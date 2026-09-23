@@ -1,7 +1,7 @@
 # Full CPU weighting audit
 
 Date: 2026-09-23. Scope: the original CPU-only 603e project through P30 in
-[TASK_PLAN.md](TASK_PLAN.md), including superscalar execution, floating point,
+[TASK_PLAN.md](plans/stale/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
 **Revised estimate: about 46% complete (weighted 46.29%; judgment range 40–50%).**
@@ -11,7 +11,7 @@ remaining effort. The range is not a statistical confidence interval.
 
 This is a bounded document/evidence audit of the current
 [SYSTEM_COMPLETION.md](SYSTEM_COMPLETION.md), original task scope and historical
-[PROGRESS.md](PROGRESS.md) weighting. No RTL review, tests or synthesis were rerun.
+[PROGRESS.md](plans/stale/PROGRESS.md) weighting. No RTL review, tests or synthesis were rerun.
 Evidence and limitations are inherited from the accepted feature contracts and
 scorecard. A full independent implementation/conformance audit remains open.
 

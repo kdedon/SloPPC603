@@ -311,7 +311,7 @@ agree with the abstract-port profiles. Search passes 623,059 checks at
 124,927 cycles; fault passes 9,604,532 checks at 1,772,615 cycles.
 Removing PTE R/C writeback is rejected at cycle 69,737; an incorrect guarded
 ISI cause is rejected at cycle 261,790. No ELF or established RTL change was
-needed. See [bus evidence](TRANSLATED_BUS60X_PLAN.md).
+needed. See [bus evidence](TRANSLATED_BUS60X_FIRMWARE.md).
 
 The full regression passes 202 registered simulation configurations, 243
 Python tests and 45 standalone lint profiles. The final 342 source inputs

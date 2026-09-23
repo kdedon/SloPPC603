@@ -14,7 +14,7 @@ UM Table4-8/4-19 establishes TB zero and DEC `0xffffffff` reset values. UM
 §4.2.2/4-15 and PEM Table6-16/6-39 distinguish DEC's full saved-state subset
 from the external interrupt's low-half-only SRR1. The implemented full-function
 mask `0x87c0ffff` includes the already documented reserved-bit inference;
-[the contract](TIMER_NEXT_SLICE.md) separates this and other local arbitration
+[the contract](plans/stale/TIMER_NEXT_SLICE.md) separates this and other local arbitration
 choices from literal manual requirements.
 
 UM2-40/2-44 establishes the MFSPR/MFTB read alias, including selector-specific

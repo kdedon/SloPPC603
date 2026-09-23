@@ -6,7 +6,7 @@ and page translation, and an integrated cache/60x path. FPGA acceptance also
 requires reviewed constraints and passing setup/hold. Board bring-up is excluded.
 
 This is the current status index. Feature contracts linked below control exact
-behavior; [MVP_EXECUTION_PLAN.md](MVP_EXECUTION_PLAN.md) preserves implementation
+behavior; [MVP_EXECUTION_PLAN.md](plans/stale/MVP_EXECUTION_PLAN.md) preserves implementation
 history. Earlier inventory and round-40 percentages are historical snapshots.
 
 ## How to read the estimates
@@ -44,7 +44,7 @@ is currently unmet.
 | Integration and verification | 7% | 85% | Independent directed/reference tests, 243 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives | Search/fault firmware now covers the combined supervisor/page-MMU/cache/bus path; no formal/collected HDL coverage/continuous CI gate; long reference acceptance remains open. |
 | FPGA fit, timing and release | 7% | 35% | Current cached physical and separately timer-enabled BAT designs fit Cyclone V with archived evidence | Neither representative fit closes timing; no combined final MVP top, board I/O timing contract or release signoff. New RTL changes require fresh fit before timing claims. |
 
-Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](ISA_MATRIX.md),
+Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](references/ISA_MATRIX.md),
 [alignment](ALIGNMENT_VERIFICATION.md), [live context](LIVE_CONTEXT_VERIFICATION.md),
 [interrupts](EXTERNAL_INTERRUPT_VERIFICATION.md), [timers](TIMER_VERIFICATION.md),
 [runtime BAT acceptance](RUNTIME_BAT_VERIFICATION.md), [TLB service](TLB_SERVICE.md),
@@ -64,7 +64,7 @@ completion denominator.
 Original category weights are preserved; broad execution, branch/LSU and memory
 categories now explicitly allocate weight to unimplemented systems. This corrects
 historical dual-issue over-credit while recognizing later supervisor/MMU work.
-The historical round-40 score remains 39.40% in [PROGRESS.md](PROGRESS.md).
+The historical round-40 score remains 39.40% in [PROGRESS.md](plans/stale/PROGRESS.md).
 This is a document/evidence audit, not fresh conformance testing, and includes
 source/tooling credit. It is not derived by rescaling the MVP score.
 
@@ -212,7 +212,7 @@ Writes remain private until retirement; canceled requests drain without changing
 the bank. Direct/indexed forms, privilege, aliases, GPR0, pending events and
 retained recovery targets are tested. The 10-point subsystem increase adds
 1.4 weighted percentage points; it does not imply software page refill works.
-The next proposed boundary is [page-hit routing](PAGE_PATH_NEXT_SLICE.md).
+The next proposed boundary is [page-hit routing](plans/stale/PAGE_PATH_NEXT_SLICE.md).
 Remaining effort stays at 6–10 / 8–14 focused engineer-weeks because page refill
 and combined timing dominate uncertainty. All 260 final acceptance input hashes
 remained stable; the full legacy gate and separately added five-test gate both
@@ -511,7 +511,7 @@ integrated simulation and 8–14 for a timing-checked FPGA result.
 See [wrapper contract](TRANSLATED_BUS60X.md),
 [direct/retry verification](TRANSLATED_BUS60X_VERIFICATION.md),
 [error/reset verification](TRANSLATED_BUS60X_ERRORS.md), and
-[compiled bus evidence](TRANSLATED_BUS60X_PLAN.md).
+[compiled bus evidence](TRANSLATED_BUS60X_FIRMWARE.md).
 
 ## Translated-cache sequence: round 1 accepted, 2026-09-23
 

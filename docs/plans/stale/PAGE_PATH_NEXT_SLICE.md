@@ -2,7 +2,7 @@
 
 This document records the original bounded implementation plan following CPU
 segment-register management. The implementation contract is now in
-[PAGE_PATH_PROTOCOL.md](PAGE_PATH_PROTOCOL.md); acceptance evidence is recorded
+[PAGE_PATH_PROTOCOL.md](../../PAGE_PATH_PROTOCOL.md); acceptance evidence is recorded
 separately in the verification and firmware documents. The smallest useful next step is an opt-in
 page path behind the BAT router with explicitly prefilled TLB entries.
 

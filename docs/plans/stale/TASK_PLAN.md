@@ -36,7 +36,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P01 — Audit source coverage and freeze architectural assumptions [DONE]
 
-- **Accepted evidence:** [SOURCES.md](SOURCES.md), [REFERENCE_AUDIT.md](REFERENCE_AUDIT.md), and [CODING_CONVENTIONS.md](CODING_CONVENTIONS.md). Primary inventory and decisions are reviewed; unresolved feature evidence has assigned owners.
+- **Accepted evidence:** [SOURCES.md](../../references/SOURCES.md), [REFERENCE_AUDIT.md](../../REFERENCE_AUDIT.md), and [CODING_CONVENTIONS.md](../../CODING_CONVENTIONS.md). Primary inventory and decisions are reviewed; unresolved feature evidence has assigned owners.
 
 - **Prerequisites:** P00.
 - **Deliver:** `docs/SOURCES.md` with PDF page versus printed-page mapping, available/missing chapters, reference precedence, model/revision distinctions, and an explicit decision log. Locate the HDL guideline referenced by the original brief; if unavailable, document local coding conventions. Audit DingusPPC license and semantic/model coverage before integration.
@@ -46,7 +46,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 - **Prerequisites:** P01.
 - **Deliver:** reviewed `TIMING_SPEC.md`, `BUS_SPEC.md`, machine-readable timing rows and bus scenario manifest under `sim/spec/`. Use chapter 6 tables/rules/schedules and chapter 7/8 pin/tenure diagrams from available source material.
-- **Accepted bounded address/lane tables:** [BUS_ADDRESSING.md](BUS_ADDRESSING.md) now covers Tables 8-4 through 8-7, including physical DH lanes in 32-bit mode and two-beat aligned doublewords. Endian steering, CPU-address translation, cache transaction selection and full bus timing remain open.
+- **Accepted bounded address/lane tables:** [BUS_ADDRESSING.md](../../references/BUS_ADDRESSING.md) now covers Tables 8-4 through 8-7, including physical DH lanes in 32-bit mode and two-beat aligned doublewords. Endian steering, CPU-address translation, cache transaction selection and full bus timing remain open.
 
 - **Acceptance:** every row/scenario has section/page provenance, mode conditions, and a precise observation point; ambiguous rules remain marked unresolved. Distinguish dispatch, execute finish, completion, throughput, signal assertion polarity, and sampling cycles. No checker derives its expected behavior solely from RTL.
 
@@ -58,7 +58,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P04 — Reproducible simulation, cross-toolchain, and early synthesis setup [DONE]
 
-- **Accepted evidence:** [BUILD_STATUS.md](BUILD_STATUS.md), reproducible BE/LE artifacts, canonical lint/regression, and saved Cyclone V reports with 35 virtual/zero physical pins. This task requires an early fit, not final timing closure; negative setup/hold slack remains explicit P30 work.
+- **Accepted evidence:** [BUILD_STATUS.md](../../BUILD_STATUS.md), reproducible BE/LE artifacts, canonical lint/regression, and saved Cyclone V reports with 35 virtual/zero physical pins. This task requires an early fit, not final timing closure; negative setup/hold slack remains explicit P30 work.
 
 - **Prerequisites:** P00, P01.
 - **Deliver:** cross-compiler container/build recipe, `crt0.S`, linker script, tohost test convention, BE/LE targets; Quartus project/SDC and core-only measurement wrapper; build scripts and tool version recording. Preserve local smoke testing without Docker.
@@ -68,8 +68,8 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P05 — Tagged dispatch, reservation station, and unfinished completion entries
 
-- **Accepted preparation:** width-one tagged IU foundation for the existing seven forms, including a pending-operand reservation station, registered issue/result channel, owner-checked rename wakeup, and unfinished CQ entries. See [EXECUTION_CONTRACT.md](EXECUTION_CONTRACT.md). Strict lint and the existing 768-result regression pass; focused completion and execution checks cover adversarial ownership and backpressure.
-- **P05c evidence:** [STAGE_TIMING.md](STAGE_TIMING.md) binds an actual-core trace to the current implementation contract, with 14 checked instructions and 18 checker tests. [TIMING_DECISIONS.md](TIMING_DECISIONS.md) fixes current-subset event bindings while retaining the extra dispatch interval, conservative completion spacing and graphical/deallocation fidelity questions.
+- **Accepted preparation:** width-one tagged IU foundation for the existing seven forms, including a pending-operand reservation station, registered issue/result channel, owner-checked rename wakeup, and unfinished CQ entries. See [EXECUTION_CONTRACT.md](../../EXECUTION_CONTRACT.md). Strict lint and the existing 768-result regression pass; focused completion and execution checks cover adversarial ownership and backpressure.
+- **P05c evidence:** [STAGE_TIMING.md](../../STAGE_TIMING.md) binds an actual-core trace to the current implementation contract, with 14 checked instructions and 18 checker tests. [TIMING_DECISIONS.md](../../TIMING_DECISIONS.md) fixes current-subset event bindings while retaining the extra dispatch interval, conservative completion spacing and graphical/deallocation fidelity questions.
 - **Parent boundary:** full P02/P03 contracts and source-reconciled timing observation points remain open. This implementation stage is not full P05 timing conformance, a flush protocol, or proof of unlimited stale-token rejection across generation wrap.
 
 - **Prerequisites:** P02, P03.
@@ -78,11 +78,11 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P06 — Precise flush and architectural recovery
 
-- **Accepted P06a preparation:** [RECOVERY_CONTRACT.md](RECOVERY_CONTRACT.md) and the executable policy model cover prefix age cuts, simultaneous events, survivor mappings, finite producer lifetime and untagged fetch drain. Fifteen tests pass after independent review. A standalone [prefix-selector RTL prototype](RECOVERY_SELECTOR.md) passes 245,760 snapshot checks; it is not connected to the CPU. Bounded local recovery integration is admitted by P05d; full parent prerequisites remain open.
+- **Accepted P06a preparation:** [RECOVERY_CONTRACT.md](../../RECOVERY_CONTRACT.md) and the executable policy model cover prefix age cuts, simultaneous events, survivor mappings, finite producer lifetime and untagged fetch drain. Fifteen tests pass after independent review. A standalone [prefix-selector RTL prototype](../../RECOVERY_SELECTOR.md) passes 245,760 snapshot checks; it is not connected to the CPU. Bounded local recovery integration is admitted by P05d; full parent prerequisites remain open.
 
-- **Accepted P06b1 backend:** [RECOVERY_BACKEND.md](RECOVERY_BACKEND.md) implements sequential CQ prefix recovery, rename survivor reconstruction and local RS/IU cancellation. Direct state/cancellation benches pass 5,871/1,066 checks, and existing no-redirect regressions pass. P06b2 now connects frontend drain, IQ clearing and diagnostic-state integration through explicit core control. This does not complete P06.
+- **Accepted P06b1 backend:** [RECOVERY_BACKEND.md](../../RECOVERY_BACKEND.md) implements sequential CQ prefix recovery, rename survivor reconstruction and local RS/IU cancellation. Direct state/cancellation benches pass 5,871/1,066 checks, and existing no-redirect regressions pass. P06b2 now connects frontend drain, IQ clearing and diagnostic-state integration through explicit core control. This does not complete P06.
 
-- **Accepted P06b2 current-subset integration:** [CORE_RECOVERY.md](CORE_RECOVERY.md) documents accepted redirect events, old-request drain, latest-target selection and diagnostic cleanup. The actual-core independent stream scoreboard passes 985 checks and the direct fetch bench passes 99. Branch/exception decode, external producer recovery and full parent conformance remain open.
+- **Accepted P06b2 current-subset integration:** [CORE_RECOVERY.md](../../CORE_RECOVERY.md) documents accepted redirect events, old-request drain, latest-target selection and diagnostic cleanup. The actual-core independent stream scoreboard passes 985 checks and the direct fetch bench passes 99. Branch/exception decode, external producer recovery and full parent conformance remain open.
 
 - **Prerequisites:** P05.
 - **Deliver:** age-aware kill/redirect protocol for IQ, units, CQ, rename map and outstanding fetch; restore surviving mappings or reconstruct them. Make memory responses safe across redirects using cancellation/drain or transaction epochs.
@@ -90,20 +90,20 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P07 — Integer ALU and CR/XER semantics
 
-- **Accepted P07a contract:** [CR_XER_CONTRACT.md](CR_XER_CONTRACT.md) defines one in-flight flag owner, allocation-controlled masks, committed CA/SO capture, atomic retirement and recovery. It is a bounded implementation contract, not flag RTL.
-- **Accepted P07b non-record logical slice:** [LOGICAL_EXECUTION.md](LOGICAL_EXECUTION.md) adds eight executable forms. The actual-core bench passes 94 logical results, all eight record-form rejection cases and registered timing checks; existing regressions pass. The [CX-I01/I02 foundation](FLAGS_STATE.md) adds independent flag references, allocated CQ deltas and committed CR/XER owner control. The [CX-I03 record-logical slice](RECORD_LOGICAL.md) now adds owner-gated dispatch, captured SO and CR0 execution, with independent full-core commitment/recovery tests. The [ADD/ADDC slice](ADD_FLAGS.md) adds CA/OV/SO execution; [ADDE](ADDE.md) now adds captured carry input. [ADDME/ADDZE](ADD_UNARY.md) now complete the reviewed ADD family; other integer families remain pending.
+- **Accepted P07a contract:** [CR_XER_CONTRACT.md](../../CR_XER_CONTRACT.md) defines one in-flight flag owner, allocation-controlled masks, committed CA/SO capture, atomic retirement and recovery. It is a bounded implementation contract, not flag RTL.
+- **Accepted P07b non-record logical slice:** [LOGICAL_EXECUTION.md](../../LOGICAL_EXECUTION.md) adds eight executable forms. The actual-core bench passes 94 logical results, all eight record-form rejection cases and registered timing checks; existing regressions pass. The [CX-I01/I02 foundation](../../FLAGS_STATE.md) adds independent flag references, allocated CQ deltas and committed CR/XER owner control. The [CX-I03 record-logical slice](../../RECORD_LOGICAL.md) now adds owner-gated dispatch, captured SO and CR0 execution, with independent full-core commitment/recovery tests. The [ADD/ADDC slice](../../ADD_FLAGS.md) adds CA/OV/SO execution; [ADDE](../../ADDE.md) now adds captured carry input. [ADDME/ADDZE](../../ADD_UNARY.md) now complete the reviewed ADD family; other integer families remain pending.
 
 - **Prerequisites:** P03, P05.
-- **Accepted P07 logical-shift slice:** [LOGICAL_SHIFTS.md](LOGICAL_SHIFTS.md) implements SLW/SRW Rc0/Rc1 with full six-bit count, preservation and recovery checks. [SRAW/SRAWI](ARITHMETIC_SHIFTS.md) now implement CA replacement and both Rc forms with independent program and recovery coverage.
-- **Accepted P07 compare slice:** [CONTROL_MEMORY.md](CONTROL_MEMORY.md) executes all four L=0 compares, selected-field CR masks and committed-SO capture; source and preservation checks cover every BF.
-- **Accepted P07 rotate slice:** [ROTATE_EXECUTION.md](ROTATE_EXECUTION.md) implements RLWINM/RLWNM with both Rc values; [RLWIMI](ROTATE_INSERT.md) now implements both Rc forms using renamed old-rA and a separately captured SH.
-- **Accepted P07 SUBF/NEG slice:** [SUBTRACT_NEGATE.md](SUBTRACT_NEGATE.md) implements eight OE/Rc forms with CA preservation, signed overflow and exact NEG reserved-field rejection. [SUBFC](SUBFC.md) now implements four carry-writing OE/Rc forms; [SUBFE](SUBFE.md) now implements captured carry input in four OE/Rc forms. [SUBFME/SUBFZE](SUBTRACT_UNARY.md) now implement eight OE/Rc forms with fixed operands, reserved-field rejection and captured carry. [SUBFIC](SUBFIC.md) now implements signed immediate subtraction and carry replacement. [ADDIC/ADDIC.](ADD_IMMEDIATE.md) now implement signed immediate carry arithmetic and primary-opcode-selected CR0 recording. [ANDI./ANDIS.](AND_IMMEDIATE.md) now implement unsigned immediate masks with unconditional recording. [CNTLZW/EXTSB/EXTSH](UNARY_LOGICAL.md) now implement six unary Rc forms with reserved-field rejection and XER preservation. [MFCR/MTCRF](CR_TRANSFERS.md) now implement full-CR reads and selected-field writes with precise recovery. [Eight CR logical operations](CR_LOGICAL.md) now implement snapshot-based Boolean operations with allocation-controlled single-bit writes. [MCRF/MCRXR](CR_STATE.md) now implement captured whole-field moves and atomic XER status transfer/clear. Full integer reference acceptance remains queued.
+- **Accepted P07 logical-shift slice:** [LOGICAL_SHIFTS.md](../../LOGICAL_SHIFTS.md) implements SLW/SRW Rc0/Rc1 with full six-bit count, preservation and recovery checks. [SRAW/SRAWI](../../ARITHMETIC_SHIFTS.md) now implement CA replacement and both Rc forms with independent program and recovery coverage.
+- **Accepted P07 compare slice:** [CONTROL_MEMORY.md](../../CONTROL_MEMORY.md) executes all four L=0 compares, selected-field CR masks and committed-SO capture; source and preservation checks cover every BF.
+- **Accepted P07 rotate slice:** [ROTATE_EXECUTION.md](../../ROTATE_EXECUTION.md) implements RLWINM/RLWNM with both Rc values; [RLWIMI](../../ROTATE_INSERT.md) now implements both Rc forms using renamed old-rA and a separately captured SH.
+- **Accepted P07 SUBF/NEG slice:** [SUBTRACT_NEGATE.md](../../SUBTRACT_NEGATE.md) implements eight OE/Rc forms with CA preservation, signed overflow and exact NEG reserved-field rejection. [SUBFC](../../SUBFC.md) now implements four carry-writing OE/Rc forms; [SUBFE](../../SUBFE.md) now implements captured carry input in four OE/Rc forms. [SUBFME/SUBFZE](../../SUBTRACT_UNARY.md) now implement eight OE/Rc forms with fixed operands, reserved-field rejection and captured carry. [SUBFIC](../../SUBFIC.md) now implements signed immediate subtraction and carry replacement. [ADDIC/ADDIC.](../../ADD_IMMEDIATE.md) now implement signed immediate carry arithmetic and primary-opcode-selected CR0 recording. [ANDI./ANDIS.](../../AND_IMMEDIATE.md) now implement unsigned immediate masks with unconditional recording. [CNTLZW/EXTSB/EXTSH](../../UNARY_LOGICAL.md) now implement six unary Rc forms with reserved-field rejection and XER preservation. [MFCR/MTCRF](../../CR_TRANSFERS.md) now implement full-CR reads and selected-field writes with precise recovery. [Eight CR logical operations](../../CR_LOGICAL.md) now implement snapshot-based Boolean operations with allocation-controlled single-bit writes. [MCRF/MCRXR](../../CR_STATE.md) now implement captured whole-field moves and atomic XER status transfer/clear. Full integer reference acceptance remains queued.
 - **Deliver:** remaining integer arithmetic, logical, rotate/mask, shifts, extensions and compares; CR/XER result fields and rename/commit handling, including carry/overflow/sticky SO and Rc forms.
 - **Acceptance:** directed boundary cases plus supported integer CSV subsets through a documented adapter; wraparound, signed comparison, shift limits, mask wrap, carry chains, CR fields, OE/Rc combinations; expand the ISA matrix only for tested forms.
 
 ### P08 — Multiply/divide execution and scheduling
 
-- **Accepted functional slice:** [MULLI/MULLW](MULTIPLY_LOW.md) implement five forms through the existing registered IU. [MULHW/MULHWU](MULTIPLY_HIGH.md) add four high-word forms. [DIVWU](DIVIDE_UNSIGNED.md) adds four unsigned divide forms with a documented zero-divisor result policy. [DIVW](DIVIDE_SIGNED.md) adds four signed divide forms with guarded zero and signed-overflow policies. [DIVIDER_TIMING.md](DIVIDER_TIMING.md) adds 20/37-cycle divide reservation and delayed finish with cancellation. A synthesizable 16-step radix-4 divider now supplies the quotient while preserving those timing and recovery rules. Multiply now uses conservative maximum-latency reservations (MULLI 3, MULLW/MULHW 5, MULHWU 6) with held-result and cancellation semantics. The operand-to-latency mapping and remaining P08 scheduling/closure gates remain open; P08 is not complete.
+- **Accepted functional slice:** [MULLI/MULLW](../../MULTIPLY_LOW.md) implement five forms through the existing registered IU. [MULHW/MULHWU](../../MULTIPLY_HIGH.md) add four high-word forms. [DIVWU](../../DIVIDE_UNSIGNED.md) adds four unsigned divide forms with a documented zero-divisor result policy. [DIVW](../../DIVIDE_SIGNED.md) adds four signed divide forms with guarded zero and signed-overflow policies. [DIVIDER_TIMING.md](../../DIVIDER_TIMING.md) adds 20/37-cycle divide reservation and delayed finish with cancellation. A synthesizable 16-step radix-4 divider now supplies the quotient while preserving those timing and recovery rules. Multiply now uses conservative maximum-latency reservations (MULLI 3, MULLW/MULHW 5, MULHWU 6) with held-result and cancellation semantics. The operand-to-latency mapping and remaining P08 scheduling/closure gates remain open; P08 is not complete.
 
 - **Prerequisites:** P02, P05, P07.
 - **Deliver:** multiply and iterative divide datapaths, operand-dependent/variant timing where documented, unit reservation and result arbitration.
@@ -111,7 +111,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P09 — BPU, branches, prediction and folding
 
-- **Accepted bounded functional slice:** [CONTROL_MEMORY.md](CONTROL_MEMORY.md) supplies serialized b/bc/bclr/bcctr, committed LR/CTR moves and BF-selected comparison dependencies. Prediction, folding, speculative SPR rename and full branch timing remain pending; full P09 is not complete.
+- **Accepted bounded functional slice:** [CONTROL_MEMORY.md](../../CONTROL_MEMORY.md) supplies serialized b/bc/bclr/bcctr, committed LR/CTR moves and BF-selected comparison dependencies. Prediction, folding, speculative SPR rename and full branch timing remain pending; full P09 is not complete.
 
 - **Prerequisites:** P02, P06, P07.
 - **Deliver:** `ppc_bpu.sv`, unconditional then conditional/LR/CTR branches, CR/LR/CTR dependencies and rename, static prediction and one unresolved prediction, folding and fetch redirect.
@@ -119,7 +119,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P10 — Real-mode LSU and committed stores
 
-- **Accepted bounded functional slice:** [CONTROL_MEMORY.md](CONTROL_MEMORY.md) supplies aligned non-update integer D/indexed loads/stores, big-endian lanes, a latched store reservation and killed-load response drain. The [update-form slice](LSU_UPDATE.md) adds 14 aligned forms and atomic base/data retirement. Two-stage pipelined timing, split unaligned accesses and architectural fault delivery remain pending; full P10 is not complete.
+- **Accepted bounded functional slice:** [CONTROL_MEMORY.md](../../CONTROL_MEMORY.md) supplies aligned non-update integer D/indexed loads/stores, big-endian lanes, a latched store reservation and killed-load response drain. The [update-form slice](../../LSU_UPDATE.md) adds 14 aligned forms and atomic base/data retirement. Two-stage pipelined timing, split unaligned accesses and architectural fault delivery remain pending; full P10 is not complete.
 
 - **Prerequisites:** P06, P07.
 - **Deliver:** two-stage LSU with uncached data request/response interface, effective address generation, scalar integer loads/stores and update/indexed forms, sign extension, alignment classification, store queue and fault hooks.
@@ -141,7 +141,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P13 — DingusPPC architectural reference adapter
 
-- **Bounded executable slice:** [REFERENCE_RUNNER.md](REFERENCE_RUNNER.md) compares actual RTL traces with original local integer/branch/CR/SPR handlers and detects injected field/trace mismatches. The v2 full-RAM corpus covers all 168 currently implemented forms, including the 28 scalar memory forms, using original instruction handlers with an explicit flat memory service. Whole-machine dispatch, upstream full integer/FP suites and architectural exception comparison stay open.
+- **Bounded executable slice:** [REFERENCE_RUNNER.md](../../REFERENCE_RUNNER.md) compares actual RTL traces with original local integer/branch/CR/SPR handlers and detects injected field/trace mismatches. The v2 full-RAM corpus covers all 168 currently implemented forms, including the 28 scalar memory forms, using original instruction handlers with an explicit flat memory service. Whole-machine dispatch, upstream full integer/FP suites and architectural exception comparison stay open.
 
 - **Prerequisites:** P01, P03, P05.
 - **Deliver:** isolated reference build/test adapter under `sim/cosim/`, CSV parser, encoded-program runner, retirement/state comparator and mismatch artifacts. Audit actual vector counts and variants.
@@ -149,9 +149,9 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P14 — Supervisor registers and precise exceptions
 
-- **Incremental register slice:** [SPRG0–SPRG3](SPRG_INTEGRATION.md) adds eight exact opt-in MFSPR/MTSPR forms, supervisor checks before allocation, commit-owned full-width state, cancellation and hard-reset behavior. This is scratch-register coverage only; it does not complete P14 or add new event classes.
+- **Incremental register slice:** [SPRG0–SPRG3](../../SPRG_INTEGRATION.md) adds eight exact opt-in MFSPR/MTSPR forms, supervisor checks before allocation, commit-owned full-width state, cancellation and hard-reset behavior. This is scratch-register coverage only; it does not complete P14 or add new event classes.
 
-- **Bounded standalone slice:** [exception state](EXCEPTION_STATE.md) provides MSR/SRR0/SRR1 transitions for selected SC/program/RFI events, with source-qualified masks, held results and explicit rejection. The caller must supply a precise committed boundary. The [opt-in CPU integration](SUPERVISOR_INTEGRATION.md) adds actual SC/RFI, selected illegal/privileged events, MFMSR and SRR access with precise serialized state changes and fetch recovery. Full event priority, other fault sources, MTMSR/CSR coverage and architectural reset remain open; P14 is not complete.
+- **Bounded standalone slice:** [exception state](../../EXCEPTION_STATE.md) provides MSR/SRR0/SRR1 transitions for selected SC/program/RFI events, with source-qualified masks, held results and explicit rejection. The caller must supply a precise committed boundary. The [opt-in CPU integration](../../SUPERVISOR_INTEGRATION.md) adds actual SC/RFI, selected illegal/privileged events, MFMSR and SRR access with precise serialized state changes and fetch recovery. Full event priority, other fault sources, MTMSR/CSR coverage and architectural reset remain open; P14 is not complete.
 
 - **Prerequisites:** P06, P07, P10, P13.
 - **Deliver:** `ppc_spr.sv`, `ppc_exc.sv`, MSR/SRR/DAR/DSISR, privilege checks, system call, traps, `mtmsr`/`rfi`, exception priority/vector selection, SPR access and reset semantics. Replace diagnostic halt with architectural fault entry.
@@ -159,7 +159,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P15 — System unit and serialized/multi-access instructions
 
-- **Bounded executable slice:** [ISYNC/SYNC/EIEIO](SERIALIZATION_INTEGRATION.md) now execute in the opt-in profile, drain older implemented work and block younger effects through retirement. ISYNC refetches PC+4 through accepted recovery. Cached modified-code protocols, global coherent ordering, multi-access instructions and decoded cache/TLB channels remain open; P15 is not complete.
+- **Bounded executable slice:** [ISYNC/SYNC/EIEIO](../../SERIALIZATION_INTEGRATION.md) now execute in the opt-in profile, drain older implemented work and block younger effects through retirement. ISYNC refetches PC+4 through accepted recovery. Cached modified-code protocols, global coherent ordering, multi-access instructions and decoded cache/TLB channels remain open; P15 is not complete.
 
 - **Prerequisites:** P10, P14.
 - **Deliver:** SRU CR/SPR operations, `lmw`/`stmw` and string instruction sequencing, `sync`/`eieio`/`isync` execution rules, cache/TLB command channels, dispatch/completion/refetch serialization classes.
@@ -175,11 +175,11 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P17 — BAT, segments, software-loaded TLB and miss handling
 
-- **Segment storage slice:** the [standalone segment-register bank](SEGMENT_REGISTERS.md) implements sixteen descriptors, direct/indexed selection and a held internal snapshot. CPU move instructions and TLB context routing remain separate increments. The local zero-reset policy is not a silicon SR initialization guarantee.
+- **Segment storage slice:** the [standalone segment-register bank](../../SEGMENT_REGISTERS.md) implements sixteen descriptors, direct/indexed selection and a held internal snapshot. CPU move instructions and TLB context routing remain separate increments. The local zero-reset policy is not a silicon SR initialization guarantee.
 
-- **Next bounded preparation:** [segment-register contract](SEGMENT_REGISTER_CONTRACT.md) records exact four-form encodings, privilege, T-dependent fields, reset and context-synchronization rules. It is a proposed next slice, with no new implemented instruction or MMU credit.
+- **Next bounded preparation:** [segment-register contract](../../SEGMENT_REGISTER_CONTRACT.md) records exact four-form encodings, privilege, T-dependent fields, reset and context-synchronization rules. It is a proposed next slice, with no new implemented instruction or MMU credit.
 
-- **Bounded standalone slice:** [BAT translation](BAT_TRANSLATION.md) provides four-pair selected-bank translation, real-mode bypass, PP/WIMG, guarded/protection checks and explicit local invalid-configuration outcomes. The [committed BAT service](BAT_SERVICE.md) adds both banks, privileged SPR requests and held translation responses. The [BAT CPU wrapper](CORE_BAT.md) adds actual instruction/data routing under a fixed startup context; the separate [page TLB service](TLB_SERVICE.md) adds both 64-entry banks, page permissions, software-selected refill and indexed invalidation. Live CPU SPR/MSR routing, segment state, integrated page lookup/miss handlers and architectural fault delivery remain open; P17 is not complete.
+- **Bounded standalone slice:** [BAT translation](../../BAT_TRANSLATION.md) provides four-pair selected-bank translation, real-mode bypass, PP/WIMG, guarded/protection checks and explicit local invalid-configuration outcomes. The [committed BAT service](../../BAT_SERVICE.md) adds both banks, privileged SPR requests and held translation responses. The [BAT CPU wrapper](../../CORE_BAT.md) adds actual instruction/data routing under a fixed startup context; the separate [page TLB service](../../TLB_SERVICE.md) adds both 64-entry banks, page permissions, software-selected refill and indexed invalidation. Live CPU SPR/MSR routing, segment state, integrated page lookup/miss handlers and architectural fault delivery remain open; P17 is not complete.
 
 - **Prerequisites:** P14, P15.
 - **Deliver:** I/D MMUs, BATs, segment state, TLB arrays/replacement, miss SPR generation and TGPR switching, permissions/WIMG, TLB-management operations and synchronization hooks.
@@ -187,7 +187,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P18 — Independent 60x bus-functional model and checkers
 
-- **Bounded executable slice:** [BUS_MASTER.md](BUS_MASTER.md) adds a task-driven scalar target and adversarial tests, plus a separately written core RAM responder. [BUS_INTEGRATION.md](BUS_INTEGRATION.md) adds arbiter ownership/fairness, instruction-error checks and independent instruction/data pin integration. Full P02 scenario mapping and independent checker mutation coverage remain open.
+- **Bounded executable slice:** [BUS_MASTER.md](../../BUS_MASTER.md) adds a task-driven scalar target and adversarial tests, plus a separately written core RAM responder. [BUS_INTEGRATION.md](../../BUS_INTEGRATION.md) adds arbiter ownership/fairness, instruction-error checks and independent instruction/data pin integration. Full P02 scenario mapping and independent checker mutation coverage remain open.
 
 - **Prerequisites:** P02.
 - **Deliver:** `tb/bfm/bus60x_bfm.sv`, memory/arbiter/snoop agents, signal-level assertions and programmable waits/retry/error injection; cycle-table replay runner.
@@ -195,7 +195,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P19 — 60x bus master and physical signal wrapper
 
-- **Bounded executable slice:** [BUS_MASTER.md](BUS_MASTER.md) implements single-outstanding 64-bit scalar transfers, grants/waits, ARTRY/DRTRY, TEA and explicit OEs with core data integration. The [unified wrapper](BUS_INTEGRATION.md) connects both core transports with captured instruction/data attributes. A separate [line-read master](BUS_LINE_READ.md) adds four-beat cacheable reads, critical-doubleword wrapping, retries/errors and full-line responses. A [cached-core wrapper](CACHED_BUS_INTEGRATION.md) now shares line refill and scalar data on physical pins. Burst writes, pipelining, parity, snooping, other modes and full timing acceptance remain open.
+- **Bounded executable slice:** [BUS_MASTER.md](../../BUS_MASTER.md) implements single-outstanding 64-bit scalar transfers, grants/waits, ARTRY/DRTRY, TEA and explicit OEs with core data integration. The [unified wrapper](../../BUS_INTEGRATION.md) connects both core transports with captured instruction/data attributes. A separate [line-read master](../../BUS_LINE_READ.md) adds four-beat cacheable reads, critical-doubleword wrapping, retries/errors and full-line responses. A [cached-core wrapper](../../CACHED_BUS_INTEGRATION.md) now shares line refill and scalar data on physical pins. Burst writes, pipelining, parity, snooping, other modes and full timing acceptance remain open.
 
 - **Prerequisites:** P02, P18.
 - **Deliver:** `ppc_bus60x.sv`, independent address/data tenures, bounded pipelining, grants, retries, late cancellation, error reporting, address-only transactions, 32/64-bit transfers, output enables and parity paths.
@@ -203,7 +203,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 ### P20 — Instruction cache and fetch/MMU integration
 
-- **Bounded standalone slice:** `ppc_icache` supplies 16-KiB physical storage, strict four-way LRU, complete-line refill, local invalidate and killed-refill drain. The [cached-core wrapper](CACHED_BUS_INTEGRATION.md) now connects actual CPU fetch and shares the physical bus with scalar data. The [cached reference](REFERENCE_CACHED.md) covers all 168 implemented forms through that path. The [managed wrapper](ICACHE_CONTROL.md) adds local full-invalidate and scalar bypass, verified with explicit CPU restart for changed code and all-form reference profiles. MMU integration, decoded architectural controls, early forwarding and FPGA storage inference remain open; P20 is not complete.
+- **Bounded standalone slice:** `ppc_icache` supplies 16-KiB physical storage, strict four-way LRU, complete-line refill, local invalidate and killed-refill drain. The [cached-core wrapper](../../CACHED_BUS_INTEGRATION.md) now connects actual CPU fetch and shares the physical bus with scalar data. The [cached reference](../../REFERENCE_CACHED.md) covers all 168 implemented forms through that path. The [managed wrapper](../../ICACHE_CONTROL.md) adds local full-invalidate and scalar bypass, verified with explicit CPU restart for changed code and all-form reference profiles. MMU integration, decoded architectural controls, early forwarding and FPGA storage inference remain open; P20 is not complete.
 
 - **Prerequisites:** P09, P17, P19.
 - **Deliver:** I-cache tags/data/strict four-way LRU, line refill and critical-word handling, invalidate/lock/disable controls, instruction translation and fetch-fault integration; storage suitable for M10K inference.

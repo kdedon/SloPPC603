@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ISA_PATH = ROOT / "sim/spec/isa.json"
 SOURCE_PATH = ROOT / "sim/spec/isa_sources.json"
 TIMING_PATH = ROOT / "sim/spec/timing.json"
-MATRIX_PATH = ROOT / "docs/ISA_MATRIX.md"
+MATRIX_PATH = ROOT / "docs/references/ISA_MATRIX.md"
 
 
 class MetadataError(ValueError):

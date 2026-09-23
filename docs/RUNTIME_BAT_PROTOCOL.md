@@ -5,7 +5,7 @@ router/service and integration owners agreed these pins and collision rules
 before production changes. Default profile behavior remains unchanged. The
 service remains the sole committed BAT bank; a private proposal is not visible
 architectural state. Architectural scope and local validation policy are in
-[RUNTIME_BAT_NEXT_SLICE.md](RUNTIME_BAT_NEXT_SLICE.md).
+[RUNTIME_BAT_NEXT_SLICE.md](plans/stale/RUNTIME_BAT_NEXT_SLICE.md).
 
 ## CPU/router boundary
 

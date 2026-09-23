@@ -387,7 +387,7 @@ validated search/fault ELFs through `ppc_core_bat_bus60x`. The independent
 RAM responder services only public bus pins, including physical page-table
 byte/halfword writes. Both profiles use uncached scalar transactions with
 fixed CI/WT/GBL policy; WIMG-driven caching and coherence remain unimplemented.
-See [compiled bus evidence](../docs/TRANSLATED_BUS60X_PLAN.md) and
+See [compiled bus evidence](../docs/TRANSLATED_BUS60X_FIRMWARE.md) and
 [wrapper contract](../docs/TRANSLATED_BUS60X.md).
 
 ## Translated physical I-cache profiles

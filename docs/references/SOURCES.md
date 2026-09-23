@@ -1,6 +1,6 @@
 # Source audit and architectural decisions
 
-Audit date: 2026-09-12. This is P01's primary-manual audit, not the P02 timing/bus transcription or a claim that RTL implements the findings. PDF page numbers below are **one-based physical pages**. Printed labels are those on the page, so PDF 177 and printed 4-19 identify the same page of the 603e manual. All source paths are relative to the repository root `/home/kevin/git/ppc`.
+Audit date: 2026-09-12. This is P01's primary-manual audit, not the P02 timing/bus transcription or a claim that RTL implements the findings. PDF page numbers below are **one-based physical pages**. Printed labels are those on the page, so PDF 177 and printed 4-19 identify the same page of the 603e manual. The named PDF manuals are external local references, not files in this repository. See [the reference index](README.md) for the current layout.
 
 ## Inventory and completeness
 

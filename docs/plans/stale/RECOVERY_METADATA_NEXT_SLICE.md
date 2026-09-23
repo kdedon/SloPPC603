@@ -90,7 +90,7 @@ passed the expanded storage test (23 checks), recovery state (5,871), execution
 (1,066), completion ring (16,480), memory edges (799), LSU update (106,065),
 alignment profiles (3,697/2,651) and dependencies (634), and fetch suites
 (10,923/2,889), plus 24 strict lint targets and 241 Python tests. The 142-file
-source manifest remained stable. See [RECOVERY_METADATA_VERIFICATION.md](RECOVERY_METADATA_VERIFICATION.md)
+source manifest remained stable. See [RECOVERY_METADATA_VERIFICATION.md](../../RECOVERY_METADATA_VERIFICATION.md)
 for commands, logs and coverage boundaries. All six compiled firmware profiles
 were also rebuilt and passed by the integration owner.
 

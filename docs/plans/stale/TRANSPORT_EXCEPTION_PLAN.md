@@ -6,7 +6,7 @@ changes. Keep physical TEA on a separate terminal transport path in this slice.
 This repairs the missing instruction-side fault channel without incorrectly
 turning every bus error into an ISI/DSI or claiming recoverable machine checks.
 The carrier described here is now implemented in the abstract core; see
-[FETCH_EXCEPTIONS.md](FETCH_EXCEPTIONS.md) for its current contract and limits.
+[FETCH_EXCEPTIONS.md](../../FETCH_EXCEPTIONS.md) for its current contract and limits.
 A subsequent bounded live MTMSR/BAT-context slice is now implemented; see
 `LIVE_CONTEXT.md` and `LIVE_BAT_CONTEXT.md`. The historical sequencing below
 explains the split. Page-TLB integration, interrupts and architectural machine

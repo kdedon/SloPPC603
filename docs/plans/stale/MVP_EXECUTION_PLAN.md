@@ -1,6 +1,6 @@
 # Supervisor/MMU MVP execution plan
 
-Current percentages and open gaps: [SYSTEM_COMPLETION.md](SYSTEM_COMPLETION.md).
+Current percentages and open gaps: [SYSTEM_COMPLETION.md](../../SYSTEM_COMPLETION.md).
 
 
 This plan follows the 2026-09-20 inventory. The target is a single-issue,
@@ -252,7 +252,7 @@ before any improvement is claimed.
 
 ## Bounded recovery and status follow-up
 
-The persistent [system scorecard](SYSTEM_COMPLETION.md) now records every major
+The persistent [system scorecard](../../SYSTEM_COMPLETION.md) now records every major
 system, fixed MVP weights, completion estimates, gaps, shortcuts and a round
 history. Current judgment is about 65% of the restricted supervisor/MMU MVP;
 full-603e scope remains a separate qualitative 40–45% range. Update this
@@ -264,7 +264,7 @@ Recovery still rebuilds validity, readiness and the youngest-writer map, while
 retaining existing survivor identities. Independent review and focused recovery,
 LSU/update, alignment and fetch-fault gates pass, along with 24 strict lint
 profiles and 241 Python tests. The focused run preserved all 142 hashed sources;
-[RECOVERY_METADATA_VERIFICATION.md](RECOVERY_METADATA_VERIFICATION.md) records
+[RECOVERY_METADATA_VERIFICATION.md](../../RECOVERY_METADATA_VERIFICATION.md) records
 commands and evidence. All six compiled firmware workloads rebuilt and passed
 with unchanged retirement/cycle totals. The previous 172-target full regression predates this
 small change; it was not rerun in this bounded round. No new fit was run and no
@@ -277,14 +277,14 @@ Explicit XER SPR 1 access is implemented in the supervisor-enabled profile,
 including user-mode reads/writes and the 603e MFSPR/MFTB read alias. The single
 committed flags owner applies retirement-only writes of SO/OV/CA and byte count
 with mask `0xe000007f`. Arithmetic and MCRXR preserve byte count. Default legacy
-instruction availability remains unchanged. [XER_ACCESS.md](XER_ACCESS.md)
+instruction availability remains unchanged. [XER_ACCESS.md](../../XER_ACCESS.md)
 records the primary-source contract and independent ownership review.
 
 The expanded compiled timer program checks masks, carry/MCRXR interactions,
 and EXT/DEC handlers that save, deliberately clear and restore XER. It passes
 436 retirements / 4,494 cycles; the other five compiled workloads pass unchanged.
 Corrupting the expected byte count fails through the firmware mailbox. Final
-focused gates are recorded in [XER_VERIFICATION.md](XER_VERIFICATION.md).
+focused gates are recorded in [XER_VERIFICATION.md](../../XER_VERIFICATION.md).
 No full regression or FPGA fit was run for this bounded slice. The scorecard
 remains about 65% MVP completion; wider software-state and MMU integration still
 requires acceptance. CPU-controlled BAT programming remains next.
@@ -297,8 +297,8 @@ after acknowledgment before redirect. The independent oracle passes 14,909
 checks and verifies reset MSR/SRR/DAR/DSISR/XER/TB/DEC reads, no stale event after
 EE enable, explicit context obligations, and fresh interrupt reuse. The fixture
 cancels old untagged responses on reset under the existing interface contract;
-it does not erase accepted stores. [EVENT_RESET_CONTRACT.md](EVENT_RESET_CONTRACT.md)
-and [EVENT_RESET_VERIFICATION.md](EVENT_RESET_VERIFICATION.md) record boundaries
+it does not erase accepted stores. [EVENT_RESET_CONTRACT.md](../../EVENT_RESET_CONTRACT.md)
+and [EVENT_RESET_VERIFICATION.md](../../EVENT_RESET_VERIFICATION.md) record boundaries
 and focused validation: 24 strict RTL lint profiles and 243 Python tests pass,
 with all 144 gate input hashes stable. A temporary timer copy retaining pending
 DEC across reset fails the intended stale-event check at cycle 71.
@@ -318,8 +318,8 @@ startup interface retain their behavior.
 Five focused suites cover service reservation/abort/reset, router arbitration,
 core recovery/reset, actual CPU privilege and exhaustive decode. Compiled firmware
 starts with empty banks and installs/replaces mappings while EXT/DEC are pending.
-See [RUNTIME_BAT_VERIFICATION.md](RUNTIME_BAT_VERIFICATION.md) and
-[RUNTIME_BAT_FIRMWARE.md](RUNTIME_BAT_FIRMWARE.md) for acceptance and its source
+See [RUNTIME_BAT_VERIFICATION.md](../../RUNTIME_BAT_VERIFICATION.md) and
+[RUNTIME_BAT_FIRMWARE.md](../../RUNTIME_BAT_FIRMWARE.md) for acceptance and its source
 boundary. This raises the weighted MVP estimate to 67.6%, rounded to about 68%.
 No new FPGA fit or timing closure is claimed. The next implementation boundary
 is CPU-connected page translation and resumable data faults.
@@ -338,7 +338,7 @@ IP prefixes, held retirement, older/younger store ordering, error provenance and
 four cancellation windows including post-response fence cleanup. Compiled
 firmware takes twelve faults and repairs four mappings for exact RFI retry.
 Full regression and eight firmware workloads pass; a corrupted DSISR expectation
-fails the intended mailbox check. See [DATA_EXCEPTION_VERIFICATION.md](DATA_EXCEPTION_VERIFICATION.md).
+fails the intended mailbox check. See [DATA_EXCEPTION_VERIFICATION.md](../../DATA_EXCEPTION_VERIFICATION.md).
 The weighted MVP estimate is now 69.1%, rounded to about 69%; no new FPGA fit
 or timing result is claimed. The next bounded work should connect CPU segment
 management and the page translation/miss/refill path.
@@ -353,8 +353,8 @@ passes 36 writes and 38 reads with pending EXT/DEC and BAT translation.
 
 Full legacy regression, five separately added segment suites, 243 Python checks
 and all nine firmware workloads pass. A corrupted readback expectation fails
-the intended mailbox check. [CPU_SEGMENT_VERIFICATION.md](CPU_SEGMENT_VERIFICATION.md)
-and [SEGMENT_FIRMWARE.md](SEGMENT_FIRMWARE.md) record the boundary. Segment/page/
+the intended mailbox check. [CPU_SEGMENT_VERIFICATION.md](../../CPU_SEGMENT_VERIFICATION.md)
+and [SEGMENT_FIRMWARE.md](../../SEGMENT_FIRMWARE.md) record the boundary. Segment/page/
 refill rises from 25% to 35%, taking weighted MVP completion from 69.1% to 70.5%
 (about 71%). No new FPGA fit or timing result is claimed. The proposed next
 slice is [page-hit routing](PAGE_PATH_NEXT_SLICE.md); miss state and software
@@ -373,8 +373,8 @@ Independent router and actual-core suites, clean broad regression, 243 Python
 checks and ten compiled workloads pass. Compiled firmware exercises I-page calls,
 D-page VSID switching and pending EXT/DEC with exact return context. The wrong
 I-page result expectation fails its intended mailbox. See
-[PAGE_PATH_VERIFICATION.md](PAGE_PATH_VERIFICATION.md) and
-[PAGE_FIRMWARE.md](PAGE_FIRMWARE.md). The weighted estimate rises from 70.5% to
+[PAGE_PATH_VERIFICATION.md](../../PAGE_PATH_VERIFICATION.md) and
+[PAGE_FIRMWARE.md](../../PAGE_FIRMWARE.md). The weighted estimate rises from 70.5% to
 71.9% (about 72%), entirely in the segment/page/refill subsystem. No new FPGA
 fit or timing result is claimed.
 
@@ -395,12 +395,12 @@ Independent decode, CPU recovery/privilege/default-off, service and router tests
 pass with the broad regression, 243 Python checks and eleven firmware workloads.
 Three compiled modes verify both data ways and the instruction entry are gone
 while a neighbor survives; a wrong-index negative reaches the failure mailbox.
-See [TLBIE_VERIFICATION.md](TLBIE_VERIFICATION.md) and
-[TLBIE_FIRMWARE.md](TLBIE_FIRMWARE.md). The weighted score rises from 71.9% to
+See [TLBIE_VERIFICATION.md](../../TLBIE_VERIFICATION.md) and
+[TLBIE_FIRMWARE.md](../../TLBIE_FIRMWARE.md). The weighted score rises from 71.9% to
 72.6% (about 73%), with only segment/page/refill changing from 45% to 50%.
 No new FPGA fit or timing claim follows.
 
-Next: [CPU TLB loads and precise miss-state dependencies](TLB_REFILL_DEPENDENCIES.md).
+Next: [CPU TLB loads and precise miss-state dependencies](../../TLB_REFILL_DEPENDENCIES.md).
 TLB loads, IMISS/DMISS/compare/hash/RPA state, TGPR and software handler retry
 remain architectural dependencies; existing page misses stay diagnostic.
 
@@ -429,7 +429,7 @@ without changing immediate external refill. Four strict feature configurations
 pass (156/268/158/280 checks), as do the 17,364-transaction vector corpus,
 96-check invalidate service, 587-check page router and 134-check invalidate router.
 An isolated implementation that uses live refill inputs at commit is rejected
-by the new bench. See [verification](TLB_PREPARED_REFILL_VERIFICATION.md).
+by the new bench. See [verification](../../TLB_PREPARED_REFILL_VERIFICATION.md).
 Overall weighted completion remains 72.6%, segment/page/refill 50%. CPU seed
 registers and load instructions are the next two rounds. No new fit.
 
@@ -443,7 +443,7 @@ SRR1 writes provide WAY without another register bank. Independent acceptance:
 existing supervisor/TLBIE/segment/XER/live-context regressions also pass.
 Wrapper default/seed-only/combined lint passed before the next round's router
 port additions; the final combined wrapper is gated in round 3. See
-[verification](CPU_TLB_SEED_VERIFICATION.md). Weighted completion: 72.88%
+[verification](../../CPU_TLB_SEED_VERIFICATION.md). Weighted completion: 72.88%
 (72.9% reported), segment/page/refill 52%; no FPGA or miss-handler claim.
 
 ## Requested three-round sequence: round 3 accepted, 2026-09-23
@@ -452,15 +452,15 @@ CPU `tlbld`/`tlbli` now use captured software compare/RPA/SRR1.WAY state and a
 retirement-owned kind-5 proposal in the existing TLB service. The bounded input
 contract requires real mode and well-formed matching compare/API fields; failed
 local validation makes no request, while accepted errors and cancellation abort
-and drain. Indexed TLBIE remains independent. See [CPU_TLB_LOAD.md](CPU_TLB_LOAD.md).
+and drain. Indexed TLBIE remains independent. See [CPU_TLB_LOAD.md](../../CPU_TLB_LOAD.md).
 
 The full regression passes, including all 243 Python checks and 177 strict
 testbench configurations. Focused decode/core/router gates and twelve compiled
 workloads pass. The new firmware installs all four mappings via CPU instructions,
 exercises page execution and interrupts, and checks invalidation in three modes;
 omitting the first load is rejected. Production and final source hashes remained
-stable across acceptance. [TLB_LOAD_VERIFICATION.md](TLB_LOAD_VERIFICATION.md)
-and [TLB_LOAD_FIRMWARE.md](TLB_LOAD_FIRMWARE.md) give exact boundaries.
+stable across acceptance. [TLB_LOAD_VERIFICATION.md](../../TLB_LOAD_VERIFICATION.md)
+and [TLB_LOAD_FIRMWARE.md](../../TLB_LOAD_FIRMWARE.md) give exact boundaries.
 
 Weighted completion rises from 72.88% to 74.0%, solely by moving segment/page/
 refill from 52% to 60%. No automatic miss capture, TGPR, handler table search or
@@ -477,8 +477,8 @@ The compiled workload performs two denied accesses, four CPU TLBLD operations
 and successful handler repair/RFI retry in 384 retirements and 4,532 cycles.
 Removing the handler TLBLD is rejected on a repeated denial. Existing page
 router (587), BAT data fault (56) and canceled DSI (253) checks pass.
-See [PAGE_DATA_EXCEPTION_VERIFICATION.md](PAGE_DATA_EXCEPTION_VERIFICATION.md)
-and [PAGE_DSI_FIRMWARE.md](PAGE_DSI_FIRMWARE.md).
+See [PAGE_DATA_EXCEPTION_VERIFICATION.md](../../PAGE_DATA_EXCEPTION_VERIFICATION.md)
+and [PAGE_DSI_FIRMWARE.md](../../PAGE_DSI_FIRMWARE.md).
 
 Weighted completion is 74.42% (74.4%), segment/page/refill 63%. Remaining effort
 estimates stay 6–10 focused engineer-weeks to simulation acceptance and 8–14 to
@@ -493,8 +493,8 @@ retirement and canceled-fetch state suppression pass the independent core
 bench (1,923 checks). The compiled three-cause repair/retry workload passes
 374 retirements in 4,492 cycles; removing handler TLBLI is rejected at cycle
 1,893. Round-1 core (1,132) and enabled/disabled router (228 each) gates still
-pass. See [PAGE_INSTRUCTION_EXCEPTION_VERIFICATION.md](PAGE_INSTRUCTION_EXCEPTION_VERIFICATION.md)
-and [PAGE_ISI_FIRMWARE.md](PAGE_ISI_FIRMWARE.md).
+pass. See [PAGE_INSTRUCTION_EXCEPTION_VERIFICATION.md](../../PAGE_INSTRUCTION_EXCEPTION_VERIFICATION.md)
+and [PAGE_ISI_FIRMWARE.md](../../PAGE_ISI_FIRMWARE.md).
 
 Segment/page/refill is 66%, weighted completion 74.84% (74.8%). No FPGA fit.
 Next is a cancellation-safe typed miss diagnostic carrying captured EA/SR/MSR
@@ -514,8 +514,8 @@ retired context and unchanged physical data (443/443/449 retirements,
 5,253/5,240/5,335 cycles). Zeroing captured SR in an isolated RTL copy is
 rejected. All fifteen compiled profiles and 243 Python checks pass; the full
 existing RTL regression plus new focused enabled/disabled configurations pass
-on stable production sources. See [PAGE_MISS_RESULT_VERIFICATION.md](PAGE_MISS_RESULT_VERIFICATION.md)
-and [PAGE_MISS_FIRMWARE.md](PAGE_MISS_FIRMWARE.md).
+on stable production sources. See [PAGE_MISS_RESULT_VERIFICATION.md](../../PAGE_MISS_RESULT_VERIFICATION.md)
+and [PAGE_MISS_FIRMWARE.md](../../PAGE_MISS_FIRMWARE.md).
 
 Weighted completion is 75.12% (75.1%), segment/page/refill 68%. The next MMU
 gate remains architectural miss state, SDR1/hash/IMISS/DMISS, TGPR and vector
@@ -534,9 +534,9 @@ PTEG addresses; it is not yet connected to architectural miss entry.
 Independent checks pass: decode 705, enabled core 1,303, disabled core 43 and
 derivation 1,034. Compiled SDR1 firmware passes 51 retirements in 564 cycles;
 omitting its first SDR1 write is rejected at cycle 287. Existing live-context
-and CPU TLB-load gates pass. See [SDR1](CPU_SDR1.md),
-[verification](SDR1_VERIFICATION.md), [hash derivation](MISS_DERIVATION.md) and
-[compiled evidence](SDR1_FIRMWARE.md).
+and CPU TLB-load gates pass. See [SDR1](../../CPU_SDR1.md),
+[verification](../../SDR1_VERIFICATION.md), [hash derivation](../../MISS_DERIVATION.md) and
+[compiled evidence](../../SDR1_FIRMWARE.md).
 
 Segment/page/refill moves 68% → 70%; weighted completion 75.12% → 75.40%.
 Other scores and the 6–10 / 8–14 engineer-week estimates stay unchanged.
@@ -551,8 +551,8 @@ transitions. RFI clears TGPR even when SRR1.WAY is set. Direct bank tests pass
 including held/canceled transitions, invalid modes and recovery ownership.
 Compiled firmware passes 109 retirements in 1,078 cycles; omitting its first
 bank switch is rejected at cycle 709. Live-context and SDR1 preservation
-gates also pass. See [CPU contract](CPU_TGPR.md), [bank contract](TGPR_REGISTER_FILE.md),
-[verification](TGPR_VERIFICATION.md) and [compiled evidence](TGPR_FIRMWARE.md).
+gates also pass. See [CPU contract](../../CPU_TGPR.md), [bank contract](../../TGPR_REGISTER_FILE.md),
+[verification](../../TGPR_VERIFICATION.md) and [compiled evidence](../../TGPR_FIRMWARE.md).
 
 Segment/page/refill moves 70% → 73%; weighted completion 75.40% → 75.82%
 (75.8%). Other scores and effort ranges remain fixed. Automatic miss entry,
@@ -574,7 +574,7 @@ All eighteen compiled workloads pass, including the new four-event handler
 (675 retirements, 7,458 cycles). Omitting its TLBLI is rejected at cycle 3,280.
 The final SDR1 image includes required pre-write SYNC barriers and passes
 55 retirements/598 cycles; its omitted-write negative fails at cycle 293.
-Independent boundary tests are documented in [TLB_MISS_VERIFICATION.md](TLB_MISS_VERIFICATION.md);
+Independent boundary tests are documented in [TLB_MISS_VERIFICATION.md](../../TLB_MISS_VERIFICATION.md);
 the standalone exception unit passes 175 enabled and 131 disabled checks.
 The full regression passes 199 registered simulation configurations and
 243 Python checks. All 43 standalone lint profiles and both existing
@@ -591,8 +591,8 @@ R/C writeback, failed-search exception conversion and replacement policy
 remain open. Translated cache/60x integration, remaining exceptions and
 setup/hold closure are still MVP blockers. No new FPGA fit was run. Remaining
 estimates stay 6–10 focused engineer-weeks for simulation acceptance and
-8–14 for a timing-checked FPGA result. See [CPU contract](CPU_TLB_MISS.md),
-[exception state](EXCEPTION_TLB_MISS.md) and [compiled evidence](MISS_ENTRY_FIRMWARE.md).
+8–14 for a timing-checked FPGA result. See [CPU contract](../../CPU_TLB_MISS.md),
+[exception state](../../EXCEPTION_TLB_MISS.md) and [compiled evidence](../../MISS_ENTRY_FIRMWARE.md).
 
 ## Table-search sequence: round 1 accepted, 2026-09-23
 

@@ -6,7 +6,7 @@ their original scope and dates; later feature contracts supersede early limitati
 
 
 **Historical audit snapshot.** Subsequent implementation and validation are
-tracked in [MVP_EXECUTION_PLAN.md](MVP_EXECUTION_PLAN.md). Its integration,
+tracked in [MVP_EXECUTION_PLAN.md](plans/stale/MVP_EXECUTION_PLAN.md). Its integration,
 exception and FPGA results supersede the corresponding initial gaps below;
 this document preserves the original inventory and forecast assumptions.
 
@@ -32,7 +32,7 @@ The repository's weighted full-scope estimate is **39.40% after round 40** (`PRO
 | `ppc603e/quartus/` | Early measurement wrapper, Quartus scripts, constraints and historical fit evidence |
 | `dingusppc/` | Reference emulator submodule; original integer instruction handlers are used by differential tests |
 | `powerpc_fpga/` | Separate small reference design, not the active implementation |
-| Root PDFs / `IMPLEMENTATION_PLAN.md` | Source manuals and original full processor target; corrections live in `docs/SOURCES.md` |
+| Root PDFs / `IMPLEMENTATION_PLAN.md` | Source manuals and original full processor target; corrections live in `docs/references/SOURCES.md` |
 
 The active new processor is under `ppc603e`; the two reference submodules should not be counted as additional completed processor features. Git contains one top-level initial commit, so commit history does not provide a reliable development-velocity estimate.
 

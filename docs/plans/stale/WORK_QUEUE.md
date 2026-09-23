@@ -212,7 +212,7 @@ Overall completion: **approximately 13%** (planning range **10–15%**). Integer
 | Capture and recovery | Parent; Astra review | Seven held-input cases and five recovery cases per family | Accepted: 64 direct checks; 3,434 ADDME and 3,434 ADDZE recovery checks |
 | Integration/metadata | Parent | Regression diagnostics, targets, implementation matrix and documentation | Accepted: strict core/wrapper lint, all prior RTL tests, 120 Python tests and 10,560 decoder probes (178 accepted) |
 
-[ADD_UNARY.md](ADD_UNARY.md) records the arithmetic and recovery boundaries. Review found no remaining correctness issue in scope. The reviewed matrix contains 60 entries: 42 implemented and 18 pending, with zero overlaps. All 20 reviewed ADD-family forms execute. Source inventory remains 226 rows, 30 reconciled and 196 pending. No new FPGA measurement or full timing acceptance is claimed.
+[ADD_UNARY.md](../../ADD_UNARY.md) records the arithmetic and recovery boundaries. Review found no remaining correctness issue in scope. The reviewed matrix contains 60 entries: 42 implemented and 18 pending, with zero overlaps. All 20 reviewed ADD-family forms execute. Source inventory remains 226 rows, 30 reconciled and 196 pending. No new FPGA measurement or full timing acceptance is claimed.
 
 Next bounded implementation: RLWINM/RLWNM with both Rc values, using the reviewed rotate/mask contract. Assign Sol/high RTL and independent full-core verification owners with Astra/high review. Cover wrapped masks, zero/full-width rotations, r0/RAW/WAW, captured SO, masked CR0 and recovery. Keep RLWIMI pending until its old-destination operand and dependency contract is explicitly implemented and tested.
 
@@ -226,7 +226,7 @@ Overall completion: **approximately 13%** (planning range **10–15%**). Integer
 | Independent rotate corpus | `isa_metadata` (Sol/high); Astra review | Bitwise rotate and circular-distance mask oracle, complete state/stream, mask sweep and recovery | Accepted: 722,063 checks, 4,176 retirements, 4,112 rotates and 4,096 exhaustive mask cases |
 | Capture/integration | Parent; Astra review | Held mask/SO fixture, dispatch caller ties, targets, metadata and docs | Accepted: 64 direct checks, core/wrapper lint, all 24 prior RTL targets, 120 Python tests, 10,560 decode probes (188 accepted) |
 
-[ROTATE_EXECUTION.md](ROTATE_EXECUTION.md) records semantics and acceptance boundaries. Review strengthened nonzero r0 source/destination/count aliases and pre-write coverage sampling; the amended corpus passes with no remaining findings. The current metadata has 60 entries: 46 implemented and 14 pending, zero overlaps. Source inventory remains 226 rows, 30 reconciled and 196 pending. No new FPGA measurement was performed.
+[ROTATE_EXECUTION.md](../../ROTATE_EXECUTION.md) records semantics and acceptance boundaries. Review strengthened nonzero r0 source/destination/count aliases and pre-write coverage sampling; the amended corpus passes with no remaining findings. The current metadata has 60 entries: 46 implemented and 14 pending, zero overlaps. Source inventory remains 226 rows, 30 reconciled and 196 pending. No new FPGA measurement was performed.
 
 Next bounded implementation: SLW/SRW with both Rc values. Assign Sol/high RTL and independent actual-core verification owners, with Astra/high review. Follow the reviewed six-bit register-count contract: counts 32–63 yield zero, higher bits are ignored, and count zero preserves the source. Include signed-looking data, nonzero r0/RAW/WAW aliases, captured SO/final-result CR0, XER preservation and recovery. Keep arithmetic shifts pending their CA-specific acceptance and RLWIMI pending the old-destination source contract.
 
@@ -273,7 +273,7 @@ The coordinator owns independent tests, metadata and integration.
 The program checks 2,684 retirements and 206,971 full-state assertions. Direct
 execution has 91 checks; SRAW and SRAWI recovery each have 3,434 checks. Counts,
 negative discarded-bit carry, real r0, aliases, captured controls, held packets,
-and kept/killed flag owners are covered. See [ARITHMETIC_SHIFTS.md](ARITHMETIC_SHIFTS.md).
+and kept/killed flag owners are covered. See [ARITHMETIC_SHIFTS.md](../../ARITHMETIC_SHIFTS.md).
 
 All 32 prior RTL targets, strict core/wrapper lint, 120 Python tests and 15,808 compiled decode probes pass (655 accepted).
 
@@ -285,7 +285,7 @@ mask wraparound and recovery. Preserve the original P03/P07 acceptance gates.
 
 `build_foundation` (Sol/high) implemented RLWIMI with two renamed sources and captured SH; `manual_audit` (Astra/high) completed targeted review with no actionable findings. The coordinator owns independent tests, integration and documentation. Both Rc forms execute, bringing the bounded reviewed subset to 90/90.
 
-The program passes 218,905 checks / 2,839 retirements, including all 2,048 mask/Rc combinations. Direct execution passes 73 checks. Recovery exercises an uncommitted old destination and kept/killed flag owners. See [ROTATE_INSERT.md](ROTATE_INSERT.md).
+The program passes 218,905 checks / 2,839 retirements, including all 2,048 mask/Rc combinations. Direct execution passes 73 checks. Recovery exercises an uncommitted old destination and kept/killed flag owners. See [ROTATE_INSERT.md](../../ROTATE_INSERT.md).
 
 Next bounded batch: review SUBF/NEG encoding and subtract carry/overflow semantics, expand P03 metadata with independent references, then implement the accepted P07 slice. Source inventory remains 50 boundedly reconciled rows and 176 pending; completing the existing 90 reviewed forms does not complete P03 or P07.
 
@@ -296,7 +296,7 @@ Round17 integration: all 36 prior RTL targets, strict core/wrapper lint and 120 
 
 The source reviewer (`manual_audit`, Astra/high) verified primary encodings and secondary semantics before acceptance. `build_foundation` (Sol/high) implemented the shared subtract datapath; targeted review found no actionable findings. The coordinator owns independent tests, metadata and integration. Eight forms bring the current subset to 98 reviewed/implemented; source reconciliation advances 50→52 of 226 rows.
 
-New tests: 113,111 program checks / 1,465 retirements, 73 direct checks, 3,439 checks per recovery variant, and five metadata/reference tests. See [SUBTRACT_NEGATE.md](SUBTRACT_NEGATE.md).
+New tests: 113,111 program checks / 1,465 retirements, 73 direct checks, 3,439 checks per recovery variant, and five metadata/reference tests. See [SUBTRACT_NEGATE.md](../../SUBTRACT_NEGATE.md).
 
 Next: SUBFC with reviewed unsigned no-borrow CA semantics and OE/Rc behavior; then SUBFE/SUBFME/SUBFZE with captured carry. Keep P03/P07 parent gates open and retain TIM-U08's SUBF timing notation caveat.
 
@@ -307,7 +307,7 @@ Round18 integration passes all 39 prior RTL targets, strict core/wrapper lint, 1
 
 Source review (`manual_audit`, Astra/high) verified XO8, no-borrow CA and timing/source locators; `build_foundation` (Sol/high) implemented the bounded four forms. Targeted RTL review found no actionable findings. The coordinator owns tests, metadata and integration.
 
-New tests pass 186,650 program checks / 2,420 retirements, 73 direct checks and 3,434 recovery checks. The program includes 512 immediate ADDE consumers with separately seeded incoming CA. Two additional Python tests enforce metadata and no-borrow anchors. 102 forms execute; source reconciliation is53/226. See [SUBFC.md](SUBFC.md).
+New tests pass 186,650 program checks / 2,420 retirements, 73 direct checks and 3,434 recovery checks. The program includes 512 immediate ADDE consumers with separately seeded incoming CA. Two additional Python tests enforce metadata and no-borrow anchors. 102 forms execute; source reconciliation is53/226. See [SUBFC.md](../../SUBFC.md).
 
 Next: SUBFE, then SUBFME/SUBFZE, with source review for incoming-CA arithmetic, overflow boundaries, reserved fields and flag recovery. Full P03/P07 acceptance remains open.
 
@@ -318,7 +318,7 @@ Round19 integration passes all 43 prior RTL targets, strict core/wrapper lint, 1
 
 Source review (`manual_audit`, Astra/high) verified XO136, captured carry, borrow-adjusted signed overflow and source/timing locators. `build_foundation` (Sol/high) implemented the four forms; targeted RTL review found no actionable issues. The coordinator owns independent tests, metadata and integration.
 
-New checks: 186,650 program / 2,420 retirements, 127 direct, 3,434 per CA-seeded recovery variant, and two new Python tests. One handwritten direct expectation was corrected by mathematical checking; no RTL change was needed. 106 forms execute; source reconciliation54/226. See [SUBFE.md](SUBFE.md).
+New checks: 186,650 program / 2,420 retirements, 127 direct, 3,434 per CA-seeded recovery variant, and two new Python tests. One handwritten direct expectation was corrected by mathematical checking; no RTL change was needed. 106 forms execute; source reconciliation54/226. See [SUBFE.md](../../SUBFE.md).
 
 Next: SUBFME/SUBFZE, including fixed B injection, reserved rB rejection, captured carry, overflow boundaries and recovery. P03/P07 remain partial.
 
@@ -329,7 +329,7 @@ Round20 integration passes all 46 prior RTL targets after updating the obsolete 
 
 Source review (`manual_audit`, Astra/high) verified XO232/200, reserved rB, fixed-operand arithmetic and timing/source locators. `build_foundation` (Sol/high) implemented a decode-only extension using ALU_SUBFE. Targeted RTL review found no actionable findings. The coordinator owns independent tests, metadata and integration.
 
-New checks: 89,010 program / 1,152 retirements, 145 direct, 3,434 per recovery variant and two Python tests. Eight forms bring coverage to114 reviewed/executable forms; source reconciliation56/226. See [SUBTRACT_UNARY.md](SUBTRACT_UNARY.md).
+New checks: 89,010 program / 1,152 retirements, 145 direct, 3,434 per recovery variant and two Python tests. Eight forms bring coverage to114 reviewed/executable forms; source reconciliation56/226. See [SUBTRACT_UNARY.md](../../SUBTRACT_UNARY.md).
 
 Next: SUBFIC, reviewing signed immediate extension, real rA0, carry without OE/Rc, and recovery before implementation. Keep P03/P07 parent gates open.
 
@@ -340,7 +340,7 @@ Round21 integration passes all 50 prior RTL targets, strict core/wrapper lint, 1
 
 Source review (`manual_audit`, Astra/high) verified primary8, signed SIMM, real rA0 and CA-only effects. `build_foundation` (Sol/high) implemented the decode-only change. The reviewer returned clear RTL findings before reporting a usage limit; the coordinator completed tests, metadata and integration locally.
 
-New checks: 150,687 program / 1,953 retirements and 3,434 per recovery variant. Two Python tests cover all immediate payload masks and signed/flag anchors. 115 forms execute; source reconciliation57/226. See [SUBFIC.md](SUBFIC.md).
+New checks: 150,687 program / 1,953 retirements and 3,434 per recovery variant. Two Python tests cover all immediate payload masks and signed/flag anchors. 115 forms execute; source reconciliation57/226. See [SUBFIC.md](../../SUBFIC.md).
 
 Next: ADDIC/ADDIC., reviewing signed immediate arithmetic, carry-only versus record effects, real rA0 and recovery. P03/P07 remain partial. Avoid relying on the exhausted review agent until usage is available.
 
@@ -351,7 +351,7 @@ Round22 integration passes all 54 prior RTL targets, strict core/wrapper lint, 1
 
 The coordinator completed source review, decode implementation, independent symbolic/literal verification and integration locally because review-agent usage was exhausted. No new agents were started. Primary opcodes12/13 select nonrecord/record behavior independently of immediate bits; CA is replaced, OV/SO preserved and rA0 remains real.
 
-New checks: 186,805 program / 2,422 retirements, 3,434 per recovery form, and two Python tests. There are117 reviewed/executable forms and59 reconciled source rows. See [ADD_IMMEDIATE.md](ADD_IMMEDIATE.md).
+New checks: 186,805 program / 2,422 retirements, 3,434 per recovery form, and two Python tests. There are117 reviewed/executable forms and59 reconciled source rows. See [ADD_IMMEDIATE.md](../../ADD_IMMEDIATE.md).
 
 Next: ANDI./ANDIS., checking zero-extended versus shifted unsigned immediate, unconditional CR0 recording and SO preservation. Full P03/P07 remain partial.
 
@@ -362,7 +362,7 @@ Round23 integration passes all 57 prior RTL targets, strict core/wrapper lint, 1
 
 The coordinator completed local source review, decode implementation and independent verification. Both primary28/29 forms always record CR0 and preserve XER. The secondary ANDIS. pseudocode's addition typo is explicitly retained, with prose and tagged software corroboration supporting AND. No agents were started.
 
-New checks: 186,805 program / 2,422 retirements, 3,439 per recovery form and three Python tests. Coverage is119 reviewed/executable forms and61 reconciled rows. See [AND_IMMEDIATE.md](AND_IMMEDIATE.md).
+New checks: 186,805 program / 2,422 retirements, 3,439 per recovery form and three Python tests. Coverage is119 reviewed/executable forms and61 reconciled rows. See [AND_IMMEDIATE.md](../../AND_IMMEDIATE.md).
 
 Next: CNTLZW/EXTSB/EXTSH, with reserved-field and Rc/SO source contracts, zero/sign boundaries and recovery. Full P03/P07 remain partial.
 
@@ -413,7 +413,7 @@ All four new targets and all 77 prior RTL targets pass, as do strict core/wrappe
 
 The bus inventory now contains 15 scenarios / eight cycle tables, with eight diagrams still inventory-only. Figure 8-13 records prose-supported TA pacing and protocol-relative DRTRY cancellation/replacement. Cycle labels are not promoted to unverified sampling edges, and unlabeled data polygons, electrical delays and omitted TEA timing remain open. No bus implementation credit is assigned.
 
-See [CR_STATE.md](CR_STATE.md) and [BUS_SPEC.md](BUS_SPEC.md). Overall completion is approximately **22%**, fixed weighted score **21.78%** (previously 21.58%). The rounded percentage remains unchanged because these are bounded additions to the full CPU scope.
+See [CR_STATE.md](../../CR_STATE.md) and [BUS_SPEC.md](../../references/BUS_SPEC.md). Overall completion is approximately **22%**, fixed weighted score **21.78%** (previously 21.58%). The rounded percentage remains unchanged because these are bounded additions to the full CPU scope.
 
 Next independent candidates: a source-reviewed low-word multiply slice with exact OE/Rc behavior and bounded execution/recovery tests; and one remaining bus waveform contract with mode-specific source anchors. Full integer reference acceptance, dual dispatch, divide and source-defined timing remain open and must not be marked complete by these slices.
 
@@ -429,7 +429,7 @@ Five new targets and all 81 prior RTL targets pass, with strict core/wrapper lin
 
 Figure 8-17 adds the prose-supported clock 3/4 TA waits, a hypothetical clock 6 DBG opportunity, and DRTRY assertion during labeled clock 11 followed by sampling at the next rising boundary. The manual's second-access pipelining condition remains explicit. The bus inventory is now 16 scenarios / nine cycle tables, with seven diagrams still inventory-only. Its 11 focused tests include nine new targeted mutation cases; this is source preparation and earns no bus hardware credit.
 
-[MULTIPLY_LOW.md](MULTIPLY_LOW.md) records the CPU acceptance boundary. MULLI's 2/3 and MULLW's 2/3/4/5 source latencies remain unimplemented; the current registered IU supplies functional semantics only. P08 is still partial. Overall completion is approximately **22%**, fixed weighted score **22.10%**, previously 21.78%.
+[MULTIPLY_LOW.md](../../MULTIPLY_LOW.md) records the CPU acceptance boundary. MULLI's 2/3 and MULLW's 2/3/4/5 source latencies remain unimplemented; the current registered IU supplies functional semantics only. P08 is still partial. Overall completion is approximately **22%**, fixed weighted score **22.10%**, previously 21.78%.
 
 Next independent candidates: MULHW/MULHWU signed/unsigned high-word semantics and Rc variants, alongside a remaining bus diagram such as Figure 8-18. Multiply scheduling, divide, dual issue and complete integer reference acceptance remain separate tasks.
 
@@ -447,7 +447,7 @@ Two long regression commands were terminated during compilation without reportin
 
 Figure 8-18 adds six selected rows distinguishing TA wait cycles from a delayed DBG grant and the final undelayed write. The source contract does not infer a data-drive onset from within-cycle drawing offsets. DRTRY does not retry or complete a write, but a preceding read's asserted DRTRY can still exclude a new data grant. The bus inventory is now 17 scenarios / ten cycle tables, with six diagrams still inventory-only. Its 15 focused tests include nine Figure 8-18 mutation cases. This is source preparation, not a bus RTL implementation.
 
-See [MULTIPLY_HIGH.md](MULTIPLY_HIGH.md) and [BUS_SPEC.md](BUS_SPEC.md). Overall completion is approximately **22%**, fixed weighted score **22.42%**, previously 22.10%. Source-defined multiply latency and scheduling remain open, so P08 is still partial.
+See [MULTIPLY_HIGH.md](../../MULTIPLY_HIGH.md) and [BUS_SPEC.md](../../references/BUS_SPEC.md). Overall completion is approximately **22%**, fixed weighted score **22.42%**, previously 22.10%. Source-defined multiply latency and scheduling remain open, so P08 is still partial.
 
 Next independent candidates: a bounded divide family with explicit exceptional-input semantics and recovery, alongside another remaining bus waveform such as Figure 8-19. Operand-dependent multiply timing, divide scheduling, dual dispatch and full reference acceptance remain separate open tasks.
 
@@ -465,7 +465,7 @@ The source leaves zero-divisor rD and CR0 LT/GT/EQ undefined. This scaffold sele
 
 Figure 8-19 adds ten selected rows and preserves two source conflicts: the prose's clock0 versus the rendered 1–20 axis, and critical-quadword versus critical-doubleword terminology. It allows final In3 acceptance to coincide with replacement In2 confirmation, avoiding an unsupported extra cycle. The bus inventory is now 18 scenarios / eleven cycle tables, with five diagrams still inventory-only; 19 focused tests include eleven Figure 8-19 mutation cases. This is source preparation, not bus RTL.
 
-See [DIVIDE_UNSIGNED.md](DIVIDE_UNSIGNED.md) and [BUS_SPEC.md](BUS_SPEC.md). Overall completion is approximately **23%**, fixed weighted score **22.74%**, previously 22.42%.
+See [DIVIDE_UNSIGNED.md](../../DIVIDE_UNSIGNED.md) and [BUS_SPEC.md](../../references/BUS_SPEC.md). Overall completion is approximately **23%**, fixed weighted score **22.74%**, previously 22.42%.
 
 Next independent candidates: signed DIVW, including zero and minimum-signed/-1 exceptional inputs with explicit defined/undefined boundaries; and a remaining bus waveform such as Figure 8-15 or 8-16. Full multiply/divide scheduling, dual dispatch and architectural reference acceptance remain open.
 
@@ -483,7 +483,7 @@ DIVW truncates normal signed quotients toward zero. Division by zero and minimum
 
 Figure 8-15 adds five selected rows and keeps minimum latency/maximum throughput qualitative. Delaying data does not change the stated throughput until it delays the third address tenure; the contract does not quantify that threshold or its impact. Read-data acceptance need not follow completed address tenure. Normal DRTRY is an explicit profile selection, not inferred from the negated trace. The bus inventory is now 19 scenarios / twelve cycle tables, with four diagrams still inventory-only; 23 focused tests include eleven Figure 8-15 mutation cases. No bus RTL credit is assigned.
 
-See [DIVIDE_SIGNED.md](DIVIDE_SIGNED.md) and [BUS_SPEC.md](BUS_SPEC.md). Overall completion is approximately **23%**, fixed weighted score **23.06%**, previously 22.74%.
+See [DIVIDE_SIGNED.md](../../DIVIDE_SIGNED.md) and [BUS_SPEC.md](../../references/BUS_SPEC.md). Overall completion is approximately **23%**, fixed weighted score **23.06%**, previously 22.74%.
 
 Next independent candidates: a source-backed P08 divider timing/reservation slice with explicit issue-to-finish edges and recovery obligations, alongside remaining Figure 8-16. Full multiply timing, dual dispatch and architectural reference acceptance remain separate open tasks.
 
@@ -508,7 +508,7 @@ The bus master connects that unchanged data interface to the bounded non-global,
 
 The reference adapter executes unmodified local DingusPPC handlers with explicit `-fwrapv`, a closed adapter-owned dispatch gate and recorded source/build hashes. Actual RTL matches **5,943 snapshots × 38 fields**, across 111 corpus encoding groups. The same comparator detects eight field corruptions and four structural trace failures; eight unsupported opcode/model gates also pass. The reference source remains unchanged. This is bounded P13b acceptance, not the original whole-machine dispatcher or full integer/FP/reference gate.
 
-See [LSU_UPDATE.md](LSU_UPDATE.md), [BUS_MASTER.md](BUS_MASTER.md) and [REFERENCE_RUNNER.md](REFERENCE_RUNNER.md). Overall completion is approximately **26%**, fixed weighted score **26.36%**, previously 23.06%.
+See [LSU_UPDATE.md](../../LSU_UPDATE.md), [BUS_MASTER.md](../../BUS_MASTER.md) and [REFERENCE_RUNNER.md](../../REFERENCE_RUNNER.md). Overall completion is approximately **26%**, fixed weighted score **26.36%**, previously 23.06%.
 
 The temporary capability detour can now return to the ordered queue: source-backed P08 divider timing/reservation, then remaining multiply timing and the other dependency-ordered work. LSU pipelining, expanded reference coverage and full bus scenario coverage retain their parent acceptance gates and must be scheduled explicitly rather than assumed complete.
 
@@ -606,7 +606,7 @@ The managed cache passes 114 direct and 811 actual-core checks, including 26 ret
 
 Review corrected immediate reset withdrawal on the managed bypass response and architectural MFMSR reserved-bit masking. Integration validation also caught missing new-output bindings in the older CR-state testbench and a reference-source freeze violation during a final metadata correction. The bench now explicitly checks that the default profile's supervisor outputs stay zero; affected jobs were restarted, and reference manifests were rebuilt against the final metadata. No warning suppression was added. The Quartus project source list includes the new exception-state dependency and the measurement wrapper passes strict lint; no new synthesis, fit, inference or timing-closure result is claimed.
 
-Round 38 final acceptance: all **140 executable aggregate targets**, **233 Python tests** (196 tooling, 22 cosim, 15 recovery), and strict default/enabled core, bus/cache/BAT/exception/managed/measurement lint pass. Six reference profiles plus the reused-binary maximum seed match **55,493 retirement snapshots** in total. All final RTL freeze hashes and reference manifests match. [The retained acceptance record](../sim/build/round38/acceptance.json) lists every target and final source/reference hashes. This round reran the full default aggregate because CPU/decode/special-lane RTL changed. The two restarted lanes described above completed successfully.
+Round 38 final acceptance: all **140 executable aggregate targets**, **233 Python tests** (196 tooling, 22 cosim, 15 recovery), and strict default/enabled core, bus/cache/BAT/exception/managed/measurement lint pass. Six reference profiles plus the reused-binary maximum seed match **55,493 retirement snapshots** in total. All final RTL freeze hashes and reference manifests match. [The retained acceptance record](../../../sim/build/round38/acceptance.json) lists every target and final source/reference hashes. This round reran the full default aggregate because CPU/decode/special-lane RTL changed. The two restarted lanes described above completed successfully.
 
 Completed compiler headers were removed in exact directories after their last consumer. Final whole-tree `clean-cache` found zero remaining `.gch` files; `sim` occupies approximately **841 MiB**, retaining executables, manifests, vectors and traces. Agent-owned temporary supervisor/cache/BAT build headers were also removed. A future parallel full regression should balance expected compile cost as well as target counts: the older exhaustive unary execution bench was substantially slower than its neighboring targets.
 
@@ -626,7 +626,7 @@ The page TLB passes 866 direct transactions/3,528 checks and 17,364 independentl
 
 Parent review added an independent accepted-request monitor to the BAT reference: every physical request must equal captured CPU EA plus its literal relocation, with WIMG and write payload preserved. All 9,881 retirements, 168 default forms and the complete RAM match original handlers. The seven reference profiles and reused-binary MAX seed total 65,374 matched snapshots. The reference remains a flat architectural handler oracle; independent address observations establish BAT routing evidence.
 
-All **147 executable aggregate targets**, **239 Python tests** (202 tooling, 22 cosim, 15 recovery), and strict lint pass. The existing 134 non-reference targets ran in disjoint compiler-directory groups, largest builds first, with three workers and two compiler jobs per worker. Six new non-reference gates and seven reference lanes complete the aggregate. The first launch used an unsupported Verilator job-option spelling; it was corrected before compilation. TLB testing exposed an EOF parser assumption, fixed with explicit line/token/width checks. The BAT test responder was corrected to sample handshakes at their acceptance edge. Final source and reference hashes match [the retained acceptance record](../sim/build/round39/acceptance.json).
+All **147 executable aggregate targets**, **239 Python tests** (202 tooling, 22 cosim, 15 recovery), and strict lint pass. The existing 134 non-reference targets ran in disjoint compiler-directory groups, largest builds first, with three workers and two compiler jobs per worker. Six new non-reference gates and seven reference lanes complete the aggregate. The first launch used an unsupported Verilator job-option spelling; it was corrected before compilation. TLB testing exposed an EOF parser assumption, fixed with explicit line/token/width checks. The BAT test responder was corrected to sample handshakes at their acceptance edge. Final source and reference hashes match [the retained acceptance record](../../../sim/build/round39/acceptance.json).
 
 All builds finished before final cleanup. Four remaining compiler headers reclaimed 0.26 GiB; agent temporary build headers were also removed. `sim` is approximately **892 MiB**, preserving binaries, traces, vectors and manifests. No synthesis, fit, RAM inference or timing-closure result is claimed.
 
@@ -640,9 +640,9 @@ The eight SPRG forms are accepted under `ENABLE_SUPERVISOR_EXCEPTIONS`: SPR272�
 
 Independent decode verification passes **8,097 checks**, including eight literal words, all GPR and SPR selectors, reserved Rc/XO/primary fields and default exclusion. Actual-core verification passes **192 checks**: all four full-width registers and isolation, consecutive reads/writes, held writer/read results with no early architectural change, exact commit, selected-bank overwrite, unfinished cancellation/stale-finish suppression, real-RFI problem-state MF/MT privilege checks and hard-reset clearing. The only behavioral-test correction was the new bench's expected SRR1: an installed old MSR of 87c04000 produces saved 87c44000, matching the existing source-qualified exception mask. RTL was unchanged. The canonical bench reran after that correction and final display cleanup.
 
-The independently reviewed [segment-register contract](SEGMENT_REGISTER_CONTRACT.md) records exact MFSR/MTSR/MFSRIN/MTSRIN masks, indexed high-nibble selection, ordinary r0/alias semantics, supervisor rules, T-dependent register fields, reserved-bit and reset policies, and required context synchronization. It separates standalone bank behavior from live CPU/TLB integration, preserves accepted context snapshots and avoids inventing automatic TLB flush or direct-store support. This is next-task preparation, with no executable MMU credit.
+The independently reviewed [segment-register contract](../../SEGMENT_REGISTER_CONTRACT.md) records exact MFSR/MTSR/MFSRIN/MTSRIN masks, indexed high-nibble selection, ordinary r0/alias semantics, supervisor rules, T-dependent register fields, reserved-bit and reset policies, and required context synchronization. It separates standalone bank behavior from live CPU/TLB integration, preserves accepted context snapshots and avoids inventing automatic TLB flush or direct-store support. This is next-task preparation, with no executable MMU credit.
 
-Final acceptance: all **149 executable aggregate targets**, **241 Python tests** (204 tooling, 22 cosim, 15 recovery), and strict lint pass. The 140 existing non-reference gates, two new SPRG gates, and seven reference profiles all ran against frozen RTL/metadata. Including the reused-binary maximum stress seed, **65,374 reference retirement snapshots** matched. These references exercise the default 168-form profile; SPRG acceptance is the separate independent opt-in bench. Final source/binary/reference hashes match [the retained acceptance record](../sim/build/round40/acceptance.json), with regression summaries and lint/Python logs retained alongside it.
+Final acceptance: all **149 executable aggregate targets**, **241 Python tests** (204 tooling, 22 cosim, 15 recovery), and strict lint pass. The 140 existing non-reference gates, two new SPRG gates, and seven reference profiles all ran against frozen RTL/metadata. Including the reused-binary maximum stress seed, **65,374 reference retirement snapshots** matched. These references exercise the default 168-form profile; SPRG acceptance is the separate independent opt-in bench. Final source/binary/reference hashes match [the retained acceptance record](../../../sim/build/round40/acceptance.json), with regression summaries and lint/Python logs retained alongside it.
 
 Exact completed SPRG build headers were removed before final cleanup. After all remaining builds finished, `clean-cache` removed four more headers and reclaimed 0.26 GiB; agent temporary headers are also gone. `sim` occupies approximately **912 MiB**, retaining executables, vectors, manifests and traces. No new synthesis, fit, inference or timing-closure result is claimed.
 

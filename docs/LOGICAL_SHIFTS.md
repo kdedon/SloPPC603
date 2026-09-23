@@ -4,7 +4,7 @@ SLW (opcode31/XO24) and SRW (opcode31/XO536) implement both Rc forms. They read 
 
 Rc=0 acquires no flag owner. Rc=1 captures committed SO through the existing owner/RS path, compares the final shifted result against zero and commits CR0 with its GPR result. Both forms preserve all XER bits and nonselected CR fields. There are no new ports or packet fields; ALU_SLW/ALU_SRW occupy the last two values in the four-bit operation enum. The next operation must widen or deliberately redesign that enum.
 
-The existing reviewed shift metadata supplies exact encodings and the low-six-bit count contract. Its tagged 601UM Table3-9 evidence and retained SLW prose typo resolution remain in [ISA_MATRIX.md](ISA_MATRIX.md). Arithmetic shifts still require separate CA semantics and remain unsupported.
+The existing reviewed shift metadata supplies exact encodings and the low-six-bit count contract. Its tagged 601UM Table3-9 evidence and retained SLW prose typo resolution remain in [ISA_MATRIX.md](references/ISA_MATRIX.md). Arithmetic shifts still require separate CA semantics and remain unsupported.
 
 ## Verification
 

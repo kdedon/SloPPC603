@@ -1,6 +1,6 @@
 # Proposed next slice: time base and decrementer
 
-The bounded implementation is now present; see [TIMERS.md](TIMERS.md).
+The bounded implementation is now present; see [TIMERS.md](../../TIMERS.md).
 This document preserves its design rationale and acceptance plan. The external-interrupt
 profile supplies a precise empty-machine boundary, architectural resume PC,
 transport drain and committed context handshake. Reuse those mechanisms for one

@@ -12,7 +12,7 @@ response-bound miss diagnostics; see [TLB_INVALIDATE_PROTOCOL.md](TLB_INVALIDATE
 [TLB_LOAD_PROTOCOL.md](TLB_LOAD_PROTOCOL.md), [PAGE_DATA_EXCEPTIONS.md](PAGE_DATA_EXCEPTIONS.md),
 [PAGE_INSTRUCTION_EXCEPTIONS.md](PAGE_INSTRUCTION_EXCEPTIONS.md), and
 [PAGE_MISS_RESULTS.md](PAGE_MISS_RESULTS.md). None implements a 603e miss
-handler or TGPR entry. [PAGE_PATH_NEXT_SLICE.md](PAGE_PATH_NEXT_SLICE.md)
+handler or TGPR entry. [PAGE_PATH_NEXT_SLICE.md](plans/stale/PAGE_PATH_NEXT_SLICE.md)
 records the original bounded acceptance goal.
 
 ## Memory transaction

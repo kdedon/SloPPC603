@@ -2,7 +2,7 @@
 
 **Status:** source transcription for P02b. This document and the JSON manifests define evidence for later bus RTL/BFM work; they do not claim that a 60x pin interface exists in RTL. The current `imem_*` scaffold remains a word-fetch transport.
 
-The primary source is the local *MPC603e & EC603e RISC Microprocessors User's Manual*, `1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf` (MPC603EUM/AD, 11/97). Physical PDF pages are used below. Chapter 7 is PDF 277–308 / printed 7-1–7-32; Chapter 8 is PDF 309–354 / printed 8-1–8-46. `docs/SOURCES.md` records source precedence and PID7v qualifications.
+The primary source is the local *MPC603e & EC603e RISC Microprocessors User's Manual*, `1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf` (MPC603EUM/AD, 11/97). Physical PDF pages are used below. Chapter 7 is PDF 277–308 / printed 7-1–7-32; Chapter 8 is PDF 309–354 / printed 8-1–8-46. `docs/references/SOURCES.md` records source precedence and PID7v qualifications.
 
 Signal direction is from the processor's point of view. Manual signal names are preserved. “Low” means the rendered manual shows an overbar; it was not inferred from extracted plain text. Encoded buses and clocks do not have a Boolean active level. Later RTL must map external low assertion to an internal positive assertion explicitly.
 
@@ -10,7 +10,7 @@ Machine-readable forms:
 
 - `sim/spec/bus_signals.json`: 54 grouped signal records, 170 named logical bits if each grouped width is summed. Supply-group width is logical and is not a package pin count.
 - `sim/spec/bus_scenarios.json`: all 23 Chapter 8 figures inventoried, 19 source scenarios, and 12 selected relative-event cycle tables.
-- `sim/spec/bus_encodings.json`: all Table 7-1/7-2 TT values, PID7v Table 7-3 HID0[ABE] overlays, and all nine Table 7-5 `TBST`/`TSIZ` combinations. See `docs/BUS_ENCODINGS.md`.
+- `sim/spec/bus_encodings.json`: all Table 7-1/7-2 TT values, PID7v Table 7-3 HID0[ABE] overlays, and all nine Table 7-5 `TBST`/`TSIZ` combinations. See `docs/references/BUS_ENCODINGS.md`.
 
 ## Interface rules that cross signal groups
 
@@ -378,7 +378,7 @@ The explicit Chapter 8 diagram inventory contains all 23 figures. Four remain `i
 ## Fidelity boundaries and unresolved rules
 
 - The PID7v core-to-bus ratios are 2:1 through 6:1, including half steps; PID7v expressly lacks 1:1 and 1.5:1. The present single-clock FPGA scaffold is a disclosed bootstrap simplification, not a supported PID7v clock mode. Exact clock crossing and electrical PLL behavior remain open. UM §1.1, PDF 44–45 / printed 1-4–1-5.
-- `docs/BUS_ENCODINGS.md` and `sim/spec/bus_encodings.json` transcribe Tables 7-1, 7-2, 7-3, and 7-5. The bounded address contract transcribes Tables 8-4 through 8-7. Remaining TC/parity/cache-state tables and encoding matrices require their own source checks. Future BFM assertions must not substitute inferred values for those gaps.
+- `docs/references/BUS_ENCODINGS.md` and `sim/spec/bus_encodings.json` transcribe Tables 7-1, 7-2, 7-3, and 7-5. The bounded address contract transcribes Tables 8-4 through 8-7. Remaining TC/parity/cache-state tables and encoding matrices require their own source checks. Future BFM assertions must not substitute inferred values for those gaps.
 - Complete big/little-endian CPU-pin lane steering is unresolved for cacheable/uncached and 32/64-bit modes. The MCM's 660 bridge transformation is system evidence, not permission to impose bridge behavior at CPU pins.
 - Physical setup/hold, pulse width, package pins, pull-up sizing, PLL lock, voltage limits, and mask errata require the missing PID7v hardware specification. The logical cycle tables cannot close those requirements.
 - `TEST[0:2]` LSSD behavior is outside the user's manual. Normal-system tie requirements remain unresolved.

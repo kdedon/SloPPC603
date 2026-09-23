@@ -8,6 +8,6 @@ The integer operation enum expands to four bits. OR and XOR reuse the existing d
 
 These nonrecord forms retain flag-free dispatch, issue and retirement behavior. Results still occupy the registered IU stage, finish at E+1 and cannot retire on their finish edge. Every new operation participates in the same ownership checks and cancellation path as the original arithmetic operations.
 
-The independent ISA metadata supplies the exact masks and source evidence in [ISA_MATRIX.md](ISA_MATRIX.md). `test-core-logical` exercises the new forms in the actual core; its hand anchors and per-bit truth-table oracle are independent of the RTL operators. Final results are recorded in [VERIFICATION.md](VERIFICATION.md). The legacy core and recovery suites remain required regressions.
+The independent ISA metadata supplies the exact masks and source evidence in [ISA_MATRIX.md](references/ISA_MATRIX.md). `test-core-logical` exercises the new forms in the actual core; its hand anchors and per-bit truth-table oracle are independent of the RTL operators. Final results are recorded in [VERIFICATION.md](VERIFICATION.md). The legacy core and recovery suites remain required regressions.
 
 This is a bounded P07 implementation slice using already-reviewed non-record semantics. Record forms now use the separately reviewed CR/XER ownership contract; ADD/ADDC carry/overflow forms are implemented separately; extended carry-input forms remain pending. Rotate, shift, compare and other reviewed metadata do not imply executable support.

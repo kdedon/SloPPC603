@@ -1,10 +1,10 @@
 # Overall completion estimate
 
 Current cross-system percentages, gaps and validation boundaries are tracked in
-[SYSTEM_COMPLETION.md](SYSTEM_COMPLETION.md). Historical milestones below retain
+[SYSTEM_COMPLETION.md](../../SYSTEM_COMPLETION.md). Historical milestones below retain
 their original scope and dates; later feature contracts supersede early limitations.
 
-The [2026-09-23 full-scope audit](FULL_CPU_COMPLETION_AUDIT.md) supersedes the
+The [2026-09-23 full-scope audit](../../FULL_CPU_COMPLETION_AUDIT.md) supersedes the
 current headline with **46.29% (about 46%)**; the round-40 table below is historical.
 
 

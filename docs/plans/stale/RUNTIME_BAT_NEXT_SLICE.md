@@ -1,9 +1,9 @@
 # Proposed next MMU slice: CPU-owned runtime BAT SPR access
 
 This document preserves the design baseline for runtime BAT programming.
-The implementation contract is now [RUNTIME_BAT_PROTOCOL.md](RUNTIME_BAT_PROTOCOL.md);
-acceptance evidence is in [RUNTIME_BAT_VERIFICATION.md](RUNTIME_BAT_VERIFICATION.md)
-and [RUNTIME_BAT_FIRMWARE.md](RUNTIME_BAT_FIRMWARE.md).
+The implementation contract is now [RUNTIME_BAT_PROTOCOL.md](../../RUNTIME_BAT_PROTOCOL.md);
+acceptance evidence is in [RUNTIME_BAT_VERIFICATION.md](../../RUNTIME_BAT_VERIFICATION.md)
+and [RUNTIME_BAT_FIRMWARE.md](../../RUNTIME_BAT_FIRMWARE.md).
 The existing-state descriptions below refer to the pre-implementation baseline.
 The next bounded increment should let supervisor firmware read/program the
 existing eight BAT pairs through MFSpr/MTSpr, retaining the live MSR context

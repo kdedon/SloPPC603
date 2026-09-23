@@ -1,8 +1,8 @@
 # PowerPC 603e FPGA Core — Implementation Plan (rev 2)
 
-> Initial scaffold added 2026-09-12: see [ppc603e/README.md](ppc603e/README.md) for implemented behavior and [the task breakdown](ppc603e/docs/TASK_PLAN.md) for dependencies and acceptance gates. This document remains the original target design; its phases and technical assumptions are not completion claims.
+> Initial scaffold added 2026-09-12: see [ppc603e/README.md](../../../README.md) for implemented behavior and [the task breakdown](TASK_PLAN.md) for dependencies and acceptance gates. This document remains the original target design; its phases and technical assumptions are not completion claims.
 
-> Source audit update (2026-09-12): [SOURCES.md](ppc603e/docs/SOURCES.md) supersedes this brief’s unsupported technical/source assumptions. The local 603e manual is complete; referenced 601 appendices are absent. PID7v clock-mode fidelity, branch shadow-LR resources, endian transport and variant timing need the recorded source-specific treatment. The target is preserved; these are explicit corrections and open dispositions, not silent reductions in scope.
+> Source audit update (2026-09-12): [SOURCES.md](../../references/SOURCES.md) supersedes this brief’s unsupported technical/source assumptions. The local 603e manual is complete; referenced 601 appendices are absent. PID7v clock-mode fidelity, branch shadow-LR resources, endian transport and variant timing need the recorded source-specific treatment. The target is preserved; these are explicit corrections and open dispositions, not silent reductions in scope.
 
 ## Context
 

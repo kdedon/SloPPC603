@@ -11,7 +11,7 @@ Each core-clock edge sampling `timer_tick_i=1` counts once. For the 603e cadence
 the caller must provide one such pulse per four bus clocks. TB64 starts at zero;
 DEC32 starts at `0xffffffff`, with no pending request. TBEN gates TB only; DEC
 continues ticking. The exact manual-backed requirements and explicitly local
-collision/sampling policies are recorded in [TIMER_NEXT_SLICE.md](TIMER_NEXT_SLICE.md).
+collision/sampling policies are recorded in [TIMER_NEXT_SLICE.md](plans/stale/TIMER_NEXT_SLICE.md).
 
 ## Register operations
 

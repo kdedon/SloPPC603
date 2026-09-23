@@ -31,7 +31,7 @@ XER extension exposes user-accessible reads/writes and preserves byte count;
 load/store decode accepts scalar forms and omits multiple/string and atomic
 forms. These are source-observed gaps, not assumptions from an old roadmap.
 
-[ISA_MATRIX.md](ISA_MATRIX.md) records 186 reviewed entries (168 default plus
+[ISA_MATRIX.md](references/ISA_MATRIX.md) records 186 reviewed entries (168 default plus
 18 supervisor/barrier forms) at its generated metadata boundary. It predates
 separate live-context/IRQ/timer contracts; **186 is neither a current total nor
 a completion denominator**. Keep feature metadata synchronized before reporting

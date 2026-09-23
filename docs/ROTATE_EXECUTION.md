@@ -1,6 +1,6 @@
 # RLWINM and RLWNM execution
 
-This slice supports both Rc forms of RLWINM (opcode 21) and RLWNM (opcode 23). The reviewed Tables A-1/A-43 encodings remain authoritative for this implementation; the conflicting Table A-6 values remain recorded in [ISA_MATRIX.md](ISA_MATRIX.md). RLWIMI remains unsupported because it also needs the old destination as a source.
+This slice supports both Rc forms of RLWINM (opcode 21) and RLWNM (opcode 23). The reviewed Tables A-1/A-43 encodings remain authoritative for this implementation; the conflicting Table A-6 values remain recorded in [ISA_MATRIX.md](references/ISA_MATRIX.md). RLWIMI remains unsupported because it also needs the old destination as a source.
 
 rS is the source and rA is the destination; r0 is a real register in either position. RLWINM injects zero-extended SH as an immediate second operand. RLWNM waits for its real rB producer and uses only the numeric low five bits of the result. Rotate-left count zero preserves the source, and register count bits above bit four are ignored.
 

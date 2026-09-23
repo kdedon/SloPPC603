@@ -10,7 +10,7 @@ address/data pipelining, snooping, parity, global transactions, DBWO, the
 The primary source is the local *MPC603e & EC603e RISC Microprocessors User's
 Manual*, `1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`
 (MPC603EUM/AD, 11/97).  Page references below give physical PDF and printed
-page numbers.  `docs/BUS_SPEC.md` and `docs/BUS_ADDRESSING.md` retain the
+page numbers.  `docs/references/BUS_SPEC.md` and `docs/references/BUS_ADDRESSING.md` retain the
 broader source transcription and its unresolved editorial details.
 
 ## Core-side contract
