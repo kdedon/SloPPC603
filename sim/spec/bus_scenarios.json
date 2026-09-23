@@ -1,0 +1,1825 @@
+{
+  "schema_version": 1,
+  "contract": "MPC603e Chapter 8 bus scenario manifest",
+  "source": {
+    "id": "UM",
+    "path": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+    "chapter": "8",
+    "pdf_pages": [
+      309,
+      354
+    ],
+    "printed_pages": [
+      "8-1",
+      "8-46"
+    ]
+  },
+  "notation": {
+    "edge": "A cycle-table edge is a rising SYSCLK boundary. Signal changes shown after an edge apply during the following bus cycle.",
+    "asserted": "Logical assertion; physical low for active-low pins in bus_signals.json.",
+    "negated": "Logical negation; do not equate with a driven high level on shared three-state signals.",
+    "qualified_BG": "BG asserted while ABB is negated and the ARTRY result after the preceding AACK is negated.",
+    "qualified_DBG": "DBG asserted while DBB and DRTRY are negated and the ARTRY result associated with that data tenure is negated.",
+    "figure_reading": "Cycle tables were transcribed from rendered figures. They state selected relative-event sampling relationships, not exhaustive per-pin/per-edge waveforms, BFM expectations, or electrical setup/hold limits. Symbolic rows such as TA, wait, and later are intentional."
+  },
+  "diagram_inventory": [
+    {
+      "figure": "8-1",
+      "title": "Block Diagram",
+      "pdf_page": 311,
+      "printed_page": "8-3",
+      "status": "context_only"
+    },
+    {
+      "figure": "8-2",
+      "title": "Timing Diagram Legend",
+      "pdf_page": 313,
+      "printed_page": "8-5",
+      "status": "notation_used"
+    },
+    {
+      "figure": "8-3",
+      "title": "Overlapping Tenures on the Bus for a Single-Beat Transfer",
+      "pdf_page": 314,
+      "printed_page": "8-6",
+      "status": "inventory_only"
+    },
+    {
+      "figure": "8-4",
+      "title": "Address Bus Arbitration",
+      "pdf_page": 318,
+      "printed_page": "8-10",
+      "status": "inventory_only"
+    },
+    {
+      "figure": "8-5",
+      "title": "Address Bus Arbitration Showing Bus Parking",
+      "pdf_page": 319,
+      "printed_page": "8-11",
+      "status": "inventory_only"
+    },
+    {
+      "figure": "8-6",
+      "title": "Address Bus Transfer",
+      "pdf_page": 320,
+      "printed_page": "8-12",
+      "status": "cycle_transcribed",
+      "scenario_id": "ADDR_MIN_64"
+    },
+    {
+      "figure": "8-7",
+      "title": "Snooped Address Cycle with ARTRY",
+      "pdf_page": 330,
+      "printed_page": "8-22",
+      "status": "cycle_transcribed",
+      "scenario_id": "ADDR_ARTRY_SNOOP"
+    },
+    {
+      "figure": "8-8",
+      "title": "Data Bus Arbitration",
+      "pdf_page": 331,
+      "printed_page": "8-23",
+      "status": "rule_transcribed",
+      "scenario_id": "QUALIFIED_GRANTS"
+    },
+    {
+      "figure": "8-9",
+      "title": "Normal Single-Beat Read Termination",
+      "pdf_page": 334,
+      "printed_page": "8-26",
+      "status": "cycle_transcribed",
+      "scenario_id": "READ_SINGLE_NORMAL"
+    },
+    {
+      "figure": "8-10",
+      "title": "Normal Single-Beat Write Termination",
+      "pdf_page": 335,
+      "printed_page": "8-27",
+      "status": "cycle_transcribed",
+      "scenario_id": "WRITE_SINGLE_NORMAL"
+    },
+    {
+      "figure": "8-11",
+      "title": "Normal Burst Transaction",
+      "pdf_page": 335,
+      "printed_page": "8-27",
+      "status": "rule_transcribed",
+      "scenario_id": "BURST_64_NORMAL"
+    },
+    {
+      "figure": "8-12",
+      "title": "Termination with DRTRY",
+      "pdf_page": 336,
+      "printed_page": "8-28",
+      "status": "cycle_transcribed",
+      "scenario_id": "READ_DRTRY_CANCEL"
+    },
+    {
+      "figure": "8-13",
+      "title": "Read Burst with TA Wait States and DRTRY",
+      "pdf_page": 337,
+      "printed_page": "8-29",
+      "status": "cycle_transcribed",
+      "scenario_id": "READ_BURST_TA_WAIT_DRTRY"
+    },
+    {
+      "figure": "8-14",
+      "title": "MEI Cache Coherency Protocol—State Diagram (WIM = 001)",
+      "pdf_page": 339,
+      "printed_page": "8-31",
+      "status": "rule_transcribed",
+      "scenario_id": "SNOOP_MEI"
+    },
+    {
+      "figure": "8-15",
+      "title": "Fastest Single-Beat Reads",
+      "pdf_page": 340,
+      "printed_page": "8-32",
+      "status": "cycle_transcribed",
+      "scenario_id": "READ_SINGLE_FASTEST_PIPELINE"
+    },
+    {
+      "figure": "8-16",
+      "title": "Fastest Single-Beat Writes",
+      "pdf_page": 341,
+      "printed_page": "8-33",
+      "status": "inventory_only"
+    },
+    {
+      "figure": "8-17",
+      "title": "Single-Beat Reads Showing Data-Delay Controls",
+      "pdf_page": 342,
+      "printed_page": "8-34",
+      "status": "cycle_transcribed",
+      "scenario_id": "READ_SINGLE_DATA_DELAYS"
+    },
+    {
+      "figure": "8-18",
+      "title": "Single-Beat Writes Showing Data Delay Controls",
+      "pdf_page": 343,
+      "printed_page": "8-35",
+      "status": "cycle_transcribed",
+      "scenario_id": "WRITE_SINGLE_DATA_DELAYS"
+    },
+    {
+      "figure": "8-19",
+      "title": "Burst Transfers with Data Delay Controls",
+      "pdf_page": 344,
+      "printed_page": "8-36",
+      "status": "cycle_transcribed",
+      "scenario_id": "BURST_DATA_DELAYS"
+    },
+    {
+      "figure": "8-20",
+      "title": "Use of Transfer Error Acknowledge (TEA)",
+      "pdf_page": 345,
+      "printed_page": "8-37",
+      "status": "cycle_transcribed",
+      "scenario_id": "WRITE_BURST_TEA"
+    },
+    {
+      "figure": "8-21",
+      "title": "32-Bit Data Bus Transfer (Eight-Beat Burst)",
+      "pdf_page": 347,
+      "printed_page": "8-39",
+      "status": "rule_transcribed",
+      "scenario_id": "BURST_32_EIGHT"
+    },
+    {
+      "figure": "8-22",
+      "title": "32-Bit Data Bus Transfer (Two-Beat Burst with DRTRY)",
+      "pdf_page": 347,
+      "printed_page": "8-39",
+      "status": "rule_transcribed",
+      "scenario_id": "DOUBLE_32_DRTRY"
+    },
+    {
+      "figure": "8-23",
+      "title": "Data Bus Write Only Transaction",
+      "pdf_page": 352,
+      "printed_page": "8-44",
+      "status": "cycle_transcribed",
+      "scenario_id": "DBWO_ENVELOPED_WRITE"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "ADDR_MIN_64",
+      "topics": [
+        "address_tenure",
+        "qualified_grant",
+        "AACK"
+      ],
+      "status": "cycle_table",
+      "mode": {
+        "data_bus_bits": 64,
+        "drtry": "normal",
+        "pinout": "full",
+        "clock_ratio": "generic diagram; not a PID7v ratio claim"
+      },
+      "source": {
+        "section": "8.3.2",
+        "figure": "8-6",
+        "pdf_page": 320,
+        "printed_page": "8-12",
+        "visually_checked": true
+      },
+      "preconditions": [
+        "BR is pending.",
+        "ABB and prior qualified ARTRY are negated."
+      ],
+      "cycles": [
+        {
+          "cycle": "0",
+          "at_edge": [
+            "Arbiter has BG asserted."
+          ],
+          "after_edge": [
+            "The qualified-grant condition is available for edge 1."
+          ]
+        },
+        {
+          "cycle": "1",
+          "at_edge": [
+            "CPU accepts qualified BG."
+          ],
+          "after_edge": [
+            "CPU asserts ABB and TS and drives A/AP/TT/TSIZ/TBST/TC/CI/WT/GBL/CSE."
+          ]
+        },
+        {
+          "cycle": "2",
+          "at_edge": [
+            "TS and address/attributes are sampled; responder may assert AACK after this edge."
+          ],
+          "after_edge": [
+            "CPU negates TS but keeps address/attributes and ABB valid through termination."
+          ]
+        },
+        {
+          "cycle": "3",
+          "at_edge": [
+            "CPU samples AACK asserted."
+          ],
+          "after_edge": [
+            "CPU negates ABB and releases the address group according to its high-Z timing; the cycle after AACK is the qualified-ARTRY window."
+          ]
+        },
+        {
+          "cycle": "4",
+          "at_edge": [
+            "With ARTRY negated, the address tenure is accepted."
+          ],
+          "after_edge": [
+            "Shared address pins are idle/high-Z unless a new tenure begins."
+          ]
+        }
+      ],
+      "assertions": [
+        "TS is one cycle for a processor-originated transfer.",
+        "AACK terminates the address tenure, not the associated data tenure.",
+        "Address and data arbitration are independent."
+      ]
+    },
+    {
+      "id": "QUALIFIED_GRANTS",
+      "topics": [
+        "address_tenure",
+        "data_tenure",
+        "qualified_grant",
+        "parking"
+      ],
+      "status": "rule_manifest",
+      "source": {
+        "sections": [
+          "8.3.1",
+          "8.4.1"
+        ],
+        "figures": [
+          "8-4",
+          "8-5",
+          "8-8"
+        ],
+        "pdf_pages": [
+          318,
+          319,
+          331
+        ],
+        "visually_checked": true
+      },
+      "rules": [
+        "Qualified BG = BG asserted and ABB negated and the ARTRY result after AACK negated.",
+        "Qualified DBG = DBG asserted and DBB negated and DRTRY negated and the ARTRY result for the associated address tenure negated.",
+        "BG is not accepted between TS and AACK.",
+        "DBG can be asserted before the corresponding address tenure is finished, but CPU ownership begins only on a qualified DBG.",
+        "A parked BG still requires the same qualification; it does not bypass ABB/ARTRY."
+      ],
+      "unresolved": [
+        "Figure 8-4 and 8-5 edge-by-edge parking/arbitration waveforms are inventoried but not yet transcribed into cycle rows."
+      ]
+    },
+    {
+      "id": "ADDR_ARTRY_SNOOP",
+      "topics": [
+        "ARTRY",
+        "snoop",
+        "retry",
+        "grant_priority"
+      ],
+      "status": "cycle_table",
+      "source": {
+        "section": "8.3.3",
+        "figure": "8-7",
+        "pdf_page": 330,
+        "printed_page": "8-22",
+        "visually_checked": true
+      },
+      "preconditions": [
+        "Another master's global address is snooped with TS.",
+        "The snoop hits modified data or cannot be serviced."
+      ],
+      "cycles": [
+        {
+          "cycle": "TS",
+          "at_edge": [
+            "CPU samples the snooped address, TT attributes, and GBL."
+          ],
+          "after_edge": [
+            "CPU begins snoop lookup."
+          ]
+        },
+        {
+          "cycle": "AACK",
+          "at_edge": [
+            "Address responder's AACK is sampled."
+          ],
+          "after_edge": [
+            "Snooper keeps ARTRY asserted through the following qualified-retry cycle."
+          ]
+        },
+        {
+          "cycle": "AACK+1",
+          "at_edge": [
+            "Bus master samples qualified ARTRY asserted."
+          ],
+          "after_edge": [
+            "Master aborts the whole transaction; associated data tenure is prevented or immediately aborted. Snooper may assert BR for copyback priority."
+          ]
+        },
+        {
+          "cycle": "AACK+2",
+          "at_edge": [
+            "Retried master ignores BG; only the retrying snooper may newly request under the protocol priority rule."
+          ],
+          "after_edge": [
+            "ARTRY release follows its shared-bus high-Z/driven-negated/high-Z sequence."
+          ]
+        },
+        {
+          "cycle": "later",
+          "at_edge": [
+            "Snooper obtains qualified BG."
+          ],
+          "after_edge": [
+            "Snooper asserts ABB and begins its copyback address tenure."
+          ]
+        }
+      ],
+      "assertions": [
+        "An early or qualified ARTRY retries both address and data portions.",
+        "In normal DRTRY mode, the generic/64-bit late-cancel boundary is the cycle after the first/only TA. In 32-bit mode this is after the first TA for word or smaller operations, but after the second TA for double-word or burst operations.",
+        "The retried operation is not guaranteed to be the next operation reissued because the core may reorder internally."
+      ]
+    },
+    {
+      "id": "READ_SINGLE_NORMAL",
+      "topics": [
+        "read",
+        "data_tenure",
+        "TA",
+        "DRTRY"
+      ],
+      "status": "cycle_table",
+      "source": {
+        "section": "8.4.4.1",
+        "figure": "8-9",
+        "pdf_page": 334,
+        "printed_page": "8-26",
+        "visually_checked": true
+      },
+      "preconditions": [
+        "Read address tenure exists and has not been retried.",
+        "TEA and DRTRY remain negated."
+      ],
+      "cycles": [
+        {
+          "cycle": "QDBG",
+          "at_edge": [
+            "CPU accepts qualified DBG."
+          ],
+          "after_edge": [
+            "CPU asserts DBB; the responder may drive the single read beat."
+          ]
+        },
+        {
+          "cycle": "QDBG+1",
+          "at_edge": [
+            "CPU samples data with TA asserted."
+          ],
+          "after_edge": [
+            "The beat remains pending for the one-cycle late-cancel window; CPU begins DBB release."
+          ]
+        },
+        {
+          "cycle": "QDBG+2",
+          "at_edge": [
+            "CPU samples DRTRY negated and validates the previously acknowledged beat."
+          ],
+          "after_edge": [
+            "DBB/data pins are idle/high-Z and the read may advance internally."
+          ]
+        }
+      ],
+      "assertions": [
+        "TA acknowledges the beat; it is not final read validity in normal DRTRY mode.",
+        "TEA and DRTRY must remain negated for normal completion."
+      ]
+    },
+    {
+      "id": "WRITE_SINGLE_NORMAL",
+      "topics": [
+        "write",
+        "data_tenure",
+        "TA"
+      ],
+      "status": "cycle_table",
+      "source": {
+        "section": "8.4.4.1",
+        "figure": "8-10",
+        "pdf_page": 335,
+        "printed_page": "8-27",
+        "visually_checked": true
+      },
+      "preconditions": [
+        "Write address tenure exists and has not been retried.",
+        "TEA remains negated."
+      ],
+      "cycles": [
+        {
+          "cycle": "QDBG",
+          "at_edge": [
+            "CPU accepts qualified DBG."
+          ],
+          "after_edge": [
+            "CPU asserts DBB and drives the single write beat and parity."
+          ]
+        },
+        {
+          "cycle": "QDBG+1",
+          "at_edge": [
+            "Responder's TA accepts the write beat."
+          ],
+          "after_edge": [
+            "CPU negates DBB and stops driving the data group according to release timing."
+          ]
+        },
+        {
+          "cycle": "QDBG+2",
+          "at_edge": [
+            "Data tenure is complete."
+          ],
+          "after_edge": [
+            "Shared data pins are idle/high-Z unless a new tenure begins."
+          ]
+        }
+      ],
+      "assertions": [
+        "DRTRY is not sampled for writes.",
+        "TA and TEA collision is not treated as normal completion; TEA terminates and TA is ignored."
+      ]
+    },
+    {
+      "id": "READ_DRTRY_CANCEL",
+      "topics": [
+        "read",
+        "DRTRY",
+        "late_cancel",
+        "data_tenure"
+      ],
+      "status": "cycle_table",
+      "source": {
+        "section": "8.4.4.1",
+        "figure": "8-12",
+        "pdf_page": 336,
+        "printed_page": "8-28",
+        "visually_checked": true
+      },
+      "preconditions": [
+        "Normal DRTRY mode is selected.",
+        "A read beat is provisional after TA; the processor negates DBB after the last/only TA even if DRTRY will extend data-bus exclusion."
+      ],
+      "cycles": [
+        {
+          "cycle": "TA",
+          "at_edge": [
+            "CPU samples a read beat with TA asserted."
+          ],
+          "after_edge": [
+            "Beat is provisional; responder may assert DRTRY during the immediately following cycle."
+          ]
+        },
+        {
+          "cycle": "TA+1",
+          "at_edge": [
+            "CPU samples DRTRY asserted."
+          ],
+          "after_edge": [
+            "Previously sampled data is invalidated; DBB may be negated, but DRTRY extends data-bus mastership exclusion and the processor waits."
+          ]
+        },
+        {
+          "cycle": "wait",
+          "at_edge": [
+            "DRTRY may remain asserted for multiple cycles while DBB is negated."
+          ],
+          "after_edge": [
+            "No other master may assert DBB; before DRTRY is negated the responder must again present valid data with TA in the preceding clock."
+          ]
+        },
+        {
+          "cycle": "final asserted DRTRY cycle",
+          "at_edge": [
+            "CPU samples replacement data with TA while DRTRY is still asserted for this cycle."
+          ],
+          "after_edge": [
+            "Responder prepares to negate DRTRY on the next bus clock."
+          ]
+        },
+        {
+          "cycle": "DRTRY negation",
+          "at_edge": [
+            "CPU samples DRTRY negated."
+          ],
+          "after_edge": [
+            "The data presented with TA on the previous clock becomes valid and the extended exclusion can finish."
+          ]
+        }
+      ],
+      "assertions": [
+        "TA must be asserted on the bus clock before the first asserted DRTRY cycle.",
+        "DRTRY is valid for reads only.",
+        "An asserted DRTRY extends exclusion of other masters even across a write tenure, although writes ignore DRTRY semantically."
+      ]
+    },
+    {
+      "id": "READ_BURST_TA_WAIT_DRTRY",
+      "topics": [
+        "read",
+        "burst",
+        "TA",
+        "DRTRY",
+        "wait_state",
+        "data_tenure"
+      ],
+      "status": "cycle_table",
+      "mode": {
+        "data_bus_bits": 64,
+        "data_bus_basis": "surrounding Section 8.4.4.1 four-beat normal-burst context; Figure 8-13 itself does not print a bus width",
+        "operation": "read_burst",
+        "drtry": "normal late-cancel mode; no-DRTRY startup mode is excluded",
+        "program_transaction_beats": 4
+      },
+      "source": {
+        "sections": [
+          "8.4.4.1",
+          "8.4.4.2",
+          "7.2.6.1",
+          "7.2.6.3",
+          "7.2.7.1",
+          "7.2.8.1",
+          "7.2.8.2"
+        ],
+        "figure": "8-13",
+        "pdf_pages": [
+          336,
+          337
+        ],
+        "printed_pages": [
+          "8-28",
+          "8-29"
+        ],
+        "visually_checked": true
+      },
+      "signal_roles": {
+        "TS": {
+          "physical_polarity": "active_low",
+          "driver": "603e while it is the address-bus master",
+          "sampling": "address-side participants sample it; this scenario does not expand the address tenure"
+        },
+        "qualified_DBG": {
+          "physical_polarity": "derived_internal_active_low_condition_as_drawn",
+          "driver": "internal qualified condition derived from external DBG and bus qualification inputs",
+          "sampling": "603e accepts it at a rising SYSCLK edge"
+        },
+        "DBB": {
+          "physical_polarity": "active_low",
+          "driver": "603e while it owns this read data tenure",
+          "sampling": "other bus participants use asserted DBB as data-bus exclusion"
+        },
+        "data": {
+          "physical_polarity": "encoded_not_asserted_or_negated",
+          "driver": "responding slave during this read",
+          "sampling": "603e samples a beat with asserted TA; Figure 8-13 does not label data values or beat ordinals"
+        },
+        "TA": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave",
+          "sampling": "603e samples TA at a rising SYSCLK edge to acknowledge the current data beat"
+        },
+        "DRTRY": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave in normal DRTRY mode",
+          "sampling": "603e samples DRTRY at a rising SYSCLK edge; assertion invalidates read data acknowledged on the preceding bus clock"
+        }
+      },
+      "preconditions": [
+        "A read-burst address tenure exists and has not been retried.",
+        "Normal DRTRY mode was selected at reset; no-DRTRY mode is excluded.",
+        "The 603e receives a qualified data-bus grant and becomes the read data-bus master.",
+        "TEA remains negated for this bounded normal/retry sequence."
+      ],
+      "cycles": [
+        {
+          "cycle": "qualified DBG",
+          "at_edge": [
+            "603e samples the qualified DBG condition asserted."
+          ],
+          "after_edge": [
+            "603e asserts DBB for the read data tenure; the responding slave may drive read data."
+          ]
+        },
+        {
+          "cycle": "Figure 8-13 bus clock 3",
+          "at_edge": [
+            "The figure does not label the data value or identify the beat sampled at this edge."
+          ],
+          "after_edge": [
+            "TA is logically negated during labeled bus clock cycle 3, inserting a wait so the data pipeline does not advance."
+          ]
+        },
+        {
+          "cycle": "Figure 8-13 bus clock 4",
+          "at_edge": [
+            "The pending second beat remains selected after the cycle-3 wait."
+          ],
+          "after_edge": [
+            "The responder reasserts TA during labeled bus clock cycle 4 and the data pipeline resumes."
+          ]
+        },
+        {
+          "cycle": "provisional TA",
+          "at_edge": [
+            "603e samples a read beat with TA asserted."
+          ],
+          "after_edge": [
+            "The acknowledged beat remains provisional for the immediately following DRTRY sample."
+          ]
+        },
+        {
+          "cycle": "provisional TA + 1",
+          "at_edge": [
+            "603e samples DRTRY asserted."
+          ],
+          "after_edge": [
+            "The read data acknowledged on the preceding bus clock is invalidated; the beat remains extended."
+          ]
+        },
+        {
+          "cycle": "replacement TA while DRTRY asserted",
+          "at_edge": [
+            "603e samples replacement read data with TA while DRTRY remains asserted for this cycle."
+          ],
+          "after_edge": [
+            "The responder prepares to negate DRTRY on the next bus clock."
+          ]
+        },
+        {
+          "cycle": "DRTRY negation",
+          "at_edge": [
+            "603e samples DRTRY negated."
+          ],
+          "after_edge": [
+            "The replacement data presented with TA on the preceding clock becomes valid and the burst pipeline may continue."
+          ]
+        }
+      ],
+      "assertions": [
+        "The surrounding 64-bit normal-burst context requires four accepted data beats, one asserted TA per beat; TA assertions need not be consecutive.",
+        "Withholding TA paces a beat: the source explicitly identifies TA negated in bus clock cycle 3 and reasserted in cycle 4 for the second beat.",
+        "DRTRY is a read-only late cancellation sampled one bus clock after TA and invalidates the preceding acknowledged read data.",
+        "TA must be asserted on the bus clock before the first asserted DRTRY cycle; otherwise results are undefined.",
+        "Before DRTRY negates, valid replacement data must be presented with TA on the preceding bus clock.",
+        "In this read tenure the 603e drives DBB, the responding slave drives data/TA/DRTRY, and the 603e samples data/TA/DRTRY."
+      ],
+      "unresolved": [
+        "Figure 8-13 does not print data values or ordinal labels inside its data polygons; this transcription does not assign them.",
+        "Only the prose-identified cycle-3/cycle-4 TA pacing and protocol-relative DRTRY events are encoded; other apparent intra-cycle transitions are not promoted to exact edge values.",
+        "The figure has no TEA waveform row, so Section 8.4.4.2 TEA collision timing is not inferred from it.",
+        "Electrical propagation, setup, and hold offsets drawn within bus cycles remain outside the logical cycle contract."
+      ]
+    },
+    {
+      "id": "READ_SINGLE_FASTEST_PIPELINE",
+      "topics": [
+        "read",
+        "single_beat",
+        "pipelining",
+        "address_tenure",
+        "data_tenure",
+        "latency",
+        "throughput",
+        "TA"
+      ],
+      "status": "cycle_table",
+      "mode": {
+        "data_bus_bits": 64,
+        "data_bus_basis": "Figure 8-15 explicitly labels D[0-63]",
+        "operation": "three pipelined single-beat reads",
+        "transaction_labels": "TT is labeled Read and TBST is drawn negated for all three address tenures",
+        "drtry": "bounded profile selects normal late-confirmation mode; this selection is not inferred from Figure 8-15's negated DRTRY trace, and no-DRTRY startup mode is not covered",
+        "timing_scope": "qualitative fastest/minimum-latency/maximum-throughput example; no numeric latency or cadence is generalized"
+      },
+      "source": {
+        "sections": [
+          "8.5",
+          "8.2.2",
+          "8.4.3",
+          "8.4.4.1",
+          "7.2.2.1",
+          "7.2.3.1",
+          "7.2.4.3",
+          "7.2.6.1",
+          "7.2.6.3",
+          "7.2.7.1",
+          "7.2.8.1",
+          "7.2.8.2"
+        ],
+        "figure": "8-15",
+        "pdf_pages": [
+          282,
+          283,
+          289,
+          292,
+          293,
+          295,
+          297,
+          298,
+          316,
+          332,
+          334,
+          340
+        ],
+        "printed_pages": [
+          "7-6",
+          "7-7",
+          "7-13",
+          "7-16",
+          "7-17",
+          "7-19",
+          "7-21",
+          "7-22",
+          "8-8",
+          "8-24",
+          "8-26",
+          "8-32"
+        ],
+        "visually_checked": true
+      },
+      "signal_roles": {
+        "TS": {
+          "physical_polarity": "active_low",
+          "driver": "603e while it is the address-bus master",
+          "sampling": "address-side participants sample TS with each depicted address and its attributes"
+        },
+        "address": {
+          "physical_polarity": "encoded_not_asserted_or_negated",
+          "driver": "603e during each depicted address tenure",
+          "sampling": "address-side participants sample A[0-31] with TS; the third address is the source's throughput-boundary event"
+        },
+        "TBST": {
+          "physical_polarity": "active_low",
+          "driver": "603e during each depicted address tenure",
+          "sampling": "address-side participants sample negated TBST as the single-beat indication"
+        },
+        "DBG": {
+          "physical_polarity": "active_low",
+          "driver": "external data-bus arbiter",
+          "sampling": "603e samples DBG at a rising SYSCLK edge, qualified only while DBB, DRTRY, and the associated ARTRY result are negated"
+        },
+        "DBB": {
+          "physical_polarity": "active_low",
+          "driver": "603e while it owns each depicted read data tenure",
+          "sampling": "other bus participants use asserted DBB as data-bus exclusion"
+        },
+        "data": {
+          "physical_polarity": "encoded_not_asserted_or_negated",
+          "driver": "responding slave during each depicted read",
+          "sampling": "603e samples D[0-63] with asserted TA; In is a source direction label, not a transcribed value"
+        },
+        "TA": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave",
+          "sampling": "603e samples TA at a rising SYSCLK edge to acknowledge each single read beat"
+        },
+        "DRTRY": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave in the selected normal DRTRY profile",
+          "sampling": "603e samples negated DRTRY one bus clock after TA to confirm the provisional read beat; the Figure 8-15 trace alone does not identify startup mode"
+        }
+      },
+      "preconditions": [
+        "The figure depicts three processor address tenures labeled Read with TBST negated, so each is a single-beat read.",
+        "External arbitration and responder timing permit the source-labeled fastest sequence; no numeric response bounds are generalized.",
+        "This bounded profile selects normal DRTRY mode to state following-cycle confirmation; the Figure 8-15 trace alone does not distinguish startup mode.",
+        "ARTRY, DRTRY, and TEA remain negated throughout the displayed sequence.",
+        "Data tenures remain in address order for the three reads.",
+        "All bidirectional signals are three-stated between bus tenures, without every entry or release edge assigned here."
+      ],
+      "cycles": [
+        {
+          "cycle": "displayed fastest read 1",
+          "at_edge": [
+            "603e samples the first In data with TA for the first associated Read/TBST-negated address tenure; no numeric edge is assigned and no address-completion-before-data ordering is implied."
+          ],
+          "after_edge": [
+            "In the selected normal DRTRY profile, the first In remains provisional until the following negated DRTRY sample; this is the source's minimum-latency pattern."
+          ]
+        },
+        {
+          "cycle": "displayed fastest read 2",
+          "at_edge": [
+            "603e samples the second In data with TA for the second associated Read/TBST-negated address tenure; address and data tenure completion may overlap."
+          ],
+          "after_edge": [
+            "The second In remains provisional until the following negated DRTRY sample, without a source-described data wait."
+          ]
+        },
+        {
+          "cycle": "displayed fastest read 3",
+          "at_edge": [
+            "603e samples the third In data with TA for the third associated Read/TBST-negated address tenure; its address tenure was not delayed by prior data latency."
+          ],
+          "after_edge": [
+            "The third In remains provisional until the following negated DRTRY sample, completing the source's maximum-throughput example without defining architectural delivery timing."
+          ]
+        },
+        {
+          "cycle": "counterfactual data delay below third-address boundary",
+          "modality": "conditional_source_statement",
+          "at_edge": [
+            "A data-bus tenure is delayed while the third address tenure can still proceed without delay."
+          ],
+          "after_edge": [
+            "The affected read's latency increases, but the source says overall throughput is not affected because split-transaction pipelining preserves the third-address cadence."
+          ]
+        },
+        {
+          "cycle": "counterfactual data delay reaches third-address boundary",
+          "modality": "conditional_exception_to_unaffected_throughput",
+          "at_edge": [
+            "Data-bus latency causes the third address tenure itself to be delayed."
+          ],
+          "after_edge": [
+            "The source's unaffected-throughput statement no longer applies; no amount of throughput change is specified."
+          ]
+        }
+      ],
+      "assertions": [
+        "Figure 8-15 is explicitly the fastest single-beat read example and demonstrates minimum latency together with maximum single-beat throughput.",
+        "The fastest/minimum/maximum terms are qualitative source claims for the displayed three-access sequence, not numeric timing bounds.",
+        "Delaying a data tenure increases the associated read latency.",
+        "A data-tenure delay does not affect overall throughput while it leaves the third address tenure undelayed.",
+        "If data-bus latency delays the third address tenure, the source's unaffected-throughput guarantee no longer applies; the source does not quantify the impact.",
+        "Section 8.2.2 permits two address tenures before the current data tenure completes and identifies the 603e's own pipeline as one level deep.",
+        "Address and data tenures are independent: the displayed read rows associate each In/TA event with its address but do not require address completion before data acceptance; those events may overlap or coincide.",
+        "The three depicted data tenures remain ordered with their address tenures; no DBWO write reordering is involved.",
+        "In the selected normal DRTRY profile, each read beat acknowledged with TA remains provisional until DRTRY is sampled negated on the following bus clock; Figure 8-15 does not expose internal delivery timing.",
+        "The 603e drives each address and DBB; responding slaves drive read data, TA, and any DRTRY response.",
+        "All depicted address/data bus signals that are bidirectional are three-stated between their respective bus tenures."
+      ],
+      "unresolved": [
+        "Figure 8-15 does not state numeric minimum latency, maximum transaction rate, or a general edge-to-edge cadence.",
+        "Exact values at the rendered 1-12 rising boundaries and apparent within-cycle transitions are not transcribed.",
+        "The amount of data-bus delay that first forces the third address tenure to wait depends on untranscribed arbitration, queue occupancy, and responder timing.",
+        "The Figure 8-15 trace alone does not distinguish normal from no-DRTRY startup mode; no-DRTRY behavior is outside this explicitly normal-mode bounded profile.",
+        "The source's fastest/minimum-latency language describes the external bus example and does not establish absolute architectural instruction, cache-fill, or GPR-delivery latency.",
+        "The three In polygons do not provide data values, byte-lane contents, parity, effective addresses, or instruction/data access identity.",
+        "The source says bidirectional signals are three-stated between tenures but this bounded transcription does not assign every entry/release edge.",
+        "All other apparent per-pin transitions and electrical offsets in Figure 8-15 remain untranscribed; this is not a complete waveform or BFM contract."
+      ]
+    },
+    {
+      "id": "READ_SINGLE_DATA_DELAYS",
+      "topics": [
+        "read",
+        "single_beat",
+        "pipelining",
+        "DBG",
+        "TA",
+        "DRTRY",
+        "wait_state",
+        "data_tenure"
+      ],
+      "status": "cycle_table",
+      "mode": {
+        "data_bus_bits": 64,
+        "data_bus_basis": "Figure 8-17 explicitly labels D[0-63]",
+        "operation": "three pipelined single-beat reads",
+        "burst": "TBST is drawn negated for each address tenure",
+        "drtry": "normal late-cancel mode; no-DRTRY startup mode is excluded"
+      },
+      "source": {
+        "sections": [
+          "8.5",
+          "7.2.6.1",
+          "7.2.6.3",
+          "7.2.7.1",
+          "7.2.8.1",
+          "7.2.8.2"
+        ],
+        "figure": "8-17",
+        "pdf_pages": [
+          292,
+          293,
+          295,
+          297,
+          298,
+          342
+        ],
+        "printed_pages": [
+          "7-16",
+          "7-17",
+          "7-19",
+          "7-21",
+          "7-22",
+          "8-34"
+        ],
+        "visually_checked": true
+      },
+      "signal_roles": {
+        "DBG": {
+          "physical_polarity": "active_low",
+          "driver": "external data-bus arbiter",
+          "sampling": "603e samples DBG at a rising SYSCLK edge, qualified only while DBB, DRTRY, and the associated ARTRY result are negated"
+        },
+        "DBB": {
+          "physical_polarity": "active_low",
+          "driver": "603e while it owns each depicted read data tenure",
+          "sampling": "other bus participants use asserted DBB as data-bus exclusion"
+        },
+        "data": {
+          "physical_polarity": "encoded_not_asserted_or_negated",
+          "driver": "responding slave during each read",
+          "sampling": "603e samples D[0-63] with asserted TA; Bad and In are source labels, not inferred values"
+        },
+        "TA": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave",
+          "sampling": "603e samples TA at a rising SYSCLK edge; negation inserts a data wait cycle"
+        },
+        "DRTRY": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave in normal DRTRY mode",
+          "sampling": "603e samples DRTRY at a rising SYSCLK edge after the preceding TA; assertion invalidates that acknowledged read data"
+        }
+      },
+      "preconditions": [
+        "The figure depicts three processor address tenures labeled Read with TBST negated, so each is a single-beat read.",
+        "Normal DRTRY mode was selected at reset; the clock-11 assertion is not legal in no-DRTRY startup mode.",
+        "The shown pipelining is conditional on the second access not being another load; the manual gives an instruction fetch as an example.",
+        "ARTRY and TEA remain negated in the bounded sequence.",
+        "All bidirectional signals are three-stated between bus tenures, without exact release edges assigned here."
+      ],
+      "cycles": [
+        {
+          "cycle": "Figure 8-17 clock 3",
+          "at_edge": [
+            "The rendered waveform is not used to assign a TA value at the left rising boundary of labeled clock 3."
+          ],
+          "after_edge": [
+            "TA remains logically negated during labeled clock cycle 3, inserting the first stated wait cycle."
+          ]
+        },
+        {
+          "cycle": "Figure 8-17 clock 4",
+          "at_edge": [
+            "The first access remains pending after the cycle-3 TA wait."
+          ],
+          "after_edge": [
+            "TA remains logically negated during labeled clock cycle 4, inserting the second stated wait cycle."
+          ]
+        },
+        {
+          "cycle": "Figure 8-17 clock 6 (second access)",
+          "modality": "counterfactual_source_statement",
+          "at_edge": [
+            "The source does not state that the 603e sampled a qualified DBG at the left rising boundary of labeled clock 6."
+          ],
+          "after_edge": [
+            "For the second access, the source says DBG could have been asserted during labeled clock cycle 6; this is an available grant opportunity, not a required assertion."
+          ]
+        },
+        {
+          "cycle": "Figure 8-17 clock 11 (third access)",
+          "transition_relation": "asserts_during_labeled_cycle",
+          "at_edge": [
+            "The rendered DRTRY transition occurs after the left rising boundary, so this row does not claim DRTRY was asserted at that boundary."
+          ],
+          "after_edge": [
+            "DRTRY becomes logically asserted during labeled clock cycle 11; the source says this flushes the previous third-access data, whose polygon is labeled Bad."
+          ]
+        },
+        {
+          "cycle": "first sampling edge after clock-11 DRTRY assertion",
+          "at_edge": [
+            "603e samples DRTRY asserted at the rising SYSCLK boundary following the depicted within-cycle transition."
+          ],
+          "after_edge": [
+            "The preceding acknowledged read data is invalidated; no architectural destination or rollback behavior is inferred from the Bad label."
+          ]
+        }
+      ],
+      "assertions": [
+        "TA negation in labeled clock cycles 3 and 4 inserts two wait cycles; an unasserted TA does not acknowledge the single beat.",
+        "The clock-6 DBG statement is explicitly counterfactual: it identifies when DBG could have asserted, not a mandatory grant or acceptance.",
+        "The DRTRY transition occurs during labeled clock cycle 11 and is sampled at the following rising SYSCLK boundary, not at clock 11's left boundary.",
+        "DRTRY is a read-only late cancellation; the asserted sample invalidates data acknowledged with TA on the preceding bus clock.",
+        "The Bad data label describes the flushed bus data. It does not by itself specify a GPR/cache update or an architectural rollback mechanism.",
+        "The shown pipelining requires the second access not to be another load; an instruction fetch is an example rather than the only permitted access kind.",
+        "All depicted address/data bus signals that are bidirectional are three-stated between their respective bus tenures."
+      ],
+      "unresolved": [
+        "Exact TA, DBG, and DRTRY values at the left rising boundaries of labeled clocks 3, 4, 6, and 11 are not inferred from within-cycle waveform transitions.",
+        "The clock-6 statement does not establish that a qualified DBG was actually accepted, nor does it identify the second access beyond the manual's not-another-load condition.",
+        "The Bad and In polygons are not mapped to architectural destinations, cache state, or rollback behavior.",
+        "The source says bidirectional signals are three-stated between tenures but this bounded transcription does not assign every entry/release edge.",
+        "All other apparent per-pin transitions, electrical offsets, and cycle values in Figure 8-17 remain untranscribed; this is not a complete waveform or BFM contract."
+      ]
+    },
+    {
+      "id": "WRITE_SINGLE_DATA_DELAYS",
+      "topics": [
+        "write",
+        "single_beat",
+        "pipelining",
+        "DBG",
+        "TA",
+        "DRTRY",
+        "wait_state",
+        "data_tenure"
+      ],
+      "status": "cycle_table",
+      "mode": {
+        "data_bus_bits": 64,
+        "data_bus_basis": "Figure 8-18 explicitly labels D[0-63]",
+        "operation": "three pipelined single-beat writes",
+        "transaction_type": "TT is labeled SBW and TBST is drawn negated for each address tenure",
+        "drtry": "ignored for write completion; Figure 8-18 draws DRTRY negated"
+      },
+      "source": {
+        "sections": [
+          "8.5",
+          "8.4.4.1",
+          "7.2.6.1",
+          "7.2.6.3",
+          "7.2.7.1",
+          "7.2.8.1",
+          "7.2.8.2"
+        ],
+        "figure": "8-18",
+        "pdf_pages": [
+          292,
+          293,
+          295,
+          297,
+          298,
+          336,
+          343
+        ],
+        "printed_pages": [
+          "7-16",
+          "7-17",
+          "7-19",
+          "7-21",
+          "7-22",
+          "8-28",
+          "8-35"
+        ],
+        "visually_checked": true
+      },
+      "signal_roles": {
+        "DBG": {
+          "physical_polarity": "active_low",
+          "driver": "external data-bus arbiter",
+          "sampling": "603e samples DBG at a rising SYSCLK edge, qualified only while DBB, DRTRY, and the associated ARTRY result are negated"
+        },
+        "DBB": {
+          "physical_polarity": "active_low",
+          "driver": "603e while it owns each depicted write data tenure",
+          "sampling": "other bus participants use asserted DBB as data-bus exclusion"
+        },
+        "data": {
+          "physical_polarity": "encoded_not_asserted_or_negated",
+          "driver": "603e during each write data tenure",
+          "sampling": "responding slave accepts D[0-63] with asserted TA; Out is a source direction label, not a transcribed data value"
+        },
+        "TA": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave",
+          "sampling": "603e samples TA at a rising SYSCLK edge; negation inserts a data wait cycle"
+        },
+        "DRTRY": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave for reads only",
+          "sampling": "603e does not use DRTRY to accept, retry, or complete write data; an asserted DRTRY from a preceding read still prevents a qualified DBG"
+        }
+      },
+      "preconditions": [
+        "The figure depicts three processor address tenures labeled SBW with TBST negated, so each is a single-beat write.",
+        "The 603e eventually receives a qualified data-bus grant for each depicted write data tenure.",
+        "ARTRY and TEA remain negated in the bounded sequence.",
+        "All bidirectional signals are three-stated between bus tenures, without every entry or release edge assigned here."
+      ],
+      "cycles": [
+        {
+          "cycle": "Figure 8-18 clock 3",
+          "at_edge": [
+            "The rendered waveform is not used to assign a TA value at the left rising boundary of labeled clock 3."
+          ],
+          "after_edge": [
+            "TA is held logically negated during labeled clock cycle 3, inserting the first stated wait cycle; the pending write beat is not acknowledged."
+          ]
+        },
+        {
+          "cycle": "Figure 8-18 clock 4",
+          "at_edge": [
+            "The first write beat remains pending after the cycle-3 TA wait."
+          ],
+          "after_edge": [
+            "TA is held logically negated during labeled clock cycle 4, inserting the second stated wait cycle while the same write beat remains pending."
+          ]
+        },
+        {
+          "cycle": "Figure 8-18 clock 6 (second access)",
+          "transition_relation": "DBG_held_negated_during_labeled_cycle",
+          "at_edge": [
+            "The rendered waveform is not used to assign a DBG value at the left rising boundary of labeled clock 6."
+          ],
+          "after_edge": [
+            "DBG is held logically negated during labeled clock cycle 6, delaying the start of the second access's data tenure."
+          ]
+        },
+        {
+          "cycle": "second-access qualified DBG after clock 6",
+          "at_edge": [
+            "603e later samples a qualified DBG for the second access; this row assigns no numeric figure clock."
+          ],
+          "after_edge": [
+            "603e asserts DBB and begins driving the second single write beat."
+          ]
+        },
+        {
+          "cycle": "last-access qualified DBG (relative)",
+          "at_edge": [
+            "603e samples a qualified DBG for the final depicted access."
+          ],
+          "after_edge": [
+            "603e asserts DBB and drives the final single write beat; the source describes this last access as not delayed."
+          ]
+        },
+        {
+          "cycle": "last-access TA (relative)",
+          "at_edge": [
+            "603e samples TA asserted with the final write beat."
+          ],
+          "after_edge": [
+            "The single-beat data tenure terminates and the 603e releases DBB and write data according to their ordinary release timing; DRTRY has no write-completion role."
+          ]
+        }
+      ],
+      "assertions": [
+        "TA negation in labeled clock cycles 3 and 4 inserts two wait cycles; the 603e keeps the unacknowledged write beat pending.",
+        "Holding DBG negated during labeled clock cycle 6 prevents a qualified data grant and delays the second access's data-tenure start.",
+        "The second data tenure starts only after a later qualified DBG; its exact numeric acceptance edge is not assigned.",
+        "The last access has none of the displayed TA or DBG delays, but the example does not define a general absolute latency requirement.",
+        "DRTRY is valid only for reads and does not accept, cancel, or complete a write beat.",
+        "An asserted DRTRY left by a preceding read can still block a qualified DBG and thereby delay the start of a write data tenure; Figure 8-18 itself draws DRTRY negated throughout.",
+        "During these writes the 603e drives DBB and D[0-63], while the responding slave drives TA.",
+        "All depicted address/data bus signals that are bidirectional are three-stated between their respective bus tenures."
+      ],
+      "unresolved": [
+        "Exact TA and DBG values at the left rising boundaries of labeled clocks 3, 4, and 6 are not inferred from within-cycle waveform transitions.",
+        "The exact numeric edge of the qualified DBG after clock 6 is not assigned, nor are all grant-qualification inputs transcribed per cycle.",
+        "The last access is source-labeled not delayed, but no absolute grant-to-TA latency is generalized beyond Figure 8-18.",
+        "The Out polygons do not provide data values, byte-lane enables, or parity values.",
+        "The source says bidirectional signals are three-stated between tenures but this bounded transcription does not assign every entry/release edge.",
+        "All other apparent per-pin transitions, electrical offsets, and cycle values in Figure 8-18 remain untranscribed; this is not a complete waveform or BFM contract."
+      ]
+    },
+    {
+      "id": "BURST_DATA_DELAYS",
+      "topics": [
+        "read",
+        "write",
+        "burst",
+        "pipelining",
+        "address_tenure",
+        "data_tenure",
+        "TA",
+        "DRTRY",
+        "wait_state"
+      ],
+      "status": "cycle_table",
+      "mode": {
+        "data_bus_bits": 64,
+        "data_bus_basis": "Figure 8-19 explicitly labels D[0-63]",
+        "operation_order": [
+          "four-beat read burst",
+          "four-beat write burst",
+          "four-beat read burst"
+        ],
+        "transaction_labels": "TT is labeled Read, Write, Read and TBST is drawn asserted for all three address tenures",
+        "drtry": "normal late-cancel mode; the final read's DRTRY assertion excludes no-DRTRY startup mode"
+      },
+      "source": {
+        "sections": [
+          "8.5",
+          "8.4.3",
+          "8.4.4",
+          "8.4.4.1",
+          "7.2.2.1",
+          "7.2.3.1",
+          "7.2.4.3",
+          "7.2.6.1",
+          "7.2.6.3",
+          "7.2.7.1",
+          "7.2.8.1",
+          "7.2.8.2"
+        ],
+        "figure": "8-19",
+        "pdf_pages": [
+          282,
+          283,
+          289,
+          292,
+          293,
+          295,
+          297,
+          298,
+          332,
+          333,
+          335,
+          336,
+          344
+        ],
+        "printed_pages": [
+          "7-6",
+          "7-7",
+          "7-13",
+          "7-16",
+          "7-17",
+          "7-19",
+          "7-21",
+          "7-22",
+          "8-24",
+          "8-25",
+          "8-27",
+          "8-28",
+          "8-36"
+        ],
+        "visually_checked": true
+      },
+      "signal_roles": {
+        "TS": {
+          "physical_polarity": "active_low",
+          "driver": "603e while it is the address-bus master",
+          "sampling": "address-side participants sample TS with the address and attributes for each depicted transfer"
+        },
+        "address": {
+          "physical_polarity": "encoded_not_asserted_or_negated",
+          "driver": "603e during each depicted address tenure",
+          "sampling": "address-side participants sample A[0-31] with TS; this scenario records only the third-address ordering constraint"
+        },
+        "TBST": {
+          "physical_polarity": "active_low",
+          "driver": "603e during each depicted address tenure",
+          "sampling": "address-side participants sample asserted TBST as the cache-line burst indication"
+        },
+        "DBG": {
+          "physical_polarity": "active_low",
+          "driver": "external data-bus arbiter",
+          "sampling": "603e samples DBG at a rising SYSCLK edge, qualified only while DBB, DRTRY, and the associated ARTRY result are negated"
+        },
+        "DBB": {
+          "physical_polarity": "active_low",
+          "driver": "603e while it owns each depicted data tenure",
+          "sampling": "other bus participants use asserted DBB as data-bus exclusion"
+        },
+        "data": {
+          "physical_polarity": "encoded_not_asserted_or_negated",
+          "driver": "responding slave for the first and final reads; 603e for the middle write",
+          "sampling": "603e samples read data and the responding slave samples write data with asserted TA"
+        },
+        "TA": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave",
+          "sampling": "603e samples TA at a rising SYSCLK edge; each accepted assertion acknowledges one burst beat"
+        },
+        "DRTRY": {
+          "physical_polarity": "active_low",
+          "driver": "responding slave for reads only",
+          "sampling": "603e samples DRTRY one rising SYSCLK edge after TA; assertion invalidates that preceding read beat"
+        }
+      },
+      "preconditions": [
+        "The figure depicts three 64-bit four-beat burst transfers ordered read, write, read.",
+        "Normal DRTRY mode was selected at reset; no-DRTRY startup mode is excluded.",
+        "Each depicted data tenure eventually receives a qualified DBG.",
+        "ARTRY and TEA remain negated throughout this bounded successful/retry sequence.",
+        "All bidirectional signals are three-stated between bus tenures, without every entry or release edge assigned here."
+      ],
+      "cycles": [
+        {
+          "cycle": "source clock 0 / first read In 0",
+          "source_term": "critical quad word",
+          "at_edge": [
+            "The first read burst presents its first data beat, labeled In 0; this row does not map source clock 0 onto the figure's displayed 1-20 axis."
+          ],
+          "after_edge": [
+            "The Figure 8-19 prose calls this first beat the critical quad word; the conflicting critical-double-word terminology remains unresolved."
+          ]
+        },
+        {
+          "cycle": "first transfer completion (source-relative)",
+          "at_edge": [
+            "The first read transfer completes after its four labeled beats In 0, In 1, In 2, and In 3."
+          ],
+          "after_edge": [
+            "The source ordering condition that held off the third transfer's address is satisfied."
+          ]
+        },
+        {
+          "cycle": "third transfer address start (source-relative)",
+          "at_edge": [
+            "Only after the first transfer completes may the 603e begin the third depicted address tenure."
+          ],
+          "after_edge": [
+            "603e asserts TS and drives the third CPU address and its Read/burst attributes; no numeric figure edge is assigned."
+          ]
+        },
+        {
+          "cycle": "write burst third beat Out 2 pending",
+          "at_edge": [
+            "603e presents the middle write burst's third labeled beat, Out 2; no numeric figure edge is assigned."
+          ],
+          "after_edge": [
+            "The responder negates TA, so Out 2 is not acknowledged and the write burst does not advance to Out 3."
+          ]
+        },
+        {
+          "cycle": "write burst third beat Out 2 accepted",
+          "at_edge": [
+            "603e later samples TA asserted for Out 2."
+          ],
+          "after_edge": [
+            "The write burst advances to its fourth labeled beat, Out 3."
+          ]
+        },
+        {
+          "cycle": "final read third beat, first In 2",
+          "at_edge": [
+            "603e samples the final read burst's first presentation of its third labeled beat, In 2, with TA asserted."
+          ],
+          "after_edge": [
+            "The acknowledged In 2 remains provisional through the immediately following DRTRY sample."
+          ]
+        },
+        {
+          "cycle": "final read third beat + 1",
+          "at_edge": [
+            "603e samples DRTRY asserted one bus clock after the first In 2 TA."
+          ],
+          "after_edge": [
+            "The preceding In 2 is invalidated and the third beat remains pending."
+          ]
+        },
+        {
+          "cycle": "final read replacement In 2",
+          "at_edge": [
+            "603e samples the repeated In 2 with TA while the DRTRY extension remains active."
+          ],
+          "after_edge": [
+            "The responder prepares to negate DRTRY on the following bus clock."
+          ]
+        },
+        {
+          "cycle": "final read DRTRY negation",
+          "at_edge": [
+            "603e samples DRTRY negated."
+          ],
+          "after_edge": [
+            "The replacement In 2 presented with TA on the preceding bus clock becomes valid and the burst may advance."
+          ]
+        },
+        {
+          "cycle": "final read fourth beat In 3 (same or later edge)",
+          "at_edge": [
+            "603e may sample the final labeled beat, In 3, with TA on the same sampling edge that negated DRTRY confirms replacement In 2, or on a later edge; no extra bubble is required."
+          ],
+          "after_edge": [
+            "The final read burst can complete after ordinary DRTRY confirmation; its exact numeric figure edge is not assigned."
+          ]
+        }
+      ],
+      "assertions": [
+        "In 0 is the first beat of the first read burst and is identified by Figure 8-19 as the critical quad word.",
+        "Section 8.4.3 calls the corresponding 64-bit first-critical transfer a critical double word; this manifest preserves rather than normalizes the terminology conflict.",
+        "The third transfer's address tenure cannot begin before the first transfer completes; the second address tenure may already overlap the first data transfer.",
+        "TA negation delays the middle write burst's third beat Out 2; the burst advances to Out 3 only after an asserted TA acknowledges Out 2.",
+        "The final read burst's third beat In 2 is presented twice because DRTRY invalidates its first acknowledged presentation.",
+        "DRTRY is sampled one bus clock after TA and is valid for reads only; it does not cancel or extend the middle write semantically.",
+        "The final In 3 TA may coincide with DRTRY negation confirming replacement In 2; consecutive event rows do not require distinct edges or an extra bubble.",
+        "Each depicted 64-bit burst comprises four accepted beats, while TA assertions may be nonconsecutive.",
+        "The 603e drives address/attributes for all three transfers and data for the middle write; responding slaves drive data for the reads and TA/DRTRY.",
+        "All depicted address/data bus signals that are bidirectional are three-stated between their respective bus tenures."
+      ],
+      "unresolved": [
+        "Figure 8-19 calls the first 64-bit read beat the critical quad word, while Section 8.4.3 says critical double word first; no terminology correction is inferred.",
+        "The prose's clock 0 label for the first read beat is not reconciled with the rendered waveform axis labeled 1 through 20.",
+        "The prose does not give numeric clock labels for the write third-beat TA delay, final-read DRTRY sequence, or third-address release point; only their relative ordering is encoded.",
+        "The exact number of clocks for which TA is negated on Out 2 is not promoted from waveform width to a protocol requirement.",
+        "The In/Out labels give ordinal beat identity but not data values, byte-lane contents, parity, effective addresses, or cache-line wrap order.",
+        "The source says bidirectional signals are three-stated between tenures but this bounded transcription does not assign every entry/release edge.",
+        "All other apparent per-pin transitions, electrical offsets, and cycle values in Figure 8-19 remain untranscribed; this is not a complete waveform or BFM contract."
+      ]
+    },
+    {
+      "id": "WRITE_BURST_TEA",
+      "topics": [
+        "TEA",
+        "write",
+        "burst",
+        "error"
+      ],
+      "status": "cycle_table",
+      "source": {
+        "sections": [
+          "8.4.4.2",
+          "8.5"
+        ],
+        "figure": "8-20",
+        "pdf_pages": [
+          337,
+          345
+        ],
+        "printed_pages": [
+          "8-29",
+          "8-37"
+        ],
+        "visually_checked": true
+      },
+      "preconditions": [
+        "A processor burst write owns DBB.",
+        "Earlier beats may already have completed."
+      ],
+      "cycles": [
+        {
+          "cycle": "beat N",
+          "at_edge": [
+            "CPU drives the current write beat while DBB is asserted."
+          ],
+          "after_edge": [
+            "Responder asserts TEA for one cycle on the third beat shown in Figure 8-20."
+          ]
+        },
+        {
+          "cycle": "TEA",
+          "at_edge": [
+            "CPU samples TEA asserted."
+          ],
+          "after_edge": [
+            "Transaction is terminated; TA and DRTRY are ignored; CPU negates DBB and stops the burst."
+          ]
+        },
+        {
+          "cycle": "TEA+1",
+          "at_edge": [
+            "DBB/data are released; TEA must be negated no later than DBB negation."
+          ],
+          "after_edge": [
+            "CPU eventually takes the error exception/checkstop path according to machine-check state."
+          ]
+        }
+      ],
+      "assertions": [
+        "TEA truncates the transfer and does not roll back data already admitted to a GPR/cache.",
+        "TEA may assert while DBB is asserted. On reads, Section 8.4.4.2 also permits TEA while DRTRY is asserted, so TEA remains legal during a multi-cycle DRTRY extension after DBB negates."
+      ]
+    },
+    {
+      "id": "BURST_64_NORMAL",
+      "topics": [
+        "burst",
+        "64_bit",
+        "TA",
+        "critical_word_first"
+      ],
+      "status": "rule_manifest",
+      "source": {
+        "section": "8.4.4.1",
+        "figure": "8-11",
+        "pdf_page": 335,
+        "printed_page": "8-27",
+        "visually_checked": true
+      },
+      "rules": [
+        "A 64-bit cache-line burst transfers four 64-bit beats for 32 bytes.",
+        "TA is required once per beat and need not assert on consecutive clocks; withholding TA paces the transfer.",
+        "For read bursts TEA and DRTRY remain negated for normal completion; for writes TEA remains negated and DRTRY is ignored.",
+        "The first beat is the critical double word selected by A[27:28], with subsequent beats wrapping within the aligned 32-byte line."
+      ],
+      "unresolved": [
+        "Figure 8-11 still needs a complete every-edge transcription; Figure 8-13 now has bounded TA-wait/DRTRY rows, while its unlabeled data polygons and remaining apparent transitions stay unresolved."
+      ]
+    },
+    {
+      "id": "BURST_32_EIGHT",
+      "topics": [
+        "burst",
+        "32_bit",
+        "byte_lanes"
+      ],
+      "status": "rule_manifest",
+      "source": {
+        "section": "8.6.1",
+        "figure": "8-21",
+        "pdf_page": 347,
+        "printed_page": "8-39",
+        "visually_checked": true
+      },
+      "mode": {
+        "data_bus_bits": 32,
+        "selected_by": "TLBISYNC asserted when HRESET is negated"
+      },
+      "rules": [
+        "Cached 32-byte burst has eight DH[0:31] beats numbered 0 through 7 in the figure.",
+        "TBST is asserted and TSIZ is 0b010.",
+        "DL[0:31] and DP[4:7] are not sampled on reads and are driven low on writes.",
+        "The same arbitration and termination protocol as 64-bit mode applies.",
+        "Late ARTRY cancellation point for a burst is after the second TA in normal mode, or coincident with the second TA in no-DRTRY mode."
+      ],
+      "unresolved": [
+        "Critical-word-first start/wrap ordering for all A[27:29] values is not yet encoded as eight explicit cycle rows."
+      ]
+    },
+    {
+      "id": "DOUBLE_32_DRTRY",
+      "topics": [
+        "32_bit",
+        "two_beat",
+        "DRTRY"
+      ],
+      "status": "rule_manifest",
+      "source": {
+        "section": "8.6.1",
+        "figure": "8-22",
+        "pdf_page": 347,
+        "printed_page": "8-39",
+        "visually_checked": true
+      },
+      "mode": {
+        "data_bus_bits": 32,
+        "drtry": "normal"
+      },
+      "rules": [
+        "An aligned 8-byte uncached/write-through transaction uses two DH beats.",
+        "TBST remains negated even though there are two beats.",
+        "TA acknowledges each beat and each read beat can enter a DRTRY late-cancel window.",
+        "Late ARTRY for the double-word operation is permitted through the cycle after the second TA in normal mode."
+      ],
+      "unresolved": [
+        "Figure 8-22 has not yet been converted into per-edge rows for its two separate DRTRY extensions."
+      ]
+    },
+    {
+      "id": "DBWO_ENVELOPED_WRITE",
+      "topics": [
+        "DBWO",
+        "data_ordering",
+        "queued_tenure",
+        "write"
+      ],
+      "status": "cycle_table",
+      "source": {
+        "section": "8.10",
+        "figure": "8-23",
+        "pdf_page": 352,
+        "printed_page": "8-44",
+        "visually_checked": true
+      },
+      "preconditions": [
+        "A read address tenure completed without ARTRY.",
+        "A later write address tenure completed without ARTRY.",
+        "Both data tenures are queued."
+      ],
+      "cycles": [
+        {
+          "cycle": "read address accepted",
+          "at_edge": [
+            "In the cycle after read AACK, qualified ARTRY is sampled negated."
+          ],
+          "after_edge": [
+            "Read data tenure is oldest in the queue."
+          ]
+        },
+        {
+          "cycle": "write address accepted",
+          "at_edge": [
+            "In the cycle after write AACK, qualified ARTRY is sampled negated."
+          ],
+          "after_edge": [
+            "Write data tenure is also queued."
+          ]
+        },
+        {
+          "cycle": "write QDBG",
+          "at_edge": [
+            "CPU samples qualified DBG with DBWO asserted."
+          ],
+          "after_edge": [
+            "CPU selects the queued write, asserts DBB, and drives write data ahead of the older read."
+          ]
+        },
+        {
+          "cycle": "write done",
+          "at_edge": [
+            "Final write TA is accepted."
+          ],
+          "after_edge": [
+            "CPU releases DBB; the older read remains queued."
+          ]
+        },
+        {
+          "cycle": "read QDBG",
+          "at_edge": [
+            "CPU samples a later qualified DBG with DBWO negated."
+          ],
+          "after_edge": [
+            "CPU performs the outstanding read data tenure."
+          ]
+        }
+      ],
+      "assertions": [
+        "DBWO is sampled only with qualified DBG.",
+        "DBWO does not reorder writes relative to other writes.",
+        "If DBWO is asserted with no queued write, the next queued read proceeds.",
+        "Up to two data tenures can be queued; transactions from other masters may occur between these steps."
+      ]
+    },
+    {
+      "id": "SNOOP_MEI",
+      "topics": [
+        "snoop",
+        "MEI",
+        "ARTRY",
+        "copyback",
+        "CSE"
+      ],
+      "status": "rule_manifest",
+      "source": {
+        "sections": [
+          "8.3.2.5",
+          "8.4.5"
+        ],
+        "figure": "8-14",
+        "pdf_page": 339,
+        "printed_page": "8-31",
+        "visually_checked": true
+      },
+      "rules": [
+        "CPU snoops address/attributes only in a TS cycle and uses GBL to qualify global coherence action.",
+        "Read or read-atomic hits can clean or flush; read-with-intent-to-modify hits flush; write-with-flush/write-with-kill actions invalidate and cancel reservation as Table 7-2 states.",
+        "A snoop hit on modified data requiring copyback asserts ARTRY, then the snooper requests address/data tenures for the push.",
+        "Figure 8-14 records Invalid, Exclusive, and Modified state transitions for WIM=001; CSE[0:1] identifies the selected set on CPU transactions."
+      ],
+      "unresolved": [
+        "All Table 7-2 TT commands and all WIM cache modes need machine-readable transition rows.",
+        "Snoop push address/data beat ordering is not fully transcribed."
+      ]
+    },
+    {
+      "id": "PIPELINED_TENURES",
+      "topics": [
+        "address_pipeline",
+        "data_queue",
+        "ordering"
+      ],
+      "status": "rule_manifest",
+      "source": {
+        "sections": [
+          "8.2",
+          "8.4.2"
+        ],
+        "pdf_pages": [
+          316,
+          332
+        ],
+        "printed_pages": [
+          "8-8",
+          "8-24"
+        ],
+        "visually_checked": true
+      },
+      "rules": [
+        "Address and data buses arbitrate and transfer independently.",
+        "The processor has one additional level of address pipelining: as many as two address tenures can complete before the current data tenure completes.",
+        "Up to two data tenures can be queued.",
+        "Data normally follows address order; DBWO is the explicit write-before-older-read selection mechanism."
+      ],
+      "unresolved": [
+        "Exact backpressure behavior when the second queued data tenure is occupied needs an implementation assertion tied to future bus RTL."
+      ]
+    },
+    {
+      "id": "NO_DRTRY_MODE",
+      "topics": [
+        "startup_mode",
+        "DRTRY",
+        "ARTRY",
+        "read_latency"
+      ],
+      "status": "rule_manifest",
+      "source": {
+        "sections": [
+          "8.6.1",
+          "8.6.2"
+        ],
+        "pdf_pages": [
+          346,
+          348
+        ],
+        "printed_pages": [
+          "8-38",
+          "8-40"
+        ],
+        "visually_checked": true
+      },
+      "mode": {
+        "selected_by": "DRTRY asserted when HRESET is negated"
+      },
+      "rules": [
+        "Read data is forwarded internally when TA is recognized without the normal following-cycle confirmation.",
+        "The system must never assert DRTRY after startup.",
+        "For generic/64-bit transactions ARTRY cancellation must occur before or coincident with the first TA, never in the following cycle. The explicit 32-bit exception uses the first TA for word or smaller and the second TA for double-word or burst transactions.",
+        "Other arbitration/transfer rules remain the same."
+      ],
+      "unresolved": [
+        "No-DRTRY cycle tables for every single/burst and 32/64-bit combination remain to be generated."
+      ]
+    }
+  ],
+  "unresolved_contract_items": [
+    {
+      "id": "DIAGRAM_ROWS",
+      "text": "Four Chapter 8 timing diagrams remain inventory-only: Figures 8-3, 8-4, 8-5, and 8-16."
+    },
+    {
+      "id": "ENCODING_TABLES",
+      "text": "Tables 7-1, 7-2, 7-3, 7-5 and 8-4 through 8-7 are machine-readable. Remaining cited Chapter 7/8 tables beyond those completed still require bounded transcription before use."
+    },
+    {
+      "id": "COLLISION_MATRIX",
+      "text": "All combinations and priority assertions for AACK/ARTRY with TA/DRTRY/TEA, including late events on every burst beat, remain to be enumerated."
+    },
+    {
+      "id": "ENDIAN_LANES",
+      "text": "Complete PID7v big/little-endian CPU-pin byte steering for cacheable/uncached and 32/64-bit modes remains open; MCM bridge behavior cannot silently fill this CPU contract."
+    },
+    {
+      "id": "PHYSICAL_TIMING",
+      "text": "Setup, hold, pulse width, pull-up sizing, PLL lock, and package pin numbers require the missing PID7v hardware specification and mask-specific errata."
+    },
+    {
+      "id": "CLOCK_FIDELITY",
+      "text": "The FPGA single-clock 1:1 scaffold is a project simplification. PID7v supports 2:1 through 6:1 and explicitly lacks 1:1 and 1.5:1; final clock-domain behavior remains open."
+    },
+    {
+      "id": "TT_INPUT_WIDTH",
+      "text": "Figure 7-1 and the Section 7.2.4.1 introduction identify TT[0:4] as five bidirectional bits and Table 7-2 uses TT4, but the input subsection says TT[0:3]. Preserve all five pins and keep this editorial inconsistency visible pending errata/hardware-spec evidence."
+    },
+    {
+      "id": "BFM_RTL",
+      "text": "This manifest is source data only. No bus RTL, BFM, assertion binding, or end-to-end bus test is provided by this task."
+    }
+  ]
+}

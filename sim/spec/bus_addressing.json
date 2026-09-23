@@ -1,0 +1,1282 @@
+{
+  "schema_version": 1,
+  "contract": "MPC603e Tables 8-4 through 8-7 address, size, and physical data-lane decomposition",
+  "source": {
+    "id": "UM",
+    "path": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+    "sections": [
+      "8.3.2.4",
+      "8.3.2.5"
+    ],
+    "pdf_pages": [
+      323,
+      324,
+      325,
+      326,
+      327
+    ],
+    "printed_pages": [
+      "8-15",
+      "8-16",
+      "8-17",
+      "8-18",
+      "8-19"
+    ],
+    "visually_checked": true
+  },
+  "conventions": {
+    "bit_numbering": "A[29:31], TSIZ[0:2], DH, and DL strings preserve the manual's MSB-first numbering.",
+    "address": "Queries use an already bus-side 32-bit byte address. A[29:31] is address & 7; no CPU effective-address translation, MMU translation, or cache-to-bus prediction is performed.",
+    "table_lane_marks": "source_table_lane_marks records only the A marks printed in the selected table. source_table_lane_cells preserves every rendered A, em dash, x, and anomalous blank in Tables 8-6/8-7.",
+    "physical_lanes": "Table 7-7 maps lanes 0,1,2,3 to DH[0:7], DH[8:15], DH[16:23], DH[24:31] and lanes 4,5,6,7 to the corresponding DL slices. Section 8.6.1 limits 32-bit mode to lanes 0 through 3.",
+    "endian_scope": "Active lane numbers and physical DH/DL signal slices do not assign operand-byte significance, select an endian mode, or define memory-controller steering.",
+    "decomposition": "Tables 8-5 and 8-7 each give every four-byte start. A word-boundary crossing uses a first transfer through the current four-byte word and a second transfer at the next word.",
+    "doubleword_32": "The Table 8-6 doubleword is one data transaction/data tenure with two data beats. Both printed beat rows retain A[29:31]=000, TSIZ=000, and lanes 0 through 3; no second bus address is inferred.",
+    "scope_rejection": "A valid processor access outside the selected rows is reported as outside_selected_tables, not architecturally invalid."
+  },
+  "source_conflicts": [
+    {
+      "id": "T8-5-OFFSET010-SECOND-TSIZ",
+      "location": "Table 8-5, start A[29:31]=010, second access",
+      "printed_tsiz": "011",
+      "lane_implied_transfer_size_bytes": 2,
+      "printed_lane_marks": [
+        4,
+        5
+      ],
+      "provisional_normalized_tsiz": "010",
+      "basis": "Table 8-1 maps two bytes to TSIZ=010; the row marks two lanes; the mirrored start A[29:31]=110 second access prints TSIZ=010; and the corresponding Table 8-7 row prints TSIZ=010.",
+      "status": "probable_manual_editorial_error_preserved_and_normalization_explicit"
+    },
+    {
+      "id": "T8-6-BYTE001-LANE2-SYMBOL",
+      "location": "Table 8-6, byte A[29:31]=001, lane 2",
+      "printed_symbol": "x",
+      "provisional_normalized_symbol": "—",
+      "basis": "The note defines x as a lane not used in 32-bit mode, but lane 2 is part of DH[0:31] and is marked A for byte A[29:31]=010; the remaining unused cells in lanes 0 through 3 print an em dash.",
+      "query_effect": "none; active lanes are taken only from printed A marks",
+      "status": "probable_manual_editorial_error_preserved_and_normalization_explicit"
+    },
+    {
+      "id": "T8-7-OFFSET001-FIRST-LANE0-SYMBOL",
+      "location": "Table 8-7, start A[29:31]=001, first access, lane 0",
+      "printed_symbol": "blank",
+      "provisional_normalized_symbol": "—",
+      "basis": "The note defines A, em dash, and x but no blank; lane 0 is outside this three-byte access and corresponding unused cells in lanes 0 through 3 print an em dash.",
+      "query_effect": "none; active lanes are taken only from printed A marks",
+      "status": "probable_manual_editorial_omission_preserved_and_normalization_explicit"
+    },
+    {
+      "id": "T8-7-OFFSET010-SECOND-LANE3-SYMBOL",
+      "location": "Table 8-7, start A[29:31]=010, second access, lane 3",
+      "printed_symbol": "x",
+      "provisional_normalized_symbol": "—",
+      "basis": "The note defines x as a lane not used in 32-bit mode, but lane 3 is part of DH[0:31] and other unused cells in lanes 0 through 3 print an em dash.",
+      "query_effect": "none; active lanes are taken only from printed A marks",
+      "status": "probable_manual_editorial_error_preserved_and_normalization_explicit"
+    }
+  ],
+  "tables_completed": [
+    {
+      "table": "8-4",
+      "title": "Aligned Data Transfers (64-Bit Bus)",
+      "pdf_pages": [
+        323,
+        324
+      ],
+      "printed_pages": [
+        "8-15",
+        "8-16"
+      ],
+      "coverage": "all 15 aligned size/address rows and their printed 64-bit byte-lane marks"
+    },
+    {
+      "table": "8-5",
+      "title": "Misaligned Data Transfers (Four-Byte Examples)",
+      "pdf_page": 325,
+      "printed_page": "8-17",
+      "coverage": "all eight starting A[29:31] values and all 14 resulting access rows"
+    },
+    {
+      "table": "8-6",
+      "title": "Aligned Data Transfers (32-Bit Bus Mode)",
+      "pdf_page": 326,
+      "printed_page": "8-18",
+      "coverage": "all 15 aligned request rows, all 16 data-beat rows, and all rendered lane cells"
+    },
+    {
+      "table": "8-7",
+      "title": "Misaligned 32-Bit Data Bus Transfer (Four-Byte Examples)",
+      "pdf_page": 327,
+      "printed_page": "8-19",
+      "coverage": "all eight starting A[29:31] values, all 14 resulting access rows, and all rendered lane cells"
+    }
+  ],
+  "expected_counts": {
+    "table_8_4_rows": 15,
+    "table_8_4_byte_rows": 8,
+    "table_8_4_halfword_rows": 4,
+    "table_8_4_word_rows": 2,
+    "table_8_4_doubleword_rows": 1,
+    "table_8_5_start_cases": 8,
+    "table_8_5_access_rows": 14,
+    "table_8_5_aligned_cases": 2,
+    "table_8_5_misaligned_cases": 6,
+    "table_8_6_request_rows": 15,
+    "table_8_6_data_beat_rows": 16,
+    "table_8_6_byte_rows": 8,
+    "table_8_6_halfword_rows": 4,
+    "table_8_6_word_rows": 2,
+    "table_8_6_doubleword_request_rows": 1,
+    "table_8_7_start_cases": 8,
+    "table_8_7_access_rows": 14,
+    "table_8_7_aligned_cases": 2,
+    "table_8_7_misaligned_cases": 6
+  },
+  "tsiz_by_bytes": {
+    "1": "001",
+    "2": "010",
+    "3": "011",
+    "4": "100",
+    "8": "000"
+  },
+  "table_8_4_aligned_64": [
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "000",
+      "source_table_lane_marks": [
+        0
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "001",
+      "source_table_lane_marks": [
+        1
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "010",
+      "source_table_lane_marks": [
+        2
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "011",
+      "source_table_lane_marks": [
+        3
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "100",
+      "source_table_lane_marks": [
+        4
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "101",
+      "source_table_lane_marks": [
+        5
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "110",
+      "source_table_lane_marks": [
+        6
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "111",
+      "source_table_lane_marks": [
+        7
+      ]
+    },
+    {
+      "transfer_size_bytes": 2,
+      "tsiz": "010",
+      "a29_31": "000",
+      "source_table_lane_marks": [
+        0,
+        1
+      ]
+    },
+    {
+      "transfer_size_bytes": 2,
+      "tsiz": "010",
+      "a29_31": "010",
+      "source_table_lane_marks": [
+        2,
+        3
+      ]
+    },
+    {
+      "transfer_size_bytes": 2,
+      "tsiz": "010",
+      "a29_31": "100",
+      "source_table_lane_marks": [
+        4,
+        5
+      ]
+    },
+    {
+      "transfer_size_bytes": 2,
+      "tsiz": "010",
+      "a29_31": "110",
+      "source_table_lane_marks": [
+        6,
+        7
+      ]
+    },
+    {
+      "transfer_size_bytes": 4,
+      "tsiz": "100",
+      "a29_31": "000",
+      "source_table_lane_marks": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "transfer_size_bytes": 4,
+      "tsiz": "100",
+      "a29_31": "100",
+      "source_table_lane_marks": [
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "transfer_size_bytes": 8,
+      "tsiz": "000",
+      "a29_31": "000",
+      "source_table_lane_marks": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    }
+  ],
+  "table_8_5_four_byte_cases": [
+    {
+      "start_a29_31": "000",
+      "alignment": "aligned",
+      "accesses": [
+        {
+          "sequence": "only",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 4,
+          "tsiz": "100",
+          "a29_31": "000",
+          "source_table_lane_marks": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "001",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 3,
+          "tsiz": "011",
+          "a29_31": "001",
+          "source_table_lane_marks": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 3,
+          "transfer_size_bytes": 1,
+          "tsiz": "001",
+          "a29_31": "100",
+          "source_table_lane_marks": [
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "010",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 2,
+          "tsiz": "010",
+          "a29_31": "010",
+          "source_table_lane_marks": [
+            2,
+            3
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 2,
+          "transfer_size_bytes": 2,
+          "source_table_tsiz": "011",
+          "tsiz": "010",
+          "tsiz_status": "provisional_normalization_of_probable_manual_editorial_error",
+          "source_conflict": "T8-5-OFFSET010-SECOND-TSIZ",
+          "a29_31": "100",
+          "source_table_lane_marks": [
+            4,
+            5
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "011",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 1,
+          "tsiz": "001",
+          "a29_31": "011",
+          "source_table_lane_marks": [
+            3
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 1,
+          "transfer_size_bytes": 3,
+          "tsiz": "011",
+          "a29_31": "100",
+          "source_table_lane_marks": [
+            4,
+            5,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "100",
+      "alignment": "aligned",
+      "accesses": [
+        {
+          "sequence": "only",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 4,
+          "tsiz": "100",
+          "a29_31": "100",
+          "source_table_lane_marks": [
+            4,
+            5,
+            6,
+            7
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "101",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 3,
+          "tsiz": "011",
+          "a29_31": "101",
+          "source_table_lane_marks": [
+            5,
+            6,
+            7
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 3,
+          "transfer_size_bytes": 1,
+          "tsiz": "001",
+          "a29_31": "000",
+          "source_table_lane_marks": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "110",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 2,
+          "tsiz": "010",
+          "a29_31": "110",
+          "source_table_lane_marks": [
+            6,
+            7
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 2,
+          "transfer_size_bytes": 2,
+          "tsiz": "010",
+          "a29_31": "000",
+          "source_table_lane_marks": [
+            0,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "111",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 1,
+          "tsiz": "001",
+          "a29_31": "111",
+          "source_table_lane_marks": [
+            7
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 1,
+          "transfer_size_bytes": 3,
+          "tsiz": "011",
+          "a29_31": "000",
+          "source_table_lane_marks": [
+            0,
+            1,
+            2
+          ]
+        }
+      ]
+    }
+  ],
+  "width_applicability": {
+    "64": {
+      "aligned_rows": "direct_table_8_4",
+      "four_byte_rows": "direct_table_8_5",
+      "lane_marks": "physical lanes and Table 7-7 signal slices returned without operand-byte/endian mapping"
+    },
+    "32": {
+      "aligned_rows": "direct_table_8_6",
+      "four_byte_rows": "direct_table_8_7",
+      "lane_marks": "physical lanes 0 through 3 and DH signal slices returned without operand-byte/endian mapping",
+      "doubleword": "one data transaction with two Table 8-6 beats; source A/TSIZ/lane fields retained per beat without inferred second address"
+    }
+  },
+  "coherency_boundary_rule": {
+    "bytes": 32,
+    "source": {
+      "section": "8.3.2.2 (continuation)",
+      "pdf_page": 322,
+      "printed_page": "8-14"
+    },
+    "rule": "A data transfer crossing an aligned 32-byte boundary must present a new address at that boundary or operate as noncoherent data with respect to the 603e."
+  },
+  "out_of_scope": [
+    "Endian byte-value ordering, operand-byte significance, and memory-controller byte-lane steering.",
+    "CPU effective-address translation and prediction of whether an access becomes these nonburst bus transfers; cacheability and the memory hierarchy determine whether a bus operation occurs.",
+    "Misaligned sizes other than the four-byte examples in Tables 8-5 and 8-7.",
+    "A derived address for the second beat of a 32-bit-mode doubleword; Table 8-6 prints A[29:31]=000 for both beats.",
+    "Floating-point alignment exceptions and instruction-specific legality.",
+    "External-control transaction atomicity and scheduling.",
+    "Burst ordering, termination timing, RTL, and BFM behavior."
+  ],
+  "lane_signal_source": {
+    "section": "7.2.7.1, Table 7-7; 8.6.1",
+    "pdf_pages": [
+      295,
+      346
+    ],
+    "printed_pages": [
+      "7-19",
+      "8-38"
+    ],
+    "lane_to_data_signals": {
+      "0": "DH[0:7]",
+      "1": "DH[8:15]",
+      "2": "DH[16:23]",
+      "3": "DH[24:31]",
+      "4": "DL[0:7]",
+      "5": "DL[8:15]",
+      "6": "DL[16:23]",
+      "7": "DL[24:31]"
+    },
+    "scope": "physical signal groups only; operand byte order and endian steering are not specified by this mapping"
+  },
+  "table_8_6_aligned_32": [
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "000",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        0
+      ],
+      "source_table_lane_cells": [
+        "A",
+        "—",
+        "—",
+        "—",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "001",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        1
+      ],
+      "source_table_lane_cells": [
+        "—",
+        "A",
+        "x",
+        "—",
+        "x",
+        "x",
+        "x",
+        "x"
+      ],
+      "lane_cell_normalizations": [
+        {
+          "lane": 2,
+          "source_symbol": "x",
+          "provisional_normalized_symbol": "—",
+          "source_conflict": "T8-6-BYTE001-LANE2-SYMBOL"
+        }
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "010",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        2
+      ],
+      "source_table_lane_cells": [
+        "—",
+        "—",
+        "A",
+        "—",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "011",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        3
+      ],
+      "source_table_lane_cells": [
+        "—",
+        "—",
+        "—",
+        "A",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "100",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        0
+      ],
+      "source_table_lane_cells": [
+        "A",
+        "—",
+        "—",
+        "—",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "101",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        1
+      ],
+      "source_table_lane_cells": [
+        "—",
+        "A",
+        "—",
+        "—",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "110",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        2
+      ],
+      "source_table_lane_cells": [
+        "—",
+        "—",
+        "A",
+        "—",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 1,
+      "tsiz": "001",
+      "a29_31": "111",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        3
+      ],
+      "source_table_lane_cells": [
+        "—",
+        "—",
+        "—",
+        "A",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 2,
+      "tsiz": "010",
+      "a29_31": "000",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        0,
+        1
+      ],
+      "source_table_lane_cells": [
+        "A",
+        "A",
+        "—",
+        "—",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 2,
+      "tsiz": "010",
+      "a29_31": "010",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        2,
+        3
+      ],
+      "source_table_lane_cells": [
+        "—",
+        "—",
+        "A",
+        "A",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 2,
+      "tsiz": "010",
+      "a29_31": "100",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        0,
+        1
+      ],
+      "source_table_lane_cells": [
+        "A",
+        "A",
+        "—",
+        "—",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 2,
+      "tsiz": "010",
+      "a29_31": "110",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        2,
+        3
+      ],
+      "source_table_lane_cells": [
+        "—",
+        "—",
+        "A",
+        "A",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 4,
+      "tsiz": "100",
+      "a29_31": "000",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "source_table_lane_cells": [
+        "A",
+        "A",
+        "A",
+        "A",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 4,
+      "tsiz": "100",
+      "a29_31": "100",
+      "data_beat_count": 1,
+      "source_table_lane_marks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "source_table_lane_cells": [
+        "A",
+        "A",
+        "A",
+        "A",
+        "x",
+        "x",
+        "x",
+        "x"
+      ]
+    },
+    {
+      "transfer_size_bytes": 8,
+      "tsiz": "000",
+      "a29_31": "000",
+      "data_beat_count": 2,
+      "source_table_lane_marks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "source_table_lane_cells": [
+        "A",
+        "A",
+        "A",
+        "A",
+        "x",
+        "x",
+        "x",
+        "x"
+      ],
+      "source_table_data_beats": [
+        {
+          "sequence": "first",
+          "source_table_row_label": "Double word",
+          "tsiz": "000",
+          "a29_31": "000",
+          "transfer_bytes": 4,
+          "source_table_data_bits": "DH[0:31]",
+          "source_table_lane_marks": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "A",
+            "A",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        },
+        {
+          "sequence": "second",
+          "source_table_row_label": "Second beat",
+          "tsiz": "000",
+          "a29_31": "000",
+          "transfer_bytes": 4,
+          "source_table_data_bits": "DH[0:31]",
+          "source_table_lane_marks": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "A",
+            "A",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        }
+      ]
+    }
+  ],
+  "table_8_7_four_byte_cases": [
+    {
+      "start_a29_31": "000",
+      "alignment": "aligned",
+      "accesses": [
+        {
+          "sequence": "only",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 4,
+          "tsiz": "100",
+          "a29_31": "000",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "A",
+            "A",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "001",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 3,
+          "tsiz": "011",
+          "a29_31": "001",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            1,
+            2,
+            3
+          ],
+          "source_table_lane_cells": [
+            "",
+            "A",
+            "A",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ],
+          "lane_cell_normalizations": [
+            {
+              "lane": 0,
+              "source_symbol": "blank",
+              "provisional_normalized_symbol": "—",
+              "source_conflict": "T8-7-OFFSET001-FIRST-LANE0-SYMBOL"
+            }
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 3,
+          "transfer_size_bytes": 1,
+          "tsiz": "001",
+          "a29_31": "100",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            0
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "—",
+            "—",
+            "—",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "010",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 2,
+          "tsiz": "010",
+          "a29_31": "010",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            2,
+            3
+          ],
+          "source_table_lane_cells": [
+            "—",
+            "—",
+            "A",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 2,
+          "transfer_size_bytes": 2,
+          "tsiz": "010",
+          "a29_31": "100",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            0,
+            1
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "A",
+            "—",
+            "x",
+            "x",
+            "x",
+            "x",
+            "x"
+          ],
+          "lane_cell_normalizations": [
+            {
+              "lane": 3,
+              "source_symbol": "x",
+              "provisional_normalized_symbol": "—",
+              "source_conflict": "T8-7-OFFSET010-SECOND-LANE3-SYMBOL"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "011",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 1,
+          "tsiz": "001",
+          "a29_31": "011",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            3
+          ],
+          "source_table_lane_cells": [
+            "—",
+            "—",
+            "—",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 1,
+          "transfer_size_bytes": 3,
+          "tsiz": "011",
+          "a29_31": "100",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            0,
+            1,
+            2
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "A",
+            "A",
+            "—",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "100",
+      "alignment": "aligned",
+      "accesses": [
+        {
+          "sequence": "only",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 4,
+          "tsiz": "100",
+          "a29_31": "100",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "A",
+            "A",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "101",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 3,
+          "tsiz": "011",
+          "a29_31": "101",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            1,
+            2,
+            3
+          ],
+          "source_table_lane_cells": [
+            "—",
+            "A",
+            "A",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 3,
+          "transfer_size_bytes": 1,
+          "tsiz": "001",
+          "a29_31": "000",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            0
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "—",
+            "—",
+            "—",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "110",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 2,
+          "tsiz": "010",
+          "a29_31": "110",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            2,
+            3
+          ],
+          "source_table_lane_cells": [
+            "—",
+            "—",
+            "A",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 2,
+          "transfer_size_bytes": 2,
+          "tsiz": "010",
+          "a29_31": "000",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            0,
+            1
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "A",
+            "—",
+            "—",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        }
+      ]
+    },
+    {
+      "start_a29_31": "111",
+      "alignment": "misaligned",
+      "accesses": [
+        {
+          "sequence": "first",
+          "address_delta_bytes": 0,
+          "transfer_size_bytes": 1,
+          "tsiz": "001",
+          "a29_31": "111",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            3
+          ],
+          "source_table_lane_cells": [
+            "—",
+            "—",
+            "—",
+            "A",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        },
+        {
+          "sequence": "second",
+          "address_delta_bytes": 1,
+          "transfer_size_bytes": 3,
+          "tsiz": "011",
+          "a29_31": "000",
+          "data_beat_count": 1,
+          "source_table_lane_marks": [
+            0,
+            1,
+            2
+          ],
+          "source_table_lane_cells": [
+            "A",
+            "A",
+            "A",
+            "—",
+            "x",
+            "x",
+            "x",
+            "x"
+          ]
+        }
+      ]
+    }
+  ]
+}

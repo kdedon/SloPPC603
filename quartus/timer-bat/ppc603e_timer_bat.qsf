@@ -1,0 +1,99 @@
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CSEBA6U23I7
+set_global_assignment -name TOP_LEVEL_ENTITY ppc_timer_bat_measure
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 1
+set_global_assignment -name SEED 1
+set_global_assignment -name SDC_FILE ppc603e_timer_bat.sdc
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fifo.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fetch.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_decode.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dispatch.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_divider.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_iu.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_regfile_gpr.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_rename.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_completion.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_flags.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_exception_state.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_timer.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_miss_derive.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_special.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bat_translate.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bat_service.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bat_memory_router.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core_bat.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ppc_timer_bat_measure.sv
+set_instance_assignment -name VIRTUAL_PIN ON -to clk_i
+set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni
+set_instance_assignment -name VIRTUAL_PIN ON -to external_irq_i
+set_instance_assignment -name VIRTUAL_PIN ON -to interrupt_taken_o
+set_instance_assignment -name VIRTUAL_PIN ON -to interrupt_pc_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to timer_tick_i
+set_instance_assignment -name VIRTUAL_PIN ON -to timebase_enable_i
+set_instance_assignment -name VIRTUAL_PIN ON -to decrementer_taken_o
+set_instance_assignment -name VIRTUAL_PIN ON -to decrementer_pc_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_spr_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_data_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_rsp_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_rsp_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_rsp_rejected_o
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_rsp_unsupported_o
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_rsp_config_error_o
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_rsp_overlap_o
+set_instance_assignment -name VIRTUAL_PIN ON -to bat_write_rsp_invalid_entry_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to start_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to start_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to start_ir_i
+set_instance_assignment -name VIRTUAL_PIN ON -to start_dr_i
+set_instance_assignment -name VIRTUAL_PIN ON -to start_pr_i
+set_instance_assignment -name VIRTUAL_PIN ON -to running_o
+set_instance_assignment -name VIRTUAL_PIN ON -to context_ir_o
+set_instance_assignment -name VIRTUAL_PIN ON -to context_dr_o
+set_instance_assignment -name VIRTUAL_PIN ON -to context_pr_o
+set_instance_assignment -name VIRTUAL_PIN ON -to pimem_req_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to pimem_req_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to pimem_req_addr_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to pimem_req_wimg_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to pimem_rsp_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to pimem_rsp_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to pimem_rsp_insn_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to pimem_rsp_error_i
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_req_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_req_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_req_write_o
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_req_addr_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_req_wdata_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_req_wstrb_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_req_wimg_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_rsp_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_rsp_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_rsp_rdata_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to pdmem_rsp_error_i
+set_instance_assignment -name VIRTUAL_PIN ON -to retire_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to retire_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to retire_o.*
+set_instance_assignment -name VIRTUAL_PIN ON -to halted_o
+set_instance_assignment -name VIRTUAL_PIN ON -to redirect_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to redirect_all_i
+set_instance_assignment -name VIRTUAL_PIN ON -to redirect_keep_pivot_i
+set_instance_assignment -name VIRTUAL_PIN ON -to redirect_pivot_i.*
+set_instance_assignment -name VIRTUAL_PIN ON -to redirect_target_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to redirect_accepted_o
+set_instance_assignment -name VIRTUAL_PIN ON -to translation_fault_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fault_instruction_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fault_write_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fault_ea_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to fault_miss_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fault_protection_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fault_guarded_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fault_config_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fault_invalid_input_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fault_invalid_entry_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to pimem_error_o
+set_instance_assignment -name VIRTUAL_PIN ON -to busy_o
+set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"

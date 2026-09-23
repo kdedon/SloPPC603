@@ -1,0 +1,3149 @@
+{
+  "schema_version": 1,
+  "status": "P01c_plus_bounded_supervisor_and_serialization_source_reconciliation",
+  "source": {
+    "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+    "table": "A-1",
+    "pdf_pages": [
+      361,
+      368
+    ]
+  },
+  "observed_row_count": 226,
+  "inventory_status_counts": {
+    "reviewed_add_family_4_OE_Rc_forms": 5,
+    "reviewed_current_rtl_decode_entry": 6,
+    "reviewed_add_immediate_carry": 2,
+    "reviewed_register_logical_2_Rc_forms": 8,
+    "reviewed_and_immediate_record": 2,
+    "reviewed_control_memory_bounded_subset": 20,
+    "reviewed_compare_family_32bit_L0": 4,
+    "primary_opcode_only_pending_full_mask": 124,
+    "reviewed_integer_unary_2_Rc_forms": 3,
+    "reviewed_cr_logical_exact_forms": 8,
+    "reviewed_divw_family": 1,
+    "reviewed_divwu_family": 1,
+    "reviewed_serialization_opt_in_exact_form": 3,
+    "reviewed_lsu_update_exact_forms": 14,
+    "reviewed_cr_state_transfer_exact_forms": 2,
+    "reviewed_cr_transfer_exact_forms": 2,
+    "reviewed_supervisor_opt_in_exact_form": 3,
+    "reviewed_multiply_high_family": 2,
+    "reviewed_multiply_low_family": 2,
+    "reviewed_subtract_family_4_OE_Rc_forms": 6,
+    "reviewed_rotate_family_2_Rc_forms": 3,
+    "reviewed_shift_family_2_Rc_forms": 4,
+    "reviewed_subtract_immediate": 1
+  },
+  "normalization_note": "source_spelling preserves OCR-visible x suffix notation and attached footnote digits; do not use it as a canonical mnemonic without reviewed normalization.",
+  "reviewed_add_family": {
+    "source_rows": [
+      "A1-001",
+      "A1-002",
+      "A1-003",
+      "A1-008",
+      "A1-009"
+    ],
+    "canonical_families": [
+      "add",
+      "addc",
+      "adde",
+      "addme",
+      "addze"
+    ],
+    "concrete_OE_Rc_forms": 20,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          361,
+          361
+        ],
+        "tables": [
+          "A-1"
+        ]
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          377,
+          377
+        ],
+        "tables": [
+          "A-3"
+        ]
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          395,
+          396
+        ],
+        "tables": [
+          "A-41"
+        ]
+      }
+    ],
+    "reserved_policy": {
+      "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+      "pdf_page": 94,
+      "printed_page": "2-16",
+      "section": "2.3.1.1",
+      "incorrect_reserved_bits": "boundedly_undefined"
+    },
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 562,
+        "printed_page": "10-8",
+        "family": "add"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 563,
+        "printed_page": "10-9",
+        "family": "addc"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 564,
+        "printed_page": "10-10",
+        "family": "adde"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 569,
+        "printed_page": "10-15",
+        "family": "addme"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 570,
+        "printed_page": "10-16",
+        "family": "addze"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR0 LT/GT/EQ and final XER.SO"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 62,
+        "printed_page": "2-16",
+        "topic": "XER SO/OV/CA"
+      }
+    ]
+  },
+  "reviewed_logical_family": {
+    "source_rows": [
+      "A1-010",
+      "A1-011",
+      "A1-151",
+      "A1-152",
+      "A1-224",
+      "A1-148",
+      "A1-150",
+      "A1-045"
+    ],
+    "canonical_families": [
+      "and",
+      "andc",
+      "or",
+      "orc",
+      "xor",
+      "nand",
+      "nor",
+      "eqv"
+    ],
+    "concrete_Rc_forms": 16,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          361,
+          368
+        ],
+        "table": "A-1",
+        "row_pages": "per_entry"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 378,
+        "table": "A-5"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          391,
+          394
+        ],
+        "table": "A-36",
+        "row_pages": "per_entry"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 571,
+        "printed_page": "10-17",
+        "family": "and"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 572,
+        "printed_page": "10-18",
+        "family": "andc"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 703,
+        "printed_page": "10-149",
+        "family": "or"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 704,
+        "printed_page": "10-150",
+        "family": "orc"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 770,
+        "printed_page": "10-216",
+        "family": "xor"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 700,
+        "printed_page": "10-146",
+        "family": "nand"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 702,
+        "printed_page": "10-148",
+        "family": "nor"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 609,
+        "printed_page": "10-55",
+        "family": "eqv"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR0 LT/GT/EQ and current XER.SO"
+      },
+      {
+        "path": "dingusppc/cpu/ppc/ppcexec.cpp",
+        "lines": [
+          874,
+          881
+        ],
+        "role": "secondary encoding cross-check"
+      },
+      {
+        "path": "dingusppc/cpu/ppc/ppcopcodes.cpp",
+        "lines": [
+          369,
+          410
+        ],
+        "role": "secondary semantic cross-check"
+      }
+    ]
+  },
+  "reviewed_rotate_family": {
+    "source_rows": [
+      "A1-162",
+      "A1-163",
+      "A1-164"
+    ],
+    "canonical_families": [
+      "rlwimi",
+      "rlwinm",
+      "rlwnm"
+    ],
+    "concrete_Rc_forms": 6,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 366,
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 397,
+        "table": "A-43"
+      }
+    ],
+    "primary_functional_table_conflict": {
+      "source": {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 379,
+        "table": "A-6"
+      },
+      "observed_primary_opcodes": {
+        "rlwimi": 22,
+        "rlwinm": 20,
+        "rlwnm": 21
+      },
+      "resolution": "Use 20/21/23 from mutually agreeing Tables A-1 and A-43. Preserve A-6 as an unresolved editorial conflict; secondary 601UM and DingusPPC also agree with 20/21/23."
+    },
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 709,
+        "printed_page": "10-155",
+        "family": "rlwimi"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 710,
+        "printed_page": "10-156",
+        "family": "rlwinm"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 711,
+        "printed_page": "10-157",
+        "family": "rlwnm"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR0 LT/GT/EQ and current XER.SO"
+      },
+      {
+        "path": "dingusppc/cpu/ppc/ppcexec.cpp",
+        "lines": [
+          751,
+          754
+        ],
+        "role": "secondary opcode cross-check"
+      },
+      {
+        "path": "dingusppc/cpu/ppc/ppcopcodes.cpp",
+        "lines": [
+          677,
+          720
+        ],
+        "role": "secondary mask and semantic cross-check"
+      }
+    ]
+  },
+  "reviewed_shift_family": {
+    "source_rows": [
+      "A1-169",
+      "A1-175",
+      "A1-172",
+      "A1-173"
+    ],
+    "canonical_families": [
+      "slw",
+      "srw",
+      "sraw",
+      "srawi"
+    ],
+    "concrete_Rc_forms": 8,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 366,
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 379,
+        "table": "A-7"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          393,
+          394
+        ],
+        "table": "A-36"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_pages": [
+          146,
+          147
+        ],
+        "printed_pages": [
+          "3-24",
+          "3-25"
+        ],
+        "section": "Table 3-9",
+        "topic": "six-bit register counts and arithmetic CA"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 721,
+        "printed_page": "10-167",
+        "family": "slw"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 733,
+        "printed_page": "10-179",
+        "family": "srw"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 724,
+        "printed_page": "10-170",
+        "family": "sraw"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 725,
+        "printed_page": "10-171",
+        "family": "srawi"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR0 LT/GT/EQ and current XER.SO"
+      },
+      {
+        "path": "dingusppc/cpu/ppc/ppcexec.cpp",
+        "lines": [
+          873,
+          884
+        ],
+        "role": "secondary XO cross-check"
+      },
+      {
+        "path": "dingusppc/cpu/ppc/ppcopcodes.cpp",
+        "lines": [
+          607,
+          671
+        ],
+        "role": "secondary shift and CA cross-check"
+      }
+    ],
+    "secondary_editorial_note": "The slw per-instruction prose on 601UM PDF 721 prints bit 16 where its Table 3-9 and the analogous srw/sraw prose specify rB[26]. Six-bit behavior follows the internally consistent Table 3-9 statements and is corroborated by DingusPPC."
+  },
+  "reviewed_compare_family": {
+    "source_rows": [
+      "A1-018",
+      "A1-019",
+      "A1-020",
+      "A1-021"
+    ],
+    "canonical_families": [
+      "cmp",
+      "cmpi",
+      "cmpl",
+      "cmpli"
+    ],
+    "concrete_32bit_L0_forms": 4,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 362,
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 378,
+        "table": "A-4"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 389,
+        "table": "A-34",
+        "families": [
+          "cmpi",
+          "cmpli"
+        ]
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 391,
+        "table": "A-36",
+        "families": [
+          "cmp",
+          "cmpl"
+        ]
+      }
+    ],
+    "primary_legality": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 94,
+        "printed_page": "2-16",
+        "section": "2.3.1.1",
+        "topic": "incorrect reserved fields are boundedly undefined"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 95,
+        "printed_page": "2-17",
+        "section": "2.3.1.3",
+        "topic": "64-bit instruction forms are illegal on 32-bit 603e"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 580,
+        "printed_page": "10-26",
+        "family": "cmp"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 581,
+        "printed_page": "10-27",
+        "family": "cmpi"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 582,
+        "printed_page": "10-28",
+        "family": "cmpl"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 583,
+        "printed_page": "10-29",
+        "family": "cmpli"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR field ordering and XER.SO"
+      },
+      {
+        "path": "dingusppc/cpu/ppc/ppcexec.cpp",
+        "lines": [
+          744,
+          814
+        ],
+        "role": "secondary opcode cross-check"
+      },
+      {
+        "path": "dingusppc/cpu/ppc/ppcopcodes.cpp",
+        "lines": [
+          1347,
+          1406
+        ],
+        "role": "secondary compare and L=1 rejection cross-check"
+      }
+    ]
+  },
+  "appendix_a_mnemonic_inventory": [
+    {
+      "row_id": "A1-001",
+      "source_spelling": "addx",
+      "primary_opcode": 31,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_add_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-002",
+      "source_spelling": "addcx",
+      "primary_opcode": 31,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_add_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-003",
+      "source_spelling": "addex",
+      "primary_opcode": 31,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_add_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-004",
+      "source_spelling": "addi",
+      "primary_opcode": 14,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_current_rtl_decode_entry"
+    },
+    {
+      "row_id": "A1-005",
+      "source_spelling": "addic",
+      "primary_opcode": 12,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_add_immediate_carry"
+    },
+    {
+      "row_id": "A1-006",
+      "source_spelling": "addic.",
+      "primary_opcode": 13,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_add_immediate_carry"
+    },
+    {
+      "row_id": "A1-007",
+      "source_spelling": "addis",
+      "primary_opcode": 15,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_current_rtl_decode_entry"
+    },
+    {
+      "row_id": "A1-008",
+      "source_spelling": "addmex",
+      "primary_opcode": 31,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_add_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-009",
+      "source_spelling": "addzex",
+      "primary_opcode": 31,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_add_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-010",
+      "source_spelling": "andx",
+      "primary_opcode": 31,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_register_logical_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-011",
+      "source_spelling": "andcx",
+      "primary_opcode": 31,
+      "pdf_page": 361,
+      "printed_page": "A-1",
+      "encoding_status": "reviewed_register_logical_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-012",
+      "source_spelling": "andi.",
+      "primary_opcode": 28,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_and_immediate_record"
+    },
+    {
+      "row_id": "A1-013",
+      "source_spelling": "andis.",
+      "primary_opcode": 29,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_and_immediate_record"
+    },
+    {
+      "row_id": "A1-014",
+      "source_spelling": "bx",
+      "primary_opcode": 18,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-015",
+      "source_spelling": "bcx",
+      "primary_opcode": 16,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-016",
+      "source_spelling": "bcctrx",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-017",
+      "source_spelling": "bclrx",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-018",
+      "source_spelling": "cmp",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_compare_family_32bit_L0"
+    },
+    {
+      "row_id": "A1-019",
+      "source_spelling": "cmpi",
+      "primary_opcode": 11,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_compare_family_32bit_L0"
+    },
+    {
+      "row_id": "A1-020",
+      "source_spelling": "cmpl",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_compare_family_32bit_L0"
+    },
+    {
+      "row_id": "A1-021",
+      "source_spelling": "cmpli",
+      "primary_opcode": 10,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_compare_family_32bit_L0"
+    },
+    {
+      "row_id": "A1-022",
+      "source_spelling": "cntlzdx 4",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-023",
+      "source_spelling": "cntlzwx",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_integer_unary_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-024",
+      "source_spelling": "crand",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_cr_logical_exact_forms"
+    },
+    {
+      "row_id": "A1-025",
+      "source_spelling": "crandc",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_cr_logical_exact_forms"
+    },
+    {
+      "row_id": "A1-026",
+      "source_spelling": "creqv",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_cr_logical_exact_forms"
+    },
+    {
+      "row_id": "A1-027",
+      "source_spelling": "crnand",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_cr_logical_exact_forms"
+    },
+    {
+      "row_id": "A1-028",
+      "source_spelling": "crnor",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_cr_logical_exact_forms"
+    },
+    {
+      "row_id": "A1-029",
+      "source_spelling": "cror",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_cr_logical_exact_forms"
+    },
+    {
+      "row_id": "A1-030",
+      "source_spelling": "crorc",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_cr_logical_exact_forms"
+    },
+    {
+      "row_id": "A1-031",
+      "source_spelling": "crxor",
+      "primary_opcode": 19,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_cr_logical_exact_forms"
+    },
+    {
+      "row_id": "A1-032",
+      "source_spelling": "dcbf",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-033",
+      "source_spelling": "dcbi 1",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-034",
+      "source_spelling": "dcbst",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-035",
+      "source_spelling": "dcbt",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-036",
+      "source_spelling": "dcbtst",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-037",
+      "source_spelling": "dcbz",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-038",
+      "source_spelling": "divdx 4",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-039",
+      "source_spelling": "divdux 4",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-040",
+      "source_spelling": "divwx",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_divw_family"
+    },
+    {
+      "row_id": "A1-041",
+      "source_spelling": "divwux",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_divwu_family"
+    },
+    {
+      "row_id": "A1-042",
+      "source_spelling": "eciwx",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-043",
+      "source_spelling": "ecowx",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-044",
+      "source_spelling": "eieio",
+      "primary_opcode": 31,
+      "pdf_page": 362,
+      "printed_page": "A-2",
+      "encoding_status": "reviewed_serialization_opt_in_exact_form"
+    },
+    {
+      "row_id": "A1-045",
+      "source_spelling": "eqvx",
+      "primary_opcode": 31,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "reviewed_register_logical_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-046",
+      "source_spelling": "extsbx",
+      "primary_opcode": 31,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "reviewed_integer_unary_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-047",
+      "source_spelling": "extshx",
+      "primary_opcode": 31,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "reviewed_integer_unary_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-048",
+      "source_spelling": "extswx 4",
+      "primary_opcode": 31,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-049",
+      "source_spelling": "fabsx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-050",
+      "source_spelling": "faddx",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-051",
+      "source_spelling": "faddsx7",
+      "primary_opcode": 59,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-052",
+      "source_spelling": "fcfidx 4,7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-053",
+      "source_spelling": "fcmpo7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-054",
+      "source_spelling": "fcmpu 7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-055",
+      "source_spelling": "fctidx 4,7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-056",
+      "source_spelling": "fctidzx 4,7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-057",
+      "source_spelling": "fctiwx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-058",
+      "source_spelling": "fctiwzx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-059",
+      "source_spelling": "fdivx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-060",
+      "source_spelling": "fdivsx7",
+      "primary_opcode": 59,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-061",
+      "source_spelling": "fmaddx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-062",
+      "source_spelling": "fmaddsx7",
+      "primary_opcode": 59,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-063",
+      "source_spelling": "fmrx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-064",
+      "source_spelling": "fmsubx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-065",
+      "source_spelling": "fmsubsx7",
+      "primary_opcode": 59,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-066",
+      "source_spelling": "fmulx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-067",
+      "source_spelling": "fmulsx7",
+      "primary_opcode": 59,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-068",
+      "source_spelling": "fnabsx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-069",
+      "source_spelling": "fnegx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-070",
+      "source_spelling": "fnmaddx 7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-071",
+      "source_spelling": "fnmaddsx7",
+      "primary_opcode": 59,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-072",
+      "source_spelling": "fnmsubx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-073",
+      "source_spelling": "fnmsubsx7",
+      "primary_opcode": 59,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-074",
+      "source_spelling": "fresx 5,7",
+      "primary_opcode": 59,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-075",
+      "source_spelling": "frspx7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-076",
+      "source_spelling": "frsqrtex 5,7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-077",
+      "source_spelling": "fselx 5,7",
+      "primary_opcode": 63,
+      "pdf_page": 363,
+      "printed_page": "A-3",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-078",
+      "source_spelling": "fsqrtx 5,7",
+      "primary_opcode": 63,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-079",
+      "source_spelling": "fsqrtsx 5,7",
+      "primary_opcode": 59,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-080",
+      "source_spelling": "fsubx7",
+      "primary_opcode": 63,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-081",
+      "source_spelling": "fsubsx7",
+      "primary_opcode": 59,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-082",
+      "source_spelling": "icbi",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-083",
+      "source_spelling": "isync",
+      "primary_opcode": 19,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_serialization_opt_in_exact_form"
+    },
+    {
+      "row_id": "A1-084",
+      "source_spelling": "lbz",
+      "primary_opcode": 34,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-085",
+      "source_spelling": "lbzu",
+      "primary_opcode": 35,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-086",
+      "source_spelling": "lbzux",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-087",
+      "source_spelling": "lbzx",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-088",
+      "source_spelling": "ld 4",
+      "primary_opcode": 58,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-089",
+      "source_spelling": "ldarx 4",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-090",
+      "source_spelling": "ldu 4",
+      "primary_opcode": 58,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-091",
+      "source_spelling": "ldux 4",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-092",
+      "source_spelling": "ldx 4",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-093",
+      "source_spelling": "lfd7",
+      "primary_opcode": 50,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-094",
+      "source_spelling": "lfdu7",
+      "primary_opcode": 51,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-095",
+      "source_spelling": "lfdux7",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-096",
+      "source_spelling": "lfdx7",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-097",
+      "source_spelling": "lfs7",
+      "primary_opcode": 48,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-098",
+      "source_spelling": "lfsu7",
+      "primary_opcode": 49,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-099",
+      "source_spelling": "lfsux7",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-100",
+      "source_spelling": "lfsx7",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-101",
+      "source_spelling": "lha",
+      "primary_opcode": 42,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-102",
+      "source_spelling": "lhau",
+      "primary_opcode": 43,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-103",
+      "source_spelling": "lhaux",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-104",
+      "source_spelling": "lhax",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-105",
+      "source_spelling": "lhbrx",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-106",
+      "source_spelling": "lhz",
+      "primary_opcode": 40,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-107",
+      "source_spelling": "lhzu",
+      "primary_opcode": 41,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-108",
+      "source_spelling": "lhzux",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-109",
+      "source_spelling": "lhzx",
+      "primary_opcode": 31,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-110",
+      "source_spelling": "lmw 3",
+      "primary_opcode": 46,
+      "pdf_page": 364,
+      "printed_page": "A-4",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-111",
+      "source_spelling": "lswi 3",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-112",
+      "source_spelling": "lswx 3",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-113",
+      "source_spelling": "lwa 4",
+      "primary_opcode": 58,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-114",
+      "source_spelling": "lwarx",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-115",
+      "source_spelling": "lwaux 4",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-116",
+      "source_spelling": "lwax 4",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-117",
+      "source_spelling": "lwbrx",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-118",
+      "source_spelling": "lwz",
+      "primary_opcode": 32,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-119",
+      "source_spelling": "lwzu",
+      "primary_opcode": 33,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-120",
+      "source_spelling": "lwzux",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-121",
+      "source_spelling": "lwzx",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-122",
+      "source_spelling": "mcrf",
+      "primary_opcode": 19,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_cr_state_transfer_exact_forms"
+    },
+    {
+      "row_id": "A1-123",
+      "source_spelling": "mcrfs7",
+      "primary_opcode": 63,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-124",
+      "source_spelling": "mcrxr",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_cr_state_transfer_exact_forms"
+    },
+    {
+      "row_id": "A1-125",
+      "source_spelling": "mfcr",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_cr_transfer_exact_forms"
+    },
+    {
+      "row_id": "A1-126",
+      "source_spelling": "mffsx7",
+      "primary_opcode": 63,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-127",
+      "source_spelling": "mfmsr 1",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_supervisor_opt_in_exact_form"
+    },
+    {
+      "row_id": "A1-128",
+      "source_spelling": "mfspr 2",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-129",
+      "source_spelling": "mfsr 1",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-130",
+      "source_spelling": "mfsrin 1",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-131",
+      "source_spelling": "mftb",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-132",
+      "source_spelling": "mtcrf",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_cr_transfer_exact_forms"
+    },
+    {
+      "row_id": "A1-133",
+      "source_spelling": "mtfsb0x7",
+      "primary_opcode": 63,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-134",
+      "source_spelling": "mtfsb1x 7",
+      "primary_opcode": 63,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-135",
+      "source_spelling": "mtfsfx7",
+      "primary_opcode": 63,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-136",
+      "source_spelling": "mtfsfix7",
+      "primary_opcode": 63,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-137",
+      "source_spelling": "mtmsr 1",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-138",
+      "source_spelling": "mtspr 2",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-139",
+      "source_spelling": "mtsr 1",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-140",
+      "source_spelling": "mtsrin 1",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-141",
+      "source_spelling": "mulhdx 4",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-142",
+      "source_spelling": "mulhdux4",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-143",
+      "source_spelling": "mulhwx",
+      "primary_opcode": 31,
+      "pdf_page": 365,
+      "printed_page": "A-5",
+      "encoding_status": "reviewed_multiply_high_family"
+    },
+    {
+      "row_id": "A1-144",
+      "source_spelling": "mulhwux",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_multiply_high_family"
+    },
+    {
+      "row_id": "A1-145",
+      "source_spelling": "mulldx 4",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-146",
+      "source_spelling": "mulli",
+      "primary_opcode": 7,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_multiply_low_family"
+    },
+    {
+      "row_id": "A1-147",
+      "source_spelling": "mullwx",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_multiply_low_family"
+    },
+    {
+      "row_id": "A1-148",
+      "source_spelling": "nandx",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_register_logical_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-149",
+      "source_spelling": "negx",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_subtract_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-150",
+      "source_spelling": "norx",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_register_logical_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-151",
+      "source_spelling": "orx",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_register_logical_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-152",
+      "source_spelling": "orcx",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_register_logical_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-153",
+      "source_spelling": "ori",
+      "primary_opcode": 24,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_current_rtl_decode_entry"
+    },
+    {
+      "row_id": "A1-154",
+      "source_spelling": "oris",
+      "primary_opcode": 25,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_current_rtl_decode_entry"
+    },
+    {
+      "row_id": "A1-155",
+      "source_spelling": "rfi 1",
+      "primary_opcode": 19,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_supervisor_opt_in_exact_form"
+    },
+    {
+      "row_id": "A1-156",
+      "source_spelling": "rldclx 4",
+      "primary_opcode": 30,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-157",
+      "source_spelling": "rldcrx 4",
+      "primary_opcode": 30,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-158",
+      "source_spelling": "rldicx 4",
+      "primary_opcode": 30,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-159",
+      "source_spelling": "rldiclx 4",
+      "primary_opcode": 30,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-160",
+      "source_spelling": "rldicrx 4",
+      "primary_opcode": 30,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-161",
+      "source_spelling": "rldimix 4",
+      "primary_opcode": 30,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-162",
+      "source_spelling": "rlwimix",
+      "primary_opcode": 20,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_rotate_family_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-163",
+      "source_spelling": "rlwinmx",
+      "primary_opcode": 21,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_rotate_family_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-164",
+      "source_spelling": "rlwnmx",
+      "primary_opcode": 23,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_rotate_family_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-165",
+      "source_spelling": "sc",
+      "primary_opcode": 17,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_supervisor_opt_in_exact_form"
+    },
+    {
+      "row_id": "A1-166",
+      "source_spelling": "slbia 1,4,5",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-167",
+      "source_spelling": "slbie 1,4,5",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-168",
+      "source_spelling": "sldx 4",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-169",
+      "source_spelling": "slwx",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_shift_family_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-170",
+      "source_spelling": "sradx 4",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-171",
+      "source_spelling": "sradix 4",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-172",
+      "source_spelling": "srawx",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_shift_family_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-173",
+      "source_spelling": "srawix",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_shift_family_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-174",
+      "source_spelling": "srdx 4",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-175",
+      "source_spelling": "srwx",
+      "primary_opcode": 31,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_shift_family_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-176",
+      "source_spelling": "stb",
+      "primary_opcode": 38,
+      "pdf_page": 366,
+      "printed_page": "A-6",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-177",
+      "source_spelling": "stbu",
+      "primary_opcode": 39,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-178",
+      "source_spelling": "stbux",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-179",
+      "source_spelling": "stbx",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-180",
+      "source_spelling": "std 4",
+      "primary_opcode": 62,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-181",
+      "source_spelling": "stdcx. 4",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-182",
+      "source_spelling": "stdu 4",
+      "primary_opcode": 62,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-183",
+      "source_spelling": "stdux 4",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-184",
+      "source_spelling": "stdx 4",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-185",
+      "source_spelling": "stfd",
+      "primary_opcode": 54,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-186",
+      "source_spelling": "stfdu",
+      "primary_opcode": 55,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-187",
+      "source_spelling": "stfdux",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-188",
+      "source_spelling": "stfdx",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-189",
+      "source_spelling": "stfiwx 5",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-190",
+      "source_spelling": "stfs",
+      "primary_opcode": 52,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-191",
+      "source_spelling": "stfsu",
+      "primary_opcode": 53,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-192",
+      "source_spelling": "stfsux",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-193",
+      "source_spelling": "stfsx",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-194",
+      "source_spelling": "sth",
+      "primary_opcode": 44,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-195",
+      "source_spelling": "sthbrx",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-196",
+      "source_spelling": "sthu",
+      "primary_opcode": 45,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-197",
+      "source_spelling": "sthux",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-198",
+      "source_spelling": "sthx",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-199",
+      "source_spelling": "stmw 3",
+      "primary_opcode": 47,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-200",
+      "source_spelling": "stswi 3",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-201",
+      "source_spelling": "stswx 3",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-202",
+      "source_spelling": "stw",
+      "primary_opcode": 36,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-203",
+      "source_spelling": "stwbrx",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-204",
+      "source_spelling": "stwcx.",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-205",
+      "source_spelling": "stwu",
+      "primary_opcode": 37,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-206",
+      "source_spelling": "stwux",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_lsu_update_exact_forms"
+    },
+    {
+      "row_id": "A1-207",
+      "source_spelling": "stwx",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_control_memory_bounded_subset"
+    },
+    {
+      "row_id": "A1-208",
+      "source_spelling": "subfx",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_subtract_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-209",
+      "source_spelling": "subfcx",
+      "primary_opcode": 31,
+      "pdf_page": 367,
+      "printed_page": "A-7",
+      "encoding_status": "reviewed_subtract_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-210",
+      "source_spelling": "subfex",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "reviewed_subtract_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-211",
+      "source_spelling": "subfic",
+      "primary_opcode": 8,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "reviewed_subtract_immediate"
+    },
+    {
+      "row_id": "A1-212",
+      "source_spelling": "subfmex",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "reviewed_subtract_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-213",
+      "source_spelling": "subfzex",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "reviewed_subtract_family_4_OE_Rc_forms"
+    },
+    {
+      "row_id": "A1-214",
+      "source_spelling": "sync",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "reviewed_serialization_opt_in_exact_form"
+    },
+    {
+      "row_id": "A1-215",
+      "source_spelling": "td 4",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-216",
+      "source_spelling": "tdi 4",
+      "primary_opcode": 2,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-217",
+      "source_spelling": "tlbia 1,5",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-218",
+      "source_spelling": "tlbie 1,5",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-219",
+      "source_spelling": "tlbld 1,6",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-220",
+      "source_spelling": "tlbli 1,6",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-221",
+      "source_spelling": "tlbsync1,5",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-222",
+      "source_spelling": "tw",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-223",
+      "source_spelling": "twi",
+      "primary_opcode": 3,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "primary_opcode_only_pending_full_mask"
+    },
+    {
+      "row_id": "A1-224",
+      "source_spelling": "xorx",
+      "primary_opcode": 31,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "reviewed_register_logical_2_Rc_forms"
+    },
+    {
+      "row_id": "A1-225",
+      "source_spelling": "xori",
+      "primary_opcode": 26,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "reviewed_current_rtl_decode_entry"
+    },
+    {
+      "row_id": "A1-226",
+      "source_spelling": "xoris",
+      "primary_opcode": 27,
+      "pdf_page": 368,
+      "printed_page": "A-8",
+      "encoding_status": "reviewed_current_rtl_decode_entry"
+    }
+  ],
+  "reviewed_control_memory": {
+    "source_rows": [
+      "A1-014",
+      "A1-015",
+      "A1-016",
+      "A1-017",
+      "A1-084",
+      "A1-087",
+      "A1-101",
+      "A1-104",
+      "A1-106",
+      "A1-109",
+      "A1-118",
+      "A1-121",
+      "A1-128",
+      "A1-138",
+      "A1-176",
+      "A1-179",
+      "A1-194",
+      "A1-198",
+      "A1-202",
+      "A1-207"
+    ],
+    "concrete_entries": 30,
+    "spr_scope": "The default profile implements SPR8/9. ENABLE_SUPERVISOR_EXCEPTIONS adds SPR1 (user-accessible XER), SPR18/19, SPR26/27 and SPRG0..3 selectors272..275. ENABLE_TIMERS adds DEC22, TBL/TBU reads268/269 and writes284/285. XER reads accept XO339/371 with the supervisor feature; other implemented read aliases require timers.",
+    "primary_tables": [
+      "A-13",
+      "A-14",
+      "A-22",
+      "A-26",
+      "A-37",
+      "A-38"
+    ]
+  },
+  "reviewed_integer_unary_family": {
+    "source_rows": [
+      "A1-023",
+      "A1-046",
+      "A1-047"
+    ],
+    "canonical_families": [
+      "cntlzw",
+      "extsb",
+      "extsh"
+    ],
+    "concrete_Rc_forms": 6,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          362,
+          363
+        ],
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 378,
+        "table": "A-5"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 391,
+        "table": "A-36"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 94,
+        "section": "2.3.1.1",
+        "topic": "reserved fields"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 584,
+        "printed_page": "10-30",
+        "family": "cntlzw"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 610,
+        "printed_page": "10-56",
+        "family": "extsb"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 611,
+        "printed_page": "10-57",
+        "family": "extsh"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR0 LT/GT/EQ and current XER.SO"
+      }
+    ]
+  },
+  "reviewed_cr_transfer": {
+    "source_rows": [
+      "A1-125",
+      "A1-132"
+    ],
+    "canonical_families": [
+      "mfcr",
+      "mtcrf"
+    ],
+    "concrete_forms": 2,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 365,
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 385,
+        "table": "A-26"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 392,
+        "table": "A-36",
+        "family": "mfcr"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 395,
+        "table": "A-38",
+        "family": "mtcrf"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 94,
+        "section": "2.3.1.1",
+        "topic": "reserved fields"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 676,
+        "printed_page": "10-122",
+        "family": "mfcr"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 684,
+        "printed_page": "10-130",
+        "family": "mtcrf"
+      }
+    ],
+    "excluded_newer_forms": [
+      "mfocrf",
+      "mtocrf"
+    ],
+    "secondary_editorial_note": "601UM PDF 684 pseudocode uses rS[32-63] notation; the 32-bit 603e operation copies corresponding rS nibbles."
+  },
+  "reviewed_cr_logical_family": {
+    "source_rows": [
+      "A1-024",
+      "A1-025",
+      "A1-026",
+      "A1-027",
+      "A1-028",
+      "A1-029",
+      "A1-030",
+      "A1-031"
+    ],
+    "canonical_families": [
+      "crand",
+      "crandc",
+      "creqv",
+      "crnand",
+      "crnor",
+      "cror",
+      "crorc",
+      "crxor"
+    ],
+    "concrete_forms": 8,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 362,
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 394,
+        "table": "A-37"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 585,
+        "printed_page": "10-31",
+        "family": "crand"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 586,
+        "printed_page": "10-32",
+        "family": "crandc"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 587,
+        "printed_page": "10-33",
+        "family": "creqv"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 588,
+        "printed_page": "10-34",
+        "family": "crnand"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 589,
+        "printed_page": "10-35",
+        "family": "crnor"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 590,
+        "printed_page": "10-36",
+        "family": "cror"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 591,
+        "printed_page": "10-37",
+        "family": "crorc"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 592,
+        "printed_page": "10-38",
+        "family": "crxor"
+      }
+    ],
+    "separate_state_transfer_forms": [
+      "mcrf",
+      "mcrxr"
+    ]
+  },
+  "reviewed_cr_state_transfer": {
+    "source_rows": [
+      "A1-122",
+      "A1-124"
+    ],
+    "canonical_families": [
+      "mcrf",
+      "mcrxr"
+    ],
+    "concrete_forms": 2,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 365,
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 395,
+        "table": "A-37",
+        "family": "mcrf"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 392,
+        "table": "A-36",
+        "family": "mcrxr"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 673,
+        "printed_page": "10-119",
+        "family": "mcrf"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 675,
+        "printed_page": "10-121",
+        "family": "mcrxr"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_pages": [
+          61,
+          62
+        ],
+        "printed_pages": [
+          "2-15",
+          "2-16"
+        ],
+        "topic": "XER bit layout and reserved bits"
+      }
+    ],
+    "source_limits": [
+      "The now-available primary MPCFPE.pdf section2.1.5/Table2-6, printed2-11/PDF73, defines XER SO/OV/CA and byte count (mask0xe000007f). MCRXR clears only SO/OV/CA; SPR1 remains user-accessible.",
+      "MCRFS is a floating-point status operation, not an MCRF/MCRXR alias and is outside this slice."
+    ]
+  },
+  "reviewed_multiply_low_family": {
+    "source_rows": [
+      "A1-146",
+      "A1-147"
+    ],
+    "canonical_families": [
+      "mulli",
+      "mullw"
+    ],
+    "concrete_forms": 5,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 366,
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 377,
+        "table": "A-3"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 389,
+        "table": "A-34",
+        "family": "mulli"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 396,
+        "table": "A-41",
+        "family": "mullw"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 697,
+        "printed_page": "10-143",
+        "family": "mulli"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 698,
+        "printed_page": "10-144",
+        "family": "mullw"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR0 LT/GT/EQ and final XER.SO"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 62,
+        "printed_page": "2-16",
+        "topic": "XER SO/OV/CA"
+      }
+    ],
+    "source_limits": [
+      "The secondary MULLI pseudocode prints prod[0-48] and rD=prod[16-48], an internally inconsistent 49/33-bit range; the adjacent prose unambiguously specifies the low-order 32 bits of the signed register-by-SIMM product.",
+      "The secondary 601 MULLW pseudocode uses 64-bit register slice notation although the 601 and 603e operands are 32-bit; the adjacent prose defines a 64-bit product of two 32-bit values and a low-order 32-bit result.",
+      "Table 6-4 lists MULLI 2/3 and MULLW 2/3/4/5 execute-cycle possibilities without mapping operands to counts. The bounded IU selects the documented maximum 3/5-cycle reservations; lower silicon-selected timing remains unresolved."
+    ]
+  },
+  "reviewed_multiply_high_family": {
+    "source_rows": [
+      "A1-143",
+      "A1-144"
+    ],
+    "canonical_families": [
+      "mulhw",
+      "mulhwu"
+    ],
+    "concrete_forms": 4,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          365,
+          366
+        ],
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 377,
+        "table": "A-3"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 396,
+        "table": "A-41",
+        "families": [
+          "mulhw",
+          "mulhwu"
+        ]
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 695,
+        "printed_page": "10-141",
+        "family": "mulhw"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 696,
+        "printed_page": "10-142",
+        "family": "mulhwu"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR0 LT/GT/EQ and current XER.SO"
+      }
+    ],
+    "source_limits": [
+      "The secondary 601 pseudocode uses 64-bit register slice notation and marks the non-result half of rD undefined; the adjacent prose unambiguously defines a 32-bit destination containing product bits 63:32.",
+      "The secondary 601 descriptions state that MQ becomes undefined. MQ is not exposed by this bounded 603e scaffold, so that 601-specific microarchitectural side effect is not imported.",
+      "Table 6-4 lists MULHW 2/3/4/5 and MULHWU 2/3/4/5/6 execute-cycle possibilities without mapping operands to counts. The bounded IU selects the documented maximum 5/6-cycle reservations; lower silicon-selected timing remains unresolved."
+    ]
+  },
+  "reviewed_divwu_family": {
+    "source_rows": [
+      "A1-041"
+    ],
+    "canonical_family": "divwu",
+    "concrete_OE_Rc_forms": 4,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 362,
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 377,
+        "table": "A-3"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 396,
+        "table": "A-41"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 603,
+        "printed_page": "10-49",
+        "family": "divwu"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR0 LT/GT/EQ and final XER.SO"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 62,
+        "printed_page": "2-16",
+        "topic": "XER SO/OV/CA"
+      }
+    ],
+    "source_limits": [
+      "On a zero divisor the architecture leaves rD and, when Rc=1, CR0 LT/GT/EQ undefined. Only OE-enabled OV=1, sticky SO, and CR0.SO remain architecturally defined.",
+      "The bounded scaffold chooses deterministic rD=0 and therefore CR0 LT/GT/EQ=EQ for a zero divisor. This is an implementation policy, not a required architectural value.",
+      "The synthesizable quotient path uses a 16-step radix-4 restoring divider. The IU reserves 20 execute cycles by default for PID7v or 37 when configured for PID6 per TIM-T64-045; the algorithm is not claimed to match silicon internals."
+    ]
+  },
+  "reviewed_divw_family": {
+    "source_rows": [
+      "A1-040"
+    ],
+    "canonical_family": "divw",
+    "concrete_OE_Rc_forms": 4,
+    "primary_encoding": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 362,
+        "table": "A-1"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 377,
+        "table": "A-3"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 396,
+        "table": "A-41"
+      }
+    ],
+    "secondary_semantics": [
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 601,
+        "printed_page": "10-47",
+        "family": "divw"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 58,
+        "printed_page": "2-12",
+        "topic": "CR0 LT/GT/EQ and final XER.SO"
+      },
+      {
+        "file": "MPC601UM.pdf",
+        "pdf_page": 62,
+        "printed_page": "2-16",
+        "topic": "XER SO/OV/CA"
+      }
+    ],
+    "source_limits": [
+      "For a zero divisor or signed INT_MIN divided by -1, the architecture leaves rD and, when Rc=1, CR0 LT/GT/EQ undefined. Only OE-enabled OV=1, sticky SO, and CR0.SO remain architecturally defined.",
+      "The bounded scaffold chooses deterministic rD=0 and therefore CR0 LT/GT/EQ=EQ for both exceptional classes. This is an implementation policy, not a required architectural value.",
+      "The synthesizable quotient path detects both exceptional classes before a 16-step radix-4 restoring magnitude divide. The IU reserves 20 execute cycles by default for PID7v or 37 when configured for PID6 per TIM-T64-047; the algorithm is not claimed to match silicon internals."
+    ]
+  },
+  "reviewed_lsu_update": {
+    "source_rows": [
+      "A1-085",
+      "A1-086",
+      "A1-102",
+      "A1-103",
+      "A1-107",
+      "A1-108",
+      "A1-119",
+      "A1-120",
+      "A1-177",
+      "A1-178",
+      "A1-196",
+      "A1-197",
+      "A1-205",
+      "A1-206"
+    ],
+    "concrete_forms": 14,
+    "primary_summary": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          107,
+          109
+        ],
+        "sections": [
+          "2.3.4.3.3",
+          "2.3.4.3.4"
+        ],
+        "role": "primary_behavior_and_603e_invalid_store_form"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          364,
+          367
+        ],
+        "table": "A-1",
+        "role": "primary_exact_encoding_rows"
+      },
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_pages": [
+          381,
+          382
+        ],
+        "tables": [
+          "A-13",
+          "A-14"
+        ],
+        "role": "primary_function_and_format"
+      }
+    ],
+    "secondary_instruction_pages": [
+      {
+        "mnemonic": "lwzu",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 668,
+        "printed_page": "10-114"
+      },
+      {
+        "mnemonic": "lbzu",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 640,
+        "printed_page": "10-86"
+      },
+      {
+        "mnemonic": "lhzu",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 657,
+        "printed_page": "10-103"
+      },
+      {
+        "mnemonic": "lhau",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 652,
+        "printed_page": "10-98"
+      },
+      {
+        "mnemonic": "stwu",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 757,
+        "printed_page": "10-203"
+      },
+      {
+        "mnemonic": "stbu",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 735,
+        "printed_page": "10-181"
+      },
+      {
+        "mnemonic": "sthu",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 748,
+        "printed_page": "10-194"
+      },
+      {
+        "mnemonic": "lwzux",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 669,
+        "printed_page": "10-115"
+      },
+      {
+        "mnemonic": "lbzux",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 641,
+        "printed_page": "10-87"
+      },
+      {
+        "mnemonic": "lhzux",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 658,
+        "printed_page": "10-104"
+      },
+      {
+        "mnemonic": "lhaux",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 653,
+        "printed_page": "10-99"
+      },
+      {
+        "mnemonic": "stwux",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 758,
+        "printed_page": "10-204"
+      },
+      {
+        "mnemonic": "stbux",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 736,
+        "printed_page": "10-182"
+      },
+      {
+        "mnemonic": "sthux",
+        "file": "MPC601UM.pdf",
+        "pdf_page": 749,
+        "printed_page": "10-195"
+      }
+    ],
+    "source_limits": [
+      "The local 603e UM delegates complete architecture semantics to the absent Programming Environments Manual; 601UM per-instruction prose is tagged secondary evidence.",
+      "601 compatibility executes rA=0 or load rA=rD forms, while that same prose explicitly says PowerPC defines them invalid; this implementation rejects them.",
+      "The implementation fault input is a bounded terminal diagnostic acknowledgement, not a complete 603e DSI/alignment exception model."
+    ]
+  },
+  "reviewed_supervisor_integration": {
+    "exact_appendix_rows": [
+      "A1-127",
+      "A1-155",
+      "A1-165"
+    ],
+    "shared_selector_rows": [
+      "A1-128",
+      "A1-138"
+    ],
+    "concrete_opt_in_forms": 15,
+    "feature_profile": "ENABLE_SUPERVISOR_EXCEPTIONS",
+    "primary_encoding_tables": [
+      "A-1",
+      "A-26",
+      "A-32",
+      "A-36",
+      "A-37",
+      "A-41"
+    ],
+    "primary_state_sections": [
+      "4.2.2",
+      "4.5.7",
+      "4.5.10"
+    ],
+    "programming_environment_source": {
+      "file": "MPCFPE.pdf",
+      "sha256": "0600de0a3cb81636b9d511aa6b185e2fccc02f895ce4630411725634ef8e7eee",
+      "scope": "32-bit RFI and system-call architectural semantics"
+    },
+    "limits": "MFSRR0/1, MTSRR0/1 and MFS/MTSPRG0..3 are exact selector aliases within the reviewed generic mfspr/mtspr rows; remaining selectors stay outside this opt-in profile.",
+    "sprg_aliases": [
+      "mfsprg0",
+      "mtsprg0",
+      "mfsprg1",
+      "mtsprg1",
+      "mfsprg2",
+      "mtsprg2",
+      "mfsprg3",
+      "mtsprg3"
+    ],
+    "sprg_selectors": [
+      272,
+      273,
+      274,
+      275
+    ],
+    "sprg_sources": [
+      {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "sha256": "6bad9fb8a3a13792f93a8593d795e0b03d3ab0349846c62fe28008a1b22e63c7",
+        "pdf_pages": [
+          177,
+          178
+        ],
+        "tables": [
+          "4-8",
+          "4-9"
+        ],
+        "scope": "hard-reset zero and distinct soft-reset behavior"
+      },
+      {
+        "file": "MPCFPE.pdf",
+        "sha256": "0600de0a3cb81636b9d511aa6b185e2fccc02f895ce4630411725634ef8e7eee",
+        "pdf_page": 95,
+        "printed_page": "2-33",
+        "section": "2.3.8",
+        "scope": "SPRG0..3 full-width operating-system storage"
+      },
+      {
+        "file": "MPCFPE.pdf",
+        "sha256": "0600de0a3cb81636b9d511aa6b185e2fccc02f895ce4630411725634ef8e7eee",
+        "pdf_pages": [
+          568,
+          585
+        ],
+        "printed_pages": [
+          "8-156",
+          "8-173"
+        ],
+        "tables": [
+          "8-10",
+          "8-15"
+        ],
+        "scope": "mfspr/mtspr selector values and supervisor privilege"
+      }
+    ]
+  },
+  "reviewed_serialization_integration": {
+    "exact_appendix_rows": [
+      "A1-044",
+      "A1-083",
+      "A1-214"
+    ],
+    "concrete_opt_in_forms": 3,
+    "feature_profile": "ENABLE_SUPERVISOR_EXCEPTIONS",
+    "primary_encoding_tables": [
+      "A-1",
+      "A-36",
+      "A-37"
+    ],
+    "primary_behavior_sections": [
+      "2.3.2.4.2",
+      "2.3.5.2",
+      "3.7.7",
+      "3.7.9",
+      "6.3.3.2"
+    ],
+    "programming_environment_sections": [
+      "4.1.5",
+      "4.2.6",
+      "4.3.2",
+      "5.1.1.1",
+      "5.1.1.2"
+    ],
+    "limits": "Exact operand-free 603e forms only. MTMSR, TLBSYNC, cache management effects, alternate requesters, and silicon timing remain outside this integration profile."
+  }
+}

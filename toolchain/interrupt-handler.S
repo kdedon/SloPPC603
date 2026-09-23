@@ -1,0 +1,31 @@
+    .section .exception.interrupt,"ax",@progbits
+    .balign 4
+    .globl interrupt_handler
+    .type interrupt_handler,@function
+interrupt_handler:
+    mtspr 272,11
+    mtspr 273,12
+    lis 12,handler_msr@ha
+    mfmsr 11
+    stw 11,handler_msr@l(12)
+    lis 12,handler_srr0@ha
+    mfspr 11,26
+    stw 11,handler_srr0@l(12)
+    lis 12,handler_srr1@ha
+    mfspr 11,27
+    stw 11,handler_srr1@l(12)
+    lis 12,handler_dar@ha
+    mfspr 11,19
+    stw 11,handler_dar@l(12)
+    lis 12,handler_dsisr@ha
+    mfspr 11,18
+    stw 11,handler_dsisr@l(12)
+    lis 12,handler_count@ha
+    lwz 11,handler_count@l(12)
+    addi 11,11,1
+    stw 11,handler_count@l(12)
+    mfspr 11,272
+    mfspr 12,273
+    rfi
+    .size interrupt_handler,.-interrupt_handler
+    .section .note.GNU-stack,"",@progbits

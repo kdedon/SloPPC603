@@ -1,0 +1,7 @@
+# SDR1 CPU verification
+
+The strict gate is `make -C sim lint-sdr1 test-sdr1-decode test-core-sdr1 test-miss-derive` (2026-09-23; `/tmp/ppc-sdr1-focused.log`). The independent decode matrix checks all 32 register fields across MFSPR, MFTB alias and MTSPR for SPR25, plus reserved Rc and neighboring selectors. It uses fixed complete-word anchors as well as the field generator; **705 checks** pass.
+
+The actual-core oracle tests full-width SDR1 reset/read/write, including reserved bits retained on software readback and r0 as a real source. A real-mode write changes state only at matching retirement, holds unchanged under eight cycles of retirement backpressure, drains/refetches the next PC and supports the MFTB read alias. Killed writes and reads leave committed state and destination intact. Problem-state attempts of all three forms take the privileged exception before any CSR mutation. Writes while IR or DR is set become side-effect-free diagnostics; a translated-mode read remains allowed. A retained write accepts two successive redirect targets and resumes at the latest target after commitment. An external cut on the exact commit edge is rejected by the irrevocable boundary. The enabled core profile passes **1,303 checks**; the disabled profile retains terminal diagnostics.
+
+This test verifies raw SDR1 storage and serialization. Encoding validation and PTEG derivation are tested separately; no page-miss exception or hash state is automatically installed here.

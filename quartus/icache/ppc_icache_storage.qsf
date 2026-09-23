@@ -1,0 +1,33 @@
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CSEBA6U23I7
+set_global_assignment -name TOP_LEVEL_ENTITY ppc_icache
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 1
+set_global_assignment -name SEED 1
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_icache.sv
+set_instance_assignment -name VIRTUAL_PIN ON -to clk_i
+set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni
+set_instance_assignment -name VIRTUAL_PIN ON -to fetch_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to fetch_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fetch_addr_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to fetch_rsp_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to fetch_rsp_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to fetch_rsp_insn_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to fetch_rsp_error_o
+set_instance_assignment -name VIRTUAL_PIN ON -to kill_i
+set_instance_assignment -name VIRTUAL_PIN ON -to invalidate_i
+set_instance_assignment -name VIRTUAL_PIN ON -to invalidate_done_o
+set_instance_assignment -name VIRTUAL_PIN ON -to line_req_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to line_req_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to line_req_line_addr_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to line_req_critical_dw_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to line_req_instruction_o
+set_instance_assignment -name VIRTUAL_PIN ON -to line_rsp_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to line_rsp_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to line_rsp_line_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to line_rsp_error_i
+set_instance_assignment -name VIRTUAL_PIN ON -to busy_o
+set_instance_assignment -name VIRTUAL_PIN ON -to hit_o
+set_instance_assignment -name VIRTUAL_PIN ON -to miss_o
+set_instance_assignment -name VIRTUAL_PIN ON -to protocol_error_o
+set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"

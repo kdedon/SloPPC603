@@ -1,0 +1,44 @@
+#include <stdint.h>
+volatile uint32_t tohost __attribute__((section(".tohost")));
+volatile uint32_t irq_count, dec_count, event_order, irq_xer, dec_xer;
+volatile uint32_t irq_msr, irq_srr0, irq_srr1, irq_dar, irq_dsisr;
+volatile uint32_t dec_msr, dec_srr0, dec_srr1, dec_dar, dec_dsisr;
+extern char page_enable_resume[];
+#define WRITE_SPR(n,v) __asm__ volatile("mtspr " #n ",%0; isync" :: "r"((uint32_t)(v)) : "memory")
+#define WRITE_SR(n,v) __asm__ volatile("isync; mtsr " #n ",%0; isync" :: "r"((uint32_t)(v)) : "memory")
+int main(void) {
+    volatile uint32_t *alias=(volatile uint32_t *)(uintptr_t)0x10008000;
+    volatile uint32_t *a=(volatile uint32_t *)(uintptr_t)0xfff08000;
+    volatile uint32_t *b=(volatile uint32_t *)(uintptr_t)0xfff09000;
+    uint32_t (*probe)(uint32_t)=(uint32_t (*)(uint32_t))(uintptr_t)0x20000000;
+    uint32_t translated=0x70,enabled=0x8070,real=0x40;
+    /* TLB entries are preloaded by the fixture. All SR/BAT state is CPU owned. */
+    WRITE_SPR(529,0xfff00002); WRITE_SPR(528,0xfff00002);
+    WRITE_SPR(537,0xfff00002); WRITE_SPR(536,0xfff00002);
+    WRITE_SR(1,0x1234); WRITE_SR(2,0x5678);
+    __asm__ volatile("mtmsr %0; isync" :: "r"(translated) : "memory");
+    *alias=0x13579bdf;
+    if(*alias!=0x13579bdf || *a!=0x13579bdf || *b) return 0x87000001;
+    if(probe(25)!=42) return 0x87000002;
+    WRITE_SR(1,0x2345);
+    if(*alias) return 0x87000003;
+    *alias=0x2468ace0;
+    if(*alias!=0x2468ace0 || *b!=0x2468ace0 || *a!=0x13579bdf) return 0x87000004;
+    WRITE_SR(1,0x1234);
+    if(*alias!=0x13579bdf) return 0x87000005;
+    *(volatile uint32_t *)(uintptr_t)0xfff0a004=1;
+    WRITE_SPR(22,0); WRITE_SPR(22,0x80000000);
+    WRITE_SR(1,0x2345);
+    if(*alias!=0x2468ace0 || irq_count || dec_count) return 0x87000006;
+    __asm__ volatile("mtmsr %0\n.globl page_enable_resume\npage_enable_resume:\nisync" :: "r"(enabled) : "memory");
+    if(irq_count!=1 || dec_count!=1 || event_order!=0x12 ||
+       irq_msr!=0x40 || dec_msr!=0x40 || irq_srr1!=enabled || dec_srr1!=enabled ||
+       irq_srr0!=(uint32_t)(uintptr_t)page_enable_resume ||
+       dec_srr0!=(uint32_t)(uintptr_t)page_enable_resume) return 0x87000007;
+    if(probe(56)!=73 || *alias!=0x2468ace0) return 0x87000008;
+    WRITE_SR(1,0x1234);
+    if(*alias!=0x13579bdf) return 0x87000009;
+    __asm__ volatile("mtmsr %0; isync" :: "r"(real) : "memory");
+    if(*a!=0x13579bdf || *b!=0x2468ace0) return 0x8700000a;
+    return 1;
+}

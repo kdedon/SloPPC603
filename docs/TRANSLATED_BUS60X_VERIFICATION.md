@@ -1,0 +1,15 @@
+# Translated scalar 60x wrapper verification
+
+`tb/tb_core_bat_bus60x.sv` runs a literal 22-retirement PowerPC program through `ppc_core_bat_bus60x` and the public scalar 60x pins. The target owns 8 KiB of big-endian byte RAM and grants each address/data tenure with delay. The CPU starts in real mode; its own MTSPR instructions install an identity instruction BAT and a data BAT mapping effective `0x10001000` to physical `0x00001000`. External BAT and TLB management remain inactive. MTMSR enables IR/DR, and SC/RFI then checks the forwarded real-mode handler and restored translated context.
+
+The pin monitor requires valid scalar address ownership and fixed cache-inhibited attributes on every transfer. It sees both real and translated instruction fetches, then a byte store at physical `0x1003`, halfword read at `0x1002`, word read at `0x1000`, and word store at `0x1004`. The test checks 60x TT/TC/TSIZ, exact 64-bit big-endian write lanes including zero inactive lanes, memory bytes `11 22 33 5a` at `0x1000`, and copied word `0x1122335a` at `0x1004`. Retired LHZ and LWZ values independently confirm the read lanes. It checks the exact instruction/retirement sequence, held retirement stability and actual backpressure, translated context on data requests, and real-mode context in the SC vector.
+
+Strict `verilator --binary --timing --assert -Wall` compilation and the direct simulation pass: 22 retirements, 34 address offers, 18 real-mode and 12 translated instruction offers, two data reads, two data writes, and 1,674 checks. Run the canonical target with `make -C sim test-core-bat-bus60x`.
+
+The first directed gate covers normal scalar transactions and CPU-owned BAT setup. It does not claim pipelined or burst bus support, coherent WIMG interpretation, page-table software, or transport error/reset behavior; those have separate gates.
+
+
+The separate `tb/tb_core_bat_bus60x_retry.sv` reuses CPU-owned BAT setup but gives the data alias nonzero BAT WIMG=`3`. At the physical boundary the test requires that metadata while every 60x tenure still drives the fixed CI/WT/GBL/CSE pins. A translated halfword load receives AACK followed by ARTRY, then must reoffer the identical physical address, transaction type, size, and instruction/data class. The wrapper admits exactly four upstream data requests despite the extra address offer. A later translated word load receives provisional poison `0xdeadbeef`, same-edge DRTRY plus replacement `0x1122335a`, and an eight-cycle hold at its retirement. The only retired word is the replacement; byte and word stores each transfer and retire once. The 60x target sees three read TA beats for two architectural loads because the poisoned provisional beat is explicitly rejected.
+
+Strict `verilator --binary --timing --assert -Wall` and the isolated retry run pass: 23 retirements, 36 address offers, one ARTRY, one DRTRY replacement, four admitted upstream data requests, eight held word-retirement cycles, and 1,747 checks. The canonical target is `make -C sim test-core-bat-bus60x-retry`.
+

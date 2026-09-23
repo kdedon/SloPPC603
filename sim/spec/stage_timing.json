@@ -1,0 +1,367 @@
+{
+  "schema_version": 1,
+  "status": "reviewed_current_IU_relations_only",
+  "source_file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+  "scope": "Seven legal IU forms only; no faults, reset epochs, branches or long-lived results within a trace.",
+  "sampling": "One record per rising edge before nonblocking state updates; all events in one record are simultaneous.",
+  "implementation_edges": {
+    "dispatch_to_issue_min": 1,
+    "issue_to_finish_exact": 1,
+    "finish_to_retire_min": 1,
+    "release_equals_retire": true,
+    "full_same_edge_reclaim": false
+  },
+  "forms": [
+    {
+      "form": "addi",
+      "timing_row_id": "TIM-T64-008",
+      "manual_execute_cycles": 1,
+      "source": {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 270,
+        "printed_page": "6-24",
+        "section": "Table 6-4"
+      },
+      "implementation_unit": "IU",
+      "forms": "ordinary immediate form",
+      "variants": [
+        "PID6-603e",
+        "PID7v-603e"
+      ]
+    },
+    {
+      "form": "addis",
+      "timing_row_id": "TIM-T64-009",
+      "manual_execute_cycles": 1,
+      "source": {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 270,
+        "printed_page": "6-24",
+        "section": "Table 6-4"
+      },
+      "implementation_unit": "IU",
+      "forms": "ordinary immediate form",
+      "variants": [
+        "PID6-603e",
+        "PID7v-603e"
+      ]
+    },
+    {
+      "form": "ori",
+      "timing_row_id": "TIM-T64-013",
+      "manual_execute_cycles": 1,
+      "source": {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 271,
+        "printed_page": "6-25",
+        "section": "Table 6-4"
+      },
+      "implementation_unit": "IU",
+      "forms": "ordinary immediate form",
+      "variants": [
+        "PID6-603e",
+        "PID7v-603e"
+      ]
+    },
+    {
+      "form": "oris",
+      "timing_row_id": "TIM-T64-014",
+      "manual_execute_cycles": 1,
+      "source": {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 271,
+        "printed_page": "6-25",
+        "section": "Table 6-4"
+      },
+      "implementation_unit": "IU",
+      "forms": "ordinary immediate form",
+      "variants": [
+        "PID6-603e",
+        "PID7v-603e"
+      ]
+    },
+    {
+      "form": "xori",
+      "timing_row_id": "TIM-T64-015",
+      "manual_execute_cycles": 1,
+      "source": {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 271,
+        "printed_page": "6-25",
+        "section": "Table 6-4"
+      },
+      "implementation_unit": "IU",
+      "forms": "ordinary immediate form",
+      "variants": [
+        "PID6-603e",
+        "PID7v-603e"
+      ]
+    },
+    {
+      "form": "xoris",
+      "timing_row_id": "TIM-T64-016",
+      "manual_execute_cycles": 1,
+      "source": {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 271,
+        "printed_page": "6-25",
+        "section": "Table 6-4"
+      },
+      "implementation_unit": "IU",
+      "forms": "ordinary immediate form",
+      "variants": [
+        "PID6-603e",
+        "PID7v-603e"
+      ]
+    },
+    {
+      "form": "add",
+      "timing_row_id": "TIM-T64-040",
+      "manual_execute_cycles": 1,
+      "source": {
+        "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+        "pdf_page": 271,
+        "printed_page": "6-25",
+        "section": "Table 6-4"
+      },
+      "implementation_unit": "IU",
+      "forms": "OE=0,Rc=0",
+      "variants": [
+        "PID6-603e",
+        "PID7v-603e"
+      ]
+    }
+  ],
+  "manual_relations": [
+    {
+      "id": "ST-M01",
+      "manual": "Dispatch latches operands at stage end; reservation stations may wait for unavailable operands.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 250,
+          "printed_page": "6-4",
+          "section": "6.2"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 248,
+          "printed_page": "6-2",
+          "section": "6.1"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 258,
+          "printed_page": "6-12",
+          "section": "6.3.3.1"
+        }
+      ],
+      "implementation_binding": "D is RS capture; E is later IU capture. These are two separate RTL edges. Manual end-of-dispatch is not certified as D or E under every stall."
+    },
+    {
+      "id": "ST-M02",
+      "manual": "Latency is execution until results are ready for a subsequent instruction; finish is final execute cycle updating CQ.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 247,
+          "printed_page": "6-1",
+          "section": "6.1"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 264,
+          "printed_page": "6-18",
+          "section": "6.4.2"
+        }
+      ],
+      "implementation_binding": "The occupied computation interval [E,E+1) ends in finish acceptance at E+1. This agrees with one execute-cycle duration; D-to-finish is at least two edges, not the table latency."
+    },
+    {
+      "id": "ST-M03",
+      "manual": "Completion removes CQ entry in order; some cases can finish and complete in one cycle.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 247,
+          "printed_page": "6-1",
+          "section": "6.1"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 258,
+          "printed_page": "6-12",
+          "section": "6.3.3"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 268,
+          "printed_page": "6-22",
+          "section": "6.6.1.3"
+        }
+      ],
+      "implementation_binding": "Implementation commit requires a previously registered finish. The missing same-cycle path is a deliberate conservative choice, not full timing conformance."
+    },
+    {
+      "id": "ST-M04",
+      "manual": "Writeback updates architectural registers at completion or through a nonflushable writeback buffer.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 248,
+          "printed_page": "6-2",
+          "section": "6.1"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 251,
+          "printed_page": "6-5",
+          "section": "6.2"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 258,
+          "printed_page": "6-12",
+          "section": "6.3.3"
+        }
+      ],
+      "implementation_binding": "Current legal retire edge combines completion, architectural GPR write and CQ/rename release. There is no separate writeback buffer."
+    },
+    {
+      "id": "ST-M05",
+      "manual": "Five completion buffers and five GPR rename buffers are required dispatch resources; rename lifespan includes deallocate in resource discussion.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 258,
+          "printed_page": "6-12",
+          "section": "6.3.3/6.3.3.1"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 267,
+          "printed_page": "6-21",
+          "section": "6.6/6.6.1.2"
+        }
+      ],
+      "implementation_binding": "Release occurs at retire edge; next cycle exposes freed capacity. Full allocation cannot reclaim at the same edge. Manual exact release availability remains unbound."
+    },
+    {
+      "id": "ST-M06",
+      "manual": "Figures show integer D1 E2 W3 A4, but younger integer W precedes older FP W in multiple rows.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 256,
+          "printed_page": "6-10",
+          "section": "Figure 6-3"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 257,
+          "printed_page": "6-11",
+          "section": "Figure 6-4"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 263,
+          "printed_page": "6-17",
+          "section": "Figure 6-5"
+        }
+      ],
+      "implementation_binding": "Retain literal cells and TIM-U17; do not equate W to an architectural commit or A to a forced RTL release edge."
+    },
+    {
+      "id": "ST-M07",
+      "manual": "IU has one execute phase; PID7v SRU can also run selected adds without serialization.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 264,
+          "printed_page": "6-18",
+          "section": "6.4.2/6.4.5"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 272,
+          "printed_page": "6-26",
+          "section": "Table 6-4 footnote 1"
+        }
+      ],
+      "implementation_binding": "All seven current forms use IU only and width one. Table throughput, second dispatch/completion, and SRU routing are outside this probe."
+    },
+    {
+      "id": "ST-M08",
+      "manual": "A waiting reservation-station instruction can begin execution in the same clock cycle that the register file receives its needed data; ordinary IU forms are not in the completion-serialization classes.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 257,
+          "printed_page": "6-11",
+          "section": "6.3.3"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 258,
+          "printed_page": "6-12",
+          "section": "6.3.3"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 259,
+          "printed_page": "6-13",
+          "section": "6.3.3.1/6.3.3.2"
+        }
+      ],
+      "implementation_binding": "Accepted producer finish and dependent IU issue may share an edge using ownership-qualified bypass. This demonstrates the current forwarding relation, not an exact source diagram binding."
+    }
+  ],
+  "events": {
+    "dispatch": "dut.dispatch with CQ/rename/RS allocation; identifier is packed completion index and generation",
+    "issue": "dut.issue_valid && dut.issue_ready",
+    "finish": "dut.completion.finish_accept; ownership-valid completion only, not generic result transport",
+    "retire": "retire_valid snapshot; commit iff retire_ready",
+    "release": "CQ and GPR rename valid bits clear on legal commit; pre-edge occupancy is checked next edge"
+  },
+  "checker_relations": [
+    "D+1 issue lower bound",
+    "exact E+1 ownership-valid finish, because CQ result_ready is always asserted outside reset",
+    "no retirement-valid before finish+1",
+    "independent decode/RAW producer order and operand/result values",
+    "oldest retirement and stable stalled packet",
+    "CQ and rename occupancy at every edge; no full same-edge reclamation",
+    "drain every dispatched instruction and exercise all seven forms"
+  ],
+  "open_decisions": [
+    {
+      "id": "ST-O01",
+      "owner": "P12",
+      "timing_issue_ids": [
+        "TIM-U01",
+        "TIM-U11",
+        "TIM-U15",
+        "TIM-U17"
+      ],
+      "text": "Bind source stage-colored intervals and finish/completion edge conventions; resolve younger graphical W versus ordered completion prose before replay."
+    },
+    {
+      "id": "ST-O02",
+      "owner": "P12/P11",
+      "timing_issue_ids": [
+        "TIM-U14"
+      ],
+      "text": "Determine exact CQ/rename deallocation availability and whether separate deallocation cycle/bypass is required. Current simultaneous release remains a disclosed choice."
+    },
+    {
+      "id": "ST-O03",
+      "owner": "P11/P12",
+      "timing_issue_ids": [],
+      "text": "Review dispatch-to-execute boundary, same-cycle finish/completion and width/SRU admission before claiming core matches 603e throughput."
+    }
+  ],
+  "claims": {
+    "full_603e_conformance": false,
+    "figure_replays": 0,
+    "bus_cycles_tested": false
+  }
+}
