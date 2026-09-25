@@ -1,7 +1,7 @@
 # Next integration boundary: committed supervisor context
 
 The first committed-context slice is implemented behind an opt-in parameter;
-see `LIVE_CONTEXT.md` for its exact supported-mode and handshake contract.
+see [`LIVE_CONTEXT.md`](../../LIVE_CONTEXT.md) for its exact supported-mode and handshake contract.
 The remaining packages below are planning boundaries. The
 typed fetch-fault carrier now gives a future translation producer a precise
 instruction-side destination. The next work must connect committed control
@@ -23,7 +23,7 @@ state before enabling translation or asynchronous events in firmware.
 
 These boundaries rule out treating a new MSR register write as complete MMU or
 interrupt integration. Architectural requirements and local manual references
-are recorded in `TRANSPORT_EXCEPTION_PLAN.md`.
+are recorded in [`TRANSPORT_EXCEPTION_PLAN.md`](TRANSPORT_EXCEPTION_PLAN.md).
 
 ## Bounded work packages
 

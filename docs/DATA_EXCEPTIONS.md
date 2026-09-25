@@ -8,7 +8,7 @@ signals are asserted. Unknown typed causes and protection responses in the
 disabled profile also remain terminal diagnostics. BAT misses, page refill,
 physical transfer error acknowledge, and other DSI causes are outside this
 slice. The router's enabled profile produces the typed denial only for BAT PP
-protection; see `DATA_FAULT_ROUTER.md`.
+protection; see [`DATA_FAULT_ROUTER.md`](DATA_FAULT_ROUTER.md).
 
 The source is *MPC603e & EC603e RISC Microprocessors User's Manual* (1997),
 local `1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`, §4.5.3 and Table 4-11

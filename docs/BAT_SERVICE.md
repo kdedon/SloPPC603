@@ -108,8 +108,8 @@ verilator --lint-only -Wall --top-module ppc_bat_service \
   rtl/ppc_bat_translate.sv rtl/ppc_bat_service.sv
 verilator --binary --timing --assert -Wall --top-module tb_bat_service \
   rtl/ppc_bat_translate.sv rtl/ppc_bat_service.sv tb/tb_bat_service.sv \
-  --Mdir /tmp/ppc-r38-bat-service
-/tmp/ppc-r38-bat-service/Vtb_bat_service
+  --Mdir build/ppc-r38-bat-service
+build/ppc-r38-bat-service/Vtb_bat_service
 ```
 
 `rtl/bat_service_files.f` is isolated from the existing CPU/translator lists.
@@ -157,15 +157,11 @@ banks and four entries, privilege/protection/validity/boundaries, independent
 IR/DR settings, preserved state after rejected candidates, overlap/disjoint
 privilege aliases, and deterministic malformed operation/SPR/write cases.
 
-The canonical corpus path is `sim/build/bat-service/vectors.txt`; the initial
-acceptance log is `/tmp/ppc-round38-bat-independent.log`. Expected observations
+The canonical corpus path is `sim/build/bat-service/vectors.txt`. Expected observations
 come from the parent-owned generator, not this bench or the RTL. Each next
 transaction is offered while the preceding response is held for 0–5 cycles.
 An injected expected-response mismatch was rejected by the actual comparison
-path. Separate empty, malformed and excessive-stall files were also rejected,
-with results in `/tmp/ppc-r38-bat-service/parser-negative-results.json`.
-Regenerable top-level `*.gch` files were removed only from the owned
-`/tmp/ppc-r38-bat-service` build directory; binaries and test evidence remain.
+path. Separate empty, malformed and excessive-stall files were also rejected.
 
 ## Opt-in retirement-prepared runtime writes
 

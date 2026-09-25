@@ -31,9 +31,7 @@ The otherwise identical simulator fails by SIGABRT at cycle 2,100 with
 `firmware failure mailbox=81000212`, the expected selector-530 failure code.
 This is a diagnostic failure, not a watchdog timeout.
 
-Logs: `/tmp/ppc-runtime-firmware.log`, `/tmp/ppc-runtime-old-firmware.log`,
-`/tmp/ppc-runtime-bat-negative.log`. Temporary logs are local convenience
-artifacts; reproduce using the commands in `toolchain/README.md`.
+Reproduce using the commands in [`toolchain/README.md`](../toolchain/README.md).
 
 ## Initial passing source boundary
 
@@ -57,4 +55,4 @@ prepare branch. The runtime service fixture with assertions enabled failed at
 simulation time 45 in the bank-stability assertion, before the transaction could
 be accepted as correct. The real service source was unchanged. This demonstrates
 that the assertion detects premature mutation; it is not a separate public-port
-readback oracle. Artifacts: `/tmp/ppc-runtime-early-write/`.
+readback oracle.

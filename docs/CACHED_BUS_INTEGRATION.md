@@ -9,7 +9,7 @@ burst writes, address/data pipelining, HID0 controls, precise bus exceptions,
 or instruction-cache early forwarding.
 
 The underlying pin contracts and primary-source locations are recorded in
-`docs/BUS_MASTER.md`, `docs/BUS_LINE_READ.md`, and `docs/ICACHE.md`.  In
+[`docs/BUS_MASTER.md`](BUS_MASTER.md), [`docs/BUS_LINE_READ.md`](BUS_LINE_READ.md), and [`docs/ICACHE.md`](ICACHE.md).  In
 particular, scalar data tenures use `TC=00`; four-beat instruction refills use
 the instruction transaction attributes defined by the line master.  The
 wrapper does not reinterpret addresses, data lanes, termination signals, or

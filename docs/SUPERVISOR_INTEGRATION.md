@@ -5,6 +5,8 @@
 the established 168-form user/integer decoder and reference profile. The
 original supervisor integration added these seven exact forms:
 
+Wrapper parameter profile: [WRAPPER_SUPERVISOR_PROFILE.md](WRAPPER_SUPERVISOR_PROFILE.md).
+
 | Form | Exact decode | Effect in this profile |
 |---|---:|---|
 | `sc` | `0x44000002` | Save the next PC and old MSR, enter vector `0xC00` |
@@ -115,8 +117,8 @@ the existing terminal diagnostic without state change or redirect.
 MTMSR is absent from this legacy profile. The additional opt-in live profile
 implements MTMSR and permits IR/DR through a committed BAT-context handshake;
 its shared MTMSR/RFI policy and conservative refetch fence are documented in
-`LIVE_CONTEXT.md`. A further external-interrupt option is documented in
-`EXTERNAL_INTERRUPTS.md`. Endian changes, floating-point state, trace,
+[`LIVE_CONTEXT.md`](LIVE_CONTEXT.md). A further external-interrupt option is documented in
+[`EXTERNAL_INTERRUPTS.md`](EXTERNAL_INTERRUPTS.md). Endian changes, floating-point state, trace,
 machine-check recovery and TGPR bank selection remain unsupported.
 
 ## Verification
@@ -134,7 +136,7 @@ reserved-bit MFMSR masking, rejected active RFI modes, suppressed GPR writes,
 exact saved PCs/cause bits, and absence of data-memory requests throughout the
 supervisor sequences.
 
-Run from `ppc603e/` with the repository Make targets wired by integration:
+Run from the repository root with the repository Make targets wired by integration:
 
 ```sh
 make -C sim test-supervisor-decode

@@ -1,6 +1,6 @@
 # Page instruction exception verification
 
-The focused strict gate is `make -C sim lint-page-instruction-exceptions test-page-instruction-exception-router test-core-page-instruction-exception`. It passed on 2026-09-23; the log is `/tmp/ppc-page-isi-focused.log`. The direct router bench passed **232 checks enabled** and **222 checks disabled**. The actual-core bench passed **1,923 checks**.
+The focused strict gate is `make -C sim lint-page-instruction-exceptions test-page-instruction-exception-router test-core-page-instruction-exception`. It passed on 2026-09-23. The direct router bench passed **232 checks enabled** and **222 checks disabled**. The actual-core bench passed **1,923 checks**.
 
 The independent router bench preloads real ITLB entries and checks sole PP denial for supervisor Ks and user Kp, sole guarded-page denial, and SR.N denial both with and without a resident entry. Each typed cause is checked at a held instruction response for exact cause, zero instruction, captured EA, no physical offer or fatal state, and exclusion of competing BAT/segment/TLB management and context requests. With the feature disabled, the same denials remain fatal diagnostics. T, an ordinary TLB miss, a deliberately wrong service response kind, and simultaneous PP plus guarded flags remain untyped and never reach physical memory.
 

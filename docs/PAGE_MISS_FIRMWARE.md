@@ -37,11 +37,11 @@ Focused strict acceptance on 2026-09-23:
 
 Each mode has four CPU TLB loads, two TLBIE operations, eight successful
 instruction-page retirements, one external interrupt and one decrementer
-interrupt. Log: `/tmp/ppc-page-miss-fw.log` (temporary local evidence).
+interrupt.
 An isolated RTL copy that replaces the captured segment descriptor with zero
 is rejected in mode 0 at cycle 5,246 with “retired miss snapshot differs from
 access context.” The canonical sources and ELF were unchanged by this negative
-control; its log is `/tmp/ppc-page-miss-negative.log`.
+control.
 
 Build with `make page-miss` in the pinned offline cross-toolchain container,
 then run from the repository root:

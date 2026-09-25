@@ -54,7 +54,7 @@ Acceptance must compare future RTL against independently recorded event traces a
 
 ## Validation record
 
-`make -C ppc603e/sim test-recovery` passes 15 tests, including 1,500 deterministic mixed recovery transitions and 100 randomized fetch-stall scenarios. An independent Astra review found no critical issue within this stated proposal scope. No canonical CPU RTL changed for this task. The generation-wrap test uses a deliberately small two-bit counter to reach a live-token collision and prove allocation waits for drain; it does not authorize replay after a token has drained and its identity is reused.
+`make -C sim test-recovery` passes 15 tests, including 1,500 deterministic mixed recovery transitions and 100 randomized fetch-stall scenarios. An independent Astra review found no critical issue within this stated proposal scope. No canonical CPU RTL changed for this task. The generation-wrap test uses a deliberately small two-bit counter to reach a live-token collision and prove allocation waits for drain; it does not authorize replay after a token has drained and its identity is reused.
 
 The independently reviewed [prefix-selector prototype](RECOVERY_SELECTOR.md) now implements the combinational cut classification outside the canonical CPU. Its strict RTL test passes 245,760 snapshots. The current-subset core integration is documented in [CORE_RECOVERY.md](CORE_RECOVERY.md).
 

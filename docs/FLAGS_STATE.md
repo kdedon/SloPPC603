@@ -15,9 +15,9 @@ The core now connects record-logical ownership acquisition and CR0 permissions t
 ## Validation commands
 
 ```sh
-make -C ppc603e/sim test-flags test-completion-flags
-make -C ppc603e/sim lint test
-make -C ppc603e/sim check-spec test-recovery
+make -C sim test-flags test-completion-flags
+make -C sim lint test
+make -C sim check-spec test-recovery
 ```
 
 The independent `sim/tools/flag_state.py` reference composes reviewed arithmetic-family equations with allocated masks and an atomic architectural-state update. Its owner model consumes flag-owning identities from an already accepted, post-commit recovery snapshot; it does not decide queue age or whether a redirect is admissible. Fourteen focused tests include 500 deterministic mask-preservation cases and deliberate sticky-SO, CR0 relation, split-commit, release-edge and malformed-survivor mutations.

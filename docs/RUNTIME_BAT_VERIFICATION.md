@@ -33,11 +33,5 @@ See [RUNTIME_BAT_FIRMWARE.md](RUNTIME_BAT_FIRMWARE.md) for their exact scope.
 Production RTL did not change during these acceptance runs. The final manifest
 contains 233 RTL/test/spec/toolchain inputs, all unchanged from its capture to
 completion. The initial 229-input manifest differed only by a runner docstring;
-four new focused test files were added during verification. Local evidence files
-are `/tmp/ppc-runtime-final-inputs.json` and
-`/tmp/ppc-runtime-full-regression.log`; their SHA256 values are recorded below.
-These temporary files are convenience artifacts, not a permanent build archive.
+four new focused test files were added during verification.
 No Quartus fit or timing analysis was run for this revision.
-
-- `/tmp/ppc-runtime-final-inputs.json`: `275b76922ff2f96ed44b33406dfe9829a796d30f6fabd12125f26577873051d8`
-- `/tmp/ppc-runtime-full-regression.log`: `cb9ac97d600d2361d771a3f00bfe82cdb2c9454f8ebb73f0ba04fa822704d721`

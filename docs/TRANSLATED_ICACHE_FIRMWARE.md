@@ -39,9 +39,7 @@ Two negative images were made by changing one linked handler instruction while
 keeping every other ELF byte and the same pin responder. Replacing the search
 handler's R/C write caused rejection at the TLB fill's completed-bus-write
 check. Replacing the guarded ISI cause constant with the PP cause caused
-rejection at the ordinary vector's SRR1 check. Their artifacts are under
-`/tmp/ppc-table-search-cached-negative.*` and
-`/tmp/ppc-table-fault-cached-negative.*`.
+rejection at the ordinary vector's SRR1 check.
 
 This establishes the bounded physical instruction-cache transport and the
 firmware's existing translation/exception behavior together. It does not

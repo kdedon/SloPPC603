@@ -6,9 +6,11 @@ their original scope and dates; later feature contracts supersede early limitati
 
 
 **Historical audit snapshot.** Subsequent implementation and validation are
-tracked in [MVP_EXECUTION_PLAN.md](plans/stale/MVP_EXECUTION_PLAN.md). Its integration,
+tracked in [MVP_EXECUTION_PLAN.md](plans/current/MVP_EXECUTION_PLAN.md). Its integration,
 exception and FPGA results supersede the corresponding initial gaps below;
 this document preserves the original inventory and forecast assumptions.
+Its 39.40% full-scope figure is superseded by the 46.29%
+[full CPU audit](FULL_CPU_COMPLETION_AUDIT.md).
 
 This assessment reviews the checkout at `6f50ccd`, with three parallel source audits covering core execution, memory/supervisor integration, and verification/build delivery. The working tree was clean at the start. No RTL or build changes were made. This report distinguishes implemented hardware, standalone components, recorded validation, and freshly executed checks.
 
@@ -18,21 +20,21 @@ The requested MVP is a **supervisor-capable integer processor with interrupts an
 
 There is a working scalar integer CPU foundation with real program execution, tagged state, recovery, physical instruction/data transport, and instruction caching. The main remaining work is architectural integration: separately tested supervisor and translation components do not yet form one live, software-managed system.
 
-The repository's weighted full-scope estimate is **39.40% after round 40** (`PROGRESS.md`). Approximately **35–40% of the original delivery scope** is a reasonable planning description; it is not independently measured completion or a time-remaining ratio. In particular, the recorded 87% integer/pipeline workstream score should not imply that dual dispatch is nearly finished: only single dispatch and retirement are supported. The latest standalone segment bank adds useful groundwork but does not complete CPU MMU integration.
+The repository's weighted full-scope estimate is **39.40% after round 40** ([`PROGRESS.md`](plans/stale/PROGRESS.md)). Approximately **35–40% of the original delivery scope** is a reasonable planning description; it is not independently measured completion or a time-remaining ratio. In particular, the recorded 87% integer/pipeline workstream score should not imply that dual dispatch is nearly finished: only single dispatch and retirement are supported. The latest standalone segment bank adds useful groundwork but does not complete CPU MMU integration.
 
 ## Repository index
 
 | Location | Role |
 | --- | --- |
-| `ppc603e/rtl/` | Active processor RTL, integration wrappers, and source lists; 29 SystemVerilog modules |
-| `ppc603e/tb/` | 92 testbench files for units, core behavior, recovery and physical bus integrations |
-| `ppc603e/sim/` | Verilator Makefile, architectural reference adapters, generated programs, source-contract checks and recovery models |
-| `ppc603e/docs/` | Architecture, task plan, progress and feature-specific contracts; 71 documents before this report |
-| `ppc603e/toolchain/` | Pinned cross-toolchain container, startup/linker code, BE/LE compile and reproducibility checks |
-| `ppc603e/quartus/` | Early measurement wrapper, Quartus scripts, constraints and historical fit evidence |
+| `rtl/` | Active processor RTL, integration wrappers, and source lists; 29 SystemVerilog modules |
+| `tb/` | 92 testbench files for units, core behavior, recovery and physical bus integrations |
+| `sim/` | Verilator Makefile, architectural reference adapters, generated programs, source-contract checks and recovery models |
+| `docs/` | Architecture, task plan, progress and feature-specific contracts; 71 documents before this report |
+| `toolchain/` | Pinned cross-toolchain container, startup/linker code, BE/LE compile and reproducibility checks |
+| `quartus/` | Early measurement wrapper, Quartus scripts, constraints and historical fit evidence |
 | `dingusppc/` | Reference emulator submodule; original integer instruction handlers are used by differential tests |
 | `powerpc_fpga/` | Separate small reference design, not the active implementation |
-| Root PDFs / `IMPLEMENTATION_PLAN.md` | Source manuals and original full processor target; corrections live in `docs/references/SOURCES.md` |
+| Root PDFs / `IMPLEMENTATION_PLAN.md` | Source manuals and original full processor target; corrections live in [`docs/references/SOURCES.md`](references/SOURCES.md) |
 
 The active new processor is under `ppc603e`; the two reference submodules should not be counted as additional completed processor features. Git contains one top-level initial commit, so commit history does not provide a reliable development-velocity estimate.
 
@@ -74,7 +76,7 @@ The principal risks and maintenance findings, in priority order:
 4. **Multicycle reservations do not guarantee short hardware paths.** `rtl/ppc_iu.sv:92` implements combinational signed/unsigned 32×32 multiplication. The latency counter does not pipeline those products. Synthesis should determine whether DSP registration or further staging is needed.
 5. **Parallel regression can race.** Several Makefile targets compile into the same output directory (for example `sim/Makefile:138` and `:147` share `build/control-memory/obj`). There is no shared prerequisite build graph or `.NOTPARALLEL` protection. Serial execution avoids this risk; unconstrained `make -j` is unsafe.
 6. **The aggregate gate is incomplete.** `sim/Makefile:17` declares `all: lint test`, while `check-spec` separately runs metadata consistency and Python suites. Add a clear comprehensive check target. No active-project CI, formal flow or collected HDL coverage was found; selected assertions are present.
-7. **Documentation mixes historical and current state.** `docs/ARCHITECTURE.md` still says variable IU latency and RLWIMI are absent in early sections, while later sections describe their implementation. Toolchain documentation still claims branches/load-store are missing. Consolidate the current capability matrix and label retained historical snapshots.
+7. **Documentation mixes historical and current state.** [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) still says variable IU latency and RLWIMI are absent in early sections, while later sections describe their implementation. Toolchain documentation still claims branches/load-store are missing. Consolidate the current capability matrix and label retained historical snapshots.
 
 Conservative serialization is a deliberate performance limit. `rtl/ppc_core.sv:230` requires an empty CQ and idle IU for special operations, including branches and memory; one owner also serializes flag dependencies. This is acceptable for the selected first MVP if documented, but does not demonstrate 603e throughput.
 
@@ -83,10 +85,10 @@ Conservative serialization is a deliberate performance limit. `rtl/ppc_core.sv:2
 Freshly completed:
 
 - All 15 strict lint invocations from the aggregate lint target, including default/enabled core, bus, cache, BAT/TLB/segments and measurement tops.
-- `make -C ppc603e/sim check-spec test-recovery`: source-contract checks and **241 Python tests** (204 tools, 22 cosim, 15 recovery), all passing.
+- `make -C sim check-spec test-recovery`: source-contract checks and **241 Python tests** (204 tools, 22 cosim, 15 recovery), all passing.
 - Freshly built iterative-divider test: **524 cases / 11,544 checks**, passing.
 
-The full `all check-spec test-recovery` run was intentionally interrupted during simulation artifact rebuilding after the divider passed. It did not complete, and this report does not claim a fresh full-regression pass. The independent Python/spec run completed afterward. Logs for this session are `/tmp/ppc-inventory-regression.log` and `/tmp/ppc-inventory-spec.log`.
+The full `all check-spec test-recovery` run was intentionally interrupted during simulation artifact rebuilding after the divider passed. It did not complete, and this report does not claim a fresh full-regression pass. The independent Python/spec run completed afterward.
 
 Recorded project evidence includes the all-168-form differential corpus (9,881 retirements and every word of a bounded 256-byte RAM), additional physical/cache/BAT profiles, and seeded stress. This is substantial subset evidence. The adapter owns its legality/dispatch boundary, substitutes flat RAM for the reference MMU, and rejects unsupported exceptions. It does not validate supervisor/MMU faults, arbitrary binaries, self-modifying code, floating point or processor timing. The full project's 10^7-instruction reference gate remains open. No new synthesis or compiled-firmware execution was performed for this audit.
 

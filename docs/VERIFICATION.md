@@ -10,15 +10,15 @@ The subsequent reset/allocation-only rename owner change passed [focused recover
 
 The opt-in time-base/decrementer profile passed the source-frozen full gate on 2026-09-21: 172 named test targets, 24 strict RTL lint profiles, 140 direct bench prelint profiles and 241 Python tests, with all 146 source hashes stable. See [timer verification](TIMER_VERIFICATION.md) for independent counter, decode, privilege and event evidence, provenance and remaining coverage.
 
-Run `make -C ppc603e/sim regression` from the workspace root; `all` is an alias for the same complete local gate. It runs strict RTL lint, every simulation in `test`, metadata consistency and Python checker tests in `check-spec`, the recovery policy tests, and the standalone recovery-selector RTL test. Focused targets remain available for development. This gate covers the implemented features and bounded profiles; it does not establish complete ISA, timing, bus or FPGA conformance.
+Run `make -C sim regression` from the workspace root; `all` is an alias for the same complete local gate. It runs strict RTL lint, every simulation in `test`, metadata consistency and Python checker tests in `check-spec`, the recovery policy tests, and the standalone recovery-selector RTL test. Focused targets remain available for development. This gate covers the implemented features and bounded profiles; it does not establish complete ISA, timing, bus or FPGA conformance.
 
 RTL lint uses `verilator --lint-only -Wall` without global warning suppression. Core and focused testbenches use `--binary --timing --assert -Wall`; their local BLKSEQ annotations permit procedural clock/reference-model blocking assignments without suppressing RTL warnings.
 
 `make -jN` may run independent targets concurrently within one invocation. The twenty control/memory program targets, two data-bus program targets, and two unified-bus program targets each share one build prerequisite for their Verilator output directory. Each executable is built once per invocation before its consumers run; program fixtures have separate directories and are only read by the benches. The existing independent BAT/TLB/vector targets depend on their associated base test before reusing its executable. Use a modest job count to limit compiler memory usage. Separate make invocations must use separate build directories, and `clean`/`clean-cache` must run after builds finish. For example:
 
 ```sh
-make -C ppc603e/sim -j2 regression
-make -C ppc603e/sim -j2 BUILD_DIR=build-parallel \
+make -C sim -j2 regression
+make -C sim -j2 BUILD_DIR=build-parallel \
   test-core-control-memory test-core-shifts
 ```
 
@@ -77,20 +77,20 @@ Each task must preserve this smoke regression until it is intentionally replaced
 
 ## Accepted foundation checks
 
-- `python3 -m unittest discover -s ppc603e/sim/cosim -p 'test_*.py'`: seven parser tests passed; the actual corpus inventory has 5,620 integer, 2,054 FP and 397 disassembly rows. This validates parsing, not execution semantics.
-- `python3 ppc603e/sim/spec/check_timing.py`: 190 timing rows, 39 rules and 384 source locators pass structural checks. Broken references, duplicate graphical cycles and inconsistent FP stage sums are rejected; 35 graphical instruction rows / 162 cells are structurally checked; the data is not yet a cycle checker.
+- `python3 -m unittest discover -s sim/cosim -p 'test_*.py'`: seven parser tests passed; the actual corpus inventory has 5,620 integer, 2,054 FP and 397 disassembly rows. This validates parsing, not execution semantics.
+- `python3 sim/spec/check_timing.py`: 190 timing rows, 39 rules and 384 source locators pass structural checks. Broken references, duplicate graphical cycles and inconsistent FP stage sums are rejected; 35 graphical instruction rows / 162 cells are structurally checked; the data is not yet a cycle checker.
 - BE/LE cross artifacts passed ELF32 PowerPC, entry, byte-order and symbol checks; clean-build reproducibility passed. See the toolchain README and BUILD_STATUS.md for commands and versions. The compiled program cannot execute on the current branch/LSU-free core.
 
 ## Tagged execution checks
 
-`make -C ppc603e/sim test` runs the original core regression plus focused execution/completion benches and the stage probe:
+`make -C sim test` runs the original core regression plus focused execution/completion benches and the stage probe:
 
 - `tb_completion` (906 checks passed): fill all five slots, finish younger entries first, hold retirement, reject invalid/duplicate/stale identities after ring reuse, combine allocation/finish/retirement, and drain an ordered diagnostic fault behind unfinished work.
 - `tb_execution`: pending operand ownership and wakeup, rename RAW/WAW and release/allocation cases, reservation issue stalls, registered IU latency, result backpressure, turnover and reset cancellation.
 
 Generation checks cover distinguishable stale tokens. They do not prove rejection of arbitrary replay after an entire finite generation counter wraps, and no flush/redirect protocol exists yet. The single-IU integration issues in order; adversarial out-of-order finish is a direct completion-unit stimulus.
 
-`make -C ppc603e/sim check-spec` validates timing, bus and ISA metadata and runs the ISA, ADD-family, bus-decoder and stage-checker tests, including 10,560 compiled decoder legality probes against the seven executable masks. Operand semantics remain covered by the core regression; full ISA metadata and timing/bus conformance remain separate work.
+`make -C sim check-spec` validates timing, bus and ISA metadata and runs the ISA, ADD-family, bus-decoder and stage-checker tests, including 10,560 compiled decoder legality probes against the seven executable masks. Operand semantics remain covered by the core regression; full ISA metadata and timing/bus conformance remain separate work.
 
 Observed after P05 integration on 2026-09-12: strict canonical lint, all three Makefile simulation targets and ISA/timing checks passed. No Quartus rebuild was performed for the changed RTL.
 
@@ -107,7 +107,7 @@ The canonical RTL and its prior FPGA measurement boundary are unchanged by this 
 
 ## Fourth-batch recovery preparation
 
-`make -C ppc603e/sim test-recovery-select` compiles the standalone prefix selector with strict Verilator warnings and checks 245,760 coherent CQ snapshots. The independent oracle covers wrapped queue age, stale/out-of-range pivots, all/keep/exclude policies, every done bitmap, reset and absent requests. Astra reviewed the implementation and oracle without a correctness finding. This module remains outside the canonical CPU and Quartus source lists; sequential cancellation, rename reconstruction and fetch recovery are not implemented.
+`make -C sim test-recovery-select` compiles the standalone prefix selector with strict Verilator warnings and checks 245,760 coherent CQ snapshots. The independent oracle covers wrapped queue age, stale/out-of-range pivots, all/keep/exclude policies, every done bitmap, reset and absent requests. Astra reviewed the implementation and oracle without a correctness finding. This module remains outside the canonical CPU and Quartus source lists; sequential cancellation, rename reconstruction and fetch recovery are not implemented.
 
 [TIMING_DECISIONS.md](TIMING_DECISIONS.md) records the current dispatch/execute/finish/commit bindings and the acceptance tests required for bounded local recovery. It preserves the existing stage probe and explicitly records the extra dispatch interval and conservative finish-to-retirement spacing.
 
@@ -255,7 +255,7 @@ Six new RTL targets pass: 266,649 full-state program checks over 3,459 retiremen
 
 The compiled decoder agrees with the 125-entry ISA matrix on 15,808 probes (763 accepted). `check-spec` and `test-recovery` pass: 127 tool tests plus 15 recovery tests, 142 total. Strict core and measurement-wrapper lint pass. Sources reconcile 64 of 226 Appendix A.1 inventory rows; 162 remain pending.
 
-All 63 prior RTL targets also pass. The long first run ended with process status 143 during `test-core-adde-recovery`; resumption exposed a truncated generated PCH cache. Removing only that target's generated `.gch` files and rerunning the remaining 14 targets completed successfully. Logs: `/tmp/ppc-round25-new.log`, `/tmp/ppc-round25-routing.log`, `/tmp/ppc-round25-regression.log`, `/tmp/ppc-round25-regression-rest-clean.log`, `/tmp/ppc-round25-spec.log`. No RTL change was required for the interrupted build.
+All 63 prior RTL targets also pass. The long first run ended with process status 143 during `test-core-adde-recovery`; resumption exposed a truncated generated PCH cache. Removing only that target's generated `.gch` files and rerunning the remaining 14 targets completed successfully. No RTL change was required for the interrupted build.
 
 ## Round 26: MFCR / MTCRF
 
@@ -263,7 +263,7 @@ Four new targets pass: 224,689 full-state checks over 2,914 retirements (523 MFC
 
 The compiled decoder agrees with 127 metadata entries on 15,808 probes (765 accepted). `check-spec` and `test-recovery` pass: 131 tool tests plus 15 recovery tests, 146 total. The final metadata-focused rerun passes 19 tests. Source reconciliation is 66/226 inventory rows, leaving 160 pending. Strict core and wrapper lint pass.
 
-All 69 prior RTL targets pass, run as three bounded groups. The stage-timing fixture initially reported unused new retirement fields under strict lint; its flag-free assertion now checks `write_cr_fields == 0` and `cr_mask == 0`, and the affected group was resumed successfully. Logs: `/tmp/ppc-round26-new.log`, `/tmp/ppc-round26-decode.log`, `/tmp/ppc-round26-regression1.log`, `/tmp/ppc-round26-regression2.log`, `/tmp/ppc-round26-regression2-rest.log`, `/tmp/ppc-round26-regression3.log`, `/tmp/ppc-round26-spec.log`.
+All 69 prior RTL targets pass, run as three bounded groups. The stage-timing fixture initially reported unused new retirement fields under strict lint; its flag-free assertion now checks `write_cr_fields == 0` and `cr_mask == 0`, and the affected group was resumed successfully.
 
 ## Round 27: parallel CR logical and bus-address tasks
 
@@ -273,7 +273,7 @@ The bus-address validator covers 64-bit tables (15 aligned rows and eight four-b
 
 Combined `check-spec`/`test-recovery` passes 139 tool tests plus 15 recovery tests, 154 total. Strict core and measurement-wrapper lint pass. The stage probe explicitly forbids both new selected-bit retirement fields on its original instruction subset.
 
-All 73 prior RTL targets pass in three bounded batches, for 77 total RTL targets including the four new ones. No blanket lint suppression was added. Evidence logs: `/tmp/ppc-round27-new.log`, `/tmp/ppc-round27-decode.log`, `/tmp/ppc-round27-regression1.log`, `/tmp/ppc-round27-regression2.log`, `/tmp/ppc-round27-regression3.log`, `/tmp/ppc-round27-spec.log`, `/tmp/ppc-round27-bus-review.log`. Bus source tables were independently read from local primary PDF326/327. No bus RTL, endian mapping, FPGA fit or timing-conformance claim follows from these checks.
+All 73 prior RTL targets pass in three bounded batches, for 77 total RTL targets including the four new ones. No blanket lint suppression was added. Bus source tables were independently read from local primary PDF326/327. No bus RTL, endian mapping, FPGA fit or timing-conformance claim follows from these checks.
 ## Round 39 acceptance lanes
 
 The aggregate also includes `test-serialization-decode`,

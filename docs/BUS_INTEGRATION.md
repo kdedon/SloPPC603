@@ -6,7 +6,7 @@ in `rtl/ppc_bus60x.sv`.  The result is a reusable top-level core with explicit
 60x address, attribute, arbitration, data, and termination pins.
 
 This remains the cache-inhibited, 64-bit, single-beat profile described in
-`docs/BUS_MASTER.md`.  Unification does not add caches, bursts, address/data
+[`docs/BUS_MASTER.md`](BUS_MASTER.md).  Unification does not add caches, bursts, address/data
 pipelining, snooping, parity, global transactions, 32-bit bus mode, or
 electrical timing guarantees.
 

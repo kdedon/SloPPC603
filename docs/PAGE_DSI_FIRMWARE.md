@@ -13,4 +13,4 @@ docker run --rm --user "$(id -u):$(id -g)" --volume "$PWD:/work" --workdir /work
 python3 toolchain/run-rtl-smoke.py --profile page-dsi --elf toolchain/build/page-dsi/smoke.elf --build-dir toolchain/build/rtl-page-dsi
 ```
 
-Initial integrated acceptance on 2026-09-23: **2 page DSIs, 4 CPU TLB loads, 12 CPU BAT writes, 384 retirements, 4,532 cycles**. The passing local log is `/tmp/ppc-page-dsi-fw.log`; it is temporary and not a checked-in artifact. The prior BAT DSI and page-hit firmware profiles remain separate regression gates.
+Initial integrated acceptance on 2026-09-23: **2 page DSIs, 4 CPU TLB loads, 12 CPU BAT writes, 384 retirements, 4,532 cycles**. The prior BAT DSI and page-hit firmware profiles remain separate regression gates.

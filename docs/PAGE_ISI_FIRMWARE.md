@@ -23,15 +23,13 @@ python3 toolchain/run-rtl-smoke.py --profile page-isi --elf toolchain/build/page
 
 Integrated acceptance on 2026-09-23 passed strict `-Wall --assert` Verilator:
 **one PP ISI, two guarded ISIs (N and G), four CPU TLBLI operations,
-twelve CPU BAT writes, 374 retirements and 4,492 cycles**. The passing log is
-`/tmp/ppc-page-isi-fw.log`.
+twelve CPU BAT writes, 374 retirements and 4,492 cycles**.
 
 A negative control changes only a temporary memory image. It verifies the
 handler `tlbli r11` word `7c005fe4` at `fff00468`, replaces it with `isync`
 `4c00012c`, and leaves the canonical ELF and image untouched. The harness
 rejects the second protection fault at cycle 1,893 with `unexpected PP fault
-order` and fault PC `20000000`; it does not time out or report success. The
-negative log is `/tmp/ppc-page-isi-negative.log`. Router sticky `fault_ea` can
+order` and fault PC `20000000`; it does not time out or report success. Router sticky `fault_ea` can
 refer to a younger canceled fetch within the same page, so the harness checks
 its page identity while requiring the exact fault PC in the retired packet and
-SRR0. These logs are temporary local artifacts.
+SRR0.

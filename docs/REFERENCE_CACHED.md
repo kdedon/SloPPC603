@@ -1,6 +1,6 @@
 # Original-handler comparison through the cached CPU
 
-`make -C ppc603e/sim test-reference-cached` runs the fixed memory corpus through
+`make -C sim test-reference-cached` runs the fixed memory corpus through
 `ppc_core_cached_bus60x`. It compares 9,881 retired instructions covering all
 168 implemented forms against the original DingusPPC handlers. Every snapshot
 includes all GPRs, CR/XER/LR/CTR and all 256 bytes of test RAM, using the existing

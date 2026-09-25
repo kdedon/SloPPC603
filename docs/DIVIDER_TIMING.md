@@ -58,28 +58,28 @@ The IU is a single nonpipelined resource for this scaffold:
 
 ## Validation
 
-Focused commands, run from `ppc603e/`:
+Focused commands, Run from the repository root:
 
 ```sh
 verilator --binary --timing --assert -Wall --top-module tb_iterative_divider \
-  --Mdir /tmp/ppc-iterative-divider rtl/ppc_divider.sv \
+  --Mdir build/ppc-iterative-divider rtl/ppc_divider.sv \
   tb/tb_iterative_divider.sv
-/tmp/ppc-iterative-divider/Vtb_iterative_divider
+build/ppc-iterative-divider/Vtb_iterative_divider
 
 verilator --binary --timing --assert -Wall --top-module tb_divider_timing \
-  --Mdir /tmp/ppc-divider-timing rtl/ppc_pkg.sv rtl/ppc_divider.sv \
+  --Mdir build/ppc-divider-timing rtl/ppc_pkg.sv rtl/ppc_divider.sv \
   rtl/ppc_iu.sv tb/tb_divider_timing.sv
-/tmp/ppc-divider-timing/Vtb_divider_timing
+build/ppc-divider-timing/Vtb_divider_timing
 
 verilator --binary --timing --assert -Wall --top-module tb_core_divider_timing \
-  --Mdir /tmp/ppc-core-divider20 $(sed 's#../##' rtl/files.f) \
+  --Mdir build/ppc-core-divider20 $(sed 's#../##' rtl/files.f) \
   tb/tb_core_divider_timing.sv
-/tmp/ppc-core-divider20/Vtb_core_divider_timing
+build/ppc-core-divider20/Vtb_core_divider_timing
 
 verilator --binary --timing --assert -Wall --top-module tb_core_divider_timing \
-  -GDIV_LATENCY=37 --Mdir /tmp/ppc-core-divider37 \
+  -GDIV_LATENCY=37 --Mdir build/ppc-core-divider37 \
   $(sed 's#../##' rtl/files.f) tb/tb_core_divider_timing.sv
-/tmp/ppc-core-divider37/Vtb_core_divider_timing
+build/ppc-core-divider37/Vtb_core_divider_timing
 ```
 
 The standalone engine passes 11,544 checks across 524 directed and deterministic random cases. Its oracle uses language division only in the testbench, checks quotient/remainder reconstruction and remainder bounds independently of radix-4 steps, and covers signed truncation, exceptional policy, exact 16-step completion, held output, cancellation, replacement, and reset.

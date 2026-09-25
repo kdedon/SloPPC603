@@ -20,7 +20,7 @@ Quartus project, and toolchain/harness changes independent.
 | Parallel-safe comprehensive regression | Shared Verilator outputs each have one build prerequisite; `all`/`regression` includes spec and recovery suites. Six affected tests passed concurrently. |
 | Supervisor configuration through wrappers | All four wrappers propagate the existing opt-in parameter. Enabled/default lint and physical scalar syscall/handler/RFI tests pass. Live MMU context is still absent. |
 | Compiled firmware execution | Pinned-toolchain BE program reaches success mailbox through enabled cached 60x wrapper. RAM responder observes real instruction refills and data transactions; completion requires final store retirement and bus drain. LE ELF and corrupted-result negative checks reject as expected. |
-| Representative FPGA measurement | Separate managed-cache/supervisor-enabled top exposes actual bus, maintenance and retirement interfaces. See `INTEGRATED_SYNTHESIS_BASELINE.md` for measured results and remaining constraints. |
+| Representative FPGA measurement | Separate managed-cache/supervisor-enabled top exposes actual bus, maintenance and retirement interfaces. See [`INTEGRATED_SYNTHESIS_BASELINE.md`](../../INTEGRATED_SYNTHESIS_BASELINE.md) for measured results and remaining constraints. |
 
 Fresh validation: 19 strict lint profiles; metadata consistency and 241 Python
 tests; six affected parallel-build simulations; both new supervisor bus profiles;
@@ -31,7 +31,7 @@ and 187 cycles. The entire simulation suite was not rerun.
 No new interrupts or page-translation functionality is claimed by this wave.
 The compiled smoke is an optional `make -C toolchain rtl-smoke` gate because the
 normal simulation environment does not require a cross-compiler. It can also
-consume a previously built ELF; see `toolchain/README.md`.
+consume a previously built ELF; see [`toolchain/README.md`](../../../toolchain/README.md).
 
 ## Parallel FPGA follow-up: instruction-cache RAM inference
 
@@ -54,7 +54,7 @@ is the concrete datapath target for a parallel timing task. The worst hold path
 is reset input to a special-lane uop register under zero-minimum virtual-I/O
 delay; review the reset/interface timing contract before choosing a fix. Do not
 hide either violation with broad false-path constraints. See
-`INTEGRATED_SYNTHESIS_BASELINE.md` for report evidence and constraint scope.
+[`INTEGRATED_SYNTHESIS_BASELINE.md`](../../INTEGRATED_SYNTHESIS_BASELINE.md) for report evidence and constraint scope.
 
 ## Wave 2: precise synchronous fault round trip
 
@@ -68,7 +68,7 @@ instruction execution. Default-profile diagnostics remain available.
 Compiled C now completes 24 handler round trips through the cached physical bus,
 checking fault counts, unchanged destination/base/memory, and saved state. The
 handler skips faults; independent RTL tests also cover address repair and retry.
-See `ALIGNMENT_EXCEPTIONS.md` for the manual-based state contract and the bounded
+See [`ALIGNMENT_EXCEPTIONS.md`](../../ALIGNMENT_EXCEPTIONS.md) for the manual-based state contract and the bounded
 trigger policy: this is not full 603e unaligned-access conformance. Generic bus
 errors remain terminal diagnostics and are not incorrectly classified as DSI.
 
@@ -82,10 +82,10 @@ produced a firmware failure. All 124 direct testbench profiles passed strict
 elaboration before the comprehensive regression. The complete regression then
 passed: 156 named test targets, 19 strict lint profiles and 241 Python tests, with
 all 125 hashed RTL/testbench/Makefile sources unchanged during the final run.
-Full-run results are recorded in `ALIGNMENT_VERIFICATION.md`; FPGA evidence
+Full-run results are recorded in [`ALIGNMENT_VERIFICATION.md`](../../ALIGNMENT_VERIFICATION.md); FPGA evidence
 remains separately documented.
 Instruction-fetch fault delivery is covered by the following wave.
-`TRANSPORT_EXCEPTION_PLAN.md` records why typed synchronous translation faults
+[`TRANSPORT_EXCEPTION_PLAN.md`](../stale/TRANSPORT_EXCEPTION_PLAN.md) records why typed synchronous translation faults
 and physical TEA require different treatment.
 
 ## Wave 3: typed fetch faults and measured control-path changes
@@ -103,7 +103,7 @@ passed two injected faults and handler retries in 186 retirements/1,123 cycles.
 Corrupting its expected protection SRR1 correctly failed via the firmware
 mailbox. Cached baseline and alignment firmware also passed against these RTL
 changes, retaining their prior 30/1,516 retirement and 187/8,421 cycle results.
-See `FETCH_EXCEPTIONS.md`, `FETCH_FAULT_VERIFICATION.md` and `toolchain/README.md`
+See [`FETCH_EXCEPTIONS.md`](../../FETCH_EXCEPTIONS.md), [`FETCH_FAULT_VERIFICATION.md`](../../FETCH_FAULT_VERIFICATION.md) and [`toolchain/README.md`](../../../toolchain/README.md)
 for scope and reproduction.
 
 The timing task decoupled rename payload storage from allocation/recovery and
@@ -112,8 +112,8 @@ Focused recovery-storage tests passed. Strict prelint passed 127 profiles.
 The comprehensive regression completed successfully: 159 named test targets,
 19 strict RTL lint profiles and 241 Python tests, with all 128 hashed
 RTL/testbench/Makefile sources unchanged. No RTL fixes were required during
-this wave's full run. `FETCH_FAULT_VERIFICATION.md` records the log fingerprints;
-`COMPILED_FIRMWARE_VERIFICATION.md` records firmware artifacts and reproduction.
+this wave's full run. [`FETCH_FAULT_VERIFICATION.md`](../../FETCH_FAULT_VERIFICATION.md) records the log fingerprints;
+[`COMPILED_FIRMWARE_VERIFICATION.md`](../../COMPILED_FIRMWARE_VERIFICATION.md) records firmware artifacts and reproduction.
 
 The new frozen-source integrated fit completed successfully with unchanged
 constraints: 13,541 ALMs (32%), 16,979 registers, 15 M10Ks and six DSPs. Worst
@@ -123,7 +123,7 @@ Unconstrained counts remain zero. The combined revision includes typed fetch
 changes as well as the two timing edits, so this comparison does not isolate
 each edit's contribution. The 50 MHz setup goal remains open, and provisional
 virtual-I/O constraints still do not establish board signoff. See
-`TIMING_CONTROL_PATH.md` for the complete comparison and next measured target.
+[`TIMING_CONTROL_PATH.md`](../../TIMING_CONTROL_PATH.md) for the complete comparison and next measured target.
 
 ## Wave 4: live supervisor state and asynchronous events
 
@@ -144,9 +144,9 @@ checks, 339 disabled-profile checks, and 198,978 decode checks. All 133 staged
 testbench profiles passed strict lint. The comprehensive frozen-source
 regression passed 165 named targets, 21 strict RTL lint profiles and 241 Python
 tests. All 132 hashed RTL/testbench/Makefile sources remained unchanged;
-`LIVE_CONTEXT_VERIFICATION.md` records the completed run and log fingerprints.
-See `LIVE_CONTEXT.md`, `LIVE_BAT_CONTEXT.md` and
-`COMPILED_FIRMWARE_VERIFICATION.md` for the exact feature boundary.
+[`LIVE_CONTEXT_VERIFICATION.md`](../../LIVE_CONTEXT_VERIFICATION.md) records the completed run and log fingerprints.
+See [`LIVE_CONTEXT.md`](../../LIVE_CONTEXT.md), [`LIVE_BAT_CONTEXT.md`](../../LIVE_BAT_CONTEXT.md) and
+[`COMPILED_FIRMWARE_VERIFICATION.md`](../../COMPILED_FIRMWARE_VERIFICATION.md) for the exact feature boundary.
 
 In parallel, completion ring traversal now uses a bounded widened sum and one
 conditional subtraction instead of integer modulo. Exhaustive ring/recovery
@@ -162,7 +162,7 @@ register under zero-minimum virtual-I/O delay; its reset/clock arrival contract
 needs review before changing RTL or constraints. The remaining setup path runs
 from completion count into rename map-valid through retirement, recovery,
 wake/operand and dispatch selection. Modulo-generated cells are no longer on
-that path. `INTEGRATED_SYNTHESIS_BASELINE.md` and `TIMING_CONTROL_PATH.md`
+that path. [`INTEGRATED_SYNTHESIS_BASELINE.md`](../../INTEGRATED_SYNTHESIS_BASELINE.md) and [`TIMING_CONTROL_PATH.md`](../../TIMING_CONTROL_PATH.md)
 preserve the current result and the previous revision that passed hold. The
 setup improvement is not an overall timing-closure result.
 
@@ -174,7 +174,7 @@ the committed resume PC across redirects and retained older instructions, then
 uses the existing fetch-drain/context-install sequence for vector 0x500. IRQs
 have a separate acceptance trace and never fabricate instruction retirement.
 Masked pulses are not latched; an admitted event is irrevocable. The chosen
-boundary policy and its limits are explicit in `EXTERNAL_INTERRUPTS.md`.
+boundary policy and its limits are explicit in [`EXTERNAL_INTERRUPTS.md`](../../EXTERNAL_INTERRUPTS.md).
 
 Independent tests pass 12,911 enabled checks, 385 disabled checks and 181
 exception-state checks. Compiled BAT-backed firmware passes two IRQs around EE
@@ -184,7 +184,7 @@ fails through the firmware mailbox; all four previous firmware profiles pass
 unchanged. Strict prelint passes 136 profiles. The comprehensive regression
 passes 168 named targets, 23 strict RTL lint profiles and 241 Python tests, with
 all 135 hashed RTL/testbench/Makefile sources unchanged. See
-`EXTERNAL_INTERRUPT_VERIFICATION.md` for completed-run fingerprints and the
+[`EXTERNAL_INTERRUPT_VERIFICATION.md`](../../EXTERNAL_INTERRUPT_VERIFICATION.md) for completed-run fingerprints and the
 remaining directed coverage gaps.
 
 The parallel setup-path change reads committed architectural low address bits
@@ -196,15 +196,15 @@ the existing alignment and memory tests. The frozen-source replacement fit
 completes successfully under unchanged constraints: 13,661 ALMs (33%) and
 17,015 registers. Worst setup improves from −6.098 ns to −5.324 ns and worst
 hold from −1.400 ns to −0.084 ns. Both still fail at the provisional 50 MHz
-target, despite the smaller deficits. See `TIMING_CONTROL_PATH.md` and
-`INTEGRATED_SYNTHESIS_BASELINE.md` for all corners, path evidence and archive
+target, despite the smaller deficits. See [`TIMING_CONTROL_PATH.md`](../../TIMING_CONTROL_PATH.md) and
+[`INTEGRATED_SYNTHESIS_BASELINE.md`](../../INTEGRATED_SYNTHESIS_BASELINE.md) for all corners, path evidence and archive
 identity. This measures the combined revision rather than isolating an edit's
 individual contribution.
 
 The next timer slice is described below. Software-managed page refill and
 combined translated/cache/physical integration remain open. The external IRQ
 option is disabled in the cached physical FPGA measurement top.
-`LIVE_SUPERVISOR_NEXT_SLICE.md` preserves earlier design input; neither live BAT
+[`LIVE_SUPERVISOR_NEXT_SLICE.md`](../stale/LIVE_SUPERVISOR_NEXT_SLICE.md) preserves earlier design input; neither live BAT
 context nor external IRQ support alone completes the MMU MVP.
 
 ### Time base and decrementer follow-up
@@ -215,8 +215,8 @@ Timer reads capture a stable pre-edge value. A sign transition latches a DEC
 request until acceptance, including across EE masking and positive reprogramming.
 The selector preserves admitted EXT requests and permits a pending DEC candidate
 to yield to EXT at the final drained boundary. Traces remain separate from
-instruction retirement. `TIMERS.md` and `TIMER_STORAGE.md` define the implemented
-rules; `TIMER_NEXT_SLICE.md` preserves their reviewed design rationale.
+instruction retirement. [`TIMERS.md`](../../TIMERS.md) and [`TIMER_STORAGE.md`](../../TIMER_STORAGE.md) define the implemented
+rules; [`TIMER_CONTRACT.md`](../../TIMER_CONTRACT.md) preserves their reviewed design rationale.
 
 The counter unit passes 210 checks, decode passes 1,017,057 checks and standalone
 exception state passes 204. Compiled firmware passes TB rollover retry, EXT/DEC
@@ -228,13 +228,13 @@ checks across six scenarios, including late EXT promotion, admitted EXT
 withdrawal, user-mode DEC and delayed-store precision. The full regression
 passes 172 named targets, 24 strict RTL lint profiles and 241 Python tests;
 all 140 staged bench profiles pass lint, and all 146 hashed sources/manifests
-remain unchanged through the full run. `TIMER_VERIFICATION.md` records the
+remain unchanged through the full run. [`TIMER_VERIFICATION.md`](../../TIMER_VERIFICATION.md) records the
 completed gate, source fingerprints and remaining directed coverage gaps.
 
 A separate timer-enabled live-BAT FPGA project exposes the full wrapper and
 enables supervisor, live context, external IRQ and timers. It measures the new
 features on abstract physical word ports, without cache/60x composition.
-`TIMER_SYNTHESIS_BASELINE.md` records that separate measurement; its results
+[`TIMER_SYNTHESIS_BASELINE.md`](../../TIMER_SYNTHESIS_BASELINE.md) records that separate measurement; its results
 must not be compared as an isolated optimization against the cached physical
 top. The source-stable fit uses 7,093 ALMs (17%), 5,132 registers, two M10Ks and
 six DSPs. It fails provisional 50 MHz timing: worst setup −4.939 ns and hold
@@ -242,10 +242,10 @@ six DSPs. It fails provisional 50 MHz timing: worst setup −4.939 ns and hold
 the enabled feature set, not timing closure. No new timing optimization is
 included in this timer wave.
 
-`RUNTIME_BAT_NEXT_SLICE.md` outlines the next bounded MMU step: privileged CPU
+[`RUNTIME_BAT_NEXT_SLICE.md`](../stale/RUNTIME_BAT_NEXT_SLICE.md) outlines the next bounded MMU step: privileged CPU
 BAT access through a single committed bank, with prepare/commit/abort semantics
 and firmware-installed mappings. That proposal is not implemented by this wave.
-`RECOVERY_METADATA_NEXT_SLICE.md` independently reviews retaining surviving
+[`RECOVERY_METADATA_NEXT_SLICE.md`](../stale/RECOVERY_METADATA_NEXT_SLICE.md) independently reviews retaining surviving
 rename ownership identities as a bounded setup-path candidate. It preserves
 readiness and map reconstruction and requires new functional/timing evidence
 before any improvement is claimed.
@@ -254,8 +254,9 @@ before any improvement is claimed.
 
 The persistent [system scorecard](../../SYSTEM_COMPLETION.md) now records every major
 system, fixed MVP weights, completion estimates, gaps, shortcuts and a round
-history. Current judgment is about 65% of the restricted supervisor/MMU MVP;
-full-603e scope remains a separate qualitative 40–45% range. Update this
+history. At this round the judgment was about 65% of the restricted
+supervisor/MMU MVP, with full-603e scope a separate qualitative 40–45% range;
+both are superseded by the scorecard and the full CPU audit. Update the
 scorecard after each round, including rounds whose accepted work leaves the
 rounded percentage unchanged.
 
@@ -286,7 +287,7 @@ and EXT/DEC handlers that save, deliberately clear and restore XER. It passes
 Corrupting the expected byte count fails through the firmware mailbox. Final
 focused gates are recorded in [XER_VERIFICATION.md](../../XER_VERIFICATION.md).
 No full regression or FPGA fit was run for this bounded slice. The scorecard
-remains about 65% MVP completion; wider software-state and MMU integration still
+then remained about 65% MVP completion; wider software-state and MMU integration still
 requires acceptance. CPU-controlled BAT programming remains next.
 
 ## Event-entry reset verification follow-up
@@ -305,7 +306,7 @@ DEC across reset fails the intended stale-event check at cycle 71.
 Production RTL remains unchanged from the XER round,
 so that round's firmware results still apply. Historical fit archives still
 predate the owner/XER changes; no new timing claim is made.
-The score stays at about 65%. CPU-owned BAT programming remains next.
+The score stayed at about 65%. CPU-owned BAT programming remains next.
 
 ## CPU-owned runtime BAT increment, 2026-09-22
 
@@ -357,7 +358,7 @@ the intended mailbox check. [CPU_SEGMENT_VERIFICATION.md](../../CPU_SEGMENT_VERI
 and [SEGMENT_FIRMWARE.md](../../SEGMENT_FIRMWARE.md) record the boundary. Segment/page/
 refill rises from 25% to 35%, taking weighted MVP completion from 69.1% to 70.5%
 (about 71%). No new FPGA fit or timing result is claimed. The proposed next
-slice is [page-hit routing](PAGE_PATH_NEXT_SLICE.md); miss state and software
+slice is [page-hit routing](../stale/PAGE_PATH_NEXT_SLICE.md); miss state and software
 refill remain subsequent architectural work.
 
 ## Prefilled page-hit increment, 2026-09-22

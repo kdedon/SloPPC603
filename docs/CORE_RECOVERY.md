@@ -26,9 +26,9 @@ This mechanism does not claim architectural exception priority or precise superv
 
 ## Verification
 
-`make -C ppc603e/sim test-fetch-recovery` runs the strict direct fetch bench (99 checks). It covers held and first-offered requests, accepted requests, repeated target replacement, coincident response discard, packet stalls, stop interactions and reset.
+`make -C sim test-fetch-recovery` runs the strict direct fetch bench (99 checks). It covers held and first-offered requests, accepted requests, repeated target replacement, coincident response discard, packet stalls, stop interactions and reset.
 
-`make -C ppc603e/sim test-core-recovery` runs the actual core with an independent ordered instruction/value scoreboard. The expected next dispatch address changes only on reset, an accepted target or a sequential dispatch, and the expected word comes from the test memory program. This catches stale or incorrect stream admission rather than accepting whatever PC/opcode the DUT dispatches. An independent list-prefix decision checks redirect acceptance; retirement and finish values are checked against surviving program order.
+`make -C sim test-core-recovery` runs the actual core with an independent ordered instruction/value scoreboard. The expected next dispatch address changes only on reset, an accepted target or a sequential dispatch, and the expected word comes from the test memory program. This catches stale or incorrect stream admission rather than accepting whatever PC/opcode the DUT dispatches. An independent list-prefix decision checks redirect acceptance; retirement and finish values are checked against surviving program order.
 
 The directed run covers 10 accepted and four rejected events, six removed entries, 45 retirements, actual RS and IU cancellation, a full-IQ cut, coincident old response, repeated redirects, misalignment, invalid identity, younger diagnostic removal, terminal diagnostic commit and reset during drain. Exact check totals and no-redirect regressions are recorded in [VERIFICATION.md](VERIFICATION.md).
 

@@ -6,7 +6,7 @@ This contract admits one speculative instruction with flag dependencies or desti
 
 ## Source decisions and limits
 
-`UM` below means the local primary [1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf](../../1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf). `601UM` means the explicitly secondary [MPC601UM.pdf](../../MPC601UM.pdf). PDF pages are one-based physical pages; printed pages are given separately.
+`UM` below means the local primary `1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`. `601UM` means the explicitly secondary `MPC601UM.pdf`. PDF pages are one-based physical pages; printed pages are given separately.
 
 | ID | Evidence and decision |
 | --- | --- |

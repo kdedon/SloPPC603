@@ -1,6 +1,6 @@
 # FPU reuse assessment and implementation plan
 
-Reviewed 2026-09-22. Scope: local `~/git/N64_MiSTer`, `~/git/ss`, and their usefulness to `ppc603e`. Two GPT-6 Sol agents independently investigated one donor each. The parent agent reviewed the decisive source paths and owns the conclusions below. This is an investigation and proposed plan; it does not implement an FPU or change the current integer MVP scope.
+Reviewed 2026-09-22. Scope: [MiSTer-devel/N64_MiSTer](https://github.com/MiSTer-devel/N64_MiSTer/tree/eb5554af01bb97bdf3d295aed02a989ac10ccee4) and [Grabulosaure/ss](https://github.com/Grabulosaure/ss/tree/70203e26e981069710e934600fd55b9d866a9e5b) as FPU donors for this CPU. Two GPT-6 Sol agents independently investigated one donor each. The parent agent reviewed the decisive source paths and owns the conclusions below. This is an investigation and proposed plan; it does not implement an FPU or change the current integer MVP scope.
 
 ## Decision
 
@@ -16,7 +16,7 @@ Do not import either complete CPU-facing FPU. The user explicitly authorized SS 
 | N64_MiSTer | `eb5554af01bb97bdf3d295aed02a989ac10ccee4` | Clean when inspected. |
 | SS | `70203e26e981069710e934600fd55b9d866a9e5b` | Existing board-project/build changes and generated reports; not an immutable whole-system baseline. |
 
-Paths below refer to these local checkouts. No applicable AGENTS.md was found in the inspected repository paths or shared parent locations. Donor trees were not modified. Static RTL inspection establishes the interfaces and explicit policies described here, not arithmetic conformance. Existing whole-system synthesis evidence cannot establish standalone FPU area, throughput or timing. A fresh isolated synthesis and independent numeric test suite are implementation gates.
+Donor paths below are relative to those repositories at the listed commits. Donor trees were not modified. Static RTL inspection establishes the interfaces and explicit policies described here, not arithmetic conformance. Existing whole-system synthesis evidence cannot establish standalone FPU area, throughput or timing. A fresh isolated synthesis and independent numeric test suite are implementation gates.
 
 ## What is available
 
@@ -86,7 +86,7 @@ Use identical target, clock constraints, register boundaries, loads, semantics a
 
 ### Validation performed in this investigation
 
-GHDL 4.1 successfully analyzed SS `base_pack.vhd`, `cpu_conf_pack.vhd` and `fpu_pack.vhd` under VHDL-2008. The parent independently reproduced that package-only result in `/tmp/ppc-fpu-review-ghdl`. A dependency-ordered broader analysis reached ambiguous `To_HString` overloads in `disas_pack.vhd`; the parent reproduced this too. A referenced `fpu_sim_pack` was not found. These are extraction/build issues, not evidence of arithmetic failure. No complete FPU elaboration, numerical execution suite or fresh synthesis was run.
+GHDL 4.1 successfully analyzed SS `base_pack.vhd`, `cpu_conf_pack.vhd` and `fpu_pack.vhd` under VHDL-2008. The parent independently reproduced that package-only result. A dependency-ordered broader analysis reached ambiguous `To_HString` overloads in `disas_pack.vhd`; the parent reproduced this too. A referenced `fpu_sim_pack` was not found. These are extraction/build issues, not evidence of arithmetic failure. No complete FPU elaboration, numerical execution suite or fresh synthesis was run.
 
 ## PPC requirements that remain ours
 
@@ -98,7 +98,7 @@ The controlling local requirements are `TASK_PLAN.md:226-242` (P23–P25), `SOUR
 4. **Precise state:** capture instruction identity and control state; hold results under backpressure; suppress all killed/stale destination and FPSCR effects; commit architectural state at the accepted retirement boundary. A donor's global flush is not a substitute for exact producer ownership.
 5. **Timing and estimates:** `fdivs/fres` have 18 execute cycles, `fdiv` 33; double multiply/fused rows have `[2,1,1]` stage occupancy; ordinary staged rows including `frsqrte` have `[1,1,1]`, with documented serialization qualifications. A functional serialized prototype earns no pipeline/cycle-conformance credit. A slower donor cannot meet a shorter target latency by adding a counter.
 
-The current `SYSTEM_COMPLETION.md` explicitly excludes FPU from the integer MVP. This proposal belongs to the full-603e workstream and does not silently change that MVP's acceptance criteria.
+The current [`SYSTEM_COMPLETION.md`](SYSTEM_COMPLETION.md) explicitly excludes FPU from the integer MVP. This proposal belongs to the full-603e workstream and does not silently change that MVP's acceptance criteria.
 
 ## Implementation plan and acceptance gates
 

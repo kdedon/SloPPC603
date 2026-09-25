@@ -5,8 +5,8 @@ Both default to zero. The live profile adds privileged MTMSR and fences MTMSR,
 RFI and supported synchronous exception entry. Physical/cache wrappers retain
 live context disabled; the BAT wrapper supplies the runtime translation context
 handshake. The separate `ENABLE_EXTERNAL_INTERRUPTS` option adds level-sensitive external
-interrupt delivery (`EXTERNAL_INTERRUPTS.md`), and `ENABLE_TIMERS` adds TB/DEC
-(`TIMERS.md`). Page-TLB refill and a general operating-system MMU remain outside
+interrupt delivery ([`EXTERNAL_INTERRUPTS.md`](EXTERNAL_INTERRUPTS.md)), and `ENABLE_TIMERS` adds TB/DEC
+([`TIMERS.md`](TIMERS.md)). Page-TLB refill and a general operating-system MMU remain outside
 this profile.
 
 ## Supported state and instruction encoding
@@ -85,10 +85,8 @@ encodings, and absence of destination/update/flag permissions. The independent
 live-core and BAT tests exercise architectural ordering and context transitions;
 their final counts and full-regression provenance are recorded in
 [LIVE_CONTEXT_VERIFICATION.md](LIVE_CONTEXT_VERIFICATION.md). Compiled firmware evidence is in
-`COMPILED_FIRMWARE_VERIFICATION.md`.
+[`COMPILED_FIRMWARE_VERIFICATION.md`](COMPILED_FIRMWARE_VERIFICATION.md).
 
-Reproduce the decoder gate from `ppc603e/sim` with
+Reproduce the decoder gate from `sim/` with
 `make test-live-context-decode` (Verilator `--binary --timing --assert -Wall`).
-The standalone strict build log is `/tmp/ppc-live-decode.log`; temporary logs
-are supporting evidence, while the checked-in bench and Make target are the
-durable reproduction path.
+The checked-in bench and Make target are the durable reproduction path.

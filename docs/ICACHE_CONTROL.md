@@ -17,7 +17,7 @@ pipeline synchronization.
 The source is the local *MPC603e & EC603e RISC Microprocessors User's Manual*,
 MPC603EUM/AD, 11/97.  Section 3.1.3 and its cache-control subsections were
 checked at PDF 130 / printed 3-4.  The cache geometry and fill behavior remain
-the contracts documented in `docs/ICACHE.md`.
+the contracts documented in [`docs/ICACHE.md`](ICACHE.md).
 
 The manual states that flash invalidation uses two consecutive HID0 writes
 which set and clear `ICFI`.  It states that clearing `ICE` ignores cache tags

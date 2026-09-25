@@ -75,29 +75,13 @@ Optional compiled IRQ acceptance is recorded separately in
 
 Directed IRQ tests passed 12,911 enabled checks and 385 disabled checks;
 exception state passed 181 and alignment dependencies 634. Strict staged prelint
-passed all 136 direct bench profiles. `make -C ppc603e/sim -j4 regression` passed (exit 0), recorded on
+passed all 136 direct bench profiles. `make -C sim -j4 regression` passed (exit 0), recorded on
 2026-09-21 at 13:03 UTC. It ran 168 named test targets, 23 strict RTL lint
 profiles and 241 Python tests (204 tool/checker, 22 cosimulation, 15 recovery).
 The log contains 271 PASS summaries, which are not independent test counts.
 All 135 RTL/testbench/simulation-Makefile hashes were identical before and after
 the run. The first frozen full gate in this slice passed; independent verification
 required no production RTL changes.
-
-Local ephemeral evidence:
-
-- `/tmp/ppc603e-irq-full-regression.log`
-- `/tmp/ppc603e-irq-regression-summary.json`
-- `/tmp/ppc603e-irq-source-before.json` and `-after.json`
-- `/tmp/ppc603e-irq-final-prelint.log`
-
-Full-log SHA-256:
-`aae69d9e23f2be668d55ee680cec8dbf70444139698b5753e5ff684c0764b1a6`
-
-Identical source-manifest SHA-256:
-`734270bf2464e1042682696b044b8bd0313d0c0c485d21d6b71ba477d6528f62`
-
-Test sources, targets and this concise evidence remain in the repository working
-tree; `/tmp` logs are not durable CI artifacts.
 
 ## Remaining directed acceptance work
 

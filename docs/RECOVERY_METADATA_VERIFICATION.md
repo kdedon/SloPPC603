@@ -27,11 +27,11 @@ public operand interface, not internal owner contents.
 Both commands passed with exit0:
 
 ```sh
-make -C ppc603e/sim -j4 lint check-spec test-recovery test-recovery-select \
+make -C sim -j4 lint check-spec test-recovery test-recovery-select \
   test-completion-ring test-core-memory-edges test-core-lsu-update \
   test-core-alignment test-core-alignment-disabled test-core-alignment-dependencies \
   test-core-fetch-fault test-core-fetch-fault-disabled
-make -C ppc603e/sim -j2 test-recovery-storage test-recovery-state test-recovery-execution
+make -C sim -j2 test-recovery-storage test-recovery-state test-recovery-execution
 ```
 
 | Gate | Result |
@@ -48,15 +48,8 @@ make -C ppc603e/sim -j2 test-recovery-storage test-recovery-state test-recovery-
 | Enabled / disabled typed fetch faults | 10,923 / 2,889 checks |
 
 All 142 hashed RTL/TB/Makefile/RTL-manifest files stayed unchanged during the
-focused run. Local evidence is `/tmp/ppc603e-owner-focused-summary.json`,
-`/tmp/ppc603e-owner-source-before.json`, and
-`/tmp/ppc603e-owner-source-after.json`. The identical before/after manifest
-SHA256 is `d705d212a91803250fd7e475e9bf97992d2302ac3df1439ff869793bbd3c6d2a`.
+focused run. Hashes of the changed files at acceptance:
 
-- `/tmp/ppc603e-owner-focused.log` SHA256:
-  `86f53fbf092ece065f3a5b89d532388fdc3c9a5b94517b217411f66b49569643`.
-- `/tmp/ppc603e-owner-recovery.log` SHA256:
-  `227941da7bb81e17868c4010bd4bca08330f457a16effeac3eda7ea07fbd8108`.
 - `rtl/ppc_rename.sv` SHA256:
   `8f5b5b11de3906a0898f4f478117cbad7ce426867e9b327d8179d76e94007b16`.
 - `tb/tb_recovery_storage.sv` SHA256:

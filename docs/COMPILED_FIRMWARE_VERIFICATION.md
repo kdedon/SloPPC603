@@ -19,9 +19,8 @@ checking both data ways and an instruction entry are invalidated, with a
 neighboring entry retained. The modes pass 382/4,609, 380/4,576 and 386/4,665
 retirements/cycles. A wrong-set negative fails mailbox `88000004`.
 [TLBIE_FIRMWARE.md](TLBIE_FIRMWARE.md) explains why the terminal misses are
-expected diagnostics rather than architectural refill. Logs are
-`/tmp/ppc-tlbie-firmware.log`, `/tmp/ppc-tlbie-negative.log` and
-`/tmp/ppc-tlbie-old-firmware.log`. No new FPGA timing evidence is claimed.
+expected diagnostics rather than architectural refill. No new FPGA timing
+evidence is claimed.
 
 ## Prefilled page-hit follow-up
 
@@ -31,8 +30,7 @@ pinned offline toolchain. Page acceptance passes four I-page retirements, six
 SR writes, four BAT writes, one EXT, one DEC and 356 retirements / 4,273 cycles.
 The instruction-page expected-result negative fails mailbox `87000002`.
 [PAGE_FIRMWARE.md](PAGE_FIRMWARE.md) records reproduction and the external-preload
-limitation. Logs are `/tmp/ppc-page-firmware.log`, `/tmp/ppc-page-negative.log`
-and `/tmp/ppc-page-old-firmware.log`. No page miss/refill or timing claim follows.
+limitation. No page miss/refill or timing claim follows.
 
 ## Segment-register follow-up, 2026-09-22
 
@@ -42,8 +40,6 @@ compiled with the pinned offline toolchain. Segment acceptance passes 36 SR
 writes, 38 reads, four BAT writes, one EXT, one DEC and 830 retirements / 9,271
 cycles. Its readback negative control fails the exact intended mailbox check.
 See [SEGMENT_FIRMWARE.md](SEGMENT_FIRMWARE.md) for reproduction and limitations.
-Legacy rerun results are in `/tmp/ppc-segment-old-firmware.log` and individual
-`/tmp/ppc-segment-fw-*.log` files. These temporary logs are local evidence only.
 
 ## Timer follow-up
 
@@ -55,12 +51,11 @@ enable boundary, and a countdown DEC after a delayed translated store. Exact
 resume labels, MSR/SRR1, preserved DAR/DSISR and single-store behavior are checked
 by compiled C. Both handlers preserve scratch GPRs. Success includes final
 mailbox retirement and physical channel drain. Controlled tick pauses are a
-fixture, not physical clock-generation evidence; see `toolchain/README.md`.
+fixture, not physical clock-generation evidence; see [`toolchain/README.md`](../toolchain/README.md).
 
 All five prior profiles also pass against this revision with unchanged results:
 baseline 30/187, alignment 1,516/8,421, synthetic fetch 186/1,123, live context
-101/1,123 and external IRQ 198/2,187 (retirements/cycles). Their logs are
-`/tmp/ppc-timer-{baseline,alignment,fetch,live,irq}-firmware.log`.
+101/1,123 and external IRQ 198/2,187 (retirements/cycles).
 
 SHA-256 identities:
 
@@ -68,17 +63,13 @@ SHA-256 identities:
 d9f4d18e3657a95a6b34c5b11d3c26a3765c97774799747db22b68f8f111940e  toolchain/build/timer/smoke.elf
 2012975bb6c9b51140c55019a7ae6b7052691b9adc91926d7d2f60a0540b81c4  toolchain/run-rtl-smoke.py
 0740308c1de3e01fcc753f0c35794dc5b867b2cc6dcd0095c417ffeb9661e164  tb/tb_compiled_timer_firmware.sv
-8e89db1a2ff503d67b6bbc77bf72a1f43f555ad9fbc02b00b04e9847aef00905  /tmp/ppc-timer-firmware.log
 ```
 
-Build log: `/tmp/ppc-timer-firmware-build.log`. The negative check asserts that
-image bytes at `0x1164` are `28090040`, then changes byte `0x1167` to `41`,
-corrupting the expected DEC-handler MSR. Running the timer binary with that
+The negative check asserts that image bytes at `0x1164` are `28090040`, then
+changes byte `0x1167` to `41`, corrupting the expected DEC-handler MSR. Running the timer binary with that
 image and `+TOHOST=fff02000` fails through `firmware failure mailbox cycle=2560`
-(SIGABRT), not timeout. The retained local image/log are
-`/tmp/ppc-timer-corrupt-dec-msr.hex` and `/tmp/ppc-timer-firmware-negative.log`.
-Check the original bytes before applying the offset to a rebuilt image. These
-temporary logs and generated binaries are not durable CI artifacts.
+(SIGABRT), not timeout. Check the original bytes before applying the offset to
+a rebuilt image.
 
 ## External-interrupt follow-up
 
@@ -98,22 +89,18 @@ SHA-256 identities:
 a80fb27a0d7641c5c4487e8c72c0d39ca71e5af7b2ce4688886bd303437ba50f  toolchain/build/external-interrupt/smoke.elf
 beeb1c6233b995b71ad5aacd8291e543784c9e5850717e814f514de4d48abba8  toolchain/run-rtl-smoke.py
 1d9c683f628ad93baf355ba4045d82bf49b2313ef227482d354cd64d64b25756  tb/tb_compiled_irq_firmware.sv
-77c1ec4f710996f93ad4737bd574d6a4870dc89691286e8393526eb01a7b0307  /tmp/ppc-irq-firmware.log
 ```
 
 The runner change after the positive run only updated its descriptive docstring.
-Prior ELFs are unchanged. Build log: `/tmp/ppc-irq-firmware-build.log`;
-earlier-profile reruns: `/tmp/ppc-irq-{baseline,alignment,fetch,live}-firmware.log`.
-These local logs and generated binaries are not durable CI storage.
+Prior ELFs are unchanged.
 
 The negative check asserts that image bytes at `0x1e0` are `28050040`, then
 changes byte `0x1e3` from `40` to `41`, corrupting the first expected handler
 MSR. The existing IRQ simulator, run with that memory image and
 `+TOHOST=fff01000`, fails via `firmware failure mailbox cycle=1240` (SIGABRT),
-not timeout. The image and log are `/tmp/ppc-irq-corrupt-handler-expectation.hex`
-and `/tmp/ppc-irq-firmware-negative.log`. Verify the original instruction bytes
-before reusing this offset with a rebuilt ELF. See `toolchain/README.md` for
-positive reproduction and `EXTERNAL_INTERRUPT_VERIFICATION.md` for independent
+not timeout. Verify the original instruction bytes
+before reusing this offset with a rebuilt ELF. See [`toolchain/README.md`](../toolchain/README.md) for
+positive reproduction and [`EXTERNAL_INTERRUPT_VERIFICATION.md`](EXTERNAL_INTERRUPT_VERIFICATION.md) for independent
 directed and full-regression evidence.
 
 ## Live-context follow-up
@@ -124,7 +111,7 @@ below. The new live BAT workload passed **101 retirements, 1,123 cycles, four
 IR/DR context transitions, one mapped alias store, seven reads and eleven
 writes**. Context followed real mode → translation → real-mode SC handler →
 translated RFI return → real mode. Final mailbox retirement and physical channel
-drain were required. See `LIVE_BAT_CONTEXT.md` for the integration boundary.
+drain were required. See [`LIVE_BAT_CONTEXT.md`](LIVE_BAT_CONTEXT.md) for the integration boundary.
 
 The live ELF SHA-256 is
 `1e026a976009fcf28a9b4b45755730ffd2e49fdb0366f252e6e0e0af101c1b03`.
@@ -133,23 +120,20 @@ The updated runner SHA-256 is
 `tb_compiled_live_firmware.sv` is
 `278739cb94e09d6e996d4b7960214ea28fd87dca650c340ad2553a654b35103a`.
 These supersede the earlier runner snapshot only; the prior ELF hashes remain
-unchanged. Build/run logs: `/tmp/ppc-live-firmware-build.log`,
-`/tmp/ppc-live-firmware.log`, and `/tmp/ppc-live-{baseline,alignment,fetch}-firmware.log`.
+unchanged.
 
 The negative check changed the expected handler MSR from `0x40` to `0x41`:
 assert image bytes at offset `0x1d8` equal `280a0040`, then change byte `0x1db`
 to `41`. Running the existing live binary with this modified memory image and
 `+TOHOST=fff01000` failed via `firmware failure mailbox cycle=946` (SIGABRT),
-not a watchdog. The modified image and output are retained locally at
-`/tmp/ppc-live-corrupt-handler-expectation.hex` and
-`/tmp/ppc-live-firmware-negative.log`. As with the earlier mutation, the byte
+not a watchdog. As with the earlier mutation, the byte
 assertion must precede use on any newly compiled image.
 
 ## Earlier typed-fetch snapshot
 
 All three profiles passed after the typed fetch-fault and rename/FIFO timing
 changes. Verilator was 5.020 (Debian 5.020-1). Firmware used the repository's
-pinned cross-toolchain profile; see `toolchain/README.md` for build commands.
+pinned cross-toolchain profile; see [`toolchain/README.md`](../toolchain/README.md) for build commands.
 
 | Profile | Environment | Accepted retirements | Cycles | Result |
 | --- | --- | ---: | ---: | --- |
@@ -175,12 +159,8 @@ ce5fd8f7d7ce4a9122a5a6011c69b6d606460af95d9332af2de18ebf2a4cd461  toolchain/buil
 a48b486cd1c8002c24e369af258c8851c04e94416892d07922d347175397cc6c  tb/tb_compiled_fetch_firmware.sv
 ```
 
-ELFs and build products are generated artifacts. Positive logs were saved to
-`/tmp/ppc-compiled-baseline-current.log`,
-`/tmp/ppc-compiled-alignment-current.log` and
-`/tmp/ppc-compiled-fetch-positive.log`; these local paths are not durable CI
-storage. Test sources, runner and firmware sources remain in the repository
-working tree.
+ELFs and build products are generated artifacts. Test sources, runner and
+firmware sources remain in the repository working tree.
 
 ## Negative fetch-firmware check
 
@@ -188,8 +168,7 @@ The test changed the compiled protection-SRR1 expectation from high half
 `0x0800` to `0x0801`. The original image bytes at offset `0x1dc` were
 `6d490800` (`xoris r9,r10,0x0800`); changing byte `0x1df` to `01` produced
 `6d490801`. The simulation failed through the firmware failure mailbox at
-cycle 725, rather than timing out. Output was captured in the tool result;
-no separate negative log was saved.
+cycle 725, rather than timing out.
 
 To reproduce against the above ELF, first run the positive fetch profile to
 generate `toolchain/build/rtl-fetch-fault/memory.hex`. From `ppc603e`:
@@ -201,12 +180,12 @@ image = Path('toolchain/build/rtl-fetch-fault/memory.hex')
 data = bytearray(int(line, 16) for line in image.read_text().split())
 assert data[0x1dc:0x1e0] == bytes.fromhex('6d490800')
 data[0x1df] = 1
-Path('/tmp/ppc-fetch-corrupt-expectation.hex').write_text(
+Path('build/ppc-fetch-corrupt-expectation.hex').write_text(
     ''.join(f'{byte:02x}\n' for byte in data))
 PY
 ulimit -c 0
 toolchain/build/rtl-fetch-fault/obj/Vtb_compiled_fetch_firmware \
-  +IMAGE=/tmp/ppc-fetch-corrupt-expectation.hex +TOHOST=fff01000
+  +IMAGE=build/ppc-fetch-corrupt-expectation.hex +TOHOST=fff01000
 ```
 
 The last command is expected to fail with `firmware reported failure`. The
@@ -219,16 +198,15 @@ All six existing ELF workloads were rebuilt against the changed RTL and passed.
 The ELF artifacts were reused; no compiler or firmware source change was needed.
 Negative firmware controls were not repeated in this round.
 
-| Workload | Retirements | Cycles | Local run log SHA256 |
-| --- | ---: | ---: | --- |
-| baseline | 30 | 187 | `b94839ecaf545c45401584e7fd1eabab2dfe5552940e753441fbaa92af0a8252` |
-| alignment | 1516 | 8421 | `c96f29341774b337db764bbf2d477d05817f02f841ed469303e96d9bc3c85bde` |
-| fetch | 186 | 1123 | `4ebe49e7296daaf175cd5b72006b9a48bb926ddd99c58314799410ee12d562ab` |
-| live | 101 | 1123 | `5ac25e39af53fa618d4a5d22591929dcf80cce5aeb92c1ff3a7805ac496c8cc0` |
-| irq | 198 | 2187 | `95cb9e2a6a57cd8bc8961e23ae9fee090d1a863bc9d9c1895cd3a92dfa578c80` |
-| timer | 372 | 3937 | `1ffc5c4d810a13c074b27a5ac7143cceb6cefc08f246f6c9d410d04dfe6ec4f7` |
+| Workload | Retirements | Cycles |
+| --- | ---: | ---: |
+| baseline | 30 | 187 |
+| alignment | 1516 | 8421 |
+| fetch | 186 | 1123 |
+| live | 101 | 1123 |
+| irq | 198 | 2187 |
+| timer | 372 | 3937 |
 
-Logs: `/tmp/ppc-owner-{baseline,alignment,fetch,live,irq,timer}-firmware.log`.
 The existing profile commands above reproduce these checks.
 [Recovery verification](RECOVERY_METADATA_VERIFICATION.md) records the focused
 RTL gates. No new full regression or FPGA fit accompanies this round.
@@ -248,14 +226,11 @@ historical evidence.
 
 All six workloads were rebuilt and passed on the frozen final RTL. The five
 unchanged workloads retain their previous retirement/cycle totals.
-`/tmp/ppc-xer-firmware-summary.json` records matching before/after RTL hashes.
-Logs use `/tmp/ppc-xer-final-{baseline,alignment,fetch,live,irq,timer}-firmware.log`.
 
 A negative control changes the first XER comparison at `0xfff01028` from
-`cmpwi r9,127` (`2c09007f`) to `cmpwi r9,126`. The corrupted image
-`/tmp/ppc-xer-negative.hex` fails through the firmware mailbox at cycle 1,226
-(SIGABRT), rather than timing out. No other workload negative controls were
-repeated in this round.
+`cmpwi r9,127` (`2c09007f`) to `cmpwi r9,126`. The corrupted image fails
+through the firmware mailbox at cycle 1,226 (SIGABRT), rather than timing out. No other workload negative
+controls were repeated in this round.
 
 Build: existing pinned offline container, `make timer`, with `SOURCE_DATE_EPOCH=0`.
 Run: existing `run-rtl-smoke.py --profile timer` command.

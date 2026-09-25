@@ -1,6 +1,10 @@
 # Agent work queue
 
-Started 2026-09-12. This is the execution ledger for [TASK_PLAN.md](TASK_PLAN.md); task definitions and acceptance criteria remain there. Parent coordinates review and integration. Three worker slots are available alongside the parent. Queue entries describe dependencies, not calendar promises.
+Percentages below are historical round snapshots. Current values are in
+[SYSTEM_COMPLETION.md](../../SYSTEM_COMPLETION.md) and the
+[full CPU audit](../../FULL_CPU_COMPLETION_AUDIT.md).
+
+Started 2026-09-12. This is the execution ledger for [TASK_PLAN.md](../current/TASK_PLAN.md); task definitions and acceptance criteria remain there. Parent coordinates review and integration. Three worker slots are available alongside the parent. Queue entries describe dependencies, not calendar promises.
 
 Current priority after round40: continue bounded **P14/P17** supervisor work from the reviewed segment-register contract. Split register storage/indexing, CPU instruction binding, and TLB context capture into separate increments. SPRG0–SPRG3 access is accepted; the larger parent tasks remain incomplete. See the latest round below.
 
@@ -16,13 +20,13 @@ These are project assignments based on complexity, not measured pricing or perfo
 
 | Slice | Agent | Model / effort | File ownership | Status |
 |---|---|---|---|---|
-| P01a primary-manual audit | `manual_audit` | Astra / high | `docs/SOURCES.md` | Accepted |
-| P01b reference/license/test inventory | `reference_inventory` | Luna / medium | `docs/REFERENCE_AUDIT.md` | Accepted after model-identity and scope corrections |
-| P04a build/toolchain foundation | `build_foundation` | Sol / high | `toolchain/`, `quartus/`, `docs/BUILD_STATUS.md` | Accepted after review; P04 setup gate complete, early fit passes but timing remains unmet |
+| P01a primary-manual audit | `manual_audit` | Astra / high | [`docs/SOURCES.md`](../../references/SOURCES.md) | Accepted |
+| P01b reference/license/test inventory | `reference_inventory` | Luna / medium | [`docs/REFERENCE_AUDIT.md`](../../REFERENCE_AUDIT.md) | Accepted after model-identity and scope corrections |
+| P04a build/toolchain foundation | `build_foundation` | Sol / high | `toolchain/`, `quartus/`, [`docs/BUILD_STATUS.md`](../../BUILD_STATUS.md) | Accepted after review; P04 setup gate complete, early fit passes but timing remains unmet |
 | P13a parser-only reference preparation | `reference_inventory` | Luna / medium | `sim/cosim/` | Accepted after review fixes; seven parser tests and actual corpus inventory passed; full P13 remains pending |
-| P02a non-FP timing extraction | `manual_audit` | Astra / high | `docs/TIMING_SPEC.md`, `sim/spec/timing*.json` | Accepted: 156 rows, 35 rules, 284 checked source locators; full P02 remains partial |
+| P02a non-FP timing extraction | `manual_audit` | Astra / high | [`docs/TIMING_SPEC.md`](../../references/TIMING_SPEC.md), `sim/spec/timing*.json` | Accepted: 156 rows, 35 rules, 284 checked source locators; full P02 remains partial |
 | P04 virtual-pin evidence review | `manual_audit` | Astra / high | Read-only QSF and reports | Accepted: final report has 0 physical/35 virtual pins; setup and hold violations recorded |
-| P01c coding conventions and integration | parent | Inherited | `docs/CODING_CONVENTIONS.md`, task/status docs | Accepted; baseline regression passed |
+| P01c coding conventions and integration | parent | Inherited | [`docs/CODING_CONVENTIONS.md`](../../CODING_CONVENTIONS.md), task/status docs | Accepted; baseline regression passed |
 
 P01 accepted finding: the 455-page local MPC603e manual is internally complete; the original abridgement estimate is unsupported. Timing and bus chapters are locally available. Reviewed evidence and the decision log are in SOURCES.md. Missing architecture-companion, variant and clock-fidelity questions remain assigned feature work.
 
@@ -96,7 +100,7 @@ This batch prepares recovery interfaces without adding recovery/branch ports to 
 
 P06b0 is combinational interface preparation outside the canonical CPU and Quartus source lists. It does not release the full P06 implementation or claim sequential recovery.
 
-Fourth-batch integration: `make -C ppc603e/sim check-spec test-recovery` passed 62 tool tests and 15 policy tests, including compiled decoder probes. Standalone selector strict build passed separately. Next implementation priority is P06b1 sequential CQ/rename recovery with atomic local RS/IU cancellation, followed by P06b2 fetch drain and whole-core integration. Follow TIMING_DECISIONS.md acceptance gates, including diagnostic-stop cleanup and no-redirect regression preservation. Full 603e timing and broad ISA/bus completion remain open.
+Fourth-batch integration: `make -C sim check-spec test-recovery` passed 62 tool tests and 15 policy tests, including compiled decoder probes. Standalone selector strict build passed separately. Next implementation priority is P06b1 sequential CQ/rename recovery with atomic local RS/IU cancellation, followed by P06b2 fetch drain and whole-core integration. Follow TIMING_DECISIONS.md acceptance gates, including diagnostic-stop cleanup and no-redirect regression preservation. Full 603e timing and broad ISA/bus completion remain open.
 
 ## Accepted fifth batch
 

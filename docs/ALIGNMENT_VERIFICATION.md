@@ -55,8 +55,8 @@ values and sign extension.
 ## Run
 
 ```sh
-make -C ppc603e/sim -j2 test-core-alignment test-core-alignment-disabled
-make -C ppc603e/sim test-exception-state test-supervisor-decode
+make -C sim -j2 test-core-alignment test-core-alignment-disabled
+make -C sim test-exception-state test-supervisor-decode
 ```
 
 Both new core targets are included in `test`, `regression` and `all`, with
@@ -65,7 +65,7 @@ coverage is complementary to this independent directed oracle.
 
 ## Full regression acceptance
 
-On 2026-09-21 at 04:38 UTC, `make -C ppc603e/sim -j2 regression` completed
+On 2026-09-21 at 04:38 UTC, `make -C sim -j2 regression` completed
 successfully (exit 0). The aggregate reaches 156 named test targets, runs 19
 strict RTL lint profiles, and includes 204 tool tests, 22 cosim tests and 15
 recovery-model tests (241 Python unit tests). All 124 direct RTL testbench
@@ -80,20 +80,7 @@ completed. This gate does not include optional cross-compiler firmware runs or
 Quartus fitting; those have separate evidence.
 
 SHA-256 snapshots of 125 source files (`rtl/*.sv`, `tb/**/*.sv` and the
-simulation Makefile) were identical before and after the successful run. The
-local evidence files are:
-
-- Full output: `/tmp/ppc603e-full-regression.log`
-- Counts and outcome: `/tmp/ppc603e-regression-summary.json`
-- Source manifests: `/tmp/ppc603e-regression-source-before.json` and
-  `/tmp/ppc603e-regression-source-after.json`
-
-The source-manifest SHA-256 is
-`13fd4cf139aa211a786e42a31f795e0159486b430ba6ab96fddc5bc668ad01ca`.
-The full-log SHA-256 is
-`35c4b19ab3c607d91a0f22e4aaaca72e3bf5a15ca273fcabb552290b0e78e527`.
-These paths are local run artifacts; this repository summary retains the
-outcome and fingerprints if the temporary files are later removed.
+simulation Makefile) were identical before and after the successful run.
 
 Earlier attempts exposed an incomplete generated compiler-header cache and two
 older fixtures that did not consume the new retirement marker. The cache was

@@ -56,7 +56,7 @@ The local Programming Environments Manual is absent. Tagged secondary MPC601UM p
 The focused checks are:
 
 ```sh
-cd /home/kevin/git/ppc/ppc603e/sim
+cd sim
 make test-lsu-update-decode
 make test-completion-update
 make test-lsu-update-edges

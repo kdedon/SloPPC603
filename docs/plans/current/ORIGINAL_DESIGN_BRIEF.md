@@ -22,11 +22,11 @@ Decisions agreed with the user:
 Judgment calls (say so if you disagree):
 
 - **PID7v-603e is the reference model** (PVR `0x0007xxxx`), because the manual documents it most completely (misaligned LE support, 20-cycle divide, HID0 IFEM/ABE). `CPU_VARIANT` selects PID6-603e (37-cycle divide, no misaligned-LE hardware), 603 (8 KB 2-way caches), and 602 (4 KB caches, 32-entry TLBs, single-precision FPU with DP trapped, protection-only TLB mode, 602 SPR stubs). The 602's own UM is not in hand; its variant is best-effort.
-- **Cycle-faithfulness ends at the bus pins and the ch. 6 tables.** Internal structure mirrors the manual's block diagram, but sub-block details the manual does not specify (e.g. exact reservation-station depth per unit, store-queue depth) are chosen for FPGA fit and written down in `docs/ARCHITECTURE.md`.
+- **Cycle-faithfulness ends at the bus pins and the ch. 6 tables.** Internal structure mirrors the manual's block diagram, but sub-block details the manual does not specify (e.g. exact reservation-station depth per unit, store-queue depth) are chosen for FPGA fit and written down in [`docs/ARCHITECTURE.md`](../../ARCHITECTURE.md).
 - **Bring-up parameter `DISPATCH_WIDTH`** (1 or 2) exists only to debug the machine one instruction at a time; the structure (IQ, rename, completion queue) is present from the first RTL. The delivered configuration is 2.
 - **Note on sources:** `G5220297-00_Odyssey_MCM_Feb97.pdf` is the IBM *603e multi-chip-module* (603e + 660 bridge) reference-design guide, not the 603e User's Manual. It remains useful for the bus (it is a real 603e system: TT decoding, arbitration, endian handling by the bridge) but the 1997 MPC603e UM is now the primary source.
 
-Everything new lives under `/home/kevin/git/ppc/ppc603e/`, leaving the downloaded artifacts untouched.
+Everything new lives in this repository, leaving the downloaded artifacts untouched.
 
 ---
 
@@ -126,9 +126,9 @@ ppc603e/
 Every phase ends with `verilator --lint-only -Wall` clean and its gate passing. Phases 1–3 are sequential; 4–8 have the dependencies noted.
 
 ### Phase 0 — Scaffolding and specifications
-- Repo layout, `sim/Makefile`, `quartus/build.sh` (from `~/git/C16_MiSTer/build.sh`), toolchain Dockerfile (BE and LE build flags), DingusPPC `testppc` built and passing on host.
-- **Write `docs/TIMING_SPEC.md`** by transcribing UM Tables 6-1…6-6 and §6.6.1 rules, and **`docs/BUS_SPEC.md`** from ch. 7/8 (signal table, FSM states, every timing diagram reduced to a cycle table). These two documents are the contracts the checkers in phases 2 and 5 enforce.
-- Generate `docs/ISA_MATRIX.md` from DingusPPC tables + UM App. A/B, annotated with unit and latency from TIMING_SPEC.
+- Repo layout, `sim/Makefile`, `quartus/build.sh` (adapted from the C16_MiSTer build script), toolchain Dockerfile (BE and LE build flags), DingusPPC `testppc` built and passing on host.
+- **Write [`docs/TIMING_SPEC.md`](../../references/TIMING_SPEC.md)** by transcribing UM Tables 6-1…6-6 and §6.6.1 rules, and **[`docs/BUS_SPEC.md`](../../references/BUS_SPEC.md)** from ch. 7/8 (signal table, FSM states, every timing diagram reduced to a cycle table). These two documents are the contracts the checkers in phases 2 and 5 enforce.
+- Generate [`docs/ISA_MATRIX.md`](../../references/ISA_MATRIX.md) from DingusPPC tables + UM App. A/B, annotated with unit and latency from TIMING_SPEC.
 
 ### Phase 1 — Machine skeleton with integer execution
 - Fetch/IQ, BPU (unconditional and resolved branches only at first), dispatch with rename and completion queue, IU, SRU (CR-logical, mfcr/mtcrf, mfspr/mtspr XER/LR/CTR), LSU stages with a simple memory port (no cache yet, no MMU: real mode), completion/retire ≤2.

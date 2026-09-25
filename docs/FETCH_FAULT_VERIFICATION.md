@@ -52,8 +52,7 @@ firmware integration has a separate owner and is not required by `regression`.
 Strict staged prelint passed all 127 direct testbench profiles, with no warning
 waivers added. Fetch recovery passed 288 checks, recovery storage 18, and
 exception-state 158. The core fault bench passed 10,923 enabled and 2,889
-disabled checks. The full frozen-source regression result follows. Local logs reside in `/tmp` and are not durable CI
-artifacts; the test sources and Makefile targets are retained in the repository working tree.
+disabled checks. The full frozen-source regression result follows.
 
 The separate compiled-C integration passed 186 retirements with two injected
 and retired faults; a deliberately wrong SRR1 expectation failed its mailbox
@@ -63,7 +62,7 @@ for `rtl-fetch-fault`.
 
 ## Full frozen-source gate
 
-`make -C ppc603e/sim -j2 regression` completed successfully (exit 0) on
+`make -C sim -j2 regression` completed successfully (exit 0) on
 2026-09-21 at 05:25 UTC. It covered 159 named test targets, 19 strict RTL lint
 profiles, and 241 Python tests (204 checker/tool, 22 cosimulation, 15 recovery).
 The separate staged prelint covered 127 direct bench profiles. The full run
@@ -77,16 +76,3 @@ No production changes were needed. The directed storage fixture initially used
 an unrelated FIFO depth that left an imported package constant unused under
 strict lint; using the configured IQ depth fixed that fixture warning before
 prelint and the full gate. The full gate passed on its first run in this slice.
-
-Reproduction/provenance (local ephemeral files):
-
-- `/tmp/ppc603e-fetch-full-regression.log`
-- `/tmp/ppc603e-fetch-regression-summary.json`
-- `/tmp/ppc603e-fetch-source-before.json` and `-after.json`
-- `/tmp/ppc603e-fetch-prelint.log` and `/tmp/ppc603e-lint-all-benches.json`
-
-Full-log SHA-256:
-`b44998d4160f43eda511eb5f19f540ef2adbb48bfe9c6606a8a6df030c65c829`
-
-Identical source-manifest SHA-256:
-`da7dd8e9b3f66d9f19a9ec703e87cc1dd8767746ca8d7a7dbd9122899ef65e0a`

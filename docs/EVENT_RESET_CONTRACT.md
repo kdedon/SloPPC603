@@ -91,8 +91,8 @@ prove subcycle asynchronous masking. The fixture cancels its pending instruction
 response on that same reset boundary.
 
 The frozen bench passes all eight scenarios and 14,909 checks, including the
-context-credit and response-stability assertions (implementation-owner run log:
-`/tmp/ppc-event-reset-run.log`). No production RTL changes were required.
+context-credit and response-stability assertions. No production RTL changes
+were required.
 
 The test has no outstanding data transaction or accepted store, keeps timer tick
 low, and does not separately reset while DEC remains masked before reservation.

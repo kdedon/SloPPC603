@@ -2,7 +2,7 @@
 
 `ppc_timer` owns the 64-bit time base, 32-bit decrementer and one coalesced
 pending bit. This implements the storage contract from
-[TIMER_NEXT_SLICE.md](plans/stale/TIMER_NEXT_SLICE.md); instruction decode, retirement-only
+[TIMER_CONTRACT.md](TIMER_CONTRACT.md); instruction decode, retirement-only
 writes, read capture and exception arbitration belong to the integrating core.
 The unit does not generate clocks, perform CDC, or independently certify the
 architectural four-bus-clock tick cadence.
@@ -47,6 +47,6 @@ verilator --binary --timing --assert -Wall --top-module tb_timer \
 ./build/timer/Vtb_timer
 ```
 
-Run from `ppc603e/sim`. Core integration fixtures must additionally prove
+Run from `sim/`. Core integration fixtures must additionally prove
 retirement-only writes, pre-edge read capture on simultaneous tick, privilege,
 wrong-path cancellation, saved exception state and precise event acceptance.

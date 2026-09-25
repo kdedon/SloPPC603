@@ -42,7 +42,7 @@ the four cuts above are specifically asynchronous event-entry windows.
 ## Focused gate
 
 ```sh
-make -C ppc603e/sim -j4 lint check-spec test-recovery \
+make -C sim -j4 lint check-spec test-recovery \
   test-core-event-reset test-core-interrupt test-core-interrupt-disabled \
   test-timer test-core-timer-events test-core-timer-registers \
   test-core-live-context test-core-live-context-disabled test-exception-state
@@ -62,15 +62,7 @@ The gate passed with exit0 from `21:38:12.915202Z` to `21:38:59.759002Z`:
 | Exception state | 204 checks |
 
 All 144 gate source/build inputs stayed unchanged. All production RTL and its
-manifest also match the separate pre-round snapshot. Evidence:
-
-- Summary: `/tmp/ppc603e-event-reset-summary.json`.
-- Log: `/tmp/ppc603e-event-reset-focused.log`.
-- Source manifests: `/tmp/ppc603e-event-reset-source-before.json` and
-  `/tmp/ppc603e-event-reset-source-after.json`.
-- Production snapshot: `/tmp/ppc603e-event-reset-rtl-before.json`.
-- Log SHA256: `c80d243f0f8a363022520e2b1b9080dd9116618b9e205108601da95d4a04217a`.
-- Source-manifest SHA256: `42f38496f88c575e417c1623a897fe513545b1843dc1e9035d75cbb7aade511f`.
+manifest also match the separate pre-round snapshot.
 
 The new target is part of the regular `test` aggregate for future complete runs.
 This round deliberately did not run the full regression, Quartus or compiled
@@ -88,10 +80,7 @@ then failed DEC/window0 after reset and EE enable, before fresh stimulus:
 The process exited by SIGABRT (`-6`), not timeout. This demonstrates that the
 post-reset no-stale-event oracle detects retained DEC pending state.
 
-- Temporary source/build/log/summary: `/tmp/ppc603e-event-reset-negative/`.
 - Original timer SHA256: `cf9ed8835f84e70da53a23dd5dd6d133da27e22b14ee2335b4d68733d2e10daf`.
-- Mutant SHA256: `69e8d897baa79c80d2ccec2f8ef57b736a5f7a30cfd9cf50ba42f9cede74df3b`.
-- Negative run log SHA256: `7d40679dbfc354c9000896b7d1671420046a2e5573f2f85ad1f0b607b0ee541d`.
 
 To reproduce from the repository root without modifying repository sources:
 

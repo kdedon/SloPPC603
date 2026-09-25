@@ -36,7 +36,7 @@ The disassembly reader skips blank/comment lines and rows with fewer than three 
 
 The top-level CMake requires CMake 3.14 and C++20 (`dingusppc/CMakeLists.txt:1-7`). On non-Windows/non-Emscripten hosts it requires SDL2 (`:12-17`); the README additionally calls out recursive submodules and SDL2 development headers (`dingusppc/README.md:72-89`). The optional PPC test target links SDL2, Cubeb, and thread/dynamic-loader libraries (`CMakeLists.txt:245-265`), and copies all three CSVs next to the executable (`:292-300`).
 
-An attempted isolated configure, `cmake -S dingusppc -B /tmp/dingusppc-audit-build -DDPPC_BUILD_PPC_TESTS=ON ...`, could not run because `cmake` is not installed in this environment (`/bin/bash: cmake: command not found`). `git -C dingusppc submodule status` reports both Capstone and Cubeb with a leading `-`, indicating uninitialized submodules. No build or test pass is claimed.
+An attempted isolated configure, `cmake -S dingusppc -B build/dingusppc-audit-build -DDPPC_BUILD_PPC_TESTS=ON ...`, could not run because `cmake` is not installed in this environment (`/bin/bash: cmake: command not found`). `git -C dingusppc submodule status` reports both Capstone and Cubeb with a leading `-`, indicating uninitialized submodules. No build or test pass is claimed.
 
 ## Variants and endian behavior
 

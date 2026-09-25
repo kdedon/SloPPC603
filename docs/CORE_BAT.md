@@ -110,7 +110,7 @@ is implied by these abstract channels.
 
 ## Verification
 
-From `ppc603e/sim`, the focused checks are:
+From `sim/`, the focused checks are:
 
 ```sh
 verilator --lint-only -Wall --top-module ppc_bat_memory_router \
@@ -120,15 +120,15 @@ verilator --lint-only -Wall --top-module ppc_core_bat \
   -f ../rtl/core_bat_files.f
 verilator --binary --timing --assert -Wall \
   --top-module tb_bat_memory_router \
-  --Mdir /tmp/ppc-r39-bat-core-router \
+  --Mdir ../build/ppc-r39-bat-core-router \
   -f ../rtl/bat_service_files.f ../rtl/ppc_bat_memory_router.sv \
   ../tb/tb_bat_memory_router.sv
-/tmp/ppc-r39-bat-core-router/Vtb_bat_memory_router
+../build/ppc-r39-bat-core-router/Vtb_bat_memory_router
 verilator --binary --timing --assert -Wall --top-module tb_core_bat \
-  --Mdir /tmp/ppc-r39-bat-core-cpu \
+  --Mdir ../build/ppc-r39-bat-core-cpu \
   -f ../rtl/files.f -f ../rtl/bat_service_files.f \
   -f ../rtl/core_bat_files.f ../tb/tb_core_bat.sv
-/tmp/ppc-r39-bat-core-cpu/Vtb_core_bat
+../build/ppc-r39-bat-core-cpu/Vtb_core_bat
 ```
 
 The direct router bench passes **230 checks**. It covers held and rejected setup,

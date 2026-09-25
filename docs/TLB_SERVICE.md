@@ -63,14 +63,14 @@ Reset synchronously clears validity, the response slot, any runtime invalidate p
 
 ## Build and validation
 
-From the workspace root:
+From the repository root:
 
 ```sh
-verilator --lint-only -Wall --top-module ppc_tlb_service ppc603e/rtl/ppc_tlb_service.sv
+verilator --lint-only -Wall --top-module ppc_tlb_service rtl/ppc_tlb_service.sv
 verilator --binary --timing --assert -Wall --top-module tb_tlb_service \
-  ppc603e/rtl/ppc_tlb_service.sv ppc603e/tb/tb_tlb_service.sv \
-  --Mdir /tmp/ppc-r39-tlb-service
-/tmp/ppc-r39-tlb-service/Vtb_tlb_service
+  rtl/ppc_tlb_service.sv tb/tb_tlb_service.sv \
+  --Mdir build/ppc-r39-tlb-service
+build/ppc-r39-tlb-service/Vtb_tlb_service
 ```
 
 `rtl/tlb_service_files.f` is a simulation-directory-relative standalone file list. The direct bench checks both ways in every set of both banks, segment aliases and VSID changes, extra tag bits, duplicate rejection and selected-way remapping, targeted invalidation with neighboring entries retained, all page permission/key/privilege combinations, C update retries and denied stores, N/T/G conditions, privileged management rejection, unsupported commands, held snapshots, simultaneous response-consume/request-accept, and reset with a held response and offered refill. The permission expectation is a literal table, independent of the RTL's Boolean equation. Physical-address expectations use arithmetic and fixed anchors.
@@ -79,9 +79,9 @@ Historical standalone Verilator 5.020 strict lint/build and runtime results for 
 
 - Direct corpus: **866 transactions / 3,528 checks PASS**.
 - Parent-owned `sim/tools/tlb_vectors.py` corpus: **17,364 transactions / 902,705 checks PASS**, including all 128 entries, every bank/key/PP/WIMG/C combination, indexed invalidation, segment/VSID aliases, duplicates and deterministic mixed traffic. The oracle uses a virtual-page dictionary and arithmetic address decomposition; it does not read RTL. Its five literal-anchor Python tests are owned and run by the parent. All twelve response outcome flags occur in its corpus. Canonical integration may regenerate the corpus in `sim/build/tlb-service/vectors.txt`.
-- **Nine negative gates PASS**: a deliberately corrupted expected response is caught by the actual RTL response comparator; empty, short, extra-token, nonhex, oversized-request, oversized-response, arbitrarily huge request and stall=33 inputs reject. Logs and `negative-results.json` remain under `/tmp/ppc-r39-tlb-service`.
+- **Nine negative gates PASS**: a deliberately corrupted expected response is caught by the actual RTL response comparator; empty, short, extra-token, nonhex, oversized-request, oversized-response, arbitrarily huge request and stall=33 inputs reject.
 
-The independent run exposed an end-of-file handling bug in the first bench parser after every actual response had matched. The final line/token parser removes that ambiguity and was rerun against the complete corpus and all negative gates. No TLB RTL correction was required by the corpus. Final logs are `/tmp/ppc-r39-tlb-build.log`, `/tmp/ppc-r39-tlb-direct.log` and `/tmp/ppc-r39-tlb-independent.log`; the isolated build directory also retains a source/binary manifest. Only its own top-level generated `.gch` files were removed after compilation finished. No synthesis, fitting or full-CPU/MMU conformance result is claimed.
+The independent run exposed an end-of-file handling bug in the first bench parser after every actual response had matched. The final line/token parser removes that ambiguity and was rerun against the complete corpus and all negative gates. No TLB RTL correction was required by the corpus. No synthesis, fitting or full-CPU/MMU conformance result is claimed.
 
 ## Optional external vector protocol
 

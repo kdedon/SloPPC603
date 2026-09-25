@@ -29,7 +29,7 @@ interface cannot install a fallback entry. These final misses remain ordered
 diagnostics: CPU load instructions are not automatic miss handling or a
 software page-table walk.
 
-Build and run using the pinned toolchain described in `toolchain/README.md`:
+Build and run using the pinned toolchain described in [`toolchain/README.md`](../toolchain/README.md):
 
 ```sh
 make -C toolchain tlbload
@@ -60,7 +60,5 @@ Mode 0 rejects the premature page miss at cycle 2,214, proving that fixture
 preloading cannot hide the missing CPU-installed mapping. Assert the original
 bytes before reusing this offset with another build.
 
-Local logs: `/tmp/ppc-tlbload-all-firmware.log`, per-profile
-`/tmp/ppc-tlbload-fw-*.log`, and `/tmp/ppc-tlbload-negative.log`. Temporary
-logs are not durable CI storage. No FPGA fit or architectural miss/refill/retry
+No FPGA fit or architectural miss/refill/retry
 acceptance follows from these tests.

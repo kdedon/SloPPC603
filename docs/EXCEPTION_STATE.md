@@ -5,7 +5,7 @@ It owns committed `MSR`, `SRR0`, and `SRR1` values and implements nine selected
 state transitions. It does not decode instructions or discover the oldest
 fault. Its caller must present one already-selected event at a committed
 instruction boundary. `ppc_core` now uses it only in the disabled-by-default
-profile documented in `SUPERVISOR_INTEGRATION.md`; it remains independently
+profile documented in [`SUPERVISOR_INTEGRATION.md`](SUPERVISOR_INTEGRATION.md); it remains independently
 testable through this interface.
 
 ## Primary sources
@@ -141,16 +141,16 @@ TGPR clearing, problem-state RFI, explicit rejected cases, atomic load masks,
 event priority, result turnover, two stalled-result edges, no repeated state
 transition, and reset cancellation.
 
-Run from `ppc603e/`:
+Run from the repository root:
 
 ```sh
 verilator --lint-only -Wall --top-module ppc_exception_state \
   rtl/ppc_exception_state.sv
 verilator --binary --timing --assert -Wall \
   --top-module tb_exception_state \
-  --Mdir /tmp/ppc-exception-state-build -o tb_exception_state \
+  --Mdir build/ppc-exception-state-build -o tb_exception_state \
   rtl/ppc_exception_state.sv tb/tb_exception_state.sv
-/tmp/ppc-exception-state-build/tb_exception_state
+build/ppc-exception-state-build/tb_exception_state
 ```
 
 Validated with Verilator 5.020: strict RTL lint passed and the direct bench

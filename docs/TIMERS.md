@@ -7,11 +7,13 @@ translated scalar/cached 60x wrappers also expose this profile; older
 physical-only cache wrappers keep timers disabled. This is an externally clocked
 timer facility, not an implementation of asynchronous physical clock crossing.
 
+Storage module: [TIMER_STORAGE.md](TIMER_STORAGE.md).
+
 Each core-clock edge sampling `timer_tick_i=1` counts once. For the 603e cadence,
 the caller must provide one such pulse per four bus clocks. TB64 starts at zero;
 DEC32 starts at `0xffffffff`, with no pending request. TBEN gates TB only; DEC
 continues ticking. The exact manual-backed requirements and explicitly local
-collision/sampling policies are recorded in [TIMER_NEXT_SLICE.md](plans/stale/TIMER_NEXT_SLICE.md).
+collision/sampling policies are recorded in [TIMER_CONTRACT.md](TIMER_CONTRACT.md).
 
 ## Register operations
 
@@ -48,7 +50,7 @@ This final-offer sampling rule is a local policy, not cycle-exact 603e priority.
 
 Event7 is DEC, requiring EE set and TGPR clear. It saves next-PC SRR0 and
 `old_MSR & 0x87c0ffff` into SRR1, with no cause bits; the full-function mask
-convention is documented in `EXCEPTION_STATE.md`. It preserves DAR/DSISR and
+convention is documented in [`EXCEPTION_STATE.md`](EXCEPTION_STATE.md). It preserves DAR/DSISR and
 uses vector `IP base + 0x900`. The mask deliberately differs from external
 interrupt's low-half-only save. Existing exception MSR entry, transport fencing
 and committed context acknowledgment apply.

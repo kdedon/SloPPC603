@@ -54,7 +54,7 @@ and hashes.
 The final gate uses:
 
 ```sh
-make -C ppc603e/sim -j4 lint check-spec test-recovery \
+make -C sim -j4 lint check-spec test-recovery \
   test-flags test-completion-flags test-completion-update test-crstate-execution \
   test-core-crstate test-crstate-edges test-core-record-edges test-core-add-flags \
   test-core-add-recovery test-recovery-state test-recovery-storage \
@@ -72,14 +72,7 @@ recovery state5,871; recovery storage23; core CR-state program112,725 checks /
 1,460 retirements; timer registers4,833; stage trace14 retirements.
 
 All **147 hashed source/metadata/build inputs** remained unchanged during
-the final gate. Local evidence:
-
-- Summary: `/tmp/ppc603e-xer-focused-summary.json`.
-- Log: `/tmp/ppc603e-xer-focused-final.log`.
-- Before/after: `/tmp/ppc603e-xer-source-before.json` and
-  `/tmp/ppc603e-xer-source-after.json`.
-- Log SHA256: `b07fefa4bc6c59cb2f88da39b2bcfda0118adebf43c6a2c14e85fd4a5f69c093`.
-- Source-manifest SHA256: `4bd949fd56f3c54a60f87363c77ba96ccf3ce8d3dbbf73b1e1263d5b927aba33`.
+the final gate.
 
 The first gate attempt stopped at a metadata validator that still required the
 historical unavailable-PEM statement. The validator and primary-source metadata

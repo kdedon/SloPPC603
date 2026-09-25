@@ -53,7 +53,7 @@ or translated execution produce a diagnostic with no TLB mutation; this is
 not a claim of silicon behavior for those inputs. The core selects DCMP and
 the data bank for `tlbld`, ICMP and the instruction bank for `tlbli`. Compare
 VSID is bits [30:7]; RPA RPN is [31:12], C bit 7, WIMG [6:3], PP [1:0].
-`TLB_REFILL_DEPENDENCIES.md` records the manual references and unresolved
+[`TLB_REFILL_DEPENDENCIES.md`](TLB_REFILL_DEPENDENCIES.md) records the manual references and unresolved
 architectural miss-handler questions.
 
 ## Ownership and retirement

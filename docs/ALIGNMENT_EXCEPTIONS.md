@@ -25,8 +25,8 @@ reservation and cache-management alignment cases remain outside this slice.
   alignment state. The 603e-specific Table 4-13 selects the exact SRR1
   behavior used here.
 - The established exception-entry MSR and RFI contracts, including TGPR and
-  supported return modes, remain as documented in `EXCEPTION_STATE.md` and
-  `SUPERVISOR_INTEGRATION.md`.
+  supported return modes, remain as documented in [`EXCEPTION_STATE.md`](EXCEPTION_STATE.md) and
+  [`SUPERVISOR_INTEGRATION.md`](SUPERVISOR_INTEGRATION.md).
 
 Manual bit numbers count from the most significant bit. HDL slices below use
 numeric least-significant-bit indexing.

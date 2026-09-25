@@ -1,6 +1,9 @@
 # Core subsystem status review — 2026-09-21
 
-This independent review supplies the core-side inputs to the persistent system
+**Historical snapshot.** Several rows below have since risen; current values are
+in [SYSTEM_COMPLETION.md](SYSTEM_COMPLETION.md).
+
+This independent review supplied the core-side inputs to the persistent system
 scorecard. The denominator is the selected **single-issue, big-endian integer
 CPU with resumable supervisor exceptions, external interrupts, TB/DEC and a
 software-managed MMU**. It is not a complete 603e, Linux compatibility promise,

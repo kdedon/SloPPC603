@@ -9,7 +9,7 @@ This work adds neither string operations nor a new timing measurement.
 ## Reviewed architectural contract
 
 The local primary architectural source is
-[Programming Environments, Rev. 1](../../MPCFPE.pdf), section 2.1.5,
+Programming Environments, Rev. 1 (`MPCFPE.pdf`), section 2.1.5,
 Figure 2-6 and Table 2-6 (printed 2-11 / PDF 73). Its XER diagram and table
 identify SO, OV, CA, and the seven-bit byte count. In normal RTL numbering these
 are bits 31, 30, 29 and 6:0. Architectural bits 3–24 are reserved and the diagram
@@ -28,7 +28,7 @@ relative to the numerical selector. Both accesses are user-level; a privilege
 fault for SPR 1 in PR=1 would be incorrect. The fixed Rc bit remains zero.
 
 The processor-specific primary source is the
-[MPC603e and EC603e User's Manual](../../1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf),
+MPC603e and EC603e User's Manual (`1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`),
 section 2.3.5.1 (printed 2-40 / PDF 118). It explicitly ignores architectural
 instruction bit 25, the extended-opcode difference between MFSPR and MFTB.
 Consequently XO 339 and XO 371 are equivalent reads for enabled SPR 1 access;

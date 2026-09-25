@@ -4,7 +4,7 @@
 for one cacheable 32-byte line read.  It transfers one real four-beat burst;
 it does not synthesize a line from four scalar bus transactions.  The scalar
 master and unified scalar core wrapper are unchanged and remain described by
-`docs/BUS_MASTER.md` and `docs/BUS_INTEGRATION.md`.
+[`docs/BUS_MASTER.md`](BUS_MASTER.md) and [`docs/BUS_INTEGRATION.md`](BUS_INTEGRATION.md).
 
 The source is the local *MPC603e & EC603e RISC Microprocessors User's Manual*,
 MPC603EUM/AD, 11/97.  Table 8-1 and Table 8-2 were checked in the rendered

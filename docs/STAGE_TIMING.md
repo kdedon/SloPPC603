@@ -8,7 +8,7 @@ The additive contract is `sim/spec/stage_timing.json`. Its seven form anchors re
 
 ## Sources and interpretation
 
-All PDF references below name the local primary source `../../1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf` (MPC603EUM/AD, 11/97). Physical PDF page numbers are one-based. The printed chapter-6 page is the PDF page minus 246. Source review used the original chapter text and the accepted, visually checked figure transcription in `TIMING_SPEC.md`.
+All PDF references below name the local primary source `../../1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf` (MPC603EUM/AD, 11/97). Physical PDF page numbers are one-based. The printed chapter-6 page is the PDF page minus 246. Source review used the original chapter text and the accepted, visually checked figure transcription in [`TIMING_SPEC.md`](references/TIMING_SPEC.md).
 
 | Source | Reviewed relation | Disposition for this implementation |
 |---|---|---|
@@ -52,20 +52,20 @@ CQ and rename occupancy are checked before every edge against dispatched, unreti
 
 ## Executable evidence and reproduction
 
-Run from the parent `ppc` directory:
+Run from the repository root:
 
 ```sh
-python3 ppc603e/sim/tools/check_stage_timing.py
-python3 -m unittest discover -s ppc603e/sim/tools -p test_stage_timing.py -v
+python3 sim/tools/check_stage_timing.py
+python3 -m unittest discover -s sim/tools -p test_stage_timing.py -v
 verilator --binary --timing --assert -Wall --top-module tb_stage_timing \
-  ppc603e/rtl/ppc_pkg.sv ppc603e/rtl/ppc_fifo.sv \
-  ppc603e/rtl/ppc_fetch.sv ppc603e/rtl/ppc_decode.sv \
-  ppc603e/rtl/ppc_regfile_gpr.sv ppc603e/rtl/ppc_rename.sv \
-  ppc603e/rtl/ppc_dispatch.sv ppc603e/rtl/ppc_iu.sv \
-  ppc603e/rtl/ppc_completion.sv ppc603e/rtl/ppc_flags.sv ppc603e/rtl/ppc_core.sv \
-  ppc603e/tb/tb_stage_timing.sv --Mdir /tmp/ppc-stage-build
-/tmp/ppc-stage-build/Vtb_stage_timing +TRACE=/tmp/ppc-stage-timing.jsonl
-python3 ppc603e/sim/tools/check_stage_timing.py /tmp/ppc-stage-timing.jsonl
+  rtl/ppc_pkg.sv rtl/ppc_fifo.sv \
+  rtl/ppc_fetch.sv rtl/ppc_decode.sv \
+  rtl/ppc_regfile_gpr.sv rtl/ppc_rename.sv \
+  rtl/ppc_dispatch.sv rtl/ppc_iu.sv \
+  rtl/ppc_completion.sv rtl/ppc_flags.sv rtl/ppc_core.sv \
+  tb/tb_stage_timing.sv --Mdir build/ppc-stage-build
+build/ppc-stage-build/Vtb_stage_timing +TRACE=build/ppc-stage-timing.jsonl
+python3 sim/tools/check_stage_timing.py build/ppc-stage-timing.jsonl
 ```
 
 The dedicated bench instantiates the actual core with an abstract fetch responder. It runs two sequences covering all seven forms, starts unstalled, stalls retirement to fill resources/IQ, then drains with periodic retirement stalls. It does not force internal state or modify RTL. Procedural stimulus changes occur away from the sampling edge; hierarchical reads supply the trace and three direct edge-distance assertions.
@@ -80,7 +80,7 @@ Measured on 2026-09-12 with strict Verilator `--timing --assert -Wall`:
 
 Representative observations: the first instruction has D2/E3/finish4/commit5. The fourth has D8/E9/finish10/commit36 due to the imposed retirement stall. The ninth has D37/E38/finish39; the tenth issues at edge39 using that producer result and finishes40. These numbers describe this stimulus only.
 
-The JSONL schema has one object per edge: integer `edge`, `cq_count`, `rename_count`, `retire_ready`, plus optional `dispatch {id,pc,insn}`, `issue {id,a,b}`, `finish {id,value}`, and `retire {id,pc,insn,gpr,value}`. The retirement object appears whenever valid, including stalled edges. `id` is the packed CQ slot/generation token; the bounded trace requires no reuse of a full token. Trace files and compiled objects are generated in `/tmp`, not committed fixtures.
+The JSONL schema has one object per edge: integer `edge`, `cq_count`, `rename_count`, `retire_ready`, plus optional `dispatch {id,pc,insn}`, `issue {id,a,b}`, `finish {id,value}`, and `retire {id,pc,insn,gpr,value}`. The retirement object appears whenever valid, including stalled edges. `id` is the packed CQ slot/generation token; the bounded trace requires no reuse of a full token. Trace files and compiled objects are generated in `build/`, not committed fixtures.
 
 Remaining scope: exact manual stage/edge binding and graphical replay; other execution units, serialization, faults/recovery/reset epochs, multiple outstanding result producers, multiply/divide, two-wide admission/retirement and exact deallocation behavior. IU result backpressure is exercised separately by `tb_execution`; it cannot arise naturally in this core because CQ always consumes responses. P05c does not replace those tests or claim complete P05/P12 acceptance.
 

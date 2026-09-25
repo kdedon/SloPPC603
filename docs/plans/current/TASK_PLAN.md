@@ -4,7 +4,7 @@ Date: 2026-09-12. Scope: CPU-only SystemVerilog core, Verilator verification, an
 
 ## Baseline and task conventions
 
-**P00, P01 and P04 are complete. P02 timing-table and diagram transcription is accepted with explicit interpretation gaps; bus contracts remain partial. P03a–P03f metadata slices cover the initial subset, ADD, register logical, rotate, shift and compare families; 168 forms execute in RTL, including the bounded serialized control/memory milestone. P05 tagged execution now serves 168 forms, and P06b connects explicit local recovery; full timing/ISA prerequisite gates remain open. P04’s early fit succeeds, with setup/hold timing unmet and assigned to later closure work. P13 now includes bounded actual-handler/RTL comparison; full P13 acceptance remains queued.** See [WORK_QUEUE.md](WORK_QUEUE.md) for assignments, ownership and review status; [PROGRESS.md](PROGRESS.md) records the approximate overall completion after each round. The first pass provides an executable single-dispatch integer scaffold, not completion of the original plan's Phase 0 or Phase 1. Comprehensive instruction semantics, full vector execution, remaining specification coverage and processor conformance are still open; toolchain and early Quartus setup have since been completed.
+**P00, P01 and P04 are complete. P02 timing-table and diagram transcription is accepted with explicit interpretation gaps; bus contracts remain partial. P03a–P03f metadata slices cover the initial subset, ADD, register logical, rotate, shift and compare families; 168 forms execute in RTL, including the bounded serialized control/memory milestone. P05 tagged execution now serves 168 forms, and P06b connects explicit local recovery; full timing/ISA prerequisite gates remain open. P04’s early fit succeeds, with setup/hold timing unmet and assigned to later closure work. P13 now includes bounded actual-handler/RTL comparison; full P13 acceptance remains queued.** See [WORK_QUEUE.md](../stale/WORK_QUEUE.md) for assignments, ownership and review status; [PROGRESS.md](../stale/PROGRESS.md) records the approximate overall completion after each round. The first pass provides an executable single-dispatch integer scaffold, not completion of the original plan's Phase 0 or Phase 1. Comprehensive instruction semantics, full vector execution, remaining specification coverage and processor conformance are still open; toolchain and early Quartus setup have since been completed.
 
 For each task, copy its ID/title, prerequisites, scope, and acceptance criteria into an issue. Attach the relevant source references and test results to its completion record. If a task is too large, split it by instruction family or protocol scenario while retaining its parent ID and acceptance gate. The FPU and cache tasks in particular should become several implementation issues once their contracts are reviewed.
 
@@ -31,7 +31,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 
 - **Prerequisites:** original brief.
 - **Delivered:** `rtl/ppc_{pkg,fifo,fetch,decode,iu,regfile_gpr,rename,completion,core}.sv`, explicit file list, simulation Makefile, self-checking core bench, README and architecture/status/task documents.
-- **Acceptance evidence:** `make -C ppc603e/sim all` passed with Verilator 5.020; three runs of 256 checked results plus illegal/Rc/OE rejection and reset/backpressure checks.
+- **Acceptance evidence:** `make -C sim all` passed with Verilator 5.020; three runs of 256 checked results plus illegal/Rc/OE rejection and reset/backpressure checks.
 - **Original boundary (superseded by P05 preparation below):** seven instruction forms; one dispatch/retirement lane; finished results inserted directly into CQ; abstract fetch transport. No architectural exception or 60x implementation.
 
 ### P01 — Audit source coverage and freeze architectural assumptions [DONE]
@@ -39,13 +39,13 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 - **Accepted evidence:** [SOURCES.md](../../references/SOURCES.md), [REFERENCE_AUDIT.md](../../REFERENCE_AUDIT.md), and [CODING_CONVENTIONS.md](../../CODING_CONVENTIONS.md). Primary inventory and decisions are reviewed; unresolved feature evidence has assigned owners.
 
 - **Prerequisites:** P00.
-- **Deliver:** `docs/SOURCES.md` with PDF page versus printed-page mapping, available/missing chapters, reference precedence, model/revision distinctions, and an explicit decision log. Locate the HDL guideline referenced by the original brief; if unavailable, document local coding conventions. Audit DingusPPC license and semantic/model coverage before integration.
+- **Deliver:** [`docs/SOURCES.md`](../../references/SOURCES.md) with PDF page versus printed-page mapping, available/missing chapters, reference precedence, model/revision distinctions, and an explicit decision log. Locate the HDL guideline referenced by the original brief; if unavailable, document local coding conventions. Audit DingusPPC license and semantic/model coverage before integration.
 - **Acceptance:** verify manual completeness rather than repeating the abridgement estimate; identify primary evidence for queue/resource sizes, reset state, endian fetch/data behavior, FPU/variant capabilities, and uncertain bus rules. Each unresolved item has an owner/task and a conservative implementation boundary. Original resource estimates are labeled unmeasured.
 
 ### P02 — Transcribe timing and bus contracts
 
 - **Prerequisites:** P01.
-- **Deliver:** reviewed `TIMING_SPEC.md`, `BUS_SPEC.md`, machine-readable timing rows and bus scenario manifest under `sim/spec/`. Use chapter 6 tables/rules/schedules and chapter 7/8 pin/tenure diagrams from available source material.
+- **Deliver:** reviewed [`TIMING_SPEC.md`](../../references/TIMING_SPEC.md), [`BUS_SPEC.md`](../../references/BUS_SPEC.md), machine-readable timing rows and bus scenario manifest under `sim/spec/`. Use chapter 6 tables/rules/schedules and chapter 7/8 pin/tenure diagrams from available source material.
 - **Accepted bounded address/lane tables:** [BUS_ADDRESSING.md](../../references/BUS_ADDRESSING.md) now covers Tables 8-4 through 8-7, including physical DH lanes in 32-bit mode and two-beat aligned doublewords. Endian steering, CPU-address translation, cache transaction selection and full bus timing remain open.
 
 - **Acceptance:** every row/scenario has section/page provenance, mode conditions, and a precise observation point; ambiguous rules remain marked unresolved. Distinguish dispatch, execute finish, completion, throughput, signal assertion polarity, and sampling cycles. No checker derives its expected behavior solely from RTL.
@@ -53,7 +53,7 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 ### P03 — Build the full ISA/variant matrix and decoder metadata
 
 - **Prerequisites:** P01, P02.
-- **Deliver:** exhaustive machine-readable opcode/form table, generator and generated `ISA_MATRIX.md`; include unit, operands, writes, privilege, serialization, latency reference, and per-variant legality. Preserve OE/Rc and reserved-bit distinctions.
+- **Deliver:** exhaustive machine-readable opcode/form table, generator and generated [`ISA_MATRIX.md`](../../references/ISA_MATRIX.md); include unit, operands, writes, privilege, serialization, latency reference, and per-variant legality. Preserve OE/Rc and reserved-bit distinctions.
 - **Acceptance:** reconcile 603e supported/unsupported instructions with source listings; detect overlapping decode patterns; ensure every implemented decode entry and every required form has a matrix row. Keep unverified 602 behavior explicitly pending.
 
 ### P04 — Reproducible simulation, cross-toolchain, and early synthesis setup [DONE]
@@ -222,6 +222,10 @@ Useful independent work after contracts: the reference adapter P13, bus BFM P18,
 - **Acceptance:** manual MEI transition matrix, modified snoop push, retries while casting out, local/external reservation invalidation, success/failure CR effects, code-store plus cache-sync/refetch sequences. Cache/BFM tests must observe external effects, not just internal state.
 
 ## Floating point
+
+The [FPU reuse assessment](../../FPU_REUSE_ASSESSMENT.md) maps P23–P25 onto
+phases F0–F5, evaluates the SS and N64 FPUs as donors, and sets the next step:
+an FPU contract (F0) and a bounded arithmetic-backend feasibility experiment (F1).
 
 ### P23 — FPR/FPSCR, FP dispatch and memory path
 

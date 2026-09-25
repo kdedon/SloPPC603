@@ -19,7 +19,7 @@ The architectural source is *PowerPC Microprocessor Family: The Programming Envi
 - Section 2.3.6, Figures 2-23/2-24 and Tables 2-17/2-18, PDFs 93–94 / printed 2-31–32, define the distinct T=0 and T=1 layouts.
 - The Chapter 2 reserved-field rule, PDF 63 / printed 2-1, permits the selected deterministic zero readback policy for written T=0 reserved bits.
 
-The detailed source transcription and later CPU-integration requirements remain in `docs/SEGMENT_REGISTER_CONTRACT.md`.
+The detailed source transcription and later CPU-integration requirements remain in [`docs/SEGMENT_REGISTER_CONTRACT.md`](SEGMENT_REGISTER_CONTRACT.md).
 
 ## Interface and acceptance
 
@@ -60,7 +60,7 @@ The bank has no architectural valid bits. `rst_ni=0` clears all entries and the 
 
 ## Verification
 
-Strict lint command, run from `ppc603e/`:
+Strict lint command, Run from the repository root:
 
 ```sh
 verilator --lint-only -Wall --top-module ppc_segment_registers rtl/ppc_segment_registers.sv
@@ -79,9 +79,9 @@ The focused commands were:
 ```sh
 verilator --binary --timing --assert -Wall \
   --top-module tb_segment_registers \
-  --Mdir /tmp/ppc-r41-segment-tests \
+  --Mdir build/ppc-r41-segment-tests \
   rtl/ppc_segment_registers.sv tb/tb_segment_registers.sv
-/tmp/ppc-r41-segment-tests/Vtb_segment_registers
+build/ppc-r41-segment-tests/Vtb_segment_registers
 ```
 
 Validation used Verilator 5.020. Strict standalone lint and the independent

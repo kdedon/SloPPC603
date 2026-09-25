@@ -17,7 +17,7 @@ The supervisor parameter alone does not add interrupts, MTMSR, general
 instruction/data fault delivery, a page MMU, software cache controls, or a combined
 BAT/TLB/cache system. Physical fetch errors still enter the wrapper's terminal
 transport diagnostic. Scalar bus errors still use the core's diagnostic path; enabled natural-alignment
-violations now enter the handler as described in `ALIGNMENT_EXCEPTIONS.md`.
+violations now enter the handler as described in [`ALIGNMENT_EXCEPTIONS.md`](ALIGNMENT_EXCEPTIONS.md).
 The cached wrappers execute the existing barriers, but this does not implement
 cache coherency or decoded cache maintenance.
 
@@ -26,7 +26,7 @@ The BAT wrapper retains startup-supplied fixed context by default. Its additiona
 MSR IR/DR/PR at MTMSR, RFI and exception boundaries. Startup must use all-zero
 context in that profile. BAT protection/guarded instruction decisions become
 typed ISI events; page misses and transport errors remain terminal. See
-`LIVE_CONTEXT.md` and `LIVE_BAT_CONTEXT.md` for the exact mode restrictions,
+[`LIVE_CONTEXT.md`](LIVE_CONTEXT.md) and [`LIVE_BAT_CONTEXT.md`](LIVE_BAT_CONTEXT.md) for the exact mode restrictions,
 handshake and remaining limits. Physical/cache wrappers do not expose this option.
 
 ## Validation

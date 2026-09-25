@@ -9,8 +9,8 @@ architectural exception delivery, or memory transaction in this module.
 
 ## Reviewed sources
 
-The primary implementation source is local
-`/home/kevin/git/ppc/1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`
+The primary implementation source is
+`1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`
 (MPC603EUM/AD, 11/97):
 
 | Locator (one-based PDF / printed) | Evidence used |
@@ -22,7 +22,7 @@ The primary implementation source is local
 
 Detailed architecture fields were obtained from the official NXP-hosted
 [PowerPC Programming Environments, MPCFPE/AD, 1/97 Rev.1](https://www.nxp.com/docs/en/user-guide/MPCFPE.pdf).
-It has 828 pages; downloaded unchanged on 2026-09-14 to `/tmp/MPCFPE.pdf`,
+It has 828 pages; downloaded unchanged on 2026-09-14 as `MPCFPE.pdf`,
 SHA-256 `0600de0a3cb81636b9d511aa6b185e2fccc02f895ce4630411725634ef8e7eee`.
 The explicit 32-bit cases were used, not the 601-specific BAT format.
 
@@ -103,8 +103,8 @@ From `ppc603e`:
 
 ```sh
 verilator --binary --timing --assert -Wall --top-module tb_bat_translate \
-  rtl/ppc_bat_translate.sv tb/tb_bat_translate.sv --Mdir /tmp/ppc-bat-build
-/tmp/ppc-bat-build/Vtb_bat_translate
+  rtl/ppc_bat_translate.sv tb/tb_bat_translate.sv --Mdir build/ppc-bat-build
+build/ppc-bat-build/Vtb_bat_translate
 ```
 
 `rtl/bat_files.f` is separate from canonical CPU lists. The bench uses independent
@@ -138,15 +138,12 @@ core integration or full-MMU conformance is claimed.
 Final strict Verilator build and direct simulation passed **16,824 checks** on
 2026-09-14. The external-vector input path accepted a valid literal observation
 and rejected an injected expected-PP mismatch, an empty file, and a malformed
-row. `/tmp/ppc-bat-build/direct-run.log` and `negative-results.json` preserve those
-results. Regenerable `*.gch` files were removed only from `/tmp/ppc-bat-build`;
-the executable, generated sources, logs and test vectors remain.
+row.
 
 The parent-owned independent Python interval/addition oracle subsequently passed
 **45,312 external vectors** against that frozen executable. Its generator is
-`sim/tools/bat_vectors.py`, corpus is
-`sim/build/bat/vectors.txt`, and acceptance log is
-`/tmp/ppc-round37-bat-independent.log`. This second implementation covers all
+`sim/tools/bat_vectors.py` and corpus is
+`sim/build/bat/vectors.txt`. This second implementation covers all
 sizes/ways, privilege/PP/validity combinations, read/write boundaries, inactive
 dirty registers, real-mode controls and attributes, malformed fields/bases,
 overlap and disjoint-privilege aliases. Its results complement the direct

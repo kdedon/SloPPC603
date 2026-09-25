@@ -2,7 +2,7 @@
 
 Date: 2026-09-12. **Chapter 6 table and visible figure transcription complete; semantic binding and conformance remain open.** The machine-readable transcription is `sim/spec/timing.json` (schema version 1). It contains all **190 rows** of UM Tables 6-1 through 6-6, **39 rules**, **13 footnote definitions**, and all **162 visible instruction-stage cells** across **35 instruction rows** in Figures 6-3/6-4/6-5. There are 20 logged issues: `TIM-U09` is resolved by specific FP-table evidence; the others retain open qualifications or semantic binding work. No timing checker or executable figure replay has been implemented.
 
-The source is local `1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`, MPC603EUM/AD, 11/97. PDF locators are one-based physical pages. The full page map and source precedence are in `SOURCES.md`. No rule in this document is evidence that the current RTL implements the required timing.
+The source is local `1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`, MPC603EUM/AD, 11/97. PDF locators are one-based physical pages. The full page map and source precedence are in [`SOURCES.md`](SOURCES.md). No rule in this document is evidence that the current RTL implements the required timing.
 
 ## Coverage and provenance
 

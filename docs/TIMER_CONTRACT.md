@@ -1,7 +1,7 @@
-# Proposed next slice: time base and decrementer
+# Time base and decrementer contract
 
-The bounded implementation is now present; see [TIMERS.md](../../TIMERS.md).
-This document preserves its design rationale and acceptance plan. The external-interrupt
+The bounded implementation is present; see [TIMERS.md](TIMERS.md).
+This document records its design rationale and acceptance plan. The external-interrupt
 profile supplies a precise empty-machine boundary, architectural resume PC,
 transport drain and committed context handshake. Reuse those mechanisms for one
 decrementer source; do not add page translation, other interrupts or power modes.
@@ -30,7 +30,7 @@ interrupt's Table 4-12, the DEC description does not override this with a
 low-half-only save. Use the existing full-function save convention
 `old_MSR & 0x87c0ffff`, without cause bits. The inclusion of HDL bit 31 (manual
 bit 0) follows the same explicitly documented full-function-reserved-bit
-inference already used by SC/program/RFI in `EXCEPTION_STATE.md`; the literal
+inference already used by SC/program/RFI in [`EXCEPTION_STATE.md`](EXCEPTION_STATE.md); the literal
 UM §4.2.2 copied fields alone establish `0x07c0ffff`. Add a standalone fixture
 with high saved fields so accidentally reusing external `0x0000ffff` fails.
 MSR entry follows UM Table 4-7, 4-18, including EE/IR/DR clear; DAR/DSISR do not

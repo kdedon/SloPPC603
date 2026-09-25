@@ -82,26 +82,10 @@ checked precisely at retirement and through handler reads. Testbench stimulus
 was corrected to update handshake counters after clock sampling; no production
 RTL fix was needed.
 
-`make -C ppc603e/sim -j4 regression` passed (exit 0), recorded on
+`make -C sim -j4 regression` passed (exit 0), recorded on
 2026-09-21 at 12:20 UTC. It ran 165 named test targets, 21 strict RTL lint
 profiles and 241 Python tests (204 tool/checker, 22 cosimulation, 15 recovery).
 The log contains 248 PASS summary lines; these are not independent test counts.
 All 132 RTL/testbench/simulation-Makefile source hashes stayed identical before
 and after the run. The first full frozen-source run in this slice passed;
 no production changes were required by the independent verification.
-
-Local ephemeral evidence:
-
-- `/tmp/ppc603e-live-full-regression.log`
-- `/tmp/ppc603e-live-regression-summary.json`
-- `/tmp/ppc603e-live-source-before.json` and `-after.json`
-- `/tmp/ppc603e-live-frozen-prelint.log`
-
-Full-log SHA-256:
-`d949a86bb07788ace3dfb69773005d755d3a22f5ee586ec8b59117a7b3547fb0`
-
-Identical source-manifest SHA-256:
-`d1a7112f8db0d9cdde65dd34644460bf24341328f06afd9ac789f2ca872087f7`
-
-The source tests, Makefile targets and this concise evidence are retained in the
-repository working tree; the `/tmp` logs are not durable CI artifacts.

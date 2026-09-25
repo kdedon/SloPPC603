@@ -47,6 +47,6 @@ neither a new context nor a CSR transaction can reinterpret its mapping.
 The core handles the ordered, typed response as a synchronous exception at the
 faulting instruction. The router does not create a DSI for alignment faults or
 infer a cause from raw data/error payloads. Reset cancels router obligations
-under the existing reset contract. See `FETCH_EXCEPTIONS.md` for the analogous
-instruction cause carrier, and `LIVE_BAT_CONTEXT.md` and
-`RUNTIME_BAT_PROTOCOL.md` for context and CSR ownership rules.
+under the existing reset contract. See [`FETCH_EXCEPTIONS.md`](FETCH_EXCEPTIONS.md) for the analogous
+instruction cause carrier, and [`LIVE_BAT_CONTEXT.md`](LIVE_BAT_CONTEXT.md) and
+[`RUNTIME_BAT_PROTOCOL.md`](RUNTIME_BAT_PROTOCOL.md) for context and CSR ownership rules.

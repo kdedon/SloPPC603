@@ -64,7 +64,7 @@ ownership fields under strict warning checks.
 ## Reproduction
 
 ```sh
-make -C ppc603e/sim -j2 \
+make -C sim -j2 \
   test-core-data-fault test-core-data-fault-disabled \
   test-core-data-fault-cancel test-bat-data-fault \
   test-bat-data-fault-disabled test-exception-state
@@ -75,7 +75,7 @@ Focused runs on 2026-09-22 passed 3,495 checks in 12 enabled core phases,
 56 checks each in enabled and disabled BAT producer fixtures, and 228 direct
 exception-state checks. The separate compiled firmware workload exercises CPU
 BAT programming, skip and permission-repair retry through the wrapper; see
-`DATA_EXCEPTION_FIRMWARE.md` for its run and negative control. These directed
+[`DATA_EXCEPTION_FIRMWARE.md`](DATA_EXCEPTION_FIRMWARE.md) for its run and negative control. These directed
 tests do not establish TLB refill behavior, complete 603e DSI causes, or
 resumable physical transport errors.
 
@@ -98,11 +98,3 @@ corrupted expected DSISR causes the exact mailbox failure `83000001` at cycle
 trace metadata modeled explicitly; those were corrected before the final pass.
 No production RTL changed during the regression. All 240 inputs in the final
 source manifest remained unchanged through completion. No Quartus fit ran.
-
-Local evidence is `/tmp/ppc-dsi-full-regression.log`,
-`/tmp/ppc-dsi-cancel-final.log`, `/tmp/ppc-dsi-prelint-final.json` and
-`/tmp/ppc-dsi-final-inputs.json`. These are temporary convenience artifacts.
-The final log and manifest SHA256 values are:
-
-- `/tmp/ppc-dsi-full-regression.log`: `a25cb80c83daedc7eb3d50cc45ff924698713b60f09181275a1db3eabd11dadb`
-- `/tmp/ppc-dsi-final-inputs.json`: `30ae4765ffc457200e36dea4e37220be5d802fb627956d7e41f79e744584f850`

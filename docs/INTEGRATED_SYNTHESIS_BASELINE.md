@@ -101,7 +101,7 @@ cache-control semantics. The measurements do not certify the eventual MMU MVP.
 
 ## Reproduction and evidence
 
-From `ppc603e/quartus/integrated`:
+From `quartus/integrated`:
 
 ```sh
 verilator --lint-only -Wall --top-module ppc_integrated_measure -f files.f

@@ -87,7 +87,7 @@ offers one line request:
 - `line_req_critical_dw_o` is fetch address bits `[4:3]`.
 - `line_req_instruction_o` is always one.
 
-The line response layout is identical to `BUS_LINE_READ.md`: `[255:192]` is
+The line response layout is identical to [`BUS_LINE_READ.md`](BUS_LINE_READ.md): `[255:192]` is
 DW0 through `[63:0]` DW3.  Within each doubleword, the lower-addressed word is
 the high 32 bits.  All eight aligned word offsets and all four critical
 doublewords are therefore selectable without changing canonical line storage.

@@ -14,7 +14,7 @@ UM Table4-8/4-19 establishes TB zero and DEC `0xffffffff` reset values. UM
 §4.2.2/4-15 and PEM Table6-16/6-39 distinguish DEC's full saved-state subset
 from the external interrupt's low-half-only SRR1. The implemented full-function
 mask `0x87c0ffff` includes the already documented reserved-bit inference;
-[the contract](plans/stale/TIMER_NEXT_SLICE.md) separates this and other local arbitration
+[the contract](TIMER_CONTRACT.md) separates this and other local arbitration
 choices from literal manual requirements.
 
 UM2-40/2-44 establishes the MFSPR/MFTB read alias, including selector-specific
@@ -60,18 +60,16 @@ handler expectation fails. See [compiled acceptance evidence](COMPILED_FIRMWARE_
 for the command, image/source hashes and exact negative case. This optional
 cross-compiler workload is not silently included in the portable regression.
 
-The timer unit's negative commands, run from `ppc603e/sim`, are
+The timer unit's negative commands, run from `sim/`, are
 `./build/timer/Vtb_timer +NEGATIVE_WRITE` and
 `./build/timer/Vtb_timer +NEGATIVE_ACK`. Each must exit nonzero with the exact
 assertion marker `unsupported timer write selector` or
-`decrementer acceptance without a pending request`, respectively. Local logs
-are `/tmp/ppc-timer-negative_write.log` and `/tmp/ppc-timer-negative_ack.log`;
-the positive unit log is `/tmp/ppc-timer-unit.log`. Use `ulimit -c 0` when
+`decrementer acceptance without a pending request`, respectively. Use `ulimit -c 0` when
 reproducing expected-negative runs.
 
 ## Comprehensive gate
 
-The final source-frozen `make -C ppc603e/sim -j4 regression` passed with exit0
+The final source-frozen `make -C sim -j4 regression` passed with exit0
 on 2026-09-21, from `14:29:36.282131Z` through `14:42:07.819049Z`:
 
 - 172 named test targets, including the two recovery targets outside `test`.
@@ -84,23 +82,12 @@ on 2026-09-21, from `14:29:36.282131Z` through `14:42:07.819049Z`:
 - All 146 hashed RTL, TB, measurement-top and manifest/Makefile inputs remained
   byte-for-byte unchanged throughout the run.
 
-Local evidence:
-
-- Full log: `/tmp/ppc603e-timer-full-regression.log`.
-- Summary: `/tmp/ppc603e-timer-regression-summary.json`.
-- Before/after source manifests:
-  `/tmp/ppc603e-timer-source-before.json` and
-  `/tmp/ppc603e-timer-source-after.json`.
-- Log SHA256: `c444bf1f289876caa11b23dfdc3098471f8c038966b0a34d6390e8dcde1894d9`.
-- Source-manifest SHA256: `0f9dadf0ca91ea32465c515494591cc1c53764e241a9f6622faeba8638aad104`.
-
 The full gate passed on its first source-frozen run after the directed fixture
 corrections described below. Documentation-only completion edits do not require
 repeating it.
 
 The test sources and targets are retained in the repository working tree;
-no commit is implied. Temporary build logs are local evidence and are not
-expected to survive a clean machine. Reproduction uses the retained Makefile
+no commit is implied. Reproduction uses the retained Makefile
 `test-timer`, `test-timer-decode`, `test-core-timer-registers`,
 `test-core-timer-events`, and `test-exception-state` targets.
 

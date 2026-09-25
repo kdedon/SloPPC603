@@ -5,7 +5,7 @@ With `ENABLE_SUPERVISOR_EXCEPTIONS=1`, instruction-protection and guarded-fetch
 causes enter the ISI handler precisely. The disabled profile and unknown cause
 values produce ordered diagnostics. This slice is an exception-delivery carrier;
 the separate opt-in live BAT integration now supplies these causes from real
-BAT decisions (see `LIVE_BAT_CONTEXT.md` and `LIVE_CONTEXT.md`).
+BAT decisions (see [`LIVE_BAT_CONTEXT.md`](LIVE_BAT_CONTEXT.md) and [`LIVE_CONTEXT.md`](LIVE_CONTEXT.md)).
 
 ## Source contract
 
@@ -23,7 +23,7 @@ SRR0 and the cause bits in SRR1:
 Only one of these cause bits is set. The saved MSR mask is `0x87c0ffff`, as in
 the existing SC/program state contract. Primary UM PDF173/printed4-15 §4.2.2
 explicitly saves manual bits5–9 and16–31; including bit0 is the existing
-603e full-function-reserved-bit inference documented in `EXCEPTION_STATE.md`.
+603e full-function-reserved-bit inference documented in [`EXCEPTION_STATE.md`](EXCEPTION_STATE.md).
 This is deliberately different from alignment's explicit low-half-only table.
 
 Physical TEA is **not** an ISI cause. Primary UM PDF179–180/printed4-21–4-22
@@ -103,4 +103,4 @@ diagnostics, PC/cause ordering, retirement stalls, handler readback and return,
 wrong-path queued/delayed responses, and unchanged physical-error behavior.
 Acceptance of this carrier does not establish full MMU, TLB-miss, DSI,
 machine-check or interrupt support. The separate opt-in MTMSR/context fence
-is documented in `LIVE_CONTEXT.md`.
+is documented in [`LIVE_CONTEXT.md`](LIVE_CONTEXT.md).

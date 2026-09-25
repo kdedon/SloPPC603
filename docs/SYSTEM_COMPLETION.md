@@ -6,8 +6,8 @@ and page translation, and an integrated cache/60x path. FPGA acceptance also
 requires reviewed constraints and passing setup/hold. Board bring-up is excluded.
 
 This is the current status index. Feature contracts linked below control exact
-behavior; [MVP_EXECUTION_PLAN.md](plans/stale/MVP_EXECUTION_PLAN.md) preserves implementation
-history. Earlier inventory and round-40 percentages are historical snapshots.
+behavior; [ARCHITECTURE.md](ARCHITECTURE.md) gives the datapath overview; [MVP_EXECUTION_PLAN.md](plans/current/MVP_EXECUTION_PLAN.md) holds the MVP waves
+and accepted-round history. The [2026-09-20 inventory](CODEBASE_INVENTORY_2026-09-20.md) and round-40 percentages are historical snapshots.
 
 ## How to read the estimates
 
@@ -77,7 +77,7 @@ means no credit is silently assigned for them.
 | Dual dispatch/retirement and superscalar scheduling | 0% | Scalar tagged machinery is a foundation, not working dual issue. |
 | Branch prediction and folding | 0% | Serialized branches execute without either feature. |
 | Data cache, writeback and coherence | 0% | Data accesses use uncached transport; no MEI/snoop/castout system. |
-| Floating point, FPR and FPSCR | 0% | Integer/soft-float software restriction; no canonical FPU. |
+| Floating point, FPR and FPSCR | 0% | Integer/soft-float software restriction; no canonical FPU. Donor evaluation and phased plan: [FPU reuse assessment](FPU_REUSE_ASSESSMENT.md). |
 | Little endian, additional variants and power modes | 0% | Toolchain artifacts/source preparation do not establish executable hardware. |
 | Full 603e cycle/throughput fidelity | Not separately scored | Unit latency checks exist; complete machine fidelity is unimplemented. |
 | Board integration | Excluded | No pinout, clocks/CDC, external-memory controller or board demonstration acceptance. |
@@ -92,7 +92,7 @@ MMU/cache/bus path runs bounded firmware, but broader event collisions, software
 maintenance and hardware timing acceptance remain open.
 
 The special lane and its optional profiles concentrate control complexity.
-[CORE_STATUS_REVIEW.md](CORE_STATUS_REVIEW.md) records the independent core assessment.
+[CORE_STATUS_REVIEW.md](CORE_STATUS_REVIEW.md) records the 2026-09-21 independent core assessment.
 Further additions need disjoint ownership, a frozen handshake contract and tests
 for cancellation before commitment and irrevocability afterward. Documentation
 contains historical passages; use this index and feature contracts for current

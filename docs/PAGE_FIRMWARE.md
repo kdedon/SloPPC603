@@ -46,9 +46,7 @@ Negative control: confirm bytes at image offset `10cc` are `2c03002a`, then chan
 the final byte to `2b`. This changes only the first instruction-page function's
 expected return value. The simulator rejects the image with failure mailbox
 `87000002` at cycle 2,044 (SIGABRT). Verify the original bytes before applying
-this offset to a rebuilt image. Local evidence is in `/tmp/ppc-page-firmware.log`
-and `/tmp/ppc-page-negative.log`; generated artifacts and temporary logs are not
-durable CI storage.
+this offset to a rebuilt image.
 
 This workload demonstrates prefilled I/D page hits with CPU context changes.
 In this baseline profile page misses, permission failures, C updates and

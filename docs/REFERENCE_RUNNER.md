@@ -2,14 +2,16 @@
 
 The isolated runner executes original DingusPPC instruction handlers and compares their architectural state with the actual `ppc_core` after every retirement. The v1 lane exercises all 140 currently implemented non-memory decode entries. The separately selected v2 lane retains that corpus and adds all 28 aligned scalar memory entries, comparing full flat RAM as well as architectural registers. It does not replace the accepted CSV parser. This closes bounded executable-reference milestones, not full P13 or whole-CPU differential verification.
 
+Seeded mixed-program stress lane: [REFERENCE_STRESS.md](REFERENCE_STRESS.md).
+
 ## Reproduce
 
-From `/home/kevin/git/ppc`:
+From the repository root:
 
 ```sh
-python3 ppc603e/sim/cosim/run_reference.py \
-  --build-dir /tmp/ppc603e-reference-build
-python3 -m unittest discover -s ppc603e/sim/cosim -p 'test_*.py'
+python3 sim/cosim/run_reference.py \
+  --build-dir build/ppc603e-reference-build
+python3 -m unittest discover -s sim/cosim -p 'test_*.py'
 ```
 
 Requirements are Python 3 standard library, Git, GCC with C++20, Verilator and its normal C++ build tools. The script uses argument arrays, compiles the unmodified local reference source, reads the canonical `rtl/files.f`, and builds only `tb_core_reference` in the isolated directory. It requires no DingusPPC machine build, SDL2, Cubeb, Capstone, network access, ROM or externally installed emulator. `--reference` selects another local reference checkout; `--model` accepts only `MPC603EV` (default) or `MPC603E`.
@@ -20,10 +22,10 @@ The underlying reference compile is:
 g++ -std=c++20 -O2 -fwrapv -flto -ffunction-sections -fdata-sections \
   -DSUPPORTS_PPC_LITTLE_ENDIAN_MODE=0 \
   -DSUPPORTS_MEMORY_CTRL_ENDIAN_MODE=0 \
-  -Idingusppc -Idingusppc/thirdparty/loguru \
-  ppc603e/sim/cosim/reference_runner.cpp \
-  dingusppc/cpu/ppc/ppcopcodes.cpp \
-  -Wl,--gc-sections -o /tmp/ppc603e-reference-build/reference_runner
+  -I../dingusppc -I../dingusppc/thirdparty/loguru \
+  sim/cosim/reference_runner.cpp \
+  ../dingusppc/cpu/ppc/ppcopcodes.cpp \
+  -Wl,--gc-sections -o build/ppc603e-reference-build/reference_runner
 ```
 
 `-fwrapv` explicitly constrains signed addition/subtraction/multiplication overflow in the compiler configuration. Most selected arithmetic handlers calculate with `uint32_t` (for example `ppcopcodes.cpp:126–328` and `:411–427`); `-fwrapv` is an additional build policy, not a claim that it repairs arbitrary undefined C++. C++20 is required, including its signed-shift semantics. The selected corpus passes with this configuration. No sanitizer or portability certification is claimed.
@@ -31,8 +33,8 @@ g++ -std=c++20 -O2 -fwrapv -flto -ffunction-sections -fdata-sections \
 To run a separate reference program, supply one bare 1–8-digit hexadecimal instruction word per line:
 
 ```sh
-/tmp/ppc603e-reference-build/reference_runner program.hex MPC603EV > expected.txt
-python3 ppc603e/sim/cosim/compare_state.py expected.txt actual.txt
+build/ppc603e-reference-build/reference_runner program.hex MPC603EV > expected.txt
+python3 sim/cosim/compare_state.py expected.txt actual.txt
 ```
 
 The reference exits 2 for unsupported/reserved instructions, unknown models, malformed/empty input, a branch outside the image, undefined-result division, or exceeding 100,000 executed instructions. Every image word is checked for encoding legality before execution, including unreachable words. Immediately before an executed DIVW/DIVWU handler, the adapter also checks the actual current source registers: all zero divisors and signed `0x80000000 / 0xffffffff` are rejected, for every OE/Rc form. These are valid instruction encodings with undefined destination/CR results; they are classified as an oracle gap, not a masked architectural comparison or illegal opcode. Unexecuted exceptional operands have no dynamic effect. Exit at `PC == image_size_bytes` is the only normal termination. A runtime error can leave partial stdout: callers must check the exit status. There is no illegal sentinel or architecture-exception interpretation. The acceptance script checks subprocess success before reading output and removes any prior success manifest before starting a new run.
@@ -84,7 +86,7 @@ On 2026-09-14, the expanded default configuration passed **8,500 snapshots × 38
 
 The arithmetic sequence causes real CA changes, OV set/clear and sticky SO propagation, then subsequent record operations observe SO. Other CR fields become nonzero through actual comparison/CR instructions and remain part of every full-state comparison. This is selected operand coverage, not exhaustive inputs, opcode-bit legality, all branch truth combinations, or all implemented RTL forms.
 
-The closed gate rejects reserved BO encodings, BCCTR forms that decrement CTR, nonzero reserved unary rB, compare L/reserved bits, reserved CR fields/Rc, high-multiply OE, unsupported SPR numbers and unsupported primary/XO values. Current CPU decode admits SPR8/9 only: **XER SPR moves remain rejected**, although the generic original reference handler has an XER branch. This avoids silently adding CPU scope or treating arbitrary XER reserved bits as validated. XER[28:0] starts zero and cannot be seeded in either lane; MCRXR's original fourth-bit handling consequently agrees on these reachable states, without resolving the reserved-bit question in `CR_STATE.md`.
+The closed gate rejects reserved BO encodings, BCCTR forms that decrement CTR, nonzero reserved unary rB, compare L/reserved bits, reserved CR fields/Rc, high-multiply OE, unsupported SPR numbers and unsupported primary/XO values. Current CPU decode admits SPR8/9 only: **XER SPR moves remain rejected**, although the generic original reference handler has an XER branch. This avoids silently adding CPU scope or treating arbitrary XER reserved bits as validated. XER[28:0] starts zero and cannot be seeded in either lane; MCRXR's original fourth-bit handling consequently agrees on these reachable states, without resolving the reserved-bit question in [`CR_STATE.md`](CR_STATE.md).
 
 The run separately reconciles executed encodings against the source-owned ISA metadata. All **140 non-memory forms** of `isa.json`'s 168 implemented entries are hit; the exact `covered` and `uncovered` ID lists and metadata hash are stored in the manifest. Metadata supplies inventory labels only, never expected state. Any uncovered implemented non-memory entry fails the acceptance run. The 28 currently uncovered entries are exactly: `lwz, lbz, stw, stb, lhz, lha, sth, lwzx, lbzx, stwx, stbx, lhzx, lhax, sthx, lwzu, lbzu, lhzu, lhau, stwu, stbu, sthu, lwzux, lbzux, lhzux, lhaux, stwux, stbux, sthux`. Other architecture instructions absent from the current decode inventory, privileged/system operations, FP and atomics also remain unsupported. The source gate is the exact membership definition; unit tests independently enumerate accepted family/modifier groups and anchor complete MTCRF masks, MCRF pairs and taken-BCCTR structure. Inventory coverage does not imply exhaustive operands or legality-bit testing.
 
@@ -94,18 +96,18 @@ The same public comparator executable is run against the actual RTL trace with e
 
 The real reference binary also rejected **43 gates**: 30 static encoding/model cases and 12 dynamic exceptional-divide cases plus the direct reset-state divide-zero case. These include high-multiply reserved OE, reserved unary/CR bits and Rc, SPR1/other SPR numbers, reserved SPR Rc, compare L=1, reserved BO, BCCTR counter-decrement forms, memory, unknown opcode and MPC602. Dynamic divide guards cover signed/unsigned zero divisor and signed overflow in every OE/Rc form after two real setup instructions, and verify that no exceptional divide snapshot was emitted. The local Python suite passes **13 tests** (seven unchanged parser tests and six comparison/corpus tests), including first-divergence precedence over length mismatch. These checks establish comparator sensitivity and bounded input rejection; they do not prove the independent reference itself is correct.
 
-The isolated build directory holds `program.hex`, `expected.txt`, `actual.txt`, compiler/RTL/compare logs, binaries, copied `DINGUSPPC-LICENSE` and `DINGUSPPC-CREDITS.md`, and `manifest.json`. The expanded measured artifacts are under `/tmp/ppc603e-reference-expanded`; pass that path with `--build-dir` to reproduce there. The manifest records source commit/dirty state, selected source/header/adapter/RTL/ISA SHA-256 hashes, compiler versions and complete build commands, binary/program/trace hashes, configuration, encoding counts, exact form coverage, rejection cases and negative diagnostics. It is a run artifact, not a checked-in golden trace. At the measured run the original checkout commit is `cf951f690013cc9466c398d0428d4df50b6ede45` and its working tree is clean.
+The isolated build directory holds `program.hex`, `expected.txt`, `actual.txt`, compiler/RTL/compare logs, binaries, copied `DINGUSPPC-LICENSE` and `DINGUSPPC-CREDITS.md`, and `manifest.json`. The manifest records source commit/dirty state, selected source/header/adapter/RTL/ISA SHA-256 hashes, compiler versions and complete build commands, binary/program/trace hashes, configuration, encoding counts, exact form coverage, rejection cases and negative diagnostics. It is a run artifact, not a checked-in golden trace. At the measured run the original checkout commit is `cf951f690013cc9466c398d0428d4df50b6ede45` and its working tree is clean.
 
 ## P13d: explicit v2 flat-memory execution
 
-Run from the workspace root:
+Run from the repository root:
 
 ```sh
-python3 ppc603e/sim/cosim/run_memory_reference.py \
-  --build-dir /tmp/ppc603e-memory-reference-build
-python3 ppc603e/sim/cosim/compare_memory.py \
-  /tmp/ppc603e-memory-reference-build/expected.txt \
-  /tmp/ppc603e-memory-reference-build/actual.txt
+python3 sim/cosim/run_memory_reference.py \
+  --build-dir build/ppc603e-memory-reference-build
+python3 sim/cosim/compare_memory.py \
+  build/ppc603e-memory-reference-build/expected.txt \
+  build/ppc603e-memory-reference-build/actual.txt
 ```
 
 This builds the same unmodified original handler source with the additional explicit flag `-DREFERENCE_FLAT_RAM=1`. The selected original load/store implementations are `ppc_st/stu/stx/stux`, `ppc_lz/lzu/lzx/lzux` and `ppc_lha/lhau/lhax/lhaux` in `dingusppc/cpu/ppc/ppcopcodes.cpp:1630–1884`. The original handlers perform effective-address arithmetic, old source capture, signed/unsigned extension, destination writes and update-register writes. The adapter does not reimplement those instruction semantics.
@@ -126,7 +128,7 @@ Every v2 trace begins with this exact mandatory header:
 
 Each following row has **102 hex32 fields**: the unchanged 38 v1 register fields, followed by all 64 RAM words in increasing addresses `0x1000, 0x1004, ..., 0x10fc`. Each word is assembled in big-endian byte order. The comparator names a mismatching word, for example `ram[00001004]`; no digest, memory masking or tolerated differences are used. `compare_memory.py` requires the v2 header and size. The v1 parser/CLI still requires exactly 38 fields and rejects v2 input; the v2 parser rejects bare v1 input. The common comparison function has an explicit optional field-name argument whose default remains v1.
 
-`tb_core_memory_reference.sv` executes the real core with a separate byte-array data backend. It accepts aligned word-address requests, applies the core's byte strobes to RAM on store-request acceptance, and returns a registered response after varying latency. Request backpressure varies independently. Read responses contain the full aligned word; original CPU lane selection and sign extension must produce the correct committed result. Store RAM effects can precede retirement after the core's irrevocable reservation, as specified in `CONTROL_MEMORY.md`. The current core serializes memory operations after older retirement and blocks younger work, so comparing RAM at each retirement observes the same instruction ordering as the reference. This is not a general speculative-store or rollback model.
+`tb_core_memory_reference.sv` executes the real core with a separate byte-array data backend. It accepts aligned word-address requests, applies the core's byte strobes to RAM on store-request acceptance, and returns a registered response after varying latency. Request backpressure varies independently. Read responses contain the full aligned word; original CPU lane selection and sign extension must produce the correct committed result. Store RAM effects can precede retirement after the core's irrevocable reservation, as specified in [`CONTROL_MEMORY.md`](CONTROL_MEMORY.md). The current core serializes memory operations after older retirement and blocks younger work, so comparing RAM at each retirement observes the same instruction ordering as the reference. This is not a general speculative-store or rollback model.
 
 The bench checks held instruction/data requests and responses, stable stalled retirement packets, and that GPR/CR/XER/LR/CTR never change on an edge without accepted retirement. Each retirement exports every architectural register and every RAM word after nonblocking updates, checking both update destinations together through the independent reference trace. It also requires exact memory-request/store counts derived from the executed reference instruction stream; a duplicate read cannot pass merely because the final architectural value repeats.
 
@@ -138,7 +140,7 @@ Memory coverage includes all four byte lanes and both halfword positions over bo
 
 The real v2 CLI passes **13 injected-failure checks**: separate updated-base and loaded-result corruption, CR/XER corruption, corruption in each byte lane of the first RAM word, corruption at the far RAM boundary, v1 input, empty v2 input, truncation and a short row. The real reference executable passes **69 rejection cases** covering every update form's rA=0 restriction, every update load's rA=rD restriction, every indexed form's Rc bit, lower/upper out-of-range accesses and misalignment before any failed-operation snapshot. These are bounded input/backend rejection tests, not architectural exception tests.
 
-The unchanged v1 execution was rerun separately after integration: **8,500 snapshots, 140 forms, 12 mismatch checks and 43 rejection gates pass** in `/tmp/ppc603e-reference-v1-round35`. The combined local Python suite passes **17 tests**, retaining the original seven parser tests and adding strict v1/v2 separation, header/shape failures, every RAM word/byte-lane comparator sensitivity, and independent memory-encoding anchors. Actual memory comparison logs and the v2 manifest are in `/tmp/ppc603e-memory-reference-build`; the manifest records source/build hashes, full field order, RAM parameters, both address-space roles, exact form/count coverage and negative outcomes.
+The unchanged v1 execution was rerun separately after integration: **8,500 snapshots, 140 forms, 12 mismatch checks and 43 rejection gates pass**. The combined local Python suite passes **17 tests**, retaining the original seven parser tests and adding strict v1/v2 separation, header/shape failures, every RAM word/byte-lane comparator sensitivity, and independent memory-encoding anchors. The v2 manifest records source/build hashes, full field order, RAM parameters, both address-space roles, exact form/count coverage and negative outcomes.
 
 ## Provenance and remaining P13 scope
 

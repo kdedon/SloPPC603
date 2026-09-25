@@ -35,8 +35,5 @@ negative control fails the intended mailbox; see [PAGE_FIRMWARE.md](PAGE_FIRMWAR
 
 The first broad attempt was rejected by the BAT reference runner's source-freeze
 guard during final fixture/contract cleanup. It is not counted as acceptance.
-The clean rerun log is `/tmp/ppc-page-regression-final.log`; the router target
-log is `/tmp/ppc-page-router-build.log`. Final selected input hashes are in
-`/tmp/ppc-page-final-inputs.json`; the production RTL matches the recorded
-`/tmp/ppc-page-rtl-inputs.json`. Temporary logs are local evidence, not durable
-CI artifacts. No new FPGA fit or timing measurement was performed.
+The production RTL matches the recorded input hashes. No new FPGA fit or timing
+measurement was performed.

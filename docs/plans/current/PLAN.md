@@ -11,6 +11,12 @@ for current percentages, accepted behavior, gaps and the MVP effort range. The
 processor scope. [CPU references](../../references/README.md) collect the
 distilled source contracts.
 
+Companion plans in this directory:
+
+- [MVP execution plan](MVP_EXECUTION_PLAN.md): MVP waves and the accepted-round ledger.
+- [Full 603e task plan](TASK_PLAN.md): P00–P30 scope that the full CPU audit measures.
+- [Original design brief](ORIGINAL_DESIGN_BRIEF.md): target machine for the full 603e.
+
 ## Working with this repository
 
 Run `make -C sim regression` from the repository root for the simulation suite.
@@ -30,9 +36,13 @@ Generated builds, logs and reports are excluded from version control.
 
 For the full 603e, dual issue, branch prediction, data cache/coherence, floating
 point, endian/variant features and timing fidelity remain major workstreams.
+Floating point has an investigation and phased plan in the
+[FPU reuse assessment](../../FPU_REUSE_ASSESSMENT.md); its first steps are an FPU
+contract and an isolated arithmetic-backend experiment.
 Do not infer full CPU completion from the restricted MVP score.
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or
-acceptance gates change. The old wave plans and work queue are retained under
-[stale plans](../stale/README.md) as history, not as current instructions.
+acceptance gates change. Superseded progress snapshots, the agent work queue and
+implemented slice proposals are retained under [stale plans](../stale/README.md)
+as history, not as current instructions.

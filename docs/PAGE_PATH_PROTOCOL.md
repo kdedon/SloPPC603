@@ -87,7 +87,7 @@ all of them and blocks `start` until its response drains. `quiescent_o` means
 memory drained and excludes owned management responses, while context readiness
 also requires no management owner. A pending management request never cancels
 an older valid memory offer. Local reset clears TLB valids and its held
-response, following `TLB_SERVICE.md`; this is a test policy and differs from
+response, following [`TLB_SERVICE.md`](TLB_SERVICE.md); this is a test policy and differs from
 603e silicon reset behavior.
 
 This interface is normalized external test/control, not a CPU architectural

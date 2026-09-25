@@ -6,7 +6,7 @@ Status: source-reviewed implementation decision for parent integration. File sco
 
 ## Source-backed bindings and explicit choices
 
-The primary source is local `../../1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`, MPC603EUM/AD, 11/97. PDF numbers below are one-based physical pages. The accepted source transcriptions remain in `TIMING_SPEC.md` and `sim/spec/timing.json`.
+The primary source is local `../../1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`, MPC603EUM/AD, 11/97. PDF numbers below are one-based physical pages. The accepted source transcriptions remain in [`TIMING_SPEC.md`](references/TIMING_SPEC.md) and `sim/spec/timing.json`.
 
 Use rising-edge event numbers and sample eligibility before nonblocking updates. An interval `[k,k+1)` begins immediately after edge k and ends at edge k+1. A result visible combinationally within that interval is not an additional accepted event. No global offset is assigned between these edge numbers and the figures' numbered stage rectangles.
 

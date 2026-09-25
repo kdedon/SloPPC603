@@ -8,7 +8,7 @@ The [2026-09-23 full-scope audit](../../FULL_CPU_COMPLETION_AUDIT.md) supersedes
 current headline with **46.29% (about 46%)**; the round-40 table below is historical.
 
 
-The estimate covers the full CPU-only 603e scope in [TASK_PLAN.md](TASK_PLAN.md), through P30: architectural features, dual dispatch, timing and 60x behavior, caches/MMU/floating point/modes, and verified FPGA delivery. Board-level work is excluded. It is a judgment-based estimate of completed scope, not an instruction-coverage percentage or a forecast of time remaining.
+The estimate covers the full CPU-only 603e scope in [TASK_PLAN.md](../current/TASK_PLAN.md), through P30: architectural features, dual dispatch, timing and 60x behavior, caches/MMU/floating point/modes, and verified FPGA delivery. Board-level work is excluded. It is a judgment-based estimate of completed scope, not an instruction-coverage percentage or a forecast of time remaining.
 
 Use the same weights after each round. Credit accepted implementation and verification; give source preparation its own credit without also counting it as executable hardware. A small batch may leave the rounded overall percentage unchanged. Revise the weights only when scope changes, recording the reason.
 

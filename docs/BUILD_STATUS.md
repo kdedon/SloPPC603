@@ -37,7 +37,7 @@ running Quartus Prime Lite 17.0.2 Build 602.
 
 ## Checks run
 
-Commands in this section run from `ppc603e/`.
+Commands in this section Run from the repository root.
 
 | Command | Result |
 |---|---|

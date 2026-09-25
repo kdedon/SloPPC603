@@ -31,7 +31,7 @@ The source must be acknowledged by the handler to prevent repeated entry.
 Only this profile adds EE (HDL bit 15) to the shared MTMSR/RFI supported policy:
 supported named bits become `0x0000c070` (EE/PR/IP/IR/DR), unsupported named bits
 `0x00073f03`. RI, POW, TGPR, ILE, FP, ME, FE0/FE1, SE/BE and LE remain rejected.
-Reserved-bit treatment and prospective RFI restoration follow `LIVE_CONTEXT.md`.
+Reserved-bit treatment and prospective RFI restoration follow [`LIVE_CONTEXT.md`](LIVE_CONTEXT.md).
 A level already pending when MTMSR or RFI enables EE prevents any next instruction
 dispatch, including the refetched target after committed context installation.
 

@@ -1,6 +1,6 @@
 # Local HDL and verification conventions
 
-The original brief names `hdl-coding-guidelines`, but that skill is not in this session's available catalog and no matching file was found under the local Codex or git trees on 2026-09-12. No `AGENTS.md` was found in this workspace. These project conventions fill that gap; they do not claim to reproduce the missing guideline.
+Project-specific rules that apply on top of the shared `hdl-coding-guidelines` skill in [`skills/`](../skills/README.md). Where the two disagree, these conventions win. [AGENTS.md](../AGENTS.md) describes the overall workflow.
 
 - Use SystemVerilog with a single `always_ff` owner for each state element and nonblocking sequential assignments. Use `always_comb` with defaults for combinational outputs; avoid inferred latches.
 - Use typed packets, explicit signal direction suffixes, sized constants/casts and explicit signedness. Translate PowerPC manual bit numbering into HDL slice numbering in comments at nontrivial encodings.

@@ -27,7 +27,7 @@ MULLI has a separate internal ALU operation from MULLW so its timing family rema
 
 `tb_core_multiply_timing.sv` observes actual-core issue, finish and retirement edges. It proves MULLI finishes at E+3 and MULLW at E+5, neither result appears early, each dependent ADD wakes and issues on the accepted finish edge, and neither producer retires on its finish edge. Existing direct arithmetic and recovery benches wait through the reservations.
 
-Run the focused gates from `ppc603e/sim/`:
+Run the focused gates from `sim/`:
 
 ```sh
 make test-multiply-timing

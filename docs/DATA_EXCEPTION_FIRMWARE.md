@@ -33,8 +33,7 @@ syndrome from `0x08000000` to `0x08010000`. DUT sources and the original ELF wer
 unchanged. The simulator failed with SIGABRT at cycle 2,452 and the exact
 `firmware failure mailbox=83000001` diagnostic, not a timeout.
 
-Local logs are `/tmp/ppc-dsi-firmware.log`, `/tmp/ppc-dsi-old-firmware.log` and
-`/tmp/ppc-dsi-negative.log`. These are temporary convenience artifacts. Commands
+Commands
 are in [the toolchain README](../toolchain/README.md); final integration evidence
 is in [DATA_EXCEPTION_VERIFICATION.md](DATA_EXCEPTION_VERIFICATION.md).
 

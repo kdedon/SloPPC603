@@ -148,7 +148,7 @@ A request at `0x0000001f` crosses an aligned 32-byte boundary. The query reports
 Section 8.3.2.2's requirement to present a new address at the boundary or treat
 the data as noncoherent with respect to the 603e.
 
-Run the focused checks from `ppc603e/`:
+Run the focused checks from the repository root:
 
 ```sh
 python3 -m json.tool sim/spec/bus_addressing.json >/dev/null

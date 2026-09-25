@@ -30,7 +30,5 @@ Negative control: assert image bytes at offset `0x1070` equal `2c093400`, then
 change the final byte to `01`. This changes the SR0 readback expectation without
 changing its write. The simulator rejects the image with failure mailbox
 `84000000` at cycle 3,479 (SIGABRT). Verify original bytes before reusing the offset
-with another compiler/build. Local logs: `/tmp/ppc-segment-firmware.log` and
-`/tmp/ppc-segment-negative.log`; generated files and temporary logs are not durable
-CI storage. No page translation, refill, cache/bus composition or timing claim
+with another compiler/build. No page translation, refill, cache/bus composition or timing claim
 is implied.

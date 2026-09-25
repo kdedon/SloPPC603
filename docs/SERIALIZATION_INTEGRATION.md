@@ -122,7 +122,7 @@ rejection, and neighboring MTMSR/TLBSYNC exclusions.
 - pre-finish ISYNC cancellation and stale-finish suppression; and
 - reset of a held barrier followed by clean restart.
 
-Run from `ppc603e/` after the parent Make wiring is present:
+Run from the repository root after the parent Make wiring is present:
 
 ```sh
 make -C sim test-serialization-decode

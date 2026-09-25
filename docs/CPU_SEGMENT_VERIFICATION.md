@@ -36,7 +36,7 @@ before the segment transport sees it. The default-disabled and enabled-without-
 runtime-BAT decoder profiles are checked separately; existing legacy benches
 keep all new CSR pins inactive.
 
-Run from `ppc603e/sim`:
+Run from `sim/`:
 
 ```sh
 make lint-segment-integration
@@ -59,10 +59,10 @@ TLB refill, or complete 603e timing behavior.
 ## Parent integration gate
 
 The full legacy regression finished with exit 0 against unchanged production
-RTL (`/tmp/ppc-segment-full-regression.log`), including all 243 Python checks.
+RTL, including all 243 Python checks.
 The five new segment targets and three lint profiles were added after the full
 invocation parsed its Makefile and passed separately through their canonical
 targets. All nine firmware workloads passed; the segment negative control
 failed the intended readback mailbox. See [SEGMENT_FIRMWARE.md](SEGMENT_FIRMWARE.md).
-All 260 final source/manifest/configuration hashes in the local
-`/tmp/ppc-segment-final-inputs.json` remained stable. No FPGA fit was run.
+All 260 final source/manifest/configuration hashes
+remained stable. No FPGA fit was run.

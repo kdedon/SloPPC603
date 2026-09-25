@@ -108,7 +108,7 @@ The utility has no address input. Every defined size result therefore reports `a
 
 ## Decoder use
 
-Run from `ppc603e/`:
+Run from the repository root:
 
 ```sh
 python3 sim/tools/bus_decode.py validate

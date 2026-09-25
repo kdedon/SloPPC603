@@ -14,8 +14,8 @@ The CQ has no independent issued-token directory. Its direct response port relie
 
 ## Verification
 
-`make -C ppc603e/sim test-recovery-execution` passes 1,066 checks with strict Verilator warnings. It covers pending wake/cancel, ready-station cancellation, stalled-result cancellation, replacement capability, reset and 260 legal local cancellation cycles across eight-bit generation wrap. This is local-token evidence, not an arbitrary stale-replay guarantee after identity reuse.
+`make -C sim test-recovery-execution` passes 1,066 checks with strict Verilator warnings. It covers pending wake/cancel, ready-station cancellation, stalled-result cancellation, replacement capability, reset and 260 legal local cancellation cycles across eight-bit generation wrap. This is local-token evidence, not an arbitrary stale-replay guarantee after identity reuse.
 
-`make -C ppc603e/sim test-recovery-state` passes 5,871 sequential CQ/rename checks after independent review, including same-edge events, pending/ready WAW survivors, full wrapped queues, irrevocable offers and generation reuse. Full no-redirect regressions also pass; see [VERIFICATION.md](VERIFICATION.md). The pure selector's 245,760 snapshot checks and Python policy model remain separate evidence. None alone establishes whole-core recovery.
+`make -C sim test-recovery-state` passes 5,871 sequential CQ/rename checks after independent review, including same-edge events, pending/ready WAW survivors, full wrapped queues, irrevocable offers and generation reuse. Full no-redirect regressions also pass; see [VERIFICATION.md](VERIFICATION.md). The pure selector's 245,760 snapshot checks and Python policy model remain separate evidence. None alone establishes whole-core recovery.
 
 P06b2 now implements a coordinated redirect path with held-request drain, newest-target replacement, IQ clearing, surviving diagnostic tracking and terminal-halt policy. Its compiled core bench compares against an independent surviving instruction stream and preserves the existing no-redirect stage timings.

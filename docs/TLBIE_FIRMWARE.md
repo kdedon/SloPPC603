@@ -41,9 +41,7 @@ The runner executes all three modes. The negative control asserts image bytes
 at offset `130c` are `3d20deac`, changes the final byte to `ad`, and runs mode 0.
 That flips the selected set from 8 to 24; the expected miss does not occur and
 the test rejects failure mailbox `88000004` at cycle 4,849. Recheck original
-bytes before reusing the offset with another build. Local logs are
-`/tmp/ppc-tlbie-firmware.log` and `/tmp/ppc-tlbie-negative.log`; generated outputs
-and temporary logs are not durable CI storage.
+bytes before reusing the offset with another build.
 
 This slice adds CPU invalidation. TLB loading still uses fixture preloads;
 TLB load instructions, miss SPRs, TGPR, software table search/refill/retry,

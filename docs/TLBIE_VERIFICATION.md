@@ -20,5 +20,4 @@ recipes). The runtime service and router suites passed 96 and 134 checks.
 All eleven compiled profiles passed; the new TLBIE ELF ran three modes, and
 the wrong-set negative was rejected as documented in [TLBIE_FIRMWARE.md](TLBIE_FIRMWARE.md).
 The 43 recorded production inputs and 275 final source/configuration inputs
-were unchanged at acceptance. No FPGA fit was run. Local broad-gate log:
-`/tmp/ppc-tlbie-regression.log`; these temporary logs are not durable CI storage.
+were unchanged at acceptance. No FPGA fit was run.

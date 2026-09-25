@@ -4,11 +4,13 @@
 software miss-entry path. It accepts a captured 32-bit effective address, its committed segment
 descriptor, and a 32-bit SDR1 value. It has no state, request handshake,
 exception entry, miss SPR write, or memory access. The local
-[PowerPC Programming Environments Manual](../../MPCFPE.pdf),
+PowerPC Programming Environments Manual (`MPCFPE.pdf`),
 §§7.6.1.1.2, 7.6.1.3.2 and 7.6.1.4.2 (Figures 7-28, 7-30 and 7-32), supplies
 the 32-bit SDR1 format, hash and PTEG address construction. The 603e manual
 §§2.1.2.2–4 and 5.5.2.1.1–3 supplies the miss-register roles but defers
 the PTEG algorithm to that Programming Environments Manual.
+
+Verification: [MISS_DERIVATION_VERIFICATION.md](MISS_DERIVATION_VERIFICATION.md).
 
 The interface is `ea_i[31:0]`, `sr_i[31:0]`, `sdr1_i[31:0]` and outputs
 `valid_o`, `miss_page_o[31:0]`, `compare_o[31:0]`, `hash1_o[31:0]`, and

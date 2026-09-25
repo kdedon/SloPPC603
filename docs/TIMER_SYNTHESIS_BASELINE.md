@@ -31,7 +31,7 @@ Strict Verilator lint, shell syntax and the fail-closed 70-port virtual
 assignment check pass. The project source list has 20 entries. The completed
 result is recorded below.
 
-Run from `ppc603e/quartus/timer-bat`:
+Run from `quartus/timer-bat`:
 
 ```sh
 verilator --lint-only -Wall --top-module ppc_timer_bat_measure -f files.f

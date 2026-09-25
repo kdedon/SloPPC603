@@ -3,7 +3,7 @@
 `ppc_core_bat` optionally enables `ENABLE_LIVE_CONTEXT=1` together with
 `ENABLE_SUPERVISOR_EXCEPTIONS=1`. The default retains the startup-only profile.
 The core owns MSR; the router installs its committed IR/DR/PR values through a
-valid/ready handshake. See `LIVE_CONTEXT.md` for MTMSR encoding, supported modes,
+valid/ready handshake. See [`LIVE_CONTEXT.md`](LIVE_CONTEXT.md) for MTMSR encoding, supported modes,
 exception/RFI fences and the architectural source contract.
 
 ## Startup and update contract
@@ -65,17 +65,17 @@ The compiled `live-context` workload enables translation with identity-mapped
 code/stack and a nonidentity data alias, enters SC with IR/DR cleared, restores
 them through RFI, and disables translation. BAT entries are installed by the
 harness before start; software does not yet program them. See
-`toolchain/README.md` for reproduction.
+[`toolchain/README.md`](../toolchain/README.md) for reproduction.
 
 The additional `ENABLE_EXTERNAL_INTERRUPTS` profile now delivers synchronous
 level interrupts through the same drain/install sequence, with EE masking,
-precise SRR0 and RFI return. See `EXTERNAL_INTERRUPTS.md`; the compiled
+precise SRR0 and RFI return. See [`EXTERNAL_INTERRUPTS.md`](EXTERNAL_INTERRUPTS.md); the compiled
 `external-interrupt` workload exercises entry around a translated store.
 
 This is a live BAT context integration on abstract physical word channels. It
 does not combine the BAT wrapper with the instruction cache or 60x bus, provide
 software-managed page-TLB refill or establish an OS-ready MMU. Optional TB/DEC
-support is now provided by `ENABLE_TIMERS`; see `TIMERS.md`. The
+support is now provided by `ENABLE_TIMERS`; see [`TIMERS.md`](TIMERS.md). The
 cached physical FPGA measurement remains a separate profile with live context
 and external interrupts disabled.
 

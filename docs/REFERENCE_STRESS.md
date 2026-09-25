@@ -9,7 +9,7 @@ license, compiler policy, closed opcode gate, and the exact 102-field v2 schema.
 
 ## Reproduce
 
-From `ppc603e/sim`:
+From `sim/`:
 
 ```sh
 python3 cosim/run_reference_stress.py --build-dir build/reference-stress

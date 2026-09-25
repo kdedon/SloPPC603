@@ -1,7 +1,7 @@
 # Full CPU weighting audit
 
 Date: 2026-09-23. Scope: the original CPU-only 603e project through P30 in
-[TASK_PLAN.md](plans/stale/TASK_PLAN.md), including superscalar execution, floating point,
+[TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
 **Revised estimate: about 46% complete (weighted 46.29%; judgment range 40–50%).**
@@ -79,7 +79,9 @@ historically measured effort. Keep them fixed for subsequent updates.
 - **Source/tools:** retain 68%/90% without claiming a fresh source reconciliation.
   Their combined 9.04 points are project-delivery credit, not executable hardware.
   Floating point and the remaining mode/platform work stay at zero; existing
-  bounded reset tests do not establish complete platform behavior.
+  bounded reset tests do not establish complete platform behavior. The
+  [FPU reuse assessment](FPU_REUSE_ASSESSMENT.md) is investigation and planning,
+  not implementation, and earns no floating-point credit.
 
 ## Reconciliation and next updates
 

@@ -47,7 +47,7 @@ The metadata validator checks all eight swapped-selector encodings, source/desti
 
 The independent decoder checks cover default rejection, enabled supervisor access, exact and neighboring selectors, fixed Rc, GPR variation, and permission normalization. The actual-core checks cover full-width round trips, bank independence, stalled retirement, pre-finish cancellation and recovery, problem-state sanitization without read or write leakage, exact saved privilege state, and hard reset. Metadata labels the eight forms `accepted_sprg_integration_benches` only after both gates passed.
 
-Run from `ppc603e/`:
+Run from the repository root:
 
 ```sh
 verilator --lint-only -Wall --top-module ppc_core $(sed 's#^../##' rtl/files.f)

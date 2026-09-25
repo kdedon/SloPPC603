@@ -1,6 +1,6 @@
 # PowerPC 603e CPU scaffold
 
-An executable starting point for the CPU described in [the original design brief](docs/plans/stale/ORIGINAL_DESIGN_BRIEF.md). This is an initial implementation, **not a complete or cycle-faithful 603e**. The original reference projects and downloaded manuals are unchanged.
+An executable starting point for the CPU described in [the original design brief](docs/plans/current/ORIGINAL_DESIGN_BRIEF.md). This is an initial implementation, **not a complete or cycle-faithful 603e**. The original reference projects and downloaded manuals are unchanged.
 
 ## Repository layout
 
