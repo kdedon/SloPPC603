@@ -83,6 +83,11 @@ and attributes until `AACK`.  It samples `ARTRY` on `AACK+1`.  A qualified
 retry aborts the entire transaction, inserts the documented one-cycle `BR`
 suppression opportunity, and repeats the same critical starting address.
 
+`AACK` is legal no earlier than the cycle after `TS`.  An `AACK` sampled on the
+`TS` edge sets sticky `protocol_error_o`; the master releases `ABB` with the
+normal half-clock negation and returns an error response with a zero line and
+no data tenure.
+
 This is the serialized subset of UM §§8.3.1–8.3.3, PDF 317–330 / printed
 8-9–8-22.  No data grant is accepted until the `AACK+1` retry decision, so a
 legal address retry cannot leave partial response state.  `ABB` is driven

@@ -85,6 +85,11 @@ and one-cycle `TS`, holding the adjusted address and attributes until `AACK`.
 UM §§8.3.1–8.3.2 and Figure 8-6 define the grant and minimum/wait-extended
 address transfer, PDF 318–320 / printed 8-10–8-12.
 
+`AACK` is legal no earlier than the cycle after `TS`.  An `AACK` sampled on the
+`TS` edge is a protocol error: the master sets sticky `protocol_error_o`,
+releases `ABB` with the normal half-clock negation, and returns an error
+response without a data tenure.
+
 The cycle after sampling `AACK`, the adapter samples `ARTRY`.  Low `ARTRY`
 restarts the complete address transaction after one cycle with `BR` negated,
 giving the retrying snooper its documented request opportunity.  An early
