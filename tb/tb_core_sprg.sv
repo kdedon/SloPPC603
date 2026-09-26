@@ -273,7 +273,7 @@ module tb_core_sprg;
     tick();
     rst_n = 1'b1;
     tick();
-    require(!halted && dut.msr == 0 && dut.srr0 == 0 && dut.srr1 == 0 &&
+    require(!halted && dut.msr == 32'h40 && dut.srr0 == 0 && dut.srr1 == 0 &&
             dut.special.sprg_q[0] == 0 && dut.special.sprg_q[1] == 0 &&
             dut.special.sprg_q[2] == 0 && dut.special.sprg_q[3] == 0 &&
             dut.completion.count_q == 0,
@@ -458,7 +458,7 @@ module tb_core_sprg;
     for (logic [31:0] pc = 0; pc <= 32'h28; pc += 4)
       commit_expected(pc, instruction(pc));
     accept_internal_redirect();
-    require(dut.msr == 32'h87c0_4000 &&
+    require(dut.msr == 32'h0000_4000 &&
             dut.special.sprg_q[0] == 32'h1357_9bdf &&
             dut.regfile.gpr[20] == 32'h2468_ace0,
             "problem-state MFSPRG fixture setup mismatch");
@@ -471,8 +471,8 @@ module tb_core_sprg;
     accept_internal_redirect();
     require(dut.regfile.gpr[20] == 32'h2468_ace0 &&
             dut.special.sprg_q[0] == 32'h1357_9bdf &&
-            dut.srr0 == 32'h100 && dut.srr1 == 32'h87c4_4000 &&
-            dut.msr == 32'h87c0_0000,
+            dut.srr0 == 32'h100 && dut.srr1 == 32'h0004_4000 &&
+            dut.msr == 32'h0000_0000,
             "problem-state MFSPRG leaked data or saved wrong privilege state");
 
     // The corresponding problem-state MTSPRG cannot overwrite a seeded bank.
@@ -480,7 +480,7 @@ module tb_core_sprg;
     for (logic [31:0] pc = 0; pc <= 32'h28; pc += 4)
       commit_expected(pc, instruction(pc));
     accept_internal_redirect();
-    require(dut.msr == 32'h87c0_4000 &&
+    require(dut.msr == 32'h0000_4000 &&
             dut.special.sprg_q[1] == 32'haaaa_5555 &&
             dut.regfile.gpr[22] == 32'hdead_beef,
             "problem-state MTSPRG fixture setup mismatch");
@@ -493,8 +493,8 @@ module tb_core_sprg;
     accept_internal_redirect();
     require(dut.special.sprg_q[1] == 32'haaaa_5555 &&
             dut.regfile.gpr[22] == 32'hdead_beef &&
-            dut.srr0 == 32'h100 && dut.srr1 == 32'h87c4_4000 &&
-            dut.msr == 32'h87c0_0000,
+            dut.srr0 == 32'h100 && dut.srr1 == 32'h0004_4000 &&
+            dut.msr == 32'h0000_0000,
             "problem-state MTSPRG modified state or saved wrong privilege state");
 
     // The source-defined hard-reset value is zero after nonzero use as well.
