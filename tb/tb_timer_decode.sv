@@ -2,10 +2,10 @@
 module tb_timer_decode;
   import ppc_pkg::*;
   logic [31:0] insn;
-  uop_t enabled,legacy,baseline,read_anchor;
+  uop_t enabled,legacy,baseline,read_anchor,legacy_anchor,baseline_anchor;
   logic unused_outputs;
   int checks=0,legal=0,rejected=0;
-  assign unused_outputs=^{enabled,legacy,baseline,read_anchor};
+  assign unused_outputs=^{enabled,legacy,baseline,read_anchor,legacy_anchor,baseline_anchor};
   ppc_decode #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_TIMERS(1'b1)) timers(.insn_i(insn),.uop_o(enabled));
   ppc_decode #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1))
@@ -30,11 +30,11 @@ module tb_timer_decode;
             int xo;
             reading=form!=2;xo=form==0?339:form==1?371:467;
             expected=(rc==0)&&(old_selector(n)||n==22||(reading&&(n==268||n==269))||(!reading&&(n==284||n==285)));
-            old_expected=(rc==0)&&(form!=1||n==1)&&old_selector(n);
+            old_expected=(rc==0)&&old_selector(n);
             insn=encode(xo,rt,n,1'(rc));#1;
             check(enabled.illegal==!expected,"timer selector/reserved Rc decode");
             check(legacy.illegal==!old_expected,"legacy profile changed SPR acceptance");
-            check(baseline.illegal!=((rc==0)&&form!=1&&(n==8||n==9)),"default SPR profile changed");
+            check(baseline.illegal!=((rc==0)&&(n==8||n==9)),"default SPR profile changed");
             check(!enabled.mem_update&&!enabled.write_cr0&&!enabled.write_ca&&!enabled.write_ov_so&&
               !enabled.write_cr_fields&&!enabled.write_cr_bit&&!enabled.branch_lk,"SPR acquired unrelated write effects");
             check(enabled.write_xer==(expected&&!reading&&n==1),"XER write permission originates in legal allocation");
@@ -46,9 +46,11 @@ module tb_timer_decode;
             end else begin rejected++;check(!enabled.gpr_write&&enabled.special_op==SPECIAL_NONE,"invalid SPR gained destination");end
           end
         end
-        insn=encode(339,rt,n,0);#1;read_anchor=enabled;
+        insn=encode(339,rt,n,0);#1;read_anchor=enabled;legacy_anchor=legacy;baseline_anchor=baseline;
         insn=encode(371,rt,n,0);#1;
         check(enabled==read_anchor,"MFTB/MFSPR normalization changed selector semantics");
+        // The alias holds in every profile, independent of unrelated options.
+        check(legacy==legacy_anchor&&baseline==baseline_anchor,"MFTB alias depends on profile");
       end
     end
     $display("PASS timer decode checks=%0d legal=%0d rejected=%0d",checks,legal,rejected);$finish;

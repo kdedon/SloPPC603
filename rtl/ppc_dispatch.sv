@@ -40,7 +40,7 @@ module ppc_dispatch (
   endfunction
   assign resolved_a = resolve(a);
   assign resolved_b = resolve(b);
-  assign issue_valid_o = rst_ni && !cancel_i && occupied && resolved_a.ready && resolved_b.ready;
+  assign issue_valid_o = !cancel_i && occupied && resolved_a.ready && resolved_b.ready;
   assign issue_o.op = op;
   assign issue_o.producer = producer;
   assign issue_o.a = resolved_a.value;
@@ -52,7 +52,7 @@ module ppc_dispatch (
   assign issue_o.write_ca = write_ca;
   assign issue_o.write_ov_so = write_ov_so;
   assign issue_o.write_cr0 = write_cr0;
-  assign dispatch_ready_o = rst_ni && !cancel_i && (!occupied || (issue_valid_o && issue_ready_i));
+  assign dispatch_ready_o = !cancel_i && (!occupied || (issue_valid_o && issue_ready_i));
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       occupied <= 1'b0;

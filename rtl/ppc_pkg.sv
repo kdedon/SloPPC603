@@ -51,8 +51,7 @@ package ppc_pkg;
     rename_tag_t tag;
     logic [31:0] value;
   } wake_packet_t;
-  // Synchronous translation faults only. Physical TEA is not cancellable
-  // instruction metadata and stays on the separate transport-fatal path.
+  // Synchronous translation faults. Bus TEA takes the transport-fatal path.
   typedef enum logic [2:0] {
     FETCH_OK = 3'd0,
     FETCH_ISI_PROTECTION = 3'd1,
@@ -91,6 +90,42 @@ package ppc_pkg;
   typedef enum logic [1:0] {
     MEM_BYTE, MEM_HALF, MEM_WORD
   } mem_size_t;
+  // Unit benches elaborate subsets of the package constants below.
+  /* verilator lint_off UNUSEDPARAM */
+  // SPR numbers
+  // Selector = {insn[15:11], insn[20:16]}. Bit 4 (instruction field bit 0)
+  // marks a supervisor-only SPR.
+  localparam int SPR_PRIV_BIT = 4;
+  localparam logic [9:0] SPR_XER = 10'd1;
+  localparam logic [9:0] SPR_LR = 10'd8;
+  localparam logic [9:0] SPR_CTR = 10'd9;
+  localparam logic [9:0] SPR_DSISR = 10'd18;
+  localparam logic [9:0] SPR_DAR = 10'd19;
+  localparam logic [9:0] SPR_DEC = 10'd22;
+  localparam logic [9:0] SPR_SDR1 = 10'd25;
+  localparam logic [9:0] SPR_SRR0 = 10'd26;
+  localparam logic [9:0] SPR_SRR1 = 10'd27;
+  localparam logic [9:0] SPR_TBL_READ = 10'd268;
+  localparam logic [9:0] SPR_TBU_READ = 10'd269;
+  localparam logic [9:0] SPR_SPRG0 = 10'd272;
+  localparam logic [9:0] SPR_SPRG3 = 10'd275;
+  localparam logic [9:0] SPR_TBL_WRITE = 10'd284;
+  localparam logic [9:0] SPR_TBU_WRITE = 10'd285;
+  localparam logic [9:0] SPR_IBAT0U = 10'd528;
+  localparam logic [9:0] SPR_DBAT3L = 10'd543;
+  localparam logic [9:0] SPR_DMISS = 10'd976;
+  localparam logic [9:0] SPR_DCMP = 10'd977;
+  localparam logic [9:0] SPR_HASH1 = 10'd978;
+  localparam logic [9:0] SPR_HASH2 = 10'd979;
+  localparam logic [9:0] SPR_IMISS = 10'd980;
+  localparam logic [9:0] SPR_ICMP = 10'd981;
+  localparam logic [9:0] SPR_RPA = 10'd982;
+  // XER
+  localparam int XER_SO_BIT = 31;
+  localparam int XER_CA_BIT = 29;
+  localparam int XER_BYTE_COUNT_WIDTH = 7;
+  localparam logic [31:0] XER_IMPLEMENTED_MASK = 32'he000_007f;
+  /* verilator lint_on UNUSEDPARAM */
   typedef struct packed {
     alu_op_t op;
     logic [31:0] a;

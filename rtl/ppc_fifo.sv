@@ -1,4 +1,4 @@
-// Registered storage; no combinational bypass. Full queues reclaim next cycle.
+// Synchronous FIFO without bypass; a pop frees space the next cycle.
 module ppc_fifo #(
   parameter int WIDTH = 32,
   parameter int DEPTH = 6
@@ -18,12 +18,11 @@ module ppc_fifo #(
   logic [PTR_WIDTH-1:0] rd_ptr, wr_ptr;
   logic [COUNT_WIDTH-1:0] count;
   logic push, pop;
-  assign push_ready_o = rst_ni && !clear_i && (count < COUNT_WIDTH'(DEPTH));
-  assign pop_valid_o = rst_ni && !clear_i && (count != 0);
-  // Data is meaningful only with pop_valid_o. Invalidation withdraws valid
-  // immediately without placing the clear/recovery path on the data mux.
-  // Keep reset and empty output behavior; a clear edge discards the old head.
-  assign pop_data_o = (rst_ni && count != 0) ? entries[rd_ptr] : '0;
+  // Both neighbours share this reset, so only clear gates the handshakes.
+  assign push_ready_o = !clear_i && (count < COUNT_WIDTH'(DEPTH));
+  assign pop_valid_o = !clear_i && (count != 0);
+  // Meaningful only with pop_valid_o.
+  assign pop_data_o = entries[rd_ptr];
   assign push = push_valid_i && push_ready_o;
   assign pop = pop_valid_o && pop_ready_i;
   always_ff @(posedge clk_i) begin

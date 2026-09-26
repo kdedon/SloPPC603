@@ -59,7 +59,7 @@ module ppc_flags (
                     (commit_packet_i.write_cr0 ?
                      (32'hf000_0000 >> (commit_packet_i.cr_field * 4)) :
                      32'b0));
-  assign xer_mask = commit_packet_i.write_xer ? 32'he000_007f : {
+  assign xer_mask = commit_packet_i.write_xer ? XER_IMPLEMENTED_MASK : {
     commit_packet_i.write_ov_so,
     commit_packet_i.write_ov_so,
     commit_packet_i.write_ca,
@@ -113,14 +113,15 @@ module ppc_flags (
           else $error("registered flag owner retired without ownership metadata");
       end
       // synthesis translate_on
-      // A flag-writing retirement is one indivisible architectural commit. A
-      // bad owner/diagnostic packet is an invariant violation, not a second
-      // ready/valid decision that could split GPR and flag effects.
+      // Flag writes commit with the retirement; a bad owner is an invariant
+      // violation, never a stall.
       if (commit_i && commit_writes_flags) begin
+        // synthesis translate_off
         assert (owner_commit)
           else $error("flag-writing retirement does not match flag owner");
         assert (!commit_packet_i.illegal)
           else $error("diagnostic retirement carries flag write permission");
+        // synthesis translate_on
         cr_q <= (cr_q & ~cr_mask) | (commit_packet_i.cr_delta & cr_mask);
         xer_q <= (xer_q & ~xer_mask) | (commit_packet_i.xer_delta & xer_mask);
       end

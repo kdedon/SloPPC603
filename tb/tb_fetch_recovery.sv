@@ -101,37 +101,30 @@ module tb_fetch_recovery;
 
   initial begin
     logic [31:0] held_address;
-    fetch_packet_t stalled_packet;
 
     idle_inputs();
     require(IQ_DEPTH == 6, "fetch recovery fixture assumes six-entry IQ contract");
 
-    // Baseline transport: a downstream packet stall holds the response packet
-    // and PC, then normal acceptance advances by four.
+    // Baseline transport: the slot reserved at request time accepts a delayed
+    // response at once, and acceptance advances by four.
     reset_fetch(1'b0);
     accept_request(RESET_PC);
-    @(negedge clk);
-    rsp_valid = 1'b1;
-    rsp_insn = 32'h3860_0001;
-    packet_ready = 1'b0;
-    #1;
-    stalled_packet = packet;
-    require(packet_valid && !rsp_ready && stalled_packet.pc == RESET_PC,
-            "packet backpressure behavior wrong");
     repeat (3) begin
       @(posedge clk);
       #1;
-      require(packet_valid && !rsp_ready && packet == stalled_packet,
-              "stalled response packet changed");
+      require(dut.pending && !packet_valid && rsp_ready,
+              "delayed response lost its pending request");
     end
     @(negedge clk);
-    packet_ready = 1'b1;
+    rsp_valid = 1'b1;
+    rsp_insn = 32'h3860_0001;
     #1;
-    require(packet_valid && rsp_ready, "stalled response did not resume");
+    require(packet_valid && rsp_ready && packet.pc == RESET_PC &&
+            packet.insn == 32'h3860_0001 && packet.page_miss == '0,
+            "reserved-slot response handshake wrong");
     @(posedge clk);
     #1;
     rsp_valid = 1'b0;
-    packet_ready = 1'b1;
     #1;
     require(req_valid && req_addr == RESET_PC + 32'd4,
             "baseline packet acceptance did not advance PC");
@@ -185,10 +178,8 @@ module tb_fetch_recovery;
     @(negedge clk);
     rsp_valid = 1'b1;
     rsp_insn = 32'hdead_4000;
-    packet_ready = 1'b0;
     #1;
-    require(rsp_ready && !packet_valid,
-            "discard response depended on packet readiness or escaped");
+    require(rsp_ready && !packet_valid, "discarded response escaped");
     @(posedge clk);
     #1;
     rsp_valid = 1'b0;
@@ -270,24 +261,24 @@ module tb_fetch_recovery;
     require(req_valid && req_addr == 32'h0000_8000,
             "latest target while accepted request drained did not win");
 
-    // A coincident response is discarded on the redirect edge even when the
-    // downstream packet consumer is ready. This edge's target is installed.
+    // A coincident response is consumed on the redirect edge while the
+    // cleared IQ refuses it. This edge's target is installed.
     reset_fetch(1'b0);
     accept_request(RESET_PC);
     @(negedge clk);
     rsp_valid = 1'b1;
     rsp_insn = 32'hdead_9000;
-    packet_ready = 1'b1;
+    packet_ready = 1'b0;
     redirect = 1'b1;
     redirect_target = 32'h0000_9000;
     #1;
-    require(rsp_ready && !packet_valid,
-            "coincident redirect exposed old response packet");
+    require(rsp_ready, "coincident redirect did not consume old response");
     @(posedge clk);
     #1;
     rsp_valid = 1'b0;
     packet_ready = 1'b1;
     redirect = 1'b0;
+    #1;
     require(req_valid && req_addr == 32'h0000_9000 && !dut.redirect_pending,
             "coincident response did not install current redirect target");
 
@@ -340,28 +331,35 @@ module tb_fetch_recovery;
     require(req_valid && req_addr == 32'h0000_b000,
             "drained target did not resume after stop");
 
-    // Existing stop semantics: an accepted response drains without a packet,
-    // advances sequentially, and resumes after stop clears.
+    // Stop drains an accepted response without a packet. The skipped PC is
+    // stale, so the stop release carries a redirect.
     reset_fetch(1'b0);
     accept_request(RESET_PC);
     @(negedge clk);
     stop = 1'b1;
     rsp_valid = 1'b1;
     rsp_insn = 32'hdead_c000;
-    packet_ready = 1'b0;
     #1;
     require(rsp_ready && !packet_valid, "stop did not drain accepted response");
     @(posedge clk);
     #1;
     rsp_valid = 1'b0;
-    require(!req_valid && dut.pc == RESET_PC + 32'd4,
-            "stop drain did not preserve sequential PC behavior");
+    require(!req_valid && !dut.pending, "stop drain left fetch activity");
+    @(negedge clk);
+    redirect = 1'b1;
+    redirect_target = 32'h0000_c000;
+    packet_ready = 1'b0;
+    @(posedge clk);
+    #1;
+    redirect = 1'b0;
+    packet_ready = 1'b1;
+    require(!req_valid && dut.pc == 32'h0000_c000,
+            "stopped redirect after drain did not store target");
     @(negedge clk);
     stop = 1'b0;
-    packet_ready = 1'b1;
     #1;
-    require(req_valid && req_addr == RESET_PC + 32'd4,
-            "stop clear did not resume sequential fetch");
+    require(req_valid && req_addr == 32'h0000_c000,
+            "stop clear did not resume at redirect target");
 
     // Reset atomically cancels a held old offer and queued redirect target.
     // The environment must also cancel the external pre-reset transaction.
@@ -397,7 +395,8 @@ module tb_fetch_recovery;
     accept_request(RESET_PC);
     return_packet(RESET_PC, 32'h6000_0000);
 
-    // Every typed cause, including diagnostics, travels unchanged under hold.
+    // Every typed cause, including diagnostics, travels unchanged, and a
+    // coincident redirect consumes it.
     for (int cause = 1; cause < 8; cause++) begin
       reset_fetch(1'b0);
       accept_request(RESET_PC);
@@ -405,22 +404,24 @@ module tb_fetch_recovery;
       rsp_fault = fetch_fault_t'(cause);
       rsp_insn = 32'hdead_beef;
       rsp_valid = 1;
-      packet_ready = 0;
-      repeat (3) begin
-        #1;
-        require(packet_valid && !rsp_ready && packet.pc == RESET_PC &&
-                packet.insn == 32'hdead_beef && packet.fault == fetch_fault_t'(cause),
-                "held fault metadata changed");
-        @(negedge clk);
-      end
+      #1;
+      require(packet_valid && rsp_ready && packet.pc == RESET_PC &&
+              packet.insn == 32'hdead_beef && packet.fault == fetch_fault_t'(cause),
+              "typed fault metadata changed");
+      @(posedge clk); #1;
+      rsp_valid = 0;
+      accept_request(RESET_PC + 32'd4);
+      @(negedge clk);
+      rsp_valid = 1;
       redirect = 1;
       redirect_target = 32'h2000;
-      packet_ready = 1;
+      packet_ready = 0;
       #1;
-      require(!packet_valid && rsp_ready, "redirect must discard coincident typed fault");
+      require(rsp_ready, "redirect must consume coincident typed fault");
       @(posedge clk); #1;
       rsp_valid = 0;
       redirect = 0;
+      packet_ready = 1;
       accept_request(32'h2000);
       return_packet(32'h2000, 32'h6000_0000);
 
@@ -433,9 +434,10 @@ module tb_fetch_recovery;
       redirect_target = 32'h3000;
       rsp_valid = 1;
       rsp_fault = fetch_fault_t'(cause);
-      packet_ready = 1;
+      packet_ready = 0;
       #1;
-      require(!packet_valid && !rsp_ready && !req_valid, "reset exposed a typed fault");
+      // The reset IQ ignores packet_valid; the memory handshakes stay gated.
+      require(!rsp_ready && !req_valid, "reset exposed a typed fault");
       @(posedge clk); #1;
       @(negedge clk);
       idle_inputs(); // Environment cancels the pre-reset response obligation.
@@ -446,8 +448,8 @@ module tb_fetch_recovery;
     end
 
     // A full IQ cannot admit a new fetch. Once an address has been offered,
-    // the held offer must remain stable even if IQ space disappears; its
-    // accepted response still obeys ordinary backpressure or redirect drain.
+    // the held offer must remain stable even if IQ space disappears on a
+    // redirect edge; its accepted response then drains.
     reset_fetch(1'b0);
     packet_ready = 1'b0;
     #1;
@@ -481,6 +483,7 @@ module tb_fetch_recovery;
     @(posedge clk); #1;
     req_ready = 1'b0;
     redirect = 1'b0;
+    packet_ready = 1'b1; // The redirect cleared the IQ.
     require(dut.pending && rsp_ready && !packet_valid,
             "IQ-full held offer did not become drainable");
     @(negedge clk);
@@ -491,6 +494,8 @@ module tb_fetch_recovery;
             "IQ-full old response was not discarded");
     @(posedge clk); #1;
     rsp_valid = 1'b0;
+    packet_ready = 1'b0;
+    #1;
     require(!req_valid && dut.pc == 32'h0000_e000,
             "IQ-full target offered without downstream credit");
     @(negedge clk);

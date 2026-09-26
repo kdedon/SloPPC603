@@ -46,19 +46,19 @@ module tb_recovery_storage;
     producer='0;wake_valid=0;wake='0;recovery=0;survivors=0;release_slot=0;release_owner='0;second_tag='0;
     foreach(packets[i]) begin packets[i]='0; tags[i]='0; end
     tick(); rst_n=1;
-    check(!pop_valid && data_out==0,"reset FIFO must be empty/zero");
+    check(!pop_valid,"reset FIFO must be empty");
     push=1;data_in=8'h11;tick();data_in=8'h22;tick();push=0;
     #1;check(pop_valid && data_out==8'h11,"held FIFO head changed");
     clear=1;push=1;pop=1;data_in=8'hff;
     #1;check(!push_ready && !pop_valid && data_out==8'h11,"clear must withdraw both handshakes");
     tick();clear=0;push=0;pop=0;
-    #1;check(!pop_valid && data_out==0,"clear edge retained offered transaction");
+    #1;check(!pop_valid,"clear edge retained offered transaction");
     push=1;data_in=8'h33;tick();data_in=8'h44;pop=1;
     #1;check(pop_valid && data_out==8'h33,"concurrent push/pop head wrong");
     tick();push=0;pop=0;
     #1;check(pop_valid && data_out==8'h44,"concurrent push/pop lost replacement");
     pop=1;tick();pop=0;
-    #1;check(!pop_valid && data_out==0,"drained FIFO not empty");
+    #1;check(!pop_valid,"drained FIFO not empty");
 
     // Surviving exact-owner wake and recovery on the same edge.
     #1;check(alloc_ready,"rename allocation not ready");first_tag=alloc_tag;

@@ -1,6 +1,5 @@
 // Cached core wrapper with local quiescent maintenance and scalar bypass.
 module ppc_core_cached_bus60x_managed #(
-  parameter int DISPATCH_WIDTH = 1,
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter int DIV_LATENCY = 20,
   parameter logic RESET_CACHE_ENABLE = 1'b1,
@@ -143,7 +142,6 @@ module ppc_core_cached_bus60x_managed #(
   logic [89:0] unused_tlb_fill;
   logic [41:0] unused_segment_csr;
   ppc_core #(
-    .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .RESET_PC(RESET_PC),
     .DIV_LATENCY(DIV_LATENCY),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS)

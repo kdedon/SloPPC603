@@ -1,6 +1,5 @@
-// Executable structural scaffold. This interface is NOT a physical 603e pinout.
+// Single-issue core with abstract fetch, data and CSR transports.
 module ppc_core #(
-  parameter int DISPATCH_WIDTH = 1,
   parameter int DIV_LATENCY = 20,
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
@@ -111,6 +110,7 @@ module ppc_core #(
   output logic redirect_accepted_o
 );
   import ppc_pkg::*;
+  localparam int MSR_TGPR_BIT = 17; // 603e MSR[TGPR], manual bit 14
   fetch_packet_t fetched, iq_head;
   uop_t uop, dispatch_uop;
   retire_packet_t allocation;
@@ -191,8 +191,6 @@ module ppc_core #(
       $fatal(1, "External interrupts require live supervisor context");
     if (ENABLE_LIVE_CONTEXT && !ENABLE_SUPERVISOR_EXCEPTIONS)
       $fatal(1, "Live context requires supervisor exceptions");
-    // The second lane must not silently masquerade as a completed feature.
-    if (DISPATCH_WIDTH != 1) $fatal(1, "Scaffold supports DISPATCH_WIDTH=1 only");
   end
   ppc_fetch #(.RESET_PC(RESET_PC)) fetch (
     .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence),
@@ -221,10 +219,8 @@ module ppc_core #(
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)
   ) decode (.insn_i(iq_head.insn), .uop_o(uop));
-  // Serialized memory dispatch observes committed source registers: CQ-empty
-  // is a pre-edge condition, so neither retirement nor recovery can forward a
-  // new value on an accepted memory dispatch. Keep rename wake/recovery out of
-  // alignment classification; the execution operands retain their usual path.
+  // Memory ops dispatch only with an empty CQ, so committed registers give the
+  // alignment EA without the rename/wake path.
   assign dispatch_ea_low = (uop.zero_a ? 2'b0 : arch_a[1:0]) +
                            (uop.use_imm ? uop.imm[1:0] : arch_b[1:0]);
   assign dispatch_misaligned =
@@ -258,15 +254,7 @@ module ppc_core #(
          (uop.special_op == SPECIAL_TLBLI) ||
          (((uop.special_op == SPECIAL_MFSPR) ||
           (uop.special_op == SPECIAL_MTSPR)) &&
-          (((uop.spr >= 10'd528) && (uop.spr <= 10'd543)) || (uop.spr == 10'd18) || (uop.spr == 10'd19) ||
-           (uop.spr == 10'd22) || (uop.spr == 10'd284) || (uop.spr == 10'd285) ||
-           (uop.spr == 10'd26) || (uop.spr == 10'd27) ||
-           (uop.spr == 10'd25) ||
-           (uop.spr == 10'd976) || (uop.spr == 10'd978) ||
-           (uop.spr == 10'd979) || (uop.spr == 10'd980) ||
-           (uop.spr == 10'd977) || (uop.spr == 10'd981) ||
-           (uop.spr == 10'd982) ||
-           ((uop.spr >= 10'd272) && (uop.spr <= 10'd275)))))) begin
+          uop.spr[SPR_PRIV_BIT]))) begin
       dispatch_uop = '0;
       dispatch_uop.special_op = SPECIAL_PROGRAM_PRIV;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && !uop.illegal &&
@@ -280,7 +268,7 @@ module ppc_core #(
     end
   end
   ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR)) regfile (
-    .clk_i, .rst_ni, .tgpr_i(msr[17]), .read_a_i(uop.src_a), .read_b_i(uop.src_b),
+    .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR_BIT]), .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .read_c_i(uop.src_c), .read_a_o(arch_a), .read_b_o(arch_b),
     .read_c_o(arch_c), .write_i(gpr_commit),
     .write_reg_i(retire_o.gpr), .write_value_i(retire_o.value),
@@ -319,8 +307,8 @@ module ppc_core #(
     .a_i(operand_a), .b_i(operand_b),
     .mask_i(dispatch_uop.mask),
     .shift_i(dispatch_uop.shift),
-    .ca_i(dispatch_uop.read_ca ? xer[29] : 1'b0),
-    .so_i(dispatch_uop.read_so ? xer[31] : 1'b0),
+    .ca_i(dispatch_uop.read_ca ? xer[XER_CA_BIT] : 1'b0),
+    .so_i(dispatch_uop.read_so ? xer[XER_SO_BIT] : 1'b0),
     .write_ca_i(dispatch_uop.write_ca),
     .write_ov_so_i(dispatch_uop.write_ov_so),
     .write_cr0_i(dispatch_uop.write_cr0),
@@ -350,7 +338,8 @@ module ppc_core #(
     .producer_i(alloc_producer), .pc_i(iq_head.pc),
     .dispatch_page_miss_i(iq_head.page_miss),
     .a_i(operand_a.value), .b_i(operand_b.value), .c_i(arch_c),
-    .cr_i(cr), .xer_flags_i(xer[31:29]), .xer_byte_count_i(xer[6:0]), .so_i(xer[31]),
+    .cr_i(cr), .xer_flags_i(xer[XER_SO_BIT:XER_CA_BIT]),
+    .xer_byte_count_i(xer[XER_BYTE_COUNT_WIDTH-1:0]), .so_i(xer[XER_SO_BIT]),
     .cancel_i(special_cancel),
     .bat_recovery_retained_i(redirect_accepted_o && special_busy && !special_cancel),
     .bat_recovery_target_i(selected_redirect_target),
@@ -442,7 +431,7 @@ module ppc_core #(
                        (dispatch_uop.special_op != SPECIAL_NONE);
   assign normal_idle = rs_ready && !issue_valid && issue_ready &&
                        !iu_result_valid;
-  assign iq_ready = rst_ni && !fault_pending && !interrupt_qualified &&
+  assign iq_ready = !fault_pending && !interrupt_qualified &&
     !special_busy && cq_ready &&
     (dispatch_uop.illegal ||
      (normal_uop && alloc_ready && rs_ready && flags_ready) ||

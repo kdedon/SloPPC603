@@ -48,8 +48,7 @@ module ppc_decode #(
 
     case (insn_i[31:26])
       6'd0: begin
-        // The all-zero word is explicitly guaranteed to be illegal. Keep
-        // every other unsupported encoding on the legacy diagnostic path.
+        // The all-zero word is architecturally illegal.
         if (ENABLE_SUPERVISOR_EXCEPTIONS && (insn_i == 32'b0)) begin
           uop_o.illegal = 1'b0;
           uop_o.special_op = SPECIAL_PROGRAM_ILLEGAL;
@@ -300,9 +299,7 @@ module ppc_decode #(
             uop_o.gpr_write = 1'b1;
             case (insn_i[9:1])
               9'd10: uop_o.op = ALU_ADDC;
-              9'd138: uop_o.op = ALU_ADDE;
-              9'd234: uop_o.op = ALU_ADDME;
-              9'd202: uop_o.op = ALU_ADDZE;
+              9'd138, 9'd234, 9'd202: uop_o.op = ALU_ADDE;
               9'd8: uop_o.op = ALU_SUBFC;
               9'd136: uop_o.op = ALU_SUBFE;
               9'd232, 9'd200: uop_o.op = ALU_SUBFE;
@@ -533,38 +530,35 @@ module ppc_decode #(
               logic [9:0] selector;
               read_form = insn_i[10:1] != 10'd467;
               selector = {insn_i[15:11], insn_i[20:16]};
-              selector_supported = (ENABLE_RUNTIME_BAT && selector >= 10'd528 && selector <= 10'd543) || (selector == 10'd8) || (selector == 10'd9) ||
-                (ENABLE_SDR1 && selector == 10'd25) ||
-                (ENABLE_TLB_MISS_EXCEPTIONS && read_form &&
-                 ((selector == 10'd976) || (selector == 10'd978) ||
-                  (selector == 10'd979) || (selector == 10'd980))) ||
-                (ENABLE_TLB_LOAD && ((selector == 10'd977) ||
-                                     (selector == 10'd981) ||
-                                     (selector == 10'd982))) ||
+              selector_supported =
+                (selector == SPR_LR) || (selector == SPR_CTR) ||
                 (ENABLE_SUPERVISOR_EXCEPTIONS &&
-                 ((selector == 10'd1) || (selector == 10'd18) || (selector == 10'd19) ||
-                  (selector == 10'd26) || (selector == 10'd27) ||
-                  ((selector >= 10'd272) && (selector <= 10'd275)))) ||
+                 ((selector == SPR_XER) || (selector == SPR_DSISR) ||
+                  (selector == SPR_DAR) || (selector == SPR_SRR0) ||
+                  (selector == SPR_SRR1) ||
+                  ((selector >= SPR_SPRG0) && (selector <= SPR_SPRG3)))) ||
                 (ENABLE_TIMERS &&
-                 ((selector == 10'd22) ||
-                  (read_form && ((selector == 10'd268) || (selector == 10'd269))) ||
-                  (!read_form && ((selector == 10'd284) || (selector == 10'd285)))));
-              // 603e ignores the MFTB/MFSPR XO difference for every implemented
-              // selector. Privilege remains selector-specific in the core.
-              if (!insn_i[0] && selector_supported &&
-                  ((insn_i[10:1] != 10'd371) || ENABLE_TIMERS || ENABLE_RUNTIME_BAT ||
-                   (ENABLE_SUPERVISOR_EXCEPTIONS && (selector == 10'd1)) ||
-                  (ENABLE_SDR1 && (selector == 10'd25)) ||
-                  (ENABLE_TLB_MISS_EXCEPTIONS && read_form &&
-                   ((selector == 10'd976) || (selector == 10'd978) ||
-                    (selector == 10'd979) || (selector == 10'd980))) ||
-                  (ENABLE_TLB_LOAD && ((selector == 10'd977) ||
-                                       (selector == 10'd981) ||
-                                       (selector == 10'd982))))) begin
+                 ((selector == SPR_DEC) ||
+                  (read_form && ((selector == SPR_TBL_READ) ||
+                                 (selector == SPR_TBU_READ))) ||
+                  (!read_form && ((selector == SPR_TBL_WRITE) ||
+                                  (selector == SPR_TBU_WRITE))))) ||
+                (ENABLE_SDR1 && (selector == SPR_SDR1)) ||
+                (ENABLE_RUNTIME_BAT &&
+                 (selector >= SPR_IBAT0U) && (selector <= SPR_DBAT3L)) ||
+                (ENABLE_TLB_MISS_EXCEPTIONS && read_form &&
+                 ((selector == SPR_DMISS) || (selector == SPR_HASH1) ||
+                  (selector == SPR_HASH2) || (selector == SPR_IMISS))) ||
+                (ENABLE_TLB_LOAD &&
+                 ((selector == SPR_DCMP) || (selector == SPR_ICMP) ||
+                  (selector == SPR_RPA)));
+              // 603e ignores the MFTB/MFSPR XO difference, so XO 371 reads every
+              // supported selector. Privilege is checked in the core.
+              if (!insn_i[0] && selector_supported) begin
                 uop_o.illegal = 1'b0;
                 uop_o.special_op = read_form ? SPECIAL_MFSPR : SPECIAL_MTSPR;
                 uop_o.spr = selector;
-                if (selector == 10'd1) begin
+                if (selector == SPR_XER) begin
                   uop_o.needs_flags = 1'b1;
                   uop_o.write_xer = !read_form;
                 end

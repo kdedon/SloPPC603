@@ -1,6 +1,5 @@
 // Core plus shared startup/runtime-programmed BAT memory router.
 module ppc_core_bat #(
-  parameter int DISPATCH_WIDTH = 1,
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter int DIV_LATENCY = 20,
   // Includes the existing serialized ISYNC/SYNC/EIEIO profile.
@@ -183,7 +182,7 @@ module ppc_core_bat #(
 
   // Keep the core instance name stable for architectural integration tests.
   ppc_core #(
-    .DISPATCH_WIDTH(DISPATCH_WIDTH), .RESET_PC(RESET_PC),
+    .RESET_PC(RESET_PC),
     .DIV_LATENCY(DIV_LATENCY),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),

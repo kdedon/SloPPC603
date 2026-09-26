@@ -68,11 +68,11 @@ module tb_tlb_seed_decode;
     check(word(339,6,981,0)==32'h7cd5_f2a6,"literal MFSPR ICMP anchor");
     check(word(467,3,982,0)==32'h7c76_f3a6,"literal MTSPR RPA anchor");
     check(word(371,7,982,0)==32'h7cf6_f2e6,"literal MFTB RPA anchor");
-    insn=word(371,4,8,0); // TLB_LOAD must not add LR to XO371.
+    insn=word(371,4,8,0); // XO371 reads LR in every profile.
     #1;
-    check(enabled.illegal&&enabled.special_op==SPECIAL_NONE&&
-          disabled.illegal&&baseline.illegal,
-          "TLB_LOAD widened unrelated LR XO371 alias");
+    check(!enabled.illegal&&!disabled.illegal&&!baseline.illegal&&
+          enabled==disabled&&enabled.special_op==SPECIAL_MFSPR&&enabled.spr==10'd8,
+          "XO371 LR alias depends on profile");
     for(int si=0;si<3;si++)begin
       int selector;
       selector=(si==0)?977:(si==1)?981:982;
