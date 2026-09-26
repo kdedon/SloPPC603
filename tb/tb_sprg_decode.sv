@@ -128,14 +128,14 @@ module tb_sprg_decode;
       end
     end
 
-    // Exhaust the full extended-opcode field while keeping an SPRG selector.
+    // Exhaust the extended-opcode field; XO 371 (MFTB) aliases the read.
     for (int write = 0; write <= 1; write++) begin
       for (int xo = 0; xo < 1024; xo++) begin
         insn = {6'd31, 5'd7, 5'd16, 5'd8, 10'(xo), 1'b0};
         #1;
         require(selected_sprg(enabled.illegal, enabled.special_op,
                               enabled.spr, logic'(write)) ==
-                (xo == ((write != 0) ? 467 : 339)),
+                ((write != 0) ? (xo == 467) : (xo == 339 || xo == 371)),
                 "nonexact XO classified as requested SPRG operation");
       end
     end

@@ -90,7 +90,7 @@ At dispatch of an unsupported instruction, fetch stops (an already offered reque
 ## Replacement boundaries
 
 1. Extend the current local-producer recovery contract before adding external or variable-latency producers. Define additional reservation stations and CR/XER/FPR destination classes with their own accepted contracts.
-2. Widen IQ read/insert, operand ports, allocator, completion admission, and commit to two lanes together; apply documented unit and destination-class restrictions. Do not merely remove the `DISPATCH_WIDTH` guard.
+2. Widen IQ read/insert, operand ports, allocator, completion admission, and commit to two lanes together; apply documented unit and destination-class restrictions. Add the width parameter only with that implementation.
 3. Insert IMMU/I-cache below fetch and DMMU/D-cache below the LSU, retaining a simple uncached transport during bring-up. The final 60x wrapper needs explicit output enables and independent address/data tenure machinery; the current transport must never be labeled 60x-compatible.
 4. Replace diagnostic halt with precise exception entry and refetch. Extend retirement records for CR/XER/FPR/SPR and memory effects so architectural comparison remains possible.
 

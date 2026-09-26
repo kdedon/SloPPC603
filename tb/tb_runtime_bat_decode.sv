@@ -63,9 +63,8 @@ module tb_runtime_bat_decode;
             expected_runtime = rc == 0 && (old_selector(selector) || bat);
             expected_timers = rc == 0 &&
               (old_selector(selector) || bat || timer_selector(selector, reading));
-            expected_legacy = rc == 0 && old_selector(selector) &&
-              (form != 1 || selector == 1);
-            expected_baseline = rc == 0 && form != 1 &&
+            expected_legacy = rc == 0 && old_selector(selector);
+            expected_baseline = rc == 0 &&
               (selector == 8 || selector == 9);
 
             insn = encode(xo, regno, selector, 1'(rc));

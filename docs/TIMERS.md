@@ -19,10 +19,10 @@ collision/sampling policies are recorded in [TIMER_CONTRACT.md](TIMER_CONTRACT.m
 
 The timer owns all storage and the coalesced pending bit. DEC uses supervisor
 read/write SPR22. TBL/TBU are user reads at selectors 268/269, supervisor writes
-at 284/285. With timers enabled, MFTB and MFSPR read opcodes alias for every
+at 284/285. In every profile, MFTB and MFSPR read opcodes alias for every
 implemented read selector, retaining identical selector-specific privilege.
 Unknown selectors and invalid Rc forms remain unsupported; aliases add no
-write permission. Timer-disabled decoding is unchanged.
+write permission.
 
 Special timer reads capture the pre-edge counter value once at the accepted
 execute edge (`timer_read_execute`), then offer a registered result. Coincident

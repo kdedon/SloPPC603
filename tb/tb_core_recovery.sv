@@ -161,7 +161,8 @@ module tb_core_recovery;
         if (dut.iu_cancel) cancelled_iu++;
         if (int'(dut.iq.count) == IQ_DEPTH) full_iq_cuts++;
         if (rsp_valid && rsp_ready) coincident_responses++;
-        check(!dut.dispatch && !dut.fetch_valid, "accepted cut blocks old dispatch/response insertion");
+        check(!dut.dispatch && !(dut.fetch_valid && dut.fetch_ready),
+              "accepted cut blocks old dispatch/response insertion");
         while (model.size() > retained) begin
           removed = model.pop_back();
           killed_count++;

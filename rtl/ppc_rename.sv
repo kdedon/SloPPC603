@@ -1,5 +1,5 @@
-// Five pending/value-holding registers with latest-writer ownership and
-// oldest-to-youngest map reconstruction after an accepted CQ prefix cut.
+// GPR rename slots with exact-owner wakeup; recovery rebuilds the map from
+// the surviving CQ prefix, oldest first.
 module ppc_rename (
   input logic clk_i, rst_ni,
   input logic [4:0] read_a_i, read_b_i,
@@ -70,10 +70,8 @@ module ppc_rename (
     end
   end
 
-  // Payload storage is independent of allocation and recovery selection.
-  // Ready/valid/owner metadata controls consumption; an invalidated slot may
-  // retain stale bits, including a simultaneous wake, until its next owner
-  // finishes. Survivors naturally retain their payload and exact-owner wakes.
+  // Payload writes ignore recovery; valid/ready/owner gate every read, so
+  // stale bits in a freed slot are harmless.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       for (int i = 0; i < GPR_RENAME_DEPTH; i++) values[i] <= '0;
@@ -82,9 +80,7 @@ module ppc_rename (
     end
   end
 
-  // Recovery can remove a slot but cannot change its producer identity.
-  // Invalid slots retain stale identity bits until allocation overwrites them;
-  // validity gates every wake/release match and architectural mapping.
+  // Only allocation changes a slot's owner; recovery leaves it intact.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       for (int i = 0; i < GPR_RENAME_DEPTH; i++) owners[i] <= '0;
@@ -133,10 +129,11 @@ module ppc_rename (
       map_valid <= '0;
       for (int i = 0; i < 32; i++) map_tag[i] <= '0;
     end else if (recovery_i) begin
-      // Allocation is prohibited on an accepted redirect. Rebuild membership
-      // and mappings while retaining exact survivor identities in owners.
+      // Rebuild membership and mappings from the survivors; owners persist.
+      // synthesis translate_off
       assert (!alloc_i)
         else $error("rename allocation attempted on accepted recovery");
+      // synthesis translate_on
       valid <= '0;
       ready <= '0;
       map_valid <= '0;
@@ -147,10 +144,12 @@ module ppc_rename (
         if ((age < int'(recovery_survivor_count_i)) &&
             recovery_survivor_packet_i[age].gpr_write &&
             (int'(recovery_survivor_packet_i[age].tag) < GPR_RENAME_DEPTH)) begin
+          // synthesis translate_off
           assert (valid[recovery_survivor_packet_i[age].tag] &&
                   owners[recovery_survivor_packet_i[age].tag] ==
                   recovery_survivor_tag_i[age])
             else $error("recovery survivor lacks exact rename ownership");
+          // synthesis translate_on
           if (valid[recovery_survivor_packet_i[age].tag] &&
               owners[recovery_survivor_packet_i[age].tag] ==
               recovery_survivor_tag_i[age]) begin

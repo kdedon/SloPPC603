@@ -5,8 +5,8 @@ Recorded: `make -C sim lint check-spec test-core-xer test-timer-decode` and the 
 This bounded extension enables SPR1 under `ENABLE_SUPERVISOR_EXCEPTIONS` while
 keeping the default decoder profile unchanged. XER itself is user-accessible:
 the feature switch is availability, not an architectural privilege requirement.
-MFSPR and MFTB both read SPR1 in this profile, including without timers; other
-SPR read aliases retain their existing timer-profile policy.
+MFSPR and MFTB both read SPR1, as they do every implemented read selector in
+every profile.
 
 ## Architectural oracle and directed coverage
 

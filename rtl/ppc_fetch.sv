@@ -1,6 +1,6 @@
-// Abstract, word-addressed-by-byte-PC fetch transport, NOT the 60x bus.
-// One untagged request may be outstanding. Responses are already normalized
-// instruction words.
+// Abstract fetch transport: one untagged request outstanding, responses are
+// instruction words. A request is offered only with a downstream slot free,
+// so while pending, packet_ready_i is low only on a redirect edge.
 module ppc_fetch #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100
 ) (
@@ -29,19 +29,17 @@ module ppc_fetch #(
   assign req_valid_o = rst_ni && (!stop_i || request_held) && !pending &&
                        (packet_ready_i || request_held);
   assign req_addr_o = pc;
-  assign quiescent_o = rst_ni && !pending && !request_held && !req_valid_o;
-  // A response belonging to the old path is never exposed on an accepted
-  // redirect edge or while that untagged obligation is being discarded.
-  assign packet_valid_o = rst_ni && pending && rsp_valid_i && !stop_i &&
-                          !redirect_i && !redirect_pending;
+  assign quiescent_o = !pending && !request_held && !req_valid_o;
+  // Old-path responses are discarded while redirect_pending. On the redirect
+  // edge itself the cleared downstream queue refuses the packet.
+  assign packet_valid_o = pending && rsp_valid_i && !stop_i && !redirect_pending;
   assign packet_o.pc = pc;
   assign packet_o.insn = rsp_insn_i;
   assign packet_o.fault = rsp_fault_i;
   assign packet_o.page_miss = (rsp_fault_i == ppc_pkg::FETCH_PAGE_MISS) ?
                               rsp_page_miss_i : '0;
-  // Redirect and stop both force progress for an already accepted response.
-  assign rsp_ready_o = rst_ni && pending &&
-                       (redirect_i || redirect_pending || stop_i || packet_ready_i);
+  // The reserved slot makes an accepted response always consumable.
+  assign rsp_ready_o = rst_ni && pending;
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
@@ -95,4 +93,25 @@ module ppc_fetch #(
       end
     end
   end
+
+  // synthesis translate_off
+  // A response dropped under stop still advances pc, so fetch must not resume
+  // before a redirect replaces it.
+  logic stop_skipped;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || redirect_i) stop_skipped <= 1'b0;
+    else if (rsp_valid_i && rsp_ready_o && !redirect_pending && stop_i)
+      stop_skipped <= 1'b1;
+  end
+  always_ff @(posedge clk_i) begin
+    if (rst_ni) begin
+      assert (!(stop_skipped && req_valid_o && !redirect_i))
+        else $error("fetch resumed after a stop-discarded response without redirect");
+      assert (!(pending && !redirect_i && !packet_ready_i))
+        else $error("accepted fetch lost its reserved downstream slot");
+      assert (!(redirect_i && packet_valid_o && packet_ready_i))
+        else $error("downstream accepted an old-path packet on a redirect edge");
+    end
+  end
+  // synthesis translate_on
 endmodule

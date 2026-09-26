@@ -43,7 +43,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-10 | H | C | `docs/plans/current/TASK_PLAN.md:7,180-206,282`, `docs/ARCHITECTURE.md:1-30`, `README.md:1,30-45` | Current docs call segment/page/TGPR/refill work open or scaffold-level, contradicting the scorecard; TASK_PLAN points to stale WORK_QUEUE for status. | AGENTS "Documentation" | Rewrite the summaries or reduce them to scorecard links. | fixed (uncommitted) |
 | AUD-11 | M | C | e.g. `docs/REFERENCE_BAT.md:31`, `docs/REFERENCE_CACHED.md:40`, `docs/SYSTEM_COMPLETION.md:572,610,634` | Evidence cites build manifests and source-hash counts; almost no verification record names a commit; some lack command or date. | AGENTS "Recording evidence" | One-line record header per doc (target, commit, date, counts); drop manifest and hash citations. | fixed (uncommitted) |
 | AUD-12 | M | C | `sim/tools/isa_check_rtl.py:128-133`, `sim/spec/isa.json` | ISA-vs-RTL check probes the default decode profile only; opt-in forms are never checked and several implemented supervisor/MMU forms are absent from `isa.json`. | CODING_CONVENTIONS (independent checks) | Probe each profile against its status set; add missing forms. | open |
-| AUD-13 | L | C | `rtl/ppc_decode.sv:554-563` | `mftb` legality depends on `ENABLE_RUNTIME_BAT`/`ENABLE_TIMERS`, contradicting the adjacent comment. | 603e UM (MFTB/MFSPR equivalence) | One rule independent of unrelated profiles. | open |
+| AUD-13 | L | C | `rtl/ppc_decode.sv:554-563` | `mftb` legality depends on `ENABLE_RUNTIME_BAT`/`ENABLE_TIMERS`, contradicting the adjacent comment. | 603e UM (MFTB/MFSPR equivalence) | One rule independent of unrelated profiles. | fixed |
 | AUD-14 | L | C | `rtl/ppc_exception_state.sv:146`, `rtl/ppc_special.sv:332-356` | `rfi` stores reserved MSR bits 31, 26:22; `mfmsr` hides them but the next exception copies them into SRR1. | `hdl-design-organization` §4 | Apply the implemented-bit mask on every MSR write. | open |
 | AUD-15 | M | E | `rtl/ppc_icache.sv:145`, `rtl/ppc_fetch.sv` | Ready requires `!rsp_valid_q`: at most one fetch every two cycles. Undocumented. | `cpu-memory-interface` §1 | Accept on the consuming edge with a RAM-output hold register. | design |
 | AUD-16 | M | E | `rtl/ppc_regfile_gpr.sv:21-30` | GPR array is reset and has two write ports: all flops, three 32:1 read muxes on the AUD-01 path. | CODING_CONVENTIONS, `cpu-register-files` §1, §4 | Drop reset; retire the update write through one port; MLAB copies. | design |
@@ -57,13 +57,13 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | ID | Sev | Cat | Where | Problem | Fix | Status |
 |---|---|---|---|---|---|---|
 | AUD-21 | M | E | `rtl/ppc_dispatch.sv:31-55` | RS wake compare feeds ALU operands and `dispatch_ready`. | Snoop-capture wake; issue next cycle. | design |
-| AUD-22 | M | E | `rtl/ppc_fetch.sv:29-44`, `rtl/ppc_fifo.sv:21` | Fetch outputs carry the recovery cone; `rsp_ready_o` reduces to `pending`; `!redirect_i` in `packet_valid_o` is redundant. | Simplify as stated. | open |
-| AUD-23 | M | K | `rtl/ppc_core.sv:250-269`, `rtl/ppc_decode.sv:536-563`, `rtl/ppc_special.sv` | Privileged-SPR list duplicated in three modules; privilege is SPR bit 4. | Use `spr[4]`; SPR numbers once in `ppc_pkg`. | open |
-| AUD-24 | L | C | `rtl/ppc_fetch.sv:86-94` | Discarding a response under `stop_i` still advances the PC; safe only by an unstated invariant. PLAUSIBLE. | Hold PC or assert the invariant. | open |
+| AUD-22 | M | E | `rtl/ppc_fetch.sv:29-44`, `rtl/ppc_fifo.sv:21` | Fetch outputs carry the recovery cone; `rsp_ready_o` reduces to `pending`; `!redirect_i` in `packet_valid_o` is redundant. | Simplify as stated. | fixed |
+| AUD-23 | M | K | `rtl/ppc_core.sv:250-269`, `rtl/ppc_decode.sv:536-563`, `rtl/ppc_special.sv` | Privileged-SPR list duplicated in three modules; privilege is SPR bit 4. | Use `spr[4]`; SPR numbers once in `ppc_pkg`. | fixed (privilege = SPR bit 4; SPR numbers in ppc_pkg) |
+| AUD-24 | L | C | `rtl/ppc_fetch.sv:86-94` | Discarding a response under `stop_i` still advances the PC; safe only by an unstated invariant. PLAUSIBLE. | Hold PC or assert the invariant. | fixed (sim assertion) |
 | AUD-25 | L | E | `rtl/ppc_pkg.sv:62-67` | Each IQ entry carries a 69-bit `page_miss` record including an EA equal to the PC. | Side register for the oldest fault; drop `ea`. | open |
 | AUD-26 | L | S | `rtl/ppc_dispatch.sv`, `rtl/ppc_core.sv:466-496` | RS and CQ payloads are loose signals copied field by field; allocation masks applied twice. | Struct payloads; sanitize once. | open |
 | AUD-27 | L | K | `rtl/ppc_pkg.sv:150`, `rtl/ppc_decode.sv` | `write_cr0` means "write CR field `cr_field`". | Rename `write_cr_field`. | open |
-| AUD-28 | L | K | `rtl/ppc_decode.sv:127-145,287-342` | `addme`/`addze` not normalized like `subfme`/`subfze`; SH passed two ways; long equality-OR chains. | Normalize; flat nested case. | open |
+| AUD-28 | L | K | `rtl/ppc_decode.sv:127-145,287-342` | `addme`/`addze` not normalized like `subfme`/`subfze`; SH passed two ways; long equality-OR chains. | Normalize; flat nested case. | fixed |
 
 ### Execution units and register files
 
@@ -109,18 +109,18 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-51 | M | S | `rtl/ppc_special.sv`, `rtl/ppc_exception_state.sv:62`, `rtl/ppc_timer.sv` | No MSR/SRR1/DSISR/SDR1 definitions with masks; `0x87c0ffff` duplicated; `rfi_prospective` re-implements `rfi_msr`. | Package structs and masks; one `rfi_msr()`. | open |
 | AUD-52 | L | S | `rtl/ppc_exception_state.sv:48-59,214-219`, `rtl/ppc_special.sv:358-369` | Event codes duplicated as localparams; ISI cause compared to raw integers. | Package enum; typed port. | open |
 | AUD-53 | L | C | `rtl/ppc_special.sv:1115-1121` | Unsupported exception result redirects to 0 in synthesis (unreachable today). | Diagnostic halt. | open |
-| AUD-54 | L | E | `rtl/ppc_special.sv:392-394,461,503`, `rtl/ppc_completion.sv:118-169`, `rtl/ppc_core.sv:131-133,445`, `rtl/ppc_fifo.sv`, `rtl/ppc_fetch.sv`, `rtl/ppc_dispatch.sv` | `rst_ni` in combinational outputs (recorded −0.084 ns hold path); raw IRQ pin gates dispatch. | Drop reset terms where state is reset; register the IRQ. | open |
+| AUD-54 | L | E | `rtl/ppc_special.sv:392-394,461,503`, `rtl/ppc_completion.sv:118-169`, `rtl/ppc_core.sv:131-133,445`, `rtl/ppc_fifo.sv`, `rtl/ppc_fetch.sv`, `rtl/ppc_dispatch.sv` | `rst_ni` in combinational outputs (recorded −0.084 ns hold path); raw IRQ pin gates dispatch. | Drop reset terms where state is reset; register the IRQ. | partial: fifo/fetch/dispatch/core reset terms removed; special, completion and IRQ registration remain |
 | AUD-55 | L | K | `rtl/ppc_special.sv:147` | Live micro-op named `unused_uop_q`. | Rename `uop_q`. | open |
-| AUD-56 | L | S | `rtl/ppc_special.sv:724,738`, `rtl/ppc_exception_state.sv:24-26,289`, `rtl/ppc_core.sv:3,195` | Dead ports and parameters (`rfi_pending_exception_i`, `result_is_exception_o`, `DISPATCH_WIDTH`). | Remove. | open |
+| AUD-56 | L | S | `rtl/ppc_special.sv:724,738`, `rtl/ppc_exception_state.sv:24-26,289`, `rtl/ppc_core.sv:3,195` | Dead ports and parameters (`rfi_pending_exception_i`, `result_is_exception_o`, `DISPATCH_WIDTH`). | Remove. | partial: DISPATCH_WIDTH removed |
 
 ### Whole RTL
 
 | ID | Sev | Cat | Where | Problem | Fix | Status |
 |---|---|---|---|---|---|---|
 | AUD-57 | L | S | all `rtl/*.sv` | No `` `default_nettype none``; `unique case` without `default:` in `ppc_icache.sv:81-90`, `ppc_bus60x_line_read.sv:88-93`. | Add both. | partial: case defaults added; default_nettype remains |
-| AUD-58 | L | S | `rtl/ppc_flags.sv:120-123`, `rtl/ppc_rename.sv:138-139,150-153` | Assertions not under `translate_off`. | Guard them. | open |
-| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | partial: bus/cache and execution-unit comments trimmed |
-| AUD-60 | L | S | `rtl/ppc_core.sv:283,322-353`, `rtl/ppc_flags.sv:62` | Raw MSR/XER bit indices and masks. | Named package constants. | open |
+| AUD-58 | L | S | `rtl/ppc_flags.sv:120-123`, `rtl/ppc_rename.sv:138-139,150-153` | Assertions not under `translate_off`. | Guard them. | fixed |
+| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | partial: bus/cache, execution-unit and front-end comments trimmed |
+| AUD-60 | L | S | `rtl/ppc_core.sv:283,322-353`, `rtl/ppc_flags.sv:62` | Raw MSR/XER bit indices and masks. | Named package constants. | partial: XER constants in ppc_pkg; MSR TGPR bit local to ppc_core |
 
 ### Tests and tooling
 

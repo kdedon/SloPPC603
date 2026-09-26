@@ -1,7 +1,6 @@
 // Core wrapper with an instruction cache whose line-refill master shares the
 // 60x pins with the scalar data master.
 module ppc_core_cached_bus60x #(
-  parameter int DISPATCH_WIDTH = 1,
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter int DIV_LATENCY = 20,
   // Includes the existing serialized ISYNC/SYNC/EIEIO profile.
@@ -121,7 +120,6 @@ module ppc_core_cached_bus60x #(
   logic [89:0] unused_tlb_fill;
   logic [41:0] unused_segment_csr;
   ppc_core #(
-    .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .RESET_PC(RESET_PC),
     .DIV_LATENCY(DIV_LATENCY),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS)

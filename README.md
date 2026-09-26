@@ -42,7 +42,7 @@ translation with software TLB refill, and scalar or instruction-cached 60x bus w
 data cache, dual dispatch and timing closure are open. See the [system scorecard](docs/SYSTEM_COMPLETION.md)
 for accepted behavior and gaps.
 
-`DISPATCH_WIDTH=1` is the only supported setting and the default. Other values fail elaboration-time simulation checks. Dual dispatch remains the delivery target. `RESET_PC` defaults to `0xfff00100`; this configurable start address does not implement MSR/reset-vector semantics.
+The core is single-issue; dual dispatch remains the delivery target. `RESET_PC` defaults to `0xfff00100`; this configurable start address does not implement MSR/reset-vector semantics.
 
 ## Work remaining
 

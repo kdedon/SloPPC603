@@ -64,8 +64,9 @@ module tb_sdr1_decode;
     check(word(339,4,25,0)==32'h7c99_02a6,"literal MFSPR SDR1 anchor");
     check(word(371,5,25,0)==32'h7cb9_02e6,"literal MFTB SDR1 anchor");
     insn=word(371,4,8,0);#1;
-    check(enabled.illegal&&disabled.illegal&&baseline.illegal,
-          "SDR1 option widened unrelated LR alias");
+    check(!enabled.illegal&&!disabled.illegal&&!baseline.illegal&&
+          enabled==disabled&&enabled.special_op==SPECIAL_MFSPR&&enabled.spr==10'd8,
+          "XO371 LR alias depends on profile");
     for(int regno=0;regno<32;regno++)begin
       for(int form=0;form<3;form++)begin
         int xo;

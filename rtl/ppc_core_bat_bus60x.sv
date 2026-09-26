@@ -5,7 +5,6 @@
 // Instruction TEA is a sticky transport stop; the translation owner can
 // remain pending/busy until reset because the arbiter consumes that error.
 module ppc_core_bat_bus60x #(
-  parameter int DISPATCH_WIDTH = 1,
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter int DIV_LATENCY = 20,
   // Includes the existing serialized ISYNC/SYNC/EIEIO profile.
@@ -163,7 +162,6 @@ module ppc_core_bat_bus60x #(
   // address outputs alone enter the scalar arbiter. WIMG is deliberately not
   // interpreted by this cache-inhibited 60x transport profile.
   ppc_core_bat #(
-    .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .RESET_PC(RESET_PC),
     .DIV_LATENCY(DIV_LATENCY),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
