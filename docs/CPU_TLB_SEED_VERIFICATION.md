@@ -1,5 +1,7 @@
 # CPU TLB seed-state verification
 
+Recorded: `make -C sim lint-tlb-seed test-tlb-seed-decode test-core-tlb-seed`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The opt-in `ENABLE_TLB_LOAD` CPU slice adds full 32-bit DCMP (SPR 977), ICMP (981), and RPA (982) seed registers. This round verifies their architectural register behavior only; no `tlbld` or `tlbli` instruction is included in this slice.
 
 `make -C sim test-tlb-seed-decode test-core-tlb-seed` passes with strict Verilator warnings. The independent decode bench reports **2,062 checks**: all 32 GPR fields for three selectors and three XO forms (MFSPR 339, 603e MFTB alias 371, MTSPR 467), with Rc=0 accepted (288 cases) and Rc=1 rejected (288 cases); 12 adjacent-selector forms are also rejected. Hardcoded instruction words anchor the reversed SPR field layout. A disjoint XO371 LR-selector case checks that enabling TLB seed state does not broaden unrelated alias decode. The default and supervisor-only feature-off decoders reject all new selector forms; a combined BAT, segment, and TLBIE configuration agrees on seed decoding.

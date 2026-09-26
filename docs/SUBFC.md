@@ -6,9 +6,9 @@ subset to 102 forms. SUBFE/SUBFME/SUBFZE remain pending.
 ## Source and execution contract
 
 Primary 603e UM Tables A-1/PDF367 (A1-209, raw `subfcx`), A-3/PDF377 and
-A-41/PDF396 establish opcode31/XO9=8, independent OE/Rc and no reserved operand
+A-41/PDF396 establish opcode 31/XO9=8, independent OE/Rc and no reserved operand
 bits. The exact form mask is 0xfc0007ff, with base0x7c000010 plus OE<<10 and Rc.
-Secondary 601UM PDF761/10-207 gives ~A+B+1; PDF62/2-16 Table2-8 defines CA
+Secondary 601UM PDF761/10-207 gives ~A+B+1; PDF62/2-16 Table 2-8 defines CA
 from the widened carry-out. Equivalently, CA is one when unsigned B>=unsigned A.
 Equality produces zero with CA1. Incoming CA is not consumed. rA/rB, including
 r0, are real registers and rD is the destination.
@@ -18,7 +18,7 @@ and final SO. Every SUBFC owns and replaces CA, even with OE=Rc=0. The IU adds
 ALU_SUBFC to the existing complemented-A/fixed-carry subtraction path and exports
 the 33-bit sum carry. Packet widths and interfaces are unchanged.
 
-Primary timing TIM-T64-021/Table6-4/PDF271 records raw `subfc[o][.]`, Integer
+Primary timing TIM-T64-021/Table 6-4/PDF271 records raw `subfc[o][.]`, Integer
 execution and base one-cycle execution for PID6/PID7v. This slice validates the
 bounded registered pipeline, not full processor timing conformance.
 
@@ -43,6 +43,6 @@ Independent source and RTL review found no actionable issue. Source inventory
 now reconciles 53 of 226 rows boundedly, with 173 pending. No Quartus resource,
 fit or timing measurement is added. Next: SUBFE and captured carry input.
 
-Round19 integration passes all 43 prior RTL targets, strict core/wrapper lint, 112 tool tests and 15 recovery-model tests. No regression failures remain.
+Round 19 integration passes all 43 prior RTL targets, strict core/wrapper lint, 112 tool tests and 15 recovery-model tests. No regression failures remain.
 
-Round20 subsequently accepts [SUBFE](SUBFE.md); current reviewed/executable coverage is106 forms. Earlier pending statements describe round19.
+Round 20 subsequently accepts [SUBFE](SUBFE.md); current reviewed/executable coverage is 106 forms. Earlier pending statements describe round 19.

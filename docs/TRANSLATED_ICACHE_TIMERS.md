@@ -1,5 +1,7 @@
 # Translated I-cache refill and timer priority
 
+Recorded: `make -C sim test-core-bat-cached-bus60x-timer`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 `tb/tb_core_bat_cached_bus60x_timer.sv` covers one deterministic DEC-to-EXT promotion at an accepted translated instruction-cache refill. It runs the BAT/cache/60x wrapper with timers enabled and uses only CPU instructions, `timer_tick_i`, `external_irq_i`, and the normal 60x target BFM to create the scenario. Readonly hierarchy observations identify the selected DEC reservation and frontend fence; they do not inject state or preload a translation.
 
 The real-mode bootstrap installs identity and alias cacheable IBATs, writes DEC=0 through SPR22, enables EE|IR through MTMSR, and branches to EA `0x10000100`. The BFM accepts the physical `0x100` line request and holds its four response beats. One timer pulse changes DEC from zero to negative. The test waits for a provisional DEC reservation with the frontend fence asserted and the held line still blocking drain, then asserts EXT. With EXT held high, the BFM releases the saved four beats. The source deasserts EXT on its accepted trace.

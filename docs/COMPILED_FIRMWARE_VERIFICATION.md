@@ -1,5 +1,7 @@
 # Compiled firmware acceptance — 2026-09-21
 
+Recorded: `make -C toolchain rtl-<profile>` per section (e.g. `rtl-smoke`, `rtl-timer`, `rtl-table-fault`), commit pre-repository snapshot, imported in 3e727b6, 2026-09-21 to 2026-09-23 as dated per section.
+
 ## CPU TLB-load follow-up, 2026-09-23
 
 All twelve workload profiles pass on the CPU-load revision. TLBIE and CPU-load
@@ -57,14 +59,6 @@ All five prior profiles also pass against this revision with unchanged results:
 baseline 30/187, alignment 1,516/8,421, synthetic fetch 186/1,123, live context
 101/1,123 and external IRQ 198/2,187 (retirements/cycles).
 
-SHA-256 identities:
-
-```text
-d9f4d18e3657a95a6b34c5b11d3c26a3765c97774799747db22b68f8f111940e  toolchain/build/timer/smoke.elf
-2012975bb6c9b51140c55019a7ae6b7052691b9adc91926d7d2f60a0540b81c4  toolchain/run-rtl-smoke.py
-0740308c1de3e01fcc753f0c35794dc5b867b2cc6dcd0095c417ffeb9661e164  tb/tb_compiled_timer_firmware.sv
-```
-
 The negative check asserts that image bytes at `0x1164` are `28090040`, then
 changes byte `0x1167` to `41`, corrupting the expected DEC-handler MSR. Running the timer binary with that
 image and `+TOHOST=fff02000` fails through `firmware failure mailbox cycle=2560`
@@ -83,15 +77,6 @@ labels, handler MSR, saved SRR1, DAR/DSISR preservation and restored translation
 Success requires mailbox retirement and channel drain. This profile does not
 combine BAT translation with the cached physical measurement top.
 
-SHA-256 identities:
-
-```text
-a80fb27a0d7641c5c4487e8c72c0d39ca71e5af7b2ce4688886bd303437ba50f  toolchain/build/external-interrupt/smoke.elf
-beeb1c6233b995b71ad5aacd8291e543784c9e5850717e814f514de4d48abba8  toolchain/run-rtl-smoke.py
-1d9c683f628ad93baf355ba4045d82bf49b2313ef227482d354cd64d64b25756  tb/tb_compiled_irq_firmware.sv
-```
-
-The runner change after the positive run only updated its descriptive docstring.
 Prior ELFs are unchanged.
 
 The negative check asserts that image bytes at `0x1e0` are `28050040`, then
@@ -112,15 +97,6 @@ IR/DR context transitions, one mapped alias store, seven reads and eleven
 writes**. Context followed real mode → translation → real-mode SC handler →
 translated RFI return → real mode. Final mailbox retirement and physical channel
 drain were required. See [`LIVE_BAT_CONTEXT.md`](LIVE_BAT_CONTEXT.md) for the integration boundary.
-
-The live ELF SHA-256 is
-`1e026a976009fcf28a9b4b45755730ffd2e49fdb0366f252e6e0e0af101c1b03`.
-The updated runner SHA-256 is
-`098b96cc20960ede438fbbcdb8d4cbf9498fe5372d8d86a408c0655e9261ebe2`;
-`tb_compiled_live_firmware.sv` is
-`278739cb94e09d6e996d4b7960214ea28fd87dca650c340ad2553a654b35103a`.
-These supersede the earlier runner snapshot only; the prior ELF hashes remain
-unchanged.
 
 The negative check changed the expected handler MSR from `0x40` to `0x41`:
 assert image bytes at offset `0x1d8` equal `280a0040`, then change byte `0x1db`
@@ -147,20 +123,7 @@ fetch profile verifies protection/guarded saved state, DAR/DSISR preservation,
 RFI retry and subsequent successful calls. It does not test a real translation
 producer, physical TEA recovery or interrupt handling.
 
-## Artifact identity
-
-SHA-256 values for the passing artifacts:
-
-```text
-8df7bc60f4c1ca4dba30fe7dbbd2428552cd10b9aac987b9f851eb1794e38add  toolchain/build/be/smoke.elf
-c0e5aafdb9efbd353fa28cec9df90582e00dac9db656af823c7a752e5142e303  toolchain/build/alignment/smoke.elf
-ce5fd8f7d7ce4a9122a5a6011c69b6d606460af95d9332af2de18ebf2a4cd461  toolchain/build/fetch-fault/smoke.elf
-94338f87aa944994714cf1788f36d1519d4bb8576b9b5bba2604fec98dbe4734  toolchain/run-rtl-smoke.py
-a48b486cd1c8002c24e369af258c8851c04e94416892d07922d347175397cc6c  tb/tb_compiled_fetch_firmware.sv
-```
-
-ELFs and build products are generated artifacts. Test sources, runner and
-firmware sources remain in the repository working tree.
+ELFs and build products are generated artifacts.
 
 ## Negative fetch-firmware check
 
@@ -170,8 +133,8 @@ The test changed the compiled protection-SRR1 expectation from high half
 `6d490801`. The simulation failed through the firmware failure mailbox at
 cycle 725, rather than timing out.
 
-To reproduce against the above ELF, first run the positive fetch profile to
-generate `toolchain/build/rtl-fetch-fault/memory.hex`. From `ppc603e`:
+To reproduce against that ELF, first run the positive fetch profile to
+generate `toolchain/build/rtl-fetch-fault/memory.hex`. From the repository root:
 
 ```sh
 python3 - <<'PY'
@@ -235,15 +198,6 @@ controls were repeated in this round.
 Build: existing pinned offline container, `make timer`, with `SOURCE_DATE_EPOCH=0`.
 Run: existing `run-rtl-smoke.py --profile timer` command.
 
-| Artifact | SHA256 |
-| --- | --- |
-| Timer ELF | `3b688b0b03a2860e683295876e40e5bfc39d81c96f2e1086c1086aa5d4d29b96` |
-| Timer C | `9c5ed1c721167a7a4e45a10ac7a7b691fc5f9ae9a806ebdb6ca502e5527eb23c` |
-| Timer handlers | `3a54815ec339d5355a13703494b31ae6cbfc36256e89008f3f3d7208156d18ae` |
-| Timer positive log | `4a83c029a2f44afdd6b9af57955d676632f992717ad9da8fe1379ebe388e4b95` |
-| Negative log | `2ea383417967470f6afc3c346b4b0b136ff56ba84fc1f5346944dfa10f4bb2b5` |
-| Firmware source manifest | `2d0d848fb6571b9060772e4b35c5e03768acb861b6d14b1632d2c1600517cfb1` |
-
 [XER contract](XER_ACCESS.md) and [focused verification](XER_VERIFICATION.md)
 record the architectural boundary and independent tests. No full regression or
 FPGA fit was run for this slice; previous fit archives remain historical.
@@ -263,8 +217,8 @@ PP/key combinations and ordinary absent/protected/guarded ISI/DSI conversion.
 
 The latter observes 21 miss cases, 10 ordinary faults and 11 allowed fills.
 Omitted PTE R/C writeback fails at cycle 30,694; a wrong guarded ISI syndrome
-fails at cycle 115,083. All 336 source input hashes remain unchanged through
-the final compiled suite and negative controls. Full regression also passes
+fails at cycle 115,083. Sources stayed unchanged through the final compiled
+suite and negative controls. Full regression also passes
 199 registered simulation configurations and 243 Python checks, plus 43
 standalone lint profiles and both existing measurement wrappers.
 
@@ -289,7 +243,7 @@ ISI cause is rejected at cycle 261,790. No ELF or established RTL change was
 needed. See [bus evidence](TRANSLATED_BUS60X_FIRMWARE.md).
 
 The full regression passes 202 registered simulation configurations, 243
-Python tests and 45 standalone lint profiles. The final 342 source inputs
-remain frozen. This validates uncached scalar translation over physical
+Python tests and 45 standalone lint profiles. Sources stayed frozen. This
+validates uncached scalar translation over physical
 bus pins; translated I-cache, complete attribute handling and FPGA timing
 remain separate acceptance gates.

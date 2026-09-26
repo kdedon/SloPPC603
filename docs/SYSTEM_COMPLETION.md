@@ -144,10 +144,10 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Round | MVP estimate | Change and validation boundary |
 | --- | ---: | --- |
 | Timer wave baseline, 2026-09-21 | About 65% | First explicit MVP scorecard, reconstructed after TB/DEC acceptance; not a historical velocity series. Full gate: 172 named targets, 24 strict RTL lint profiles, 140 bench prelint profiles, 241 Python tests; six compiled workloads. |
-| Bounded recovery/status round, 2026-09-21 | About 65% (unchanged) | Rename identities retained across recovery; independent focused recovery/memory/fault gates, 24 strict lint profiles and 241 Python tests passed with 142 source hashes stable. Prior 172-target full regression predates this change; no new fit. All six compiled firmware workloads rebuilt and passed; prior negative controls were not repeated. |
+| Bounded recovery/status round, 2026-09-21 | About 65% (unchanged) | Rename identities retained across recovery; independent focused recovery/memory/fault gates, 24 strict lint profiles and 241 Python tests passed with sources unchanged. Prior 172-target full regression predates this change; no new fit. All six compiled firmware workloads rebuilt and passed; prior negative controls were not repeated. |
 | XER state-saving round, 2026-09-21 | About 65% (unchanged) | SPR1 read/write and alias through precise flags retirement; 28,721 core checks, 189 CQ/flags checks, 1,213,761 decode checks, 243 Python tests and all six firmware workloads pass. See XER verification for the complete focused gate. No full regression or fit. |
-| Event-entry reset round, 2026-09-21 | About 65% (unchanged) | Test-only hardening: EXT/DEC at four reset boundaries, 14,909 independent checks, fresh-boot state and event reuse; 24 lint profiles and 243 Python tests pass. All 144 focused-gate source hashes stable; production RTL unchanged. |
-| Runtime BAT round, 2026-09-22 | About 68% (67.6% weighted) | BAT/live context rises from 60% to 85%; other system scores unchanged. Five new suites and four runtime lint profiles pass, plus seven compiled workloads and two negative controls. Full legacy regression, 28 combined lint profiles and 243 Python checks pass; 233 final input hashes remain stable. No new FPGA fit. |
+| Event-entry reset round, 2026-09-21 | About 65% (unchanged) | Test-only hardening: EXT/DEC at four reset boundaries, 14,909 independent checks, fresh-boot state and event reuse; 24 lint profiles and 243 Python tests pass. Sources stayed unchanged through the gate; production RTL unchanged. |
+| Runtime BAT round, 2026-09-22 | About 68% (67.6% weighted) | BAT/live context rises from 60% to 85%; other system scores unchanged. Five new suites and four runtime lint profiles pass, plus seven compiled workloads and two negative controls. Full legacy regression, 28 combined lint profiles and 243 Python checks pass; Sources stayed unchanged through the gate. No new FPGA fit. |
 | DSI protection round, 2026-09-22 | About 69% (69.1% weighted) | Load/store and supervisor scores each rise from 65% to 75%; other scores unchanged. Full regression and separately added live-context cancellation target pass, with 243 Python checks, eight firmware workloads and a syndrome negative control. Production RTL stayed stable during the gate; no new FPGA fit. |
 | CPU segment-register round, 2026-09-22 | About 71% (70.5% weighted) | Segment/page/refill rises from 25% to 35%; all other scores unchanged. Five new suites, three additional integration lint profiles, full legacy regression, 243 Python checks, nine firmware workloads and a readback negative control pass. Segment descriptors still do not drive page translation. No new FPGA fit. |
 | Prefilled page-hit round, 2026-09-22 | About 72% (71.9% weighted) | Segment/page/refill rises from 35% to 45%; all other scores unchanged. Clean broad regression plus the separately finalized router suite, 159 bench lint profiles, 243 Python checks, ten firmware workloads and an instruction-page negative control pass. External TLB preload remains a deliberate shortcut; no CPU software refill or new FPGA fit. |
@@ -155,6 +155,23 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Requested three-round sequence: round 1, prepared refill, 2026-09-22 | Unchanged: 72.6% weighted | Opt-in kind-5 normalized refill now prepares without mutation and commits captured bank/set/way/entry atomically. Four feature combinations, legacy corpus, page/invalidate integration and a live-input mutation negative pass. This service foundation does not yet expose CPU TLB loads, so system percentages remain unchanged. |
 | Requested three-round sequence: round 2, seed registers, 2026-09-23 | About 73% (72.9% weighted) | Segment/page/refill 50% → 52%. DCMP/ICMP/RPA now support full-width committed CPU reads/writes, privilege enforcement and cancellation. 2,062 decode, 1,417 enabled-core and 88 disabled-core checks pass, with neighboring supervisor/context/XER/TLBIE/SR regressions. CPU TLB loads and automatic miss state are still absent at this acceptance point. |
 | Requested three-round sequence: round 3, CPU TLB loads, 2026-09-23 | About 74% (74.0% weighted) | Segment/page/refill 52% → 60%; other system percentages unchanged. Privileged real-mode TLBLD/TLBLI capture CPU seed state and commit prepared entries at retirement, with cancellation/error drain. Full regression, 177 strict test configurations, 243 Python checks, twelve compiled workloads and missing-load negative pass. No fixture preloading in the CPU-load workload; no architectural miss handler or new FPGA fit. |
+| Page-exception round 1, page DSI, 2026-09-23 | 74.0% → 74.42% | Segment/page/refill 60% → 63%. |
+| Page-exception round 2, page ISI, 2026-09-23 | 74.42% → 74.84% | Segment/page/refill 63% → 66%. |
+| Page-exception round 3, miss results, 2026-09-23 | 74.84% → 75.12% | Segment/page/refill 66% → 68%. |
+| Miss-entry round 1, SDR1, 2026-09-23 | 75.12% → 75.40% | Segment/page/refill 68% → 70%. |
+| Miss-entry round 2, TGPR, 2026-09-23 | 75.40% → 75.82% | Segment/page/refill 70% → 73%. |
+| Miss-entry round 3, miss vectors, 2026-09-23 | 75.82% → 76.80% | Segment/page/refill 73% → 80%. |
+| Table-search round 1, matched way, 2026-09-23 | 76.80% → 77.08% | Segment/page/refill 80% → 82%. |
+| Table-search round 2, PTEG search, 2026-09-23 | 77.08% → 77.64% | Segment/page/refill 82% → 86%. |
+| Table-search round 3, failed-search faults, 2026-09-23 | 77.64% → 78.20% | Segment/page/refill 86% → 90%. |
+| Translated-60x round 1, scalar wrapper, 2026-09-23 | 78.20% → 78.34% | Integration 70% → 72%. |
+| Translated-60x round 2, bus firmware, 2026-09-23 | 78.34% → 78.90% | 60x transport 70% → 75%; integration 72% → 75%. |
+| Translated-60x round 3, retry/error/reset, 2026-09-23 | 78.90% → 79.32% | 60x transport 75% → 78%; integration 75% → 78%. |
+| Translated-cache round 1, cached wrapper, 2026-09-23 | 79.32% → 79.82% | Instruction cache 65% → 75%. |
+| Translated-cache round 2, cached firmware, 2026-09-23 | 79.82% → 80.35% | Instruction cache 75% → 80%; integration 78% → 82%. |
+| Translated-cache round 3, coherence/drain, 2026-09-23 | 80.35% → 80.81% | Instruction cache 80% → 85%; integration 82% → 85%. |
+| Bounded cached-interrupt round, 2026-09-23 | 80.81% (unchanged) | Verification only. |
+| Bounded cached-timer round, 2026-09-23 | 80.81% (unchanged) | Verification only. |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.
@@ -214,8 +231,8 @@ retained recovery targets are tested. The 10-point subsystem increase adds
 1.4 weighted percentage points; it does not imply software page refill works.
 The next proposed boundary is [page-hit routing](plans/stale/PAGE_PATH_NEXT_SLICE.md).
 Remaining effort stays at 6–10 / 8–14 focused engineer-weeks because page refill
-and combined timing dominate uncertainty. All 260 final acceptance input hashes
-remained stable; the full legacy gate and separately added five-test gate both
+and combined timing dominate uncertainty. Sources stayed unchanged through
+acceptance; the full legacy gate and separately added five-test gate both
 passed. Production RTL stayed fixed during validation.
 
 
@@ -441,9 +458,8 @@ Segment/page/refill moves 86% → 90%; weighted completion 77.64% → 78.20%.
 Across the requested three rounds: 76.80% → 78.20%, a 1.40-point increase.
 Other system scores stay fixed. Full regression passes all 199 registered
 simulation configurations and 243 Python checks; 43 standalone lint profiles
-and both historical measurement wrappers pass. All twenty compiled workloads pass on the final runner. The 336 frozen source
-input hashes stayed unchanged through the final compiled suite and negative
-controls; production RTL also stayed frozen through the broad regression.
+and both historical measurement wrappers pass. All twenty compiled workloads pass on the final runner. Sources stayed
+unchanged through the final compiled suite and negative controls; production RTL also stayed frozen through the broad regression.
 No new FPGA fit, timing closure or OS-boot claim.
 
 See [search handler](TABLE_SEARCH_HANDLER.md),
@@ -504,7 +520,7 @@ claim all reset edges or architectural recovery from transport errors.
 Other systems stay fixed. All 202 registered simulation configurations,
 243 Python checks, 45 standalone lint profiles and twenty existing compiled
 workloads pass, along with both new bus profiles and two negative controls.
-The final 342 source input hashes remain stable; established RTL was unchanged.
+Established RTL was unchanged.
 No FPGA fit was run. Remaining effort stays 6–10 focused engineer-weeks for
 integrated simulation and 8–14 for a timing-checked FPGA result.
 
@@ -545,8 +561,8 @@ offers remain stable. One outstanding request and the sole IQ producer reserve
 that slot. Focused firmware passes; the shared-core change requires the broad
 regression currently in progress before final sequence acceptance.
 
-Cache80%, integration82%; weighted79.82% → 80.35%. Other scores stay fixed.
-No new FPGA fit or timing claim; maintenance/remapping adverse cases are round3.
+Cache 80%, integration 82%; weighted 79.82% → 80.35%. Other scores stay fixed.
+No new FPGA fit or timing claim; maintenance/remapping adverse cases are round 3.
 
 ## Translated-cache sequence: round 3 accepted, 2026-09-23
 
@@ -558,8 +574,8 @@ and 47 retirements: maintenance waits for an accepted refill, redirect discards
 old bytes, held completion blocks fetches, and one accepted beat followed by
 TEA cannot publish a poisoned line. Reset restores execution.
 
-Cache80→85%, integration82→85%; weighted80.35→80.81%. The three rounds move
-79.32→80.81% (+1.49 points). Fetch remains90%: the capacity fix closes an
+Cache 80% → 85%, integration 82% → 85%; weighted 80.35% → 80.81%. The three rounds
+move 79.32% → 80.81% (+1.49 points). Fetch remains 90%: the capacity fix closes an
 integration defect rather than expanding its scope. The focused fetch test
 passes 304 checks. Legacy fixtures were adjusted to establish a held
 request before redirect and require full-IQ offer suppression; explicit
@@ -578,7 +594,7 @@ pass. Historical cached and timer/BAT measurement wrappers also pass lint;
 this is not a new synthesis, fit or timing result. Twenty preserved compiled
 ELF workloads pass, plus scalar-bus and cached-bus executions of the existing
 search/fault ELFs. Both cached negative images fail at their intended checks.
-All 348 source-input hashes remain unchanged through final acceptance.
+Sources stayed unchanged through final acceptance.
 
 The shared production change outside the new wrapper is the reviewed fetch
 capacity gate. Legacy corpus fixtures now require IQ credit pressure instead
@@ -587,7 +603,7 @@ request/retirement backpressure and held-packet stability checks remain.
 The 304-check standalone fetch gate retains explicit response backpressure.
 
 Final weighted MVP estimate: **80.81% (about 81%)**, up from 79.32%.
-Cache85%, integration85%; all other system scores stay fixed. Remaining effort
+Cache 85%, integration 85%; all other system scores stay fixed. Remaining effort
 stays **6–10 / 8–14 engineer-weeks** for simulation / timing-checked FPGA
 acceptance pending a combined-top fit and broader event/maintenance stress.
 
@@ -599,11 +615,11 @@ drain before event acceptance; the handler reads exact SRR0/SRR1, holds an
 actual retirement stable under backpressure, and RFI resumes the alias through
 a cache hit without a second physical refill. No stale target instruction
 retires before the handler. Canonical strict simulation passes 1,051 checks
-and 18 retirements. An independent Sol review found no remaining blocker.
+and 18 retirements. An independent review found no remaining blocker.
 
 Fresh validation also passes the enabled/disabled core IRQ configurations,
 three neighboring translated-cache gates and default/full-feature wrapper
-lint. All production RTL is unchanged; 349 source input hashes are frozen.
+lint. All production RTL is unchanged.
 The prior full 205-configuration regression, 243 Python checks and compiled
 firmware results are inherited, not rerun this round. The new target increases
 the registered simulation build count to 206; a full 206-configuration run is
@@ -618,7 +634,7 @@ See [test contract and evidence](TRANSLATED_ICACHE_INTERRUPTS.md).
 
 ## Bounded cached-timer round — accepted, 2026-09-23
 
-One Sol implementation/review set adds DEC-to-EXT promotion while an accepted
+One implementation/review round adds DEC-to-EXT promotion while an accepted
 translated cache refill blocks drain. The CPU writes DEC=0; one public timer
 tick creates the request. The test observes DEC selection and a frontend
 fence before asserting EXT, so this exercises promotion rather than initial
@@ -630,8 +646,7 @@ and pulse-qualified, mutually exclusive event traces are checked.
 
 Canonical strict simulation passes **2,748 checks**, 25 retirements, one EXT
 and one DEC. Five neighboring timer/IRQ/cache-drain configurations and both
-wrapper lint profiles pass. Production RTL is unchanged; all 350 frozen source
-input hashes remain stable. Full regression, Python and compiled firmware
+wrapper lint profiles pass. Production RTL is unchanged. Full regression, Python and compiled firmware
 results remain inherited; the registered build count is now 207, without a
 claim that the full 207-configuration suite ran this round. No fit was run.
 

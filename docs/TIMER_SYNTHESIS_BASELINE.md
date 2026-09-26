@@ -96,7 +96,7 @@ No broad false path, reset change, or input-delay relaxation was applied.
 
 ## Accepted evidence
 
-[Compact evidence](../quartus/timer-bat/timer-20260921/README.md) retains
+Compact evidence in the local `quartus/timer-bat/timer-20260921` archive (not in the repository) retains
 resource excerpts, original flow/STA reports, full path query, tool/image
 identity, statuses and source hashes. `archive.sha256` checks every bundled
 file; `original-full-reports.sha256` is explicitly provenance for full reports

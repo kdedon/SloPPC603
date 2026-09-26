@@ -1,5 +1,7 @@
 # Translated scalar 60x error and reset gate
 
+Recorded: `make -C sim test-core-bat-bus60x-errors`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 `tb_core_bat_bus60x_errors.sv` drives the external 60x pins of
 `ppc_core_bat_bus60x` with the independent target BFM. It uses the real
 wrapper, CPU instructions and target byte RAM; it does not force internal CPU

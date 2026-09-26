@@ -90,7 +90,7 @@ wrong-path is still fatal because the fetch and bus channels have no epoch.
 
 ## Wrapper and compilation
 
-`ppc_core_cached_bus60x_managed` retains the Round37 retirement, redirect,
+`ppc_core_cached_bus60x_managed` retains the Round 37 retirement, redirect,
 diagnostic, and physical pin ports and adds only the maintenance handshake.
 It passes `DISPATCH_WIDTH`, `RESET_PC`, and `DIV_LATENCY` to an internal core
 instance named `core`.

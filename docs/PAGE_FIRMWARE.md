@@ -1,5 +1,7 @@
 # Compiled instruction/data page-hit acceptance
 
+Recorded: `make -C toolchain rtl-page`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 This records the original fixture-prefilled page-hit workload. Later compiled
 workloads exercise CPU-owned `tlbld`/`tlbli` and opt-in typed page exceptions;
 see [TLB_LOAD_PROTOCOL.md](TLB_LOAD_PROTOCOL.md),

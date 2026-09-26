@@ -1,5 +1,7 @@
 # Page-hit data protection DSI verification
 
+Recorded: `make -C sim lint-page-data-exceptions test-page-data-exception-router test-core-page-data-exception`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The opt-in `ENABLE_PAGE_DATA_EXCEPTIONS` profile delivers a clean page-TLB PP denial through the existing precise `DATA_DSI_PROTECTION` response. It requires page translation and data exceptions; the ordinary profile retains diagnostic page failures. TLB misses, C=0 stores, direct-store segments, malformed/provenance errors and conflicting causes remain diagnostics.
 
 The focused strict gate `make -C sim lint-page-data-exceptions test-page-data-exception-router test-core-page-data-exception` passes (2026-09-23). The independent router bench reports **228 checks in each enabled and disabled profile**. It preloads real DTLB entries and checks Ks/PP and Kp/PP read denial, PP store denial ahead of C-bit work, held response stability, CSR/context/management exclusion, captured EA/access kind, no physical offer, and default-off `DATA_OK` plus legacy error. Miss, C=0 and SR.T cases never become typed protection. Adversarial service responses with a wrong kind or simultaneous protection and guarded flags also stay generic diagnostics.

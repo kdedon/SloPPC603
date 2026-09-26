@@ -90,6 +90,7 @@ FPGA fits: see [quartus/README.md](quartus/README.md) and
   describes the target machine. Floating-point work starts from
   [docs/FPU_REUSE_ASSESSMENT.md](docs/FPU_REUSE_ASSESSMENT.md) (donor evaluation, F0–F5 plan).
 - `docs/plans/stale/`: history only. Do not take instructions or status from it.
+- [docs/AUDIT.md](docs/AUDIT.md): open audit findings (AUD-nn) with status; update the row when you fix one.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): datapath overview and the history of how it grew.
 - `docs/references/`: distilled source contracts (ISA matrix, timing, 60x bus, source audit).
 - Feature documents in `docs/` come in families: `FEATURE.md` or `*_PROTOCOL.md` /
@@ -124,10 +125,15 @@ A verification record states what anyone can rerun and check:
 - the date, pass/fail, and the counts that matter (checks, retirements, cycles);
 - what the test establishes and what it does not.
 
-Never cite log files, JSON summaries, source-hash manifests or scratch directories
-(`/tmp`, `build/`, home directories). They disappear and nobody else can open them.
-If output must be kept, make the test print its own summary, or commit a small,
-deliberate artifact next to the test. Reproduction commands use repo-relative paths.
+Never cite log files, JSON summaries, source-hash manifests or other scratch
+artifacts (anything under `/tmp`, `sim/build/` or home directories) as evidence.
+They disappear and nobody else can open them. Commands may still write into
+`sim/build/` as their output directory. If output must be kept, make the test print
+its own summary, or commit a small, deliberate artifact next to the test.
+Reproduction commands use repo-relative paths.
+
+Each record opens with one line:
+`Recorded: <make target(s)>, commit <sha>, <date>.`
 
 ## Working rules
 
@@ -141,3 +147,8 @@ deliberate artifact next to the test. Reproduction commands use repo-relative pa
 - New RTL changes need a fresh fit before any timing claim.
 - Cite external code as GitHub permalinks at fixed commits; never reference local paths.
 - Follow `concise-writing` for comments and commit messages.
+- Run long builds and tests as one command that exits, then grep its log for results;
+  do not tail or poll logs. Keep parallel jobs modest (`-j2` per agent when several share a machine).
+- Builds go through `sim/tools/verilate`, which deletes Verilator's ~70 MB precompiled
+  headers; `make -C sim clean-cache` reclaims any left by other paths. Remove worktrees and
+  scratch files when a task ends.

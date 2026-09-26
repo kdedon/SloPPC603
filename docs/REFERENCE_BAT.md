@@ -1,5 +1,7 @@
 # CPU execution through relocated BAT addresses
 
+Recorded: `make -C sim test-reference-bat`, commit pre-repository snapshot, imported in 3e727b6, round 39 (date not recorded).
+
 `make -C sim test-reference-bat` runs the all-168-form memory corpus on the
 actual `ppc_core_bat` wrapper and compares every accepted retirement with the
 original local DingusPPC handlers. The 102-field trace includes GPRs, CR, XER,
@@ -28,10 +30,8 @@ retirement. The adapter compares all state snapshots, checks dynamic coverage
 of every default implemented form, and requires three deliberately corrupted
 GPR/RAM comparisons to fail at the named field.
 
-`build/reference-bat/manifest.json` retains input/header/binary/trace hashes,
-the reference revision and dirty status, tool versions, exact commands,
-coverage and physical-transport counters. Inputs are frozen before building
-and verified again after comparison. Regenerable compiler header caches are
+Inputs are frozen before building and verified again after comparison.
+Regenerable compiler header caches are
 removed only from this run's exact compiler directory after it finishes.
 
 This lane verifies CPU execution through BAT routing, not an independent MMU

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runs Verilator, then deletes the precompiled headers left in the model
+# directory. Each is about 70 MB and only speeds up the build that made it.
+mdir=obj_dir
+prev=
+for arg in "$@"; do
+  case "$prev" in -Mdir|--Mdir) mdir=$arg ;; esac
+  prev=$arg
+done
+"${VERILATOR_BIN:-verilator}" "$@"
+status=$?
+if [ -d "$mdir" ]; then
+  find "$mdir" -maxdepth 1 -name '*.gch' -delete
+fi
+exit $status

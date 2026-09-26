@@ -4,7 +4,7 @@ The BAT router has an opt-in synchronous data-fault response for a valid DBAT
 hit whose PP bits deny a load or store. This is the translation source for the
 core's typed DSI protection carrier. The 603e user manual identifies data
 protection as DSI at vector `0x300` (local `1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`, PDF181–182,
-printed4-23–4-24, §4.5.3/Table4-11). This router supplies the cause; the core
+printed 4-23–4-24, §4.5.3/Table 4-11). This router supplies the cause; the core
 owns precise retirement and DAR/DSISR/SRR state.
 
 ## Interface and enablement

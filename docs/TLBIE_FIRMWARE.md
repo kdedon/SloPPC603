@@ -1,5 +1,7 @@
 # Compiled CPU TLB invalidation acceptance
 
+Recorded: `make -C toolchain rtl-tlbie`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 The `tlbie` profile uses one compiled ELF in three fixture-selected modes. Four
 TLB entries are preloaded through the public normalized control interface:
 DTLB set 8 ways A/B under VSIDs `1234`/`2345`, ITLB set 8 under VSID `5678`,

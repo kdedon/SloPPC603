@@ -1,5 +1,7 @@
 # Translated I-cache drain and line-error gate
 
+Recorded: `make -C sim test-core-bat-cached-bus60x-drain`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 `tb/tb_core_bat_cached_bus60x_drain.sv` drives the composed wrapper through its public CPU control and 60x pins. The CPU installs a runtime IBAT mapping `EA 0x10000100` to physical `0x00000100`, with WIMG=0000. The pin responder implements one scalar word at a time or a four-beat, critical-word-first line. It does not force internal CPU, router, cache, or bus state.
 
 The first phase holds an accepted cacheable line refill with the original instruction bytes already captured. While that response is outstanding, an external invalidate command must remain unaccepted. A CPU all-kill redirect discards the old-context instruction; the responder changes physical memory to a new instruction and releases the old line. The test requires maintenance to wait until the held physical response has drained. It then holds the maintenance completion and checks that no physical alias refill or stale target instruction retires. Acknowledging completion allows a fresh line refill and exactly the new instruction's architectural write (`r8=9`). This models the required caller sequence: redirect/fence around a code write, followed by explicit cache invalidation. The maintenance command alone is not a frontend, data-store, or global memory barrier.

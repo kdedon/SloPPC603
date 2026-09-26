@@ -24,4 +24,4 @@ Independent review requested stronger nonzero r0 stimuli and pre-write count cov
 
 This slice does not establish full 603e timing, dual issue or FPGA timing closure.
 
-Round17 subsequently accepts [RLWIMI](ROTATE_INSERT.md); all 90 currently reviewed forms execute. Earlier pending/count statements describe their original rounds.
+Round 17 subsequently accepts [RLWIMI](ROTATE_INSERT.md); all 90 currently reviewed forms execute. Earlier pending/count statements describe their original rounds.

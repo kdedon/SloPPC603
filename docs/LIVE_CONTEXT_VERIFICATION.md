@@ -1,19 +1,21 @@
 # Committed supervisor context verification
 
+Recorded: `make -C sim regression`, `test-core-live-context`, `test-core-bat-live-context`, `test-live-context-decode`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
+
 This gate verifies the opt-in live-context subset with startup-programmed BATs.
 It does not implement interrupt entry, page-TLB refill, live BAT writes, cache
 composition, or complete PowerPC MSR semantics.
 
 ## Independent expected behavior
 
-The local *Programming Environments* manual (`MPCFPE.pdf`), PDF581/printed8-169,
+The local *Programming Environments* manual (`MPCFPE.pdf`), PDF 581/printed 8-169,
 specifies privileged MTMSR, replacement from rS, execution synchronization
 except POW/LE, and immediate EE/RI effects at completion. The implementation
 rejects those unsupported named modes, including EE/RI. The local 1997
 *MPC603e & EC603e User's Manual* §2.3.2.4.2 distinguishes MTMSR execution
 synchronization from subsequent-context synchronization: software needs ISYNC
 to guarantee following instructions use the new context. This implementation's
-unconditional drain/refetch is a conservative choice. The manual's printed5-50
+unconditional drain/refetch is a conservative choice. The manual's printed page 5-50
 implicit-branch restriction also matters: these tests identity-map the code
 containing MTMSR across instruction-translation transitions.
 
@@ -85,7 +87,5 @@ RTL fix was needed.
 `make -C sim -j4 regression` passed (exit 0), recorded on
 2026-09-21 at 12:20 UTC. It ran 165 named test targets, 21 strict RTL lint
 profiles and 241 Python tests (204 tool/checker, 22 cosimulation, 15 recovery).
-The log contains 248 PASS summary lines; these are not independent test counts.
-All 132 RTL/testbench/simulation-Makefile source hashes stayed identical before
-and after the run. The first full frozen-source run in this slice passed;
+RTL, testbench and simulation Makefile sources stayed unchanged during the run. The first full frozen-source run in this slice passed;
 no production changes were required by the independent verification.

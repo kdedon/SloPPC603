@@ -11,7 +11,7 @@ in its frontmatter decides when it triggers. Skills can also be read directly as
 | `hdl-coding-guidelines` | SystemVerilog rules, clocks/resets, FSMs, handshakes, CDC, BRAM/DSP inference, SDC, Quartus reports on Cyclone V. Source docs in `references/source/`. |
 | `mister-framework` | MiSTer `emu` top level, `hps_io`, SDRAM/DDRAM, video/audio, build, simulation. Source docs in `references/source/`. |
 | `hdl-design-organization` | Packages, structs/enums, config records, RAM wrappers, SPR definitions with masks, build hygiene. |
-| `concise-writing` | Comments, commit messages and replies. |
+| `concise-writing` | Comments, commit messages, docs and replies. |
 
 ## CPU microarchitecture
 

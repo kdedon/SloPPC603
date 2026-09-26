@@ -1,5 +1,7 @@
 # P05c: current IU stage observation
 
+Recorded: `make -C sim test-stage`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-12.
+
 Current extension: [DIVIDER_TIMING.md](DIVIDER_TIMING.md) adds 20/37-cycle DIVW/DIVWU reservation. The single-cycle relations below continue to apply to the original instruction subset and its stage probe; they do not describe divide finish timing.
 
 Status: reviewed relations and executable probe for the seven legal P05 forms. The full-core probe passes 14 dispatches, issues, finishes and retirements. It covers pending RAW operands, finish-to-dependent-issue bypass, retirement stalls and full resources. This establishes the accepted implementation event contract; it does not establish complete 603e stage timing or implement a Figure 6-3/6-4/6-5 replay.
@@ -78,7 +80,7 @@ Measured on 2026-09-12 with strict Verilator `--timing --assert -Wall`:
 - 27 stalled retirement-offer edges with stable packets; 21 edges with five occupied resources.
 - 18 Python tests pass: 2 positive tests and 16 deliberate negative cases, including edge collapse/delay, RAW-before-finish, wrong values, younger retirement, changed stalled packet, early resource release, full same-edge allocation, missing edges, incomplete coverage/drain and changed source/edge constants.
 
-Representative observations: the first instruction has D2/E3/finish4/commit5. The fourth has D8/E9/finish10/commit36 due to the imposed retirement stall. The ninth has D37/E38/finish39; the tenth issues at edge39 using that producer result and finishes40. These numbers describe this stimulus only.
+Representative observations: the first instruction has D2/E3/finish4/commit5. The fourth has D8/E9/finish10/commit36 due to the imposed retirement stall. The ninth has D37/E38/finish39; the tenth issues at edge 39 using that producer result and finishes at edge 40. These numbers describe this stimulus only.
 
 The JSONL schema has one object per edge: integer `edge`, `cq_count`, `rename_count`, `retire_ready`, plus optional `dispatch {id,pc,insn}`, `issue {id,a,b}`, `finish {id,value}`, and `retire {id,pc,insn,gpr,value}`. The retirement object appears whenever valid, including stalled edges. `id` is the packed CQ slot/generation token; the bounded trace requires no reuse of a full token. Trace files and compiled objects are generated in `build/`, not committed fixtures.
 

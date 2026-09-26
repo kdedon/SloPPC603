@@ -5,14 +5,24 @@ description: Load whenever writing prose or comments for a human to read — rep
 
 # Concise writing
 
-- When writing something intended for human consumption, (comment, commit message, reply to prompt) use as few words as possible. Pick every word meticulously to reduce the volume to a strict minimum. Be down to the point. Less is more.
-- When it isn't obvious, add a small, to the point, comment to explain *what* the block does and *why*. Use examples when possible. Propose ASCII drawings to explain complete systems.
-- Code comments should be human sounding and focused on the code only. They should not contain references to decision numbers, plans, implementation stages, or other agentic details. They should also not contain paths to local files or references.
-- Comments should contain no references to local files or third party works such as emulators.
-- Comments should be short and only describe actions that are unintuitive.
-- Comments should not say what things are not.
-- Comments should not describe obvious behavior.
-- Comments should not take up several paragraphs.
-- Comments should be brief and worded like a human and only describe what is going on in the code.
-- Comments should contain no references to plans, stages, steps, or other agentic work.
-- Don't touch blocks of code unrelated to the feature you implement. e.g. Don't add comments to a block of code if you did not create it or modify it. As much as possible try to minimize the number of changed lines when implementing a feature.
+Applies to comments, commit messages, docs and replies.
+
+## Rules
+
+- Use as few words as possible. Pick each word deliberately; less is more.
+- When a block is not obvious, add a short comment saying *what* it does and *why*.
+  Use examples where they help; propose ASCII drawings for whole systems.
+- Comments describe only the code, briefly and in a human voice: unintuitive behavior,
+  never obvious behavior, never what the code is not, never several paragraphs.
+- Comments carry no references to plans, stages, steps, decision numbers or other agentic work.
+- Comments carry no local file paths and no references to third-party works such as emulators.
+- Leave unrelated code alone: don't add comments to blocks you did not create or modify,
+  and keep the changed-line count minimal.
+
+## Checklist
+
+- [ ] Every sentence earns its place; nothing restates the code or the obvious.
+- [ ] Comments explain what and why for non-obvious code only, in a few lines.
+- [ ] No plan, stage, decision or agent references; no local paths or third-party names.
+- [ ] No negative statements about what the code is not.
+- [ ] Only lines belonging to the change were touched.

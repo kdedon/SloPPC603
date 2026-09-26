@@ -1,5 +1,7 @@
 # Actual-core page-hit integration verification
 
+Recorded: `make -C sim lint-page-path test-core-page-translation test-page-memory-router`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 `tb/tb_core_page_translation.sv` drives `ppc_core_bat` with the opt-in live supervisor, segment-register and page-translation parameters enabled. The bench uses external startup BAT setup and normalized TLB management requests. Its physical instruction and data responders are independent of the router's internal TLB state.
 
 The instruction stream starts in real mode, installs SR1 through `mtsr`, enables MSR.IR/DR with `mtmsr`, and executes from an IBAT-mapped code region whose physical address is unchanged by later SR1 writes. Two DTLB ways are prefilled for the same EA `0x10000000`: VSID `0x001234` maps to PA `0x80000000` with WIMG `0100`, and VSID `0x002345` maps to PA `0x90000000` with WIMG `0010`. The CPU switches A→B→A through committed `mtsr` instructions and `isync`, then loads three distinct GPRs. The bench checks physical request addresses and attributes, return values, exact three SR retirement commits, retained A translation, and absence of physical stores.

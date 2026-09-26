@@ -1,5 +1,7 @@
 # XER SPR access verification
 
+Recorded: `make -C sim lint check-spec test-core-xer test-timer-decode` and the focused gate below, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
+
 This bounded extension enables SPR1 under `ENABLE_SUPERVISOR_EXCEPTIONS` while
 keeping the default decoder profile unchanged. XER itself is user-accessible:
 the feature switch is availability, not an architectural privilege requirement.
@@ -8,12 +10,12 @@ SPR read aliases retain their existing timer-profile policy.
 
 ## Architectural oracle and directed coverage
 
-Primary PEM §2.1.5/Table2-6, printed2-11/PDF73, defines SO/OV/CA and the seven-bit
+Primary PEM §2.1.5/Table 2-6, printed 2-11/PDF 73, defines SO/OV/CA and the seven-bit
 byte count (`0xe000007f`). Reserved bits read zero and are ignored on writes.
 MTSpr replaces these fields directly: SO=0/OV=1 must not turn SO on. Arithmetic
 still applies its instruction-specific sticky SO semantics and preserves byte
 count. MCRXR copies `{SO,OV,CA,0}` to the selected CR field and clears only those
-three flags. The 603e UM printed2-40/PDF118 establishes the MFSPR/MFTB read alias.
+three flags. The 603e UM printed 2-40/PDF 118 establishes the MFSPR/MFTB read alias.
 See [the sourced implementation contract](XER_ACCESS.md).
 
 `tb_core_xer.sv` passes **28,721 checks across 35 scenarios**. It maintains literal
@@ -44,10 +46,9 @@ primary PEM instead of retaining the earlier unavailable-source limitation.
 
 The compiled timer workload also passes XER read/write/masking and interrupt save/restore checks:
 436 retirements in 4,494 cycles. A deliberately wrong expected byte count
-(127→126) fails through the mailbox at cycle1,226. All six compiled workloads
+(127→126) fails through the mailbox at cycle 1,226. All six compiled workloads
 were rerun by the integration owner; see
-[compiled evidence](COMPILED_FIRMWARE_VERIFICATION.md) for exact reproduction
-and hashes.
+[compiled evidence](COMPILED_FIRMWARE_VERIFICATION.md) for exact reproduction.
 
 ## Focused gate
 
@@ -61,18 +62,17 @@ make -C sim -j4 lint check-spec test-recovery \
   test-core-timer-registers test-core-xer test-timer-decode test-stage
 ```
 
-The focused gate passed with exit0 at `2026-09-21T21:05:32.734512+00:00`. It includes
+The focused gate passed with exit 0 at `2026-09-21T21:05:32.734512+00:00`. It includes
 24 strict RTL lint profiles and **243 Python tests** (15 recovery, 206 tools,
 22 cosimulation). The exhaustive SPR decoder passed **1,213,761 checks**:
 1,344 legal and 195,264 rejected timer-profile words.
 
-Additional passing checks: flags37; completion-update25; CR-state execution45,730;
-CR-state edges11,247; core record edges43; core ADD flags18,967; ADD recovery3,439;
-recovery state5,871; recovery storage23; core CR-state program112,725 checks /
-1,460 retirements; timer registers4,833; stage trace14 retirements.
+Additional passing checks: flags 37; completion-update 25; CR-state execution 45,730;
+CR-state edges 11,247; core record edges 43; core ADD flags 18,967; ADD recovery 3,439;
+recovery state 5,871; recovery storage 23; core CR-state program 112,725 checks /
+1,460 retirements; timer registers 4,833; stage trace 14 retirements.
 
-All **147 hashed source/metadata/build inputs** remained unchanged during
-the final gate.
+Sources, metadata and build inputs stayed unchanged during the final gate.
 
 The first gate attempt stopped at a metadata validator that still required the
 historical unavailable-PEM statement. The validator and primary-source metadata

@@ -1,5 +1,7 @@
 # CPU segment-register instruction verification
 
+Recorded: `make -C sim lint-segment-integration test-segment-cpu-decode test-core-segment-csr test-core-segment-privilege`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 The optional `ENABLE_SEGMENT_REGISTERS` profile connects `mfsr`, `mfsrin`,
 `mtsr`, and `mtsrin` to the committed segment-register bank. This verification
 covers instruction decode, privilege, captured operands, retirement ownership,
@@ -64,5 +66,4 @@ The five new segment targets and three lint profiles were added after the full
 invocation parsed its Makefile and passed separately through their canonical
 targets. All nine firmware workloads passed; the segment negative control
 failed the intended readback mailbox. See [SEGMENT_FIRMWARE.md](SEGMENT_FIRMWARE.md).
-All 260 final source/manifest/configuration hashes
-remained stable. No FPGA fit was run.
+Sources stayed unchanged through acceptance. No FPGA fit was run.
