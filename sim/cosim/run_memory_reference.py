@@ -9,16 +9,19 @@ import sys
 from compare_state import compare
 from compare_memory import FIELDS, HEADER, RAM_BASE, RAM_BYTES, read_trace
 from memory_program import corpus, FORMS
+from reference_checkout import PINNED_COMMIT, add_arguments, verify
 from run_reference import HERE, PROJECT, ROOT, build_reference, command, digest
 
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--build-dir',type=Path,default=Path('/tmp/ppc603e-memory-reference-build'))
+    ap.add_argument('--build-dir',type=Path,default=PROJECT/'sim/build/reference-memory')
+    add_arguments(ap,prebuilt_runner=True)
     args=ap.parse_args();build=args.build_dir.resolve();build.mkdir(parents=True,exist_ok=True)
     (build/'manifest.json').unlink(missing_ok=True)
     ref=ROOT/'dingusppc'
-    runner,cppargs=build_reference(build,ref,flat_ram=True)
+    reference_commit,reference_dirty=verify(ref,args.allow_unpinned_reference)
+    runner,cppargs=build_reference(build,ref,flat_ram=True,prebuilt=args.reference_runner_dir)
     words,groups=corpus();program=build/'program.hex'
     program.write_text(''.join(f'{w:08x}\n' for w in words))
     expected=build/'expected.txt';actual=build/'actual.txt'
@@ -33,7 +36,7 @@ def main():
     memory_writes=sum(memory_access(r[1])[1] for r in rows)
     sources=[(PROJECT/'sim'/line).resolve() for line in (PROJECT/'rtl/files.f').read_text().splitlines() if line.strip()]
     bench=PROJECT/'tb/tb_core_memory_reference.sv'
-    rtlargs=['verilator','--binary','--timing','--assert','-Wall','--top-module','tb_core_memory_reference',
+    rtlargs=[args.verilator,'--binary','--timing','--assert','-Wall','--top-module','tb_core_memory_reference',
              '--Mdir',build/'rtl',*sources,bench]
     command(rtlargs,build/'rtl-build.log')
     command([build/'rtl/Vtb_core_memory_reference',f'+PROGRAM={program}',f'+TRACE={actual}',
@@ -101,16 +104,15 @@ def main():
             reject(name+'/misaligned',[0x38801001,(op<<26)|(3<<21)|(4<<16)],'misaligned',1)
     (build/'reject.hex').unlink()
     original=[ref/'cpu/ppc/ppcopcodes.cpp',ref/'cpu/ppc/ppcemu.h',ref/'cpu/ppc/ppcmmu.h',ref/'LICENSE',ref/'CREDITS.md']
-    adapter=[HERE/name for name in ['reference_runner.cpp','run_reference.py','run_memory_reference.py','memory_program.py',
+    adapter=[HERE/name for name in ['reference_runner.cpp','run_reference.py','reference_checkout.py','run_memory_reference.py','memory_program.py',
                                    'reference_program.py','compare_memory.py','compare_state.py']]
     manifest={'schema_version':2,'header':HEADER,'snapshot_fields':FIELDS,'model':'MPC603EV','pvr':'00070101',
               'ppc_le':False,'memory_controller_le':False,'backend':'flat big-endian service; no original MMU',
               'ram_base':RAM_BASE,'ram_bytes':RAM_BYTES,'instruction_image':'separate immutable Harvard image',
               'initial_state':'zero GPR/CR/XER/LR/CTR and RAM; PC0; real instruction initialization',
-              'reference_commit':subprocess.check_output(['git','-C',str(ref),'rev-parse','HEAD'],text=True).strip(),
-              'reference_dirty':subprocess.check_output(['git','-C',str(ref),'status','--porcelain'],text=True).splitlines(),
+              'reference_pinned':PINNED_COMMIT,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
               'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
-              'verilator':subprocess.check_output(['verilator','--version'],text=True).strip(),
+              'verilator':subprocess.check_output([args.verilator,'--version'],text=True).strip(),
               'compile_commands':[[str(x) for x in cppargs],[str(x) for x in rtlargs]],
               'sha256':{str(p):digest(p) for p in original+adapter+sources+[bench,runner,program,expected,actual,isa_path]},
               'program_words':len(words),'snapshots':len(rows),'encoding_groups':groups,'covered_forms':covered,

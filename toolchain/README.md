@@ -13,7 +13,7 @@ authenticated by APT signatures; HTTP avoids depending on CA state in the bare
 bootstrap image. `build-container.sh` records the resulting local image ID and
 any registry digest alongside the artifacts.
 
-Run these commands from `ppc603e/`.
+Run these commands from the repository root.
 
 ```sh
 ./toolchain/build-container.sh
@@ -54,6 +54,20 @@ and requires the mailbox store to retire and the transport to drain before passi
 
 The LE artifact proves compiler/assembler/linker byte order only. Architectural
 LE instruction/data behavior remains P26 work and is not implied by this build.
+
+## All compiled-firmware profiles
+
+`make -C toolchain rtl-all` builds and runs every RTL firmware profile below and
+fails unless all pass. `regression` does not run them. Without a host
+cross-compiler, build the ELFs in the pinned container first; `rtl-all` then
+reuses them and fails with a clear message if any is missing:
+
+```sh
+docker run --rm --network none --user "$(id -u):$(id -g)" \
+  --volume "$PWD:/work" --workdir /work/toolchain \
+  ppc603e-cross:bookworm-20250811 make firmware-all
+make -C toolchain -j2 rtl-all
+```
 
 ## Compiled firmware execution
 
@@ -112,8 +126,8 @@ as the other firmware profiles. Then run `make rtl-fetch-fault` on the host with
 Verilator, or invoke:
 
 ```sh
-python3 run-rtl-smoke.py --profile fetch-fault \
-  --elf build/fetch-fault/smoke.elf --build-dir build/rtl-fetch-fault
+python3 toolchain/run-rtl-smoke.py --profile fetch-fault \
+  --elf toolchain/build/fetch-fault/smoke.elf --build-dir toolchain/build/rtl-fetch-fault
 ```
 
 This profile executes on the **abstract core**, not the physical bus/cache

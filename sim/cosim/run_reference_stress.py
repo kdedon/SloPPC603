@@ -11,6 +11,7 @@ import subprocess
 import sys
 from compare_memory import FIELDS, HEADER, read_trace
 from compare_state import compare
+from reference_checkout import PINNED_COMMIT, add_arguments, verify
 from run_reference import HERE, PROJECT, ROOT, build_reference, command, digest
 from stress_program import GENERATOR_VERSION, MIN_BLOCKS, MAX_BLOCKS, generate
 
@@ -34,7 +35,7 @@ def source_inputs(ref,sources,bench):
     files=[ref/'cpu/ppc/ppcopcodes.cpp',ref/'LICENSE',ref/'CREDITS.md',*sources,bench,PROJECT/'rtl/files.f',PROJECT/'sim/spec/isa.json']
     # Pin all local reference headers, not only directly included headers.
     files.extend(sorted(ref.rglob('*.h')))
-    files.extend(HERE/name for name in ['reference_runner.cpp','run_reference.py','compare_state.py',
+    files.extend(HERE/name for name in ['reference_runner.cpp','run_reference.py','reference_checkout.py','compare_state.py',
                                       'compare_memory.py','stress_program.py','run_reference_stress.py'])
     return {str(path):digest(path) for path in files}
 
@@ -43,27 +44,28 @@ def run_suite(args):
     build=args.build_dir.resolve();build.mkdir(parents=True,exist_ok=True)
     (build/args.report_name).unlink(missing_ok=True)
     ref=ROOT/'dingusppc';bench=PROJECT/'tb/tb_core_memory_reference.sv'
+    reference_commit,reference_dirty=verify(ref,args.allow_unpinned_reference)
     sources=[(PROJECT/'sim'/line).resolve() for line in (PROJECT/'rtl/files.f').read_text().splitlines() if line.strip()]
     inputs=source_inputs(ref,sources,bench)
     runner=build/'reference_runner';rtl=build/'rtl/Vtb_core_memory_reference'
     build_path=build/'build-manifest.json'
     if args.reuse_build:
         frozen=json.loads(build_path.read_text())
+        runner=Path(frozen.get('runner',runner))
         if frozen['inputs']!=inputs or frozen['executables']!={str(p):digest(p) for p in [runner,rtl]}:
             raise RuntimeError('reuse-build inputs/binaries changed; rebuild to obtain trustworthy provenance')
     else:
-        runner,cppargs=build_reference(build,ref,flat_ram=True)
-        rtlargs=['verilator','--binary','--timing','--assert','-Wall','--top-module','tb_core_memory_reference',
+        runner,cppargs=build_reference(build,ref,flat_ram=True,prebuilt=args.reference_runner_dir)
+        rtlargs=[args.verilator,'--binary','--timing','--assert','-Wall','--top-module','tb_core_memory_reference',
                  '--Mdir',build/'rtl',*sources,bench]
         command(rtlargs,build/'rtl-build.log')
         if source_inputs(ref,sources,bench)!=inputs:
             raise RuntimeError('sources changed during compile; rerun after source freeze')
-        frozen={'inputs':inputs,'executables':{str(p):digest(p) for p in [runner,rtl]},
+        frozen={'inputs':inputs,'runner':str(runner),'executables':{str(p):digest(p) for p in [runner,rtl]},
                 'commands':[[str(x) for x in cppargs],[str(x) for x in rtlargs]],
-                'reference_commit':subprocess.check_output(['git','-C',str(ref),'rev-parse','HEAD'],text=True).strip(),
-                'reference_dirty':subprocess.check_output(['git','-C',str(ref),'status','--porcelain'],text=True).splitlines(),
+                'reference_pinned':PINNED_COMMIT,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
                 'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
-                'verilator':subprocess.check_output(['verilator','--version'],text=True).strip()}
+                'verilator':subprocess.check_output([args.verilator,'--version'],text=True).strip()}
         build_path.write_text(json.dumps(frozen,indent=2)+'\n')
     shutil.copyfile(ref/'LICENSE',build/'DINGUSPPC-LICENSE');shutil.copyfile(ref/'CREDITS.md',build/'DINGUSPPC-CREDITS.md')
     entries=json.loads((PROJECT/'sim/spec/isa.json').read_text())['decode_entries']
@@ -159,7 +161,8 @@ def run_suite(args):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--build-dir',type=Path,default=Path('/tmp/ppc603e-reference-stress'))
+    parser.add_argument('--build-dir',type=Path,default=PROJECT/'sim/build/reference-stress')
+    add_arguments(parser,prebuilt_runner=True)
     parser.add_argument('--seeds',type=parse_seeds,default=parse_seeds('603e,1,deadbeef'))
     parser.add_argument('--blocks',type=int,default=120)
     parser.add_argument('--report-name',default='suite.json',help='separate suite JSON name, e.g. maximum.json')

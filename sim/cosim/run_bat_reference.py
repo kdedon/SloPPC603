@@ -10,14 +10,16 @@ import sys
 from compare_memory import FIELDS, HEADER, read_trace
 from compare_state import compare
 from memory_program import corpus
+from reference_checkout import PINNED_COMMIT, add_arguments, verify
 from run_reference import HERE, PROJECT, ROOT, build_reference, command, digest
 from run_reference_stress import memory_access
 
 
-def run(build):
+def run(build, args):
     build.mkdir(parents=True, exist_ok=True)
     (build/'manifest.json').unlink(missing_ok=True)
     ref = ROOT/'dingusppc'
+    reference_commit, reference_dirty = verify(ref, args.allow_unpinned_reference)
     lists = [PROJECT/'rtl'/name for name in
              ['files.f', 'bat_service_files.f', 'core_bat_files.f']]
     sources = list(dict.fromkeys((PROJECT/'sim'/line).resolve()
@@ -25,12 +27,12 @@ def run(build):
     bench = PROJECT/'tb/tb_core_bat_reference.sv'
     isa = PROJECT/'sim/spec/isa.json'
     adapters = [HERE/name for name in ['run_bat_reference.py', 'reference_runner.cpp',
-                'run_reference.py', 'run_reference_stress.py', 'memory_program.py',
+                'run_reference.py', 'reference_checkout.py', 'run_reference_stress.py', 'memory_program.py',
                 'reference_program.py', 'compare_memory.py', 'compare_state.py']]
     inputs = list(dict.fromkeys([*sources, *lists, bench, isa, *adapters,
                   ref/'cpu/ppc/ppcopcodes.cpp', ref/'LICENSE', ref/'CREDITS.md', *sorted(ref.rglob('*.h'))]))
     frozen = {str(p): digest(p) for p in inputs}
-    runner, cppargs = build_reference(build, ref, flat_ram=True)
+    runner, cppargs = build_reference(build, ref, flat_ram=True, prebuilt=args.reference_runner_dir)
     words, groups = corpus()
     program = build/'program.hex'
     program.write_text(''.join(f'{word:08x}\n' for word in words))
@@ -39,7 +41,7 @@ def run(build):
     rows = read_trace(expected)
     requests = sum(memory_access(row[1])[0] for row in rows)
     writes = sum(memory_access(row[1])[1] for row in rows)
-    rtlargs = ['verilator', '--binary', '--timing', '--assert', '-Wall', '--top-module',
+    rtlargs = [args.verilator, '--binary', '--timing', '--assert', '-Wall', '--top-module',
                'tb_core_bat_reference', '--Mdir', build/'rtl', *sources, bench]
     command(rtlargs, build/'rtl-build.log')
     executable = build/'rtl/Vtb_core_bat_reference'
@@ -78,10 +80,10 @@ def run(build):
               'sha256': {**frozen, **{str(p): digest(p) for p in artifacts}},
               'compile_commands': [list(map(str, cppargs)), list(map(str, rtlargs))],
               'run_command': list(map(str, rtlrun)), 'negative_diagnostics': negative,
-              'reference_commit': subprocess.check_output(['git', '-C', str(ref), 'rev-parse', 'HEAD'], text=True).strip(),
-              'reference_dirty': subprocess.check_output(['git', '-C', str(ref), 'status', '--porcelain'], text=True).splitlines(),
+              'reference_pinned': PINNED_COMMIT, 'reference_commit': reference_commit,
+              'reference_dirty': reference_dirty,
               'compiler': subprocess.check_output(['g++', '--version'], text=True).splitlines()[0],
-              'verilator': subprocess.check_output(['verilator', '--version'], text=True).strip(),
+              'verilator': subprocess.check_output([args.verilator, '--version'], text=True).strip(),
               'limits': ['separate immutable instruction image and 256-byte BE data RAM',
                          'local startup IR/DR/PR and BAT programming; no CPU CSR/MSR routing',
                          'abstract physical ports carry WIMG; no downstream cache/60x ordering',
@@ -96,11 +98,12 @@ def run(build):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--build-dir', type=Path, default=Path('build/reference-bat'))
+    parser.add_argument('--build-dir', type=Path, default=PROJECT/'sim/build/reference-bat')
+    add_arguments(parser, prebuilt_runner=True)
     args = parser.parse_args()
     build = args.build_dir.resolve()
     try:
-        run(build)
+        run(build, args)
     finally:
         for path in (build/'rtl').glob('*.gch'):
             if path.is_file() and not path.is_symlink():

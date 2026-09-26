@@ -8,7 +8,7 @@ This project targets `5CSEBA6U23I7` at 50 MHz and synthesizes the current core
 behind a small deterministic instruction responder. It is an early unsupported-
 construct and area check, not final 603e fit or timing evidence.
 
-Run these commands from `ppc603e/`.
+Run these commands from the repository root.
 
 ```sh
 ./quartus/build.sh          # use Quartus on PATH
@@ -16,11 +16,19 @@ Run these commands from `ppc603e/`.
 ./quartus/probe.sh
 ```
 
-The default container image is `theypsilon/quartus-lite-c5:17.0.2.docker0`, the
-locally established Cyclone V flow used by the nearby C16_MiSTer project. Override
-`QUARTUS_IMAGE` when a reviewed image is available. A successful build writes
+The default container image is `theypsilon/quartus-lite-c5:17.0.2.docker0`, pinned
+by digest in every build script. Override `QUARTUS_IMAGE` when a reviewed image is
+available. A successful build writes
 `quartus/evidence/tool-versions.txt`, `image.txt` for Docker builds, and copies
 the flow summary, fitter report, and timing report into `quartus/evidence/`.
+
+Each project's `files.f` owns its source list. Every build script regenerates the
+QSF source assignments from it with `qsf_sources.py`, and `make -C sim check-spec`
+fails if a committed QSF has drifted:
+
+```sh
+python3 quartus/qsf_sources.py quartus quartus/integrated quartus/timer-bat quartus/icache
+```
 
 The top-level clock, synchronous active-low reset, 32-bit instruction stimulus,
 and one folded activity bit are all virtual pins, so none consume package I/O.
@@ -35,7 +43,8 @@ port list and two named struct assignment patterns. The canonical RTL now uses
 equivalent, older-tool-compatible syntax; there are no shadow RTL copies in this
 project.
 
-`ppc603e_core.sdc` creates a 20 ns clock with zero-delay virtual I/O assumptions.
+`ppc603e_core.sdc` creates a 20 ns clock, derives clock uncertainty, and sets zero
+`-max`/`-min` virtual I/O delays.
 Those assumptions measure the core bootstrap only; they are not a board interface
 contract or 60x bus timing. The single FPGA clock is also a scaffold
 simplification. Primary-source audit found that PID7v silicon does not support a
@@ -49,4 +58,5 @@ reports from the final RTL.
 The 2026-09-12 bootstrap fit completed, but timing did not meet the placeholder
 constraints: worst setup slack was -0.360 ns and worst hold slack was -2.235 ns
 across the four reported corners. See `docs/BUILD_STATUS.md` for the complete
-bounded result and why it is not a final 50 MHz claim.
+bounded result and why it is not a final 50 MHz claim. That run predates
+`derive_clock_uncertainty`, so its slack is optimistic.

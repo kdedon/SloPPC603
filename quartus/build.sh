@@ -4,8 +4,11 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/.." && pwd)"
 mode="${1:-local}"
-image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5:17.0.2.docker0}"
+image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70}"
 
+case "${mode}" in local|--docker) ;; *) echo "usage: $0 [--docker]" >&2; exit 2 ;; esac
+python3 "${script_dir}/qsf_sources.py" "${script_dir}"
+python3 "${script_dir}/check_virtual_ports.py" "${script_dir}/ppc_core_measure.sv" "${script_dir}/ppc603e_core.qsf"
 mkdir -p "${script_dir}/evidence"
 
 case "${mode}" in

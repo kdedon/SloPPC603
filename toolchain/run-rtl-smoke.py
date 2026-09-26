@@ -66,60 +66,57 @@ def load_elf(path, required_symbols=None, capture_symbols=None):
     return memory, mailbox
 
 
+CACHED = ('files.f', 'bus_files.f', 'line_read_files.f', 'icache_files.f', 'cached_system_files.f')
+BAT = ('files.f', 'bat_service_files.f', 'core_bat_files.f')
+BAT_BUS = BAT + ('bus_files.f', 'system_files.f', 'core_bat_bus60x_files.f')
+BAT_CACHED = BAT + ('bus_files.f', 'system_files.f', 'line_read_files.f', 'icache_files.f',
+                    'cached_system_files.f', 'cache_control_files.f', 'core_bat_cached_bus60x_files.f')
+TIMER = {'interrupt_handler': 0x500, 'decrementer_handler': 0x900}
+PAGE = {**TIMER, 'page_probe': 0x6000}
+TLBIE = {**PAGE, 'tlbie_data_probe': 0x7000}
+MISS = {'imiss_handler': 0x1000, 'dlmiss_handler': 0x1100, 'dsmiss_handler': 0x1200, 'page_probe': 0x6000}
+FAULT = {**MISS, 'table_search_dsi_vector': 0x300, 'table_search_isi_vector': 0x400}
+
+# profile: (bench, source lists, fixed-address symbols as offsets from BASE, +MODE runs)
+PROFILES = {
+    'cached-bus': ('tb_compiled_firmware', CACHED, {}, 0),
+    'fetch-fault': ('tb_compiled_fetch_firmware', ('files.f',),
+                    {'isi_handler': 0x400, 'fetch_protection_probe': 0x800, 'fetch_guarded_probe': 0x900}, 0),
+    'live-context': ('tb_compiled_live_firmware', BAT, {'syscall_handler': 0xc00}, 0),
+    'external-interrupt': ('tb_compiled_irq_firmware', BAT, {'interrupt_handler': 0x500}, 0),
+    'timer': ('tb_compiled_timer_firmware', BAT, TIMER, 0),
+    'runtime-bat': ('tb_compiled_runtime_bat_firmware', BAT, TIMER, 0),
+    'dsi': ('tb_compiled_dsi_firmware', BAT, {'dsi_handler': 0x300}, 0),
+    'segment': ('tb_compiled_segment_firmware', BAT, TIMER, 0),
+    'page': ('tb_compiled_page_firmware', BAT, PAGE, 0),
+    'tlbie': ('tb_compiled_tlbie_firmware', BAT, TLBIE, 3),
+    'tlbload': ('tb_compiled_tlbload_firmware', BAT, TLBIE, 3),
+    'page-dsi': ('tb_compiled_page_dsi_firmware', BAT, {'page_dsi_handler': 0x300}, 0),
+    'page-isi': ('tb_compiled_page_isi_firmware', BAT, {'page_isi_handler': 0x400, 'page_probe': 0x6000}, 0),
+    'page-miss': ('tb_compiled_page_miss_firmware', BAT, {**TLBIE, 'page_miss_store_probe': 0x7008}, 3),
+    'sdr1': ('tb_compiled_sdr1_firmware', BAT, {}, 0),
+    'tgpr': ('tb_compiled_tgpr_firmware', BAT, {}, 0),
+    'miss-entry': ('tb_compiled_miss_entry_firmware', BAT, MISS, 2),
+    'table-search': ('tb_compiled_table_search_firmware', BAT, MISS, 0),
+    'table-fault': ('tb_compiled_table_fault_firmware', BAT, FAULT, 0),
+    'table-search-bus': ('tb_compiled_table_bus60x_firmware', BAT_BUS, MISS, 0),
+    'table-fault-bus': ('tb_compiled_table_bus60x_firmware', BAT_BUS, FAULT, 0),
+    'table-search-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, MISS, 0),
+    'table-fault-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, FAULT, 0),
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile', choices=('cached-bus', 'fetch-fault', 'live-context', 'external-interrupt', 'timer', 'runtime-bat', 'dsi', 'segment', 'page', 'tlbie', 'tlbload', 'page-dsi', 'page-isi', 'page-miss', 'sdr1', 'tgpr', 'miss-entry', 'table-search', 'table-fault', 'table-search-bus', 'table-fault-bus', 'table-search-cached', 'table-fault-cached'), default='cached-bus')
+    parser.add_argument('--profile', choices=tuple(PROFILES), default='cached-bus')
     parser.add_argument('--elf', type=Path, default=Path(__file__).resolve().parent/'build/be/smoke.elf')
     parser.add_argument('--build-dir', type=Path, default=Path(__file__).resolve().parent/'build/rtl-smoke')
-    parser.add_argument('--verilator', default='verilator')
+    parser.add_argument('--verilator', default=str(Path(__file__).resolve().parent.parent/'sim/tools/verilate'))
     parser.add_argument('--jobs', type=int, default=2)
     args = parser.parse_args()
-    table_cached_profile = args.profile in ('table-search-cached', 'table-fault-cached')
-    table_bus_profile = args.profile in ('table-search-bus', 'table-fault-bus')
-    table_fault_profile = args.profile in ('table-fault', 'table-fault-bus', 'table-fault-cached')
-    table_search_profile = args.profile in ('table-search', 'table-search-bus', 'table-search-cached')
-    miss_entry_profile = args.profile == 'miss-entry'
-    tgpr_profile = args.profile == 'tgpr'
-    sdr1_profile = args.profile == 'sdr1'
-    fetch_profile = args.profile == 'fetch-fault'
-    live_profile = args.profile == 'live-context'
-    irq_profile = args.profile == 'external-interrupt'
-    timer_profile = args.profile == 'timer'
-    runtime_bat_profile = args.profile == 'runtime-bat'
-    dsi_profile = args.profile == 'dsi'
-    segment_profile = args.profile == 'segment'
-    page_profile = args.profile in ('page', 'tlbie', 'tlbload', 'page-miss')
-    tlbie_profile = args.profile in ('tlbie', 'tlbload', 'page-miss')
-    tlbload_profile = args.profile in ('tlbload', 'page-miss')
-    page_miss_profile = args.profile == 'page-miss'
-    page_dsi_profile = args.profile == 'page-dsi'
-    page_isi_profile = args.profile == 'page-isi'
-    required = {'isi_handler': BASE+0x400, 'fetch_protection_probe': BASE+0x800,
-                'fetch_guarded_probe': BASE+0x900} if fetch_profile else None
-    if live_profile:
-        required = {'syscall_handler': BASE+0xc00}
-    if irq_profile:
-        required = {'interrupt_handler': BASE+0x500}
-    if timer_profile or runtime_bat_profile or segment_profile or page_profile:
-        required = {'interrupt_handler': BASE+0x500, 'decrementer_handler': BASE+0x900}
-    if dsi_profile:
-        required = {'dsi_handler': BASE+0x300}
-    if page_dsi_profile:
-        required = {'page_dsi_handler': BASE+0x300}
-    if page_isi_profile:
-        required = {'page_isi_handler': BASE+0x400, 'page_probe': BASE+0x6000}
-    if page_profile:
-        required['page_probe'] = BASE+0x6000
-    if tlbie_profile:
-        required['tlbie_data_probe'] = BASE+0x7000
-    if page_miss_profile:
-        required['page_miss_store_probe'] = BASE+0x7008
-    if miss_entry_profile or table_search_profile or table_fault_profile:
-        required = {'imiss_handler': BASE+0x1000, 'dlmiss_handler': BASE+0x1100,
-                    'dsmiss_handler': BASE+0x1200, 'page_probe': BASE+0x6000}
-    if table_fault_profile:
-        required.update({'table_search_dsi_vector': BASE+0x300,
-                         'table_search_isi_vector': BASE+0x400})
+    top, manifests, offsets, modes = PROFILES[args.profile]
+    table_fault_profile = args.profile.startswith('table-fault')
+    required = {name: BASE+offset for name, offset in offsets.items()}
     symbols = {}
     memory, mailbox = load_elf(args.elf, required, symbols)
     fault_args = []
@@ -130,70 +127,21 @@ def main():
             if size < needed or value % 4 or not BASE <= value <= BASE+SIZE-size:
                 raise ValueError(f'invalid fault verification symbol {symbol!r}')
             fault_args.append(f'+{plusarg}={value:08x}')
-    top = 'tb_compiled_fetch_firmware' if fetch_profile else 'tb_compiled_firmware'
-    if live_profile:
-        top = 'tb_compiled_live_firmware'
-    if irq_profile:
-        top = 'tb_compiled_irq_firmware'
-    if timer_profile:
-        top = 'tb_compiled_timer_firmware'
-    if runtime_bat_profile:
-        top = 'tb_compiled_runtime_bat_firmware'
-    if dsi_profile:
-        top = 'tb_compiled_dsi_firmware'
-    if segment_profile:
-        top = 'tb_compiled_segment_firmware'
-    if page_profile:
-        top = 'tb_compiled_page_firmware'
-    if tlbie_profile:
-        top = 'tb_compiled_tlbie_firmware'
-    if tlbload_profile:
-        top = 'tb_compiled_tlbload_firmware'
-    if page_miss_profile:
-        top = 'tb_compiled_page_miss_firmware'
-    if page_dsi_profile:
-        top = 'tb_compiled_page_dsi_firmware'
-    if page_isi_profile:
-        top = 'tb_compiled_page_isi_firmware'
-    if sdr1_profile:
-        top = 'tb_compiled_sdr1_firmware'
-    if table_search_profile:
-        top = 'tb_compiled_table_search_firmware'
-    if table_fault_profile:
-        top = 'tb_compiled_table_fault_firmware'
-    if miss_entry_profile:
-        top = 'tb_compiled_miss_entry_firmware'
-    if tgpr_profile:
-        top = 'tb_compiled_tgpr_firmware'
-    if table_bus_profile:
-        top = 'tb_compiled_table_bus60x_firmware'
-    if table_cached_profile:
-        top = 'tb_compiled_table_cached_bus60x_firmware'
     build = args.build_dir.resolve()
     build.mkdir(parents=True, exist_ok=True)
     image = build/'memory.hex'
     image.write_text(''.join(f'{byte:02x}\n' for byte in memory))
     root = Path(__file__).resolve().parent.parent
     sources = []
-    manifests = ('files.f',) if fetch_profile else (
-        'files.f', 'bus_files.f', 'line_read_files.f', 'icache_files.f', 'cached_system_files.f')
-    if table_fault_profile or table_search_profile or miss_entry_profile or tgpr_profile or sdr1_profile or live_profile or irq_profile or timer_profile or runtime_bat_profile or dsi_profile or segment_profile or page_profile or page_dsi_profile or page_isi_profile:
-        manifests = ('files.f', 'bat_service_files.f', 'core_bat_files.f')
-    if table_bus_profile:
-        manifests += ('bus_files.f', 'system_files.f', 'core_bat_bus60x_files.f')
-    if table_cached_profile:
-        manifests += ('bus_files.f', 'system_files.f', 'line_read_files.f',
-                      'icache_files.f', 'cached_system_files.f', 'cache_control_files.f',
-                      'core_bat_cached_bus60x_files.f')
     for manifest in manifests:
         for source in (root/'rtl'/manifest).read_text().split():
             if source not in sources:
                 sources.append(source)
-    profile_params = [f'-GFAULT_PROFILE={int(table_fault_profile)}'] if table_bus_profile or table_cached_profile else []
+    profile_params = [f'-GFAULT_PROFILE={int(table_fault_profile)}'] if manifests in (BAT_BUS, BAT_CACHED) else []
     subprocess.run([args.verilator, '--binary', '--timing', '--assert', '-Wall', '-j', str(args.jobs),
                     '--top-module', top, '--Mdir', str(build/'obj'),
                     *profile_params, *sources, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
-    for mode in (range(3) if tlbie_profile else (range(2) if miss_entry_profile else (None,))):
+    for mode in (range(modes) if modes else (None,)):
         mode_args = [] if mode is None else [f'+MODE={mode}']
         subprocess.run([str(build/'obj'/f'V{top}'), f'+IMAGE={image}',
                         f'+TOHOST={mailbox:08x}', *fault_args, *mode_args], check=True)

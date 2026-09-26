@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 from compare_state import FIELDS, SCHEMA_VERSION, compare, read_trace
+from reference_checkout import PINNED_COMMIT, add_arguments, verify
 from reference_program import corpus
 
 HERE = Path(__file__).resolve().parent
@@ -27,26 +28,47 @@ def command(args, log):
         raise RuntimeError(f'command failed ({result.returncode}); see {log}\n{log.read_text()[-5000:]}')
 
 
-def build_reference(build, ref, *, flat_ram=False):
+def runner_inputs(ref):
+    files=[HERE/'reference_runner.cpp',ref/'cpu/ppc/ppcopcodes.cpp',*sorted(ref.rglob('*.h'))]
+    return {str(path):digest(path) for path in files}
+
+
+def build_reference(build, ref, *, flat_ram=False, prebuilt=None):
+    """Compile the runner into build, or reuse one from a prebuilt directory."""
+    if prebuilt is not None:
+        prebuilt=prebuilt.resolve()
+        record=json.loads((prebuilt/'reference-build.json').read_text())
+        runner=prebuilt/'reference_runner'
+        if record['flat_ram']!=flat_ram or record['inputs']!=runner_inputs(ref) or record['runner']!=digest(runner):
+            raise RuntimeError(f'prebuilt reference runner in {prebuilt} is stale or mismatched; rebuild it')
+        return runner,record['compile_command']
     runner=build/'reference_runner'
     cppargs=['g++','-std=c++20','-O2','-fwrapv','-flto','-ffunction-sections','-fdata-sections',
              '-DSUPPORTS_PPC_LITTLE_ENDIAN_MODE=0','-DSUPPORTS_MEMORY_CTRL_ENDIAN_MODE=0',
              *(['-DREFERENCE_FLAT_RAM=1'] if flat_ram else []),
              '-I'+str(ref),'-I'+str(ref/'thirdparty/loguru'),
              HERE/'reference_runner.cpp',ref/'cpu/ppc/ppcopcodes.cpp','-Wl,--gc-sections','-o',runner]
+    inputs=runner_inputs(ref)
     command(cppargs,build/'reference-build.log')
+    if runner_inputs(ref)!=inputs:
+        raise RuntimeError('reference sources changed during compile; rerun after source freeze')
+    cppargs=[str(x) for x in cppargs]
+    (build/'reference-build.json').write_text(json.dumps(
+        {'flat_ram':flat_ram,'inputs':inputs,'runner':digest(runner),'compile_command':cppargs},indent=2)+'\n')
     return runner,cppargs
 
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--build-dir',type=Path,default=Path('/tmp/ppc603e-reference-build'))
+    ap.add_argument('--build-dir',type=Path,default=PROJECT/'sim/build/reference')
     ap.add_argument('--reference',type=Path,default=ROOT/'dingusppc')
     ap.add_argument('--model',choices=['MPC603EV','MPC603E'],default='MPC603EV')
+    add_arguments(ap)
     args=ap.parse_args()
     build=args.build_dir.resolve(); build.mkdir(parents=True,exist_ok=True)
     (build/'manifest.json').unlink(missing_ok=True)
     ref=args.reference.resolve()
+    reference_commit,reference_dirty=verify(ref,args.allow_unpinned_reference)
     runner,cppargs=build_reference(build,ref)
     words, coverage=corpus()
     program=build/'program.hex'
@@ -67,7 +89,7 @@ def main():
         raise RuntimeError(f'implemented non-memory forms not exercised: {uncovered_nonmemory}')
     sources=[(PROJECT/'sim'/line).resolve() for line in (PROJECT/'rtl/files.f').read_text().splitlines() if line.strip()]
     bench=PROJECT/'tb/tb_core_reference.sv'
-    rtlargs=['verilator','--binary','--timing','--assert','-Wall','--top-module','tb_core_reference',
+    rtlargs=[args.verilator,'--binary','--timing','--assert','-Wall','--top-module','tb_core_reference',
              '--Mdir',build/'rtl',*sources,bench]
     command(rtlargs,build/'rtl-build.log')
     command([build/'rtl/Vtb_core_reference',f'+PROGRAM={program}',f'+TRACE={actual}',
@@ -150,16 +172,15 @@ def main():
     (build/'reject.hex').unlink()
     original=[ref/'cpu/ppc/ppcopcodes.cpp',ref/'cpu/ppc/ppcemu.h',ref/'cpu/ppc/ppcmmu.h',
               ref/'LICENSE',ref/'CREDITS.md']
-    adapter=[HERE/name for name in ['reference_runner.cpp','run_reference.py','reference_program.py','compare_state.py']]
+    adapter=[HERE/name for name in ['reference_runner.cpp','run_reference.py','reference_checkout.py','reference_program.py','compare_state.py']]
     manifest={'schema_version':SCHEMA_VERSION,'reference':'DingusPPC original opcode handlers',
-              'reference_commit':subprocess.check_output(['git','-C',str(ref),'rev-parse','HEAD'],text=True).strip(),
-              'reference_dirty':subprocess.check_output(['git','-C',str(ref),'status','--porcelain'],text=True).splitlines(),
+              'reference_pinned':PINNED_COMMIT,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
               'model':args.model,'pvr':'00070101' if args.model=='MPC603EV' else '00060101',
               'include_601':False,'ppc_le':False,'memory_controller_le':False,
               'initial_state':'zero GPR/CR/XER/LR/CTR, PC=0; PVR only model metadata',
               'snapshot_fields':FIELDS,'license':'GPL-3.0-or-later; see copied reference LICENSE',
               'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
-              'verilator':subprocess.check_output(['verilator','--version'],text=True).strip(),
+              'verilator':subprocess.check_output([args.verilator,'--version'],text=True).strip(),
               'compile_commands':[[str(x) for x in cppargs],[str(x) for x in rtlargs]],
               'sha256':{str(p):digest(p) for p in original+adapter+sources+[bench,runner,program,expected,actual,isa_path]},
               'program_words':len(words),'snapshots':len(rows),'corpus_encoding_groups':coverage,
