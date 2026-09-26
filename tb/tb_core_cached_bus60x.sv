@@ -162,9 +162,13 @@ module tb_core_cached_bus60x;
                     "invalid scalar data attributes");
               if (tx_write) scalar_writes++; else scalar_reads++;
             end
-            aack_n = 1'b0;
-            responder_state = 1;
+            responder_state = 9;
           end
+        end
+        // AACK no earlier than the cycle after TS.
+        9: begin
+          aack_n = 1'b0;
+          responder_state = 1;
         end
         1: begin
           aack_n = 1'b1;
@@ -243,7 +247,7 @@ module tb_core_cached_bus60x;
     if (rst_n) begin
       #1;
       check(!bus_error, "cached wrapper protocol diagnostic");
-      check(!(dut.scalar_selected && dut.line_selected),
+      check(!(dut.pin_mux.scalar_selected && dut.pin_mux.line_selected),
             "two physical masters selected");
       if (cache_busy)
         check(bus_busy, "cache activity missing from aggregate busy");

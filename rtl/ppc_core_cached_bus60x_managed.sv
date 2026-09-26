@@ -128,9 +128,7 @@ module ppc_core_cached_bus60x_managed #(
   logic [63:0] line_d_o;
   logic line_d_oe, line_ta_n, line_drtry_n, line_tea_n;
 
-  logic scalar_selected, line_selected, selector_busy;
-  logic selector_protocol_error;
-  logic scalar_pins_released, line_pins_released;
+  logic selector_busy, selector_protocol_error;
   logic ifetch_error_q;
   logic transport_ifetch_error;
 
@@ -345,103 +343,44 @@ module ppc_core_cached_bus60x_managed #(
     .drtry_n_i(line_drtry_n), .tea_n_i(line_tea_n)
   );
 
-  assign scalar_pins_released = !scalar_abb_oe && !scalar_ts_oe &&
-                                !scalar_addr_oe && !scalar_dbb_oe &&
-                                !scalar_d_oe;
-  assign line_pins_released = !line_abb_oe && !line_ts_oe &&
-                              !line_addr_oe && !line_dbb_oe && !line_d_oe;
-
-  ppc_bus60x_master_select selector (
+  ppc_bus60x_two_master pin_mux (
     .clk_i, .rst_ni,
-    .scalar_br_n_i(scalar_br_n), .scalar_busy_i(scalar_busy),
-    .scalar_pins_released_i(scalar_pins_released),
-    .scalar_bg_n_o(scalar_bg_n), .line_br_n_i(line_br_n),
-    .line_busy_i(line_busy), .line_pins_released_i(line_pins_released),
-    .line_bg_n_o(line_bg_n), .bg_n_i,
-    .scalar_selected_o(scalar_selected), .line_selected_o(line_selected),
-    .busy_o(selector_busy), .protocol_error_o(selector_protocol_error)
+    .scalar_busy_i(scalar_busy), .scalar_br_n_i(scalar_br_n),
+    .scalar_bg_n_o(scalar_bg_n), .scalar_abb_n_o(scalar_abb_in_n),
+    .scalar_abb_n_i(scalar_abb_n), .scalar_abb_oe_i(scalar_abb_oe),
+    .scalar_ts_n_i(scalar_ts_n), .scalar_ts_oe_i(scalar_ts_oe),
+    .scalar_a_i(scalar_a), .scalar_tt_i(scalar_tt),
+    .scalar_tbst_n_i(scalar_tbst_n), .scalar_tsiz_i(scalar_tsiz),
+    .scalar_tc_i(scalar_tc), .scalar_ci_n_i(scalar_ci_n),
+    .scalar_wt_n_i(scalar_wt_n), .scalar_gbl_n_i(scalar_gbl_n),
+    .scalar_cse_i(scalar_cse), .scalar_addr_oe_i(scalar_addr_oe),
+    .scalar_aack_n_o(scalar_aack_n), .scalar_artry_n_o(scalar_artry_n),
+    .scalar_dbg_n_o(scalar_dbg_n), .scalar_dbb_n_o(scalar_dbb_in_n),
+    .scalar_dbb_n_i(scalar_dbb_n), .scalar_dbb_oe_i(scalar_dbb_oe),
+    .scalar_d_i(scalar_d_o), .scalar_d_oe_i(scalar_d_oe),
+    .scalar_ta_n_o(scalar_ta_n), .scalar_drtry_n_o(scalar_drtry_n),
+    .scalar_tea_n_o(scalar_tea_n),
+    .line_busy_i(line_busy), .line_br_n_i(line_br_n),
+    .line_bg_n_o(line_bg_n), .line_abb_n_o(line_abb_in_n),
+    .line_abb_n_i(line_abb_n), .line_abb_oe_i(line_abb_oe),
+    .line_ts_n_i(line_ts_n), .line_ts_oe_i(line_ts_oe),
+    .line_a_i(line_a), .line_tt_i(line_tt),
+    .line_tbst_n_i(line_tbst_n), .line_tsiz_i(line_tsiz),
+    .line_tc_i(line_tc), .line_ci_n_i(line_ci_n),
+    .line_wt_n_i(line_wt_n), .line_gbl_n_i(line_gbl_n),
+    .line_cse_i(line_cse), .line_addr_oe_i(line_addr_oe),
+    .line_aack_n_o(line_aack_n), .line_artry_n_o(line_artry_n),
+    .line_dbg_n_o(line_dbg_n), .line_dbb_n_o(line_dbb_in_n),
+    .line_dbb_n_i(line_dbb_n), .line_dbb_oe_i(line_dbb_oe),
+    .line_d_i(line_d_o), .line_d_oe_i(line_d_oe),
+    .line_ta_n_o(line_ta_n), .line_drtry_n_o(line_drtry_n),
+    .line_tea_n_o(line_tea_n),
+    .busy_o(selector_busy), .protocol_error_o(selector_protocol_error),
+    .br_n_o, .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o, .ts_oe_o,
+    .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o, .wt_n_o, .gbl_n_o,
+    .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbb_n_i,
+    .dbb_n_o, .dbb_oe_o, .d_o, .d_oe_o, .ta_n_i, .drtry_n_i, .tea_n_i
   );
-
-  // Only the captured physical owner observes termination inputs.
-  assign scalar_abb_in_n = scalar_selected ? abb_n_i : 1'b1;
-  assign scalar_aack_n = scalar_selected ? aack_n_i : 1'b1;
-  assign scalar_artry_n = scalar_selected ? artry_n_i : 1'b1;
-  assign scalar_dbg_n = scalar_selected ? dbg_n_i : 1'b1;
-  assign scalar_dbb_in_n = scalar_selected ? dbb_n_i : 1'b1;
-  assign scalar_ta_n = scalar_selected ? ta_n_i : 1'b1;
-  assign scalar_drtry_n = scalar_selected ? drtry_n_i : 1'b1;
-  assign scalar_tea_n = scalar_selected ? tea_n_i : 1'b1;
-  assign line_abb_in_n = line_selected ? abb_n_i : 1'b1;
-  assign line_aack_n = line_selected ? aack_n_i : 1'b1;
-  assign line_artry_n = line_selected ? artry_n_i : 1'b1;
-  assign line_dbg_n = line_selected ? dbg_n_i : 1'b1;
-  assign line_dbb_in_n = line_selected ? dbb_n_i : 1'b1;
-  assign line_ta_n = line_selected ? ta_n_i : 1'b1;
-  assign line_drtry_n = line_selected ? drtry_n_i : 1'b1;
-  assign line_tea_n = line_selected ? tea_n_i : 1'b1;
-
-  always_comb begin
-    br_n_o = 1'b1;
-    abb_n_o = 1'b1;
-    abb_oe_o = 1'b0;
-    ts_n_o = 1'b1;
-    ts_oe_o = 1'b0;
-    a_o = 32'b0;
-    tt_o = 5'b0;
-    tbst_n_o = 1'b1;
-    tsiz_o = 3'b0;
-    tc_o = 2'b0;
-    ci_n_o = 1'b1;
-    wt_n_o = 1'b1;
-    gbl_n_o = 1'b1;
-    cse_o = 2'b0;
-    addr_oe_o = 1'b0;
-    dbb_n_o = 1'b1;
-    dbb_oe_o = 1'b0;
-    d_o = 64'b0;
-    d_oe_o = 1'b0;
-    if (scalar_selected) begin
-      br_n_o = scalar_br_n;
-      abb_n_o = scalar_abb_n;
-      abb_oe_o = scalar_abb_oe;
-      ts_n_o = scalar_ts_n;
-      ts_oe_o = scalar_ts_oe;
-      a_o = scalar_a;
-      tt_o = scalar_tt;
-      tbst_n_o = scalar_tbst_n;
-      tsiz_o = scalar_tsiz;
-      tc_o = scalar_tc;
-      ci_n_o = scalar_ci_n;
-      wt_n_o = scalar_wt_n;
-      gbl_n_o = scalar_gbl_n;
-      cse_o = scalar_cse;
-      addr_oe_o = scalar_addr_oe;
-      dbb_n_o = scalar_dbb_n;
-      dbb_oe_o = scalar_dbb_oe;
-      d_o = scalar_d_o;
-      d_oe_o = scalar_d_oe;
-    end else if (line_selected) begin
-      br_n_o = line_br_n;
-      abb_n_o = line_abb_n;
-      abb_oe_o = line_abb_oe;
-      ts_n_o = line_ts_n;
-      ts_oe_o = line_ts_oe;
-      a_o = line_a;
-      tt_o = line_tt;
-      tbst_n_o = line_tbst_n;
-      tsiz_o = line_tsiz;
-      tc_o = line_tc;
-      ci_n_o = line_ci_n;
-      wt_n_o = line_wt_n;
-      gbl_n_o = line_gbl_n;
-      cse_o = line_cse;
-      addr_oe_o = line_addr_oe;
-      dbb_n_o = line_dbb_n;
-      dbb_oe_o = line_dbb_oe;
-      d_o = line_d_o;
-      d_oe_o = line_d_oe;
-    end
-  end
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni)

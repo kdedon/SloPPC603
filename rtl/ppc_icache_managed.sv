@@ -1,5 +1,4 @@
-// Local maintenance and enable/bypass control around ppc_icache.
-// This is an integration control interface, not a HID0 or icbi implementation.
+// Maintenance and enable/bypass control around ppc_icache.
 module ppc_icache_managed #(
   parameter logic RESET_CACHE_ENABLE = 1'b1
 ) (
@@ -51,8 +50,7 @@ module ppc_icache_managed #(
     MANAGED_DRAIN,
     MANAGED_INVALIDATE_PULSE,
     MANAGED_INVALIDATE_WAIT,
-    MANAGED_DONE,
-    MANAGED_INVALID
+    MANAGED_DONE
   } managed_state_t;
 
   managed_state_t state_q;
@@ -193,7 +191,7 @@ module ppc_icache_managed #(
 
         default: begin
           protocol_error_q <= 1'b1;
-          state_q <= MANAGED_INVALID;
+          state_q <= MANAGED_RUN;
         end
       endcase
     end

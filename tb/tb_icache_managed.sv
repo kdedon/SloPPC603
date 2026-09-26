@@ -25,6 +25,7 @@ module tb_icache_managed;
   integer checks = 0, cycles = 0, fetches = 0;
   integer line_requests = 0, bypass_requests = 0, maintenance_commands = 0;
   integer hit_pulses = 0, miss_pulses = 0;
+  logic allow_protocol_error = 1'b0;
 
   ppc_icache_managed dut (
     .clk_i(clk), .rst_ni(rst_n),
@@ -81,7 +82,8 @@ module tb_icache_managed;
     if (cycles > 1000) $fatal(1, "managed-cache watchdog");
     #1;
     if (rst_n) begin
-      check(!protocol_error, "unexpected managed-cache protocol error");
+      if (!allow_protocol_error)
+        check(!protocol_error, "unexpected managed-cache protocol error");
       if (line_accept) line_requests++;
       if (bypass_accept) bypass_requests++;
       if (fetch_accept) fetches++;
@@ -368,6 +370,17 @@ module tb_icache_managed;
           $sformatf("coverage counters mismatch fetch=%0d line=%0d bypass=%0d maintenance=%0d miss=%0d hit=%0d",
                     fetches, line_requests, bypass_requests,
                     maintenance_commands, miss_pulses, hit_pulses));
+    // An unencoded state returns to RUN with a sticky diagnostic.
+    allow_protocol_error = 1'b1;
+    @(negedge clk);
+    dut.state_q = type(dut.state_q)'(3'b111);
+    #1;
+    check(maintenance_busy && !maintenance_ready, "illegal state injected");
+    @(posedge clk);
+    #1;
+    check(!maintenance_busy && maintenance_ready && protocol_error,
+          "illegal state recovers to run with sticky diagnostic");
+
     $display("PASS: tb_icache_managed %0d checks, %0d fetches, %0d line, %0d bypass, %0d maintenance",
              checks, fetches, line_requests, bypass_requests,
              maintenance_commands);

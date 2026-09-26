@@ -28,6 +28,7 @@ module tb_bus60x_line_read;
   int ta_samples = 0;
   int cycles = 0;
   int attempts_before_invalid = 0;
+  int ta_before_abort = 0;
   int address_release_checks = 0;
   int data_release_checks = 0;
   int nonfinal_hold_checks = 0;
@@ -464,6 +465,24 @@ module tb_bus60x_line_read;
     target.drtry_n_o = 1'b1;
     expect_response(256'b0, 1'b1, 0);
     check(protocol_error, "early DRTRY sets sticky protocol diagnostic");
+
+    // AACK sampled with TS is malformed: the address tenure is released with
+    // a zero error line and no data tenure, and the next line completes.
+    reset_dut();
+    prepare_request(2'd0, 1'b0, 0, 0, 0);
+    drive_adjacent_line(2'd0);
+    expect_response(BASE_LINE, 1'b0, 0);
+    ta_before_abort = ta_samples;
+    fork
+      start_request(32'h0000_4000, 2'd2, 1'b1);
+      target.grant_address_ts_cycle_aack(0);
+    join
+    expect_response(256'b0, 1'b1, 1);
+    check(protocol_error && !dbb_oe && !abb_oe && ta_samples == ta_before_abort,
+          "AACK in the TS cycle aborts with sticky diagnostic");
+    prepare_request(2'd1, 1'b0, 0, 0, 0);
+    drive_adjacent_line(2'd1);
+    expect_response(BASE_LINE, 1'b0, 0);
 
     // Misaligned line requests fail atomically without asserting BR.
     reset_dut();
