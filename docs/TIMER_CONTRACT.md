@@ -124,13 +124,12 @@ existing asynchronous selector profile. Keep all existing defaults unchanged.
   SPRs 284/285. DEC is supervisor read/write SPR 22. Freeze the full opcode and
   reserved-field checks from the instruction tables before implementation.
   UM 2-40 and 2-44 explicitly say the 603e ignores the XO difference between
-  MFTB and MFSPR (manual instruction bit 25). In the opt-in timer profile,
-  freeze full alias behavior for **every implemented MFSPR read selector**,
+  MFTB and MFSPR (manual instruction bit 25). In every profile, the decoder
+  applies full alias behavior to **every implemented MFSPR read selector**,
   including DEC, with identical selector-specific privilege checks for both
   opcodes. An MFTB opcode must not make a supervisor-only register user-readable.
   Unknown selectors remain unsupported under both opcodes; this creates no
-  write aliases. Keep timer-disabled legacy decoding unchanged and label its
-  existing narrower decoding as outside this opt-in 603e alias extension.
+  write aliases.
 - Do not promise atomic 64-bit TB reads. Firmware uses TBU/TBL/TBU retry across
   rollover. Test the retry algorithm with deliberate rollover between reads.
 

@@ -49,7 +49,7 @@ The self-checking simulation compares 768 integer results with a sequential refe
 - Explicit identity-based recovery control with CQ/rename restoration, local cancellation, IQ clearing and fetch draining.
 - Ordered diagnostic halt on unsupported instructions; reset restarts the machine.
 
-`DISPATCH_WIDTH=1` is the only supported setting and the default. Other values fail elaboration-time simulation checks. Dual dispatch remains the delivery target. `RESET_PC` defaults to `0xfff00100`; this configurable start address does not implement MSR/reset-vector semantics.
+The core is single-issue; dual dispatch remains the delivery target. `RESET_PC` defaults to `0xfff00100`; this configurable start address does not implement MSR/reset-vector semantics.
 
 ## Work remaining
 

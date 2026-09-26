@@ -26,7 +26,7 @@ This mechanism does not claim architectural exception priority or precise superv
 
 ## Verification
 
-`make -C sim test-fetch-recovery` runs the strict direct fetch bench (99 checks). It covers held and first-offered requests, accepted requests, repeated target replacement, coincident response discard, packet stalls, stop interactions and reset.
+`make -C sim test-fetch-recovery` runs the strict direct fetch bench (304 checks; recorded 2026-09-26 on this change). It covers held and first-offered requests, accepted requests, repeated target replacement, coincident response discard, stop interactions and reset. Fetch requests only with a free IQ slot, so an accepted response is always consumable; sim-only assertions check that reserved slot, that the cleared IQ refuses an old packet on a redirect edge, and that fetch never resumes after a stop-discarded response without a redirect.
 
 `make -C sim test-core-recovery` runs the actual core with an independent ordered instruction/value scoreboard. The expected next dispatch address changes only on reset, an accepted target or a sequential dispatch, and the expected word comes from the test memory program. This catches stale or incorrect stream admission rather than accepting whatever PC/opcode the DUT dispatches. An independent list-prefix decision checks redirect acceptance; retirement and finish values are checked against surviving program order.
 

@@ -92,7 +92,7 @@ wrong-path is still fatal because the fetch and bus channels have no epoch.
 
 `ppc_core_cached_bus60x_managed` retains the Round37 retirement, redirect,
 diagnostic, and physical pin ports and adds only the maintenance handshake.
-It passes `DISPATCH_WIDTH`, `RESET_PC`, and `DIV_LATENCY` to an internal core
+It passes `RESET_PC` and `DIV_LATENCY` to an internal core
 instance named `core`.
 
 `rtl/cache_control_files.f` contains the two new modules.  A build includes,
