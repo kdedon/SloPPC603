@@ -19,6 +19,7 @@
 ../../rtl/ppc_bus60x_line_read.sv
 ../../rtl/ppc_icache.sv
 ../../rtl/ppc_bus60x_master_select.sv
+../../rtl/ppc_bus60x_two_master.sv
 ../../rtl/ppc_icache_managed.sv
 ../../rtl/ppc_core_cached_bus60x_managed.sv
 ppc_integrated_measure.sv

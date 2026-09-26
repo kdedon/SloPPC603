@@ -101,6 +101,35 @@ module bus60x_target_bfm #(
     end
   endtask
 
+  // Misbehaving responder: AACK is sampled on the same edge as TS.
+  task automatic grant_address_ts_cycle_aack(input integer bg_wait);
+    integer timeout;
+    begin
+      timeout = 0;
+      while (br_n_i && timeout < 64) begin
+        @(posedge clk_i);
+        timeout++;
+      end
+      if (br_n_i) $fatal(1, "%m timed out waiting for BR");
+      wait_cycles(bg_wait);
+      @(negedge clk_i);
+      bg_n_o = 1'b0;
+      timeout = 0;
+      do begin
+        @(negedge clk_i);
+        timeout++;
+      end while (!(abb_oe_i && !abb_n_i && ts_oe_i && !ts_n_i) &&
+                 timeout < 64);
+      if (!(abb_oe_i && !abb_n_i && ts_oe_i && !ts_n_i))
+        $fatal(1, "%m timed out waiting for TS/ABB");
+      captured_addr = a_i;
+      bg_n_o = 1'b1;
+      aack_n_o = 1'b0;
+      @(negedge clk_i);
+      aack_n_o = 1'b1;
+    end
+  endtask
+
   task automatic grant_data(input integer dbg_wait);
     integer cycle;
     begin

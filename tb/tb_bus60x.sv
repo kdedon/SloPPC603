@@ -19,7 +19,7 @@ module tb_bus60x;
   logic d_oe, ta_n, drtry_n, tea_n;
 
   integer checks, responses, address_attempts, data_tenures;
-  integer attempts_before_invalid;
+  integer attempts_before_invalid, tenures_before_abort;
   logic monitor_request;
   logic [31:0] expected_bus_addr;
   logic [2:0] expected_bus_size;
@@ -674,6 +674,28 @@ module tb_bus60x;
       end
     join
     check(protocol_error, "missing replacement sets sticky diagnostic");
+
+    // AACK sampled with TS is malformed: the address tenure is released with
+    // an error response and no data tenure, and the next access completes.
+    reset_dut();
+    tenures_before_abort = data_tenures;
+    fork
+      begin
+        start_request(1'b0, 32'h1000, 32'b0, 4'b1111,
+                      32'h1000, 3'd4);
+        expect_response(32'b0, 1'b1, 1);
+      end
+      target.grant_address_ts_cycle_aack(0);
+    join
+    check(protocol_error, "AACK in the TS cycle sets sticky diagnostic");
+    check(data_tenures == tenures_before_abort && !dbb_oe && !abb_oe,
+          "aborted address tenure starts no data tenure");
+    target.mem[0] = 8'h5a;
+    target.mem[1] = 8'h6b;
+    target.mem[2] = 8'h7c;
+    target.mem[3] = 8'h8d;
+    normal_read(32'h1000, 4'b1111, 32'h1000, 3'd4,
+                32'h5a6b_7c8d, 0, 0, 0, 0);
 
     // Local request-shape rejection produces no bus activity and is atomic.
     reset_dut();

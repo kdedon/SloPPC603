@@ -1,9 +1,6 @@
-// Bounded 64-bit 60x bus master for the scalar data-memory port.
-//
-// This block deliberately serializes address and data tenures.  It implements
-// one outstanding, non-burst, cache-inhibited transaction and normal (late)
-// DRTRY read confirmation.  Pin parity, snooping, caches, pipelining and the
-// 32-bit data-bus mode are outside this profile.
+// 64-bit 60x bus master for scalar accesses: one outstanding single-beat
+// cache-inhibited transaction, serialized address and data tenures, and
+// normal-mode DRTRY read confirmation.
 module ppc_bus60x (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -53,12 +50,22 @@ module ppc_bus60x (
   input  logic        drtry_n_i,
   input  logic        tea_n_i
 );
+  // TT[0:4], TC[0:1] and TSIZ[0:2] in manual bit order.
+  localparam logic [4:0] TT_WRITE_WITH_FLUSH = 5'b00010;
+  localparam logic [4:0] TT_READ             = 5'b01010;
+  localparam logic [1:0] TC_DATA             = 2'b00;
+  localparam logic [1:0] TC_INSTRUCTION      = 2'b10;
+  localparam logic [2:0] TSIZ_1_BYTE         = 3'b001;
+  localparam logic [2:0] TSIZ_2_BYTES        = 3'b010;
+  localparam logic [2:0] TSIZ_4_BYTES        = 3'b100;
+
   typedef enum logic [3:0] {
     BUS_IDLE,
     BUS_ADDR_REQUEST,
     BUS_ADDR_TRANSFER,
     BUS_ADDR_WAIT,
     BUS_ADDR_RETRY_SAMPLE,
+    BUS_ADDR_ABORT,
     BUS_RETRY_GAP,
     BUS_DATA_REQUEST,
     BUS_DATA_TRANSFER,
@@ -119,13 +126,13 @@ module ppc_bus60x (
     request_byte_offset = 2'b00;
     request_size = 3'b000;
     unique case (req_wstrb_i)
-      4'b1000: begin request_byte_offset = 2'd0; request_size = 3'd1; end
-      4'b0100: begin request_byte_offset = 2'd1; request_size = 3'd1; end
-      4'b0010: begin request_byte_offset = 2'd2; request_size = 3'd1; end
-      4'b0001: begin request_byte_offset = 2'd3; request_size = 3'd1; end
-      4'b1100: begin request_byte_offset = 2'd0; request_size = 3'd2; end
-      4'b0011: begin request_byte_offset = 2'd2; request_size = 3'd2; end
-      4'b1111: begin request_byte_offset = 2'd0; request_size = 3'd4; end
+      4'b1000: begin request_byte_offset = 2'd0; request_size = TSIZ_1_BYTE; end
+      4'b0100: begin request_byte_offset = 2'd1; request_size = TSIZ_1_BYTE; end
+      4'b0010: begin request_byte_offset = 2'd2; request_size = TSIZ_1_BYTE; end
+      4'b0001: begin request_byte_offset = 2'd3; request_size = TSIZ_1_BYTE; end
+      4'b1100: begin request_byte_offset = 2'd0; request_size = TSIZ_2_BYTES; end
+      4'b0011: begin request_byte_offset = 2'd2; request_size = TSIZ_2_BYTES; end
+      4'b1111: begin request_byte_offset = 2'd0; request_size = TSIZ_4_BYTES; end
       default: begin request_shape_valid = 1'b0; request_byte_offset = 2'b00; request_size = 3'b000; end
     endcase
     if (req_addr_i[1:0] != 2'b00)
@@ -146,17 +153,18 @@ module ppc_bus60x (
 
     abb_oe_o = rst_ni && ((state_q == BUS_ADDR_TRANSFER) ||
                           (state_q == BUS_ADDR_WAIT) ||
-                          (state_q == BUS_ADDR_RETRY_SAMPLE));
+                          (state_q == BUS_ADDR_RETRY_SAMPLE) ||
+                          (state_q == BUS_ADDR_ABORT));
     abb_n_o = addr_release_half_q ? 1'b1 : 1'b0;
     ts_oe_o = abb_oe_o;
     ts_n_o = (state_q == BUS_ADDR_TRANSFER) ? 1'b0 : 1'b1;
     addr_oe_o = abb_oe_o;
 
     a_o = request_addr_q;
-    tt_o = request_write_q ? 5'b00010 : 5'b01010;
+    tt_o = request_write_q ? TT_WRITE_WITH_FLUSH : TT_READ;
     tbst_n_o = 1'b1;
     tsiz_o = request_size_q;
-    tc_o = request_instruction_q ? 2'b10 : 2'b00;
+    tc_o = request_instruction_q ? TC_INSTRUCTION : TC_DATA;
     ci_n_o = 1'b0;
     wt_n_o = 1'b1;
     gbl_n_o = 1'b1;
@@ -241,9 +249,11 @@ module ppc_bus60x (
         end
 
         BUS_ADDR_TRANSFER: begin
+          // AACK is legal no earlier than the cycle after TS.
           if (!aack_n_i) begin
             addr_release_pending_q <= 1'b1;
-            state_q <= BUS_ADDR_RETRY_SAMPLE;
+            protocol_error_q <= 1'b1;
+            state_q <= BUS_ADDR_ABORT;
           end else begin
             state_q <= BUS_ADDR_WAIT;
           end
@@ -262,6 +272,14 @@ module ppc_bus60x (
             state_q <= BUS_RETRY_GAP;
           else
             state_q <= BUS_DATA_REQUEST;
+        end
+
+        BUS_ADDR_ABORT: begin
+          addr_release_pending_q <= 1'b0;
+          rsp_valid_q <= 1'b1;
+          rsp_rdata_q <= 32'b0;
+          rsp_error_q <= 1'b1;
+          state_q <= BUS_IDLE;
         end
 
         BUS_RETRY_GAP: begin

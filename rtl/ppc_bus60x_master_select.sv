@@ -20,8 +20,7 @@ module ppc_bus60x_master_select (
   typedef enum logic [1:0] {
     OWNER_NONE,
     OWNER_SCALAR,
-    OWNER_LINE,
-    OWNER_INVALID
+    OWNER_LINE
   } owner_t;
 
   owner_t owner_q;

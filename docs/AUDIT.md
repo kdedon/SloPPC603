@@ -81,12 +81,12 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | ID | Sev | Cat | Where | Problem | Fix | Status |
 |---|---|---|---|---|---|---|
 | AUD-35 | M | E | `rtl/ppc_icache.sv:93-121,237-244` | Hit way feeds the data RAM address and LRU update in the compare cycle. PLAUSIBLE. | Per-way RAMs with late select, or register the hit. | design |
-| AUD-36 | L | E | `rtl/ppc_bus60x_line_read.sv:72-73,157-159,286-293` | Two 256-bit line registers; needless zeroing and datapath reset. | Use `line_work_q` as the response. | open |
-| AUD-37 | L | C | `rtl/ppc_bus60x.sv:243-249`, `rtl/ppc_bus60x_line_read.sv:202-208` | AACK in the TS cycle is accepted, not flagged (BUS_SPEC Figure 8-6). | Protocol error in the TS cycle. | open |
-| AUD-38 | L | C | `rtl/ppc_icache_managed.sv:55,194-197` | `default:` enters `MANAGED_INVALID`, which has no exit; busy stays high. | Return to `MANAGED_RUN` with sticky error. | open |
-| AUD-39 | M | K | `rtl/ppc_core_cached_bus60x.sv:291-387`, `rtl/ppc_core_cached_bus60x_managed.sv:348-444`, `rtl/ppc_core_bat_cached_bus60x.sv:520-616` | ~100 identical lines of 60x pin glue in three wrappers; pins as loose ports. | Pin structs; one two-master module. | open |
-| AUD-40 | L | S | `rtl/ppc_bus60x.sv:156-163`, `rtl/ppc_bus60x_line_read.sv:118-121`, `rtl/ppc_icache.sv:46,61-63,110-112` | TT/TSIZ codes and cache widths are literals. | Package enums; `$clog2` widths. | open |
-| AUD-41 | L | S | `rtl/ppc_bus60x_line_read.sv:63`, `rtl/ppc_bus60x_master_select.sv:24` | Dead enum states. | Remove. | open |
+| AUD-36 | L | E | `rtl/ppc_bus60x_line_read.sv:72-73,157-159,286-293` | Two 256-bit line registers; needless zeroing and datapath reset. | Use `line_work_q` as the response. | fixed |
+| AUD-37 | L | C | `rtl/ppc_bus60x.sv:243-249`, `rtl/ppc_bus60x_line_read.sv:202-208` | AACK in the TS cycle is accepted, not flagged (BUS_SPEC Figure 8-6). | Protocol error in the TS cycle. | fixed |
+| AUD-38 | L | C | `rtl/ppc_icache_managed.sv:55,194-197` | `default:` enters `MANAGED_INVALID`, which has no exit; busy stays high. | Return to `MANAGED_RUN` with sticky error. | fixed |
+| AUD-39 | M | K | `rtl/ppc_core_cached_bus60x.sv:291-387`, `rtl/ppc_core_cached_bus60x_managed.sv:348-444`, `rtl/ppc_core_bat_cached_bus60x.sv:520-616` | ~100 identical lines of 60x pin glue in three wrappers; pins as loose ports. | Pin structs; one two-master module. | fixed |
+| AUD-40 | L | S | `rtl/ppc_bus60x.sv:156-163`, `rtl/ppc_bus60x_line_read.sv:118-121`, `rtl/ppc_icache.sv:46,61-63,110-112` | TT/TSIZ codes and cache widths are literals. | Package enums; `$clog2` widths. | fixed |
+| AUD-41 | L | S | `rtl/ppc_bus60x_line_read.sv:63`, `rtl/ppc_bus60x_master_select.sv:24` | Dead enum states. | Remove. | fixed |
 
 ### MMU
 
@@ -117,9 +117,9 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 
 | ID | Sev | Cat | Where | Problem | Fix | Status |
 |---|---|---|---|---|---|---|
-| AUD-57 | L | S | all `rtl/*.sv` | No `` `default_nettype none``; `unique case` without `default:` in `ppc_icache.sv:81-90`, `ppc_bus60x_line_read.sv:88-93`. | Add both. | open |
+| AUD-57 | L | S | all `rtl/*.sv` | No `` `default_nettype none``; `unique case` without `default:` in `ppc_icache.sv:81-90`, `ppc_bus60x_line_read.sv:88-93`. | Add both. | partial: case defaults added; default_nettype remains |
 | AUD-58 | L | S | `rtl/ppc_flags.sv:120-123`, `rtl/ppc_rename.sv:138-139,150-153` | Assertions not under `translate_off`. | Guard them. | open |
-| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | open |
+| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | partial: bus/cache headers trimmed |
 | AUD-60 | L | S | `rtl/ppc_core.sv:283,322-353`, `rtl/ppc_flags.sv:62` | Raw MSR/XER bit indices and masks. | Named package constants. | open |
 
 ### Tests and tooling

@@ -7,6 +7,7 @@ module tb_bus60x_master_select;
   logic line_br_n, line_busy, line_released, line_bg_n;
   logic bg_n, scalar_selected, line_selected, busy, protocol_error;
   int checks = 0, cycles = 0, completions = 0;
+  logic allow_protocol_error = 1'b0;
 
   ppc_bus60x_master_select dut (
     .clk_i(clk), .rst_ni(rst_n),
@@ -29,7 +30,8 @@ module tb_bus60x_master_select;
     if (cycles > 300) $fatal(1, "master-select watchdog");
     #1;
     check(!(scalar_selected && line_selected), "physical owner is one-hot");
-    check(!protocol_error, "unexpected selector protocol diagnostic");
+    if (!allow_protocol_error)
+      check(!protocol_error, "unexpected selector protocol diagnostic");
     if (!scalar_selected) check(scalar_bg_n, "unselected scalar observed BG");
     if (!line_selected) check(line_bg_n, "unselected line master observed BG");
   end
@@ -175,6 +177,17 @@ module tb_bus60x_master_select;
     @(posedge clk);
     #1;
     check(!busy, "selector clean after reset");
+
+    // An unencoded owner returns to no owner with a sticky diagnostic.
+    allow_protocol_error = 1'b1;
+    @(negedge clk);
+    dut.owner_q = type(dut.owner_q)'(2'b11);
+    #1;
+    check(busy && !scalar_selected && !line_selected, "illegal owner injected");
+    @(posedge clk);
+    #1;
+    check(!busy && protocol_error,
+          "illegal owner recovers to none with sticky diagnostic");
 
     $display("PASS: tb_bus60x_master_select %0d checks, %0d completed owners",
              checks, completions);

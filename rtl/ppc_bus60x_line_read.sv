@@ -1,6 +1,5 @@
-// Bounded cacheable 32-byte line-read master for a 64-bit 60x bus.
-// Four physical beats are accepted in critical-doubleword-first wrap order
-// and normalized into line-base order in the 256-bit response.
+// Cacheable 32-byte line-read master for a 64-bit 60x bus. Beats arrive
+// critical doubleword first and are stored in line order.
 module ppc_bus60x_line_read (
   input  logic         clk_i,
   input  logic         rst_ni,
@@ -48,19 +47,26 @@ module ppc_bus60x_line_read (
   input  logic         drtry_n_i,
   input  logic         tea_n_i
 );
+  // TT[0:4], TC[0:1] and TSIZ[0:2] in manual bit order.
+  localparam logic [4:0] TT_READ_WITH_INTENT_TO_MODIFY = 5'b01110;
+  localparam logic [1:0] TC_DATA                       = 2'b00;
+  localparam logic [1:0] TC_INSTRUCTION                = 2'b10;
+  // With TBST asserted: one 32-byte burst.
+  localparam logic [2:0] TSIZ_BURST                    = 3'b010;
+
   typedef enum logic [3:0] {
     LINE_IDLE,
     LINE_ADDR_REQUEST,
     LINE_ADDR_TRANSFER,
     LINE_ADDR_WAIT,
     LINE_ADDR_RETRY_SAMPLE,
+    LINE_ADDR_ABORT,
     LINE_RETRY_GAP,
     LINE_DATA_REQUEST,
     LINE_DATA_WAIT,
     LINE_BEAT_CONFIRM,
     LINE_BEAT_REPLACEMENT,
-    LINE_DATA_ERROR_RELEASE,
-    LINE_FATAL_UNUSED
+    LINE_DATA_ERROR_RELEASE
   } line_state_t;
 
   line_state_t state_q;
@@ -69,13 +75,14 @@ module ppc_bus60x_line_read (
   logic instruction_q;
   logic [1:0] beat_count_q;
   logic [63:0] provisional_q;
-  logic [255:0] line_work_q;
-  logic [255:0] rsp_line_q;
+  // Assembles confirmed beats and holds the response; zero on error.
+  logic [255:0] line_q;
   logic rsp_valid_q, rsp_error_q, protocol_error_q;
   logic addr_release_pending_q, data_release_pending_q;
   logic addr_release_half_q, data_release_half_q;
   logic final_release_started_q, release_oe_cycle_q;
   logic [1:0] current_slot;
+  logic line_commit, line_clear;
 
   function automatic logic [255:0] insert_doubleword(
     input logic [255:0] prior,
@@ -90,6 +97,7 @@ module ppc_bus60x_line_read (
         2'd1: result[191:128] = value;
         2'd2: result[127:64] = value;
         2'd3: result[63:0] = value;
+        default: ;
       endcase
       return result;
     end
@@ -97,10 +105,33 @@ module ppc_bus60x_line_read (
 
   assign current_slot = critical_dw_q + beat_count_q;
 
+  // A request is accepted only while no response is held, so line_q never
+  // changes under a valid response.
+  assign line_commit = state_q == LINE_BEAT_CONFIRM && tea_n_i && drtry_n_i;
+  assign line_clear =
+    (state_q == LINE_IDLE && req_valid_i && req_ready_o &&
+     req_line_addr_i[4:0] != 5'b00000) ||
+    state_q == LINE_ADDR_ABORT ||
+    (state_q == LINE_DATA_WAIT && (!tea_n_i || !drtry_n_i)) ||
+    (state_q == LINE_BEAT_CONFIRM && !tea_n_i) ||
+    (state_q == LINE_BEAT_REPLACEMENT && (!tea_n_i || drtry_n_i)) ||
+    state_q == LINE_DATA_ERROR_RELEASE;
+
+  // Every entry to LINE_BEAT_CONFIRM coincides with TA, so capturing on any
+  // TA leaves the candidate correct wherever it is consumed.
+  always_ff @(posedge clk_i) begin
+    if (!ta_n_i)
+      provisional_q <= d_i;
+    if (line_clear)
+      line_q <= 256'b0;
+    else if (line_commit)
+      line_q <= insert_doubleword(line_q, current_slot, provisional_q);
+  end
+
   always_comb begin
     req_ready_o = rst_ni && (state_q == LINE_IDLE) && !rsp_valid_q;
     rsp_valid_o = rst_ni && rsp_valid_q;
-    rsp_line_o = rsp_line_q;
+    rsp_line_o = line_q;
     rsp_error_o = rsp_error_q;
     protocol_error_o = rst_ni && protocol_error_q;
     busy_o = rst_ni && ((state_q != LINE_IDLE) || rsp_valid_q);
@@ -108,17 +139,18 @@ module ppc_bus60x_line_read (
     br_n_o = (rst_ni && (state_q == LINE_ADDR_REQUEST)) ? 1'b0 : 1'b1;
     abb_oe_o = rst_ni && ((state_q == LINE_ADDR_TRANSFER) ||
                           (state_q == LINE_ADDR_WAIT) ||
-                          (state_q == LINE_ADDR_RETRY_SAMPLE));
+                          (state_q == LINE_ADDR_RETRY_SAMPLE) ||
+                          (state_q == LINE_ADDR_ABORT));
     abb_n_o = addr_release_half_q ? 1'b1 : 1'b0;
     ts_oe_o = abb_oe_o;
     ts_n_o = (state_q == LINE_ADDR_TRANSFER) ? 1'b0 : 1'b1;
     addr_oe_o = abb_oe_o;
 
     a_o = start_addr_q;
-    tt_o = 5'b01110;
+    tt_o = TT_READ_WITH_INTENT_TO_MODIFY;
     tbst_n_o = 1'b0;
-    tsiz_o = 3'b010;
-    tc_o = instruction_q ? 2'b10 : 2'b00;
+    tsiz_o = TSIZ_BURST;
+    tc_o = instruction_q ? TC_INSTRUCTION : TC_DATA;
     ci_n_o = 1'b1;
     wt_n_o = 1'b1;
     gbl_n_o = 1'b1;
@@ -154,9 +186,6 @@ module ppc_bus60x_line_read (
       critical_dw_q <= 2'b0;
       instruction_q <= 1'b0;
       beat_count_q <= 2'b0;
-      provisional_q <= 64'b0;
-      line_work_q <= 256'b0;
-      rsp_line_q <= 256'b0;
       rsp_valid_q <= 1'b0;
       rsp_error_q <= 1'b0;
       protocol_error_q <= 1'b0;
@@ -176,7 +205,6 @@ module ppc_bus60x_line_read (
           release_oe_cycle_q <= 1'b0;
           if (req_valid_i && req_ready_o) begin
             if (req_line_addr_i[4:0] != 5'b00000) begin
-              rsp_line_q <= 256'b0;
               rsp_error_q <= 1'b1;
               rsp_valid_q <= 1'b1;
               protocol_error_q <= 1'b1;
@@ -186,8 +214,6 @@ module ppc_bus60x_line_read (
               critical_dw_q <= req_critical_dw_i;
               instruction_q <= req_instruction_i;
               beat_count_q <= 2'b0;
-              provisional_q <= 64'b0;
-              line_work_q <= 256'b0;
               rsp_error_q <= 1'b0;
               state_q <= LINE_ADDR_REQUEST;
             end
@@ -200,9 +226,11 @@ module ppc_bus60x_line_read (
         end
 
         LINE_ADDR_TRANSFER: begin
+          // AACK is legal no earlier than the cycle after TS.
           if (!aack_n_i) begin
             addr_release_pending_q <= 1'b1;
-            state_q <= LINE_ADDR_RETRY_SAMPLE;
+            protocol_error_q <= 1'b1;
+            state_q <= LINE_ADDR_ABORT;
           end else begin
             state_q <= LINE_ADDR_WAIT;
           end
@@ -223,6 +251,13 @@ module ppc_bus60x_line_read (
             state_q <= LINE_DATA_REQUEST;
         end
 
+        LINE_ADDR_ABORT: begin
+          addr_release_pending_q <= 1'b0;
+          rsp_error_q <= 1'b1;
+          rsp_valid_q <= 1'b1;
+          state_q <= LINE_IDLE;
+        end
+
         LINE_RETRY_GAP: begin
           state_q <= LINE_ADDR_REQUEST;
         end
@@ -235,18 +270,15 @@ module ppc_bus60x_line_read (
         LINE_DATA_WAIT: begin
           release_oe_cycle_q <= 1'b0;
           if (!tea_n_i) begin
-            rsp_line_q <= 256'b0;
             rsp_error_q <= 1'b1;
             data_release_pending_q <= 1'b1;
             state_q <= LINE_DATA_ERROR_RELEASE;
           end else if (!drtry_n_i) begin
-            rsp_line_q <= 256'b0;
             rsp_error_q <= 1'b1;
             protocol_error_q <= 1'b1;
             data_release_pending_q <= 1'b1;
             state_q <= LINE_DATA_ERROR_RELEASE;
           end else if (!ta_n_i) begin
-            provisional_q <= d_i;
             if (beat_count_q == 2'd3) begin
               final_release_started_q <= 1'b1;
               release_oe_cycle_q <= 1'b1;
@@ -260,7 +292,6 @@ module ppc_bus60x_line_read (
           data_release_pending_q <= 1'b0;
           release_oe_cycle_q <= 1'b0;
           if (!tea_n_i) begin
-            rsp_line_q <= 256'b0;
             rsp_error_q <= 1'b1;
             if (final_release_started_q) begin
               rsp_valid_q <= 1'b1;
@@ -272,28 +303,21 @@ module ppc_bus60x_line_read (
           end else if (!drtry_n_i) begin
             // Cancel the preceding candidate.  Same-edge TA is a replacement
             // for this same logical beat, not the next beat.
-            if (!ta_n_i) begin
-              provisional_q <= d_i;
+            if (!ta_n_i)
               state_q <= LINE_BEAT_CONFIRM;
-            end else begin
+            else
               state_q <= LINE_BEAT_REPLACEMENT;
-            end
           end else begin
             if (beat_count_q == 2'd3) begin
               // DBB has already been released after the final TA.  A low TA
               // on this confirmation edge is not qualified by this tenure;
               // only DRTRY/TEA judge the captured final candidate.
-              rsp_line_q <= insert_doubleword(
-                line_work_q, current_slot, provisional_q);
               rsp_error_q <= 1'b0;
               rsp_valid_q <= 1'b1;
               state_q <= LINE_IDLE;
             end else begin
-              line_work_q <= insert_doubleword(
-                line_work_q, current_slot, provisional_q);
               beat_count_q <= beat_count_q + 2'd1;
               if (!ta_n_i) begin
-                provisional_q <= d_i;
                 if (beat_count_q == 2'd2) begin
                   final_release_started_q <= 1'b1;
                   release_oe_cycle_q <= 1'b1;
@@ -310,7 +334,6 @@ module ppc_bus60x_line_read (
         LINE_BEAT_REPLACEMENT: begin
           release_oe_cycle_q <= 1'b0;
           if (!tea_n_i) begin
-            rsp_line_q <= 256'b0;
             rsp_error_q <= 1'b1;
             if (final_release_started_q) begin
               rsp_valid_q <= 1'b1;
@@ -320,7 +343,6 @@ module ppc_bus60x_line_read (
               state_q <= LINE_DATA_ERROR_RELEASE;
             end
           end else if (drtry_n_i) begin
-            rsp_line_q <= 256'b0;
             rsp_error_q <= 1'b1;
             protocol_error_q <= 1'b1;
             if (final_release_started_q) begin
@@ -331,7 +353,6 @@ module ppc_bus60x_line_read (
               state_q <= LINE_DATA_ERROR_RELEASE;
             end
           end else if (!ta_n_i) begin
-            provisional_q <= d_i;
             state_q <= LINE_BEAT_CONFIRM;
           end
         end
@@ -340,7 +361,6 @@ module ppc_bus60x_line_read (
           data_release_pending_q <= 1'b0;
           release_oe_cycle_q <= 1'b0;
           rsp_valid_q <= 1'b1;
-          rsp_line_q <= 256'b0;
           rsp_error_q <= 1'b1;
           state_q <= LINE_IDLE;
         end

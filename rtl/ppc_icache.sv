@@ -1,6 +1,4 @@
-// Bounded 603e-shaped instruction-cache storage and refill controller.
-// Addresses are already physical.  This module does not perform translation,
-// permission checking, scalar bypass, or critical-word forwarding.
+// Physically addressed 603e-shaped instruction cache with line refill.
 module ppc_icache (
   input  logic         clk_i,
   input  logic         rst_ni,
@@ -34,6 +32,13 @@ module ppc_icache (
 );
   localparam integer SET_COUNT = 128;
   localparam integer WAY_COUNT = 4;
+  localparam integer LINE_BYTES = 32;
+  localparam integer OFFSET_BITS = $clog2(LINE_BYTES);
+  localparam integer WORD_BITS = $clog2(LINE_BYTES / 4);
+  localparam integer SET_BITS = $clog2(SET_COUNT);
+  localparam integer WAY_BITS = $clog2(WAY_COUNT);
+  localparam integer TAG_BITS = 32 - SET_BITS - OFFSET_BITS;
+  localparam logic [WAY_BITS-1:0] LRU_RANK = WAY_BITS'(WAY_COUNT - 1);
 
   typedef enum logic [1:0] {
     IC_IDLE,
@@ -43,7 +48,7 @@ module ppc_icache (
   } icache_state_t;
 
   icache_state_t state_q;
-  logic [WAY_COUNT-1:0][SET_COUNT-1:0][19:0] tag_mem;
+  logic [WAY_COUNT-1:0][SET_COUNT-1:0][TAG_BITS-1:0] tag_mem;
   // One synchronous-read line RAM. Flattening {way, set} keeps the data path
   // independent of the register-based tag lookup and permits FPGA block RAM.
   // Neither the RAM nor its output register is reset; valid tags own visibility.
@@ -51,26 +56,26 @@ module ppc_icache (
   logic [255:0] data_read_q;
   logic data_read_enable, data_write_enable;
   logic rsp_from_ram_q;
-  logic [2:0] hit_word_q;
+  logic [WORD_BITS-1:0] hit_word_q;
   logic [WAY_COUNT-1:0][SET_COUNT-1:0] valid_mem;
   // Rank zero is MRU and rank three is LRU.  Every set remains a permutation.
-  logic [WAY_COUNT-1:0][SET_COUNT-1:0][1:0] lru_rank_mem;
+  logic [WAY_COUNT-1:0][SET_COUNT-1:0][WAY_BITS-1:0] lru_rank_mem;
 
   logic rsp_valid_q, rsp_error_q;
   logic [31:0] rsp_insn_q;
   logic [31:3] miss_addr_q;
-  logic [6:0] miss_set_q;
-  logic [19:0] miss_tag_q;
-  logic [2:0] miss_word_q;
-  logic [1:0] victim_way_q;
+  logic [SET_BITS-1:0] miss_set_q;
+  logic [TAG_BITS-1:0] miss_tag_q;
+  logic [WORD_BITS-1:0] miss_word_q;
+  logic [WAY_BITS-1:0] victim_way_q;
   logic invalidate_done_q, hit_q, miss_q, protocol_error_q;
 
   logic lookup_hit;
-  logic [1:0] lookup_way;
-  logic [1:0] lookup_victim;
-  logic [6:0] lookup_set;
-  logic [19:0] lookup_tag;
-  logic [2:0] lookup_word;
+  logic [WAY_BITS-1:0] lookup_way;
+  logic [WAY_BITS-1:0] lookup_victim;
+  logic [SET_BITS-1:0] lookup_set;
+  logic [TAG_BITS-1:0] lookup_tag;
+  logic [WORD_BITS-1:0] lookup_word;
   logic found_invalid;
   logic found_lru;
 
@@ -87,6 +92,7 @@ module ppc_icache (
       3'd5: return line[95:64];
       3'd6: return line[63:32];
       3'd7: return line[31:0];
+      default: return 32'b0;
     endcase
   endfunction
 
@@ -107,34 +113,33 @@ module ppc_icache (
   end
 
   always_comb begin
-    lookup_set = fetch_addr_i[11:5];
-    lookup_tag = fetch_addr_i[31:12];
-    lookup_word = fetch_addr_i[4:2];
+    lookup_set = fetch_addr_i[OFFSET_BITS +: SET_BITS];
+    lookup_tag = fetch_addr_i[31 -: TAG_BITS];
+    lookup_word = fetch_addr_i[2 +: WORD_BITS];
     lookup_hit = 1'b0;
-    lookup_way = 2'b00;
+    lookup_way = '0;
     for (integer way = 0; way < WAY_COUNT; way++) begin
       if (!lookup_hit && valid_mem[way][lookup_set] &&
           tag_mem[way][lookup_set] == lookup_tag) begin
         lookup_hit = 1'b1;
-        lookup_way = 2'(way);
+        lookup_way = WAY_BITS'(way);
       end
     end
 
-    // An invalid way avoids evicting a valid line.  Once all four ways are
-    // valid, strict LRU rank three is selected.
-    lookup_victim = 2'b00;
+    // Fill an invalid way first, else the strict-LRU way.
+    lookup_victim = '0;
     found_invalid = 1'b0;
     for (integer way = 0; way < WAY_COUNT; way++) begin
       if (!found_invalid && !valid_mem[way][lookup_set]) begin
-        lookup_victim = 2'(way);
+        lookup_victim = WAY_BITS'(way);
         found_invalid = 1'b1;
       end
     end
     found_lru = 1'b0;
     if (!found_invalid) begin
       for (integer way = 0; way < WAY_COUNT; way++) begin
-        if (!found_lru && lru_rank_mem[way][lookup_set] == 2'd3) begin
-          lookup_victim = 2'(way);
+        if (!found_lru && lru_rank_mem[way][lookup_set] == LRU_RANK) begin
+          lookup_victim = WAY_BITS'(way);
           found_lru = 1'b1;
         end
       end
@@ -172,12 +177,12 @@ module ppc_icache (
       rsp_error_q <= 1'b0;
       rsp_insn_q <= 32'b0;
       rsp_from_ram_q <= 1'b0;
-      hit_word_q <= 3'b0;
+      hit_word_q <= '0;
       miss_addr_q <= 29'b0;
-      miss_set_q <= 7'b0;
-      miss_tag_q <= 20'b0;
-      miss_word_q <= 3'b0;
-      victim_way_q <= 2'b0;
+      miss_set_q <= '0;
+      miss_tag_q <= '0;
+      miss_word_q <= '0;
+      victim_way_q <= '0;
       invalidate_done_q <= 1'b0;
       hit_q <= 1'b0;
       miss_q <= 1'b0;
@@ -185,7 +190,7 @@ module ppc_icache (
       valid_mem <= '0;
       for (integer way = 0; way < WAY_COUNT; way++) begin
         tag_mem[way] <= '0;
-        lru_rank_mem[way] <= {SET_COUNT{2'(way)}};
+        lru_rank_mem[way] <= {SET_COUNT{WAY_BITS'(way)}};
       end
     end else begin
       invalidate_done_q <= 1'b0;
@@ -199,7 +204,7 @@ module ppc_icache (
         // accepted by the line transport is drained but never installed.
         valid_mem <= '0;
         for (integer way = 0; way < WAY_COUNT; way++)
-          lru_rank_mem[way] <= {SET_COUNT{2'(way)}};
+          lru_rank_mem[way] <= {SET_COUNT{WAY_BITS'(way)}};
         rsp_valid_q <= 1'b0;
         invalidate_done_q <= 1'b1;
         if (state_q == IC_REFILL_WAIT && !line_rsp_valid_i)
@@ -235,12 +240,12 @@ module ppc_icache (
                 rsp_valid_q <= 1'b1;
                 hit_q <= 1'b1;
                 for (integer way = 0; way < WAY_COUNT; way++) begin
-                  if (2'(way) == lookup_way)
-                    lru_rank_mem[way][lookup_set] <= 2'd0;
+                  if (WAY_BITS'(way) == lookup_way)
+                    lru_rank_mem[way][lookup_set] <= '0;
                   else if (lru_rank_mem[way][lookup_set] <
                            lru_rank_mem[lookup_way][lookup_set])
                     lru_rank_mem[way][lookup_set] <=
-                      lru_rank_mem[way][lookup_set] + 2'd1;
+                      lru_rank_mem[way][lookup_set] + 1'b1;
                 end
               end else begin
                 miss_addr_q <= fetch_addr_i[31:3];
@@ -271,12 +276,12 @@ module ppc_icache (
                 valid_mem[victim_way_q][miss_set_q] <= 1'b1;
                 rsp_insn_q <= select_word(line_rsp_line_i, miss_word_q);
                 for (integer way = 0; way < WAY_COUNT; way++) begin
-                  if (2'(way) == victim_way_q)
-                    lru_rank_mem[way][miss_set_q] <= 2'd0;
+                  if (WAY_BITS'(way) == victim_way_q)
+                    lru_rank_mem[way][miss_set_q] <= '0;
                   else if (lru_rank_mem[way][miss_set_q] <
                            lru_rank_mem[victim_way_q][miss_set_q])
                     lru_rank_mem[way][miss_set_q] <=
-                      lru_rank_mem[way][miss_set_q] + 2'd1;
+                      lru_rank_mem[way][miss_set_q] + 1'b1;
                 end
               end
               state_q <= IC_IDLE;
