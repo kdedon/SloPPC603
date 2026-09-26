@@ -3,6 +3,7 @@ import copy
 import subprocess
 import unittest
 
+import isa_check_rtl
 import isa_generate
 
 
@@ -70,10 +71,48 @@ class IsaMetadataTest(unittest.TestCase):
             capture_output=True,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(
-            result.stdout,
-            "PASS: 26048 compiled decoder probes, 935 accepted by metadata and RTL\n",
-        )
+        self.assertTrue(result.stdout.endswith("PASS\n"), result.stdout)
+        for name, _ in isa_check_rtl.PROFILES:
+            self.assertRegex(result.stdout, rf"(?m)^{name}: \d+ probes, \d+ accepted, \d+ mismatches$")
+
+    def test_opt_in_profiles_select_entries_by_feature_profile(self):
+        by_id = {entry["id"]: entry for entry in self.spec["decode_entries"]}
+        names = [name for name, _ in isa_check_rtl.PROFILES]
+
+        def enabled(entry_id):
+            mask = isa_check_rtl.enabled_profiles(by_id[entry_id])
+            return {name for index, name in enumerate(names) if mask >> index & 1}
+
+        self.assertEqual(enabled("addi"), set(names))
+        self.assertEqual(enabled("mfsprg0"), set(names) - {"default"})
+        self.assertEqual(enabled("mtmsr"), set(names) - {"default", "supervisor"})
+        self.assertEqual(enabled("tlbie"), {"tlbie", "all"})
+        self.assertEqual(enabled("mfdmiss"), {"tlb_miss", "all"})
+        self.assertEqual(enabled("mfdcmp"), {"tlb_load", "tlb_miss", "all"})
+        self.assertEqual(enabled("mtdmiss"), set())
+
+    def test_invalid_opt_in_profile_entries_are_rejected(self):
+        cases = [
+            ("mfdec", "privilege", "user", "SPR\\[0\\]"),
+            ("mttbl", "value", "0x7c1c43a7", "outside mask|SPR selector"),
+            ("tlbie", "mask", "0xfc0007ff", "reserved fields"),
+        ]
+        for entry_id, key, value, message in cases:
+            with self.subTest(entry=entry_id):
+                broken = copy.deepcopy(self.spec)
+                entry = next(item for item in broken["decode_entries"] if item["id"] == entry_id)
+                entry[key] = value
+                with self.assertRaisesRegex(isa_generate.MetadataError, message):
+                    isa_generate.validate(broken, self.sources, self.timing)
+        broken = copy.deepcopy(self.spec)
+        entry = next(item for item in broken["decode_entries"] if item["id"] == "mfsdr1")
+        entry["implementation"]["feature_profile"] = ["ENABLE_SDR1"]
+        with self.assertRaisesRegex(isa_generate.MetadataError, "supervisor exceptions"):
+            isa_generate.validate(broken, self.sources, self.timing)
+        broken = copy.deepcopy(self.spec)
+        broken["spr_read_opcode_equivalence"]["extended_opcodes"] = [339]
+        with self.assertRaisesRegex(isa_generate.MetadataError, "bit-25"):
+            isa_generate.validate(broken, self.sources, self.timing)
 
     def test_add_family_expands_to_twenty_with_twenty_implemented_forms(self):
         entries = [
@@ -199,7 +238,6 @@ class IsaMetadataTest(unittest.TestCase):
         self.assertTrue(all(entry["implementation"]["validation"] == "accepted_cr_transfer_benches" for entry in entries.values()))
         profile = next(item for item in self.spec["cr_transfer_semantics"]["profiles"]
                        if item["id"] == "CRXFER-mtcrf")
-        self.assertIn("FXM[0] selects CR0", profile["field_mapping"])
         self.assertEqual(profile["FXM_zero"], "No CR field is selected; CR is unchanged.")
         self.assertEqual(self.spec["cr_transfer_semantics"]["profiles"][0]["preserved"], ["CR", "XER"])
 
@@ -265,7 +303,6 @@ class IsaMetadataTest(unittest.TestCase):
                 word = int(entry["value"], 16) | (d << 21) | (a << 16) | (b << 11)
                 self.assertTrue(isa_generate.decode_matches(entry, word))
                 self.assertFalse(isa_generate.decode_matches(entry, word | 1))
-        self.assertIn("pre-instruction CR", self.spec["cr_logical_semantics"]["source_snapshot"])
         self.assertEqual(self.spec["cr_logical_semantics"]["preserved"],
                          ["all unselected CR bits", "GPR", "XER"])
 
@@ -310,10 +347,6 @@ class IsaMetadataTest(unittest.TestCase):
             self.assertTrue(isa_generate.decode_matches(entries["mcrxr"], word))
             for reserved in (1 << 22, 1 << 20, 1 << 11, 1):
                 self.assertFalse(isa_generate.decode_matches(entries["mcrxr"], word | reserved))
-        semantics = self.spec["cr_state_transfer_semantics"]
-        self.assertIn("pre-instruction", semantics["mcrf"]["source_snapshot"])
-        self.assertIn("commit atomically", semantics["mcrxr"]["atomic_ordering"])
-        self.assertIn("reserved zero", semantics["mcrxr"]["reserved_bit_3"])
         self.assertEqual(entries["mcrxr"]["writes"],
                          ["CR[crfD]", "XER.SO", "XER.OV", "XER.CA"])
         self.assertTrue(all(entry["implementation"]["validation"] ==
@@ -575,12 +608,6 @@ class IsaMetadataTest(unittest.TestCase):
             self.assertNotIn("XER.CA", entry["writes"])
             self.assertEqual(entry["implementation"]["validation"],
                              "accepted_multiply_low_benches")
-        semantics = self.spec["multiply_low_semantics"]
-        self.assertIn("complete signed product", semantics["profiles"][1]["overflow"])
-        self.assertIn("MULLI 3", semantics["implementation_timing"])
-        self.assertIn("MULLW 5", semantics["implementation_timing"])
-        self.assertIn("accepted finish at E+N", semantics["implementation_timing"])
-        self.assertIn("does not complete P08", semantics["implementation_timing"])
 
     def test_invalid_multiply_encoding_effects_and_sources_are_rejected(self):
         broken = copy.deepcopy(self.spec)
@@ -618,12 +645,6 @@ class IsaMetadataTest(unittest.TestCase):
                 self.assertNotIn("XER.OV", entry["writes"])
                 self.assertEqual(entry["implementation"]["validation"],
                                  "accepted_multiply_high_benches")
-        semantics = self.spec["multiply_high_semantics"]
-        self.assertIn("signed interpretation", semantics["flag_rule"])
-        self.assertIn("MULHW 5", semantics["implementation_timing"])
-        self.assertIn("MULHWU 6", semantics["implementation_timing"])
-        self.assertIn("accepted finish at E+N", semantics["implementation_timing"])
-        self.assertIn("does not complete P08", semantics["implementation_timing"])
 
     def test_invalid_multiply_high_reserved_bit_effects_and_sources_are_rejected(self):
         broken = copy.deepcopy(self.spec)
@@ -660,14 +681,6 @@ class IsaMetadataTest(unittest.TestCase):
             self.assertIn("architecturally_undefined", entry["implementation"]["zero_divisor_policy"])
             self.assertIn("rtl/ppc_divider.sv", entry["implementation"]["rtl"])
             self.assertIn("radix4_restoring_16_steps", entry["implementation"]["timing"])
-        semantics = self.spec["divide_unsigned_semantics"]
-        self.assertIn("undefined", semantics["zero_divisor_architecture"])
-        self.assertIn("local policy", semantics["zero_divisor_local_policy"])
-        self.assertIn("detects rB=0", semantics["zero_divisor_local_policy"])
-        self.assertIn("16-step radix-4", semantics["implementation_timing"])
-        self.assertIn("20 execute cycles", semantics["implementation_timing"])
-        self.assertIn("37 when configured", semantics["implementation_timing"])
-        self.assertIn("does not complete all P08", semantics["implementation_timing"])
 
     def test_invalid_divwu_encoding_policy_and_sources_are_rejected(self):
         broken = copy.deepcopy(self.spec)
@@ -704,14 +717,6 @@ class IsaMetadataTest(unittest.TestCase):
             self.assertIn("architecturally_undefined", entry["implementation"]["exception_policy"])
             self.assertIn("rtl/ppc_divider.sv", entry["implementation"]["rtl"])
             self.assertIn("radix4_restoring_16_steps", entry["implementation"]["timing"])
-        semantics = self.spec["divide_signed_semantics"]
-        self.assertIn("truncated toward zero", semantics["normal_result"])
-        self.assertIn("INT_MIN", semantics["exception_architecture"])
-        self.assertIn("detects both", semantics["exception_local_policy"])
-        self.assertIn("16-step radix-4", semantics["implementation_timing"])
-        self.assertIn("20 execute cycles", semantics["implementation_timing"])
-        self.assertIn("37 when configured", semantics["implementation_timing"])
-        self.assertIn("does not complete all P08", semantics["implementation_timing"])
 
     def test_invalid_divw_encoding_policy_and_sources_are_rejected(self):
         broken = copy.deepcopy(self.spec)
@@ -752,10 +757,6 @@ class IsaMetadataTest(unittest.TestCase):
                 self.assertEqual(entry["writes"], ["memory", "rA"])
             if entry["form"] == "X":
                 self.assertEqual(entry["reserved_bits"][0]["required"], 0)
-        semantics = self.spec["lsu_update_semantics"]
-        self.assertIn("together", semantics["atomic_retirement"])
-        self.assertIn("second speculative rename allocation",
-                      semantics["implementation_scheduling"])
 
     def test_invalid_lsu_update_metadata_and_sources_are_rejected(self):
         broken = copy.deepcopy(self.spec)
@@ -788,6 +789,70 @@ class IsaMetadataTest(unittest.TestCase):
         self.assertEqual(exceptions["tlbia"], "pending_editorial_reconciliation")
         self.assertEqual(exceptions["fsqrt"], "floating_point_unavailable")
         self.assertEqual(exceptions["fsqrts"], "floating_point_unavailable")
+
+
+class IsaProseMetadataTest(unittest.TestCase):
+    """Checks that contract prose fields contain required phrases; no RTL or encoding behavior."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.spec, cls.sources, cls.timing = isa_generate.load_all()
+
+    def test_cr_transfer_masks_fields_and_profiles_prose(self):
+        profile = next(item for item in self.spec["cr_transfer_semantics"]["profiles"]
+                       if item["id"] == "CRXFER-mtcrf")
+        self.assertIn("FXM[0] selects CR0", profile["field_mapping"])
+
+    def test_cr_logical_exact_encodings_equations_and_effects_prose(self):
+        self.assertIn("pre-instruction CR", self.spec["cr_logical_semantics"]["source_snapshot"])
+
+    def test_cr_state_transfer_encodings_reserved_fields_and_effects_prose(self):
+        semantics = self.spec["cr_state_transfer_semantics"]
+        self.assertIn("pre-instruction", semantics["mcrf"]["source_snapshot"])
+        self.assertIn("commit atomically", semantics["mcrxr"]["atomic_ordering"])
+        self.assertIn("reserved zero", semantics["mcrxr"]["reserved_bit_3"])
+
+    def test_multiply_low_exact_encodings_effects_and_timing_boundary_prose(self):
+        semantics = self.spec["multiply_low_semantics"]
+        self.assertIn("complete signed product", semantics["profiles"][1]["overflow"])
+        self.assertIn("MULLI 3", semantics["implementation_timing"])
+        self.assertIn("MULLW 5", semantics["implementation_timing"])
+        self.assertIn("accepted finish at E+N", semantics["implementation_timing"])
+        self.assertIn("does not complete P08", semantics["implementation_timing"])
+
+    def test_multiply_high_exact_encodings_reserved_oe_and_result_contract_prose(self):
+        semantics = self.spec["multiply_high_semantics"]
+        self.assertIn("signed interpretation", semantics["flag_rule"])
+        self.assertIn("MULHW 5", semantics["implementation_timing"])
+        self.assertIn("MULHWU 6", semantics["implementation_timing"])
+        self.assertIn("accepted finish at E+N", semantics["implementation_timing"])
+        self.assertIn("does not complete P08", semantics["implementation_timing"])
+
+    def test_divwu_exact_forms_flags_and_explicit_zero_policy_prose(self):
+        semantics = self.spec["divide_unsigned_semantics"]
+        self.assertIn("undefined", semantics["zero_divisor_architecture"])
+        self.assertIn("local policy", semantics["zero_divisor_local_policy"])
+        self.assertIn("detects rB=0", semantics["zero_divisor_local_policy"])
+        self.assertIn("16-step radix-4", semantics["implementation_timing"])
+        self.assertIn("20 execute cycles", semantics["implementation_timing"])
+        self.assertIn("37 when configured", semantics["implementation_timing"])
+        self.assertIn("does not complete all P08", semantics["implementation_timing"])
+
+    def test_divw_exact_forms_flags_and_exception_policy_prose(self):
+        semantics = self.spec["divide_signed_semantics"]
+        self.assertIn("truncated toward zero", semantics["normal_result"])
+        self.assertIn("INT_MIN", semantics["exception_architecture"])
+        self.assertIn("detects both", semantics["exception_local_policy"])
+        self.assertIn("16-step radix-4", semantics["implementation_timing"])
+        self.assertIn("20 execute cycles", semantics["implementation_timing"])
+        self.assertIn("37 when configured", semantics["implementation_timing"])
+        self.assertIn("does not complete all P08", semantics["implementation_timing"])
+
+    def test_lsu_update_exact_forms_legality_and_atomic_effects_prose(self):
+        semantics = self.spec["lsu_update_semantics"]
+        self.assertIn("together", semantics["atomic_retirement"])
+        self.assertIn("second speculative rename allocation",
+                      semantics["implementation_scheduling"])
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent CR0/XER masked-commit and one-owner lifecycle reference."""
+"""Python CR0/XER masked-commit and one-owner lifecycle model; exercised only by its unit tests, not by an RTL bench."""
 
 from __future__ import annotations
 

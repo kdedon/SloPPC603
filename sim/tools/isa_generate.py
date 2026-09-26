@@ -52,6 +52,73 @@ def find_overlaps(entries: list[dict[str, Any]]) -> list[tuple[str, str]]:
     ]
 
 
+DECODE_PARAMETERS = (
+    "ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_LIVE_CONTEXT", "ENABLE_TIMERS",
+    "ENABLE_RUNTIME_BAT", "ENABLE_SEGMENT_REGISTERS", "ENABLE_TLB_INVALIDATE",
+    "ENABLE_TLB_LOAD", "ENABLE_SDR1", "ENABLE_TLB_MISS_EXCEPTIONS",
+)
+PROFILE_STATUSES = {"implemented_opt_in_profile", "manual_legal_not_implemented"}
+SPR_READ_XO = (339, 371)
+SPR_WRITE_XO = 467
+
+
+def feature_profile(entry: dict[str, Any]) -> list[str]:
+    profile = entry["implementation"].get("feature_profile", [])
+    return [profile] if isinstance(profile, str) else list(profile)
+
+
+def spr_field(spr: int) -> int:
+    """Encoded SPR field: the two five-bit halves are swapped."""
+    return ((spr & 31) << 16) | ((spr >> 5) << 11)
+
+
+def validate_profile_entries(spec: dict[str, Any]) -> None:
+    rule = spec.get("spr_read_opcode_equivalence", {})
+    if rule.get("ignored_bit_mask") != "0x00000040" or rule.get("extended_opcodes") != list(SPR_READ_XO):
+        raise MetadataError("603e MFSPR/MFTB bit-25 equivalence rule changed")
+    x_forms = {
+        "mtmsr": (146, 0xFC1FFFFF), "mtsr": (210, 0xFC10FFFF), "mtsrin": (242, 0xFC1F07FF),
+        "mfsr": (595, 0xFC10FFFF), "mfsrin": (659, 0xFC1F07FF), "tlbie": (306, 0xFFFF07FF),
+        "tlbld": (978, 0xFFFF07FF), "tlbli": (1010, 0xFFFF07FF),
+    }
+    seen_x = set()
+    for entry in spec["decode_entries"]:
+        status = entry["implementation"].get("status")
+        if status not in PROFILE_STATUSES:
+            continue
+        profile = feature_profile(entry)
+        if not profile or set(profile) - set(DECODE_PARAMETERS) or len(profile) != len(set(profile)):
+            raise MetadataError(f"{entry['id']}: feature_profile must list known decode parameters")
+        if "ENABLE_SUPERVISOR_EXCEPTIONS" not in profile:
+            raise MetadataError(f"{entry['id']}: opt-in profile requires supervisor exceptions")
+        if len(profile) > 1 and "ENABLE_LIVE_CONTEXT" not in profile:
+            raise MetadataError(f"{entry['id']}: MMU/timer profiles require live context")
+        if "spr" in entry:
+            spr = entry["spr"]
+            xo = (_number(entry["value"], "value") >> 1) & 0x3FF
+            if xo not in SPR_READ_XO + (SPR_WRITE_XO,):
+                raise MetadataError(f"{entry['id']}: SPR entry must use MFSPR, MFTB or MTSPR")
+            if (_number(entry["mask"], "mask"), _number(entry["value"], "value")) != (0xFC1FFFFF, (31 << 26) | spr_field(spr) | (xo << 1)):
+                raise MetadataError(f"{entry['id']}: SPR selector encoding changed")
+            # PEM Tables 8-10/8-15: SPR[0] (selector bit 4) set means supervisor-only.
+            if entry["privilege"] != ("supervisor" if spr & 16 else "user"):
+                raise MetadataError(f"{entry['id']}: privilege disagrees with SPR[0]")
+            reads = xo in SPR_READ_XO
+            if (entry["writes"] == ["rD"]) != reads:
+                raise MetadataError(f"{entry['id']}: SPR direction disagrees with extended opcode")
+        else:
+            if entry["id"] not in x_forms:
+                raise MetadataError(f"{entry['id']}: unreviewed opt-in X-form")
+            xo, mask = x_forms[entry["id"]]
+            if (_number(entry["mask"], "mask"), _number(entry["value"], "value")) != (mask, (31 << 26) | (xo << 1)):
+                raise MetadataError(f"{entry['id']}: X-form reserved fields or XO changed")
+            if entry["privilege"] != "supervisor":
+                raise MetadataError(f"{entry['id']}: system control form must be supervisor-only")
+            seen_x.add(entry["id"])
+    if seen_x != set(x_forms):
+        raise MetadataError(f"missing opt-in X-forms: {sorted(set(x_forms) - seen_x)}")
+
+
 def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, Any]) -> None:
     required = {"schema_version", "variants", "functional_families", "instruction_forms", "decode_entries", "allowed_overlaps"}
     missing = required - spec.keys()
@@ -535,6 +602,8 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
             reviewed_serialization.get("concrete_opt_in_forms") != 3 or
             set(reviewed_serialization.get("exact_appendix_rows", [])) != {"A1-044", "A1-083", "A1-214"}):
         raise MetadataError("reviewed serialization semantic/source contract changed")
+
+    validate_profile_entries(spec)
 
     add_entries = [entry for entry in entries if entry.get("family") in {"add", "addc", "adde", "addme", "addze"}]
     if len(add_entries) != 20:
@@ -1520,6 +1589,10 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
                            "implemented_opt_in_supervisor" for entry in entries)
     serialization_count = sum(entry["implementation"].get("status") ==
                               "implemented_opt_in_serialization" for entry in entries)
+    profile_count = sum(entry["implementation"].get("status") ==
+                        "implemented_opt_in_profile" for entry in entries)
+    not_implemented_count = sum(entry["implementation"].get("status") ==
+                                "manual_legal_not_implemented" for entry in entries)
     lines = [
         "# ISA implementation and source inventory",
         "",
@@ -1528,6 +1601,8 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
         "## P03v boundary",
         "",
         f"This bounded preparation covers {len(entries)} reviewed decode entries: {default_count} implemented by default and {supervisor_count + serialization_count} available only with `ENABLE_SUPERVISOR_EXCEPTIONS=1`. The opt-in forms comprise {supervisor_count} supervisor forms plus ISYNC, SYNC, and EIEIO. This does not complete P03, the 603e exception architecture, or the cache/bus ordering architecture.",
+        "",
+        f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBLD/TLBLI and the XER, timer, BAT, SDR1 and TLB-miss SPR moves) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} manual-legal forms are recorded as `manual_legal_not_implemented` and must stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
         "",
         "Secondary 601UM and DingusPPC evidence is tagged only as an encoding/semantics cross-check. The 603e UM controls implementation-specific support, and neither secondary source is a timing oracle.",
         "",
@@ -1664,9 +1739,11 @@ def main() -> int:
     implemented_count = sum(entry["implementation"].get("status") == "implemented" for entry in spec["decode_entries"])
     opt_in_count = sum(entry["implementation"].get("status") == "implemented_opt_in_supervisor" for entry in spec["decode_entries"])
     serialization_count = sum(entry["implementation"].get("status") == "implemented_opt_in_serialization" for entry in spec["decode_entries"])
+    profile_count = sum(entry["implementation"].get("status") == "implemented_opt_in_profile" for entry in spec["decode_entries"])
     print(
         f"ISA metadata valid: {len(spec['decode_entries'])} reviewed entries, {implemented_count} default implemented, "
         f"{opt_in_count} supervisor opt-in, {serialization_count} serialization opt-in, "
+        f"{profile_count} profile opt-in, "
         f"{sources['observed_row_count']} source rows, {overlap_count} overlaps "
         f"({len(spec['allowed_overlaps'])} explicitly allowed)"
     )

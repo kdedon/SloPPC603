@@ -22,6 +22,12 @@ module tb_rotate_execution;
   logic result_valid, result_ready;
   result_packet_t result;
   int checks = 0;
+  int vectors = 0;
+  int vector_file;
+  string vector_path;
+  logic [31:0] vec_a, vec_b, vec_mask, vec_value;
+  logic vec_so, vec_rc;
+  logic [3:0] vec_cr0;
 
   ppc_dispatch station (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
@@ -196,12 +202,26 @@ module tb_rotate_execution;
              1'b0, 1'b0, 1'b0, 1'b0, 1'b1,
              32'h8000_0000, 1'b0, 1'b0, 1'b0, 4'h8);
 
-    $display("PASS rotate execution: held mask/SO, low-five-bit counts and CR0, packet stall (%0d checks)", checks);
+    // Expected values come from the independent Python rotate model.
+    if (!$value$plusargs("VECTORS=%s", vector_path))
+      $fatal(1, "missing +VECTORS=<rotate vector file>");
+    vector_file = $fopen(vector_path, "r");
+    if (vector_file == 0) $fatal(1, "cannot open %s", vector_path);
+    while ($fscanf(vector_file, "%h %h %h %h %h %h %h\n", vec_a, vec_b, vec_mask,
+                   vec_so, vec_rc, vec_value, vec_cr0) == 7) begin
+      run_case(ALU_ROTATE, vec_a, vec_b, vec_mask, 1'b0, vec_so, 1'b0, 1'b0, vec_rc,
+               vec_value, 1'b0, 1'b0, 1'b0, vec_cr0);
+      vectors++;
+    end
+    $fclose(vector_file);
+    require(vectors == 64, "rotate vector file is incomplete");
+
+    $display("PASS rotate execution: held mask/SO, low-five-bit counts and CR0, packet stall, %0d model vectors (%0d checks)", vectors, checks);
     $finish;
   end
 
   initial begin
-    #10000;
+    #100000;
     $fatal(1, "rotate execution watchdog");
   end
 endmodule
