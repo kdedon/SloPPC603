@@ -12,7 +12,7 @@ The same effective instruction address faults and retries three times:
 
 Each event must save SRR0=`20000000` and the old MSR=`00000060` plus its syndrome in SRR1. Exception entry runs with IR=DR=0 and MSR=`00000040`. The handler records those values, repairs the pre-existing mapping or segment descriptor, and executes `rfi` to retry precisely the faulting fetch. Successful calls return 42, 73 and 100, proving that the corrected instruction was fetched and executed. The main program performs its initial and guarded page `tlbli` loads in real mode; handler repairs also execute in real mode.
 
-The independent physical RAM responder delays instruction and data responses and retirement. It checks one protection and two guarded typed fetch-fault retirements, each at the alias PC with no architectural destination, along with four CPU `tlbli` retirements, twelve CPU BAT writes, physical probe fetches only after repair, and the page-protection/no-execute/guarded sticky diagnostics without miss/configuration/changed causes. The fixture cannot preload a TLB entry. This verifies resumable instruction-page denials using the existing ISI carrier, not I-TLB miss entry, page-table walking, or frontend coherence.
+The independent physical RAM responder delays instruction and data responses and retirement. It checks one protection and two guarded typed fetch-fault retirements, each at the alias PC with no architectural destination, along with four CPU `tlbli` retirements, twelve CPU BAT writes, physical probe fetches only after repair, and that the router consumed page-protection, no-execute and guarded lookups without miss/direct-store/changed causes. Typed ISIs must leave the sticky fault and page diagnostics clear. The fixture cannot preload a TLB entry. This verifies resumable instruction-page denials using the existing ISI carrier, not I-TLB miss entry, page-table walking, or frontend coherence.
 
 Build with the pinned container toolchain, then run strict Verilator:
 
@@ -29,7 +29,5 @@ A negative control changes only a temporary memory image. It verifies the
 handler `tlbli r11` word `7c005fe4` at `fff00468`, replaces it with `isync`
 `4c00012c`, and leaves the canonical ELF and image untouched. The harness
 rejects the second protection fault at cycle 1,893 with `unexpected PP fault
-order` and fault PC `20000000`; it does not time out or report success. Router sticky `fault_ea` can
-refer to a younger canceled fetch within the same page, so the harness checks
-its page identity while requiring the exact fault PC in the retired packet and
-SRR0.
+order` and fault PC `20000000`; it does not time out or report success. The
+harness requires the exact fault PC in the retired packet and SRR0.

@@ -30,10 +30,9 @@ The router accepts one memory request at a time. At request acceptance it saves
 the effective address, read/write direction, data payload and committed
 IR/DR/PR context. The BAT service evaluates that captured context. A PP denial
 cannot enter `ROUTE_PHYSICAL_OFFER`, so a denied store makes no physical write
-request. The existing sticky `translation_fault_o` and detail pins record its
-effective address, write direction and protection cause as diagnostics even
-when the typed response is handled architecturally. Those sticky pins are not
-the exception handshake; the held response is.
+request. The held response is the exception handshake. A typed DSI leaves the
+sticky `translation_fault_o` and detail pins unchanged; they record only
+outcomes returned as generic errors or terminal fetch failures.
 
 A context update is admitted only when the router is quiescent, with no
 instruction or data offer. A request offered on the same edge as a context

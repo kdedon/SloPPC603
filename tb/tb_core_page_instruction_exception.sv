@@ -222,7 +222,7 @@ module tb_core_page_instruction_exception;
       start_core();wait(done);@(negedge clk_i);
       check(faults==1&&handler_reads==2&&held_retire>=6&&
             denied_physical==0&&dut.core.regfile.gpr[6]==0&&
-            page_fault_o&&old_fetch_drains>0,
+            !page_fault_o&&old_fetch_drains>0,
             "page ISI handler/retirement or wrong-path fetch ordering");
     end
     reset_case(3);

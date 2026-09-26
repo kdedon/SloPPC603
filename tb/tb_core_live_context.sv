@@ -255,11 +255,8 @@ module tb_core_live_context #(
       if(!USE_BAT)check({bv,bsr,startv,bspr,bdata}==0,"unused BAT setup must stay inactive");
       if(!USE_BAT)check({cp,ci,cd}=={model_msr[14],model_msr[5],model_msr[4]},"MSR context mutated outside accepted retirement");
       check(bstatus==0,"unexpected BAT setup fault");
-      if(phase!=7 && phase!=8)check(fault_status==0,"unexpected BAT translation fault");
-      else if(fault_status!=0)check(fault_status[0] && fault_status[1] &&
-        fault_status[34:3]>=32'h20000 && fault_status[34:3]<32'h40000 && fault_status[36]==(phase==7) &&
-        fault_status[37]==(phase==8) && !fault_status[35] && fault_status[43:38]==0,
-        $sformatf("router typed-fault diagnostic identity bits=%011x",fault_status));
+      // Typed protection/guarded faults leave the sticky diagnostics clear.
+      check(fault_status==0,"unexpected BAT translation diagnostic");
       if((phase==7 || phase==8) && iv)check(!(ia>=32'h20000 && ia<32'h40000),"denied target reached physical fetch");
       if(USE_BAT && iv)check(iwimg==(ci?4'b0000:4'b0001),"instruction request context/WIMG mismatch");
       if(iv && ia==32'h14 && !ir)held_offer<=held_offer+1;

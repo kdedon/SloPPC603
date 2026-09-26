@@ -1,5 +1,5 @@
-// Software-loaded 4-KiB page TLB boundary; see TLB_SERVICE.md.
-// Local reset invalidates entries; real 603e reset does NOT clear TLB valids.
+// Software-loaded 4-KiB page instruction and data TLBs.
+// Local reset clears valids; 603e hardware reset leaves them unchanged.
 module ppc_tlb_service #(
   parameter bit ENABLE_RUNTIME_INVALIDATE = 1'b0,
   parameter bit ENABLE_RUNTIME_REFILL = 1'b0
@@ -11,7 +11,7 @@ module ppc_tlb_service #(
   output logic transaction_idle_o,
   input logic req_valid_i,
   output logic req_ready_o,
-  input logic [2:0] req_kind_i,
+  input ppc_pkg::tlb_req_kind_t req_kind_i,
   input logic req_bank_i,
   input logic [31:0] req_ea_i,
   input logic [23:0] req_vsid_i,
@@ -23,7 +23,7 @@ module ppc_tlb_service #(
   input logic [1:0] req_pp_i,
   output logic rsp_valid_o,
   input logic rsp_ready_i,
-  output logic [2:0] rsp_kind_o,
+  output ppc_pkg::tlb_req_kind_t rsp_kind_o,
   output logic rsp_bank_o,
   output logic [31:0] rsp_ea_o,
   output logic rsp_allow_o, rsp_hit_o, rsp_miss_o,
@@ -38,9 +38,7 @@ module ppc_tlb_service #(
   output logic [1:0] rsp_pp_o,
   output logic rsp_c_o, rsp_r_o
 );
-  localparam logic [2:0] LOOKUP = 3'd0, REFILL = 3'd1,
-    INVALIDATE_SET = 3'd2, PREPARE_INVALIDATE = 3'd4,
-    PREPARE_REFILL = 3'd5;
+  import ppc_pkg::*;
   typedef struct packed {
     logic [23:0] vsid;
     logic [10:0] page_tag;
@@ -50,7 +48,7 @@ module ppc_tlb_service #(
     logic [1:0] pp;
   } entry_t;
   typedef struct packed {
-    logic [2:0] kind;
+    tlb_req_kind_t kind;
     logic bank;
     logic [31:0] ea;
     logic allow_access, hit, miss, protection_fault, guarded_fault, no_execute;
@@ -132,7 +130,7 @@ module ppc_tlb_service #(
     response_d.bank = req_bank_i;
     response_d.ea = req_ea_i;
     case (req_kind_i)
-      LOOKUP: begin
+      TLB_LOOKUP: begin
         if (!req_bank_i && req_write_i) response_d.invalid_input = 1'b1;
         else if (req_t_i) response_d.direct_store = 1'b1;
         else if (!req_bank_i && req_n_i) response_d.no_execute = 1'b1;
@@ -156,21 +154,21 @@ module ppc_tlb_service #(
           end
         end
       end
-      REFILL: begin
+      TLB_REFILL: begin
         if (req_pr_i) response_d.privileged = 1'b1;
         // Local unambiguous-bank policy; source does not define a duplicate winner.
         else if (matched[!req_way_i]) response_d.refill_rejected = 1'b1;
         else fill_commit = 1'b1;
       end
-      INVALIDATE_SET: begin
+      TLB_INVALIDATE_SET: begin
         if (req_pr_i) response_d.privileged = 1'b1;
         else invalidate_commit = 1'b1;
       end
-      PREPARE_INVALIDATE: begin
+      TLB_PREPARE_INVALIDATE: begin
         if (!ENABLE_RUNTIME_INVALIDATE) response_d.unsupported = 1'b1;
         else if (req_pr_i) response_d.privileged = 1'b1;
       end
-      PREPARE_REFILL: begin
+      TLB_PREPARE_REFILL: begin
         if (!ENABLE_RUNTIME_REFILL) response_d.unsupported = 1'b1;
         else if (req_pr_i) response_d.privileged = 1'b1;
         // Match the immediate-refill duplicate policy at preparation.
@@ -217,13 +215,13 @@ module ppc_tlb_service #(
       if (request_fire) begin
         response_valid_q <= 1'b1;
         response_q <= response_d;
-        if (ENABLE_RUNTIME_INVALIDATE && req_kind_i == PREPARE_INVALIDATE &&
+        if (ENABLE_RUNTIME_INVALIDATE && req_kind_i == TLB_PREPARE_INVALIDATE &&
             !req_pr_i && !prepare_abort_i) begin
           prepared_q <= 1'b1;
           prepared_is_refill_q <= 1'b0;
           prepared_set_q <= set_index;
         end
-        if (ENABLE_RUNTIME_REFILL && req_kind_i == PREPARE_REFILL &&
+        if (ENABLE_RUNTIME_REFILL && req_kind_i == TLB_PREPARE_REFILL &&
             !req_pr_i && !matched[!req_way_i] && !prepare_abort_i) begin
           prepared_q <= 1'b1;
           prepared_is_refill_q <= 1'b1;

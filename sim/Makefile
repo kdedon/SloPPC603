@@ -8,6 +8,8 @@ ICACHE_RTL := $(shell cat ../rtl/icache_files.f)
 CACHED_SYSTEM_RTL := $(shell cat ../rtl/cached_system_files.f)
 BAT_RTL := $(shell cat ../rtl/bat_files.f)
 BAT_SERVICE_RTL := $(shell cat ../rtl/bat_service_files.f)
+# Core builds already list the package through RTL.
+CORE_BAT_SERVICE_RTL := $(filter-out ../rtl/ppc_pkg.sv,$(BAT_SERVICE_RTL))
 CORE_BAT_RTL := $(shell cat ../rtl/core_bat_files.f)
 TLB_SERVICE_RTL := $(shell cat ../rtl/tlb_service_files.f)
 SEGMENT_REGISTER_RTL := $(shell cat ../rtl/segment_register_files.f)
@@ -36,12 +38,12 @@ build-core-bus60x-unified:
 lint:
 	cd ../quartus/timer-bat && $(VERILATOR) --lint-only -Wall --top-module ppc_timer_bat_measure -f files.f
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" $(RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_segment_registers $(SEGMENT_REGISTER_RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_tlb_service $(TLB_SERVICE_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_service $(BAT_SERVICE_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_cached_bus60x_managed $(RTL) $(BUS_RTL) $(SYSTEM_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) $(CACHE_CONTROL_RTL)
@@ -682,7 +684,7 @@ test-bat-memory-router:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_bat_memory_router --Mdir $(BUILD_DIR)/bat-memory-router $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv ../tb/tb_bat_memory_router.sv
 	./$(BUILD_DIR)/bat-memory-router/Vtb_bat_memory_router
 test-core-bat:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat --Mdir $(BUILD_DIR)/core-bat $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_bat.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat --Mdir $(BUILD_DIR)/core-bat $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_bat.sv
 	./$(BUILD_DIR)/core-bat/Vtb_core_bat
 
 # Round40: bounded supervisor scratch-register access.
@@ -776,7 +778,7 @@ test-core-live-context-disabled:
 
 test-core-bat-live-context:
 	mkdir -p $(BUILD_DIR)/core-bat-live-context
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_live_context "-GUSE_BAT=1'b1" --Mdir $(BUILD_DIR)/core-bat-live-context $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_live_context.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_live_context "-GUSE_BAT=1'b1" --Mdir $(BUILD_DIR)/core-bat-live-context $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_live_context.sv
 	./$(BUILD_DIR)/core-bat-live-context/Vtb_core_live_context
 
 .PHONY: test-live-context-decode
@@ -853,7 +855,7 @@ lint-runtime-bat:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_service "-GENABLE_RUNTIME_BAT=1'b1" $(BAT_SERVICE_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_memory_router "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 
 test-bat-runtime-service:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_bat_runtime_service --Mdir $(BUILD_DIR)/bat-runtime-service $(BAT_SERVICE_RTL) ../tb/tb_bat_runtime_service.sv
@@ -915,7 +917,7 @@ lint: lint-segment-integration
 test: test-segment-cpu-decode test-core-segment-csr test-core-segment-privilege test-segment-runtime-service test-segment-runtime-router
 lint-segment-integration:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" $(RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_memory_router "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv
 
 test-segment-cpu-decode:
@@ -948,12 +950,12 @@ test-segment-runtime-router:
 lint: lint-page-path
 test: test-core-page-translation test-page-memory-router
 lint-page-path:
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 
 test-core-page-translation:
 	mkdir -p $(BUILD_DIR)/core-page-translation
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_translation --Mdir $(BUILD_DIR)/core-page-translation $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_translation.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_translation --Mdir $(BUILD_DIR)/core-page-translation $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_translation.sv
 	./$(BUILD_DIR)/core-page-translation/Vtb_core_page_translation
 
 test-page-memory-router:
@@ -967,7 +969,7 @@ lint: lint-tlbie-integration
 test: test-tlbie-decode test-core-tlbie test-core-tlbie-privilege test-tlb-runtime-invalidate-service test-tlb-runtime-invalidate-router
 lint-tlbie-integration:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" $(RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 
 test-tlbie-decode:
 	mkdir -p $(BUILD_DIR)/tlbie-decode
@@ -1020,7 +1022,7 @@ lint: lint-tlb-seed
 test: test-tlb-seed-decode test-core-tlb-seed
 lint-tlb-seed:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_TLB_LOAD=1'b1" $(RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_LOAD=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_LOAD=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 
 test-tlb-seed-decode:
 	mkdir -p $(BUILD_DIR)/tlb-seed-decode
@@ -1052,7 +1054,7 @@ lint: lint-tlb-load-integration
 test: test-tlb-load-decode test-core-tlb-load
 lint-tlb-load-integration:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_TLB_LOAD=1'b1" $(RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_LOAD=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_LOAD=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 
 test-tlb-load-decode:
 	mkdir -p $(BUILD_DIR)/tlb-load-decode
@@ -1072,7 +1074,7 @@ test-core-tlb-load:
 lint: lint-page-data-exceptions
 test: test-page-data-exception-router test-core-page-data-exception
 lint-page-data-exceptions:
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 
 test-page-data-exception-router:
 	mkdir -p $(BUILD_DIR)/page-data-exception-router-enabled
@@ -1084,7 +1086,7 @@ test-page-data-exception-router:
 
 test-core-page-data-exception:
 	mkdir -p $(BUILD_DIR)/core-page-data-exception
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_data_exception --Mdir $(BUILD_DIR)/core-page-data-exception $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_data_exception.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_data_exception --Mdir $(BUILD_DIR)/core-page-data-exception $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_data_exception.sv
 	./$(BUILD_DIR)/core-page-data-exception/Vtb_core_page_data_exception
 
 # Opt-in page instruction PP, no-execute and guarded ISI delivery.
@@ -1092,7 +1094,7 @@ test-core-page-data-exception:
 lint: lint-page-instruction-exceptions
 test: test-page-instruction-exception-router test-core-page-instruction-exception
 lint-page-instruction-exceptions:
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 
 test-page-instruction-exception-router:
 	mkdir -p $(BUILD_DIR)/page-instruction-exception-router-enabled
@@ -1104,7 +1106,7 @@ test-page-instruction-exception-router:
 
 test-core-page-instruction-exception:
 	mkdir -p $(BUILD_DIR)/core-page-instruction-exception
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_instruction_exception --Mdir $(BUILD_DIR)/core-page-instruction-exception $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_instruction_exception.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_instruction_exception --Mdir $(BUILD_DIR)/core-page-instruction-exception $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_instruction_exception.sv
 	./$(BUILD_DIR)/core-page-instruction-exception/Vtb_core_page_instruction_exception
 
 # Response-bound page miss/changed diagnostic capsules; no architectural miss entry.
@@ -1112,7 +1114,7 @@ test-core-page-instruction-exception:
 lint: lint-page-miss-results
 test: test-page-miss-result-router test-core-page-miss-result
 lint-page-miss-results:
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 
 test-page-miss-result-router:
 	mkdir -p $(BUILD_DIR)/page-miss-result-router-enabled
@@ -1203,7 +1205,7 @@ test-core-tlb-miss:
 	./$(BUILD_DIR)/core-tlb-miss-disabled/Vtb_core_tlb_miss
 
 # Translated core with the existing cache-inhibited scalar 60x transport.
-CORE_BAT_BUS60X_RTL := $(RTL) $(BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv $(shell cat ../rtl/core_bat_bus60x_files.f)
+CORE_BAT_BUS60X_RTL := $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv $(shell cat ../rtl/core_bat_bus60x_files.f)
 .PHONY: test-core-bat-bus60x
 test: test-core-bat-bus60x
 test-core-bat-bus60x:

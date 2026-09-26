@@ -19,14 +19,10 @@ load or store denial produces no physical request. The held response has
 until `dmem_rsp_ready_i` accepts it. The error bit stays zero because the typed
 cause, rather than a transport error, represents the condition.
 
-The router still records `translation_fault_o`, `page_fault_o`,
-`page_protection_o`, accepted EA and read/write identity as sticky diagnostics,
-matching the existing typed BAT DSI convention in
-[DATA_FAULT_ROUTER.md](DATA_FAULT_ROUTER.md). Those sticky pins are not an
-exception handshake. Generic BAT protection detail `fault_protection_o`
-remains clear for a page-path failure. A consumer must use the held data
-response cause to identify the faulting instruction and must not infer an
-exception from a sticky flag.
+A typed page DSI leaves `translation_fault_o`, `page_fault_o` and the detail
+pins unchanged, matching the typed BAT DSI convention in
+[DATA_FAULT_ROUTER.md](DATA_FAULT_ROUTER.md). A consumer uses the held data
+response cause to identify the faulting instruction.
 
 With the parameter disabled, page PP denial retains its held generic error
 response (`DATA_OK`, `dmem_rsp_error_o=1`). In either profile a TLB miss,

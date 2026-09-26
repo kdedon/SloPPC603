@@ -1,5 +1,5 @@
-// Serialized committed BAT CSR/translation service. See BAT_SERVICE.md.
-// Reset-zero BAT storage is a local policy, not silicon BAT reset behavior.
+// Serialized committed BAT register and translation service.
+// Reset zeroes BAT storage; 603e hardware reset leaves BATs undefined.
 module ppc_bat_service #(
   parameter bit ENABLE_RUNTIME_BAT = 1'b0
 ) (
@@ -12,7 +12,7 @@ module ppc_bat_service #(
   output logic transaction_idle_o,
   input  logic req_valid_i,
   output logic req_ready_o,
-  input  logic [2:0] req_kind_i,
+  input  ppc_pkg::bat_req_kind_t req_kind_i,
   input  logic [31:0] req_ea_i,
   input  logic [9:0] req_spr_i,
   input  logic [31:0] req_data_i,
@@ -21,7 +21,7 @@ module ppc_bat_service #(
   input  logic req_pr_i,
   output logic rsp_valid_o,
   input  logic rsp_ready_i,
-  output logic [2:0] rsp_kind_o,
+  output ppc_pkg::bat_req_kind_t rsp_kind_o,
   output logic [31:0] rsp_ea_o,
   output logic [9:0] rsp_spr_o,
   output logic [31:0] rsp_data_o,
@@ -44,12 +44,7 @@ module ppc_bat_service #(
   output logic [3:0] rsp_wimg_o,
   output logic [1:0] rsp_pp_o
 );
-  localparam logic [2:0] TRANSLATE_I = 3'd0;
-  localparam logic [2:0] TRANSLATE_READ = 3'd1;
-  localparam logic [2:0] TRANSLATE_WRITE = 3'd2;
-  localparam logic [2:0] SPR_READ = 3'd3;
-  localparam logic [2:0] SPR_WRITE = 3'd4;
-  localparam logic [2:0] PREPARE_WRITE = 3'd5;
+  import ppc_pkg::*;
 
   typedef struct packed {
     logic [8:0] status;
@@ -61,7 +56,7 @@ module ppc_bat_service #(
     logic [1:0] protection;
   } translation_t;
   typedef struct packed {
-    logic [2:0] kind;
+    bat_req_kind_t kind;
     logic [31:0] ea;
     logic [9:0] spr;
     logic [31:0] data;
@@ -73,21 +68,19 @@ module ppc_bat_service #(
 
   // [bank] is 0 for instruction and 1 for data. [entry] is architectural 0..3.
   logic [1:0][3:0][31:0] upper_q, lower_q;
-  logic [3:0][31:0] selected_upper, selected_lower;
-  logic translation_request, csr_request, valid_spr, bank, selected_bank;
+  logic [3:0][31:0] candidate_upper, candidate_lower;
+  logic translation_request, csr_request, valid_spr, bank, translation_bank;
   logic csr_write_candidate, encoding_bad, write_commit, request_fire;
   logic [1:0] entry_index;
   logic [11:0] length_plus_one, extended_length;
-  logic translator_instruction, translator_valid;
-  logic [31:0] translator_ea;
-  translation_t translation;
+  translation_t translation, candidate;
   response_t response_q, response_d;
   logic response_valid_q;
   logic prepared_q, ack_q, prepare_request;
   logic [3:0] prepared_spr_q;
   logic [31:0] prepared_data_q;
 
-  assign prepare_request = ENABLE_RUNTIME_BAT && req_kind_i == PREPARE_WRITE;
+  assign prepare_request = ENABLE_RUNTIME_BAT && req_kind_i == BAT_PREPARE_WRITE;
   assign commit_ack_valid_o = rst_ni && ENABLE_RUNTIME_BAT && ack_q;
   assign transaction_idle_o = rst_ni && !response_valid_q && !prepared_q && !ack_q;
 
@@ -109,16 +102,18 @@ module ppc_bat_service #(
           response_q.translation;
 
   always_comb begin
-    translation_request = req_kind_i == TRANSLATE_I ||
-                          req_kind_i == TRANSLATE_READ || req_kind_i == TRANSLATE_WRITE;
-    csr_request = req_kind_i == SPR_READ || req_kind_i == SPR_WRITE || prepare_request;
+    translation_request = req_kind_i == BAT_TRANSLATE_I ||
+                          req_kind_i == BAT_TRANSLATE_READ ||
+                          req_kind_i == BAT_TRANSLATE_WRITE;
+    csr_request = req_kind_i == BAT_SPR_READ || req_kind_i == BAT_SPR_WRITE ||
+                  prepare_request;
     valid_spr = req_spr_i >= 10'd528 && req_spr_i <= 10'd543;
     bank = req_spr_i[3];
     entry_index = req_spr_i[2:1];
-    selected_bank = translation_request ? (req_kind_i != TRANSLATE_I) : bank;
-    selected_upper = upper_q[selected_bank];
-    selected_lower = lower_q[selected_bank];
-    csr_write_candidate = (req_kind_i == SPR_WRITE || prepare_request) &&
+    translation_bank = req_kind_i != BAT_TRANSLATE_I;
+    candidate_upper = upper_q[bank];
+    candidate_lower = lower_q[bank];
+    csr_write_candidate = (req_kind_i == BAT_SPR_WRITE || prepare_request) &&
                           valid_spr && !req_pr_i;
     extended_length = {1'b0, req_data_i[12:2]};
     length_plus_one = extended_length + 12'd1;
@@ -128,26 +123,18 @@ module ppc_bat_service #(
       ((req_data_i & 32'h0001ff84) != 0 || (!bank && req_data_i[6])) :
       ((req_data_i & 32'h0001e000) != 0 ||
        (extended_length & length_plus_one) != 0);
-    if (csr_write_candidate) begin
-      if (req_spr_i[0]) selected_lower[entry_index] = req_data_i;
-      else selected_upper[entry_index] = req_data_i;
-    end
-    translator_valid = req_valid_i && (translation_request || csr_write_candidate);
-    translator_instruction = translation_request ? req_kind_i == TRANSLATE_I : !bank;
-    translator_ea = translation_request ? req_ea_i : 32'b0;
+    if (req_spr_i[0]) candidate_lower[entry_index] = req_data_i;
+    else candidate_upper[entry_index] = req_data_i;
   end
 
-  // Translation requests observe the committed bank. CSR writes instead ask
-  // this same translator to validate the candidate bank in real mode: its
-  // whole-bank diagnostics apply even when translation is disabled.
-  ppc_bat_translate translator (
-    .valid_i(translator_valid), .instruction_i(translator_instruction),
-    .write_i(translation_request && req_kind_i == TRANSLATE_WRITE),
-    .ea_i(translator_ea),
-    .msr_ir_i(translation_request && req_ir_i),
-    .msr_dr_i(translation_request && req_dr_i),
-    .msr_pr_i(translation_request && req_pr_i),
-    .batu_i(selected_upper), .batl_i(selected_lower),
+  // Only validated banks commit, so translation skips the bank checks.
+  ppc_bat_translate #(.VALIDATE_BANK(1'b0)) translator (
+    .valid_i(req_valid_i && translation_request),
+    .instruction_i(req_kind_i == BAT_TRANSLATE_I),
+    .write_i(req_kind_i == BAT_TRANSLATE_WRITE),
+    .ea_i(req_ea_i),
+    .msr_ir_i(req_ir_i), .msr_dr_i(req_dr_i), .msr_pr_i(req_pr_i),
+    .batu_i(upper_q[translation_bank]), .batl_i(lower_q[translation_bank]),
     .allow_o(translation.status[8]), .bypass_o(translation.status[7]),
     .bat_hit_o(translation.status[6]), .bat_miss_o(translation.status[5]),
     .protection_fault_o(translation.status[4]),
@@ -158,6 +145,28 @@ module ppc_bat_service #(
     .hit_index_o(translation.index), .pa_o(translation.physical),
     .wimg_o(translation.attributes), .pp_o(translation.protection)
   );
+
+  // A CSR write substitutes its data into the addressed bank and validates the
+  // whole candidate bank. Real mode keeps the match logic constant.
+  ppc_bat_translate #(.VALIDATE_BANK(1'b1)) bank_check (
+    .valid_i(req_valid_i && csr_write_candidate), .instruction_i(!bank),
+    .write_i(1'b0), .ea_i(32'b0),
+    .msr_ir_i(1'b0), .msr_dr_i(1'b0), .msr_pr_i(1'b0),
+    .batu_i(candidate_upper), .batl_i(candidate_lower),
+    .allow_o(candidate.status[8]), .bypass_o(candidate.status[7]),
+    .bat_hit_o(candidate.status[6]), .bat_miss_o(candidate.status[5]),
+    .protection_fault_o(candidate.status[4]),
+    .guarded_fault_o(candidate.status[3]),
+    .config_error_o(candidate.status[2]),
+    .invalid_input_o(candidate.status[1]), .overlap_o(candidate.status[0]),
+    .invalid_entry_o(candidate.bad), .match_o(candidate.matched),
+    .hit_index_o(candidate.index), .pa_o(candidate.physical),
+    .wimg_o(candidate.attributes), .pp_o(candidate.protection)
+  );
+  logic _unused_candidate;
+  assign _unused_candidate = ^{candidate.status[8:3], candidate.status[1],
+    candidate.matched, candidate.index, candidate.physical,
+    candidate.attributes, candidate.protection};
 
   always_comb begin
     response_d = '0;
@@ -170,13 +179,13 @@ module ppc_bat_service #(
     end else if (csr_request && valid_spr) begin
       if (req_pr_i) begin
         response_d.privileged = 1'b1;
-      end else if (req_kind_i == SPR_READ) begin
+      end else if (req_kind_i == BAT_SPR_READ) begin
         response_d.data = req_spr_i[0] ? lower_q[bank][entry_index] : upper_q[bank][entry_index];
-      end else if (encoding_bad || translation.status[2]) begin
+      end else if (encoding_bad || candidate.status[2]) begin
         response_d.write_rejected = 1'b1;
         response_d.translation.status[2] = 1'b1;
-        response_d.translation.status[0] = translation.status[0];
-        response_d.translation.bad = translation.bad;
+        response_d.translation.status[0] = candidate.status[0];
+        response_d.translation.bad = candidate.bad;
         if (encoding_bad) response_d.translation.bad[entry_index] = 1'b1;
       end else begin
         write_commit = 1'b1;

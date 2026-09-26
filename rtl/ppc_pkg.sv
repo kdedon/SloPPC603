@@ -1,4 +1,7 @@
 package ppc_pkg;
+  // Standalone MMU profiles compile this package without the core that uses
+  // every constant.
+  // verilator lint_off UNUSEDPARAM
   localparam int IQ_DEPTH = 6;
   localparam int GPR_RENAME_DEPTH = 5;
   localparam int CQ_DEPTH = 5;
@@ -65,6 +68,32 @@ package ppc_pkg;
     fetch_fault_t fault;
     page_miss_t page_miss;
   } fetch_packet_t;
+
+  // MMU request kinds
+  // Unlisted codes return unsupported.
+  typedef enum logic [2:0] {
+    BAT_TRANSLATE_I = 3'd0,
+    BAT_TRANSLATE_READ = 3'd1,
+    BAT_TRANSLATE_WRITE = 3'd2,
+    BAT_SPR_READ = 3'd3,
+    BAT_SPR_WRITE = 3'd4,
+    BAT_PREPARE_WRITE = 3'd5
+  } bat_req_kind_t;
+  typedef enum logic [2:0] {
+    TLB_LOOKUP = 3'd0,
+    TLB_REFILL = 3'd1,
+    TLB_INVALIDATE_SET = 3'd2,
+    TLB_RESERVED = 3'd3,
+    TLB_PREPARE_INVALIDATE = 3'd4,
+    TLB_PREPARE_REFILL = 3'd5
+  } tlb_req_kind_t;
+  typedef enum logic [2:0] {
+    SEG_READ = 3'd0,
+    SEG_WRITE = 3'd1,
+    SEG_SNAPSHOT = 3'd2,
+    SEG_PREPARE = 3'd4
+  } seg_req_kind_t;
+  // End MMU request kinds
   typedef enum logic [4:0] {
     ALU_ADD, ALU_OR, ALU_XOR, ALU_AND, ALU_ANDC,
     ALU_ORC, ALU_NAND, ALU_NOR, ALU_EQV, ALU_ADDC, ALU_ADDE,
@@ -184,3 +213,4 @@ package ppc_pkg;
     logic [31:0] xer_delta;
   } retire_packet_t;
 endpackage
+// verilator lint_on UNUSEDPARAM

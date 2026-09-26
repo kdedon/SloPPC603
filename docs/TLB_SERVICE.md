@@ -28,7 +28,7 @@ Figure 5-7, Figure 5-17 and PEM Table 7-21 were visually inspected as well as te
 
 A request is accepted on a rising edge with `req_valid_i && req_ready_o`. With no runtime proposal or held commit acknowledgment, `req_ready_o = rst_ni && (!response_valid || rsp_ready_i)`. An accepted request captures its entire response and, for a successful kind-1 refill or kind-2 invalidate, changes storage at that edge. A held response blocks every following request; a runtime proposal or acknowledgment also reserves the slot. When an ordinary old response is consumed, one new request may be accepted on that same edge. Kinds 1 and 2 remain already-authorized committed management operations, exposed through the router's normalized test/control port. CPU `tlbie` instead uses opt-in kind 4: preparation is private, the indexed valid bits clear on retirement commit, and a registered acknowledgment is held until consumed. See [TLB_INVALIDATE_PROTOCOL.md](TLB_INVALIDATE_PROTOCOL.md).
 
-Bank 0 is ITLB and bank 1 is DTLB. The service request and response kind fields are now three bits wide. All responses echo accepted kind, bank and EA. Payload outputs are meaningful only while `rsp_valid_o` is asserted.
+Bank 0 is ITLB and bank 1 is DTLB. The service request and response kind fields are three bits wide and typed `ppc_pkg::tlb_req_kind_t`. All responses echo accepted kind, bank and EA. Payload outputs are meaningful only while `rsp_valid_o` is asserted.
 
 | Kind | Inputs used | Behavior |
 | --- | --- | --- |

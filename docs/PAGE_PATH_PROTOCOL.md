@@ -37,7 +37,8 @@ WIMG, PP and C; the current snapshot supplies Ks/Kp/N on every lookup. A VSID
 switch can therefore retain older tagged entries, while an SR permission
 change affects subsequent lookups without rewriting an entry.
 
-A page failure sets `translation_fault_o`, captures its accepted EA and I/D/write
+A page failure that is not returned as a typed ISI, DSI, miss or changed
+result sets `translation_fault_o`, captures its accepted EA and I/D/write
 identity, and sets `page_fault_o` plus one or more explicit sticky diagnostic
 flags: `page_miss_o`, `page_protection_o`, `page_no_execute_o`,
 `page_guarded_o`, `page_direct_store_o`, `page_needs_changed_o`, or
@@ -48,9 +49,9 @@ the fatal diagnostic state and a data page failure returns generic error with
 sole clean page PP/N/G denials use the held ISI/DSI response, and sole clean
 miss or C=0 store outcomes use a held diagnostic cause and captured 68-bit
 context packet. Other failures retain the original diagnostic behavior.
-Generic BAT `fault_miss_o` remains clear for a page-path failure;
-`page_miss_o` specifically identifies a TLB miss. Sticky page flags remain
-observers and cannot identify which accepted request retired.
+For such a failure `fault_miss_o`, `fault_protection_o` and
+`fault_guarded_o` follow the TLB result, so `fault_miss_o` agrees with
+`page_miss_o`. Sticky flags cannot identify which accepted request retired.
 
 ## Normalized TLB test/control interface
 

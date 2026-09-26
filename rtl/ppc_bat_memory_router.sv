@@ -1,6 +1,6 @@
-// Startup-programmed BAT translation between abstract effective and physical
-// instruction/data channels. Optional runtime context comes from committed MSR;
-// Optional runtime CSR transactions reserve validated writes until retirement.
+// Effective-to-physical instruction/data router: BAT translation with optional
+// segment/TLB page fallback, committed MSR context and retirement-prepared
+// BAT, segment and TLB updates.
 module ppc_bat_memory_router #(
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
   parameter bit ENABLE_RUNTIME_BAT = 1'b0,
@@ -156,8 +156,8 @@ module ppc_bat_memory_router #(
   output logic        imem_rsp_valid_o,
   input  logic        imem_rsp_ready_i,
   output logic [31:0] imem_rsp_insn_o,
-  output logic [2:0] imem_rsp_fault_o,
-  output logic [68:0] imem_rsp_page_miss_o,
+  output ppc_pkg::fetch_fault_t imem_rsp_fault_o,
+  output ppc_pkg::page_miss_t imem_rsp_page_miss_o,
   input  logic        dmem_req_valid_i,
   output logic        dmem_req_ready_o,
   input  logic        dmem_req_write_i,
@@ -168,8 +168,8 @@ module ppc_bat_memory_router #(
   input  logic        dmem_rsp_ready_i,
   output logic [31:0] dmem_rsp_rdata_o,
   output logic        dmem_rsp_error_o,
-  output logic [2:0]  dmem_rsp_fault_o,
-  output logic [68:0] dmem_rsp_page_miss_o,
+  output ppc_pkg::data_fault_t dmem_rsp_fault_o,
+  output ppc_pkg::page_miss_t dmem_rsp_page_miss_o,
 
   output logic       translation_fault_o,
   output logic       fault_instruction_o,
@@ -193,22 +193,7 @@ module ppc_bat_memory_router #(
   output logic       ifetch_fatal_o,
   output logic       busy_o
 );
-  // Wire encoding matches the abstract core's fetch_fault_t contract.
-  localparam logic [2:0] FETCH_OK = 3'd0;
-  localparam logic [2:0] FETCH_ISI_PROTECTION = 3'd1;
-  localparam logic [2:0] FETCH_ISI_GUARDED = 3'd2;
-  localparam logic [2:0] FETCH_PAGE_MISS = 3'd3;
-  // Wire encoding matches the abstract core's data_fault_t contract.
-  localparam logic [2:0] DATA_OK = 3'd0;
-  localparam logic [2:0] DATA_DSI_PROTECTION = 3'd1;
-  localparam logic [2:0] DATA_PAGE_MISS = 3'd2;
-  localparam logic [2:0] DATA_PAGE_CHANGED = 3'd3;
-  localparam logic [2:0] TRANSLATE_I = 3'd0;
-  localparam logic [2:0] TRANSLATE_READ = 3'd1;
-  localparam logic [2:0] TRANSLATE_WRITE = 3'd2;
-  localparam logic [2:0] SPR_WRITE = 3'd4;
-  localparam logic [2:0] SPR_READ = 3'd3;
-  localparam logic [2:0] PREPARE_WRITE = 3'd5;
+  import ppc_pkg::*;
 
   typedef enum logic [3:0] {
     ROUTE_IDLE,
@@ -229,13 +214,13 @@ module ppc_bat_memory_router #(
   route_state_t state_q;
   logic running_q, context_ir_q, context_dr_q, context_pr_q;
   logic request_ir_q, request_dr_q, request_pr_q;
-  logic [2:0] fetch_fault_q;
-  logic [2:0] data_fault_q;
+  fetch_fault_t fetch_fault_q;
+  data_fault_t data_fault_q;
   logic last_grant_data_q, owner_instruction_q, owner_write_q;
   logic [31:0] request_ea_q, request_wdata_q;
   logic [3:0] request_wstrb_q;
   logic [31:0] page_sr_q;
-  logic [68:0] page_miss_result_q;
+  page_miss_t page_miss_result_q;
   logic [31:0] physical_addr_q;
   logic [3:0] physical_wimg_q;
 
@@ -249,12 +234,12 @@ module ppc_bat_memory_router #(
   logic choose_instruction, choose_data;
 
   logic bat_req_valid, bat_req_ready;
-  logic [2:0] bat_req_kind;
+  bat_req_kind_t bat_req_kind;
   logic [31:0] bat_req_ea;
   logic [9:0] bat_req_spr;
   logic [31:0] bat_req_data;
   logic bat_rsp_valid, bat_rsp_ready;
-  logic [2:0] bat_rsp_kind;
+  bat_req_kind_t bat_rsp_kind;
   logic [31:0] bat_rsp_ea, bat_rsp_data, bat_rsp_pa;
   logic [9:0] bat_rsp_spr;
   logic bat_rsp_privileged, bat_rsp_unsupported, bat_rsp_write_rejected;
@@ -274,7 +259,7 @@ module ppc_bat_memory_router #(
   logic segment_owner_q, segment_offer, segment_service_idle;
   logic segment_req_valid, segment_req_ready;
   logic segment_rsp_valid, segment_rsp_ready;
-  logic [2:0] segment_rsp_kind;
+  seg_req_kind_t segment_rsp_kind;
   logic [3:0] segment_rsp_index;
   logic [31:0] segment_rsp_address, segment_rsp_data;
   logic segment_rsp_privileged, segment_rsp_unsupported;
@@ -287,7 +272,7 @@ module ppc_bat_memory_router #(
   logic tlb_commit_ack, tlb_transaction_idle;
   logic tlb_mgmt_owner_q, tlb_mgmt_offer;
   logic tlb_req_valid, tlb_req_ready;
-  logic [2:0] tlb_req_kind;
+  tlb_req_kind_t tlb_req_kind;
   logic tlb_req_bank, tlb_req_pr, tlb_req_ks, tlb_req_kp;
   logic tlb_req_n, tlb_req_t, tlb_req_write, tlb_req_way, tlb_req_c;
   logic [31:0] tlb_req_ea;
@@ -296,7 +281,7 @@ module ppc_bat_memory_router #(
   logic [3:0] tlb_req_wimg;
   logic [1:0] tlb_req_pp;
   logic tlb_rsp_valid, tlb_rsp_ready, tlb_rsp_bank;
-  logic [2:0] tlb_rsp_kind;
+  tlb_req_kind_t tlb_rsp_kind;
   logic [1:0] tlb_rsp_match, tlb_rsp_pp;
   logic [31:0] tlb_rsp_ea, tlb_rsp_pa;
   logic [3:0] tlb_rsp_wimg;
@@ -313,6 +298,7 @@ module ppc_bat_memory_router #(
   logic clean_page_instruction_pp, clean_page_instruction_guarded;
   logic clean_page_instruction_no_execute;
   logic clean_page_miss_base, clean_page_true_miss, clean_page_changed;
+  logic bat_fetch_isi, bat_data_dsi, bat_typed_fault, page_typed_fault;
   logic page_fault_q, page_miss_q, page_protection_q;
   logic page_no_execute_q, page_guarded_q, page_direct_store_q;
   logic page_needs_changed_q, page_config_q;
@@ -393,7 +379,7 @@ module ppc_bat_memory_router #(
     tlb_fill_owner_q && tlb_rsp_valid;
   assign tlb_fill_rsp_error_o = tlb_rsp_privileged ||
     tlb_rsp_refill_rejected || tlb_rsp_unsupported ||
-    tlb_rsp_invalid_input || tlb_rsp_kind != 3'd5 ||
+    tlb_rsp_invalid_input || tlb_rsp_kind != TLB_PREPARE_REFILL ||
     tlb_rsp_bank != tlb_fill_bank_q || tlb_rsp_ea != tlb_fill_ea_q;
   assign tlb_fill_ack_valid_o = ENABLE_TLB_LOAD &&
     tlb_fill_owner_q && tlb_commit_ack;
@@ -436,11 +422,11 @@ module ppc_bat_memory_router #(
     (tlb_inv_offer && tlb_inv_req_valid_i) ||
     (tlb_fill_offer && tlb_fill_req_valid_i) ||
     (ENABLE_PAGE_TRANSLATION && state_q == ROUTE_PAGE_OFFER);
-  assign tlb_req_kind = state_q == ROUTE_PAGE_OFFER ? 3'd0 :
-    (tlb_inv_offer && tlb_inv_req_valid_i ? 3'd4 :
-      (tlb_fill_offer && tlb_fill_req_valid_i ? 3'd5 :
-        ((tlb_mgmt_req_kind_i == 2'd1 || tlb_mgmt_req_kind_i == 2'd2) ?
-          {1'b0, tlb_mgmt_req_kind_i} : 3'd3)));
+  assign tlb_req_kind = state_q == ROUTE_PAGE_OFFER ? TLB_LOOKUP :
+    (tlb_inv_offer && tlb_inv_req_valid_i ? TLB_PREPARE_INVALIDATE :
+      (tlb_fill_offer && tlb_fill_req_valid_i ? TLB_PREPARE_REFILL :
+        (tlb_mgmt_req_kind_i == 2'd1 ? TLB_REFILL :
+          (tlb_mgmt_req_kind_i == 2'd2 ? TLB_INVALIDATE_SET : TLB_RESERVED))));
   assign tlb_req_bank = state_q == ROUTE_PAGE_OFFER ?
     !owner_instruction_q :
     (tlb_inv_offer && tlb_inv_req_valid_i ? 1'b0 :
@@ -492,7 +478,7 @@ module ppc_bat_memory_router #(
     !(|bat_rsp_invalid_entry) && !bat_rsp_privileged &&
     !bat_rsp_unsupported && !bat_rsp_write_rejected &&
     (owner_instruction_q ? request_ir_q : request_dr_q);
-  assign page_reply_config = tlb_rsp_kind != 3'd0 ||
+  assign page_reply_config = tlb_rsp_kind != TLB_LOOKUP ||
     tlb_rsp_bank != !owner_instruction_q || tlb_rsp_ea != request_ea_q ||
     tlb_rsp_invalid_input || tlb_rsp_privileged ||
     tlb_rsp_refill_rejected || tlb_rsp_unsupported ||
@@ -508,7 +494,7 @@ module ppc_bat_memory_router #(
   // The held data response carries the typed cause; sticky pins are diagnostics.
   assign clean_page_data_pp = ENABLE_PAGE_DATA_EXCEPTIONS &&
     !owner_instruction_q && !page_reply_config &&
-    tlb_rsp_kind == 3'd0 && tlb_rsp_bank &&
+    tlb_rsp_kind == TLB_LOOKUP && tlb_rsp_bank &&
     tlb_rsp_ea == request_ea_q && tlb_rsp_hit &&
     !tlb_rsp_allow && tlb_rsp_protection && !tlb_rsp_miss &&
     !tlb_rsp_guarded && !tlb_rsp_no_execute &&
@@ -520,7 +506,7 @@ module ppc_bat_memory_router #(
   assign clean_page_instruction_base =
     ENABLE_PAGE_INSTRUCTION_EXCEPTIONS && owner_instruction_q &&
     !page_reply_config && !page_sr_q[31] &&
-    tlb_rsp_kind == 3'd0 && !tlb_rsp_bank &&
+    tlb_rsp_kind == TLB_LOOKUP && !tlb_rsp_bank &&
     tlb_rsp_ea == request_ea_q && !tlb_rsp_allow && !tlb_rsp_miss &&
     !tlb_rsp_direct_store && !tlb_rsp_needs_changed &&
     !tlb_rsp_privileged && !tlb_rsp_refill_rejected &&
@@ -539,7 +525,7 @@ module ppc_bat_memory_router #(
   // cannot be recast as a changed-bit request.
   assign clean_page_miss_base = ENABLE_PAGE_MISS_RESULTS &&
     !page_reply_config && !page_sr_q[31] &&
-    tlb_rsp_kind == 3'd0 && tlb_rsp_bank == !owner_instruction_q &&
+    tlb_rsp_kind == TLB_LOOKUP && tlb_rsp_bank == !owner_instruction_q &&
     tlb_rsp_ea == request_ea_q && !tlb_rsp_allow &&
     !tlb_rsp_protection && !tlb_rsp_guarded &&
     !tlb_rsp_no_execute && !tlb_rsp_direct_store &&
@@ -555,6 +541,20 @@ module ppc_bat_memory_router #(
     (tlb_rsp_match == 2'b01 || tlb_rsp_match == 2'b10) &&
     tlb_rsp_way == tlb_rsp_match[1] &&
     !tlb_rsp_c && tlb_rsp_r;
+  // Typed faults return to the core as resumable exceptions. Only the
+  // remaining diagnostic outcomes set the sticky fault and page outputs.
+  // Protection outranks guarded, matching the page path.
+  assign bat_fetch_isi = ENABLE_LIVE_CONTEXT && !bat_rsp_miss &&
+    !bat_rsp_config && !bat_rsp_invalid_input &&
+    (bat_rsp_protection || bat_rsp_guarded);
+  assign bat_data_dsi = ENABLE_DATA_EXCEPTIONS && bat_rsp_hit &&
+    bat_rsp_protection && !bat_rsp_miss && !bat_rsp_config &&
+    !bat_rsp_invalid_input && !(|bat_rsp_invalid_entry) && !bat_rsp_guarded;
+  assign bat_typed_fault = owner_instruction_q ? bat_fetch_isi : bat_data_dsi;
+  assign page_typed_fault = owner_instruction_q ?
+    (clean_page_true_miss || clean_page_instruction_pp ||
+     clean_page_instruction_guarded || clean_page_instruction_no_execute) :
+    (clean_page_data_pp || clean_page_true_miss || clean_page_changed);
   assign service_pr = running_q &&
     ((csr_offer && bat_csr_req_valid_i) ? context_pr_q : request_pr_q);
 
@@ -564,7 +564,7 @@ module ppc_bat_memory_router #(
   assign imem_rsp_valid_o = imem_rsp_valid;
   assign imem_rsp_page_miss_o = (ENABLE_PAGE_MISS_RESULTS &&
     imem_rsp_valid && imem_rsp_fault_o == FETCH_PAGE_MISS) ?
-    page_miss_result_q : 69'b0;
+    page_miss_result_q : '0;
   assign imem_rsp_insn_o = imem_rsp_insn;
   assign imem_rsp_ready = imem_rsp_ready_i;
   assign dmem_req_valid = dmem_req_valid_i;
@@ -577,7 +577,7 @@ module ppc_bat_memory_router #(
   assign dmem_rsp_page_miss_o = (ENABLE_PAGE_MISS_RESULTS &&
     dmem_rsp_valid && (dmem_rsp_fault_o == DATA_PAGE_MISS ||
                        dmem_rsp_fault_o == DATA_PAGE_CHANGED)) ?
-    page_miss_result_q : 69'b0;
+    page_miss_result_q : '0;
   assign dmem_rsp_rdata_o = dmem_rsp_rdata;
   assign dmem_rsp_error_o = dmem_rsp_error;
   assign dmem_rsp_ready = dmem_rsp_ready_i;
@@ -622,7 +622,7 @@ module ppc_bat_memory_router #(
   // BAT service.  A setup response must be consumed before start is accepted.
   always_comb begin
     bat_req_valid = 1'b0;
-    bat_req_kind = SPR_WRITE;
+    bat_req_kind = BAT_SPR_WRITE;
     bat_req_ea = 32'b0;
     bat_req_spr = bat_write_spr_i;
     bat_req_data = bat_write_data_i;
@@ -630,14 +630,14 @@ module ppc_bat_memory_router #(
       bat_req_valid = bat_write_valid_i && !tlb_mgmt_owner_q;
     end else if (state_q == ROUTE_TRANSLATE_OFFER) begin
       bat_req_valid = 1'b1;
-      bat_req_kind = owner_instruction_q ? TRANSLATE_I :
-                     (owner_write_q ? TRANSLATE_WRITE : TRANSLATE_READ);
+      bat_req_kind = owner_instruction_q ? BAT_TRANSLATE_I :
+                     (owner_write_q ? BAT_TRANSLATE_WRITE : BAT_TRANSLATE_READ);
       bat_req_ea = request_ea_q;
       bat_req_spr = 10'b0;
       bat_req_data = 32'b0;
     end else if (csr_offer) begin
       bat_req_valid = bat_csr_req_valid_i;
-      bat_req_kind = bat_csr_req_write_i ? PREPARE_WRITE : SPR_READ;
+      bat_req_kind = bat_csr_req_write_i ? BAT_PREPARE_WRITE : BAT_SPR_READ;
       bat_req_spr = bat_csr_req_spr_i;
       bat_req_data = bat_csr_req_data_i;
     end
@@ -666,8 +666,8 @@ module ppc_bat_memory_router #(
                         segment_csr_ack_ready_i),
     .transaction_idle_o(segment_service_idle),
     .req_valid_i(segment_req_valid), .req_ready_o(segment_req_ready),
-    .req_kind_i(state_q == ROUTE_SEGMENT_OFFER ? 3'd2 :
-                (segment_csr_req_write_i ? 3'd4 : 3'd0)),
+    .req_kind_i(state_q == ROUTE_SEGMENT_OFFER ? SEG_SNAPSHOT :
+                (segment_csr_req_write_i ? SEG_PREPARE : SEG_READ)),
     .req_indexed_i(1'b0),
     .req_index_i(state_q == ROUTE_SEGMENT_OFFER ? request_ea_q[31:28] :
                  segment_csr_req_index_i),
@@ -840,7 +840,7 @@ module ppc_bat_memory_router #(
       request_wdata_q <= 32'b0;
       request_wstrb_q <= 4'b0;
       page_sr_q <= 32'b0;
-      page_miss_result_q <= 69'b0;
+      page_miss_result_q <= '0;
       physical_addr_q <= 32'b0;
       physical_wimg_q <= 4'b0;
       fault_q <= 1'b0;
@@ -906,7 +906,7 @@ module ppc_bat_memory_router #(
             owner_write_q <= choose_data && dmem_req_write;
             request_ea_q <= choose_instruction ? imem_req_addr :
                                                   dmem_req_addr;
-            page_miss_result_q <= 69'b0;
+            page_miss_result_q <= '0;
             request_wdata_q <= choose_data ? dmem_req_wdata : 32'b0;
             request_wstrb_q <= choose_data ? dmem_req_wstrb : 4'b1111;
             last_grant_data_q <= choose_data;
@@ -928,22 +928,20 @@ module ppc_bat_memory_router #(
             end else if (clean_bat_page_miss) begin
               state_q <= ROUTE_SEGMENT_OFFER;
             end else begin
-              fault_q <= 1'b1;
-              fault_instruction_q <= owner_instruction_q;
-              fault_write_q <= owner_write_q;
-              fault_ea_q <= request_ea_q;
-              fault_miss_q <= bat_rsp_miss;
-              fault_protection_q <= bat_rsp_protection;
-              fault_guarded_q <= bat_rsp_guarded;
-              fault_config_q <= bat_rsp_config;
-              fault_invalid_input_q <= bat_rsp_invalid_input;
-              fault_invalid_entry_q <= bat_rsp_invalid_entry;
+              if (!bat_typed_fault) begin
+                fault_q <= 1'b1;
+                fault_instruction_q <= owner_instruction_q;
+                fault_write_q <= owner_write_q;
+                fault_ea_q <= request_ea_q;
+                fault_miss_q <= bat_rsp_miss;
+                fault_protection_q <= bat_rsp_protection;
+                fault_guarded_q <= bat_rsp_guarded;
+                fault_config_q <= bat_rsp_config;
+                fault_invalid_input_q <= bat_rsp_invalid_input;
+                fault_invalid_entry_q <= bat_rsp_invalid_entry;
+              end
               if (owner_instruction_q) begin
-                // The narrow typed carrier represents exactly one cause.
-                // Miss/configuration/combined causes remain diagnostics.
-                if (ENABLE_LIVE_CONTEXT && !bat_rsp_miss && !bat_rsp_config &&
-                    !bat_rsp_invalid_input &&
-                    (bat_rsp_protection ^ bat_rsp_guarded)) begin
+                if (bat_fetch_isi) begin
                   fetch_fault_q <= bat_rsp_protection ?
                     FETCH_ISI_PROTECTION : FETCH_ISI_GUARDED;
                   state_q <= ROUTE_IFETCH_FAULT_RESPONSE;
@@ -952,14 +950,7 @@ module ppc_bat_memory_router #(
                   state_q <= ROUTE_IFETCH_FATAL;
                 end
               end else begin
-                // Only a valid BAT hit denied by PP is a resumable DSI.
-                // Misses and malformed configurations remain diagnostics.
-                data_fault_q <= (ENABLE_DATA_EXCEPTIONS && bat_rsp_hit &&
-                                 bat_rsp_protection && !bat_rsp_miss &&
-                                 !bat_rsp_config && !bat_rsp_invalid_input &&
-                                 !(|bat_rsp_invalid_entry) &&
-                                 !bat_rsp_guarded) ?
-                  DATA_DSI_PROTECTION : DATA_OK;
+                data_fault_q <= bat_data_dsi ? DATA_DSI_PROTECTION : DATA_OK;
                 state_q <= ROUTE_DATA_FAULT_RESPONSE;
               end
             end
@@ -973,7 +964,7 @@ module ppc_bat_memory_router #(
 
         ROUTE_SEGMENT_RESPONSE: begin
           if (segment_rsp_valid) begin
-            if (segment_rsp_kind == 3'd2 &&
+            if (segment_rsp_kind == SEG_SNAPSHOT &&
                 segment_rsp_index == request_ea_q[31:28] &&
                 segment_rsp_address == request_ea_q &&
                 !segment_rsp_privileged && !segment_rsp_unsupported) begin
@@ -1016,37 +1007,38 @@ module ppc_bat_memory_router #(
               physical_wimg_q <= tlb_rsp_wimg;
               state_q <= ROUTE_PHYSICAL_OFFER;
             end else begin
-              // Exact page misses and C=0 stores carry their request-time
-              // context through the held response; all other failures remain
-              // the existing typed exception or ordered diagnostic.
+              // Page misses and C=0 stores carry their request-time context
+              // through the held response.
               page_miss_result_q <= (clean_page_true_miss ||
                                      clean_page_changed) ?
-                {request_ea_q, page_sr_q, request_pr_q, request_ir_q,
-                 request_dr_q, owner_write_q,
-                 (clean_page_changed && tlb_rsp_way)} : 69'b0;
-              fault_q <= 1'b1;
-              fault_instruction_q <= owner_instruction_q;
-              fault_write_q <= owner_write_q;
-              fault_ea_q <= request_ea_q;
-              fault_miss_q <= 1'b0;
-              fault_protection_q <= 1'b0;
-              fault_guarded_q <= 1'b0;
-              fault_config_q <= page_reply_config;
-              fault_invalid_input_q <= tlb_rsp_invalid_input;
-              fault_invalid_entry_q <= '0;
-              page_fault_q <= 1'b1;
-              page_miss_q <= page_miss_q || tlb_rsp_miss;
-              page_protection_q <= page_protection_q || tlb_rsp_protection;
-              page_no_execute_q <= page_no_execute_q || tlb_rsp_no_execute;
-              page_guarded_q <= page_guarded_q || tlb_rsp_guarded;
-              page_direct_store_q <= page_direct_store_q || tlb_rsp_direct_store;
-              page_needs_changed_q <= page_needs_changed_q ||
-                                      tlb_rsp_needs_changed;
-              page_config_q <= page_config_q || page_reply_config;
+                page_miss_t'{ea: request_ea_q, sr: page_sr_q,
+                             pr: request_pr_q, ir: request_ir_q,
+                             dr: request_dr_q, write: owner_write_q,
+                             way: clean_page_changed && tlb_rsp_way} : '0;
+              if (!page_typed_fault) begin
+                fault_q <= 1'b1;
+                fault_instruction_q <= owner_instruction_q;
+                fault_write_q <= owner_write_q;
+                fault_ea_q <= request_ea_q;
+                fault_miss_q <= tlb_rsp_miss;
+                fault_protection_q <= tlb_rsp_protection;
+                fault_guarded_q <= tlb_rsp_guarded;
+                fault_config_q <= page_reply_config;
+                fault_invalid_input_q <= tlb_rsp_invalid_input;
+                fault_invalid_entry_q <= '0;
+                page_fault_q <= 1'b1;
+                page_miss_q <= page_miss_q || tlb_rsp_miss;
+                page_protection_q <= page_protection_q || tlb_rsp_protection;
+                page_no_execute_q <= page_no_execute_q || tlb_rsp_no_execute;
+                page_guarded_q <= page_guarded_q || tlb_rsp_guarded;
+                page_direct_store_q <= page_direct_store_q ||
+                                       tlb_rsp_direct_store;
+                page_needs_changed_q <= page_needs_changed_q ||
+                                        tlb_rsp_needs_changed;
+                page_config_q <= page_config_q || page_reply_config;
+              end
               if (owner_instruction_q) begin
-                if (clean_page_true_miss || clean_page_instruction_pp ||
-                    clean_page_instruction_guarded ||
-                    clean_page_instruction_no_execute) begin
+                if (page_typed_fault) begin
                   fetch_fault_q <= clean_page_true_miss ? FETCH_PAGE_MISS :
                     (clean_page_instruction_pp ? FETCH_ISI_PROTECTION :
                                                  FETCH_ISI_GUARDED);
@@ -1219,17 +1211,8 @@ module ppc_bat_memory_router #(
     state_q == ROUTE_DATA_FAULT_RESPONSE |-> !pdmem_req_valid_o);
   // synthesis translate_on
 
-  // Keep service response fields visible to lint while the wrapper consumes
-  // only the authorization, PA, WIMG, and fault subset.
-  logic _unused_segment_response;
-  assign _unused_segment_response = ^{segment_rsp_kind,
-    segment_rsp_index, segment_rsp_address};
-  logic _unused_tlb_response;
-  assign _unused_tlb_response = ^{page_sr_q[27:24], tlb_rsp_hit, tlb_rsp_match, tlb_rsp_way,
-    tlb_rsp_pp, tlb_rsp_c, tlb_rsp_r};
-  logic _unused_bat_response;
-  assign _unused_bat_response = ^{bat_rsp_kind, bat_rsp_ea, bat_rsp_spr,
-    bat_rsp_data, bat_rsp_privileged, bat_rsp_unsupported,
-    bat_rsp_write_rejected, bat_rsp_bypass, bat_rsp_hit, bat_rsp_overlap,
-    bat_rsp_match, bat_rsp_hit_index, bat_rsp_pp};
+  // Service echo and attribute fields left unused here.
+  logic _unused_response;
+  assign _unused_response = ^{bat_rsp_kind, bat_rsp_ea, bat_rsp_spr,
+    bat_rsp_match, bat_rsp_hit_index, bat_rsp_pp, tlb_rsp_pp};
 endmodule

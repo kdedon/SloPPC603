@@ -604,7 +604,7 @@ module tb_tlb_runtime_invalidate_router;
     invalidate_wait_idle();
     data_access(0, 32'h1000_2234, 1, {RPN_A, 12'h234}, 4'h2);
     data_access(0, EA, 0, 0, 0);
-    check(page_miss_o && !fault_miss_o && !page_config_o,
+    check(page_miss_o && fault_miss_o && !page_config_o,
           "post-invalidate page miss classification");
 
     // Privileged CPU request returns an error with no reservation or mutation.

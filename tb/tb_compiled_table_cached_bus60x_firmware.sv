@@ -431,8 +431,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
       check(!halted&&!cut_accepted&&!pimem_error&&!ifetch_error&&
         !bus_error&&!interrupt_taken&&!decrementer_taken,
          $sformatf("unexpected transport or translation failure halted=%b cut=%b pimem=%b ifetch=%b bus=%b translation=%b interrupt=%b dec=%b ea=%08x fi=%b fw=%b fm=%b fp=%b fg=%b fc=%b msr=%08x misses=%0d retired=%0d",halted,cut_accepted,pimem_error,ifetch_error,bus_error,translation_fault,interrupt_taken,decrementer_taken,unused_fault_ea,unused_fault_instruction,unused_fault_write,unused_fault_miss,unused_fault_protection,unused_fault_guarded,unused_fault_config,dut.translated_core.core.msr,search_misses,retires));
-      if(search_misses>0||fault_misses>0)
-        check(translation_fault,"router missed sticky page diagnostic");
+      check(!translation_fault,"typed page miss set sticky diagnostic");
       check(!unused_page_ports[1]&&!bat_valid&&!bat_rsp&&
         !bat_rejected&&!bat_unsupported&&!bat_config&&!bat_overlap&&
         bat_invalid==0,"external management unexpectedly active");

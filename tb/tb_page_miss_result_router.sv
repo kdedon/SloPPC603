@@ -327,11 +327,21 @@ module tb_page_miss_result_router #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1)
             "page miss leaked physical offer or lost ownership");
     end
     check(cycles<30,"page miss result timed out");
-    check(page_fault_o&&fault_ea_o==EA&&
-          page_miss_o==(!changed_expected)&&
-          page_needs_changed_o==changed_expected&&
-          !pimem_req_valid_o&&!pdmem_req_valid_o,
-          "page miss/changed diagnostics or captured EA");
+    // Typed results leave the sticky outputs clear; diagnostics report the
+    // miss consistently on both the generic and page outputs.
+    if(ENABLE_PAGE_MISS_RESULTS)
+      check(!page_fault_o&&!translation_fault_o&&
+            dut.tlb_rsp_miss==(!changed_expected)&&
+            dut.tlb_rsp_needs_changed==changed_expected&&
+            !pimem_req_valid_o&&!pdmem_req_valid_o,
+            "typed page miss/changed classification");
+    else
+      check(page_fault_o&&translation_fault_o&&fault_ea_o==EA&&
+            page_miss_o==(!changed_expected)&&
+            fault_miss_o==(!changed_expected)&&
+            page_needs_changed_o==changed_expected&&
+            !pimem_req_valid_o&&!pdmem_req_valid_o,
+            "page miss/changed diagnostics or captured EA");
     if(ENABLE_PAGE_MISS_RESULTS)begin
       if(instruction_req)
         check(imem_rsp_valid_o&&!ifetch_fatal_o&&
@@ -389,7 +399,7 @@ module tb_page_miss_result_router #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1)
     end
     check(cycles<30,"poisoned service miss absent");
     if(mixed)force dut.tlb_rsp_protection=1'b1;
-    else force dut.tlb_rsp_kind=3'd3;
+    else force dut.tlb_rsp_kind=ppc_pkg::TLB_RESERVED;
     @(posedge clk_i);@(negedge clk_i);
     if(mixed)release dut.tlb_rsp_protection;
     else release dut.tlb_rsp_kind;

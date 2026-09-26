@@ -519,10 +519,19 @@ module tb_page_instruction_exception_router #(parameter bit ENABLE_PAGE_INSTRUCT
             "denied page fetch leaked physical/management offer");
     end
     check(timeout_count<30,"page fetch denial timed out");
-    check(page_fault_o&&page_no_execute_o==expect_n&&
-          page_guarded_o==expect_g&&page_protection_o==expect_pp&&
-          !page_config_o&&fault_instruction_o&&fault_ea_o==EA&&
-          !pimem_req_valid_o,"page fetch classification/EA");
+    // A typed ISI leaves the sticky outputs clear; its cause is read from
+    // the consumed lookup response instead.
+    if(ENABLE_PAGE_INSTRUCTION_EXCEPTIONS&&cause!=0)
+      check(!page_fault_o&&!translation_fault_o&&
+            dut.tlb_rsp_no_execute==expect_n&&
+            dut.tlb_rsp_guarded==expect_g&&
+            dut.tlb_rsp_protection==expect_pp&&!pimem_req_valid_o,
+            "typed page fetch classification");
+    else
+      check(page_fault_o&&page_no_execute_o==expect_n&&
+            page_guarded_o==expect_g&&page_protection_o==expect_pp&&
+            !page_config_o&&fault_instruction_o&&fault_ea_o==EA&&
+            !pimem_req_valid_o,"page fetch classification/EA");
     if(ENABLE_PAGE_INSTRUCTION_EXCEPTIONS&&cause!=0)begin
       check(imem_rsp_valid_o&&!ifetch_fatal_o&&
             imem_rsp_fault_o==cause&&imem_rsp_insn_o==0,
@@ -566,7 +575,7 @@ module tb_page_instruction_exception_router #(parameter bit ENABLE_PAGE_INSTRUCT
     end
     check(timeout_count<30,"poisoned lookup response absent");
     if(mixed_cause)force dut.tlb_rsp_guarded=1'b1;
-    else force dut.tlb_rsp_kind=3'd3;
+    else force dut.tlb_rsp_kind=ppc_pkg::TLB_RESERVED;
     @(posedge clk_i);@(negedge clk_i);
     if(mixed_cause)release dut.tlb_rsp_guarded;
     else release dut.tlb_rsp_kind;

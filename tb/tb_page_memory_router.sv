@@ -366,7 +366,8 @@ module tb_page_memory_router;
     end else begin
       check(dmem_rsp_valid_o && !pdmem_req_valid_o &&
             dmem_rsp_error_o && dmem_rsp_fault_o == 0 &&
-            page_fault_o && !fault_protection_o,
+            page_fault_o && translation_fault_o && fault_ea_o == ea &&
+            fault_write_o == write_req,
             "page denial leaked physical access or architectural cause");
       @(negedge clk_i);
       tlb_mgmt_req_valid_i = 1; segment_csr_req_valid_i = 1;
@@ -488,8 +489,9 @@ module tb_page_memory_router;
     end
     check(timeout_count < 20 && ifetch_fatal_o && page_fault_o &&
           page_no_execute_o == expect_n && page_guarded_o == expect_g &&
-          !page_config_o && !fault_protection_o && !fault_guarded_o &&
-          !fault_miss_o && fault_instruction_o && fault_ea_o == EA,
+          !page_config_o && !fault_protection_o &&
+          fault_guarded_o == expect_g && !fault_miss_o &&
+          fault_instruction_o && fault_ea_o == EA,
           "instruction page diagnostic classification");
     repeat (3) begin
       @(posedge clk_i); #1;
@@ -531,7 +533,7 @@ module tb_page_memory_router;
     // A genuine page miss stays diagnostic and cannot issue an identity PA.
     data_access(0, 32'h1000_5234, 0, 0, 0);
     check(page_miss_o && !page_config_o && !page_protection_o &&
-          translation_fault_o && !fault_miss_o, "page-miss diagnostics");
+          translation_fault_o && fault_miss_o, "page-miss diagnostics");
     // Key selection is sampled from the live committed SR and PR context.
     reset_all();
     manage(2'd1, 1, EA, VSID_A, 0, RPN_A, 1, 4'h5, 2'b00, 0);

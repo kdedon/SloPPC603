@@ -371,8 +371,10 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
       check(dmem_rsp_valid_o && !pdmem_req_valid_o &&
             dmem_rsp_error_o == !expect_typed &&
             dmem_rsp_fault_o == (expect_typed ? 3'd1 : 3'd0) &&
-            dmem_rsp_rdata_o == 0 && page_fault_o &&
-            !fault_protection_o,
+            dmem_rsp_rdata_o == 0 &&
+            (expect_typed ? !page_fault_o && !translation_fault_o :
+             page_fault_o && translation_fault_o && fault_ea_o == ea &&
+             fault_write_o == write_req),
             "page denial produced wrong typed cause or physical offer");
       @(negedge clk_i);
       tlb_mgmt_req_valid_i = 1; segment_csr_req_valid_i = 1;
@@ -519,7 +521,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     end
     check(timeout_count<30,"poisoned service response not produced");
     if(mixed_cause)force dut.tlb_rsp_guarded=1'b1;
-    else force dut.tlb_rsp_kind=3'd3;
+    else force dut.tlb_rsp_kind=ppc_pkg::TLB_RESERVED;
     @(posedge clk_i);@(negedge clk_i);
     if(mixed_cause)release dut.tlb_rsp_guarded;
     else release dut.tlb_rsp_kind;
@@ -539,7 +541,9 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     start_router(1,1,0);
     set_sr(4'd1,32'h4000_0000|{8'h00,VSID_A});
     data_access(0,EA,0,0,0,ENABLE_PAGE_DATA_EXCEPTIONS);
-    check(page_protection_o&&!page_miss_o&&!page_needs_changed_o&&
+    // Typed DSIs leave the sticky diagnostic outputs clear.
+    check(ENABLE_PAGE_DATA_EXCEPTIONS ? !page_protection_o&&!page_fault_o :
+          page_protection_o&&!page_miss_o&&!page_needs_changed_o&&
           fault_ea_o==EA&&!fault_write_o,
           "Ks/PP load denial did not retain EA and classification");
     set_sr(4'd1,{8'h00,VSID_A});
@@ -552,7 +556,8 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     set_sr(4'd1,32'h2000_0000|{8'h00,VSID_A});
     set_context(1,1,1);
     data_access(0,EA,0,0,0,ENABLE_PAGE_DATA_EXCEPTIONS);
-    check(page_protection_o&&context_pr_o&&!fault_write_o,
+    check(context_pr_o&&(ENABLE_PAGE_DATA_EXCEPTIONS ? !page_fault_o :
+          page_protection_o&&!fault_write_o),
           "Kp/PP user load denial lost privilege snapshot");
 
     // PP=11 store denial beats C-bit work, even when K=0.
@@ -561,7 +566,8 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     start_router(1,1,0);
     set_sr(4'd1,{8'h00,VSID_A});
     data_access(1,EA,0,0,0,ENABLE_PAGE_DATA_EXCEPTIONS);
-    check(page_protection_o&&!page_needs_changed_o&&fault_write_o&&
+    check(ENABLE_PAGE_DATA_EXCEPTIONS ? !page_fault_o&&!page_needs_changed_o :
+          page_protection_o&&!page_needs_changed_o&&fault_write_o&&
           fault_ea_o==EA,"PP store denial became C update or lost write");
 
     // A C=0 store and a genuine miss remain legacy diagnostics.
