@@ -1,6 +1,5 @@
-// Fixed 16-step radix-4 restoring divider. The algorithm operates on unsigned
-// magnitudes and restores the quotient sign for DIVW. Exceptional architectural
-// inputs use the scaffold's deterministic zero-result policy.
+// 16-step radix-4 restoring divider on unsigned magnitudes; DIVW restores the
+// quotient sign. Divide by zero and signed overflow return zero.
 module ppc_divider (
   input logic clk_i, rst_ni,
   input logic start_i,
@@ -56,47 +55,25 @@ module ppc_divider (
   end
   assign next_quotient = {quotient_q, quotient_digit};
 
+  // Start has priority so exact-token cancellation and a surviving
+  // replacement can share an edge without dropping the replacement.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       busy_o <= 1'b0;
       quotient_valid_o <= 1'b0;
       quotient_o <= 32'b0;
-      remainder_q <= 32'b0;
-      dividend_q <= 32'b0;
-      divisor_q <= 32'b0;
-      quotient_q <= 30'b0;
-      quotient_negative_q <= 1'b0;
-      exceptional_q <= 1'b0;
       iterations_left_q <= 5'b0;
     end else if (start_i) begin
-      // Start has priority so exact-token cancellation and a surviving
-      // replacement can share an edge without dropping the replacement.
       busy_o <= 1'b1;
       quotient_valid_o <= 1'b0;
       quotient_o <= 32'b0;
-      remainder_q <= 32'b0;
-      dividend_q <= start_dividend_magnitude;
-      divisor_q <= start_exceptional ? 32'd1 : start_divisor_magnitude;
-      quotient_q <= 30'b0;
-      quotient_negative_q <= signed_i &&
-        (dividend_i[31] != divisor_i[31]);
-      exceptional_q <= start_exceptional;
       iterations_left_q <= 5'd16;
     end else if (cancel_i) begin
       busy_o <= 1'b0;
       quotient_valid_o <= 1'b0;
       quotient_o <= 32'b0;
-      remainder_q <= 32'b0;
-      dividend_q <= 32'b0;
-      divisor_q <= 32'b0;
-      quotient_q <= 30'b0;
-      quotient_negative_q <= 1'b0;
-      exceptional_q <= 1'b0;
       iterations_left_q <= 5'b0;
     end else if (busy_o) begin
-      remainder_q <= next_remainder[31:0];
-      dividend_q <= {dividend_q[29:0], 2'b0};
-      quotient_q <= next_quotient[29:0];
       iterations_left_q <= iterations_left_q - 1'b1;
       if (iterations_left_q == 1) begin
         busy_o <= 1'b0;
@@ -108,6 +85,22 @@ module ppc_divider (
         else
           quotient_o <= next_quotient;
       end
+    end
+  end
+  // Iteration datapath; read only while busy_o. The 30-bit quotient history
+  // is fully shifted out by the final step, so start leaves it unset.
+  always_ff @(posedge clk_i) begin
+    if (start_i) begin
+      remainder_q <= 32'b0;
+      dividend_q <= start_dividend_magnitude;
+      divisor_q <= start_exceptional ? 32'd1 : start_divisor_magnitude;
+      quotient_negative_q <= signed_i &&
+        (dividend_i[31] != divisor_i[31]);
+      exceptional_q <= start_exceptional;
+    end else if (busy_o) begin
+      remainder_q <= next_remainder[31:0];
+      dividend_q <= {dividend_q[29:0], 2'b0};
+      quotient_q <= next_quotient[29:0];
     end
   end
 endmodule

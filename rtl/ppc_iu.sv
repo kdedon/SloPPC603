@@ -26,23 +26,42 @@ module ppc_iu #(
   logic [31:0] divider_quotient;
   logic [31:0] result_value;
   logic [32:0] add_sum;
-  logic [31:0] unused_add_low_sum;
   logic [31:0] add_operand_a;
   logic add_carry_in;
   logic add_overflow, operation_overflow, final_so;
-  logic signed [63:0] multiply_product;
-  logic [31:0] unsigned_multiply_high;
-  logic [31:0] unused_unsigned_multiply_low;
+  logic issue_multiply, issue_multiply_signed;
+  logic signed [32:0] multiply_a_q, multiply_b_q;
+  logic signed [65:0] multiply_product_q;
+  logic [1:0] _unused_multiply_product_high;
   logic multiply_overflow;
   logic divide_by_zero;
   logic signed_divide_exception;
   logic [4:0] rotate_amount;
+  logic [63:0] rotate_double;
   logic [31:0] rotate_value;
-  logic [31:0] insert_rotate_value;
-  logic [5:0] sraw_amount;
+  logic [31:0] _unused_rotate_low;
+  logic [31:0] left_mask, right_mask;
+  logic sign_fill;
   logic [31:0] sraw_value;
   logic sraw_ca;
-  logic [31:0] leading_zeros;
+  logic [5:0] leading_zeros;
+  // Tree count: level k merges pairs of 2^k-bit groups. A group count equal
+  // to its width means the group is all zero.
+  function automatic logic [5:0] count_leading_zeros(input logic [31:0] value);
+    logic [5:0] count [32];
+    logic [5:0] high, low;
+    for (int i = 0; i < 32; i++) count[i] = {5'b0, !value[31 - i]};
+    for (int level = 0; level < 5; level++) begin
+      for (int group = 0; group < (16 >> level); group++) begin
+        high = count[2 * group];
+        low = count[2 * group + 1];
+        if (!high[level]) count[group] = high;
+        else if (low[level]) count[group] = high << 1;
+        else count[group] = high | low;
+      end
+    end
+    return count[0];
+  endfunction
   initial begin
     if (DIV_LATENCY < 17)
       $fatal(1, "DIV_LATENCY must allow 16 radix-4 iterations after start");
@@ -54,9 +73,7 @@ module ppc_iu #(
   assign held_complete = held_divide ?
     ((divide_cycles_left == '0) && divider_quotient_valid && !divider_busy) :
     (!held_multiply || (multiply_cycles_left == '0));
-  // Cancellation destroys only the held token; a surviving replacement may
-  // enter. An unfinished divide does not become replaceable merely because
-  // the downstream consumer is ready.
+  // Cancel frees the slot for a same-edge replacement.
   assign issue_ready_o = rst_ni &&
     (!occupied || cancel_i || (result_valid_o && result_ready_i));
   assign result_valid_o = rst_ni && occupied && held_complete && !cancel_i;
@@ -86,16 +103,25 @@ module ppc_iu #(
        (held.op == ALU_ADDZE))) && held.ca_in);
   assign add_sum = {1'b0, add_operand_a} + {1'b0, held.b} +
                    33'(add_carry_in);
-  // Two's-complement overflow is carry into the sign bit XOR carry out.
-  // The low-part sum includes a CA-reading operation's third operand at bit zero.
-  assign unused_add_low_sum = {1'b0, add_operand_a[30:0]} +
-                              {1'b0, held.b[30:0]} + 32'(add_carry_in);
-  assign add_overflow = unused_add_low_sum[31] ^ add_sum[32];
-  assign multiply_product = $signed(held.a) * $signed(held.b);
-  assign {unsigned_multiply_high, unused_unsigned_multiply_low} =
-    held.a * held.b;
+  assign add_overflow = (add_operand_a[31] == held.b[31]) &&
+                        (add_sum[31] != add_operand_a[31]);
+  // One signed 33x33 DSP product serves signed and unsigned forms. Inputs
+  // register at issue and the product one edge later, inside the shortest
+  // (3-cycle) reservation.
+  assign issue_multiply = (issue_i.op == ALU_MULLI) ||
+    (issue_i.op == ALU_MULLW) || (issue_i.op == ALU_MULHW) ||
+    (issue_i.op == ALU_MULHWU);
+  assign issue_multiply_signed = issue_i.op != ALU_MULHWU;
+  always_ff @(posedge clk_i) begin
+    if (issue_valid_i && issue_ready_o && issue_multiply) begin
+      multiply_a_q <= {issue_multiply_signed && issue_i.a[31], issue_i.a};
+      multiply_b_q <= {issue_multiply_signed && issue_i.b[31], issue_i.b};
+    end
+    multiply_product_q <= multiply_a_q * multiply_b_q;
+  end
+  assign _unused_multiply_product_high = multiply_product_q[65:64];
   assign multiply_overflow =
-    multiply_product[63:32] != {32{multiply_product[31]}};
+    multiply_product_q[63:32] != {32{multiply_product_q[31]}};
   assign divide_by_zero = held.b == 0;
   assign signed_divide_exception = divide_by_zero ||
     ((held.a == 32'h8000_0000) && (held.b == 32'hffff_ffff));
@@ -105,39 +131,25 @@ module ppc_iu #(
                               (held.op == ALU_DIVW) ? signed_divide_exception :
                               add_overflow;
   assign final_so = held.so_in | operation_overflow;
-  assign rotate_amount = held.b[4:0];
-  // The five-bit subtraction implements (32-amount) modulo 32, avoiding a
-  // width-dependent shift by 32 when the amount is zero.
-  assign rotate_value = (held.a << rotate_amount) |
-                        (held.a >> (5'b0 - rotate_amount));
-  assign insert_rotate_value = (held.a << held.shift) |
-                               (held.a >> (5'b0 - held.shift));
-  assign sraw_amount = held.b[5:0];
+  // One left rotator serves every rotate and shift. A right shift by n is a
+  // left rotate by (32 - n) mod 32 masked to the low 32 - n bits.
   always_comb begin
-    if (sraw_amount[5])
-      sraw_value = {32{held.a[31]}};
-    else
-      sraw_value = $signed(held.a) >>> sraw_amount[4:0];
-
-    sraw_ca = 1'b0;
-    if (held.a[31] && (sraw_amount != 0)) begin
-      if (sraw_amount[5]) begin
-        sraw_ca = 1'b1;
-      end else begin
-        for (int bit_index = 0; bit_index < 32; bit_index++) begin
-          if ((bit_index < int'(sraw_amount)) && held.a[bit_index])
-            sraw_ca = 1'b1;
-        end
-      end
-    end
+    case (held.op)
+      ALU_RLWIMI: rotate_amount = held.shift;
+      ALU_SRW, ALU_SRAW: rotate_amount = 5'd0 - held.b[4:0];
+      default: rotate_amount = held.b[4:0];
+    endcase
   end
-  // Ascending scan lets the highest set bit determine the final count.
-  always_comb begin
-    leading_zeros = 32'd32;
-    for (int bit_index = 0; bit_index < 32; bit_index++) begin
-      if (held.a[bit_index]) leading_zeros = 32'(31 - bit_index);
-    end
-  end
+  assign rotate_double = {held.a, held.a} << rotate_amount;
+  assign {rotate_value, _unused_rotate_low} = rotate_double;
+  assign left_mask = 32'hffff_ffff << held.b[4:0];
+  assign right_mask = 32'hffff_ffff >> held.b[4:0];
+  assign sign_fill = held.a[31];
+  assign sraw_value = held.b[5] ? {32{sign_fill}} :
+    (rotate_value & right_mask) | ({32{sign_fill}} & ~right_mask);
+  // CA is set when a negative value shifts out any one bit.
+  assign sraw_ca = sign_fill && (held.b[5] || |(held.a & ~left_mask));
+  assign leading_zeros = count_leading_zeros(held.a);
   assign result_o.ca = held.write_ca ?
     ((held.op == ALU_SRAW) ? sraw_ca : add_sum[32]) : 1'b0;
   assign result_o.ov = held.write_ov_so ? operation_overflow : 1'b0;
@@ -160,20 +172,18 @@ module ppc_iu #(
       ALU_SUBFC: result_value = add_sum[31:0];
       ALU_SUBFE: result_value = add_sum[31:0];
       ALU_ROTATE: result_value = rotate_value & held.mask;
-      ALU_RLWIMI: result_value = (insert_rotate_value & held.mask) |
+      ALU_RLWIMI: result_value = (rotate_value & held.mask) |
                                  (held.b & ~held.mask);
-      ALU_SLW: result_value = held.b[5] ? 32'b0 :
-                              held.a << held.b[4:0];
-      ALU_SRW: result_value = held.b[5] ? 32'b0 :
-                              held.a >> held.b[4:0];
+      ALU_SLW: result_value = held.b[5] ? 32'b0 : rotate_value & left_mask;
+      ALU_SRW: result_value = held.b[5] ? 32'b0 : rotate_value & right_mask;
       ALU_SRAW: result_value = sraw_value;
-      ALU_CNTLZW: result_value = leading_zeros;
+      ALU_CNTLZW: result_value = {26'b0, leading_zeros};
       ALU_EXTSB: result_value = {{24{held.a[7]}}, held.a[7:0]};
       ALU_EXTSH: result_value = {{16{held.a[15]}}, held.a[15:0]};
-      ALU_MULLI: result_value = multiply_product[31:0];
-      ALU_MULLW: result_value = multiply_product[31:0];
-      ALU_MULHW: result_value = multiply_product[63:32];
-      ALU_MULHWU: result_value = unsigned_multiply_high;
+      ALU_MULLI: result_value = multiply_product_q[31:0];
+      ALU_MULLW: result_value = multiply_product_q[31:0];
+      ALU_MULHW: result_value = multiply_product_q[63:32];
+      ALU_MULHWU: result_value = multiply_product_q[63:32];
       ALU_DIVWU: result_value = divider_quotient;
       ALU_DIVW: result_value = divider_quotient;
       ALU_OR: result_value = held.a | held.b;
@@ -188,9 +198,11 @@ module ppc_iu #(
     endcase
   end
   always_ff @(posedge clk_i) begin
+    if (issue_valid_i && issue_ready_o) held <= issue_i;
+  end
+  always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       occupied <= 1'b0;
-      held <= '0;
       divide_cycles_left <= '0;
       multiply_cycles_left <= '0;
     end else begin
@@ -206,15 +218,12 @@ module ppc_iu #(
       end
       if (issue_valid_i && issue_ready_o) begin
         occupied <= 1'b1;
-        held <= issue_i;
         if ((issue_i.op == ALU_DIVWU) || (issue_i.op == ALU_DIVW))
           divide_cycles_left <= DIV_COUNT_WIDTH'(DIV_LATENCY - 1);
         else
           divide_cycles_left <= '0;
         case (issue_i.op)
-          // Table 6-4 lists operand-dependent sets but does not define their
-          // operand mapping. This bounded profile reserves the documented
-          // maximum for each row rather than inventing a silicon classifier.
+          // Table 6-4 maximum for each family.
           ALU_MULLI: multiply_cycles_left <= MULTIPLY_COUNT_WIDTH'(3 - 1);
           ALU_MULLW, ALU_MULHW:
             multiply_cycles_left <= MULTIPLY_COUNT_WIDTH'(5 - 1);

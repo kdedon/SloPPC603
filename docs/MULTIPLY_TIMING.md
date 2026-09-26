@@ -19,7 +19,11 @@ For an issue accepted on edge `E`, an N-cycle multiply first offers its result d
 
 Exact-token recovery cancellation suppresses the old result at any execute or held-result boundary. The IU may accept a surviving replacement on that same edge, and a replacement multiply receives a fresh complete reservation. Reset clears the reservation under the existing internal-state/external-response cancellation contract. Divide retains its independent iterative engine and configured 20/37-cycle reservation.
 
-MULLI has a separate internal ALU operation from MULLW so its timing family remains known after issue. Both still compute the same signed low-product function; MULLI has no overflow or record permission. Multiplier arithmetic remains combinational behind the reservation counter. This milestone establishes bounded resource occupancy and accepted-event timing. It does not establish a staged multiplier datapath, silicon operand selection, dual issue, silicon scheduling equivalence, or FPGA timing closure.
+MULLI has a separate internal ALU operation from MULLW so its timing family remains known after issue. Both still compute the same signed low-product function; MULLI has no overflow or record permission. This milestone establishes bounded resource occupancy and accepted-event timing. It does not establish silicon operand selection, dual issue, silicon scheduling equivalence, or FPGA timing closure.
+
+## Datapath
+
+One signed 33x33 multiplier serves all four operations. Each operand is sign-extended to 33 bits, or zero-extended for MULHWU. Low forms take product bits [31:0]; high forms take [63:32]. The operand registers load on the accepted issue edge `E` and the product register loads on `E+1`. The result, OV and CR0 come from the product register, not from the held operands. The shortest reservation (3) first offers the result before `E+3`, so the registered product is always ready by then; reservation counts and the edge contract above are unchanged. A cancel only drops the reservation; a same-edge replacement multiply reloads the operand registers. No fit has been run for this structure.
 
 ## Verification
 

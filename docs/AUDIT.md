@@ -37,7 +37,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-04 | M | C | `sim/Makefile:22`, `toolchain/Makefile` | The 23 `tb_compiled_*` benches are outside `regression` and have no aggregate target, yet the scorecard credits them. | AGENTS "Working rules" | Add an aggregate firmware target that fails loudly without the toolchain. | open |
 | AUD-05 | H | E | `rtl/ppc_icache.sv:46,55-57,185-189` | Tags and LRU are reset flop arrays: about 11.9k registers, 8.7k ALMs estimated, 0 MLAB (local map report). The integrated core is 13.7k ALMs. | CODING_CONVENTIONS (no reset of large RAMs), `cpu-cache-design` §1, §6 | Tags in MLAB/M10K; keep only valid bits as flops; walk-clear if zeroed tags are required. | design |
 | AUD-06 | H | E | `rtl/ppc_bat_memory_router.sv:213-225,603-619,899-1017` | One serial FSM translates every I and D access: ≥3 cycles to the physical request, ~7 on the page path. The I-cache sits behind it, so hits pay translation and data stalls fetch. | `cpu-mmu-tlb` §1-2 | Registered µTLB with BAT compare per side; keep the serial path for misses and CSR work. | design |
-| AUD-07 | M | E | `rtl/ppc_iu.sv:94-96` | Multiplier is combinational on the single-cycle wake loop with no multicycle constraint; signed and unsigned products infer two multipliers. | `cpu-execution-units` §3 | One signed 33×33 product, registered inside the existing latency. | open |
+| AUD-07 | M | E | `rtl/ppc_iu.sv:94-96` | Multiplier is combinational on the single-cycle wake loop with no multicycle constraint; signed and unsigned products infer two multipliers. | `cpu-execution-units` §3 | One signed 33×33 product, registered inside the existing latency. | fixed (no fit yet) |
 | AUD-08 | M | C | `sim/cosim/run_reference.py:155` and siblings | DingusPPC HEAD is recorded but never checked against the reviewed commit `cf951f69…`; a different checkout changes the oracle silently. | AGENTS "Recording evidence" | Fail unless HEAD matches the pinned commit and the tree is clean; explicit override flag. | open |
 | AUD-09 | M | C | `quartus/*.sdc`, `quartus/*/*.sdc` | No SDC calls `derive_clock_uncertainty`; root SDC I/O delays lack `-min`. Reported slack is optimistic. | `hdl-coding-guidelines` SDC minimum, Gate 7 | Add it to all three; add `-max`/`-min` pairs. | open |
 | AUD-10 | H | C | `docs/plans/current/TASK_PLAN.md:7,180-206,282`, `docs/ARCHITECTURE.md:1-30`, `README.md:1,30-45` | Current docs call segment/page/TGPR/refill work open or scaffold-level, contradicting the scorecard; TASK_PLAN points to stale WORK_QUEUE for status. | AGENTS "Documentation" | Rewrite the summaries or reduce them to scorecard links. | fixed (uncommitted) |
@@ -69,12 +69,12 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 
 | ID | Sev | Cat | Where | Problem | Fix | Status |
 |---|---|---|---|---|---|---|
-| AUD-29 | L | E | `rtl/ppc_iu.sv:111-168` | Five barrel shifters; SRAW carry via a 32-iteration loop. | One rotator, mask, sign fill. | open |
-| AUD-30 | L | E | `rtl/ppc_iu.sv:29,91-93` | Second adder for overflow, misnamed `unused_add_low_sum`. | `ov = (a[31]==b[31]) && (sum[31]!=a[31])`. | open |
-| AUD-31 | L | E | `rtl/ppc_iu.sv:135-140` | `cntlzw` is a 32-deep priority loop on the result mux. | Log-depth LZC. | open |
+| AUD-29 | L | E | `rtl/ppc_iu.sv:111-168` | Five barrel shifters; SRAW carry via a 32-iteration loop. | One rotator, mask, sign fill. | fixed |
+| AUD-30 | L | E | `rtl/ppc_iu.sv:29,91-93` | Second adder for overflow, misnamed `unused_add_low_sum`. | `ov = (a[31]==b[31]) && (sum[31]!=a[31])`. | fixed |
+| AUD-31 | L | E | `rtl/ppc_iu.sv:135-140` | `cntlzw` is a 32-deep priority loop on the result mux. | Log-depth LZC. | fixed |
 | AUD-32 | L | E | `rtl/ppc_iu.sv:79-86,154-161` | Carry-in and inversion decoded in execute; five enum values compute one add. | Carry select fields in the issue packet. | open |
 | AUD-33 | L | E | `rtl/ppc_special.sv:411-416` | `cmp` uses a separate comparator and serializes the machine. | Route through the IU subtract as a renamed op. | design |
-| AUD-34 | L | E | `rtl/ppc_divider.sv:62-95`, `rtl/ppc_iu.sv:193` | ~160 datapath bits reset and cleared on cancel. | Reset control only. | open |
+| AUD-34 | L | E | `rtl/ppc_divider.sv:62-95`, `rtl/ppc_iu.sv:193` | ~160 datapath bits reset and cleared on cancel. | Reset control only. | fixed |
 
 ### Load/store, cache, bus
 
@@ -119,7 +119,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 |---|---|---|---|---|---|---|
 | AUD-57 | L | S | all `rtl/*.sv` | No `` `default_nettype none``; `unique case` without `default:` in `ppc_icache.sv:81-90`, `ppc_bus60x_line_read.sv:88-93`. | Add both. | partial: case defaults added; default_nettype remains |
 | AUD-58 | L | S | `rtl/ppc_flags.sv:120-123`, `rtl/ppc_rename.sv:138-139,150-153` | Assertions not under `translate_off`. | Guard them. | open |
-| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | partial: bus/cache headers trimmed |
+| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | partial: bus/cache and execution-unit comments trimmed |
 | AUD-60 | L | S | `rtl/ppc_core.sv:283,322-353`, `rtl/ppc_flags.sv:62` | Raw MSR/XER bit indices and masks. | Named package constants. | open |
 
 ### Tests and tooling
