@@ -1,5 +1,7 @@
 # Compiled runtime BAT acceptance
 
+Recorded: `make -C toolchain rtl-runtime-bat`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 Initial acceptance on 2026-09-22: the pinned offline compiler build and
 `run-rtl-smoke.py --profile runtime-bat` pass. Final protocol verification is
 recorded separately in [RUNTIME_BAT_VERIFICATION.md](RUNTIME_BAT_VERIFICATION.md).
@@ -32,21 +34,6 @@ The otherwise identical simulator fails by SIGABRT at cycle 2,100 with
 This is a diagnostic failure, not a watchdog timeout.
 
 Reproduce using the commands in [`toolchain/README.md`](../toolchain/README.md).
-
-## Initial passing source boundary
-
-| Input | SHA256 |
-| --- | --- |
-| `rtl/ppc_core.sv` | `452ef4f0d91ab5ff2c0e360c46565f416d7a79b467e75ba91d4f349ca9c2e827` |
-| `rtl/ppc_special.sv` | `31ca8094ceeb7feeb64d646c33ad0ab55469d2b569ff7408ab5775d85224c850` |
-| `rtl/ppc_decode.sv` | `6e66d2e448793b6731d33421cad8ac9dd6119267c96267c39fb06bbbd56e86fc` |
-| `rtl/ppc_bat_service.sv` | `8ca313a7b383df73337ccbc1c11f6653926f8da78b138cffe13c3c2cec402749` |
-| `rtl/ppc_bat_memory_router.sv` | `67f9eb7fd921ea0bab32cc037b5863f338aa3cff9dc5d7c670c4ce526454f691` |
-| `rtl/ppc_core_bat.sv` | `2a58195d793d215c30e8aee7fda3c93b3ff1907391ef8aeaceb27414203a5061` |
-| `tb/tb_compiled_runtime_bat_firmware.sv` | `b103a566ffec85847304cdcb334126f12e0b1b17a4bba39ad8cfa704821375f8` |
-| `toolchain/runtime-bat-smoke.c` | `9d191bc31b1017ab66f1e57dd5904d0aaa0f2f46a02e8d20fec8077f93b2ad8f` |
-| `toolchain/runtime-bat.ld` | `2417769d7639a1cbffdedd22de7836055c73e0c2f7bba377ea0c769bd242cfe9` |
-| `toolchain/build/runtime-bat/smoke.elf` | `549c8aa7b14cbdbce8379f464b960101e0e9dcfbf38fada1a7e3aab906ffefe7` |
 
 ## Early-mutation assertion control
 

@@ -165,10 +165,10 @@ path. Separate empty, malformed and excessive-stall files were also rejected.
 
 ## Opt-in retirement-prepared runtime writes
 
-`ENABLE_RUNTIME_BAT` adds request kind5 PREPARE_WRITE and the explicit
-prepare-commit/abort plus held commit-ack interface. Validation matches kind4,
+`ENABLE_RUNTIME_BAT` adds request kind 5 PREPARE_WRITE and the explicit
+prepare-commit/abort plus held commit-ack interface. Validation matches kind 4,
 but successful preparation only reserves selector/data; the sole committed
 bank changes on commit. Abort wins a same-edge preparation without withdrawing
 its response. Full pin, ownership, reset and arbitration rules are frozen in
-[RUNTIME_BAT_PROTOCOL.md](RUNTIME_BAT_PROTOCOL.md). Kind5 remains unsupported
+[RUNTIME_BAT_PROTOCOL.md](RUNTIME_BAT_PROTOCOL.md). Kind 5 remains unsupported
 when the parameter is zero; the original startup-write behavior is unchanged.

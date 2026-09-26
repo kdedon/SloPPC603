@@ -17,6 +17,9 @@ Companion plans in this directory:
 - [Full 603e task plan](TASK_PLAN.md): P00–P30 scope that the full CPU audit measures.
 - [Original design brief](ORIGINAL_DESIGN_BRIEF.md): target machine for the full 603e.
 
+Open correctness, efficiency and style findings are tracked in the
+[repository audit](../../AUDIT.md).
+
 ## Working with this repository
 
 Run `make -C sim regression` from the repository root for the simulation suite.

@@ -55,7 +55,7 @@ MSR[IP] is SystemVerilog `msr[6]` and manual SRR1 cause bit 12 is `srr1[19]`.
 | 2 | Privileged-instruction program | `event_pc_i` | SRR1 manual bit 13 | IP base + `0x700` |
 | 3 | RFI | SRR registers unchanged | restore, or privileged cause when PR=1 | aligned SRR0, or program vector |
 | 4 | Alignment | `event_pc_i` | high SRR1 half clears; low half saves MSR | IP base + `0x600` |
-| 5 | ISI | `event_pc_i` | selector1 protection, selector2 guarded; saved-MSR subset plus cause | IP base + `0x400` |
+| 5 | ISI | `event_pc_i` | selector 1 protection, selector 2 guarded; saved-MSR subset plus cause | IP base + `0x400` |
 | 6 | External interrupt | `event_pc_i` architectural next PC | high SRR1 half clears; low half saves MSR | IP base + `0x500` |
 | 7 | Decrementer | `event_pc_i` architectural next PC | full-function saved MSR, no cause | IP base + `0x900` |
 | 8 | Data-storage protection | `event_pc_i` faulting instruction PC | high SRR1 half clears; low half saves MSR | IP base + `0x300` |
@@ -95,7 +95,7 @@ event; this state block does not detect data EA faults or own DAR/DSISR.
 
 Typed ISI delivery and `event_isi_cause_i` are documented in
 [FETCH_EXCEPTIONS.md](FETCH_EXCEPTIONS.md). That selector is used only for
-event5; values other than1/2 reject without architectural changes.
+event 5; values other than 1/2 reject without architectural changes.
 
 ## Acceptance and rejection
 

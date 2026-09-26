@@ -1,5 +1,7 @@
 # External interrupt during a translated instruction-cache refill
 
+Recorded: `make -C sim test-core-bat-cached-bus60x-irq`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 `tb_core_bat_cached_bus60x_irq.sv` exercises the opt-in external-interrupt
 profile through the BAT-translated 60x instruction cache. The CPU starts in
 real mode, writes identity and alias WIMG=0000 IBATs with `mtspr`, enables

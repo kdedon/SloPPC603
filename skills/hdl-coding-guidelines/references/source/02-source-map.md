@@ -114,7 +114,7 @@ These sources were listed in the Phase 0/1 skeleton but no topic doc's §9 foote
 
 | Source | Note |
 |---|---|
-| [projf-explore](https://github.com/projf/projf-explore/tree/dd212c2) @ commit `dd212c2` | Listed in skeleton as "practical Verilog examples, display pipelines." No §9 footer in docs 10-41 cites any file from this tree. Bundle scope (Cyclone V HDL idioms, ready/valid, CDC, memory/DSP inference, timing) did not surface a need for projf-explore's graphics-pipeline examples. |
+| [projf-explore](https://github.com/projf/projf-explore/tree/dd212c2e5e0e0d8bdcf93ba077630dbfd49ae708) @ commit `dd212c2` | Listed in skeleton as "practical Verilog examples, display pipelines." No §9 footer in docs 10-41 cites any file from this tree. Bundle scope (Cyclone V HDL idioms, ready/valid, CDC, memory/DSP inference, timing) did not surface a need for projf-explore's graphics-pipeline examples. |
 | [DE1-SoC Computer Manual](https://fpgacademy.org/Downloads/DE1-SoC_Computer_ARM.pdf) + extracted text | Listed in skeleton as Cyclone V DE1-SoC context. No §9 footer cites it. The HDL-craft scope of this bundle did not require board-level/system reference material. |
 | [`lowrisc-style-guides`](https://github.com/lowRISC/style-guides/tree/735d9112220033467e930b9afff250f76794a6fd) @ commit `735d911` (project tree) | The raw markdown [lowRISC SystemVerilog style guide](https://github.com/lowRISC/style-guides/blob/735d9112220033467e930b9afff250f76794a6fd/VerilogCodingStyle.md) is cited heavily (see Style guides above); the cloned project tree itself is not cited as a code source — only its style-guide markdown file is load-bearing. |
 

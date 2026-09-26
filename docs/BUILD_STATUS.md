@@ -154,7 +154,7 @@ The temporary milestone adds `ppc_special.sv` to both canonical simulation and Q
 
 ## Logical-shift measurement boundary
 
-Round15 adds ALU_SLW/ALU_SRW and two decode cases without changing ports, packet widths or canonical module lists. Core and measurement-wrapper strict lint pass. No Quartus fit/resource/timing rerun was performed; the new shift logic is not covered by historical FPGA measurements. All sixteen values of the current four-bit ALU enum are now assigned.
+Round 15 adds ALU_SLW/ALU_SRW and two decode cases without changing ports, packet widths or canonical module lists. Core and measurement-wrapper strict lint pass. No Quartus fit/resource/timing rerun was performed; the new shift logic is not covered by historical FPGA measurements. All sixteen values of the current four-bit ALU enum are now assigned.
 
 ## Round 16
 
@@ -164,7 +164,7 @@ SRAW/SRAWI add ALU_SRAW and widen alu_op_t to five bits, increasing internal pac
 
 RLWIMI adds ALU_RLWIMI within the five-bit enum and a five-bit SH field in uop/issue packets and the reservation station. Dispatch gains shift_i; the core wires it and all direct fixtures tie it appropriately. Canonical source lists and external core ports are unchanged. No new Quartus fit/resource/timing measurement is claimed.
 
-Round17 strict core and measurement-wrapper lint pass with zero warnings.
+Round 17 strict core and measurement-wrapper lint pass with zero warnings.
 
 ## Round 18
 

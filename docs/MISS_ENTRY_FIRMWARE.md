@@ -1,5 +1,7 @@
 # Compiled miss-entry and retry workload
 
+Recorded: `make -C toolchain rtl-miss-entry`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The `miss-entry` profile reserves high vectors `fff01000`, `fff01100` and
 `fff01200` and moves ordinary text to `fff02000`. The ELF loader and linker
 both check vector placement. CPU instructions install SDR1, two segment

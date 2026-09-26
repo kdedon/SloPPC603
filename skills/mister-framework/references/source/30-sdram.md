@@ -286,7 +286,7 @@ The actual controller body (state machine that drives `nCS`/`nRAS`/`nCAS`/`nWE` 
 
 ## 8. Verification
 
-- Use [MemTest_MiSTer](https://github.com/MiSTer-devel/MemTest_MiSTer) — the official SDRAM quality utility — to confirm the daughter board itself is sound before debugging a core controller. The [`Hardware_MiSTer/README.md`](https://github.com/MiSTer-devel/Hardware_MiSTer/blob/bbd3619620056a0f44476e27f18b442b4f0a5952/README.md) notes this is the canonical test.
+- Use [MemTest_MiSTer](https://github.com/MiSTer-devel/MemTest_MiSTer/tree/86f89561b325d329ab96dfa6097d895e79ded36a) — the official SDRAM quality utility — to confirm the daughter board itself is sound before debugging a core controller. The [`Hardware_MiSTer/README.md`](https://github.com/MiSTer-devel/Hardware_MiSTer/blob/bbd3619620056a0f44476e27f18b442b4f0a5952/README.md) notes this is the canonical test.
 - In simulation, model SDRAM with a behavioural model (the AS4C32M16 vendor model or an equivalent JEDEC SDR model) clocked off `SDRAM_CLK`; verify command sequencing for reset, mode-register-load, refresh, read, write, and write-with-DQM combinations.
 - On hardware, the failure modes that point at SDRAM are: garbled tile/sprite pixels (incomplete refresh or wrong CL), ROM checksum failures after long idle periods (refresh missing), drifting boot behaviour (clock phase outside the chip's setup/hold window).
 - `MISTER.INI` provides no SDRAM-specific knobs; misbehaviour is debugged via OSD memory-test cores, JTAG / SignalTap on the `SDRAM_*` pads, or `MemTest_MiSTer` swap.

@@ -1,6 +1,6 @@
-# PowerPC 603e CPU scaffold
+# PowerPC 603e-compatible CPU
 
-An executable starting point for the CPU described in [the original design brief](docs/plans/current/ORIGINAL_DESIGN_BRIEF.md). This is an initial implementation, **not a complete or cycle-faithful 603e**. The original reference projects and downloaded manuals are unchanged.
+A SystemVerilog CPU working toward the machine described in [the original design brief](docs/plans/current/ORIGINAL_DESIGN_BRIEF.md). It is **not yet a complete or cycle-faithful 603e**.
 
 ## Repository layout
 
@@ -36,18 +36,11 @@ The self-checking simulation compares 768 integer results with a sequential refe
 
 ## Implemented
 
-- Abstract instruction request/response transport with one outstanding request.
-- Six-entry instruction queue, single dispatch lane, one IU reservation station and registered integer execution.
-- 32 architectural GPRs and five pending/value-holding rename registers with a latest-writer map and tagged wakeup.
-- Five-entry completion queue with ownership-checked tagged finishes and one ordered architectural retirement per cycle.
-- `addi`, `addis`, `ori`, `oris`, `xori`, `xoris`, plus `add`, `addc`, `adde`, `addme`, and `addze` with all OE/Rc combinations.
-- Register `and`, `andc`, `or`, `orc`, `xor`, `nand`, `nor`, and `eqv` with Rc=0 or Rc=1; record forms commit CR0 with their GPR result.
-- `rlwinm` and `rlwnm` with both Rc values, wrapped masks and five-bit rotate counts.
-- `slw` and `srw` with both Rc values and six-bit register counts.
-- Serialized branches, LR/CTR moves and comparisons to any CR field.
-- Aligned big-endian scalar loads/stores (D and indexed), with store authorization and cancelled-load draining.
-- Explicit identity-based recovery control with CQ/rename restoration, local cancellation, IQ clearing and fetch draining.
-- Ordered diagnostic halt on unsupported instructions; reset restarts the machine.
+A single-issue, big-endian integer core with tagged rename, ordered retirement and precise recovery.
+Opt-in profiles add supervisor exceptions, interrupts, time base/decrementer, BAT and segment/page
+translation with software TLB refill, and scalar or instruction-cached 60x bus wrappers. Floating point,
+data cache, dual dispatch and timing closure are open. See the [system scorecard](docs/SYSTEM_COMPLETION.md)
+for accepted behavior and gaps.
 
 `DISPATCH_WIDTH=1` is the only supported setting and the default. Other values fail elaboration-time simulation checks. Dual dispatch remains the delivery target. `RESET_PC` defaults to `0xfff00100`; this configurable start address does not implement MSR/reset-vector semantics.
 

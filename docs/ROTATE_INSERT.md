@@ -1,6 +1,6 @@
 # Rotate word insert — round 17
 
-RLWIMI implements primary opcode20, Rc0/Rc1. All 90 currently reviewed forms now
+RLWIMI implements primary opcode 20, Rc0/Rc1. All 90 currently reviewed forms now
 execute; this bounded set is not the complete 603e ISA.
 
 The existing two rename read ports capture rS and the previous rA mapping before
@@ -28,7 +28,7 @@ unchanged. The source opcode-table discrepancy remains documented in ISA_MATRIX.
   RS/IU/finished-CQ kills and kept finish/commit redirects check the surviving
   GPR/CR/XER state and exact producer ownership.
 
-The old rotate bench now tests opcode22 rejection in both Rc modes; obsolete
+The old rotate bench now tests opcode 22 rejection in both Rc modes; obsolete
 RLWIMI rejection expectations are replaced by the accepted execution coverage.
 Direct dispatch fixtures tie the new SH input to zero for established operations.
 Targeted independent RTL review found no actionable issues.
@@ -36,4 +36,4 @@ Targeted independent RTL review found no actionable issues.
 This adds no full timing-conformance or Quartus fit/timing claim. The next bounded
 integer work is source/metadata preparation for SUBF/NEG and their CA/OE/Rc forms.
 
-Round17 integration: all 36 prior RTL targets, strict core/wrapper lint and 120 Python tests pass. The strengthened insert recovery fixture passes 3,445 checks. Compiled decode passes 15,808 probes with 660 accepted.
+Round 17 integration: all 36 prior RTL targets, strict core/wrapper lint and 120 Python tests pass. The strengthened insert recovery fixture passes 3,445 checks. Compiled decode passes 15,808 probes with 660 accepted.

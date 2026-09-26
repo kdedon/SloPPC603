@@ -1,5 +1,7 @@
 # Event/reset focused verification
 
+Recorded: `make -C sim lint check-spec test-core-event-reset test-core-interrupt` and the focused gate below, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
+
 This test-only round passed on 2026-09-21. Production RTL is unchanged.
 [EVENT_RESET_CONTRACT.md](EVENT_RESET_CONTRACT.md) distinguishes immediate
 suppression of handshake/event controls from architectural state clearing on an
@@ -48,7 +50,7 @@ make -C sim -j4 lint check-spec test-recovery \
   test-core-live-context test-core-live-context-disabled test-exception-state
 ```
 
-The gate passed with exit0 from `21:38:12.915202Z` to `21:38:59.759002Z`:
+The gate passed with exit 0 from `21:38:12.915202Z` to `21:38:59.759002Z`:
 
 | Fixture/gate | Result |
 | --- | --- |
@@ -61,8 +63,8 @@ The gate passed with exit0 from `21:38:12.915202Z` to `21:38:59.759002Z`:
 | Live context enabled / disabled | 26,354 / 414 checks |
 | Exception state | 204 checks |
 
-All 144 gate source/build inputs stayed unchanged. All production RTL and its
-manifest also match the separate pre-round snapshot.
+Gate sources stayed unchanged during the run, and production RTL matched the
+pre-round tree.
 
 The new target is part of the regular `test` aggregate for future complete runs.
 This round deliberately did not run the full regression, Quartus or compiled
@@ -80,8 +82,6 @@ then failed DEC/window0 after reset and EE enable, before fresh stimulus:
 The process exited by SIGABRT (`-6`), not timeout. This demonstrates that the
 post-reset no-stale-event oracle detects retained DEC pending state.
 
-- Original timer SHA256: `cf9ed8835f84e70da53a23dd5dd6d133da27e22b14ee2335b4d68733d2e10daf`.
-
 To reproduce from the repository root without modifying repository sources:
 
 ```sh
@@ -90,18 +90,18 @@ from pathlib import Path
 import resource, subprocess, tempfile
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 work = Path(tempfile.mkdtemp(prefix='ppc-event-reset-negative-'))
-source = Path('ppc603e/rtl/ppc_timer.sv').read_text()
+source = Path('rtl/ppc_timer.sv').read_text()
 old = "      decrementer_o <= 32'hffff_ffff;\n      decrementer_pending_o <= 1'b0;\n"
 assert source.count(old) == 1
 mutant = work / 'ppc_timer.sv'
 mutant.write_text(source.replace(old, "      decrementer_o <= 32'hffff_ffff;\n", 1))
-rtl = [str(Path('ppc603e/rtl') / line.strip())
-       for line in Path('ppc603e/rtl/files.f').read_text().splitlines()
+rtl = [str(Path('rtl') / line.strip())
+       for line in Path('rtl/files.f').read_text().splitlines()
        if line.strip() and not line.lstrip().startswith(('#', '//'))]
-rtl[rtl.index('ppc603e/rtl/ppc_timer.sv')] = str(mutant)
+rtl[rtl.index('rtl/ppc_timer.sv')] = str(mutant)
 subprocess.run(['verilator', '--binary', '--timing', '--assert', '-Wall',
     '--top-module', 'tb_core_event_reset', '--Mdir', str(work / 'obj'),
-    *rtl, 'ppc603e/tb/tb_core_event_reset.sv'], check=True)
+    *rtl, 'tb/tb_core_event_reset.sv'], check=True)
 r = subprocess.run([str(work / 'obj/Vtb_core_event_reset')],
                    capture_output=True, text=True, timeout=30)
 output = r.stdout + r.stderr
@@ -110,5 +110,5 @@ assert r.returncode != 0 and 'stale pending/event after reset' in output
 PY
 ```
 
-The reproduction omits the explanatory comment used in the recorded temporary
-mutant, so its text hash differs while the injected defect is identical.
+The reproduction omits the explanatory comment used in the recorded mutant; the
+injected defect is identical.

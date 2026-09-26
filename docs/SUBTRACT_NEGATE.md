@@ -7,7 +7,7 @@ executable subset to 98 forms. Carry-writing subtract families remain pending.
 
 603e UM Appendix A-1 places NEG on PDF366 (row A1-149, raw `negx`) and SUBF on
 PDF367 (A1-208, raw `subfx`). Tables A-3/PDF377 and A-41/PDF396 corroborate
-primary31, XO9 SUBF40/NEG104, independent OE/Rc and NEG's reserved zero rB.
+primary 31, XO9 SUBF40/NEG104, independent OE/Rc and NEG's reserved zero rB.
 The exact masks are 0xfc0007ff and 0xfc00ffff respectively; bases are 0x7c000050
 and 0x7c0000d0, combined with OE<<10 and Rc. Nonzero NEG rB is rejected by the
 bounded implementation rather than assigned execution semantics.
@@ -15,10 +15,10 @@ bounded implementation rather than assigned execution semantics.
 Secondary 601UM SUBF PDF760/10-206 specifies B−A; NEG PDF701/10-147 specifies
 −A. Both preserve CA and do not consume it. OE replaces OV and sets sticky SO
 on signed overflow; Rc compares the final 32-bit result with zero and copies
-final SO (601UM PDF58/62, Tables2-3/2-8). NEG overflows only on 0x80000000.
+final SO (601UM PDF58/62, Tables 2-3/2-8). NEG overflows only on 0x80000000.
 All rA/rB operands, including r0, are real registers; NEG has no rB dependency.
 
-Primary Table6-4/PDF271 supplies TIM-T64-028/031. SUBF's raw `subf[.]` spelling
+Primary Table 6-4/PDF271 supplies TIM-T64-028/031. SUBF's raw `subf[.]` spelling
 omits OE; the existing TIM-U08 caveat remains open. Appendix A establishes OE
 legality without changing the raw timing row or claiming full timing conformance.
 
@@ -46,6 +46,6 @@ Independent source and RTL reviews found no actionable issue. The source
 inventory advances to 52 boundedly reconciled rows, 174 pending. No new Quartus
 resource/fit/timing measurement is claimed. SUBFC is the next bounded slice.
 
-Round18 integration passes all 39 prior RTL targets, strict core/wrapper lint, 110 tool tests and 15 recovery-model tests. No regression failures remain.
+Round 18 integration passes all 39 prior RTL targets, strict core/wrapper lint, 110 tool tests and 15 recovery-model tests. No regression failures remain.
 
-Round19 subsequently accepts [SUBFC](SUBFC.md), bringing the current subset to 102 forms; the carry-writing pending statements above describe round18.
+Round 19 subsequently accepts [SUBFC](SUBFC.md), bringing the current subset to 102 forms; the carry-writing pending statements above describe round 18.

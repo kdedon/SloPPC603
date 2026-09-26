@@ -1,5 +1,7 @@
 # Data protection exception verification
 
+Recorded: `make -C sim regression`, `test-core-data-fault`, `test-core-data-fault-cancel`, `test-bat-data-fault`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 The independent directed oracles exercise the abstract core's accepted typed
 `DATA_DSI_PROTECTION` response and the BAT router's protection producer. The
 expected exception values are fixed from the local *MPC603e & EC603e RISC
@@ -96,5 +98,4 @@ with the pinned offline compiler; seven prior ELF workloads were reused. A
 corrupted expected DSISR causes the exact mailbox failure `83000001` at cycle
 2,452. Initial integration found legacy fixtures that needed the new input and
 trace metadata modeled explicitly; those were corrected before the final pass.
-No production RTL changed during the regression. All 240 inputs in the final
-source manifest remained unchanged through completion. No Quartus fit ran.
+No production RTL or other source changed during the regression. No Quartus fit ran.

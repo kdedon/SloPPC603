@@ -191,7 +191,7 @@ All 26 preexisting RTL targets and both new targets pass. Core and measurement-w
 
 The source matrix has 90 reviewed entries, 80 implemented, 10 pending and no overlaps. Historical Quartus measurements remain unchanged, and these functional results do not establish BPU/LSU timing or full processor conformance.
 
-## Round15: logical shifts
+## Round 15: logical shifts
 
 `test-core-shifts` uses the existing symbolic-program fixture with a separate generated profile. It passes 173,321 checks and 2,247 retirements, including 659 SLW and 659 SRW operations. Independent bit selection covers 5 source values × 64 counts × 4 forms, upper count bits, nonzero aliases, SO0/SO1 and complete architectural state. `test-shift-execution` passes 91 delayed-data/count and held-packet checks. `test-slw-recovery` and `test-srw-recovery` each pass 3,439 checks across killed RS/IU/CQ and retained finish/commit redirects.
 
@@ -205,49 +205,49 @@ New program: 206,971 checks / 2,684 retirements. Direct execution: 91 checks. SR
 
 The new full-state program passes 218,905 checks / 2,839 retirements, including 2,245 RLWIMI operations and all 2,048 MB/ME/Rc combinations. Direct execution passes 73 checks. Recovery specifically exercises an uncommitted older destination mapping. The compiled decoder passes 15,808 probes with 660 accepted by metadata and RTL; all 90 reviewed forms are implemented. See [ROTATE_INSERT.md](ROTATE_INSERT.md).
 
-Round17 integration: all 36 prior RTL targets, strict core/wrapper lint and 120 Python tests pass. The strengthened insert recovery fixture passes 3,445 checks. Compiled decode passes 15,808 probes with 660 accepted.
+Round 17 integration: all 36 prior RTL targets, strict core/wrapper lint and 120 Python tests pass. The strengthened insert recovery fixture passes 3,445 checks. Compiled decode passes 15,808 probes with 660 accepted.
 
 ## Round 18 SUBF/NEG
 
 The independent program passes 113,111 checks / 1,465 retirements, direct execution 73 checks, and SUBF/NEG recovery 3,439 checks each. Five additional Python tests enforce reserved-field and side-effect metadata and literal reference anchors. Compiled decoder validation passes 15,808 probes with 684 accepted; 98 reviewed forms execute. See [SUBTRACT_NEGATE.md](SUBTRACT_NEGATE.md).
 
-Round18 integration passes all 39 prior RTL targets, strict core/wrapper lint, 110 tool tests and 15 recovery-model tests. No regression failures remain.
+Round 18 integration passes all 39 prior RTL targets, strict core/wrapper lint, 110 tool tests and 15 recovery-model tests. No regression failures remain.
 
 ## Round 19 SUBFC
 
 The independent program passes 186,650 checks / 2,420 retirements, direct execution 73 checks and recovery 3,434 checks. Two new Python tests cover metadata and no-borrow anchors. The compiled decoder passes 15,808 probes with 704 accepted. There are 102 reviewed/executable forms. See [SUBFC.md](SUBFC.md).
 
-Round19 integration passes all 43 prior RTL targets, strict core/wrapper lint, 112 tool tests and 15 recovery-model tests. No regression failures remain.
+Round 19 integration passes all 43 prior RTL targets, strict core/wrapper lint, 112 tool tests and 15 recovery-model tests. No regression failures remain.
 
 ## Round 20 SUBFE
 
 Program: 186,650 checks / 2,420 retirements. Direct execution: 127 checks. CA1 and CA0 recovery: 3,434 checks each. Two Python tests cover metadata and borrow-adjusted overflow anchors. Decoder: 15,808 probes, 724 accepted. 106 reviewed forms execute. A handwritten direct-test expectation was corrected; see [SUBFE.md](SUBFE.md).
 
-Round20 integration passes all 46 prior RTL targets after updating the obsolete SUBFE rejection fixture, strict core/wrapper lint, 114 tool tests and 15 recovery-model tests. No failures remain.
+Round 20 integration passes all 46 prior RTL targets after updating the obsolete SUBFE rejection fixture, strict core/wrapper lint, 114 tool tests and 15 recovery-model tests. No failures remain.
 
 ## Round 21 unary extended subtraction
 
 Program: 89,010 checks / 1,152 retirements. Direct execution: 145 checks. Recovery: 3,434 checks each for SUBFME/SUBFZE. Two Python tests cover exact masks/reserved rB and carry/overflow anchors. Decoder: 15,808 probes, 732 accepted. 114 reviewed forms execute. See [SUBTRACT_UNARY.md](SUBTRACT_UNARY.md).
 
-Round21 integration passes all 50 prior RTL targets, strict core/wrapper lint, 116 tool tests and 15 recovery-model tests. No failures remain.
+Round 21 integration passes all 50 prior RTL targets, strict core/wrapper lint, 116 tool tests and 15 recovery-model tests. No failures remain.
 
 ## Round 22 SUBFIC
 
-Program: 150,687 checks / 1,953 retirements. Recovery: 3,434 checks each with positive/negative immediates. Two Python tests cover all16-bit payload masks and signed immediate/real-r0/flag anchors. Decoder: 15,808 probes, 737 accepted. 115 reviewed forms execute. See [SUBFIC.md](SUBFIC.md).
+Program: 150,687 checks / 1,953 retirements. Recovery: 3,434 checks each with positive/negative immediates. Two Python tests cover all 16-bit payload masks and signed immediate/real-r0/flag anchors. Decoder: 15,808 probes, 737 accepted. 115 reviewed forms execute. See [SUBFIC.md](SUBFIC.md).
 
-Round22 integration passes all 54 prior RTL targets, strict core/wrapper lint, 118 tool tests and 15 recovery-model tests. No failures remain.
+Round 22 integration passes all 54 prior RTL targets, strict core/wrapper lint, 118 tool tests and 15 recovery-model tests. No failures remain.
 
 ## Round 23 ADDIC/ADDIC.
 
-Program: 186,805 checks / 2,422 retirements. Recovery: 3,434 checks per form. Two Python tests cover all immediate masks, record permissions and literal arithmetic/flag anchors. Decoder: 15,808 probes, 747 accepted. There are117 reviewed/executable forms. See [ADD_IMMEDIATE.md](ADD_IMMEDIATE.md).
+Program: 186,805 checks / 2,422 retirements. Recovery: 3,434 checks per form. Two Python tests cover all immediate masks, record permissions and literal arithmetic/flag anchors. Decoder: 15,808 probes, 747 accepted. There are 117 reviewed/executable forms. See [ADD_IMMEDIATE.md](ADD_IMMEDIATE.md).
 
-Round23 integration passes all 57 prior RTL targets, strict core/wrapper lint, 120 tool tests and 15 recovery-model tests. No failures remain.
+Round 23 integration passes all 57 prior RTL targets, strict core/wrapper lint, 120 tool tests and 15 recovery-model tests. No failures remain.
 
 ## Round 24 ANDI./ANDIS.
 
-Program: 186,805 checks / 2,422 retirements. Recovery: 3,439 checks per form. Three Python tests cover all immediate masks, mandatory recording, literal mask/flag anchors and the preserved source discrepancy. Decoder: 15,808 probes, 757 accepted. There are119 reviewed/executable forms. See [AND_IMMEDIATE.md](AND_IMMEDIATE.md).
+Program: 186,805 checks / 2,422 retirements. Recovery: 3,439 checks per form. Three Python tests cover all immediate masks, mandatory recording, literal mask/flag anchors and the preserved source discrepancy. Decoder: 15,808 probes, 757 accepted. There are 119 reviewed/executable forms. See [AND_IMMEDIATE.md](AND_IMMEDIATE.md).
 
-Round24 integration passes all 60 prior RTL targets, strict core/wrapper lint, 123 tool tests and 15 recovery-model tests. No failures remain.
+Round 24 integration passes all 60 prior RTL targets, strict core/wrapper lint, 123 tool tests and 15 recovery-model tests. No failures remain.
 
 ## Round 25: CNTLZW / EXTSB / EXTSH
 

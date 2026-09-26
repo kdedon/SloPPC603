@@ -18,8 +18,8 @@ collision/sampling policies are recorded in [TIMER_CONTRACT.md](TIMER_CONTRACT.m
 ## Register operations
 
 The timer owns all storage and the coalesced pending bit. DEC uses supervisor
-read/write SPR22. TBL/TBU are user reads at selectors268/269, supervisor writes
-at284/285. With timers enabled, MFTB and MFSPR read opcodes alias for every
+read/write SPR22. TBL/TBU are user reads at selectors 268/269, supervisor writes
+at 284/285. With timers enabled, MFTB and MFSPR read opcodes alias for every
 implemented read selector, retaining identical selector-specific privilege.
 Unknown selectors and invalid Rc forms remain unsupported; aliases add no
 write permission. Timer-disabled decoding is unchanged.
@@ -48,7 +48,7 @@ EXT at the final drained offer boundary. That promotion leaves DEC pending.
 Once offered, cause/PC are irrevocable through acceptance and context redirect.
 This final-offer sampling rule is a local policy, not cycle-exact 603e priority.
 
-Event7 is DEC, requiring EE set and TGPR clear. It saves next-PC SRR0 and
+Event 7 is DEC, requiring EE set and TGPR clear. It saves next-PC SRR0 and
 `old_MSR & 0x87c0ffff` into SRR1, with no cause bits; the full-function mask
 convention is documented in [`EXCEPTION_STATE.md`](EXCEPTION_STATE.md). It preserves DAR/DSISR and
 uses vector `IP base + 0x900`. The mask deliberately differs from external

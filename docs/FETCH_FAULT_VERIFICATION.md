@@ -1,5 +1,7 @@
 # Typed synchronous fetch-fault verification
 
+Recorded: `make -C sim regression`, `test-core-fetch-fault`, `test-core-fetch-fault-disabled`, `test-fetch-recovery`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
+
 The abstract fetch channel carries protection (`1`) and guarded (`2`) ISI
 causes separately from physical transport errors. Physical TEA remains terminal
 in the wrappers; these tests do not classify TEA as a recoverable ISI.
@@ -7,8 +9,8 @@ in the wrappers; these tests do not classify TEA as a recoverable ISI.
 ## Independent architectural expectations
 
 The expected constants were checked against the local 1997 *MPC603e & EC603e
-User's Manual*, PDF173/printed4-15 §4.2.2 and PDF183/printed4-25 §4.5.4, and
-*Programming Environments* (`MPCFPE.pdf`), PDF275/printed6-29 Table6-10.
+User's Manual*, PDF 173/printed 4-15 §4.2.2 and PDF 183/printed 4-25 §4.5.4, and
+*Programming Environments* (`MPCFPE.pdf`), PDF 275/printed 6-29 Table 6-10.
 The latter page was also visually inspected. SRR0 identifies the requested
 instruction address, including a taken branch target. Protection sets SRR1
 `0x08000000`; guarded sets `0x10000000`. The full-function reserved-bit rule
@@ -57,7 +59,7 @@ disabled checks. The full frozen-source regression result follows.
 The separate compiled-C integration passed 186 retirements with two injected
 and retired faults; a deliberately wrong SRR1 expectation failed its mailbox
 check. See [compiled firmware evidence](COMPILED_FIRMWARE_VERIFICATION.md)
-for hashes and negative reproduction, and [the toolchain guide](../toolchain/README.md)
+for negative reproduction, and [the toolchain guide](../toolchain/README.md)
 for `rtl-fetch-fault`.
 
 ## Full frozen-source gate
@@ -65,13 +67,11 @@ for `rtl-fetch-fault`.
 `make -C sim -j2 regression` completed successfully (exit 0) on
 2026-09-21 at 05:25 UTC. It covered 159 named test targets, 19 strict RTL lint
 profiles, and 241 Python tests (204 checker/tool, 22 cosimulation, 15 recovery).
-The separate staged prelint covered 127 direct bench profiles. The full run
-contains 204 PASS summary lines; those lines are not a count of independent
-tests. Both typed fault profiles, alignment, physical terminal-fetch-error,
+The separate staged prelint covered 127 direct bench profiles. Both typed fault profiles, alignment, physical terminal-fetch-error,
 cache reference lanes and recovery suites passed.
 
-All 128 RTL, testbench and simulation Makefile source hashes were identical
-before and after the run, including the completed optional compiled-fetch bench.
+RTL, testbench and simulation Makefile sources, including the optional
+compiled-fetch bench, stayed unchanged during the run.
 No production changes were needed. The directed storage fixture initially used
 an unrelated FIFO depth that left an imported package constant unused under
 strict lint; using the configured IQ depth fixed that fixture warning before

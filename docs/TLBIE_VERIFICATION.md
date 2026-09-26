@@ -1,5 +1,7 @@
 # CPU `tlbie` verification
 
+Recorded: `make -C sim test-tlbie-decode test-core-tlbie test-core-tlbie-privilege`, `make -C sim regression`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 `make -C sim test-tlbie-decode` passes **6,370 checks**. The fixed-literal oracle uses `0x7c000264 | (RB << 11)` for primary opcode 31/XO 306, exercises every RB register including r0, and rejects every nonzero reserved RT and RA value, Rc=1, and adjacent XO values. It also checks the default-disabled decode and absence of GPR, flag, memory, and branch writes.
 
 `make -C sim test-core-tlbie` passes **905 checks** against an independent prepared-invalidate model. The model starts with both ITLB and DTLB valid in all 32 sets and changes only the indexed set on the exact `tlbie` retirement commit edge. It checks RB r3 and the old full r0 value, a held retirement, delayed acknowledgement, cancellation before request acceptance, same-edge request/kill, cancellation while response is withheld, result-publication kill, latest retained redirect target, service error, and reset during a delayed acknowledgement. Cancelled operations leave every modeled set valid; committed operations clear the same set in both banks while neighboring sets remain valid.
@@ -19,5 +21,4 @@ and 37-check simulation (its command was added after the broad make parsed its
 recipes). The runtime service and router suites passed 96 and 134 checks.
 All eleven compiled profiles passed; the new TLBIE ELF ran three modes, and
 the wrong-set negative was rejected as documented in [TLBIE_FIRMWARE.md](TLBIE_FIRMWARE.md).
-The 43 recorded production inputs and 275 final source/configuration inputs
-were unchanged at acceptance. No FPGA fit was run.
+Production and test sources were unchanged at acceptance. No FPGA fit was run.

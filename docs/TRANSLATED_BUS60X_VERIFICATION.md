@@ -1,5 +1,7 @@
 # Translated scalar 60x wrapper verification
 
+Recorded: `make -C sim test-core-bat-bus60x test-core-bat-bus60x-retry`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 `tb/tb_core_bat_bus60x.sv` runs a literal 22-retirement PowerPC program through `ppc_core_bat_bus60x` and the public scalar 60x pins. The target owns 8 KiB of big-endian byte RAM and grants each address/data tenure with delay. The CPU starts in real mode; its own MTSPR instructions install an identity instruction BAT and a data BAT mapping effective `0x10001000` to physical `0x00001000`. External BAT and TLB management remain inactive. MTMSR enables IR/DR, and SC/RFI then checks the forwarded real-mode handler and restored translated context.
 
 The pin monitor requires valid scalar address ownership and fixed cache-inhibited attributes on every transfer. It sees both real and translated instruction fetches, then a byte store at physical `0x1003`, halfword read at `0x1002`, word read at `0x1000`, and word store at `0x1004`. The test checks 60x TT/TC/TSIZ, exact 64-bit big-endian write lanes including zero inactive lanes, memory bytes `11 22 33 5a` at `0x1000`, and copied word `0x1122335a` at `0x1004`. Retired LHZ and LWZ values independently confirm the read lanes. It checks the exact instruction/retirement sequence, held retirement stability and actual backpressure, translated context on data requests, and real-mode context in the SC vector.

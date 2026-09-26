@@ -114,7 +114,7 @@ coverage including packed-struct fields, records exact source/project/script
 hashes before and after compilation, and rejects source drift. Report
 collection requires fresh map/fit/STA/flow reports and zero physical I/O.
 
-[Accepted evidence](../quartus/integrated/alignment-20260921/summary.txt) contains
+Accepted evidence in the local `quartus/integrated/alignment-20260921` archive (not in the repository) contains
 resource excerpts, original STA/flow reports, critical paths, tool/image
 identities, statuses and source hashes. The report-only query is reproduced by
 `report-critical-paths.sh`; its shell command was run against the completed fit,
@@ -127,7 +127,7 @@ from bundled-file checksums.
 
 Strict lint and shell syntax checks pass. The virtual-port checker rejects
 both a missing final declaration and a vector wildcard incorrectly applied to
-a packed struct. [Standalone cache evidence](../quartus/icache/accepted-20260921/summary.txt)
+a packed struct. Standalone cache evidence in the local `quartus/icache/accepted-20260921` archive
 also records full-capacity readback, backpressure/cancellation tests, existing
 cached-system suites and compiled big-endian firmware execution.
 
@@ -150,7 +150,7 @@ evidence, not the current source revision.
 The original bootstrap project and `quartus/evidence` remain unchanged. The
 first current-system diagnostic exposed asynchronous cache reads that prevented
 RAM inference; it was deliberately interrupted and remains explicitly labeled
-in [its status record](../quartus/integrated/diagnostic-20260921/status.txt).
+in its local `quartus/integrated/diagnostic-20260921` status record.
 The synchronous-read cache implementation resolves that storage issue. Earlier
 attempts with incomplete virtual-pin patterns were discarded as measurement
 configuration diagnostics. Only the accepted source-stable, zero-physical-I/O

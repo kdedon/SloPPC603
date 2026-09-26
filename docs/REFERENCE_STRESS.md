@@ -1,5 +1,7 @@
 # Deterministic original-handler mixed-program stress
 
+Recorded: `make -C sim test-reference-stress` plus the maximum-seed command below, commit pre-repository snapshot, imported in 3e727b6, 2026-09-14.
+
 This lane generates seeded mixed programs, executes the original DingusPPC
 handlers, and compares every retired instruction against the actual core. It
 reuses the accepted v2 flat-memory adapter and actual-core memory reference
@@ -90,26 +92,21 @@ the bound is 9,441 retirements at 512 blocks, well below the adapter's
 The bench's 500,000-cycle watchdog is retained; passing measured maximum-size
 seeds is evidence for these programs, not an exhaustive proof for every seed.
 
-`build-manifest.json` pins original reference revision/dirty status, all local
-reference headers, adapter/generator/comparator inputs, canonical RTL and ISA
-metadata, compiler commands/versions, and both executable hashes. Source hashes
-are checked again after compilation and after the suite. Per-seed manifests
-pin program and trace hashes, executed form/kind counts, memory counts, control
-outcomes, and exact reproduction commands. They retain the first divergent
-row/PC and nearby annotated program instructions on comparison failure.
+The runner rechecks its inputs after compilation and after the suite. On a
+comparison failure it reports the first divergent row/PC and nearby annotated
+program instructions.
 
 Each passing seed also corrupts one middle-row GPR and one RAM word independently
 and invokes the public v2 comparator against the actual RTL trace. Both must
 fail with the precise field diagnostic. Existing comparator tests cover malformed,
 empty, truncated and schema-incompatible traces. No expected/actual mismatch is
-ignored. A failing seed leaves its program, partial traces and failure manifest
-for reproduction. Regenerable Verilator `*.gch` files in this lane's owned build
-directory are removed after execution, while binaries, logs, traces and manifests
-remain available.
+ignored. A failing seed leaves its program and partial traces for reproduction.
+Regenerable Verilator `*.gch` files in this lane's build directory are removed
+after execution.
 
 ## Measured acceptance
 
-The frozen Round36 source passed on 2026-09-14 with the current iterative
+The frozen round 36 source passed on 2026-09-14 with the current iterative
 divider and fixed multiplier maxima (MULLI 3, MULLW/MULHW 5, MULHWU 6 cycles).
 The stress generator does not emit MULLI; its functional/timing coverage remains
 in the separate fixed corpus and multiplier tests.
@@ -131,12 +128,8 @@ maximum seed alone exercised 105 taken loop backedges, 56 BCLR returns, 56 taken
 BCCTR branches, and 289 data-request / 312 instruction-request / 1,667 retirement
 stall observations. All 22 cosim unit tests passed.
 
-The default `sim/build/reference-stress/suite.json` and separate `maximum.json`
-retain their own per-seed manifest hashes. Both used the same original-handler
-and actual-core executables. A final independent hash check found all 126
-recorded source inputs and both executables unchanged, and no owned `*.gch`
-files remained. Binaries, annotated programs, expected/actual full-state traces,
-logs and manifests remain in that build directory.
+Both suites used the same original-handler and actual-core executables; sources
+and executables stayed unchanged through the run.
 
 Five additional reference-only 512-block probes (seeds 0, 1, 603e, deadbeef and
 ffffffff) completed with 3,688–3,937 words and 3,980–4,319 snapshots; these probes

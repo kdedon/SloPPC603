@@ -1,5 +1,7 @@
 # Compiled page miss result acceptance
 
+Recorded: `make -C toolchain rtl-page-miss`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The `page-miss` profile reuses the CPU TLB-load/invalidate workload with a
 conditional final store probe. It builds a separate ELF from
 `toolchain/tlbload-smoke.c` with `PAGE_MISS_STORE_PROBE`, and shares the fixed

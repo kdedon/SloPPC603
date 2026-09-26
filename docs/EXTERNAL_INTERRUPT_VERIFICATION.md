@@ -1,22 +1,24 @@
 # External interrupt verification
 
+Recorded: `make -C sim regression`, `test-core-interrupt`, `test-core-interrupt-disabled`, `test-core-alignment-dependencies`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
+
 This verifies the opt-in external interrupt profile with live supervisor context.
 It does not cover TB/DEC, SMI, machine-check delivery, pin CDC circuitry, a complete
 603e interrupt controller, page-TLB refill, or precise 603e pipeline timing.
 
 ## Independent architectural expectations
 
-The local 1997 *MPC603e & EC603e User's Manual*, PDF183–184/printed4-25–26,
-§4.5.5/Table4-12, defines the external vector at IP-selected `0x500`, SRR0 as
+The local 1997 *MPC603e & EC603e User's Manual*, PDF 183–184/printed 4-25–26,
+§4.5.5/Table 4-12, defines the external vector at IP-selected `0x500`, SRR0 as
 the next attempted instruction EA, and SRR1 as only the old MSR low 16 bits.
 Entry clears EE/PR/IR/DR/RI and uses the established exception-entry transition.
 The same section requires initiated instructions to complete or except and
 completed stores to drain; exceptions encountered during that process precede
-external entry. The manual's §7.2.9.1, PDF299–300/printed7-23–24, describes INT
+external entry. The manual's §7.2.9.1, PDF 299–300/printed 7-23–24, describes INT
 as level-sensitive. Holding it until taken guarantees service; withdrawing it
 before service does not require the processor to remember a pulse.
 
-The *Programming Environments* manual, PDF581/printed8-169, additionally requires
+The *Programming Environments* manual, PDF 581/printed 8-169, additionally requires
 an enabled pending interrupt to precede the following instruction when MTMSR
 sets EE. RFI restoring EE receives the analogous precise boundary treatment in
 this implementation.
@@ -56,9 +58,9 @@ Cases exercise:
   A redirect-all offered during committed IRQ/context installation is rejected.
 - Disabled IRQ profile rejection of EE without entry or MSR mutation.
 
-`tb_exception_state.sv` checks event6 independently: EE0 and TGPR rejection,
-EE1 low/high IP entry, upper SRR1 clearing even with nonzero old MSR upper bits,
-precise resume PC, and stable state under held result backpressure. Event7 remains
+`tb_exception_state.sv` checks event 6 independently: EE=0 and TGPR rejection,
+EE=1 low/high IP entry, upper SRR1 clearing even with nonzero old MSR upper bits,
+precise resume PC, and stable state under held result backpressure. Event 7 remains
 unsupported. Existing core/BAT/special fixtures explicitly tie the new IRQ inputs
 inactive and connect their trace outputs.
 
@@ -78,9 +80,7 @@ exception state passed 181 and alignment dependencies 634. Strict staged prelint
 passed all 136 direct bench profiles. `make -C sim -j4 regression` passed (exit 0), recorded on
 2026-09-21 at 13:03 UTC. It ran 168 named test targets, 23 strict RTL lint
 profiles and 241 Python tests (204 tool/checker, 22 cosimulation, 15 recovery).
-The log contains 271 PASS summaries, which are not independent test counts.
-All 135 RTL/testbench/simulation-Makefile hashes were identical before and after
-the run. The first frozen full gate in this slice passed; independent verification
+RTL, testbench and simulation Makefile sources stayed unchanged during the run. The first frozen full gate in this slice passed; independent verification
 required no production RTL changes.
 
 ## Remaining directed acceptance work

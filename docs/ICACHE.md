@@ -70,7 +70,7 @@ dual-port RAM. Synthesis estimates 8,695 ALMs for the complete standalone
 cache; this is not a fitted resource count. The remaining tag/LRU/control
 registers are not claimed to reside in block RAM. The source hashes, complete
 report and simulation summary are preserved in
-[`quartus/icache/accepted-20260921`](../quartus/icache/accepted-20260921/summary.txt).
+the local `quartus/icache/accepted-20260921` archive, which is not in the repository.
 No memory-style attribute or substitute storage model was used. The subsequent integrated fitter places
 this array in **13 physical M10K blocks**; see the
 [current fitted baseline](INTEGRATED_SYNTHESIS_BASELINE.md).

@@ -6,7 +6,7 @@ subset to 106 forms. SUBFME/SUBFZE remain pending.
 ## Source and execution contract
 
 Primary 603e UM Tables A-1/PDF368 (A1-210, raw `subfex`), A-3/PDF377 and
-A-41/PDF396 establish opcode31/XO9=136, independent OE/Rc and no reserved operand
+A-41/PDF396 establish opcode 31/XO9=136, independent OE/Rc and no reserved operand
 fields. The form mask is 0xfc0007ff; base0x7c000110 plus OE<<10 and Rc.
 Secondary 601UM PDF762/10-208 specifies ~A+B+XER.CA. All rA/rB operands,
 including r0, are real registers; rD is the destination.
@@ -20,7 +20,7 @@ SUBFE always reads and replaces CA under the existing flag owner. The reservatio
 station captures committed CA on dispatch; ALU_SUBFE selects complemented A and
 held CA, while SUBF/SUBFC retain fixed carry-in one. No interfaces change.
 
-Primary timing TIM-T64-033/Table6-4/PDF271 records raw `subfe[o][.]`, Integer
+Primary timing TIM-T64-033/Table 6-4/PDF271 records raw `subfe[o][.]`, Integer
 execution and base one-cycle execution for PID6/PID7v. Full timing conformance
 and FPGA resource/timing closure remain open.
 
@@ -51,6 +51,6 @@ check; its former SUBFE rejection became obsolete when SUBFE was implemented.
 Independent source and RTL review found no RTL issues. Source inventory advances
 to 54 boundedly reconciled rows and 172 pending. Next: SUBFME/SUBFZE.
 
-Round20 integration passes all 46 prior RTL targets after updating the obsolete SUBFE rejection fixture, strict core/wrapper lint, 114 tool tests and 15 recovery-model tests. No failures remain.
+Round 20 integration passes all 46 prior RTL targets after updating the obsolete SUBFE rejection fixture, strict core/wrapper lint, 114 tool tests and 15 recovery-model tests. No failures remain.
 
-Round21 subsequently accepts [SUBFME/SUBFZE](SUBTRACT_UNARY.md); the current reviewed/executable subset has114 forms. Earlier pending statements describe round20.
+Round 21 subsequently accepts [SUBFME/SUBFZE](SUBTRACT_UNARY.md); the current reviewed/executable subset has 114 forms. Earlier pending statements describe round 20.

@@ -1,5 +1,7 @@
 # Time-base and decrementer verification
 
+Recorded: `make -C sim regression`, `test-timer`, `test-core-timer-registers`, `test-core-timer-events`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
+
 This covers the opt-in timer profile, with supervisor exceptions, live context
 and external interrupt delivery enabled. It does not establish physical tick
 CDC, the four-bus-clock tick generator, soft-reset retention, other interrupt
@@ -7,18 +9,18 @@ sources or full 603e pipeline recognition timing.
 
 ## Independent expectations
 
-The local UM §4.5.9/printed4-31 defines the decrementer vector at IP-selected
+The local UM §4.5.9/printed 4-31 defines the decrementer vector at IP-selected
 `0x900`, next-instruction SRR0, pending/coalesced requests and EE qualification.
 PEM §2.3.14.1/2-37 defines the sign transition, including software writes.
-UM Table4-8/4-19 establishes TB zero and DEC `0xffffffff` reset values. UM
-§4.2.2/4-15 and PEM Table6-16/6-39 distinguish DEC's full saved-state subset
+UM Table 4-8/4-19 establishes TB zero and DEC `0xffffffff` reset values. UM
+§4.2.2/4-15 and PEM Table 6-16/6-39 distinguish DEC's full saved-state subset
 from the external interrupt's low-half-only SRR1. The implemented full-function
 mask `0x87c0ffff` includes the already documented reserved-bit inference;
 [the contract](TIMER_CONTRACT.md) separates this and other local arbitration
 choices from literal manual requirements.
 
-UM2-40/2-44 establishes the MFSPR/MFTB read alias, including selector-specific
-privilege. PEM2-36–37 supplies the running-counter `TBL=0; TBU=upper; TBL=lower`
+UM 2-40/2-44 establishes the MFSPR/MFTB read alias, including selector-specific
+privilege. PEM 2-36–37 supplies the running-counter `TBL=0; TBU=upper; TBL=lower`
 sequence and the need for software to handle non-atomic 64-bit reads. TBEN gating
 only TB, pre-edge read sampling, write-over-tick priority, and acknowledgment
 coalescing a same-edge new request are explicit bounded policies.
@@ -31,7 +33,7 @@ coalescing a same-edge new request are explicit bounded policies.
 | `tb_timer_decode.sv` | 1,017,057 checks | All 32 register fields, 1,024 selectors, three opcodes and both Rc values across timer-enabled, legacy supervisor and default profiles. Literal selector oracle; canonical/alias full-uop equivalence. 1,248 legal and 195,360 rejected timer-profile words. |
 | `tb_core_timer_registers.sv` | 4,833 checks / nine scenarios | Independent counters from public ticks and accepted writes; pre-edge read snapshots, every observed read coincident with a tick, held retirement, TBU carry and three-write programming, allowed user TB reads, five privileged DEC/write forms, three exact-identity canceled writes. |
 | `tb_core_timer_events.sv` | 15,031 checks / six scenarios | Masked pending survives positive writes, repeated requests coalesce, EE enable, EXT before DEC, late promotion while draining, initially admitted EXT survives withdrawal, RFI delivers pending DEC, delayed store/countdown underflow/no repeated side effect, user-mode DEC entry and RFI. |
-| `tb_exception_state.sv` | 204 checks overall | Event7 low/high IP, upper saved MSR fields, stable held response, EE0/TGPR rejection and existing event semantics. |
+| `tb_exception_state.sv` | 204 checks overall | Event 7 low/high IP, upper saved MSR fields, stable held response, EE=0/TGPR rejection and existing event semantics. |
 
 The register fixture maintains TB64 and DEC32 from external ticks and retired
 writes. Its only read-timing observation is the named
@@ -57,7 +59,7 @@ TB rollover retry, DEC programming, simultaneous EXT, vector handlers and BAT
 translation. It passes 372 retirements in 3,937 cycles, with one EXT, two DEC,
 eight context installations and one alias store. Its deliberately incorrect
 handler expectation fails. See [compiled acceptance evidence](COMPILED_FIRMWARE_VERIFICATION.md)
-for the command, image/source hashes and exact negative case. This optional
+for the command and exact negative case. This optional
 cross-compiler workload is not silently included in the portable regression.
 
 The timer unit's negative commands, run from `sim/`, are
@@ -69,7 +71,7 @@ reproducing expected-negative runs.
 
 ## Comprehensive gate
 
-The final source-frozen `make -C sim -j4 regression` passed with exit0
+The final source-frozen `make -C sim -j4 regression` passed with exit 0
 on 2026-09-21, from `14:29:36.282131Z` through `14:42:07.819049Z`:
 
 - 172 named test targets, including the two recovery targets outside `test`.
@@ -77,17 +79,14 @@ on 2026-09-21, from `14:29:36.282131Z` through `14:42:07.819049Z`:
   `ppc_timer_bat_measure` FPGA measurement top.
 - 140 direct testbench profiles passed staged strict prelint before the run.
 - 241 Python unit tests (15 recovery policy, 204 checker/tool and 22 cosimulation).
-- 290 PASS summary lines; these are log summaries, not an additional count of
-  independent test cases.
-- All 146 hashed RTL, TB, measurement-top and manifest/Makefile inputs remained
-  byte-for-byte unchanged throughout the run.
+- RTL, testbench, measurement-top and Makefile sources stayed unchanged
+  throughout the run.
 
 The full gate passed on its first source-frozen run after the directed fixture
 corrections described below. Documentation-only completion edits do not require
 repeating it.
 
-The test sources and targets are retained in the repository working tree;
-no commit is implied. Reproduction uses the retained Makefile
+Reproduction uses the Makefile
 `test-timer`, `test-timer-decode`, `test-core-timer-registers`,
 `test-core-timer-events`, and `test-exception-state` targets.
 

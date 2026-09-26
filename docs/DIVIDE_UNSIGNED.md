@@ -12,7 +12,7 @@ The iterative RTL detects a zero divisor before its fixed magnitude iterations a
 
 ## Sources and timing
 
-Primary 603e UM Table A-1 PDF362, A-3 PDF377 and A-41 PDF396 supply primary31/XO459 with OE/Rc variants: fixed-form mask `fc0007ff`, base value `7c000396`. Secondary MPC601UM PDF603 (printed10-49) supplies unsigned quotient and divide-by-zero semantics. Its trailing signed-remainder wording is not used to redefine the unsigned operation.
+Primary 603e UM Table A-1 PDF362, A-3 PDF377 and A-41 PDF396 supply primary 31/XO459 with OE/Rc variants: fixed-form mask `fc0007ff`, base value `7c000396`. Secondary MPC601UM PDF603 (printed 10-49) supplies unsigned quotient and divide-by-zero semantics. Its trailing signed-remainder wording is not used to redefine the unsigned operation.
 
 TIM-T64-045 records PID6 37-cycle and PID7v 20-cycle latency. The IU now reserves its single execution slot for 20 cycles by default, with `DIV_LATENCY=37` selecting the PID6 timing value. [DIVIDER_TIMING.md](DIVIDER_TIMING.md) defines the accepted-edge convention and focused evidence. A synthesizable 16-step radix-4 divider now supplies the quotient without a division operator in RTL. Silicon-internal equivalence, wider P08 scheduling, and FPGA timing closure remain open.
 

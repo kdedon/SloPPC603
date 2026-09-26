@@ -1,5 +1,7 @@
 # Compiled SDR1 acceptance
 
+Recorded: `make -C toolchain rtl-sdr1`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The `sdr1` profile builds with the pinned offline compiler and runs through the
 actual core wrapper with delayed physical memory responses. It verifies zero
 reset, four full-width SDR1 writes and five independent readbacks.
