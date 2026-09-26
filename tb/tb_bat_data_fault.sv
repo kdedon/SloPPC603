@@ -222,9 +222,11 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
     // PP-denied write: typed only in the opt-in data-exception profile.
     request_data(1'b1,32'h00000040);
     wait_response();
-    check(translation_fault_o && fault_protection_o && !fault_miss_o &&
-          !fault_guarded_o && !fault_config_o && !fault_invalid_input_o &&
-          fault_write_o && fault_ea_o==32'h40,"protection provenance");
+    // A typed DSI leaves the sticky diagnostic outputs clear.
+    check(ENABLE_DATA_EXCEPTIONS ? !translation_fault_o :
+          (translation_fault_o && fault_protection_o && !fault_miss_o &&
+           !fault_guarded_o && !fault_config_o && !fault_invalid_input_o &&
+           fault_write_o && fault_ea_o==32'h40),"protection provenance");
     for(int hold=0;hold<5;hold++) begin
       #1;check(dmem_rsp_valid_o && dmem_rsp_rdata_o==0 &&
           dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?3'd1:3'd0) &&
@@ -261,8 +263,9 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
     // An unmapped translated address is a diagnostic, never a typed DSI.
     request_data(1'b0,32'h20000040);
     wait_response();
-    check(dmem_rsp_fault_o==0 && dmem_rsp_error_o && fault_miss_o &&
-          !pdmem_req_valid_o,"BAT miss was classified as DSI");
+    check(dmem_rsp_fault_o==0 && dmem_rsp_error_o && translation_fault_o &&
+          fault_miss_o && fault_ea_o==32'h20000040 && !pdmem_req_valid_o,
+          "BAT miss was classified as DSI");
     consume_response();
 
     // A successful read after a local fault must not inherit its cause.
@@ -312,8 +315,9 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
     @(posedge clk_i);@(negedge clk_i);start_valid_i=0;
     request_data(1'b0,32'h00000080);
     wait_response();
-    check(translation_fault_o && fault_protection_o && !fault_write_o &&
-          !fault_miss_o && !fault_config_o && fault_ea_o==32'h80 &&
+    check((ENABLE_DATA_EXCEPTIONS ? !translation_fault_o :
+           (translation_fault_o && fault_protection_o && !fault_write_o &&
+            !fault_miss_o && !fault_config_o && fault_ea_o==32'h80)) &&
           dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?3'd1:3'd0) &&
           dmem_rsp_error_o==!ENABLE_DATA_EXCEPTIONS && !pdmem_req_valid_o,
           "PP=00 read denial classification or provenance");

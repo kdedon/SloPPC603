@@ -147,14 +147,13 @@ module tb_compiled_page_miss_firmware;
       cycles++;check(cycles<150000,"firmware timeout");
       check(!tlb_mgmt_req_valid_i&&!tlb_mgmt_rsp_valid_o,"fixture TLB management must remain inactive");
       check(!cut_accepted&&!physical_error,"unexpected redirect/physical fault");
-      if(halted||fault||page_fault_o)begin
-        check(mailbox_retired&&tlbie_retires==2&&page_fault_o&&page_miss_o&&
-              !page_protection_o&&!page_no_execute_o&&!page_guarded_o&&!page_direct_store_o&&
-              !page_needs_changed_o&&!page_config_o&&!unused_fm&&!unused_fp,
-              "unexpected terminal cause or premature fault");
-        check(unused_fi==(mode==1)&&unused_fw==(mode==2)&&
-              unused_fea==((mode==1)?32'h20008000:32'h10008000),"wrong invalidated access");
-      end
+      // Typed misses leave the sticky diagnostic outputs clear; the retired
+      // capsule identifies the access.
+      check(!fault&&!page_fault_o&&!page_miss_o&&!page_protection_o&&
+            !page_no_execute_o&&!page_guarded_o&&!page_direct_store_o&&
+            !page_needs_changed_o&&!page_config_o,"typed miss set sticky diagnostic");
+      if(halted)check(mailbox_retired&&tlbie_retires==2,
+                      "premature halt");
       check(!bat_valid&&!bat_rsp&&!bat_rejected&&!bat_unsupported&&!bat_config&&!bat_overlap&&bat_invalid==0,
             "harness must not program BATs");
       if(running)begin
@@ -210,7 +209,7 @@ module tb_compiled_page_miss_firmware;
       end
       if(tv&&tr)begin
         if(retired.illegal)begin
-          check(mailbox_retired&&tlbie_retires==2&&page_miss_o&&
+          check(mailbox_retired&&tlbie_retires==2&&
                 !retired.alignment_exception&&!retired.gpr_write&&
                 !retired.update_write&&!retired.write_xer&&!retired.write_ca&&
                 !retired.write_ov_so&&!retired.write_cr0&&!retired.write_cr_fields&&

@@ -78,8 +78,8 @@ remain unchanged. Reproduce with `make -C toolchain rtl-table-search-bus`
 and `make -C toolchain rtl-table-fault-bus` after building with the pinned
 compiler. `run-rtl-smoke.py` also accepts those profile names directly.
 
-The router's sticky `translation_fault_o` is expected after a handled miss;
-it is checked as history rather than treated as terminal failure. Completion
+A handled miss is a typed result, so the router's sticky
+`translation_fault_o` must stay clear. Completion
 requires a successful physical mailbox write and its retirement. The terminal
 instruction loop can keep fetching, so global bus idle is not an acceptance
 requirement. No later store is needed by either program.

@@ -1,3 +1,4 @@
+../rtl/ppc_pkg.sv
 ../rtl/ppc_bat_translate.sv
 ../rtl/ppc_bat_service.sv
 ../rtl/ppc_segment_registers.sv

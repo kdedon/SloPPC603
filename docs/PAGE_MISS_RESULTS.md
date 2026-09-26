@@ -10,9 +10,7 @@ search a page table, update PTE R/C bits, or retry an instruction.
 integrated wrapper. The router requires page translation. A response carries
 `page_miss_t`, a packed 69-bit snapshot in this exact order:
 `{ea[31:0], sr[31:0], pr, ir, dr, write, way}`. `way` is the least
-significant bit. Router ports use `logic [68:0]` to
-keep its standalone source list independent of the core package. Core ports
-use the package type. Names are `imem_rsp_page_miss_i/o` and
+significant bit. Router and core ports use the package type. Names are `imem_rsp_page_miss_i/o` and
 `dmem_rsp_page_miss_i/o`; fetch uses `rsp_page_miss_i`. This capsule travels
 with the existing response valid/ready handshake; it has no independent event,
 acknowledgement or sticky ownership. It is held stable under backpressure and
@@ -33,8 +31,8 @@ The typed selectors are `FETCH_PAGE_MISS=3`, `DATA_PAGE_MISS=2` and
 `DATA_PAGE_CHANGED=3`. The latter distinguishes a resident page needing C work
 from an absent mapping. Typed data responses set transport error to zero so
 it cannot mask their cause. Typed instruction misses use the held fetch fault
-response instead of the router's irreversible fatal state. Existing sticky
-page diagnostics remain observations, not exception handshakes.
+response instead of the router's irreversible fatal state. Typed miss and
+changed results leave the sticky fault and page diagnostics unchanged.
 
 The router snapshots the exact accepted EA, direction and PR/IR/DR, plus the
 committed SR selected for that translation. No later live input may replace

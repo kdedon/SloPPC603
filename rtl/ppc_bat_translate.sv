@@ -1,7 +1,10 @@
-// Stateless selected-bank 32-bit BAT translation.  Caller supplies IBATs for
-// instruction accesses or DBATs for data accesses; no segment/TLB fallback here.
-// Local configuration rejection is not an architectural exception mechanism.
-module ppc_bat_translate (
+// Stateless selected-bank 32-bit BAT translation. Caller supplies IBATs for
+// instruction accesses or DBATs for data accesses. VALIDATE_BANK=0 is for
+// callers that only store banks that already passed validation: it drops the
+// whole-bank configuration checks, whose outputs then read zero.
+module ppc_bat_translate #(
+  parameter bit VALIDATE_BANK = 1'b1
+) (
   input  logic              valid_i,
   input  logic              instruction_i,
   input  logic              write_i,
@@ -32,6 +35,7 @@ module ppc_bat_translate (
   logic [3:0] bad;
   logic overlaps;
   logic translation_enabled;
+  logic [31:0] hit_lower, hit_mask;
 
   // PEM Table 7-10: twelve masks, 128 KiB through 256 MiB.
   function automatic logic legal_length(input logic [10:0] bl);
@@ -54,7 +58,7 @@ module ppc_bat_translate (
     for (integer i = 0; i < 4; i++) begin
       active[i] = |batu_i[i][1:0];
       address_mask[i] = ~{4'b0000, batu_i[i][12:2], 17'h1ffff};
-      bad[i] = active[i] &&
+      bad[i] = VALIDATE_BANK && active[i] &&
         (!legal_length(batu_i[i][12:2]) ||
          |batu_i[i][16:13] || |batl_i[i][16:7] || batl_i[i][2] ||
          |(batu_i[i][31:17] & ~address_mask[i][31:17]) ||
@@ -65,7 +69,7 @@ module ppc_bat_translate (
       for (integer j = i + 1; j < 4; j++) begin
         // Reject intersecting effective ranges if either privilege could hit
         // both. Check independent of current PR and translation enable.
-        if (active[i] && active[j] && !bad[i] && !bad[j] &&
+        if (VALIDATE_BANK && active[i] && active[j] && !bad[i] && !bad[j] &&
             |(batu_i[i][1:0] & batu_i[j][1:0]) &&
             (((batu_i[i] ^ batu_i[j]) & address_mask[i] &
               address_mask[j]) == 32'b0))
@@ -88,6 +92,8 @@ module ppc_bat_translate (
     pa_o = '0;
     wimg_o = '0;
     pp_o = '0;
+    hit_lower = '0;
+    hit_mask = '0;
     if (valid_i) begin
       invalid_entry_o = bad;
       overlap_o = overlaps;
@@ -101,25 +107,26 @@ module ppc_bat_translate (
           // 603e UM §5.2: real-mode instruction/data attributes differ.
           wimg_o = instruction_i ? 4'b0001 : 4'b0011;
         end else begin
+          // A validated bank has at most one applicable match, so the hit
+          // entry is an AND-OR select rather than a priority chain.
           for (integer i = 0; i < 4; i++) begin
-            if (batu_i[i][msr_pr_i ? 0 : 1] &&
-                (ea_i & address_mask[i]) == (batu_i[i] & 32'hfffe0000)) begin
-              match_o[i] = 1'b1;
-              hit_index_o = 2'(i);
-            end
+            match_o[i] = batu_i[i][msr_pr_i ? 0 : 1] &&
+              (ea_i & address_mask[i]) == (batu_i[i] & 32'hfffe0000);
+            hit_lower |= {32{match_o[i]}} & batl_i[i];
+            hit_mask |= {32{match_o[i]}} & address_mask[i];
           end
+          hit_index_o = {match_o[3] | match_o[2], match_o[3] | match_o[1]};
           bat_hit_o = |match_o;
           bat_miss_o = !bat_hit_o;
           if (bat_hit_o) begin
-            pp_o = batl_i[hit_index_o][1:0];
-            wimg_o = batl_i[hit_index_o][6:3];
+            pp_o = hit_lower[1:0];
+            wimg_o = hit_lower[6:3];
             protection_fault_o = pp_o == 2'b00 || (write_i && pp_o != 2'b10);
             // Specific 603e Table 5-3 overrides generic PEM IBAT G reservation.
             guarded_fault_o = instruction_i && wimg_o[0];
             allow_o = !protection_fault_o && !guarded_fault_o;
             if (allow_o)
-              pa_o = (batl_i[hit_index_o] & 32'hfffe0000) |
-                     (ea_i & ~address_mask[hit_index_o]);
+              pa_o = (hit_lower & 32'hfffe0000) | (ea_i & ~hit_mask);
           end
         end
       end

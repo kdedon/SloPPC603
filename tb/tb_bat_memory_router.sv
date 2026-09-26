@@ -594,8 +594,9 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
       @(posedge clk_i);@(negedge clk_i);imem_req_valid_i=0;
       wait_pimem(32'h40001234,4'b0000);return_pimem(32'h60000000);
 
-      // One-hot protection/guarded faults are held typed responses; the
-      // combined syndrome remains terminal rather than selecting a cause.
+      // Protection/guarded faults are held typed responses. PP=00 with G=1
+      // reports protection, as the page path does. Typed faults leave the
+      // sticky diagnostic outputs clear.
       for (int cause=1;cause<=3;cause++) begin
         reset_router();
         write_bat(10'd529,cause == 1 ? 32'h40000000 :
@@ -606,19 +607,18 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
         #1;check(imem_req_ready_o,"fault request not admitted");
         @(posedge clk_i);@(negedge clk_i);imem_req_valid_i=0;
         while(!imem_rsp_valid_o && !ifetch_fatal_o) @(negedge clk_i);
-        if(cause < 3) begin
-          repeat(4) begin
-            check(imem_rsp_valid_o && imem_rsp_fault_o == 3'(cause) &&
-                  !ifetch_fatal_o && !pimem_req_valid_o && !context_ready_o,
-                  "typed local fault lost cause/ownership under stall");
-            @(negedge clk_i);
-          end
-          imem_rsp_ready_i=1;@(posedge clk_i);@(negedge clk_i);imem_rsp_ready_i=0;
-          check(!imem_rsp_valid_o && !ifetch_fatal_o && quiescent_o,
-                "consumed typed fault did not release router");
-        end else check(ifetch_fatal_o && !imem_rsp_valid_o &&
-                       fault_protection_o && fault_guarded_o && !pimem_req_valid_o,
-                       "combined cause was silently prioritized");
+        repeat(4) begin
+          check(imem_rsp_valid_o &&
+                imem_rsp_fault_o == (cause == 2 ? ppc_pkg::FETCH_ISI_GUARDED :
+                                                  ppc_pkg::FETCH_ISI_PROTECTION) &&
+                !ifetch_fatal_o && !pimem_req_valid_o && !context_ready_o,
+                "typed local fault lost cause/ownership under stall");
+          @(negedge clk_i);
+        end
+        imem_rsp_ready_i=1;@(posedge clk_i);@(negedge clk_i);imem_rsp_ready_i=0;
+        check(!imem_rsp_valid_o && !ifetch_fatal_o && quiescent_o &&
+              !translation_fault_o,
+              "consumed typed fault did not release router");
       end
     end
     $display("PASS: tb_bat_memory_router %0d checks, %0d setup, %0d physical I/%0d D, %0d local faults",

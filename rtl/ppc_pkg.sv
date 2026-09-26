@@ -1,8 +1,7 @@
 package ppc_pkg;
-  // Only the core reads IQ_DEPTH; unit builds import the package without it.
+  // Unit and standalone MMU builds import this package without every consumer.
   /* verilator lint_off UNUSEDPARAM */
   localparam int IQ_DEPTH = 6;
-  /* verilator lint_on UNUSEDPARAM */
   localparam int GPR_RENAME_DEPTH = 5;
   localparam int CQ_DEPTH = 5;
   localparam int TAG_WIDTH = $clog2(GPR_RENAME_DEPTH);
@@ -67,6 +66,32 @@ package ppc_pkg;
     fetch_fault_t fault;
     page_miss_t page_miss;
   } fetch_packet_t;
+
+  // MMU request kinds
+  // Unlisted codes return unsupported.
+  typedef enum logic [2:0] {
+    BAT_TRANSLATE_I = 3'd0,
+    BAT_TRANSLATE_READ = 3'd1,
+    BAT_TRANSLATE_WRITE = 3'd2,
+    BAT_SPR_READ = 3'd3,
+    BAT_SPR_WRITE = 3'd4,
+    BAT_PREPARE_WRITE = 3'd5
+  } bat_req_kind_t;
+  typedef enum logic [2:0] {
+    TLB_LOOKUP = 3'd0,
+    TLB_REFILL = 3'd1,
+    TLB_INVALIDATE_SET = 3'd2,
+    TLB_RESERVED = 3'd3,
+    TLB_PREPARE_INVALIDATE = 3'd4,
+    TLB_PREPARE_REFILL = 3'd5
+  } tlb_req_kind_t;
+  typedef enum logic [2:0] {
+    SEG_READ = 3'd0,
+    SEG_WRITE = 3'd1,
+    SEG_SNAPSHOT = 3'd2,
+    SEG_PREPARE = 3'd4
+  } seg_req_kind_t;
+  // End MMU request kinds
   typedef enum logic [4:0] {
     ALU_ADD, ALU_OR, ALU_XOR, ALU_AND, ALU_ANDC,
     ALU_ORC, ALU_NAND, ALU_NOR, ALU_EQV, ALU_ADDC, ALU_ADDE,
@@ -93,8 +118,6 @@ package ppc_pkg;
   typedef enum logic [1:0] {
     MEM_BYTE, MEM_HALF, MEM_WORD
   } mem_size_t;
-  // Unit benches elaborate subsets of the package constants below.
-  /* verilator lint_off UNUSEDPARAM */
   // SPR numbers
   // Selector = {insn[15:11], insn[20:16]}. Bit 4 (instruction field bit 0)
   // marks a supervisor-only SPR.
@@ -128,7 +151,6 @@ package ppc_pkg;
   localparam int XER_CA_BIT = 29;
   localparam int XER_BYTE_COUNT_WIDTH = 7;
   localparam logic [31:0] XER_IMPLEMENTED_MASK = 32'he000_007f;
-  /* verilator lint_on UNUSEDPARAM */
   typedef struct packed {
     alu_op_t op;
     logic [31:0] a;
@@ -223,8 +245,7 @@ package ppc_pkg;
   } retire_packet_t;
 
   // ---- MSR and exception events -------------------------------------------
-  // HDL bit = 31 - manual bit. Not every build uses every constant.
-  /* verilator lint_off UNUSEDPARAM */
+  // HDL bit = 31 - manual bit.
   localparam int MSR_POW  = 18;
   localparam int MSR_TGPR = 17;
   localparam int MSR_ILE  = 16;
@@ -242,7 +263,6 @@ package ppc_pkg;
   localparam logic [31:0] MSR_SRR1_MASK = 32'h87c0_ffff;
   // Hard reset: IP=1 (UM 4.5.1).
   localparam logic [31:0] MSR_RESET = 32'h0000_0040;
-  /* verilator lint_on UNUSEDPARAM */
 
   function automatic logic [31:0] rfi_msr(
     input logic [31:0] old_msr,
@@ -272,3 +292,4 @@ package ppc_pkg;
   } exception_event_t;
   // ---- end MSR and exception events ---------------------------------------
 endpackage
+/* verilator lint_on UNUSEDPARAM */

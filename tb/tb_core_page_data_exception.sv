@@ -223,14 +223,14 @@ module tb_core_page_data_exception;
     reset_case(0);preload(2'b00);start_core();
     wait(done);@(negedge clk_i);
     check(denied==1&&physical_data==0&&held_retire>=6&&
-          handler_reads==4&&page_protection_o&&
+          handler_reads==4&&!page_fault_o&&
           dut.core.regfile.gpr[3]==32'h1000_1234&&
           dut.core.regfile.gpr[6]==32'h55,
           "load update denial mutated destination/base or missed handler");
     reset_case(1);preload(2'b11);start_core();
     wait(done);@(negedge clk_i);
     check(denied==1&&physical_data==0&&held_retire>=6&&
-          handler_reads==4&&page_protection_o&&
+          handler_reads==4&&!page_fault_o&&
           dut.core.regfile.gpr[3]==32'h1000_1234&&
           dut.core.regfile.gpr[6]==32'h55,
           "store update denial changed memory/base or missed handler");

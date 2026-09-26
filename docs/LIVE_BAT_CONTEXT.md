@@ -31,33 +31,34 @@ the fence. The wrapper does not expose a second MSR owner.
 
 ## Instruction translation faults
 
-In the live profile, a BAT response indicating exactly one of protection or
-guarded instruction access produces a held instruction response with wire cause
-1 or 2 respectively. Successful instruction responses use cause 0. These three
-bits match `ppc_pkg::fetch_fault_t`; the wrapper casts the standalone router's
-wire encoding to that enum. The fault has no physical request, and the core
-associates it with the original requested effective PC.
+In the live profile, a BAT instruction hit denied by protection or guarded
+access produces a held instruction response with `FETCH_ISI_PROTECTION` or
+`FETCH_ISI_GUARDED`. Successful instruction responses use `FETCH_OK`. The
+router port carries `ppc_pkg::fetch_fault_t` directly. The fault has no
+physical request, and the core associates it with the original requested
+effective PC.
 
-Instruction BAT miss, configuration/invalid-input failures, and simultaneous
-protection plus guarded conditions retain terminal diagnostics. The current
-typed enum represents only one cause; this slice does not invent a priority or
-claim combined-cause architectural handling. Physical instruction transport
-errors remain terminal even while a context fence is draining. The subsequent
+A hit with PP=00 and G=1 reports protection (SRR1 bit 4), the same
+protection-before-guarded order as the page path. Instruction BAT miss and
+configuration/invalid-input failures retain terminal diagnostics. Physical
+instruction transport errors remain terminal even while a context fence is
+draining. The subsequent
 [DSI protection extension](DATA_EXCEPTIONS.md) adds resumable BAT PP data denials
 when supervisor exceptions and live context are both enabled. Data misses,
 malformed translations and physical errors retain diagnostic responses.
 Default-profile instruction faults retain their previous terminal behavior.
 
-The `translation_fault_o` and detailed fault outputs retain sticky diagnostic
-history. A supported live instruction or data-protection fault may set that history and still
-return through its handler. `ifetch_fatal_o` distinguishes the router's terminal
-instruction outcome; only that terminal signal contributes to wrapper halt.
+The `translation_fault_o` and detailed fault outputs are sticky diagnostics
+for outcomes that are not typed faults: terminal fetch failures and generic
+data errors. A typed instruction or data-protection fault leaves them
+unchanged. `ifetch_fatal_o` distinguishes the router's terminal instruction
+outcome; only that terminal signal contributes to wrapper halt.
 
 ## Acceptance boundaries
 
 Directed tests cover held old-context offers/responses, delayed context updates,
-new translated addresses, typed protection/guarded responses, and combined-cause
-diagnostics. Core tests cover retirement atomicity, cancellation, privilege and
+new translated addresses, and typed protection/guarded responses, including
+PP=00 with G=1 reported as protection with the sticky diagnostics clear. Core tests cover retirement atomicity, cancellation, privilege and
 context acknowledgment stalls. Final counts and frozen-source regression
 evidence are recorded separately in the verification report.
 

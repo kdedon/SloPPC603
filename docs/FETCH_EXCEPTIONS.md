@@ -93,8 +93,8 @@ not physical machine-check sources.
 Physical bus/cache wrappers and the legacy BAT profile supply `FETCH_OK` for
 successful fetch responses and preserve terminal transport policies. With both
 supervisor and live-context parameters enabled, the BAT wrapper installs committed
-MSR IR/DR/PR and routes individual protection/guarded decisions into this carrier.
-Misses, malformed configuration, combined unrepresentable causes and physical
+MSR IR/DR/PR and routes protection/guarded decisions into this carrier; a hit
+with both reports protection. Misses, malformed configuration and physical
 transport errors retain terminal handling. Abstract tests still independently
 inject each typed cause without claiming a translation producer.
 

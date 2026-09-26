@@ -33,7 +33,7 @@ A request is accepted on `req_valid_i && req_ready_o`. With no prepared proposal
 | 3 | Unsupported | indexed/direct rule used by kinds 0/1 | PR is ignored | Data zero, unsupported error, no mutation |
 | 4 | Prepared write, opt-in only | indexed/direct rule used by kind 1 | PR=1 returns privileged error and no proposal | Normalized proposal response; selected SR changes only on later commit |
 
-The kind fields are three bits wide. Every response captures and holds the accepted request kind, selected index, and complete address. Error responses hold data zero. Privileged and unsupported are mutually exclusive: kinds 0/1 and enabled kind 4 may report privilege, kind 3 and disabled kind 4 report unsupported, and kind 2 reports neither. `req_indexed_i` and `req_index_i` have no effect on a snapshot selector. Kind 3 still uses them for deterministic index echo.
+The kind fields are three bits wide and typed `ppc_pkg::seg_req_kind_t`. Every response captures and holds the accepted request kind, selected index, and complete address. Error responses hold data zero. Privileged and unsupported are mutually exclusive: kinds 0/1 and enabled kind 4 may report privilege, kind 3 and disabled kind 4 report unsupported, and kind 2 reports neither. `req_indexed_i` and `req_index_i` have no effect on a snapshot selector. Kind 3 still uses them for deterministic index echo.
 
 A snapshot contains only the stored descriptor, selected SR index, and accepted
 effective address. The response does not echo PR, instruction/data access kind,

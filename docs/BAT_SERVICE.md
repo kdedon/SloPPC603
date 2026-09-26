@@ -65,6 +65,8 @@ per transaction; no independent instruction/data request can bypass it.
 | 4 | Committed BAT SPR write | SPR number, write data, PR |
 | 5–7 | Unsupported operation | No state change |
 
+The kind ports are typed `ppc_pkg::bat_req_kind_t`.
+
 `req_spr_i` is the ordinary 10-bit architectural SPR number, **not** the split
 bit-field encoding in an `mfspr`/`mtspr` instruction. CSR requests outside
 528–543 return unsupported even in problem state. An in-range CSR request with
@@ -96,8 +98,10 @@ Translation results preserve the existing translator contract: real-mode bypass,
 BAT hit/miss, protection/guarded/configuration diagnostics, index/match mask,
 PA/WIMG/PP. PA is usable only with `rsp_allow_o`; a miss returns no identity
 mapping. WIMG attributes remain metadata rather than implemented cache/bus
-ordering. The valid bank invariant normally prevents configuration errors during
-translation; diagnostics remain in the response for explicit contract reuse.
+ordering. Because only validated banks commit, translation uses a
+`VALIDATE_BANK=0` translator on the committed bank, and translation responses
+carry zero invalid-entry, overlap and configuration flags. A second, validating
+translator checks write candidates in real mode.
 
 ## Verification and reproduction
 

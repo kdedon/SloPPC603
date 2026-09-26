@@ -93,13 +93,13 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | ID | Sev | Cat | Where | Problem | Fix | Status |
 |---|---|---|---|---|---|---|
 | AUD-42 | M | E | `rtl/ppc_bat_memory_router.sv:1026`, `rtl/ppc_special.sv:606-617` | True miss always reports SRR1.WAY=0, so the TLB acts direct-mapped (documented in [CPU_TLB_MISS.md](CPU_TLB_MISS.md)). | Per-set LRU bit returned in the capsule. | design |
-| AUD-43 | L | E | `rtl/ppc_bat_translate.sv:54-110` | Bank config and overlap checks run per translation but cannot fire there. | Validate on write only; AND-OR result. | open |
-| AUD-44 | L | C | `rtl/ppc_bat_translate.sv:116-119` vs `rtl/ppc_tlb_service.sv:150-151` | BAT PP=00 with G=1 halts; the page path prioritizes and raises ISI (documented terminal in [LIVE_BAT_CONTEXT.md](LIVE_BAT_CONTEXT.md)). | Same protection-before-guarded rule. | open |
-| AUD-45 | L | K | `rtl/ppc_bat_memory_router.sv:1222-1234` | Lint sinks list used signals; comment false. | Sink only unused fields. | open |
-| AUD-46 | M | S | router 206-211 and literals; `ppc_bat_service.sv:47-52`; `ppc_tlb_service.sv:41-43`; `ppc_segment_registers.sv:211-214` | Request kinds re-declared and hard-coded across four modules. | Package enums. | open |
-| AUD-47 | L | S | router 159-205; `rtl/ppc_core_bat.sv:136,251,261` | Ports `logic [68:0]`/`[2:0]` although `page_miss_t` and fault enums exist. | Typed ports, named struct literal. | open |
+| AUD-43 | L | E | `rtl/ppc_bat_translate.sv:54-110` | Bank config and overlap checks run per translation but cannot fire there. | Validate on write only; AND-OR result. | fixed (VALIDATE_BANK parameter; one-hot AND-OR select) |
+| AUD-44 | L | C | `rtl/ppc_bat_translate.sv:116-119` vs `rtl/ppc_tlb_service.sv:150-151` | BAT PP=00 with G=1 halts; the page path prioritizes and raises ISI (documented terminal in [LIVE_BAT_CONTEXT.md](LIVE_BAT_CONTEXT.md)). | Same protection-before-guarded rule. | fixed (PP=00 with G=1 raises protection ISI) |
+| AUD-45 | L | K | `rtl/ppc_bat_memory_router.sv:1222-1234` | Lint sinks list used signals; comment false. | Sink only unused fields. | fixed |
+| AUD-46 | M | S | router 206-211 and literals; `ppc_bat_service.sv:47-52`; `ppc_tlb_service.sv:41-43`; `ppc_segment_registers.sv:211-214` | Request kinds re-declared and hard-coded across four modules. | Package enums. | fixed |
+| AUD-47 | L | S | router 159-205; `rtl/ppc_core_bat.sv:136,251,261` | Ports `logic [68:0]`/`[2:0]` although `page_miss_t` and fault enums exist. | Typed ports, named struct literal. | fixed |
 | AUD-48 | M | K | router 273-416,603-608,867-886 | Five near-identical offer equations and six owner flops for one exclusive owner. | One `owner_t`, one priority encoder. | open |
-| AUD-49 | L | K | router 931-940,1027-1045,1118 | Sticky fault outputs set by recoverable misses; `fault_miss_o` disagrees with `page_miss_o`. | Set on fatal paths only. | open |
+| AUD-49 | L | K | router 931-940,1027-1045,1118 | Sticky fault outputs set by recoverable misses; `fault_miss_o` disagrees with `page_miss_o`. | Set on fatal paths only. | fixed (sticky outputs fire on diagnostics only) |
 
 ### Exceptions and completion
 
@@ -119,7 +119,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 |---|---|---|---|---|---|---|
 | AUD-57 | L | S | all `rtl/*.sv` | No `` `default_nettype none``; `unique case` without `default:` in `ppc_icache.sv:81-90`, `ppc_bus60x_line_read.sv:88-93`. | Add both. | partial: case defaults added; default_nettype remains |
 | AUD-58 | L | S | `rtl/ppc_flags.sv:120-123`, `rtl/ppc_rename.sv:138-139,150-153` | Assertions not under `translate_off`. | Guard them. | fixed |
-| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | partial: bus/cache, execution, front-end and exception comments trimmed |
+| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | partial: bus/cache, execution, front-end, exception and MMU comments trimmed |
 | AUD-60 | L | S | `rtl/ppc_core.sv:283,322-353`, `rtl/ppc_flags.sv:62` | Raw MSR/XER bit indices and masks. | Named package constants. | partial: XER constants in ppc_pkg; MSR TGPR bit local to ppc_core |
 
 ### Tests and tooling

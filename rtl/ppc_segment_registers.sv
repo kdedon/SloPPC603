@@ -1,6 +1,4 @@
-// Standalone committed PowerPC segment-register bank.
-// This service stores normalized descriptors only; it does not translate an
-// address or model the 603e instruction timing of MFSR/MTSR operations.
+// Committed PowerPC segment-register bank storing normalized descriptors.
 module ppc_segment_registers #(
   parameter bit ENABLE_RUNTIME_SEGMENT = 1'b0
 ) (
@@ -15,7 +13,7 @@ module ppc_segment_registers #(
 
   input  logic        req_valid_i,
   output logic        req_ready_o,
-  input  logic [2:0]  req_kind_i,
+  input  ppc_pkg::seg_req_kind_t req_kind_i,
   input  logic        req_indexed_i,
   input  logic [3:0]  req_index_i,
   input  logic [31:0] req_address_i,
@@ -24,17 +22,14 @@ module ppc_segment_registers #(
 
   output logic        rsp_valid_o,
   input  logic        rsp_ready_i,
-  output logic [2:0]  rsp_kind_o,
+  output ppc_pkg::seg_req_kind_t rsp_kind_o,
   output logic [3:0]  rsp_index_o,
   output logic [31:0] rsp_address_o,
   output logic [31:0] rsp_data_o,
   output logic        rsp_privileged_o,
   output logic        rsp_unsupported_o
 );
-  localparam logic [2:0] REQ_READ     = 3'd0;
-  localparam logic [2:0] REQ_WRITE    = 3'd1;
-  localparam logic [2:0] REQ_SNAPSHOT = 3'd2;
-  localparam logic [2:0] REQ_PREPARE  = 3'd4;
+  import ppc_pkg::*;
 
   // Architectural SRs have no valid bit. Reset-to-zero is a deterministic
   // local service policy; 603e hard-reset SR contents are source-defined as
@@ -42,7 +37,7 @@ module ppc_segment_registers #(
   logic [31:0] sr_q [16];
 
   logic        rsp_valid_q;
-  logic [2:0]  rsp_kind_q;
+  seg_req_kind_t rsp_kind_q;
   logic [3:0]  rsp_index_q;
   logic [31:0] rsp_address_q;
   logic [31:0] rsp_data_q;
@@ -58,7 +53,7 @@ module ppc_segment_registers #(
 
   // Snapshot is an internal context observation and always selects from the
   // accepted address. Direct/indexed selection applies only to read/write.
-  assign request_index = (req_kind_i == REQ_SNAPSHOT) ? req_address_i[31:28] :
+  assign request_index = (req_kind_i == SEG_SNAPSHOT) ? req_address_i[31:28] :
                          (req_indexed_i ? req_address_i[31:28] : req_index_i);
   // T=0 reserves bits 27:24; T=1 is a different, opaque full-word format.
   assign normalized_write_data = req_data_i[31] ? req_data_i :
@@ -85,7 +80,7 @@ module ppc_segment_registers #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       rsp_valid_q <= 1'b0;
-      rsp_kind_q <= '0;
+      rsp_kind_q <= SEG_READ;
       rsp_index_q <= '0;
       rsp_address_q <= '0;
       rsp_data_q <= '0;
@@ -116,19 +111,19 @@ module ppc_segment_registers #(
         rsp_privileged_q <= 1'b0;
         rsp_unsupported_q <= 1'b0;
         case (req_kind_i)
-          REQ_READ: begin
+          SEG_READ: begin
             if (req_pr_i) rsp_privileged_q <= 1'b1;
             else rsp_data_q <= sr_q[request_index];
           end
-          REQ_WRITE: begin
+          SEG_WRITE: begin
             if (req_pr_i) rsp_privileged_q <= 1'b1;
             else begin
               sr_q[request_index] <= normalized_write_data;
               rsp_data_q <= normalized_write_data;
             end
           end
-          REQ_SNAPSHOT: rsp_data_q <= sr_q[request_index];
-          REQ_PREPARE: begin
+          SEG_SNAPSHOT: rsp_data_q <= sr_q[request_index];
+          SEG_PREPARE: begin
             if (!ENABLE_RUNTIME_SEGMENT) rsp_unsupported_q <= 1'b1;
             else if (req_pr_i) rsp_privileged_q <= 1'b1;
             else begin

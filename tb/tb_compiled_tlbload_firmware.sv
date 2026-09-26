@@ -150,7 +150,7 @@ module tb_compiled_tlbload_firmware;
       if(halted||fault||page_fault_o)begin
         check(mailbox_retired&&tlbie_retires==2&&page_fault_o&&page_miss_o&&
               !page_protection_o&&!page_no_execute_o&&!page_guarded_o&&!page_direct_store_o&&
-              !page_needs_changed_o&&!page_config_o&&!unused_fm&&!unused_fp,
+              !page_needs_changed_o&&!page_config_o&&unused_fm&&!unused_fp,
               "unexpected terminal cause or premature fault");
         check(unused_fi==(mode==1)&&!unused_fw&&
               unused_fea==((mode==1)?32'h20008000:32'h10008000),"wrong invalidated access");

@@ -105,6 +105,19 @@ module tb_compiled_page_isi_firmware;
   assign dr=rst_n&&!dpending&&cycles%5!=2;
   assign rv=rst_n&&dpending&&ddelay==0;
   assign tr=rst_n&&cycles%7>=2;
+  // Page lookup causes the router consumed. Typed faults leave the sticky
+  // diagnostic outputs clear, so the bench records causes here.
+  logic seen_pp=0,seen_n=0,seen_g=0,seen_miss=0,seen_ds=0,seen_changed=0;
+  always @(posedge clk)
+    if(dut.router.tlb_rsp_valid&&dut.router.tlb_rsp_ready&&
+       dut.router.tlb_rsp_kind==TLB_LOOKUP)begin
+      seen_pp<=seen_pp||dut.router.tlb_rsp_protection;
+      seen_n<=seen_n||dut.router.tlb_rsp_no_execute;
+      seen_g<=seen_g||dut.router.tlb_rsp_guarded;
+      seen_miss<=seen_miss||dut.router.tlb_rsp_miss;
+      seen_ds<=seen_ds||dut.router.tlb_rsp_direct_store;
+      seen_changed<=seen_changed||dut.router.tlb_rsp_needs_changed;
+    end
   always @(posedge clk)begin : monitor
     logic [9:0] selector;
     if(!rst_n)begin
@@ -114,10 +127,8 @@ module tb_compiled_page_isi_firmware;
       check(!halted&&!cut_accepted&&!physical_error&&!interrupt_taken&&!decrementer_taken,
             "unexpected halt/physical/asynchronous event");
       check(!unused_page_ports[1],"fixture TLB management active");
-      if(fault)check(unused_fi&&!unused_fp&&!unused_fm&&!unused_fg&&!unused_fc&&
-                     !unused_finv&&unused_fentries==0&&unused_fea[31:12]==20'h20000&&
-                     unused_page_ports[42]&&!unused_page_ports[43],
-                     $sformatf("wrong page/router fault classification fi=%b fw=%b fm=%b fp=%b fg=%b fc=%b finv=%b fent=%h fea=%08x page=%h",unused_fi,unused_fw,unused_fm,unused_fp,unused_fg,unused_fc,unused_finv,unused_fentries,unused_fea,unused_page_ports));
+      check(!fault&&unused_page_ports[49:42]==0,
+            $sformatf("typed page ISI set sticky diagnostic page=%h",unused_page_ports));
       check(!bat_valid&&!bat_rsp&&!bat_rejected&&!bat_unsupported&&!bat_config&&
             !bat_overlap&&bat_invalid==0,"harness must not program BATs");
       if(running)begin
@@ -189,10 +200,8 @@ module tb_compiled_page_isi_firmware;
         retires++;
       end
       if(mailbox_retired&&!ipending&&!dpending&&!iv&&!dv&&!sv&&!rv)begin
-        check(transitions==12&&!cir&&fault&&unused_page_ports[42]&&
-              unused_page_ports[44]&&unused_page_ports[45]&&unused_page_ports[46]&&
-              !unused_page_ports[43]&&!unused_page_ports[47]&&
-              !unused_page_ports[48]&&!unused_page_ports[49],
+        check(transitions==12&&!cir&&seen_pp&&seen_n&&seen_g&&
+              !seen_miss&&!seen_ds&&!seen_changed,
               "missing clean page PP/N/G diagnostics or context transitions");
         check(isi_pp==1&&isi_guarded==2&&bat_writes==12&&tlbli_retires==4&&
               segment_writes==3&&

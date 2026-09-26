@@ -132,7 +132,8 @@ module ppc_core_bat #(
   logic context_valid, context_ready, memory_quiescent;
   logic committed_ir, committed_dr, committed_pr;
   logic router_start_ready, start_context_supported;
-  logic [2:0] imem_rsp_fault, dmem_rsp_fault;
+  ppc_pkg::fetch_fault_t imem_rsp_fault;
+  ppc_pkg::data_fault_t dmem_rsp_fault;
   logic bat_csr_req_valid, bat_csr_req_ready, bat_csr_req_write;
   logic [9:0] bat_csr_req_spr;
   logic [31:0] bat_csr_req_data, bat_csr_rsp_data;
@@ -140,8 +141,7 @@ module ppc_core_bat #(
   logic bat_csr_commit, bat_csr_abort, bat_csr_ack_valid, bat_csr_ack_ready, bat_csr_idle;
 
   assign core_rst_n = rst_ni && running_o;
-  // Live context starts at the core's reset MSR, not a second independent
-  // startup context. Legacy startup-programmed translation is unchanged.
+  // Live context starts at the core's reset MSR.
   logic tlb_inv_req_valid;
   logic tlb_inv_req_ready;
   logic [31:0] tlb_inv_req_ea;
@@ -247,7 +247,7 @@ module ppc_core_bat #(
     .imem_req_ready_i(imem_req_ready), .imem_req_addr_o(imem_req_addr),
     .imem_rsp_valid_i(imem_rsp_valid), .imem_rsp_ready_o(imem_rsp_ready),
     .imem_rsp_insn_i(imem_rsp_insn),
-    .imem_rsp_fault_i(ppc_pkg::fetch_fault_t'(imem_rsp_fault)),
+    .imem_rsp_fault_i(imem_rsp_fault),
     .imem_rsp_page_miss_i(imem_rsp_page_miss),
     .context_valid_o(context_valid), .context_ready_i(context_ready),
     .context_ir_o(committed_ir), .context_dr_o(committed_dr),
@@ -257,7 +257,7 @@ module ppc_core_bat #(
     .dmem_req_write_o(dmem_req_write), .dmem_req_addr_o(dmem_req_addr),
     .dmem_req_wdata_o(dmem_req_wdata), .dmem_req_wstrb_o(dmem_req_wstrb),
     .dmem_rsp_valid_i(dmem_rsp_valid), .dmem_rsp_ready_o(dmem_rsp_ready),
-    .dmem_rsp_fault_i(ppc_pkg::data_fault_t'(dmem_rsp_fault)),
+    .dmem_rsp_fault_i(dmem_rsp_fault),
     .dmem_rsp_page_miss_i(dmem_rsp_page_miss),
     .dmem_rsp_rdata_i(dmem_rsp_rdata), .dmem_rsp_error_i(dmem_rsp_error),
     .retire_valid_o, .retire_ready_i, .retire_o,

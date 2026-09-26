@@ -110,7 +110,7 @@ module tb_compiled_dsi_firmware;
     end else begin
       cycles++;check(cycles<150000,"firmware timeout");
       check(!halted&&!cut_accepted&&!physical_error&&!interrupt_taken&&!decrementer_taken,"unexpected halt/physical/asynchronous event");
-      if(fault)check(!unused_fi&&unused_fp&&!unused_fm&&!unused_fg&&!unused_fc&&!unused_finv&&unused_fentries==0&&unused_fea==32'h10008000,"wrong router fault classification");
+      check(!fault,"typed DSI set sticky router diagnostic");
       check(!bat_valid&&!bat_rsp&&!bat_rejected&&!bat_unsupported&&!bat_config&&!bat_overlap&&bat_invalid==0,"harness must not program BATs");
       if(running)begin
         check(!bat_ready&&!cpr&&cir==cdr,"unexpected startup/live context");
@@ -162,7 +162,7 @@ module tb_compiled_dsi_firmware;
         retires++;
       end
       if(mailbox_retired&&!ipending&&!dpending&&!iv&&!dv&&!sv&&!rv)begin
-        check(transitions==26&&last_context==0&&fault,"missing fault/context phases");
+        check(transitions==26&&last_context==0,"missing context phases");
         check(alias_stores==2&&dsi_loads==8&&dsi_stores==4&&bat_writes==30,"missing DSI effects or BAT repair");
         check(word_at(BASE+32'h8000)==32'h2468ace0,"final physical data corrupted");
         $display("PASS compiled DSI firmware: load_faults=%0d store_faults=%0d BATwrites=%0d retires=%0d reads=%0d writes=%0d cycles=%0d",dsi_loads,dsi_stores,bat_writes,retires,reads,writes,cycles);$finish;
