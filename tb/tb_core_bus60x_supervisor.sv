@@ -37,7 +37,7 @@ module tb_core_bus60x_supervisor #(
   end
 
   ppc_core_bus60x #(
-    .RESET_PC(32'b0),
+    .RESET_PC(32'hfff0_0100),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS)
   ) dut (
     .clk_i(clk), .rst_ni(rst_n),
@@ -59,7 +59,7 @@ module tb_core_bus60x_supervisor #(
     .ta_n_i(ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n)
   );
 
-  bus60x_target_bfm #(.BASE_ADDR(32'b0), .MEM_BYTES(4096)) target (
+  bus60x_target_bfm #(.BASE_ADDR(32'hfff0_0000), .MEM_BYTES(4096)) target (
     .clk_i(clk), .br_n_i(br_n), .abb_n_i(abb_n_driven),
     .abb_oe_i(abb_oe), .ts_n_i(ts_n), .ts_oe_i(ts_oe),
     .a_i(bus_a), .dbb_n_i(dbb_n_driven), .dbb_oe_i(dbb_oe),
@@ -90,23 +90,23 @@ module tb_core_bus60x_supervisor #(
       if (addr_oe) check(bus_busy, "address ownership implies busy bus");
       if (retire_valid && retire_ready) begin
         if (!ENABLE_SUPERVISOR_EXCEPTIONS) begin
-          check(retirements == 0 && retired.pc == 0 && retired.illegal,
+          check(retirements == 0 && retired.pc == 32'hfff0_0100 && retired.illegal,
                 "default profile rejects SC without executing handler");
           done = 1'b1;
         end else begin
           check(!retired.illegal && !halted, "enabled profile executes legal instruction");
           case (retirements)
-            0: check(retired.pc == 0 && retired.insn == 32'h44000002, "SC retires");
-            1: check(retired.pc == 32'hc00 && retired.gpr == 5 &&
+            0: check(retired.pc == 32'hfff0_0100 && retired.insn == 32'h44000002, "SC retires");
+            1: check(retired.pc == 32'hfff0_0c00 && retired.gpr == 5 &&
                      retired.gpr_write && retired.value == 7, "handler executes");
-            2: check(retired.pc == 32'hc04 && retired.insn == 32'h4c000064, "RFI retires");
-            3: check(retired.pc == 4 && retired.gpr == 3 &&
-                     retired.gpr_write && retired.value == 0, "MFMSR after return");
-            4: check(retired.pc == 8 && retired.insn == 32'h7c0004ac, "SYNC retires");
-            5: check(retired.pc == 12 && retired.insn == 32'h7c0006ac, "EIEIO retires");
-            6: check(retired.pc == 16 && retired.insn == 32'h4c00012c, "ISYNC retires");
+            2: check(retired.pc == 32'hfff0_0c04 && retired.insn == 32'h4c000064, "RFI retires");
+            3: check(retired.pc == 32'hfff0_0104 && retired.gpr == 3 &&
+                     retired.gpr_write && retired.value == 32'h40, "MFMSR after return");
+            4: check(retired.pc == 32'hfff0_0108 && retired.insn == 32'h7c0004ac, "SYNC retires");
+            5: check(retired.pc == 32'hfff0_010c && retired.insn == 32'h7c0006ac, "EIEIO retires");
+            6: check(retired.pc == 32'hfff0_0110 && retired.insn == 32'h4c00012c, "ISYNC retires");
             7: begin
-              check(retired.pc == 20 && retired.gpr == 4 &&
+              check(retired.pc == 32'hfff0_0114 && retired.gpr == 4 &&
                     retired.gpr_write && retired.value == 42, "post-ISYNC refetch executes");
               done = 1'b1;
             end
@@ -121,13 +121,13 @@ module tb_core_bus60x_supervisor #(
   initial begin
     retire_ready = 1'b1;
     repeat (3) @(negedge clk);
-    put_word(0, 32'h44000002); // sc
-    put_word(4, 32'h7c6000a6); // mfmsr r3
-    put_word(8, 32'h7c0004ac); // sync
-    put_word(12, 32'h7c0006ac); // eieio
-    put_word(16, 32'h4c00012c); // isync
-    put_word(20, 32'h3880002a); // addi r4,0,42
-    put_word(24, 32'h48000000); // terminal loop
+    put_word('h100, 32'h44000002); // sc
+    put_word('h104, 32'h7c6000a6); // mfmsr r3
+    put_word('h108, 32'h7c0004ac); // sync
+    put_word('h10c, 32'h7c0006ac); // eieio
+    put_word('h110, 32'h4c00012c); // isync
+    put_word('h114, 32'h3880002a); // addi r4,0,42
+    put_word('h118, 32'h48000000); // terminal loop
     put_word('hc00, 32'h38a00007); // addi r5,0,7
     put_word('hc04, 32'h4c000064); // rfi
     rst_n = 1'b1;

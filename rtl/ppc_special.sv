@@ -1,5 +1,4 @@
 // Serialized control, SPR, compare and one-outstanding real-mode memory lane.
-// This is a functional lane; it does not claim 603e timing or cache behavior.
 module ppc_special #(
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
@@ -140,11 +139,14 @@ module ppc_special #(
     S_IDLE, S_EXEC, S_HOLD, S_MEM_PREP, S_MEM_OFFER,
     S_MEM_WAIT, S_MEM_RESULT, S_MEM_DRAIN, S_EXCEPTION_RESULT,
     S_CONTEXT_DRAIN, S_CONTEXT_INSTALL, S_CONTEXT_REDIRECT, S_CONTEXT_ABORT,
-    S_INTERRUPT_COMMIT, S_TIMER_RESULT,
+    S_INTERRUPT_COMMIT, S_TIMER_RESULT, S_EXCEPTION_HALT,
     S_BAT_OFFER, S_BAT_WAIT, S_BAT_RESULT, S_BAT_ABORT, S_BAT_ACK, S_BAT_REDIRECT
   } state_t;
   state_t state_q;
-  uop_t unused_uop_q;
+  // The shared uop record carries fields for other lanes.
+  /* verilator lint_off UNUSEDSIGNAL */
+  uop_t uop_q;
+  /* verilator lint_on UNUSEDSIGNAL */
   completion_tag_t producer_q;
   logic [31:0] a_q, b_q, c_q, pc_q, cr_snapshot_q;
   logic [2:0] xer_flags_q;
@@ -154,13 +156,10 @@ module ppc_special #(
   logic branch_taken_q, branch_ctr_write_q, branch_lr_write_q;
   logic [31:0] branch_target_q, branch_ctr_next_q, branch_lr_next_q;
   logic [31:0] lr_q, ctr_q;
-  // Architecturally visible SPRG0..SPRG3 storage. The core reset input models
-  // hard reset for this bank; soft-reset preservation is outside this module.
+  // SPRG0..SPRG3; rst_ni models hard reset.
   logic [31:0] sprg_q [4];
   logic [31:0] dar_q, dsisr_q;
-  // Full-width software seed state for a later CPU TLB load instruction.
   logic [31:0] dcmp_q, icmp_q, rpa_q;
-  // Full-width committed SDR1; the future hash unit validates its encoding.
   logic [31:0] sdr1_q;
   logic [31:0] imiss_q, dmiss_q, hash1_q, hash2_q;
   page_miss_t fetch_page_miss_q, miss_context;
@@ -183,14 +182,12 @@ module ppc_special #(
   logic [31:0] branch_ctr_after;
   logic cr_logic_a, cr_logic_b, cr_logic_value;
   logic exception_event_valid, exception_event_ready;
-  logic [3:0] exception_event_kind;
+  exception_event_t exception_event_kind;
   logic exception_result_valid, exception_result_supported;
-  logic exception_result_is_exception;
   logic [31:0] exception_result_target;
   logic exception_state_load_valid, exception_state_load_ready;
   logic [2:0] exception_state_load_enable;
   logic rfi_state_unsupported, exception_entry_unsupported, dsi_event;
-  logic _unused_exception_result_kind;
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
   logic decrementer_selected_q;
   // External services own committed BAT, segment and TLB state. This lane owns
@@ -207,33 +204,33 @@ module ppc_special #(
   logic mmu_error_q, mmu_response_pending_q;
   logic [31:0] mmu_value_q, mmu_resume_target_q;
   assign bat_operation = ENABLE_RUNTIME_BAT &&
-    ((unused_uop_q.special_op == SPECIAL_MFSPR) || (unused_uop_q.special_op == SPECIAL_MTSPR)) &&
-    (unused_uop_q.spr >= 10'd528) && (unused_uop_q.spr <= 10'd543);
+    ((uop_q.special_op == SPECIAL_MFSPR) || (uop_q.special_op == SPECIAL_MTSPR)) &&
+    (uop_q.spr >= 10'd528) && (uop_q.spr <= 10'd543);
   assign dispatch_bat = ENABLE_RUNTIME_BAT &&
     ((uop_i.special_op == SPECIAL_MFSPR) || (uop_i.special_op == SPECIAL_MTSPR)) &&
     (uop_i.spr >= 10'd528) && (uop_i.spr <= 10'd543);
   assign segment_operation = ENABLE_SEGMENT_REGISTERS &&
-    ((unused_uop_q.special_op == SPECIAL_MFSR) ||
-     (unused_uop_q.special_op == SPECIAL_MTSR));
+    ((uop_q.special_op == SPECIAL_MFSR) ||
+     (uop_q.special_op == SPECIAL_MTSR));
   assign dispatch_segment = ENABLE_SEGMENT_REGISTERS &&
     ((uop_i.special_op == SPECIAL_MFSR) ||
      (uop_i.special_op == SPECIAL_MTSR));
   assign tlbie_operation = ENABLE_TLB_INVALIDATE &&
-    (unused_uop_q.special_op == SPECIAL_TLBIE);
+    (uop_q.special_op == SPECIAL_TLBIE);
   assign dispatch_tlbie = ENABLE_TLB_INVALIDATE &&
     (uop_i.special_op == SPECIAL_TLBIE);
-  assign tlb_fill_opcode = (unused_uop_q.special_op == SPECIAL_TLBLD) ||
-                           (unused_uop_q.special_op == SPECIAL_TLBLI);
+  assign tlb_fill_opcode = (uop_q.special_op == SPECIAL_TLBLD) ||
+                           (uop_q.special_op == SPECIAL_TLBLI);
   assign dispatch_tlb_fill = ENABLE_TLB_LOAD &&
     ((uop_i.special_op == SPECIAL_TLBLD) ||
      (uop_i.special_op == SPECIAL_TLBLI));
   assign sdr1_write = ENABLE_SDR1 &&
-    (unused_uop_q.special_op == SPECIAL_MTSPR) && (unused_uop_q.spr == 10'd25);
+    (uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd25);
   assign dispatch_sdr1_write = ENABLE_SDR1 &&
     (uop_i.special_op == SPECIAL_MTSPR) && (uop_i.spr == 10'd25);
   assign tlb_fill_cmp = (uop_i.special_op == SPECIAL_TLBLD) ? dcmp_q : icmp_q;
-  // This bounded software-seeded profile accepts only the miss-shaped words
-  // whose compare API agrees with the EA used to select the TLB entry.
+  // Accept only miss-shaped seeds whose compare word matches the EA that
+  // selects the TLB entry.
   assign tlb_fill_seed_invalid = !tlb_fill_cmp[31] || tlb_fill_cmp[6] ||
     (tlb_fill_cmp[5:0] != b_i[27:22]) ||
     (|rpa_q[11:9]) || rpa_q[2] || (|msr_o[5:4]);
@@ -242,8 +239,8 @@ module ppc_special #(
   assign mmu_operation = bat_operation || segment_operation || tlbie_operation ||
                          tlb_fill_operation;
   assign mmu_req_write = (bat_operation &&
-    (unused_uop_q.special_op == SPECIAL_MTSPR)) ||
-    (segment_operation && (unused_uop_q.special_op == SPECIAL_MTSR)) ||
+    (uop_q.special_op == SPECIAL_MTSPR)) ||
+    (segment_operation && (uop_q.special_op == SPECIAL_MTSR)) ||
     tlbie_operation || tlb_fill_operation;
   assign mmu_req_ready = bat_operation ? bat_csr_req_ready_i :
                          segment_operation ? segment_csr_req_ready_i :
@@ -284,9 +281,9 @@ module ppc_special #(
   assign tlb_fill_ack_ready_o = rst_ni && (state_q == S_BAT_ACK) &&
                                 tlb_fill_operation;
   assign segment_csr_req_valid_o = rst_ni && (state_q == S_BAT_OFFER) && segment_operation;
-  assign segment_csr_req_write_o = unused_uop_q.special_op == SPECIAL_MTSR;
-  assign segment_csr_req_index_o = unused_uop_q.sr_indexed ? b_q[31:28] :
-                                    unused_uop_q.sr_index;
+  assign segment_csr_req_write_o = uop_q.special_op == SPECIAL_MTSR;
+  assign segment_csr_req_index_o = uop_q.sr_indexed ? b_q[31:28] :
+                                    uop_q.sr_index;
   assign segment_csr_req_data_o = a_q;
   assign segment_csr_rsp_ready_o = mmu_rsp_ready && segment_operation;
   assign segment_csr_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
@@ -294,8 +291,8 @@ module ppc_special #(
   assign segment_csr_abort_o = rst_ni && (state_q == S_BAT_ABORT) && segment_operation;
   assign segment_csr_ack_ready_o = rst_ni && (state_q == S_BAT_ACK) && segment_operation;
   assign bat_csr_req_valid_o = rst_ni && (state_q == S_BAT_OFFER) && bat_operation;
-  assign bat_csr_req_write_o = unused_uop_q.special_op == SPECIAL_MTSPR;
-  assign bat_csr_req_spr_o = unused_uop_q.spr;
+  assign bat_csr_req_write_o = uop_q.special_op == SPECIAL_MTSPR;
+  assign bat_csr_req_spr_o = uop_q.spr;
   assign bat_csr_req_data_o = a_q;
   assign bat_csr_rsp_ready_o = mmu_rsp_ready && bat_operation;
   assign bat_csr_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
@@ -306,18 +303,18 @@ module ppc_special #(
   logic [63:0] timebase;
   logic [31:0] decrementer, timer_read_value_q;
   logic timer_read, timer_read_execute, timer_write;
-  assign timer_read = ENABLE_TIMERS && (unused_uop_q.special_op == SPECIAL_MFSPR) &&
-    ((unused_uop_q.spr == 10'd22) || (unused_uop_q.spr == 10'd268) ||
-     (unused_uop_q.spr == 10'd269));
+  assign timer_read = ENABLE_TIMERS && (uop_q.special_op == SPECIAL_MFSPR) &&
+    ((uop_q.spr == 10'd22) || (uop_q.spr == 10'd268) ||
+     (uop_q.spr == 10'd269));
   assign timer_read_execute = rst_ni && (state_q == S_EXEC) && timer_read && !cancel_i;
   assign timer_write = ENABLE_TIMERS && rst_ni && (state_q == S_HOLD) &&
-    commit_match && (unused_uop_q.special_op == SPECIAL_MTSPR) &&
-    ((unused_uop_q.spr == 10'd22) || (unused_uop_q.spr == 10'd284) ||
-     (unused_uop_q.spr == 10'd285));
+    commit_match && (uop_q.special_op == SPECIAL_MTSPR) &&
+    ((uop_q.spr == 10'd22) || (uop_q.spr == 10'd284) ||
+     (uop_q.spr == 10'd285));
   generate if (ENABLE_TIMERS) begin : timers_enabled
     ppc_timer timer (
       .clk_i, .rst_ni, .timer_tick_i, .timebase_enable_i,
-      .write_valid_i(timer_write), .write_spr_i(unused_uop_q.spr),
+      .write_valid_i(timer_write), .write_spr_i(uop_q.spr),
       .write_value_i(a_q), .decrementer_accept_i(decrementer_taken_o),
       .timebase_o(timebase), .decrementer_o(decrementer), .decrementer_pending_o
     );
@@ -328,7 +325,7 @@ module ppc_special #(
     logic unused_timer_inputs;
     assign unused_timer_inputs = ^{timer_tick_i, timebase_enable_i, timer_write};
   end endgenerate
-  logic [31:0] context_target_q, rfi_prospective, mtmsr_value;
+  logic [31:0] context_target_q, mtmsr_value;
   localparam logic [31:0] LIVE_UNSUPPORTED_MASK =
     (ENABLE_EXTERNAL_INTERRUPTS ? 32'h0007_3f03 : 32'h0007_bf03) &
     ~(ENABLE_TGPR ? 32'h0002_0000 : 32'b0);
@@ -350,28 +347,11 @@ module ppc_special #(
   assign dispatch_context = ENABLE_LIVE_CONTEXT && context_operation(uop_i.special_op);
   assign frontend_fence_o = rst_ni && fence_q;
   assign context_valid_o = rst_ni && (state_q == S_CONTEXT_INSTALL);
-  assign rfi_prospective = ((msr_o & ~32'h87c0_ffff) |
-                           (srr1_o & 32'h87c0_ffff)) & ~32'h0002_0000;
   assign mtmsr_unsupported = !live_mode_supported(a_q);
-  assign mtmsr_value = (msr_o & ~MFMSR_READ_MASK) | (a_q & LIVE_SUPPORTED_MASK);
+  assign mtmsr_value = (msr_o & ~MSR_IMPLEMENTED_MASK) | (a_q & LIVE_SUPPORTED_MASK);
 
-  localparam logic [3:0] EVENT_SC               = 4'd0;
-  localparam logic [3:0] EVENT_PROGRAM_ILLEGAL = 4'd1;
-  localparam logic [3:0] EVENT_PROGRAM_PRIV    = 4'd2;
-  localparam logic [3:0] EVENT_RFI              = 4'd3;
-  localparam logic [3:0] EVENT_ALIGNMENT        = 4'd4;
-  localparam logic [3:0] EVENT_ISI              = 4'd5;
-  localparam logic [3:0] EVENT_EXTERNAL         = 4'd6;
-  localparam logic [3:0] EVENT_DECREMENTER      = 4'd7;
-  localparam logic [3:0] EVENT_DSI              = 4'd8;
-  localparam logic [3:0] EVENT_TLB_I_MISS       = 4'd9;
-  localparam logic [3:0] EVENT_TLB_D_LOAD       = 4'd10;
-  localparam logic [3:0] EVENT_TLB_D_STORE      = 4'd11;
-  // Only PR and IP from restored control state affect this bounded core.
+  // Restored MSR bits rfi cannot honor without live context.
   localparam logic [31:0] RFI_UNSUPPORTED_ACTIVE_MASK = 32'h0000_bf33;
-  // Table 4-7 says reserved MSR bits read as zero. This contains every named
-  // 603e MSR field in HDL bit numbering.
-  localparam logic [31:0] MFMSR_READ_MASK = 32'h0007_ff73;
 
   function automatic logic [3:0] select_cr_field(
     input logic [31:0] cr,
@@ -409,14 +389,14 @@ module ppc_special #(
 
   always_comb begin
     compare_eq = (a_q == b_q);
-    if (unused_uop_q.special_op == SPECIAL_CMP)
+    if (uop_q.special_op == SPECIAL_CMP)
       compare_lt = $signed(a_q) < $signed(b_q);
     else
       compare_lt = a_q < b_q;
     compare_cr0 = {compare_lt, !compare_lt && !compare_eq,
                    compare_eq, so_q};
 
-    case (unused_uop_q.spr)
+    case (uop_q.spr)
       10'd1: exec_value = {xer_flags_q, 22'b0, xer_byte_count_q};
       10'd8: exec_value = lr_q;
       10'd9: exec_value = ctr_q;
@@ -442,9 +422,9 @@ module ppc_special #(
       default: exec_value = '0;
     endcase
 
-    cr_logic_a = cr_snapshot_q[31-unused_uop_q.cr_bit_a];
-    cr_logic_b = cr_snapshot_q[31-unused_uop_q.cr_bit_b];
-    case (unused_uop_q.cr_logic)
+    cr_logic_a = cr_snapshot_q[31-uop_q.cr_bit_a];
+    cr_logic_b = cr_snapshot_q[31-uop_q.cr_bit_b];
+    case (uop_q.cr_logic)
       CR_LOGIC_AND:  cr_logic_value = cr_logic_a & cr_logic_b;
       CR_LOGIC_ANDC: cr_logic_value = cr_logic_a & ~cr_logic_b;
       CR_LOGIC_EQV:  cr_logic_value = ~(cr_logic_a ^ cr_logic_b);
@@ -460,32 +440,32 @@ module ppc_special #(
     result_valid_o = 1'b0;
     if (rst_ni && (state_q == S_EXEC)) begin
       result_valid_o = !timer_read;
-      if (unused_uop_q.special_op == SPECIAL_MFSPR) result_o.value = exec_value;
-      if (unused_uop_q.special_op == SPECIAL_MTSPR && unused_uop_q.spr == 10'd1)
+      if (uop_q.special_op == SPECIAL_MFSPR) result_o.value = exec_value;
+      if (uop_q.special_op == SPECIAL_MTSPR && uop_q.spr == 10'd1)
         result_o.value = a_q;
-      if (unused_uop_q.special_op == SPECIAL_MFMSR)
-        result_o.value = msr_o & MFMSR_READ_MASK;
-      if (unused_uop_q.special_op == SPECIAL_MFCR)
+      if (uop_q.special_op == SPECIAL_MFMSR)
+        result_o.value = msr_o & MSR_IMPLEMENTED_MASK;
+      if (uop_q.special_op == SPECIAL_MFCR)
         result_o.value = cr_snapshot_q;
-      if (unused_uop_q.special_op == SPECIAL_MTCRF)
+      if (uop_q.special_op == SPECIAL_MTCRF)
         result_o.value = a_q;
-      if (unused_uop_q.special_op == SPECIAL_CR_LOGIC)
+      if (uop_q.special_op == SPECIAL_CR_LOGIC)
         result_o.value[0] = cr_logic_value;
-      if (unused_uop_q.special_op == SPECIAL_MCRF)
+      if (uop_q.special_op == SPECIAL_MCRF)
         result_o.cr0 = select_cr_field(cr_snapshot_q,
-                                       unused_uop_q.cr_source_field);
-      if (unused_uop_q.special_op == SPECIAL_MCRXR) begin
+                                       uop_q.cr_source_field);
+      if (uop_q.special_op == SPECIAL_MCRXR) begin
         result_o.cr0 = {xer_flags_q, 1'b0};
         result_o.ca = 1'b0;
         result_o.ov = 1'b0;
         result_o.so = 1'b0;
       end
-      if ((unused_uop_q.special_op == SPECIAL_CMP) ||
-          (unused_uop_q.special_op == SPECIAL_CMPL))
+      if ((uop_q.special_op == SPECIAL_CMP) ||
+          (uop_q.special_op == SPECIAL_CMPL))
         result_o.cr0 = compare_cr0;
-      if ((unused_uop_q.special_op == SPECIAL_MTMSR) &&
+      if ((uop_q.special_op == SPECIAL_MTMSR) &&
           mtmsr_unsupported) result_o.fault = 1'b1;
-      if ((unused_uop_q.special_op == SPECIAL_RFI) &&
+      if ((uop_q.special_op == SPECIAL_RFI) &&
           rfi_state_unsupported) result_o.fault = 1'b1;
       if (miss_spr_read_invalid ||
           (fetch_page_miss_opcode && !miss_eligible))
@@ -494,11 +474,11 @@ module ppc_special #(
         result_o.fault = 1'b1;
       if (tlb_fill_opcode && tlb_fill_local_error_q)
         result_o.fault = 1'b1;
-      if (((unused_uop_q.special_op == SPECIAL_SC) ||
-           (unused_uop_q.special_op == SPECIAL_PROGRAM_ILLEGAL) ||
-           (unused_uop_q.special_op == SPECIAL_PROGRAM_PRIV) ||
-           (unused_uop_q.special_op == SPECIAL_ALIGNMENT) ||
-           (unused_uop_q.special_op == SPECIAL_ISI)) &&
+      if (((uop_q.special_op == SPECIAL_SC) ||
+           (uop_q.special_op == SPECIAL_PROGRAM_ILLEGAL) ||
+           (uop_q.special_op == SPECIAL_PROGRAM_PRIV) ||
+           (uop_q.special_op == SPECIAL_ALIGNMENT) ||
+           (uop_q.special_op == SPECIAL_ISI)) &&
           exception_entry_unsupported) result_o.fault = 1'b1;
     end else if (rst_ni && (state_q == S_BAT_RESULT)) begin
       result_valid_o = !cancel_i;
@@ -514,14 +494,14 @@ module ppc_special #(
   end
 
   always_comb begin
-    misaligned = ((unused_uop_q.mem_size == MEM_WORD) && (ea_q[1:0] != 0)) ||
-                 ((unused_uop_q.mem_size == MEM_HALF) && ea_q[0]);
+    misaligned = ((uop_q.mem_size == MEM_WORD) && (ea_q[1:0] != 0)) ||
+                 ((uop_q.mem_size == MEM_HALF) && ea_q[0]);
     dmem_req_valid_o = rst_ni && (state_q == S_MEM_OFFER);
-    dmem_req_write_o = (unused_uop_q.special_op == SPECIAL_STORE);
+    dmem_req_write_o = (uop_q.special_op == SPECIAL_STORE);
     dmem_req_addr_o = {ea_q[31:2], 2'b0};
     dmem_req_wdata_o = '0;
     dmem_req_wstrb_o = '0;
-    case (unused_uop_q.mem_size)
+    case (uop_q.mem_size)
       MEM_BYTE: begin
         case (ea_q[1:0])
           2'd0: begin
@@ -555,7 +535,7 @@ module ppc_special #(
     dmem_rsp_ready_o = rst_ni && ((state_q == S_MEM_WAIT) ||
                                   (state_q == S_MEM_DRAIN));
     store_irrevocable_o = rst_ni &&
-      (unused_uop_q.special_op == SPECIAL_STORE) &&
+      (uop_q.special_op == SPECIAL_STORE) &&
       ((state_q == S_MEM_OFFER) || (state_q == S_MEM_WAIT) ||
        (state_q == S_MEM_RESULT) || (state_q == S_HOLD));
 
@@ -570,18 +550,18 @@ module ppc_special #(
   end
 
   assign branch_commit_redirect_o = rst_ni && (state_q == S_HOLD) && commit_match &&
-    ((unused_uop_q.special_op == SPECIAL_B) ||
-     (unused_uop_q.special_op == SPECIAL_BC) ||
-     (unused_uop_q.special_op == SPECIAL_BCLR) ||
-     (unused_uop_q.special_op == SPECIAL_BCCTR) ||
-     (unused_uop_q.special_op == SPECIAL_ISYNC)) && branch_taken_q;
+    ((uop_q.special_op == SPECIAL_B) ||
+     (uop_q.special_op == SPECIAL_BC) ||
+     (uop_q.special_op == SPECIAL_BCLR) ||
+     (uop_q.special_op == SPECIAL_BCCTR) ||
+     (uop_q.special_op == SPECIAL_ISYNC)) && branch_taken_q;
   assign branch_commit_target_o = branch_target_q;
 
-  assign fetch_page_miss_opcode = (unused_uop_q.special_op == SPECIAL_ISI) &&
-    (unused_uop_q.fetch_fault == FETCH_PAGE_MISS);
+  assign fetch_page_miss_opcode = (uop_q.special_op == SPECIAL_ISI) &&
+    (uop_q.fetch_fault == FETCH_PAGE_MISS);
   assign data_page_miss_opcode =
-    ((unused_uop_q.special_op == SPECIAL_LOAD) ||
-     (unused_uop_q.special_op == SPECIAL_STORE)) &&
+    ((uop_q.special_op == SPECIAL_LOAD) ||
+     (uop_q.special_op == SPECIAL_STORE)) &&
     ((memory_result_q.data_fault == DATA_PAGE_MISS) ||
      (memory_result_q.data_fault == DATA_PAGE_CHANGED));
   assign miss_context = ((state_q == S_MEM_WAIT) &&
@@ -612,19 +592,19 @@ module ppc_special #(
      (miss_context.dr == msr_o[4]) &&
      (miss_context.pr == msr_o[14]) &&
      (miss_context.write ==
-      (unused_uop_q.special_op == SPECIAL_STORE)) &&
+      (uop_q.special_op == SPECIAL_STORE)) &&
      (!data_changed_cause ||
-      (unused_uop_q.special_op == SPECIAL_STORE)) &&
+      (uop_q.special_op == SPECIAL_STORE)) &&
      (!data_true_miss_cause || !miss_context.way));
   assign miss_eligible = ENABLE_TLB_MISS_EXCEPTIONS &&
     !msr_o[17] && miss_derive_valid && miss_provenance_valid;
   assign miss_spr_read_invalid = ENABLE_TLB_MISS_EXCEPTIONS &&
-    (unused_uop_q.special_op == SPECIAL_MFSPR) &&
-    ((unused_uop_q.spr == 10'd976) || (unused_uop_q.spr == 10'd978) ||
-     (unused_uop_q.spr == 10'd979) || (unused_uop_q.spr == 10'd980)) &&
+    (uop_q.special_op == SPECIAL_MFSPR) &&
+    ((uop_q.spr == 10'd976) || (uop_q.spr == 10'd978) ||
+     (uop_q.spr == 10'd979) || (uop_q.spr == 10'd980)) &&
     (|msr_o[5:4]);
-  // The committed miss changes MSR before its held redirect is consumed;
-  // use the captured result kind, not a recheck against the new MSR.
+  // The committed miss changes MSR before its held redirect is consumed,
+  // so use the captured result kind.
   assign data_exception_event = dsi_event ||
     (ENABLE_TLB_MISS_EXCEPTIONS && data_page_miss_opcode &&
      !memory_result_q.fault);
@@ -634,11 +614,11 @@ module ppc_special #(
      (exception_event_kind == EVENT_TLB_D_STORE));
 
   assign rfi_state_unsupported = ENABLE_LIVE_CONTEXT ?
-    !live_mode_supported(rfi_prospective) :
+    !live_mode_supported(rfi_msr(msr_o, srr1_o)) :
     |(srr1_o & RFI_UNSUPPORTED_ACTIVE_MASK);
   assign exception_entry_unsupported = msr_o[17];
-  assign dsi_event = ((unused_uop_q.special_op == SPECIAL_LOAD) ||
-                      (unused_uop_q.special_op == SPECIAL_STORE)) &&
+  assign dsi_event = ((uop_q.special_op == SPECIAL_LOAD) ||
+                      (uop_q.special_op == SPECIAL_STORE)) &&
                      (memory_result_q.data_fault == DATA_DSI_PROTECTION);
   always_comb begin
     exception_event_valid = 1'b0;
@@ -648,7 +628,7 @@ module ppc_special #(
       exception_event_kind = decrementer_selected_q ? EVENT_DECREMENTER : EVENT_EXTERNAL;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && (state_q == S_HOLD) &&
         commit_match) begin
-      case (unused_uop_q.special_op)
+      case (uop_q.special_op)
         SPECIAL_ISI: begin
           if (fetch_page_miss_opcode) begin
             exception_event_valid = miss_eligible;
@@ -666,7 +646,7 @@ module ppc_special #(
           if (data_page_miss_opcode) begin
             exception_event_valid = !memory_result_q.fault && miss_eligible;
             exception_event_kind =
-              (unused_uop_q.special_op == SPECIAL_STORE) ?
+              (uop_q.special_op == SPECIAL_STORE) ?
                 EVENT_TLB_D_STORE : EVENT_TLB_D_LOAD;
           end else begin
             exception_event_valid = !exception_entry_unsupported && dsi_event;
@@ -701,33 +681,33 @@ module ppc_special #(
   assign interrupt_pc_o = interrupt_taken_o ? pc_q : 32'b0;
   assign exception_state_load_valid = ENABLE_SUPERVISOR_EXCEPTIONS &&
     (state_q == S_HOLD) && commit_match &&
-    (((unused_uop_q.special_op == SPECIAL_MTSPR) &&
-      ((unused_uop_q.spr == 10'd26) || (unused_uop_q.spr == 10'd27))) ||
-     (ENABLE_LIVE_CONTEXT && (unused_uop_q.special_op == SPECIAL_MTMSR) &&
+    (((uop_q.special_op == SPECIAL_MTSPR) &&
+      ((uop_q.spr == 10'd26) || (uop_q.spr == 10'd27))) ||
+     (ENABLE_LIVE_CONTEXT && (uop_q.special_op == SPECIAL_MTMSR) &&
       !mtmsr_unsupported));
-  assign exception_state_load_enable = (unused_uop_q.special_op == SPECIAL_MTMSR) ?
-    3'b001 : (unused_uop_q.spr == 10'd26) ?
+  assign exception_state_load_enable = (uop_q.special_op == SPECIAL_MTMSR) ?
+    3'b001 : (uop_q.spr == 10'd26) ?
     3'b010 : 3'b100;
 
-  ppc_exception_state #(.ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS))
-    exception_state (
+  ppc_exception_state #(
+    .RESET_MSR(MSR_RESET),
+    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)
+  ) exception_state (
     .clk_i, .rst_ni,
     .event_valid_i(exception_event_valid),
     .event_ready_o(exception_event_ready),
     .event_kind_i(exception_event_kind), .event_pc_i(pc_q),
-    .event_isi_cause_i(unused_uop_q.fetch_fault),
+    .event_isi_cause_i(uop_q.fetch_fault),
     .event_miss_cr0_i(cr_snapshot_q[31:28]),
     .event_miss_key_i(miss_context.pr ? miss_context.sr[29] :
                                         miss_context.sr[30]),
     .event_miss_way_i((data_page_miss_opcode && data_changed_cause) ?
                        miss_context.way : 1'b0),
-    .rfi_pending_exception_i(1'b0),
     .result_valid_o(exception_result_valid),
     .result_ready_i((state_q == S_EXCEPTION_RESULT) &&
       (!data_exception_event || !ENABLE_LIVE_CONTEXT ||
        (frontend_quiescent_i && memory_quiescent_i))),
     .result_supported_o(exception_result_supported),
-    .result_is_exception_o(exception_result_is_exception),
     .result_target_o(exception_result_target),
     .state_load_valid_i(exception_state_load_valid),
     .state_load_ready_o(exception_state_load_ready),
@@ -735,7 +715,6 @@ module ppc_special #(
     .state_load_msr_i(mtmsr_value), .state_load_srr0_i(a_q),
     .state_load_srr1_i(a_q), .msr_o, .srr0_o, .srr1_o
   );
-  assign _unused_exception_result_kind = exception_result_is_exception;
   assign exception_commit_redirect_o = rst_ni &&
     ((state_q == S_BAT_REDIRECT) || (ENABLE_LIVE_CONTEXT && (state_q == S_CONTEXT_REDIRECT)) ||
      (!ENABLE_LIVE_CONTEXT && (state_q == S_EXCEPTION_RESULT) &&
@@ -748,11 +727,12 @@ module ppc_special #(
     (interrupt_q || (state_q == S_BAT_ACK) || (state_q == S_BAT_REDIRECT) ||
      bat_csr_commit_o || segment_csr_commit_o || tlb_inv_commit_o ||
      tlb_fill_commit_o || exception_event_valid || (state_q == S_EXCEPTION_RESULT) ||
+     (state_q == S_EXCEPTION_HALT) ||
      ((state_q == S_HOLD) && commit_match && sdr1_write &&
       !sdr1_write_invalid_q) ||
      (state_q == S_CONTEXT_INSTALL) || (state_q == S_CONTEXT_REDIRECT) ||
      (ENABLE_LIVE_CONTEXT && exception_state_load_valid &&
-      (unused_uop_q.special_op == SPECIAL_MTMSR)));
+      (uop_q.special_op == SPECIAL_MTMSR)));
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
@@ -768,7 +748,7 @@ module ppc_special #(
       decrementer_selected_q <= 1'b0;
       timer_read_value_q <= '0;
       context_target_q <= '0;
-      unused_uop_q <= '0;
+      uop_q <= '0;
       producer_q <= '0;
       a_q <= '0;
       b_q <= '0;
@@ -807,21 +787,20 @@ module ppc_special #(
       hash2_q <= '0;
     end else begin
       if ((mmu_operation || sdr1_write ||
-           (ENABLE_TGPR && (unused_uop_q.special_op == SPECIAL_MTMSR))) &&
+           (ENABLE_TGPR && (uop_q.special_op == SPECIAL_MTMSR))) &&
           bat_recovery_retained_i)
         mmu_resume_target_q <= bat_recovery_target_i;
       if (ENABLE_EXTERNAL_INTERRUPTS && interrupt_valid_i && dispatch_ready_o) begin
-        // A selected architectural boundary is now irrevocable. There is no
-        // CQ entry, fabricated instruction or rename/retirement permission.
+        // The selected boundary is now irrevocable.
         interrupt_q <= 1'b1;
         decrementer_selected_q <= ENABLE_TIMERS && interrupt_decrementer_i;
         fence_q <= 1'b1;
         pc_q <= interrupt_pc_i;
-        unused_uop_q <= '0;
+        uop_q <= '0;
         state_q <= S_CONTEXT_DRAIN;
       end else if (dispatch_valid_i && dispatch_ready_o) begin
         interrupt_q <= 1'b0;
-        unused_uop_q <= uop_i;
+        uop_q <= uop_i;
         fetch_page_miss_q <= dispatch_page_miss_i;
         tlb_fill_payload_q <= '{bank: (uop_i.special_op == SPECIAL_TLBLD),
           ea: b_i, vsid: tlb_fill_cmp[30:7], way: srr1_o[17],
@@ -916,19 +895,20 @@ module ppc_special #(
               end
             end
             S_MEM_OFFER: begin
-              if (unused_uop_q.special_op == SPECIAL_LOAD) begin
+              if (uop_q.special_op == SPECIAL_LOAD) begin
                 killed_q <= 1'b1;
                 if (request_fire) state_q <= S_MEM_DRAIN;
               end
             end
             S_MEM_WAIT: begin
-              if (unused_uop_q.special_op == SPECIAL_LOAD) begin
+              if (uop_q.special_op == SPECIAL_LOAD) begin
                 killed_q <= 1'b1;
                 if (response_fire) state_q <= S_IDLE;
                 else state_q <= S_MEM_DRAIN;
               end
             end
             S_MEM_DRAIN: if (response_fire) state_q <= S_IDLE;
+            S_EXCEPTION_HALT: ;
             default: begin
               if (fence_q) state_q <= S_CONTEXT_ABORT;
               else state_q <= S_IDLE;
@@ -988,12 +968,12 @@ module ppc_special #(
             end
             S_TIMER_RESULT: if (result_fire) state_q <= S_HOLD;
             S_HOLD: if (commit_match) begin
-              if ((unused_uop_q.special_op == SPECIAL_MTSPR) && (unused_uop_q.spr == 10'd8))
+              if ((uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd8))
                 lr_q <= a_q;
-              if ((unused_uop_q.special_op == SPECIAL_MTSPR) && (unused_uop_q.spr == 10'd9))
+              if ((uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd9))
                 ctr_q <= a_q;
-              if (unused_uop_q.special_op == SPECIAL_MTSPR) begin
-                case (unused_uop_q.spr)
+              if (uop_q.special_op == SPECIAL_MTSPR) begin
+                case (uop_q.spr)
                   10'd18: dsisr_q <= a_q;
                   10'd19: dar_q <= a_q;
                   10'd25: if (ENABLE_SDR1 && !sdr1_write_invalid_q)
@@ -1024,15 +1004,15 @@ module ppc_special #(
                 hash2_q <= derived_hash2;
               end
               if (exception_event_valid &&
-                  (unused_uop_q.special_op == SPECIAL_ALIGNMENT)) begin
+                  (uop_q.special_op == SPECIAL_ALIGNMENT)) begin
                 dar_q <= ea_q;
-                dsisr_q <= {15'b0, unused_uop_q.alignment_dsisr};
+                dsisr_q <= {15'b0, uop_q.alignment_dsisr};
               end
               if (exception_event_valid && dsi_event) begin
                 dar_q <= ea_q;
                 // UM Table 4-11: protection bit 4, store bit 6.
                 dsisr_q <= 32'h0800_0000 |
-                  ((unused_uop_q.special_op == SPECIAL_STORE) ?
+                  ((uop_q.special_op == SPECIAL_STORE) ?
                    32'h0200_0000 : 32'b0);
               end
               if (branch_lr_write_q) lr_q <= branch_lr_next_q;
@@ -1043,12 +1023,12 @@ module ppc_special #(
                 state_q <= mmu_req_write ? S_BAT_ACK : S_BAT_REDIRECT;
               else if (exception_event_valid) state_q <= S_EXCEPTION_RESULT;
               else if ((ENABLE_LIVE_CONTEXT &&
-                       (unused_uop_q.special_op == SPECIAL_MTMSR) &&
+                       (uop_q.special_op == SPECIAL_MTMSR) &&
                        !mtmsr_unsupported) ||
                        (sdr1_write && !sdr1_write_invalid_q)) begin
                 context_target_q <= (sdr1_write ||
                   (ENABLE_TGPR &&
-                   (unused_uop_q.special_op == SPECIAL_MTMSR))) ?
+                   (uop_q.special_op == SPECIAL_MTMSR))) ?
                   mmu_resume_target_q : pc_q + 32'd4;
                 state_q <= S_CONTEXT_INSTALL;
               end else begin
@@ -1062,7 +1042,7 @@ module ppc_special #(
                 memory_result_q.producer <= producer_q;
                 memory_result_q.fault <= 1'b1;
                 state_q <= S_MEM_RESULT;
-              end else if ((unused_uop_q.special_op == SPECIAL_LOAD) ||
+              end else if ((uop_q.special_op == SPECIAL_LOAD) ||
                            store_authorize_i) state_q <= S_MEM_OFFER;
             end
             S_MEM_OFFER: if (request_fire) begin
@@ -1101,9 +1081,9 @@ module ppc_special #(
                   endcase
                 end
                 memory_result_q.update_value <= ea_q;
-                case (unused_uop_q.mem_size)
+                case (uop_q.mem_size)
                   MEM_BYTE: memory_result_q.value <= {24'b0, load_byte};
-                  MEM_HALF: memory_result_q.value <= unused_uop_q.mem_signed ?
+                  MEM_HALF: memory_result_q.value <= uop_q.mem_signed ?
                     {{16{load_half[15]}}, load_half} : {16'b0, load_half};
                   default: memory_result_q.value <= dmem_rsp_rdata_i;
                 endcase
@@ -1115,7 +1095,12 @@ module ppc_special #(
             S_EXCEPTION_RESULT: if (exception_result_valid &&
               (!data_exception_event || !ENABLE_LIVE_CONTEXT ||
                (frontend_quiescent_i && memory_quiescent_i))) begin
-              if (ENABLE_LIVE_CONTEXT) begin
+              // A committed event the state unit rejected has no target;
+              // stop rather than redirect.
+              if (!exception_result_supported) begin
+                fence_q <= 1'b1;
+                state_q <= S_EXCEPTION_HALT;
+              end else if (ENABLE_LIVE_CONTEXT) begin
                 context_target_q <= exception_result_target;
                 state_q <= S_CONTEXT_INSTALL;
               end else state_q <= S_IDLE;

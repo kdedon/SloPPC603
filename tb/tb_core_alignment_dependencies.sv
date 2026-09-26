@@ -119,10 +119,10 @@ module tb_core_alignment_dependencies;
       'h18:return addi(31,0,123);
       'h20:return addi(4,0,'h1000);
       'h24:return 32'h80640001;
-      'h600:return mfspr(20,19);
-      'h604:return mfspr(21,26);
-      'h608:return addi(22,4,0); // fault/update base must be preserved
-      'h60c:return addi(31,0,123);
+      'hfff0_0600:return mfspr(20,19);
+      'hfff0_0604:return mfspr(21,26);
+      'hfff0_0608:return addi(22,4,0); // fault/update base must be preserved
+      'hfff0_060c:return addi(31,0,123);
       default:return 32'h48000000;
     endcase
   endfunction
@@ -164,13 +164,13 @@ module tb_core_alignment_dependencies;
         insn=instruction(model_pc);check(retired.pc==model_pc&&retired.insn==insn,"ordered stream");
         if(selected!=4&&model_pc==fault_pc())begin
           check(retired.alignment_exception&&!retired.illegal&&!retired.gpr_write&&!retired.update_write,"precise alignment event");
-          faults++;model_pc='h600;
+          faults++;model_pc='hfff0_0600;
         end else begin
           check(!retired.illegal&&!retired.alignment_exception&&retired.fetch_fault==FETCH_OK,"unexpected diagnostic");
           rt=int'(insn[25:21]);ra=int'(insn[20:16]);expected=0;write_gpr=1;
           if(insn[31:26]==14)expected=(ra==0?32'b0:regs[ra])+{{16{insn[15]}},insn[15:0]};
-          else if(model_pc=='h600)expected=expected_dar();
-          else if(model_pc=='h604)expected=fault_pc();
+          else if(model_pc=='hfff0_0600)expected=expected_dar();
+          else if(model_pc=='hfff0_0604)expected=fault_pc();
           else if(selected==3&&model_pc=='h10)begin
             expected='hb2;check(retired.update_write&&retired.update_gpr==4&&retired.update_value=='h1001,"update predecessor commits base");regs[4]='h1001;
           end else if(selected==4&&model_pc=='h14)expected=32'ha1b2c3d4;

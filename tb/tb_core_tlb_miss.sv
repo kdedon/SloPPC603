@@ -44,7 +44,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
   assign tr=!(FEATURE&&(phase<4||phase==11||phase==14||phase==15||phase==19)&&tv&&retired.pc==fault_pc()&&
               hold_count<8) &&
             !(phase==18&&dut.special_busy&&
-              dut.special.unused_uop_q.special_op==SPECIAL_STORE&&
+              dut.special.uop_q.special_op==SPECIAL_STORE&&
               !cut_seen);
   assign red_keep=1'b0;
   assign pivot='0;
@@ -53,7 +53,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
              (phase==7&&drv&&d_fault!=DATA_OK&&!cut_seen)||
              (phase==15&&drv&&d_fault==DATA_PAGE_CHANGED)||
              (phase==18&&dut.special_busy&&
-              dut.special.unused_uop_q.special_op==SPECIAL_STORE&&
+              dut.special.uop_q.special_op==SPECIAL_STORE&&
               !dut.special_store_irrevocable&&!cut_seen)||
              (phase==9&&ipending&&idelay==1&&
               i_fault==FETCH_PAGE_MISS&&!cut_seen)||

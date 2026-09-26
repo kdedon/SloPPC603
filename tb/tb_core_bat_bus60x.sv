@@ -36,7 +36,7 @@ module tb_core_bat_bus60x;
       20:return imm(24,4,4,2);            // r4 = 0x10000002
       24:return spr(1,4,538);             // DBAT1U alias
       28:return (32'd31<<26)|(32'd5<<21)|(32'd83<<1);  // mfmsr r5
-      32:return imm(24,5,5,'h30);         // IR=DR=1
+      32:return imm(26,5,5,'h70);         // IR=DR=1, clear reset IP
       36:return (32'd31<<26)|(32'd5<<21)|(32'd146<<1); // mtmsr r5
       40:return 32'h4c00012c;             // isync
       44:return imm(15,1,0,'h1000);       // r1 = EA 0x10000000

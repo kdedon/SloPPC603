@@ -150,7 +150,7 @@ module tb_core_event_reset;
     if(!rst_n)begin
       ipending<=0;idelay<=0;fetch_pc<=0;cycles<=0;age<=0;ctx_wait<=0;
       reserved<=0;event_seen<=0;ack_seen<=0;irq<=0;
-      model_pc=0;msr=0;srr0=0;srr1=0;dar=0;dsisr=0;xer=0;tbl=0;tbu=0;dec_value='1;
+      model_pc=0;msr=32'h40;srr0=0;srr1=0;dar=0;dsisr=0;xer=0;tbl=0;tbu=0;dec_value='1;
       context_credit=0;events=0;retires=0;reset_reads=0;quiet_retires=0;fresh=0;done=0;
       foreach(regs[i])regs[i]=0;
       check(!iv&&!sv&&!dv&&!tv&&!ext&&!dec&&!cv,"valid survived reset assertion");
@@ -186,7 +186,7 @@ module tb_core_event_reset;
         insn=retired.insn;rt=insn[25:21];ra=insn[20:16];op=int'(insn[31:26]);selector=int'({insn[15:11],insn[20:16]});
         value=0;writes=0;next_pc=model_pc+4;
         if(insn==32'h7c600124)begin context_credit++;msr=regs[3];if(!postboot&&source==0)irq<=1;end
-        else if(insn==32'h4c000064)begin context_credit++;msr=srr1&32'h87c0ffff;next_pc=srr0;end
+        else if(insn==32'h4c000064)begin context_credit++;msr=((msr&~32'h87c0ffff)|(srr1&32'h87c0ffff))&32'h0005ff73;next_pc=srr0;end
         else if(insn[10:1]==83&&op==31)begin writes=1;value=msr;end
         else if(op==14)begin writes=1;value={{16{insn[15]}},insn[15:0]};end
         else if(op==24)begin writes=1;value=regs[rt]|{16'b0,insn[15:0]};rt=5'(ra);end
@@ -206,7 +206,7 @@ module tb_core_event_reset;
         check(retired.gpr_write==writes,"GPR permission");
         if(writes)begin check(retired.gpr==5'(rt)&&retired.value==value,"architectural reset/handler readback");regs[rt]=value;end
         if(postboot&&model_pc<=32)begin
-          check(writes&&value==(model_pc==32?32'hffffffff:0),"reset register contents");reset_reads++;
+          check(writes&&value==(model_pc==32?32'hffffffff:model_pc==0?32'h40:0),"reset register contents");reset_reads++;
         end
         if(postboot&&model_pc>=44&&model_pc<=72)begin check(events==0,"stale DEC after EE enable");quiet_retires++;end
         if(postboot&&model_pc==76)begin fresh=1;if(source==0)irq<=1;end

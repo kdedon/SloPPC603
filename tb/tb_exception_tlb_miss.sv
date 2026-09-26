@@ -1,18 +1,18 @@
 module tb_exception_tlb_miss #(
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b1
 );
+  import ppc_pkg::*;
   logic clk_i = 1'b0;
   always #5 clk_i <= ~clk_i;
   logic rst_ni;
   logic event_valid_i, event_ready_o;
-  logic [3:0] event_kind_i;
+  exception_event_t event_kind_i;
   logic [31:0] event_pc_i;
-  logic [2:0] event_isi_cause_i;
+  fetch_fault_t event_isi_cause_i;
   logic [3:0] event_miss_cr0_i;
   logic event_miss_key_i, event_miss_way_i;
-  logic rfi_pending_exception_i;
   logic result_valid_o, result_ready_i;
-  logic result_supported_o, result_is_exception_o;
+  logic result_supported_o;
   logic [31:0] result_target_o;
   logic state_load_valid_i, state_load_ready_o;
   logic [2:0] state_load_enable_i;
@@ -52,12 +52,12 @@ module tb_exception_tlb_miss #(
     @(posedge clk_i);
     #1;
     state_load_valid_i = 1'b0;
-    check_word("loaded MSR", msr_o, msr);
+    check_word("loaded MSR", msr_o, msr & MSR_IMPLEMENTED_MASK);
     check_word("loaded SRR0", srr0_o, srr0);
     check_word("loaded SRR1", srr1_o, srr1);
   endtask
 
-  task automatic offer_event(input logic [3:0] kind,
+  task automatic offer_event(input exception_event_t kind,
                              input logic [31:0] pc,
                              input logic [3:0] cr0,
                              input logic key,
@@ -88,7 +88,7 @@ module tb_exception_tlb_miss #(
 
   task automatic run_miss_case(
     input logic ip,
-    input logic [3:0] kind,
+    input exception_event_t kind,
     input logic [3:0] cr0,
     input logic key,
     input logic way,
@@ -103,12 +103,11 @@ module tb_exception_tlb_miss #(
     offer_event(kind, pc, cr0, key, way);
     if (ENABLE_TLB_MISS_EXCEPTIONS) begin
       check_bit("supported miss event", result_supported_o, 1'b1);
-      check_bit("exception result", result_is_exception_o, 1'b1);
       check_word("miss vector", result_target_o, expected_target);
       check_word("miss SRR0", srr0_o, pc);
       check_word("miss SRR1", srr1_o, expected_srr1);
       check_word("miss MSR", msr_o,
-                 ip ? 32'h8542_0040 : 32'h8542_0000);
+                 ip ? 32'h0002_0040 : 32'h0002_0000);
       check_bit("TGPR set", msr_o[17], 1'b1);
       check_bit("EE clear", msr_o[15], 1'b0);
       check_bit("PR clear", msr_o[14], 1'b0);
@@ -116,11 +115,10 @@ module tb_exception_tlb_miss #(
       check_bit("DR clear", msr_o[4], 1'b0);
     end else begin
       check_bit("unsupported disabled event", result_supported_o, 1'b0);
-      check_bit("not exception", result_is_exception_o, 1'b0);
       check_word("disabled result target", result_target_o, 32'b0);
       check_word("disabled SRR0", srr0_o, 32'h1234_5000);
       check_word("disabled SRR1", srr1_o, 32'h8765_4000);
-      check_word("disabled MSR", msr_o, old_msr);
+      check_word("disabled MSR", msr_o, old_msr & MSR_IMPLEMENTED_MASK);
     end
     // An unconsumed result excludes a concurrent state load; its metadata and
     // architectural state remain stable under backpressure.
@@ -147,13 +145,12 @@ module tb_exception_tlb_miss #(
     checks = 0;
     rst_ni = 1'b0;
     event_valid_i = 1'b0;
-    event_kind_i = 4'd0;
+    event_kind_i = EVENT_SC;
     event_pc_i = 32'b0;
-    event_isi_cause_i = 3'b0;
+    event_isi_cause_i = FETCH_OK;
     event_miss_cr0_i = 4'b0;
     event_miss_key_i = 1'b0;
     event_miss_way_i = 1'b0;
-    rfi_pending_exception_i = 1'b0;
     result_ready_i = 1'b0;
     state_load_valid_i = 1'b0;
     state_load_enable_i = 3'b0;
@@ -164,28 +161,29 @@ module tb_exception_tlb_miss #(
     @(negedge clk_i);
     rst_ni = 1'b1;
 
-    run_miss_case(1'b0, 4'd9, 4'ha, 1'b1, 1'b0,
-                  32'ha54c_c033, 32'h0000_1000);
-    run_miss_case(1'b0, 4'd10, 4'h5, 1'b0, 1'b1,
-                  32'h5542_c033, 32'h0000_1100);
-    run_miss_case(1'b0, 4'd11, 4'h3, 1'b1, 1'b1,
-                  32'h354b_c033, 32'h0000_1200);
-    run_miss_case(1'b1, 4'd9, 4'ha, 1'b1, 1'b0,
-                  32'ha54c_c073, 32'hfff0_1000);
-    run_miss_case(1'b1, 4'd10, 4'h5, 1'b0, 1'b1,
-                  32'h5542_c073, 32'hfff0_1100);
-    run_miss_case(1'b1, 4'd11, 4'h3, 1'b1, 1'b1,
-                  32'h354b_c073, 32'hfff0_1200);
+    // Reserved MSR bits offered by the state load never reach SRR1.
+    run_miss_case(1'b0, EVENT_TLB_I_MISS, 4'ha, 1'b1, 1'b0,
+                  32'ha00c_c033, 32'h0000_1000);
+    run_miss_case(1'b0, EVENT_TLB_D_LOAD, 4'h5, 1'b0, 1'b1,
+                  32'h5002_c033, 32'h0000_1100);
+    run_miss_case(1'b0, EVENT_TLB_D_STORE, 4'h3, 1'b1, 1'b1,
+                  32'h300b_c033, 32'h0000_1200);
+    run_miss_case(1'b1, EVENT_TLB_I_MISS, 4'ha, 1'b1, 1'b0,
+                  32'ha00c_c073, 32'hfff0_1000);
+    run_miss_case(1'b1, EVENT_TLB_D_LOAD, 4'h5, 1'b0, 1'b1,
+                  32'h5002_c073, 32'hfff0_1100);
+    run_miss_case(1'b1, EVENT_TLB_D_STORE, 4'h3, 1'b1, 1'b1,
+                  32'h300b_c073, 32'hfff0_1200);
 
     // Unsupported contexts and malformed PC never change any state.
     load_state(32'h0002_0000, 32'h9876_5000, 32'h1234_5678);
-    offer_event(4'd9, 32'h2000_0000, 4'hc, 1'b1, 1'b1);
+    offer_event(EVENT_TLB_I_MISS, 32'h2000_0000, 4'hc, 1'b1, 1'b1);
     check_bit("nested TGPR reject", result_supported_o, 1'b0);
     check_word("nested MSR unchanged", msr_o, 32'h0002_0000);
     check_word("nested SRR0 unchanged", srr0_o, 32'h9876_5000);
     drain_result();
     load_state(32'h0000_0000, 32'h9876_5000, 32'h1234_5678);
-    offer_event(4'd10, 32'h2000_0002, 4'hc, 1'b1, 1'b1);
+    offer_event(EVENT_TLB_D_LOAD, 32'h2000_0002, 4'hc, 1'b1, 1'b1);
     check_bit("unaligned PC reject", result_supported_o, 1'b0);
     check_word("unaligned SRR1 unchanged", srr1_o, 32'h1234_5678);
     drain_result();
@@ -195,7 +193,7 @@ module tb_exception_tlb_miss #(
     load_state(32'h0000_0000, 32'h1111_0000, 32'h2222_0000);
     @(negedge clk_i);
     event_valid_i = 1'b1;
-    event_kind_i = 4'd9;
+    event_kind_i = EVENT_TLB_I_MISS;
     event_pc_i = 32'h2000_4000;
     event_miss_cr0_i = 4'h6;
     event_miss_key_i = 1'b0;
@@ -222,13 +220,26 @@ module tb_exception_tlb_miss #(
     if (ENABLE_TLB_MISS_EXCEPTIONS) begin
       // A WAY=1 miss writes SRR1[17]=1. RFI nevertheless clears TGPR.
       load_state(32'h0000_c033, 32'b0, 32'b0);
-      offer_event(4'd11, 32'h2000_3000, 4'h3, 1'b1, 1'b1);
+      offer_event(EVENT_TLB_D_STORE, 32'h2000_3000, 4'h3, 1'b1, 1'b1);
       check_bit("way one in SRR1", srr1_o[17], 1'b1);
       drain_result();
-      offer_event(4'd3, 32'h0000_1200, 4'b0, 1'b0, 1'b0);
+      offer_event(EVENT_RFI, 32'h0000_1200, 4'b0, 1'b0, 1'b0);
       check_bit("RFI supported", result_supported_o, 1'b1);
       check_bit("RFI clears TGPR", msr_o[17], 1'b0);
       check_word("RFI resumes missed PC", result_target_o, 32'h2000_3000);
+      check_word("RFI restored MSR", msr_o, 32'h0000_c033);
+      drain_result();
+      // Miss CR0 in SRR1[31] must not reach reserved MSR bit 31 via RFI.
+      load_state(32'h0000_c033, 32'b0, 32'b0);
+      offer_event(EVENT_TLB_D_STORE, 32'h2000_3004, 4'hf, 1'b1, 1'b1);
+      check_bit("CR0 LT in SRR1", srr1_o[31], 1'b1);
+      drain_result();
+      offer_event(EVENT_RFI, 32'h0000_1204, 4'b0, 1'b0, 1'b0);
+      check_word("RFI MSR drops set CR0", msr_o, 32'h0000_c033);
+      drain_result();
+      offer_event(EVENT_SC, 32'h0000_1300, 4'b0, 1'b0, 1'b0);
+      check_word("reserved MSR bits absent from next SRR1", srr1_o,
+                 32'h0000_c033);
       drain_result();
     end
 

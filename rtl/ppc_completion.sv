@@ -62,8 +62,8 @@ module ppc_completion #(
   endfunction
 
   // Reachable index < CQ_DEPTH and offset <= CQ_DEPTH imply sum < 2*depth.
-  // A widened add and one subtraction implement ring traversal without a
-  // general integer modulo/divider on the recovery selection path.
+  // A widened add and one subtraction replace modulo on the recovery
+  // selection path.
   function automatic logic [CQ_INDEX_WIDTH-1:0] ring_offset(
     input logic [CQ_INDEX_WIDTH-1:0] index,
     input logic [COUNT_WIDTH-1:0] offset

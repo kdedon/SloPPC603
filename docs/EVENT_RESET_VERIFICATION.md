@@ -3,6 +3,11 @@
 Recorded: `make -C sim lint check-spec test-core-event-reset test-core-interrupt` and the focused gate below, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
 
 This test-only round passed on 2026-09-21. Production RTL is unchanged.
+
+Recorded 2026-09-26: `make -C sim test-core-event-reset` passes 14,909 checks
+on the audit-remediation branch (base 835f5c7 plus AUD-02/14 changes). The
+oracle now expects the hard-reset MSR `0x0000_0040` (IP=1) from `mfmsr`, and
+models RFI with reserved MSR bits masked.
 [EVENT_RESET_CONTRACT.md](EVENT_RESET_CONTRACT.md) distinguishes immediate
 suppression of handshake/event controls from architectural state clearing on an
 active reset clock edge. This fixture checks controls while reset is sampled;

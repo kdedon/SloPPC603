@@ -154,15 +154,15 @@ module tb_core_alignment #(
       20: return ENABLE_SUPERVISOR_EXCEPTIONS ? mfspr(19,19) : addi(19,0,0);
       24: return addi(9,0,'h99);
       28: return addi(0,0,0);
-      'h600: return mfspr(20,19); // DAR
-      'h604: return mfspr(21,18); // DSISR
-      'h608: return mfspr(22,26); // SRR0
-      'h60c: return mfspr(23,27); // SRR1
-      'h610: return addi(25,3,0); // observe fault destination unchanged
-      'h614: return addi(26,4,0); // observe update base unchanged
-      'h618: return phase == 1 ? addi(4,4,-1) : addi(24,22,8);
-      'h61c: return phase == 1 ? addi(24,22,0) : 32'h7f1a03a6; // mtsrr0 r24
-      'h620: return 32'h4c000064; // rfi
+      'hfff0_0600: return mfspr(20,19); // DAR
+      'hfff0_0604: return mfspr(21,18); // DSISR
+      'hfff0_0608: return mfspr(22,26); // SRR0
+      'hfff0_060c: return mfspr(23,27); // SRR1
+      'hfff0_0610: return addi(25,3,0); // observe fault destination unchanged
+      'hfff0_0614: return addi(26,4,0); // observe update base unchanged
+      'hfff0_0618: return phase == 1 ? addi(4,4,-1) : addi(24,22,8);
+      'hfff0_061c: return phase == 1 ? addi(24,22,0) : 32'h7f1a03a6; // mtsrr0 r24
+      'hfff0_0620: return 32'h4c000064; // rfi
       default: begin
         if (phase == 2) begin
           case(pc)
@@ -277,7 +277,7 @@ module tb_core_alignment #(
           form=int'((model_pc-'h24)/16 + 32'(selected)) % 16;
           saved_dsisr=phase == 1 ? 32'h4064 : dsisr_anchor(form);
           faults++; fault_stalls=0;
-          if(ENABLE_SUPERVISOR_EXCEPTIONS) model_pc='h600;
+          if(ENABLE_SUPERVISOR_EXCEPTIONS) model_pc='hfff0_0600;
           else done=1;
         end else begin
           check(!retired.illegal && !retired.alignment_exception,"unexpected diagnostic or alignment event");
@@ -288,7 +288,7 @@ module tb_core_alignment #(
           end else if(insn == mfspr(rt,18)) begin writes=1;expected_value=saved_dsisr; end
           else if(insn == mfspr(rt,19)) begin writes=1;expected_value=faults == 0 ? 0 : 'h1001; end
           else if(insn == mfspr(rt,26)) begin writes=1;expected_value=saved_pc; end
-          else if(insn == mfspr(rt,27)) begin writes=1;expected_value=0; end
+          else if(insn == mfspr(rt,27)) begin writes=1;expected_value=32'h40; end
           else if(phase == 1 && model_pc == 'h24) begin
             writes=1;expected_value=32'ha1b2c3d4;
             check(requests == 1 && retired.update_write && retired.update_gpr == 4 &&
