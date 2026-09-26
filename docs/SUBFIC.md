@@ -7,8 +7,8 @@ remaining immediate integer families and full P03/P07 acceptance are open.
 ## Source and execution contract
 
 Primary 603e UM A-1/PDF368 (A1-211), arithmetic A-3/PDF377 and D-form A-34
-continuation/PDF390 establish primary opcode8, mask0xfc000000 and value0x20000000.
-All low16 bits are SIMM, with no OE or Rc. A-3's raw `subficx` does not override
+continuation/PDF390 establish primary opcode 8, mask 0xfc000000 and value0x20000000.
+All low 16 bits are SIMM, with no OE or Rc. A-3's raw `subficx` does not override
 the D-form layout or add modifier forms. Secondary 601UM PDF763/10-209 specifies
 ~rA+EXTS(SIMM)+1 and lists only CA as an affected special-register field.
 
@@ -18,7 +18,7 @@ SO and other XER bits are preserved. Every SUBFIC allocates the flag owner and
 replaces CA. The decode-only change uses ALU_SUBFC with a captured signed immediate;
 no packet, ALU operation or interface changes are needed.
 
-TIM-T64-003 in primary Table6-4/PDF270 records Integer/base one-cycle execution
+TIM-T64-003 in primary Table 6-4/PDF270 records Integer/base one-cycle execution
 for PID6/PID7v. This does not establish full timing conformance or FPGA closure.
 
 ## Verification
@@ -33,7 +33,7 @@ for PID6/PID7v. This does not establish full timing conformance or FPGA closure.
   Positive/negative immediates clear/set seeded CA while preserving CR/OV/SO.
   RS/IU/CQ kills and kept finish/commit cuts verify surviving state; redirected
   ADDE consumes the retained or replaced carry.
-- Two additional Python tests check all65,536 immediate payloads against the
+- Two additional Python tests check all 65,536 immediate payloads against the
   exact form mask, reject a false Rc modifier, and verify signed extension,
   real r0 and flag preservation using literal anchors under both old CA values.
 - Decoder: 15,808 compiled probes, 737 accepted by both metadata and RTL.
@@ -42,6 +42,6 @@ Independent source and targeted RTL reviews found no actionable issue. Source
 inventory reaches 57 boundedly reconciled rows and 169 pending. No new Quartus
 resource/fit/timing measurement is claimed. Next: ADDIC/ADDIC.
 
-Round22 integration passes all 54 prior RTL targets, strict core/wrapper lint, 118 tool tests and 15 recovery-model tests. No failures remain.
+Round 22 integration passes all 54 prior RTL targets, strict core/wrapper lint, 118 tool tests and 15 recovery-model tests. No failures remain.
 
-Round23 subsequently accepts [ADDIC/ADDIC.](ADD_IMMEDIATE.md); the current reviewed/executable subset has117 forms. Earlier next-step statements describe round22.
+Round 23 subsequently accepts [ADDIC/ADDIC.](ADD_IMMEDIATE.md); the current reviewed/executable subset has 117 forms. Earlier next-step statements describe round 22.

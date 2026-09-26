@@ -9,9 +9,9 @@ This temporary milestone prioritizes executable programs before returning to the
 - `cmp`, `cmpl`, `cmpi`, `cmpli`: 32-bit comparisons to any BF-selected CR field, preserving all other fields and XER. Reserved bits and L=1 are rejected.
 - `lbz`, `lhz`, `lha`, `lwz`, `stb`, `sth`, `stw`, plus their non-update indexed forms: aligned, uncached, big-endian transfers through an abstract data interface. Update, multiple/string, reservation, byte-reversed and floating-point memory forms remain unsupported.
 
-Primary 603e UM encodings are Table A-22 (PDF384), A-13 (PDF381), A-14 (PDF382), A-26 (PDF385), XL form A-37 (PDF394), XFX form A-38 (PDF395), and SPR Figure2-1/descriptions (PDF81–82). Shared instruction semantics use tagged 601UM evidence: branches PDF575–578, BO Table3-25 PDF190–191, SPR moves PDF679/690, and scalar load/store instruction descriptions PDF639–759. These secondary sources are not timing oracles.
+Primary 603e UM encodings are Table A-22 (PDF384), A-13 (PDF381), A-14 (PDF382), A-26 (PDF385), XL form A-37 (PDF394), XFX form A-38 (PDF395), and SPR Figure 2-1/descriptions (PDF81–82). Shared instruction semantics use tagged 601UM evidence: branches PDF575–578, BO Table 3-25 PDF190–191, SPR moves PDF679/690, and scalar load/store instruction descriptions PDF639–759. These secondary sources are not timing oracles.
 
-Valid BO values are 0–5, 8–13, 16–20; the gaps and 21–31 are reserved. BCCTR permits only 4, 5, 12, 13 and 20, because it cannot decrement its target register. XL bits15:11 and reserved Rc bits in X/XFX forms must be zero. Metadata retains these restrictions explicitly.
+Valid BO values are 0–5, 8–13, 16–20; the gaps and 21–31 are reserved. BCCTR permits only 4, 5, 12, 13 and 20, because it cannot decrement its target register. XL bits 15:11 and reserved Rc bits in X/XFX forms must be zero. Metadata retains these restrictions explicitly.
 
 ## State and ordering
 
@@ -21,7 +21,7 @@ All operations still finish by completion slot and generation. Nongpr-writing in
 
 ## Data interface
 
-A request has valid/ready, write, aligned 32-bit word address, 32-bit write data and four byte enables. Big-endian byte offset zero uses enable bit3 and data bits31:24; offset three uses bit0 and bits7:0. Loads extract the addressed byte/halfword from the returned word; LHA sign-extends the selected halfword. Effective addresses wrap at 32 bits. rA=0 means a literal zero base, while indexed rB=0 and store/source r0 are ordinary register reads.
+A request has valid/ready, write, aligned 32-bit word address, 32-bit write data and four byte enables. Big-endian byte offset zero uses enable bit 3 and data bits 31:24; offset three uses bit 0 and bits 7:0. Loads extract the addressed byte/halfword from the returned word; LHA sign-extends the selected halfword. Effective addresses wrap at 32 bits. rA=0 means a literal zero base, while indexed rB=0 and store/source r0 are ordinary register reads.
 
 Every accepted request, including stores, receives one response with valid/ready, 32-bit data and an error bit. Response ready is asserted only after the request acceptance has been registered. A responder may produce an immediate response but must hold it until accepted. A store error acknowledgment must indicate that the store had no external effect; the core cannot undo a peripheral write.
 

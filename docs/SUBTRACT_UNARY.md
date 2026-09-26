@@ -6,7 +6,7 @@ executable subset to 114 forms. Immediate subtract remains pending.
 ## Source and execution contract
 
 Primary 603e UM Tables A-1/PDF368 (A1-212/213, raw `subfmex`/`subfzex`),
-A-3/PDF377 and A-41/PDF396 establish opcode31, XO9=232/200 and reserved rB=0.
+A-3/PDF377 and A-41/PDF396 establish opcode 31, XO9=232/200 and reserved rB=0.
 The masks are 0xfc00ffff, with bases0x7c0001d0/0x7c000190 plus OE<<10 and Rc.
 All nonzero reserved rB encodings are rejected by the bounded implementation.
 
@@ -22,7 +22,7 @@ operand path. rA, including r0, remains real; there is no rB dependency. The
 existing flag owner and dispatch capture preserve CA across waits and recovery.
 No ALU operation, packet field or interface is added.
 
-Primary Table6-4/PDF271 supplies TIM-T64-037/035: raw [o][.] forms, Integer
+Primary Table 6-4/PDF271 supplies TIM-T64-037/035: raw [o][.] forms, Integer
 execution, base one-cycle execution for PID6/PID7v. No full processor timing or
 new Quartus fit/resource/timing claim follows from this bounded slice.
 
@@ -49,6 +49,6 @@ Independent source and RTL review found no actionable findings. Source inventory
 now has 56 boundedly reconciled rows and 170 pending. Next: SUBFIC immediate
 subtraction with carry, followed by remaining immediate integer forms.
 
-Round21 integration passes all 50 prior RTL targets, strict core/wrapper lint, 116 tool tests and 15 recovery-model tests. No failures remain.
+Round 21 integration passes all 50 prior RTL targets, strict core/wrapper lint, 116 tool tests and 15 recovery-model tests. No failures remain.
 
-Round22 subsequently accepts [SUBFIC](SUBFIC.md); the current reviewed/executable subset has115 forms. Earlier pending statements describe round21.
+Round 22 subsequently accepts [SUBFIC](SUBFIC.md); the current reviewed/executable subset has 115 forms. Earlier pending statements describe round 21.

@@ -1,4 +1,4 @@
-VERILATOR ?= verilator
+VERILATOR ?= $(CURDIR)/tools/verilate
 # Randomize uninitialized state with a fixed seed so a missing reset fails reproducibly.
 XRAND ?= 1
 XRAND_SEED ?= 1

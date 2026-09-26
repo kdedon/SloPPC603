@@ -1,5 +1,7 @@
 # Architectural TLB miss verification
 
+Recorded: `make -C sim lint-tlb-miss test-exception-tlb-miss test-core-tlb-miss`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The opt-in `ENABLE_TLB_MISS_EXCEPTIONS` path has independent checks at the exception-state and actual-core boundaries. The local manual cited in [TLB_REFILL_DEPENDENCIES.md](TLB_REFILL_DEPENDENCIES.md) supplies the literal vector, SRR1, and hash expectations; test expectations do not call production derivation logic.
 
 Run `make -C sim lint-tlb-miss test-exception-tlb-miss test-core-tlb-miss`. All targets use strict Verilator `-Wall --assert`; the tests run both enabled and disabled parameters. The standalone exception-state bench (`tb_exception_tlb_miss.sv`) is owned by the service lane and checks events 9/10/11 under both IP settings, literal SRR1/MSR/vector values, result backpressure, same-edge state-load exclusion, unsupported events, and RFI's unconditional TGPR clear. It passed 175 enabled and 131 disabled checks.

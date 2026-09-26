@@ -1,5 +1,7 @@
 # Compiled 603e table-search fault firmware
 
+Recorded: `make -C toolchain rtl-table-fault`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 **Status:** The pinned compiler build and combined RTL workload pass: 21
 miss cases, 10 ordinary faults and 11 successful fills. This image builds on the
 accepted CPU-driven PTEG search and R/C update image. Its table data is

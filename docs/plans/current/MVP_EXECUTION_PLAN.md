@@ -10,6 +10,8 @@ observable integration results, rather than adding isolated instruction counts.
 
 ## Wave 1: executable integration baseline
 
+Status: accepted.
+
 Three bounded delegated tasks cover build verification, core wrapper configuration,
 and FPGA measurement. The coordinating task owns compiled firmware execution and
 integration review. File ownership keeps RTL wrappers, simulation Makefile,
@@ -44,7 +46,7 @@ integrated fitted design uses 13 M10Ks for that array. The complete current
 integrated subset fits in 13,985 ALMs (33%), 17,025 registers, 15 M10Ks total and
 six DSP blocks. Tags, valid bits and replacement state still use registers.
 
-The final integrated flow completed with stable source hashes, but provisional
+The final integrated flow completed with unchanged sources, but provisional
 50 MHz timing fails: worst setup slack −12.576 ns and worst hold slack −0.774 ns.
 Unconstrained clock/I/O/path counts are zero under the measurement constraints.
 This establishes a placed/routed baseline, not timing closure or board signoff.
@@ -57,6 +59,8 @@ hide either violation with broad false-path constraints. See
 [`INTEGRATED_SYNTHESIS_BASELINE.md`](../../INTEGRATED_SYNTHESIS_BASELINE.md) for report evidence and constraint scope.
 
 ## Wave 2: precise synchronous fault round trip
+
+Status: accepted (bounded alignment policy, not full unaligned-access conformance).
 
 The alignment slice is implemented behind the supervisor-profile parameter.
 Misalignment is classified from final serialized operands before destination
@@ -81,7 +85,7 @@ checks and the disabled oracle 2,651. The compiled workload passed 24 faults,
 produced a firmware failure. All 124 direct testbench profiles passed strict
 elaboration before the comprehensive regression. The complete regression then
 passed: 156 named test targets, 19 strict lint profiles and 241 Python tests, with
-all 125 hashed RTL/testbench/Makefile sources unchanged during the final run.
+sources unchanged during the final run.
 Full-run results are recorded in [`ALIGNMENT_VERIFICATION.md`](../../ALIGNMENT_VERIFICATION.md); FPGA evidence
 remains separately documented.
 Instruction-fetch fault delivery is covered by the following wave.
@@ -89,6 +93,8 @@ Instruction-fetch fault delivery is covered by the following wave.
 and physical TEA require different treatment.
 
 ## Wave 3: typed fetch faults and measured control-path changes
+
+Status: accepted; 50 MHz setup closure remains open under Wave 6.
 
 The abstract core now carries protection/guarded instruction faults with their
 requested PC through fetch, queueing and retirement. Enabled handling enters
@@ -110,9 +116,9 @@ The timing task decoupled rename payload storage from allocation/recovery and
 removed FIFO clear from its data mux while preserving handshake suppression.
 Focused recovery-storage tests passed. Strict prelint passed 127 profiles.
 The comprehensive regression completed successfully: 159 named test targets,
-19 strict RTL lint profiles and 241 Python tests, with all 128 hashed
-RTL/testbench/Makefile sources unchanged. No RTL fixes were required during
-this wave's full run. [`FETCH_FAULT_VERIFICATION.md`](../../FETCH_FAULT_VERIFICATION.md) records the log fingerprints;
+19 strict RTL lint profiles and 241 Python tests, with sources
+unchanged. No RTL fixes were required during
+this wave's full run. [`FETCH_FAULT_VERIFICATION.md`](../../FETCH_FAULT_VERIFICATION.md) records the run;
 [`COMPILED_FIRMWARE_VERIFICATION.md`](../../COMPILED_FIRMWARE_VERIFICATION.md) records firmware artifacts and reproduction.
 
 The new frozen-source integrated fit completed successfully with unchanged
@@ -126,6 +132,8 @@ virtual-I/O constraints still do not establish board signoff. See
 [`TIMING_CONTROL_PATH.md`](../../TIMING_CONTROL_PATH.md) for the complete comparison and next measured target.
 
 ## Wave 4: live supervisor state and asynchronous events
+
+Status: accepted, including the external-interrupt and TB/DEC follow-ups.
 
 The first bounded part is implemented behind `ENABLE_LIVE_CONTEXT`: privileged
 MTMSR, a shared supported-mode policy for MTMSR/RFI, and a frontend
@@ -143,8 +151,8 @@ actual protection/guarded BAT faults through ISI and RFI), 443 live-router
 checks, 339 disabled-profile checks, and 198,978 decode checks. All 133 staged
 testbench profiles passed strict lint. The comprehensive frozen-source
 regression passed 165 named targets, 21 strict RTL lint profiles and 241 Python
-tests. All 132 hashed RTL/testbench/Makefile sources remained unchanged;
-[`LIVE_CONTEXT_VERIFICATION.md`](../../LIVE_CONTEXT_VERIFICATION.md) records the completed run and log fingerprints.
+tests. Sources remained unchanged;
+[`LIVE_CONTEXT_VERIFICATION.md`](../../LIVE_CONTEXT_VERIFICATION.md) records the completed run.
 See [`LIVE_CONTEXT.md`](../../LIVE_CONTEXT.md), [`LIVE_BAT_CONTEXT.md`](../../LIVE_BAT_CONTEXT.md) and
 [`COMPILED_FIRMWARE_VERIFICATION.md`](../../COMPILED_FIRMWARE_VERIFICATION.md) for the exact feature boundary.
 
@@ -183,8 +191,8 @@ resume PCs and exactly one alias store. A corrupted handler-MSR expectation
 fails through the firmware mailbox; all four previous firmware profiles pass
 unchanged. Strict prelint passes 136 profiles. The comprehensive regression
 passes 168 named targets, 23 strict RTL lint profiles and 241 Python tests, with
-all 135 hashed RTL/testbench/Makefile sources unchanged. See
-[`EXTERNAL_INTERRUPT_VERIFICATION.md`](../../EXTERNAL_INTERRUPT_VERIFICATION.md) for completed-run fingerprints and the
+sources unchanged. See
+[`EXTERNAL_INTERRUPT_VERIFICATION.md`](../../EXTERNAL_INTERRUPT_VERIFICATION.md) for the completed run and the
 remaining directed coverage gaps.
 
 The parallel setup-path change reads committed architectural low address bits
@@ -227,9 +235,9 @@ register tests pass 4,833 checks across nine scenarios; event tests pass 15,031
 checks across six scenarios, including late EXT promotion, admitted EXT
 withdrawal, user-mode DEC and delayed-store precision. The full regression
 passes 172 named targets, 24 strict RTL lint profiles and 241 Python tests;
-all 140 staged bench profiles pass lint, and all 146 hashed sources/manifests
+all 140 staged bench profiles pass lint, and sources
 remain unchanged through the full run. [`TIMER_VERIFICATION.md`](../../TIMER_VERIFICATION.md) records the
-completed gate, source fingerprints and remaining directed coverage gaps.
+completed gate and remaining directed coverage gaps.
 
 A separate timer-enabled live-BAT FPGA project exposes the full wrapper and
 enables supervisor, live context, external IRQ and timers. It measures the new
@@ -264,7 +272,7 @@ Rename producer identities now change only on reset or accepted allocation.
 Recovery still rebuilds validity, readiness and the youngest-writer map, while
 retaining existing survivor identities. Independent review and focused recovery,
 LSU/update, alignment and fetch-fault gates pass, along with 24 strict lint
-profiles and 241 Python tests. The focused run preserved all 142 hashed sources;
+profiles and 241 Python tests. Sources stayed unchanged through the focused run;
 [RECOVERY_METADATA_VERIFICATION.md](../../RECOVERY_METADATA_VERIFICATION.md) records
 commands and evidence. All six compiled firmware workloads rebuilt and passed
 with unchanged retirement/cycle totals. The previous 172-target full regression predates this
@@ -301,7 +309,7 @@ cancels old untagged responses on reset under the existing interface contract;
 it does not erase accepted stores. [EVENT_RESET_CONTRACT.md](../../EVENT_RESET_CONTRACT.md)
 and [EVENT_RESET_VERIFICATION.md](../../EVENT_RESET_VERIFICATION.md) record boundaries
 and focused validation: 24 strict RTL lint profiles and 243 Python tests pass,
-with all 144 gate input hashes stable. A temporary timer copy retaining pending
+with sources unchanged. A temporary timer copy retaining pending
 DEC across reset fails the intended stale-event check at cycle 71.
 Production RTL remains unchanged from the XER round,
 so that round's firmware results still apply. Historical fit archives still
@@ -401,11 +409,15 @@ See [TLBIE_VERIFICATION.md](../../TLBIE_VERIFICATION.md) and
 72.6% (about 73%), with only segment/page/refill changing from 45% to 50%.
 No new FPGA fit or timing claim follows.
 
-Next: [CPU TLB loads and precise miss-state dependencies](../../TLB_REFILL_DEPENDENCIES.md).
-TLB loads, IMISS/DMISS/compare/hash/RPA state, TGPR and software handler retry
-remain architectural dependencies; existing page misses stay diagnostic.
+Next at that point: [CPU TLB loads and precise miss-state dependencies](../../TLB_REFILL_DEPENDENCIES.md).
+The rounds below accept them.
 
 ## Wave 5: one software-managed translation path
+
+Status: partly accepted. CPU-owned BATs, segments, SDR1, TLBIE/TLBLD/TLBLI, TGPR,
+miss entry, software PTEG search and page ISI/DSI run over scalar and cached 60x
+wrappers. Open: TLB replacement, remaining DSI causes, T=1 segments and broader
+event/reset interleavings.
 
 Combine live MSR context, BATs, segment registers and I/D TLB services behind the
 chosen physical wrapper. Implement required management instructions, miss SPRs,
@@ -415,6 +427,10 @@ Acceptance is firmware-installed mappings, I/D misses serviced in software,
 protection failures, mapping replacement/invalidation and successful retry.
 
 ## Wave 6: integrated acceptance and timing closure
+
+Status: partly accepted. Compiled workloads, translated retry/error stress and
+WIMG=0 instruction caching pass. Open: architectural cache maintenance, a
+combined-top fit and setup/hold closure.
 
 Expand compiled workloads and memory wait/retry/error stress; connect architectural
 cache maintenance and translated attributes. Rerun representative synthesis at
@@ -459,8 +475,8 @@ The full regression passes, including all 243 Python checks and 177 strict
 testbench configurations. Focused decode/core/router gates and twelve compiled
 workloads pass. The new firmware installs all four mappings via CPU instructions,
 exercises page execution and interrupts, and checks invalidation in three modes;
-omitting the first load is rejected. Production and final source hashes remained
-stable across acceptance. [TLB_LOAD_VERIFICATION.md](../../TLB_LOAD_VERIFICATION.md)
+omitting the first load is rejected. Sources remained
+unchanged across acceptance. [TLB_LOAD_VERIFICATION.md](../../TLB_LOAD_VERIFICATION.md)
 and [TLB_LOAD_FIRMWARE.md](../../TLB_LOAD_FIRMWARE.md) give exact boundaries.
 
 Weighted completion rises from 72.88% to 74.0%, solely by moving segment/page/
@@ -669,7 +685,7 @@ move 78.20→79.32%; no established RTL module changed.
 Final gates: 202 simulation configurations, 243 Python checks, 45 standalone
 lint profiles, twenty preserved compiled workloads and two bus executions of
 the existing search/fault ELFs. Both meaningful firmware mutants are rejected.
-342 source inputs remain frozen. Next: translated physical I-cache with an
+Sources stayed unchanged. Next: translated physical I-cache with an
 explicit attribute/invalidation contract, then combined fit/timing work.
 No new fit; planning estimates stay 6–10 / 8–14 focused engineer-weeks.
 
@@ -678,23 +694,23 @@ No new fit; planning estimates stay 6–10 / 8–14 focused engineer-weeks.
 New physical I-cache composition after CPU-owned translation: conservative
 WIMG=0 cache policy, other attributes scalar bypass, data uncached, explicit
 external maintenance. Directed CPU BAT/line/hit/bypass test passes 3,342 checks
-and both lint profiles pass. Cache65→75%; weighted79.32→79.82%. Compiled
-fault-matrix integration is not yet accepted; round2 is investigating a stall.
+and both lint profiles pass. Cache 65% → 75%; weighted 79.32% → 79.82%. Compiled
+fault-matrix integration is not yet accepted; round 2 is investigating a stall.
 
 ## Translated-cache sequence round 2 — accepted (2026-09-23)
 
 Unchanged table-search and all 21 table-fault cases pass through the physical
 I-cache and pin-only 60x RAM. Both firmware negative controls reject their
 intended corruption. Integration exposed and fixed a shared fetch/IQ credit
-deadlock without weakening the architectural oracle. Cache75→80%,
-integration78→82%; weighted79.82→80.35%. Broad regression is required on the
+deadlock without weakening the architectural oracle. Cache 75% → 80%,
+integration 78% → 82%; weighted 79.82% → 80.35%. Broad regression is required on the
 changed fetch RTL before final sequence acceptance.
 
 ## Translated-cache sequence round 3 — accepted (2026-09-23)
 
 Canonical remap/stale-code/permission gate passes 2,275 checks; maintenance,
-redirect, partial-fill TEA and reset gate passes 1,436. Cache80→85%,
-integration82→85%; weighted80.35→80.81%. Sequence gain: 1.49 points.
+redirect, partial-fill TEA and reset gate passes 1,436. Cache 80% → 85%,
+integration 82% → 85%; weighted 80.35% → 80.81%. Sequence gain: 1.49 points.
 Shared fetch credit coverage now has 304 focused checks; the final broad
 regression passes after adapting legacy corpus fixtures to its capacity contract.
 No automatic coherence, architectural cache operations, data cache or timing
@@ -703,26 +719,26 @@ closure claim. Next: combined-top fit and cached event/maintenance stress.
 Final sequence gates: 205 registered simulation configurations, 243 Python
 checks, strict profile/measurement-wrapper lint, twenty preserved compiled
 workloads and four scalar/cached bus executions of the search/fault ELFs.
-Both cached firmware corruption controls fail as intended. The 348 frozen
-source hashes remain stable; no new FPGA fit or timing claim.
+Both cached firmware corruption controls fail as intended. Sources stayed
+unchanged; no new FPGA fit or timing claim.
 
 ## Bounded cached-interrupt round — accepted (2026-09-23)
 
-One Sol implementation/review set added the translated-cache IRQ refill-drain
+One implementation/review round added the translated-cache IRQ refill-drain
 gate. Canonical strict simulation passes 1,051 checks: exact saved state, held
 handler retirement, old-response drain and RFI cache-hit resumption. Five
 neighboring simulation configurations and both wrapper lint profiles pass.
-Production RTL is unchanged; 349 source inputs remain frozen. Prior broad
+Production RTL is unchanged. Prior broad
 regression/firmware evidence is inherited; no full regression or fit rerun.
-MVP80.81% unchanged, with all system percentages and effort ranges preserved.
+MVP 80.81% unchanged, with all system percentages and effort ranges preserved.
 Next work remains combined-top fit and broader cached event/maintenance stress.
 
 ## Bounded cached-timer round — accepted (2026-09-23)
 
-One Sol orchestration set verified DEC selection during held translated cache
+One round verified DEC selection during held translated cache
 refill, promotion to later EXT, preserved DEC pending, both precise handlers
 and cached resumption. Canonical strict gate: 2,748 checks, 25 retirements.
 Five neighboring timer/IRQ/cache configurations and both wrapper lint profiles
-pass. Production RTL unchanged; 350 frozen source inputs stable. Prior broad
+pass. Production RTL unchanged. Prior broad
 regression and firmware evidence is inherited; no full-suite or fit rerun.
-MVP80.81%, all system scores and remaining-effort ranges stay unchanged.
+MVP 80.81%, all system scores and remaining-effort ranges stay unchanged.

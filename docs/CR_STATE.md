@@ -6,9 +6,9 @@ Both instructions use the existing exact flags owner and selected-field completi
 
 ## Source boundaries
 
-Primary manual PDF392/395 supplies the X/XL encodings. MCRF uses primary19/XO0 with reserved mask `fc63ffff` and value `4c000000`; MCRXR uses primary31/XO512 with mask `fc7fffff` and value `7c000400`. Nonzero reserved fields, including bit0, are rejected.
+Primary manual PDF392/395 supplies the X/XL encodings. MCRF uses primary 19/XO0 with reserved mask `fc63ffff` and value `4c000000`; MCRXR uses primary 31/XO512 with mask `fc7fffff` and value `7c000400`. Nonzero reserved fields, including bit 0, are rejected.
 
-Secondary MPC601UM PDF673 (printed10-119) supplies MCRF semantics; PDF675 (printed10-121) supplies MCRXR semantics. The latter's prose describes a complete four-bit field, while its extracted pseudocode has a single-bit-looking destination: the source discrepancy remains recorded in ISA provenance. The 601 XER drawing/table at PDF61/62 identifies architectural bit3 as reserved/zero. This subset therefore inserts zero in the fourth CR bit and preserves XER[28:0], while clearing XER[31:29]. Full reserved-bit behavior must be reconciled with the missing programming-environments manual before general XER SPR writes or architectural conformance are claimed.
+Secondary MPC601UM PDF673 (printed 10-119) supplies MCRF semantics; PDF675 (printed 10-121) supplies MCRXR semantics. The latter's prose describes a complete four-bit field, while its extracted pseudocode has a single-bit-looking destination: the source discrepancy remains recorded in ISA provenance. The 601 XER drawing/table at PDF61/62 identifies architectural bit 3 as reserved/zero. This subset therefore inserts zero in the fourth CR bit and preserves XER[28:0], while clearing XER[31:29]. Full reserved-bit behavior must be reconciled with the missing programming-environments manual before general XER SPR writes or architectural conformance are claimed.
 
 ## Validation
 

@@ -1,5 +1,7 @@
 # Compiled temporary-register bank acceptance
 
+Recorded: `make -C toolchain rtl-tgpr`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The pinned compiler builds `tgpr-smoke.c` and `tgpr-probe.S`. The workload
 uses only r0–r3 while TGPR is active, keeps normal registers distinct from
 temporary values, and verifies persistence across two visits. It deliberately

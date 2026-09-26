@@ -1,5 +1,7 @@
 # Rename owner retention: focused acceptance
 
+Recorded: `make -C sim lint check-spec test-recovery-storage test-recovery-state` and the focused gate below, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
+
 The reset/allocation-only owner-storage change passed focused validation on
 2026-09-21 at `15:04:23.351183Z`. Independent review confirmed that every wake
 and release still requires a valid slot and exact producer identity, reads still
@@ -24,7 +26,7 @@ public operand interface, not internal owner contents.
 
 ## Results and reproduction
 
-Both commands passed with exit0:
+Both commands passed with exit 0:
 
 ```sh
 make -C sim -j4 lint check-spec test-recovery test-recovery-select \
@@ -47,13 +49,7 @@ make -C sim -j2 test-recovery-storage test-recovery-state test-recovery-executio
 | Alignment dependency cases | 634 checks / seven variants |
 | Enabled / disabled typed fetch faults | 10,923 / 2,889 checks |
 
-All 142 hashed RTL/TB/Makefile/RTL-manifest files stayed unchanged during the
-focused run. Hashes of the changed files at acceptance:
-
-- `rtl/ppc_rename.sv` SHA256:
-  `8f5b5b11de3906a0898f4f478117cbad7ce426867e9b327d8179d76e94007b16`.
-- `tb/tb_recovery_storage.sv` SHA256:
-  `02fadecfcd0018ad35c720eedde7d3600ce3b5b8a881386c086cf72921f16cd4`.
+RTL, testbench and Makefile sources stayed unchanged during the focused run.
 
 ## Scope and remaining qualification
 
@@ -62,7 +58,7 @@ storage change. This limited final round deliberately ran the focused gates
 above instead of repeating that full regression. Compiled firmware reruns are
 recorded separately in [compiled acceptance](COMPILED_FIRMWARE_VERIFICATION.md).
 The owner change has not received a fresh FPGA measurement; earlier timing
-archives remain evidence of their own source manifests.
+results describe earlier RTL.
 
 The tests do not make arbitrarily delayed stale tokens safe after complete
 finite-generation wrap. Cancellation must obey the existing producer-lifetime

@@ -1,5 +1,7 @@
 # Compiled table-fault verification
 
+Recorded: `make -C toolchain rtl-table-fault`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 `tb/tb_compiled_table_fault_firmware.sv` executes the pinned PPC603e-compiled `table-fault` image on `ppc_core_bat` with independent, delayed instruction/data RAM responses and retirement backpressure. The fixture starts in real mode, then lets software install SDR1, BAT and segment state; it does not preload any PTE or TLB entry. It uses the linked image's `tohost`, `fault_count`, and `fault_records` symbol addresses passed by the runner.
 
 The oracle covers five fixed cases followed by all 16 `KEY × PP × {load,store}` combinations. A monotonic physical marker at `0xfff0b000` identifies the active case. For each case, the test requires exactly one typed architectural miss retirement and independently checks the saved EA, segment value, access type, way, and absence of faulting-instruction writes. Instruction and data search addresses are fixed expected physical PTEG addresses, including the secondary group for absent pages. The first three cases must scan all eight primary and eight secondary PTE0 slots without a PTE1 read. The guarded instruction must find primary slot 4; protected instruction primary slot 2; each matrix case primary slot 5. The physical data monitor enforces that PTE1 is read only after the selected PTE0 and that an allowed PTE R or R+C write precedes TLB fill.

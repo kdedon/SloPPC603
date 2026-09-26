@@ -1,5 +1,7 @@
 # Compiled firmware through the translated instruction cache
 
+Recorded: `make -C toolchain rtl-table-search-cached rtl-table-fault-cached`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The `table-search` and `table-fault` ELF files are unchanged from the accepted
 scalar 60x tests. `tb_compiled_table_cached_bus60x_firmware.sv` runs each one
 through `ppc_core_bat_cached_bus60x` and a single physical 192 KiB RAM at

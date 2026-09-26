@@ -1,5 +1,7 @@
 # Prepared TLB refill verification
 
+Recorded: `make -C sim test-tlb-prepared-refill`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 `make -C sim test-tlb-prepared-refill` builds `tb_tlb_prepared_refill.sv` with strict `-Wall --assert` in every `ENABLE_RUNTIME_INVALIDATE` / `ENABLE_RUNTIME_REFILL` combination. All four profiles pass:
 
 | Invalidate | Refill | Checks |

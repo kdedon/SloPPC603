@@ -12,7 +12,7 @@ Both exceptional cases are detected before magnitude iteration. The implementati
 
 ## Sources and timing
 
-Primary 603e UM Tables A-1 PDF362, A-3 PDF377 and A-41 PDF396 specify primary31/XO491 with OE/Rc: mask `fc0007ff`, base `7c0003d6`. Secondary MPC601UM PDF601–602 (printed10-47/10-48) supplies signed quotient, remainder bounds and exceptional-input semantics.
+Primary 603e UM Tables A-1 PDF362, A-3 PDF377 and A-41 PDF396 specify primary 31/XO491 with OE/Rc: mask `fc0007ff`, base `7c0003d6`. Secondary MPC601UM PDF601–602 (printed 10-47/10-48) supplies signed quotient, remainder bounds and exceptional-input semantics.
 
 TIM-T64-047 records PID6 37-cycle and PID7v 20-cycle latency. The IU now reserves its single execution slot for 20 cycles by default, with `DIV_LATENCY=37` selecting the PID6 timing value. [DIVIDER_TIMING.md](DIVIDER_TIMING.md) defines the accepted-edge convention and focused evidence. A synthesizable 16-step radix-4 magnitude divider now supplies the quotient without a division operator in RTL. Silicon-internal equivalence, wider P08 scheduling, and FPGA timing closure remain open.
 

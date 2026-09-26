@@ -1,5 +1,7 @@
 # Runtime BAT directed verification
 
+Recorded: `make -C sim lint-runtime-bat test-bat-runtime-service test-bat-runtime-router test-core-runtime-bat`, `make -C sim regression`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 The opt-in CPU-programmable BAT path is checked at the service, router, decoder, and core boundaries. Run `make -C sim lint-runtime-bat` and `make -C sim -j5 test-bat-runtime-service test-bat-runtime-router test-core-runtime-bat test-core-runtime-bat-privilege test-runtime-bat-decode`. Both commands passed on 2026-09-22; lint uses strict `-Wall`, and simulations additionally enable `--assert`. These targets are also prerequisites of the ordinary `lint` and `test` gates. The compiled firmware evidence, including IRQ/DEC and a corrupted-readback negative run, is in [RUNTIME_BAT_FIRMWARE.md](RUNTIME_BAT_FIRMWARE.md).
 
 | Suite | Passing checks | Publicly observed behavior |
@@ -30,8 +32,6 @@ reused. The runtime readback-expectation negative fails with mailbox `81000212`;
 the temporary early-write RTL mutant fails its bank-stability assertion.
 See [RUNTIME_BAT_FIRMWARE.md](RUNTIME_BAT_FIRMWARE.md) for their exact scope.
 
-Production RTL did not change during these acceptance runs. The final manifest
-contains 233 RTL/test/spec/toolchain inputs, all unchanged from its capture to
-completion. The initial 229-input manifest differed only by a runner docstring;
-four new focused test files were added during verification.
+Production RTL did not change during these acceptance runs; four new focused
+test files were added during verification.
 No Quartus fit or timing analysis was run for this revision.

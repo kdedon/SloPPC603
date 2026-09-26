@@ -10,23 +10,23 @@ BAT decisions (see [`LIVE_BAT_CONTEXT.md`](LIVE_BAT_CONTEXT.md) and [`LIVE_CONTE
 ## Source contract
 
 The local *MPC603e & EC603e RISC Microprocessors User's Manual* (1997),
-`1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`, PDF183/printed4-25 §4.5.4,
+`1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf`, PDF183/printed 4-25 §4.5.4,
 identifies protected and guarded instruction fetches as ISI causes and defines
 the `0x400` vector. It delegates register settings to the architectural manual.
 *PowerPC Microprocessor Family: The Programming Environments*, Rev. 1, local
-`MPCFPE.pdf`, PDF275/printed6-29 Table6-10 defines the failed fetch address in
+`MPCFPE.pdf`, PDF275/printed 6-29 Table 6-10 defines the failed fetch address in
 SRR0 and the cause bits in SRR1:
 
-- Protection: manual bit4, HDL mask `0x08000000`.
-- Guarded: manual bit3, HDL mask `0x10000000`.
+- Protection: manual bit 4, HDL mask `0x08000000`.
+- Guarded: manual bit 3, HDL mask `0x10000000`.
 
 Only one of these cause bits is set. The saved MSR mask is `0x87c0ffff`, as in
-the existing SC/program state contract. Primary UM PDF173/printed4-15 §4.2.2
-explicitly saves manual bits5–9 and16–31; including bit0 is the existing
+the existing SC/program state contract. Primary UM PDF173/printed 4-15 §4.2.2
+explicitly saves manual bits 5–9 and 16–31; including bit 0 is the existing
 603e full-function-reserved-bit inference documented in [`EXCEPTION_STATE.md`](EXCEPTION_STATE.md).
 This is deliberately different from alignment's explicit low-half-only table.
 
-Physical TEA is **not** an ISI cause. Primary UM PDF179–180/printed4-21–4-22
+Physical TEA is **not** an ISI cause. Primary UM PDF179–180/printed 4-21–4-22
 §4.5.2 defines TEA/MCP machine checks and ME-disabled checkstop, with immediate
 recognition and no general recoverability guarantee. The physical wrappers keep
 their existing terminal transport-error policy. No physical TEA becomes a

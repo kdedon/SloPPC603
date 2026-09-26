@@ -1,5 +1,7 @@
 # Compiled segment-register acceptance — 2026-09-22
 
+Recorded: `make -C toolchain rtl-segment`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 The `segment` workload exercises the CPU-owned bank with all four management
 instructions. It initializes BAT identity mappings itself, writes all sixteen
 SRs with indexed forms in real mode, reads them directly, enables IR/DR, writes

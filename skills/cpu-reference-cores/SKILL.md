@@ -52,3 +52,11 @@ Line numbers were spot-checked, not all re-verified; open the source before quot
 2. Check the core's clock: a technique that closes at 34 MHz (PSX) or CE/2 (SH2) may not at 603e rates.
 3. Prefer lessons that two or more cores agree on; treat single-core tricks as options.
 4. Every report ends with pitfalls; check your design against them before review.
+
+## Checklist
+
+- [ ] The cited technique was read at the linked source lines, not only in the report.
+- [ ] The source core's clock and CE scheme were compared with the 603e target.
+- [ ] At least two cores agree, or the lesson is labeled a single-core option.
+- [ ] The report's pitfalls were checked against the design.
+- [ ] Citations are GitHub permalinks at the reviewed commit.

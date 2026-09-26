@@ -1,5 +1,7 @@
 # CPU TLB load verification
 
+Recorded: `make -C sim lint-tlb-load-integration test-tlb-load-decode test-core-tlb-load test-tlb-runtime-fill-router`, `make -C sim regression`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The opt-in `ENABLE_TLB_LOAD` path executes 603e `tlbld rB` and `tlbli rB` through a captured, retirement-owned prepared refill. This verification covers the bounded software-seeded profile; architectural page-miss entry and software miss-handler sequencing are separate work.
 
 `make -C sim lint-tlb-seed lint-tlb-load-integration test-tlb-load-decode test-core-tlb-load test-tlb-runtime-fill-router` passed with strict Verilator warnings and assertions on 2026-09-23. The decoder oracle passed **12,366 checks**. It anchors real `-mcpu=603e` object-dump words (`7c00ffa4`, `7c003fe4`, `7c004fe4`), tests all 32 old rB fields for both opcodes, and rejects 4,032 reserved RT/RA/Rc combinations. Default-off and baseline profiles reject both opcodes; combined BAT, segment, and TLBIE options leave the decode unchanged.
@@ -17,6 +19,5 @@ round-3 inputs. The gate includes 243 Python checks; all 177 distinct strict
 testbench lint configurations also pass. All twelve compiled workload profiles
 pass, with three modes each for TLBIE and CPU TLB loads. A missing-first-load
 negative fails at the first page use; see [TLB_LOAD_FIRMWARE.md](TLB_LOAD_FIRMWARE.md).
-Forty-eight recorded production inputs and 284 final source/configuration inputs
-were unchanged at acceptance.
+Production and test sources were unchanged at acceptance.
 No FPGA fit or architectural miss-handler acceptance was performed.

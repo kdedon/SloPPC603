@@ -1,5 +1,7 @@
 # Software PTEG search verification
 
+Recorded: `make -C toolchain rtl-table-search` and `make -C sim test-core-tlb-miss`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 `tb_compiled_table_search_firmware.sv` passed **299,206 checks over 5,140 retirements and 54,838 cycles**. An isolated mutation that removes the PTE R/C halfword write is rejected before TLB refill at cycle 30,602 with “TLB fill preceded exact PTE read and R/C write.” The harness runs the compiled 603e software miss handler against the integrated CPU, BAT, segment, TLB, and physical memory path. The harness supplies a 192 KiB byte RAM from `0xfff00000` through `0xfff2ffff` and loads only the boot image. Firmware stores every PTE into the physical table at `0xfff10000`; the harness does not preload TLB entries or PTEs. It checks fixed physical addresses and words independently of the handler and its `pte_before` snapshot.
 
 The four events have these literal search outcomes:

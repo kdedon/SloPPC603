@@ -1,40 +1,37 @@
-# Scaffold architecture
+# Architecture
 
-Current cross-system percentages, gaps and validation boundaries are tracked in
-[SYSTEM_COMPLETION.md](SYSTEM_COMPLETION.md). Historical milestones below retain
-their original scope and dates; later feature contracts supersede early limitations.
-The current opt-in data-protection path is described in
-[DATA_EXCEPTIONS.md](DATA_EXCEPTIONS.md): BAT PP denials can be handled and
-retried, while page misses and physical transport errors remain separate.
+Current percentages, gaps and validation boundaries are tracked in
+[SYSTEM_COMPLETION.md](SYSTEM_COMPLETION.md).
 
+Accepted state, 2026-09-23: a single-issue, big-endian integer core with tagged
+rename, ordered retirement and precise recovery. Opt-in parameters add
+supervisor exceptions, live MSR context, external and decrementer interrupts,
+runtime BATs, segment registers, SDR1, CPU `tlbie`/`tlbld`/`tlbli`, TGPR and
+architectural instruction/load/store TLB miss entry. Software handlers search
+primary and secondary PTEGs, write R/C back, refill the TLB and retry through
+RFI; failed searches become ordinary ISI/DSI. BAT and page PP/N/G denials take
+precise ISI/DSI with handler repair and retry.
 
-The opt-in page-hit profile now routes clean BAT misses through the canonical
-CPU-managed segment bank and the I/D TLB service. It captures access context,
-uses PA/WIMG only on allowed hits and keeps page failures diagnostic. The TLB
-control port is external preload/management, not CPU software refill. See
-[PAGE_PATH_PROTOCOL.md](PAGE_PATH_PROTOCOL.md) and
-[PAGE_FIRMWARE.md](PAGE_FIRMWARE.md). Earlier standalone-service descriptions
-below are historical; automatic miss state, TGPR, handler refill/retry, combined
-cache/bus integration and timing acceptance remain open.
+`ppc_core_bat_bus60x` runs the translated core over scalar 60x pins.
+`ppc_core_bat_cached_bus60x` adds a 16-KiB four-way physical instruction cache
+after translation for WIMG=0 fetches; data stays uncached. Open: TLB
+replacement (true misses use way 0), remaining DSI causes, data cache,
+architectural cache instructions, broader event/reset interleavings and timing
+closure.
 
-The separate opt-in CPU TLBIE path now prepares indexed invalidation and commits
-it at retirement, then acknowledges and refetches. Both ways in both banks are
-invalidated; external TLB loading remains a test/control operation. See
-[CPU_TLBIE.md](CPU_TLBIE.md) and [TLBIE_FIRMWARE.md](TLBIE_FIRMWARE.md).
+Contracts: [CPU TLB miss](CPU_TLB_MISS.md), [table search](TABLE_SEARCH_HANDLER.md),
+[page data](PAGE_DATA_EXCEPTIONS.md) and [instruction](PAGE_INSTRUCTION_EXCEPTIONS.md)
+exceptions, [page path](PAGE_PATH_PROTOCOL.md), [CPU TLBIE](CPU_TLBIE.md),
+[CPU TLB load](CPU_TLB_LOAD.md), [TGPR](CPU_TGPR.md),
+[translated 60x](TRANSLATED_BUS60X.md) and [translated I-cache](TRANSLATED_ICACHE.md).
 
-`ENABLE_TLB_LOAD` adds committed DCMP/ICMP/RPA seed registers and privileged
-real-mode `tlbld`/`tlbli`. The CPU captures the selected compare word, RPA,
-SRR1.WAY and old RB, validates the bounded input contract, and commits a private
-refill proposal through the same sole TLB service. Compiled software can install
-and use I/D page mappings without external preloads. This is CPU-seeded loading;
-automatic miss capture, TGPR and software page-table search/retry remain open.
-See [CPU_TLB_LOAD.md](CPU_TLB_LOAD.md), [TLB_LOAD_PROTOCOL.md](TLB_LOAD_PROTOCOL.md)
-and [TLB_LOAD_FIRMWARE.md](TLB_LOAD_FIRMWARE.md).
+The sections below start from the 2026-09-14 integer bootstrap and record each
+extension in order; each keeps its original scope, and later contracts supersede
+its limitations. Statements in the original brief about variants, endian
+transformations, latency, bus qualification, resource estimates and manual
+completeness are design inputs to verify, not established conformance.
 
-
-Status: executable integer/control/memory bootstrap, 2026-09-14. The desired final architecture remains the 603e-style machine in the original implementation plan. Statements in that plan about variants, endian transformations, latency, bus qualification, resource estimates, and manual completeness are design inputs to verify, not conformance established by this scaffold.
-
-## Current datapath
+## Base datapath
 
 ```text
 instruction request/response
@@ -129,9 +126,9 @@ SUBFE adds a complemented-A operation with captured carry-in, sharing the flag o
 
 SUBFME/SUBFZE reuse ALU_SUBFE with immediate B=ffffffff/0, reserved rB=0 and real rA. Both capture and replace CA without a register dependency on the encoded reserved field.
 
-SUBFIC uses ALU_SUBFC with signed SIMM and real rA0, replacing only CA alongside its GPR result. All low16 bits are data; no OE/Rc decoding applies.
+SUBFIC uses ALU_SUBFC with signed SIMM and real rA0, replacing only CA alongside its GPR result. All low 16 bits are data; no OE/Rc decoding applies.
 
-ADDIC/ADDIC. use ALU_ADDC with signed SIMM and real rA0. Both replace CA; only primary13 captures SO and records CR0. Immediate low bits never select OE/Rc behavior.
+ADDIC/ADDIC. use ALU_ADDC with signed SIMM and real rA0. Both replace CA; only primary 13 captures SO and records CR0. Immediate low bits never select OE/Rc behavior.
 
 ANDI./ANDIS. read real rS and write rA through ALU_AND using an unsigned low/high-half immediate. Both record CR0 with captured SO, preserving all XER bits.
 

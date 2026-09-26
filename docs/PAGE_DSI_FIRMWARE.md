@@ -1,5 +1,7 @@
 # Compiled page-protection DSI acceptance
 
+Recorded: `make -C toolchain rtl-page-dsi`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The `page-dsi` profile runs a single big-endian PowerPC ELF against the integrated CPU, BAT router, segment registers, and TLB service. The new `ENABLE_PAGE_DATA_EXCEPTIONS` parameter is opt-in. The fixture never issues normalized TLB management requests or programs BATs; CPU instructions install both the bootstrap BAT and each DTLB entry. The program runs with instruction translation off, enables data translation for each protected access, and uses a high-prefix DSI handler at `fff00300`.
 
 The program selects segment 1 with VSID `001234` and supervisor key Ks=1. It first installs a way-0 page entry for EA `10008000` to physical `fff08000` with PP=00, C=1. Its update-form load is denied. The handler records DAR, DSISR, SRR0, SRR1 and entry MSR, observes the unchanged physical word, writes RPA with PP=10, executes `tlbld` in real mode, and returns with `rfi` to retry the load. Software then reinstalls the same entry with PP=01; the update-form store is denied under Ks=1. The handler repairs it with PP=10 and retries. Both cases require the original faulting PC in SRR0, DAR=`10008000`, DSISR protection bit, the store bit only for the store, saved MSR=`00000050`, and entry MSR=`00000040`.

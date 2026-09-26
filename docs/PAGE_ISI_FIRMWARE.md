@@ -1,5 +1,7 @@
 # Compiled instruction-page ISI acceptance
 
+Recorded: `make -C toolchain rtl-page-isi`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The `page-isi` profile uses one big-endian PowerPC ELF and the opt-in `ENABLE_PAGE_INSTRUCTION_EXCEPTIONS` router path. The CPU configures its own bootstrap BAT, segment register and instruction TLB; the external normalized TLB management interface never offers a request. Code at physical `fff01000` remains BAT-backed while IR=1. The test function at effective `20000000` is physically stored at `fff06000`; the high-prefix ISI handler occupies `fff00400`. This avoids the separate high-prefix I-TLB miss vector at `fff01000`, which is not implemented by this profile.
 
 The same effective instruction address faults and retries three times:

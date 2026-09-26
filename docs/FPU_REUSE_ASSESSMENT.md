@@ -1,6 +1,6 @@
 # FPU reuse assessment and implementation plan
 
-Reviewed 2026-09-22. Scope: [MiSTer-devel/N64_MiSTer](https://github.com/MiSTer-devel/N64_MiSTer/tree/eb5554af01bb97bdf3d295aed02a989ac10ccee4) and [Grabulosaure/ss](https://github.com/Grabulosaure/ss/tree/70203e26e981069710e934600fd55b9d866a9e5b) as FPU donors for this CPU. Two GPT-6 Sol agents independently investigated one donor each. The parent agent reviewed the decisive source paths and owns the conclusions below. This is an investigation and proposed plan; it does not implement an FPU or change the current integer MVP scope.
+Reviewed 2026-09-22. Scope: [MiSTer-devel/N64_MiSTer](https://github.com/MiSTer-devel/N64_MiSTer/tree/eb5554af01bb97bdf3d295aed02a989ac10ccee4) and [Grabulosaure/ss](https://github.com/Grabulosaure/ss/tree/70203e26e981069710e934600fd55b9d866a9e5b) as FPU donors for this CPU. Each donor was investigated independently; the decisive source paths were then reviewed together to reach the conclusions below. This is an investigation and proposed plan; it does not implement an FPU or change the current integer MVP scope.
 
 ## Decision
 

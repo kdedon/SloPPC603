@@ -8,9 +8,9 @@ Two ALU operations reuse the tagged IU completion and retirement paths. No inter
 
 ## Source contract
 
-Primary 603e UM Table A-41 at PDF396 identifies both as XO forms with a fixed-zero OE-position bit. MULHW uses primary31/XO75, mask/value `fc0007ff/7c000096`; MULHWU uses primary31/XO11, `fc0007ff/7c000016`, with Rc selecting the low bit.
+Primary 603e UM Table A-41 at PDF396 identifies both as XO forms with a fixed-zero OE-position bit. MULHW uses primary 31/XO75, mask/value `fc0007ff/7c000096`; MULHWU uses primary 31/XO11, `fc0007ff/7c000016`, with Rc selecting the low bit.
 
-Secondary MPC601UM PDF695/696 (printed10-141/10-142) supplies signed and unsigned high-product semantics. Its pseudocode uses 64-bit register slices and describes undefined upper register bits; this 32-bit implementation follows the adjacent 32-bit operand/result prose. The 601-specific MQ side effect is not imported into the 603e. ISA metadata retains these boundaries.
+Secondary MPC601UM PDF695/696 (printed 10-141/10-142) supplies signed and unsigned high-product semantics. Its pseudocode uses 64-bit register slices and describes undefined upper register bits; this 32-bit implementation follows the adjacent 32-bit operand/result prose. The 601-specific MQ side effect is not imported into the 603e. ISA metadata retains these boundaries.
 
 Primary timing rows TIM-T64-030 and TIM-T64-023 list MULHW 2/3/4/5 and MULHWU 2/3/4/5/6 cycle possibilities. The manual does not map operands to those counts. The bounded IU selects the documented maximum, producing accepted finish at E+5 and E+6 respectively. Lower operand-selected timing and silicon multiplier scheduling remain unresolved. No new FPGA fit or timing claim is made.
 

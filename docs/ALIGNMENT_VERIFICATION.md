@@ -1,5 +1,7 @@
 # Alignment exception verification
 
+Recorded: `make -C sim regression`, `test-core-alignment`, `test-core-alignment-disabled`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
+
 The current core rejects non-naturally-aligned halfword and word accesses.
 These tests verify precise exception routing at that existing boundary. They do
 not claim the full 603e alignment-detection rules: ordinary big-endian unaligned
@@ -69,8 +71,7 @@ On 2026-09-21 at 04:38 UTC, `make -C sim -j2 regression` completed
 successfully (exit 0). The aggregate reaches 156 named test targets, runs 19
 strict RTL lint profiles, and includes 204 tool tests, 22 cosim tests and 15
 recovery-model tests (241 Python unit tests). All 124 direct RTL testbench
-profiles also passed strict pre-elaboration. The full log contains 183 PASS
-summaries; that is a log-entry count, not an independent test count.
+profiles also passed strict pre-elaboration.
 
 Focused alignment results in the complete run were 3,697 checks for the enabled
 profile and 2,651 for the disabled profile. The exception-state fixture passed
@@ -79,8 +80,7 @@ cache/bus/MMU service tests, recovery tests and the older instruction suites all
 completed. This gate does not include optional cross-compiler firmware runs or
 Quartus fitting; those have separate evidence.
 
-SHA-256 snapshots of 125 source files (`rtl/*.sv`, `tb/**/*.sv` and the
-simulation Makefile) were identical before and after the successful run.
+RTL, testbench and simulation Makefile sources stayed unchanged during the run.
 
 Earlier attempts exposed an incomplete generated compiler-header cache and two
 older fixtures that did not consume the new retirement marker. The cache was

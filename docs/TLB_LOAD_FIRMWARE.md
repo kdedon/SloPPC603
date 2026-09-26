@@ -1,5 +1,7 @@
 # Compiled CPU TLB-load acceptance
 
+Recorded: `make -C toolchain rtl-tlbload`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The `tlbload` profile extends the TLBIE workload with CPU-installed page
 translations. At startup, IR=DR=0 and the external normalized TLB management
 request remains inactive for the entire simulation. CPU instructions write

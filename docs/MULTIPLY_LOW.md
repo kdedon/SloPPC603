@@ -8,9 +8,9 @@ The implementation computes an explicit signed 64-bit product and compares its u
 
 ## Sources and boundaries
 
-Primary 603e UM PDF366 (Table A-1), PDF389 (D-form) and PDF396 (XO-form) anchor the encodings. MULLI uses primary opcode7, mask/value `fc000000/1c000000`. MULLW uses primary31/XO235, with fixed-form mask `fc0007ff`; OE and Rc select the four values from base `7c0001d6`.
+Primary 603e UM PDF366 (Table A-1), PDF389 (D-form) and PDF396 (XO-form) anchor the encodings. MULLI uses primary opcode 7, mask/value `fc000000/1c000000`. MULLW uses primary 31/XO235, with fixed-form mask `fc0007ff`; OE and Rc select the four values from base `7c0001d6`.
 
-Secondary MPC601UM PDF697/698 (printed10-143/10-144) provides semantics. Its MULLI product slices have an off-by-one width inconsistency, and the MULLW pseudocode uses 64-bit register slices despite the 32-bit context. The bounded implementation follows the low-32-bit prose and explicit signed overflow rule; the discrepancies remain in ISA source metadata. 601-specific MQ effects and timing are not imported into the 603e.
+Secondary MPC601UM PDF697/698 (printed 10-143/10-144) provides semantics. Its MULLI product slices have an off-by-one width inconsistency, and the MULLW pseudocode uses 64-bit register slices despite the 32-bit context. The bounded implementation follows the low-32-bit prose and explicit signed overflow rule; the discrepancies remain in ISA source metadata. 601-specific MQ effects and timing are not imported into the 603e.
 
 The primary timing records TIM-T64-002 and TIM-T64-039 list 2/3-cycle MULLI and 2/3/4/5-cycle MULLW cases. The manual does not map operands to those counts. The bounded IU selects the documented maximum, producing accepted finish at E+3 and E+5 respectively. Lower operand-selected timing, a staged multiplier datapath, dual issue and silicon scheduling equivalence remain open. No new FPGA timing or fit claim is made.
 

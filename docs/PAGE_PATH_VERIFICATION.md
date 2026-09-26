@@ -1,5 +1,7 @@
 # Page-path router verification
 
+Recorded: `make -C sim test-page-memory-router`, `make -C sim regression`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+
 This is the historical acceptance record for the original page-hit profile,
 with later typed features disabled. Its 587-check count and broad gate are
 not evidence for later CPU TLB loads, typed page exceptions or response-bound
@@ -35,5 +37,5 @@ negative control fails the intended mailbox; see [PAGE_FIRMWARE.md](PAGE_FIRMWAR
 
 The first broad attempt was rejected by the BAT reference runner's source-freeze
 guard during final fixture/contract cleanup. It is not counted as acceptance.
-The production RTL matches the recorded input hashes. No new FPGA fit or timing
+Production RTL was unchanged through acceptance. No new FPGA fit or timing
 measurement was performed.

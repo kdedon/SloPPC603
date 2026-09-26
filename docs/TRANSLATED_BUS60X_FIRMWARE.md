@@ -1,5 +1,7 @@
 # Translated scalar 60x transport
 
+Recorded: `make -C toolchain rtl-table-search-bus rtl-table-fault-bus`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+
 The opt-in `ppc_core_bat_bus60x` composes the existing `ppc_core_bat`
 translation and CPU pipeline with the existing `ppc_bus60x_arbiter` and
 `ppc_bus60x` scalar adapter. Its external bus and diagnostics use the same

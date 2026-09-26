@@ -1,5 +1,7 @@
 # Original-handler comparison through the cached CPU
 
+Recorded: `make -C sim test-reference-cached test-reference-managed test-reference-cache-disabled`, commit pre-repository snapshot, imported in 3e727b6, round 38 (date not recorded).
+
 `make -C sim test-reference-cached` runs the fixed memory corpus through
 `ppc_core_cached_bus60x`. It compares 9,881 retired instructions covering all
 168 implemented forms against the original DingusPPC handlers. Every snapshot
@@ -30,18 +32,15 @@ cover those behaviors.
 - 240 scalar data transactions, including 134 stores.
 - 15,844 physical bus wait cycles and retirement backpressure.
 - Three injected GPR/RAM corruptions are rejected by the public v2 comparator.
-- All 142 source, header, executable and trace hashes in the final manifest match.
 
 These counters stop at the final required retirement; speculative fetch may
 still have an outstanding burst. They are workload observations, not processor
 performance or whole-bus-idle acceptance claims. The existing fixed and seeded
 reference lanes remain available independently.
 
-`sim/build/reference-cached/manifest.json` records the exact commands, sources,
-reference checkout identity, coverage, diagnostics and hashes. `program.hex`,
-`expected.txt`, `actual.txt`, the executables and the original license/credits
-are retained there. Regenerable compiler header caches are removed by the runner
-only from its own compiler directory after execution finishes.
+The runner writes its programs, traces, executables and the original
+license/credits under `sim/build/reference-cached`. It removes regenerable
+compiler header caches only from its own compiler directory after execution.
 
 ## Managed-cache profiles (round 38)
 
@@ -49,8 +48,7 @@ The same independent physical-pin responder and original-handler comparison
 also support `--cache-profile managed` and `--cache-profile disabled`. The first
 uses `ppc_core_cached_bus60x_managed` with its local cache-enable reset parameter
 set. The second starts that wrapper in scalar instruction bypass mode. Each
-profile gets its own build directory and manifest, including the profile name,
-exact compiler defines, sources, original headers, executable and trace hashes.
+profile gets its own build directory.
 
 ```sh
 make -C sim test-reference-managed
@@ -72,8 +70,7 @@ recorded retirement, so final counters do not imply a drained system.
 
 Round 38 acceptance: all three profiles matched **9,881 retirements**, all
 **168 default forms**, and every word of the 256-byte data RAM. Each rejected
-three injected register/RAM corruptions. Final source/header/binary/trace hashes
-match all retained manifests (143 legacy, 149 managed, 149 disabled).
+three injected register/RAM corruptions.
 
 | Profile | Accepted fetch requests | Cache hits | Miss/burst addresses | Scalar instruction addresses | Scalar data / stores | Physical wait cycles |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -84,7 +81,4 @@ match all retained manifests (143 legacy, 149 managed, 149 disabled).
 The independent responder accepted 5,184 / 5,188 / 10,161 data beats respectively
 before the final required retirement. These endpoint-dependent counts include
 speculation and outstanding transport, so they are not drained-system totals
-or a 603e performance comparison. Artifacts are retained under
-`sim/build/reference-cached`, `sim/build/reference-managed`, and
-`sim/build/reference-cache-disabled`; completed compiler header caches are
-removed without deleting the executables, manifests or traces.
+or a 603e performance comparison.
