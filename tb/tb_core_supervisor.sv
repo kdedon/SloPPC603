@@ -127,11 +127,11 @@ module tb_core_supervisor;
           32'h0000_0000: return 32'h3860_0001;
           32'h0000_0004: return SC;
           32'h0000_0008: return 32'h3880_0002;
-          32'h0000_0c00: return 32'h38a0_0003;
-          32'h0000_0c04: return MFSRR0_R6;
-          32'h0000_0c08: return MFSRR1_R7;
-          32'h0000_0c0c: return MFMSR_R8;
-          32'h0000_0c10: return RFI;
+          32'hfff0_0c00: return 32'h38a0_0003;
+          32'hfff0_0c04: return MFSRR0_R6;
+          32'hfff0_0c08: return MFSRR1_R7;
+          32'hfff0_0c0c: return MFMSR_R8;
+          32'hfff0_0c10: return RFI;
           default: return 32'h4800_0000;
         endcase
       end
@@ -154,9 +154,9 @@ module tb_core_supervisor;
       3: begin
         case (address)
           32'h0000_0000: return 32'h0000_0000;
-          32'h0000_0700: return MFSRR0_R15;
-          32'h0000_0704: return MFSRR1_R16;
-          32'h0000_0708: return 32'h3a20_000b;
+          32'hfff0_0700: return MFSRR0_R15;
+          32'hfff0_0704: return MFSRR1_R16;
+          32'hfff0_0708: return 32'h3a20_000b;
           default: return 32'h4800_0000;
         endcase
       end
@@ -259,7 +259,7 @@ module tb_core_supervisor;
     tick();
     rst_n = 1'b1;
     tick();
-    require(!halted && dut.msr == 0 && dut.srr0 == 0 && dut.srr1 == 0 &&
+    require(!halted && dut.msr == 32'h40 && dut.srr0 == 0 && dut.srr1 == 0 &&
             dut.completion.count_q == 0,
             "supervisor/core reset state wrong");
   endtask
@@ -323,7 +323,7 @@ module tb_core_supervisor;
     commit_expected(32'h0, 32'h3860_0001);
     wait_offer(32'h4, SC);
     held_sc = retired;
-    require(dut.msr == 0 && dut.srr0 == 0 && dut.srr1 == 0 &&
+    require(dut.msr == 32'h40 && dut.srr0 == 0 && dut.srr1 == 0 &&
             dut.regfile.gpr[4] == 0,
             "SC changed state or allowed younger side effect before commit");
     redirect_valid = 1'b1;
@@ -334,7 +334,7 @@ module tb_core_supervisor;
             "external all-cut killed a stalled finished SC head");
     repeat (2) begin
       tick();
-      require(retire_valid && retired == held_sc && dut.msr == 0 &&
+      require(retire_valid && retired == held_sc && dut.msr == 32'h40 &&
               dut.srr0 == 0 && dut.srr1 == 0,
               "stalled SC offer/state was not stable");
     end
@@ -345,7 +345,7 @@ module tb_core_supervisor;
             "SC commit edge exposed an external redirect gap");
     tick();
     retire_ready = 1'b0;
-    require(dut.msr == 0 && dut.srr0 == 32'h8 && dut.srr1 == 0 &&
+    require(dut.msr == 32'h40 && dut.srr0 == 32'h8 && dut.srr1 == 32'h40 &&
             dut.regfile.gpr[4] == 0,
             "SC commit state or younger-state exclusion wrong");
     accept_internal_exception_redirect();
@@ -353,17 +353,17 @@ module tb_core_supervisor;
     redirect_all = 1'b0;
     require(internal_exception_redirects == before_redirects + 1,
             "SC did not redirect exactly once");
-    commit_expected(32'hc00, 32'h38a0_0003);
-    commit_expected(32'hc04, MFSRR0_R6);
-    commit_expected(32'hc08, MFSRR1_R7);
-    commit_expected(32'hc0c, MFMSR_R8);
+    commit_expected(32'hfff0_0c00, 32'h38a0_0003);
+    commit_expected(32'hfff0_0c04, MFSRR0_R6);
+    commit_expected(32'hfff0_0c08, MFSRR1_R7);
+    commit_expected(32'hfff0_0c0c, MFMSR_R8);
     require(dut.regfile.gpr[5] == 3 && dut.regfile.gpr[6] == 8 &&
-            dut.regfile.gpr[7] == 0 && dut.regfile.gpr[8] == 0,
+            dut.regfile.gpr[7] == 32'h40 && dut.regfile.gpr[8] == 32'h40,
             "handler did not observe committed SRR/MSR state");
-    commit_expected(32'hc10, RFI);
+    commit_expected(32'hfff0_0c10, RFI);
     accept_internal_exception_redirect();
     commit_expected(32'h8, 32'h3880_0002);
-    require(dut.regfile.gpr[4] == 2 && dut.msr == 0 &&
+    require(dut.regfile.gpr[4] == 2 && dut.msr == 32'h40 &&
             internal_exception_redirects == before_redirects + 2,
             "SC handler RFI roundtrip did not resume at PC+4");
 
@@ -385,19 +385,19 @@ module tb_core_supervisor;
     require(dut.srr0 == 32'h0000_0100, "MTSRR0 did not commit atomically");
     commit_expected(32'h14, RFI);
     accept_internal_exception_redirect();
-    require(dut.msr == 32'h87c0_4000,
-            "RFI did not install selected problem/full-function state");
+    require(dut.msr == 32'h0000_4000,
+            "RFI did not install selected problem state without reserved bits");
     commit_expected(32'h100, problem_instruction);
     accept_internal_exception_redirect();
-    require(dut.msr == 32'h87c0_0000 && dut.srr0 == 32'h100 &&
-            dut.srr1 == 32'h87c4_4000,
+    require(dut.msr == 32'h0000_0000 && dut.srr0 == 32'h100 &&
+            dut.srr1 == 32'h0004_4000,
             "problem-state selected instruction exception state wrong");
     commit_expected(32'h700, MFSRR0_R11);
     commit_expected(32'h704, MFSRR1_R12);
     commit_expected(32'h708, MFMSR_R13);
     commit_expected(32'h70c, 32'h39c0_0009);
     require(dut.regfile.gpr[11] == 32'h100 &&
-            dut.regfile.gpr[12] == 32'h87c4_4000 &&
+            dut.regfile.gpr[12] == 32'h0004_4000 &&
             dut.regfile.gpr[13] == 0 && dut.regfile.gpr[14] == 9,
             "privileged handler/MFMSR reserved-bit observations wrong");
 
@@ -407,14 +407,14 @@ module tb_core_supervisor;
 
     reset_core(3);
     commit_expected(32'h0, 32'h0000_0000);
-    require(!halted && dut.srr0 == 0 && dut.srr1 == 32'h0008_0000,
+    require(!halted && dut.srr0 == 0 && dut.srr1 == 32'h0008_0040,
             "selected illegal opcode did not create program state");
     accept_internal_exception_redirect();
-    commit_expected(32'h700, MFSRR0_R15);
-    commit_expected(32'h704, MFSRR1_R16);
-    commit_expected(32'h708, 32'h3a20_000b);
+    commit_expected(32'hfff0_0700, MFSRR0_R15);
+    commit_expected(32'hfff0_0704, MFSRR1_R16);
+    commit_expected(32'hfff0_0708, 32'h3a20_000b);
     require(dut.regfile.gpr[15] == 0 &&
-            dut.regfile.gpr[16] == 32'h0008_0000 &&
+            dut.regfile.gpr[16] == 32'h0008_0040 &&
             dut.regfile.gpr[17] == 11 && !halted,
             "illegal-opcode handler observations wrong");
 
@@ -435,7 +435,7 @@ module tb_core_supervisor;
     tick();
     redirect_valid = 1'b0;
     redirect_all = 1'b0;
-    require(dut.msr == 0 && dut.srr0 == 0 && dut.srr1 == 0 &&
+    require(dut.msr == 32'h40 && dut.srr0 == 0 && dut.srr1 == 0 &&
             commits == 0 && internal_exception_redirects == 0,
             "killed SC changed committed exception state");
     commit_expected(32'h100, 32'h3a40_000c);
@@ -479,13 +479,13 @@ module tb_core_supervisor;
     require(retired.pc == 32'h10 && retired.insn == RFI && retired.illegal &&
             !retired.gpr_write && !retired.update_write,
             "unsupported RFI did not normalize to a terminal diagnostic");
-    require(dut.msr == 0 && dut.srr0 == 32'h100 && dut.srr1 == 32'h20,
+    require(dut.msr == 32'h40 && dut.srr0 == 32'h100 && dut.srr1 == 32'h20,
             "unsupported RFI changed state before diagnostic commit");
     retire_ready = 1'b1;
     tick();
     retire_ready = 1'b0;
     require(halted && internal_exception_redirects == before_redirects &&
-            dut.msr == 0 && dut.srr0 == 32'h100 && dut.srr1 == 32'h20,
+            dut.msr == 32'h40 && dut.srr0 == 32'h100 && dut.srr1 == 32'h20,
             "unsupported RFI redirected or changed state at halt");
 
     $display("tb_core_supervisor: PASS (%0d checks)", checks);

@@ -1,5 +1,8 @@
 package ppc_pkg;
+  // Only the core reads IQ_DEPTH; unit builds import the package without it.
+  /* verilator lint_off UNUSEDPARAM */
   localparam int IQ_DEPTH = 6;
+  /* verilator lint_on UNUSEDPARAM */
   localparam int GPR_RENAME_DEPTH = 5;
   localparam int CQ_DEPTH = 5;
   localparam int TAG_WIDTH = $clog2(GPR_RENAME_DEPTH);
@@ -183,4 +186,54 @@ package ppc_pkg;
     logic [31:0] cr_delta;
     logic [31:0] xer_delta;
   } retire_packet_t;
+
+  // ---- MSR and exception events -------------------------------------------
+  // HDL bit = 31 - manual bit. Not every build uses every constant.
+  /* verilator lint_off UNUSEDPARAM */
+  localparam int MSR_POW  = 18;
+  localparam int MSR_TGPR = 17;
+  localparam int MSR_ILE  = 16;
+  localparam int MSR_EE   = 15;
+  localparam int MSR_PR   = 14;
+  localparam int MSR_FP   = 13;
+  localparam int MSR_IP   = 6;
+  localparam int MSR_IR   = 5;
+  localparam int MSR_DR   = 4;
+  localparam int MSR_RI   = 1;
+  localparam int MSR_LE   = 0;
+  // Named 603e fields. Reserved bits read as zero and are never stored.
+  localparam logic [31:0] MSR_IMPLEMENTED_MASK = 32'h0007_ff73;
+  // SRR1 bits copied from MSR on entry and restored by rfi: manual 0, 5-9, 16-31.
+  localparam logic [31:0] MSR_SRR1_MASK = 32'h87c0_ffff;
+  // Hard reset: IP=1 (UM 4.5.1).
+  localparam logic [31:0] MSR_RESET = 32'h0000_0040;
+  /* verilator lint_on UNUSEDPARAM */
+
+  function automatic logic [31:0] rfi_msr(
+    input logic [31:0] old_msr,
+    input logic [31:0] saved_srr1
+  );
+    logic [31:0] next_msr;
+    next_msr = ((old_msr & ~MSR_SRR1_MASK) | (saved_srr1 & MSR_SRR1_MASK)) &
+               MSR_IMPLEMENTED_MASK;
+    // rfi always clears the 603e TGPR bit.
+    next_msr[MSR_TGPR] = 1'b0;
+    return next_msr;
+  endfunction
+
+  typedef enum logic [3:0] {
+    EVENT_SC              = 4'd0,
+    EVENT_PROGRAM_ILLEGAL = 4'd1,
+    EVENT_PROGRAM_PRIV    = 4'd2,
+    EVENT_RFI             = 4'd3,
+    EVENT_ALIGNMENT       = 4'd4,
+    EVENT_ISI             = 4'd5,
+    EVENT_EXTERNAL        = 4'd6,
+    EVENT_DECREMENTER     = 4'd7,
+    EVENT_DSI             = 4'd8,
+    EVENT_TLB_I_MISS      = 4'd9,
+    EVENT_TLB_D_LOAD      = 4'd10,
+    EVENT_TLB_D_STORE     = 4'd11
+  } exception_event_t;
+  // ---- end MSR and exception events ---------------------------------------
 endpackage

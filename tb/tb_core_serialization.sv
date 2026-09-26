@@ -181,7 +181,7 @@ module tb_core_serialization;
       if (rv && rr) responses <= responses + 1;
       if (tv && tr) commits <= commits + 1;
       if (dut.special_branch_redirect && dut.recovery_accepted &&
-          (dut.special.unused_uop_q.special_op == SPECIAL_ISYNC))
+          (dut.special.uop_q.special_op == SPECIAL_ISYNC))
         isync_redirects <= isync_redirects + 1;
     end
   end

@@ -132,16 +132,16 @@ module tb_core_fetch_fault #(
       52: return addi(12,0,12);
       56: return addi(13,0,13);
       60: return addi(14,0,14);
-      'h400: return spr(0,20,26);
-      'h404: return spr(0,21,27);
-      'h408: return spr(0,22,19);
-      'h40c: return spr(0,23,18);
-      'h410: return addi(24,6,0);
-      'h414: return addi(25,7,0);
-      'h418: return 32'h7f800026; // mfcr r28: poisoned add. must not alter CR
-      'h41c: return addi(26,20,phase == 1 ? 0 : 8);
-      'h420: return spr(1,26,26);
-      'h424: return 32'h4c000064;
+      'hfff0_0400: return spr(0,20,26);
+      'hfff0_0404: return spr(0,21,27);
+      'hfff0_0408: return spr(0,22,19);
+      'hfff0_040c: return spr(0,23,18);
+      'hfff0_0410: return addi(24,6,0);
+      'hfff0_0414: return addi(25,7,0);
+      'hfff0_0418: return 32'h7f800026; // mfcr r28: poisoned add. must not alter CR
+      'hfff0_041c: return addi(26,20,phase == 1 ? 0 : 8);
+      'hfff0_0420: return spr(1,26,26);
+      'hfff0_0424: return 32'h4c000064;
       default: begin
         if(phase == 0) begin
           if(pc == 'h140) return addi(31,0,123);
@@ -257,9 +257,9 @@ module tb_core_fetch_fault #(
           check(retired.illegal == (!ENABLE_SUPERVISOR_EXCEPTIONS || selected > 2),
                 "enabled valid vs disabled/unknown cause disposition");
           saved_pc=model_pc;resume_pc=model_pc;
-          saved_srr1=expected_fault == FETCH_ISI_PROTECTION ? 32'h08000000 : 32'h10000000;
+          saved_srr1=(expected_fault == FETCH_ISI_PROTECTION ? 32'h08000000 : 32'h10000000) | 32'h40;
           faults++;held_fault=0;
-          if(retired.illegal) done=1;else model_pc='h400;
+          if(retired.illegal) done=1;else model_pc='hfff0_0400;
         end else begin
           check(!retired.illegal,"unexpected ordinary diagnostic");
           insn=retired.insn;op=int'(insn[31:26]);rt=int'(insn[25:21]);ra=int'(insn[20:16]);

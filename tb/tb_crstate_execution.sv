@@ -139,7 +139,7 @@ module tb_crstate_execution;
   );
 
   assert property (@(posedge clk) disable iff (!rst_n)
-    supervisor_outputs == 130'b0);
+    supervisor_outputs == {64'b0, ppc_pkg::MSR_RESET, 34'b0});
 
   function automatic completion_tag_t make_tag(input int ordinal);
     completion_tag_t tag;

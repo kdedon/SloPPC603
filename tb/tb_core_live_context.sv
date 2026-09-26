@@ -34,7 +34,7 @@ module tb_core_live_context #(
   int phase=0,cycles=0,idelay=0,ddelay=0,checks=0,retires=0;
   int held_offer=0,held_retire=0,context_wait=0,installs=0,stores=0,loads=0;
   logic pivot_seen=0,cut_sent=0;
-  logic [31:0] installed_msr=0;
+  logic [31:0] installed_msr=32'h40;
   generate if (!USE_BAT) begin : abstract_core
     logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
@@ -246,8 +246,8 @@ module tb_core_live_context #(
     if(!rst_n) begin
       ipending<=0;dpending<=0;idelay<=0;ddelay<=0;captured_word<=0;
       cycles<=0;retires=0;held_offer<=0;held_retire<=0;context_wait<=0;installs=0;
-      stores=0;loads=0;model_pc=0;model_msr=0;srr0=0;srr1=0;done=0;
-      pivot_seen<=0;cut_sent<=0;pivot<='0;installed_msr=0;
+      stores=0;loads=0;model_pc=0;model_msr=32'h40;srr0=0;srr1=0;done=0;
+      pivot_seen<=0;cut_sent<=0;pivot<='0;installed_msr=32'h40;
       foreach(regs[i])regs[i]=0;
     end else begin
       cycles<=cycles+1;
@@ -313,7 +313,7 @@ module tb_core_live_context #(
         end else if(insn==32'h44000002)begin
           srr0=model_pc+4;srr1=model_msr;model_msr=model_msr&32'hfff930c8;
           next_pc=model_msr[6]?32'hfff00c00:32'hc00;
-        end else if(insn==32'h4c000064)begin model_msr=srr1&32'h87c0ffff;next_pc=srr0;end
+        end else if(insn==32'h4c000064)begin model_msr=((model_msr&~32'h87c0ffff)|(srr1&32'h87c0ffff))&32'h0005ff73;next_pc=srr0;end
         else if(op==14 || op==15)begin writes=1;value=(ra==0?0:regs[ra])+(op==14?{{16{insn[15]}},insn[15:0]}:{insn[15:0],16'b0});end
         else if(op==24)begin writes=1;value=regs[rt]|{16'b0,insn[15:0]};rt=ra;end
         else if(insn==(32'h7c0000a6|(32'(rt)<<21)))begin writes=1;value=model_msr;end
@@ -354,7 +354,7 @@ module tb_core_live_context #(
       @(posedge clk);@(negedge clk);startv=0;
     end
     wait(done);@(negedge clk);
-    if(phase==2 || (phase==3 && (selected&32'h87c0ffff&32'h7bf03)!=0) || !ENABLE_LIVE_CONTEXT)check(halted&&model_msr==0,"diagnostic mutated context");
+    if(phase==2 || (phase==3 && (selected&32'h87c0ffff&32'h7bf03)!=0) || !ENABLE_LIVE_CONTEXT)check(halted&&model_msr==32'h40,"diagnostic mutated context");
     else if(phase==3)check(!halted && model_msr==0 && installs==1,"RFI cause/nonrestored bits affected supported-mode policy");
     else if(phase==4)check(cut_sent&&installs==0&&regs[31]==123,"killed proposal changed context");
     else begin
@@ -374,7 +374,7 @@ module tb_core_live_context #(
     repeat(3)@(negedge clk);
     check(!cv && !ci && !cd && !cp && !iv,"reset did not cancel committed installation");
     rst_n=1;wait(done);@(negedge clk);
-    check(halted && model_msr==0 && installs==0,"pre-reset proposal leaked into restarted context");
+    check(halted && model_msr==32'h40 && installs==0,"pre-reset proposal leaked into restarted context");
   endtask
   initial begin
     bv=0;bsr=0;bspr=0;bdata=0;startv=0;

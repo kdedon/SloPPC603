@@ -106,7 +106,7 @@ module tb_core_data_fault #(
   function automatic logic [31:0] instruction(input logic [31:0] pc);
     case(pc)
       0: return addi(7,0,phase==3 ? 'h40 : 0);
-      4: return phase==3 ? 32'h7ce00124 : addi(0,0,0); // mtmsr r7 / nop
+      4: return ENABLE_SUPERVISOR_EXCEPTIONS ? 32'h7ce00124 : addi(0,0,0); // mtmsr r7 clears reset IP / nop
       8: return addi(3,0,'h55);
       12: return addi(4,0,'h1000);
       16: return addi(5,0,4);

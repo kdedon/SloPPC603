@@ -44,7 +44,7 @@ module tb_core_bat_bus60x_retry;
       24:return imm(24,4,4,2);
       28:return spr(1,4,538);             // DBAT1U alias
       32:return (32'd31<<26)|(32'd5<<21)|(32'd83<<1);
-      36:return imm(24,5,5,'h30);
+      36:return imm(26,5,5,'h70);         // IR=DR=1, clear reset IP
       40:return (32'd31<<26)|(32'd5<<21)|(32'd146<<1);
       44:return 32'h4c00012c;
       48:return imm(15,1,0,'h1000);

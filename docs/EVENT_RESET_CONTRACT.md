@@ -28,9 +28,12 @@ operands, timer-read capture, exception/memory result payload and cancellation
 state. Its LR/CTR/SPRG/DAR/DSISR storage resets to zero. Committed XER/CR and
 GPR/rename/completion state also reset through their existing owners.
 
-The integrated exception-state instance resets MSR, SRR0 and SRR1 to zero and
-clears its response slot; standalone exception-state reset values remain
-parameterized. Timer reset sets TB to zero, DEC to `0xffffffff` and pending to
+The integrated exception-state instance resets MSR to `0x0000_0040` (hard
+reset, MSR[IP]=1, MPC603e UM §4.5.1), so exceptions vector to `0xfff0_xxxx`
+until software clears IP. SRR0 and SRR1 reset to zero and the response slot
+clears. Standalone exception-state reset values remain parameterized. Reserved
+MSR bits are never stored: reset, `mtmsr`, `rfi` and exception entry all apply
+the implemented-bit mask, so reserved bits cannot reappear in SRR1. Timer reset sets TB to zero, DEC to `0xffffffff` and pending to
 zero, with priority over tick, write and event acceptance. The negative reset
 DEC value does not create a new request. A still-asserted external IRQ level is
 not an internally queued request: after reset it is masked by reset MSR.EE=0,

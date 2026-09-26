@@ -55,7 +55,7 @@ module tb_core_bat_cached_bus60x;
       56:return imm(24,4,4,2);
       60:return spr(1,4,538);             // DBAT1 EA30000000 -> PA0
       64:return (32'd31<<26)|(32'd6<<21)|(32'd83<<1);
-      68:return imm(24,6,6,'h30);
+      68:return imm(26,6,6,'h70);  // IR=DR=1, clear reset IP
       72:return (32'd31<<26)|(32'd6<<21)|(32'd146<<1);
       76:return 32'h4c00012c;
       80:return imm(15,7,0,'h1000);

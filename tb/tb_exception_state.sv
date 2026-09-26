@@ -1,24 +1,17 @@
 // Direct source-backed checks for the standalone exception-state controller.
 /* verilator lint_off BLKSEQ */
 module tb_exception_state;
-  localparam logic [3:0] EVENT_SC              = 4'd0;
-  localparam logic [3:0] EVENT_PROGRAM_ILLEGAL = 4'd1;
-  localparam logic [3:0] EVENT_PROGRAM_PRIV    = 4'd2;
-  localparam logic [3:0] EVENT_RFI              = 4'd3;
-  localparam logic [3:0] EVENT_ALIGNMENT        = 4'd4;
-  localparam logic [3:0] EVENT_ISI              = 4'd5;
-  localparam logic [3:0] EVENT_DSI              = 4'd8;
+  import ppc_pkg::*;
 
   logic clk = 1'b0;
   logic rst_n = 1'b0;
   always #5 clk = ~clk;
 
   logic event_valid, event_ready;
-  logic [3:0] event_kind;
-  logic [2:0] event_isi_cause;
+  exception_event_t event_kind;
+  fetch_fault_t event_isi_cause;
   logic [31:0] event_pc;
-  logic rfi_pending_exception;
-  logic result_valid, result_ready, result_supported, result_is_exception;
+  logic result_valid, result_ready, result_supported;
   logic [31:0] result_target;
   logic state_load_valid, state_load_ready;
   logic [2:0] state_load_enable;
@@ -32,10 +25,8 @@ module tb_exception_state;
     .event_kind_i(event_kind), .event_pc_i(event_pc),
     .event_isi_cause_i(event_isi_cause),
     .event_miss_cr0_i('0), .event_miss_key_i(1'b0), .event_miss_way_i(1'b0),
-    .rfi_pending_exception_i(rfi_pending_exception),
     .result_valid_o(result_valid), .result_ready_i(result_ready),
     .result_supported_o(result_supported),
-    .result_is_exception_o(result_is_exception),
     .result_target_o(result_target),
     .state_load_valid_i(state_load_valid),
     .state_load_ready_o(state_load_ready),
@@ -54,9 +45,8 @@ module tb_exception_state;
   task automatic clear_inputs;
     event_valid = 1'b0;
     event_kind = EVENT_SC;
-    event_isi_cause = 3'b0;
+    event_isi_cause = FETCH_OK;
     event_pc = 32'b0;
-    rfi_pending_exception = 1'b0;
     result_ready = 1'b0;
     state_load_valid = 1'b0;
     state_load_enable = 3'b0;
@@ -85,23 +75,20 @@ module tb_exception_state;
   endtask
 
   task automatic accept_event(
-    input logic [3:0] kind,
+    input exception_event_t kind,
     input logic [31:0] pc,
-    input logic pending,
-    input logic [2:0] isi_cause = 3'b0
+    input fetch_fault_t isi_cause = FETCH_OK
   );
     @(negedge clk);
     event_valid = 1'b1;
     event_kind = kind;
     event_isi_cause = isi_cause;
     event_pc = pc;
-    rfi_pending_exception = pending;
     #1;
     require(event_ready, "event was not accepted into empty result slot");
     @(posedge clk);
     #1;
     event_valid = 1'b0;
-    rfi_pending_exception = 1'b0;
     require(result_valid, "accepted event did not produce a result");
   endtask
 
@@ -122,23 +109,24 @@ module tb_exception_state;
     @(negedge clk);
     rst_n = 1'b1;
     #1;
-    require(msr == 0 && srr0 == 0 && srr1 == 0 && !result_valid,
-            "reset state is not the configured zero state");
+    require(msr == 32'h0000_0040 && srr0 == 0 && srr1 == 0 && !result_valid,
+            "reset state is not HRESET MSR[IP]=1 with zero SRRs");
     require(event_ready && state_load_ready,
             "idle controller did not advertise both acceptance paths");
 
     // An accepted SC changes architectural state at event acceptance. Its
-    // result may then stall without a second state transition.
+    // result may then stall without a second state transition. Reserved MSR
+    // bits never load.
     load_state(3'b111, 32'hfffd_ffff, 32'hdead_beef, 32'h1357_9bdf);
-    require(msr == 32'hfffd_ffff && srr0 == 32'hdead_beef &&
+    require(msr == 32'h0005_ff73 && srr0 == 32'hdead_beef &&
             srr1 == 32'h1357_9bdf, "atomic state preload failed");
-    accept_event(EVENT_SC, 32'hffff_fffc, 1'b0);
-    require(result_supported && result_is_exception &&
+    accept_event(EVENT_SC, 32'hffff_fffc);
+    require(result_supported &&
             result_target == 32'hfff0_0c00, "SC result/vector is wrong");
     require(srr0 == 32'h0000_0000, "SC PC+4 wraparound is wrong");
-    require(srr1 == 32'h87c0_ffff,
+    require(srr1 == 32'h0000_ff73,
             "SC SRR1 save/exception-field clearing is wrong");
-    require(msr == 32'hfff9_10cd, "SC exception MSR transform is wrong");
+    require(msr == 32'h0001_1041, "SC exception MSR transform is wrong");
 
     held_msr = msr;
     held_srr0 = srr0;
@@ -159,7 +147,7 @@ module tb_exception_state;
     repeat (2) begin
       @(posedge clk);
       #1;
-      require(result_valid && result_supported && result_is_exception &&
+      require(result_valid && result_supported &&
               result_target == held_target, "stalled result changed");
       require(msr == held_msr && srr0 == held_srr0 && srr1 == held_srr1,
               "stalled result repeated or admitted a state transition");
@@ -177,19 +165,19 @@ module tb_exception_state;
     result_ready = 1'b0;
     event_valid = 1'b0;
     state_load_valid = 1'b0;
-    require(result_valid && result_supported && result_is_exception &&
+    require(result_valid && result_supported &&
             result_target == 32'hfff0_0700,
             "turnover did not replace SC result with program result");
-    require(srr0 == 32'h0000_1234 && srr1 == 32'h87c8_10cd,
+    require(srr0 == 32'h0000_1234 && srr1 == 32'h0008_1041,
             "illegal program exception saved state/cause incorrectly");
-    require(msr == 32'hfff9_10cd,
+    require(msr == 32'h0001_1041,
             "turnover used colliding state-load data");
     consume_result();
 
     // Privileged and illegal causes are distinct and only one is installed.
     load_state(3'b111, 32'h0000_0040, 32'h1111_1111, 32'h2222_2222);
-    accept_event(EVENT_PROGRAM_PRIV, 32'h0000_2000, 1'b0);
-    require(result_supported && result_is_exception &&
+    accept_event(EVENT_PROGRAM_PRIV, 32'h0000_2000);
+    require(result_supported &&
             result_target == 32'hfff0_0700, "privileged vector is wrong");
     require(srr0 == 32'h0000_2000 && srr1 == 32'h0004_0040,
             "privileged program SRR state is wrong");
@@ -200,14 +188,14 @@ module tb_exception_state;
     for (int prefix = 0; prefix < 2; prefix++) begin
       load_state(3'b111, prefix != 0 ? 32'hfffd_ffff : 32'h0000_8002,
                  32'h1111_1111, 32'h2222_2222);
-      accept_event(EVENT_ALIGNMENT, 32'h0000_2ffc, 1'b0);
-      require(result_supported && result_is_exception &&
+      accept_event(EVENT_ALIGNMENT, 32'h0000_2ffc);
+      require(result_supported &&
               result_target == (prefix != 0 ? 32'hfff0_0600 : 32'h0000_0600),
               "alignment exception vector/IP selection is wrong");
       require(srr0 == 32'h0000_2ffc &&
-              srr1 == (prefix != 0 ? 32'h0000_ffff : 32'h0000_8002),
+              srr1 == (prefix != 0 ? 32'h0000_ff73 : 32'h0000_8002),
               "alignment fault PC/MSR low-half save is wrong");
-      require(msr == (prefix != 0 ? 32'hfff9_10cd : 32'b0),
+      require(msr == (prefix != 0 ? 32'h0001_1041 : 32'b0),
               "alignment exception entry MSR transform is wrong");
       held_msr=msr;held_srr0=srr0;held_srr1=srr1;held_target=result_target;
       repeat(3) begin
@@ -225,14 +213,14 @@ module tb_exception_state;
     for (int prefix = 0; prefix < 2; prefix++) begin
       load_state(3'b111, prefix != 0 ? 32'hfffd_ffff : 32'h0000_8002,
                  32'h1111_1111, 32'h2222_2222);
-      accept_event(EVENT_DSI, 32'h0000_2ffc, 1'b0);
-      require(result_supported && result_is_exception &&
+      accept_event(EVENT_DSI, 32'h0000_2ffc);
+      require(result_supported &&
               result_target == (prefix != 0 ? 32'hfff0_0300 : 32'h0000_0300),
               "DSI vector/IP selection is wrong");
       require(srr0 == 32'h0000_2ffc &&
-              srr1 == (prefix != 0 ? 32'h0000_ffff : 32'h0000_8002),
+              srr1 == (prefix != 0 ? 32'h0000_ff73 : 32'h0000_8002),
               "DSI fault PC/low MSR save is wrong");
-      require(msr == (prefix != 0 ? 32'hfff9_10cd : 32'b0),
+      require(msr == (prefix != 0 ? 32'h0001_1041 : 32'b0),
               "DSI exception entry MSR transform is wrong");
       held_msr=msr;held_srr0=srr0;held_srr1=srr1;held_target=result_target;
       repeat(3) begin
@@ -251,21 +239,21 @@ module tb_exception_state;
       for (int prefix = 0; prefix < 2; prefix++) begin
         load_state(3'b111, prefix != 0 ? 32'hfffd_ffff : 32'h87c0_8002,
                    32'hdead_beef, 32'h1234_5678);
-        accept_event(EVENT_ISI, 32'h0000_2340, 1'b0, 3'(cause));
-        require(result_supported && result_is_exception &&
+        accept_event(EVENT_ISI, 32'h0000_2340, fetch_fault_t'(cause));
+        require(result_supported &&
                 result_target == (prefix != 0 ? 32'hfff0_0400 : 32'h0000_0400),
                 "ISI IP-selected vector is wrong");
         require(srr0 == 32'h0000_2340 &&
-                srr1 == ((prefix != 0 ? 32'h87c0_ffff : 32'h87c0_8002) |
+                srr1 == ((prefix != 0 ? 32'h0000_ff73 : 32'h0000_8002) |
                          (cause == 1 ? 32'h0800_0000 : 32'h1000_0000)),
                 "ISI original PC/MSR mask/single cause is wrong");
-        require(msr == (prefix != 0 ? 32'hfff9_10cd : 32'h87c0_0000),
+        require(msr == (prefix != 0 ? 32'h0001_1041 : 32'h0000_0000),
                 "ISI entry MSR transform is wrong");
         held_msr=msr;held_srr0=srr0;held_srr1=srr1;held_target=result_target;
-        @(negedge clk); event_isi_cause = 3'(3-cause);
+        @(negedge clk); event_isi_cause = fetch_fault_t'(3-cause);
         repeat(3) begin
           @(posedge clk);#1;
-          require(result_valid && result_supported && result_is_exception &&
+          require(result_valid && result_supported &&
                   result_target == held_target && msr == held_msr &&
                   srr0 == held_srr0 && srr1 == held_srr1,
                   "held ISI cause/state changed with live inputs");
@@ -276,8 +264,8 @@ module tb_exception_state;
     // Neither FETCH_OK nor reserved causes authorize an ISI event.
     for (int cause = 0; cause < 8; cause++) begin
       if (cause != 1 && cause != 2) begin
-        accept_event(EVENT_ISI, 32'h0000_2340, 1'b0, 3'(cause));
-        require(!result_supported && !result_is_exception && result_target == 0 &&
+        accept_event(EVENT_ISI, 32'h0000_2340, fetch_fault_t'(cause));
+        require(!result_supported && result_target == 0 &&
                 msr == held_msr && srr0 == held_srr0 && srr1 == held_srr1,
                 "invalid ISI selector changed architectural state");
         consume_result();
@@ -287,11 +275,11 @@ module tb_exception_state;
     // External IRQ Table 4-12 saves the next PC and ONLY the low MSR half.
     for(int prefix=0;prefix<2;prefix++) begin
       load_state(3'b111,(prefix != 0) ? 32'h87c08070 : 32'h87c08030,32'h1111,32'h2222);
-      accept_event(4'd6,32'h2340,1'b0);
-      require(result_supported && result_is_exception &&
+      accept_event(EVENT_EXTERNAL,32'h2340);
+      require(result_supported &&
               result_target==((prefix != 0) ? 32'hfff00500 : 32'h500),"IRQ vector/IP selection");
       require(srr0==32'h2340 && srr1==((prefix != 0) ? 32'h8070 : 32'h8030) &&
-              msr==((prefix != 0) ? 32'h87c00040 : 32'h87c00000),"IRQ next PC/low-half save/entry MSR");
+              msr==((prefix != 0) ? 32'h00000040 : 32'h00000000),"IRQ next PC/low-half save/entry MSR");
       held_msr=msr;held_srr0=srr0;held_srr1=srr1;held_target=result_target;
       repeat(3)begin
         @(posedge clk);#1;
@@ -303,8 +291,8 @@ module tb_exception_state;
     for(int rejected=0;rejected<2;rejected++)begin
       load_state(3'b001,(rejected != 0) ? 32'h00028000 : 32'h00000000,0,0);
       held_msr=msr;held_srr0=srr0;held_srr1=srr1;
-      accept_event(4'd6,32'h2340,1'b0);
-      require(!result_supported && !result_is_exception && result_target==0 &&
+      accept_event(EVENT_EXTERNAL,32'h2340);
+      require(!result_supported && result_target==0 &&
               msr==held_msr && srr0==held_srr0 && srr1==held_srr1,"masked/TGPR IRQ mutated state");
       consume_result();
     end
@@ -312,11 +300,11 @@ module tb_exception_state;
     // DEC differs from external IRQ: full-function MSR fields are saved.
     for(int prefix=0;prefix<2;prefix++)begin
       load_state(3'b111,(prefix!=0)?32'h87c08070:32'h87c08030,32'h1111,32'h2222);
-      accept_event(4'd7,32'h3450,1'b0);
-      require(result_supported && result_is_exception &&
+      accept_event(EVENT_DECREMENTER,32'h3450);
+      require(result_supported &&
               result_target==((prefix!=0)?32'hfff00900:32'h900),"DEC vector/IP selection");
-      require(srr0==32'h3450 && srr1==((prefix!=0)?32'h87c08070:32'h87c08030) &&
-              msr==((prefix!=0)?32'h87c00040:32'h87c00000),"DEC full saved MSR differs from IRQ mask");
+      require(srr0==32'h3450 && srr1==((prefix!=0)?32'h00008070:32'h00008030) &&
+              msr==((prefix!=0)?32'h00000040:32'h00000000),"DEC full saved MSR differs from IRQ mask");
       held_msr=msr;held_srr0=srr0;held_srr1=srr1;held_target=result_target;
       repeat(3)begin
         @(posedge clk);#1;
@@ -328,27 +316,33 @@ module tb_exception_state;
     for(int rejected=0;rejected<2;rejected++)begin
       load_state(3'b001,(rejected!=0)?32'h00028000:32'h00000000,0,0);
       held_msr=msr;held_srr0=srr0;held_srr1=srr1;
-      accept_event(4'd7,32'h3450,1'b0);
-      require(!result_supported && !result_is_exception && result_target==0 &&
+      accept_event(EVENT_DECREMENTER,32'h3450);
+      require(!result_supported && result_target==0 &&
               msr==held_msr && srr0==held_srr0 && srr1==held_srr1,"masked/TGPR DEC mutated state");
       consume_result();
     end
 
-    // Supervisor RFI restores the 603e state subset, preserves partial
-    // function bits, clears TGPR, and aligns the saved target.
+    // Supervisor RFI restores the implemented SRR1 subset, preserves partial
+    // function bits, clears TGPR, and aligns the saved target. SRR1 reserved
+    // bits (manual 0, 5-9) are dropped.
     load_state(3'b111, 32'h7802_0000, 32'h1234_567b, 32'h87c0_ff73);
-    accept_event(EVENT_RFI, 32'h0000_3000, 1'b0);
-    require(result_supported && !result_is_exception &&
+    accept_event(EVENT_RFI, 32'h0000_3000);
+    require(result_supported &&
             result_target == 32'h1234_5678, "RFI target alignment is wrong");
-    require(msr == 32'hffc0_ff73, "RFI masked MSR restore/TGPR clear is wrong");
+    require(msr == 32'h0000_ff73, "RFI masked MSR restore/TGPR clear is wrong");
     require(srr0 == 32'h1234_567b && srr1 == 32'h87c0_ff73,
             "RFI unexpectedly modified save/restore registers");
+    consume_result();
+    // The next exception must not copy those reserved bits back into SRR1.
+    accept_event(EVENT_SC, 32'h0000_3010);
+    require(result_supported && srr1 == 32'h0000_ff73,
+            "reserved MSR bits restored by RFI reappeared in SRR1");
     consume_result();
 
     // RFI in problem state is a privileged-instruction program exception.
     load_state(3'b111, 32'h0000_4040, 32'haaaa_aaaa, 32'h5555_5555);
-    accept_event(EVENT_RFI, 32'h0000_4000, 1'b0);
-    require(result_supported && result_is_exception &&
+    accept_event(EVENT_RFI, 32'h0000_4000);
+    require(result_supported &&
             result_target == 32'hfff0_0700,
             "problem-state RFI did not take the program vector");
     require(msr == 32'h0000_0040 && srr0 == 32'h0000_4000 &&
@@ -356,22 +350,14 @@ module tb_exception_state;
             "problem-state RFI did not save a privileged cause");
     consume_result();
 
-    // A pending exception enabled by RFI requires priority arbitration this
-    // unit does not implement. Reject it and preserve every state register.
     load_state(3'b111, 32'h0100_0000, 32'h0000_5003, 32'h87c0_0073);
     held_msr = msr;
     held_srr0 = srr0;
     held_srr1 = srr1;
-    accept_event(EVENT_RFI, 32'h0000_5000, 1'b1);
-    require(!result_supported && !result_is_exception && result_target == 0,
-            "pending-exception RFI was not explicitly rejected");
-    require(msr == held_msr && srr0 == held_srr0 && srr1 == held_srr1,
-            "rejected pending-exception RFI changed state");
-    consume_result();
 
     // Misaligned boundaries, unknown causes, and nested non-RFI events in
     // TGPR mode are explicit no-state-change rejections.
-    accept_event(EVENT_SC, 32'h0000_6002, 1'b0);
+    accept_event(EVENT_SC, 32'h0000_6002);
     require(!result_supported && result_target == 0,
             "misaligned committed boundary was accepted");
     require(msr == held_msr && srr0 == held_srr0 && srr1 == held_srr1,
@@ -380,8 +366,8 @@ module tb_exception_state;
 
     // Unknown four-bit selectors preserve the committed state.
     held_msr=msr;held_srr0=srr0;held_srr1=srr1;
-    accept_event(4'd9, 32'h0000_6000, 1'b0);
-    require(!result_supported && !result_is_exception && result_target==0 &&
+    accept_event(exception_event_t'(4'd12), 32'h0000_6000);
+    require(!result_supported && result_target==0 &&
             msr==held_msr && srr0==held_srr0 && srr1==held_srr1,
             "unknown event kind changed architectural state");
     consume_result();
@@ -389,7 +375,7 @@ module tb_exception_state;
     load_state(3'b001, 32'h0002_0000, 32'b0, 32'b0);
     held_srr0 = srr0;
     held_srr1 = srr1;
-    accept_event(EVENT_PROGRAM_ILLEGAL, 32'h0000_7000, 1'b0);
+    accept_event(EVENT_PROGRAM_ILLEGAL, 32'h0000_7000);
     require(!result_supported && msr == 32'h0002_0000 &&
             srr0 == held_srr0 && srr1 == held_srr1,
             "TGPR-mode nested program event was not rejected");
@@ -403,7 +389,7 @@ module tb_exception_state;
 
     // Reset cancels a held result and restores all configured reset values.
     load_state(3'b001, 32'h0000_0000, 32'b0, 32'b0);
-    accept_event(EVENT_SC, 32'h0000_8000, 1'b0);
+    accept_event(EVENT_SC, 32'h0000_8000);
     require(result_valid, "reset fixture did not create a held result");
     @(negedge clk);
     rst_n = 1'b0;
@@ -412,7 +398,7 @@ module tb_exception_state;
             "reset assertion did not immediately cancel handshakes");
     @(posedge clk);
     #1;
-    require(!result_valid && msr == 0 && srr0 == 0 && srr1 == 0,
+    require(!result_valid && msr == 32'h0000_0040 && srr0 == 0 && srr1 == 0,
             "reset did not cancel result and restore state");
     require(!event_ready && !state_load_ready,
             "acceptance remained enabled during sampled reset");

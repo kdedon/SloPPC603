@@ -400,7 +400,7 @@ test-crstate-decode:
 
 .PHONY: test-crstate-execution
 test-crstate-execution:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_crstate_execution --Mdir $(BUILD_DIR)/crstate-execution ../rtl/ppc_pkg.sv $(EXCEPTION_RTL) ../rtl/ppc_timer.sv ../rtl/ppc_miss_derive.sv ../rtl/ppc_special.sv ../tb/tb_crstate_execution.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_crstate_execution --Mdir $(BUILD_DIR)/crstate-execution $(EXCEPTION_RTL) ../rtl/ppc_timer.sv ../rtl/ppc_miss_derive.sv ../rtl/ppc_special.sv ../tb/tb_crstate_execution.sv
 	./$(BUILD_DIR)/crstate-execution/Vtb_crstate_execution
 
 .PHONY: test-core-multiply test-multiply-recovery test-multiply-overflow-recovery
@@ -1188,10 +1188,10 @@ lint-tlb-miss:
 
 test-exception-tlb-miss:
 	mkdir -p $(BUILD_DIR)/exception-tlb-miss-enabled
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_tlb_miss --Mdir $(BUILD_DIR)/exception-tlb-miss-enabled ../rtl/ppc_exception_state.sv ../tb/tb_exception_tlb_miss.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_tlb_miss --Mdir $(BUILD_DIR)/exception-tlb-miss-enabled $(EXCEPTION_RTL) ../tb/tb_exception_tlb_miss.sv
 	./$(BUILD_DIR)/exception-tlb-miss-enabled/Vtb_exception_tlb_miss
 	mkdir -p $(BUILD_DIR)/exception-tlb-miss-disabled
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_tlb_miss "-GENABLE_TLB_MISS_EXCEPTIONS=1'b0" --Mdir $(BUILD_DIR)/exception-tlb-miss-disabled ../rtl/ppc_exception_state.sv ../tb/tb_exception_tlb_miss.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_tlb_miss "-GENABLE_TLB_MISS_EXCEPTIONS=1'b0" --Mdir $(BUILD_DIR)/exception-tlb-miss-disabled $(EXCEPTION_RTL) ../tb/tb_exception_tlb_miss.sv
 	./$(BUILD_DIR)/exception-tlb-miss-disabled/Vtb_exception_tlb_miss
 
 test-core-tlb-miss:
