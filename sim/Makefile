@@ -17,9 +17,9 @@ EXCEPTION_RTL := $(shell cat ../rtl/exception_files.f)
 # Shared Verilator output directories have a single build owner per invocation.
 # These phony prerequisites keep source/configuration checking in Verilator while
 # allowing each read-only simulation to run concurrently on its own program files.
-.PHONY: regression build-control-memory build-core-bus60x build-core-bus60x-unified
+.PHONY: regression build-control-memory build-core-bus60x build-core-bus60x-unified build-core-add-recovery
 all: regression
-regression: lint check-spec test-recovery test-recovery-select test
+regression: reference-checkout lint check-spec test-recovery test-recovery-select test
 
 build-control-memory:
 	mkdir -p $(BUILD_DIR)/control-memory/obj
@@ -28,6 +28,10 @@ build-control-memory:
 build-core-bus60x:
 	mkdir -p $(BUILD_DIR)/core-bus60x
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bus60x --Mdir $(BUILD_DIR)/core-bus60x $(RTL) $(BUS_RTL) ../tb/tb_core_bus60x.sv
+
+build-core-add-recovery:
+	mkdir -p $(BUILD_DIR)/core-add-recovery
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery --Mdir $(BUILD_DIR)/core-add-recovery $(RTL) ../tb/tb_core_add_recovery.sv
 
 build-core-bus60x-unified:
 	mkdir -p $(BUILD_DIR)/core-bus60x-unified
@@ -57,7 +61,9 @@ lint:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bus60x $(BUS_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bus60x $(RTL) $(BUS_RTL) $(SYSTEM_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bus60x "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" $(RTL) $(BUS_RTL) $(SYSTEM_RTL)
-	$(VERILATOR) --lint-only -Wall --top-module ppc_core_measure $(RTL) ../quartus/ppc_core_measure.sv
+	cd ../quartus && $(VERILATOR) --lint-only -Wall --top-module ppc_core_measure -f files.f
+	cd ../quartus/integrated && $(VERILATOR) --lint-only -Wall --top-module ppc_integrated_measure -f files.f
+	cd ../quartus/icache && $(VERILATOR) --lint-only -Wall --top-module ppc_icache -f files.f
 test: test-iterative-divider test-bus60x-line-read test-reference-memory test-line-read-independent test-core-divider-timing test-core-divider-timing-pid6 test-bus60x-arbiter test-core-bus60x-ifetch-error test-divider-timing test-core-bus60x-unified test-core-bus60x-unified-update test-lsu-update-decode test-completion-update test-lsu-update-edges test-core-lsu-update test-bus60x test-core-bus60x test-core-bus60x-update test-reference test-divw-decode test-divw-execution test-core-divide-signed test-divw-recovery test-divw-zero-recovery test-divw-overflow-recovery test-divwu-decode test-divwu-execution test-core-divide-unsigned test-divwu-recovery test-divwu-zero-recovery test-multiply-high-decode test-multiply-high-execution test-core-multiply-high test-mulhw-recovery test-mulhwu-recovery test-multiply-decode test-multiply-execution test-core-multiply test-multiply-recovery test-multiply-overflow-recovery test-crstate-execution test-crstate-decode test-core-crstate test-crstate-edges test-crlogical-decode test-completion-cr-bits test-crlogical-edges test-core-crlogical test-crtransfer-decode test-completion-cr-fields test-crtransfer-edges test-core-crtransfer test-unarylogical-decode test-core-unarylogical test-unarylogical-execution test-cntlzw-recovery test-extsb-recovery test-extsh-recovery test-core-andimmediate test-andi-recovery test-andis-recovery test-core-addimmediate test-addic-recovery test-addic-record-recovery test-core-subimmediate test-subfic-recovery test-subfic-negative-recovery test-core-subunary test-subunary-execution test-subfme-recovery test-subfze-recovery test-core-subextend test-subextend-execution test-subfe-recovery test-subfe-zero-recovery test-core-subcarry test-subcarry-execution test-subfc-recovery test-core-subtract test-subtract-execution test-subf-recovery test-neg-recovery test-core-insert test-insert-execution test-insert-recovery test-core-arithmetic-shifts test-arithmetic-shift-execution test-sraw-recovery test-srawi-recovery test-core test-completion test-execution test-stage test-recovery-execution test-recovery-state test-core-recovery test-fetch-recovery test-core-logical test-flags test-completion-flags test-record-execution test-core-record-logical test-core-record-edges test-core-add-flags test-core-add-recovery test-add-execution test-core-adde test-core-adde-recovery test-adde-execution test-core-add-unary test-add-unary-execution test-addme-recovery test-addze-recovery test-core-rotate test-rotate-execution test-core-control-memory test-core-memory-edges test-core-shifts test-shift-execution test-slw-recovery test-srw-recovery
 test-core:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core --Mdir $(BUILD_DIR) $(RTL) ../tb/tb_core.sv
@@ -80,6 +86,7 @@ check-spec:
 	python3 tools/check_stage_timing.py
 	python3 -m unittest discover -s tools -p 'test_*.py'
 	python3 -m unittest discover -s cosim -p 'test_*.py'
+	python3 ../quartus/qsf_sources.py --check ../quartus ../quartus/integrated ../quartus/timer-bat ../quartus/icache
 test-recovery:
 	python3 -m unittest discover -s recovery -p 'test_*.py'
 test-recovery-select:
@@ -118,18 +125,16 @@ test-core-record-edges:
 test-core-add-flags:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_flags --Mdir $(BUILD_DIR)/core-add-flags $(RTL) ../tb/tb_core_add_flags.sv
 	./$(BUILD_DIR)/core-add-flags/Vtb_core_add_flags
-test-core-add-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery --Mdir $(BUILD_DIR)/core-add-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery
+test-core-add-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=add
 test-add-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_add_execution --Mdir $(BUILD_DIR)/add-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_add_execution.sv
 	./$(BUILD_DIR)/add-execution/Vtb_add_execution
 test-core-adde:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_adde --Mdir $(BUILD_DIR)/core-adde $(RTL) ../tb/tb_core_adde.sv
 	./$(BUILD_DIR)/core-adde/Vtb_core_adde
-test-core-adde-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ADDE=1 --Mdir $(BUILD_DIR)/core-adde-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/core-adde-recovery/Vtb_core_add_recovery
+test-core-adde-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=adde
 test-adde-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_adde_execution --Mdir $(BUILD_DIR)/adde-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_adde_execution.sv
 	./$(BUILD_DIR)/adde-execution/Vtb_adde_execution
@@ -139,12 +144,10 @@ test-core-add-unary:
 test-add-unary-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_add_unary_execution --Mdir $(BUILD_DIR)/add-unary-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_add_unary_execution.sv
 	./$(BUILD_DIR)/add-unary-execution/Vtb_add_unary_execution
-test-addme-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_UNARY=1 --Mdir $(BUILD_DIR)/addme-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/addme-recovery/Vtb_core_add_recovery
-test-addze-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_UNARY=2 --Mdir $(BUILD_DIR)/addze-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/addze-recovery/Vtb_core_add_recovery
+test-addme-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=addme
+test-addze-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=addze
 clean:
 	rm -rf $(BUILD_DIR)
 
@@ -177,13 +180,11 @@ test-shift-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_shift_execution --Mdir $(BUILD_DIR)/shift-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_shift_execution.sv
 	./$(BUILD_DIR)/shift-execution/Vtb_shift_execution
 
-test-slw-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SHIFT=1 --Mdir $(BUILD_DIR)/slw-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/slw-recovery/Vtb_core_add_recovery
+test-slw-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=slw
 
-test-srw-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SHIFT=2 --Mdir $(BUILD_DIR)/srw-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/srw-recovery/Vtb_core_add_recovery
+test-srw-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=srw
 
 .PHONY: test-core-arithmetic-shifts test-arithmetic-shift-execution test-sraw-recovery test-srawi-recovery
 test-core-arithmetic-shifts: build-control-memory
@@ -194,13 +195,11 @@ test-arithmetic-shift-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_arithmetic_shift_execution --Mdir $(BUILD_DIR)/arithmetic-shift-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_arithmetic_shift_execution.sv
 	./$(BUILD_DIR)/arithmetic-shift-execution/Vtb_arithmetic_shift_execution
 
-test-sraw-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ARITH_SHIFT=1 --Mdir $(BUILD_DIR)/sraw-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/sraw-recovery/Vtb_core_add_recovery
+test-sraw-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=sraw
 
-test-srawi-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ARITH_SHIFT=2 --Mdir $(BUILD_DIR)/srawi-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/srawi-recovery/Vtb_core_add_recovery
+test-srawi-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=srawi
 
 .PHONY: test-core-insert test-insert-execution test-insert-recovery
 test-core-insert: build-control-memory
@@ -211,9 +210,8 @@ test-insert-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_insert_execution --Mdir $(BUILD_DIR)/insert-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_insert_execution.sv
 	./$(BUILD_DIR)/insert-execution/Vtb_insert_execution
 
-test-insert-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_INSERT=1 --Mdir $(BUILD_DIR)/insert-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/insert-recovery/Vtb_core_add_recovery
+test-insert-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=insert
 
 .PHONY: test-core-subtract test-subtract-execution test-subf-recovery test-neg-recovery
 test-core-subtract: build-control-memory
@@ -224,13 +222,11 @@ test-subtract-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_subtract_execution --Mdir $(BUILD_DIR)/subtract-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_subtract_execution.sv
 	./$(BUILD_DIR)/subtract-execution/Vtb_subtract_execution
 
-test-subf-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SUB=1 --Mdir $(BUILD_DIR)/subf-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/subf-recovery/Vtb_core_add_recovery
+test-subf-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=subf
 
-test-neg-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SUB=2 --Mdir $(BUILD_DIR)/neg-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/neg-recovery/Vtb_core_add_recovery
+test-neg-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=neg
 
 .PHONY: test-core-subcarry test-subcarry-execution test-subfc-recovery
 test-core-subcarry: build-control-memory
@@ -241,9 +237,8 @@ test-subcarry-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_subcarry_execution --Mdir $(BUILD_DIR)/subcarry-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_subcarry_execution.sv
 	./$(BUILD_DIR)/subcarry-execution/Vtb_subcarry_execution
 
-test-subfc-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SUBFC=1 --Mdir $(BUILD_DIR)/subfc-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/subfc-recovery/Vtb_core_add_recovery
+test-subfc-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=subfc
 
 .PHONY: test-core-subextend test-subextend-execution test-subfe-recovery test-subfe-zero-recovery
 test-core-subextend: build-control-memory
@@ -254,13 +249,11 @@ test-subextend-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_subextend_execution --Mdir $(BUILD_DIR)/subextend-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_subextend_execution.sv
 	./$(BUILD_DIR)/subextend-execution/Vtb_subextend_execution
 
-test-subfe-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SUBFE=1 --Mdir $(BUILD_DIR)/subfe-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/subfe-recovery/Vtb_core_add_recovery
+test-subfe-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=subfe
 
-test-subfe-zero-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SUBFE=2 --Mdir $(BUILD_DIR)/subfe-zero-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/subfe-zero-recovery/Vtb_core_add_recovery
+test-subfe-zero-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=subfe-zero
 
 .PHONY: test-core-subunary test-subunary-execution test-subfme-recovery test-subfze-recovery
 test-core-subunary: build-control-memory
@@ -271,52 +264,44 @@ test-subunary-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_subunary_execution --Mdir $(BUILD_DIR)/subunary-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_subunary_execution.sv
 	./$(BUILD_DIR)/subunary-execution/Vtb_subunary_execution
 
-test-subfme-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SUBUNARY=1 --Mdir $(BUILD_DIR)/subfme-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/subfme-recovery/Vtb_core_add_recovery
+test-subfme-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=subfme
 
-test-subfze-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SUBUNARY=2 --Mdir $(BUILD_DIR)/subfze-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/subfze-recovery/Vtb_core_add_recovery
+test-subfze-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=subfze
 
 .PHONY: test-core-subimmediate test-subfic-recovery test-subfic-negative-recovery
 test-core-subimmediate: build-control-memory
 	python3 tools/control_memory_program.py --subimmediate --output $(BUILD_DIR)/subimmediate
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory +PROGRAM_DIR=$(BUILD_DIR)/subimmediate
 
-test-subfic-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SUBFIC=1 --Mdir $(BUILD_DIR)/subfic-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/subfic-recovery/Vtb_core_add_recovery
+test-subfic-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=subfic
 
-test-subfic-negative-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SUBFIC=2 --Mdir $(BUILD_DIR)/subfic-negative-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/subfic-negative-recovery/Vtb_core_add_recovery
+test-subfic-negative-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=subfic-negative
 
 .PHONY: test-core-addimmediate test-addic-recovery test-addic-record-recovery
 test-core-addimmediate: build-control-memory
 	python3 tools/control_memory_program.py --addimmediate --output $(BUILD_DIR)/addimmediate
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory +PROGRAM_DIR=$(BUILD_DIR)/addimmediate
 
-test-addic-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ADDIC=1 --Mdir $(BUILD_DIR)/addic-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/addic-recovery/Vtb_core_add_recovery
+test-addic-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=addic
 
-test-addic-record-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ADDIC=2 --Mdir $(BUILD_DIR)/addic-record-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/addic-record-recovery/Vtb_core_add_recovery
+test-addic-record-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=addic-record
 
 .PHONY: test-core-andimmediate test-andi-recovery test-andis-recovery
 test-core-andimmediate: build-control-memory
 	python3 tools/control_memory_program.py --andimmediate --output $(BUILD_DIR)/andimmediate
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory +PROGRAM_DIR=$(BUILD_DIR)/andimmediate
 
-test-andi-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ANDIMM=1 --Mdir $(BUILD_DIR)/andi-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/andi-recovery/Vtb_core_add_recovery
+test-andi-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=andi
 
-test-andis-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ANDIMM=2 --Mdir $(BUILD_DIR)/andis-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/andis-recovery/Vtb_core_add_recovery
+test-andis-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=andis
 
 .PHONY: test-core-unarylogical test-unarylogical-execution test-cntlzw-recovery test-extsb-recovery test-extsh-recovery
 test-core-unarylogical: build-control-memory
@@ -327,17 +312,14 @@ test-unarylogical-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_unarylogical_execution --Mdir $(BUILD_DIR)/unarylogical-execution ../rtl/ppc_pkg.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_unarylogical_execution.sv
 	./$(BUILD_DIR)/unarylogical-execution/Vtb_unarylogical_execution
 
-test-cntlzw-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ULOGIC=1 --Mdir $(BUILD_DIR)/cntlzw-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/cntlzw-recovery/Vtb_core_add_recovery
+test-cntlzw-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=cntlzw
 
-test-extsb-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ULOGIC=2 --Mdir $(BUILD_DIR)/extsb-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/extsb-recovery/Vtb_core_add_recovery
+test-extsb-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=extsb
 
-test-extsh-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_ULOGIC=3 --Mdir $(BUILD_DIR)/extsh-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/extsh-recovery/Vtb_core_add_recovery
+test-extsh-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=extsh
 
 .PHONY: test-unarylogical-decode
 test-unarylogical-decode:
@@ -408,13 +390,11 @@ test-core-multiply: build-control-memory
 	python3 tools/control_memory_program.py --multiply --output $(BUILD_DIR)/multiply
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory +PROGRAM_DIR=$(BUILD_DIR)/multiply
 
-test-multiply-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_MUL=1 --Mdir $(BUILD_DIR)/multiply-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/multiply-recovery/Vtb_core_add_recovery
+test-multiply-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=multiply
 
-test-multiply-overflow-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_MUL=2 --Mdir $(BUILD_DIR)/multiply-overflow-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/multiply-overflow-recovery/Vtb_core_add_recovery
+test-multiply-overflow-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=multiply-overflow
 
 .PHONY: test-multiply-decode
 test-multiply-decode:
@@ -431,13 +411,11 @@ test-core-multiply-high: build-control-memory
 	python3 tools/control_memory_program.py --multiply-high --output $(BUILD_DIR)/multiply-high
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory +PROGRAM_DIR=$(BUILD_DIR)/multiply-high
 
-test-mulhw-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_MULHIGH=1 --Mdir $(BUILD_DIR)/mulhw-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/mulhw-recovery/Vtb_core_add_recovery
+test-mulhw-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=mulhw
 
-test-mulhwu-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_MULHIGH=2 --Mdir $(BUILD_DIR)/mulhwu-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/mulhwu-recovery/Vtb_core_add_recovery
+test-mulhwu-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=mulhwu
 
 .PHONY: test-multiply-high-decode
 test-multiply-high-decode:
@@ -454,13 +432,11 @@ test-core-divide-unsigned: build-control-memory
 	python3 tools/control_memory_program.py --divide-unsigned --output $(BUILD_DIR)/divide-unsigned
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory +PROGRAM_DIR=$(BUILD_DIR)/divide-unsigned
 
-test-divwu-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_DIV=1 --Mdir $(BUILD_DIR)/divwu-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/divwu-recovery/Vtb_core_add_recovery
+test-divwu-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=divwu
 
-test-divwu-zero-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_DIV=2 --Mdir $(BUILD_DIR)/divwu-zero-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/divwu-zero-recovery/Vtb_core_add_recovery
+test-divwu-zero-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=divwu-zero
 
 .PHONY: test-divwu-decode
 test-divwu-decode:
@@ -477,17 +453,14 @@ test-core-divide-signed: build-control-memory
 	python3 tools/control_memory_program.py --divide-signed --output $(BUILD_DIR)/divide-signed
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory +PROGRAM_DIR=$(BUILD_DIR)/divide-signed
 
-test-divw-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SDIV=1 --Mdir $(BUILD_DIR)/divw-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/divw-recovery/Vtb_core_add_recovery
+test-divw-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=divw
 
-test-divw-zero-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SDIV=2 --Mdir $(BUILD_DIR)/divw-zero-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/divw-zero-recovery/Vtb_core_add_recovery
+test-divw-zero-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=divw-zero
 
-test-divw-overflow-recovery:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_add_recovery -GUSE_SDIV=3 --Mdir $(BUILD_DIR)/divw-overflow-recovery $(RTL) ../tb/tb_core_add_recovery.sv
-	./$(BUILD_DIR)/divw-overflow-recovery/Vtb_core_add_recovery
+test-divw-overflow-recovery: build-core-add-recovery
+	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=divw-overflow
 
 .PHONY: test-divw-decode
 test-divw-decode:
@@ -510,9 +483,20 @@ test-core-bus60x-update: build-core-bus60x
 	python3 tools/control_memory_program.py --lsu-update --output $(BUILD_DIR)/bus60x-update-program
 	./$(BUILD_DIR)/core-bus60x/Vtb_core_bus60x +PROGRAM_DIR=$(BUILD_DIR)/bus60x-update-program
 
-.PHONY: test-reference
-test-reference:
-	python3 cosim/run_reference.py --build-dir $(BUILD_DIR)/reference
+.PHONY: test-reference reference-checkout reference-runner-flat
+# Reference targets need the pinned DingusPPC checkout beside this repository.
+# REFERENCE_FLAGS=--allow-unpinned-reference accepts another commit.
+REFERENCE_DIR := ../../dingusppc
+REFERENCE_ARGS = --verilator $(VERILATOR) $(REFERENCE_FLAGS)
+FLAT_REFERENCE_ARGS = $(REFERENCE_ARGS) --reference-runner-dir $(BUILD_DIR)/reference-runner-flat
+reference-checkout:
+	@test -f $(REFERENCE_DIR)/cpu/ppc/ppcopcodes.cpp || { \
+		echo "ERROR: reference targets (and regression) need a DingusPPC checkout at $(abspath $(REFERENCE_DIR)); see docs/REFERENCE_RUNNER.md" >&2; exit 2; }
+# One flat-RAM runner build shared by every memory reference target.
+reference-runner-flat: reference-checkout
+	python3 cosim/build_reference_runner.py --build-dir $(BUILD_DIR)/reference-runner-flat $(REFERENCE_FLAGS)
+test-reference: reference-checkout
+	python3 cosim/run_reference.py --build-dir $(BUILD_DIR)/reference $(REFERENCE_ARGS)
 
 .PHONY: test-lsu-update-decode test-completion-update test-lsu-update-edges test-bus60x
 test-lsu-update-decode:
@@ -567,8 +551,8 @@ test-iterative-divider:
 test-bus60x-line-read:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_bus60x_line_read --Mdir $(BUILD_DIR)/bus60x-line-read $(LINE_RTL) ../tb/bfm/bus60x_line_target_bfm.sv ../tb/tb_bus60x_line_read.sv
 	./$(BUILD_DIR)/bus60x-line-read/Vtb_bus60x_line_read
-test-reference-memory:
-	python3 cosim/run_memory_reference.py --build-dir $(BUILD_DIR)/reference-memory
+test-reference-memory: reference-runner-flat
+	python3 cosim/run_memory_reference.py --build-dir $(BUILD_DIR)/reference-memory $(FLAT_REFERENCE_ARGS)
 
 .PHONY: test-multiply-timing test-core-multiply-timing test-icache test-icache-bus60x test-reference-stress
 test: test-multiply-timing test-core-multiply-timing test-icache test-icache-bus60x test-reference-stress
@@ -589,8 +573,8 @@ test-icache-bus60x:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_icache_bus60x --Mdir $(BUILD_DIR)/icache-bus60x $(ICACHE_RTL) $(LINE_RTL) ../tb/tb_icache_bus60x.sv
 	./$(BUILD_DIR)/icache-bus60x/Vtb_icache_bus60x
 
-test-reference-stress:
-	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-stress
+test-reference-stress: reference-runner-flat
+	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-stress $(FLAT_REFERENCE_ARGS)
 
 .PHONY: test-bat test-bat-independent test-exception-state test-bus60x-master-select test-core-cached-bus60x test-reference-cached
 test: test-bat test-bat-independent test-exception-state test-bus60x-master-select test-core-cached-bus60x test-reference-cached
@@ -615,8 +599,8 @@ test-core-cached-bus60x:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cached_bus60x --Mdir $(BUILD_DIR)/core-cached-bus60x $(RTL) $(BUS_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) ../tb/tb_core_cached_bus60x.sv
 	./$(BUILD_DIR)/core-cached-bus60x/Vtb_core_cached_bus60x
 
-test-reference-cached:
-	python3 cosim/run_cached_reference.py --build-dir $(BUILD_DIR)/reference-cached
+test-reference-cached: reference-runner-flat
+	python3 cosim/run_cached_reference.py --build-dir $(BUILD_DIR)/reference-cached $(FLAT_REFERENCE_ARGS)
 
 # Round38 independent BAT transactions and managed transport reference profiles.
 .PHONY: test-bat-service test-bat-service-independent test-reference-managed test-reference-cache-disabled
@@ -630,11 +614,11 @@ test-bat-service-independent: test-bat-service
 	python3 tools/bat_service_vectors.py --output $(BUILD_DIR)/bat-service/vectors.txt
 	./$(BUILD_DIR)/bat-service/Vtb_bat_service +VECTORS=$(BUILD_DIR)/bat-service/vectors.txt
 
-test-reference-managed:
-	python3 cosim/run_cached_reference.py --cache-profile managed --build-dir $(BUILD_DIR)/reference-managed
+test-reference-managed: reference-runner-flat
+	python3 cosim/run_cached_reference.py --cache-profile managed --build-dir $(BUILD_DIR)/reference-managed $(FLAT_REFERENCE_ARGS)
 
-test-reference-cache-disabled:
-	python3 cosim/run_cached_reference.py --cache-profile disabled --build-dir $(BUILD_DIR)/reference-cache-disabled
+test-reference-cache-disabled: reference-runner-flat
+	python3 cosim/run_cached_reference.py --cache-profile disabled --build-dir $(BUILD_DIR)/reference-cache-disabled $(FLAT_REFERENCE_ARGS)
 
 .PHONY: test-icache-managed test-core-cached-managed test-supervisor-decode test-core-supervisor
 test: test-icache-managed test-core-cached-managed test-supervisor-decode test-core-supervisor
@@ -664,8 +648,8 @@ test-serialization-decode:
 test-core-serialization:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_serialization --Mdir $(BUILD_DIR)/core-serialization $(RTL) ../tb/tb_core_serialization.sv
 	./$(BUILD_DIR)/core-serialization/Vtb_core_serialization
-test-reference-bat:
-	python3 cosim/run_bat_reference.py --build-dir $(BUILD_DIR)/reference-bat
+test-reference-bat: reference-runner-flat
+	python3 cosim/run_bat_reference.py --build-dir $(BUILD_DIR)/reference-bat $(FLAT_REFERENCE_ARGS)
 
 .PHONY: test-tlb-service test-tlb-independent
 test: test-tlb-service test-tlb-independent

@@ -1,7 +1,9 @@
 // XER-writing recovery uses actual instructions to seed sticky SO/OV/CA.
 // No architectural or speculative RTL state is forced.
 /* verilator lint_off BLKSEQ */
-module tb_core_add_recovery #(parameter int USE_SDIV = 0, parameter int USE_DIV = 0, parameter int USE_MULHIGH = 0, parameter int USE_MUL = 0, parameter int USE_ADDE = 0, parameter int USE_UNARY = 0, parameter int USE_ULOGIC = 0, parameter int USE_ANDIMM = 0, parameter int USE_ADDIC = 0, parameter int USE_SUBFIC = 0, parameter int USE_SUBUNARY = 0, parameter int USE_SUBFE = 0, parameter int USE_SUBFC = 0, parameter int USE_SUB = 0, parameter int USE_INSERT = 0, parameter int USE_ARITH_SHIFT = 0, parameter int USE_SHIFT = 0);
+module tb_core_add_recovery;
+  // Stimulus variant, selected at run time by +case=<name>.
+  int USE_SDIV = 0, USE_DIV = 0, USE_MULHIGH = 0, USE_MUL = 0, USE_ADDE = 0, USE_UNARY = 0, USE_ULOGIC = 0, USE_ANDIMM = 0, USE_ADDIC = 0, USE_SUBFIC = 0, USE_SUBUNARY = 0, USE_SUBFE = 0, USE_SUBFC = 0, USE_SUB = 0, USE_INSERT = 0, USE_ARITH_SHIFT = 0, USE_SHIFT = 0;
   logic [41:0] unused_segment_csr;
   logic [47:0] unused_bat_csr;
   import ppc_pkg::*;
@@ -11,21 +13,72 @@ module tb_core_add_recovery #(parameter int USE_SDIV = 0, parameter int USE_DIV 
   // ADDME starts with CA=0 so its candidate sets carry; ADDZE starts with
   // CA=1 so its candidate clears carry. Literal expectations are independent
   // of the RTL's injected-operand implementation.
-  localparam logic [31:0] SEED = (USE_UNARY == 1 || USE_SUBFE == 2 || USE_SUBUNARY == 1 || USE_SUBFIC == 2) ? 32'h7c61_0e15 : 32'h7c61_0c15;
-  localparam logic [31:0] SEED_XER = (USE_UNARY == 1 || USE_SUBFE == 2 || USE_SUBUNARY == 1 || USE_SUBFIC == 2) ? 32'hc000_0000 : 32'he000_0000;
-  localparam logic [31:0] CHANGE = USE_SDIV == 2 ? 32'h7c8107d7 : USE_SDIV != 0 ? 32'h7c8137d7 : USE_DIV == 1 ? 32'h7c813797 : USE_DIV == 2 ? 32'h7c810797 : USE_MULHIGH == 1 ? 32'h7c813097 : USE_MULHIGH == 2 ? 32'h7c813017 : USE_MUL == 1 ? 32'h7c8135d7 : USE_MUL == 2 ? 32'h7c810dd7 : USE_ULOGIC == 1 ? 32'h7cc40035 : USE_ULOGIC == 2 ? 32'h7cc40775 : USE_ULOGIC == 3 ? 32'h7cc40735 : USE_ANDIMM == 1 ? 32'h70c40001 : USE_ANDIMM == 2 ? 32'h74248000 : USE_ADDIC == 1 ? 32'h30810001 : USE_ADDIC == 2 ? 32'h34810000 : USE_SUBFIC == 1 ? 32'h20810001 : USE_SUBFIC == 2 ? 32'h2081ffff : USE_SUBUNARY == 1 ? 32'h7c8105d1 : USE_SUBUNARY == 2 ? 32'h7c810591 : USE_SUBFE != 0 ? 32'h7c813511 : USE_SUBFC != 0 ? 32'h7c813411 : USE_SUB == 1 ? 32'h7c813451 : USE_SUB == 2 ? 32'h7c8104d1 : USE_INSERT != 0 ? 32'h50260001 : USE_ARITH_SHIFT == 1 ? 32'h7c24_3631 : USE_ARITH_SHIFT == 2 ? 32'h7c24_0e71 : USE_SHIFT == 1 ? 32'h7c24_3031 :
+  logic [31:0] SEED;
+  logic [31:0] SEED_XER;
+  logic [31:0] CHANGE;
+  logic [31:0] CHANGED_VALUE;
+  logic [31:0] CHANGED_CR;
+  logic [31:0] CHANGED_XER;
+  logic CARRY_TARGET;
+  logic DIVIDE_PROFILE;
+  logic MULTIPLY_PROFILE;
+  logic RESERVED_PROFILE;
+  string case_name;
+  task automatic configure;
+    if (!$value$plusargs("case=%s", case_name)) $fatal(1, "missing +case=<name>");
+    case (case_name)
+      "add": ;
+      "adde": USE_ADDE = 1;
+      "addme": USE_UNARY = 1;
+      "addze": USE_UNARY = 2;
+      "slw": USE_SHIFT = 1;
+      "srw": USE_SHIFT = 2;
+      "sraw": USE_ARITH_SHIFT = 1;
+      "srawi": USE_ARITH_SHIFT = 2;
+      "insert": USE_INSERT = 1;
+      "subf": USE_SUB = 1;
+      "neg": USE_SUB = 2;
+      "subfc": USE_SUBFC = 1;
+      "subfe": USE_SUBFE = 1;
+      "subfe-zero": USE_SUBFE = 2;
+      "subfme": USE_SUBUNARY = 1;
+      "subfze": USE_SUBUNARY = 2;
+      "subfic": USE_SUBFIC = 1;
+      "subfic-negative": USE_SUBFIC = 2;
+      "addic": USE_ADDIC = 1;
+      "addic-record": USE_ADDIC = 2;
+      "andi": USE_ANDIMM = 1;
+      "andis": USE_ANDIMM = 2;
+      "cntlzw": USE_ULOGIC = 1;
+      "extsb": USE_ULOGIC = 2;
+      "extsh": USE_ULOGIC = 3;
+      "multiply": USE_MUL = 1;
+      "multiply-overflow": USE_MUL = 2;
+      "mulhw": USE_MULHIGH = 1;
+      "mulhwu": USE_MULHIGH = 2;
+      "divwu": USE_DIV = 1;
+      "divwu-zero": USE_DIV = 2;
+      "divw": USE_SDIV = 1;
+      "divw-zero": USE_SDIV = 2;
+      "divw-overflow": USE_SDIV = 3;
+      default: $fatal(1, "unknown +case=%s", case_name);
+    endcase
+    SEED = (USE_UNARY == 1 || USE_SUBFE == 2 || USE_SUBUNARY == 1 || USE_SUBFIC == 2) ? 32'h7c61_0e15 : 32'h7c61_0c15;
+    SEED_XER = (USE_UNARY == 1 || USE_SUBFE == 2 || USE_SUBUNARY == 1 || USE_SUBFIC == 2) ? 32'hc000_0000 : 32'he000_0000;
+    CHANGE = USE_SDIV == 2 ? 32'h7c8107d7 : USE_SDIV != 0 ? 32'h7c8137d7 : USE_DIV == 1 ? 32'h7c813797 : USE_DIV == 2 ? 32'h7c810797 : USE_MULHIGH == 1 ? 32'h7c813097 : USE_MULHIGH == 2 ? 32'h7c813017 : USE_MUL == 1 ? 32'h7c8135d7 : USE_MUL == 2 ? 32'h7c810dd7 : USE_ULOGIC == 1 ? 32'h7cc40035 : USE_ULOGIC == 2 ? 32'h7cc40775 : USE_ULOGIC == 3 ? 32'h7cc40735 : USE_ANDIMM == 1 ? 32'h70c40001 : USE_ANDIMM == 2 ? 32'h74248000 : USE_ADDIC == 1 ? 32'h30810001 : USE_ADDIC == 2 ? 32'h34810000 : USE_SUBFIC == 1 ? 32'h20810001 : USE_SUBFIC == 2 ? 32'h2081ffff : USE_SUBUNARY == 1 ? 32'h7c8105d1 : USE_SUBUNARY == 2 ? 32'h7c810591 : USE_SUBFE != 0 ? 32'h7c813511 : USE_SUBFC != 0 ? 32'h7c813411 : USE_SUB == 1 ? 32'h7c813451 : USE_SUB == 2 ? 32'h7c8104d1 : USE_INSERT != 0 ? 32'h50260001 : USE_ARITH_SHIFT == 1 ? 32'h7c24_3631 : USE_ARITH_SHIFT == 2 ? 32'h7c24_0e71 : USE_SHIFT == 1 ? 32'h7c24_3031 :
     USE_SHIFT == 2 ? 32'h7c24_3431 : USE_UNARY == 1 ? 32'h7c81_05d5 :
     USE_UNARY == 2 ? 32'h7c81_0595 : USE_ADDE != 0 ? 32'h7c81_0515 : 32'h7c81_0415;
-  localparam logic [31:0] CHANGED_VALUE = USE_SDIV == 1 ? 32'h80000000 : USE_SDIV != 0 ? 32'b0 : USE_DIV == 1 ? 32'h80000000 : USE_DIV == 2 ? 32'b0 : USE_MULHIGH == 1 ? 32'hffffffff : USE_MULHIGH == 2 ? 32'b0 : USE_MUL == 1 ? 32'h80000000 : USE_MUL == 2 ? 32'b0 : USE_ULOGIC == 1 ? 32'd31 : USE_ULOGIC != 0 ? 32'd1 : USE_ANDIMM == 1 ? 32'h00000001 : USE_ANDIMM == 2 ? 32'h80000000 : USE_ADDIC == 1 ? 32'h80000001 : USE_ADDIC == 2 ? 32'h80000000 : USE_SUBFIC == 1 ? 32'h80000001 : USE_SUBFIC == 2 ? 32'h7fffffff : USE_SUBUNARY == 1 ? 32'h7ffffffe : USE_SUBUNARY == 2 ? 32'h80000000 : USE_SUBFE == 1 ? 32'h80000001 : USE_SUBFE == 2 ? 32'h80000000 : USE_SUBFC != 0 ? 32'h80000001 : USE_SUB == 1 ? 32'h80000001 : USE_SUB == 2 ? 32'h80000000 : USE_INSERT != 0 ? 32'h8000_0001 : USE_ARITH_SHIFT != 0 ? 32'hc000_0000 : USE_SHIFT == 1 ? 32'b0 :
+    CHANGED_VALUE = USE_SDIV == 1 ? 32'h80000000 : USE_SDIV != 0 ? 32'b0 : USE_DIV == 1 ? 32'h80000000 : USE_DIV == 2 ? 32'b0 : USE_MULHIGH == 1 ? 32'hffffffff : USE_MULHIGH == 2 ? 32'b0 : USE_MUL == 1 ? 32'h80000000 : USE_MUL == 2 ? 32'b0 : USE_ULOGIC == 1 ? 32'd31 : USE_ULOGIC != 0 ? 32'd1 : USE_ANDIMM == 1 ? 32'h00000001 : USE_ANDIMM == 2 ? 32'h80000000 : USE_ADDIC == 1 ? 32'h80000001 : USE_ADDIC == 2 ? 32'h80000000 : USE_SUBFIC == 1 ? 32'h80000001 : USE_SUBFIC == 2 ? 32'h7fffffff : USE_SUBUNARY == 1 ? 32'h7ffffffe : USE_SUBUNARY == 2 ? 32'h80000000 : USE_SUBFE == 1 ? 32'h80000001 : USE_SUBFE == 2 ? 32'h80000000 : USE_SUBFC != 0 ? 32'h80000001 : USE_SUB == 1 ? 32'h80000001 : USE_SUB == 2 ? 32'h80000000 : USE_INSERT != 0 ? 32'h8000_0001 : USE_ARITH_SHIFT != 0 ? 32'hc000_0000 : USE_SHIFT == 1 ? 32'b0 :
     USE_SHIFT == 2 ? 32'h4000_0000 : USE_UNARY == 1 ? 32'h7fff_ffff :
     (USE_UNARY == 2 || USE_ADDE != 0) ? 32'h8000_0001 : 32'h8000_0000;
-  localparam logic [31:0] CHANGED_CR = USE_SDIV == 1 ? 32'h90000000 : USE_SDIV != 0 ? 32'h30000000 : USE_DIV == 1 ? 32'h90000000 : USE_DIV == 2 ? 32'h30000000 : USE_MULHIGH == 1 ? 32'h90000000 : USE_MULHIGH == 2 ? 32'h30000000 : USE_MUL == 1 ? 32'h90000000 : USE_MUL == 2 ? 32'h30000000 : USE_ULOGIC != 0 ? 32'h50000000 : USE_ANDIMM == 1 ? 32'h50000000 : USE_ANDIMM == 2 ? 32'h90000000 : USE_ADDIC == 1 ? 32'h30000000 : USE_ADDIC == 2 ? 32'h90000000 : USE_SUBFIC != 0 ? 32'h30000000 : USE_SUBUNARY == 1 ? 32'h50000000 : USE_SUBUNARY == 2 ? 32'h90000000 : USE_SUBFE != 0 ? 32'h90000000 : USE_SUBFC != 0 ? 32'h90000000 : USE_SUB != 0 ? 32'h90000000 : USE_INSERT != 0 ? 32'h9000_0000 : USE_ARITH_SHIFT != 0 ? 32'h9000_0000 : USE_SHIFT == 1 ? 32'h3000_0000 :
+    CHANGED_CR = USE_SDIV == 1 ? 32'h90000000 : USE_SDIV != 0 ? 32'h30000000 : USE_DIV == 1 ? 32'h90000000 : USE_DIV == 2 ? 32'h30000000 : USE_MULHIGH == 1 ? 32'h90000000 : USE_MULHIGH == 2 ? 32'h30000000 : USE_MUL == 1 ? 32'h90000000 : USE_MUL == 2 ? 32'h30000000 : USE_ULOGIC != 0 ? 32'h50000000 : USE_ANDIMM == 1 ? 32'h50000000 : USE_ANDIMM == 2 ? 32'h90000000 : USE_ADDIC == 1 ? 32'h30000000 : USE_ADDIC == 2 ? 32'h90000000 : USE_SUBFIC != 0 ? 32'h30000000 : USE_SUBUNARY == 1 ? 32'h50000000 : USE_SUBUNARY == 2 ? 32'h90000000 : USE_SUBFE != 0 ? 32'h90000000 : USE_SUBFC != 0 ? 32'h90000000 : USE_SUB != 0 ? 32'h90000000 : USE_INSERT != 0 ? 32'h9000_0000 : USE_ARITH_SHIFT != 0 ? 32'h9000_0000 : USE_SHIFT == 1 ? 32'h3000_0000 :
     USE_SHIFT == 2 ? 32'h5000_0000 : USE_UNARY == 1 ? 32'h5000_0000 : 32'h9000_0000;
-  localparam logic [31:0] CHANGED_XER = USE_SDIV == 1 ? 32'ha0000000 : USE_SDIV != 0 ? SEED_XER : USE_DIV == 1 ? 32'ha0000000 : USE_DIV == 2 ? SEED_XER : USE_MULHIGH != 0 ? SEED_XER : USE_MUL == 1 ? 32'ha0000000 : USE_MUL == 2 ? SEED_XER : USE_ULOGIC != 0 ? SEED_XER : USE_ANDIMM != 0 ? SEED_XER : USE_ADDIC != 0 ? 32'hc0000000 : USE_SUBFIC == 1 ? 32'hc0000000 : USE_SUBFIC == 2 ? 32'he0000000 : USE_SUBUNARY == 1 ? 32'ha0000000 : USE_SUBUNARY == 2 ? 32'hc0000000 : USE_SUBFE != 0 ? 32'hc0000000 : USE_SUBFC != 0 ? 32'hc0000000 : USE_SUB != 0 ? SEED_XER : USE_INSERT != 0 ? SEED_XER : USE_ARITH_SHIFT != 0 ? 32'hc000_0000 : USE_SHIFT != 0 ? SEED_XER : USE_UNARY == 1 ? 32'he000_0000 : 32'h8000_0000;
-  localparam logic CARRY_TARGET = (USE_SDIV != 0 || USE_SDIV != 0 || USE_DIV != 0 || USE_MULHIGH != 0 || USE_MUL != 0 || USE_ADDIC != 0 || USE_SUBFIC != 0 || USE_SUBUNARY != 0 || USE_SUBFE != 0 || USE_SUBFC != 0 || USE_ARITH_SHIFT != 0 || USE_UNARY != 0 || USE_ADDE != 0);
-  localparam logic DIVIDE_PROFILE = (USE_SDIV != 0) || (USE_DIV != 0);
-  localparam logic MULTIPLY_PROFILE = (USE_MULHIGH != 0) || (USE_MUL != 0);
-  localparam logic RESERVED_PROFILE = DIVIDE_PROFILE || MULTIPLY_PROFILE;
+    CHANGED_XER = USE_SDIV == 1 ? 32'ha0000000 : USE_SDIV != 0 ? SEED_XER : USE_DIV == 1 ? 32'ha0000000 : USE_DIV == 2 ? SEED_XER : USE_MULHIGH != 0 ? SEED_XER : USE_MUL == 1 ? 32'ha0000000 : USE_MUL == 2 ? SEED_XER : USE_ULOGIC != 0 ? SEED_XER : USE_ANDIMM != 0 ? SEED_XER : USE_ADDIC != 0 ? 32'hc0000000 : USE_SUBFIC == 1 ? 32'hc0000000 : USE_SUBFIC == 2 ? 32'he0000000 : USE_SUBUNARY == 1 ? 32'ha0000000 : USE_SUBUNARY == 2 ? 32'hc0000000 : USE_SUBFE != 0 ? 32'hc0000000 : USE_SUBFC != 0 ? 32'hc0000000 : USE_SUB != 0 ? SEED_XER : USE_INSERT != 0 ? SEED_XER : USE_ARITH_SHIFT != 0 ? 32'hc000_0000 : USE_SHIFT != 0 ? SEED_XER : USE_UNARY == 1 ? 32'he000_0000 : 32'h8000_0000;
+    CARRY_TARGET = (USE_SDIV != 0 || USE_SDIV != 0 || USE_DIV != 0 || USE_MULHIGH != 0 || USE_MUL != 0 || USE_ADDIC != 0 || USE_SUBFIC != 0 || USE_SUBUNARY != 0 || USE_SUBFE != 0 || USE_SUBFC != 0 || USE_ARITH_SHIFT != 0 || USE_UNARY != 0 || USE_ADDE != 0);
+    DIVIDE_PROFILE = (USE_SDIV != 0) || (USE_DIV != 0);
+    MULTIPLY_PROFILE = (USE_MULHIGH != 0) || (USE_MUL != 0);
+    RESERVED_PROFILE = DIVIDE_PROFILE || MULTIPLY_PROFILE;
+  endtask
   logic clk = 0, rst_n = 0;
   always #5 clk = ~clk;
   logic req_valid, req_ready, rsp_valid, rsp_ready, retire_valid, retire_ready, halted;
@@ -317,9 +370,10 @@ module tb_core_add_recovery #(parameter int USE_SDIV = 0, parameter int USE_DIV 
     redirect_keep = 1;
     redirect_pivot = '0;
     keep_change = 0;
+    configure();
     for (int mode = 0; mode < 5; mode++) run_case(mode);
     require(cuts == 5, "missing recovery scenario");
-    $display("PASS ADD recovery: ADDE=%0d UNARY=%0d SHIFT=%0d ARITH=%0d INSERT=%0d SUB=%0d SUBFC=%0d SUBFE=%0d SUBUNARY=%0d SUBFIC=%0d ADDIC=%0d ANDIMM=%0d ULOGIC=%0d nonzero XER/CR, RS/IU/CQ kills, kept finish/commit (%0d checks)", USE_ADDE, USE_UNARY, USE_SHIFT, USE_ARITH_SHIFT, USE_INSERT, USE_SUB, USE_SUBFC, USE_SUBFE, USE_SUBUNARY, USE_SUBFIC, USE_ADDIC, USE_ANDIMM, USE_ULOGIC, checks);
+    $display("PASS ADD recovery %s: ADDE=%0d UNARY=%0d SHIFT=%0d ARITH=%0d INSERT=%0d SUB=%0d SUBFC=%0d SUBFE=%0d SUBUNARY=%0d SUBFIC=%0d ADDIC=%0d ANDIMM=%0d ULOGIC=%0d nonzero XER/CR, RS/IU/CQ kills, kept finish/commit (%0d checks)", case_name, USE_ADDE, USE_UNARY, USE_SHIFT, USE_ARITH_SHIFT, USE_INSERT, USE_SUB, USE_SUBFC, USE_SUBFE, USE_SUBUNARY, USE_SUBFIC, USE_ADDIC, USE_ANDIMM, USE_ULOGIC, checks);
     $finish;
   end
   initial begin

@@ -77,8 +77,11 @@ make -C sim <target>     # one focused bench, e.g. test-core-tlb-miss
 make -C sim clean-cache  # after builds finish: reclaim precompiled headers
 ```
 
-Reference comparison targets (`test-reference*`) need a sibling `../dingusppc`
-checkout; it is not vendored. Firmware builds: see [toolchain/README.md](toolchain/README.md).
+`regression` and the reference comparison targets (`test-reference*`) need a sibling
+`../dingusppc` checkout at the commit pinned in `sim/cosim/reference_checkout.py`; it is
+not vendored. The compiled-firmware benches are not in `regression`; run them with
+`make -C toolchain rtl-all`, which needs the pinned cross-compiler or ELFs built in its
+container (see [toolchain/README.md](toolchain/README.md)).
 FPGA fits: see [quartus/README.md](quartus/README.md) and
 [docs/INTEGRATED_SYNTHESIS_BASELINE.md](docs/INTEGRATED_SYNTHESIS_BASELINE.md).
 

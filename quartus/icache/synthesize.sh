@@ -6,11 +6,12 @@ repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
 mode="${1:-local}"
 image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70}"
 case "${mode}" in local|--docker) ;; *) echo "usage: $0 [--docker]" >&2; exit 2 ;; esac
+python3 "${script_dir}/../qsf_sources.py" "${script_dir}"
 evidence_dir="${script_dir}/evidence/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "${evidence_dir}" "${script_dir}/output_files"
 trap 'printf "%s\n" "$?" > "${evidence_dir}/script-exit-status.txt"' EXIT
 manifest() {
-  (cd "${script_dir}" && sha256sum ../../rtl/ppc_icache.sv ppc_icache_storage.qsf ppc_icache_storage.qpf synthesize.sh)
+  (cd "${script_dir}" && sha256sum ../../rtl/ppc_icache.sv files.f ppc_icache_storage.qsf ppc_icache_storage.qpf synthesize.sh ../qsf_sources.py)
 }
 manifest > "${evidence_dir}/source-before.sha256"
 if [[ "${mode}" == local ]]; then
@@ -36,14 +37,14 @@ if ! cmp -s "${evidence_dir}/source-before.sha256" "${evidence_dir}/source-after
   exit 3
 fi
 if (( compile_status != 0 )); then exit "${compile_status}"; fi
-if ! rg -q 'Implemented 0 input pins' "${evidence_dir}/build.log" ||
-   ! rg -q 'Implemented 0 output pins' "${evidence_dir}/build.log" ||
-   ! rg -q 'Design contains 374 virtual pins' "${evidence_dir}/build.log"; then
+if ! grep -Eq 'Implemented 0 input pins' "${evidence_dir}/build.log" ||
+   ! grep -Eq 'Implemented 0 output pins' "${evidence_dir}/build.log" ||
+   ! grep -Eq 'Design contains 374 virtual pins' "${evidence_dir}/build.log"; then
   echo "ERROR: expected all 374 cache ports to be virtual and zero physical I/O" >&2
   exit 4
 fi
-if ! rg -q 'Inferred altsyncram megafunction.*"data_mem_rtl_0"' "${evidence_dir}/build.log" ||
-   rg -q 'RAM logic .*data_mem.*uninferred' "${evidence_dir}/build.log"; then
+if ! grep -Eq 'Inferred altsyncram megafunction.*"data_mem_rtl_0"' "${evidence_dir}/build.log" ||
+   grep -Eq 'RAM logic .*data_mem.*uninferred' "${evidence_dir}/build.log"; then
   echo "ERROR: cache data RAM inference was not confirmed" >&2
   exit 4
 fi

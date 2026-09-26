@@ -129,8 +129,7 @@ module tb_stage_timing;
     end
   end
   initial begin
-    trace_path = "/tmp/ppc-stage-timing.jsonl";
-    if ($value$plusargs("TRACE=%s", trace_path)) begin end
+    if (!$value$plusargs("TRACE=%s", trace_path)) $fatal(1, "missing +TRACE=<path>");
     trace_fd = $fopen(trace_path, "w");
     if (trace_fd == 0) $fatal(1, "cannot open stage trace");
     for (int i = 0; i < 2048; i++) begin

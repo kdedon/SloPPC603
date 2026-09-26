@@ -415,3 +415,22 @@ rtl-table-search-cached: table-search
 	$(PYTHON) run-rtl-smoke.py --profile table-search-cached --elf $(BUILD_DIR)/table-search/smoke.elf --build-dir $(BUILD_DIR)/rtl-table-search-cached
 rtl-table-fault-cached: table-fault
 	$(PYTHON) run-rtl-smoke.py --profile table-fault-cached --elf $(BUILD_DIR)/table-fault/smoke.elf --build-dir $(BUILD_DIR)/rtl-table-fault-cached
+
+# Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
+# or from `make firmware-all` in the pinned container.
+FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault
+RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached
+FIRMWARE_ELFS := $(FIRMWARE_PROFILES:%=$(BUILD_DIR)/%/smoke.elf)
+CROSS_MISSING := ERROR: $(CC) not found; install the pinned cross-compiler or run make firmware-all in the container (see toolchain/README.md)
+
+.PHONY: firmware-all rtl-all check-cross check-firmware
+check-cross:
+	@command -v $(CC) >/dev/null 2>&1 || { echo "$(CROSS_MISSING)" >&2; exit 2; }
+check-firmware:
+	@command -v $(CC) >/dev/null 2>&1 || for elf in $(FIRMWARE_ELFS); do \
+		[ -f $$elf ] || { echo "$(CROSS_MISSING); missing $$elf" >&2; exit 2; }; done
+firmware-all: check-cross
+	$(MAKE) $(FIRMWARE_PROFILES)
+rtl-all: check-firmware
+	$(MAKE) $(RTL_PROFILES:%=rtl-%)
+	@echo "PASS: $(words $(RTL_PROFILES)) compiled-firmware RTL profiles"

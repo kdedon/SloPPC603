@@ -6,6 +6,7 @@ repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
 mode="${1:-local}"
 image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70}"
 case "${mode}" in local|--docker) ;; *) echo "usage: $0 [--docker]" >&2; exit 2 ;; esac
+python3 "${script_dir}/../qsf_sources.py" "${script_dir}"
 python3 "${script_dir}/../check_virtual_ports.py" "${script_dir}/ppc_timer_bat_measure.sv" "${script_dir}/ppc603e_timer_bat.qsf"
 evidence_dir="${script_dir}/evidence/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "${evidence_dir}"
@@ -14,7 +15,7 @@ manifest() {
   (
     cd "${script_dir}"
     while IFS= read -r source; do sha256sum "${source}"; done < files.f
-    sha256sum files.f ppc603e_timer_bat.qsf ppc603e_timer_bat.qpf ppc603e_timer_bat.sdc build.sh collect-reports.sh ../check_virtual_ports.py
+    sha256sum files.f ppc603e_timer_bat.qsf ppc603e_timer_bat.qpf ppc603e_timer_bat.sdc build.sh collect-reports.sh ../check_virtual_ports.py ../qsf_sources.py
   )
 }
 manifest > "${evidence_dir}/source-before.sha256"

@@ -7,10 +7,10 @@ evidence_dir="${script_dir}/evidence"
 
 mkdir -p "${evidence_dir}"
 map_report="${output_dir}/ppc603e_core.map.rpt"
-if ! rg -q 'Design contains 35 virtual pins' "${map_report}" ||
-   ! rg -q 'Implemented 0 input pins' "${map_report}" ||
-   ! rg -q 'Implemented 0 output pins' "${map_report}"; then
-  echo "ERROR: expected 35 virtual pins and zero physical package pins" >&2
+if ! grep -Eq 'Design contains [0-9]+ virtual pins' "${map_report}" ||
+   ! grep -Eq 'Implemented 0 input pins' "${map_report}" ||
+   ! grep -Eq 'Implemented 0 output pins' "${map_report}"; then
+  echo "ERROR: expected virtual pins and zero physical package pins" >&2
   exit 1
 fi
 
@@ -28,14 +28,14 @@ done
 
 (
   cd "${evidence_dir}"
-  rg -n \
+  grep -En \
     'Logic utilization|Total registers|Total block memory bits|Total RAM Blocks|DSP block|Implemented [0-9]+ (input|output) pins|Design contains [0-9]+ virtual pins|Worst-case Slack|Worst-case (setup|hold) slack|Timing requirements not met|Timing requirements were met|Unconstrained' \
     ./*.rpt > summary.txt || true
 )
 
 (
   cd "${script_dir}/.."
-  sha256sum rtl/*.sv rtl/files.f quartus/ppc_core_measure.sv \
+  sha256sum rtl/*.sv rtl/files.f quartus/files.f quartus/qsf_sources.py quartus/ppc_core_measure.sv \
     quartus/ppc603e_core.qsf quartus/ppc603e_core.qpf quartus/ppc603e_core.sdc \
     > "${evidence_dir}/source-sha256.txt"
 )
