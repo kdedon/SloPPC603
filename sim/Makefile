@@ -1,4 +1,4 @@
-VERILATOR ?= verilator
+VERILATOR ?= $(CURDIR)/tools/verilate
 BUILD_DIR ?= build
 RTL := $(shell cat ../rtl/files.f)
 BUS_RTL := $(shell cat ../rtl/bus_files.f)
