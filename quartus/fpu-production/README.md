@@ -220,3 +220,19 @@ critical path: multiply 21.343 ns, alignment/conversion 29.062 ns, add/leading-z
 are exploratory synthesis estimates for a frozen source copy, not full-shell or
 602 acceptance. The arithmetic revision separately passed the numerical corpus;
 that does not close the hardware timing requirement.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`4f06a9d` plus the arithmetic changes subsequently committed as `59befd3`,
+2026-09-27.
+
+Registering denormal shift controls and segmenting the rounding increment
+reduced the estimate to 10,578 ALMs and 14,058 ALUTs, with 2,534 registers,
+416 block-memory bits and five DSP blocks. Post-map Fmax was **21.7 MHz**;
+worst setup slack was −25.990 ns. Both frequency targets still failed. The
+worst output path traversed rounding from sum magnitude bit 159 to result bit
+62 (40.342 ns, 21 logic levels). The add-stage register path remained 41.333 ns;
+conversion was 29.062 ns, divider 27.299 ns, multiply 21.973 ns and response
+rounding 40.688 ns. Map reported zero errors and four warnings, with 433 virtual
+pins and zero physical pins; TimeQuest reported zero errors and zero warnings.
+No fitter ran. This frozen arithmetic measurement does not establish full-shell
+or 602 performance.
