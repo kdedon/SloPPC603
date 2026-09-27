@@ -343,3 +343,16 @@ response-RAM pass-through, constant disabled second-retirement outputs,
 virtual-clock warning. TimeQuest reported zero errors and the expected missing
 multiply-stage filter warning for the pruned double-precision stage. No fitter
 ran. This is a separate static 602 measurement, not a runtime mode switch.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`7be0258`, 2026-09-27.
+
+Clamping denormal shift controls and simplifying exponent calculation estimated
+10,639 ALMs, 14,153 ALUTs, 2,559 registers, 416 block-memory bits and five DSP
+blocks. Fmax was **24.4 MHz**, with −20.900 ns setup slack; both targets failed.
+The longest path now began at bounded shift bit 5, but remained 35.252 ns through
+rounding to result bit 62 (21 logic levels). Add measured 31.988 ns, alignment
+26.690 ns, divider setup 33.067 ns, multiply 21.061 ns and response 35.598 ns.
+This change reduced area but did not materially improve frequency. Map reported
+zero errors and four warnings, 433 virtual pins and zero physical pins;
+TimeQuest reported zero errors and zero warnings. No fitter ran.

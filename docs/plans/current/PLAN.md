@@ -46,7 +46,7 @@ selects 603e or 602 at compile time and must match original instruction latency
 and throughput. Numerical, exact-cycle and public-shell gates have passed at
 the checkpoints in [verification](../../../sim/fpu/PRODUCTION.md); dedicated
 paired dispatch/retirement and current-revision acceptance remain open. Latest
-arithmetic synthesis estimates 24.5 MHz; the measured two-lane 603e shell
+arithmetic synthesis estimates 24.4 MHz; the measured two-lane 603e shell
 estimates 12.9 MHz. Both miss 50 and 66 MHz, and no fitter has run. The earlier
 serialized 50.5 MHz result is historical. See the
 [FPU assessment](../../FPU_REUSE_ASSESSMENT.md) for the remaining semantic and
