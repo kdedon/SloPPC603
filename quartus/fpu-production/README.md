@@ -236,3 +236,17 @@ rounding 40.688 ns. Map reported zero errors and four warnings, with 433 virtual
 pins and zero physical pins; TimeQuest reported zero errors and zero warnings.
 No fitter ran. This frozen arithmetic measurement does not establish full-shell
 or 602 performance.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`bd03673`, 2026-09-27.
+
+Parallel block carry propagation and local leading-zero candidates shortened
+the add-stage path from 41.333 to **28.079 ns** (13 logic levels). Overall
+post-map Fmax was **21.3 MHz**, with −26.953 ns worst setup slack; rounding
+still dominated at 41.305 ns to the result output and 41.651 ns to the response
+register. Both frequency targets failed. The map estimated 10,820 ALMs,
+14,360 ALUTs, 2,534 registers, 416 block-memory bits and five DSP blocks.
+It reported zero errors and four warnings, 433 virtual pins and zero physical
+pins; TimeQuest reported zero errors and zero warnings. Other stage delays
+were 28.734 ns alignment, 32.089 ns divider and 21.299 ns multiply. No fitter
+ran. This snapshot precedes the separately tested divider-normalization change.
