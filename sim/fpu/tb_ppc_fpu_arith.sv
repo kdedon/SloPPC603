@@ -37,6 +37,9 @@ module tb_ppc_fpu_arith;
     int op_failures [0:12];
     int op_latency_min [0:12];
     int op_latency_max [0:12];
+    int precision_count [0:12][0:1];
+    int precision_latency_min [0:12][0:1];
+    int precision_latency_max [0:12][0:1];
     int result_failures, invalid_failures, flag_failures, class_failures;
     logic bad_result, bad_invalid, bad_flags, bad_class;
     string vectors_path;
@@ -124,6 +127,11 @@ module tb_ppc_fpu_arith;
             op_failures[i] = 0;
             op_latency_min[i] = 1025;
             op_latency_max[i] = 0;
+            for (int precision = 0; precision < 2; precision++) begin
+                precision_count[i][precision] = 0;
+                precision_latency_min[i][precision] = 1025;
+                precision_latency_max[i][precision] = 0;
+            end
         end
         expected = '0;
         repeat (3) @(negedge clk_i);
@@ -189,6 +197,11 @@ module tb_ppc_fpu_arith;
                 if (waited > 1024) $fatal(1, "response timeout vector %0d", count);
             end
             op_count[int'(op_bits)]++;
+            precision_count[int'(op_bits)][int'(read_single)]++;
+            if (waited < precision_latency_min[int'(op_bits)][int'(read_single)])
+                precision_latency_min[int'(op_bits)][int'(read_single)] = waited;
+            if (waited > precision_latency_max[int'(op_bits)][int'(read_single)])
+                precision_latency_max[int'(op_bits)][int'(read_single)] = waited;
             if (waited < op_latency_min[int'(op_bits)])
                 op_latency_min[int'(op_bits)] = waited;
             if (waited > op_latency_max[int'(op_bits)])
@@ -311,6 +324,13 @@ module tb_ppc_fpu_arith;
             if (op_count[i] != 0)
                 $display("PPC_ARITH_OP op=%0d vectors=%0d mismatches=%0d latency_min=%0d latency_max=%0d",
                          i, op_count[i], op_failures[i], op_latency_min[i], op_latency_max[i]);
+        for (int i = 0; i <= 12; i++)
+            for (int precision = 0; precision < 2; precision++)
+                if (precision_count[i][precision] != 0)
+                    $display("PPC_ARITH_PRECISION op=%0d single=%0d vectors=%0d latency_min=%0d latency_max=%0d",
+                             i, precision, precision_count[i][precision],
+                             precision_latency_min[i][precision],
+                             precision_latency_max[i][precision]);
         if (failures != 0) $fatal(1, "PPC arithmetic qualification failed");
         $display("PASS PPC arithmetic raw packets");
         $finish;

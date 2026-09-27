@@ -26,6 +26,12 @@ PDF 162–163 / 4-4–4-5]
 
 The arithmetic backend module is `ppc_fpu_arith`. Its request and response follow `valid/ready`; response also returns the request tag, and responses with other tags are ignored. It must cover add/subtract/multiply/divide, fused multiply-add variants, `frsp`, `fctiw(z)`, compare, `fres`, and `frsqrte`. It may take multiple cycles, but holds its response under backpressure. The F1 `ss_fpu_candidate` remains an isolated experiment and is not a production dependency. [UM Tables 2-14–17, PDF 104–105; `FPU_REUSE_ASSESSMENT.md` F1–F4]
 
+The core must deliver the same abort/kill identity to any LSU preparation
+resources it allocates. The FPU discards its local instruction and drains stale
+replies; it does not own the LSU's reservations or store-buffer entries. Keep
+prepared translation/authorization associated with the full completion tag
+until matching store acceptance or cancellation.
+
 The memory response channel also follows ready/valid: the LSU holds its packet until accepted. A matching reply presented in the request-accept cycle is backpressured until the shell enters its response state. Unrelated stale replies may drain immediately. This permits a combinational preparation response without losing it.
 
 While reset is asserted, outward request/result/store valid signals and issue/commit readiness are inactive. In particular, resetting a held store prevents publication even if the integrating consumer remains ready. The memory response channel may drain cancelled replies during reset.

@@ -18,6 +18,9 @@ module tb_ppc_fpu_estimates;
     logic [2:0] mode_bits;
     string input_path, output_path;
     int input_file, output_file, parsed, count, waited;
+    int latency_count [0:1][0:1];
+    int latency_min [0:1][0:1];
+    int latency_max [0:1][0:1];
     ppc_fpu_arith_rsp_t held;
 
     ppc_fpu_arith dut (.*);
@@ -35,6 +38,12 @@ module tb_ppc_fpu_estimates;
         rsp_ready_i = 1'b0;
         flush_i = 1'b0;
         count = 0;
+        for (int operation = 0; operation < 2; operation++)
+            for (int special = 0; special < 2; special++) begin
+                latency_count[operation][special] = 0;
+                latency_min[operation][special] = 1025;
+                latency_max[operation][special] = 0;
+            end
         repeat (3) @(negedge clk_i);
         rst_ni = 1'b1;
         while (!$feof(input_file)) begin
@@ -68,10 +77,16 @@ module tb_ppc_fpu_estimates;
             req_valid_i = 1'b0;
             waited = 0;
             while (!rsp_valid_o) begin
-                @(negedge clk_i);
+                @(posedge clk_i);
+                #1;
                 waited = waited + 1;
                 if (waited > 1024) $fatal(1, "estimate response timeout %0d", count);
             end
+            latency_count[int'(op_bits)-13][int'(mode_bits == 3'd3)]++;
+            if (waited < latency_min[int'(op_bits)-13][int'(mode_bits == 3'd3)])
+                latency_min[int'(op_bits)-13][int'(mode_bits == 3'd3)] = waited;
+            if (waited > latency_max[int'(op_bits)-13][int'(mode_bits == 3'd3)])
+                latency_max[int'(op_bits)-13][int'(mode_bits == 3'd3)] = waited;
             if (rsp_o.tag !== req_i.tag)
                 $fatal(1, "estimate response tag %0d", count);
             $fdisplay(output_file, "%h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h",
@@ -96,6 +111,12 @@ module tb_ppc_fpu_estimates;
         $fclose(input_file);
         $fclose(output_file);
         $display("PASS estimate transport vectors=%0d", count);
+        for (int operation = 0; operation < 2; operation++)
+            for (int special = 0; special < 2; special++)
+                if (latency_count[operation][special] != 0)
+                    $display("ESTIMATE_LATENCY op=%0d special=%0d vectors=%0d latency_min=%0d latency_max=%0d",
+                             operation + 13, special, latency_count[operation][special],
+                             latency_min[operation][special], latency_max[operation][special]);
         $finish;
     end
 endmodule

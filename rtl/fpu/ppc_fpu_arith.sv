@@ -120,7 +120,8 @@ module ppc_fpu_arith (
     } round_post_t;
 
     typedef enum logic [4:0] {
-        IDLE, CALC, CONV_PREP, CONV_FINISH, DIVIDE,
+        IDLE, CALC, CONV_PREP, CONV_FINISH,
+        DIV_START, DIVIDE,
         PREP, PREP_PRODUCT, ALIGN_PLAN, ALIGN_SHIFT,
         SUM_PLAN, SUM_0, SUM_1, SUM_2, SUM_3,
         NORM_HIGH, NORM_LOW,
@@ -149,8 +150,8 @@ module ppc_fpu_arith (
     logic [54:0] div_denominator_x3_q;
     logic [54:0] div_quotient_q;
     logic [4:0] div_rounds_q;
-    logic [52:0] launch_a_sig;
-    logic [52:0] launch_b_sig;
+    logic [52:0] div_a_sig_q;
+    logic [52:0] div_b_sig_q;
     logic launch_divide;
     logic launch_finite;
 
@@ -991,8 +992,6 @@ module ppc_fpu_arith (
     endfunction
 
     always_comb begin
-        launch_a_sig = finite_sig(req_i.a[62:0]);
-        launch_b_sig = finite_sig(req_i.b[62:0]);
         launch_divide = 1'b0;
         if (req_i.op == FP_DIV)
             launch_divide = (req_i.a[62:0] != 63'd0) &&
@@ -1064,6 +1063,8 @@ module ppc_fpu_arith (
             round_work_q <= '0;
             round_post_q <= '0;
             div_remainder_q <= '0;
+            div_a_sig_q <= '0;
+            div_b_sig_q <= '0;
             div_denominator_q <= '0;
             div_denominator_x2_q <= '0;
             div_denominator_x3_q <= '0;
@@ -1074,30 +1075,36 @@ module ppc_fpu_arith (
                 IDLE: if (req_valid_i) begin
                     req_q <= req_i;
                     if (launch_divide) begin
-                        div_denominator_q <= launch_b_sig;
-                        div_denominator_x2_q <= {launch_b_sig, 1'b0};
-                        div_denominator_x3_q <= {2'b00, launch_b_sig} +
-                            {1'b0, launch_b_sig, 1'b0};
-                        if (req_i.op == FP_FRES) begin
-                            div_remainder_q <= 53'h10000000000000 -
-                                ((53'h10000000000000 >= launch_b_sig) ?
-                                    launch_b_sig : 53'd0);
-                            div_quotient_q <= (53'h10000000000000 >= launch_b_sig) ?
-                                55'd1 : 55'd0;
-                        end else begin
-                            div_remainder_q <= launch_a_sig -
-                                ((launch_a_sig >= launch_b_sig) ?
-                                    launch_b_sig : 53'd0);
-                            div_quotient_q <= (launch_a_sig >= launch_b_sig) ?
-                                55'd1 : 55'd0;
-                        end
-                        div_rounds_q <= (req_i.single_result ||
-                            req_i.op == FP_FRES) ? 5'd13 : 5'd27;
-                        state_q <= DIVIDE;
-                    end else if (launch_finite) state_q <= PREP;
+                        div_a_sig_q <= finite_sig(req_i.a[62:0]);
+                        div_b_sig_q <= finite_sig(req_i.b[62:0]);
+                        state_q <= DIV_START;
+                    end
+                    else if (launch_finite) state_q <= PREP;
                     else if (req_i.op == FP_FCTIW || req_i.op == FP_FCTIWZ)
                         state_q <= CONV_PREP;
                     else state_q <= CALC;
+                end
+                DIV_START: begin
+                    div_denominator_q <= div_b_sig_q;
+                    div_denominator_x2_q <= {div_b_sig_q, 1'b0};
+                    div_denominator_x3_q <= {2'b00, div_b_sig_q} +
+                        {1'b0, div_b_sig_q, 1'b0};
+                    if (req_q.op == FP_FRES) begin
+                            div_remainder_q <= 53'h10000000000000 -
+                                ((53'h10000000000000 >= div_b_sig_q) ?
+                                    div_b_sig_q : 53'd0);
+                            div_quotient_q <= (53'h10000000000000 >= div_b_sig_q) ?
+                                55'd1 : 55'd0;
+                    end else begin
+                            div_remainder_q <= div_a_sig_q -
+                                ((div_a_sig_q >= div_b_sig_q) ?
+                                    div_b_sig_q : 53'd0);
+                            div_quotient_q <= (div_a_sig_q >= div_b_sig_q) ?
+                                55'd1 : 55'd0;
+                    end
+                    div_rounds_q <= (req_q.single_result ||
+                        req_q.op == FP_FRES) ? 5'd13 : 5'd27;
+                    state_q <= DIVIDE;
                 end
                 CALC: begin
                     rsp_q <= calculate(req_q.tag, req_q.op, req_q.a, req_q.b,
@@ -1181,10 +1188,13 @@ module ppc_fpu_arith (
                     div_quotient_q <= div_quotient_next;
                     div_rounds_q <= div_rounds_q - 5'd1;
                     if (div_rounds_q == 5'd1) begin
-                        sum_q <= prepare_division_sum(req_q.op,
+                        // The normalized quotient is in [0.5, 2), so its
+                        // leading one is bit 157 or 158. NORM_HIGH cannot
+                        // shift it; enter NORM_LOW with the same value.
+                        norm_high_q <= prepare_division_sum(req_q.op,
                             req_q.single_result, req_q.a, req_q.b,
                             div_quotient_next, div_remainder_next != 53'd0);
-                        state_q <= NORM_HIGH;
+                        state_q <= NORM_LOW;
                     end
                 end
                 RESPONSE: if (rsp_ready_i) state_q <= IDLE;
