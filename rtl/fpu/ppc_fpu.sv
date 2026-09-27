@@ -72,28 +72,35 @@ module ppc_fpu #(
   } decode_info_t;
 
   typedef struct packed {
+    logic ready;
+    logic [63:0] raw;
+    logic sp;
+    logic lt;
+  } source_t;
+  typedef struct packed {
+    logic [63:0] raw;
+    logic sp;
+  } local_operand_t;
+  typedef struct packed {
     logic valid;
     logic started;
     logic done;
     logic dest_fpr;
     ppc_fpu_issue_t issue;
     decoded_t decoded;
-  decoded_t decoded1;
-  logic [31:0] issue1_ea;
     ppc_fpu_result_t result;
     ppc_fpu_arith_rsp_t arith;
     logic arith_done;
     logic fpr_forwarded;
     logic cr_forwarded;
     logic [1:0] local_wait;
+    logic [1:0] local_move_kind;
+    local_operand_t local_a;
+    local_operand_t local_b;
+    local_operand_t local_c;
+    logic local_c_lt;
     ppc_fpu_mem_t mem;
   } pending_t;
-  typedef struct packed {
-    logic ready;
-    logic [63:0] raw;
-    logic sp;
-    logic lt;
-  } source_t;
   typedef struct packed {
     completion_tag_t tag;
     logic [31:0] insn;
@@ -140,7 +147,7 @@ module ppc_fpu #(
   logic [63:0] src_c;
   logic [63:0] src_d;
   logic src_a_sp, src_b_sp, src_c_sp, src_d_sp;
-  logic src_b_lt, src_c_lt, src_d_lt;
+  logic src_b_lt, src_d_lt;
   source_t source_a, source_b, source_c, source_d;
   logic use_a, use_b, use_c, use_d;
   logic select_b;
@@ -295,7 +302,7 @@ module ppc_fpu #(
           if (frac[i]) lead = i;
         end
         d[62:52] = 11'(lead + 874);
-        d[51:0] = (52'(frac) << (52 - lead));
+        d[51:0] = (52'(frac) << $unsigned(52 - lead));
       end
       return d;
     end
@@ -319,7 +326,7 @@ module ppc_fpu #(
       end else if (exponent != 0) begin
         sig = {1'b1, d[51:0]};
         shift_amt = 29 + (897 - exponent);
-        if (shift_amt < 53) s[22:0] = 23'(sig >> shift_amt);
+        if (shift_amt < 53) s[22:0] = 23'(sig >> $unsigned(shift_amt));
       end
       return s;
     end
@@ -470,6 +477,70 @@ module ppc_fpu #(
         end
       end
       return s;
+    end
+  endfunction
+
+  // MOVE/FSEL execute from captured operands in the second local pipeline
+  // stage.  This keeps the backend finish bypass out of the FSEL data mux.
+  function automatic ppc_fpu_result_t finish_local_data(
+      input ppc_fpu_result_t base, input logic [1:0] move_kind,
+      input logic is_move, input logic rc, input local_operand_t a,
+      input local_operand_t b, input local_operand_t c,
+      input logic c_lt);
+    ppc_fpu_result_t r;
+    logic choose_b;
+    begin
+      r = base;
+      choose_b = CPU_602 ?
+          (((a.raw[30:23] == 8'hff) && a.raw[22:0] != 23'd0) ||
+           (a.raw[31] && a.raw[30:0] != 31'd0)) :
+          (((a.raw[62:52] == 11'h7ff) && a.raw[51:0] != 52'd0) ||
+           (a.raw[63] && a.raw[62:0] != 63'd0));
+      if (r.exception == FPU_NO_EXCEPTION) begin
+        if (is_move) begin
+          r.fpr_write = 1'b1;
+          r.fpr_sp = CPU_602;
+          r.fpr_value = b.raw;
+          if (CPU_602) begin
+            case (move_kind)
+              2'd1: r.fpr_value[31] = ~b.raw[31];
+              2'd2: r.fpr_value[31] = 1'b1;
+              2'd3: r.fpr_value[31] = 1'b0;
+              default: ;
+            endcase
+            if (!b.sp) begin
+              r.exception = FPU_EMULATION_TRAP;
+              r.fpr_write = 1'b0;
+            end
+          end else begin
+            case (move_kind)
+              2'd1: r.fpr_value[63] = ~b.raw[63];
+              2'd2: r.fpr_value[63] = 1'b1;
+              2'd3: r.fpr_value[63] = 1'b0;
+              default: ;
+            endcase
+          end
+        end else begin
+          r.fpr_write = 1'b1;
+          r.fpr_value = choose_b ? b.raw : c.raw;
+          r.fpr_sp = CPU_602;
+          if (CPU_602 && (!a.sp || (choose_b && !b.sp) ||
+                          (!choose_b && !c.sp))) begin
+            r.exception = FPU_EMULATION_TRAP;
+            r.fpr_write = 1'b0;
+          end
+          if (CPU_602 && !choose_b) case ({c.sp,c_lt})
+            2'b10, 2'b11: ;
+            default: begin
+              r.exception = FPU_EMULATION_TRAP;
+              r.fpr_write = 1'b0;
+            end
+          endcase
+        end
+        r.cr_write = rc && r.exception == FPU_NO_EXCEPTION;
+        r.cr_field = 3'd1;
+      end
+      return r;
     end
   endfunction
 
@@ -931,7 +1002,6 @@ module ppc_fpu #(
     src_c_sp = source_c.sp;
     src_d_sp = source_d.sp;
     src_b_lt = source_b.lt;
-    src_c_lt = source_c.lt;
     src_d_lt = source_d.lt;
     use_a = 1'b0;
     use_b = 1'b0;
@@ -1262,65 +1332,13 @@ module ppc_fpu #(
                    work_decoded.op != FP_FRSP &&
                    work_decoded.op != FP_FRSQRTE))) begin
       exec_result.exception = FPU_EMULATION_TRAP;
-    end else if (!operand_tags_ok) begin
+    end else if (!operand_tags_ok && work_decoded.kind != DK_MOVE &&
+                 work_decoded.kind != DK_FSEL) begin
       exec_result.exception = CPU_602 ? FPU_EMULATION_TRAP : FPU_ILLEGAL;
       exec_result.gpr_update = 1'b0;
     end else begin
       case (work_decoded.kind)
-        DK_MOVE: begin
-          exec_result.fpr_write = 1'b1;
-          exec_result.fpr_sp = CPU_602;
-          exec_result.fpr_lt = 1'b0;
-          exec_result.fpr_value = src_b;
-          if (CPU_602) begin
-            case (work_decoded.move_kind)
-              2'd1: exec_result.fpr_value[31] = ~src_b[31];
-              2'd2: exec_result.fpr_value[31] = 1'b1;
-              2'd3: exec_result.fpr_value[31] = 1'b0;
-              default: ;
-            endcase
-          end else begin
-            case (work_decoded.move_kind)
-              2'd1: exec_result.fpr_value[63] = ~src_b[63];
-              2'd2: exec_result.fpr_value[63] = 1'b1;
-              2'd3: exec_result.fpr_value[63] = 1'b0;
-              default: ;
-            endcase
-          end
-          exec_result.cr_write = work_issue.insn[0];
-          exec_result.cr_field = 3'd1;
-          exec_result.cr_value = fpscr_q[31:28];
-        end
-        DK_FSEL: begin
-          exec_result.fpr_write = 1'b1;
-          if (CPU_602) begin
-            if (select_b) begin
-              exec_result.fpr_value = src_b;
-              exec_result.fpr_sp = 1'b1;
-            end else begin
-              exec_result.fpr_value = src_c;
-              exec_result.fpr_sp = 1'b1;
-            end
-            if (!src_a_sp || (select_b && !src_b_sp)) begin
-              exec_result.exception = FPU_EMULATION_TRAP;
-              exec_result.fpr_write = 1'b0;
-            end
-            if (!select_b) begin
-              // LT is independent; selected SP+LT is still a valid SP source.
-              case ({src_c_sp,src_c_lt})
-                2'b10,2'b11: ;
-                default: begin
-                  exec_result.exception = FPU_EMULATION_TRAP;
-                  exec_result.fpr_write = 1'b0;
-                end
-              endcase
-            end
-          end else exec_result.fpr_value = select_b ? src_b : src_c;
-          exec_result.cr_write = work_issue.insn[0] &&
-              exec_result.exception == FPU_NO_EXCEPTION;
-          exec_result.cr_field = 3'd1;
-          exec_result.cr_value = fpscr_q[31:28];
-        end
+        DK_MOVE, DK_FSEL: ;  // Operand data and tags resolve in stage two.
         DK_MFFS: begin
           exec_result.fpr_write = 1'b1;
           exec_result.fpr_value = {32'd0,fpscr_q};
@@ -1396,51 +1414,13 @@ module ppc_fpu #(
                    work1_decoded.op != FP_FRSP &&
                    work1_decoded.op != FP_FRSQRTE))) begin
       work1_result.exception = FPU_EMULATION_TRAP;
-    end else if (!work1_tags_ok) begin
+    end else if (!work1_tags_ok && work1_decoded.kind != DK_MOVE &&
+                 work1_decoded.kind != DK_FSEL) begin
       work1_result.exception = FPU_EMULATION_TRAP;
       work1_result.gpr_update = 1'b0;
     end else begin
       case (work1_decoded.kind)
-        DK_MOVE: begin
-          work1_result.fpr_write = 1'b1;
-          work1_result.fpr_sp = CPU_602;
-          work1_result.fpr_value = work1_b.raw;
-          if (CPU_602) begin
-            case (work1_decoded.move_kind)
-              2'd1: work1_result.fpr_value[31] = ~work1_b.raw[31];
-              2'd2: work1_result.fpr_value[31] = 1'b1;
-              2'd3: work1_result.fpr_value[31] = 1'b0;
-              default: ;
-            endcase
-          end else begin
-            case (work1_decoded.move_kind)
-              2'd1: work1_result.fpr_value[63] = ~work1_b.raw[63];
-              2'd2: work1_result.fpr_value[63] = 1'b1;
-              2'd3: work1_result.fpr_value[63] = 1'b0;
-              default: ;
-            endcase
-          end
-          work1_result.cr_write = work1_issue.insn[0];
-          work1_result.cr_field = 3'd1;
-          work1_result.cr_value = fpscr_q[31:28];
-        end
-        DK_FSEL: begin
-          work1_result.fpr_write = 1'b1;
-          work1_result.fpr_value = work1_select_b ?
-              work1_b.raw : work1_c.raw;
-          work1_result.fpr_sp = CPU_602;
-          if (CPU_602 &&
-              (!work1_a.sp ||
-               (work1_select_b && !work1_b.sp) ||
-               (!work1_select_b && !work1_c.sp))) begin
-            work1_result.exception = FPU_EMULATION_TRAP;
-            work1_result.fpr_write = 1'b0;
-          end
-          work1_result.cr_write = work1_issue.insn[0] &&
-              work1_result.exception == FPU_NO_EXCEPTION;
-          work1_result.cr_field = 3'd1;
-          work1_result.cr_value = fpscr_q[31:28];
-        end
+        DK_MOVE, DK_FSEL: ;  // Resolved from captured operands next stage.
         DK_MEMORY: begin
           if (work1_ea[1:0] != 2'b00 &&
               (!CPU_602 || work1_decoded.mem_store)) begin
@@ -1511,6 +1491,14 @@ module ppc_fpu #(
       if (local_launch) begin
         pending_d[exec_index].result = exec_result;
         pending_d[exec_index].local_wait = 2'd3;
+        pending_d[exec_index].local_move_kind = work_decoded.move_kind;
+        pending_d[exec_index].local_a.raw = source_a.raw;
+        pending_d[exec_index].local_a.sp = source_a.sp;
+        pending_d[exec_index].local_b.raw = source_b.raw;
+        pending_d[exec_index].local_b.sp = source_b.sp;
+        pending_d[exec_index].local_c.raw = source_c.raw;
+        pending_d[exec_index].local_c.sp = source_c.sp;
+        pending_d[exec_index].local_c_lt = source_c.lt;
       end else if (mem_launch) begin
         pending_d[exec_index].mem = mem_req_o;
         pending_d[exec_index].result = exec_result;
@@ -1521,6 +1509,14 @@ module ppc_fpu #(
       if (work1_local_launch) begin
         pending_d[work1_old_index].result = work1_result;
         pending_d[work1_old_index].local_wait = 2'd3;
+        pending_d[work1_old_index].local_move_kind = work1_decoded.move_kind;
+        pending_d[work1_old_index].local_a.raw = work1_a.raw;
+        pending_d[work1_old_index].local_a.sp = work1_a.sp;
+        pending_d[work1_old_index].local_b.raw = work1_b.raw;
+        pending_d[work1_old_index].local_b.sp = work1_b.sp;
+        pending_d[work1_old_index].local_c.raw = work1_c.raw;
+        pending_d[work1_old_index].local_c.sp = work1_c.sp;
+        pending_d[work1_old_index].local_c_lt = work1_c.lt;
       end else if (work1_mem_launch) begin
         pending_d[work1_old_index].mem = work1_mem_req;
         pending_d[work1_old_index].result = work1_result;
@@ -1530,13 +1526,23 @@ module ppc_fpu #(
       if (i < int'(pending_count_q) && pending_q[i].valid &&
           pending_q[i].started && !pending_q[i].done &&
           pending_q[i].local_wait != 2'd0) begin
+        if (pending_q[i].local_wait == 2'd3 &&
+            (pending_q[i].decoded.kind == DK_MOVE ||
+             pending_q[i].decoded.kind == DK_FSEL))
+          pending_d[i].result = finish_local_data(pending_q[i].result,
+              pending_q[i].local_move_kind,
+              pending_q[i].decoded.kind == DK_MOVE,
+              pending_q[i].issue.insn[0],
+              pending_q[i].local_a, pending_q[i].local_b,
+              pending_q[i].local_c, pending_q[i].local_c_lt);
         pending_d[i].local_wait = pending_q[i].local_wait - 2'd1;
         if (pending_q[i].local_wait == 2'd1) pending_d[i].done = 1'b1;
       end
     if (retire_count != 2'd0) begin
       for (integer i = 0; i < PENDING_DEPTH; i++) begin
         if (i + int'(retire_count) < PENDING_DEPTH)
-          pending_d[i] = pending_d[i+int'(retire_count)];
+          pending_d[i] =
+              pending_d[PENDING_IDX_BITS'(i + int'(retire_count))];
         else pending_d[i] = '0;
       end
       pending_count_d = pending_count_q - {1'b0,retire_count};
@@ -1561,6 +1567,14 @@ module ppc_fpu #(
         if (local_launch) begin
           pending_d[dispatch_index].result = exec_result;
           pending_d[dispatch_index].local_wait = 2'd3;
+          pending_d[dispatch_index].local_move_kind = work_decoded.move_kind;
+          pending_d[dispatch_index].local_a.raw = source_a.raw;
+          pending_d[dispatch_index].local_a.sp = source_a.sp;
+          pending_d[dispatch_index].local_b.raw = source_b.raw;
+          pending_d[dispatch_index].local_b.sp = source_b.sp;
+          pending_d[dispatch_index].local_c.raw = source_c.raw;
+          pending_d[dispatch_index].local_c.sp = source_c.sp;
+          pending_d[dispatch_index].local_c_lt = source_c.lt;
         end else if (mem_launch) begin
           pending_d[dispatch_index].mem = mem_req_o;
           pending_d[dispatch_index].result = exec_result;
@@ -1571,6 +1585,14 @@ module ppc_fpu #(
         if (work1_local_launch) begin
           pending_d[dispatch_index].result = work1_result;
           pending_d[dispatch_index].local_wait = 2'd3;
+          pending_d[dispatch_index].local_move_kind = work1_decoded.move_kind;
+          pending_d[dispatch_index].local_a.raw = work1_a.raw;
+          pending_d[dispatch_index].local_a.sp = work1_a.sp;
+          pending_d[dispatch_index].local_b.raw = work1_b.raw;
+          pending_d[dispatch_index].local_b.sp = work1_b.sp;
+          pending_d[dispatch_index].local_c.raw = work1_c.raw;
+          pending_d[dispatch_index].local_c.sp = work1_c.sp;
+          pending_d[dispatch_index].local_c_lt = work1_c.lt;
         end else if (work1_mem_launch) begin
           pending_d[dispatch_index].mem = work1_mem_req;
           pending_d[dispatch_index].result = work1_result;
@@ -1598,6 +1620,14 @@ module ppc_fpu #(
         if (work1_local_launch) begin
           pending_d[dispatch1_index].result = work1_result;
           pending_d[dispatch1_index].local_wait = 2'd3;
+          pending_d[dispatch1_index].local_move_kind = work1_decoded.move_kind;
+          pending_d[dispatch1_index].local_a.raw = work1_a.raw;
+          pending_d[dispatch1_index].local_a.sp = work1_a.sp;
+          pending_d[dispatch1_index].local_b.raw = work1_b.raw;
+          pending_d[dispatch1_index].local_b.sp = work1_b.sp;
+          pending_d[dispatch1_index].local_c.raw = work1_c.raw;
+          pending_d[dispatch1_index].local_c.sp = work1_c.sp;
+          pending_d[dispatch1_index].local_c_lt = work1_c.lt;
         end else if (work1_mem_launch) begin
           pending_d[dispatch1_index].mem = work1_mem_req;
           pending_d[dispatch1_index].result = work1_result;
