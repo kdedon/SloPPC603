@@ -6,6 +6,7 @@ module ppc_fpu_arith #(
     input  logic rst_ni,
     input  logic req_valid_i,
     output logic req_ready_o,
+    output logic div_busy_o,
     input  ppc_fpu_pkg::ppc_fpu_arith_req_t req_i,
     output logic rsp_valid_o,
     input  logic rsp_ready_i,
@@ -283,6 +284,7 @@ module ppc_fpu_arith #(
     logic push_response;
     ppc_fpu_arith_rsp_t pushed_response;
     logic divide_request;
+    logic divide_finishing;
     logic [54:0] div_trial;
     logic [52:0] div_remainder_next;
     logic [54:0] div_quotient_next;
@@ -585,6 +587,7 @@ module ppc_fpu_arith #(
         logic [5:0] denorm_shift;
         logic denorm_result;
         logic deliver_inf;
+        logic final_sign;
         out = '0;
         out.tag = tag;
         out.write_result = 1'b1;
@@ -604,36 +607,33 @@ module ppc_fpu_arith #(
         deliver_inf = (rn == 2'b00) ||
             (rn == 2'b10 && !value.sign) ||
             (rn == 2'b11 && value.sign);
+        final_sign = value.sign ^ value.negate_final;
         if (value.overflow && !oe) begin
-            if (deliver_inf) out.result = value.sign ? NEG_INF : POS_INF;
+            if (deliver_inf) out.result = final_sign ? NEG_INF : POS_INF;
             else if (single_result)
-                out.result = {value.sign, 11'd1150, {23{1'b1}}, 29'd0};
-            else out.result = {value.sign, 11'h7fe, {52{1'b1}}};
-            out.fprf = result_class(out.result);
+                out.result = {final_sign, 11'd1150, {23{1'b1}}, 29'd0};
+            else out.result = {final_sign, 11'h7fe, {52{1'b1}}};
+            out.fprf = deliver_inf ?
+                (final_sign ? 5'b01001 : 5'b00101) :
+                (final_sign ? 5'b01000 : 5'b00100);
         end else if (wide == 0 ||
             (ni && (CPU_602 ? value.tiny_before : denorm_result))) begin
-            out.result = {value.sign, 63'd0};
-            out.fprf = result_class(out.result);
+            out.result = {final_sign, 63'd0};
+            out.fprf = final_sign ? 5'b10010 : 5'b00010;
         end else if (!single_result && denorm_result) begin
-            out.result = {value.sign, 11'd0, wide[51:0]};
-            out.fprf = result_class(out.result);
+            out.result = {final_sign, 11'd0, wide[51:0]};
+            out.fprf = final_sign ? 5'b11000 : 5'b10100;
         end else begin
             if (single_result && denorm_result) begin
                 denorm_shift = leading_zero53(wide);
                 wide <<= denorm_shift;
                 exponent -= 16'(denorm_shift);
             end
-            out.result = {value.sign, 11'(exponent + 16'sd1023),
+            out.result = {final_sign, 11'(exponent + 16'sd1023),
                 wide[51:0]};
-            if (single_result && denorm_result)
-                out.fprf = value.sign ? 5'b11000 : 5'b10100;
-            else out.fprf = result_class(out.result);
-        end
-        if (value.negate_final) begin
-            out.result[63] = ~out.result[63];
-            if (out.fprf == 5'b10100) out.fprf = 5'b11000;
-            else if (out.fprf == 5'b11000) out.fprf = 5'b10100;
-            else out.fprf = result_class(out.result);
+            out.fprf = (single_result && denorm_result) ?
+                (final_sign ? 5'b11000 : 5'b10100) :
+                (final_sign ? 5'b01000 : 5'b00100);
         end
         return out;
     endfunction
@@ -1345,6 +1345,7 @@ module ppc_fpu_arith #(
         logic signed [15:0] scale;
         logic signed [15:0] normalized_exp;
         logic [7:0] left_distance;
+        logic [15:0] denorm_shift;
         out = '0;
         out.sign = value.sign;
         out.negate_final = value.negate_final;
@@ -1353,6 +1354,8 @@ module ppc_fpu_arith #(
         scale = single_result ? 16'sd192 : 16'sd1536;
         normalized_exp = value.exponent;
         left_distance = 8'd0;
+        denorm_shift = denorm_distance[15] ?
+            -denorm_distance : denorm_distance;
         if (value.magnitude == 160'd0) return out;
         if (value.magnitude[159])
             normalized_exp = value.exponent + 16'sd1;
@@ -1368,9 +1371,9 @@ module ppc_fpu_arith #(
         if (out.tiny_before && !ue) begin
             if (denorm_distance > 0)
                 out.magnitude = shift_right_jam(value.magnitude,
-                    unsigned'(int'(denorm_distance)));
+                    {16'd0, denorm_shift});
             else out.magnitude = value.magnitude <<
-                unsigned'(-int'(denorm_distance));
+                {16'd0, denorm_shift};
             out.exponent = min_exp;
         end else begin
             out.magnitude = value.magnitude[159] ?
@@ -1590,9 +1593,16 @@ module ppc_fpu_arith #(
             {53'd0, div_digit};
     end
 
+    // The finishing divide enqueues on this edge, so a new operation may
+    // enter immediately; earlier divide states block FPU admission.
+    assign divide_finishing = divide_state_q == DIV_PACK ||
+        (divide_state_q == DIV_SPECIAL &&
+            divide_special_count_q == 6'd1);
+    assign div_busy_o = rst_ni && !flush_i &&
+        divide_state_q != DIV_IDLE && !divide_finishing;
     assign req_ready_o = rst_ni && !flush_i &&
         (outstanding_q < 3'd4 || retire) &&
-        divide_state_q == DIV_IDLE &&
+        (divide_state_q == DIV_IDLE || divide_finishing) &&
         !(input_valid_q && !CPU_602 &&
             (input_q.op == FP_MUL ||
             input_q.op == FP_MADD || input_q.op == FP_MSUB ||
