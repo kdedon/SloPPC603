@@ -39,9 +39,11 @@ Generated builds, logs and reports are excluded from version control.
 
 For the full 603e, dual issue, branch prediction, data cache/coherence, floating
 point, endian/variant features and timing fidelity remain major workstreams.
-Floating point has an investigation and phased plan in the
-[FPU reuse assessment](../../FPU_REUSE_ASSESSMENT.md); its first steps are an FPU
-contract and an isolated arithmetic-backend experiment.
+Floating point now has a manual-backed [FPU contract](../../FPU_CONTRACT.md),
+including explicit source conflicts, and an isolated arithmetic qualification
+in progress under the [FPU reuse assessment](../../FPU_REUSE_ASSESSMENT.md).
+The target is a complete standalone FPU; a separate process will integrate it
+into the CPU. Existing core RTL and file lists remain outside this workstream.
 Do not infer full CPU completion from the restricted MVP score.
 
 After each accepted implementation round, update the scorecard's affected rows

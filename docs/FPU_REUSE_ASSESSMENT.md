@@ -2,6 +2,17 @@
 
 Reviewed 2026-09-22. Scope: [MiSTer-devel/N64_MiSTer](https://github.com/MiSTer-devel/N64_MiSTer/tree/eb5554af01bb97bdf3d295aed02a989ac10ccee4) and [Grabulosaure/ss](https://github.com/Grabulosaure/ss/tree/70203e26e981069710e934600fd55b9d866a9e5b) as FPU donors for this CPU. Each donor was investigated independently; the decisive source paths were then reviewed together to reach the conclusions below. This is an investigation and proposed plan; it does not implement an FPU or change the current integer MVP scope.
 
+## Implementation status — 2026-09-27
+
+F0: [FPU contract](FPU_CONTRACT.md) records the architectural instruction/status
+rules, manual citations, donor boundary and explicit source conflicts. The
+contract selects consistent instruction/table rules where passages disagree;
+NI status details and exact-mask behavior remain documented limits.
+F1 qualification is in progress under `rtl/fpu/` and `sim/fpu/`, isolated from
+core file lists. The requested endpoint is a complete standalone FPU; another
+process owns CPU integration. No architectural completion or score change is
+claimed by this documentation milestone.
+
 ## Decision
 
 **Neither donor is a drop-in 603e FPU. Use SS as the starting candidate for arithmetic code reuse and N64 as a source of size-oriented implementation techniques.** Reuse may save work on mantissa arithmetic, normalization and rounding, but does not remove the need for PPC state, fused arithmetic, exception semantics, estimates, memory support or precise retirement. No measured schedule saving is established.
