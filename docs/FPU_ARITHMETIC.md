@@ -4,9 +4,10 @@ The production arithmetic engine consumes one tagged request and returns one tag
 
 The static `CPU_602` parameter selects arithmetic behavior and removes double-multiply scheduling from the 602 elaboration. Both backend interfaces use binary64 operand encodings; the 602 shell widens binary32 hardware operands exactly and packs results back to its 32-bit FPR bank. The binary64 inputs are classified before arithmetic. A finite operand becomes a sign, a signed unbiased exponent, and a normalized 53-bit significand. Subnormal inputs are normalized without losing bits. Special values are resolved before the finite datapath, with NaN payload priority A, B, C and distinct invalid causes. Single-result arithmetic rounds directly from the exact intermediate to binary32, then widens that value exactly into an FPR binary64 encoding.
 
-Finite add/subtract and fused operations share a 160-bit aligned significand
-representation. The fused intermediate retains the complete 106-bit double
-product or 48-bit single product until the final rounding. Three execution
+Finite add/subtract and fused operations prepare a 160-bit significand
+representation. An experimental 112-bit addition lane retains the complete
+106-bit double product or 48-bit single product until final rounding, then
+expands its sum back to the existing 160-bit rounding input. Three execution
 stages perform multiply/alignment preparation, addition/leading-zero detection,
 and rounding/packing. Double multiply and fused instructions spend two cycles
 in multiply preparation. Registering their common alignment input removes a
@@ -14,6 +15,26 @@ late source-select mux before addition. The add stage computes parallel sum/diff
 propagation and leading-zero candidates. Normalization controls cross the
 register boundary into rounding. Current synthesis still misses the frequency
 target.
+
+The 112-bit lane drops the 48 low bits that are zero in both prepared
+operands: the 106-bit product has five trailing zeros in the lane, and the
+53-bit addend has 58. Exponent alignment by at most two positions therefore
+keeps every input bit, including cases with deep cancellation. At an exponent
+gap of at least three, the unshifted operand has at least five trailing zeros
+and dominates the shifted operand, so subtraction cannot cancel to zero or
+change the result sign and needs at most two leading left shifts. If shifting
+the smaller operand discards a fractional tail `t`, the jammed lane integer is
+odd and differs from the exact aligned operand by less than one lane unit.
+Adding or subtracting it from the even unshifted operand leaves an odd
+approximation. The exact result and that approximation remain on the same
+side of every even rounding threshold. The double guard threshold is at bit
+55 or higher before normalization (single is higher); subnormal cuts are
+coarser, and UE exponent scaling does not change the significand cut. Both
+results are inexact when `t` is nonzero. When no tail is discarded, the lane
+sum is exact. This argument covers all rounding modes and tininess/overflow
+tests; the divider keeps its separate 160-bit path. The 112-bit lane is not a
+qualified production timing improvement until directed cancellation and
+halfway-tail vectors, both CPU personalities, and Quartus mapping pass.
 
 Division captures raw operands at request acceptance and normalizes them in
 the first divider stage. Special-result calculation also occurs after admission. A radix-four recurrence compares

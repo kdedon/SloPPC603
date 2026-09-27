@@ -233,6 +233,12 @@ module ppc_fpu_arith #(
         logic [7:0] leading_zero;
     } sum_candidate_t;
 
+    typedef struct packed {
+        logic [111:0] magnitude;
+        logic carry_out;
+        logic [7:0] leading_zero;
+    } sum_candidate112_t;
+
     typedef enum logic [3:0] {
         DIV_IDLE, DIV_START, DIV_ITER, DIV_SP_NORM_TINY,
         DIV_NORM, DIV_TINY, DIV_PRE, DIV_ROUND, DIV_PACK,
@@ -1452,6 +1458,184 @@ module ppc_fpu_arith #(
         return out;
     endfunction
 
+    function automatic logic [111:0] shift_right_jam112(
+        input logic [111:0] value, input logic [7:0] distance
+    );
+        logic [111:0] work;
+        if (distance >= 8'd112) return {111'd0, |value};
+        work = value;
+        if (distance[6])
+            work = (work >> 64) | {111'd0, |work[63:0]};
+        if (distance[5])
+            work = (work >> 32) | {111'd0, |work[31:0]};
+        if (distance[4])
+            work = (work >> 16) | {111'd0, |work[15:0]};
+        if (distance[3])
+            work = (work >> 8) | {111'd0, |work[7:0]};
+        if (distance[2])
+            work = (work >> 4) | {111'd0, |work[3:0]};
+        if (distance[1])
+            work = (work >> 2) | {111'd0, |work[1:0]};
+        if (distance[0])
+            work = (work >> 1) | {111'd0, work[0]};
+        return work;
+    endfunction
+
+    function automatic sum_candidate112_t carry_select112(
+        input logic [111:0] lhs,
+        input logic [111:0] rhs,
+        input logic subtract
+    );
+        sum_candidate112_t out;
+        logic [111:0] b_value;
+        logic [16:0] sum_zero;
+        logic [15:0] sum_one;
+        logic [111:0] candidate_zero;
+        logic [111:0] candidate_one;
+        logic [34:0] lz_zero;
+        logic [34:0] lz_one;
+        logic [34:0] selected_lz;
+        logic [6:0] zero_zero;
+        logic [6:0] zero_one;
+        logic [6:0] block_zero;
+        logic [6:0] carry_in;
+        logic [6:0] carry_p0, carry_p1, carry_p2, carry_p3;
+        logic [6:0] carry_g0, carry_g1, carry_g2, carry_g3;
+        logic [6:0] suffix0, suffix1, suffix2, suffix3;
+        logic [6:0] first_block;
+        logic [7:0] combined_lz;
+        logic [7:0] local_count;
+        out = '0;
+        b_value = rhs ^ {112{subtract}};
+        for (int block = 0; block < 7; block++) begin
+            sum_zero = {1'b0, lhs[block*16 +: 16]} +
+                {1'b0, b_value[block*16 +: 16]};
+            sum_one = sum_zero[15:0] + 16'd1;
+            candidate_zero[block*16 +: 16] = sum_zero[15:0];
+            candidate_one[block*16 +: 16] = sum_one;
+            carry_g0[block] = sum_zero[16];
+            carry_p0[block] = &(lhs[block*16 +: 16] ^
+                b_value[block*16 +: 16]);
+            zero_zero[block] = sum_zero[15:0] == 16'd0;
+            zero_one[block] = sum_one == 16'd0;
+            lz_zero[block*5 +: 5] = leading_zero16(sum_zero[15:0]);
+            lz_one[block*5 +: 5] = leading_zero16(sum_one);
+        end
+        carry_p1 = carry_p0;
+        carry_g1 = carry_g0;
+        for (int block = 1; block < 7; block++) begin
+            carry_p1[block] = carry_p0[block] & carry_p0[block-1];
+            carry_g1[block] = carry_g0[block] |
+                (carry_p0[block] & carry_g0[block-1]);
+        end
+        carry_p2 = carry_p1;
+        carry_g2 = carry_g1;
+        for (int block = 2; block < 7; block++) begin
+            carry_p2[block] = carry_p1[block] & carry_p1[block-2];
+            carry_g2[block] = carry_g1[block] |
+                (carry_p1[block] & carry_g1[block-2]);
+        end
+        carry_p3 = carry_p2;
+        carry_g3 = carry_g2;
+        for (int block = 4; block < 7; block++) begin
+            carry_p3[block] = carry_p2[block] & carry_p2[block-4];
+            carry_g3[block] = carry_g2[block] |
+                (carry_p2[block] & carry_g2[block-4]);
+        end
+        carry_in[0] = subtract;
+        for (int block = 1; block < 7; block++)
+            carry_in[block] = carry_g3[block-1] |
+                (carry_p3[block-1] & subtract);
+        out.carry_out = carry_g3[6] | (carry_p3[6] & subtract);
+        for (int block = 0; block < 7; block++) begin
+            out.magnitude[block*16 +: 16] = carry_in[block] ?
+                candidate_one[block*16 +: 16] :
+                candidate_zero[block*16 +: 16];
+            selected_lz[block*5 +: 5] = carry_in[block] ?
+                lz_one[block*5 +: 5] : lz_zero[block*5 +: 5];
+            block_zero[block] = carry_in[block] ?
+                zero_one[block] : zero_zero[block];
+        end
+        suffix0 = block_zero;
+        suffix1 = suffix0;
+        for (int block = 0; block < 6; block++)
+            suffix1[block] = suffix0[block] & suffix0[block+1];
+        suffix2 = suffix1;
+        for (int block = 0; block < 5; block++)
+            suffix2[block] = suffix1[block] & suffix1[block+2];
+        suffix3 = suffix2;
+        for (int block = 0; block < 3; block++)
+            suffix3[block] = suffix2[block] & suffix2[block+4];
+        first_block[6] = !block_zero[6];
+        for (int block = 0; block < 6; block++)
+            first_block[block] = !block_zero[block] &&
+                suffix3[block+1];
+        combined_lz = 8'd0;
+        for (int block = 0; block < 7; block++) begin
+            local_count = 8'((6-block)*16) +
+                {3'd0, selected_lz[block*5 +: 5]};
+            combined_lz |= local_count & {8{first_block[block]}};
+        end
+        out.leading_zero = suffix3[0] ? 8'd112 : combined_lz;
+        return out;
+    endfunction
+
+    // For Δ<=2 all 106 product bits survive the 112-bit lane exactly.
+    // At larger Δ the unshifted operand is even and dominates the result;
+    // a discarded tail below bit zero is represented by odd jam. The exact
+    // value differs by less than one lane unit, so it cannot cross an even
+    // rounding threshold (DP guard remains at bit >=55 before expansion).
+    function automatic add_result_t add_aligned112(
+        input align_plan_t plan, input logic [1:0] rn
+    );
+        add_result_t out;
+        finite_sum_t result_sum;
+        logic [111:0] aligned_x;
+        logic [111:0] aligned_y;
+        // Only x-y carry-out chooses the subtraction direction.
+        /* verilator lint_off UNUSEDSIGNAL */
+        sum_candidate112_t sum_same;
+        sum_candidate112_t sum_xy;
+        sum_candidate112_t sum_yx;
+        /* verilator lint_on UNUSEDSIGNAL */
+        out = '0;
+        result_sum = '0;
+        aligned_x = plan.shift_x ?
+            shift_right_jam112(plan.x[159:48], plan.distance) :
+            plan.x[159:48];
+        aligned_y = plan.shift_y ?
+            shift_right_jam112(plan.y[159:48], plan.distance) :
+            plan.y[159:48];
+        sum_same = carry_select112(aligned_x, aligned_y, 1'b0);
+        sum_xy = carry_select112(aligned_x, aligned_y, 1'b1);
+        sum_yx = carry_select112(aligned_y, aligned_x, 1'b1);
+        result_sum.exponent = plan.exponent;
+        result_sum.negate_final = plan.negate_final;
+        if (aligned_x == 112'd0 && aligned_y == 112'd0 &&
+            plan.single_operand) begin
+            result_sum.sign = plan.sign_x;
+            out.leading_zero = 8'd160;
+        end else if (plan.sign_x == plan.sign_y) begin
+            result_sum.magnitude = {sum_same.magnitude, 48'd0};
+            result_sum.sign = plan.sign_x;
+            out.leading_zero = sum_same.leading_zero == 8'd112 ?
+                8'd160 : sum_same.leading_zero;
+        end else if (sum_xy.leading_zero == 8'd112) begin
+            result_sum.sign = rn == 2'b11;
+            out.leading_zero = 8'd160;
+        end else if (sum_xy.carry_out) begin
+            result_sum.magnitude = {sum_xy.magnitude, 48'd0};
+            result_sum.sign = plan.sign_x;
+            out.leading_zero = sum_xy.leading_zero;
+        end else begin
+            result_sum.magnitude = {sum_yx.magnitude, 48'd0};
+            result_sum.sign = plan.sign_y;
+            out.leading_zero = sum_yx.leading_zero;
+        end
+        out.finite_value = result_sum;
+        return out;
+    endfunction
+
     function automatic round_work_t direct_round_work(
         input finite_sum_t value,
         input logic single_result,
@@ -1655,7 +1839,7 @@ module ppc_fpu_arith #(
         add_tiny_before = 1'b0;
         add_result = '0;
         if (aligned_q.finite)
-            add_result = add_aligned(aligned_q.plan,
+            add_result = add_aligned112(aligned_q.plan,
                 aligned_q.req.rn);
         add_next = '0;
         add_next.req = aligned_q.req;
