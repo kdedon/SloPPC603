@@ -250,3 +250,22 @@ It reported zero errors and four warnings, 433 virtual pins and zero physical
 pins; TimeQuest reported zero errors and zero warnings. Other stage delays
 were 28.734 ns alignment, 32.089 ns divider and 21.299 ns multiply. No fitter
 ran. This snapshot precedes the separately tested divider-normalization change.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit
+`bb83db6` (dual-lane shell with arithmetic `59befd3`), 2026-09-27.
+
+The first two-lane 603e shell mapped at 28,616 estimated ALMs, 34,912 ALUTs,
+7,192 registers, 412 block-memory bits and five DSP blocks. It had 1,336 virtual
+pins and zero physical pins. Post-map Fmax was **12.9 MHz**, with −57.775 ns
+worst setup slack; both targets failed. The longest path traversed arithmetic
+rounding, shell source forwarding and divider operand normalization before the
+divider input register (77.609 ns, 42 logic levels). This exposes a full-module
+path absent from the standalone arithmetic measurement.
+
+Map reported zero errors and 72 warnings: two signed shift-count conversions,
+a queue-compaction index-width warning, response-RAM pass-through logic,
+constant memory-size and disabled 602-tag outputs with their summary, and the
+virtual-clock warning. TimeQuest reported zero errors and zero warnings. No
+fitter ran. This snapshot predates the second forwarding output, local execution
+stage changes and later arithmetic optimizations; it is exploratory evidence,
+not current acceptance or timing closure.
