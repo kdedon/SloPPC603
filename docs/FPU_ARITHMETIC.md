@@ -10,11 +10,13 @@ product or 48-bit single product until the final rounding. Three execution
 stages perform multiply/alignment preparation, addition/leading-zero detection,
 and rounding/packing. Double multiply and fused instructions spend two cycles
 in multiply preparation. Registering their common alignment input removes a
-late source-select mux before addition. The add stage is being restructured
-because current synthesis misses the frequency target.
+late source-select mux before addition. The add stage computes parallel sum/difference candidates with block carry
+propagation and leading-zero candidates. Normalization controls cross the
+register boundary into rounding. Current synthesis still misses the frequency
+target.
 
-Division captures normalized operand exponents at request acceptance and
-registers their difference at launch. A radix-four recurrence compares
+Division captures raw operands at request acceptance and normalizes them in
+the first divider stage. Special-result calculation also occurs after admission. A radix-four recurrence compares
 `4×remainder` with registered `D`, `2D` and `3D`, generating two quotient bits
 per cycle. Thirteen single or 27 double iterations preserve guard and
 nonzero-remainder sticky information for final rounding. Divide and reciprocal
@@ -30,9 +32,9 @@ The engine supports binary64 arithmetic, direct binary32 rounding, integer-word 
 
 The independent [production suite](../sim/fpu/PRODUCTION.md) records numerical and shell checks. [Quartus measurements](../quartus/fpu-production/README.md) separately record area and frequency. The target is 50 MHz, with 66 MHz aspirational. The separate SS experiment remains a measured donor candidate, not a production dependency.
 
-The fixed-cycle arithmetic checkpoint `251d633` passed 200,072 raw 603e packets
-and separate timing tests in both elaborations. Independent numerical acceptance
-of the 602 profile is a separate gate. Expected request-acceptance to
+The fixed-cycle arithmetic checkpoint `6a2f28b` passed 200,288 raw 603e packets,
+181,376 raw 602 packets and exact timing tests with 71/52 tagged responses.
+The two personalities are compiled separately. Expected request-acceptance to
 finish latency is three cycles for ordinary instructions, four for 603e double
 multiply/fused, 18 for single divide/reciprocal and 33 for double divide.
 Special values retain their instruction's timing. Ordinary initiation interval

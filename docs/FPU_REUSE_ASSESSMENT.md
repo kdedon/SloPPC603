@@ -27,12 +27,12 @@ the distinct tag, exception, register and instruction rules. The replacement
 [pipeline](FPU_PIPELINE_DESIGN.md) selects its personality at compile time and
 must meet original instruction latency and throughput. Recorded pipeline checkpoints now include 200,288 603e raw-bit cases,
 181,376 602 cases, 17,628 independent 602 estimate checks, exact-cycle gates
-with 71/52 tagged responses, 851/87
+with 71/52 tagged responses, 851/171
 public-shell checks, and a 32-operation issue/forward/commit stream in each
 personality. These results cover separately pinned source snapshots; they are
 not one final revision's acceptance. Dedicated paired dispatch/retirement,
 recovery coverage and current-revision gates remain in progress.
-The latest arithmetic post-map estimate is **25.8 MHz**; the first two-lane
+The latest arithmetic post-map estimate is **25.8 MHz**; the measured two-lane
 603e shell estimates **14.6 MHz**. Both miss 50 and 66 MHz. No completion or
 fitted timing claim is made for the replacement. See
 [verification](../sim/fpu/PRODUCTION.md) and
