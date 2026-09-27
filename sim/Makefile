@@ -1299,6 +1299,13 @@ test-core-bat-cached-bus60x-irq:
 	./$(BUILD_DIR)/core-bat-cached-bus60x-irq/Vtb_core_bat_cached_bus60x_irq $(SIM_ARGS)
 
 # DEC-to-EXT promotion while a translated cache refill drains.
+.PHONY: test-core-bat-cached-bus60x-cacheops
+test: test-core-bat-cached-bus60x-cacheops
+test-core-bat-cached-bus60x-cacheops:
+	mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x-cacheops
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x_cacheops --Mdir $(BUILD_DIR)/core-bat-cached-bus60x-cacheops -I../tb $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_cached_bus60x_cacheops.sv
+	./$(BUILD_DIR)/core-bat-cached-bus60x-cacheops/Vtb_core_bat_cached_bus60x_cacheops $(SIM_ARGS)
+
 .PHONY: test-core-bat-cached-bus60x-timer
 test: test-core-bat-cached-bus60x-timer
 test-core-bat-cached-bus60x-timer:
