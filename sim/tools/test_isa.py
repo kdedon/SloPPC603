@@ -85,7 +85,9 @@ class IsaMetadataTest(unittest.TestCase):
 
         self.assertEqual(enabled("addi"), set(names))
         self.assertEqual(enabled("mfsprg0"), set(names) - {"default"})
-        self.assertEqual(enabled("mtmsr"), set(names) - {"default", "supervisor"})
+        self.assertEqual(enabled("mtmsr"), set(names) - {"default", "supervisor", "cache"})
+        self.assertEqual(enabled("icbi"), {"cache", "all"})
+        self.assertEqual(enabled("dcbi"), {"cache", "all"})
         self.assertEqual(enabled("tlbie"), {"tlbie", "all"})
         self.assertEqual(enabled("mfdmiss"), {"tlb_miss", "all"})
         self.assertEqual(enabled("mfdcmp"), {"tlb_load", "tlb_miss", "all"})
@@ -96,6 +98,9 @@ class IsaMetadataTest(unittest.TestCase):
             ("mfdec", "privilege", "user", "SPR\\[0\\]"),
             ("mttbl", "value", "0x7c1c43a7", "outside mask|SPR selector"),
             ("tlbie", "mask", "0xfc0007ff", "reserved fields"),
+            ("dcbz", "mask", "0xfc0007ff", "reserved fields"),
+            ("dcbi", "privilege", "user", "privilege must be supervisor"),
+            ("icbi", "privilege", "supervisor", "privilege must be user"),
         ]
         for entry_id, key, value, message in cases:
             with self.subTest(entry=entry_id):

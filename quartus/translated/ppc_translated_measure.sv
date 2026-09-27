@@ -149,6 +149,7 @@ module ppc_translated_measure (
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),
     .ENABLE_TLB_INVALIDATE(1'b1),
     .ENABLE_TLB_LOAD(1'b1),
+    .ENABLE_CACHE_INSTRUCTIONS(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (.rst_ni(rst_sync_q[1]), .*);
 endmodule

@@ -20,7 +20,8 @@ module ppc_core_bat #(
   parameter bit ENABLE_TLB_INVALIDATE = 1'b0,
   parameter bit ENABLE_TLB_LOAD = 1'b0,
   parameter bit ENABLE_TEST_REDIRECT = 1'b1,
-  parameter bit ENABLE_MICRO_TLB = 1'b1
+  parameter bit ENABLE_MICRO_TLB = 1'b1,
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -100,6 +101,10 @@ module ppc_core_bat #(
   output logic pdmem_rsp_ready_o,
   input  logic [31:0] pdmem_rsp_rdata_i,
   input  logic pdmem_rsp_error_i,
+  // icbi: ready reports the four ways at EA's set invalidated.
+  output logic icbi_req_valid_o,
+  input  logic icbi_req_ready_i,
+  output logic [31:0] icbi_req_ea_o,
   output logic retire_valid_o,
   input  logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
@@ -132,6 +137,9 @@ module ppc_core_bat #(
   logic [3:0] dmem_req_wstrb;
   logic dmem_rsp_valid, dmem_rsp_ready, dmem_rsp_error;
   logic [31:0] dmem_rsp_rdata;
+  logic dmem_req_probe, probe_q, probe_rsp_q;
+  logic router_pdmem_req_valid, router_pdmem_req_ready;
+  logic router_pdmem_rsp_valid, router_pdmem_rsp_ready;
   logic context_valid, context_ready, memory_quiescent;
   logic committed_ir, committed_dr, committed_pr;
   logic router_start_ready, start_context_supported;
@@ -199,7 +207,8 @@ module ppc_core_bat #(
     .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS),
     .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
     .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
-    .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
+    .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT),
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
   ) core (
     .tlb_fill_req_valid_o(tlb_fill_req_valid),
     .tlb_fill_req_bank_o(tlb_fill_req_bank),
@@ -260,10 +269,12 @@ module ppc_core_bat #(
     .dmem_req_ready_i(dmem_req_ready),
     .dmem_req_write_o(dmem_req_write), .dmem_req_addr_o(dmem_req_addr),
     .dmem_req_wdata_o(dmem_req_wdata), .dmem_req_wstrb_o(dmem_req_wstrb),
+    .dmem_req_probe_o(dmem_req_probe),
     .dmem_rsp_valid_i(dmem_rsp_valid), .dmem_rsp_ready_o(dmem_rsp_ready),
     .dmem_rsp_fault_i(dmem_rsp_fault),
     .dmem_rsp_page_miss_i(dmem_rsp_page_miss),
     .dmem_rsp_rdata_i(dmem_rsp_rdata), .dmem_rsp_error_i(dmem_rsp_error),
+    .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o,
     .retire_valid_o, .retire_ready_i, .retire_o,
     .halted_o(core_halted), .redirect_valid_i, .redirect_all_i,
     .redirect_keep_pivot_i, .redirect_pivot_i, .redirect_target_i,
@@ -369,10 +380,13 @@ module ppc_core_bat #(
     .pimem_req_valid_o, .pimem_req_ready_i, .pimem_req_addr_o,
     .pimem_req_wimg_o, .pimem_rsp_valid_i, .pimem_rsp_ready_o,
     .pimem_rsp_insn_i, .pimem_rsp_error_i,
-    .pdmem_req_valid_o, .pdmem_req_ready_i, .pdmem_req_write_o,
+    .pdmem_req_valid_o(router_pdmem_req_valid),
+    .pdmem_req_ready_i(router_pdmem_req_ready), .pdmem_req_write_o,
     .pdmem_req_addr_o, .pdmem_req_wdata_o, .pdmem_req_wstrb_o,
-    .pdmem_req_wimg_o, .pdmem_rsp_valid_i, .pdmem_rsp_ready_o,
-    .pdmem_rsp_rdata_i, .pdmem_rsp_error_i,
+    .pdmem_req_wimg_o, .pdmem_rsp_valid_i(router_pdmem_rsp_valid),
+    .pdmem_rsp_ready_o(router_pdmem_rsp_ready),
+    .pdmem_rsp_rdata_i(probe_q ? 32'b0 : pdmem_rsp_rdata_i),
+    .pdmem_rsp_error_i(!probe_q && pdmem_rsp_error_i),
     .imem_req_valid_i(imem_req_valid), .imem_req_ready_o(imem_req_ready),
     .imem_req_addr_i(imem_req_addr), .imem_rsp_valid_o(imem_rsp_valid),
     .imem_rsp_ready_i(imem_rsp_ready), .imem_rsp_insn_o(imem_rsp_insn),
@@ -401,6 +415,33 @@ module ppc_core_bat #(
   initial assert (!ENABLE_PAGE_INSTRUCTION_EXCEPTIONS ||
     (ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_PAGE_TRANSLATION))
     else $error("page instruction exceptions require supervisor and page translation");
+  // synthesis translate_on
+
+  // A translated cache-block probe completes here instead of on the physical
+  // port. The data lane holds one request, so its accepted flag covers the
+  // router's physical offer and response.
+  assign router_pdmem_req_ready = probe_q ? !probe_rsp_q : pdmem_req_ready_i;
+  assign pdmem_req_valid_o = router_pdmem_req_valid && !probe_q;
+  assign router_pdmem_rsp_valid = probe_q ? probe_rsp_q : pdmem_rsp_valid_i;
+  assign pdmem_rsp_ready_o = router_pdmem_rsp_ready && !probe_q;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      probe_q <= 1'b0;
+      probe_rsp_q <= 1'b0;
+    end else begin
+      if (dmem_req_valid && dmem_req_ready)
+        probe_q <= ENABLE_CACHE_INSTRUCTIONS && dmem_req_probe;
+      if (probe_q && router_pdmem_req_valid && !probe_rsp_q)
+        probe_rsp_q <= 1'b1;
+      else if (probe_rsp_q && router_pdmem_rsp_ready)
+        probe_rsp_q <= 1'b0;
+    end
+  end
+
+  // synthesis translate_off
+  assert property (@(posedge clk_i) disable iff (!rst_ni)
+    !(probe_q && (pdmem_req_valid_o || pdmem_rsp_ready_o)))
+    else $error("cache-block probe reached the physical data port");
   // synthesis translate_on
 
   assign halted_o = core_halted || ifetch_fatal;

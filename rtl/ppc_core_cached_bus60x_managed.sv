@@ -144,12 +144,15 @@ module ppc_core_cached_bus60x_managed #(
   logic [36:0] unused_tlb_inv;
   logic [89:0] unused_tlb_fill;
   logic [41:0] unused_segment_csr;
+  logic [33:0] unused_cache_core;
   ppc_core #(
     .RESET_PC(RESET_PC),
     .DIV_LATENCY(DIV_LATENCY),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
   ) core (
+    .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
+    .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .tlb_fill_req_valid_o(unused_tlb_fill[89]),
     .tlb_fill_req_bank_o(unused_tlb_fill[88]),
     .tlb_fill_req_ea_o(unused_tlb_fill[87:56]),
@@ -224,6 +227,7 @@ module ppc_core_cached_bus60x_managed #(
     .redirect_pivot_i, .redirect_target_i, .redirect_accepted_o
   );
 
+  logic unused_icbi_ready;
   ppc_icache_managed #(
     .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE)
   ) managed_cache (
@@ -238,6 +242,7 @@ module ppc_core_cached_bus60x_managed #(
     .maintenance_invalidate_i, .maintenance_cache_enable_i,
     .maintenance_done_valid_o, .maintenance_done_ready_i,
     .cache_enabled_o, .maintenance_busy_o,
+    .icbi_valid_i(1'b0), .icbi_ready_o(unused_icbi_ready), .icbi_addr_i(32'b0),
     .bypass_req_valid_o(bypass_req_valid),
     .bypass_req_ready_i(bypass_req_ready),
     .bypass_req_addr_o(bypass_req_addr),

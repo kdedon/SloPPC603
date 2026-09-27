@@ -34,8 +34,11 @@ module tb_compiled_dsi_firmware;
   logic [31:0] unused_interrupt_pc;
   assign external_irq=0;
   logic [49:0] unused_page_ports;
+  logic [32:0] unused_icbi_core;
   ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
                  .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),.ENABLE_RUNTIME_BAT(1'b1)) dut(
+    .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
+    .icbi_req_ea_o(unused_icbi_core[32:1]),
     .tlb_mgmt_req_valid_i('0),
     .tlb_mgmt_req_ready_o(unused_page_ports[0]),
     .tlb_mgmt_req_kind_i('0),

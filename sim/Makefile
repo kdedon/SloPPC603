@@ -1247,7 +1247,7 @@ test-core-bat-bus60x:
 lint: lint-core-bat-bus60x
 lint-core-bat-bus60x:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_bus60x $(CORE_BAT_BUS60X_RTL)
-	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_bus60x "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" $(CORE_BAT_BUS60X_RTL)
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_bus60x "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(CORE_BAT_BUS60X_RTL)
 
 .PHONY: test-core-bat-bus60x-retry
 test: test-core-bat-bus60x-retry
@@ -1274,7 +1274,7 @@ test-core-bat-cached-bus60x:
 lint: lint-core-bat-cached-bus60x
 lint-core-bat-cached-bus60x:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_cached_bus60x $(CORE_BAT_CACHED_BUS60X_RTL)
-	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_cached_bus60x "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" $(CORE_BAT_CACHED_BUS60X_RTL)
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_cached_bus60x "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(CORE_BAT_CACHED_BUS60X_RTL)
 
 .PHONY: test-core-bat-cached-bus60x-drain
 test: test-core-bat-cached-bus60x-drain
@@ -1299,6 +1299,35 @@ test-core-bat-cached-bus60x-irq:
 	./$(BUILD_DIR)/core-bat-cached-bus60x-irq/Vtb_core_bat_cached_bus60x_irq $(SIM_ARGS)
 
 # DEC-to-EXT promotion while a translated cache refill drains.
+.PHONY: test-core-cache-control
+test: test-core-cache-control
+test-core-cache-control:
+	mkdir -p $(BUILD_DIR)/core-cache-control
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cache_control --Mdir $(BUILD_DIR)/core-cache-control -I../tb $(RTL) ../tb/tb_core_cache_control.sv
+	./$(BUILD_DIR)/core-cache-control/Vtb_core_cache_control $(SIM_ARGS)
+
+.PHONY: test-core-cache-probe-miss
+test: test-core-cache-probe-miss
+test-core-cache-probe-miss:
+	mkdir -p $(BUILD_DIR)/core-cache-probe-miss
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cache_probe_miss --Mdir $(BUILD_DIR)/core-cache-probe-miss -I../tb $(RTL) ../tb/tb_core_cache_probe_miss.sv
+	./$(BUILD_DIR)/core-cache-probe-miss/Vtb_core_cache_probe_miss $(SIM_ARGS)
+
+.PHONY: test-core-bat-cached-bus60x-cacheops
+test: test-core-bat-cached-bus60x-cacheops
+test-core-bat-cached-bus60x-cacheops:
+	mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x-cacheops
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x_cacheops --Mdir $(BUILD_DIR)/core-bat-cached-bus60x-cacheops -I../tb $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_cached_bus60x_cacheops.sv
+	./$(BUILD_DIR)/core-bat-cached-bus60x-cacheops/Vtb_core_bat_cached_bus60x_cacheops $(SIM_ARGS)
+
+.PHONY: test-core-bat-cached-bus60x-stress
+test: test-core-bat-cached-bus60x-stress
+STRESS_SEEDS ?= 1 2 3 4
+test-core-bat-cached-bus60x-stress:
+	mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x-stress
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x_stress --Mdir $(BUILD_DIR)/core-bat-cached-bus60x-stress -I../tb $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_cached_bus60x_stress.sv
+	for seed in $(STRESS_SEEDS); do ./$(BUILD_DIR)/core-bat-cached-bus60x-stress/Vtb_core_bat_cached_bus60x_stress $(SIM_ARGS) +seed=$$seed || exit 1; done
+
 .PHONY: test-core-bat-cached-bus60x-timer
 test: test-core-bat-cached-bus60x-timer
 test-core-bat-cached-bus60x-timer:

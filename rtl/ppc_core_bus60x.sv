@@ -84,12 +84,15 @@ module ppc_core_bus60x #(
   logic [36:0] unused_tlb_inv;
   logic [89:0] unused_tlb_fill;
   logic [41:0] unused_segment_csr;
+  logic [33:0] unused_cache_core;
   ppc_core #(
     .RESET_PC(RESET_PC),
     .DIV_LATENCY(DIV_LATENCY),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
   ) core (
+    .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
+    .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .tlb_fill_req_valid_o(unused_tlb_fill[89]),
     .tlb_fill_req_bank_o(unused_tlb_fill[88]),
     .tlb_fill_req_ea_o(unused_tlb_fill[87:56]),

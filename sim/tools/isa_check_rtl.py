@@ -33,6 +33,7 @@ PROFILES: list[tuple[str, frozenset[str]]] = [
     ("tlb_load", frozenset({SUP, LIVE, "ENABLE_TLB_LOAD"})),
     ("sdr1", frozenset({SUP, LIVE, "ENABLE_SDR1"})),
     ("tlb_miss", frozenset({SUP, LIVE, "ENABLE_SDR1", "ENABLE_TLB_LOAD", "ENABLE_TLB_MISS_EXCEPTIONS"})),
+    ("cache", frozenset({SUP, "ENABLE_CACHE_INSTRUCTIONS"})),
     ("all", frozenset(DECODE_PARAMETERS)),
 ]
 

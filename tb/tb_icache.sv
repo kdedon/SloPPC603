@@ -35,6 +35,7 @@ module tb_icache;
     .fetch_rsp_error_o(fetch_rsp_error),
     .kill_i(kill), .invalidate_i(invalidate),
     .invalidate_done_o(invalidate_done),
+    .invalidate_set_i(1'b0), .invalidate_set_addr_i(32'b0),
     .line_req_valid_o(line_req_valid),
     .line_req_ready_i(line_req_ready),
     .line_req_line_addr_o(line_req_line_addr),
