@@ -106,6 +106,22 @@ These are source dispositions and implementation boundaries. They do not silentl
 
 ## Audit acceptance record
 
+### FPU source addition, 2026-09-27
+
+The 602 user manual is now available for the standalone FPU work. Motorola/IBM's
+*PowerPC 602 RISC Microprocessor User's Manual*, MPC602UM/AD / MPR602UMU-01,
+11/95, has 488 physical PDF pages in this
+[pinned scan](https://zxgit.org/RomanRom2/awesome-cpus/raw/commit/8115b6c97d547c13037b0cfcb0125d09a3e90543/PowerPC/PowerPC_602/manual.pdf),
+SHA-256 `77c0fc4a7c4f0cbec82940d45e4dca0186404b46fbb431ce247818af05e6b1e3`.
+It is a primary publisher manual hosted by a mirror. Bounded extracts establish
+the 602 FPR/tag, FP instruction, emulation, and timing rules documented in
+[FPU_602_CONTRACT.md](../FPU_602_CONTRACT.md). The earlier missing-manual statements
+above describe the original P01 audit; this addition closes source availability,
+not full 602 core implementation or a system/bus audit. The PEM inventory row
+also supersedes the original missing-architecture-companion statements.
+
+### Original P01 acceptance
+
 **Primary-source audit complete:** actual PDF lengths and the entire primary manual's printed-page continuity were checked, key architectural anchors were inspected, original source assumptions were corrected, and unresolved feature evidence has owners and conservative boundaries. This does **not** mark P02 or architectural implementation complete. P01's guideline and software-reference/license portions are separate companion work; see [`CODING_CONVENTIONS.md`](../CODING_CONVENTIONS.md) and the reference audit when integrated.
 
 Method: local `pdfinfo`; `pdftotext -layout`; per-page footer verification of every UM numbered page and every 601UM chapter page; targeted full-page reading. Rendered visual checks confirmed UM Table 4-8 (PDF 177), the branch-resource wording (PDF 252), and MCM Figure 11-7 with its warning caption (PDF 200). PDF text extraction can lose signal overbars, table footnotes and diagram timing edges, so this audit is not permission to use plain extracted text alone for P02 waveforms. Downloaded PDFs were not modified.
