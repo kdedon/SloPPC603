@@ -1,5 +1,11 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-27 current refit (after AUD-50/AUD-33)
+
+Recorded: `./quartus/translated/build.sh --docker`, same merge, 2026-09-27.
+Setup +0.388 / +0.496 ns, hold +0.256 / +0.093 ns at slow 100 C / -40 C; fast
+corners pass. Fmax 50.99 MHz; 66 MHz needs about 4.5 ns. 8,687 ALMs.
+
 ## 2026-09-27 refit with micro-TLBs
 
 Recorded: `./quartus/translated/build.sh --docker`, merge of the micro-TLB round

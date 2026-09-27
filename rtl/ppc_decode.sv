@@ -242,8 +242,9 @@ module ppc_decode #(
       6'd10, 6'd11: begin
         if (!insn_i[22] && !insn_i[21]) begin
           uop_o.illegal = 1'b0;
-          uop_o.special_op = (insn_i[31:26] == 6'd10) ?
-                              SPECIAL_CMPL : SPECIAL_CMP;
+          uop_o.op = (insn_i[31:26] == 6'd10) ? ALU_CMPL : ALU_CMP;
+          uop_o.invert_a = 1'b1;
+          uop_o.carry_in = CARRY_ONE;
           uop_o.src_a = insn_i[20:16];
           uop_o.use_imm = 1'b1;
           uop_o.imm = (insn_i[31:26] == 6'd10) ?
@@ -484,8 +485,9 @@ module ppc_decode #(
             10'd0, 10'd32: begin
               if (!insn_i[0] && !insn_i[22] && !insn_i[21]) begin
                 uop_o.illegal = 1'b0;
-                uop_o.special_op = (insn_i[10:1] == 10'd0) ?
-                                    SPECIAL_CMP : SPECIAL_CMPL;
+                uop_o.op = (insn_i[10:1] == 10'd0) ? ALU_CMP : ALU_CMPL;
+                uop_o.invert_a = 1'b1;
+                uop_o.carry_in = CARRY_ONE;
                 uop_o.read_so = 1'b1;
                 uop_o.needs_flags = 1'b1;
                 uop_o.write_cr_field = 1'b1;

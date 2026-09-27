@@ -74,7 +74,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-30 | L | E | `rtl/ppc_iu.sv:29,91-93` | Second adder for overflow, misnamed `unused_add_low_sum`. | `ov = (a[31]==b[31]) && (sum[31]!=a[31])`. | fixed |
 | AUD-31 | L | E | `rtl/ppc_iu.sv:135-140` | `cntlzw` is a 32-deep priority loop on the result mux. | Log-depth LZC. | fixed |
 | AUD-32 | L | E | `rtl/ppc_iu.sv:79-86,154-161` | Carry-in and inversion decoded in execute; five enum values compute one add. | Carry select fields in the issue packet. | fixed (invert_a and carry_in in the issue packet; seven ALU ops removed) |
-| AUD-33 | L | E | `rtl/ppc_special.sv:411-416` | `cmp` uses a separate comparator and serializes the machine. | Route through the IU subtract as a renamed op. | design |
+| AUD-33 | L | E | `rtl/ppc_special.sv:411-416` | `cmp` uses a separate comparator and serializes the machine. | Route through the IU subtract as a renamed op. | fixed (compares on the IU adder as renamed flag ops; no CQ drain) |
 | AUD-34 | L | E | `rtl/ppc_divider.sv:62-95`, `rtl/ppc_iu.sv:193` | ~160 datapath bits reset and cleared on cancel. | Reset control only. | fixed |
 
 ### Load/store, cache, bus
@@ -106,7 +106,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 
 | ID | Sev | Cat | Where | Problem | Fix | Status |
 |---|---|---|---|---|---|---|
-| AUD-50 | M | S | `rtl/ppc_special.sv:757-1128,139-145` | One `always_ff` owns ~60 state elements across branch, SPR, LSU, MMU CSR and exceptions; `S_BAT_*` reused for other MMU ops. | Split by concern; rename `S_MMU_*`. | design |
+| AUD-50 | M | S | `rtl/ppc_special.sv:757-1128,139-145` | One `always_ff` owns ~60 state elements across branch, SPR, LSU, MMU CSR and exceptions; `S_BAT_*` reused for other MMU ops. | Split by concern; rename `S_MMU_*`. | fixed (per-concern owner blocks; lock-step shadow matched 43 benches cycle for cycle) |
 | AUD-51 | M | S | `rtl/ppc_special.sv`, `rtl/ppc_exception_state.sv:62`, `rtl/ppc_timer.sv` | No MSR/SRR1/DSISR/SDR1 definitions with masks; `0x87c0ffff` duplicated; `rfi_prospective` re-implements `rfi_msr`. | Package structs and masks; one `rfi_msr()`. | fixed (SDR1 reserved bits masked; DSISR and SPRGs need no mask) |
 | AUD-52 | L | S | `rtl/ppc_exception_state.sv:48-59,214-219`, `rtl/ppc_special.sv:358-369` | Event codes duplicated as localparams; ISI cause compared to raw integers. | Package enum; typed port. | fixed |
 | AUD-53 | L | C | `rtl/ppc_special.sv:1115-1121` | Unsupported exception result redirects to 0 in synthesis (unreachable today). | Diagnostic halt. | fixed (reported on halted_o; unreachable in every profile) |

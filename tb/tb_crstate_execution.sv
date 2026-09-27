@@ -18,7 +18,6 @@ module tb_crstate_execution;
   logic [31:0] pc;
   logic [31:0] a, b, c, cr;
   logic [2:0] xer_flags;
-  logic so;
   logic cancel;
   logic store_authorize;
   logic commit;
@@ -118,7 +117,7 @@ module tb_crstate_execution;
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
     .uop_i(uop), .producer_i(producer), .pc_i(pc),
     .a_i(a), .b_i(b), .c_i(c), .cr_i(cr), .xer_flags_i(xer_flags), .xer_byte_count_i(7'b0),
-    .so_i(so), .cancel_i(cancel), .store_authorize_i(store_authorize),
+    .cancel_i(cancel), .store_authorize_i(store_authorize),
     .commit_i(commit), .commit_tag_i(commit_tag),
     .result_valid_o(result_valid), .result_ready_i(result_ready),
     .result_o(result), .branch_commit_redirect_o(branch_commit_redirect),
@@ -185,7 +184,6 @@ module tb_crstate_execution;
     c = 32'hcccc_0003;
     cr = '0;
     xer_flags = '0;
-    so = 1'b0;
     cancel = 1'b0;
     store_authorize = 1'b1;
     commit = 1'b0;
@@ -245,7 +243,6 @@ module tb_crstate_execution;
     c = 32'h0303_0000 ^ 32'(ordinal * 5);
     cr = captured_cr;
     xer_flags = captured_xer;
-    so = captured_xer[2];
     #1;
     check(dispatch_ready, "special lane did not accept idle dispatch");
     tick();
@@ -266,7 +263,6 @@ module tb_crstate_execution;
     @(negedge clk);
     cr = ~captured_cr;
     xer_flags = ~captured_xer;
-    so = ~captured_xer[2];
     producer = make_tag(ordinal + 91);
     a = ~a;
     b = ~b;

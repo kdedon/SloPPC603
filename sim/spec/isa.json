@@ -5531,13 +5531,13 @@
         "status": "implemented",
         "rtl": [
           "rtl/ppc_decode.sv",
-          "rtl/ppc_special.sv",
+          "rtl/ppc_dispatch.sv",
+          "rtl/ppc_iu.sv",
           "rtl/ppc_core.sv",
           "rtl/ppc_completion.sv",
           "rtl/ppc_flags.sv"
         ],
-        "validation": "accepted_control_memory_benches",
-        "scheduling": "serialized after draining older operations; no 603e timing acceptance"
+        "validation": "accepted_control_memory_benches"
       },
       "evidence": [
         {
@@ -5633,13 +5633,13 @@
         "status": "implemented",
         "rtl": [
           "rtl/ppc_decode.sv",
-          "rtl/ppc_special.sv",
+          "rtl/ppc_dispatch.sv",
+          "rtl/ppc_iu.sv",
           "rtl/ppc_core.sv",
           "rtl/ppc_completion.sv",
           "rtl/ppc_flags.sv"
         ],
-        "validation": "accepted_control_memory_benches",
-        "scheduling": "serialized after draining older operations; no 603e timing acceptance"
+        "validation": "accepted_control_memory_benches"
       },
       "evidence": [
         {
@@ -5743,13 +5743,13 @@
         "status": "implemented",
         "rtl": [
           "rtl/ppc_decode.sv",
-          "rtl/ppc_special.sv",
+          "rtl/ppc_dispatch.sv",
+          "rtl/ppc_iu.sv",
           "rtl/ppc_core.sv",
           "rtl/ppc_completion.sv",
           "rtl/ppc_flags.sv"
         ],
-        "validation": "accepted_control_memory_benches",
-        "scheduling": "serialized after draining older operations; no 603e timing acceptance"
+        "validation": "accepted_control_memory_benches"
       },
       "evidence": [
         {
@@ -5845,13 +5845,13 @@
         "status": "implemented",
         "rtl": [
           "rtl/ppc_decode.sv",
-          "rtl/ppc_special.sv",
+          "rtl/ppc_dispatch.sv",
+          "rtl/ppc_iu.sv",
           "rtl/ppc_core.sv",
           "rtl/ppc_completion.sv",
           "rtl/ppc_flags.sv"
         ],
-        "validation": "accepted_control_memory_benches",
-        "scheduling": "serialized after draining older operations; no 603e timing acceptance"
+        "validation": "accepted_control_memory_benches"
       },
       "evidence": [
         {
@@ -19837,7 +19837,10 @@
   "spr_read_opcode_equivalence": {
     "rule": "The 603e ignores instruction bit 25 (HDL bit 6), so XO 339 (mfspr) and XO 371 (mftb) decode identically for every implemented read selector in every profile.",
     "ignored_bit_mask": "0x00000040",
-    "extended_opcodes": [339, 371],
+    "extended_opcodes": [
+      339,
+      371
+    ],
     "source": "603e UM section 2.3.5.1 printed 2-40 / PDF 118 and section 2.3.6.2.2 printed 2-44 / PDF 122"
   },
   "opt_in_profile_semantics": {
@@ -20699,7 +20702,10 @@
       "selector": 1,
       "feature_profile": "ENABLE_SUPERVISOR_EXCEPTIONS",
       "privilege": "user_or_supervisor",
-      "read_opcodes": [339, 371],
+      "read_opcodes": [
+        339,
+        371
+      ],
       "write_opcode": 467,
       "reserved_rc": 0,
       "defined_mask": "0xe000007f",
@@ -20735,7 +20741,7 @@
     "dispatch_contract": "Serialized dispatch waits for an empty completion queue, idle normal IU/RS, and idle one-outstanding special/memory lane; younger dispatch remains blocked through accepted retirement.",
     "isync_commit": "Accepted retirement performs a keep-committing-pivot recovery to PC+4, clearing queued prefetched instructions and using fetch obligation drain/refetch semantics.",
     "sync_ordering": "The serialized one-outstanding transport has completed every older request/response/retirement before SYNC dispatch and prevents younger requests until SYNC retirement.",
-    "eieio_ordering": "The same serialized rule is conservative for this scaffold\u2019s uncached, strictly ordered, one-outstanding data transport; the 603e itself treats EIEIO as a no-op because cache-inhibited accesses are already strictly ordered.",
+    "eieio_ordering": "The same serialized rule is conservative for this scaffold’s uncached, strictly ordered, one-outstanding data transport; the 603e itself treats EIEIO as a no-op because cache-inhibited accesses are already strictly ordered.",
     "limits": [
       "No cache-coherency or bus-broadcast acknowledgement",
       "No second-level cache or alternate requester visibility",

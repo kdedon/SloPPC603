@@ -1,5 +1,11 @@
 # Timer and live BAT FPGA measurement
 
+## 2026-09-27 current refit (after AUD-50/AUD-33)
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, same merge, 2026-09-27.
+Setup +0.695 / +0.648 ns, hold +0.249 / +0.052 ns at slow 100 C / -40 C; fast
+corners pass. Fmax 51.67 MHz. 5,200 ALMs.
+
 ## 2026-09-27 micro-TLB refit with synchronized reset
 
 Recorded: `./quartus/timer-bat/build.sh --docker`, commit `e8262df`,

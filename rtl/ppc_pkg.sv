@@ -94,20 +94,22 @@ package ppc_pkg;
   } seg_req_kind_t;
   // End MMU request kinds
   // ALU_ADD computes (invert_a ? ~a : a) + b + carry_in for every add and
-  // subtract form.
+  // subtract form. ALU_CMP/ALU_CMPL read signed/unsigned CR bits from the
+  // same b - a sum.
   typedef enum logic [4:0] {
     ALU_ADD, ALU_OR, ALU_XOR, ALU_AND, ALU_ANDC,
     ALU_ORC, ALU_NAND, ALU_NOR, ALU_EQV,
     ALU_ROTATE, ALU_SLW, ALU_SRW, ALU_SRAW, ALU_RLWIMI,
     ALU_CNTLZW, ALU_EXTSB, ALU_EXTSH, ALU_MULLW,
-    ALU_MULHW, ALU_MULHWU, ALU_DIVWU, ALU_DIVW, ALU_MULLI
+    ALU_MULHW, ALU_MULHWU, ALU_DIVWU, ALU_DIVW, ALU_MULLI,
+    ALU_CMP, ALU_CMPL
   } alu_op_t;
   typedef enum logic [1:0] {
     CARRY_ZERO, CARRY_ONE, CARRY_CA
   } carry_in_t;
   typedef enum logic [4:0] {
     SPECIAL_NONE, SPECIAL_B, SPECIAL_BC, SPECIAL_BCLR, SPECIAL_BCCTR,
-    SPECIAL_MFSPR, SPECIAL_MTSPR, SPECIAL_CMP, SPECIAL_CMPL,
+    SPECIAL_MFSPR, SPECIAL_MTSPR,
     SPECIAL_LOAD, SPECIAL_STORE, SPECIAL_MFCR, SPECIAL_MTCRF,
     SPECIAL_CR_LOGIC, SPECIAL_MCRF, SPECIAL_MCRXR,
     SPECIAL_SC, SPECIAL_RFI, SPECIAL_PROGRAM_ILLEGAL,

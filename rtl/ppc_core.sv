@@ -432,7 +432,7 @@ module ppc_core #(
     .dispatch_page_miss_i(head_page_miss),
     .a_i(special_a), .b_i(special_b), .c_i(arch_c),
     .cr_i(cr), .xer_flags_i(xer[XER_SO_BIT:XER_CA_BIT]),
-    .xer_byte_count_i(xer[XER_BYTE_COUNT_WIDTH-1:0]), .so_i(xer[XER_SO_BIT]),
+    .xer_byte_count_i(xer[XER_BYTE_COUNT_WIDTH-1:0]),
     .cancel_i(special_cancel),
     .bat_recovery_retained_i(redirect_accepted_o && special_busy && !special_cancel),
     .bat_recovery_target_i(selected_redirect_target),
