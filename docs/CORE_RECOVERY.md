@@ -7,7 +7,8 @@ The current integer CPU accepts explicit recovery requests through its internal/
 The interface exists only with `ENABLE_TEST_REDIRECT=1` (the default for
 benches). With it clear the redirect inputs are ignored, `redirect_accepted_o`
 stays low and the CQ builds only whole-machine recovery: internal exception,
-branch and ISYNC redirects are all-cuts of an empty serialized machine. The
+branch and ISYNC redirects are all-cuts of an empty serialized machine, so
+the CQ builds no kill vector (assertions check the empty queue). The
 integrated measurement top, the compiled-firmware benches and the managed
 cached reference benches use that production setting.
 
