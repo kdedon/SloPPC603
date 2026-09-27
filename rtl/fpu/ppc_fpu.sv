@@ -94,13 +94,17 @@ module ppc_fpu #(
     logic fpr_forwarded;
     logic cr_forwarded;
     logic [1:0] local_wait;
-    logic [1:0] local_move_kind;
-    local_operand_t local_a;
-    local_operand_t local_b;
-    local_operand_t local_c;
-    logic local_c_lt;
     ppc_fpu_mem_t mem;
   } pending_t;
+  typedef struct packed {
+    logic valid;
+    completion_tag_t tag;
+    logic [1:0] move_kind;
+    local_operand_t a;
+    local_operand_t b;
+    local_operand_t c;
+    logic c_lt;
+  } local_stage_t;
   typedef struct packed {
     completion_tag_t tag;
     logic [31:0] insn;
@@ -117,6 +121,8 @@ module ppc_fpu #(
 
   pending_t pending_q [0:PENDING_DEPTH-1];
   pending_t pending_d [0:PENDING_DEPTH-1];
+  local_stage_t local_stage_q;
+  local_stage_t local_stage_d;
   logic [2:0] pending_count_q;
   logic [2:0] pending_count_d;
   logic [31:0] sp_q;
@@ -1441,6 +1447,38 @@ module ppc_fpu #(
     end
   end
 
+  // Only one local FPU instruction can launch per edge. Capture its operands
+  // once, with the full producer tag, then resolve MOVE/FSEL data next edge.
+  always_comb begin
+    local_stage_d = '0;
+    if (local_launch && (work_decoded.kind == DK_MOVE ||
+                         work_decoded.kind == DK_FSEL)) begin
+      local_stage_d.valid = 1'b1;
+      local_stage_d.tag = work_issue.tag;
+      local_stage_d.move_kind = work_decoded.move_kind;
+      local_stage_d.a.raw = source_a.raw;
+      local_stage_d.a.sp = source_a.sp;
+      local_stage_d.b.raw = source_b.raw;
+      local_stage_d.b.sp = source_b.sp;
+      local_stage_d.c.raw = source_c.raw;
+      local_stage_d.c.sp = source_c.sp;
+      local_stage_d.c_lt = source_c.lt;
+    end else if (work1_local_launch &&
+                 (work1_decoded.kind == DK_MOVE ||
+                  work1_decoded.kind == DK_FSEL)) begin
+      local_stage_d.valid = 1'b1;
+      local_stage_d.tag = work1_issue.tag;
+      local_stage_d.move_kind = work1_decoded.move_kind;
+      local_stage_d.a.raw = work1_a.raw;
+      local_stage_d.a.sp = work1_a.sp;
+      local_stage_d.b.raw = work1_b.raw;
+      local_stage_d.b.sp = work1_b.sp;
+      local_stage_d.c.raw = work1_c.raw;
+      local_stage_d.c.sp = work1_c.sp;
+      local_stage_d.c_lt = work1_c.lt;
+    end
+  end
+
   // Store only finished tagged replies; retirement and cancellation compact
   // the queue after capture. Every architectural write occurs on commit.
   always_comb begin
@@ -1491,14 +1529,6 @@ module ppc_fpu #(
       if (local_launch) begin
         pending_d[exec_index].result = exec_result;
         pending_d[exec_index].local_wait = 2'd3;
-        pending_d[exec_index].local_move_kind = work_decoded.move_kind;
-        pending_d[exec_index].local_a.raw = source_a.raw;
-        pending_d[exec_index].local_a.sp = source_a.sp;
-        pending_d[exec_index].local_b.raw = source_b.raw;
-        pending_d[exec_index].local_b.sp = source_b.sp;
-        pending_d[exec_index].local_c.raw = source_c.raw;
-        pending_d[exec_index].local_c.sp = source_c.sp;
-        pending_d[exec_index].local_c_lt = source_c.lt;
       end else if (mem_launch) begin
         pending_d[exec_index].mem = mem_req_o;
         pending_d[exec_index].result = exec_result;
@@ -1509,14 +1539,6 @@ module ppc_fpu #(
       if (work1_local_launch) begin
         pending_d[work1_old_index].result = work1_result;
         pending_d[work1_old_index].local_wait = 2'd3;
-        pending_d[work1_old_index].local_move_kind = work1_decoded.move_kind;
-        pending_d[work1_old_index].local_a.raw = work1_a.raw;
-        pending_d[work1_old_index].local_a.sp = work1_a.sp;
-        pending_d[work1_old_index].local_b.raw = work1_b.raw;
-        pending_d[work1_old_index].local_b.sp = work1_b.sp;
-        pending_d[work1_old_index].local_c.raw = work1_c.raw;
-        pending_d[work1_old_index].local_c.sp = work1_c.sp;
-        pending_d[work1_old_index].local_c_lt = work1_c.lt;
       end else if (work1_mem_launch) begin
         pending_d[work1_old_index].mem = work1_mem_req;
         pending_d[work1_old_index].result = work1_result;
@@ -1526,15 +1548,17 @@ module ppc_fpu #(
       if (i < int'(pending_count_q) && pending_q[i].valid &&
           pending_q[i].started && !pending_q[i].done &&
           pending_q[i].local_wait != 2'd0) begin
-        if (pending_q[i].local_wait == 2'd3 &&
+        if (local_stage_q.valid &&
+            local_stage_q.tag == pending_q[i].issue.tag &&
+            pending_q[i].local_wait == 2'd3 &&
             (pending_q[i].decoded.kind == DK_MOVE ||
              pending_q[i].decoded.kind == DK_FSEL))
           pending_d[i].result = finish_local_data(pending_q[i].result,
-              pending_q[i].local_move_kind,
+              local_stage_q.move_kind,
               pending_q[i].decoded.kind == DK_MOVE,
               pending_q[i].issue.insn[0],
-              pending_q[i].local_a, pending_q[i].local_b,
-              pending_q[i].local_c, pending_q[i].local_c_lt);
+              local_stage_q.a, local_stage_q.b,
+              local_stage_q.c, local_stage_q.c_lt);
         pending_d[i].local_wait = pending_q[i].local_wait - 2'd1;
         if (pending_q[i].local_wait == 2'd1) pending_d[i].done = 1'b1;
       end
@@ -1567,14 +1591,6 @@ module ppc_fpu #(
         if (local_launch) begin
           pending_d[dispatch_index].result = exec_result;
           pending_d[dispatch_index].local_wait = 2'd3;
-          pending_d[dispatch_index].local_move_kind = work_decoded.move_kind;
-          pending_d[dispatch_index].local_a.raw = source_a.raw;
-          pending_d[dispatch_index].local_a.sp = source_a.sp;
-          pending_d[dispatch_index].local_b.raw = source_b.raw;
-          pending_d[dispatch_index].local_b.sp = source_b.sp;
-          pending_d[dispatch_index].local_c.raw = source_c.raw;
-          pending_d[dispatch_index].local_c.sp = source_c.sp;
-          pending_d[dispatch_index].local_c_lt = source_c.lt;
         end else if (mem_launch) begin
           pending_d[dispatch_index].mem = mem_req_o;
           pending_d[dispatch_index].result = exec_result;
@@ -1585,14 +1601,6 @@ module ppc_fpu #(
         if (work1_local_launch) begin
           pending_d[dispatch_index].result = work1_result;
           pending_d[dispatch_index].local_wait = 2'd3;
-          pending_d[dispatch_index].local_move_kind = work1_decoded.move_kind;
-          pending_d[dispatch_index].local_a.raw = work1_a.raw;
-          pending_d[dispatch_index].local_a.sp = work1_a.sp;
-          pending_d[dispatch_index].local_b.raw = work1_b.raw;
-          pending_d[dispatch_index].local_b.sp = work1_b.sp;
-          pending_d[dispatch_index].local_c.raw = work1_c.raw;
-          pending_d[dispatch_index].local_c.sp = work1_c.sp;
-          pending_d[dispatch_index].local_c_lt = work1_c.lt;
         end else if (work1_mem_launch) begin
           pending_d[dispatch_index].mem = work1_mem_req;
           pending_d[dispatch_index].result = work1_result;
@@ -1620,14 +1628,6 @@ module ppc_fpu #(
         if (work1_local_launch) begin
           pending_d[dispatch1_index].result = work1_result;
           pending_d[dispatch1_index].local_wait = 2'd3;
-          pending_d[dispatch1_index].local_move_kind = work1_decoded.move_kind;
-          pending_d[dispatch1_index].local_a.raw = work1_a.raw;
-          pending_d[dispatch1_index].local_a.sp = work1_a.sp;
-          pending_d[dispatch1_index].local_b.raw = work1_b.raw;
-          pending_d[dispatch1_index].local_b.sp = work1_b.sp;
-          pending_d[dispatch1_index].local_c.raw = work1_c.raw;
-          pending_d[dispatch1_index].local_c.sp = work1_c.sp;
-          pending_d[dispatch1_index].local_c_lt = work1_c.lt;
         end else if (work1_mem_launch) begin
           pending_d[dispatch1_index].mem = work1_mem_req;
           pending_d[dispatch1_index].result = work1_result;
@@ -1659,6 +1659,7 @@ module ppc_fpu #(
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
+      local_stage_q <= '0;
       for (integer i = 0; i < PENDING_DEPTH; i++) pending_q[i] <= '0;
       pending_count_q <= '0;
       fpscr_q <= '0;
@@ -1667,6 +1668,7 @@ module ppc_fpu #(
       deferred_abort_flush_q <= 1'b0;
       for (integer i = 0; i < 32; i++) fpr_q[i] <= '0;
     end else begin
+      local_stage_q <= kill_all_i ? '0 : local_stage_d;
       for (integer i = 0; i < PENDING_DEPTH; i++) pending_q[i] <= pending_d[i];
       pending_count_q <= pending_count_d;
       sp_q <= sp_d;
