@@ -29,3 +29,6 @@ in `reference_checkout.py`; `--allow-unpinned-reference` (or
 `make REFERENCE_FLAGS=--allow-unpinned-reference`) overrides this and records the
 actual commit. The Makefile builds the flat-RAM reference runner once
 (`build_reference_runner.py`) and passes it and `$(VERILATOR)` to each runner.
+With the default `XRAND=1` it also passes `--xrand-seed $(XRAND_SEED)`: the RTL
+is built with `--x-assign unique --x-initial unique`, run with that seed, and the
+manifest records it as `xrand_seed`. `XRAND=0` keeps the zero-initialized build.

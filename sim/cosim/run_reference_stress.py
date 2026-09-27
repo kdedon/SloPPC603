@@ -11,7 +11,7 @@ import subprocess
 import sys
 from compare_memory import FIELDS, HEADER, read_trace
 from compare_state import compare
-from reference_checkout import PINNED_COMMIT, add_arguments, verify
+from reference_checkout import PINNED_COMMIT, add_arguments, verify, xrand_build_flags, xrand_run_args
 from run_reference import HERE, PROJECT, ROOT, build_reference, command, digest
 from stress_program import GENERATOR_VERSION, MIN_BLOCKS, MAX_BLOCKS, generate
 
@@ -54,15 +54,17 @@ def run_suite(args):
         runner=Path(frozen.get('runner',runner))
         if frozen['inputs']!=inputs or frozen['executables']!={str(p):digest(p) for p in [runner,rtl]}:
             raise RuntimeError('reuse-build inputs/binaries changed; rebuild to obtain trustworthy provenance')
+        if frozen.get('xrand_seed')!=args.xrand_seed:
+            raise RuntimeError(f'reuse-build was built with --xrand-seed {frozen.get("xrand_seed")}; pass the same value')
     else:
         runner,cppargs=build_reference(build,ref,flat_ram=True,prebuilt=args.reference_runner_dir)
         rtlargs=[args.verilator,'--binary','--timing','--assert','-Wall','--top-module','tb_core_memory_reference',
-                 '--Mdir',build/'rtl',*sources,bench]
+                 '--Mdir',build/'rtl',*xrand_build_flags(args.xrand_seed),*sources,bench]
         command(rtlargs,build/'rtl-build.log')
         if source_inputs(ref,sources,bench)!=inputs:
             raise RuntimeError('sources changed during compile; rerun after source freeze')
         frozen={'inputs':inputs,'runner':str(runner),'executables':{str(p):digest(p) for p in [runner,rtl]},
-                'commands':[[str(x) for x in cppargs],[str(x) for x in rtlargs]],
+                'commands':[[str(x) for x in cppargs],[str(x) for x in rtlargs]],'xrand_seed':args.xrand_seed,
                 'reference_pinned':PINNED_COMMIT,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
                 'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
                 'verilator':subprocess.check_output([args.verilator,'--version'],text=True).strip()}
@@ -79,11 +81,12 @@ def run_suite(args):
             (directory/'program.json').write_text(json.dumps(description,indent=2)+'\n')
             expected=directory/'expected.txt';actual=directory/'actual.txt'
             repro=[sys.executable,HERE/'run_reference_stress.py','--build-dir',build,'--reuse-build',
-                   '--seeds',f'{seed:08x}','--blocks',str(args.blocks),'--report-name',args.report_name]
+                   '--seeds',f'{seed:08x}','--blocks',str(args.blocks),'--report-name',args.report_name,
+                   *([] if args.xrand_seed is None else ['--xrand-seed',str(args.xrand_seed)])]
             report={'seed':f'{seed:08x}','blocks':args.blocks,'generator_version':GENERATOR_VERSION,
                     'schema_version':2,'model':'MPC603EV','ram_base':'00001000','ram_bytes':256,
                     'program_words':len(words),'program_sha256':digest(program),
-                    'build_manifest_sha256':digest(build_path),'reproduce':shlex.join(map(str,repro)),'status':'RUNNING'}
+                    'build_manifest_sha256':digest(build_path),'xrand_seed':args.xrand_seed,'reproduce':shlex.join(map(str,repro)),'status':'RUNNING'}
             report['commands']=[[str(runner),str(program),'MPC603EV']]
             rows=[]
             try:
@@ -91,7 +94,8 @@ def run_suite(args):
                 requests=sum(memory_access(r[1])[0] for r in rows)
                 writes=sum(memory_access(r[1])[1] for r in rows)
                 rtl_command=[rtl,f'+PROGRAM={program}',f'+TRACE={actual}',f'+WORDS={len(words)}',
-                             f'+COMMITS={len(rows)}',f'+MEMORY_REQUESTS={requests}',f'+MEMORY_WRITES={writes}']
+                             f'+COMMITS={len(rows)}',f'+MEMORY_REQUESTS={requests}',f'+MEMORY_WRITES={writes}',
+                             *xrand_run_args(args.xrand_seed)]
                 report['commands'].append(list(map(str,rtl_command)))
                 command(rtl_command,directory/'rtl-run.log')
                 compare(rows,read_trace(actual),fields=FIELDS)
@@ -139,7 +143,7 @@ def run_suite(args):
             print(f'PASS seed {seed:08x}: {len(rows)} snapshots, {len(report["dynamic_forms"])} dynamic forms, '
                   f'{report["memory_requests"]} memory accesses',flush=True)
         if source_inputs(ref,sources,bench)!=inputs: raise RuntimeError('sources changed during stress; final acceptance requires a frozen build')
-        summary={'status':'PASS','schema_version':2,'generator_version':GENERATOR_VERSION,
+        summary={'status':'PASS','schema_version':2,'xrand_seed':args.xrand_seed,'generator_version':GENERATOR_VERSION,
                  'build_manifest_sha256':digest(build_path),'seeds':[r['seed'] for r in results],
                  'blocks_per_seed':args.blocks,'snapshots':total,'dynamic_forms':dict(sorted(aggregate.items())),
                  'uncovered_metadata_forms':sorted(e['id'] for e in entries if e['id'] not in aggregate),

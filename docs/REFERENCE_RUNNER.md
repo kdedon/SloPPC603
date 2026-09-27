@@ -1,6 +1,6 @@
 # P13b/P13c/P13d executable reference lanes
 
-Recorded: `make -C sim test-reference test-reference-memory`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-14 (v1; v2 date not recorded).
+Recorded: `make -C sim test-reference test-reference-memory`, this branch, 2026-09-26: PASS, v1 8,500 snapshots with 12 injected mismatches and 43 rejection gates; v2 9,881 snapshots, 168 forms, 13 negative comparisons, 69 rejection gates; X-randomized seed 1.
 
 The isolated runner executes original DingusPPC instruction handlers and compares their architectural state with the actual `ppc_core` after every retirement. The v1 lane exercises all 140 currently implemented non-memory decode entries. The separately selected v2 lane retains that corpus and adds all 28 aligned scalar memory entries, comparing full flat RAM as well as architectural registers. It does not replace the accepted CSV parser. This closes bounded executable-reference milestones, not full P13 or whole-CPU differential verification.
 

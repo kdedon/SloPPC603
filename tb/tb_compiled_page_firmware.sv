@@ -3,11 +3,10 @@
 /* verilator lint_off BLKSEQ */
 module tb_compiled_page_firmware;
   import ppc_pkg::*;
-  localparam logic [31:0] BASE=32'hfff00000;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
   logic iv,ir,sv,sr,dv,dr,dw,rv,rr,tv,tr,halted,cut_accepted;
-  logic [31:0] ia,iw,da,wd,rd,tohost_addr;
+  logic [31:0] ia,iw,da,wd,rd;
   logic [3:0] st,iwimg,dwimg;
   logic bat_valid=0,bat_ready,bat_rsp,bat_rejected,bat_unsupported,bat_config,bat_overlap;
   logic [3:0] bat_invalid;
@@ -20,11 +19,13 @@ module tb_compiled_page_firmware;
   /* verilator lint_off UNUSEDSIGNAL */
   retire_packet_t retired;
   /* verilator lint_on UNUSEDSIGNAL */
-  logic [7:0] mem[0:196607];
-  logic ipending=0,dpending=0,mailbox_written=0,mailbox_retired=0;
+  logic ipending=0,dpending=0;
   logic [31:0] fetch_pc;
   logic [1:0] last_context=0;
-  int idelay=0,ddelay=0,cycles=0,retires=0,checks=0,reads=0,writes=0;
+  int idelay=0,ddelay=0,cycles=0,retires=0,reads=0,writes=0;
+  localparam int FW_MEM_BYTES=196608;
+  function automatic string check_detail();return "";endfunction
+  `include "compiled_firmware.svh"
   int transitions=0,interrupts=0,decrements=0,phase=0;
   logic external_irq,interrupt_taken,decrementer_taken;
   int bat_writes=0,segment_reads=0,segment_writes=0;
@@ -63,7 +64,6 @@ module tb_compiled_page_firmware;
   logic page_needs_changed_o;
   logic page_config_o;
   int page_retires=0,page_fetches=0,alias_stores=0,preloads=0;
-  string image_path;
   logic [49:0] unused_page_ports;
   ppc_core_bat #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
                  .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),.ENABLE_RUNTIME_BAT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1)) dut(
@@ -123,12 +123,6 @@ module tb_compiled_page_firmware;
     .fault_ea_o(unused_fea),.fault_miss_o(unused_fm),.fault_protection_o(unused_fp),
     .fault_guarded_o(unused_fg),.fault_config_o(unused_fc),.fault_invalid_input_o(unused_finv),
     .fault_invalid_entry_o(unused_fentries),.pimem_error_o(physical_error),.busy_o(unused_busy));
-  function automatic logic [31:0] word_at(input logic [31:0] address);
-    int o; o=int'(address-BASE); return {mem[o],mem[o+1],mem[o+2],mem[o+3]};
-  endfunction
-  task automatic check(input logic ok,input string message);
-    checks++;if(!ok)$fatal(1,"%s cycle=%0d pc=%08x insn=%08x",message,cycles,retired.pc,retired.insn);
-  endtask
   assign ir=rst_n&&!ipending&&cycles%4!=1;
   assign sv=rst_n&&ipending&&idelay==0;
   assign iw=word_at(fetch_pc);
@@ -181,10 +175,7 @@ module tb_compiled_page_firmware;
           if(da==BASE+32'ha004)begin
             check(st==15&&wd==1&&phase==0,"fixture phase order");phase=1;
           end
-          if(da==tohost_addr&&word_at(da)!=0)begin
-            check(st==15&&word_at(da)==1,$sformatf("firmware failure mailbox=%08x",word_at(da)));
-            check(!mailbox_written,"duplicate mailbox");mailbox_written=1;
-          end
+          mailbox_store(da,st==4'hf);
         end else reads++;
       end
       if(interrupt_taken)begin
@@ -208,9 +199,7 @@ module tb_compiled_page_firmware;
           if(retired.insn[10:1]==595||retired.insn[10:1]==659)segment_reads++;
           if(retired.insn[10:1]==210||retired.insn[10:1]==242)segment_writes++;
         end
-        if(mailbox_written&&!mailbox_retired)begin
-          check(retired.insn[31:26]==36&&!retired.gpr_write&&!retired.update_write,"mailbox retirement");mailbox_retired=1;
-        end
+        mailbox_retire();
         if(retired.pc==32'h20000000||retired.pc==32'h20000004)begin
           check(cir&&page_retires<4,"unexpected instruction-page retirement");
           check(retired.pc[2] ? retired.insn==32'h4e800020 : retired.insn==32'h38630011,
@@ -247,10 +236,9 @@ module tb_compiled_page_firmware;
     wait(tlb_mgmt_idle_o);preloads++;
   endtask
   initial begin
-    if(!$value$plusargs("IMAGE=%s",image_path)||!$value$plusargs("TOHOST=%h",tohost_addr))$fatal(1,"IMAGE/TOHOST required");
+    load_image;
     check(tohost_addr==BASE+32'h4000,"mailbox range");
-    foreach(mem[i])mem[i]=0;
-    $readmemh(image_path,mem,0,65535);repeat(4)@(negedge clk);rst_n=1;
+    repeat(4)@(negedge clk);rst_n=1;
     // Fixture-owned normalized TLB preload; CPU owns every BAT and SR write.
     preload(1,32'h10008000,24'h001234,0,20'hfff08);
     preload(1,32'h10008000,24'h002345,1,20'hfff09);

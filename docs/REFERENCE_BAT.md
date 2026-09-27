@@ -1,6 +1,6 @@
 # CPU execution through relocated BAT addresses
 
-Recorded: `make -C sim test-reference-bat`, commit pre-repository snapshot, imported in 3e727b6, round 39 (date not recorded).
+Recorded: `make -C sim test-reference-bat`, this branch, 2026-09-26: PASS, 9,881 retirements, 168 forms, X-randomized seed 1.
 
 `make -C sim test-reference-bat` runs the all-168-form memory corpus on the
 actual `ppc_core_bat` wrapper and compares every accepted retirement with the

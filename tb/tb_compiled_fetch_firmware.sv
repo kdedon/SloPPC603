@@ -6,28 +6,27 @@ module tb_compiled_fetch_firmware;
   logic [41:0] unused_segment_csr;
   import ppc_pkg::*;
   logic [32:0] unused_decrementer;
-  localparam logic [31:0] BASE = 32'hfff00000;
-  localparam logic [31:0] PROTECTION_PC = BASE + 32'h800;
-  localparam logic [31:0] GUARDED_PC = BASE + 32'h900;
   logic clk = 0, rst_n = 0;
   always #5 clk = ~clk;
   logic iv, ir, sv, sr, dv, dr, dw, rv, rr, tv, tr, halted, cut_accepted;
-  logic [31:0] ia, iw, da, wd, rd, tohost_addr;
+  logic [31:0] ia, iw, da, wd, rd;
   logic [3:0] st;
   fetch_fault_t fetch_fault;
   /* verilator lint_off UNUSEDSIGNAL */
   retire_packet_t retired;
   /* verilator lint_on UNUSEDSIGNAL */
-  logic [7:0] mem [0:65535];
   logic ipending = 0, dpending = 0;
   logic [31:0] fetch_pc;
   fetch_fault_t pending_cause;
-  int idelay = 0, ddelay = 0, cycles = 0, retires = 0, checks = 0;
+  int idelay = 0, ddelay = 0, cycles = 0, retires = 0;
+  localparam int FW_MEM_BYTES=65536;
+  function automatic string check_detail();return "";endfunction
+  `include "compiled_firmware.svh"
+  localparam logic [31:0] PROTECTION_PC = BASE + 32'h800;
+  localparam logic [31:0] GUARDED_PC = BASE + 32'h900;
   int injections = 0, fault_retires = 0, reads = 0, writes = 0;
   logic protection_injected = 0, guarded_injected = 0;
   logic protection_retired = 0, guarded_retired = 0;
-  logic mailbox_written = 0, mailbox_retired = 0;
-  string image_path;
 
   logic [3:0] unused_context;
   logic [32:0] unused_interrupt;
@@ -96,15 +95,6 @@ module tb_compiled_fetch_firmware;
     .redirect_pivot_i('0), .redirect_target_i('0), .redirect_accepted_o(cut_accepted)
   );
 
-  function automatic logic [31:0] word_at(input logic [31:0] address);
-    int offset;
-    offset = int'(address - BASE);
-    return {mem[offset],mem[offset+1],mem[offset+2],mem[offset+3]};
-  endfunction
-  task automatic check(input logic condition, input string message);
-    checks++;
-    if (!condition) $fatal(1,"%s cycle=%0d pc=%08x insn=%08x",message,cycles,retired.pc,retired.insn);
-  endtask
 
   assign ir = rst_n && !ipending && cycles % 4 != 1;
   assign sv = rst_n && ipending && idelay == 0;
@@ -147,11 +137,7 @@ module tb_compiled_fetch_firmware;
           writes++;
           for (int lane = 0; lane < 4; lane++)
             if (st[3-lane]) mem[int'(da-BASE)+lane] = wd[31-lane*8 -: 8];
-          if (da == tohost_addr && word_at(da) != 0) begin
-            check(st == 4'hf && word_at(da) == 1,"firmware reported failure");
-            check(!mailbox_written,"duplicate success mailbox");
-            mailbox_written = 1;
-          end
+          mailbox_store(da,st==4'hf);
         end else reads++;
       end
       if (tv && tr) begin
@@ -170,11 +156,9 @@ module tb_compiled_fetch_firmware;
           end
           fault_retires++;
         end
-        if (mailbox_written && !mailbox_retired) begin
-          check(retired.insn[31:26] == 6'd36 && retired.fetch_fault == FETCH_OK &&
-                !retired.gpr_write && !retired.update_write,"mailbox owner must retire as STW");
-          mailbox_retired = 1;
-        end
+        if (mailbox_written && !mailbox_retired)
+          check(retired.fetch_fault == FETCH_OK,"mailbox owner fetch fault");
+        mailbox_retire();
         retires++;
       end
       if (mailbox_retired && !dpending) begin
@@ -195,10 +179,7 @@ module tb_compiled_fetch_firmware;
   assert property (@(posedge clk) disable iff (!rst_n)
     tv && !tr |=> tv && $stable(retired));
   initial begin
-    if (!$value$plusargs("IMAGE=%s",image_path) || !$value$plusargs("TOHOST=%h",tohost_addr))
-      $fatal(1,"IMAGE and TOHOST plusargs required");
-    check(tohost_addr >= BASE && tohost_addr <= BASE+32'hfffc && tohost_addr[1:0] == 0,"invalid mailbox");
-    $readmemh(image_path,mem);
+    load_image;
     repeat (4) @(negedge clk);
     rst_n = 1;
   end

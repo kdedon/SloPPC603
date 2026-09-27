@@ -7,10 +7,28 @@ import sys
 PINNED_COMMIT = 'cf951f690013cc9466c398d0428d4df50b6ede45'
 
 
+def positive_seed(value):
+    seed = int(value)
+    if seed < 1:
+        raise ValueError('seed must be positive')
+    return seed
+
+
+def xrand_build_flags(seed):
+    """Verilator flags that randomize uninitialized state; none when seed is None."""
+    return [] if seed is None else ['--x-assign', 'unique', '--x-initial', 'unique']
+
+
+def xrand_run_args(seed):
+    return [] if seed is None else [f'+verilator+seed+{seed}', '+verilator+rand+reset+2']
+
+
 def add_arguments(parser, prebuilt_runner=False):
     parser.add_argument('--allow-unpinned-reference', action='store_true',
                         help=f'accept a reference checkout other than clean {PINNED_COMMIT[:12]}')
     parser.add_argument('--verilator', default='verilator', help='Verilator executable')
+    parser.add_argument('--xrand-seed', type=positive_seed,
+                        help='build the RTL with randomized X state and run it with this seed')
     if prebuilt_runner:
         parser.add_argument('--reference-runner-dir', type=Path,
                             help='reuse the flat-RAM runner from build_reference_runner.py')

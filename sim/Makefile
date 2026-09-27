@@ -1,5 +1,5 @@
 VERILATOR ?= $(CURDIR)/tools/verilate
-# The cosim drivers take one executable path, without the X flags below.
+# The cosim drivers take one executable path; they add the X flags from --xrand-seed.
 VERILATOR_TOOL := $(VERILATOR)
 # Randomize uninitialized state with a fixed seed so a missing reset fails reproducibly.
 XRAND ?= 1
@@ -7,6 +7,7 @@ XRAND_SEED ?= 1
 ifeq ($(XRAND),1)
 override VERILATOR += --x-assign unique --x-initial unique
 SIM_ARGS ?= +verilator+seed+$(XRAND_SEED) +verilator+rand+reset+2
+XRAND_REFERENCE_ARGS := --xrand-seed $(XRAND_SEED)
 endif
 BUILD_DIR ?= build
 RTL := $(shell cat ../rtl/files.f)
@@ -38,7 +39,7 @@ build-control-memory:
 
 build-core-bus60x:
 	mkdir -p $(BUILD_DIR)/core-bus60x
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bus60x --Mdir $(BUILD_DIR)/core-bus60x $(RTL) $(BUS_RTL) ../tb/tb_core_bus60x.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bus60x --Mdir $(BUILD_DIR)/core-bus60x $(RTL) $(BUS_RTL) ../tb/bfm/bus60x_delay_target_bfm.sv ../tb/tb_core_bus60x.sv
 
 build-core-add-recovery:
 	mkdir -p $(BUILD_DIR)/core-add-recovery
@@ -46,7 +47,7 @@ build-core-add-recovery:
 
 build-core-bus60x-unified:
 	mkdir -p $(BUILD_DIR)/core-bus60x-unified
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bus60x_unified --Mdir $(BUILD_DIR)/core-bus60x-unified $(RTL) $(BUS_RTL) $(SYSTEM_RTL) ../tb/tb_core_bus60x_unified.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bus60x_unified --Mdir $(BUILD_DIR)/core-bus60x-unified $(RTL) $(BUS_RTL) $(SYSTEM_RTL) ../tb/bfm/bus60x_delay_target_bfm.sv ../tb/tb_core_bus60x_unified.sv
 
 lint:
 	cd ../quartus/timer-bat && $(VERILATOR) --lint-only -Wall --top-module ppc_timer_bat_measure -f files.f
@@ -499,7 +500,7 @@ test-core-bus60x-update: build-core-bus60x
 # Reference targets need the pinned DingusPPC checkout beside this repository.
 # REFERENCE_FLAGS=--allow-unpinned-reference accepts another commit.
 REFERENCE_DIR := ../../dingusppc
-REFERENCE_ARGS = --verilator $(VERILATOR_TOOL) $(REFERENCE_FLAGS)
+REFERENCE_ARGS = --verilator $(VERILATOR_TOOL) $(XRAND_REFERENCE_ARGS) $(REFERENCE_FLAGS)
 FLAT_REFERENCE_ARGS = $(REFERENCE_ARGS) --reference-runner-dir $(BUILD_DIR)/reference-runner-flat
 reference-checkout:
 	@test -f $(REFERENCE_DIR)/cpu/ppc/ppcopcodes.cpp || { \

@@ -10,7 +10,7 @@ import sys
 from compare_memory import FIELDS, HEADER, read_trace
 from compare_state import compare
 from memory_program import corpus
-from reference_checkout import PINNED_COMMIT, add_arguments, verify
+from reference_checkout import PINNED_COMMIT, add_arguments, verify, xrand_build_flags, xrand_run_args
 from run_reference import HERE, PROJECT, ROOT, build_reference, command, digest
 from run_reference_stress import memory_access
 
@@ -28,11 +28,12 @@ def run(build, args):
     sources = list(dict.fromkeys((PROJECT/'sim'/line).resolve()
                    for file in lists for line in file.read_text().splitlines() if line.strip()))
     bench = PROJECT/'tb/tb_core_cached_reference.sv'
+    bfm = PROJECT/'tb/bfm/bus60x_delay_target_bfm.sv'
     isa = PROJECT/'sim/spec/isa.json'
     adapters = [HERE/name for name in ['run_cached_reference.py', 'reference_runner.cpp',
                 'run_reference.py', 'reference_checkout.py', 'run_reference_stress.py', 'memory_program.py',
                 'reference_program.py', 'compare_memory.py', 'compare_state.py']]
-    inputs = list(dict.fromkeys([*sources, *lists, bench, isa, *adapters,
+    inputs = list(dict.fromkeys([*sources, *lists, bfm, bench, isa, *adapters,
                   ref/'cpu/ppc/ppcopcodes.cpp', ref/'LICENSE', ref/'CREDITS.md', *sorted(ref.rglob('*.h'))]))
     frozen = {str(p): digest(p) for p in inputs}
     runner, cppargs = build_reference(build, ref, flat_ram=True, prebuilt=args.reference_runner_dir)
@@ -45,7 +46,7 @@ def run(build, args):
     requests = sum(memory_access(row[1])[0] for row in rows)
     writes = sum(memory_access(row[1])[1] for row in rows)
     rtlargs = [args.verilator, '--binary', '--timing', '--assert', '-Wall', '--top-module',
-               'tb_core_cached_reference', '--Mdir', build/'rtl', *sources, bench]
+               'tb_core_cached_reference', '--Mdir', build/'rtl', *xrand_build_flags(args.xrand_seed), *sources, bfm, bench]
     if profile != 'legacy':
         rtlargs.append('-DREFERENCE_MANAGED_CACHE')
     if profile == 'disabled':
@@ -53,7 +54,8 @@ def run(build, args):
     command(rtlargs, build/'rtl-build.log')
     executable = build/'rtl/Vtb_core_cached_reference'
     rtlrun = [executable, f'+PROGRAM={program}', f'+TRACE={actual}', f'+WORDS={len(words)}',
-              f'+COMMITS={len(rows)}', f'+MEMORY_REQUESTS={requests}', f'+MEMORY_WRITES={writes}']
+              f'+COMMITS={len(rows)}', f'+MEMORY_REQUESTS={requests}', f'+MEMORY_WRITES={writes}',
+              *xrand_run_args(args.xrand_seed)]
     command(rtlrun, build/'rtl-run.log')
     compare(rows, read_trace(actual), fields=FIELDS)
     command([sys.executable, HERE/'compare_memory.py', expected, actual], build/'compare.log')
@@ -86,7 +88,7 @@ def run(build, args):
               'uncovered_forms': missing, 'encoding_groups': groups, 'bus_metrics': metrics,
               'sha256': {**frozen, **{str(p): digest(p) for p in artifacts}},
               'compile_commands': [list(map(str, cppargs)), list(map(str, rtlargs))],
-              'run_command': list(map(str, rtlrun)), 'negative_diagnostics': negative,
+              'run_command': list(map(str, rtlrun)), 'xrand_seed': args.xrand_seed, 'negative_diagnostics': negative,
               'reference_pinned': PINNED_COMMIT, 'reference_commit': reference_commit,
               'reference_dirty': reference_dirty,
               'compiler': subprocess.check_output(['g++', '--version'], text=True).splitlines()[0],

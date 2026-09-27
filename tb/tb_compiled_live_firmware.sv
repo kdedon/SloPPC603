@@ -5,11 +5,10 @@ module tb_compiled_live_firmware;
   import ppc_pkg::*;
   logic [32:0] unused_decrementer;
   logic [32:0] unused_interrupt;
-  localparam logic [31:0] BASE=32'hfff00000;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
   logic iv,ir,sv,sr,dv,dr,dw,rv,rr,tv,tr,halted,cut_accepted;
-  logic [31:0] ia,iw,da,wd,rd,tohost_addr;
+  logic [31:0] ia,iw,da,wd,rd;
   logic [3:0] st,iwimg,dwimg;
   logic bat_valid=0,bat_ready,bat_rsp,bat_rejected,bat_unsupported,bat_config,bat_overlap;
   logic [3:0] bat_invalid;
@@ -22,13 +21,14 @@ module tb_compiled_live_firmware;
   /* verilator lint_off UNUSEDSIGNAL */
   retire_packet_t retired;
   /* verilator lint_on UNUSEDSIGNAL */
-  logic [7:0] mem[0:65535];
-  logic ipending=0,dpending=0,mailbox_written=0,mailbox_retired=0;
+  logic ipending=0,dpending=0;
   logic [31:0] fetch_pc;
   logic [1:0] last_context=0;
-  int idelay=0,ddelay=0,cycles=0,retires=0,checks=0,reads=0,writes=0;
+  int idelay=0,ddelay=0,cycles=0,retires=0,reads=0,writes=0;
+  localparam int FW_MEM_BYTES=65536;
+  function automatic string check_detail();return "";endfunction
+  `include "compiled_firmware.svh"
   int transitions=0,alias_stores=0;
-  string image_path;
   logic [49:0] unused_page_ports;
   ppc_core_bat #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1)) dut(
     .tlb_mgmt_req_valid_i('0),
@@ -86,12 +86,6 @@ module tb_compiled_live_firmware;
     .fault_ea_o(unused_fea),.fault_miss_o(unused_fm),.fault_protection_o(unused_fp),
     .fault_guarded_o(unused_fg),.fault_config_o(unused_fc),.fault_invalid_input_o(unused_finv),
     .fault_invalid_entry_o(unused_fentries),.pimem_error_o(physical_error),.busy_o(unused_busy));
-  function automatic logic [31:0] word_at(input logic [31:0] address);
-    int o; o=int'(address-BASE); return {mem[o],mem[o+1],mem[o+2],mem[o+3]};
-  endfunction
-  task automatic check(input logic ok,input string message);
-    checks++;if(!ok)$fatal(1,"%s cycle=%0d pc=%08x insn=%08x",message,cycles,retired.pc,retired.insn);
-  endtask
   task automatic write_bat(input logic[9:0] spr,input logic[31:0] value);
     @(negedge clk);bat_spr=spr;bat_data=value;bat_valid=1;
     do @(posedge clk); while(!bat_ready);
@@ -137,18 +131,12 @@ module tb_compiled_live_firmware;
           if(da==BASE+32'h3000&&wd==32'h2468ace0)begin
             check(cdr&&st==4'hf,"alias store outside translated context");alias_stores++;
           end
-          if(da==tohost_addr&&word_at(da)!=0)begin
-            check(st==4'hf&&word_at(da)==1,"firmware failure mailbox");
-            check(!mailbox_written,"duplicate mailbox");mailbox_written=1;
-          end
+          mailbox_store(da,st==4'hf);
         end else reads++;
       end
       if(tv&&tr)begin
         check(!retired.illegal&&!retired.alignment_exception&&retired.fetch_fault==FETCH_OK,"retirement diagnostic");
-        if(mailbox_written&&!mailbox_retired)begin
-          check(retired.insn[31:26]==6'd36&&!retired.gpr_write&&!retired.update_write,"mailbox STW retirement");
-          mailbox_retired=1;
-        end
+        mailbox_retire();
         retires++;
       end
       if(mailbox_retired&&!ipending&&!dpending&&!iv&&!dv&&!sv&&!rv)begin
@@ -162,10 +150,8 @@ module tb_compiled_live_firmware;
   assert property(@(posedge clk) disable iff(!rst_n) rv&&!rr |=> rv&&$stable(rd));
   assert property(@(posedge clk) disable iff(!rst_n) tv&&!tr |=> tv&&$stable(retired));
   initial begin
-    if(!$value$plusargs("IMAGE=%s",image_path)||!$value$plusargs("TOHOST=%h",tohost_addr))$fatal(1,"IMAGE/TOHOST required");
-    check(tohost_addr>=BASE&&tohost_addr<=BASE+32'hfffc&&tohost_addr[1:0]==0,"mailbox range");
-    foreach(mem[i])mem[i]=0;
-    $readmemh(image_path,mem);repeat(4)@(negedge clk);rst_n=1;
+    load_image;
+    repeat(4)@(negedge clk);rst_n=1;
     write_bat(10'd529,32'hfff00002);write_bat(10'd528,32'hfff00002);
     write_bat(10'd537,32'hfff00002);write_bat(10'd536,32'hfff00002);
     write_bat(10'd539,32'hfff00002);write_bat(10'd538,32'h10000002);

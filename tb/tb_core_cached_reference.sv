@@ -35,9 +35,6 @@ module tb_core_cached_reference;
   logic [2:0] tsiz;
   logic [1:0] tc,cse;
   logic [63:0] bus_di,bus_do;
-  logic address_pending=0,transfer_pending=0,transfer_write=0,transfer_instruction=0,transfer_burst=0;
-  logic [31:0] transfer_addr=0;
-  int address_delay=0,data_delay=0,transfer_size=0,beat=0;
 
 `ifdef REFERENCE_MANAGED_CACHE
   ppc_core_cached_bus60x_managed #(.RESET_PC(32'b0), .RESET_CACHE_ENABLE(CACHE_ENABLED)) dut (
@@ -70,42 +67,38 @@ module tb_core_cached_reference;
       default: case(n) 0:return 3;1:return 0;2:return 1;default:return 2;endcase
     endcase
   endfunction
-  assign bg_n=!(rst_n && !br_n && cycle_count%3!=0);
-  assign aack_n=!(address_pending && address_delay==0);
-  assign dbg_n=!(transfer_pending && !address_pending && cycle_count%4!=1);
-  assign ta_n=!(transfer_pending && dbb_oe && !dbb_n && data_delay==0);
+  bus60x_delay_target_bfm target(
+    .clk_i(clk),.rst_ni(rst_n),.phase_i(cycle_count),
+    .br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(bus_addr),.tt_i(tt),
+    .tsiz_i(tsiz),.tbst_n_i(tbst_n),.tc_i(tc),.dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),
+    .bg_n_o(bg_n),.aack_n_o(aack_n),.dbg_n_o(dbg_n),.ta_n_o(ta_n));
   assign tr=rst_n && cycle_count>30 && cycle_count%7!=2 && cycle_count%7!=3;
   always @(negedge clk) cycle_count++;
   always_comb begin
     bus_di='0;
-    if(transfer_pending && transfer_instruction && transfer_burst) begin
-      bus_di={memory[int'((transfer_addr & 32'hffffffe0)>>2)+2*slot(int'(transfer_addr[4:3]),beat)],
-              memory[int'((transfer_addr & 32'hffffffe0)>>2)+2*slot(int'(transfer_addr[4:3]),beat)+1]};
-    end else if(transfer_pending && transfer_instruction) begin
-      bus_di={memory[int'((transfer_addr & 32'hfffffff8)>>2)],
-              memory[int'((transfer_addr & 32'hfffffff8)>>2)+1]};
-    end else if(transfer_pending && !transfer_write && transfer_addr>=32'h1000 && transfer_addr<32'h1100)
+    if(target.transfer_pending && target.transfer_instruction && target.transfer_burst) begin
+      bus_di={memory[int'((target.transfer_addr & 32'hffffffe0)>>2)+2*slot(int'(target.transfer_addr[4:3]),target.beat)],
+              memory[int'((target.transfer_addr & 32'hffffffe0)>>2)+2*slot(int'(target.transfer_addr[4:3]),target.beat)+1]};
+    end else if(target.transfer_pending && target.transfer_instruction) begin
+      bus_di={memory[int'((target.transfer_addr & 32'hfffffff8)>>2)],
+              memory[int'((target.transfer_addr & 32'hfffffff8)>>2)+1]};
+    end else if(target.transfer_pending && !target.transfer_write && target.transfer_addr>=32'h1000 && target.transfer_addr<32'h1100)
       for(int lane=0;lane<8;lane++)
-        bus_di[63-8*lane -:8]=ram[int'((transfer_addr & 32'hfffffff8)-32'h1000)+lane];
+        bus_di[63-8*lane -:8]=ram[int'((target.transfer_addr & 32'hfffffff8)-32'h1000)+lane];
   end
   always @(posedge clk) begin
-    if(!rst_n) begin
-      address_pending<=0;transfer_pending<=0;address_delay<=0;data_delay<=0;beat<=0;
-    end else begin
+    if(rst_n) begin
       assert(!bus_error && !ifetch_error && !halted && !redirect_accepted)
         else $fatal(1,"cached reference transport/core diagnostic");
-      if((!br_n && bg_n) || (address_pending && address_delay>0) ||
-         (transfer_pending && data_delay>0)) bus_waits++;
+      if((!br_n && bg_n) || (target.address_pending && target.address_delay>0) ||
+         (target.transfer_pending && target.data_delay>0)) bus_waits++;
       if(icache_hit) cache_hits++;
       if(icache_miss) cache_misses++;
       if(dut.core.imem_req_valid_o && dut.core.imem_req_ready_i) instruction_requests++;
       if(dut.core.imem_req_valid_o && !dut.core.imem_req_ready_i) request_stalls++;
       if(tv && !tr) retire_stalls++;
-      if(address_delay>0) address_delay<=address_delay-1;
-      if(data_delay>0 && dbb_oe && !dbb_n) data_delay<=data_delay-1;
-      if(!aack_n) address_pending<=0;
       if(ts_oe && !ts_n) begin
-        assert(addr_oe && abb_oe && !abb_n && !transfer_pending)
+        assert(addr_oe && abb_oe && !abb_n && !target.transfer_pending)
           else $fatal(1,"overlapping physical transaction");
         assert(gbl_n && wt_n && cse==0) else $fatal(1,"unexpected memory attributes");
         if(tc==2 && !tbst_n) begin
@@ -122,22 +115,16 @@ module tb_core_cached_reference;
             else $fatal(1,"invalid scalar data transaction");
           memory_requests++;
         end
-        address_pending<=1;transfer_pending<=1;address_delay<=1+cycle_count%3;
-        data_delay<=2+cycle_count%4;transfer_addr<=bus_addr;transfer_write<=tt==5'b00010;
-        transfer_instruction<=tc==2;transfer_burst<=!tbst_n;transfer_size<=int'(tsiz);beat<=0;
       end
       if(!ta_n) begin
         bus_beats++;
-        if(transfer_write) begin
+        if(target.transfer_write) begin
           assert(d_oe) else $fatal(1,"write without output enable");
           memory_writes++;
           for(int byte_index=0;byte_index<4;byte_index++)
-            if(byte_index<transfer_size)
-              ram[int'(transfer_addr-32'h1000)+byte_index] <= bus_do[63-8*(int'(transfer_addr[2:0])+byte_index) -:8];
+            if(byte_index<target.transfer_size)
+              ram[int'(target.transfer_addr-32'h1000)+byte_index] <= bus_do[63-8*(int'(target.transfer_addr[2:0])+byte_index) -:8];
         end else assert(!d_oe) else $fatal(1,"read drives data pins");
-        if(transfer_burst && beat<3) begin
-          beat<=beat+1;data_delay<=cycle_count%3;
-        end else transfer_pending<=0;
       end
     end
   end

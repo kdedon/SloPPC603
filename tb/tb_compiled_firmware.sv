@@ -21,15 +21,12 @@ module tb_compiled_firmware;
   logic [63:0] bus_din, bus_dout;
 
 
-  logic [7:0] mem [0:65535];
   integer responder_state = 0;
   logic tx_line, tx_write;
-  logic [31:0] tx_addr, tohost_addr;
+  logic [31:0] tx_addr;
   integer tx_size = 0, tx_beat = 0;
-  integer checks = 0, cycles = 0, retirements = 0;
+  integer cycles = 0, retirements = 0;
   integer line_bursts = 0, scalar_reads = 0, scalar_writes = 0;
-  string image_path;
-  logic mailbox_written = 1'b0, mailbox_retired = 1'b0;
   logic unused_status;
   assign unused_status = ^{redirect_accepted, bus_busy, cache_hit, cache_miss, cache_busy};
   assign retire_ready = rst_n && cycles % 7 != 2;
@@ -59,17 +56,13 @@ module tb_compiled_firmware;
   );
 
 
-  task automatic check(input logic condition, input string message);
-    checks++;
-    if (!condition) $fatal(1, "%s cycles=%0d pc=%08x insn=%08x", message, cycles, retired.pc, retired.insn);
-  endtask
-  function automatic logic [31:0] data_word(input integer offset);
-    return {mem[offset], mem[offset+1], mem[offset+2], mem[offset+3]};
+  localparam int FW_MEM_BYTES = 65536;
+  function automatic string check_detail();
+    return "";
   endfunction
+  `include "compiled_firmware.svh"
   function automatic logic [63:0] instruction_dw(input logic [31:0] base, input integer slot);
-    integer offset;
-    offset = int'(base - 32'hfff00000) + slot*8;
-    return {data_word(offset), data_word(offset+4)};
+    return {word_at(base + 32'(slot*8)), word_at(base + 32'(slot*8) + 4)};
   endfunction
   function automatic integer burst_slot(
     input logic [1:0] start,
@@ -177,13 +170,10 @@ module tb_compiled_firmware;
                 mem[byte_base+byte_index] =
                   bus_dout[63-8*(lane_base+byte_index) -: 8];
               check(d_oe, "scalar write TA without driven data");
-              if (tx_addr == tohost_addr && data_word(byte_base) != 0) begin
-                check(data_word(byte_base) == 1, "firmware reported failure");
+              if (tx_addr == tohost_addr && word_at(tx_addr) != 0)
                 check(retirements > 0 && scalar_reads >= 3 && line_bursts > 0,
                       "missing compiled program execution activity");
-                check(!mailbox_written, "duplicate success mailbox write");
-                mailbox_written = 1'b1;
-              end
+              mailbox_store(tx_addr, tx_size == 4);
             end else begin
               check(!d_oe, "read transaction drove data");
             end
@@ -203,15 +193,7 @@ module tb_compiled_firmware;
       check(!halted && !ifetch_error && !bus_error, "CPU or transport fault");
       if (retire_valid && retire_ready) begin
         check(!retired.illegal, "illegal compiled instruction");
-        if (mailbox_written && !mailbox_retired) begin
-          // The implemented scalar LSU drains older work before offering a
-          // store and blocks younger retirement until that store completes.
-          // Thus the next accepted retirement after this physical write is
-          // its owner. crt0 uses a non-update STW for the success mailbox.
-          check(retired.insn[31:26] == 6'd36 && !retired.gpr_write &&
-                !retired.update_write, "mailbox write must retire as STW");
-          mailbox_retired = 1'b1;
-        end
+        mailbox_retire();
         retirements++;
       end
       if (mailbox_retired && responder_state == 0 && !bus_busy &&
@@ -224,11 +206,7 @@ module tb_compiled_firmware;
     end
   end
   initial begin
-    if (!$value$plusargs("IMAGE=%s", image_path) || !$value$plusargs("TOHOST=%h", tohost_addr))
-      $fatal(1, "IMAGE and TOHOST plusargs required");
-    check(tohost_addr >= 32'hfff00000 && tohost_addr <= 32'hfff0fffc && tohost_addr[1:0] == 0,
-          "invalid tohost_addr address");
-    $readmemh(image_path, mem);
+    load_image;
     repeat (4) @(negedge clk);
     rst_n = 1;
   end

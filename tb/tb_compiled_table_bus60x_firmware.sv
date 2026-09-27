@@ -5,7 +5,6 @@ module tb_compiled_table_bus60x_firmware #(
   parameter int FAULT_PROFILE = 0
 );
   import ppc_pkg::*;
-  localparam logic [31:0] BASE=32'hfff00000;
   localparam logic [31:0] HTAB=32'hfff10000;
   localparam logic [31:0] MARKER=32'hfff0b000;
   logic clk=0,rst_n=0;
@@ -36,19 +35,15 @@ module tb_compiled_table_bus60x_firmware #(
   logic [2:0] tsiz;
   logic [1:0] tc,cse;
   logic [63:0] d_i,d_o;
-  logic [7:0] mem[0:196607];
-  logic address_pending=0,transfer_pending=0;
-  logic transfer_write=0,transfer_instruction=0;
-  logic [31:0] transfer_addr=0;
-  int transfer_size=0,address_delay=0,data_delay=0;
   logic pin_done=0,pin_done_write=0;
   logic [31:0] pin_done_addr=0;
   int pin_done_size=0;
-  int cycles=0,checks=0,retires=0,pin_reads=0,pin_writes=0,pin_ifetches=0;
+  int cycles=0,retires=0,pin_reads=0,pin_writes=0,pin_ifetches=0;
+  localparam int FW_MEM_BYTES=196608;
+  `include "compiled_firmware.svh"
   int bank_switches=0;
-  logic last_bank=0,mailbox_written=0,mailbox_retired=0;
-  logic [31:0] tohost_addr,fault_count_addr,fault_records_addr;
-  string image_path;
+  logic last_bank=0;
+  logic [31:0] fault_count_addr,fault_records_addr;
 
   ppc_core_bat_bus60x #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
@@ -128,43 +123,34 @@ module tb_compiled_table_bus60x_firmware #(
     .ta_n_i(ta_n),.drtry_n_i(1'b1),.tea_n_i(1'b1)
   );
 
-  function automatic logic [31:0] word_at(input logic [31:0] address);
-    int o;o=int'(address-BASE);
-    return {mem[o],mem[o+1],mem[o+2],mem[o+3]};
+  function automatic string check_detail();
+    return $sformatf(" profile=%0d marker=%0d bus=%08x",FAULT_PROFILE,active_marker,a);
   endfunction
-  task automatic check(input bit ok,input string why);
-    checks++;
-    if(!ok)$fatal(1,"%s cycle=%0d profile=%0d marker=%0d pc=%08x bus=%08x",
-      why,cycles,FAULT_PROFILE,active_marker,retired.pc,a);
-  endtask
   assign tr=rst_n&&cycles%7>=2;
-  assign bg_n=!(rst_n&&!br_n&&cycles%3!=0);
-  assign aack_n=!(address_pending&&address_delay==0);
-  assign dbg_n=!(transfer_pending&&!address_pending&&cycles%4!=1);
-  assign ta_n=!(transfer_pending&&dbb_oe&&!dbb_n&&data_delay==0);
+  bus60x_delay_target_bfm target(
+    .clk_i(clk),.rst_ni(rst_n),.phase_i(cycles),
+    .br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(a),.tt_i(tt),
+    .tsiz_i(tsiz),.tbst_n_i(tbst_n),.tc_i(tc),.dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),
+    .bg_n_o(bg_n),.aack_n_o(aack_n),.dbg_n_o(dbg_n),.ta_n_o(ta_n));
   always_comb begin
     d_i='0;
-    if(transfer_pending&&!transfer_write)
+    if(target.transfer_pending&&!target.transfer_write)
       for(int lane=0;lane<8;lane++)
-        d_i[63-8*lane -:8]=mem[int'((transfer_addr&32'hfffffff8)-BASE)+lane];
+        d_i[63-8*lane -:8]=mem[int'((target.transfer_addr&32'hfffffff8)-BASE)+lane];
   end
 
   // No abstract physical request or response is used by this RAM responder.
   // The byte address/size and 64-bit data lanes are sampled from the pins.
   always @(posedge clk) begin : pin_ram
     if(!rst_n)begin
-      address_pending<=0;transfer_pending<=0;
-      address_delay<=0;data_delay<=0;pin_done<=0;
+      pin_done<=0;
       pin_done_addr<=0;pin_done_write<=0;
       pin_done_size<=0;
     end else begin
       pin_done<=0;
-      if(address_delay>0)address_delay<=address_delay-1;
-      if(data_delay>0&&dbb_oe&&!dbb_n)data_delay<=data_delay-1;
-      if(!aack_n)address_pending<=0;
       if(ts_oe&&!ts_n)begin
         check(router_busy&&bus_busy,"60x tenure without translation/bus owner");
-        check(addr_oe&&abb_oe&&!abb_n&&!transfer_pending,
+        check(addr_oe&&abb_oe&&!abb_n&&!target.transfer_pending,
           "60x address ownership/overlap");
         check(a>=BASE&&a<=BASE+32'h2fffc&&
           tsiz!=0&&(tsiz==1||tsiz==2||tsiz==4)&&
@@ -176,29 +162,24 @@ module tb_compiled_table_bus60x_firmware #(
           "60x fixed scalar attributes");
         if(tc==2)check(tt==5'b01010&&tsiz==4&&a[1:0]==0,
           "instruction bus shape");
-        address_pending<=1;transfer_pending<=1;
-        address_delay<=1+cycles%3;data_delay<=2+cycles%4;
-        transfer_addr<=a;transfer_write<=tt==5'b00010;
-        transfer_instruction<=tc==2;transfer_size<=int'(tsiz);
       end
       if(!ta_n)begin
-        check(transfer_pending,"TA without selected tenure");
-        if(transfer_write)begin
+        check(target.transfer_pending,"TA without selected tenure");
+        if(target.transfer_write)begin
           check(d_oe,"target accepted undriven write data");
           pin_writes++;
           for(int i=0;i<4;i++)
-            if(i<transfer_size)
-              mem[int'(transfer_addr-BASE)+i]=
-                d_o[63-8*(int'(transfer_addr[2:0])+i) -:8];
+            if(i<target.transfer_size)
+              mem[int'(target.transfer_addr-BASE)+i]=
+                d_o[63-8*(int'(target.transfer_addr[2:0])+i) -:8];
         end else begin
           check(!d_oe,"processor drove read data");
           pin_reads++;
-          if(transfer_instruction)pin_ifetches++;
+          if(target.transfer_instruction)pin_ifetches++;
         end
-        pin_done<=1;pin_done_addr<=transfer_addr;
-        pin_done_write<=transfer_write;
-        pin_done_size<=transfer_size;
-        transfer_pending<=0;
+        pin_done<=1;pin_done_addr<=target.transfer_addr;
+        pin_done_write<=target.transfer_write;
+        pin_done_size<=target.transfer_size;
       end
     end
   end
@@ -493,11 +474,7 @@ module tb_compiled_table_bus60x_firmware #(
       // Completed pin writes alone mutate the RAM. Observe their effects one
       // cycle later; do not mirror hierarchical physical request payloads.
       if(pin_done&&pin_done_write)begin
-        if(pin_done_addr==tohost_addr&&word_at(tohost_addr)!=0)begin
-          check(pin_done_size==4&&word_at(tohost_addr)==1,
-            $sformatf("firmware failure mailbox=%08x",word_at(tohost_addr)));
-          check(!mailbox_written,"duplicate mailbox");mailbox_written=1;
-        end
+        mailbox_store(pin_done_addr,pin_done_size==4);
         if(FAULT_PROFILE==0)begin
           for(int x=0;x<4;x++)
             if(pin_done_addr==search_low_addr(x)+2&&
@@ -636,11 +613,7 @@ module tb_compiled_table_bus60x_firmware #(
           end else check(retired.page_miss=='0,
             "normal fault retire retained miss capsule");
         end
-        if(mailbox_written&&!mailbox_retired)begin
-          check(retired.insn[31:26]==36&&!retired.gpr_write&&
-            !retired.update_write,"mailbox retirement");
-          mailbox_retired=1;
-        end
+        mailbox_retire();
         retires++;
       end
 
@@ -711,16 +684,12 @@ module tb_compiled_table_bus60x_firmware #(
   assert property(@(posedge clk) disable iff(!rst_n)
     tv&&!tr |=> tv&&$stable(retired));
   initial begin
-    if(!$value$plusargs("IMAGE=%s",image_path)||
-       !$value$plusargs("TOHOST=%h",tohost_addr))
-      $fatal(1,"IMAGE/TOHOST required");
+    load_image;
     if(FAULT_PROFILE!=0&&
        (!$value$plusargs("FAULT_COUNT=%h",fault_count_addr)||
         !$value$plusargs("FAULT_RECORDS=%h",fault_records_addr)))
       $fatal(1,"FAULT_COUNT/FAULT_RECORDS required");
     check(tohost_addr==BASE+32'h4000,"mailbox address");
-    foreach(mem[i])mem[i]=0;
-    $readmemh(image_path,mem,0,65535);
     repeat(4)@(negedge clk);rst_n=1;
     @(negedge clk);start_valid=1;
     do @(posedge clk);while(!start_ready);
