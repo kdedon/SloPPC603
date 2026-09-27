@@ -217,6 +217,8 @@ module ppc_bat_memory_router #(
   // Private !running_q copy for the BAT request select, kept off the core's
   // high-fanout running net.
   (* dont_merge *) logic bat_setup_q;
+  // Private running copy for running_o, which gates the core's reset.
+  (* dont_merge *) logic running_out_q;
   logic request_ir_q, request_dr_q, request_pr_q;
   fetch_fault_t fetch_fault_q;
   data_fault_t data_fault_q;
@@ -850,6 +852,7 @@ module ppc_bat_memory_router #(
       tlb_fill_ea_q <= 32'b0;
       tlb_fill_bank_q <= 1'b0;
       running_q <= 1'b0;
+      running_out_q <= 1'b0;
       bat_setup_q <= 1'b1;
       context_ir_q <= 1'b0;
       context_dr_q <= 1'b0;
@@ -908,6 +911,7 @@ module ppc_bat_memory_router #(
       end
       if (start_valid_i && start_ready_o) begin
         running_q <= 1'b1;
+        running_out_q <= 1'b1;
         bat_setup_q <= 1'b0;
         context_ir_q <= start_ir_i;
         context_dr_q <= start_dr_i;
@@ -1123,7 +1127,7 @@ module ppc_bat_memory_router #(
     end
   end
 
-  assign running_o = rst_ni && running_q;
+  assign running_o = rst_ni && running_out_q;
   assign context_ir_o = context_ir_q;
   assign context_dr_o = context_dr_q;
   assign context_pr_o = context_pr_q;

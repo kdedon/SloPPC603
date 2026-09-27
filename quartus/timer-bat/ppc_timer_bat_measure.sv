@@ -77,7 +77,8 @@ module ppc_timer_bat_measure (
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_EXTERNAL_INTERRUPTS(1'b1),
-    .ENABLE_TIMERS(1'b1)
+    .ENABLE_TIMERS(1'b1),
+    .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (
     .tlb_mgmt_req_valid_i(1'b0),
     .tlb_mgmt_req_ready_o(unused_page[0]),
