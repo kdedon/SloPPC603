@@ -77,6 +77,9 @@ The split lanes change timing that four older benches assumed:
   accepted, as valid/ready requires; it had relied on ready staying high for
   a cycle after it sampled it.
 
+One-off builds with `MICRO_TLB_ENTRIES` of 2 (seed 3) and 8 (seed 4) also
+matched the slow path.
+
 ## Against the pre-change router
 
 A one-off build paired the micro-TLB router with the serial router from
