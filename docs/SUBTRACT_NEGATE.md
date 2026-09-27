@@ -24,10 +24,10 @@ legality without changing the raw timing row or claiming full timing conformance
 
 ## Implementation and verification
 
-ALU_SUBF uses the existing adder with complemented A and carry-in one. NEG
+Decode selects ALU_ADD with `invert_a` and `CARRY_ONE`. NEG
 injects B=0. Carry into the sign bit XOR carry out computes overflow. Decode
 explicitly restricts CA writes to the established carry-writing ADD forms;
-SUBF/NEG acquire flag ownership only for OE or Rc. No interfaces change.
+SUBF/NEG acquire flag ownership only for OE or Rc.
 
 - `test-core-subtract`: 1,517 symbolic program words, 1,465 retirements, 519 SUBF
   and 70 NEG operations, 113,111 complete-state checks. Eight boundary values
@@ -49,3 +49,9 @@ resource/fit/timing measurement is claimed. SUBFC is the next bounded slice.
 Round 18 integration passes all 39 prior RTL targets, strict core/wrapper lint, 110 tool tests and 15 recovery-model tests. No regression failures remain.
 
 Round 19 subsequently accepts [SUBFC](SUBFC.md), bringing the current subset to 102 forms; the carry-writing pending statements above describe round 18.
+
+## Unified add selection
+
+Recorded: `make -C sim lint check-spec test-add-execution test-adde-execution test-add-unary-execution test-subtract-execution test-subcarry-execution test-subextend-execution test-subunary-execution test-core-add-flags test-core-adde test-core-add-unary test-core-subtract test-core-subcarry test-core-subextend test-core-subunary test-core-subimmediate test-core-addimmediate test-subf-recovery test-neg-recovery test-subfc-recovery test-subfe-recovery test-subfme-recovery test-subfze-recovery test-subfic-recovery test-addme-recovery test-addze-recovery test-addic-recovery test-reference test-reference-memory`, this branch, 2026-09-26.
+
+All add and subtract forms issue as ALU_ADD with decoded `invert_a` and carry-in select (see [ARCHITECTURE.md](ARCHITECTURE.md)). All targets pass. The execution benches now also check that both selects survive RS waits and are not taken from live dispatch inputs: add 28, ADDE 37, unary ADD 64, subtract 73, SUBFC 73, SUBFE 127, unary subtract 145 checks. Core corpora: ADD flags 19,075, ADDE 21,847, unary ADD 27,436, subtract 113,078 checks. Each recovery target passes 3,366 or 3,371 checks. Reference: 8,500 snapshots over 142 encoding groups; memory reference 9,881 snapshots over 168 forms. This establishes unchanged architectural results; it makes no timing claim.

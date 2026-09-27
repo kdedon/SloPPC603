@@ -18,7 +18,7 @@ module tb_record_execution;
   ppc_dispatch station (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
-    .shift_i(5'b0), .mask_i('0), .op_i(op), .producer_i(producer), .a_i(a), .b_i(b),
+    .shift_i(5'b0), .mask_i('0), .op_i(op), .invert_a_i(1'b0), .carry_in_i(CARRY_ZERO), .producer_i(producer), .a_i(a), .b_i(b),
     .write_ca_i(1'b0), .write_ov_so_i(1'b0), .ca_i(1'b0), .so_i(so), .write_cr_field_i(record_form),
     .wake_valid_i(wake_valid), .wake_i(wake),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)

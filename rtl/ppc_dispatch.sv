@@ -5,6 +5,8 @@ module ppc_dispatch (
   input logic dispatch_valid_i,
   output logic dispatch_ready_o,
   input ppc_pkg::alu_op_t op_i,
+  input logic invert_a_i,
+  input ppc_pkg::carry_in_t carry_in_i,
   input ppc_pkg::completion_tag_t producer_i,
   input ppc_pkg::operand_t a_i, b_i,
   input logic [31:0] mask_i,
@@ -23,6 +25,8 @@ module ppc_dispatch (
   import ppc_pkg::*;
   logic occupied;
   alu_op_t op;
+  logic invert_a;
+  carry_in_t carry_in;
   completion_tag_t producer;
   operand_t a, b, resolved_a, resolved_b;
   logic [31:0] mask;
@@ -42,6 +46,8 @@ module ppc_dispatch (
   assign resolved_b = resolve(b);
   assign issue_valid_o = !cancel_i && occupied && resolved_a.ready && resolved_b.ready;
   assign issue_o.op = op;
+  assign issue_o.invert_a = invert_a;
+  assign issue_o.carry_in = carry_in;
   assign issue_o.producer = producer;
   assign issue_o.a = resolved_a.value;
   assign issue_o.b = resolved_b.value;
@@ -57,6 +63,8 @@ module ppc_dispatch (
     if (!rst_ni) begin
       occupied <= 1'b0;
       op <= ALU_ADD;
+      invert_a <= 1'b0;
+      carry_in <= CARRY_ZERO;
       producer <= '0;
       a <= '0;
       b <= '0;
@@ -74,6 +82,8 @@ module ppc_dispatch (
       if (dispatch_valid_i && dispatch_ready_o) begin
         occupied <= 1'b1;
         op <= op_i;
+        invert_a <= invert_a_i;
+        carry_in <= carry_in_i;
         producer <= producer_i;
         mask <= mask_i;
         shift <= shift_i;

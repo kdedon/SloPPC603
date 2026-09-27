@@ -10,6 +10,8 @@ module tb_insert_execution;
   logic dispatch_valid, dispatch_ready;
   logic rs_cancel, iu_cancel;
   alu_op_t dispatch_op;
+  logic dispatch_invert_a;
+  carry_in_t dispatch_carry_in;
   completion_tag_t dispatch_producer;
   operand_t dispatch_a, dispatch_b;
   logic dispatch_ca, dispatch_so, dispatch_write_ca, dispatch_write_ov_so;
@@ -27,7 +29,8 @@ module tb_insert_execution;
   ppc_dispatch station (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
-    .shift_i(dispatch_shift), .mask_i(dispatch_mask), .op_i(dispatch_op), .producer_i(dispatch_producer),
+    .shift_i(dispatch_shift), .mask_i(dispatch_mask), .op_i(dispatch_op),
+    .invert_a_i(dispatch_invert_a), .carry_in_i(dispatch_carry_in), .producer_i(dispatch_producer),
     .a_i(dispatch_a), .b_i(dispatch_b), .ca_i(dispatch_ca), .so_i(dispatch_so),
     .write_ca_i(dispatch_write_ca),
     .write_ov_so_i(dispatch_write_ov_so),
@@ -87,6 +90,8 @@ module tb_insert_execution;
     end
     dispatch_shift = sh;
     dispatch_op = operation;
+    dispatch_invert_a = 1'b0;
+    dispatch_carry_in = CARRY_ZERO;
     dispatch_mask = mask;
     dispatch_ca = ca_in;
     dispatch_so = so_in;
@@ -102,7 +107,9 @@ module tb_insert_execution;
 
     // Mutate every live control and operand after D. The held operation must
     // use only the accepted dispatch snapshot when the pending source wakes.
-    dispatch_op = (operation == ALU_ADD) ? ALU_ADDC : ALU_ADD;
+    dispatch_op = (operation == ALU_ADD) ? ALU_OR : ALU_ADD;
+    dispatch_invert_a = !dispatch_invert_a;
+    dispatch_carry_in = (dispatch_carry_in == CARRY_CA) ? CARRY_ONE : CARRY_CA;
     dispatch_ca = !ca_in;
     dispatch_so = !so_in;
     dispatch_write_ca = !write_ca;
@@ -127,6 +134,7 @@ module tb_insert_execution;
     wake_valid = 1'b1;
     #1;
     require(issue_valid && issue.op == operation &&
+            issue.invert_a == 1'b0 && issue.carry_in == CARRY_ZERO &&
             issue.producer == dispatch_producer &&
             issue.shift == sh && issue.a == source_a && issue.b == source_b && issue.mask == mask &&
             issue.ca_in == ca_in && issue.so_in == so_in && issue.write_ca == write_ca &&
@@ -165,6 +173,8 @@ module tb_insert_execution;
   initial begin
     dispatch_valid = 1'b0;
     dispatch_op = ALU_ADD;
+    dispatch_invert_a = 1'b0;
+    dispatch_carry_in = CARRY_ZERO;
     dispatch_mask = '0;
     dispatch_shift = '0;
     dispatch_producer = '0;

@@ -118,17 +118,19 @@ A faulted load suppresses GPR write/wake and enters terminal diagnostic halt; it
 
 RLWIMI uses the two existing rename read ports for rS and old rA. The five-bit SH is a separate captured field in uop/issue packets and the reservation station; its destination allocation does not replace the source mapping before capture. The IU merges masked rotated rS with unmasked old rA, then derives CR0 from that merged result for Rc. No third rename read port or serialized execution is required.
 
-SUBF/NEG share ALU_SUBF and the existing adder with complemented A plus carry-in one; NEG supplies immediate zero B. Both preserve CA, while OE/Rc use the existing owner-controlled OV/SO/CR0 path.
+Every add and subtract form issues as ALU_ADD. Decode supplies `invert_a` and a carry-in select (`CARRY_ZERO`, `CARRY_ONE`, `CARRY_CA`) that travel in the uop, reservation station and issue packet; the IU computes `(invert_a ? ~a : a) + b + carry_in` and never inspects the opcode for them. Carry writes stay under the separate `write_ca` permission.
+
+SUBF/NEG add complemented A with carry-in one; NEG supplies immediate zero B. Both preserve CA, while OE/Rc use the existing owner-controlled OV/SO/CR0 path.
 
 SUBFC extends the complemented-A arithmetic path with an always-enabled CA write; the carry-in is fixed one, independently of committed CA. Its result carry expresses unsigned no-borrow.
 
 SUBFE adds a complemented-A operation with captured carry-in, sharing the flag owner and registered arithmetic path. Its overflow calculation includes the borrow adjustment.
 
-SUBFME/SUBFZE reuse ALU_SUBFE with immediate B=ffffffff/0, reserved rB=0 and real rA. Both capture and replace CA without a register dependency on the encoded reserved field.
+SUBFME/SUBFZE use the SUBFE selection with immediate B=ffffffff/0, reserved rB=0 and real rA. Both capture and replace CA without a register dependency on the encoded reserved field.
 
-SUBFIC uses ALU_SUBFC with signed SIMM and real rA0, replacing only CA alongside its GPR result. All low 16 bits are data; no OE/Rc decoding applies.
+SUBFIC uses the SUBFC selection with signed SIMM and real rA0, replacing only CA alongside its GPR result. All low 16 bits are data; no OE/Rc decoding applies.
 
-ADDIC/ADDIC. use ALU_ADDC with signed SIMM and real rA0. Both replace CA; only primary 13 captures SO and records CR0. Immediate low bits never select OE/Rc behavior.
+ADDIC/ADDIC. use ALU_ADD with carry-in zero, signed SIMM and real rA0. Both replace CA; only primary 13 captures SO and records CR0. Immediate low bits never select OE/Rc behavior.
 
 ANDI./ANDIS. read real rS and write rA through ALU_AND using an unsigned low/high-half immediate. Both record CR0 with captured SO, preserving all XER bits.
 

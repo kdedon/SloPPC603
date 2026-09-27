@@ -10,6 +10,8 @@ module tb_subunary_execution;
   logic dispatch_valid, dispatch_ready;
   logic rs_cancel, iu_cancel;
   alu_op_t dispatch_op;
+  logic dispatch_invert_a;
+  carry_in_t dispatch_carry_in;
   completion_tag_t dispatch_producer;
   operand_t dispatch_a, dispatch_b;
   logic dispatch_ca, dispatch_so, dispatch_write_ca, dispatch_write_ov_so;
@@ -26,7 +28,8 @@ module tb_subunary_execution;
   ppc_dispatch station (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
-    .shift_i(5'b0), .mask_i(dispatch_mask), .op_i(dispatch_op), .producer_i(dispatch_producer),
+    .shift_i(5'b0), .mask_i(dispatch_mask), .op_i(dispatch_op),
+    .invert_a_i(dispatch_invert_a), .carry_in_i(dispatch_carry_in), .producer_i(dispatch_producer),
     .a_i(dispatch_a), .b_i(dispatch_b), .ca_i(dispatch_ca), .so_i(dispatch_so),
     .write_ca_i(dispatch_write_ca),
     .write_ov_so_i(dispatch_write_ov_so),
@@ -49,6 +52,8 @@ module tb_subunary_execution;
 
   task automatic run_case(
     input alu_op_t operation,
+    input logic invert_a,
+    input carry_in_t carry_in,
     input logic count_pending,
     input logic [31:0] source_a,
     input logic [31:0] source_b,
@@ -84,6 +89,8 @@ module tb_subunary_execution;
       dispatch_a.value = source_a;
     end
     dispatch_op = operation;
+    dispatch_invert_a = invert_a;
+    dispatch_carry_in = carry_in;
     dispatch_mask = mask;
     dispatch_ca = ca_in;
     dispatch_so = so_in;
@@ -99,7 +106,9 @@ module tb_subunary_execution;
 
     // Mutate every live control and operand after D. The held operation must
     // use only the accepted dispatch snapshot when the pending source wakes.
-    dispatch_op = (operation == ALU_ADD) ? ALU_ADDC : ALU_ADD;
+    dispatch_op = (operation == ALU_ADD) ? ALU_OR : ALU_ADD;
+    dispatch_invert_a = !dispatch_invert_a;
+    dispatch_carry_in = (dispatch_carry_in == CARRY_CA) ? CARRY_ONE : CARRY_CA;
     dispatch_ca = !ca_in;
     dispatch_so = !so_in;
     dispatch_write_ca = !write_ca;
@@ -123,6 +132,7 @@ module tb_subunary_execution;
     wake_valid = 1'b1;
     #1;
     require(issue_valid && issue.op == operation &&
+            issue.invert_a == invert_a && issue.carry_in == carry_in &&
             issue.producer == dispatch_producer &&
             issue.a == source_a && issue.b == source_b && issue.mask == mask &&
             issue.ca_in == ca_in && issue.so_in == so_in && issue.write_ca == write_ca &&
@@ -163,6 +173,8 @@ module tb_subunary_execution;
   initial begin
     dispatch_valid = 1'b0;
     dispatch_op = ALU_ADD;
+    dispatch_invert_a = 1'b0;
+    dispatch_carry_in = CARRY_ZERO;
     dispatch_mask = '0;
     dispatch_producer = '0;
     dispatch_a = '0;
@@ -183,52 +195,52 @@ module tb_subunary_execution;
     rst_n = 1'b1;
     require(IQ_DEPTH == 6, "shift execution fixture resource assumption");
 
-    run_case(ALU_SUBFE, 1'b0, 32'h00000000, 32'hffffffff, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h00000000, 32'hffffffff, 32'hffffffff,
              1'b0, 1'b0, 1'b1, 1'b1, 1'b1,
              32'hfffffffe, 1'b1, 1'b0, 1'b0, 4'h8);
-    run_case(ALU_SUBFE, 1'b0, 32'h00000000, 32'hffffffff, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h00000000, 32'hffffffff, 32'hffffffff,
              1'b1, 1'b1, 1'b1, 1'b1, 1'b1,
              32'hffffffff, 1'b1, 1'b0, 1'b1, 4'h9);
-    run_case(ALU_SUBFE, 1'b0, 32'hffffffff, 32'hffffffff, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'hffffffff, 32'hffffffff, 32'hffffffff,
              1'b0, 1'b0, 1'b1, 1'b1, 1'b1,
              32'hffffffff, 1'b0, 1'b0, 1'b0, 4'h8);
-    run_case(ALU_SUBFE, 1'b0, 32'hffffffff, 32'hffffffff, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'hffffffff, 32'hffffffff, 32'hffffffff,
              1'b1, 1'b1, 1'b1, 1'b1, 1'b1,
              32'h00000000, 1'b1, 1'b0, 1'b1, 4'h3);
-    run_case(ALU_SUBFE, 1'b0, 32'h80000000, 32'hffffffff, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h80000000, 32'hffffffff, 32'hffffffff,
              1'b0, 1'b0, 1'b1, 1'b1, 1'b1,
              32'h7ffffffe, 1'b1, 1'b0, 1'b0, 4'h4);
-    run_case(ALU_SUBFE, 1'b0, 32'h80000000, 32'hffffffff, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h80000000, 32'hffffffff, 32'hffffffff,
              1'b1, 1'b1, 1'b1, 1'b1, 1'b1,
              32'h7fffffff, 1'b1, 1'b0, 1'b1, 4'h5);
-    run_case(ALU_SUBFE, 1'b0, 32'h7fffffff, 32'hffffffff, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h7fffffff, 32'hffffffff, 32'hffffffff,
              1'b0, 1'b0, 1'b1, 1'b1, 1'b1,
              32'h7fffffff, 1'b1, 1'b1, 1'b1, 4'h5);
-    run_case(ALU_SUBFE, 1'b0, 32'h7fffffff, 32'hffffffff, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h7fffffff, 32'hffffffff, 32'hffffffff,
              1'b1, 1'b1, 1'b1, 1'b1, 1'b1,
              32'h80000000, 1'b1, 1'b0, 1'b1, 4'h9);
-    run_case(ALU_SUBFE, 1'b0, 32'h00000000, 32'h00000000, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h00000000, 32'h00000000, 32'hffffffff,
              1'b0, 1'b0, 1'b1, 1'b1, 1'b1,
              32'hffffffff, 1'b0, 1'b0, 1'b0, 4'h8);
-    run_case(ALU_SUBFE, 1'b0, 32'h00000000, 32'h00000000, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h00000000, 32'h00000000, 32'hffffffff,
              1'b1, 1'b1, 1'b1, 1'b1, 1'b1,
              32'h00000000, 1'b1, 1'b0, 1'b1, 4'h3);
-    run_case(ALU_SUBFE, 1'b0, 32'hffffffff, 32'h00000000, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'hffffffff, 32'h00000000, 32'hffffffff,
              1'b0, 1'b0, 1'b1, 1'b1, 1'b1,
              32'h00000000, 1'b0, 1'b0, 1'b0, 4'h2);
-    run_case(ALU_SUBFE, 1'b0, 32'hffffffff, 32'h00000000, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'hffffffff, 32'h00000000, 32'hffffffff,
              1'b1, 1'b1, 1'b1, 1'b1, 1'b1,
              32'h00000001, 1'b0, 1'b0, 1'b1, 4'h5);
-    run_case(ALU_SUBFE, 1'b0, 32'h80000000, 32'h00000000, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h80000000, 32'h00000000, 32'hffffffff,
              1'b0, 1'b0, 1'b1, 1'b1, 1'b1,
              32'h7fffffff, 1'b0, 1'b0, 1'b0, 4'h4);
-    run_case(ALU_SUBFE, 1'b0, 32'h80000000, 32'h00000000, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h80000000, 32'h00000000, 32'hffffffff,
              1'b1, 1'b1, 1'b1, 1'b1, 1'b1,
              32'h80000000, 1'b0, 1'b1, 1'b1, 4'h9);
-    run_case(ALU_SUBFE, 1'b0, 32'h7fffffff, 32'h00000000, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h7fffffff, 32'h00000000, 32'hffffffff,
              1'b0, 1'b0, 1'b1, 1'b1, 1'b1,
              32'h80000000, 1'b0, 1'b0, 1'b0, 4'h8);
-    run_case(ALU_SUBFE, 1'b0, 32'h7fffffff, 32'h00000000, 32'hffffffff,
+    run_case(ALU_ADD, 1'b1, CARRY_CA, 1'b0, 32'h7fffffff, 32'h00000000, 32'hffffffff,
              1'b1, 1'b1, 1'b1, 1'b1, 1'b1,
              32'h80000001, 1'b0, 1'b0, 1'b1, 4'h9);
     $display("PASS unary subtract execution: captured operands/SO and overflow, packet stall (%0d checks)", checks);

@@ -92,14 +92,18 @@ package ppc_pkg;
     SEG_PREPARE = 3'd4
   } seg_req_kind_t;
   // End MMU request kinds
+  // ALU_ADD computes (invert_a ? ~a : a) + b + carry_in for every add and
+  // subtract form.
   typedef enum logic [4:0] {
     ALU_ADD, ALU_OR, ALU_XOR, ALU_AND, ALU_ANDC,
-    ALU_ORC, ALU_NAND, ALU_NOR, ALU_EQV, ALU_ADDC, ALU_ADDE,
-    ALU_ADDME, ALU_ADDZE, ALU_ROTATE, ALU_SLW, ALU_SRW, ALU_SRAW,
-    ALU_RLWIMI, ALU_SUBF, ALU_SUBFC, ALU_SUBFE,
+    ALU_ORC, ALU_NAND, ALU_NOR, ALU_EQV,
+    ALU_ROTATE, ALU_SLW, ALU_SRW, ALU_SRAW, ALU_RLWIMI,
     ALU_CNTLZW, ALU_EXTSB, ALU_EXTSH, ALU_MULLW,
     ALU_MULHW, ALU_MULHWU, ALU_DIVWU, ALU_DIVW, ALU_MULLI
   } alu_op_t;
+  typedef enum logic [1:0] {
+    CARRY_ZERO, CARRY_ONE, CARRY_CA
+  } carry_in_t;
   typedef enum logic [4:0] {
     SPECIAL_NONE, SPECIAL_B, SPECIAL_BC, SPECIAL_BCLR, SPECIAL_BCCTR,
     SPECIAL_MFSPR, SPECIAL_MTSPR, SPECIAL_CMP, SPECIAL_CMPL,
@@ -153,6 +157,8 @@ package ppc_pkg;
   localparam logic [31:0] XER_IMPLEMENTED_MASK = 32'he000_007f;
   typedef struct packed {
     alu_op_t op;
+    logic invert_a;
+    carry_in_t carry_in;
     logic [31:0] a;
     logic [31:0] b;
     logic [31:0] mask;
@@ -166,6 +172,8 @@ package ppc_pkg;
   } issue_packet_t;
   typedef struct packed {
     alu_op_t op;
+    logic invert_a;
+    carry_in_t carry_in;
     logic illegal;
     logic [4:0] src_a;
     logic [4:0] src_b;

@@ -17,8 +17,8 @@ and zero/CA1 when CAin1. Overflow includes the borrow adjustment. OE replaces
 OV and sets sticky SO on overflow; Rc uses the final result and final SO.
 
 SUBFE always reads and replaces CA under the existing flag owner. The reservation
-station captures committed CA on dispatch; ALU_SUBFE selects complemented A and
-held CA, while SUBF/SUBFC retain fixed carry-in one. No interfaces change.
+station captures committed CA on dispatch; decode selects ALU_ADD with
+`invert_a` and `CARRY_CA`, while SUBF/SUBFC use `CARRY_ONE`.
 
 Primary timing TIM-T64-033/Table 6-4/PDF271 records raw `subfe[o][.]`, Integer
 execution and base one-cycle execution for PID6/PID7v. Full timing conformance

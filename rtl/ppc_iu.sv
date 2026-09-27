@@ -93,14 +93,14 @@ module ppc_iu #(
     .busy_o(divider_busy), .quotient_valid_o(divider_quotient_valid),
     .quotient_o(divider_quotient)
   );
-  assign add_operand_a = ((held.op == ALU_SUBF) ||
-                          (held.op == ALU_SUBFC) ||
-                          (held.op == ALU_SUBFE)) ? ~held.a : held.a;
-  assign add_carry_in = (held.op == ALU_SUBF) ||
-    (held.op == ALU_SUBFC) ||
-    ((((held.op == ALU_ADDE) || (held.op == ALU_ADDME) ||
-       (held.op == ALU_SUBFE) ||
-       (held.op == ALU_ADDZE))) && held.ca_in);
+  assign add_operand_a = held.invert_a ? ~held.a : held.a;
+  always_comb begin
+    case (held.carry_in)
+      CARRY_ONE: add_carry_in = 1'b1;
+      CARRY_CA: add_carry_in = held.ca_in;
+      default: add_carry_in = 1'b0;
+    endcase
+  end
   assign add_sum = {1'b0, add_operand_a} + {1'b0, held.b} +
                    33'(add_carry_in);
   assign add_overflow = (add_operand_a[31] == held.b[31]) &&
@@ -164,13 +164,6 @@ module ppc_iu #(
   always_comb begin
     case (held.op)
       ALU_ADD: result_value = add_sum[31:0];
-      ALU_ADDC: result_value = add_sum[31:0];
-      ALU_ADDE: result_value = add_sum[31:0];
-      ALU_ADDME: result_value = add_sum[31:0];
-      ALU_ADDZE: result_value = add_sum[31:0];
-      ALU_SUBF: result_value = add_sum[31:0];
-      ALU_SUBFC: result_value = add_sum[31:0];
-      ALU_SUBFE: result_value = add_sum[31:0];
       ALU_ROTATE: result_value = rotate_value & held.mask;
       ALU_RLWIMI: result_value = (rotate_value & held.mask) |
                                  (held.b & ~held.mask);

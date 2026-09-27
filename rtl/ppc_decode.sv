@@ -66,7 +66,9 @@ module ppc_decode #(
       6'd8: begin
         uop_o.illegal = 1'b0;
         uop_o.gpr_write = 1'b1;
-        uop_o.op = ALU_SUBFC;
+        uop_o.op = ALU_ADD;
+        uop_o.invert_a = 1'b1;
+        uop_o.carry_in = CARRY_ONE;
         uop_o.use_imm = 1'b1;
         uop_o.imm = {{16{insn_i[15]}}, insn_i[15:0]};
         uop_o.needs_flags = 1'b1;
@@ -75,7 +77,7 @@ module ppc_decode #(
       6'd12, 6'd13: begin
         uop_o.illegal = 1'b0;
         uop_o.gpr_write = 1'b1;
-        uop_o.op = ALU_ADDC;
+        uop_o.op = ALU_ADD;
         uop_o.use_imm = 1'b1;
         uop_o.imm = {{16{insn_i[15]}}, insn_i[15:0]};
         uop_o.needs_flags = 1'b1;
@@ -298,12 +300,6 @@ module ppc_decode #(
             uop_o.illegal = 1'b0;
             uop_o.gpr_write = 1'b1;
             case (insn_i[9:1])
-              9'd10: uop_o.op = ALU_ADDC;
-              9'd138, 9'd234, 9'd202: uop_o.op = ALU_ADDE;
-              9'd8: uop_o.op = ALU_SUBFC;
-              9'd136: uop_o.op = ALU_SUBFE;
-              9'd232, 9'd200: uop_o.op = ALU_SUBFE;
-              9'd40, 9'd104: uop_o.op = ALU_SUBF;
               9'd235: uop_o.op = ALU_MULLW;
               9'd459: uop_o.op = ALU_DIVWU;
               9'd491: uop_o.op = ALU_DIVW;
@@ -315,6 +311,15 @@ module ppc_decode #(
                              (insn_i[9:1] == 9'd200) ||
                              (insn_i[9:1] == 9'd234) ||
                              (insn_i[9:1] == 9'd202);
+            // subf* forms add ~rA; subf/neg/subfc add one, extended forms CA.
+            uop_o.invert_a = (insn_i[9:1] == 9'd40) ||
+                              (insn_i[9:1] == 9'd104) ||
+                              (insn_i[9:1] == 9'd8) ||
+                              (insn_i[9:1] == 9'd136) ||
+                              (insn_i[9:1] == 9'd232) ||
+                              (insn_i[9:1] == 9'd200);
+            uop_o.carry_in = uop_o.read_ca ? CARRY_CA :
+                             (uop_o.invert_a ? CARRY_ONE : CARRY_ZERO);
             uop_o.read_so = insn_i[10] || insn_i[0];
             uop_o.write_ca = (insn_i[9:1] == 9'd8) ||
                               (insn_i[9:1] == 9'd136) ||

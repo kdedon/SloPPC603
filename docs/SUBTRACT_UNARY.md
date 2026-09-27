@@ -17,10 +17,10 @@ SUBFZE sets CA only for A=0 with incoming CA1. Carry uses the unsigned fixed
 operand, while overflow uses the signed mathematical result. OE updates OV and
 sticky SO; Rc records the final result with final SO.
 
-The decode-only change reuses ALU_SUBFE and injects B=ffffffff/0 via the immediate
+Decode uses the SUBFE selection (ALU_ADD, `invert_a`, `CARRY_CA`) and injects
+B=ffffffff/0 via the immediate
 operand path. rA, including r0, remains real; there is no rB dependency. The
 existing flag owner and dispatch capture preserve CA across waits and recovery.
-No ALU operation, packet field or interface is added.
 
 Primary Table 6-4/PDF271 supplies TIM-T64-037/035: raw [o][.] forms, Integer
 execution, base one-cycle execution for PID6/PID7v. No full processor timing or

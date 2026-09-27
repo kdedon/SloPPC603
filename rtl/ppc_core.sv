@@ -302,7 +302,9 @@ module ppc_core #(
   ppc_dispatch station (
     .clk_i, .rst_ni, .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch && normal_uop),
-    .dispatch_ready_o(rs_ready), .op_i(dispatch_uop.op), .producer_i(alloc_producer),
+    .dispatch_ready_o(rs_ready), .op_i(dispatch_uop.op),
+    .invert_a_i(dispatch_uop.invert_a), .carry_in_i(dispatch_uop.carry_in),
+    .producer_i(alloc_producer),
     .a_i(operand_a), .b_i(operand_b),
     .mask_i(dispatch_uop.mask),
     .shift_i(dispatch_uop.shift),

@@ -15,7 +15,7 @@ CA from the unsigned sum of rA and the 32-bit sign extension of SIMM, ignoring
 incoming CA. rA0 is a real register. OV/SO are unchanged. ADDIC preserves CR;
 ADDIC. records the signed result plus current SO in CR0 and preserves other fields.
 
-The decode-only extension uses ALU_ADDC, a captured sign-extended immediate and
+Decode selects ALU_ADD with `CARRY_ZERO`, a captured sign-extended immediate and
 unconditional CA ownership/write. Only primary 13 captures SO and enables CR0.
 The existing tagged execution, masked commitment and recovery paths are reused.
 

@@ -14,9 +14,8 @@ Equality produces zero with CA1. Incoming CA is not consumed. rA/rB, including
 r0, are real registers and rD is the destination.
 
 OE controls signed overflow and sticky SO. Rc records the final signed result
-and final SO. Every SUBFC owns and replaces CA, even with OE=Rc=0. The IU adds
-ALU_SUBFC to the existing complemented-A/fixed-carry subtraction path and exports
-the 33-bit sum carry. Packet widths and interfaces are unchanged.
+and final SO. Every SUBFC owns and replaces CA, even with OE=Rc=0. Decode selects
+ALU_ADD with `invert_a` and `CARRY_ONE`; the IU exports the 33-bit sum carry.
 
 Primary timing TIM-T64-021/Table 6-4/PDF271 records raw `subfc[o][.]`, Integer
 execution and base one-cycle execution for PID6/PID7v. This slice validates the
