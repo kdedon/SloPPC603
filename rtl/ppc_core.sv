@@ -145,6 +145,7 @@ module ppc_core #(
   logic iu_result_valid, iu_result_ready;
   logic special_result_valid, special_result_ready, special_ready, special_busy;
   logic special_cancel, special_store_irrevocable, special_branch_redirect;
+  logic special_kill;
   logic special_exception_redirect, special_exception_irrevocable;
   logic special_exception_halt;
   logic frontend_fence, frontend_quiescent;
@@ -512,7 +513,7 @@ module ppc_core #(
   always_comb begin
     rs_cancel = 1'b0;
     iu_cancel = 1'b0;
-    special_cancel = 1'b0;
+    special_kill = 1'b0;
     fault_killed = 1'b0;
     for (int slot = 0; slot < CQ_DEPTH; slot++) begin
       if (recovery_accepted && recovery_kill[slot]) begin
@@ -522,12 +523,20 @@ module ppc_core #(
             iu_result.producer.generation == recovery_kill_generation[slot]) iu_cancel = 1'b1;
         if (special_producer.index == CQ_INDEX_WIDTH'(slot) &&
             special_producer.generation == recovery_kill_generation[slot])
-          special_cancel = 1'b1;
+          special_kill = 1'b1;
         if (fault_producer.index == CQ_INDEX_WIDTH'(slot) &&
             fault_producer.generation == recovery_kill_generation[slot]) fault_killed = 1'b1;
       end
     end
   end
+  // Without the test redirect every recovery is the special unit's own
+  // redirect, issued with the CQ empty, so it never kills the special lane.
+  assign special_cancel = ENABLE_TEST_REDIRECT && special_kill;
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni && !ENABLE_TEST_REDIRECT)
+      assert (!special_kill) else $error("special-unit redirect killed the special lane");
+  // synthesis translate_on
   // Ownership demand is derived from decoded reads/writes at the atomic
   // dispatch boundary; a diagnostic can never acquire the token.
   assign dispatch_needs_flags = !dispatch_uop.illegal &&
