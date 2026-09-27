@@ -1,5 +1,7 @@
 `default_nettype none
-module ppc_fpu (
+module ppc_fpu #(
+    parameter bit CPU_602 = 1'b0
+) (
     input logic clk_i,
     input logic rst_ni,
     input logic issue_valid_i,
@@ -24,17 +26,22 @@ module ppc_fpu (
     output ppc_fpu_pkg::ppc_fpu_mem_t store_o,
     input logic [4:0] inspect_fpr_index_i,
     output logic [63:0] inspect_fpr_o,
-    output logic [31:0] inspect_fpscr_o
+    output logic [31:0] inspect_fpscr_o,
+    output logic [31:0] inspect_sp_o,
+    output logic [31:0] inspect_lt_o,
+    output logic forward_valid_o,
+    output ppc_fpu_pkg::ppc_fpu_forward_t forward_o
 );
   import ppc_pkg::completion_tag_t;
   import ppc_fpu_pkg::*;
 
-  typedef enum logic [2:0] {
-    IDLE, SEND_ARITH, WAIT_ARITH, SEND_MEM, WAIT_MEM, READY
-  } state_t;
-  typedef enum logic [2:0] {
+  localparam int PENDING_DEPTH = CPU_602 ? 4 : 5;
+  localparam int PENDING_IDX_BITS = CPU_602 ? 2 : 3;
+  localparam int FPR_BITS = CPU_602 ? 32 : 64;
+
+  typedef enum logic [3:0] {
     DK_ILLEGAL, DK_ARITH, DK_MOVE, DK_FSEL, DK_MFFS, DK_MCRFS,
-    DK_MTFS, DK_MEMORY
+    DK_MTFS, DK_MEMORY, DK_MFSPR, DK_MTSPR
   } decode_kind_t;
   typedef struct packed {
     decode_kind_t kind;
@@ -46,31 +53,109 @@ module ppc_fpu (
     logic mem_integer;
     logic mem_update;
     logic [1:0] move_kind;
+    logic spr_sp;
   } decoded_t;
 
-  state_t state_q;
+  typedef struct packed {
+    logic valid;
+    logic started;
+    logic done;
+    logic dest_fpr;
+    ppc_fpu_issue_t issue;
+    decoded_t decoded;
+    ppc_fpu_result_t result;
+    ppc_fpu_arith_rsp_t arith;
+    logic arith_done;
+    logic fpr_forwarded;
+    logic cr_forwarded;
+    logic [1:0] local_wait;
+    ppc_fpu_mem_t mem;
+  } pending_t;
+  typedef struct packed {
+    logic ready;
+    logic [63:0] raw;
+    logic sp;
+    logic lt;
+  } source_t;
+  typedef struct packed {
+    completion_tag_t tag;
+    logic [31:0] insn;
+    logic msr_fp;
+    logic msr_fe0;
+    logic msr_fe1;
+    logic msr_pr;
+  } work_t;
+
+  pending_t pending_q [0:PENDING_DEPTH-1];
+  pending_t pending_d [0:PENDING_DEPTH-1];
+  logic [2:0] pending_count_q;
+  logic [2:0] pending_count_d;
+  logic [31:0] sp_q;
+  logic [31:0] lt_q;
+  logic [31:0] sp_d;
+  logic [31:0] lt_d;
   decoded_t decoded;
-  ppc_fpu_result_t held_q;
-  logic issue_rc_q;
-  logic issue_fe_any_q;
-  ppc_fpu_mem_t mem_q;
-  ppc_fpu_arith_req_t arith_req_q;
+  ppc_fpu_result_t head_result;
+  ppc_fpu_result_t exec_result;
+  ppc_fpu_arith_req_t arith_req;
   ppc_fpu_arith_rsp_t arith_rsp;
+  ppc_fpu_arith_rsp_t arith_finish;
   logic arith_req_ready;
   logic arith_rsp_valid;
-  logic [63:0] fpr_q [0:31];
+  logic arith_rsp_ready;
+  logic arith_finish_valid;
+  logic [FPR_BITS-1:0] fpr_q [0:31];
   logic [31:0] fpscr_q;
   logic [31:0] proposed_fpscr;
-  logic [31:0] arith_fpscr_next;
   logic [31:0] issue_ea;
-  logic [63:0] issue_b;
-  logic [63:0] issue_a;
-  logic [63:0] issue_c;
+  logic [31:0] issue_spr;
+  logic [63:0] src_a;
+  logic [63:0] src_b;
+  logic [63:0] src_c;
+  logic [63:0] src_d;
+  logic src_a_sp, src_b_sp, src_c_sp, src_d_sp;
+  logic src_b_lt, src_c_lt, src_d_lt;
+  source_t source_a, source_b, source_c, source_d;
+  logic use_a, use_b, use_c, use_d;
+  logic select_b;
+  logic operand_tags_ok;
+  logic work_valid;
+  logic head_available;
+  logic [2:0] after_retire_count;
+  logic matching_abort;
+  logic duplicate_tag;
+  logic forward_from_pending;
+  logic [PENDING_IDX_BITS-1:0] forward_index;
+  logic [PENDING_IDX_BITS-1:0] abort_index;
+  logic abort_index_valid;
+  logic safe_abort_flush;
+  logic sources_ready;
+  logic [PENDING_IDX_BITS-1:0] exec_index;
+  logic exec_found;
+  logic exec_fire;
+  logic arith_rsp_match;
+  logic mem_rsp_match;
+  logic [PENDING_IDX_BITS-1:0] arith_rsp_index;
+  logic [PENDING_IDX_BITS-1:0] mem_rsp_index;
+  logic retire_fire;
+  logic dispatch_fire;
+  logic barrier_present;
+  logic source_waiting;
+  logic [2:0] fpr_pending_count;
+  logic [31:0] prefix_fpscr;
+  logic prefix_known;
+  work_t work_issue;
+  decoded_t work_decoded;
+  logic work_dispatch;
+  logic [31:0] work_ea;
+  logic [4:0] src_a_index, src_b_index, src_c_index, src_d_index;
+  logic arith_launch;
+  logic mem_launch;
+  logic local_launch;
+  logic [PENDING_IDX_BITS-1:0] dispatch_index;
+  ppc_fpu_result_t mem_incoming_result;
   logic commit_match;
   logic abort_match;
-  logic pending_match_mem;
-  logic pending_match_arith;
-  logic fp_opcode_class;
 
   function automatic logic [31:0] normalize_fpscr(input logic [31:0] f);
     logic [31:0] n;
@@ -175,13 +260,202 @@ module ppc_fpu (
     end
   endfunction
 
+  function automatic logic single_fits_double(input logic [63:0] d);
+    logic [31:0] s;
+    begin
+      s = narrow_single(d);
+      return d[62:52] != 11'h7ff &&
+          (s[30:23] != 8'd0 || s[22:0] == 23'd0) &&
+          widen_single(s) == d;
+    end
+  endfunction
+
+  function automatic logic is_barrier(input decode_kind_t kind);
+    return kind == DK_MFFS || kind == DK_MCRFS ||
+        kind == DK_MTFS || kind == DK_MFSPR || kind == DK_MTSPR;
+  endfunction
+
+  function automatic logic writes_fpr(input decode_kind_t kind,
+                                       input ppc_fpu_op_t op,
+                                       input logic mem_load);
+    return (kind == DK_ARITH && op != FP_CMPU && op != FP_CMPO) ||
+        kind == DK_MOVE || kind == DK_FSEL || kind == DK_MFFS ||
+        (kind == DK_MEMORY && mem_load);
+  endfunction
+
+  function automatic logic numeric_emulation_trap(
+      input logic [8:0] invalid, input logic ox, input logic ux,
+      input logic zx, input logic xx, input logic tiny,
+      input logic [5:0] control
+  );
+    logic enabled;
+    begin
+      enabled = ((|invalid) && control[5]) || (ox && control[4]) ||
+          (ux && control[3]) || (zx && control[2]) || (xx && control[1]);
+      return CPU_602 && (enabled || (!control[0] && tiny));
+    end
+  endfunction
+
+  function automatic ppc_fpu_result_t numeric_result(
+      input ppc_fpu_result_t base, input ppc_fpu_arith_rsp_t ar,
+      input ppc_fpu_op_t op, input logic rc, input logic [2:0] cr_field,
+      input logic fe0, input logic fe1, input logic [31:0] old_f
+  );
+    ppc_fpu_result_t out;
+    logic [31:0] next_f;
+    begin
+      out = base;
+      out.tag = ar.tag;
+      next_f = arithmetic_fpscr(old_f, ar.invalid, ar.ox,
+          ar.ux, ar.zx, ar.xx, ar.fr,
+          ar.fi, ar.frfi_valid, ar.fprf,
+          ar.fprf_valid, ar.fpcc, ar.compare_valid);
+      if (numeric_emulation_trap(ar.invalid, ar.ox, ar.ux, ar.zx,
+                                 ar.xx, ar.tiny_before_round, old_f[7:2])) begin
+        out.exception = FPU_EMULATION_TRAP;
+        out.fpr_write = 1'b0;
+        out.fpscr_write = 1'b0;
+        out.cr_write = 1'b0;
+      end else begin
+        out.fpr_write = ar.write_result;
+        out.fpr_value = CPU_602 ?
+            {32'd0, (op == FP_FCTIWZ ? ar.result[31:0] :
+              narrow_single(ar.result))} : ar.result;
+        out.fpr_sp = CPU_602 && op != FP_FCTIWZ;
+        out.fpr_lt = CPU_602 && op == FP_FCTIWZ;
+        out.fpscr_write = 1'b1;
+        out.fpscr_value = next_f;
+        out.cr_write = ar.compare_valid ||
+            (!ar.compare_valid && rc);
+        out.cr_field = ar.compare_valid ? cr_field : 3'd1;
+        out.cr_value = ar.compare_valid ? ar.fpcc : next_f[31:28];
+        if (!CPU_602 && (fe0 || fe1) && next_f[30])
+          out.exception = FPU_FP_ENABLED;
+      end
+      return out;
+    end
+  endfunction
+
+  function automatic source_t read_source(input logic [4:0] reg_index,
+                                          input logic [2:0] older_count);
+    source_t s;
+    begin
+      s = '0;
+      s.ready = 1'b1;
+      s.raw = {{(64-FPR_BITS){1'b0}}, fpr_q[reg_index]};
+      s.sp = CPU_602 && sp_q[31-reg_index];
+      s.lt = CPU_602 && lt_q[31-reg_index];
+      for (integer i = 0; i < PENDING_DEPTH; i++) begin
+        if (i < int'(older_count) && pending_q[i].valid &&
+            pending_q[i].dest_fpr && pending_q[i].issue.insn[25:21] == reg_index) begin
+          s.ready = 1'b0;
+          if (pending_q[i].done && pending_q[i].result.fpr_write) begin
+            s.ready = 1'b1;
+            s.raw = pending_q[i].result.fpr_value;
+            s.sp = pending_q[i].result.fpr_sp;
+            s.lt = pending_q[i].result.fpr_lt;
+          end else if (arith_finish_valid &&
+                       arith_finish.tag == pending_q[i].issue.tag &&
+                       !numeric_emulation_trap(arith_finish.invalid, arith_finish.ox,
+                           arith_finish.ux, arith_finish.zx, arith_finish.xx,
+                           arith_finish.tiny_before_round, fpscr_q[7:2]) &&
+                       arith_finish.write_result) begin
+            s.ready = 1'b1;
+            s.raw = CPU_602 ?
+                {32'd0, (pending_q[i].decoded.op == FP_FCTIWZ ?
+                  arith_finish.result[31:0] : narrow_single(arith_finish.result))} :
+                arith_finish.result;
+            s.sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
+            s.lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
+          end else if (arith_rsp_valid && arith_rsp.tag == pending_q[i].issue.tag &&
+                       !numeric_emulation_trap(arith_rsp.invalid, arith_rsp.ox,
+                           arith_rsp.ux, arith_rsp.zx, arith_rsp.xx,
+                           arith_rsp.tiny_before_round, fpscr_q[7:2]) &&
+                       arith_rsp.write_result) begin
+            s.ready = 1'b1;
+            s.raw = CPU_602 ?
+                {32'd0, (pending_q[i].decoded.op == FP_FCTIWZ ?
+                  arith_rsp.result[31:0] : narrow_single(arith_rsp.result))} :
+                arith_rsp.result;
+            s.sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
+            s.lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
+          end
+        end
+      end
+      return s;
+    end
+  endfunction
+
+  function automatic logic [31:0] status_change(input logic [31:0] old_f,
+                                                  input logic [31:0] insn,
+                                                  input logic [63:0] b);
+    logic [31:0] n;
+    begin
+      n = old_f;
+      case (insn[10:1])
+        10'd38: if (insn[25:21] != 5'd1 && insn[25:21] != 5'd2) begin
+          n[31-insn[25:21]] = 1'b1;
+          if (!old_f[31-insn[25:21]] &&
+              ((insn[25:21] >= 5'd3 && insn[25:21] <= 5'd12) ||
+               (insn[25:21] >= 5'd21 && insn[25:21] <= 5'd23))) n[31] = 1'b1;
+        end
+        10'd70: if (insn[25:21] != 5'd1 && insn[25:21] != 5'd2)
+          n[31-insn[25:21]] = 1'b0;
+        10'd134: n[31-4*int'(insn[25:23]) -: 4] = insn[15:12];
+        10'd711: for (integer i = 0; i < 8; i++)
+          if (insn[24-i]) n[31-4*i -: 4] = b[31-4*i -: 4];
+        10'd64: case (insn[20:18])
+          3'd0: n[31:28] = 4'b0;
+          3'd1: n[27:24] = 4'b0;
+          3'd2: n[23:20] = 4'b0;
+          3'd3: n[19] = 1'b0;
+          3'd5: n[10:8] = 3'b0;
+          default: n = old_f;
+        endcase
+        default: n = old_f;
+      endcase
+      return normalize_fpscr(n);
+    end
+  endfunction
+
+  function automatic ppc_fpu_result_t memory_result(
+      input ppc_fpu_result_t base, input logic mem_load,
+      input logic mem_single, input ppc_fpu_mem_rsp_t reply
+  );
+    ppc_fpu_result_t r;
+    begin
+      r = base;
+      r.tag = reply.tag;
+      if (reply.fault) begin
+        r.exception = FPU_MEMORY_FAULT;
+        r.fault_code = reply.fault_code;
+        r.fault_info = reply.fault_info;
+        r.gpr_update = 1'b0;
+        r.store = 1'b0;
+      end else if (mem_load) begin
+        r.fpr_write = 1'b1;
+        if (CPU_602) begin
+          r.fpr_value = {32'd0,reply.data[31:0]};
+          r.fpr_sp = 1'b1;
+          if (!mem_single) begin
+            if (!single_fits_double(reply.data)) begin
+              r.exception = FPU_EMULATION_TRAP;
+              r.fpr_write = 1'b0;
+              r.gpr_update = 1'b0;
+            end else r.fpr_value = {32'd0,narrow_single(reply.data)};
+          end
+        end else r.fpr_value = mem_single ?
+            widen_single(reply.data[31:0]) : reply.data;
+      end
+      return r;
+    end
+  endfunction
+
   always_comb begin
     decoded = '0;
     decoded.kind = DK_ILLEGAL;
-    fp_opcode_class = (issue_i.insn[31:26] == 6'd59) ||
-                      (issue_i.insn[31:26] == 6'd63) ||
-                      (issue_i.insn[31:26] >= 6'd48 && issue_i.insn[31:26] <= 6'd55);
     issue_ea = 32'd0;
+    issue_spr = {22'd0, issue_i.insn[15:11], issue_i.insn[20:16]};
     if (issue_i.insn[31:26] >= 6'd48 && issue_i.insn[31:26] <= 6'd55) begin
       decoded.kind = DK_MEMORY;
       decoded.mem_load = (issue_i.insn[31:26] <= 6'd51);
@@ -202,9 +476,13 @@ module ppc_fpu (
         10'd663, 10'd695: begin decoded.mem_store=1'b1; decoded.mem_single=1'b1; decoded.mem_update=(issue_i.insn[10:1]==10'd695); end
         10'd727, 10'd759: begin decoded.mem_store=1'b1; decoded.mem_update=(issue_i.insn[10:1]==10'd759); end
         10'd983: begin decoded.mem_store=1'b1; decoded.mem_integer=1'b1; end
+        10'd339, 10'd467: if (CPU_602 &&
+            (issue_spr == 32'd1021 || issue_spr == 32'd1022)) begin
+          decoded.kind = issue_i.insn[10:1] == 10'd339 ? DK_MFSPR : DK_MTSPR;
+          decoded.spr_sp = issue_spr == 32'd1021;
+        end else decoded.kind = DK_ILLEGAL;
         default: decoded.kind=DK_ILLEGAL;
       endcase
-      if (decoded.kind == DK_MEMORY) fp_opcode_class = 1'b1;
     end else if (issue_i.insn[31:26] == 6'd59 || issue_i.insn[31:26] == 6'd63) begin
       decoded.kind = DK_ARITH;
       case (issue_i.insn[31:26])
@@ -293,233 +571,686 @@ module ppc_fpu (
       decoded.kind = DK_ILLEGAL;
   end
 
-  assign issue_a = fpr_q[issue_i.insn[20:16]];
-  assign issue_b = fpr_q[issue_i.insn[15:11]];
-  assign issue_c = fpr_q[issue_i.insn[10:6]];
-  assign inspect_fpr_o = fpr_q[inspect_fpr_index_i];
-  assign inspect_fpscr_o = fpscr_q;
-  assign issue_ready_o = (rst_ni && state_q == IDLE && !kill_all_i);
-  assign result_valid_o = (rst_ni && state_q == READY);
-  assign result_o = held_q;
-  assign commit_match = commit_valid_i && (commit_tag_i == held_q.tag);
-  assign abort_match = abort_valid_i && (abort_tag_i == held_q.tag);
-  assign pending_match_mem = mem_rsp_i.tag == held_q.tag;
-  assign pending_match_arith = arith_rsp.tag == held_q.tag;
-  assign arith_fpscr_next = arithmetic_fpscr(
-      fpscr_q, arith_rsp.invalid, arith_rsp.ox, arith_rsp.ux, arith_rsp.zx,
-      arith_rsp.xx, arith_rsp.fr, arith_rsp.fi, arith_rsp.frfi_valid,
-      arith_rsp.fprf, arith_rsp.fprf_valid, arith_rsp.fpcc, arith_rsp.compare_valid);
-  assign mem_req_valid_o = (rst_ni && state_q == SEND_MEM && !kill_all_i && !abort_match);
-  assign mem_req_o = mem_q;
-  // A combinational LSU reply must wait until its request has been accepted.
-  // Stale replies still drain while this instruction prepares its request.
-  assign mem_rsp_ready_o = !(state_q == SEND_MEM && pending_match_mem);
-  assign store_valid_o = (rst_ni && state_q == READY && held_q.store && commit_match &&
-                          !kill_all_i && !abort_match);
-  assign store_o = mem_q;
-  assign commit_ready_o = (rst_ni && state_q == READY && commit_match && !kill_all_i &&
-                           !abort_match && (!held_q.store || store_ready_i));
+  // One waiting reservation entry is permitted. Ready independent operands
+  // bypass it and enter the arithmetic pipe on the dispatch handshake.
+  always_comb begin
+    exec_found = 1'b0;
+    exec_index = '0;
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (!exec_found && i < int'(pending_count_q) &&
+          pending_q[i].valid && !pending_q[i].started) begin
+        exec_found = 1'b1;
+        exec_index = PENDING_IDX_BITS'(i);
+      end
+    end
+    barrier_present = 1'b0;
+    fpr_pending_count = '0;
+    duplicate_tag = 1'b0;
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (i < int'(pending_count_q) && pending_q[i].valid) begin
+        barrier_present |= is_barrier(pending_q[i].decoded.kind);
+        fpr_pending_count += {2'd0,pending_q[i].dest_fpr};
+        if (pending_q[i].issue.tag == issue_i.tag) duplicate_tag = 1'b1;
+      end
+    end
+  end
 
-  ppc_fpu_arith arithmetic (
+  always_comb begin
+    arith_rsp_match = 1'b0;
+    mem_rsp_match = 1'b0;
+    arith_rsp_index = '0;
+    mem_rsp_index = '0;
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (i < int'(pending_count_q) && pending_q[i].valid) begin
+        if (arith_rsp_valid && pending_q[i].started &&
+            pending_q[i].decoded.kind == DK_ARITH &&
+            pending_q[i].issue.tag == arith_rsp.tag) begin
+          arith_rsp_match = 1'b1;
+          arith_rsp_index = PENDING_IDX_BITS'(i);
+        end
+        if (mem_rsp_valid_i && pending_q[i].started &&
+            pending_q[i].decoded.kind == DK_MEMORY &&
+            pending_q[i].issue.tag == mem_rsp_i.tag) begin
+          mem_rsp_match = 1'b1;
+          mem_rsp_index = PENDING_IDX_BITS'(i);
+        end
+      end
+    end
+  end
+
+  always_comb begin
+    abort_index = '0;
+    abort_index_valid = 1'b0;
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (i < int'(pending_count_q) && pending_q[i].valid &&
+          pending_q[i].issue.tag == abort_tag_i) begin
+        abort_index = PENDING_IDX_BITS'(i);
+        abort_index_valid = 1'b1;
+      end
+    end
+    safe_abort_flush = abort_valid_i && abort_index_valid;
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      if (i < int'(abort_index) && pending_q[i].valid &&
+          pending_q[i].decoded.kind == DK_ARITH &&
+          pending_q[i].started && !pending_q[i].arith_done)
+        safe_abort_flush = 1'b0;
+  end
+
+  always_comb begin
+    head_result = '0;
+    head_available = pending_count_q != 3'd0 && pending_q[0].valid;
+    if (head_available) begin
+      head_result = pending_q[0].result;
+      if ((pending_q[0].decoded.kind == DK_MOVE ||
+           pending_q[0].decoded.kind == DK_FSEL) && head_result.cr_write)
+        head_result.cr_value = fpscr_q[31:28];
+      if (pending_q[0].decoded.kind == DK_ARITH) begin
+        if (pending_q[0].arith_done)
+          head_result = numeric_result(pending_q[0].result, pending_q[0].arith,
+              pending_q[0].decoded.op, pending_q[0].issue.insn[0],
+              pending_q[0].issue.insn[25:23],
+              pending_q[0].issue.msr_fe0, pending_q[0].issue.msr_fe1, fpscr_q);
+        else if (arith_rsp_match && arith_rsp_index == '0) begin
+          head_result = numeric_result(pending_q[0].result, arith_rsp,
+              pending_q[0].decoded.op, pending_q[0].issue.insn[0],
+              pending_q[0].issue.insn[25:23],
+              pending_q[0].issue.msr_fe0,
+              pending_q[0].issue.msr_fe1, fpscr_q);
+        end else if (arith_finish_valid &&
+                     arith_finish.tag == pending_q[0].issue.tag) begin
+          head_result = numeric_result(pending_q[0].result, arith_finish,
+              pending_q[0].decoded.op, pending_q[0].issue.insn[0],
+              pending_q[0].issue.insn[25:23],
+              pending_q[0].issue.msr_fe0,
+              pending_q[0].issue.msr_fe1, fpscr_q);
+        end
+      end else if (pending_q[0].decoded.kind == DK_MEMORY &&
+                   mem_rsp_match && mem_rsp_index == '0) begin
+        head_result = memory_result(pending_q[0].result,
+            pending_q[0].decoded.mem_load, pending_q[0].decoded.mem_single,
+            mem_rsp_i);
+      end
+    end
+    commit_match = head_available && commit_valid_i &&
+        commit_tag_i == pending_q[0].issue.tag;
+    matching_abort = abort_index_valid;
+    abort_match = abort_valid_i && matching_abort;
+    result_valid_o = rst_ni && !kill_all_i && !abort_match &&
+        head_available && (pending_q[0].done ||
+          (pending_q[0].decoded.kind == DK_ARITH &&
+           ((arith_rsp_match && arith_rsp_index == '0) ||
+            (arith_finish_valid && arith_finish.tag == pending_q[0].issue.tag))) ||
+          (pending_q[0].decoded.kind == DK_MEMORY &&
+           mem_rsp_match && mem_rsp_index == '0));
+    result_o = head_result;
+    store_o = pending_q[0].mem;
+    store_valid_o = result_valid_o && head_result.store && commit_match;
+    commit_ready_o = result_valid_o && commit_match &&
+        (!head_result.store || store_ready_i);
+    retire_fire = commit_ready_o;
+    after_retire_count = pending_count_q - {2'd0,retire_fire};
+    issue_ready_o = rst_ni && !kill_all_i && !abort_valid_i &&
+        !exec_found && !barrier_present && !duplicate_tag &&
+        (after_retire_count < 3'(PENDING_DEPTH)) &&
+        (!is_barrier(decoded.kind) || pending_count_q == 3'd0) &&
+        (!writes_fpr(decoded.kind, decoded.op, decoded.mem_load) ||
+         fpr_pending_count < 3'd4 ||
+         (retire_fire && pending_q[0].dest_fpr));
+    dispatch_fire = issue_valid_i && issue_ready_o;
+    dispatch_index = PENDING_IDX_BITS'(after_retire_count);
+  end
+
+  always_comb begin
+    work_issue = '0;
+    work_decoded = '0;
+    work_ea = '0;
+    work_valid = 1'b0;
+    work_dispatch = 1'b0;
+    if (exec_found) begin
+      work_issue.tag = pending_q[exec_index].issue.tag;
+      work_issue.insn = pending_q[exec_index].issue.insn;
+      work_issue.msr_fp = pending_q[exec_index].issue.msr_fp;
+      work_issue.msr_fe0 = pending_q[exec_index].issue.msr_fe0;
+      work_issue.msr_fe1 = pending_q[exec_index].issue.msr_fe1;
+      work_issue.msr_pr = pending_q[exec_index].issue.msr_pr;
+      work_decoded = pending_q[exec_index].decoded;
+      work_ea = pending_q[exec_index].result.ea;
+      work_valid = 1'b1;
+    end else if (dispatch_fire) begin
+      work_issue.tag = issue_i.tag;
+      work_issue.insn = issue_i.insn;
+      work_issue.msr_fp = issue_i.msr_fp;
+      work_issue.msr_fe0 = issue_i.msr_fe0;
+      work_issue.msr_fe1 = issue_i.msr_fe1;
+      work_issue.msr_pr = issue_i.msr_pr;
+      work_decoded = decoded;
+      work_ea = issue_ea;
+      work_valid = 1'b1;
+      work_dispatch = 1'b1;
+    end
+    src_a_index = work_issue.insn[20:16];
+    src_b_index = work_issue.insn[15:11];
+    src_c_index = work_issue.insn[10:6];
+    src_d_index = work_issue.insn[25:21];
+    source_a = read_source(src_a_index, work_dispatch ?
+        pending_count_q : 3'(exec_index));
+    source_b = read_source(src_b_index, work_dispatch ?
+        pending_count_q : 3'(exec_index));
+    source_c = read_source(src_c_index, work_dispatch ?
+        pending_count_q : 3'(exec_index));
+    source_d = read_source(src_d_index, work_dispatch ?
+        pending_count_q : 3'(exec_index));
+    src_a = source_a.raw;
+    src_b = source_b.raw;
+    src_c = source_c.raw;
+    src_d = source_d.raw;
+    src_a_sp = source_a.sp;
+    src_b_sp = source_b.sp;
+    src_c_sp = source_c.sp;
+    src_d_sp = source_d.sp;
+    src_b_lt = source_b.lt;
+    src_c_lt = source_c.lt;
+    src_d_lt = source_d.lt;
+    use_a = 1'b0;
+    use_b = 1'b0;
+    use_c = 1'b0;
+    use_d = 1'b0;
+    select_b = CPU_602 ?
+        (((src_a[30:23] == 8'hff) && src_a[22:0] != 23'd0) ||
+         (src_a[31] && src_a[30:0] != 31'd0)) :
+        (((src_a[62:52] == 11'h7ff) && src_a[51:0] != 52'd0) ||
+         (src_a[63] && src_a[62:0] != 63'd0));
+    if (work_decoded.kind == DK_ARITH) begin
+      use_a = !(work_decoded.op == FP_FRSP || work_decoded.op == FP_FCTIW ||
+          work_decoded.op == FP_FCTIWZ || work_decoded.op == FP_FRES ||
+          work_decoded.op == FP_FRSQRTE);
+      use_b = work_decoded.op != FP_MUL;
+      use_c = work_decoded.op == FP_MUL || work_decoded.op == FP_MADD ||
+          work_decoded.op == FP_MSUB || work_decoded.op == FP_NMADD ||
+          work_decoded.op == FP_NMSUB;
+    end else if (work_decoded.kind == DK_MOVE || work_decoded.kind == DK_MTFS)
+      use_b = work_decoded.kind == DK_MOVE || work_issue.insn[10:1] == 10'd711;
+    else if (work_decoded.kind == DK_FSEL) begin
+      use_a = 1'b1;
+      use_b = select_b;
+      use_c = !use_b;
+    end else if (work_decoded.kind == DK_MEMORY && work_decoded.mem_store)
+      use_d = 1'b1;
+    source_waiting = (use_a && !source_a.ready) ||
+        (use_b && !source_b.ready) || (use_c && !source_c.ready) ||
+        (use_d && !source_d.ready);
+    sources_ready = !source_waiting;
+    operand_tags_ok = 1'b1;
+    if (CPU_602) begin
+      if (work_decoded.kind == DK_ARITH) begin
+        if (use_a) begin
+          // SP and LT are independent; both 10 and 11 satisfy the SP gate.
+          case ({src_a_sp,source_a.lt})
+            2'b10,2'b11: ;
+            default: operand_tags_ok = 1'b0;
+          endcase
+        end
+        if (use_b && !src_b_sp) operand_tags_ok = 1'b0;
+        if (use_c && !src_c_sp) operand_tags_ok = 1'b0;
+      end
+      if (work_decoded.kind == DK_MTFS && work_issue.insn[10:1] == 10'd711)
+        operand_tags_ok = src_b_lt;
+      if (work_decoded.kind == DK_MOVE) operand_tags_ok = src_b_sp;
+      if (work_decoded.kind == DK_MEMORY && work_decoded.mem_store)
+        operand_tags_ok = work_decoded.mem_integer ? src_d_lt : src_d_sp;
+    end
+  end
+
+  always_comb begin
+    arith_req = '0;
+    arith_req.tag = work_issue.tag;
+    arith_req.op = work_decoded.op;
+    arith_req.a = CPU_602 ? widen_single(src_a[31:0]) : src_a;
+    arith_req.b = CPU_602 ? widen_single(src_b[31:0]) : src_b;
+    arith_req.c = CPU_602 ? widen_single(src_c[31:0]) : src_c;
+    arith_req.rn = fpscr_q[1:0];
+    arith_req.ni = fpscr_q[2];
+    arith_req.ve = fpscr_q[7];
+    arith_req.oe = fpscr_q[6];
+    arith_req.ue = fpscr_q[5];
+    arith_req.ze = fpscr_q[4];
+    arith_req.single_result = work_decoded.single_result;
+    arith_launch = rst_ni && !kill_all_i && !abort_valid_i && work_valid &&
+        sources_ready && operand_tags_ok && work_decoded.kind == DK_ARITH &&
+        work_issue.msr_fp &&
+        !(CPU_602 && (work_decoded.op == FP_FCTIW ||
+                      (work_issue.insn[31:26] == 6'd63 &&
+                       work_decoded.op != FP_FCTIWZ &&
+                       work_decoded.op != FP_CMPU &&
+                       work_decoded.op != FP_CMPO &&
+                       work_decoded.op != FP_FRSP &&
+                       work_decoded.op != FP_FRSQRTE)));
+    mem_launch = rst_ni && !kill_all_i && !abort_valid_i && work_valid &&
+        sources_ready && operand_tags_ok && work_decoded.kind == DK_MEMORY &&
+        work_issue.msr_fp && (work_ea[1:0] == 2'b00 ||
+          (CPU_602 && work_decoded.mem_load)) &&
+        !(CPU_602 && work_decoded.mem_store &&
+          !work_decoded.mem_single && !work_decoded.mem_integer &&
+          (src_d[30:23] == 8'hff ||
+           (src_d[30:23] == 8'd0 && src_d[22:0] != 23'd0)));
+    local_launch = rst_ni && !kill_all_i && !abort_valid_i && work_valid &&
+        sources_ready && !arith_launch && !mem_launch;
+    arith_rsp_ready = 1'b1;
+    // A same-cycle LSU reply waits until its request is registered.
+    mem_rsp_ready_o = rst_ni && !kill_all_i &&
+        !(work_valid && work_decoded.kind == DK_MEMORY &&
+          mem_rsp_i.tag == work_issue.tag);
+    mem_req_o = '0;
+    mem_req_o.tag = work_issue.tag;
+    mem_req_o.ea = work_ea;
+    mem_req_o.size_bytes = (work_decoded.mem_single || work_decoded.mem_integer) ?
+        4'd4 : 4'd8;
+    mem_req_o.write = work_decoded.mem_store;
+    if (CPU_602) begin
+      mem_req_o.data = work_decoded.mem_integer ? {32'd0,src_d[31:0]} :
+          work_decoded.mem_single ? {32'd0,src_d[31:0]} :
+          widen_single(src_d[31:0]);
+    end else
+      mem_req_o.data = work_decoded.mem_integer ? {32'd0,src_d[31:0]} :
+          work_decoded.mem_single ? {32'd0,narrow_single(src_d)} : src_d;
+    mem_req_valid_o = mem_launch;
+    exec_fire = (arith_launch && arith_req_ready) ||
+        (mem_launch && mem_req_ready_i) || local_launch;
+  end
+
+  ppc_fpu_arith #(.CPU_602(CPU_602)) arithmetic (
       .clk_i(clk_i), .rst_ni(rst_ni),
-      .req_valid_i(state_q == SEND_ARITH && !kill_all_i && !abort_match),
-      .req_ready_o(arith_req_ready), .req_i(arith_req_q),
-      .rsp_valid_o(arith_rsp_valid), .rsp_ready_i(state_q == WAIT_ARITH), .rsp_o(arith_rsp),
-      .flush_i(kill_all_i || abort_match)
+      .req_valid_i(arith_launch), .req_ready_o(arith_req_ready),
+      .req_i(arith_req), .rsp_valid_o(arith_rsp_valid),
+      .rsp_ready_i(arith_rsp_ready), .rsp_o(arith_rsp),
+      .finish_valid_o(arith_finish_valid), .finish_o(arith_finish),
+      .flush_i(kill_all_i || safe_abort_flush)
   );
 
   always_comb begin
-    proposed_fpscr = fpscr_q;
-    case (issue_i.insn[10:1])
-      10'd38: if (issue_i.insn[25:21] != 5'd1 && issue_i.insn[25:21] != 5'd2) begin
-        proposed_fpscr[31-issue_i.insn[25:21]] = 1'b1;
-        if (!fpscr_q[31-issue_i.insn[25:21]] &&
-            ((issue_i.insn[25:21] >= 5'd3 && issue_i.insn[25:21] <= 5'd12) ||
-             (issue_i.insn[25:21] >= 5'd21 && issue_i.insn[25:21] <= 5'd23)))
-          proposed_fpscr[31] = 1'b1;
-      end
-      10'd70: if (issue_i.insn[25:21] != 5'd1 && issue_i.insn[25:21] != 5'd2)
-        proposed_fpscr[31-issue_i.insn[25:21]] = 1'b0;
-      10'd134: proposed_fpscr[31-4*int'(issue_i.insn[25:23]) -: 4] = issue_i.insn[15:12];
-      10'd711: for (integer i = 0; i < 8; i++) begin
-        if (issue_i.insn[24-i]) proposed_fpscr[31-4*i -: 4] = issue_b[31-4*i -: 4];
-      end
-      default: proposed_fpscr = fpscr_q;
-    endcase
-    if (issue_i.insn[10:1] == 10'd64) begin
-      case (issue_i.insn[20:18])
-        3'd0: proposed_fpscr[31:28] = 4'b0000;
-        3'd1: proposed_fpscr[27:24] = 4'b0000;
-        3'd2: proposed_fpscr[23:20] = 4'b0000;
-        3'd3: proposed_fpscr[19] = 1'b0;
-        3'd5: proposed_fpscr[10:8] = 3'b000;
-        default: proposed_fpscr = fpscr_q;
+    exec_result = '0;
+    exec_result.tag = work_issue.tag;
+    exec_result.ea = work_ea;
+    exec_result.fpr_index = work_issue.insn[25:21];
+    exec_result.gpr_index = work_issue.insn[20:16];
+    exec_result.gpr_value = work_ea;
+    exec_result.gpr_update = work_decoded.kind == DK_MEMORY &&
+        work_decoded.mem_update;
+    exec_result.cr_field = work_issue.insn[25:23];
+    proposed_fpscr = status_change(fpscr_q, work_issue.insn, src_b);
+    if (work_decoded.kind == DK_ILLEGAL) begin
+      exec_result.exception = FPU_ILLEGAL;
+      exec_result.gpr_update = 1'b0;
+    end else if ((work_decoded.kind == DK_MFSPR ||
+                  work_decoded.kind == DK_MTSPR) && work_issue.msr_pr) begin
+      exec_result.exception = FPU_PRIVILEGED;
+      exec_result.gpr_update = 1'b0;
+    end else if (!work_issue.msr_fp &&
+                 work_decoded.kind != DK_MFSPR &&
+                 work_decoded.kind != DK_MTSPR) begin
+      exec_result.exception = FPU_UNAVAILABLE;
+      exec_result.gpr_update = 1'b0;
+    end else if (CPU_602 && work_decoded.kind == DK_ARITH &&
+                 (work_decoded.op == FP_FCTIW ||
+                  (work_issue.insn[31:26] == 6'd63 &&
+                   work_decoded.op != FP_FCTIWZ &&
+                   work_decoded.op != FP_CMPU &&
+                   work_decoded.op != FP_CMPO &&
+                   work_decoded.op != FP_FRSP &&
+                   work_decoded.op != FP_FRSQRTE))) begin
+      exec_result.exception = FPU_EMULATION_TRAP;
+    end else if (!operand_tags_ok) begin
+      exec_result.exception = CPU_602 ? FPU_EMULATION_TRAP : FPU_ILLEGAL;
+      exec_result.gpr_update = 1'b0;
+    end else begin
+      case (work_decoded.kind)
+        DK_MOVE: begin
+          exec_result.fpr_write = 1'b1;
+          exec_result.fpr_sp = CPU_602;
+          exec_result.fpr_lt = 1'b0;
+          exec_result.fpr_value = src_b;
+          if (CPU_602) begin
+            case (work_decoded.move_kind)
+              2'd1: exec_result.fpr_value[31] = ~src_b[31];
+              2'd2: exec_result.fpr_value[31] = 1'b1;
+              2'd3: exec_result.fpr_value[31] = 1'b0;
+              default: ;
+            endcase
+          end else begin
+            case (work_decoded.move_kind)
+              2'd1: exec_result.fpr_value[63] = ~src_b[63];
+              2'd2: exec_result.fpr_value[63] = 1'b1;
+              2'd3: exec_result.fpr_value[63] = 1'b0;
+              default: ;
+            endcase
+          end
+          exec_result.cr_write = work_issue.insn[0];
+          exec_result.cr_field = 3'd1;
+          exec_result.cr_value = fpscr_q[31:28];
+        end
+        DK_FSEL: begin
+          exec_result.fpr_write = 1'b1;
+          if (CPU_602) begin
+            if (select_b) begin
+              exec_result.fpr_value = src_b;
+              exec_result.fpr_sp = 1'b1;
+            end else begin
+              exec_result.fpr_value = src_c;
+              exec_result.fpr_sp = 1'b1;
+            end
+            if (!src_a_sp || (select_b && !src_b_sp)) begin
+              exec_result.exception = FPU_EMULATION_TRAP;
+              exec_result.fpr_write = 1'b0;
+            end
+            if (!select_b) begin
+              // LT is independent; selected SP+LT is still a valid SP source.
+              case ({src_c_sp,src_c_lt})
+                2'b10,2'b11: ;
+                default: begin
+                  exec_result.exception = FPU_EMULATION_TRAP;
+                  exec_result.fpr_write = 1'b0;
+                end
+              endcase
+            end
+          end else exec_result.fpr_value = select_b ? src_b : src_c;
+          exec_result.cr_write = work_issue.insn[0] &&
+              exec_result.exception == FPU_NO_EXCEPTION;
+          exec_result.cr_field = 3'd1;
+          exec_result.cr_value = fpscr_q[31:28];
+        end
+        DK_MFFS: begin
+          exec_result.fpr_write = 1'b1;
+          exec_result.fpr_value = {32'd0,fpscr_q};
+          exec_result.fpr_lt = CPU_602;
+          exec_result.cr_write = work_issue.insn[0];
+          exec_result.cr_field = 3'd1;
+          exec_result.cr_value = fpscr_q[31:28];
+        end
+        DK_MCRFS: begin
+          exec_result.fpscr_write = 1'b1;
+          exec_result.fpscr_value = proposed_fpscr;
+          exec_result.cr_write = 1'b1;
+          exec_result.cr_field = work_issue.insn[25:23];
+          exec_result.cr_value =
+              fpscr_q[31-4*int'(work_issue.insn[20:18]) -: 4];
+        end
+        DK_MTFS: begin
+          exec_result.fpscr_write = 1'b1;
+          exec_result.fpscr_value = proposed_fpscr;
+          exec_result.cr_write = work_issue.insn[0];
+          exec_result.cr_field = 3'd1;
+          exec_result.cr_value = proposed_fpscr[31:28];
+          if (!CPU_602 && (work_issue.msr_fe0 || work_issue.msr_fe1) &&
+              proposed_fpscr[30]) exec_result.exception = FPU_FP_ENABLED;
+          if (CPU_602 && proposed_fpscr[30] &&
+              (work_issue.msr_fe0 || work_issue.msr_fe1))
+            exec_result.exception = FPU_FP_ENABLED;
+        end
+        DK_MFSPR: begin
+          exec_result.gpr_update = 1'b1;
+          exec_result.gpr_index = work_issue.insn[25:21];
+          exec_result.gpr_value = work_decoded.spr_sp ? sp_q : lt_q;
+        end
+        DK_MTSPR: begin
+          exec_result.gpr_update = 1'b0;
+        end
+        DK_MEMORY: begin
+          if (work_ea[1:0] != 2'b00 &&
+              (!CPU_602 || work_decoded.mem_store)) begin
+            exec_result.exception = FPU_ALIGNMENT;
+            exec_result.gpr_update = 1'b0;
+          end else if (CPU_602 && work_decoded.mem_store &&
+                       !work_decoded.mem_single && !work_decoded.mem_integer &&
+                       (src_d[30:23] == 8'hff ||
+                        (src_d[30:23] == 8'd0 && src_d[22:0] != 23'd0))) begin
+            exec_result.exception = FPU_EMULATION_TRAP;
+            exec_result.gpr_update = 1'b0;
+          end else exec_result.store = work_decoded.mem_store;
+        end
+        default: ;
       endcase
     end
-    proposed_fpscr = normalize_fpscr(proposed_fpscr);
+  end
+
+  // Store only finished tagged replies; retirement and cancellation compact
+  // the queue after capture. Every architectural write occurs on commit.
+  always_comb begin
+    for (integer i = 0; i < PENDING_DEPTH; i++) pending_d[i] = pending_q[i];
+    pending_count_d = pending_count_q;
+    sp_d = sp_q;
+    lt_d = lt_q;
+    if (forward_valid_o && forward_from_pending) begin
+      if (forward_o.fpr_write)
+        pending_d[forward_index].fpr_forwarded = 1'b1;
+      if (forward_o.cr_write)
+        pending_d[forward_index].cr_forwarded = 1'b1;
+    end
+    mem_incoming_result = '0;
+    if (arith_rsp_match) begin
+      pending_d[arith_rsp_index].arith = arith_rsp;
+      pending_d[arith_rsp_index].arith_done = 1'b1;
+      pending_d[arith_rsp_index].done = 1'b1;
+      pending_d[arith_rsp_index].result.fpr_write = arith_rsp.write_result;
+      pending_d[arith_rsp_index].result.fpr_value = CPU_602 ?
+          {32'd0,(pending_q[arith_rsp_index].decoded.op == FP_FCTIWZ ?
+            arith_rsp.result[31:0] : narrow_single(arith_rsp.result))} :
+          arith_rsp.result;
+      pending_d[arith_rsp_index].result.fpr_sp =
+          CPU_602 && pending_q[arith_rsp_index].decoded.op != FP_FCTIWZ;
+      pending_d[arith_rsp_index].result.fpr_lt =
+          CPU_602 && pending_q[arith_rsp_index].decoded.op == FP_FCTIWZ;
+      if (numeric_emulation_trap(arith_rsp.invalid, arith_rsp.ox,
+          arith_rsp.ux, arith_rsp.zx, arith_rsp.xx,
+          arith_rsp.tiny_before_round, fpscr_q[7:2]))
+        pending_d[arith_rsp_index].result.exception = FPU_EMULATION_TRAP;
+    end
+    if (mem_rsp_match && mem_rsp_ready_o) begin
+      mem_incoming_result = memory_result(pending_q[mem_rsp_index].result,
+          pending_q[mem_rsp_index].decoded.mem_load,
+          pending_q[mem_rsp_index].decoded.mem_single, mem_rsp_i);
+      pending_d[mem_rsp_index].result = mem_incoming_result;
+      pending_d[mem_rsp_index].done = 1'b1;
+    end
+    if (exec_found && exec_fire) begin
+      pending_d[exec_index].started = 1'b1;
+      if (local_launch) begin
+        pending_d[exec_index].result = exec_result;
+        pending_d[exec_index].local_wait = 2'd3;
+      end else if (mem_launch) pending_d[exec_index].mem = mem_req_o;
+    end
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      if (i < int'(pending_count_q) && pending_q[i].valid &&
+          pending_q[i].started && !pending_q[i].done &&
+          pending_q[i].local_wait != 2'd0) begin
+        pending_d[i].local_wait = pending_q[i].local_wait - 2'd1;
+        if (pending_q[i].local_wait == 2'd1) pending_d[i].done = 1'b1;
+      end
+    if (retire_fire) begin
+      for (integer i = 0; i < PENDING_DEPTH-1; i++)
+        pending_d[i] = pending_d[i+1];
+      pending_d[PENDING_DEPTH-1] = '0;
+      pending_count_d = pending_count_q - 3'd1;
+    end
+    if (dispatch_fire) begin
+      pending_d[dispatch_index] = '0;
+      pending_d[dispatch_index].valid = 1'b1;
+      pending_d[dispatch_index].issue = issue_i;
+      pending_d[dispatch_index].decoded = decoded;
+      pending_d[dispatch_index].dest_fpr =
+          writes_fpr(decoded.kind, decoded.op, decoded.mem_load);
+      pending_d[dispatch_index].result.tag = issue_i.tag;
+      pending_d[dispatch_index].result.ea = issue_ea;
+      pending_d[dispatch_index].result.fpr_index = issue_i.insn[25:21];
+      pending_d[dispatch_index].result.gpr_index = issue_i.insn[20:16];
+      pending_d[dispatch_index].result.gpr_value = issue_ea;
+      pending_d[dispatch_index].result.gpr_update =
+          decoded.kind == DK_MEMORY && decoded.mem_update;
+      pending_d[dispatch_index].result.cr_field = issue_i.insn[25:23];
+      if (work_dispatch && exec_fire) begin
+        pending_d[dispatch_index].started = 1'b1;
+        if (local_launch) begin
+          pending_d[dispatch_index].result = exec_result;
+          pending_d[dispatch_index].local_wait = 2'd3;
+        end else if (mem_launch) pending_d[dispatch_index].mem = mem_req_o;
+      end
+      pending_count_d = after_retire_count + 3'd1;
+    end
+    if (abort_match) begin
+      for (integer i = 0; i < PENDING_DEPTH; i++)
+        if (i >= int'(abort_index)) pending_d[i] = '0;
+      pending_count_d = 3'(abort_index);
+    end
+    if (kill_all_i) begin
+      for (integer i = 0; i < PENDING_DEPTH; i++) pending_d[i] = '0;
+      pending_count_d = '0;
+    end
+    if (retire_fire && (head_result.exception == FPU_NO_EXCEPTION ||
+                        head_result.exception == FPU_FP_ENABLED)) begin
+      if (CPU_602 && head_result.fpr_write) begin
+        sp_d[31-head_result.fpr_index] = head_result.fpr_sp;
+        lt_d[31-head_result.fpr_index] = head_result.fpr_lt;
+      end
+      if (CPU_602 && pending_q[0].decoded.kind == DK_MTSPR) begin
+        if (pending_q[0].decoded.spr_sp) sp_d = pending_q[0].issue.gpr_b;
+        else lt_d = pending_q[0].issue.gpr_b;
+      end
+    end
   end
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
-      state_q <= IDLE;
-      held_q <= '0;
-      issue_rc_q <= 1'b0;
-      issue_fe_any_q <= 1'b0;
-      mem_q <= '0;
-      arith_req_q <= '0;
-      fpscr_q <= 32'd0;
-    end else if (kill_all_i || (abort_match && state_q != IDLE)) begin
-      state_q <= IDLE;
+      for (integer i = 0; i < PENDING_DEPTH; i++) pending_q[i] <= '0;
+      pending_count_q <= '0;
+      fpscr_q <= '0;
+      sp_q <= '0;
+      lt_q <= '0;
+      for (integer i = 0; i < 32; i++) fpr_q[i] <= '0;
     end else begin
-      case (state_q)
-        IDLE: if (issue_valid_i) begin
-          issue_rc_q <= issue_i.insn[0];
-          issue_fe_any_q <= issue_i.msr_fe0 || issue_i.msr_fe1;
-          held_q <= '0;
-          held_q.tag <= issue_i.tag;
-          held_q.fpr_index <= issue_i.insn[25:21];
-          held_q.cr_field <= issue_i.insn[25:23];
-          held_q.ea <= issue_ea;
-          held_q.gpr_index <= issue_i.insn[20:16];
-          held_q.gpr_value <= issue_ea;
-          held_q.gpr_update <= decoded.kind == DK_MEMORY && decoded.mem_update;
-          mem_q <= '0;
-          mem_q.tag <= issue_i.tag;
-          mem_q.ea <= issue_ea;
-          mem_q.size_bytes <= decoded.mem_single || decoded.mem_integer ? 4'd4 : 4'd8;
-          mem_q.write <= decoded.mem_store;
-          arith_req_q <= '0;
-          arith_req_q.tag <= issue_i.tag;
-          arith_req_q.op <= decoded.op;
-          arith_req_q.a <= issue_a;
-          arith_req_q.b <= issue_b;
-          arith_req_q.c <= issue_c;
-          arith_req_q.rn <= fpscr_q[1:0];
-          arith_req_q.ni <= fpscr_q[2];
-          arith_req_q.ve <= fpscr_q[7];
-          arith_req_q.oe <= fpscr_q[6];
-          arith_req_q.ue <= fpscr_q[5];
-          arith_req_q.ze <= fpscr_q[4];
-          arith_req_q.single_result <= decoded.single_result;
-          if (decoded.kind == DK_ILLEGAL) begin
-            held_q.exception <= FPU_ILLEGAL;
-            held_q.gpr_update <= 1'b0;
-            state_q <= READY;
-          end else if (!issue_i.msr_fp && fp_opcode_class) begin
-            held_q.exception <= FPU_UNAVAILABLE;
-            held_q.gpr_update <= 1'b0;
-            state_q <= READY;
-          end else begin
-            case (decoded.kind)
-              DK_ARITH: state_q <= SEND_ARITH;
-              DK_MOVE: begin
-                held_q.fpr_write <= 1'b1;
-                case (decoded.move_kind)
-                  2'd1: held_q.fpr_value <= {~issue_b[63],issue_b[62:0]};
-                  2'd2: held_q.fpr_value <= {1'b1,issue_b[62:0]};
-                  2'd3: held_q.fpr_value <= {1'b0,issue_b[62:0]};
-                  default: held_q.fpr_value <= issue_b;
-                endcase
-                held_q.cr_write <= issue_i.insn[0];
-                held_q.cr_field <= 3'd1;
-                held_q.cr_value <= fpscr_q[31:28];
-                state_q <= READY;
+      for (integer i = 0; i < PENDING_DEPTH; i++) pending_q[i] <= pending_d[i];
+      pending_count_q <= pending_count_d;
+      sp_q <= sp_d;
+      lt_q <= lt_d;
+      if (retire_fire &&
+          (head_result.exception == FPU_NO_EXCEPTION ||
+           head_result.exception == FPU_FP_ENABLED)) begin
+        if (head_result.fpr_write)
+          fpr_q[head_result.fpr_index] <= FPR_BITS'(head_result.fpr_value);
+        if (head_result.fpscr_write) fpscr_q <= head_result.fpscr_value;
+      end
+    end
+  end
+
+  assign inspect_fpr_o = {{(64-FPR_BITS){1'b0}},fpr_q[inspect_fpr_index_i]};
+  assign inspect_fpscr_o = fpscr_q;
+  assign inspect_sp_o = CPU_602 ? sp_q : 32'd0;
+  assign inspect_lt_o = CPU_602 ? lt_q : 32'd0;
+
+  // The forwarding packet is independent of retirement.  If several units
+  // finish together, the oldest unforwarded entry is sent first; the others
+  // remain in their tagged queue slots for later cycles.
+  always_comb begin
+    ppc_fpu_forward_t candidate;
+    ppc_fpu_arith_rsp_t ar;
+    logic [31:0] candidate_fpscr;
+    logic candidate_exception;
+    logic ready;
+    candidate = '0;
+    ar = '0;
+    candidate_fpscr = '0;
+    candidate_exception = 1'b0;
+    ready = 1'b0;
+    prefix_fpscr = fpscr_q;
+    prefix_known = 1'b1;
+    forward_o = '0;
+    forward_valid_o = 1'b0;
+    forward_from_pending = 1'b0;
+    forward_index = '0;
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (i < int'(pending_count_q) && pending_q[i].valid) begin
+        ready = pending_q[i].done;
+        candidate = '0;
+        candidate.tag = pending_q[i].issue.tag;
+        candidate.fpr_index = pending_q[i].result.fpr_index;
+        candidate.fpr_write = pending_q[i].result.fpr_write;
+        candidate.fpr_value = pending_q[i].result.fpr_value;
+        candidate.fpr_sp = pending_q[i].result.fpr_sp;
+        candidate.fpr_lt = pending_q[i].result.fpr_lt;
+        candidate.cr_write = pending_q[i].result.cr_write;
+        candidate.cr_field = pending_q[i].result.cr_field;
+        candidate.cr_value = pending_q[i].result.cr_value;
+        if ((pending_q[i].decoded.kind == DK_MOVE ||
+             pending_q[i].decoded.kind == DK_FSEL) && candidate.cr_write)
+          candidate.cr_value = prefix_fpscr[31:28];
+        candidate_exception = pending_q[i].result.exception != FPU_NO_EXCEPTION &&
+            pending_q[i].result.exception != FPU_FP_ENABLED;
+        if (pending_q[i].decoded.kind == DK_ARITH) begin
+          ar = pending_q[i].arith;
+          if (!ready && arith_finish_valid &&
+              arith_finish.tag == pending_q[i].issue.tag) begin
+            ar = arith_finish;
+            ready = 1'b1;
+          end else if (!ready && arith_rsp_match &&
+                       arith_rsp.tag == pending_q[i].issue.tag) begin
+            ar = arith_rsp;
+            ready = 1'b1;
+          end
+          if (ready) begin
+            candidate.tag = ar.tag;
+            candidate_exception = numeric_emulation_trap(ar.invalid, ar.ox,
+                ar.ux, ar.zx, ar.xx, ar.tiny_before_round, prefix_fpscr[7:2]);
+            candidate_fpscr = arithmetic_fpscr(prefix_fpscr, ar.invalid,
+                ar.ox, ar.ux, ar.zx, ar.xx, ar.fr, ar.fi, ar.frfi_valid,
+                ar.fprf, ar.fprf_valid, ar.fpcc, ar.compare_valid);
+            candidate.fpr_write = ar.write_result && !candidate_exception;
+            candidate.fpr_value = CPU_602 ?
+                {32'd0,(pending_q[i].decoded.op == FP_FCTIWZ ? ar.result[31:0] :
+                 narrow_single(ar.result))} : ar.result;
+            candidate.fpr_sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
+            candidate.fpr_lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
+            candidate.cr_write = !candidate_exception &&
+                (ar.compare_valid || pending_q[i].issue.insn[0]);
+            candidate.cr_field = ar.compare_valid ?
+                pending_q[i].issue.insn[25:23] : 3'd1;
+            candidate.cr_value = ar.compare_valid ? ar.fpcc :
+                candidate_fpscr[31:28];
+            if (!candidate_exception) prefix_fpscr = candidate_fpscr;
+          end else prefix_known = 1'b0;
+        end else if (pending_q[i].decoded.kind == DK_MEMORY && !ready &&
+                     mem_rsp_match && mem_rsp_i.tag == pending_q[i].issue.tag) begin
+          ready = 1'b1;
+          candidate_exception = mem_rsp_i.fault;
+          if (pending_q[i].decoded.mem_load && !mem_rsp_i.fault) begin
+            candidate.fpr_write = 1'b1;
+            if (CPU_602) begin
+              candidate.fpr_sp = 1'b1;
+              candidate.fpr_value = {32'd0,mem_rsp_i.data[31:0]};
+              if (!pending_q[i].decoded.mem_single) begin
+                candidate_exception = !single_fits_double(mem_rsp_i.data);
+                candidate.fpr_value = {32'd0,narrow_single(mem_rsp_i.data)};
               end
-              DK_FSEL: begin
-                held_q.fpr_write <= 1'b1;
-                held_q.fpr_value <= ((issue_a[62:52] == 11'h7ff && issue_a[51:0] != 52'd0) ||
-                                     (issue_a[63] && issue_a[62:0] != 63'd0)) ? issue_b : issue_c;
-                held_q.cr_write <= issue_i.insn[0];
-                held_q.cr_field <= 3'd1;
-                held_q.cr_value <= fpscr_q[31:28];
-                state_q <= READY;
-              end
-              DK_MFFS: begin
-                held_q.fpr_write <= 1'b1;
-                held_q.fpr_value <= {32'd0,fpscr_q};
-                held_q.cr_write <= issue_i.insn[0];
-                held_q.cr_field <= 3'd1;
-                held_q.cr_value <= fpscr_q[31:28];
-                state_q <= READY;
-              end
-              DK_MCRFS: begin
-                held_q.fpscr_write <= 1'b1;
-                held_q.fpscr_value <= proposed_fpscr;
-                held_q.cr_write <= 1'b1;
-                held_q.cr_field <= issue_i.insn[25:23];
-                held_q.cr_value <= fpscr_q[31-4*int'(issue_i.insn[20:18]) -: 4];
-                state_q <= READY;
-              end
-              DK_MTFS: begin
-                held_q.fpscr_write <= 1'b1;
-                held_q.fpscr_value <= proposed_fpscr;
-                if ((issue_i.msr_fe0 || issue_i.msr_fe1) && proposed_fpscr[30])
-                  held_q.exception <= FPU_FP_ENABLED;
-                held_q.cr_write <= issue_i.insn[0];
-                held_q.cr_field <= 3'd1;
-                held_q.cr_value <= proposed_fpscr[31:28];
-                state_q <= READY;
-              end
-              DK_MEMORY: begin
-                if (issue_ea[1:0] != 2'b00) begin
-                  held_q.exception <= FPU_ALIGNMENT;
-                  held_q.gpr_update <= 1'b0;
-                  state_q <= READY;
-                end else begin
-                  if (decoded.mem_store) begin
-                    held_q.store <= 1'b1;
-                    if (decoded.mem_integer) mem_q.data <= {32'd0,fpr_q[issue_i.insn[25:21]][31:0]};
-                    else if (decoded.mem_single)
-                      mem_q.data <= {32'd0,narrow_single(fpr_q[issue_i.insn[25:21]])};
-                    else mem_q.data <= fpr_q[issue_i.insn[25:21]];
-                  end
-                  state_q <= SEND_MEM;
-                end
-              end
-              default: state_q <= READY;
-            endcase
+            end else candidate.fpr_value = pending_q[i].decoded.mem_single ?
+                widen_single(mem_rsp_i.data[31:0]) : mem_rsp_i.data;
           end
         end
-        SEND_ARITH: if (arith_req_ready) state_q <= WAIT_ARITH;
-        WAIT_ARITH: if (arith_rsp_valid && pending_match_arith) begin
-            held_q.fpr_write <= arith_rsp.write_result;
-            held_q.fpr_value <= arith_rsp.result;
-            held_q.fpscr_write <= 1'b1;
-            held_q.fpscr_value <= arith_fpscr_next;
-            held_q.cr_write <= arith_rsp.compare_valid ||
-                               (arith_req_q.op != FP_CMPU && arith_req_q.op != FP_CMPO &&
-                                issue_rc_q);
-            held_q.cr_field <= arith_rsp.compare_valid ? held_q.cr_field : 3'd1;
-            held_q.cr_value <= arith_rsp.compare_valid ? arith_rsp.fpcc :
-                               arith_fpscr_next[31:28];
-            if (issue_fe_any_q && arith_fpscr_next[30])
-              held_q.exception <= FPU_FP_ENABLED;
-            state_q <= READY;
+        if (!forward_from_pending && ready && !candidate_exception &&
+            ((candidate.fpr_write && !pending_q[i].fpr_forwarded) ||
+             (candidate.cr_write && !pending_q[i].cr_forwarded &&
+              pending_q[i].decoded.kind != DK_MCRFS &&
+              (prefix_known || (pending_q[i].decoded.kind == DK_ARITH &&
+                                (pending_q[i].decoded.op == FP_CMPU ||
+                                 pending_q[i].decoded.op == FP_CMPO)))))) begin
+          forward_from_pending = 1'b1;
+          forward_index = PENDING_IDX_BITS'(i);
+          forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
+          candidate.fpr_write &= !pending_q[i].fpr_forwarded;
+          candidate.cr_write &= !pending_q[i].cr_forwarded &&
+              pending_q[i].decoded.kind != DK_MCRFS &&
+              (prefix_known || (pending_q[i].decoded.kind == DK_ARITH &&
+                                (pending_q[i].decoded.op == FP_CMPU ||
+                                 pending_q[i].decoded.op == FP_CMPO)));
+          forward_o = candidate;
         end
-        SEND_MEM: if (mem_req_ready_i) state_q <= WAIT_MEM;
-        WAIT_MEM: if (mem_rsp_valid_i && pending_match_mem) begin
-          if (mem_rsp_i.fault) begin
-            held_q.exception <= FPU_MEMORY_FAULT;
-            held_q.fault_code <= mem_rsp_i.fault_code;
-            held_q.fault_info <= mem_rsp_i.fault_info;
-            held_q.store <= 1'b0;
-            held_q.gpr_update <= 1'b0;
-          end else if (!mem_q.write) begin
-            held_q.fpr_write <= 1'b1;
-            held_q.fpr_value <= (mem_q.size_bytes == 4'd4) ?
-                                widen_single(mem_rsp_i.data[31:0]) : mem_rsp_i.data;
-          end
-          state_q <= READY;
-        end
-        READY: if (commit_ready_o) begin
-            if (held_q.exception == FPU_NO_EXCEPTION || held_q.exception == FPU_FP_ENABLED) begin
-              if (held_q.fpr_write) fpr_q[held_q.fpr_index] <= held_q.fpr_value;
-              if (held_q.fpscr_write) fpscr_q <= held_q.fpscr_value;
-            end
-            state_q <= IDLE;
-        end
-        default: state_q <= IDLE;
-      endcase
+      end
     end
   end
 endmodule
