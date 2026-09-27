@@ -356,3 +356,33 @@ rounding to result bit 62 (21 logic levels). Add measured 31.988 ns, alignment
 This change reduced area but did not materially improve frequency. Map reported
 zero errors and four warnings, 433 virtual pins and zero physical pins;
 TimeQuest reported zero errors and zero warnings. No fitter ran.
+
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`6a2f28b`, 2026-09-27.
+
+Deferring divider special-result calculation and simplifying the single-precision
+subnormal exponent mapped at 10,575 estimated ALMs, 14,075 ALUTs, 2,564 registers,
+416 block-memory bits and five DSP blocks. Post-map Fmax was **25.8 MHz**, with
+−18.766 ns setup slack; both 50 and 66 MHz failed. The worst output path was
+registered denormal shift through rounding to result bit 35 (33.118 ns,
+22 logic levels). Stage delays were 26.810 ns alignment, 31.988 ns add,
+33.350 ns divider, 21.181 ns multiply and 33.464 ns response rounding. Map
+reported zero errors and four warnings (RAM pass-through, constant invalid bit
+and summary, virtual clock), with 433 virtual pins and zero physical pins.
+TimeQuest reported zero errors and zero warnings. No fitter ran.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit
+`cf5c789` with arithmetic frozen at `55097fe`, 2026-09-27.
+
+The shared local operand stage mapped the 603e shell at 28,597 estimated ALMs,
+34,814 ALUTs, 7,300 registers, 412 block-memory bits and five DSP blocks,
+with 1,428 virtual pins and zero physical pins. Post-map Fmax was **14.6 MHz**,
+with −48.468 ns setup slack; both targets failed. The worst path now traversed
+shell admission/control from pending count to a pending memory tag (68.302 ns,
+26 logic levels). Map reported zero errors and 70 warnings: queue-compaction
+index width, RAM pass-through, constant disabled 602 tag and memory-size outputs
+with their summary, and virtual clock. TimeQuest reported zero errors and zero
+warnings. This predates the constant queue-shift correction in `1598fb9` and
+arithmetic changes in `6a2f28b`. No fitter ran; this is exploratory synthesis,
+not current timing closure.
