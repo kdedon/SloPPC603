@@ -180,6 +180,20 @@ checks, 11,958 estimate packets with 0 mismatches, and 851 shell checks with
 `fctiw`/`fctiwz` 3, finite `fres` 18, and `frsqrte` 1; strict test builds
 emitted 0 warnings and 0 errors.
 
+Recorded: `make -C sim -j2 test-fpu` on commit `a07eafb` plus registered
+rounding-precision control, 2026-09-27; 20 Python anchors, 32 table
+value/bound proofs, 200,000 raw arithmetic packets with 0 mismatches,
+74 cancellation offsets, 4 held-response checks, 11,958 estimate packets
+with 0 mismatches, and 851 shell checks with 0 failures. Strict test builds
+emitted 0 warnings and 0 errors; no latency change was observed.
+
+Recorded: `make -C sim -j2 test-fpu` on commit `34909b0` plus the divider
+numerator-capture cut, 2026-09-27; 20 Python anchors, 32 table value/bound
+proofs, 200,000 raw arithmetic packets with 0 mismatches, 74 cancellation
+offsets, 4 held-response checks, 11,958 estimate packets with 0
+mismatches, and 851 shell checks with 0 failures. Strict test builds
+emitted 0 warnings and 0 errors; no latency change was observed.
+
 Recorded: `make -C sim -j2 test-fpu lint` with `YOSYS_BIN` set to the
 pinned extractor, on clean commit `5b272c2`, 2026-09-27; 20 Python anchors,
 32 table value/bound proofs, 200,000 raw arithmetic packets with 0

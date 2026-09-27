@@ -1121,8 +1121,7 @@ module ppc_fpu_arith (
         endcase
     end
 
-    assign div_start_numerator = req_q.op == FP_FRES ?
-        53'h10000000000000 : div_a_sig_q;
+    assign div_start_numerator = div_a_sig_q;
     assign div_start_difference = {1'b0, div_start_numerator} -
         {1'b0, div_b_sig_q};
 
@@ -1192,7 +1191,8 @@ module ppc_fpu_arith (
                     round_single_q <= req_i.single_result ||
                         req_i.op == FP_FRSP || req_i.op == FP_FRES;
                     if (launch_divide) begin
-                        div_a_sig_q <= finite_sig(req_i.a[62:0]);
+                        div_a_sig_q <= req_i.op == FP_FRES ?
+                            53'h10000000000000 : finite_sig(req_i.a[62:0]);
                         div_b_sig_q <= finite_sig(req_i.b[62:0]);
                         state_q <= DIV_START;
                     end
