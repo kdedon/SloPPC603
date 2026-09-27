@@ -266,10 +266,12 @@ module ppc_fpu_arith #(
     logic [54:0] div_denominator_x3_q;
     logic [54:0] div_quotient_q;
     logic [4:0] div_rounds_q;
-    logic [52:0] div_a_sig_q;
-    logic [52:0] div_b_sig_q;
-    logic signed [15:0] div_a_exp_q;
-    logic signed [15:0] div_b_exp_q;
+    logic [62:0] div_a_raw_q;
+    logic [62:0] div_b_raw_q;
+    logic [52:0] div_start_a_sig;
+    logic [52:0] div_start_b_sig;
+    logic signed [15:0] div_start_a_exp;
+    logic signed [15:0] div_start_b_exp;
     logic signed [15:0] div_result_exp_q;
     logic div_result_sign_q;
     finite_sum_t div_sum_q;
@@ -338,6 +340,18 @@ module ppc_fpu_arith #(
             v.exp = v.exp - 16'(leading_zero53(v.sig));
             v.sig = v.sig << leading_zero53(v.sig);
         end
+        return v;
+    endfunction
+
+    // Divide specials need only IEEE class bits on the admission edge.
+    function automatic operand_t classify_operand(input logic [63:0] bits);
+        operand_t v;
+        v = '0;
+        v.sign = bits[63];
+        v.zero = bits[62:0] == 63'd0;
+        v.inf = bits[62:0] == 63'h7ff0_0000_0000_0000;
+        v.nan = bits[62:52] == 11'h7ff && bits[51:0] != 52'd0;
+        v.snan = v.nan && !bits[51];
         return v;
     endfunction
 
@@ -1673,8 +1687,14 @@ module ppc_fpu_arith #(
         else round_response = add_q.special_rsp;
     end
 
-    assign div_start_difference = {1'b0, div_a_sig_q} -
-        {1'b0, div_b_sig_q};
+    assign div_start_a_sig = divide_req_q.op == FP_FRES ?
+        53'h10000000000000 : finite_sig(div_a_raw_q);
+    assign div_start_b_sig = finite_sig(div_b_raw_q);
+    assign div_start_a_exp = divide_req_q.op == FP_FRES ?
+        16'sd0 : finite_exp(div_a_raw_q);
+    assign div_start_b_exp = finite_exp(div_b_raw_q);
+    assign div_start_difference = {1'b0, div_start_a_sig} -
+        {1'b0, div_start_b_sig};
 
     always_comb begin
         div_trial = {div_remainder_q, 2'b00};
@@ -1775,19 +1795,11 @@ module ppc_fpu_arith #(
                 divide_req_q.ue <= req_i.ue;
                 divide_req_q.single_result <=
                     CPU_602 || req_i.single_result;
-                if (req_i.op == FP_FRES ||
-                    req_i.a[62:52] != 11'h7ff) begin
-                    div_a_sig_q <= req_i.op == FP_FRES ?
-                        53'h10000000000000 : finite_sig(req_i.a[62:0]);
-                end
-                div_b_sig_q <= finite_sig(req_i.b[62:0]);
+                div_a_raw_q <= req_i.a[62:0];
+                div_b_raw_q <= req_i.b[62:0];
                 div_result_sign_q <=
                     ((req_i.op != FP_FRES) && req_i.a[63]) ^
                     req_i.b[63];
-                if (req_i.op == FP_FRES)
-                    div_a_exp_q <= 16'sd0;
-                else div_a_exp_q <= finite_exp(req_i.a[62:0]);
-                div_b_exp_q <= finite_exp(req_i.b[62:0]);
                 if (req_i.b[62:0] != 63'd0 &&
                     req_i.b[62:52] != 11'h7ff &&
                     (req_i.op == FP_FRES ||
@@ -1797,7 +1809,8 @@ module ppc_fpu_arith #(
                 end else begin
                     divide_special_rsp_q <= calculate(req_i.tag,
                         req_i.op, req_i.a, req_i.b, req_i.c,
-                        unpack(req_i.b), req_i.ve, req_i.ze);
+                        classify_operand(req_i.b), req_i.ve,
+                        req_i.ze);
                     divide_special_count_q <=
                         (CPU_602 || req_i.op == FP_FRES ||
                         req_i.single_result) ?
@@ -1807,14 +1820,15 @@ module ppc_fpu_arith #(
             end else begin
                 case (divide_state_q)
                     DIV_START: begin
-                        div_result_exp_q <= div_a_exp_q - div_b_exp_q;
-                        div_denominator_q <= div_b_sig_q;
-                        div_denominator_x2_q <= {div_b_sig_q, 1'b0};
+                        div_result_exp_q <= div_start_a_exp -
+                            div_start_b_exp;
+                        div_denominator_q <= div_start_b_sig;
+                        div_denominator_x2_q <= {div_start_b_sig, 1'b0};
                         div_denominator_x3_q <=
-                            {2'b00, div_b_sig_q} +
-                            {1'b0, div_b_sig_q, 1'b0};
+                            {2'b00, div_start_b_sig} +
+                            {1'b0, div_start_b_sig, 1'b0};
                         div_remainder_q <= div_start_difference[53] ?
-                            div_a_sig_q : div_start_difference[52:0];
+                            div_start_a_sig : div_start_difference[52:0];
                         div_quotient_q <= div_start_difference[53] ?
                             55'd0 : 55'd1;
                         div_rounds_q <=
