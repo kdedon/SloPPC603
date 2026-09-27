@@ -1306,6 +1306,13 @@ test-core-cache-control:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cache_control --Mdir $(BUILD_DIR)/core-cache-control -I../tb $(RTL) ../tb/tb_core_cache_control.sv
 	./$(BUILD_DIR)/core-cache-control/Vtb_core_cache_control $(SIM_ARGS)
 
+.PHONY: test-core-cache-probe-miss
+test: test-core-cache-probe-miss
+test-core-cache-probe-miss:
+	mkdir -p $(BUILD_DIR)/core-cache-probe-miss
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cache_probe_miss --Mdir $(BUILD_DIR)/core-cache-probe-miss -I../tb $(RTL) ../tb/tb_core_cache_probe_miss.sv
+	./$(BUILD_DIR)/core-cache-probe-miss/Vtb_core_cache_probe_miss $(SIM_ARGS)
+
 .PHONY: test-core-bat-cached-bus60x-cacheops
 test: test-core-bat-cached-bus60x-cacheops
 test-core-bat-cached-bus60x-cacheops:
