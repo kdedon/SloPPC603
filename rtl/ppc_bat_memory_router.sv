@@ -259,8 +259,8 @@ module ppc_bat_memory_router #(
   logic fault_config_q, fault_invalid_input_q;
   logic [3:0] fault_invalid_entry_q;
   logic pimem_error_q, ifetch_fatal_q;
-  logic csr_owner_q, csr_offer, service_idle, service_ack;
-  logic segment_owner_q, segment_offer, segment_service_idle;
+  logic csr_owner, csr_offer, service_idle, service_ack;
+  logic segment_owner, segment_offer, segment_service_idle;
   logic segment_req_valid, segment_req_ready;
   logic segment_rsp_valid, segment_rsp_ready;
   seg_req_kind_t segment_rsp_kind;
@@ -269,12 +269,22 @@ module ppc_bat_memory_router #(
   logic segment_rsp_privileged, segment_rsp_unsupported;
   logic segment_service_ack;
   logic service_pr;
-  logic tlb_inv_owner_q, tlb_inv_offer;
-  logic tlb_fill_owner_q, tlb_fill_offer;
+  logic tlb_inv_owner, tlb_inv_offer;
+  logic tlb_fill_owner, tlb_fill_offer;
   logic [31:0] tlb_fill_ea_q;
   logic tlb_fill_bank_q;
   logic tlb_commit_ack, tlb_transaction_idle;
-  logic tlb_mgmt_owner_q, tlb_mgmt_offer;
+  logic tlb_mgmt_owner, tlb_mgmt_offer;
+  // One exclusive owner of the idle service slot. Offer and grant vectors are
+  // indexed in priority order.
+  typedef enum logic [2:0] {
+    OWN_NONE, OWN_BAT_CSR, OWN_SEGMENT, OWN_TLB_INV, OWN_TLB_FILL, OWN_TLB_MGMT
+  } owner_t;
+  localparam int SLOT_BAT_CSR = 0, SLOT_SEGMENT = 1, SLOT_TLB_INV = 2,
+                 SLOT_TLB_FILL = 3, SLOT_TLB_MGMT = 4, SLOT_COUNT = 5;
+  owner_t owner_q;
+  logic slot_free;
+  logic [SLOT_COUNT-1:0] slot_eligible, slot_pending, slot_offer, slot_grant;
   logic tlb_req_valid, tlb_req_ready;
   tlb_req_kind_t tlb_req_kind;
   logic tlb_req_bank, tlb_req_pr, tlb_req_ks, tlb_req_kp;
@@ -295,7 +305,6 @@ module ppc_bat_memory_router #(
   logic tlb_rsp_privileged, tlb_rsp_refill_rejected;
   logic tlb_rsp_unsupported, tlb_rsp_invalid_input;
   logic tlb_rsp_way, tlb_rsp_c, tlb_rsp_r;
-  logic tlb_mgmt_service_idle;
   logic page_reply_config, page_reply_allow, clean_bat_page_miss;
   logic clean_page_data_pp;
   logic clean_page_instruction_base;
@@ -307,106 +316,110 @@ module ppc_bat_memory_router #(
   logic page_no_execute_q, page_guarded_q, page_direct_store_q;
   logic page_needs_changed_q, page_config_q;
 
+  // The slot is free once memory has drained, no transaction owns it and
+  // every service has released its response, proposal and ack. A slot is
+  // offered to each eligible requester with no pending higher-priority peer:
+  // BAT CSR, segment CSR, tlbie, TLB load, then management. Management alone
+  // runs before start; startup BAT writes, running memory and context win.
+  assign slot_free = rst_ni && state_q == ROUTE_IDLE && owner_q == OWN_NONE &&
+    service_idle && segment_service_idle && tlb_transaction_idle &&
+    !imem_req_valid && !dmem_req_valid;
+  assign slot_eligible[SLOT_BAT_CSR] = ENABLE_RUNTIME_BAT && running_q;
+  assign slot_eligible[SLOT_SEGMENT] = ENABLE_SEGMENT_REGISTERS && running_q;
+  assign slot_eligible[SLOT_TLB_INV] = ENABLE_TLB_INVALIDATE && running_q;
+  assign slot_eligible[SLOT_TLB_FILL] = ENABLE_TLB_LOAD && running_q;
+  assign slot_eligible[SLOT_TLB_MGMT] = ENABLE_PAGE_TRANSLATION &&
+    !bat_write_valid_i && !bat_rsp_valid && !(running_q && context_valid_i);
+  assign slot_pending[SLOT_BAT_CSR] = ENABLE_RUNTIME_BAT && bat_csr_req_valid_i;
+  assign slot_pending[SLOT_SEGMENT] = ENABLE_SEGMENT_REGISTERS &&
+    segment_csr_req_valid_i;
+  assign slot_pending[SLOT_TLB_INV] = ENABLE_TLB_INVALIDATE &&
+    tlb_inv_req_valid_i;
+  assign slot_pending[SLOT_TLB_FILL] = ENABLE_TLB_LOAD && tlb_fill_req_valid_i;
+  assign slot_pending[SLOT_TLB_MGMT] = ENABLE_PAGE_TRANSLATION &&
+    tlb_mgmt_req_valid_i;
+  always_comb begin
+    logic higher_pending;
+    higher_pending = 1'b0;
+    for (int slot = 0; slot < SLOT_COUNT; slot++) begin
+      slot_offer[slot] = slot_free && slot_eligible[slot] && !higher_pending;
+      higher_pending = higher_pending || slot_pending[slot];
+    end
+  end
+  assign slot_grant[SLOT_BAT_CSR] = slot_offer[SLOT_BAT_CSR] &&
+    bat_csr_req_valid_i && bat_req_ready;
+  assign slot_grant[SLOT_SEGMENT] = slot_offer[SLOT_SEGMENT] &&
+    segment_csr_req_valid_i && segment_req_ready;
+  assign slot_grant[SLOT_TLB_INV] = slot_offer[SLOT_TLB_INV] &&
+    tlb_inv_req_valid_i && tlb_req_ready;
+  assign slot_grant[SLOT_TLB_FILL] = slot_offer[SLOT_TLB_FILL] &&
+    tlb_fill_req_valid_i && tlb_req_ready;
+  assign slot_grant[SLOT_TLB_MGMT] = slot_offer[SLOT_TLB_MGMT] &&
+    tlb_mgmt_req_valid_i && tlb_req_ready;
+  assign csr_offer = slot_offer[SLOT_BAT_CSR];
+  assign segment_offer = slot_offer[SLOT_SEGMENT];
+  assign tlb_inv_offer = slot_offer[SLOT_TLB_INV];
+  assign tlb_fill_offer = slot_offer[SLOT_TLB_FILL];
+  assign tlb_mgmt_offer = slot_offer[SLOT_TLB_MGMT];
+  assign csr_owner = owner_q == OWN_BAT_CSR;
+  assign segment_owner = owner_q == OWN_SEGMENT;
+  assign tlb_inv_owner = owner_q == OWN_TLB_INV;
+  assign tlb_fill_owner = owner_q == OWN_TLB_FILL;
+  assign tlb_mgmt_owner = owner_q == OWN_TLB_MGMT;
+
   // Memory drain excludes the caller's own CSR transport/reservation. CSR idle
   // separately tracks that ownership so waiting for a response cannot deadlock.
-  assign csr_offer = ENABLE_RUNTIME_BAT && rst_ni && running_q &&
-    state_q == ROUTE_IDLE && !csr_owner_q && !segment_owner_q &&
-    !tlb_mgmt_owner_q && !tlb_inv_owner_q && !tlb_fill_owner_q &&
-    service_idle && segment_service_idle &&
-    tlb_mgmt_service_idle && !imem_req_valid && !dmem_req_valid;
   assign bat_csr_req_ready_o = csr_offer && bat_req_ready;
-  assign bat_csr_rsp_valid_o = ENABLE_RUNTIME_BAT && csr_owner_q && bat_rsp_valid;
+  assign bat_csr_rsp_valid_o = ENABLE_RUNTIME_BAT && csr_owner && bat_rsp_valid;
   assign bat_csr_rsp_data_o = bat_rsp_data;
   assign bat_csr_rsp_error_o = bat_rsp_privileged || bat_rsp_unsupported ||
     bat_rsp_write_rejected || bat_rsp_config || bat_rsp_overlap ||
     bat_rsp_invalid_input || (|bat_rsp_invalid_entry);
-  assign bat_csr_ack_valid_o = ENABLE_RUNTIME_BAT && csr_owner_q && service_ack;
-  assign bat_csr_idle_o = rst_ni && (!ENABLE_RUNTIME_BAT || !csr_owner_q);
-  // Both CSR transports require a drained memory path. BAT wins a
-  // simultaneous CSR offer; neither request can overtake the other owner.
-  assign segment_offer = ENABLE_SEGMENT_REGISTERS && rst_ni && running_q &&
-    state_q == ROUTE_IDLE && !csr_owner_q && !segment_owner_q &&
-    !tlb_mgmt_owner_q && !tlb_inv_owner_q && !tlb_fill_owner_q &&
-    service_idle && segment_service_idle &&
-    tlb_mgmt_service_idle &&
-    !(ENABLE_RUNTIME_BAT && bat_csr_req_valid_i) &&
-    !imem_req_valid && !dmem_req_valid;
+  assign bat_csr_ack_valid_o = ENABLE_RUNTIME_BAT && csr_owner && service_ack;
+  assign bat_csr_idle_o = rst_ni && (!ENABLE_RUNTIME_BAT || !csr_owner);
   assign segment_req_valid =
     (segment_offer && segment_csr_req_valid_i) ||
     (ENABLE_PAGE_TRANSLATION && state_q == ROUTE_SEGMENT_OFFER);
   assign segment_csr_req_ready_o = segment_offer && segment_req_ready;
   assign segment_csr_rsp_valid_o = ENABLE_SEGMENT_REGISTERS &&
-    segment_owner_q && segment_rsp_valid;
+    segment_owner && segment_rsp_valid;
   assign segment_csr_rsp_data_o = segment_rsp_data;
   assign segment_csr_rsp_error_o = segment_rsp_privileged ||
     segment_rsp_unsupported;
   assign segment_csr_ack_valid_o = ENABLE_SEGMENT_REGISTERS &&
-    segment_owner_q && segment_service_ack;
+    segment_owner && segment_service_ack;
   assign segment_csr_idle_o = rst_ni &&
-    (!ENABLE_SEGMENT_REGISTERS || !segment_owner_q);
+    (!ENABLE_SEGMENT_REGISTERS || !segment_owner);
   assign segment_rsp_ready =
-    (segment_owner_q && segment_csr_rsp_ready_i) ||
+    (segment_owner && segment_csr_rsp_ready_i) ||
     (ENABLE_PAGE_TRANSLATION && state_q == ROUTE_SEGMENT_RESPONSE);
 
-  // CPU tlbie reserves the shared TLB service. The request is accepted only
-  // after old memory drains; held responses/proposals/acks exclude all peers.
-  assign tlb_inv_offer = ENABLE_TLB_INVALIDATE && rst_ni && running_q &&
-    state_q == ROUTE_IDLE && !csr_owner_q && !segment_owner_q &&
-    !tlb_mgmt_owner_q && !tlb_inv_owner_q && !tlb_fill_owner_q &&
-    service_idle &&
-    segment_service_idle && tlb_transaction_idle &&
-    !(ENABLE_RUNTIME_BAT && bat_csr_req_valid_i) &&
-    !segment_csr_req_valid_i && !imem_req_valid && !dmem_req_valid;
   assign tlb_inv_req_ready_o = tlb_inv_offer && tlb_req_ready;
   assign tlb_inv_rsp_valid_o = ENABLE_TLB_INVALIDATE &&
-    tlb_inv_owner_q && tlb_rsp_valid;
+    tlb_inv_owner && tlb_rsp_valid;
   assign tlb_inv_rsp_error_o = tlb_rsp_privileged ||
     tlb_rsp_refill_rejected || tlb_rsp_unsupported ||
     tlb_rsp_invalid_input;
   assign tlb_inv_ack_valid_o = ENABLE_TLB_INVALIDATE &&
-    tlb_inv_owner_q && tlb_commit_ack;
+    tlb_inv_owner && tlb_commit_ack;
   assign tlb_inv_idle_o = rst_ni &&
-    (!ENABLE_TLB_INVALIDATE || !tlb_inv_owner_q);
+    (!ENABLE_TLB_INVALIDATE || !tlb_inv_owner);
 
-  // CPU TLB loads use the same service reservation as tlbie. An accepted
-  // request owns the slot through response, proposal and held commit ack.
-  assign tlb_fill_offer = ENABLE_TLB_LOAD && rst_ni && running_q &&
-    state_q == ROUTE_IDLE && !csr_owner_q && !segment_owner_q &&
-    !tlb_mgmt_owner_q && !tlb_inv_owner_q && !tlb_fill_owner_q &&
-    service_idle && segment_service_idle && tlb_transaction_idle &&
-    !(ENABLE_RUNTIME_BAT && bat_csr_req_valid_i) &&
-    !segment_csr_req_valid_i &&
-    !(ENABLE_TLB_INVALIDATE && tlb_inv_req_valid_i) &&
-    !imem_req_valid && !dmem_req_valid;
   assign tlb_fill_req_ready_o = tlb_fill_offer && tlb_req_ready;
   assign tlb_fill_rsp_valid_o = ENABLE_TLB_LOAD &&
-    tlb_fill_owner_q && tlb_rsp_valid;
+    tlb_fill_owner && tlb_rsp_valid;
   assign tlb_fill_rsp_error_o = tlb_rsp_privileged ||
     tlb_rsp_refill_rejected || tlb_rsp_unsupported ||
     tlb_rsp_invalid_input || tlb_rsp_kind != TLB_PREPARE_REFILL ||
     tlb_rsp_bank != tlb_fill_bank_q || tlb_rsp_ea != tlb_fill_ea_q;
   assign tlb_fill_ack_valid_o = ENABLE_TLB_LOAD &&
-    tlb_fill_owner_q && tlb_commit_ack;
+    tlb_fill_owner && tlb_commit_ack;
   assign tlb_fill_idle_o = rst_ni &&
-    (!ENABLE_TLB_LOAD || !tlb_fill_owner_q);
+    (!ENABLE_TLB_LOAD || !tlb_fill_owner);
 
-  // Test/control TLB management has lowest idle-transport priority. Startup
-  // BAT writes win before start; running memory, CPU CSR and context win after.
-  assign tlb_mgmt_service_idle = tlb_transaction_idle;
-  assign tlb_mgmt_offer = ENABLE_PAGE_TRANSLATION && rst_ni &&
-    state_q == ROUTE_IDLE && !tlb_mgmt_owner_q && !tlb_inv_owner_q &&
-    !tlb_fill_owner_q &&
-    !csr_owner_q && !segment_owner_q && service_idle && segment_service_idle &&
-    tlb_mgmt_service_idle && !bat_write_valid_i && !bat_rsp_valid &&
-    !(ENABLE_RUNTIME_BAT && bat_csr_req_valid_i) &&
-    !segment_csr_req_valid_i &&
-    !(ENABLE_TLB_INVALIDATE && tlb_inv_req_valid_i) &&
-    !(ENABLE_TLB_LOAD && tlb_fill_req_valid_i) &&
-    !(running_q && context_valid_i) &&
-    !imem_req_valid && !dmem_req_valid;
   assign tlb_mgmt_req_ready_o = tlb_mgmt_offer && tlb_req_ready;
   assign tlb_mgmt_rsp_valid_o = ENABLE_PAGE_TRANSLATION &&
-    tlb_mgmt_owner_q && tlb_rsp_valid;
+    tlb_mgmt_owner && tlb_rsp_valid;
   assign tlb_mgmt_rsp_kind_o = tlb_rsp_kind[1:0];
   assign tlb_mgmt_rsp_bank_o = tlb_rsp_bank;
   assign tlb_mgmt_rsp_ea_o = tlb_rsp_ea;
@@ -415,11 +428,11 @@ module ppc_bat_memory_router #(
   assign tlb_mgmt_rsp_unsupported_o = tlb_rsp_unsupported;
   assign tlb_mgmt_rsp_invalid_input_o = tlb_rsp_invalid_input;
   assign tlb_mgmt_idle_o = rst_ni &&
-    (!ENABLE_PAGE_TRANSLATION || !tlb_mgmt_owner_q) &&
+    (!ENABLE_PAGE_TRANSLATION || !tlb_mgmt_owner) &&
     (!ENABLE_TLB_INVALIDATE ||
-     (!tlb_inv_owner_q && !tlb_inv_req_valid_i)) &&
+     (!tlb_inv_owner && !tlb_inv_req_valid_i)) &&
     (!ENABLE_TLB_LOAD ||
-     (!tlb_fill_owner_q && !tlb_fill_req_valid_i));
+     (!tlb_fill_owner && !tlb_fill_req_valid_i));
 
   assign tlb_req_valid =
     (tlb_mgmt_offer && tlb_mgmt_req_valid_i) ||
@@ -470,9 +483,9 @@ module ppc_bat_memory_router #(
   assign tlb_req_pp = (tlb_inv_offer && tlb_inv_req_valid_i) ?
     2'b0 : (tlb_fill_offer && tlb_fill_req_valid_i ?
       tlb_fill_req_pp_i : tlb_mgmt_req_pp_i);
-  assign tlb_rsp_ready = (tlb_mgmt_owner_q && tlb_mgmt_rsp_ready_i) ||
-    (tlb_inv_owner_q && tlb_inv_rsp_ready_i) ||
-    (tlb_fill_owner_q && tlb_fill_rsp_ready_i) ||
+  assign tlb_rsp_ready = (tlb_mgmt_owner && tlb_mgmt_rsp_ready_i) ||
+    (tlb_inv_owner && tlb_inv_rsp_ready_i) ||
+    (tlb_fill_owner && tlb_fill_rsp_ready_i) ||
     (ENABLE_PAGE_TRANSLATION && state_q == ROUTE_PAGE_RESPONSE);
 
   assign clean_bat_page_miss = ENABLE_PAGE_TRANSLATION && bat_rsp_miss &&
@@ -589,27 +602,26 @@ module ppc_bat_memory_router #(
   // Do not block a held old-context request merely because an update waits.
   // The core fences new offers and drains all old obligations before updating.
   assign quiescent_o = rst_ni && running_q && state_q == ROUTE_IDLE &&
-                       (!bat_rsp_valid || (ENABLE_RUNTIME_BAT && csr_owner_q)) &&
-                       (!segment_rsp_valid || segment_owner_q) &&
-                       (!tlb_rsp_valid || tlb_mgmt_owner_q ||
-                        tlb_inv_owner_q || tlb_fill_owner_q) &&
+                       (!bat_rsp_valid || (ENABLE_RUNTIME_BAT && csr_owner)) &&
+                       (!segment_rsp_valid || segment_owner) &&
+                       (!tlb_rsp_valid || tlb_mgmt_owner ||
+                        tlb_inv_owner || tlb_fill_owner) &&
                        !imem_req_valid && !dmem_req_valid;
   assign context_ready_o = ENABLE_LIVE_CONTEXT && quiescent_o &&
-    (!ENABLE_RUNTIME_BAT || (!csr_owner_q && !bat_csr_req_valid_i)) &&
+    (!ENABLE_RUNTIME_BAT || (!csr_owner && !bat_csr_req_valid_i)) &&
     (!ENABLE_SEGMENT_REGISTERS ||
-     (!segment_owner_q && !segment_csr_req_valid_i)) &&
-    (!ENABLE_PAGE_TRANSLATION || !tlb_mgmt_owner_q) &&
+     (!segment_owner && !segment_csr_req_valid_i)) &&
+    (!ENABLE_PAGE_TRANSLATION || !tlb_mgmt_owner) &&
     (!ENABLE_TLB_INVALIDATE ||
-     (!tlb_inv_owner_q && !tlb_inv_req_valid_i)) &&
+     (!tlb_inv_owner && !tlb_inv_req_valid_i)) &&
     (!ENABLE_TLB_LOAD ||
-     (!tlb_fill_owner_q && !tlb_fill_req_valid_i));
+     (!tlb_fill_owner && !tlb_fill_req_valid_i));
 
   always_comb begin
     choose_instruction = 1'b0;
     choose_data = 1'b0;
     if (rst_ni && running_q && state_q == ROUTE_IDLE &&
-        !csr_owner_q && !segment_owner_q && !tlb_mgmt_owner_q &&
-        !tlb_inv_owner_q && !tlb_fill_owner_q) begin
+        owner_q == OWN_NONE) begin
       if (imem_req_valid && dmem_req_valid) begin
         choose_instruction = last_grant_data_q;
         choose_data = !last_grant_data_q;
@@ -631,7 +643,7 @@ module ppc_bat_memory_router #(
     bat_req_spr = bat_write_spr_i;
     bat_req_data = bat_write_data_i;
     if (bat_setup_q) begin
-      bat_req_valid = bat_write_valid_i && !tlb_mgmt_owner_q;
+      bat_req_valid = bat_write_valid_i && !tlb_mgmt_owner;
     end else if (state_q == ROUTE_TRANSLATE_OFFER) begin
       bat_req_valid = 1'b1;
       bat_req_kind = owner_instruction_q ? BAT_TRANSLATE_I :
@@ -646,14 +658,14 @@ module ppc_bat_memory_router #(
       bat_req_data = bat_csr_req_data_i;
     end
 
-    bat_write_ready_o = rst_ni && bat_setup_q && !tlb_mgmt_owner_q &&
+    bat_write_ready_o = rst_ni && bat_setup_q && !tlb_mgmt_owner &&
                         bat_req_ready;
     bat_write_rsp_valid_o = rst_ni && bat_setup_q && bat_rsp_valid;
     bat_rsp_ready = bat_setup_q ? bat_write_rsp_ready_i :
-                    (csr_owner_q ? bat_csr_rsp_ready_i :
+                    (csr_owner ? bat_csr_rsp_ready_i :
                      (state_q == ROUTE_TRANSLATE_RESPONSE));
     start_ready_o = rst_ni && bat_setup_q && !bat_write_valid_i &&
-                    !bat_rsp_valid && bat_req_ready && !tlb_mgmt_owner_q &&
+                    !bat_rsp_valid && bat_req_ready && !tlb_mgmt_owner &&
                     !(ENABLE_PAGE_TRANSLATION && tlb_mgmt_req_valid_i);
   end
 
@@ -662,11 +674,11 @@ module ppc_bat_memory_router #(
   ) segment_bank (
     .clk_i, .rst_ni,
     .prepare_commit_i(ENABLE_SEGMENT_REGISTERS && running_q &&
-                      segment_owner_q && segment_csr_commit_i),
+                      segment_owner && segment_csr_commit_i),
     .prepare_abort_i(ENABLE_SEGMENT_REGISTERS && running_q &&
-                     segment_owner_q && segment_csr_abort_i),
+                     segment_owner && segment_csr_abort_i),
     .commit_ack_valid_o(segment_service_ack),
-    .commit_ack_ready_i(ENABLE_SEGMENT_REGISTERS && segment_owner_q &&
+    .commit_ack_ready_i(ENABLE_SEGMENT_REGISTERS && segment_owner &&
                         segment_csr_ack_ready_i),
     .transaction_idle_o(segment_service_idle),
     .req_valid_i(segment_req_valid), .req_ready_o(segment_req_ready),
@@ -693,19 +705,19 @@ module ppc_bat_memory_router #(
   ) tlb (
     .clk_i, .rst_ni,
     .prepare_commit_i(running_q &&
-      ((ENABLE_TLB_INVALIDATE && tlb_inv_owner_q && tlb_inv_commit_i) ||
-       (ENABLE_TLB_LOAD && tlb_fill_owner_q && tlb_fill_commit_i))),
+      ((ENABLE_TLB_INVALIDATE && tlb_inv_owner && tlb_inv_commit_i) ||
+       (ENABLE_TLB_LOAD && tlb_fill_owner && tlb_fill_commit_i))),
     .prepare_abort_i(running_q &&
       ((ENABLE_TLB_INVALIDATE && tlb_inv_abort_i &&
-        (tlb_inv_owner_q ||
+        (tlb_inv_owner ||
          (tlb_inv_req_valid_i && tlb_inv_req_ready_o))) ||
        (ENABLE_TLB_LOAD && tlb_fill_abort_i &&
-        (tlb_fill_owner_q ||
+        (tlb_fill_owner ||
          (tlb_fill_req_valid_i && tlb_fill_req_ready_o))))),
     .commit_ack_valid_o(tlb_commit_ack),
     .commit_ack_ready_i(
-      (ENABLE_TLB_INVALIDATE && tlb_inv_owner_q && tlb_inv_ack_ready_i) ||
-      (ENABLE_TLB_LOAD && tlb_fill_owner_q && tlb_fill_ack_ready_i)),
+      (ENABLE_TLB_INVALIDATE && tlb_inv_owner && tlb_inv_ack_ready_i) ||
+      (ENABLE_TLB_LOAD && tlb_fill_owner && tlb_fill_ack_ready_i)),
     .transaction_idle_o(tlb_transaction_idle),
     .req_valid_i(tlb_req_valid), .req_ready_o(tlb_req_ready),
     .req_kind_i(tlb_req_kind), .req_bank_i(tlb_req_bank),
@@ -739,7 +751,7 @@ module ppc_bat_memory_router #(
     .prepare_commit_i(ENABLE_RUNTIME_BAT && running_q && bat_csr_commit_i),
     .prepare_abort_i(ENABLE_RUNTIME_BAT && running_q && bat_csr_abort_i),
     .commit_ack_valid_o(service_ack),
-    .commit_ack_ready_i(ENABLE_RUNTIME_BAT && csr_owner_q && bat_csr_ack_ready_i),
+    .commit_ack_ready_i(ENABLE_RUNTIME_BAT && csr_owner && bat_csr_ack_ready_i),
     .transaction_idle_o(service_idle),
     .req_valid_i(bat_req_valid), .req_ready_o(bat_req_ready),
     .req_kind_i(bat_req_kind), .req_ea_i(bat_req_ea),
@@ -833,13 +845,9 @@ module ppc_bat_memory_router #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       state_q <= ROUTE_IDLE;
-      csr_owner_q <= 1'b0;
-      segment_owner_q <= 1'b0;
-      tlb_inv_owner_q <= 1'b0;
-      tlb_fill_owner_q <= 1'b0;
+      owner_q <= OWN_NONE;
       tlb_fill_ea_q <= 32'b0;
       tlb_fill_bank_q <= 1'b0;
-      tlb_mgmt_owner_q <= 1'b0;
       running_q <= 1'b0;
       bat_setup_q <= 1'b1;
       context_ir_q <= 1'b0;
@@ -881,26 +889,22 @@ module ppc_bat_memory_router #(
       pimem_error_q <= 1'b0;
       ifetch_fatal_q <= 1'b0;
     end else begin
-      if (csr_owner_q && service_idle) csr_owner_q <= 1'b0;
-      if (bat_csr_req_valid_i && bat_csr_req_ready_o) csr_owner_q <= 1'b1;
-      if (segment_owner_q && segment_service_idle) segment_owner_q <= 1'b0;
-      if (segment_csr_req_valid_i && segment_csr_req_ready_o)
-        segment_owner_q <= 1'b1;
-      if (tlb_inv_owner_q && tlb_transaction_idle)
-        tlb_inv_owner_q <= 1'b0;
-      if (tlb_inv_req_valid_i && tlb_inv_req_ready_o)
-        tlb_inv_owner_q <= 1'b1;
-      if (tlb_fill_owner_q && tlb_transaction_idle)
-        tlb_fill_owner_q <= 1'b0;
-      if (tlb_fill_req_valid_i && tlb_fill_req_ready_o) begin
-        tlb_fill_owner_q <= 1'b1;
+      unique case (owner_q)
+        OWN_NONE: begin
+          if (slot_grant[SLOT_BAT_CSR]) owner_q <= OWN_BAT_CSR;
+          else if (slot_grant[SLOT_SEGMENT]) owner_q <= OWN_SEGMENT;
+          else if (slot_grant[SLOT_TLB_INV]) owner_q <= OWN_TLB_INV;
+          else if (slot_grant[SLOT_TLB_FILL]) owner_q <= OWN_TLB_FILL;
+          else if (slot_grant[SLOT_TLB_MGMT]) owner_q <= OWN_TLB_MGMT;
+        end
+        OWN_BAT_CSR: if (service_idle) owner_q <= OWN_NONE;
+        OWN_SEGMENT: if (segment_service_idle) owner_q <= OWN_NONE;
+        default: if (tlb_transaction_idle) owner_q <= OWN_NONE;
+      endcase
+      if (slot_grant[SLOT_TLB_FILL]) begin
         tlb_fill_ea_q <= tlb_fill_req_ea_i;
         tlb_fill_bank_q <= tlb_fill_req_bank_i;
       end
-      if (tlb_mgmt_owner_q && tlb_mgmt_service_idle)
-        tlb_mgmt_owner_q <= 1'b0;
-      if (tlb_mgmt_req_valid_i && tlb_mgmt_req_ready_o)
-        tlb_mgmt_owner_q <= 1'b1;
       if (start_valid_i && start_ready_o) begin
         running_q <= 1'b1;
         bat_setup_q <= 1'b0;
@@ -1142,9 +1146,7 @@ module ppc_bat_memory_router #(
   assign page_config_o = rst_ni && page_config_q;
   assign pimem_error_o = rst_ni && pimem_error_q;
   assign ifetch_fatal_o = rst_ni && ifetch_fatal_q;
-  assign busy_o = rst_ni && (csr_owner_q || segment_owner_q ||
-                              tlb_inv_owner_q || tlb_fill_owner_q ||
-                              tlb_mgmt_owner_q || bat_rsp_valid ||
+  assign busy_o = rst_ni && (owner_q != OWN_NONE || bat_rsp_valid ||
                               segment_rsp_valid || tlb_rsp_valid ||
                               state_q != ROUTE_IDLE ||
                               (running_q && (imem_req_valid ||
@@ -1171,45 +1173,47 @@ module ppc_bat_memory_router #(
   initial assert (!ENABLE_RUNTIME_BAT || ENABLE_LIVE_CONTEXT)
     else $error("runtime BAT requires live context");
   always @(posedge clk_i) if (rst_ni && ENABLE_RUNTIME_BAT) begin
-    if (bat_csr_commit_i) assert (csr_owner_q && state_q == ROUTE_IDLE)
+    if (bat_csr_commit_i) assert (csr_owner && state_q == ROUTE_IDLE)
       else $error("runtime BAT commit without exclusive owner");
-    if (csr_owner_q) assert (state_q == ROUTE_IDLE && !context_ready_o)
+    if (csr_owner) assert (state_q == ROUTE_IDLE && !context_ready_o)
       else $error("runtime BAT ownership overlaps memory/context installation");
   end
   always @(posedge clk_i) if (rst_ni && ENABLE_SEGMENT_REGISTERS) begin
-    if (segment_csr_commit_i) assert (segment_owner_q &&
-      state_q == ROUTE_IDLE && !csr_owner_q)
+    if (segment_csr_commit_i) assert (segment_owner &&
+      state_q == ROUTE_IDLE && !csr_owner)
       else $error("segment commit without exclusive owner");
-    if (segment_owner_q) assert (state_q == ROUTE_IDLE &&
-      !context_ready_o && !csr_owner_q)
+    if (segment_owner) assert (state_q == ROUTE_IDLE &&
+      !context_ready_o && !csr_owner)
       else $error("segment ownership overlaps memory/context installation");
   end
   always @(posedge clk_i) if (rst_ni && ENABLE_TLB_INVALIDATE) begin
-    if (tlb_inv_commit_i) assert (tlb_inv_owner_q &&
-      state_q == ROUTE_IDLE && !tlb_mgmt_owner_q)
+    if (tlb_inv_commit_i) assert (tlb_inv_owner &&
+      state_q == ROUTE_IDLE && !tlb_mgmt_owner)
       else $error("TLB invalidate commit without exclusive owner");
-    if (tlb_inv_owner_q) assert (state_q == ROUTE_IDLE &&
-      !context_ready_o && !csr_owner_q && !segment_owner_q &&
-      !tlb_mgmt_owner_q)
+    if (tlb_inv_owner) assert (state_q == ROUTE_IDLE &&
+      !context_ready_o && !csr_owner && !segment_owner &&
+      !tlb_mgmt_owner)
       else $error("TLB invalidate owner overlaps memory/context");
   end
   always @(posedge clk_i) if (rst_ni && ENABLE_TLB_LOAD) begin
-    if (tlb_fill_commit_i) assert (tlb_fill_owner_q &&
-      state_q == ROUTE_IDLE && !tlb_mgmt_owner_q && !tlb_inv_owner_q)
+    if (tlb_fill_commit_i) assert (tlb_fill_owner &&
+      state_q == ROUTE_IDLE && !tlb_mgmt_owner && !tlb_inv_owner)
       else $error("TLB fill commit without exclusive owner");
-    if (tlb_fill_owner_q) assert (state_q == ROUTE_IDLE &&
-      !context_ready_o && !csr_owner_q && !segment_owner_q &&
-      !tlb_mgmt_owner_q && !tlb_inv_owner_q)
+    if (tlb_fill_owner) assert (state_q == ROUTE_IDLE &&
+      !context_ready_o && !csr_owner && !segment_owner &&
+      !tlb_mgmt_owner && !tlb_inv_owner)
       else $error("TLB fill owner overlaps memory/context");
   end
   always @(posedge clk_i) if (rst_ni && ENABLE_PAGE_TRANSLATION) begin
-    if (tlb_mgmt_owner_q) assert (state_q == ROUTE_IDLE &&
-      !context_ready_o && !csr_owner_q && !segment_owner_q)
+    if (tlb_mgmt_owner) assert (state_q == ROUTE_IDLE &&
+      !context_ready_o && !csr_owner && !segment_owner)
       else $error("TLB management overlaps memory, CSR or context");
     if (state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid &&
         !page_reply_allow) assert (!pimem_req_valid_o && !pdmem_req_valid_o)
       else $error("denied page response offered physical memory");
   end
+  assert property (@(posedge clk_i) disable iff (!rst_ni) $onehot0(slot_grant))
+    else $error("service slot granted to more than one owner");
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     context_valid_i && context_ready_o |->
       !imem_req_valid_i && !dmem_req_valid_i && state_q == ROUTE_IDLE);
