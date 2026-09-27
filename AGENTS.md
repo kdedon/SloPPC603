@@ -162,3 +162,9 @@ Each record opens with one line:
 - Builds go through `sim/tools/verilate`, which deletes Verilator's ~70 MB precompiled
   headers; `make -C sim clean-cache` reclaims any left by other paths. Remove worktrees and
   scratch files when a task ends.
+- Keep context small. Locate code with `grep -n`, then read only the lines you need; do
+  not read whole RTL files, scorecards or skills. Edit scorecards by targeted replacement.
+  Chain verification steps into one command, so you wait for one result.
+- Hand off before context grows large (roughly 150 tool calls): stop at a committed
+  checkpoint and report what is done, what remains, the exact next step, and the branch
+  and commit, so a fresh agent can continue.
