@@ -59,8 +59,9 @@ historically measured effort. Keep them fixed for subsequent updates.
   interrupts and timers. Missing exception/debug coverage, full system operations
   and supported-state restrictions prevent using the higher restricted-MVP score.
 - **MMU:** 80% recognizes CPU-owned BAT/SR/TLB state, real software table search,
-  R/C updates and fault/retry on the combined cached bus path. Replacement policy,
-  remaining attributes, edge cases and full conformance remain open.
+  R/C updates, per-set LRU replacement ways and fault/retry on the combined
+  cached bus path. Remaining attributes, edge cases and full conformance
+  remain open.
 - **Bus/cache/coherence:** preserve 18% as bus 6%, instruction cache 4%, data cache
   5%, coherence/reservations 3%. Bus receives 65% for the bounded scalar/burst
   implementation; full tenure, snoop, parity and error semantics are incomplete.
