@@ -325,3 +325,21 @@ Other stage delays were 32.269 ns add, 26.750 ns alignment, 21.121 ns multiply
 and 35.494 ns response. Map reported zero errors and four warnings, 433 virtual
 pins and zero physical pins; TimeQuest reported zero errors and zero warnings.
 No fitter ran.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full602`, commit
+`6cf259e` (shell `7f98717`), 2026-09-27.
+
+The first full 602 map estimated 19,953 ALMs, 25,771 ALUTs, 4,897 registers,
+412 block-memory bits and one DSP block, with 1,428 virtual pins and zero
+physical pins. Post-map Fmax was **16.5 MHz**, with −40.626 ns setup slack;
+both targets failed. The longest path ran from rounding through shell bypass
+and special-divide calculation into its held metadata register (60.460 ns,
+40 logic levels). Special-divide calculation still occurred at admission in
+this snapshot. It also predates the single shared local operand-stage register.
+
+Map reported zero errors and 40 warnings: queue-compaction index width,
+response-RAM pass-through, constant disabled second-retirement outputs,
+32-bit FPR upper bits and memory-size bits with their summary, and the
+virtual-clock warning. TimeQuest reported zero errors and the expected missing
+multiply-stage filter warning for the pruned double-precision stage. No fitter
+ran. This is a separate static 602 measurement, not a runtime mode switch.
