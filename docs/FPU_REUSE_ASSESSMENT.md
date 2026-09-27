@@ -32,8 +32,8 @@ public-shell checks, and a 32-operation issue/forward/commit stream in each
 personality. These results cover separately pinned source snapshots; they are
 not one final revision's acceptance. Dedicated paired dispatch/retirement,
 recovery coverage and current-revision gates remain in progress.
-The latest arithmetic post-map estimate is **25.8 MHz**; the measured two-lane
-603e shell estimates **14.6 MHz**. Both miss 50 and 66 MHz. No completion or
+The latest arithmetic post-map estimate is **26.2 MHz**; the measured two-lane
+603e shell estimates **15.0 MHz**. Both miss 50 and 66 MHz. No completion or
 fitted timing claim is made for the replacement. See
 [verification](../sim/fpu/PRODUCTION.md) and
 [measurements](../quartus/fpu-production/README.md) for exact commands and scope.

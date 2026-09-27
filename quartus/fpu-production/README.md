@@ -386,3 +386,30 @@ with their summary, and virtual clock. TimeQuest reported zero errors and zero
 warnings. This predates the constant queue-shift correction in `1598fb9` and
 arithmetic changes in `6a2f28b`. No fitter ran; this is exploratory synthesis,
 not current timing closure.
+
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit
+`1598fb9` (arithmetic `6a2f28b`), 2026-09-27.
+
+Constant one/two-entry queue shifts removed the index-width warning. The full
+603e mapped at 27,759 estimated ALMs, 33,791 ALUTs, 7,407 registers,
+412 block-memory bits and five DSP blocks, with 1,428 virtual pins and zero
+physical pins. Post-map Fmax was **15.0 MHz**, with −46.851 ns setup slack;
+both frequency targets failed. The worst path ran from arithmetic denormal
+shift through shell forwarding/control to pending store metadata (66.685 ns,
+34 logic levels). Map reported zero errors and 69 warnings (RAM pass-through,
+constant disabled outputs and summary, virtual clock); TimeQuest reported zero
+errors and zero warnings. No fitter ran. This precedes speculative shell
+candidate selection in `1463439`.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`43f692b`, 2026-09-27.
+
+The fixed-distance sticky shifter mapped at 10,585 estimated ALMs, 14,132 ALUTs,
+2,564 registers, 416 block-memory bits and five DSP blocks, with 433 virtual
+pins and zero physical pins. Post-map Fmax was **26.2 MHz**, with −18.192 ns
+setup slack; both frequency targets failed. The critical output path remained
+denormal shift through rounding (32.544 ns, 22 logic levels). Stage delays
+were 24.959 ns alignment, 35.626 ns add, 33.355 ns divider and 32.890 ns
+response rounding. Map reported zero errors and four warnings; TimeQuest
+reported zero errors and zero warnings. No fitter ran.
