@@ -74,6 +74,24 @@ endfunction
 function automatic logic [31:0] asm_cmpwi(input int ra, input int value);
   return asm_d(11, 0, ra, value);
 endfunction
+function automatic logic [31:0] asm_or(input int ra, input int rs, input int rb);
+  return (32'd31 << 26) | (32'(rs) << 21) | (32'(ra) << 16) | (32'(rb) << 11) |
+         (32'd444 << 1);
+endfunction
+function automatic logic [31:0] asm_add(input int rt, input int ra, input int rb);
+  return (32'd31 << 26) | (32'(rt) << 21) | (32'(ra) << 16) | (32'(rb) << 11) |
+         (32'd266 << 1);
+endfunction
+function automatic logic [31:0] asm_rlwinm(input int ra, input int rs, input int sh,
+                                           input int mb, input int me);
+  return (32'd21 << 26) | (32'(rs) << 21) | (32'(ra) << 16) | (32'(sh) << 11) |
+         (32'(mb) << 6) | (32'(me) << 1);
+endfunction
+// Each bench uses a subset of the constants below.
+/* verilator lint_off UNUSEDPARAM */
+// bc BO/BI pairs for cr0.
+localparam int ASM_BO_TRUE = 12, ASM_BO_FALSE = 4, ASM_BI_LT = 0, ASM_BI_EQ = 2;
+localparam logic [31:0] ASM_BCTRL = 32'h4e800421;
 localparam logic [31:0] ASM_NOP = 32'h60000000;
 localparam logic [31:0] ASM_BLR = 32'h4e800020;
 localparam logic [31:0] ASM_SYNC = 32'h7c0004ac;
@@ -82,3 +100,4 @@ localparam logic [31:0] ASM_EIEIO = 32'h7c0006ac;
 localparam logic [31:0] ASM_RFI = 32'h4c000064;
 localparam logic [31:0] ASM_SC = 32'h44000002;
 localparam logic [31:0] ASM_SELF = 32'h48000000;
+/* verilator lint_on UNUSEDPARAM */

@@ -44,10 +44,13 @@ module bus60x_scripted_target_bfm #(
   logic [4:0] tt;
   int beat;
   /* verilator lint_on UNUSEDSIGNAL */
-  logic burst, write, instruction, in_data;
+  logic burst, write, in_data;
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic instruction;
   // Whether the previous address tenure was retried: a policy of
   // retry_i = want && !last_retried retries each transaction once.
   logic last_retried;
+  /* verilator lint_on UNUSEDSIGNAL */
   logic [2:0] tsiz;
   // Each bench reads the subset it needs.
   /* verilator lint_off UNUSEDSIGNAL */

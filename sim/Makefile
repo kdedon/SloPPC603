@@ -1306,6 +1306,14 @@ test-core-bat-cached-bus60x-cacheops:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x_cacheops --Mdir $(BUILD_DIR)/core-bat-cached-bus60x-cacheops -I../tb $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_cached_bus60x_cacheops.sv
 	./$(BUILD_DIR)/core-bat-cached-bus60x-cacheops/Vtb_core_bat_cached_bus60x_cacheops $(SIM_ARGS)
 
+.PHONY: test-core-bat-cached-bus60x-stress
+test: test-core-bat-cached-bus60x-stress
+STRESS_SEEDS ?= 1 2 3 4
+test-core-bat-cached-bus60x-stress:
+	mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x-stress
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x_stress --Mdir $(BUILD_DIR)/core-bat-cached-bus60x-stress -I../tb $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_cached_bus60x_stress.sv
+	for seed in $(STRESS_SEEDS); do ./$(BUILD_DIR)/core-bat-cached-bus60x-stress/Vtb_core_bat_cached_bus60x_stress $(SIM_ARGS) +seed=$$seed || exit 1; done
+
 .PHONY: test-core-bat-cached-bus60x-timer
 test: test-core-bat-cached-bus60x-timer
 test-core-bat-cached-bus60x-timer:
