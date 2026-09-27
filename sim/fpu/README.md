@@ -73,3 +73,9 @@ date. The strict qualifier fails with 16,879 mismatches. A separate strict
 oracle comparison produces the same count and digest. The large failure is
 an explicit F1 exit-gate failure; these results support selective arithmetic
 reuse after repair, not production integration.
+
+Recorded: `make -C sim -j2 lint-fpu`, commit `4faef5c` plus unrelated
+pipeline and test work in progress, 2026-09-27. The unchanged TECH0 donor
+boundary regenerated with pinned GHDL 4.1.0/Yosys 0.33 and passed one strict
+Verilator lint invocation with zero warnings. This refresh checks extraction
+and lint only; it does not supersede the failed numerical qualification above.

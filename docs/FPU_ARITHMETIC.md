@@ -30,8 +30,9 @@ The engine supports binary64 arithmetic, direct binary32 rounding, integer-word 
 
 The independent [production suite](../sim/fpu/PRODUCTION.md) records numerical and shell checks. [Quartus measurements](../quartus/fpu-production/README.md) separately record area and frequency. The target is 50 MHz, with 66 MHz aspirational. The separate SS experiment remains a measured donor candidate, not a production dependency.
 
-The fixed-cycle arithmetic checkpoint `251d633` passed 200,072 raw packets
-and separate timing tests in both elaborations. Expected request-acceptance to
+The fixed-cycle arithmetic checkpoint `251d633` passed 200,072 raw 603e packets
+and separate timing tests in both elaborations. Independent numerical acceptance
+of the 602 profile is a separate gate. Expected request-acceptance to
 finish latency is three cycles for ordinary instructions, four for 603e double
 multiply/fused, 18 for single divide/reciprocal and 33 for double divide.
 Special values retain their instruction's timing. Ordinary initiation interval

@@ -96,6 +96,20 @@ constant memory-size bits and 603e-disabled SP/LT outputs plus their summary,
 and the virtual-clock warning. TimeQuest reported zero errors and warnings.
 No fitter ran.
 
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`4faef5c` plus the function-result member rename from `sum` to `finite_value`,
+2026-09-27.
+
+Renaming that member resolved Quartus elaboration. The carry-select revision
+used 10,867 estimated ALMs, 14,466 ALUTs, 2,503 registers, 412 memory bits and
+five DSP blocks. Post-map Fmax improved to **14.9 MHz**, with −47.266 ns
+setup slack; both targets still failed. The worst reported path moved to
+rounding and result classification, from the registered exponent to
+`finish_o.fprf` (61.618 ns data delay, 26 logic levels). Map reported zero
+errors and four warnings; TimeQuest reported zero errors and warnings.
+No fitter ran. The rename was tested in an isolated synthesis snapshot;
+architectural acceptance still requires the corresponding live-source tests.
+
 ### Earlier serialized implementation
 
 The following measurements describe the earlier serialized 603e implementation.
