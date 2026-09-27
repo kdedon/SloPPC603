@@ -31,7 +31,7 @@ public-shell checks, and a 32-operation issue/forward/commit stream in each
 personality. These results cover separately pinned source snapshots; they are
 not one final revision's acceptance. Dedicated paired dispatch/retirement,
 602 estimate coverage and further current-revision gates remain in progress.
-The latest arithmetic post-map estimate is **24.0 MHz**; the first two-lane
+The latest arithmetic post-map estimate is **24.5 MHz**; the first two-lane
 603e shell estimates **12.9 MHz**. Both miss 50 and 66 MHz. No completion or
 fitted timing claim is made for the replacement. See
 [verification](../sim/fpu/PRODUCTION.md) and

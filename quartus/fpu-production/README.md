@@ -310,3 +310,18 @@ rounding to result bit 62 (35.975 ns, 22 logic levels). Stage delays were
 36.321 ns response rounding. Map reported zero errors and four warnings;
 TimeQuest reported zero errors and zero warnings. No fitter ran. The divider
 raw-operand capture change is not included.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`6cf259e`, 2026-09-27.
+
+Raw operand capture at divider admission mapped at 10,813 estimated ALMs,
+14,365 ALUTs, 2,567 registers, 416 block-memory bits and five DSP blocks.
+Post-map Fmax was **24.5 MHz**, with −20.796 ns setup slack; both targets
+failed. Rounding remained the overall critical path at 35.148 ns to the result
+output (22 logic levels). The divider's new setup path measured 33.067 ns from
+raw divisor to first remainder; moving normalization behind the input register
+removes it from the shell bypass path but still requires stage optimization.
+Other stage delays were 32.269 ns add, 26.750 ns alignment, 21.121 ns multiply
+and 35.494 ns response. Map reported zero errors and four warnings, 433 virtual
+pins and zero physical pins; TimeQuest reported zero errors and zero warnings.
+No fitter ran.
