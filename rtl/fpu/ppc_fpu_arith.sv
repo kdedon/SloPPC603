@@ -46,6 +46,29 @@ module ppc_fpu_arith (
     } finite_prep_t;
 
     typedef struct packed {
+        logic [159:0] x;
+        logic [159:0] y;
+        logic signed [15:0] exponent;
+        logic [7:0] distance;
+        logic shift_x;
+        logic shift_y;
+        logic sign_x;
+        logic sign_y;
+        logic negate_final;
+        logic single_operand;
+    } align_plan_t;
+
+    typedef struct packed {
+        logic [159:0] x;
+        logic [159:0] y;
+        logic signed [15:0] exponent;
+        logic sign_x;
+        logic sign_y;
+        logic negate_final;
+        logic single_operand;
+    } align_data_t;
+
+    typedef struct packed {
         logic [159:0] magnitude;
         logic signed [15:0] exponent;
         logic sign;
@@ -74,13 +97,16 @@ module ppc_fpu_arith (
     } round_post_t;
 
     typedef enum logic [3:0] {
-        IDLE, CALC, DIVIDE, PREP, ALIGN, NORM_HIGH, NORM_LOW,
+        IDLE, CALC, DIVIDE, PREP, ALIGN_PLAN, ALIGN_SHIFT, ALIGN_SUM,
+        NORM_HIGH, NORM_LOW,
         TINY, ROUND, PACK, RESPONSE
     } state_t;
     state_t state_q;
     ppc_fpu_arith_req_t req_q;
     ppc_fpu_arith_rsp_t rsp_q;
     finite_prep_t prep_q;
+    align_plan_t align_plan_q;
+    align_data_t align_data_q;
     finite_sum_t sum_q;
     finite_sum_t norm_high_q;
     finite_sum_t norm_low_q;
@@ -572,41 +598,68 @@ module ppc_fpu_arith (
         return out;
     endfunction
 
-    function automatic finite_sum_t align_finite(
-        input finite_prep_t prep, input logic [1:0] rn
-    );
-        finite_sum_t out;
-        logic [159:0] x;
-        logic [159:0] y;
-        int unsigned distance;
-        x = prep.x;
-        y = prep.y;
+    function automatic align_plan_t plan_alignment(input finite_prep_t prep);
+        align_plan_t out;
+        int signed delta;
         out = '0;
+        out.x = prep.x;
+        out.y = prep.y;
+        out.exponent = (prep.x == 0 && prep.y != 0) ?
+            prep.exp_y : prep.exp_x;
+        out.sign_x = prep.sign_x;
+        out.sign_y = prep.sign_y;
         out.negate_final = prep.negate_final;
-        out.exponent = (x == 0 && y != 0) ? prep.exp_y : prep.exp_x;
-        if (y != 0) begin
-            if (x == 0) out.exponent = prep.exp_y;
-            else if (prep.exp_x > prep.exp_y) begin
-                distance = int'(prep.exp_x) - int'(prep.exp_y);
-                y = shift_right_jam(y, distance);
+        out.single_operand = prep.single_operand;
+        delta = 0;
+        if (prep.y != 0 && prep.x != 0) begin
+            if (prep.exp_x > prep.exp_y) begin
+                delta = int'(prep.exp_x) - int'(prep.exp_y);
+                out.distance = delta >= 160 ? 8'd160 : 8'(delta);
+                out.shift_y = 1'b1;
             end else if (prep.exp_y > prep.exp_x) begin
-                distance = int'(prep.exp_y) - int'(prep.exp_x);
-                x = shift_right_jam(x, distance);
+                delta = int'(prep.exp_y) - int'(prep.exp_x);
+                out.distance = delta >= 160 ? 8'd160 : 8'(delta);
+                out.shift_x = 1'b1;
                 out.exponent = prep.exp_y;
             end
         end
-        if (x == 0 && y == 0 && prep.single_operand) begin
+        return out;
+    endfunction
+
+    function automatic align_data_t shift_alignment(input align_plan_t plan);
+        align_data_t out;
+        out = '0;
+        out.x = plan.shift_x ?
+            shift_right_jam(plan.x, {24'd0, plan.distance}) : plan.x;
+        out.y = plan.shift_y ?
+            shift_right_jam(plan.y, {24'd0, plan.distance}) : plan.y;
+        out.exponent = plan.exponent;
+        out.sign_x = plan.sign_x;
+        out.sign_y = plan.sign_y;
+        out.negate_final = plan.negate_final;
+        out.single_operand = plan.single_operand;
+        return out;
+    endfunction
+
+    function automatic finite_sum_t sum_alignment(
+        input align_data_t aligned, input logic [1:0] rn
+    );
+        finite_sum_t out;
+        out = '0;
+        out.negate_final = aligned.negate_final;
+        out.exponent = aligned.exponent;
+        if (aligned.x == 0 && aligned.y == 0 && aligned.single_operand) begin
             out.magnitude = '0;
-            out.sign = prep.sign_x;
-        end else if (prep.sign_x == prep.sign_y) begin
-            out.magnitude = x + y;
-            out.sign = prep.sign_x;
-        end else if (x > y) begin
-            out.magnitude = x - y;
-            out.sign = prep.sign_x;
-        end else if (y > x) begin
-            out.magnitude = y - x;
-            out.sign = prep.sign_y;
+            out.sign = aligned.sign_x;
+        end else if (aligned.sign_x == aligned.sign_y) begin
+            out.magnitude = aligned.x + aligned.y;
+            out.sign = aligned.sign_x;
+        end else if (aligned.x > aligned.y) begin
+            out.magnitude = aligned.x - aligned.y;
+            out.sign = aligned.sign_x;
+        end else if (aligned.y > aligned.x) begin
+            out.magnitude = aligned.y - aligned.x;
+            out.sign = aligned.sign_y;
         end else begin
             out.magnitude = '0;
             out.sign = rn == 2'b11;
@@ -903,6 +956,8 @@ module ppc_fpu_arith (
             req_q <= '0;
             rsp_q <= '0;
             prep_q <= '0;
+            align_plan_q <= '0;
+            align_data_q <= '0;
             sum_q <= '0;
             norm_high_q <= '0;
             norm_low_q <= '0;
@@ -949,10 +1004,18 @@ module ppc_fpu_arith (
                 end
                 PREP: begin
                     prep_q <= prepare_finite(req_q.op, req_q.a, req_q.b, req_q.c);
-                    state_q <= ALIGN;
+                    state_q <= ALIGN_PLAN;
                 end
-                ALIGN: begin
-                    sum_q <= align_finite(prep_q, req_q.rn);
+                ALIGN_PLAN: begin
+                    align_plan_q <= plan_alignment(prep_q);
+                    state_q <= ALIGN_SHIFT;
+                end
+                ALIGN_SHIFT: begin
+                    align_data_q <= shift_alignment(align_plan_q);
+                    state_q <= ALIGN_SUM;
+                end
+                ALIGN_SUM: begin
+                    sum_q <= sum_alignment(align_data_q, req_q.rn);
                     state_q <= NORM_HIGH;
                 end
                 NORM_HIGH: begin
