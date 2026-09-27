@@ -45,8 +45,9 @@ experiment. The donor failed qualification. The replacement standalone module
 selects 603e or 602 at compile time and must match original instruction latency
 and throughput. The coherent baseline passes both personalities’ numerical, exact-cycle,
 public-shell, paired dispatch/retirement and strict lint gates in
-[verification](../../../sim/fpu/PRODUCTION.md). Later timing changes and expanded
-full-queue admission checks remain under qualification. Retained
+[verification](../../../sim/fpu/PRODUCTION.md), including full-queue admission
+and 602 SPR timing. Frequency closure and the documented silicon-semantics
+gaps remain open. Retained
 arithmetic synthesis estimates 28.8 MHz; the measured 603e/602 shells
 estimate 19.7/17.7 MHz. All miss 50 and 66 MHz, and no fitter has run. The earlier
 serialized 50.5 MHz result is historical. See the

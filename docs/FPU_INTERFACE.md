@@ -1,12 +1,14 @@
 # Standalone FPU interface
 
-The standalone module is being rebuilt for original 603e and 602 instruction
-latency and throughput. `parameter bit CPU_602=0` selects 603e; setting it to
+The standalone module implements separate 603e and 602 personalities with
+the manuals’ execution latencies and initiation intervals. `parameter bit CPU_602=0` selects 603e; setting it to
 one at elaboration selects 602. There is no runtime personality switch. The
 architectural contracts are [603e](FPU_CONTRACT.md) and
 [602](FPU_602_CONTRACT.md); the [pipeline design](FPU_PIPELINE_DESIGN.md)
-defines the acceptance schedule. The current pipeline is under verification:
-prior serialized results do not establish its completion.
+defines the acceptance schedule. A coherent dual-personality baseline passes
+the [functional and cycle tests](../sim/fpu/PRODUCTION.md). Frequency closure
+remains open: full-module post-map estimates are 19.7/17.7 MHz against 50 MHz.
+The semantics limits in both contracts remain explicit.
 
 The issue interface carries the core's full `ppc_pkg::completion_tag_t`
 (3-bit queue index and 8-bit generation). Four FPR destination credits allow
