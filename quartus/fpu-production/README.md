@@ -269,3 +269,16 @@ virtual-clock warning. TimeQuest reported zero errors and zero warnings. No
 fitter ran. This snapshot predates the second forwarding output, local execution
 stage changes and later arithmetic optimizations; it is exploratory evidence,
 not current acceptance or timing closure.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`b37603a` (arithmetic `29071cf`), 2026-09-27.
+
+The bounded divider normalization and conversion-stage rebalance mapped with
+10,612 estimated ALMs, 14,213 ALUTs, 2,565 registers, 416 block-memory bits and
+five DSP blocks. Divider-stage delay fell from 32.089 to **21.169 ns**;
+alignment was 27.629 ns, add 28.079 ns and multiply 21.625 ns. Rounding remained
+41.651 ns to the response register, so Fmax stayed **21.3 MHz**, with −26.953 ns
+setup slack and both frequency targets failing. Map reported zero errors and
+four warnings, 433 virtual pins and zero physical pins; TimeQuest reported zero
+errors and zero warnings. No fitter ran. The later raw-input divider capture
+change is outside this snapshot.
