@@ -52,6 +52,12 @@ architectural bank after a stall cannot substitute for correct bindings.
 [603e UM §6.3.3.1, physical PDF 258; 602 UM §§1.2.2.2, 6.4.3,
 physical PDF 56, 304–305]
 
+Pending capacity is five instructions for 603e and four for 602, selected at
+elaboration. The 602 has four completion buffers and retires at most one
+instruction per cycle. FPR rename capacity remains four in both builds.
+[603e UM §6.3.3.1, physical PDF 258; 602 UM §§1.1.3.1.3, 6.3.2,
+physical PDF 45, 299]
+
 Finished FPR values and CR results are forwarded before architectural retirement.
 The forward packet includes the full completion tag, destination, value, validity,
 and 602 SP/LT tags where applicable. CR forwarding excludes `mcrfs`. Architectural

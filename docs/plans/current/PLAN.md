@@ -51,9 +51,13 @@ full-unit post-map estimate is 50.5 MHz, meeting the synthesis-only 50 MHz
 check; 66 MHz remains unmet. No fitted timing closure is claimed. See the
 assessment for resources, selected semantics and remaining silicon questions. A separate process will integrate the FPU
 into the CPU. Existing core RTL and file lists remain outside this workstream.
-The requested complete 603e/602 module remains open: 602 mode is absent,
-603e scheduling is serialized, and implementation-specific semantic gaps
-remain in the contract. Passing the current suite does not close those gates.
+The requested complete 603e/602 module remains open. The
+[602 contract](../../FPU_602_CONTRACT.md) now has a pinned primary manual;
+the [replacement pipeline](../../FPU_PIPELINE_DESIGN.md) must meet original
+instruction latency and throughput in each compile-time build. The first
+arithmetic pipeline map reached 11.7 MHz, so normalization/rounding needs
+redesign within the fixed cycle count. The earlier serialized suite and
+50.5 MHz measurement do not close the new implementation's acceptance gates.
 Do not infer full CPU completion from the restricted MVP score.
 
 After each accepted implementation round, update the scorecard's affected rows

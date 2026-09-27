@@ -23,6 +23,22 @@ The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not 
 
 ## Recorded synthesis evidence
 
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`5cd6432` plus uncommitted pipeline/package changes, 2026-09-27.
+
+The first three/four-cycle pipeline experiment mapped at 9,722 estimated ALMs,
+12,865 ALUTs, 2,648 registers, 412 block-memory bits and five DSP blocks. It had
+327 virtual pins and zero physical pins. Post-map Fmax was **11.7 MHz**, with
+−65.852 ns worst setup slack at 20 ns: both 50 and 66 MHz failed. The critical
+path ran from the registered sum through normalization/rounding to the response
+FIFO, with 45 logic levels and 85.660 ns data delay. The run used a frozen source
+copy while parallel work continued; it is an exploratory measurement of the
+initial composed rounding stage, not an accepted implementation or a result for
+the subsequent redesigned stage. Map reported zero errors and four warnings;
+TimeQuest reported zero errors. No fitter ran.
+
+### Earlier serialized implementation
+
 The following measurements describe the earlier serialized 603e implementation.
 They do not establish area or frequency for the replacement pipeline or 602 build.
 Fresh measurements are required before accepting either new personality.
