@@ -1,5 +1,6 @@
 `default_nettype none
-// Serialized control, SPR, compare and one-outstanding memory lane.
+// Serialized control, SPR, compare and one-outstanding memory lane. One
+// sequencer owns the lane state; each concern owns its own registers.
 module ppc_special #(
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
@@ -143,7 +144,7 @@ module ppc_special #(
     S_MEM_WAIT, S_MEM_RESULT, S_MEM_DRAIN, S_EXCEPTION_RESULT,
     S_CONTEXT_DRAIN, S_CONTEXT_INSTALL, S_CONTEXT_REDIRECT, S_CONTEXT_ABORT,
     S_INTERRUPT_COMMIT, S_TIMER_RESULT, S_EXCEPTION_HALT,
-    S_BAT_OFFER, S_BAT_WAIT, S_BAT_RESULT, S_BAT_ABORT, S_BAT_ACK, S_BAT_REDIRECT,
+    S_MMU_OFFER, S_MMU_WAIT, S_MMU_RESULT, S_MMU_ABORT, S_MMU_ACK, S_MMU_REDIRECT,
     S_BRANCH_REDIRECT
   } state_t;
   state_t state_q;
@@ -263,16 +264,16 @@ module ppc_special #(
   assign mmu_idle = bat_operation ? bat_csr_idle_i :
                     segment_operation ? segment_csr_idle_i :
                     tlbie_operation ? tlb_inv_idle_i : tlb_fill_idle_i;
-  assign mmu_rsp_ready = rst_ni && ((state_q == S_BAT_WAIT) ||
-    ((state_q == S_BAT_ABORT) && mmu_response_pending_q));
-  assign tlb_inv_req_valid_o = rst_ni && (state_q == S_BAT_OFFER) && tlbie_operation;
+  assign mmu_rsp_ready = rst_ni && ((state_q == S_MMU_WAIT) ||
+    ((state_q == S_MMU_ABORT) && mmu_response_pending_q));
+  assign tlb_inv_req_valid_o = rst_ni && (state_q == S_MMU_OFFER) && tlbie_operation;
   assign tlb_inv_req_ea_o = b_q;
   assign tlb_inv_rsp_ready_o = mmu_rsp_ready && tlbie_operation;
   assign tlb_inv_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
     tlbie_operation && !mmu_error_q;
-  assign tlb_inv_abort_o = rst_ni && (state_q == S_BAT_ABORT) && tlbie_operation;
-  assign tlb_inv_ack_ready_o = rst_ni && (state_q == S_BAT_ACK) && tlbie_operation;
-  assign tlb_fill_req_valid_o = rst_ni && (state_q == S_BAT_OFFER) &&
+  assign tlb_inv_abort_o = rst_ni && (state_q == S_MMU_ABORT) && tlbie_operation;
+  assign tlb_inv_ack_ready_o = rst_ni && (state_q == S_MMU_ACK) && tlbie_operation;
+  assign tlb_fill_req_valid_o = rst_ni && (state_q == S_MMU_OFFER) &&
                                 tlb_fill_operation;
   assign {tlb_fill_req_bank_o, tlb_fill_req_ea_o, tlb_fill_req_vsid_o,
     tlb_fill_req_way_o, tlb_fill_req_rpn_o, tlb_fill_req_c_o,
@@ -280,11 +281,11 @@ module ppc_special #(
   assign tlb_fill_rsp_ready_o = mmu_rsp_ready && tlb_fill_operation;
   assign tlb_fill_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
                              tlb_fill_operation && !mmu_error_q;
-  assign tlb_fill_abort_o = rst_ni && (state_q == S_BAT_ABORT) &&
+  assign tlb_fill_abort_o = rst_ni && (state_q == S_MMU_ABORT) &&
                             tlb_fill_operation;
-  assign tlb_fill_ack_ready_o = rst_ni && (state_q == S_BAT_ACK) &&
+  assign tlb_fill_ack_ready_o = rst_ni && (state_q == S_MMU_ACK) &&
                                 tlb_fill_operation;
-  assign segment_csr_req_valid_o = rst_ni && (state_q == S_BAT_OFFER) && segment_operation;
+  assign segment_csr_req_valid_o = rst_ni && (state_q == S_MMU_OFFER) && segment_operation;
   assign segment_csr_req_write_o = uop_q.special_op == SPECIAL_MTSR;
   assign segment_csr_req_index_o = uop_q.sr_indexed ? b_q[31:28] :
                                     uop_q.sr_index;
@@ -292,17 +293,17 @@ module ppc_special #(
   assign segment_csr_rsp_ready_o = mmu_rsp_ready && segment_operation;
   assign segment_csr_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
     segment_operation && mmu_req_write && !mmu_error_q;
-  assign segment_csr_abort_o = rst_ni && (state_q == S_BAT_ABORT) && segment_operation;
-  assign segment_csr_ack_ready_o = rst_ni && (state_q == S_BAT_ACK) && segment_operation;
-  assign bat_csr_req_valid_o = rst_ni && (state_q == S_BAT_OFFER) && bat_operation;
+  assign segment_csr_abort_o = rst_ni && (state_q == S_MMU_ABORT) && segment_operation;
+  assign segment_csr_ack_ready_o = rst_ni && (state_q == S_MMU_ACK) && segment_operation;
+  assign bat_csr_req_valid_o = rst_ni && (state_q == S_MMU_OFFER) && bat_operation;
   assign bat_csr_req_write_o = uop_q.special_op == SPECIAL_MTSPR;
   assign bat_csr_req_spr_o = uop_q.spr;
   assign bat_csr_req_data_o = a_q;
   assign bat_csr_rsp_ready_o = mmu_rsp_ready && bat_operation;
   assign bat_csr_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
     bat_operation && mmu_req_write && !mmu_error_q;
-  assign bat_csr_abort_o = rst_ni && (state_q == S_BAT_ABORT) && bat_operation;
-  assign bat_csr_ack_ready_o = rst_ni && (state_q == S_BAT_ACK) && bat_operation;
+  assign bat_csr_abort_o = rst_ni && (state_q == S_MMU_ABORT) && bat_operation;
+  assign bat_csr_ack_ready_o = rst_ni && (state_q == S_MMU_ACK) && bat_operation;
 
   logic [63:0] timebase;
   logic [31:0] decrementer, timer_read_value_q;
@@ -484,7 +485,7 @@ module ppc_special #(
            (uop_q.special_op == SPECIAL_ALIGNMENT) ||
            (uop_q.special_op == SPECIAL_ISI)) &&
           exception_entry_unsupported) result_o.fault = 1'b1;
-    end else if (state_q == S_BAT_RESULT) begin
+    end else if (state_q == S_MMU_RESULT) begin
       result_valid_o = !cancel_i;
       result_o.value = mmu_value_q;
       result_o.fault = mmu_error_q;
@@ -716,16 +717,16 @@ module ppc_special #(
     .state_load_srr1_i(a_q), .msr_o, .srr0_o, .srr1_o
   );
   assign exception_commit_redirect_o = rst_ni &&
-    ((state_q == S_BAT_REDIRECT) || (ENABLE_LIVE_CONTEXT && (state_q == S_CONTEXT_REDIRECT)) ||
+    ((state_q == S_MMU_REDIRECT) || (ENABLE_LIVE_CONTEXT && (state_q == S_CONTEXT_REDIRECT)) ||
      (!ENABLE_LIVE_CONTEXT && (state_q == S_EXCEPTION_RESULT) &&
       exception_result_valid && exception_result_supported));
-  assign exception_commit_target_o = (state_q == S_BAT_REDIRECT) ? mmu_resume_target_q : ENABLE_LIVE_CONTEXT ?
+  assign exception_commit_target_o = (state_q == S_MMU_REDIRECT) ? mmu_resume_target_q : ENABLE_LIVE_CONTEXT ?
     context_target_q : exception_result_target;
   assign exception_halt_o = (state_q == S_EXCEPTION_HALT);
   // Block external cuts on the event-commit edge and until the exception
   // redirect has been presented. The exception itself has already committed.
   assign exception_irrevocable_o = rst_ni &&
-    (interrupt_q || (state_q == S_BAT_ACK) || (state_q == S_BAT_REDIRECT) ||
+    (interrupt_q || (state_q == S_MMU_ACK) || (state_q == S_MMU_REDIRECT) ||
      bat_csr_commit_o || segment_csr_commit_o || tlb_inv_commit_o ||
      tlb_fill_commit_o || exception_event_valid || (state_q == S_EXCEPTION_RESULT) ||
      (state_q == S_EXCEPTION_HALT) ||
@@ -735,20 +736,196 @@ module ppc_special #(
      (ENABLE_LIVE_CONTEXT && exception_state_load_valid &&
       (uop_q.special_op == SPECIAL_MTMSR)));
 
+  // Lane step classes. An accepted interrupt boundary outranks dispatch;
+  // otherwise a held operation either cancels or runs its state.
+  logic interrupt_accept, dispatch_fire, step_run, hold_commit;
+  assign interrupt_accept = ENABLE_EXTERNAL_INTERRUPTS && interrupt_valid_i &&
+                            dispatch_ready_o;
+  assign dispatch_fire = dispatch_valid_i && dispatch_ready_o && !interrupt_accept;
+  assign step_run = !cancel_i && !interrupt_accept && !dispatch_fire;
+  assign hold_commit = step_run && (state_q == S_HOLD) && commit_match;
+  logic dispatch_fenced, context_install, exception_result_accept;
+  assign dispatch_fenced = dispatch_context || dispatch_bat || dispatch_segment ||
+                           dispatch_tlbie || dispatch_tlb_fill || dispatch_sdr1_write;
+  assign context_install = (ENABLE_LIVE_CONTEXT &&
+    (uop_q.special_op == SPECIAL_MTMSR) && !mtmsr_unsupported) ||
+    (sdr1_write && !sdr1_write_invalid_q);
+  assign exception_result_accept = exception_result_valid &&
+    (!data_exception_event || !ENABLE_LIVE_CONTEXT ||
+     (frontend_quiescent_i && memory_quiescent_i));
+
+  // Lane sequencer: state, fence and kill ownership.
+  state_t state_d;
+  logic fence_d, killed_d, mem_response_fence;
+  always_comb begin
+    state_d = state_q;
+    fence_d = fence_q;
+    killed_d = killed_q;
+    if (interrupt_accept) begin
+      state_d = S_CONTEXT_DRAIN;
+      fence_d = 1'b1;
+    end else if (dispatch_fire) begin
+      killed_d = 1'b0;
+      fence_d = dispatch_fenced;
+      if ((uop_i.special_op == SPECIAL_LOAD) ||
+          (uop_i.special_op == SPECIAL_STORE)) state_d = S_MEM_PREP;
+      else if (dispatch_fenced) state_d = S_CONTEXT_DRAIN;
+      else state_d = S_EXEC;
+    end else if (cancel_i) begin
+      case (state_q)
+        S_MMU_OFFER: begin
+          // An offered request cannot be withdrawn by recovery. Finish its
+          // handshake, then abort the side-effect-free prepared proposal.
+          killed_d = 1'b1;
+          if (mmu_req_ready) state_d = S_MMU_ABORT;
+        end
+        S_MMU_WAIT: state_d = S_MMU_ABORT;
+        S_MMU_RESULT, S_HOLD: begin
+          if (mmu_operation) state_d = S_MMU_ABORT;
+          else if (fence_q) state_d = S_CONTEXT_ABORT;
+          else state_d = S_IDLE;
+        end
+        S_MMU_ABORT: if (mmu_idle && !mmu_response_pending_q) begin
+          fence_d = 1'b0;
+          state_d = S_IDLE;
+        end
+        S_MEM_OFFER: if (uop_q.special_op == SPECIAL_LOAD) begin
+          killed_d = 1'b1;
+          if (request_fire) state_d = S_MEM_DRAIN;
+        end
+        S_MEM_WAIT: if (uop_q.special_op == SPECIAL_LOAD) begin
+          killed_d = 1'b1;
+          state_d = response_fire ? S_IDLE : S_MEM_DRAIN;
+        end
+        S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
+        S_EXCEPTION_HALT: ;
+        default: state_d = fence_q ? S_CONTEXT_ABORT : S_IDLE;
+      endcase
+    end else begin
+      case (state_q)
+        // Fence remains asserted from dispatch through install and redirect.
+        // Offered old requests drain under the old committed context.
+        S_CONTEXT_DRAIN: if (frontend_quiescent_i && memory_quiescent_i)
+          state_d = interrupt_q ? S_INTERRUPT_COMMIT :
+                    mmu_operation ? S_MMU_OFFER : S_EXEC;
+        S_MMU_OFFER: if (mmu_req_ready)
+          state_d = killed_q ? S_MMU_ABORT : S_MMU_WAIT;
+        S_MMU_WAIT: if (mmu_rsp_valid) state_d = S_MMU_RESULT;
+        S_MMU_RESULT: if (result_fire) state_d = S_HOLD;
+        S_MMU_ABORT: if (mmu_idle && !mmu_response_pending_q) begin
+          fence_d = 1'b0;
+          state_d = S_IDLE;
+        end
+        S_MMU_ACK: if (mmu_ack_valid) state_d = S_MMU_REDIRECT;
+        S_MMU_REDIRECT: if (redirect_accepted_i) begin
+          fence_d = 1'b0;
+          state_d = S_IDLE;
+        end
+        S_BRANCH_REDIRECT: if (redirect_accepted_i) state_d = S_IDLE;
+        S_INTERRUPT_COMMIT: if (exception_event_ready) state_d = S_EXCEPTION_RESULT;
+        S_CONTEXT_ABORT: if (frontend_quiescent_i && memory_quiescent_i) begin
+          fence_d = 1'b0;
+          state_d = S_IDLE;
+        end
+        S_CONTEXT_INSTALL: if (context_ready_i) state_d = S_CONTEXT_REDIRECT;
+        S_CONTEXT_REDIRECT: if (redirect_accepted_i) begin
+          fence_d = 1'b0;
+          state_d = S_IDLE;
+        end
+        S_EXEC: begin
+          if (timer_read_execute) state_d = S_TIMER_RESULT;
+          else if (result_fire) state_d = S_HOLD;
+        end
+        S_TIMER_RESULT: if (result_fire) state_d = S_HOLD;
+        S_HOLD: if (commit_match) begin
+          if (tlb_fill_operation && mmu_error_q) state_d = S_MMU_ABORT;
+          else if (mmu_operation && !mmu_error_q)
+            state_d = mmu_req_write ? S_MMU_ACK : S_MMU_REDIRECT;
+          else if (exception_event_valid) state_d = S_EXCEPTION_RESULT;
+          else if (context_install) state_d = S_CONTEXT_INSTALL;
+          else begin
+            fence_d = 1'b0;
+            state_d = branch_redirect_taken ? S_BRANCH_REDIRECT : S_IDLE;
+          end
+        end
+        S_MEM_PREP: begin
+          if (misaligned) state_d = S_MEM_RESULT;
+          else if ((uop_q.special_op == SPECIAL_LOAD) || store_authorize_i)
+            state_d = S_MEM_OFFER;
+        end
+        S_MEM_OFFER: if (request_fire) state_d = killed_q ? S_MEM_DRAIN : S_MEM_WAIT;
+        S_MEM_WAIT: if (response_fire) begin
+          if (killed_q) state_d = S_IDLE;
+          else begin
+            if (mem_response_fence) fence_d = 1'b1;
+            state_d = S_MEM_RESULT;
+          end
+        end
+        S_MEM_RESULT: if (result_fire) state_d = S_HOLD;
+        S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
+        S_EXCEPTION_RESULT: if (exception_result_accept) begin
+          // A committed event the state unit rejected has no target;
+          // stop rather than redirect.
+          if (!exception_result_supported) begin
+            fence_d = 1'b1;
+            state_d = S_EXCEPTION_HALT;
+          end else if (ENABLE_LIVE_CONTEXT) state_d = S_CONTEXT_INSTALL;
+          else state_d = S_IDLE;
+        end
+        default: ;
+      endcase
+    end
+  end
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       state_q <= S_IDLE;
-      mmu_error_q <= 1'b0;
-      mmu_response_pending_q <= 1'b0;
-      mmu_value_q <= '0;
-      mmu_resume_target_q <= '0;
-      tlb_fill_payload_q <= '0;
-      tlb_fill_local_error_q <= 1'b0;
       fence_q <= 1'b0;
+      killed_q <= 1'b0;
+    end else begin
+      state_q <= state_d;
+      fence_q <= fence_d;
+      killed_q <= killed_d;
+    end
+  end
+
+  // Exception and interrupt sequencer.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
       interrupt_q <= 1'b0;
       decrementer_selected_q <= 1'b0;
-      timer_read_value_q <= '0;
       context_target_q <= '0;
+    end else if (interrupt_accept) begin
+      // The selected boundary is now irrevocable.
+      interrupt_q <= 1'b1;
+      decrementer_selected_q <= ENABLE_TIMERS && interrupt_decrementer_i;
+    end else if (dispatch_fire) begin
+      interrupt_q <= 1'b0;
+    end else if (step_run) begin
+      case (state_q)
+        // Initial EXT remains latched on withdrawal. Only a provisional
+        // DEC reservation can promote to EXT at the final offer boundary.
+        S_CONTEXT_DRAIN: if (frontend_quiescent_i && memory_quiescent_i &&
+                             interrupt_q && decrementer_selected_q && external_irq_i)
+          decrementer_selected_q <= 1'b0;
+        S_CONTEXT_REDIRECT: if (redirect_accepted_i) interrupt_q <= 1'b0;
+        S_HOLD: if (commit_match && !(tlb_fill_operation && mmu_error_q) &&
+                    !(mmu_operation && !mmu_error_q) && !exception_event_valid &&
+                    context_install)
+          context_target_q <= (sdr1_write ||
+            (ENABLE_TGPR && (uop_q.special_op == SPECIAL_MTMSR))) ?
+            mmu_resume_target_q : pc_q + 32'd4;
+        S_EXCEPTION_RESULT: if (exception_result_accept && exception_result_supported &&
+                                ENABLE_LIVE_CONTEXT)
+          context_target_q <= exception_result_target;
+        default: ;
+      endcase
+    end
+  end
+
+  // Dispatch capture. An interrupt boundary installs its resume PC and an
+  // empty uop.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
       uop_q <= '0;
       producer_q <= '0;
       a_q <= '0;
@@ -760,12 +937,76 @@ module ppc_special #(
       xer_byte_count_q <= '0;
       so_q <= 1'b0;
       ea_q <= '0;
+      fetch_page_miss_q <= '0;
+    end else if (interrupt_accept) begin
+      pc_q <= interrupt_pc_i;
+      uop_q <= '0;
+    end else if (dispatch_fire) begin
+      uop_q <= uop_i;
+      fetch_page_miss_q <= dispatch_page_miss_i;
+      producer_q <= producer_i;
+      a_q <= a_i;
+      b_q <= b_i;
+      c_q <= c_i;
+      pc_q <= pc_i;
+      cr_snapshot_q <= cr_i;
+      xer_flags_q <= xer_flags_i;
+      xer_byte_count_q <= xer_byte_count_i;
+      so_q <= so_i;
+      ea_q <= a_i + b_i;
+    end
+  end
+
+  // Branch unit: resolves at dispatch from committed LR/CTR/CR.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
       branch_taken_q <= 1'b0;
       branch_target_q <= '0;
       branch_ctr_write_q <= 1'b0;
       branch_lr_write_q <= 1'b0;
       branch_ctr_next_q <= '0;
       branch_lr_next_q <= '0;
+    end else if (dispatch_fire) begin
+      branch_ctr_write_q <= 1'b0;
+      branch_lr_write_q <= uop_i.branch_lk;
+      branch_lr_next_q <= pc_i + 32'd4;
+      branch_ctr_next_q <= ctr_q;
+      branch_taken_q <= 1'b0;
+      branch_target_q <= '0;
+      case (uop_i.special_op)
+        SPECIAL_B: begin
+          branch_taken_q <= 1'b1;
+          branch_target_q <= uop_i.branch_aa ? uop_i.branch_disp :
+                                               pc_i + uop_i.branch_disp;
+        end
+        SPECIAL_BC, SPECIAL_BCLR, SPECIAL_BCCTR: begin
+          branch_taken_q <= branch_ctr_ok && branch_cond_ok;
+          if (uop_i.special_op == SPECIAL_BC)
+            branch_target_q <= uop_i.branch_aa ? uop_i.branch_disp :
+                                                 pc_i + uop_i.branch_disp;
+          else if (uop_i.special_op == SPECIAL_BCLR)
+            branch_target_q <= lr_q & 32'hffff_fffc;
+          else
+            branch_target_q <= ctr_q & 32'hffff_fffc;
+          if (!uop_i.branch_bo[2]) begin
+            branch_ctr_write_q <= 1'b1;
+            branch_ctr_next_q <= branch_ctr_after;
+          end
+        end
+        SPECIAL_ISYNC: begin
+          // Refetch serialization: commit redirects to the next sequential
+          // instruction after all older work has drained.
+          branch_taken_q <= 1'b1;
+          branch_target_q <= pc_i + 32'd4;
+        end
+        default: ;
+      endcase
+    end
+  end
+
+  // SPR file. Every write lands on the matching retirement edge.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
       lr_q <= '0;
       ctr_q <= '0;
       sprg_q[0] <= SPRG_RESET;
@@ -779,340 +1020,163 @@ module ppc_special #(
       rpa_q <= '0;
       sdr1_q <= SDR1_RESET;
       sdr1_write_invalid_q <= 1'b0;
-      killed_q <= 1'b0;
-      memory_result_q <= '0;
-      fetch_page_miss_q <= '0;
       imiss_q <= '0;
       dmiss_q <= '0;
       hash1_q <= '0;
       hash2_q <= '0;
+      timer_read_value_q <= '0;
     end else begin
-      if ((mmu_operation || sdr1_write ||
-           (ENABLE_TGPR && (uop_q.special_op == SPECIAL_MTMSR))) &&
-          bat_recovery_retained_i)
+      if (dispatch_fire)
+        sdr1_write_invalid_q <= dispatch_sdr1_write && (|msr_o[5:4]);
+      if (timer_read_execute && step_run) timer_read_value_q <= exec_value;
+      if (hold_commit) begin
+        if ((uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd8))
+          lr_q <= a_q;
+        if ((uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd9))
+          ctr_q <= a_q;
+        if (uop_q.special_op == SPECIAL_MTSPR) begin
+          case (uop_q.spr)
+            10'd18: dsisr_q <= a_q;
+            10'd19: dar_q <= a_q;
+            10'd25: if (ENABLE_SDR1 && !sdr1_write_invalid_q)
+              sdr1_q <= a_q & SDR1_WMASK;
+            10'd977: if (ENABLE_TLB_LOAD) dcmp_q <= a_q;
+            10'd981: if (ENABLE_TLB_LOAD) icmp_q <= a_q;
+            10'd982: if (ENABLE_TLB_LOAD) rpa_q <= a_q;
+            10'd272: sprg_q[0] <= a_q;
+            10'd273: sprg_q[1] <= a_q;
+            10'd274: sprg_q[2] <= a_q;
+            10'd275: sprg_q[3] <= a_q;
+            default: ;
+          endcase
+        end
+        if (miss_event_commit) begin
+          // The oldest accepted miss installs all CPU-visible miss state
+          // on the same edge as SRR0/SRR1 and the vector reservation.
+          if (exception_event_kind == EVENT_TLB_I_MISS) begin
+            imiss_q <= derived_miss_page;
+            icmp_q <= derived_compare;
+          end else begin
+            // The physical data request/capsule is word-aligned. The
+            // matching captured LSU EA retains byte/halfword offsets.
+            dmiss_q <= ea_q;
+            dcmp_q <= derived_compare;
+          end
+          hash1_q <= derived_hash1;
+          hash2_q <= derived_hash2;
+        end
+        if (exception_event_valid &&
+            (uop_q.special_op == SPECIAL_ALIGNMENT)) begin
+          dar_q <= ea_q;
+          dsisr_q <= {15'b0, uop_q.alignment_dsisr};
+        end
+        if (exception_event_valid && dsi_event) begin
+          dar_q <= ea_q;
+          // UM Table 4-11: protection bit 4, store bit 6.
+          dsisr_q <= 32'h0800_0000 |
+            ((uop_q.special_op == SPECIAL_STORE) ?
+             32'h0200_0000 : 32'b0);
+        end
+        if (branch_lr_write_q) lr_q <= branch_lr_next_q;
+        if (branch_ctr_write_q) ctr_q <= branch_ctr_next_q;
+      end
+    end
+  end
+
+  // Serialized memory lane: one outstanding data obligation.
+  // Transport faults and unrecognized typed causes remain diagnostics. Only
+  // an enabled BAT protection denial is DSI, and only an exact, well-formed
+  // page miss becomes a resumable miss event.
+  always_comb begin
+    mem_response_fence = 1'b0;
+    if (!dmem_rsp_error_i) begin
+      case (dmem_rsp_fault_i)
+        DATA_DSI_PROTECTION: mem_response_fence = ENABLE_SUPERVISOR_EXCEPTIONS &&
+          !exception_entry_unsupported && ENABLE_LIVE_CONTEXT;
+        DATA_PAGE_MISS, DATA_PAGE_CHANGED: mem_response_fence = miss_eligible;
+        default: ;
+      endcase
+    end
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) memory_result_q <= '0;
+    else if (step_run) begin
+      if ((state_q == S_MEM_PREP) && misaligned) begin
+        memory_result_q <= '0;
+        memory_result_q.producer <= producer_q;
+        memory_result_q.fault <= 1'b1;
+      end
+      if ((state_q == S_MEM_WAIT) && response_fire && !killed_q) begin
+        memory_result_q <= '0;
+        memory_result_q.producer <= producer_q;
+        if (dmem_rsp_error_i) memory_result_q.fault <= 1'b1;
+        else begin
+          case (dmem_rsp_fault_i)
+            DATA_OK: ;
+            DATA_DSI_PROTECTION: begin
+              if (ENABLE_SUPERVISOR_EXCEPTIONS && !exception_entry_unsupported)
+                memory_result_q.data_fault <= DATA_DSI_PROTECTION;
+              else memory_result_q.fault <= 1'b1;
+            end
+            DATA_PAGE_MISS, DATA_PAGE_CHANGED: begin
+              memory_result_q.fault <= !miss_eligible;
+              if (ENABLE_PAGE_MISS_RESULTS) begin
+                memory_result_q.data_fault <= dmem_rsp_fault_i;
+                memory_result_q.page_miss <= dmem_rsp_page_miss_i;
+              end
+            end
+            default: memory_result_q.fault <= 1'b1;
+          endcase
+        end
+        memory_result_q.update_value <= ea_q;
+        case (uop_q.mem_size)
+          MEM_BYTE: memory_result_q.value <= {24'b0, load_byte};
+          MEM_HALF: memory_result_q.value <= uop_q.mem_signed ?
+            {{16{load_half[15]}}, load_half} : {16'b0, load_half};
+          default: memory_result_q.value <= dmem_rsp_rdata_i;
+        endcase
+      end
+    end
+  end
+
+  // MMU CSR transaction: fenced request, response and retained resume target.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      mmu_error_q <= 1'b0;
+      mmu_response_pending_q <= 1'b0;
+      mmu_value_q <= '0;
+      mmu_resume_target_q <= '0;
+      tlb_fill_payload_q <= '0;
+      tlb_fill_local_error_q <= 1'b0;
+    end else begin
+      if (dispatch_fire) mmu_resume_target_q <= pc_i + 32'd4;
+      else if ((mmu_operation || sdr1_write ||
+                (ENABLE_TGPR && (uop_q.special_op == SPECIAL_MTMSR))) &&
+               bat_recovery_retained_i)
         mmu_resume_target_q <= bat_recovery_target_i;
-      if (ENABLE_EXTERNAL_INTERRUPTS && interrupt_valid_i && dispatch_ready_o) begin
-        // The selected boundary is now irrevocable.
-        interrupt_q <= 1'b1;
-        decrementer_selected_q <= ENABLE_TIMERS && interrupt_decrementer_i;
-        fence_q <= 1'b1;
-        pc_q <= interrupt_pc_i;
-        uop_q <= '0;
-        state_q <= S_CONTEXT_DRAIN;
-      end else if (dispatch_valid_i && dispatch_ready_o) begin
-        interrupt_q <= 1'b0;
-        uop_q <= uop_i;
-        fetch_page_miss_q <= dispatch_page_miss_i;
+      if (dispatch_fire) begin
         tlb_fill_payload_q <= '{bank: (uop_i.special_op == SPECIAL_TLBLD),
           ea: b_i, vsid: tlb_fill_cmp[30:7], way: srr1_o[17],
           rpn: rpa_q[31:12], c: rpa_q[7], wimg: rpa_q[6:3],
           pp: rpa_q[1:0]};
         tlb_fill_local_error_q <= dispatch_tlb_fill && tlb_fill_seed_invalid;
-        sdr1_write_invalid_q <= dispatch_sdr1_write && (|msr_o[5:4]);
-        fence_q <= dispatch_context || dispatch_bat || dispatch_segment ||
-                   dispatch_tlbie || dispatch_tlb_fill ||
-                   dispatch_sdr1_write;
-        mmu_resume_target_q <= pc_i + 32'd4;
         mmu_error_q <= 1'b0;
         mmu_response_pending_q <= 1'b0;
-        producer_q <= producer_i;
-        a_q <= a_i;
-        b_q <= b_i;
-        c_q <= c_i;
-        pc_q <= pc_i;
-        cr_snapshot_q <= cr_i;
-        xer_flags_q <= xer_flags_i;
-        xer_byte_count_q <= xer_byte_count_i;
-        so_q <= so_i;
-        ea_q <= a_i + b_i;
-        killed_q <= 1'b0;
-        branch_ctr_write_q <= 1'b0;
-        branch_lr_write_q <= uop_i.branch_lk;
-        branch_lr_next_q <= pc_i + 32'd4;
-        branch_ctr_next_q <= ctr_q;
-        branch_taken_q <= 1'b0;
-        branch_target_q <= '0;
-        case (uop_i.special_op)
-          SPECIAL_B: begin
-            branch_taken_q <= 1'b1;
-            branch_target_q <= uop_i.branch_aa ? uop_i.branch_disp :
-                                                 pc_i + uop_i.branch_disp;
-          end
-          SPECIAL_BC, SPECIAL_BCLR, SPECIAL_BCCTR: begin
-            branch_taken_q <= branch_ctr_ok && branch_cond_ok;
-            if (uop_i.special_op == SPECIAL_BC)
-              branch_target_q <= uop_i.branch_aa ? uop_i.branch_disp :
-                                                   pc_i + uop_i.branch_disp;
-            else if (uop_i.special_op == SPECIAL_BCLR)
-              branch_target_q <= lr_q & 32'hffff_fffc;
-            else
-              branch_target_q <= ctr_q & 32'hffff_fffc;
-            if (!uop_i.branch_bo[2]) begin
-              branch_ctr_write_q <= 1'b1;
-              branch_ctr_next_q <= branch_ctr_after;
-            end
-          end
-          SPECIAL_ISYNC: begin
-            // Refetch serialization: commit redirects to the next sequential
-            // instruction after all older work has drained.
-            branch_taken_q <= 1'b1;
-            branch_target_q <= pc_i + 32'd4;
-          end
-          default: ;
-        endcase
-        if ((uop_i.special_op == SPECIAL_LOAD) ||
-            (uop_i.special_op == SPECIAL_STORE)) state_q <= S_MEM_PREP;
-        else if (dispatch_context || dispatch_bat || dispatch_segment ||
-                 dispatch_tlbie || dispatch_tlb_fill ||
-                 dispatch_sdr1_write)
-          state_q <= S_CONTEXT_DRAIN;
-        else state_q <= S_EXEC;
-      end else begin
-        if (cancel_i) begin
-          case (state_q)
-            S_BAT_OFFER: begin
-              // An offered request cannot be withdrawn by recovery. Finish its
-              // handshake, then abort the side-effect-free prepared proposal.
-              killed_q <= 1'b1;
-              if (mmu_req_ready) begin
-                mmu_response_pending_q <= 1'b1;
-                state_q <= S_BAT_ABORT;
-              end
-            end
-            S_BAT_WAIT: begin
-              mmu_response_pending_q <= !mmu_rsp_valid;
-              state_q <= S_BAT_ABORT;
-            end
-            S_BAT_RESULT, S_HOLD: begin
-              if (mmu_operation) state_q <= S_BAT_ABORT;
-              else if (fence_q) state_q <= S_CONTEXT_ABORT;
-              else state_q <= S_IDLE;
-            end
-            S_BAT_ABORT: begin
-              if (mmu_rsp_valid && mmu_rsp_ready) mmu_response_pending_q <= 1'b0;
-              if (mmu_idle && !mmu_response_pending_q) begin
-                fence_q <= 1'b0;
-                state_q <= S_IDLE;
-              end
-            end
-            S_MEM_OFFER: begin
-              if (uop_q.special_op == SPECIAL_LOAD) begin
-                killed_q <= 1'b1;
-                if (request_fire) state_q <= S_MEM_DRAIN;
-              end
-            end
-            S_MEM_WAIT: begin
-              if (uop_q.special_op == SPECIAL_LOAD) begin
-                killed_q <= 1'b1;
-                if (response_fire) state_q <= S_IDLE;
-                else state_q <= S_MEM_DRAIN;
-              end
-            end
-            S_MEM_DRAIN: if (response_fire) state_q <= S_IDLE;
-            S_EXCEPTION_HALT: ;
-            default: begin
-              if (fence_q) state_q <= S_CONTEXT_ABORT;
-              else state_q <= S_IDLE;
-            end
-          endcase
-        end else begin
-          case (state_q)
-            // Fence remains asserted from dispatch through install and redirect.
-            // Offered old requests drain under the old committed context.
-            S_CONTEXT_DRAIN: if (frontend_quiescent_i && memory_quiescent_i) begin
-              // Initial EXT remains latched on withdrawal. Only a provisional
-              // DEC reservation can promote to EXT at the final offer boundary.
-              if (interrupt_q && decrementer_selected_q && external_irq_i)
-                decrementer_selected_q <= 1'b0;
-              state_q <= interrupt_q ? S_INTERRUPT_COMMIT : mmu_operation ? S_BAT_OFFER : S_EXEC;
-            end
-            S_BAT_OFFER: if (mmu_req_ready) begin
-              mmu_response_pending_q <= 1'b1;
-              state_q <= killed_q ? S_BAT_ABORT : S_BAT_WAIT;
-            end
-            S_BAT_WAIT: if (mmu_rsp_valid) begin
+      end else if (!interrupt_accept) begin
+        case (state_q)
+          S_MMU_OFFER: if (mmu_req_ready) mmu_response_pending_q <= 1'b1;
+          S_MMU_WAIT: begin
+            if (cancel_i) mmu_response_pending_q <= !mmu_rsp_valid;
+            else if (mmu_rsp_valid) begin
               mmu_response_pending_q <= 1'b0;
               mmu_value_q <= mmu_rsp_data;
               mmu_error_q <= mmu_rsp_error;
-              state_q <= S_BAT_RESULT;
             end
-            S_BAT_RESULT: if (result_fire) state_q <= S_HOLD;
-            S_BAT_ABORT: begin
-              if (mmu_rsp_valid && mmu_rsp_ready) mmu_response_pending_q <= 1'b0;
-              if (mmu_idle && !mmu_response_pending_q) begin
-                fence_q <= 1'b0;
-                state_q <= S_IDLE;
-              end
-            end
-            S_BAT_ACK: if (mmu_ack_valid) state_q <= S_BAT_REDIRECT;
-            S_BAT_REDIRECT: if (redirect_accepted_i) begin
-              fence_q <= 1'b0;
-              state_q <= S_IDLE;
-            end
-            S_BRANCH_REDIRECT: if (redirect_accepted_i) state_q <= S_IDLE;
-            S_INTERRUPT_COMMIT: if (exception_event_ready)
-              state_q <= S_EXCEPTION_RESULT;
-            S_CONTEXT_ABORT: if (frontend_quiescent_i && memory_quiescent_i) begin
-              fence_q <= 1'b0;
-              state_q <= S_IDLE;
-            end
-            S_CONTEXT_INSTALL: if (context_ready_i) state_q <= S_CONTEXT_REDIRECT;
-            S_CONTEXT_REDIRECT: if (redirect_accepted_i) begin
-              fence_q <= 1'b0;
-              interrupt_q <= 1'b0;
-              state_q <= S_IDLE;
-            end
-            S_EXEC: begin
-              if (timer_read_execute) begin
-                timer_read_value_q <= exec_value;
-                state_q <= S_TIMER_RESULT;
-              end else if (result_fire) state_q <= S_HOLD;
-            end
-            S_TIMER_RESULT: if (result_fire) state_q <= S_HOLD;
-            S_HOLD: if (commit_match) begin
-              if ((uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd8))
-                lr_q <= a_q;
-              if ((uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd9))
-                ctr_q <= a_q;
-              if (uop_q.special_op == SPECIAL_MTSPR) begin
-                case (uop_q.spr)
-                  10'd18: dsisr_q <= a_q;
-                  10'd19: dar_q <= a_q;
-                  10'd25: if (ENABLE_SDR1 && !sdr1_write_invalid_q)
-                    sdr1_q <= a_q & SDR1_WMASK;
-                  10'd977: if (ENABLE_TLB_LOAD) dcmp_q <= a_q;
-                  10'd981: if (ENABLE_TLB_LOAD) icmp_q <= a_q;
-                  10'd982: if (ENABLE_TLB_LOAD) rpa_q <= a_q;
-                  10'd272: sprg_q[0] <= a_q;
-                  10'd273: sprg_q[1] <= a_q;
-                  10'd274: sprg_q[2] <= a_q;
-                  10'd275: sprg_q[3] <= a_q;
-                  default: ;
-                endcase
-              end
-              if (miss_event_commit) begin
-                // The oldest accepted miss installs all CPU-visible miss state
-                // on the same edge as SRR0/SRR1 and the vector reservation.
-                if (exception_event_kind == EVENT_TLB_I_MISS) begin
-                  imiss_q <= derived_miss_page;
-                  icmp_q <= derived_compare;
-                end else begin
-                  // The physical data request/capsule is word-aligned. The
-                  // matching captured LSU EA retains byte/halfword offsets.
-                  dmiss_q <= ea_q;
-                  dcmp_q <= derived_compare;
-                end
-                hash1_q <= derived_hash1;
-                hash2_q <= derived_hash2;
-              end
-              if (exception_event_valid &&
-                  (uop_q.special_op == SPECIAL_ALIGNMENT)) begin
-                dar_q <= ea_q;
-                dsisr_q <= {15'b0, uop_q.alignment_dsisr};
-              end
-              if (exception_event_valid && dsi_event) begin
-                dar_q <= ea_q;
-                // UM Table 4-11: protection bit 4, store bit 6.
-                dsisr_q <= 32'h0800_0000 |
-                  ((uop_q.special_op == SPECIAL_STORE) ?
-                   32'h0200_0000 : 32'b0);
-              end
-              if (branch_lr_write_q) lr_q <= branch_lr_next_q;
-              if (branch_ctr_write_q) ctr_q <= branch_ctr_next_q;
-              if (tlb_fill_operation && mmu_error_q)
-                state_q <= S_BAT_ABORT;
-              else if (mmu_operation && !mmu_error_q)
-                state_q <= mmu_req_write ? S_BAT_ACK : S_BAT_REDIRECT;
-              else if (exception_event_valid) state_q <= S_EXCEPTION_RESULT;
-              else if ((ENABLE_LIVE_CONTEXT &&
-                       (uop_q.special_op == SPECIAL_MTMSR) &&
-                       !mtmsr_unsupported) ||
-                       (sdr1_write && !sdr1_write_invalid_q)) begin
-                context_target_q <= (sdr1_write ||
-                  (ENABLE_TGPR &&
-                   (uop_q.special_op == SPECIAL_MTMSR))) ?
-                  mmu_resume_target_q : pc_q + 32'd4;
-                state_q <= S_CONTEXT_INSTALL;
-              end else if (branch_redirect_taken) begin
-                fence_q <= 1'b0;
-                state_q <= S_BRANCH_REDIRECT;
-              end else begin
-                fence_q <= 1'b0;
-                state_q <= S_IDLE;
-              end
-            end
-            S_MEM_PREP: begin
-              if (misaligned) begin
-                memory_result_q <= '0;
-                memory_result_q.producer <= producer_q;
-                memory_result_q.fault <= 1'b1;
-                state_q <= S_MEM_RESULT;
-              end else if ((uop_q.special_op == SPECIAL_LOAD) ||
-                           store_authorize_i) state_q <= S_MEM_OFFER;
-            end
-            S_MEM_OFFER: if (request_fire) begin
-              if (killed_q) state_q <= S_MEM_DRAIN;
-              else state_q <= S_MEM_WAIT;
-            end
-            S_MEM_WAIT: if (response_fire) begin
-              if (killed_q) state_q <= S_IDLE;
-              else begin
-                memory_result_q <= '0;
-                memory_result_q.producer <= producer_q;
-                // Transport faults and unrecognized typed causes remain
-                // diagnostics. Only an enabled BAT protection denial is DSI.
-                if (dmem_rsp_error_i) memory_result_q.fault <= 1'b1;
-                else begin
-                  case (dmem_rsp_fault_i)
-                    DATA_OK: ;
-                    DATA_DSI_PROTECTION: begin
-                      if (ENABLE_SUPERVISOR_EXCEPTIONS &&
-                          !exception_entry_unsupported) begin
-                        memory_result_q.data_fault <= DATA_DSI_PROTECTION;
-                        if (ENABLE_LIVE_CONTEXT) fence_q <= 1'b1;
-                      end else memory_result_q.fault <= 1'b1;
-                    end
-                    DATA_PAGE_MISS, DATA_PAGE_CHANGED: begin
-                      // Only an exact, well-formed response becomes a resumable
-                      // miss event. All other typed responses remain diagnostic.
-                      memory_result_q.fault <= !miss_eligible;
-                      if (ENABLE_PAGE_MISS_RESULTS) begin
-                        memory_result_q.data_fault <= dmem_rsp_fault_i;
-                        memory_result_q.page_miss <= dmem_rsp_page_miss_i;
-                      end
-                      if (miss_eligible) fence_q <= 1'b1;
-                    end
-                    default: memory_result_q.fault <= 1'b1;
-                  endcase
-                end
-                memory_result_q.update_value <= ea_q;
-                case (uop_q.mem_size)
-                  MEM_BYTE: memory_result_q.value <= {24'b0, load_byte};
-                  MEM_HALF: memory_result_q.value <= uop_q.mem_signed ?
-                    {{16{load_half[15]}}, load_half} : {16'b0, load_half};
-                  default: memory_result_q.value <= dmem_rsp_rdata_i;
-                endcase
-                state_q <= S_MEM_RESULT;
-              end
-            end
-            S_MEM_RESULT: if (result_fire) state_q <= S_HOLD;
-            S_MEM_DRAIN: if (response_fire) state_q <= S_IDLE;
-            S_EXCEPTION_RESULT: if (exception_result_valid &&
-              (!data_exception_event || !ENABLE_LIVE_CONTEXT ||
-               (frontend_quiescent_i && memory_quiescent_i))) begin
-              // A committed event the state unit rejected has no target;
-              // stop rather than redirect.
-              if (!exception_result_supported) begin
-                fence_q <= 1'b1;
-                state_q <= S_EXCEPTION_HALT;
-              end else if (ENABLE_LIVE_CONTEXT) begin
-                context_target_q <= exception_result_target;
-                state_q <= S_CONTEXT_INSTALL;
-              end else state_q <= S_IDLE;
-            end
-            default: ;
-          endcase
-        end
+          end
+          S_MMU_ABORT: if (mmu_rsp_valid && mmu_rsp_ready)
+            mmu_response_pending_q <= 1'b0;
+          default: ;
+        endcase
       end
     end
   end
@@ -1145,7 +1209,7 @@ module ppc_special #(
       if (bat_csr_req_valid_o)
         assert (fence_q && frontend_quiescent_i && memory_quiescent_i)
           else $error("BAT request offered before old transport drained");
-      if ((state_q == S_BAT_ACK) || (state_q == S_BAT_REDIRECT))
+      if ((state_q == S_MMU_ACK) || (state_q == S_MMU_REDIRECT))
         assert (fence_q && !cancel_i)
           else $error("committed MMU register transaction became cancellable");
       if (commit_i && (state_q == S_HOLD))
