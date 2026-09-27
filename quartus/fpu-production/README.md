@@ -413,3 +413,17 @@ denormal shift through rounding (32.544 ns, 22 logic levels). Stage delays
 were 24.959 ns alignment, 35.626 ns add, 33.355 ns divider and 32.890 ns
 response rounding. Map reported zero errors and four warnings; TimeQuest
 reported zero errors and zero warnings. No fitter ran.
+
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full602`, commit
+`1598fb9` (arithmetic `6a2f28b`), 2026-09-27.
+
+The separate 602 shell mapped at 20,183 estimated ALMs, 26,368 ALUTs,
+4,964 registers, 412 block-memory bits and one DSP block, with 1,428 virtual
+pins and zero physical pins. Post-map Fmax was **17.4 MHz**, with −37.623 ns
+setup slack; both targets failed. The longest path ran from pending count
+through shell admission/control to pending FPSCR metadata (57.457 ns,
+26 logic levels). Map reported zero errors and 39 warnings; the queue-index
+warning was absent. TimeQuest reported zero errors and the expected unmatched
+optional double-multiply register filter warning. No fitter ran. This shares
+the 603e measurement's source checkpoint and predates `1463439`.
