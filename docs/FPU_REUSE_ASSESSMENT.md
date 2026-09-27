@@ -50,10 +50,12 @@ those conflicts.
 Completion correction: the preceding evidence covers the serialized 603e
 implementation only. It does not establish a complete 603e/602 module. The
 602 personality and its independent architectural tests are absent; exact
-603e scheduling and the listed semantic conflicts also remain open. The
-current local 602 hardware specification is insufficient to freeze the
-602 instruction/exception contract. These are acceptance gates, not work
-that a passing 603e arithmetic suite can substitute for.
+603e scheduling and the listed semantic conflicts also remain open. The full 602 user manual is now pinned and the separate
+[602 contract](FPU_602_CONTRACT.md) records its instruction, tag, exception and
+timing rules. The replacement [pipeline design](FPU_PIPELINE_DESIGN.md) targets
+original latencies and throughput in both compile-time builds. Implementation
+and fresh verification remain acceptance gates; the earlier serialized
+measurements do not establish results for the replacement.
 
 ## Decision
 
