@@ -273,9 +273,59 @@ module tb_ppc_fpu_602;
         checks += 2;
     endtask
 
+    task automatic change_fpscr_bit(input logic [4:0] bit_number,
+        input logic value);
+        completion_tag_t identity;
+        issue_word(xform(6'd63, bit_number, 5'd0, 5'd0,
+                         value ? 10'd38 : 10'd70), 32'd0,
+                   1'b0, 1'b0, 1'b0, identity);
+        await_result(identity);
+        if (result_o.exception != FPU_NO_EXCEPTION ||
+            !result_o.fpscr_write ||
+            result_o.fpscr_value[31-bit_number] != value)
+            $fatal(1, "602 FPSCR bit %0d update failed", bit_number);
+        commit(identity);
+        checks++;
+    endtask
+
+    task automatic expect_numeric_trap(input logic [31:0] instruction,
+        input logic [4:0] destination, input logic fe0, input logic fe1);
+        completion_tag_t identity;
+        logic [63:0] prior_fpr;
+        logic [31:0] prior_fpscr, prior_sp, prior_lt;
+        inspect_fpr_index_i = destination;
+        #1;
+        prior_fpr = inspect_fpr_o;
+        prior_fpscr = inspect_fpscr_o;
+        prior_sp = inspect_sp_o;
+        prior_lt = inspect_lt_o;
+        issue_word(instruction, 32'd0, fe0, fe1, 1'b0, identity);
+        await_result(identity);
+        if (result_o.exception != FPU_EMULATION_TRAP ||
+            result_o.fpr_write || result_o.fpscr_write ||
+            result_o.cr_write || result_o.gpr_update || result_o.store ||
+            mem_req_valid_o || store_valid_o ||
+            (forward_valid_o && forward_o.tag == identity) ||
+            (forward1_valid_o && forward1_o.tag == identity) ||
+            last_forward.tag == identity)
+            $fatal(1, "602 numeric trap insn=%h FE=%b%b exc=%0d FPR=%b FPSCR=%b CR=%b GPR=%b store=%b mem=%b fwd=%b/%h fwd1=%b/%h last=%h",
+                   instruction, fe0, fe1, result_o.exception,
+                   result_o.fpr_write, result_o.fpscr_write,
+                   result_o.cr_write, result_o.gpr_update, result_o.store,
+                   mem_req_valid_o, forward_valid_o, forward_o.tag,
+                   forward1_valid_o, forward1_o.tag, last_forward.tag);
+        commit(identity);
+        #1;
+        if (inspect_fpr_o !== prior_fpr || inspect_fpscr_o !== prior_fpscr ||
+            inspect_sp_o !== prior_sp || inspect_lt_o !== prior_lt)
+            $fatal(1, "602 enabled numeric trap changed architectural state");
+        checks += 2;
+    endtask
+
     initial begin : run
         completion_tag_t identity;
         logic [31:0] sp_bits;
+        logic [31:0] prior_fpscr;
         serial_number = 0;
         checks = 0;
         rst_ni = 1'b0;
@@ -300,6 +350,69 @@ module tb_ppc_fpu_602;
         write_tag_spr(10'd1022, 32'd0);
         load_single(5'd1, 32'h3f800000);
         load_single(5'd2, 32'h40000000);
+        load_single(5'd0, 32'd0);
+        load_single(5'd12, 32'h3f000000);
+        load_single(5'd14, 32'h007fffff);
+        load_single(5'd16, 32'h7f800001);
+        load_single(5'd19, 32'h7f7fffff);
+        load_single(5'd20, 32'h3f400000);
+        load_single(5'd21, 32'h33000000);
+        load_single(5'd22, 32'h3f800001);
+        load_single(5'd23, 32'h807fffff);
+
+        // 602 enabled numeric conditions trap to 0x1600 under every FE0/FE1
+        // setting; the destination, tags, FPSCR, CR and base update are quiet.
+        // §4.5.7.1, physical PDF 211–212; Table 2-23, PDF 117.
+        change_fpscr_bit(5'd24, 1'b1);  // VE: signaling NaN in frsp.
+        for (int mode = 0; mode < 4; mode++)
+            expect_numeric_trap(xform(6'd63, 5'd20, 5'd0, 5'd16, 10'd12),
+                5'd20, 1'(mode >> 1), 1'(mode));
+        change_fpscr_bit(5'd24, 1'b0);
+        change_fpscr_bit(5'd25, 1'b1);  // OE: largest finite times two.
+        for (int mode = 0; mode < 4; mode++)
+            expect_numeric_trap(aform(6'd59, 5'd20, 5'd19, 5'd0, 5'd2, 5'd25),
+                5'd20, 1'(mode >> 1), 1'(mode));
+        change_fpscr_bit(5'd25, 1'b0);
+        change_fpscr_bit(5'd29, 1'b1);  // NI avoids NI=0 tiny trap.
+        change_fpscr_bit(5'd26, 1'b1);  // UE: inexact tiny product.
+        for (int mode = 0; mode < 4; mode++)
+            expect_numeric_trap(aform(6'd59, 5'd20, 5'd14, 5'd0, 5'd12, 5'd25),
+                5'd20, 1'(mode >> 1), 1'(mode));
+        change_fpscr_bit(5'd26, 1'b0);
+        change_fpscr_bit(5'd29, 1'b0);
+        change_fpscr_bit(5'd27, 1'b1);  // ZE: finite divided by zero.
+        for (int mode = 0; mode < 4; mode++)
+            expect_numeric_trap(aform(6'd59, 5'd20, 5'd1, 5'd0, 5'd0, 5'd18),
+                5'd20, 1'(mode >> 1), 1'(mode));
+        change_fpscr_bit(5'd27, 1'b0);
+        change_fpscr_bit(5'd28, 1'b1);  // XE: 1 + 2^-25 rounds inexact.
+        for (int mode = 0; mode < 4; mode++)
+            expect_numeric_trap(aform(6'd59, 5'd20, 5'd1, 5'd21, 5'd0, 5'd21),
+                5'd20, 1'(mode >> 1), 1'(mode));
+        change_fpscr_bit(5'd28, 1'b0);
+
+        // (largest subnormal) × (1+2^-23) is tiny before rounding but
+        // rounds up to minimum normal. NI=0 traps, NI=1 delivers signed zero.
+        expect_numeric_trap(aform(6'd59, 5'd20, 5'd14, 5'd0, 5'd22, 5'd25),
+                            5'd20, 1'b0, 1'b0);
+        change_fpscr_bit(5'd29, 1'b1);
+        issue_word(aform(6'd59, 5'd20, 5'd14, 5'd0, 5'd22, 5'd25),
+                   32'd0, 1'b0, 1'b0, 1'b0, identity);
+        await_result(identity);
+        if (result_o.exception != FPU_NO_EXCEPTION ||
+            result_o.fpr_value[31:0] != 32'h00000000)
+            $fatal(1, "602 NI failed tiny round-up positive zero");
+        commit(identity);
+        issue_word(aform(6'd59, 5'd20, 5'd23, 5'd0, 5'd22, 5'd25),
+                   32'd0, 1'b0, 1'b0, 1'b0, identity);
+        await_result(identity);
+        if (result_o.exception != FPU_NO_EXCEPTION ||
+            result_o.fpr_value[31:0] != 32'h80000000)
+            $fatal(1, "602 NI failed tiny round-up negative zero");
+        commit(identity);
+        change_fpscr_bit(5'd29, 1'b0);
+        checks += 3;
+
         issue_word(aform(6'd59, 5'd3, 5'd1, 5'd2, 5'd0, 5'd21),
                    32'd0, 1'b0, 1'b0, 1'b0, identity);
         await_result(identity);
@@ -404,6 +517,38 @@ module tb_ppc_fpu_602;
             $fatal(1, "602 user-mode tag SPR access did not trap");
         commit(identity);
         checks++;
+
+        // SP and LT are independent architectural bits. A source with both
+        // set satisfies an SP consumer; its new destination clears LT.
+        // 602 UM §2.1.2.4.1, physical PDF 97.
+        write_tag_spr(10'd1022, inspect_lt_o | (32'h80000000 >> 1));
+        if (!inspect_sp_o[31-1] || !inspect_lt_o[31-1])
+            $fatal(1, "602 could not represent simultaneous SP/LT tags");
+        issue_word(xform(6'd63, 5'd24, 5'd0, 5'd1, 10'd72),
+                   32'd0, 1'b0, 1'b0, 1'b0, identity);
+        await_result(identity);
+        if (result_o.exception != FPU_NO_EXCEPTION ||
+            result_o.fpr_value[31:0] != 32'h3f800000 ||
+            !result_o.fpr_sp || result_o.fpr_lt)
+            $fatal(1, "602 fmr rejected SP+LT source or retained LT");
+        commit(identity);
+        inspect_fpr_index_i = 5'd24;
+        #1;
+        if (inspect_fpr_o[31:0] != 32'h3f800000 ||
+            !inspect_sp_o[31-24] || inspect_lt_o[31-24])
+            $fatal(1, "602 fmr SP+LT destination tags incorrect");
+        issue_word(aform(6'd59, 5'd25, 5'd1, 5'd2, 5'd0, 5'd21),
+                   32'd0, 1'b0, 1'b0, 1'b0, identity);
+        await_result(identity);
+        if (result_o.exception != FPU_NO_EXCEPTION ||
+            result_o.fpr_value[31:0] != 32'h40400000 ||
+            !result_o.fpr_sp || result_o.fpr_lt)
+            $fatal(1, "602 arithmetic rejected SP+LT source");
+        commit(identity);
+        if (!inspect_sp_o[31-25] || inspect_lt_o[31-25])
+            $fatal(1, "602 arithmetic SP+LT destination tags incorrect");
+        write_tag_spr(10'd1022, inspect_lt_o & ~(32'h80000000 >> 1));
+        checks += 5;
 
         expect_emulation(xform(6'd63, 5'd0, 5'd0, 5'd1, 10'd711), 0, 0);
 
@@ -524,12 +669,15 @@ module tb_ppc_fpu_602;
         checks++;
         issue_word(xform(6'd63, 5'd18, 5'd0, 5'd16, 10'd72),
                    32'd0, 1'b0, 1'b0, 1'b0, identity);
+        prior_fpscr = inspect_fpscr_o;
         await_result(identity);
         if (result_o.exception != FPU_NO_EXCEPTION ||
             result_o.fpr_value[31:0] != 32'h7f800001 ||
             result_o.fpscr_write)
             $fatal(1, "602 fmr changed signaling payload/status");
         commit(identity);
+        if (inspect_fpscr_o !== prior_fpscr)
+            $fatal(1, "602 fmr changed FPSCR after commit");
         checks++;
 
         $display("602 FPU architectural checks PASS: %0d", checks);
