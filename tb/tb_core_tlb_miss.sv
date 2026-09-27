@@ -168,7 +168,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
     end
     case(pc)
       0:return 32'h3c60_1000; // SDR1 base
-      4:return phase==4?32'h6063_0200:spr(1,3,25); // invalid reserved SDR1
+      4:return phase==4?32'h6063_0002:spr(1,3,25); // noncontiguous HTABMASK
       8:return phase==4?spr(1,3,25):32'h34c6_0001; // seed / CR0 GT
       12:return phase==4?32'h34c6_0001:
                  phase==11?32'h38a0_4010:

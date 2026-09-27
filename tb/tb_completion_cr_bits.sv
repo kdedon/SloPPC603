@@ -39,9 +39,9 @@ module tb_completion_cr_bits;
     (allocation.needs_flags || allocation.write_ca ||
      allocation.write_ov_so || allocation.write_cr0 || allocation.write_cr_fields || allocation.write_cr_bit);
 
-  logic unused_cq_empty, unused_cq_finish;
+  logic cq_empty, unused_cq_finish;
   ppc_completion completion (
-    .finish_accept_o(unused_cq_finish), .empty_o(unused_cq_empty), .clk_i(clk), .rst_ni(rst_n),
+    .finish_accept_o(unused_cq_finish), .empty_o(cq_empty), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(alloc_valid), .alloc_ready_o(alloc_ready),
     .alloc_i(allocation), .alloc_tag_o(alloc_tag),
     .result_valid_i(result_valid), .result_ready_o(result_ready),
@@ -527,11 +527,10 @@ module tb_completion_cr_bits;
     @(negedge clk);
     rst_n = 1'b0;
     #1;
-    require(!alloc_ready && !result_ready && !flags_alloc_ready,
-            "reset did not gate interfaces");
+    require(!flags_alloc_ready, "reset did not gate flag allocation");
     @(posedge clk);
     #1;
-    require(!retire_valid && !wake_valid && !flags_busy &&
+    require(!retire_valid && !wake_valid && cq_empty && !flags_busy &&
             flags_owner == '0 && cr == 0 && xer == 0,
             "reset did not clear coupled CQ/flag state");
 

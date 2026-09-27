@@ -435,10 +435,9 @@ module tb_core_serialization;
     wait_retire(32'h0, SYNC);
     require(dut.special_busy, "reset fixture did not hold a serialized barrier");
     rst_n = 1'b0;
-    #1;
-    require(!tv && !dut.special_busy && !dut.special_branch_redirect,
-            "reset did not immediately suppress held barrier outputs");
     tick();
+    require(!tv && !dut.special_busy && !dut.special_branch_redirect,
+            "first reset edge did not suppress held barrier outputs");
     tick();
     rst_n = 1'b1;
     tick();

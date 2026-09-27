@@ -44,7 +44,9 @@ The shared asynchronous selector stops new dispatch when EXT or DEC qualifies,
 drains already admitted work and reserves the existing architectural next PC.
 Initial EXT wins and remains latched even if its input falls. Initial DEC remains
 provisional during old-context fetch drain and can promote to a newly asserted
-EXT at the final drained offer boundary. That promotion leaves DEC pending.
+EXT at the final drained offer boundary. EXT here is the core's registered
+request, one cycle behind `external_irq_i` ([EXTERNAL_INTERRUPTS.md](EXTERNAL_INTERRUPTS.md)).
+That promotion leaves DEC pending.
 Once offered, cause/PC are irrevocable through acceptance and context redirect.
 This final-offer sampling rule is a local policy, not cycle-exact 603e priority.
 

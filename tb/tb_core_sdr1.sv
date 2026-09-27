@@ -239,19 +239,20 @@ module tb_core_sdr1 #(parameter bit FEATURE=1'b1);
               sdr1_retires<=sdr1_retires+1;
             end
             12,16:begin
-              check(retired.gpr_write&&retired.value==32'h1234_5678,
-                    "SDR1 MFSPR/MFTB readback");
+              // Reserved manual bits 16-22 of 0x1234_5678 read as zero.
+              check(retired.gpr_write&&retired.value==32'h1234_0078,
+                    "SDR1 MFSPR/MFTB masked readback");
               sdr1_retires<=sdr1_retires+1;
             end
             28:begin
-              check(!retired.gpr_write&&dut.special.sdr1_q==32'h1234_5678,
+              check(!retired.gpr_write&&dut.special.sdr1_q==32'h1234_0078,
                     "SDR1 r0 write committed early");
               sdr1_retires<=sdr1_retires+1;
             end
             32:begin
               check(retired.gpr_write&&retired.gpr==6&&
-                    retired.value==32'ha1b2_c3d4,
-                    "SDR1 old full r0 payload");
+                    retired.value==32'ha1b2_01d4,
+                    "SDR1 r0 payload with reserved bits dropped");
               sdr1_retires<=sdr1_retires+1;
             end
             36:begin
@@ -287,13 +288,13 @@ module tb_core_sdr1 #(parameter bit FEATURE=1'b1);
         end else if(mode==8)begin
           if(retired.pc==32'h200)check(0,"superseded retained target retired");
           if(retired.pc==32'h240)
-            check(retired.gpr_write&&retired.gpr==4&&retired.value==32'h1234,
+            check(retired.gpr_write&&retired.gpr==4&&retired.value==32'h0034,
                   "latest retained target lost SDR1 value");
           if(retired.pc==32'h244)done<=1;
         end else if(mode==9)begin
           if(retired.pc==32'h200)check(0,"rejected commit-edge cut redirected");
           if(retired.pc==8)
-            check(retired.gpr_write&&retired.gpr==4&&retired.value==32'h1234,
+            check(retired.gpr_write&&retired.gpr==4&&retired.value==32'h0034,
                   "commit-edge rejection lost SDR1 write");
           if(retired.pc==12)done<=1;
         end else if(mode==7)begin
@@ -331,16 +332,16 @@ module tb_core_sdr1 #(parameter bit FEATURE=1'b1);
     if(FEATURE)begin
       reset_case(0,0);wait(done);@(negedge clk);
       check(sdr1_retires==5&&hold_count>=8&&
-            context_installs==2&&dut.special.sdr1_q==32'ha1b2_c3d4&&
-            dut.regfile.gpr[4]==32'h1234_5678&&
-            dut.regfile.gpr[5]==32'h1234_5678&&
-            dut.regfile.gpr[6]==32'ha1b2_c3d4,
-            "full-width committed SDR1/readback/refetch result");
+            context_installs==2&&dut.special.sdr1_q==32'ha1b2_01d4&&
+            dut.regfile.gpr[4]==32'h1234_0078&&
+            dut.regfile.gpr[5]==32'h1234_0078&&
+            dut.regfile.gpr[6]==32'ha1b2_01d4,
+            "masked committed SDR1/readback/refetch result");
       reset_case(1,0);kill_result(4);wait(done);@(negedge clk);
       check(dut.special.sdr1_q==0&&dut.regfile.gpr[4]==0,
             "canceled SDR1 write mutated state");
       reset_case(2,0);kill_result(8);wait(done);@(negedge clk);
-      check(dut.special.sdr1_q==32'h1234&&dut.regfile.gpr[4]==0,
+      check(dut.special.sdr1_q==32'h0034&&dut.regfile.gpr[4]==0,
             "canceled SDR1 read wrote destination");
       for(int c=0;c<3;c++)begin
         reset_case(3,c);wait(done);@(negedge clk);
@@ -353,7 +354,7 @@ module tb_core_sdr1 #(parameter bit FEATURE=1'b1);
       wait(allocated&&tv&&retired.pc==4&&!tr);
       retain_target(32'h200);retain_target(32'h240);
       release_write=1;wait(done);@(negedge clk);
-      check(dut.special.sdr1_q==32'h1234&&context_installs==1,
+      check(dut.special.sdr1_q==32'h0034&&context_installs==1,
             "latest retained target commit/refetch count");
       reset_case(9,0);
       wait(allocated&&tv&&retired.pc==4&&tr);
@@ -362,7 +363,7 @@ module tb_core_sdr1 #(parameter bit FEATURE=1'b1);
                "same-edge SDR1 commit incorrectly accepted external cut");
       @(posedge clk);@(negedge clk);red=0;
       wait(done);@(negedge clk);
-      check(dut.special.sdr1_q==32'h1234&&context_installs==1,
+      check(dut.special.sdr1_q==32'h0034&&context_installs==1,
             "same-edge irrevocable write/refetch state");
       for(int m=5;m<=7;m++)begin
         reset_case(m,0);wait(done);@(negedge clk);

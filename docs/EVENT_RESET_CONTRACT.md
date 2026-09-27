@@ -13,12 +13,18 @@ state and the timer storage are not asynchronously forced to their reset values.
 Payload bits without a valid transfer need not be zero during reset.
 
 Handshake controls are different: low `rst_ni` immediately suppresses fetch
-request/response/packet transfers; special dispatch, results, data requests and
-response acceptance; context-valid and frontend fence; interrupt/decrementer
-trace pulses; exception result-valid and event acceptance. CQ retire-valid is
-also masked, preventing architectural retirement. Trace PCs are zero whenever
-their corresponding taken pulse is absent. Tests should check these controls
-before the first reset edge, then check state after the edge.
+request/response/packet transfers; special data requests and response
+acceptance; context-valid and frontend fence; interrupt/decrementer trace
+pulses; exception result-valid and event acceptance. Trace PCs are zero
+whenever their corresponding taken pulse is absent. Tests should check these
+controls before the first reset edge, then check state after the edge.
+
+Special dispatch-ready, busy and result-valid, CQ retire-valid, alloc-ready,
+result-ready, empty and redirect acceptance, and interrupt qualification are
+driven only by synchronously reset state. They take reset values from the
+first reset edge; before it they may reflect pre-reset state, but every
+consumer is itself in reset, so no handshake in that cycle has an effect.
+Tests check these after the first reset edge.
 
 On the reset edge, core resume override, committed-next-PC tracking, fault and
 halt state clear. Fetch forgets pending requests, held offers and deferred

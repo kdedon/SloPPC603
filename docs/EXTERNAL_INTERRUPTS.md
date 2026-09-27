@@ -13,8 +13,12 @@ for the bounded refill-drain acceptance gate.
 ## Pin and trace contract
 
 `external_irq_i` is an active-high **synchronous** level. The embedding system
-must synchronize an asynchronous physical input before this interface. There is
-no masked-pulse latch: a level withdrawn before admission need not cause entry.
+must synchronize an asynchronous physical input before this interface. The core
+registers the level into a request flop before any use, so the pin never
+reaches dispatch combinationally. Assertion and withdrawal therefore take
+effect one cycle after the pin changes; this adds one cycle of interrupt
+latency. The DEC-to-EXT promotion at the final offer boundary also samples the
+registered level. There is no masked-pulse latch: a level withdrawn before admission need not cause entry.
 Hold the level until `interrupt_taken_o` to guarantee service. Once admitted at
 an empty architectural boundary, the selected event is irrevocable even if the
 level falls while the old fetch transport drains.
@@ -46,8 +50,8 @@ synchronous exceptions.
 
 ## Boundary selection and priority
 
-A qualified level (profile enabled, EE set, no terminal fault) blocks new
-instruction dispatch immediately. Older already-admitted instructions continue
+A qualified request (profile enabled, registered level set, EE set, no terminal
+fault) blocks new instruction dispatch in the same cycle. Older already-admitted instructions continue
 to retire, including delayed loads and authorized stores. Already-initiated
 synchronous exceptions complete first and clear EE. Terminal diagnostics prevent
 interrupt entry. Neither a stalled offered retirement nor an outstanding data

@@ -15,8 +15,9 @@ Verification: [MISS_DERIVATION_VERIFICATION.md](MISS_DERIVATION_VERIFICATION.md)
 The interface is `ea_i[31:0]`, `sr_i[31:0]`, `sdr1_i[31:0]` and outputs
 `valid_o`, `miss_page_o[31:0]`, `compare_o[31:0]`, `hash1_o[31:0]`, and
 `hash2_o[31:0]`. All four data outputs are exactly zero when `valid_o=0`.
-This is validation of inputs to the *derivation*, not a validation or
-normalization of software's full-width SDR1 register write.
+This is validation of inputs to the *derivation*. The core's SDR1 write
+already drops the reserved bits, so from the core only the mask and base
+checks can fail.
 
 For a valid input, architectural SDR1 bits 0–15 are HTABORG (HDL
 `SDR1[31:16]`), bits 16–22 are reserved (`[15:9]=0`), and bits 23–31 are

@@ -16,8 +16,9 @@ write direction equal the committed request. A changed-bit response is valid
 only for a store and carries the unique matched DTLB way. A true instruction
 or data miss must carry way=0; a nonzero way on either is diagnostic. Both
 forms require MSR[TGPR]=0 and a valid result from the
-pure 32-bit SDR1 miss-derive unit: SR.T=0, reserved SDR1 bits zero, a
-contiguous HTABMASK and an aligned HTABORG. An invalid capsule or SDR1 value
+pure 32-bit SDR1 miss-derive unit: SR.T=0, reserved SDR1 bits zero (always
+true, since SDR1 writes drop them), a contiguous HTABMASK and an aligned
+HTABORG. An invalid capsule or SDR1 value
 remains a typed, no-effect diagnostic with its capsule at retirement; it
 cannot update miss SPRs or enter a vector. SDR1 writes are fenced and allowed
 only with IR=DR=0, so the committed SDR1 used at miss retirement cannot be

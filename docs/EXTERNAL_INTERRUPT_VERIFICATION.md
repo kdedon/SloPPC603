@@ -1,6 +1,7 @@
 # External interrupt verification
 
 Recorded: `make -C sim regression`, `test-core-interrupt`, `test-core-interrupt-disabled`, `test-core-alignment-dependencies`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-21.
+Recorded: `make -C sim test-core-interrupt test-core-interrupt-disabled test-core-timer-events test-core-event-reset test-core-bat-cached-bus60x-irq test-core-bat-cached-bus60x-timer`, commit this branch, 2026-09-26. Pass with the registered IRQ request: 12,895 enabled and 385 disabled IRQ checks, 15,007 timer-event, 15,053 event-reset, 1,055 cached-IRQ and 2,756 cached timer-promotion checks. No bench expectation needed changing for the added cycle.
 
 This verifies the opt-in external interrupt profile with live supervisor context.
 It does not cover TB/DEC, SMI, machine-check delivery, pin CDC circuitry, a complete
@@ -23,8 +24,9 @@ an enabled pending interrupt to precede the following instruction when MTMSR
 sets EE. RFI restoring EE receives the analogous precise boundary treatment in
 this implementation.
 
-The implemented input is an **active-high synchronous level**. An external
-asynchronous pin needs a separately supplied synchronizer. Masked pulses are not
+The implemented input is an **active-high synchronous level**, registered once
+inside the core. An external asynchronous pin needs a separately supplied
+synchronizer. Masked pulses are not
 latched. An unmasked level withdrawn before admission cancels qualification;
 once admitted, the operation is latched and irrevocable until reset. A held
 level can re-enter after RFI restores EE. RI remains unsupported. The choice to
