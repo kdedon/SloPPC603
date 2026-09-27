@@ -52,6 +52,8 @@ Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `34909b
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `c554312`, 2026-09-27.
 
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `695c705`, 2026-09-27.
+
 | Commit / variant | ALM estimate | ALUT | Registers | RAM bits | DSP | Fmax | Setup slack | Pins | Critical path |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `fc33a75` / `full` | 11,601 | 14,305 | 3,462 | 0 | 4 | 12.4 MHz | −60.524 ns | 0/816 | Sum magnitude to FPRF |
@@ -69,6 +71,7 @@ Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `c55431
 | `a07eafb` / `full` | 10,278 | 11,985 | 6,986 | 0 | 4 | 45.9 MHz | −1.777 ns | 0/816 | Request op precision decode to wide rounding result |
 | `34909b0` / `full` | 10,281 | 11,944 | 6,987 | 0 | 4 | 47.4 MHz | −1.098 ns | 0/816 | Late FRES numerator opcode select to DIV_START remainder |
 | `c554312` / `full` | 10,254 | 11,993 | 6,987 | 0 | 4 | 48.2 MHz | −0.727 ns | 0/816 | Unpack `b` denormal normalize to FRSQRTE result |
+| `695c705` / `full` | 10,348 | 12,094 | 7,008 | 0 | 4 | 49.2 MHz | −0.324 ns | 0/816 | `round_single_q` to `round_post_q.wide[52]` |
 
 The 50 MHz harness check and aspirational 66 MHz target are unmet in all recorded runs. These maps are useful historical measurements, not fitted-area or timing-closure claims; final synthesis result is pending. The synthesis script pins Quartus Lite image `theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70`.
 

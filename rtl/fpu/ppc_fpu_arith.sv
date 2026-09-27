@@ -148,6 +148,17 @@ module ppc_fpu_arith (
         logic fi;
     } round_post_t;
 
+    typedef struct packed {
+        logic [52:0] kept;
+        logic signed [15:0] exponent;
+        logic sign;
+        logic negate_final;
+        logic tiny_before;
+        logic zero;
+        logic inexact;
+        logic increment;
+    } round_pre_t;
+
     typedef enum logic [4:0] {
         IDLE, CALC, CONV_PREP, CONV_SHIFT, CONV_FINISH,
         DIV_START, DIVIDE,
@@ -155,7 +166,7 @@ module ppc_fpu_arith (
         ALIGN_PLAN, ALIGN_SHIFT,
         SUM_PLAN, SUM_0, SUM_1, SUM_2, SUM_3,
         NORM_HIGH_A, NORM_HIGH_B, NORM_LOW_A, NORM_LOW_B,
-        TINY, ROUND, PACK, RESPONSE
+        TINY, ROUND_PRE, ROUND, PACK, RESPONSE
     } state_t;
     state_t state_q;
     ppc_fpu_arith_req_t req_q;
@@ -181,6 +192,7 @@ module ppc_fpu_arith (
     finite_sum_t norm_low_a_q;
     finite_sum_t norm_low_q;
     round_work_t round_work_q;
+    round_pre_t round_pre_q;
     round_post_t round_post_q;
     logic [52:0] div_remainder_q;
     logic [52:0] div_denominator_q;
@@ -394,16 +406,45 @@ module ppc_fpu_arith (
         return out;
     endfunction
 
-    function automatic round_post_t round_mantissa(
+    function automatic round_pre_t prepare_round_mantissa(
         input round_work_t value, input logic single_result,
-        input logic [1:0] rn, input logic oe, input logic ue
+        input logic [1:0] rn
+    );
+        round_pre_t out;
+        logic guard_bit;
+        logic sticky_bit;
+        out = '0;
+        out.exponent = value.exponent;
+        out.sign = value.sign;
+        out.negate_final = value.negate_final;
+        out.tiny_before = value.tiny_before;
+        out.zero = value.magnitude == 0;
+        if (out.zero) return out;
+        if (single_result) begin
+            out.kept = {29'd0, value.magnitude[158:135]};
+            guard_bit = value.magnitude[134];
+            sticky_bit = |value.magnitude[133:0];
+        end else begin
+            out.kept = value.magnitude[158:106];
+            guard_bit = value.magnitude[105];
+            sticky_bit = |value.magnitude[104:0];
+        end
+        out.inexact = guard_bit | sticky_bit;
+        case (rn)
+            2'b00: out.increment = guard_bit & (sticky_bit | out.kept[0]);
+            2'b01: out.increment = 1'b0;
+            2'b10: out.increment = !value.sign & out.inexact;
+            default: out.increment = value.sign & out.inexact;
+        endcase
+        return out;
+    endfunction
+
+    function automatic round_post_t round_mantissa(
+        input round_pre_t value, input logic single_result,
+        input logic oe, input logic ue
     );
         round_post_t out;
         logic [52:0] kept;
-        logic guard_bit;
-        logic sticky_bit;
-        logic inexact;
-        logic increment;
         logic carry_out;
         logic signed [15:0] max_exp;
         logic signed [15:0] scale;
@@ -411,39 +452,24 @@ module ppc_fpu_arith (
         out.exponent = value.exponent;
         out.sign = value.sign;
         out.negate_final = value.negate_final;
-        if (value.magnitude == 0) return out;
+        if (value.zero) return out;
+        kept = value.kept;
         max_exp = single_result ? 16'sd127 : 16'sd1023;
         scale = single_result ? 16'sd192 : 16'sd1536;
+        out.fr = value.increment;
+        out.fi = value.inexact;
+        out.xx = value.inexact;
         if (single_result) begin
-            kept = {29'd0, value.magnitude[158:135]};
-            guard_bit = value.magnitude[134];
-            sticky_bit = |value.magnitude[133:0];
-        end else begin
-            kept = value.magnitude[158:106];
-            guard_bit = value.magnitude[105];
-            sticky_bit = |value.magnitude[104:0];
-        end
-        inexact = guard_bit | sticky_bit;
-        case (rn)
-            2'b00: increment = guard_bit & (sticky_bit | kept[0]);
-            2'b01: increment = 1'b0;
-            2'b10: increment = !value.sign & inexact;
-            default: increment = value.sign & inexact;
-        endcase
-        out.fr = increment;
-        out.fi = inexact;
-        out.xx = inexact;
-        if (single_result) begin
-            carry_out = increment && (&kept[23:0]);
-            kept[23:0] = kept[23:0] + {23'd0, increment};
+            carry_out = value.increment && (&kept[23:0]);
+            kept[23:0] = kept[23:0] + {23'd0, value.increment};
             if (carry_out) begin
                 kept[23:0] = 24'h800000;
                 out.exponent += 16'sd1;
             end
             out.wide = {kept[23:0], 29'd0};
         end else begin
-            carry_out = increment && (&kept);
-            kept = kept + {{52{1'b0}}, increment};
+            carry_out = value.increment && (&kept);
+            kept = kept + {{52{1'b0}}, value.increment};
             if (carry_out) begin
                 kept = {1'b1, 52'd0};
                 out.exponent += 16'sd1;
@@ -459,7 +485,7 @@ module ppc_fpu_arith (
             out.xx = 1'b1;
         end
         out.ux = (value.tiny_before && ue) ||
-            (value.tiny_before && !ue && inexact);
+            (value.tiny_before && !ue && value.inexact);
         return out;
     endfunction
 
@@ -1175,6 +1201,7 @@ module ppc_fpu_arith (
             norm_low_a_q <= '0;
             norm_low_q <= '0;
             round_work_q <= '0;
+            round_pre_q <= '0;
             round_post_q <= '0;
             div_remainder_q <= '0;
             div_a_sig_q <= '0;
@@ -1313,11 +1340,16 @@ module ppc_fpu_arith (
                 TINY: begin
                     round_work_q <= prepare_tiny(norm_low_q,
                         round_single_q, req_q.ue);
+                    state_q <= ROUND_PRE;
+                end
+                ROUND_PRE: begin
+                    round_pre_q <= prepare_round_mantissa(round_work_q,
+                        round_single_q, req_q.rn);
                     state_q <= ROUND;
                 end
                 ROUND: begin
-                    round_post_q <= round_mantissa(round_work_q,
-                        round_single_q, req_q.rn, req_q.oe, req_q.ue);
+                    round_post_q <= round_mantissa(round_pre_q,
+                        round_single_q, req_q.oe, req_q.ue);
                     state_q <= PACK;
                 end
                 PACK: begin

@@ -187,6 +187,25 @@ value/bound proofs, 200,000 raw arithmetic packets with 0 mismatches,
 with 0 mismatches, and 851 shell checks with 0 failures. Strict test builds
 emitted 0 warnings and 0 errors; no latency change was observed.
 
+Recorded: `make -C sim -j2 test-fpu` on commit `c554312` plus the CALC
+operand-B capture cut, 2026-09-27; 20 Python anchors, 32 table value/bound
+proofs, 200,000 raw arithmetic packets with 0 mismatches, 74 cancellation
+offsets, 4 held-response checks, 11,958 estimate packets with 0
+mismatches, and 851 shell checks with 0 failures. Strict test builds emitted
+0 warnings and 0 errors; one-clock special and estimate paths remained.
+
+Recorded: `make -C sim -j2 test-fpu` on commit `695c705` plus the
+registered round-pre stage and extended cancellation bench, 2026-09-27;
+20 Python anchors, 32 table value/bound proofs, 200,000 raw arithmetic
+packets with 0 mismatches, 76 cancellation offsets (FMA 0–26, divide 0–48),
+4 held-response checks, 11,958 estimate packets with 0 mismatches, and
+851 shell checks with 0 failures. ADD/SUB/`frsp` reached 17 clocks,
+MUL/fused 20, single/double divide 19/33, finite `fres` 19,
+`frsqrte` 1, and conversion 3. The single divide and `fres` measurements
+are one cycle longer than the 603e manual's 18-cycle table; timing
+reconciliation remains required. Strict test builds emitted 0 warnings and
+0 errors.
+
 Recorded: `make -C sim -j2 test-fpu` on commit `34909b0` plus the divider
 numerator-capture cut, 2026-09-27; 20 Python anchors, 32 table value/bound
 proofs, 200,000 raw arithmetic packets with 0 mismatches, 74 cancellation

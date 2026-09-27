@@ -26,7 +26,7 @@ F2–F4 standalone instruction semantics are implemented in `ppc_fpu.sv` and
 tagged commit/abort, and side-effect-free memory preparation for later LSU
 attachment. The new arithmetic engine is independent of the failed donor.
 [Production verification](../sim/fpu/PRODUCTION.md) records 200,000 raw
-arithmetic packets, 11,958 estimate packets, 851 shell checks and 74
+arithmetic packets, 11,958 estimate packets, 851 shell checks and 76
 cancellation offsets, all passing, including the explicitly chosen NI status
 policy and illegal-before-unavailable priority. The shell implements every
 architectural 603e FP instruction class and remains serialized. The separate

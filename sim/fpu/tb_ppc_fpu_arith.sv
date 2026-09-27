@@ -270,7 +270,7 @@ module tb_ppc_fpu_arith;
             @(posedge clk_i);
             #1;
             waited++;
-            if (waited > 16) $fatal(1, "flush test response timeout");
+            if (waited > 64) $fatal(1, "flush test response timeout");
         end
         @(negedge clk_i);
         flush_i = 1'b1;
@@ -295,7 +295,7 @@ module tb_ppc_fpu_arith;
             @(posedge clk_i);
             #1;
             waited++;
-            if (waited > 16) $fatal(1, "reset test response timeout");
+            if (waited > 64) $fatal(1, "reset test response timeout");
         end
         @(negedge clk_i);
         rst_ni = 1'b0;
@@ -312,11 +312,11 @@ module tb_ppc_fpu_arith;
         #1;
         if (rsp_valid_o) $fatal(1, "reset response remained");
         $display("PASS PPC arithmetic flush/reset held-response checks=4");
-        for (int offset = 0; offset <= 24; offset++)
+        for (int offset = 0; offset <= 26; offset++)
             cancel_at_offset(FP_MADD, offset, 8'(offset + 16));
         for (int offset = 0; offset <= 48; offset++)
             cancel_at_offset(FP_DIV, offset, 8'(offset + 32));
-        $display("PASS PPC arithmetic cancel-offset sweeps=74");
+        $display("PASS PPC arithmetic cancel-offset sweeps=76");
         $display("PPC_ARITH_RESULT vectors=%0d mismatches=%0d", count, failures);
         $display("PPC_ARITH_DOMAINS result=%0d invalid=%0d flags=%0d class=%0d",
                  result_failures, invalid_failures, flag_failures, class_failures);
