@@ -64,6 +64,7 @@ package ppc_fpu_pkg;
     logic fprf_valid;
     logic [3:0] fpcc;
     logic compare_valid;
+    logic tiny_before_round;
   } ppc_fpu_arith_rsp_t;
 
   typedef struct packed {
@@ -74,6 +75,7 @@ package ppc_fpu_pkg;
     logic msr_fp;
     logic msr_fe0;
     logic msr_fe1;
+    logic msr_pr;
   } ppc_fpu_issue_t;
 
   typedef enum logic [2:0] {
@@ -82,7 +84,9 @@ package ppc_fpu_pkg;
     FPU_UNAVAILABLE = 3'd2,
     FPU_ALIGNMENT = 3'd3,
     FPU_MEMORY_FAULT = 3'd4,
-    FPU_FP_ENABLED = 3'd5
+    FPU_FP_ENABLED = 3'd5,
+    FPU_EMULATION_TRAP = 3'd6,
+    FPU_PRIVILEGED = 3'd7
   } ppc_fpu_exception_t;
 
   typedef struct packed {
@@ -94,6 +98,8 @@ package ppc_fpu_pkg;
     logic [4:0] fpr_index;
     logic fpr_write;
     logic [63:0] fpr_value;
+    logic fpr_sp;
+    logic fpr_lt;
     logic fpscr_write;
     logic [31:0] fpscr_value;
     logic cr_write;
@@ -104,6 +110,18 @@ package ppc_fpu_pkg;
     logic [31:0] gpr_value;
     logic store;
   } ppc_fpu_result_t;
+
+  typedef struct packed {
+    completion_tag_t tag;
+    logic fpr_write;
+    logic [4:0] fpr_index;
+    logic [63:0] fpr_value;
+    logic fpr_sp;
+    logic fpr_lt;
+    logic cr_write;
+    logic [2:0] cr_field;
+    logic [3:0] cr_value;
+  } ppc_fpu_forward_t;
 
   typedef struct packed {
     completion_tag_t tag;
