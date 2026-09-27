@@ -322,6 +322,42 @@ module tb_icache_managed;
     check(line_requests == 2 && hit_pulses >= 1,
           "re-enabled cache did not miss once then hit");
 
+    // Cached hits stream: each fetch is accepted on the edge that completes
+    // the previous one, so eight words take nine cycles.
+    begin
+      integer requested, responded, stream_cycles;
+      requested = 0;
+      responded = 0;
+      stream_cycles = 0;
+      @(negedge clk);
+      fetch_addr = 32'h0000_0100;
+      fetch_valid = 1'b1;
+      fetch_rsp_ready = 1'b1;
+      while (responded < 8) begin
+        logic fire_req, fire_rsp;
+        #1;
+        fire_req = fetch_valid && fetch_ready;
+        fire_rsp = fetch_rsp_valid && fetch_rsp_ready;
+        if (fetch_rsp_valid)
+          check(fetch_rsp_insn == 32'hcccc_0000 + 32'(responded) &&
+                !fetch_rsp_error, "streamed managed hit payload");
+        if (responded > 0 && fetch_valid)
+          check(fire_req && fire_rsp, "managed hit not accepted on completion");
+        @(posedge clk);
+        stream_cycles++;
+        @(negedge clk);
+        if (fire_rsp) responded++;
+        if (fire_req) begin
+          requested++;
+          fetch_addr = fetch_addr + 32'd4;
+        end
+        fetch_valid = requested < 8;
+      end
+      fetch_rsp_ready = 1'b0;
+      check(stream_cycles == 9 && line_requests == 2,
+            $sformatf("managed hit stream took %0d cycles", stream_cycles));
+    end
+
     // Explicit same-mode invalidation also removes the cached line.
     accept_maintenance(1'b1, 1'b1);
     finish_maintenance();
@@ -365,7 +401,7 @@ module tb_icache_managed;
     check(cache_enabled && maintenance_ready,
           "reset did not restore enabled managed mode");
 
-    check(fetches == 6 && line_requests == 3 && bypass_requests == 3 &&
+    check(fetches == 14 && line_requests == 3 && bypass_requests == 3 &&
           maintenance_commands == 4 && miss_pulses == 3,
           $sformatf("coverage counters mismatch fetch=%0d line=%0d bypass=%0d maintenance=%0d miss=%0d hit=%0d",
                     fetches, line_requests, bypass_requests,

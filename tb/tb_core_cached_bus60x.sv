@@ -33,6 +33,7 @@ module tb_core_cached_bus60x;
   integer checks = 0, cycles = 0, retirements = 0;
   integer line_bursts = 0, scalar_reads = 0, scalar_writes = 0;
   integer hit_pulses = 0, miss_pulses = 0, overlap_cycles = 0;
+  integer hit_run = 0, longest_hit_run = 0;
   integer phase = 0, phase_retires = 0, loop_branches = 0;
   integer normal_start_bursts = 0, normal_start_hits = 0;
   logic post_redirect = 1'b0;
@@ -252,6 +253,9 @@ module tb_core_cached_bus60x;
       if (cache_busy)
         check(bus_busy, "cache activity missing from aggregate busy");
       if (cache_hit) hit_pulses++;
+      // Consecutive hit pulses are lookups accepted on consecutive edges.
+      hit_run = cache_hit ? hit_run + 1 : 0;
+      if (hit_run > longest_hit_run) longest_hit_run = hit_run;
       if (cache_miss) miss_pulses++;
       if (dut.scalar_busy && dut.line_busy) overlap_cycles++;
       if (retire_accepted) begin
@@ -423,14 +427,16 @@ module tb_core_cached_bus60x;
           $sformatf("cache hits did not reduce instruction bursts bursts=%0d hits=%0d",
                     line_bursts - normal_start_bursts,
                     hit_pulses - normal_start_hits));
+    check(longest_hit_run >= 4,
+          $sformatf("cached fetch did not stream hits run=%0d", longest_hit_run));
     check(scalar_reads >= 3 && scalar_writes >= 2 && overlap_cycles > 0,
           "missing concurrent queued scalar/refill ownership pressure");
     check(miss_pulses >= line_bursts,
           "instruction burst lacks corresponding cache miss");
 
-    $display("PASS: tb_core_cached_bus60x %0d checks, %0d retires, %0d line bursts, %0d hits, %0d misses, %0d scalar R/%0d W, %0d overlap cycles",
-             checks, retirements, line_bursts, hit_pulses, miss_pulses,
-             scalar_reads, scalar_writes, overlap_cycles);
+    $display("PASS: tb_core_cached_bus60x %0d checks, %0d retires, %0d line bursts, %0d hits (longest run %0d), %0d misses, %0d scalar R/%0d W, %0d overlap cycles",
+             checks, retirements, line_bursts, hit_pulses, longest_hit_run,
+             miss_pulses, scalar_reads, scalar_writes, overlap_cycles);
     $finish;
   end
 endmodule

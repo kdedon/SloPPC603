@@ -17,6 +17,8 @@
 ../../rtl/ppc_bus60x.sv
 ../../rtl/ppc_bus60x_arbiter.sv
 ../../rtl/ppc_bus60x_line_read.sv
+../../rtl/ppc_ram_sdp.sv
+../../rtl/ppc_ram_lut.sv
 ../../rtl/ppc_icache.sv
 ../../rtl/ppc_bus60x_master_select.sv
 ../../rtl/ppc_bus60x_two_master.sv

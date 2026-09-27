@@ -1,7 +1,15 @@
 `default_nettype none
 // Abstract fetch transport: one untagged request outstanding, responses are
-// instruction words. A request is offered only with a downstream slot free,
-// so while pending, packet_ready_i is low only on a redirect edge.
+// instruction words. The next request is offered on the edge that consumes a
+// response, so a responder that accepts on that edge returns one word per
+// cycle.
+//
+// Every response is consumed when it arrives, so a responder never holds one
+// (a held response could block a shared translation router). A request
+// offered with nothing pending has a reserved queue slot. One offered on a
+// consume edge may not: if its response finds the queue full, a normal word
+// waits in a one-entry buffer, and a fault response (whose side information
+// is captured at queue entry) is dropped and fetched again.
 module ppc_fetch #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100
 ) (
@@ -20,75 +28,116 @@ module ppc_fetch #(
   input logic packet_ready_i,
   output ppc_pkg::fetch_packet_t packet_o
 );
-  logic pending, request_held;
-  logic redirect_pending;
-  logic [31:0] pc, redirect_target;
+  import ppc_pkg::*;
 
-  // Reserve a downstream packet slot before offering a new untagged fetch.
-  // A held offer remains stable even if the slot indication changes.
-  assign req_valid_o = rst_ni && (!stop_i || request_held) && !pending &&
-                       (packet_ready_i || request_held);
-  assign req_addr_o = pc;
-  assign quiescent_o = !pending && !request_held && !req_valid_o;
-  // Old-path responses are discarded while redirect_pending. On the redirect
-  // edge itself the cleared downstream queue refuses the packet.
-  assign packet_valid_o = pending && rsp_valid_i && !stop_i && !redirect_pending;
-  assign packet_o.pc = pc;
-  assign packet_o.insn = rsp_insn_i;
-  assign packet_o.fault = rsp_fault_i;
-  // The reserved slot makes an accepted response always consumable.
+  logic pending, request_held, redirect_pending;
+  // pc is the pending request's address, else the next one to offer.
+  logic [31:0] pc, pc_plus4, redirect_target;
+  // The buffer holds only normal words and never coexists with a pending
+  // request: no request is offered while it is full or the queue is full.
+  logic buf_valid;
+  logic [31:0] buf_pc, buf_insn;
+  logic consume, live, to_buf, replay, offer, accept;
+  logic pending_d, request_held_d, redirect_pending_d;
+  logic [31:0] pc_d;
+
   assign rsp_ready_o = rst_ni && pending;
+  assign consume = rsp_valid_i && rsp_ready_o;
+  // Old-path responses are discarded while redirect_pending, and responses
+  // arriving under stop are dropped.
+  assign live = consume && !stop_i && !redirect_pending;
+  assign to_buf = live && !redirect_i && !packet_ready_i &&
+                  rsp_fault_i == FETCH_OK;
+  assign replay = live && !redirect_i && !packet_ready_i &&
+                  rsp_fault_i != FETCH_OK;
+  assign offer = !stop_i && packet_ready_i && !buf_valid &&
+                 (!pending || (consume && !redirect_pending));
+  // A held offer remains stable even if the slot indication changes.
+  assign req_valid_o = rst_ni && (request_held || offer);
+  assign req_addr_o = pending ? pc_plus4 : pc;
+  assign accept = req_valid_o && req_ready_i;
+  assign quiescent_o = !pending && !request_held && !req_valid_o;
+  // On the redirect edge itself the cleared downstream queue refuses the
+  // packet.
+  assign packet_valid_o = buf_valid || live;
+  always_comb begin
+    if (buf_valid) begin
+      packet_o.pc = buf_pc;
+      packet_o.insn = buf_insn;
+      packet_o.fault = FETCH_OK;
+    end else begin
+      packet_o.pc = pc;
+      packet_o.insn = rsp_insn_i;
+      packet_o.fault = rsp_fault_i;
+    end
+  end
+
+  always_comb begin
+    pending_d = pending;
+    request_held_d = request_held;
+    redirect_pending_d = redirect_pending;
+    pc_d = pc;
+    if (redirect_i) begin
+      if (req_valid_o) begin
+        // Preserve an old request held, first offered, or offered on a
+        // consume edge. Its address cannot be withdrawn.
+        request_held_d = !req_ready_i;
+        pending_d = req_ready_i;
+        redirect_pending_d = 1'b1;
+        if (pending) pc_d = pc_plus4;
+      end else if (pending && !consume) begin
+        redirect_pending_d = 1'b1;
+      end else begin
+        // A coincident old response is discarded; external stop may leave no
+        // old request obligation.
+        pending_d = 1'b0;
+        request_held_d = 1'b0;
+        redirect_pending_d = 1'b0;
+        pc_d = redirect_target_i;
+      end
+    end else begin
+      if (consume) begin
+        pending_d = 1'b0;
+        if (redirect_pending) begin
+          redirect_pending_d = 1'b0;
+          pc_d = redirect_target;
+        end else if (!replay) begin
+          pc_d = pc_plus4;
+        end
+      end
+      if (req_valid_o) request_held_d = !req_ready_i;
+      if (accept) pending_d = 1'b1;
+    end
+  end
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       pending <= 1'b0;
       request_held <= 1'b0;
       redirect_pending <= 1'b0;
+      buf_valid <= 1'b0;
       pc <= RESET_PC;
+      pc_plus4 <= RESET_PC + 32'd4;
       redirect_target <= RESET_PC;
-    end else if (redirect_i) begin
-      assert (redirect_target_i[1:0] == 2'b00)
-        else $error("accepted fetch redirect target is not word aligned");
-      redirect_target <= redirect_target_i;
-
-      if (pending) begin
-        // A coincident old response is consumed by rsp_ready_o and discarded.
-        if (rsp_valid_i) begin
-          pending <= 1'b0;
-          request_held <= 1'b0;
-          redirect_pending <= 1'b0;
-          pc <= redirect_target_i;
-        end else begin
-          redirect_pending <= 1'b1;
-        end
-      end else if (req_valid_o) begin
-        // Preserve both a previously held request and an old request first
-        // offered on this redirect edge. Its address cannot be withdrawn.
-        request_held <= !req_ready_i;
-        if (req_ready_i) pending <= 1'b1;
-        redirect_pending <= 1'b1;
-      end else begin
-        // External stop may leave no old request obligation.
-        pending <= 1'b0;
-        request_held <= 1'b0;
-        redirect_pending <= 1'b0;
-        pc <= redirect_target_i;
-      end
     end else begin
-      if (req_valid_o) begin
-        request_held <= !req_ready_i;
-        if (req_ready_i) pending <= 1'b1;
-      end
-      if (rsp_valid_i && rsp_ready_o) begin
-        pending <= 1'b0;
-        request_held <= 1'b0;
-        if (redirect_pending) begin
-          redirect_pending <= 1'b0;
-          pc <= redirect_target;
-        end else begin
-          pc <= pc + 32'd4;
-        end
-      end
+      pending <= pending_d;
+      request_held <= request_held_d;
+      redirect_pending <= redirect_pending_d;
+      pc <= pc_d;
+      // Only pending requests use pc_plus4, so it can trail a redirect by a
+      // cycle and never depends on the redirect target.
+      if (!pending) pc_plus4 <= pc + 32'd4;
+      else if (consume && !replay) pc_plus4 <= pc_plus4 + 32'd4;
+      if (redirect_i) redirect_target <= redirect_target_i;
+      if (redirect_i || (buf_valid && packet_ready_i)) buf_valid <= 1'b0;
+      if (to_buf) buf_valid <= 1'b1;
+    end
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (to_buf) begin
+      buf_pc <= pc;
+      buf_insn <= rsp_insn_i;
     end
   end
 
@@ -98,15 +147,19 @@ module ppc_fetch #(
   logic stop_skipped;
   always_ff @(posedge clk_i) begin
     if (!rst_ni || redirect_i) stop_skipped <= 1'b0;
-    else if (rsp_valid_i && rsp_ready_o && !redirect_pending && stop_i)
+    else if (consume && !redirect_pending && stop_i)
       stop_skipped <= 1'b1;
   end
   always_ff @(posedge clk_i) begin
     if (rst_ni) begin
+      assert (!(redirect_i && redirect_target_i[1:0] != 2'b00))
+        else $error("accepted fetch redirect target is not word aligned");
       assert (!(stop_skipped && req_valid_o && !redirect_i))
         else $error("fetch resumed after a stop-discarded response without redirect");
-      assert (!(pending && !redirect_i && !packet_ready_i))
-        else $error("accepted fetch lost its reserved downstream slot");
+      assert (!(buf_valid && (pending || request_held)))
+        else $error("fetch buffer coexists with a fetch obligation");
+      assert (!(request_held && pending))
+        else $error("held fetch offer coexists with a pending request");
       assert (!(redirect_i && packet_valid_o && packet_ready_i))
         else $error("downstream accepted an old-path packet on a redirect edge");
     end

@@ -24,6 +24,8 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_arbiter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_line_read.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_ram_sdp.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_ram_lut.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_icache.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_master_select.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_two_master.sv

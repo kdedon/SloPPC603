@@ -72,7 +72,10 @@ redirect after maintenance and before releasing completion.  A future decoded
 
 In enabled mode each core fetch uses `ppc_icache`.  Misses request one real
 four-beat 32-byte instruction line through `ppc_bus60x_line_read`; hits return
-the stored word without physical bus traffic.
+the stored word without physical bus traffic.  One fetch is outstanding, but a
+new cached fetch is accepted on the edge that completes the previous one, so
+hits stream one per cycle.  Disabled mode accepts a new bypass fetch only after
+the previous one completes.
 
 In disabled mode every core fetch is routed through the existing
 `ppc_bus60x_arbiter` to the scalar `ppc_bus60x` master.  The captured request is
@@ -114,9 +117,12 @@ It checks maintenance priority, an already accepted refill held and drained
 through fetch-response backpressure, forced invalidation across both mode
 changes, completion backpressure, repeated disabled reads observing changed
 memory, re-enable miss then hit, explicit same-mode invalidation, and immediate
-reset withdrawal of a pending bypass response.  The frozen directed run passes
-114 checks across six fetch responses, three cache-line requests, three scalar
-bypass requests, and four maintenance commands.
+reset withdrawal of a pending bypass response.  It also streams eight cached
+hits, each accepted on the previous completion edge, in nine cycles.
+
+Recorded: `make -C sim test-icache-managed`, commit e0d9007, 2026-09-26.
+Pass: 141 checks across 14 fetch responses, three cache-line requests, three
+scalar bypass requests, and four maintenance commands.
 
 `tb/tb_core_cached_bus60x_managed.sv` uses the actual core and an independent
 physical pin responder.  It runs a cached loop, changes the physical
@@ -124,9 +130,13 @@ instruction image, performs full maintenance plus an accepted restart
 redirect, and proves that only the new instruction updates architectural
 state.  It changes the image again, disables the cache, checks single-beat
 `TC=10`/asserted-`CI` instruction transactions with no line fills or cache
-hits, and injects a bypass `TEA` before reset recovery.  The frozen run passes
-811 checks and 26 retirements, observing two line bursts, 13 scalar instruction
-fetches, 41 cache hits, two misses, and 28 physical wait cycles.
+hits, and injects a bypass `TEA` before reset recovery.
+
+Recorded: `make -C sim test-core-cached-managed`, commit e0d9007, 2026-09-26.
+Pass: 836 checks and 26 retirements, observing two line bursts, 13 scalar
+instruction fetches, 66 cache hits, two misses, and 17 physical wait cycles.
+Streaming raised the hit count (more sequential and wrong-path lookups) from
+the previous record.
 
 The parent-owned reference profiles run the complete current instruction
 corpus with the managed wrapper both enabled and disabled.  The resulting

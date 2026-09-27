@@ -11,7 +11,7 @@ evidence_dir="${script_dir}/evidence/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "${evidence_dir}" "${script_dir}/output_files"
 trap 'printf "%s\n" "$?" > "${evidence_dir}/script-exit-status.txt"' EXIT
 manifest() {
-  (cd "${script_dir}" && sha256sum ../../rtl/ppc_icache.sv files.f ppc_icache_storage.qsf ppc_icache_storage.qpf synthesize.sh ../qsf_sources.py)
+  (cd "${script_dir}" && sha256sum ../../rtl/ppc_ram_sdp.sv ../../rtl/ppc_ram_lut.sv ../../rtl/ppc_icache.sv files.f ppc_icache_storage.qsf ppc_icache_storage.qpf synthesize.sh ../qsf_sources.py)
 }
 manifest > "${evidence_dir}/source-before.sha256"
 if [[ "${mode}" == local ]]; then
@@ -43,9 +43,8 @@ if ! grep -Eq 'Implemented 0 input pins' "${evidence_dir}/build.log" ||
   echo "ERROR: expected all 374 cache ports to be virtual and zero physical I/O" >&2
   exit 4
 fi
-if ! grep -Eq 'Inferred altsyncram megafunction.*"data_mem_rtl_0"' "${evidence_dir}/build.log" ||
-   grep -Eq 'RAM logic .*data_mem.*uninferred' "${evidence_dir}/build.log"; then
-  echo "ERROR: cache data RAM inference was not confirmed" >&2
+if grep -Eq 'RAM logic .*uninferred' "${evidence_dir}/build.log"; then
+  echo "ERROR: cache RAM inference was not confirmed" >&2
   exit 4
 fi
 python3 - "${evidence_dir}/ppc_icache_storage.map.rpt" <<'PY'
@@ -53,8 +52,15 @@ import sys
 from pathlib import Path
 rows = [[field.strip() for field in line.split(';')]
         for line in Path(sys.argv[1]).read_text().splitlines()]
-assert any(len(row) > 9 and row[1].startswith('altsyncram:data_mem_rtl_0|')
-           and row[3:9] == ['Simple Dual Port', '512', '256', '512', '256', '131072']
-           for row in rows), 'missing full 512 x 256 data RAM in synthesis RAM Summary'
-print('PASS: complete 131072-bit cache data array inferred as 512 x 256 synchronous-read RAM')
+def ram(name, kind, depth, width):
+    size = str(int(depth) * int(width))
+    assert any(len(row) > 9 and row[1].startswith(name) and row[2] == kind
+               and row[3:9] == ['Simple Dual Port', depth, width, depth, width, size]
+               for row in rows), f'missing {depth} x {width} {kind} {name} in synthesis RAM Summary'
+for way in range(4):
+    ram(f'ppc_ram_sdp:g_way[{way}].data_ram|', 'M10K block', '256', '128')
+    ram(f'ppc_ram_lut:g_way[{way}].tag_ram|', 'MLAB', '128', '20')
+ram('ppc_ram_lut:lru_ram|', 'MLAB', '128', '8')
+ram('ppc_ram_lut:way_valid_ram|', 'MLAB', '128', '4')
+print('PASS: four 256 x 128 M10K data RAMs, four 128 x 20 MLAB tag RAMs, 128 x 8 LRU and 128 x 4 way-valid MLAB RAMs')
 PY

@@ -39,49 +39,68 @@ it applies the instruction-cache section's explicit strict LRU rule to all
 four ways and retains the wording conflict here.
 
 Table 4-8 says hard reset invalidates all blocks, zeros the tag directory, and
-initializes distinct LRU values.  `rst_ni` represents that hard-reset behavior:
-valids and tags clear and ways receive distinct ranks.  The 128-kbit data array
-is deliberately not reset because invalid tags make its contents inaccessible.
-The data array is a 512-by-256-bit synchronous-read RAM addressed by the
-concatenated two-bit way and seven-bit set. Tags, validity and LRU remain
-register arrays. A hit enables the RAM read on the accepting clock edge and
-captures the requested word index. The registered RAM output then supplies
-the held response. This preserves the existing one-edge hit latency without
-an asynchronous array read before the response register.
+initializes distinct LRU values.  `rst_ni` represents hard reset, but clears
+only validity.  Software cannot read the tag directory, and an invalid block
+never hits, so tag contents are unobservable until a refill writes them; the
+tag RAMs are not cleared.  The LRU RAM is not cleared either.  Instead the
+first install into an all-invalid set writes the ranks that distinct reset
+ranks {0,1,2,3} (way 0 most recent) would reach after touching the victim.
+Reset and flash invalidation leave every set all-invalid, and ranks select a
+victim only once all four ways are valid, so replacement order is identical to
+a zeroed directory with distinct reset ranks.  No walk-clear or post-reset
+busy period is needed.
 
-Only an accepted aligned hit enables a data read. Only a successful refill in
-`IC_REFILL_WAIT`, with reset, kill and invalidation inactive, writes the RAM.
-The controller cannot read and write it on the same edge, so correctness does
-not depend on mixed-port read-during-write behavior. RAM contents and read
-output are not reset; reset metadata and response validity prevent publication
-of uninitialized or old data. A stalled response blocks subsequent reads,
-even when a different address is offered, keeping the selected word stable.
+## Storage and lookup timing
 
-The standalone Cyclone V storage-inference project is
-`quartus/icache/ppc_icache_storage.qsf`; run `./synthesize.sh --docker` from that
-directory. Its gate requires a full 512-by-256 simple-dual-port RAM entry in
-the synthesis report, not merely the presence of a RAM attribute. Integrated
-area and timing are measured separately by `quartus/integrated`.
+| Array | Implementation | Reset |
+|---|---|---|
+| Tags | four 128 × 20 LUT RAMs (MLAB), asynchronous read | none |
+| Way valid | one 128 × 4 MLAB, asynchronous read, plus 128 set-valid flops | set flops clear |
+| LRU ranks | one 128 × 8 MLAB, four 2-bit ranks per set | none; seeded on first install |
+| Data | four 256 × 128 simple-dual-port M10K RAMs, one per way; row = half line, address `{set, word[2]}` | none |
 
-The 2026-09-21 standalone Quartus 17.0.2 synthesis passes with **131,072 block
-memory bits**, 11,854 registers, 374 virtual pins and zero physical I/O. The
-RAM Summary identifies the complete 512-by-256 `data_mem_rtl_0` as a simple
-dual-port RAM. Synthesis estimates 8,695 ALMs for the complete standalone
-cache; this is not a fitted resource count. The remaining tag/LRU/control
-registers are not claimed to reside in block RAM. The source hashes, complete
-report and simulation summary are preserved in
-the local `quartus/icache/accepted-20260921` archive, which is not in the repository.
-No memory-style attribute or substitute storage model was used. The subsequent integrated fitter places
-this array in **13 physical M10K blocks**; see the
-[current fitted baseline](INTEGRATED_SYNTHESIS_BASELINE.md).
+`rtl/ppc_ram_lut.sv` and `rtl/ppc_ram_sdp.sv` are the only RAM
+descriptions; each pins the RAM style and leaves same-address
+read-during-write undefined, which the controller never relies on.
+
+A way is valid when its set-valid flop and its way-valid bit are both set.
+Reset and flash invalidation clear the 128 set flops in one cycle.  The first
+install into a cleared set writes all four way-valid bits, keeping only the
+new way; later installs add their way.  The miss set's valid bits are captured
+at lookup, because only the install or an aborting invalidation can change
+them.
+
+In the accepting cycle the set index reads all four tags, the way-valid bits
+and all four data rows in parallel.  The tag compare yields a one-hot hit that
+is registered with word bits `[1:0]`; it feeds only registers (response way,
+miss capture, LRU update) and never a RAM address.  The response cycle selects
+the word from the registered data outputs with one AND-OR over the one-hot
+hit, merged with the refill or error word.
+
+A hit's LRU update is registered and written in the following cycle.  A miss
+chooses its victim in `IC_REFILL_REQUEST`, one cycle after the miss, so a hit
+accepted just before it has already updated the ranks.  Consecutive updates to
+one set read the previous cycle's write.
+
+The data RAMs are read every cycle except while a response is held, so their
+outputs stay stable under response backpressure even when a different address
+is offered.  Only a refill writes them: the first half-line in
+`IC_REFILL_WAIT` as the line is accepted, the second half in `IC_INSTALL` from
+a 128-bit holding register.  A read that coincides with a write returns data
+that no response selects.  RAM and holding-register contents are not reset.
 
 ## Fetch and refill channels
 
 The fetch request is accepted on `fetch_valid_i && fetch_ready_o`.  Its address
-is already physical; there is no instruction MMU or permission input.  A hit
-produces a held `fetch_rsp_valid_o` response containing the selected 32-bit
-instruction.  A miss pulses `miss_o`, captures the address and victim, and
-offers one line request:
+is already physical; there is no instruction MMU or permission input.  Ready
+requires `IC_IDLE` and either no held response or one being consumed on the
+same edge.  A hit produces a held `fetch_rsp_valid_o` response one edge after
+acceptance.  Because the next lookup is accepted on the edge that consumes the
+response, a requester that keeps a request offered receives one hit per cycle.
+Before this change ready also required no held response, capping hits at one
+every two cycles.
+
+A miss pulses `miss_o`, captures the address, and offers one line request:
 
 - `line_req_line_addr_o` is the 32-byte-aligned base.
 - `line_req_critical_dw_o` is fetch address bits `[4:3]`.
@@ -92,25 +111,29 @@ DW0 through `[63:0]` DW3.  Within each doubleword, the lower-addressed word is
 the high 32 bits.  All eight aligned word offsets and all four critical
 doublewords are therefore selectable without changing canonical line storage.
 
-A successful response installs the whole line atomically and returns the
-requested word.  An error returns a held zero/error fetch response and does
-not alter cache storage or LRU state.  This bounded design waits for the full
-line.  Section 3.1.2 describes critical-doubleword forwarding and sequential
-fetch during fill, including PID7v behavior; those timing paths remain open.
-There is one lookup or refill in flight, so hits under a refill are also open.
+A successful response is accepted in one cycle and publishes the requested
+word at that edge.  The following `IC_INSTALL` cycle writes the second half,
+the tag, validity and the LRU update; the line becomes visible together, and
+the next lookup is accepted one cycle after the line.  An error returns a held
+zero/error fetch response and does not alter cache storage or LRU state.  This
+bounded design waits for the full line.  Section 3.1.2 describes
+critical-doubleword forwarding and sequential fetch during fill, including
+PID7v behavior; those timing paths remain open.  There is one lookup or refill
+in flight, so hits under a refill are also open.
 
 ## Kill, invalidate, and reset
 
 `kill_i` cancels an offered refill that has not been accepted.  Once accepted,
 the refill transaction cannot be revoked: `line_rsp_ready_o` remains asserted,
 the controller drains its response, and neither installs a line nor publishes
-a fetch response.  Kill also gates a held fetch response immediately, including
+a fetch response.  Kill during `IC_INSTALL` suppresses the published response
+and the install.  Kill also gates a held fetch response immediately, including
 when fetch ready is asserted on that edge.
 
 `invalidate_i` is the bounded flash-invalidate command.  At its sampling edge
-all valid bits clear and distinct reset LRU ranks are restored.  A held fetch
-response is suppressed.  An accepted refill is drained under the same rules as
-a kill, preventing a same-edge refill response from recreating a valid entry.
+all set-valid flops clear.  A held fetch response is suppressed.  An accepted
+refill is drained under the same rules as a kill, and an install in progress
+is dropped, preventing a same-edge refill from recreating a valid entry.
 `invalidate_done_o` acknowledges each sampled command edge; a one-cycle command
 therefore yields a one-cycle acknowledgment, while a held command keeps the
 acknowledgment asserted after its first sampled edge.  This interface does not
@@ -125,11 +148,37 @@ Word-misaligned fetches return a held local error, set sticky
 `protocol_error_o`, and create no line request.  A line transport error is a
 fetch transport error, not an architectural exception model.
 
+## Standalone synthesis
+
+The standalone Cyclone V storage-inference project is
+`quartus/icache/ppc_icache_storage.qsf`; run `./synthesize.sh --docker` from that
+directory.  Its gate requires, in the synthesis RAM Summary, four 256 × 128
+simple-dual-port M10K data RAMs, four 128 × 20 MLAB tag RAMs and the 128 × 8
+LRU and 128 × 4 way-valid MLABs, with no uninferred RAM.  Integrated area and
+timing are measured separately by `quartus/integrated`.
+
+Recorded: `quartus/icache/synthesize.sh --docker` (Quartus 17.0.2 `quartus_map`, synthesis only), commit 33c715c, 2026-09-26.
+
+| Standalone `ppc_icache` | Before (c2c84bc) | After |
+|---|---|---|
+| ALMs needed (estimate) | 8,695 | 1,072 |
+| Registers | 11,854 | 352 |
+| MLAB memory bits | 0 | 11,776 |
+| M10K memory bits | 131,072 | 131,072 |
+| Virtual pins / physical I/O | 374 / 0 | 374 / 0 |
+
+These are synthesis estimates, not fitted counts.  The before column reran the
+same script on the previous controller, whose tags, validity and LRU were
+reset register arrays and whose data was one 512 × 256 RAM (13 M10K blocks in
+the last integrated fit).  The four 256 × 128 data RAMs need 4 M10K blocks
+each at ×40, so a fit should place 16 blocks; no fit has been run for this
+change.
+
 ## Files, verification, and limits
 
-`rtl/icache_files.f` lists only `ppc_icache.sv`.  Integration combines it with
-the separate `rtl/line_read_files.f`; neither the scalar bus nor core file list
-is changed.
+`rtl/icache_files.f` lists `ppc_ram_sdp.sv`, `ppc_ram_lut.sv` and
+`ppc_icache.sv`.  Integration combines it with the separate
+`rtl/line_read_files.f`; neither the scalar bus nor core file list is changed.
 
 `tb/tb_icache.sv` uses the abstract line channel and an independent word/line
 oracle.  It checks all eight word positions, all four critical-doubleword
@@ -140,11 +189,26 @@ kill/invalidate, flash invalidation, refill error, misalignment, and reset
 cancellation.  The parent-owned physical integration test connects the
 controller to the line master and supplies all refill data through 60x pins.
 The storage regression additionally fills all 512 lines with distinct data and
-reads every word back in reverse line order, checks unchanged hit latency, and
-offers changing addresses while responses are stalled. This verifies all way,
-set and word bits of the synchronous RAM path without inspecting its contents
-through hierarchical testbench access.
+reads every word back in reverse line order, checks one-edge hit latency, and
+offers changing addresses while responses are stalled.  This verifies all way,
+set and word bits of the RAM paths without inspecting their contents through
+hierarchical testbench access.
+
+Streaming checks keep a request offered over the resident image: 200 hits must
+return in 201 cycles with every consume edge accepting the next lookup, and
+300 more run under random response stalls with changing stalled addresses.
+Addresses revisit one set often, chaining LRU updates.  A directed sequence
+hits B, A and C on consecutive consume edges and misses E on the next one; E
+must evict D, proving the victim sees every registered update.  Another checks
+that a refill response consumed during the install cycle is followed one cycle
+later by a hit to the new line.
+
+Recorded: `make -C sim test-icache test-icache-managed test-icache-bus60x` (within `make -C sim -j3 regression`, which passed), commit e0d9007, 2026-09-26.
+Pass: `tb_icache` 60,883 checks, 5,205 fetches, 4,642 hits, 562 misses, 549
+line requests, 500 streamed hits (200 in 201 cycles); `tb_icache_managed` 141
+checks; `tb_icache_bus60x` 3,805 checks, 89 fetch responses, 21 bursts.
 
 There is no MMU, translation fault, cache enable/disable bypass, cache lock,
 `icbi` address operation, HID0 register, early restart, snooping, parity,
-multi-request hit pipeline, or core integration in this bounded controller.
+hit-under-miss, or core integration in this bounded controller.  Only one
+lookup is outstanding; streaming comes from accepting on the consume edge.

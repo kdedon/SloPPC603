@@ -31,13 +31,13 @@ The Python model records producer tokens to make the lifetime assumption executa
 
 ## Untagged fetch drain
 
-The existing one-outstanding fetch channel has no response IDs and cannot withdraw a stalled offered request. Recovery must preserve a held request's old PC through acceptance, then consume and discard its response. An already accepted request likewise drains. A same-edge old response is discarded when redirect is accepted, even if the IQ could accept it. New target requests start only after the old request/response obligation is gone.
+The existing one-outstanding fetch channel has no response IDs and cannot withdraw a stalled offered request. The RTL offers its next request on the edge that consumes a response, so the transport still holds at most one accepted request without a response. Recovery must preserve a held request's old PC through acceptance, then consume and discard its response. An already accepted request likewise drains. A same-edge old response is discarded when redirect is accepted, even if the IQ could accept it. New target requests start only after the old request/response obligation is gone.
 
 While draining, a later accepted redirect replaces the pending target PC but never changes the old offered address. An aligned target is required; alignment-fault semantics are outside this proposal. There is no drain timeout that invents success: forward progress assumes the environment eventually accepts the held request and responds. No stale untagged response can be distinguished after issuing a new target request, so a responder must emit exactly one response per accepted request.
 
 Only an accepted CQ redirect may activate fetch drain; a stale or rejected pivot must never redirect the frontend. The caller must preserve surviving operand identities. Neither coupling nor IQ/RS storage is implemented by this policy model. Canonical local holders support cancellation, and the full core now couples accepted requests to fetch drain and IQ clearing.
 
-The fetch policy model includes explicit request offers so even a request first presented on a redirect edge is retained. It supports one request/response obligation, no same-edge request/response completion, and arbitrary request/response/IQ stalls.
+The fetch policy model includes explicit request offers so even a request first presented on a redirect edge is retained. It supports one request/response obligation, no same-edge request/response completion, and arbitrary request/response/IQ stalls. The RTL's consume-edge offer, its one-entry buffer for an unreserved word that finds the IQ full, and its refetch of such a fault response are outside the model; `test-fetch-recovery` covers them.
 
 ## Executable checks and implementation slices
 
