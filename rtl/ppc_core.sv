@@ -158,7 +158,7 @@ module ppc_core #(
   retire_packet_t recovery_packets [CQ_DEPTH];
   completion_tag_t recovery_tags [CQ_DEPTH];
   rename_tag_t alloc_tag;
-  logic [31:0] arch_a, arch_b, arch_c;
+  logic [31:0] arch_a, arch_b, arch_c, special_a, special_b;
   logic [1:0] dispatch_ea_low;
   logic dispatch_misaligned;
   // Committed flag state supplies SO to record logical operations.
@@ -245,10 +245,11 @@ module ppc_core #(
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)
   ) decode (.insn_i(iq_head.insn), .uop_o(uop));
-  // Memory ops dispatch only with an empty CQ, so committed registers give the
-  // alignment EA without the rename/wake path.
-  assign dispatch_ea_low = (uop.zero_a ? 2'b0 : arch_a[1:0]) +
-                           (uop.use_imm ? uop.imm[1:0] : arch_b[1:0]);
+  // Special uops dispatch only with an empty CQ and idle IU, so committed
+  // registers supply their operands without the rename/wake path.
+  assign special_a = uop.zero_a ? 32'b0 : arch_a;
+  assign special_b = uop.use_imm ? uop.imm : arch_b;
+  assign dispatch_ea_low = special_a[1:0] + special_b[1:0];
   assign dispatch_misaligned =
     ((uop.mem_size == MEM_WORD) && (dispatch_ea_low != 0)) ||
     ((uop.mem_size == MEM_HALF) && dispatch_ea_low[0]);
@@ -372,7 +373,7 @@ module ppc_core #(
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
     .producer_i(alloc_producer), .pc_i(iq_head.pc),
     .dispatch_page_miss_i(head_page_miss),
-    .a_i(operand_a.value), .b_i(operand_b.value), .c_i(arch_c),
+    .a_i(special_a), .b_i(special_b), .c_i(arch_c),
     .cr_i(cr), .xer_flags_i(xer[XER_SO_BIT:XER_CA_BIT]),
     .xer_byte_count_i(xer[XER_BYTE_COUNT_WIDTH-1:0]), .so_i(xer[XER_SO_BIT]),
     .cancel_i(special_cancel),
@@ -487,6 +488,10 @@ module ppc_core #(
       assert (forwarded_ea_low == dispatch_ea_low)
         else $error("committed and forwarded memory EA low bits disagree");
     end
+    if (rst_ni && dispatch && special_uop)
+      assert (cq_empty && !commit && src_a.ready && src_b.ready &&
+              src_a.value == arch_a && src_b.value == arch_b)
+        else $error("special dispatch saw an uncommitted GPR source");
     if (rst_ni && ENABLE_PAGE_MISS_RESULTS && dispatch &&
         (iq_head.fault == FETCH_PAGE_MISS))
       assert (iq_miss_valid_q)
