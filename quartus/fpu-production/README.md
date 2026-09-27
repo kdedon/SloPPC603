@@ -427,3 +427,17 @@ through shell admission/control to pending FPSCR metadata (57.457 ns,
 warning was absent. TimeQuest reported zero errors and the expected unmatched
 optional double-multiply register filter warning. No fitter ran. This shares
 the 603e measurement's source checkpoint and predates `1463439`.
+
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`91c80b8`, 2026-09-27.
+
+Parallel single-subnormal rounding candidates mapped at 10,670 estimated ALMs,
+14,264 ALUTs, 2,596 registers, 416 block-memory bits and five DSP blocks,
+with 433 virtual pins and zero physical pins. Post-map Fmax was **27.0 MHz**,
+with −17.049 ns setup slack; both targets failed. The longest output path now
+ran from sum magnitude bit 159 to result bit 31 (31.401 ns); response-register
+rounding was 31.709 ns. Alignment was 24.436 ns, add/normal exponent 35.579 ns
+and divider 32.630 ns. Map reported zero errors and four warnings; TimeQuest
+reported zero errors and zero warnings. No fitter ran. The area increase and
+frequency improvement apply to arithmetic alone, not a full-shell checkpoint.
