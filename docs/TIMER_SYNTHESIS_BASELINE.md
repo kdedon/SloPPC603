@@ -1,5 +1,39 @@
 # Timer and live BAT FPGA measurement
 
+## 2026-09-27 micro-TLB refit with synchronized reset
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, commit `e8262df`,
+2026-09-27. Quartus 17.0.2, derived clock uncertainty. As in the integrated
+and translated tops, the measurement top registers `rst_ni` through two flops
+and the SDC cuts only the asynchronous input to the first. Setup and hold
+**meet 50 MHz at every corner**; 66 MHz is not met.
+
+| Resource | Result |
+| --- | ---: |
+| ALMs | 5,215 / 41,910 (12%) |
+| Registers | 5,094 |
+| M10K blocks | 3 / 553 |
+| Block-memory bits | 492 |
+| DSP blocks | 3 / 112 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +0.775 | +0.249 |
+| Slow 1100 mV, -40 C | +0.637 | +0.036 |
+| Fast 1100 mV, 100 C | +9.278 | +0.136 |
+| Fast 1100 mV, -40 C | +10.980 | +0.121 |
+
+Fmax is 51.64 MHz at the worst corner (slow -40 C) and 52.02 MHz at slow
+100 C. 66 MHz needs 15.15 ns; the core's worst path, the instruction-queue
+RAM into `dispatch|entry.a.value`, would miss it by about 4.2 ns. The worst
+paths into router, BAT service and micro-TLB registers keep 4.6 ns of slack
+at slow 100 C (`state_q` into the BAT service response; micro-TLB fill,
+4.9 ns), so at 66 MHz they would miss by at most 0.2 ns. The worst path
+leaving the router is still `running_out_q` into the core, +1.790 ns. The
+smallest hold slack is on the virtual `bat_write_data_i` input. Setup is
+0.7 ns below the unsynchronized fit of `56824e5`; the reset is now an
+internal high-fanout register net rather than a zero-delay input.
+
 ## 2026-09-27 micro-TLB refit
 
 Recorded: `./quartus/timer-bat/build.sh --docker`, commit `56824e5`,
@@ -29,7 +63,7 @@ a micro-TLB fill, and `special|ea_q` into `request_ea_q` at acceptance, 5.0
 ns. At 66 MHz (15.15 ns) the router paths would miss by about 0.2 ns and the
 core by about 3.4 ns. Each failing hold path is the single path from the
 virtual `rst_ni` input, with zero input delay, to `router|d_state_q`; the
-next refit synchronizes that reset.
+refit below synchronizes that reset.
 
 ## 2026-09-27 refit without test redirect
 
