@@ -30,7 +30,7 @@ module tb_compiled_firmware;
   logic unused_status;
   assign unused_status = ^{redirect_accepted, bus_busy, cache_hit, cache_miss, cache_busy};
   assign retire_ready = rst_n && cycles % 7 != 2;
-  ppc_core_cached_bus60x #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1)) dut (
+  ppc_core_cached_bus60x #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1)) dut (
     .clk_i(clk), .rst_ni(rst_n),
     .retire_valid_o(retire_valid), .retire_ready_i(retire_ready),
     .retire_o(retired), .halted_o(halted), .ifetch_error_o(ifetch_error),

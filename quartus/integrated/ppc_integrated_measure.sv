@@ -63,6 +63,7 @@ module ppc_integrated_measure (
 );
   ppc_core_cached_bus60x_managed #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
-    .RESET_CACHE_ENABLE(1'b0)
+    .RESET_CACHE_ENABLE(1'b0),
+    .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (.*);
 endmodule

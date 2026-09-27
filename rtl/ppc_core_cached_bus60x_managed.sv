@@ -5,7 +5,8 @@ module ppc_core_cached_bus60x_managed #(
   parameter int DIV_LATENCY = 20,
   parameter logic RESET_CACHE_ENABLE = 1'b1,
   // Includes the existing serialized ISYNC/SYNC/EIEIO profile.
-  parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
+  parameter bit ENABLE_TEST_REDIRECT = 1'b1
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -143,7 +144,8 @@ module ppc_core_cached_bus60x_managed #(
   ppc_core #(
     .RESET_PC(RESET_PC),
     .DIV_LATENCY(DIV_LATENCY),
-    .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS)
+    .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
+    .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
   ) core (
     .tlb_fill_req_valid_o(unused_tlb_fill[89]),
     .tlb_fill_req_bank_o(unused_tlb_fill[88]),

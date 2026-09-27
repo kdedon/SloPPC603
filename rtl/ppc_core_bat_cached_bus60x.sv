@@ -22,7 +22,8 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_PAGE_DATA_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_PAGE_INSTRUCTION_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_TLB_INVALIDATE = 1'b0,
-  parameter bit ENABLE_TLB_LOAD = 1'b0
+  parameter bit ENABLE_TLB_LOAD = 1'b0,
+  parameter bit ENABLE_TEST_REDIRECT = 1'b1
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -242,7 +243,8 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_PAGE_DATA_EXCEPTIONS(ENABLE_PAGE_DATA_EXCEPTIONS),
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(ENABLE_PAGE_INSTRUCTION_EXCEPTIONS),
     .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
-    .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD)
+    .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
+    .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
   ) translated_core (
     .clk_i,
     .rst_ni,

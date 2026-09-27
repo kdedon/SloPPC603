@@ -361,7 +361,8 @@ module tb_core_serialization;
             "EIEIO ordered stream did not complete exactly");
 
     // ISYNC discards an already returned stale PC+4 instruction and refetches
-    // changed code. Its internal keep-pivot recovery wins over an external cut.
+    // changed code. Its registered refetch, one edge after commit, wins over
+    // an external cut.
     reset_core(3);
     wait_retire(32'h0, ISYNC);
     watchdog = 0;
@@ -376,12 +377,15 @@ module tb_core_serialization;
     cut_target = 32'h100;
     tr = 1'b1;
     #1;
-    require(dut.special_branch_redirect && dut.recovery_accepted &&
-            dut.selected_redirect_keep && !cut_accepted &&
-            dut.selected_redirect_target == 32'h4,
-            "ISYNC commit/refetch did not win redirect arbitration");
+    require(!dut.special_branch_redirect && !cut_accepted,
+            "ISYNC commit edge accepted a cut of the retiring head");
     tick();
     tr = 1'b0;
+    require(dut.special_branch_redirect && dut.recovery_accepted &&
+            dut.selected_redirect_all && !cut_accepted &&
+            dut.selected_redirect_target == 32'h4,
+            "ISYNC refetch did not win redirect arbitration");
+    tick();
     cut = 1'b0;
     require(isync_redirects == prior_redirects + 1,
             "ISYNC emitted the wrong number of refetch redirects");
@@ -399,12 +403,12 @@ module tb_core_serialization;
     cut = 1'b0;
     wait_retire(32'hffff_fffc, ISYNC);
     tr = 1'b1;
-    #1;
+    tick();
+    tr = 1'b0;
     require(dut.special_branch_redirect &&
             dut.selected_redirect_target == 32'h0,
             "ISYNC PC+4 wrap target wrong");
     tick();
-    tr = 1'b0;
     commit_retire(32'h0, 32'h3920_0009);
     require(dut.regfile.gpr[9] == 9, "wrapped ISYNC target did not execute");
 

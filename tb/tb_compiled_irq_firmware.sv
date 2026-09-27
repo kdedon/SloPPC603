@@ -32,7 +32,7 @@ module tb_compiled_irq_firmware;
   logic [31:0] interrupt_pc;
   assign external_irq=running&&((interrupts==0)||(second_irq_pending&&interrupts==1));
   logic [49:0] unused_page_ports;
-  ppc_core_bat #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
+  ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
                  .ENABLE_EXTERNAL_INTERRUPTS(1'b1)) dut(
     .tlb_mgmt_req_valid_i('0),
     .tlb_mgmt_req_ready_o(unused_page_ports[0]),

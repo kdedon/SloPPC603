@@ -37,7 +37,7 @@ module tb_compiled_miss_entry_firmware;
   logic [31:0] unused_interrupt_pc;
   assign external_irq=0;
   logic [49:0] unused_page_ports;
-  ppc_core_bat #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
+  ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_TGPR(1'b1),.ENABLE_SDR1(1'b1),.ENABLE_RUNTIME_BAT(1'b1),
                  .ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1),
                  .ENABLE_TLB_LOAD(1'b1),.ENABLE_PAGE_MISS_RESULTS(1'b1),

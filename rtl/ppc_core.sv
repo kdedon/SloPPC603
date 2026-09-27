@@ -14,7 +14,10 @@ module ppc_core #(
   parameter bit ENABLE_PAGE_MISS_RESULTS = 1'b0,
   parameter bit ENABLE_SDR1 = 1'b0,
   parameter bit ENABLE_TGPR = 1'b0,
-  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
+  // Test-only external recovery with an arbitrary CQ pivot. When clear, the
+  // redirect port is ignored and every recovery clears the whole machine.
+  parameter bit ENABLE_TEST_REDIRECT = 1'b1
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -103,8 +106,8 @@ module ppc_core #(
   input logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
   output logic halted_o,
-  // External test recovery. A committing internal branch takes priority;
-  // architectural exception entry remains outside this interface.
+  // External test recovery (ENABLE_TEST_REDIRECT). Internal redirects take
+  // priority; architectural exception entry remains outside this interface.
   input logic redirect_valid_i, redirect_all_i, redirect_keep_pivot_i,
   input ppc_pkg::completion_tag_t redirect_pivot_i,
   input logic [31:0] redirect_target_i,
@@ -524,7 +527,10 @@ module ppc_core #(
     allocation.write_cr_bit = dispatch_uop.write_cr_bit;
     allocation.cr_bit = dispatch_uop.cr_bit;
   end
-  ppc_completion #(.ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)) completion (
+  ppc_completion #(
+    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+    .ENABLE_PIVOT_RECOVERY(ENABLE_TEST_REDIRECT)
+  ) completion (
     .clk_i, .rst_ni, .alloc_valid_i(dispatch), .alloc_ready_o(cq_ready),
     .empty_o(cq_empty),
     .alloc_i(allocation), .alloc_tag_o(alloc_producer),
@@ -552,25 +558,20 @@ module ppc_core #(
     .flags_busy_o(flags_busy), .flags_owner_o(flags_owner)
   );
   assign commit = retire_valid_o && retire_ready_i;
-  // A taken serialized branch or committed ISYNC refetch wins over an external
-  // test redirect on that edge. A committed exception then redirects from an
-  // empty serialized machine. Stores and committed exceptions suppress
-  // external cuts while their external effect is pending.
+  // Committed exceptions, taken branches and ISYNC redirect from registered
+  // special-unit state on the edge after commit, when the serialized machine
+  // is empty; they win over an external test redirect. Stores and committed
+  // exceptions suppress external cuts while their external effect is pending.
   always_comb begin
-    if (special_exception_redirect) begin
+    if (special_exception_redirect || special_branch_redirect) begin
       selected_redirect_valid = 1'b1;
       selected_redirect_all = 1'b1;
       selected_redirect_keep = 1'b0;
       selected_redirect_pivot = '0;
-      selected_redirect_target = special_exception_target;
-    end else if (special_branch_redirect) begin
-      selected_redirect_valid = 1'b1;
-      selected_redirect_all = 1'b0;
-      selected_redirect_keep = 1'b1;
-      selected_redirect_pivot = retire_producer;
-      selected_redirect_target = special_branch_target;
+      selected_redirect_target = special_exception_redirect ?
+        special_exception_target : special_branch_target;
     end else begin
-      selected_redirect_valid = redirect_valid_i && !halted_o &&
+      selected_redirect_valid = ENABLE_TEST_REDIRECT && redirect_valid_i && !halted_o &&
         !special_store_irrevocable && !special_exception_irrevocable &&
         (redirect_target_i[1:0] == 2'b00);
       selected_redirect_all = redirect_all_i;

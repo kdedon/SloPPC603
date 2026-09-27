@@ -37,7 +37,7 @@ module tb_core_cached_reference;
   logic [63:0] bus_di,bus_do;
 
 `ifdef REFERENCE_MANAGED_CACHE
-  ppc_core_cached_bus60x_managed #(.RESET_PC(32'b0), .RESET_CACHE_ENABLE(CACHE_ENABLED)) dut (
+  ppc_core_cached_bus60x_managed #(.ENABLE_TEST_REDIRECT(1'b0), .RESET_PC(32'b0), .RESET_CACHE_ENABLE(CACHE_ENABLED)) dut (
     .maintenance_valid_i(1'b0), .maintenance_ready_o(maintenance_ready),
     .maintenance_invalidate_i(1'b0), .maintenance_cache_enable_i(CACHE_ENABLED),
     .maintenance_done_valid_o(maintenance_done), .maintenance_done_ready_i(1'b1),
