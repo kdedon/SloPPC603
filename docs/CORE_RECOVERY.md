@@ -26,7 +26,9 @@ This mechanism does not claim architectural exception priority or precise superv
 
 ## Verification
 
-`make -C sim test-fetch-recovery` runs the strict direct fetch bench (304 checks; recorded 2026-09-26 on this change). It covers held and first-offered requests, accepted requests, repeated target replacement, coincident response discard, stop interactions and reset. Fetch requests only with a free IQ slot, so an accepted response is always consumable; sim-only assertions check that reserved slot, that the cleared IQ refuses an old packet on a redirect edge, and that fetch never resumes after a stop-discarded response without a redirect.
+Recorded: `make -C sim test-fetch-recovery`, commit 2c9fe33, 2026-09-26. Pass: 339 checks.
+
+The strict direct fetch bench covers held and first-offered requests, accepted requests, repeated target replacement, coincident response discard, stop interactions, reset, and streaming. Every response is consumed on arrival. A request offered with nothing pending reserves a free IQ slot. The next request is offered on the edge that consumes a response, so a responder that accepts on that edge returns one instruction per cycle; such a request has no reserved slot, and if its response finds the IQ full it is dropped and the same address is fetched again. The bench checks consume-edge offers, the drop and replay, a held consume-edge offer under stop, and a consume-edge redirect. Sim-only assertions check the reserved slot, that the cleared IQ refuses an old packet on a redirect edge, and that fetch never resumes after a stop-discarded response without a redirect.
 
 `make -C sim test-core-recovery` runs the actual core with an independent ordered instruction/value scoreboard. The expected next dispatch address changes only on reset, an accepted target or a sequential dispatch, and the expected word comes from the test memory program. This catches stale or incorrect stream admission rather than accepting whatever PC/opcode the DUT dispatches. An independent list-prefix decision checks redirect acceptance; retirement and finish values are checked against surviving program order.
 

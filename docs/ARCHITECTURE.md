@@ -36,7 +36,7 @@ completeness are design inputs to verify, not established conformance.
 ```text
 instruction request/response
         |
-  ppc_fetch (one outstanding request, redirect/drain PC)
+  ppc_fetch (one outstanding request, next offered on the consume edge; redirect/drain PC)
         |
   ppc_fifo (six-entry IQ)
         |
@@ -56,14 +56,14 @@ instruction request/response
   finished head retirement writes GPR and releases rename slot
 ```
 
-One instruction dispatches per cycle. Dispatch allocates an unfinished completion entry and pending rename destination; a reservation station waits for source values and issues to a registered IU. Completion accepts results by slot and generation and retires only the finished head. The single IU issues in order; direct CQ tests exercise younger finishes before older ones in preparation for additional units. Explicit recovery control restores a surviving instruction prefix and drains old fetch traffic; a serialized branch lane now supplies architectural control flow. Fetch transport usually limits throughput below one instruction per cycle. These stage choices do not establish processor timing conformance; see [EXECUTION_CONTRACT.md](EXECUTION_CONTRACT.md).
+One instruction dispatches per cycle. Dispatch allocates an unfinished completion entry and pending rename destination; a reservation station waits for source values and issues to a registered IU. Completion accepts results by slot and generation and retires only the finished head. The single IU issues in order; direct CQ tests exercise younger finishes before older ones in preparation for additional units. Explicit recovery control restores a surviving instruction prefix and drains old fetch traffic; a serialized branch lane now supplies architectural control flow. Cached hits in the direct cached wrappers stream one instruction per cycle; misses, uncached and translated fetches are slower. These stage choices do not establish processor timing conformance; see [EXECUTION_CONTRACT.md](EXECUTION_CONTRACT.md).
 
 ## Ownership and invariants
 
 | Module | Owns | Contract |
 |---|---|---|
 | `ppc_pkg` | Packet layouts and fixed queue/tag sizes | Host bit slicing uses `[31:0]`; PowerPC manual bit numbers must be translated explicitly in future work. |
-| `ppc_fetch` | Next PC and outstanding response state | Advance sequentially after accepted normal responses; preserve old offers and drain/discard old responses before installing the latest accepted redirect target. |
+| `ppc_fetch` | Next PC and outstanding response state | Advance sequentially after accepted normal responses; offer the next request on the consume edge; drop and refetch an unreserved response that finds the IQ full; preserve old offers and drain/discard old responses before installing the latest accepted redirect target. |
 | `ppc_fifo` | Circular storage and occupancy | Ordered, no fall-through; accepted redirect clears with priority over push/pop; simultaneous normal push/pop preserves count; a full queue advertises capacity the cycle after a pop. The IQ has depth 6; CQ owns its separate depth-5 ring. |
 | `ppc_decode` | Supported opcode classification | Reject unknown opcodes and unsupported OE/Rc forms; rA=0 literal-zero behavior only for add immediate forms. |
 | `ppc_dispatch` | One IU reservation entry (`rs_entry_t`: `iu_ctrl_t` controls plus two operands) | Controls are captured whole and issue unchanged in `issue_packet_t`; source wake requires rename slot and completion identity; ready issue remains stable under backpressure unless an accepted identity-matched recovery cancels it. |
@@ -164,7 +164,7 @@ The v2 [reference lane](REFERENCE_RUNNER.md) executes original DingusPPC load/st
 
 The IU distinguishes internal `ALU_MULLI` from `ALU_MULLW` while retaining the same architectural encodings and captured operands. It reserves MULLI for 3 cycles, MULLW/MULHW for 5 and MULHWU for 6, using the maximum latency in each Table 6-4 row. This is an explicit conservative scheduling profile. The manual table does not identify the operand-to-cycle mapping, so the shorter listed latencies and their conditions remain unresolved. Result validity controls dependency wakeup; cancellation can replace a held operation without stale writeback. The product datapath remains combinational.
 
-`ppc_icache` stores 128 sets of four 32-byte lines, with physical tags and exact four-way LRU ranks. It accepts one aligned 32-bit instruction request at a time and returns a held response. A miss requests a critical-doubleword-first burst but waits for the entire confirmed line before installing and responding. Kill retracts an unaccepted refill or drains an accepted one without installation. Invalidate clears validity and similarly discards outstanding fetch work; kill/invalidate suppress a same-edge fetch response handshake. Data storage is not reset. The controller exposes local controls, not architectural HID0 operations, and its reset models hard reset.
+`ppc_icache` stores 128 sets of four 32-byte lines, with physical tags and exact four-way LRU ranks. It accepts one aligned 32-bit instruction request at a time and returns a held response. Tags, way-valid bits and LRU ranks now live in MLAB RAMs behind 128 set-valid flops, and the data in four per-way M10K RAMs read in parallel and selected late by the registered hit; a lookup is accepted on the edge that consumes the previous response, so hits stream one per cycle ([ICACHE.md](ICACHE.md)). A miss requests a critical-doubleword-first burst but waits for the entire confirmed line before installing and responding. Kill retracts an unaccepted refill or drains an accepted one without installation. Invalidate clears validity and similarly discards outstanding fetch work; kill/invalidate suppress a same-edge fetch response handshake. Data storage is not reset. The controller exposes local controls, not architectural HID0 operations, and its reset models hard reset.
 
 The independent cache/burst bench connects this controller to `ppc_bus60x_line_read` and checks instruction results through a physical pin responder. The original `ppc_core_bus60x` wrapper uses scalar fetch; the new cached wrapper below routes actual CPU fetch through the cache. Translation, permissions, cache lock, software cache instructions, early forwarding, hit-under-refill, and M10K inference/FPGA timing acceptance remain open.
 
@@ -214,8 +214,9 @@ fetches until its completion is acknowledged. It does not implement `icbi`,
 a store barrier or automatic CPU prefetch synchronization.
 See [the integration contract](TRANSLATED_ICACHE.md).
 
-The fetch unit admits a new request only when the sole downstream instruction
-queue has space, retaining any held offer. With one outstanding request and
-no other queue producer, this reserves response capacity and prevents a held
-instruction response from blocking a data transaction behind the shared
-translation router.
+The fetch unit consumes every instruction response on arrival, retaining any
+held offer, so a held instruction response never blocks a data transaction
+behind the shared translation router. A request offered with nothing pending
+reserves an IQ slot; one offered on a consume edge does not, and its response
+is dropped and refetched if the IQ is full. The router accepts only when idle,
+so translated fetch does not stream.
