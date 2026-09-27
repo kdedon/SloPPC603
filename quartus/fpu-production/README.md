@@ -282,3 +282,17 @@ setup slack and both frequency targets failing. Map reported zero errors and
 four warnings, 433 virtual pins and zero physical pins; TimeQuest reported zero
 errors and zero warnings. No fitter ran. The later raw-input divider capture
 change is outside this snapshot.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith602`, commit
+`b37603a` (arithmetic `29071cf`), 2026-09-27.
+
+The separate 602 elaboration estimated 8,662 ALMs, 11,609 ALUTs, 1,799 registers,
+412 block-memory bits and **one DSP block**, with 433 virtual pins and zero
+physical pins. Post-map Fmax was **21.6 MHz**, with −26.351 ns setup slack;
+both targets failed. Rounding remained critical at 40.703 ns to the result
+output (21 logic levels). Map reported zero errors and five warnings: response
+RAM pass-through, two constant invalid-cause outputs and their summary, and
+the virtual-clock warning. TimeQuest reported zero errors and one diagnostic
+warning because the optional multiply-stage register filter matched nothing:
+that double-precision stage was removed in 602 elaboration. No fitter ran.
+This snapshot precedes the additional compile-time rounding simplification.
