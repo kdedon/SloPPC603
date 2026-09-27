@@ -5,7 +5,7 @@ import sys
 
 # Runs track the latest DingusPPC. This is the last commit a full reference run
 # passed on; when HEAD differs, its log since then explains new mismatches.
-LAST_VERIFIED = 'cf951f690013cc9466c398d0428d4df50b6ede45'
+LAST_VERIFIED = '5b292af4d7b34467b9023b57a48834bea75535f3'
 
 
 def positive_seed(value):
