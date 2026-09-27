@@ -1,3 +1,4 @@
+`default_nettype none
 // Reusable core wrapper for the bounded unified scalar 60x bus profile.
 module ppc_core_bus60x #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
@@ -213,3 +214,4 @@ module ppc_core_bus60x #(
   assign halted_o = core_halted || ifetch_error_o;
   assign bus_busy_o = router_busy || adapter_busy;
 endmodule
+`default_nettype wire

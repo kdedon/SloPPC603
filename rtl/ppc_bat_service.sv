@@ -1,3 +1,4 @@
+`default_nettype none
 // Serialized committed BAT register and translation service.
 // Reset zeroes BAT storage; 603e hardware reset leaves BATs undefined.
 module ppc_bat_service #(
@@ -258,3 +259,4 @@ module ppc_bat_service #(
   assert property (held_response) else $error("BAT service changed stalled response");
   // synthesis translate_on
 endmodule
+`default_nettype wire

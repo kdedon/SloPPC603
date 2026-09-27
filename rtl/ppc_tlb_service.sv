@@ -1,3 +1,4 @@
+`default_nettype none
 // Software-loaded 4-KiB page instruction and data TLBs.
 // Local reset clears valids; 603e hardware reset leaves them unchanged.
 module ppc_tlb_service #(
@@ -267,3 +268,4 @@ module ppc_tlb_service #(
     else $error("held TLB response changed");
   // synthesis translate_on
 endmodule
+`default_nettype wire

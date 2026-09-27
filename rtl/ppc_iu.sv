@@ -1,3 +1,4 @@
+`default_nettype none
 // Registered issue stage. One result per issue; reset cancels held work.
 module ppc_iu #(
   // PID7v divw/divwu execute latency. Set to 37 for the PID6 timing model.
@@ -227,3 +228,4 @@ module ppc_iu #(
     end
   end
 endmodule
+`default_nettype wire

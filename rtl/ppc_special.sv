@@ -1,4 +1,5 @@
-// Serialized control, SPR, compare and one-outstanding real-mode memory lane.
+`default_nettype none
+// Serialized control, SPR, compare and one-outstanding memory lane.
 module ppc_special #(
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
@@ -1201,3 +1202,4 @@ module ppc_special #(
     else $error("stalled TLB load request changed");
   // synthesis translate_on
 endmodule
+`default_nettype wire

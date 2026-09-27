@@ -1,3 +1,4 @@
+`default_nettype none
 // Allocate in program order, finish by identity, retire a finished head, and
 // recover to an accepted pre-edge queue prefix.
 module ppc_completion #(
@@ -343,3 +344,4 @@ module ppc_completion #(
     end
   end
 endmodule
+`default_nettype wire

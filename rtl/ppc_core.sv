@@ -1,3 +1,4 @@
+`default_nettype none
 // Single-issue core with abstract fetch, data and CSR transports.
 module ppc_core #(
   parameter int DIV_LATENCY = 20,
@@ -622,3 +623,4 @@ module ppc_core #(
     end
   end
 endmodule
+`default_nettype wire

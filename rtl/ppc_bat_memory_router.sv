@@ -1,3 +1,4 @@
+`default_nettype none
 // Effective-to-physical instruction/data router: BAT translation with optional
 // segment/TLB page fallback, committed MSR context and retirement-prepared
 // BAT, segment and TLB updates.
@@ -1225,3 +1226,4 @@ module ppc_bat_memory_router #(
   assign _unused_response = ^{bat_rsp_kind, bat_rsp_ea, bat_rsp_spr,
     bat_rsp_match, bat_rsp_hit_index, bat_rsp_pp, tlb_rsp_pp};
 endmodule
+`default_nettype wire

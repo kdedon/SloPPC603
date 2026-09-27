@@ -1,3 +1,4 @@
+`default_nettype none
 // Fair serialized selector for the scalar and line-read 60x masters.
 // Physical ownership is retained through response consumption and pin release.
 module ppc_bus60x_master_select (
@@ -92,3 +93,4 @@ module ppc_bus60x_master_select (
     end
   end
 endmodule
+`default_nettype wire

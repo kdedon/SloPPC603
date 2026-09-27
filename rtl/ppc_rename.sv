@@ -1,3 +1,4 @@
+`default_nettype none
 // GPR rename slots with exact-owner wakeup; recovery rebuilds the map from
 // the surviving CQ prefix, oldest first.
 module ppc_rename (
@@ -187,3 +188,4 @@ module ppc_rename (
     end
   end
 endmodule
+`default_nettype wire

@@ -1,3 +1,4 @@
+`default_nettype none
 package ppc_pkg;
   // Unit and standalone MMU builds import this package without every consumer.
   /* verilator lint_off UNUSEDPARAM */
@@ -321,3 +322,4 @@ package ppc_pkg;
   // ---- end SPR write masks and reset values -------------------------------
 endpackage
 /* verilator lint_on UNUSEDPARAM */
+`default_nettype wire

@@ -1,6 +1,7 @@
+`default_nettype none
 // Pure 32-bit page-miss compare and PTEG address derivation.
 // PowerPC Programming Environments Manual, sections 7.6.1.1.2,
-// 7.6.1.3.2, and 7.6.1.4.2. This unit has no architectural state or event.
+// 7.6.1.3.2, and 7.6.1.4.2.
 module ppc_miss_derive (
   input  logic [31:0] ea_i,
   input  logic [31:0] sr_i,
@@ -47,3 +48,4 @@ module ppc_miss_derive (
     end
   end
 endmodule
+`default_nettype wire

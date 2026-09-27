@@ -1,3 +1,4 @@
+`default_nettype none
 // Maintenance and enable/bypass control around ppc_icache.
 module ppc_icache_managed #(
   parameter logic RESET_CACHE_ENABLE = 1'b1
@@ -197,3 +198,4 @@ module ppc_icache_managed #(
     end
   end
 endmodule
+`default_nettype wire

@@ -118,9 +118,9 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 
 | ID | Sev | Cat | Where | Problem | Fix | Status |
 |---|---|---|---|---|---|---|
-| AUD-57 | L | S | all `rtl/*.sv` | No `` `default_nettype none``; `unique case` without `default:` in `ppc_icache.sv:81-90`, `ppc_bus60x_line_read.sv:88-93`. | Add both. | partial: case defaults added; default_nettype remains |
+| AUD-57 | L | S | all `rtl/*.sv` | No `` `default_nettype none``; `unique case` without `default:` in `ppc_icache.sv:81-90`, `ppc_bus60x_line_read.sv:88-93`. | Add both. | fixed |
 | AUD-58 | L | S | `rtl/ppc_flags.sv:120-123`, `rtl/ppc_rename.sv:138-139,150-153` | Assertions not under `translate_off`. | Guard them. | fixed |
-| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | partial: bus/cache, execution, front-end, exception and MMU comments trimmed |
+| AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | fixed |
 | AUD-60 | L | S | `rtl/ppc_core.sv:283,322-353`, `rtl/ppc_flags.sv:62` | Raw MSR/XER bit indices and masks. | Named package constants. | fixed |
 
 ### Tests and tooling

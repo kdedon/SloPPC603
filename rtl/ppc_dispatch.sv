@@ -1,3 +1,4 @@
+`default_nettype none
 // One-entry IU reservation station; pending operands retain producer identity.
 module ppc_dispatch (
   input logic clk_i, rst_ni,
@@ -50,3 +51,4 @@ module ppc_dispatch (
     end
   end
 endmodule
+`default_nettype wire

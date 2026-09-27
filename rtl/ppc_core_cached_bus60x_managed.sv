@@ -1,3 +1,4 @@
+`default_nettype none
 // Cached core wrapper with local quiescent maintenance and scalar bypass.
 module ppc_core_cached_bus60x_managed #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
@@ -397,3 +398,4 @@ module ppc_core_cached_bus60x_managed #(
   assign bus_busy_o = selector_busy || scalar_router_busy || scalar_busy || line_busy ||
                       icache_busy_o || ifetch_error_o;
 endmodule
+`default_nettype wire

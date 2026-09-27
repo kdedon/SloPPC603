@@ -1,3 +1,4 @@
+`default_nettype none
 // Opt-in translated physical I-cache plus scalar 60x data/bypass composition.
 // Only authorized physical instruction requests with WIMG=0000 may enter the
 // line cache. Other WIMG values bypass it through the cache-inhibited scalar
@@ -568,3 +569,4 @@ module ppc_core_bat_cached_bus60x #(
     maintenance_done_valid_o && !maintenance_done_ready_i
       |=> maintenance_done_valid_o);
 endmodule
+`default_nettype wire

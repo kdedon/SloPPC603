@@ -1,3 +1,4 @@
+`default_nettype none
 // Core wrapper with an instruction cache whose line-refill master shares the
 // 60x pins with the scalar data master.
 module ppc_core_cached_bus60x #(
@@ -338,3 +339,4 @@ module ppc_core_cached_bus60x #(
   assign bus_busy_o = selector_busy || scalar_busy || line_busy ||
                       icache_busy_o || ifetch_error_o;
 endmodule
+`default_nettype wire

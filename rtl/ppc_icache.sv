@@ -1,3 +1,4 @@
+`default_nettype none
 // Physically addressed 603e-shaped instruction cache with line refill.
 module ppc_icache (
   input  logic         clk_i,
@@ -302,3 +303,4 @@ module ppc_icache (
     end
   end
 endmodule
+`default_nettype wire

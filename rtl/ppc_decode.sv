@@ -1,4 +1,5 @@
-// Deliberately bounded executable ISA. Everything else produces a diagnostic.
+`default_nettype none
+// Decodes the implemented ISA subset; other encodings produce a diagnostic.
 module ppc_decode #(
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
@@ -629,3 +630,4 @@ module ppc_decode #(
     end
   end
 endmodule
+`default_nettype wire

@@ -1,3 +1,4 @@
+`default_nettype none
 module ppc_regfile_gpr #(
   parameter bit ENABLE_TGPR = 1'b0
 ) (
@@ -20,7 +21,7 @@ module ppc_regfile_gpr #(
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
-      // Deterministic scaffold reset, not an architectural reset guarantee.
+      // Zeroed for simulation determinism; the 603e leaves GPRs undefined at reset.
       for (int i = 0; i < 32; i++) gpr[i] <= '0;
     end else begin
       if (write_i && !write_tgpr) gpr[write_reg_i] <= write_value_i;
@@ -63,3 +64,4 @@ module ppc_regfile_gpr #(
     else $error("simultaneous GPR retirement writes alias");
   // synthesis translate_on
 endmodule
+`default_nettype wire

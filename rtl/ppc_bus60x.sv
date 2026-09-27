@@ -1,3 +1,4 @@
+`default_nettype none
 // 64-bit 60x bus master for scalar accesses: one outstanding single-beat
 // cache-inhibited transaction, serialized address and data tenures, and
 // normal-mode DRTRY read confirmation.
@@ -415,3 +416,4 @@ module ppc_bus60x (
     end
   end
 endmodule
+`default_nettype wire

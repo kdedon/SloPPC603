@@ -1,3 +1,4 @@
+`default_nettype none
 // Core plus shared startup/runtime-programmed BAT memory router.
 module ppc_core_bat #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
@@ -400,3 +401,4 @@ module ppc_core_bat #(
 
   assign halted_o = core_halted || ifetch_fatal;
 endmodule
+`default_nettype wire

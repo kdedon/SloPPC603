@@ -1,3 +1,4 @@
+`default_nettype none
 // Stateless selected-bank 32-bit BAT translation. Caller supplies IBATs for
 // instruction accesses or DBATs for data accesses. VALIDATE_BANK=0 is for
 // callers that only store banks that already passed validation: it drops the
@@ -133,3 +134,4 @@ module ppc_bat_translate #(
     end
   end
 endmodule
+`default_nettype wire

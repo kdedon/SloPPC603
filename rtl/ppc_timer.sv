@@ -1,3 +1,4 @@
+`default_nettype none
 // One owner for architected TB/DEC storage and coalesced decrementer requests.
 // timer_tick_i is a level enable sampled in the clk_i domain.
 module ppc_timer (
@@ -62,3 +63,4 @@ module ppc_timer (
   end
   // synthesis translate_on
 endmodule
+`default_nettype wire

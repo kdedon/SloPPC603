@@ -1,3 +1,4 @@
+`default_nettype none
 // Cacheable 32-byte line-read master for a 64-bit 60x bus. Beats arrive
 // critical doubleword first and are stored in line order.
 module ppc_bus60x_line_read (
@@ -373,3 +374,4 @@ module ppc_bus60x_line_read (
     end
   end
 endmodule
+`default_nettype wire

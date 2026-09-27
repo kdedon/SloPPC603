@@ -1,3 +1,4 @@
+`default_nettype none
 // Fair single-entry router from the core's separate instruction/data channels
 // to one scalar 60x adapter request/response channel.
 module ppc_bus60x_arbiter (
@@ -169,3 +170,4 @@ module ppc_bus60x_arbiter (
     end
   end
 endmodule
+`default_nettype wire

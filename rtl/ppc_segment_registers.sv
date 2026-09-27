@@ -1,3 +1,4 @@
+`default_nettype none
 // Committed PowerPC segment-register bank storing normalized descriptors.
 module ppc_segment_registers #(
   parameter bit ENABLE_RUNTIME_SEGMENT = 1'b0
@@ -164,3 +165,4 @@ module ppc_segment_registers #(
   end
   // synthesis translate_on
 endmodule
+`default_nettype wire

@@ -1,3 +1,4 @@
+`default_nettype none
 // 603e MSR/SRR0/SRR1 state for one caller-selected committed-boundary event.
 // The caller detects the oldest fault and arbitrates simultaneous causes.
 module ppc_exception_state #(
@@ -297,3 +298,4 @@ module ppc_exception_state #(
     else $error("stalled exception result changed or disappeared");
   // synthesis translate_on
 endmodule
+`default_nettype wire

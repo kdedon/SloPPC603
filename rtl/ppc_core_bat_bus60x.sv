@@ -1,3 +1,4 @@
+`default_nettype none
 // Opt-in BAT/page translation composition with the existing scalar 60x bus.
 // All physical transactions use that adapter's fixed cache-inhibited policy:
 // CI_N=0, WT_N=1, GBL_N=1, CSE=00, one outstanding scalar owner. BAT/TLB
@@ -336,3 +337,4 @@ module ppc_core_bat_bus60x #(
   assign halted_o = core_halted || ifetch_error_o;
   assign bus_busy_o = router_busy || adapter_busy;
 endmodule
+`default_nettype wire

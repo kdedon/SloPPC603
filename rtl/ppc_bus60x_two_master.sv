@@ -1,3 +1,4 @@
+`default_nettype none
 // Shares one 60x pin set between the scalar and line-read masters. Only the
 // selected master drives the pins and sees termination inputs. Per-master
 // ports mirror the master's: scalar_abb_n_i is its abb_n_o.
@@ -198,3 +199,4 @@ module ppc_bus60x_two_master (
     end
   end
 endmodule
+`default_nettype wire

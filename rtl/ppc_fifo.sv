@@ -1,3 +1,4 @@
+`default_nettype none
 // Synchronous FIFO without bypass; a pop frees space the next cycle.
 module ppc_fifo #(
   parameter int WIDTH = 32,
@@ -45,3 +46,4 @@ module ppc_fifo #(
     end
   end
 endmodule
+`default_nettype wire

@@ -1,3 +1,4 @@
+`default_nettype none
 // 16-step radix-4 restoring divider on unsigned magnitudes; DIVW restores the
 // quotient sign. Divide by zero and signed overflow return zero.
 module ppc_divider (
@@ -104,3 +105,4 @@ module ppc_divider (
     end
   end
 endmodule
+`default_nettype wire

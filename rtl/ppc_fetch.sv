@@ -1,3 +1,4 @@
+`default_nettype none
 // Abstract fetch transport: one untagged request outstanding, responses are
 // instruction words. A request is offered only with a downstream slot free,
 // so while pending, packet_ready_i is low only on a redirect edge.
@@ -112,3 +113,4 @@ module ppc_fetch #(
   end
   // synthesis translate_on
 endmodule
+`default_nettype wire
