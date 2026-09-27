@@ -51,6 +51,8 @@ Outputs are `build/{be,le}/smoke.{elf,bin,dump,map}`. The checker verifies:
 means failure. The RTL smoke harness observes this convention at the external bus RAM. It
 checks for CPU/transport faults, completion timeout, and expected memory traffic,
 and requires the mailbox store to retire and the transport to drain before passing.
+Every firmware bench takes the image load, RAM model, failure checks and this
+mailbox rule from `tb/compiled_firmware.svh`.
 
 The LE artifact proves compiler/assembler/linker byte order only. Architectural
 LE instruction/data behavior remains P26 work and is not implied by this build.

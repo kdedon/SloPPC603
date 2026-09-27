@@ -139,7 +139,7 @@ def main():
                 sources.append(source)
     profile_params = [f'-GFAULT_PROFILE={int(table_fault_profile)}'] if manifests in (BAT_BUS, BAT_CACHED) else []
     subprocess.run([args.verilator, '--binary', '--timing', '--assert', '-Wall', '-j', str(args.jobs),
-                    '--top-module', top, '--Mdir', str(build/'obj'),
+                    '--top-module', top, '--Mdir', str(build/'obj'), '-I../tb',
                     *profile_params, *sources, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
     for mode in (range(modes) if modes else (None,)):
         mode_args = [] if mode is None else [f'+MODE={mode}']

@@ -3,11 +3,10 @@
 /* verilator lint_off BLKSEQ */
 module tb_compiled_sdr1_firmware;
   import ppc_pkg::*;
-  localparam logic [31:0] BASE=32'hfff00000;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
   logic iv,ir,sv,sr,dv,dr,dw,rv,rr,tv,tr,halted,cut_accepted;
-  logic [31:0] ia,iw,da,wd,rd,tohost_addr;
+  logic [31:0] ia,iw,da,wd,rd;
   logic [3:0] st,iwimg,dwimg;
   logic bat_valid=0,bat_ready,bat_rsp,bat_rejected,bat_unsupported,bat_config,bat_overlap;
   logic [3:0] bat_invalid;
@@ -20,17 +19,18 @@ module tb_compiled_sdr1_firmware;
   /* verilator lint_off UNUSEDSIGNAL */
   retire_packet_t retired;
   /* verilator lint_on UNUSEDSIGNAL */
-  logic [7:0] mem[0:196607];
-  logic ipending=0,dpending=0,mailbox_written=0,mailbox_retired=0;
+  logic ipending=0,dpending=0;
   logic [31:0] fetch_pc;
-  int idelay=0,ddelay=0,cycles=0,retires=0,checks=0,reads=0,writes=0;
+  int idelay=0,ddelay=0,cycles=0,retires=0,reads=0,writes=0;
+  localparam int FW_MEM_BYTES=196608;
+  function automatic string check_detail();return "";endfunction
+  `include "compiled_firmware.svh"
   int sdr1_writes=0,sdr1_reads=0;
   logic external_irq,interrupt_taken,decrementer_taken;
 
   logic [31:0] unused_decrementer_pc;
   logic [31:0] unused_interrupt_pc;
   assign external_irq=0;
-  string image_path;
   logic [49:0] unused_page_ports;
   ppc_core_bat #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_SDR1(1'b1)) dut(
@@ -89,12 +89,6 @@ module tb_compiled_sdr1_firmware;
     .fault_ea_o(unused_fea),.fault_miss_o(unused_fm),.fault_protection_o(unused_fp),
     .fault_guarded_o(unused_fg),.fault_config_o(unused_fc),.fault_invalid_input_o(unused_finv),
     .fault_invalid_entry_o(unused_fentries),.pimem_error_o(physical_error),.busy_o(unused_busy));
-  function automatic logic [31:0] word_at(input logic [31:0] address);
-    int o; o=int'(address-BASE); return {mem[o],mem[o+1],mem[o+2],mem[o+3]};
-  endfunction
-  task automatic check(input logic ok,input string message);
-    checks++;if(!ok)$fatal(1,"%s cycle=%0d pc=%08x insn=%08x",message,cycles,retired.pc,retired.insn);
-  endtask
   assign ir=rst_n&&!ipending&&cycles%4!=1;
   assign sv=rst_n&&ipending&&idelay==0;
   assign iw=word_at(fetch_pc);
@@ -138,10 +132,7 @@ module tb_compiled_sdr1_firmware;
         if(dw)begin
           writes++;
           for(int lane=0;lane<4;lane++)if(st[3-lane])mem[int'(da-BASE)+lane]=wd[31-lane*8 -:8];
-          if(da==tohost_addr&&word_at(da)!=0)begin
-            check(st==15&&word_at(da)==1,$sformatf("firmware failure mailbox=%08x",word_at(da)));
-            check(!mailbox_written,"duplicate mailbox");mailbox_written=1;
-          end
+          mailbox_store(da,st==4'hf);
         end else reads++;
       end
       if(tv&&tr)begin
@@ -158,10 +149,7 @@ module tb_compiled_sdr1_firmware;
                   "SDR1 readback mismatch");sdr1_reads++;
           end
         end
-        if(mailbox_written&&!mailbox_retired)begin
-          check(retired.insn[31:26]==36&&!retired.gpr_write&&!retired.update_write,
-                "mailbox retirement");mailbox_retired=1;
-        end
+        mailbox_retire();
         retires++;
       end
       if(mailbox_retired&&!ipending&&!dpending&&!iv&&!dv&&!sv&&!rv)begin
@@ -175,11 +163,9 @@ module tb_compiled_sdr1_firmware;
   assert property(@(posedge clk) disable iff(!rst_n) rv&&!rr |=> rv&&$stable(rd));
   assert property(@(posedge clk) disable iff(!rst_n) tv&&!tr |=> tv&&$stable(retired));
   initial begin
-    if(!$value$plusargs("IMAGE=%s",image_path)||!$value$plusargs("TOHOST=%h",tohost_addr))
-      $fatal(1,"IMAGE/TOHOST required");
+    load_image;
     check(tohost_addr==BASE+32'h4000,"mailbox range");
-    foreach(mem[i])mem[i]=0;
-    $readmemh(image_path,mem,0,65535);repeat(4)@(negedge clk);rst_n=1;
+    repeat(4)@(negedge clk);rst_n=1;
     @(negedge clk);start_valid=1;
     do @(posedge clk);while(!start_ready);
     @(negedge clk);start_valid=0;
