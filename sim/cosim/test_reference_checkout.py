@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-from reference_checkout import verify
+from reference_checkout import positive_seed, verify, xrand_build_flags, xrand_run_args
 
 
 class ReferenceCheckoutTest(unittest.TestCase):
@@ -38,6 +38,20 @@ class ReferenceCheckoutTest(unittest.TestCase):
         self.assertEqual(len(head), 40)
         self.assertTrue(dirty)
         self.assertIn('uncommitted', stderr.getvalue())
+
+
+class XrandArgumentsTest(unittest.TestCase):
+    def test_no_seed_keeps_zero_initialization(self):
+        self.assertEqual(xrand_build_flags(None), [])
+        self.assertEqual(xrand_run_args(None), [])
+
+    def test_seed_randomizes_build_and_run(self):
+        self.assertEqual(xrand_build_flags(7), ['--x-assign', 'unique', '--x-initial', 'unique'])
+        self.assertEqual(xrand_run_args(7), ['+verilator+seed+7', '+verilator+rand+reset+2'])
+
+    def test_nonpositive_seed_rejected(self):
+        with self.assertRaises(ValueError):
+            positive_seed('0')
 
 
 if __name__ == '__main__':

@@ -10,7 +10,7 @@ import sys
 from compare_memory import FIELDS, HEADER, read_trace
 from compare_state import compare
 from memory_program import corpus
-from reference_checkout import PINNED_COMMIT, add_arguments, verify
+from reference_checkout import PINNED_COMMIT, add_arguments, verify, xrand_build_flags, xrand_run_args
 from run_reference import HERE, PROJECT, ROOT, build_reference, command, digest
 from run_reference_stress import memory_access
 
@@ -42,11 +42,12 @@ def run(build, args):
     requests = sum(memory_access(row[1])[0] for row in rows)
     writes = sum(memory_access(row[1])[1] for row in rows)
     rtlargs = [args.verilator, '--binary', '--timing', '--assert', '-Wall', '--top-module',
-               'tb_core_bat_reference', '--Mdir', build/'rtl', *sources, bench]
+               'tb_core_bat_reference', '--Mdir', build/'rtl', *xrand_build_flags(args.xrand_seed), *sources, bench]
     command(rtlargs, build/'rtl-build.log')
     executable = build/'rtl/Vtb_core_bat_reference'
     rtlrun = [executable, f'+PROGRAM={program}', f'+TRACE={actual}', f'+WORDS={len(words)}',
-              f'+COMMITS={len(rows)}', f'+MEMORY_REQUESTS={requests}', f'+MEMORY_WRITES={writes}']
+              f'+COMMITS={len(rows)}', f'+MEMORY_REQUESTS={requests}', f'+MEMORY_WRITES={writes}',
+              *xrand_run_args(args.xrand_seed)]
     command(rtlrun, build/'rtl-run.log')
     compare(rows, read_trace(actual), fields=FIELDS)
     command([sys.executable, HERE/'compare_memory.py', expected, actual], build/'compare.log')
@@ -79,7 +80,7 @@ def run(build, args):
               'uncovered_forms': missing, 'encoding_groups': groups, 'bus_metrics': metrics,
               'sha256': {**frozen, **{str(p): digest(p) for p in artifacts}},
               'compile_commands': [list(map(str, cppargs)), list(map(str, rtlargs))],
-              'run_command': list(map(str, rtlrun)), 'negative_diagnostics': negative,
+              'run_command': list(map(str, rtlrun)), 'xrand_seed': args.xrand_seed, 'negative_diagnostics': negative,
               'reference_pinned': PINNED_COMMIT, 'reference_commit': reference_commit,
               'reference_dirty': reference_dirty,
               'compiler': subprocess.check_output(['g++', '--version'], text=True).splitlines()[0],

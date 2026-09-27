@@ -1,6 +1,6 @@
 # Deterministic original-handler mixed-program stress
 
-Recorded: `make -C sim test-reference-stress` plus the maximum-seed command below, commit pre-repository snapshot, imported in 3e727b6, 2026-09-14.
+Recorded: `make -C sim test-reference-stress`, this branch, 2026-09-26: PASS, 3 seeds, 3,419 snapshots, 104 dynamic forms, X-randomized seed 1. The maximum-seed command below was last recorded on the pre-repository snapshot, 2026-09-14.
 
 This lane generates seeded mixed programs, executes the original DingusPPC
 handlers, and compares every retired instruction against the actual core. It
@@ -27,7 +27,8 @@ reuses those executables for every seed. `--reuse-build` requires exact recorded
 source and executable hashes. It fails on a stale build rather than rebuilding
 silently. `--report-name` permits a separate maximum-size report without
 overwriting the default `suite.json`. Per-seed directories include both seed
-and block count.
+and block count. `--xrand-seed N` (set by the make target unless `XRAND=0`)
+randomizes uninitialized RTL state; `--reuse-build` requires the same value.
 
 Generation version 1 uses an explicitly defined xorshift32 generator, independent
 of Python's random module. The program words, seed, block count and generator

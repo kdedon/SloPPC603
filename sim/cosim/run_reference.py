@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 from compare_state import FIELDS, SCHEMA_VERSION, compare, read_trace
-from reference_checkout import PINNED_COMMIT, add_arguments, verify
+from reference_checkout import PINNED_COMMIT, add_arguments, verify, xrand_build_flags, xrand_run_args
 from reference_program import corpus
 
 HERE = Path(__file__).resolve().parent
@@ -90,10 +90,11 @@ def main():
     sources=[(PROJECT/'sim'/line).resolve() for line in (PROJECT/'rtl/files.f').read_text().splitlines() if line.strip()]
     bench=PROJECT/'tb/tb_core_reference.sv'
     rtlargs=[args.verilator,'--binary','--timing','--assert','-Wall','--top-module','tb_core_reference',
-             '--Mdir',build/'rtl',*sources,bench]
+             '--Mdir',build/'rtl',*xrand_build_flags(args.xrand_seed),*sources,bench]
     command(rtlargs,build/'rtl-build.log')
-    command([build/'rtl/Vtb_core_reference',f'+PROGRAM={program}',f'+TRACE={actual}',
-             f'+WORDS={len(words)}',f'+COMMITS={len(rows)}'],build/'rtl-run.log')
+    rtlrun=[build/'rtl/Vtb_core_reference',f'+PROGRAM={program}',f'+TRACE={actual}',
+            f'+WORDS={len(words)}',f'+COMMITS={len(rows)}',*xrand_run_args(args.xrand_seed)]
+    command(rtlrun,build/'rtl-run.log')
     compare(rows,read_trace(actual))
     # Invoke the SAME public comparator against the REAL actual RTL trace.
     command([sys.executable,HERE/'compare_state.py',expected,actual],build/'compare.log')
@@ -182,6 +183,7 @@ def main():
               'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
               'verilator':subprocess.check_output([args.verilator,'--version'],text=True).strip(),
               'compile_commands':[[str(x) for x in cppargs],[str(x) for x in rtlargs]],
+              'run_command':[str(x) for x in rtlrun],'xrand_seed':args.xrand_seed,
               'sha256':{str(p):digest(p) for p in original+adapter+sources+[bench,runner,program,expected,actual,isa_path]},
               'program_words':len(words),'snapshots':len(rows),'corpus_encoding_groups':coverage,
               'metadata_form_coverage':{'covered':covered,'uncovered_nonmemory':uncovered_nonmemory,
