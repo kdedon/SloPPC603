@@ -109,6 +109,14 @@ cancellation offsets, 4 held-response checks, 11,958 estimate packets with
 0 mismatches, and 833 shell checks with 0 failures. Basic/fused/`frsp`
 latency was 1–10 clocks, divide 1–32, conversion 2, and compare 1.
 
+Recorded: `make -C sim -j2 test-fpu` on commit `a3c3db6` plus the
+registered 160-bit add/sub carry-chunk split, 2026-09-27; 20 Python anchors,
+32 table value/bound proofs, 200,000 arithmetic packets with 0 mismatches,
+66 cancellation offsets, 4 held-response checks, 11,958 estimate packets
+with 0 mismatches, and 833 shell checks with 0 failures. Basic/fused/`frsp`
+latency was 1–14 clocks, divide 1–32, conversion 2, and compare 1. The
+FMA 0–16 and divide 0–48 cancellation sweeps cover the completed paths.
+
 Recorded: `make -C sim -j2 test-core test-completion test-execution check-spec`
 on commit `fc33a75` plus documentation and FPU-bench changes, 2026-09-27;
 the existing integer core, completion, execution, and structural spec checks

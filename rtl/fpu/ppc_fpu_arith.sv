@@ -81,6 +81,17 @@ module ppc_fpu_arith (
     } align_data_t;
 
     typedef struct packed {
+        logic [159:0] lhs;
+        logic [159:0] rhs;
+        logic [159:0] result;
+        logic signed [15:0] exponent;
+        logic sign;
+        logic negate_final;
+        logic subtract;
+        logic carry;
+    } sum_chunks_t;
+
+    typedef struct packed {
         logic [159:0] magnitude;
         logic signed [15:0] exponent;
         logic sign;
@@ -108,9 +119,10 @@ module ppc_fpu_arith (
         logic fi;
     } round_post_t;
 
-    typedef enum logic [3:0] {
+    typedef enum logic [4:0] {
         IDLE, CALC, CONV_PREP, CONV_FINISH, DIVIDE,
-        PREP, PREP_PRODUCT, ALIGN_PLAN, ALIGN_SHIFT, ALIGN_SUM,
+        PREP, PREP_PRODUCT, ALIGN_PLAN, ALIGN_SHIFT,
+        SUM_PLAN, SUM_0, SUM_1, SUM_2, SUM_3,
         NORM_HIGH, NORM_LOW,
         TINY, ROUND, PACK, RESPONSE
     } state_t;
@@ -122,6 +134,10 @@ module ppc_fpu_arith (
     finite_prep_t prep_q;
     align_plan_t align_plan_q;
     align_data_t align_data_q;
+    sum_chunks_t sum_plan_q;
+    sum_chunks_t sum_0_q;
+    sum_chunks_t sum_1_q;
+    sum_chunks_t sum_2_q;
     finite_sum_t sum_q;
     finite_sum_t norm_high_q;
     finite_sum_t norm_low_q;
@@ -667,29 +683,83 @@ module ppc_fpu_arith (
         return out;
     endfunction
 
-    function automatic finite_sum_t sum_alignment(
+    function automatic sum_chunks_t plan_sum(
         input align_data_t aligned, input logic [1:0] rn
     );
-        finite_sum_t out;
+        sum_chunks_t out;
         out = '0;
-        out.negate_final = aligned.negate_final;
         out.exponent = aligned.exponent;
+        out.negate_final = aligned.negate_final;
         if (aligned.x == 0 && aligned.y == 0 && aligned.single_operand) begin
-            out.magnitude = '0;
             out.sign = aligned.sign_x;
         end else if (aligned.sign_x == aligned.sign_y) begin
-            out.magnitude = aligned.x + aligned.y;
+            out.lhs = aligned.x;
+            out.rhs = aligned.y;
             out.sign = aligned.sign_x;
         end else if (aligned.x > aligned.y) begin
-            out.magnitude = aligned.x - aligned.y;
+            out.lhs = aligned.x;
+            out.rhs = aligned.y;
             out.sign = aligned.sign_x;
+            out.subtract = 1'b1;
         end else if (aligned.y > aligned.x) begin
-            out.magnitude = aligned.y - aligned.x;
+            out.lhs = aligned.y;
+            out.rhs = aligned.x;
             out.sign = aligned.sign_y;
+            out.subtract = 1'b1;
         end else begin
-            out.magnitude = '0;
             out.sign = rn == 2'b11;
         end
+        out.carry = out.subtract;
+        return out;
+    endfunction
+
+    function automatic sum_chunks_t sum_chunk_0(input sum_chunks_t value);
+        sum_chunks_t out;
+        logic [40:0] partial;
+        out = value;
+        partial = {1'b0, value.lhs[39:0]} +
+            {1'b0, (value.rhs[39:0] ^ {40{value.subtract}})} +
+            {40'd0, value.carry};
+        out.result[39:0] = partial[39:0];
+        out.carry = partial[40];
+        return out;
+    endfunction
+
+    function automatic sum_chunks_t sum_chunk_1(input sum_chunks_t value);
+        sum_chunks_t out;
+        logic [40:0] partial;
+        out = value;
+        partial = {1'b0, value.lhs[79:40]} +
+            {1'b0, (value.rhs[79:40] ^ {40{value.subtract}})} +
+            {40'd0, value.carry};
+        out.result[79:40] = partial[39:0];
+        out.carry = partial[40];
+        return out;
+    endfunction
+
+    function automatic sum_chunks_t sum_chunk_2(input sum_chunks_t value);
+        sum_chunks_t out;
+        logic [40:0] partial;
+        out = value;
+        partial = {1'b0, value.lhs[119:80]} +
+            {1'b0, (value.rhs[119:80] ^ {40{value.subtract}})} +
+            {40'd0, value.carry};
+        out.result[119:80] = partial[39:0];
+        out.carry = partial[40];
+        return out;
+    endfunction
+
+    function automatic finite_sum_t finish_sum(input sum_chunks_t value);
+        finite_sum_t out;
+        logic [39:0] partial;
+        out = '0;
+        partial = value.lhs[159:120] +
+            (value.rhs[159:120] ^ {40{value.subtract}}) +
+            {39'd0, value.carry};
+        out.magnitude = {partial, value.result[119:0]};
+        out.exponent = value.exponent;
+        out.sign = value.sign;
+        out.negate_final = value.negate_final;
         return out;
     endfunction
 
@@ -984,6 +1054,10 @@ module ppc_fpu_arith (
             prep_q <= '0;
             align_plan_q <= '0;
             align_data_q <= '0;
+            sum_plan_q <= '0;
+            sum_0_q <= '0;
+            sum_1_q <= '0;
+            sum_2_q <= '0;
             sum_q <= '0;
             norm_high_q <= '0;
             norm_low_q <= '0;
@@ -1054,10 +1128,26 @@ module ppc_fpu_arith (
                 end
                 ALIGN_SHIFT: begin
                     align_data_q <= shift_alignment(align_plan_q);
-                    state_q <= ALIGN_SUM;
+                    state_q <= SUM_PLAN;
                 end
-                ALIGN_SUM: begin
-                    sum_q <= sum_alignment(align_data_q, req_q.rn);
+                SUM_PLAN: begin
+                    sum_plan_q <= plan_sum(align_data_q, req_q.rn);
+                    state_q <= SUM_0;
+                end
+                SUM_0: begin
+                    sum_0_q <= sum_chunk_0(sum_plan_q);
+                    state_q <= SUM_1;
+                end
+                SUM_1: begin
+                    sum_1_q <= sum_chunk_1(sum_0_q);
+                    state_q <= SUM_2;
+                end
+                SUM_2: begin
+                    sum_2_q <= sum_chunk_2(sum_1_q);
+                    state_q <= SUM_3;
+                end
+                SUM_3: begin
+                    sum_q <= finish_sum(sum_2_q);
                     state_q <= NORM_HIGH;
                 end
                 NORM_HIGH: begin
