@@ -151,6 +151,13 @@ module tb_core_sprg;
           32'h50: return spr_word(1'b0, 5'd25, 10'd273);
           32'h54: return spr_word(1'b0, 5'd26, 10'd274);
           32'h58: return spr_word(1'b0, 5'd27, 10'd275);
+          // All-ones roundtrips: SPRG and DSISR store every bit.
+          32'h5c: return d_word(6'd15, 5'd15, 5'd0, 16'hffff);
+          32'h60: return d_word(6'd24, 5'd15, 5'd15, 16'hffff);
+          32'h64: return spr_word(1'b1, 5'd15, 10'd273);
+          32'h68: return spr_word(1'b1, 5'd15, 10'd18);
+          32'h6c: return spr_word(1'b0, 5'd28, 10'd273);
+          32'h70: return spr_word(1'b0, 5'd29, 10'd18);
           default: return 32'h4800_0000;
         endcase
       end
@@ -276,7 +283,7 @@ module tb_core_sprg;
     require(!halted && dut.msr == 32'h40 && dut.srr0 == 0 && dut.srr1 == 0 &&
             dut.special.sprg_q[0] == 0 && dut.special.sprg_q[1] == 0 &&
             dut.special.sprg_q[2] == 0 && dut.special.sprg_q[3] == 0 &&
-            dut.completion.count_q == 0,
+            dut.special.dsisr_q == 0 && dut.completion.count_q == 0,
             "hard reset did not clear local supervisor state");
   endtask
 
@@ -421,6 +428,13 @@ module tb_core_sprg;
             dut.regfile.gpr[26] == 32'hdead_beef &&
             dut.regfile.gpr[27] == 32'h0bad_c0de,
             "post-overwrite SPRG readback mismatch");
+    for (logic [31:0] pc = 32'h5c; pc <= 32'h70; pc += 32'd4)
+      commit_expected(pc, instruction(pc));
+    require(dut.special.sprg_q[1] == 32'hffff_ffff &&
+            dut.special.dsisr_q == 32'hffff_ffff &&
+            dut.regfile.gpr[28] == 32'hffff_ffff &&
+            dut.regfile.gpr[29] == 32'hffff_ffff,
+            "SPRG1/DSISR all-ones write did not read back unmasked");
 
     // Kill an unfinished MTSPRG. The result acceptance and any later stale
     // activity are suppressed; the redirected target executes normally.

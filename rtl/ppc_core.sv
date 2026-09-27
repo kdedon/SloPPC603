@@ -124,12 +124,13 @@ module ppc_core #(
   logic special_result_valid, special_result_ready, special_ready, special_busy;
   logic special_cancel, special_store_irrevocable, special_branch_redirect;
   logic special_exception_redirect, special_exception_irrevocable;
+  logic special_exception_halt;
   logic frontend_fence, frontend_quiescent;
   logic interrupt_qualified, interrupt_admit, resume_override_valid_q;
-  logic decrementer_pending;
+  logic decrementer_pending, external_irq_q;
   logic [31:0] committed_next_pc_q, resume_override_target_q, interrupt_resume_pc;
-  assign interrupt_qualified = ENABLE_EXTERNAL_INTERRUPTS && rst_ni &&
-    (external_irq_i || (ENABLE_TIMERS && decrementer_pending)) && msr[15] && !fault_pending && !halted_o;
+  assign interrupt_qualified = ENABLE_EXTERNAL_INTERRUPTS &&
+    (external_irq_q || (ENABLE_TIMERS && decrementer_pending)) && msr[15] && !fault_pending && !halted_o;
   assign interrupt_admit = interrupt_qualified && cq_empty && normal_idle &&
     !special_busy && special_ready && !recovery_accepted;
   assign interrupt_resume_pc = resume_override_valid_q ?
@@ -366,7 +367,8 @@ module ppc_core #(
     .tlb_fill_commit_o, .tlb_fill_abort_o,
     .tlb_fill_ack_valid_i, .tlb_fill_ack_ready_o, .tlb_fill_idle_i,
     .interrupt_valid_i(interrupt_admit), .interrupt_pc_i(interrupt_resume_pc),
-    .interrupt_decrementer_i(ENABLE_TIMERS && !external_irq_i), .external_irq_i,
+    .interrupt_decrementer_i(ENABLE_TIMERS && !external_irq_q),
+    .external_irq_i(external_irq_q),
     .timer_tick_i, .timebase_enable_i, .decrementer_taken_o, .decrementer_pc_o,
     .decrementer_pending_o(decrementer_pending),
     .interrupt_taken_o, .interrupt_pc_o,
@@ -381,6 +383,7 @@ module ppc_core #(
     .exception_commit_redirect_o(special_exception_redirect),
     .exception_commit_target_o(special_exception_target),
     .exception_irrevocable_o(special_exception_irrevocable),
+    .exception_halt_o(special_exception_halt),
     .busy_o(special_busy),
     .producer_o(special_producer), .store_irrevocable_o(special_store_irrevocable),
     .lr_o(lr), .ctr_o(ctr), .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1),
@@ -564,7 +567,10 @@ module ppc_core #(
       fault_pending <= 1'b0;
       halted_o <= 1'b0;
       fault_producer <= '0;
+      external_irq_q <= 1'b0;
     end else begin
+      // Registered so the pin never reaches dispatch combinationally.
+      external_irq_q <= ENABLE_EXTERNAL_INTERRUPTS && external_irq_i;
       if (fault_killed) fault_pending <= 1'b0;
       if (dispatch && dispatch_uop.illegal) begin
         fault_pending <= 1'b1;
@@ -574,7 +580,7 @@ module ppc_core #(
         fault_pending <= 1'b1;
         fault_producer <= result.producer;
       end
-      if (commit && retire_o.illegal) halted_o <= 1'b1;
+      if ((commit && retire_o.illegal) || special_exception_halt) halted_o <= 1'b1;
 
       // synthesis translate_off
       if (special_exception_redirect)

@@ -4,6 +4,8 @@ Recorded: `make -C sim lint check-spec test-core-event-reset test-core-interrupt
 
 This test-only round passed on 2026-09-21. Production RTL is unchanged.
 
+Recorded: `make -C sim test-core-event-reset`, commit this branch, 2026-09-26. Pass: 15,053 checks with special/CQ reset terms removed and the IRQ request registered (see [EVENT_RESET_CONTRACT.md](EVENT_RESET_CONTRACT.md)).
+
 Recorded 2026-09-26: `make -C sim test-core-event-reset` passes 14,909 checks
 on the audit-remediation branch (base 835f5c7 plus AUD-02/14 changes). The
 oracle now expects the hard-reset MSR `0x0000_0040` (IP=1) from `mfmsr`, and

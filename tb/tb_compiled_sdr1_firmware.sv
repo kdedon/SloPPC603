@@ -1,4 +1,4 @@
-// Compiled full-width SDR1 state roundtrip with delayed physical responses.
+// Compiled masked SDR1 state roundtrip with delayed physical responses.
 // Physical byte RAM uses independent delayed/backpressured instruction/data ports.
 /* verilator lint_off BLKSEQ */
 module tb_compiled_sdr1_firmware;
@@ -98,8 +98,8 @@ module tb_compiled_sdr1_firmware;
   function automatic logic [31:0] expected_read(input int n);
     case(n)
       0,4:return 0;
-      1:return 32'hffffffff;
-      2:return 32'h12345678;
+      1:return 32'hffff01ff;
+      2:return 32'h12340078;
       3:return 32'h80000000;
       default:return 32'hbad00000;
     endcase

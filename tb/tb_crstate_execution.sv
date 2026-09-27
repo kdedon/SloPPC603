@@ -42,7 +42,7 @@ module tb_crstate_execution;
   logic [31:0] dmem_rsp_rdata;
   logic dmem_rsp_error;
 
-  logic [129:0] supervisor_outputs;
+  logic [130:0] supervisor_outputs;
 
   int checks = 0;
   int mcrf_cases = 0;
@@ -130,6 +130,7 @@ module tb_crstate_execution;
     .exception_irrevocable_o(supervisor_outputs[33]),
     .msr_o(supervisor_outputs[65:34]), .srr0_o(supervisor_outputs[97:66]),
     .srr1_o(supervisor_outputs[129:98]),
+    .exception_halt_o(supervisor_outputs[130]),
     .dmem_req_valid_o(dmem_req_valid), .dmem_req_ready_i(dmem_req_ready),
     .dmem_req_write_o(dmem_req_write), .dmem_req_addr_o(dmem_req_addr),
     .dmem_req_wdata_o(dmem_req_wdata), .dmem_req_wstrb_o(dmem_req_wstrb),
@@ -139,7 +140,7 @@ module tb_crstate_execution;
   );
 
   assert property (@(posedge clk) disable iff (!rst_n)
-    supervisor_outputs == {64'b0, ppc_pkg::MSR_RESET, 34'b0});
+    supervisor_outputs == {65'b0, ppc_pkg::MSR_RESET, 34'b0});
 
   function automatic completion_tag_t make_tag(input int ordinal);
     completion_tag_t tag;

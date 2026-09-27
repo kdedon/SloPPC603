@@ -115,7 +115,7 @@ module ppc_completion #(
     redirect_candidate_survivors = COUNT_WIDTH'(retained);
     redirect_candidate_tail =
       ring_offset(head_q, retained);
-    redirect_accepted_o = rst_ni && redirect_valid_i && redirect_found;
+    redirect_accepted_o = redirect_valid_i && redirect_found;
     // An offered finished head is irrevocable even when ready on this edge.
     if ((count_q != '0) && (head_q < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
         done_q[head_q] && redirect_candidate_kill[head_q])
@@ -126,11 +126,11 @@ module ppc_completion #(
       redirect_kill_generation_o[i] = generations_q[i];
   end
 
-  assign alloc_ready_o = rst_ni && !redirect_accepted_o &&
+  assign alloc_ready_o = !redirect_accepted_o &&
                          (count_q < COUNT_WIDTH'(CQ_DEPTH));
-  assign empty_o = rst_ni && (count_q == 0);
+  assign empty_o = (count_q == 0);
   // Even a stale or killed response drains so that it cannot block a producer.
-  assign result_ready_o = rst_ni;
+  assign result_ready_o = 1'b1;
   assign alloc_fire = alloc_valid_i && alloc_ready_o;
   assign retire_fire = retire_valid_o && retire_ready_i;
   assign finish_accept_o = finish_accept;
@@ -166,8 +166,7 @@ module ppc_completion #(
     alloc_tag_o.index = tail_q;
     alloc_tag_o.generation = generations_q[tail_q] + CQ_GENERATION_WIDTH'(1);
 
-    retire_valid_o = rst_ni && (count_q != '0) &&
-                     active_q[head_q] && done_q[head_q];
+    retire_valid_o = (count_q != '0) && active_q[head_q] && done_q[head_q];
     retire_o = '0;
     retire_tag_o = '0;
     if (retire_valid_o) begin

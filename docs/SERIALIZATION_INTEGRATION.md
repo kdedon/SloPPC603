@@ -101,10 +101,12 @@ public external `redirect_accepted_o` remains false on that edge. Before CQ
 finish, an accepted external all-cut may cancel ISYNC and select its own target;
 the stale result is suppressed and cannot redirect later. Once ISYNC is the
 finished offered head, the normal completion irrevocability rule rejects a cut
-that would remove it. Reset withdraws the special result/redirect and clears
-the in-flight barrier state.
+that would remove it. From the first reset edge the special result/redirect is
+withdrawn and the in-flight barrier state is clear.
 
 ## Verification
+
+Recorded: `make -C sim test-core-serialization`, commit this branch, 2026-09-26. Pass: 121 checks. The reset case now checks the held barrier's retire-valid, busy and redirect after the first reset edge rather than combinationally.
 
 `tb_serialization_decode` checks 168 conditions across the three exact words,
 all low 26 fixed-bit mutations, permission normalization, default-profile

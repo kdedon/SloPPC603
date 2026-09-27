@@ -291,5 +291,16 @@ package ppc_pkg;
     EVENT_TLB_D_STORE     = 4'd11
   } exception_event_t;
   // ---- end MSR and exception events ---------------------------------------
+
+  // ---- SPR write masks and reset values -----------------------------------
+  // Hard reset clears all three (UM Table 4-8).
+  // SDR1: HTABORG manual 0-15, reserved 16-22, HTABMASK 23-31. Reserved bits
+  // are never stored, so they read as zero.
+  localparam logic [31:0] SDR1_WMASK = 32'hffff_01ff;
+  localparam logic [31:0] SDR1_RESET = 32'h0000_0000;
+  // DSISR and SPRG0-3 are fully architected; no mask needed.
+  localparam logic [31:0] DSISR_RESET = 32'h0000_0000;
+  localparam logic [31:0] SPRG_RESET = 32'h0000_0000;
+  // ---- end SPR write masks and reset values -------------------------------
 endpackage
 /* verilator lint_on UNUSEDPARAM */

@@ -130,7 +130,12 @@ state change for:
 
 The last case is rejected because the architecture requires the highest
 priority newly enabled exception rather than the nominal RFI target. That
-priority selection is caller work. The caller must hold an unaccepted event
+priority selection is caller work.
+
+In the core, the special lane gates every event so that none of these cases
+reaches the controller; a sim assertion fires if a committed event ever
+returns unsupported. Should one occur, the lane stops without a redirect and
+the core raises `halted_o` until reset. The caller must hold an unaccepted event
 stable under ordinary valid/ready rules.
 
 ## Verification

@@ -1,6 +1,7 @@
 # Architectural TLB miss verification
 
 Recorded: `make -C sim lint-tlb-miss test-exception-tlb-miss test-core-tlb-miss`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+Recorded: `make -C sim test-exception-tlb-miss test-core-tlb-miss`, commit this branch, 2026-09-26. Pass: 186 enabled and 125 disabled exception-state checks; 3,575 checks over 20 enabled core phases and 336 over three disabled phases.
 
 The opt-in `ENABLE_TLB_MISS_EXCEPTIONS` path has independent checks at the exception-state and actual-core boundaries. The local manual cited in [TLB_REFILL_DEPENDENCIES.md](TLB_REFILL_DEPENDENCIES.md) supplies the literal vector, SRR1, and hash expectations; test expectations do not call production derivation logic.
 
@@ -10,6 +11,6 @@ The direct-core bench (`tb_core_tlb_miss.sv`) passes 3,581 checks across 20 enab
 
 The matched-way extension supplies the 69-bit response capsule with a final `way` bit. A C=0 store in matched way 0 and another in matched way 1 hold that bit through backpressured retirement; way 1 sets SRR1.WAY and RFI still clears TGPR. An external redirect offered at an admitted way-1 store response is rejected by the ordered-store irrevocability rule. A separate redirect cancels a way-1 store before memory offer and proves no request or miss-state mutation. Forged way 1 on true instruction and data misses remains a terminal diagnostic; the default-off C=0 way-1 case also stays diagnostic.
 
-Adversarial phases reject a reserved-bit SDR1, a mismatched data capsule EA, and a C=0-store cause on a load without installing miss state. Both instruction and data misses are canceled before and on their typed response edge; the target retires with zero miss SPR/SRR mutations. A translated DMISS read is diagnostic, and an IMISS write is rejected as a read-only selector without changing state. The disabled profile retains terminal typed diagnostics and never enters a miss handler. All diagnostic and fault retirements forbid GPR, update-form, and flag writes.
+Adversarial phases reject an SDR1 with a noncontiguous HTABMASK (SDR1 writes drop reserved bits, so a reserved-bit value cannot reach derivation), a mismatched data capsule EA, and a C=0-store cause on a load without installing miss state. Both instruction and data misses are canceled before and on their typed response edge; the target retires with zero miss SPR/SRR mutations. A translated DMISS read is diagnostic, and an IMISS write is rejected as a read-only selector without changing state. The disabled profile retains terminal typed diagnostics and never enters a miss handler. All diagnostic and fault retirements forbid GPR, update-form, and flag writes.
 
 This core bench deliberately models typed router responses; router classification and physical-request exclusion remain covered by the page-miss router tests. The compiled miss-handler workload separately proves CPU TLB refill and retry through the integrated router and memory path. These directed checks do not model software PTE search or replacement-policy behavior.

@@ -30,9 +30,9 @@ module tb_completion;
   logic [$clog2(CQ_DEPTH+1)-1:0] unused_survivor_count;
   retire_packet_t unused_survivor_packet [CQ_DEPTH];
   completion_tag_t unused_survivor_tag [CQ_DEPTH];
-  logic unused_cq_empty, unused_cq_finish;
+  logic cq_empty, cq_finish;
   ppc_completion dut (
-    .finish_accept_o(unused_cq_finish), .empty_o(unused_cq_empty), .clk_i(clk), .rst_ni(rst_n),
+    .finish_accept_o(cq_finish), .empty_o(cq_empty), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(alloc_valid), .alloc_ready_o(alloc_ready), .alloc_i(allocation),
     .alloc_tag_o(alloc_tag), .result_valid_i(result_valid), .result_ready_o(result_ready),
     .result_i(result_packet), .wake_valid_o(wake_valid), .wake_o(wake),
@@ -267,17 +267,22 @@ module tb_completion;
     check_head(50, tags[1], 32'b0, 1'b1);
     retire_one(50, tags[1], 32'b0, 1'b1);
 
-    // Reset simultaneously clears ownership, finish state and all generation counters.
+    // The first reset edge clears ownership, finish state and all generation
+    // counters. Handshakes offered while reset is held have no effect.
     allocate(51, 1'b0, tags[0]);
     @(negedge clk);
     rst_n = 1'b0;
     result_valid = 1'b1;
     result_packet.producer = tags[0];
-    #1;
-    require(!alloc_ready && !result_ready && !wake_valid && !retire_valid, "reset gates handshakes");
-    @(posedge clk);
-    #1;
+    alloc_valid = 1'b1;
+    repeat (2) begin
+      @(posedge clk);
+      #1;
+      require(cq_empty && !cq_finish && !wake_valid && !retire_valid,
+              "reset did not idle the queue or ignored no handshake");
+    end
     result_valid = 1'b0;
+    alloc_valid = 1'b0;
     @(negedge clk);
     rst_n = 1'b1;
     #1;

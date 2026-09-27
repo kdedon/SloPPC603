@@ -29,7 +29,7 @@ The architectural source is *PowerPC Microprocessor Family: The Programming Envi
 - Table 8-10, PDF 568 / printed 8-156, assigns SPR272–275 to supervisor `mfspr` access.
 - Table 8-15, PDF 585 / printed 8-173, assigns the same selectors to supervisor `mtspr` access.
 
-These sources define ordinary full-width storage. No source says a write preserves any part of the selected register, so `mtspr` replaces all 32 bits.
+These sources define ordinary full-width storage. No source says a write preserves any part of the selected register, so `mtspr` replaces all 32 bits; no write mask is needed. `ppc_pkg` records the reset value as `SPRG_RESET`. DSISR is likewise fully architected (DSI uses bits 0–11, alignment bits 12–31; UM Tables 4-11 and 4-13) and takes no mask; its reset value is `DSISR_RESET`.
 
 ## Execution and privilege contract
 
@@ -57,6 +57,8 @@ python3 sim/tools/test_isa.py
 make -C sim test-sprg-decode
 make -C sim test-core-sprg
 ```
+
+Recorded: `make -C sim test-core-sprg`, commit this branch, 2026-09-26. Pass: 210 checks. The added checks write all-ones to SPRG1 and DSISR, require unmasked readback and committed state, and require DSISR zero after the next hard reset.
 
 Validated with Verilator 5.020: strict default/enabled core lint passed, `tb_sprg_decode` passed 8,097 checks, `tb_core_sprg` passed 192 checks, and 37 ISA metadata tests passed. The generated metadata reports 186 reviewed entries: 168 default implemented, 15 supervisor opt-in, and three serialization opt-in.
 

@@ -104,6 +104,8 @@ module ppc_special #(
   output logic exception_commit_redirect_o,
   output logic [31:0] exception_commit_target_o,
   output logic exception_irrevocable_o,
+  // A committed event the exception state rejected; the lane stops.
+  output logic exception_halt_o,
   output logic busy_o,
   output ppc_pkg::completion_tag_t producer_o,
   output logic store_irrevocable_o,
@@ -369,9 +371,9 @@ module ppc_special #(
     endcase
   endfunction
 
-  assign busy_o = rst_ni && (state_q != S_IDLE);
+  assign busy_o = (state_q != S_IDLE);
   assign producer_o = producer_q;
-  assign dispatch_ready_o = rst_ni && (state_q == S_IDLE) && !cancel_i;
+  assign dispatch_ready_o = (state_q == S_IDLE) && !cancel_i;
   assign commit_match = commit_i && (commit_tag_i == producer_q);
   assign result_fire = result_valid_o && result_ready_i;
   assign request_fire = dmem_req_valid_o && dmem_req_ready_i;
@@ -438,7 +440,7 @@ module ppc_special #(
     result_o = '0;
     result_o.producer = producer_q;
     result_valid_o = 1'b0;
-    if (rst_ni && (state_q == S_EXEC)) begin
+    if (state_q == S_EXEC) begin
       result_valid_o = !timer_read;
       if (uop_q.special_op == SPECIAL_MFSPR) result_o.value = exec_value;
       if (uop_q.special_op == SPECIAL_MTSPR && uop_q.spr == 10'd1)
@@ -480,14 +482,14 @@ module ppc_special #(
            (uop_q.special_op == SPECIAL_ALIGNMENT) ||
            (uop_q.special_op == SPECIAL_ISI)) &&
           exception_entry_unsupported) result_o.fault = 1'b1;
-    end else if (rst_ni && (state_q == S_BAT_RESULT)) begin
+    end else if (state_q == S_BAT_RESULT) begin
       result_valid_o = !cancel_i;
       result_o.value = mmu_value_q;
       result_o.fault = mmu_error_q;
-    end else if (rst_ni && (state_q == S_TIMER_RESULT)) begin
+    end else if (state_q == S_TIMER_RESULT) begin
       result_valid_o = 1'b1;
       result_o.value = timer_read_value_q;
-    end else if (rst_ni && (state_q == S_MEM_RESULT)) begin
+    end else if (state_q == S_MEM_RESULT) begin
       result_valid_o = 1'b1;
       result_o = memory_result_q;
     end
@@ -721,6 +723,7 @@ module ppc_special #(
       exception_result_valid && exception_result_supported));
   assign exception_commit_target_o = (state_q == S_BAT_REDIRECT) ? mmu_resume_target_q : ENABLE_LIVE_CONTEXT ?
     context_target_q : exception_result_target;
+  assign exception_halt_o = (state_q == S_EXCEPTION_HALT);
   // Block external cuts on the event-commit edge and until the exception
   // redirect has been presented. The exception itself has already committed.
   assign exception_irrevocable_o = rst_ni &&
@@ -767,16 +770,16 @@ module ppc_special #(
       branch_lr_next_q <= '0;
       lr_q <= '0;
       ctr_q <= '0;
-      sprg_q[0] <= '0;
-      sprg_q[1] <= '0;
-      sprg_q[2] <= '0;
-      sprg_q[3] <= '0;
+      sprg_q[0] <= SPRG_RESET;
+      sprg_q[1] <= SPRG_RESET;
+      sprg_q[2] <= SPRG_RESET;
+      sprg_q[3] <= SPRG_RESET;
       dar_q <= '0;
-      dsisr_q <= '0;
+      dsisr_q <= DSISR_RESET;
       dcmp_q <= '0;
       icmp_q <= '0;
       rpa_q <= '0;
-      sdr1_q <= '0;
+      sdr1_q <= SDR1_RESET;
       sdr1_write_invalid_q <= 1'b0;
       killed_q <= 1'b0;
       memory_result_q <= '0;
@@ -977,7 +980,7 @@ module ppc_special #(
                   10'd18: dsisr_q <= a_q;
                   10'd19: dar_q <= a_q;
                   10'd25: if (ENABLE_SDR1 && !sdr1_write_invalid_q)
-                    sdr1_q <= a_q;
+                    sdr1_q <= a_q & SDR1_WMASK;
                   10'd977: if (ENABLE_TLB_LOAD) dcmp_q <= a_q;
                   10'd981: if (ENABLE_TLB_LOAD) icmp_q <= a_q;
                   10'd982: if (ENABLE_TLB_LOAD) rpa_q <= a_q;
