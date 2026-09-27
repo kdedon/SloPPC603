@@ -455,3 +455,17 @@ shell control into pending GPR-result metadata (58.843 ns, 34 logic levels).
 Map reported zero errors and 69 warnings; TimeQuest reported zero errors and
 zero warnings. No fitter ran. This excludes the later parallel rounding
 candidates and 602 SPR timing correction.
+
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`90f24b4`, 2026-09-27.
+
+The parallel normal/scaled exponent experiment regressed post-map Fmax to
+**25.7 MHz**, with −18.890 ns setup slack. Add-stage normal-exponent calculation
+became the overall critical path at 38.724 ns, versus 35.579 ns in `91c80b8`.
+Response rounding remained 31.709 ns and divider 32.630 ns. Area was 10,655
+estimated ALMs, 14,275 ALUTs, 2,596 registers, 416 block-memory bits and five
+DSP blocks, with 433 virtual pins and zero physical pins. Map reported zero
+errors and four warnings; TimeQuest reported zero errors and zero warnings.
+Both frequency targets failed, and no fitter ran. This experiment was rejected;
+the preceding 27.0 MHz arithmetic implementation remains the retained candidate.

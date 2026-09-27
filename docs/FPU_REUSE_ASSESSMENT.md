@@ -32,7 +32,7 @@ public-shell checks; 71/52 exact-cycle responses; 32-operation streams in both
 personalities; 20/19 paired dispatch/retirement checks; and 63 strict lint
 invocations with no warnings or errors. Later timing changes require their own
 acceptance records; full-queue admission coverage is being expanded.
-The latest arithmetic post-map estimate is **27.0 MHz**; the measured two-lane
+The retained arithmetic post-map estimate is **27.0 MHz**; the measured two-lane
 603e shell estimates **16.9 MHz**. Both miss 50 and 66 MHz. No completion or
 fitted timing claim is made for the replacement. See
 [verification](../sim/fpu/PRODUCTION.md) and
