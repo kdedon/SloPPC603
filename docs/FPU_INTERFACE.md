@@ -10,6 +10,20 @@ For loads the shell issues a tagged, word-aligned, atomic memory preparation req
 
 Illegal and FP-unavailable results carry precise exception codes. A disabled FP instruction never starts arithmetic or memory access. The selected enabled-exception rule is `(FE0|FE1)&FEX` and precise completion, as recorded in `FPU_CONTRACT.md`; the shell calculates FPSCR effects from backend metadata then reports the exception in its held result. Reserved fields and unimplemented `fsqrt/fsqrts` are illegal. [UM Table 4-1, PDF 163 / 4-5; §§4.5.7–8, PDF 187–189; Table B-1, PDF 407]
 
+The core maps the result's exception enum to its exception controller; the FPU
+does not redirect instruction fetch or write SRR0/SRR1. Vector offsets below
+are combined with the core's exception-prefix policy. [UM Table 4-1,
+PDF 162–163 / 4-4–4-5]
+
+| Result exception | Core disposition |
+| --- | --- |
+| `FPU_NO_EXCEPTION` | Commit the proposed state normally. |
+| `FPU_ILLEGAL` | Program exception, offset `0x00700`, illegal-instruction cause. |
+| `FPU_UNAVAILABLE` | FP-unavailable exception, offset `0x00800`. |
+| `FPU_ALIGNMENT` | Alignment exception, offset `0x00600`. |
+| `FPU_MEMORY_FAULT` | Route the returned LSU fault code/context through the core's data-fault path. |
+| `FPU_FP_ENABLED` | Program exception, offset `0x00700`, FP-enabled cause; preserve the contract's proposed FPSCR/result disposition. |
+
 The arithmetic backend module is `ppc_fpu_arith`. Its request and response follow `valid/ready`; response also returns the request tag, and responses with other tags are ignored. It must cover add/subtract/multiply/divide, fused multiply-add variants, `frsp`, `fctiw(z)`, compare, `fres`, and `frsqrte`. It may take multiple cycles, but holds its response under backpressure. The F1 `ss_fpu_candidate` remains an isolated experiment and is not a production dependency. [UM Tables 2-14–17, PDF 104–105; `FPU_REUSE_ASSESSMENT.md` F1–F4]
 
 The memory response channel also follows ready/valid: the LSU holds its packet until accepted. A matching reply presented in the request-accept cycle is backpressured until the shell enters its response state. Unrelated stale replies may drain immediately. This permits a combinational preparation response without losing it.
