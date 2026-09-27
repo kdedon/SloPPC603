@@ -1,5 +1,7 @@
 `default_nettype none
-module tb_ppc_fpu_arith;
+module tb_ppc_fpu_arith #(
+    parameter bit CPU_602 = 1'b0
+);
     import ppc_pkg::*;
     import ppc_fpu_pkg::*;
 
@@ -37,13 +39,13 @@ module tb_ppc_fpu_arith;
     int count;
     int failures;
     int waited;
-    int op_count [0:12];
-    int op_failures [0:12];
-    int op_latency_min [0:12];
-    int op_latency_max [0:12];
-    int precision_count [0:12][0:1];
-    int precision_latency_min [0:12][0:1];
-    int precision_latency_max [0:12][0:1];
+    int op_count [0:13];
+    int op_failures [0:13];
+    int op_latency_min [0:13];
+    int op_latency_max [0:13];
+    int precision_count [0:13][0:1];
+    int precision_latency_min [0:13][0:1];
+    int precision_latency_max [0:13][0:1];
     int result_failures, invalid_failures, flag_failures, class_failures;
     logic bad_result, bad_invalid, bad_flags, bad_class;
     string vectors_path;
@@ -58,6 +60,7 @@ module tb_ppc_fpu_arith;
         @(negedge clk_i);
         req_i = '0;
         req_i.op = operation;
+        req_i.single_result = CPU_602;
         req_i.a = 64'h3ff0000000000000;
         req_i.b = 64'h4000000000000000;
         req_i.c = 64'h4000000000000000;
@@ -84,6 +87,7 @@ module tb_ppc_fpu_arith;
         @(negedge clk_i);
         req_i = '0;
         req_i.op = FP_ADD;
+        req_i.single_result = CPU_602;
         req_i.a = 64'h3ff0000000000000;
         req_i.b = 64'h4000000000000000;
         req_i.tag.index = 3'd4;
@@ -110,7 +114,7 @@ module tb_ppc_fpu_arith;
         if (rsp_valid_o) $fatal(1, "cancel sweep duplicate result");
     endtask
 
-    ppc_fpu_arith dut (.*);
+    ppc_fpu_arith #(.CPU_602(CPU_602)) dut (.*);
 
     always @(posedge clk_i)
         if (div_busy_o && req_ready_o)
@@ -142,7 +146,7 @@ module tb_ppc_fpu_arith;
         invalid_failures = 0;
         flag_failures = 0;
         class_failures = 0;
-        for (int i = 0; i <= 12; i++) begin
+        for (int i = 0; i <= 13; i++) begin
             op_count[i] = 0;
             op_failures[i] = 0;
             op_latency_min[i] = 1025;
@@ -282,6 +286,7 @@ module tb_ppc_fpu_arith;
         @(negedge clk_i);
         req_i = '0;
         req_i.op = FP_ADD;
+        req_i.single_result = CPU_602;
         req_i.a = 64'h3ff0000000000000;
         req_i.b = 64'h4000000000000000;
         req_i.tag.index = 3'd1;
@@ -346,11 +351,11 @@ module tb_ppc_fpu_arith;
         $display("PPC_ARITH_RESULT vectors=%0d mismatches=%0d", count, failures);
         $display("PPC_ARITH_DOMAINS result=%0d invalid=%0d flags=%0d class=%0d",
                  result_failures, invalid_failures, flag_failures, class_failures);
-        for (int i = 0; i <= 12; i++)
+        for (int i = 0; i <= 13; i++)
             if (op_count[i] != 0)
                 $display("PPC_ARITH_OP op=%0d vectors=%0d mismatches=%0d latency_min=%0d latency_max=%0d",
                          i, op_count[i], op_failures[i], op_latency_min[i], op_latency_max[i]);
-        for (int i = 0; i <= 12; i++)
+        for (int i = 0; i <= 13; i++)
             for (int precision = 0; precision < 2; precision++)
                 if (precision_count[i][precision] != 0)
                     $display("PPC_ARITH_PRECISION op=%0d single=%0d vectors=%0d latency_min=%0d latency_max=%0d",

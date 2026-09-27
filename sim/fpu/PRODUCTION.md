@@ -311,3 +311,23 @@ correct 64-bit value and size, but its result packet had `store=0`, so no
 store could be authorized at commit. The shell owner fixed the lost result
 field in the live RTL; the 602 public-shell suite has not yet passed on the
 revised dual-lane shell. This is a failure record, not acceptance evidence.
+
+The compile-time 602 raw arithmetic generator `production_vectors_602.py`
+(SHA-256 `e851dd5a3f6da231618f2de6a9eff6f6e6b9a58473fe0b00f1d704cfcf95e151`,
+MIT) accepts only exactly widened binary32 source operands. It preserves
+signaling NaN bits on widening, compares exact rounded 602 `fres` with the
+independent rational divide oracle, and implements the manual's NI=1
+before-round tiny-to-zero rule as a separate delivery adaptation. All four
+RN modes and individually enabled exception modes are generated. The raw
+test checks every defined result, invalid cause, OX/UX/ZX/XX, FR/FI validity
+and value, FPRF/FPCC, and `tiny_before_round`; only undefined integer high
+bits, suppressed result data, and FR on disabled overflow are masked.
+
+Recorded: `make -C sim -j2 lint-fpu-timing test-fpu-timing-603
+test-fpu-timing-602 test-fpu-arith-602` on arithmetic commit `59befd3`
+plus uncommitted verification sources in an immutable snapshot, 2026-09-27;
+seed `0x602f0002`, 128 random source triples per opcode, 181,376 raw 602
+packets over 13 operation families with zero result, invalid, flag, or
+classification mismatches. Both static timing runs passed (603e 71, 602 52
+tagged responses), and strict lint/build emitted zero warnings/errors. The
+602 `frsqrte` estimate remains a separate open verification gate.

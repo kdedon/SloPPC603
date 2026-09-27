@@ -113,14 +113,19 @@ test-fpu-qualify: test-fpu-reference $(FPU_VECTORS) $(FPU_EXTRACT_DIR)/Vss_fpu_c
 	$(FPU_EXTRACT_DIR)/Vss_fpu_candidate $(FPU_VECTORS:.jsonl=.txt) $(FPU_RESULTS)
 	python3 fpu/vectors.py compare --vectors $(FPU_VECTORS) --results $(FPU_RESULTS) --strict
 
-.PHONY: test-fpu-arith-initial test-fpu-arith
+.PHONY: test-fpu-arith-initial test-fpu-arith test-fpu-arith-602
 PPC_FPU_ARITH_RTL := ../rtl/ppc_pkg.sv ../rtl/fpu/ppc_fpu_pkg.sv ../rtl/fpu/ppc_fpu_arith.sv
 PPC_FPU_ARITH_BUILD := $(BUILD_DIR)/ppc-fpu-arith
+PPC_FPU_ARITH_602_BUILD := $(BUILD_DIR)/ppc-fpu-arith-602
 PPC_FPU_ARITH_INITIAL := $(BUILD_DIR)/fpu/production-initial.txt
 PPC_FPU_ARITH_ALL := $(BUILD_DIR)/fpu/production-all.txt
+PPC_FPU_ARITH_602_VECTORS := $(BUILD_DIR)/fpu/production-602.txt
 
 $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith: $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_arith --Mdir $(PPC_FPU_ARITH_BUILD) $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
+
+$(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith: $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_arith --Mdir $(PPC_FPU_ARITH_602_BUILD) $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
 
 $(PPC_FPU_ARITH_INITIAL): fpu/production_vectors.py fpu/ppc_reference.py fpu/reference.py
 	mkdir -p $(BUILD_DIR)/fpu
@@ -130,11 +135,18 @@ $(PPC_FPU_ARITH_ALL): fpu/production_vectors.py fpu/ppc_reference.py fpu/referen
 	mkdir -p $(BUILD_DIR)/fpu
 	python3 fpu/production_vectors.py --vectors $@ --random 128
 
+$(PPC_FPU_ARITH_602_VECTORS): fpu/production_vectors_602.py fpu/production_vectors.py fpu/ppc_reference.py fpu/reference.py
+	mkdir -p $(BUILD_DIR)/fpu
+	python3 fpu/production_vectors_602.py --vectors $@ --random 128
+
 test-fpu-arith-initial: test-fpu-reference $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith $(PPC_FPU_ARITH_INITIAL)
 	./$(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_ARITH_INITIAL)
 
 test-fpu-arith: test-fpu-reference $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith $(PPC_FPU_ARITH_ALL)
 	./$(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_ARITH_ALL)
+
+test-fpu-arith-602: test-fpu-reference $(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith $(PPC_FPU_ARITH_602_VECTORS)
+	./$(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_ARITH_602_VECTORS)
 
 .PHONY: test-fpu-timing-603 test-fpu-timing-602 lint-fpu-timing
 PPC_FPU_TIMING_603_BUILD := $(BUILD_DIR)/ppc-fpu-timing-603
