@@ -33,7 +33,9 @@ personalities; 28/24 paired dispatch/retirement checks; and 63 strict lint
 invocations with no warnings or errors. Later timing changes require their own
 acceptance records. The baseline includes full-queue admission, rejected
 second-lane isolation and 602 SPR transfer timing.
-The retained arithmetic post-map estimate is **27.0 MHz**; the measured two-lane
+The separately qualified 112-bit add/fused lane (`20c2329`) passes 201,632
+603e and 181,952 602 raw-bit cases, including new cancellation and halfway-tail
+vectors. Its arithmetic post-map estimate is **28.8 MHz**; the measured two-lane
 603e shell estimates **18.2 MHz**. Both miss 50 and 66 MHz. No completion or
 fitted timing claim is made for the replacement. See
 [verification](../sim/fpu/PRODUCTION.md) and

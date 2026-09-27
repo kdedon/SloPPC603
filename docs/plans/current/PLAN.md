@@ -47,7 +47,7 @@ and throughput. The coherent baseline passes both personalities’ numerical, ex
 public-shell, paired dispatch/retirement and strict lint gates in
 [verification](../../../sim/fpu/PRODUCTION.md). Later timing changes and expanded
 full-queue admission checks remain under qualification. Retained
-arithmetic synthesis estimates 27.0 MHz; the measured two-lane 603e shell
+arithmetic synthesis estimates 28.8 MHz; the measured two-lane 603e shell
 estimates 18.2 MHz. Both miss 50 and 66 MHz, and no fitter has run. The earlier
 serialized 50.5 MHz result is historical. See the
 [FPU assessment](../../FPU_REUSE_ASSESSMENT.md) for the remaining semantic and
