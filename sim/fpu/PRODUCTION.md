@@ -117,6 +117,24 @@ with 0 mismatches, and 833 shell checks with 0 failures. Basic/fused/`frsp`
 latency was 1–14 clocks, divide 1–32, conversion 2, and compare 1. The
 FMA 0–16 and divide 0–48 cancellation sweeps cover the completed paths.
 
+Recorded: `make -C sim -j2 test-fpu` on commit `5f03036` plus the divider
+quotient bypass and per-precision latency bench, 2026-09-27; 20 Python
+anchors, 32 table value/bound proofs, 200,000 arithmetic packets with 0
+mismatches, 66 cancellation offsets, 4 held-response checks, 11,958 estimate
+packets with 0 mismatches, and 833 shell checks with 0 failures. Finite
+single-precision divide was 18 clocks and double divide 32; finite `fres`
+was 18 and `frsqrte` 1. Special estimate paths were 1 clock. Basic/fused/
+`frsp` paths reached 14 clocks, conversion 2, and compare 1. These are
+request-acceptance to result-valid measurements, not core issue timing.
+
+Recorded: `make -C sim -j2 test-fpu` on commit `46f48c8` plus the
+CONV_SHIFT timing cut, 2026-09-27; 20 Python anchors, 32 table value/bound
+proofs, 200,000 arithmetic packets with 0 mismatches, 66 cancellation
+offsets, 4 held-response checks, 11,958 estimate packets with 0 mismatches,
+and 833 shell checks with 0 failures. `fctiw`/`fctiwz` each took 3 clocks;
+single/double divide remained 18/32, finite `fres` 18, and finite
+`frsqrte` 1. Strict test builds emitted 0 warnings and 0 errors.
+
 Recorded: `make -C sim -j2 test-core test-completion test-execution check-spec`
 on commit `fc33a75` plus documentation and FPU-bench changes, 2026-09-27;
 the existing integer core, completion, execution, and structural spec checks

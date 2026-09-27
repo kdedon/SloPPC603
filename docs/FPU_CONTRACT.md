@@ -107,3 +107,15 @@ classes above. Independent spot checks included UM PDF 103–106, 186–189 and
 270–276, and PEM PDF 127–128, 143–144, 492–493 and 509–514. The explicit
 source-conflict rows limit acceptance; this is a specification review, with
 zero RTL tests or synthesis runs credited to F0.
+
+### Official errata cross-check
+
+The [official MPC603EUMAD/D errata](https://www.nxp.com/docs/en/reference-manual/MPC603EUMAD.pdf)
+clarifies precise enabled FP exceptions (§4.1 correction, physical PDF p.8),
+but the reviewed corrections do not resolve the vector/update discrepancy.
+The [official Rev. 3 manual](https://www.nxp.com/docs/en/reference-manual/MPC603EUM.pdf)
+retains both the FE-gated program route (Table 4-1, physical PDF pp.65, 161;
+§4.2.2, p.169) and the emulation/no-update/regardless-of-FE paragraph
+(§4.5.7.1, p.184). Its NI description still specifies only signed-zero
+replacement (§2.3.4.2, p.100). This cross-check does not change the selected
+Table 4-1/PEM behavior or establish the unresolved silicon semantics.

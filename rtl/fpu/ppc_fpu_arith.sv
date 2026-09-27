@@ -27,6 +27,16 @@ module ppc_fpu_arith (
     } operand_t;
 
     typedef struct packed {
+        logic [32:0] whole;
+        logic guard_bit;
+        logic sticky_bit;
+        logic invalid_value;
+        logic sign;
+        logic snan;
+        logic nan;
+    } conv_parts_t;
+
+    typedef struct packed {
         logic sign;
         logic zero;
         logic inf;
@@ -120,7 +130,7 @@ module ppc_fpu_arith (
     } round_post_t;
 
     typedef enum logic [4:0] {
-        IDLE, CALC, CONV_PREP, CONV_FINISH,
+        IDLE, CALC, CONV_PREP, CONV_SHIFT, CONV_FINISH,
         DIV_START, DIVIDE,
         PREP, PREP_PRODUCT, ALIGN_PLAN, ALIGN_SHIFT,
         SUM_PLAN, SUM_0, SUM_1, SUM_2, SUM_3,
@@ -131,6 +141,7 @@ module ppc_fpu_arith (
     ppc_fpu_arith_req_t req_q;
     ppc_fpu_arith_rsp_t rsp_q;
     operand_t conv_source_q;
+    conv_parts_t conv_parts_q;
     finite_operands_t finite_operands_q;
     finite_prep_t prep_q;
     align_plan_t align_plan_q;
@@ -512,71 +523,79 @@ module ppc_fpu_arith (
         return estimate_sig;
     endfunction
 
-    function automatic ppc_fpu_arith_rsp_t convert_word(
+    function automatic conv_parts_t prepare_conversion(input operand_t source);
+        conv_parts_t out;
+        int unsigned shift;
+        out = '0;
+        out.sign = source.sign;
+        out.snan = source.snan;
+        out.nan = source.nan;
+        out.invalid_value = source.nan || source.inf;
+        if (!out.invalid_value && !source.zero) begin
+            if (source.exp >= 16'sd32) begin
+                out.invalid_value = 1'b1;
+            end else if (source.exp < -16'sd1) begin
+                out.sticky_bit = 1'b1;
+            end else begin
+                shift = int'(16'sd52) - int'(source.exp);
+                out.whole = 33'(source.sig >> shift);
+                if (shift != 0 && shift <= 53) begin
+                    out.guard_bit = source.sig[shift-1];
+                    for (int i = 0; i < 53; i++) begin
+                        if (i < int'(shift-1))
+                            out.sticky_bit |= source.sig[i];
+                    end
+                end
+            end
+        end
+        return out;
+    endfunction
+
+    function automatic ppc_fpu_arith_rsp_t finish_conversion(
         input ppc_pkg::completion_tag_t tag,
         input ppc_fpu_op_t op,
         input logic [1:0] rn,
         input logic ve,
-        input operand_t source
+        input conv_parts_t parts
     );
         ppc_fpu_arith_rsp_t out;
-        logic [63:0] whole;
+        logic [32:0] whole;
         logic [31:0] word_value;
-        logic guard_bit;
-        logic sticky_bit;
         logic inexact;
         logic increment;
         logic invalid_value;
         logic [1:0] mode;
-        int unsigned shift;
         out = '0;
         out.tag = tag;
         out.write_result = 1'b1;
         out.frfi_valid = 1'b1;
         out.fprf_valid = 1'b0;
         mode = op == FP_FCTIWZ ? 2'b01 : rn;
-        whole = '0;
-        guard_bit = 1'b0;
-        sticky_bit = 1'b0;
-        invalid_value = source.nan || source.inf;
-        if (!invalid_value && !source.zero) begin
-            if (source.exp >= 16'sd32) begin
-                invalid_value = 1'b1;
-            end else if (source.exp < -16'sd1) begin
-                sticky_bit = 1'b1;
-            end else begin
-                shift = int'(16'sd52) - int'(source.exp);
-                whole = {11'd0, source.sig} >> shift;
-                if (shift != 0 && shift <= 53) begin
-                    guard_bit = source.sig[shift-1];
-                    for (int i = 0; i < 53; i++) begin
-                        if (i < int'(shift-1)) sticky_bit |= source.sig[i];
-                    end
-                end
-            end
-        end
-        inexact = guard_bit | sticky_bit;
+        whole = parts.whole;
+        invalid_value = parts.invalid_value;
+        inexact = parts.guard_bit | parts.sticky_bit;
         case (mode)
-            2'b00: increment = guard_bit & (sticky_bit | whole[0]);
+            2'b00: increment = parts.guard_bit &
+                (parts.sticky_bit | whole[0]);
             2'b01: increment = 1'b0;
-            2'b10: increment = !source.sign & inexact;
-            default: increment = source.sign & inexact;
+            2'b10: increment = !parts.sign & inexact;
+            default: increment = parts.sign & inexact;
         endcase
-        whole = whole + {63'd0, increment};
+        whole = whole + {32'd0, increment};
         if (!invalid_value) begin
-            if ((!source.sign && whole > 64'h0000_0000_7fff_ffff) ||
-                (source.sign && whole > 64'h0000_0000_8000_0000))
+            if ((!parts.sign && whole > 33'h07fff_ffff) ||
+                (parts.sign && whole > 33'h08000_0000))
                 invalid_value = 1'b1;
         end
         if (invalid_value) begin
             out.invalid[INV_CVI] = 1'b1;
-            out.invalid[INV_SNAN] = source.snan;
+            out.invalid[INV_SNAN] = parts.snan;
             out.write_result = !ve;
-            if (source.nan || source.sign) word_value = 32'h8000_0000;
+            if (parts.nan || parts.sign) word_value = 32'h8000_0000;
             else word_value = 32'h7fff_ffff;
             out.frfi_valid = 1'b1;
         end else begin
-            if (source.sign) word_value = 32'(0 - whole);
+            if (parts.sign) word_value = 32'(0 - whole);
             else word_value = whole[31:0];
             out.fr = increment;
             out.fi = inexact;
@@ -1049,6 +1068,7 @@ module ppc_fpu_arith (
             req_q <= '0;
             rsp_q <= '0;
             conv_source_q <= '0;
+            conv_parts_q <= '0;
             finite_operands_q <= '0;
             prep_q <= '0;
             align_plan_q <= '0;
@@ -1113,11 +1133,15 @@ module ppc_fpu_arith (
                 end
                 CONV_PREP: begin
                     conv_source_q <= unpack(req_q.b);
+                    state_q <= CONV_SHIFT;
+                end
+                CONV_SHIFT: begin
+                    conv_parts_q <= prepare_conversion(conv_source_q);
                     state_q <= CONV_FINISH;
                 end
                 CONV_FINISH: begin
-                    rsp_q <= convert_word(req_q.tag, req_q.op, req_q.rn,
-                        req_q.ve, conv_source_q);
+                    rsp_q <= finish_conversion(req_q.tag, req_q.op, req_q.rn,
+                        req_q.ve, conv_parts_q);
                     state_q <= RESPONSE;
                 end
                 PREP: begin
