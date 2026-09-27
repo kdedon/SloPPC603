@@ -122,6 +122,42 @@ module tb_ppc_fpu_shell;
         issue_valid_i = 1'b0;
     endtask
 
+    task automatic seed_frfi(input logic [7:0] generation);
+        completion_tag_t identity;
+        identity = tag(3'd1, generation);
+        send_issue(fp_insn(63, 5'd13, 0, 0, 38), identity, 0, 0, 1'b1);
+        await_result(identity);
+        commit(identity);
+        identity = tag(3'd1, generation + 8'd1);
+        send_issue(fp_insn(63, 5'd14, 0, 0, 38), identity, 0, 0, 1'b1);
+        await_result(identity);
+        commit(identity);
+        if (inspect_fpscr_o[18:17] != 2'b11)
+            $fatal(1, "estimate FR/FI seeding failed");
+        checks += 2;
+    endtask
+
+    task automatic check_estimate_frfi(
+        input logic [5:0] primary, input logic [9:0] xo,
+        input logic [4:0] source, input logic expected_write,
+        input logic [4:0] cause_physical_bit, input logic [7:0] generation
+    );
+        completion_tag_t identity;
+        identity = tag(3'd2, generation);
+        send_issue(fp_insn(primary, 28, 0, source, xo), identity, 0, 0, 1'b1);
+        await_result(identity);
+        if (result_o.exception != FPU_NO_EXCEPTION ||
+            result_o.fpr_write != expected_write ||
+            result_o.fpscr_value[18:17] != 2'b00 ||
+            !result_o.fpscr_value[cause_physical_bit])
+            $fatal(1, "estimate exceptional FR/FI primary=%0d xo=%0d source=%0d",
+                   primary, xo, source);
+        commit(identity);
+        if (inspect_fpscr_o[18:17] != 2'b00)
+            $fatal(1, "estimate FR/FI not cleared on commit");
+        checks += 2;
+    endtask
+
     task automatic load_single_fpr(
         input logic [4:0] register_index, input logic [31:0] bits,
         input logic [63:0] expected_bits, input logic [7:0] generation
@@ -891,6 +927,29 @@ module tb_ppc_fpu_shell;
             commit(convert_tag);
             checks += 4;
         end
+
+        load_fpr(25, 64'd0, 41);
+        load_fpr(26, 64'h7ff0000000000001, 42);
+        load_fpr(27, 64'hbff0000000000000, 43);
+        seed_frfi(44);
+        check_estimate_frfi(6'd59, 10'd24, 5'd25, 1'b1, 26, 46);
+        send_issue(fp_insn(63, 5'd27, 0, 0, 38), tag(3, 47), 0, 0, 1'b1);
+        await_result(tag(3, 47));
+        commit(tag(3, 47));
+        seed_frfi(48);
+        check_estimate_frfi(6'd59, 10'd24, 5'd25, 1'b0, 26, 50);
+        seed_frfi(51);
+        check_estimate_frfi(6'd63, 10'd26, 5'd25, 1'b0, 26, 53);
+        seed_frfi(54);
+        check_estimate_frfi(6'd59, 10'd24, 5'd26, 1'b1, 24, 56);
+        send_issue(fp_insn(63, 5'd24, 0, 0, 38), tag(4, 57), 0, 0, 1'b1);
+        await_result(tag(4, 57));
+        commit(tag(4, 57));
+        seed_frfi(58);
+        check_estimate_frfi(6'd59, 10'd24, 5'd26, 1'b0, 24, 60);
+        seed_frfi(61);
+        check_estimate_frfi(6'd63, 10'd26, 5'd27, 1'b0, 9, 63);
+        checks += 2;
 
         $display("PASS PPC FPU shell checks=%0d", checks);
         $finish;

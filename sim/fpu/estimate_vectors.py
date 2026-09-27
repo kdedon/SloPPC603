@@ -129,6 +129,16 @@ def generate(path, seed, count):
         for rn in range(4):
             for ni in (0, 1):
                 add(rows, FRSQRTE, value, RSQRT, rn, ni, oe=1, ue=1)
+    # Architecturally conforming FRSQRTE operands must be binary32 values.
+    for raw in (1, 2, 0x007fffff, 0x00800000, 0x3f000000,
+                0x3f800000, 0x40000000, 0x40400000, 0x7f7fffff):
+        for rn in range(4):
+            add(rows, FRSQRTE, widen_sp(raw), RSQRT, rn)
+    for _ in range(count):
+        exponent = rng.randrange(1, 255)
+        fraction = rng.getrandbits(23)
+        add(rows, FRSQRTE, widen_sp((exponent << 23) | fraction),
+            RSQRT, rng.randrange(4), rng.randrange(2))
     # Exercise every binary64 exponent, plus each subnormal leading-bit
     # position. This complements the cross-product of all lookup bins above.
     for exponent in range(1, 2047):
@@ -199,15 +209,18 @@ def expected_special(op, value):
 
 def check_one(row, output):
     op, value, rn, ni, ve, oe, ue, ze, mode = row
-    out_op, out_input, result, invalid, ox, ux, zx, xx, frfi_valid, \
+    out_op, out_input, result, invalid, ox, ux, zx, xx, fr, fi, frfi_valid, \
         fprf_valid, fprf, write_result, compare_valid, fpcc = output
     if (out_op, out_input) != (op, value):
         return 'trace op/input'
-    if frfi_valid or compare_valid or fpcc or xx:
-        return 'undefined FR/FI or unexpected compare/XX update'
+    if compare_valid or fpcc or xx:
+        return 'unexpected compare/XX update'
     special = expected_special(op, value)
     if special is not None:
         expected_result, expected_invalid, expected_zx = special
+        exceptional = bool(expected_invalid or expected_zx)
+        if frfi_valid != exceptional or (exceptional and (fr or fi)):
+            return 'exceptional FR/FI clear or ordinary FR/FI validity'
         suppress = bool((expected_invalid and ve) or (expected_zx and ze))
         if (invalid, ox, ux, zx, write_result, fprf_valid) != \
                 (expected_invalid, 0, 0, expected_zx, int(not suppress), int(not suppress)):
@@ -215,6 +228,8 @@ def check_one(row, output):
         if not suppress and result != expected_result:
             return 'special result'
     else:
+        if frfi_valid:
+            return 'finite estimate FR/FI validity'
         if invalid or zx or not write_result or not fprf_valid:
             return 'finite invalid/ZX/write'
         if op == FRSQRTE:
@@ -227,6 +242,9 @@ def check_one(row, output):
             if not Fraction(31 * 31, 32 * 32) <= squared_product <= \
                     Fraction(33 * 33, 32 * 32):
                 return 'rsqrt 1/32 relative bound'
+            source_sp = widen_sp(calculate('to32', value, 0)['bits']) == value
+            if source_sp and widen_sp(calculate('to32', result, 0)['bits']) != result:
+                return 'rsqrt SP-representable destination'
         else:
             sign = value >> 63
             if result >> 63 != sign:
@@ -298,7 +316,7 @@ def compare(vectors, results):
     for index, (a, b) in enumerate(zip(source, observed)):
         row = tuple(int(item, 16) for item in a.split())
         output = tuple(int(item, 16) for item in b.split())
-        if len(row) != 9 or len(output) != 14:
+        if len(row) != 9 or len(output) != 16:
             raise SystemExit(f'FAIL estimate trace format vector={index}')
         mismatch = check_one(row, output)
         if mismatch:

@@ -35,16 +35,6 @@ module ppc_fpu_arith (
     } special_t;
 
     typedef struct packed {
-        logic [63:0] bits;
-        logic [4:0] fprf;
-        logic ox;
-        logic ux;
-        logic xx;
-        logic fr;
-        logic fi;
-    } rounded_t;
-
-    typedef struct packed {
         logic [159:0] x;
         logic [159:0] y;
         logic signed [15:0] exp_x;
@@ -62,14 +52,40 @@ module ppc_fpu_arith (
         logic negate_final;
     } finite_sum_t;
 
-    typedef enum logic [2:0] {
-        IDLE, CALC, DIVIDE, PREP, ALIGN, ROUND, RESPONSE
+    typedef struct packed {
+        logic [159:0] magnitude;
+        logic signed [15:0] exponent;
+        logic sign;
+        logic negate_final;
+        logic tiny_before;
+    } round_work_t;
+
+    typedef struct packed {
+        logic [52:0] wide;
+        logic signed [15:0] exponent;
+        logic sign;
+        logic negate_final;
+        logic overflow;
+        logic ox;
+        logic ux;
+        logic xx;
+        logic fr;
+        logic fi;
+    } round_post_t;
+
+    typedef enum logic [3:0] {
+        IDLE, CALC, DIVIDE, PREP, ALIGN, NORM_HIGH, NORM_LOW,
+        TINY, ROUND, PACK, RESPONSE
     } state_t;
     state_t state_q;
     ppc_fpu_arith_req_t req_q;
     ppc_fpu_arith_rsp_t rsp_q;
     finite_prep_t prep_q;
     finite_sum_t sum_q;
+    finite_sum_t norm_high_q;
+    finite_sum_t norm_low_q;
+    round_work_t round_work_q;
+    round_post_t round_post_q;
     logic [52:0] div_remainder_q;
     logic [52:0] div_denominator_q;
     logic [53:0] div_denominator_x2_q;
@@ -185,82 +201,120 @@ module ppc_fpu_arith (
         return bits[63] ? 5'b01000 : 5'b00100;
     endfunction
 
-    function automatic rounded_t round_pack(
-        input logic [159:0] magnitude,
-        input logic signed [15:0] exponent_in,
-        input logic sign,
-        input logic single_result,
-        input logic [1:0] rn,
-        input logic ni,
-        input logic oe,
-        input logic ue
+    function automatic finite_sum_t normalize_high(input finite_sum_t value);
+        finite_sum_t out;
+        out = value;
+        if (out.magnitude != 0) begin
+            if (out.magnitude[159]) begin
+                out.magnitude = shift_right_jam(out.magnitude, 1);
+                out.exponent += 16'sd1;
+            end else begin
+                if (out.magnitude[158:31] == 128'd0) begin
+                    out.magnitude <<= 128;
+                    out.exponent -= 16'sd128;
+                end
+                if (out.magnitude[158:95] == 64'd0) begin
+                    out.magnitude <<= 64;
+                    out.exponent -= 16'sd64;
+                end
+                if (out.magnitude[158:127] == 32'd0) begin
+                    out.magnitude <<= 32;
+                    out.exponent -= 16'sd32;
+                end
+                if (out.magnitude[158:143] == 16'd0) begin
+                    out.magnitude <<= 16;
+                    out.exponent -= 16'sd16;
+                end
+            end
+        end
+        return out;
+    endfunction
+
+    function automatic finite_sum_t normalize_low(input finite_sum_t value);
+        finite_sum_t out;
+        out = value;
+        if (out.magnitude != 0) begin
+            if (out.magnitude[158:151] == 8'd0) begin
+                out.magnitude <<= 8;
+                out.exponent -= 16'sd8;
+            end
+            if (out.magnitude[158:155] == 4'd0) begin
+                out.magnitude <<= 4;
+                out.exponent -= 16'sd4;
+            end
+            if (out.magnitude[158:157] == 2'd0) begin
+                out.magnitude <<= 2;
+                out.exponent -= 16'sd2;
+            end
+            if (!out.magnitude[158]) begin
+                out.magnitude <<= 1;
+                out.exponent -= 16'sd1;
+            end
+        end
+        return out;
+    endfunction
+
+    function automatic round_work_t prepare_tiny(
+        input finite_sum_t value, input logic single_result, input logic ue
     );
-        rounded_t out;
-        logic [159:0] work;
+        round_work_t out;
+        logic signed [15:0] min_exp;
+        logic signed [15:0] scale;
+        out = '0;
+        out.magnitude = value.magnitude;
+        out.exponent = value.exponent;
+        out.sign = value.sign;
+        out.negate_final = value.negate_final;
+        min_exp = single_result ? -16'sd126 : -16'sd1022;
+        scale = single_result ? 16'sd192 : 16'sd1536;
+        if (out.magnitude != 0) begin
+            out.tiny_before = out.exponent < min_exp;
+            if (out.tiny_before && ue)
+                out.exponent += scale;
+            else if (out.tiny_before) begin
+                out.magnitude = shift_right_jam(out.magnitude,
+                    int'(min_exp) - int'(out.exponent));
+                out.exponent = min_exp;
+            end
+        end
+        return out;
+    endfunction
+
+    function automatic round_post_t round_mantissa(
+        input round_work_t value, input logic single_result,
+        input logic [1:0] rn, input logic oe, input logic ue
+    );
+        round_post_t out;
         logic [52:0] kept;
-        logic [52:0] wide;
         logic guard_bit;
         logic sticky_bit;
         logic inexact;
         logic increment;
         logic carry_out;
-        logic tiny_before;
-        logic deliver_inf;
-        logic denorm_result;
-        logic signed [15:0] exponent;
-        logic signed [15:0] min_exp;
         logic signed [15:0] max_exp;
         logic signed [15:0] scale;
-        logic [10:0] exp_field;
-        logic [5:0] denorm_shift;
         out = '0;
-        denorm_shift = 6'd0;
-        work = magnitude;
-        exponent = exponent_in;
-        if (work == 0) begin
-            out.bits = {sign, 63'd0};
-            out.fprf = result_class(out.bits);
-            return out;
-        end
-        if (work[159]) begin
-            work = shift_right_jam(work, 1);
-            exponent = exponent + 16'sd1;
-        end else begin
-            if (work[158:31] == 128'd0) begin work <<= 128; exponent -= 16'sd128; end
-            if (work[158:95] == 64'd0) begin work <<= 64; exponent -= 16'sd64; end
-            if (work[158:127] == 32'd0) begin work <<= 32; exponent -= 16'sd32; end
-            if (work[158:143] == 16'd0) begin work <<= 16; exponent -= 16'sd16; end
-            if (work[158:151] == 8'd0) begin work <<= 8; exponent -= 16'sd8; end
-            if (work[158:155] == 4'd0) begin work <<= 4; exponent -= 16'sd4; end
-            if (work[158:157] == 2'd0) begin work <<= 2; exponent -= 16'sd2; end
-            if (!work[158]) begin work <<= 1; exponent -= 16'sd1; end
-        end
-        min_exp = single_result ? -16'sd126 : -16'sd1022;
+        out.exponent = value.exponent;
+        out.sign = value.sign;
+        out.negate_final = value.negate_final;
+        if (value.magnitude == 0) return out;
         max_exp = single_result ? 16'sd127 : 16'sd1023;
         scale = single_result ? 16'sd192 : 16'sd1536;
-        tiny_before = exponent < min_exp;
-        if (tiny_before && ue) begin
-            exponent = exponent + scale;
-            out.ux = 1'b1;
-        end else if (tiny_before) begin
-            work = shift_right_jam(work, int'(min_exp) - int'(exponent));
-            exponent = min_exp;
-        end
         if (single_result) begin
-            kept = {29'd0, work[158:135]};
-            guard_bit = work[134];
-            sticky_bit = |work[133:0];
+            kept = {29'd0, value.magnitude[158:135]};
+            guard_bit = value.magnitude[134];
+            sticky_bit = |value.magnitude[133:0];
         end else begin
-            kept = work[158:106];
-            guard_bit = work[105];
-            sticky_bit = |work[104:0];
+            kept = value.magnitude[158:106];
+            guard_bit = value.magnitude[105];
+            sticky_bit = |value.magnitude[104:0];
         end
         inexact = guard_bit | sticky_bit;
         case (rn)
             2'b00: increment = guard_bit & (sticky_bit | kept[0]);
             2'b01: increment = 1'b0;
-            2'b10: increment = !sign & inexact;
-            default: increment = sign & inexact;
+            2'b10: increment = !value.sign & inexact;
+            default: increment = value.sign & inexact;
         endcase
         out.fr = increment;
         out.fi = inexact;
@@ -270,66 +324,91 @@ module ppc_fpu_arith (
             kept[23:0] = kept[23:0] + {23'd0, increment};
             if (carry_out) begin
                 kept[23:0] = 24'h800000;
-                exponent = exponent + 16'sd1;
+                out.exponent += 16'sd1;
             end
+            out.wide = {kept[23:0], 29'd0};
         end else begin
             carry_out = increment && (&kept);
             kept = kept + {{52{1'b0}}, increment};
             if (carry_out) begin
                 kept = {1'b1, 52'd0};
-                exponent = exponent + 16'sd1;
+                out.exponent += 16'sd1;
             end
+            out.wide = kept;
         end
-        if (exponent > max_exp) begin
-            out.ox = 1'b1;
-            if (oe) begin
-                exponent = exponent - scale;
-            end else begin
-                out.fi = 1'b1;
-                out.xx = 1'b1;
-                deliver_inf = (rn == 2'b00) ||
-                    (rn == 2'b10 && !sign) || (rn == 2'b11 && sign);
-                if (deliver_inf) begin
-                    out.bits = sign ? NEG_INF : POS_INF;
-                end else if (single_result) begin
-                    out.bits = {sign, 11'd1150, {23{1'b1}}, 29'd0};
-                end else begin
-                    out.bits = {sign, 11'h7fe, {52{1'b1}}};
-                end
-                out.fprf = result_class(out.bits);
-                return out;
-            end
+        out.overflow = out.exponent > max_exp;
+        out.ox = out.overflow;
+        if (out.overflow && oe)
+            out.exponent -= scale;
+        else if (out.overflow) begin
+            out.fi = 1'b1;
+            out.xx = 1'b1;
         end
-        if (tiny_before && !ue && inexact) out.ux = 1'b1;
-        if (single_result) wide = {kept[23:0], 29'd0};
-        else wide = kept;
+        out.ux = (value.tiny_before && ue) ||
+            (value.tiny_before && !ue && inexact);
+        return out;
+    endfunction
+
+    function automatic ppc_fpu_arith_rsp_t finish_rounded(
+        input round_post_t value, input ppc_pkg::completion_tag_t tag,
+        input ppc_fpu_op_t op, input logic single_result,
+        input logic [1:0] rn, input logic ni, input logic oe
+    );
+        ppc_fpu_arith_rsp_t out;
+        logic signed [15:0] min_exp;
+        logic signed [15:0] exponent;
+        logic [52:0] wide;
+        logic [5:0] denorm_shift;
+        logic denorm_result;
+        logic deliver_inf;
+        out = '0;
+        out.tag = tag;
+        out.write_result = 1'b1;
+        out.frfi_valid = op != FP_FRES;
+        out.fprf_valid = 1'b1;
+        out.ox = value.ox;
+        out.ux = value.ux;
+        out.xx = (op == FP_FRES) ? 1'b0 : value.xx;
+        out.fr = value.fr;
+        out.fi = value.fi;
+        min_exp = single_result ? -16'sd126 : -16'sd1022;
+        exponent = value.exponent;
+        wide = value.wide;
+        denorm_shift = 6'd0;
         denorm_result = (exponent == min_exp) && !wide[52] && (wide != 0);
-        if (ni && denorm_result) begin
-            out.bits = {sign, 63'd0};
-            out.fprf = result_class(out.bits);
-            return out;
+        deliver_inf = (rn == 2'b00) ||
+            (rn == 2'b10 && !value.sign) ||
+            (rn == 2'b11 && value.sign);
+        if (value.overflow && !oe) begin
+            if (deliver_inf) out.result = value.sign ? NEG_INF : POS_INF;
+            else if (single_result)
+                out.result = {value.sign, 11'd1150, {23{1'b1}}, 29'd0};
+            else out.result = {value.sign, 11'h7fe, {52{1'b1}}};
+            out.fprf = result_class(out.result);
+        end else if (wide == 0 || (ni && denorm_result)) begin
+            out.result = {value.sign, 63'd0};
+            out.fprf = result_class(out.result);
+        end else if (!single_result && denorm_result) begin
+            out.result = {value.sign, 11'd0, wide[51:0]};
+            out.fprf = result_class(out.result);
+        end else begin
+            if (single_result && denorm_result) begin
+                denorm_shift = leading_zero53(wide);
+                wide <<= denorm_shift;
+                exponent -= 16'(denorm_shift);
+            end
+            out.result = {value.sign, 11'(exponent + 16'sd1023),
+                wide[51:0]};
+            if (single_result && denorm_result)
+                out.fprf = value.sign ? 5'b11000 : 5'b10100;
+            else out.fprf = result_class(out.result);
         end
-        if (wide == 0) begin
-            out.bits = {sign, 63'd0};
-            out.fprf = result_class(out.bits);
-            return out;
+        if (value.negate_final) begin
+            out.result[63] = ~out.result[63];
+            if (out.fprf == 5'b10100) out.fprf = 5'b11000;
+            else if (out.fprf == 5'b11000) out.fprf = 5'b10100;
+            else out.fprf = result_class(out.result);
         end
-        if (!single_result && denorm_result) begin
-            out.bits = {sign, 11'd0, wide[51:0]};
-            out.fprf = result_class(out.bits);
-            return out;
-        end
-        if (single_result && denorm_result) begin
-            denorm_shift = leading_zero53(wide);
-            wide = wide << denorm_shift;
-            exponent = exponent - 16'(denorm_shift);
-        end
-        exp_field = 11'(exponent + 16'sd1023);
-        out.bits = {sign, exp_field, wide[51:0]};
-        if (single_result && denorm_result)
-            out.fprf = sign ? 5'b11000 : 5'b10100;
-        else
-            out.fprf = result_class(out.bits);
         return out;
     endfunction
 
@@ -535,47 +614,14 @@ module ppc_fpu_arith (
         return out;
     endfunction
 
-    function automatic ppc_fpu_arith_rsp_t finish_finite(
-        input finite_sum_t sum, input ppc_pkg::completion_tag_t tag,
-        input ppc_fpu_op_t op, input logic single_result,
-        input logic [1:0] rn, input logic ni, input logic oe, input logic ue
-    );
-        ppc_fpu_arith_rsp_t out;
-        rounded_t rounded;
-        rounded = round_pack(sum.magnitude, sum.exponent, sum.sign,
-            single_result || op == FP_FRSP || op == FP_FRES,
-            rn, ni, oe, ue);
-        out = '0;
-        out.tag = tag;
-        out.write_result = 1'b1;
-        out.frfi_valid = op != FP_FRES;
-        out.fprf_valid = 1'b1;
-        out.result = rounded.bits;
-        out.ox = rounded.ox;
-        out.ux = rounded.ux;
-        out.xx = (op == FP_FRES) ? 1'b0 : rounded.xx;
-        out.fr = rounded.fr;
-        out.fi = rounded.fi;
-        out.fprf = rounded.fprf;
-        if (sum.negate_final) begin
-            out.result[63] = ~out.result[63];
-            if (rounded.fprf == 5'b10100) out.fprf = 5'b11000;
-            else if (rounded.fprf == 5'b11000) out.fprf = 5'b10100;
-            else out.fprf = result_class(out.result);
-        end
-        return out;
-    endfunction
-
     function automatic ppc_fpu_arith_rsp_t calculate(input ppc_pkg::completion_tag_t tag, input ppc_fpu_op_t op,
         input logic [63:0] a_bits, input logic [63:0] b_bits,
         input logic [63:0] c_bits, input logic [1:0] rn,
-        input logic ni, input logic ve, input logic oe,
-        input logic ue, input logic ze);
+        input logic ve, input logic ze);
         ppc_fpu_arith_rsp_t out;
         special_t a;
         operand_t b;
         special_t c;
-        rounded_t rounded;
         logic use_a;
         logic use_b;
         logic use_c;
@@ -685,7 +731,7 @@ module ppc_fpu_arith (
             out.write_result = !(ve && (|out.invalid));
             out.fprf_valid = out.write_result;
             if (op == FP_FRES || op == FP_FRSQRTE)
-                out.frfi_valid = 1'b0;
+                out.frfi_valid = |out.invalid;
             return out;
         end
         if (op == FP_FRSP) begin
@@ -746,7 +792,7 @@ module ppc_fpu_arith (
                 out.write_result = !ze;
                 out.fprf_valid = out.write_result;
                 out.fprf = result_class(out.result);
-                out.frfi_valid = 1'b0;
+                out.frfi_valid = 1'b1;
                 return out;
             end
             if (b.inf) begin
@@ -758,17 +804,15 @@ module ppc_fpu_arith (
         end
         if (op == FP_FRSQRTE) begin
             estimate_sig = rsqrt_significand(b.exp[0], b.sig[51:48]);
+            // The 603e estimate is architecturally single-precision exact.
+            estimate_sig[28:0] = 29'd0;
             estimate_exp = -(b.exp >>> 1) - 16'sd1;
-            rounded = round_pack({1'b0, estimate_sig, 106'd0},
-                estimate_exp, 1'b0, 1'b0, rn,
-                ni, oe, ue);
-            out.result = rounded.bits;
-            out.fprf = rounded.fprf;
-            out.ox = rounded.ox;
-            out.ux = rounded.ux;
-            out.xx = rounded.xx;
-            out.fr = rounded.fr;
-            out.fi = rounded.fi;
+            // Every normalized table estimate fits binary64 exactly; its
+            // exponent stays in [-512, 536] for finite binary64 operands.
+            out.result = {1'b0, 11'(estimate_exp + 16'sd1022 +
+                $signed({15'd0, estimate_sig[52]})),
+                estimate_sig[51:0]};
+            out.fprf = 5'b00100;
             out.frfi_valid = 1'b0;
             return out;
         end
@@ -860,6 +904,10 @@ module ppc_fpu_arith (
             rsp_q <= '0;
             prep_q <= '0;
             sum_q <= '0;
+            norm_high_q <= '0;
+            norm_low_q <= '0;
+            round_work_q <= '0;
+            round_post_q <= '0;
             div_remainder_q <= '0;
             div_denominator_q <= '0;
             div_denominator_x2_q <= '0;
@@ -896,8 +944,7 @@ module ppc_fpu_arith (
                 end
                 CALC: begin
                     rsp_q <= calculate(req_q.tag, req_q.op, req_q.a, req_q.b,
-                        req_q.c, req_q.rn, req_q.ni, req_q.ve,
-                        req_q.oe, req_q.ue, req_q.ze);
+                        req_q.c, req_q.rn, req_q.ve, req_q.ze);
                     state_q <= RESPONSE;
                 end
                 PREP: begin
@@ -906,12 +953,32 @@ module ppc_fpu_arith (
                 end
                 ALIGN: begin
                     sum_q <= align_finite(prep_q, req_q.rn);
+                    state_q <= NORM_HIGH;
+                end
+                NORM_HIGH: begin
+                    norm_high_q <= normalize_high(sum_q);
+                    state_q <= NORM_LOW;
+                end
+                NORM_LOW: begin
+                    norm_low_q <= normalize_low(norm_high_q);
+                    state_q <= TINY;
+                end
+                TINY: begin
+                    round_work_q <= prepare_tiny(norm_low_q,
+                        req_q.single_result || req_q.op == FP_FRSP ||
+                        req_q.op == FP_FRES, req_q.ue);
                     state_q <= ROUND;
                 end
                 ROUND: begin
-                    rsp_q <= finish_finite(sum_q, req_q.tag, req_q.op,
-                        req_q.single_result, req_q.rn, req_q.ni,
-                        req_q.oe, req_q.ue);
+                    round_post_q <= round_mantissa(round_work_q,
+                        req_q.single_result || req_q.op == FP_FRSP ||
+                        req_q.op == FP_FRES, req_q.rn, req_q.oe, req_q.ue);
+                    state_q <= PACK;
+                end
+                PACK: begin
+                    rsp_q <= finish_rounded(round_post_q, req_q.tag, req_q.op,
+                        req_q.single_result || req_q.op == FP_FRSP ||
+                        req_q.op == FP_FRES, req_q.rn, req_q.ni, req_q.oe);
                     state_q <= RESPONSE;
                 end
                 DIVIDE: begin
@@ -922,7 +989,7 @@ module ppc_fpu_arith (
                         sum_q <= prepare_division_sum(req_q.op,
                             req_q.single_result, req_q.a, req_q.b,
                             div_quotient_next, div_remainder_next != 53'd0);
-                        state_q <= ROUND;
+                        state_q <= NORM_HIGH;
                     end
                 end
                 RESPONSE: if (rsp_ready_i) state_q <= IDLE;

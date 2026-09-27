@@ -1,6 +1,6 @@
 # FPU reuse assessment and implementation plan
 
-Reviewed 2026-09-22. Scope: [MiSTer-devel/N64_MiSTer](https://github.com/MiSTer-devel/N64_MiSTer/tree/eb5554af01bb97bdf3d295aed02a989ac10ccee4) and [Grabulosaure/ss](https://github.com/Grabulosaure/ss/tree/70203e26e981069710e934600fd55b9d866a9e5b) as FPU donors for this CPU. Each donor was investigated independently; the decisive source paths were then reviewed together to reach the conclusions below. This is an investigation and proposed plan; it does not implement an FPU or change the current integer MVP scope.
+Reviewed 2026-09-22. Scope: [MiSTer-devel/N64_MiSTer](https://github.com/MiSTer-devel/N64_MiSTer/tree/eb5554af01bb97bdf3d295aed02a989ac10ccee4) and [Grabulosaure/ss](https://github.com/Grabulosaure/ss/tree/70203e26e981069710e934600fd55b9d866a9e5b) as FPU donors for this CPU. Each donor was investigated independently; the decisive source paths were then reviewed together to reach the conclusions below. The original investigation is retained below; the implementation status records subsequent standalone work. The integer MVP scope is unchanged.
 
 ## Implementation status — 2026-09-27
 
@@ -21,12 +21,22 @@ The unchanged F1 experiment remains a benchmark for the new standalone unit. The
 process owns CPU integration. No architectural completion or score change is
 claimed by this documentation milestone.
 
-F2–F4 standalone implementation is in progress in `ppc_fpu.sv` and
-`ppc_fpu_arith.sv`. The serialized shell provides FPR/FPSCR ownership, tagged
-commit/abort, and side-effect-free memory preparation for later LSU attachment.
-The new arithmetic engine is independent of the failed donor candidate.
-Production numerical, architectural and timing acceptance remain separate
-gates; the initial implementation and clean lint do not close them.
+F2–F4 standalone instruction semantics are implemented in `ppc_fpu.sv` and
+`ppc_fpu_arith.sv`: all implemented 603e FP classes, FPR/FPSCR ownership,
+tagged commit/abort, and side-effect-free memory preparation for later LSU
+attachment. The new arithmetic engine is independent of the failed donor.
+[Production verification](../sim/fpu/PRODUCTION.md) records 200,000 raw
+arithmetic packets, 11,410 estimate packets and 752 shell checks, all passing,
+including the explicitly chosen NI status policy. These are standalone tests;
+the separate core integrator owns CPU-level acceptance.
+
+F5 frequency acceptance remains open. The `fc33a75` full-unit measurement
+reports 11,601 estimated ALMs, 14,305 combinational ALUTs, 3,462 registers,
+no block RAM and four DSP blocks at 12.4 MHz post-map, below 50/66 MHz.
+Further registered arithmetic stages are being measured. The serialized lane
+does not implement the 603e's four rename slots or exact pipeline throughput.
+Source conflicts and silicon-specific NI behavior remain explicit in the
+contract; passing the selected policy tests does not resolve those conflicts.
 
 ## Decision
 
@@ -170,6 +180,11 @@ Run prior integer regressions as well as FP integration tests. Measure isolated 
 
 **Exit:** reviewed numeric/architectural coverage, reproducible mixed-language or SV build, clean integer regression, and separately recorded functional and timing acceptance. No donor game/OS success or whole-system fit substitutes for these gates.
 
-## Recommended next implementation task
+## Next acceptance work
 
-Complete F0 and a tightly bounded F1 feasibility experiment before scheduling a wholesale FPU port. The concrete deliverable is a raw-bit arithmetic harness, a semantics-gap table, a source/provenance manifest and an area/latency comparison of the implementations below. SS reuse is authorized; N64 contributes valuable resource-sharing techniques without requiring adoption of its MIPS control or numeric policies. The largest unavoidable new blocks are the PPC architectural shell and fused arithmetic.
+Finish the standalone timing measurements and record the final pipeline schedule.
+The separate integration process must connect the tagged interface to completion,
+CR/MSR, FPR dependencies and the atomic LSU protocol, then run CPU-level FP and
+integer regressions. Four rename slots and 603e pipeline throughput require
+additional integration work. Preserve the failed F1 candidate as reproducible
+comparison evidence; production uses the independently verified SV backend.

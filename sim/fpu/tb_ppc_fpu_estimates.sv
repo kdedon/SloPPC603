@@ -74,9 +74,10 @@ module tb_ppc_fpu_estimates;
             end
             if (rsp_o.tag !== req_i.tag)
                 $fatal(1, "estimate response tag %0d", count);
-            $fdisplay(output_file, "%h %h %h %h %h %h %h %h %h %h %h %h %h %h",
+            $fdisplay(output_file, "%h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h",
                       op_bits, input_bits, rsp_o.result, rsp_o.invalid,
-                      rsp_o.ox, rsp_o.ux, rsp_o.zx, rsp_o.xx, rsp_o.frfi_valid,
+                      rsp_o.ox, rsp_o.ux, rsp_o.zx, rsp_o.xx,
+                      rsp_o.fr, rsp_o.fi, rsp_o.frfi_valid,
                       rsp_o.fprf_valid, rsp_o.fprf, rsp_o.write_result,
                       rsp_o.compare_valid, rsp_o.fpcc);
             held = rsp_o;
