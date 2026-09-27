@@ -1503,6 +1503,7 @@ module ppc_fpu_arith #(
     logic signed [15:0] add_min_exponent;
     logic signed [15:0] add_scale;
     logic signed [15:0] add_normal_exponent;
+    logic signed [15:0] add_exponent_plus_one;
     logic [7:0] add_normal_left_shift;
     logic add_tiny_before;
     ppc_fpu_arith_rsp_t round_response;
@@ -1622,6 +1623,7 @@ module ppc_fpu_arith #(
         add_min_exponent = '0;
         add_scale = '0;
         add_normal_exponent = '0;
+        add_exponent_plus_one = '0;
         add_normal_left_shift = '0;
         add_tiny_before = 1'b0;
         add_result = '0;
@@ -1649,11 +1651,11 @@ module ppc_fpu_arith #(
             add_normal_left_shift =
                 add_result.finite_value.magnitude[159] ? 8'd0 :
                 (add_result.leading_zero - 8'd1);
-            add_normal_exponent =
-                add_result.finite_value.magnitude[159] ?
-                (aligned_q.plan.exponent + 16'sd1) :
-                (aligned_q.plan.exponent -
-                    $signed({8'd0, add_normal_left_shift}));
+            // LZ=0 for a carry into bit 159, so one expression handles
+            // both right-one and left-normalized exponent cases.
+            add_exponent_plus_one = aligned_q.plan.exponent + 16'sd1;
+            add_normal_exponent = add_exponent_plus_one -
+                $signed({8'd0, add_result.leading_zero});
             add_tiny_before =
                 add_result.finite_value.magnitude != 160'd0 &&
                 (add_result.finite_value.magnitude[159] ?
