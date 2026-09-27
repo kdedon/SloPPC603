@@ -159,6 +159,7 @@ module ppc_fpu_arith (
     } state_t;
     state_t state_q;
     ppc_fpu_arith_req_t req_q;
+    logic round_single_q;
     ppc_fpu_arith_rsp_t rsp_q;
     operand_t conv_source_q;
     conv_parts_t conv_parts_q;
@@ -1154,6 +1155,7 @@ module ppc_fpu_arith (
         if (!rst_ni || flush_i) begin
             state_q <= IDLE;
             req_q <= '0;
+            round_single_q <= 1'b0;
             rsp_q <= '0;
             conv_source_q <= '0;
             conv_parts_q <= '0;
@@ -1187,6 +1189,8 @@ module ppc_fpu_arith (
             case (state_q)
                 IDLE: if (req_valid_i) begin
                     req_q <= req_i;
+                    round_single_q <= req_i.single_result ||
+                        req_i.op == FP_FRSP || req_i.op == FP_FRES;
                     if (launch_divide) begin
                         div_a_sig_q <= finite_sig(req_i.a[62:0]);
                         div_b_sig_q <= finite_sig(req_i.b[62:0]);
@@ -1305,20 +1309,17 @@ module ppc_fpu_arith (
                 end
                 TINY: begin
                     round_work_q <= prepare_tiny(norm_low_q,
-                        req_q.single_result || req_q.op == FP_FRSP ||
-                        req_q.op == FP_FRES, req_q.ue);
+                        round_single_q, req_q.ue);
                     state_q <= ROUND;
                 end
                 ROUND: begin
                     round_post_q <= round_mantissa(round_work_q,
-                        req_q.single_result || req_q.op == FP_FRSP ||
-                        req_q.op == FP_FRES, req_q.rn, req_q.oe, req_q.ue);
+                        round_single_q, req_q.rn, req_q.oe, req_q.ue);
                     state_q <= PACK;
                 end
                 PACK: begin
                     rsp_q <= finish_rounded(round_post_q, req_q.tag, req_q.op,
-                        req_q.single_result || req_q.op == FP_FRSP ||
-                        req_q.op == FP_FRES, req_q.rn, req_q.ni, req_q.oe);
+                        round_single_q, req_q.rn, req_q.ni, req_q.oe);
                     state_q <= RESPONSE;
                 end
                 DIVIDE: begin
