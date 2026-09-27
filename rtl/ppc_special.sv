@@ -721,13 +721,14 @@ module ppc_special #(
      (ENABLE_LIVE_CONTEXT && exception_state_load_valid &&
       (uop_q.special_op == SPECIAL_MTMSR)));
 
-  // Lane step classes. An accepted interrupt boundary outranks dispatch;
-  // otherwise a held operation either cancels or runs its state.
+  // Lane step classes. The core never offers an interrupt boundary and a
+  // dispatch together, so dispatch capture does not wait on interrupt
+  // admission. A held operation either cancels or runs its state.
   logic interrupt_accept, dispatch_fire, step_run, hold_commit;
   assign interrupt_accept = ENABLE_EXTERNAL_INTERRUPTS && interrupt_valid_i &&
                             dispatch_ready_o;
-  assign dispatch_fire = dispatch_valid_i && dispatch_ready_o && !interrupt_accept;
-  assign step_run = !cancel_i && !interrupt_accept && !dispatch_fire;
+  assign dispatch_fire = dispatch_valid_i && dispatch_ready_o;
+  assign step_run = !cancel_i && (state_q != S_IDLE);
   assign hold_commit = step_run && (state_q == S_HOLD) && commit_match;
   logic dispatch_fenced, context_install, exception_result_accept;
   assign dispatch_fenced = dispatch_context || dispatch_bat || dispatch_segment ||
@@ -1145,7 +1146,7 @@ module ppc_special #(
         tlb_fill_local_error_q <= dispatch_tlb_fill && tlb_fill_seed_invalid;
         mmu_error_q <= 1'b0;
         mmu_response_pending_q <= 1'b0;
-      end else if (!interrupt_accept) begin
+      end else begin
         case (state_q)
           S_MMU_OFFER: if (mmu_req_ready) mmu_response_pending_q <= 1'b1;
           S_MMU_WAIT: begin
@@ -1195,6 +1196,9 @@ module ppc_special #(
       if ((state_q == S_MMU_ACK) || (state_q == S_MMU_REDIRECT))
         assert (fence_q && !cancel_i)
           else $error("committed MMU register transaction became cancellable");
+      if (dispatch_fire)
+        assert (!(ENABLE_EXTERNAL_INTERRUPTS && interrupt_valid_i))
+          else $error("interrupt boundary offered with a dispatch");
       if (commit_i && (state_q == S_HOLD))
         assert (commit_match)
           else $error("serialized special retirement identity mismatch");
