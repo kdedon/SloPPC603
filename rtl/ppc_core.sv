@@ -406,8 +406,25 @@ module ppc_core #(
     .dispatch_valid_i(dispatch && normal_uop),
     .dispatch_ready_o(rs_ready), .entry_i(rs_entry),
     .wake_valid_i(wake_valid), .wake_i(wake),
+    .iu_done_i(iu_result_valid && iu_result_ready),
+    .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
+  // synthesis translate_off
+  always @(posedge clk_i) begin
+    if (rst_ni)
+      assert (!(special_result_valid && iu_result_valid))
+        else $error("special and IU results offered together");
+  end
+  // Only IU results produce operands a held RS entry waits for, so every wait
+  // takes the back-to-back bypass.
+  always @(posedge clk_i) begin
+    if (rst_ni && station.occupied && !rs_cancel)
+      assert ((station.entry.a.ready || station.bypass_a) &&
+              (station.entry.b.ready || station.bypass_b))
+        else $error("RS operand waits on a producer outside the IU");
+  end
+  // synthesis translate_on
   ppc_iu #(.DIV_LATENCY(DIV_LATENCY)) iu (
     .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid), .issue_ready_o(issue_ready),
     .issue_i(issue), .result_valid_o(iu_result_valid),
@@ -492,7 +509,9 @@ module ppc_core #(
   assign result_valid = special_result_valid || iu_result_valid;
   assign result = special_result_valid ? special_result : iu_result;
   assign special_result_ready = result_ready && special_result_valid;
-  assign iu_result_ready = result_ready && !special_result_valid;
+  // A special op dispatches only into an idle IU and blocks dispatch until
+  // it finishes, so the two result sources are never valid together.
+  assign iu_result_ready = result_ready;
   // Classify held identities without depending on cancel-masked valid signals.
   always_comb begin
     rs_cancel = 1'b0;
@@ -632,9 +651,10 @@ module ppc_core #(
       selected_redirect_valid = ENABLE_TEST_REDIRECT && redirect_valid_i && !halted_o &&
         !special_store_irrevocable && !special_exception_irrevocable &&
         (redirect_target_i[1:0] == 2'b00);
-      selected_redirect_all = redirect_all_i;
-      selected_redirect_keep = redirect_keep_pivot_i;
-      selected_redirect_pivot = redirect_pivot_i;
+      // A disabled test port must not reach recovery logic.
+      selected_redirect_all = !ENABLE_TEST_REDIRECT || redirect_all_i;
+      selected_redirect_keep = ENABLE_TEST_REDIRECT && redirect_keep_pivot_i;
+      selected_redirect_pivot = ENABLE_TEST_REDIRECT ? redirect_pivot_i : '0;
       selected_redirect_target = redirect_target_i;
     end
   end

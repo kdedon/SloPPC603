@@ -1,5 +1,32 @@
 # Current cached-physical synthesis baseline
 
+## 2026-09-27 refit: RS result bypass (AUD-21)
+
+Recorded: `./quartus/integrated/build.sh --docker`, commit `20424d7`
+(RTL; the baseline column is `7b93e91`), 2026-09-27. Quartus 17.0.2, seed 1.
+Path slack from `quartus_sta` `report_timing` on the same fits.
+
+| Result | `7b93e91` | This fit |
+| --- | ---: | ---: |
+| Fmax, slow 100 C (reg-to-reg) | 53.67 MHz | 54.10 MHz |
+| Setup slack, slow 100 C / -40 C | +0.983 / +1.269 ns | +0.771 / +0.992 ns |
+| Hold slack, slow 100 C / -40 C | +0.247 / +0.041 ns | +0.325 / +0.031 ns |
+| Worst setup path into IU operand/`held` flops, slow 100 C | +3.343 ns | +8.075 ns |
+| Worst setup path into the RS, slow 100 C | +1.819 ns | +1.515 ns |
+| ALMs / registers | 5,044 / 4,430 | 4,950 / 4,365 |
+
+Worst setup at both corners is still the half-cycle `dbb_n_o` release
+output, which the Fmax figure excludes; the worst core reg-to-reg path is IQ
+head → rename → RS capture. The ALU → IU-operand loop no longer passes
+completion qualification or a wake compare. Fast corners pass. An intermediate
+fit with only the bypass showed hold −0.180 ns from the test-only
+`redirect_all_i` input into completion; the disabled test port is now constant.
+
+Recorded: `make -C toolchain -j2 rtl-all`, commits `7b93e91` and
+`20424d7`, 2026-09-27. All 24 profiles pass with identical retirement
+and cycle counts before and after (for example BE smoke 1,515 retirements
+in 9,083 cycles; table fault 73,465 in 461,709), so CPI is unchanged.
+
 ## 2026-09-27 current refit (after AUD-50/AUD-33)
 
 Recorded: `./quartus/integrated/build.sh --docker`, merge of the special-lane

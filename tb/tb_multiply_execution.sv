@@ -43,6 +43,8 @@ module tb_multiply_execution;
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
     .entry_i(dispatch_entry),
     .wake_valid_i(wake_valid), .wake_i(wake),
+    .iu_done_i(result_valid && result_ready),
+    .iu_producer_i(result.producer), .iu_value_i(result.value),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
 
@@ -113,6 +115,10 @@ module tb_multiply_execution;
     wake.value = source_a;
     wake_valid = 1'b1;
     #1;
+    require(!issue_valid, "held wake issued before capture");
+    @(posedge clk);
+    #1;
+    wake_valid = 1'b0;
     require(issue_valid && issue.ctrl.op == ALU_MULLW &&
             issue.ctrl.producer == dispatch_producer &&
             issue.a == source_a && issue.b == source_b &&

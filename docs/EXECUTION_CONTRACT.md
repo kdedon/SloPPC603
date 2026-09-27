@@ -9,7 +9,7 @@ Status: implemented foundation for the current 15 instruction forms (the origina
 Keep the public core fetch/retirement interfaces, five rename slots, five completion entries, six IQ entries and width-one mode. Replace the combinational dispatch-to-completion path with:
 
 1. Atomic dispatch allocates an **unfinished** completion entry and an unready GPR rename slot, and captures the operation plus source operands in a one-entry IU reservation station.
-2. A ready reservation station issues to a registered IU input stage. Unready sources hold producer identities and can wake from an accepted result. Backpressure preserves both operation and operands.
+2. A ready reservation station issues to a registered IU input stage. Unready sources hold producer identities and can wake from an accepted result. A source whose producer will occupy the IU is marked at capture and takes that IU result as it is accepted, so a dependent op issues in its producer's result cycle; any other wake is captured and issues one cycle later. Backpressure preserves both operation and operands.
 3. The IU computes from held inputs during the following cycle. Its tagged result remains valid and stable until consumed. It can accept a replacement operation at the edge consuming the previous result.
 4. Completion validates result ownership, stores the result and marks the entry finished. Only an accepted result updates rename storage or wakes operands.
 5. Only a finished head entry can retire. Retirement updates architectural GPR state and releases its rename slot. A younger result finishing first cannot make architectural progress past an unfinished head.

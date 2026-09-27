@@ -38,6 +38,8 @@ module tb_record_execution;
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
     .entry_i(dispatch_entry),
     .wake_valid_i(wake_valid), .wake_i(wake),
+    .iu_done_i(result_valid && result_ready),
+    .iu_producer_i(result.producer), .iu_value_i(result.value),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
   ppc_iu iu (
@@ -86,6 +88,9 @@ module tb_record_execution;
     wake.value = value;
     wake_valid = 1;
     #1;
+    require(!issue_valid, "held wake issued before capture");
+    @(posedge clk); #1;
+    wake_valid = 0;
     require(issue_valid && issue.ctrl.op == ALU_OR && issue.a == value && issue.b == 0 &&
             issue.ctrl.producer == producer && issue.ctrl.so_in == captured_so && issue.ctrl.write_cr_field == rc,
             "RS lost held operation/SO/record metadata at wake");

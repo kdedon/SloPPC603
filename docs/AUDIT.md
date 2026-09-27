@@ -57,7 +57,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 
 | ID | Sev | Cat | Where | Problem | Fix | Status |
 |---|---|---|---|---|---|---|
-| AUD-21 | M | E | `rtl/ppc_dispatch.sv:31-55` | RS wake compare feeds ALU operands and `dispatch_ready`. | Snoop-capture wake; issue next cycle. | deferred: off the critical path after AUD-01; issuing next cycle would add a cycle to every dependent ALU op |
+| AUD-21 | M | E | `rtl/ppc_dispatch.sv:31-55` | RS wake compare feeds ALU operands and `dispatch_ready`. | Snoop-capture wake; issue next cycle. | fixed (IU result bypassed by a select registered at capture; dependent ops still issue back to back, CPI unchanged; IU-operand path slack +3.3 → +8.1 ns) |
 | AUD-22 | M | E | `rtl/ppc_fetch.sv:29-44`, `rtl/ppc_fifo.sv:21` | Fetch outputs carry the recovery cone; `rsp_ready_o` reduces to `pending`; `!redirect_i` in `packet_valid_o` is redundant. | Simplify as stated. | fixed |
 | AUD-23 | M | K | `rtl/ppc_core.sv:250-269`, `rtl/ppc_decode.sv:536-563`, `rtl/ppc_special.sv` | Privileged-SPR list duplicated in three modules; privilege is SPR bit 4. | Use `spr[4]`; SPR numbers once in `ppc_pkg`. | fixed (privilege = SPR bit 4; SPR numbers in ppc_pkg) |
 | AUD-24 | L | C | `rtl/ppc_fetch.sv:86-94` | Discarding a response under `stop_i` still advances the PC; safe only by an unstated invariant. PLAUSIBLE. | Hold PC or assert the invariant. | fixed (sim assertion) |
