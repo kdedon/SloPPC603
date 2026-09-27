@@ -60,11 +60,11 @@ package ppc_pkg;
     FETCH_ISI_GUARDED = 3'd2,
     FETCH_PAGE_MISS = 3'd3
   } fetch_fault_t;
+  // The core holds the page-miss context beside the IQ, not per entry.
   typedef struct packed {
     logic [31:0] pc;
     logic [31:0] insn;
     fetch_fault_t fault;
-    page_miss_t page_miss;
   } fetch_packet_t;
 
   // MMU request kinds

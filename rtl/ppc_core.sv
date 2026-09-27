@@ -111,6 +111,10 @@ module ppc_core #(
 );
   import ppc_pkg::*;
   fetch_packet_t fetched, iq_head;
+  localparam int IQ_COUNT_WIDTH = $clog2(IQ_DEPTH + 1);
+  page_miss_t iq_miss_q, head_page_miss;
+  logic iq_miss_valid_q, iq_push_miss, iq_pop_miss;
+  logic [IQ_COUNT_WIDTH-1:0] iq_miss_count_q, iq_miss_count_left;
   uop_t uop, dispatch_uop;
   retire_packet_t allocation;
   completion_tag_t alloc_producer, retire_producer;
@@ -200,7 +204,6 @@ module ppc_core #(
     .req_addr_o(imem_req_addr_o), .rsp_valid_i(imem_rsp_valid_i),
     .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i),
     .rsp_fault_i(imem_rsp_fault_i),
-    .rsp_page_miss_i(imem_rsp_page_miss_i),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready), .packet_o(fetched)
   );
   ppc_fifo #(.WIDTH($bits(fetch_packet_t)), .DEPTH(IQ_DEPTH)) iq (
@@ -209,6 +212,27 @@ module ppc_core #(
     .push_data_i(fetched), .pop_valid_o(iq_valid), .pop_ready_i(iq_ready),
     .pop_data_o(iq_head)
   );
+  // Page-miss context of the oldest IQ page-miss entry, captured only when no
+  // other page-miss entry is queued. A younger one never dispatches: the older
+  // fault either redirects, which clears the IQ, or halts.
+  assign iq_push_miss = fetch_valid && fetch_ready && (fetched.fault == FETCH_PAGE_MISS);
+  assign iq_pop_miss = iq_valid && iq_ready && (iq_head.fault == FETCH_PAGE_MISS);
+  assign iq_miss_count_left = iq_miss_count_q - IQ_COUNT_WIDTH'(iq_pop_miss);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted) begin
+      iq_miss_count_q <= '0;
+      iq_miss_valid_q <= 1'b0;
+    end else begin
+      iq_miss_count_q <= iq_miss_count_left + IQ_COUNT_WIDTH'(iq_push_miss);
+      if (iq_pop_miss) iq_miss_valid_q <= 1'b0;
+      if (iq_push_miss && (iq_miss_count_left == '0)) iq_miss_valid_q <= 1'b1;
+    end
+  end
+  always_ff @(posedge clk_i) begin
+    if (iq_push_miss && (iq_miss_count_left == '0)) iq_miss_q <= imem_rsp_page_miss_i;
+  end
+  assign head_page_miss = (ENABLE_PAGE_MISS_RESULTS && iq_miss_valid_q &&
+    (iq_head.fault == FETCH_PAGE_MISS)) ? iq_miss_q : '0;
   ppc_decode #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
@@ -345,7 +369,7 @@ module ppc_core #(
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
     .producer_i(alloc_producer), .pc_i(iq_head.pc),
-    .dispatch_page_miss_i(iq_head.page_miss),
+    .dispatch_page_miss_i(head_page_miss),
     .a_i(operand_a.value), .b_i(operand_b.value), .c_i(arch_c),
     .cr_i(cr), .xer_flags_i(xer[XER_SO_BIT:XER_CA_BIT]),
     .xer_byte_count_i(xer[XER_BYTE_COUNT_WIDTH-1:0]), .so_i(xer[XER_SO_BIT]),
@@ -459,6 +483,10 @@ module ppc_core #(
       assert (forwarded_ea_low == dispatch_ea_low)
         else $error("committed and forwarded memory EA low bits disagree");
     end
+    if (rst_ni && ENABLE_PAGE_MISS_RESULTS && dispatch &&
+        (iq_head.fault == FETCH_PAGE_MISS))
+      assert (iq_miss_valid_q)
+        else $error("dispatched fetch page miss without its captured context");
   end
   // synthesis translate_on
   // Completion masks every write permission of a diagnostic allocation.
@@ -468,8 +496,7 @@ module ppc_core #(
     allocation.insn = iq_head.insn;
     allocation.illegal = dispatch_uop.illegal;
     allocation.fetch_fault = iq_head.fault;
-    allocation.page_miss = (ENABLE_PAGE_MISS_RESULTS &&
-      iq_head.fault == FETCH_PAGE_MISS) ? iq_head.page_miss : '0;
+    allocation.page_miss = head_page_miss;
     allocation.alignment_exception =
       dispatch_uop.special_op == SPECIAL_ALIGNMENT;
     allocation.gpr_write = dispatch_uop.gpr_write;

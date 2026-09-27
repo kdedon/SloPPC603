@@ -26,7 +26,7 @@ module tb_fetch_recovery;
     .clk_i(clk), .rst_ni(rst_n), .stop_i(stop),
     .redirect_i(redirect), .redirect_target_i(redirect_target),
     .req_valid_o(req_valid), .req_ready_i(req_ready), .req_addr_o(req_addr),
-    .rsp_valid_i(rsp_valid), .rsp_ready_o(rsp_ready), .rsp_insn_i(rsp_insn), .rsp_page_miss_i('0), .rsp_fault_i(rsp_fault),
+    .rsp_valid_i(rsp_valid), .rsp_ready_o(rsp_ready), .rsp_insn_i(rsp_insn), .rsp_fault_i(rsp_fault),
     .quiescent_o(unused_quiescent), .packet_valid_o(packet_valid), .packet_ready_i(packet_ready), .packet_o(packet)
   );
 
@@ -120,7 +120,7 @@ module tb_fetch_recovery;
     rsp_insn = 32'h3860_0001;
     #1;
     require(packet_valid && rsp_ready && packet.pc == RESET_PC &&
-            packet.insn == 32'h3860_0001 && packet.page_miss == '0,
+            packet.insn == 32'h3860_0001,
             "reserved-slot response handshake wrong");
     @(posedge clk);
     #1;

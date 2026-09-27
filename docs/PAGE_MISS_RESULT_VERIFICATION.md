@@ -23,3 +23,9 @@ negative control. Sources and tests were unchanged through the passing gate.
 The FPGA measurement wrapper's activity digest consumes the new retirement
 fields for lint and measurement observability. No FPGA fit or timing result
 was produced in this sequence.
+
+## Side-register fetch capsule
+
+Recorded: `make -C sim lint test-fetch-recovery test-core-fetch-fault test-core-page-miss-result test-page-miss-result-router test-core-page-instruction-exception test-core-tlb-miss test-exception-tlb-miss`, this branch, 2026-09-26.
+
+Instruction-queue entries no longer carry the capsule; the core holds the oldest queued fetch miss capsule in one side register (see [PAGE_MISS_CORE.md](PAGE_MISS_CORE.md)). All targets pass, with the core's assertion that every dispatched fetch miss has its captured capsule active. The direct-core bench still reports 586 checks per profile; the router bench 181 enabled and 161 disabled; `test-core-tlb-miss` 3,575 checks over 20 enabled phases and 336 over 3 disabled phases; fetch recovery 304 checks. This establishes unchanged retirement capsules and miss-entry state; it makes no timing or resource claim.
