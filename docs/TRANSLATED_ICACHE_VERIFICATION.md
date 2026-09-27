@@ -1,6 +1,7 @@
 # Translated instruction-cache verification
 
 Recorded: `make -C sim test-core-bat-cached-bus60x test-core-bat-cached-bus60x-coherence`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+Recorded: `make -C sim test-core-bat-cached-bus60x-coherence`, commit 56824e5, 2026-09-27. Pass: 66 retirements, 37 physical offers, one old-line and two new-line bursts, four alias executions, 23 stale-phase hits, 2,124 checks. The bench now holds its maintenance command until accepted: with micro-TLB hits, the physical fetch is idle for only one cycle between I-cache hits.
 
 `tb/tb_core_bat_cached_bus60x.sv` exercises the composed `ppc_core_bat_cached_bus60x` through public 60x pins and delayed target responses. The literal 41-retirement CPU program starts in real mode and installs four BAT mappings through MTSPR: an identity instruction mapping for context activation, a nonidentity cacheable instruction alias `EA 0x10000000 → PA 0`, a nonidentity instruction alias with WIMG=`2` for scalar bypass `EA 0x20000000 → PA 0`, and a data alias `EA 0x30000000 → PA 0`. External mapping management is inactive.
 

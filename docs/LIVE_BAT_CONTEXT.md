@@ -26,6 +26,8 @@ update waits. Each accepted request captures IR/DR/PR for its BAT lookup; its
 physical address and WIMG are then held with the request. The core's frontend
 fence stops new offers and drains old responses before publishing a committed
 context. Thus context installation cannot reinterpret an outstanding access.
+Every accepted installation also clears both router micro-TLBs, so no
+translation cached under the old IR/DR/PR survives it.
 After acknowledgment, the core redirects under the new context and releases
 the fence. The wrapper does not expose a second MSR owner.
 

@@ -184,3 +184,14 @@ bank changes on commit. Abort wins a same-edge preparation without withdrawing
 its response. Full pin, ownership, reset and arbitration rules are frozen in
 [RUNTIME_BAT_PROTOCOL.md](RUNTIME_BAT_PROTOCOL.md). Kind 5 remains unsupported
 when the parameter is zero; the original startup-write behavior is unchanged.
+
+## Router latency
+
+The router's serial translation sequence offers a BAT translation one cycle
+after accepting a memory request, and the physical request follows two
+cycles later: three cycles from acceptance for a BAT hit or real-mode bypass.
+The router's micro-TLBs now repeat an allowed BAT or real-mode result for the
+same 4-KiB page in one cycle without a service request, so the service sees
+only misses, stores to pages first reached by a load, and CSR traffic.
+64 back-to-back fetches from one BAT page took 321 cycles before and take 130
+now with a zero-wait memory. See [MICRO_TLB.md](MICRO_TLB.md).
