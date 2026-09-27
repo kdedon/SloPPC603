@@ -38,3 +38,11 @@ set_instance_assignment -name VIRTUAL_PIN ON -to inspect_sp_o[*]
 set_instance_assignment -name VIRTUAL_PIN ON -to inspect_lt_o[*]
 set_instance_assignment -name VIRTUAL_PIN ON -to "forward_o.*"
 set_instance_assignment -name VIRTUAL_PIN ON -to forward_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to "issue1_valid_i"
+set_instance_assignment -name VIRTUAL_PIN ON -to "issue1_ready_o"
+set_instance_assignment -name VIRTUAL_PIN ON -to "issue1_i.*"
+set_instance_assignment -name VIRTUAL_PIN ON -to "result1_valid_o"
+set_instance_assignment -name VIRTUAL_PIN ON -to "result1_o.*"
+set_instance_assignment -name VIRTUAL_PIN ON -to "commit1_valid_i"
+set_instance_assignment -name VIRTUAL_PIN ON -to "commit1_tag_i.*"
+set_instance_assignment -name VIRTUAL_PIN ON -to "commit1_ready_o"

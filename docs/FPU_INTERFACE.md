@@ -16,7 +16,27 @@ independent instructions to overlap. Pending capacity is five instructions in
 
 `ppc_fpu_pkg.sv` defines a typed arithmetic request (`op`, `a/b/c` raw 64-bit FPR values, RN, NI, VE/OE/UE/ZE, single-result flag) and response (raw 64-bit result, nine distinct invalid causes, OX/UX/ZX/XX, FR/FI/FPRF with validity, result-write suppression). XE stays in the shell's FPSCR logic. It also defines an instruction packet (`completion_tag_t`, 32-bit instruction, 32-bit GPR base/index, MSR FP/FE/PR bits), a held result packet (tag, exception kind, proposed FPR/CR/base updates and fault context), and a memory packet (tag, EA, size, read/write, data). The arithmetic backend owns numeric classification/rounding; the shell owns architectural FPSCR sticky/summary, status instructions, CR effects, FPR storage, decode and commit. [UM §§2.3.4.2–3, PDF 103–113; PEM §§2.1.3–4, 3.3, PDF 68–72, 123–150]
 
-The shell's `issue_valid/issue_ready` handshake captures instruction, tag, GPR values and MSR controls. `result_valid/result` stays stable while waiting for completion ownership. A matching `commit_valid/commit_tag` accepts only the held result; `abort_valid/abort_tag` discards the matching instruction and younger work; `kill_all` discards all pending work. Index and generation must both match. A wrong-generation commit, abort, memory response or arithmetic response cannot update FPR/FPSCR, publish a store, or release the held instruction. `kill_all` clears pending work at recovery/reset. Result fields are **proposals**; the core may apply CR/base updates only when `commit_valid && commit_ready`, never from `result_valid` alone. Every architectural FPR/FPSCR update occurs on accepted matching commit. [UM §6.3.3, PDF 258 / 6-12; §4.5.7.1, PDF 188 / 4-30; `FPU_CONTRACT.md` exception disposition]
+The primary `issue_valid_i/issue_ready_o/issue_i` lane captures instruction,
+tag, GPR values and MSR controls. The second lane
+`issue1_valid_i/issue1_ready_o/issue1_i` supplies the immediately younger
+instruction. It accepts only with the primary lane on the same edge; a pair
+contains one FPU operation and one FP memory operation. A rejected second lane
+may move to the primary lane next cycle. Resource reservations belong to the
+FPU and LSU, independently of lane number. Status barriers cannot pair. These
+are the concurrent shell's implementation requirements; the acceptance record
+must establish them before integration.
+
+ `result_valid_o/result_o` exposes the oldest completed instruction and stays
+stable while it waits for completion ownership. The 603e's additional
+`result1_valid_o/result1_o` exposes an eligible immediately younger load;
+`commit1_valid_i/commit1_tag_i/commit1_ready_o` may retire it only together
+with the primary head. Neither may fault, and the pair may contain at most one
+FPR write and one CR write. The 602 retires one instruction per edge and leaves
+second-retirement readiness inactive. These outputs present an ordered queue:
+if only the primary head retires, its unaccepted successor moves to the primary
+output. When neither retires, the exposed packets remain stable. The integrator
+must track the accepted prefix, not treat the two lanes as independent queues.
+[603e UM §6.6.1.3, PDF 268–269; 602 UM §6.3.2, PDF 299] A matching `commit_valid/commit_tag` accepts only the held result; `abort_valid/abort_tag` discards the matching instruction and younger work; `kill_all` discards all pending work. Index and generation must both match. A wrong-generation commit, abort, memory response or arithmetic response cannot update FPR/FPSCR, publish a store, or release the held instruction. `kill_all` clears pending work at recovery/reset. Result fields are **proposals**; the core may apply CR/base updates only when `commit_valid && commit_ready`, never from `result_valid` alone. Every architectural FPR/FPSCR update occurs on accepted matching commit. [UM §6.3.3, PDF 258 / 6-12; §4.5.7.1, PDF 188 / 4-30; `FPU_CONTRACT.md` exception disposition]
 
 For loads the shell issues a tagged, atomic memory preparation request and waits for a tagged response carrying full 32/64-bit raw data or a fault. The LSU performs transport/translation and returns a single prepared result; the 603e FPU widens `lfs` numerically or copies `lfd` bits. The 602 retains raw binary32 `lfs` bits and checks `lfd` for exact hardware representation. The 603e rejects non-word-aligned FP accesses; the 602 permits unaligned FP loads, whose transport belongs to the LSU, but rejects non-word-aligned FP stores. [602 UM §2.2.3, PDF 104; §§2.3.4.3.8–9, PDF 127–129] A killed response is ignored. For stores the shell calculates raw `stfs`/`stfd`/`stfiwx` data and sends a tagged **side-effect-free** preparation request at issue. The LSU must check translation, protection, alignment and transport feasibility and return prepared success or fault before the FPU publishes a result. Only after successful preparation does a matching commit drive the authorized store descriptor. `store_valid` and `commit_ready` then handshake on the same edge as `store_ready`; the core must hold `commit_valid` and its tag stable until `commit_ready`. Fault/kill suppress both the store and update-form GPR base change. The core commits any load/store update-form GPR base value alongside FPU commit. The LSU must keep a 64-bit operation atomic over its 32-bit transport. [UM §§2.3.4.3.8–10, 4.5.6, PDF 112–113, 184–186; PEM §3.3.4, PDF 130–131]
 
