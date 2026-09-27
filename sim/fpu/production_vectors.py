@@ -56,6 +56,11 @@ def packets(ops, random_count, seed):
                     cases.extend((x, 0, y, 'cross') for x in special for y in special)
                 else:
                     cases.extend((x, y, 0, 'cross') for x in special for y in special)
+            if op == 'mul' and not single:
+                cases.extend((a, 0, c, 'dp-pack-boundary') for a, c in (
+                    (0x0010000000000000, 0x3fe0000000000000),
+                    (0x0000000000000001, 0x3fe0000000000000),
+                    (0x7fefffffffffffff, 0x4000000000000000)))
             if op in THREE:
                 # Product edge pairs with both addend-zero signs exercise the
                 # fused path through cancellation, underflow, infinity and NaN.
@@ -74,6 +79,9 @@ def packets(ops, random_count, seed):
                         (0, 0x36a0000000000000, 0x7fefffffffffffff),
                         (0, 1 << 63, 0x7fefffffffffffff),
                         (0x3ff0000000000001, 0xbff0000000000000, 0x3feffffffffffffe)))
+                    cases.append((0x0000000000000001,
+                                  0x000fffffffffffff,
+                                  0x3fe0000000000000, 'dp-tiny-halfway'))
                 else:
                     cases.extend((a, b, c, 'fused-cancellation') for a, b, c in (
                         (0x3ff0000020000000, 0xbff0000000000000,
@@ -81,8 +89,7 @@ def packets(ops, random_count, seed):
                         # Exact single subnormal; negative fused variants
                         # must retain the single-precision FPRF class.
                         (0x3810000000000000, 0, 0x3fe0000000000000),
-                        (0xb810000000000000, 0, 0x3fe0000000000000),
-                        (0x3810000000000001, 0, 0x3fe0000000000000)))
+                        (0xb810000000000000, 0, 0x3fe0000000000000)))
             if op == 'frsp':
                 cases.extend((0, x, 0, 'round-boundary') for x in
                              (0x380fffffe0000000, 0x36a0000000000000,
@@ -115,7 +122,8 @@ def generate(path, ops, random_count, seed):
     rows = list(packets(ops, random_count, seed))
     fields = ('code', 'a', 'b', 'c', 'rn', 'single', 'ni', 've', 'oe', 'ue', 'ze')
     results = ('result', 'write_result', 'invalid', 'ox', 'ux', 'zx', 'xx',
-               'fr', 'fi', 'frfi_valid', 'fprf', 'fprf_valid', 'fpcc', 'compare_valid')
+               'fr', 'fi', 'frfi_valid', 'fprf', 'fprf_valid', 'fpcc', 'compare_valid',
+               'tiny_before_round')
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('w') as out:
         for row in rows:

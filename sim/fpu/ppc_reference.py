@@ -77,7 +77,8 @@ def arithmetic(op, a, b=0, c=0, rn=0, single=False, ni=False,
     """
     out = dict(result=0, write_result=True, invalid=0, ox=False, ux=False,
                zx=False, xx=False, fr=False, fi=False, frfi_valid=True,
-               fprf=0, fprf_valid=False, fpcc=0, compare_valid=False)
+               fprf=0, fprf_valid=False, fpcc=0, compare_valid=False,
+               tiny_before_round=False)
     relevant = (a, b) if op not in ('frsp', 'fctiw', 'fctiwz', 'mul') else (b,)
     if op == 'mul':
         relevant = (a, c)
@@ -202,6 +203,7 @@ def arithmetic(op, a, b=0, c=0, rn=0, single=False, ni=False,
         out['ux'] = _top(n, d, exponent) < 1 - fmt.bias and ue
     bits, nx, uf_after, overflow, increment = pack_ratio(n, d, exponent, sign, rn, fmt)
     tiny = bool(n) and _top(n, d, exponent) < 1 - fmt.bias
+    out['tiny_before_round'] = tiny
     out['ux'] = tiny and (ue or nx)
     out['ox'] = overflow
     out['xx'] = nx or (overflow and not oe)

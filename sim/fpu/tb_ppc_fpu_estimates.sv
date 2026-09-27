@@ -6,10 +6,12 @@ module tb_ppc_fpu_estimates;
     logic clk_i = 1'b0;
     always #5 clk_i <= ~clk_i;
     logic rst_ni;
-    logic req_valid_i, req_ready_o;
+    logic req_valid_i, req_ready_o, div_busy_o;
     ppc_fpu_arith_req_t req_i;
     logic rsp_valid_o, rsp_ready_i;
     ppc_fpu_arith_rsp_t rsp_o;
+    logic finish_valid_o;
+    ppc_fpu_arith_rsp_t finish_o;
     logic flush_i;
     logic [4:0] op_bits;
     logic [63:0] input_bits;
@@ -22,8 +24,24 @@ module tb_ppc_fpu_estimates;
     int latency_min [0:1][0:1];
     int latency_max [0:1][0:1];
     ppc_fpu_arith_rsp_t held;
+    ppc_fpu_arith_rsp_t finished_packet;
+    logic finished_seen;
 
     ppc_fpu_arith dut (.*);
+
+    always @(posedge clk_i)
+        if (div_busy_o && req_ready_o)
+            $fatal(1, "divider busy advertised new estimate credit");
+
+    always @(posedge clk_i)
+        if (!rst_ni || (req_valid_i && req_ready_o)) begin
+            finished_seen <= 1'b0;
+        end else if (finish_valid_o) begin
+            if (finish_o.tag !== req_i.tag)
+                $fatal(1, "estimate finish tag differs from outstanding request");
+            finished_packet <= finish_o;
+            finished_seen <= 1'b1;
+        end
 
     initial begin
         if (!$value$plusargs("VECTORS=%s", input_path) ||
@@ -82,6 +100,10 @@ module tb_ppc_fpu_estimates;
                 waited = waited + 1;
                 if (waited > 1024) $fatal(1, "estimate response timeout %0d", count);
             end
+            if (!finished_seen || rsp_o !== finished_packet)
+                $fatal(1, "estimate finish bypass differs from held response %0d seen=%b live_valid=%b live=%h captured=%h response=%h",
+                       count, finished_seen, finish_valid_o, finish_o,
+                       finished_packet, rsp_o);
             latency_count[int'(op_bits)-13][int'(mode_bits == 3'd3)]++;
             if (waited < latency_min[int'(op_bits)-13][int'(mode_bits == 3'd3)])
                 latency_min[int'(op_bits)-13][int'(mode_bits == 3'd3)] = waited;

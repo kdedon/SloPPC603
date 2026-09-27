@@ -23,12 +23,24 @@ module tb_ppc_fpu_shell;
     logic [4:0] inspect_fpr_index_i;
     logic [63:0] inspect_fpr_o;
     logic [31:0] inspect_fpscr_o;
+    logic [31:0] inspect_sp_o, inspect_lt_o;
+    logic forward_valid_o;
+    ppc_fpu_forward_t forward_o;
     int checks;
     ppc_fpu_result_t held;
+    ppc_fpu_forward_t last_forward;
     logic [31:0] expected_status;
     completion_tag_t status_tag;
 
     ppc_fpu dut (.*);
+
+    always @(posedge clk_i)
+        if (!rst_ni) last_forward <= '0;
+        else if (forward_valid_o) begin
+            if (!(forward_o.fpr_write || forward_o.cr_write))
+                $fatal(1, "603e forward packet without a destination");
+            last_forward <= forward_o;
+        end
 
     function automatic completion_tag_t tag(input logic [2:0] index, input logic [7:0] generation);
         completion_tag_t value;
@@ -212,6 +224,7 @@ module tb_ppc_fpu_shell;
 
     task automatic await_result(input completion_tag_t identity);
         int waited;
+        ppc_fpu_forward_t expected_forward;
         waited = 0;
         while (!result_valid_o) begin
             @(negedge clk_i);
@@ -219,6 +232,20 @@ module tb_ppc_fpu_shell;
             if (waited > 1024) $fatal(1, "result timeout tag=%h", identity);
         end
         if (result_o.tag !== identity) $fatal(1, "result tag mismatch");
+        if (last_forward.tag == identity) begin
+            expected_forward = '0;
+            expected_forward.tag = result_o.tag;
+            expected_forward.fpr_write = result_o.fpr_write;
+            expected_forward.fpr_index = result_o.fpr_index;
+            expected_forward.fpr_value = result_o.fpr_value;
+            expected_forward.fpr_sp = result_o.fpr_sp;
+            expected_forward.fpr_lt = result_o.fpr_lt;
+            expected_forward.cr_write = result_o.cr_write;
+            expected_forward.cr_field = result_o.cr_field;
+            expected_forward.cr_value = result_o.cr_value;
+            if (last_forward !== expected_forward)
+                $fatal(1, "forward packet differs from completed result tag=%h", identity);
+        end
         held = result_o;
         repeat (2) begin
             @(posedge clk_i);
@@ -377,6 +404,8 @@ module tb_ppc_fpu_shell;
         rst_ni = 1'b1;
         #1;
         if (store_valid_o || store_o != '0) $fatal(1, "spurious store after reset");
+        if (inspect_sp_o != 32'd0 || inspect_lt_o != 32'd0)
+            $fatal(1, "603e elaboration exposed 602 tag state");
 
         load_fpr(1, 64'h3ff0_0000_0000_0000, 1);
         load_fpr(2, 64'h4000_0000_0000_0000, 2);

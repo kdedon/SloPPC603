@@ -1,11 +1,14 @@
 # Standalone PPC FPU verification
 
-Final RTL checkpoint: `cb871b4`. The pinned suite passes 200,000 arithmetic
-packets, 11,958 estimates, 851 shell checks, 76 cancellation offsets and 55
-strict lint invocations. Both post-map configurations exceed 50 MHz; neither
-reaches 66 MHz. Detailed `Recorded:` entries and scope limits follow.
+The 603e and 602 compile-time FPU personalities are in pipeline and shell
+qualification. The `cb871b4` results below record an earlier serialized 603e
+checkpoint, not final acceptance of either personality. Current work checks
+the manuals' per-instruction execution latency and initiation interval,
+ordered forwarding and retirement, and 602 operand tags and emulation traps.
+Detailed `Recorded:` entries retain each result's exact source scope.
 
-The production arithmetic oracle is `ppc_reference.py` (SHA-256
+At the `cb871b4` checkpoint, the production arithmetic oracle was
+`ppc_reference.py` (SHA-256
 `defbd974681295392a673cec2c0020877f4a26c6cb2e1c42209c588a71627956`),
 layered over the exact-integer IEEE model in `reference.py`. Both are original
 project code under [`LICENSE`](LICENSE) (MIT). The model uses integer
@@ -31,7 +34,7 @@ The arithmetic transport test sweeps cancel offsets across finite FMA and
 divide, alternating flush and reset, then verifies a fresh tag and exact
 result with no old completion.
 
-The estimate checker `estimate_vectors.py` (SHA-256
+The estimate checker at that checkpoint was `estimate_vectors.py` (SHA-256
 `8fb874fc4073c427e8914dbb6cd3a604138de83e58ae30c55a997f0a684397ae`)
 uses seed `0x603ef003`. It checks exact-rational relative-error bounds,
 FRES result sign and binary32 precision, every binary64 exponent and
@@ -271,3 +274,40 @@ production target. Strict `make -C sim -j2 lint` includes the standalone
 `ppc_fpu` top as well as the donor and existing core tops. This verification
 does not measure core integration: the production unit is intentionally not
 in any core `files.f`.
+
+## Pipeline and 602 personality qualification in progress
+
+The current arithmetic model `ppc_reference.py` has SHA-256
+`d24d94727585c7e0170945172d9da77e3dbe55ab6e22b1e6f621d7dcb1e6979b`;
+the current corpus generator `production_vectors.py` has SHA-256
+`971ae6420e1e210d410d11fb7bb892e89da8baa34de683392ac56ecfa9074e0b`.
+The exact-rational model now supplies before-round tininess and excludes
+undefined non-binary32 operands from the single-result FMA conformance
+corpus. These pins describe this work-in-progress checkpoint; the 602 raw
+arithmetic oracle and both public shell personality suites still need
+complete qualification.
+
+Recorded: `make -C sim -j2 lint-fpu-timing test-fpu-timing-603
+test-fpu-timing-602` on commit `2f8ec31` plus uncommitted arithmetic-R and
+testbench changes in an immutable source snapshot, 2026-09-27; strict lint
+emitted 0 warnings/errors; exact 3/4/18/33-clock arithmetic finish latency,
+32-operation basic II=1 train, 12-operation double-multiply II=2 train,
+four-credit held-response and flush/tag checks passed; 603e retired 65
+tagged responses, 602 retired 48. This run preceded terminal-edge divide
+admission.
+
+Recorded: `make -C sim -j2 lint-fpu-timing test-fpu-timing-603
+test-fpu-timing-602` on commit `f60fbd2` plus the timing testbench additions
+in an immutable source snapshot, 2026-09-27; strict lint emitted 0
+warnings/errors; 603e retired 71 tagged responses and 602 retired 52. The
+additional finite-to-special pairs proved exact initiation intervals of 18
+clocks for single divide and `fres`, and 33 clocks for double divide, while
+each finish pulse retained its required latency.
+
+Recorded: `make -C sim -j2 test-fpu-602` on commit `2f8ec31` plus pending
+shell and testbench changes in an immutable source snapshot, 2026-09-27;
+the directed test found that a prepared `stfd` descriptor contained the
+correct 64-bit value and size, but its result packet had `store=0`, so no
+store could be authorized at commit. The shell owner fixed the lost result
+field in the live RTL; the 602 public-shell suite has not yet passed on the
+revised dual-lane shell. This is a failure record, not acceptance evidence.

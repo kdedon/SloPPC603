@@ -8,10 +8,13 @@ module tb_ppc_fpu_arith;
     logic rst_ni;
     logic req_valid_i;
     logic req_ready_o;
+    logic div_busy_o;
     ppc_fpu_arith_req_t req_i;
     logic rsp_valid_o;
     logic rsp_ready_i;
     ppc_fpu_arith_rsp_t rsp_o;
+    logic finish_valid_o;
+    ppc_fpu_arith_rsp_t finish_o;
     logic flush_i;
     ppc_fpu_arith_rsp_t expected;
     logic [63:0] result_mask;
@@ -24,6 +27,7 @@ module tb_ppc_fpu_arith;
     logic [8:0] read_invalid;
     logic read_ox, read_ux, read_zx, read_xx;
     logic read_fr, read_fi, read_frfi_valid;
+    logic read_tiny_before_round;
     logic [4:0] read_fprf;
     logic read_fprf_valid;
     logic [3:0] read_fpcc;
@@ -44,6 +48,8 @@ module tb_ppc_fpu_arith;
     logic bad_result, bad_invalid, bad_flags, bad_class;
     string vectors_path;
     ppc_fpu_arith_rsp_t held;
+    ppc_fpu_arith_rsp_t finished_packet;
+    logic finished_seen;
 
     task automatic cancel_at_offset(
         input ppc_fpu_op_t operation, input int offset, input logic [7:0] generation
@@ -106,6 +112,20 @@ module tb_ppc_fpu_arith;
 
     ppc_fpu_arith dut (.*);
 
+    always @(posedge clk_i)
+        if (div_busy_o && req_ready_o)
+            $fatal(1, "divider busy advertised new arithmetic credit");
+
+    always @(posedge clk_i)
+        if (!rst_ni || (req_valid_i && req_ready_o)) begin
+            finished_seen <= 1'b0;
+        end else if (finish_valid_o) begin
+            if (finish_o.tag !== req_i.tag)
+                $fatal(1, "arithmetic finish tag differs from outstanding request");
+            finished_packet <= finish_o;
+            finished_seen <= 1'b1;
+        end
+
     initial begin
         if (!$value$plusargs("VECTORS=%s", vectors_path))
             $fatal(1, "missing VECTORS argument");
@@ -139,16 +159,16 @@ module tb_ppc_fpu_arith;
         #1;
         while (!$feof(file_handle)) begin
             parsed = $fscanf(file_handle,
-                "%h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h\n",
+                "%h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h\n",
                 op_bits, read_a, read_b, read_c, read_rn, read_single,
                 read_ni, read_ve, read_oe, read_ue, read_ze,
                 read_result, read_write_result, read_invalid,
                 read_ox, read_ux, read_zx, read_xx,
                 read_fr, read_fi, read_frfi_valid,
                 read_fprf, read_fprf_valid, read_fpcc,
-                read_compare_valid, result_mask);
+                read_compare_valid, read_tiny_before_round, result_mask);
             if (parsed == -1) break;
-            if (parsed != 26) $fatal(1, "invalid vector %0d fields=%0d", count, parsed);
+            if (parsed != 27) $fatal(1, "invalid vector %0d fields=%0d", count, parsed);
             expected = '0;
             expected.result = read_result;
             expected.write_result = read_write_result;
@@ -164,6 +184,7 @@ module tb_ppc_fpu_arith;
             expected.fprf_valid = read_fprf_valid;
             expected.fpcc = read_fpcc;
             expected.compare_valid = read_compare_valid;
+            expected.tiny_before_round = read_tiny_before_round;
             req_i = '0;
             req_i.tag.index = 3'(count % 5);
             req_i.tag.generation = 8'(count / 5);
@@ -196,6 +217,10 @@ module tb_ppc_fpu_arith;
                 waited = waited + 1;
                 if (waited > 1024) $fatal(1, "response timeout vector %0d", count);
             end
+            if (!finished_seen || rsp_o !== finished_packet)
+                $fatal(1, "arithmetic finish bypass differs from held response %0d seen=%b live_valid=%b live=%h captured=%h response=%h",
+                       count, finished_seen, finish_valid_o, finish_o,
+                       finished_packet, rsp_o);
             op_count[int'(op_bits)]++;
             precision_count[int'(op_bits)][int'(read_single)]++;
             if (waited < precision_latency_min[int'(op_bits)][int'(read_single)])
@@ -212,6 +237,7 @@ module tb_ppc_fpu_arith;
             bad_flags = (rsp_o.ox !== expected.ox || rsp_o.ux !== expected.ux ||
                         rsp_o.zx !== expected.zx || rsp_o.xx !== expected.xx ||
                         rsp_o.frfi_valid !== expected.frfi_valid ||
+                        rsp_o.tiny_before_round !== expected.tiny_before_round ||
                         (expected.frfi_valid && rsp_o.fi !== expected.fi) ||
                         (expected.frfi_valid && !(expected.ox && !read_oe) &&
                          rsp_o.fr !== expected.fr));
