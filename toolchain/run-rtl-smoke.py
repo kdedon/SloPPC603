@@ -76,6 +76,12 @@ PAGE = {**TIMER, 'page_probe': 0x6000}
 TLBIE = {**PAGE, 'tlbie_data_probe': 0x7000}
 MISS = {'imiss_handler': 0x1000, 'dlmiss_handler': 0x1100, 'dsmiss_handler': 0x1200, 'page_probe': 0x6000}
 FAULT = {**MISS, 'table_search_dsi_vector': 0x300, 'table_search_isi_vector': 0x400}
+STRESS = {**MISS, 'dsi_handler': 0x300, 'isi_handler': 0x400, 'interrupt_handler': 0x500,
+          'decrementer_handler': 0x900}
+del STRESS['page_probe']
+# Bench plusarg: (symbol, minimum size) for the stress image's counters.
+STRESS_SYMBOLS = {'EXT_COUNT': ('stress_ext_count', 4), 'DEC_COUNT': ('stress_dec_count', 4),
+                  'IRQ_ACK': ('irq_ack', 4), 'MISS_TOTAL': ('miss_total', 4)}
 
 # profile: (bench, source lists, fixed-address symbols as offsets from BASE, +MODE runs)
 PROFILES = {
@@ -103,6 +109,7 @@ PROFILES = {
     'table-fault-bus': ('tb_compiled_table_bus60x_firmware', BAT_BUS, FAULT, 0),
     'table-search-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, MISS, 0),
     'table-fault-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, FAULT, 0),
+    'mmu-stress-cached': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, 8),
 }
 
 
@@ -127,6 +134,12 @@ def main():
             if size < needed or value % 4 or not BASE <= value <= BASE+SIZE-size:
                 raise ValueError(f'invalid fault verification symbol {symbol!r}')
             fault_args.append(f'+{plusarg}={value:08x}')
+    if args.profile == 'mmu-stress-cached':
+        for plusarg, (symbol, needed) in STRESS_SYMBOLS.items():
+            value, size = symbols.get(symbol.encode(), (0, 0))
+            if size < needed or value % 4 or not BASE <= value <= BASE+SIZE-size:
+                raise ValueError(f'invalid stress symbol {symbol}')
+            fault_args.append(f'+{plusarg}={value:08x}')
     build = args.build_dir.resolve()
     build.mkdir(parents=True, exist_ok=True)
     image = build/'memory.hex'
@@ -137,7 +150,8 @@ def main():
         for source in (root/'rtl'/manifest).read_text().split():
             if source not in sources:
                 sources.append(source)
-    profile_params = [f'-GFAULT_PROFILE={int(table_fault_profile)}'] if manifests in (BAT_BUS, BAT_CACHED) else []
+    profile_params = ([f'-GFAULT_PROFILE={int(table_fault_profile)}']
+                      if manifests in (BAT_BUS, BAT_CACHED) and args.profile.startswith('table-') else [])
     bfms = (['../tb/bfm/bus60x_delay_target_bfm.sv'] if manifests in (BAT_BUS, BAT_CACHED) else
             ['../tb/bfm/bus60x_negedge_target_bfm.sv'] if manifests == CACHED else [])
     subprocess.run([args.verilator, '--binary', '--timing', '--assert', '-Wall', '-j', str(args.jobs),
