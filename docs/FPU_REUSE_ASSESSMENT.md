@@ -21,41 +21,26 @@ The unchanged F1 experiment remains a benchmark for the standalone unit. A
 separate process owns CPU integration; this standalone result does not establish
 full CPU completion.
 
-F2–F4 standalone instruction semantics are implemented in `ppc_fpu.sv` and
-`ppc_fpu_arith.sv`: all implemented 603e FP classes, FPR/FPSCR ownership,
-tagged commit/abort, and side-effect-free memory preparation for later LSU
-attachment. The new arithmetic engine is independent of the failed donor.
-[Production verification](../sim/fpu/PRODUCTION.md) records 200,000 raw
-arithmetic packets, 11,958 estimate packets, 851 shell checks and 76
-cancellation offsets, all passing, including the explicitly chosen NI status
-policy and illegal-before-unavailable priority. The shell implements every
-architectural 603e FP instruction class and remains serialized. The separate
-core integrator owns CPU-level acceptance.
+The complete standalone **603e/602 pipeline remains in progress**. The
+[602 contract](FPU_602_CONTRACT.md) pins its primary user manual and records
+the distinct tag, exception, register and instruction rules. The replacement
+[pipeline](FPU_PIPELINE_DESIGN.md) selects its personality at compile time and
+must meet original instruction latency and throughput. The arithmetic checkpoint
+`251d633` passes numerical and execution-cycle tests; the concurrent shell and
+602 architectural acceptance are still being verified. The latest arithmetic
+post-map estimate is **12.7 MHz**, below both 50 and 66 MHz. No completion claim
+is made for the replacement.
 
-The standalone F5 synthesis-only 50 MHz check passes. Frozen `cb871b4`
-full-unit post-map measurement reports 10,364 estimated ALMs, 12,102
-combinational ALUTs, 7,122 registers, no block RAM and four DSP blocks at
-50.5 MHz, with +0.200 ns setup slack at 20 ns. The aspirational 66 MHz
-check fails. The arithmetic-only configuration also passes 50 MHz at
-50.8 MHz, using 5,998 estimated ALMs, 7,515 ALUTs, 4,566 registers and
-four DSP blocks, with no block RAM. These are post-map estimates, not
-fitted timing closure; see
-[measurement evidence](../quartus/fpu-production/README.md).
-The serialized lane does not implement four rename slots or exact 603e
-pipeline throughput. Finite single divide and `fres` take 19 clocks rather
-than the UM's 18. Source conflicts and silicon-specific NI behavior remain
-explicit in the contract; passing the selected policy tests does not resolve
-those conflicts.
-
-Completion correction: the preceding evidence covers the serialized 603e
-implementation only. It does not establish a complete 603e/602 module. The
-602 personality and its independent architectural tests are absent; exact
-603e scheduling and the listed semantic conflicts also remain open. The full 602 user manual is now pinned and the separate
-[602 contract](FPU_602_CONTRACT.md) records its instruction, tag, exception and
-timing rules. The replacement [pipeline design](FPU_PIPELINE_DESIGN.md) targets
-original latencies and throughput in both compile-time builds. Implementation
-and fresh verification remain acceptance gates; the earlier serialized
-measurements do not establish results for the replacement.
+The historical serialized 603e checkpoint `cb871b4` passed 200,000 raw arithmetic
+packets, 11,958 estimates, 851 shell checks and 76 cancellation offsets. Its
+full-unit post-map estimate was 10,364 ALMs, 12,102 ALUTs, 7,122 registers,
+zero RAM and four DSP blocks at 50.5 MHz; arithmetic-only reached 50.8 MHz.
+Those measurements do not apply to the replacement pipeline. The old shell had
+only one instruction in flight and lacked 602 support and original scheduling.
+See [verification history](../sim/fpu/PRODUCTION.md) and
+[measurement evidence](../quartus/fpu-production/README.md) for reproducible
+commands and limitations. Exact silicon NI status and the cited source conflicts
+remain documented semantic gaps; selected-policy tests do not resolve them.
 
 ## Decision
 

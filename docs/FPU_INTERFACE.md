@@ -1,12 +1,24 @@
 # Standalone FPU interface
 
-The FPU accepts one instruction word at a time and holds its result until the core commits or aborts the exact `ppc_pkg::completion_tag_t` identity (3-bit queue index plus 8-bit generation). This serialized first implementation targets complete instruction semantics but has at most one FP instruction in flight. Matching the 603e's four-FPR-rename capacity and throughput needs a four-entry destination-owner table, source forwarding, and concurrent completion packets; no opcode or status policy should change. [UM §6.3.3.1, PDF 258 / 6-12; `FPU_CONTRACT.md`]
+The standalone module is being rebuilt for original 603e and 602 instruction
+latency and throughput. `parameter bit CPU_602=0` selects 603e; setting it to
+one at elaboration selects 602. There is no runtime personality switch. The
+architectural contracts are [603e](FPU_CONTRACT.md) and
+[602](FPU_602_CONTRACT.md); the [pipeline design](FPU_PIPELINE_DESIGN.md)
+defines the acceptance schedule. The current pipeline is under verification:
+prior serialized results do not establish its completion.
 
-`ppc_fpu_pkg.sv` defines a typed arithmetic request (`op`, `a/b/c` raw 64-bit FPR values, RN, NI, VE/OE/UE/ZE, single-result flag) and response (raw 64-bit result, nine distinct invalid causes, OX/UX/ZX/XX, FR/FI/FPRF with validity, result-write suppression). XE stays in the shell's FPSCR logic. It also defines an instruction packet (`completion_tag_t`, 32-bit instruction, 32-bit GPR base/index, MSR FP/FE bits), a held result packet (tag, exception kind, proposed FPR/CR/base updates and fault context), and a memory packet (tag, EA, size, read/write, data). The arithmetic backend owns numeric classification/rounding; the shell owns architectural FPSCR sticky/summary, status instructions, CR effects, FPR storage, decode and commit. [UM §§2.3.4.2–3, PDF 103–113; PEM §§2.1.3–4, 3.3, PDF 68–72, 123–150]
+The issue interface carries the core's full `ppc_pkg::completion_tag_t`
+(3-bit queue index and 8-bit generation). Four FPR destination credits allow
+independent instructions to overlap. Pending capacity is five instructions in
+603e and four in 602. Results retire in order; forwarding can precede retirement.
+[603e UM §6.3.3.1, PDF 258; 602 UM §§1.1.3.1.3, 6.3.2–4, PDF 45, 299–305]
 
-The shell's `issue_valid/issue_ready` handshake captures instruction, tag, GPR values and MSR controls. `result_valid/result` stays stable while waiting for completion ownership. A matching `commit_valid/commit_tag` accepts only the held result; `abort_valid/abort_tag` or `kill_all` discards it. Index and generation must both match. A wrong-generation commit, abort, memory response or arithmetic response cannot update FPR/FPSCR, publish a store, or release the held instruction. `kill_all` clears pending work at recovery/reset. Result fields are **proposals**; the core may apply CR/base updates only when `commit_valid && commit_ready`, never from `result_valid` alone. Every architectural FPR/FPSCR update occurs on accepted matching commit. [UM §6.3.3, PDF 258 / 6-12; §4.5.7.1, PDF 188 / 4-30; `FPU_CONTRACT.md` exception disposition]
+`ppc_fpu_pkg.sv` defines a typed arithmetic request (`op`, `a/b/c` raw 64-bit FPR values, RN, NI, VE/OE/UE/ZE, single-result flag) and response (raw 64-bit result, nine distinct invalid causes, OX/UX/ZX/XX, FR/FI/FPRF with validity, result-write suppression). XE stays in the shell's FPSCR logic. It also defines an instruction packet (`completion_tag_t`, 32-bit instruction, 32-bit GPR base/index, MSR FP/FE/PR bits), a held result packet (tag, exception kind, proposed FPR/CR/base updates and fault context), and a memory packet (tag, EA, size, read/write, data). The arithmetic backend owns numeric classification/rounding; the shell owns architectural FPSCR sticky/summary, status instructions, CR effects, FPR storage, decode and commit. [UM §§2.3.4.2–3, PDF 103–113; PEM §§2.1.3–4, 3.3, PDF 68–72, 123–150]
 
-For loads the shell issues a tagged, word-aligned, atomic memory preparation request and waits for a tagged response carrying full 32/64-bit raw data or a fault. The LSU performs transport/translation and returns a single prepared result; the FPU widens `lfs` numerically or copies `lfd` bits. A killed response is ignored. For stores the shell calculates raw `stfs`/`stfd`/`stfiwx` data and sends a tagged **side-effect-free** preparation request at issue. The LSU must check translation, protection, alignment and transport feasibility and return prepared success or fault before the FPU publishes a result. Only after successful preparation does a matching commit drive the authorized store descriptor. `store_valid` and `commit_ready` then handshake on the same edge as `store_ready`; the core must hold `commit_valid` and its tag stable until `commit_ready`. Fault/kill suppress both the store and update-form GPR base change. The core commits any load/store update-form GPR base value alongside FPU commit. The LSU must keep a 64-bit operation atomic over its 32-bit transport. [UM §§2.3.4.3.8–10, 4.5.6, PDF 112–113, 184–186; PEM §3.3.4, PDF 130–131]
+The shell's `issue_valid/issue_ready` handshake captures instruction, tag, GPR values and MSR controls. `result_valid/result` stays stable while waiting for completion ownership. A matching `commit_valid/commit_tag` accepts only the held result; `abort_valid/abort_tag` discards the matching instruction and younger work; `kill_all` discards all pending work. Index and generation must both match. A wrong-generation commit, abort, memory response or arithmetic response cannot update FPR/FPSCR, publish a store, or release the held instruction. `kill_all` clears pending work at recovery/reset. Result fields are **proposals**; the core may apply CR/base updates only when `commit_valid && commit_ready`, never from `result_valid` alone. Every architectural FPR/FPSCR update occurs on accepted matching commit. [UM §6.3.3, PDF 258 / 6-12; §4.5.7.1, PDF 188 / 4-30; `FPU_CONTRACT.md` exception disposition]
+
+For loads the shell issues a tagged, atomic memory preparation request and waits for a tagged response carrying full 32/64-bit raw data or a fault. The LSU performs transport/translation and returns a single prepared result; the 603e FPU widens `lfs` numerically or copies `lfd` bits. The 602 retains raw binary32 `lfs` bits and checks `lfd` for exact hardware representation. The 603e rejects non-word-aligned FP accesses; the 602 permits unaligned FP loads, whose transport belongs to the LSU, but rejects non-word-aligned FP stores. [602 UM §2.2.3, PDF 104; §§2.3.4.3.8–9, PDF 127–129] A killed response is ignored. For stores the shell calculates raw `stfs`/`stfd`/`stfiwx` data and sends a tagged **side-effect-free** preparation request at issue. The LSU must check translation, protection, alignment and transport feasibility and return prepared success or fault before the FPU publishes a result. Only after successful preparation does a matching commit drive the authorized store descriptor. `store_valid` and `commit_ready` then handshake on the same edge as `store_ready`; the core must hold `commit_valid` and its tag stable until `commit_ready`. Fault/kill suppress both the store and update-form GPR base change. The core commits any load/store update-form GPR base value alongside FPU commit. The LSU must keep a 64-bit operation atomic over its 32-bit transport. [UM §§2.3.4.3.8–10, 4.5.6, PDF 112–113, 184–186; PEM §3.3.4, PDF 130–131]
 
 Illegal encodings report `FPU_ILLEGAL` before the MSR[FP] check; valid disabled FP instructions report `FPU_UNAVAILABLE`. Neither starts arithmetic or memory access. [UM Table 4-2, PDF 166 / 4-8; §4.5.8, PDF 189 / 4-31] The selected enabled-exception rule is `(FE0|FE1)&FEX` and precise completion, as recorded in `FPU_CONTRACT.md`; the shell calculates FPSCR effects from backend metadata then reports the exception in its held result. Reserved fields and unimplemented `fsqrt/fsqrts` are illegal. [UM Table 4-1, PDF 163 / 4-5; §§4.5.7–8, PDF 187–189; Table B-1, PDF 407]
 
@@ -23,6 +35,13 @@ PDF 162–163 / 4-4–4-5]
 | `FPU_ALIGNMENT` | Alignment exception, offset `0x00600`. |
 | `FPU_MEMORY_FAULT` | Route the returned LSU fault code/context through the core's data-fault path. |
 | `FPU_FP_ENABLED` | Program exception, offset `0x00700`, FP-enabled cause; preserve the contract's proposed FPSCR/result disposition. |
+| `FPU_EMULATION_TRAP` | 602 emulation exception, offset `0x01600`; suppress architectural writes. |
+| `FPU_PRIVILEGED` | Program exception, offset `0x00700`, privileged-instruction cause. |
+
+The additional 602 dispositions follow 602 UM §§4.5.7, 4.5.18, PDF 211–212,
+221. SP/LT SPR accesses use the tagged issue path: `gpr_b` supplies `mtspr`
+data, and the result's GPR proposal carries `mfspr` data. They require supervisor
+privilege but do not require MSR[FP].
 
 The arithmetic backend module is `ppc_fpu_arith`. Its request and response follow `valid/ready`; response also returns the request tag, and responses with other tags are ignored. It covers add/subtract/multiply/divide, fused multiply-add variants, `frsp`, `fctiw(z)`, compare, `fres`, and `frsqrte`. It holds its response under backpressure. The F1 `ss_fpu_candidate` remains an isolated experiment and is not a production dependency. [UM Tables 2-14–17, PDF 104–105; `FPU_REUSE_ASSESSMENT.md` F1–F4]
 
@@ -42,7 +61,21 @@ The shell must pass strict Verilator lint with no blanket waivers. Numerical acc
 
 ## Implementation schedule and resource boundary
 
-The first implementation uses `clk_i` only and active-low synchronous reset `rst_ni`; no derived clock or CDC. One pending instruction register holds its full tag, decoded operation and operands. One 32×64-bit FPR bank and one 32-bit FPSCR own architectural state; a single arithmetic request register and one held result packet bound the datapath. The controller states are idle, send-arithmetic, await-arithmetic, send-memory-prepare, await-memory, and result-held. Arithmetic latency is backend dependent, while simple bit moves and status operations are available after one registered issue stage. A store needs a side-effect-free prepare response before result-ready and one store-accept handshake with matching commit. The serialized profile has initiation interval at least issue-to-commit plus one cycle and does not claim the UM Table 6-5 timing. [UM Tables 6-5–6, PDF 272–275; §6.3.3.1, PDF 258]
+The module uses `clk_i` and active-low synchronous reset `rst_ni`. The
+architectural FPR bank has 32 entries of 64 bits for 603e or 32 bits for 602;
+FPSCR is 32 bits in both. The 602 additionally owns SP/LT tag words. Inspect
+ports expose committed state only. Pending instruction records retain source
+bindings, raw arithmetic metadata, memory disposition and completion identity.
+See the pipeline design for execution latency, initiation interval, response
+credits and the external LSU timing boundary.
+
+`forward_valid_o/forward_o` is a one-cycle speculative notification with no
+backpressure input. The integrating core must capture relevant FPR/CR results
+and discard them on recovery; it must never use forwarding to authorize an
+architectural update. The backend's `finish_valid_o/finish_o` similarly exposes
+the final arithmetic stage before its held response queue. Its raw metadata
+must match the eventual response for the same full tag. These bypass paths are
+part of the timing constraints, not false paths.
 
 `NI=1` has a narrow project policy until more 603e-specific status evidence is found: the backend calculates IEEE exception metadata and then replaces a denormal delivered result with signed zero. Tests must label its FPSCR status as this policy, not a proven silicon encoding. Memory `size_bytes` is literal 4 or 8; the LSU prepares an atomic operation and returns its own tagged `fault_code`/`fault_info` alongside `fault`. The FPU forwards that context without interpreting it. A store descriptor becomes valid only during an exact-tag commit handshake. [UM §2.3.4.2, PDF 103 / 2-25; §4.5.6, PDF 184–186 / 4-26–4-28]
 
@@ -54,9 +87,9 @@ See [production verification](../sim/fpu/PRODUCTION.md) for instruction,
 status, memory, cancellation and retirement coverage. These tests exercise the
 standalone interface; the integrating CPU still needs its own end-to-end tests.
 
-The latest standalone suite passes 851 shell checks, including illegal FP encodings with MSR[FP]=0, matching and stale tags, FPSCR changes, memory preparation and commit-only stores. Full architectural standalone instruction coverage is implemented in this serialized shell; the core integration and four-entry rename/throughput model remain separate work. [Production verification](../sim/fpu/PRODUCTION.md)
-
-The final production source checkpoint is `cb871b4`. Its standalone verification
-and synthesis measurements are recorded in [production verification](../sim/fpu/PRODUCTION.md)
-and [Quartus evidence](../quartus/fpu-production/README.md). Core attachment and
-fitted timing remain separate acceptance work.
+The historical serialized checkpoint `cb871b4` passed 851 shell checks. Its
+measurements remain in [production verification](../sim/fpu/PRODUCTION.md) and
+[Quartus evidence](../quartus/fpu-production/README.md). They do not qualify
+the replacement concurrent shell, either 602 elaboration, or original-chip
+latency and throughput. New acceptance records must identify the tested source
+checkpoint. CPU attachment and fitted timing remain separate work.

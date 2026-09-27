@@ -52,6 +52,18 @@ five warnings: response RAM pass-through logic, two constant software-invalid
 cause outputs and their summary, and the virtual-clock warning. TimeQuest
 reported zero errors; no fitter ran.
 
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`74d7577` plus the shared-alignment pipeline subsequently committed as
+`251d633` and virtual-finish-pin changes, 2026-09-27.
+
+The common registered alignment input removed the late stage-selector mux.
+The arithmetic map used 10,538 estimated ALMs, 13,460 ALUTs, 2,506 registers,
+412 block-memory bits and five DSP blocks. Post-map Fmax was **12.7 MHz**,
+with −58.813 ns setup slack; both targets failed. The worst path remained
+alignment through magnitude comparison, add/subtract and leading-zero detection
+(78.647 ns, 29 logic levels). Map completed with zero errors and four warnings;
+TimeQuest completed with zero errors and zero warnings. No fitter ran.
+
 ### Earlier serialized implementation
 
 The following measurements describe the earlier serialized 603e implementation.
