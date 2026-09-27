@@ -56,8 +56,8 @@ sequence. A BAT block is cached page by page.
 
 A data entry filled by a load does not permit stores. A store to that page
 misses, takes the serial sequence and, if allowed, upgrades the entry. On the
-603e a permitted store implies a permitted load (PEM Table 7-21 for pages and
-the BAT PP encoding), so a store-filled entry serves both. A store to a C=0
+603e a permitted store implies a permitted load (PEM Table 7-21 for pages,
+Table 7-12 for BATs), so a store-filled entry serves both. A store to a C=0
 page is refused by the serial sequence and never cached as store-permitted.
 
 ## Invalidation
