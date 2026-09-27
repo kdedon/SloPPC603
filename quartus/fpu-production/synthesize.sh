@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Map production FPU variants and run post-map STA; this does not fit the device.
+set -euo pipefail
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
+image='theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70'
+[[ "${1:---docker}" == --docker ]] || { echo 'usage: synthesize.sh [--docker]' >&2; exit 2; }
+run() {
+  local variant="$1"; shift
+  docker run --rm --network none --user "$(id -u):$(id -g)" \
+    --volume "${repo_dir}:/work" \
+    --workdir "/work/quartus/fpu-production/output_files/${variant}/project" \
+    "${image}" "/opt/intelFPGA_lite/quartus/bin/$@"
+}
+
+docker image inspect --format 'id={{.Id}} repo_digests={{join .RepoDigests ","}}' "${image}"
+docker run --rm --network none --user "$(id -u):$(id -g)" \
+  --volume "${repo_dir}:/work" --workdir /work "${image}" \
+  /opt/intelFPGA_lite/quartus/bin/quartus_sh --version
+for variant in full arith; do
+  project_dir="${script_dir}/output_files/${variant}/project"
+  reports_dir="${script_dir}/output_files/${variant}/reports"
+  mkdir -p "${project_dir}" "${reports_dir}"
+  rm -f "${reports_dir}"/*
+  cp "${script_dir}/${variant}/ppc_fpu.qpf" "${script_dir}/${variant}/ppc_fpu.qsf" \
+    "${script_dir}/ppc_fpu.sdc" "${script_dir}/timing.tcl" "${project_dir}/"
+  sources=(rtl/ppc_pkg.sv rtl/fpu/ppc_fpu_pkg.sv rtl/fpu/ppc_fpu_arith.sv)
+  if [[ "${variant}" == full ]]; then sources+=(rtl/fpu/ppc_fpu.sv); fi
+  manifest="${script_dir}/output_files/${variant}/sources.sha256"
+  project_inputs=(
+    "quartus/fpu-production/output_files/${variant}/project/ppc_fpu.qpf"
+    "quartus/fpu-production/output_files/${variant}/project/ppc_fpu.qsf"
+    "quartus/fpu-production/output_files/${variant}/project/ppc_fpu.sdc"
+    "quartus/fpu-production/output_files/${variant}/project/timing.tcl"
+    quartus/fpu-production/synthesize.sh
+  )
+  (cd "${repo_dir}" && sha256sum "${sources[@]}" "${project_inputs[@]}") > "${manifest}.before"
+  run "${variant}" quartus_map --read_settings_files=on --write_settings_files=off ppc_fpu -c ppc_fpu
+  run "${variant}" quartus_sta -t timing.tcl
+  (cd "${repo_dir}" && sha256sum "${sources[@]}" "${project_inputs[@]}") > "${manifest}.after"
+  cmp "${manifest}.before" "${manifest}.after"
+  for report in ppc_fpu.map.rpt clocks.txt check_timing.txt fmax.txt setup.txt hold.txt unconstrained.txt; do
+    cp "${project_dir}/output_files/${report}" "${reports_dir}/"
+  done
+  map_report="${reports_dir}/ppc_fpu.map.rpt"
+  if ! grep -Eq 'Total pins +; 0' "${map_report}" ||
+     ! grep -Eq 'Total virtual pins +; [1-9][0-9]*' "${map_report}"; then
+    echo "ERROR: ${variant} did not map as virtual-only I/O" >&2
+    exit 4
+  fi
+  echo "${variant} synthesis summary:"
+  grep -E 'Estimate of Logic utilization|Combinational ALUT usage|Dedicated logic registers|Total registers|Total block memory bits|Total DSP Blocks|Total virtual pins|Total pins' "${map_report}"
+  python3 - "${reports_dir}" <<'PY'
+import re
+import sys
+from pathlib import Path
+reports = Path(sys.argv[1])
+fmax = (reports / "fmax.txt").read_text()
+setup = (reports / "setup.txt").read_text()
+fm = re.search(r";\s*([0-9.]+) MHz\s*;\s*([0-9.]+) MHz\s*;\s*fpu_clk", fmax)
+slack = re.search(r"Worst case slack is\s+(-?[0-9.]+)", setup)
+if not fm or not slack:
+    raise SystemExit("ERROR: could not parse Fmax and worst setup slack")
+frequency = float(fm.group(1))
+print(f"Post-map Fmax: {frequency:.1f} MHz; 50 MHz: {'PASS' if frequency >= 50 else 'FAIL'}; 66 MHz: {'PASS' if frequency >= 66 else 'FAIL'}")
+print(f"Worst setup slack at 20 ns: {float(slack.group(1)):.3f} ns")
+print("Top setup paths:")
+paths = [line for line in setup.splitlines() if re.match(r";\s*-?[0-9.]+\s*;", line)]
+for line in paths[:10]:
+    print(line)
+PY
+  if rg -n 'Warning \(|Critical Warning \(|Error \(' "${map_report}" "${reports_dir}/check_timing.txt"; then
+    echo "Review warnings above for ${variant}."
+  fi
+done
+echo 'PASS: production FPU variants mapped and post-map timed; no fitted-area or timing-closure claim.'

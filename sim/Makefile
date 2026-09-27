@@ -112,6 +112,43 @@ test-fpu-characterize: test-fpu-reference $(FPU_VECTORS) $(FPU_EXTRACT_DIR)/Vss_
 test-fpu-qualify: test-fpu-reference $(FPU_VECTORS) $(FPU_EXTRACT_DIR)/Vss_fpu_candidate
 	$(FPU_EXTRACT_DIR)/Vss_fpu_candidate $(FPU_VECTORS:.jsonl=.txt) $(FPU_RESULTS)
 	python3 fpu/vectors.py compare --vectors $(FPU_VECTORS) --results $(FPU_RESULTS) --strict
+
+.PHONY: test-fpu-arith-initial test-fpu-arith
+PPC_FPU_ARITH_RTL := ../rtl/ppc_pkg.sv ../rtl/fpu/ppc_fpu_pkg.sv ../rtl/fpu/ppc_fpu_arith.sv
+PPC_FPU_ARITH_BUILD := $(BUILD_DIR)/ppc-fpu-arith
+PPC_FPU_ARITH_INITIAL := $(BUILD_DIR)/fpu/production-initial.txt
+PPC_FPU_ARITH_ALL := $(BUILD_DIR)/fpu/production-all.txt
+
+$(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith: $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_arith --Mdir $(PPC_FPU_ARITH_BUILD) $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
+
+$(PPC_FPU_ARITH_INITIAL): fpu/production_vectors.py fpu/ppc_reference.py
+	mkdir -p $(BUILD_DIR)/fpu
+	python3 fpu/production_vectors.py --vectors $@ --random 32 --ops add sub mul madd msub nmadd nmsub frsp fctiw fctiwz cmpu cmpo
+
+$(PPC_FPU_ARITH_ALL): fpu/production_vectors.py fpu/ppc_reference.py
+	mkdir -p $(BUILD_DIR)/fpu
+	python3 fpu/production_vectors.py --vectors $@ --random 128
+
+test-fpu-arith-initial: test-fpu-reference $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith $(PPC_FPU_ARITH_INITIAL)
+	./$(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_ARITH_INITIAL)
+
+test-fpu-arith: test-fpu-reference $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith $(PPC_FPU_ARITH_ALL)
+	./$(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_ARITH_ALL)
+
+.PHONY: test-fpu-shell
+PPC_FPU_SHELL_BUILD := $(BUILD_DIR)/ppc-fpu-shell
+$(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_shell.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_shell --Mdir $(PPC_FPU_SHELL_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_shell.sv
+
+test-fpu-shell: $(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell
+	./$(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell
+
+.PHONY: lint-fpu-production
+lint-fpu-production:
+	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv
+
+lint: lint-fpu-production
 test: test-iterative-divider test-bus60x-line-read test-reference-memory test-line-read-independent test-core-divider-timing test-core-divider-timing-pid6 test-bus60x-arbiter test-core-bus60x-ifetch-error test-divider-timing test-core-bus60x-unified test-core-bus60x-unified-update test-lsu-update-decode test-completion-update test-lsu-update-edges test-core-lsu-update test-bus60x test-core-bus60x test-core-bus60x-update test-reference test-divw-decode test-divw-execution test-core-divide-signed test-divw-recovery test-divw-zero-recovery test-divw-overflow-recovery test-divwu-decode test-divwu-execution test-core-divide-unsigned test-divwu-recovery test-divwu-zero-recovery test-multiply-high-decode test-multiply-high-execution test-core-multiply-high test-mulhw-recovery test-mulhwu-recovery test-multiply-decode test-multiply-execution test-core-multiply test-multiply-recovery test-multiply-overflow-recovery test-crstate-execution test-crstate-decode test-core-crstate test-crstate-edges test-crlogical-decode test-completion-cr-bits test-crlogical-edges test-core-crlogical test-crtransfer-decode test-completion-cr-fields test-crtransfer-edges test-core-crtransfer test-unarylogical-decode test-core-unarylogical test-unarylogical-execution test-cntlzw-recovery test-extsb-recovery test-extsh-recovery test-core-andimmediate test-andi-recovery test-andis-recovery test-core-addimmediate test-addic-recovery test-addic-record-recovery test-core-subimmediate test-subfic-recovery test-subfic-negative-recovery test-core-subunary test-subunary-execution test-subfme-recovery test-subfze-recovery test-core-subextend test-subextend-execution test-subfe-recovery test-subfe-zero-recovery test-core-subcarry test-subcarry-execution test-subfc-recovery test-core-subtract test-subtract-execution test-subf-recovery test-neg-recovery test-core-insert test-insert-execution test-insert-recovery test-core-arithmetic-shifts test-arithmetic-shift-execution test-sraw-recovery test-srawi-recovery test-core test-completion test-execution test-stage test-recovery-execution test-recovery-state test-core-recovery test-fetch-recovery test-core-logical test-flags test-completion-flags test-record-execution test-core-record-logical test-core-record-edges test-core-add-flags test-core-add-recovery test-add-execution test-core-adde test-core-adde-recovery test-adde-execution test-core-add-unary test-add-unary-execution test-addme-recovery test-addze-recovery test-core-rotate test-rotate-execution test-core-control-memory test-core-memory-edges test-core-shifts test-shift-execution test-slw-recovery test-srw-recovery
 test-core:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core --Mdir $(BUILD_DIR) $(RTL) ../tb/tb_core.sv

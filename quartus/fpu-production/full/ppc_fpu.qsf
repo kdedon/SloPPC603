@@ -1,0 +1,36 @@
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CSEBA6U23I7
+set_global_assignment -name TOP_LEVEL_ENTITY ppc_fpu
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 2
+set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"
+set_global_assignment -name SDC_FILE ppc_fpu.sdc
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/ppc_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_arith.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu.sv
+set_instance_assignment -name VIRTUAL_PIN ON -to clk_i
+set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni
+set_instance_assignment -name VIRTUAL_PIN ON -to issue_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to issue_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to issue_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to result_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to result_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to commit_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to commit_tag_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to commit_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to abort_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to abort_tag_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to kill_all_i
+set_instance_assignment -name VIRTUAL_PIN ON -to mem_req_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to mem_req_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to mem_req_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to mem_rsp_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to mem_rsp_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to mem_rsp_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to store_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to store_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to store_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to inspect_fpr_index_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to inspect_fpr_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to inspect_fpscr_o[*]

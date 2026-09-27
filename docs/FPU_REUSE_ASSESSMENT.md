@@ -21,6 +21,13 @@ The unchanged F1 experiment remains a benchmark for the new standalone unit. The
 process owns CPU integration. No architectural completion or score change is
 claimed by this documentation milestone.
 
+F2–F4 standalone implementation is in progress in `ppc_fpu.sv` and
+`ppc_fpu_arith.sv`. The serialized shell provides FPR/FPSCR ownership, tagged
+commit/abort, and side-effect-free memory preparation for later LSU attachment.
+The new arithmetic engine is independent of the failed donor candidate.
+Production numerical, architectural and timing acceptance remain separate
+gates; the initial implementation and clean lint do not close them.
+
 ## Decision
 
 **Neither donor is a drop-in 603e FPU. Use SS as the starting candidate for arithmetic code reuse and N64 as a source of size-oriented implementation techniques.** Reuse may save work on mantissa arithmetic, normalization and rounding, but does not remove the need for PPC state, fused arithmetic, exception semantics, estimates, memory support or precise retirement. No measured schedule saving is established.
