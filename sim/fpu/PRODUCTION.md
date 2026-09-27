@@ -180,6 +180,22 @@ checks, 11,958 estimate packets with 0 mismatches, and 851 shell checks with
 `fctiw`/`fctiwz` 3, finite `fres` 18, and `frsqrte` 1; strict test builds
 emitted 0 warnings and 0 errors.
 
+Recorded: `make -C sim -j2 test-fpu lint` with `YOSYS_BIN` set to the
+pinned extractor, on clean commit `5b272c2`, 2026-09-27; 20 Python anchors,
+32 table value/bound proofs, 200,000 raw arithmetic packets with 0
+mismatches, 72 cancellation offsets, 4 held-response checks, 11,958
+estimate packets with 0 mismatches, 851 shell checks with 0 failures,
+and 55 strict lint invocations with 0 warnings and 0 errors.
+
+Recorded: `make -C sim -j2 test-fpu` on commit `5b272c2` plus the split
+NORM_LOW timing stage, 2026-09-27; 20 Python anchors, 32 table value/bound
+proofs, 200,000 arithmetic packets with 0 mismatches, 74 cancellation
+offsets (FMA 0–24, divide 0–48), 4 held-response checks, 11,958 estimate
+packets with 0 mismatches, and 851 shell checks with 0 failures. ADD/SUB/
+`frsp` reached 16 clocks, MUL/fused 19, single/double divide stayed
+18/32, conversion 3, finite `fres` 18, and `frsqrte` 1. Strict test builds
+emitted 0 warnings and 0 errors.
+
 `test-fpu` runs the production Python anchors, exact reciprocal-square-root
 table proof, raw arithmetic, estimates, and shell; `test-fpu-qualify` remains
 the deliberately failing F1 donor qualification and is not part of that

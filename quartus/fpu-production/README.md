@@ -44,6 +44,8 @@ Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `438f37
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `4068252`, 2026-09-27.
 
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `5b272c2`, 2026-09-27.
+
 | Commit / variant | ALM estimate | ALUT | Registers | RAM bits | DSP | Fmax | Setup slack | Pins | Critical path |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `fc33a75` / `full` | 11,601 | 14,305 | 3,462 | 0 | 4 | 12.4 MHz | −60.524 ns | 0/816 | Sum magnitude to FPRF |
@@ -57,6 +59,7 @@ Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `406825
 | `7318a24` / `full` | 10,209 | 12,013 | 6,117 | 0 | 4 | 38.8 MHz | −5.797 ns | 0/816 | 53-bit significand multiplication |
 | `438f377` / `full` | 10,274 | 12,101 | 6,626 | 0 | 4 | 44.0 MHz | −2.707 ns | 0/816 | Coarse normalization and exponent adjustment |
 | `4068252` / `full` | 10,212 | 11,914 | 6,807 | 0 | 4 | 45.4 MHz | −2.007 ns | 0/816 | Divider compare and subtract to remainder |
+| `5b272c2` / `full` | 10,246 | 11,898 | 6,807 | 0 | 4 | 47.1 MHz | −1.229 ns | 0/816 | Low normalization (8/4/2/1) |
 
 The 50 MHz harness check and aspirational 66 MHz target are unmet in all recorded runs. These maps are useful historical measurements, not fitted-area or timing-closure claims; final synthesis result is pending. The synthesis script pins Quartus Lite image `theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70`.
 

@@ -154,7 +154,7 @@ module ppc_fpu_arith (
         PREP, PREP_MUL, PREP_MID, PREP_LOW, PREP_PRODUCT,
         ALIGN_PLAN, ALIGN_SHIFT,
         SUM_PLAN, SUM_0, SUM_1, SUM_2, SUM_3,
-        NORM_HIGH_A, NORM_HIGH_B, NORM_LOW,
+        NORM_HIGH_A, NORM_HIGH_B, NORM_LOW_A, NORM_LOW_B,
         TINY, ROUND, PACK, RESPONSE
     } state_t;
     state_t state_q;
@@ -176,6 +176,7 @@ module ppc_fpu_arith (
     finite_sum_t sum_q;
     finite_sum_t norm_high_a_q;
     finite_sum_t norm_high_q;
+    finite_sum_t norm_low_a_q;
     finite_sum_t norm_low_q;
     round_work_t round_work_q;
     round_post_t round_post_q;
@@ -321,19 +322,19 @@ module ppc_fpu_arith (
         finite_sum_t out;
         out = value;
         if (out.magnitude != 0) begin
-                if (out.magnitude[158:127] == 32'd0) begin
-                    out.magnitude <<= 32;
-                    out.exponent -= 16'sd32;
-                end
-                if (out.magnitude[158:143] == 16'd0) begin
-                    out.magnitude <<= 16;
-                    out.exponent -= 16'sd16;
-                end
+            if (out.magnitude[158:127] == 32'd0) begin
+                out.magnitude <<= 32;
+                out.exponent -= 16'sd32;
+            end
+            if (out.magnitude[158:143] == 16'd0) begin
+                out.magnitude <<= 16;
+                out.exponent -= 16'sd16;
+            end
         end
         return out;
     endfunction
 
-    function automatic finite_sum_t normalize_low(input finite_sum_t value);
+    function automatic finite_sum_t normalize_low_a(input finite_sum_t value);
         finite_sum_t out;
         out = value;
         if (out.magnitude != 0) begin
@@ -345,6 +346,14 @@ module ppc_fpu_arith (
                 out.magnitude <<= 4;
                 out.exponent -= 16'sd4;
             end
+        end
+        return out;
+    endfunction
+
+    function automatic finite_sum_t normalize_low_b(input finite_sum_t value);
+        finite_sum_t out;
+        out = value;
+        if (out.magnitude != 0) begin
             if (out.magnitude[158:157] == 2'd0) begin
                 out.magnitude <<= 2;
                 out.exponent -= 16'sd2;
@@ -1162,6 +1171,7 @@ module ppc_fpu_arith (
             sum_q <= '0;
             norm_high_a_q <= '0;
             norm_high_q <= '0;
+            norm_low_a_q <= '0;
             norm_low_q <= '0;
             round_work_q <= '0;
             round_post_q <= '0;
@@ -1283,10 +1293,14 @@ module ppc_fpu_arith (
                 end
                 NORM_HIGH_B: begin
                     norm_high_q <= normalize_high_b(norm_high_a_q);
-                    state_q <= NORM_LOW;
+                    state_q <= NORM_LOW_A;
                 end
-                NORM_LOW: begin
-                    norm_low_q <= normalize_low(norm_high_q);
+                NORM_LOW_A: begin
+                    norm_low_a_q <= normalize_low_a(norm_high_q);
+                    state_q <= NORM_LOW_B;
+                end
+                NORM_LOW_B: begin
+                    norm_low_q <= normalize_low_b(norm_low_a_q);
                     state_q <= TINY;
                 end
                 TINY: begin
@@ -1313,12 +1327,12 @@ module ppc_fpu_arith (
                     div_rounds_q <= div_rounds_q - 5'd1;
                     if (div_rounds_q == 5'd1) begin
                         // The normalized quotient is in [0.5, 2), so its
-                        // leading one is bit 157 or 158. NORM_HIGH cannot
-                        // shift it; enter NORM_LOW with the same value.
-                        norm_high_q <= prepare_division_sum(req_q.op,
+                        // leading one is bit 157 or 158. Coarse normalization
+                        // and the 8/4 shifts cannot change it.
+                        norm_low_a_q <= prepare_division_sum(req_q.op,
                             req_q.single_result, req_q.a, req_q.b,
                             div_quotient_next, div_remainder_next != 53'd0);
-                        state_q <= NORM_LOW;
+                        state_q <= NORM_LOW_B;
                     end
                 end
                 RESPONSE: if (rsp_ready_i) state_q <= IDLE;
