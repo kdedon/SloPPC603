@@ -1,10 +1,11 @@
-"""Reviewed DingusPPC checkout and tool options shared by every reference runner."""
+"""DingusPPC checkout checks and tool options shared by every reference runner."""
 from pathlib import Path
 import subprocess
 import sys
 
-# The reviewed reference commit; results from any other tree are not comparable.
-PINNED_COMMIT = 'cf951f690013cc9466c398d0428d4df50b6ede45'
+# Runs track the latest DingusPPC. This is the last commit a full reference run
+# passed on; when HEAD differs, its log since then explains new mismatches.
+LAST_VERIFIED = 'cf951f690013cc9466c398d0428d4df50b6ede45'
 
 
 def positive_seed(value):
@@ -24,8 +25,6 @@ def xrand_run_args(seed):
 
 
 def add_arguments(parser, prebuilt_runner=False):
-    parser.add_argument('--allow-unpinned-reference', action='store_true',
-                        help=f'accept a reference checkout other than clean {PINNED_COMMIT[:12]}')
     parser.add_argument('--verilator', default='verilator', help='Verilator executable')
     parser.add_argument('--xrand-seed', type=positive_seed,
                         help='build the RTL with randomized X state and run it with this seed')
@@ -34,17 +33,14 @@ def add_arguments(parser, prebuilt_runner=False):
                             help='reuse the flat-RAM runner from build_reference_runner.py')
 
 
-def verify(ref, allow_unpinned):
-    """Return (HEAD, dirty paths); fail unless ref is the clean pinned commit."""
+def verify(ref):
+    """Return (HEAD, dirty paths) and report how the checkout relates to LAST_VERIFIED."""
     if not (ref/'cpu/ppc/ppcopcodes.cpp').is_file():
-        raise RuntimeError(f'DingusPPC checkout not found at {ref}; clone it next to this repository '
-                           f'and check out {PINNED_COMMIT}')
+        raise RuntimeError(f'DingusPPC checkout not found at {ref}; clone it next to this repository')
     head = subprocess.check_output(['git', '-C', str(ref), 'rev-parse', 'HEAD'], text=True).strip()
     dirty = subprocess.check_output(['git', '-C', str(ref), 'status', '--porcelain'], text=True).splitlines()
-    if head != PINNED_COMMIT or dirty:
-        problem = (f'{ref} is at {head}{" with uncommitted changes" if dirty else ""}; '
-                   f'expected clean {PINNED_COMMIT}')
-        if not allow_unpinned:
-            raise RuntimeError(f'{problem} (--allow-unpinned-reference overrides)')
-        print(f'WARNING: {problem}; results are not comparable to recorded evidence', file=sys.stderr)
+    print(f'DingusPPC {head[:12]}{" (uncommitted changes)" if dirty else ""}')
+    if head != LAST_VERIFIED:
+        print(f'DingusPPC {head[:12]} differs from last verified {LAST_VERIFIED[:12]}; on a mismatch, '
+              f'review: git -C {ref} log --oneline {LAST_VERIFIED[:12]}..{head[:12]}', file=sys.stderr)
     return head, dirty

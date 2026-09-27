@@ -16,7 +16,7 @@ def main():
     build = args.build_dir.resolve()
     build.mkdir(parents=True, exist_ok=True)
     ref = ROOT/'dingusppc'
-    verify(ref, args.allow_unpinned_reference)
+    verify(ref)
     runner, _ = build_reference(build, ref, flat_ram=True)
     print(f'Built {runner}')
 

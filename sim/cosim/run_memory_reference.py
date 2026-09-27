@@ -9,7 +9,7 @@ import sys
 from compare_state import compare
 from compare_memory import FIELDS, HEADER, RAM_BASE, RAM_BYTES, read_trace
 from memory_program import corpus, FORMS
-from reference_checkout import PINNED_COMMIT, add_arguments, verify, xrand_build_flags, xrand_run_args
+from reference_checkout import LAST_VERIFIED, add_arguments, verify, xrand_build_flags, xrand_run_args
 from run_reference import HERE, PROJECT, ROOT, build_reference, command, digest
 
 
@@ -20,7 +20,7 @@ def main():
     args=ap.parse_args();build=args.build_dir.resolve();build.mkdir(parents=True,exist_ok=True)
     (build/'manifest.json').unlink(missing_ok=True)
     ref=ROOT/'dingusppc'
-    reference_commit,reference_dirty=verify(ref,args.allow_unpinned_reference)
+    reference_commit,reference_dirty=verify(ref)
     runner,cppargs=build_reference(build,ref,flat_ram=True,prebuilt=args.reference_runner_dir)
     words,groups=corpus();program=build/'program.hex'
     program.write_text(''.join(f'{w:08x}\n' for w in words))
@@ -111,7 +111,7 @@ def main():
               'ppc_le':False,'memory_controller_le':False,'backend':'flat big-endian service; no original MMU',
               'ram_base':RAM_BASE,'ram_bytes':RAM_BYTES,'instruction_image':'separate immutable Harvard image',
               'initial_state':'zero GPR/CR/XER/LR/CTR and RAM; PC0; real instruction initialization',
-              'reference_pinned':PINNED_COMMIT,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
+              'reference_last_verified':LAST_VERIFIED,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
               'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
               'verilator':subprocess.check_output([args.verilator,'--version'],text=True).strip(),
               'compile_commands':[[str(x) for x in cppargs],[str(x) for x in rtlargs]],

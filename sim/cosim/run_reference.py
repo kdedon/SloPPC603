@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 from compare_state import FIELDS, SCHEMA_VERSION, compare, read_trace
-from reference_checkout import PINNED_COMMIT, add_arguments, verify, xrand_build_flags, xrand_run_args
+from reference_checkout import LAST_VERIFIED, add_arguments, verify, xrand_build_flags, xrand_run_args
 from reference_program import corpus
 
 HERE = Path(__file__).resolve().parent
@@ -68,7 +68,7 @@ def main():
     build=args.build_dir.resolve(); build.mkdir(parents=True,exist_ok=True)
     (build/'manifest.json').unlink(missing_ok=True)
     ref=args.reference.resolve()
-    reference_commit,reference_dirty=verify(ref,args.allow_unpinned_reference)
+    reference_commit,reference_dirty=verify(ref)
     runner,cppargs=build_reference(build,ref)
     words, coverage=corpus()
     program=build/'program.hex'
@@ -175,7 +175,7 @@ def main():
               ref/'LICENSE',ref/'CREDITS.md']
     adapter=[HERE/name for name in ['reference_runner.cpp','run_reference.py','reference_checkout.py','reference_program.py','compare_state.py']]
     manifest={'schema_version':SCHEMA_VERSION,'reference':'DingusPPC original opcode handlers',
-              'reference_pinned':PINNED_COMMIT,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
+              'reference_last_verified':LAST_VERIFIED,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
               'model':args.model,'pvr':'00070101' if args.model=='MPC603EV' else '00060101',
               'include_601':False,'ppc_le':False,'memory_controller_le':False,
               'initial_state':'zero GPR/CR/XER/LR/CTR, PC=0; PVR only model metadata',

@@ -496,18 +496,22 @@ test-core-bus60x-update: build-core-bus60x
 	python3 tools/control_memory_program.py --lsu-update --output $(BUILD_DIR)/bus60x-update-program
 	./$(BUILD_DIR)/core-bus60x/Vtb_core_bus60x $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/bus60x-update-program
 
-.PHONY: test-reference reference-checkout reference-runner-flat
-# Reference targets need the pinned DingusPPC checkout beside this repository.
-# REFERENCE_FLAGS=--allow-unpinned-reference accepts another commit.
+.PHONY: test-reference reference-checkout reference-runner-flat reference-update
+# Reference targets need a DingusPPC checkout beside this repository; track its latest commit.
 REFERENCE_DIR := ../../dingusppc
-REFERENCE_ARGS = --verilator $(VERILATOR_TOOL) $(XRAND_REFERENCE_ARGS) $(REFERENCE_FLAGS)
+REFERENCE_ARGS = --verilator $(VERILATOR_TOOL) $(XRAND_REFERENCE_ARGS)
 FLAT_REFERENCE_ARGS = $(REFERENCE_ARGS) --reference-runner-dir $(BUILD_DIR)/reference-runner-flat
 reference-checkout:
 	@test -f $(REFERENCE_DIR)/cpu/ppc/ppcopcodes.cpp || { \
 		echo "ERROR: reference targets (and regression) need a DingusPPC checkout at $(abspath $(REFERENCE_DIR)); see docs/REFERENCE_RUNNER.md" >&2; exit 2; }
+# Fast-forward the DingusPPC checkout and print the range it moved over.
+reference-update: reference-checkout
+	@old=$$(git -C $(REFERENCE_DIR) rev-parse --short HEAD); git -C $(REFERENCE_DIR) pull --ff-only && \
+		new=$$(git -C $(REFERENCE_DIR) rev-parse --short HEAD) && echo "DingusPPC $$old..$$new" && \
+		git -C $(REFERENCE_DIR) log --oneline $$old..$$new
 # One flat-RAM runner build shared by every memory reference target.
 reference-runner-flat: reference-checkout
-	python3 cosim/build_reference_runner.py --build-dir $(BUILD_DIR)/reference-runner-flat $(REFERENCE_FLAGS)
+	python3 cosim/build_reference_runner.py --build-dir $(BUILD_DIR)/reference-runner-flat
 test-reference: reference-checkout
 	python3 cosim/run_reference.py --build-dir $(BUILD_DIR)/reference $(REFERENCE_ARGS)
 

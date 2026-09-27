@@ -10,7 +10,7 @@ import sys
 from compare_memory import FIELDS, HEADER, read_trace
 from compare_state import compare
 from memory_program import corpus
-from reference_checkout import PINNED_COMMIT, add_arguments, verify, xrand_build_flags, xrand_run_args
+from reference_checkout import LAST_VERIFIED, add_arguments, verify, xrand_build_flags, xrand_run_args
 from run_reference import HERE, PROJECT, ROOT, build_reference, command, digest
 from run_reference_stress import memory_access
 
@@ -19,7 +19,7 @@ def run(build, args):
     build.mkdir(parents=True, exist_ok=True)
     (build/'manifest.json').unlink(missing_ok=True)
     ref = ROOT/'dingusppc'
-    reference_commit, reference_dirty = verify(ref, args.allow_unpinned_reference)
+    reference_commit, reference_dirty = verify(ref)
     lists = [PROJECT/'rtl'/name for name in
              ['files.f', 'bat_service_files.f', 'core_bat_files.f']]
     sources = list(dict.fromkeys((PROJECT/'sim'/line).resolve()
@@ -81,7 +81,7 @@ def run(build, args):
               'sha256': {**frozen, **{str(p): digest(p) for p in artifacts}},
               'compile_commands': [list(map(str, cppargs)), list(map(str, rtlargs))],
               'run_command': list(map(str, rtlrun)), 'xrand_seed': args.xrand_seed, 'negative_diagnostics': negative,
-              'reference_pinned': PINNED_COMMIT, 'reference_commit': reference_commit,
+              'reference_last_verified': LAST_VERIFIED, 'reference_commit': reference_commit,
               'reference_dirty': reference_dirty,
               'compiler': subprocess.check_output(['g++', '--version'], text=True).splitlines()[0],
               'verilator': subprocess.check_output([args.verilator, '--version'], text=True).strip(),

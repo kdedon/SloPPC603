@@ -11,7 +11,7 @@ import subprocess
 import sys
 from compare_memory import FIELDS, HEADER, read_trace
 from compare_state import compare
-from reference_checkout import PINNED_COMMIT, add_arguments, verify, xrand_build_flags, xrand_run_args
+from reference_checkout import LAST_VERIFIED, add_arguments, verify, xrand_build_flags, xrand_run_args
 from run_reference import HERE, PROJECT, ROOT, build_reference, command, digest
 from stress_program import GENERATOR_VERSION, MIN_BLOCKS, MAX_BLOCKS, generate
 
@@ -44,7 +44,7 @@ def run_suite(args):
     build=args.build_dir.resolve();build.mkdir(parents=True,exist_ok=True)
     (build/args.report_name).unlink(missing_ok=True)
     ref=ROOT/'dingusppc';bench=PROJECT/'tb/tb_core_memory_reference.sv'
-    reference_commit,reference_dirty=verify(ref,args.allow_unpinned_reference)
+    reference_commit,reference_dirty=verify(ref)
     sources=[(PROJECT/'sim'/line).resolve() for line in (PROJECT/'rtl/files.f').read_text().splitlines() if line.strip()]
     inputs=source_inputs(ref,sources,bench)
     runner=build/'reference_runner';rtl=build/'rtl/Vtb_core_memory_reference'
@@ -65,7 +65,7 @@ def run_suite(args):
             raise RuntimeError('sources changed during compile; rerun after source freeze')
         frozen={'inputs':inputs,'runner':str(runner),'executables':{str(p):digest(p) for p in [runner,rtl]},
                 'commands':[[str(x) for x in cppargs],[str(x) for x in rtlargs]],'xrand_seed':args.xrand_seed,
-                'reference_pinned':PINNED_COMMIT,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
+                'reference_last_verified':LAST_VERIFIED,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
                 'compiler':subprocess.check_output(['g++','--version'],text=True).splitlines()[0],
                 'verilator':subprocess.check_output([args.verilator,'--version'],text=True).strip()}
         build_path.write_text(json.dumps(frozen,indent=2)+'\n')

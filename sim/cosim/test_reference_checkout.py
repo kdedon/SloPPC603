@@ -24,20 +24,24 @@ class ReferenceCheckoutTest(unittest.TestCase):
 
     def test_missing_checkout_rejected(self):
         with self.assertRaisesRegex(RuntimeError, 'not found'):
-            verify(self.ref/'absent', False)
+            verify(self.ref/'absent')
 
-    def test_unpinned_commit_rejected(self):
-        with self.assertRaisesRegex(RuntimeError, 'allow-unpinned-reference'):
-            verify(self.ref, False)
-
-    def test_override_warns_and_records(self):
-        (self.ref/'cpu/ppc/ppcopcodes.cpp').write_text('dirty')
+    def test_any_commit_accepted_with_log_hint(self):
         stderr = io.StringIO()
-        with contextlib.redirect_stderr(stderr):
-            head, dirty = verify(self.ref, True)
+        with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(io.StringIO()):
+            head, dirty = verify(self.ref)
         self.assertEqual(len(head), 40)
+        self.assertFalse(dirty)
+        self.assertIn('differs from last verified', stderr.getvalue())
+        self.assertIn('log --oneline', stderr.getvalue())
+
+    def test_dirty_tree_accepted_and_reported(self):
+        (self.ref/'cpu/ppc/ppcopcodes.cpp').write_text('dirty')
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+            _, dirty = verify(self.ref)
         self.assertTrue(dirty)
-        self.assertIn('uncommitted', stderr.getvalue())
+        self.assertIn('uncommitted changes', stdout.getvalue())
 
 
 class XrandArgumentsTest(unittest.TestCase):

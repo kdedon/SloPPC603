@@ -24,10 +24,13 @@ original handlers, full register snapshots and a bounded flat big-endian RAM
 backend. Its mandatory-header v2 traces use `compare_memory.py`; the existing
 38-field v1 format stays unchanged.
 
-Every runner requires `../dingusppc` to be a clean checkout of the commit pinned
-in `reference_checkout.py`; `--allow-unpinned-reference` (or
-`make REFERENCE_FLAGS=--allow-unpinned-reference`) overrides this and records the
-actual commit. The Makefile builds the flat-RAM reference runner once
+Every runner requires a `../dingusppc` checkout and tracks its latest commit;
+`make -C sim reference-update` fast-forwards it and prints the new log range.
+Runs print and record the DingusPPC commit and dirty state. `LAST_VERIFIED` in
+`reference_checkout.py` is the last commit a full reference run passed on; when
+HEAD differs, the runner prints the `git log` range to review if a comparison
+breaks. DingusPPC is a comparison reference, not a source of truth: triage every
+mismatch against the manuals. The Makefile builds the flat-RAM reference runner once
 (`build_reference_runner.py`) and passes it and `$(VERILATOR)` to each runner.
 With the default `XRAND=1` it also passes `--xrand-seed $(XRAND_SEED)`: the RTL
 is built with `--x-assign unique --x-initial unique`, run with that seed, and the
