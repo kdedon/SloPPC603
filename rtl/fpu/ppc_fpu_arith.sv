@@ -142,6 +142,8 @@ module ppc_fpu_arith #(
 
     typedef struct packed {
         logic [52:0] wide;
+        logic [52:0] single_normalized_wide;
+        logic [10:0] single_denorm_biased_exp;
         logic signed [15:0] exponent;
         logic sign;
         logic negate_final;
@@ -552,6 +554,10 @@ module ppc_fpu_arith #(
         round_post_t out;
         logic [52:0] kept;
         logic [52:0] rounded_up;
+        logic [52:0] base_single_wide;
+        logic [52:0] up_single_wide;
+        logic [5:0] base_single_lz;
+        logic [5:0] up_single_lz;
         logic [5:0] increment_carry;
         logic carry_out;
         logic signed [15:0] max_exp;
@@ -586,6 +592,16 @@ module ppc_fpu_arith #(
         out.fi = value.inexact;
         out.xx = value.inexact;
         if (single_result) begin
+            base_single_wide = {value.kept[23:0], 29'd0};
+            up_single_wide = {rounded_up[23:0], 29'd0};
+            base_single_lz = leading_zero53(base_single_wide);
+            up_single_lz = leading_zero53(up_single_wide);
+            out.single_normalized_wide = value.increment ?
+                (up_single_wide << up_single_lz) :
+                (base_single_wide << base_single_lz);
+            out.single_denorm_biased_exp = value.increment ?
+                (11'd897 - {5'd0, up_single_lz}) :
+                (11'd897 - {5'd0, base_single_lz});
             carry_out = value.increment && (&kept[23:0]);
             if (value.increment) kept[23:0] = rounded_up[23:0];
             if (carry_out) begin
@@ -624,7 +640,6 @@ module ppc_fpu_arith #(
         logic signed [15:0] min_exp;
         logic signed [15:0] exponent;
         logic [52:0] wide;
-        logic [5:0] denorm_shift;
         logic denorm_result;
         logic deliver_inf;
         logic final_sign;
@@ -642,7 +657,6 @@ module ppc_fpu_arith #(
         min_exp = single_result ? -16'sd126 : -16'sd1022;
         exponent = value.exponent;
         wide = value.wide;
-        denorm_shift = 6'd0;
         denorm_result = (exponent == min_exp) && !wide[52] && (wide != 0);
         deliver_inf = (rn == 2'b00) ||
             (rn == 2'b10 && !value.sign) ||
@@ -665,12 +679,9 @@ module ppc_fpu_arith #(
             out.fprf = final_sign ? 5'b11000 : 5'b10100;
         end else begin
             if (single_result && denorm_result) begin
-                denorm_shift = leading_zero53(wide);
-                wide <<= denorm_shift;
-                // A binary32 subnormal widens to a binary64 normal with
-                // biased exponent 1023-126-shift = 897-shift.
                 out.result = {final_sign,
-                    11'd897 - {5'd0, denorm_shift}, wide[51:0]};
+                    value.single_denorm_biased_exp,
+                    value.single_normalized_wide[51:0]};
                 out.fprf = final_sign ? 5'b11000 : 5'b10100;
             end else begin
                 out.result = {final_sign, 11'(exponent + 16'sd1023),
