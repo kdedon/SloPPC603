@@ -422,3 +422,10 @@ queue is full produced no request, forward, or issue handshake; same-edge
 retirement admitted it exactly once and produced exactly one tagged memory
 request. In 603e mode, two simultaneous retirements freed two credits for
 same-edge ordered arithmetic-plus-LSU admission.
+
+Recorded: `make -C sim -j2 test-fpu-shell test-fpu-602
+test-fpu-stream-603 test-fpu-stream-602` on the same immutable shell
+`1463439`/arithmetic `6a2f28b` snapshot, 2026-09-27; 603e shell 851 checks,
+602 shell 171 checks, and both 32-instruction streams issued, forwarded,
+and committed all 32 packets with zero warnings or errors. This predates
+the 602 SPR timing correction.
