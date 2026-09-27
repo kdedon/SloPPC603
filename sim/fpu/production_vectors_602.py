@@ -70,6 +70,15 @@ def cases_for(op, rng, random_count):
     if op in ('mul', 'madd', 'msub', 'nmadd', 'nmsub'):
         yield (0x00800000, 0, 0x3f000000, 'exact-tiny')
         yield (0x007fffff, 0, 0x3f800001, 'tiny-rounds-normal')
+    if op in THREE:
+        # Exact product cancellation and both sides of a binary32 halfway
+        # result; all sources are legal SP-tagged binary32 values.
+        yield (0x3f800001, 0xbf800002, 0x3f800001, 'delta2')
+        yield (0x3f800000, 0xbf7fffff, 0x3f800000, 'adjacent')
+        yield (0x3f800001, 0x33800000, 0x3f7ffffe, 'halfway-below')
+        yield (0x3f800001, 0x33800000, 0x3f800001, 'halfway-above')
+        yield (0x3f800000, 0x0d800000, 0x3f800000, 'far-positive')
+        yield (0x3f800000, 0x8d800000, 0x3f800000, 'far-negative')
     for _ in range(random_count):
         yield (rng.getrandbits(32), rng.getrandbits(32),
                rng.getrandbits(32), 'random')

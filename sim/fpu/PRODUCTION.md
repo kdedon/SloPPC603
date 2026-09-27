@@ -455,3 +455,20 @@ snapshot of shell commit `f2c8e36` and arithmetic commit `91c80b8`,
 packets per personality, and 28/24 paired-issue checks, with six strict
 lint invocations and zero warnings or errors. This qualifies the
 memory-specific source and dependency cone cut at the public interface.
+
+The expanded alignment corpus adds exact Δ2 fused-product cancellation,
+one-minus-its-adjacent-predecessor, positive and negative halfway tails, and
+far aligned signed addends. The 603e generator is SHA-256
+`e825a737ace004491c41e6b7e2ac8f704312c7a782a5d31a4251206a30561230`;
+the 602 generator is SHA-256
+`23ffe6e8e2844f33019528ef7f954c93d902075403a8ecc514cc65f9906ee3b0`.
+Its exact cancellation anchor is independently asserted in the Python
+reference tests, including all four rounding modes.
+
+Recorded: `make -C sim -j2 test-fpu-reference` with the new reference
+anchor, 2026-09-27; 21 tests passed. Recorded: `make -C sim -j2
+test-fpu-arith test-fpu-arith-602` on arithmetic WIP commit `20c2329`
+(blob `83a72a2568032123fda8139ca478f0c79eb8dda8`) with the expanded
+vectors, 2026-09-27; 603e 201,632 and 602 181,952 raw packets, zero
+result/invalid/flag/class mismatches, 76 cancellation offsets and four
+flush/reset/held-response checks passed.

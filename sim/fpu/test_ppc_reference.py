@@ -30,6 +30,19 @@ class PowerPCReferenceChecks(unittest.TestCase):
         self.assertEqual(result['result'], 0x3ff8000020000000)
         self.assertTrue(result['xx'])
 
+    def test_fused_product_low_bit_survives_cancellation(self):
+        for rn in range(4):
+            double = arithmetic('madd', 0x3ff0000000000001,
+                                0xbff0000000000002,
+                                0x3ff0000000000001, rn)
+            self.assertEqual(double['result'], 0x3970000000000000)
+            self.assertFalse(double['xx'])
+            single = arithmetic('madd', 0x3ff0000020000000,
+                                0xbff0000040000000,
+                                0x3ff0000020000000, rn, single=True)
+            self.assertEqual(single['result'], 0x3d10000000000000)
+            self.assertFalse(single['xx'])
+
     def test_negative_fused_negates_after_rounding(self):
         a, b, c = 0x3ff0000000000000, 0x3ca0000000000000, 0x3ff0000000000000
         positive = arithmetic('madd', a, b, c, rn=2)

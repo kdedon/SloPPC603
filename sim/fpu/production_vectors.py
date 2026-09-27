@@ -90,6 +90,29 @@ def packets(ops, random_count, seed):
                         (0, 0x36a0000000000000, 0x7fefffffffffffff),
                         (0, 1 << 63, 0x7fefffffffffffff),
                         (0x3ff0000000000001, 0xbff0000000000000, 0x3feffffffffffffe)))
+                    cases.extend((a, b, c, 'fused-align-boundary') for a, b, c in (
+                        # Exact Δ2 product cancellation: (1+2^-52)^2 -
+                        # (1+2^-51) = 2^-104, plus the adjacent 1-nextbelow(1).
+                        (0x3ff0000000000001, 0xbff0000000000002,
+                         0x3ff0000000000001),
+                        (0x3ff0000000000000, 0xbfefffffffffffff,
+                         0x3ff0000000000000),
+                        # A 106-bit product lies just below/above an addend
+                        # halfway boundary; all four RN modes are generated.
+                        (0x3ff0000000000001, 0x3ca0000000000000,
+                         0x3feffffffffffffe),
+                        (0x3ff0000000000001, 0x3ca0000000000000,
+                         0x3ff0000000000001),
+                        # Far aligned addends isolate right-jam sticky at
+                        # distances 159/160/161 and both signs.
+                        (0x3ff0000000000000, 0x3600000000000000,
+                         0x3ff0000000000000),
+                        (0x3ff0000000000000, 0x35f0000000000000,
+                         0x3ff0000000000000),
+                        (0x3ff0000000000000, 0x35e0000000000000,
+                         0x3ff0000000000000),
+                        (0x3ff0000000000000, 0xb5f0000000000000,
+                         0x3ff0000000000000)))
                     cases.append((0x0000000000000001,
                                   0x000fffffffffffff,
                                   0x3fe0000000000000, 'dp-tiny-halfway'))
@@ -101,6 +124,19 @@ def packets(ops, random_count, seed):
                         # must retain the single-precision FPRF class.
                         (0x3810000000000000, 0, 0x3fe0000000000000),
                         (0xb810000000000000, 0, 0x3fe0000000000000)))
+                    cases.extend((a, b, c, 'fused-align-boundary') for a, b, c in (
+                        (0x3ff0000020000000, 0xbff0000040000000,
+                         0x3ff0000020000000),
+                        (0x3ff0000000000000, 0xbfefffffe0000000,
+                         0x3ff0000000000000),
+                        (0x3ff0000020000000, 0x3e70000000000000,
+                         0x3fefffffc0000000),
+                        (0x3ff0000020000000, 0x3e70000000000000,
+                         0x3ff0000020000000),
+                        (0x3ff0000000000000, 0x39b0000000000000,
+                         0x3ff0000000000000),
+                        (0x3ff0000000000000, 0xb9b0000000000000,
+                         0x3ff0000000000000)))
             if op == 'frsp':
                 cases.extend((0, x, 0, 'round-boundary') for x in
                              (0x380fffffe0000000, 0x36a0000000000000,
