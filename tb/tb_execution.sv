@@ -396,27 +396,22 @@ module tb_execution;
     check(dp_issue_valid && dp_issue === held_issue,
           "RS issue packet changed while downstream backpressured");
 
-    // Issue/capture turnover and a wake coincident with capture of new pending work.
+    // Issue/capture turnover. Rename resolves a same-edge wake before capture.
     @(negedge clk);
     dp_issue_ready = 1'b1;
     dp_valid = 1'b1;
     dp_op = ALU_ADD;
     dp_producer = ctag(2, 32'h63);
-    dp_a = pending_operand(rename_tag_t'(4), ctag(4, 32'h64));
+    dp_a = ready_operand(32'd7);
     dp_b = ready_operand(32'd9);
-    dp_wake_valid = 1'b1;
-    dp_wake.tag = rename_tag_t'(4);
-    dp_wake.producer = ctag(4, 32'h64);
-    dp_wake.value = 32'd7;
     #1;
     check(dp_ready, "RS did not allow issue/capture turnover");
     tick();
     dp_valid = 1'b0;
-    dp_wake_valid = 1'b0;
     dp_issue_ready = 1'b0;
     check(dp_issue_valid && dp_issue.a == 32'd7 && dp_issue.b == 32'd9 &&
           dp_issue.ctrl.op == ALU_ADD && dp_issue.ctrl.producer == ctag(2, 32'h63),
-          "same-edge wake was missed during RS capture");
+          "RS lost the turnover capture");
 
     // IU result holds under backpressure, then turns over without a bubble.
     reset_units();

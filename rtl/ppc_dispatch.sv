@@ -5,6 +5,7 @@
 // When that IU result is accepted the operand takes the result directly, so a
 // dependent op still issues back to back and no wake compare sits on the
 // issue or operand path. Any other wake is captured and issues one cycle later.
+// Sources arrive already resolved against a same-cycle wake.
 module ppc_dispatch (
   input logic clk_i, rst_ni,
   input logic cancel_i,
@@ -27,7 +28,6 @@ module ppc_dispatch (
   rs_entry_t entry;
   logic bypass_a, bypass_b;
   logic ready_a, ready_b, issue_fire;
-  operand_t captured_a, captured_b;
   function automatic operand_t resolve(input operand_t pending);
     operand_t operand;
     operand = pending;
@@ -64,8 +64,6 @@ module ppc_dispatch (
   assign issue_o.a = bypass_a ? iu_value_i : entry.a.value;
   assign issue_o.b = bypass_b ? iu_value_i : entry.b.value;
   assign dispatch_ready_o = !cancel_i && (!occupied || issue_fire);
-  assign captured_a = resolve(entry_i.a);
-  assign captured_b = resolve(entry_i.b);
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       occupied <= 1'b0;
@@ -83,11 +81,10 @@ module ppc_dispatch (
       if (dispatch_valid_i && dispatch_ready_o) begin
         occupied <= 1'b1;
         entry.ctrl <= entry_i.ctrl;
-        // Also accept a wake coincident with capture of a pending source.
-        entry.a <= captured_a;
-        entry.b <= captured_b;
-        bypass_a <= next_iu_producer(captured_a.ready, captured_a.producer);
-        bypass_b <= next_iu_producer(captured_b.ready, captured_b.producer);
+        entry.a <= entry_i.a;
+        entry.b <= entry_i.b;
+        bypass_a <= next_iu_producer(entry_i.a.ready, entry_i.a.producer);
+        bypass_b <= next_iu_producer(entry_i.b.ready, entry_i.b.producer);
       end
     end
   end
