@@ -1,7 +1,9 @@
 # Cyclone V bootstrap measurement
 
 For the current cached 60x system, use the separate `integrated/` project and
-[current baseline notes](../docs/INTEGRATED_SYNTHESIS_BASELINE.md). This directory's
+[current baseline notes](../docs/INTEGRATED_SYNTHESIS_BASELINE.md). The
+`translated/` project fits the translated cached 60x top with the MVP profile;
+see [its baseline](../docs/TRANSLATED_SYNTHESIS_BASELINE.md). This directory's
 original project and historical evidence remain the bootstrap measurement.
 
 This project targets `5CSEBA6U23I7` at 50 MHz and synthesizes the current core
@@ -27,7 +29,7 @@ QSF source assignments from it with `qsf_sources.py`, and `make -C sim check-spe
 fails if a committed QSF has drifted:
 
 ```sh
-python3 quartus/qsf_sources.py quartus quartus/integrated quartus/timer-bat quartus/icache
+python3 quartus/qsf_sources.py quartus quartus/integrated quartus/timer-bat quartus/translated quartus/icache
 ```
 
 The top-level clock, synchronous active-low reset, 32-bit instruction stimulus,
