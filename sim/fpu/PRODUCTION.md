@@ -275,17 +275,17 @@ production target. Strict `make -C sim -j2 lint` includes the standalone
 does not measure core integration: the production unit is intentionally not
 in any core `files.f`.
 
-## Pipeline and 602 personality qualification in progress
+## Historical initial pipeline and 602 qualification
 
-The current arithmetic model `ppc_reference.py` has SHA-256
+At this checkpoint, arithmetic model `ppc_reference.py` had SHA-256
 `d24d94727585c7e0170945172d9da77e3dbe55ab6e22b1e6f621d7dcb1e6979b`;
-the current corpus generator `production_vectors.py` has SHA-256
+the corpus generator `production_vectors.py` had SHA-256
 `971ae6420e1e210d410d11fb7bb892e89da8baa34de683392ac56ecfa9074e0b`.
 The exact-rational model now supplies before-round tininess and excludes
 undefined non-binary32 operands from the single-result FMA conformance
-corpus. These pins describe this work-in-progress checkpoint; the 602 raw
-arithmetic oracle and both public shell personality suites still need
-complete qualification.
+corpus. These pins describe the initial checkpoint, before qualification of the 602
+raw oracle and both shell suites. The later combined acceptance records below
+supersede this status.
 
 Recorded: `make -C sim -j2 lint-fpu-timing test-fpu-timing-603
 test-fpu-timing-602` on commit `2f8ec31` plus uncommitted arithmetic-R and

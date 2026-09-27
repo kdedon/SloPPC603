@@ -195,10 +195,12 @@ Run prior integer regressions as well as FP integration tests. Measure isolated 
 
 ## Next acceptance work
 
-The standalone implementation and synthesis-only 50 MHz measurement are complete.
-The final schedule and limits are recorded in [FPU_ARITHMETIC.md](FPU_ARITHMETIC.md).
+Both compile-time personalities pass the recorded standalone functional and
+instruction-cycle baseline, including four rename credits and pipelined issue.
+Frequency closure remains open: full 603e and 602 post-map Fmax are 19.7 and
+17.7 MHz, below both 50 and 66 MHz. See [FPU_ARITHMETIC.md](FPU_ARITHMETIC.md)
+and the [measurement records](../quartus/fpu-production/README.md).
 The separate integration process must connect the tagged interface to completion,
 CR/MSR, FPR dependencies and the atomic LSU protocol, then run CPU-level FP and
-integer regressions. Four rename slots and 603e pipeline throughput require
-additional integration work. Preserve the failed F1 candidate as reproducible
-comparison evidence; production uses the independently verified SV backend.
+integer regressions. Preserve the failed F1 candidate as reproducible comparison
+evidence; production uses the independently verified SV backend.

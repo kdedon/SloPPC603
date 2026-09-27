@@ -519,3 +519,23 @@ The 602 path ran from the same arithmetic control into pending FPSCR data
 The 602 warning is the expected absent optional double-multiply register filter.
 No fitter ran. Subsequent `16a8246` removes inactive helper functions without
 changing the active datapath; these measurements retain their original source pin.
+
+## Final speed-mapping experiment
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full` and
+`./quartus/fpu-production/synthesize.sh --docker full602`, commit `20c2329`
+with the sole harness change `quartus_map --optimize=speed` in a frozen copy,
+2026-09-27. Both blocking commands exited zero. The pinned Quartus 17.0.2
+image, device, constraints and two-processor setting above were unchanged.
+
+| Personality | Estimated ALMs | ALUTs | Registers | Post-map Fmax | 20 ns slack |
+|---|---:|---:|---:|---:|---:|
+| 603e | 27,007 | 32,701 | 7,391 | 19.7 MHz | −30.659 ns |
+| 602 | 19,674 | 25,976 | 5,004 | 17.7 MHz | −36.533 ns |
+
+Speed mapping reproduced the preceding default results exactly; it did not
+close either clock target. Map reported zero errors and 69/39 warnings;
+TimeQuest reported zero errors and 0/1 warnings for 603e/602. No fitter ran.
+The committed harness retains its original mapping command. Further work must
+shorten arithmetic rounding and same-cycle completion/credit paths while
+preserving the documented instruction latencies and throughput.
