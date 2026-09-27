@@ -255,6 +255,27 @@ module tb_ppc_fpu_602;
         checks++;
     endtask
 
+    task automatic check_spr_latency(input logic [9:0] xo,
+        input logic [9:0] spr, input logic [31:0] source_gpr,
+        input logic [1:0] cycles);
+        completion_tag_t identity;
+        issue_word(spr_insn(xo, 5'd10, spr), source_gpr,
+                   1'b0, 1'b0, 1'b0, identity);
+        if ((cycles == 2'd1) != result_valid_o)
+            $fatal(1, "602 SPR %0d wrong first-cycle result", spr);
+        if (cycles == 2'd2) begin
+            @(posedge clk_i);
+            #2;
+            if (!result_valid_o)
+                $fatal(1, "602 SPR %0d missing second-cycle result", spr);
+        end
+        await_result(identity);
+        if (result_o.exception != FPU_NO_EXCEPTION)
+            $fatal(1, "602 SPR %0d latency result trapped", spr);
+        commit(identity);
+        checks++;
+    endtask
+
     task automatic expect_emulation(input logic [31:0] instruction,
         input logic fe0, input logic fe1);
         completion_tag_t identity;
@@ -348,6 +369,10 @@ module tb_ppc_fpu_602;
         // architecturally specified by the manual.
         write_tag_spr(10'd1021, 32'd0);
         write_tag_spr(10'd1022, 32'd0);
+        // LT/SP use the non-BAT SPR timing: mfspr=1, mtspr=2.
+        // 602 UM Table 6-2, physical PDF 312.
+        check_spr_latency(10'd339, 10'd1021, 32'd0, 2'd1);
+        check_spr_latency(10'd467, 10'd1022, 32'd0, 2'd2);
         load_single(5'd1, 32'h3f800000);
         load_single(5'd2, 32'h40000000);
         load_single(5'd0, 32'd0);

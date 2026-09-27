@@ -357,6 +357,12 @@ module ppc_fpu #(
         (CPU_602 && kind == DK_ARITH && op == FP_FCTIWZ);
   endfunction
 
+  function automatic logic [1:0] local_latency(input decode_kind_t kind);
+    if (CPU_602 && kind == DK_MFSPR) return 2'd1;
+    if (CPU_602 && kind == DK_MTSPR) return 2'd2;
+    return 2'd3;
+  endfunction
+
   function automatic logic is_fpu_exec(input decode_kind_t kind);
     return kind == DK_ARITH || kind == DK_MOVE || kind == DK_FSEL;
   endfunction
@@ -1537,7 +1543,7 @@ module ppc_fpu #(
       pending_d[exec_index].started = 1'b1;
       if (local_launch) begin
         pending_d[exec_index].result = exec_result;
-        pending_d[exec_index].local_wait = 2'd3;
+        pending_d[exec_index].local_wait = local_latency(work_decoded.kind);
       end else if (mem_launch) begin
         pending_d[exec_index].mem = mem_req_o;
         pending_d[exec_index].result = exec_result;
@@ -1547,7 +1553,8 @@ module ppc_fpu #(
       pending_d[work1_old_index].started = 1'b1;
       if (work1_local_launch) begin
         pending_d[work1_old_index].result = work1_result;
-        pending_d[work1_old_index].local_wait = 2'd3;
+        pending_d[work1_old_index].local_wait =
+            local_latency(work1_decoded.kind);
       end else if (work1_mem_launch) begin
         pending_d[work1_old_index].mem = work1_mem_req;
         pending_d[work1_old_index].result = work1_result;
@@ -1602,7 +1609,8 @@ module ppc_fpu #(
         pending_d[dispatch_index].started = 1'b1;
         if (local_launch) begin
           pending_d[dispatch_index].result = exec_result;
-          pending_d[dispatch_index].local_wait = 2'd3;
+          pending_d[dispatch_index].local_wait =
+              local_latency(work_decoded.kind);
         end else if (mem_launch) begin
           pending_d[dispatch_index].mem = mem_req_o;
           pending_d[dispatch_index].result = exec_result;
@@ -1612,7 +1620,8 @@ module ppc_fpu #(
         pending_d[dispatch_index].started = 1'b1;
         if (work1_local_launch) begin
           pending_d[dispatch_index].result = work1_result;
-          pending_d[dispatch_index].local_wait = 2'd3;
+          pending_d[dispatch_index].local_wait =
+              local_latency(work1_decoded.kind);
         end else if (work1_mem_launch) begin
           pending_d[dispatch_index].mem = work1_mem_req;
           pending_d[dispatch_index].result = work1_result;
@@ -1639,7 +1648,8 @@ module ppc_fpu #(
         pending_d[dispatch1_index].started = 1'b1;
         if (work1_local_launch) begin
           pending_d[dispatch1_index].result = work1_result;
-          pending_d[dispatch1_index].local_wait = 2'd3;
+          pending_d[dispatch1_index].local_wait =
+              local_latency(work1_decoded.kind);
         end else if (work1_mem_launch) begin
           pending_d[dispatch1_index].mem = work1_mem_req;
           pending_d[dispatch1_index].result = work1_result;
