@@ -39,6 +39,34 @@ mismatches. It also passed exact 3/4/18/33-cycle timing checks. The first
 arithmetic Quartus map reached 28.8 MHz at 9,572 ALMs, improving area and
 frequency over the 160-bit lane but still missing the 50 MHz target.
 
+### Remaining physical timing work
+
+The qualified arithmetic checkpoint is `16a8246`; the 112-bit change alters
+only the add lane. In the first Cyclone V Quartus 17.0.2 map, the worst add
+register path runs from `aligned_q.plan.distance[6]` to
+`add_q.normal_exponent[15]` in 34.603 ns. The distance signal drives the
+alignment selection, then the selected sum's leading-zero count and exponent
+correction remain in the same execution stage. The prefix carry and local
+leading-zero candidates have reduced this path, but the late distance control
+and serial leading-zero-to-exponent computation still exceed a 20 ns period.
+The divider's first stage runs from `div_b_raw_q[60]` to
+`div_remainder_q[1]` in 32.673 ns: raw divisor normalization and the initial
+radix-four remainder step share that stage. The response rounding path is
+28.055 ns to the response queue. These are measured data delays, not new
+cycle budgets; moving work into a new execution stage would violate the
+required 3/4/18/33-cycle behavior.
+
+The integrated shell makes the same-edge finish bypass a longer path than the
+arithmetic map alone: the latest full-module maps reached 19.7 MHz for 603e
+and 17.7 MHz for 602, with forwarding and request-control logic after the
+backend result. A future implementation needs to shorten or restructure that
+combinational forwarding path while preserving same-edge dependent issue and
+the held response contract. It also needs to split or precompute the add
+stage's alignment/normal-exponent decision and rebalance divisor preparation
+within the existing divide schedule. Each change requires fresh raw-oracle,
+exact-timing and fitted full-module checks. The current implementation meets
+the tested functional and cycle contracts but has not met 50 MHz.
+
 Division captures raw operands at request acceptance and normalizes them in
 the first divider stage. Special-result calculation also occurs after admission. A radix-four recurrence compares
 `4×remainder` with registered `D`, `2D` and `3D`, generating two quotient bits
