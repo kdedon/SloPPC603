@@ -283,6 +283,71 @@ module tb_ppc_fpu_dual #(
             $fatal(1, "paired load failed to commit FPR4");
         checks++;
 
+        // A prepared store and a younger load may share the 603e retirement
+        // edge: the store's only side effect is the matching commit handshake.
+        issue_one(request(8'd96, dform(6'd52, 5'd1, 16'd0)));
+        reply_memory(tag(96), 64'd0, 1'b1);
+        issue_one(request(8'd97, dform(CPU_602 ? 6'd48 : 6'd50,
+                                       5'd7, 16'd0)));
+        reply_memory(tag(97),
+            CPU_602 ? 64'h000000003f800000 : 64'h3ff0000000000000, 1'b0);
+        await_head(tag(96));
+        if (!result_o.store || store_valid_o || !store_o.write ||
+            store_o.data[31:0] != 32'h3f800000)
+            $fatal(1, "prepared store published early or lost descriptor result=%h store=%h",
+                   result_o, store_o);
+        if (!CPU_602) begin
+            if (!result1_valid_o || result1_o.tag != tag(97) ||
+                !result1_o.fpr_write || result1_o.fpr_index != 5'd7)
+                $fatal(1, "603e store/load dual result missing %h", result1_o);
+            @(negedge clk_i);
+            commit_tag_i = tag(96);
+            commit_valid_i = 1'b1;
+            commit1_tag_i = tag(97);
+            commit1_valid_i = 1'b1;
+            #1;
+            if (!store_valid_o || store_o.tag != tag(96))
+                $fatal(1, "603e store authorization missing exact commit %h", store_o);
+            @(posedge clk_i);
+            accept0 = commit_ready_o;
+            accept1 = commit1_ready_o;
+            #2;
+            commit_valid_i = 1'b0;
+            commit1_valid_i = 1'b0;
+            if (!accept0 || !accept1)
+                $fatal(1, "603e store/load paired retirement rejected");
+            checks += 3;
+        end else begin
+            if (result1_valid_o)
+                $fatal(1, "602 incorrectly offered dual store/load retirement");
+            retire_one(tag(96));
+            await_head(tag(97));
+            retire_one(tag(97));
+            checks += 2;
+        end
+        inspect_fpr_index_i = 5'd7;
+        #1;
+        if (inspect_fpr_o != (CPU_602 ? 64'h000000003f800000 :
+                                      64'h3ff0000000000000))
+            $fatal(1, "store/load pair did not commit load FPR7");
+        checks++;
+
+        // Reversed age order still accepts one LSU and one arithmetic
+        // operation on the same edge and retires in program order.
+        issue_pair(request(8'd98, dform(CPU_602 ? 6'd48 : 6'd50,
+                                        5'd8, 16'd0)),
+                   request(8'd99, add_insn(5'd9)));
+        reply_memory(tag(98),
+            CPU_602 ? 64'h000000003f800000 : 64'h3ff0000000000000, 1'b0);
+        await_head(tag(98));
+        retire_one(tag(98));
+        await_head(tag(99));
+        if (!result_o.fpr_write || result_o.fpr_value !=
+            (CPU_602 ? 64'h0000000040400000 : 64'h4008000000000000))
+            $fatal(1, "load-older arithmetic result incorrect %h", result_o);
+        retire_one(tag(99));
+        checks += 3;
+
         // The LSU reservation remains available behind an occupied divider.
         issue_one(request(8'd92, {CPU_602 ? 6'd59 : 6'd63,
                                   5'd5, 5'd2, 5'd1, 5'd0, 5'd18, 1'b0}));
@@ -297,6 +362,36 @@ module tb_ppc_fpu_dual #(
         await_head(tag(93));
         retire_one(tag(93));
         checks += 3;
+
+        // Abort at a middle generation cancels that entry and all younger
+        // work, including a queued LSU request, but preserves the older
+        // arithmetic result. Reuse the physical tag index with a fresh
+        // generation and verify no stale completion can satisfy it.
+        issue_one(request(8'd100, add_insn(5'd12)));
+        issue_one(request(8'd101, add_insn(5'd13)));
+        issue_one(request(8'd102,
+            dform(CPU_602 ? 6'd48 : 6'd50, 5'd14, 16'd0)));
+        @(negedge clk_i);
+        abort_tag_i = tag(101);
+        abort_valid_i = 1'b1;
+        @(posedge clk_i);
+        #2;
+        abort_valid_i = 1'b0;
+        await_head(tag(100));
+        if (!result_o.fpr_write || result_o.fpr_value !=
+            (CPU_602 ? 64'h0000000040400000 : 64'h4008000000000000))
+            $fatal(1, "middle abort damaged older result %h", result_o);
+        retire_one(tag(100));
+        repeat (3) begin
+            @(negedge clk_i);
+            if (result_valid_o || mem_req_valid_o)
+                $fatal(1, "middle abort retained canceled younger work result=%h memory=%h",
+                       result_o, mem_req_o);
+        end
+        issue_one(request(8'd109, add_insn(5'd15)));
+        await_head(tag(109));
+        retire_one(tag(109));
+        checks += 4;
 
         // A 602 serialized conversion cannot accept a paired LSU operation.
         if (CPU_602) begin

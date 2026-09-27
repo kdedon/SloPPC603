@@ -372,3 +372,13 @@ parameterized testbench and Makefile target, in an immutable snapshot,
 strict lint/build zero warnings/errors. Defined exceptional result, invalid
 cause, divide-by-zero, FR/FI clearing, FPRF/write suppression, and unaffected
 status metadata were checked alongside finite bounds and result format.
+
+Recorded: `make -C sim -j2 test-fpu-dual-603 test-fpu-dual-602` on frozen
+shell commit `27ff134` with the expanded public-port bench, 2026-09-27;
+603e passed 20 and 602 passed 19 directed checks, with zero build warnings.
+The new cases covered exact-tag authorization of an older prepared store
+while its younger load retired on the same 603e edge, opposite load-before-FP
+issue order, middle-generation abort preserving the older arithmetic result
+while canceling a younger LSU request, and later reuse of the canceled tag
+index with a new generation. The 602 serialized `fctiwz` pairing rejection
+remained covered.
