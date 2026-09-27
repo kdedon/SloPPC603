@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent 32-bit reference preparation for reviewed word-rotate forms."""
+"""Python reference model for reviewed word-rotate forms; rotate_vectors.py feeds it to tb_rotate_execution."""
 
 from __future__ import annotations
 

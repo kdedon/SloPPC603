@@ -2,7 +2,7 @@
   "schema_version": 1,
   "status": "P03x_168_default_plus_10_opt_in_integration_forms",
   "scope": {
-    "executable_decode_entries": "Entries with implementation.status=implemented form the default decoder profile; implemented_opt_in_supervisor and implemented_opt_in_serialization entries require ENABLE_SUPERVISOR_EXCEPTIONS=1.",
+    "executable_decode_entries": "Entries with implementation.status=implemented form the default decoder profile; implemented_opt_in_supervisor and implemented_opt_in_serialization entries require ENABLE_SUPERVISOR_EXCEPTIONS=1; implemented_opt_in_profile entries require every parameter in implementation.feature_profile.",
     "source_inventory": "Appendix A is indexed completely; reviewed families now include seven bounded supervisor and three architectural-serialization opt-in forms in addition to the 168-form default subset.",
     "acceptance_gate": "P03 remains open until every required form has complete reserved-field and variant legality metadata."
   },
@@ -15335,8 +15335,4516 @@
           "role": "architecture_IO_ordering"
         }
       ]
+    },
+    {
+      "id": "mfxer",
+      "mnemonic": "mfxer",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c0102a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "XER"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 567,
+          "printed_page": "8-155",
+          "table": "8-9",
+          "role": "architecture_user_mfspr_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 1
+    },
+    {
+      "id": "mtxer",
+      "mnemonic": "mtxer",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c0103a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "XER"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 584,
+          "printed_page": "8-172",
+          "table": "8-14",
+          "role": "architecture_user_mtspr_selector"
+        }
+      ],
+      "spr": 1
+    },
+    {
+      "id": "mtmsr",
+      "mnemonic": "mtmsr",
+      "family": "mtmsr",
+      "semantic_class": "opt_in_system_control",
+      "form": "X",
+      "mask": "0xfc1fffff",
+      "value": "0x7c000124",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "MSR"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-005",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-137"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 121,
+          "printed_page": "2-43",
+          "table": "2-37",
+          "role": "primary_supervisor_instruction"
+        }
+      ]
+    },
+    {
+      "id": "mfdec",
+      "mnemonic": "mfdec",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1602a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DEC"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TIMERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 22
+    },
+    {
+      "id": "mtdec",
+      "mnemonic": "mtdec",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1603a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DEC"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TIMERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 22
+    },
+    {
+      "id": "mftbl",
+      "mnemonic": "mftbl",
+      "family": "mftb",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c0c42e6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "TBL"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-017",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TIMERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-131"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 122,
+          "printed_page": "2-44",
+          "section": "2.3.6.2.2",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 268
+    },
+    {
+      "id": "mftbu",
+      "mnemonic": "mftbu",
+      "family": "mftb",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c0d42e6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "TBU"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-017",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TIMERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-131"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 269
+    },
+    {
+      "id": "mttbl",
+      "mnemonic": "mttbl",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1c43a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "TBL"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-018",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TIMERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 284
+    },
+    {
+      "id": "mttbu",
+      "mnemonic": "mttbu",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1d43a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "TBU"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-018",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TIMERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 285
+    },
+    {
+      "id": "mfibat0u",
+      "mnemonic": "mfibat0u",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1082a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "IBAT0U"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-010",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 528
+    },
+    {
+      "id": "mtibat0u",
+      "mnemonic": "mtibat0u",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1083a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "IBAT0U"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-012",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 528
+    },
+    {
+      "id": "mfibat0l",
+      "mnemonic": "mfibat0l",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1182a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "IBAT0L"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-010",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 529
+    },
+    {
+      "id": "mtibat0l",
+      "mnemonic": "mtibat0l",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1183a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "IBAT0L"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-012",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 529
+    },
+    {
+      "id": "mfibat1u",
+      "mnemonic": "mfibat1u",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1282a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "IBAT1U"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-010",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 530
+    },
+    {
+      "id": "mtibat1u",
+      "mnemonic": "mtibat1u",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1283a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "IBAT1U"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-012",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 530
+    },
+    {
+      "id": "mfibat1l",
+      "mnemonic": "mfibat1l",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1382a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "IBAT1L"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-010",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 531
+    },
+    {
+      "id": "mtibat1l",
+      "mnemonic": "mtibat1l",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1383a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "IBAT1L"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-012",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 531
+    },
+    {
+      "id": "mfibat2u",
+      "mnemonic": "mfibat2u",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1482a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "IBAT2U"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-010",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 532
+    },
+    {
+      "id": "mtibat2u",
+      "mnemonic": "mtibat2u",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1483a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "IBAT2U"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-012",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 532
+    },
+    {
+      "id": "mfibat2l",
+      "mnemonic": "mfibat2l",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1582a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "IBAT2L"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-010",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 533
+    },
+    {
+      "id": "mtibat2l",
+      "mnemonic": "mtibat2l",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1583a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "IBAT2L"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-012",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 533
+    },
+    {
+      "id": "mfibat3u",
+      "mnemonic": "mfibat3u",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1682a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "IBAT3U"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-010",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 534
+    },
+    {
+      "id": "mtibat3u",
+      "mnemonic": "mtibat3u",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1683a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "IBAT3U"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-012",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 534
+    },
+    {
+      "id": "mfibat3l",
+      "mnemonic": "mfibat3l",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1782a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "IBAT3L"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-010",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 535
+    },
+    {
+      "id": "mtibat3l",
+      "mnemonic": "mtibat3l",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1783a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "IBAT3L"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-012",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 535
+    },
+    {
+      "id": "mfdbat0u",
+      "mnemonic": "mfdbat0u",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1882a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DBAT0U"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-009",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 536
+    },
+    {
+      "id": "mtdbat0u",
+      "mnemonic": "mtdbat0u",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1883a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DBAT0U"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 536
+    },
+    {
+      "id": "mfdbat0l",
+      "mnemonic": "mfdbat0l",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1982a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DBAT0L"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-009",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 537
+    },
+    {
+      "id": "mtdbat0l",
+      "mnemonic": "mtdbat0l",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1983a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DBAT0L"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 537
+    },
+    {
+      "id": "mfdbat1u",
+      "mnemonic": "mfdbat1u",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1a82a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DBAT1U"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-009",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 538
+    },
+    {
+      "id": "mtdbat1u",
+      "mnemonic": "mtdbat1u",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1a83a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DBAT1U"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 538
+    },
+    {
+      "id": "mfdbat1l",
+      "mnemonic": "mfdbat1l",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1b82a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DBAT1L"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-009",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 539
+    },
+    {
+      "id": "mtdbat1l",
+      "mnemonic": "mtdbat1l",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1b83a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DBAT1L"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 539
+    },
+    {
+      "id": "mfdbat2u",
+      "mnemonic": "mfdbat2u",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1c82a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DBAT2U"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-009",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 540
+    },
+    {
+      "id": "mtdbat2u",
+      "mnemonic": "mtdbat2u",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1c83a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DBAT2U"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 540
+    },
+    {
+      "id": "mfdbat2l",
+      "mnemonic": "mfdbat2l",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1d82a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DBAT2L"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-009",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 541
+    },
+    {
+      "id": "mtdbat2l",
+      "mnemonic": "mtdbat2l",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1d83a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DBAT2L"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 541
+    },
+    {
+      "id": "mfdbat3u",
+      "mnemonic": "mfdbat3u",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1e82a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DBAT3U"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-009",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 542
+    },
+    {
+      "id": "mtdbat3u",
+      "mnemonic": "mtdbat3u",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1e83a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DBAT3U"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 542
+    },
+    {
+      "id": "mfdbat3l",
+      "mnemonic": "mfdbat3l",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1f82a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DBAT3L"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-009",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 543
+    },
+    {
+      "id": "mtdbat3l",
+      "mnemonic": "mtdbat3l",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1f83a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DBAT3L"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_RUNTIME_BAT"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 543
+    },
+    {
+      "id": "mtsr",
+      "mnemonic": "mtsr",
+      "family": "mtsr",
+      "semantic_class": "opt_in_system_control",
+      "form": "X",
+      "mask": "0xfc10ffff",
+      "value": "0x7c0001a4",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS",
+        "SR"
+      ],
+      "writes": [
+        "SR"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-006",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SEGMENT_REGISTERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-139"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 123,
+          "printed_page": "2-45",
+          "table": "2-41",
+          "role": "primary_supervisor_instruction"
+        }
+      ]
+    },
+    {
+      "id": "mtsrin",
+      "mnemonic": "mtsrin",
+      "family": "mtsrin",
+      "semantic_class": "opt_in_system_control",
+      "form": "X",
+      "mask": "0xfc1f07ff",
+      "value": "0x7c0001e4",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS",
+        "rB"
+      ],
+      "writes": [
+        "SR"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-007",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SEGMENT_REGISTERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-140"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 123,
+          "printed_page": "2-45",
+          "table": "2-41",
+          "role": "primary_supervisor_instruction"
+        }
+      ]
+    },
+    {
+      "id": "mfsr",
+      "mnemonic": "mfsr",
+      "family": "mfsr",
+      "semantic_class": "opt_in_system_control",
+      "form": "X",
+      "mask": "0xfc10ffff",
+      "value": "0x7c0004a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "SR"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-013",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SEGMENT_REGISTERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-129"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 123,
+          "printed_page": "2-45",
+          "table": "2-41",
+          "role": "primary_supervisor_instruction"
+        }
+      ]
+    },
+    {
+      "id": "mfsrin",
+      "mnemonic": "mfsrin",
+      "family": "mfsrin",
+      "semantic_class": "opt_in_system_control",
+      "form": "X",
+      "mask": "0xfc1f07ff",
+      "value": "0x7c000526",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rB",
+        "SR"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-015",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SEGMENT_REGISTERS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-130"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 123,
+          "printed_page": "2-45",
+          "table": "2-41",
+          "role": "primary_supervisor_instruction"
+        }
+      ]
+    },
+    {
+      "id": "tlbie",
+      "mnemonic": "tlbie",
+      "family": "tlbie",
+      "semantic_class": "opt_in_system_control",
+      "form": "X",
+      "mask": "0xffff07ff",
+      "value": "0x7c000264",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rB"
+      ],
+      "writes": [
+        "TLB"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-016",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_INVALIDATE"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 368,
+          "printed_page": "A-8",
+          "table": "A-1",
+          "rows": [
+            "A1-218"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 124,
+          "printed_page": "2-46",
+          "table": "2-42",
+          "role": "primary_supervisor_instruction"
+        }
+      ]
+    },
+    {
+      "id": "tlbld",
+      "mnemonic": "tlbld",
+      "family": "tlbld",
+      "semantic_class": "opt_in_system_control",
+      "form": "X",
+      "mask": "0xffff07ff",
+      "value": "0x7c0007a4",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rB",
+        "DCMP",
+        "RPA",
+        "SRR1"
+      ],
+      "writes": [
+        "DTLB"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-042",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_LOAD"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 368,
+          "printed_page": "A-8",
+          "table": "A-1",
+          "rows": [
+            "A1-219"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 125,
+          "printed_page": "2-47",
+          "section": "2.3.8",
+          "role": "primary_instruction_page"
+        }
+      ]
+    },
+    {
+      "id": "tlbli",
+      "mnemonic": "tlbli",
+      "family": "tlbli",
+      "semantic_class": "opt_in_system_control",
+      "form": "X",
+      "mask": "0xffff07ff",
+      "value": "0x7c0007e4",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rB",
+        "ICMP",
+        "RPA",
+        "SRR1"
+      ],
+      "writes": [
+        "ITLB"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-045",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_LOAD"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 368,
+          "printed_page": "A-8",
+          "table": "A-1",
+          "rows": [
+            "A1-220"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 126,
+          "printed_page": "2-48",
+          "section": "2.3.8",
+          "role": "primary_instruction_page"
+        }
+      ]
+    },
+    {
+      "id": "mfdcmp",
+      "mnemonic": "mfdcmp",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c11f2a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DCMP"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_LOAD"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 977
+    },
+    {
+      "id": "mtdcmp",
+      "mnemonic": "mtdcmp",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c11f3a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DCMP"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_LOAD"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        }
+      ],
+      "spr": 977
+    },
+    {
+      "id": "mficmp",
+      "mnemonic": "mficmp",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c15f2a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "ICMP"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_LOAD"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 981
+    },
+    {
+      "id": "mticmp",
+      "mnemonic": "mticmp",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c15f3a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "ICMP"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_LOAD"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        }
+      ],
+      "spr": 981
+    },
+    {
+      "id": "mfrpa",
+      "mnemonic": "mfrpa",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c16f2a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "RPA"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_LOAD"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 982
+    },
+    {
+      "id": "mtrpa",
+      "mnemonic": "mtrpa",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c16f3a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "RPA"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_LOAD"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        }
+      ],
+      "spr": 982
+    },
+    {
+      "id": "mfsdr1",
+      "mnemonic": "mfsdr1",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1902a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "SDR1"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SDR1"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 25
+    },
+    {
+      "id": "mtsdr1",
+      "mnemonic": "mtsdr1",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1903a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "SDR1"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SDR1"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 25
+    },
+    {
+      "id": "mfdmiss",
+      "mnemonic": "mfdmiss",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c10f2a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DMISS"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SDR1",
+          "ENABLE_TLB_LOAD",
+          "ENABLE_TLB_MISS_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 87,
+          "printed_page": "2-9",
+          "section": "2.1.2.2",
+          "role": "primary_dmiss_imiss_read_write"
+        }
+      ],
+      "spr": 976
+    },
+    {
+      "id": "mfhash1",
+      "mnemonic": "mfhash1",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c12f2a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "HASH1"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SDR1",
+          "ENABLE_TLB_LOAD",
+          "ENABLE_TLB_MISS_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 88,
+          "printed_page": "2-10",
+          "section": "2.1.2.4",
+          "role": "primary_hash_read_only"
+        }
+      ],
+      "spr": 978
+    },
+    {
+      "id": "mfhash2",
+      "mnemonic": "mfhash2",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c13f2a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "HASH2"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SDR1",
+          "ENABLE_TLB_LOAD",
+          "ENABLE_TLB_MISS_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 88,
+          "printed_page": "2-10",
+          "section": "2.1.2.4",
+          "role": "primary_hash_read_only"
+        }
+      ],
+      "spr": 979
+    },
+    {
+      "id": "mfimiss",
+      "mnemonic": "mfimiss",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c14f2a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "IMISS"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SDR1",
+          "ENABLE_TLB_LOAD",
+          "ENABLE_TLB_MISS_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 87,
+          "printed_page": "2-9",
+          "section": "2.1.2.2",
+          "role": "primary_dmiss_imiss_read_write"
+        }
+      ],
+      "spr": 980
+    },
+    {
+      "id": "mtdmiss",
+      "mnemonic": "mtdmiss",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c10f3a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DMISS"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "manual_legal_not_implemented",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SDR1",
+          "ENABLE_TLB_LOAD",
+          "ENABLE_TLB_MISS_EXCEPTIONS"
+        ],
+        "note": "UM 2.1.2.2 describes DMISS/IMISS as software read/write; the TLB-miss contract rejects mtspr."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 87,
+          "printed_page": "2-9",
+          "section": "2.1.2.2",
+          "role": "primary_dmiss_imiss_read_write"
+        }
+      ],
+      "spr": 976
+    },
+    {
+      "id": "mtimiss",
+      "mnemonic": "mtimiss",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c14f3a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "IMISS"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "manual_legal_not_implemented",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_SDR1",
+          "ENABLE_TLB_LOAD",
+          "ENABLE_TLB_MISS_EXCEPTIONS"
+        ],
+        "note": "UM 2.1.2.2 describes DMISS/IMISS as software read/write; the TLB-miss contract rejects mtspr."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_pages": [
+            121,
+            122
+          ],
+          "printed_pages": [
+            "2-43",
+            "2-44"
+          ],
+          "table": "2-39",
+          "role": "primary_603e_specific_selector"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 87,
+          "printed_page": "2-9",
+          "section": "2.1.2.2",
+          "role": "primary_dmiss_imiss_read_write"
+        }
+      ],
+      "spr": 980
+    },
+    {
+      "id": "mfdsisr",
+      "mnemonic": "mfdsisr",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1202a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DSISR"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 18
+    },
+    {
+      "id": "mtdsisr",
+      "mnemonic": "mtdsisr",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1203a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DSISR"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 18
+    },
+    {
+      "id": "mfdar",
+      "mnemonic": "mfdar",
+      "family": "mfspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1302a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "DAR"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 568,
+          "printed_page": "8-156",
+          "table": "8-10",
+          "role": "architecture_mfspr_selector_and_privilege"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 118,
+          "printed_page": "2-40",
+          "section": "2.3.5.1",
+          "role": "primary_mftb_mfspr_bit25_equivalence"
+        }
+      ],
+      "spr": 19
+    },
+    {
+      "id": "mtdar",
+      "mnemonic": "mtdar",
+      "family": "mtspr",
+      "semantic_class": "opt_in_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1303a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "DAR"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "MPCFPE.pdf",
+          "pdf_page": 585,
+          "printed_page": "8-173",
+          "table": "8-15",
+          "role": "architecture_mtspr_selector_and_privilege"
+        }
+      ],
+      "spr": 19
     }
   ],
+  "spr_read_opcode_equivalence": {
+    "rule": "The 603e ignores instruction bit 25 (HDL bit 6), so XO 339 (mfspr) and XO 371 (mftb) decode identically for every implemented read selector in every profile.",
+    "ignored_bit_mask": "0x00000040",
+    "extended_opcodes": [339, 371],
+    "source": "603e UM section 2.3.5.1 printed 2-40 / PDF 118 and section 2.3.6.2.2 printed 2-44 / PDF 122"
+  },
+  "opt_in_profile_semantics": {
+    "status": "implemented_opt_in_profile",
+    "feature_profile": "Every listed ppc_decode parameter must be 1; the list includes the core-level prerequisites of the named feature.",
+    "manual_legal_not_implemented": "Manual-legal forms the current contracts reject; the decoder must reject them in every profile."
+  },
   "aliases": [
     {
       "alias": "nop",

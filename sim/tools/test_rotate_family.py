@@ -4,6 +4,7 @@ import unittest
 
 import isa_generate
 import rotate_family
+import rotate_vectors
 
 
 class RotateFamilyTest(unittest.TestCase):
@@ -91,6 +92,14 @@ class RotateFamilyTest(unittest.TestCase):
         self.assertEqual(first, second)
         for vector in first:
             rotate_family.evaluate(**vector)
+
+    def test_bench_vectors_are_deterministic_and_self_consistent(self):
+        rows = rotate_vectors.vectors()
+        self.assertEqual(rows, rotate_vectors.vectors())
+        self.assertEqual(len(rows), 64)
+        for a, b, mask, so, rc, value, cr0 in rows:
+            self.assertEqual(value, rotate_family.rotate_left(a, b) & mask)
+            self.assertEqual(cr0 & 1, so if rc else 0)
 
 
 if __name__ == "__main__":

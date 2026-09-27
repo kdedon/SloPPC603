@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent 32-bit reference preparation for the reviewed ADD family."""
+"""Python reference model for the reviewed ADD family; exercised only by its unit tests, not by an RTL bench."""
 
 from __future__ import annotations
 

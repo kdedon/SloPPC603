@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent 32-bit reference preparation for reviewed word-shift forms."""
+"""Python reference model for reviewed word-shift forms; exercised only by its unit tests, not by an RTL bench."""
 
 from __future__ import annotations
 

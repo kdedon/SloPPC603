@@ -70,36 +70,14 @@ class BusScenarioTests(unittest.TestCase):
         self.assertEqual(source["pdf_pages"][-1], 342)
         self.assertEqual(source["printed_pages"][-1], "8-34")
         self.assertEqual(self.single_delays["mode"]["data_bus_bits"], 64)
-        self.assertIn("explicitly labels D[0-63]", self.single_delays["mode"]["data_bus_basis"])
-        self.assertIn("TBST is drawn negated", self.single_delays["mode"]["burst"])
 
     def test_figure_8_17_hand_anchored_delay_observations(self) -> None:
         by_cycle = {item["cycle"]: item for item in self.single_delays["cycles"]}
-        clock3 = by_cycle["Figure 8-17 clock 3"]
-        clock4 = by_cycle["Figure 8-17 clock 4"]
         clock6 = by_cycle["Figure 8-17 clock 6 (second access)"]
         clock11 = by_cycle["Figure 8-17 clock 11 (third access)"]
 
-        self.assertIn("TA remains logically negated", clock3["after_edge"][0])
-        self.assertIn("first stated wait cycle", clock3["after_edge"][0])
-        self.assertIn("TA remains logically negated", clock4["after_edge"][0])
-        self.assertIn("second stated wait cycle", clock4["after_edge"][0])
         self.assertEqual(clock6["modality"], "counterfactual_source_statement")
-        self.assertIn("could have been asserted", clock6["after_edge"][0])
-        self.assertIn("not a required assertion", clock6["after_edge"][0])
         self.assertEqual(clock11["transition_relation"], "asserts_during_labeled_cycle")
-        self.assertIn("polygon is labeled Bad", clock11["after_edge"][0])
-
-    def test_figure_8_17_sampling_boundary_and_scope_are_explicit(self) -> None:
-        clock11, following = self.single_delays["cycles"][-2:]
-        self.assertIn("after the left rising boundary", clock11["at_edge"][0])
-        self.assertIn("during labeled clock cycle 11", clock11["after_edge"][0])
-        self.assertIn("following the depicted within-cycle transition", following["at_edge"][0])
-        self.assertIn("no architectural destination or rollback", following["after_edge"][0])
-        self.assertTrue(any("not being another load" in item for item in self.single_delays["preconditions"]))
-        unresolved = " ".join(self.single_delays["unresolved"])
-        self.assertIn("within-cycle waveform transitions", unresolved)
-        self.assertIn("not a complete waveform or BFM contract", unresolved)
 
     def test_figure_8_18_profile_and_source_locators(self) -> None:
         self.assertEqual(
@@ -112,37 +90,17 @@ class BusScenarioTests(unittest.TestCase):
         self.assertEqual(source["printed_pages"][-1], "8-35")
         mode = self.write_delays["mode"]
         self.assertEqual(mode["data_bus_bits"], 64)
-        self.assertIn("explicitly labels D[0-63]", mode["data_bus_basis"])
-        self.assertIn("TT is labeled SBW", mode["transaction_type"])
-        self.assertIn("TBST is drawn negated", mode["transaction_type"])
 
     def test_figure_8_18_hand_anchored_delay_observations(self) -> None:
         by_cycle = {item["cycle"]: item for item in self.write_delays["cycles"]}
-        clock3 = by_cycle["Figure 8-18 clock 3"]
-        clock4 = by_cycle["Figure 8-18 clock 4"]
         clock6 = by_cycle["Figure 8-18 clock 6 (second access)"]
-        final = by_cycle["last-access qualified DBG (relative)"]
-        self.assertIn("TA is held logically negated", clock3["after_edge"][0])
-        self.assertIn("first stated wait cycle", clock3["after_edge"][0])
-        self.assertIn("TA is held logically negated", clock4["after_edge"][0])
-        self.assertIn("second stated wait cycle", clock4["after_edge"][0])
         self.assertEqual(clock6["transition_relation"], "DBG_held_negated_during_labeled_cycle")
-        self.assertIn("delaying the start", clock6["after_edge"][0])
-        self.assertIn("last access as not delayed", final["after_edge"][0])
 
     def test_figure_8_18_write_roles_and_drtry_boundary(self) -> None:
         roles = self.write_delays["signal_roles"]
         self.assertEqual(roles["data"]["driver"], "603e during each write data tenure")
         self.assertEqual(roles["TA"]["driver"], "responding slave")
         self.assertEqual(roles["DRTRY"]["driver"], "responding slave for reads only")
-        self.assertIn("does not use DRTRY", roles["DRTRY"]["sampling"])
-        self.assertIn("still prevents a qualified DBG", roles["DRTRY"]["sampling"])
-        assertions = " ".join(self.write_delays["assertions"])
-        self.assertIn("does not accept, cancel, or complete a write beat", assertions)
-        self.assertIn("preceding read can still block a qualified DBG", assertions)
-        unresolved = " ".join(self.write_delays["unresolved"])
-        self.assertIn("no absolute grant-to-TA latency", unresolved)
-        self.assertIn("not a complete waveform or BFM contract", unresolved)
 
     def test_figure_8_19_profile_and_source_locators(self) -> None:
         self.assertEqual(
@@ -159,23 +117,11 @@ class BusScenarioTests(unittest.TestCase):
             mode["operation_order"],
             ["four-beat read burst", "four-beat write burst", "four-beat read burst"],
         )
-        self.assertIn("Read, Write, Read", mode["transaction_labels"])
-        self.assertIn("TBST is drawn asserted", mode["transaction_labels"])
 
     def test_figure_8_19_critical_term_and_address_order_are_bounded(self) -> None:
         by_cycle = {item["cycle"]: item for item in self.burst_delays["cycles"]}
         critical = by_cycle["source clock 0 / first read In 0"]
-        first_done = by_cycle["first transfer completion (source-relative)"]
-        third_address = by_cycle["third transfer address start (source-relative)"]
         self.assertEqual(critical["source_term"], "critical quad word")
-        self.assertIn("does not map source clock 0", critical["at_edge"][0])
-        self.assertIn("critical-double-word terminology remains unresolved", critical["after_edge"][0])
-        self.assertIn("In 0, In 1, In 2, and In 3", first_done["at_edge"][0])
-        self.assertIn("Only after the first transfer completes", third_address["at_edge"][0])
-        unresolved = " ".join(self.burst_delays["unresolved"])
-        self.assertIn("axis labeled 1 through 20", unresolved)
-        self.assertIn("critical quad word", unresolved)
-        self.assertIn("critical double word", unresolved)
 
     def test_figure_8_19_write_wait_and_read_retry_sequences(self) -> None:
         labels = [item["cycle"] for item in self.burst_delays["cycles"]]
@@ -191,14 +137,6 @@ class BusScenarioTests(unittest.TestCase):
         self.assertEqual(replacement, retry + 1)
         self.assertEqual(confirmation, replacement + 1)
         self.assertEqual(in3, confirmation + 1)
-        rows = self.burst_delays["cycles"]
-        self.assertIn("negates TA", rows[out2_wait]["after_edge"][0])
-        self.assertIn("Out 3", rows[out2_done]["after_edge"][0])
-        self.assertIn("preceding In 2 is invalidated", rows[retry]["after_edge"][0])
-        self.assertIn("replacement In 2", rows[confirmation]["after_edge"][0])
-        self.assertIn("same sampling edge", rows[in3]["at_edge"][0])
-        self.assertIn("no extra bubble is required", rows[in3]["at_edge"][0])
-        self.assertNotIn("later samples", rows[in3]["at_edge"][0])
         roles = self.burst_delays["signal_roles"]
         self.assertEqual(
             roles["data"]["driver"],
@@ -216,53 +154,18 @@ class BusScenarioTests(unittest.TestCase):
         self.assertEqual(source["printed_pages"][-1], "8-32")
         mode = self.fastest_reads["mode"]
         self.assertEqual(mode["data_bus_bits"], 64)
-        self.assertIn("Read", mode["transaction_labels"])
-        self.assertIn("TBST is drawn negated", mode["transaction_labels"])
-        self.assertIn("qualitative", mode["timing_scope"])
-        self.assertIn("no numeric latency", mode["timing_scope"])
 
     def test_figure_8_15_latency_throughput_condition_is_not_strengthened(self) -> None:
         by_cycle = {item["cycle"]: item for item in self.fastest_reads["cycles"]}
-        first = by_cycle["displayed fastest read 1"]
-        second = by_cycle["displayed fastest read 2"]
         below = by_cycle["counterfactual data delay below third-address boundary"]
         boundary = by_cycle["counterfactual data delay reaches third-address boundary"]
-        self.assertIn("no address-completion-before-data ordering is implied", first["at_edge"][0])
-        self.assertIn("address and data tenure completion may overlap", second["at_edge"][0])
         self.assertEqual(below["modality"], "conditional_source_statement")
-        self.assertIn("third address tenure can still proceed without delay", below["at_edge"][0])
-        self.assertIn("latency increases", below["after_edge"][0])
-        self.assertIn("throughput is not affected", below["after_edge"][0])
         self.assertEqual(boundary["modality"], "conditional_exception_to_unaffected_throughput")
-        self.assertIn("third address tenure itself to be delayed", boundary["at_edge"][0])
-        self.assertIn("statement no longer applies", boundary["after_edge"][0])
-        self.assertIn("no amount of throughput change is specified", boundary["after_edge"][0])
-        self.assertNotIn("throughput decreases", boundary["after_edge"][0])
 
     def test_figure_8_15_mode_roles_and_architectural_limit(self) -> None:
-        mode = self.fastest_reads["mode"]
-        self.assertIn("bounded profile selects normal", mode["drtry"])
-        self.assertIn("selection is not inferred", mode["drtry"])
-        self.assertIn("no-DRTRY startup mode is not covered", mode["drtry"])
         roles = self.fastest_reads["signal_roles"]
         self.assertEqual(roles["data"]["driver"], "responding slave during each depicted read")
         self.assertEqual(roles["DRTRY"]["driver"], "responding slave in the selected normal DRTRY profile")
-        self.assertIn("one bus clock after TA", roles["DRTRY"]["sampling"])
-        unresolved = " ".join(self.fastest_reads["unresolved"])
-        self.assertIn("does not state numeric minimum latency", unresolved)
-        self.assertIn("does not establish absolute architectural", unresolved)
-        self.assertIn("not a complete waveform or BFM contract", unresolved)
-
-    def test_hand_anchored_ta_pacing_observations(self) -> None:
-        by_cycle = {item["cycle"]: item for item in self.scenario["cycles"]}
-        cycle3 = by_cycle["Figure 8-13 bus clock 3"]
-        cycle4 = by_cycle["Figure 8-13 bus clock 4"]
-        self.assertIn("does not label the data value or identify the beat sampled", cycle3["at_edge"][0])
-        self.assertIn("TA is logically negated", cycle3["after_edge"][0])
-        self.assertIn("does not advance", cycle3["after_edge"][0])
-        self.assertIn("remains selected", cycle4["at_edge"][0])
-        self.assertIn("reasserts TA", cycle4["after_edge"][0])
-        self.assertIn("pipeline resumes", cycle4["after_edge"][0])
 
     def test_drtry_relations_are_relative_and_read_only(self) -> None:
         labels = [item["cycle"] for item in self.scenario["cycles"]]
@@ -274,8 +177,6 @@ class BusScenarioTests(unittest.TestCase):
         self.assertLess(cancellation, replacement)
         self.assertEqual(confirmation, replacement + 1)
         self.assertEqual(self.scenario["mode"]["operation"], "read_burst")
-        self.assertIn("normal late-cancel", self.scenario["mode"]["drtry"])
-        self.assertTrue(any("read-only late cancellation" in item for item in self.scenario["assertions"]))
 
     def test_driver_sampling_and_polarity_are_not_inferred_from_wave_height(self) -> None:
         roles = self.scenario["signal_roles"]
@@ -289,15 +190,6 @@ class BusScenarioTests(unittest.TestCase):
 
     def test_mode_and_fidelity_limits_remain_explicit(self) -> None:
         self.assertEqual(self.scenario["mode"]["data_bus_bits"], 64)
-        self.assertIn(
-            "figure 8-13 itself does not print a bus width",
-            self.scenario["mode"]["data_bus_basis"].lower(),
-        )
-        unresolved = " ".join(self.scenario["unresolved"])
-        self.assertIn("does not print data values or ordinal labels", unresolved)
-        self.assertIn("intra-cycle transitions", unresolved)
-        self.assertIn("no TEA waveform row", unresolved)
-        self.assertIn("Electrical propagation", unresolved)
 
     def test_targeted_metadata_mutations_are_rejected(self) -> None:
         def scenario(doc: dict) -> dict:
@@ -434,6 +326,190 @@ class BusScenarioTests(unittest.TestCase):
         self.assertIn("Figure 8-17 5 rows", first)
         self.assertIn("Figure 8-18 6 rows", first)
         self.assertIn("Figure 8-19 10 rows", first)
+
+
+class BusScenarioProseTests(unittest.TestCase):
+    """Checks that transcribed figure prose contains required phrases; no RTL or protocol behavior."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.path = ROOT / "sim/spec/bus_scenarios.json"
+        cls.doc = json.loads(cls.path.read_text(encoding="utf-8"))
+        cls.scenario = next(
+            item for item in cls.doc["scenarios"]
+            if item["id"] == "READ_BURST_TA_WAIT_DRTRY"
+        )
+        cls.single_delays = next(
+            item for item in cls.doc["scenarios"]
+            if item["id"] == "READ_SINGLE_DATA_DELAYS"
+        )
+        cls.write_delays = next(
+            item for item in cls.doc["scenarios"]
+            if item["id"] == "WRITE_SINGLE_DATA_DELAYS"
+        )
+        cls.burst_delays = next(
+            item for item in cls.doc["scenarios"]
+            if item["id"] == "BURST_DATA_DELAYS"
+        )
+        cls.fastest_reads = next(
+            item for item in cls.doc["scenarios"]
+            if item["id"] == "READ_SINGLE_FASTEST_PIPELINE"
+        )
+
+    def test_figure_8_17_profile_and_source_locators_prose(self) -> None:
+        self.assertIn("explicitly labels D[0-63]", self.single_delays["mode"]["data_bus_basis"])
+        self.assertIn("TBST is drawn negated", self.single_delays["mode"]["burst"])
+
+    def test_figure_8_17_hand_anchored_delay_observations_prose(self) -> None:
+        by_cycle = {item["cycle"]: item for item in self.single_delays["cycles"]}
+        clock3 = by_cycle["Figure 8-17 clock 3"]
+        clock4 = by_cycle["Figure 8-17 clock 4"]
+        clock6 = by_cycle["Figure 8-17 clock 6 (second access)"]
+        clock11 = by_cycle["Figure 8-17 clock 11 (third access)"]
+        self.assertIn("TA remains logically negated", clock3["after_edge"][0])
+        self.assertIn("first stated wait cycle", clock3["after_edge"][0])
+        self.assertIn("TA remains logically negated", clock4["after_edge"][0])
+        self.assertIn("second stated wait cycle", clock4["after_edge"][0])
+        self.assertIn("could have been asserted", clock6["after_edge"][0])
+        self.assertIn("not a required assertion", clock6["after_edge"][0])
+        self.assertIn("polygon is labeled Bad", clock11["after_edge"][0])
+
+    def test_figure_8_17_sampling_boundary_and_scope_are_explicit_prose(self) -> None:
+        clock11, following = self.single_delays["cycles"][-2:]
+        self.assertIn("after the left rising boundary", clock11["at_edge"][0])
+        self.assertIn("during labeled clock cycle 11", clock11["after_edge"][0])
+        self.assertIn("following the depicted within-cycle transition", following["at_edge"][0])
+        self.assertIn("no architectural destination or rollback", following["after_edge"][0])
+        self.assertTrue(any("not being another load" in item for item in self.single_delays["preconditions"]))
+        unresolved = " ".join(self.single_delays["unresolved"])
+        self.assertIn("within-cycle waveform transitions", unresolved)
+        self.assertIn("not a complete waveform or BFM contract", unresolved)
+
+    def test_figure_8_18_profile_and_source_locators_prose(self) -> None:
+        mode = self.write_delays["mode"]
+        self.assertIn("explicitly labels D[0-63]", mode["data_bus_basis"])
+        self.assertIn("TT is labeled SBW", mode["transaction_type"])
+        self.assertIn("TBST is drawn negated", mode["transaction_type"])
+
+    def test_figure_8_18_hand_anchored_delay_observations_prose(self) -> None:
+        by_cycle = {item["cycle"]: item for item in self.write_delays["cycles"]}
+        clock3 = by_cycle["Figure 8-18 clock 3"]
+        clock4 = by_cycle["Figure 8-18 clock 4"]
+        clock6 = by_cycle["Figure 8-18 clock 6 (second access)"]
+        final = by_cycle["last-access qualified DBG (relative)"]
+        self.assertIn("TA is held logically negated", clock3["after_edge"][0])
+        self.assertIn("first stated wait cycle", clock3["after_edge"][0])
+        self.assertIn("TA is held logically negated", clock4["after_edge"][0])
+        self.assertIn("second stated wait cycle", clock4["after_edge"][0])
+        self.assertIn("delaying the start", clock6["after_edge"][0])
+        self.assertIn("last access as not delayed", final["after_edge"][0])
+
+    def test_figure_8_18_write_roles_and_drtry_boundary_prose(self) -> None:
+        roles = self.write_delays["signal_roles"]
+        self.assertIn("does not use DRTRY", roles["DRTRY"]["sampling"])
+        self.assertIn("still prevents a qualified DBG", roles["DRTRY"]["sampling"])
+        assertions = " ".join(self.write_delays["assertions"])
+        self.assertIn("does not accept, cancel, or complete a write beat", assertions)
+        self.assertIn("preceding read can still block a qualified DBG", assertions)
+        unresolved = " ".join(self.write_delays["unresolved"])
+        self.assertIn("no absolute grant-to-TA latency", unresolved)
+        self.assertIn("not a complete waveform or BFM contract", unresolved)
+
+    def test_figure_8_19_profile_and_source_locators_prose(self) -> None:
+        mode = self.burst_delays["mode"]
+        self.assertIn("Read, Write, Read", mode["transaction_labels"])
+        self.assertIn("TBST is drawn asserted", mode["transaction_labels"])
+
+    def test_figure_8_19_critical_term_and_address_order_are_bounded_prose(self) -> None:
+        by_cycle = {item["cycle"]: item for item in self.burst_delays["cycles"]}
+        critical = by_cycle["source clock 0 / first read In 0"]
+        first_done = by_cycle["first transfer completion (source-relative)"]
+        third_address = by_cycle["third transfer address start (source-relative)"]
+        self.assertIn("does not map source clock 0", critical["at_edge"][0])
+        self.assertIn("critical-double-word terminology remains unresolved", critical["after_edge"][0])
+        self.assertIn("In 0, In 1, In 2, and In 3", first_done["at_edge"][0])
+        self.assertIn("Only after the first transfer completes", third_address["at_edge"][0])
+        unresolved = " ".join(self.burst_delays["unresolved"])
+        self.assertIn("axis labeled 1 through 20", unresolved)
+        self.assertIn("critical quad word", unresolved)
+        self.assertIn("critical double word", unresolved)
+
+    def test_figure_8_19_write_wait_and_read_retry_sequences_prose(self) -> None:
+        labels = [item["cycle"] for item in self.burst_delays["cycles"]]
+        out2_wait = labels.index("write burst third beat Out 2 pending")
+        out2_done = labels.index("write burst third beat Out 2 accepted")
+        retry = labels.index("final read third beat + 1")
+        confirmation = labels.index("final read DRTRY negation")
+        in3 = labels.index("final read fourth beat In 3 (same or later edge)")
+        rows = self.burst_delays["cycles"]
+        self.assertIn("negates TA", rows[out2_wait]["after_edge"][0])
+        self.assertIn("Out 3", rows[out2_done]["after_edge"][0])
+        self.assertIn("preceding In 2 is invalidated", rows[retry]["after_edge"][0])
+        self.assertIn("replacement In 2", rows[confirmation]["after_edge"][0])
+        self.assertIn("same sampling edge", rows[in3]["at_edge"][0])
+        self.assertIn("no extra bubble is required", rows[in3]["at_edge"][0])
+        self.assertNotIn("later samples", rows[in3]["at_edge"][0])
+
+    def test_figure_8_15_profile_and_source_locators_prose(self) -> None:
+        mode = self.fastest_reads["mode"]
+        self.assertIn("Read", mode["transaction_labels"])
+        self.assertIn("TBST is drawn negated", mode["transaction_labels"])
+        self.assertIn("qualitative", mode["timing_scope"])
+        self.assertIn("no numeric latency", mode["timing_scope"])
+
+    def test_figure_8_15_latency_throughput_condition_is_not_strengthened_prose(self) -> None:
+        by_cycle = {item["cycle"]: item for item in self.fastest_reads["cycles"]}
+        first = by_cycle["displayed fastest read 1"]
+        second = by_cycle["displayed fastest read 2"]
+        below = by_cycle["counterfactual data delay below third-address boundary"]
+        boundary = by_cycle["counterfactual data delay reaches third-address boundary"]
+        self.assertIn("no address-completion-before-data ordering is implied", first["at_edge"][0])
+        self.assertIn("address and data tenure completion may overlap", second["at_edge"][0])
+        self.assertIn("third address tenure can still proceed without delay", below["at_edge"][0])
+        self.assertIn("latency increases", below["after_edge"][0])
+        self.assertIn("throughput is not affected", below["after_edge"][0])
+        self.assertIn("third address tenure itself to be delayed", boundary["at_edge"][0])
+        self.assertIn("statement no longer applies", boundary["after_edge"][0])
+        self.assertIn("no amount of throughput change is specified", boundary["after_edge"][0])
+        self.assertNotIn("throughput decreases", boundary["after_edge"][0])
+
+    def test_figure_8_15_mode_roles_and_architectural_limit_prose(self) -> None:
+        mode = self.fastest_reads["mode"]
+        self.assertIn("bounded profile selects normal", mode["drtry"])
+        self.assertIn("selection is not inferred", mode["drtry"])
+        self.assertIn("no-DRTRY startup mode is not covered", mode["drtry"])
+        roles = self.fastest_reads["signal_roles"]
+        self.assertIn("one bus clock after TA", roles["DRTRY"]["sampling"])
+        unresolved = " ".join(self.fastest_reads["unresolved"])
+        self.assertIn("does not state numeric minimum latency", unresolved)
+        self.assertIn("does not establish absolute architectural", unresolved)
+        self.assertIn("not a complete waveform or BFM contract", unresolved)
+
+    def test_hand_anchored_ta_pacing_observations_prose(self) -> None:
+        by_cycle = {item["cycle"]: item for item in self.scenario["cycles"]}
+        cycle3 = by_cycle["Figure 8-13 bus clock 3"]
+        cycle4 = by_cycle["Figure 8-13 bus clock 4"]
+        self.assertIn("does not label the data value or identify the beat sampled", cycle3["at_edge"][0])
+        self.assertIn("TA is logically negated", cycle3["after_edge"][0])
+        self.assertIn("does not advance", cycle3["after_edge"][0])
+        self.assertIn("remains selected", cycle4["at_edge"][0])
+        self.assertIn("reasserts TA", cycle4["after_edge"][0])
+        self.assertIn("pipeline resumes", cycle4["after_edge"][0])
+
+    def test_drtry_relations_are_relative_and_read_only_prose(self) -> None:
+        self.assertIn("normal late-cancel", self.scenario["mode"]["drtry"])
+        self.assertTrue(any("read-only late cancellation" in item for item in self.scenario["assertions"]))
+
+    def test_mode_and_fidelity_limits_remain_explicit_prose(self) -> None:
+        self.assertIn(
+            "figure 8-13 itself does not print a bus width",
+            self.scenario["mode"]["data_bus_basis"].lower(),
+        )
+        unresolved = " ".join(self.scenario["unresolved"])
+        self.assertIn("does not print data values or ordinal labels", unresolved)
+        self.assertIn("intra-cycle transitions", unresolved)
+        self.assertIn("no TEA waveform row", unresolved)
+        self.assertIn("Electrical propagation", unresolved)
 
 
 if __name__ == "__main__":
