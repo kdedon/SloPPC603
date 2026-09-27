@@ -201,3 +201,22 @@ zero warnings: Quartus 17 rejected a nested `unsigned'(int'(...))` cast in the
 denormal shift-distance conversion. This run produced no area or timing result.
 The separate Verilator numerical and timing results do not establish Quartus
 compatibility. A parser-compatible conversion and fresh synthesis are required.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`2f8ec31` plus uncommitted arithmetic cast, divider-admission and FPRF changes,
+2026-09-27.
+
+The corrected rounding revision mapped with zero errors and four warnings;
+TimeQuest reported zero errors and zero warnings. It used 10,840 estimated ALMs,
+14,353 ALUTs, 2,534 registers, 416 block-memory bits and five DSP blocks, with
+433 virtual pins and zero physical pins. Post-map Fmax improved to **18.2 MHz**,
+with −35.027 ns worst setup slack: both 50 and 66 MHz still failed. The worst
+path ran from registered denormal distance through rounding to result bit 62
+(49.379 ns data delay, 18 logic levels). No fitter ran.
+
+The per-stage reports exposed additional failures rather than just the overall
+critical path: multiply 21.343 ns, alignment/conversion 29.062 ns, add/leading-zero
+41.333 ns, divider 27.299 ns, and response rounding 49.725 ns data delay. These
+are exploratory synthesis estimates for a frozen source copy, not full-shell or
+602 acceptance. The arithmetic revision separately passed the numerical corpus;
+that does not close the hardware timing requirement.

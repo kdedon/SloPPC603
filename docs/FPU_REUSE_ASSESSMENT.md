@@ -28,7 +28,7 @@ the distinct tag, exception, register and instruction rules. The replacement
 must meet original instruction latency and throughput. The arithmetic checkpoint
 `251d633` passes numerical and execution-cycle tests; the concurrent shell and
 602 architectural acceptance are still being verified. The latest arithmetic
-post-map estimate is **14.9 MHz**, below both 50 and 66 MHz. No completion claim
+post-map estimate is **18.2 MHz**, below both 50 and 66 MHz. No completion claim
 is made for the replacement.
 
 The historical serialized 603e checkpoint `cb871b4` passed 200,000 raw arithmetic
