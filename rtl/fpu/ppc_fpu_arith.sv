@@ -382,20 +382,26 @@ module ppc_fpu_arith #(
     function automatic logic [159:0] shift_right_jam(
         input logic [159:0] value, input int unsigned distance
     );
-        logic [159:0] shifted;
-        logic lost;
-        shifted = '0;
-        lost = 1'b0;
-        if (distance >= 160) begin
-            lost = |value;
-        end else begin
-            shifted = value >> distance;
-            for (int i = 0; i < 160; i++) begin
-                if (i < distance) lost |= value[i];
-            end
-        end
-        shifted[0] |= lost;
-        return shifted;
+        logic [159:0] work;
+        if (distance >= 160) return {159'd0, |value};
+        work = value;
+        if (distance[7])
+            work = (work >> 128) | {159'd0, |work[127:0]};
+        if (distance[6])
+            work = (work >> 64) | {159'd0, |work[63:0]};
+        if (distance[5])
+            work = (work >> 32) | {159'd0, |work[31:0]};
+        if (distance[4])
+            work = (work >> 16) | {159'd0, |work[15:0]};
+        if (distance[3])
+            work = (work >> 8) | {159'd0, |work[7:0]};
+        if (distance[2])
+            work = (work >> 4) | {159'd0, |work[3:0]};
+        if (distance[1])
+            work = (work >> 2) | {159'd0, |work[1:0]};
+        if (distance[0])
+            work = (work >> 1) | {159'd0, work[0]};
+        return work;
     endfunction
 
     function automatic logic [4:0] result_class(input logic [63:0] bits);
