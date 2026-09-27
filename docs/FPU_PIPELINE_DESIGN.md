@@ -42,6 +42,29 @@ and dequeue, held responses, full capacity, and recovery during every stage.
 
 ## Dispatch, forwarding, and retirement
 
+The shell has two ordered dispatch lanes, `issue_valid_i/issue_ready_o/issue_i`
+and `issue1_valid_i/issue1_ready_o/issue1_i`. Lane 1 can handshake only when
+lane 0 handshakes on the same edge. A paired issue contains one FPU arithmetic,
+move, or select operation and one floating-point LSU operation, in either lane
+order. Status controls, tag SPR accesses, and 602 `fctiwz` serialize and cannot
+pair. Queue space and rename credits are checked for the entire accepted prefix;
+lane 1 failure does not revoke an accepted lane 0. The integrator may present an
+unaccepted lane-1 instruction as lane 0 on the next edge. These lanes preserve
+the manual's independent FPU and LSU dispatch opportunities without implying
+the standalone FPU itself supplies the core's three-way general dispatcher.
+[602 UM §§1.1.3.1.3, 6.3.2, 6.4.4–5, Tables 6-5–6,
+physical PDF 45, 299, 304–305, 315–318]
+
+Each lane has an independent operand reservation slot and can launch directly
+into its execution resource on dispatch. A stalled arithmetic request must not
+block a ready FP load or store, and an LSU request backpressure must not consume
+arithmetic initiation bandwidth. Both resources publish full-tag completions
+into the shared four- or five-entry pending queue; one oldest instruction retires
+per edge. Same-edge retirement may free a slot or FPR rename credit for a
+two-instruction accepted prefix. Pair tests cover both lane orders, a waiting
+producer with independent opposite-resource work, fault/abort of either lane,
+and sustained FPU II1 concurrent with the LSU's externally prepared requests.
+
 The shell issue handshake represents dispatch. Operand reservation and backend
 execution acceptance are distinct events; dispatch delay must not be counted as
 an extra arithmetic execution stage or used to conceal excess execution latency.
