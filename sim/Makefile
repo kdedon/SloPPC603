@@ -60,6 +60,8 @@ lint:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_tlb_service $(TLB_SERVICE_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_service $(BAT_SERVICE_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_memory_router "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv
+	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_memory_router "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_MICRO_TLB=1'b0" $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_cached_bus60x_managed $(RTL) $(BUS_RTL) $(SYSTEM_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) $(CACHE_CONTROL_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_cached_bus60x_managed "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" $(RTL) $(BUS_RTL) $(SYSTEM_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) $(CACHE_CONTROL_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_translate $(BAT_RTL)
@@ -957,11 +959,24 @@ test-core-page-translation:
 	mkdir -p $(BUILD_DIR)/core-page-translation
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_translation --Mdir $(BUILD_DIR)/core-page-translation $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_translation.sv
 	./$(BUILD_DIR)/core-page-translation/Vtb_core_page_translation $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/core-page-translation-no-micro-tlb
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_translation "-GENABLE_MICRO_TLB=1'b0" --Mdir $(BUILD_DIR)/core-page-translation-no-micro-tlb $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_translation.sv
+	./$(BUILD_DIR)/core-page-translation-no-micro-tlb/Vtb_core_page_translation $(SIM_ARGS)
 
 test-page-memory-router:
 	mkdir -p $(BUILD_DIR)/page-memory-router
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_page_memory_router --Mdir $(BUILD_DIR)/page-memory-router $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv ../tb/tb_page_memory_router.sv
 	./$(BUILD_DIR)/page-memory-router/Vtb_page_memory_router $(SIM_ARGS)
+
+MICRO_TLB_TB := ../tb/tb_micro_tlb_pkg.sv ../tb/tb_micro_tlb_harness.sv ../tb/tb_micro_tlb_router.sv
+test: test-micro-tlb-router
+test-micro-tlb-router:
+	mkdir -p $(BUILD_DIR)/micro-tlb-router
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_micro_tlb_router --Mdir $(BUILD_DIR)/micro-tlb-router $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv $(MICRO_TLB_TB)
+	./$(BUILD_DIR)/micro-tlb-router/Vtb_micro_tlb_router $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/micro-tlb-router-seed2
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_micro_tlb_router -GSEED=2 -GRANDOM_OPS=900 --Mdir $(BUILD_DIR)/micro-tlb-router-seed2 $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv $(MICRO_TLB_TB)
+	./$(BUILD_DIR)/micro-tlb-router-seed2/Vtb_micro_tlb_router $(SIM_ARGS)
 
 # Opt-in supervisor tlbie with retirement-committed four-entry set invalidation.
 .PHONY: lint-tlbie-integration test-tlbie-decode test-core-tlbie test-core-tlbie-privilege test-tlb-runtime-invalidate-service test-tlb-runtime-invalidate-router
@@ -1088,6 +1103,9 @@ test-core-page-data-exception:
 	mkdir -p $(BUILD_DIR)/core-page-data-exception
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_data_exception --Mdir $(BUILD_DIR)/core-page-data-exception $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_data_exception.sv
 	./$(BUILD_DIR)/core-page-data-exception/Vtb_core_page_data_exception $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/core-page-data-exception-no-micro-tlb
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_data_exception "-GENABLE_MICRO_TLB=1'b0" --Mdir $(BUILD_DIR)/core-page-data-exception-no-micro-tlb $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_data_exception.sv
+	./$(BUILD_DIR)/core-page-data-exception-no-micro-tlb/Vtb_core_page_data_exception $(SIM_ARGS)
 
 # Opt-in page instruction PP, no-execute and guarded ISI delivery.
 .PHONY: lint-page-instruction-exceptions test-page-instruction-exception-router test-core-page-instruction-exception
@@ -1108,6 +1126,9 @@ test-core-page-instruction-exception:
 	mkdir -p $(BUILD_DIR)/core-page-instruction-exception
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_instruction_exception --Mdir $(BUILD_DIR)/core-page-instruction-exception $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_instruction_exception.sv
 	./$(BUILD_DIR)/core-page-instruction-exception/Vtb_core_page_instruction_exception $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/core-page-instruction-exception-no-micro-tlb
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_instruction_exception "-GENABLE_MICRO_TLB=1'b0" --Mdir $(BUILD_DIR)/core-page-instruction-exception-no-micro-tlb $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_instruction_exception.sv
+	./$(BUILD_DIR)/core-page-instruction-exception-no-micro-tlb/Vtb_core_page_instruction_exception $(SIM_ARGS)
 
 # Response-bound page miss/changed diagnostic capsules; no architectural miss entry.
 .PHONY: lint-page-miss-results test-page-miss-result-router test-core-page-miss-result

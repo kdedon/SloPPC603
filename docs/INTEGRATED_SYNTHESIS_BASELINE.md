@@ -1,5 +1,13 @@
 # Current cached-physical synthesis baseline
 
+## 2026-09-27 refit after the micro-TLB merge
+
+Recorded: `./quartus/integrated/build.sh --docker`, merge of AUD-06 onto
+`1a6a0d4`, 2026-09-27 (the integrated top has no translation, so its RTL is
+unchanged by that round). Setup +1.789 / +2.070 ns and hold +0.195 / +0.177 ns at
+slow 100 C / -40 C; fast corners pass. Fmax 57.25 MHz; 66 MHz needs about 2.5 ns.
+5,065 ALMs, 4,446 registers.
+
 ## 2026-09-27 reset-synchronizer refit
 
 Recorded: `./quartus/integrated/build.sh --docker`, commit `dfdf4fc` (this

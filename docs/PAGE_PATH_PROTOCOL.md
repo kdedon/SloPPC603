@@ -17,8 +17,10 @@ records the original bounded acceptance goal.
 
 ## Memory transaction
 
+A request that hits its side's micro-TLB skips this sequence and repeats a
+translation the sequence already allowed; see [MICRO_TLB.md](MICRO_TLB.md).
 The router captures EA, instruction/data bank, write intent, committed PR and
-IR/DR when it accepts a memory request. Real-mode bypass and an allowed BAT hit
+IR/DR when the sequence takes a request that missed. Real-mode bypass and an allowed BAT hit
 retain their existing priority and physical PA/WIMG. BAT permission denial,
 guarded denial, configuration errors, malformed entries and other diagnostics
 also retain their existing result. Only a clean BAT miss for an access whose
@@ -34,7 +36,8 @@ one edge later, so a page-translated access spends one more cycle in
 `ROUTE_PAGE_RESPONSE` than with the earlier flop array. The snapshot and TLB
 response both remain owned by the accepted
 memory transaction; offered CSR and context updates wait until it completes.
-Only an unambiguous TLB `allow` result sends PA and WIMG to the physical bus.
+Only an unambiguous TLB `allow` result sends PA and WIMG to the requesting
+lane, which issues the physical request and fills its micro-TLB.
 There is no identity fallback on a page miss or denial. The TLB stores RPN,
 WIMG, PP and C; the current snapshot supplies Ks/Kp/N on every lookup. A VSID
 switch can therefore retain older tagged entries, while an SR permission
@@ -55,6 +58,25 @@ context packet. Other failures retain the original diagnostic behavior.
 For such a failure `fault_miss_o`, `fault_protection_o` and
 `fault_guarded_o` follow the TLB result, so `fault_miss_o` agrees with
 `page_miss_o`. Sticky flags cannot identify which accepted request retired.
+
+## Latency
+
+Counted from the edge that accepts the request to the first cycle of the
+physical request, with an idle sequence:
+
+| Path | Before the micro-TLB | Now |
+|---|---:|---:|
+| Micro-TLB hit | — | 1 |
+| BAT hit or real-mode bypass | 3 | 3 |
+| Clean BAT miss, TLB hit | 8 | 8 |
+
+The page path spends one cycle each in `ROUTE_TRANSLATE_OFFER`,
+`ROUTE_TRANSLATE_RESPONSE`, `ROUTE_SEGMENT_OFFER`, `ROUTE_SEGMENT_RESPONSE`
+and `ROUTE_PAGE_OFFER`, and two in `ROUTE_PAGE_RESPONSE` (the registered RAM
+read). Its result goes to the lane instead of a `ROUTE_PHYSICAL_OFFER` state,
+so the sequence is free while the physical access runs. Before the micro-TLB, 64 back-to-back
+fetches from one TLB page took 641 cycles with a zero-wait memory; they now
+take 137. [MICRO_TLB.md](MICRO_TLB.md) gives the measurement.
 
 ## Normalized TLB test/control interface
 

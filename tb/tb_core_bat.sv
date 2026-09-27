@@ -236,6 +236,7 @@ module tb_core_bat;
     end
   end
 
+  int overlap_cycles = 0;
   always @(posedge clk_i) begin
     logic retired_now;
     logic [31:0] retire_pc, retire_insn;
@@ -269,8 +270,8 @@ module tb_core_bat;
           check(1'b0, "retirement in translation-fault phase");
         end
       end
-      check(!(pimem_req_valid_o && pdmem_req_valid_o),
-            "two physical channels offered together");
+      // Separate lanes may offer both physical channels at once.
+      if (pimem_req_valid_o && pdmem_req_valid_o) overlap_cycles++;
       if (busy_o) check(running_o || bat_write_rsp_valid_o,
                         "busy outside setup response or running phase");
     end
@@ -466,8 +467,8 @@ module tb_core_bat;
 
     check(retire_stalls > 0 && physical_i >= 9,
           "delayed response/grant/retirement coverage incomplete");
-    $display("PASS: tb_core_bat %0d checks, %0d physical I/%0d D, %0d writes, %0d retire stalls",
-             checks, physical_i, physical_d, physical_writes, retire_stalls);
+    $display("PASS: tb_core_bat %0d checks, %0d physical I/%0d D, %0d writes, %0d retire stalls, %0d overlapped I/D offer cycles",
+             checks, physical_i, physical_d, physical_writes, retire_stalls, overlap_cycles);
     $finish;
   end
 endmodule

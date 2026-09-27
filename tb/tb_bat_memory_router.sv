@@ -154,8 +154,6 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
       if (accept_i) physical_i++;
       if (accept_d) physical_d++;
       if (local_fault) local_faults++;
-      check(!(pimem_req_valid_o && pdmem_req_valid_o),
-            "two physical request owners");
       if (pimem_req_valid_o || pdmem_req_valid_o || dmem_rsp_valid_o)
         check(busy_o, "live routing operation absent from busy");
     end
@@ -451,8 +449,9 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
     write_bat(10'd536, 32'h0000_0003, 1'b0, 1'b0);
     start_context(1'b1, 1'b1, 1'b0);
 
-    // Simultaneous requests select instruction first.  The data request stays
-    // asserted and is accepted after the complete instruction response.
+    // Simultaneous requests are both accepted into their lanes. The shared
+    // translation takes the instruction first, then translates the data
+    // request while the physical fetch is still outstanding.
     imem_req_addr_i = 32'h0000_1234;
     imem_req_valid_i = 1'b1;
     dmem_req_addr_i = 32'h0000_1000;
@@ -461,18 +460,19 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
     dmem_req_wstrb_i = 4'b1111;
     dmem_req_valid_i = 1'b1;
     #1;
-    check(imem_req_ready_o && !dmem_req_ready_o,
-          "first fair tie did not select instruction");
+    check(imem_req_ready_o && dmem_req_ready_o,
+          "split lanes did not accept both requests");
     @(posedge clk_i);
     @(negedge clk_i);
     imem_req_valid_i = 1'b0;
     imem_req_addr_i = 32'hffff_ffff;
-    wait_pimem(32'h4000_1234, 4'b0000);
-    return_pimem(32'h1122_3344);
-    while (!dmem_req_ready_o) @(negedge clk_i);
-    @(posedge clk_i);
-    @(negedge clk_i);
     dmem_req_valid_i = 1'b0;
+    dmem_req_addr_i = 32'hffff_ffff;
+    while (!pimem_req_valid_o) @(negedge clk_i);
+    check(!pdmem_req_valid_o, "first fair tie did not translate instruction first");
+    wait_pimem(32'h4000_1234, 4'b0000);
+    check(pdmem_req_valid_o, "data did not translate beside the outstanding fetch");
+    return_pimem(32'h1122_3344);
     while (!pdmem_req_valid_o) @(negedge clk_i);
     check(pdmem_req_addr_o == 32'h8000_1000 && !pdmem_req_write_o &&
           pdmem_req_wimg_o == 0 && pdmem_req_wstrb_o == 4'b1111,

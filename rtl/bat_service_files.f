@@ -4,3 +4,4 @@
 ../rtl/ppc_segment_registers.sv
 ../rtl/ppc_tlb_ram.sv
 ../rtl/ppc_tlb_service.sv
+../rtl/ppc_micro_tlb.sv

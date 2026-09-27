@@ -2,7 +2,7 @@
 // physical effects and GPR results are computed independently of the router.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off UNUSEDSIGNAL */
-module tb_core_page_instruction_exception;
+module tb_core_page_instruction_exception #(parameter bit ENABLE_MICRO_TLB = 1'b1);
   import ppc_pkg::*;
   logic clk_i=0, rst_ni=0;
   always #5 clk_i=~clk_i;
@@ -49,7 +49,7 @@ module tb_core_page_instruction_exception;
   logic interrupt_taken_o,decrementer_taken_o;
   logic [31:0] interrupt_pc_o,decrementer_pc_o;
 
-  ppc_core_bat #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
+  ppc_core_bat #(.RESET_PC(32'b0),.ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1),
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1)) dut (

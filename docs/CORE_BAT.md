@@ -21,7 +21,7 @@ permissions come from the official Programming Environments manual at PDF
 321–329 / printed 7-33–7-41 as recorded in those documents.
 
 The manuals define architectural registers and address translation. They do
-not define this wrapper's setup/start handshake, serialized routing policy,
+not define this wrapper's setup/start handshake, routing and micro-TLB policy,
 sticky diagnostics, or transport-fatal response. Those are explicit local
 integration choices.
 
@@ -49,17 +49,19 @@ updates while running remain outside this milestone.
 ## Request routing
 
 Instruction and data requests use their existing core valid/ready payloads.
-The router accepts at most one request, captures its complete effective-address
-and data payload, obtains one held BAT-service result, then issues one physical
-request. It routes the eventual physical response only to that captured owner.
-Payload changes after upstream acceptance cannot alter the translation or
-physical transaction.
+Each side has its own lane that accepts at most one request and captures its
+complete effective-address and data payload. A micro-TLB hit issues the
+physical request on the next cycle; a miss obtains one held BAT-service result
+through the shared translation sequence, then issues one physical request.
+The physical response returns only to the lane that captured it. Payload
+changes after upstream acceptance cannot alter the translation or physical
+transaction. See [MICRO_TLB.md](MICRO_TLB.md).
 
-When instruction and data requests arrive together, selection alternates after
-each accepted owner; reset history selects instruction first. Serialization is
-a throughput limitation, but gives a simple starvation-free boundary for two
-continuously offered requesters. A new owner is not accepted until the old
-physical response or local data-fault response is consumed.
+When both lanes wait for the translation sequence, it alternates between
+them; reset history selects instruction first. A lane accepts its next request
+on the edge that returns its previous physical response or local fault
+response, so fetch and data traffic no longer block each other except while
+sharing the translation sequence.
 
 `IR=0` or `DR=0` uses the source-defined real-mode bypass: physical address
 equals effective address, instruction WIMG is `0001`, and data WIMG is `0011`.
@@ -105,8 +107,9 @@ list, `rtl/ppc_bat_memory_router.sv`, and its bench.
 The physical instruction port carries a 32-bit PA and four WIMG bits with a
 read response containing instruction plus error. The physical data port carries
 PA, write direction, 32-bit write data, four byte strobes, WIMG, and a held
-read/error response. No bus protocol, cache line, MMU timing, or memory ordering
-is implied by these abstract channels.
+read/error response. The two ports may each hold a request at the same time.
+No bus protocol, cache line, or ordering between the two ports is implied by
+these abstract channels.
 
 ## Verification
 
@@ -131,14 +134,19 @@ verilator --binary --timing --assert -Wall --top-module tb_core_bat \
 ../build/ppc-r39-bat-core-cpu/Vtb_core_bat
 ```
 
-The direct router bench passes **230 checks**. It covers held and rejected setup,
-context locking, simultaneous instruction/data fairness, accepted-payload
+Recorded: `make -C sim test-bat-memory-router test-core-bat`, commit 56824e5,
+2026-09-27. Pass: router bench 496 checks (3 physical I, 4 D); core bench 186
+checks (16 physical I, 3 D, one cycle with both ports offered).
+
+The direct router bench originally passed **230 checks**. It covers held and rejected setup,
+context locking, simultaneous instruction/data acceptance with the
+instruction translated first, accepted-payload
 capture, translated PA/WIMG, real-mode bypass, protection denial without a
 physical request, permitted access, guarded-IBAT configuration rejection,
 instruction miss, and separation of physical-instruction error from a retained
 translation diagnostic.
 
-The actual-core bench passes **330 checks** with nine physical instruction and
+The actual-core bench originally passed **330 checks** with nine physical instruction and
 three physical data transactions, including one write and three retirement
 backpressure cycles. It executes a relocated load/add/store/load program through
 IBAT EA `0x00000000` to PA `0x40000000` and DBAT EA `0x00000000` to PA

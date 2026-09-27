@@ -1,5 +1,102 @@
 # Timer and live BAT FPGA measurement
 
+## 2026-09-27 micro-TLB refit with synchronized reset
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, commit `e8262df`,
+2026-09-27. Quartus 17.0.2, derived clock uncertainty. As in the integrated
+and translated tops, the measurement top registers `rst_ni` through two flops
+and the SDC cuts only the asynchronous input to the first. Setup and hold
+**meet 50 MHz at every corner**; 66 MHz is not met.
+
+| Resource | Result |
+| --- | ---: |
+| ALMs | 5,215 / 41,910 (12%) |
+| Registers | 5,094 |
+| M10K blocks | 3 / 553 |
+| Block-memory bits | 492 |
+| DSP blocks | 3 / 112 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +0.775 | +0.249 |
+| Slow 1100 mV, -40 C | +0.637 | +0.036 |
+| Fast 1100 mV, 100 C | +9.278 | +0.136 |
+| Fast 1100 mV, -40 C | +10.980 | +0.121 |
+
+Fmax is 51.64 MHz at the worst corner (slow -40 C) and 52.02 MHz at slow
+100 C. 66 MHz needs 15.15 ns; the core's worst path, the instruction-queue
+RAM into `dispatch|entry.a.value`, would miss it by about 4.2 ns. The worst
+paths into router, BAT service and micro-TLB registers keep 4.6 ns of slack
+at slow 100 C (`state_q` into the BAT service response; micro-TLB fill,
+4.9 ns), so at 66 MHz they would miss by at most 0.2 ns. The worst path
+leaving the router is still `running_out_q` into the core, +1.790 ns. The
+smallest hold slack is on the virtual `bat_write_data_i` input. Setup is
+0.7 ns below the unsynchronized fit of `56824e5`; the reset is now an
+internal high-fanout register net rather than a zero-delay input.
+
+## 2026-09-27 micro-TLB refit
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, commit `56824e5`,
+2026-09-27. Quartus 17.0.2, derived clock uncertainty. This adds the router's
+per-side micro-TLBs and split instruction/data lanes
+([MICRO_TLB.md](MICRO_TLB.md)). Setup **meets 50 MHz at every corner** with
+1.5 ns to spare; hold **fails** on one measurement-boundary path.
+
+| Resource | Without micro-TLB | This refit |
+| --- | ---: | ---: |
+| ALMs | 4,898 | 5,186 |
+| Registers | 4,594 | 5,088 |
+| M10K blocks | 3 | 3 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +1.492 | -0.356 |
+| Slow 1100 mV, -40 C | +1.530 | -0.571 |
+| Fast 1100 mV, 100 C | +8.676 | +0.134 |
+| Fast 1100 mV, -40 C | +10.970 | -0.206 |
+
+Fmax is 54.03 MHz at the worst corner. Worst setup stays in the core
+(`fifo:iq` and `special:uop_q.spr` into `dispatch` and `special`). The
+micro-TLBs synthesize to about 175 ALUTs and 184 registers per side. The
+worst router paths have 4.66 ns of slack (slow 100 C): `request_ea_q` into
+a micro-TLB fill, and `special|ea_q` into `request_ea_q` at acceptance, 5.0
+ns. At 66 MHz (15.15 ns) the router paths would miss by about 0.2 ns and the
+core by about 3.4 ns. Each failing hold path is the single path from the
+virtual `rst_ni` input, with zero input delay, to `router|d_state_q`; the
+refit above synchronizes that reset.
+
+## 2026-09-27 refit without test redirect
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, commit `31bb82d`,
+2026-09-27. Quartus 17.0.2, derived clock uncertainty. The measurement top now
+sets `ENABLE_TEST_REDIRECT=0`, as the integrated top does, so the test-only
+arbitrary-pivot recovery is not built. `running_o`, which gates the core's
+reset, has its own `dont_merge` flop. Setup **meets 50 MHz at every corner**;
+hold **fails** at slow -40 C on a measurement-boundary input.
+
+| Resource | Combined refit | This refit |
+| --- | ---: | ---: |
+| ALMs | 5,628 | 4,898 |
+| Registers | 4,478 | 4,594 |
+| M10K blocks | 3 | 3 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +0.367 | +0.244 |
+| Slow 1100 mV, -40 C | +0.532 | -0.121 (TNS -7.020) |
+| Fast 1100 mV, 100 C | +8.327 | +0.131 |
+| Fast 1100 mV, -40 C | +10.738 | +0.116 |
+
+Fmax is 50.93 MHz at the worst corner (was 50.32), 51.37 MHz at slow -40 C;
+66 MHz remains far off. Worst setup is in the core,
+`special|uop_q.spr[3]` to `dispatch|entry.a.value`. The worst path leaving
+the router is now `router|running_out_q` into the same dispatch endpoint at
++1.931 ns (slow -40 C), against -2.349 ns from `running_q` before. Every
+failing hold path starts at the virtual `retire_ready_i` input, which has zero
+input delay, and ends at a GPR MLAB address register; it is a property of this
+measurement top's unconstrained I/O, like the earlier `bat_write_data_i` hold
+failures, not a core register path.
+
 ## 2026-09-27 combined refit
 
 Recorded: `./quartus/timer-bat/build.sh --docker`, merge of the MMU round (AUD-17,

@@ -73,11 +73,17 @@ module ppc_timer_bat_measure (
   output logic busy_o
 );
   logic [49:0] unused_page;
+  // The core resets synchronously; this chain registers the external reset so
+  // its arrival no longer reaches reset logic directly.
+  logic [1:0] rst_sync_q;
+  always_ff @(posedge clk_i) rst_sync_q <= {rst_sync_q[0], rst_ni};
+
   ppc_core_bat #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_EXTERNAL_INTERRUPTS(1'b1),
-    .ENABLE_TIMERS(1'b1)
+    .ENABLE_TIMERS(1'b1),
+    .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (
     .tlb_mgmt_req_valid_i(1'b0),
     .tlb_mgmt_req_ready_o(unused_page[0]),
@@ -109,6 +115,7 @@ module ppc_timer_bat_measure (
     .page_direct_store_o(unused_page[47]),
     .page_needs_changed_o(unused_page[48]),
     .page_config_o(unused_page[49]),
+    .rst_ni(rst_sync_q[1]),
     .*
   );
 endmodule

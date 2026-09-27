@@ -1,5 +1,14 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-27 refit with micro-TLBs
+
+Recorded: `./quartus/translated/build.sh --docker`, merge of the micro-TLB round
+(AUD-06) onto `1a6a0d4`, 2026-09-27. Setup and hold meet the provisional 50 MHz
+constraint at every corner: slow 100 C +0.115 / +0.231 ns, slow -40 C +0.302 /
++0.119 ns, fast 100 C +6.041 / +0.136 ns, fast -40 C +6.379 / +0.121 ns
+(setup / hold). Fmax 50.29 MHz; 66 MHz needs about 4.9 ns more. 8,679 ALMs,
+8,520 registers.
+
 `quartus/translated/` fits `ppc_core_bat_cached_bus60x`, the translated
 cached 60x top, with the MVP profile. It is the first fit of the combined
 MMU, timer, exception and cached-bus composition.
