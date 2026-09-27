@@ -216,7 +216,7 @@ module ppc_fpu_arith #(
         logic [7:0] normal_left_shift;
         logic signed [15:0] normal_exponent;
         logic tiny_before;
-        logic [15:0] denorm_shift;
+        logic [7:0] denorm_shift;
         logic denorm_right;
     } round_input_t;
 
@@ -1434,7 +1434,7 @@ module ppc_fpu_arith #(
         input logic [7:0] normal_left_shift,
         input logic signed [15:0] normal_exponent,
         input logic tiny_before,
-        input logic [15:0] denorm_shift,
+        input logic [7:0] denorm_shift,
         input logic denorm_right
     );
         round_work_t out;
@@ -1449,9 +1449,9 @@ module ppc_fpu_arith #(
         if (out.tiny_before && !ue) begin
             if (denorm_right)
                 out.magnitude = shift_right_jam(value.magnitude,
-                    {16'd0, denorm_shift});
+                    {24'd0, denorm_shift});
             else out.magnitude = value.magnitude <<
-                {16'd0, denorm_shift};
+                {24'd0, denorm_shift};
             out.exponent = min_exp;
         end else begin
             out.magnitude = value.magnitude[159] ?
@@ -1467,7 +1467,7 @@ module ppc_fpu_arith #(
         input logic [7:0] normal_left_shift,
         input logic signed [15:0] normal_exponent,
         input logic tiny_before,
-        input logic [15:0] denorm_shift,
+        input logic [7:0] denorm_shift,
         input logic denorm_right,
         input ppc_pkg::completion_tag_t tag,
         input ppc_fpu_op_t op,
@@ -1504,6 +1504,7 @@ module ppc_fpu_arith #(
     logic signed [15:0] add_scale;
     logic signed [15:0] add_normal_exponent;
     logic signed [15:0] add_exponent_plus_one;
+    logic [15:0] add_denorm_abs;
     logic [7:0] add_normal_left_shift;
     logic add_tiny_before;
     ppc_fpu_arith_rsp_t round_response;
@@ -1624,6 +1625,7 @@ module ppc_fpu_arith #(
         add_scale = '0;
         add_normal_exponent = '0;
         add_exponent_plus_one = '0;
+        add_denorm_abs = '0;
         add_normal_left_shift = '0;
         add_tiny_before = 1'b0;
         add_result = '0;
@@ -1668,8 +1670,10 @@ module ppc_fpu_arith #(
             add_next.normal_exponent = add_normal_exponent;
             add_next.tiny_before = add_tiny_before;
             add_next.denorm_right = add_exponent_from_min[15];
-            add_next.denorm_shift = add_exponent_from_min[15] ?
+            add_denorm_abs = add_exponent_from_min[15] ?
                 -add_exponent_from_min : add_exponent_from_min;
+            add_next.denorm_shift = add_denorm_abs >= 16'd160 ?
+                8'd160 : add_denorm_abs[7:0];
         end
     end
 
