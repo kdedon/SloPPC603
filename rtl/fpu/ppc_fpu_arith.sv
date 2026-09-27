@@ -244,6 +244,8 @@ module ppc_fpu_arith #(
         logic ni;
         logic oe;
         logic ue;
+        logic ve;
+        logic ze;
         logic single_result;
     } divide_request_t;
 
@@ -260,6 +262,7 @@ module ppc_fpu_arith #(
     divide_request_t divide_req_q;
     ppc_fpu_arith_rsp_t divide_special_rsp_q;
     logic [5:0] divide_special_count_q;
+    logic divide_special_pending_q;
     logic [52:0] div_remainder_q;
     logic [52:0] div_denominator_q;
     logic [53:0] div_denominator_x2_q;
@@ -268,6 +271,8 @@ module ppc_fpu_arith #(
     logic [4:0] div_rounds_q;
     logic [62:0] div_a_raw_q;
     logic [62:0] div_b_raw_q;
+    logic div_a_sign_q;
+    logic div_b_sign_q;
     logic [52:0] div_start_a_sig;
     logic [52:0] div_start_b_sig;
     logic signed [15:0] div_start_a_exp;
@@ -656,13 +661,16 @@ module ppc_fpu_arith #(
             if (single_result && denorm_result) begin
                 denorm_shift = leading_zero53(wide);
                 wide <<= denorm_shift;
-                exponent -= 16'(denorm_shift);
+                // A binary32 subnormal widens to a binary64 normal with
+                // biased exponent 1023-126-shift = 897-shift.
+                out.result = {final_sign,
+                    11'd897 - {5'd0, denorm_shift}, wide[51:0]};
+                out.fprf = final_sign ? 5'b11000 : 5'b10100;
+            end else begin
+                out.result = {final_sign, 11'(exponent + 16'sd1023),
+                    wide[51:0]};
+                out.fprf = final_sign ? 5'b01000 : 5'b00100;
             end
-            out.result = {final_sign, 11'(exponent + 16'sd1023),
-                wide[51:0]};
-            out.fprf = (single_result && denorm_result) ?
-                (final_sign ? 5'b11000 : 5'b10100) :
-                (final_sign ? 5'b01000 : 5'b00100);
         end
         return out;
     endfunction
@@ -1767,6 +1775,7 @@ module ppc_fpu_arith #(
             aligned_valid_q <= 1'b0;
             add_valid_q <= 1'b0;
             divide_state_q <= DIV_IDLE;
+            divide_special_pending_q <= 1'b0;
             response_read_q <= 2'd0;
             response_write_q <= 2'd0;
             response_count_q <= 3'd0;
@@ -1799,10 +1808,14 @@ module ppc_fpu_arith #(
                 divide_req_q.ni <= req_i.ni;
                 divide_req_q.oe <= req_i.oe;
                 divide_req_q.ue <= req_i.ue;
+                divide_req_q.ve <= req_i.ve;
+                divide_req_q.ze <= req_i.ze;
                 divide_req_q.single_result <=
                     CPU_602 || req_i.single_result;
                 div_a_raw_q <= req_i.a[62:0];
                 div_b_raw_q <= req_i.b[62:0];
+                div_a_sign_q <= req_i.a[63];
+                div_b_sign_q <= req_i.b[63];
                 div_result_sign_q <=
                     ((req_i.op != FP_FRES) && req_i.a[63]) ^
                     req_i.b[63];
@@ -1811,12 +1824,10 @@ module ppc_fpu_arith #(
                     (req_i.op == FP_FRES ||
                     (req_i.a[62:0] != 63'd0 &&
                     req_i.a[62:52] != 11'h7ff))) begin
+                    divide_special_pending_q <= 1'b0;
                     divide_state_q <= DIV_START;
                 end else begin
-                    divide_special_rsp_q <= calculate(req_i.tag,
-                        req_i.op, req_i.a, req_i.b, req_i.c,
-                        classify_operand(req_i.b), req_i.ve,
-                        req_i.ze);
+                    divide_special_pending_q <= 1'b1;
                     divide_special_count_q <=
                         (CPU_602 || req_i.op == FP_FRES ||
                         req_i.single_result) ?
@@ -1889,6 +1900,16 @@ module ppc_fpu_arith #(
                     end
                     DIV_PACK: divide_state_q <= DIV_IDLE;
                     DIV_SPECIAL: begin
+                        if (divide_special_pending_q) begin
+                            divide_special_rsp_q <= calculate(
+                                divide_req_q.tag, divide_req_q.op,
+                                {div_a_sign_q, div_a_raw_q},
+                                {div_b_sign_q, div_b_raw_q}, 64'd0,
+                                classify_operand({div_b_sign_q,
+                                    div_b_raw_q}), divide_req_q.ve,
+                                divide_req_q.ze);
+                            divide_special_pending_q <= 1'b0;
+                        end
                         divide_special_count_q <=
                             divide_special_count_q - 6'd1;
                         if (divide_special_count_q == 6'd1)
