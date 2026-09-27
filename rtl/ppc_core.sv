@@ -17,7 +17,10 @@ module ppc_core #(
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
   // Test-only external recovery with an arbitrary CQ pivot. When clear, the
   // redirect port is ignored and every recovery clears the whole machine.
-  parameter bit ENABLE_TEST_REDIRECT = 1'b1
+  parameter bit ENABLE_TEST_REDIRECT = 1'b1,
+  // dcbf/dcbst/dcbi/dcbz/dcbt/dcbtst/icbi; the wrapper must honor
+  // dmem_req_probe_o and the icbi request.
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -96,12 +99,18 @@ module ppc_core #(
   output logic [31:0] dmem_req_addr_o,
   output logic [31:0] dmem_req_wdata_o,
   output logic [3:0] dmem_req_wstrb_o,
+  // Cache-block probe: translate and check permission, transfer nothing.
+  output logic dmem_req_probe_o,
   input logic dmem_rsp_valid_i,
   output logic dmem_rsp_ready_o,
   input logic [31:0] dmem_rsp_rdata_i,
   input logic dmem_rsp_error_i,
   input ppc_pkg::data_fault_t dmem_rsp_fault_i,
   input ppc_pkg::page_miss_t dmem_rsp_page_miss_i,
+  // icbi: ready completes invalidation of the four ways at EA's set.
+  output logic icbi_req_valid_o,
+  input logic icbi_req_ready_i,
+  output logic [31:0] icbi_req_ea_o,
   output logic retire_valid_o,
   input logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
@@ -208,6 +217,8 @@ module ppc_core #(
       $fatal(1, "External interrupts require live supervisor context");
     if (ENABLE_LIVE_CONTEXT && !ENABLE_SUPERVISOR_EXCEPTIONS)
       $fatal(1, "Live context requires supervisor exceptions");
+    if (ENABLE_CACHE_INSTRUCTIONS && !ENABLE_SUPERVISOR_EXCEPTIONS)
+      $fatal(1, "Cache instructions require supervisor exceptions");
   end
   ppc_fetch #(.RESET_PC(RESET_PC)) fetch (
     .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence),
@@ -229,7 +240,8 @@ module ppc_core #(
     .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
     .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
     .ENABLE_SDR1(ENABLE_SDR1),
-    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)
+    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
   ) predecode (.insn_i(fetched.insn), .uop_o(push_uop));
   ppc_fifo #(.WIDTH($bits(fetch_packet_t) + 15), .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(recovery_accepted),
@@ -267,7 +279,8 @@ module ppc_core #(
     .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
     .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
     .ENABLE_SDR1(ENABLE_SDR1),
-    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)
+    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
   ) decode (.insn_i(iq_head.insn), .uop_o(uop));
   // Special uops dispatch only with an empty CQ and idle IU, so committed
   // registers supply their operands without the rename/wake path.
@@ -302,7 +315,7 @@ module ppc_core #(
          (uop.special_op == SPECIAL_MTSR) ||
          (uop.special_op == SPECIAL_TLBIE) ||
          (uop.special_op == SPECIAL_TLBLD) ||
-         (uop.special_op == SPECIAL_TLBLI) ||
+         (uop.special_op == SPECIAL_TLBLI) || uop.privileged ||
          (((uop.special_op == SPECIAL_MFSPR) ||
           (uop.special_op == SPECIAL_MTSPR)) &&
           uop.spr[SPR_PRIV_BIT]))) begin
@@ -424,7 +437,8 @@ module ppc_core #(
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TGPR(ENABLE_TGPR),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
-    .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS)
+    .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS),
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
@@ -481,9 +495,10 @@ module ppc_core #(
     .lr_o(lr), .ctr_o(ctr), .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1),
     .dmem_req_valid_o, .dmem_req_ready_i,
     .dmem_req_write_o, .dmem_req_addr_o, .dmem_req_wdata_o,
-    .dmem_req_wstrb_o, .dmem_rsp_valid_i, .dmem_rsp_ready_o,
+    .dmem_req_wstrb_o, .dmem_req_probe_o, .dmem_rsp_valid_i, .dmem_rsp_ready_o,
     .dmem_rsp_rdata_i, .dmem_rsp_error_i, .dmem_rsp_fault_i,
-    .dmem_rsp_page_miss_i
+    .dmem_rsp_page_miss_i,
+    .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o
   );
   assign context_ir_o = msr[MSR_IR];
   assign context_dr_o = msr[MSR_DR];

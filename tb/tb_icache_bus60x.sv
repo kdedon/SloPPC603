@@ -27,7 +27,7 @@ module tb_icache_bus60x;
     .clk_i(clk),.rst_ni(rst_n),.fetch_valid_i(fv),.fetch_ready_o(fr),.fetch_addr_i(fa),
     .fetch_rsp_valid_o(fsv),.fetch_rsp_ready_i(fsr),.fetch_rsp_insn_o(insn),
     .fetch_rsp_error_o(fse),.kill_i(kill),.invalidate_i(invalidate),
-    .invalidate_done_o(invalidate_done),.line_req_valid_o(qv),.line_req_ready_i(qr),
+    .invalidate_done_o(invalidate_done),.invalidate_set_i(1'b0),.invalidate_set_addr_i(32'b0),.line_req_valid_o(qv),.line_req_ready_i(qr),
     .line_req_line_addr_o(line_addr),.line_req_critical_dw_o(critical),.line_req_instruction_o(qi),
     .line_rsp_valid_i(rv),.line_rsp_ready_o(rr),.line_rsp_line_i(line_data),
     .line_rsp_error_i(error),.busy_o(cache_busy),.hit_o(hit),.miss_o(miss),

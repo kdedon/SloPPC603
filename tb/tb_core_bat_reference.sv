@@ -44,7 +44,10 @@ module tb_core_bat_reference;
   logic [3:0] observed_d_strobes=0;
 
   logic [49:0] unused_page_ports;
+  logic [32:0] unused_icbi_core;
   ppc_core_bat #(.RESET_PC(32'b0)) dut (
+    .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
+    .icbi_req_ea_o(unused_icbi_core[32:1]),
     .tlb_mgmt_req_valid_i('0),
     .tlb_mgmt_req_ready_o(unused_page_ports[0]),
     .tlb_mgmt_req_kind_i('0),

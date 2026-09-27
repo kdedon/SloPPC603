@@ -36,7 +36,10 @@ module tb_core_record_edges;
   logic [3:0] unused_context;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
+  logic [33:0] unused_cache_core;
   ppc_core #(.RESET_PC(32'b0)) dut (
+    .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
+    .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .tlb_inv_req_valid_o(unused_tlb_inv_core[0]),
     .tlb_inv_req_ready_i(1'b0),
     .tlb_inv_req_ea_o(unused_tlb_inv_core[32:1]),

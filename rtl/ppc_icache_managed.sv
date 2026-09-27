@@ -23,6 +23,12 @@ module ppc_icache_managed #(
   output logic         cache_enabled_o,
   output logic         maintenance_busy_o,
 
+  // CPU icbi: held until ready, which marks the set invalidated. External
+  // maintenance wins a same-cycle tie; both drain accepted fetches first.
+  input  logic         icbi_valid_i,
+  output logic         icbi_ready_o,
+  input  logic [31:0]  icbi_addr_i,
+
   output logic         bypass_req_valid_o,
   input  logic         bypass_req_ready_i,
   output logic [31:0]  bypass_req_addr_o,
@@ -51,12 +57,13 @@ module ppc_icache_managed #(
     MANAGED_DRAIN,
     MANAGED_INVALIDATE_PULSE,
     MANAGED_INVALIDATE_WAIT,
-    MANAGED_DONE
+    MANAGED_DONE,
+    MANAGED_SET_INVALIDATE
   } managed_state_t;
 
   managed_state_t state_q;
   logic cache_enabled_q;
-  logic target_enable_q, invalidate_required_q;
+  logic target_enable_q, invalidate_required_q, icbi_q;
   logic fetch_outstanding_q;
   logic protocol_error_q;
 
@@ -67,7 +74,7 @@ module ppc_icache_managed #(
   logic cache_busy, cache_protocol_error;
   logic cache_hit, cache_miss;
   logic accept_fetch, complete_fetch;
-  logic command_priority;
+  logic command_priority, icbi_start;
   logic fetch_accept_enable;
 
   ppc_icache cache (
@@ -78,6 +85,7 @@ module ppc_icache_managed #(
     .fetch_rsp_error_o(cache_rsp_error), .kill_i(1'b0),
     .invalidate_i(cache_invalidate),
     .invalidate_done_o(cache_invalidate_done),
+    .invalidate_set_i(icbi_ready_o), .invalidate_set_addr_i(icbi_addr_i),
     .line_req_valid_o, .line_req_ready_i, .line_req_line_addr_o,
     .line_req_critical_dw_o, .line_req_instruction_o,
     .line_rsp_valid_i, .line_rsp_ready_o, .line_rsp_line_i,
@@ -90,10 +98,13 @@ module ppc_icache_managed #(
   assign maintenance_busy_o = rst_ni && state_q != MANAGED_RUN;
   assign cache_enabled_o = rst_ni && cache_enabled_q;
   assign command_priority = maintenance_valid_i && maintenance_ready_o;
+  assign icbi_start = icbi_valid_i && rst_ni && state_q == MANAGED_RUN &&
+                      !maintenance_valid_i;
+  assign icbi_ready_o = rst_ni && state_q == MANAGED_SET_INVALIDATE;
   // A cache fetch may be accepted on the edge that completes the previous one.
   assign fetch_accept_enable = rst_ni && state_q == MANAGED_RUN &&
     (!fetch_outstanding_q || (cache_enabled_q && complete_fetch)) &&
-    !command_priority;
+    !command_priority && !icbi_start;
   assign cache_fetch_valid = fetch_accept_enable && cache_enabled_q &&
                              fetch_valid_i;
   assign bypass_req_valid_o = fetch_accept_enable && !cache_enabled_q &&
@@ -139,6 +150,7 @@ module ppc_icache_managed #(
       cache_enabled_q <= RESET_CACHE_ENABLE;
       target_enable_q <= RESET_CACHE_ENABLE;
       invalidate_required_q <= 1'b0;
+      icbi_q <= 1'b0;
       fetch_outstanding_q <= 1'b0;
       protocol_error_q <= 1'b0;
     end else begin
@@ -162,12 +174,17 @@ module ppc_icache_managed #(
             invalidate_required_q <= maintenance_invalidate_i ||
               (maintenance_cache_enable_i != cache_enabled_q);
             state_q <= MANAGED_DRAIN;
+          end else if (icbi_start) begin
+            icbi_q <= 1'b1;
+            state_q <= MANAGED_DRAIN;
           end
         end
 
         MANAGED_DRAIN: begin
           if (!fetch_outstanding_q && !cache_busy) begin
-            if (invalidate_required_q)
+            if (icbi_q)
+              state_q <= MANAGED_SET_INVALIDATE;
+            else if (invalidate_required_q)
               state_q <= MANAGED_INVALIDATE_PULSE;
             else begin
               cache_enabled_q <= target_enable_q;
@@ -192,6 +209,11 @@ module ppc_icache_managed #(
             state_q <= MANAGED_RUN;
         end
 
+        MANAGED_SET_INVALIDATE: begin
+          icbi_q <= 1'b0;
+          state_q <= MANAGED_RUN;
+        end
+
         default: begin
           protocol_error_q <= 1'b1;
           state_q <= MANAGED_RUN;
@@ -199,5 +221,10 @@ module ppc_icache_managed #(
       endcase
     end
   end
+  // synthesis translate_off
+  assert property (@(posedge clk_i) disable iff (!rst_ni)
+    icbi_valid_i && !icbi_ready_o |=> icbi_valid_i && $stable(icbi_addr_i))
+    else $error("pending icbi request changed");
+  // synthesis translate_on
 endmodule
 `default_nettype wire

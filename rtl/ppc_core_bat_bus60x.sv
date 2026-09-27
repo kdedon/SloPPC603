@@ -25,7 +25,8 @@ module ppc_core_bat_bus60x #(
   parameter bit ENABLE_TLB_INVALIDATE = 1'b0,
   parameter bit ENABLE_TLB_LOAD = 1'b0,
   parameter bit ENABLE_TEST_REDIRECT = 1'b1,
-  parameter bit ENABLE_MICRO_TLB = 1'b1
+  parameter bit ENABLE_MICRO_TLB = 1'b1,
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -146,6 +147,7 @@ module ppc_core_bat_bus60x #(
   logic imem_req_valid, imem_req_ready;
   logic [31:0] imem_req_addr;
   logic [3:0] unused_pimem_wimg, unused_pdmem_wimg;
+  logic [32:0] unused_icbi;
   logic imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_rsp_insn;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
@@ -183,7 +185,8 @@ module ppc_core_bat_bus60x #(
     .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
     .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT),
-    .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB)
+    .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
   ) translated_core (
     .clk_i,
     .rst_ni,
@@ -263,6 +266,9 @@ module ppc_core_bat_bus60x #(
     .pdmem_rsp_ready_o(dmem_rsp_ready),
     .pdmem_rsp_rdata_i(dmem_rsp_rdata),
     .pdmem_rsp_error_i(dmem_rsp_error),
+    // No instruction cache: icbi completes at once.
+    .icbi_req_valid_o(unused_icbi[0]), .icbi_req_ready_i(1'b1),
+    .icbi_req_ea_o(unused_icbi[32:1]),
     .retire_valid_o,
     .retire_ready_i,
     .retire_o,
