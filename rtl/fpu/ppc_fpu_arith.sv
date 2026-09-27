@@ -166,7 +166,18 @@ module ppc_fpu_arith #(
 
 
     typedef struct packed {
-        ppc_fpu_arith_req_t req;
+        ppc_pkg::completion_tag_t tag;
+        ppc_fpu_op_t op;
+        logic [1:0] rn;
+        logic ni;
+        logic ve;
+        logic oe;
+        logic ue;
+        logic single_result;
+    } arith_control_t;
+
+    typedef struct packed {
+        arith_control_t req;
         logic finite;
         logic conversion;
         logic dp_multiply;
@@ -178,7 +189,15 @@ module ppc_fpu_arith #(
     } multiply_stage_t;
 
     typedef struct packed {
-        ppc_fpu_arith_req_t req;
+        arith_control_t req;
+        logic finite;
+        ppc_fpu_arith_rsp_t special_rsp;
+        finite_operands_t operands;
+        mul_parts_t products;
+    } double_multiply_stage_t;
+
+    typedef struct packed {
+        arith_control_t req;
         logic finite;
         logic conversion;
         ppc_fpu_arith_rsp_t special_rsp;
@@ -187,7 +206,7 @@ module ppc_fpu_arith #(
     } add_input_t;
 
     typedef struct packed {
-        ppc_fpu_arith_req_t req;
+        arith_control_t req;
         logic finite;
         logic conversion;
         ppc_fpu_arith_rsp_t special_rsp;
@@ -214,10 +233,10 @@ module ppc_fpu_arith #(
 
     ppc_fpu_arith_req_t input_q;
     logic input_valid_q;
-    multiply_stage_t multiply_q;
+    double_multiply_stage_t multiply_q;
     logic multiply_valid_q;
-    add_input_t multiply_double_q;
-    logic multiply_double_valid_q;
+    add_input_t aligned_q;
+    logic aligned_valid_q;
     round_input_t add_q;
     logic add_valid_q;
 
@@ -1307,7 +1326,7 @@ module ppc_fpu_arith #(
 
     multiply_stage_t multiply_next;
     add_input_t multiply_double_next;
-    add_input_t add_source;
+    add_input_t multiply_basic_next;
     round_input_t add_next;
     ppc_fpu_arith_rsp_t round_response;
     finite_operands_t work_operands;
@@ -1326,7 +1345,14 @@ module ppc_fpu_arith #(
         work_operands = '0;
         multiply_prep = '0;
         multiply_product = '0;
-        multiply_next.req = input_q;
+        multiply_next.req.tag = input_q.tag;
+        multiply_next.req.op = input_q.op;
+        multiply_next.req.rn = input_q.rn;
+        multiply_next.req.ni = input_q.ni;
+        multiply_next.req.ve = input_q.ve;
+        multiply_next.req.oe = input_q.oe;
+        multiply_next.req.ue = input_q.ue;
+        multiply_next.req.single_result = input_q.single_result;
         multiply_next.dp_multiply = !CPU_602 &&
             (input_q.op == FP_MUL ||
             input_q.op == FP_MADD || input_q.op == FP_MSUB ||
@@ -1389,10 +1415,7 @@ module ppc_fpu_arith #(
         multiply_double_prep = '0;
         multiply_double_next.req = multiply_q.req;
         multiply_double_next.finite = multiply_q.finite;
-        multiply_double_next.conversion = multiply_q.conversion;
         multiply_double_next.special_rsp = multiply_q.special_rsp;
-        multiply_double_next.conversion_parts =
-            multiply_q.conversion_parts;
         if (multiply_q.finite) begin
             multiply_double_product = multiply_finish(multiply_low(
                 multiply_mid(multiply_q.products)));
@@ -1408,25 +1431,26 @@ module ppc_fpu_arith #(
     end
 
     always_comb begin
-        add_source = '0;
-        if (multiply_double_valid_q) add_source = multiply_double_q;
-        else begin
-            add_source.req = multiply_q.req;
-            add_source.finite = multiply_q.finite;
-            add_source.conversion = multiply_q.conversion;
-            add_source.special_rsp = multiply_q.special_rsp;
-            add_source.conversion_parts = multiply_q.conversion_parts;
-            add_source.plan = multiply_q.plan;
-        end
+        multiply_basic_next = '0;
+        multiply_basic_next.req = multiply_next.req;
+        multiply_basic_next.finite = multiply_next.finite;
+        multiply_basic_next.conversion = multiply_next.conversion;
+        multiply_basic_next.special_rsp = multiply_next.special_rsp;
+        multiply_basic_next.conversion_parts =
+            multiply_next.conversion_parts;
+        multiply_basic_next.plan = multiply_next.plan;
+    end
+
+    always_comb begin
         add_next = '0;
-        add_next.req = add_source.req;
-        add_next.finite = add_source.finite;
-        add_next.conversion = add_source.conversion;
-        add_next.special_rsp = add_source.special_rsp;
-        add_next.conversion_parts = add_source.conversion_parts;
-        if (add_source.finite)
-            add_next.sum = add_aligned(add_source.plan, add_source.req.rn);
-        if (add_source.finite)
+        add_next.req = aligned_q.req;
+        add_next.finite = aligned_q.finite;
+        add_next.conversion = aligned_q.conversion;
+        add_next.special_rsp = aligned_q.special_rsp;
+        add_next.conversion_parts = aligned_q.conversion_parts;
+        if (aligned_q.finite)
+            add_next.sum = add_aligned(aligned_q.plan, aligned_q.req.rn);
+        if (aligned_q.finite)
             add_next.leading_zero =
                 leading_zero160(add_next.sum.magnitude);
     end
@@ -1503,7 +1527,7 @@ module ppc_fpu_arith #(
         if (!rst_ni || flush_i) begin
             input_valid_q <= 1'b0;
             multiply_valid_q <= 1'b0;
-            multiply_double_valid_q <= 1'b0;
+            aligned_valid_q <= 1'b0;
             add_valid_q <= 1'b0;
             divide_state_q <= DIV_IDLE;
             response_read_q <= 2'd0;
@@ -1513,17 +1537,23 @@ module ppc_fpu_arith #(
         end else begin
             input_valid_q <= accept && !divide_request;
             if (accept && !divide_request) input_q <= req_i;
-            multiply_valid_q <= input_valid_q;
-            if (input_valid_q) multiply_q <= multiply_next;
-            multiply_double_valid_q <= multiply_valid_q &&
-                multiply_q.dp_multiply;
-            if (multiply_valid_q && multiply_q.dp_multiply)
-                multiply_double_q <= multiply_double_next;
-            add_valid_q <= multiply_double_valid_q ||
-                (multiply_valid_q && !multiply_q.dp_multiply);
-            if (multiply_double_valid_q ||
-                (multiply_valid_q && !multiply_q.dp_multiply))
-                add_q <= add_next;
+            multiply_valid_q <= input_valid_q &&
+                multiply_next.dp_multiply;
+            if (input_valid_q && multiply_next.dp_multiply) begin
+                multiply_q.req <= multiply_next.req;
+                multiply_q.finite <= multiply_next.finite;
+                multiply_q.special_rsp <= multiply_next.special_rsp;
+                multiply_q.operands <= multiply_next.operands;
+                multiply_q.products <= multiply_next.products;
+            end
+            aligned_valid_q <= (input_valid_q &&
+                !multiply_next.dp_multiply) || multiply_valid_q;
+            if (input_valid_q && !multiply_next.dp_multiply)
+                aligned_q <= multiply_basic_next;
+            else if (multiply_valid_q)
+                aligned_q <= multiply_double_next;
+            add_valid_q <= aligned_valid_q;
+            if (aligned_valid_q) add_q <= add_next;
 
             if (accept && divide_request) begin
                 divide_req_q.tag <= req_i.tag;
