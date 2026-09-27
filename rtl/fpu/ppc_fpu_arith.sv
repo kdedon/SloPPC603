@@ -104,26 +104,7 @@ module ppc_fpu_arith #(
         logic single_operand;
     } align_plan_t;
 
-    typedef struct packed {
-        logic [159:0] x;
-        logic [159:0] y;
-        logic signed [15:0] exponent;
-        logic sign_x;
-        logic sign_y;
-        logic negate_final;
-        logic single_operand;
-    } align_data_t;
 
-    typedef struct packed {
-        logic [159:0] lhs;
-        logic [159:0] rhs;
-        logic [159:0] result;
-        logic signed [15:0] exponent;
-        logic sign;
-        logic negate_final;
-        logic subtract;
-        logic carry;
-    } sum_chunks_t;
 
     typedef struct packed {
         logic [159:0] magnitude;
@@ -227,11 +208,6 @@ module ppc_fpu_arith #(
         logic [7:0] leading_zero;
     } add_result_t;
 
-    typedef struct packed {
-        logic [159:0] magnitude;
-        logic carry_out;
-        logic [7:0] leading_zero;
-    } sum_candidate_t;
 
     typedef struct packed {
         logic [111:0] magnitude;
@@ -945,100 +921,11 @@ module ppc_fpu_arith #(
         return out;
     endfunction
 
-    function automatic align_data_t shift_alignment(input align_plan_t plan);
-        align_data_t out;
-        out = '0;
-        out.x = plan.shift_x ?
-            shift_right_jam(plan.x, {24'd0, plan.distance}) : plan.x;
-        out.y = plan.shift_y ?
-            shift_right_jam(plan.y, {24'd0, plan.distance}) : plan.y;
-        out.exponent = plan.exponent;
-        out.sign_x = plan.sign_x;
-        out.sign_y = plan.sign_y;
-        out.negate_final = plan.negate_final;
-        out.single_operand = plan.single_operand;
-        return out;
-    endfunction
 
-    function automatic sum_chunks_t plan_sum(
-        input align_data_t aligned, input logic [1:0] rn
-    );
-        sum_chunks_t out;
-        out = '0;
-        out.exponent = aligned.exponent;
-        out.negate_final = aligned.negate_final;
-        if (aligned.x == 0 && aligned.y == 0 && aligned.single_operand) begin
-            out.sign = aligned.sign_x;
-        end else if (aligned.sign_x == aligned.sign_y) begin
-            out.lhs = aligned.x;
-            out.rhs = aligned.y;
-            out.sign = aligned.sign_x;
-        end else if (aligned.x > aligned.y) begin
-            out.lhs = aligned.x;
-            out.rhs = aligned.y;
-            out.sign = aligned.sign_x;
-            out.subtract = 1'b1;
-        end else if (aligned.y > aligned.x) begin
-            out.lhs = aligned.y;
-            out.rhs = aligned.x;
-            out.sign = aligned.sign_y;
-            out.subtract = 1'b1;
-        end else begin
-            out.sign = rn == 2'b11;
-        end
-        out.carry = out.subtract;
-        return out;
-    endfunction
 
-    function automatic sum_chunks_t sum_chunk_0(input sum_chunks_t value);
-        sum_chunks_t out;
-        logic [40:0] partial;
-        out = value;
-        partial = {1'b0, value.lhs[39:0]} +
-            {1'b0, (value.rhs[39:0] ^ {40{value.subtract}})} +
-            {40'd0, value.carry};
-        out.result[39:0] = partial[39:0];
-        out.carry = partial[40];
-        return out;
-    endfunction
 
-    function automatic sum_chunks_t sum_chunk_1(input sum_chunks_t value);
-        sum_chunks_t out;
-        logic [40:0] partial;
-        out = value;
-        partial = {1'b0, value.lhs[79:40]} +
-            {1'b0, (value.rhs[79:40] ^ {40{value.subtract}})} +
-            {40'd0, value.carry};
-        out.result[79:40] = partial[39:0];
-        out.carry = partial[40];
-        return out;
-    endfunction
 
-    function automatic sum_chunks_t sum_chunk_2(input sum_chunks_t value);
-        sum_chunks_t out;
-        logic [40:0] partial;
-        out = value;
-        partial = {1'b0, value.lhs[119:80]} +
-            {1'b0, (value.rhs[119:80] ^ {40{value.subtract}})} +
-            {40'd0, value.carry};
-        out.result[119:80] = partial[39:0];
-        out.carry = partial[40];
-        return out;
-    endfunction
 
-    function automatic finite_sum_t finish_sum(input sum_chunks_t value);
-        finite_sum_t out;
-        logic [39:0] partial;
-        out = '0;
-        partial = value.lhs[159:120] +
-            (value.rhs[159:120] ^ {40{value.subtract}}) +
-            {39'd0, value.carry};
-        out.magnitude = {partial, value.result[119:0]};
-        out.exponent = value.exponent;
-        out.sign = value.sign;
-        out.negate_final = value.negate_final;
-        return out;
-    endfunction
 
     function automatic ppc_fpu_arith_rsp_t calculate(input ppc_pkg::completion_tag_t tag, input ppc_fpu_op_t op,
         input logic [63:0] a_bits, input logic [63:0] b_bits,
@@ -1297,166 +1184,7 @@ module ppc_fpu_arith #(
         return count;
     endfunction
 
-    function automatic sum_candidate_t carry_select_160(
-        input logic [159:0] lhs,
-        input logic [159:0] rhs,
-        input logic subtract
-    );
-        sum_candidate_t out;
-        logic [159:0] b_value;
-        logic [16:0] sum_zero;
-        logic [15:0] sum_one;
-        logic [159:0] candidate_zero;
-        logic [159:0] candidate_one;
-        logic [49:0] lz_zero;
-        logic [49:0] lz_one;
-        logic [49:0] selected_lz;
-        logic [9:0] zero_zero;
-        logic [9:0] zero_one;
-        logic [9:0] block_zero;
-        logic [9:0] carry_in;
-        logic [9:0] carry_p0, carry_p1, carry_p2, carry_p3, carry_p4;
-        logic [9:0] carry_g0, carry_g1, carry_g2, carry_g3, carry_g4;
-        logic [9:0] suffix0, suffix1, suffix2, suffix3, suffix4;
-        logic [9:0] first_block;
-        logic [7:0] combined_lz;
-        logic [7:0] local_count;
-        out = '0;
-        b_value = rhs ^ {160{subtract}};
-        for (int block = 0; block < 10; block++) begin
-            sum_zero = {1'b0, lhs[block*16 +: 16]} +
-                {1'b0, b_value[block*16 +: 16]};
-            sum_one = sum_zero[15:0] + 16'd1;
-            candidate_zero[block*16 +: 16] = sum_zero[15:0];
-            candidate_one[block*16 +: 16] = sum_one;
-            carry_g0[block] = sum_zero[16];
-            carry_p0[block] = &(lhs[block*16 +: 16] ^
-                b_value[block*16 +: 16]);
-            zero_zero[block] = sum_zero[15:0] == 16'd0;
-            zero_one[block] = sum_one == 16'd0;
-            lz_zero[block*5 +: 5] = leading_zero16(sum_zero[15:0]);
-            lz_one[block*5 +: 5] = leading_zero16(sum_one);
-        end
-        // Prefix generate/propagate resolves all ten block carries in four
-        // levels while both sum and LZ candidates are already available.
-        carry_p1 = carry_p0;
-        carry_g1 = carry_g0;
-        for (int block = 1; block < 10; block++) begin
-            carry_p1[block] = carry_p0[block] & carry_p0[block-1];
-            carry_g1[block] = carry_g0[block] |
-                (carry_p0[block] & carry_g0[block-1]);
-        end
-        carry_p2 = carry_p1;
-        carry_g2 = carry_g1;
-        for (int block = 2; block < 10; block++) begin
-            carry_p2[block] = carry_p1[block] & carry_p1[block-2];
-            carry_g2[block] = carry_g1[block] |
-                (carry_p1[block] & carry_g1[block-2]);
-        end
-        carry_p3 = carry_p2;
-        carry_g3 = carry_g2;
-        for (int block = 4; block < 10; block++) begin
-            carry_p3[block] = carry_p2[block] & carry_p2[block-4];
-            carry_g3[block] = carry_g2[block] |
-                (carry_p2[block] & carry_g2[block-4]);
-        end
-        carry_p4 = carry_p3;
-        carry_g4 = carry_g3;
-        for (int block = 8; block < 10; block++) begin
-            carry_p4[block] = carry_p3[block] & carry_p3[block-8];
-            carry_g4[block] = carry_g3[block] |
-                (carry_p3[block] & carry_g3[block-8]);
-        end
-        carry_in[0] = subtract;
-        for (int block = 1; block < 10; block++)
-            carry_in[block] = carry_g4[block-1] |
-                (carry_p4[block-1] & subtract);
-        out.carry_out = carry_g4[9] | (carry_p4[9] & subtract);
-        for (int block = 0; block < 10; block++) begin
-            out.magnitude[block*16 +: 16] = carry_in[block] ?
-                candidate_one[block*16 +: 16] :
-                candidate_zero[block*16 +: 16];
-            selected_lz[block*5 +: 5] = carry_in[block] ?
-                lz_one[block*5 +: 5] : lz_zero[block*5 +: 5];
-            block_zero[block] = carry_in[block] ?
-                zero_one[block] : zero_zero[block];
-        end
-        suffix0 = block_zero;
-        suffix1 = suffix0;
-        for (int block = 0; block < 9; block++)
-            suffix1[block] = suffix0[block] & suffix0[block+1];
-        suffix2 = suffix1;
-        for (int block = 0; block < 8; block++)
-            suffix2[block] = suffix1[block] & suffix1[block+2];
-        suffix3 = suffix2;
-        for (int block = 0; block < 6; block++)
-            suffix3[block] = suffix2[block] & suffix2[block+4];
-        suffix4 = suffix3;
-        for (int block = 0; block < 2; block++)
-            suffix4[block] = suffix3[block] & suffix3[block+8];
-        first_block[9] = !block_zero[9];
-        for (int block = 0; block < 9; block++)
-            first_block[block] = !block_zero[block] &&
-                suffix4[block+1];
-        combined_lz = 8'd0;
-        for (int block = 0; block < 10; block++) begin
-            local_count = 8'((9-block)*16) +
-                {3'd0, selected_lz[block*5 +: 5]};
-            combined_lz |= local_count & {8{first_block[block]}};
-        end
-        out.leading_zero = suffix4[0] ? 8'd160 : combined_lz;
-        return out;
-    endfunction
 
-    function automatic add_result_t add_aligned(
-        input align_plan_t plan, input logic [1:0] rn
-    );
-        add_result_t out;
-        finite_sum_t result_sum;
-        align_data_t aligned;
-        // Only x-y needs carry-out to choose the magnitude direction.
-        /* verilator lint_off UNUSEDSIGNAL */
-        sum_candidate_t sum_same;
-        sum_candidate_t sum_xy;
-        sum_candidate_t sum_yx;
-        /* verilator lint_on UNUSEDSIGNAL */
-        logic [7:0] lz_same;
-        logic [7:0] lz_xy;
-        logic [7:0] lz_yx;
-        out = '0;
-        result_sum = '0;
-        aligned = shift_alignment(plan);
-        sum_same = carry_select_160(aligned.x, aligned.y, 1'b0);
-        sum_xy = carry_select_160(aligned.x, aligned.y, 1'b1);
-        sum_yx = carry_select_160(aligned.y, aligned.x, 1'b1);
-        lz_same = sum_same.leading_zero;
-        lz_xy = sum_xy.leading_zero;
-        lz_yx = sum_yx.leading_zero;
-        result_sum.exponent = aligned.exponent;
-        result_sum.negate_final = aligned.negate_final;
-        if (aligned.x == 160'd0 && aligned.y == 160'd0 &&
-            aligned.single_operand) begin
-            result_sum.sign = aligned.sign_x;
-            out.leading_zero = 8'd160;
-        end else if (aligned.sign_x == aligned.sign_y) begin
-            result_sum.magnitude = sum_same.magnitude;
-            result_sum.sign = aligned.sign_x;
-            out.leading_zero = lz_same;
-        end else if (lz_xy == 8'd160) begin
-            result_sum.sign = rn == 2'b11;
-            out.leading_zero = 8'd160;
-        end else if (sum_xy.carry_out) begin
-            result_sum.magnitude = sum_xy.magnitude;
-            result_sum.sign = aligned.sign_x;
-            out.leading_zero = lz_xy;
-        end else begin
-            result_sum.magnitude = sum_yx.magnitude;
-            result_sum.sign = aligned.sign_y;
-            out.leading_zero = lz_yx;
-        end
-        out.finite_value = result_sum;
-        return out;
-    endfunction
 
     function automatic logic [111:0] shift_right_jam112(
         input logic [111:0] value, input logic [7:0] distance

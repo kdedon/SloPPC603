@@ -32,9 +32,12 @@ side of every even rounding threshold. The double guard threshold is at bit
 coarser, and UE exponent scaling does not change the significand cut. Both
 results are inexact when `t` is nonzero. When no tail is discarded, the lane
 sum is exact. This argument covers all rounding modes and tininess/overflow
-tests; the divider keeps its separate 160-bit path. The 112-bit lane is not a
-qualified production timing improvement until directed cancellation and
-halfway-tail vectors, both CPU personalities, and Quartus mapping pass.
+tests; the divider keeps its separate 160-bit path. The 112-bit lane passed
+directed cancellation and halfway-tail vectors against the independent
+oracle: 201,632 raw 603e packets and 181,952 raw 602 packets with no
+mismatches. It also passed exact 3/4/18/33-cycle timing checks. The first
+arithmetic Quartus map reached 28.8 MHz at 9,572 ALMs, improving area and
+frequency over the 160-bit lane but still missing the 50 MHz target.
 
 Division captures raw operands at request acceptance and normalizes them in
 the first divider stage. Special-result calculation also occurs after admission. A radix-four recurrence compares
