@@ -436,3 +436,13 @@ the rejected-lane test, 2026-09-27; 603e 28 and 602 24 checks passed with
 zero warnings and errors. A second simultaneous LSU issue was rejected with
 no memory request or forward; issuing that tag later caused exactly one
 ordinary prepare and completion.
+
+Recorded: `YOSYS_BIN=<pinned Yosys 0.33 executable> make -C sim -j2
+test-fpu-all lint` on an immutable snapshot of shell commit `7ed5182` and
+arithmetic commit `91c80b8`, 2026-09-27; 603e raw 200,288/0 mismatches,
+602 raw 181,376/0, 603e estimates 11,958/0, 602 estimates 17,628/0,
+603e shell 851 checks, 602 shell 173 checks including its exact SP/LT SPR
+latencies, timing 71/52 responses, both 32-instruction streams, and dual
+reservation checks 28/24. All 63 strict lint invocations passed with zero
+warnings and errors. This is the coherent qualification baseline before the
+memory-specific shell cone and arithmetic-width experiments.
