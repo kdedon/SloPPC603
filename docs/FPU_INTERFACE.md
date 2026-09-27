@@ -14,6 +14,8 @@ The arithmetic backend module is `ppc_fpu_arith`. Its request and response follo
 
 The memory response channel also follows ready/valid: the LSU holds its packet until accepted. A matching reply presented in the request-accept cycle is backpressured until the shell enters its response state. Unrelated stale replies may drain immediately. This permits a combinational preparation response without losing it.
 
+While reset is asserted, outward request/result/store valid signals and issue/commit readiness are inactive. In particular, resetting a held store prevents publication even if the integrating consumer remains ready. The memory response channel may drain cancelled replies during reset.
+
 Memory packet `data` uses register bit order: the low 32 bits hold a word, and all 64 bits hold a doubleword. The integrating LSU owns byte ordering, bus beat order and memory attributes from the core's instruction context. It must return the complete logical value after any byte-order conversion, and must not expose an intermediate half-load or half-store through this interface.
 
 The shell must pass strict Verilator lint with no blanket waivers. Numerical acceptance belongs to the arithmetic backend's independent bit tests; shell acceptance requires directed decode/legality, raw FPR bits, FPSCR masks/stickiness, matching and stale tags, backpressure, kill, memory faults, and commit-only update tests. Builds use blocking `make -j2` commands, then grep completed logs. [Repository `AGENTS.md`; `CODING_CONVENTIONS.md`]

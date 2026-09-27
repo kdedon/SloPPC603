@@ -298,8 +298,8 @@ module ppc_fpu (
   assign issue_c = fpr_q[issue_i.insn[10:6]];
   assign inspect_fpr_o = fpr_q[inspect_fpr_index_i];
   assign inspect_fpscr_o = fpscr_q;
-  assign issue_ready_o = (state_q == IDLE && !kill_all_i);
-  assign result_valid_o = (state_q == READY);
+  assign issue_ready_o = (rst_ni && state_q == IDLE && !kill_all_i);
+  assign result_valid_o = (rst_ni && state_q == READY);
   assign result_o = held_q;
   assign commit_match = commit_valid_i && (commit_tag_i == held_q.tag);
   assign abort_match = abort_valid_i && (abort_tag_i == held_q.tag);
@@ -309,15 +309,15 @@ module ppc_fpu (
       fpscr_q, arith_rsp.invalid, arith_rsp.ox, arith_rsp.ux, arith_rsp.zx,
       arith_rsp.xx, arith_rsp.fr, arith_rsp.fi, arith_rsp.frfi_valid,
       arith_rsp.fprf, arith_rsp.fprf_valid, arith_rsp.fpcc, arith_rsp.compare_valid);
-  assign mem_req_valid_o = (state_q == SEND_MEM && !kill_all_i && !abort_match);
+  assign mem_req_valid_o = (rst_ni && state_q == SEND_MEM && !kill_all_i && !abort_match);
   assign mem_req_o = mem_q;
   // A combinational LSU reply must wait until its request has been accepted.
   // Stale replies still drain while this instruction prepares its request.
   assign mem_rsp_ready_o = !(state_q == SEND_MEM && pending_match_mem);
-  assign store_valid_o = (state_q == READY && held_q.store && commit_match &&
+  assign store_valid_o = (rst_ni && state_q == READY && held_q.store && commit_match &&
                           !kill_all_i && !abort_match);
   assign store_o = mem_q;
-  assign commit_ready_o = (state_q == READY && commit_match && !kill_all_i &&
+  assign commit_ready_o = (rst_ni && state_q == READY && commit_match && !kill_all_i &&
                            !abort_match && (!held_q.store || store_ready_i));
 
   ppc_fpu_arith arithmetic (

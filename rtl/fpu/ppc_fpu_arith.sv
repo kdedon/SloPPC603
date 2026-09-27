@@ -872,8 +872,8 @@ module ppc_fpu_arith (
         div_quotient_next = (div_quotient_q << 2) | {53'd0, div_digit};
     end
 
-    assign req_ready_o = state_q == IDLE && !flush_i;
-    assign rsp_valid_o = state_q == RESPONSE;
+    assign req_ready_o = rst_ni && state_q == IDLE && !flush_i;
+    assign rsp_valid_o = rst_ni && state_q == RESPONSE && !flush_i;
     assign rsp_o = rsp_q;
 
     always_ff @(posedge clk_i) begin

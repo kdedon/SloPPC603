@@ -1,6 +1,6 @@
 # Standalone 603e arithmetic design
 
-The production arithmetic engine consumes one tagged request and returns one tagged response. It has one clock, active-low synchronous reset, an input ready/valid handshake, an output ready/valid handshake, and a flush that discards all in-flight state. The response remains stable while stalled. The engine never writes FPSCR or an FPR; the shell commits its response with the matching instruction tag.
+The production arithmetic engine consumes one tagged request and returns one tagged response. Requests must carry one of the defined `ppc_fpu_op_t` operations; the shell rejects illegal opcodes before this boundary. It has one clock, active-low synchronous reset, an input ready/valid handshake, an output ready/valid handshake, and a flush that discards all in-flight state. The response remains stable while stalled. The engine never writes FPSCR or an FPR; the shell commits its response with the matching instruction tag.
 
 The binary64 inputs are classified before arithmetic. A finite operand becomes a sign, a signed unbiased exponent, and a normalized 53-bit significand. Subnormal inputs are normalized without losing bits. Special values are resolved before the finite datapath, with NaN payload priority A, B, C and distinct invalid causes. Single-result arithmetic rounds directly from the exact intermediate to binary32, then widens that value exactly into an FPR binary64 encoding.
 
