@@ -17,7 +17,7 @@ Run all variants after the RTL has stabilized:
 ./quartus/fpu-production/synthesize.sh --docker arith602
 ```
 
-The script uses Quartus 17.0.2 Lite from the same pinned Cyclone V image as `quartus/icache/synthesize.sh`, targets `5CSEBA6U23I7`, and sets `NUM_PARALLEL_PROCESSORS=2`. Each project creates a 20 ns `clk_i` clock and zero min/max delays on virtual inputs and outputs. All interface bits are assigned virtual pins. The script checks that Quartus reports zero physical pins, compares source/configuration hashes before and after each map, and prints ALUTs, estimated ALMs, registers, memory bits, DSP blocks, Fmax against 50/66 MHz, worst setup slack and the ten worst setup paths. It also reports Quartus warnings for review.
+The script uses Quartus 17.0.2 Lite from the same pinned Cyclone V image as `quartus/icache/synthesize.sh`, targets `5CSEBA6U23I7`, and sets `NUM_PARALLEL_PROCESSORS=2`. Each project creates a 20 ns `clk_i` clock and zero min/max delays on virtual inputs and outputs. All interface bits are assigned virtual pins. The script checks that Quartus reports zero physical pins, compares source/configuration hashes before and after each map, and prints ALUTs, estimated ALMs, registers, memory bits, DSP blocks, Fmax against 50/66 MHz, worst setup slack and the ten worst setup paths. It also reports Quartus warnings for review and the worst path into each arithmetic pipeline stage, so a faster overall path does not hide a remaining stage bottleneck.
 
 The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not run the fitter, so its ALM estimate and timing are not fitted-area or timing-closure results. `output_files/full/reports/` and `output_files/arith/reports/` are generated build outputs.
 
@@ -192,3 +192,12 @@ For `3472757`, Quartus reported 10 warnings: two signed-shift conversions guarde
 For `cb871b4`, the full map reports 10 warnings: two guarded signed-shift conversions (shift counts 30–52), six constant-zero output bits (`size_bytes[1:0]` on memory/store packets and reserved FPSCR bit 20 on both status outputs), the constant-output summary warning, and the virtual-pin clock warning. The arithmetic-only map reports three: `rsp_o.invalid[6]` (`INV_SOFT`) is tied low because arithmetic operations do not generate the software-set cause, the constant-output summary warning, and the same virtual-pin clock warning. In both maps, `clk_i` is treated as a ripple clock and timing involving virtual pins is estimated. `check_timing` found no unconstrained ports, loops or latches; it reports 1,630 full-map and 650 arithmetic-only min/max consistency notices from equal zero-delay virtual I/O constraints. Setup found 10 paths and none violated in either map. Hold found 10 violated paths in each: full-map `mem_rsp_i` fault fields to `held_q`, arithmetic-only `req_i` fields to `req_q`, both with worst slack −5.431 ns from zero-delay virtual inputs. The setup pass is post-map only; no fitter ran.
 
 The earlier `82099f4` attempt failed the virtual-pin assertion and is excluded. The baseline attempt at `f58dabb` aborted and is excluded. Neither is an accepted result.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`6b3d826` plus stage-report harness changes, 2026-09-27.
+
+The rounding-control revision failed Quartus elaboration with two errors and
+zero warnings: Quartus 17 rejected a nested `unsigned'(int'(...))` cast in the
+denormal shift-distance conversion. This run produced no area or timing result.
+The separate Verilator numerical and timing results do not establish Quartus
+compatibility. A parser-compatible conversion and fresh synthesis are required.

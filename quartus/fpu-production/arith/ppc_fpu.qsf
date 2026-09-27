@@ -19,3 +19,4 @@ set_instance_assignment -name VIRTUAL_PIN ON -to rsp_o.*
 set_instance_assignment -name VIRTUAL_PIN ON -to flush_i
 set_instance_assignment -name VIRTUAL_PIN ON -to finish_valid_o
 set_instance_assignment -name VIRTUAL_PIN ON -to "finish_o.*"
+set_instance_assignment -name VIRTUAL_PIN ON -to div_busy_o

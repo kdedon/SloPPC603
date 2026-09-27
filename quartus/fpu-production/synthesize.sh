@@ -57,6 +57,9 @@ for variant in "${variants[@]}"; do
   for report in ppc_fpu.map.rpt clocks.txt check_timing.txt fmax.txt setup.txt hold.txt unconstrained.txt; do
     cp "${project_dir}/output_files/${report}" "${reports_dir}/"
   done
+  for report in "${project_dir}"/output_files/stage_*.txt; do
+    if [[ -f "${report}" ]]; then cp "${report}" "${reports_dir}/"; fi
+  done
   map_report="${reports_dir}/ppc_fpu.map.rpt"
   if ! grep -Eq 'Total pins +; 0' "${map_report}" ||
      ! grep -Eq 'Total virtual pins +; [1-9][0-9]*' "${map_report}"; then
