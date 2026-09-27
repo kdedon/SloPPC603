@@ -72,8 +72,10 @@ module ppc_fpu_arith (
     finite_sum_t sum_q;
     logic [52:0] div_remainder_q;
     logic [52:0] div_denominator_q;
+    logic [53:0] div_denominator_x2_q;
+    logic [54:0] div_denominator_x3_q;
     logic [54:0] div_quotient_q;
-    logic [5:0] div_bit_q;
+    logic [4:0] div_rounds_q;
     logic [52:0] launch_a_sig;
     logic [52:0] launch_b_sig;
     logic launch_divide;
@@ -557,7 +559,9 @@ module ppc_fpu_arith (
         out.fprf = rounded.fprf;
         if (sum.negate_final) begin
             out.result[63] = ~out.result[63];
-            out.fprf = result_class(out.result);
+            if (rounded.fprf == 5'b10100) out.fprf = 5'b11000;
+            else if (rounded.fprf == 5'b11000) out.fprf = 5'b10100;
+            else out.fprf = result_class(out.result);
         end
         return out;
     endfunction
@@ -789,7 +793,10 @@ module ppc_fpu_arith (
         logic [159:0] magnitude;
         logic signed [15:0] exponent;
         logic result_sign;
-        magnitude = {1'b0, quotient, 104'd0};
+        if (single_result || op == FP_FRES)
+            magnitude = {1'b0, quotient[26:0], 132'd0};
+        else
+            magnitude = {1'b0, quotient, 104'd0};
         magnitude[0] |= remainder_nonzero;
         if (op == FP_FRES) begin
             exponent = -finite_exp(b_bits[62:0]);
@@ -844,15 +851,25 @@ module ppc_fpu_arith (
         endcase
     end
 
-    logic [53:0] div_remainder_next;
+    logic [54:0] div_trial;
+    logic [52:0] div_remainder_next;
     logic [54:0] div_quotient_next;
+    logic [1:0] div_digit;
     always_comb begin
-        div_remainder_next = {div_remainder_q, 1'b0};
-        div_quotient_next = div_quotient_q << 1;
-        if (div_remainder_next >= {1'b0, div_denominator_q}) begin
-            div_remainder_next = div_remainder_next - {1'b0, div_denominator_q};
-            div_quotient_next[0] = 1'b1;
+        div_trial = {div_remainder_q, 2'b00};
+        div_digit = 2'd0;
+        if (div_trial >= div_denominator_x3_q) begin
+            div_trial -= div_denominator_x3_q;
+            div_digit = 2'd3;
+        end else if (div_trial >= {1'b0, div_denominator_x2_q}) begin
+            div_trial -= {1'b0, div_denominator_x2_q};
+            div_digit = 2'd2;
+        end else if (div_trial >= {2'b00, div_denominator_q}) begin
+            div_trial -= {2'b00, div_denominator_q};
+            div_digit = 2'd1;
         end
+        div_remainder_next = div_trial[52:0];
+        div_quotient_next = (div_quotient_q << 2) | {53'd0, div_digit};
     end
 
     assign req_ready_o = state_q == IDLE && !flush_i;
@@ -868,14 +885,19 @@ module ppc_fpu_arith (
             sum_q <= '0;
             div_remainder_q <= '0;
             div_denominator_q <= '0;
+            div_denominator_x2_q <= '0;
+            div_denominator_x3_q <= '0;
             div_quotient_q <= '0;
-            div_bit_q <= '0;
+            div_rounds_q <= '0;
         end else begin
             case (state_q)
                 IDLE: if (req_valid_i) begin
                     req_q <= req_i;
                     if (launch_divide) begin
                         div_denominator_q <= launch_b_sig;
+                        div_denominator_x2_q <= {launch_b_sig, 1'b0};
+                        div_denominator_x3_q <= {2'b00, launch_b_sig} +
+                            {1'b0, launch_b_sig, 1'b0};
                         if (req_i.op == FP_FRES) begin
                             div_remainder_q <= 53'h10000000000000 -
                                 ((53'h10000000000000 >= launch_b_sig) ?
@@ -889,7 +911,8 @@ module ppc_fpu_arith (
                             div_quotient_q <= (launch_a_sig >= launch_b_sig) ?
                                 55'd1 : 55'd0;
                         end
-                        div_bit_q <= 6'd54;
+                        div_rounds_q <= (req_i.single_result ||
+                            req_i.op == FP_FRES) ? 5'd13 : 5'd27;
                         state_q <= DIVIDE;
                     end else if (launch_finite) state_q <= PREP;
                     else state_q <= CALC;
@@ -915,14 +938,14 @@ module ppc_fpu_arith (
                     state_q <= RESPONSE;
                 end
                 DIVIDE: begin
-                    div_remainder_q <= div_remainder_next[52:0];
+                    div_remainder_q <= div_remainder_next;
                     div_quotient_q <= div_quotient_next;
-                    div_bit_q <= div_bit_q - 6'd1;
-                    if (div_bit_q == 6'd1) begin
+                    div_rounds_q <= div_rounds_q - 5'd1;
+                    if (div_rounds_q == 5'd1) begin
                         rsp_q <= finish_division(req_q.tag, req_q.op,
                             req_q.a, req_q.b, req_q.rn, req_q.ni,
                             req_q.oe, req_q.ue, req_q.single_result,
-                            div_quotient_next, div_remainder_next != 54'd0);
+                            div_quotient_next, div_remainder_next != 53'd0);
                         state_q <= RESPONSE;
                     end
                 end

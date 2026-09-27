@@ -57,6 +57,13 @@ def packets(ops, random_count, seed):
                 else:
                     cases.extend((x, y, 0, 'cross') for x in special for y in special)
             if op in THREE:
+                # Product edge pairs with both addend-zero signs exercise the
+                # fused path through cancellation, underflow, infinity and NaN.
+                product_edge = [edge[i] for i in (0, 1, 2, 3, 5, 8, 9, 10,
+                                                   12, 13, 14, 15, 17, 20, 21, 22)]
+                cases.extend((a, zero, c, 'fused-pair')
+                             for a in product_edge for c in product_edge
+                             for zero in (edge[0], edge[12]))
                 cases.append((0x3ff8000000000000, 0xbaf0000000000000,
                               0x3ff0000020000000, 'single-round'))
                 if not single:
@@ -68,8 +75,14 @@ def packets(ops, random_count, seed):
                         (0, 1 << 63, 0x7fefffffffffffff),
                         (0x3ff0000000000001, 0xbff0000000000000, 0x3feffffffffffffe)))
                 else:
-                    cases.append((0x3ff0000020000000, 0xbff0000000000000,
-                                  0x3fefffffc0000000, 'fused-cancellation'))
+                    cases.extend((a, b, c, 'fused-cancellation') for a, b, c in (
+                        (0x3ff0000020000000, 0xbff0000000000000,
+                         0x3fefffffc0000000),
+                        # Exact single subnormal; negative fused variants
+                        # must retain the single-precision FPRF class.
+                        (0x3810000000000000, 0, 0x3fe0000000000000),
+                        (0xb810000000000000, 0, 0x3fe0000000000000),
+                        (0x3810000000000001, 0, 0x3fe0000000000000)))
             if op == 'frsp':
                 cases.extend((0, x, 0, 'round-boundary') for x in
                              (0x380fffffe0000000, 0x36a0000000000000,

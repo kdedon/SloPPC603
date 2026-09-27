@@ -35,6 +35,8 @@ module tb_ppc_fpu_arith;
     int waited;
     int op_count [0:12];
     int op_failures [0:12];
+    int op_latency_min [0:12];
+    int op_latency_max [0:12];
     int result_failures, invalid_failures, flag_failures, class_failures;
     logic bad_result, bad_invalid, bad_flags, bad_class;
     string vectors_path;
@@ -61,6 +63,8 @@ module tb_ppc_fpu_arith;
         for (int i = 0; i <= 12; i++) begin
             op_count[i] = 0;
             op_failures[i] = 0;
+            op_latency_min[i] = 1025;
+            op_latency_max[i] = 0;
         end
         expected = '0;
         repeat (3) @(negedge clk_i);
@@ -119,11 +123,16 @@ module tb_ppc_fpu_arith;
             req_valid_i = 1'b0;
             waited = 0;
             while (!rsp_valid_o) begin
-                @(negedge clk_i);
+                @(posedge clk_i);
+                #1;
                 waited = waited + 1;
                 if (waited > 1024) $fatal(1, "response timeout vector %0d", count);
             end
             op_count[int'(op_bits)]++;
+            if (waited < op_latency_min[int'(op_bits)])
+                op_latency_min[int'(op_bits)] = waited;
+            if (waited > op_latency_max[int'(op_bits)])
+                op_latency_max[int'(op_bits)] = waited;
             bad_result = (((rsp_o.result ^ expected.result) & result_mask) != 64'd0) ||
                          rsp_o.write_result !== expected.write_result;
             bad_invalid = rsp_o.invalid !== expected.invalid;
@@ -174,8 +183,8 @@ module tb_ppc_fpu_arith;
                  result_failures, invalid_failures, flag_failures, class_failures);
         for (int i = 0; i <= 12; i++)
             if (op_count[i] != 0)
-                $display("PPC_ARITH_OP op=%0d vectors=%0d mismatches=%0d",
-                         i, op_count[i], op_failures[i]);
+                $display("PPC_ARITH_OP op=%0d vectors=%0d mismatches=%0d latency_min=%0d latency_max=%0d",
+                         i, op_count[i], op_failures[i], op_latency_min[i], op_latency_max[i]);
         if (failures != 0) $fatal(1, "PPC arithmetic qualification failed");
         $display("PASS PPC arithmetic raw packets");
         $finish;
