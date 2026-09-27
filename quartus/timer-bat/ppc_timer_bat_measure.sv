@@ -262,6 +262,7 @@ module ppc_timer_bat_measure (
   always_ff @(posedge clk_i) busy_o_obq <= busy_o_od;
   assign busy_o = busy_o_obq;
 
+  logic [32:0] unused_icbi_core;
   ppc_core_bat #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),
@@ -269,6 +270,8 @@ module ppc_timer_bat_measure (
     .ENABLE_TIMERS(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (
+    .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
+    .icbi_req_ea_o(unused_icbi_core[32:1]),
     .tlb_mgmt_req_valid_i(1'b0),
     .tlb_mgmt_req_ready_o(unused_page[0]),
     .tlb_mgmt_req_kind_i(2'b0),

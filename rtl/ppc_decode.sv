@@ -9,7 +9,8 @@ module ppc_decode #(
   parameter bit ENABLE_TLB_INVALIDATE = 1'b0,
   parameter bit ENABLE_TLB_LOAD = 1'b0,
   parameter bit ENABLE_SDR1 = 1'b0,
-  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
 ) (
   input logic [31:0] insn_i,
   output ppc_pkg::uop_t uop_o
@@ -503,6 +504,33 @@ module ppc_decode #(
                                     SPECIAL_TLBLD : SPECIAL_TLBLI;
                 uop_o.src_a = 5'b0;
                 uop_o.src_b = insn_i[15:11];
+              end
+            end
+            10'd86, 10'd54, 10'd470, 10'd1014, 10'd278, 10'd246, 10'd982: begin
+              // Cache control X-forms: EA = (rA|0) + rB; RT and Rc reserved.
+              if (ENABLE_CACHE_INSTRUCTIONS && ENABLE_SUPERVISOR_EXCEPTIONS &&
+                  !insn_i[0] && (insn_i[25:21] == 5'b0)) begin
+                uop_o.illegal = 1'b0;
+                uop_o.zero_a = insn_i[20:16] == 5'b0;
+                case (insn_i[10:1])
+                  10'd278, 10'd246: begin
+                    // dcbt/dcbtst: with no data cache the touch is a no-op.
+                    uop_o.op = ALU_OR;
+                    uop_o.zero_a = 1'b1;
+                    uop_o.use_imm = 1'b1;
+                  end
+                  10'd982: uop_o.special_op = SPECIAL_ICBI;
+                  default: begin
+                    // dcbf/dcbst translate as loads; dcbi/dcbz as stores.
+                    uop_o.special_op = ((insn_i[10:1] == 10'd470) ||
+                                        (insn_i[10:1] == 10'd1014)) ?
+                                       SPECIAL_STORE : SPECIAL_LOAD;
+                    uop_o.mem_size = MEM_BYTE;
+                    uop_o.cache_probe = 1'b1;
+                    uop_o.block_zero = insn_i[10:1] == 10'd1014;
+                    uop_o.privileged = insn_i[10:1] == 10'd470;
+                  end
+                endcase
               end
             end
             10'd306: begin

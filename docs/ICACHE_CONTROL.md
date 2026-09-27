@@ -6,11 +6,11 @@ the accepted instruction-cache and shared 60x transport.  The original
 `ppc_icache` and `ppc_core_cached_bus60x` modules and their public interfaces
 remain unchanged.
 
-This control plane is not a decoded HID0, `icbi`, or `isync` implementation.
-It provides a hardware integration handshake that software-visible supervisor
-control can request later.  It does not add an MMU, address-specific
-invalidation, cache lock, precise instruction-bus exceptions, or automatic CPU
-pipeline synchronization.
+This control plane is not a decoded HID0 or `isync` implementation. It
+provides a hardware integration handshake. A separate `icbi_*` port carries
+the CPU's one-set `icbi` invalidation through the same drain sequence; see
+[CACHE_CONTROL.md](CACHE_CONTROL.md). The plane adds no MMU, cache lock,
+precise instruction-bus exceptions or automatic CPU pipeline synchronization.
 
 ## Primary-source boundary
 
@@ -51,6 +51,17 @@ After accepting a command, the controller:
    mode changes.
 5. Changes the mode and asserts held `maintenance_done_valid_o`.
 6. Resumes fetch only after `maintenance_done_ready_i` consumes completion.
+
+## CPU icbi port
+
+`icbi_valid_i` with `icbi_addr_i` is held until `icbi_ready_o`, a one-cycle
+pulse in `MANAGED_SET_INVALIDATE` on which the set indexed by address bits 11:5
+is cleared (all four ways). The request starts only in `MANAGED_RUN` when no
+external command is offered, so an external command wins a same-cycle tie and
+`icbi` waits through its held completion. After starting, `icbi` blocks fetch
+acceptance and drains exactly as an external command, then clears the set.
+`maintenance_busy_o` is high throughout. `ppc_core_cached_bus60x_managed`
+ties the port off.
 
 Forcing a full invalidate on both disable and re-enable prevents lines filled
 before bypass from becoming visible after a later mode change.  A same-mode

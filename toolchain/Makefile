@@ -416,6 +416,22 @@ rtl-table-search-cached: table-search
 rtl-table-fault-cached: table-fault
 	$(PYTHON) run-rtl-smoke.py --profile table-fault-cached --elf $(BUILD_DIR)/table-fault/smoke.elf --build-dir $(BUILD_DIR)/rtl-table-fault-cached
 
+.PHONY: cacheops rtl-cacheops
+cacheops: $(BUILD_DIR)/cacheops/smoke.elf $(BUILD_DIR)/cacheops/smoke.bin $(BUILD_DIR)/cacheops/smoke.dump
+$(BUILD_DIR)/cacheops:
+	mkdir -p $@
+$(BUILD_DIR)/cacheops/crt0.o: crt0.S | $(BUILD_DIR)/cacheops
+	$(CC) $(COMMON_ASFLAGS) -mbig-endian -DENABLE_CACHEOPS_SMOKE -c $< -o $@
+$(BUILD_DIR)/cacheops/main.o: cacheops-smoke.c | $(BUILD_DIR)/cacheops
+	$(CC) $(COMMON_CFLAGS) -mbig-endian -c $< -o $@
+$(BUILD_DIR)/cacheops/handler.o: cacheops-handler.S | $(BUILD_DIR)/cacheops
+	$(CC) $(COMMON_ASFLAGS) -mbig-endian -c $< -o $@
+$(BUILD_DIR)/cacheops/smoke.elf: $(BUILD_DIR)/cacheops/crt0.o $(BUILD_DIR)/cacheops/main.o $(BUILD_DIR)/cacheops/handler.o cacheops.ld
+	$(CC) $(COMMON_CFLAGS) -mbig-endian $(subst link.ld,cacheops.ld,$(COMMON_LDFLAGS)) \
+		-Wl,-Map,$(BUILD_DIR)/cacheops/smoke.map $(filter %.o,$^) -o $@
+rtl-cacheops: cacheops
+	$(PYTHON) run-rtl-smoke.py --profile cacheops --elf $(BUILD_DIR)/cacheops/smoke.elf --build-dir $(BUILD_DIR)/rtl-cacheops
+
 # Page replacement, invalidation and faults under EXT/DEC and reset stress.
 .PHONY: mmu-stress rtl-mmu-stress-cached
 mmu-stress: $(BUILD_DIR)/mmu-stress/smoke.elf $(BUILD_DIR)/mmu-stress/smoke.bin $(BUILD_DIR)/mmu-stress/smoke.dump
@@ -435,8 +451,8 @@ rtl-mmu-stress-cached: mmu-stress
 
 # Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
 # or from `make firmware-all` in the pinned container.
-FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress
-RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached
+FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops
+RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached cacheops
 FIRMWARE_ELFS := $(FIRMWARE_PROFILES:%=$(BUILD_DIR)/%/smoke.elf)
 CROSS_MISSING := ERROR: $(CC) not found; install the pinned cross-compiler or run make firmware-all in the container (see toolchain/README.md)
 

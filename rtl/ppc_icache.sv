@@ -21,6 +21,10 @@ module ppc_icache (
   input  logic         kill_i,
   input  logic         invalidate_i,
   output logic         invalidate_done_o,
+  // Clears all four ways of the set that holds this address. The caller
+  // drains refills and responses first.
+  input  logic         invalidate_set_i,
+  input  logic [31:0]  invalidate_set_addr_i,
 
   output logic         line_req_valid_o,
   input  logic         line_req_ready_i,
@@ -135,6 +139,9 @@ module ppc_icache (
     return result;
   endfunction
 
+  logic unused_set_addr_bits;
+  assign unused_set_addr_bits = ^{invalidate_set_addr_i[31:OFFSET_BITS+SET_BITS],
+                                  invalidate_set_addr_i[OFFSET_BITS-1:0]};
   assign lookup_set = fetch_addr_i[OFFSET_BITS +: SET_BITS];
   assign lookup_tag = fetch_addr_i[31 -: TAG_BITS];
   assign lookup_word = fetch_addr_i[2 +: WORD_BITS];
@@ -272,6 +279,8 @@ module ppc_icache (
       if (rsp_valid_q && fetch_rsp_ready_i)
         rsp_valid_q <= 1'b0;
 
+      if (invalidate_set_i)
+        set_valid_q[invalidate_set_addr_i[OFFSET_BITS +: SET_BITS]] <= 1'b0;
       if (invalidate_i) begin
         // This is the bounded flash-invalidate command.  A refill already
         // accepted by the line transport is drained but never installed.
@@ -378,6 +387,9 @@ module ppc_icache (
     if (rst_ni && accept)
       assert ($onehot0(lookup_hit_way))
         else $error("instruction cache holds one line in two ways");
+    if (rst_ni && invalidate_set_i)
+      assert (state_q == IC_IDLE && !rsp_valid_q && !accept)
+        else $error("set invalidate overlapped a lookup or refill");
   end
   // synthesis translate_on
 endmodule

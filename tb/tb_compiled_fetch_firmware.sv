@@ -32,7 +32,10 @@ module tb_compiled_fetch_firmware;
   logic [32:0] unused_interrupt;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
+  logic [33:0] unused_cache_core;
   ppc_core #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1)) dut (
+    .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
+    .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .tlb_inv_req_valid_o(unused_tlb_inv_core[0]),
     .tlb_inv_req_ready_i(1'b0),
     .tlb_inv_req_ea_o(unused_tlb_inv_core[32:1]),

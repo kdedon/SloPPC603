@@ -13,7 +13,8 @@ module ppc_special #(
   parameter bit ENABLE_PAGE_MISS_RESULTS = 1'b0,
   parameter bit ENABLE_SDR1 = 1'b0,
   parameter bit ENABLE_TGPR = 1'b0,
-  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -118,12 +119,16 @@ module ppc_special #(
   output logic [31:0] dmem_req_addr_o,
   output logic [31:0] dmem_req_wdata_o,
   output logic [3:0] dmem_req_wstrb_o,
+  output logic dmem_req_probe_o,
   input logic dmem_rsp_valid_i,
   output logic dmem_rsp_ready_o,
   input logic [31:0] dmem_rsp_rdata_i,
   input logic dmem_rsp_error_i,
   input ppc_pkg::data_fault_t dmem_rsp_fault_i,
-  input ppc_pkg::page_miss_t dmem_rsp_page_miss_i
+  input ppc_pkg::page_miss_t dmem_rsp_page_miss_i,
+  output logic icbi_req_valid_o,
+  input logic icbi_req_ready_i,
+  output logic [31:0] icbi_req_ea_o
 );
   import ppc_pkg::*;
 
@@ -144,7 +149,7 @@ module ppc_special #(
     S_CONTEXT_DRAIN, S_CONTEXT_INSTALL, S_CONTEXT_REDIRECT, S_CONTEXT_ABORT,
     S_INTERRUPT_COMMIT, S_TIMER_RESULT, S_EXCEPTION_HALT,
     S_MMU_OFFER, S_MMU_WAIT, S_MMU_RESULT, S_MMU_ABORT, S_MMU_ACK, S_MMU_REDIRECT,
-    S_BRANCH_REDIRECT
+    S_BRANCH_REDIRECT, S_ICBI
   } state_t;
   state_t state_q;
   // The shared uop record carries fields for other lanes.
@@ -194,6 +199,7 @@ module ppc_special #(
   logic exception_state_load_valid, exception_state_load_ready;
   logic [2:0] exception_state_load_enable;
   logic rfi_state_unsupported, exception_entry_unsupported, dsi_event;
+  logic block_zero_event;
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
   logic decrementer_selected_q;
   // External services own committed BAT, segment and TLB state. This lane owns
@@ -496,6 +502,7 @@ module ppc_special #(
                  ((uop_q.mem_size == MEM_HALF) && ea_q[0]);
     dmem_req_valid_o = rst_ni && (state_q == S_MEM_OFFER);
     dmem_req_write_o = (uop_q.special_op == SPECIAL_STORE);
+    dmem_req_probe_o = ENABLE_CACHE_INSTRUCTIONS && uop_q.cache_probe;
     dmem_req_addr_o = {ea_q[31:2], 2'b0};
     dmem_req_wdata_o = '0;
     dmem_req_wstrb_o = '0;
@@ -546,6 +553,11 @@ module ppc_special #(
     load_half = ea_q[1] ? dmem_rsp_rdata_i[15:0] :
                               dmem_rsp_rdata_i[31:16];
   end
+
+  // The request is held until ready reports the invalidation done.
+  assign icbi_req_valid_o = ENABLE_CACHE_INSTRUCTIONS && rst_ni &&
+                            (state_q == S_ICBI);
+  assign icbi_req_ea_o = ea_q;
 
   // A taken branch or ISYNC redirects on the edge after it commits.
   assign branch_redirect_taken = branch_taken_q &&
@@ -617,7 +629,7 @@ module ppc_special #(
     (|msr_o[5:4]);
   // The committed miss changes MSR before its held redirect is consumed,
   // so use the captured result kind.
-  assign data_exception_event = dsi_event ||
+  assign data_exception_event = dsi_event || block_zero_event ||
     (ENABLE_TLB_MISS_EXCEPTIONS && data_page_miss_opcode &&
      !memory_result_q.fault);
   assign miss_event_commit = exception_event_valid &&
@@ -633,6 +645,11 @@ module ppc_special #(
                       (uop_q.special_op == SPECIAL_STORE)) &&
                      ((memory_result_q.data_fault == DATA_DSI_PROTECTION) ||
                       (memory_result_q.data_fault == DATA_DSI_DIRECT_STORE));
+  // Data is never cached here, so a translated dcbz takes the 603e
+  // caching-inhibited alignment exception.
+  assign block_zero_event = ENABLE_CACHE_INSTRUCTIONS && uop_q.block_zero &&
+    (uop_q.special_op == SPECIAL_STORE) && !memory_result_q.fault &&
+    (memory_result_q.data_fault == DATA_OK);
   always_comb begin
     exception_event_valid = 1'b0;
     exception_event_kind = EVENT_SC;
@@ -661,6 +678,9 @@ module ppc_special #(
             exception_event_kind =
               (uop_q.special_op == SPECIAL_STORE) ?
                 EVENT_TLB_D_STORE : EVENT_TLB_D_LOAD;
+          end else if (block_zero_event) begin
+            exception_event_valid = !exception_entry_unsupported;
+            exception_event_kind = EVENT_ALIGNMENT;
           end else begin
             exception_event_valid = !exception_entry_unsupported && dsi_event;
             exception_event_kind = EVENT_DSI;
@@ -781,6 +801,8 @@ module ppc_special #(
       fence_d = dispatch_fenced;
       if ((uop_i.special_op == SPECIAL_LOAD) ||
           (uop_i.special_op == SPECIAL_STORE)) state_d = S_MEM_PREP;
+      else if (ENABLE_CACHE_INSTRUCTIONS &&
+               (uop_i.special_op == SPECIAL_ICBI)) state_d = S_ICBI;
       else if (dispatch_fenced) state_d = S_CONTEXT_DRAIN;
       else state_d = S_EXEC;
     end else if (cancel_i) begin
@@ -810,6 +832,11 @@ module ppc_special #(
           state_d = response_fire ? S_IDLE : S_MEM_DRAIN;
         end
         S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
+        // An offered invalidation completes before the lane is reused.
+        S_ICBI: begin
+          killed_d = 1'b1;
+          if (icbi_req_ready_i) state_d = S_IDLE;
+        end
         S_EXCEPTION_HALT: ;
         default: state_d = fence_q ? S_CONTEXT_ABORT : S_IDLE;
       endcase
@@ -875,6 +902,7 @@ module ppc_special #(
         end
         S_MEM_RESULT: if (result_fire) state_d = S_HOLD;
         S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
+        S_ICBI: if (icbi_req_ready_i) state_d = killed_q ? S_IDLE : S_EXEC;
         S_EXCEPTION_RESULT: if (exception_result_accept) begin
           // A committed event the state unit rejected has no target;
           // stop rather than redirect.
@@ -1081,7 +1109,7 @@ module ppc_special #(
           hash2_q <= derived_hash2;
         end
         if (exception_event_valid &&
-            (uop_q.special_op == SPECIAL_ALIGNMENT)) begin
+            ((uop_q.special_op == SPECIAL_ALIGNMENT) || block_zero_event)) begin
           dar_q <= ea_q;
           dsisr_q <= {15'b0, uop_q.alignment_dsisr};
         end
@@ -1111,6 +1139,8 @@ module ppc_special #(
           mem_response_fence = ENABLE_SUPERVISOR_EXCEPTIONS &&
             !exception_entry_unsupported && ENABLE_LIVE_CONTEXT;
         DATA_PAGE_MISS, DATA_PAGE_CHANGED: mem_response_fence = miss_eligible;
+        DATA_OK: mem_response_fence = ENABLE_CACHE_INSTRUCTIONS &&
+          uop_q.block_zero && !exception_entry_unsupported && ENABLE_LIVE_CONTEXT;
         default: ;
       endcase
     end
@@ -1129,7 +1159,8 @@ module ppc_special #(
         if (dmem_rsp_error_i) memory_result_q.fault <= 1'b1;
         else begin
           case (dmem_rsp_fault_i)
-            DATA_OK: ;
+            DATA_OK: if (uop_q.block_zero && exception_entry_unsupported)
+              memory_result_q.fault <= 1'b1;
             DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE: begin
               if (ENABLE_SUPERVISOR_EXCEPTIONS && !exception_entry_unsupported)
                 memory_result_q.data_fault <= dmem_rsp_fault_i;

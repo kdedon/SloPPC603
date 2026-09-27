@@ -1,6 +1,15 @@
 # Timer and live BAT FPGA measurement
 
 
+
+## 2026-09-27 refit after merging gate 2
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, merge of the gate-2 branch onto
+`7609a14`, 2026-09-27. Setup meets 50 MHz at every corner (+1.594 / +1.393 ns
+at slow 100 C / -40 C); Fmax 54.33 MHz; 4,945 ALMs. **Hold misses by 0.070 ns**
+at slow -40 C on the zero-delay virtual input `pimem_rsp_insn_i[2]` →
+`fetch.buf_insn[2]`; other corners pass.
+
 ## 2026-09-27 refit after merging AUD-21 and gate 1
 
 Recorded: `./quartus/timer-bat/build.sh --docker`, merge of the gate-1 branch

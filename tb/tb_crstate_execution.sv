@@ -56,7 +56,10 @@ module tb_crstate_execution;
   assert property (@(posedge clk) disable iff (!rst_n) context_outputs == 0);
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
+  logic [33:0] unused_cache_special;
   ppc_special dut (
+    .dmem_req_probe_o(unused_cache_special[0]), .icbi_req_valid_o(unused_cache_special[1]),
+    .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_special[33:2]),
     .dispatch_page_miss_i('0),
     .tlb_inv_req_valid_o(unused_tlb_inv_core[0]),
     .tlb_inv_req_ready_i(1'b0),

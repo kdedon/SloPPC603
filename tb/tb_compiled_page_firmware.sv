@@ -65,8 +65,11 @@ module tb_compiled_page_firmware;
   logic page_config_o;
   int page_retires=0,page_fetches=0,alias_stores=0,preloads=0;
   logic [49:0] unused_page_ports;
+  logic [32:0] unused_icbi_core;
   ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
                  .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),.ENABLE_RUNTIME_BAT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1)) dut(
+    .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
+    .icbi_req_ea_o(unused_icbi_core[32:1]),
     .clk_i(clk),.rst_ni(rst_n),
     .tlb_mgmt_req_valid_i,
     .tlb_mgmt_req_ready_o,

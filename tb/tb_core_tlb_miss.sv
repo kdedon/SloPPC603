@@ -81,10 +81,13 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
     return c;
   endfunction
   logic [89:0] unused_tlb_fill;
+  logic [33:0] unused_cache_core;
   ppc_core #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_TGPR(1'b1),
     .ENABLE_SDR1(1'b1),.ENABLE_PAGE_MISS_RESULTS(1'b1),
     .ENABLE_TLB_LOAD(1'b1),.ENABLE_TLB_MISS_EXCEPTIONS(FEATURE)) dut (
+    .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
+    .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .clk_i(clk),.rst_ni(rst_n),
     .bat_csr_req_valid_o(unused_bat_csr[47]),.bat_csr_req_ready_i(1'b0),
     .bat_csr_req_write_o(unused_bat_csr[46]),.bat_csr_req_spr_o(unused_bat_csr[45:36]),

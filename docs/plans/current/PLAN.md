@@ -33,9 +33,10 @@ Generated builds, logs and reports are excluded from version control.
    translated cached 60x top ([evidence](../../MMU_STRESS_FIRMWARE.md)).
    Machine check, trace and debug exceptions stay outside the MVP set; the
    stress has no ARTRY/TEA, which gate 2 owns.
-2. Verify cache maintenance, context changes, interrupts and data effects across
-   held refills and bus retries. Keep explicit CPU synchronization and external
-   maintenance contracts distinct.
+2. Accepted 2026-09-27: cache maintenance, context changes, interrupts and data
+   effects across held refills and bus retries, with CPU `icbi` and external
+   maintenance as distinct contracts ([cache control](../../CACHE_CONTROL.md)).
+   Page-table context changes under randomized retries remain with gate 1.
 3. Fit the combined translated cached top with reviewed interface constraints
    (including reset arrival);
    fix setup and hold violations, then run broader integration and firmware gates

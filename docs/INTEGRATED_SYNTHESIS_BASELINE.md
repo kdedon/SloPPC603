@@ -1,6 +1,16 @@
 # Current cached-physical synthesis baseline
 
 
+
+## 2026-09-27 refit after merging gate 2
+
+Recorded: `./quartus/integrated/build.sh --docker`, merge of the gate-2 branch onto
+`7609a14`, 2026-09-27. Setup meets 50 MHz at every corner (+1.718 / +1.817 ns
+at slow 100 C / -40 C); Fmax 55.40 MHz; 4,942 ALMs. **Hold misses by 0.163 ns**
+at slow -40 C, only on paths from the zero-delay virtual bus input `d_i[53]`
+into `ppc_bus60x.pending_rdata_q`; other corners pass. This is the virtual-I/O
+measurement artifact, not a core path.
+
 ## 2026-09-27 refit after merging AUD-21 and gate 1
 
 Recorded: `./quartus/integrated/build.sh --docker`, merge of the gate-1 branch

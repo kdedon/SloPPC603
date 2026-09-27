@@ -26,7 +26,10 @@ module ppc_core_measure (
   logic [36:0] unused_tlb_inv;
   logic [89:0] unused_tlb_fill;
   logic [41:0] unused_segment_csr;
+  logic [33:0] unused_cache_core;
   ppc_core dut (
+    .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
+    .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .clk_i,
     .rst_ni,
     .tlb_fill_req_valid_o(unused_tlb_fill[89]),

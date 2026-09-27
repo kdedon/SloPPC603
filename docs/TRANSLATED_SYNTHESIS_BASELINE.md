@@ -1,6 +1,30 @@
 # Translated cached 60x synthesis baseline
 
 
+
+## 2026-09-27 refit after merging gate 2
+
+Recorded: `./quartus/translated/build.sh --docker`, merge of the gate-2 branch onto
+`7609a14`, 2026-09-27. Setup meets 50 MHz at every corner (+0.771 / +0.902 ns
+at slow 100 C / -40 C); Fmax 52.00 MHz; 8,895 ALMs. **Hold misses by 0.198 ns**
+at slow -40 C, only on paths from the zero-delay virtual input `retire_ready_i`
+into the GPR MLAB write address; other corners pass (+0.081 / +0.136 /
++0.118 ns). All three measurement tops show this virtual-input artifact on this
+merge; the boundary model is being revised.
+
+## 2026-09-27 refit after merging gate 2 onto AUD-21 and gate 1
+
+Recorded: `./quartus/translated/build.sh --docker`, commit a038548, 2026-09-27.
+Profile includes `ENABLE_CACHE_INSTRUCTIONS`. Setup meets at every corner:
++0.771 / +0.902 ns at slow 100 C / -40 C (Fmax 52.0 MHz), fast +6.300 /
++6.615 ns. Hold meets at slow 100 C (+0.081 ns) and both fast corners but
+**misses by 0.198 ns at slow -40 C** on the virtual input `retire_ready_i` into
+the GPR MLAB write-address register (update-write port select). This is the
+zero-minimum virtual-I/O assumption, the same class as the timer/BAT hold on a
+virtual input; no gate-2 logic is on the path. 8,895 ALMs, 8,623 registers,
+23 M10Ks. The worst setup path runs from the IQ RAM through decode into the
+special-lane capture.
+
 ## 2026-09-27 refit after merging AUD-21 and gate 1
 
 Recorded: `./quartus/translated/build.sh --docker`, merge of the gate-1 branch
@@ -27,6 +51,22 @@ and DSISR selection, `tlbsync` decode) lies on it; the +93 ALMs moved
 placement on a path that had +0.388 ns at the previous fit. Closing it
 belongs to the dispatch/issue timing work (AUD-21 and the 66 MHz push).
 
+## 2026-09-27 refit with cache control instructions
+
+Recorded: `./quartus/translated/build.sh --docker`, commit 0a974ff, 2026-09-27.
+The profile adds `ENABLE_CACHE_INSTRUCTIONS`. Setup +0.900 / +0.882 ns, hold
++0.253 / +0.221 ns at slow 100 C / -40 C; fast corners pass (setup +6.147 /
++6.519, hold +0.135 / +0.119). Fmax 52.31 MHz; 66 MHz needs about 3.9 ns.
+8,832 ALMs, 8,519 registers, 23 M10Ks. The worst setup path runs from the
+special lane's captured SPR through the result select, completion wake and
+reservation-station issue into dispatch (`special|a_q`).
+
+The first fit of the same profile at c588165 missed setup by 0.724 / 0.537 ns:
+a test-redirect kill compare fed the special result valid ahead of that path.
+0a974ff ties the special-lane cancel off when `ENABLE_TEST_REDIRECT=0`, where
+every recovery is the special unit's own redirect with an empty CQ; a
+simulation assertion checks the invariant.
+
 ## 2026-09-27 current refit (after AUD-50/AUD-33)
 
 Recorded: `./quartus/translated/build.sh --docker`, same merge, 2026-09-27.
@@ -48,7 +88,7 @@ MMU, timer, exception and cached-bus composition.
 
 ## Profile
 
-`ppc_translated_measure` enables supervisor exceptions, live context,
+`ppc_translated_measure` enables supervisor exceptions, cache control instructions, live context,
 external interrupts, timers, runtime BAT, segment registers, SDR1, TGPR,
 page translation and miss results, page data and instruction exceptions,
 TLB load and invalidate, and TLB-miss exceptions. `ENABLE_TEST_REDIRECT=0`

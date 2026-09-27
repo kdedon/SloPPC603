@@ -1,4 +1,4 @@
-// Direct maintenance, drain, invalidation, and bypass checks.
+// Direct maintenance, icbi, drain, invalidation, and bypass checks.
 /* verilator lint_off BLKSEQ */
 module tb_icache_managed;
   logic clk = 1'b0, rst_n = 1'b0;
@@ -11,6 +11,8 @@ module tb_icache_managed;
   logic maintenance_valid, maintenance_ready, maintenance_invalidate;
   logic maintenance_enable, maintenance_done_valid, maintenance_done_ready;
   logic cache_enabled, maintenance_busy;
+  logic icbi_valid, icbi_ready;
+  logic [31:0] icbi_addr;
   logic bypass_req_valid, bypass_req_ready;
   logic [31:0] bypass_req_addr;
   logic bypass_rsp_valid, bypass_rsp_ready;
@@ -24,7 +26,7 @@ module tb_icache_managed;
   logic busy, hit, miss, protocol_error;
   integer checks = 0, cycles = 0, fetches = 0;
   integer line_requests = 0, bypass_requests = 0, maintenance_commands = 0;
-  integer hit_pulses = 0, miss_pulses = 0;
+  integer hit_pulses = 0, miss_pulses = 0, icbi_commands = 0;
   logic allow_protocol_error = 1'b0;
 
   ppc_icache_managed dut (
@@ -40,6 +42,7 @@ module tb_icache_managed;
     .maintenance_done_valid_o(maintenance_done_valid),
     .maintenance_done_ready_i(maintenance_done_ready),
     .cache_enabled_o(cache_enabled), .maintenance_busy_o(maintenance_busy),
+    .icbi_valid_i(icbi_valid), .icbi_ready_o(icbi_ready), .icbi_addr_i(icbi_addr),
     .bypass_req_valid_o(bypass_req_valid),
     .bypass_req_ready_i(bypass_req_ready),
     .bypass_req_addr_o(bypass_req_addr),
@@ -88,6 +91,11 @@ module tb_icache_managed;
       if (bypass_accept) bypass_requests++;
       if (fetch_accept) fetches++;
       if (maintenance_accept) maintenance_commands++;
+      if (icbi_valid && icbi_ready) icbi_commands++;
+      if (icbi_ready)
+        check(icbi_valid && !dut.fetch_outstanding_q && !dut.cache_busy &&
+              !fetch_ready && !line_req_valid,
+              "icbi completed with cache activity");
       if (hit) hit_pulses++;
       if (miss) miss_pulses++;
       if (line_req_valid) check(busy, "line request not covered by busy");
@@ -204,6 +212,28 @@ module tb_icache_managed;
     end
   endtask
 
+  // Holds icbi until its completion; returns the cycles it waited.
+  task automatic run_icbi(input logic [31:0] address, output integer waited);
+    begin
+      @(negedge clk);
+      icbi_addr = address;
+      icbi_valid = 1'b1;
+      waited = 0;
+      #1;
+      while (!icbi_ready && waited < 60) begin
+        @(negedge clk);
+        waited++;
+        #1;
+      end
+      check(icbi_ready, "icbi did not complete");
+      @(posedge clk);
+      @(negedge clk);
+      icbi_valid = 1'b0;
+      icbi_addr = 32'hxxxx_xxxx;
+      check(!maintenance_busy && maintenance_ready, "icbi did not release");
+    end
+  endtask
+
   task automatic perform_bypass_fetch(input logic [31:0] expected_addr,
                                       input logic [31:0] value);
     begin
@@ -239,6 +269,8 @@ module tb_icache_managed;
     maintenance_invalidate = 1'b0;
     maintenance_enable = 1'b1;
     maintenance_done_ready = 1'b0;
+    icbi_valid = 1'b0;
+    icbi_addr = 32'b0;
     bypass_req_ready = 1'b0;
     bypass_rsp_valid = 1'b0;
     bypass_rsp_insn = 32'b0;
@@ -366,6 +398,123 @@ module tb_icache_managed;
     return_line(make_line(32'hdddd_0000), 1'b0);
     expect_fetch_response(32'hdddd_0003);
 
+    // icbi clears every way of the indexed set regardless of tag: a line in
+    // another set stays warm, the indexed line refills.
+    begin
+      integer waited;
+      accept_fetch(32'h0000_0204);
+      accept_line_request();
+      return_line(make_line(32'h5555_0000), 1'b0);
+      expect_fetch_response(32'h5555_0001);
+      run_icbi(32'h7777_0110, waited);
+      check(waited <= 3, "idle icbi took too long");
+      accept_fetch(32'h0000_0204);
+      expect_fetch_response(32'h5555_0001);
+      check(line_requests == 4, "icbi disturbed another set");
+      accept_fetch(32'h0000_010c);
+      accept_line_request();
+      return_line(make_line(32'h6666_0000), 1'b0);
+      expect_fetch_response(32'h6666_0003);
+      check(line_requests == 5, "icbi left the indexed set valid");
+
+      // An icbi raised during an accepted, held refill waits for the fill
+      // and its response, then invalidates the freshly installed line.
+      run_icbi(32'h0000_0100, waited);
+      accept_fetch(32'h0000_0108);
+      accept_line_request();
+      @(negedge clk);
+      icbi_addr = 32'h0000_0100;
+      icbi_valid = 1'b1;
+      repeat (4) begin
+        @(posedge clk);
+        #1;
+        check(!icbi_ready && !fetch_ready && line_rsp_ready,
+              "icbi overtook a held refill");
+      end
+      return_line(make_line(32'h8888_0000), 1'b0);
+      repeat (3) begin
+        @(posedge clk);
+        #1;
+        check(fetch_rsp_valid && !icbi_ready,
+              "icbi overtook a held fetch response");
+      end
+      expect_fetch_response(32'h8888_0002);
+      waited = 0;
+      #1;
+      while (!icbi_ready && waited < 10) begin
+        @(negedge clk);
+        waited++;
+        #1;
+      end
+      check(icbi_ready, "icbi did not follow the drained refill");
+      @(posedge clk);
+      @(negedge clk);
+      icbi_valid = 1'b0;
+      accept_fetch(32'h0000_0108);
+      accept_line_request();
+      return_line(make_line(32'h9999_0000), 1'b0);
+      expect_fetch_response(32'h9999_0002);
+      check(line_requests == 7, "drained refill survived icbi");
+
+      // Same-cycle external command wins; icbi waits for its completion.
+      @(negedge clk);
+      maintenance_invalidate = 1'b0;
+      maintenance_enable = 1'b1;
+      maintenance_valid = 1'b1;
+      icbi_addr = 32'h0000_0200;
+      icbi_valid = 1'b1;
+      #1;
+      check(maintenance_ready, "external command lost the tie");
+      @(posedge clk);
+      @(negedge clk);
+      maintenance_valid = 1'b0;
+      while (!maintenance_done_valid) begin
+        check(!icbi_ready, "icbi ran inside external maintenance");
+        @(negedge clk);
+      end
+      repeat (3) begin
+        @(posedge clk);
+        #1;
+        check(!icbi_ready && maintenance_done_valid,
+              "icbi overtook held external completion");
+      end
+      finish_maintenance();
+      waited = 0;
+      #1;
+      while (!icbi_ready && waited < 10) begin
+        @(negedge clk);
+        waited++;
+        #1;
+      end
+      check(icbi_ready, "icbi did not run after external completion");
+      @(posedge clk);
+      @(negedge clk);
+      icbi_valid = 1'b0;
+
+      // icbi takes fetch admission from a same-edge fetch.
+      @(negedge clk);
+      fetch_addr = 32'h0000_0204;
+      fetch_valid = 1'b1;
+      icbi_addr = 32'h0000_0100;
+      icbi_valid = 1'b1;
+      #1;
+      check(!fetch_ready, "same-edge fetch beat icbi");
+      while (!icbi_ready) @(negedge clk);
+      @(posedge clk);
+      @(negedge clk);
+      icbi_valid = 1'b0;
+      #1;
+      check(fetch_ready, "fetch not admitted after icbi");
+      @(posedge clk);
+      @(negedge clk);
+      fetch_valid = 1'b0;
+      accept_line_request();
+      return_line(make_line(32'haaaa_0000), 1'b0);
+      expect_fetch_response(32'haaaa_0001);
+      check(line_requests == 8 && icbi_commands == 5,
+            "set 0x200 icbi or fetch admission count");
+    end
+
     // Enter bypass once more, then prove asynchronous output gating when
     // reset arrives with an accepted bypass request and response presented.
     accept_maintenance(1'b0, 1'b0);
@@ -401,8 +550,8 @@ module tb_icache_managed;
     check(cache_enabled && maintenance_ready,
           "reset did not restore enabled managed mode");
 
-    check(fetches == 14 && line_requests == 3 && bypass_requests == 3 &&
-          maintenance_commands == 4 && miss_pulses == 3,
+    check(fetches == 20 && line_requests == 8 && bypass_requests == 3 &&
+          maintenance_commands == 5 && miss_pulses == 8 && icbi_commands == 5,
           $sformatf("coverage counters mismatch fetch=%0d line=%0d bypass=%0d maintenance=%0d miss=%0d hit=%0d",
                     fetches, line_requests, bypass_requests,
                     maintenance_commands, miss_pulses, hit_pulses));
@@ -417,9 +566,9 @@ module tb_icache_managed;
     check(!maintenance_busy && maintenance_ready && protocol_error,
           "illegal state recovers to run with sticky diagnostic");
 
-    $display("PASS: tb_icache_managed %0d checks, %0d fetches, %0d line, %0d bypass, %0d maintenance",
+    $display("PASS: tb_icache_managed %0d checks, %0d fetches, %0d line, %0d bypass, %0d maintenance, %0d icbi",
              checks, fetches, line_requests, bypass_requests,
-             maintenance_commands);
+             maintenance_commands, icbi_commands);
     $finish;
   end
 endmodule

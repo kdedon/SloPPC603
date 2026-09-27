@@ -117,7 +117,7 @@ package ppc_pkg;
     SPECIAL_PROGRAM_PRIV, SPECIAL_MFMSR,
     SPECIAL_ISYNC, SPECIAL_SYNC, SPECIAL_EIEIO, SPECIAL_ALIGNMENT, SPECIAL_ISI, SPECIAL_MTMSR,
     SPECIAL_MFSR, SPECIAL_MTSR, SPECIAL_TLBIE,
-    SPECIAL_TLBLD, SPECIAL_TLBLI, SPECIAL_TLBSYNC
+    SPECIAL_TLBLD, SPECIAL_TLBLI, SPECIAL_TLBSYNC, SPECIAL_ICBI
   } special_op_t;
   typedef enum logic [2:0] {
     CR_LOGIC_AND, CR_LOGIC_ANDC, CR_LOGIC_EQV, CR_LOGIC_NAND,
@@ -220,6 +220,11 @@ package ppc_pkg;
     cr_logic_op_t cr_logic;
     mem_size_t mem_size;
     logic mem_signed;
+    // dcbf/dcbst/dcbi/dcbz: translate and check like the access, no transfer.
+    logic cache_probe;
+    // dcbz: a translated probe that ends in the alignment exception.
+    logic block_zero;
+    logic privileged;
     // Low 17 bits of alignment DSISR; reserved high bits are always zero.
     logic [16:0] alignment_dsisr;
     logic read_ca;

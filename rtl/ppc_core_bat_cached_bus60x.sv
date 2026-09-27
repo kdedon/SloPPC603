@@ -2,7 +2,8 @@
 // Opt-in translated physical I-cache plus scalar 60x data/bypass composition.
 // Only authorized physical instruction requests with WIMG=0000 may enter the
 // line cache. Other WIMG values bypass it through the cache-inhibited scalar
-// bus. Data is scalar. No automatic code coherence or icbi/HID0 is implied.
+// bus. Data is scalar. CPU icbi invalidates one set; there is no automatic
+// code coherence or HID0.
 module ppc_core_bat_cached_bus60x #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter int DIV_LATENCY = 20,
@@ -24,7 +25,8 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_TLB_INVALIDATE = 1'b0,
   parameter bit ENABLE_TLB_LOAD = 1'b0,
   parameter bit ENABLE_TEST_REDIRECT = 1'b1,
-  parameter bit ENABLE_MICRO_TLB = 1'b1
+  parameter bit ENABLE_MICRO_TLB = 1'b1,
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -221,6 +223,8 @@ module ppc_core_bat_cached_bus60x #(
   logic physical_fetch_busy_q, route_managed_q;
   logic managed_fetch_valid, direct_fetch_valid, fetch_gate;
   logic managed_maintenance_valid, managed_maintenance_ready;
+  logic icbi_req_valid, icbi_req_ready;
+  logic [31:0] icbi_req_ea;
   logic eligible_managed;
   logic scalar_imem_req_valid, scalar_imem_req_ready;
   logic [31:0] scalar_imem_req_addr;
@@ -246,7 +250,8 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
     .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT),
-    .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB)
+    .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
   ) translated_core (
     .clk_i,
     .rst_ni,
@@ -326,6 +331,8 @@ module ppc_core_bat_cached_bus60x #(
     .pdmem_rsp_ready_o(dmem_rsp_ready),
     .pdmem_rsp_rdata_i(dmem_rsp_rdata),
     .pdmem_rsp_error_i(dmem_rsp_error),
+    .icbi_req_valid_o(icbi_req_valid), .icbi_req_ready_i(icbi_req_ready),
+    .icbi_req_ea_o(icbi_req_ea),
     .retire_valid_o,
     .retire_ready_i,
     .retire_o,
@@ -364,6 +371,8 @@ module ppc_core_bat_cached_bus60x #(
     .maintenance_invalidate_i, .maintenance_cache_enable_i,
     .maintenance_done_valid_o, .maintenance_done_ready_i,
     .cache_enabled_o, .maintenance_busy_o,
+    .icbi_valid_i(icbi_req_valid), .icbi_ready_o(icbi_req_ready),
+    .icbi_addr_i(icbi_req_ea),
     .bypass_req_valid_o(bypass_req_valid),
     .bypass_req_ready_i(bypass_req_ready),
     .bypass_req_addr_o(bypass_req_addr),
@@ -388,7 +397,8 @@ module ppc_core_bat_cached_bus60x #(
   // Capture whether it entered managed cache or direct scalar bypass; a later
   // WIMG/context change cannot switch ownership of its held response.
   assign eligible_managed = imem_req_wimg == 4'b0000;
-  assign fetch_gate = rst_ni && !maintenance_valid_i &&
+  // A pending external command or CPU icbi holds new fetches.
+  assign fetch_gate = rst_ni && !maintenance_valid_i && !icbi_req_valid &&
     !maintenance_busy_o && !transport_ifetch_error;
   assign managed_fetch_valid = imem_req_valid && eligible_managed &&
     !physical_fetch_busy_q && fetch_gate;

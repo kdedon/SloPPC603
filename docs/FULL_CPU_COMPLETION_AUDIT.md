@@ -4,7 +4,7 @@ Date: 2026-09-23. Scope: the original CPU-only 603e project through P30 in
 [TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
-**Revised estimate: about 46% complete (weighted 46.29%; judgment range 40–50%).**
+**Revised estimate: about 47% complete (weighted 46.79%; judgment range 40–50%).**
 This replaces the provisional 40–45% headline. It is completed project scope,
 including documentation and tooling, not measured RTL coverage or a fraction of
 remaining effort. The range is not a statistical confidence interval.
@@ -30,18 +30,18 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Dual dispatch/retirement and superscalar scheduling | 4% | 0% | 0.00% |
 | Functional branches | 3% | 90% | 2.70% |
 | Branch prediction and folding | 2% | 0% | 0.00% |
-| Load/store architecture | 5% | 65% | 3.25% |
+| Load/store architecture | 5% | 67% | 3.35% |
 | Supervisor, system instructions and interrupts | 8% | 70% | 5.60% |
 | MMU | 8% | 80% | 6.40% |
 | 60x transport and protocol | 6% | 65% | 3.90% |
-| Instruction cache and architectural maintenance | 4% | 80% | 3.20% |
+| Instruction cache and architectural maintenance | 4% | 90% | 3.60% |
 | Data cache and writeback | 5% | 0% | 0.00% |
 | Coherence and reservations | 3% | 0% | 0.00% |
 | Floating point | 12% | 0% | 0.00% |
 | Endian, variants and platform behavior | 6% | 0% | 0.00% |
 | Full timing, reference and integration verification | 10% | 50% | 5.00% |
 | Final FPGA closure and release | 4% | 10% | 0.40% |
-| **Total** | **100%** | | **46.29%** |
+| **Total** | **100%** | | **46.79%** |
 
 ## Reasons for the revised credit
 
@@ -65,8 +65,9 @@ historically measured effort. Keep them fixed for subsequent updates.
 - **Bus/cache/coherence:** preserve 18% as bus 6%, instruction cache 4%, data cache
   5%, coherence/reservations 3%. Bus receives 65% for the bounded scalar/burst
   implementation; full tenure, snoop, parity and error semantics are incomplete.
-  Instruction cache receives 80% for translated physical operation, with
-  architectural maintenance and remaining behavior open. Data cache and coherence
+  Instruction cache receives 90% for translated physical operation and
+  architectural `icbi` (2026-09-27); HID0 control, locking and parity remain
+  open. LSU gains 2 points for the cache-block probes and `dcbz` alignment. Data cache and coherence
   receive zero. This category contributes 7.10 points, not an MVP cache percentage
   applied to the entire memory system.
 - **Verification:** 50% recognizes the broad scalar regression, reference checks
@@ -86,7 +87,7 @@ historically measured effort. Keep them fixed for subsequent updates.
 
 ## Reconciliation and next updates
 
-Historical round-40 total: **39.40%**. Current audited total: **46.29%** (+6.89
+Historical round-40 total: **39.40%**. Current audited total: **46.79%** (+7.39
 points), combining real later capability with a downward correction to the old
 execution estimate. The difference is not a clean development-velocity measure.
 The MVP remains **80.81%** under its separate, unchanged scope and weighting.
