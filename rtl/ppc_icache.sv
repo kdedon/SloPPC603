@@ -140,9 +140,10 @@ module ppc_icache (
   assign lookup_word = fetch_addr_i[2 +: WORD_BITS];
   assign accept = fetch_valid_i && fetch_ready_o;
 
-  // Every accepted aligned lookup reads all ways; a miss ignores the data.
-  // Reads happen only in IDLE and writes only in WAIT/INSTALL.
-  assign data_re = accept && fetch_addr_i[1:0] == 2'b00;
+  // All ways are read every cycle except while a response is held, which
+  // keeps the RAM outputs stable. A read that is not an accepted hit, such
+  // as one overlapping a refill write, returns data no response selects.
+  assign data_re = !rsp_valid_q || fetch_rsp_ready_i;
   assign install_ok = rst_ni && !kill_i && !invalidate_i;
   assign data_waddr = {miss_set_q, state_q == IC_INSTALL};
   assign data_wdata = state_q == IC_INSTALL ? line_half1_q :
