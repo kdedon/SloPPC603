@@ -212,7 +212,9 @@ module ppc_fpu_arith (
         logic signed [15:0] max_exp;
         logic signed [15:0] scale;
         logic [10:0] exp_field;
+        logic [5:0] denorm_shift;
         out = '0;
+        denorm_shift = 6'd0;
         work = magnitude;
         exponent = exponent_in;
         if (work == 0) begin
@@ -318,12 +320,9 @@ module ppc_fpu_arith (
             return out;
         end
         if (single_result && denorm_result) begin
-            for (int i = 0; i < 53; i++) begin
-                if (!wide[52]) begin
-                    wide = wide << 1;
-                    exponent = exponent - 16'sd1;
-                end
-            end
+            denorm_shift = leading_zero53(wide);
+            wide = wide << denorm_shift;
+            exponent = exponent - 16'(denorm_shift);
         end
         exp_field = 11'(exponent + 16'sd1023);
         out.bits = {sign, exp_field, wide[51:0]};
@@ -544,16 +543,17 @@ module ppc_fpu_arith (
         ppc_fpu_arith_rsp_t out;
         rounded_t rounded;
         rounded = round_pack(sum.magnitude, sum.exponent, sum.sign,
-            single_result || op == FP_FRSP, rn, ni, oe, ue);
+            single_result || op == FP_FRSP || op == FP_FRES,
+            rn, ni, oe, ue);
         out = '0;
         out.tag = tag;
         out.write_result = 1'b1;
-        out.frfi_valid = 1'b1;
+        out.frfi_valid = op != FP_FRES;
         out.fprf_valid = 1'b1;
         out.result = rounded.bits;
         out.ox = rounded.ox;
         out.ux = rounded.ux;
-        out.xx = rounded.xx;
+        out.xx = (op == FP_FRES) ? 1'b0 : rounded.xx;
         out.fr = rounded.fr;
         out.fi = rounded.fi;
         out.fprf = rounded.fprf;
@@ -775,50 +775,27 @@ module ppc_fpu_arith (
         return out;
     endfunction
 
-    function automatic ppc_fpu_arith_rsp_t finish_division(
-        input ppc_pkg::completion_tag_t tag,
-        input ppc_fpu_op_t op,
-        input logic [63:0] a_bits,
-        input logic [63:0] b_bits,
-        input logic [1:0] rn,
-        input logic ni,
-        input logic oe,
-        input logic ue,
-        input logic single_result,
+    function automatic finite_sum_t prepare_division_sum(
+        input ppc_fpu_op_t op, input logic single_result,
+        input logic [63:0] a_bits, input logic [63:0] b_bits,
         input logic [54:0] quotient,
         input logic remainder_nonzero
     );
-        ppc_fpu_arith_rsp_t out;
-        rounded_t rounded;
-        logic [159:0] magnitude;
-        logic signed [15:0] exponent;
-        logic result_sign;
-        if (single_result || op == FP_FRES)
-            magnitude = {1'b0, quotient[26:0], 132'd0};
-        else
-            magnitude = {1'b0, quotient, 104'd0};
-        magnitude[0] |= remainder_nonzero;
-        if (op == FP_FRES) begin
-            exponent = -finite_exp(b_bits[62:0]);
-            result_sign = b_bits[63];
-        end else begin
-            exponent = finite_exp(a_bits[62:0]) - finite_exp(b_bits[62:0]);
-            result_sign = a_bits[63] ^ b_bits[63];
-        end
-        rounded = round_pack(magnitude, exponent, result_sign,
-            single_result || op == FP_FRES, rn, ni, oe, ue);
+        finite_sum_t out;
         out = '0;
-        out.tag = tag;
-        out.write_result = 1'b1;
-        out.result = rounded.bits;
-        out.ox = rounded.ox;
-        out.ux = rounded.ux;
-        out.xx = (op == FP_FRES) ? 1'b0 : rounded.xx;
-        out.fr = rounded.fr;
-        out.fi = rounded.fi;
-        out.frfi_valid = op != FP_FRES;
-        out.fprf = rounded.fprf;
-        out.fprf_valid = 1'b1;
+        if (single_result || op == FP_FRES)
+            out.magnitude = {1'b0, quotient[26:0], 132'd0};
+        else
+            out.magnitude = {1'b0, quotient, 104'd0};
+        out.magnitude[0] |= remainder_nonzero;
+        if (op == FP_FRES) begin
+            out.exponent = -finite_exp(b_bits[62:0]);
+            out.sign = b_bits[63];
+        end else begin
+            out.exponent = finite_exp(a_bits[62:0]) -
+                finite_exp(b_bits[62:0]);
+            out.sign = a_bits[63] ^ b_bits[63];
+        end
         return out;
     endfunction
 
@@ -942,11 +919,10 @@ module ppc_fpu_arith (
                     div_quotient_q <= div_quotient_next;
                     div_rounds_q <= div_rounds_q - 5'd1;
                     if (div_rounds_q == 5'd1) begin
-                        rsp_q <= finish_division(req_q.tag, req_q.op,
-                            req_q.a, req_q.b, req_q.rn, req_q.ni,
-                            req_q.oe, req_q.ue, req_q.single_result,
+                        sum_q <= prepare_division_sum(req_q.op,
+                            req_q.single_result, req_q.a, req_q.b,
                             div_quotient_next, div_remainder_next != 53'd0);
-                        state_q <= RESPONSE;
+                        state_q <= ROUND;
                     end
                 end
                 RESPONSE: if (rsp_ready_i) state_q <= IDLE;

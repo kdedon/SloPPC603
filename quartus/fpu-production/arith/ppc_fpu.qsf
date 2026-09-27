@@ -12,8 +12,8 @@ set_instance_assignment -name VIRTUAL_PIN ON -to clk_i
 set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni
 set_instance_assignment -name VIRTUAL_PIN ON -to req_valid_i
 set_instance_assignment -name VIRTUAL_PIN ON -to req_ready_o
-set_instance_assignment -name VIRTUAL_PIN ON -to req_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to req_i.*
 set_instance_assignment -name VIRTUAL_PIN ON -to rsp_valid_o
 set_instance_assignment -name VIRTUAL_PIN ON -to rsp_ready_i
-set_instance_assignment -name VIRTUAL_PIN ON -to rsp_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_o.*
 set_instance_assignment -name VIRTUAL_PIN ON -to flush_i

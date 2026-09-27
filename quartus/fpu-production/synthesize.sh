@@ -4,7 +4,15 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
 image='theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70'
-[[ "${1:---docker}" == --docker ]] || { echo 'usage: synthesize.sh [--docker]' >&2; exit 2; }
+[[ "${1:---docker}" == --docker ]] || { echo 'usage: synthesize.sh [--docker] [full|arith|all]' >&2; exit 2; }
+variant_choice="${2:-all}"
+case "${variant_choice}" in
+  full|arith|all) ;;
+  *) echo 'usage: synthesize.sh [--docker] [full|arith|all]' >&2; exit 2 ;;
+esac
+[[ $# -le 2 ]] || { echo 'usage: synthesize.sh [--docker] [full|arith|all]' >&2; exit 2; }
+variants=(full arith)
+if [[ "${variant_choice}" != all ]]; then variants=("${variant_choice}"); fi
 run() {
   local variant="$1"; shift
   docker run --rm --network none --user "$(id -u):$(id -g)" \
@@ -17,7 +25,7 @@ docker image inspect --format 'id={{.Id}} repo_digests={{join .RepoDigests ","}}
 docker run --rm --network none --user "$(id -u):$(id -g)" \
   --volume "${repo_dir}:/work" --workdir /work "${image}" \
   /opt/intelFPGA_lite/quartus/bin/quartus_sh --version
-for variant in full arith; do
+for variant in "${variants[@]}"; do
   project_dir="${script_dir}/output_files/${variant}/project"
   reports_dir="${script_dir}/output_files/${variant}/reports"
   mkdir -p "${project_dir}" "${reports_dir}"

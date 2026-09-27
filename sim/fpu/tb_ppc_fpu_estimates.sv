@@ -13,6 +13,9 @@ module tb_ppc_fpu_estimates;
     logic flush_i;
     logic [4:0] op_bits;
     logic [63:0] input_bits;
+    logic [1:0] rn_bits;
+    logic ni_bit, ve_bit, oe_bit, ue_bit, ze_bit;
+    logic [2:0] mode_bits;
     string input_path, output_path;
     int input_file, output_file, parsed, count, waited;
     ppc_fpu_arith_rsp_t held;
@@ -35,15 +38,24 @@ module tb_ppc_fpu_estimates;
         repeat (3) @(negedge clk_i);
         rst_ni = 1'b1;
         while (!$feof(input_file)) begin
-            parsed = $fscanf(input_file, "%h %h\n", op_bits, input_bits);
+            parsed = $fscanf(input_file, "%h %h %h %h %h %h %h %h %h\n",
+                op_bits, input_bits, rn_bits, ni_bit, ve_bit, oe_bit,
+                ue_bit, ze_bit, mode_bits);
             if (parsed == -1) break;
-            if (parsed != 2) $fatal(1, "estimate vector format");
+            if (parsed != 9) $fatal(1, "estimate vector format");
+            if (mode_bits > 3'd5) $fatal(1, "estimate mode format");
             @(negedge clk_i);
             req_i = '0;
             req_i.tag.index = 3'(count % 5);
             req_i.tag.generation = 8'(count / 5);
             req_i.op = ppc_fpu_op_t'(op_bits);
             req_i.b = input_bits;
+            req_i.rn = rn_bits;
+            req_i.ni = ni_bit;
+            req_i.ve = ve_bit;
+            req_i.oe = oe_bit;
+            req_i.ue = ue_bit;
+            req_i.ze = ze_bit;
             req_valid_i = 1'b1;
             waited = 0;
             while (!req_ready_o) begin
@@ -60,11 +72,13 @@ module tb_ppc_fpu_estimates;
                 waited = waited + 1;
                 if (waited > 1024) $fatal(1, "estimate response timeout %0d", count);
             end
-            if (rsp_o.tag !== req_i.tag || !rsp_o.write_result)
-                $fatal(1, "estimate response tag/write %0d", count);
-            $fdisplay(output_file, "%h %h %h %h %h %h %h %h %h",
+            if (rsp_o.tag !== req_i.tag)
+                $fatal(1, "estimate response tag %0d", count);
+            $fdisplay(output_file, "%h %h %h %h %h %h %h %h %h %h %h %h %h %h",
                       op_bits, input_bits, rsp_o.result, rsp_o.invalid,
-                      rsp_o.ox, rsp_o.ux, rsp_o.zx, rsp_o.xx, rsp_o.frfi_valid);
+                      rsp_o.ox, rsp_o.ux, rsp_o.zx, rsp_o.xx, rsp_o.frfi_valid,
+                      rsp_o.fprf_valid, rsp_o.fprf, rsp_o.write_result,
+                      rsp_o.compare_valid, rsp_o.fpcc);
             held = rsp_o;
             @(posedge clk_i);
             #1;

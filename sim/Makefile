@@ -159,6 +159,12 @@ test-fpu-estimates: $(PPC_FPU_ESTIMATE_BUILD)/Vtb_ppc_fpu_estimates $(PPC_FPU_ES
 	./$(PPC_FPU_ESTIMATE_BUILD)/Vtb_ppc_fpu_estimates +VECTORS=$(PPC_FPU_ESTIMATE_VECTORS) +OUTPUT=$(PPC_FPU_ESTIMATE_RESULTS)
 	python3 fpu/estimate_vectors.py compare --vectors $(PPC_FPU_ESTIMATE_VECTORS) --results $(PPC_FPU_ESTIMATE_RESULTS)
 
+.PHONY: test-fpu-rsqrt-table test-fpu
+test-fpu-rsqrt-table:
+	python3 ../rtl/fpu/ppc_fpu_arith_rsqrt_table.py
+
+test-fpu: test-fpu-rsqrt-table test-fpu-arith test-fpu-estimates test-fpu-shell
+
 .PHONY: lint-fpu-production
 lint-fpu-production:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv

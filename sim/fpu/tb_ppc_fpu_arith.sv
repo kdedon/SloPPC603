@@ -42,6 +42,65 @@ module tb_ppc_fpu_arith;
     string vectors_path;
     ppc_fpu_arith_rsp_t held;
 
+    task automatic cancel_at_offset(
+        input ppc_fpu_op_t operation, input int offset, input logic [7:0] generation
+    );
+        int local_wait;
+        @(negedge clk_i);
+        req_i = '0;
+        req_i.op = operation;
+        req_i.a = 64'h3ff0000000000000;
+        req_i.b = 64'h4000000000000000;
+        req_i.c = 64'h4000000000000000;
+        req_i.tag.index = 3'd2;
+        req_i.tag.generation = generation;
+        req_valid_i = 1'b1;
+        if (!req_ready_o) $fatal(1, "cancel sweep request not ready");
+        @(posedge clk_i);
+        #1;
+        req_valid_i = 1'b0;
+        repeat (offset) @(negedge clk_i);
+        if ((offset & 1) != 0) rst_ni = 1'b0;
+        else flush_i = 1'b1;
+        #1;
+        if (rsp_valid_o) $fatal(1, "cancel sweep published flushed result");
+        if (!rst_ni && req_ready_o)
+            $fatal(1, "cancel sweep reset accepted request");
+        @(posedge clk_i);
+        #1;
+        flush_i = 1'b0;
+        rst_ni = 1'b1;
+        if (rsp_valid_o) $fatal(1, "cancel sweep retained flushed result");
+
+        @(negedge clk_i);
+        req_i = '0;
+        req_i.op = FP_ADD;
+        req_i.a = 64'h3ff0000000000000;
+        req_i.b = 64'h4000000000000000;
+        req_i.tag.index = 3'd4;
+        req_i.tag.generation = generation;
+        req_valid_i = 1'b1;
+        if (!req_ready_o) $fatal(1, "cancel sweep fresh request not ready");
+        @(posedge clk_i);
+        #1;
+        req_valid_i = 1'b0;
+        local_wait = 0;
+        while (!rsp_valid_o) begin
+            @(posedge clk_i);
+            #1;
+            local_wait++;
+            if (local_wait > 8) $fatal(1, "cancel sweep fresh result timeout");
+        end
+        if (rsp_o.tag != req_i.tag || rsp_o.result != 64'h4008000000000000)
+            $fatal(1, "cancel sweep returned stale tag/data");
+        @(negedge clk_i);
+        rsp_ready_i = 1'b1;
+        @(posedge clk_i);
+        #1;
+        rsp_ready_i = 1'b0;
+        if (rsp_valid_o) $fatal(1, "cancel sweep duplicate result");
+    endtask
+
     ppc_fpu_arith dut (.*);
 
     initial begin
@@ -69,6 +128,7 @@ module tb_ppc_fpu_arith;
         expected = '0;
         repeat (3) @(negedge clk_i);
         rst_ni = 1'b1;
+        #1;
         while (!$feof(file_handle)) begin
             parsed = $fscanf(file_handle,
                 "%h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h\n",
@@ -178,6 +238,72 @@ module tb_ppc_fpu_arith;
             if (rsp_valid_o) $fatal(1, "duplicate response vector %0d", count);
         end
         $fclose(file_handle);
+        // A held response must disappear immediately when flushed, even if
+        // the consumer presents ready on the same edge.
+        @(negedge clk_i);
+        req_i = '0;
+        req_i.op = FP_ADD;
+        req_i.a = 64'h3ff0000000000000;
+        req_i.b = 64'h4000000000000000;
+        req_i.tag.index = 3'd1;
+        req_i.tag.generation = 8'hfb;
+        req_valid_i = 1'b1;
+        if (!req_ready_o) $fatal(1, "flush test request not ready");
+        @(posedge clk_i);
+        #1;
+        req_valid_i = 1'b0;
+        waited = 0;
+        while (!rsp_valid_o) begin
+            @(posedge clk_i);
+            #1;
+            waited++;
+            if (waited > 16) $fatal(1, "flush test response timeout");
+        end
+        @(negedge clk_i);
+        flush_i = 1'b1;
+        rsp_ready_i = 1'b1;
+        #1;
+        if (rsp_valid_o) $fatal(1, "flushed response accepted");
+        @(posedge clk_i);
+        #1;
+        flush_i = 1'b0;
+        rsp_ready_i = 1'b0;
+        if (rsp_valid_o) $fatal(1, "flushed response remained");
+
+        @(negedge clk_i);
+        req_i.tag.generation = 8'hfc;
+        req_valid_i = 1'b1;
+        if (!req_ready_o) $fatal(1, "reset test request not ready");
+        @(posedge clk_i);
+        #1;
+        req_valid_i = 1'b0;
+        waited = 0;
+        while (!rsp_valid_o) begin
+            @(posedge clk_i);
+            #1;
+            waited++;
+            if (waited > 16) $fatal(1, "reset test response timeout");
+        end
+        @(negedge clk_i);
+        rst_ni = 1'b0;
+        rsp_ready_i = 1'b1;
+        req_valid_i = 1'b1;
+        #1;
+        if (rsp_valid_o || req_ready_o)
+            $fatal(1, "reset exposed arithmetic handshake");
+        @(posedge clk_i);
+        #1;
+        req_valid_i = 1'b0;
+        rsp_ready_i = 1'b0;
+        rst_ni = 1'b1;
+        #1;
+        if (rsp_valid_o) $fatal(1, "reset response remained");
+        $display("PASS PPC arithmetic flush/reset held-response checks=4");
+        for (int offset = 0; offset <= 5; offset++)
+            cancel_at_offset(FP_MADD, offset, 8'(offset + 16));
+        for (int offset = 0; offset <= 30; offset++)
+            cancel_at_offset(FP_DIV, offset, 8'(offset + 32));
+        $display("PASS PPC arithmetic cancel-offset sweeps=37");
         $display("PPC_ARITH_RESULT vectors=%0d mismatches=%0d", count, failures);
         $display("PPC_ARITH_DOMAINS result=%0d invalid=%0d flags=%0d class=%0d",
                  result_failures, invalid_failures, flag_failures, class_failures);
