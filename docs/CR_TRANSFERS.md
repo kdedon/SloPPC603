@@ -14,7 +14,7 @@ Primary 603e sources: Appendix A.1 PDF365, CR-operation table A-26 PDF385, X-for
 
 MFCR snapshots committed CR only after older instructions drain; younger work waits until it retires. MTCRF captures rS and acquires the exact completion-tag flag owner, including FXM=0. The uop and retirement packet add `write_cr_fields` and eight-bit `cr_mask`, while the result packet keeps its existing shape: MTCRF uses `value` as a candidate CR value and grants no GPR write.
 
-Completion accepts a candidate only from a matching live producer and masks its CR delta using the allocated FXM. The architectural flag unit independently applies that mask on the shared retirement handshake. An execution result cannot grant additional write permissions. Allocation diagnostics clear the new permission and mask. Existing compare/record `write_cr0` and `cr_field` behavior remains supported.
+Completion accepts a candidate only from a matching live producer and masks its CR delta using the allocated FXM. The architectural flag unit independently applies that mask on the shared retirement handshake. An execution result cannot grant additional write permissions. Allocation diagnostics clear the new permission and mask. Existing compare/record `write_cr_field` and `cr_field` behavior remains supported.
 
 Unfinished transfers can be killed, including a finish coincident with an accepted cut. A finished offered head remains irrevocable. A kept head may stall or commit on a recovery edge without losing or duplicating its effects. Full CR, XER, GPR and owner checks cover these cases.
 

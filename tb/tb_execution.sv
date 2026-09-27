@@ -60,7 +60,7 @@ module tb_execution;
   ppc_dispatch dispatch_dut (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .dispatch_valid_i(dp_valid), .dispatch_ready_o(dp_ready),
-    .write_ca_i(1'b0), .write_ov_so_i(1'b0), .ca_i(1'b0), .so_i(1'b0), .write_cr0_i(1'b0), .shift_i(5'b0), .mask_i('0), .op_i(dp_op), .producer_i(dp_producer), .a_i(dp_a), .b_i(dp_b),
+    .write_ca_i(1'b0), .write_ov_so_i(1'b0), .ca_i(1'b0), .so_i(1'b0), .write_cr_field_i(1'b0), .shift_i(5'b0), .mask_i('0), .op_i(dp_op), .producer_i(dp_producer), .a_i(dp_a), .b_i(dp_b),
     .wake_valid_i(dp_wake_valid), .wake_i(dp_wake),
     .issue_valid_o(dp_issue_valid), .issue_ready_i(dp_issue_ready),
     .issue_o(dp_issue)

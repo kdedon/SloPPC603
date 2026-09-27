@@ -135,7 +135,7 @@ module tb_core_crstate_edges;
             require(keep_candidate,"killed transfer retired");
             model_cr=kind==0 ? 32'h12345378 : 32'h12345e78;
             if(kind!=0)model_xer=0;
-            require(!retired.gpr_write && retired.write_cr0 && retired.cr_field==5 &&
+            require(!retired.gpr_write && retired.write_cr_field && retired.cr_field==5 &&
                     !retired.write_cr_fields && !retired.write_cr_bit &&
                     retired.write_ca==(kind!=0) && retired.write_ov_so==(kind!=0) &&
                     retired.cr_delta==(kind==0 ? 32'h00000300 : 32'h00000e00) && retired.xer_delta==0,

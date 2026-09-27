@@ -13,7 +13,7 @@ module ppc_dispatch (
   input logic so_i,
   input logic write_ca_i,
   input logic write_ov_so_i,
-  input logic write_cr0_i,
+  input logic write_cr_field_i,
   input logic wake_valid_i,
   input ppc_pkg::wake_packet_t wake_i,
   output logic issue_valid_o,
@@ -27,7 +27,7 @@ module ppc_dispatch (
   operand_t a, b, resolved_a, resolved_b;
   logic [31:0] mask;
   logic [4:0] shift;
-  logic ca_in, so_in, write_ca, write_ov_so, write_cr0;
+  logic ca_in, so_in, write_ca, write_ov_so, write_cr_field;
   function automatic operand_t resolve(input operand_t pending);
     operand_t operand;
     operand = pending;
@@ -51,7 +51,7 @@ module ppc_dispatch (
   assign issue_o.so_in = so_in;
   assign issue_o.write_ca = write_ca;
   assign issue_o.write_ov_so = write_ov_so;
-  assign issue_o.write_cr0 = write_cr0;
+  assign issue_o.write_cr_field = write_cr_field;
   assign dispatch_ready_o = !cancel_i && (!occupied || (issue_valid_o && issue_ready_i));
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
@@ -66,7 +66,7 @@ module ppc_dispatch (
       so_in <= 1'b0;
       write_ca <= 1'b0;
       write_ov_so <= 1'b0;
-      write_cr0 <= 1'b0;
+      write_cr_field <= 1'b0;
     end else begin
       a <= resolved_a;
       b <= resolved_b;
@@ -81,7 +81,7 @@ module ppc_dispatch (
         so_in <= so_i;
         write_ca <= write_ca_i;
         write_ov_so <= write_ov_so_i;
-        write_cr0 <= write_cr0_i;
+        write_cr_field <= write_cr_field_i;
         // Also accept a wake coincident with capture of a pending source.
         a <= resolve(a_i);
         b <= resolve(b_i);

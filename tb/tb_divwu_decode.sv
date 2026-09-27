@@ -28,7 +28,7 @@ module tb_divwu_decode;
             "DIVWU register fields changed");
     require(uop.read_so == (oe || rc) && uop.needs_flags == (oe || rc) &&
             !uop.read_ca && !uop.write_ca &&
-            uop.write_ov_so == oe && uop.write_cr0 == rc,
+            uop.write_ov_so == oe && uop.write_cr_field == rc,
             "DIVWU OE/Rc and XER permissions changed");
   endtask
 

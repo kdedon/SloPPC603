@@ -136,11 +136,11 @@ module tb_core_crtransfer_edges;
             if(kind==0) begin
               model_gpr[4]=32'h12345678;
               require(retired.gpr_write && retired.gpr==4 && retired.value==model_cr &&
-                      !retired.write_cr0 && !retired.write_cr_fields && !retired.write_ca && !retired.write_ov_so,"MFCR retirement effects");
+                      !retired.write_cr_field && !retired.write_cr_fields && !retired.write_ca && !retired.write_ov_so,"MFCR retirement effects");
             end else begin
               model_cr=32'he2c45977;
               require(!retired.gpr_write && retired.write_cr_fields && retired.cr_mask==8'ha5 &&
-                      !retired.write_cr0 && !retired.write_ca && !retired.write_ov_so,"MTCRF mask/permissions");
+                      !retired.write_cr_field && !retired.write_ca && !retired.write_ov_so,"MTCRF mask/permissions");
             end
           end
           32,32'h100:begin

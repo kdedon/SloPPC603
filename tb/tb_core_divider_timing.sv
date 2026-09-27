@@ -203,7 +203,7 @@ module tb_core_divider_timing #(
                      "second setup retirement mismatch");
           2: begin
             require(retired.pc == 8 && retired.gpr_write && retired.gpr == 3 &&
-                    retired.value == 20 && retired.write_cr0 &&
+                    retired.value == 20 && retired.write_cr_field &&
                     retired.cr_delta == 32'h4000_0000,
                     "divide retirement/result/CR0 mismatch");
             require(divide_finish_edge >= 0 && cycles > divide_finish_edge,

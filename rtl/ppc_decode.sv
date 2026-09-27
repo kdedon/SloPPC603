@@ -82,7 +82,7 @@ module ppc_decode #(
         uop_o.write_ca = 1'b1;
         // Record is selected by primary opcode, not an immediate-data bit.
         uop_o.read_so = insn_i[26];
-        uop_o.write_cr0 = insn_i[26];
+        uop_o.write_cr_field = insn_i[26];
       end
       6'd14, 6'd15: begin
         uop_o.illegal = 1'b0;
@@ -104,7 +104,7 @@ module ppc_decode #(
                                  {16'b0, insn_i[15:0]};
         uop_o.needs_flags = 1'b1;
         uop_o.read_so = 1'b1;
-        uop_o.write_cr0 = 1'b1;
+        uop_o.write_cr_field = 1'b1;
       end
       6'd24, 6'd25, 6'd26, 6'd27: begin
         uop_o.illegal = 1'b0;
@@ -127,7 +127,7 @@ module ppc_decode #(
         uop_o.shift = insn_i[15:11];
         uop_o.read_so = insn_i[0];
         uop_o.needs_flags = insn_i[0];
-        uop_o.write_cr0 = insn_i[0];
+        uop_o.write_cr_field = insn_i[0];
       end
       6'd21, 6'd23: begin
         uop_o.illegal = 1'b0;
@@ -138,7 +138,7 @@ module ppc_decode #(
         uop_o.mask = make_rotate_mask(insn_i[10:6], insn_i[5:1]);
         uop_o.read_so = insn_i[0];
         uop_o.needs_flags = insn_i[0];
-        uop_o.write_cr0 = insn_i[0];
+        uop_o.write_cr_field = insn_i[0];
         if (insn_i[31:26] == 6'd21) begin
           uop_o.use_imm = 1'b1;
           uop_o.imm = {27'b0, insn_i[15:11]};
@@ -178,7 +178,7 @@ module ppc_decode #(
               uop_o.illegal = 1'b0;
               uop_o.special_op = SPECIAL_MCRF;
               uop_o.needs_flags = 1'b1;
-              uop_o.write_cr0 = 1'b1;
+              uop_o.write_cr_field = 1'b1;
               uop_o.cr_field = insn_i[25:23];
               uop_o.cr_source_field = insn_i[20:18];
             end
@@ -247,7 +247,7 @@ module ppc_decode #(
             {16'b0, insn_i[15:0]} : {{16{insn_i[15]}}, insn_i[15:0]};
           uop_o.read_so = 1'b1;
           uop_o.needs_flags = 1'b1;
-          uop_o.write_cr0 = 1'b1;
+          uop_o.write_cr_field = 1'b1;
           uop_o.cr_field = insn_i[25:23];
         end
       end
@@ -325,7 +325,7 @@ module ppc_decode #(
                               (insn_i[9:1] == 9'd234) ||
                               (insn_i[9:1] == 9'd202);
             uop_o.write_ov_so = insn_i[10];
-            uop_o.write_cr0 = insn_i[0];
+            uop_o.write_cr_field = insn_i[0];
             uop_o.needs_flags = uop_o.read_ca || uop_o.read_so ||
                                  uop_o.write_ca;
             if ((insn_i[9:1] == 9'd234) ||
@@ -348,7 +348,7 @@ module ppc_decode #(
                           ALU_MULHW : ALU_MULHWU;
               uop_o.read_so = insn_i[0];
               uop_o.needs_flags = insn_i[0];
-              uop_o.write_cr0 = insn_i[0];
+              uop_o.write_cr_field = insn_i[0];
             end
             10'd512: begin
               if (!insn_i[0] && (insn_i[22:21] == 0) &&
@@ -360,7 +360,7 @@ module ppc_decode #(
                 uop_o.read_so = 1'b1;
                 uop_o.write_ca = 1'b1;
                 uop_o.write_ov_so = 1'b1;
-                uop_o.write_cr0 = 1'b1;
+                uop_o.write_cr_field = 1'b1;
                 uop_o.cr_field = insn_i[25:23];
               end
             end
@@ -426,7 +426,7 @@ module ppc_decode #(
                 uop_o.imm = 32'b0;
                 uop_o.read_so = insn_i[0];
                 uop_o.needs_flags = insn_i[0];
-                uop_o.write_cr0 = insn_i[0];
+                uop_o.write_cr_field = insn_i[0];
               end
             end
             10'd792, 10'd824: begin
@@ -438,7 +438,7 @@ module ppc_decode #(
               uop_o.read_so = insn_i[0];
               uop_o.needs_flags = 1'b1;
               uop_o.write_ca = 1'b1;
-              uop_o.write_cr0 = insn_i[0];
+              uop_o.write_cr_field = insn_i[0];
               if (insn_i[10:1] == 10'd824) begin
                 uop_o.use_imm = 1'b1;
                 uop_o.imm = {27'b0, insn_i[15:11]};
@@ -452,7 +452,7 @@ module ppc_decode #(
               uop_o.dst = insn_i[20:16];
               uop_o.read_so = insn_i[0];
               uop_o.needs_flags = insn_i[0];
-              uop_o.write_cr0 = insn_i[0];
+              uop_o.write_cr_field = insn_i[0];
             end
             10'd28, 10'd60, 10'd444, 10'd412,
             10'd316, 10'd476, 10'd124, 10'd284: begin
@@ -462,7 +462,7 @@ module ppc_decode #(
               uop_o.dst = insn_i[20:16];
               uop_o.read_so = insn_i[0];
               uop_o.needs_flags = insn_i[0];
-              uop_o.write_cr0 = insn_i[0];
+              uop_o.write_cr_field = insn_i[0];
               case (insn_i[10:1])
                 10'd28: uop_o.op = ALU_AND;
                 10'd60: uop_o.op = ALU_ANDC;
@@ -482,7 +482,7 @@ module ppc_decode #(
                                     SPECIAL_CMP : SPECIAL_CMPL;
                 uop_o.read_so = 1'b1;
                 uop_o.needs_flags = 1'b1;
-                uop_o.write_cr0 = 1'b1;
+                uop_o.write_cr_field = 1'b1;
                 uop_o.cr_field = insn_i[25:23];
               end
             end

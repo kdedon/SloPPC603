@@ -24,7 +24,7 @@ module tb_crlogical_decode;
                        unused_uop.write_cr_bit && unused_uop.cr_bit==5'(dest) &&
                        unused_uop.cr_bit_a==5'(a) && unused_uop.cr_bit_b==5'(b) &&
                        unused_uop.cr_logic==cr_logic_op_t'(operation) && unused_uop.needs_flags &&
-                       !unused_uop.gpr_write && !unused_uop.write_cr0 && !unused_uop.write_cr_fields &&
+                       !unused_uop.gpr_write && !unused_uop.write_cr_field && !unused_uop.write_cr_fields &&
                        !unused_uop.write_ca && !unused_uop.write_ov_so)
                   else $fatal(1,"CR logical route/permission word=%h",insn);
               end else begin

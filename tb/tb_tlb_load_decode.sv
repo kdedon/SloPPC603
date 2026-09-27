@@ -41,7 +41,7 @@ module tb_tlb_load_decode;
             !enabled.gpr_write&&!enabled.mem_update&&
             !enabled.needs_flags&&!enabled.write_xer&&
             !enabled.write_ca&&!enabled.write_ov_so&&
-            !enabled.write_cr0&&!enabled.write_cr_fields&&
+            !enabled.write_cr_field&&!enabled.write_cr_fields&&
             !enabled.write_cr_bit&&!enabled.branch_lk,
             "old RB dependency or unrelated architectural side effect");
     end else begin

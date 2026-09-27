@@ -230,7 +230,7 @@ module tb_crstate_execution;
     uop.cr_source_field = 3'(source_field);
     uop.cr_field = 3'(destination_field);
     uop.needs_flags = 1'b1;
-    uop.write_cr0 = 1'b1;
+    uop.write_cr_field = 1'b1;
     if (operation == SPECIAL_MCRXR) begin
       uop.read_ca = 1'b1;
       uop.read_so = 1'b1;

@@ -41,7 +41,7 @@ module divider_timing_case #(
     input logic [31:0] b,
     input logic so_in,
     input logic write_ov_so,
-    input logic write_cr0
+    input logic write_cr_field
   );
     issue_packet_t packet;
     packet = '0;
@@ -52,7 +52,7 @@ module divider_timing_case #(
     packet.b = b;
     packet.so_in = so_in;
     packet.write_ov_so = write_ov_so;
-    packet.write_cr0 = write_cr0;
+    packet.write_cr_field = write_cr_field;
     return packet;
   endfunction
 

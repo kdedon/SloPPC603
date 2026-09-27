@@ -59,7 +59,7 @@ module tb_segment_cpu_decode;
         "register dependency or write permission");
       check(!enabled.mem_update && !enabled.needs_flags &&
         !enabled.write_xer && !enabled.write_ca &&
-        !enabled.write_ov_so && !enabled.write_cr0 &&
+        !enabled.write_ov_so && !enabled.write_cr_field &&
         !enabled.write_cr_fields && !enabled.write_cr_bit &&
         !enabled.branch_lk,"segment instruction acquired unrelated effects");
     end else begin

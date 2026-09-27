@@ -12,7 +12,7 @@ module tb_divwu_execution;
   alu_op_t dispatch_op;
   completion_tag_t dispatch_producer;
   operand_t dispatch_a, dispatch_b;
-  logic dispatch_so, dispatch_write_ov_so, dispatch_write_cr0;
+  logic dispatch_so, dispatch_write_ov_so, dispatch_write_cr_field;
   logic wake_valid;
   wake_packet_t wake;
   logic issue_valid, issue_ready;
@@ -27,7 +27,7 @@ module tb_divwu_execution;
     .shift_i(5'b0), .mask_i('0), .op_i(dispatch_op),
     .producer_i(dispatch_producer), .a_i(dispatch_a), .b_i(dispatch_b),
     .ca_i(1'b0), .so_i(dispatch_so), .write_ca_i(1'b0),
-    .write_ov_so_i(dispatch_write_ov_so), .write_cr0_i(dispatch_write_cr0),
+    .write_ov_so_i(dispatch_write_ov_so), .write_cr_field_i(dispatch_write_cr_field),
     .wake_valid_i(wake_valid), .wake_i(wake),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
@@ -70,7 +70,7 @@ module tb_divwu_execution;
     dispatch_op = ALU_DIVWU;
     dispatch_so = so_in;
     dispatch_write_ov_so = oe;
-    dispatch_write_cr0 = rc;
+    dispatch_write_cr_field = rc;
     dispatch_valid = 1'b1;
     #1;
     require(dispatch_ready, "DIVWU dispatch unexpectedly blocked");
@@ -81,7 +81,7 @@ module tb_divwu_execution;
     dispatch_op = ALU_ADD;
     dispatch_so = !so_in;
     dispatch_write_ov_so = !oe;
-    dispatch_write_cr0 = !rc;
+    dispatch_write_cr_field = !rc;
     dispatch_b.value = ~divisor;
     repeat (2) begin
       @(posedge clk);
@@ -99,7 +99,7 @@ module tb_divwu_execution;
     require(issue_valid && issue.op == ALU_DIVWU &&
             issue.producer == dispatch_producer && issue.a == dividend &&
             issue.b == divisor && issue.so_in == so_in && !issue.write_ca &&
-            issue.write_ov_so == oe && issue.write_cr0 == rc,
+            issue.write_ov_so == oe && issue.write_cr_field == rc,
             "RS lost DIVWU inputs, controls, SO, or producer");
     @(posedge clk);
     #1;
@@ -146,7 +146,7 @@ module tb_divwu_execution;
     dispatch_b = '0;
     dispatch_so = 1'b0;
     dispatch_write_ov_so = 1'b0;
-    dispatch_write_cr0 = 1'b0;
+    dispatch_write_cr_field = 1'b0;
     rs_cancel = 1'b0;
     iu_cancel = 1'b0;
     wake_valid = 1'b0;

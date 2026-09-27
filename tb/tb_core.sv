@@ -122,7 +122,7 @@ module tb_core;
     end else begin
       if (dut.cr !== 0 || dut.xer !== 0 || dut.flags_busy)
         $fatal(1, "Flag-free core changed CR/XER or acquired a flag owner");
-      if (retire_valid && (retired.needs_flags || retired.write_ca || retired.write_ov_so || retired.write_cr0 ||
+      if (retire_valid && (retired.needs_flags || retired.write_ca || retired.write_ov_so || retired.write_cr_field ||
                           retired.cr_delta != 0 || retired.xer_delta != 0))
         $fatal(1, "Flag-free retirement offered flag effects");
       cycles <= cycles + 1;

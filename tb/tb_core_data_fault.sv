@@ -197,7 +197,7 @@ module tb_core_data_fault #(
         check(retired.fetch_fault==FETCH_OK && !retired.alignment_exception,"wrong exception class");
         if(model_pc==24 && faults==0) begin
           check(!dpending && older_stores==1 && requests==2,"fault preceded older store completion");
-          check(!retired.gpr_write && !retired.update_write && !retired.write_cr0 &&
+          check(!retired.gpr_write && !retired.update_write && !retired.write_cr_field &&
                 !retired.write_ca && !retired.write_ov_so && !retired.write_cr_fields &&
                 !retired.write_cr_bit,"fault authorized register side effect");
           check(retired.rename_owned == !(phase==1 || phase==6 || phase==7 || phase==8),

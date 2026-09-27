@@ -212,7 +212,7 @@ module tb_core_multiply_timing;
           2: require(retired.pc == 8 && retired.gpr == 3 && retired.value == 7,
                      "first dependent retirement mismatch");
           3: require(retired.pc == 12 && retired.gpr == 4 &&
-                     retired.value == 14 && retired.write_cr0 &&
+                     retired.value == 14 && retired.write_cr_field &&
                      retired.cr_delta == 32'h4000_0000,
                      "MULLW retirement mismatch");
           4: require(retired.pc == 16 && retired.gpr == 5 && retired.value == 15,

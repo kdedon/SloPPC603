@@ -66,7 +66,7 @@ module tb_sprg_decode;
     require(enabled.gpr_write == !write,
             "SPRG GPR write permission mismatch");
     require(!enabled.needs_flags && !enabled.write_ca &&
-            !enabled.write_ov_so && !enabled.write_cr0 &&
+            !enabled.write_ov_so && !enabled.write_cr_field &&
             !enabled.write_cr_fields && !enabled.write_cr_bit &&
             !enabled.mem_update,
             "SPRG decode escaped unrelated architectural permissions");

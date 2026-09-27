@@ -158,7 +158,7 @@ module tb_compiled_fetch_firmware;
         check(!retired.illegal && !retired.alignment_exception,"unexpected instruction diagnostic");
         if (retired.fetch_fault != FETCH_OK) begin
           check(!retired.gpr_write && !retired.update_write &&
-                !retired.write_ca && !retired.write_ov_so && !retired.write_cr0 &&
+                !retired.write_ca && !retired.write_ov_so && !retired.write_cr_field &&
                 !retired.write_cr_fields && !retired.write_cr_bit,"fetch fault granted write permission");
           if (retired.fetch_fault == FETCH_ISI_PROTECTION) begin
             check(retired.pc == PROTECTION_PC && !protection_retired,"protection fault identity");

@@ -155,7 +155,7 @@ module ppc_iu #(
   assign result_o.ov = held.write_ov_so ? operation_overflow : 1'b0;
   assign result_o.so = held.write_ov_so ? final_so : 1'b0;
   assign result_o.value = result_value;
-  assign result_o.cr0 = held.write_cr0 ? {
+  assign result_o.cr0 = held.write_cr_field ? {
     result_value[31],
     !result_value[31] && (result_value != 0),
     result_value == 0,

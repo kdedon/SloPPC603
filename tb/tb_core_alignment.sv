@@ -267,7 +267,7 @@ module tb_core_alignment #(
                  (phase == 1 && model_pc == 'h24 && faults == 0);
         if(is_fault) begin
           check(fault_stalls >= 12,"fault retirement backpressure observed");
-          check(!retired.gpr_write && !retired.update_write && !retired.write_cr0 &&
+          check(!retired.gpr_write && !retired.update_write && !retired.write_cr_field &&
                 !retired.write_ca && !retired.write_ov_so && !retired.write_cr_fields &&
                 !retired.write_cr_bit,"fault carries no architectural register effects");
           check(retired.illegal == !ENABLE_SUPERVISOR_EXCEPTIONS,"profile-specific fault disposition");

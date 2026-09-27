@@ -149,12 +149,12 @@ module ppc_completion #(
     allocation.update_value = '0;
     allocation.needs_flags = !alloc_i.illegal &&
       (alloc_i.needs_flags || alloc_i.write_xer || alloc_i.write_ca ||
-       alloc_i.write_ov_so || alloc_i.write_cr0 || alloc_i.write_cr_fields ||
+       alloc_i.write_ov_so || alloc_i.write_cr_field || alloc_i.write_cr_fields ||
        alloc_i.write_cr_bit);
     allocation.write_xer = alloc_i.write_xer && !alloc_i.illegal;
     allocation.write_ca = alloc_i.write_ca && !alloc_i.illegal;
     allocation.write_ov_so = alloc_i.write_ov_so && !alloc_i.illegal;
-    allocation.write_cr0 = alloc_i.write_cr0 && !alloc_i.illegal;
+    allocation.write_cr_field = alloc_i.write_cr_field && !alloc_i.illegal;
     allocation.cr_field = alloc_i.illegal ? 3'b0 : alloc_i.cr_field;
     allocation.write_cr_fields = alloc_i.write_cr_fields && !alloc_i.illegal;
     allocation.cr_mask = allocation.write_cr_fields ? alloc_i.cr_mask : 8'b0;
@@ -307,7 +307,7 @@ module ppc_completion #(
           packets_q[result_i.producer.index].write_xer <= 1'b0;
           packets_q[result_i.producer.index].write_ca <= 1'b0;
           packets_q[result_i.producer.index].write_ov_so <= 1'b0;
-          packets_q[result_i.producer.index].write_cr0 <= 1'b0;
+          packets_q[result_i.producer.index].write_cr_field <= 1'b0;
           packets_q[result_i.producer.index].cr_field <= '0;
           packets_q[result_i.producer.index].write_cr_fields <= 1'b0;
           packets_q[result_i.producer.index].cr_mask <= '0;
@@ -327,7 +327,7 @@ module ppc_completion #(
                 32'b0;
           else
             packets_q[result_i.producer.index].cr_delta <=
-              packets_q[result_i.producer.index].write_cr0 ?
+              packets_q[result_i.producer.index].write_cr_field ?
                 ({result_i.cr0, 28'b0} >>
                  (packets_q[result_i.producer.index].cr_field * 4)) : 32'b0;
           packets_q[result_i.producer.index].xer_delta <=

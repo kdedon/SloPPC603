@@ -280,7 +280,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
               dut.special.hash1_q==0&&dut.special.hash2_q==0,
               "held miss mutated architectural state before retirement");
         check(!retired.gpr_write&&!retired.update_write&&
-              !retired.write_cr0&&!retired.write_ca&&
+              !retired.write_cr_field&&!retired.write_ca&&
               !retired.write_ov_so,
               "held miss retained write permissions");
       end
@@ -298,7 +298,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
             "forged true-miss WAY produced architectural event");
           if(FEATURE&&(phase<4||phase==11||phase==14||phase==15||phase==19))events++;
           check(!retired.gpr_write&&!retired.update_write&&
-                !retired.write_cr0&&!retired.write_ca&&
+                !retired.write_cr_field&&!retired.write_ca&&
                 !retired.write_ov_so&&!retired.write_cr_fields&&
                 !retired.write_cr_bit,
                 "miss retirement retained writes");

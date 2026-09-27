@@ -20,7 +20,7 @@ module tb_unarylogical_decode;
                     !unused_uop.zero_a && unused_uop.use_imm && unused_uop.imm == 0 &&
                     !unused_uop.read_ca && !unused_uop.write_ca && !unused_uop.write_ov_so &&
                     unused_uop.read_so == 1'(rc) && unused_uop.needs_flags == 1'(rc) &&
-                    unused_uop.write_cr0 == 1'(rc) && unused_uop.special_op == SPECIAL_NONE)
+                    unused_uop.write_cr_field == 1'(rc) && unused_uop.special_op == SPECIAL_NONE)
               else $fatal(1, "unary decode contract word=%h", insn);
             checks++;
           end

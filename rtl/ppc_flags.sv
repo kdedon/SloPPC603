@@ -44,7 +44,7 @@ module ppc_flags (
                         (commit_tag_i == flags_owner_q);
   assign commit_writes_flags = commit_packet_i.write_xer || commit_packet_i.write_ca ||
                                commit_packet_i.write_ov_so ||
-                               commit_packet_i.write_cr0 ||
+                               commit_packet_i.write_cr_field ||
                                commit_packet_i.write_cr_fields ||
                                commit_packet_i.write_cr_bit;
   assign fields_cr_mask = {
@@ -56,7 +56,7 @@ module ppc_flags (
   assign cr_mask = commit_packet_i.write_cr_fields ? fields_cr_mask :
                    (commit_packet_i.write_cr_bit ?
                     (32'h8000_0000 >> commit_packet_i.cr_bit) :
-                    (commit_packet_i.write_cr0 ?
+                    (commit_packet_i.write_cr_field ?
                      (32'hf000_0000 >> (commit_packet_i.cr_field * 4)) :
                      32'b0));
   assign xer_mask = commit_packet_i.write_xer ? XER_IMPLEMENTED_MASK : {

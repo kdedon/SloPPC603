@@ -161,7 +161,7 @@ package ppc_pkg;
     logic so_in;
     logic write_ca;
     logic write_ov_so;
-    logic write_cr0;
+    logic write_cr_field;
     completion_tag_t producer;
   } issue_packet_t;
   typedef struct packed {
@@ -207,7 +207,7 @@ package ppc_pkg;
     logic write_xer;
     logic write_ca;
     logic write_ov_so;
-    logic write_cr0;
+    logic write_cr_field;
   } uop_t;
   typedef struct packed {
     logic [31:0] pc;
@@ -234,7 +234,7 @@ package ppc_pkg;
     logic write_xer;
     logic write_ca;
     logic write_ov_so;
-    logic write_cr0;
+    logic write_cr_field;
     logic [2:0] cr_field;
     logic write_cr_fields;
     logic [7:0] cr_mask;

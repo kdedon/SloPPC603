@@ -208,7 +208,7 @@ module tb_core_add_recovery;
           4, 12: begin
             require(retired.needs_flags && (retired.write_ca == (!((USE_UNARY == 1 || USE_SUBFE == 2 || USE_SUBUNARY == 1 || USE_SUBFIC == 2) && expected_pc == 4) && !((USE_SDIV != 0 || USE_DIV != 0 || USE_MULHIGH != 0 || USE_MUL != 0 || USE_SHIFT != 0 || USE_INSERT != 0 || USE_SUB != 0 || USE_ANDIMM != 0 || USE_ULOGIC != 0) && expected_pc == 12))) &&
                     (retired.write_ov_so == !((USE_MULHIGH != 0 || USE_SHIFT != 0 || USE_ARITH_SHIFT != 0 || USE_INSERT != 0 || USE_SUBFIC != 0 || USE_ADDIC != 0 || USE_ANDIMM != 0 || USE_ULOGIC != 0) && expected_pc == 12)) &&
-                    (retired.write_cr0 == !((USE_SUBFIC != 0 || USE_ADDIC == 1) && expected_pc == 12)) && retired.gpr_write && !retired.illegal,
+                    (retired.write_cr_field == !((USE_SUBFIC != 0 || USE_ADDIC == 1) && expected_pc == 12)) && retired.gpr_write && !retired.illegal,
                     "ADD flag permissions");
             if (expected_pc == 4) begin
               require(retired.gpr == 3 && retired.value == 0 &&
@@ -239,7 +239,7 @@ module tb_core_add_recovery;
               // cut, not a cancelled candidate or a stale pre-seed value.
               require(retired.gpr == 5 && retired.value == (keep_change ? 32'(CHANGED_XER[29]) : 32'(SEED_XER[29])) &&
                       retired.needs_flags && retired.write_ca && !retired.write_ov_so &&
-                      !retired.write_cr0 && retired.xer_delta == 0 && retired.cr_delta == 0,
+                      !retired.write_cr_field && retired.xer_delta == 0 && retired.cr_delta == 0,
                       "redirected ADDE did not consume surviving committed CA");
               expected_gpr[5] = keep_change ? 32'(CHANGED_XER[29]) : 32'(SEED_XER[29]);
               expected_xer[29] = 0;
@@ -257,7 +257,7 @@ module tb_core_add_recovery;
         endcase
         if (retired.insn != SEED && retired.insn != CHANGE &&
             !(CARRY_TARGET && retired.pc == TARGET))
-          require(!retired.needs_flags && !retired.write_cr0 && !retired.write_ca &&
+          require(!retired.needs_flags && !retired.write_cr_field && !retired.write_ca &&
                   !retired.write_ov_so && retired.cr_delta == 0 && retired.xer_delta == 0,
                   "flag-free retirement altered permissions/deltas");
         commits++;

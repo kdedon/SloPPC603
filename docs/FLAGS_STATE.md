@@ -4,7 +4,7 @@ The CX-I02 implementation adds full-width committed CR and XER registers and a s
 
 ## Packet and state path
 
-Allocation supplies `needs_flags`, `write_ca`, `write_ov_so`, and `write_cr0`. The completion queue clears these for diagnostics, treats any flag write as requiring ownership, and clears speculative deltas on allocation. Result packets contain candidates `ca`, `ov`, `so`, and `cr0`; the producer cannot grant write permissions. Only an accepted live, unfinished, exact-generation result stores candidates under the allocated enables. The resulting retirement packet includes `cr_delta` and `xer_delta` along with the GPR result.
+Allocation supplies `needs_flags`, `write_ca`, `write_ov_so`, and `write_cr_field`. The completion queue clears these for diagnostics, treats any flag write as requiring ownership, and clears speculative deltas on allocation. Result packets contain candidates `ca`, `ov`, `so`, and `cr0`; the producer cannot grant write permissions. Only an accepted live, unfinished, exact-generation result stores candidates under the allocated enables. The resulting retirement packet includes `cr_delta` and `xer_delta` along with the GPR result.
 
 `ppc_flags` applies the masked delta using the same accepted retirement event as the architectural GPR file. Its masks permit CR0 and XER CA/OV/SO only. Other bits are preserved. A stalled retirement changes no architectural state. An inconsistent owner is an assertion failure, not a separate handshake that could split GPR and flag commitment.
 
@@ -28,7 +28,7 @@ The [serialized comparison extension](CONTROL_MEMORY.md) adds allocation-control
 
 ## Round 26 selected CR-field transfer extension
 
-[MFCR/MTCRF](CR_TRANSFERS.md) add full committed-CR reads and eight-bit FXM writes. The allocation-owned `write_cr_fields` permission and `cr_mask` select any combination of CR fields; the result's `value` carries the candidate and completion stores only selected bits in `cr_delta`. The flags unit independently masks retirement. Existing `write_cr0`/`cr_field` stays the one-field path; XER permissions are unchanged. MFCR drains older work before capturing CR and blocks younger dispatch until retirement. MTCRF owns the exact flag token even when FXM is zero. This supersedes the earlier statement that CR transfers remain unsupported, without adding flag forwarding or claiming 603e timing.
+[MFCR/MTCRF](CR_TRANSFERS.md) add full committed-CR reads and eight-bit FXM writes. The allocation-owned `write_cr_fields` permission and `cr_mask` select any combination of CR fields; the result's `value` carries the candidate and completion stores only selected bits in `cr_delta`. The flags unit independently masks retirement. Existing `write_cr_field`/`cr_field` stays the one-field path; XER permissions are unchanged. MFCR drains older work before capturing CR and blocks younger dispatch until retirement. MTCRF owns the exact flag token even when FXM is zero. This supersedes the earlier statement that CR transfers remain unsupported, without adding flag forwarding or claiming 603e timing.
 
 ## Round 27 single CR-bit extension
 
@@ -36,4 +36,4 @@ The [serialized comparison extension](CONTROL_MEMORY.md) adds allocation-control
 
 ## Round 28 CR-state extension
 
-[MCRF/MCRXR](CR_STATE.md) reuse the selected-field `write_cr0` permission. MCRXR also allocates CA and OV/SO clearing; all effects retire atomically from one captured result. XER[28:0] remains preserved, with the reserved-bit source boundary recorded in that contract.
+[MCRF/MCRXR](CR_STATE.md) reuse the selected-field `write_cr_field` permission. MCRXR also allocates CA and OV/SO clearing; all effects retire atomically from one captured result. XER[28:0] remains preserved, with the reserved-bit source boundary recorded in that contract.

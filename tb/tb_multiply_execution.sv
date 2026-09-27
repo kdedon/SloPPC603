@@ -11,7 +11,7 @@ module tb_multiply_execution;
   alu_op_t dispatch_op;
   completion_tag_t dispatch_producer;
   operand_t dispatch_a, dispatch_b;
-  logic dispatch_so, dispatch_write_ov_so, dispatch_write_cr0;
+  logic dispatch_so, dispatch_write_ov_so, dispatch_write_cr_field;
   logic wake_valid;
   wake_packet_t wake;
   logic issue_valid, issue_ready;
@@ -27,7 +27,7 @@ module tb_multiply_execution;
     .producer_i(dispatch_producer), .a_i(dispatch_a), .b_i(dispatch_b),
     .ca_i(1'b0), .so_i(dispatch_so), .write_ca_i(1'b0),
     .write_ov_so_i(dispatch_write_ov_so),
-    .write_cr0_i(dispatch_write_cr0),
+    .write_cr_field_i(dispatch_write_cr_field),
     .wake_valid_i(wake_valid), .wake_i(wake),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
@@ -49,7 +49,7 @@ module tb_multiply_execution;
     input logic [31:0] source_b,
     input logic so_in,
     input logic write_ov_so,
-    input logic write_cr0,
+    input logic write_cr_field,
     input logic [31:0] expected_value,
     input logic expected_ov,
     input logic expected_so,
@@ -70,7 +70,7 @@ module tb_multiply_execution;
     dispatch_op = ALU_MULLW;
     dispatch_so = so_in;
     dispatch_write_ov_so = write_ov_so;
-    dispatch_write_cr0 = write_cr0;
+    dispatch_write_cr_field = write_cr_field;
     dispatch_valid = 1'b1;
     #1;
     require(dispatch_ready, "multiply dispatch unexpectedly blocked");
@@ -83,7 +83,7 @@ module tb_multiply_execution;
     dispatch_op = ALU_ADD;
     dispatch_so = !so_in;
     dispatch_write_ov_so = !write_ov_so;
-    dispatch_write_cr0 = !write_cr0;
+    dispatch_write_cr_field = !write_cr_field;
     dispatch_b.value = ~source_b;
     repeat (2) begin
       @(posedge clk);
@@ -104,7 +104,7 @@ module tb_multiply_execution;
             issue.a == source_a && issue.b == source_b &&
             issue.so_in == so_in && !issue.write_ca &&
             issue.write_ov_so == write_ov_so &&
-            issue.write_cr0 == write_cr0,
+            issue.write_cr_field == write_cr_field,
             "RS lost multiply inputs, controls, SO, or producer");
     @(posedge clk);
     #1;
@@ -151,7 +151,7 @@ module tb_multiply_execution;
     dispatch_b = '0;
     dispatch_so = 1'b0;
     dispatch_write_ov_so = 1'b0;
-    dispatch_write_cr0 = 1'b0;
+    dispatch_write_cr_field = 1'b0;
     rs_cancel = 1'b0;
     iu_cancel = 1'b0;
     wake_valid = 1'b0;

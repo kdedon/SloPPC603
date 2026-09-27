@@ -48,7 +48,7 @@ module tb_lsu_update_decode;
     require(uop.mem_size == size && uop.mem_signed == signed_load,
             "size/sign extension controls");
     require(!uop.needs_flags && !uop.write_ca && !uop.write_ov_so &&
-            !uop.write_cr0 && !uop.write_cr_fields && !uop.write_cr_bit,
+            !uop.write_cr_field && !uop.write_cr_fields && !uop.write_cr_bit,
             "update form acquired flag effects");
   endtask
 

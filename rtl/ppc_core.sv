@@ -310,7 +310,7 @@ module ppc_core #(
     .so_i(dispatch_uop.read_so ? xer[XER_SO_BIT] : 1'b0),
     .write_ca_i(dispatch_uop.write_ca),
     .write_ov_so_i(dispatch_uop.write_ov_so),
-    .write_cr0_i(dispatch_uop.write_cr0),
+    .write_cr_field_i(dispatch_uop.write_cr_field),
     .wake_valid_i(wake_valid), .wake_i(wake),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
@@ -422,7 +422,7 @@ module ppc_core #(
   assign dispatch_needs_flags = !dispatch_uop.illegal &&
     (dispatch_uop.needs_flags || dispatch_uop.read_ca ||
      dispatch_uop.read_so || dispatch_uop.write_xer || dispatch_uop.write_ca ||
-     dispatch_uop.write_ov_so || dispatch_uop.write_cr0 ||
+     dispatch_uop.write_ov_so || dispatch_uop.write_cr_field ||
      dispatch_uop.write_cr_fields || dispatch_uop.write_cr_bit);
   assign normal_uop = !dispatch_uop.illegal &&
                       (dispatch_uop.special_op == SPECIAL_NONE);
@@ -474,7 +474,7 @@ module ppc_core #(
   assign allocation.write_xer = dispatch_uop.write_xer;
   assign allocation.write_ca = dispatch_uop.write_ca;
   assign allocation.write_ov_so = dispatch_uop.write_ov_so;
-  assign allocation.write_cr0 = dispatch_uop.write_cr0;
+  assign allocation.write_cr_field = dispatch_uop.write_cr_field;
   assign allocation.cr_field = dispatch_uop.cr_field;
   assign allocation.write_cr_fields = dispatch_uop.write_cr_fields;
   assign allocation.cr_mask = dispatch_uop.cr_mask;

@@ -32,14 +32,14 @@ module tb_multiply_high_decode;
             "high-word multiply register fields changed");
     require(uop.read_so == rc && uop.needs_flags == rc &&
             !uop.read_ca && !uop.write_ca && !uop.write_ov_so &&
-            uop.write_cr0 == rc,
+            uop.write_cr_field == rc,
             "high-word multiply Rc/XER permissions changed");
 
     // Architectural bit 21 (HDL bit 10) is reserved zero, not OE.
     insn[10] = 1'b1;
     #1;
     require(uop.illegal, "reserved high-word multiply OE bit was accepted");
-    require(!uop.gpr_write && !uop.needs_flags && !uop.write_cr0 &&
+    require(!uop.gpr_write && !uop.needs_flags && !uop.write_cr_field &&
             !uop.write_ca && !uop.write_ov_so,
             "reserved high-word multiply retained architectural permissions");
   endtask

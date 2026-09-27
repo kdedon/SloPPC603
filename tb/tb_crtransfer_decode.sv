@@ -14,7 +14,7 @@ module tb_crtransfer_decode;
           #1;
           if(reserved==0 && rc==0)begin
             assert(!unused_uop.illegal && unused_uop.gpr_write && unused_uop.dst==5'(regno) &&
-                   unused_uop.special_op==SPECIAL_MFCR && !unused_uop.write_cr0 &&
+                   unused_uop.special_op==SPECIAL_MFCR && !unused_uop.write_cr_field &&
                    !unused_uop.write_cr_fields && !unused_uop.write_ca && !unused_uop.write_ov_so)
               else $fatal(1,"MFCR route/effects word=%h",insn);
           end else begin
@@ -33,7 +33,7 @@ module tb_crtransfer_decode;
             assert(!unused_uop.illegal && !unused_uop.gpr_write && unused_uop.src_a==5'(regno) &&
                    unused_uop.special_op==SPECIAL_MTCRF && unused_uop.needs_flags &&
                    unused_uop.write_cr_fields && unused_uop.cr_mask==8'(mask) &&
-                   !unused_uop.write_cr0 && !unused_uop.write_ca && !unused_uop.write_ov_so && !unused_uop.zero_a)
+                   !unused_uop.write_cr_field && !unused_uop.write_ca && !unused_uop.write_ov_so && !unused_uop.zero_a)
               else $fatal(1,"MTCRF mask/route/effects word=%h",insn);
           end else begin
             assert(unused_uop.illegal && !unused_uop.gpr_write && !unused_uop.needs_flags && !unused_uop.write_cr_fields)
