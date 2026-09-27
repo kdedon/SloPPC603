@@ -124,5 +124,8 @@ and retirement commits against the same TLB service; see
 [TLB_LOAD_PROTOCOL.md](TLB_LOAD_PROTOCOL.md). The external port does not derive
 VSID from a current SR, perform a software miss handler, or establish fetch
 coherence after an external mutation. Software changing mappings must obey
-its own synchronization and invalidation rules. Direct-store T=1 remains
-unsupported and is classified through the page diagnostic path.
+its own synchronization and invalidation rules. Direct-store T=1 transfers
+are unsupported; with page exceptions enabled a T=1 access is a typed ISI or
+DSI ([PAGE_DATA_EXCEPTIONS.md](PAGE_DATA_EXCEPTIONS.md),
+[PAGE_INSTRUCTION_EXCEPTIONS.md](PAGE_INSTRUCTION_EXCEPTIONS.md)), otherwise
+a page diagnostic.
