@@ -215,7 +215,8 @@ module ppc_fpu_arith #(
         finite_sum_t sum;
         logic [7:0] leading_zero;
         logic signed [15:0] exponent_from_min;
-        logic signed [15:0] denorm_distance;
+        logic [15:0] denorm_shift;
+        logic denorm_right;
     } round_input_t;
 
     typedef struct packed {
@@ -527,7 +528,7 @@ module ppc_fpu_arith #(
         round_post_t out;
         logic [52:0] kept;
         logic [52:0] rounded_up;
-        logic [23:0] rounded_up_single;
+        logic [5:0] increment_carry;
         logic carry_out;
         logic signed [15:0] max_exp;
         logic signed [15:0] scale;
@@ -538,8 +539,23 @@ module ppc_fpu_arith #(
         out.tiny_before = value.tiny_before;
         if (value.zero) return out;
         kept = value.kept;
-        rounded_up = value.kept + 53'd1;
-        rounded_up_single = value.kept[23:0] + 24'd1;
+        increment_carry[0] = 1'b1;
+        increment_carry[1] = &value.kept[8:0];
+        increment_carry[2] = &value.kept[17:0];
+        increment_carry[3] = &value.kept[26:0];
+        increment_carry[4] = &value.kept[35:0];
+        increment_carry[5] = &value.kept[44:0];
+        rounded_up[8:0] = value.kept[8:0] + {8'd0, increment_carry[0]};
+        rounded_up[17:9] = value.kept[17:9] +
+            {8'd0, increment_carry[1]};
+        rounded_up[26:18] = value.kept[26:18] +
+            {8'd0, increment_carry[2]};
+        rounded_up[35:27] = value.kept[35:27] +
+            {8'd0, increment_carry[3]};
+        rounded_up[44:36] = value.kept[44:36] +
+            {8'd0, increment_carry[4]};
+        rounded_up[52:45] = value.kept[52:45] +
+            {7'd0, increment_carry[5]};
         max_exp = single_result ? 16'sd127 : 16'sd1023;
         scale = single_result ? 16'sd192 : 16'sd1536;
         out.fr = value.increment;
@@ -547,7 +563,7 @@ module ppc_fpu_arith #(
         out.xx = value.inexact;
         if (single_result) begin
             carry_out = value.increment && (&kept[23:0]);
-            if (value.increment) kept[23:0] = rounded_up_single;
+            if (value.increment) kept[23:0] = rounded_up[23:0];
             if (carry_out) begin
                 kept[23:0] = 24'h800000;
                 out.exponent += 16'sd1;
@@ -1338,14 +1354,14 @@ module ppc_fpu_arith #(
         input logic single_result,
         input logic ue,
         input logic signed [15:0] exponent_from_min,
-        input logic signed [15:0] denorm_distance
+        input logic [15:0] denorm_shift,
+        input logic denorm_right
     );
         round_work_t out;
         logic signed [15:0] min_exp;
         logic signed [15:0] scale;
         logic signed [15:0] normalized_exp;
         logic [7:0] left_distance;
-        logic [15:0] denorm_shift;
         out = '0;
         out.sign = value.sign;
         out.negate_final = value.negate_final;
@@ -1354,8 +1370,6 @@ module ppc_fpu_arith #(
         scale = single_result ? 16'sd192 : 16'sd1536;
         normalized_exp = value.exponent;
         left_distance = 8'd0;
-        denorm_shift = denorm_distance[15] ?
-            -denorm_distance : denorm_distance;
         if (value.magnitude == 160'd0) return out;
         if (value.magnitude[159])
             normalized_exp = value.exponent + 16'sd1;
@@ -1369,7 +1383,7 @@ module ppc_fpu_arith #(
             (exponent_from_min <
                 $signed({8'd0, left_distance}));
         if (out.tiny_before && !ue) begin
-            if (denorm_distance > 0)
+            if (denorm_right)
                 out.magnitude = shift_right_jam(value.magnitude,
                     {16'd0, denorm_shift});
             else out.magnitude = value.magnitude <<
@@ -1389,7 +1403,8 @@ module ppc_fpu_arith #(
         input finite_sum_t value,
         input logic [7:0] leading_zero,
         input logic signed [15:0] exponent_from_min,
-        input logic signed [15:0] denorm_distance,
+        input logic [15:0] denorm_shift,
+        input logic denorm_right,
         input ppc_pkg::completion_tag_t tag,
         input ppc_fpu_op_t op,
         input logic single,
@@ -1406,7 +1421,8 @@ module ppc_fpu_arith #(
         single_result = single || op == FP_FRSP || op == FP_FRES;
         normalized = value;
         work = direct_round_work(normalized, leading_zero,
-            single_result, ue, exponent_from_min, denorm_distance);
+            single_result, ue, exponent_from_min, denorm_shift,
+            denorm_right);
         pre = prepare_round_mantissa(work, single_result, rn);
         post = round_mantissa(pre, single_result, oe, ue);
         return finish_rounded(post, tag, op, single_result,
@@ -1418,6 +1434,7 @@ module ppc_fpu_arith #(
     add_input_t multiply_basic_next;
     round_input_t add_next;
     add_result_t add_result;
+    logic signed [15:0] add_exponent_from_min;
     ppc_fpu_arith_rsp_t round_response;
     finite_operands_t work_operands;
     finite_prep_t multiply_prep;
@@ -1532,6 +1549,7 @@ module ppc_fpu_arith #(
     end
 
     always_comb begin
+        add_exponent_from_min = '0;
         add_result = '0;
         if (aligned_q.finite)
             add_result = add_aligned(aligned_q.plan,
@@ -1545,15 +1563,14 @@ module ppc_fpu_arith #(
         if (aligned_q.finite) begin
             add_next.sum = add_result.finite_value;
             add_next.leading_zero = add_result.leading_zero;
-            add_next.exponent_from_min = aligned_q.plan.exponent -
+            add_exponent_from_min = aligned_q.plan.exponent -
                 ((aligned_q.req.single_result ||
                     aligned_q.req.op == FP_FRSP) ?
                     -16'sd126 : -16'sd1022);
-            add_next.denorm_distance =
-                ((aligned_q.req.single_result ||
-                    aligned_q.req.op == FP_FRSP) ?
-                    -16'sd126 : -16'sd1022) -
-                aligned_q.plan.exponent;
+            add_next.exponent_from_min = add_exponent_from_min;
+            add_next.denorm_right = add_exponent_from_min[15];
+            add_next.denorm_shift = add_exponent_from_min[15] ?
+                -add_exponent_from_min : add_exponent_from_min;
         end
     end
 
@@ -1562,7 +1579,7 @@ module ppc_fpu_arith #(
         if (add_q.finite)
             round_response = round_finite(add_q.sum,
                 add_q.leading_zero, add_q.exponent_from_min,
-                add_q.denorm_distance, add_q.req.tag,
+                add_q.denorm_shift, add_q.denorm_right, add_q.req.tag,
                 add_q.req.op, add_q.req.single_result, add_q.req.rn,
                 add_q.req.ni, add_q.req.oe, add_q.req.ue);
         else if (add_q.conversion)
