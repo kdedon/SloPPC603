@@ -1,6 +1,7 @@
 # Micro-TLB verification
 
-Recorded: `make -C sim test-micro-tlb-router`, commit 56824e5, 2026-09-27. Pass: seed 1, 2,349 checks over 664 operations and 2,313 records; seed 2, 3,451 checks over 964 operations and 3,415 records.
+Recorded: `make -C sim -j3 regression` (includes `test-micro-tlb-router`), commit b189e61, 2026-09-27. Pass: micro-TLB bench seed 1, 2,426 checks over 664 operations and 2,390 records; seed 2, 3,519 checks over 964 operations and 3,483 records; BAT and cached reference comparisons 9,881 retirements each; 231 + 28 + 15 Python checks.
+Recorded: `make -C toolchain -j3 rtl-all`, commit 0d03555 (same RTL), 2026-09-27. Pass: 24 compiled-firmware profiles.
 
 The contract is [MICRO_TLB.md](MICRO_TLB.md).
 
