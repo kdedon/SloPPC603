@@ -158,6 +158,8 @@ module ppc_fpu #(
   logic use_a, use_b, use_c, use_d;
   logic select_b;
   logic operand_tags_ok;
+  logic mem_sources_ready;
+  logic mem_tags_ok;
   logic work_valid;
   logic head_available;
   logic [2:0] after_retire_count;
@@ -224,6 +226,9 @@ module ppc_fpu #(
   logic work1_use_a, work1_use_b, work1_use_c, work1_use_d;
   logic work1_sources_ready;
   logic work1_tags_ok;
+  logic work1_mem_sources_ready;
+  logic work1_mem_tags_ok;
+  logic work1_mem_lane0_dep;
   logic work1_select_b;
   logic work1_lane0_dep;
   logic work1_arith_eligible;
@@ -1047,6 +1052,9 @@ module ppc_fpu #(
         (use_b && !source_b.ready) || (use_c && !source_c.ready) ||
         (use_d && !source_d.ready);
     sources_ready = !source_waiting;
+    mem_sources_ready = !work_decoded.mem_store || source_d.ready;
+    mem_tags_ok = !CPU_602 || !work_decoded.mem_store ||
+        (work_decoded.mem_integer ? source_d.lt : source_d.sp);
     operand_tags_ok = 1'b1;
     if (CPU_602) begin
       if (work_decoded.kind == DK_ARITH) begin
@@ -1145,6 +1153,15 @@ module ppc_fpu #(
          (work1_use_b && issue_i.insn[25:21] == work1_issue.insn[15:11]) ||
          (work1_use_c && issue_i.insn[25:21] == work1_issue.insn[10:6]) ||
          (work1_use_d && issue_i.insn[25:21] == work1_issue.insn[25:21]));
+    work1_mem_lane0_dep = !exec_found && issue_valid_i && issue1_valid_i &&
+        work1_decoded.kind == DK_MEMORY && work1_decoded.mem_store &&
+        writes_fpr(decoded.kind, decoded.op, decoded.mem_load) &&
+        issue_i.insn[25:21] == work1_issue.insn[25:21];
+    work1_mem_sources_ready =
+        (!work1_decoded.mem_store || work1_d.ready) &&
+        !work1_mem_lane0_dep;
+    work1_mem_tags_ok = !CPU_602 || !work1_decoded.mem_store ||
+        (work1_decoded.mem_integer ? work1_d.lt : work1_d.sp);
     work1_sources_ready = !work1_decoded.spr_sp && !work1_lane0_dep &&
         (!work1_use_a || work1_a.ready) &&
         (!work1_use_b || work1_b.ready) &&
@@ -1204,7 +1221,7 @@ module ppc_fpu #(
                        work1_decoded.op != FP_FRSP &&
                        work1_decoded.op != FP_FRSQRTE)));
     work1_mem_eligible = rst_ni && !kill_all_i && !abort_valid_i &&
-        work1_valid && work1_sources_ready && work1_tags_ok &&
+        work1_valid && work1_mem_sources_ready && work1_mem_tags_ok &&
         work1_decoded.kind == DK_MEMORY && work1_issue.msr_fp &&
         (work1_ea[1:0] == 2'b00 ||
          (CPU_602 && work1_decoded.mem_load)) &&
@@ -1217,7 +1234,9 @@ module ppc_fpu #(
         !deferred_abort_flush_q && work1_admitted;
     work1_mem_launch = work1_mem_eligible && work1_admitted;
     work1_local_launch = rst_ni && !kill_all_i && !abort_valid_i &&
-        work1_valid && work1_admitted && work1_sources_ready &&
+        work1_valid && work1_admitted &&
+        (work1_decoded.kind == DK_MEMORY ?
+         work1_mem_sources_ready : work1_sources_ready) &&
         !work1_arith_eligible && !work1_mem_eligible &&
         (!(work1_decoded.kind == DK_MOVE ||
            work1_decoded.kind == DK_FSEL) || arith_req_ready);
@@ -1266,7 +1285,8 @@ module ppc_fpu #(
                        work_decoded.op != FP_FRSP &&
                        work_decoded.op != FP_FRSQRTE)));
     mem_eligible = rst_ni && !kill_all_i && !abort_valid_i && work_valid &&
-        sources_ready && operand_tags_ok && work_decoded.kind == DK_MEMORY &&
+        mem_sources_ready && mem_tags_ok &&
+        work_decoded.kind == DK_MEMORY &&
         work_issue.msr_fp && (work_ea[1:0] == 2'b00 ||
           (CPU_602 && work_decoded.mem_load)) &&
         !(CPU_602 && work_decoded.mem_store &&
@@ -1280,7 +1300,8 @@ module ppc_fpu #(
         work_decoded.kind == DK_MCRFS || work_decoded.kind == DK_MTFS;
     local_launch = rst_ni && !kill_all_i && !abort_valid_i && work_valid &&
         work_admitted &&
-        sources_ready && !arith_eligible && !mem_eligible &&
+        (work_decoded.kind == DK_MEMORY ? mem_sources_ready : sources_ready) &&
+        !arith_eligible && !mem_eligible &&
         (!local_fpu_uses_pipe || arith_req_ready);
     arith_rsp_ready = 1'b1;
     // A same-cycle LSU reply waits until its request is registered.
