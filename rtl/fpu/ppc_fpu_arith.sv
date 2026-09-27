@@ -227,6 +227,7 @@ module ppc_fpu_arith #(
     typedef struct packed {
         logic [159:0] magnitude;
         logic carry_out;
+        logic [7:0] leading_zero;
     } sum_candidate_t;
 
     typedef enum logic [3:0] {
@@ -1229,43 +1230,27 @@ module ppc_fpu_arith #(
     endfunction
     /* verilator lint_on UNUSEDSIGNAL */
 
-    function automatic logic [7:0] leading_zero160(
-        input logic [159:0] value
+    function automatic logic [4:0] leading_zero16(
+        input logic [15:0] value
     );
-        logic [159:0] work;
-        logic [7:0] count;
-        if (value == 160'd0) return 8'd160;
+        logic [15:0] work;
+        logic [4:0] count;
+        if (value == 16'd0) return 5'd16;
         work = value;
-        count = 8'd0;
-        if (work[159:32] == 128'd0) begin
-            work <<= 128;
-            count += 8'd128;
-        end
-        if (work[159:96] == 64'd0) begin
-            work <<= 64;
-            count += 8'd64;
-        end
-        if (work[159:128] == 32'd0) begin
-            work <<= 32;
-            count += 8'd32;
-        end
-        if (work[159:144] == 16'd0) begin
-            work <<= 16;
-            count += 8'd16;
-        end
-        if (work[159:152] == 8'd0) begin
+        count = 5'd0;
+        if (work[15:8] == 8'd0) begin
             work <<= 8;
-            count += 8'd8;
+            count += 5'd8;
         end
-        if (work[159:156] == 4'd0) begin
+        if (work[15:12] == 4'd0) begin
             work <<= 4;
-            count += 8'd4;
+            count += 5'd4;
         end
-        if (work[159:158] == 2'd0) begin
+        if (work[15:14] == 2'd0) begin
             work <<= 2;
-            count += 8'd2;
+            count += 5'd2;
         end
-        if (!work[159]) count += 8'd1;
+        if (!work[15]) count += 5'd1;
         return count;
     endfunction
 
@@ -1277,24 +1262,106 @@ module ppc_fpu_arith #(
         sum_candidate_t out;
         logic [159:0] b_value;
         logic [16:0] sum_zero;
-        logic [16:0] sum_one;
-        logic carry;
+        logic [15:0] sum_one;
+        logic [159:0] candidate_zero;
+        logic [159:0] candidate_one;
+        logic [49:0] lz_zero;
+        logic [49:0] lz_one;
+        logic [49:0] selected_lz;
+        logic [9:0] zero_zero;
+        logic [9:0] zero_one;
+        logic [9:0] block_zero;
+        logic [9:0] carry_in;
+        logic [9:0] carry_p0, carry_p1, carry_p2, carry_p3, carry_p4;
+        logic [9:0] carry_g0, carry_g1, carry_g2, carry_g3, carry_g4;
+        logic [9:0] suffix0, suffix1, suffix2, suffix3, suffix4;
+        logic [9:0] first_block;
+        logic [7:0] combined_lz;
+        logic [7:0] local_count;
         out = '0;
         b_value = rhs ^ {160{subtract}};
-        carry = subtract;
         for (int block = 0; block < 10; block++) begin
             sum_zero = {1'b0, lhs[block*16 +: 16]} +
                 {1'b0, b_value[block*16 +: 16]};
-            sum_one = sum_zero + 17'd1;
-            if (carry) begin
-                out.magnitude[block*16 +: 16] = sum_one[15:0];
-                carry = sum_one[16];
-            end else begin
-                out.magnitude[block*16 +: 16] = sum_zero[15:0];
-                carry = sum_zero[16];
-            end
+            sum_one = sum_zero[15:0] + 16'd1;
+            candidate_zero[block*16 +: 16] = sum_zero[15:0];
+            candidate_one[block*16 +: 16] = sum_one;
+            carry_g0[block] = sum_zero[16];
+            carry_p0[block] = &(lhs[block*16 +: 16] ^
+                b_value[block*16 +: 16]);
+            zero_zero[block] = sum_zero[15:0] == 16'd0;
+            zero_one[block] = sum_one == 16'd0;
+            lz_zero[block*5 +: 5] = leading_zero16(sum_zero[15:0]);
+            lz_one[block*5 +: 5] = leading_zero16(sum_one);
         end
-        out.carry_out = carry;
+        // Prefix generate/propagate resolves all ten block carries in four
+        // levels while both sum and LZ candidates are already available.
+        carry_p1 = carry_p0;
+        carry_g1 = carry_g0;
+        for (int block = 1; block < 10; block++) begin
+            carry_p1[block] = carry_p0[block] & carry_p0[block-1];
+            carry_g1[block] = carry_g0[block] |
+                (carry_p0[block] & carry_g0[block-1]);
+        end
+        carry_p2 = carry_p1;
+        carry_g2 = carry_g1;
+        for (int block = 2; block < 10; block++) begin
+            carry_p2[block] = carry_p1[block] & carry_p1[block-2];
+            carry_g2[block] = carry_g1[block] |
+                (carry_p1[block] & carry_g1[block-2]);
+        end
+        carry_p3 = carry_p2;
+        carry_g3 = carry_g2;
+        for (int block = 4; block < 10; block++) begin
+            carry_p3[block] = carry_p2[block] & carry_p2[block-4];
+            carry_g3[block] = carry_g2[block] |
+                (carry_p2[block] & carry_g2[block-4]);
+        end
+        carry_p4 = carry_p3;
+        carry_g4 = carry_g3;
+        for (int block = 8; block < 10; block++) begin
+            carry_p4[block] = carry_p3[block] & carry_p3[block-8];
+            carry_g4[block] = carry_g3[block] |
+                (carry_p3[block] & carry_g3[block-8]);
+        end
+        carry_in[0] = subtract;
+        for (int block = 1; block < 10; block++)
+            carry_in[block] = carry_g4[block-1] |
+                (carry_p4[block-1] & subtract);
+        out.carry_out = carry_g4[9] | (carry_p4[9] & subtract);
+        for (int block = 0; block < 10; block++) begin
+            out.magnitude[block*16 +: 16] = carry_in[block] ?
+                candidate_one[block*16 +: 16] :
+                candidate_zero[block*16 +: 16];
+            selected_lz[block*5 +: 5] = carry_in[block] ?
+                lz_one[block*5 +: 5] : lz_zero[block*5 +: 5];
+            block_zero[block] = carry_in[block] ?
+                zero_one[block] : zero_zero[block];
+        end
+        suffix0 = block_zero;
+        suffix1 = suffix0;
+        for (int block = 0; block < 9; block++)
+            suffix1[block] = suffix0[block] & suffix0[block+1];
+        suffix2 = suffix1;
+        for (int block = 0; block < 8; block++)
+            suffix2[block] = suffix1[block] & suffix1[block+2];
+        suffix3 = suffix2;
+        for (int block = 0; block < 6; block++)
+            suffix3[block] = suffix2[block] & suffix2[block+4];
+        suffix4 = suffix3;
+        for (int block = 0; block < 2; block++)
+            suffix4[block] = suffix3[block] & suffix3[block+8];
+        first_block[9] = !block_zero[9];
+        for (int block = 0; block < 9; block++)
+            first_block[block] = !block_zero[block] &&
+                suffix4[block+1];
+        combined_lz = 8'd0;
+        for (int block = 0; block < 10; block++) begin
+            local_count = 8'((9-block)*16) +
+                {3'd0, selected_lz[block*5 +: 5]};
+            combined_lz |= local_count & {8{first_block[block]}};
+        end
+        out.leading_zero = suffix4[0] ? 8'd160 : combined_lz;
         return out;
     endfunction
 
@@ -1319,9 +1386,9 @@ module ppc_fpu_arith #(
         sum_same = carry_select_160(aligned.x, aligned.y, 1'b0);
         sum_xy = carry_select_160(aligned.x, aligned.y, 1'b1);
         sum_yx = carry_select_160(aligned.y, aligned.x, 1'b1);
-        lz_same = leading_zero160(sum_same.magnitude);
-        lz_xy = leading_zero160(sum_xy.magnitude);
-        lz_yx = leading_zero160(sum_yx.magnitude);
+        lz_same = sum_same.leading_zero;
+        lz_xy = sum_xy.leading_zero;
+        lz_yx = sum_yx.leading_zero;
         result_sum.exponent = aligned.exponent;
         result_sum.negate_final = aligned.negate_final;
         if (aligned.x == 160'd0 && aligned.y == 160'd0 &&
