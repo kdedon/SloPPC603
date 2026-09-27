@@ -55,6 +55,9 @@ module ppc_core_bus60x #(
   input  logic        drtry_n_i,
   input  logic        tea_n_i
 );
+  // Named constants: Quartus 17 rejects package-scoped enum port actuals.
+  localparam ppc_pkg::fetch_fault_t NO_FETCH_FAULT = ppc_pkg::FETCH_OK;
+  localparam ppc_pkg::data_fault_t NO_DATA_FAULT = ppc_pkg::DATA_OK;
   logic core_halted;
   logic imem_req_valid, imem_req_ready;
   logic [31:0] imem_req_addr;
@@ -144,7 +147,7 @@ module ppc_core_bus60x #(
     .imem_rsp_valid_i(imem_rsp_valid),
     .imem_rsp_ready_o(imem_rsp_ready),
     .imem_rsp_insn_i(imem_rsp_insn),
-    .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(ppc_pkg::FETCH_OK),
+    .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(NO_FETCH_FAULT),
     .dmem_req_valid_o(dmem_req_valid),
     .dmem_req_ready_i(dmem_req_ready),
     .dmem_req_write_o(dmem_req_write),
@@ -154,7 +157,7 @@ module ppc_core_bus60x #(
     .dmem_rsp_valid_i(dmem_rsp_valid),
     .dmem_rsp_ready_o(dmem_rsp_ready),
     .dmem_rsp_rdata_i(dmem_rsp_rdata),
-    .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), .dmem_rsp_error_i(dmem_rsp_error),
+    .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(NO_DATA_FAULT), .dmem_rsp_error_i(dmem_rsp_error),
     .retire_valid_o, .retire_ready_i, .retire_o,
     .halted_o(core_halted),
     .redirect_valid_i, .redirect_all_i, .redirect_keep_pivot_i,

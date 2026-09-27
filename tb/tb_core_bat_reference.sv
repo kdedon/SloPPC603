@@ -18,6 +18,7 @@ module tb_core_bat_reference;
   int memory_delay = 0, memory_requests = 0, memory_writes = 0, memory_stalls = 0;
   int expected_memory_requests, expected_memory_writes;
   logic committed_this_edge = 0;
+  logic deferred_this_edge = 0;
   logic [31:0] architectural_gpr[32];
   logic [127:0] architectural_flags;
   logic [31:0] da, wd;
@@ -113,6 +114,8 @@ module tb_core_bat_reference;
   always @(negedge clk) cycle_count++;
   always @(posedge clk) begin
     committed_this_edge = rst_n && tv && tr;
+    // An update load's base write follows its retirement edge.
+    deferred_this_edge = rst_n && dut.core.update_pending_q;
     if (!rst_n) begin
       pending <= 0;
       delay_count <= 0;
@@ -180,7 +183,11 @@ module tb_core_bat_reference;
           else $fatal(1, "unsupported/unknown retirement in reference program");
         $fwrite(trace_file, "%08x %08x ", retired.pc, retired.insn);
         #1;
-        for (int r = 0; r < 32; r++) $fwrite(trace_file, "%08x ", dut.core.regfile.gpr[r]);
+        // Include an update load's base write, which lands one edge later.
+        for (int r = 0; r < 32; r++)
+          $fwrite(trace_file, "%08x ",
+                  (dut.core.update_pending_q && r == int'(dut.core.update_reg_q)) ?
+                    dut.core.update_value_q : dut.core.regfile.gpr[r]);
         $fwrite(trace_file, "%08x %08x %08x %08x ", dut.core.cr, dut.core.xer, dut.core.lr, dut.core.ctr);
         for (int byte_offset=0; byte_offset<256; byte_offset+=4)
           $fwrite(trace_file, "%08x ", {ram[byte_offset],ram[byte_offset+1],ram[byte_offset+2],ram[byte_offset+3]});
@@ -202,10 +209,10 @@ module tb_core_bat_reference;
   // Every architectural register must change only at an accepted retirement.
   // RAM may change earlier at a reserved store request, per the core contract.
   always @(negedge clk) begin
-    if (!rst_n || !running) begin
+    if (!rst_n || !running || !dut.core.regfile.ready_o) begin
       for (int r=0;r<32;r++) architectural_gpr[r] = 0;
       architectural_flags = 0;
-    end else if (committed_this_edge) begin
+    end else if (committed_this_edge || deferred_this_edge) begin
       for (int r=0;r<32;r++) architectural_gpr[r] = dut.core.regfile.gpr[r];
       architectural_flags = {dut.core.cr,dut.core.xer,dut.core.lr,dut.core.ctr};
     end else begin

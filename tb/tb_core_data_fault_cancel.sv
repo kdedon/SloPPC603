@@ -126,7 +126,8 @@ module tb_core_data_fault_cancel;
       if(cut && cut_accepted) cut_seen=1;
       if(dv) check(!dw && da=='h1000 && st==4'hf,"only old load may issue");
       if(dv && dr) requests++;
-      if(tv) begin
+      // Fall-through NOPs after the checked target pair are not examined.
+      if(tv && !done) begin
         check(cut_seen,"old path retired before cut");
         check(!retired.illegal && retired.data_fault==DATA_OK &&
               !retired.alignment_exception && retired.fetch_fault==FETCH_OK,

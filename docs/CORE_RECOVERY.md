@@ -4,6 +4,13 @@ The current integer CPU accepts explicit recovery requests through its internal/
 
 ## Request and acceptance
 
+The interface exists only with `ENABLE_TEST_REDIRECT=1` (the default for
+benches). With it clear the redirect inputs are ignored, `redirect_accepted_o`
+stays low and the CQ builds only whole-machine recovery: internal exception,
+branch and ISYNC redirects are all-cuts of an empty serialized machine. The
+integrated measurement top, the compiled-firmware benches and the managed
+cached reference benches use that production setting.
+
 `redirect_valid_i` presents a request for the current rising edge. `redirect_all_i` requests an all-cut; otherwise `redirect_pivot_i` names a live completion identity and `redirect_keep_pivot_i` selects whether that pivot survives. `redirect_target_i` supplies the aligned target PC. `redirect_accepted_o` reports the combinational acceptance decision, sampled on that edge.
 
 This is an event interface, with no separate ready/response queue. A caller should present one request per intended event; holding valid across edges submits another request on each edge. A rejected event has no effect and is not automatically retried. The caller must obtain the completion identity from its own tracked allocation; the public retirement packet alone does not expose it. The integrated test observes allocation identities directly, without forcing internal state.

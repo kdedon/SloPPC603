@@ -175,7 +175,7 @@ module ppc_completion #(
     alloc_tag_o.index = tail_q;
     alloc_tag_o.generation = generations_q[tail_q] + CQ_GENERATION_WIDTH'(1);
 
-    retire_valid_o = (count_q != '0) && active_q[head_q] && done_q[head_q];
+    retire_valid_o = rst_ni && (count_q != '0) && active_q[head_q] && done_q[head_q];
     retire_o = '0;
     retire_tag_o = '0;
     if (retire_valid_o) begin

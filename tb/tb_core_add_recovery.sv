@@ -268,7 +268,8 @@ module tb_core_add_recovery;
     if (rst_n) begin
       require(dut.cr == expected_cr && dut.xer == expected_xer, "atomic full CR/XER state");
       for (int r = 0; r < 32; r++)
-        require(dut.regfile.gpr[r] == expected_gpr[r], "atomic architectural GPR state");
+        if (dut.regfile.ready_o)
+          require(dut.regfile.gpr[r] == expected_gpr[r], "atomic architectural GPR state");
     end
   end
   assert property (@(posedge clk) disable iff (!rst_n)

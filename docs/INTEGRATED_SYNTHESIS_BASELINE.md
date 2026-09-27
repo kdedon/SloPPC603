@@ -1,6 +1,42 @@
 # Current cached-physical synthesis baseline
 
-## 2026-09-26 refit
+## 2026-09-27 refit: AUD-01/AUD-16 timing closure
+
+Recorded: `./quartus/integrated/build.sh --docker`, commit this branch,
+2026-09-27. Quartus 17.0.2, `5CSEBA6U23I7`, seed 1. The build **fits and
+meets the provisional 50 MHz constraint at all four corners**. The
+measurement top now sets `ENABLE_TEST_REDIRECT=0` (production recovery; the
+redirect ports remain on the top but are ignored).
+
+| Resource | This fit | 2026-09-26 refit |
+| --- | --- | --- |
+| ALMs | 11,576 / 41,910 (28%) | 13,209 |
+| Registers | 15,967 | 16,826 |
+| Block-memory data bits | 131,546 | 131,456 |
+| M10K blocks | 15 / 553 | 15 |
+| MLAB bits | 3,072 | 0 |
+| DSP blocks | 3 / 112 | 3 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +1.316 | +0.305 |
+| Slow 1100 mV, -40 C | +1.653 | +0.155 |
+| Fast 1100 mV, 100 C | +5.170 | +0.164 |
+| Fast 1100 mV, -40 C | +5.963 | +0.144 |
+
+The 3,072 MLAB bits are the three 32x32 GPR read-port copies (AUD-16). The
+former AUD-01 cone is gone: special-unit operands come from the committed
+GPR file, branch/ISYNC redirects are registered, recovery is whole-machine
+only, and GPR source indexes are predecoded at IQ push. The worst setup
+paths are now the half-cycle bus release flops to the `dbb_n_o`/`abb_n_o`
+virtual outputs (1.316 ns at 100 C) and `fetch|pc` to the I-cache LRU ranks
+(1.704 ns at 100 C). An intermediate fit without the IQ predecode gave
++2.168 / +1.823 ns slow-corner setup; its worst path ran from the IQ output
+through decode and the rename map into the reservation station. Setup
+slack moves by a few hundred picoseconds between fits from placement
+alone; neither fit certifies a board frequency.
+
+## 2026-09-26 refit (superseded)
 
 Recorded: `./quartus/integrated/build.sh --docker`, commit `87317f4` (RTL as of
 the audit merges through `384eb3d`), 2026-09-26. Quartus 17.0.2, `5CSEBA6U23I7`,

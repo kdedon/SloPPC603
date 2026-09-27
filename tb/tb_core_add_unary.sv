@@ -647,7 +647,7 @@ module tb_core_add_unary;
         require(dut.flags_owner == owner_expected,
                 "ADD one-owner exact identity differs from stream model");
       for (int reg_index = 0; reg_index < 32; reg_index++)
-        require(dut.regfile.gpr[reg_index] == model_gpr[reg_index],
+        if (dut.regfile.ready_o) require(dut.regfile.gpr[reg_index] == model_gpr[reg_index],
                 "full GPR state differs from ADD retirement oracle");
     end
   end

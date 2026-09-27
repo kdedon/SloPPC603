@@ -84,10 +84,11 @@ therefore proves ordering only over the implemented CPU transport.
 ## ISYNC refetch edge
 
 ISYNC captures its instruction PC at dispatch. When its exact completion entry
-is accepted at retirement, it asserts the existing internal branch-class
-redirect with target `PC + 4` modulo 32 bits. The completion recovery uses
-`keep_pivot` on the simultaneous commit edge. Serialization guarantees the
-pivot is the only CQ entry, so there is no younger CQ state to preserve.
+is accepted at retirement, the special unit enters a redirect state and, on
+the next edge, asserts the internal branch-class redirect with target `PC + 4`
+modulo 32 bits. Serialization guarantees ISYNC was the only CQ entry, so the
+redirect is a whole-machine recovery of an empty CQ; the special unit stays
+busy until it is accepted, so nothing dispatches in between.
 
 That accepted recovery clears the instruction queue and invokes the fetch
 recovery contract. Any already offered old instruction request remains stable;
@@ -97,7 +98,9 @@ does not invalidate an instruction cache or make modified code coherent. Cache
 maintenance remains separate system work.
 
 The internal ISYNC redirect wins over a concurrent external redirect, and the
-public external `redirect_accepted_o` remains false on that edge. Before CQ
+public external `redirect_accepted_o` remains false on that edge. On the
+commit edge itself an external all-cut is rejected because it would remove
+the finished offered head. Before CQ
 finish, an accepted external all-cut may cancel ISYNC and select its own target;
 the stale result is suppressed and cannot redirect later. Once ISYNC is the
 finished offered head, the normal completion irrevocability rule rejects a cut
@@ -106,13 +109,13 @@ withdrawn and the in-flight barrier state is clear.
 
 ## Verification
 
-Recorded: `make -C sim test-core-serialization`, commit this branch, 2026-09-26. Pass: 121 checks. The reset case now checks the held barrier's retire-valid, busy and redirect after the first reset edge rather than combinationally.
+Recorded: `make -C sim test-core-serialization`, commit this branch, 2026-09-26. Pass: 144 checks. The ISYNC cases check the redirect one edge after commit and the rejected cut on the commit edge.
 
 `tb_serialization_decode` checks 168 conditions across the three exact words,
 all low 26 fixed-bit mutations, permission normalization, default-profile
 rejection, and neighboring MTMSR/TLBSYNC exclusions.
 
-`tb_core_serialization` checks 124 conditions in an actual core:
+`tb_core_serialization` checks 144 conditions in an actual core:
 
 - delayed older load response, SYNC stall, and a dependent younger store;
 - delayed older store acknowledgement, EIEIO stall, and a younger load;

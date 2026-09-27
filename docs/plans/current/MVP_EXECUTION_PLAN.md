@@ -742,3 +742,13 @@ Five neighboring timer/IRQ/cache configurations and both wrapper lint profiles
 pass. Production RTL unchanged. Prior broad
 regression and firmware evidence is inherited; no full-suite or fit rerun.
 MVP 80.81%, all system scores and remaining-effort ranges stay unchanged.
+
+## Integrated timing-closure round — accepted (2026-09-27)
+
+AUD-01/AUD-16: committed-GPR special operands, registered branch/ISYNC
+redirect, test-only pivot recovery (`ENABLE_TEST_REDIRECT`), IQ source
+predecode, single-write-port MLAB GPR file. The cached physical top meets the
+provisional 50 MHz constraint (slow setup +1.316 / +1.653 ns). Fresh: full
+regression, compiled firmware and integrated fit. MVP 80.81% → 81.51%
+(FPGA fit/timing 35% → 45%). Timer/BAT fit and AUD-21 remain open.
+

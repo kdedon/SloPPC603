@@ -22,9 +22,9 @@ Every selected form requires `rA != 0`. Loads additionally require `rA != rD`. I
 
 `uop.mem_update` authorizes a second GPR effect when the completion entry is allocated. The entry records `update_write`, `update_gpr`, and a zeroed `update_value`; a producer supplies only `result.update_value`. Completion accepts that value only for the exact active generation and only when allocation authorized the update. A fault clears the normal GPR and update permissions and both payloads.
 
-The special lane returns EA as the update value after a successful memory acknowledgement. The architectural GPR file has two commit ports driven from one accepted completion retirement:
+The special lane returns EA as the update value after a successful memory acknowledgement. The architectural GPR file has one write port, fed from one accepted completion retirement:
 
-- A load update writes the loaded value to rD and EA to rA on the same edge.
+- A load update writes the loaded value to rD on the retirement edge and EA to rA on the next edge. Dispatch is held for that one cycle, so no instruction observes rD without rA.
 - A store update writes EA to rA only after the externally acknowledged store reaches accepted retirement.
 - A stalled finished packet changes neither destination.
 - A memory error or alignment diagnostic changes neither destination.

@@ -19,7 +19,7 @@ acceptance evidence are still required. The aggregate is `sum(weight × completi
 / 100`, rounded to a whole percent. Keep weights fixed between rounds unless the
 user changes scope. Treat small score changes as bookkeeping, not velocity.
 
-**MVP estimate: about 81% complete (weighted 80.8%; planning range 60–85%).** The
+**MVP estimate: about 82% complete (weighted 81.5%; planning range 60–85%).** The
 remaining work is concentrated in MMU replacement and exception completeness,
 broader combined-system stress, architectural maintenance and timing closure. These are
 hard acceptance blockers regardless of the weighted score. Final FPGA acceptance
@@ -42,7 +42,7 @@ is currently unmet.
 | Instruction cache and maintenance | 5% | 85% | 16-KiB four-way physical cache, block-RAM data array, translated WIMG=0 fills/hits, scalar bypass, remap and explicit stale-code invalidate/restart, denied warm-line suppression and partial-fill TEA/reset | Conservative WIMG policy; no automatic code coherence or architectural cache instructions. External maintenance is not a CPU/store barrier; broader event/interleaving acceptance remains open. |
 | Toolchain and reproducible builds | 4% | 90% | Pinned compiler, BE ELF loader, twenty compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility or release packaging claim. |
 | Integration and verification | 7% | 85% | Independent directed/reference tests, 243 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives | Search/fault firmware now covers the combined supervisor/page-MMU/cache/bus path; no formal/collected HDL coverage/continuous CI gate; long reference acceptance remains open. |
-| FPGA fit, timing and release | 7% | 35% | Current cached physical and separately timer-enabled BAT designs fit Cyclone V with archived evidence | Neither representative fit closes timing; no combined final MVP top, board I/O timing contract or release signoff. New RTL changes require fresh fit before timing claims. |
+| FPGA fit, timing and release | 7% | 45% | Current cached physical and separately timer-enabled BAT designs fit Cyclone V with archived evidence; the cached physical top meets the provisional 50 MHz constraint at all corners | The timer/BAT fit does not close timing; no combined final MVP top, board I/O timing contract or release signoff. New RTL changes require fresh fit before timing claims. |
 
 Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](references/ISA_MATRIX.md),
 [alignment](ALIGNMENT_VERIFICATION.md), [live context](LIVE_CONTEXT_VERIFICATION.md),
@@ -655,3 +655,21 @@ claim that the full 207-configuration suite ran this round. No fit was run.
 This single boundary does not cover continuous timer cadence, high saved-MSR
 mask differentiation, event/data or maintenance collisions, or timing closure.
 See [timer/cache verification](TRANSLATED_ICACHE_TIMERS.md).
+
+## Integrated timing-closure round — accepted, 2026-09-27
+
+AUD-01 and AUD-16 changes close the cached physical top at the provisional
+50 MHz constraint: slow-corner setup +1.316 / +1.653 ns (100 C / -40 C), from
+-3.904 / -4.538 ns; all hold slacks positive; 11,576 ALMs, 3,072 MLAB bits.
+Special-unit operands come from the committed GPR file; branch/ISYNC
+redirects are registered one edge after commit (a taken branch costs one more
+cycle); arbitrary-pivot recovery sits behind `ENABLE_TEST_REDIRECT`; GPR
+sources are predecoded at IQ push; the GPR file has one write port and three
+MLAB copies, with an update load's base write one edge after retirement.
+
+Fresh: `make -C sim regression` (pass), `make -C toolchain rtl-all` (pass),
+`./quartus/integrated/build.sh --docker`. The timer/BAT fit was not rerun.
+
+**MVP 81.51% (about 82%), up from 80.81%:** FPGA fit/timing 35% → 45%.
+Effort ranges are unchanged. See
+[integrated fit](INTEGRATED_SYNTHESIS_BASELINE.md).
