@@ -1,7 +1,7 @@
 # Cache control verification
 
-Recorded: `make -C sim test-icache-managed test-core-cache-control test-core-cache-probe-miss test-core-bat-cached-bus60x-cacheops test-core-bat-cached-bus60x-stress`, commit 39c40f8, 2026-09-27.
-Recorded: `make -C toolchain rtl-cacheops` with the ELF from `make cacheops` in `ppc603e-cross:bookworm-20250811`, commit 39c40f8, 2026-09-27.
+Recorded: `make -C sim test-icache-managed test-core-cache-control test-core-cache-probe-miss test-core-bat-cached-bus60x-cacheops test-core-bat-cached-bus60x-stress`, commit 1707634, 2026-09-27 (in `make -C sim -j2 regression`, pass).
+Recorded: `make -C toolchain rtl-cacheops` with the ELF from `make cacheops` in `ppc603e-cross:bookworm-20250811`, commit 1707634, 2026-09-27 (in `make -C toolchain -j2 rtl-all`, 25 profiles pass).
 
 Contract: [CACHE_CONTROL.md](CACHE_CONTROL.md). All benches check against
 manual-derived expectations written in the bench (DSISR per UM Table 4-13 is
@@ -18,13 +18,20 @@ recomputed from the instruction word), not against RTL internals.
 
 Stress seeds (regression runs `STRESS_SEEDS="1 2 3 4"`):
 
-STRESS_TABLE
+| Seed | Checks | Retirements | Cycles | EXT | DEC | Ext. commands | ARTRY | DRTRY | Held fills | Post-`icbi` holds |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 92,723 | 1,818 | 43,499 | 53 | 38 | 9 | 180 | 163 | 335 | 13 |
+| 2 | 95,657 | 1,820 | 44,905 | 53 | 39 | 10 | 198 | 150 | 329 | 7 |
+| 3 | 101,719 | 1,884 | 47,705 | 62 | 43 | 13 | 207 | 210 | 290 | 10 |
+| 4 | 99,077 | 1,872 | 46,462 | 59 | 43 | 13 | 214 | 206 | 327 | 7 |
+
+Each seed runs 36 `icbi`.
 
 Seeds 5-40 also pass (not part of the regression).
 
 ## Negative controls
 
-Run on the commit above with a temporary RTL edit, then reverted:
+Run on commit 39c40f8 with a temporary RTL edit, then reverted:
 
 - Invalidating the set when `icbi` starts, before the drain
   (`.invalidate_set_i(icbi_start)` in `ppc_icache_managed`, set-invalidate

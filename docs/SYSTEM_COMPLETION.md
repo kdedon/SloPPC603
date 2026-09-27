@@ -687,8 +687,8 @@ follow the access class; a translated `dcbz` takes the caching-inhibited
 alignment exception; `dcbt`/`dcbtst` are no-ops; user `dcbi` is privileged.
 External maintenance keeps its own handshake and shares the drain.
 
-Fresh on the final commit: `make -C sim regression` (REGRESSION_SUMMARY),
-`make -C toolchain rtl-all` (FIRMWARE_SUMMARY) and `./quartus/translated/build.sh
+Fresh on the final commit: `make -C sim regression` (strict lint, 274 Python tests, every simulation target),
+`make -C toolchain rtl-all` (25 profiles) and `./quartus/translated/build.sh
 --docker` (setup +0.900 / +0.882 ns, hold +0.119 ns worst, 52.31 MHz). New
 benches: managed-cache `icbi`, actual-core cache control and probe TLB misses,
 the translated cache-operation bench, a four-seed cached-top stress and the
