@@ -30,6 +30,7 @@ module ppc_iu #(
   logic [31:0] add_operand_a;
   logic add_carry_in;
   logic add_overflow, operation_overflow, final_so;
+  logic held_compare, compare_eq, compare_gt;
   logic issue_multiply, issue_multiply_signed;
   logic signed [32:0] multiply_a_q, multiply_b_q;
   logic signed [65:0] multiply_product_q;
@@ -156,12 +157,20 @@ module ppc_iu #(
   assign result_o.ov = held.ctrl.write_ov_so ? operation_overflow : 1'b0;
   assign result_o.so = held.ctrl.write_ov_so ? final_so : 1'b0;
   assign result_o.value = result_value;
-  assign result_o.cr0 = held.ctrl.write_cr_field ? {
+  // Compares issue as ~a + b + 1 = b - a. Carry out means b >= a unsigned;
+  // the true sign of b - a is its sign bit XOR overflow.
+  assign held_compare = (held.ctrl.op == ALU_CMP) || (held.ctrl.op == ALU_CMPL);
+  assign compare_eq = held.a == held.b;
+  assign compare_gt = (held.ctrl.op == ALU_CMPL) ? !add_sum[32] :
+                      (add_sum[31] != add_overflow);
+  assign result_o.cr0 = !held.ctrl.write_cr_field ? 4'b0 :
+    held_compare ? {!compare_gt && !compare_eq, compare_gt, compare_eq,
+                    held.ctrl.so_in} : {
     result_value[31],
     !result_value[31] && (result_value != 0),
     result_value == 0,
     held.ctrl.write_ov_so ? final_so : held.ctrl.so_in
-  } : 4'b0;
+  };
   always_comb begin
     case (held.ctrl.op)
       ALU_ADD: result_value = add_sum[31:0];

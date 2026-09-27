@@ -669,6 +669,33 @@ def make_crstate():
     for i in range(32):e('mcrf',i%8,(i+1)%8)
     e('illegal');return p
 
+def make_compare():
+    p=make_program();p.ops.pop();e=p.emit
+    values=(0,1,0x7fff,0x8000,0x7fffffff,0x80000000,0x80000001,0xffff8000,0xfffffffe,0xffffffff)
+    def load(r,v):
+        e('addis',r,0,v>>16);e('ori',r,r,v&65535)
+    e('addis',18,0,0x7fff);e('ori',18,18,0xffff);e('addi',19,0,1);e('addis',8,0,0x5a5a)
+    n=0
+    for so in (0,1):
+        e('mcrxr',7)
+        if so:e('addco',20,18,19)
+        for a in values:
+            load(9,a)
+            for b in values:
+                load(10,b)
+                e('mtcrf',255,8)
+                e('cmp',n%8,9,10);e('cmpl',(n+3)%8,9,10);e('mfcr',11);n+=1
+            for imm in (0,1,0x7fff,0x8000,0xffff):
+                e('cmpi',n%8,9,imm);e('cmpli',(n+5)%8,9,imm);n+=1
+            e('mfcr',11)
+    # Producer-to-compare, compare-to-compare and compare-to-consumer chains.
+    e('mcrxr',7);load(9,0x7fffffff)
+    for bf in range(8):
+        e('addi',9,9,1);e('cmp',bf,9,10);e('cmpli',(bf+1)%8,9,0x8000)
+        e('bc',12,4*bf,f'cmp_taken{bf}',0,0);e('addi',12,0,bf)
+        p.label(f'cmp_taken{bf}');e('cror',31,4*bf+2,4*bf);e('mfcr',11)
+    e('illegal');return p
+
 def make_multiply():
     p=make_program();p.ops.pop();e=p.emit
     values=[0,1,0xffffffff,2,0x7fffffff,0x80000000,0x10000,0xffff0000]
@@ -806,9 +833,9 @@ def make_lsu_update():
     for _ in range(8):e('lwzu',6,4,4);e('add',7,6,4)
     e('illegal');return p
 
-def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=False, subcarry=False, subextend=False, subunary=False, subimmediate=False, addimmediate=False, andimmediate=False, unarylogical=False, crtransfer=False, crlogical=False, crstate=False, multiply=False, multiply_high=False, divide_unsigned=False, divide_signed=False, lsu_update=False):
+def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=False, subcarry=False, subextend=False, subunary=False, subimmediate=False, addimmediate=False, andimmediate=False, unarylogical=False, crtransfer=False, crlogical=False, crstate=False, multiply=False, multiply_high=False, divide_unsigned=False, divide_signed=False, lsu_update=False, compare=False):
     output.mkdir(parents=True,exist_ok=True)
-    p=make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_program()
+    p=make_compare() if compare else make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_program()
     assert p.encode(0,'mflr',(3,))==0x7c6802a6
     assert p.encode(0,'mtctr',(3,))==0x7c6903a6
     assert p.encode(0,'bclr',(20,0,0))==0x4e800020
@@ -864,9 +891,10 @@ if __name__=='__main__':
     ap.add_argument('--divide-unsigned',action='store_true')
     ap.add_argument('--divide-signed',action='store_true')
     ap.add_argument('--lsu-update',action='store_true')
+    ap.add_argument('--compare',action='store_true')
     # Both fixtures fit signed D-form immediates; 0x6000 separates unified
     # bus data RAM from the instruction image below 0x4000.
     ap.add_argument('--memory-base',type=lambda x:int(x,0),choices=(0x1000,0x6000),default=BASE)
     args=ap.parse_args()
     BASE=args.memory_base
-    write(args.output,args.shifts,args.arithmetic_shifts,args.insert,args.subtract,args.subcarry,args.subextend,args.subunary,args.subimmediate,args.addimmediate,args.andimmediate,args.unarylogical,args.crtransfer,args.crlogical,args.crstate,args.multiply,args.multiply_high,args.divide_unsigned,args.divide_signed,args.lsu_update)
+    write(args.output,args.shifts,args.arithmetic_shifts,args.insert,args.subtract,args.subcarry,args.subextend,args.subunary,args.subimmediate,args.addimmediate,args.andimmediate,args.unarylogical,args.crtransfer,args.crlogical,args.crstate,args.multiply,args.multiply_high,args.divide_unsigned,args.divide_signed,args.lsu_update,args.compare)

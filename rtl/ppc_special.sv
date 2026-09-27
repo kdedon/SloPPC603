@@ -1,5 +1,5 @@
 `default_nettype none
-// Serialized control, SPR, compare and one-outstanding memory lane. One
+// Serialized control, SPR and one-outstanding memory lane. One
 // sequencer owns the lane state; each concern owns its own registers.
 module ppc_special #(
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
@@ -80,7 +80,6 @@ module ppc_special #(
   input logic [31:0] cr_i,
   input logic [2:0] xer_flags_i,
   input logic [6:0] xer_byte_count_i,
-  input logic so_i,
   input logic cancel_i,
   input logic bat_recovery_retained_i,
   input logic [31:0] bat_recovery_target_i,
@@ -156,7 +155,6 @@ module ppc_special #(
   logic [31:0] a_q, b_q, c_q, pc_q, cr_snapshot_q;
   logic [2:0] xer_flags_q;
   logic [6:0] xer_byte_count_q;
-  logic so_q;
   logic [31:0] ea_q;
   logic branch_taken_q, branch_ctr_write_q, branch_lr_write_q;
   logic [31:0] branch_target_q, branch_ctr_next_q, branch_lr_next_q;
@@ -178,8 +176,6 @@ module ppc_special #(
   result_packet_t memory_result_q;
   logic commit_match, result_fire, request_fire, response_fire;
   logic [31:0] exec_value;
-  logic [3:0] compare_cr0;
-  logic compare_lt, compare_eq;
   logic [7:0] load_byte;
   logic [15:0] load_half;
   logic misaligned;
@@ -393,14 +389,6 @@ module ppc_special #(
                           (cr_i[31-uop_i.branch_bi] == uop_i.branch_bo[3]);
 
   always_comb begin
-    compare_eq = (a_q == b_q);
-    if (uop_q.special_op == SPECIAL_CMP)
-      compare_lt = $signed(a_q) < $signed(b_q);
-    else
-      compare_lt = a_q < b_q;
-    compare_cr0 = {compare_lt, !compare_lt && !compare_eq,
-                   compare_eq, so_q};
-
     case (uop_q.spr)
       10'd1: exec_value = {xer_flags_q, 22'b0, xer_byte_count_q};
       10'd8: exec_value = lr_q;
@@ -465,9 +453,6 @@ module ppc_special #(
         result_o.ov = 1'b0;
         result_o.so = 1'b0;
       end
-      if ((uop_q.special_op == SPECIAL_CMP) ||
-          (uop_q.special_op == SPECIAL_CMPL))
-        result_o.cr0 = compare_cr0;
       if ((uop_q.special_op == SPECIAL_MTMSR) &&
           mtmsr_unsupported) result_o.fault = 1'b1;
       if ((uop_q.special_op == SPECIAL_RFI) &&
@@ -935,7 +920,6 @@ module ppc_special #(
       cr_snapshot_q <= '0;
       xer_flags_q <= '0;
       xer_byte_count_q <= '0;
-      so_q <= 1'b0;
       ea_q <= '0;
       fetch_page_miss_q <= '0;
     end else if (interrupt_accept) begin
@@ -952,7 +936,6 @@ module ppc_special #(
       cr_snapshot_q <= cr_i;
       xer_flags_q <= xer_flags_i;
       xer_byte_count_q <= xer_byte_count_i;
-      so_q <= so_i;
       ea_q <= a_i + b_i;
     end
   end

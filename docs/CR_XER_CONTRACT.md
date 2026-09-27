@@ -154,7 +154,7 @@ Before improving flag throughput, separately review per-field CA/SO dependencies
 
 ## Selected-field comparison extension
 
-The control/memory milestone retains the exact CQ-tag flag owner and adds an allocation-controlled `cr_field` selector. Existing record forms use field zero. The `write_cr_field` permission (formerly `write_cr0`) now enables one selected four-bit field: the completion result is shifted into that field, and committed flags apply the corresponding mask. Comparisons capture SO after older work drains and update no XER bits. The independent program checks all BF values, signed/unsigned immediate/register comparisons and preserved nonselected fields. This supersedes the CR0-only mask restriction for comparison packets; it does not add speculative flag forwarding.
+The control/memory milestone retains the exact CQ-tag flag owner and adds an allocation-controlled `cr_field` selector. Existing record forms use field zero. The `write_cr_field` permission (formerly `write_cr0`) now enables one selected four-bit field: the completion result is shifted into that field, and committed flags apply the corresponding mask. Comparisons take SO from committed XER at dispatch while holding the flag token, and update no XER bits; they execute on the IU adder without draining older work ([CONTROL_MEMORY.md](CONTROL_MEMORY.md#compares)). The independent program checks all BF values, signed/unsigned immediate/register comparisons and preserved nonselected fields. This supersedes the CR0-only mask restriction for comparison packets; it does not add speculative flag forwarding.
 
 ## Round 26 selected CR-field transfer extension
 
