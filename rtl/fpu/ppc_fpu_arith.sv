@@ -1,5 +1,7 @@
 `default_nettype none
-module ppc_fpu_arith (
+module ppc_fpu_arith #(
+    parameter bit CPU_602 = 1'b0
+) (
     input  logic clk_i,
     input  logic rst_ni,
     input  logic req_valid_i,
@@ -8,6 +10,8 @@ module ppc_fpu_arith (
     output logic rsp_valid_o,
     input  logic rsp_ready_i,
     output ppc_fpu_pkg::ppc_fpu_arith_rsp_t rsp_o,
+    output logic finish_valid_o,
+    output ppc_fpu_pkg::ppc_fpu_arith_rsp_t finish_o,
     input  logic flush_i
 );
     import ppc_fpu_pkg::*;
@@ -140,6 +144,7 @@ module ppc_fpu_arith (
         logic signed [15:0] exponent;
         logic sign;
         logic negate_final;
+        logic tiny_before;
         logic overflow;
         logic ox;
         logic ux;
@@ -159,41 +164,67 @@ module ppc_fpu_arith (
         logic increment;
     } round_pre_t;
 
-    typedef enum logic [4:0] {
-        IDLE, CALC, CONV_PREP, CONV_SHIFT, CONV_FINISH,
-        DIV_START, DIVIDE,
-        PREP, PREP_MUL, PREP_MID, PREP_LOW, PREP_PRODUCT,
-        ALIGN_PLAN, ALIGN_SHIFT,
-        SUM_PLAN, SUM_0, SUM_1, SUM_2, SUM_3,
-        NORM_HIGH_A, NORM_HIGH_B, NORM_LOW_A, NORM_LOW_B,
-        TINY, ROUND_PRE, ROUND, PACK, RESPONSE
-    } state_t;
-    state_t state_q;
-    ppc_fpu_arith_req_t req_q;
-    logic round_single_q;
-    ppc_fpu_arith_rsp_t rsp_q;
-    operand_t calc_b_q;
-    operand_t conv_source_q;
-    conv_parts_t conv_parts_q;
-    finite_operands_t finite_operands_q;
-    mul_parts_t mul_parts_q;
-    mul_mid_t mul_mid_q;
-    mul_low_t mul_low_q;
-    finite_prep_t prep_q;
-    align_plan_t align_plan_q;
-    align_data_t align_data_q;
-    sum_chunks_t sum_plan_q;
-    sum_chunks_t sum_0_q;
-    sum_chunks_t sum_1_q;
-    sum_chunks_t sum_2_q;
-    finite_sum_t sum_q;
-    finite_sum_t norm_high_a_q;
-    finite_sum_t norm_high_q;
-    finite_sum_t norm_low_a_q;
-    finite_sum_t norm_low_q;
-    round_work_t round_work_q;
-    round_pre_t round_pre_q;
-    round_post_t round_post_q;
+
+    typedef struct packed {
+        ppc_fpu_arith_req_t req;
+        logic finite;
+        logic conversion;
+        logic dp_multiply;
+        ppc_fpu_arith_rsp_t special_rsp;
+        conv_parts_t conversion_parts;
+        finite_operands_t operands;
+        mul_parts_t products;
+        align_plan_t plan;
+    } multiply_stage_t;
+
+    typedef struct packed {
+        ppc_fpu_arith_req_t req;
+        logic finite;
+        logic conversion;
+        ppc_fpu_arith_rsp_t special_rsp;
+        conv_parts_t conversion_parts;
+        align_plan_t plan;
+    } add_input_t;
+
+    typedef struct packed {
+        ppc_fpu_arith_req_t req;
+        logic finite;
+        logic conversion;
+        ppc_fpu_arith_rsp_t special_rsp;
+        conv_parts_t conversion_parts;
+        finite_sum_t sum;
+        logic [7:0] leading_zero;
+    } round_input_t;
+
+    typedef enum logic [3:0] {
+        DIV_IDLE, DIV_START, DIV_ITER, DIV_SP_NORM_TINY,
+        DIV_NORM, DIV_TINY, DIV_PRE, DIV_ROUND, DIV_PACK,
+        DIV_SPECIAL
+    } divide_state_t;
+
+    typedef struct packed {
+        ppc_pkg::completion_tag_t tag;
+        ppc_fpu_op_t op;
+        logic [1:0] rn;
+        logic ni;
+        logic oe;
+        logic ue;
+        logic single_result;
+    } divide_request_t;
+
+    ppc_fpu_arith_req_t input_q;
+    logic input_valid_q;
+    multiply_stage_t multiply_q;
+    logic multiply_valid_q;
+    add_input_t multiply_double_q;
+    logic multiply_double_valid_q;
+    round_input_t add_q;
+    logic add_valid_q;
+
+    divide_state_t divide_state_q;
+    divide_request_t divide_req_q;
+    ppc_fpu_arith_rsp_t divide_special_rsp_q;
+    logic [5:0] divide_special_count_q;
     logic [52:0] div_remainder_q;
     logic [52:0] div_denominator_q;
     logic [53:0] div_denominator_x2_q;
@@ -206,11 +237,25 @@ module ppc_fpu_arith (
     logic signed [15:0] div_b_exp_q;
     logic signed [15:0] div_result_exp_q;
     logic div_result_sign_q;
-    logic [52:0] div_start_numerator;
-    logic [53:0] div_start_difference;
-    logic launch_divide;
-    logic launch_finite;
+    finite_sum_t div_sum_q;
+    round_work_t div_work_q;
+    round_pre_t div_pre_q;
+    round_post_t div_post_q;
 
+    ppc_fpu_arith_rsp_t response_q [0:3];
+    logic [1:0] response_read_q;
+    logic [1:0] response_write_q;
+    logic [2:0] response_count_q;
+    logic [2:0] outstanding_q;
+    logic accept;
+    logic retire;
+    logic push_response;
+    ppc_fpu_arith_rsp_t pushed_response;
+    logic divide_request;
+    logic [54:0] div_trial;
+    logic [52:0] div_remainder_next;
+    logic [54:0] div_quotient_next;
+    logic [1:0] div_digit;
     function automatic logic [5:0] leading_zero53(input logic [52:0] value);
         logic [52:0] work;
         logic [5:0] count;
@@ -271,11 +316,10 @@ module ppc_fpu_arith (
 
     function automatic logic signed [15:0] finite_exp(input logic [62:0] magnitude);
         logic signed [15:0] exponent;
-        logic [52:0] significand;
         if (magnitude[62:52] == 11'd0) begin
             exponent = -16'sd1022;
-            significand = {1'b0, magnitude[51:0]};
-            exponent = exponent - 16'(leading_zero53(significand));
+            exponent = exponent -
+                16'(leading_zero53({1'b0, magnitude[51:0]}));
         end else exponent = $signed({5'd0, magnitude[62:52]}) - 16'sd1023;
         return exponent;
     endfunction
@@ -456,6 +500,7 @@ module ppc_fpu_arith (
         out.exponent = value.exponent;
         out.sign = value.sign;
         out.negate_final = value.negate_final;
+        out.tiny_before = value.tiny_before;
         if (value.zero) return out;
         kept = value.kept;
         max_exp = single_result ? 16'sd127 : 16'sd1023;
@@ -508,11 +553,12 @@ module ppc_fpu_arith (
         out = '0;
         out.tag = tag;
         out.write_result = 1'b1;
-        out.frfi_valid = op != FP_FRES;
+        out.frfi_valid = op != FP_FRES || CPU_602;
         out.fprf_valid = 1'b1;
+        out.tiny_before_round = value.tiny_before;
         out.ox = value.ox;
         out.ux = value.ux;
-        out.xx = (op == FP_FRES) ? 1'b0 : value.xx;
+        out.xx = (op == FP_FRES && !CPU_602) ? 1'b0 : value.xx;
         out.fr = value.fr;
         out.fi = value.fi;
         min_exp = single_result ? -16'sd126 : -16'sd1022;
@@ -529,7 +575,8 @@ module ppc_fpu_arith (
                 out.result = {value.sign, 11'd1150, {23{1'b1}}, 29'd0};
             else out.result = {value.sign, 11'h7fe, {52{1'b1}}};
             out.fprf = result_class(out.result);
-        end else if (wide == 0 || (ni && denorm_result)) begin
+        end else if (wide == 0 ||
+            (ni && (CPU_602 ? value.tiny_before : denorm_result))) begin
             out.result = {value.sign, 63'd0};
             out.fprf = result_class(out.result);
         end else if (!single_result && denorm_result) begin
@@ -1011,7 +1058,8 @@ module ppc_fpu_arith (
             out.write_result = !(ve && (|out.invalid));
             out.fprf_valid = out.write_result;
             if (op == FP_FRES || op == FP_FRSQRTE)
-                out.frfi_valid = |out.invalid;
+                out.frfi_valid = CPU_602 && op == FP_FRES ?
+                    1'b1 : |out.invalid;
             return out;
         end
         if (op == FP_FRSP) begin
@@ -1078,7 +1126,7 @@ module ppc_fpu_arith (
             if (b.inf) begin
                 out.result = {b.sign, 63'd0};
                 out.fprf = result_class(out.result);
-                out.frfi_valid = 1'b0;
+                out.frfi_valid = CPU_602 && op == FP_FRES;
                 return out;
             end
         end
@@ -1118,41 +1166,288 @@ module ppc_fpu_arith (
         return out;
     endfunction
 
+
+    // The single-result source-format contract makes these low bits zero.
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic logic [105:0] multiply_single(
+        input logic [52:0] a_sig, input logic [52:0] c_sig
+    );
+        logic [47:0] product;
+        product = a_sig[52:29] * c_sig[52:29];
+        return {product, 58'd0};
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    function automatic finite_sum_t add_aligned(
+        input align_plan_t plan, input logic [1:0] rn
+    );
+        align_data_t aligned;
+        sum_chunks_t chunks;
+        aligned = shift_alignment(plan);
+        chunks = plan_sum(aligned, rn);
+        chunks = sum_chunk_0(chunks);
+        chunks = sum_chunk_1(chunks);
+        chunks = sum_chunk_2(chunks);
+        return finish_sum(chunks);
+    endfunction
+
+    function automatic logic [7:0] leading_zero160(
+        input logic [159:0] value
+    );
+        logic [159:0] work;
+        logic [7:0] count;
+        if (value == 160'd0) return 8'd160;
+        work = value;
+        count = 8'd0;
+        if (work[159:32] == 128'd0) begin
+            work <<= 128;
+            count += 8'd128;
+        end
+        if (work[159:96] == 64'd0) begin
+            work <<= 64;
+            count += 8'd64;
+        end
+        if (work[159:128] == 32'd0) begin
+            work <<= 32;
+            count += 8'd32;
+        end
+        if (work[159:144] == 16'd0) begin
+            work <<= 16;
+            count += 8'd16;
+        end
+        if (work[159:152] == 8'd0) begin
+            work <<= 8;
+            count += 8'd8;
+        end
+        if (work[159:156] == 4'd0) begin
+            work <<= 4;
+            count += 8'd4;
+        end
+        if (work[159:158] == 2'd0) begin
+            work <<= 2;
+            count += 8'd2;
+        end
+        if (!work[159]) count += 8'd1;
+        return count;
+    endfunction
+
+    function automatic round_work_t direct_round_work(
+        input finite_sum_t value,
+        input logic [7:0] leading_zero,
+        input logic single_result,
+        input logic ue
+    );
+        round_work_t out;
+        logic signed [15:0] min_exp;
+        logic signed [15:0] scale;
+        logic signed [15:0] normalized_exp;
+        logic [7:0] left_distance;
+        int signed denorm_distance;
+        out = '0;
+        out.sign = value.sign;
+        out.negate_final = value.negate_final;
+        out.exponent = value.exponent;
+        min_exp = single_result ? -16'sd126 : -16'sd1022;
+        scale = single_result ? 16'sd192 : 16'sd1536;
+        normalized_exp = value.exponent;
+        left_distance = 8'd0;
+        denorm_distance = 0;
+        if (value.magnitude == 160'd0) return out;
+        if (value.magnitude[159])
+            normalized_exp = value.exponent + 16'sd1;
+        else begin
+            left_distance = leading_zero - 8'd1;
+            normalized_exp = value.exponent -
+                $signed({8'd0, left_distance});
+        end
+        out.tiny_before = normalized_exp < min_exp;
+        if (out.tiny_before && !ue) begin
+            denorm_distance = int'(min_exp) - int'(value.exponent);
+            if (denorm_distance > 0)
+                out.magnitude = shift_right_jam(value.magnitude,
+                    unsigned'(denorm_distance));
+            else out.magnitude = value.magnitude <<
+                unsigned'(-denorm_distance);
+            out.exponent = min_exp;
+        end else begin
+            out.magnitude = value.magnitude[159] ?
+                shift_right_jam(value.magnitude, 1) :
+                (value.magnitude << left_distance);
+            out.exponent = normalized_exp;
+            if (out.tiny_before) out.exponent += scale;
+        end
+        return out;
+    endfunction
+
+    function automatic ppc_fpu_arith_rsp_t round_finite(
+        input finite_sum_t value,
+        input logic [7:0] leading_zero,
+        input ppc_pkg::completion_tag_t tag,
+        input ppc_fpu_op_t op,
+        input logic single,
+        input logic [1:0] rn,
+        input logic ni,
+        input logic oe,
+        input logic ue
+    );
+        finite_sum_t normalized;
+        round_work_t work;
+        round_pre_t pre;
+        round_post_t post;
+        logic single_result;
+        single_result = single || op == FP_FRSP || op == FP_FRES;
+        normalized = value;
+        work = direct_round_work(normalized, leading_zero,
+            single_result, ue);
+        pre = prepare_round_mantissa(work, single_result, rn);
+        post = round_mantissa(pre, single_result, oe, ue);
+        return finish_rounded(post, tag, op, single_result,
+            rn, ni, oe);
+    endfunction
+
+    multiply_stage_t multiply_next;
+    add_input_t multiply_double_next;
+    add_input_t add_source;
+    round_input_t add_next;
+    ppc_fpu_arith_rsp_t round_response;
+    finite_operands_t work_operands;
+    finite_prep_t multiply_prep;
+    finite_prep_t multiply_double_prep;
+    logic [105:0] multiply_product;
+    logic [105:0] multiply_double_product;
+    logic [53:0] div_start_difference;
+
     always_comb begin
-        launch_divide = 1'b0;
-        if (req_i.op == FP_DIV)
-            launch_divide = (req_i.a[62:0] != 63'd0) &&
-                (req_i.a[62:52] != 11'h7ff) &&
-                (req_i.b[62:0] != 63'd0) &&
-                (req_i.b[62:52] != 11'h7ff);
-        else if (req_i.op == FP_FRES)
-            launch_divide = (req_i.b[62:0] != 63'd0) &&
-                (req_i.b[62:52] != 11'h7ff);
-        launch_finite = 1'b0;
-        case (req_i.op)
-            FP_ADD, FP_SUB:
-                launch_finite = req_i.a[62:52] != 11'h7ff &&
-                    req_i.b[62:52] != 11'h7ff;
-            FP_MUL:
-                launch_finite = req_i.a[62:52] != 11'h7ff &&
-                    req_i.c[62:52] != 11'h7ff;
-            FP_MADD, FP_MSUB, FP_NMADD, FP_NMSUB:
-                launch_finite = req_i.a[62:52] != 11'h7ff &&
-                    req_i.b[62:52] != 11'h7ff &&
-                    req_i.c[62:52] != 11'h7ff;
-            FP_FRSP: launch_finite = req_i.b[62:52] != 11'h7ff;
-            default: begin end
-        endcase
+        divide_request = req_i.op == FP_DIV || req_i.op == FP_FRES;
     end
 
-    assign div_start_numerator = div_a_sig_q;
-    assign div_start_difference = {1'b0, div_start_numerator} -
+    always_comb begin
+        multiply_next = '0;
+        work_operands = '0;
+        multiply_prep = '0;
+        multiply_product = '0;
+        multiply_next.req = input_q;
+        multiply_next.dp_multiply = !CPU_602 &&
+            (input_q.op == FP_MUL ||
+            input_q.op == FP_MADD || input_q.op == FP_MSUB ||
+            input_q.op == FP_NMADD || input_q.op == FP_NMSUB) &&
+            !input_q.single_result;
+        multiply_next.conversion = input_q.op == FP_FCTIW ||
+            input_q.op == FP_FCTIWZ;
+        case (input_q.op)
+            FP_ADD, FP_SUB:
+                multiply_next.finite =
+                    input_q.a[62:52] != 11'h7ff &&
+                    input_q.b[62:52] != 11'h7ff;
+            FP_MUL:
+                multiply_next.finite =
+                    input_q.a[62:52] != 11'h7ff &&
+                    input_q.c[62:52] != 11'h7ff;
+            FP_MADD, FP_MSUB, FP_NMADD, FP_NMSUB:
+                multiply_next.finite =
+                    input_q.a[62:52] != 11'h7ff &&
+                    input_q.b[62:52] != 11'h7ff &&
+                    input_q.c[62:52] != 11'h7ff;
+            FP_FRSP:
+                multiply_next.finite = input_q.b[62:52] != 11'h7ff;
+            default: begin end
+        endcase
+        if (multiply_next.conversion) begin
+            multiply_next.conversion_parts =
+                prepare_conversion(unpack(input_q.b));
+        end else if (multiply_next.finite) begin
+            work_operands = prepare_operands(input_q.a, input_q.b,
+                input_q.c);
+            multiply_next.operands = work_operands;
+            if (multiply_next.dp_multiply) begin
+                multiply_next.products = multiply_parts(
+                    work_operands.a_sig, work_operands.c_sig);
+            end else begin
+                if (input_q.op == FP_MUL || input_q.op == FP_MADD ||
+                    input_q.op == FP_MSUB || input_q.op == FP_NMADD ||
+                    input_q.op == FP_NMSUB)
+                    multiply_product = multiply_single(
+                        work_operands.a_sig, work_operands.c_sig);
+                multiply_prep = prepare_finite(input_q.op,
+                    work_operands.a_sig, work_operands.b_sig,
+                    work_operands.a_exp, work_operands.b_exp,
+                    work_operands.c_exp, work_operands.a_sign,
+                    work_operands.b_sign, work_operands.c_sign,
+                    multiply_product);
+                multiply_next.plan = plan_alignment(multiply_prep);
+            end
+        end else begin
+            multiply_next.special_rsp = calculate(input_q.tag, input_q.op,
+                input_q.a, input_q.b, input_q.c, unpack(input_q.b),
+                input_q.ve, input_q.ze);
+        end
+    end
+
+    always_comb begin
+        multiply_double_next = '0;
+        multiply_double_product = '0;
+        multiply_double_prep = '0;
+        multiply_double_next.req = multiply_q.req;
+        multiply_double_next.finite = multiply_q.finite;
+        multiply_double_next.conversion = multiply_q.conversion;
+        multiply_double_next.special_rsp = multiply_q.special_rsp;
+        multiply_double_next.conversion_parts =
+            multiply_q.conversion_parts;
+        if (multiply_q.finite) begin
+            multiply_double_product = multiply_finish(multiply_low(
+                multiply_mid(multiply_q.products)));
+            multiply_double_prep = prepare_finite(multiply_q.req.op,
+                multiply_q.operands.a_sig, multiply_q.operands.b_sig,
+                multiply_q.operands.a_exp, multiply_q.operands.b_exp,
+                multiply_q.operands.c_exp, multiply_q.operands.a_sign,
+                multiply_q.operands.b_sign, multiply_q.operands.c_sign,
+                multiply_double_product);
+            multiply_double_next.plan =
+                plan_alignment(multiply_double_prep);
+        end
+    end
+
+    always_comb begin
+        add_source = '0;
+        if (multiply_double_valid_q) add_source = multiply_double_q;
+        else begin
+            add_source.req = multiply_q.req;
+            add_source.finite = multiply_q.finite;
+            add_source.conversion = multiply_q.conversion;
+            add_source.special_rsp = multiply_q.special_rsp;
+            add_source.conversion_parts = multiply_q.conversion_parts;
+            add_source.plan = multiply_q.plan;
+        end
+        add_next = '0;
+        add_next.req = add_source.req;
+        add_next.finite = add_source.finite;
+        add_next.conversion = add_source.conversion;
+        add_next.special_rsp = add_source.special_rsp;
+        add_next.conversion_parts = add_source.conversion_parts;
+        if (add_source.finite)
+            add_next.sum = add_aligned(add_source.plan, add_source.req.rn);
+        if (add_source.finite)
+            add_next.leading_zero =
+                leading_zero160(add_next.sum.magnitude);
+    end
+
+    always_comb begin
+        round_response = '0;
+        if (add_q.finite)
+            round_response = round_finite(add_q.sum,
+                add_q.leading_zero, add_q.req.tag,
+                add_q.req.op, add_q.req.single_result, add_q.req.rn,
+                add_q.req.ni, add_q.req.oe, add_q.req.ue);
+        else if (add_q.conversion)
+            round_response = finish_conversion(add_q.req.tag,
+                add_q.req.op, add_q.req.rn, add_q.req.ve,
+                add_q.conversion_parts);
+        else round_response = add_q.special_rsp;
+    end
+
+    assign div_start_difference = {1'b0, div_a_sig_q} -
         {1'b0, div_b_sig_q};
 
-    logic [54:0] div_trial;
-    logic [52:0] div_remainder_next;
-    logic [54:0] div_quotient_next;
-    logic [1:0] div_digit;
     always_comb begin
         div_trial = {div_remainder_q, 2'b00};
         div_digit = 2'd0;
@@ -1167,222 +1462,195 @@ module ppc_fpu_arith (
             div_digit = 2'd1;
         end
         div_remainder_next = div_trial[52:0];
-        div_quotient_next = (div_quotient_q << 2) | {53'd0, div_digit};
+        div_quotient_next = (div_quotient_q << 2) |
+            {53'd0, div_digit};
     end
 
-    assign req_ready_o = rst_ni && state_q == IDLE && !flush_i;
-    assign rsp_valid_o = rst_ni && state_q == RESPONSE && !flush_i;
-    assign rsp_o = rsp_q;
+    assign req_ready_o = rst_ni && !flush_i &&
+        (outstanding_q < 3'd4 || retire) &&
+        divide_state_q == DIV_IDLE &&
+        !(input_valid_q && !CPU_602 &&
+            (input_q.op == FP_MUL ||
+            input_q.op == FP_MADD || input_q.op == FP_MSUB ||
+            input_q.op == FP_NMADD || input_q.op == FP_NMSUB) &&
+            !input_q.single_result);
+    assign accept = req_valid_i && req_ready_o;
+    assign rsp_valid_o = rst_ni && !flush_i &&
+        response_count_q != 3'd0;
+    assign rsp_o = response_q[response_read_q];
+    assign retire = rsp_valid_o && rsp_ready_i;
+    assign finish_valid_o = rst_ni && !flush_i && push_response;
+    assign finish_o = pushed_response;
+
+    always_comb begin
+        push_response = add_valid_q;
+        pushed_response = round_response;
+        if (divide_state_q == DIV_PACK) begin
+            push_response = 1'b1;
+            pushed_response = finish_rounded(div_post_q,
+                divide_req_q.tag, divide_req_q.op,
+                CPU_602 || divide_req_q.single_result ||
+                divide_req_q.op == FP_FRES,
+                divide_req_q.rn, divide_req_q.ni, divide_req_q.oe);
+        end else if (divide_state_q == DIV_SPECIAL &&
+            divide_special_count_q == 6'd1) begin
+            push_response = 1'b1;
+            pushed_response = divide_special_rsp_q;
+        end
+    end
 
     always_ff @(posedge clk_i) begin
         if (!rst_ni || flush_i) begin
-            state_q <= IDLE;
-            req_q <= '0;
-            round_single_q <= 1'b0;
-            rsp_q <= '0;
-            calc_b_q <= '0;
-            conv_source_q <= '0;
-            conv_parts_q <= '0;
-            finite_operands_q <= '0;
-            mul_parts_q <= '0;
-            mul_mid_q <= '0;
-            mul_low_q <= '0;
-            prep_q <= '0;
-            align_plan_q <= '0;
-            align_data_q <= '0;
-            sum_plan_q <= '0;
-            sum_0_q <= '0;
-            sum_1_q <= '0;
-            sum_2_q <= '0;
-            sum_q <= '0;
-            norm_high_a_q <= '0;
-            norm_high_q <= '0;
-            norm_low_a_q <= '0;
-            norm_low_q <= '0;
-            round_work_q <= '0;
-            round_pre_q <= '0;
-            round_post_q <= '0;
-            div_remainder_q <= '0;
-            div_a_sig_q <= '0;
-            div_b_sig_q <= '0;
-            div_a_exp_q <= '0;
-            div_b_exp_q <= '0;
-            div_result_exp_q <= '0;
-            div_result_sign_q <= '0;
-            div_denominator_q <= '0;
-            div_denominator_x2_q <= '0;
-            div_denominator_x3_q <= '0;
-            div_quotient_q <= '0;
-            div_rounds_q <= '0;
+            input_valid_q <= 1'b0;
+            multiply_valid_q <= 1'b0;
+            multiply_double_valid_q <= 1'b0;
+            add_valid_q <= 1'b0;
+            divide_state_q <= DIV_IDLE;
+            response_read_q <= 2'd0;
+            response_write_q <= 2'd0;
+            response_count_q <= 3'd0;
+            outstanding_q <= 3'd0;
         end else begin
-            case (state_q)
-                IDLE: if (req_valid_i) begin
-                    req_q <= req_i;
-                    round_single_q <= req_i.single_result ||
-                        req_i.op == FP_FRSP || req_i.op == FP_FRES;
-                    if (launch_divide) begin
-                        div_a_sig_q <= req_i.op == FP_FRES ?
-                            53'h10000000000000 : finite_sig(req_i.a[62:0]);
-                        div_b_sig_q <= finite_sig(req_i.b[62:0]);
-                        div_a_exp_q <= req_i.op == FP_FRES ? 16'sd0 :
-                            finite_exp(req_i.a[62:0]);
-                        div_b_exp_q <= finite_exp(req_i.b[62:0]);
-                        div_result_sign_q <= (req_i.op != FP_FRES &&
-                            req_i.a[63]) ^ req_i.b[63];
-                        state_q <= DIV_START;
+            input_valid_q <= accept && !divide_request;
+            if (accept && !divide_request) input_q <= req_i;
+            multiply_valid_q <= input_valid_q;
+            if (input_valid_q) multiply_q <= multiply_next;
+            multiply_double_valid_q <= multiply_valid_q &&
+                multiply_q.dp_multiply;
+            if (multiply_valid_q && multiply_q.dp_multiply)
+                multiply_double_q <= multiply_double_next;
+            add_valid_q <= multiply_double_valid_q ||
+                (multiply_valid_q && !multiply_q.dp_multiply);
+            if (multiply_double_valid_q ||
+                (multiply_valid_q && !multiply_q.dp_multiply))
+                add_q <= add_next;
+
+            if (accept && divide_request) begin
+                divide_req_q.tag <= req_i.tag;
+                divide_req_q.op <= req_i.op;
+                divide_req_q.rn <= req_i.rn;
+                divide_req_q.ni <= req_i.ni;
+                divide_req_q.oe <= req_i.oe;
+                divide_req_q.ue <= req_i.ue;
+                divide_req_q.single_result <=
+                    CPU_602 || req_i.single_result;
+                if (req_i.op == FP_FRES ||
+                    req_i.a[62:52] != 11'h7ff) begin
+                    div_a_sig_q <= req_i.op == FP_FRES ?
+                        53'h10000000000000 : finite_sig(req_i.a[62:0]);
+                end
+                div_b_sig_q <= finite_sig(req_i.b[62:0]);
+                div_result_sign_q <=
+                    ((req_i.op != FP_FRES) && req_i.a[63]) ^
+                    req_i.b[63];
+                if (req_i.op == FP_FRES)
+                    div_a_exp_q <= 16'sd0;
+                else div_a_exp_q <= finite_exp(req_i.a[62:0]);
+                div_b_exp_q <= finite_exp(req_i.b[62:0]);
+                if (req_i.b[62:0] != 63'd0 &&
+                    req_i.b[62:52] != 11'h7ff &&
+                    (req_i.op == FP_FRES ||
+                    (req_i.a[62:0] != 63'd0 &&
+                    req_i.a[62:52] != 11'h7ff))) begin
+                    divide_state_q <= DIV_START;
+                end else begin
+                    divide_special_rsp_q <= calculate(req_i.tag,
+                        req_i.op, req_i.a, req_i.b, req_i.c,
+                        unpack(req_i.b), req_i.ve, req_i.ze);
+                    divide_special_count_q <=
+                        (CPU_602 || req_i.op == FP_FRES ||
+                        req_i.single_result) ?
+                        6'd18 : 6'd33;
+                    divide_state_q <= DIV_SPECIAL;
+                end
+            end else begin
+                case (divide_state_q)
+                    DIV_START: begin
+                        div_result_exp_q <= div_a_exp_q - div_b_exp_q;
+                        div_denominator_q <= div_b_sig_q;
+                        div_denominator_x2_q <= {div_b_sig_q, 1'b0};
+                        div_denominator_x3_q <=
+                            {2'b00, div_b_sig_q} +
+                            {1'b0, div_b_sig_q, 1'b0};
+                        div_remainder_q <= div_start_difference[53] ?
+                            div_a_sig_q : div_start_difference[52:0];
+                        div_quotient_q <= div_start_difference[53] ?
+                            55'd0 : 55'd1;
+                        div_rounds_q <=
+                            (divide_req_q.single_result ||
+                            divide_req_q.op == FP_FRES) ?
+                            5'd13 : 5'd27;
+                        divide_state_q <= DIV_ITER;
                     end
-                    else if (launch_finite) state_q <= PREP;
-                    else if (req_i.op == FP_FCTIW || req_i.op == FP_FCTIWZ)
-                        state_q <= CONV_PREP;
-                    else begin
-                        calc_b_q <= unpack(req_i.b);
-                        state_q <= CALC;
+                    DIV_ITER: begin
+                        div_remainder_q <= div_remainder_next;
+                        div_quotient_q <= div_quotient_next;
+                        div_rounds_q <= div_rounds_q - 5'd1;
+                        if (div_rounds_q == 5'd1) begin
+                            div_sum_q <= prepare_division_sum(
+                                divide_req_q.op,
+                                divide_req_q.single_result,
+                                div_result_exp_q, div_result_sign_q,
+                                div_quotient_next,
+                                div_remainder_next != 53'd0);
+                            if (divide_req_q.single_result ||
+                                divide_req_q.op == FP_FRES)
+                                divide_state_q <= DIV_SP_NORM_TINY;
+                            else divide_state_q <= DIV_NORM;
+                        end
                     end
-                end
-                DIV_START: begin
-                    div_result_exp_q <= div_a_exp_q - div_b_exp_q;
-                    div_denominator_q <= div_b_sig_q;
-                    div_denominator_x2_q <= {div_b_sig_q, 1'b0};
-                    div_denominator_x3_q <= {2'b00, div_b_sig_q} +
-                        {1'b0, div_b_sig_q, 1'b0};
-                    div_remainder_q <= div_start_difference[53] ?
-                        div_start_numerator : div_start_difference[52:0];
-                    div_quotient_q <= div_start_difference[53] ?
-                        55'd0 : 55'd1;
-                    div_rounds_q <= (req_q.single_result ||
-                        req_q.op == FP_FRES) ? 5'd13 : 5'd27;
-                    state_q <= DIVIDE;
-                end
-                CALC: begin
-                    rsp_q <= calculate(req_q.tag, req_q.op, req_q.a, req_q.b,
-                        req_q.c, calc_b_q, req_q.ve, req_q.ze);
-                    state_q <= RESPONSE;
-                end
-                CONV_PREP: begin
-                    conv_source_q <= unpack(req_q.b);
-                    state_q <= CONV_SHIFT;
-                end
-                CONV_SHIFT: begin
-                    conv_parts_q <= prepare_conversion(conv_source_q);
-                    state_q <= CONV_FINISH;
-                end
-                CONV_FINISH: begin
-                    rsp_q <= finish_conversion(req_q.tag, req_q.op, req_q.rn,
-                        req_q.ve, conv_parts_q);
-                    state_q <= RESPONSE;
-                end
-                PREP: begin
-                    finite_operands_q <= prepare_operands(req_q.a, req_q.b,
-                        req_q.c);
-                    if (req_q.op == FP_MUL || req_q.op == FP_MADD ||
-                        req_q.op == FP_MSUB || req_q.op == FP_NMADD ||
-                        req_q.op == FP_NMSUB)
-                        state_q <= PREP_MUL;
-                    else state_q <= PREP_PRODUCT;
-                end
-                PREP_MUL: begin
-                    mul_parts_q <= multiply_parts(finite_operands_q.a_sig,
-                        finite_operands_q.c_sig);
-                    state_q <= PREP_MID;
-                end
-                PREP_MID: begin
-                    mul_mid_q <= multiply_mid(mul_parts_q);
-                    state_q <= PREP_LOW;
-                end
-                PREP_LOW: begin
-                    mul_low_q <= multiply_low(mul_mid_q);
-                    state_q <= PREP_PRODUCT;
-                end
-                PREP_PRODUCT: begin
-                    prep_q <= prepare_finite(req_q.op,
-                        finite_operands_q.a_sig, finite_operands_q.b_sig,
-                        finite_operands_q.a_exp, finite_operands_q.b_exp,
-                        finite_operands_q.c_exp, finite_operands_q.a_sign,
-                        finite_operands_q.b_sign, finite_operands_q.c_sign,
-                        multiply_finish(mul_low_q));
-                    state_q <= ALIGN_PLAN;
-                end
-                ALIGN_PLAN: begin
-                    align_plan_q <= plan_alignment(prep_q);
-                    state_q <= ALIGN_SHIFT;
-                end
-                ALIGN_SHIFT: begin
-                    align_data_q <= shift_alignment(align_plan_q);
-                    state_q <= SUM_PLAN;
-                end
-                SUM_PLAN: begin
-                    sum_plan_q <= plan_sum(align_data_q, req_q.rn);
-                    state_q <= SUM_0;
-                end
-                SUM_0: begin
-                    sum_0_q <= sum_chunk_0(sum_plan_q);
-                    state_q <= SUM_1;
-                end
-                SUM_1: begin
-                    sum_1_q <= sum_chunk_1(sum_0_q);
-                    state_q <= SUM_2;
-                end
-                SUM_2: begin
-                    sum_2_q <= sum_chunk_2(sum_1_q);
-                    state_q <= SUM_3;
-                end
-                SUM_3: begin
-                    sum_q <= finish_sum(sum_2_q);
-                    state_q <= NORM_HIGH_A;
-                end
-                NORM_HIGH_A: begin
-                    norm_high_a_q <= normalize_high_a(sum_q);
-                    state_q <= NORM_HIGH_B;
-                end
-                NORM_HIGH_B: begin
-                    norm_high_q <= normalize_high_b(norm_high_a_q);
-                    state_q <= NORM_LOW_A;
-                end
-                NORM_LOW_A: begin
-                    norm_low_a_q <= normalize_low_a(norm_high_q);
-                    state_q <= NORM_LOW_B;
-                end
-                NORM_LOW_B: begin
-                    norm_low_q <= normalize_low_b(norm_low_a_q);
-                    state_q <= TINY;
-                end
-                TINY: begin
-                    round_work_q <= prepare_tiny(norm_low_q,
-                        round_single_q, req_q.ue);
-                    state_q <= ROUND_PRE;
-                end
-                ROUND_PRE: begin
-                    round_pre_q <= prepare_round_mantissa(round_work_q,
-                        round_single_q, req_q.rn);
-                    state_q <= ROUND;
-                end
-                ROUND: begin
-                    round_post_q <= round_mantissa(round_pre_q,
-                        round_single_q, req_q.oe, req_q.ue);
-                    state_q <= PACK;
-                end
-                PACK: begin
-                    rsp_q <= finish_rounded(round_post_q, req_q.tag, req_q.op,
-                        round_single_q, req_q.rn, req_q.ni, req_q.oe);
-                    state_q <= RESPONSE;
-                end
-                DIVIDE: begin
-                    div_remainder_q <= div_remainder_next;
-                    div_quotient_q <= div_quotient_next;
-                    div_rounds_q <= div_rounds_q - 5'd1;
-                    if (div_rounds_q == 5'd1) begin
-                        // The normalized quotient is in [0.5, 2), so its
-                        // leading one is bit 157 or 158. Coarse normalization
-                        // and the 8/4 shifts cannot change it.
-                        norm_low_a_q <= prepare_division_sum(req_q.op,
-                            req_q.single_result, div_result_exp_q,
-                            div_result_sign_q,
-                            div_quotient_next, div_remainder_next != 53'd0);
-                        state_q <= NORM_LOW_B;
+                    DIV_SP_NORM_TINY: begin
+                        div_work_q <= prepare_tiny(normalize_low_b(
+                            div_sum_q), 1'b1, divide_req_q.ue);
+                        divide_state_q <= DIV_PRE;
                     end
-                end
-                RESPONSE: if (rsp_ready_i) state_q <= IDLE;
-                default: state_q <= IDLE;
+                    DIV_NORM: begin
+                        div_sum_q <= normalize_low_b(div_sum_q);
+                        divide_state_q <= DIV_TINY;
+                    end
+                    DIV_TINY: begin
+                        div_work_q <= prepare_tiny(div_sum_q,
+                            1'b0, divide_req_q.ue);
+                        divide_state_q <= DIV_PRE;
+                    end
+                    DIV_PRE: begin
+                        div_pre_q <= prepare_round_mantissa(div_work_q,
+                            divide_req_q.single_result ||
+                            divide_req_q.op == FP_FRES, divide_req_q.rn);
+                        divide_state_q <= DIV_ROUND;
+                    end
+                    DIV_ROUND: begin
+                        div_post_q <= round_mantissa(div_pre_q,
+                            divide_req_q.single_result ||
+                            divide_req_q.op == FP_FRES,
+                            divide_req_q.oe, divide_req_q.ue);
+                        divide_state_q <= DIV_PACK;
+                    end
+                    DIV_PACK: divide_state_q <= DIV_IDLE;
+                    DIV_SPECIAL: begin
+                        divide_special_count_q <=
+                            divide_special_count_q - 6'd1;
+                        if (divide_special_count_q == 6'd1)
+                            divide_state_q <= DIV_IDLE;
+                    end
+                    default: begin end
+                endcase
+            end
+
+            if (push_response) begin
+                response_q[response_write_q] <= pushed_response;
+                response_write_q <= response_write_q + 2'd1;
+            end
+            if (retire) response_read_q <= response_read_q + 2'd1;
+            case ({push_response, retire})
+                2'b10: response_count_q <= response_count_q + 3'd1;
+                2'b01: response_count_q <= response_count_q - 3'd1;
+                default: begin end
+            endcase
+            case ({accept, retire})
+                2'b10: outstanding_q <= outstanding_q + 3'd1;
+                2'b01: outstanding_q <= outstanding_q - 3'd1;
+                default: begin end
             endcase
         end
     end
