@@ -13,7 +13,8 @@ and data values solely from physical address, TC, transfer type/size, data and
 acknowledgment pins. Instruction transfers must be four-beat cacheable bursts;
 data transfers must be scalar reads/writes. A literal critical-doubleword order
 table selects instruction data. Byte stores update only their physical lanes.
-The bench varies bus grants and acknowledgments and stalls retirement. Core
+The shared `tb/bfm/bus60x_delay_target_bfm.sv` varies bus grants and
+acknowledgments, and the bench stalls retirement. Core
 signal taps count fetches and export architectural state; they do not choose
 memory responses or interpret instructions.
 

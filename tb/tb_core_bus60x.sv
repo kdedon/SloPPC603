@@ -103,10 +103,6 @@ module tb_core_bus60x;
   logic [2:0] tsiz;
   logic [1:0] tc, cse;
   logic [63:0] bus_di, bus_do;
-  logic address_pending = 0, transfer_pending = 0;
-  logic transfer_write = 0;
-  logic [31:0] transfer_addr = 0;
-  int address_delay = 0, data_delay = 0, transfer_size = 0;
   int bus_reads = 0, bus_writes = 0;
   ppc_bus60x bus_adapter (
     .clk_i(clk), .rst_ni(rst_n),
@@ -125,52 +121,43 @@ module tb_core_bus60x;
     .ta_n_i(ta_n), .drtry_n_i(1'b1), .tea_n_i(1'b1)
   );
   assign dr = adapter_ready && edge_count%4 == 0;
-  assign bg_n = !(rst_n && !br_n && edge_count%3 != 0);
-  assign aack_n = !(address_pending && address_delay == 0);
-  assign dbg_n = !(transfer_pending && !address_pending && edge_count%4 != 1);
-  assign ta_n = !(transfer_pending && dbb_oe && !dbb_n && data_delay == 0);
+  bus60x_delay_target_bfm target (
+    .clk_i(clk), .rst_ni(rst_n), .phase_i(edge_count),
+    .br_n_i(br_n), .ts_n_i(ts_n), .ts_oe_i(ts_oe), .a_i(bus_addr), .tt_i(tt),
+    .tsiz_i(tsiz), .tbst_n_i(tbst_n), .tc_i(tc), .dbb_n_i(dbb_n), .dbb_oe_i(dbb_oe),
+    .bg_n_o(bg_n), .aack_n_o(aack_n), .dbg_n_o(dbg_n), .ta_n_o(ta_n)
+  );
   always_comb begin
     bus_di = '0;
-    if (transfer_pending && !transfer_write && transfer_addr >= 32'h1000 && transfer_addr < 32'h1100)
+    if (target.transfer_pending && !target.transfer_write && target.transfer_addr >= 32'h1000 && target.transfer_addr < 32'h1100)
       for (int lane = 0; lane < 8; lane++)
-        bus_di[63-8*lane -: 8] = mem[int'((transfer_addr & 32'hfffffff8)-32'h1000)+lane];
+        bus_di[63-8*lane -: 8] = mem[int'((target.transfer_addr & 32'hfffffff8)-32'h1000)+lane];
   end
   always @(posedge clk) begin
-    if (!rst_n) begin
-      address_pending <= 0; transfer_pending <= 0;
-      address_delay <= 0; data_delay <= 0;
-    end else begin
+    if (rst_n) begin
       require(!bus_error, "adapter reported protocol error");
       require(!(rv && re), "unexpected bus error response");
-      if (address_delay > 0) address_delay <= address_delay-1;
-      if (data_delay > 0 && dbb_oe && !dbb_n) data_delay <= data_delay-1;
-      if (!aack_n) address_pending <= 0;
       if (ts_oe && !ts_n) begin
-        require(addr_oe && abb_oe && !abb_n && !transfer_pending,
+        require(addr_oe && abb_oe && !abb_n && !target.transfer_pending,
                 "address tenure overlap or missing ownership");
         require(tbst_n && !ci_n && gbl_n && tc == 0 && cse == 0,
                 "unexpected transfer attributes");
         require(tt == 5'b01010 || tt == 5'b00010, "unexpected transaction type");
         require(tsiz == 1 || tsiz == 2 || tsiz == 4, "unexpected scalar size");
         require(bus_addr >= 32'h1000 && bus_addr < 32'h1100, "bus address outside RAM");
-        address_pending <= 1; transfer_pending <= 1;
-        address_delay <= 1+edge_count%3; data_delay <= 2+edge_count%4;
-        transfer_addr <= bus_addr; transfer_write <= tt == 5'b00010;
-        transfer_size <= int'(tsiz);
       end
       if (!ta_n) begin
-        require(transfer_pending, "data acknowledgement without transaction");
-        if (transfer_write) begin
+        require(target.transfer_pending, "data acknowledgement without transaction");
+        if (target.transfer_write) begin
           require(d_oe, "write accepted without data ownership");
           bus_writes++;
           for (int byte_index=0; byte_index<4; byte_index++)
-            if (byte_index < transfer_size) mem[int'(transfer_addr-32'h1000)+byte_index] <=
-              bus_do[63-8*(int'(transfer_addr[2:0])+byte_index) -: 8];
+            if (byte_index < target.transfer_size) mem[int'(target.transfer_addr-32'h1000)+byte_index] <=
+              bus_do[63-8*(int'(target.transfer_addr[2:0])+byte_index) -: 8];
         end else begin
           require(!d_oe, "processor drives read data");
           bus_reads++;
         end
-        transfer_pending <= 0;
       end
       if (halted) begin
         require(bus_reads == read_requests && bus_writes == write_requests,

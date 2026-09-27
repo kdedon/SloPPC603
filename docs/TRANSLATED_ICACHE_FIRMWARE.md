@@ -16,7 +16,7 @@ doubleword; the responder supplies four 64-bit beats in
 `(start[4:3] + beat) mod 4` order within its 32-byte line. Reads come from
 physical RAM bytes, and scalar byte/halfword/word stores update RAM only at
 accepted `TA` from the external write-data lanes. Address and data grants have
-independent waits. The test never fabricates an instruction or data response
+independent waits from `tb/bfm/bus60x_delay_target_bfm.sv`. The test never fabricates an instruction or data response
 from the wrapper's internal physical-request wires.
 
 The `table-search` profile checks four exact primary/secondary PTEG scans,

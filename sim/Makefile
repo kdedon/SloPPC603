@@ -39,7 +39,7 @@ build-control-memory:
 
 build-core-bus60x:
 	mkdir -p $(BUILD_DIR)/core-bus60x
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bus60x --Mdir $(BUILD_DIR)/core-bus60x $(RTL) $(BUS_RTL) ../tb/tb_core_bus60x.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bus60x --Mdir $(BUILD_DIR)/core-bus60x $(RTL) $(BUS_RTL) ../tb/bfm/bus60x_delay_target_bfm.sv ../tb/tb_core_bus60x.sv
 
 build-core-add-recovery:
 	mkdir -p $(BUILD_DIR)/core-add-recovery
@@ -47,7 +47,7 @@ build-core-add-recovery:
 
 build-core-bus60x-unified:
 	mkdir -p $(BUILD_DIR)/core-bus60x-unified
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bus60x_unified --Mdir $(BUILD_DIR)/core-bus60x-unified $(RTL) $(BUS_RTL) $(SYSTEM_RTL) ../tb/tb_core_bus60x_unified.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bus60x_unified --Mdir $(BUILD_DIR)/core-bus60x-unified $(RTL) $(BUS_RTL) $(SYSTEM_RTL) ../tb/bfm/bus60x_delay_target_bfm.sv ../tb/tb_core_bus60x_unified.sv
 
 lint:
 	cd ../quartus/timer-bat && $(VERILATOR) --lint-only -Wall --top-module ppc_timer_bat_measure -f files.f

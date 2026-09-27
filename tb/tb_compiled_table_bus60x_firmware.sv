@@ -35,10 +35,6 @@ module tb_compiled_table_bus60x_firmware #(
   logic [2:0] tsiz;
   logic [1:0] tc,cse;
   logic [63:0] d_i,d_o;
-  logic address_pending=0,transfer_pending=0;
-  logic transfer_write=0,transfer_instruction=0;
-  logic [31:0] transfer_addr=0;
-  int transfer_size=0,address_delay=0,data_delay=0;
   logic pin_done=0,pin_done_write=0;
   logic [31:0] pin_done_addr=0;
   int pin_done_size=0;
@@ -131,33 +127,30 @@ module tb_compiled_table_bus60x_firmware #(
     return $sformatf(" profile=%0d marker=%0d bus=%08x",FAULT_PROFILE,active_marker,a);
   endfunction
   assign tr=rst_n&&cycles%7>=2;
-  assign bg_n=!(rst_n&&!br_n&&cycles%3!=0);
-  assign aack_n=!(address_pending&&address_delay==0);
-  assign dbg_n=!(transfer_pending&&!address_pending&&cycles%4!=1);
-  assign ta_n=!(transfer_pending&&dbb_oe&&!dbb_n&&data_delay==0);
+  bus60x_delay_target_bfm target(
+    .clk_i(clk),.rst_ni(rst_n),.phase_i(cycles),
+    .br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(a),.tt_i(tt),
+    .tsiz_i(tsiz),.tbst_n_i(tbst_n),.tc_i(tc),.dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),
+    .bg_n_o(bg_n),.aack_n_o(aack_n),.dbg_n_o(dbg_n),.ta_n_o(ta_n));
   always_comb begin
     d_i='0;
-    if(transfer_pending&&!transfer_write)
+    if(target.transfer_pending&&!target.transfer_write)
       for(int lane=0;lane<8;lane++)
-        d_i[63-8*lane -:8]=mem[int'((transfer_addr&32'hfffffff8)-BASE)+lane];
+        d_i[63-8*lane -:8]=mem[int'((target.transfer_addr&32'hfffffff8)-BASE)+lane];
   end
 
   // No abstract physical request or response is used by this RAM responder.
   // The byte address/size and 64-bit data lanes are sampled from the pins.
   always @(posedge clk) begin : pin_ram
     if(!rst_n)begin
-      address_pending<=0;transfer_pending<=0;
-      address_delay<=0;data_delay<=0;pin_done<=0;
+      pin_done<=0;
       pin_done_addr<=0;pin_done_write<=0;
       pin_done_size<=0;
     end else begin
       pin_done<=0;
-      if(address_delay>0)address_delay<=address_delay-1;
-      if(data_delay>0&&dbb_oe&&!dbb_n)data_delay<=data_delay-1;
-      if(!aack_n)address_pending<=0;
       if(ts_oe&&!ts_n)begin
         check(router_busy&&bus_busy,"60x tenure without translation/bus owner");
-        check(addr_oe&&abb_oe&&!abb_n&&!transfer_pending,
+        check(addr_oe&&abb_oe&&!abb_n&&!target.transfer_pending,
           "60x address ownership/overlap");
         check(a>=BASE&&a<=BASE+32'h2fffc&&
           tsiz!=0&&(tsiz==1||tsiz==2||tsiz==4)&&
@@ -169,29 +162,24 @@ module tb_compiled_table_bus60x_firmware #(
           "60x fixed scalar attributes");
         if(tc==2)check(tt==5'b01010&&tsiz==4&&a[1:0]==0,
           "instruction bus shape");
-        address_pending<=1;transfer_pending<=1;
-        address_delay<=1+cycles%3;data_delay<=2+cycles%4;
-        transfer_addr<=a;transfer_write<=tt==5'b00010;
-        transfer_instruction<=tc==2;transfer_size<=int'(tsiz);
       end
       if(!ta_n)begin
-        check(transfer_pending,"TA without selected tenure");
-        if(transfer_write)begin
+        check(target.transfer_pending,"TA without selected tenure");
+        if(target.transfer_write)begin
           check(d_oe,"target accepted undriven write data");
           pin_writes++;
           for(int i=0;i<4;i++)
-            if(i<transfer_size)
-              mem[int'(transfer_addr-BASE)+i]=
-                d_o[63-8*(int'(transfer_addr[2:0])+i) -:8];
+            if(i<target.transfer_size)
+              mem[int'(target.transfer_addr-BASE)+i]=
+                d_o[63-8*(int'(target.transfer_addr[2:0])+i) -:8];
         end else begin
           check(!d_oe,"processor drove read data");
           pin_reads++;
-          if(transfer_instruction)pin_ifetches++;
+          if(target.transfer_instruction)pin_ifetches++;
         end
-        pin_done<=1;pin_done_addr<=transfer_addr;
-        pin_done_write<=transfer_write;
-        pin_done_size<=transfer_size;
-        transfer_pending<=0;
+        pin_done<=1;pin_done_addr<=target.transfer_addr;
+        pin_done_write<=target.transfer_write;
+        pin_done_size<=target.transfer_size;
       end
     end
   end
