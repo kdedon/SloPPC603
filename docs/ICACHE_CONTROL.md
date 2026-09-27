@@ -120,7 +120,7 @@ memory, re-enable miss then hit, explicit same-mode invalidation, and immediate
 reset withdrawal of a pending bypass response.  It also streams eight cached
 hits, each accepted on the previous completion edge, in nine cycles.
 
-Recorded: `make -C sim test-icache-managed`, commit 33c715c, 2026-09-26.
+Recorded: `make -C sim test-icache-managed`, commit e0d9007, 2026-09-26.
 Pass: 141 checks across 14 fetch responses, three cache-line requests, three
 scalar bypass requests, and four maintenance commands.
 
@@ -132,9 +132,9 @@ state.  It changes the image again, disables the cache, checks single-beat
 `TC=10`/asserted-`CI` instruction transactions with no line fills or cache
 hits, and injects a bypass `TEA` before reset recovery.
 
-Recorded: `make -C sim test-core-cached-managed`, commit 33c715c, 2026-09-26.
-Pass: 854 checks and 26 retirements, observing two line bursts, 13 scalar
-instruction fetches, 64 cache hits, two misses, and 17 physical wait cycles.
+Recorded: `make -C sim test-core-cached-managed`, commit e0d9007, 2026-09-26.
+Pass: 836 checks and 26 retirements, observing two line bursts, 13 scalar
+instruction fetches, 66 cache hits, two misses, and 17 physical wait cycles.
 Streaming raised the hit count (more sequential and wrong-path lookups) from
 the previous record.
 

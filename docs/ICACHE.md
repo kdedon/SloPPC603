@@ -203,7 +203,7 @@ must evict D, proving the victim sees every registered update.  Another checks
 that a refill response consumed during the install cycle is followed one cycle
 later by a hit to the new line.
 
-Recorded: `make -C sim test-icache test-icache-managed test-icache-bus60x`, commit 33c715c, 2026-09-26.
+Recorded: `make -C sim test-icache test-icache-managed test-icache-bus60x` (within `make -C sim -j3 regression`, which passed), commit e0d9007, 2026-09-26.
 Pass: `tb_icache` 60,883 checks, 5,205 fetches, 4,642 hits, 562 misses, 549
 line requests, 500 streamed hits (200 in 201 cycles); `tb_icache_managed` 141
 checks; `tb_icache_bus60x` 3,805 checks, 89 fetch responses, 21 bursts.
