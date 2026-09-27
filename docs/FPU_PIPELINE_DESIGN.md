@@ -72,6 +72,10 @@ and sustained FPU II1 concurrent with the LSU's externally prepared requests.
 The shell issue handshake represents dispatch. Operand reservation and backend
 execution acceptance are distinct events; dispatch delay must not be counted as
 an extra arithmetic execution stage or used to conceal excess execution latency.
+Move/select capture operand bits and tags in one full-tagged FPU stage register;
+the following stage computes the result while the next move/select may capture
+its own operands. The shared stage is safe because a dispatch pair contains at
+most one FPU instruction.
 Ready independent instructions need a direct dispatch path when an obligatory
 reservation cycle would prevent sustained issue with four rename entries.
 Likewise, an arriving head result must be usable for retirement without an
