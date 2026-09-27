@@ -469,3 +469,17 @@ DSP blocks, with 433 virtual pins and zero physical pins. Map reported zero
 errors and four warnings; TimeQuest reported zero errors and zero warnings.
 Both frequency targets failed, and no fitter ran. This experiment was rejected;
 the preceding 27.0 MHz arithmetic implementation remains the retained candidate.
+
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`20c2329` (112-bit add/fused experiment), 2026-09-27.
+
+The narrower add lane mapped at 9,572 estimated ALMs, 12,780 ALUTs,
+2,548 registers, 416 block-memory bits and five DSP blocks, with 433 virtual
+pins and zero physical pins. Post-map Fmax was **28.8 MHz**, with −14.769 ns
+setup slack; both targets still failed. Add-stage exponent normalization now
+dominated at 34.603 ns; response rounding fell to 28.055 ns, alignment was
+24.118 ns and divider 32.673 ns. Map reported zero errors and four warnings;
+TimeQuest reported zero errors and zero warnings. No fitter ran. This
+measurement does not replace the directed numerical acceptance gate for the
+narrowing proof or establish full-module performance.
