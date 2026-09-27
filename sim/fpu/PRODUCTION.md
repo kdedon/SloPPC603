@@ -354,3 +354,21 @@ both results together, while 602 retired in order on separate cycles. The
 LSU completed a queued load while a divider remained occupied, and 602
 rejected pairing serialized `fctiwz` with a load. Store+load paired retirement,
 opposite issue order, cancellation and generation-wrap cases remain open.
+
+The 602 `frsqrte` checker `estimate_vectors_602.py` (SHA-256
+`1fbeaf866f3cd8e32b333d8bccb9fc8f8f19440723ccceb2b8a084465bab1305`,
+MIT) checks output binary32 representability and the manual's one-part-in-32
+bound using exact fractions and squared inequalities, without reproducing
+the RTL table. It spans every binary32 normal exponent and all 16 significand
+bins at both endpoints, every subnormal leading-bit position, seeded random
+inputs, and special values with VE/ZE. Its source values preserve signaling
+NaN payloads while widening the binary32 request transport. Exact 602
+`fres` is qualified by the rational division oracle in the 602 raw corpus.
+
+Recorded: `make -C sim -j2 lint-fpu-estimates-602 test-fpu-estimates-602`
+on exact arithmetic commit `6cf259e` plus the new 602 estimate checker,
+parameterized testbench and Makefile target, in an immutable snapshot,
+2026-09-27; seed `0x602f0003`, 17,628 estimate packets, zero mismatches,
+strict lint/build zero warnings/errors. Defined exceptional result, invalid
+cause, divide-by-zero, FR/FI clearing, FPRF/write suppression, and unaffected
+status metadata were checked alongside finite bounds and result format.

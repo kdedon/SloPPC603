@@ -1,5 +1,7 @@
 `default_nettype none
-module tb_ppc_fpu_estimates;
+module tb_ppc_fpu_estimates #(
+    parameter bit CPU_602 = 1'b0
+);
     import ppc_pkg::*;
     import ppc_fpu_pkg::*;
 
@@ -27,7 +29,7 @@ module tb_ppc_fpu_estimates;
     ppc_fpu_arith_rsp_t finished_packet;
     logic finished_seen;
 
-    ppc_fpu_arith dut (.*);
+    ppc_fpu_arith #(.CPU_602(CPU_602)) dut (.*);
 
     always @(posedge clk_i)
         if (div_busy_o && req_ready_o)
