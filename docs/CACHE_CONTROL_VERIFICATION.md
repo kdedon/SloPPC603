@@ -1,5 +1,6 @@
 # Cache control verification
 
+Recorded: `make -C sim -j2 regression` and `make -C toolchain -j2 rtl-all` (26 profiles), commit a038548 (merged with AUD-21 and gate 1), 2026-09-27: both pass with the counts below unchanged.
 Recorded: `make -C sim test-icache-managed test-core-cache-control test-core-cache-probe-miss test-core-bat-cached-bus60x-cacheops test-core-bat-cached-bus60x-stress`, commit 1707634, 2026-09-27 (in `make -C sim -j2 regression`, pass).
 Recorded: `make -C toolchain rtl-cacheops` with the ELF from `make cacheops` in `ppc603e-cross:bookworm-20250811`, commit 1707634, 2026-09-27 (in `make -C toolchain -j2 rtl-all`, 25 profiles pass).
 

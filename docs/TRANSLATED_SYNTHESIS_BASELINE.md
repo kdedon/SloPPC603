@@ -1,6 +1,19 @@
 # Translated cached 60x synthesis baseline
 
 
+## 2026-09-27 refit after merging gate 2 onto AUD-21 and gate 1
+
+Recorded: `./quartus/translated/build.sh --docker`, commit a038548, 2026-09-27.
+Profile includes `ENABLE_CACHE_INSTRUCTIONS`. Setup meets at every corner:
++0.771 / +0.902 ns at slow 100 C / -40 C (Fmax 52.0 MHz), fast +6.300 /
++6.615 ns. Hold meets at slow 100 C (+0.081 ns) and both fast corners but
+**misses by 0.198 ns at slow -40 C** on the virtual input `retire_ready_i` into
+the GPR MLAB write-address register (update-write port select). This is the
+zero-minimum virtual-I/O assumption, the same class as the timer/BAT hold on a
+virtual input; no gate-2 logic is on the path. 8,895 ALMs, 8,623 registers,
+23 M10Ks. The worst setup path runs from the IQ RAM through decode into the
+special-lane capture.
+
 ## 2026-09-27 refit after merging AUD-21 and gate 1
 
 Recorded: `./quartus/translated/build.sh --docker`, merge of the gate-1 branch

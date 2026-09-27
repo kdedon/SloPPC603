@@ -733,9 +733,13 @@ follow the access class; a translated `dcbz` takes the caching-inhibited
 alignment exception; `dcbt`/`dcbtst` are no-ops; user `dcbi` is privileged.
 External maintenance keeps its own handshake and shares the drain.
 
-Fresh on the final commit: `make -C sim regression` (strict lint, 274 Python tests, every simulation target),
-`make -C toolchain rtl-all` (25 profiles) and `./quartus/translated/build.sh
---docker` (setup +0.900 / +0.882 ns, hold +0.119 ns worst, 52.31 MHz). New
+Fresh on the merged tree (a038548, with AUD-21 and gate 1): `make -C sim
+regression` (446 PASS lines, 274 Python tests), `make -C toolchain rtl-all`
+(26 profiles) and `./quartus/translated/build.sh --docker`: setup meets every
+corner (52.0 MHz) but hold misses by 0.198 ns at slow -40 C on the virtual
+`retire_ready_i` input into the GPR MLAB address (zero-minimum virtual-I/O
+assumption, same class as the timer/BAT hold; not gate-2 logic). Before the
+merge (0a974ff) the same profile met setup and hold at 52.31 MHz. New
 benches: managed-cache `icbi`, actual-core cache control and probe TLB misses,
 the translated cache-operation bench, a four-seed cached-top stress and the
 compiled cache-operation firmware. A pre-drain invalidate and a no-op `icbi`
