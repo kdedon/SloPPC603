@@ -196,7 +196,7 @@ module tb_ppc_fpu_arith;
             bad_result = (((rsp_o.result ^ expected.result) & result_mask) != 64'd0) ||
                          rsp_o.write_result !== expected.write_result;
             bad_invalid = rsp_o.invalid !== expected.invalid;
-            bad_flags = !read_ni && (rsp_o.ox !== expected.ox || rsp_o.ux !== expected.ux ||
+            bad_flags = (rsp_o.ox !== expected.ox || rsp_o.ux !== expected.ux ||
                         rsp_o.zx !== expected.zx || rsp_o.xx !== expected.xx ||
                         rsp_o.frfi_valid !== expected.frfi_valid ||
                         (expected.frfi_valid && rsp_o.fi !== expected.fi) ||

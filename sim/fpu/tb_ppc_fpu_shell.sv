@@ -868,6 +868,30 @@ module tb_ppc_fpu_shell;
         store_ready_i = 1'b0;
         checks++;
 
+        load_fpr(23, 64'h3ff8000000000000, 242);
+        for (int rounding = 0; rounding < 4; rounding++) begin
+            completion_tag_t rn_tag;
+            completion_tag_t convert_tag;
+            rn_tag = tag(3'd4, 8'(243 + 2*rounding));
+            convert_tag = tag(3'd0, 8'(244 + 2*rounding));
+            send_issue(fp_insn(63, 5'd28, 0, 0, 134) |
+                       (32'(rounding) << 12), rn_tag, 0, 0, 1'b1);
+            await_result(rn_tag);
+            if (result_o.exception != FPU_NO_EXCEPTION ||
+                result_o.fpscr_value[1:0] != 2'(rounding))
+                $fatal(1, "mtfsfi RN control=%0d", rounding);
+            commit(rn_tag);
+            send_issue(fp_insn(63, 24, 0, 23, 14), convert_tag, 0, 0, 1'b1);
+            await_result(convert_tag);
+            if (result_o.exception != FPU_NO_EXCEPTION ||
+                !result_o.fpr_write || result_o.fpr_value[31:0] !=
+                ((rounding == 0 || rounding == 2) ? 32'd2 : 32'd1) ||
+                result_o.fpscr_value[1:0] != 2'(rounding))
+                $fatal(1, "FPSCR RN did not control fctiw rounding=%0d", rounding);
+            commit(convert_tag);
+            checks += 4;
+        end
+
         $display("PASS PPC FPU shell checks=%0d", checks);
         $finish;
     end
