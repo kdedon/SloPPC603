@@ -202,6 +202,10 @@ module ppc_fpu_arith (
     logic [4:0] div_rounds_q;
     logic [52:0] div_a_sig_q;
     logic [52:0] div_b_sig_q;
+    logic signed [15:0] div_a_exp_q;
+    logic signed [15:0] div_b_exp_q;
+    logic signed [15:0] div_result_exp_q;
+    logic div_result_sign_q;
     logic [52:0] div_start_numerator;
     logic [53:0] div_start_difference;
     logic launch_divide;
@@ -1097,7 +1101,8 @@ module ppc_fpu_arith (
 
     function automatic finite_sum_t prepare_division_sum(
         input ppc_fpu_op_t op, input logic single_result,
-        input logic [63:0] a_bits, input logic [63:0] b_bits,
+        input logic signed [15:0] result_exponent,
+        input logic result_sign,
         input logic [54:0] quotient,
         input logic remainder_nonzero
     );
@@ -1108,14 +1113,8 @@ module ppc_fpu_arith (
         else
             out.magnitude = {1'b0, quotient, 104'd0};
         out.magnitude[0] |= remainder_nonzero;
-        if (op == FP_FRES) begin
-            out.exponent = -finite_exp(b_bits[62:0]);
-            out.sign = b_bits[63];
-        end else begin
-            out.exponent = finite_exp(a_bits[62:0]) -
-                finite_exp(b_bits[62:0]);
-            out.sign = a_bits[63] ^ b_bits[63];
-        end
+        out.exponent = result_exponent;
+        out.sign = result_sign;
         return out;
     endfunction
 
@@ -1206,6 +1205,10 @@ module ppc_fpu_arith (
             div_remainder_q <= '0;
             div_a_sig_q <= '0;
             div_b_sig_q <= '0;
+            div_a_exp_q <= '0;
+            div_b_exp_q <= '0;
+            div_result_exp_q <= '0;
+            div_result_sign_q <= '0;
             div_denominator_q <= '0;
             div_denominator_x2_q <= '0;
             div_denominator_x3_q <= '0;
@@ -1221,6 +1224,11 @@ module ppc_fpu_arith (
                         div_a_sig_q <= req_i.op == FP_FRES ?
                             53'h10000000000000 : finite_sig(req_i.a[62:0]);
                         div_b_sig_q <= finite_sig(req_i.b[62:0]);
+                        div_a_exp_q <= req_i.op == FP_FRES ? 16'sd0 :
+                            finite_exp(req_i.a[62:0]);
+                        div_b_exp_q <= finite_exp(req_i.b[62:0]);
+                        div_result_sign_q <= (req_i.op != FP_FRES &&
+                            req_i.a[63]) ^ req_i.b[63];
                         state_q <= DIV_START;
                     end
                     else if (launch_finite) state_q <= PREP;
@@ -1232,6 +1240,7 @@ module ppc_fpu_arith (
                     end
                 end
                 DIV_START: begin
+                    div_result_exp_q <= div_a_exp_q - div_b_exp_q;
                     div_denominator_q <= div_b_sig_q;
                     div_denominator_x2_q <= {div_b_sig_q, 1'b0};
                     div_denominator_x3_q <= {2'b00, div_b_sig_q} +
@@ -1366,7 +1375,8 @@ module ppc_fpu_arith (
                         // leading one is bit 157 or 158. Coarse normalization
                         // and the 8/4 shifts cannot change it.
                         norm_low_a_q <= prepare_division_sum(req_q.op,
-                            req_q.single_result, req_q.a, req_q.b,
+                            req_q.single_result, div_result_exp_q,
+                            div_result_sign_q,
                             div_quotient_next, div_remainder_next != 53'd0);
                         state_q <= NORM_LOW_B;
                     end

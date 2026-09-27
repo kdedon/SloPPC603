@@ -46,10 +46,8 @@ The SS candidate fails numerical qualification and the pre-fit frequency
 target. The complete standalone PPC shell and replacement arithmetic pass
 independent numeric and architectural tests: 200,000 raw packets, 11,958
 estimate packets, 851 shell checks and 76 cancellation offsets. It is
-serialized, with no core integration or four-entry rename throughput. Frequency
-acceptance remains open: the latest completed full-unit post-map estimate is
-44.0 MHz, below the 50 MHz target; the next measurement is pending. No fitted
-timing closure is claimed. See the assessment for resources, selected semantics
+serialized, with no core integration or four-entry rename throughput. The full-unit post-map estimate is 50.4 MHz, meeting the synthesis-only
+50 MHz check; 66 MHz remains unmet. No fitted timing closure is claimed. See the assessment for resources, selected semantics
 and remaining silicon questions. A separate process will integrate the FPU
 into the CPU. Existing core RTL and file lists remain outside this workstream.
 Do not infer full CPU completion from the restricted MVP score.

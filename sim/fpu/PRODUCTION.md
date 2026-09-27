@@ -206,6 +206,18 @@ are one cycle longer than the 603e manual's 18-cycle table; timing
 reconciliation remains required. Strict test builds emitted 0 warnings and
 0 errors.
 
+Recorded: `make -C sim -j2 test-fpu lint` with `YOSYS_BIN` set to the
+pinned extractor, on clean source commit `3472757` (documentation drafts
+were uncommitted), 2026-09-27; 20 Python anchors, 32 table value/bound
+proofs, 200,000 raw arithmetic packets with 0 mismatches, 76 cancellation
+offsets, 4 held-response checks, 11,958 estimate packets with 0
+mismatches, 851 shell checks with 0 failures, and 55 strict lint invocations
+with 0 warnings and 0 errors. Measured ADD/SUB/`frsp` maximum latency was
+17 clocks, MUL/fused 20, single/double divide 19/33, finite `fres` 19,
+`frsqrte` 1, and `fctiw`/`fctiwz` 3. The FPU meets the 50 MHz synthesis
+target, while the documented single divide/`fres` cycle-count discrepancy
+remains an implementation timing gap.
+
 Recorded: `make -C sim -j2 test-fpu` on commit `34909b0` plus the divider
 numerator-capture cut, 2026-09-27; 20 Python anchors, 32 table value/bound
 proofs, 200,000 raw arithmetic packets with 0 mismatches, 74 cancellation

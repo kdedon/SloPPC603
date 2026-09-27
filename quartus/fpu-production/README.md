@@ -54,6 +54,10 @@ Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `c55431
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `695c705`, 2026-09-27.
 
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `3472757`, 2026-09-27.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit `3472757`, 2026-09-27.
+
 | Commit / variant | ALM estimate | ALUT | Registers | RAM bits | DSP | Fmax | Setup slack | Pins | Critical path |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | `fc33a75` / `full` | 11,601 | 14,305 | 3,462 | 0 | 4 | 12.4 MHz | −60.524 ns | 0/816 | Sum magnitude to FPRF |
@@ -72,11 +76,15 @@ Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit `695c70
 | `34909b0` / `full` | 10,281 | 11,944 | 6,987 | 0 | 4 | 47.4 MHz | −1.098 ns | 0/816 | Late FRES numerator opcode select to DIV_START remainder |
 | `c554312` / `full` | 10,254 | 11,993 | 6,987 | 0 | 4 | 48.2 MHz | −0.727 ns | 0/816 | Unpack `b` denormal normalize to FRSQRTE result |
 | `695c705` / `full` | 10,348 | 12,094 | 7,008 | 0 | 4 | 49.2 MHz | −0.324 ns | 0/816 | `round_single_q` to `round_post_q.wide[52]` |
+| `3472757` / `full` | 10,362 | 12,114 | 7,084 | 0 | 4 | 50.4 MHz | +0.155 ns | 0/816 | Operand `b` to low-normalization exponent |
+| `3472757` / `arith` | 5,976 | 7,482 | 4,528 | 0 | 4 | 48.6 MHz | −0.568 ns | 0/326 | Operand `b` to low-normalization exponent |
 
-The 50 MHz harness check and aspirational 66 MHz target are unmet in all recorded runs. These maps are useful historical measurements, not fitted-area or timing-closure claims; final synthesis result is pending. The synthesis script pins Quartus Lite image `theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70`.
+The current `full` map passes the 50 MHz harness check at 50.39 MHz with +0.155 ns setup slack, while `arith` measures 48.62 MHz with −0.568 ns slack. The aspirational 66 MHz target remains unmet, and a final boundary cut plus remeasurement are pending. These post-map results are not fitted-area or timing-closure claims. The synthesis script pins Quartus Lite image `theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70`.
 
 For `5adb120`, Quartus reported two signed-shift-to-unsigned conversions in single-format load/store conversion. Their guarded shift counts are nonnegative (30–52), so the conversion preserves the intended logical shift. Six output bits are constant zero: `size_bytes[1:0]` on memory/store packets (sizes 4 and 8), and FPSCR wire bit `[11]` (architectural reserved bit 20) on both status outputs. These constants match the interface contract. Its virtual-pin clock warning means the input clock is treated as a ripple clock. `check_timing` found zero unconstrained input/output paths, loops, or latches; its 1,630 min/max consistency notices reflect the intentional equal zero I/O delays. Post-map hold analysis found 10 violated virtual-input-to-register paths (`mem_rsp_i.fault_info` to `held_q.fault_info`), worst slack −5.431 ns. No fitter ran, so this hold result is also post-map only.
 
 For `4068252`, completed post-map reports show the divider compare/subtract path as critical (11 logic levels). Quartus again reported two signed-shift conversions; the shifts are guarded to counts 30–52. The six constant-zero output bits are the two low size bits on each memory/store packet and reserved FPSCR bit 20 on each status output. The virtual-pin clock warning says `clk_i` is treated as a ripple clock, and timing values involving its 816 virtual pins are estimates. `check_timing` found no unconstrained ports, loops or latches; its 1,630 min/max consistency notices come from equal zero-delay virtual I/O constraints. Hold analysis found 10 violated input-to-register paths from `mem_rsp_i.fault_info` to `held_q.fault_info`, worst slack −5.431 ns. These are post-map warnings and timing results; no fitter ran.
+
+For `3472757`, Quartus reported 10 warnings: two signed-shift conversions guarded to counts 30–52; six constant-zero output bits (`size_bytes[1:0]` on memory/store packets and reserved FPSCR bit 20 on both status outputs); and the virtual-pin clock warning, which treats `clk_i` as a ripple clock. Its `check_timing` report has zero unconstrained ports, loops or latches; 1,630 min/max consistency notices reflect equal zero-delay virtual I/O constraints. Setup found 10 paths with none violated; the worst slack is +0.155 ns. Hold still has 10 violated virtual-input-to-register paths from `mem_rsp_i.fault_info` to `held_q.fault_info`, worst slack −5.431 ns. The 50 MHz pass is post-map only; no fitter ran.
 
 The earlier `82099f4` attempt failed the virtual-pin assertion and is excluded. The baseline attempt at `f58dabb` aborted and is excluded. Neither is an accepted result.

@@ -32,14 +32,17 @@ policy and illegal-before-unavailable priority. The shell implements every
 architectural 603e FP instruction class and remains serialized. The separate
 core integrator owns CPU-level acceptance.
 
-F5 frequency acceptance remains open. The latest completed `438f377` full-unit
-post-map measurement reports 10,274 estimated ALMs, 12,101 combinational ALUTs,
-6,626 registers, no block RAM and four DSP blocks at 44.0 MHz, below the
-50/66 MHz targets. The current `4068252` measurement is pending. These are
-post-map estimates, not a fitted timing result. The serialized lane does not
-implement the 603e's four rename slots or exact pipeline throughput. Source
-conflicts and silicon-specific NI behavior remain explicit in the contract;
-passing the selected policy tests does not resolve those conflicts.
+The standalone F5 synthesis-only 50 MHz check passes. Frozen `3472757`
+full-unit post-map measurement reports 10,362 estimated ALMs, 12,114
+combinational ALUTs, 7,084 registers, no block RAM and four DSP blocks at
+50.4 MHz, with +0.155 ns setup slack at 20 ns. The aspirational 66 MHz
+check fails. These are post-map estimates, not fitted timing closure; see
+[measurement evidence](../quartus/fpu-production/README.md).
+The serialized lane does not implement four rename slots or exact 603e
+pipeline throughput. Finite single divide and `fres` take 19 clocks rather
+than the UM's 18. Source conflicts and silicon-specific NI behavior remain
+explicit in the contract; passing the selected policy tests does not resolve
+those conflicts.
 
 ## Decision
 
@@ -185,7 +188,8 @@ Run prior integer regressions as well as FP integration tests. Measure isolated 
 
 ## Next acceptance work
 
-Finish the standalone timing measurements and record the final pipeline schedule.
+The standalone implementation and synthesis-only 50 MHz measurement are complete.
+The final schedule and limits are recorded in [FPU_ARITHMETIC.md](FPU_ARITHMETIC.md).
 The separate integration process must connect the tagged interface to completion,
 CR/MSR, FPR dependencies and the atomic LSU protocol, then run CPU-level FP and
 integer regressions. Four rename slots and 603e pipeline throughput require
