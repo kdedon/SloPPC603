@@ -446,3 +446,12 @@ latencies, timing 71/52 responses, both 32-instruction streams, and dual
 reservation checks 28/24. All 63 strict lint invocations passed with zero
 warnings and errors. This is the coherent qualification baseline before the
 memory-specific shell cone and arithmetic-width experiments.
+
+Recorded: `make -C sim -j2 lint-fpu-production lint-fpu-stream
+lint-fpu-dual test-fpu-shell test-fpu-602 test-fpu-stream-603
+test-fpu-stream-602 test-fpu-dual-603 test-fpu-dual-602` on an immutable
+snapshot of shell commit `f2c8e36` and arithmetic commit `91c80b8`,
+2026-09-27; 603e/602 shell 851/173 checks, 32 issue/forward/commit stream
+packets per personality, and 28/24 paired-issue checks, with six strict
+lint invocations and zero warnings or errors. This qualifies the
+memory-specific source and dependency cone cut at the public interface.
