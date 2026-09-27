@@ -70,6 +70,8 @@ module tb_execution;
     .dispatch_valid_i(dp_valid), .dispatch_ready_o(dp_ready),
     .entry_i(dp_entry),
     .wake_valid_i(dp_wake_valid), .wake_i(dp_wake),
+    .iu_done_i(iu_result_valid && iu_result_ready),
+    .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value),
     .issue_valid_o(dp_issue_valid), .issue_ready_i(dp_issue_ready),
     .issue_o(dp_issue)
   );
@@ -79,6 +81,28 @@ module tb_execution;
     .issue_valid_i(iu_issue_valid), .issue_ready_o(iu_issue_ready),
     .issue_i(iu_issue), .result_valid_o(iu_result_valid),
     .result_ready_i(iu_result_ready), .result_o(iu_result)
+  );
+
+  // RS and IU wired as in the core, for the result bypass.
+  logic ln_valid, ln_ready, ln_issue_valid, ln_issue_ready;
+  logic ln_result_valid, ln_result_ready;
+  rs_entry_t ln_entry;
+  issue_packet_t ln_issue;
+  result_packet_t ln_result;
+  ppc_dispatch linked_dut (
+    .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
+    .dispatch_valid_i(ln_valid), .dispatch_ready_o(ln_ready),
+    .entry_i(ln_entry), .wake_valid_i(1'b0), .wake_i('0),
+    .iu_done_i(ln_result_valid && ln_result_ready),
+    .iu_producer_i(ln_result.producer), .iu_value_i(ln_result.value),
+    .issue_valid_o(ln_issue_valid), .issue_ready_i(ln_issue_ready),
+    .issue_o(ln_issue)
+  );
+  ppc_iu linked_iu (
+    .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
+    .issue_valid_i(ln_issue_valid), .issue_ready_o(ln_issue_ready),
+    .issue_i(ln_issue), .result_valid_o(ln_result_valid),
+    .result_ready_i(ln_result_ready), .result_o(ln_result)
   );
 
   function automatic completion_tag_t ctag(input int index, input int generation);
@@ -145,6 +169,25 @@ module tb_execution;
     iu_issue_valid = 1'b0;
     iu_issue = '0;
     iu_result_ready = 1'b0;
+
+    ln_valid = 1'b0;
+    ln_entry = '0;
+    ln_result_ready = 1'b1;
+  endtask
+
+  task automatic linked_dispatch(input alu_op_t op, input completion_tag_t producer,
+                                 input operand_t a, input operand_t b);
+    @(negedge clk);
+    ln_entry = '0;
+    ln_entry.ctrl.op = op;
+    ln_entry.ctrl.producer = producer;
+    ln_entry.a = a;
+    ln_entry.b = b;
+    ln_valid = 1'b1;
+    #1;
+    check(ln_ready, "linked RS rejected dispatch");
+    tick();
+    ln_valid = 1'b0;
   endtask
 
   task automatic reset_units;
@@ -336,6 +379,9 @@ module tb_execution;
     tick();
     dp_wake.producer = ctag(0, 32'h60);
     #1;
+    check(!dp_issue_valid, "held wake issued before capture");
+    tick();
+    dp_wake_valid = 1'b0;
     check(dp_issue_valid && dp_issue.a == 32'hffff_0000 &&
           dp_issue.b == 32'h00ff_00ff && dp_issue.ctrl.op == ALU_XOR &&
           dp_issue.ctrl.producer == ctag(1, 32'h61), "correct producer did not wake RS");
@@ -350,27 +396,22 @@ module tb_execution;
     check(dp_issue_valid && dp_issue === held_issue,
           "RS issue packet changed while downstream backpressured");
 
-    // Issue/capture turnover and a wake coincident with capture of new pending work.
+    // Issue/capture turnover. Rename resolves a same-edge wake before capture.
     @(negedge clk);
     dp_issue_ready = 1'b1;
     dp_valid = 1'b1;
     dp_op = ALU_ADD;
     dp_producer = ctag(2, 32'h63);
-    dp_a = pending_operand(rename_tag_t'(4), ctag(4, 32'h64));
+    dp_a = ready_operand(32'd7);
     dp_b = ready_operand(32'd9);
-    dp_wake_valid = 1'b1;
-    dp_wake.tag = rename_tag_t'(4);
-    dp_wake.producer = ctag(4, 32'h64);
-    dp_wake.value = 32'd7;
     #1;
     check(dp_ready, "RS did not allow issue/capture turnover");
     tick();
     dp_valid = 1'b0;
-    dp_wake_valid = 1'b0;
     dp_issue_ready = 1'b0;
     check(dp_issue_valid && dp_issue.a == 32'd7 && dp_issue.b == 32'd9 &&
           dp_issue.ctrl.op == ALU_ADD && dp_issue.ctrl.producer == ctag(2, 32'h63),
-          "same-edge wake was missed during RS capture");
+          "RS lost the turnover capture");
 
     // IU result holds under backpressure, then turns over without a bubble.
     reset_units();
@@ -406,6 +447,64 @@ module tb_execution;
     check(iu_result_valid && iu_result.value == 32'h5555_5555 &&
           iu_result.producer == ctag(1, 32'h71), "IU turnover lost replacement result");
 
+    // A consumer captured as its producer issues takes the IU result in the
+    // producer's result cycle: dependent ops issue back to back.
+    reset_units();
+    linked_dispatch(ALU_ADD, ctag(0, 32'h40), ready_operand(32'd5), ready_operand(32'd1));
+    check(ln_issue_valid, "linked producer did not issue");
+    linked_dispatch(ALU_ADD, ctag(1, 32'h41), pending_operand(rename_tag_t'(0), ctag(0, 32'h40)),
+                    ready_operand(32'd10));
+    check(ln_result_valid && ln_result.value == 32'd6, "linked producer result missing");
+    check(ln_issue_valid && ln_issue.a == 32'd6 && ln_issue.b == 32'd10 &&
+          ln_issue.ctrl.producer == ctag(1, 32'h41), "dependent op did not issue back to back");
+    tick();
+    check(ln_result_valid && ln_result.value == 32'd16 &&
+          ln_result.producer == ctag(1, 32'h41), "dependent result wrong");
+    tick();
+    check(!ln_result_valid && !ln_issue_valid, "linked pair left work behind");
+
+    // A held result not yet accepted keeps the consumer waiting; it issues
+    // in the cycle the result is accepted.
+    linked_dispatch(ALU_XOR, ctag(2, 32'h42), ready_operand(32'hf0f0_f0f0), ready_operand(32'h0ff0_0ff0));
+    @(negedge clk);
+    ln_result_ready = 1'b0;
+    ln_entry = '0;
+    ln_entry.ctrl.op = ALU_OR;
+    ln_entry.ctrl.producer = ctag(3, 32'h43);
+    ln_entry.a = ready_operand(32'h1);
+    ln_entry.b = pending_operand(rename_tag_t'(1), ctag(2, 32'h42));
+    ln_valid = 1'b1;
+    tick();
+    ln_valid = 1'b0;
+    held_result = ln_result;
+    repeat (2) begin
+      check(ln_result_valid && ln_result === held_result && !ln_issue_valid,
+            "consumer issued before its result was accepted");
+      tick();
+    end
+    @(negedge clk);
+    ln_result_ready = 1'b1;
+    #1;
+    check(ln_issue_valid && ln_issue.b == 32'hff00_ff00, "consumer missed the accepted result");
+    tick();
+    check(ln_result_valid && ln_result.value == 32'hff00_ff01, "stalled bypass result wrong");
+
+    // A consumer captured while a multi-cycle producer already occupies the IU.
+    linked_dispatch(ALU_MULLW, ctag(4, 32'h44), ready_operand(32'd1234), ready_operand(32'd1000));
+    tick();
+    check(!ln_result_valid, "multiply finished too early for this check");
+    linked_dispatch(ALU_ADD, ctag(0, 32'h45), pending_operand(rename_tag_t'(2), ctag(4, 32'h44)),
+                    pending_operand(rename_tag_t'(2), ctag(4, 32'h44)));
+    while (!ln_result_valid) begin
+      check(!ln_issue_valid, "consumer issued before the multiply result");
+      tick();
+    end
+    check(ln_result.value == 32'd1234000 && ln_issue_valid &&
+          ln_issue.a == 32'd1234000 && ln_issue.b == 32'd1234000,
+          "consumer missed the multiply result");
+    tick();
+    check(ln_result_valid && ln_result.value == 32'd2468000, "multiply consumer result wrong");
+
     // Reset cancels a held result and restores issue readiness.
     @(negedge clk);
     rst_n = 1'b0;
@@ -418,7 +517,7 @@ module tb_execution;
     check(iu_issue_ready && dp_ready && rn_alloc_ready,
           "execution units did not recover readiness after reset");
 
-    $display("PASS: rename ownership/pressure, RS wake/backpressure, IU hold/turnover/reset");
+    $display("PASS: rename ownership/pressure, RS wake/backpressure, IU bypass back to back, IU hold/turnover/reset");
     $finish;
   end
 endmodule

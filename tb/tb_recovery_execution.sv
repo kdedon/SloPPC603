@@ -37,6 +37,8 @@ module tb_recovery_execution;
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
     .entry_i(dispatch_entry),
     .wake_valid_i(wake_valid), .wake_i(wake),
+    .iu_done_i(result_valid && result_ready),
+    .iu_producer_i(result.producer), .iu_value_i(result.value),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
   ppc_iu iu (
