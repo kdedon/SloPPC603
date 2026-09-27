@@ -34,7 +34,7 @@ invocations with no warnings or errors. Later timing changes require their own
 acceptance records. The baseline includes full-queue admission, rejected
 second-lane isolation and 602 SPR transfer timing.
 The retained arithmetic post-map estimate is **27.0 MHz**; the measured two-lane
-603e shell estimates **16.9 MHz**. Both miss 50 and 66 MHz. No completion or
+603e shell estimates **18.2 MHz**. Both miss 50 and 66 MHz. No completion or
 fitted timing claim is made for the replacement. See
 [verification](../sim/fpu/PRODUCTION.md) and
 [measurements](../quartus/fpu-production/README.md) for exact commands and scope.

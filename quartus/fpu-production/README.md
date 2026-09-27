@@ -483,3 +483,16 @@ dominated at 34.603 ns; response rounding fell to 28.055 ns, alignment was
 TimeQuest reported zero errors and zero warnings. No fitter ran. This
 measurement does not replace the directed numerical acceptance gate for the
 narrowing proof or establish full-module performance.
+
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit
+`f2c8e36` (arithmetic restored to `91c80b8`), 2026-09-27.
+
+Memory-specific readiness and dependency logic mapped at 28,196 estimated ALMs,
+34,287 ALUTs, 7,439 registers, 412 block-memory bits and five DSP blocks,
+with 1,428 virtual pins and zero physical pins. Post-map Fmax was **18.2 MHz**,
+with −34.796 ns setup slack; both targets failed. The worst path remained
+arithmetic rounding through shell logic to pending FPR data (54.630 ns,
+28 logic levels). Map reported zero errors and 69 warnings; TimeQuest reported
+zero errors and zero warnings. No fitter ran. This excludes the later 112-bit
+add lane, which has a separate arithmetic-only measurement.
