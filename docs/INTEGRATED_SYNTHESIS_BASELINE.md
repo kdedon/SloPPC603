@@ -1,5 +1,41 @@
 # Current cached-physical synthesis baseline
 
+## 2026-09-26 refit
+
+Recorded: `./quartus/integrated/build.sh --docker`, commit `87317f4` (RTL as of
+the audit merges through `384eb3d`), 2026-09-26. Quartus 17.0.2, `5CSEBA6U23I7`,
+seed 1. The SDC now derives clock uncertainty (AUD-09), so these slacks are
+stricter than the archived ones below. The build **fits but does not meet the
+provisional 50 MHz constraint**.
+
+| Resource | Fitted result | Archived 2026-09-21 |
+| --- | --- | --- |
+| ALMs | 13,127 / 41,910 (31%) | 13,661 |
+| Registers | 16,827 | 17,015 |
+| Block-memory data bits | 131,456 | 131,456 |
+| M10K blocks | 15 / 553 | 15 |
+| MLAB bits | 0 | 0 |
+| DSP blocks | 3 / 112 | 6 |
+| Virtual / physical I/O pins | 568 / 0 | 494 / 0 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | -3.941 | +0.320 |
+| Slow 1100 mV, -40 C | -4.467 | +0.146 |
+| Fast 1100 mV, 100 C | +6.340 | +0.177 |
+| Fast 1100 mV, -40 C | +6.641 | +0.113 |
+
+Fmax at the worst corner is 40.87 MHz. Hold now passes at every corner. The
+worst setup path is still the AUD-01 cone: `core|completion|head_q[2]` to
+`core|special|ea_q[30]` at slow 1100 mV, -40 C, through commit matching,
+redirect/recovery, wake and operand selection into the special EA adder. The
+DSP count halves because one registered 33x33 multiplier replaced two (AUD-07).
+The MLAB count stays zero because the I-cache tags and the GPR file are still
+flops (AUD-05, AUD-16).
+
+## Archived 2026-09-21 result
+
+
 This profile remains separate from the timer-enabled live-BAT measurement in
 [TIMER_SYNTHESIS_BASELINE.md](TIMER_SYNTHESIS_BASELINE.md). The configurations
 contain different memory integrations and must not be treated as an optimization

@@ -1,5 +1,39 @@
 # Timer and live BAT FPGA measurement
 
+## 2026-09-26 refit
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, commit `95422a6` plus the
+router struct-literal fix in the same commit as this record, 2026-09-26.
+Quartus 17.0.2, `5CSEBA6U23I7`, seed 1, with derived clock uncertainty (AUD-09).
+The previous source list omitted the segment and TLB services and no longer
+elaborated (AUD-03); this run compiles the full `files.f` list. It **fits but
+fails setup and hold**.
+
+| Resource | Result | Archived |
+| --- | --- | --- |
+| ALMs | 6,856 / 41,910 (16%) | 7,093 |
+| Registers | 5,275 | 5,132 |
+| Block-memory data bits | 402 | 402 |
+| M10K blocks | 2 / 553 | 2 |
+| DSP blocks | 3 / 112 | 6 |
+| Virtual / physical I/O pins | 721 / 0 | 647 / 0 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | -4.494 | -3.700 |
+| Slow 1100 mV, -40 C | -4.765 | -3.861 |
+| Fast 1100 mV, 100 C | +5.646 | -1.621 |
+| Fast 1100 mV, -40 C | +8.210 | -1.668 |
+
+Worst setup is the AUD-01 cone, `core|completion|count_q[0]` to
+`core|special|ea_q[30]`. Every worst hold path starts at the virtual
+`bat_write_data_i` measurement input and ends in `bat|upper_q` storage with a
+zero input delay: a property of this measurement top, which exposes the startup
+BAT write port as unconstrained virtual pins, not of a core register path.
+
+## Archived result
+
+
 The enabled timer/BAT profile **fits Cyclone V but fails provisional 50 MHz
 setup and hold**. Quartus completed synthesis, fitting, assembly and timing
 analysis in 13m11s; compilation and evidence checks returned zero, and source

@@ -814,6 +814,18 @@ module ppc_bat_memory_router #(
     end
   end
 
+  // Quartus 17 rejects typed assignment patterns, so the capsule is built by field.
+  page_miss_t page_miss_capture;
+  always_comb begin
+    page_miss_capture.ea = request_ea_q;
+    page_miss_capture.sr = page_sr_q;
+    page_miss_capture.pr = request_pr_q;
+    page_miss_capture.ir = request_ir_q;
+    page_miss_capture.dr = request_dr_q;
+    page_miss_capture.write = owner_write_q;
+    page_miss_capture.way = clean_page_changed && tlb_rsp_way;
+  end
+
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       state_q <= ROUTE_IDLE;
@@ -1011,10 +1023,7 @@ module ppc_bat_memory_router #(
               // through the held response.
               page_miss_result_q <= (clean_page_true_miss ||
                                      clean_page_changed) ?
-                page_miss_t'{ea: request_ea_q, sr: page_sr_q,
-                             pr: request_pr_q, ir: request_ir_q,
-                             dr: request_dr_q, write: owner_write_q,
-                             way: clean_page_changed && tlb_rsp_way} : '0;
+                page_miss_capture : '0;
               if (!page_typed_fault) begin
                 fault_q <= 1'b1;
                 fault_instruction_q <= owner_instruction_q;
