@@ -1,5 +1,31 @@
 # Current cached-physical synthesis baseline
 
+## 2026-09-27 refit: special-lane split and IU compares (AUD-50, AUD-33)
+
+Recorded: `./quartus/integrated/build.sh --docker`, commit 8f416dc, 2026-09-27.
+Quartus 17.0.2, `5CSEBA6U23I7`, seed 1. Setup meets the provisional 50 MHz
+constraint at every corner; 66 MHz (15.15 ns) needs about 3.4 ns more.
+
+| Resource | This fit | Combined refit below |
+| --- | --- | --- |
+| ALMs | 4,987 / 41,910 (12%) | 5,029 |
+| Registers | 4,395 | 4,448 |
+| M10K blocks | 18 / 553 | 18 |
+| MLAB bits | 14,848 | 14,848 |
+| DSP blocks | 3 / 112 | 3 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +1.472 | +0.252 |
+| Slow 1100 mV, -40 C | +1.690 | +0.027 |
+| Fast 1100 mV, 100 C | +4.684 | +0.136 |
+| Fast 1100 mV, -40 C | +5.914 | +0.117 |
+
+Fmax is 53.97 MHz at the worst corner. Worst setup is the half-cycle bus
+release flop `scalar_bus|data_release_half_q` to the `dbb_n_o` output, not
+core logic. Hold is positive at every corner in this placement; the
+unsynchronized `rst_ni` input item below is unchanged in the source.
+
 ## 2026-09-27 combined refit
 
 Recorded: `./quartus/integrated/build.sh --docker`, merge of the timing (AUD-01,
