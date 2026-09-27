@@ -614,7 +614,7 @@ test-bus60x-master-select:
 	./$(BUILD_DIR)/bus60x-master-select/Vtb_bus60x_master_select $(SIM_ARGS)
 
 test-core-cached-bus60x:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cached_bus60x --Mdir $(BUILD_DIR)/core-cached-bus60x $(RTL) $(BUS_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) ../tb/tb_core_cached_bus60x.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cached_bus60x --Mdir $(BUILD_DIR)/core-cached-bus60x $(RTL) $(BUS_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) ../tb/bfm/bus60x_negedge_target_bfm.sv ../tb/tb_core_cached_bus60x.sv
 	./$(BUILD_DIR)/core-cached-bus60x/Vtb_core_cached_bus60x $(SIM_ARGS)
 
 test-reference-cached: reference-runner-flat
@@ -646,7 +646,7 @@ test-icache-managed:
 	./$(BUILD_DIR)/icache-managed/Vtb_icache_managed $(SIM_ARGS)
 
 test-core-cached-managed:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cached_bus60x_managed --Mdir $(BUILD_DIR)/core-cached-managed $(RTL) $(BUS_RTL) $(SYSTEM_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) $(CACHE_CONTROL_RTL) ../tb/tb_core_cached_bus60x_managed.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cached_bus60x_managed --Mdir $(BUILD_DIR)/core-cached-managed $(RTL) $(BUS_RTL) $(SYSTEM_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) $(CACHE_CONTROL_RTL) ../tb/bfm/bus60x_negedge_target_bfm.sv ../tb/tb_core_cached_bus60x_managed.sv
 	./$(BUILD_DIR)/core-cached-managed/Vtb_core_cached_bus60x_managed $(SIM_ARGS)
 
 test-supervisor-decode:

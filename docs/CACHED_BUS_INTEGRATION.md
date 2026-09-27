@@ -95,8 +95,10 @@ wrapper out of the scalar bus list preserves standalone bus lint and tests.
 
 `tb/tb_bus60x_master_select.sv` checks one-hot ownership, literal alternating
 ties, single-sided service, external-grant isolation, retention until delayed
-pin release, and reset cancellation.  `tb/tb_core_cached_bus60x.sv` uses an
-independent physical pin responder and actual core program.  It checks that an
+pin release, and reset cancellation.  `tb/tb_core_cached_bus60x.sv` runs an
+actual core program against the shared negedge responder
+`tb/bfm/bus60x_negedge_target_bfm.sv` and checks every tenure's pin attributes
+and data in the bench.  It checks that an
 instruction `TEA` cannot retire a fabricated word, reset recovers the wrapper,
 an accepted refill drains across redirect before the target executes, scalar
 loads and stores share the pins safely with refills, loop instructions hit in

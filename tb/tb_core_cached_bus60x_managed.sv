@@ -23,17 +23,17 @@ module tb_core_cached_bus60x_managed;
   logic [2:0] tsiz;
   logic [1:0] tc, cse;
   logic tbst_n, ci_n, wt_n, gbl_n;
-  logic [63:0] bus_din, bus_dout;
+  logic [63:0] bus_din = 64'b0, bus_dout;
 
   logic [31:0] imem [0:255];
-  integer responder_state = 0, tx_beat = 0;
-  logic tx_line;
-  logic [31:0] tx_addr;
   logic inject_scalar_tea = 1'b0;
+  logic ts_accept, tenure_done, unused_read_line;
+  logic [31:0] read_addr;
+  int read_beats;
 
   integer checks = 0, cycles = 0, retirements = 0, phase_retires = 0;
   integer phase = 0, line_bursts = 0, scalar_fetches = 0;
-  integer hit_pulses = 0, miss_pulses = 0, physical_waits = 0;
+  integer hit_pulses = 0, miss_pulses = 0;
   logic retire_enable = 1'b1;
   logic [31:0] old_r1_at_cached_restart, cached_r2_at_bypass_restart;
 
@@ -85,128 +85,52 @@ module tb_core_cached_bus60x_managed;
              checks, message, phase, retirements);
   endtask
 
-  function automatic logic [63:0] instruction_dw(
-    input logic [31:0] line_base,
-    input integer slot
-  );
-    integer first_word;
-    begin
-      first_word = int'((line_base + 8*slot) >> 2);
-      return {imem[first_word], imem[first_word+1]};
-    end
-  endfunction
-
-  function automatic integer burst_slot(
-    input logic [1:0] start,
-    input integer beat
-  );
-    return (int'(start) + beat) & 3;
-  endfunction
-
-  function automatic logic [63:0] scalar_instruction_data(
-    input logic [31:0] address
-  );
-    integer first_word;
-    begin
-      first_word = int'((address & 32'hffff_fff8) >> 2);
-      return {imem[first_word], imem[first_word+1]};
-    end
-  endfunction
-
   assign bg_n = !(rst_n && !br_n);
   assign retire_ready = rst_n && retire_enable;
 
-  // Independent pin responder: four actual line beats when cached and one
-  // cache-inhibited scalar instruction beat when bypassed.
+  // Four actual line beats when cached and one cache-inhibited scalar
+  // instruction beat when bypassed, with a bounded data-grant wait on every
+  // tenure to exercise physical ownership.
+  bus60x_negedge_target_bfm #(.GATED_GRANT(1'b1)) bfm (
+    .clk_i(clk), .rst_ni(rst_n), .ts_n_i(ts_n), .ts_oe_i(ts_oe),
+    .a_i(bus_addr), .tt_i(tt), .tsiz_i(tsiz), .tbst_n_i(tbst_n),
+    .dbb_n_i(dbb_n), .dbb_oe_i(dbb_oe), .dbg_gate_i((cycles & 1) == 0),
+    .tea_line_i(1'b0), .tea_scalar_i(inject_scalar_tea),
+    .aack_n_o(aack_n), .dbg_n_o(dbg_n), .ta_n_o(ta_n), .tea_n_o(tea_n),
+    .ts_accept_o(ts_accept), .complete_o(tenure_done),
+    .read_addr_o(read_addr), .read_line_o(unused_read_line),
+    .read_beats_o(read_beats)
+  );
+  assign drtry_n = 1'b1;
+
+  // Line and scalar instruction reads both come from imem.
+  always @(read_beats) begin
+    integer first_word;
+    first_word = int'(read_addr >> 2);
+    bus_din = {imem[first_word], imem[first_word+1]};
+  end
+
+  // Independent attribute and data checks on each responder tenure.
   always @(negedge clk) begin
-    if (!rst_n) begin
-      responder_state = 0;
-      aack_n = 1'b1;
-      dbg_n = 1'b1;
-      ta_n = 1'b1;
-      drtry_n = 1'b1;
-      tea_n = 1'b1;
-      bus_din = 64'b0;
-      tx_line = 1'b0;
-      tx_addr = 32'b0;
-      tx_beat = 0;
-    end else begin
-      case (responder_state)
-        0: begin
-          if (ts_oe && !ts_n) begin
-            check(addr_oe && abb_oe && !abb_n,
-                  "TS without address-bus ownership");
-            check(tt != 5'b00010, "maintenance program issued a write");
-            tx_line = !tbst_n;
-            tx_addr = bus_addr;
-            tx_beat = 0;
-            if (!tbst_n) begin
-              check(tt == 5'b01110 && tsiz == 3'b010 && tc == 2'b10 &&
-                    ci_n && wt_n && gbl_n && cse == 0,
-                    "cached refill pin attributes mismatch");
-              line_bursts++;
-            end else begin
-              check(tt == 5'b01010 && tsiz == 3'b100 && tc == 2'b10 &&
-                    !ci_n && wt_n && gbl_n && cse == 0,
-                    "disabled-cache scalar fetch attributes mismatch");
-              scalar_fetches++;
-            end
-            responder_state = 9;
-          end
+    if (rst_n) begin
+      if (!tea_n) inject_scalar_tea = 1'b0;
+      if (ts_accept) begin
+        check(addr_oe && abb_oe && !abb_n,
+              "TS without address-bus ownership");
+        check(tt != 5'b00010, "maintenance program issued a write");
+        if (!tbst_n) begin
+          check(tt == 5'b01110 && tsiz == 3'b010 && tc == 2'b10 &&
+                ci_n && wt_n && gbl_n && cse == 0,
+                "cached refill pin attributes mismatch");
+          line_bursts++;
+        end else begin
+          check(tt == 5'b01010 && tsiz == 3'b100 && tc == 2'b10 &&
+                !ci_n && wt_n && gbl_n && cse == 0,
+                "disabled-cache scalar fetch attributes mismatch");
+          scalar_fetches++;
         end
-        // AACK no earlier than the cycle after TS.
-        9: begin
-          aack_n = 1'b0;
-          responder_state = 1;
-        end
-        1: begin
-          aack_n = 1'b1;
-          responder_state = 2;
-        end
-        2: begin
-          // Insert a bounded data-grant wait to exercise physical ownership.
-          physical_waits++;
-          if ((cycles & 1) == 0) begin
-            dbg_n = 1'b0;
-            responder_state = 3;
-          end
-        end
-        3: begin
-          if (dbb_oe && !dbb_n) begin
-            dbg_n = 1'b1;
-            if (!tx_line && inject_scalar_tea) begin
-              tea_n = 1'b0;
-              inject_scalar_tea = 1'b0;
-              responder_state = 6;
-            end else begin
-              bus_din = tx_line ?
-                instruction_dw({tx_addr[31:5], 5'b0},
-                  burst_slot(tx_addr[4:3], 0)) :
-                scalar_instruction_data(tx_addr);
-              ta_n = 1'b0;
-              responder_state = 4;
-            end
-          end
-        end
-        4: begin
-          if (tx_line && tx_beat < 3) begin
-            tx_beat++;
-            bus_din = instruction_dw({tx_addr[31:5], 5'b0},
-              burst_slot(tx_addr[4:3], tx_beat));
-            ta_n = 1'b0;
-          end else begin
-            ta_n = 1'b1;
-            check(!d_oe, "instruction read drove physical data");
-            responder_state = 5;
-          end
-        end
-        5: responder_state = 0;
-        6: begin
-          tea_n = 1'b1;
-          responder_state = 0;
-        end
-        default: responder_state = 0;
-      endcase
+      end
+      if (tenure_done) check(!d_oe, "instruction read drove physical data");
     end
   end
 
@@ -332,12 +256,6 @@ module tb_core_cached_bus60x_managed;
     imem[0] = I_OLD;
     imem[1] = I_BRANCH_ZERO;
     imem[32] = I_ERROR_TARGET;
-    aack_n = 1'b1;
-    dbg_n = 1'b1;
-    ta_n = 1'b1;
-    drtry_n = 1'b1;
-    tea_n = 1'b1;
-    bus_din = 64'b0;
     redirect_valid = 1'b0;
     redirect_all = 1'b0;
     redirect_keep = 1'b0;
@@ -441,12 +359,12 @@ module tb_core_cached_bus60x_managed;
     check(!ifetch_error && cache_enabled && maintenance_ready,
           "reset did not recover fatal bypass and default cache mode");
     check(line_bursts >= 2 && scalar_fetches >= 9 && miss_pulses >= 2 &&
-          physical_waits > 0,
+          bfm.grant_waits > 0,
           "actual-core maintenance coverage counters incomplete");
 
     $display("PASS: tb_core_cached_bus60x_managed %0d checks, %0d retires, %0d line bursts, %0d scalar fetches, %0d hits, %0d misses, %0d waits",
              checks, retirements, line_bursts, scalar_fetches,
-             hit_pulses, miss_pulses, physical_waits);
+             hit_pulses, miss_pulses, bfm.grant_waits);
     $finish;
   end
 endmodule
