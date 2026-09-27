@@ -399,3 +399,16 @@ test-fpu-timing-603 test-fpu-timing-602 test-fpu-arith-602` on the same exact
 arithmetic commit in an immutable snapshot, 2026-09-27; 603e 71 and 602 52
 exact timing responses, plus 181,376 seeded 602 numerical packets with zero
 mismatches and no warnings/errors.
+
+Recorded: `YOSYS_BIN=<pinned Yosys 0.33 executable> make -C sim -j2
+test-fpu-all lint` on an immutable source snapshot of shell commit `1598fb9`
+and arithmetic commit `6a2f28b`, plus the new aggregate Makefile target,
+2026-09-27; 20 Python anchors, 32 reciprocal-square-root table proofs,
+603e raw arithmetic 200,288/0 mismatches, 602 raw arithmetic 181,376/0,
+603e estimates 11,958/0, 602 estimates 17,628/0, 603e shell 851 checks,
+602 shell 171 checks, exact timing 71/52 responses, independent streams
+32/32 issued/forwarded/committed in each personality, and paired-issue
+checks 20/19. All 63 strict lint invocations, including the extracted donor
+and both standalone personalities, passed with zero warnings and errors.
+This snapshot precedes the speculative-dispatch and later arithmetic timing
+changes, which require separate qualification.

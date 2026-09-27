@@ -268,6 +268,12 @@ test-fpu-rsqrt-table:
 
 test-fpu: test-fpu-rsqrt-table test-fpu-arith test-fpu-estimates test-fpu-shell
 
+.PHONY: test-fpu-all
+test-fpu-all: test-fpu test-fpu-arith-602 test-fpu-estimates-602 \
+	test-fpu-602 test-fpu-timing-603 test-fpu-timing-602 \
+	test-fpu-stream-603 test-fpu-stream-602 \
+	test-fpu-dual-603 test-fpu-dual-602
+
 .PHONY: lint-fpu-production
 lint-fpu-production:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv
