@@ -93,6 +93,28 @@ bindings, raw arithmetic metadata, memory disposition and completion identity.
 See the pipeline design for execution latency, initiation interval, response
 credits and the external LSU timing boundary.
 
+FP memory operations execute in the external LSU. Its adapter must enforce
+these hit-path latency/initiation intervals, expressed in core cycles:
+
+| Instruction family | 603e | 602 |
+| --- | --- | --- |
+| `lfs`, `stfs`, including indexed/update forms; `stfiwx` | 2 / 1 | 2 / 1 |
+| `lfd`, `stfd`, including indexed/update forms | 2 / 1 | 3 / 2 |
+
+The adapter controls request admission with `mem_req_ready_i` and returns the
+atomic tagged response at the scheduled stage; misses and faults may delay it.
+Core dispatch must also respect the LSU's reservation availability. The shell
+accepts externally prepared responses and does not supply a cache or enforce
+these physical LSU stages itself. Immediate-response mock tests establish the
+transport protocol, not original-chip memory timing.
+[603e UM Table 6-6, PDF 274–276; 602 UM Table 6-6, PDF 316–318]
+
+The 602 SP/LT `mfspr` and `mtspr` operations execute in one and two cycles,
+respectively, with architectural writes still restricted to matching commit.
+These are IU/SRU register-transfer timings, distinct from the three-stage
+floating-point status instructions.
+[602 UM Table 6-2, PDF 312; Table 6-5, PDF 315–316]
+
 `forward_valid_o/forward_o` and `forward1_valid_o/forward1_o` are one-cycle
 speculative notifications with no backpressure input. The primary notification
 prioritizes a ready CR update; the second preserves another ready result, such
