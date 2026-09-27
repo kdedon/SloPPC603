@@ -429,3 +429,10 @@ test-fpu-stream-603 test-fpu-stream-602` on the same immutable shell
 602 shell 171 checks, and both 32-instruction streams issued, forwarded,
 and committed all 32 packets with zero warnings or errors. This predates
 the 602 SPR timing correction.
+
+Recorded: `make -C sim -j2 lint-fpu-dual test-fpu-dual-603
+test-fpu-dual-602` on the same `1463439`/`6a2f28b` immutable snapshot with
+the rejected-lane test, 2026-09-27; 603e 28 and 602 24 checks passed with
+zero warnings and errors. A second simultaneous LSU issue was rejected with
+no memory request or forward; issuing that tag later caused exactly one
+ordinary prepare and completion.

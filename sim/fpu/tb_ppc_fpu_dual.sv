@@ -523,6 +523,44 @@ module tb_ppc_fpu_dual #(
             checks += 3;
         end
 
+        // A rejected second LSU lane has no prepare or forward side effect;
+        // issuing it later with the same tag produces one normal request.
+        @(negedge clk_i);
+        issue_i = request(8'd140,
+            dform(CPU_602 ? 6'd48 : 6'd50, 5'd27, 16'd0));
+        issue1_i = request(8'd141,
+            dform(CPU_602 ? 6'd48 : 6'd50, 5'd28, 16'd0));
+        issue_valid_i = 1'b1;
+        issue1_valid_i = 1'b1;
+        @(posedge clk_i);
+        accept0 = issue_ready_o;
+        accept1 = issue1_ready_o;
+        #2;
+        issue_valid_i = 1'b0;
+        issue1_valid_i = 1'b0;
+        if (!accept0 || accept1)
+            $fatal(1, "same-class LSU pair acceptance incorrect");
+        reply_memory(tag(140),
+            CPU_602 ? 64'h000000003f800000 : 64'h3ff0000000000000,
+            1'b0);
+        repeat (3) begin
+            @(negedge clk_i);
+            if ((mem_req_valid_o && mem_req_o.tag == tag(141)) ||
+                (forward_valid_o && forward_o.tag == tag(141)) ||
+                (forward1_valid_o && forward1_o.tag == tag(141)))
+                $fatal(1, "rejected second lane launched or forwarded");
+        end
+        await_head(tag(140));
+        retire_one(tag(140));
+        issue_one(request(8'd141,
+            dform(CPU_602 ? 6'd48 : 6'd50, 5'd28, 16'd0)));
+        reply_memory(tag(141),
+            CPU_602 ? 64'h000000003f800000 : 64'h3ff0000000000000,
+            1'b0);
+        await_head(tag(141));
+        retire_one(tag(141));
+        checks += 2;
+
         attempts = 0;
         while (mem_req_valid_o || result_valid_o || result1_valid_o) begin
             @(negedge clk_i);
