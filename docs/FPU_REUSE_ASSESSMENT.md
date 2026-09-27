@@ -32,11 +32,14 @@ policy and illegal-before-unavailable priority. The shell implements every
 architectural 603e FP instruction class and remains serialized. The separate
 core integrator owns CPU-level acceptance.
 
-The standalone F5 synthesis-only 50 MHz check passes. Frozen `3472757`
-full-unit post-map measurement reports 10,362 estimated ALMs, 12,114
-combinational ALUTs, 7,084 registers, no block RAM and four DSP blocks at
-50.4 MHz, with +0.155 ns setup slack at 20 ns. The aspirational 66 MHz
-check fails. These are post-map estimates, not fitted timing closure; see
+The standalone F5 synthesis-only 50 MHz check passes. Frozen `cb871b4`
+full-unit post-map measurement reports 10,364 estimated ALMs, 12,102
+combinational ALUTs, 7,122 registers, no block RAM and four DSP blocks at
+50.5 MHz, with +0.200 ns setup slack at 20 ns. The aspirational 66 MHz
+check fails. The arithmetic-only configuration also passes 50 MHz at
+50.8 MHz, using 5,998 estimated ALMs, 7,515 ALUTs, 4,566 registers and
+four DSP blocks, with no block RAM. These are post-map estimates, not
+fitted timing closure; see
 [measurement evidence](../quartus/fpu-production/README.md).
 The serialized lane does not implement four rename slots or exact 603e
 pipeline throughput. Finite single divide and `fres` take 19 clocks rather

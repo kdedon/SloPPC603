@@ -56,7 +56,7 @@ standalone interface; the integrating CPU still needs its own end-to-end tests.
 
 The latest standalone suite passes 851 shell checks, including illegal FP encodings with MSR[FP]=0, matching and stale tags, FPSCR changes, memory preparation and commit-only stores. Full architectural standalone instruction coverage is implemented in this serialized shell; the core integration and four-entry rename/throughput model remain separate work. [Production verification](../sim/fpu/PRODUCTION.md)
 
-The final production source checkpoint is `3472757`. Its standalone verification
+The final production source checkpoint is `cb871b4`. Its standalone verification
 and synthesis measurements are recorded in [production verification](../sim/fpu/PRODUCTION.md)
 and [Quartus evidence](../quartus/fpu-production/README.md). Core attachment and
 fitted timing remain separate acceptance work.

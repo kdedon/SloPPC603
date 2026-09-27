@@ -1,5 +1,10 @@
 # Standalone PPC FPU verification
 
+Final RTL checkpoint: `cb871b4`. The pinned suite passes 200,000 arithmetic
+packets, 11,958 estimates, 851 shell checks, 76 cancellation offsets and 55
+strict lint invocations. Both post-map configurations exceed 50 MHz; neither
+reaches 66 MHz. Detailed `Recorded:` entries and scope limits follow.
+
 The production arithmetic oracle is `ppc_reference.py` (SHA-256
 `defbd974681295392a673cec2c0020877f4a26c6cb2e1c42209c588a71627956`),
 layered over the exact-integer IEEE model in `reference.py`. Both are original
@@ -217,6 +222,24 @@ with 0 warnings and 0 errors. Measured ADD/SUB/`frsp` maximum latency was
 `frsqrte` 1, and `fctiw`/`fctiwz` 3. The FPU meets the 50 MHz synthesis
 target, while the documented single divide/`fres` cycle-count discrepancy
 remains an implementation timing gap.
+
+Recorded: `make -C sim -j2 test-fpu` on commit `3472757` plus the early
+DIV/FRES exponent-capture timing change, 2026-09-27; 20 Python anchors,
+32 table value/bound proofs, 200,000 raw arithmetic packets with 0
+mismatches, 76 cancellation offsets, 4 held-response checks, 11,958
+estimate packets with 0 mismatches, and 851 shell checks with 0 failures.
+Strict test builds emitted 0 warnings and 0 errors; measured latencies did
+not change. This check preceded fresh synthesis of the timing change.
+
+Recorded: `make -C sim -j2 test-fpu lint` with `YOSYS_BIN` set to the
+pinned extractor, on final RTL commit `cb871b4` with documentation drafts
+uncommitted, 2026-09-27; 20 Python anchors, 32 table value/bound proofs,
+200,000 raw arithmetic packets with 0 mismatches, 76 cancellation offsets,
+4 held-response checks, 11,958 estimate packets with 0 mismatches, 851
+shell checks with 0 failures, and 55 strict lint invocations with 0
+warnings and 0 errors. The same RTL measured 50.5 MHz for the full FPU
+and 50.8 MHz for arithmetic alone in the pinned Quartus image. The
+single divide/`fres` 19-versus-18-cycle manual discrepancy remains open.
 
 Recorded: `make -C sim -j2 test-fpu` on commit `34909b0` plus the divider
 numerator-capture cut, 2026-09-27; 20 Python anchors, 32 table value/bound
