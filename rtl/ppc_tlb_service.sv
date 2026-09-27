@@ -140,15 +140,16 @@ module ppc_tlb_service #(
     end
   end
 
-  for (genvar way = 0; way < 2; way++) begin : g_way
+  genvar ram_way;
+  generate for (ram_way = 0; ram_way < 2; ram_way = ram_way + 1) begin : g_way
     ppc_tlb_ram #(.WIDTH($bits(entry_t)), .DEPTH(64)) entries (
       .clk_i,
-      .write_i(ram_write && ram_write_way[way]),
+      .write_i(ram_write && ram_write_way[ram_way]),
       .write_addr_i(ram_write_addr), .write_data_i(ram_write_data),
       .read_addr_i({req_bank_i, req_ea_i[16:12]}),
-      .read_data_o(entry_rd[way])
+      .read_data_o(entry_rd[ram_way])
     );
-  end
+  end endgenerate
 
   always_comb begin
     // Manual EA15..19 -> HDL [16:12]; EA4..14 -> HDL [27:17].
