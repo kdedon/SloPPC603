@@ -37,7 +37,7 @@ While draining, a later accepted redirect replaces the pending target PC but nev
 
 Only an accepted CQ redirect may activate fetch drain; a stale or rejected pivot must never redirect the frontend. The caller must preserve surviving operand identities. Neither coupling nor IQ/RS storage is implemented by this policy model. Canonical local holders support cancellation, and the full core now couples accepted requests to fetch drain and IQ clearing.
 
-The fetch policy model includes explicit request offers so even a request first presented on a redirect edge is retained. It supports one request/response obligation, no same-edge request/response completion, and arbitrary request/response/IQ stalls. The RTL's consume-edge offer and its drop-and-replay of an unreserved response that finds the IQ full are outside the model; `test-fetch-recovery` covers them.
+The fetch policy model includes explicit request offers so even a request first presented on a redirect edge is retained. It supports one request/response obligation, no same-edge request/response completion, and arbitrary request/response/IQ stalls. The RTL's consume-edge offer, its one-entry buffer for an unreserved word that finds the IQ full, and its refetch of such a fault response are outside the model; `test-fetch-recovery` covers them.
 
 ## Executable checks and implementation slices
 

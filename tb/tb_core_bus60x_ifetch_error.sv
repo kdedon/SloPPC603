@@ -76,7 +76,7 @@ module tb_core_bus60x_ifetch_error;
     end
     if (rst_n && dbb_oe)
       check(!data_oe, "instruction read never drives data");
-    if (retire_valid && retire_ready) begin
+    if (rst_n && retire_valid && retire_ready) begin
       check(^retired !== 1'bx, "retired packet is fully known");
       check(retired.pc == 32'h0000_1000 &&
             retired.insn == 32'h3860_0001 && !retired.illegal,

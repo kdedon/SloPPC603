@@ -63,7 +63,7 @@ One instruction dispatches per cycle. Dispatch allocates an unfinished completio
 | Module | Owns | Contract |
 |---|---|---|
 | `ppc_pkg` | Packet layouts and fixed queue/tag sizes | Host bit slicing uses `[31:0]`; PowerPC manual bit numbers must be translated explicitly in future work. |
-| `ppc_fetch` | Next PC and outstanding response state | Advance sequentially after accepted normal responses; offer the next request on the consume edge; drop and refetch an unreserved response that finds the IQ full; preserve old offers and drain/discard old responses before installing the latest accepted redirect target. |
+| `ppc_fetch` | Next PC and outstanding response state | Advance sequentially after accepted normal responses; offer the next request on the consume edge; buffer an unreserved word that finds the IQ full (refetch a fault response); preserve old offers and drain/discard old responses before installing the latest accepted redirect target. |
 | `ppc_fifo` | Circular storage and occupancy | Ordered, no fall-through; accepted redirect clears with priority over push/pop; simultaneous normal push/pop preserves count; a full queue advertises capacity the cycle after a pop. The IQ has depth 6; CQ owns its separate depth-5 ring. |
 | `ppc_decode` | Supported opcode classification | Reject unknown opcodes and unsupported OE/Rc forms; rA=0 literal-zero behavior only for add immediate forms. |
 | `ppc_dispatch` | One IU reservation entry (`rs_entry_t`: `iu_ctrl_t` controls plus two operands) | Controls are captured whole and issue unchanged in `issue_packet_t`; source wake requires rename slot and completion identity; ready issue remains stable under backpressure unless an accepted identity-matched recovery cancels it. |
@@ -218,5 +218,6 @@ The fetch unit consumes every instruction response on arrival, retaining any
 held offer, so a held instruction response never blocks a data transaction
 behind the shared translation router. A request offered with nothing pending
 reserves an IQ slot; one offered on a consume edge does not, and its response
-is dropped and refetched if the IQ is full. The router accepts only when idle,
+waits in a one-entry fetch buffer if the IQ is full (a fault response is
+refetched instead). The router accepts only when idle,
 so translated fetch does not stream.
