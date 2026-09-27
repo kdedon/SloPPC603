@@ -26,13 +26,13 @@ F2–F4 standalone instruction semantics are implemented in `ppc_fpu.sv` and
 tagged commit/abort, and side-effect-free memory preparation for later LSU
 attachment. The new arithmetic engine is independent of the failed donor.
 [Production verification](../sim/fpu/PRODUCTION.md) records 200,000 raw
-arithmetic packets, 11,410 estimate packets and 752 shell checks, all passing,
+arithmetic packets, 11,958 estimate packets and 833 shell checks, all passing,
 including the explicitly chosen NI status policy. These are standalone tests;
 the separate core integrator owns CPU-level acceptance.
 
-F5 frequency acceptance remains open. The `fc33a75` full-unit measurement
-reports 11,601 estimated ALMs, 14,305 combinational ALUTs, 3,462 registers,
-no block RAM and four DSP blocks at 12.4 MHz post-map, below 50/66 MHz.
+F5 frequency acceptance remains open. The `c10d82b` full-unit measurement
+reports 10,759 estimated ALMs, 13,265 combinational ALUTs, 4,073 registers,
+no block RAM and four DSP blocks at 19.4 MHz post-map, below 50/66 MHz.
 Further registered arithmetic stages are being measured. The serialized lane
 does not implement the 603e's four rename slots or exact pipeline throughput.
 Source conflicts and silicon-specific NI behavior remain explicit in the

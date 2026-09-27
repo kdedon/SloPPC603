@@ -28,4 +28,8 @@ The first implementation uses `clk_i` only and active-low synchronous reset `rst
 
 `stfs` extracts a single-format representation directly from its FPR operand without invoking `frsp` or changing FPSCR; the source is expected to be representable as binary32. The current shell truncates discarded low bits for a source outside that precondition. Software requiring a defined rounded conversion first executes `frsp`. `lfs` widens the binary32 representation exactly. [PEM §3.3.4, PDF 130–131 / 3-24–3-25; PEM `stfsx`, PDF 640 / 8-228]
 
-Recorded: `make -C sim -j2 test-fpu-shell`, commit `f58dabb` plus testbench fixes, 2026-09-27: 35 smoke checks passed with strict Verilator compilation. Checks cover raw `lfd`, held results, stale commit rejection, commit-only FPR/FPSCR writes, abort, FP-unavailable and illegal `fsqrt`. This is preliminary evidence; it does not establish full instruction, memory-fault or FPSCR coverage.
+Recorded: `make -C sim -j2 test-fpu-shell`, commit `919b76e` plus the pipeline,
+estimate and test changes committed as `c10d82b`, 2026-09-27: 833 checks passed.
+See [production verification](../sim/fpu/PRODUCTION.md) for instruction,
+status, memory, cancellation and retirement coverage. These tests exercise the
+standalone interface; the integrating CPU still needs its own end-to-end tests.

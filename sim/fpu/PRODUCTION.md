@@ -27,12 +27,16 @@ divide, alternating flush and reset, then verifies a fresh tag and exact
 result with no old completion.
 
 The estimate checker `estimate_vectors.py` (SHA-256
-`94380a0354d9262838ddff123c4b2e8719c9beeaf373268d1f72591e5934220a`)
+`8fb874fc4073c427e8914dbb6cd3a604138de83e58ae30c55a997f0a684397ae`)
 uses seed `0x603ef003`. It checks exact-rational relative-error bounds,
 FRES result sign and binary32 precision, every binary64 exponent and
 subnormal leading-bit position for FRSQRTE, both exponent parities and every
-table-bin endpoint, special results, VE/ZE suppression, FPRF, and affected
-status bits. Finite estimate bounds apply to delivered representable results;
+table-bin endpoint, special results, VE/ZE suppression, FPRF, affected
+status bits, and FR/FI clearing on invalid or zero-divide. FRSQRTE checks
+binary32 result representability for binary32-representable operands as
+specified by PEM; its full binary64 exponent sweep tests the selected
+implementation's extension outside that architectural operand domain.
+Finite estimate bounds apply to delivered representable results;
 overflow/underflow are checked by their separate rounding and scaled-result
 rules. No fixed implementation-dependent estimate bit pattern is assumed.
 
@@ -50,6 +54,8 @@ forms with known exact operands; `fres`/`frsqrte`, both compares, FP moves,
 `fsel`, `mffs`, `mtfsfi`, `mtfsf`, `mcrfs`, and `stfiwx`; D-form, indexed,
 and update loads/stores; all four FPSCR RN settings controlling `fctiw(1.5)`;
 and reset with a held store, in-flight divide, and pending LSU request.
+Zero-input and invalid estimates are also tested with FR/FI preseeded to one,
+with VE/ZE both disabled and enabled, before checking both bits clear at commit.
 
 Recorded: `make -C sim -j2 test-fpu` on commit `fc33a75` plus uncommitted
 shell RN-control and strict NI-metadata test changes, 2026-09-27; 20 Python anchors, 32 exact
@@ -62,12 +68,42 @@ Observed request-acceptance to result-valid latency was 1–3 clocks for
 add/sub/mul/fused/`frsp`, 1–28 for divide, and 1 for conversion/compare;
 these ranges include faster special cases.
 
+Recorded: `make -C sim -j2 test-fpu` on commit `919b76e` plus uncommitted
+estimate contract, round-pipeline, and bench changes, 2026-09-27; 20 Python
+anchors, 32 exact table values and relative-bound proofs, 200,000 arithmetic
+packets with 0 mismatches, 37 cancel offsets, 4 held-response flush/reset
+checks, 11,958 estimate packets with 0 mismatches, and 833 shell checks with
+0 failures. The estimate corpus contains 1,208 normal FRES, 192 overflow,
+192 underflow, 64 exact subnormal, 576 special, and 9,726 FRSQRTE packets.
+Observed request-acceptance to result-valid latency was 1–7 clocks for
+add/sub/mul/fused/`frsp`, 1–32 for divide, and 1 for conversion/compare;
+the minima include special cases.
+
+Recorded: `make -C sim -j2 test-fpu-arith` on commit `c10d82b` plus the
+expanded cancellation sweep, 2026-09-27; 200,000 raw packets with 0
+mismatches, 43 cancellation offsets (FMA 0–8, divide 0–33), and 4 held-response
+flush/reset checks. The offsets reach beyond both newly staged finite paths
+and include already completed responses under backpressure.
+
+Recorded: `make -C sim -j2 test-fpu`, commit `c10d82b` plus the alignment
+and bench changes committed as `398753e`, 2026-09-27; 20 Python anchors, 32 exact table values and 32
+truncated-result bound proofs, 200,000 arithmetic packets with 0 mismatches,
+66 cancellation offsets (FMA 0–16, divide 0–48), 4 held-response checks,
+11,958 estimate packets with 0 mismatches, and 833 shell checks with 0
+failures. Request-acceptance to result-valid latency was 1–9 clocks for
+add/sub/mul/fused/`frsp`, 1–32 for divide, and 1 for conversion/compare;
+the minima include faster special cases.
+
 Recorded: `make -C sim -j2 test-core test-completion test-execution check-spec`
 on commit `fc33a75` plus documentation and FPU-bench changes, 2026-09-27;
 the existing integer core, completion, execution, and structural spec checks
 passed (3 × 256 integer results, 907 completion checks, 190 structural rows,
 39 rules, 384 locators). These are representative unchanged-core regressions,
 not an integrated-FPU test.
+
+Recorded: `make -C sim -j2 lint` with `YOSYS_BIN` set to the pinned
+extractor, on commit `c10d82b`, 2026-09-27; 55 lint invocations, 0 warnings,
+0 errors. This includes the strict standalone production FPU top.
 
 `test-fpu` runs the production Python anchors, exact reciprocal-square-root
 table proof, raw arithmetic, estimates, and shell; `test-fpu-qualify` remains

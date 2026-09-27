@@ -45,7 +45,7 @@ experiment under the [FPU reuse assessment](../../FPU_REUSE_ASSESSMENT.md).
 The SS candidate fails numerical qualification and the pre-fit frequency
 target. The standalone PPC shell and replacement arithmetic pass independent numeric
 and architectural tests; frequency acceptance remains open. The current full
-unit estimates 12.4 MHz before fit, below the 50 MHz target. See the assessment
+unit estimates 19.4 MHz before fit, below the 50 MHz target. See the assessment
 for measured resources, selected semantics and remaining silicon questions.
 The target is a complete standalone FPU; a separate process will integrate it
 into the CPU. Existing core RTL and file lists remain outside this workstream.
