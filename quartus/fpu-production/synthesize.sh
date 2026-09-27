@@ -4,14 +4,15 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
 image='theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70'
-[[ "${1:---docker}" == --docker ]] || { echo 'usage: synthesize.sh [--docker] [full|arith|all]' >&2; exit 2; }
+usage='usage: synthesize.sh [--docker] [full|arith|full602|arith602|all]'
+[[ "${1:---docker}" == --docker ]] || { echo "${usage}" >&2; exit 2; }
 variant_choice="${2:-all}"
 case "${variant_choice}" in
-  full|arith|all) ;;
-  *) echo 'usage: synthesize.sh [--docker] [full|arith|all]' >&2; exit 2 ;;
+  full|arith|full602|arith602|all) ;;
+  *) echo "${usage}" >&2; exit 2 ;;
 esac
-[[ $# -le 2 ]] || { echo 'usage: synthesize.sh [--docker] [full|arith|all]' >&2; exit 2; }
-variants=(full arith)
+[[ $# -le 2 ]] || { echo "${usage}" >&2; exit 2; }
+variants=(full arith full602 arith602)
 if [[ "${variant_choice}" != all ]]; then variants=("${variant_choice}"); fi
 run() {
   local variant="$1"; shift
@@ -26,14 +27,20 @@ docker run --rm --network none --user "$(id -u):$(id -g)" \
   --volume "${repo_dir}:/work" --workdir /work "${image}" \
   /opt/intelFPGA_lite/quartus/bin/quartus_sh --version
 for variant in "${variants[@]}"; do
+  base_variant="${variant%602}"
   project_dir="${script_dir}/output_files/${variant}/project"
   reports_dir="${script_dir}/output_files/${variant}/reports"
   mkdir -p "${project_dir}" "${reports_dir}"
   rm -f "${reports_dir}"/*
-  cp "${script_dir}/${variant}/ppc_fpu.qpf" "${script_dir}/${variant}/ppc_fpu.qsf" \
+  cp "${script_dir}/${base_variant}/ppc_fpu.qpf" "${script_dir}/${base_variant}/ppc_fpu.qsf" \
     "${script_dir}/ppc_fpu.sdc" "${script_dir}/timing.tcl" "${project_dir}/"
+  if [[ "${variant}" == *602 ]]; then
+    echo 'set_parameter -name CPU_602 1' >> "${project_dir}/ppc_fpu.qsf"
+  else
+    echo 'set_parameter -name CPU_602 0' >> "${project_dir}/ppc_fpu.qsf"
+  fi
   sources=(rtl/ppc_pkg.sv rtl/fpu/ppc_fpu_pkg.sv rtl/fpu/ppc_fpu_arith.sv)
-  if [[ "${variant}" == full ]]; then sources+=(rtl/fpu/ppc_fpu.sv); fi
+  if [[ "${base_variant}" == full ]]; then sources+=(rtl/fpu/ppc_fpu.sv); fi
   manifest="${script_dir}/output_files/${variant}/sources.sha256"
   project_inputs=(
     "quartus/fpu-production/output_files/${variant}/project/ppc_fpu.qpf"
