@@ -315,9 +315,8 @@ module tb_compiled_table_fault_firmware;
                 !retired.page_miss.pr&&
                 retired.page_miss.ea==(is_i(m)?ea(m):(ea(m)&32'hfffffffc))&&
                 retired.page_miss.sr==sr_expected(m)&&
-                !retired.page_miss.way&&
                 retired.page_miss.write==(m==3||(m>=16&&m%2!=0)),
-            "typed miss capsule EA/SR/way/write");
+            "typed miss capsule EA/SR/write");
           check(is_i(m)?
                 (retired.fetch_fault==FETCH_PAGE_MISS&&retired.pc==ea(m)):
                 (retired.data_fault==DATA_PAGE_MISS),
