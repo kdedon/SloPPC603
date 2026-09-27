@@ -135,6 +135,25 @@ and 833 shell checks with 0 failures. `fctiw`/`fctiwz` each took 3 clocks;
 single/double divide remained 18/32, finite `fres` 18, and finite
 `frsqrte` 1. Strict test builds emitted 0 warnings and 0 errors.
 
+Recorded: `make -C sim -j2 test-fpu` on commit `7318a24` plus the
+partial-product multiplier and illegal-encoding priority changes,
+2026-09-27; 20 Python anchors, 32 table value/bound proofs, 200,000
+arithmetic packets with 0 mismatches, 70 cancellation offsets (FMA 0–20,
+divide 0–48), 4 held-response checks, 11,958 estimate packets with 0
+mismatches, and 851 shell checks with 0 failures. The shell includes six
+illegal FP encodings issued with MSR[FP]=0 and verifies illegal priority.
+Finite MUL/fused latency reached 17 clocks; single/double divide remained
+18/32, finite `fres` 18, `frsqrte` 1, and `fctiw`/`fctiwz` 3.
+
+Recorded: `make -C sim -j2 test-fpu` on commit `438f377` plus the split
+NORM_HIGH timing stage, 2026-09-27; 20 Python anchors, 32 table value/bound
+proofs, 200,000 arithmetic packets with 0 mismatches, 72 cancellation
+offsets (FMA 0–22, divide 0–48), 4 held-response checks, 11,958 estimate
+packets with 0 mismatches, and 851 shell checks with 0 failures. ADD/SUB/
+`frsp` reached 15 clocks, MUL/fused 18, single/double divide 18/32,
+conversion 3, finite `fres` 18, and `frsqrte` 1. Test builds emitted 0
+warnings and 0 errors.
+
 Recorded: `make -C sim -j2 test-core test-completion test-execution check-spec`
 on commit `fc33a75` plus documentation and FPU-bench changes, 2026-09-27;
 the existing integer core, completion, execution, and structural spec checks

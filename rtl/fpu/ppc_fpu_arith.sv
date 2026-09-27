@@ -154,7 +154,7 @@ module ppc_fpu_arith (
         PREP, PREP_MUL, PREP_MID, PREP_LOW, PREP_PRODUCT,
         ALIGN_PLAN, ALIGN_SHIFT,
         SUM_PLAN, SUM_0, SUM_1, SUM_2, SUM_3,
-        NORM_HIGH, NORM_LOW,
+        NORM_HIGH_A, NORM_HIGH_B, NORM_LOW,
         TINY, ROUND, PACK, RESPONSE
     } state_t;
     state_t state_q;
@@ -174,6 +174,7 @@ module ppc_fpu_arith (
     sum_chunks_t sum_1_q;
     sum_chunks_t sum_2_q;
     finite_sum_t sum_q;
+    finite_sum_t norm_high_a_q;
     finite_sum_t norm_high_q;
     finite_sum_t norm_low_q;
     round_work_t round_work_q;
@@ -293,7 +294,7 @@ module ppc_fpu_arith (
         return bits[63] ? 5'b01000 : 5'b00100;
     endfunction
 
-    function automatic finite_sum_t normalize_high(input finite_sum_t value);
+    function automatic finite_sum_t normalize_high_a(input finite_sum_t value);
         finite_sum_t out;
         out = value;
         if (out.magnitude != 0) begin
@@ -309,6 +310,15 @@ module ppc_fpu_arith (
                     out.magnitude <<= 64;
                     out.exponent -= 16'sd64;
                 end
+            end
+        end
+        return out;
+    endfunction
+
+    function automatic finite_sum_t normalize_high_b(input finite_sum_t value);
+        finite_sum_t out;
+        out = value;
+        if (out.magnitude != 0) begin
                 if (out.magnitude[158:127] == 32'd0) begin
                     out.magnitude <<= 32;
                     out.exponent -= 16'sd32;
@@ -317,7 +327,6 @@ module ppc_fpu_arith (
                     out.magnitude <<= 16;
                     out.exponent -= 16'sd16;
                 end
-            end
         end
         return out;
     endfunction
@@ -1144,6 +1153,7 @@ module ppc_fpu_arith (
             sum_1_q <= '0;
             sum_2_q <= '0;
             sum_q <= '0;
+            norm_high_a_q <= '0;
             norm_high_q <= '0;
             norm_low_q <= '0;
             round_work_q <= '0;
@@ -1267,10 +1277,14 @@ module ppc_fpu_arith (
                 end
                 SUM_3: begin
                     sum_q <= finish_sum(sum_2_q);
-                    state_q <= NORM_HIGH;
+                    state_q <= NORM_HIGH_A;
                 end
-                NORM_HIGH: begin
-                    norm_high_q <= normalize_high(sum_q);
+                NORM_HIGH_A: begin
+                    norm_high_a_q <= normalize_high_a(sum_q);
+                    state_q <= NORM_HIGH_B;
+                end
+                NORM_HIGH_B: begin
+                    norm_high_q <= normalize_high_b(norm_high_a_q);
                     state_q <= NORM_LOW;
                 end
                 NORM_LOW: begin

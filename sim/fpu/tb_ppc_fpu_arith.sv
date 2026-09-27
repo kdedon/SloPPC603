@@ -312,11 +312,11 @@ module tb_ppc_fpu_arith;
         #1;
         if (rsp_valid_o) $fatal(1, "reset response remained");
         $display("PASS PPC arithmetic flush/reset held-response checks=4");
-        for (int offset = 0; offset <= 20; offset++)
+        for (int offset = 0; offset <= 22; offset++)
             cancel_at_offset(FP_MADD, offset, 8'(offset + 16));
         for (int offset = 0; offset <= 48; offset++)
             cancel_at_offset(FP_DIV, offset, 8'(offset + 32));
-        $display("PASS PPC arithmetic cancel-offset sweeps=70");
+        $display("PASS PPC arithmetic cancel-offset sweeps=72");
         $display("PPC_ARITH_RESULT vectors=%0d mismatches=%0d", count, failures);
         $display("PPC_ARITH_DOMAINS result=%0d invalid=%0d flags=%0d class=%0d",
                  result_failures, invalid_failures, flag_failures, class_failures);
