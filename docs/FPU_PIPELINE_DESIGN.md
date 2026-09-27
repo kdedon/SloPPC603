@@ -55,15 +55,19 @@ the standalone FPU itself supplies the core's three-way general dispatcher.
 [602 UM §§1.1.3.1.3, 6.3.2, 6.4.4–5, Tables 6-5–6,
 physical PDF 45, 299, 304–305, 315–318]
 
-Each lane has an independent operand reservation slot and can launch directly
-into its execution resource on dispatch. A stalled arithmetic request must not
+The FPU and LSU each have an operand reservation opportunity, independent of
+which dispatch lane supplied the instruction. A stalled arithmetic request must not
 block a ready FP load or store, and an LSU request backpressure must not consume
 arithmetic initiation bandwidth. Both resources publish full-tag completions
-into the shared four- or five-entry pending queue; one oldest instruction retires
-per edge. Same-edge retirement may free a slot or FPR rename credit for a
-two-instruction accepted prefix. Pair tests cover both lane orders, a waiting
+into the shared four- or five-entry pending queue. The 602 retires one oldest
+instruction per edge. The 603e may also retire a following successful load when
+the two results use at most one CR update and one FPR update; this includes a
+compare plus load or an authorized store plus load. Same-edge retirement may
+free queue slots and FPR rename credits for an accepted issue prefix. Pair tests
+cover both lane orders, a waiting
 producer with independent opposite-resource work, fault/abort of either lane,
 and sustained FPU II1 concurrent with the LSU's externally prepared requests.
+[603e UM §6.6.1.3, physical PDF 268; 602 UM §6.3.2, physical PDF 299]
 
 The shell issue handshake represents dispatch. Operand reservation and backend
 execution acceptance are distinct events; dispatch delay must not be counted as
@@ -88,11 +92,15 @@ instruction per cycle. FPR rename capacity remains four in both builds.
 physical PDF 45, 299]
 
 Finished FPR values and CR results are forwarded before architectural retirement.
-The forward packet includes the full completion tag, destination, value, validity,
-and 602 SP/LT tags where applicable. CR forwarding excludes `mcrfs`. Architectural
+Two forwarding packets preserve a same-edge CR result and load FPR result when
+both 603e instructions retire together. A CR result takes the first forwarding
+bus so the BPU can resolve the branch without waiting for retirement; the second
+bus carries the remaining value. Each packet includes the full completion tag,
+destination, value, validity, and 602 SP/LT tags where applicable. CR forwarding
+excludes `mcrfs`. Architectural
 updates remain exact-tag, in-order, commit-only. A held oldest result is stable;
 independent younger instructions may execute and finish while it awaits commit.
-[603e UM §6.4.3, physical PDF 264]
+[603e UM §§6.4.3, 6.6.1.3, physical PDF 264, 268]
 
 Arithmetic stores raw exception and rounding metadata in pending records. At
 ordered retirement, FPSCR effects combine with the committed FPSCR so concurrent
