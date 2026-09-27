@@ -49,11 +49,15 @@ The core must deliver the same abort/kill identity to any LSU preparation
 resources it allocates. The FPU discards its local instruction and drains stale
 replies; it does not own the LSU's reservations or store-buffer entries. Keep
 prepared translation/authorization associated with the full completion tag
-until matching store acceptance or cancellation.
+until matching store acceptance or cancellation. A queue index may be reused
+with a new generation, but the core must not reuse the identical full tag while
+any cancelled backend or LSU reply bearing that identity can still arrive.
+Generation wrap requires draining or otherwise proving those replies impossible;
+a receiver cannot distinguish two transactions with identical identifiers.
 
 The memory response channel also follows ready/valid: the LSU holds its packet until accepted. A matching reply presented in the request-accept cycle is backpressured until the shell enters its response state. Unrelated stale replies may drain immediately. This permits a combinational preparation response without losing it.
 
-While reset is asserted, outward request/result/store valid signals and issue/commit readiness are inactive. In particular, resetting a held store prevents publication even if the integrating consumer remains ready. The memory response channel may drain cancelled replies during reset.
+While reset is asserted, outward request/result/store valid signals and issue/commit readiness are inactive. In particular, resetting a held store prevents publication even if the integrating consumer remains ready. Memory-response readiness is also inactive during reset or global kill; stale replies may drain after reset releases.
 
 Memory packet `data` uses register bit order: the low 32 bits hold a word, and all 64 bits hold a doubleword. The integrating LSU owns byte ordering, bus beat order and memory attributes from the core's instruction context. It must return the complete logical value after any byte-order conversion, and must not expose an intermediate half-load or half-store through this interface.
 
@@ -70,7 +74,11 @@ See the pipeline design for execution latency, initiation interval, response
 credits and the external LSU timing boundary.
 
 `forward_valid_o/forward_o` is a one-cycle speculative notification with no
-backpressure input. The integrating core must capture relevant FPR/CR results
+backpressure input. FPR and CR fields have separate write qualifiers: an FPR
+may forward before the same instruction's CR1, which waits for older FPSCR
+effects. Consumers must honor those qualifiers rather than assume exactly one
+notification per tag. `mcrfs` supplies its CR update at retirement only. The
+integrating core must capture relevant FPR/CR results
 and discard them on recovery; it must never use forwarding to authorize an
 architectural update. The backend's `finish_valid_o/finish_o` similarly exposes
 the final arithmetic stage before its held response queue. Its raw metadata

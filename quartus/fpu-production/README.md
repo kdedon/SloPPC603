@@ -64,6 +64,38 @@ alignment through magnitude comparison, add/subtract and leading-zero detection
 (78.647 ns, 29 logic levels). Map completed with zero errors and four warnings;
 TimeQuest completed with zero errors and zero warnings. No fitter ran.
 
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`7b994ba` plus uncommitted carry-select arithmetic changes, 2026-09-27.
+
+The next revision passed its numerical test but failed Quartus elaboration:
+three errors, zero warnings. Quartus 17 could not resolve a nested function-local
+struct field (`out.sum.exponent`). No area or frequency result was produced.
+The planned fix uses a local intermediate struct before assigning the outer field.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`479aab1` plus the carry-out arithmetic subsequently committed as `4faef5c`,
+2026-09-27.
+
+The local intermediate alone did not resolve Quartus's parsing problem:
+assignment to the function-local `sum` member still failed. Three elaboration
+errors and zero warnings produced no area or timing result. Renaming the member
+is the next compatibility correction.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit
+`479aab1` with arithmetic pinned to `251d633`, 2026-09-27.
+
+This exploratory concurrent-shell map used 19,468 estimated ALMs, 24,769 ALUTs,
+7,134 registers, 412 memory bits and five DSP blocks, with 975 virtual pins and
+zero physical pins. Post-map Fmax was **12.8 MHz**, with −58.140 ns slack;
+both targets failed. The worst path passed from arithmetic rounding through
+source forwarding, select control and pending-result storage (77.974 ns).
+The shell had lint acceptance only when captured; this measurement does not
+establish functional correctness. Map reported zero errors and 71 warnings:
+two signed shift-count conversions, inferred response RAM pass-through,
+constant memory-size bits and 603e-disabled SP/LT outputs plus their summary,
+and the virtual-clock warning. TimeQuest reported zero errors and warnings.
+No fitter ran.
+
 ### Earlier serialized implementation
 
 The following measurements describe the earlier serialized 603e implementation.
