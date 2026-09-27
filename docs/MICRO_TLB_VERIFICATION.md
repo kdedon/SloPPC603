@@ -80,8 +80,8 @@ The split lanes change timing that four older benches assumed:
 ## Against the pre-change router
 
 A one-off build paired the micro-TLB router with the serial router from
-`31bb82d` (module renamed, same harness and operation lists). Both seeds gave
-identical record streams. This
+`31bb82d` (module renamed, same harness and operation lists). Seeds 1, 2
+and 3 (2,390, 3,483 and 3,778 records) gave identical record streams. This
 build is not in regression, since the old source is not kept; the regression
 bench compares against `ENABLE_MICRO_TLB=0`, which uses the same serial
 sequence. The same run gave the "before" latencies in

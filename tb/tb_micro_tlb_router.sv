@@ -37,6 +37,15 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
   localparam logic [9:0] DBAT0U = 10'd536, DBAT0L = 10'd537;
   localparam logic [9:0] DBAT1U = 10'd538, DBAT1L = 10'd539;
 
+  // The operation stream comes from its own generator so SEED alone selects it.
+  logic [31:0] rng_state = 32'h1;
+  function automatic int rnd(input int lo, input int hi);
+    rng_state = rng_state ^ (rng_state << 13);
+    rng_state = rng_state ^ (rng_state >> 17);
+    rng_state = rng_state ^ (rng_state << 5);
+    return lo + int'(rng_state % 32'(hi - lo + 1));
+  endfunction
+
   task automatic check(input bit good, input string why);
     checks++;
     if (!good) $fatal(1, "micro-TLB check %0d: %s", checks, why);
@@ -238,80 +247,85 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
   function automatic logic [31:0] pick_page;
     logic [31:0] base;
     int sel;
-    sel = $urandom_range(0, 4);
+    sel = rnd(0, 4);
     unique case (sel)
-      0, 1: base = 32'h0000_0000 + 32'($urandom_range(0, 3)) * 32'h1000;
-      2: base = 32'h0002_0000 + 32'($urandom_range(0, 1)) * 32'h1000;
-      3: base = 32'h1000_0000 + 32'($urandom_range(0, 2)) * 32'h1000 +
-                32'($urandom_range(0, 2)) * 32'h2_0000;
-      default: base = 32'h2000_0000 + 32'($urandom_range(0, 1)) * 32'h1000;
+      0, 1: base = 32'h0000_0000 + 32'(rnd(0, 3)) * 32'h1000;
+      2: base = 32'h0002_0000 + 32'(rnd(0, 1)) * 32'h1000;
+      3: base = 32'h1000_0000 + 32'(rnd(0, 2)) * 32'h1000 +
+                32'(rnd(0, 2)) * 32'h2_0000;
+      default: base = 32'h2000_0000 + 32'(rnd(0, 1)) * 32'h1000;
     endcase
-    return base + 32'($urandom_range(0, 63)) * 32'd4;
+    return base + 32'(rnd(0, 63)) * 32'd4;
   endfunction
 
   function automatic logic [31:0] bat_upper;
     logic [31:0] bepi;
     int sel;
-    sel = $urandom_range(0, 2);
+    sel = rnd(0, 2);
     unique case (sel)
       0: bepi = 32'h0000_0000;
       1: bepi = 32'h0002_0000;
       default: bepi = 32'h1000_0000;
     endcase
-    return bepi | 32'($urandom_range(0, 3));
+    return bepi | 32'(rnd(0, 3));
   endfunction
 
   function automatic logic [31:0] bat_lower;
     logic [31:0] brpn;
     int sel;
-    sel = $urandom_range(0, 3);
+    sel = rnd(0, 3);
     unique case (sel)
       0: brpn = 32'h4000_0000;
       1: brpn = 32'h4100_0000;
       2: brpn = 32'h8000_0000;
       default: brpn = 32'h8100_0000;
     endcase
-    return brpn | (32'($urandom_range(0, 15)) << 3) | 32'($urandom_range(0, 3));
+    return brpn | (32'(rnd(0, 15)) << 3) | 32'(rnd(0, 3));
   endfunction
 
   function automatic void random_stream(input int n);
     logic [9:0] sprs [8];
     logic [19:0] rpns [4];
+    logic [19:0] rpn;
     logic [23:0] vsid;
     logic [31:0] ea;
     int fetches, datas, sel;
     sprs = '{IBAT0U, IBAT0L, IBAT1U, IBAT1L, DBAT0U, DBAT0L, DBAT1U, DBAT1L};
     rpns = '{20'h11111, 20'h22222, 20'h33333, 20'h44444};
     for (int i = 0; i < n; i++) begin
-      vsid = $urandom_range(0, 1) != 0 ? VSID_A : VSID_B;
+      vsid = rnd(0, 1) != 0 ? VSID_A : VSID_B;
       ea = pick_page();
-      ea[31:28] = $urandom_range(0, 1) != 0 ? 4'h1 : 4'h2;
-      sel = $urandom_range(0, 39);
+      ea[31:28] = rnd(0, 1) != 0 ? 4'h1 : 4'h2;
+      sel = rnd(0, 3);
+      rpn = rpns[sel];
+      sel = rnd(0, 39);
       unique case (sel)
         0: begin
           logic [9:0] spr;
-          spr = sprs[$urandom_range(0, 7)];
+          int pick;
+          pick = rnd(0, 7);
+          spr = sprs[pick];
           void'(bat(spr, spr[0] ? bat_lower() : bat_upper()));
         end
-        1: void'(sr($urandom_range(0, 1) != 0 ? 4'd1 : 4'd2,
-                    sr_value(1'($urandom_range(0, 1)), 1'($urandom_range(0, 1)),
-                             $urandom_range(0, 7) == 0, vsid)));
-        2, 3: void'(tlb_entry(OP_TLBLD, 1'($urandom_range(0, 1)),
-                    {ea[31:12], 12'b0}, vsid, 1'($urandom_range(0, 1)),
-                    rpns[$urandom_range(0, 3)], $urandom_range(0, 3) != 0,
-                    4'($urandom_range(0, 15)) & 4'b1110,
-                    2'($urandom_range(0, 3))));
+        1: void'(sr(rnd(0, 1) != 0 ? 4'd1 : 4'd2,
+                    sr_value(1'(rnd(0, 1)), 1'(rnd(0, 1)),
+                             rnd(0, 7) == 0, vsid)));
+        2, 3: void'(tlb_entry(OP_TLBLD, 1'(rnd(0, 1)),
+                    {ea[31:12], 12'b0}, vsid, 1'(rnd(0, 1)),
+                    rpn, rnd(0, 3) != 0,
+                    4'(rnd(0, 15)) & 4'b1110,
+                    2'(rnd(0, 3))));
         4: void'(tlbie(ea));
-        5: void'(tlb_entry(OP_MGMT, 1'($urandom_range(0, 1)),
-                    {ea[31:12], 12'b0}, vsid, 1'($urandom_range(0, 1)),
-                    rpns[$urandom_range(0, 3)], 1'b1, 4'b0000, 2'b10));
-        6: void'(context_op($urandom_range(0, 4) != 0, $urandom_range(0, 4) != 0,
-                            $urandom_range(0, 3) == 0));
+        5: void'(tlb_entry(OP_MGMT, 1'(rnd(0, 1)),
+                    {ea[31:12], 12'b0}, vsid, 1'(rnd(0, 1)),
+                    rpn, 1'b1, 4'b0000, 2'b10));
+        6: void'(context_op(rnd(0, 4) != 0, rnd(0, 4) != 0,
+                            rnd(0, 3) == 0));
         default: begin
-          fetches = $urandom_range(0, 3);
-          datas = $urandom_range(fetches == 0 ? 1 : 0, 3);
+          fetches = rnd(0, 3);
+          datas = rnd(fetches == 0 ? 1 : 0, 3);
           void'(access(pick_page(), fetches, pick_page(), datas,
-                       1'($urandom_range(0, 1))));
+                       1'(rnd(0, 1))));
         end
       endcase
     end
@@ -335,9 +349,9 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
   endfunction
 
   initial begin
-    int unused_seed, accesses, hits;
+    int accesses, hits;
     record_t r;
-    unused_seed = $urandom(SEED);
+    rng_state = 32'h2545_f491 ^ (32'(SEED) * 32'h9e37_79b9);
     directed();
     random_stream(RANDOM_OPS);
     @(negedge clk_i); go = 1'b1;
