@@ -33,6 +33,7 @@ module tb_ppc_fpu_dual #(
     logic forward_valid_o, forward1_valid_o;
     ppc_fpu_forward_t forward_o, forward1_o;
     logic saw_compare_cr, saw_load_fpr, saw_dual_forward;
+    int held_issue_accepts, held_mem_requests;
     int checks;
 
     ppc_fpu #(.CPU_602(CPU_602)) dut (.*);
@@ -73,7 +74,13 @@ module tb_ppc_fpu_dual #(
             saw_compare_cr <= 1'b0;
             saw_load_fpr <= 1'b0;
             saw_dual_forward <= 1'b0;
+            held_issue_accepts <= 0;
+            held_mem_requests <= 0;
         end else begin
+            if (issue_valid_i && issue_ready_o && issue_i.tag == tag(120))
+                held_issue_accepts <= held_issue_accepts + 1;
+            if (mem_req_valid_o && mem_req_ready_i && mem_req_o.tag == tag(120))
+                held_mem_requests <= held_mem_requests + 1;
             if (forward_valid_o && forward_o.tag == tag(90)) begin
                 if (!forward_o.cr_write || forward_o.cr_field != 3'd5 ||
                     forward_o.cr_value != 4'h8 || forward_o.fpr_write)
@@ -411,6 +418,109 @@ module tb_ppc_fpu_dual #(
             await_head(tag(94));
             retire_one(tag(94));
             checks++;
+        end
+
+        // A full reservation queue must not issue a held LSU request before
+        // its issue handshake. A same-edge retirement frees its credit.
+        issue_one(request(8'd110, add_insn(5'd16)));
+        issue_one(request(8'd111, add_insn(5'd17)));
+        issue_one(request(8'd112, add_insn(5'd18)));
+        issue_one(request(8'd113, add_insn(5'd19)));
+        if (!CPU_602) issue_one(request(8'd114, compare_insn()));
+        @(negedge clk_i);
+        issue_i = request(8'd120,
+            dform(CPU_602 ? 6'd48 : 6'd50, 5'd21, 16'd0));
+        issue_valid_i = 1'b1;
+        repeat (3) begin
+            #1;
+            if (issue_ready_o ||
+                (mem_req_valid_o && mem_req_o.tag == tag(120)) ||
+                (forward_valid_o && forward_o.tag == tag(120)) ||
+                (forward1_valid_o && forward1_o.tag == tag(120)))
+                $fatal(1, "blocked issue caused an early side effect");
+            @(negedge clk_i);
+        end
+        if (held_issue_accepts != 0 || held_mem_requests != 0)
+            $fatal(1, "blocked issue was accepted/launched early");
+        commit_tag_i = tag(110);
+        commit_valid_i = 1'b1;
+        @(posedge clk_i);
+        accept0 = commit_ready_o;
+        accept1 = issue_ready_o;
+        #2;
+        commit_valid_i = 1'b0;
+        issue_valid_i = 1'b0;
+        if (!accept0 || !accept1 || held_issue_accepts != 1)
+            $fatal(1, "same-edge retirement did not admit held LSU commit=%b issue=%b count=%0d",
+                   accept0, accept1, held_issue_accepts);
+        attempts = 0;
+        while (!mem_req_valid_o || mem_req_o.tag != tag(120)) begin
+            @(negedge clk_i);
+            attempts++;
+            if (attempts > 100) $fatal(1, "accepted held LSU never launched");
+        end
+        mem_req_ready_i = 1'b1;
+        @(posedge clk_i);
+        #2;
+        mem_req_ready_i = 1'b0;
+        @(negedge clk_i);
+        mem_rsp_i = '0;
+        mem_rsp_i.tag = tag(120);
+        mem_rsp_i.data = CPU_602 ? 64'h000000003f800000 :
+                                   64'h3ff0000000000000;
+        mem_rsp_valid_i = 1'b1;
+        @(posedge clk_i);
+        #2;
+        mem_rsp_valid_i = 1'b0;
+        retire_one(tag(111));
+        retire_one(tag(112));
+        retire_one(tag(113));
+        if (!CPU_602) retire_one(tag(114));
+        await_head(tag(120));
+        retire_one(tag(120));
+        if (held_issue_accepts != 1 || held_mem_requests != 1)
+            $fatal(1, "held LSU accepted or launched more than once issue=%0d memory=%0d",
+                   held_issue_accepts, held_mem_requests);
+        checks += 3;
+
+        // Two 603e retirements free two queue slots on the same edge that
+        // admits an ordered arithmetic/LSU pair; 602 remains single-issue.
+        if (!CPU_602) begin
+            issue_one(request(8'd130, compare_insn()));
+            issue_one(request(8'd131, dform(6'd50, 5'd22, 16'd0)));
+            reply_memory(tag(131), 64'h3ff0000000000000, 1'b0);
+            issue_one(request(8'd132, add_insn(5'd23)));
+            issue_one(request(8'd133, add_insn(5'd24)));
+            issue_one(request(8'd134, compare_insn()));
+            await_head(tag(130));
+            if (!result1_valid_o || result1_o.tag != tag(131))
+                $fatal(1, "dual-retire credit setup missing second result");
+            @(negedge clk_i);
+            issue_i = request(8'd135, add_insn(5'd25));
+            issue1_i = request(8'd136, dform(6'd50, 5'd26, 16'd0));
+            issue_valid_i = 1'b1;
+            issue1_valid_i = 1'b1;
+            commit_tag_i = tag(130);
+            commit_valid_i = 1'b1;
+            commit1_tag_i = tag(131);
+            commit1_valid_i = 1'b1;
+            @(posedge clk_i);
+            accept0 = issue_ready_o && commit_ready_o;
+            accept1 = issue1_ready_o && commit1_ready_o;
+            #2;
+            issue_valid_i = 1'b0;
+            issue1_valid_i = 1'b0;
+            commit_valid_i = 1'b0;
+            commit1_valid_i = 1'b0;
+            if (!accept0 || !accept1)
+                $fatal(1, "full queue did not dual-retire and dual-admit");
+            reply_memory(tag(136), 64'h3ff0000000000000, 1'b0);
+            retire_one(tag(132));
+            retire_one(tag(133));
+            retire_one(tag(134));
+            retire_one(tag(135));
+            retire_one(tag(136));
+            checks += 3;
         end
 
         attempts = 0;

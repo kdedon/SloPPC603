@@ -412,3 +412,13 @@ checks 20/19. All 63 strict lint invocations, including the extracted donor
 and both standalone personalities, passed with zero warnings and errors.
 This snapshot precedes the speculative-dispatch and later arithmetic timing
 changes, which require separate qualification.
+
+Recorded: `make -C sim -j2 lint-fpu-dual test-fpu-dual-603
+test-fpu-dual-602` on an immutable snapshot of speculative-dispatch shell
+commit `1463439` and arithmetic commit `6a2f28b`, with the expanded dual
+bench, 2026-09-27; 603e passed 26 and 602 passed 22 directed checks with
+zero lint/build warnings or errors. A held LSU issue while the reservation
+queue is full produced no request, forward, or issue handshake; same-edge
+retirement admitted it exactly once and produced exactly one tagged memory
+request. In 603e mode, two simultaneous retirements freed two credits for
+same-edge ordered arithmetic-plus-LSU admission.
