@@ -90,8 +90,10 @@ module ppc_icache_managed #(
   assign maintenance_busy_o = rst_ni && state_q != MANAGED_RUN;
   assign cache_enabled_o = rst_ni && cache_enabled_q;
   assign command_priority = maintenance_valid_i && maintenance_ready_o;
+  // A cache fetch may be accepted on the edge that completes the previous one.
   assign fetch_accept_enable = rst_ni && state_q == MANAGED_RUN &&
-                               !fetch_outstanding_q && !command_priority;
+    (!fetch_outstanding_q || (cache_enabled_q && complete_fetch)) &&
+    !command_priority;
   assign cache_fetch_valid = fetch_accept_enable && cache_enabled_q &&
                              fetch_valid_i;
   assign bypass_req_valid_o = fetch_accept_enable && !cache_enabled_q &&
@@ -140,12 +142,12 @@ module ppc_icache_managed #(
       fetch_outstanding_q <= 1'b0;
       protocol_error_q <= 1'b0;
     end else begin
-      if (accept_fetch)
-        fetch_outstanding_q <= 1'b1;
       if (complete_fetch ||
           (fetch_outstanding_q && !cache_enabled_q &&
            bypass_ifetch_error_i))
         fetch_outstanding_q <= 1'b0;
+      if (accept_fetch)
+        fetch_outstanding_q <= 1'b1;
 
       if ((cache_rsp_valid || bypass_rsp_valid_i) &&
           !fetch_outstanding_q)

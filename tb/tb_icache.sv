@@ -23,6 +23,8 @@ module tb_icache;
   int accepted_line_requests = 0;
   int hit_pulses = 0;
   int miss_pulses = 0;
+  int stream_hit_count = 0;
+  int stream_best_cycles = 0;
 
   ppc_icache dut (
     .clk_i(clk), .rst_ni(rst_n),
@@ -78,7 +80,7 @@ module tb_icache;
 
   always @(posedge clk) begin
     cycles++;
-    if (cycles > 50000)
+    if (cycles > 60000)
       $fatal(1, "icache test watchdog");
     if (rst_n && fetch_valid && fetch_ready)
       accepted_fetches++;
@@ -321,6 +323,101 @@ module tb_icache;
     end
   endtask
 
+  // Resident-line seed used by the 512-line fill.
+  function automatic logic [31:0] fill_seed(input integer line_index);
+    return 32'ha000_0000 ^ (32'h0102_0409 * line_index);
+  endfunction
+
+  // Stream hits over the resident 16 KB image. Requests stay offered and a
+  // new one is accepted on the edge that consumes each response. Without
+  // stalls, count responses take count + 1 cycles. With stalls, the held
+  // response and its RAM word must survive changing addresses.
+  task automatic stream_hits(input integer count, input logic stalls);
+    logic [31:0] expect_q[$];
+    logic [31:0] lfsr;
+    logic fire_req, fire_rsp;
+    integer responded, stream_cycles;
+    begin
+      lfsr = 32'h1234_5679;
+      responded = 0;
+      stream_cycles = 0;
+      @(negedge clk);
+      fetch_addr = {18'b0, lfsr[13:2], 2'b00};
+      fetch_valid = 1'b1;
+      fetch_rsp_ready = 1'b1;
+      while (responded < count) begin
+        #1;
+        fire_req = fetch_valid && fetch_ready;
+        fire_rsp = fetch_rsp_valid && fetch_rsp_ready;
+        check(!line_req_valid, "streamed fetch stays a hit");
+        if (fetch_rsp_valid) begin
+          check(expect_q.size() != 0, "stream response without request");
+          check(fetch_rsp_insn == expect_q[0] && !fetch_rsp_error,
+                "streamed hit payload");
+        end
+        if (!stalls && responded > 0 && fetch_valid)
+          check(fire_req && fire_rsp,
+                "consume edge accepts the next hit");
+        @(posedge clk);
+        stream_cycles++;
+        @(negedge clk);
+        if (fire_rsp) begin
+          void'(expect_q.pop_front());
+          responded++;
+        end
+        if (fire_req)
+          expect_q.push_back(line_word(fill_seed(integer'(fetch_addr[13:5])),
+                                       fetch_addr[4:2]));
+        else if (stalls && expect_q.size() != 0)
+          check(fetch_rsp_valid, "stalled stream holds its response");
+        lfsr = {lfsr[30:0], lfsr[31] ^ lfsr[21] ^ lfsr[1] ^ lfsr[0]};
+        // Revisit the same set often to chain LRU updates. A stalled offer
+        // may change address; the held response must not.
+        if (fire_req || stalls)
+          fetch_addr = lfsr[4] ? {18'b0, lfsr[9:8], fetch_addr[11:5],
+                                  lfsr[7:5], 2'b00} :
+                                 {18'b0, lfsr[13:2], 2'b00};
+        if (stalls) fetch_rsp_ready = lfsr[3] | lfsr[11];
+        fetch_valid = responded + expect_q.size() < count;
+      end
+      fetch_valid = 1'b0;
+      fetch_rsp_ready = 1'b0;
+      if (!stalls)
+        check(stream_cycles == count + 1,
+              $sformatf("hit stream took %0d cycles for %0d responses",
+                        stream_cycles, count));
+      stream_hit_count += count;
+      if (!stalls) stream_best_cycles = stream_cycles;
+    end
+  endtask
+
+  // Issue a request on the edge that consumes the held response.
+  task automatic consume_and_issue(
+    input logic [31:0] address,
+    input logic [31:0] held_insn,
+    input logic expect_hit
+  );
+    begin
+      while (!fetch_rsp_valid) @(posedge clk);
+      #1;
+      check(fetch_rsp_insn == held_insn,
+            "held response before consume-edge request");
+      @(negedge clk);
+      fetch_addr = address;
+      fetch_valid = 1'b1;
+      fetch_rsp_ready = 1'b1;
+      #1;
+      check(fetch_ready, "ready on the consume edge");
+      @(posedge clk);
+      #1;
+      check(hit == expect_hit && miss == !expect_hit,
+            "consume-edge lookup classification");
+      @(negedge clk);
+      fetch_valid = 1'b0;
+      fetch_rsp_ready = 1'b0;
+    end
+  endtask
+
   initial begin
     localparam logic [31:0] WORD_LINE = 32'h0000_1fe0;
     localparam logic [31:0] WORD_SEED = 32'h8100_2200;
@@ -497,22 +594,68 @@ module tb_icache;
     // way/set RAM address and the registered word selector. No refill may occur
     // during this readback, even while a different request is offered stalled.
     for (integer line_index = 0; line_index < 512; line_index++)
-      refill_fetch(32'(line_index * 32),
-                   32'ha000_0000 ^ (32'h0102_0409 * line_index), 0, 0);
+      refill_fetch(32'(line_index * 32), fill_seed(line_index), 0, 0);
     for (integer line_index = 511; line_index >= 0; line_index--) begin
       for (integer word_index = 0; word_index < 8; word_index++)
         hit_fetch(32'(line_index * 32 + word_index * 4),
-                  32'ha000_0000 ^ (32'h0102_0409 * line_index),
-                  word_index == 3 ? 2 : 0);
+                  fill_seed(line_index), word_index == 3 ? 2 : 0);
     end
+
+    stream_hits(200, 1'b0);
+    stream_hits(300, 1'b1);
+
+    // Back-to-back hits to one set chain their registered LRU updates; a
+    // miss on the next consume edge must see all of them. After A/B/C/D,
+    // touching B, A, C leaves D as the victim for E.
+    reset_dut();
+    refill_fetch(addr_a, SEED_A, 0, 0);
+    refill_fetch(addr_b, SEED_B, 0, 0);
+    refill_fetch(addr_c, SEED_C, 0, 0);
+    refill_fetch(addr_d, SEED_D, 0, 0);
+    issue_fetch(addr_b, 1'b1, 1'b0);
+    consume_and_issue(addr_a, line_word(SEED_B, addr_b[4:2]), 1'b1);
+    consume_and_issue(addr_c, line_word(SEED_A, addr_a[4:2]), 1'b1);
+    consume_and_issue(addr_e, line_word(SEED_C, addr_c[4:2]), 1'b0);
+    accept_line_request(addr_e, addr_e[4:3], 0);
+    send_line_response(make_line(SEED_E), 1'b0);
+    expect_fetch_response(line_word(SEED_E, addr_e[4:2]), 1'b0, 0);
+    hit_fetch(addr_a, SEED_A, 0);
+    hit_fetch(addr_b, SEED_B, 0);
+    hit_fetch(addr_c, SEED_C, 0);
+    hit_fetch(addr_e, SEED_E, 0);
+    issue_fetch(addr_d, 1'b0, 1'b1);
+    check(line_req_valid, "chained LRU updates evict D");
+    pulse_kill();
+
+    // A refill response consumed on its first cycle overlaps the install
+    // cycle; the next request waits one cycle and then hits the new line.
+    issue_fetch(addr_d + 32'd4, 1'b0, 1'b1);
+    accept_line_request(addr_d, 2'd0, 0);
+    send_line_response(make_line(SEED_D), 1'b0);
+    check(fetch_rsp_valid && busy && !fetch_ready &&
+          fetch_rsp_insn == line_word(SEED_D, 3'd1),
+          "refill response overlaps the install cycle");
+    fetch_addr = addr_d + 32'd8;
+    fetch_valid = 1'b1;
+    fetch_rsp_ready = 1'b1;
+    @(posedge clk);
+    #1;
+    check(!fetch_rsp_valid && fetch_ready, "install completes after one cycle");
+    @(posedge clk);
+    #1;
+    check(hit && fetch_rsp_valid && fetch_rsp_insn == line_word(SEED_D, 3'd2),
+          "first hit after install");
+    @(negedge clk);
+    fetch_valid = 1'b0;
+    fetch_rsp_ready = 1'b0;
 
     check(accepted_fetches == hit_pulses + miss_pulses + 1,
           "classification pulses cover every aligned accepted fetch");
     check(accepted_line_requests >= 7,
           "multiple replacements and cancellation paths accepted refills");
-    $display("PASS: tb_icache %0d checks, %0d fetches, %0d hits, %0d misses, %0d line requests",
+    $display("PASS: tb_icache %0d checks, %0d fetches, %0d hits, %0d misses, %0d line requests, %0d streamed hits (200 in %0d cycles)",
              checks, accepted_fetches, hit_pulses, miss_pulses,
-             accepted_line_requests);
+             accepted_line_requests, stream_hit_count, stream_best_cycles);
     $finish;
   end
 endmodule
