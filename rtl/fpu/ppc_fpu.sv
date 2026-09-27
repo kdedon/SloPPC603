@@ -200,6 +200,7 @@ module ppc_fpu #(
   work_t work_issue;
   decoded_t work_decoded;
   logic work_dispatch;
+  logic work_admitted;
   logic [31:0] work_ea;
   logic [4:0] src_a_index, src_b_index, src_c_index, src_d_index;
   logic arith_launch;
@@ -217,6 +218,7 @@ module ppc_fpu #(
   logic [31:0] work1_ea;
   logic work1_valid;
   logic work1_old;
+  logic work1_admitted;
   logic [PENDING_IDX_BITS-1:0] work1_old_index;
   source_t work1_a, work1_b, work1_c, work1_d;
   logic work1_use_a, work1_use_b, work1_use_c, work1_use_d;
@@ -975,7 +977,7 @@ module ppc_fpu #(
       work_decoded = pending_q[exec_index].decoded;
       work_ea = pending_q[exec_index].result.ea;
       work_valid = 1'b1;
-    end else if (dispatch_fire) begin
+    end else if (issue_valid_i) begin
       work_issue.tag = issue_i.tag;
       work_issue.insn = issue_i.insn;
       work_issue.msr_fp = issue_i.msr_fp;
@@ -987,6 +989,7 @@ module ppc_fpu #(
       work_valid = 1'b1;
       work_dispatch = 1'b1;
     end
+    work_admitted = !work_dispatch || dispatch_fire;
     src_a_index = work_issue.insn[20:16];
     src_b_index = work_issue.insn[15:11];
     src_c_index = work_issue.insn[10:6];
@@ -1059,10 +1062,10 @@ module ppc_fpu #(
     end
   end
 
-  // The second work context is a ready opposite-resource dispatch. When an
-  // older reservation is waiting, lane 0 uses this path; otherwise lane 1
-  // uses it. A lane-1 source bound to lane-0's new destination waits until
-  // that full-tag producer appears in the pending queue.
+  // Resolve the second work context before the late dispatch-credit decision.
+  // An old reservation uses it first; otherwise lane 0 or lane 1 is decoded
+  // speculatively, but only an accepted lane can launch a resource request.
+  // A lane-1 source bound to lane-0's new destination waits for its full tag.
   always_comb begin
     work1_issue = '0;
     work1_decoded = '0;
@@ -1079,14 +1082,14 @@ module ppc_fpu #(
       work1_valid = 1'b1;
       work1_old = 1'b1;
       work1_old_index = second_exec_index;
-    end else if (exec_found && dispatch_fire) begin
+    end else if (exec_found && issue_valid_i) begin
       work1_issue.tag = issue_i.tag;
       work1_issue.insn = issue_i.insn;
       work1_issue.msr_fp = issue_i.msr_fp;
       work1_decoded = decoded;
       work1_ea = issue_ea;
       work1_valid = 1'b1;
-    end else if (!exec_found && dispatch1_fire) begin
+    end else if (!exec_found && issue1_valid_i) begin
       work1_issue.tag = issue1_i.tag;
       work1_issue.insn = issue1_i.insn;
       work1_issue.msr_fp = issue1_i.msr_fp;
@@ -1094,6 +1097,8 @@ module ppc_fpu #(
       work1_ea = issue1_ea;
       work1_valid = 1'b1;
     end
+    work1_admitted = work1_old ||
+        (exec_found ? dispatch_fire : dispatch1_fire);
     work1_a = read_source(work1_issue.insn[20:16],
         work1_old ? 3'(work1_old_index) : pending_count_q);
     work1_b = read_source(work1_issue.insn[15:11],
@@ -1128,7 +1133,7 @@ module ppc_fpu #(
       work1_use_c = !work1_select_b;
     end else if (work1_decoded.kind == DK_MEMORY && work1_decoded.mem_store)
       work1_use_d = 1'b1;
-    work1_lane0_dep = !exec_found && dispatch1_fire &&
+    work1_lane0_dep = !exec_found && issue_valid_i && issue1_valid_i &&
         writes_fpr(decoded.kind, decoded.op, decoded.mem_load) &&
         ((work1_use_a && issue_i.insn[25:21] == work1_issue.insn[20:16]) ||
          (work1_use_b && issue_i.insn[25:21] == work1_issue.insn[15:11]) ||
@@ -1202,10 +1207,11 @@ module ppc_fpu #(
           (work1_d.raw[30:23] == 8'hff ||
            (work1_d.raw[30:23] == 8'd0 &&
             work1_d.raw[22:0] != 23'd0)));
-    work1_arith_launch = work1_arith_eligible && !deferred_abort_flush_q;
-    work1_mem_launch = work1_mem_eligible;
+    work1_arith_launch = work1_arith_eligible &&
+        !deferred_abort_flush_q && work1_admitted;
+    work1_mem_launch = work1_mem_eligible && work1_admitted;
     work1_local_launch = rst_ni && !kill_all_i && !abort_valid_i &&
-        work1_valid && work1_sources_ready &&
+        work1_valid && work1_admitted && work1_sources_ready &&
         !work1_arith_eligible && !work1_mem_eligible &&
         (!(work1_decoded.kind == DK_MOVE ||
            work1_decoded.kind == DK_FSEL) || arith_req_ready);
@@ -1261,20 +1267,23 @@ module ppc_fpu #(
           !work_decoded.mem_single && !work_decoded.mem_integer &&
           (src_d[30:23] == 8'hff ||
            (src_d[30:23] == 8'd0 && src_d[22:0] != 23'd0)));
-    arith_launch = arith_eligible && !deferred_abort_flush_q;
-    mem_launch = mem_eligible;
+    arith_launch = arith_eligible && !deferred_abort_flush_q && work_admitted;
+    mem_launch = mem_eligible && work_admitted;
     local_fpu_uses_pipe = work_decoded.kind == DK_MOVE ||
         work_decoded.kind == DK_FSEL || work_decoded.kind == DK_MFFS ||
         work_decoded.kind == DK_MCRFS || work_decoded.kind == DK_MTFS;
     local_launch = rst_ni && !kill_all_i && !abort_valid_i && work_valid &&
+        work_admitted &&
         sources_ready && !arith_eligible && !mem_eligible &&
         (!local_fpu_uses_pipe || arith_req_ready);
     arith_rsp_ready = 1'b1;
     // A same-cycle LSU reply waits until its request is registered.
     mem_rsp_ready_o = rst_ni && !kill_all_i &&
-        !(work_valid && work_decoded.kind == DK_MEMORY &&
+        !(work_valid && work_admitted &&
+          work_decoded.kind == DK_MEMORY &&
           mem_rsp_i.tag == work_issue.tag) &&
-        !(work1_valid && work1_decoded.kind == DK_MEMORY &&
+        !(work1_valid && work1_admitted &&
+          work1_decoded.kind == DK_MEMORY &&
           mem_rsp_i.tag == work1_issue.tag);
     mem_req_o = '0;
     mem_req_o.tag = work_issue.tag;
