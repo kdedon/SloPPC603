@@ -183,7 +183,7 @@ module ppc_fpu_arith #(
         logic conversion;
         logic dp_multiply;
         ppc_fpu_arith_rsp_t special_rsp;
-        conv_parts_t conversion_parts;
+        operand_t conversion_operand;
         finite_operands_t operands;
         mul_parts_t products;
         align_plan_t plan;
@@ -202,7 +202,7 @@ module ppc_fpu_arith #(
         logic finite;
         logic conversion;
         ppc_fpu_arith_rsp_t special_rsp;
-        conv_parts_t conversion_parts;
+        operand_t conversion_operand;
         align_plan_t plan;
     } add_input_t;
 
@@ -1550,8 +1550,7 @@ module ppc_fpu_arith #(
             default: begin end
         endcase
         if (multiply_next.conversion) begin
-            multiply_next.conversion_parts =
-                prepare_conversion(unpack(input_q.b));
+            multiply_next.conversion_operand = unpack(input_q.b);
         end else if (multiply_next.finite) begin
             work_operands = prepare_operands(input_q.a, input_q.b,
                 input_q.c);
@@ -1607,8 +1606,8 @@ module ppc_fpu_arith #(
         multiply_basic_next.finite = multiply_next.finite;
         multiply_basic_next.conversion = multiply_next.conversion;
         multiply_basic_next.special_rsp = multiply_next.special_rsp;
-        multiply_basic_next.conversion_parts =
-            multiply_next.conversion_parts;
+        multiply_basic_next.conversion_operand =
+            multiply_next.conversion_operand;
         multiply_basic_next.plan = multiply_next.plan;
     end
 
@@ -1623,7 +1622,9 @@ module ppc_fpu_arith #(
         add_next.finite = aligned_q.finite;
         add_next.conversion = aligned_q.conversion;
         add_next.special_rsp = aligned_q.special_rsp;
-        add_next.conversion_parts = aligned_q.conversion_parts;
+        if (aligned_q.conversion)
+            add_next.conversion_parts =
+                prepare_conversion(aligned_q.conversion_operand);
         if (aligned_q.finite) begin
             add_next.sum = add_result.finite_value;
             add_next.leading_zero = add_result.leading_zero;
