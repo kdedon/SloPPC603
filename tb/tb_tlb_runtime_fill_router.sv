@@ -128,6 +128,20 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
     .dmem_rsp_page_miss_o(unused_dmem_page_miss),
     .*);
 
+  typedef struct packed {
+    logic [23:0] vsid;
+    logic [10:0] page_tag;
+    logic [19:0] rpn;
+    logic c;
+    logic [3:0] wimg;
+    logic [1:0] pp;
+  } tlb_entry_t;
+  function automatic tlb_entry_t tlb_entry(input bit bank, input bit way,
+                                           input logic [4:0] set);
+    return way ? dut.tlb.g_way[1].entries.mem[{bank, set}] :
+                 dut.tlb.g_way[0].entries.mem[{bank, set}];
+  endfunction
+
   localparam logic [31:0] EA = 32'h1000_1234;
   localparam logic [23:0] VSID_A = 24'h123456, VSID_B = 24'h654321;
   localparam logic [19:0] RPN_A = 20'habcde, RPN_B = 20'hbcdef;
@@ -201,6 +215,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
     check(tlb_mgmt_req_ready_o && !pimem_req_valid_o && !pdmem_req_valid_o,
           "management not admitted on idle route");
     @(posedge clk_i); #1;
+    if (!tlb_mgmt_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_mgmt_rsp_valid_o && !tlb_mgmt_idle_o &&
           tlb_mgmt_rsp_kind_o == (expect_unsupported ? 2'd3 : kind) &&
           tlb_mgmt_rsp_bank_o == bank && tlb_mgmt_rsp_ea_o == ea &&
@@ -460,6 +475,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
     tlb_mgmt_req_pp_i = 2'b10;
     #1; check(tlb_mgmt_req_ready_o, "privileged-management probe not admitted");
     @(posedge clk_i); #1;
+    if (!tlb_mgmt_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_mgmt_rsp_valid_o && tlb_mgmt_rsp_privileged_o &&
           !tlb_mgmt_rsp_refill_rejected_o,
           "user-mode management refill was not rejected");
@@ -502,6 +518,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
     tlb_inv_req_valid_i = 1; tlb_inv_req_ea_i = ea;
     #1; check(tlb_inv_req_ready_o, "CPU invalidate request not ready");
     @(posedge clk_i); #1;
+    if (!tlb_inv_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_inv_rsp_valid_o && tlb_inv_rsp_error_o == expect_error &&
           !tlb_inv_idle_o && quiescent_o && !context_ready_o,
           "CPU invalidate response/owner");
@@ -534,6 +551,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
     tlb_fill_req_pp_i = pp;
     #1; check(tlb_fill_req_ready_o, "fill request not admitted");
     @(posedge clk_i); #1;
+    if (!tlb_fill_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_fill_rsp_valid_o &&
           tlb_fill_rsp_error_o == expect_error && !tlb_fill_idle_o &&
           quiescent_o && !context_ready_o,
@@ -586,10 +604,10 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
     fill_consume();
     fill_commit();
     check(dut.tlb.valid_q[bank][way][ea[16:12]] &&
-          dut.tlb.entries_q[bank][way][ea[16:12]].rpn == rpn &&
-          dut.tlb.entries_q[bank][way][ea[16:12]].wimg == wimg &&
-          dut.tlb.entries_q[bank][way][ea[16:12]].c == changed &&
-          dut.tlb.entries_q[bank][way][ea[16:12]].pp == pp,
+          tlb_entry(bank, way, ea[16:12]).rpn == rpn &&
+          tlb_entry(bank, way, ea[16:12]).wimg == wimg &&
+          tlb_entry(bank, way, ea[16:12]).c == changed &&
+          tlb_entry(bank, way, ea[16:12]).pp == pp,
           "committed fill entry did not match accepted payload");
     fill_ack_and_idle();
   endtask
@@ -641,6 +659,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       #1; check(tlb_fill_req_ready_o && !context_ready_o,
                 "concurrent abort/context displaced accepted fill offer");
       @(posedge clk_i); #1;
+      if (!tlb_fill_rsp_valid_o) begin @(posedge clk_i); #1; end
       check(tlb_fill_rsp_valid_o && !dut.tlb.prepared_q &&
             !dut.tlb.valid_q[1][0][9],
             "same-edge abort retained a fill proposal");
@@ -658,6 +677,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       tlb_inv_abort_i = 1;
       #1; check(tlb_inv_req_ready_o, "same-edge TLBIE abort offer not ready");
       @(posedge clk_i); #1;
+      if (!tlb_inv_rsp_valid_o) begin @(posedge clk_i); #1; end
       check(tlb_inv_rsp_valid_o && !dut.tlb.prepared_q &&
             !tlb_inv_ack_valid_o,
             "same-edge TLBIE abort retained proposal or ack");
@@ -690,23 +710,23 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
 
       // Other-way duplicate rejection has no early or late mutation.
       fill_offer(1, EA, VSID_A, 1, 20'hcdef0, 1, 4'h1, 2'b11, 1);
-      check(dut.tlb.entries_q[1][1][1].rpn == RPN_B &&
+      check(tlb_entry(1, 1, 1).rpn == RPN_B &&
             !tlb_fill_ack_valid_o, "duplicate proposal mutated other way");
       fill_consume();
       @(posedge clk_i); #1;
-      check(tlb_fill_idle_o && dut.tlb.entries_q[1][1][1].rpn == RPN_B,
+      check(tlb_fill_idle_o && tlb_entry(1, 1, 1).rpn == RPN_B,
             "duplicate rejection did not drain");
 
       // A selected-way replacement does not disturb the other way, bank,
       // or neighboring set; the old value remains until commit.
       fill_offer(1, EA, 24'ha1b2c3, 0, 20'hd5678, 1, 4'h3, 2'b10, 0);
-      check(dut.tlb.entries_q[1][0][1].rpn == RPN_A,
+      check(tlb_entry(1, 0, 1).rpn == RPN_A,
             "selected way replaced before retirement");
       fill_consume(); fill_commit();
-      check(dut.tlb.entries_q[1][0][1].rpn == 20'hd5678 &&
-            dut.tlb.entries_q[1][1][1].rpn == RPN_B &&
-            dut.tlb.entries_q[0][0][1].rpn == RPN_B &&
-            dut.tlb.entries_q[1][0][2].rpn == RPN_B,
+      check(tlb_entry(1, 0, 1).rpn == 20'hd5678 &&
+            tlb_entry(1, 1, 1).rpn == RPN_B &&
+            tlb_entry(0, 0, 1).rpn == RPN_B &&
+            tlb_entry(1, 0, 2).rpn == RPN_B,
             "selected-way replacement disturbed peer entry");
       fill_ack_and_idle();
 
@@ -718,7 +738,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       @(posedge clk_i); #1;
       check(!tlb_fill_rsp_valid_o && tlb_fill_ack_valid_o &&
             dut.tlb.valid_q[1][0][10] &&
-            dut.tlb.entries_q[1][0][10].rpn == 20'ha1234,
+            tlb_entry(1, 0, 10).rpn == 20'ha1234,
             "response-consume/commit edge lost captured fill");
       @(negedge clk_i);
       tlb_fill_rsp_ready_i = 0; tlb_fill_commit_i = 0;
@@ -745,9 +765,9 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       tlb_mgmt_req_valid_i = 0; bat_csr_req_valid_i = 0;
       segment_csr_req_valid_i = 0; context_valid_i = 0;
       fill_consume(); fill_commit();
-      check(dut.tlb.entries_q[1][0][3].rpn == 20'hc1234 &&
-            dut.tlb.entries_q[1][0][3].vsid == VSID_A &&
-            dut.tlb.entries_q[1][0][3].wimg == 4'h7 &&
+      check(tlb_entry(1, 0, 3).rpn == 20'hc1234 &&
+            tlb_entry(1, 0, 3).vsid == VSID_A &&
+            tlb_entry(1, 0, 3).wimg == 4'h7 &&
             dut.tlb.valid_q[1][0][3] && !dut.tlb.valid_q[0][1][3],
             "commit used live caller fields");
       @(negedge clk_i); tlb_mgmt_req_valid_i = 1;
@@ -781,6 +801,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       #1; check(tlb_inv_req_ready_o && !tlb_fill_req_ready_o &&
                 !tlb_mgmt_req_ready_o, "TLB ownership priority");
       @(posedge clk_i); #1;
+      if (!tlb_inv_rsp_valid_o) begin @(posedge clk_i); #1; end
       check(tlb_inv_rsp_valid_o && !tlb_fill_rsp_valid_o &&
             !tlb_fill_req_ready_o, "invalidate owner lost priority");
       @(negedge clk_i); tlb_inv_req_valid_i = 0;
@@ -794,6 +815,9 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       check(tlb_inv_idle_o && tlb_fill_req_ready_o &&
             !tlb_mgmt_req_ready_o, "fill did not follow invalidate");
       // The waiting fill now handshakes, then aborts without mutation.
+      @(posedge clk_i); #1;
+      check(!tlb_fill_rsp_valid_o && !tlb_fill_idle_o && !tlb_mgmt_req_ready_o,
+            "fill classification cycle");
       @(posedge clk_i); #1;
       check(tlb_fill_rsp_valid_o && !tlb_mgmt_req_ready_o,
             "fill did not claim TLB after invalidate");

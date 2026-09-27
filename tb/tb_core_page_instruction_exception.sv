@@ -192,6 +192,7 @@ module tb_core_page_instruction_exception;
     tlb_mgmt_req_valid_i=1;
     #1;check(tlb_mgmt_req_ready_o,"ITLB prefill not ready");
     @(posedge clk_i);@(negedge clk_i);tlb_mgmt_req_valid_i=0;
+    if(!tlb_mgmt_rsp_valid_o)@(negedge clk_i);
     check(tlb_mgmt_rsp_valid_o&&tlb_mgmt_rsp_kind_o==2'd1&&
           !tlb_mgmt_rsp_privileged_o&&!tlb_mgmt_rsp_refill_rejected_o&&
           !tlb_mgmt_rsp_unsupported_o&&!tlb_mgmt_rsp_invalid_input_o,

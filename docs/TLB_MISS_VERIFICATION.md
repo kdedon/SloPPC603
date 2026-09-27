@@ -2,6 +2,7 @@
 
 Recorded: `make -C sim lint-tlb-miss test-exception-tlb-miss test-core-tlb-miss`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
 Recorded: `make -C sim test-exception-tlb-miss test-core-tlb-miss`, commit this branch, 2026-09-26. Pass: 186 enabled and 125 disabled exception-state checks; 3,575 checks over 20 enabled core phases and 336 over three disabled phases.
+Recorded: `make -C sim test-exception-tlb-miss test-core-tlb-miss test-tlb-service test-tlb-independent`, `make -C sim regression`, commit f3cc2f4, 2026-09-27. Pass: 186 / 125 exception-state checks; 3,851 checks over 20 enabled core phases and 336 over three disabled phases; TLB service 5,327 direct checks and 17,364 oracle transactions. Phases 16 and 17 now retire way-one true misses as instruction and load miss events with SRR1.WAY=1 (AUD-42); the oracle and a literal service sequence check the per-set LRU.
 
 The opt-in `ENABLE_TLB_MISS_EXCEPTIONS` path has independent checks at the exception-state and actual-core boundaries. The local manual cited in [TLB_REFILL_DEPENDENCIES.md](TLB_REFILL_DEPENDENCIES.md) supplies the literal vector, SRR1, and hash expectations; test expectations do not call production derivation logic.
 

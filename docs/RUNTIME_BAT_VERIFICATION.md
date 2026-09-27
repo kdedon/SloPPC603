@@ -1,6 +1,7 @@
 # Runtime BAT directed verification
 
 Recorded: `make -C sim lint-runtime-bat test-bat-runtime-service test-bat-runtime-router test-core-runtime-bat`, `make -C sim regression`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+Recorded: `make -C sim test-bat-service test-bat-service-independent test-bat-runtime-service test-bat-runtime-router test-core-runtime-bat`, `make -C sim regression`, commit f3cc2f4, 2026-09-27. Pass: BAT service 570 direct checks and 57,950 external transactions; runtime service 1,150, router 52, abstract core 885. BAT writes now respond two edges after acceptance (AUD-74); the service bench checks the blocked validation cycle and an abort on the validation edge.
 
 The opt-in CPU-programmable BAT path is checked at the service, router, decoder, and core boundaries. Run `make -C sim lint-runtime-bat` and `make -C sim -j5 test-bat-runtime-service test-bat-runtime-router test-core-runtime-bat test-core-runtime-bat-privilege test-runtime-bat-decode`. Both commands passed on 2026-09-22; lint uses strict `-Wall`, and simulations additionally enable `--assert`. These targets are also prerequisites of the ordinary `lint` and `test` gates. The compiled firmware evidence, including IRQ/DEC and a corrupted-readback negative run, is in [RUNTIME_BAT_FIRMWARE.md](RUNTIME_BAT_FIRMWARE.md).
 

@@ -29,7 +29,10 @@ bank used by CPU `mfsr`/`mtsr` requests. It checks the returned index and EA,
 then captures the descriptor once. It submits a lookup to `ppc_tlb_service`
 with that captured descriptor's T, N, Ks, Kp and 24-bit VSID, plus the accepted
 EA, bank, write intent and PR. Later changes to a live SR or MSR cannot change
-that lookup. The snapshot and TLB response both remain owned by the accepted
+that lookup. The TLB reads its entry RAM on the accepting edge and responds
+one edge later, so a page-translated access spends one more cycle in
+`ROUTE_PAGE_RESPONSE` than with the earlier flop array. The snapshot and TLB
+response both remain owned by the accepted
 memory transaction; offered CSR and context updates wait until it completes.
 Only an unambiguous TLB `allow` result sends PA and WIMG to the physical bus.
 There is no identity fallback on a page miss or denial. The TLB stores RPN,
@@ -73,7 +76,8 @@ A registered response uses `tlb_mgmt_rsp_valid_o/ready_i` and returns
 `unsupported`, `invalid_input` status outputs. An unsupported input kind echoes
 kind 3 because the router sends kind 3 to the service; it cannot perform a
 lookup through this management port. The underlying service commits an allowed
-refill or invalidation on request acceptance. The response acknowledges that
+refill or invalidation on the classification edge after acceptance, which
+also registers the response. The response acknowledges that
 result and remains stable under backpressure. There is no management abort or
 second commit stage. `tlb_mgmt_idle_o` rises after the held response and router
 ownership drain, which may lag response consumption by one clock. It is also

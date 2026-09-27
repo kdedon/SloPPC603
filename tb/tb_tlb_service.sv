@@ -61,6 +61,11 @@ module tb_tlb_service;
   task automatic tick;
     @(posedge clk); #1;
   endtask
+  // Acceptance edge plus the registered-read edge that registers the response.
+  task automatic accept_tick;
+    tick(); check(!rsp_valid && !req_ready, "lookup cycle holds the slot");
+    tick();
+  endtask
   function automatic response_t echo(input request_t r);
     response_t e;
     assert (!$isunknown(r)) else $fatal(1, "unknown expected request");
@@ -81,18 +86,38 @@ module tb_tlb_service;
     check(!expanded_rsp_kind[2], {label_text, " legacy kind high bit"});
     check(rsp === expected, $sformatf("%s expected=%023h actual=%023h", label_text, expected, rsp));
   endtask
+  // Per-set LRU shadow (UM Table 5-10): a miss reports the way not used last.
+  logic [1:0][31:0] lru_model = '0;
+  // Responses echo kind, bank and EA; a refill also needs its request way.
+  function automatic response_t with_lru(input response_t e);
+    response_t result;
+    result = e;
+    if (e.miss) result.way = lru_model[e.bank][e.ea[16:12]];
+    return result;
+  endfunction
+  task automatic note_lru(input logic [1:0] kind, input bit bank,
+                          input logic [4:0] set, input bit refill_way,
+                          input bit hit_now, input bit hit_way, input bit blocked);
+    if (hit_now) lru_model[bank][set] = !hit_way;
+    if (kind == 2'd1 && !blocked) lru_model[bank][set] = !refill_way;
+  endtask
   task automatic transact(input request_t r, input response_t expected, input int stalls = 0);
+    response_t want;
+    want = with_lru(expected);
     @(negedge clk); req = r; req_valid = 1; rsp_ready = 1;
     #1; check(req_ready, "idle acceptance");
-    tick(); transactions++; compare(expected, "accepted");
+    accept_tick(); transactions++; compare(want, "accepted");
     @(negedge clk); req_valid = 0; rsp_ready = 0;
     for (int i = 0; i < stalls; i++) begin
-      tick(); compare(expected, "stalled"); check(!req_ready, "stall blocks request");
+      tick(); compare(want, "stalled"); check(!req_ready, "stall blocks request");
     end
     @(negedge clk); rsp_ready = 1;
     tick(); check(!rsp_valid, "response consumed");
+    note_lru(want.kind, want.bank, want.ea[16:12], r.way, want.hit, want.way,
+             want.privileged || want.refill_rejected);
   endtask
   task automatic reset_service;
+    lru_model = '0;
     @(negedge clk); rst_n = 0; req_valid = 0; rsp_ready = 0;
     #1; check(!req_ready && !rsp_valid, "reset gates transport");
     tick(); @(negedge clk); rst_n = 1; tick();
@@ -212,22 +237,35 @@ module tb_tlb_service;
     r = '0; r.bank = 1; r.ea = 32'h45678123; r.vsid = 24'h123456;
     held = hit(r, 0, 32'hab123123, 15, 3, 0);
     @(negedge clk); req = r; req_valid = 1; rsp_ready = 1;
-    tick(); transactions++; compare(held, "snapshot initial");
+    accept_tick(); transactions++; compare(held, "snapshot initial"); note_lru(held.kind, held.bank, held.ea[16:12], r.way, held.hit, held.way, 0);
     next_r = r; next_r.kind = 1; next_r.rpn = 20'hfedcb; next_r.pp = 2; next_r.c = 1;
     next_e = echo(next_r);
     @(negedge clk); req = next_r; rsp_ready = 0;
     repeat (5) begin tick(); check(!req_ready, "held blocks remap"); compare(held, "immutable snapshot"); end
     @(negedge clk); rsp_ready = 1; #1; check(req_ready, "turnover accepts remap");
-    tick(); transactions++; compare(next_e, "remap response");
+    accept_tick(); transactions++; compare(next_e, "remap response"); note_lru(next_e.kind, next_e.bank, next_e.ea[16:12], next_r.way, 0, 0, 0);
     @(negedge clk); req_valid = 0; tick(); check(!rsp_valid, "remap consumed");
     transact(r, hit(r, 0, 32'hfedcb123, 0, 2, 1));
     // Reset while a live response and another refill are offered cancels both.
     @(negedge clk); req = r; req_valid = 1; rsp_ready = 1; tick();
     @(negedge clk); req = next_r; rsp_ready = 0; rst_n = 0;
     #1; check(!req_ready && !rsp_valid, "reset suppresses held response and offered write");
-    tick(); @(negedge clk); rst_n = 1; req_valid = 0; tick();
+    tick(); @(negedge clk); rst_n = 1; req_valid = 0; tick(); lru_model = '0;
     e = echo(r); e.miss = 1; transact(r, e);
     address = r.ea; check(address == 32'h45678123, "literal address anchor");
+    // Literal LRU replacement sequence on one DTLB set.
+    r = '0; r.bank = 1; r.ea = 32'h00005000; r.vsid = 24'h000111;
+    e = echo(r); e.miss = 1;
+    check(with_lru(e).way == 0, "fresh set replaces way 0"); transact(r, e);
+    r.kind = 1; r.way = 0; r.rpn = 20'h11111; r.pp = 2; r.c = 1; transact(r, echo(r));
+    r.kind = 0; r.vsid = 24'h000222; e = echo(r); e.miss = 1;
+    check(with_lru(e).way == 1, "way 0 refill selects way 1"); transact(r, e);
+    r.kind = 1; r.way = 1; r.rpn = 20'h22222; transact(r, echo(r));
+    r.kind = 0; r.vsid = 24'h000333; e = echo(r); e.miss = 1;
+    check(with_lru(e).way == 0, "way 1 refill selects way 0"); transact(r, e);
+    r.vsid = 24'h000111; transact(r, hit(r, 0, 32'h11111000, 0, 2, 1));
+    r.vsid = 24'h000333; e = echo(r); e.miss = 1;
+    check(with_lru(e).way == 1, "way 0 hit selects way 1"); transact(r, e);
   endtask
   function automatic bit hexadecimal(input string token, input int max_digits);
     if (token.len() == 0 || token.len() > max_digits) return 0;
@@ -268,7 +306,7 @@ module tb_tlb_service;
     if (!present) $fatal(1, "empty vector corpus");
     vector_count = 0;
     @(negedge clk); req = r; req_valid = 1; rsp_ready = 1;
-    tick();
+    accept_tick();
     while (present) begin
       transactions++; vector_count++; compare(expected, "vector accepted");
       read_vector(fd, present, next_r, next_stalls, next_expected);
@@ -278,7 +316,7 @@ module tb_tlb_service;
         tick(); check(!req_ready, "vector stall blocks next"); compare(expected, "vector held");
       end
       @(negedge clk); rsp_ready = 1; #1; check(req_ready, "vector turnover ready");
-      tick();
+      if (present) accept_tick(); else tick();
       stalls = next_stalls; expected = next_expected;
     end
     check(!rsp_valid, "vector final response drained");

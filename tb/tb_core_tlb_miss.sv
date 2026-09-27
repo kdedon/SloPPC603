@@ -41,7 +41,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
   assign sv=rst_n&&ipending&&idelay==0;
   assign dr=rst_n&&!dpending;
   assign drv=rst_n&&dpending&&ddelay==0;
-  assign tr=!(FEATURE&&(phase<4||phase==11||phase==14||phase==15||phase==19)&&tv&&retired.pc==fault_pc()&&
+  assign tr=!(FEATURE&&(phase<4||phase==11||phase==14||phase==15||phase==16||phase==17||phase==19)&&tv&&retired.pc==fault_pc()&&
               hold_count<8) &&
             !(phase==18&&dut.special_busy&&
               dut.special.uop_q.special_op==SPECIAL_STORE&&
@@ -65,8 +65,8 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
   endfunction
   function automatic logic [31:0] vector_pc();
     case(phase)
-      0:return 32'h1000;
-      1,11,14,19:return 32'h1100;
+      0,16:return 32'h1000;
+      1,11,14,17,19:return 32'h1100;
       default:return 32'h1200;
     endcase
   endfunction
@@ -158,8 +158,8 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
   function automatic logic [31:0] instruction(input logic [31:0] pc);
     if(pc>=vector_pc()&&pc<=vector_pc()+32'd16)begin
       case(pc-vector_pc())
-        0:return spr(0,0,(phase==0)?980:976); // IMISS / DMISS
-        4:return spr(0,1,(phase==0)?981:977); // ICMP / DCMP
+        0:return spr(0,0,(phase==0||phase==16)?980:976); // IMISS / DMISS
+        4:return spr(0,1,(phase==0||phase==16)?981:977); // ICMP / DCMP
         8:return spr(0,2,978); // HASH1
         12:return spr(0,3,979); // HASH2
         16:return 32'h4c00_0064; // rfi
@@ -258,11 +258,13 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
       if(phase==14&&ipending&&fetch_pc==32&&fault_seen&&idelay>0)
         check(!cv,"context installed before younger fetch drained");
       if(iv&&ir&&ia==vector_pc()&&FEATURE&&
-         (phase<4||phase==11||phase==14||phase==15||phase==19))begin
+         (phase<4||phase==11||phase==14||phase==15||phase==16||phase==17||phase==19))begin
         if(phase==14)check(old_fetch_drains>0,
           "handler fetch preceded old younger response drain");
         check(dut.srr0==fault_pc()&&
               dut.srr1==(phase==0?32'h400c_0020:
+                phase==16?32'h400e_0020:
+                phase==17?32'h400a_0010:
                 phase==11?32'h4000_4010:
                 (phase==1||phase==14||phase==19)?32'h4008_0010:
                 phase==15?32'h400b_0010:32'h4009_0010)&&
@@ -270,7 +272,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
               dut.regfile.gpr[0]==0&&dut.regfile.gpr[1]==0&&
               dut.regfile.gpr[2]==0&&dut.regfile.gpr[3]==32'h1000_0000&&
               dut.regfile.gpr[6]==1&&dut.regfile.gpr[7]==0&&
-              ((phase==0)||dut.regfile.gpr[4]==32'h1000_1234),
+              ((phase==0||phase==16)||dut.regfile.gpr[4]==32'h1000_1234),
               "miss entry did not atomically save PC, syndrome, CR0 and TGPR");
       end
       if(tv&&!tr&&retired.pc==fault_pc())begin
@@ -294,9 +296,9 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
           if(phase==0||phase==1||phase==2||phase==3)
             check(retired.page_miss.way==0,
               "ordinary true miss or way-zero C=0 changed WAY");
-          if(phase==16||phase==17)check(retired.illegal,
-            "forged true-miss WAY produced architectural event");
-          if(FEATURE&&(phase<4||phase==11||phase==14||phase==15||phase==19))events++;
+          if(phase==16||phase==17)check(!retired.illegal,
+            "LRU way-one true miss was rejected");
+          if(FEATURE&&(phase<4||phase==11||phase==14||phase==15||phase==16||phase==17||phase==19))events++;
           check(!retired.gpr_write&&!retired.update_write&&
                 !retired.write_cr_field&&!retired.write_ca&&
                 !retired.write_ov_so&&!retired.write_cr_fields&&
@@ -308,23 +310,22 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
           check(dut.msr[17]&&dut.msr[5:4]==0,
                 "handler lost TGPR or real-mode state");
           if(retired.pc-vector_pc()==0)check(retired.gpr_write&&retired.gpr==0&&
-            retired.value==((phase==0)?32'd20:
+            retired.value==((phase==0||phase==16)?32'd20:
               phase==19?32'h1000_1235:32'h1000_1234),
             "handler miss effective page read");
           if(retired.pc-vector_pc()==4)check(retired.gpr_write&&retired.gpr==1&&
             retired.value==32'h891a_2b00,
             "handler compare read");
           if(retired.pc-vector_pc()==8)check(retired.gpr_write&&retired.gpr==2&&
-            retired.value==((phase==0)?32'h1000_1580:32'h1000_15c0),
+            retired.value==((phase==0||phase==16)?32'h1000_1580:32'h1000_15c0),
             "handler primary hash read");
           if(retired.pc-vector_pc()==12)check(retired.gpr_write&&retired.gpr==3&&
-            retired.value==((phase==0)?32'h1000_ea40:32'h1000_ea00),
+            retired.value==((phase==0||phase==16)?32'h1000_ea40:32'h1000_ea00),
             "handler secondary hash read");
         end
         if(retired.pc==fault_pc()&&
            (retired.fetch_fault!=FETCH_OK||retired.data_fault!=DATA_OK)&&
-           (!FEATURE||phase==4||phase==5||phase==8||
-            phase==16||phase==17))done<=1;
+           (!FEATURE||phase==4||phase==5||phase==8))done<=1;
         if(phase==12&&retired.pc==20&&retired.illegal)begin
           check(dut.special.imiss_q==0&&dut.special.dmiss_q==0&&
                 dut.special.hash1_q==0&&dut.special.hash2_q==0&&
@@ -340,8 +341,8 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
           done<=1;
         end
         if(retired.pc==28&&fault_seen&&retired.data_fault==DATA_OK&&
-           (phase<4||phase==11||phase==14||phase==15||phase==19))begin
-          if(phase==1||phase==11||phase==14||phase==19)
+           (phase<4||phase==11||phase==14||phase==15||phase==16||phase==17||phase==19))begin
+          if(phase==1||phase==11||phase==14||phase==17||phase==19)
             check(retired.gpr_write&&retired.gpr==6&&
                   retired.value==(phase==19?32'h34:32'h1234_5678)&&
                   retired.update_write&&retired.update_gpr==4&&
@@ -361,16 +362,16 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
           done<=1;
         end
         if(retired.pc==32'd24&&(phase==0||phase==6||phase==9||phase==16)&&fault_seen)begin
-          if(phase==0)check(!dut.msr[17]&&dut.cr[31:28]==4,
+          if(phase==0||phase==16)check(!dut.msr[17]&&dut.cr[31:28]==4,
             "RFI did not clear TGPR/preserve CR0 after I miss");
           done<=1;
         end
         if(retired.pc==32'd32&&phase!=0&&phase!=4&&phase!=6&&
            phase!=9&&phase!=16&&phase!=18)begin
-          if(phase<4||phase==11||phase==14||phase==15||phase==19)
+          if(phase<4||phase==11||phase==14||phase==15||phase==16||phase==17||phase==19)
             check(!dut.msr[17]&&dut.cr[31:28]==4&&
                   dut.msr[14]==(phase==11)&&
-                  (phase!=15||dut.srr1[17]),
+                  ((phase!=15&&phase!=17)||dut.srr1[17]),
                   "RFI did not restore normal/user context after data miss");
           done<=1;
         end
@@ -381,9 +382,9 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
     @(negedge clk);rst_n=0;phase=p;
     repeat(4)@(negedge clk);rst_n=1;
     wait(done);@(negedge clk);
-    if(FEATURE&&(p<4||p==11||p==14||p==15||p==19))check(events==1&&handler_reads>=4&&
+    if(FEATURE&&(p<4||p==11||p==14||p==15||p==16||p==17||p==19))check(events==1&&handler_reads>=4&&
       hold_count>=8&&retired_faults==1&&!halted&&
-      requests==(p==0?0:2)&&
+      requests==((p==0||p==16)?0:2)&&
       (p!=14||old_fetch_drains>0),
       "miss event/handler/hold count");
     else if(p==6||p==7||p==9||p==10||p==18)check(cut_seen&&events==0&&handler_reads==0&&
@@ -392,10 +393,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
     else if(p==12||p==13)check(events==0&&handler_reads==0&&
       dut.special.imiss_q==0&&dut.special.dmiss_q==0,
       "invalid miss-SPR operation installed state");
-    else check(events==0&&handler_reads==0&&retired_faults==1&&
-      ((p!=16&&p!=17)||
-       (dut.srr0==0&&dut.srr1==0&&dut.special.imiss_q==0&&
-        dut.special.dmiss_q==0&&!dut.msr[17])),
+    else check(events==0&&handler_reads==0&&retired_faults==1,
       "guarded/disabled miss entered handler or lost diagnostic");
     $display("PASS core TLB miss feature=%0d phase=%0d checks=%0d",
       FEATURE,p,checks);

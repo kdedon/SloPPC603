@@ -199,6 +199,7 @@ module tb_tlb_runtime_invalidate_router;
     check(tlb_mgmt_req_ready_o && !pimem_req_valid_o && !pdmem_req_valid_o,
           "management not admitted on idle route");
     @(posedge clk_i); #1;
+    if (!tlb_mgmt_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_mgmt_rsp_valid_o && !tlb_mgmt_idle_o &&
           tlb_mgmt_rsp_kind_o == (expect_unsupported ? 2'd3 : kind) &&
           tlb_mgmt_rsp_bank_o == bank && tlb_mgmt_rsp_ea_o == ea &&
@@ -458,6 +459,7 @@ module tb_tlb_runtime_invalidate_router;
     tlb_mgmt_req_pp_i = 2'b10;
     #1; check(tlb_mgmt_req_ready_o, "privileged-management probe not admitted");
     @(posedge clk_i); #1;
+    if (!tlb_mgmt_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_mgmt_rsp_valid_o && tlb_mgmt_rsp_privileged_o &&
           !tlb_mgmt_rsp_refill_rejected_o,
           "user-mode management refill was not rejected");
@@ -500,6 +502,7 @@ module tb_tlb_runtime_invalidate_router;
     tlb_inv_req_valid_i = 1; tlb_inv_req_ea_i = ea;
     #1; check(tlb_inv_req_ready_o, "CPU invalidate request not ready");
     @(posedge clk_i); #1;
+    if (!tlb_inv_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_inv_rsp_valid_o && tlb_inv_rsp_error_o == expect_error &&
           !tlb_inv_idle_o && quiescent_o && !context_ready_o,
           "CPU invalidate response/owner");
@@ -549,6 +552,7 @@ module tb_tlb_runtime_invalidate_router;
     @(negedge clk_i); pdmem_rsp_valid_i = 0;
     #1; check(tlb_inv_req_ready_o, "invalidate not admitted after drain");
     @(posedge clk_i); #1;
+    if (!tlb_inv_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_inv_rsp_valid_o && !tlb_inv_rsp_error_o &&
           !tlb_inv_idle_o && dut.tlb.valid_q[0][0][1] &&
           dut.tlb.valid_q[1][1][1], "prepare changed entries");

@@ -66,6 +66,11 @@ module tb_bat_service;
     req_valid = 1; rsp_ready = 0;
     #1; check(req_ready, "new request admitted in empty slot");
     @(posedge clk); #1;
+    // A validated write answers two edges after acceptance.
+    for (integer w = 0; w < 2 && !rsp_valid; w++) begin
+      check(!req_ready, "validating write blocks the next request");
+      @(posedge clk); #1;
+    end
     check(rsp_valid && rsp_kind == kind && rsp_ea == address && rsp_spr == spr,
           "accepted request context captured");
     @(negedge clk); req_valid = 0;
@@ -175,11 +180,22 @@ module tb_bat_service;
         check(rsp_valid && observed == current_row.result, "external response stable across edge");
         @(negedge clk);
       end
+      // A successful write stores one edge after its response appears.
+      #1;
+      if (!req_ready) begin
+        check(rsp_valid && observed == current_row.result,
+              "external response held while its write stores");
+        @(negedge clk);
+      end
       rsp_ready = 1;
       #1;
       check(req_ready && rsp_valid && observed == current_row.result,
             "external turnover still presents previous response");
       @(posedge clk); #1;
+      if (have_next && !rsp_valid) begin
+        check(!req_ready, "external write validation blocks requests");
+        @(posedge clk); #1;
+      end
       check(rsp_valid == have_next, "external turnover accepts exactly next request");
       current_row = next_row; have_current = have_next; count++;
     end
@@ -276,6 +292,8 @@ module tb_bat_service;
       @(negedge clk);
     end
     rsp_ready = 1; #1; check(req_ready && observed == held, "remap turnover uses old response");
+    @(posedge clk); #1;
+    check(!rsp_valid && !req_ready, "turnover write validates for one cycle");
     @(posedge clk); #1;
     check(rsp_valid && rsp_kind == 4 && rsp_spr == 537 && !rsp_rejected, "turnover returns write result");
     @(negedge clk); req_valid = 0; rsp_ready = 0;

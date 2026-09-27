@@ -647,7 +647,6 @@ module tb_compiled_table_cached_bus60x_firmware #(
               retired.page_miss.ea==
                 (fault_is_i(m)?fault_ea(m):(fault_ea(m)&32'hfffffffc))&&
               retired.page_miss.sr==fault_sr(m)&&
-              !retired.page_miss.way&&
               retired.page_miss.write==(m==3||(m>=16&&m%2!=0)),
               "fault typed full-EA capsule");
             check(fault_is_i(m)?

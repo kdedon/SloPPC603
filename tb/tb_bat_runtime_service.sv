@@ -67,6 +67,11 @@ module tb_bat_runtime_service;
     req_valid = 1; rsp_ready = 0;
     #1; check(req_ready, "new request admitted in empty slot");
     @(posedge clk); #1;
+    // A validated write answers two edges after acceptance.
+    for (integer w = 0; w < 2 && !rsp_valid; w++) begin
+      check(!req_ready, "validating write blocks the next request");
+      @(posedge clk); #1;
+    end
     check(rsp_valid && rsp_kind == kind && rsp_ea == address && rsp_spr == spr,
           "accepted request context captured");
     @(negedge clk); req_valid = 0;
@@ -158,8 +163,17 @@ module tb_bat_runtime_service;
     req_kind=5;req_spr=528;req_data=32'h00800000;req_valid=1;req_pr=0;
     #1;check(req_ready,"abort/prepare handshake unavailable");
     @(posedge clk);#1;req_valid=0;prepare_abort=0;
+    @(posedge clk);#1;
     check(rsp_valid&&!ack_valid,"same-edge abort lost required response");consume();
     check(idle,"same-edge abort retained proposal");get(528,model[0]);
+    // Cancellation during validation also wins over reservation.
+    @(negedge clk);req_kind=5;req_spr=528;req_data=32'h00800000;req_valid=1;req_pr=0;
+    #1;check(req_ready,"validation-abort prepare unavailable");
+    @(posedge clk);#1;req_valid=0;prepare_abort=1;
+    check(!rsp_valid&&!idle,"prepare validates before responding");
+    @(posedge clk);#1;prepare_abort=0;
+    check(rsp_valid&&!ack_valid&&!rsp_rejected,"validation-cycle abort lost response");consume();
+    check(idle,"validation-cycle abort retained proposal");get(528,model[0]);
     // Local rejections do not mutate any bank half.
     prepare(528,32'h00000014,1);get(528,model[0]); // malformed inactive BL
     prepare(528,32'h00002000,1);get(528,model[0]); // reserved upper bit

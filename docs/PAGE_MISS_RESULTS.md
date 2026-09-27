@@ -23,8 +23,9 @@ store, hit=1, one-hot match, C=0, needs_changed=1, allow=0 and all other causes 
 captured SR.T=0; instruction misses additionally require SR.N=0. A clean
 changed-bit result also requires the service's way to agree with its sole
 one-hot matched entry. Only `DATA_PAGE_CHANGED` copies that matched way;
-true instruction/data misses set `way=0`. This is the resident entry to
-update, not a replacement-way recommendation for an absent mapping. Mismatched,
+true instruction/data misses carry the service's LRU replacement way for the
+set (UM Table 5-10 SRR1[WAY]). The changed-bit way is the resident entry to
+update. Mismatched,
 mixed and unsupported replies retain legacy diagnostic handling.
 
 The typed selectors are `FETCH_PAGE_MISS=3`, `DATA_PAGE_MISS=2` and

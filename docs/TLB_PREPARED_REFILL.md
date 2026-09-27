@@ -29,10 +29,11 @@ edge; it does not revalidate against live inputs. No other bank, way or set
 changes. A registered acknowledgment appears after commit and remains held
 until consumed. Commit is irrevocable. Abort releases an uncommitted proposal,
 preserves a held response, creates no acknowledgment and wins over retaining a
-preparation accepted on the same edge. Reset clears response, proposal,
+preparation accepted on the same edge or on the following classification
+edge. Reset clears response, proposal,
 acknowledgment and local TLB valids; entry data storage remains don't-care
 behind invalid bits. `transaction_idle_o` is low during reset and while any
-response, proposal or acknowledgment remains.
+response, classification, proposal or acknowledgment remains.
 
 The existing kind-1 management refill still writes at request acceptance. The
 standalone historical two-bit 93/90 vector format covers kinds 0–3 and is
