@@ -6,3 +6,6 @@ set_input_delay -clock core_clk -max 0.000 [remove_from_collection [all_inputs] 
 set_input_delay -clock core_clk -min 0.000 [remove_from_collection [all_inputs] [get_ports {clk_i}]]
 set_output_delay -clock core_clk -max 0.000 [all_outputs]
 set_output_delay -clock core_clk -min 0.000 [all_outputs]
+# rst_ni is asynchronous to core_clk; its only load is the first flop of the
+# measurement top's two-flop reset synchronizer.
+set_false_path -from [get_ports {rst_ni}] -to [get_registers {rst_sync_q[0]}]
