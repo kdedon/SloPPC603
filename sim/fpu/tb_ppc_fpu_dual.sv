@@ -561,6 +561,43 @@ module tb_ppc_fpu_dual #(
         retire_one(tag(141));
         checks += 2;
 
+        // With VE enabled but FE0/FE1 clear, invalid arithmetic suppresses
+        // the destination without a program trap. Its younger load can use
+        // the 603e's second retirement slot because the older packet writes
+        // no FPR. The 602 exception/tag matrix checks its distinct trap path.
+        if (!CPU_602) begin
+            initialize_fpr(5'd29, 8'd142, 64'h7ff0000000000001);
+            issue_one(request(8'd143,
+                {6'd63, 5'd24, 5'd0, 5'd0, 10'd38, 1'b0}));
+            await_head(tag(143));
+            retire_one(tag(143));
+            if (!inspect_fpscr_o[7]) $fatal(1, "VE was not committed");
+            issue_pair(request(8'd144,
+                {6'd63, 5'd30, 5'd29, 5'd1, 5'd0, 5'd21, 1'b0}),
+                request(8'd145, dform(6'd50, 5'd31, 16'd0)));
+            reply_memory(tag(145), 64'h3ff0000000000000, 1'b0);
+            await_head(tag(144));
+            if (result_o.fpr_write || result_o.exception != FPU_NO_EXCEPTION ||
+                !result1_valid_o || result1_o.tag != tag(145))
+                $fatal(1, "enabled invalid dual-retire fpr_write=%b exception=%0d result1_valid=%b result1_tag=%h head=%h second=%h",
+                       result_o.fpr_write, result_o.exception,
+                       result1_valid_o, result1_o.tag, result_o, result1_o);
+            @(negedge clk_i);
+            commit_tag_i = tag(144);
+            commit_valid_i = 1'b1;
+            commit1_tag_i = tag(145);
+            commit1_valid_i = 1'b1;
+            @(posedge clk_i);
+            accept0 = commit_ready_o;
+            accept1 = commit1_ready_o;
+            #2;
+            commit_valid_i = 1'b0;
+            commit1_valid_i = 1'b0;
+            if (!accept0 || !accept1)
+                $fatal(1, "suppressed-result/load dual retirement rejected");
+            checks += 3;
+        end
+
         attempts = 0;
         while (mem_req_valid_o || result_valid_o || result1_valid_o) begin
             @(negedge clk_i);

@@ -483,3 +483,12 @@ shell 603e/602 851/173 checks, exact timing 71/52 responses, both
 lint invocations passed with zero warnings and errors. This gate combines
 the narrower arithmetic datapath and memory-specific shell cone with the
 expanded alignment vectors.
+
+Recorded: `make -C sim -j2 lint-fpu-dual test-fpu-dual-603
+test-fpu-dual-602` on the same `f2c8e36`/`20c2329` combined snapshot with
+an enabled-invalid dual-retirement vector, 2026-09-27; 603e 32 and 602 24
+checks passed with zero warnings or errors. The 603e test sets FPSCR VE
+through `mtfsb1` architectural bit 24 while MSR FE0/FE1 remain clear,
+then confirms a signaling-NaN arithmetic result suppresses its FPR write
+and retires beside a younger completed load. The 602 exception matrix
+independently checks its enabled emulation-trap path.
