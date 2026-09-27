@@ -11,10 +11,16 @@ module tb_ppc_fpu_stream #(
     logic rst_ni;
     logic issue_valid_i, issue_ready_o;
     ppc_fpu_issue_t issue_i;
+    logic issue1_valid_i, issue1_ready_o;
+    ppc_fpu_issue_t issue1_i;
     logic result_valid_o;
     ppc_fpu_result_t result_o;
+    logic result1_valid_o;
+    ppc_fpu_result_t result1_o;
     logic commit_valid_i, commit_ready_o;
     completion_tag_t commit_tag_i;
+    logic commit1_valid_i, commit1_ready_o;
+    completion_tag_t commit1_tag_i;
     logic abort_valid_i, kill_all_i;
     completion_tag_t abort_tag_i;
     logic mem_req_valid_o, mem_req_ready_i;
@@ -28,8 +34,12 @@ module tb_ppc_fpu_stream #(
     logic [31:0] inspect_fpscr_o, inspect_sp_o, inspect_lt_o;
     logic forward_valid_o;
     ppc_fpu_forward_t forward_o;
+    logic forward1_valid_o;
+    ppc_fpu_forward_t forward1_o;
 
     logic automatic_commit;
+    logic auto_commit_valid;
+    completion_tag_t auto_commit_tag;
     logic manual_commit_valid;
     completion_tag_t manual_commit_tag;
     int issued;
@@ -40,8 +50,35 @@ module tb_ppc_fpu_stream #(
     logic [63:0] expected_value;
 
     ppc_fpu #(.CPU_602(CPU_602)) dut (.*);
-    assign commit_valid_i = automatic_commit ? result_valid_o : manual_commit_valid;
-    assign commit_tag_i = automatic_commit ? result_o.tag : manual_commit_tag;
+    assign issue1_valid_i = 1'b0;
+    assign issue1_i = '0;
+    assign commit1_valid_i = 1'b0;
+    assign commit1_tag_i = '0;
+    always @(posedge clk_i)
+        if (rst_ni) begin
+            if (issue1_ready_o || commit1_ready_o)
+                $fatal(1, "stream used unrequested second lane");
+            if (result1_valid_o && result1_o.tag == result_o.tag)
+                $fatal(1, "stream second result duplicated first tag packet=%h", result1_o);
+            if (forward1_valid_o &&
+                (!forward_valid_o || forward1_o.tag == forward_o.tag ||
+                 !(forward1_o.fpr_write || forward1_o.cr_write)))
+                $fatal(1, "stream second forward malformed packet=%h", forward1_o);
+        end
+    // Register the eager retirement request at the intervening falling edge.
+    // This presents it for the very next rising edge without a combinational
+    // result/commit loop through the shell's credit-ready logic.
+    always @(negedge clk_i) begin
+        if (!rst_ni) begin
+            auto_commit_valid <= 1'b0;
+            auto_commit_tag <= '0;
+        end else begin
+            auto_commit_valid <= result_valid_o;
+            auto_commit_tag <= result_o.tag;
+        end
+    end
+    assign commit_valid_i = automatic_commit ? auto_commit_valid : manual_commit_valid;
+    assign commit_tag_i = automatic_commit ? auto_commit_tag : manual_commit_tag;
 
     function automatic logic [31:0] dform(input logic [5:0] primary,
         input logic [4:0] target);
@@ -69,24 +106,32 @@ module tb_ppc_fpu_stream #(
             forwarded <= 0;
         end else begin
             cycle_count <= cycle_count + 1;
+            if (automatic_commit && issue_valid_i && issue_ready_o) begin
+                ordinal = (int'(issue_i.tag.generation) - 32'd40) * 4 +
+                          int'(issue_i.tag.index);
+                if (ordinal < 0 || ordinal >= 32)
+                    $fatal(1, "stream accepted unexpected tag %h", issue_i.tag);
+                issue_cycle[ordinal] <= cycle_count + 1;
+            end
             if (automatic_commit && result_valid_o && commit_ready_o) begin
                 if (result_o.tag !== stream_tag(committed) ||
                     result_o.exception != FPU_NO_EXCEPTION ||
                     !result_o.fpr_write || result_o.fpr_value != expected_value)
-                    $fatal(1, "%s stream result %0d tag/data/exception mismatch",
-                           CPU_602 ? "602" : "603e", committed);
+                    $fatal(1, "%s stream result %0d tag/data/exception mismatch packet=%h",
+                           CPU_602 ? "602" : "603e", committed, result_o);
                 committed <= committed + 1;
             end
             if (automatic_commit && forward_valid_o) begin
-                ordinal = int'(forward_o.tag.generation - 8'd40) * 4 +
+                ordinal = (int'(forward_o.tag.generation) - 32'd40) * 4 +
                           int'(forward_o.tag.index);
                 if (ordinal != forwarded || !forward_o.fpr_write ||
                     forward_o.fpr_value != expected_value)
-                    $fatal(1, "%s stream forward tag/data/duplicate", CPU_602 ? "602" : "603e");
-                if (cycle_count - issue_cycle[ordinal] > 5)
-                    $fatal(1, "%s stream late forward ordinal=%0d delay=%0d",
+                    $fatal(1, "%s stream forward tag/data/duplicate packet=%h",
+                           CPU_602 ? "602" : "603e", forward_o);
+                if (cycle_count + 1 - issue_cycle[ordinal] != 3)
+                    $fatal(1, "%s stream forward ordinal=%0d delay=%0d expected=3",
                            CPU_602 ? "602" : "603e", ordinal,
-                           cycle_count - issue_cycle[ordinal]);
+                           cycle_count + 1 - issue_cycle[ordinal]);
                 forwarded <= forwarded + 1;
             end
         end
@@ -119,7 +164,8 @@ module tb_ppc_fpu_stream #(
         while (!mem_req_valid_o) begin
             @(negedge clk_i);
             attempts++;
-            if (attempts > 100) $fatal(1, "stream setup memory request timeout");
+            if (attempts > 100)
+                $fatal(1, "stream setup memory request timeout descriptor=%h", mem_req_o);
         end
         mem_req_ready_i = 1'b1;
         @(posedge clk_i);
@@ -206,7 +252,6 @@ module tb_ppc_fpu_stream #(
             if (!accepted)
                 $fatal(1, "%s stream dispatch bubble at %0d",
                        CPU_602 ? "602" : "603e", i);
-            issue_cycle[i] = cycle_count;
             issued++;
             issue_valid_i = 1'b0;
         end
@@ -225,7 +270,7 @@ module tb_ppc_fpu_stream #(
         inspect_fpr_index_i = 5'd3;
         #1;
         if (inspect_fpr_o != expected_value || store_valid_o || store_o.write)
-            $fatal(1, "stream final FPR/store state mismatch");
+            $fatal(1, "stream final FPR/store state mismatch store=%h", store_o);
         $display("%s FPU shell stream PASS: %0d issued, %0d forwarded, %0d committed",
                  CPU_602 ? "602" : "603e", issued, forwarded, committed);
         $finish;

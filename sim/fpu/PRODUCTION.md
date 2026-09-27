@@ -331,3 +331,15 @@ packets over 13 operation families with zero result, invalid, flag, or
 classification mismatches. Both static timing runs passed (603e 71, 602 52
 tagged responses), and strict lint/build emitted zero warnings/errors. The
 602 `frsqrte` estimate remains a separate open verification gate.
+
+Recorded: `make -C sim -j2 lint-fpu-production lint-fpu-stream` and
+`make -C sim -j2 test-fpu-shell test-fpu-602 test-fpu-stream-603
+test-fpu-stream-602` on shell commit `27ff134` with arithmetic source from
+the preceding frozen timing snapshot and uncommitted bench wiring, in an
+immutable snapshot, 2026-09-27; strict lint and all four builds emitted zero
+warnings/errors. The 603e decoded shell passed 851 checks; the 602 decoded
+shell passed 87, including commit-time `stfd` authorization and separate
+selected/unselected `fsel` SP-tag cases. Each personality's 32-operation
+single-lane stream dispatched, forwarded, and committed all 32 in order,
+with exact three-clock forward latency. This gate does not yet cover
+simultaneous ordered FP+LSU issue or paired retirement/forwarding.

@@ -8,10 +8,16 @@ module tb_ppc_fpu_602;
     logic rst_ni;
     logic issue_valid_i, issue_ready_o;
     ppc_fpu_issue_t issue_i;
+    logic issue1_valid_i, issue1_ready_o;
+    ppc_fpu_issue_t issue1_i;
     logic result_valid_o;
     ppc_fpu_result_t result_o;
+    logic result1_valid_o;
+    ppc_fpu_result_t result1_o;
     logic commit_valid_i, commit_ready_o;
     completion_tag_t commit_tag_i;
+    logic commit1_valid_i, commit1_ready_o;
+    completion_tag_t commit1_tag_i;
     logic abort_valid_i, kill_all_i;
     completion_tag_t abort_tag_i;
     logic mem_req_valid_o, mem_req_ready_i;
@@ -25,6 +31,8 @@ module tb_ppc_fpu_602;
     logic [31:0] inspect_fpscr_o, inspect_sp_o, inspect_lt_o;
     logic forward_valid_o;
     ppc_fpu_forward_t forward_o;
+    logic forward1_valid_o;
+    ppc_fpu_forward_t forward1_o;
     ppc_fpu_forward_t last_forward;
     ppc_fpu_result_t held_result;
     ppc_fpu_mem_t held_mem_req;
@@ -32,6 +40,20 @@ module tb_ppc_fpu_602;
     int checks;
 
     ppc_fpu #(.CPU_602(1'b1)) dut (.*);
+    assign issue1_valid_i = 1'b0;
+    assign issue1_i = '0;
+    assign commit1_valid_i = 1'b0;
+    assign commit1_tag_i = '0;
+
+    always @(posedge clk_i)
+        if (rst_ni) begin
+            if (issue1_ready_o || commit1_ready_o)
+                $fatal(1, "602 accepted an unrequested second lane");
+            if (result1_valid_o)
+                $fatal(1, "602 exposed second result packet=%h", result1_o);
+            if (forward1_valid_o)
+                $fatal(1, "602 exposed second forward packet=%h", forward1_o);
+        end
 
     always @(posedge clk_i)
         if (!rst_ni) last_forward <= '0;
