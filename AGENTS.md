@@ -47,6 +47,11 @@ Precedence when sources disagree: the 603e manuals (per
 contracts in `docs/`, then [`docs/CODING_CONVENTIONS.md`](docs/CODING_CONVENTIONS.md), then skills. Skills are
 design guidance, not architectural authority.
 
+DingusPPC is a comparison reference, never a source of truth. It is an emulator: it
+may take shortcuts or omit whole areas of the processor. A mismatch is triaged
+against the manuals; change the RTL only when the manual says the RTL is wrong.
+Agreement with DingusPPC is evidence of consistency, not of correctness.
+
 When adding or editing a skill, keep one topic per skill, cite code as a GitHub
 permalink at a fixed commit, and never link local paths or other skills.
 
