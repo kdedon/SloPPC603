@@ -1,9 +1,9 @@
 // The compiled MMU stress image on the translated cached 60x top with the
 // MVP profile. MODE seeds the external IRQ schedule, decrementer ticks, 60x
-// target delays and retirement backpressure. Modes 1-7 also reset the CPU at
-// a chosen point (in a miss handler, during a PTE read or R/C write, a TLB
-// load, a translated line fill, a held IRQ or a DEC entry) and require the
-// image to pass again from reset. RAM changes only through pin tenures.
+// target delays and retirement backpressure. Modes 1-8 also reset the CPU at
+// a chosen point (during a PTE read or R/C write in a miss handler, a TLB
+// load or invalidate, a translated line fill, a held IRQ, a DEC entry or at
+// random cycles) and require the image to pass again from reset. RAM changes only through pin tenures.
 /* verilator lint_off BLKSEQ */
 module tb_compiled_mmu_stress_firmware;
   import ppc_pkg::*;
@@ -51,6 +51,7 @@ module tb_compiled_mmu_stress_firmware;
 
   // Per-run counters clear on every reset; totals do not.
   int retires=0,ext_taken=0,dec_taken=0,resumes=0,tgpr_entries=0,fills=0;
+  int invalidates=0;
   int total_retires=0,total_ext=0,total_dec=0,total_resumes=0,total_cycles=0;
   int irq_in_miss=0,irq_in_bus=0,dec_in_miss=0,line_starts=0,page_lines=0;
   int cache_hits=0,cache_misses=0,chained=0;
@@ -156,6 +157,7 @@ module tb_compiled_mmu_stress_firmware;
   /* verilator lint_on UNUSEDSIGNAL */
   wire tgpr=dut.translated_core.core.msr[17];
   wire tlb_fill_offer=dut.translated_core.tlb_fill_req_valid;
+  wire tlb_inv_offer=dut.translated_core.tlb_inv_req_valid;
 
   function automatic string check_detail();
     return $sformatf(" mode=%0d resets=%0d/%0d ext=%0d dec=%0d msr=%08x bus=%08x",
@@ -234,7 +236,7 @@ module tb_compiled_mmu_stress_firmware;
   always @(posedge clk) begin : oracle
     if(!rst_n)begin
       retires=0;ext_taken=0;dec_taken=0;resumes=0;tgpr_entries=0;fills=0;
-      chained=0;
+      chained=0;invalidates=0;
       resume_pending=0;last_tgpr=0;last_irq_tgpr=0;event_pc=0;
       irq<=0;cycles=0;next_irq=400+int'(lfsr[9:0]);
       mailbox_written=0;mailbox_retired=0;
@@ -258,6 +260,7 @@ module tb_compiled_mmu_stress_firmware;
       if(irq&&target.transfer_pending&&!target.transfer_instruction)irq_in_bus++;
       if(dut.translated_core.core.special.decrementer_pending_o&&tgpr)dec_in_miss++;
       if(tlb_fill_offer)fills++;
+      if(tlb_inv_offer)invalidates++;
       if(icache_hit)cache_hits++;
       if(icache_miss)cache_misses++;
 
@@ -323,6 +326,7 @@ module tb_compiled_mmu_stress_firmware;
       5:wait(dec_taken>=3);
       6:wait(tgpr_entries>=4&&tgpr&&target.transfer_pending&&
              target.transfer_write);
+      8:wait(invalidates>=40&&tlb_inv_offer);
       default:repeat(3000+int'(lfsr[15:0]))@(posedge clk);
     endcase
     repeat(mode==5?3:0)@(posedge clk);

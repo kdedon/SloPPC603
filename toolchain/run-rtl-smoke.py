@@ -109,7 +109,7 @@ PROFILES = {
     'table-fault-bus': ('tb_compiled_table_bus60x_firmware', BAT_BUS, FAULT, 0),
     'table-search-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, MISS, 0),
     'table-fault-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, FAULT, 0),
-    'mmu-stress-cached': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, 8),
+    'mmu-stress-cached': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, 9),
 }
 
 
