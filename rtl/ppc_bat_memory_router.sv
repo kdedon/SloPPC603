@@ -335,6 +335,8 @@ module ppc_bat_memory_router #(
   logic clean_page_instruction_base;
   logic clean_page_instruction_pp, clean_page_instruction_guarded;
   logic clean_page_instruction_no_execute;
+  logic clean_page_instruction_direct_store, clean_page_data_direct_store;
+  logic clean_page_direct_store;
   logic clean_page_miss_base, clean_page_true_miss, clean_page_changed;
   logic bat_fetch_isi, bat_data_dsi, bat_typed_fault, page_typed_fault;
   logic page_fault_q, page_miss_q, page_protection_q;
@@ -562,6 +564,17 @@ module ppc_bat_memory_router #(
   assign clean_page_instruction_no_execute = clean_page_instruction_base &&
     page_sr_q[28] && tlb_rsp_no_execute &&
     !tlb_rsp_protection && !tlb_rsp_guarded;
+  // UM Table 5-3: SR.T=1 without a BAT match is ISI SRR1[3] or DSI
+  // DSISR[5]. The service reports it before tag lookup.
+  assign clean_page_direct_store = !page_reply_config && page_sr_q[31] &&
+    tlb_rsp_direct_store && !tlb_rsp_hit && !tlb_rsp_miss &&
+    !tlb_rsp_protection && !tlb_rsp_guarded && !tlb_rsp_no_execute &&
+    !tlb_rsp_needs_changed;
+  assign clean_page_instruction_direct_store =
+    ENABLE_PAGE_INSTRUCTION_EXCEPTIONS && owner_instruction_q &&
+    clean_page_direct_store;
+  assign clean_page_data_direct_store = ENABLE_PAGE_DATA_EXCEPTIONS &&
+    !owner_instruction_q && clean_page_direct_store;
   // Typed miss diagnostics require one exact lookup result and one cause.
   // The service checks protection before a store's C bit, so a PP denial
   // cannot be recast as a changed-bit request.
@@ -595,8 +608,10 @@ module ppc_bat_memory_router #(
   assign bat_typed_fault = owner_instruction_q ? bat_fetch_isi : bat_data_dsi;
   assign page_typed_fault = owner_instruction_q ?
     (clean_page_true_miss || clean_page_instruction_pp ||
-     clean_page_instruction_guarded || clean_page_instruction_no_execute) :
-    (clean_page_data_pp || clean_page_true_miss || clean_page_changed);
+     clean_page_instruction_guarded || clean_page_instruction_no_execute ||
+     clean_page_instruction_direct_store) :
+    (clean_page_data_pp || clean_page_data_direct_store ||
+     clean_page_true_miss || clean_page_changed);
   assign service_pr = !bat_setup_q &&
     ((csr_offer && bat_csr_req_valid_i) ? context_pr_q : request_pr_q);
 
@@ -1233,6 +1248,7 @@ module ppc_bat_memory_router #(
                 end
               end else begin
                 data_fault_q <= clean_page_data_pp ? DATA_DSI_PROTECTION :
+                  clean_page_data_direct_store ? DATA_DSI_DIRECT_STORE :
                   (clean_page_true_miss ? DATA_PAGE_MISS :
                     (clean_page_changed ? DATA_PAGE_CHANGED : DATA_OK));
                 state_q <= ROUTE_DATA_FAULT_RESPONSE;

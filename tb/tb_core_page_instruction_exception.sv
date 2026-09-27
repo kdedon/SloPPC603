@@ -83,7 +83,8 @@ module tb_core_page_instruction_exception #(parameter bit ENABLE_MICRO_TLB = 1'b
   function automatic logic [31:0] program_word(input logic [31:0] pa);
     case(pa)
       0:return phase==0||phase==3?32'h3c80_4000:
-               phase==2?32'h3c80_1000:32'h3c80_0000;
+               phase==2?32'h3c80_1000:
+               phase==4?32'h3c80_8000:32'h3c80_0000; // Ks, N or T
       4:return 32'h6084_1234; // SR0 VSID 0x001234
       8:return 32'h7c80_01a4; // mtsr 0,r4
       12:return 32'h38a0_0020; // MSR.IR
@@ -240,6 +241,16 @@ module tb_core_page_instruction_exception #(parameter bit ENABLE_MICRO_TLB = 1'b
           denied_physical==0&&dut.core.srr0==0&&dut.core.srr1==0&&
           dut.core.regfile.gpr[6]==0,
           "killed page ISI installed state or executed denied payload");
+    // UM Table 5-3: a fetch from an SR.T=1 segment is ISI SRR1[3], even
+    // with an allowed ITLB entry for the page.
+    reset_case(4);
+    preload(32'h0000_0014,20'h00000,2'b10,4'h0);
+    preload(32'h0000_1000,20'h00001,2'b10,4'h0);
+    start_core();wait(done);@(negedge clk_i);
+    check(faults==1&&handler_reads==2&&denied_physical==0&&
+          dut.core.regfile.gpr[6]==0&&!page_fault_o&&
+          !page_direct_store_o,
+          "direct-store fetch missed ISI or executed its payload");
     $display("PASS actual-core page ISI checks=%0d",checks);$finish;
   end
 endmodule

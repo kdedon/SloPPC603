@@ -623,11 +623,16 @@ module tb_page_instruction_exception_router #(parameter bit ENABLE_PAGE_INSTRUCT
     set_sr(4'd1,{8'h00,VSID_A});
     fetch_denial(3'd2,0,1,0);
 
-    // T=1 and an ordinary TLB miss remain fatal diagnostics in this round.
-    reset_all();start_router(1,1,0);
+    // T=1 is the bit-3 ISI before tag lookup, even over an allowed entry;
+    // disabled, it stays a fatal diagnostic.
+    reset_all();
+    manage(2'd1,0,EA,VSID_A,0,RPN_A,1,4'h0,2'b10,0);
+    start_router(1,1,0);
     set_sr(4'd1,32'h8000_0000|{8'h00,VSID_A});
-    fetch_denial(0,0,0,0);
-    check(page_direct_store_o,"T=1 classification absent");
+    fetch_denial(3'd2,0,0,0);
+    check(page_direct_store_o==!ENABLE_PAGE_INSTRUCTION_EXCEPTIONS&&
+          dut.tlb_rsp_direct_store,"T=1 classification absent");
+    // An ordinary TLB miss remains a fatal diagnostic without miss results.
     reset_all();start_router(1,1,0);
     set_sr(4'd1,{8'h00,VSID_A});
     fetch_denial(0,0,0,0);

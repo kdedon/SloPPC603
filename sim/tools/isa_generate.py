@@ -79,7 +79,7 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
     x_forms = {
         "mtmsr": (146, 0xFC1FFFFF), "mtsr": (210, 0xFC10FFFF), "mtsrin": (242, 0xFC1F07FF),
         "mfsr": (595, 0xFC10FFFF), "mfsrin": (659, 0xFC1F07FF), "tlbie": (306, 0xFFFF07FF),
-        "tlbld": (978, 0xFFFF07FF), "tlbli": (1010, 0xFFFF07FF),
+        "tlbld": (978, 0xFFFF07FF), "tlbli": (1010, 0xFFFF07FF), "tlbsync": (566, 0xFFFFFFFF),
     }
     seen_x = set()
     for entry in spec["decode_entries"]:
@@ -1602,7 +1602,7 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
         "",
         f"This bounded preparation covers {len(entries)} reviewed decode entries: {default_count} implemented by default and {supervisor_count + serialization_count} available only with `ENABLE_SUPERVISOR_EXCEPTIONS=1`. The opt-in forms comprise {supervisor_count} supervisor forms plus ISYNC, SYNC, and EIEIO. This does not complete P03, the 603e exception architecture, or the cache/bus ordering architecture.",
         "",
-        f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBLD/TLBLI and the XER, timer, BAT, SDR1 and TLB-miss SPR moves) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} forms whose manual passages conflict are recorded as `manual_conflict_rejected` and stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
+        f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBSYNC/TLBLD/TLBLI and the XER, timer, BAT, SDR1 and TLB-miss SPR moves) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} forms whose manual passages conflict are recorded as `manual_conflict_rejected` and stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
         "",
         "Secondary 601UM and DingusPPC evidence is tagged only as an encoding/semantics cross-check. The 603e UM controls implementation-specific support, and neither secondary source is a timing oracle.",
         "",
