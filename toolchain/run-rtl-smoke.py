@@ -76,6 +76,8 @@ PAGE = {**TIMER, 'page_probe': 0x6000}
 TLBIE = {**PAGE, 'tlbie_data_probe': 0x7000}
 MISS = {'imiss_handler': 0x1000, 'dlmiss_handler': 0x1100, 'dsmiss_handler': 0x1200, 'page_probe': 0x6000}
 FAULT = {**MISS, 'table_search_dsi_vector': 0x300, 'table_search_isi_vector': 0x400}
+CACHEOPS = {'dsi_handler': 0x300, 'interrupt_handler': 0x500, 'alignment_handler': 0x600,
+            'decrementer_handler': 0x900}
 
 # profile: (bench, source lists, fixed-address symbols as offsets from BASE, +MODE runs)
 PROFILES = {
@@ -103,7 +105,10 @@ PROFILES = {
     'table-fault-bus': ('tb_compiled_table_bus60x_firmware', BAT_BUS, FAULT, 0),
     'table-search-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, MISS, 0),
     'table-fault-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, FAULT, 0),
+    'cacheops': ('tb_compiled_cacheops_firmware', BAT_CACHED, CACHEOPS, 0),
 }
+# Benches whose target is not the default for their source lists.
+SCRIPTED_TARGET = {'cacheops'}
 
 
 def main():
@@ -137,8 +142,11 @@ def main():
         for source in (root/'rtl'/manifest).read_text().split():
             if source not in sources:
                 sources.append(source)
-    profile_params = [f'-GFAULT_PROFILE={int(table_fault_profile)}'] if manifests in (BAT_BUS, BAT_CACHED) else []
-    bfms = (['../tb/bfm/bus60x_delay_target_bfm.sv'] if manifests in (BAT_BUS, BAT_CACHED) else
+    scripted = args.profile in SCRIPTED_TARGET
+    profile_params = ([f'-GFAULT_PROFILE={int(table_fault_profile)}']
+                      if manifests in (BAT_BUS, BAT_CACHED) and not scripted else [])
+    bfms = (['../tb/bfm/bus60x_scripted_target_bfm.sv'] if scripted else
+            ['../tb/bfm/bus60x_delay_target_bfm.sv'] if manifests in (BAT_BUS, BAT_CACHED) else
             ['../tb/bfm/bus60x_negedge_target_bfm.sv'] if manifests == CACHED else [])
     subprocess.run([args.verilator, '--binary', '--timing', '--assert', '-Wall', '-j', str(args.jobs),
                     '--top-module', top, '--Mdir', str(build/'obj'), '-I../tb',

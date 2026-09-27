@@ -6,8 +6,9 @@
 //   drtry_i  cancels a read beat with DRTRY and replaces it on the same edge,
 //   wait_i   extra cycles before BG, AACK, DBG and each TA.
 // Writes land in mem on TA; reads return mem at each beat, so a replacement
-// beat carries the current memory value.
+// beat carries the current memory value. mem[0] holds BASE_ADDR.
 module bus60x_scripted_target_bfm #(
+  parameter logic [31:0] BASE_ADDR = 32'b0,
   parameter int MEM_BYTES = 65536
 ) (
   input  logic        clk_i,
@@ -84,12 +85,16 @@ module bus60x_scripted_target_bfm #(
     repeat (count) @(posedge clk_i);
   endtask
 
+  function automatic bit in_memory(input logic [31:0] address);
+    return address - BASE_ADDR < 32'(MEM_BYTES);
+  endfunction
+
   function automatic logic [63:0] doubleword(input logic [31:0] base);
     logic [63:0] value;
     value = 64'b0;
     for (int lane = 0; lane < 8; lane++)
-      if (int'(base) + lane < MEM_BYTES)
-        value[63-8*lane -: 8] = mem[int'(base) + lane];
+      if (in_memory(base + 32'(lane)))
+        value[63-8*lane -: 8] = mem[int'(base + 32'(lane) - BASE_ADDR)];
     return value;
   endfunction
 
@@ -167,8 +172,8 @@ module bus60x_scripted_target_bfm #(
       if (!d_oe_i) $fatal(1, "%m: write TA without driven data");
       size = (tsiz == 3'b000) ? 8 : int'(tsiz);
       for (int k = 0; k < size; k++)
-        if (int'(addr) + k < MEM_BYTES)
-          mem[int'(addr) + k] = d_i[63-8*(int'(addr[2:0]) + k) -: 8];
+        if (in_memory(addr + 32'(k)))
+          mem[int'(addr + 32'(k) - BASE_ADDR)] = d_i[63-8*(int'(addr[2:0]) + k) -: 8];
       writes++;
       @(negedge clk_i);
       ta_n_o = 1'b1;
