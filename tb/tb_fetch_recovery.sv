@@ -504,7 +504,95 @@ module tb_fetch_recovery;
     require(req_valid && req_addr == 32'h0000_e000,
             "IQ credit did not release redirected target");
 
-    $display("PASS fetch recovery: held/first/accepted/coincident/repeated/stop/reset (%0d checks)", checks);
+    // Streaming: the next request is offered on the edge that consumes a
+    // response. A responder accepting on that edge returns one word per
+    // cycle; the new request has no reserved slot, so its response waits
+    // while the queue is full.
+    reset_fetch(1'b0);
+    accept_request(RESET_PC);
+    for (int i = 0; i < 4; i++) begin
+      @(negedge clk);
+      rsp_valid = 1'b1;
+      rsp_insn = 32'h3800_0000 | i;
+      req_ready = 1'b1;
+      #1;
+      require(rsp_ready && packet_valid && packet.pc == RESET_PC + 4*i &&
+              packet.insn == (32'h3800_0000 | i),
+              "streamed response packet wrong");
+      require(req_valid && req_addr == RESET_PC + 4*(i+1),
+              "next request not offered on the consume edge");
+      @(posedge clk); #1;
+      require(dut.pending && dut.need_room && !dut.request_held,
+              "consume-edge request not accepted without a reserved slot");
+    end
+    @(negedge clk);
+    req_ready = 1'b0;
+    rsp_insn = 32'h3800_0004;
+    packet_ready = 1'b0;
+    #1;
+    require(!rsp_ready && packet_valid && !req_valid,
+            "unreserved response consumed while the queue is full");
+    repeat (2) begin
+      @(posedge clk); #1;
+      require(dut.pending && !rsp_ready && packet.pc == RESET_PC + 16,
+              "unreserved response not held while the queue is full");
+    end
+    @(negedge clk);
+    packet_ready = 1'b1;
+    #1;
+    require(rsp_ready && packet_valid && req_valid &&
+            req_addr == RESET_PC + 20,
+            "queue space did not release the held response");
+    // An unaccepted consume-edge offer stays held with its address, even
+    // under stop.
+    @(posedge clk); #1;
+    rsp_valid = 1'b0;
+    stop = 1'b1;
+    #1;
+    require(!dut.pending && dut.request_held && req_valid &&
+            req_addr == RESET_PC + 20,
+            "unaccepted consume-edge offer withdrawn");
+    @(negedge clk);
+    req_ready = 1'b1;
+    @(posedge clk); #1;
+    req_ready = 1'b0;
+    require(dut.pending && !req_valid, "held offer not accepted");
+    // Stop gates new offers on a consume edge; the response is dropped.
+    @(negedge clk);
+    rsp_valid = 1'b1;
+    #1;
+    require(rsp_ready && !packet_valid && !req_valid,
+            "stopped consume edge offered or published");
+    @(posedge clk); #1;
+    rsp_valid = 1'b0;
+
+    // A redirect on a consume edge clears the queue, so no new request is
+    // offered; the response is discarded and the target follows.
+    reset_fetch(1'b0);
+    accept_request(RESET_PC);
+    @(negedge clk);
+    rsp_valid = 1'b1;
+    rsp_insn = 32'h6000_0000;
+    req_ready = 1'b1;
+    redirect = 1'b1;
+    redirect_target = 32'h0000_7000;
+    packet_ready = 1'b0;
+    #1;
+    require(rsp_ready && !req_valid,
+            "redirect consume edge offered an old-path request");
+    @(posedge clk); #1;
+    rsp_valid = 1'b0;
+    redirect = 1'b0;
+    packet_ready = 1'b1;
+    #1;
+    require(!dut.pending && !dut.redirect_pending && req_valid &&
+            req_addr == 32'h0000_7000,
+            "redirect target not offered after consume-edge redirect");
+    @(posedge clk); #1;
+    req_ready = 1'b0;
+    require(dut.pending && !dut.need_room, "redirect target reserves a slot");
+
+    $display("PASS fetch recovery: held/first/accepted/coincident/repeated/stop/reset/streaming (%0d checks)", checks);
     $finish;
   end
 
