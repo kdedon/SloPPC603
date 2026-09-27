@@ -553,6 +553,9 @@ module ppc_core #(
       assert (cq_empty && !commit && src_a.ready && src_b.ready &&
               src_a.value == arch_a && src_b.value == arch_b)
         else $error("special dispatch saw an uncommitted GPR source");
+    if (rst_ni && (special_exception_redirect || special_branch_redirect))
+      assert (cq_empty && normal_idle)
+        else $error("internal redirect found in-flight work");
     if (rst_ni && ENABLE_PAGE_MISS_RESULTS && dispatch &&
         (iq_head.fault == FETCH_PAGE_MISS))
       assert (iq_miss_valid_q)

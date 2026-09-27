@@ -168,6 +168,11 @@ module ppc_special #(
   page_miss_t fetch_page_miss_q, miss_context;
   logic fetch_page_miss_opcode, data_page_miss_opcode;
   logic miss_derive_valid, miss_provenance_valid, miss_eligible;
+  // Fetch-miss eligibility is fixed from dispatch (MSR, SDR1 and the captured
+  // context cannot change while the lane holds it), so it is registered there.
+  logic dispatch_fetch_miss_valid, dispatch_fetch_miss_eligible;
+  logic fetch_miss_eligible_q, fetch_miss_eligible;
+  logic [31:0] dispatch_miss_unused [4];
   logic data_changed_cause;
   logic miss_spr_read_invalid, miss_event_commit, data_exception_event;
   logic [31:0] derived_miss_page, derived_compare, derived_hash1, derived_hash2;
@@ -303,10 +308,13 @@ module ppc_special #(
 
   logic [63:0] timebase;
   logic [31:0] decrementer, timer_read_value_q;
-  logic timer_read, timer_read_execute, timer_write;
-  assign timer_read = ENABLE_TIMERS && (uop_q.special_op == SPECIAL_MFSPR) &&
-    ((uop_q.spr == 10'd22) || (uop_q.spr == 10'd268) ||
-     (uop_q.spr == 10'd269));
+  logic timer_read, timer_read_q, timer_read_execute, timer_write;
+  function automatic logic reads_timer(input special_op_t op, input logic [9:0] spr);
+    return (op == SPECIAL_MFSPR) &&
+      ((spr == 10'd22) || (spr == 10'd268) || (spr == 10'd269));
+  endfunction
+  // Decoded at dispatch: it selects the result valid.
+  assign timer_read = ENABLE_TIMERS && timer_read_q;
   assign timer_read_execute = rst_ni && (state_q == S_EXEC) && timer_read && !cancel_i;
   assign timer_write = ENABLE_TIMERS && rst_ni && (state_q == S_HOLD) &&
     commit_match && (uop_q.special_op == SPECIAL_MTSPR) &&
@@ -458,7 +466,7 @@ module ppc_special #(
       if ((uop_q.special_op == SPECIAL_RFI) &&
           rfi_state_unsupported) result_o.fault = 1'b1;
       if (miss_spr_read_invalid ||
-          (fetch_page_miss_opcode && !miss_eligible))
+          (fetch_page_miss_opcode && !fetch_miss_eligible))
         result_o.fault = 1'b1;
       if (sdr1_write && sdr1_write_invalid_q)
         result_o.fault = 1'b1;
@@ -585,6 +593,23 @@ module ppc_special #(
       (uop_q.special_op == SPECIAL_STORE)));
   assign miss_eligible = ENABLE_TLB_MISS_EXCEPTIONS &&
     !msr_o[17] && miss_derive_valid && miss_provenance_valid;
+  ppc_miss_derive dispatch_miss_derive (
+    .ea_i(dispatch_page_miss_i.ea), .sr_i(dispatch_page_miss_i.sr),
+    .sdr1_i(sdr1_q), .valid_o(dispatch_fetch_miss_valid),
+    .miss_page_o(dispatch_miss_unused[0]), .compare_o(dispatch_miss_unused[1]),
+    .hash1_o(dispatch_miss_unused[2]), .hash2_o(dispatch_miss_unused[3])
+  );
+  logic _unused_dispatch_miss;
+  assign _unused_dispatch_miss = ^{dispatch_miss_unused[0], dispatch_miss_unused[1],
+                                   dispatch_miss_unused[2], dispatch_miss_unused[3]};
+  assign dispatch_fetch_miss_eligible = ENABLE_TLB_MISS_EXCEPTIONS &&
+    !msr_o[17] && dispatch_fetch_miss_valid &&
+    (dispatch_page_miss_i.ea == pc_i) && dispatch_page_miss_i.ir &&
+    (dispatch_page_miss_i.ir == msr_o[5]) &&
+    (dispatch_page_miss_i.dr == msr_o[4]) &&
+    (dispatch_page_miss_i.pr == msr_o[14]) &&
+    !dispatch_page_miss_i.write && !dispatch_page_miss_i.sr[28];
+  assign fetch_miss_eligible = ENABLE_TLB_MISS_EXCEPTIONS && fetch_miss_eligible_q;
   assign miss_spr_read_invalid = ENABLE_TLB_MISS_EXCEPTIONS &&
     (uop_q.special_op == SPECIAL_MFSPR) &&
     ((uop_q.spr == 10'd976) || (uop_q.spr == 10'd978) ||
@@ -618,7 +643,7 @@ module ppc_special #(
       case (uop_q.special_op)
         SPECIAL_ISI: begin
           if (fetch_page_miss_opcode) begin
-            exception_event_valid = miss_eligible;
+            exception_event_valid = fetch_miss_eligible;
             exception_event_kind = EVENT_TLB_I_MISS;
           end else begin
             exception_event_valid = !exception_entry_unsupported;
@@ -923,12 +948,17 @@ module ppc_special #(
       xer_byte_count_q <= '0;
       ea_q <= '0;
       fetch_page_miss_q <= '0;
+      fetch_miss_eligible_q <= 1'b0;
+      timer_read_q <= 1'b0;
     end else if (interrupt_accept) begin
       pc_q <= interrupt_pc_i;
       uop_q <= '0;
+      timer_read_q <= 1'b0;
     end else if (dispatch_fire) begin
       uop_q <= uop_i;
       fetch_page_miss_q <= dispatch_page_miss_i;
+      fetch_miss_eligible_q <= dispatch_fetch_miss_eligible;
+      timer_read_q <= reads_timer(uop_i.special_op, uop_i.spr);
       producer_q <= producer_i;
       a_q <= a_i;
       b_q <= b_i;
@@ -1168,6 +1198,11 @@ module ppc_special #(
   // synthesis translate_off
   always_ff @(posedge clk_i) begin
     if (rst_ni) begin
+      if (fetch_page_miss_opcode && ((state_q == S_EXEC) || (state_q == S_HOLD)))
+        assert (fetch_miss_eligible == miss_eligible)
+          else $error("registered fetch-miss eligibility went stale");
+      assert (timer_read_q == reads_timer(uop_q.special_op, uop_q.spr))
+        else $error("registered timer-read decode disagrees with the held uop");
       if (tlb_fill_commit_o)
         assert (!tlb_fill_abort_o && !cancel_i && fence_q &&
                 !mmu_response_pending_q && !tlb_fill_local_error_q)
