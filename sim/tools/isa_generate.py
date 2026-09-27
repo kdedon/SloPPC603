@@ -56,7 +56,11 @@ DECODE_PARAMETERS = (
     "ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_LIVE_CONTEXT", "ENABLE_TIMERS",
     "ENABLE_RUNTIME_BAT", "ENABLE_SEGMENT_REGISTERS", "ENABLE_TLB_INVALIDATE",
     "ENABLE_TLB_LOAD", "ENABLE_SDR1", "ENABLE_TLB_MISS_EXCEPTIONS",
+    "ENABLE_CACHE_INSTRUCTIONS",
 )
+# Cache control needs supervisor exceptions only: dcbz alignment, probe DSI
+# and dcbi privilege use the base exception path.
+CACHE_PROFILE = ["ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_CACHE_INSTRUCTIONS"]
 PROFILE_STATUSES = {"implemented_opt_in_profile", "manual_conflict_rejected"}
 SPR_READ_XO = (339, 371)
 SPR_WRITE_XO = 467
@@ -80,7 +84,12 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
         "mtmsr": (146, 0xFC1FFFFF), "mtsr": (210, 0xFC10FFFF), "mtsrin": (242, 0xFC1F07FF),
         "mfsr": (595, 0xFC10FFFF), "mfsrin": (659, 0xFC1F07FF), "tlbie": (306, 0xFFFF07FF),
         "tlbld": (978, 0xFFFF07FF), "tlbli": (1010, 0xFFFF07FF),
+        "dcbf": (86, 0xFFE007FF), "dcbi": (470, 0xFFE007FF), "dcbst": (54, 0xFFE007FF),
+        "dcbt": (278, 0xFFE007FF), "dcbtst": (246, 0xFFE007FF), "dcbz": (1014, 0xFFE007FF),
+        "icbi": (982, 0xFFE007FF),
     }
+    # UM section 3.7: only dcbi is supervisor-level among the cache forms.
+    user_forms = {"dcbf", "dcbst", "dcbt", "dcbtst", "dcbz", "icbi"}
     seen_x = set()
     for entry in spec["decode_entries"]:
         status = entry["implementation"].get("status")
@@ -91,8 +100,10 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
             raise MetadataError(f"{entry['id']}: feature_profile must list known decode parameters")
         if "ENABLE_SUPERVISOR_EXCEPTIONS" not in profile:
             raise MetadataError(f"{entry['id']}: opt-in profile requires supervisor exceptions")
-        if len(profile) > 1 and "ENABLE_LIVE_CONTEXT" not in profile:
+        if len(profile) > 1 and "ENABLE_LIVE_CONTEXT" not in profile and profile != CACHE_PROFILE:
             raise MetadataError(f"{entry['id']}: MMU/timer profiles require live context")
+        if "ENABLE_CACHE_INSTRUCTIONS" in profile and profile != CACHE_PROFILE:
+            raise MetadataError(f"{entry['id']}: cache control profile changed")
         if "spr" in entry:
             spr = entry["spr"]
             xo = (_number(entry["value"], "value") >> 1) & 0x3FF
@@ -112,8 +123,11 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
             xo, mask = x_forms[entry["id"]]
             if (_number(entry["mask"], "mask"), _number(entry["value"], "value")) != (mask, (31 << 26) | (xo << 1)):
                 raise MetadataError(f"{entry['id']}: X-form reserved fields or XO changed")
-            if entry["privilege"] != "supervisor":
-                raise MetadataError(f"{entry['id']}: system control form must be supervisor-only")
+            expected_privilege = "user" if entry["id"] in user_forms else "supervisor"
+            if entry["privilege"] != expected_privilege:
+                raise MetadataError(f"{entry['id']}: privilege must be {expected_privilege}")
+            if entry["id"] in user_forms | {"dcbi"} and profile != CACHE_PROFILE:
+                raise MetadataError(f"{entry['id']}: cache control form outside the cache profile")
             seen_x.add(entry["id"])
     if seen_x != set(x_forms):
         raise MetadataError(f"missing opt-in X-forms: {sorted(set(x_forms) - seen_x)}")
@@ -1602,7 +1616,7 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
         "",
         f"This bounded preparation covers {len(entries)} reviewed decode entries: {default_count} implemented by default and {supervisor_count + serialization_count} available only with `ENABLE_SUPERVISOR_EXCEPTIONS=1`. The opt-in forms comprise {supervisor_count} supervisor forms plus ISYNC, SYNC, and EIEIO. This does not complete P03, the 603e exception architecture, or the cache/bus ordering architecture.",
         "",
-        f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBLD/TLBLI and the XER, timer, BAT, SDR1 and TLB-miss SPR moves) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} forms whose manual passages conflict are recorded as `manual_conflict_rejected` and stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
+        f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBLD/TLBLI, the cache control forms and the XER, timer, BAT, SDR1 and TLB-miss SPR moves) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} forms whose manual passages conflict are recorded as `manual_conflict_rejected` and stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
         "",
         "Secondary 601UM and DingusPPC evidence is tagged only as an encoding/semantics cross-check. The 603e UM controls implementation-specific support, and neither secondary source is a timing oracle.",
         "",
