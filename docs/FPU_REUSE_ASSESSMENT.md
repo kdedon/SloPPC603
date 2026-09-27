@@ -36,7 +36,7 @@ second-lane isolation and 602 SPR transfer timing.
 The separately qualified 112-bit add/fused lane (`20c2329`) passes 201,632
 603e and 181,952 602 raw-bit cases, including new cancellation and halfway-tail
 vectors. Its arithmetic post-map estimate is **28.8 MHz**; the measured two-lane
-603e shell estimates **18.2 MHz**. Both miss 50 and 66 MHz. No completion or
+603e/602 shells estimate **19.7/17.7 MHz**. All miss 50 and 66 MHz. No completion or
 fitted timing claim is made for the replacement. See
 [verification](../sim/fpu/PRODUCTION.md) and
 [measurements](../quartus/fpu-production/README.md) for exact commands and scope.

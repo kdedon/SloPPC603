@@ -496,3 +496,26 @@ arithmetic rounding through shell logic to pending FPR data (54.630 ns,
 28 logic levels). Map reported zero errors and 69 warnings; TimeQuest reported
 zero errors and zero warnings. No fitter ran. This excludes the later 112-bit
 add lane, which has a separate arithmetic-only measurement.
+
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full` and
+`./quartus/fpu-production/synthesize.sh --docker full602`, commit `20c2329`
+(shell `f2c8e36`), 2026-09-27.
+
+Both static personalities were measured from the same frozen source with the
+112-bit add lane and memory-specific readiness logic:
+
+| Profile | Estimated ALMs | ALUTs | Registers | RAM bits | DSPs | Post-map Fmax | 20 ns setup slack |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 603e | 27,007 | 32,701 | 7,391 | 412 | 5 | 19.7 MHz | −30.659 ns |
+| 602 | 19,674 | 25,976 | 5,004 | 412 | 1 | 17.7 MHz | −36.533 ns |
+
+Both fail 50 MHz and 66 MHz. Both used 1,428 virtual pins and zero physical
+pins. The 603e critical path ran from arithmetic denormal shift through shell
+completion/admission logic into pending CR data (50.493 ns, 23 logic levels).
+The 602 path ran from the same arithmetic control into pending FPSCR data
+(56.367 ns, 33 logic levels). Map reported zero errors and 69/39 warnings for
+603e/602; TimeQuest reported zero errors and zero/one warnings, respectively.
+The 602 warning is the expected absent optional double-multiply register filter.
+No fitter ran. Subsequent `16a8246` removes inactive helper functions without
+changing the active datapath; these measurements retain their original source pin.
