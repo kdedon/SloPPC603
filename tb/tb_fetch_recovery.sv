@@ -506,8 +506,8 @@ module tb_fetch_recovery;
 
     // Streaming: the next request is offered on the edge that consumes a
     // response. A responder accepting on that edge returns one word per
-    // cycle; the new request has no reserved slot, so its response waits
-    // while the queue is full.
+    // cycle; the new request has no reserved slot, so a response that finds
+    // the queue full is dropped and fetched again.
     reset_fetch(1'b0);
     accept_request(RESET_PC);
     for (int i = 0; i < 4; i++) begin
@@ -530,19 +530,28 @@ module tb_fetch_recovery;
     rsp_insn = 32'h3800_0004;
     packet_ready = 1'b0;
     #1;
-    require(!rsp_ready && packet_valid && !req_valid,
-            "unreserved response consumed while the queue is full");
-    repeat (2) begin
-      @(posedge clk); #1;
-      require(dut.pending && !rsp_ready && packet.pc == RESET_PC + 16,
-              "unreserved response not held while the queue is full");
-    end
+    require(rsp_ready && !req_valid,
+            "unreserved response not consumed while the queue is full");
+    @(posedge clk); #1;
+    rsp_valid = 1'b0;
+    #1;
+    require(!dut.pending && dut.pc == RESET_PC + 16 && !req_valid,
+            "dropped unreserved response advanced the PC");
     @(negedge clk);
     packet_ready = 1'b1;
     #1;
-    require(rsp_ready && packet_valid && req_valid &&
-            req_addr == RESET_PC + 20,
-            "queue space did not release the held response");
+    require(req_valid && req_addr == RESET_PC + 16,
+            "dropped response not fetched again");
+    req_ready = 1'b1;
+    @(posedge clk); #1;
+    req_ready = 1'b0;
+    require(dut.pending && !dut.need_room, "replayed request reserves a slot");
+    @(negedge clk);
+    rsp_valid = 1'b1;
+    #1;
+    require(rsp_ready && packet_valid && packet.pc == RESET_PC + 16 &&
+            req_valid && req_addr == RESET_PC + 20,
+            "replayed response not delivered");
     // An unaccepted consume-edge offer stays held with its address, even
     // under stop.
     @(posedge clk); #1;

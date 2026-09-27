@@ -4,10 +4,12 @@
 // response, so a responder that accepts on that edge returns one word per
 // cycle.
 //
-// A request offered with nothing pending reserves a downstream slot; its
-// response is always consumable. A request accepted on a consume edge (or
-// while the queue is full) has no reserved slot, so its response is consumed
-// only when the queue has room. Old-path responses are always consumable.
+// Every response is consumed when it arrives, so a responder never holds one
+// (a held response could block a shared translation router). A request
+// offered with nothing pending reserves a downstream slot. A request accepted
+// on a consume edge, or while the queue is full, has none: if its response
+// finds the queue full, the response is dropped and the same address is
+// fetched again. Instruction fetch has no side effects, so replay is safe.
 module ppc_fetch #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100
 ) (
@@ -30,12 +32,13 @@ module ppc_fetch #(
   logic redirect_pending;
   // pc is the pending request's address, else the next one to offer.
   logic [31:0] pc, pc_plus4, redirect_target;
-  logic consume, offer, accept;
+  logic consume, replay, offer, accept;
   logic pending_d, need_room_d, request_held_d, redirect_pending_d;
   logic [31:0] pc_d;
 
-  assign rsp_ready_o = rst_ni && pending && (!need_room || packet_ready_i);
+  assign rsp_ready_o = rst_ni && pending;
   assign consume = rsp_valid_i && rsp_ready_o;
+  assign replay = consume && need_room && !packet_ready_i;
   assign offer = !stop_i && packet_ready_i &&
                  (!pending || (consume && !redirect_pending));
   // A held offer remains stable even if the slot indication changes.
@@ -81,7 +84,7 @@ module ppc_fetch #(
         if (redirect_pending) begin
           redirect_pending_d = 1'b0;
           pc_d = redirect_target;
-        end else begin
+        end else if (!replay) begin
           pc_d = pc_plus4;
         end
       end
@@ -111,7 +114,7 @@ module ppc_fetch #(
       // Only pending requests use pc_plus4, so it can trail a redirect by a
       // cycle and never depends on the redirect target.
       if (!pending) pc_plus4 <= pc + 32'd4;
-      else if (consume) pc_plus4 <= pc_plus4 + 32'd4;
+      else if (consume && !replay) pc_plus4 <= pc_plus4 + 32'd4;
       if (redirect_i) redirect_target <= redirect_target_i;
     end
   end
@@ -122,7 +125,7 @@ module ppc_fetch #(
   logic stop_skipped;
   always_ff @(posedge clk_i) begin
     if (!rst_ni || redirect_i) stop_skipped <= 1'b0;
-    else if (consume && !redirect_pending && stop_i)
+    else if (consume && !redirect_pending && !replay && stop_i)
       stop_skipped <= 1'b1;
   end
   always_ff @(posedge clk_i) begin
