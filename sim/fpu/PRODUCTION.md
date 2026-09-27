@@ -102,6 +102,13 @@ with 0 mismatches, and 833 shell checks with 0 failures. Arithmetic and
 divide latency remained 1–9 and 1–32 clocks; `fctiw`/`fctiwz` latency became
 2 clocks, while compare stayed at 1 clock.
 
+Recorded: `make -C sim -j2 test-fpu` on commit `435aeed` plus the
+PREP_OPERANDS/PREP_PRODUCT split, 2026-09-27; 20 Python anchors, 32 table
+value/bound proofs, 200,000 arithmetic packets with 0 mismatches, 66
+cancellation offsets, 4 held-response checks, 11,958 estimate packets with
+0 mismatches, and 833 shell checks with 0 failures. Basic/fused/`frsp`
+latency was 1–10 clocks, divide 1–32, conversion 2, and compare 1.
+
 Recorded: `make -C sim -j2 test-core test-completion test-execution check-spec`
 on commit `fc33a75` plus documentation and FPU-bench changes, 2026-09-27;
 the existing integer core, completion, execution, and structural spec checks

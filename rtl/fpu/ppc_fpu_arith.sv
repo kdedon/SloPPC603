@@ -35,6 +35,18 @@ module ppc_fpu_arith (
     } special_t;
 
     typedef struct packed {
+        logic [52:0] a_sig;
+        logic [52:0] b_sig;
+        logic [52:0] c_sig;
+        logic signed [15:0] a_exp;
+        logic signed [15:0] b_exp;
+        logic signed [15:0] c_exp;
+        logic a_sign;
+        logic b_sign;
+        logic c_sign;
+    } finite_operands_t;
+
+    typedef struct packed {
         logic [159:0] x;
         logic [159:0] y;
         logic signed [15:0] exp_x;
@@ -98,7 +110,7 @@ module ppc_fpu_arith (
 
     typedef enum logic [3:0] {
         IDLE, CALC, CONV_PREP, CONV_FINISH, DIVIDE,
-        PREP, ALIGN_PLAN, ALIGN_SHIFT, ALIGN_SUM,
+        PREP, PREP_PRODUCT, ALIGN_PLAN, ALIGN_SHIFT, ALIGN_SUM,
         NORM_HIGH, NORM_LOW,
         TINY, ROUND, PACK, RESPONSE
     } state_t;
@@ -106,6 +118,7 @@ module ppc_fpu_arith (
     ppc_fpu_arith_req_t req_q;
     ppc_fpu_arith_rsp_t rsp_q;
     operand_t conv_source_q;
+    finite_operands_t finite_operands_q;
     finite_prep_t prep_q;
     align_plan_t align_plan_q;
     align_data_t align_data_q;
@@ -556,46 +569,57 @@ module ppc_fpu_arith (
         return out;
     endfunction
 
-    function automatic finite_prep_t prepare_finite(input ppc_fpu_op_t op, input logic [63:0] a_bits,
-        input logic [63:0] b_bits, input logic [63:0] c_bits);
+    function automatic finite_operands_t prepare_operands(
+        input logic [63:0] a_bits, input logic [63:0] b_bits,
+        input logic [63:0] c_bits
+    );
+        finite_operands_t out;
+        out = '0;
+        out.a_sig = finite_sig(a_bits[62:0]);
+        out.b_sig = finite_sig(b_bits[62:0]);
+        out.c_sig = finite_sig(c_bits[62:0]);
+        out.a_exp = finite_exp(a_bits[62:0]);
+        out.b_exp = finite_exp(b_bits[62:0]);
+        out.c_exp = finite_exp(c_bits[62:0]);
+        out.a_sign = a_bits[63];
+        out.b_sign = b_bits[63];
+        out.c_sign = c_bits[63];
+        return out;
+    endfunction
+
+    function automatic finite_prep_t prepare_finite(
+        input ppc_fpu_op_t op, input finite_operands_t operand
+    );
         finite_prep_t out;
-        logic [52:0] a_sig, b_sig, c_sig;
-        logic signed [15:0] a_exp, b_exp, c_exp;
         logic [105:0] product;
         logic subtract_b;
         out = '0;
-        a_sig = finite_sig(a_bits[62:0]);
-        b_sig = finite_sig(b_bits[62:0]);
-        c_sig = finite_sig(c_bits[62:0]);
-        a_exp = finite_exp(a_bits[62:0]);
-        b_exp = finite_exp(b_bits[62:0]);
-        c_exp = finite_exp(c_bits[62:0]);
         subtract_b = op == FP_MSUB || op == FP_NMSUB;
         out.negate_final = op == FP_NMADD || op == FP_NMSUB;
         out.single_operand = op == FP_MUL || op == FP_FRSP;
         if (op == FP_ADD || op == FP_SUB) begin
-            out.x = {1'b0, a_sig, 106'd0};
-            out.y = {1'b0, b_sig, 106'd0};
-            out.exp_x = a_exp;
-            out.exp_y = b_exp;
-            out.sign_x = a_bits[63];
-            out.sign_y = b_bits[63] ^ (op == FP_SUB);
+            out.x = {1'b0, operand.a_sig, 106'd0};
+            out.y = {1'b0, operand.b_sig, 106'd0};
+            out.exp_x = operand.a_exp;
+            out.exp_y = operand.b_exp;
+            out.sign_x = operand.a_sign;
+            out.sign_y = operand.b_sign ^ (op == FP_SUB);
         end else if (op == FP_MUL || op == FP_MADD ||
             op == FP_MSUB || op == FP_NMADD ||
             op == FP_NMSUB) begin
-            product = a_sig * c_sig;
+            product = operand.a_sig * operand.c_sig;
             out.x = {1'b0, product, 53'd0};
-            out.exp_x = a_exp + c_exp + 16'sd1;
-            out.sign_x = a_bits[63] ^ c_bits[63];
+            out.exp_x = operand.a_exp + operand.c_exp + 16'sd1;
+            out.sign_x = operand.a_sign ^ operand.c_sign;
             if (op != FP_MUL) begin
-                out.y = {1'b0, b_sig, 106'd0};
-                out.exp_y = b_exp;
-                out.sign_y = b_bits[63] ^ subtract_b;
+                out.y = {1'b0, operand.b_sig, 106'd0};
+                out.exp_y = operand.b_exp;
+                out.sign_y = operand.b_sign ^ subtract_b;
             end
         end else if (op == FP_FRSP) begin
-            out.x = {1'b0, b_sig, 106'd0};
-            out.exp_x = b_exp;
-            out.sign_x = b_bits[63];
+            out.x = {1'b0, operand.b_sig, 106'd0};
+            out.exp_x = operand.b_exp;
+            out.sign_x = operand.b_sign;
         end
         return out;
     endfunction
@@ -956,6 +980,7 @@ module ppc_fpu_arith (
             req_q <= '0;
             rsp_q <= '0;
             conv_source_q <= '0;
+            finite_operands_q <= '0;
             prep_q <= '0;
             align_plan_q <= '0;
             align_data_q <= '0;
@@ -1015,7 +1040,12 @@ module ppc_fpu_arith (
                     state_q <= RESPONSE;
                 end
                 PREP: begin
-                    prep_q <= prepare_finite(req_q.op, req_q.a, req_q.b, req_q.c);
+                    finite_operands_q <= prepare_operands(req_q.a, req_q.b,
+                        req_q.c);
+                    state_q <= PREP_PRODUCT;
+                end
+                PREP_PRODUCT: begin
+                    prep_q <= prepare_finite(req_q.op, finite_operands_q);
                     state_q <= ALIGN_PLAN;
                 end
                 ALIGN_PLAN: begin
