@@ -110,7 +110,6 @@ module ppc_core #(
   output logic redirect_accepted_o
 );
   import ppc_pkg::*;
-  localparam int MSR_TGPR_BIT = 17; // 603e MSR[TGPR], manual bit 14
   fetch_packet_t fetched, iq_head;
   uop_t uop, dispatch_uop;
   retire_packet_t allocation;
@@ -243,7 +242,7 @@ module ppc_core #(
         dispatch_uop.special_op = SPECIAL_ISI;
       else
         dispatch_uop.illegal = 1'b1;
-    end else if (ENABLE_SUPERVISOR_EXCEPTIONS && msr[14] && !uop.illegal &&
+    end else if (ENABLE_SUPERVISOR_EXCEPTIONS && msr[MSR_PR] && !uop.illegal &&
         ((uop.special_op == SPECIAL_RFI) ||
          (uop.special_op == SPECIAL_MTMSR) ||
          (uop.special_op == SPECIAL_MFMSR) ||
@@ -268,7 +267,7 @@ module ppc_core #(
     end
   end
   ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR)) regfile (
-    .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR_BIT]), .read_a_i(uop.src_a), .read_b_i(uop.src_b),
+    .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR]), .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .read_c_i(uop.src_c), .read_a_o(arch_a), .read_b_o(arch_b),
     .read_c_o(arch_c), .write_i(gpr_commit),
     .write_reg_i(retire_o.gpr), .write_value_i(retire_o.value),
@@ -390,9 +389,9 @@ module ppc_core #(
     .dmem_rsp_rdata_i, .dmem_rsp_error_i, .dmem_rsp_fault_i,
     .dmem_rsp_page_miss_i
   );
-  assign context_ir_o = msr[5];
-  assign context_dr_o = msr[4];
-  assign context_pr_o = msr[14];
+  assign context_ir_o = msr[MSR_IR];
+  assign context_dr_o = msr[MSR_DR];
+  assign context_pr_o = msr[MSR_PR];
 
   assign result_valid = special_result_valid || iu_result_valid;
   assign result = special_result_valid ? special_result : iu_result;
