@@ -32,7 +32,7 @@ module tb_serialization_decode;
     require(!enabled.gpr_write && !enabled.mem_update &&
             !enabled.needs_flags && !enabled.read_ca && !enabled.read_so &&
             !enabled.write_ca && !enabled.write_ov_so &&
-            !enabled.write_cr0 && !enabled.write_cr_fields &&
+            !enabled.write_cr_field && !enabled.write_cr_fields &&
             !enabled.write_cr_bit,
             "serialization form acquired architectural permissions");
     require(default_profile.illegal,

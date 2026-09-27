@@ -29,7 +29,7 @@ module tb_multiply_decode;
             "MULLW register fields were not preserved");
     require(uop.read_so == (oe || rc) && uop.needs_flags == (oe || rc) &&
             !uop.read_ca && !uop.write_ca &&
-            uop.write_ov_so == oe && uop.write_cr0 == rc,
+            uop.write_ov_so == oe && uop.write_cr_field == rc,
             "MULLW OE/Rc permissions were incorrect");
   endtask
 
@@ -43,7 +43,7 @@ module tb_multiply_decode;
             uop.imm == {{16{simm[15]}}, simm},
             "MULLI register or signed-immediate fields were incorrect");
     require(!uop.needs_flags && !uop.read_ca && !uop.read_so &&
-            !uop.write_ca && !uop.write_ov_so && !uop.write_cr0,
+            !uop.write_ca && !uop.write_ov_so && !uop.write_cr_field,
             "MULLI acquired or wrote flag state");
   endtask
 

@@ -189,7 +189,7 @@ module tb_core_page_miss_result #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1);
                   phase>=8?
                   DATA_OK:phase==3?DATA_PAGE_CHANGED:DATA_PAGE_MISS)&&
                 !retired.gpr_write&&!retired.update_write&&
-                !retired.write_cr0&&!retired.write_ca&&
+                !retired.write_cr_field&&!retired.write_ca&&
                 !retired.write_ov_so&&!retired.write_cr_fields&&
                 !retired.write_cr_bit,
                 "page diagnostic cause/capsule or unauthorized write");

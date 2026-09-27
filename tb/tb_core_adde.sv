@@ -330,7 +330,7 @@ module tb_core_adde;
             "retirement legality disagrees with independent supported set");
     if (packet.illegal) begin
       require(!packet.gpr_write && !packet.needs_flags && !packet.write_ca &&
-              !packet.write_ov_so && !packet.write_cr0 &&
+              !packet.write_ov_so && !packet.write_cr_field &&
               packet.cr_delta == 0 && packet.xer_delta == 0,
               "unsupported ADD diagnostic carried architectural effects");
       return;
@@ -370,7 +370,7 @@ module tb_core_adde;
               "ADD/addc/adde GPR result or destination mismatch");
       require(packet.needs_flags == (write_ca || oe || rc) &&
               packet.write_ca == write_ca && packet.write_ov_so == oe &&
-              packet.write_cr0 == rc,
+              packet.write_cr_field == rc,
               "ADD/addc/adde allocated flag permissions mismatch");
       require(packet.xer_delta == {
                 oe ? new_so : 1'b0,
@@ -427,7 +427,7 @@ module tb_core_adde;
       value = xor_truth(a, b);
       cr0 = cr0_for(value, old_so);
       require(packet.gpr_write && packet.gpr == packet.insn[20:16] &&
-              packet.value == value && packet.needs_flags && packet.write_cr0 &&
+              packet.value == value && packet.needs_flags && packet.write_cr_field &&
               !packet.write_ca && !packet.write_ov_so &&
               packet.cr_delta == {cr0, 28'b0} && packet.xer_delta == 0,
               "record logical sticky-SO observation mismatch");
@@ -435,7 +435,7 @@ module tb_core_adde;
       model_cr = {cr0, model_cr[27:0]};
     end else begin
       require(packet.gpr_write && !packet.needs_flags && !packet.write_ca &&
-              !packet.write_ov_so && !packet.write_cr0 &&
+              !packet.write_ov_so && !packet.write_cr_field &&
               packet.cr_delta == 0 && packet.xer_delta == 0,
               "setup instruction carried ADD flag permissions");
       case (packet.insn[31:26])
@@ -544,7 +544,7 @@ module tb_core_adde;
       if (dut.issue_valid && dut.issue_ready) begin
         issue_index = -1;
         for (int i = 0; i < stream.size(); i++)
-          if (stream[i].tag == dut.issue.producer) issue_index = i;
+          if (stream[i].tag == dut.issue.ctrl.producer) issue_index = i;
         require(issue_index >= 0 && !stream[issue_index].issued,
                 "ADD issue did not match a live unissued stream entry");
         if (issue_index >= 0) begin

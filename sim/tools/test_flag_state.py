@@ -18,7 +18,7 @@ class FlagStateTest(unittest.TestCase):
         cases = (
             (flag_state.WritePermissions(write_ca=True), flag_state.CompletionPayload(0, ca=0), 0x1234_5678, 0x89AB_CDEF & ~0x2000_0000),
             (flag_state.WritePermissions(read_so=True, write_ov_so=True), flag_state.CompletionPayload(0, ov=1, so=0), 0x1234_5678, 0x49AB_CDEF),
-            (flag_state.WritePermissions(read_so=True, write_cr0=True), flag_state.CompletionPayload(0, cr0=0xA), 0xA234_5678, 0x89AB_CDEF),
+            (flag_state.WritePermissions(read_so=True, write_cr_field=True), flag_state.CompletionPayload(0, cr0=0xA), 0xA234_5678, 0x89AB_CDEF),
             (flag_state.WritePermissions(), flag_state.CompletionPayload(0, 1, 1, 1, 0xF), 0x1234_5678, 0x89AB_CDEF),
         )
         for permissions, payload, expected_cr, expected_xer in cases:
@@ -45,7 +45,7 @@ class FlagStateTest(unittest.TestCase):
     def test_negative_final_so_and_sticky_so_mutations_are_rejected(self):
         request = flag_state.AllocationRequest(
             flag_state.OwnerTag(0, 7),
-            flag_state.WritePermissions(read_so=True, write_ov_so=True, write_cr0=True),
+            flag_state.WritePermissions(read_so=True, write_ov_so=True, write_cr_field=True),
         )
         incoming_zero = flag_state.CapturedAllocation(request, ca_in=0, so_in=0)
         overflow = flag_state.CompletionPayload(0x8000_0000, ov=1, so=1, cr0=0x9)
@@ -88,7 +88,7 @@ class FlagStateTest(unittest.TestCase):
         before = self.seeded
         with self.assertRaisesRegex(flag_state.FlagStateError, "five-bit"):
             flag_state.CommitPacket(
-                flag_state.WritePermissions(read_so=True, write_cr0=True),
+                flag_state.WritePermissions(read_so=True, write_cr_field=True),
                 flag_state.CompletionPayload(0xDEAD_BEEF, cr0=0x8),
                 gpr_write=True,
                 gpr=32,
@@ -134,7 +134,7 @@ class FlagStateTest(unittest.TestCase):
         model = flag_state.FlagOwnerModel(self.seeded)
         old = flag_state.OwnerTag(0, 1)
         new = flag_state.OwnerTag(1, 2)
-        permissions = flag_state.WritePermissions(read_so=True, write_cr0=True)
+        permissions = flag_state.WritePermissions(read_so=True, write_cr_field=True)
         model.advance(allocate=flag_state.AllocationRequest(old, permissions, gpr=3))
         model.advance(finish=(old, flag_state.CompletionPayload(7, cr0=0x5)))
         release_edge = model.advance(
@@ -166,7 +166,7 @@ class FlagStateTest(unittest.TestCase):
     def test_redirect_keep_finish_and_post_commit_owner_release(self):
         model = flag_state.FlagOwnerModel(self.seeded)
         tag = flag_state.OwnerTag(3, 21)
-        request = flag_state.AllocationRequest(tag, flag_state.WritePermissions(read_so=True, write_cr0=True), gpr=8)
+        request = flag_state.AllocationRequest(tag, flag_state.WritePermissions(read_so=True, write_cr_field=True), gpr=8)
         model.advance(allocate=request)
         payload = flag_state.CompletionPayload(0, cr0=0x3)
         unfinished = model.advance(finish=(tag, payload), retire=tag, post_commit_survivors=(tag,))
@@ -181,7 +181,7 @@ class FlagStateTest(unittest.TestCase):
     def test_malformed_recovery_owner_snapshots_are_rejected_before_mutation(self):
         tag = flag_state.OwnerTag(3, 21)
         other = flag_state.OwnerTag(4, 22)
-        permissions = flag_state.WritePermissions(read_so=True, write_cr0=True)
+        permissions = flag_state.WritePermissions(read_so=True, write_cr_field=True)
 
         model = flag_state.FlagOwnerModel(self.seeded)
         model.advance(allocate=flag_state.AllocationRequest(tag, permissions, gpr=8))

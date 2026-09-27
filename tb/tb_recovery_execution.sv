@@ -14,10 +14,28 @@ module tb_recovery_execution;
   logic wake_valid;
   wake_packet_t wake;
   integer checks = 0;
+  rs_entry_t dispatch_entry;
+  assign dispatch_entry = '{
+    ctrl: '{
+      op: ALU_ADD,
+      invert_a: 1'b0,
+      carry_in: CARRY_ZERO,
+      mask: '0,
+      shift: 5'b0,
+      ca_in: 1'b0,
+      so_in: 1'b0,
+      write_ca: 1'b0,
+      write_ov_so: 1'b0,
+      write_cr_field: 1'b0,
+      producer: producer
+    },
+    a: a,
+    b: b
+  };
   ppc_dispatch station (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
-    .write_ca_i(1'b0), .write_ov_so_i(1'b0), .ca_i(1'b0), .so_i(1'b0), .write_cr0_i(1'b0), .shift_i(5'b0), .mask_i('0), .op_i(ALU_ADD), .producer_i(producer), .a_i(a), .b_i(b),
+    .entry_i(dispatch_entry),
     .wake_valid_i(wake_valid), .wake_i(wake),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );

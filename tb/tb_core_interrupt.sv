@@ -205,7 +205,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       if(tv&&tr&&!done)begin
         check(!taken,"IRQ must not synthesize or share an instruction retirement");
         check(retired.pc==model_pc&&retired.insn==word_at(model_pc),"ordered architectural retirement identity");
-        check(!retired.alignment_exception&&!retired.update_write&&!retired.write_cr0&&!retired.write_ca&&
+        check(!retired.alignment_exception&&!retired.update_write&&!retired.write_cr_field&&!retired.write_ca&&
               !retired.write_ov_so&&!retired.write_cr_fields&&!retired.write_cr_bit,"unexpected register/flag permission");
         check(retired.fetch_fault==((phase==7&&model_pc=='h28)?FETCH_ISI_PROTECTION:FETCH_OK),"fetch cause identity");
         insn=retired.insn;rt=int'(insn[25:21]);ra=int'(insn[20:16]);op=int'(insn[31:26]);writes=0;value=0;next_pc=model_pc+4;

@@ -279,7 +279,7 @@ module tb_core_recovery;
     while (!dut.station.occupied) begin
       retire_ready = 1; tick(); retire_ready = 0;
     end
-    cut_id = dut.issue.producer;
+    cut_id = dut.issue.ctrl.producer;
     send_cut(0, cut_id, 0, 32'h600, 1);
     // Misalignment and stale identity reject atomically while normal work progresses.
     send_cut(1, '0, 0, 32'h603, 0);

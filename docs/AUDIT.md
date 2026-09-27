@@ -51,6 +51,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-18 | M | C | all Verilator builds | No `--x-assign unique --x-initial unique` or random reset seed; a missing reset is invisible. | CODING_CONVENTIONS (independent reset checks) | Add the flags; run core benches with a recorded seed. | fixed (sim benches and reference runners X-randomized at XRAND_SEED; XRAND=0 disables) |
 | AUD-19 | M | K | `AGENTS.md` Commands, `sim/Makefile` | AGENTS says only `test-reference*` need `../dingusppc`, but `regression` includes them; a missing checkout fails as a buried g++ error. | — | Correct the text; add a precheck with a clear message. | fixed |
 | AUD-20 | L | S | `sim/cosim/README.md:8-23`, `quartus/README.md:11`, `toolchain/README.md:16`, cosim script defaults, `tb/tb_stage_timing.sv:132` | Leftover `ppc603e/` workspace commands and `/tmp` paths. | AGENTS "Recording evidence" | Repo-relative commands; default scratch to `sim/build/`. | fixed |
+| AUD-74 | M | E | `rtl/ppc_bat_memory_router.sv:629-651`, `rtl/ppc_bat_service.sv` | Timer-bat worst setup (-5.952 ns, slow 100 C, 2026-09-26 refit) runs from `router|running_q` (fan-out 5,272) through the BAT request mux and write validation into `bat|upper_q`. Only the startup write port and runtime BAT CSR writes use it; it worsened after AUD-43 put the validating instance on the write side. | `cpu-fmax-critical-paths` | Register the BAT write request and validation result, and replicate or register the `running_q` select. | design |
 
 ### Fetch, decode, dispatch
 
@@ -60,9 +61,9 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-22 | M | E | `rtl/ppc_fetch.sv:29-44`, `rtl/ppc_fifo.sv:21` | Fetch outputs carry the recovery cone; `rsp_ready_o` reduces to `pending`; `!redirect_i` in `packet_valid_o` is redundant. | Simplify as stated. | fixed |
 | AUD-23 | M | K | `rtl/ppc_core.sv:250-269`, `rtl/ppc_decode.sv:536-563`, `rtl/ppc_special.sv` | Privileged-SPR list duplicated in three modules; privilege is SPR bit 4. | Use `spr[4]`; SPR numbers once in `ppc_pkg`. | fixed (privilege = SPR bit 4; SPR numbers in ppc_pkg) |
 | AUD-24 | L | C | `rtl/ppc_fetch.sv:86-94` | Discarding a response under `stop_i` still advances the PC; safe only by an unstated invariant. PLAUSIBLE. | Hold PC or assert the invariant. | fixed (sim assertion) |
-| AUD-25 | L | E | `rtl/ppc_pkg.sv:62-67` | Each IQ entry carries a 69-bit `page_miss` record including an EA equal to the PC. | Side register for the oldest fault; drop `ea`. | open |
-| AUD-26 | L | S | `rtl/ppc_dispatch.sv`, `rtl/ppc_core.sv:466-496` | RS and CQ payloads are loose signals copied field by field; allocation masks applied twice. | Struct payloads; sanitize once. | open |
-| AUD-27 | L | K | `rtl/ppc_pkg.sv:150`, `rtl/ppc_decode.sv` | `write_cr0` means "write CR field `cr_field`". | Rename `write_cr_field`. | open |
+| AUD-25 | L | E | `rtl/ppc_pkg.sv:62-67` | Each IQ entry carries a 69-bit `page_miss` record including an EA equal to the PC. | Side register for the oldest fault; drop `ea`. | fixed (IQ entries keep the cause; one side register holds the oldest miss record) |
+| AUD-26 | L | S | `rtl/ppc_dispatch.sv`, `rtl/ppc_core.sv:466-496` | RS and CQ payloads are loose signals copied field by field; allocation masks applied twice. | Struct payloads; sanitize once. | fixed (rs_entry_t/issue_packet_t; allocation sanitized once in completion) |
+| AUD-27 | L | K | `rtl/ppc_pkg.sv:150`, `rtl/ppc_decode.sv` | `write_cr0` means "write CR field `cr_field`". | Rename `write_cr_field`. | fixed |
 | AUD-28 | L | K | `rtl/ppc_decode.sv:127-145,287-342` | `addme`/`addze` not normalized like `subfme`/`subfze`; SH passed two ways; long equality-OR chains. | Normalize; flat nested case. | fixed |
 
 ### Execution units and register files
@@ -72,7 +73,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-29 | L | E | `rtl/ppc_iu.sv:111-168` | Five barrel shifters; SRAW carry via a 32-iteration loop. | One rotator, mask, sign fill. | fixed |
 | AUD-30 | L | E | `rtl/ppc_iu.sv:29,91-93` | Second adder for overflow, misnamed `unused_add_low_sum`. | `ov = (a[31]==b[31]) && (sum[31]!=a[31])`. | fixed |
 | AUD-31 | L | E | `rtl/ppc_iu.sv:135-140` | `cntlzw` is a 32-deep priority loop on the result mux. | Log-depth LZC. | fixed |
-| AUD-32 | L | E | `rtl/ppc_iu.sv:79-86,154-161` | Carry-in and inversion decoded in execute; five enum values compute one add. | Carry select fields in the issue packet. | open |
+| AUD-32 | L | E | `rtl/ppc_iu.sv:79-86,154-161` | Carry-in and inversion decoded in execute; five enum values compute one add. | Carry select fields in the issue packet. | fixed (invert_a and carry_in in the issue packet; seven ALU ops removed) |
 | AUD-33 | L | E | `rtl/ppc_special.sv:411-416` | `cmp` uses a separate comparator and serializes the machine. | Route through the IU subtract as a renamed op. | design |
 | AUD-34 | L | E | `rtl/ppc_divider.sv:62-95`, `rtl/ppc_iu.sv:193` | ~160 datapath bits reset and cleared on cancel. | Reset control only. | fixed |
 
@@ -120,7 +121,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-57 | L | S | all `rtl/*.sv` | No `` `default_nettype none``; `unique case` without `default:` in `ppc_icache.sv:81-90`, `ppc_bus60x_line_read.sv:88-93`. | Add both. | partial: case defaults added; default_nettype remains |
 | AUD-58 | L | S | `rtl/ppc_flags.sv:120-123`, `rtl/ppc_rename.sv:138-139,150-153` | Assertions not under `translate_off`. | Guard them. | fixed |
 | AUD-59 | L | S | ~20 module headers and comments (e.g. `ppc_core.sv:1`, `ppc_fetch.sv:1`, `ppc_special.sv:1-2,161,163`, router 1-3) | "does not…", "scaffold", "future hash unit", doc-file references. | Trim to current behavior (`concise-writing`). | partial: bus/cache, execution, front-end, exception and MMU comments trimmed |
-| AUD-60 | L | S | `rtl/ppc_core.sv:283,322-353`, `rtl/ppc_flags.sv:62` | Raw MSR/XER bit indices and masks. | Named package constants. | partial: XER constants in ppc_pkg; MSR TGPR bit local to ppc_core |
+| AUD-60 | L | S | `rtl/ppc_core.sv:283,322-353`, `rtl/ppc_flags.sv:62` | Raw MSR/XER bit indices and masks. | Named package constants. | fixed |
 
 ### Tests and tooling
 

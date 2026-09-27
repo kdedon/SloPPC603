@@ -35,7 +35,7 @@ module tb_timer_decode;
             check(enabled.illegal==!expected,"timer selector/reserved Rc decode");
             check(legacy.illegal==!old_expected,"legacy profile changed SPR acceptance");
             check(baseline.illegal!=((rc==0)&&(n==8||n==9)),"default SPR profile changed");
-            check(!enabled.mem_update&&!enabled.write_cr0&&!enabled.write_ca&&!enabled.write_ov_so&&
+            check(!enabled.mem_update&&!enabled.write_cr_field&&!enabled.write_ca&&!enabled.write_ov_so&&
               !enabled.write_cr_fields&&!enabled.write_cr_bit&&!enabled.branch_lk,"SPR acquired unrelated write effects");
             check(enabled.write_xer==(expected&&!reading&&n==1),"XER write permission originates in legal allocation");
             if(expected)begin

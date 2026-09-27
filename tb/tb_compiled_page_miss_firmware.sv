@@ -203,7 +203,7 @@ module tb_compiled_page_miss_firmware;
           check(mailbox_retired&&tlbie_retires==2&&
                 !retired.alignment_exception&&!retired.gpr_write&&
                 !retired.update_write&&!retired.write_xer&&!retired.write_ca&&
-                !retired.write_ov_so&&!retired.write_cr0&&!retired.write_cr_fields&&
+                !retired.write_ov_so&&!retired.write_cr_field&&!retired.write_cr_fields&&
                 !retired.write_cr_bit,"miss diagnostic changed architectural state");
           check(retired.page_miss.ea==((mode==1)?32'h20008000:32'h10008000)&&
                 retired.page_miss.sr==((mode==1)?32'h5678:((mode==2)?32'h2345:32'h1234))&&

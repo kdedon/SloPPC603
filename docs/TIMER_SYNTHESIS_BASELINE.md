@@ -31,6 +31,10 @@ Worst setup is the AUD-01 cone, `core|completion|count_q[0]` to
 zero input delay: a property of this measurement top, which exposes the startup
 BAT write port as unconstrained virtual pins, not of a core register path.
 
+After the remaining audit merges (AUD-25/26/27/32/51/53/54/60), a refit on
+2026-09-26 (`./quartus/timer-bat/build.sh --docker`) gives slow-corner setup
+slack -5.952 / -5.353 ns (100 C / -40 C), hold -3.867 / -3.851 ns, 6,860 ALMs and 5,264 registers. The worst setup path moved to the BAT write/validate path (AUD-74).
+
 ## Archived result
 
 

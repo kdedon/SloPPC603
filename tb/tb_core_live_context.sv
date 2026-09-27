@@ -290,7 +290,7 @@ module tb_core_live_context #(
         check(retired.pc==model_pc && retired.insn==word_at(model_pc),"ordered retirement identity");
         check(retired.fetch_fault==(((phase==7 || phase==8) && model_pc==32'h20000)?
             (phase==7?FETCH_ISI_PROTECTION:FETCH_ISI_GUARDED):FETCH_OK) && !retired.alignment_exception && !retired.update_write &&
-          !retired.write_cr0 && !retired.write_ca && !retired.write_ov_so && !retired.write_cr_fields && !retired.write_cr_bit,
+          !retired.write_cr_field && !retired.write_ca && !retired.write_ov_so && !retired.write_cr_fields && !retired.write_cr_bit,
           "unexpected fault/flag effects");
         insn=retired.insn;rt=int'(insn[25:21]);ra=int'(insn[20:16]);op=int'(insn[31:26]);
         writes=0;value=0;next_pc=model_pc+4;

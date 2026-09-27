@@ -79,7 +79,7 @@ module tb_flags;
 
   task automatic commit_owner(
     input completion_tag_t owner,
-    input logic write_cr0,
+    input logic write_cr_field,
     input logic write_ov_so,
     input logic write_ca,
     input logic [31:0] cr_delta,
@@ -88,7 +88,7 @@ module tb_flags;
     @(negedge clk);
     commit_packet = '0;
     commit_packet.needs_flags = 1'b1;
-    commit_packet.write_cr0 = write_cr0;
+    commit_packet.write_cr_field = write_cr_field;
     commit_packet.write_ov_so = write_ov_so;
     commit_packet.write_ca = write_ca;
     commit_packet.cr_delta = cr_delta;
@@ -222,7 +222,7 @@ module tb_flags;
     recovery_tags[1] = '0;
     commit_packet = '0;
     commit_packet.needs_flags = 1'b1;
-    commit_packet.write_cr0 = 1'b1;
+    commit_packet.write_cr_field = 1'b1;
     commit_packet.cr_delta = 32'h5000_ffff;
     commit_tag = owner5;
     commit = 1'b1;

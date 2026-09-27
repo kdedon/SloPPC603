@@ -20,7 +20,7 @@ module tb_live_context_decode;
 
   function automatic logic no_write_permission(input uop_t unused_u);
     return !unused_u.gpr_write && !unused_u.mem_update && !unused_u.write_ca && !unused_u.write_ov_so &&
-           !unused_u.write_cr0 && !unused_u.write_cr_fields && !unused_u.write_cr_bit && !unused_u.branch_lk;
+           !unused_u.write_cr_field && !unused_u.write_cr_fields && !unused_u.write_cr_bit && !unused_u.branch_lk;
   endfunction
   task automatic require(input logic condition, input string message);
     checks++;

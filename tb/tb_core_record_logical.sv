@@ -339,7 +339,7 @@ module tb_core_record_logical;
     require(packet.cr_delta[27:0] == 0 && packet.xer_delta == 0,
             "retirement changed unsupported CR/XER bits");
     if (packet.illegal) begin
-      require(!packet.gpr_write && !packet.needs_flags && !packet.write_cr0 &&
+      require(!packet.gpr_write && !packet.needs_flags && !packet.write_cr_field &&
               !packet.write_ca && !packet.write_ov_so && packet.cr_delta == 0,
               "diagnostic retirement carried architectural writes");
       return;
@@ -357,7 +357,7 @@ module tb_core_record_logical;
               "record/nonrecord logical GPR retirement mismatch");
       if (packet.insn[0]) begin
         cr0 = record_cr0(value);
-        require(packet.needs_flags && packet.write_cr0 &&
+        require(packet.needs_flags && packet.write_cr_field &&
                 !packet.write_ca && !packet.write_ov_so &&
                 packet.cr_delta == {cr0, 28'b0},
                 "record logical retirement flag metadata/value mismatch");
@@ -368,12 +368,12 @@ module tb_core_record_logical;
         else if (cr0[1]) relation_zero++;
         else relation_positive++;
       end else begin
-        require(!packet.needs_flags && !packet.write_cr0 && packet.cr_delta == 0,
+        require(!packet.needs_flags && !packet.write_cr_field && packet.cr_delta == 0,
                 "nonrecord logical acquired or wrote flags");
       end
       model_gpr[packet.gpr] = value;
     end else begin
-      require(packet.gpr_write && !packet.needs_flags && !packet.write_cr0 &&
+      require(packet.gpr_write && !packet.needs_flags && !packet.write_cr_field &&
               !packet.write_ca && !packet.write_ov_so && packet.cr_delta == 0,
               "flag-free setup instruction carried flag metadata");
       case (packet.insn[31:26])
@@ -526,7 +526,7 @@ module tb_core_record_logical;
       if (dut.issue_valid && dut.issue_ready) begin
         issue_index = -1;
         for (int i = 0; i < stream.size(); i++)
-          if (stream[i].tag == dut.issue.producer) issue_index = i;
+          if (stream[i].tag == dut.issue.ctrl.producer) issue_index = i;
         require(issue_index >= 0 && !stream[issue_index].issued,
                 "issue did not match one live unissued stream entry");
         if (issue_index >= 0) begin

@@ -15,8 +15,8 @@ the D-form layout or add modifier forms. Secondary 601UM PDF763/10-209 specifies
 B is the 32-bit sign extension of SIMM; result=u32(B−rA), CA=(unsignedB>=unsignedrA).
 rA0 is a real register, not literal zero. Incoming CA is ignored. Full CR, OV,
 SO and other XER bits are preserved. Every SUBFIC allocates the flag owner and
-replaces CA. The decode-only change uses ALU_SUBFC with a captured signed immediate;
-no packet, ALU operation or interface changes are needed.
+replaces CA. Decode selects ALU_ADD with `invert_a` and `CARRY_ONE` and a captured signed
+immediate.
 
 TIM-T64-003 in primary Table 6-4/PDF270 records Integer/base one-cycle execution
 for PID6/PID7v. This does not establish full timing conformance or FPGA closure.

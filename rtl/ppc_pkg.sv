@@ -60,11 +60,11 @@ package ppc_pkg;
     FETCH_ISI_GUARDED = 3'd2,
     FETCH_PAGE_MISS = 3'd3
   } fetch_fault_t;
+  // The core holds the page-miss context beside the IQ, not per entry.
   typedef struct packed {
     logic [31:0] pc;
     logic [31:0] insn;
     fetch_fault_t fault;
-    page_miss_t page_miss;
   } fetch_packet_t;
 
   // MMU request kinds
@@ -92,14 +92,18 @@ package ppc_pkg;
     SEG_PREPARE = 3'd4
   } seg_req_kind_t;
   // End MMU request kinds
+  // ALU_ADD computes (invert_a ? ~a : a) + b + carry_in for every add and
+  // subtract form.
   typedef enum logic [4:0] {
     ALU_ADD, ALU_OR, ALU_XOR, ALU_AND, ALU_ANDC,
-    ALU_ORC, ALU_NAND, ALU_NOR, ALU_EQV, ALU_ADDC, ALU_ADDE,
-    ALU_ADDME, ALU_ADDZE, ALU_ROTATE, ALU_SLW, ALU_SRW, ALU_SRAW,
-    ALU_RLWIMI, ALU_SUBF, ALU_SUBFC, ALU_SUBFE,
+    ALU_ORC, ALU_NAND, ALU_NOR, ALU_EQV,
+    ALU_ROTATE, ALU_SLW, ALU_SRW, ALU_SRAW, ALU_RLWIMI,
     ALU_CNTLZW, ALU_EXTSB, ALU_EXTSH, ALU_MULLW,
     ALU_MULHW, ALU_MULHWU, ALU_DIVWU, ALU_DIVW, ALU_MULLI
   } alu_op_t;
+  typedef enum logic [1:0] {
+    CARRY_ZERO, CARRY_ONE, CARRY_CA
+  } carry_in_t;
   typedef enum logic [4:0] {
     SPECIAL_NONE, SPECIAL_B, SPECIAL_BC, SPECIAL_BCLR, SPECIAL_BCCTR,
     SPECIAL_MFSPR, SPECIAL_MTSPR, SPECIAL_CMP, SPECIAL_CMPL,
@@ -151,21 +155,34 @@ package ppc_pkg;
   localparam int XER_CA_BIT = 29;
   localparam int XER_BYTE_COUNT_WIDTH = 7;
   localparam logic [31:0] XER_IMPLEMENTED_MASK = 32'he000_007f;
+  // IU controls fixed at dispatch; the station holds them unchanged until issue.
   typedef struct packed {
     alu_op_t op;
-    logic [31:0] a;
-    logic [31:0] b;
+    logic invert_a;
+    carry_in_t carry_in;
     logic [31:0] mask;
     logic [4:0] shift;
     logic ca_in;
     logic so_in;
     logic write_ca;
     logic write_ov_so;
-    logic write_cr0;
+    logic write_cr_field;
     completion_tag_t producer;
+  } iu_ctrl_t;
+  typedef struct packed {
+    iu_ctrl_t ctrl;
+    operand_t a;
+    operand_t b;
+  } rs_entry_t;
+  typedef struct packed {
+    iu_ctrl_t ctrl;
+    logic [31:0] a;
+    logic [31:0] b;
   } issue_packet_t;
   typedef struct packed {
     alu_op_t op;
+    logic invert_a;
+    carry_in_t carry_in;
     logic illegal;
     logic [4:0] src_a;
     logic [4:0] src_b;
@@ -207,7 +224,7 @@ package ppc_pkg;
     logic write_xer;
     logic write_ca;
     logic write_ov_so;
-    logic write_cr0;
+    logic write_cr_field;
   } uop_t;
   typedef struct packed {
     logic [31:0] pc;
@@ -234,7 +251,7 @@ package ppc_pkg;
     logic write_xer;
     logic write_ca;
     logic write_ov_so;
-    logic write_cr0;
+    logic write_cr_field;
     logic [2:0] cr_field;
     logic write_cr_fields;
     logic [7:0] cr_mask;

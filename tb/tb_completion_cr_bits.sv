@@ -37,7 +37,7 @@ module tb_completion_cr_bits;
 
   assign flags_alloc_needs = !allocation.illegal &&
     (allocation.needs_flags || allocation.write_ca ||
-     allocation.write_ov_so || allocation.write_cr0 || allocation.write_cr_fields || allocation.write_cr_bit);
+     allocation.write_ov_so || allocation.write_cr_field || allocation.write_cr_fields || allocation.write_cr_bit);
 
   logic cq_empty, unused_cq_finish;
   ppc_completion completion (
@@ -89,7 +89,7 @@ module tb_completion_cr_bits;
     input logic needs_flags,
     input logic write_ca,
     input logic write_ov_so,
-    input logic write_cr0
+    input logic write_cr_field
   );
     retire_packet_t packet;
     packet = '0;
@@ -103,7 +103,7 @@ module tb_completion_cr_bits;
     packet.needs_flags = needs_flags;
     packet.write_ca = write_ca;
     packet.write_ov_so = write_ov_so;
-    packet.write_cr0 = write_cr0;
+    packet.write_cr_field = write_cr_field;
     // Allocation data is poison: completion must clear result-bearing fields.
     packet.cr_delta = 32'hffff_ffff;
     packet.xer_delta = 32'hffff_ffff;
@@ -133,7 +133,7 @@ module tb_completion_cr_bits;
     #1;
     effective_needs = !packet.illegal &&
       (packet.needs_flags || packet.write_ca ||
-       packet.write_ov_so || packet.write_cr0 || packet.write_cr_fields || packet.write_cr_bit);
+       packet.write_ov_so || packet.write_cr_field || packet.write_cr_fields || packet.write_cr_bit);
     require(alloc_ready, "CQ allocation unexpectedly blocked");
     require(!effective_needs || flags_alloc_ready,
             "flag-owning allocation unexpectedly blocked");
@@ -221,7 +221,7 @@ module tb_completion_cr_bits;
     require(retire_valid && retired_tag == plain_tag,
             "flag-free result did not reach head");
     require(!retired.needs_flags && !retired.write_ca &&
-            !retired.write_ov_so && !retired.write_cr0,
+            !retired.write_ov_so && !retired.write_cr_field,
             "flag-free retirement gained permissions");
     require(retired.cr_delta == 0 && retired.xer_delta == 0,
             "flag-free retirement stored forged candidates");
@@ -260,7 +260,7 @@ module tb_completion_cr_bits;
     send_result(owner_tag, 32'h89ab_cdef, 1'b1, 1'b1, 1'b1, 4'ha,
                 1'b1, 1'b1);
     require(retire_valid && retired.needs_flags && retired.write_ca &&
-            !retired.write_ov_so && retired.write_cr0,
+            !retired.write_ov_so && retired.write_cr_field,
             "allocated flag permissions not retained");
     require(retired.value == 32'h89ab_cdef &&
             retired.cr_delta == 32'ha000_0000 &&
@@ -292,7 +292,7 @@ module tb_completion_cr_bits;
     require(retire_valid && retired_tag == illegal_tag && retired.illegal,
             "diagnostic did not complete locally");
     require(!retired.gpr_write && !retired.needs_flags &&
-            !retired.write_ca && !retired.write_ov_so && !retired.write_cr0 &&
+            !retired.write_ca && !retired.write_ov_so && !retired.write_cr_field &&
             retired.value == 0 && retired.cr_delta == 0 && retired.xer_delta == 0,
             "diagnostic side effects were not normalized");
     require(!flags_busy, "diagnostic acquired flag ownership");
@@ -479,7 +479,7 @@ module tb_completion_cr_bits;
       send_result(owner_tag, candidate, 1'b1, 1'b1, 1'b1, 4'hf, 1'b1, 1'b0);
       require(retire_valid && retired.write_cr_fields && retired.cr_mask == 8'(mask) &&
               retired.cr_delta == expected_delta && retired.xer_delta == 0 &&
-              !retired.gpr_write && !retired.write_cr0, "multi-field completion permission/data mismatch");
+              !retired.gpr_write && !retired.write_cr_field, "multi-field completion permission/data mismatch");
       require(cr == held_cr && xer == held_xer, "multi-field result changed architectural flags before commit");
       repeat (2) begin @(posedge clk); #1; require(cr == held_cr && xer == held_xer, "stalled field write changed flags"); end
       accept_retirement();

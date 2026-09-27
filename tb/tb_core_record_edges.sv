@@ -205,7 +205,7 @@ module tb_core_record_edges;
     owner = dut.flags_owner;
     require(retired.pc == 0 && retired.insn == ORC_DOT &&
             retired.gpr == 5'd9 && retired.value == 32'hffff_ffff &&
-            retired.write_cr0 && retired.cr_delta == 32'h8000_0000,
+            retired.write_cr_field && retired.cr_delta == 32'h8000_0000,
             "finished record retirement packet");
   endtask
 

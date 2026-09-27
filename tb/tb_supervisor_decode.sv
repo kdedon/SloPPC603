@@ -43,7 +43,7 @@ module tb_supervisor_decode;
     require(enabled.gpr_write == gpr_write && enabled.dst == gpr,
             "enabled supervisor GPR permission/destination wrong");
     require(!enabled.needs_flags && !enabled.write_ca &&
-            !enabled.write_ov_so && !enabled.write_cr0 &&
+            !enabled.write_ov_so && !enabled.write_cr_field &&
             !enabled.write_cr_fields && !enabled.write_cr_bit &&
             !enabled.mem_update,
             "supervisor form escaped unrelated write permissions");

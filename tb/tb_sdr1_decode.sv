@@ -47,7 +47,7 @@ module tb_sdr1_decode;
             enabled.gpr_write==read_form&&
             !enabled.needs_flags&&!enabled.write_xer&&
             !enabled.write_ca&&!enabled.write_ov_so&&
-            !enabled.write_cr0&&!enabled.write_cr_fields&&
+            !enabled.write_cr_field&&!enabled.write_cr_fields&&
             !enabled.write_cr_bit&&!enabled.mem_update&&
             !enabled.branch_lk,
             "SDR1 GPR dependency or unrelated side effect");

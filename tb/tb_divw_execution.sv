@@ -12,7 +12,7 @@ module tb_divw_execution;
   alu_op_t dispatch_op;
   completion_tag_t dispatch_producer;
   operand_t dispatch_a, dispatch_b;
-  logic dispatch_so, dispatch_write_ov_so, dispatch_write_cr0;
+  logic dispatch_so, dispatch_write_ov_so, dispatch_write_cr_field;
   logic wake_valid;
   wake_packet_t wake;
   logic issue_valid, issue_ready;
@@ -21,13 +21,28 @@ module tb_divw_execution;
   result_packet_t result;
   int checks = 0;
 
+  rs_entry_t dispatch_entry;
+  assign dispatch_entry = '{
+    ctrl: '{
+      op: dispatch_op,
+      invert_a: 1'b0,
+      carry_in: CARRY_ZERO,
+      mask: '0,
+      shift: 5'b0,
+      ca_in: 1'b0,
+      so_in: dispatch_so,
+      write_ca: 1'b0,
+      write_ov_so: dispatch_write_ov_so,
+      write_cr_field: dispatch_write_cr_field,
+      producer: dispatch_producer
+    },
+    a: dispatch_a,
+    b: dispatch_b
+  };
   ppc_dispatch station (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
-    .shift_i(5'b0), .mask_i('0), .op_i(dispatch_op),
-    .producer_i(dispatch_producer), .a_i(dispatch_a), .b_i(dispatch_b),
-    .ca_i(1'b0), .so_i(dispatch_so), .write_ca_i(1'b0),
-    .write_ov_so_i(dispatch_write_ov_so), .write_cr0_i(dispatch_write_cr0),
+    .entry_i(dispatch_entry),
     .wake_valid_i(wake_valid), .wake_i(wake),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
@@ -70,7 +85,7 @@ module tb_divw_execution;
     dispatch_op = ALU_DIVW;
     dispatch_so = so_in;
     dispatch_write_ov_so = oe;
-    dispatch_write_cr0 = rc;
+    dispatch_write_cr_field = rc;
     dispatch_valid = 1'b1;
     #1;
     require(dispatch_ready, "DIVW dispatch unexpectedly blocked");
@@ -81,7 +96,7 @@ module tb_divw_execution;
     dispatch_op = ALU_ADD;
     dispatch_so = !so_in;
     dispatch_write_ov_so = !oe;
-    dispatch_write_cr0 = !rc;
+    dispatch_write_cr_field = !rc;
     dispatch_b.value = ~divisor;
     repeat (2) begin
       @(posedge clk);
@@ -96,10 +111,10 @@ module tb_divw_execution;
     wake.value = dividend;
     wake_valid = 1'b1;
     #1;
-    require(issue_valid && issue.op == ALU_DIVW &&
-            issue.producer == dispatch_producer && issue.a == dividend &&
-            issue.b == divisor && issue.so_in == so_in && !issue.write_ca &&
-            issue.write_ov_so == oe && issue.write_cr0 == rc,
+    require(issue_valid && issue.ctrl.op == ALU_DIVW &&
+            issue.ctrl.producer == dispatch_producer && issue.a == dividend &&
+            issue.b == divisor && issue.ctrl.so_in == so_in && !issue.ctrl.write_ca &&
+            issue.ctrl.write_ov_so == oe && issue.ctrl.write_cr_field == rc,
             "RS lost DIVW inputs, controls, SO, or producer");
     @(posedge clk);
     #1;
@@ -146,7 +161,7 @@ module tb_divw_execution;
     dispatch_b = '0;
     dispatch_so = 1'b0;
     dispatch_write_ov_so = 1'b0;
-    dispatch_write_cr0 = 1'b0;
+    dispatch_write_cr_field = 1'b0;
     rs_cancel = 1'b0;
     iu_cancel = 1'b0;
     wake_valid = 1'b0;

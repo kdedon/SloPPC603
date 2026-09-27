@@ -15,11 +15,28 @@ module tb_record_execution;
   result_packet_t result, stalled;
   int checks = 0;
 
+  rs_entry_t dispatch_entry;
+  assign dispatch_entry = '{
+    ctrl: '{
+      op: op,
+      invert_a: 1'b0,
+      carry_in: CARRY_ZERO,
+      mask: '0,
+      shift: 5'b0,
+      ca_in: 1'b0,
+      so_in: so,
+      write_ca: 1'b0,
+      write_ov_so: 1'b0,
+      write_cr_field: record_form,
+      producer: producer
+    },
+    a: a,
+    b: b
+  };
   ppc_dispatch station (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
-    .shift_i(5'b0), .mask_i('0), .op_i(op), .producer_i(producer), .a_i(a), .b_i(b),
-    .write_ca_i(1'b0), .write_ov_so_i(1'b0), .ca_i(1'b0), .so_i(so), .write_cr0_i(record_form),
+    .entry_i(dispatch_entry),
     .wake_valid_i(wake_valid), .wake_i(wake),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
@@ -69,8 +86,8 @@ module tb_record_execution;
     wake.value = value;
     wake_valid = 1;
     #1;
-    require(issue_valid && issue.op == ALU_OR && issue.a == value && issue.b == 0 &&
-            issue.producer == producer && issue.so_in == captured_so && issue.write_cr0 == rc,
+    require(issue_valid && issue.ctrl.op == ALU_OR && issue.a == value && issue.b == 0 &&
+            issue.ctrl.producer == producer && issue.ctrl.so_in == captured_so && issue.ctrl.write_cr_field == rc,
             "RS lost held operation/SO/record metadata at wake");
     @(posedge clk); #1;
     wake_valid = 0;

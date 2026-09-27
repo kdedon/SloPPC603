@@ -81,7 +81,7 @@ module tb_runtime_bat_decode;
               check(legacy.illegal && baseline.illegal,
                 "BAT selector escaped feature gate");
               check(!runtime.mem_update && !runtime.write_xer &&
-                !runtime.write_ca && !runtime.write_ov_so && !runtime.write_cr0 &&
+                !runtime.write_ca && !runtime.write_ov_so && !runtime.write_cr_field &&
                 !runtime.write_cr_fields && !runtime.write_cr_bit &&
                 !runtime.branch_lk,
                 "BAT form acquired unrelated effects");

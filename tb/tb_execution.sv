@@ -57,10 +57,18 @@ module tb_execution;
     .recovery_survivor_packet_i(empty_packets), .recovery_survivor_tag_i(empty_tags)
   );
 
+  rs_entry_t dp_entry;
+  always_comb begin
+    dp_entry = '0;
+    dp_entry.ctrl.op = dp_op;
+    dp_entry.ctrl.producer = dp_producer;
+    dp_entry.a = dp_a;
+    dp_entry.b = dp_b;
+  end
   ppc_dispatch dispatch_dut (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .dispatch_valid_i(dp_valid), .dispatch_ready_o(dp_ready),
-    .write_ca_i(1'b0), .write_ov_so_i(1'b0), .ca_i(1'b0), .so_i(1'b0), .write_cr0_i(1'b0), .shift_i(5'b0), .mask_i('0), .op_i(dp_op), .producer_i(dp_producer), .a_i(dp_a), .b_i(dp_b),
+    .entry_i(dp_entry),
     .wake_valid_i(dp_wake_valid), .wake_i(dp_wake),
     .issue_valid_o(dp_issue_valid), .issue_ready_i(dp_issue_ready),
     .issue_o(dp_issue)
@@ -329,8 +337,8 @@ module tb_execution;
     dp_wake.producer = ctag(0, 32'h60);
     #1;
     check(dp_issue_valid && dp_issue.a == 32'hffff_0000 &&
-          dp_issue.b == 32'h00ff_00ff && dp_issue.op == ALU_XOR &&
-          dp_issue.producer == ctag(1, 32'h61), "correct producer did not wake RS");
+          dp_issue.b == 32'h00ff_00ff && dp_issue.ctrl.op == ALU_XOR &&
+          dp_issue.ctrl.producer == ctag(1, 32'h61), "correct producer did not wake RS");
     held_issue = dp_issue;
     tick();
     dp_wake_valid = 1'b0;
@@ -361,17 +369,17 @@ module tb_execution;
     dp_wake_valid = 1'b0;
     dp_issue_ready = 1'b0;
     check(dp_issue_valid && dp_issue.a == 32'd7 && dp_issue.b == 32'd9 &&
-          dp_issue.op == ALU_ADD && dp_issue.producer == ctag(2, 32'h63),
+          dp_issue.ctrl.op == ALU_ADD && dp_issue.ctrl.producer == ctag(2, 32'h63),
           "same-edge wake was missed during RS capture");
 
     // IU result holds under backpressure, then turns over without a bubble.
     reset_units();
     @(negedge clk);
     iu_issue_valid = 1'b1;
-    iu_issue.op = ALU_ADD;
+    iu_issue.ctrl.op = ALU_ADD;
     iu_issue.a = 32'hffff_ffff;
     iu_issue.b = 32'd2;
-    iu_issue.producer = ctag(0, 32'h70);
+    iu_issue.ctrl.producer = ctag(0, 32'h70);
     #1;
     check(!iu_result_valid, "IU produced a result before the first issue edge");
     check(iu_issue_ready, "IU rejected first issue");
@@ -380,10 +388,10 @@ module tb_execution;
     check(iu_result_valid && iu_result.value == 32'd1 &&
           iu_result.producer == ctag(0, 32'h70), "IU add result/tag mismatch");
     held_result = iu_result;
-    iu_issue.op = ALU_XOR;
+    iu_issue.ctrl.op = ALU_XOR;
     iu_issue.a = 32'haaaa_5555;
     iu_issue.b = 32'hffff_0000;
-    iu_issue.producer = ctag(1, 32'h71);
+    iu_issue.ctrl.producer = ctag(1, 32'h71);
     tick();
     check(iu_result_valid && iu_result === held_result && !iu_issue_ready,
           "IU held result was unstable under backpressure");

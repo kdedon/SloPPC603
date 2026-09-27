@@ -149,15 +149,15 @@ module tb_core_multiply_timing;
     end else begin
       cycles++;
 
-      if (dut.issue_valid && dut.issue_ready && dut.issue.op == ALU_MULLI) begin
+      if (dut.issue_valid && dut.issue_ready && dut.issue.ctrl.op == ALU_MULLI) begin
         require(mulli_issue_edge < 0, "MULLI issued more than once");
         mulli_issue_edge = cycles;
-        mulli_producer = dut.issue.producer;
+        mulli_producer = dut.issue.ctrl.producer;
       end
-      if (dut.issue_valid && dut.issue_ready && dut.issue.op == ALU_MULLW) begin
+      if (dut.issue_valid && dut.issue_ready && dut.issue.ctrl.op == ALU_MULLW) begin
         require(mullw_issue_edge < 0, "MULLW issued more than once");
         mullw_issue_edge = cycles;
-        mullw_producer = dut.issue.producer;
+        mullw_producer = dut.issue.ctrl.producer;
       end
 
       if (mulli_issue_edge >= 0 && mulli_finish_edge < 0 &&
@@ -173,7 +173,7 @@ module tb_core_multiply_timing;
 
       if (dut.iu_result_valid && dut.iu_result_ready &&
           dut.iu_result.producer == mulli_producer &&
-          dut.iu.held.op == ALU_MULLI) begin
+          dut.iu.held.ctrl.op == ALU_MULLI) begin
         require((cycles - mulli_issue_edge) == 3,
                 "MULLI accepted finish was not E+3");
         require(dut.iu_result.value == 6 && dut.iu_result.cr0 == 0,
@@ -184,7 +184,7 @@ module tb_core_multiply_timing;
       end
       if (dut.iu_result_valid && dut.iu_result_ready &&
           dut.iu_result.producer == mullw_producer &&
-          dut.iu.held.op == ALU_MULLW) begin
+          dut.iu.held.ctrl.op == ALU_MULLW) begin
         require((cycles - mullw_issue_edge) == 5,
                 "MULLW accepted finish was not E+5");
         require(dut.iu_result.value == 14 && dut.iu_result.cr0 == 4'h4,
@@ -194,11 +194,11 @@ module tb_core_multiply_timing;
         mullw_finish_edge = cycles;
       end
 
-      if (dut.issue_valid && dut.issue_ready && dut.issue.op == ALU_ADD &&
+      if (dut.issue_valid && dut.issue_ready && dut.issue.ctrl.op == ALU_ADD &&
           dut.issue.a == 6 && dut.issue.b == 1)
         require(mulli_finish_edge == cycles,
                 "MULLI dependent did not wake on accepted finish");
-      if (dut.issue_valid && dut.issue_ready && dut.issue.op == ALU_ADD &&
+      if (dut.issue_valid && dut.issue_ready && dut.issue.ctrl.op == ALU_ADD &&
           dut.issue.a == 14 && dut.issue.b == 1)
         require(mullw_finish_edge == cycles,
                 "MULLW dependent did not wake on accepted finish");
@@ -212,7 +212,7 @@ module tb_core_multiply_timing;
           2: require(retired.pc == 8 && retired.gpr == 3 && retired.value == 7,
                      "first dependent retirement mismatch");
           3: require(retired.pc == 12 && retired.gpr == 4 &&
-                     retired.value == 14 && retired.write_cr0 &&
+                     retired.value == 14 && retired.write_cr_field &&
                      retired.cr_delta == 32'h4000_0000,
                      "MULLW retirement mismatch");
           4: require(retired.pc == 16 && retired.gpr == 5 && retired.value == 15,

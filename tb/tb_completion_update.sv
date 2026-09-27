@@ -41,7 +41,7 @@ module tb_completion_update;
                             kill_gen_reduction, survivor_count,
                             survivors, survivor_tags,
                             retired.needs_flags, retired.write_ca,
-                            retired.write_ov_so, retired.write_cr0,
+                            retired.write_ov_so, retired.write_cr_field,
                             retired.cr_field, retired.write_cr_fields,
                             retired.cr_mask, retired.write_cr_bit,
                             retired.cr_bit, retired.cr_delta,

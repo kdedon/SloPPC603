@@ -170,7 +170,7 @@ module tb_core_timer_registers;
       if(tv&&tr&&!done)begin
         check(retired.pc==model_pc&&retired.insn==word_at(model_pc),"retirement identity");
         check(!retired.illegal&&!retired.alignment_exception&&retired.fetch_fault==FETCH_OK&&
-          !retired.update_write&&!retired.write_ca&&!retired.write_ov_so&&!retired.write_cr0&&
+          !retired.update_write&&!retired.write_ca&&!retired.write_ov_so&&!retired.write_cr_field&&
           !retired.write_cr_fields&&!retired.write_cr_bit,"unexpected permission/diagnostic");
         insn=retired.insn;rt=int'(insn[25:21]);ra=int'(insn[20:16]);op=int'(insn[31:26]);
         selector=int'({insn[15:11],insn[20:16]});writes=0;value=0;next_pc=model_pc+4;

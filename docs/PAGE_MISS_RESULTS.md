@@ -11,7 +11,7 @@ integrated wrapper. The router requires page translation. A response carries
 `page_miss_t`, a packed 69-bit snapshot in this exact order:
 `{ea[31:0], sr[31:0], pr, ir, dr, write, way}`. `way` is the least
 significant bit. Router and core ports use the package type. Names are `imem_rsp_page_miss_i/o` and
-`dmem_rsp_page_miss_i/o`; fetch uses `rsp_page_miss_i`. This capsule travels
+`dmem_rsp_page_miss_i/o`. This capsule travels
 with the existing response valid/ready handshake; it has no independent event,
 acknowledgement or sticky ownership. It is held stable under backpressure and
 zero outside the matching typed response valid window.
@@ -37,9 +37,10 @@ changed results leave the sticky fault and page diagnostics unchanged.
 The router snapshots the exact accepted EA, direction and PR/IR/DR, plus the
 committed SR selected for that translation. No later live input may replace
 that context. Capsule outputs are zero outside a matching typed response.
-The capsule field is named `page_miss` in fetch, result and retirement records.
-Fetch packets carry the capsule through the existing instruction queue;
-allocation copies it into the completion entry for an enabled fetch miss.
+The capsule field is named `page_miss` in result and retirement records.
+Fetch packets carry only the cause; the core holds the oldest queued fetch
+miss capsule in one side register, and allocation copies it into the
+completion entry for an enabled fetch miss.
 The special lane captures typed data cause and capsule only for its matching
 live memory response. The completion queue preserves these diagnostic causes
 and capsule at retirement, sets illegal, and suppresses all architectural

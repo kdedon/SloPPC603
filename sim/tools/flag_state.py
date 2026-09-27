@@ -53,22 +53,22 @@ class WritePermissions:
     read_so: bool = False
     write_ca: bool = False
     write_ov_so: bool = False
-    write_cr0: bool = False
+    write_cr_field: bool = False
 
     def __post_init__(self) -> None:
-        for name in ("read_ca", "read_so", "write_ca", "write_ov_so", "write_cr0"):
+        for name in ("read_ca", "read_so", "write_ca", "write_ov_so", "write_cr_field"):
             if type(getattr(self, name)) is not bool:
                 raise FlagStateError(f"{name} must be bool")
-        if (self.write_ov_so or self.write_cr0) and not self.read_so:
+        if (self.write_ov_so or self.write_cr_field) and not self.read_so:
             raise FlagStateError("OV/SO or CR0 writers must capture incoming SO")
 
     @property
     def needs_flags(self) -> bool:
-        return self.read_ca or self.read_so or self.write_ca or self.write_ov_so or self.write_cr0
+        return self.read_ca or self.read_so or self.write_ca or self.write_ov_so or self.write_cr_field
 
     @property
     def cr_mask(self) -> int:
-        return CR0_MASK if self.write_cr0 else 0
+        return CR0_MASK if self.write_cr_field else 0
 
     @property
     def xer_mask(self) -> int:
@@ -201,7 +201,7 @@ def validate_completion(allocation: CapturedAllocation, payload: CompletionPaylo
             if allocation.so_in and not payload.so:
                 raise FlagStateError("sticky SO cannot clear an incoming one")
             raise FlagStateError("SO must equal incoming SO OR current OV")
-    if permissions.write_cr0:
+    if permissions.write_cr_field:
         relation = payload.cr0 & 0xE
         expected_relation = 0x8 if payload.value & 0x8000_0000 else (0x2 if payload.value == 0 else 0x4)
         if relation != expected_relation:
@@ -239,7 +239,7 @@ def prepare_add(
         read_so=bool(oe or rc),
         write_ca=family != "add",
         write_ov_so=bool(oe),
-        write_cr0=bool(rc),
+        write_cr_field=bool(rc),
     )
     return PreparedOperation(
         permissions,
@@ -267,7 +267,7 @@ def prepare_shift(
     )
     writes_ca = family in {"sraw", "srawi"}
     permissions = WritePermissions(
-        read_so=bool(rc), write_ca=writes_ca, write_cr0=bool(rc)
+        read_so=bool(rc), write_ca=writes_ca, write_cr_field=bool(rc)
     )
     return PreparedOperation(
         permissions,
@@ -293,7 +293,7 @@ def prepare_logical(
     result = logical_family.evaluate(
         family, source, operand, rc=rc, ca=ca_in, ov=ov_in, so=so_in, old_cr0=old_cr0,
     )
-    permissions = WritePermissions(read_so=bool(rc), write_cr0=bool(rc))
+    permissions = WritePermissions(read_so=bool(rc), write_cr_field=bool(rc))
     return PreparedOperation(
         permissions,
         CompletionPayload(result.value, result.ca, result.ov, result.so, result.cr0),

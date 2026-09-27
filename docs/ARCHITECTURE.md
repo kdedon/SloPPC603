@@ -66,13 +66,13 @@ One instruction dispatches per cycle. Dispatch allocates an unfinished completio
 | `ppc_fetch` | Next PC and outstanding response state | Advance sequentially after accepted normal responses; preserve old offers and drain/discard old responses before installing the latest accepted redirect target. |
 | `ppc_fifo` | Circular storage and occupancy | Ordered, no fall-through; accepted redirect clears with priority over push/pop; simultaneous normal push/pop preserves count; a full queue advertises capacity the cycle after a pop. The IQ has depth 6; CQ owns its separate depth-5 ring. |
 | `ppc_decode` | Supported opcode classification | Reject unknown opcodes and unsupported OE/Rc forms; rA=0 literal-zero behavior only for add immediate forms. |
-| `ppc_dispatch` | One IU reservation entry and pending operands | Source wake requires rename slot and completion identity; ready issue remains stable under backpressure unless an accepted identity-matched recovery cancels it. |
+| `ppc_dispatch` | One IU reservation entry (`rs_entry_t`: `iu_ctrl_t` controls plus two operands) | Controls are captured whole and issue unchanged in `issue_packet_t`; source wake requires rename slot and completion identity; ready issue remains stable under backpressure unless an accepted identity-matched recovery cancels it. |
 | `ppc_flags` | Committed CR/XER and exact-tag owner control | Record-logical ownership and CR0 commitment connected; ADD/ADDC/ADDE/ADDME/ADDZE update CA/OV/SO; [ADDME/ADDZE](ADD_UNARY.md) now implement captured-carry decrement/increment. |
 | `ppc_special` | Serialized branch/LR/CTR/compare and scalar data transactions | Drains older work, blocks younger dispatch, uses ordinary tagged completion; no BPU/LSU timing acceptance. |
 | `ppc_iu` | Registered ADD family, eight Boolean operations rotate/mask and logical shifts with held result | One atomic GPR/CR0/XER result per issue; no variable latency or exception generation. |
 | `ppc_regfile_gpr` | Committed GPR state | Only retirement writes; update loads atomically write their data and base through two ports. r0 is an ordinary writable register. Zeroing on reset is a deterministic test convenience. |
 | `ppc_rename` | Five values, valid/ready bits, producer identities and latest-writer map | Each dispatched writer gets a free slot; reads see the newest unretired writer or wait for its accepted finish; retire clears the map only if it still points at that retiring tag; simultaneous younger allocation wins. |
-| `ppc_completion` | Ordered allocations with independent finish state | Reject invalid/stale/duplicate finishes; only finished head retires; output remains stable while stalled; accepted prefix cuts preserve that irrevocable head and suppress killed finishes. |
+| `ppc_completion` | Ordered allocations with independent finish state | The only place that clears a diagnostic allocation's write permissions; reject invalid/stale/duplicate finishes; only finished head retires; output remains stable while stalled; accepted prefix cuts preserve that irrevocable head and suppress killed finishes. |
 | `ppc_core` | Resource gating, commit, stop/halt state | IQ pop, rename/CQ allocation and reservation capture are atomic; only accepted redirects clear frontend state and cancel exact producer identities; unsupported instructions allocate a CQ entry without a GPR rename slot. |
 
 No rename slot is reclaimed for allocation in the same cycle as release. This intentionally creates a bubble at capacity. Result data appears in both rename storage (operand lookup) and completion packets (retirement trace/writeback); a future completion redesign may replace this duplication with result-tag reads.
@@ -118,17 +118,19 @@ A faulted load suppresses GPR write/wake and enters terminal diagnostic halt; it
 
 RLWIMI uses the two existing rename read ports for rS and old rA. The five-bit SH is a separate captured field in uop/issue packets and the reservation station; its destination allocation does not replace the source mapping before capture. The IU merges masked rotated rS with unmasked old rA, then derives CR0 from that merged result for Rc. No third rename read port or serialized execution is required.
 
-SUBF/NEG share ALU_SUBF and the existing adder with complemented A plus carry-in one; NEG supplies immediate zero B. Both preserve CA, while OE/Rc use the existing owner-controlled OV/SO/CR0 path.
+Every add and subtract form issues as ALU_ADD. Decode supplies `invert_a` and a carry-in select (`CARRY_ZERO`, `CARRY_ONE`, `CARRY_CA`) that travel in the uop, reservation station and issue packet; the IU computes `(invert_a ? ~a : a) + b + carry_in` and never inspects the opcode for them. Carry writes stay under the separate `write_ca` permission.
+
+SUBF/NEG add complemented A with carry-in one; NEG supplies immediate zero B. Both preserve CA, while OE/Rc use the existing owner-controlled OV/SO/CR0 path.
 
 SUBFC extends the complemented-A arithmetic path with an always-enabled CA write; the carry-in is fixed one, independently of committed CA. Its result carry expresses unsigned no-borrow.
 
 SUBFE adds a complemented-A operation with captured carry-in, sharing the flag owner and registered arithmetic path. Its overflow calculation includes the borrow adjustment.
 
-SUBFME/SUBFZE reuse ALU_SUBFE with immediate B=ffffffff/0, reserved rB=0 and real rA. Both capture and replace CA without a register dependency on the encoded reserved field.
+SUBFME/SUBFZE use the SUBFE selection with immediate B=ffffffff/0, reserved rB=0 and real rA. Both capture and replace CA without a register dependency on the encoded reserved field.
 
-SUBFIC uses ALU_SUBFC with signed SIMM and real rA0, replacing only CA alongside its GPR result. All low 16 bits are data; no OE/Rc decoding applies.
+SUBFIC uses the SUBFC selection with signed SIMM and real rA0, replacing only CA alongside its GPR result. All low 16 bits are data; no OE/Rc decoding applies.
 
-ADDIC/ADDIC. use ALU_ADDC with signed SIMM and real rA0. Both replace CA; only primary 13 captures SO and records CR0. Immediate low bits never select OE/Rc behavior.
+ADDIC/ADDIC. use ALU_ADD with carry-in zero, signed SIMM and real rA0. Both replace CA; only primary 13 captures SO and records CR0. Immediate low bits never select OE/Rc behavior.
 
 ANDI./ANDIS. read real rS and write rA through ALU_AND using an unsigned low/high-half immediate. Both record CR0 with captured SO, preserving all XER bits.
 

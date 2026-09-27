@@ -153,10 +153,10 @@ module tb_core_divider_timing #(
       cycles++;
 
       if (dut.issue_valid && dut.issue_ready &&
-          dut.issue.op == ALU_DIVWU) begin
+          dut.issue.ctrl.op == ALU_DIVWU) begin
         require(divide_issue_edge < 0, "divide issued more than once");
         divide_issue_edge = cycles;
-        divide_producer = dut.issue.producer;
+        divide_producer = dut.issue.ctrl.producer;
       end
 
       if (divide_issue_edge >= 0 && divide_finish_edge < 0) begin
@@ -171,7 +171,7 @@ module tb_core_divider_timing #(
       end
 
       if (dut.iu_result_valid && dut.iu_result_ready &&
-          dut.iu.held.op == ALU_DIVWU &&
+          dut.iu.held.ctrl.op == ALU_DIVWU &&
           dut.iu_result.producer == divide_producer) begin
         require(divide_issue_edge >= 0 && divide_finish_edge < 0,
                 "unexpected divide finish");
@@ -185,7 +185,7 @@ module tb_core_divider_timing #(
         divide_finish_edge = cycles;
       end
 
-      if (dut.issue_valid && dut.issue_ready && dut.issue.op == ALU_ADD &&
+      if (dut.issue_valid && dut.issue_ready && dut.issue.ctrl.op == ALU_ADD &&
           dut.issue.a == 32'd20 && dut.issue.b == 32'd1) begin
         require(dependent_issue_edge < 0, "dependent instruction issued twice");
         dependent_issue_edge = cycles;
@@ -203,7 +203,7 @@ module tb_core_divider_timing #(
                      "second setup retirement mismatch");
           2: begin
             require(retired.pc == 8 && retired.gpr_write && retired.gpr == 3 &&
-                    retired.value == 20 && retired.write_cr0 &&
+                    retired.value == 20 && retired.write_cr_field &&
                     retired.cr_delta == 32'h4000_0000,
                     "divide retirement/result/CR0 mismatch");
             require(divide_finish_edge >= 0 && cycles > divide_finish_edge,

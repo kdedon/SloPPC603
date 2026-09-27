@@ -390,7 +390,7 @@ module tb_core_rotate;
     require(packet.illegal == !expected_legal(packet.insn),
             "retirement legality disagrees with supported program word");
     if (packet.illegal) begin
-      require(!packet.gpr_write && !packet.needs_flags && !packet.write_cr0 &&
+      require(!packet.gpr_write && !packet.needs_flags && !packet.write_cr_field &&
               !packet.write_ca && !packet.write_ov_so && packet.cr_delta == 0 &&
               packet.xer_delta == 0,
               "diagnostic retirement carried architectural writes");
@@ -418,7 +418,7 @@ module tb_core_rotate;
               "rotate retirement changed XER permissions/value");
       if (rc) begin
         cr0 = record_cr0(value, old_so);
-        require(packet.needs_flags && packet.write_cr0 &&
+        require(packet.needs_flags && packet.write_cr_field &&
                 packet.cr_delta == {cr0, 28'b0},
                 "record rotate retirement flag metadata/value mismatch");
         model_cr = {cr0, model_cr[27:0]};
@@ -426,7 +426,7 @@ module tb_core_rotate;
         else if (cr0[1]) relation_zero++;
         else relation_positive++;
       end else begin
-        require(!packet.needs_flags && !packet.write_cr0 && packet.cr_delta == 0,
+        require(!packet.needs_flags && !packet.write_cr_field && packet.cr_delta == 0,
                 "nonrecord rotate acquired or wrote flags");
       end
       model_gpr[packet.gpr] = value;
@@ -465,7 +465,7 @@ module tb_core_rotate;
       cr0 = record_cr0(value, new_so);
       require(packet.gpr_write && packet.gpr == packet.insn[25:21] &&
               packet.value == value && packet.needs_flags && packet.write_ca &&
-              packet.write_ov_so == oe && packet.write_cr0 == rc,
+              packet.write_ov_so == oe && packet.write_cr_field == rc,
               "ADDC seed retirement metadata/value mismatch");
       require(packet.xer_delta == {oe ? new_so : 1'b0,
                                    oe ? overflow : 1'b0, carry, 29'b0} &&
@@ -479,7 +479,7 @@ module tb_core_rotate;
       end
       if (rc) model_cr = {cr0, model_cr[27:0]};
     end else begin
-      require(packet.gpr_write && !packet.needs_flags && !packet.write_cr0 &&
+      require(packet.gpr_write && !packet.needs_flags && !packet.write_cr_field &&
               !packet.write_ca && !packet.write_ov_so && packet.cr_delta == 0,
               "flag-free setup instruction carried flag metadata");
       case (packet.insn[31:26])
@@ -641,7 +641,7 @@ module tb_core_rotate;
       if (dut.issue_valid && dut.issue_ready) begin
         issue_index = -1;
         for (int i = 0; i < stream.size(); i++)
-          if (stream[i].tag == dut.issue.producer) issue_index = i;
+          if (stream[i].tag == dut.issue.ctrl.producer) issue_index = i;
         require(issue_index >= 0 && !stream[issue_index].issued,
                 "issue did not match one live unissued stream entry");
         if (issue_index >= 0) begin

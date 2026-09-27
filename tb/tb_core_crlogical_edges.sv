@@ -147,7 +147,7 @@ module tb_core_crlogical_edges;
             model_cr=(kind==0 || kind==2 || kind==4) ? 32'h02345678 : 32'h13345678;
             require(!retired.gpr_write && retired.write_cr_bit &&
                     retired.cr_bit==((kind==0 || kind==2 || kind==4) ? 5'd3 : 5'd7) &&
-                    !retired.write_cr_fields && !retired.write_cr0 && !retired.write_ca && !retired.write_ov_so,
+                    !retired.write_cr_fields && !retired.write_cr_field && !retired.write_ca && !retired.write_ov_so,
                     "CR logical bit permission/destination");
           end
           32,32'h100:begin

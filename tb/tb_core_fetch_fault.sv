@@ -246,7 +246,7 @@ module tb_core_fetch_fault #(
         check(retired.insn == payload(model_pc,expected_fault),"fault payload identity or normal word");
         check(retired.fetch_fault == expected_fault,"captured typed fault cause");
         check(!retired.alignment_exception,"fetch event is not alignment");
-        check(!retired.update_write && !retired.write_cr0 && !retired.write_ca &&
+        check(!retired.update_write && !retired.write_cr_field && !retired.write_ca &&
               !retired.write_ov_so && !retired.write_cr_fields && !retired.write_cr_bit,
               "fault payload did not create GPR-update or flag effects");
         if(expected_fault != FETCH_OK) begin

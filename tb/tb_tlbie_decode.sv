@@ -38,7 +38,7 @@ module tb_tlbie_decode;
             !enabled.gpr_write && !enabled.mem_update &&
             !enabled.needs_flags && !enabled.write_xer &&
             !enabled.write_ca && !enabled.write_ov_so &&
-            !enabled.write_cr0 && !enabled.write_cr_fields &&
+            !enabled.write_cr_field && !enabled.write_cr_fields &&
             !enabled.write_cr_bit && !enabled.branch_lk,
             "RB dependency or architectural side effects");
     end else begin

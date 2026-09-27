@@ -22,7 +22,7 @@ module tb_crstate_decode;
                 if ((reserved_9_10 == 0) && (reserved_14_15 == 0) &&
                     (reserved_16_20 == 0) && (rc == 0)) begin
                   assert (!unused_uop.illegal && unused_uop.special_op == SPECIAL_MCRF &&
-                          unused_uop.needs_flags && unused_uop.write_cr0 &&
+                          unused_uop.needs_flags && unused_uop.write_cr_field &&
                           unused_uop.cr_field == 3'(dest) &&
                           unused_uop.cr_source_field == 3'(source) &&
                           !unused_uop.gpr_write && !unused_uop.write_ca &&
@@ -32,7 +32,7 @@ module tb_crstate_decode;
                 end else begin
                   assert (unused_uop.illegal && !unused_uop.needs_flags &&
                           !unused_uop.gpr_write && !unused_uop.write_ca &&
-                          !unused_uop.write_ov_so && !unused_uop.write_cr0 &&
+                          !unused_uop.write_ov_so && !unused_uop.write_cr_field &&
                           !unused_uop.write_cr_fields && !unused_uop.write_cr_bit)
                     else $fatal(1, "reserved MCRF accepted word=%h", insn);
                 end
@@ -53,14 +53,14 @@ module tb_crstate_decode;
                   (reserved_16_20 == 0) && (rc == 0)) begin
                 assert (!unused_uop.illegal && unused_uop.special_op == SPECIAL_MCRXR &&
                         unused_uop.needs_flags && unused_uop.read_ca && unused_uop.read_so &&
-                        unused_uop.write_ca && unused_uop.write_ov_so && unused_uop.write_cr0 &&
+                        unused_uop.write_ca && unused_uop.write_ov_so && unused_uop.write_cr_field &&
                         unused_uop.cr_field == 3'(dest) && !unused_uop.gpr_write &&
                         !unused_uop.write_cr_fields && !unused_uop.write_cr_bit)
                   else $fatal(1, "MCRXR route/permission word=%h", insn);
               end else begin
                 assert (unused_uop.illegal && !unused_uop.needs_flags &&
                         !unused_uop.gpr_write && !unused_uop.write_ca &&
-                        !unused_uop.write_ov_so && !unused_uop.write_cr0 &&
+                        !unused_uop.write_ov_so && !unused_uop.write_cr_field &&
                         !unused_uop.write_cr_fields && !unused_uop.write_cr_bit)
                   else $fatal(1, "reserved MCRXR accepted word=%h", insn);
               end

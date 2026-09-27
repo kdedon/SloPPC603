@@ -308,7 +308,7 @@ module tb_compiled_table_fault_firmware;
           m=int'(active_marker);
           check(m>0&&m<32&&miss_n[m]==0&&
                 !retired.gpr_write&&!retired.update_write&&
-                !retired.write_xer&&!retired.write_cr0,
+                !retired.write_xer&&!retired.write_cr_field,
              $sformatf("typed miss retirement count/effects kindI=%0d kindD=%0d ea=%08x msr=%08x lr=%08x",
               retired.fetch_fault,retired.data_fault,retired.page_miss.ea,dut.core.msr,dut.core.lr));
           check(retired.page_miss.ir&&retired.page_miss.dr&&

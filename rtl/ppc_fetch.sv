@@ -15,7 +15,6 @@ module ppc_fetch #(
   output logic rsp_ready_o,
   input logic [31:0] rsp_insn_i,
   input ppc_pkg::fetch_fault_t rsp_fault_i,
-  input ppc_pkg::page_miss_t rsp_page_miss_i,
   output logic packet_valid_o,
   input logic packet_ready_i,
   output ppc_pkg::fetch_packet_t packet_o
@@ -36,8 +35,6 @@ module ppc_fetch #(
   assign packet_o.pc = pc;
   assign packet_o.insn = rsp_insn_i;
   assign packet_o.fault = rsp_fault_i;
-  assign packet_o.page_miss = (rsp_fault_i == ppc_pkg::FETCH_PAGE_MISS) ?
-                              rsp_page_miss_i : '0;
   // The reserved slot makes an accepted response always consumable.
   assign rsp_ready_o = rst_ni && pending;
 

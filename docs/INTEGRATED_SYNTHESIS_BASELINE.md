@@ -33,6 +33,10 @@ DSP count halves because one registered 33x33 multiplier replaced two (AUD-07).
 The MLAB count stays zero because the I-cache tags and the GPR file are still
 flops (AUD-05, AUD-16).
 
+After the remaining audit merges (AUD-25/26/27/32/51/53/54/60), a refit on
+2026-09-26 (`./quartus/integrated/build.sh --docker`) gives slow-corner setup
+slack -3.904 / -4.538 ns (100 C / -40 C), hold +0.342 / +0.158 ns, 13,209 ALMs and 16,826 registers.
+
 ## Archived 2026-09-21 result
 
 
