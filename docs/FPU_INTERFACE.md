@@ -115,6 +115,15 @@ These are IU/SRU register-transfer timings, distinct from the three-stage
 floating-point status instructions.
 [602 UM Table 6-2, PDF 312; Table 6-5, PDF 315–316]
 
+The integrating completion controller must also supply the documented variable
+serialization stalls. In particular, a newly set disabled sticky exception on
+602 can lose one or two completion cycles; this is not an extra fixed FPU
+execution stage. The held result's FPSCR proposal and committed FPSCR inspection
+allow the controller to recognize that transition and delay `commit_valid_i`.
+Standalone execution-cycle tests do not establish this whole-core completion
+schedule. Status-instruction serialization likewise includes core completion
+arbitration. [602 UM §4.5.7.1, PDF 211; 603e UM Table 6-5 notes, PDF 273]
+
 `forward_valid_o/forward_o` and `forward1_valid_o/forward1_o` are one-cycle
 speculative notifications with no backpressure input. The primary notification
 prioritizes a ready CR update; the second preserves another ready result, such
