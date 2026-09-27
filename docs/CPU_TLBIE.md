@@ -9,3 +9,17 @@ For this 603e, UM §5.4.3.2 (PDF 223 / printed 5-27) specifies that one `tlbie` 
 The CPU/router boundary is `tlb_inv_req_valid/ready`, captured `tlb_inv_req_ea[31:0]`, held `tlb_inv_rsp_valid/ready/error`, `tlb_inv_commit`, `tlb_inv_abort`, held `tlb_inv_ack_valid/ready`, and `tlb_inv_idle`. The request prepares an invalidate without changing either TLB bank. The bank changes exactly once at the matching instruction's accepted retirement edge. A killed offered request completes its handshake, then aborts and drains its response before ownership is released. A successful commit waits for acknowledgment, then refetches at the latest retained target. The CPU reuses the existing serialized supervisor fence and holds it while old accepted fetch and memory obligations drain. A rejected request remains a diagnostic and has no TLB effect.
 
 PEM Tables 2-22/23 (PDF 104–106 / printed 2-42–44) require a context-synchronizing operation before and after TLBIE for data accesses, with `sync` permitted after when earlier memory and R/C work must finish. Instruction access requires a context-synchronizing operation or `sync` after the invalidate. The local fence/refetch simplifies this bounded implementation; it does not replace software's architectural ordering obligations or model PTE R/C memory writes. This increment does not implement TLB load instructions, miss SPRs/TGPR, page-table search, software refill, full translated CPU retry, or TLB broadcast.
+
+## TLBSYNC
+
+The same profile decodes `tlbsync`, exactly `0x7c00046c` (UM Table A-1,
+PDF 368 / A-8; primary opcode 31, XO 566, every other field zero). It is
+supervisor-only: in PR=1 it raises the privileged-instruction program
+exception before allocation. UM §5.4.3.2 (PDF 223 / 5-27) and §7.2.9.7.5
+(PDF 303 / 7-27) define its only effect on the 603e: execution stops after a
+completed `tlbsync` while the TLBISYNC input is asserted. This core has no
+TLBISYNC input and treats it as negated, as for a single processor that never
+broadcasts invalidations, so `tlbsync` retires through the serialized
+special lane as a no-op. It offers no TLB or bus transaction; the 603e
+generates no address-only `tlbsync` tenure (UM Table 7-1, PDF 285 / 7-9).
+

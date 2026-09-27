@@ -15,8 +15,9 @@ request acceptance, then snapshots `SR[EA[31:28]]` from the sole segment bank
 on a clean BAT miss. BAT bypass and hits retain precedence. A page response is
 eligible for a typed ISI only if the service returns a kind-0 lookup for the
 instruction bank with the exact captured EA; `page_reply_config=0`, `allow=0`,
-`miss=0`, and privilege, unsupported, invalid-input, refill-rejected,
-direct-store T and needs-changed causes are all clear, and captured SR.T=0.
+`miss=0`, and privilege, unsupported, invalid-input, refill-rejected
+and needs-changed causes are all clear. Direct-store T is typed only as the
+sole cause with captured SR.T=1; every other row requires SR.T=0.
 The classifier must use
 this response and the captured SR/context, never a later live request or SR.
 Any configuration/provenance mismatch or mixed cause remains an ordered
@@ -27,9 +28,11 @@ non-ISI diagnostic.
 | Page PP denial | A matching TLB hit with `protection=1`, captured SR.N=0; guarded and no-execute clear | `FETCH_ISI_PROTECTION` |
 | Guarded instruction page | A matching TLB hit with `guarded=1`, captured SR.N=0; protection and no-execute clear | `FETCH_ISI_GUARDED` |
 | Segment N (no execute) | `no_execute=1` alone with captured SR.N=1; **no TLB hit is required** because the service rejects N before tag lookup | `FETCH_ISI_GUARDED` |
+| Direct-store segment | `direct_store=1` alone with captured SR.T=1; checked before tag lookup, so a resident entry does not matter (UM Table 5-3) | `FETCH_ISI_GUARDED` |
 
-The N mapping uses the existing guarded selector because the implemented ISI
-state carrier has one SRR1 cause bit for N/guarded and one for PP. A service
+The N and T mappings use the existing guarded selector because UM Table 5-3
+gives all three the same SRR1[3] syndrome; the ISI carrier has one SRR1
+cause bit for N/T/guarded and one for PP. A service
 response with a simultaneous miss, PP, G, T or another cause is not typed.
 For a recognized case the router enters `ROUTE_IFETCH_FAULT_RESPONSE`, offers
 no physical memory request, and holds `imem_rsp_valid_o=1`, zero instruction
@@ -39,10 +42,9 @@ parameter disabled, page instruction failures retain the current fatal
 diagnostic behavior. Physical TEA and malformed BAT outcomes remain outside
 this page classifier.
 
-`translation_fault_o`, `page_fault_o` and the corresponding
-`page_protection_o`, `page_guarded_o` or `page_no_execute_o` stay sticky
-observer diagnostics, following the typed BAT ISI and page DSI convention.
-They are not an independent exception event. The held fetch response alone
+A typed page ISI leaves `translation_fault_o`, `page_fault_o` and the
+`page_*` detail pins clear, following the typed BAT ISI and page DSI
+convention; they report only untyped diagnostics. The held fetch response alone
 identifies the exact request. The core's existing fetch packet carries its
 captured PC and cause through the queue; it recognizes supported ISI only at
 the matching oldest retirement boundary. A wrong-path accepted response is

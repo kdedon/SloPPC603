@@ -24,7 +24,8 @@ package ppc_pkg;
     DATA_OK = 3'd0,
     DATA_DSI_PROTECTION = 3'd1,
     DATA_PAGE_MISS = 3'd2,
-    DATA_PAGE_CHANGED = 3'd3
+    DATA_PAGE_CHANGED = 3'd3,
+    DATA_DSI_DIRECT_STORE = 3'd4
   } data_fault_t;
   // Response-bound context for a diagnostic page miss or changed-bit store.
   // The router captures these fields with the accepted translation request.
@@ -116,7 +117,7 @@ package ppc_pkg;
     SPECIAL_PROGRAM_PRIV, SPECIAL_MFMSR,
     SPECIAL_ISYNC, SPECIAL_SYNC, SPECIAL_EIEIO, SPECIAL_ALIGNMENT, SPECIAL_ISI, SPECIAL_MTMSR,
     SPECIAL_MFSR, SPECIAL_MTSR, SPECIAL_TLBIE,
-    SPECIAL_TLBLD, SPECIAL_TLBLI
+    SPECIAL_TLBLD, SPECIAL_TLBLI, SPECIAL_TLBSYNC
   } special_op_t;
   typedef enum logic [2:0] {
     CR_LOGIC_AND, CR_LOGIC_ANDC, CR_LOGIC_EQV, CR_LOGIC_NAND,

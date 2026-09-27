@@ -631,7 +631,8 @@ module ppc_special #(
   assign exception_entry_unsupported = msr_o[17];
   assign dsi_event = ((uop_q.special_op == SPECIAL_LOAD) ||
                       (uop_q.special_op == SPECIAL_STORE)) &&
-                     (memory_result_q.data_fault == DATA_DSI_PROTECTION);
+                     ((memory_result_q.data_fault == DATA_DSI_PROTECTION) ||
+                      (memory_result_q.data_fault == DATA_DSI_DIRECT_STORE));
   always_comb begin
     exception_event_valid = 1'b0;
     exception_event_kind = EVENT_SC;
@@ -1086,8 +1087,9 @@ module ppc_special #(
         end
         if (exception_event_valid && dsi_event) begin
           dar_q <= ea_q;
-          // UM Table 4-11: protection bit 4, store bit 6.
-          dsisr_q <= 32'h0800_0000 |
+          // UM Table 4-11: protection bit 4, direct-store bit 5, store bit 6.
+          dsisr_q <= ((memory_result_q.data_fault == DATA_DSI_DIRECT_STORE) ?
+                      32'h0400_0000 : 32'h0800_0000) |
             ((uop_q.special_op == SPECIAL_STORE) ?
              32'h0200_0000 : 32'b0);
         end
@@ -1099,14 +1101,15 @@ module ppc_special #(
 
   // Serialized memory lane: one outstanding data obligation.
   // Transport faults and unrecognized typed causes remain diagnostics. Only
-  // an enabled BAT protection denial is DSI, and only an exact, well-formed
-  // page miss becomes a resumable miss event.
+  // an enabled protection or direct-store denial is DSI, and only an exact,
+  // well-formed page miss becomes a resumable miss event.
   always_comb begin
     mem_response_fence = 1'b0;
     if (!dmem_rsp_error_i) begin
       case (dmem_rsp_fault_i)
-        DATA_DSI_PROTECTION: mem_response_fence = ENABLE_SUPERVISOR_EXCEPTIONS &&
-          !exception_entry_unsupported && ENABLE_LIVE_CONTEXT;
+        DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE:
+          mem_response_fence = ENABLE_SUPERVISOR_EXCEPTIONS &&
+            !exception_entry_unsupported && ENABLE_LIVE_CONTEXT;
         DATA_PAGE_MISS, DATA_PAGE_CHANGED: mem_response_fence = miss_eligible;
         default: ;
       endcase
@@ -1127,9 +1130,9 @@ module ppc_special #(
         else begin
           case (dmem_rsp_fault_i)
             DATA_OK: ;
-            DATA_DSI_PROTECTION: begin
+            DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE: begin
               if (ENABLE_SUPERVISOR_EXCEPTIONS && !exception_entry_unsupported)
-                memory_result_q.data_fault <= DATA_DSI_PROTECTION;
+                memory_result_q.data_fault <= dmem_rsp_fault_i;
               else memory_result_q.fault <= 1'b1;
             end
             DATA_PAGE_MISS, DATA_PAGE_CHANGED: begin

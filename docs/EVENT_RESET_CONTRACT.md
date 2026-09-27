@@ -110,5 +110,8 @@ seed normalizes to nonzero byte count, not nonzero SO/OV/CA. These are limits of
 this directed matrix, not claims that those existing mechanisms were removed.
 A direct core fixture also cannot establish BAT-router reset/restart behavior,
 physical bus cancellation, external device effects, cache initialization, or
-board-level asynchronous assertion/synchronized release. No full regression
+board-level asynchronous assertion/synchronized release. The compiled MMU
+stress image ([MMU_STRESS_FIRMWARE.md](MMU_STRESS_FIRMWARE.md)) covers
+router, bus and cache reset/restart on the translated cached 60x top; board
+reset remains open. No full regression
 or new timing measurement is part of this bounded round.

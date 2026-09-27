@@ -420,3 +420,13 @@ The shared fetch transport reserves instruction-queue capacity before a new
 request. An already offered request remains stable under backpressure. This
 prevents a cache response waiting on a full queue from retaining the unified
 translation router while an older instruction needs a data transaction.
+
+## MMU and event stress profile
+
+`make mmu-stress` builds a self-checking page-table image: TLB replacement
+by LRU way, R/C updates, `tlbie`/`tlbsync` remapping, direct-store and
+page-fault DSI/ISI, repeated under external and decrementer interrupts.
+`make rtl-mmu-stress-cached` runs it on `ppc_core_bat_cached_bus60x` with the
+MVP profile in nine seeded modes; eight reset the CPU mid-run (during miss
+handlers, TLB loads and invalidates, line fills, held IRQs or DEC entry) and
+require a clean rerun. See [stress evidence](../docs/MMU_STRESS_FIRMWARE.md).

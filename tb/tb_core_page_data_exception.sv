@@ -1,5 +1,6 @@
 // Actual CPU, BAT, committed SR and prefilled DTLB integration. The expected
 // physical effects and GPR results are computed independently of the router.
+// Phases 0-2 cover page PP denial; 3-4 cover direct-store (SR.T=1) segments.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off UNUSEDSIGNAL */
 module tb_core_page_data_exception #(parameter bit ENABLE_MICRO_TLB = 1'b1);
@@ -85,12 +86,12 @@ module tb_core_page_data_exception #(parameter bit ENABLE_MICRO_TLB = 1'b1);
       0:return 32'h3c60_1000; // addis r3,0,0x1000
       4:return 32'h6063_1234; // EA=0x10001234
       8:return 32'h38c0_0055; // original update destination
-      12:return 32'h3c80_4000; // SR.Ks=1
+      12:return phase>=3?32'h3c80_8000:32'h3c80_4000; // SR.T=1 or SR.Ks=1
       16:return 32'h6084_1234; // VSID=0x001234
       20:return 32'h7c81_01a4; // mtsr 1,r4
       24:return 32'h38a0_0010; // MSR.DR
       28:return 32'h7ca0_0124; // mtmsr r5
-      32:return phase==1?32'h94c3_0000:32'h84c3_0000; // stwu/lwzu
+      32:return (phase==1||phase==4)?32'h94c3_0000:32'h84c3_0000; // stwu/lwzu
       36:return 32'h3be0_0007; // terminal after handler skips fault
       32'h100:return 32'h3be0_0009; // external-cut target
       32'h300:return spr(0,7,19); // DAR
@@ -140,7 +141,8 @@ module tb_core_page_data_exception #(parameter bit ENABLE_MICRO_TLB = 1'b1);
         if(retire_o.pc==32'd32)begin
           denied<=denied+1;
           check(phase!=2&&!retire_o.illegal&&
-                retire_o.data_fault==DATA_DSI_PROTECTION&&
+                retire_o.data_fault==(phase>=3?DATA_DSI_DIRECT_STORE:
+                                                DATA_DSI_PROTECTION)&&
                 !retire_o.gpr_write&&!retire_o.update_write,
                 "page PP fault lost typed DSI or wrote update registers");
         end
@@ -152,8 +154,10 @@ module tb_core_page_data_exception #(parameter bit ENABLE_MICRO_TLB = 1'b1);
         if(retire_o.pc==32'h304)begin
           handler_reads<=handler_reads+1;
           check(retire_o.gpr_write&&retire_o.gpr==8&&
-                retire_o.value==(phase==1?32'h0a00_0000:32'h0800_0000),
-                "handler DSISR protection/store");
+                retire_o.value==(phase==1?32'h0a00_0000:
+                                 phase==3?32'h0400_0000:
+                                 phase==4?32'h0600_0000:32'h0800_0000),
+                "handler DSISR protection/direct-store/store");
         end
         if(retire_o.pc==32'h308)begin
           handler_reads<=handler_reads+1;
@@ -246,6 +250,16 @@ module tb_core_page_data_exception #(parameter bit ENABLE_MICRO_TLB = 1'b1);
           dut.core.regfile.gpr[3]==32'h1000_1234&&
           dut.core.regfile.gpr[6]==32'h55,
           "cancelled page denial installed DSI or mutated registers");
+    // UM Table 5-3: SR.T=1 is DSI DSISR[5] even over an allowed TLB entry.
+    for(int direct_phase=3;direct_phase<5;direct_phase++)begin
+      reset_case(direct_phase);preload(2'b10);start_core();
+      wait(done);@(negedge clk_i);
+      check(denied==1&&physical_data==0&&handler_reads==4&&
+            !page_fault_o&&!page_direct_store_o&&
+            dut.core.regfile.gpr[3]==32'h1000_1234&&
+            dut.core.regfile.gpr[6]==32'h55,
+            "direct-store denial missed DSI or changed memory/registers");
+    end
     $display("PASS actual-core page DSI checks=%0d",checks);$finish;
   end
 endmodule
