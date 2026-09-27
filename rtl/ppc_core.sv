@@ -651,9 +651,10 @@ module ppc_core #(
       selected_redirect_valid = ENABLE_TEST_REDIRECT && redirect_valid_i && !halted_o &&
         !special_store_irrevocable && !special_exception_irrevocable &&
         (redirect_target_i[1:0] == 2'b00);
-      selected_redirect_all = redirect_all_i;
-      selected_redirect_keep = redirect_keep_pivot_i;
-      selected_redirect_pivot = redirect_pivot_i;
+      // A disabled test port must not reach recovery logic.
+      selected_redirect_all = !ENABLE_TEST_REDIRECT || redirect_all_i;
+      selected_redirect_keep = ENABLE_TEST_REDIRECT && redirect_keep_pivot_i;
+      selected_redirect_pivot = ENABLE_TEST_REDIRECT ? redirect_pivot_i : '0;
       selected_redirect_target = redirect_target_i;
     end
   end
