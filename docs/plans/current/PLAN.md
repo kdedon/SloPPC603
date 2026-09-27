@@ -33,9 +33,13 @@ Generated builds, logs and reports are excluded from version control.
 2. Verify cache maintenance, context changes, interrupts and data effects across
    held refills and bus retries. Keep explicit CPU synchronization and external
    maintenance contracts distinct.
-3. Fit the combined translated cached top with reviewed interface constraints;
+3. Fit the combined translated cached top with reviewed interface constraints
+   (including reset arrival);
    fix setup and hold violations, then run broader integration and firmware gates
    on the final RTL. The existing fit archives measure earlier configurations.
+
+Timing targets: 50 MHz is the provisional MVP constraint; 66 MHz, the original
+603e's clock, is the aspirational target. Fit records report Fmax against both.
 
 For the full 603e, dual issue, branch prediction, data cache/coherence, floating
 point, endian/variant features and timing fidelity remain major workstreams.
