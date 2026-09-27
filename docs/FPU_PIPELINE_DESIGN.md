@@ -78,6 +78,10 @@ its own operands. The shared stage is safe because a dispatch pair contains at
 most one FPU instruction.
 Ready independent instructions need a direct dispatch path when an obligatory
 reservation cycle would prevent sustained issue with four rename entries.
+The shell may decode and read a presented candidate before the late completion
+credit decision; backend and LSU requests, pending records, and forwarding are
+qualified by the actual accepted issue prefix. A held rejected lane produces no
+execution or memory side effect.
 Likewise, an arriving head result must be usable for retirement without an
 unnecessary holding-register cycle. Acceptance tests cover the complete shell's
 steady issue rate and dependent producer-to-consumer distance, not only the
