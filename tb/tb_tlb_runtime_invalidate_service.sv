@@ -90,6 +90,9 @@ module tb_tlb_runtime_invalidate_service;
     req_pr_i = pr; req_valid_i = 1;
     #1; check(req_ready_o, "request ready");
     @(posedge clk_i); #1;
+    check(!rsp_valid_o && !req_ready_o && !transaction_idle_o,
+          "lookup cycle holds the slot");
+    @(posedge clk_i); #1;
     check(rsp_valid_o, "registered response");
     @(negedge clk_i); req_valid_i = 0;
   endtask

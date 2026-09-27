@@ -17,6 +17,7 @@
 ../../rtl/ppc_bat_translate.sv
 ../../rtl/ppc_bat_service.sv
 ../../rtl/ppc_segment_registers.sv
+../../rtl/ppc_tlb_ram.sv
 ../../rtl/ppc_tlb_service.sv
 ../../rtl/ppc_bat_memory_router.sv
 ../../rtl/ppc_core_bat.sv

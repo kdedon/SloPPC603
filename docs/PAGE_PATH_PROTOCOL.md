@@ -73,7 +73,8 @@ A registered response uses `tlb_mgmt_rsp_valid_o/ready_i` and returns
 `unsupported`, `invalid_input` status outputs. An unsupported input kind echoes
 kind 3 because the router sends kind 3 to the service; it cannot perform a
 lookup through this management port. The underlying service commits an allowed
-refill or invalidation on request acceptance. The response acknowledges that
+refill or invalidation on the classification edge after acceptance, which
+also registers the response. The response acknowledges that
 result and remains stable under backpressure. There is no management abort or
 second commit stage. `tlb_mgmt_idle_o` rises after the held response and router
 ownership drain, which may lag response consumption by one clock. It is also

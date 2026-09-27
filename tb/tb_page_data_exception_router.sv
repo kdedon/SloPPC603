@@ -204,6 +204,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     check(tlb_mgmt_req_ready_o && !pimem_req_valid_o && !pdmem_req_valid_o,
           "management not admitted on idle route");
     @(posedge clk_i); #1;
+    if (!tlb_mgmt_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_mgmt_rsp_valid_o && !tlb_mgmt_idle_o &&
           tlb_mgmt_rsp_kind_o == (expect_unsupported ? 2'd3 : kind) &&
           tlb_mgmt_rsp_bank_o == bank && tlb_mgmt_rsp_ea_o == ea &&
@@ -470,6 +471,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     tlb_mgmt_req_pp_i = 2'b10;
     #1; check(tlb_mgmt_req_ready_o, "privileged-management probe not admitted");
     @(posedge clk_i); #1;
+    if (!tlb_mgmt_rsp_valid_o) begin @(posedge clk_i); #1; end
     check(tlb_mgmt_rsp_valid_o && tlb_mgmt_rsp_privileged_o &&
           !tlb_mgmt_rsp_refill_rejected_o,
           "user-mode management refill was not rejected");

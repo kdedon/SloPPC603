@@ -68,6 +68,11 @@ module tb_tlb_prepared_refill #(
     req_valid_i=1;prepare_abort_i=abort_on_accept;
     #1;check(req_ready_o,"idle request admission");
     @(posedge clk_i);#1;
+    // Abort is sampled only on the accepting edge.
+    prepare_abort_i=0;
+    check(!rsp_valid_o && !req_ready_o && !transaction_idle_o,
+          "lookup cycle holds the slot");
+    @(posedge clk_i);#1;
     check(rsp_valid_o && rsp_kind_o==kind &&
           rsp_bank_o==bank && rsp_ea_o==ea,
           "registered response identity");
@@ -249,6 +254,19 @@ module tb_tlb_prepared_refill #(
             "accept+abort response");
       consume();
       check(transaction_idle_o,"accept+abort retained reservation");
+      lookup(1,EA,B,1,32'h22222234,0,2'b11,1);
+
+      // Abort on the classifying edge likewise leaves no slot.
+      @(negedge clk_i);
+      req_kind_i=3'd5;req_bank_i=1;req_ea_i=EA;req_vsid_i=B;req_pr_i=0;
+      req_way_i=1;req_rpn_i=20'h33333;req_valid_i=1;
+      #1;check(req_ready_o,"classify-abort admission");
+      @(posedge clk_i);#1;req_valid_i=0;prepare_abort_i=1;
+      @(posedge clk_i);#1;prepare_abort_i=0;
+      check(rsp_valid_o&&!rsp_unsupported_o&&!commit_ack_valid_o,
+            "classify-edge abort response");
+      consume();
+      check(transaction_idle_o,"classify-edge abort retained reservation");
       lookup(1,EA,B,1,32'h22222234,0,2'b11,1);
     end else begin
       consume();

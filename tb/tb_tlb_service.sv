@@ -61,6 +61,11 @@ module tb_tlb_service;
   task automatic tick;
     @(posedge clk); #1;
   endtask
+  // Acceptance edge plus the registered-read edge that registers the response.
+  task automatic accept_tick;
+    tick(); check(!rsp_valid && !req_ready, "lookup cycle holds the slot");
+    tick();
+  endtask
   function automatic response_t echo(input request_t r);
     response_t e;
     assert (!$isunknown(r)) else $fatal(1, "unknown expected request");
@@ -84,7 +89,7 @@ module tb_tlb_service;
   task automatic transact(input request_t r, input response_t expected, input int stalls = 0);
     @(negedge clk); req = r; req_valid = 1; rsp_ready = 1;
     #1; check(req_ready, "idle acceptance");
-    tick(); transactions++; compare(expected, "accepted");
+    accept_tick(); transactions++; compare(expected, "accepted");
     @(negedge clk); req_valid = 0; rsp_ready = 0;
     for (int i = 0; i < stalls; i++) begin
       tick(); compare(expected, "stalled"); check(!req_ready, "stall blocks request");
@@ -212,13 +217,13 @@ module tb_tlb_service;
     r = '0; r.bank = 1; r.ea = 32'h45678123; r.vsid = 24'h123456;
     held = hit(r, 0, 32'hab123123, 15, 3, 0);
     @(negedge clk); req = r; req_valid = 1; rsp_ready = 1;
-    tick(); transactions++; compare(held, "snapshot initial");
+    accept_tick(); transactions++; compare(held, "snapshot initial");
     next_r = r; next_r.kind = 1; next_r.rpn = 20'hfedcb; next_r.pp = 2; next_r.c = 1;
     next_e = echo(next_r);
     @(negedge clk); req = next_r; rsp_ready = 0;
     repeat (5) begin tick(); check(!req_ready, "held blocks remap"); compare(held, "immutable snapshot"); end
     @(negedge clk); rsp_ready = 1; #1; check(req_ready, "turnover accepts remap");
-    tick(); transactions++; compare(next_e, "remap response");
+    accept_tick(); transactions++; compare(next_e, "remap response");
     @(negedge clk); req_valid = 0; tick(); check(!rsp_valid, "remap consumed");
     transact(r, hit(r, 0, 32'hfedcb123, 0, 2, 1));
     // Reset while a live response and another refill are offered cancels both.
@@ -268,7 +273,7 @@ module tb_tlb_service;
     if (!present) $fatal(1, "empty vector corpus");
     vector_count = 0;
     @(negedge clk); req = r; req_valid = 1; rsp_ready = 1;
-    tick();
+    accept_tick();
     while (present) begin
       transactions++; vector_count++; compare(expected, "vector accepted");
       read_vector(fd, present, next_r, next_stalls, next_expected);
@@ -278,7 +283,7 @@ module tb_tlb_service;
         tick(); check(!req_ready, "vector stall blocks next"); compare(expected, "vector held");
       end
       @(negedge clk); rsp_ready = 1; #1; check(req_ready, "vector turnover ready");
-      tick();
+      if (present) accept_tick(); else tick();
       stalls = next_stalls; expected = next_expected;
     end
     check(!rsp_valid, "vector final response drained");

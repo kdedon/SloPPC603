@@ -62,10 +62,32 @@ module ppc_tlb_service #(
     logic [1:0] pp;
     logic c, r;
   } response_t;
+  typedef struct packed {
+    tlb_req_kind_t kind;
+    logic bank;
+    logic [31:0] ea;
+    logic [23:0] vsid;
+    logic pr, ks, kp, n, t, write, way;
+    logic [19:0] rpn;
+    logic c;
+    logic [3:0] wimg;
+    logic [1:0] pp;
+    logic abort;
+  } request_t;
 
   // Bank 0 = ITLB, bank 1 = DTLB. UM 5.4.3.1/Figure 5-7.
+  // Entries live in one RAM per way addressed by {bank, set}; valids stay in
+  // flops so reset and tlbie clear them at once. A request reads both ways on
+  // its accepting edge; the next edge classifies it from the registered read
+  // and registers the response.
   logic [1:0][1:0][31:0] valid_q;
-  entry_t entries_q [2][2][32];
+  entry_t [1:0] entry_rd;
+  logic ram_write;
+  logic [1:0] ram_write_way;
+  logic [5:0] ram_write_addr;
+  entry_t ram_write_data;
+  request_t request_q;
+  logic lookup_q;
   typedef struct packed {
     logic [19:0] rpn;
     logic c;
@@ -76,19 +98,20 @@ module ppc_tlb_service #(
   entry_t refill_entry;
   response_t response_q, response_d;
   logic response_valid_q, request_fire, fill_commit, invalidate_commit;
+  logic prepare_invalidate, prepare_refill;
   logic prepared_q, prepared_is_refill_q, commit_ack_q;
   logic prepared_bank_q, prepared_way_q;
   logic [4:0] prepared_set_q;
   entry_t prepared_entry_q;
   logic [4:0] set_index;
   logic [1:0] matched;
-  logic selected_way, selected_key, protection_denied;
+  logic selected_way, selected_key, protection_denied, prepared_write;
 
-  assign req_ready_o = rst_ni && !prepared_q && !commit_ack_q &&
+  assign req_ready_o = rst_ni && !prepared_q && !commit_ack_q && !lookup_q &&
                        (!response_valid_q || rsp_ready_i);
   assign commit_ack_valid_o = rst_ni &&
     (ENABLE_RUNTIME_INVALIDATE || ENABLE_RUNTIME_REFILL) && commit_ack_q;
-  assign transaction_idle_o = rst_ni && !response_valid_q &&
+  assign transaction_idle_o = rst_ni && !response_valid_q && !lookup_q &&
                               !prepared_q && !commit_ack_q;
   assign rsp_valid_o = rst_ni && response_valid_q;
   assign request_fire = req_valid_i && req_ready_o;
@@ -98,43 +121,74 @@ module ppc_tlb_service #(
     rsp_refill_rejected_o, rsp_unsupported_o, rsp_invalid_input_o,
     rsp_match_o, rsp_way_o, rsp_pa_o, rsp_wimg_o, rsp_pp_o, rsp_c_o, rsp_r_o} = response_q;
 
+  // Prepared refill commit and immediate refill never share an edge: a
+  // reservation blocks acceptance, and the refill decision needs the read.
+  assign prepared_write = (ENABLE_RUNTIME_INVALIDATE || ENABLE_RUNTIME_REFILL) &&
+    !prepare_abort_i && prepare_commit_i && prepared_q &&
+    (!response_valid_q || rsp_ready_i) && prepared_is_refill_q;
+  always_comb begin
+    ram_write = prepared_write || fill_commit;
+    ram_write_way = '0;
+    if (prepared_write) begin
+      ram_write_way[prepared_way_q] = 1'b1;
+      ram_write_addr = {prepared_bank_q, prepared_set_q};
+      ram_write_data = prepared_entry_q;
+    end else begin
+      ram_write_way[request_q.way] = 1'b1;
+      ram_write_addr = {request_q.bank, set_index};
+      ram_write_data = refill_entry;
+    end
+  end
+
+  for (genvar way = 0; way < 2; way++) begin : g_way
+    ppc_tlb_ram #(.WIDTH($bits(entry_t)), .DEPTH(64)) entries (
+      .clk_i,
+      .write_i(ram_write && ram_write_way[way]),
+      .write_addr_i(ram_write_addr), .write_data_i(ram_write_data),
+      .read_addr_i({req_bank_i, req_ea_i[16:12]}),
+      .read_data_o(entry_rd[way])
+    );
+  end
+
   always_comb begin
     // Manual EA15..19 -> HDL [16:12]; EA4..14 -> HDL [27:17].
     // EA0..3 selects the caller's segment register and is deliberately not tagged.
-    set_index = req_ea_i[16:12];
+    set_index = request_q.ea[16:12];
     matched = '0;
     for (int way = 0; way < 2; way++) begin
-      matched[way] = valid_q[req_bank_i][way][set_index] &&
-        entries_q[req_bank_i][way][set_index].vsid == req_vsid_i &&
-        entries_q[req_bank_i][way][set_index].page_tag == req_ea_i[27:17];
+      matched[way] = valid_q[request_q.bank][way][set_index] &&
+        entry_rd[way].vsid == request_q.vsid &&
+        entry_rd[way].page_tag == request_q.ea[27:17];
     end
     selected_way = matched[1];
-    selected_entry.rpn = entries_q[req_bank_i][selected_way][set_index].rpn;
-    selected_entry.c = entries_q[req_bank_i][selected_way][set_index].c;
-    selected_entry.wimg = entries_q[req_bank_i][selected_way][set_index].wimg;
-    selected_entry.pp = entries_q[req_bank_i][selected_way][set_index].pp;
-    selected_key = req_pr_i ? req_kp_i : req_ks_i;
+    selected_entry.rpn = entry_rd[selected_way].rpn;
+    selected_entry.c = entry_rd[selected_way].c;
+    selected_entry.wimg = entry_rd[selected_way].wimg;
+    selected_entry.pp = entry_rd[selected_way].pp;
+    selected_key = request_q.pr ? request_q.kp : request_q.ks;
     // PEM Table 7-21: page PP differs from BAT PP.
     protection_denied = (selected_key && selected_entry.pp == 2'b00) ||
-      (req_write_i && (selected_entry.pp == 2'b11 ||
+      (request_q.write && (selected_entry.pp == 2'b11 ||
                       (selected_key && selected_entry.pp == 2'b01)));
-    refill_entry.vsid = req_vsid_i;
-    refill_entry.page_tag = req_ea_i[27:17];
-    refill_entry.rpn = req_rpn_i;
-    refill_entry.c = req_c_i;
-    refill_entry.wimg = req_wimg_i;
-    refill_entry.pp = req_pp_i;
+    refill_entry.vsid = request_q.vsid;
+    refill_entry.page_tag = request_q.ea[27:17];
+    refill_entry.rpn = request_q.rpn;
+    refill_entry.c = request_q.c;
+    refill_entry.wimg = request_q.wimg;
+    refill_entry.pp = request_q.pp;
     fill_commit = 1'b0;
     invalidate_commit = 1'b0;
+    prepare_invalidate = 1'b0;
+    prepare_refill = 1'b0;
     response_d = '0;
-    response_d.kind = req_kind_i;
-    response_d.bank = req_bank_i;
-    response_d.ea = req_ea_i;
-    case (req_kind_i)
+    response_d.kind = request_q.kind;
+    response_d.bank = request_q.bank;
+    response_d.ea = request_q.ea;
+    case (request_q.kind)
       TLB_LOOKUP: begin
-        if (!req_bank_i && req_write_i) response_d.invalid_input = 1'b1;
-        else if (req_t_i) response_d.direct_store = 1'b1;
-        else if (!req_bank_i && req_n_i) response_d.no_execute = 1'b1;
+        if (!request_q.bank && request_q.write) response_d.invalid_input = 1'b1;
+        else if (request_q.t) response_d.direct_store = 1'b1;
+        else if (!request_q.bank && request_q.n) response_d.no_execute = 1'b1;
         else if (matched == 2'b00) response_d.miss = 1'b1;
         else if (matched == 2'b11) response_d.invalid_input = 1'b1;
         else begin
@@ -147,33 +201,35 @@ module ppc_tlb_service #(
           // UM 5.4.1.1: every valid 603e TLB entry is effectively referenced.
           response_d.r = 1'b1;
           if (protection_denied) response_d.protection_fault = 1'b1;
-          else if (!req_bank_i && selected_entry.wimg[0]) response_d.guarded_fault = 1'b1;
-          else if (req_write_i && !selected_entry.c) response_d.needs_changed = 1'b1;
+          else if (!request_q.bank && selected_entry.wimg[0]) response_d.guarded_fault = 1'b1;
+          else if (request_q.write && !selected_entry.c) response_d.needs_changed = 1'b1;
           else begin
             response_d.allow_access = 1'b1;
-            response_d.pa = {selected_entry.rpn, req_ea_i[11:0]};
+            response_d.pa = {selected_entry.rpn, request_q.ea[11:0]};
           end
         end
       end
       TLB_REFILL: begin
-        if (req_pr_i) response_d.privileged = 1'b1;
+        if (request_q.pr) response_d.privileged = 1'b1;
         // Local unambiguous-bank policy; source does not define a duplicate winner.
-        else if (matched[!req_way_i]) response_d.refill_rejected = 1'b1;
-        else fill_commit = 1'b1;
+        else if (matched[!request_q.way]) response_d.refill_rejected = 1'b1;
+        else fill_commit = lookup_q;
       end
       TLB_INVALIDATE_SET: begin
-        if (req_pr_i) response_d.privileged = 1'b1;
-        else invalidate_commit = 1'b1;
+        if (request_q.pr) response_d.privileged = 1'b1;
+        else invalidate_commit = lookup_q;
       end
       TLB_PREPARE_INVALIDATE: begin
         if (!ENABLE_RUNTIME_INVALIDATE) response_d.unsupported = 1'b1;
-        else if (req_pr_i) response_d.privileged = 1'b1;
+        else if (request_q.pr) response_d.privileged = 1'b1;
+        else prepare_invalidate = !request_q.abort && !prepare_abort_i;
       end
       TLB_PREPARE_REFILL: begin
         if (!ENABLE_RUNTIME_REFILL) response_d.unsupported = 1'b1;
-        else if (req_pr_i) response_d.privileged = 1'b1;
+        else if (request_q.pr) response_d.privileged = 1'b1;
         // Match the immediate-refill duplicate policy at preparation.
-        else if (matched[!req_way_i]) response_d.refill_rejected = 1'b1;
+        else if (matched[!request_q.way]) response_d.refill_rejected = 1'b1;
+        else prepare_refill = !request_q.abort && !prepare_abort_i;
       end
       default: response_d.unsupported = 1'b1;
     endcase
@@ -184,6 +240,8 @@ module ppc_tlb_service #(
       valid_q <= '0;
       response_valid_q <= 1'b0;
       response_q <= '0;
+      request_q <= '0;
+      lookup_q <= 1'b0;
       prepared_q <= 1'b0;
       prepared_is_refill_q <= 1'b0;
       prepared_bank_q <= 1'b0;
@@ -200,8 +258,6 @@ module ppc_tlb_service #(
         else if (prepare_commit_i && prepared_q &&
                  (!response_valid_q || rsp_ready_i)) begin
           if (prepared_is_refill_q) begin
-            entries_q[prepared_bank_q][prepared_way_q][prepared_set_q] <=
-              prepared_entry_q;
             valid_q[prepared_bank_q][prepared_way_q][prepared_set_q] <= 1'b1;
           end else begin
             for (int bank = 0; bank < 2; bank++) begin
@@ -214,27 +270,44 @@ module ppc_tlb_service #(
         end
       end
       if (request_fire) begin
+        lookup_q <= 1'b1;
+        request_q.kind <= req_kind_i;
+        request_q.bank <= req_bank_i;
+        request_q.ea <= req_ea_i;
+        request_q.vsid <= req_vsid_i;
+        request_q.pr <= req_pr_i;
+        request_q.ks <= req_ks_i;
+        request_q.kp <= req_kp_i;
+        request_q.n <= req_n_i;
+        request_q.t <= req_t_i;
+        request_q.write <= req_write_i;
+        request_q.way <= req_way_i;
+        request_q.rpn <= req_rpn_i;
+        request_q.c <= req_c_i;
+        request_q.wimg <= req_wimg_i;
+        request_q.pp <= req_pp_i;
+        request_q.abort <= prepare_abort_i;
+      end
+      // Acceptance drained the response slot, so it is free here.
+      if (lookup_q) begin
+        lookup_q <= 1'b0;
         response_valid_q <= 1'b1;
         response_q <= response_d;
-        if (ENABLE_RUNTIME_INVALIDATE && req_kind_i == TLB_PREPARE_INVALIDATE &&
-            !req_pr_i && !prepare_abort_i) begin
+        if (ENABLE_RUNTIME_INVALIDATE && prepare_invalidate) begin
           prepared_q <= 1'b1;
           prepared_is_refill_q <= 1'b0;
           prepared_set_q <= set_index;
         end
-        if (ENABLE_RUNTIME_REFILL && req_kind_i == TLB_PREPARE_REFILL &&
-            !req_pr_i && !matched[!req_way_i] && !prepare_abort_i) begin
+        if (ENABLE_RUNTIME_REFILL && prepare_refill) begin
           prepared_q <= 1'b1;
           prepared_is_refill_q <= 1'b1;
-          prepared_bank_q <= req_bank_i;
-          prepared_way_q <= req_way_i;
+          prepared_bank_q <= request_q.bank;
+          prepared_way_q <= request_q.way;
           prepared_set_q <= set_index;
           prepared_entry_q <= refill_entry;
         end
-        if (fill_commit) begin
-          entries_q[req_bank_i][req_way_i][set_index] <= refill_entry;
-          valid_q[req_bank_i][req_way_i][set_index] <= 1'b1;
-        end
+        if (fill_commit)
+          valid_q[request_q.bank][request_q.way][set_index] <= 1'b1;
         if (invalidate_commit) begin
           // 603e tlbie invalidates FOUR entries, with no tag/VSID comparison.
           for (int bank = 0; bank < 2; bank++) begin
@@ -255,6 +328,12 @@ module ppc_tlb_service #(
       else $error("TLB prepared reservation and ack overlap");
     if (prepared_q || commit_ack_q) assert (!req_ready_o)
       else $error("TLB prepared reservation lost exclusive slot");
+  end
+  always @(posedge clk_i) if (rst_ni) begin
+    if (lookup_q) assert (!response_valid_q && !prepared_q && !commit_ack_q)
+      else $error("TLB lookup overlaps a held response or reservation");
+    if (ram_write) assert (!request_fire)
+      else $error("TLB entry write coincides with a read");
   end
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     rsp_valid_o && !rsp_ready_i |=>
