@@ -1562,13 +1562,16 @@ module ppc_fpu #(
         pending_d[i].local_wait = pending_q[i].local_wait - 2'd1;
         if (pending_q[i].local_wait == 2'd1) pending_d[i].done = 1'b1;
       end
-    if (retire_count != 2'd0) begin
-      for (integer i = 0; i < PENDING_DEPTH; i++) begin
-        if (i + int'(retire_count) < PENDING_DEPTH)
-          pending_d[i] =
-              pending_d[PENDING_IDX_BITS'(i + int'(retire_count))];
-        else pending_d[i] = '0;
-      end
+    if (retire_count == 2'd1) begin
+      for (integer i = 0; i < PENDING_DEPTH-1; i++)
+        pending_d[i] = pending_d[i+1];
+      pending_d[PENDING_DEPTH-1] = '0;
+      pending_count_d = pending_count_q - {1'b0,retire_count};
+    end else if (retire_count == 2'd2) begin
+      for (integer i = 0; i < PENDING_DEPTH-2; i++)
+        pending_d[i] = pending_d[i+2];
+      pending_d[PENDING_DEPTH-2] = '0;
+      pending_d[PENDING_DEPTH-1] = '0;
       pending_count_d = pending_count_q - {1'b0,retire_count};
     end
     if (dispatch_fire) begin
