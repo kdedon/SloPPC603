@@ -752,6 +752,13 @@ provisional 50 MHz constraint (slow setup +1.316 / +1.653 ns). Fresh: full
 regression, compiled firmware and integrated fit. MVP 80.81% → 81.51%
 (FPGA fit/timing 35% → 45%). Timer/BAT fit and AUD-21 remain open.
 
+## RS result bypass round — accepted (2026-09-27)
+
+AUD-21: the IU result reaches RS issue through a select registered at
+capture; no wake compare on the issue path and no CPI change. Fresh: full
+regression, compiled firmware and integrated fit (54.10 MHz, IU-operand path
+slack +3.3 → +8.1 ns). MVP 81.51% → 81.51%.
+
 ## Cache maintenance and held-refill round — accepted (2026-09-27)
 
 Gate 2. Cache control instructions behind `ENABLE_CACHE_INSTRUCTIONS`: one-set
@@ -762,4 +769,3 @@ both mutation controls rejected. Fresh: full regression, `rtl-all`, translated
 fit (52.31 MHz after tying off the special-lane cancel without the test
 redirect). MVP 81.51% → 82.66%; full audit 46.29% → 46.79%. See
 [verification](../../CACHE_CONTROL_VERIFICATION.md).
-

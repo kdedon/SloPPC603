@@ -676,6 +676,22 @@ Fresh: `make -C sim regression` (pass), `make -C toolchain rtl-all` (pass),
 Effort ranges are unchanged. See
 [integrated fit](INTEGRATED_SYNTHESIS_BASELINE.md).
 
+## RS result bypass (AUD-21) — accepted, 2026-09-27
+
+A pending RS operand whose producer will occupy the IU is marked at capture
+and takes the accepted IU result through a registered select, so the wake
+compare and completion qualification leave the ALU → IU-operand loop while
+dependent ops still issue back to back. Worst setup into the IU operand flops
+went from +3.343 to +8.075 ns (slow 100 C); Fmax 53.67 → 54.10 MHz. Compiled
+firmware cycle counts are identical before and after.
+
+Fresh: `make -C sim -j2 regression` (pass, 420 PASS lines, 0 failures),
+`make -C toolchain -j2 rtl-all` (24/24),
+`./quartus/integrated/build.sh --docker`, commit `20424d7`.
+
+**MVP stays 81.51%:** efficiency round, no row changes. See
+[integrated fit](INTEGRATED_SYNTHESIS_BASELINE.md).
+
 ## Cache maintenance and held-refill round — accepted, 2026-09-27
 
 Gate 2: the cache control instructions ([contract](CACHE_CONTROL.md)) behind
