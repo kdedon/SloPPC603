@@ -61,6 +61,17 @@ def packets(ops, random_count, seed):
                     (0x0010000000000000, 0x3fe0000000000000),
                     (0x0000000000000001, 0x3fe0000000000000),
                     (0x7fefffffffffffff, 0x4000000000000000)))
+            if op == 'div' and not single:
+                cases.extend((a, b, 0, 'dp-divide-boundary') for a, b in (
+                    (0x0000000000000001, 0x3ff0000000000000),
+                    (0x3ff0000000000000, 0x0000000000000001),
+                    (0x0000000000000001, 0x7fefffffffffffff),
+                    (0x7fefffffffffffff, 0x0000000000000001),
+                    (0x3fefffffffffffff, 0x3ff0000000000000),
+                    (0x3ff0000000000000, 0x3ff0000000000000),
+                    (0x3ff0000000000001, 0x3ff0000000000000),
+                    (0x3ff0000000000000, 0x3fefffffffffffff),
+                    (0x3ff0000000000000, 0x3ff0000000000001)))
             if op in THREE:
                 # Product edge pairs with both addend-zero signs exercise the
                 # fused path through cancellation, underflow, infinity and NaN.

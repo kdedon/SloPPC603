@@ -382,3 +382,20 @@ issue order, middle-generation abort preserving the older arithmetic result
 while canceling a younger LSU request, and later reuse of the canceled tag
 index with a new generation. The 602 serialized `fctiwz` pairing rejection
 remained covered.
+
+The expanded `production_vectors.py` has SHA-256
+`ecbc4419b016d56dd6ae0cc4c0f3ba11e39a670b71e5c9e9548bff1ded13f02d`.
+Its binary64 divide boundary cases include minimum subnormal divided by one
+or maximum finite, the reverse ratios, and numerators immediately below,
+equal to and above their denominators. The generator crosses each directed
+case with all four RN modes and individual exception enables, including UE.
+
+Recorded: `make -C sim -j2 test-fpu-arith` on exact arithmetic commit
+`6a2f28b` with the expanded generator, 2026-09-27; 200,288 raw arithmetic
+packets, zero result/invalid/flag/class mismatches, no Verilator warnings or
+errors. The new divide cases exercised the normalized quotient boundary and
+overflow/underflow paths. Recorded: `make -C sim -j2 lint-fpu-timing
+test-fpu-timing-603 test-fpu-timing-602 test-fpu-arith-602` on the same exact
+arithmetic commit in an immutable snapshot, 2026-09-27; 603e 71 and 602 52
+exact timing responses, plus 181,376 seeded 602 numerical packets with zero
+mismatches and no warnings/errors.
