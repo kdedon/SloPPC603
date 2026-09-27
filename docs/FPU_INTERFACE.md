@@ -93,8 +93,12 @@ bindings, raw arithmetic metadata, memory disposition and completion identity.
 See the pipeline design for execution latency, initiation interval, response
 credits and the external LSU timing boundary.
 
-`forward_valid_o/forward_o` is a one-cycle speculative notification with no
-backpressure input. FPR and CR fields have separate write qualifiers: an FPR
+`forward_valid_o/forward_o` and `forward1_valid_o/forward1_o` are one-cycle
+speculative notifications with no backpressure input. The primary notification
+prioritizes a ready CR update; the second preserves another ready result, such
+as the load paired with a retiring compare. This prevents two retired entries
+from losing one notification to a single output arbiter. Consumers capture both
+valid outputs on the same edge. FPR and CR fields have separate write qualifiers: an FPR
 may forward before the same instruction's CR1, which waits for older FPSCR
 effects. Consumers must honor those qualifiers rather than assume exactly one
 notification per tag. `mcrfs` supplies its CR update at retirement only. The
