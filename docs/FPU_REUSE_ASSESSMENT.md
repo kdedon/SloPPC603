@@ -8,8 +8,16 @@ F0: [FPU contract](FPU_CONTRACT.md) records the architectural instruction/status
 rules, manual citations, donor boundary and explicit source conflicts. The
 contract selects consistent instruction/table rules where passages disagree;
 NI status details and exact-mask behavior remain documented limits.
-F1 qualification is in progress under `rtl/fpu/` and `sim/fpu/`, isolated from
-core file lists. The requested endpoint is a complete standalone FPU; another
+F1 experiment is complete under `rtl/fpu/` and `sim/fpu/`, isolated from core
+file lists. **The donor fails the numerical exit gate:** both split/direct
+variants mismatch 16,879 of 47,736 independent vectors; strict qualification
+fails deliberately. Both pass strict lint. Synthesis-only results are
+3,375/3,099 ALUTs and 11/4 DSP blocks; both estimate 32.2 MHz before fit, below
+50 MHz and the 66 MHz aspiration. See [numeric qualification](../sim/fpu/README.md)
+and [Quartus measurement](../quartus/fpu/README.md) for commands, counts and limits.
+Retain the finite arithmetic patterns only after independent verification;
+replace donor classification, rounding, packing, conversions and PPC status.
+The unchanged F1 experiment remains a benchmark for the new standalone unit. The requested endpoint is a complete standalone FPU; another
 process owns CPU integration. No architectural completion or score change is
 claimed by this documentation milestone.
 

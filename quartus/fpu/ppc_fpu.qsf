@@ -1,0 +1,33 @@
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CSEBA6U23I7
+set_global_assignment -name TOP_LEVEL_ENTITY ss_fpu_candidate
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 2
+set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ss_fpu_candidate.sv
+set_global_assignment -name VERILOG_FILE fpu_calc.v
+
+set_instance_assignment -name VIRTUAL_PIN ON -to clk
+set_instance_assignment -name VIRTUAL_PIN ON -to reset_n
+set_instance_assignment -name VIRTUAL_PIN ON -to req
+set_instance_assignment -name VIRTUAL_PIN ON -to rdy
+set_instance_assignment -name VIRTUAL_PIN ON -to fin
+set_instance_assignment -name VIRTUAL_PIN ON -to flush
+set_instance_assignment -name VIRTUAL_PIN ON -to stall
+set_instance_assignment -name VIRTUAL_PIN ON -to fop[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to sdi
+set_instance_assignment -name VIRTUAL_PIN ON -to sdo
+set_instance_assignment -name VIRTUAL_PIN ON -to rd[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to fs1[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to fs2[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to fd[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to fcc[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to exc[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to unf
+set_instance_assignment -name VIRTUAL_PIN ON -to raw_significand[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to raw_exponent[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to raw_sign
+set_instance_assignment -name VIRTUAL_PIN ON -to round_guard
+set_instance_assignment -name VIRTUAL_PIN ON -to round_sticky
+set_instance_assignment -name VIRTUAL_PIN ON -to round_increment
+set_instance_assignment -name VIRTUAL_PIN ON -to invalid_causes[*]
