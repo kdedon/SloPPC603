@@ -15,7 +15,8 @@ module ppc_fifo #(
 );
   localparam int PTR_WIDTH = $clog2(DEPTH);
   localparam int COUNT_WIDTH = $clog2(DEPTH + 1);
-  logic [WIDTH-1:0] entries [DEPTH];
+  // Registers, not block RAM: the output feeds decode-free dispatch directly.
+  (* ramstyle = "logic" *) logic [WIDTH-1:0] entries [DEPTH];
   logic [PTR_WIDTH-1:0] rd_ptr, wr_ptr;
   logic [COUNT_WIDTH-1:0] count;
   logic push, pop;
