@@ -450,15 +450,12 @@ module ppc_fpu_arith #(
     function automatic finite_sum_t normalize_low_b(input finite_sum_t value);
         finite_sum_t out;
         out = value;
-        if (out.magnitude != 0) begin
-            if (out.magnitude[158:157] == 2'd0) begin
-                out.magnitude <<= 2;
-                out.exponent -= 16'sd2;
-            end
-            if (!out.magnitude[158]) begin
-                out.magnitude <<= 1;
-                out.exponent -= 16'sd1;
-            end
+        // Both normalized finite significands are in [1, 2), so their
+        // quotient is in (0.5, 2). The first quotient bit is therefore
+        // bit 158 or 157; at most one left shift is required.
+        if (!value.magnitude[158]) begin
+            out.magnitude = value.magnitude << 1;
+            out.exponent = value.exponent - 16'sd1;
         end
         return out;
     endfunction
