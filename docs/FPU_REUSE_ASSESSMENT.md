@@ -25,13 +25,13 @@ The complete standalone **603e/602 pipeline remains in progress**. The
 [602 contract](FPU_602_CONTRACT.md) pins its primary user manual and records
 the distinct tag, exception, register and instruction rules. The replacement
 [pipeline](FPU_PIPELINE_DESIGN.md) selects its personality at compile time and
-must meet original instruction latency and throughput. Recorded pipeline checkpoints now include 200,288 603e raw-bit cases,
-181,376 602 cases, 17,628 independent 602 estimate checks, exact-cycle gates
-with 71/52 tagged responses, 851/171
-public-shell checks, and a 32-operation issue/forward/commit stream in each
-personality. These results cover separately pinned source snapshots; they are
-not one final revision's acceptance. Dedicated paired dispatch/retirement,
-recovery coverage and current-revision gates remain in progress.
+must meet original instruction latency and throughput. A coherent baseline
+(shell `1598fb9`, arithmetic `6a2f28b`) passes `test-fpu-all lint`: 200,288
+603e and 181,376 602 raw-bit cases; 11,958/17,628 estimate checks; 851/171
+public-shell checks; 71/52 exact-cycle responses; 32-operation streams in both
+personalities; 20/19 paired dispatch/retirement checks; and 63 strict lint
+invocations with no warnings or errors. Later timing changes require their own
+acceptance records; full-queue admission coverage is being expanded.
 The latest arithmetic post-map estimate is **26.2 MHz**; the measured two-lane
 603e shell estimates **15.0 MHz**. Both miss 50 and 66 MHz. No completion or
 fitted timing claim is made for the replacement. See

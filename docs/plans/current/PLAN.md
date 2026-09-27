@@ -43,9 +43,10 @@ Floating point has manual-backed [603e](../../FPU_CONTRACT.md) and
 [602](../../FPU_602_CONTRACT.md) contracts and a completed isolated donor
 experiment. The donor failed qualification. The replacement standalone module
 selects 603e or 602 at compile time and must match original instruction latency
-and throughput. Numerical, exact-cycle and public-shell gates have passed at
-the checkpoints in [verification](../../../sim/fpu/PRODUCTION.md); dedicated
-paired dispatch/retirement and current-revision acceptance remain open. Latest
+and throughput. The coherent baseline passes both personalities’ numerical, exact-cycle,
+public-shell, paired dispatch/retirement and strict lint gates in
+[verification](../../../sim/fpu/PRODUCTION.md). Later timing changes and expanded
+full-queue admission checks remain under qualification. Latest
 arithmetic synthesis estimates 26.2 MHz; the measured two-lane 603e shell
 estimates 15.0 MHz. Both miss 50 and 66 MHz, and no fitter has run. The earlier
 serialized 50.5 MHz result is historical. See the
