@@ -1,7 +1,7 @@
 # Compiled firmware acceptance — 2026-09-21
 
 Recorded: `make -C toolchain rtl-<profile>` per section (e.g. `rtl-smoke`, `rtl-timer`, `rtl-table-fault`), commit pre-repository snapshot, imported in 3e727b6, 2026-09-21 to 2026-09-23 as dated per section.
-Recorded: `make -C toolchain -j3 -k rtl-all` with ELFs from `make firmware-all` in `ppc603e-cross:bookworm-20250811`, commit f3cc2f4 plus the three table-fault bench edits committed with this line, 2026-09-27. Pass: all profiles (32 PASS lines), including table fault 21 cases / 21 misses in flat, 60x and cached 60x profiles. True-miss capsules now carry the TLB LRU way (AUD-42), so the table-fault benches no longer require way 0; the service, router and core benches check the way.
+Recorded: `make -C toolchain -j3 -k rtl-all` with ELFs from `make firmware-all` in `ppc603e-cross:bookworm-20250811`, sources of commit 5e54917 (run on f3cc2f4 plus its uncommitted bench edits), 2026-09-27. Pass: all profiles (32 PASS lines), including table fault 21 cases / 21 misses in flat, 60x and cached 60x profiles. True-miss capsules now carry the TLB LRU way (AUD-42), so the table-fault benches no longer require way 0; the service, router and core benches check the way.
 
 ## CPU TLB-load follow-up, 2026-09-23
 
