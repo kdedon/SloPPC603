@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-09-23. This is the active planning entry point. The target for
+Updated: 2026-09-27. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -28,8 +28,11 @@ Generated builds, logs and reports are excluded from version control.
 
 ## Next acceptance gates
 
-1. Close remaining page replacement and data/exception behavior, then stress
-   event and reset interactions on the translated cached 60x path.
+1. Closed 2026-09-27: LRU page replacement, direct-store DSI/ISI and
+   `tlbsync` are implemented, and seeded EXT/DEC/reset stress passes on the
+   translated cached 60x top ([evidence](../../MMU_STRESS_FIRMWARE.md)).
+   Machine check, trace and debug exceptions stay outside the MVP set; the
+   stress has no ARTRY/TEA, which gate 2 owns.
 2. Verify cache maintenance, context changes, interrupts and data effects across
    held refills and bus retries. Keep explicit CPU synchronization and external
    maintenance contracts distinct.

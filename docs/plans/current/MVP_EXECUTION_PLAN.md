@@ -752,3 +752,16 @@ provisional 50 MHz constraint (slow setup +1.316 / +1.653 ns). Fresh: full
 regression, compiled firmware and integrated fit. MVP 80.81% → 81.51%
 (FPGA fit/timing 35% → 45%). Timer/BAT fit and AUD-21 remain open.
 
+## Gate-1 MMU/event round — accepted (2026-09-27)
+
+Direct-store segments (SR.T=1) now raise DSI DSISR[5] (+[6] for stores) and
+ISI SRR1[3] instead of a diagnostic (UM Table 5-3); `tlbsync` decodes as a
+supervisor no-op with TLBISYNC negated. A new compiled image,
+`rtl-mmu-stress-cached`, checks LRU replacement, R/C, tlbie/tlbsync remap,
+direct-store and page-fault DSI/ISI on the MVP-profile translated cached top
+under seeded EXT/DEC, bus delays and eight mid-run reset points. Fresh: full
+`make -C sim regression`, `make -C toolchain rtl-all` (25 profiles) and a
+translated fit. MVP 81.51% → 82.66% (page TLB 90 → 94, supervisor 75 → 78,
+interrupts/timers 85 → 88, integration 85 → 87). See
+[stress evidence](../../MMU_STRESS_FIRMWARE.md).
+
