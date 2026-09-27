@@ -30,9 +30,10 @@ Generated builds, logs and reports are excluded from version control.
 
 1. Close remaining page replacement and data/exception behavior, then stress
    event and reset interactions on the translated cached 60x path.
-2. Verify cache maintenance, context changes, interrupts and data effects across
-   held refills and bus retries. Keep explicit CPU synchronization and external
-   maintenance contracts distinct.
+2. Accepted 2026-09-27: cache maintenance, context changes, interrupts and data
+   effects across held refills and bus retries, with CPU `icbi` and external
+   maintenance as distinct contracts ([cache control](../../CACHE_CONTROL.md)).
+   Page-table context changes under randomized retries remain with gate 1.
 3. Fit the combined translated cached top with reviewed interface constraints
    (including reset arrival);
    fix setup and hold violations, then run broader integration and firmware gates

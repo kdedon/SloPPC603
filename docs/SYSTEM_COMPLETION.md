@@ -1,6 +1,6 @@
 # System completion scorecard
 
-Updated: 2026-09-23. Scope: single-issue, big-endian integer CPU with supervisor
+Updated: 2026-09-27. Scope: single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, external/decrementer interrupts, CPU-managed BAT
 and page translation, and an integrated cache/60x path. FPGA acceptance also
 requires reviewed constraints and passing setup/hold. Board bring-up is excluded.
@@ -19,9 +19,9 @@ acceptance evidence are still required. The aggregate is `sum(weight × completi
 / 100`, rounded to a whole percent. Keep weights fixed between rounds unless the
 user changes scope. Treat small score changes as bookkeeping, not velocity.
 
-**MVP estimate: about 82% complete (weighted 81.5%; planning range 60–85%).** The
+**MVP estimate: about 83% complete (weighted 82.7%; planning range 60–85%).** The
 remaining work is concentrated in MMU replacement and exception completeness,
-broader combined-system stress, architectural maintenance and timing closure. These are
+broader combined-system stress and timing closure. These are
 hard acceptance blockers regardless of the weighted score. Final FPGA acceptance
 is currently unmet.
 
@@ -42,7 +42,7 @@ is currently unmet.
 | Instruction cache and maintenance | 5% | 95% | 16-KiB four-way physical cache, block-RAM data array, translated WIMG=0 fills/hits, scalar bypass, remap and explicit stale-code invalidate/restart, denied warm-line suppression and partial-fill TEA/reset; CPU `icbi` drains held/retried fills then clears the set; `dcbst`/`sync`/`icbi`/`isync` code patching under EXT/DEC, mode and BAT changes, retries and external maintenance | Conservative WIMG policy; no HID0 (external maintenance stands in); no automatic code coherence (not architected). External maintenance is not a CPU/store barrier. |
 | Toolchain and reproducible builds | 4% | 90% | Pinned compiler, BE ELF loader, twenty compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility or release packaging claim. |
 | Integration and verification | 7% | 87% | Independent directed/reference tests, seeded cached-top stress with a scripted 60x target, 243 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives | Search/fault firmware now covers the combined supervisor/page-MMU/cache/bus path; no formal/collected HDL coverage/continuous CI gate; long reference acceptance remains open. |
-| FPGA fit, timing and release | 7% | 45% | Current cached physical and separately timer-enabled BAT designs fit Cyclone V with archived evidence; the cached physical top (53.67 MHz), the timer/BAT top (51.67 MHz) and the translated MVP top (50.99 MHz) all meet 50 MHz setup and hold at every corner behind reset synchronizers | Translated and timer/BAT margins are thin; the translated MVP top misses setup; no board I/O timing contract or release signoff. New RTL changes require fresh fit before timing claims. |
+| FPGA fit, timing and release | 7% | 45% | Current cached physical and separately timer-enabled BAT designs fit Cyclone V with archived evidence; the cached physical top (53.67 MHz), the timer/BAT top (51.67 MHz) and the translated MVP top with cache control (52.31 MHz) all meet 50 MHz setup and hold at every corner behind reset synchronizers | Translated and timer/BAT margins are thin; no board I/O timing contract or release signoff. New RTL changes require fresh fit before timing claims. |
 
 Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](references/ISA_MATRIX.md),
 [alignment](ALIGNMENT_VERIFICATION.md), [live context](LIVE_CONTEXT_VERIFICATION.md),
@@ -173,6 +173,7 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Translated-cache round 3, coherence/drain, 2026-09-23 | 80.35% → 80.81% | Instruction cache 80% → 85%; integration 82% → 85%. |
 | Bounded cached-interrupt round, 2026-09-23 | 80.81% (unchanged) | Verification only. |
 | Bounded cached-timer round, 2026-09-23 | 80.81% (unchanged) | Verification only. |
+| Cache maintenance and held-refill round, 2026-09-27 | 81.51% → 82.66% | Cache 95%, load/store 78%, supervisor 77%, 60x 80%, integration 87%. |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.
@@ -674,3 +675,30 @@ Fresh: `make -C sim regression` (pass), `make -C toolchain rtl-all` (pass),
 **MVP 81.51% (about 82%), up from 80.81%:** FPGA fit/timing 35% → 45%.
 Effort ranges are unchanged. See
 [integrated fit](INTEGRATED_SYNTHESIS_BASELINE.md).
+
+## Cache maintenance and held-refill round — accepted, 2026-09-27
+
+Gate 2: the cache control instructions ([contract](CACHE_CONTROL.md)) behind
+`ENABLE_CACHE_INSTRUCTIONS`. CPU `icbi` drains an accepted fetch, its retried
+or held line fill and response before clearing all four ways of the indexed
+set, and cannot be withdrawn by a cut; `dcbf`/`dcbst`/`dcbi`/`dcbz` translate
+as loads or stores and complete without a transfer, so DSI and TLB misses
+follow the access class; a translated `dcbz` takes the caching-inhibited
+alignment exception; `dcbt`/`dcbtst` are no-ops; user `dcbi` is privileged.
+External maintenance keeps its own handshake and shares the drain.
+
+Fresh on the final commit: `make -C sim regression` (REGRESSION_SUMMARY),
+`make -C toolchain rtl-all` (FIRMWARE_SUMMARY) and `./quartus/translated/build.sh
+--docker` (setup +0.900 / +0.882 ns, hold +0.119 ns worst, 52.31 MHz). New
+benches: managed-cache `icbi`, actual-core cache control and probe TLB misses,
+the translated cache-operation bench, a four-seed cached-top stress and the
+compiled cache-operation firmware. A pre-drain invalidate and a no-op `icbi`
+are both rejected ([verification](CACHE_CONTROL_VERIFICATION.md)). The first
+fit missed setup by 0.724 ns; tying off the special-lane cancel without the
+test redirect fixed it ([fit](TRANSLATED_SYNTHESIS_BASELINE.md)).
+
+**MVP 81.51% → 82.66% (about 83%):** instruction cache 85% → 95%, load/store
+75% → 78%, supervisor/synchronous exceptions 75% → 77%, 60x transport 78% →
+80%, integration 85% → 87%. Full-603e audit 46.29% → 46.79%. Remaining for
+this area: page-table context changes under randomized retries (gate 1 MMU
+stress), no data cache or HID0.

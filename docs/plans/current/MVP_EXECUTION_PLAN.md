@@ -752,3 +752,14 @@ provisional 50 MHz constraint (slow setup +1.316 / +1.653 ns). Fresh: full
 regression, compiled firmware and integrated fit. MVP 80.81% → 81.51%
 (FPGA fit/timing 35% → 45%). Timer/BAT fit and AUD-21 remain open.
 
+## Cache maintenance and held-refill round — accepted (2026-09-27)
+
+Gate 2. Cache control instructions behind `ENABLE_CACHE_INSTRUCTIONS`: one-set
+CPU `icbi` that drains retried/held fills first, translated probe forms with
+DSI/TLB-miss, `dcbz` alignment, no-op touches; external maintenance stays a
+separate handshake. New directed, seeded stress and compiled-firmware gates;
+both mutation controls rejected. Fresh: full regression, `rtl-all`, translated
+fit (52.31 MHz after tying off the special-lane cancel without the test
+redirect). MVP 81.51% → 82.66%; full audit 46.29% → 46.79%. See
+[verification](../../CACHE_CONTROL_VERIFICATION.md).
+
