@@ -71,22 +71,29 @@ module ppc_bat_service #(
   logic [1:0][3:0][31:0] upper_q, lower_q;
   logic [3:0][31:0] candidate_upper, candidate_lower;
   logic translation_request, csr_request, valid_spr, bank, translation_bank;
-  logic csr_write_candidate, encoding_bad, write_commit, request_fire;
-  logic [1:0] entry_index;
+  logic csr_write_candidate, encoding_bad, write_ok, request_fire;
+  logic [1:0] entry_index, write_entry;
+  logic write_bank;
   logic [11:0] length_plus_one, extended_length;
   translation_t translation, candidate;
-  response_t response_q, response_d;
+  response_t response_q, response_d, write_response;
   logic response_valid_q;
   logic prepared_q, ack_q, prepare_request;
   logic [3:0] prepared_spr_q;
   logic [31:0] prepared_data_q;
+  // A validated CSR write takes three edges: capture, validate into the
+  // response and a store flag, then store. Nothing else is accepted meanwhile.
+  logic write_q, write_prepare_q, write_abort_q, write_store_q;
+  logic [31:0] write_ea_q, write_data_q;
+  logic [3:0] write_spr_q;
 
   assign prepare_request = ENABLE_RUNTIME_BAT && req_kind_i == BAT_PREPARE_WRITE;
   assign commit_ack_valid_o = rst_ni && ENABLE_RUNTIME_BAT && ack_q;
-  assign transaction_idle_o = rst_ni && !response_valid_q && !prepared_q && !ack_q;
+  assign transaction_idle_o = rst_ni && !response_valid_q && !prepared_q &&
+                              !ack_q && !write_q && !write_store_q;
 
-  assign req_ready_o = rst_ni && !prepared_q && !ack_q &&
-                       (!response_valid_q || rsp_ready_i);
+  assign req_ready_o = rst_ni && !prepared_q && !ack_q && !write_q &&
+                       !write_store_q && (!response_valid_q || rsp_ready_i);
   assign request_fire = req_valid_i && req_ready_o;
   assign rsp_valid_o = rst_ni && response_valid_q;
   assign rsp_kind_o = response_q.kind;
@@ -112,20 +119,26 @@ module ppc_bat_service #(
     bank = req_spr_i[3];
     entry_index = req_spr_i[2:1];
     translation_bank = req_kind_i != BAT_TRANSLATE_I;
-    candidate_upper = upper_q[bank];
-    candidate_lower = lower_q[bank];
     csr_write_candidate = (req_kind_i == BAT_SPR_WRITE || prepare_request) &&
                           valid_spr && !req_pr_i;
-    extended_length = {1'b0, req_data_i[12:2]};
+  end
+
+  always_comb begin
+    write_bank = write_spr_q[3];
+    write_entry = write_spr_q[2:1];
+    candidate_upper = upper_q[write_bank];
+    candidate_lower = lower_q[write_bank];
+    extended_length = {1'b0, write_data_q[12:2]};
     length_plus_one = extended_length + 12'd1;
     // Reserved writes are rejected locally, not silently masked. All table BL
     // masks have contiguous low ones, including zero and all eleven ones.
-    encoding_bad = req_spr_i[0] ?
-      ((req_data_i & 32'h0001ff84) != 0 || (!bank && req_data_i[6])) :
-      ((req_data_i & 32'h0001e000) != 0 ||
+    encoding_bad = write_spr_q[0] ?
+      ((write_data_q & 32'h0001ff84) != 0 ||
+       (!write_bank && write_data_q[6])) :
+      ((write_data_q & 32'h0001e000) != 0 ||
        (extended_length & length_plus_one) != 0);
-    if (req_spr_i[0]) candidate_lower[entry_index] = req_data_i;
-    else candidate_upper[entry_index] = req_data_i;
+    if (write_spr_q[0]) candidate_lower[write_entry] = write_data_q;
+    else candidate_upper[write_entry] = write_data_q;
   end
 
   // Only validated banks commit, so translation skips the bank checks.
@@ -150,7 +163,7 @@ module ppc_bat_service #(
   // A CSR write substitutes its data into the addressed bank and validates the
   // whole candidate bank. Real mode keeps the match logic constant.
   ppc_bat_translate #(.VALIDATE_BANK(1'b1)) bank_check (
-    .valid_i(req_valid_i && csr_write_candidate), .instruction_i(!bank),
+    .valid_i(write_q), .instruction_i(!write_bank),
     .write_i(1'b0), .ea_i(32'b0),
     .msr_ir_i(1'b0), .msr_dr_i(1'b0), .msr_pr_i(1'b0),
     .batu_i(candidate_upper), .batl_i(candidate_lower),
@@ -174,7 +187,6 @@ module ppc_bat_service #(
     response_d.kind = req_kind_i;
     response_d.ea = req_ea_i;
     response_d.spr = req_spr_i;
-    write_commit = 1'b0;
     if (translation_request) begin
       response_d.translation = translation;
     end else if (csr_request && valid_spr) begin
@@ -182,17 +194,25 @@ module ppc_bat_service #(
         response_d.privileged = 1'b1;
       end else if (req_kind_i == BAT_SPR_READ) begin
         response_d.data = req_spr_i[0] ? lower_q[bank][entry_index] : upper_q[bank][entry_index];
-      end else if (encoding_bad || candidate.status[2]) begin
-        response_d.write_rejected = 1'b1;
-        response_d.translation.status[2] = 1'b1;
-        response_d.translation.status[0] = candidate.status[0];
-        response_d.translation.bad = candidate.bad;
-        if (encoding_bad) response_d.translation.bad[entry_index] = 1'b1;
-      end else begin
-        write_commit = 1'b1;
       end
     end else begin
       response_d.unsupported = 1'b1;
+    end
+  end
+
+  always_comb begin
+    write_response = '0;
+    write_response.kind = write_prepare_q ? BAT_PREPARE_WRITE : BAT_SPR_WRITE;
+    write_response.ea = write_ea_q;
+    // SPRs 528..543 share the upper six bits.
+    write_response.spr = {6'b100001, write_spr_q};
+    write_ok = !encoding_bad && !candidate.status[2];
+    if (!write_ok) begin
+      write_response.write_rejected = 1'b1;
+      write_response.translation.status[2] = 1'b1;
+      write_response.translation.status[0] = candidate.status[0];
+      write_response.translation.bad = candidate.bad;
+      if (encoding_bad) write_response.translation.bad[write_entry] = 1'b1;
     end
   end
 
@@ -206,22 +226,43 @@ module ppc_bat_service #(
       prepared_spr_q <= '0;
       prepared_data_q <= '0;
       ack_q <= 1'b0;
+      write_q <= 1'b0;
+      write_prepare_q <= 1'b0;
+      write_abort_q <= 1'b0;
+      write_store_q <= 1'b0;
+      write_ea_q <= '0;
+      write_spr_q <= '0;
+      write_data_q <= '0;
     end else begin
       if (response_valid_q && rsp_ready_i) response_valid_q <= 1'b0;
       if (ack_q && commit_ack_ready_i) ack_q <= 1'b0;
-      if (request_fire) begin
+      if (request_fire && csr_write_candidate) begin
+        write_q <= 1'b1;
+        write_prepare_q <= prepare_request;
+        write_abort_q <= prepare_abort_i;
+        write_ea_q <= req_ea_i;
+        write_spr_q <= req_spr_i[3:0];
+        write_data_q <= req_data_i;
+      end else if (request_fire) begin
         response_valid_q <= 1'b1;
         response_q <= response_d;
-        if (write_commit) begin
-          if (prepare_request) begin
-            prepared_q <= 1'b1;
-            prepared_spr_q <= req_spr_i[3:0];
-            prepared_data_q <= req_data_i;
-          end else begin
-            if (req_spr_i[0]) lower_q[bank][entry_index] <= req_data_i;
-            else upper_q[bank][entry_index] <= req_data_i;
-          end
+      end
+      // Acceptance drained the response slot, so it is free here.
+      if (write_q) begin
+        write_q <= 1'b0;
+        response_valid_q <= 1'b1;
+        response_q <= write_response;
+        if (write_ok && !write_prepare_q) write_store_q <= 1'b1;
+        if (write_ok && write_prepare_q && !write_abort_q) begin
+          prepared_q <= 1'b1;
+          prepared_spr_q <= write_spr_q;
+          prepared_data_q <= write_data_q;
         end
+      end
+      if (write_store_q) begin
+        write_store_q <= 1'b0;
+        if (write_spr_q[0]) lower_q[write_bank][write_entry] <= write_data_q;
+        else upper_q[write_bank][write_entry] <= write_data_q;
       end
       if (ENABLE_RUNTIME_BAT && prepare_commit_i && prepared_q && !prepare_abort_i) begin
         if (prepared_spr_q[0])
@@ -249,7 +290,7 @@ module ppc_bat_service #(
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     commit_ack_valid_o && !commit_ack_ready_i |=> commit_ack_valid_o);
   assert property (@(posedge clk_i) disable iff (!rst_ni)
-    !(request_fire && write_commit && !prepare_request) &&
+    !write_store_q &&
     !(ENABLE_RUNTIME_BAT && prepare_commit_i && prepared_q && !prepare_abort_i)
     |=> $stable({upper_q, lower_q}));
   property held_response;

@@ -318,6 +318,7 @@ module tb_core_bat;
       @(posedge clk_i);
       @(negedge clk_i);
       bat_write_valid_i = 1'b0;
+      for (int w = 0; w < 2 && !bat_write_rsp_valid_o; w++) @(negedge clk_i);
       check(bat_write_rsp_valid_o && !bat_write_rsp_rejected_o &&
             !bat_write_rsp_unsupported_o && !bat_write_rsp_config_error_o &&
             !bat_write_rsp_overlap_o && bat_write_rsp_invalid_entry_o == 0,

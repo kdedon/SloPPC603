@@ -192,6 +192,7 @@ module tb_core_page_translation;
     bat_write_data_i=32'h4000_0002;bat_write_valid_i=1;
     #1;check(bat_write_ready_o,"IBATL setup not ready");
     @(posedge clk_i);@(negedge clk_i);bat_write_valid_i=0;
+    for(int w=0;w<2&&!bat_write_rsp_valid_o;w++)@(negedge clk_i);
     check(bat_write_rsp_valid_o && !bat_write_rsp_rejected_o,
       "IBATL setup rejected");
     bat_write_rsp_ready_i=1;
@@ -200,6 +201,7 @@ module tb_core_page_translation;
     bat_write_valid_i=1;
     #1;check(bat_write_ready_o,"IBATU setup not ready");
     @(posedge clk_i);@(negedge clk_i);bat_write_valid_i=0;
+    for(int w=0;w<2&&!bat_write_rsp_valid_o;w++)@(negedge clk_i);
     check(bat_write_rsp_valid_o && !bat_write_rsp_rejected_o,
       "IBATU setup rejected");
     bat_write_rsp_ready_i=1;

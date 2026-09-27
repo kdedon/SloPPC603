@@ -165,6 +165,7 @@ module tb_bat_runtime_router;
     check(!bat_csr_idle_o && quiescent_o && !context_ready_o,
           "CSR ownership did not separate idle, memory drain and context");
     @(negedge clk_i); bat_csr_req_valid_i = 1'b0;
+    for (int w = 0; w < 2 && !bat_csr_rsp_valid_o; w++) @(negedge clk_i);
   endtask
 
   task automatic consume_csr;

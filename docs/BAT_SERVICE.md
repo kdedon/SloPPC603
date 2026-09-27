@@ -73,8 +73,16 @@ bit-field encoding in an `mfspr`/`mtspr` instruction. CSR requests outside
 PR=1 returns privileged and cannot read or write bank contents. This interface
 does not decide instruction-decode exception priority for arbitrary SPR opcodes.
 
-Acceptance is `req_valid_i && req_ready_o`. A successful write commits once on
-that edge; result consumption never reapplies it. The caller therefore supplies
+Acceptance is `req_valid_i && req_ready_o`. Translations, reads and rejected
+privilege/unsupported requests register their response on that edge. A
+supervisor in-range write (kind 4, or prepare kind 5) is instead captured on
+that edge, validated on the next edge, which registers its response and a
+store flag, and a successful kind-4 write stores its half on the edge after
+that. The service accepts no request from acceptance through the store edge,
+so the next request always observes the stored bank. This adds one cycle to
+the write response and two to the write's service occupancy; the extra stages
+keep bank validation off the request mux and the storage enable.
+A successful write commits once; result consumption never reapplies it. The caller therefore supplies
 already-committed writes, not speculative instructions. No external cancellation
 input is provided. The response captures request kind, EA and SPR context even
 when a particular field has no semantic use for that operation.

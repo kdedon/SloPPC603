@@ -214,6 +214,9 @@ module ppc_bat_memory_router #(
 
   route_state_t state_q;
   logic running_q, context_ir_q, context_dr_q, context_pr_q;
+  // Private !running_q copy for the BAT request select, kept off the core's
+  // high-fanout running net.
+  (* dont_merge *) logic bat_setup_q;
   logic request_ir_q, request_dr_q, request_pr_q;
   fetch_fault_t fetch_fault_q;
   data_fault_t data_fault_q;
@@ -556,7 +559,7 @@ module ppc_bat_memory_router #(
     (clean_page_true_miss || clean_page_instruction_pp ||
      clean_page_instruction_guarded || clean_page_instruction_no_execute) :
     (clean_page_data_pp || clean_page_true_miss || clean_page_changed);
-  assign service_pr = running_q &&
+  assign service_pr = !bat_setup_q &&
     ((csr_offer && bat_csr_req_valid_i) ? context_pr_q : request_pr_q);
 
   assign imem_req_valid = imem_req_valid_i;
@@ -627,7 +630,7 @@ module ppc_bat_memory_router #(
     bat_req_ea = 32'b0;
     bat_req_spr = bat_write_spr_i;
     bat_req_data = bat_write_data_i;
-    if (!running_q) begin
+    if (bat_setup_q) begin
       bat_req_valid = bat_write_valid_i && !tlb_mgmt_owner_q;
     end else if (state_q == ROUTE_TRANSLATE_OFFER) begin
       bat_req_valid = 1'b1;
@@ -643,13 +646,13 @@ module ppc_bat_memory_router #(
       bat_req_data = bat_csr_req_data_i;
     end
 
-    bat_write_ready_o = rst_ni && !running_q && !tlb_mgmt_owner_q &&
+    bat_write_ready_o = rst_ni && bat_setup_q && !tlb_mgmt_owner_q &&
                         bat_req_ready;
-    bat_write_rsp_valid_o = rst_ni && !running_q && bat_rsp_valid;
-    bat_rsp_ready = !running_q ? bat_write_rsp_ready_i :
+    bat_write_rsp_valid_o = rst_ni && bat_setup_q && bat_rsp_valid;
+    bat_rsp_ready = bat_setup_q ? bat_write_rsp_ready_i :
                     (csr_owner_q ? bat_csr_rsp_ready_i :
                      (state_q == ROUTE_TRANSLATE_RESPONSE));
-    start_ready_o = rst_ni && !running_q && !bat_write_valid_i &&
+    start_ready_o = rst_ni && bat_setup_q && !bat_write_valid_i &&
                     !bat_rsp_valid && bat_req_ready && !tlb_mgmt_owner_q &&
                     !(ENABLE_PAGE_TRANSLATION && tlb_mgmt_req_valid_i);
   end
@@ -838,6 +841,7 @@ module ppc_bat_memory_router #(
       tlb_fill_bank_q <= 1'b0;
       tlb_mgmt_owner_q <= 1'b0;
       running_q <= 1'b0;
+      bat_setup_q <= 1'b1;
       context_ir_q <= 1'b0;
       context_dr_q <= 1'b0;
       context_pr_q <= 1'b0;
@@ -899,6 +903,7 @@ module ppc_bat_memory_router #(
         tlb_mgmt_owner_q <= 1'b1;
       if (start_valid_i && start_ready_o) begin
         running_q <= 1'b1;
+        bat_setup_q <= 1'b0;
         context_ir_q <= start_ir_i;
         context_dr_q <= start_dr_i;
         context_pr_q <= start_pr_i;

@@ -282,6 +282,9 @@ module tb_page_memory_router;
     bat_write_data_i = value;
     #1; check(bat_write_ready_o, "startup BAT write not ready");
     @(posedge clk_i); #1;
+    for (int w = 0; w < 2 && !bat_write_rsp_valid_o; w++) begin
+      @(posedge clk_i); #1;
+    end
     check(bat_write_rsp_valid_o && !bat_write_rsp_rejected_o &&
           !bat_write_rsp_config_error_o, "startup BAT write rejected");
     @(negedge clk_i);

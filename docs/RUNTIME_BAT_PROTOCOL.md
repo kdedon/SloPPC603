@@ -50,9 +50,10 @@ by one additional clock. The caller must use idle, not assume a fixed latency.
 ## Service extension
 
 `ppc_bat_service` adds `ENABLE_RUNTIME_BAT=0` and request kind 5
-`PREPARE_WRITE`. Kind 5 remains unsupported when disabled. Existing kinds 0–4,
-including request-edge startup writes and response turnover, retain their
-behavior. New pins are `prepare_commit_i`, `prepare_abort_i`,
+`PREPARE_WRITE`. Kind 5 remains unsupported when disabled. Existing kinds 0–4
+and response turnover retain their behavior, except that writes respond one
+cycle later (see [BAT_SERVICE.md](BAT_SERVICE.md)). A prepare validates on the
+edge after acceptance; abort on either edge drops the proposal. New pins are `prepare_commit_i`, `prepare_abort_i`,
 `commit_ack_valid_o`, `commit_ack_ready_i` and `transaction_idle_o`.
 Idle is low during reset and otherwise requires no response, reservation or ack.
 Legacy instances tie commit/abort/ack-ready low and leave new outputs explicitly

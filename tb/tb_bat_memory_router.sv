@@ -204,6 +204,10 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
       @(posedge clk_i);
       @(negedge clk_i);
       bat_write_valid_i = 1'b0;
+      for (int w = 0; w < 2 && !bat_write_rsp_valid_o; w++) begin
+        check(!start_ready_o, "validating setup write excludes start");
+        @(negedge clk_i);
+      end
       check(bat_write_rsp_valid_o &&
             bat_write_rsp_rejected_o == reject &&
             bat_write_rsp_unsupported_o == unsupported,

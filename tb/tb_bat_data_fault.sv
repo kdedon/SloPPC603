@@ -160,6 +160,7 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
     @(negedge clk_i);bat_write_spr_i=spr;bat_write_data_i=data;bat_write_valid_i=1;
     #1;check(bat_write_ready_o,"setup write admission");
     @(posedge clk_i);@(negedge clk_i);bat_write_valid_i=0;
+    for(int w=0;w<2&&!bat_write_rsp_valid_o;w++)@(negedge clk_i);
     check(bat_write_rsp_valid_o && !bat_write_rsp_rejected_o &&
           !bat_write_rsp_unsupported_o && !bat_write_rsp_config_error_o,
           "setup write success");
@@ -170,6 +171,7 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
     @(negedge clk_i);bat_write_spr_i=spr;bat_write_data_i=data;bat_write_valid_i=1;
     #1;check(bat_write_ready_o,"malformed setup admission");
     @(posedge clk_i);@(negedge clk_i);bat_write_valid_i=0;
+    for(int w=0;w<2&&!bat_write_rsp_valid_o;w++)@(negedge clk_i);
     check(bat_write_rsp_valid_o && bat_write_rsp_rejected_o &&
           bat_write_rsp_config_error_o && !dmem_rsp_valid_o &&
           dmem_rsp_fault_o==0,"malformed BAT became a data exception");
