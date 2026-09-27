@@ -1,6 +1,7 @@
 # Actual-core page-hit integration verification
 
 Recorded: `make -C sim lint-page-path test-core-page-translation test-page-memory-router`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+Recorded: `make -C sim test-core-page-translation test-page-memory-router`, `make -C sim regression`, commit f3cc2f4, 2026-09-27. Pass: 1,073 core and 609 router checks with the registered-read TLB (AUD-17) and delayed BAT write responses (AUD-74).
 
 `tb/tb_core_page_translation.sv` drives `ppc_core_bat` with the opt-in live supervisor, segment-register and page-translation parameters enabled. The bench uses external startup BAT setup and normalized TLB management requests. Its physical instruction and data responders are independent of the router's internal TLB state.
 

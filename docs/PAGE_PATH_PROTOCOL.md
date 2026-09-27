@@ -29,7 +29,10 @@ bank used by CPU `mfsr`/`mtsr` requests. It checks the returned index and EA,
 then captures the descriptor once. It submits a lookup to `ppc_tlb_service`
 with that captured descriptor's T, N, Ks, Kp and 24-bit VSID, plus the accepted
 EA, bank, write intent and PR. Later changes to a live SR or MSR cannot change
-that lookup. The snapshot and TLB response both remain owned by the accepted
+that lookup. The TLB reads its entry RAM on the accepting edge and responds
+one edge later, so a page-translated access spends one more cycle in
+`ROUTE_PAGE_RESPONSE` than with the earlier flop array. The snapshot and TLB
+response both remain owned by the accepted
 memory transaction; offered CSR and context updates wait until it completes.
 Only an unambiguous TLB `allow` result sends PA and WIMG to the physical bus.
 There is no identity fallback on a page miss or denial. The TLB stores RPN,

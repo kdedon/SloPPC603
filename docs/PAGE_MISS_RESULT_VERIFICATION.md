@@ -1,6 +1,7 @@
 # Response-bound page miss verification
 
 Recorded: `make -C sim lint-page-miss-results test-page-miss-result-router test-core-page-miss-result`, `make -C sim regression`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+Recorded: `make -C sim test-page-miss-result-router test-core-page-miss-result`, `make -C sim regression`, commit f3cc2f4, 2026-09-27. Pass: router 246 enabled / 218 disabled checks. A way-0 refill with another VSID makes the following data and instruction true misses carry LRU way 1 in the capsule (AUD-42).
 
 The canonical focused gate is `make -C sim lint-page-miss-results test-page-miss-result-router test-core-page-miss-result`; it passed on 2026-09-23. The independent router bench reports **152 enabled** and **136 disabled** checks. The direct-core bench runs ten phases in each parameter profile, **586 checks per profile**.
 

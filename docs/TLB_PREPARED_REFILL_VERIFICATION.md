@@ -1,6 +1,7 @@
 # Prepared TLB refill verification
 
 Recorded: `make -C sim test-tlb-prepared-refill`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+Recorded: `make -C sim test-tlb-prepared-refill`, `make -C sim regression`, commit f3cc2f4, 2026-09-27. Pass: 189 / 331 / 191 / 345 checks for the four profiles. Responses arrive one edge later (AUD-17); the bench checks the classification cycle, abort sampled only on the accepting edge, and abort on the classification edge.
 
 `make -C sim test-tlb-prepared-refill` builds `tb_tlb_prepared_refill.sv` with strict `-Wall --assert` in every `ENABLE_RUNTIME_INVALIDATE` / `ENABLE_RUNTIME_REFILL` combination. All four profiles pass:
 

@@ -1,5 +1,40 @@
 # Timer and live BAT FPGA measurement
 
+## 2026-09-27 MMU refit
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, commit `f3cc2f4`, 2026-09-27.
+Quartus 17.0.2, `5CSEBA6U23I7`, seed 1. It **fits, meets hold and fails
+setup**.
+
+| Result | 2026-09-26 refit | This refit |
+| --- | ---: | ---: |
+| ALMs | 6,860 | 6,840 |
+| Registers | 5,264 | 5,334 |
+| Block-memory bits / M10K | 402 / 2 | 402 / 2 |
+| Setup slack, slow 100 C / -40 C (ns) | -5.952 / -5.353 | -4.432 / -4.653 |
+| Hold slack, slow 100 C / -40 C (ns) | -3.867 / -3.851 | +0.291 / +0.013 |
+| Setup slack, fast 100 C / -40 C (ns) | — | +6.956 / +9.055 |
+
+AUD-74 moved BAT write validation behind a captured request and registered
+its result, and gave the router's BAT request select a private copy of
+`!running_q`. The former worst path (`router|running_q` through the BAT
+request mux and validation into `bat|upper_q`) is gone, and so is the
+virtual-input hold failure into `bat|upper_q`. Every path ending in a router
+or BAT-service register now has positive setup slack (worst +0.923 ns at
+slow 100 C, into `router|request_wdata_q` from `completion|head_q`).
+
+Worst setup is again the core cone, `core|completion|done_q[3]` to
+`core|special|ea_q[30]` (AUD-01). The worst path leaving the MMU is
+`router|running_q` into the same `special|ea_q` endpoint (-2.349 ns), a core
+consumer of `running_o`.
+
+This profile leaves page translation disabled, so synthesis prunes the TLB.
+The AUD-17 entry RAMs were checked separately with map-only synthesis of
+`ppc_tlb_service` (both runtime features enabled): two 64 x 62
+simple-dual-port M10K blocks, 7,936 bits, 386 registers and 722 ALUTs,
+against 8,226 registers, 3,510 ALUTs and no RAM for the previous flop array.
+The paths were named with `quartus_sta` `report_timing` in the pinned image.
+
 ## 2026-09-26 refit
 
 Recorded: `./quartus/timer-bat/build.sh --docker`, commit `95422a6` plus the
