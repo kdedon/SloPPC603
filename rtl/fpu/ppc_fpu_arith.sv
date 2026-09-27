@@ -213,8 +213,9 @@ module ppc_fpu_arith #(
         ppc_fpu_arith_rsp_t special_rsp;
         conv_parts_t conversion_parts;
         finite_sum_t sum;
-        logic [7:0] leading_zero;
-        logic signed [15:0] exponent_from_min;
+        logic [7:0] normal_left_shift;
+        logic signed [15:0] normal_exponent;
+        logic tiny_before;
         logic [15:0] denorm_shift;
         logic denorm_right;
     } round_input_t;
@@ -1414,38 +1415,23 @@ module ppc_fpu_arith #(
 
     function automatic round_work_t direct_round_work(
         input finite_sum_t value,
-        input logic [7:0] leading_zero,
         input logic single_result,
         input logic ue,
-        input logic signed [15:0] exponent_from_min,
+        input logic [7:0] normal_left_shift,
+        input logic signed [15:0] normal_exponent,
+        input logic tiny_before,
         input logic [15:0] denorm_shift,
         input logic denorm_right
     );
         round_work_t out;
         logic signed [15:0] min_exp;
-        logic signed [15:0] scale;
-        logic signed [15:0] normalized_exp;
-        logic [7:0] left_distance;
         out = '0;
         out.sign = value.sign;
         out.negate_final = value.negate_final;
         out.exponent = value.exponent;
         min_exp = single_result ? -16'sd126 : -16'sd1022;
-        scale = single_result ? 16'sd192 : 16'sd1536;
-        normalized_exp = value.exponent;
-        left_distance = 8'd0;
         if (value.magnitude == 160'd0) return out;
-        if (value.magnitude[159])
-            normalized_exp = value.exponent + 16'sd1;
-        else begin
-            left_distance = leading_zero - 8'd1;
-            normalized_exp = value.exponent -
-                $signed({8'd0, left_distance});
-        end
-        out.tiny_before = value.magnitude[159] ?
-            (exponent_from_min < -16'sd1) :
-            (exponent_from_min <
-                $signed({8'd0, left_distance}));
+        out.tiny_before = tiny_before;
         if (out.tiny_before && !ue) begin
             if (denorm_right)
                 out.magnitude = shift_right_jam(value.magnitude,
@@ -1456,17 +1442,17 @@ module ppc_fpu_arith #(
         end else begin
             out.magnitude = value.magnitude[159] ?
                 shift_right_jam(value.magnitude, 1) :
-                (value.magnitude << left_distance);
-            out.exponent = normalized_exp;
-            if (out.tiny_before) out.exponent += scale;
+                (value.magnitude << normal_left_shift);
+            out.exponent = normal_exponent;
         end
         return out;
     endfunction
 
     function automatic ppc_fpu_arith_rsp_t round_finite(
         input finite_sum_t value,
-        input logic [7:0] leading_zero,
-        input logic signed [15:0] exponent_from_min,
+        input logic [7:0] normal_left_shift,
+        input logic signed [15:0] normal_exponent,
+        input logic tiny_before,
         input logic [15:0] denorm_shift,
         input logic denorm_right,
         input ppc_pkg::completion_tag_t tag,
@@ -1482,11 +1468,12 @@ module ppc_fpu_arith #(
         round_pre_t pre;
         round_post_t post;
         logic single_result;
-        single_result = single || op == FP_FRSP || op == FP_FRES;
+        single_result = CPU_602 || single || op == FP_FRSP ||
+            op == FP_FRES;
         normalized = value;
-        work = direct_round_work(normalized, leading_zero,
-            single_result, ue, exponent_from_min, denorm_shift,
-            denorm_right);
+        work = direct_round_work(normalized, single_result, ue,
+            normal_left_shift, normal_exponent, tiny_before,
+            denorm_shift, denorm_right);
         pre = prepare_round_mantissa(work, single_result, rn);
         post = round_mantissa(pre, single_result, oe, ue);
         return finish_rounded(post, tag, op, single_result,
@@ -1499,6 +1486,11 @@ module ppc_fpu_arith #(
     round_input_t add_next;
     add_result_t add_result;
     logic signed [15:0] add_exponent_from_min;
+    logic signed [15:0] add_min_exponent;
+    logic signed [15:0] add_scale;
+    logic signed [15:0] add_normal_exponent;
+    logic [7:0] add_normal_left_shift;
+    logic add_tiny_before;
     ppc_fpu_arith_rsp_t round_response;
     finite_operands_t work_operands;
     finite_prep_t multiply_prep;
@@ -1613,6 +1605,11 @@ module ppc_fpu_arith #(
 
     always_comb begin
         add_exponent_from_min = '0;
+        add_min_exponent = '0;
+        add_scale = '0;
+        add_normal_exponent = '0;
+        add_normal_left_shift = '0;
+        add_tiny_before = 1'b0;
         add_result = '0;
         if (aligned_q.finite)
             add_result = add_aligned(aligned_q.plan,
@@ -1627,12 +1624,33 @@ module ppc_fpu_arith #(
                 prepare_conversion(aligned_q.conversion_operand);
         if (aligned_q.finite) begin
             add_next.sum = add_result.finite_value;
-            add_next.leading_zero = add_result.leading_zero;
-            add_exponent_from_min = aligned_q.plan.exponent -
-                ((aligned_q.req.single_result ||
-                    aligned_q.req.op == FP_FRSP) ?
-                    -16'sd126 : -16'sd1022);
-            add_next.exponent_from_min = add_exponent_from_min;
+            add_min_exponent = (CPU_602 || aligned_q.req.single_result ||
+                aligned_q.req.op == FP_FRSP) ?
+                -16'sd126 : -16'sd1022;
+            add_scale = (CPU_602 || aligned_q.req.single_result ||
+                aligned_q.req.op == FP_FRSP) ?
+                16'sd192 : 16'sd1536;
+            add_exponent_from_min =
+                aligned_q.plan.exponent - add_min_exponent;
+            add_normal_left_shift =
+                add_result.finite_value.magnitude[159] ? 8'd0 :
+                (add_result.leading_zero - 8'd1);
+            add_normal_exponent =
+                add_result.finite_value.magnitude[159] ?
+                (aligned_q.plan.exponent + 16'sd1) :
+                (aligned_q.plan.exponent -
+                    $signed({8'd0, add_normal_left_shift}));
+            add_tiny_before =
+                add_result.finite_value.magnitude != 160'd0 &&
+                (add_result.finite_value.magnitude[159] ?
+                    (add_exponent_from_min < -16'sd1) :
+                    (add_exponent_from_min <
+                        $signed({8'd0, add_normal_left_shift})));
+            if (add_tiny_before && aligned_q.req.ue)
+                add_normal_exponent += add_scale;
+            add_next.normal_left_shift = add_normal_left_shift;
+            add_next.normal_exponent = add_normal_exponent;
+            add_next.tiny_before = add_tiny_before;
             add_next.denorm_right = add_exponent_from_min[15];
             add_next.denorm_shift = add_exponent_from_min[15] ?
                 -add_exponent_from_min : add_exponent_from_min;
@@ -1643,7 +1661,8 @@ module ppc_fpu_arith #(
         round_response = '0;
         if (add_q.finite)
             round_response = round_finite(add_q.sum,
-                add_q.leading_zero, add_q.exponent_from_min,
+                add_q.normal_left_shift, add_q.normal_exponent,
+                add_q.tiny_before,
                 add_q.denorm_shift, add_q.denorm_right, add_q.req.tag,
                 add_q.req.op, add_q.req.single_result, add_q.req.rn,
                 add_q.req.ni, add_q.req.oe, add_q.req.ue);
