@@ -65,7 +65,11 @@ module ppc_icache (
   typedef logic [WAY_COUNT-1:0][WAY_BITS-1:0] lru_ranks_t;
   localparam lru_ranks_t LRU_SEED = {2'd3, 2'd2, 2'd1, 2'd0};
 
-  logic [WAY_COUNT-1:0][SET_COUNT-1:0] valid_q;
+  // A way is valid when its set's flop and its bit in the way-valid RAM are
+  // both set. Flash invalidate and reset clear only the 128 set flops; the
+  // first install into a cleared set rewrites all four way bits.
+  logic [SET_COUNT-1:0] set_valid_q;
+  logic [WAY_COUNT-1:0] way_valid_rdata, way_valid_wdata, victim_onehot;
   logic [WAY_COUNT-1:0][TAG_BITS-1:0] tag_rdata;
   logic [WAY_COUNT-1:0][HALF_BITS-1:0] data_rdata;
   logic [WAY_COUNT-1:0] tag_we, data_we;
@@ -86,6 +90,9 @@ module ppc_icache (
   logic [TAG_BITS-1:0] miss_tag_q;
   logic [WORD_BITS-1:0] miss_word_q;
   logic [WAY_BITS-1:0] victim_way_q;
+  // The miss set's valid bits cannot change before its install: only the
+  // install and an aborting invalidate write them.
+  logic [WAY_COUNT-1:0] miss_valid_q;
   logic invalidate_done_q, hit_q, miss_q, protocol_error_q;
   logic upd_valid_q, upd_seed_q;
   logic [SET_BITS-1:0] upd_set_q;
@@ -95,7 +102,7 @@ module ppc_icache (
   logic [SET_BITS-1:0] lookup_set;
   logic [TAG_BITS-1:0] lookup_tag;
   logic [WORD_BITS-1:0] lookup_word;
-  logic [WAY_COUNT-1:0] lookup_hit_way, miss_set_valid;
+  logic [WAY_COUNT-1:0] lookup_valid, lookup_hit_way;
   logic lookup_hit;
   logic [WAY_BITS-1:0] lookup_way, victim_way;
   logic [31:0] ram_insn;
@@ -143,27 +150,39 @@ module ppc_icache (
   assign lru_raddr = upd_valid_q ? upd_set_q : miss_set_q;
   assign lru_wdata = lru_touch(upd_seed_q ? LRU_SEED : lru_rdata, upd_way_q);
 
-  for (genvar w = 0; w < WAY_COUNT; w++) begin : g_way
-    assign tag_we[w] = install_ok && state_q == IC_INSTALL &&
-                       victim_way_q == WAY_BITS'(w);
-    assign data_we[w] = install_ok && victim_way_q == WAY_BITS'(w) &&
+  genvar way;
+  generate
+  for (way = 0; way < WAY_COUNT; way = way + 1) begin : g_way
+    assign tag_we[way] = install_ok && state_q == IC_INSTALL &&
+                         victim_way_q == WAY_BITS'(way);
+    assign data_we[way] = install_ok && victim_way_q == WAY_BITS'(way) &&
       (state_q == IC_INSTALL ||
        (state_q == IC_REFILL_WAIT && line_rsp_valid_i && !line_rsp_error_i));
 
     ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(TAG_BITS)) tag_ram (
-      .clk_i, .we_i(tag_we[w]), .waddr_i(miss_set_q), .wdata_i(miss_tag_q),
-      .raddr_i(lookup_set), .rdata_o(tag_rdata[w])
+      .clk_i, .we_i(tag_we[way]), .waddr_i(miss_set_q), .wdata_i(miss_tag_q),
+      .raddr_i(lookup_set), .rdata_o(tag_rdata[way])
     );
     ppc_ram_sdp #(.DEPTH(2*SET_COUNT), .WIDTH(HALF_BITS)) data_ram (
-      .clk_i, .we_i(data_we[w]), .waddr_i(data_waddr), .wdata_i(data_wdata),
+      .clk_i, .we_i(data_we[way]), .waddr_i(data_waddr), .wdata_i(data_wdata),
       .re_i(data_re), .raddr_i({lookup_set, lookup_word[2]}),
-      .rdata_o(data_rdata[w])
+      .rdata_o(data_rdata[way])
     );
 
-    assign lookup_hit_way[w] = valid_q[w][lookup_set] &&
-                               tag_rdata[w] == lookup_tag;
-    assign miss_set_valid[w] = valid_q[w][miss_set_q];
+    assign lookup_valid[way] = set_valid_q[lookup_set] &&
+                               way_valid_rdata[way];
+    assign victim_onehot[way] = victim_way_q == WAY_BITS'(way);
+    assign lookup_hit_way[way] = lookup_valid[way] &&
+                                 tag_rdata[way] == lookup_tag;
   end
+  endgenerate
+
+  assign way_valid_wdata = miss_valid_q | victim_onehot;
+  ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(WAY_COUNT)) way_valid_ram (
+    .clk_i, .we_i(install_ok && state_q == IC_INSTALL), .waddr_i(miss_set_q),
+    .wdata_i(way_valid_wdata), .raddr_i(lookup_set),
+    .rdata_o(way_valid_rdata)
+  );
 
   ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(LRU_BITS)) lru_ram (
     .clk_i, .we_i(upd_valid_q), .waddr_i(upd_set_q), .wdata_i(lru_wdata),
@@ -182,12 +201,12 @@ module ppc_icache (
 
     // Fill the lowest invalid way first, else the strict-LRU way.
     victim_way = '0;
-    if (&miss_set_valid) begin
+    if (&miss_valid_q) begin
       for (int w = WAY_COUNT - 1; w >= 0; w--)
         if (lru_rdata[w] == LRU_RANK) victim_way = WAY_BITS'(w);
     end else begin
       for (int w = WAY_COUNT - 1; w >= 0; w--)
-        if (!miss_set_valid[w]) victim_way = WAY_BITS'(w);
+        if (!miss_valid_q[w]) victim_way = WAY_BITS'(w);
     end
   end
 
@@ -233,12 +252,13 @@ module ppc_icache (
       miss_set_q <= '0;
       miss_tag_q <= '0;
       miss_word_q <= '0;
+      miss_valid_q <= '0;
       victim_way_q <= '0;
       invalidate_done_q <= 1'b0;
       hit_q <= 1'b0;
       miss_q <= 1'b0;
       protocol_error_q <= 1'b0;
-      valid_q <= '0;
+      set_valid_q <= '0;
       upd_valid_q <= 1'b0;
       upd_seed_q <= 1'b0;
       upd_set_q <= '0;
@@ -254,7 +274,7 @@ module ppc_icache (
       if (invalidate_i) begin
         // This is the bounded flash-invalidate command.  A refill already
         // accepted by the line transport is drained but never installed.
-        valid_q <= '0;
+        set_valid_q <= '0;
         rsp_valid_q <= 1'b0;
         invalidate_done_q <= 1'b1;
         if (state_q == IC_REFILL_WAIT && !line_rsp_valid_i)
@@ -299,6 +319,7 @@ module ppc_icache (
                 miss_set_q <= lookup_set;
                 miss_tag_q <= lookup_tag;
                 miss_word_q <= lookup_word;
+                miss_valid_q <= lookup_valid;
                 miss_q <= 1'b1;
                 state_q <= IC_REFILL_REQUEST;
               end
@@ -329,9 +350,9 @@ module ppc_icache (
           end
 
           IC_INSTALL: begin
-            valid_q[victim_way_q][miss_set_q] <= 1'b1;
+            set_valid_q[miss_set_q] <= 1'b1;
             upd_valid_q <= 1'b1;
-            upd_seed_q <= ~|miss_set_valid;
+            upd_seed_q <= ~|miss_valid_q;
             upd_set_q <= miss_set_q;
             upd_way_q <= victim_way_q;
             state_q <= IC_IDLE;
