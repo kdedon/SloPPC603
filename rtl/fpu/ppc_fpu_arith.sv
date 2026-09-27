@@ -1529,6 +1529,8 @@ module ppc_fpu_arith #(
     logic signed [15:0] add_scale;
     logic signed [15:0] add_normal_exponent;
     logic signed [15:0] add_exponent_plus_one;
+    logic signed [15:0] add_scaled_exp_plus_one;
+    logic signed [15:0] add_scaled_normal_exponent;
     logic [15:0] add_denorm_abs;
     logic [7:0] add_normal_left_shift;
     logic add_tiny_before;
@@ -1650,6 +1652,8 @@ module ppc_fpu_arith #(
         add_scale = '0;
         add_normal_exponent = '0;
         add_exponent_plus_one = '0;
+        add_scaled_exp_plus_one = '0;
+        add_scaled_normal_exponent = '0;
         add_denorm_abs = '0;
         add_normal_left_shift = '0;
         add_tiny_before = 1'b0;
@@ -1681,7 +1685,11 @@ module ppc_fpu_arith #(
             // LZ=0 for a carry into bit 159, so one expression handles
             // both right-one and left-normalized exponent cases.
             add_exponent_plus_one = aligned_q.plan.exponent + 16'sd1;
+            add_scaled_exp_plus_one = aligned_q.plan.exponent +
+                add_scale + 16'sd1;
             add_normal_exponent = add_exponent_plus_one -
+                $signed({8'd0, add_result.leading_zero});
+            add_scaled_normal_exponent = add_scaled_exp_plus_one -
                 $signed({8'd0, add_result.leading_zero});
             add_tiny_before =
                 add_result.finite_value.magnitude != 160'd0 &&
@@ -1689,10 +1697,10 @@ module ppc_fpu_arith #(
                     (add_exponent_from_min < -16'sd1) :
                     (add_exponent_from_min <
                         $signed({8'd0, add_normal_left_shift})));
-            if (add_tiny_before && aligned_q.req.ue)
-                add_normal_exponent += add_scale;
             add_next.normal_left_shift = add_normal_left_shift;
-            add_next.normal_exponent = add_normal_exponent;
+            add_next.normal_exponent =
+                (add_tiny_before && aligned_q.req.ue) ?
+                add_scaled_normal_exponent : add_normal_exponent;
             add_next.tiny_before = add_tiny_before;
             add_next.denorm_right = add_exponent_from_min[15];
             add_denorm_abs = add_exponent_from_min[15] ?
