@@ -161,6 +161,7 @@ module ppc_fpu_arith (
     ppc_fpu_arith_req_t req_q;
     logic round_single_q;
     ppc_fpu_arith_rsp_t rsp_q;
+    operand_t calc_b_q;
     operand_t conv_source_q;
     conv_parts_t conv_parts_q;
     finite_operands_t finite_operands_q;
@@ -869,11 +870,10 @@ module ppc_fpu_arith (
 
     function automatic ppc_fpu_arith_rsp_t calculate(input ppc_pkg::completion_tag_t tag, input ppc_fpu_op_t op,
         input logic [63:0] a_bits, input logic [63:0] b_bits,
-        input logic [63:0] c_bits,
+        input logic [63:0] c_bits, input operand_t b,
         input logic ve, input logic ze);
         ppc_fpu_arith_rsp_t out;
         special_t a;
-        operand_t b;
         special_t c;
         logic use_a;
         logic use_b;
@@ -894,7 +894,6 @@ module ppc_fpu_arith (
         out.frfi_valid = 1'b1;
         out.fprf_valid = 1'b1;
         a = classify_special(a_bits);
-        b = unpack(b_bits);
         c = classify_special(c_bits);
         use_a = 1'b0;
         use_b = 1'b0;
@@ -1156,6 +1155,7 @@ module ppc_fpu_arith (
             req_q <= '0;
             round_single_q <= 1'b0;
             rsp_q <= '0;
+            calc_b_q <= '0;
             conv_source_q <= '0;
             conv_parts_q <= '0;
             finite_operands_q <= '0;
@@ -1199,7 +1199,10 @@ module ppc_fpu_arith (
                     else if (launch_finite) state_q <= PREP;
                     else if (req_i.op == FP_FCTIW || req_i.op == FP_FCTIWZ)
                         state_q <= CONV_PREP;
-                    else state_q <= CALC;
+                    else begin
+                        calc_b_q <= unpack(req_i.b);
+                        state_q <= CALC;
+                    end
                 end
                 DIV_START: begin
                     div_denominator_q <= div_b_sig_q;
@@ -1216,7 +1219,7 @@ module ppc_fpu_arith (
                 end
                 CALC: begin
                     rsp_q <= calculate(req_q.tag, req_q.op, req_q.a, req_q.b,
-                        req_q.c, req_q.ve, req_q.ze);
+                        req_q.c, calc_b_q, req_q.ve, req_q.ze);
                     state_q <= RESPONSE;
                 end
                 CONV_PREP: begin
