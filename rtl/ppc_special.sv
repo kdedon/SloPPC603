@@ -143,7 +143,8 @@ module ppc_special #(
     S_MEM_WAIT, S_MEM_RESULT, S_MEM_DRAIN, S_EXCEPTION_RESULT,
     S_CONTEXT_DRAIN, S_CONTEXT_INSTALL, S_CONTEXT_REDIRECT, S_CONTEXT_ABORT,
     S_INTERRUPT_COMMIT, S_TIMER_RESULT, S_EXCEPTION_HALT,
-    S_BAT_OFFER, S_BAT_WAIT, S_BAT_RESULT, S_BAT_ABORT, S_BAT_ACK, S_BAT_REDIRECT
+    S_BAT_OFFER, S_BAT_WAIT, S_BAT_RESULT, S_BAT_ABORT, S_BAT_ACK, S_BAT_REDIRECT,
+    S_BRANCH_REDIRECT
   } state_t;
   state_t state_q;
   // The shared uop record carries fields for other lanes.
@@ -181,7 +182,7 @@ module ppc_special #(
   logic [7:0] load_byte;
   logic [15:0] load_half;
   logic misaligned;
-  logic branch_ctr_ok, branch_cond_ok;
+  logic branch_ctr_ok, branch_cond_ok, branch_redirect_taken;
   logic [31:0] branch_ctr_after;
   logic cr_logic_a, cr_logic_b, cr_logic_value;
   logic exception_event_valid, exception_event_ready;
@@ -552,12 +553,14 @@ module ppc_special #(
                               dmem_rsp_rdata_i[31:16];
   end
 
-  assign branch_commit_redirect_o = rst_ni && (state_q == S_HOLD) && commit_match &&
+  // A taken branch or ISYNC redirects on the edge after it commits.
+  assign branch_redirect_taken = branch_taken_q &&
     ((uop_q.special_op == SPECIAL_B) ||
      (uop_q.special_op == SPECIAL_BC) ||
      (uop_q.special_op == SPECIAL_BCLR) ||
      (uop_q.special_op == SPECIAL_BCCTR) ||
-     (uop_q.special_op == SPECIAL_ISYNC)) && branch_taken_q;
+     (uop_q.special_op == SPECIAL_ISYNC));
+  assign branch_commit_redirect_o = rst_ni && (state_q == S_BRANCH_REDIRECT);
   assign branch_commit_target_o = branch_target_q;
 
   assign fetch_page_miss_opcode = (uop_q.special_op == SPECIAL_ISI) &&
@@ -952,6 +955,7 @@ module ppc_special #(
               fence_q <= 1'b0;
               state_q <= S_IDLE;
             end
+            S_BRANCH_REDIRECT: if (redirect_accepted_i) state_q <= S_IDLE;
             S_INTERRUPT_COMMIT: if (exception_event_ready)
               state_q <= S_EXCEPTION_RESULT;
             S_CONTEXT_ABORT: if (frontend_quiescent_i && memory_quiescent_i) begin
@@ -1035,6 +1039,9 @@ module ppc_special #(
                    (uop_q.special_op == SPECIAL_MTMSR))) ?
                   mmu_resume_target_q : pc_q + 32'd4;
                 state_q <= S_CONTEXT_INSTALL;
+              end else if (branch_redirect_taken) begin
+                fence_q <= 1'b0;
+                state_q <= S_BRANCH_REDIRECT;
               end else begin
                 fence_q <= 1'b0;
                 state_q <= S_IDLE;
@@ -1168,6 +1175,9 @@ module ppc_special #(
       if (context_valid_o)
         assert (fence_q && frontend_quiescent_i && memory_quiescent_i)
           else $error("context offered before transport drain");
+      if (state_q == S_BRANCH_REDIRECT)
+        assert (!cancel_i && redirect_accepted_i)
+          else $error("committed branch redirect was not accepted");
       if (state_q == S_CONTEXT_REDIRECT)
         assert (fence_q && !cancel_i)
           else $error("committed context redirect lost its fence");

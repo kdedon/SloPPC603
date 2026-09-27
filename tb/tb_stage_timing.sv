@@ -115,7 +115,8 @@ module tb_stage_timing;
   assign rsp_valid = pending;
   assign rsp_insn = instruction(pending_addr);
   // Start unstalled, fill CQ/rename/IQ, then drain; periodic stalls hold later heads.
-  assign retire_ready = (edge_number < 10 || edge_number >= 35) && (edge_number % 7 != 0);
+  // Dispatch starts after the 32-edge GPR reset clear.
+  assign retire_ready = (edge_number < 42 || edge_number >= 67) && ((edge_number - 32) % 7 != 0);
   always_ff @(posedge clk) begin
     if (!rst_n) begin
       pending <= 1'b0;

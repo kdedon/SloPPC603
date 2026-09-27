@@ -18,6 +18,7 @@ module tb_core_cached_reference;
   logic [7:0] ram[256];
   logic [31:0] memory[16384];
   logic committed_this_edge=0;
+  logic deferred_this_edge = 0;
   logic [31:0] architectural_gpr[32];
   logic [127:0] architectural_flags;
   int cycle_count=0,commits=0,words,expected_commits,trace_file;
@@ -37,7 +38,7 @@ module tb_core_cached_reference;
   logic [63:0] bus_di,bus_do;
 
 `ifdef REFERENCE_MANAGED_CACHE
-  ppc_core_cached_bus60x_managed #(.RESET_PC(32'b0), .RESET_CACHE_ENABLE(CACHE_ENABLED)) dut (
+  ppc_core_cached_bus60x_managed #(.ENABLE_TEST_REDIRECT(1'b0), .RESET_PC(32'b0), .RESET_CACHE_ENABLE(CACHE_ENABLED)) dut (
     .maintenance_valid_i(1'b0), .maintenance_ready_o(maintenance_ready),
     .maintenance_invalidate_i(1'b0), .maintenance_cache_enable_i(CACHE_ENABLED),
     .maintenance_done_valid_o(maintenance_done), .maintenance_done_ready_i(1'b1),
@@ -138,11 +139,16 @@ module tb_core_cached_reference;
 `endif
   always @(posedge clk) begin
     committed_this_edge=rst_n && tv && tr;
+    // An update load's base write follows its retirement edge.
+    deferred_this_edge=rst_n && dut.core.update_pending_q;
     if(committed_this_edge) begin
       assert(!retired.illegal && !$isunknown(retired)) else $fatal(1,"illegal/unknown cached retirement");
       $fwrite(trace_file,"%08x %08x ",retired.pc,retired.insn);
       #1;
-      for(int r=0;r<32;r++) $fwrite(trace_file,"%08x ",dut.core.regfile.gpr[r]);
+      // Include an update load's base write, which lands one edge later.
+      for(int r=0;r<32;r++)
+        $fwrite(trace_file,"%08x ",(dut.core.update_pending_q && r==int'(dut.core.update_reg_q)) ?
+                dut.core.update_value_q : dut.core.regfile.gpr[r]);
       $fwrite(trace_file,"%08x %08x %08x %08x ",dut.core.cr,dut.core.xer,dut.core.lr,dut.core.ctr);
       for(int offset=0;offset<256;offset+=4)
         $fwrite(trace_file,"%08x ",{ram[offset],ram[offset+1],ram[offset+2],ram[offset+3]});
@@ -170,10 +176,10 @@ module tb_core_cached_reference;
   // Every architectural register must change only at an accepted retirement.
   // RAM may change earlier at a reserved store request, per the core contract.
   always @(negedge clk) begin
-    if (!rst_n) begin
+    if (!rst_n || !dut.core.regfile.ready_o) begin
       for (int r=0;r<32;r++) architectural_gpr[r] = 0;
       architectural_flags = 0;
-    end else if (committed_this_edge) begin
+    end else if (committed_this_edge || deferred_this_edge) begin
       for (int r=0;r<32;r++) architectural_gpr[r] = dut.core.regfile.gpr[r];
       architectural_flags = {dut.core.cr,dut.core.xer,dut.core.lr,dut.core.ctr};
     end else begin

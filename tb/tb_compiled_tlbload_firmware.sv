@@ -69,7 +69,7 @@ module tb_compiled_tlbload_firmware;
   assign unused_tlb_mgmt=^{tlb_mgmt_req_ready_o,tlb_mgmt_rsp_kind_o,tlb_mgmt_rsp_bank_o,
     tlb_mgmt_rsp_ea_o,tlb_mgmt_rsp_privileged_o,tlb_mgmt_rsp_refill_rejected_o,
     tlb_mgmt_rsp_unsupported_o,tlb_mgmt_rsp_invalid_input_o,tlb_mgmt_idle_o};
-  ppc_core_bat #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
+  ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
                  .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),.ENABLE_RUNTIME_BAT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1),.ENABLE_TLB_INVALIDATE(1'b1),.ENABLE_TLB_LOAD(1'b1)) dut(
     .clk_i(clk),.rst_ni(rst_n),
     .tlb_mgmt_req_valid_i,

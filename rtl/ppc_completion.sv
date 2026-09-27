@@ -2,7 +2,9 @@
 // Allocate in program order, finish by identity, retire a finished head, and
 // recover to an accepted pre-edge queue prefix.
 module ppc_completion #(
-  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
+  // Clear: only whole-queue recovery is legal and no survivor walk is built.
+  parameter bit ENABLE_PIVOT_RECOVERY = 1'b1
 ) (
   input logic clk_i,
   input logic rst_ni,
@@ -79,6 +81,8 @@ module ppc_completion #(
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni) begin
+      if (!ENABLE_PIVOT_RECOVERY && redirect_valid_i)
+        assert (redirect_all_i) else $error("pivot recovery is disabled");
       assert (int'(head_q) < CQ_DEPTH) else $error("CQ head out of range");
       assert (int'(tail_q) < CQ_DEPTH) else $error("CQ tail out of range");
       assert (int'(count_q) <= CQ_DEPTH) else $error("CQ count out of range");
@@ -99,7 +103,7 @@ module ppc_completion #(
     // no age meaning after ring wrap and reuse.
     for (int age = 0; age < CQ_DEPTH; age++) begin
       slot = ring_offset(head_q, COUNT_WIDTH'(age));
-      if ((age < int'(count_q)) && active_q[slot] &&
+      if (ENABLE_PIVOT_RECOVERY && (age < int'(count_q)) && active_q[slot] &&
           (redirect_pivot_i.index == slot) &&
           (redirect_pivot_i.generation == generations_q[slot]) &&
           !redirect_all_i) begin
@@ -113,6 +117,10 @@ module ppc_completion #(
         redirect_candidate_kill[slot] = 1'b1;
     end
 
+    if (!ENABLE_PIVOT_RECOVERY) begin
+      redirect_found = 1'b1;
+      retained = '0;
+    end
     redirect_candidate_survivors = COUNT_WIDTH'(retained);
     redirect_candidate_tail =
       ring_offset(head_q, retained);
@@ -167,7 +175,7 @@ module ppc_completion #(
     alloc_tag_o.index = tail_q;
     alloc_tag_o.generation = generations_q[tail_q] + CQ_GENERATION_WIDTH'(1);
 
-    retire_valid_o = (count_q != '0) && active_q[head_q] && done_q[head_q];
+    retire_valid_o = rst_ni && (count_q != '0) && active_q[head_q] && done_q[head_q];
     retire_o = '0;
     retire_tag_o = '0;
     if (retire_valid_o) begin
@@ -213,7 +221,7 @@ module ppc_completion #(
     end
     output_age = 0;
     slot = '0;
-    if (redirect_accepted_o) begin
+    if (ENABLE_PIVOT_RECOVERY && redirect_accepted_o) begin
       recovery_survivor_count_o = redirect_candidate_survivors -
                                   COUNT_WIDTH'(retire_fire);
       for (int age = 0; age < CQ_DEPTH; age++) begin

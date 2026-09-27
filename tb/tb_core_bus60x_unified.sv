@@ -150,7 +150,8 @@ module tb_core_bus60x_unified;
         retirements++;
         #1;
         for (int regno = 0; regno < 32; regno++)
-          require(dut.core.regfile.gpr[regno] == values[regno], $sformatf("GPR%0d mismatch expected=%08x actual=%08x", regno, values[regno], dut.core.regfile.gpr[regno]));
+          // An update load's base write lands one edge after retirement.
+          require(((dut.core.update_pending_q && regno == int'(dut.core.update_reg_q)) ? dut.core.update_value_q : dut.core.regfile.gpr[regno]) == values[regno], $sformatf("GPR%0d mismatch expected=%08x actual=%08x", regno, values[regno], ((dut.core.update_pending_q && regno == int'(dut.core.update_reg_q)) ? dut.core.update_value_q : dut.core.regfile.gpr[regno])));
         require(dut.core.cr == cr && dut.core.xer == xer, "full CR/XER mismatch");
         require(dut.core.lr == lr && dut.core.ctr == ctr, "LR/CTR mismatch");
         require(memory_digest() == hash, "committed byte-memory mismatch");

@@ -171,6 +171,7 @@ module tb_core_record_edges;
     tick();
     rst_n = 1'b1;
     tick();
+    while (!dut.regfile.ready_o) tick();
     require(!halted && dut.cr == 0 && dut.xer == 0 && !dut.flags_busy &&
             dut.regfile.gpr[9] == 0 && dut.completion.count_q == 0,
             "reset architectural/speculative state");

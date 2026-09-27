@@ -18,7 +18,8 @@ module ppc_core_bat #(
   parameter bit ENABLE_PAGE_DATA_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_PAGE_INSTRUCTION_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_TLB_INVALIDATE = 1'b0,
-  parameter bit ENABLE_TLB_LOAD = 1'b0
+  parameter bit ENABLE_TLB_LOAD = 1'b0,
+  parameter bit ENABLE_TEST_REDIRECT = 1'b1
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -196,7 +197,8 @@ module ppc_core_bat #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS),
     .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
-    .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT)
+    .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
+    .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
   ) core (
     .tlb_fill_req_valid_o(tlb_fill_req_valid),
     .tlb_fill_req_bank_o(tlb_fill_req_bank),

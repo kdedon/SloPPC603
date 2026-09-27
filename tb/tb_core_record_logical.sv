@@ -584,7 +584,7 @@ module tb_core_record_logical;
       require(dut.cr == model_cr, "full committed CR disagrees with retirement oracle");
       require(dut.xer == model_xer, "full committed XER disagrees with retirement oracle");
       for (int reg_index = 0; reg_index < 32; reg_index++)
-        require(dut.regfile.gpr[reg_index] == model_gpr[reg_index],
+        if (dut.regfile.ready_o) require(dut.regfile.gpr[reg_index] == model_gpr[reg_index],
                 "architectural GPR disagrees with retirement oracle");
     end
   end

@@ -14,7 +14,10 @@ module ppc_core #(
   parameter bit ENABLE_PAGE_MISS_RESULTS = 1'b0,
   parameter bit ENABLE_SDR1 = 1'b0,
   parameter bit ENABLE_TGPR = 1'b0,
-  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
+  // Test-only external recovery with an arbitrary CQ pivot. When clear, the
+  // redirect port is ignored and every recovery clears the whole machine.
+  parameter bit ENABLE_TEST_REDIRECT = 1'b1
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -103,8 +106,8 @@ module ppc_core #(
   input logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
   output logic halted_o,
-  // External test recovery. A committing internal branch takes priority;
-  // architectural exception entry remains outside this interface.
+  // External test recovery (ENABLE_TEST_REDIRECT). Internal redirects take
+  // priority; architectural exception entry remains outside this interface.
   input logic redirect_valid_i, redirect_all_i, redirect_keep_pivot_i,
   input ppc_pkg::completion_tag_t redirect_pivot_i,
   input logic [31:0] redirect_target_i,
@@ -117,6 +120,11 @@ module ppc_core #(
   logic iq_miss_valid_q, iq_push_miss, iq_pop_miss;
   logic [IQ_COUNT_WIDTH-1:0] iq_miss_count_q, iq_miss_count_left;
   uop_t uop, dispatch_uop;
+  // Only the source indexes of the push-side decode are kept.
+  /* verilator lint_off UNUSEDSIGNAL */
+  uop_t push_uop;
+  /* verilator lint_on UNUSEDSIGNAL */
+  logic [4:0] head_src_a, head_src_b, head_src_c;
   retire_packet_t allocation;
   completion_tag_t alloc_producer, retire_producer;
   operand_t src_a, src_b, operand_a, operand_b;
@@ -145,6 +153,9 @@ module ppc_core #(
   logic fetch_valid, fetch_ready, iq_valid, iq_ready;
   logic alloc_ready, cq_ready, cq_empty, cq_finish_accept;
   logic dispatch, commit, gpr_commit, update_commit, fault_pending;
+  logic gpr_port_write, update_pending_q, gpr_ready;
+  logic [4:0] gpr_port_reg, update_reg_q;
+  logic [31:0] gpr_port_value, update_value_q;
   logic normal_uop, special_uop, normal_idle;
   logic dispatch_needs_flags;
   logic recovery_accepted, rs_cancel, iu_cancel, fault_killed;
@@ -158,7 +169,7 @@ module ppc_core #(
   retire_packet_t recovery_packets [CQ_DEPTH];
   completion_tag_t recovery_tags [CQ_DEPTH];
   rename_tag_t alloc_tag;
-  logic [31:0] arch_a, arch_b, arch_c;
+  logic [31:0] arch_a, arch_b, arch_c, special_a, special_b;
   logic [1:0] dispatch_ea_low;
   logic dispatch_misaligned;
   // Committed flag state supplies SO to record logical operations.
@@ -208,11 +219,24 @@ module ppc_core #(
     .rsp_fault_i(imem_rsp_fault_i),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready), .packet_o(fetched)
   );
-  ppc_fifo #(.WIDTH($bits(fetch_packet_t)), .DEPTH(IQ_DEPTH)) iq (
+  // GPR source indexes are predecoded at IQ push so register-file and rename
+  // reads start from the queue output instead of the full decoder.
+  ppc_decode #(
+    .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
+    .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
+    .ENABLE_TIMERS(ENABLE_TIMERS), .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
+    .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
+    .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
+    .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
+    .ENABLE_SDR1(ENABLE_SDR1),
+    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)
+  ) predecode (.insn_i(fetched.insn), .uop_o(push_uop));
+  ppc_fifo #(.WIDTH($bits(fetch_packet_t) + 15), .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(recovery_accepted),
     .push_valid_i(fetch_valid), .push_ready_o(fetch_ready),
-    .push_data_i(fetched), .pop_valid_o(iq_valid), .pop_ready_i(iq_ready),
-    .pop_data_o(iq_head)
+    .push_data_i({fetched, push_uop.src_a, push_uop.src_b, push_uop.src_c}),
+    .pop_valid_o(iq_valid), .pop_ready_i(iq_ready),
+    .pop_data_o({iq_head, head_src_a, head_src_b, head_src_c})
   );
   // Page-miss context of the oldest IQ page-miss entry, captured only when no
   // other page-miss entry is queued. A younger one never dispatches: the older
@@ -245,10 +269,11 @@ module ppc_core #(
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)
   ) decode (.insn_i(iq_head.insn), .uop_o(uop));
-  // Memory ops dispatch only with an empty CQ, so committed registers give the
-  // alignment EA without the rename/wake path.
-  assign dispatch_ea_low = (uop.zero_a ? 2'b0 : arch_a[1:0]) +
-                           (uop.use_imm ? uop.imm[1:0] : arch_b[1:0]);
+  // Special uops dispatch only with an empty CQ and idle IU, so committed
+  // registers supply their operands without the rename/wake path.
+  assign special_a = uop.zero_a ? 32'b0 : arch_a;
+  assign special_b = uop.use_imm ? uop.imm : arch_b;
+  assign dispatch_ea_low = special_a[1:0] + special_b[1:0];
   assign dispatch_misaligned =
     ((uop.mem_size == MEM_WORD) && (dispatch_ea_low != 0)) ||
     ((uop.mem_size == MEM_HALF) && dispatch_ea_low[0]);
@@ -293,16 +318,49 @@ module ppc_core #(
       dispatch_uop.mem_update = 1'b0;
     end
   end
+  // One GPR write port. An update load's base write follows its destination
+  // write by one edge; dispatch waits for it (update forms serialize behind
+  // an empty CQ, so no other retirement competes for the port).
+  always_comb begin
+    gpr_port_write = gpr_commit || update_commit || update_pending_q;
+    if (gpr_commit) begin
+      gpr_port_reg = retire_o.gpr;
+      gpr_port_value = retire_o.value;
+    end else if (update_commit) begin
+      gpr_port_reg = retire_o.update_gpr;
+      gpr_port_value = retire_o.update_value;
+    end else begin
+      gpr_port_reg = update_reg_q;
+      gpr_port_value = update_value_q;
+    end
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) update_pending_q <= 1'b0;
+    else update_pending_q <= gpr_commit && update_commit;
+    if (gpr_commit && update_commit) begin
+      update_reg_q <= retire_o.update_gpr;
+      update_value_q <= retire_o.update_value;
+    end
+  end
+  // synthesis translate_off
+  always @(posedge clk_i) begin
+    if (rst_ni && update_pending_q)
+      assert (!gpr_commit && !update_commit && !dispatch)
+        else $error("deferred update write shared its port or cycle");
+    if (rst_ni && gpr_commit && update_commit)
+      assert (retire_o.gpr != retire_o.update_gpr)
+        else $error("update retirement writes alias");
+  end
+  // synthesis translate_on
   ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR)) regfile (
-    .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR]), .read_a_i(uop.src_a), .read_b_i(uop.src_b),
-    .read_c_i(uop.src_c), .read_a_o(arch_a), .read_b_o(arch_b),
-    .read_c_o(arch_c), .write_i(gpr_commit),
-    .write_reg_i(retire_o.gpr), .write_value_i(retire_o.value),
-    .update_write_i(update_commit), .update_reg_i(retire_o.update_gpr),
-    .update_value_i(retire_o.update_value)
+    .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR]), .read_a_i(head_src_a), .read_b_i(head_src_b),
+    .read_c_i(head_src_c), .read_a_o(arch_a), .read_b_o(arch_b),
+    .read_c_o(arch_c), .write_i(gpr_port_write),
+    .write_reg_i(gpr_port_reg), .write_value_i(gpr_port_value),
+    .ready_o(gpr_ready)
   );
   ppc_rename rename (
-    .clk_i, .rst_ni, .read_a_i(uop.src_a), .read_b_i(uop.src_b),
+    .clk_i, .rst_ni, .read_a_i(head_src_a), .read_b_i(head_src_b),
     .arch_a_i(arch_a), .arch_b_i(arch_b), .read_a_o(src_a), .read_b_o(src_b),
     .alloc_ready_o(alloc_ready), .alloc_tag_o(alloc_tag),
     .alloc_i(dispatch && dispatch_uop.gpr_write),
@@ -372,7 +430,7 @@ module ppc_core #(
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
     .producer_i(alloc_producer), .pc_i(iq_head.pc),
     .dispatch_page_miss_i(head_page_miss),
-    .a_i(operand_a.value), .b_i(operand_b.value), .c_i(arch_c),
+    .a_i(special_a), .b_i(special_b), .c_i(arch_c),
     .cr_i(cr), .xer_flags_i(xer[XER_SO_BIT:XER_CA_BIT]),
     .xer_byte_count_i(xer[XER_BYTE_COUNT_WIDTH-1:0]), .so_i(xer[XER_SO_BIT]),
     .cancel_i(special_cancel),
@@ -468,7 +526,7 @@ module ppc_core #(
                        (dispatch_uop.special_op != SPECIAL_NONE);
   assign normal_idle = rs_ready && !issue_valid && issue_ready &&
                        !iu_result_valid;
-  assign iq_ready = !fault_pending && !interrupt_qualified &&
+  assign iq_ready = !fault_pending && !interrupt_qualified && !update_pending_q && gpr_ready &&
     !special_busy && cq_ready &&
     (dispatch_uop.illegal ||
      (normal_uop && alloc_ready && rs_ready && flags_ready) ||
@@ -487,6 +545,14 @@ module ppc_core #(
       assert (forwarded_ea_low == dispatch_ea_low)
         else $error("committed and forwarded memory EA low bits disagree");
     end
+    if (rst_ni && iq_valid)
+      assert (head_src_a == uop.src_a && head_src_b == uop.src_b &&
+              head_src_c == uop.src_c)
+        else $error("predecoded GPR sources disagree with decode");
+    if (rst_ni && dispatch && special_uop)
+      assert (cq_empty && !commit && src_a.ready && src_b.ready &&
+              src_a.value == arch_a && src_b.value == arch_b)
+        else $error("special dispatch saw an uncommitted GPR source");
     if (rst_ni && ENABLE_PAGE_MISS_RESULTS && dispatch &&
         (iq_head.fault == FETCH_PAGE_MISS))
       assert (iq_miss_valid_q)
@@ -519,7 +585,10 @@ module ppc_core #(
     allocation.write_cr_bit = dispatch_uop.write_cr_bit;
     allocation.cr_bit = dispatch_uop.cr_bit;
   end
-  ppc_completion #(.ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)) completion (
+  ppc_completion #(
+    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+    .ENABLE_PIVOT_RECOVERY(ENABLE_TEST_REDIRECT)
+  ) completion (
     .clk_i, .rst_ni, .alloc_valid_i(dispatch), .alloc_ready_o(cq_ready),
     .empty_o(cq_empty),
     .alloc_i(allocation), .alloc_tag_o(alloc_producer),
@@ -547,25 +616,20 @@ module ppc_core #(
     .flags_busy_o(flags_busy), .flags_owner_o(flags_owner)
   );
   assign commit = retire_valid_o && retire_ready_i;
-  // A taken serialized branch or committed ISYNC refetch wins over an external
-  // test redirect on that edge. A committed exception then redirects from an
-  // empty serialized machine. Stores and committed exceptions suppress
-  // external cuts while their external effect is pending.
+  // Committed exceptions, taken branches and ISYNC redirect from registered
+  // special-unit state on the edge after commit, when the serialized machine
+  // is empty; they win over an external test redirect. Stores and committed
+  // exceptions suppress external cuts while their external effect is pending.
   always_comb begin
-    if (special_exception_redirect) begin
+    if (special_exception_redirect || special_branch_redirect) begin
       selected_redirect_valid = 1'b1;
       selected_redirect_all = 1'b1;
       selected_redirect_keep = 1'b0;
       selected_redirect_pivot = '0;
-      selected_redirect_target = special_exception_target;
-    end else if (special_branch_redirect) begin
-      selected_redirect_valid = 1'b1;
-      selected_redirect_all = 1'b0;
-      selected_redirect_keep = 1'b1;
-      selected_redirect_pivot = retire_producer;
-      selected_redirect_target = special_branch_target;
+      selected_redirect_target = special_exception_redirect ?
+        special_exception_target : special_branch_target;
     end else begin
-      selected_redirect_valid = redirect_valid_i && !halted_o &&
+      selected_redirect_valid = ENABLE_TEST_REDIRECT && redirect_valid_i && !halted_o &&
         !special_store_irrevocable && !special_exception_irrevocable &&
         (redirect_target_i[1:0] == 2'b00);
       selected_redirect_all = redirect_all_i;

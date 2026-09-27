@@ -210,9 +210,14 @@ module tb_lsu_update_edges;
     require(tv && retired.update_write && retired.update_value == 32'h1004,
             "rejected cut disturbed finished update packet");
     commit_packet();
+    // One write port: rA follows rD by one edge and dispatch waits for it.
     require(dut.regfile.gpr[3] == 32'hcafe_babe &&
-            dut.regfile.gpr[5] == 32'h1004,
-            "load destinations were not committed atomically");
+            dut.regfile.gpr[5] == 32'h1000 && dut.update_pending_q &&
+            !dut.iq_ready, "load destination write or dispatch hold missing");
+    tick();
+    require(dut.regfile.gpr[3] == 32'hcafe_babe &&
+            dut.regfile.gpr[5] == 32'h1004 && !dut.update_pending_q,
+            "load base write did not follow its destination");
 
     // A memory error suppresses both destination writes and halts with the
     // committed base and old load destination intact.
@@ -299,7 +304,7 @@ module tb_lsu_update_edges;
     require(halted && dut.regfile.gpr[5] == 32'h1000,
             "store error updated base register");
 
-    $display("PASS LSU update edges: atomic dual write, fault, recovery and store alias (%0d checks)", checks);
+    $display("PASS LSU update edges: sequenced dual write, fault, recovery and store alias (%0d checks)", checks);
     $finish;
   end
 

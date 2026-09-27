@@ -32,7 +32,7 @@ module tb_compiled_sdr1_firmware;
   logic [31:0] unused_interrupt_pc;
   assign external_irq=0;
   logic [49:0] unused_page_ports;
-  ppc_core_bat #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
+  ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_SDR1(1'b1)) dut(
     .tlb_mgmt_req_valid_i('0),
     .tlb_mgmt_req_ready_o(unused_page_ports[0]),

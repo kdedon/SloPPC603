@@ -153,7 +153,7 @@ module tb_core_crstate_edges;
       end
     end
   end
-  always @(negedge clk) if(rst_n) begin
+  always @(negedge clk) if(rst_n && dut.regfile.ready_o) begin
     for(int i=0;i<32;i++)require(dut.regfile.gpr[i]==model_gpr[i],"GPR changed outside matching retirement");
     require(dut.cr==model_cr && dut.xer==model_xer && dut.lr==0 && dut.ctr==0,"architectural state mismatch");
   end

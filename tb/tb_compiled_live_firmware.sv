@@ -30,7 +30,7 @@ module tb_compiled_live_firmware;
   `include "compiled_firmware.svh"
   int transitions=0,alias_stores=0;
   logic [49:0] unused_page_ports;
-  ppc_core_bat #(.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1)) dut(
+  ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1)) dut(
     .tlb_mgmt_req_valid_i('0),
     .tlb_mgmt_req_ready_o(unused_page_ports[0]),
     .tlb_mgmt_req_kind_i('0),
