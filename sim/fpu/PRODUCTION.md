@@ -472,3 +472,14 @@ test-fpu-arith test-fpu-arith-602` on arithmetic WIP commit `20c2329`
 vectors, 2026-09-27; 603e 201,632 and 602 181,952 raw packets, zero
 result/invalid/flag/class mismatches, 76 cancellation offsets and four
 flush/reset/held-response checks passed.
+
+Recorded: `YOSYS_BIN=<pinned Yosys 0.33 executable> make -C sim -j2
+test-fpu-all lint` on an immutable combined snapshot of shell commit
+`f2c8e36`, arithmetic commit `20c2329`, and vectors commit `df405da`,
+2026-09-27; 21 Python anchors, 32 table proofs, raw 603e 201,632/0 and
+602 181,952/0 mismatches, estimates 603e 11,958/0 and 602 17,628/0,
+shell 603e/602 851/173 checks, exact timing 71/52 responses, both
+32-instruction streams, and dual reservation 28/24 checks. All 63 strict
+lint invocations passed with zero warnings and errors. This gate combines
+the narrower arithmetic datapath and memory-specific shell cone with the
+expanded alignment vectors.
