@@ -37,6 +37,21 @@ initial composed rounding stage, not an accepted implementation or a result for
 the subsequent redesigned stage. Map reported zero errors and four warnings;
 TimeQuest reported zero errors. No fitter ran.
 
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`74d7577` plus uncommitted direct-rounding pipeline changes, 2026-09-27.
+
+The next frozen arithmetic revision passed 200,072 raw numerical cases before
+mapping. It used 10,550 estimated ALMs, 13,610 ALUTs, 2,680 registers, 412
+block-memory bits and five DSP blocks, with 432 virtual pins and zero physical
+pins. Post-map Fmax was **11.8 MHz**, with −64.808 ns setup slack: both targets
+still failed. The critical path moved to the add stage, from the double-multiply
+stage selector through alignment, magnitude comparison, addition and leading-zero
+detection (84.642 ns data delay, 28 logic levels). This requires another datapath
+revision within the fixed instruction latencies. Map reported zero errors and
+five warnings: response RAM pass-through logic, two constant software-invalid
+cause outputs and their summary, and the virtual-clock warning. TimeQuest
+reported zero errors; no fitter ran.
+
 ### Earlier serialized implementation
 
 The following measurements describe the earlier serialized 603e implementation.

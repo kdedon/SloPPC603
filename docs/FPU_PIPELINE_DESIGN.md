@@ -45,6 +45,12 @@ and dequeue, held responses, full capacity, and recovery during every stage.
 The shell issue handshake represents dispatch. Operand reservation and backend
 execution acceptance are distinct events; dispatch delay must not be counted as
 an extra arithmetic execution stage or used to conceal excess execution latency.
+Ready independent instructions need a direct dispatch path when an obligatory
+reservation cycle would prevent sustained issue with four rename entries.
+Likewise, an arriving head result must be usable for retirement without an
+unnecessary holding-register cycle. Acceptance tests cover the complete shell's
+steady issue rate and dependent producer-to-consumer distance, not only the
+backend's isolated latency.
 The shell owns four FPR rename entries and pending instruction records. Source
 bindings select the youngest older producer and retain its full identity until
 the value arrives. Completion snooping updates waiting operands; rereading the
