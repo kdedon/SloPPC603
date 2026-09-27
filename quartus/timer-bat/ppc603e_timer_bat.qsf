@@ -26,6 +26,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bat_service.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_segment_registers.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_tlb_ram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_tlb_service.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_micro_tlb.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bat_memory_router.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core_bat.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ppc_timer_bat_measure.sv

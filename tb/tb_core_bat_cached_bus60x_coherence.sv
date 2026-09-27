@@ -280,10 +280,13 @@ module tb_core_bat_cached_bus60x_coherence;
   initial begin : maintenance_control
     int timeout;
     wait(alias_runs==3);
-    timeout=0;
-    while(!maintenance_ready&&timeout<2000)begin @(negedge clk);timeout++;end
-    check(maintenance_ready,"maintenance command never ready");
+    // Hold the command until accepted; it blocks new fetch acceptance, so
+    // ready follows once the outstanding fetch drains.
     @(negedge clk);maintenance_valid=1;
+    timeout=0;
+    #1;
+    while(!maintenance_ready&&timeout<2000)begin @(negedge clk);#1;timeout++;end
+    check(maintenance_ready,"maintenance command never ready");
     @(posedge clk);
     @(negedge clk);maintenance_valid=0;
     timeout=0;

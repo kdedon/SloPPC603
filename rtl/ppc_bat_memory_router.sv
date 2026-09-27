@@ -1,7 +1,9 @@
 `default_nettype none
 // Effective-to-physical instruction/data router: BAT translation with optional
 // segment/TLB page fallback, committed MSR context and retirement-prepared
-// BAT, segment and TLB updates.
+// BAT, segment and TLB updates. Instruction and data lanes each hold one
+// request. A micro-TLB hit issues the physical request on the next edge; a
+// miss queues for the one shared translation sequence.
 module ppc_bat_memory_router #(
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
   parameter bit ENABLE_RUNTIME_BAT = 1'b0,
@@ -12,7 +14,9 @@ module ppc_bat_memory_router #(
   parameter bit ENABLE_DATA_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_PAGE_DATA_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_PAGE_INSTRUCTION_EXCEPTIONS = 1'b0,
-  parameter bit ENABLE_PAGE_MISS_RESULTS = 1'b0
+  parameter bit ENABLE_PAGE_MISS_RESULTS = 1'b0,
+  parameter bit ENABLE_MICRO_TLB = 1'b1,
+  parameter int MICRO_TLB_ENTRIES = 4
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -204,15 +208,37 @@ module ppc_bat_memory_router #(
     ROUTE_SEGMENT_RESPONSE,
     ROUTE_PAGE_OFFER,
     ROUTE_PAGE_RESPONSE,
-    ROUTE_PHYSICAL_OFFER,
-    ROUTE_PHYSICAL_RESPONSE,
     ROUTE_DATA_FAULT_RESPONSE,
     ROUTE_IFETCH_FAULT_RESPONSE,
     ROUTE_IFETCH_FATAL,
     ROUTE_INVALID
   } route_state_t;
 
+  // A lane waits for the translation sequence, is owned by it, or carries
+  // its translated request to the physical port.
+  typedef enum logic [2:0] {
+    LANE_IDLE,
+    LANE_WAIT,
+    LANE_SLOW,
+    LANE_OFFER,
+    LANE_RESPONSE,
+    LANE_FATAL
+  } lane_state_t;
+
   route_state_t state_q;
+  lane_state_t i_state_q, d_state_q;
+  logic [31:0] i_ea_q, d_ea_q, i_pa_q, d_pa_q, d_wdata_q;
+  logic [3:0] i_wimg_q, d_wimg_q, d_wstrb_q;
+  logic d_write_q;
+  logic lanes_idle, lane_accept_ok, i_accept, d_accept, i_finish, d_finish;
+  logic i_hit, d_hit, i_hit_raw, d_hit_raw;
+  logic [19:0] i_hit_rpn, d_hit_rpn;
+  logic [3:0] i_hit_wimg, d_hit_wimg;
+  lane_state_t i_accept_state, d_accept_state;
+  logic route_allow, route_from_tlb, route_set_touch;
+  logic [31:0] route_pa;
+  logic [3:0] route_wimg;
+  logic utlb_flush;
   logic running_q, context_ir_q, context_dr_q, context_pr_q;
   // Private !running_q copy for the BAT request select, kept off the core's
   // high-fanout running net.
@@ -223,12 +249,9 @@ module ppc_bat_memory_router #(
   fetch_fault_t fetch_fault_q;
   data_fault_t data_fault_q;
   logic last_grant_data_q, owner_instruction_q, owner_write_q;
-  logic [31:0] request_ea_q, request_wdata_q;
-  logic [3:0] request_wstrb_q;
+  logic [31:0] request_ea_q;
   logic [31:0] page_sr_q;
   page_miss_t page_miss_result_q;
-  logic [31:0] physical_addr_q;
-  logic [3:0] physical_wimg_q;
 
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_req_addr, imem_rsp_insn;
@@ -324,8 +347,8 @@ module ppc_bat_memory_router #(
   // BAT CSR, segment CSR, tlbie, TLB load, then management. Management alone
   // runs before start; startup BAT writes, running memory and context win.
   assign slot_free = rst_ni && state_q == ROUTE_IDLE && owner_q == OWN_NONE &&
-    service_idle && segment_service_idle && tlb_transaction_idle &&
-    !imem_req_valid && !dmem_req_valid;
+    lanes_idle && service_idle && segment_service_idle &&
+    tlb_transaction_idle && !imem_req_valid && !dmem_req_valid;
   assign slot_eligible[SLOT_BAT_CSR] = ENABLE_RUNTIME_BAT && running_q;
   assign slot_eligible[SLOT_SEGMENT] = ENABLE_SEGMENT_REGISTERS && running_q;
   assign slot_eligible[SLOT_TLB_INV] = ENABLE_TLB_INVALIDATE && running_q;
@@ -604,6 +627,7 @@ module ppc_bat_memory_router #(
   // Do not block a held old-context request merely because an update waits.
   // The core fences new offers and drains all old obligations before updating.
   assign quiescent_o = rst_ni && running_q && state_q == ROUTE_IDLE &&
+                       lanes_idle &&
                        (!bat_rsp_valid || (ENABLE_RUNTIME_BAT && csr_owner)) &&
                        (!segment_rsp_valid || segment_owner) &&
                        (!tlb_rsp_valid || tlb_mgmt_owner ||
@@ -619,22 +643,90 @@ module ppc_bat_memory_router #(
     (!ENABLE_TLB_LOAD ||
      (!tlb_fill_owner && !tlb_fill_req_valid_i));
 
+  // A lane accepts while it is idle or on the edge that returns its previous
+  // response. No lane accepts while a service owns the slot.
+  assign lanes_idle = i_state_q == LANE_IDLE && d_state_q == LANE_IDLE;
+  assign lane_accept_ok = rst_ni && running_q && owner_q == OWN_NONE &&
+                          !ifetch_fatal_q;
+  assign i_finish = i_state_q == LANE_RESPONSE && pimem_rsp_valid_i &&
+                    !pimem_rsp_error_i && imem_rsp_ready;
+  assign d_finish = d_state_q == LANE_RESPONSE && pdmem_rsp_valid_i &&
+                    dmem_rsp_ready;
+  assign imem_req_ready = lane_accept_ok &&
+    (i_state_q == LANE_IDLE || i_finish);
+  assign dmem_req_ready = lane_accept_ok &&
+    (d_state_q == LANE_IDLE || d_finish);
+  assign i_accept = imem_req_valid && imem_req_ready;
+  assign d_accept = dmem_req_valid && dmem_req_ready;
+  assign i_hit = ENABLE_MICRO_TLB && i_hit_raw;
+  assign d_hit = ENABLE_MICRO_TLB && d_hit_raw;
+
+  // The translation sequence takes a waiting lane or a missing request on
+  // its accepting edge, alternating when both compete.
   always_comb begin
+    logic want_instruction, want_data;
+    want_instruction = i_state_q == LANE_WAIT || (i_accept && !i_hit);
+    want_data = d_state_q == LANE_WAIT || (d_accept && !d_hit);
     choose_instruction = 1'b0;
     choose_data = 1'b0;
-    if (rst_ni && running_q && state_q == ROUTE_IDLE &&
-        owner_q == OWN_NONE) begin
-      if (imem_req_valid && dmem_req_valid) begin
+    if (rst_ni && state_q == ROUTE_IDLE) begin
+      if (want_instruction && want_data) begin
         choose_instruction = last_grant_data_q;
         choose_data = !last_grant_data_q;
       end else begin
-        choose_instruction = imem_req_valid;
-        choose_data = dmem_req_valid;
+        choose_instruction = want_instruction;
+        choose_data = want_data;
       end
     end
-    imem_req_ready = choose_instruction;
-    dmem_req_ready = choose_data;
+    i_accept_state = i_hit ? LANE_OFFER :
+      (choose_instruction ? LANE_SLOW : LANE_WAIT);
+    d_accept_state = d_hit ? LANE_OFFER :
+      (choose_data ? LANE_SLOW : LANE_WAIT);
   end
+
+  assign route_allow =
+    (state_q == ROUTE_TRANSLATE_RESPONSE && bat_rsp_valid && bat_rsp_allow) ||
+    (state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid && page_reply_allow);
+  assign route_from_tlb = state_q == ROUTE_PAGE_RESPONSE;
+  assign route_pa = route_from_tlb ? tlb_rsp_pa : bat_rsp_pa;
+  assign route_wimg = route_from_tlb ? tlb_rsp_wimg : bat_rsp_wimg;
+  // A TLB hit points its set's LRU bit away from the hit way.
+  assign route_set_touch = state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid &&
+                           tlb_rsp_hit;
+  // Flush on every commit that can change a translation: BAT, SR and TLB
+  // updates, management, and every MSR/SDR1 context installation.
+  assign utlb_flush = !running_q || (context_valid_i && context_ready_o) ||
+    (ENABLE_RUNTIME_BAT && bat_csr_commit_i) ||
+    (ENABLE_SEGMENT_REGISTERS && segment_owner && segment_csr_commit_i) ||
+    (ENABLE_TLB_INVALIDATE && tlb_inv_owner && tlb_inv_commit_i) ||
+    (ENABLE_TLB_LOAD && tlb_fill_owner && tlb_fill_commit_i) ||
+    tlb_mgmt_owner;
+
+  ppc_micro_tlb #(.ENTRIES(MICRO_TLB_ENTRIES)) i_utlb (
+    .clk_i, .rst_ni,
+    .flush_i(utlb_flush),
+    .set_flush_i(route_set_touch && owner_instruction_q),
+    .set_flush_index_i(request_ea_q[16:12]),
+    .lookup_page_i(imem_req_addr[31:12]), .lookup_write_i(1'b0),
+    .hit_o(i_hit_raw), .hit_rpn_o(i_hit_rpn), .hit_wimg_o(i_hit_wimg),
+    .fill_i(ENABLE_MICRO_TLB && route_allow && owner_instruction_q),
+    .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
+    .fill_wimg_i(route_wimg), .fill_write_ok_i(1'b0),
+    .fill_from_tlb_i(route_from_tlb)
+  );
+
+  ppc_micro_tlb #(.ENTRIES(MICRO_TLB_ENTRIES)) d_utlb (
+    .clk_i, .rst_ni,
+    .flush_i(utlb_flush),
+    .set_flush_i(route_set_touch && !owner_instruction_q),
+    .set_flush_index_i(request_ea_q[16:12]),
+    .lookup_page_i(dmem_req_addr[31:12]), .lookup_write_i(dmem_req_write),
+    .hit_o(d_hit_raw), .hit_rpn_o(d_hit_rpn), .hit_wimg_o(d_hit_wimg),
+    .fill_i(ENABLE_MICRO_TLB && route_allow && !owner_instruction_q),
+    .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
+    .fill_wimg_i(route_wimg), .fill_write_ok_i(owner_write_q),
+    .fill_from_tlb_i(route_from_tlb)
+  );
 
   // Setup writes and running translations serialize through the committed
   // BAT service.  A setup response must be consumed before start is accepted.
@@ -786,49 +878,48 @@ module ppc_bat_memory_router #(
   assign bat_write_rsp_invalid_entry_o = bat_rsp_invalid_entry;
 
   always_comb begin
-    pimem_req_valid_o = rst_ni && state_q == ROUTE_PHYSICAL_OFFER &&
-                         owner_instruction_q;
-    pimem_req_addr_o = physical_addr_q;
-    pimem_req_wimg_o = physical_wimg_q;
-    pdmem_req_valid_o = rst_ni && state_q == ROUTE_PHYSICAL_OFFER &&
-                         !owner_instruction_q;
-    pdmem_req_write_o = owner_write_q;
-    pdmem_req_addr_o = physical_addr_q;
-    pdmem_req_wdata_o = request_wdata_q;
-    pdmem_req_wstrb_o = request_wstrb_q;
-    pdmem_req_wimg_o = physical_wimg_q;
+    pimem_req_valid_o = rst_ni && i_state_q == LANE_OFFER;
+    pimem_req_addr_o = i_pa_q;
+    pimem_req_wimg_o = i_wimg_q;
+    pdmem_req_valid_o = rst_ni && d_state_q == LANE_OFFER;
+    pdmem_req_write_o = d_write_q;
+    pdmem_req_addr_o = d_pa_q;
+    pdmem_req_wdata_o = d_wdata_q;
+    pdmem_req_wstrb_o = d_wstrb_q;
+    pdmem_req_wimg_o = d_wimg_q;
 
     imem_rsp_valid = 1'b0;
     imem_rsp_insn = pimem_rsp_insn_i;
     imem_rsp_fault_o = FETCH_OK;
     pimem_rsp_ready_o = 1'b0;
+    if (rst_ni && i_state_q == LANE_RESPONSE) begin
+      // A physical instruction error is consumed here and never returned.
+      if (pimem_rsp_valid_i && pimem_rsp_error_i)
+        pimem_rsp_ready_o = 1'b1;
+      else begin
+        imem_rsp_valid = pimem_rsp_valid_i;
+        pimem_rsp_ready_o = imem_rsp_ready;
+      end
+    end else if (rst_ni && state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
+      imem_rsp_valid = 1'b1;
+      imem_rsp_insn = 32'b0;
+      imem_rsp_fault_o = fetch_fault_q;
+    end
+
     dmem_rsp_valid = 1'b0;
     dmem_rsp_rdata = pdmem_rsp_rdata_i;
     dmem_rsp_error = 1'b0;
     dmem_rsp_fault_o = DATA_OK;
     pdmem_rsp_ready_o = 1'b0;
-    if (rst_ni && state_q == ROUTE_PHYSICAL_RESPONSE) begin
-      if (owner_instruction_q) begin
-        if (pimem_rsp_valid_i && pimem_rsp_error_i)
-          pimem_rsp_ready_o = 1'b1;
-        else begin
-          imem_rsp_valid = pimem_rsp_valid_i;
-          pimem_rsp_ready_o = imem_rsp_ready;
-        end
-      end else begin
-        dmem_rsp_valid = pdmem_rsp_valid_i;
-        dmem_rsp_error = pdmem_rsp_error_i;
-        pdmem_rsp_ready_o = dmem_rsp_ready;
-      end
+    if (rst_ni && d_state_q == LANE_RESPONSE) begin
+      dmem_rsp_valid = pdmem_rsp_valid_i;
+      dmem_rsp_error = pdmem_rsp_error_i;
+      pdmem_rsp_ready_o = dmem_rsp_ready;
     end else if (rst_ni && state_q == ROUTE_DATA_FAULT_RESPONSE) begin
       dmem_rsp_valid = 1'b1;
       dmem_rsp_rdata = 32'b0;
       dmem_rsp_error = data_fault_q == DATA_OK;
       dmem_rsp_fault_o = data_fault_q;
-    end else if (rst_ni && state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
-      imem_rsp_valid = 1'b1;
-      imem_rsp_insn = 32'b0;
-      imem_rsp_fault_o = fetch_fault_q;
     end
   end
 
@@ -848,6 +939,17 @@ module ppc_bat_memory_router #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       state_q <= ROUTE_IDLE;
+      i_state_q <= LANE_IDLE;
+      d_state_q <= LANE_IDLE;
+      i_ea_q <= 32'b0;
+      d_ea_q <= 32'b0;
+      i_pa_q <= 32'b0;
+      d_pa_q <= 32'b0;
+      i_wimg_q <= 4'b0;
+      d_wimg_q <= 4'b0;
+      d_write_q <= 1'b0;
+      d_wdata_q <= 32'b0;
+      d_wstrb_q <= 4'b0;
       owner_q <= OWN_NONE;
       tlb_fill_ea_q <= 32'b0;
       tlb_fill_bank_q <= 1'b0;
@@ -866,12 +968,8 @@ module ppc_bat_memory_router #(
       owner_instruction_q <= 1'b0;
       owner_write_q <= 1'b0;
       request_ea_q <= 32'b0;
-      request_wdata_q <= 32'b0;
-      request_wstrb_q <= 4'b0;
       page_sr_q <= 32'b0;
       page_miss_result_q <= '0;
-      physical_addr_q <= 32'b0;
-      physical_wimg_q <= 4'b0;
       fault_q <= 1'b0;
       fault_instruction_q <= 1'b0;
       fault_write_q <= 1'b0;
@@ -923,6 +1021,71 @@ module ppc_bat_memory_router #(
         context_pr_q <= context_pr_i;
       end
 
+      if (i_accept) begin
+        i_ea_q <= imem_req_addr;
+        i_pa_q <= {i_hit_rpn, imem_req_addr[11:0]};
+        i_wimg_q <= i_hit_wimg;
+      end
+      if (d_accept) begin
+        d_ea_q <= dmem_req_addr;
+        d_pa_q <= {d_hit_rpn, dmem_req_addr[11:0]};
+        d_wimg_q <= d_hit_wimg;
+        d_write_q <= dmem_req_write;
+        d_wdata_q <= dmem_req_wdata;
+        d_wstrb_q <= dmem_req_wstrb;
+      end
+      if (route_allow && owner_instruction_q) begin
+        i_pa_q <= route_pa;
+        i_wimg_q <= route_wimg;
+      end
+      if (route_allow && !owner_instruction_q) begin
+        d_pa_q <= route_pa;
+        d_wimg_q <= route_wimg;
+      end
+
+      unique case (i_state_q)
+        LANE_IDLE: if (i_accept) i_state_q <= i_accept_state;
+        LANE_WAIT: if (choose_instruction) i_state_q <= LANE_SLOW;
+        LANE_SLOW: begin
+          if (route_allow && owner_instruction_q) i_state_q <= LANE_OFFER;
+          else if (state_q == ROUTE_IFETCH_FAULT_RESPONSE && imem_rsp_ready)
+            i_state_q <= LANE_IDLE;
+        end
+        LANE_OFFER: if (pimem_req_ready_i) i_state_q <= LANE_RESPONSE;
+        LANE_RESPONSE: begin
+          if (pimem_rsp_valid_i && pimem_rsp_error_i) begin
+            pimem_error_q <= 1'b1;
+            ifetch_fatal_q <= 1'b1;
+            i_state_q <= LANE_FATAL;
+          end else if (i_accept) i_state_q <= i_accept_state;
+          else if (i_finish) i_state_q <= LANE_IDLE;
+        end
+        LANE_FATAL: i_state_q <= LANE_FATAL;
+        default: begin
+          ifetch_fatal_q <= 1'b1;
+          i_state_q <= LANE_FATAL;
+        end
+      endcase
+
+      unique case (d_state_q)
+        LANE_IDLE: if (d_accept) d_state_q <= d_accept_state;
+        LANE_WAIT: if (choose_data) d_state_q <= LANE_SLOW;
+        LANE_SLOW: begin
+          if (route_allow && !owner_instruction_q) d_state_q <= LANE_OFFER;
+          else if (state_q == ROUTE_DATA_FAULT_RESPONSE && dmem_rsp_ready)
+            d_state_q <= LANE_IDLE;
+        end
+        LANE_OFFER: if (pdmem_req_ready_i) d_state_q <= LANE_RESPONSE;
+        LANE_RESPONSE: begin
+          if (d_accept) d_state_q <= d_accept_state;
+          else if (d_finish) d_state_q <= LANE_IDLE;
+        end
+        default: begin
+          ifetch_fatal_q <= 1'b1;
+          d_state_q <= LANE_FATAL;
+        end
+      endcase
+
       unique case (state_q)
         ROUTE_IDLE: begin
           if (choose_instruction || choose_data) begin
@@ -930,12 +1093,13 @@ module ppc_bat_memory_router #(
             request_dr_q <= context_dr_q;
             request_pr_q <= context_pr_q;
             owner_instruction_q <= choose_instruction;
-            owner_write_q <= choose_data && dmem_req_write;
-            request_ea_q <= choose_instruction ? imem_req_addr :
-                                                  dmem_req_addr;
+            if (choose_instruction)
+              request_ea_q <= i_state_q == LANE_WAIT ? i_ea_q : imem_req_addr;
+            else
+              request_ea_q <= d_state_q == LANE_WAIT ? d_ea_q : dmem_req_addr;
+            owner_write_q <= choose_data &&
+              (d_state_q == LANE_WAIT ? d_write_q : dmem_req_write);
             page_miss_result_q <= '0;
-            request_wdata_q <= choose_data ? dmem_req_wdata : 32'b0;
-            request_wstrb_q <= choose_data ? dmem_req_wstrb : 4'b1111;
             last_grant_data_q <= choose_data;
             state_q <= ROUTE_TRANSLATE_OFFER;
           end
@@ -949,9 +1113,7 @@ module ppc_bat_memory_router #(
         ROUTE_TRANSLATE_RESPONSE: begin
           if (bat_rsp_valid) begin
             if (bat_rsp_allow) begin
-              physical_addr_q <= bat_rsp_pa;
-              physical_wimg_q <= bat_rsp_wimg;
-              state_q <= ROUTE_PHYSICAL_OFFER;
+              state_q <= ROUTE_IDLE;
             end else if (clean_bat_page_miss) begin
               state_q <= ROUTE_SEGMENT_OFFER;
             end else begin
@@ -1030,9 +1192,7 @@ module ppc_bat_memory_router #(
         ROUTE_PAGE_RESPONSE: begin
           if (tlb_rsp_valid) begin
             if (page_reply_allow) begin
-              physical_addr_q <= tlb_rsp_pa;
-              physical_wimg_q <= tlb_rsp_wimg;
-              state_q <= ROUTE_PHYSICAL_OFFER;
+              state_q <= ROUTE_IDLE;
             end else begin
               // Page misses and C=0 stores carry their request-time context
               // through the held response.
@@ -1078,30 +1238,6 @@ module ppc_bat_memory_router #(
                 state_q <= ROUTE_DATA_FAULT_RESPONSE;
               end
             end
-          end
-        end
-
-        ROUTE_PHYSICAL_OFFER: begin
-          if ((owner_instruction_q && pimem_req_valid_o &&
-               pimem_req_ready_i) ||
-              (!owner_instruction_q && pdmem_req_valid_o &&
-               pdmem_req_ready_i))
-            state_q <= ROUTE_PHYSICAL_RESPONSE;
-        end
-
-        ROUTE_PHYSICAL_RESPONSE: begin
-          if (owner_instruction_q) begin
-            if (pimem_rsp_valid_i && pimem_rsp_ready_o) begin
-              if (pimem_rsp_error_i) begin
-                pimem_error_q <= 1'b1;
-                ifetch_fatal_q <= 1'b1;
-                state_q <= ROUTE_IFETCH_FATAL;
-              end else begin
-                state_q <= ROUTE_IDLE;
-              end
-            end
-          end else if (pdmem_rsp_valid_i && pdmem_rsp_ready_o) begin
-            state_q <= ROUTE_IDLE;
           end
         end
 
@@ -1153,7 +1289,7 @@ module ppc_bat_memory_router #(
   assign ifetch_fatal_o = rst_ni && ifetch_fatal_q;
   assign busy_o = rst_ni && (owner_q != OWN_NONE || bat_rsp_valid ||
                               segment_rsp_valid || tlb_rsp_valid ||
-                              state_q != ROUTE_IDLE ||
+                              state_q != ROUTE_IDLE || !lanes_idle ||
                               (running_q && (imem_req_valid ||
                                              dmem_req_valid)));
 
@@ -1214,7 +1350,8 @@ module ppc_bat_memory_router #(
       !context_ready_o && !csr_owner && !segment_owner)
       else $error("TLB management overlaps memory, CSR or context");
     if (state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid &&
-        !page_reply_allow) assert (!pimem_req_valid_o && !pdmem_req_valid_o)
+        !page_reply_allow)
+      assert (owner_instruction_q ? !pimem_req_valid_o : !pdmem_req_valid_o)
       else $error("denied page response offered physical memory");
   end
   assert property (@(posedge clk_i) disable iff (!rst_ni) $onehot0(slot_grant))
@@ -1233,6 +1370,14 @@ module ppc_bat_memory_router #(
                dmem_rsp_page_miss_o}));
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     state_q == ROUTE_DATA_FAULT_RESPONSE |-> !pdmem_req_valid_o);
+  // The translation sequence owns exactly the lane it serves.
+  assert property (@(posedge clk_i) disable iff (!rst_ni)
+    state_q != ROUTE_IDLE |->
+      (owner_instruction_q ? i_state_q == LANE_SLOW : d_state_q == LANE_SLOW));
+  assert property (@(posedge clk_i) disable iff (!rst_ni)
+    state_q == ROUTE_IDLE |-> i_state_q != LANE_SLOW && d_state_q != LANE_SLOW);
+  assert property (@(posedge clk_i) disable iff (!rst_ni)
+    owner_q != OWN_NONE |-> lanes_idle && !imem_req_ready_o && !dmem_req_ready_o);
   // synthesis translate_on
 
   // Service echo and attribute fields left unused here.

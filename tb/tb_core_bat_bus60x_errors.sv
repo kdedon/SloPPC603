@@ -188,7 +188,15 @@ module tb_core_bat_bus60x_errors;
       end else target.acknowledge_normal_read(1);
     end
     check(saw_data_tea,"data request reached physical bus");
-    for(int i=0;i<80&&!data_error_seen;i++)@(posedge clk);
+    // Fetch runs beside the data access, so prefetches may still be
+    // outstanding after the TEA; serve them until the bus drains.
+    for(int i=0;i<200&&!(data_error_seen&&halted&&!bus_busy);i++)begin
+      if(!br_n)begin
+        target.grant_address(1,1,1'b0,1'b0);
+        target.grant_data(1);
+        target.acknowledge_normal_read(1);
+      end else @(posedge clk);
+    end
     #1;
     check(data_error_seen&&halted&&!ifetch_error&&!pimem_error&&
           !protocol_error&&!bus_busy,
