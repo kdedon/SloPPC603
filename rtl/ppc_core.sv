@@ -301,6 +301,7 @@ module ppc_core #(
          (uop.special_op == SPECIAL_MFSR) ||
          (uop.special_op == SPECIAL_MTSR) ||
          (uop.special_op == SPECIAL_TLBIE) ||
+         (uop.special_op == SPECIAL_TLBSYNC) ||
          (uop.special_op == SPECIAL_TLBLD) ||
          (uop.special_op == SPECIAL_TLBLI) ||
          (((uop.special_op == SPECIAL_MFSPR) ||

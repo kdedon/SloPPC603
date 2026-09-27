@@ -1,6 +1,22 @@
 # CPU `tlbie` verification
 
 Recorded: `make -C sim test-tlbie-decode test-core-tlbie test-core-tlbie-privilege`, `make -C sim regression`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-22.
+Recorded: `make -C sim test-tlbie-decode test-core-tlbie-privilege check-spec`, commit cf05f65, 2026-09-27.
+
+## TLBSYNC, 2026-09-27
+
+Pass. `test-tlbie-decode` now reports **6,399 checks**: the exact `tlbsync`
+word decodes only with the feature enabled, writes no register, flag or
+memory, and every one of its 26 low-bit mutations is rejected. The enabled
+`test-core-tlbie-privilege` profile reports **882 checks**: problem-state
+`tlbsync` enters Program Priv with SRR0=`0x100` and SRR1=`0x00044000` and
+no TLB offer, and supervisor `tlbsync` retires as a no-op followed by the
+next instruction, with no exception state written. The default-disabled
+profile reports **342 checks**, keeping `tlbsync` on the illegal diagnostic
+halt. `check-spec` (231 + 28 Python tests) compares every decode profile
+with the new `tlbsync` ISA entry.
+
+## TLBIE, 2026-09-22
 
 `make -C sim test-tlbie-decode` passes **6,370 checks**. The fixed-literal oracle uses `0x7c000264 | (RB << 11)` for primary opcode 31/XO 306, exercises every RB register including r0, and rejects every nonzero reserved RT and RA value, Rc=1, and adjacent XO values. It also checks the default-disabled decode and absence of GPR, flag, memory, and branch writes.
 

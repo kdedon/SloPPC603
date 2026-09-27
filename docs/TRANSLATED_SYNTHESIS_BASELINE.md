@@ -1,5 +1,32 @@
 # Translated cached 60x synthesis baseline
 
+
+## 2026-09-27 refit after merging AUD-21 and gate 1
+
+Recorded: `./quartus/translated/build.sh --docker`, merge of the gate-1 branch
+onto `f6f9df5` (AUD-21 merged), 2026-09-27. **Meets 50 MHz** at every corner:
+setup +0.958 / +1.106 ns and hold +0.255 / +0.121 ns at slow 100 C / -40 C;
+fast corners pass (setup +6.282 / +6.574, hold +0.138 / +0.117 ns). Fmax
+52.52 MHz (slow 100 C); 66 MHz needs about 3.9 ns. 8,924 ALMs. The AUD-21
+bypass takes the redirect-kill → station-issue path below off the critical
+path.
+
+## 2026-09-27 refit after direct-store DSI/ISI and tlbsync
+
+Recorded: `./quartus/translated/build.sh --docker`, commit 4428a5e (gate-1
+branch), 2026-09-27. **Misses 50 MHz setup**: slow 100 C −0.351 ns
+(TNS −8.309), slow −40 C −0.198 ns; hold meets at every corner (+0.253 /
++0.065 / +0.134 / +0.104 ns); fast corners meet setup. Fmax 49.14 MHz (slow
+100 C). 8,780 ALMs, 8,580 registers, 23 M10K.
+
+The worst path is unchanged in kind: `special.state_q.S_BRANCH_REDIRECT` →
+completion retained/redirect kill → `special_cancel` → special result valid →
+completion finish → station resolve/issue → `iq_ready` → rename owner
+enable. None of the gate-1 changes (router T=1 classification, DSI cause
+and DSISR selection, `tlbsync` decode) lies on it; the +93 ALMs moved
+placement on a path that had +0.388 ns at the previous fit. Closing it
+belongs to the dispatch/issue timing work (AUD-21 and the 66 MHz push).
+
 ## 2026-09-27 current refit (after AUD-50/AUD-33)
 
 Recorded: `./quartus/translated/build.sh --docker`, same merge, 2026-09-27.

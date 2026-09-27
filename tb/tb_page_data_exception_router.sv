@@ -295,6 +295,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     @(negedge clk_i); bat_write_rsp_ready_i = 0;
   endtask
 
+  logic [2:0] typed_code = 3'd1;
   task automatic data_access(input bit write_req, input logic [31:0] ea,
       input bit expect_offer, input logic [31:0] expected_pa,
       input logic [3:0] expected_wimg, input bit expect_typed);
@@ -371,7 +372,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     end else begin
       check(dmem_rsp_valid_o && !pdmem_req_valid_o &&
             dmem_rsp_error_o == !expect_typed &&
-            dmem_rsp_fault_o == (expect_typed ? 3'd1 : 3'd0) &&
+            dmem_rsp_fault_o == (expect_typed ? typed_code : 3'd0) &&
             dmem_rsp_rdata_o == 0 &&
             (expect_typed ? !page_fault_o && !translation_fault_o :
              page_fault_o && translation_fault_o && fault_ea_o == ea &&
@@ -588,10 +589,20 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
           "TLB miss was promoted to protection DSI");
     reset_all();
     start_router(1,1,0);
-    set_sr(4'd1,32'h8000_0000|{8'h00,VSID_A});
-    data_access(0,EA,0,0,0,0);
-    check(page_direct_store_o&&!page_protection_o,
-          "direct-store segment was promoted to protection DSI");
+    // SR.T=1 is DSI DSISR[5] for loads and stores, even over an allowed
+    // TLB entry, when page data exceptions are enabled.
+    for(int w=0;w<2;w++)begin
+      reset_all();
+      manage(2'd1,1,EA,VSID_A,0,RPN_A,1,4'h2,2'b10,0);
+      start_router(1,1,0);
+      set_sr(4'd1,32'h8000_0000|{8'h00,VSID_A});
+      typed_code=3'd4;
+      data_access(w!=0,EA,0,0,0,ENABLE_PAGE_DATA_EXCEPTIONS);
+      typed_code=3'd1;
+      check(page_direct_store_o==!ENABLE_PAGE_DATA_EXCEPTIONS&&
+            !page_protection_o,
+            "direct-store segment lost its DSI or diagnostic");
+    end
 
     // An internally malformed or contradictory service response cannot
     // become the narrow architectural cause even if PP protection is set.

@@ -1,5 +1,18 @@
 # Timer and live BAT FPGA measurement
 
+
+## 2026-09-27 refit after merging AUD-21 and gate 1
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, merge of the gate-1 branch
+onto `f6f9df5` (AUD-21 merged), 2026-09-27. Setup meets 50 MHz at every
+corner (+1.447 / +1.612 ns at slow 100 C / -40 C); Fmax 53.90 MHz, 4,913 ALMs.
+**Hold misses by 0.020 ns** at slow -40 C on the virtual input
+`bat_write_data_i[30]` → `bat_service.write_data_q[30]`, with
+`pimem_rsp_insn_i[6]` → `fetch.buf_insn[6]` at +0.001 ns. Both are
+zero-delay same-clock virtual inputs, a measurement artifact rather than a
+core path; the boundary model of the three measurement tops is being
+revised. Other corners' hold passes (+0.251 / +0.137 / +0.121 ns).
+
 ## 2026-09-27 current refit (after AUD-50/AUD-33)
 
 Recorded: `./quartus/timer-bat/build.sh --docker`, same merge, 2026-09-27.

@@ -1,5 +1,14 @@
 # Current cached-physical synthesis baseline
 
+
+## 2026-09-27 refit after merging AUD-21 and gate 1
+
+Recorded: `./quartus/integrated/build.sh --docker`, merge of the gate-1 branch
+onto `f6f9df5` (AUD-21 merged), 2026-09-27. Meets 50 MHz at every corner:
+setup +1.367 / +1.539 ns and hold +0.202 / +0.079 ns at slow 100 C / -40 C;
+fast corners pass. Fmax 55.80 MHz (slow 100 C); 66 MHz needs about 2.8 ns.
+4,951 ALMs.
+
 ## 2026-09-27 refit: RS result bypass (AUD-21)
 
 Recorded: `./quartus/integrated/build.sh --docker`, commit `20424d7`

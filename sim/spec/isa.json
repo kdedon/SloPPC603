@@ -18372,6 +18372,70 @@
       ]
     },
     {
+      "id": "tlbsync",
+      "mnemonic": "tlbsync",
+      "family": "tlbsync",
+      "semantic_class": "opt_in_system_control",
+      "form": "X",
+      "mask": "0xffffffff",
+      "value": "0x7c00046c",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [],
+      "writes": [],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-028",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_TLB_INVALIDATE"
+        ]
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 368,
+          "printed_page": "A-8",
+          "table": "A-1",
+          "rows": [
+            "A1-221"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 124,
+          "printed_page": "2-46",
+          "table": "2-42",
+          "role": "primary_supervisor_instruction"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 223,
+          "printed_page": "5-27",
+          "section": "5.4.3.2",
+          "role": "primary_tlbisync_behavior"
+        }
+      ]
+    },
+    {
       "id": "tlbld",
       "mnemonic": "tlbld",
       "family": "tlbld",
