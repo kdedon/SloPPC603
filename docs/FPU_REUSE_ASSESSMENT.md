@@ -25,11 +25,17 @@ The complete standalone **603e/602 pipeline remains in progress**. The
 [602 contract](FPU_602_CONTRACT.md) pins its primary user manual and records
 the distinct tag, exception, register and instruction rules. The replacement
 [pipeline](FPU_PIPELINE_DESIGN.md) selects its personality at compile time and
-must meet original instruction latency and throughput. The arithmetic checkpoint
-`251d633` passes numerical and execution-cycle tests; the concurrent shell and
-602 architectural acceptance are still being verified. The latest arithmetic
-post-map estimate is **24.0 MHz**, below both 50 and 66 MHz. No completion claim
-is made for the replacement.
+must meet original instruction latency and throughput. Recorded pipeline checkpoints now include 200,288 603e raw-bit cases,
+181,376 602 cases, exact-cycle gates with 71/52 tagged responses, 851/87
+public-shell checks, and a 32-operation issue/forward/commit stream in each
+personality. These results cover separately pinned source snapshots; they are
+not one final revision's acceptance. Dedicated paired dispatch/retirement,
+602 estimate coverage and further current-revision gates remain in progress.
+The latest arithmetic post-map estimate is **24.0 MHz**; the first two-lane
+603e shell estimates **12.9 MHz**. Both miss 50 and 66 MHz. No completion or
+fitted timing claim is made for the replacement. See
+[verification](../sim/fpu/PRODUCTION.md) and
+[measurements](../quartus/fpu-production/README.md) for exact commands and scope.
 
 The historical serialized 603e checkpoint `cb871b4` passed 200,000 raw arithmetic
 packets, 11,958 estimates, 851 shell checks and 76 cancellation offsets. Its

@@ -39,25 +39,19 @@ Generated builds, logs and reports are excluded from version control.
 
 For the full 603e, dual issue, branch prediction, data cache/coherence, floating
 point, endian/variant features and timing fidelity remain major workstreams.
-Floating point now has a manual-backed [FPU contract](../../FPU_CONTRACT.md),
-including explicit source conflicts, and a completed isolated arithmetic
-experiment under the [FPU reuse assessment](../../FPU_REUSE_ASSESSMENT.md).
-The SS candidate fails numerical qualification and the pre-fit frequency
-target. The standalone 603e shell and replacement arithmetic pass
-independent numeric and architectural tests: 200,000 raw packets, 11,958
-estimate packets, 851 shell checks and 76 cancellation offsets. It is
-serialized, with no core integration or four-entry rename throughput. The
-full-unit post-map estimate is 50.5 MHz, meeting the synthesis-only 50 MHz
-check; 66 MHz remains unmet. No fitted timing closure is claimed. See the
-assessment for resources, selected semantics and remaining silicon questions. A separate process will integrate the FPU
-into the CPU. Existing core RTL and file lists remain outside this workstream.
-The requested complete 603e/602 module remains open. The
-[602 contract](../../FPU_602_CONTRACT.md) now has a pinned primary manual;
-the [replacement pipeline](../../FPU_PIPELINE_DESIGN.md) must meet original
-instruction latency and throughput in each compile-time build. The
-latest arithmetic pipeline map reached 24.0 MHz; rounding/classification
-still needs redesign within the fixed cycle count. The earlier serialized suite and
-50.5 MHz measurement do not close the new implementation's acceptance gates.
+Floating point has manual-backed [603e](../../FPU_CONTRACT.md) and
+[602](../../FPU_602_CONTRACT.md) contracts and a completed isolated donor
+experiment. The donor failed qualification. The replacement standalone module
+selects 603e or 602 at compile time and must match original instruction latency
+and throughput. Numerical, exact-cycle and public-shell gates have passed at
+the checkpoints in [verification](../../../sim/fpu/PRODUCTION.md); dedicated
+paired dispatch/retirement and current-revision acceptance remain open. Latest
+arithmetic synthesis estimates 24.0 MHz; the measured two-lane 603e shell
+estimates 12.9 MHz. Both miss 50 and 66 MHz, and no fitter has run. The earlier
+serialized 50.5 MHz result is historical. See the
+[FPU assessment](../../FPU_REUSE_ASSESSMENT.md) for the remaining semantic and
+implementation gaps. A separate process owns CPU integration; existing core
+RTL and file lists remain outside this workstream.
 Do not infer full CPU completion from the restricted MVP score.
 
 After each accepted implementation round, update the scorecard's affected rows
