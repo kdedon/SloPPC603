@@ -2,6 +2,33 @@
 
 
 
+## 2026-09-27 66 MHz round: registered I/O, IQ decode at push
+
+Recorded: `./quartus/integrated/build.sh --docker` and
+`./quartus/report-target-paths.sh integrated --docker`, commit `fe62f24`,
+2026-09-27. Quartus 17.0.2, seed 1. **Meets 50 MHz and 66 MHz** at every
+corner; hold passes at every corner.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +5.171 | +0.316 |
+| Slow 1100 mV, -40 C | +4.858 | +0.273 |
+| Fast 1100 mV, 100 C | +7.361 | +0.177 |
+| Fast 1100 mV, -40 C | +7.735 | +0.142 |
+
+Fmax 66.04 MHz at the worst corner (slow -40 C; 67.44 MHz at slow 100 C),
+from 55.40 MHz after gate 2. No endpoint fails at 15.152 ns. 5,561 ALMs,
+6,455 registers (the IQ now holds decoded uops in registers), 3 DSP blocks.
+The worst paths left near 66 MHz run from the I-cache data RAM through
+decode into the IQ, and from the IQ into rename and the reservation station.
+
+Method changes in this fit, so earlier sections are not directly comparable:
+every data port of the measurement top now passes through one boundary
+register (the SDC cuts only the pin-to-register hop), and the fitter runs
+Standard Fit instead of Auto Fit. The 66 MHz column re-times the same fit
+with `./quartus/report-target-paths.sh <top> --docker`; the 50 MHz SDC stays
+the gate of record.
+
 ## 2026-09-27 refit after merging gate 2
 
 Recorded: `./quartus/integrated/build.sh --docker`, merge of the gate-2 branch onto

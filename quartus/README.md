@@ -32,6 +32,16 @@ fails if a committed QSF has drifted:
 python3 quartus/qsf_sources.py quartus quartus/integrated quartus/timer-bat quartus/translated quartus/icache
 ```
 
+In the `integrated/`, `timer-bat/` and `translated/` tops every virtual data
+port passes through one boundary register that models the upstream or
+downstream flop; their SDCs cut only the pin-to-register hop, so every timed
+path is register to register. To list failing endpoints of a completed fit
+at another period (default 15.152 ns, 66 MHz) without refitting:
+
+```sh
+./quartus/report-target-paths.sh integrated --docker   # or timer-bat, translated
+```
+
 The top-level clock, synchronous active-low reset, 32-bit instruction stimulus,
 and one folded activity bit are all virtual pins, so none consume package I/O.
 The runtime instruction input prevents synthesis from specializing decoder,
