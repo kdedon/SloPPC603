@@ -26,12 +26,13 @@ The complete standalone **603e/602 pipeline remains in progress**. The
 the distinct tag, exception, register and instruction rules. The replacement
 [pipeline](FPU_PIPELINE_DESIGN.md) selects its personality at compile time and
 must meet original instruction latency and throughput. A coherent baseline
-(shell `1598fb9`, arithmetic `6a2f28b`) passes `test-fpu-all lint`: 200,288
-603e and 181,376 602 raw-bit cases; 11,958/17,628 estimate checks; 851/171
+(shell `7ed5182`, arithmetic `91c80b8`) passes `test-fpu-all lint`: 200,288
+603e and 181,376 602 raw-bit cases; 11,958/17,628 estimate checks; 851/173
 public-shell checks; 71/52 exact-cycle responses; 32-operation streams in both
-personalities; 20/19 paired dispatch/retirement checks; and 63 strict lint
+personalities; 28/24 paired dispatch/retirement checks; and 63 strict lint
 invocations with no warnings or errors. Later timing changes require their own
-acceptance records; full-queue admission coverage is being expanded.
+acceptance records. The baseline includes full-queue admission, rejected
+second-lane isolation and 602 SPR transfer timing.
 The retained arithmetic post-map estimate is **27.0 MHz**; the measured two-lane
 603e shell estimates **16.9 MHz**. Both miss 50 and 66 MHz. No completion or
 fitted timing claim is made for the replacement. See
