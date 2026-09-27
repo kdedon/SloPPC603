@@ -117,7 +117,7 @@ floating-point status instructions.
 
 The integrating completion controller must also supply the documented variable
 serialization stalls. In particular, a newly set disabled sticky exception on
-602 can lose one or two completion cycles; this is not an extra fixed FPU
+602 with MSR[FE]=0 can lose one or two completion cycles; this is not an extra fixed FPU
 execution stage. The held result's FPSCR proposal and committed FPSCR inspection
 allow the controller to recognize that transition and delay `commit_valid_i`.
 Standalone execution-cycle tests do not establish this whole-core completion
