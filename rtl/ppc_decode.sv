@@ -543,6 +543,14 @@ module ppc_decode #(
                 uop_o.src_b = insn_i[15:11];
               end
             end
+            10'd566: begin
+              // TLBSYNC has no operands. TLBISYNC is treated as negated, so
+              // it completes as a serialized supervisor no-op.
+              if (ENABLE_TLB_INVALIDATE && (insn_i == 32'h7c00_046c)) begin
+                uop_o.illegal = 1'b0;
+                uop_o.special_op = SPECIAL_TLBSYNC;
+              end
+            end
             10'd595, 10'd659, 10'd210, 10'd242: begin
               logic direct_form, read_form;
               direct_form = (insn_i[10:1] == 10'd595) ||

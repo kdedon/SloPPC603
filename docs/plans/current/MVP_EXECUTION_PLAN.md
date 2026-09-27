@@ -759,6 +759,20 @@ capture; no wake compare on the issue path and no CPI change. Fresh: full
 regression, compiled firmware and integrated fit (54.10 MHz, IU-operand path
 slack +3.3 → +8.1 ns). MVP 81.51% → 81.51%.
 
+## Gate-1 MMU/event round — accepted (2026-09-27)
+
+Direct-store segments (SR.T=1) now raise DSI DSISR[5] (+[6] for stores) and
+ISI SRR1[3] instead of a diagnostic (UM Table 5-3); `tlbsync` decodes as a
+supervisor no-op with TLBISYNC negated. A new compiled image,
+`rtl-mmu-stress-cached`, checks LRU replacement, R/C, tlbie/tlbsync remap,
+direct-store and page-fault DSI/ISI on the MVP-profile translated cached top
+under seeded EXT/DEC, bus delays and eight mid-run reset points. Fresh: full
+`make -C sim regression`, `make -C toolchain rtl-all` (25 profiles) and a
+translated fit, which misses 50 MHz setup by 0.351 ns on the unchanged
+dispatch/completion path (hold meets). MVP 81.51% → 82.66% (page TLB 90 → 94, supervisor 75 → 78,
+interrupts/timers 85 → 88, integration 85 → 87). See
+[stress evidence](../../MMU_STRESS_FIRMWARE.md).
+
 ## Cache maintenance and held-refill round — accepted (2026-09-27)
 
 Gate 2. Cache control instructions behind `ENABLE_CACHE_INSTRUCTIONS`: one-set
@@ -767,5 +781,5 @@ DSI/TLB-miss, `dcbz` alignment, no-op touches; external maintenance stays a
 separate handshake. New directed, seeded stress and compiled-firmware gates;
 both mutation controls rejected. Fresh: full regression, `rtl-all`, translated
 fit (52.31 MHz after tying off the special-lane cancel without the test
-redirect). MVP 81.51% → 82.66%; full audit 46.29% → 46.79%. See
+redirect). MVP 82.66% → 83.81%; full audit 46.29% → 46.79%. See
 [verification](../../CACHE_CONTROL_VERIFICATION.md).

@@ -1,4 +1,4 @@
-// Fixed-encoding oracle for optional 603e tlbie. No decoded uop input drives
+// Fixed-encoding oracle for optional 603e tlbie and tlbsync. No decoded uop input drives
 // expected legality, register dependency, or side-effect checks.
 /* verilator lint_off BLKSEQ */
 module tb_tlbie_decode;
@@ -69,6 +69,24 @@ module tb_tlbie_decode;
       probe(0,5'(rb));
     end
     check(accepted==32 && rejected==2080,"decode coverage tally");
+    // tlbsync 0x7c00046c: every non-opcode field is fixed.
+    insn=32'h7c00_046c;
+    #1;
+    check(!enabled.illegal && enabled.special_op==SPECIAL_TLBSYNC &&
+          combined==enabled,"canonical tlbsync rejected");
+    check(!enabled.gpr_write && !enabled.mem_update && !enabled.needs_flags &&
+          !enabled.write_xer && !enabled.write_cr_field &&
+          !enabled.write_cr_fields && !enabled.write_cr_bit,
+          "tlbsync architectural side effects");
+    check(disabled.special_op!=SPECIAL_TLBSYNC &&
+          baseline.special_op!=SPECIAL_TLBSYNC,
+          "tlbsync escaped default-disabled feature gate");
+    for(int b=0;b<26;b++)begin
+      insn=32'h7c00_046c ^ (32'h1<<b);
+      #1;
+      check(enabled.special_op!=SPECIAL_TLBSYNC,
+            "reserved tlbsync mutation accepted");
+    end
     $display("PASS tlbie decode checks=%0d accepted=%0d rejected=%0d",
       checks,accepted,rejected);
     $finish;

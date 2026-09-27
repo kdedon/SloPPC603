@@ -119,3 +119,17 @@ PY
 
 The reproduction omits the explanatory comment used in the recorded mutant; the
 injected defect is identical.
+
+## Translated cached reset stress, 2026-09-27
+
+Recorded: `make -C toolchain rtl-mmu-stress-cached`, commit 4428a5e, 2026-09-27.
+
+The direct-core matrix above cannot reach the BAT router, the 60x bus or the
+I-cache. The compiled MMU stress image covers them on
+`ppc_core_bat_cached_bus60x`: eight seeded modes reset the CPU during a
+miss-handler PTEG read or R/C write, a TLB load or invalidate, a translated
+line fill, a held IRQ, a DEC entry or at random cycles, while EXT and DEC
+fire throughout. Every mode passes the full image again from reset, with
+matching handler and bench event counts and exact RFI resume PCs. See
+[MMU_STRESS_FIRMWARE.md](MMU_STRESS_FIRMWARE.md).
+

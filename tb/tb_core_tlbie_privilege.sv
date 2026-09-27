@@ -1,5 +1,6 @@
-// Problem-state tlbie enters Program Priv; default-off tlbie retains the
-// legacy illegal diagnostic halt. Neither may reach the TLB transport.
+// Problem-state tlbie and tlbsync enter Program Priv; default-off forms retain
+// the legacy illegal diagnostic halt. Neither may reach the TLB transport.
+// Supervisor tlbsync retires as a no-op with TLBISYNC negated.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off UNUSEDSIGNAL */
 module tb_core_tlbie_privilege #(parameter bit FEATURE=1'b1);
@@ -91,13 +92,27 @@ module tb_core_tlbie_privilege #(parameter bit FEATURE=1'b1);
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i(32'b0),.redirect_accepted_o(cut));
 
+  function automatic logic [31:0] tested_word();
+    case(test_case)
+      0:return 32'h7c00_0264; // tlbie r0
+      1:return 32'h7c00_fa64; // tlbie r31
+      default:return 32'h7c00_046c; // tlbsync
+    endcase
+  endfunction
   function automatic logic [31:0] instruction(input logic [31:0] pc);
     if(!FEATURE)begin
       case(pc)
-        0:return test_case==0 ? 32'h7c00_0264 : 32'h7c00_fa64;
+        0:return tested_word();
         32'h700:return 32'h7d7a_02a6; // mfsrr0 r11
         32'h704:return 32'h7d9b_02a6; // mfsrr1 r12
         32'h708:return 32'h39c0_0009; // addi r14,0,9
+        default:return 32'h4800_0000;
+      endcase
+    end
+    if(test_case==3)begin
+      case(pc)
+        0:return 32'h7c00_046c; // supervisor tlbsync
+        4:return 32'h39c0_000b; // addi r14,0,11
         default:return 32'h4800_0000;
       endcase
     end
@@ -107,7 +122,7 @@ module tb_core_tlbie_privilege #(parameter bit FEATURE=1'b1);
       8:return 32'h3940_0100; // addi r10,0,0x100
       12:return 32'h7d5a_03a6; // mtsrr0 r10
       16:return 32'h4c00_0064; // rfi to problem state
-      32'h100:return test_case==0 ? 32'h7c00_0264 : 32'h7c00_fa64;
+      32'h100:return tested_word();
       32'h700:return 32'h7d7a_02a6;
       32'h704:return 32'h7d9b_02a6;
       32'h708:return 32'h39c0_0009;
@@ -135,7 +150,14 @@ module tb_core_tlbie_privilege #(parameter bit FEATURE=1'b1);
       if(inv_req)csr_offers<=csr_offers+1;
       check(!inv_req&&!inv_commit&&!inv_abort&&!seg_req,
             "privileged/default-off tlbie reached MMU transport");
-      if(tv)begin
+      if(tv&&FEATURE&&test_case==3)begin
+        if(retired.pc==0)begin
+          fault_retires<=fault_retires+1;
+          check(!retired.illegal&&!retired.gpr_write&&!retired.update_write,
+                "supervisor tlbsync did not retire as a no-op");
+        end
+        if(retired.pc==4)done<=1;
+      end else if(tv)begin
         if(retired.pc==(FEATURE ? 32'h100 : 32'h0))begin
           fault_retires<=fault_retires+1;
           check(!retired.gpr_write&&!retired.update_write,
@@ -147,13 +169,17 @@ module tb_core_tlbie_privilege #(parameter bit FEATURE=1'b1);
     end
   end
   initial begin
-    for(int i=0;i<2;i++)begin
+    for(int i=0;i<(FEATURE ? 4 : 3);i++)begin
       @(negedge clk);rst_n=0;test_case=i;
       repeat(4)@(negedge clk);rst_n=1;
       wait(done);@(negedge clk);
       check(fault_retires==1 && csr_offers==0,
             "missing/duplicate Program event or transport offer");
-      if(FEATURE)begin
+      if(FEATURE && test_case==3)begin
+        check(!halted && dut.msr==32'h40 && dut.srr0==0 && dut.srr1==0 &&
+              dut.regfile.gpr[14]==11,
+              "supervisor tlbsync raised an exception or stopped");
+      end else if(FEATURE)begin
         check(!halted && dut.msr==0 && dut.srr0==32'h100 &&
               dut.srr1==32'h0004_4000,
               "problem-state Program saved PC/state/cause");
