@@ -20,14 +20,28 @@ module tb_multiply_execution;
   result_packet_t result;
   int checks = 0;
 
+  rs_entry_t dispatch_entry;
+  assign dispatch_entry = '{
+    ctrl: '{
+      op: dispatch_op,
+      invert_a: 1'b0,
+      carry_in: CARRY_ZERO,
+      mask: '0,
+      shift: 5'b0,
+      ca_in: 1'b0,
+      so_in: dispatch_so,
+      write_ca: 1'b0,
+      write_ov_so: dispatch_write_ov_so,
+      write_cr_field: dispatch_write_cr_field,
+      producer: dispatch_producer
+    },
+    a: dispatch_a,
+    b: dispatch_b
+  };
   ppc_dispatch station (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
-    .shift_i(5'b0), .mask_i('0), .op_i(dispatch_op), .invert_a_i(1'b0), .carry_in_i(CARRY_ZERO),
-    .producer_i(dispatch_producer), .a_i(dispatch_a), .b_i(dispatch_b),
-    .ca_i(1'b0), .so_i(dispatch_so), .write_ca_i(1'b0),
-    .write_ov_so_i(dispatch_write_ov_so),
-    .write_cr_field_i(dispatch_write_cr_field),
+    .entry_i(dispatch_entry),
     .wake_valid_i(wake_valid), .wake_i(wake),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
@@ -99,12 +113,12 @@ module tb_multiply_execution;
     wake.value = source_a;
     wake_valid = 1'b1;
     #1;
-    require(issue_valid && issue.op == ALU_MULLW &&
-            issue.producer == dispatch_producer &&
+    require(issue_valid && issue.ctrl.op == ALU_MULLW &&
+            issue.ctrl.producer == dispatch_producer &&
             issue.a == source_a && issue.b == source_b &&
-            issue.so_in == so_in && !issue.write_ca &&
-            issue.write_ov_so == write_ov_so &&
-            issue.write_cr_field == write_cr_field,
+            issue.ctrl.so_in == so_in && !issue.ctrl.write_ca &&
+            issue.ctrl.write_ov_so == write_ov_so &&
+            issue.ctrl.write_cr_field == write_cr_field,
             "RS lost multiply inputs, controls, SO, or producer");
     @(posedge clk);
     #1;

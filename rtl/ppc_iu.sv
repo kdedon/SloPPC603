@@ -66,10 +66,10 @@ module ppc_iu #(
     if (DIV_LATENCY < 17)
       $fatal(1, "DIV_LATENCY must allow 16 radix-4 iterations after start");
   end
-  assign held_divide = (held.op == ALU_DIVWU) || (held.op == ALU_DIVW);
-  assign held_multiply = (held.op == ALU_MULLI) ||
-    (held.op == ALU_MULLW) || (held.op == ALU_MULHW) ||
-    (held.op == ALU_MULHWU);
+  assign held_divide = (held.ctrl.op == ALU_DIVWU) || (held.ctrl.op == ALU_DIVW);
+  assign held_multiply = (held.ctrl.op == ALU_MULLI) ||
+    (held.ctrl.op == ALU_MULLW) || (held.ctrl.op == ALU_MULHW) ||
+    (held.ctrl.op == ALU_MULHWU);
   assign held_complete = held_divide ?
     ((divide_cycles_left == '0) && divider_quotient_valid && !divider_busy) :
     (!held_multiply || (multiply_cycles_left == '0));
@@ -77,14 +77,14 @@ module ppc_iu #(
   assign issue_ready_o = rst_ni &&
     (!occupied || cancel_i || (result_valid_o && result_ready_i));
   assign result_valid_o = rst_ni && occupied && held_complete && !cancel_i;
-  assign result_o.producer = held.producer;
+  assign result_o.producer = held.ctrl.producer;
   assign result_o.fault = 1'b0;
   assign result_o.data_fault = DATA_OK;
   assign result_o.page_miss = '0;
   assign result_o.update_value = '0;
   assign divider_start = issue_valid_i && issue_ready_o &&
-    ((issue_i.op == ALU_DIVWU) || (issue_i.op == ALU_DIVW));
-  assign divider_signed = issue_i.op == ALU_DIVW;
+    ((issue_i.ctrl.op == ALU_DIVWU) || (issue_i.ctrl.op == ALU_DIVW));
+  assign divider_signed = issue_i.ctrl.op == ALU_DIVW;
   assign divider_cancel = cancel_i ||
     (result_valid_o && result_ready_i && held_divide);
   ppc_divider divider (
@@ -93,11 +93,11 @@ module ppc_iu #(
     .busy_o(divider_busy), .quotient_valid_o(divider_quotient_valid),
     .quotient_o(divider_quotient)
   );
-  assign add_operand_a = held.invert_a ? ~held.a : held.a;
+  assign add_operand_a = held.ctrl.invert_a ? ~held.a : held.a;
   always_comb begin
-    case (held.carry_in)
+    case (held.ctrl.carry_in)
       CARRY_ONE: add_carry_in = 1'b1;
-      CARRY_CA: add_carry_in = held.ca_in;
+      CARRY_CA: add_carry_in = held.ctrl.ca_in;
       default: add_carry_in = 1'b0;
     endcase
   end
@@ -108,10 +108,10 @@ module ppc_iu #(
   // One signed 33x33 DSP product serves signed and unsigned forms. Inputs
   // register at issue and the product one edge later, inside the shortest
   // (3-cycle) reservation.
-  assign issue_multiply = (issue_i.op == ALU_MULLI) ||
-    (issue_i.op == ALU_MULLW) || (issue_i.op == ALU_MULHW) ||
-    (issue_i.op == ALU_MULHWU);
-  assign issue_multiply_signed = issue_i.op != ALU_MULHWU;
+  assign issue_multiply = (issue_i.ctrl.op == ALU_MULLI) ||
+    (issue_i.ctrl.op == ALU_MULLW) || (issue_i.ctrl.op == ALU_MULHW) ||
+    (issue_i.ctrl.op == ALU_MULHWU);
+  assign issue_multiply_signed = issue_i.ctrl.op != ALU_MULHWU;
   always_ff @(posedge clk_i) begin
     if (issue_valid_i && issue_ready_o && issue_multiply) begin
       multiply_a_q <= {issue_multiply_signed && issue_i.a[31], issue_i.a};
@@ -125,17 +125,17 @@ module ppc_iu #(
   assign divide_by_zero = held.b == 0;
   assign signed_divide_exception = divide_by_zero ||
     ((held.a == 32'h8000_0000) && (held.b == 32'hffff_ffff));
-  assign operation_overflow = ((held.op == ALU_MULLI) ||
-                               (held.op == ALU_MULLW)) ? multiply_overflow :
-                              (held.op == ALU_DIVWU) ? divide_by_zero :
-                              (held.op == ALU_DIVW) ? signed_divide_exception :
+  assign operation_overflow = ((held.ctrl.op == ALU_MULLI) ||
+                               (held.ctrl.op == ALU_MULLW)) ? multiply_overflow :
+                              (held.ctrl.op == ALU_DIVWU) ? divide_by_zero :
+                              (held.ctrl.op == ALU_DIVW) ? signed_divide_exception :
                               add_overflow;
-  assign final_so = held.so_in | operation_overflow;
+  assign final_so = held.ctrl.so_in | operation_overflow;
   // One left rotator serves every rotate and shift. A right shift by n is a
   // left rotate by (32 - n) mod 32 masked to the low 32 - n bits.
   always_comb begin
-    case (held.op)
-      ALU_RLWIMI: rotate_amount = held.shift;
+    case (held.ctrl.op)
+      ALU_RLWIMI: rotate_amount = held.ctrl.shift;
       ALU_SRW, ALU_SRAW: rotate_amount = 5'd0 - held.b[4:0];
       default: rotate_amount = held.b[4:0];
     endcase
@@ -150,23 +150,23 @@ module ppc_iu #(
   // CA is set when a negative value shifts out any one bit.
   assign sraw_ca = sign_fill && (held.b[5] || |(held.a & ~left_mask));
   assign leading_zeros = count_leading_zeros(held.a);
-  assign result_o.ca = held.write_ca ?
-    ((held.op == ALU_SRAW) ? sraw_ca : add_sum[32]) : 1'b0;
-  assign result_o.ov = held.write_ov_so ? operation_overflow : 1'b0;
-  assign result_o.so = held.write_ov_so ? final_so : 1'b0;
+  assign result_o.ca = held.ctrl.write_ca ?
+    ((held.ctrl.op == ALU_SRAW) ? sraw_ca : add_sum[32]) : 1'b0;
+  assign result_o.ov = held.ctrl.write_ov_so ? operation_overflow : 1'b0;
+  assign result_o.so = held.ctrl.write_ov_so ? final_so : 1'b0;
   assign result_o.value = result_value;
-  assign result_o.cr0 = held.write_cr_field ? {
+  assign result_o.cr0 = held.ctrl.write_cr_field ? {
     result_value[31],
     !result_value[31] && (result_value != 0),
     result_value == 0,
-    held.write_ov_so ? final_so : held.so_in
+    held.ctrl.write_ov_so ? final_so : held.ctrl.so_in
   } : 4'b0;
   always_comb begin
-    case (held.op)
+    case (held.ctrl.op)
       ALU_ADD: result_value = add_sum[31:0];
-      ALU_ROTATE: result_value = rotate_value & held.mask;
-      ALU_RLWIMI: result_value = (rotate_value & held.mask) |
-                                 (held.b & ~held.mask);
+      ALU_ROTATE: result_value = rotate_value & held.ctrl.mask;
+      ALU_RLWIMI: result_value = (rotate_value & held.ctrl.mask) |
+                                 (held.b & ~held.ctrl.mask);
       ALU_SLW: result_value = held.b[5] ? 32'b0 : rotate_value & left_mask;
       ALU_SRW: result_value = held.b[5] ? 32'b0 : rotate_value & right_mask;
       ALU_SRAW: result_value = sraw_value;
@@ -211,11 +211,11 @@ module ppc_iu #(
       end
       if (issue_valid_i && issue_ready_o) begin
         occupied <= 1'b1;
-        if ((issue_i.op == ALU_DIVWU) || (issue_i.op == ALU_DIVW))
+        if ((issue_i.ctrl.op == ALU_DIVWU) || (issue_i.ctrl.op == ALU_DIVW))
           divide_cycles_left <= DIV_COUNT_WIDTH'(DIV_LATENCY - 1);
         else
           divide_cycles_left <= '0;
-        case (issue_i.op)
+        case (issue_i.ctrl.op)
           // Table 6-4 maximum for each family.
           ALU_MULLI: multiply_cycles_left <= MULTIPLY_COUNT_WIDTH'(3 - 1);
           ALU_MULLW, ALU_MULHW:

@@ -45,14 +45,14 @@ module divider_timing_case #(
   );
     issue_packet_t packet;
     packet = '0;
-    packet.op = op;
-    packet.producer.index = CQ_INDEX_WIDTH'(CASE_ID % CQ_DEPTH);
-    packet.producer.generation = generation;
+    packet.ctrl.op = op;
+    packet.ctrl.producer.index = CQ_INDEX_WIDTH'(CASE_ID % CQ_DEPTH);
+    packet.ctrl.producer.generation = generation;
     packet.a = a;
     packet.b = b;
-    packet.so_in = so_in;
-    packet.write_ov_so = write_ov_so;
-    packet.write_cr_field = write_cr_field;
+    packet.ctrl.so_in = so_in;
+    packet.ctrl.write_ov_so = write_ov_so;
+    packet.ctrl.write_cr_field = write_cr_field;
     return packet;
   endfunction
 
@@ -167,7 +167,7 @@ module divider_timing_case #(
     accept(issue);
     require(dut.divide_cycles_left == COUNTER_WIDTH'(LATENCY - 1),
             "counter did not reserve the configured execute interval");
-    expect_divide_latency(expected_result(issue.producer, 32'h7fff_ffff,
+    expect_divide_latency(expected_result(issue.ctrl.producer, 32'h7fff_ffff,
                                           1'b0, 1'b0, 4'h5));
     drain_result();
 
@@ -177,14 +177,14 @@ module divider_timing_case #(
                        1'b0, 1'b0, 1'b1);
     result_ready = 1'b1;
     accept(issue);
-    expect_earliest_accept(expected_result(issue.producer, 32'd12,
+    expect_earliest_accept(expected_result(issue.ctrl.producer, 32'd12,
                                            1'b0, 1'b0, 4'h4));
 
     // Signed divide retains its captured SO and all result fields while held.
     issue = make_issue(ALU_DIVW, 8'h22, 32'h8000_0000, 32'd1,
                        1'b1, 1'b1, 1'b1);
     accept(issue);
-    expect_divide_latency(expected_result(issue.producer, 32'h8000_0000,
+    expect_divide_latency(expected_result(issue.ctrl.producer, 32'h8000_0000,
                                           1'b0, 1'b1, 4'h9));
     drain_result();
 
@@ -221,7 +221,7 @@ module divider_timing_case #(
     issue_valid = 1'b0;
     result_ready = 1'b0;
     #1;
-    require(result_valid && result == expected_result(issue.producer, 32'd7,
+    require(result_valid && result == expected_result(issue.ctrl.producer, 32'd7,
                                                        1'b0, 1'b0, 4'b0),
             "same-edge surviving replacement was lost");
     drain_result();
@@ -231,7 +231,7 @@ module divider_timing_case #(
     issue = make_issue(ALU_DIVW, 8'h55, 32'd21, 32'd3,
                        1'b0, 1'b0, 1'b1);
     accept(issue);
-    expect_divide_latency(expected_result(issue.producer, 32'd7,
+    expect_divide_latency(expected_result(issue.ctrl.producer, 32'd7,
                                           1'b0, 1'b0, 4'h4));
     @(negedge clk);
     issue = make_issue(ALU_DIVWU, 8'h66, 32'd81, 32'd9,
@@ -250,7 +250,7 @@ module divider_timing_case #(
     #1;
     require(dut.divide_cycles_left == COUNTER_WIDTH'(LATENCY - 1),
             "replacement divide inherited old reservation age");
-    expect_divide_latency(expected_result(issue.producer, 32'd9,
+    expect_divide_latency(expected_result(issue.ctrl.producer, 32'd9,
                                           1'b0, 1'b0, 4'h5));
     drain_result();
 
@@ -259,11 +259,11 @@ module divider_timing_case #(
     issue = make_issue(ALU_DIVW, 8'h67, 32'd45, 32'd5,
                        1'b1, 1'b1, 1'b1);
     accept(issue);
-    expect_divide_latency(expected_result(issue.producer, 32'd9,
+    expect_divide_latency(expected_result(issue.ctrl.producer, 32'd9,
                                           1'b0, 1'b1, 4'h5));
     @(posedge clk);
     #1;
-    require(result_valid && result == expected_result(issue.producer, 32'd9,
+    require(result_valid && result == expected_result(issue.ctrl.producer, 32'd9,
                                                        1'b0, 1'b1, 4'h5),
             "held result changed before cancellation");
     @(negedge clk);

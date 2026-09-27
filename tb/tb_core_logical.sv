@@ -362,7 +362,7 @@ module tb_core_logical;
       if (dut.issue_valid && dut.issue_ready) begin
         found = -1;
         for (int i = 0; i < timing_count; i++)
-          if (timing_valid[i] && timing_id[i] == dut.issue.producer) found = i;
+          if (timing_valid[i] && timing_id[i] == dut.issue.ctrl.producer) found = i;
         if (found >= 0) begin
           require(timing_issue_edge[found] == -1, "logical producer issued twice");
           require(edge_count > timing_dispatch_edge[found],

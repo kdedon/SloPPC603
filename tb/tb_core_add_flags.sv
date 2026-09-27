@@ -502,7 +502,7 @@ module tb_core_add_flags;
       if (dut.issue_valid && dut.issue_ready) begin
         issue_index = -1;
         for (int i = 0; i < stream.size(); i++)
-          if (stream[i].tag == dut.issue.producer) issue_index = i;
+          if (stream[i].tag == dut.issue.ctrl.producer) issue_index = i;
         require(issue_index >= 0 && !stream[issue_index].issued,
                 "ADD issue did not match a live unissued stream entry");
         if (issue_index >= 0) begin

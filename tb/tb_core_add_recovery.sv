@@ -323,7 +323,7 @@ module tb_core_add_recovery;
     if (USE_INSERT != 0) begin
       require(dut.regfile.gpr[6] == 0, "old destination must still be speculative");
       if (mode == 0)
-        require(dut.station.b.ready && dut.station.b.value == 1,
+        require(dut.station.entry.b.ready && dut.station.entry.b.value == 1,
                 "insert must capture the older uncommitted destination value");
     end
     if (mode == 4) begin

@@ -115,6 +115,7 @@ module ppc_core #(
   retire_packet_t allocation;
   completion_tag_t alloc_producer, retire_producer;
   operand_t src_a, src_b, operand_a, operand_b;
+  rs_entry_t rs_entry;
   issue_packet_t issue;
   result_packet_t result, iu_result, special_result;
   wake_packet_t wake;
@@ -299,20 +300,27 @@ module ppc_core #(
       operand_b.value = dispatch_uop.imm;
     end
   end
+  assign rs_entry = '{
+    ctrl: '{
+      op: dispatch_uop.op,
+      invert_a: dispatch_uop.invert_a,
+      carry_in: dispatch_uop.carry_in,
+      mask: dispatch_uop.mask,
+      shift: dispatch_uop.shift,
+      ca_in: dispatch_uop.read_ca && xer[XER_CA_BIT],
+      so_in: dispatch_uop.read_so && xer[XER_SO_BIT],
+      write_ca: dispatch_uop.write_ca,
+      write_ov_so: dispatch_uop.write_ov_so,
+      write_cr_field: dispatch_uop.write_cr_field,
+      producer: alloc_producer
+    },
+    a: operand_a,
+    b: operand_b
+  };
   ppc_dispatch station (
     .clk_i, .rst_ni, .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch && normal_uop),
-    .dispatch_ready_o(rs_ready), .op_i(dispatch_uop.op),
-    .invert_a_i(dispatch_uop.invert_a), .carry_in_i(dispatch_uop.carry_in),
-    .producer_i(alloc_producer),
-    .a_i(operand_a), .b_i(operand_b),
-    .mask_i(dispatch_uop.mask),
-    .shift_i(dispatch_uop.shift),
-    .ca_i(dispatch_uop.read_ca ? xer[XER_CA_BIT] : 1'b0),
-    .so_i(dispatch_uop.read_so ? xer[XER_SO_BIT] : 1'b0),
-    .write_ca_i(dispatch_uop.write_ca),
-    .write_ov_so_i(dispatch_uop.write_ov_so),
-    .write_cr_field_i(dispatch_uop.write_cr_field),
+    .dispatch_ready_o(rs_ready), .entry_i(rs_entry),
     .wake_valid_i(wake_valid), .wake_i(wake),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
@@ -407,8 +415,8 @@ module ppc_core #(
     fault_killed = 1'b0;
     for (int slot = 0; slot < CQ_DEPTH; slot++) begin
       if (recovery_accepted && recovery_kill[slot]) begin
-        if (issue.producer.index == CQ_INDEX_WIDTH'(slot) &&
-            issue.producer.generation == recovery_kill_generation[slot]) rs_cancel = 1'b1;
+        if (issue.ctrl.producer.index == CQ_INDEX_WIDTH'(slot) &&
+            issue.ctrl.producer.generation == recovery_kill_generation[slot]) rs_cancel = 1'b1;
         if (iu_result.producer.index == CQ_INDEX_WIDTH'(slot) &&
             iu_result.producer.generation == recovery_kill_generation[slot]) iu_cancel = 1'b1;
         if (special_producer.index == CQ_INDEX_WIDTH'(slot) &&
@@ -453,37 +461,33 @@ module ppc_core #(
     end
   end
   // synthesis translate_on
-  assign allocation.pc = iq_head.pc;
-  assign allocation.insn = iq_head.insn;
-  assign allocation.illegal = dispatch_uop.illegal;
-  assign allocation.fetch_fault = iq_head.fault;
-  assign allocation.page_miss = (ENABLE_PAGE_MISS_RESULTS &&
-    iq_head.fault == FETCH_PAGE_MISS) ? iq_head.page_miss : '0;
-  assign allocation.alignment_exception =
-    dispatch_uop.special_op == SPECIAL_ALIGNMENT;
-  assign allocation.data_fault = DATA_OK;
-  assign allocation.gpr_write = dispatch_uop.gpr_write && !dispatch_uop.illegal;
-  assign allocation.rename_owned = dispatch_uop.gpr_write && !dispatch_uop.illegal;
-  assign allocation.gpr = dispatch_uop.dst;
-  assign allocation.tag = alloc_tag;
-  assign allocation.value = '0;
-  assign allocation.update_write = dispatch_uop.mem_update &&
-                                   !dispatch_uop.illegal;
-  assign allocation.update_gpr = dispatch_uop.mem_update ?
-                                 dispatch_uop.src_a : 5'b0;
-  assign allocation.update_value = '0;
-  assign allocation.needs_flags = dispatch_needs_flags;
-  assign allocation.write_xer = dispatch_uop.write_xer;
-  assign allocation.write_ca = dispatch_uop.write_ca;
-  assign allocation.write_ov_so = dispatch_uop.write_ov_so;
-  assign allocation.write_cr_field = dispatch_uop.write_cr_field;
-  assign allocation.cr_field = dispatch_uop.cr_field;
-  assign allocation.write_cr_fields = dispatch_uop.write_cr_fields;
-  assign allocation.cr_mask = dispatch_uop.cr_mask;
-  assign allocation.write_cr_bit = dispatch_uop.write_cr_bit;
-  assign allocation.cr_bit = dispatch_uop.cr_bit;
-  assign allocation.cr_delta = '0;
-  assign allocation.xer_delta = '0;
+  // Completion masks every write permission of a diagnostic allocation.
+  always_comb begin
+    allocation = '0;
+    allocation.pc = iq_head.pc;
+    allocation.insn = iq_head.insn;
+    allocation.illegal = dispatch_uop.illegal;
+    allocation.fetch_fault = iq_head.fault;
+    allocation.page_miss = (ENABLE_PAGE_MISS_RESULTS &&
+      iq_head.fault == FETCH_PAGE_MISS) ? iq_head.page_miss : '0;
+    allocation.alignment_exception =
+      dispatch_uop.special_op == SPECIAL_ALIGNMENT;
+    allocation.gpr_write = dispatch_uop.gpr_write;
+    allocation.gpr = dispatch_uop.dst;
+    allocation.tag = alloc_tag;
+    allocation.update_write = dispatch_uop.mem_update;
+    allocation.update_gpr = dispatch_uop.src_a;
+    allocation.needs_flags = dispatch_needs_flags;
+    allocation.write_xer = dispatch_uop.write_xer;
+    allocation.write_ca = dispatch_uop.write_ca;
+    allocation.write_ov_so = dispatch_uop.write_ov_so;
+    allocation.write_cr_field = dispatch_uop.write_cr_field;
+    allocation.cr_field = dispatch_uop.cr_field;
+    allocation.write_cr_fields = dispatch_uop.write_cr_fields;
+    allocation.cr_mask = dispatch_uop.cr_mask;
+    allocation.write_cr_bit = dispatch_uop.write_cr_bit;
+    allocation.cr_bit = dispatch_uop.cr_bit;
+  end
   ppc_completion #(.ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)) completion (
     .clk_i, .rst_ni, .alloc_valid_i(dispatch), .alloc_ready_o(cq_ready),
     .empty_o(cq_empty),

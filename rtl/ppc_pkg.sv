@@ -155,12 +155,11 @@ package ppc_pkg;
   localparam int XER_CA_BIT = 29;
   localparam int XER_BYTE_COUNT_WIDTH = 7;
   localparam logic [31:0] XER_IMPLEMENTED_MASK = 32'he000_007f;
+  // IU controls fixed at dispatch; the station holds them unchanged until issue.
   typedef struct packed {
     alu_op_t op;
     logic invert_a;
     carry_in_t carry_in;
-    logic [31:0] a;
-    logic [31:0] b;
     logic [31:0] mask;
     logic [4:0] shift;
     logic ca_in;
@@ -169,6 +168,16 @@ package ppc_pkg;
     logic write_ov_so;
     logic write_cr_field;
     completion_tag_t producer;
+  } iu_ctrl_t;
+  typedef struct packed {
+    iu_ctrl_t ctrl;
+    operand_t a;
+    operand_t b;
+  } rs_entry_t;
+  typedef struct packed {
+    iu_ctrl_t ctrl;
+    logic [31:0] a;
+    logic [31:0] b;
   } issue_packet_t;
   typedef struct packed {
     alu_op_t op;

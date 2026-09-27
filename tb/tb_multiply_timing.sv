@@ -45,14 +45,14 @@ module tb_multiply_timing;
   );
     issue_packet_t packet;
     packet = '0;
-    packet.op = operation;
-    packet.producer.index = CQ_INDEX_WIDTH'(int'(generation) % CQ_DEPTH);
-    packet.producer.generation = generation;
+    packet.ctrl.op = operation;
+    packet.ctrl.producer.index = CQ_INDEX_WIDTH'(int'(generation) % CQ_DEPTH);
+    packet.ctrl.producer.generation = generation;
     packet.a = a;
     packet.b = b;
-    packet.so_in = so_in;
-    packet.write_ov_so = write_ov_so;
-    packet.write_cr_field = write_cr_field;
+    packet.ctrl.so_in = so_in;
+    packet.ctrl.write_ov_so = write_ov_so;
+    packet.ctrl.write_cr_field = write_cr_field;
     return packet;
   endfunction
 
@@ -147,25 +147,25 @@ module tb_multiply_timing;
                        1'b0, 1'b0, 1'b0);
     accept(issue);
     expect_earliest_finish(ALU_MULLI,
-      make_result(issue.producer, 32'hffff_ffeb, 1'b0, 1'b0, 4'b0));
+      make_result(issue.ctrl.producer, 32'hffff_ffeb, 1'b0, 1'b0, 4'b0));
 
     issue = make_issue(ALU_MULLW, 8'h22, 32'h4000_0000, 32'd4,
                        1'b0, 1'b1, 1'b1);
     accept(issue);
     expect_earliest_finish(ALU_MULLW,
-      make_result(issue.producer, 32'b0, 1'b1, 1'b1, 4'h3));
+      make_result(issue.ctrl.producer, 32'b0, 1'b1, 1'b1, 4'h3));
 
     issue = make_issue(ALU_MULHW, 8'h33, 32'h8000_0000, 32'd2,
                        1'b1, 1'b0, 1'b1);
     accept(issue);
     expect_earliest_finish(ALU_MULHW,
-      make_result(issue.producer, 32'hffff_ffff, 1'b0, 1'b0, 4'h9));
+      make_result(issue.ctrl.producer, 32'hffff_ffff, 1'b0, 1'b0, 4'h9));
 
     issue = make_issue(ALU_MULHWU, 8'h44, 32'hffff_ffff,
                        32'hffff_ffff, 1'b0, 1'b0, 1'b1);
     accept(issue);
     expect_earliest_finish(ALU_MULHWU,
-      make_result(issue.producer, 32'hffff_fffe, 1'b0, 1'b0, 4'h8));
+      make_result(issue.ctrl.producer, 32'hffff_fffe, 1'b0, 1'b0, 4'h8));
 
     // An executing multiply blocks unrelated issues. Exact cancellation may
     // replace it on the same edge without leaking its result or flags.
@@ -193,7 +193,7 @@ module tb_multiply_timing;
     issue_valid = 1'b0;
     #1;
     require(result_valid && result ==
-            make_result(issue.producer, 32'd17, 1'b0, 1'b0, 4'b0),
+            make_result(issue.ctrl.producer, 32'd17, 1'b0, 1'b0, 4'b0),
             "same-edge replacement result mismatch");
     @(posedge clk);
     #1;
@@ -221,7 +221,7 @@ module tb_multiply_timing;
     issue_valid = 1'b0;
     #1;
     expect_earliest_finish(ALU_MULLI,
-      make_result(issue.producer, 32'd56, 1'b0, 1'b0, 4'b0));
+      make_result(issue.ctrl.producer, 32'd56, 1'b0, 1'b0, 4'b0));
 
     // A completed result remains stable for a sampled stalled edge, then an
     // exact cancellation destroys it without a handshake.
