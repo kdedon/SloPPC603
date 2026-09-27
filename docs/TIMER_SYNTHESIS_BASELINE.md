@@ -63,7 +63,7 @@ a micro-TLB fill, and `special|ea_q` into `request_ea_q` at acceptance, 5.0
 ns. At 66 MHz (15.15 ns) the router paths would miss by about 0.2 ns and the
 core by about 3.4 ns. Each failing hold path is the single path from the
 virtual `rst_ni` input, with zero input delay, to `router|d_state_q`; the
-refit below synchronizes that reset.
+refit above synchronizes that reset.
 
 ## 2026-09-27 refit without test redirect
 
