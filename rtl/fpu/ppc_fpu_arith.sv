@@ -187,6 +187,8 @@ module ppc_fpu_arith (
     logic [4:0] div_rounds_q;
     logic [52:0] div_a_sig_q;
     logic [52:0] div_b_sig_q;
+    logic [52:0] div_start_numerator;
+    logic [53:0] div_start_difference;
     logic launch_divide;
     logic launch_finite;
 
@@ -1109,6 +1111,11 @@ module ppc_fpu_arith (
         endcase
     end
 
+    assign div_start_numerator = req_q.op == FP_FRES ?
+        53'h10000000000000 : div_a_sig_q;
+    assign div_start_difference = {1'b0, div_start_numerator} -
+        {1'b0, div_b_sig_q};
+
     logic [54:0] div_trial;
     logic [52:0] div_remainder_next;
     logic [54:0] div_quotient_next;
@@ -1185,19 +1192,10 @@ module ppc_fpu_arith (
                     div_denominator_x2_q <= {div_b_sig_q, 1'b0};
                     div_denominator_x3_q <= {2'b00, div_b_sig_q} +
                         {1'b0, div_b_sig_q, 1'b0};
-                    if (req_q.op == FP_FRES) begin
-                            div_remainder_q <= 53'h10000000000000 -
-                                ((53'h10000000000000 >= div_b_sig_q) ?
-                                    div_b_sig_q : 53'd0);
-                            div_quotient_q <= (53'h10000000000000 >= div_b_sig_q) ?
-                                55'd1 : 55'd0;
-                    end else begin
-                            div_remainder_q <= div_a_sig_q -
-                                ((div_a_sig_q >= div_b_sig_q) ?
-                                    div_b_sig_q : 53'd0);
-                            div_quotient_q <= (div_a_sig_q >= div_b_sig_q) ?
-                                55'd1 : 55'd0;
-                    end
+                    div_remainder_q <= div_start_difference[53] ?
+                        div_start_numerator : div_start_difference[52:0];
+                    div_quotient_q <= div_start_difference[53] ?
+                        55'd0 : 55'd1;
                     div_rounds_q <= (req_q.single_result ||
                         req_q.op == FP_FRES) ? 5'd13 : 5'd27;
                     state_q <= DIVIDE;

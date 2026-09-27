@@ -17,26 +17,29 @@ fails deliberately. Both pass strict lint. Synthesis-only results are
 and [Quartus measurement](../quartus/fpu/README.md) for commands, counts and limits.
 Retain the finite arithmetic patterns only after independent verification;
 replace donor classification, rounding, packing, conversions and PPC status.
-The unchanged F1 experiment remains a benchmark for the new standalone unit. The requested endpoint is a complete standalone FPU; another
-process owns CPU integration. No architectural completion or score change is
-claimed by this documentation milestone.
+The unchanged F1 experiment remains a benchmark for the standalone unit. A
+separate process owns CPU integration; this standalone result does not establish
+full CPU completion.
 
 F2–F4 standalone instruction semantics are implemented in `ppc_fpu.sv` and
 `ppc_fpu_arith.sv`: all implemented 603e FP classes, FPR/FPSCR ownership,
 tagged commit/abort, and side-effect-free memory preparation for later LSU
 attachment. The new arithmetic engine is independent of the failed donor.
 [Production verification](../sim/fpu/PRODUCTION.md) records 200,000 raw
-arithmetic packets, 11,958 estimate packets and 833 shell checks, all passing,
-including the explicitly chosen NI status policy. These are standalone tests;
-the separate core integrator owns CPU-level acceptance.
+arithmetic packets, 11,958 estimate packets, 851 shell checks and 72
+cancellation offsets, all passing, including the explicitly chosen NI status
+policy and illegal-before-unavailable priority. The shell implements every
+architectural 603e FP instruction class and remains serialized. The separate
+core integrator owns CPU-level acceptance.
 
-F5 frequency acceptance remains open. The `c10d82b` full-unit measurement
-reports 10,759 estimated ALMs, 13,265 combinational ALUTs, 4,073 registers,
-no block RAM and four DSP blocks at 19.4 MHz post-map, below 50/66 MHz.
-Further registered arithmetic stages are being measured. The serialized lane
-does not implement the 603e's four rename slots or exact pipeline throughput.
-Source conflicts and silicon-specific NI behavior remain explicit in the
-contract; passing the selected policy tests does not resolve those conflicts.
+F5 frequency acceptance remains open. The latest completed `438f377` full-unit
+post-map measurement reports 10,274 estimated ALMs, 12,101 combinational ALUTs,
+6,626 registers, no block RAM and four DSP blocks at 44.0 MHz, below the
+50/66 MHz targets. The current `4068252` measurement is pending. These are
+post-map estimates, not a fitted timing result. The serialized lane does not
+implement the 603e's four rename slots or exact pipeline throughput. Source
+conflicts and silicon-specific NI behavior remain explicit in the contract;
+passing the selected policy tests does not resolve those conflicts.
 
 ## Decision
 

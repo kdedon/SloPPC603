@@ -165,6 +165,21 @@ Recorded: `make -C sim -j2 lint` with `YOSYS_BIN` set to the pinned
 extractor, on commit `c10d82b`, 2026-09-27; 55 lint invocations, 0 warnings,
 0 errors. This includes the strict standalone production FPU top.
 
+Recorded: `make -C sim -j2 lint` with `YOSYS_BIN` set to the pinned
+extractor, on commit `4068252`, 2026-09-27; 55 lint invocations, 0 warnings,
+0 errors. The arithmetic oracle pin above still matches its file SHA-256;
+the source-format precondition for single-result arithmetic, NI policy,
+and implementation-dependent estimate bits remain explicit contract limits.
+
+Recorded: `make -C sim -j2 test-fpu` on commit `4068252` plus the divider
+initial-subtract timing change and transitive vector-prerequisite fix,
+2026-09-27; 20 Python anchors, 32 table value/bound proofs, 200,000 raw
+arithmetic packets with 0 mismatches, 72 cancellation offsets, 4 held-response
+checks, 11,958 estimate packets with 0 mismatches, and 851 shell checks with
+0 failures. Single/double divide remained 18/32 clocks, MUL/fused 18,
+`fctiw`/`fctiwz` 3, finite `fres` 18, and `frsqrte` 1; strict test builds
+emitted 0 warnings and 0 errors.
+
 `test-fpu` runs the production Python anchors, exact reciprocal-square-root
 table proof, raw arithmetic, estimates, and shell; `test-fpu-qualify` remains
 the deliberately failing F1 donor qualification and is not part of that

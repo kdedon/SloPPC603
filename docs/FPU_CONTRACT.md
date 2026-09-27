@@ -53,7 +53,7 @@ Bit numbers below are architectural, most significant bit first. Exception bits 
 | 2 | VX | OR of bits 7–12 and 21–23; recomputed, not sticky. | PEM Table 2-4, PDF 70–71 |
 | 3–6 | OX, UX, ZX, XX | Sticky overflow, underflow, zero-divide, inexact; XX is sticky FI. | PEM Table 2-4, PDF 70 |
 | 7–12 | VXSNAN, VXISI, VXIDI, VXZDZ, VXIMZ, VXVC | Sticky SNaN, ∞−∞, ∞/∞, 0/0, ∞×0, invalid compare. | PEM Table 2-4, PDF 70–71 |
-| 13–14 | FR, FI | Last arithmetic/conversion fraction increment and inexact/disabled overflow; not sticky. `fres`/`frsqrte` make both undefined. | PEM §§2.1.4, 3.3.5, PDF 71, 133–134 |
+| 13–14 | FR, FI | Last arithmetic/conversion fraction increment and inexact/disabled overflow; not sticky. Ordinary `fres`/`frsqrte` estimates make both undefined; invalid/zero-divide clears both. | PEM §§2.1.4, 3.3.5, Tables 3-12–13, PDF 71, 133–134, 144–145 |
 | 15–19 | FPRF | `C,FL,FG,FE,FU`: result class/condition or one-hot compare outcome; not sticky. See class encodings below. | PEM Tables 2-4–5, PDF 71–72 |
 | 20 | — | Reserved. | PEM Figure 2-5/Table 2-4, PDF 70–71 |
 | 21–23 | VXSOFT, VXSQRT, VXCVI | Sticky software invalid request, invalid square-root or reciprocal-square-root estimate, invalid integer convert. VXSOFT is set only by explicit FPSCR manipulation; `frsqrte` can set VXSQRT although `fsqrt` is unsupported. | PEM Table 2-4, PDF 71; PEM `frsqrtex`, PDF 512–513; UM Table B-1, PDF 407 |

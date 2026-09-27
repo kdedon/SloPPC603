@@ -24,7 +24,7 @@ PDF 162–163 / 4-4–4-5]
 | `FPU_MEMORY_FAULT` | Route the returned LSU fault code/context through the core's data-fault path. |
 | `FPU_FP_ENABLED` | Program exception, offset `0x00700`, FP-enabled cause; preserve the contract's proposed FPSCR/result disposition. |
 
-The arithmetic backend module is `ppc_fpu_arith`. Its request and response follow `valid/ready`; response also returns the request tag, and responses with other tags are ignored. It must cover add/subtract/multiply/divide, fused multiply-add variants, `frsp`, `fctiw(z)`, compare, `fres`, and `frsqrte`. It may take multiple cycles, but holds its response under backpressure. The F1 `ss_fpu_candidate` remains an isolated experiment and is not a production dependency. [UM Tables 2-14–17, PDF 104–105; `FPU_REUSE_ASSESSMENT.md` F1–F4]
+The arithmetic backend module is `ppc_fpu_arith`. Its request and response follow `valid/ready`; response also returns the request tag, and responses with other tags are ignored. It covers add/subtract/multiply/divide, fused multiply-add variants, `frsp`, `fctiw(z)`, compare, `fres`, and `frsqrte`. It holds its response under backpressure. The F1 `ss_fpu_candidate` remains an isolated experiment and is not a production dependency. [UM Tables 2-14–17, PDF 104–105; `FPU_REUSE_ASSESSMENT.md` F1–F4]
 
 The core must deliver the same abort/kill identity to any LSU preparation
 resources it allocates. The FPU discards its local instruction and drains stale
@@ -53,3 +53,5 @@ estimate and test changes committed as `c10d82b`, 2026-09-27: 833 checks passed.
 See [production verification](../sim/fpu/PRODUCTION.md) for instruction,
 status, memory, cancellation and retirement coverage. These tests exercise the
 standalone interface; the integrating CPU still needs its own end-to-end tests.
+
+The latest standalone suite passes 851 shell checks, including illegal FP encodings with MSR[FP]=0, matching and stale tags, FPSCR changes, memory preparation and commit-only stores. Full architectural standalone instruction coverage is implemented in this serialized shell; the core integration and four-entry rename/throughput model remain separate work. [Production verification](../sim/fpu/PRODUCTION.md)

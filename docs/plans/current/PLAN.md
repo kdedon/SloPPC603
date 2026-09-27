@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-09-23. This is the active planning entry point. The target for
+Updated: 2026-09-27. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -43,11 +43,14 @@ Floating point now has a manual-backed [FPU contract](../../FPU_CONTRACT.md),
 including explicit source conflicts, and a completed isolated arithmetic
 experiment under the [FPU reuse assessment](../../FPU_REUSE_ASSESSMENT.md).
 The SS candidate fails numerical qualification and the pre-fit frequency
-target. The standalone PPC shell and replacement arithmetic pass independent numeric
-and architectural tests; frequency acceptance remains open. The current full
-unit estimates 19.4 MHz before fit, below the 50 MHz target. See the assessment
-for measured resources, selected semantics and remaining silicon questions.
-The target is a complete standalone FPU; a separate process will integrate it
+target. The complete standalone PPC shell and replacement arithmetic pass
+independent numeric and architectural tests: 200,000 raw packets, 11,958
+estimate packets, 851 shell checks and 72 cancellation offsets. It is
+serialized, with no core integration or four-entry rename throughput. Frequency
+acceptance remains open: the latest completed full-unit post-map estimate is
+44.0 MHz, below the 50 MHz target; the next measurement is pending. No fitted
+timing closure is claimed. See the assessment for resources, selected semantics
+and remaining silicon questions. A separate process will integrate the FPU
 into the CPU. Existing core RTL and file lists remain outside this workstream.
 Do not infer full CPU completion from the restricted MVP score.
 

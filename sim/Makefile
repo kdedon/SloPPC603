@@ -122,11 +122,11 @@ PPC_FPU_ARITH_ALL := $(BUILD_DIR)/fpu/production-all.txt
 $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith: $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_arith --Mdir $(PPC_FPU_ARITH_BUILD) $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
 
-$(PPC_FPU_ARITH_INITIAL): fpu/production_vectors.py fpu/ppc_reference.py
+$(PPC_FPU_ARITH_INITIAL): fpu/production_vectors.py fpu/ppc_reference.py fpu/reference.py
 	mkdir -p $(BUILD_DIR)/fpu
 	python3 fpu/production_vectors.py --vectors $@ --random 32 --ops add sub mul madd msub nmadd nmsub frsp fctiw fctiwz cmpu cmpo
 
-$(PPC_FPU_ARITH_ALL): fpu/production_vectors.py fpu/ppc_reference.py
+$(PPC_FPU_ARITH_ALL): fpu/production_vectors.py fpu/ppc_reference.py fpu/reference.py
 	mkdir -p $(BUILD_DIR)/fpu
 	python3 fpu/production_vectors.py --vectors $@ --random 128
 
@@ -151,7 +151,7 @@ PPC_FPU_ESTIMATE_RESULTS := $(BUILD_DIR)/fpu/estimate-results.txt
 $(PPC_FPU_ESTIMATE_BUILD)/Vtb_ppc_fpu_estimates: $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_estimates.sv
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_estimates --Mdir $(PPC_FPU_ESTIMATE_BUILD) $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_estimates.sv
 
-$(PPC_FPU_ESTIMATE_VECTORS): fpu/estimate_vectors.py
+$(PPC_FPU_ESTIMATE_VECTORS): fpu/estimate_vectors.py fpu/reference.py
 	mkdir -p $(BUILD_DIR)/fpu
 	python3 fpu/estimate_vectors.py generate --vectors $@ --random 512
 

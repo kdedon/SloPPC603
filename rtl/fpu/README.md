@@ -1,3 +1,20 @@
+# Standalone PowerPC FPU
+
+The production unit is `ppc_fpu`, a serialized MPC603e instruction implementation
+with 32 FPRs, FPSCR, tagged completion, and an atomic memory preparation interface.
+Compile in this order: `rtl/ppc_pkg.sv`, `ppc_fpu_pkg.sv`,
+`ppc_fpu_arith.sv`, `ppc_fpu.sv`. No core file list includes this directory.
+
+- [Architectural contract](../../docs/FPU_CONTRACT.md): manual rules and explicit source conflicts.
+- [Integration interface](../../docs/FPU_INTERFACE.md): ownership, commit, cancellation and LSU obligations.
+- [Arithmetic design](../../docs/FPU_ARITHMETIC.md): exact fused path, rounding and schedule.
+- [Production verification](../../sim/fpu/PRODUCTION.md): `make -C sim -j2 test-fpu` and independent model evidence.
+- [Synthesis measurements](../../quartus/fpu-production/README.md): pinned Quartus map and post-map timing.
+
+The SS extraction below is a separate, failed qualification experiment. Production
+uses the independently implemented SystemVerilog arithmetic backend and does not
+instantiate or compile the donor.
+
 # Isolated SS arithmetic experiment
 
 `ss_fpu_candidate` wraps a stripped SS `fpu_calc` pipeline. It is an arithmetic
