@@ -215,6 +215,16 @@ module ppc_fpu_arith #(
         logic [7:0] leading_zero;
     } round_input_t;
 
+    typedef struct packed {
+        finite_sum_t sum;
+        logic [7:0] leading_zero;
+    } add_result_t;
+
+    typedef struct packed {
+        logic [159:0] magnitude;
+        logic carry_out;
+    } sum_candidate_t;
+
     typedef enum logic [3:0] {
         DIV_IDLE, DIV_START, DIV_ITER, DIV_SP_NORM_TINY,
         DIV_NORM, DIV_TINY, DIV_PRE, DIV_ROUND, DIV_PACK,
@@ -1197,19 +1207,6 @@ module ppc_fpu_arith #(
     endfunction
     /* verilator lint_on UNUSEDSIGNAL */
 
-    function automatic finite_sum_t add_aligned(
-        input align_plan_t plan, input logic [1:0] rn
-    );
-        align_data_t aligned;
-        sum_chunks_t chunks;
-        aligned = shift_alignment(plan);
-        chunks = plan_sum(aligned, rn);
-        chunks = sum_chunk_0(chunks);
-        chunks = sum_chunk_1(chunks);
-        chunks = sum_chunk_2(chunks);
-        return finish_sum(chunks);
-    endfunction
-
     function automatic logic [7:0] leading_zero160(
         input logic [159:0] value
     );
@@ -1248,6 +1245,85 @@ module ppc_fpu_arith #(
         end
         if (!work[159]) count += 8'd1;
         return count;
+    endfunction
+
+    function automatic sum_candidate_t carry_select_160(
+        input logic [159:0] lhs,
+        input logic [159:0] rhs,
+        input logic subtract
+    );
+        sum_candidate_t out;
+        logic [159:0] b_value;
+        logic [16:0] sum_zero;
+        logic [16:0] sum_one;
+        logic carry;
+        out = '0;
+        b_value = rhs ^ {160{subtract}};
+        carry = subtract;
+        for (int block = 0; block < 10; block++) begin
+            sum_zero = {1'b0, lhs[block*16 +: 16]} +
+                {1'b0, b_value[block*16 +: 16]};
+            sum_one = sum_zero + 17'd1;
+            if (carry) begin
+                out.magnitude[block*16 +: 16] = sum_one[15:0];
+                carry = sum_one[16];
+            end else begin
+                out.magnitude[block*16 +: 16] = sum_zero[15:0];
+                carry = sum_zero[16];
+            end
+        end
+        out.carry_out = carry;
+        return out;
+    endfunction
+
+    function automatic add_result_t add_aligned(
+        input align_plan_t plan, input logic [1:0] rn
+    );
+        add_result_t out;
+        finite_sum_t result_sum;
+        align_data_t aligned;
+        // Only x-y needs carry-out to choose the magnitude direction.
+        /* verilator lint_off UNUSEDSIGNAL */
+        sum_candidate_t sum_same;
+        sum_candidate_t sum_xy;
+        sum_candidate_t sum_yx;
+        /* verilator lint_on UNUSEDSIGNAL */
+        logic [7:0] lz_same;
+        logic [7:0] lz_xy;
+        logic [7:0] lz_yx;
+        out = '0;
+        result_sum = '0;
+        aligned = shift_alignment(plan);
+        sum_same = carry_select_160(aligned.x, aligned.y, 1'b0);
+        sum_xy = carry_select_160(aligned.x, aligned.y, 1'b1);
+        sum_yx = carry_select_160(aligned.y, aligned.x, 1'b1);
+        lz_same = leading_zero160(sum_same.magnitude);
+        lz_xy = leading_zero160(sum_xy.magnitude);
+        lz_yx = leading_zero160(sum_yx.magnitude);
+        result_sum.exponent = aligned.exponent;
+        result_sum.negate_final = aligned.negate_final;
+        if (aligned.x == 160'd0 && aligned.y == 160'd0 &&
+            aligned.single_operand) begin
+            result_sum.sign = aligned.sign_x;
+            out.leading_zero = 8'd160;
+        end else if (aligned.sign_x == aligned.sign_y) begin
+            result_sum.magnitude = sum_same.magnitude;
+            result_sum.sign = aligned.sign_x;
+            out.leading_zero = lz_same;
+        end else if (lz_xy == 8'd160) begin
+            result_sum.sign = rn == 2'b11;
+            out.leading_zero = 8'd160;
+        end else if (sum_xy.carry_out) begin
+            result_sum.magnitude = sum_xy.magnitude;
+            result_sum.sign = aligned.sign_x;
+            out.leading_zero = lz_xy;
+        end else begin
+            result_sum.magnitude = sum_yx.magnitude;
+            result_sum.sign = aligned.sign_y;
+            out.leading_zero = lz_yx;
+        end
+        out.sum = result_sum;
+        return out;
     endfunction
 
     function automatic round_work_t direct_round_work(
@@ -1328,6 +1404,7 @@ module ppc_fpu_arith #(
     add_input_t multiply_double_next;
     add_input_t multiply_basic_next;
     round_input_t add_next;
+    add_result_t add_result;
     ppc_fpu_arith_rsp_t round_response;
     finite_operands_t work_operands;
     finite_prep_t multiply_prep;
@@ -1442,17 +1519,20 @@ module ppc_fpu_arith #(
     end
 
     always_comb begin
+        add_result = '0;
+        if (aligned_q.finite)
+            add_result = add_aligned(aligned_q.plan,
+                aligned_q.req.rn);
         add_next = '0;
         add_next.req = aligned_q.req;
         add_next.finite = aligned_q.finite;
         add_next.conversion = aligned_q.conversion;
         add_next.special_rsp = aligned_q.special_rsp;
         add_next.conversion_parts = aligned_q.conversion_parts;
-        if (aligned_q.finite)
-            add_next.sum = add_aligned(aligned_q.plan, aligned_q.req.rn);
-        if (aligned_q.finite)
-            add_next.leading_zero =
-                leading_zero160(add_next.sum.magnitude);
+        if (aligned_q.finite) begin
+            add_next.sum = add_result.sum;
+            add_next.leading_zero = add_result.leading_zero;
+        end
     end
 
     always_comb begin
