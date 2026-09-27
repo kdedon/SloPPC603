@@ -1,5 +1,37 @@
 # Current cached-physical synthesis baseline
 
+## 2026-09-27 reset-synchronizer refit
+
+Recorded: `./quartus/integrated/build.sh --docker`, commit `dfdf4fc` (this
+branch), 2026-09-27. Quartus 17.0.2, `5CSEBA6U23I7`, seed 1. The measurement
+top now registers `rst_ni` through two flops before the core; the core's
+reset is synchronous ([EVENT_RESET_CONTRACT.md](EVENT_RESET_CONTRACT.md)), so
+this only delays both reset edges by two cycles. The SDC cuts the
+asynchronous `rst_ni` input into the first synchronizer flop and times every
+path after it. **Setup and hold now meet the provisional 50 MHz constraint at
+every corner.**
+
+| Resource | Result |
+| --- | --- |
+| ALMs | 5,065 / 41,910 (12%) |
+| Registers | 4,446 |
+| M10K blocks | 18 / 553 |
+| MLAB bits | 14,848 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +1.789 | +0.195 |
+| Slow 1100 mV, -40 C | +2.070 | +0.177 |
+| Fast 1100 mV, 100 C | +5.869 | +0.160 |
+| Fast 1100 mV, -40 C | +6.277 | +0.114 |
+
+The worst setup path gives 54.91 MHz; 66 MHz (15.15 ns), the aspirational
+target, needs about 3.1 ns more. The previous -0.148 ns hold failure from
+`rst_ni` is gone and no reset path appears in the timing report.
+Unconstrained input and output path counts are zero. The translated MVP top
+is measured separately in
+[TRANSLATED_SYNTHESIS_BASELINE.md](TRANSLATED_SYNTHESIS_BASELINE.md).
+
 ## 2026-09-27 combined refit
 
 Recorded: `./quartus/integrated/build.sh --docker`, merge of the timing (AUD-01,
