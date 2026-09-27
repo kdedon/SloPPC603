@@ -1,5 +1,21 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-27 refit after direct-store DSI/ISI and tlbsync
+
+Recorded: `./quartus/translated/build.sh --docker`, commit 4428a5e (gate-1
+branch), 2026-09-27. **Misses 50 MHz setup**: slow 100 C −0.351 ns
+(TNS −8.309), slow −40 C −0.198 ns; hold meets at every corner (+0.253 /
++0.065 / +0.134 / +0.104 ns); fast corners meet setup. Fmax 49.14 MHz (slow
+100 C). 8,780 ALMs, 8,580 registers, 23 M10K.
+
+The worst path is unchanged in kind: `special.state_q.S_BRANCH_REDIRECT` →
+completion retained/redirect kill → `special_cancel` → special result valid →
+completion finish → station resolve/issue → `iq_ready` → rename owner
+enable. None of the gate-1 changes (router T=1 classification, DSI cause
+and DSISR selection, `tlbsync` decode) lies on it; the +93 ALMs moved
+placement on a path that had +0.388 ns at the previous fit. Closing it
+belongs to the dispatch/issue timing work (AUD-21 and the 66 MHz push).
+
 ## 2026-09-27 current refit (after AUD-50/AUD-33)
 
 Recorded: `./quartus/translated/build.sh --docker`, same merge, 2026-09-27.

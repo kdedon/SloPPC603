@@ -761,7 +761,8 @@ supervisor no-op with TLBISYNC negated. A new compiled image,
 direct-store and page-fault DSI/ISI on the MVP-profile translated cached top
 under seeded EXT/DEC, bus delays and eight mid-run reset points. Fresh: full
 `make -C sim regression`, `make -C toolchain rtl-all` (25 profiles) and a
-translated fit. MVP 81.51% → 82.66% (page TLB 90 → 94, supervisor 75 → 78,
+translated fit, which misses 50 MHz setup by 0.351 ns on the unchanged
+dispatch/completion path (hold meets). MVP 81.51% → 82.66% (page TLB 90 → 94, supervisor 75 → 78,
 interrupts/timers 85 → 88, integration 85 → 87). See
 [stress evidence](../../MMU_STRESS_FIRMWARE.md).
 

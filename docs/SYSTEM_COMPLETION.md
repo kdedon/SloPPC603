@@ -42,7 +42,7 @@ is currently unmet.
 | Instruction cache and maintenance | 5% | 85% | 16-KiB four-way physical cache, block-RAM data array, translated WIMG=0 fills/hits, scalar bypass, remap and explicit stale-code invalidate/restart, denied warm-line suppression and partial-fill TEA/reset | Conservative WIMG policy; no automatic code coherence or architectural cache instructions. External maintenance is not a CPU/store barrier; broader event/interleaving acceptance remains open. |
 | Toolchain and reproducible builds | 4% | 90% | Pinned compiler, BE ELF loader, twenty-one compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes; MMU stress has nine), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility or release packaging claim. |
 | Integration and verification | 7% | 87% | Independent directed/reference tests, 259 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives; seeded nine-mode MMU/event/reset stress on the MVP-profile translated cached top | Search/fault/stress firmware covers the combined supervisor/page-MMU/cache/bus path; no ARTRY/TEA in the stress; no formal/collected HDL coverage/continuous CI gate; long reference acceptance remains open. |
-| FPGA fit, timing and release | 7% | 45% | Current cached physical and separately timer-enabled BAT designs fit Cyclone V with archived evidence; the cached physical top (53.67 MHz), the timer/BAT top (51.67 MHz) and the translated MVP top (50.99 MHz) all meet 50 MHz setup and hold at every corner behind reset synchronizers | Translated and timer/BAT margins are thin; the translated MVP top misses setup; no board I/O timing contract or release signoff. New RTL changes require fresh fit before timing claims. |
+| FPGA fit, timing and release | 7% | 45% | Current cached physical and separately timer-enabled BAT designs fit Cyclone V with archived evidence; the cached physical top (53.67 MHz), the timer/BAT top (51.67 MHz) and the translated MVP top (50.99 MHz) all meet 50 MHz setup and hold at every corner behind reset synchronizers | Translated and timer/BAT margins are thin; the gate-1 refit of the translated MVP top misses setup by 0.351 ns (49.14 MHz) on the dispatch/completion path; no board I/O timing contract or release signoff. New RTL changes require fresh fit before timing claims. |
 
 Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](references/ISA_MATRIX.md),
 [alignment](ALIGNMENT_VERIFICATION.md), [live context](LIVE_CONTEXT_VERIFICATION.md),
@@ -675,3 +675,32 @@ Fresh: `make -C sim regression` (pass), `make -C toolchain rtl-all` (pass),
 **MVP 81.51% (about 82%), up from 80.81%:** FPGA fit/timing 35% → 45%.
 Effort ranges are unchanged. See
 [integrated fit](INTEGRATED_SYNTHESIS_BASELINE.md).
+
+## Gate-1 MMU/event round — accepted, 2026-09-27
+
+Direct-store segments (SR.T=1) raise DSI DSISR[5] (+[6] for stores) and ISI
+SRR1[3] instead of a diagnostic (UM Table 5-3), completing the DSI/ISI causes
+of the supported instructions. `tlbsync` decodes as a supervisor no-op with
+TLBISYNC negated (UM §5.4.3.2). The new compiled image
+`rtl-mmu-stress-cached` checks LRU replacement ways, R/C, tlbie/tlbsync
+remapping, direct-store and page-fault DSI/ISI on the MVP-profile translated
+cached top under seeded EXT/DEC (about 170 of each per run, every resume PC
+checked), bus delays and retirement stalls, in nine modes; eight reset the
+CPU during miss handlers, PTE reads and R/C writes, TLB loads and
+invalidates, line fills, held IRQs and DEC entry, then require a clean
+rerun. A wrong LRU update is caught (mailbox `0x8e000031`).
+
+Fresh: `make -C sim regression` (436 PASS lines, 231 + 28 + 15 Python
+tests), `make -C toolchain rtl-all` (25 profiles, ELFs rebuilt in the pinned
+container), and `./quartus/translated/build.sh --docker`, which **misses
+50 MHz setup by 0.351 ns** on the existing dispatch/completion path (see
+[translated fit](TRANSLATED_SYNTHESIS_BASELINE.md)); hold meets. The FPGA row
+stays at 45%.
+
+**MVP 81.51% → 82.66% (about 83%):** page TLB 90% → 94%, supervisor 75% →
+78%, interrupts/timers 85% → 88%, integration 85% → 87%. Effort ranges are
+unchanged. See [stress evidence](MMU_STRESS_FIRMWARE.md),
+[page DSI](PAGE_DATA_EXCEPTION_VERIFICATION.md),
+[page ISI](PAGE_INSTRUCTION_EXCEPTION_VERIFICATION.md) and
+[TLBSYNC](TLBIE_VERIFICATION.md).
+
