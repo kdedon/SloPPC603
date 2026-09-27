@@ -213,10 +213,12 @@ module ppc_fpu_arith #(
         conv_parts_t conversion_parts;
         finite_sum_t sum;
         logic [7:0] leading_zero;
+        logic signed [15:0] exponent_from_min;
+        logic signed [15:0] denorm_distance;
     } round_input_t;
 
     typedef struct packed {
-        finite_sum_t sum;
+        finite_sum_t finite_value;
         logic [7:0] leading_zero;
     } add_result_t;
 
@@ -522,6 +524,8 @@ module ppc_fpu_arith #(
     );
         round_post_t out;
         logic [52:0] kept;
+        logic [52:0] rounded_up;
+        logic [23:0] rounded_up_single;
         logic carry_out;
         logic signed [15:0] max_exp;
         logic signed [15:0] scale;
@@ -532,6 +536,8 @@ module ppc_fpu_arith #(
         out.tiny_before = value.tiny_before;
         if (value.zero) return out;
         kept = value.kept;
+        rounded_up = value.kept + 53'd1;
+        rounded_up_single = value.kept[23:0] + 24'd1;
         max_exp = single_result ? 16'sd127 : 16'sd1023;
         scale = single_result ? 16'sd192 : 16'sd1536;
         out.fr = value.increment;
@@ -539,7 +545,7 @@ module ppc_fpu_arith #(
         out.xx = value.inexact;
         if (single_result) begin
             carry_out = value.increment && (&kept[23:0]);
-            kept[23:0] = kept[23:0] + {23'd0, value.increment};
+            if (value.increment) kept[23:0] = rounded_up_single;
             if (carry_out) begin
                 kept[23:0] = 24'h800000;
                 out.exponent += 16'sd1;
@@ -547,7 +553,7 @@ module ppc_fpu_arith #(
             out.wide = {kept[23:0], 29'd0};
         end else begin
             carry_out = value.increment && (&kept);
-            kept = kept + {{52{1'b0}}, value.increment};
+            if (value.increment) kept = rounded_up;
             if (carry_out) begin
                 kept = {1'b1, 52'd0};
                 out.exponent += 16'sd1;
@@ -1322,7 +1328,7 @@ module ppc_fpu_arith #(
             result_sum.sign = aligned.sign_y;
             out.leading_zero = lz_yx;
         end
-        out.sum = result_sum;
+        out.finite_value = result_sum;
         return out;
     endfunction
 
@@ -1330,14 +1336,15 @@ module ppc_fpu_arith #(
         input finite_sum_t value,
         input logic [7:0] leading_zero,
         input logic single_result,
-        input logic ue
+        input logic ue,
+        input logic signed [15:0] exponent_from_min,
+        input logic signed [15:0] denorm_distance
     );
         round_work_t out;
         logic signed [15:0] min_exp;
         logic signed [15:0] scale;
         logic signed [15:0] normalized_exp;
         logic [7:0] left_distance;
-        int signed denorm_distance;
         out = '0;
         out.sign = value.sign;
         out.negate_final = value.negate_final;
@@ -1346,7 +1353,6 @@ module ppc_fpu_arith #(
         scale = single_result ? 16'sd192 : 16'sd1536;
         normalized_exp = value.exponent;
         left_distance = 8'd0;
-        denorm_distance = 0;
         if (value.magnitude == 160'd0) return out;
         if (value.magnitude[159])
             normalized_exp = value.exponent + 16'sd1;
@@ -1355,14 +1361,16 @@ module ppc_fpu_arith #(
             normalized_exp = value.exponent -
                 $signed({8'd0, left_distance});
         end
-        out.tiny_before = normalized_exp < min_exp;
+        out.tiny_before = value.magnitude[159] ?
+            (exponent_from_min < -16'sd1) :
+            (exponent_from_min <
+                $signed({8'd0, left_distance}));
         if (out.tiny_before && !ue) begin
-            denorm_distance = int'(min_exp) - int'(value.exponent);
             if (denorm_distance > 0)
                 out.magnitude = shift_right_jam(value.magnitude,
-                    unsigned'(denorm_distance));
+                    unsigned'(int'(denorm_distance)));
             else out.magnitude = value.magnitude <<
-                unsigned'(-denorm_distance);
+                unsigned'(-int'(denorm_distance));
             out.exponent = min_exp;
         end else begin
             out.magnitude = value.magnitude[159] ?
@@ -1377,6 +1385,8 @@ module ppc_fpu_arith #(
     function automatic ppc_fpu_arith_rsp_t round_finite(
         input finite_sum_t value,
         input logic [7:0] leading_zero,
+        input logic signed [15:0] exponent_from_min,
+        input logic signed [15:0] denorm_distance,
         input ppc_pkg::completion_tag_t tag,
         input ppc_fpu_op_t op,
         input logic single,
@@ -1393,7 +1403,7 @@ module ppc_fpu_arith #(
         single_result = single || op == FP_FRSP || op == FP_FRES;
         normalized = value;
         work = direct_round_work(normalized, leading_zero,
-            single_result, ue);
+            single_result, ue, exponent_from_min, denorm_distance);
         pre = prepare_round_mantissa(work, single_result, rn);
         post = round_mantissa(pre, single_result, oe, ue);
         return finish_rounded(post, tag, op, single_result,
@@ -1530,8 +1540,17 @@ module ppc_fpu_arith #(
         add_next.special_rsp = aligned_q.special_rsp;
         add_next.conversion_parts = aligned_q.conversion_parts;
         if (aligned_q.finite) begin
-            add_next.sum = add_result.sum;
+            add_next.sum = add_result.finite_value;
             add_next.leading_zero = add_result.leading_zero;
+            add_next.exponent_from_min = aligned_q.plan.exponent -
+                ((aligned_q.req.single_result ||
+                    aligned_q.req.op == FP_FRSP) ?
+                    -16'sd126 : -16'sd1022);
+            add_next.denorm_distance =
+                ((aligned_q.req.single_result ||
+                    aligned_q.req.op == FP_FRSP) ?
+                    -16'sd126 : -16'sd1022) -
+                aligned_q.plan.exponent;
         end
     end
 
@@ -1539,7 +1558,8 @@ module ppc_fpu_arith #(
         round_response = '0;
         if (add_q.finite)
             round_response = round_finite(add_q.sum,
-                add_q.leading_zero, add_q.req.tag,
+                add_q.leading_zero, add_q.exponent_from_min,
+                add_q.denorm_distance, add_q.req.tag,
                 add_q.req.op, add_q.req.single_result, add_q.req.rn,
                 add_q.req.ni, add_q.req.oe, add_q.req.ue);
         else if (add_q.conversion)
