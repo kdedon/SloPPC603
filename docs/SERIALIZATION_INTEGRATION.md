@@ -94,8 +94,8 @@ That accepted recovery clears the instruction queue and invokes the fetch
 recovery contract. Any already offered old instruction request remains stable;
 an accepted old response is drained and discarded. Fetch then requests PC+4
 again. This gives changed backing instruction memory a fresh request, but it
-does not invalidate an instruction cache or make modified code coherent. Cache
-maintenance remains separate system work.
+does not invalidate an instruction cache or make modified code coherent;
+`icbi` does that before ISYNC ([CACHE_CONTROL.md](CACHE_CONTROL.md)).
 
 The internal ISYNC redirect wins over a concurrent external redirect, and the
 public external `redirect_accepted_o` remains false on that edge. On the

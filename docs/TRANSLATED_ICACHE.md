@@ -41,7 +41,9 @@ command completes through `maintenance_done_valid_o`/`ready_i`. While done is
 held, new physical instruction fetches stay blocked. Data requests can start
 on the command-accept edge or run while maintenance is active; this handshake
 is not a data-store barrier or a global memory-quiescence indication. It is a
-local control plane, not architectural `icbi` or HID0. The caller must also
+local control plane, not HID0. CPU `icbi` uses its own port through the same
+drain and holds new fetches while pending ([CACHE_CONTROL.md](CACHE_CONTROL.md));
+`maintenance_busy_o` covers both. The caller must also
 arrange CPU prefetch/context synchronization when changing executable bytes at the
 same physical address. Physical tags avoid aliasing when an EA is remapped to
 a different PA, but do not make same-PA code writes coherent. Software must

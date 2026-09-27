@@ -420,3 +420,17 @@ The shared fetch transport reserves instruction-queue capacity before a new
 request. An already offered request remains stable under backpressure. This
 prevents a cache response waiting on a full queue from retaining the unified
 translation router while an older instruction needs a data transaction.
+
+## Cache control profile
+
+`make rtl-cacheops` runs `cacheops-smoke.c` with `cacheops-handler.S` and
+`cacheops.ld` through `ppc_core_bat_cached_bus60x` with
+`ENABLE_CACHE_INSTRUCTIONS`. The firmware patches 64 generated routines across
+four same-set pages with `dcbst`/`sync`/`icbi`/`isync` and calls each, checks
+that touches and permitted probes leave memory unchanged, that `dcbz` reaches
+the alignment handler (which zeroes the block) with Table 4-13 DSISR, and that
+probes on read-only and no-access DBAT blocks take DSI with load or store
+syndromes and exact DAR/SRR0. The pin target retries, replaces read beats,
+holds line fills and delays at random, and EXT, DEC and external cache
+invalidation arrive throughout. See [contract](../docs/CACHE_CONTROL.md) and
+[verification](../docs/CACHE_CONTROL_VERIFICATION.md).

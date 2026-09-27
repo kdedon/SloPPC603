@@ -14,9 +14,12 @@ precise ISI/DSI with handler repair and retry.
 
 `ppc_core_bat_bus60x` runs the translated core over scalar 60x pins.
 `ppc_core_bat_cached_bus60x` adds a 16-KiB four-way physical instruction cache
-after translation for WIMG=0 fetches; data stays uncached. Open: TLB
-replacement (true misses use way 0), remaining DSI causes, data cache,
-architectural cache instructions, broader event/reset interleavings and timing
+after translation for WIMG=0 fetches; data stays uncached. The cache control
+instructions ([CACHE_CONTROL.md](CACHE_CONTROL.md)) add a one-set CPU `icbi`
+that drains accepted refills first, translated `dcbf`/`dcbst`/`dcbi`/`dcbz`
+probes that complete without a transfer (`dcbz` then takes the alignment
+exception) and no-op touches. Open: TLB replacement (true misses use way 0),
+remaining DSI causes, data cache, broader event/reset interleavings and timing
 closure.
 
 Contracts: [CPU TLB miss](CPU_TLB_MISS.md), [table search](TABLE_SEARCH_HANDLER.md),
