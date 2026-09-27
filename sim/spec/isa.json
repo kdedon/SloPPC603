@@ -19449,7 +19449,7 @@
         "602": "pending_missing_primary"
       },
       "implementation": {
-        "status": "manual_legal_not_implemented",
+        "status": "manual_conflict_rejected",
         "feature_profile": [
           "ENABLE_SUPERVISOR_EXCEPTIONS",
           "ENABLE_LIVE_CONTEXT",
@@ -19457,7 +19457,7 @@
           "ENABLE_TLB_LOAD",
           "ENABLE_TLB_MISS_EXCEPTIONS"
         ],
-        "note": "UM 2.1.2.2 describes DMISS/IMISS as software read/write; the TLB-miss contract rejects mtspr."
+        "note": "UM conflict: 2.1.2.2 (PDF 87) says software read/write; 2.1 (PDF 61) and 5.5.2.1.1 (PDF 232) say read-only. The TLB-miss contract follows read-only."
       },
       "evidence": [
         {
@@ -19528,7 +19528,7 @@
         "602": "pending_missing_primary"
       },
       "implementation": {
-        "status": "manual_legal_not_implemented",
+        "status": "manual_conflict_rejected",
         "feature_profile": [
           "ENABLE_SUPERVISOR_EXCEPTIONS",
           "ENABLE_LIVE_CONTEXT",
@@ -19536,7 +19536,7 @@
           "ENABLE_TLB_LOAD",
           "ENABLE_TLB_MISS_EXCEPTIONS"
         ],
-        "note": "UM 2.1.2.2 describes DMISS/IMISS as software read/write; the TLB-miss contract rejects mtspr."
+        "note": "UM conflict: 2.1.2.2 (PDF 87) says software read/write; 2.1 (PDF 61) and 5.5.2.1.1 (PDF 232) say read-only. The TLB-miss contract follows read-only."
       },
       "evidence": [
         {
@@ -19843,7 +19843,7 @@
   "opt_in_profile_semantics": {
     "status": "implemented_opt_in_profile",
     "feature_profile": "Every listed ppc_decode parameter must be 1; the list includes the core-level prerequisites of the named feature.",
-    "manual_legal_not_implemented": "Manual-legal forms the current contracts reject; the decoder must reject them in every profile."
+    "manual_conflict_rejected": "Manual-legal forms the current contracts reject; the decoder must reject them in every profile."
   },
   "aliases": [
     {

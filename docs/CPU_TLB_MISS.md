@@ -59,7 +59,11 @@ access; `rfi` clears TGPR and restores the normal register view.
 
 New DMISS, IMISS, HASH1 and HASH2 selectors are read-only through supervisor
 `mfspr` (including the project's 603e `mftb` XO alias). `mtspr` for them is
-illegal. The detailed 603e manual §5.5.2.1 says these table-search registers
+illegal. HASH1 and HASH2 are read-only in every manual passage. For DMISS and
+IMISS the 603e UM conflicts: §2.1 (PDF 61) and the detailed MMU section
+§5.5.2.1.1 (PDF 232 / 5-36) call them read-only, while §2.1.2.2 (PDF 87 / 2-9)
+calls them software read/write. No `mtspr` encoding table or manual handler
+writes them, so the core follows the two read-only passages. The detailed 603e manual §5.5.2.1 says these table-search registers
 *should only* be accessed with IR=DR=0. This core enforces that bounded mode
 as a diagnostic for these four new reads. The existing software DCMP, ICMP
 and RPA access policy is unchanged. Privilege rejection precedes completion

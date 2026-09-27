@@ -57,7 +57,7 @@ DECODE_PARAMETERS = (
     "ENABLE_RUNTIME_BAT", "ENABLE_SEGMENT_REGISTERS", "ENABLE_TLB_INVALIDATE",
     "ENABLE_TLB_LOAD", "ENABLE_SDR1", "ENABLE_TLB_MISS_EXCEPTIONS",
 )
-PROFILE_STATUSES = {"implemented_opt_in_profile", "manual_legal_not_implemented"}
+PROFILE_STATUSES = {"implemented_opt_in_profile", "manual_conflict_rejected"}
 SPR_READ_XO = (339, 371)
 SPR_WRITE_XO = 467
 
@@ -1592,7 +1592,7 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
     profile_count = sum(entry["implementation"].get("status") ==
                         "implemented_opt_in_profile" for entry in entries)
     not_implemented_count = sum(entry["implementation"].get("status") ==
-                                "manual_legal_not_implemented" for entry in entries)
+                                "manual_conflict_rejected" for entry in entries)
     lines = [
         "# ISA implementation and source inventory",
         "",
@@ -1602,7 +1602,7 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
         "",
         f"This bounded preparation covers {len(entries)} reviewed decode entries: {default_count} implemented by default and {supervisor_count + serialization_count} available only with `ENABLE_SUPERVISOR_EXCEPTIONS=1`. The opt-in forms comprise {supervisor_count} supervisor forms plus ISYNC, SYNC, and EIEIO. This does not complete P03, the 603e exception architecture, or the cache/bus ordering architecture.",
         "",
-        f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBLD/TLBLI and the XER, timer, BAT, SDR1 and TLB-miss SPR moves) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} manual-legal forms are recorded as `manual_legal_not_implemented` and must stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
+        f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBLD/TLBLI and the XER, timer, BAT, SDR1 and TLB-miss SPR moves) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} forms whose manual passages conflict are recorded as `manual_conflict_rejected` and stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
         "",
         "Secondary 601UM and DingusPPC evidence is tagged only as an encoding/semantics cross-check. The 603e UM controls implementation-specific support, and neither secondary source is a timing oracle.",
         "",
