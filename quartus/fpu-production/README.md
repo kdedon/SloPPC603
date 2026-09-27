@@ -296,3 +296,17 @@ the virtual-clock warning. TimeQuest reported zero errors and one diagnostic
 warning because the optional multiply-stage register filter matched nothing:
 that double-precision stage was removed in 602 elaboration. No fitter ran.
 This snapshot precedes the additional compile-time rounding simplification.
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
+`12d2827`, 2026-09-27.
+
+Registering normalized exponent and shift decisions before rounding improved
+post-map Fmax to **24.0 MHz**, with −21.623 ns setup slack. Both frequency
+targets still failed. Area was 10,761 estimated ALMs, 14,288 ALUTs, 2,568
+registers, 416 block-memory bits and five DSP blocks, with 433 virtual pins and
+zero physical pins. The longest output path was denormal-shift control through
+rounding to result bit 62 (35.975 ns, 22 logic levels). Stage delays were
+35.822 ns add, 26.071 ns alignment, 21.169 ns divider, 20.466 ns multiply and
+36.321 ns response rounding. Map reported zero errors and four warnings;
+TimeQuest reported zero errors and zero warnings. No fitter ran. The divider
+raw-operand capture change is not included.

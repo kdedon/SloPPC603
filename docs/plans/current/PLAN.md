@@ -55,7 +55,7 @@ The requested complete 603e/602 module remains open. The
 [602 contract](../../FPU_602_CONTRACT.md) now has a pinned primary manual;
 the [replacement pipeline](../../FPU_PIPELINE_DESIGN.md) must meet original
 instruction latency and throughput in each compile-time build. The
-latest arithmetic pipeline map reached 21.3 MHz; rounding/classification
+latest arithmetic pipeline map reached 24.0 MHz; rounding/classification
 still needs redesign within the fixed cycle count. The earlier serialized suite and
 50.5 MHz measurement do not close the new implementation's acceptance gates.
 Do not infer full CPU completion from the restricted MVP score.
