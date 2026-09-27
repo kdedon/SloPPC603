@@ -38,7 +38,9 @@ module ppc_fpu #(
     output logic [31:0] inspect_sp_o,
     output logic [31:0] inspect_lt_o,
     output logic forward_valid_o,
-    output ppc_fpu_pkg::ppc_fpu_forward_t forward_o
+    output ppc_fpu_pkg::ppc_fpu_forward_t forward_o,
+    output logic forward1_valid_o,
+    output ppc_fpu_pkg::ppc_fpu_forward_t forward1_o
 );
   import ppc_pkg::completion_tag_t;
   import ppc_fpu_pkg::*;
@@ -151,6 +153,8 @@ module ppc_fpu #(
   logic duplicate1_tag;
   logic forward_from_pending;
   logic [PENDING_IDX_BITS-1:0] forward_index;
+  logic forward1_from_pending;
+  logic [PENDING_IDX_BITS-1:0] forward1_index;
   logic [PENDING_IDX_BITS-1:0] abort_index;
   logic abort_index_valid;
   logic safe_abort_flush;
@@ -1470,6 +1474,12 @@ module ppc_fpu #(
       if (forward_o.cr_write)
         pending_d[forward_index].cr_forwarded = 1'b1;
     end
+    if (forward1_valid_o && forward1_from_pending) begin
+      if (forward1_o.fpr_write)
+        pending_d[forward1_index].fpr_forwarded = 1'b1;
+      if (forward1_o.cr_write)
+        pending_d[forward1_index].cr_forwarded = 1'b1;
+    end
     mem_incoming_result = '0;
     if (arith_rsp_match) begin
       pending_d[arith_rsp_index].arith = arith_rsp;
@@ -1652,9 +1662,9 @@ module ppc_fpu #(
   assign inspect_sp_o = CPU_602 ? sp_q : 32'd0;
   assign inspect_lt_o = CPU_602 ? lt_q : 32'd0;
 
-  // The forwarding packet is independent of retirement.  If several units
-  // finish together, the oldest unforwarded entry is sent first; the others
-  // remain in their tagged queue slots for later cycles.
+  // Forwarding is independent of retirement.  Two packets preserve a CR
+  // result and a load FPR result that may retire together.  A CR result has
+  // priority on the first bus; remaining results stay queued for a later bus.
   always_comb begin
     ppc_fpu_forward_t candidate;
     ppc_fpu_arith_rsp_t ar;
@@ -1678,6 +1688,10 @@ module ppc_fpu #(
     forward_valid_o = 1'b0;
     forward_from_pending = 1'b0;
     forward_index = '0;
+    forward1_o = '0;
+    forward1_valid_o = 1'b0;
+    forward1_from_pending = 1'b0;
+    forward1_index = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
       if (i < int'(pending_count_q) && pending_q[i].valid) begin
         ready = pending_q[i].done || pending_q[i].local_wait == 2'd1;
@@ -1757,15 +1771,31 @@ module ppc_fpu #(
                               (pending_q[i].decoded.op == FP_CMPU ||
                                pending_q[i].decoded.op == FP_CMPO)));
         if (ready && !candidate_exception &&
-            (candidate_fpr_new || candidate_cr_new) &&
-            (!forward_from_pending ||
-             (!forward_o.cr_write && candidate_cr_new))) begin
-          forward_from_pending = 1'b1;
-          forward_index = PENDING_IDX_BITS'(i);
-          forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
+            (candidate_fpr_new || candidate_cr_new)) begin
           candidate.fpr_write = candidate_fpr_new;
           candidate.cr_write = candidate_cr_new;
-          forward_o = candidate;
+          if (!forward_from_pending) begin
+            forward_from_pending = 1'b1;
+            forward_index = PENDING_IDX_BITS'(i);
+            forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
+            forward_o = candidate;
+          end else if (!forward_o.cr_write && candidate_cr_new) begin
+            // Promote a completed CR value without losing the displaced FPR.
+            // An earlier second FPR packet remains in its queue slot.
+            forward1_from_pending = forward_from_pending;
+            forward1_index = forward_index;
+            forward1_valid_o = forward_valid_o;
+            forward1_o = forward_o;
+            forward_from_pending = 1'b1;
+            forward_index = PENDING_IDX_BITS'(i);
+            forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
+            forward_o = candidate;
+          end else if (!forward1_from_pending) begin
+            forward1_from_pending = 1'b1;
+            forward1_index = PENDING_IDX_BITS'(i);
+            forward1_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
+            forward1_o = candidate;
+          end
         end
       end
     end
