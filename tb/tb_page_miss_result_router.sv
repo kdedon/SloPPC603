@@ -440,13 +440,26 @@ module tb_page_miss_result_router #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1)
     set_sr(4'd1,{8'h00,VSID_A});
     probe_miss(0,1,3'd3,{8'h00,VSID_A},0,1,0);
 
-    // The same C=0 store matched in way 1 carries way 1. A true miss above
-    // always carried way 0, regardless of any future victim policy.
+    // The same C=0 store matched in way 1 carries way 1. The true misses
+    // above found LRU way 0 in a freshly reset set.
     reset_all();
     manage(2'd1,1,EA,VSID_A,1,RPN_A,0,4'h0,2'b10,0);
     start_router(1,1,0);
     set_sr(4'd1,{8'h00,VSID_A});
     probe_miss(0,1,3'd3,{8'h00,VSID_A},0,1,1);
+
+    // Refilling way 0 with another VSID points the set's LRU at way 1, which
+    // a true data or instruction miss then reports.
+    reset_all();
+    manage(2'd1,1,EA,~VSID_A,0,RPN_A,1,4'h0,2'b10,0);
+    start_router(1,1,0);
+    set_sr(4'd1,{8'h00,VSID_A});
+    probe_miss(0,0,3'd2,{8'h00,VSID_A},0,0,1);
+    reset_all();
+    manage(2'd1,0,EA,~VSID_A,0,RPN_A,1,4'h0,2'b10,0);
+    start_router(1,1,0);
+    set_sr(4'd1,{8'h00,VSID_A});
+    probe_miss(1,0,3'd3,{8'h00,VSID_A},0,0,1);
 
     for(int m=0;m<2;m++)begin
       reset_all();start_router(1,1,0);

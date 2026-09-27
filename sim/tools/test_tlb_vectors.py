@@ -42,6 +42,17 @@ class TlbOracleTests(unittest.TestCase):
         m.accept(request(kind=2, ea=0xfffe0000, vsid=0xffffff))
         self.assertEqual(len(m.slots), 0)
 
+    def test_miss_reports_lru_way(self):
+        m = Model()
+        self.assertEqual(m.accept(request(bank=1))['way'], 0)
+        m.accept(request(kind=1, bank=1, way=0, vsid=1, rpn=1, pp=2))
+        self.assertEqual(m.accept(request(bank=1, vsid=2))['way'], 1)
+        m.accept(request(kind=1, bank=1, way=1, vsid=2, rpn=2, pp=2))
+        self.assertEqual(m.accept(request(bank=1, vsid=3))['way'], 0)
+        self.assertEqual(m.accept(request(bank=1, vsid=1))['way'], 0)
+        self.assertEqual(m.accept(request(bank=1, vsid=3))['way'], 1)
+        self.assertEqual(m.accept(request(bank=0, vsid=3))['way'], 0)
+
     def test_fault_precedence(self):
         m = Model()
         m.accept(request(kind=1, wimg=1, pp=0))

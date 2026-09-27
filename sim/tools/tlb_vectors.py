@@ -41,6 +41,8 @@ class Model:
     def __init__(self):
         # Slots are identified independently from the virtual-page key.
         self.slots = {}
+        # UM Table 5-10: SRR1[WAY] is the per-set LRU way; reset state is 0.
+        self.lru = {}
 
     def accept(self, q):
         s = dict.fromkeys(RESPONSE, 0)
@@ -56,6 +58,7 @@ class Model:
             elif any(slot[2] != q['way'] for slot, _ in matches):
                 s['refill_rejected'] = 1
             else:
+                self.lru[q['bank'], index] = 1 - q['way']
                 self.slots[q['bank'], index, q['way']] = dict(
                     key=key, **{k: q[k] for k in ('rpn', 'c', 'wimg', 'pp')})
         elif q['kind'] == 2:
@@ -74,9 +77,11 @@ class Model:
             s['n_fault'] = 1
         elif not matches:
             s['miss'] = 1
+            s['way'] = self.lru.get((q['bank'], index), 0)
         else:
             assert len(matches) == 1
             slot, entry = matches[0]
+            self.lru[q['bank'], index] = 1 - slot[2]
             s.update(hit=1, matched=2**slot[2], way=slot[2], r=1,
                      **{k: entry[k] for k in ('c', 'wimg', 'pp')})
             key_bit = q['kp'] if q['pr'] else q['ks']

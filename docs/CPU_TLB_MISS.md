@@ -7,14 +7,13 @@ resumable exceptions. Existing transport, protection, guarded and malformed
 page replies keep their prior behavior. The CPU does not search a page table.
 
 The router's accepted-response capsule is 69 bits and carries
-`{EA, SR, PR, IR, DR, write, way}`. The final way bit is a local response
-snapshot, not a general replacement-policy state.
+`{EA, SR, PR, IR, DR, write, way}`. The way bit is the lookup's snapshot of
+the set's LRU way for a true miss, or the matched way for a C=0 store.
 An instruction miss must have `EA==fault PC`, IR=1, write=0, SR.N=0 and
 PR/IR/DR equal the committed mode. A data miss must have `EA` equal the
 *aligned word address offered to the data router*, DR=1, and PR/IR/DR and
 write direction equal the committed request. A changed-bit response is valid
-only for a store and carries the unique matched DTLB way. A true instruction
-or data miss must carry way=0; a nonzero way on either is diagnostic. Both
+only for a store and carries the unique matched DTLB way. Both
 forms require MSR[TGPR]=0 and a valid result from the
 pure 32-bit SDR1 miss-derive unit: SR.T=0, reserved SDR1 bits zero (always
 true, since SDR1 writes drop them), a contiguous HTABMASK and an aligned
@@ -43,10 +42,13 @@ save the faulting instruction PC. HASH1 (978) and HASH2 (979) are shared
 physical PTEG addresses for the last accepted I or D miss. Their calculation
 and the compare word use the captured SR and EA, not later live segment
 state. The automatic compare update replaces the prior software seed in the
-corresponding bank. A true I/D miss selects WAY=0 deterministically. A C=0
-store hit instead copies its matched DTLB way into SRR1.WAY, allowing a
-software `tlbld` refill to replace that same resident entry. This is a local
-matched-hit rule, not an implementation of LRU replacement.
+corresponding bank. A true I/D miss sets SRR1.WAY to the TLB's LRU way for
+the missed set: UM Table 5-10 (PDF 232 / 5-36) defines WAY as the "next TLB
+set to be replaced (set per LRU)", and §5.5.2.1 lets software override it.
+Each bank keeps one LRU bit per set; a lookup hit or a refill of one way
+points it at the other, and reset clears it to way 0. A C=0 store hit instead
+copies its matched DTLB way into SRR1.WAY, allowing a software `tlbld` refill
+to replace that same resident entry.
 
 The exception-state unit atomically saves CR0 into SRR1[31:28], the miss-time
 segment key into SRR1[19] (`PR ? Kp : Ks`), instruction/data type into
@@ -70,7 +72,7 @@ as a diagnostic for these four new reads. The existing software DCMP, ICMP
 and RPA access policy is unchanged. Privilege rejection precedes completion
 allocation for all implemented selectors.
 
-The hardware does not search PTEGs, update R/C in memory or implement LRU.
+The hardware does not search PTEGs or update R/C in memory.
 The compiled [software search handler](TABLE_SEARCH_HANDLER.md) searches both
 PTEGs and writes R/C before CPU-issued refill. Failed-search conversion and
 permission coverage are tracked by its separate software acceptance gates.
@@ -84,8 +86,8 @@ A clean C=0 store hit retains the TLB lookup's sole matched way in its held
 response capsule. At oldest retirement that bit becomes SRR1.WAY. The handler
 can set RPA.C=1 and execute `tlbld` with the unchanged SRR1.WAY to replace the
 matching resident entry in either way; the service's cross-way duplicate guard
-then does not reject it. A true miss still has no resident way and uses fixed
-WAY=0. No matched-way value is inferred from current TLB state at exception
+then does not reject it. A true miss has no resident way and reports the LRU
+way captured by its lookup. No matched-way or LRU value is inferred from current TLB state at exception
 entry or after cancellation. The capsule and SRR1 transition are tied to the
 same accepted request and exact retirement identity.
 

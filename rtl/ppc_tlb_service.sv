@@ -81,6 +81,9 @@ module ppc_tlb_service #(
   // its accepting edge; the next edge classifies it from the registered read
   // and registers the response.
   logic [1:0][1:0][31:0] valid_q;
+  // One LRU bit per set and bank names the way to replace next (UM Table
+  // 5-10, SRR1[WAY]). A hit or refill of one way points it at the other.
+  logic [1:0][31:0] lru_q;
   entry_t [1:0] entry_rd;
   logic ram_write;
   logic [1:0] ram_write_way;
@@ -190,8 +193,10 @@ module ppc_tlb_service #(
         if (!request_q.bank && request_q.write) response_d.invalid_input = 1'b1;
         else if (request_q.t) response_d.direct_store = 1'b1;
         else if (!request_q.bank && request_q.n) response_d.no_execute = 1'b1;
-        else if (matched == 2'b00) response_d.miss = 1'b1;
-        else if (matched == 2'b11) response_d.invalid_input = 1'b1;
+        else if (matched == 2'b00) begin
+          response_d.miss = 1'b1;
+          response_d.way = lru_q[request_q.bank][set_index];
+        end else if (matched == 2'b11) response_d.invalid_input = 1'b1;
         else begin
           response_d.hit = 1'b1;
           response_d.matched = matched;
@@ -239,6 +244,7 @@ module ppc_tlb_service #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       valid_q <= '0;
+      lru_q <= '0;
       response_valid_q <= 1'b0;
       response_q <= '0;
       request_q <= '0;
@@ -260,6 +266,7 @@ module ppc_tlb_service #(
                  (!response_valid_q || rsp_ready_i)) begin
           if (prepared_is_refill_q) begin
             valid_q[prepared_bank_q][prepared_way_q][prepared_set_q] <= 1'b1;
+            lru_q[prepared_bank_q][prepared_set_q] <= !prepared_way_q;
           end else begin
             for (int bank = 0; bank < 2; bank++) begin
               for (int way = 0; way < 2; way++)
@@ -307,8 +314,12 @@ module ppc_tlb_service #(
           prepared_set_q <= set_index;
           prepared_entry_q <= refill_entry;
         end
-        if (fill_commit)
+        if (fill_commit) begin
           valid_q[request_q.bank][request_q.way][set_index] <= 1'b1;
+          lru_q[request_q.bank][set_index] <= !request_q.way;
+        end
+        if (response_d.hit)
+          lru_q[request_q.bank][set_index] <= !selected_way;
         if (invalidate_commit) begin
           // 603e tlbie invalidates FOUR entries, with no tag/VSID comparison.
           for (int bank = 0; bank < 2; bank++) begin

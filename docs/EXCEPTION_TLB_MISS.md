@@ -21,7 +21,7 @@ SRR1 = {CR0[3:0], 1'b0, old_MSR[26:22], 2'b0,
 ```
 
 I/D is one for kind 9 and zero for kinds 10/11. STORE is one only for kind
-11. The current core's bounded WAY choice is supplied by its caller; this
+11. WAY is supplied by its caller (the TLB LRU way or matched way); this
 unit does not implement TLB replacement policy. The old MSR fields in this
 concatenation are the manual's bits 5–9 and 16–31. The CR0 field replaces
 manual bits 0–3 and must not be ORed with old MSR. The handler MSR applies

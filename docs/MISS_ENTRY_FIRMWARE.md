@@ -20,8 +20,8 @@ final mailbox retirement under delayed/backpressured physical responses.
 
 This is deliberately a **software-seeded refill handler**. It supplies a
 known RPA instead of searching PTEGs, does not write reference/changed bits
-back to a page table, and uses the implementation's deterministic WAY=0
-policy for true misses. Its C=0 entry is tested in both ways; the captured
+back to a page table, and refills the way SRR1.WAY names (the TLB LRU way
+for true misses). Its C=0 entry is tested in both ways; the captured
 matched way directs in-place repair. SPRG0/1 are reserved scratch in this small
 firmware. It is not an OS
 boot test or an automatic table-search implementation.
@@ -41,4 +41,4 @@ The full preservation regression is tracked by the system scorecard.
 
 The current profile runs both MODE=0 and MODE=1. Each CPU-installs its C=0
 entry in that way and verifies captured WAY and successful in-place repair:
-684 retirements / 7,503 cycles each. The 69-bit capsule carries the matched way for changed stores. True misses still use deterministic WAY=0.
+684 retirements / 7,503 cycles each. The 69-bit capsule carries the matched way for changed stores and the LRU way for true misses.

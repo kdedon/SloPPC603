@@ -168,7 +168,7 @@ module ppc_special #(
   page_miss_t fetch_page_miss_q, miss_context;
   logic fetch_page_miss_opcode, data_page_miss_opcode;
   logic miss_derive_valid, miss_provenance_valid, miss_eligible;
-  logic data_changed_cause, data_true_miss_cause;
+  logic data_changed_cause;
   logic miss_spr_read_invalid, miss_event_commit, data_exception_event;
   logic [31:0] derived_miss_page, derived_compare, derived_hash1, derived_hash2;
   logic sdr1_write, dispatch_sdr1_write, sdr1_write_invalid_q;
@@ -580,16 +580,12 @@ module ppc_special #(
   assign data_changed_cause = (state_q == S_MEM_WAIT) ?
     (dmem_rsp_fault_i == DATA_PAGE_CHANGED) :
     (memory_result_q.data_fault == DATA_PAGE_CHANGED);
-  assign data_true_miss_cause = (state_q == S_MEM_WAIT) ?
-    (dmem_rsp_fault_i == DATA_PAGE_MISS) :
-    (memory_result_q.data_fault == DATA_PAGE_MISS);
   assign miss_provenance_valid = fetch_page_miss_opcode ?
     ((miss_context.ea == pc_q) && miss_context.ir &&
      (miss_context.ir == msr_o[5]) &&
      (miss_context.dr == msr_o[4]) &&
      (miss_context.pr == msr_o[14]) &&
-     !miss_context.write && !miss_context.sr[28] &&
-     !miss_context.way) :
+     !miss_context.write && !miss_context.sr[28]) :
     ((miss_context.ea == {ea_q[31:2], 2'b0}) &&
      (miss_context.ir == msr_o[5]) && miss_context.dr &&
      (miss_context.dr == msr_o[4]) &&
@@ -597,8 +593,7 @@ module ppc_special #(
      (miss_context.write ==
       (uop_q.special_op == SPECIAL_STORE)) &&
      (!data_changed_cause ||
-      (uop_q.special_op == SPECIAL_STORE)) &&
-     (!data_true_miss_cause || !miss_context.way));
+      (uop_q.special_op == SPECIAL_STORE)));
   assign miss_eligible = ENABLE_TLB_MISS_EXCEPTIONS &&
     !msr_o[17] && miss_derive_valid && miss_provenance_valid;
   assign miss_spr_read_invalid = ENABLE_TLB_MISS_EXCEPTIONS &&
@@ -704,8 +699,7 @@ module ppc_special #(
     .event_miss_cr0_i(cr_snapshot_q[31:28]),
     .event_miss_key_i(miss_context.pr ? miss_context.sr[29] :
                                         miss_context.sr[30]),
-    .event_miss_way_i((data_page_miss_opcode && data_changed_cause) ?
-                       miss_context.way : 1'b0),
+    .event_miss_way_i(miss_context.way),
     .result_valid_o(exception_result_valid),
     .result_ready_i((state_q == S_EXCEPTION_RESULT) &&
       (!data_exception_event || !ENABLE_LIVE_CONTEXT ||

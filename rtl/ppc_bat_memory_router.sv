@@ -839,7 +839,8 @@ module ppc_bat_memory_router #(
     page_miss_capture.ir = request_ir_q;
     page_miss_capture.dr = request_dr_q;
     page_miss_capture.write = owner_write_q;
-    page_miss_capture.way = clean_page_changed && tlb_rsp_way;
+    // A true miss carries the LRU replacement way; a C=0 store its matched way.
+    page_miss_capture.way = tlb_rsp_way;
   end
 
   always_ff @(posedge clk_i) begin
