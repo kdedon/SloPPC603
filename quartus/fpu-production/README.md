@@ -441,3 +441,17 @@ rounding was 31.709 ns. Alignment was 24.436 ns, add/normal exponent 35.579 ns
 and divider 32.630 ns. Map reported zero errors and four warnings; TimeQuest
 reported zero errors and zero warnings. No fitter ran. The area increase and
 frequency improvement apply to arithmetic alone, not a full-shell checkpoint.
+
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full`, commit
+`43f692b` (shell `1463439`), 2026-09-27.
+
+Speculative operand selection before admission gating, together with the staged
+sticky shifter, mapped at 28,229 estimated ALMs, 34,258 ALUTs, 7,407 registers,
+412 block-memory bits and five DSP blocks, with 1,428 virtual pins and zero
+physical pins. Post-map Fmax was **16.9 MHz**, with −39.009 ns setup slack;
+both targets failed. The longest path remained arithmetic rounding through
+shell control into pending GPR-result metadata (58.843 ns, 34 logic levels).
+Map reported zero errors and 69 warnings; TimeQuest reported zero errors and
+zero warnings. No fitter ran. This excludes the later parallel rounding
+candidates and 602 SPR timing correction.
