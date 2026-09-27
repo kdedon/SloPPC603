@@ -95,12 +95,22 @@ wrapper out of the scalar bus list preserves standalone bus lint and tests.
 
 `tb/tb_bus60x_master_select.sv` checks one-hot ownership, literal alternating
 ties, single-sided service, external-grant isolation, retention until delayed
-pin release, and reset cancellation.  `tb/tb_core_cached_bus60x.sv` uses an
-independent physical pin responder and actual core program.  It checks that an
+pin release, and reset cancellation.  `tb/tb_core_cached_bus60x.sv` runs an
+actual core program against the shared negedge responder
+`tb/bfm/bus60x_negedge_target_bfm.sv` and checks every tenure's pin attributes
+and data in the bench.  It checks that an
 instruction `TEA` cannot retire a fabricated word, reset recovers the wrapper,
 an accepted refill drains across redirect before the target executes, scalar
 loads and stores share the pins safely with refills, loop instructions hit in
 cache, and full pin attributes distinguish line refills from scalar data.
+
+Recorded: `make -C sim test-core-cached-bus60x test-core-cached-managed` and
+`make -C toolchain rtl-smoke rtl-alignment`, commit `f2539b3` (this branch),
+2026-09-27. Moving these benches and `tb_compiled_firmware` onto the shared
+responder left every PASS line unchanged: 685 and 972 checks, 20 and 26
+retirements; firmware 29 retirements / 207 cycles and 1,515 retirements /
+8,999 cycles. `make -C sim -j2 regression` (416 PASS lines) and
+`make -C toolchain rtl-all` (24 profiles) pass on the same commit.
 
 The parent-owned cached reference test runs the complete current instruction
 corpus from one physical memory responder and checks architectural state while

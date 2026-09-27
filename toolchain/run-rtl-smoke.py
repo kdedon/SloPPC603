@@ -138,7 +138,8 @@ def main():
             if source not in sources:
                 sources.append(source)
     profile_params = [f'-GFAULT_PROFILE={int(table_fault_profile)}'] if manifests in (BAT_BUS, BAT_CACHED) else []
-    bfms = ['../tb/bfm/bus60x_delay_target_bfm.sv'] if manifests in (BAT_BUS, BAT_CACHED) else []
+    bfms = (['../tb/bfm/bus60x_delay_target_bfm.sv'] if manifests in (BAT_BUS, BAT_CACHED) else
+            ['../tb/bfm/bus60x_negedge_target_bfm.sv'] if manifests == CACHED else [])
     subprocess.run([args.verilator, '--binary', '--timing', '--assert', '-Wall', '-j', str(args.jobs),
                     '--top-module', top, '--Mdir', str(build/'obj'), '-I../tb',
                     *profile_params, *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)

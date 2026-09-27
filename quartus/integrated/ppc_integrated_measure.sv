@@ -61,9 +61,14 @@ module ppc_integrated_measure (
   input  logic        drtry_n_i,
   input  logic        tea_n_i
 );
+  // The core resets synchronously; this chain registers the external reset so
+  // its arrival no longer reaches reset logic directly.
+  logic [1:0] rst_sync_q;
+  always_ff @(posedge clk_i) rst_sync_q <= {rst_sync_q[0], rst_ni};
+
   ppc_core_cached_bus60x_managed #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .RESET_CACHE_ENABLE(1'b0),
     .ENABLE_TEST_REDIRECT(1'b0)
-  ) dut (.*);
+  ) dut (.rst_ni(rst_sync_q[1]), .*);
 endmodule

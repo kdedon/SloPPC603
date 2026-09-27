@@ -18,13 +18,11 @@ module tb_compiled_firmware;
   logic [2:0] tsiz;
   logic [1:0] tc, cse;
   logic tbst_n, ci_n, wt_n, gbl_n;
-  logic [63:0] bus_din, bus_dout;
+  logic [63:0] bus_din = 64'b0, bus_dout;
 
-
-  integer responder_state = 0;
-  logic tx_line, tx_write;
-  logic [31:0] tx_addr;
-  integer tx_size = 0, tx_beat = 0;
+  logic ts_accept, tenure_done, unused_read_line;
+  logic [31:0] read_addr;
+  int read_beats;
   integer cycles = 0, retirements = 0;
   integer line_bursts = 0, scalar_reads = 0, scalar_writes = 0;
   logic unused_status;
@@ -61,131 +59,64 @@ module tb_compiled_firmware;
     return "";
   endfunction
   `include "compiled_firmware.svh"
-  function automatic logic [63:0] instruction_dw(input logic [31:0] base, input integer slot);
-    return {word_at(base + 32'(slot*8)), word_at(base + 32'(slot*8) + 4)};
-  endfunction
-  function automatic integer burst_slot(
-    input logic [1:0] start,
-    input integer beat
-  );
-    case (start)
-      2'd0: case (beat) 0:return 0; 1:return 1; 2:return 2; default:return 3; endcase
-      2'd1: case (beat) 0:return 1; 1:return 2; 2:return 3; default:return 0; endcase
-      2'd2: case (beat) 0:return 2; 1:return 3; 2:return 0; default:return 1; endcase
-      default: case (beat) 0:return 3; 1:return 0; 2:return 1; default:return 2; endcase
-    endcase
-  endfunction
-
   // External grant follows aggregate BR.  The selector keeps BG out of its
   // own BR/history decision cone, so this responder introduces no logic loop.
   assign bg_n = !(rst_n && !br_n);
 
-  // Independent pin responder.  It recognizes attributes and supplies either
-  // four canonical instruction-line beats or one scalar data beat.
+  bus60x_negedge_target_bfm bfm (
+    .clk_i(clk), .rst_ni(rst_n), .ts_n_i(ts_n), .ts_oe_i(ts_oe),
+    .a_i(bus_addr), .tt_i(tt), .tsiz_i(tsiz), .tbst_n_i(tbst_n),
+    .dbb_n_i(dbb_n), .dbb_oe_i(dbb_oe), .dbg_gate_i(1'b1),
+    .tea_line_i(1'b0), .tea_scalar_i(1'b0),
+    .aack_n_o(aack_n), .dbg_n_o(dbg_n), .ta_n_o(ta_n), .tea_n_o(tea_n),
+    .ts_accept_o(ts_accept), .complete_o(tenure_done),
+    .read_addr_o(read_addr), .read_line_o(unused_read_line),
+    .read_beats_o(read_beats)
+  );
+  assign drtry_n = 1'b1;
+
+  // Line and scalar reads both return the addressed doubleword of RAM.
+  always @(read_beats) bus_din = {word_at(read_addr), word_at(read_addr + 32'd4)};
+
+  // Independent attribute and data checks on each responder tenure.
   always @(negedge clk) begin
-    if (!rst_n) begin
-      responder_state = 0;
-      aack_n = 1'b1;
-      dbg_n = 1'b1;
-      ta_n = 1'b1;
-      drtry_n = 1'b1;
-      tea_n = 1'b1;
-      bus_din = 64'b0;
-      tx_line = 1'b0;
-      tx_write = 1'b0;
-      tx_addr = 32'b0;
-      tx_size = 0;
-      tx_beat = 0;
-    end else begin
-      case (responder_state)
-        0: begin
-          if (ts_oe && !ts_n) begin
-            check(addr_oe && abb_oe && !abb_n,
-                  "TS without address ownership");
-            tx_line = !tbst_n;
-            tx_write = tt == 5'b00010;
-            check(bus_addr >= 32'hfff00000 && bus_addr < 32'hfff10000,
-                  "bus address outside bootstrap RAM");
-            tx_addr = bus_addr;
-            tx_size = int'(tsiz);
-            tx_beat = 0;
-            if (!tbst_n) begin
-              check(tt == 5'b01110 && tsiz == 3'b010 && tc == 2'b10 &&
-                    ci_n && wt_n && gbl_n && cse == 0,
-                    "invalid instruction burst attributes");
-              line_bursts++;
-            end else begin
-              check(tc == 2'b00 && !ci_n && wt_n && gbl_n &&
-                    (tt == 5'b01010 || tt == 5'b00010) && tsiz == 3'd4,
-                    "invalid scalar data attributes");
-              if (tx_write) scalar_writes++; else scalar_reads++;
-            end
-            responder_state = 9;
-          end
+    if (rst_n) begin
+      if (ts_accept) begin
+        check(addr_oe && abb_oe && !abb_n,
+              "TS without address ownership");
+        check(bus_addr >= 32'hfff00000 && bus_addr < 32'hfff10000,
+              "bus address outside bootstrap RAM");
+        if (!tbst_n) begin
+          check(tt == 5'b01110 && tsiz == 3'b010 && tc == 2'b10 &&
+                ci_n && wt_n && gbl_n && cse == 0,
+                "invalid instruction burst attributes");
+          line_bursts++;
+        end else begin
+          check(tc == 2'b00 && !ci_n && wt_n && gbl_n &&
+                (tt == 5'b01010 || tt == 5'b00010) && tsiz == 3'd4,
+                "invalid scalar data attributes");
+          if (tt == 5'b00010) scalar_writes++; else scalar_reads++;
         end
-        // AACK no earlier than the cycle after TS.
-        9: begin
-          aack_n = 1'b0;
-          responder_state = 1;
+      end
+      if (tenure_done) begin
+        if (!bfm.tx_line && bfm.tx_write) begin
+          integer byte_base, lane_base;
+          byte_base = int'(bfm.tx_addr - 32'hfff0_0000);
+          lane_base = int'(bfm.tx_addr[2:0]);
+          for (integer byte_index = 0; byte_index < bfm.tx_size; byte_index++)
+            mem[byte_base+byte_index] =
+              bus_dout[63-8*(lane_base+byte_index) -: 8];
+          check(d_oe, "scalar write TA without driven data");
+          if (bfm.tx_addr == tohost_addr && word_at(bfm.tx_addr) != 0)
+            check(retirements > 0 && scalar_reads >= 3 && line_bursts > 0,
+                  "missing compiled program execution activity");
+          mailbox_store(bfm.tx_addr, bfm.tx_size == 4);
+        end else begin
+          check(!d_oe, "read transaction drove data");
         end
-        1: begin
-          aack_n = 1'b1;
-          responder_state = 2;
-        end
-        2: begin
-          dbg_n = 1'b0;
-          if (dbb_oe && !dbb_n) begin
-            dbg_n = 1'b1;
-            if (tx_line) begin
-              bus_din = instruction_dw(
-                {tx_addr[31:5], 5'b0},
-                burst_slot(tx_addr[4:3], 0));
-            end else if (!tx_write) begin
-              integer byte_base;
-              byte_base = int'((tx_addr & 32'hffff_fff8) - 32'hfff0_0000);
-              bus_din = {mem[byte_base], mem[byte_base+1],
-                         mem[byte_base+2], mem[byte_base+3],
-                         mem[byte_base+4], mem[byte_base+5],
-                         mem[byte_base+6], mem[byte_base+7]};
-            end
-            ta_n = 1'b0;
-            responder_state = 3;
-          end
-        end
-        3: begin
-          // The preceding TA was sampled at the intervening rising edge.
-          if (tx_line && tx_beat < 3) begin
-            tx_beat++;
-            bus_din = instruction_dw(
-              {tx_addr[31:5], 5'b0},
-              burst_slot(tx_addr[4:3], tx_beat));
-            ta_n = 1'b0;
-          end else begin
-            ta_n = 1'b1;
-            if (!tx_line && tx_write) begin
-              integer byte_base, lane_base;
-              byte_base = int'(tx_addr - 32'hfff0_0000);
-              lane_base = int'(tx_addr[2:0]);
-              for (integer byte_index = 0; byte_index < tx_size; byte_index++)
-                mem[byte_base+byte_index] =
-                  bus_dout[63-8*(lane_base+byte_index) -: 8];
-              check(d_oe, "scalar write TA without driven data");
-              if (tx_addr == tohost_addr && word_at(tx_addr) != 0)
-                check(retirements > 0 && scalar_reads >= 3 && line_bursts > 0,
-                      "missing compiled program execution activity");
-              mailbox_store(tx_addr, tx_size == 4);
-            end else begin
-              check(!d_oe, "read transaction drove data");
-            end
-            responder_state = 4;
-          end
-        end
-        4: responder_state = 0;
-        default: responder_state = 0;
-      endcase
+      end
     end
   end
-
 
   always @(posedge clk) begin
     if (rst_n) begin
@@ -196,7 +127,7 @@ module tb_compiled_firmware;
         mailbox_retire();
         retirements++;
       end
-      if (mailbox_retired && responder_state == 0 && !bus_busy &&
+      if (mailbox_retired && bfm.idle && !bus_busy &&
           !abb_oe && !dbb_oe) begin
         $display("PASS compiled BE firmware: tohost_addr=%08x value=1 retirements=%0d bursts=%0d reads=%0d writes=%0d cycles=%0d",
                  tohost_addr, retirements, line_bursts, scalar_reads, scalar_writes, cycles);
