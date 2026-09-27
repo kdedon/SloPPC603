@@ -11,6 +11,16 @@ class PowerPCReferenceChecks(unittest.TestCase):
         result = arithmetic('msub', a, one, c)
         self.assertEqual(result['result'], 0xbc90000000000000)
         self.assertFalse(result['xx'])
+        for rn in range(4):
+            deep = arithmetic('madd', 0x3ff0000000000001,
+                              0xbff0000000000000, 0x3feffffffffffffe, rn)
+            self.assertEqual(deep['result'], 0xb970000000000000)
+            self.assertFalse(deep['xx'])
+            single = arithmetic('madd', 0x3ff0000020000000,
+                                0xbff0000000000000, 0x3fefffffc0000000,
+                                rn, single=True)
+            self.assertEqual(single['result'], 0xbd10000000000000)
+            self.assertFalse(single['xx'])
 
     def test_single_fused_rounds_once(self):
         a = 0x3ff8000000000000

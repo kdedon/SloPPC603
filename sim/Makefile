@@ -144,6 +144,21 @@ $(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fp
 test-fpu-shell: $(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell
 	./$(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell
 
+.PHONY: test-fpu-estimates
+PPC_FPU_ESTIMATE_BUILD := $(BUILD_DIR)/ppc-fpu-estimates
+PPC_FPU_ESTIMATE_VECTORS := $(BUILD_DIR)/fpu/estimate-vectors.txt
+PPC_FPU_ESTIMATE_RESULTS := $(BUILD_DIR)/fpu/estimate-results.txt
+$(PPC_FPU_ESTIMATE_BUILD)/Vtb_ppc_fpu_estimates: $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_estimates.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_estimates --Mdir $(PPC_FPU_ESTIMATE_BUILD) $(PPC_FPU_ARITH_RTL) fpu/tb_ppc_fpu_estimates.sv
+
+$(PPC_FPU_ESTIMATE_VECTORS): fpu/estimate_vectors.py
+	mkdir -p $(BUILD_DIR)/fpu
+	python3 fpu/estimate_vectors.py generate --vectors $@ --random 512
+
+test-fpu-estimates: $(PPC_FPU_ESTIMATE_BUILD)/Vtb_ppc_fpu_estimates $(PPC_FPU_ESTIMATE_VECTORS)
+	./$(PPC_FPU_ESTIMATE_BUILD)/Vtb_ppc_fpu_estimates +VECTORS=$(PPC_FPU_ESTIMATE_VECTORS) +OUTPUT=$(PPC_FPU_ESTIMATE_RESULTS)
+	python3 fpu/estimate_vectors.py compare --vectors $(PPC_FPU_ESTIMATE_VECTORS) --results $(PPC_FPU_ESTIMATE_RESULTS)
+
 .PHONY: lint-fpu-production
 lint-fpu-production:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv

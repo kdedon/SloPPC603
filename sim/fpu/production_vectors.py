@@ -49,9 +49,27 @@ def packets(ops, random_count, seed):
                                   (edge[5], edge[5], x, 'edge')))
                 else:
                     cases.extend(((x, edge[5], 0, 'edge'), (edge[5], x, 0, 'edge')))
+            if op in ('add', 'sub', 'mul', 'div', 'cmpu', 'cmpo'):
+                special = [edge[i] for i in (0, 1, 2, 3, 5, 8, 9, 10,
+                                              12, 13, 14, 15, 17, 20, 21, 22)]
+                if op == 'mul':
+                    cases.extend((x, 0, y, 'cross') for x in special for y in special)
+                else:
+                    cases.extend((x, y, 0, 'cross') for x in special for y in special)
             if op in THREE:
                 cases.append((0x3ff8000000000000, 0xbaf0000000000000,
                               0x3ff0000020000000, 'single-round'))
+                if not single:
+                    cases.extend((a, b, c, 'fused-special') for a, b, c in (
+                        (0x7ff0000000000000, 0x7ff0000000000001, 0),
+                        (0x7ff0000000000000, 0xfff0000000000000, 0x3ff0000000000000),
+                        (0xfff0000000000000, 0x7ff8000000000123, 0),
+                        (0, 0x36a0000000000000, 0x7fefffffffffffff),
+                        (0, 1 << 63, 0x7fefffffffffffff),
+                        (0x3ff0000000000001, 0xbff0000000000000, 0x3feffffffffffffe)))
+                else:
+                    cases.append((0x3ff0000020000000, 0xbff0000000000000,
+                                  0x3fefffffc0000000, 'fused-cancellation'))
             if op == 'frsp':
                 cases.extend((0, x, 0, 'round-boundary') for x in
                              (0x380fffffe0000000, 0x36a0000000000000,
@@ -69,7 +87,8 @@ def packets(ops, random_count, seed):
                         modes.extend(((True, False, False, False, False),
                                       (False, True, False, False, False),
                                       (False, False, True, False, False),
-                                      (False, False, False, True, False)))
+                                      (False, False, False, True, False),
+                                      (False, False, False, False, True)))
                     for ve, oe, ue, ze, ni in modes:
                         expected = arithmetic(op, a, b, c, rn, single, ni, ve, oe, ue, ze)
                         mask = 0 if not expected['write_result'] else 0xffffffff if op in ('fctiw', 'fctiwz') else (1 << 64) - 1

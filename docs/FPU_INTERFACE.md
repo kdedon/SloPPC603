@@ -1,4 +1,4 @@
-# Standalone FPU interface plan
+# Standalone FPU interface
 
 The FPU accepts one instruction word at a time and holds its result until the core commits or aborts the exact `ppc_pkg::completion_tag_t` identity (3-bit queue index plus 8-bit generation). This serialized first implementation targets complete instruction semantics but has at most one FP instruction in flight. Matching the 603e's four-FPR-rename capacity and throughput needs a four-entry destination-owner table, source forwarding, and concurrent completion packets; no opcode or status policy should change. [UM §6.3.3.1, PDF 258 / 6-12; `FPU_CONTRACT.md`]
 
@@ -12,6 +12,10 @@ Illegal and FP-unavailable results carry precise exception codes. A disabled FP 
 
 The arithmetic backend module is `ppc_fpu_arith`. Its request and response follow `valid/ready`; response also returns the request tag, and responses with other tags are ignored. It must cover add/subtract/multiply/divide, fused multiply-add variants, `frsp`, `fctiw(z)`, compare, `fres`, and `frsqrte`. It may take multiple cycles, but holds its response under backpressure. The F1 `ss_fpu_candidate` remains an isolated experiment and is not a production dependency. [UM Tables 2-14–17, PDF 104–105; `FPU_REUSE_ASSESSMENT.md` F1–F4]
 
+The memory response channel also follows ready/valid: the LSU holds its packet until accepted. A matching reply presented in the request-accept cycle is backpressured until the shell enters its response state. Unrelated stale replies may drain immediately. This permits a combinational preparation response without losing it.
+
+Memory packet `data` uses register bit order: the low 32 bits hold a word, and all 64 bits hold a doubleword. The integrating LSU owns byte ordering, bus beat order and memory attributes from the core's instruction context. It must return the complete logical value after any byte-order conversion, and must not expose an intermediate half-load or half-store through this interface.
+
 The shell must pass strict Verilator lint with no blanket waivers. Numerical acceptance belongs to the arithmetic backend's independent bit tests; shell acceptance requires directed decode/legality, raw FPR bits, FPSCR masks/stickiness, matching and stale tags, backpressure, kill, memory faults, and commit-only update tests. Builds use blocking `make -j2` commands, then grep completed logs. [Repository `AGENTS.md`; `CODING_CONVENTIONS.md`]
 
 ## Implementation schedule and resource boundary
@@ -21,3 +25,5 @@ The first implementation uses `clk_i` only and active-low synchronous reset `rst
 `NI=1` has a narrow project policy until more 603e-specific status evidence is found: the backend calculates IEEE exception metadata and then replaces a denormal delivered result with signed zero. Tests must label its FPSCR status as this policy, not a proven silicon encoding. Memory `size_bytes` is literal 4 or 8; the LSU prepares an atomic operation and returns its own tagged `fault_code`/`fault_info` alongside `fault`. The FPU forwards that context without interpreting it. A store descriptor becomes valid only during an exact-tag commit handshake. [UM §2.3.4.2, PDF 103 / 2-25; §4.5.6, PDF 184–186 / 4-26–4-28]
 
 `stfs` extracts a single-format representation directly from its FPR operand without invoking `frsp` or changing FPSCR; the source is expected to be representable as binary32. The current shell truncates discarded low bits for a source outside that precondition. Software requiring a defined rounded conversion first executes `frsp`. `lfs` widens the binary32 representation exactly. [PEM §3.3.4, PDF 130–131 / 3-24–3-25; PEM `stfsx`, PDF 640 / 8-228]
+
+Recorded: `make -C sim -j2 test-fpu-shell`, commit `f58dabb` plus testbench fixes, 2026-09-27: 35 smoke checks passed with strict Verilator compilation. Checks cover raw `lfd`, held results, stale commit rejection, commit-only FPR/FPSCR writes, abort, FP-unavailable and illegal `fsqrt`. This is preliminary evidence; it does not establish full instruction, memory-fault or FPSCR coverage.

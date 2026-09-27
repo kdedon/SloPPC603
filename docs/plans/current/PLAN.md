@@ -43,7 +43,8 @@ Floating point now has a manual-backed [FPU contract](../../FPU_CONTRACT.md),
 including explicit source conflicts, and a completed isolated arithmetic
 experiment under the [FPU reuse assessment](../../FPU_REUSE_ASSESSMENT.md).
 The SS candidate fails numerical qualification and the pre-fit frequency
-target; the standalone PPC shell and replacement arithmetic are next.
+target. The standalone PPC shell and replacement arithmetic are implemented
+and undergoing numerical, architectural and timing verification.
 The target is a complete standalone FPU; a separate process will integrate it
 into the CPU. Existing core RTL and file lists remain outside this workstream.
 Do not infer full CPU completion from the restricted MVP score.

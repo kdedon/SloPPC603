@@ -311,7 +311,9 @@ module ppc_fpu (
       arith_rsp.fprf, arith_rsp.fprf_valid, arith_rsp.fpcc, arith_rsp.compare_valid);
   assign mem_req_valid_o = (state_q == SEND_MEM && !kill_all_i && !abort_match);
   assign mem_req_o = mem_q;
-  assign mem_rsp_ready_o = 1'b1;
+  // A combinational LSU reply must wait until its request has been accepted.
+  // Stale replies still drain while this instruction prepares its request.
+  assign mem_rsp_ready_o = !(state_q == SEND_MEM && pending_match_mem);
   assign store_valid_o = (state_q == READY && held_q.store && commit_match &&
                           !kill_all_i && !abort_match);
   assign store_o = mem_q;

@@ -27,6 +27,14 @@ module ppc_fpu_arith (
     } operand_t;
 
     typedef struct packed {
+        logic sign;
+        logic zero;
+        logic inf;
+        logic nan;
+        logic snan;
+    } special_t;
+
+    typedef struct packed {
         logic [63:0] bits;
         logic [4:0] fprf;
         logic ox;
@@ -36,10 +44,32 @@ module ppc_fpu_arith (
         logic fi;
     } rounded_t;
 
-    typedef enum logic [1:0] {IDLE, CALC, DIVIDE, RESPONSE} state_t;
+    typedef struct packed {
+        logic [159:0] x;
+        logic [159:0] y;
+        logic signed [15:0] exp_x;
+        logic signed [15:0] exp_y;
+        logic sign_x;
+        logic sign_y;
+        logic negate_final;
+        logic single_operand;
+    } finite_prep_t;
+
+    typedef struct packed {
+        logic [159:0] magnitude;
+        logic signed [15:0] exponent;
+        logic sign;
+        logic negate_final;
+    } finite_sum_t;
+
+    typedef enum logic [2:0] {
+        IDLE, CALC, DIVIDE, PREP, ALIGN, ROUND, RESPONSE
+    } state_t;
     state_t state_q;
     ppc_fpu_arith_req_t req_q;
     ppc_fpu_arith_rsp_t rsp_q;
+    finite_prep_t prep_q;
+    finite_sum_t sum_q;
     logic [52:0] div_remainder_q;
     logic [52:0] div_denominator_q;
     logic [54:0] div_quotient_q;
@@ -47,6 +77,32 @@ module ppc_fpu_arith (
     logic [52:0] launch_a_sig;
     logic [52:0] launch_b_sig;
     logic launch_divide;
+    logic launch_finite;
+
+    function automatic logic [5:0] leading_zero53(input logic [52:0] value);
+        logic [52:0] work;
+        logic [5:0] count;
+        work = value;
+        count = 6'd0;
+        if (work[52:21] == 32'd0) begin work <<= 32; count += 6'd32; end
+        if (work[52:37] == 16'd0) begin work <<= 16; count += 6'd16; end
+        if (work[52:45] == 8'd0) begin work <<= 8; count += 6'd8; end
+        if (work[52:49] == 4'd0) begin work <<= 4; count += 6'd4; end
+        if (work[52:51] == 2'd0) begin work <<= 2; count += 6'd2; end
+        if (!work[52]) count += 6'd1;
+        return count;
+    endfunction
+
+    function automatic special_t classify_special(input logic [63:0] bits);
+        special_t value;
+        value = '0;
+        value.sign = bits[63];
+        value.zero = bits[62:0] == 63'd0;
+        value.inf = bits[62:0] == 63'h7ff0_0000_0000_0000;
+        value.nan = bits[62:52] == 11'h7ff && bits[51:0] != 52'd0;
+        value.snan = value.nan && !bits[51];
+        return value;
+    endfunction
 
     function automatic operand_t unpack(input logic [63:0] bits);
         operand_t v;
@@ -66,12 +122,8 @@ module ppc_fpu_arith (
         end else if (exp_field == 11'd0 && frac != 52'd0) begin
             v.sig = {1'b0, frac};
             v.exp = -16'sd1022;
-            for (int i = 0; i < 52; i++) begin
-                if (!v.sig[52]) begin
-                    v.sig = v.sig << 1;
-                    v.exp = v.exp - 16'sd1;
-                end
-            end
+            v.exp = v.exp - 16'(leading_zero53(v.sig));
+            v.sig = v.sig << leading_zero53(v.sig);
         end
         return v;
     endfunction
@@ -80,9 +132,7 @@ module ppc_fpu_arith (
         logic [52:0] significand;
         significand = {magnitude[62:52] != 11'd0, magnitude[51:0]};
         if (magnitude[62:52] == 11'd0) begin
-            for (int i = 0; i < 52; i++) begin
-                if (!significand[52]) significand = significand << 1;
-            end
+            significand = significand << leading_zero53(significand);
         end
         return significand;
     endfunction
@@ -93,12 +143,7 @@ module ppc_fpu_arith (
         if (magnitude[62:52] == 11'd0) begin
             exponent = -16'sd1022;
             significand = {1'b0, magnitude[51:0]};
-            for (int i = 0; i < 52; i++) begin
-                if (!significand[52]) begin
-                    significand = significand << 1;
-                    exponent = exponent - 16'sd1;
-                end
-            end
+            exponent = exponent - 16'(leading_zero53(significand));
         end else exponent = $signed({5'd0, magnitude[62:52]}) - 16'sd1023;
         return exponent;
     endfunction
@@ -177,12 +222,14 @@ module ppc_fpu_arith (
             work = shift_right_jam(work, 1);
             exponent = exponent + 16'sd1;
         end else begin
-            for (int i = 0; i < 159; i++) begin
-                if (!work[158]) begin
-                    work = work << 1;
-                    exponent = exponent - 16'sd1;
-                end
-            end
+            if (work[158:31] == 128'd0) begin work <<= 128; exponent -= 16'sd128; end
+            if (work[158:95] == 64'd0) begin work <<= 64; exponent -= 16'sd64; end
+            if (work[158:127] == 32'd0) begin work <<= 32; exponent -= 16'sd32; end
+            if (work[158:143] == 16'd0) begin work <<= 16; exponent -= 16'sd16; end
+            if (work[158:151] == 8'd0) begin work <<= 8; exponent -= 16'sd8; end
+            if (work[158:155] == 4'd0) begin work <<= 4; exponent -= 16'sd4; end
+            if (work[158:157] == 2'd0) begin work <<= 2; exponent -= 16'sd2; end
+            if (!work[158]) begin work <<= 1; exponent -= 16'sd1; end
         end
         min_exp = single_result ? -16'sd126 : -16'sd1022;
         max_exp = single_result ? 16'sd127 : 16'sd1023;
@@ -401,11 +448,129 @@ module ppc_fpu_arith (
         return out;
     endfunction
 
-    function automatic ppc_fpu_arith_rsp_t calculate(input ppc_fpu_arith_req_t request);
+    function automatic finite_prep_t prepare_finite(input ppc_fpu_op_t op, input logic [63:0] a_bits,
+        input logic [63:0] b_bits, input logic [63:0] c_bits);
+        finite_prep_t out;
+        logic [52:0] a_sig, b_sig, c_sig;
+        logic signed [15:0] a_exp, b_exp, c_exp;
+        logic [105:0] product;
+        logic subtract_b;
+        out = '0;
+        a_sig = finite_sig(a_bits[62:0]);
+        b_sig = finite_sig(b_bits[62:0]);
+        c_sig = finite_sig(c_bits[62:0]);
+        a_exp = finite_exp(a_bits[62:0]);
+        b_exp = finite_exp(b_bits[62:0]);
+        c_exp = finite_exp(c_bits[62:0]);
+        subtract_b = op == FP_MSUB || op == FP_NMSUB;
+        out.negate_final = op == FP_NMADD || op == FP_NMSUB;
+        out.single_operand = op == FP_MUL || op == FP_FRSP;
+        if (op == FP_ADD || op == FP_SUB) begin
+            out.x = {1'b0, a_sig, 106'd0};
+            out.y = {1'b0, b_sig, 106'd0};
+            out.exp_x = a_exp;
+            out.exp_y = b_exp;
+            out.sign_x = a_bits[63];
+            out.sign_y = b_bits[63] ^ (op == FP_SUB);
+        end else if (op == FP_MUL || op == FP_MADD ||
+            op == FP_MSUB || op == FP_NMADD ||
+            op == FP_NMSUB) begin
+            product = a_sig * c_sig;
+            out.x = {1'b0, product, 53'd0};
+            out.exp_x = a_exp + c_exp + 16'sd1;
+            out.sign_x = a_bits[63] ^ c_bits[63];
+            if (op != FP_MUL) begin
+                out.y = {1'b0, b_sig, 106'd0};
+                out.exp_y = b_exp;
+                out.sign_y = b_bits[63] ^ subtract_b;
+            end
+        end else if (op == FP_FRSP) begin
+            out.x = {1'b0, b_sig, 106'd0};
+            out.exp_x = b_exp;
+            out.sign_x = b_bits[63];
+        end
+        return out;
+    endfunction
+
+    function automatic finite_sum_t align_finite(
+        input finite_prep_t prep, input logic [1:0] rn
+    );
+        finite_sum_t out;
+        logic [159:0] x;
+        logic [159:0] y;
+        int unsigned distance;
+        x = prep.x;
+        y = prep.y;
+        out = '0;
+        out.negate_final = prep.negate_final;
+        out.exponent = (x == 0 && y != 0) ? prep.exp_y : prep.exp_x;
+        if (y != 0) begin
+            if (x == 0) out.exponent = prep.exp_y;
+            else if (prep.exp_x > prep.exp_y) begin
+                distance = int'(prep.exp_x) - int'(prep.exp_y);
+                y = shift_right_jam(y, distance);
+            end else if (prep.exp_y > prep.exp_x) begin
+                distance = int'(prep.exp_y) - int'(prep.exp_x);
+                x = shift_right_jam(x, distance);
+                out.exponent = prep.exp_y;
+            end
+        end
+        if (x == 0 && y == 0 && prep.single_operand) begin
+            out.magnitude = '0;
+            out.sign = prep.sign_x;
+        end else if (prep.sign_x == prep.sign_y) begin
+            out.magnitude = x + y;
+            out.sign = prep.sign_x;
+        end else if (x > y) begin
+            out.magnitude = x - y;
+            out.sign = prep.sign_x;
+        end else if (y > x) begin
+            out.magnitude = y - x;
+            out.sign = prep.sign_y;
+        end else begin
+            out.magnitude = '0;
+            out.sign = rn == 2'b11;
+        end
+        return out;
+    endfunction
+
+    function automatic ppc_fpu_arith_rsp_t finish_finite(
+        input finite_sum_t sum, input ppc_pkg::completion_tag_t tag,
+        input ppc_fpu_op_t op, input logic single_result,
+        input logic [1:0] rn, input logic ni, input logic oe, input logic ue
+    );
         ppc_fpu_arith_rsp_t out;
-        operand_t a;
+        rounded_t rounded;
+        rounded = round_pack(sum.magnitude, sum.exponent, sum.sign,
+            single_result || op == FP_FRSP, rn, ni, oe, ue);
+        out = '0;
+        out.tag = tag;
+        out.write_result = 1'b1;
+        out.frfi_valid = 1'b1;
+        out.fprf_valid = 1'b1;
+        out.result = rounded.bits;
+        out.ox = rounded.ox;
+        out.ux = rounded.ux;
+        out.xx = rounded.xx;
+        out.fr = rounded.fr;
+        out.fi = rounded.fi;
+        out.fprf = rounded.fprf;
+        if (sum.negate_final) begin
+            out.result[63] = ~out.result[63];
+            out.fprf = result_class(out.result);
+        end
+        return out;
+    endfunction
+
+    function automatic ppc_fpu_arith_rsp_t calculate(input ppc_pkg::completion_tag_t tag, input ppc_fpu_op_t op,
+        input logic [63:0] a_bits, input logic [63:0] b_bits,
+        input logic [63:0] c_bits, input logic [1:0] rn,
+        input logic ni, input logic ve, input logic oe,
+        input logic ue, input logic ze);
+        ppc_fpu_arith_rsp_t out;
+        special_t a;
         operand_t b;
-        operand_t c;
+        special_t c;
         rounded_t rounded;
         logic use_a;
         logic use_b;
@@ -415,36 +580,25 @@ module ppc_fpu_arith (
         logic generated_invalid;
         logic subtract_b;
         logic negate_final;
-        logic sign_x;
-        logic sign_y;
-        logic sign_result;
-        logic [159:0] x;
-        logic [159:0] y;
-        logic [159:0] magnitude;
-        logic [105:0] product;
         logic [52:0] estimate_sig;
-        logic signed [15:0] exp_x;
-        logic signed [15:0] exp_y;
-        logic signed [15:0] exponent;
         logic signed [15:0] estimate_exp;
-        int unsigned distance;
         logic [3:0] compare_code;
         logic cmp_less;
         logic cmp_greater;
         out = '0;
-        out.tag = request.tag;
+        out.tag = tag;
         out.write_result = 1'b1;
         out.frfi_valid = 1'b1;
         out.fprf_valid = 1'b1;
-        a = unpack(request.a);
-        b = unpack(request.b);
-        c = unpack(request.c);
+        a = classify_special(a_bits);
+        b = unpack(b_bits);
+        c = classify_special(c_bits);
         use_a = 1'b0;
         use_b = 1'b0;
         use_c = 1'b0;
         subtract_b = 1'b0;
         negate_final = 1'b0;
-        case (request.op)
+        case (op)
             FP_ADD, FP_SUB, FP_CMPU, FP_CMPO, FP_DIV: begin
                 use_a = 1'b1;
                 use_b = 1'b1;
@@ -465,50 +619,50 @@ module ppc_fpu_arith (
             (use_b && b.snan) || (use_c && c.snan);
         any_nan = (use_a && a.nan) || (use_b && b.nan) || (use_c && c.nan);
         selected_nan = QNAN;
-        if (use_a && a.nan) selected_nan = request.a | 64'h0008_0000_0000_0000;
-        else if (use_b && b.nan) selected_nan = request.b | 64'h0008_0000_0000_0000;
-        else if (use_c && c.nan) selected_nan = request.c | 64'h0008_0000_0000_0000;
-        if (request.op == FP_MUL || request.op == FP_MADD ||
-            request.op == FP_MSUB || request.op == FP_NMADD ||
-            request.op == FP_NMSUB)
+        if (use_a && a.nan) selected_nan = a_bits | 64'h0008_0000_0000_0000;
+        else if (use_b && b.nan) selected_nan = b_bits | 64'h0008_0000_0000_0000;
+        else if (use_c && c.nan) selected_nan = c_bits | 64'h0008_0000_0000_0000;
+        if (op == FP_MUL || op == FP_MADD ||
+            op == FP_MSUB || op == FP_NMADD ||
+            op == FP_NMSUB)
             out.invalid[INV_IMZ] = (a.zero && c.inf) || (a.inf && c.zero);
-        if (request.op == FP_ADD || request.op == FP_SUB)
+        if (op == FP_ADD || op == FP_SUB)
             out.invalid[INV_ISI] = a.inf && b.inf &&
-                (a.sign != (b.sign ^ (request.op == FP_SUB)));
-        if (request.op == FP_MADD || request.op == FP_MSUB ||
-            request.op == FP_NMADD || request.op == FP_NMSUB) begin
-            subtract_b = request.op == FP_MSUB || request.op == FP_NMSUB;
-            negate_final = request.op == FP_NMADD || request.op == FP_NMSUB;
+                (a.sign != (b.sign ^ (op == FP_SUB)));
+        if (op == FP_MADD || op == FP_MSUB ||
+            op == FP_NMADD || op == FP_NMSUB) begin
+            subtract_b = op == FP_MSUB || op == FP_NMSUB;
+            negate_final = op == FP_NMADD || op == FP_NMSUB;
             out.invalid[INV_ISI] = (a.inf || c.inf) && b.inf &&
                 !a.nan && !c.nan && !out.invalid[INV_IMZ] &&
                 ((a.sign ^ c.sign) != (b.sign ^ subtract_b));
         end
-        if (request.op == FP_DIV) begin
+        if (op == FP_DIV) begin
             out.invalid[INV_IDI] = a.inf && b.inf;
             out.invalid[INV_ZDZ] = a.zero && b.zero;
         end
-        if (request.op == FP_FRSQRTE)
+        if (op == FP_FRSQRTE)
             out.invalid[INV_SQRT] = b.sign && !b.zero && !b.nan;
         generated_invalid = out.invalid[INV_ISI] || out.invalid[INV_IDI] ||
             out.invalid[INV_ZDZ] || out.invalid[INV_IMZ] ||
             out.invalid[INV_SQRT];
 
-        if (request.op == FP_CMPU || request.op == FP_CMPO) begin
+        if (op == FP_CMPU || op == FP_CMPO) begin
             out.write_result = 1'b0;
             out.frfi_valid = 1'b0;
             out.fprf_valid = 1'b0;
             out.compare_valid = 1'b1;
             if (any_nan) begin
                 compare_code = 4'b0001;
-                if (request.op == FP_CMPO)
-                    out.invalid[INV_VC] = !out.invalid[INV_SNAN] || !request.ve;
+                if (op == FP_CMPO)
+                    out.invalid[INV_VC] = !out.invalid[INV_SNAN] || !ve;
             end else begin
                 cmp_less = 1'b0;
                 cmp_greater = 1'b0;
-                if (!(a.zero && b.zero) && request.a != request.b) begin
+                if (!(a.zero && b.zero) && a_bits != b_bits) begin
                     if (a.sign != b.sign) cmp_less = a.sign;
-                    else if (!a.sign) cmp_less = request.a[62:0] < request.b[62:0];
-                    else cmp_less = request.a[62:0] > request.b[62:0];
+                    else if (!a.sign) cmp_less = a_bits[62:0] < b_bits[62:0];
+                    else cmp_less = a_bits[62:0] > b_bits[62:0];
                     cmp_greater = !cmp_less;
                 end
                 if (cmp_less) compare_code = 4'b1000;
@@ -518,58 +672,58 @@ module ppc_fpu_arith (
             out.fpcc = compare_code;
             return out;
         end
-        if (request.op == FP_FCTIW || request.op == FP_FCTIWZ)
-            return convert_word(request.tag, request.op, request.rn, request.ve, b);
+        if (op == FP_FCTIW || op == FP_FCTIWZ)
+            return convert_word(tag, op, rn, ve, b);
         if (any_nan || generated_invalid) begin
             out.result = any_nan ? selected_nan : QNAN;
-            if (request.op == FP_FRSP) out.result[28:0] = 29'd0;
+            if (op == FP_FRSP) out.result[28:0] = 29'd0;
             out.fprf = result_class(out.result);
-            out.write_result = !(request.ve && (|out.invalid));
+            out.write_result = !(ve && (|out.invalid));
             out.fprf_valid = out.write_result;
-            if (request.op == FP_FRES || request.op == FP_FRSQRTE)
+            if (op == FP_FRES || op == FP_FRSQRTE)
                 out.frfi_valid = 1'b0;
             return out;
         end
-        if (request.op == FP_FRSP) begin
+        if (op == FP_FRSP) begin
             if (b.inf || b.zero) begin
-                out.result = request.b;
+                out.result = b_bits;
                 out.fprf = result_class(out.result);
                 return out;
             end
         end
-        if (request.op == FP_ADD || request.op == FP_SUB) begin
+        if (op == FP_ADD || op == FP_SUB) begin
             if (a.inf || b.inf) begin
-                if (a.inf) out.result = request.a;
-                else out.result = {b.sign ^ (request.op == FP_SUB), request.b[62:0]};
+                if (a.inf) out.result = a_bits;
+                else out.result = {b.sign ^ (op == FP_SUB), b_bits[62:0]};
                 out.fprf = result_class(out.result);
                 return out;
             end
         end
-        if (request.op == FP_MUL || request.op == FP_MADD ||
-            request.op == FP_MSUB || request.op == FP_NMADD ||
-            request.op == FP_NMSUB) begin
+        if (op == FP_MUL || op == FP_MADD ||
+            op == FP_MSUB || op == FP_NMADD ||
+            op == FP_NMSUB) begin
             if (a.inf || c.inf) begin
                 out.result = {(a.sign ^ c.sign), POS_INF[62:0]};
                 if (negate_final) out.result[63] = ~out.result[63];
                 out.fprf = result_class(out.result);
                 return out;
             end
-            if (request.op == FP_MUL && (a.zero || c.zero)) begin
+            if (op == FP_MUL && (a.zero || c.zero)) begin
                 out.result = {(a.sign ^ c.sign), 63'd0};
                 out.fprf = result_class(out.result);
                 return out;
             end
-            if (b.inf && request.op != FP_MUL) begin
+            if (b.inf && op != FP_MUL) begin
                 out.result = {(b.sign ^ subtract_b ^ negate_final), POS_INF[62:0]};
                 out.fprf = result_class(out.result);
                 return out;
             end
         end
-        if (request.op == FP_DIV) begin
+        if (op == FP_DIV) begin
             if (b.zero && !a.zero) begin
                 out.zx = !a.inf;
                 out.result = {(a.sign ^ b.sign), POS_INF[62:0]};
-                out.write_result = !(request.ze && out.zx);
+                out.write_result = !(ze && out.zx);
                 out.fprf_valid = out.write_result;
                 out.fprf = result_class(out.result);
                 return out;
@@ -581,11 +735,11 @@ module ppc_fpu_arith (
                 return out;
             end
         end
-        if (request.op == FP_FRES || request.op == FP_FRSQRTE) begin
+        if (op == FP_FRES || op == FP_FRSQRTE) begin
             if (b.zero) begin
                 out.zx = 1'b1;
                 out.result = {b.sign, POS_INF[62:0]};
-                out.write_result = !request.ze;
+                out.write_result = !ze;
                 out.fprf_valid = out.write_result;
                 out.fprf = result_class(out.result);
                 out.frfi_valid = 1'b0;
@@ -598,86 +752,21 @@ module ppc_fpu_arith (
                 return out;
             end
         end
-        if (request.op == FP_FRSQRTE) begin
+        if (op == FP_FRSQRTE) begin
             estimate_sig = rsqrt_significand(b.exp[0], b.sig[51:48]);
             estimate_exp = -(b.exp >>> 1) - 16'sd1;
             rounded = round_pack({1'b0, estimate_sig, 106'd0},
-                estimate_exp, 1'b0, 1'b0, request.rn,
-                request.ni, request.oe, request.ue);
+                estimate_exp, 1'b0, 1'b0, rn,
+                ni, oe, ue);
             out.result = rounded.bits;
             out.fprf = rounded.fprf;
+            out.ox = rounded.ox;
+            out.ux = rounded.ux;
+            out.xx = rounded.xx;
+            out.fr = rounded.fr;
+            out.fi = rounded.fi;
             out.frfi_valid = 1'b0;
             return out;
-        end
-        x = '0;
-        y = '0;
-        exp_x = '0;
-        exp_y = '0;
-        sign_x = 1'b0;
-        sign_y = 1'b0;
-        if (request.op == FP_ADD || request.op == FP_SUB) begin
-            x = {1'b0, a.sig, 106'd0};
-            y = {1'b0, b.sig, 106'd0};
-            exp_x = a.exp;
-            exp_y = b.exp;
-            sign_x = a.sign;
-            sign_y = b.sign ^ (request.op == FP_SUB);
-        end else if (request.op == FP_MUL || request.op == FP_MADD ||
-            request.op == FP_MSUB || request.op == FP_NMADD ||
-            request.op == FP_NMSUB) begin
-            product = a.sig * c.sig;
-            x = {1'b0, product, 53'd0};
-            exp_x = a.exp + c.exp + 16'sd1;
-            sign_x = a.sign ^ c.sign;
-            if (request.op != FP_MUL) begin
-                y = {1'b0, b.sig, 106'd0};
-                exp_y = b.exp;
-                sign_y = b.sign ^ subtract_b;
-            end
-        end else if (request.op == FP_FRSP) begin
-            x = {1'b0, b.sig, 106'd0};
-            exp_x = b.exp;
-            sign_x = b.sign;
-        end
-        exponent = (x == 0 && y != 0) ? exp_y : exp_x;
-        if (y != 0) begin
-            if (x == 0) begin
-                exponent = exp_y;
-            end else if (exp_x > exp_y) begin
-                distance = int'(exp_x) - int'(exp_y);
-                y = shift_right_jam(y, distance);
-            end else if (exp_y > exp_x) begin
-                distance = int'(exp_y) - int'(exp_x);
-                x = shift_right_jam(x, distance);
-                exponent = exp_y;
-            end
-        end
-        if (sign_x == sign_y) begin
-            magnitude = x + y;
-            sign_result = sign_x;
-        end else if (x > y) begin
-            magnitude = x - y;
-            sign_result = sign_x;
-        end else if (y > x) begin
-            magnitude = y - x;
-            sign_result = sign_y;
-        end else begin
-            magnitude = '0;
-            sign_result = request.rn == 2'b11;
-        end
-        rounded = round_pack(magnitude, exponent, sign_result,
-            request.single_result || request.op == FP_FRSP, request.rn,
-            request.ni, request.oe, request.ue);
-        out.result = rounded.bits;
-        out.ox = rounded.ox;
-        out.ux = rounded.ux;
-        out.xx = rounded.xx;
-        out.fr = rounded.fr;
-        out.fi = rounded.fi;
-        out.fprf = rounded.fprf;
-        if (negate_final) begin
-            out.result[63] = ~out.result[63];
-            out.fprf = result_class(out.result);
         end
         return out;
     endfunction
@@ -738,6 +827,21 @@ module ppc_fpu_arith (
         else if (req_i.op == FP_FRES)
             launch_divide = (req_i.b[62:0] != 63'd0) &&
                 (req_i.b[62:52] != 11'h7ff);
+        launch_finite = 1'b0;
+        case (req_i.op)
+            FP_ADD, FP_SUB:
+                launch_finite = req_i.a[62:52] != 11'h7ff &&
+                    req_i.b[62:52] != 11'h7ff;
+            FP_MUL:
+                launch_finite = req_i.a[62:52] != 11'h7ff &&
+                    req_i.c[62:52] != 11'h7ff;
+            FP_MADD, FP_MSUB, FP_NMADD, FP_NMSUB:
+                launch_finite = req_i.a[62:52] != 11'h7ff &&
+                    req_i.b[62:52] != 11'h7ff &&
+                    req_i.c[62:52] != 11'h7ff;
+            FP_FRSP: launch_finite = req_i.b[62:52] != 11'h7ff;
+            default: begin end
+        endcase
     end
 
     logic [53:0] div_remainder_next;
@@ -760,6 +864,8 @@ module ppc_fpu_arith (
             state_q <= IDLE;
             req_q <= '0;
             rsp_q <= '0;
+            prep_q <= '0;
+            sum_q <= '0;
             div_remainder_q <= '0;
             div_denominator_q <= '0;
             div_quotient_q <= '0;
@@ -785,10 +891,27 @@ module ppc_fpu_arith (
                         end
                         div_bit_q <= 6'd54;
                         state_q <= DIVIDE;
-                    end else state_q <= CALC;
+                    end else if (launch_finite) state_q <= PREP;
+                    else state_q <= CALC;
                 end
                 CALC: begin
-                    rsp_q <= calculate(req_q);
+                    rsp_q <= calculate(req_q.tag, req_q.op, req_q.a, req_q.b,
+                        req_q.c, req_q.rn, req_q.ni, req_q.ve,
+                        req_q.oe, req_q.ue, req_q.ze);
+                    state_q <= RESPONSE;
+                end
+                PREP: begin
+                    prep_q <= prepare_finite(req_q.op, req_q.a, req_q.b, req_q.c);
+                    state_q <= ALIGN;
+                end
+                ALIGN: begin
+                    sum_q <= align_finite(prep_q, req_q.rn);
+                    state_q <= ROUND;
+                end
+                ROUND: begin
+                    rsp_q <= finish_finite(sum_q, req_q.tag, req_q.op,
+                        req_q.single_result, req_q.rn, req_q.ni,
+                        req_q.oe, req_q.ue);
                     state_q <= RESPONSE;
                 end
                 DIVIDE: begin
