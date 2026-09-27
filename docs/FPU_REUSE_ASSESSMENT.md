@@ -47,6 +47,14 @@ than the UM's 18. Source conflicts and silicon-specific NI behavior remain
 explicit in the contract; passing the selected policy tests does not resolve
 those conflicts.
 
+Completion correction: the preceding evidence covers the serialized 603e
+implementation only. It does not establish a complete 603e/602 module. The
+602 personality and its independent architectural tests are absent; exact
+603e scheduling and the listed semantic conflicts also remain open. The
+current local 602 hardware specification is insufficient to freeze the
+602 instruction/exception contract. These are acceptance gates, not work
+that a passing 603e arithmetic suite can substitute for.
+
 ## Decision
 
 **Neither donor is a drop-in 603e FPU. Use SS as the starting candidate for arithmetic code reuse and N64 as a source of size-oriented implementation techniques.** Reuse may save work on mantissa arithmetic, normalization and rounding, but does not remove the need for PPC state, fused arithmetic, exception semantics, estimates, memory support or precise retirement. No measured schedule saving is established.
