@@ -104,6 +104,21 @@ module tb_ppc_fpu_shell;
         checks += 2;
     endtask
 
+    task automatic check_illegal_fp0(
+        input logic [31:0] instruction, input logic [7:0] generation
+    );
+        completion_tag_t identity;
+        identity = tag(3'd4, generation);
+        send_issue(instruction, identity, 0, 0, 1'b0);
+        await_result(identity);
+        if (result_o.exception != FPU_ILLEGAL || result_o.fpr_write ||
+            result_o.fpscr_write || result_o.store || mem_req_valid_o)
+            $fatal(1, "illegal FP encoding lost priority to MSR[FP]=0 insn=%h",
+                   instruction);
+        commit(identity);
+        checks++;
+    endtask
+
     task automatic send_issue_fe(
         input logic [31:0] instruction, input completion_tag_t identity,
         input logic fe0, input logic fe1
@@ -417,6 +432,12 @@ module tb_ppc_fpu_shell;
         if (result_o.exception != FPU_ILLEGAL) $fatal(1, "fsqrt must be illegal");
         commit(tag(3, 8));
         checks = checks + 1;
+        check_illegal_fp0(fp_insn(63, 4, 1, 2, 22), 100);
+        check_illegal_fp0(fp_insn(59, 4, 1, 2, 22), 101);
+        check_illegal_fp0(fp_insn(63, 4, 1, 2, 19), 102);
+        check_illegal_fp0(fp_insn(59, 4, 1, 2, 19), 103);
+        check_illegal_fp0(fp_aform(63, 4, 1, 2, 1, 21, 1'b0), 104);
+        check_illegal_fp0(fp_aform(63, 4, 1, 2, 0, 25, 1'b0), 105);
 
         prepare_store(dform(54, 3, 1, 0), tag(4, 9), 32'h00002000,
                       32'h00002000, 4'd8, 64'h4008_0000_0000_0000, 1'b0);

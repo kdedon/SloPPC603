@@ -77,6 +77,12 @@ Overflow always sets OX. OE=0 produces infinity or max finite according to sign 
 
 ## Exception and retirement boundary
 
+Illegal-instruction program exceptions have higher priority than FP-unavailable
+exceptions. Unsupported `fsqrt/fsqrts`, illegal primary/XO combinations and
+illegal reserved-field encodings therefore report illegal instruction even
+when MSR[FP]=0. A valid FP instruction with FP disabled reports FP-unavailable.
+[UM §4.1.1, Table 4-2, PDF 166 / 4-8; §§4.5.7.2–4.5.8, PDF 188–189 / 4-30–4-31]
+
 `MSR[FP]=0` causes FP-unavailable at vector `0x00800` for FP arithmetic, move, load, and store before they perform an architectural effect. The architecture's `MSR[FE0:FE1]` settings are `00` ignore FP program exceptions, `01` imprecise nonrecoverable, `10` imprecise recoverable, and `11` precise. The 603e treats both unequal-bit modes as precise. The operative exception route for this contract is the UM Table 4-1 formula `(FE0∨FE1)&FPSCR[FEX]` to program vector `0x00700`; PEM Tables 3-12–16 govern result/status under enabled conditions. A conflicting UM paragraph is logged below as a silicon-revision risk. FPSCR, FPR, CR and store effects must be owned by the same completed instruction to avoid committing killed work. [UM Table 4-1, PDF 163 / 4-5; §§4.5.7.1, 4.5.8, PDF 188–189 / 4-30–4-31; PEM §3.3.6, Tables 3-11–16, PDF 140–150 / 3-34–3-44]
 
 ## Semantics gaps and source conflicts

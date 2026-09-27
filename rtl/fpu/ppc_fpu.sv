@@ -401,12 +401,12 @@ module ppc_fpu (
           arith_req_q.ue <= fpscr_q[5];
           arith_req_q.ze <= fpscr_q[4];
           arith_req_q.single_result <= decoded.single_result;
-          if (!issue_i.msr_fp && fp_opcode_class) begin
-            held_q.exception <= FPU_UNAVAILABLE;
+          if (decoded.kind == DK_ILLEGAL) begin
+            held_q.exception <= FPU_ILLEGAL;
             held_q.gpr_update <= 1'b0;
             state_q <= READY;
-          end else if (decoded.kind == DK_ILLEGAL) begin
-            held_q.exception <= FPU_ILLEGAL;
+          end else if (!issue_i.msr_fp && fp_opcode_class) begin
+            held_q.exception <= FPU_UNAVAILABLE;
             held_q.gpr_update <= 1'b0;
             state_q <= READY;
           end else begin

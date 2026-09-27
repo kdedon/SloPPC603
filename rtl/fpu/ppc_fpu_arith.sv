@@ -57,6 +57,25 @@ module ppc_fpu_arith (
     } finite_operands_t;
 
     typedef struct packed {
+        logic [53:0] p00;
+        logic [52:0] p01;
+        logic [52:0] p10;
+        logic [51:0] p11;
+    } mul_parts_t;
+
+    typedef struct packed {
+        logic [53:0] p00;
+        logic [51:0] p11;
+        logic [53:0] mid;
+    } mul_mid_t;
+
+    typedef struct packed {
+        logic [53:0] p00;
+        logic [51:0] p11;
+        logic [54:0] cross_sum;
+    } mul_low_t;
+
+    typedef struct packed {
         logic [159:0] x;
         logic [159:0] y;
         logic signed [15:0] exp_x;
@@ -132,7 +151,8 @@ module ppc_fpu_arith (
     typedef enum logic [4:0] {
         IDLE, CALC, CONV_PREP, CONV_SHIFT, CONV_FINISH,
         DIV_START, DIVIDE,
-        PREP, PREP_PRODUCT, ALIGN_PLAN, ALIGN_SHIFT,
+        PREP, PREP_MUL, PREP_MID, PREP_LOW, PREP_PRODUCT,
+        ALIGN_PLAN, ALIGN_SHIFT,
         SUM_PLAN, SUM_0, SUM_1, SUM_2, SUM_3,
         NORM_HIGH, NORM_LOW,
         TINY, ROUND, PACK, RESPONSE
@@ -143,6 +163,9 @@ module ppc_fpu_arith (
     operand_t conv_source_q;
     conv_parts_t conv_parts_q;
     finite_operands_t finite_operands_q;
+    mul_parts_t mul_parts_q;
+    mul_mid_t mul_mid_q;
+    mul_low_t mul_low_q;
     finite_prep_t prep_q;
     align_plan_t align_plan_q;
     align_data_t align_data_q;
@@ -623,39 +646,79 @@ module ppc_fpu_arith (
         return out;
     endfunction
 
+    function automatic mul_parts_t multiply_parts(
+        input logic [52:0] a_sig, input logic [52:0] c_sig
+    );
+        mul_parts_t out;
+        out = '0;
+        out.p00 = a_sig[26:0] * c_sig[26:0];
+        out.p01 = a_sig[26:0] * c_sig[52:27];
+        out.p10 = a_sig[52:27] * c_sig[26:0];
+        out.p11 = a_sig[52:27] * c_sig[52:27];
+        return out;
+    endfunction
+
+    function automatic mul_mid_t multiply_mid(input mul_parts_t parts);
+        mul_mid_t out;
+        out = '0;
+        out.p00 = parts.p00;
+        out.p11 = parts.p11;
+        out.mid = {1'b0, parts.p01} + {1'b0, parts.p10};
+        return out;
+    endfunction
+
+    function automatic mul_low_t multiply_low(input mul_mid_t middle);
+        mul_low_t out;
+        out = '0;
+        out.p00 = middle.p00;
+        out.p11 = middle.p11;
+        out.cross_sum = {28'd0, middle.p00[53:27]} + {1'b0, middle.mid};
+        return out;
+    endfunction
+
+    function automatic logic [105:0] multiply_finish(input mul_low_t low);
+        logic [51:0] upper;
+        upper = low.p11 + {24'd0, low.cross_sum[54:27]};
+        return {upper, low.cross_sum[26:0], low.p00[26:0]};
+    endfunction
+
     function automatic finite_prep_t prepare_finite(
-        input ppc_fpu_op_t op, input finite_operands_t operand
+        input ppc_fpu_op_t op,
+        input logic [52:0] a_sig, input logic [52:0] b_sig,
+        input logic signed [15:0] a_exp,
+        input logic signed [15:0] b_exp,
+        input logic signed [15:0] c_exp,
+        input logic a_sign, input logic b_sign, input logic c_sign,
+        input logic [105:0] product
     );
         finite_prep_t out;
-        logic [105:0] product;
         logic subtract_b;
         out = '0;
         subtract_b = op == FP_MSUB || op == FP_NMSUB;
         out.negate_final = op == FP_NMADD || op == FP_NMSUB;
         out.single_operand = op == FP_MUL || op == FP_FRSP;
         if (op == FP_ADD || op == FP_SUB) begin
-            out.x = {1'b0, operand.a_sig, 106'd0};
-            out.y = {1'b0, operand.b_sig, 106'd0};
-            out.exp_x = operand.a_exp;
-            out.exp_y = operand.b_exp;
-            out.sign_x = operand.a_sign;
-            out.sign_y = operand.b_sign ^ (op == FP_SUB);
+            out.x = {1'b0, a_sig, 106'd0};
+            out.y = {1'b0, b_sig, 106'd0};
+            out.exp_x = a_exp;
+            out.exp_y = b_exp;
+            out.sign_x = a_sign;
+            out.sign_y = b_sign ^ (op == FP_SUB);
         end else if (op == FP_MUL || op == FP_MADD ||
             op == FP_MSUB || op == FP_NMADD ||
             op == FP_NMSUB) begin
-            product = operand.a_sig * operand.c_sig;
             out.x = {1'b0, product, 53'd0};
-            out.exp_x = operand.a_exp + operand.c_exp + 16'sd1;
-            out.sign_x = operand.a_sign ^ operand.c_sign;
+            out.exp_x = a_exp + c_exp + 16'sd1;
+            out.sign_x = a_sign ^ c_sign;
             if (op != FP_MUL) begin
-                out.y = {1'b0, operand.b_sig, 106'd0};
-                out.exp_y = operand.b_exp;
-                out.sign_y = operand.b_sign ^ subtract_b;
+                out.y = {1'b0, b_sig, 106'd0};
+                out.exp_y = b_exp;
+                out.sign_y = b_sign ^ subtract_b;
             end
         end else if (op == FP_FRSP) begin
-            out.x = {1'b0, operand.b_sig, 106'd0};
-            out.exp_x = operand.b_exp;
-            out.sign_x = operand.b_sign;
+            out.x = {1'b0, b_sig, 106'd0};
+            out.exp_x = b_exp;
+            out.sign_x = b_sign;
         end
         return out;
     endfunction
@@ -1070,6 +1133,9 @@ module ppc_fpu_arith (
             conv_source_q <= '0;
             conv_parts_q <= '0;
             finite_operands_q <= '0;
+            mul_parts_q <= '0;
+            mul_mid_q <= '0;
+            mul_low_q <= '0;
             prep_q <= '0;
             align_plan_q <= '0;
             align_data_q <= '0;
@@ -1147,10 +1213,32 @@ module ppc_fpu_arith (
                 PREP: begin
                     finite_operands_q <= prepare_operands(req_q.a, req_q.b,
                         req_q.c);
+                    if (req_q.op == FP_MUL || req_q.op == FP_MADD ||
+                        req_q.op == FP_MSUB || req_q.op == FP_NMADD ||
+                        req_q.op == FP_NMSUB)
+                        state_q <= PREP_MUL;
+                    else state_q <= PREP_PRODUCT;
+                end
+                PREP_MUL: begin
+                    mul_parts_q <= multiply_parts(finite_operands_q.a_sig,
+                        finite_operands_q.c_sig);
+                    state_q <= PREP_MID;
+                end
+                PREP_MID: begin
+                    mul_mid_q <= multiply_mid(mul_parts_q);
+                    state_q <= PREP_LOW;
+                end
+                PREP_LOW: begin
+                    mul_low_q <= multiply_low(mul_mid_q);
                     state_q <= PREP_PRODUCT;
                 end
                 PREP_PRODUCT: begin
-                    prep_q <= prepare_finite(req_q.op, finite_operands_q);
+                    prep_q <= prepare_finite(req_q.op,
+                        finite_operands_q.a_sig, finite_operands_q.b_sig,
+                        finite_operands_q.a_exp, finite_operands_q.b_exp,
+                        finite_operands_q.c_exp, finite_operands_q.a_sign,
+                        finite_operands_q.b_sign, finite_operands_q.c_sign,
+                        multiply_finish(mul_low_q));
                     state_q <= ALIGN_PLAN;
                 end
                 ALIGN_PLAN: begin
