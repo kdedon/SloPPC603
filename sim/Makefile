@@ -206,6 +206,27 @@ lint-fpu-stream:
 
 lint: lint-fpu-stream
 
+.PHONY: test-fpu-dual-603 test-fpu-dual-602 lint-fpu-dual
+PPC_FPU_DUAL_603_BUILD := $(BUILD_DIR)/ppc-fpu-dual-603
+PPC_FPU_DUAL_602_BUILD := $(BUILD_DIR)/ppc-fpu-dual-602
+$(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_603_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+
+$(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+
+test-fpu-dual-603: $(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual
+	./$(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual
+
+test-fpu-dual-602: $(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual
+	./$(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual
+
+lint-fpu-dual:
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+
+lint: lint-fpu-dual
+
 .PHONY: test-fpu-estimates
 PPC_FPU_ESTIMATE_BUILD := $(BUILD_DIR)/ppc-fpu-estimates
 PPC_FPU_ESTIMATE_VECTORS := $(BUILD_DIR)/fpu/estimate-vectors.txt

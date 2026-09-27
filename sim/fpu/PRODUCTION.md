@@ -343,3 +343,14 @@ selected/unselected `fsel` SP-tag cases. Each personality's 32-operation
 single-lane stream dispatched, forwarded, and committed all 32 in order,
 with exact three-clock forward latency. This gate does not yet cover
 simultaneous ordered FP+LSU issue or paired retirement/forwarding.
+
+Recorded: `make -C sim -j2 lint-fpu-dual` and `make -C sim -j2
+test-fpu-dual-603 test-fpu-dual-602` on shell commit `27ff134` with frozen
+arithmetic and the new dual-port bench, 2026-09-27; strict lint/build emitted
+zero warnings/errors, and each personality passed eight directed checks.
+Both accepted an ordered compare+load pair on the same edge; 603e delivered
+the simultaneous CR and FPR forwarding packets on separate buses and retired
+both results together, while 602 retired in order on separate cycles. The
+LSU completed a queued load while a divider remained occupied, and 602
+rejected pairing serialized `fctiwz` with a load. Store+load paired retirement,
+opposite issue order, cancellation and generation-wrap cases remain open.

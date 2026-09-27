@@ -1,0 +1,337 @@
+`default_nettype none
+// Public-port ordered FP + LSU reservation and paired-retirement checks.
+module tb_ppc_fpu_dual #(
+    parameter bit CPU_602 = 1'b0
+);
+    import ppc_pkg::*;
+    import ppc_fpu_pkg::*;
+
+    logic clk_i = 1'b0;
+    always #5 clk_i <= ~clk_i;
+    logic rst_ni;
+    logic issue_valid_i, issue_ready_o;
+    ppc_fpu_issue_t issue_i;
+    logic issue1_valid_i, issue1_ready_o;
+    ppc_fpu_issue_t issue1_i;
+    logic result_valid_o, result1_valid_o;
+    ppc_fpu_result_t result_o, result1_o;
+    logic commit_valid_i, commit_ready_o;
+    completion_tag_t commit_tag_i;
+    logic commit1_valid_i, commit1_ready_o;
+    completion_tag_t commit1_tag_i;
+    logic abort_valid_i, kill_all_i;
+    completion_tag_t abort_tag_i;
+    logic mem_req_valid_o, mem_req_ready_i;
+    ppc_fpu_mem_t mem_req_o;
+    logic mem_rsp_valid_i, mem_rsp_ready_o;
+    ppc_fpu_mem_rsp_t mem_rsp_i;
+    logic store_valid_o, store_ready_i;
+    ppc_fpu_mem_t store_o;
+    logic [4:0] inspect_fpr_index_i;
+    logic [63:0] inspect_fpr_o;
+    logic [31:0] inspect_fpscr_o, inspect_sp_o, inspect_lt_o;
+    logic forward_valid_o, forward1_valid_o;
+    ppc_fpu_forward_t forward_o, forward1_o;
+    logic saw_compare_cr, saw_load_fpr, saw_dual_forward;
+    int checks;
+
+    ppc_fpu #(.CPU_602(CPU_602)) dut (.*);
+
+    function automatic completion_tag_t tag(input logic [7:0] generation);
+        completion_tag_t t;
+        t.index = 3'(generation);
+        t.generation = generation;
+        return t;
+    endfunction
+
+    function automatic logic [31:0] dform(input logic [5:0] primary,
+        input logic [4:0] target, input logic [15:0] displacement);
+        return {primary, target, 5'd1, displacement};
+    endfunction
+
+    function automatic logic [31:0] add_insn(input logic [4:0] target);
+        return {CPU_602 ? 6'd59 : 6'd63, target, 5'd1, 5'd2,
+                5'd0, 5'd21, 1'b0};
+    endfunction
+
+    function automatic logic [31:0] compare_insn();
+        return {6'd63, 5'd20, 5'd1, 5'd2, 10'd0, 1'b0};
+    endfunction
+
+    function automatic ppc_fpu_issue_t request(input logic [7:0] generation,
+        input logic [31:0] instruction);
+        ppc_fpu_issue_t p;
+        p = '0;
+        p.tag = tag(generation);
+        p.insn = instruction;
+        p.msr_fp = 1'b1;
+        return p;
+    endfunction
+
+    always @(posedge clk_i)
+        if (!rst_ni) begin
+            saw_compare_cr <= 1'b0;
+            saw_load_fpr <= 1'b0;
+            saw_dual_forward <= 1'b0;
+        end else begin
+            if (forward_valid_o && forward_o.tag == tag(90)) begin
+                if (!forward_o.cr_write || forward_o.cr_field != 3'd5 ||
+                    forward_o.cr_value != 4'h8 || forward_o.fpr_write)
+                    $fatal(1, "compare forward malformed %h", forward_o);
+                saw_compare_cr <= 1'b1;
+            end
+            if (forward_valid_o && forward_o.tag == tag(91)) begin
+                if (!forward_o.fpr_write || forward_o.fpr_index != 5'd4)
+                    $fatal(1, "load forward malformed %h", forward_o);
+                saw_load_fpr <= 1'b1;
+            end
+            if (forward1_valid_o) begin
+                if (!forward_valid_o || forward1_o.tag == forward_o.tag)
+                    $fatal(1, "second forward has no distinct older packet %h", forward1_o);
+                if (forward1_o.tag == tag(91)) begin
+                    if (!forward1_o.fpr_write || forward1_o.fpr_index != 5'd4 ||
+                        forward1_o.fpr_value != (CPU_602 ? 64'h000000003f800000 :
+                                                64'h3ff0000000000000))
+                        $fatal(1, "paired load forward malformed %h", forward1_o);
+                    saw_load_fpr <= 1'b1;
+                    if (forward_o.tag == tag(90)) saw_dual_forward <= 1'b1;
+                end
+            end
+        end
+
+    task automatic issue_one(input ppc_fpu_issue_t packet);
+        int attempts;
+        bit accepted;
+        @(negedge clk_i);
+        issue_i = packet;
+        issue_valid_i = 1'b1;
+        attempts = 0;
+        accepted = 1'b0;
+        while (!accepted) begin
+            @(posedge clk_i);
+            accepted = issue_valid_i && issue_ready_o;
+            #2;
+            attempts++;
+            if (attempts > 100) $fatal(1, "single issue timeout %h", packet);
+        end
+        issue_valid_i = 1'b0;
+    endtask
+
+    task automatic issue_pair(input ppc_fpu_issue_t older,
+        input ppc_fpu_issue_t younger);
+        bit accept0, accept1;
+        @(negedge clk_i);
+        issue_i = older;
+        issue1_i = younger;
+        issue_valid_i = 1'b1;
+        issue1_valid_i = 1'b1;
+        @(posedge clk_i);
+        accept0 = issue_valid_i && issue_ready_o;
+        accept1 = issue1_valid_i && issue1_ready_o;
+        #2;
+        issue_valid_i = 1'b0;
+        issue1_valid_i = 1'b0;
+        if (!accept0 || !accept1)
+            $fatal(1, "%s ordered pair was not accepted same edge older=%h younger=%h ready=%b%b",
+                   CPU_602 ? "602" : "603e", older, younger, accept0, accept1);
+        checks++;
+    endtask
+
+    task automatic reply_memory(input completion_tag_t identity,
+        input logic [63:0] data, input bit write_expected);
+        int attempts;
+        attempts = 0;
+        while (!mem_req_valid_o) begin
+            @(negedge clk_i);
+            attempts++;
+            if (attempts > 100)
+                $fatal(1, "memory prepare timeout tag=%h descriptor=%h",
+                       identity, mem_req_o);
+        end
+        if (mem_req_o.tag != identity || mem_req_o.write != write_expected)
+            $fatal(1, "memory prepare tag/write mismatch descriptor=%h", mem_req_o);
+        mem_req_ready_i = 1'b1;
+        @(posedge clk_i);
+        #2;
+        mem_req_ready_i = 1'b0;
+        // Align the compare/load pair's tagged LSU reply with the compare's
+        // finish edge so both independent forward packets are required.
+        if (identity == tag(91)) @(negedge clk_i);
+        @(negedge clk_i);
+        mem_rsp_i = '0;
+        mem_rsp_i.tag = identity;
+        mem_rsp_i.data = data;
+        mem_rsp_valid_i = 1'b1;
+        #1;
+        if (!mem_rsp_ready_o)
+            $fatal(1, "memory reply backpressured tag=%h", identity);
+        @(posedge clk_i);
+        #2;
+        mem_rsp_valid_i = 1'b0;
+    endtask
+
+    task automatic await_head(input completion_tag_t identity);
+        int attempts;
+        attempts = 0;
+        while (!result_valid_o) begin
+            @(negedge clk_i);
+            attempts++;
+            if (attempts > 100) $fatal(1, "head result timeout tag=%h", identity);
+        end
+        if (result_o.tag != identity || result_o.exception != FPU_NO_EXCEPTION)
+            $fatal(1, "head result tag/exception mismatch %h", result_o);
+    endtask
+
+    task automatic retire_one(input completion_tag_t identity);
+        bit accepted;
+        @(negedge clk_i);
+        commit_tag_i = identity;
+        commit_valid_i = 1'b1;
+        @(posedge clk_i);
+        accepted = commit_ready_o;
+        #2;
+        commit_valid_i = 1'b0;
+        if (!accepted) $fatal(1, "commit rejected tag=%h result=%h", identity, result_o);
+    endtask
+
+    task automatic initialize_fpr(input logic [4:0] index,
+        input logic [7:0] generation, input logic [63:0] data);
+        completion_tag_t identity;
+        identity = tag(generation);
+        issue_one(request(generation,
+            dform(CPU_602 ? 6'd48 : 6'd50, index, 16'd0)));
+        reply_memory(identity, data, 1'b0);
+        await_head(identity);
+        retire_one(identity);
+    endtask
+
+    initial begin : run
+        int attempts;
+        bit accept0, accept1;
+        rst_ni = 1'b0;
+        issue_valid_i = 1'b0;
+        issue_i = '0;
+        issue1_valid_i = 1'b0;
+        issue1_i = '0;
+        commit_valid_i = 1'b0;
+        commit_tag_i = '0;
+        commit1_valid_i = 1'b0;
+        commit1_tag_i = '0;
+        abort_valid_i = 1'b0;
+        abort_tag_i = '0;
+        kill_all_i = 1'b0;
+        mem_req_ready_i = 1'b0;
+        mem_rsp_valid_i = 1'b0;
+        mem_rsp_i = '0;
+        store_ready_i = 1'b1;
+        inspect_fpr_index_i = 5'd0;
+        checks = 0;
+        repeat (3) @(negedge clk_i);
+        rst_ni = 1'b1;
+        initialize_fpr(5'd1, 8'd1,
+            CPU_602 ? 64'h000000003f800000 : 64'h3ff0000000000000);
+        initialize_fpr(5'd2, 8'd2,
+            CPU_602 ? 64'h0000000040000000 : 64'h4000000000000000);
+        if (inspect_fpscr_o != 32'd0)
+            $fatal(1, "initial FPSCR changed");
+
+        // Ordered compare then load may retire together on 603e: the CR
+        // packet and FPR packet must both reach the independent forward buses.
+        issue_pair(request(8'd90, compare_insn()),
+                   request(8'd91, dform(CPU_602 ? 6'd48 : 6'd50, 5'd4, 16'd0)));
+        reply_memory(tag(91),
+            CPU_602 ? 64'h000000003f800000 : 64'h3ff0000000000000, 1'b0);
+        await_head(tag(90));
+        if (result_o.cr_field != 3'd5 || result_o.cr_value != 4'h8 ||
+            result_o.fpr_write)
+            $fatal(1, "compare head did not produce CR5 less %h", result_o);
+        if (!CPU_602) begin
+            if (!result1_valid_o || result1_o.tag != tag(91) ||
+                !result1_o.fpr_write || result1_o.fpr_index != 5'd4)
+                $fatal(1, "603e paired compare/load result missing %h", result1_o);
+            @(negedge clk_i);
+            commit_tag_i = tag(90);
+            commit_valid_i = 1'b1;
+            commit1_tag_i = tag(91);
+            commit1_valid_i = 1'b1;
+            @(posedge clk_i);
+            accept0 = commit_ready_o;
+            accept1 = commit1_ready_o;
+            #2;
+            commit_valid_i = 1'b0;
+            commit1_valid_i = 1'b0;
+            if (!accept0 || !accept1)
+                $fatal(1, "603e compare/load dual retirement rejected");
+            if (!saw_compare_cr || !saw_load_fpr || !saw_dual_forward)
+                $fatal(1, "603e lost paired compare/load forwarding cr=%b fpr=%b dual=%b",
+                       saw_compare_cr, saw_load_fpr, saw_dual_forward);
+            checks += 3;
+        end else begin
+            if (result1_valid_o || forward1_valid_o)
+                $fatal(1, "602 exposed dual retirement/forwarding");
+            retire_one(tag(90));
+            await_head(tag(91));
+            retire_one(tag(91));
+            if (!saw_compare_cr || !saw_load_fpr)
+                $fatal(1, "602 lost ordered compare/load forwards");
+            checks += 2;
+        end
+        inspect_fpr_index_i = 5'd4;
+        #1;
+        if (inspect_fpr_o != (CPU_602 ? 64'h000000003f800000 :
+                                      64'h3ff0000000000000))
+            $fatal(1, "paired load failed to commit FPR4");
+        checks++;
+
+        // The LSU reservation remains available behind an occupied divider.
+        issue_one(request(8'd92, {CPU_602 ? 6'd59 : 6'd63,
+                                  5'd5, 5'd2, 5'd1, 5'd0, 5'd18, 1'b0}));
+        issue_one(request(8'd93,
+            dform(CPU_602 ? 6'd48 : 6'd50, 5'd6, 16'd0)));
+        reply_memory(tag(93),
+            CPU_602 ? 64'h000000003f800000 : 64'h3ff0000000000000, 1'b0);
+        if (result_valid_o && result_o.tag == tag(92))
+            $fatal(1, "LSU reply occurred only after divider completion");
+        await_head(tag(92));
+        retire_one(tag(92));
+        await_head(tag(93));
+        retire_one(tag(93));
+        checks += 3;
+
+        // A 602 serialized conversion cannot accept a paired LSU operation.
+        if (CPU_602) begin
+            @(negedge clk_i);
+            issue_i = request(8'd94, {6'd63, 5'd7, 5'd0, 5'd1, 10'd15, 1'b0});
+            issue1_i = request(8'd95, dform(6'd48, 5'd8, 16'd0));
+            issue_valid_i = 1'b1;
+            issue1_valid_i = 1'b1;
+            @(posedge clk_i);
+            accept0 = issue_ready_o;
+            accept1 = issue1_ready_o;
+            #2;
+            issue_valid_i = 1'b0;
+            issue1_valid_i = 1'b0;
+            if (!accept0 || accept1)
+                $fatal(1, "602 fctiwz incorrectly paired with LSU");
+            await_head(tag(94));
+            retire_one(tag(94));
+            checks++;
+        end
+
+        attempts = 0;
+        while (mem_req_valid_o || result_valid_o || result1_valid_o) begin
+            @(negedge clk_i);
+            attempts++;
+            if (attempts > 8) $fatal(1, "dual bench left pending results");
+        end
+        if (store_valid_o || store_o.write)
+            $fatal(1, "dual bench exposed unauthorized store %h", store_o);
+        if (CPU_602 && (!inspect_sp_o[31-4] || inspect_lt_o[31-4]))
+            $fatal(1, "602 dual load tag incorrect SP=%h LT=%h",
+                   inspect_sp_o, inspect_lt_o);
+        $display("%s FPU dual reservation checks PASS: %0d",
+                 CPU_602 ? "602" : "603e", checks);
+        $finish;
+    end
+endmodule
+`default_nettype wire
