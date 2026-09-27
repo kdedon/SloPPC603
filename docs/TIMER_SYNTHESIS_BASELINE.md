@@ -1,5 +1,36 @@
 # Timer and live BAT FPGA measurement
 
+## 2026-09-27 micro-TLB refit
+
+Recorded: `./quartus/timer-bat/build.sh --docker`, commit `56824e5`,
+2026-09-27. Quartus 17.0.2, derived clock uncertainty. This adds the router's
+per-side micro-TLBs and split instruction/data lanes
+([MICRO_TLB.md](MICRO_TLB.md)). Setup **meets 50 MHz at every corner** with
+1.5 ns to spare; hold **fails** on one measurement-boundary path.
+
+| Resource | Without micro-TLB | This refit |
+| --- | ---: | ---: |
+| ALMs | 4,898 | 5,186 |
+| Registers | 4,594 | 5,088 |
+| M10K blocks | 3 | 3 |
+
+| Corner | Setup slack (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +1.492 | -0.356 |
+| Slow 1100 mV, -40 C | +1.530 | -0.571 |
+| Fast 1100 mV, 100 C | +8.676 | +0.134 |
+| Fast 1100 mV, -40 C | +10.970 | -0.206 |
+
+Fmax is 54.03 MHz at the worst corner. Worst setup stays in the core
+(`fifo:iq` and `special:uop_q.spr` into `dispatch` and `special`). The
+micro-TLBs synthesize to about 175 ALUTs and 184 registers per side. The
+worst router paths have 4.66 ns of slack (slow 100 C): `request_ea_q` into
+a micro-TLB fill, and `special|ea_q` into `request_ea_q` at acceptance, 5.0
+ns. At 66 MHz (15.15 ns) the router paths would miss by about 0.2 ns and the
+core by about 3.4 ns. Each failing hold path is the single path from the
+virtual `rst_ni` input, with zero input delay, to `router|d_state_q`; the
+next refit synchronizes that reset.
+
 ## 2026-09-27 refit without test redirect
 
 Recorded: `./quartus/timer-bat/build.sh --docker`, commit `31bb82d`,
