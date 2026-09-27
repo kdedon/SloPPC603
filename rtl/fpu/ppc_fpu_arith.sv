@@ -97,13 +97,15 @@ module ppc_fpu_arith (
     } round_post_t;
 
     typedef enum logic [3:0] {
-        IDLE, CALC, DIVIDE, PREP, ALIGN_PLAN, ALIGN_SHIFT, ALIGN_SUM,
+        IDLE, CALC, CONV_PREP, CONV_FINISH, DIVIDE,
+        PREP, ALIGN_PLAN, ALIGN_SHIFT, ALIGN_SUM,
         NORM_HIGH, NORM_LOW,
         TINY, ROUND, PACK, RESPONSE
     } state_t;
     state_t state_q;
     ppc_fpu_arith_req_t req_q;
     ppc_fpu_arith_rsp_t rsp_q;
+    operand_t conv_source_q;
     finite_prep_t prep_q;
     align_plan_t align_plan_q;
     align_data_t align_data_q;
@@ -669,7 +671,7 @@ module ppc_fpu_arith (
 
     function automatic ppc_fpu_arith_rsp_t calculate(input ppc_pkg::completion_tag_t tag, input ppc_fpu_op_t op,
         input logic [63:0] a_bits, input logic [63:0] b_bits,
-        input logic [63:0] c_bits, input logic [1:0] rn,
+        input logic [63:0] c_bits,
         input logic ve, input logic ze);
         ppc_fpu_arith_rsp_t out;
         special_t a;
@@ -775,8 +777,6 @@ module ppc_fpu_arith (
             out.fpcc = compare_code;
             return out;
         end
-        if (op == FP_FCTIW || op == FP_FCTIWZ)
-            return convert_word(tag, op, rn, ve, b);
         if (any_nan || generated_invalid) begin
             out.result = any_nan ? selected_nan : QNAN;
             if (op == FP_FRSP) out.result[28:0] = 29'd0;
@@ -955,6 +955,7 @@ module ppc_fpu_arith (
             state_q <= IDLE;
             req_q <= '0;
             rsp_q <= '0;
+            conv_source_q <= '0;
             prep_q <= '0;
             align_plan_q <= '0;
             align_data_q <= '0;
@@ -995,11 +996,22 @@ module ppc_fpu_arith (
                             req_i.op == FP_FRES) ? 5'd13 : 5'd27;
                         state_q <= DIVIDE;
                     end else if (launch_finite) state_q <= PREP;
+                    else if (req_i.op == FP_FCTIW || req_i.op == FP_FCTIWZ)
+                        state_q <= CONV_PREP;
                     else state_q <= CALC;
                 end
                 CALC: begin
                     rsp_q <= calculate(req_q.tag, req_q.op, req_q.a, req_q.b,
-                        req_q.c, req_q.rn, req_q.ve, req_q.ze);
+                        req_q.c, req_q.ve, req_q.ze);
+                    state_q <= RESPONSE;
+                end
+                CONV_PREP: begin
+                    conv_source_q <= unpack(req_q.b);
+                    state_q <= CONV_FINISH;
+                end
+                CONV_FINISH: begin
+                    rsp_q <= convert_word(req_q.tag, req_q.op, req_q.rn,
+                        req_q.ve, conv_source_q);
                     state_q <= RESPONSE;
                 end
                 PREP: begin

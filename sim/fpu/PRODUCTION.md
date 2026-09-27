@@ -94,6 +94,14 @@ failures. Request-acceptance to result-valid latency was 1–9 clocks for
 add/sub/mul/fused/`frsp`, 1–32 for divide, and 1 for conversion/compare;
 the minima include faster special cases.
 
+Recorded: `make -C sim -j2 test-fpu` on commit `3ea914c` plus the
+registered conversion-stage RTL change, 2026-09-27; 20 Python anchors,
+32 table-value/bound proofs, 200,000 arithmetic packets with 0 mismatches,
+66 cancellation offsets, 4 held-response checks, 11,958 estimate packets
+with 0 mismatches, and 833 shell checks with 0 failures. Arithmetic and
+divide latency remained 1–9 and 1–32 clocks; `fctiw`/`fctiwz` latency became
+2 clocks, while compare stayed at 1 clock.
+
 Recorded: `make -C sim -j2 test-core test-completion test-execution check-spec`
 on commit `fc33a75` plus documentation and FPU-bench changes, 2026-09-27;
 the existing integer core, completion, execution, and structural spec checks
