@@ -866,3 +866,10 @@ against DingusPPC (`test-reference-firmware`). Inherited from the branch: `ci`,
 reference-acceptance, translated fit (63.37 MHz); fresh on the merge: lint,
 check-spec. MVP 87.67% → 88.84%. See [residuals](../../DIAGNOSTIC_RESIDUALS.md).
 
+## Fetch-to-decode and signoff round — accepted (2026-09-28)
+
+Registered fetch-to-decode stage. Fresh on the combined tree: `make -C sim ci`
+and fits of the translated, cached physical, timer/BAT and chip tops, all meeting
+50 MHz and 66 MHz at every corner (70.92 / 73.21 / 69.85 / 66.22 MHz). MVP
+88.84% → 89.05%. Next: data-cache integration (wave 2), then release.
+

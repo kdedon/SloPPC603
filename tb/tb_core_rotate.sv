@@ -528,7 +528,7 @@ module tb_core_rotate;
       response_delay <= 0;
     end else begin
       if (req_valid && !req_ready) request_stalls++;
-      if (int'(dut.iq.count) == IQ_DEPTH &&
+      if (int'(dut.iq.count) == IQ_DEPTH && dut.fd_valid_q &&
           !dut.fetch.request_held && !dut.fetch.pending) begin
         require(!req_valid, "full rotate IQ admitted an unreserved fetch");
         credit_stalls++;

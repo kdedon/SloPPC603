@@ -75,3 +75,12 @@ and SMI at the vectors the manual gives, checkstops and recovers only through
 HRESET, and runs compiled images under random retry and DRTRY. It does not
 establish reduced-pinout or 32-bit modes (rejected), data-cache behaviour
 (the slot passes through), or JTAG/COP and power management (absent).
+
+## 2026-09-28 signoff fit with the fetch-to-decode register
+
+Recorded: `./quartus/chip/build.sh --docker` and `./quartus/report-target-paths.sh chip --docker`,
+merge of `fetch-decode-stage` onto `e73215f` plus uncommitted merge resolution,
+2026-09-28. Meets 50 MHz and 66 MHz at every corner: setup +5.029 / +4.899 /
++7.317 / +7.721 ns, hold +0.253 / +0.242 / +0.134 / +0.118 ns. Fmax 66.22 MHz;
+no endpoint fails at 15.152 ns.
+

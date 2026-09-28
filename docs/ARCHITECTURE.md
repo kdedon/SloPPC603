@@ -76,7 +76,7 @@ One instruction dispatches per cycle. Dispatch allocates an unfinished completio
 | `ppc_regfile_gpr` | Committed GPR state | One write port and one MLAB-inferable copy per read port; only retirement writes. An update load writes rD at retirement and rA one edge later while dispatch waits. r0 is an ordinary writable register. After reset the write port zeroes all entries over 32 edges while dispatch waits; the zeroing is a test convenience (the 603e leaves GPRs undefined). |
 | `ppc_rename` | Five values, valid/ready bits, producer identities and latest-writer map | Each dispatched writer gets a free slot; reads see the newest unretired writer or wait for its accepted finish; retire clears the map only if it still points at that retiring tag; simultaneous younger allocation wins. |
 | `ppc_completion` | Ordered allocations with independent finish state | The only place that clears a diagnostic allocation's write permissions; reject invalid/stale/duplicate finishes; only finished head retires; output remains stable while stalled; accepted prefix cuts preserve that irrevocable head and suppress killed finishes. |
-| `ppc_core` | Resource gating, commit, stop/halt state | Instructions are decoded at IQ push; the IQ holds the uop. Special uops take operands straight from the committed GPR file (they dispatch only with an empty CQ). IQ pop, rename/CQ allocation and reservation capture are atomic; only accepted redirects clear frontend state and cancel exact producer identities; unsupported instructions allocate a CQ entry without a GPR rename slot. |
+| `ppc_core` | Resource gating, commit, stop/halt state | Fetched words are registered, then decoded at IQ push; the IQ holds the uop. Special uops take operands straight from the committed GPR file (they dispatch only with an empty CQ). IQ pop, rename/CQ allocation and reservation capture are atomic; only accepted redirects clear frontend state and cancel exact producer identities; unsupported instructions allocate a CQ entry without a GPR rename slot. |
 
 No rename slot is reclaimed for allocation in the same cycle as release. This intentionally creates a bubble at capacity. Result data appears in both rename storage (operand lookup) and completion packets (retirement trace/writeback); a future completion redesign may replace this duplication with result-tag reads.
 
@@ -234,3 +234,23 @@ checkstop state (`checkstop_o`). Behind `ENABLE_DEBUG_EXCEPTIONS`, trace
 reuses the interrupt boundary after each armed instruction (dispatch
 serializes while SE or BE is set) and IABR marks matching IQ entries at push.
 See [the contract](EXCEPTION_MACHINE_CHECK_TRACE.md).
+
+## Fetch-to-decode register
+
+A one-entry register sits between `ppc_fetch` and the IQ. It holds the
+fetched word with its PC, fetch fault and page-miss context; decode and the
+IABR compare read it at IQ push, so the I-cache RAM output reaches only a
+register in its cycle. It accepts when empty or when the IQ accepts, and it
+clears with the IQ on an accepted redirect. Fetch credit therefore covers
+IQ_DEPTH + 1 entries, and every fetched instruction reaches the IQ one cycle
+later.
+
+Recorded: `make -C toolchain rtl-all`, commit `6c66bb4` (before) and commit
+`a9e139f` plus the bench change committed as `f68868a` (after), 2026-09-28.
+All 31 profiles pass. CPI (cycles per retirement, bench memory models with
+their injected stalls) rises by 0 to 4.7%: BE smoke 6.00 to 6.01, table
+search 6.55 to 6.77, segment 7.45 to 7.80, page DSI 7.79 to 8.12, cached
+table search 15.55 to 15.70, load/store extensions 22.47 unchanged, MMU
+stress modes +0.5 to +1.9%. Summed over the 63 PASS lines, CPI goes from
+17.033 to 17.221 (+1.1%). Interrupt-driven benches retire slightly different
+counts because interrupt arrival shifts relative to fetch.

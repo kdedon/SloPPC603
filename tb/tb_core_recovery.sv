@@ -246,7 +246,7 @@ module tb_core_recovery;
     #1; check(redirect_accepted == accept, "directed redirect outcome");
     tick(); redirect_valid = 0;
     #1;
-    if (accept) check(dut.iq.count == 0, "accepted cut clears IQ");
+    if (accept) check(dut.iq.count == 0 && !dut.fd_valid_q, "accepted cut clears IQ and its input register");
   endtask
   task automatic await_full;
     while (model.size() != CQ_DEPTH || int'(dut.iq.count) != IQ_DEPTH) tick();

@@ -292,6 +292,22 @@ module ppc_core #(
     .rsp_fault_i(imem_rsp_fault_i),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready), .packet_o(fetched)
   );
+  // Fetch-to-decode register: the fetched word, its PC, fault and page-miss
+  // context are registered before decode. It clears with the IQ.
+  fetch_packet_t fd_packet_q;
+  page_miss_t fd_miss_q;
+  logic fd_valid_q, iq_push_ready;
+  assign fetch_ready = !recovery_accepted && (!fd_valid_q || iq_push_ready);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted) fd_valid_q <= 1'b0;
+    else if (fetch_ready) fd_valid_q <= fetch_valid;
+  end
+  always_ff @(posedge clk_i) begin
+    if (fetch_valid && fetch_ready) begin
+      fd_packet_q <= fetched;
+      fd_miss_q <= imem_rsp_page_miss_i;
+    end
+  end
   // Instructions are decoded at IQ push; dispatch starts from the queued uop.
   ppc_decode #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
@@ -308,18 +324,18 @@ module ppc_core #(
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE)
-  ) predecode (.insn_i(fetched.insn), .uop_o(push_uop));
+  ) predecode (.insn_i(fd_packet_q.insn), .uop_o(push_uop));
   // IABR compares at IQ push. The manual requires a context-synchronizing
   // instruction after mtspr IABR, and its refetch clears older IQ entries.
   always_comb begin
-    queued = fetched;
-    if (ENABLE_DEBUG_EXCEPTIONS && iabr[1] && (fetched.fault == FETCH_OK) &&
-        (fetched.pc[31:2] == iabr[31:2]))
+    queued = fd_packet_q;
+    if (ENABLE_DEBUG_EXCEPTIONS && iabr[1] && (fd_packet_q.fault == FETCH_OK) &&
+        (fd_packet_q.pc[31:2] == iabr[31:2]))
       queued.fault = FETCH_IABR;
   end
   ppc_fifo #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t)), .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(recovery_accepted),
-    .push_valid_i(fetch_valid), .push_ready_o(fetch_ready),
+    .push_valid_i(fd_valid_q), .push_ready_o(iq_push_ready),
     .push_data_i({queued, push_uop}),
     .pop_valid_o(iq_valid), .pop_ready_i(iq_pop),
     .pop_data_o({iq_head, iq_uop})
@@ -335,7 +351,7 @@ module ppc_core #(
   // Page-miss context of the oldest IQ page-miss entry, captured only when no
   // other page-miss entry is queued. A younger one never dispatches: the older
   // fault either redirects, which clears the IQ, or halts.
-  assign iq_push_miss = fetch_valid && fetch_ready && (fetched.fault == FETCH_PAGE_MISS);
+  assign iq_push_miss = fd_valid_q && iq_push_ready && (fd_packet_q.fault == FETCH_PAGE_MISS);
   assign iq_pop_miss = iq_valid && iq_pop && (iq_head.fault == FETCH_PAGE_MISS);
   assign iq_miss_count_left = iq_miss_count_q - IQ_COUNT_WIDTH'(iq_pop_miss);
   always_ff @(posedge clk_i) begin
@@ -349,7 +365,7 @@ module ppc_core #(
     end
   end
   always_ff @(posedge clk_i) begin
-    if (iq_push_miss && (iq_miss_count_left == '0)) iq_miss_q <= imem_rsp_page_miss_i;
+    if (iq_push_miss && (iq_miss_count_left == '0)) iq_miss_q <= fd_miss_q;
   end
   assign head_page_miss = (ENABLE_PAGE_MISS_RESULTS && iq_miss_valid_q &&
     (iq_head.fault == FETCH_PAGE_MISS)) ? iq_miss_q : '0;

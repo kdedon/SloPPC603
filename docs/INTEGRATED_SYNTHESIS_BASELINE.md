@@ -2,6 +2,28 @@
 
 
 
+## 2026-09-28 signoff with the fetch-to-decode register
+
+Recorded: `./quartus/integrated/build.sh --docker` and `./quartus/report-target-paths.sh integrated --docker`,
+merge of `fetch-decode-stage` onto `e73215f` plus uncommitted merge resolution,
+2026-09-28. **Meets 50 MHz and 66 MHz** at every corner: setup +6.338 / +6.339 / +7.913 / +8.194 ns and hold
++0.250 / +0.239 / +0.135 / +0.111 ns (slow 100 C, slow -40 C, fast 100 C, fast -40 C). Fmax 73.21 MHz; no
+endpoint fails at 15.152 ns. Includes the data-cache module, chip package,
+multiplier and residuals merges.
+
+## 2026-09-28 fetch-to-decode register: 66 MHz
+
+Recorded: `make -C sim -j2 ci`, `./quartus/integrated/build.sh --docker` and
+`./quartus/report-target-paths.sh integrated --docker`, commit `f68868a`,
+2026-09-28. Quartus 17.0.2, seed 1. **Meets 50 MHz and 66 MHz** at every
+corner with hold passing everywhere: setup at 50 MHz +5.383 / +5.495 /
++7.304 / +7.732 ns (66 MHz +0.535 / +0.647 / +2.456 / +2.884 ns) and hold
++0.319 / +0.241 / +0.167 / +0.118 ns (slow 100 C, slow -40 C, fast 100 C,
+fast -40 C). Fmax 74.91 MHz (from 65.02); re-timed at 15.152 ns and at
+14.286 ns (70 MHz) no endpoint fails. 5,483 ALMs, 6,762 registers, 3 DSP
+blocks, 131,072 block-memory bits. The RTL change is the fetch-to-decode
+register described in [ARCHITECTURE.md](ARCHITECTURE.md#fetch-to-decode-register).
+
 ## 2026-09-28 final signoff on the complete MVP RTL
 
 Recorded: `./quartus/integrated/build.sh --docker` and
