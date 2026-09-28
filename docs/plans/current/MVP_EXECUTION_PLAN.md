@@ -819,3 +819,11 @@ datapath storage, registered IQ head, ungated wake payload. Fresh on the branch
 tops, each meeting 50 MHz setup and hold at every corner (65.24 / 63.20 / 70.28
 MHz). MVP 87.46% → 90.26%. See [interface timing](../../INTERFACE_TIMING_CONTRACT.md).
 
+## Full decode and final signoff round — accepted (2026-09-28)
+
+`ENABLE_FULL_DECODE` in the translated profile: no instruction word halts.
+Fresh on the combined tree: `make -C sim ci` (532 PASS lines, 31 firmware
+profiles, coverage 76.6%) and fits of all three tops, each meeting 50 MHz setup
+and hold at every corner (61.41 / 65.02 / 72.70 MHz). MVP 90.26% → 91.80%.
+See [verification](../../FULL_DECODE_VERIFICATION.md).
+

@@ -4,7 +4,7 @@ Date: 2026-09-23. Scope: the original CPU-only 603e project through P30 in
 [TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
-**Revised estimate: about 49% complete (weighted 48.59%; judgment range 40–55%).**
+**Revised estimate: about 50% complete (weighted 50.03%; judgment range 40–55%).**
 This replaces the provisional 40–45% headline. It is completed project scope,
 including documentation and tooling, not measured RTL coverage or a fraction of
 remaining effort. The range is not a statistical confidence interval.
@@ -26,12 +26,12 @@ historically measured effort. Keep them fixed for subsequent updates.
 | --- | ---: | ---: | ---: |
 | Source contracts and ISA planning | 8% | 68% | 5.44% |
 | Reproducible tools and scaffold | 4% | 90% | 3.60% |
-| Scalar tagged execution, recovery and integer units | 8% | 85% | 6.80% |
+| Scalar tagged execution, recovery and integer units | 8% | 88% | 7.04% |
 | Dual dispatch/retirement and superscalar scheduling | 4% | 0% | 0.00% |
 | Functional branches | 3% | 90% | 2.70% |
 | Branch prediction and folding | 2% | 0% | 0.00% |
 | Load/store architecture | 5% | 75% | 3.75% |
-| Supervisor, system instructions and interrupts | 8% | 80% | 6.40% |
+| Supervisor, system instructions and interrupts | 8% | 85% | 6.80% |
 | MMU | 8% | 80% | 6.40% |
 | 60x transport and protocol | 6% | 70% | 4.20% |
 | Instruction cache and architectural maintenance | 4% | 90% | 3.60% |
@@ -40,8 +40,8 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Floating point | 12% | 0% | 0.00% |
 | Endian, variants and platform behavior | 6% | 0% | 0.00% |
 | Full timing, reference and integration verification | 10% | 50% | 5.00% |
-| Final FPGA closure and release | 4% | 10% | 0.40% |
-| **Total** | **100%** | | **48.59%** |
+| Final FPGA closure and release | 4% | 30% | 1.20% |
+| **Total** | **100%** | | **50.03%** |
 
 ## Reasons for the revised credit
 
@@ -87,7 +87,7 @@ historically measured effort. Keep them fixed for subsequent updates.
 
 ## Reconciliation and next updates
 
-Historical round-40 total: **39.40%**. Current audited total: **48.59%** (+9.19
+Historical round-40 total: **39.40%**. Current audited total: **50.03%** (+10.63
 points), combining real later capability with a downward correction to the old
 execution estimate. The difference is not a clean development-velocity measure.
 The MVP remains **80.81%** under its separate, unchanged scope and weighting.
@@ -111,3 +111,8 @@ split of unaligned scalars) and machine check, trace and IABR: load/store 67% �
 (local reservation only). Total 46.79% → 48.59%. Evidence:
 [load/store](LOAD_STORE_EXTENSIONS_VERIFICATION.md),
 [exceptions](EXCEPTION_MACHINE_CHECK_TRACE_VERIFICATION.md).
+
+Full decode, gate-3 timing contract and MVP signoff fits: scalar integer 85% →
+88%, supervisor 80% → 85%, final FPGA closure 10% → 30% (MVP tops at 50 MHz;
+full-603e timing and release remain). Total 48.59% → 50.03%.
+

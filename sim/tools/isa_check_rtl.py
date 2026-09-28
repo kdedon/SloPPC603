@@ -39,6 +39,9 @@ PROFILES: list[tuple[str, frozenset[str]]] = [
     ("byte_reverse", frozenset({SUP, "ENABLE_BYTE_REVERSE"})),
     ("multiple_string", frozenset({SUP, "ENABLE_MULTIPLE_STRING"})),
     ("reservation", frozenset({SUP, "ENABLE_CACHE_INSTRUCTIONS", "ENABLE_RESERVATION"})),
+    ("full_decode", frozenset({SUP, LIVE, "ENABLE_FULL_DECODE"})),
+    ("all_base", frozenset(DECODE_PARAMETERS) - {"ENABLE_FULL_DECODE"}),
+    # The translated MVP decode profile.
     ("all", frozenset(DECODE_PARAMETERS)),
 ]
 
@@ -169,6 +172,12 @@ int main(int argc, char** argv) {{
         for (uint32_t rc = 0; rc < 2; ++rc)
             for (uint32_t regs : register_fields)
                 check(top, (UINT32_C(19) << 26) | regs | (xo << 1) | rc);
+    // Every opcode-59/63 XO/Rc combination: FP A-forms vary frC in word bits 10:6.
+    for (uint32_t primary : {{59u, 63u}})
+        for (uint32_t xo = 0; xo < 1024; ++xo)
+            for (uint32_t rc = 0; rc < 2; ++rc)
+                for (uint32_t regs : register_fields)
+                    check(top, (primary << 26) | regs | (xo << 1) | rc);
     // Branch option values, BI extremes and the reserved XL field.
     for (uint32_t bo = 0; bo < 32; ++bo)
         for (uint32_t bi : {{0u, 7u, 31u}})

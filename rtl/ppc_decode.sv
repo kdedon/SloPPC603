@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
-// Decodes the implemented ISA subset; other encodings produce a diagnostic.
+// Decodes the implemented ISA. With ENABLE_FULL_DECODE every other encoding
+// takes the illegal-instruction program exception; otherwise it produces a
+// diagnostic.
 module ppc_decode #(
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
@@ -16,7 +18,10 @@ module ppc_decode #(
   parameter bit ENABLE_BYTE_REVERSE = 1'b0,
   parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
   parameter bit ENABLE_RESERVATION = 1'b0,
-  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
+  // Illegal and invalid forms, traps, FP class, PVR/HID0/HID1/EAR and
+  // eciwx/ecowx.
+  parameter bit ENABLE_FULL_DECODE = 1'b0
 ) (
   input logic [31:0] insn_i,
   output ppc_pkg::uop_t uop_o
@@ -46,7 +51,38 @@ module ppc_decode #(
     endcase
   endfunction
 
+  // UM Table A-1: 603e floating-point arithmetic, move and FPSCR forms.
+  // fsqrt/fsqrts (A-form XO 22) are unimplemented optional instructions.
+  function automatic logic fp_a_form(input logic [5:0] primary,
+                                     input logic [4:0] xo);
+    case (xo)
+      5'd18, 5'd20, 5'd21, 5'd25, 5'd28, 5'd29, 5'd30, 5'd31: return 1'b1;
+      5'd24: return primary == 6'd59;  // fres
+      5'd23, 5'd26: return primary == 6'd63;  // fsel, frsqrte
+      default: return 1'b0;
+    endcase
+  endfunction
+  function automatic logic fp_x_form(input logic [9:0] xo);
+    case (xo)
+      10'd0, 10'd12, 10'd14, 10'd15, 10'd32, 10'd38, 10'd40, 10'd64,
+      10'd70, 10'd72, 10'd134, 10'd136, 10'd264, 10'd583, 10'd711:
+        return 1'b1;
+      default: return 1'b0;
+    endcase
+  endfunction
+  // Opcode-31 FP loads/stores and stfiwx.
+  function automatic logic fp_indexed(input logic [9:0] xo);
+    case (xo)
+      10'd535, 10'd567, 10'd599, 10'd631, 10'd663, 10'd695, 10'd727,
+      10'd759, 10'd983: return 1'b1;
+      default: return 1'b0;
+    endcase
+  endfunction
+
+  logic spr_form_privileged;
+
   always_comb begin
+    spr_form_privileged = 1'b0;
     uop_o = '0;
     uop_o.illegal = 1'b1;
     uop_o.src_a = insn_i[20:16];
@@ -60,6 +96,32 @@ module ppc_decode #(
         if (ENABLE_SUPERVISOR_EXCEPTIONS && (insn_i == 32'b0)) begin
           uop_o.illegal = 1'b0;
           uop_o.special_op = SPECIAL_PROGRAM_ILLEGAL;
+        end
+      end
+      6'd3: begin
+        if (ENABLE_FULL_DECODE) begin
+          uop_o.illegal = 1'b0;
+          uop_o.special_op = SPECIAL_TRAP;
+          uop_o.branch_bo = insn_i[25:21];
+          uop_o.use_imm = 1'b1;
+          uop_o.imm = {{16{insn_i[15]}}, insn_i[15:0]};
+        end
+      end
+      6'd48, 6'd49, 6'd50, 6'd51, 6'd52, 6'd53, 6'd54, 6'd55: begin
+        // FP loads/stores are classified by opcode alone (UM 2.3.4.3.9).
+        if (ENABLE_FULL_DECODE) begin
+          uop_o.illegal = 1'b0;
+          uop_o.special_op = SPECIAL_FPU;
+        end
+      end
+      6'd59, 6'd63: begin
+        // Reserved fields of FP forms are not checked: the class follows
+        // the primary and extended opcode (UM 2.3.1).
+        if (ENABLE_FULL_DECODE &&
+            (fp_a_form(insn_i[31:26], insn_i[5:1]) ||
+             ((insn_i[31:26] == 6'd63) && fp_x_form(insn_i[10:1])))) begin
+          uop_o.illegal = 1'b0;
+          uop_o.special_op = SPECIAL_FPU;
         end
       end
       6'd7: begin
@@ -371,6 +433,31 @@ module ppc_decode #(
           end
         end else begin
           case (insn_i[10:1])
+            10'd4: begin
+              if (ENABLE_FULL_DECODE && !insn_i[0]) begin
+                uop_o.illegal = 1'b0;
+                uop_o.special_op = SPECIAL_TRAP;
+                uop_o.branch_bo = insn_i[25:21];
+              end
+            end
+            10'd310, 10'd438: begin
+              // eciwx/ecowx: word access, EA = (rA|0) + rB, Rc reserved.
+              if (ENABLE_FULL_DECODE && !insn_i[0]) begin
+                uop_o.illegal = 1'b0;
+                uop_o.special_op = insn_i[8] ? SPECIAL_STORE : SPECIAL_LOAD;
+                uop_o.gpr_write = !insn_i[8];
+                uop_o.zero_a = insn_i[20:16] == 5'b0;
+                uop_o.mem_size = MEM_WORD;
+                uop_o.mem_external = 1'b1;
+              end
+            end
+            10'd535, 10'd567, 10'd599, 10'd631, 10'd663, 10'd695, 10'd727,
+            10'd759, 10'd983: begin
+              if (ENABLE_FULL_DECODE && fp_indexed(insn_i[10:1])) begin
+                uop_o.illegal = 1'b0;
+                uop_o.special_op = SPECIAL_FPU;
+              end
+            end
             10'd75, 10'd11: begin
               uop_o.illegal = 1'b0;
               uop_o.gpr_write = 1'b1;
@@ -422,7 +509,11 @@ module ppc_decode #(
               // fields. Require the complete fixed instruction word.
               if (ENABLE_SUPERVISOR_EXCEPTIONS &&
                   (((insn_i[10:1] == 10'd598) &&
-                    (insn_i == 32'h7c00_04ac)) ||
+                    ((insn_i == 32'h7c00_04ac) ||
+                     // Later architecture levels define L (bits 9-10) as
+                     // weaker forms of sync; a full sync satisfies them.
+                     (ENABLE_FULL_DECODE &&
+                      ((insn_i & ~32'h0060_0000) == 32'h7c00_04ac)))) ||
                    ((insn_i[10:1] == 10'd854) &&
                     (insn_i == 32'h7c00_06ac)))) begin
                 uop_o.illegal = 1'b0;
@@ -618,7 +709,12 @@ module ppc_decode #(
                 (ENABLE_TLB_LOAD &&
                  ((selector == SPR_DCMP) || (selector == SPR_ICMP) ||
                   (selector == SPR_RPA))) ||
-                (ENABLE_DEBUG_EXCEPTIONS && (selector == SPR_IABR));
+                (ENABLE_DEBUG_EXCEPTIONS && (selector == SPR_IABR)) ||
+                (ENABLE_FULL_DECODE &&
+                 ((selector == SPR_HID0) || (selector == SPR_HID1) ||
+                  (selector == SPR_EAR) ||
+                  (read_form && (selector == SPR_PVR))));
+              spr_form_privileged = selector[SPR_PRIV_BIT];
               // 603e ignores the MFTB/MFSPR XO difference, so XO 371 reads every
               // supported selector. Privilege is checked in the core.
               if (!insn_i[0] && selector_supported) begin
@@ -718,6 +814,14 @@ module ppc_decode #(
       end
       default: ;
     endcase
+    // Illegal opcodes and invalid forms take the illegal-instruction program
+    // exception (UM 4.5.7, PEM 6.4.7). An undefined SPR with spr[0] = 1 is
+    // privileged in problem state; the core raises that from privileged.
+    if (ENABLE_FULL_DECODE && uop_o.illegal) begin
+      uop_o = '0;
+      uop_o.special_op = SPECIAL_PROGRAM_ILLEGAL;
+      uop_o.privileged = spr_form_privileged;
+    end
     // MPC603e UM Table 4-13: instruction-derived alignment syndrome. Keep
     // metadata separate from ordinary operands so immediate low bits cannot
     // accidentally select indexed-form syndrome fields.

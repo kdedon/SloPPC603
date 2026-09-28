@@ -35,7 +35,10 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
   // A TEA on a fetch, fill or data tenure enters machine check or checkstop.
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
-  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
+  parameter bit ENABLE_FULL_DECODE = 1'b0,
+  parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
+  parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -236,6 +239,12 @@ module ppc_core_bat_cached_bus60x #(
   logic managed_maintenance_valid, managed_maintenance_ready;
   logic icbi_req_valid, icbi_req_ready;
   logic [31:0] icbi_req_ea;
+  logic icache_ctl_valid, icache_ctl_ready, icache_ctl_enable;
+  logic icache_ctl_invalidate, cpu_maintenance_valid, cpu_maintenance_q;
+  logic managed_invalidate, managed_cache_enable, maintenance_drained;
+  logic managed_done_valid, managed_done_ready;
+  ppc_pkg::dmem_attr_t dmem_req_attr;
+  logic [5:0] scalar_req_attr;
   logic eligible_managed;
   logic scalar_imem_req_valid, scalar_imem_req_ready;
   logic [31:0] scalar_imem_req_addr;
@@ -269,7 +278,11 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
     .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
-    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE), .PVR_VALUE(PVR_VALUE),
+    // HID0[ICE] starts in the cache's reset mode.
+    .HID0_RESET(RESET_CACHE_ENABLE ? (32'd1 << ppc_pkg::HID0_ICE) : 32'd0),
+    .PLL_CFG(PLL_CFG)
   ) translated_core (
     .clk_i,
     .rst_ni,
@@ -351,6 +364,10 @@ module ppc_core_bat_cached_bus60x #(
     .pdmem_rsp_error_i(dmem_rsp_error),
     .icbi_req_valid_o(icbi_req_valid), .icbi_req_ready_i(icbi_req_ready),
     .icbi_req_ea_o(icbi_req_ea),
+    .icache_ctl_valid_o(icache_ctl_valid), .icache_ctl_ready_i(icache_ctl_ready),
+    .icache_ctl_enable_o(icache_ctl_enable),
+    .icache_ctl_invalidate_o(icache_ctl_invalidate),
+    .pdmem_req_attr_o(dmem_req_attr),
     .retire_valid_o,
     .retire_ready_i,
     .retire_o,
@@ -386,8 +403,10 @@ module ppc_core_bat_cached_bus60x #(
     .fetch_rsp_error_o(cache_fetch_rsp_error),
     .maintenance_valid_i(managed_maintenance_valid),
     .maintenance_ready_o(managed_maintenance_ready),
-    .maintenance_invalidate_i, .maintenance_cache_enable_i,
-    .maintenance_done_valid_o, .maintenance_done_ready_i,
+    .maintenance_invalidate_i(managed_invalidate),
+    .maintenance_cache_enable_i(managed_cache_enable),
+    .maintenance_done_valid_o(managed_done_valid),
+    .maintenance_done_ready_i(managed_done_ready),
     .cache_enabled_o, .maintenance_busy_o,
     .icbi_valid_i(icbi_req_valid), .icbi_ready_o(icbi_req_ready),
     .icbi_addr_i(icbi_req_ea),
@@ -418,6 +437,7 @@ module ppc_core_bat_cached_bus60x #(
   assign eligible_managed = imem_req_wimg == 4'b0000;
   // A pending external command or CPU icbi holds new fetches.
   assign fetch_gate = rst_ni && !maintenance_valid_i && !icbi_req_valid &&
+    !icache_ctl_valid &&
     !maintenance_busy_o && !transport_ifetch_error;
   assign managed_fetch_valid = imem_req_valid && eligible_managed &&
     !physical_fetch_busy_q && fetch_gate;
@@ -447,12 +467,30 @@ module ppc_core_bat_cached_bus60x #(
 
   // A command wins over a simultaneous new physical fetch. It is accepted
   // only after the previous held fetch and both bus masters/selector drain.
-  assign maintenance_ready_o = rst_ni && managed_maintenance_ready &&
+  assign maintenance_drained = rst_ni && managed_maintenance_ready &&
     !physical_fetch_busy_q && !scalar_router_busy && !scalar_busy &&
     !line_busy && !selector_busy && !icache_busy_o &&
     !transport_ifetch_error;
-  assign managed_maintenance_valid = maintenance_valid_i &&
-    maintenance_ready_o;
+  assign maintenance_ready_o = maintenance_drained && !cpu_maintenance_q;
+  // A HID0 ICE/ICFI write uses the same command; an external command wins a
+  // tie. Its completion is consumed here and releases the CPU request.
+  assign cpu_maintenance_valid = icache_ctl_valid && !cpu_maintenance_q &&
+    !maintenance_valid_i && maintenance_drained;
+  assign managed_maintenance_valid = (maintenance_valid_i &&
+    maintenance_ready_o) || cpu_maintenance_valid;
+  assign managed_invalidate = maintenance_valid_i ? maintenance_invalidate_i :
+                                                    icache_ctl_invalidate;
+  assign managed_cache_enable = maintenance_valid_i ?
+    maintenance_cache_enable_i : icache_ctl_enable;
+  assign maintenance_done_valid_o = managed_done_valid && !cpu_maintenance_q;
+  assign managed_done_ready = cpu_maintenance_q || maintenance_done_ready_i;
+  assign icache_ctl_ready = cpu_maintenance_q && managed_done_valid;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) cpu_maintenance_q <= 1'b0;
+    else if (cpu_maintenance_valid && managed_maintenance_ready)
+      cpu_maintenance_q <= 1'b1;
+    else if (icache_ctl_ready) cpu_maintenance_q <= 1'b0;
+  end
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
@@ -481,6 +519,7 @@ module ppc_core_bat_cached_bus60x #(
     .dmem_req_ready_o(dmem_req_ready),
     .dmem_req_write_i(dmem_req_write), .dmem_req_addr_i(dmem_req_addr),
     .dmem_req_wdata_i(dmem_req_wdata), .dmem_req_wstrb_i(dmem_req_wstrb),
+    .dmem_req_attr_i(dmem_req_attr),
     .dmem_rsp_valid_o(dmem_rsp_valid), .dmem_rsp_ready_i(dmem_rsp_ready),
     .dmem_rsp_rdata_o(dmem_rsp_rdata), .dmem_rsp_error_o(dmem_rsp_error),
     .bus_req_valid_o(scalar_req_valid),
@@ -490,6 +529,7 @@ module ppc_core_bat_cached_bus60x #(
     .bus_req_addr_o(scalar_req_addr),
     .bus_req_wdata_o(scalar_req_wdata),
     .bus_req_wstrb_o(scalar_req_wstrb),
+    .bus_req_attr_o(scalar_req_attr),
     .bus_rsp_valid_i(scalar_rsp_valid),
     .bus_rsp_ready_o(scalar_router_rsp_ready),
     .bus_rsp_rdata_i(scalar_rsp_rdata),
@@ -504,6 +544,7 @@ module ppc_core_bat_cached_bus60x #(
     .req_instruction_i(scalar_req_instruction),
     .req_write_i(scalar_req_write), .req_addr_i(scalar_req_addr),
     .req_wdata_i(scalar_req_wdata), .req_wstrb_i(scalar_req_wstrb),
+    .req_attr_i(scalar_req_attr),
     .rsp_valid_o(scalar_rsp_valid), .rsp_ready_i(scalar_router_rsp_ready),
     .rsp_rdata_o(scalar_rsp_rdata), .rsp_error_o(scalar_rsp_error),
     .busy_o(scalar_busy), .protocol_error_o(scalar_protocol_error),

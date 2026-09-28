@@ -37,10 +37,10 @@ Generated builds, logs and reports are excluded from version control.
    effects across held refills and bus retries, with CPU `icbi` and external
    maintenance as distinct contracts ([cache control](../../CACHE_CONTROL.md)).
    Page-table context changes under randomized retries remain with gate 1.
-3. Fit the combined translated cached top with reviewed interface constraints
-   (including reset arrival);
-   fix setup and hold violations, then run broader integration and firmware gates
-   on the final RTL. The existing fit archives measure earlier configurations.
+3. Closed 2026-09-28: the reviewed [interface timing contract](../../INTERFACE_TIMING_CONTRACT.md)
+   is implemented by the measurement SDCs, and final fits on the complete MVP
+   RTL meet 50 MHz setup and hold on all three tops. Open: 66 MHz on the cached
+   tops (registered fetch-to-decode stage) and the remaining scorecard gaps.
 
 Timing targets: 50 MHz is the provisional MVP constraint; 66 MHz, the original
 603e's clock, is the aspirational target. Fit records report Fmax against both.

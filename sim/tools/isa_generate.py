@@ -59,7 +59,7 @@ DECODE_PARAMETERS = (
     "ENABLE_RUNTIME_BAT", "ENABLE_SEGMENT_REGISTERS", "ENABLE_TLB_INVALIDATE",
     "ENABLE_TLB_LOAD", "ENABLE_SDR1", "ENABLE_TLB_MISS_EXCEPTIONS",
     "ENABLE_CACHE_INSTRUCTIONS", "ENABLE_BYTE_REVERSE", "ENABLE_MULTIPLE_STRING",
-    "ENABLE_RESERVATION",
+    "ENABLE_RESERVATION", "ENABLE_FULL_DECODE",
 )
 # Cache control needs supervisor exceptions only: dcbz alignment, probe DSI
 # and dcbi privilege use the base exception path.
@@ -83,6 +83,46 @@ LSU_EXTENSION_FORMS = {
     "sthbrx": (0xFC0007FF, (31 << 26) | (918 << 1), BYTE_REVERSE_PROFILE, "none"),
     "stwbrx": (0xFC0007FF, (31 << 26) | (662 << 1), BYTE_REVERSE_PROFILE, "none"),
 }
+# ENABLE_FULL_DECODE forms: traps, external control, PVR/HID0/HID1/EAR moves,
+# sync with bits 9-10 set, and the FP class (FP unavailable while MSR[FP] = 0).
+FULL_DECODE_PROFILE = ["ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_LIVE_CONTEXT", "ENABLE_FULL_DECODE"]
+
+
+def _spr_word(spr: int, xo: int) -> int:
+    return (31 << 26) | ((spr & 31) << 16) | ((spr >> 5) << 11) | (xo << 1)
+
+
+FULL_DECODE_FORMS = {
+    # id: (mask, value, unit, privilege)
+    "tw": (0xFC0007FF, (31 << 26) | (4 << 1), "Integer", "user"),
+    "twi": (0xFC000000, 3 << 26, "Integer", "user"),
+    "eciwx": (0xFC0007FF, (31 << 26) | (310 << 1), "LSU", "user"),
+    "ecowx": (0xFC0007FF, (31 << 26) | (438 << 1), "LSU", "user"),
+    "mfpvr": (0xFC1FFFFF, _spr_word(287, 339), "SRU", "supervisor"),
+    "mfhid0": (0xFC1FFFFF, _spr_word(1008, 339), "SRU", "supervisor"),
+    "mthid0": (0xFC1FFFFF, _spr_word(1008, 467), "SRU", "supervisor"),
+    "mfhid1": (0xFC1FFFFF, _spr_word(1009, 339), "SRU", "supervisor"),
+    "mthid1": (0xFC1FFFFF, _spr_word(1009, 467), "SRU", "supervisor"),
+    "mfear": (0xFC1FFFFF, _spr_word(282, 339), "SRU", "supervisor"),
+    "mtear": (0xFC1FFFFF, _spr_word(282, 467), "SRU", "supervisor"),
+    "sync_l": (0xFF9FFFFF, 0x7C0004AC, "SRU", "user"),
+}
+for _op, _name in enumerate(("lfs", "lfsu", "lfd", "lfdu", "stfs", "stfsu", "stfd", "stfdu")):
+    FULL_DECODE_FORMS[_name] = (0xFC000000, (48 + _op) << 26, "LSU", "user")
+for _name, _xo in (("lfsx", 535), ("lfsux", 567), ("lfdx", 599), ("lfdux", 631), ("stfsx", 663),
+                   ("stfsux", 695), ("stfdx", 727), ("stfdux", 759), ("stfiwx", 983)):
+    FULL_DECODE_FORMS[_name] = (0xFC0007FE, (31 << 26) | (_xo << 1), "LSU", "user")
+# fsqrt/fsqrts (A-form XO 22) are unimplemented optional forms (Table B-1).
+for _op, _forms in ((59, (("fdivs", 18), ("fsubs", 20), ("fadds", 21), ("fres", 24), ("fmuls", 25),
+                          ("fmsubs", 28), ("fmadds", 29), ("fnmsubs", 30), ("fnmadds", 31))),
+                    (63, (("fdiv", 18), ("fsub", 20), ("fadd", 21), ("fsel", 23), ("fmul", 25),
+                          ("frsqrte", 26), ("fmsub", 28), ("fmadd", 29), ("fnmsub", 30), ("fnmadd", 31)))):
+    for _name, _xo in _forms:
+        FULL_DECODE_FORMS[_name] = (0xFC00003E, (_op << 26) | (_xo << 1), "FPU", "user")
+for _name, _xo in (("fcmpu", 0), ("frsp", 12), ("fctiw", 14), ("fctiwz", 15), ("fcmpo", 32),
+                   ("mtfsb1", 38), ("fneg", 40), ("mcrfs", 64), ("mtfsb0", 70), ("fmr", 72),
+                   ("mtfsfi", 134), ("fnabs", 136), ("fabs", 264), ("mffs", 583), ("mtfsf", 711)):
+    FULL_DECODE_FORMS[_name] = (0xFC0007FE, (63 << 26) | (_xo << 1), "FPU", "user")
 LSU_EXTENSION_PROFILES = [MULTIPLE_PROFILE, BYTE_REVERSE_PROFILE, RESERVATION_PROFILE]
 PROFILE_STATUSES = {"implemented_opt_in_profile", "manual_conflict_rejected"}
 SPR_READ_XO = (339, 371)
@@ -115,6 +155,7 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
     user_forms = {"dcbf", "dcbst", "dcbt", "dcbtst", "dcbz", "icbi"}
     seen_x = set()
     seen_lsu = set()
+    seen_full = set()
     for entry in spec["decode_entries"]:
         status = entry["implementation"].get("status")
         if status not in PROFILE_STATUSES:
@@ -124,6 +165,18 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
             raise MetadataError(f"{entry['id']}: feature_profile must list known decode parameters")
         if "ENABLE_SUPERVISOR_EXCEPTIONS" not in profile:
             raise MetadataError(f"{entry['id']}: opt-in profile requires supervisor exceptions")
+        if "ENABLE_FULL_DECODE" in profile:
+            if entry["id"] not in FULL_DECODE_FORMS:
+                raise MetadataError(f"{entry['id']}: unreviewed full-decode form")
+            mask, value, unit, privilege = FULL_DECODE_FORMS[entry["id"]]
+            if (_number(entry["mask"], "mask"), _number(entry["value"], "value")) != (mask, value):
+                raise MetadataError(f"{entry['id']}: full-decode encoding changed")
+            if (profile != FULL_DECODE_PROFILE or entry["unit"] != unit or
+                    entry["privilege"] != privilege or
+                    entry["implementation"].get("validation") != "accepted_full_decode_benches"):
+                raise MetadataError(f"{entry['id']}: full-decode profile, unit or privilege changed")
+            seen_full.add(entry["id"])
+            continue
         if entry["id"] in LSU_EXTENSION_FORMS:
             mask, value, expected_profile, serialization = LSU_EXTENSION_FORMS[entry["id"]]
             if (_number(entry["mask"], "mask"), _number(entry["value"], "value")) != (mask, value):
@@ -169,6 +222,8 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
             seen_x.add(entry["id"])
     if seen_x != set(x_forms):
         raise MetadataError(f"missing opt-in X-forms: {sorted(set(x_forms) - seen_x)}")
+    if seen_full != set(FULL_DECODE_FORMS):
+        raise MetadataError(f"missing full-decode forms: {sorted(set(FULL_DECODE_FORMS) - seen_full)}")
     if seen_lsu != set(LSU_EXTENSION_FORMS):
         raise MetadataError(f"missing load/store extension forms: {sorted(set(LSU_EXTENSION_FORMS) - seen_lsu)}")
 
@@ -1647,6 +1702,8 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
                         "implemented_opt_in_profile" for entry in entries)
     not_implemented_count = sum(entry["implementation"].get("status") ==
                                 "manual_conflict_rejected" for entry in entries)
+    full_count = sum(entry["implementation"].get("validation") ==
+                     "accepted_full_decode_benches" for entry in entries)
     lines = [
         "# ISA implementation and source inventory",
         "",
@@ -1657,6 +1714,8 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
         f"This bounded preparation covers {len(entries)} reviewed decode entries: {default_count} implemented by default and {supervisor_count + serialization_count} available only with `ENABLE_SUPERVISOR_EXCEPTIONS=1`. The opt-in forms comprise {supervisor_count} supervisor forms plus ISYNC, SYNC, and EIEIO. This does not complete P03, the 603e exception architecture, or the cache/bus ordering architecture.",
         "",
         f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBSYNC/TLBLD/TLBLI, the cache control forms, the XER, timer, BAT, SDR1 and TLB-miss SPR moves, and the load/store multiple, string, reservation and byte-reverse forms) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} forms whose manual passages conflict are recorded as `manual_conflict_rejected` and stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
+        "",
+        f"With `ENABLE_FULL_DECODE` the {full_count} `accepted_full_decode_benches` entries (TW/TWI, ECIWX/ECOWX, PVR/HID0/HID1/EAR moves, SYNC with bits 9-10 set, and every 603e floating-point form) decode, and every other encoding takes the illegal-instruction program exception instead of a diagnostic; an undefined SPR with spr[0] = 1 is privileged in problem state. With no FPU, MSR[FP] never sets and the floating-point forms take FP unavailable (UM 4.5.8); they are classified by primary and extended opcode, so their reserved fields and Rc are not checked. FSQRT/FSQRTS stay illegal (Table B-1).",
         "",
         "Secondary 601UM and DingusPPC evidence is tagged only as an encoding/semantics cross-check. The 603e UM controls implementation-specific support, and neither secondary source is a timing oracle.",
         "",

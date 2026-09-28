@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Kevin Dedon
 // Direct source-backed checks for the standalone exception-state controller.
 /* verilator lint_off BLKSEQ */
-module tb_exception_state;
+module tb_exception_state #(
+  parameter bit FULL_DECODE = 1'b0
+);
   import ppc_pkg::*;
 
   logic clk = 1'b0;
@@ -21,7 +23,7 @@ module tb_exception_state;
   logic [31:0] msr, srr0, srr1;
   int checks = 0;
 
-  ppc_exception_state dut (
+  ppc_exception_state #(.ENABLE_FULL_DECODE(FULL_DECODE)) dut (
     .clk_i(clk), .rst_ni(rst_n),
     .event_valid_i(event_valid), .event_ready_o(event_ready),
     .event_kind_i(event_kind), .event_pc_i(event_pc),
@@ -115,6 +117,25 @@ module tb_exception_state;
             "reset state is not HRESET MSR[IP]=1 with zero SRRs");
     require(event_ready && state_load_ready,
             "idle controller did not advertise both acceptance paths");
+
+    if (FULL_DECODE) begin
+      // Without an FPU, MSR[FP] stays 0 through state load, RFI and the
+      // FP-unavailable exception (UM 4.5.8).
+      load_state(3'b111, 32'h0000_2000, 32'h0000_2000, 32'h0000_2032);
+      require(msr == 32'h0000_0000 && srr0 == 32'h0000_2000 &&
+              srr1 == 32'h0000_2032, "state load set MSR[FP]");
+      accept_event(EVENT_RFI, 32'h0000_1000);
+      require(result_supported && result_target == 32'h0000_2000 &&
+              msr == 32'h0000_0032, "RFI restored MSR[FP]");
+      consume_result();
+      accept_event(EVENT_FP_UNAVAILABLE, 32'h0000_2000);
+      require(result_supported && result_target == 32'h0000_0800 &&
+              srr0 == 32'h0000_2000 && srr1 == 32'h0000_0032 && msr == 0,
+              "FP unavailable entry is wrong");
+      consume_result();
+      $display("tb_exception_state: PASS full decode (%0d checks)", checks);
+      $finish;
+    end
 
     // An accepted SC changes architectural state at event acceptance. Its
     // result may then stall without a second state transition. Reserved MSR
@@ -368,7 +389,7 @@ module tb_exception_state;
 
     // Unknown four-bit selectors preserve the committed state.
     held_msr=msr;held_srr0=srr0;held_srr1=srr1;
-    accept_event(exception_event_t'(4'd12), 32'h0000_6000);
+    accept_event(exception_event_t'(5'd12), 32'h0000_6000);
     require(!result_supported && result_target==0 &&
             msr==held_msr && srr0==held_srr0 && srr1==held_srr1,
             "unknown event kind changed architectural state");

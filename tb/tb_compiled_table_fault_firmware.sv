@@ -43,6 +43,10 @@ module tb_compiled_table_fault_firmware;
                  .ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1),
                  .ENABLE_TLB_LOAD(1'b1),.ENABLE_TLB_INVALIDATE(1'b1),.ENABLE_PAGE_MISS_RESULTS(1'b1),
                  .ENABLE_TLB_MISS_EXCEPTIONS(1'b1)) dut(
+    .icache_ctl_ready_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pdmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
     .icbi_req_ea_o(unused_icbi_core[32:1]),
     .tlb_mgmt_req_valid_i('0),

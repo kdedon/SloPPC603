@@ -273,6 +273,10 @@ module ppc_timer_bat_measure (
     .ENABLE_TIMERS(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (
+    .icache_ctl_ready_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pdmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
     .icbi_req_ea_o(unused_icbi_core[32:1]),
     .tlb_mgmt_req_valid_i(1'b0),

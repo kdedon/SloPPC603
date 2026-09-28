@@ -59,6 +59,7 @@ lint:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_BYTE_REVERSE=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_MISALIGNED_ACCESS=1'b1" $(RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_segment_registers $(SEGMENT_REGISTER_RTL)
@@ -635,6 +636,8 @@ test-bat-independent: test-bat
 test-exception-state:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_state --Mdir $(BUILD_DIR)/exception-state $(EXCEPTION_RTL) ../tb/tb_exception_state.sv
 	./$(BUILD_DIR)/exception-state/Vtb_exception_state $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_state "-GFULL_DECODE=1'b1" --Mdir $(BUILD_DIR)/exception-state-full-decode $(EXCEPTION_RTL) ../tb/tb_exception_state.sv
+	./$(BUILD_DIR)/exception-state-full-decode/Vtb_exception_state $(SIM_ARGS)
 
 test-bus60x-master-select:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_bus60x_master_select --Mdir $(BUILD_DIR)/bus60x-master-select ../rtl/ppc_bus60x_master_select.sv ../tb/tb_bus60x_master_select.sv
@@ -1391,6 +1394,7 @@ coverage:
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile mmu-stress-tea --elf $(FIRMWARE_DIR)/mmu-stress/smoke.elf --build-dir $(COVERAGE_DIR)/mmu-stress-tea
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile cacheops --elf $(FIRMWARE_DIR)/cacheops/smoke.elf --build-dir $(COVERAGE_DIR)/cacheops
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile lsu --elf $(FIRMWARE_DIR)/lsu/smoke.elf --build-dir $(COVERAGE_DIR)/lsu
+	python3 ../toolchain/run-rtl-smoke.py --coverage --profile full-decode --elf $(FIRMWARE_DIR)/full-decode/smoke.elf --build-dir $(COVERAGE_DIR)/full-decode
 	$(MAKE) coverage-summary
 coverage-summary:
 	python3 tools/coverage_summary.py --waivers coverage_waivers.txt --min-total $(COVERAGE_MIN) $(COVERAGE_DIR)/*/cov-*.dat
@@ -1420,3 +1424,13 @@ reference-acceptance: reference-runner-flat
 	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-acceptance-a --seeds $(REFERENCE_SEEDS_A) --blocks 512 $(FLAT_REFERENCE_ARGS)
 	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-acceptance-b --seeds $(REFERENCE_SEEDS_B) --blocks 512 $(FLAT_REFERENCE_ARGS)
 	@echo "PASS: reference acceptance"
+
+# Complete decode: illegal/invalid forms, traps, FP unavailable, HID0/EAR.
+.PHONY: test-decode-sweep test-core-full-decode
+test: test-decode-sweep test-core-full-decode
+test-decode-sweep:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_decode_sweep --Mdir $(BUILD_DIR)/decode-sweep ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_decode_sweep.sv
+	./$(BUILD_DIR)/decode-sweep/Vtb_decode_sweep $(SIM_ARGS)
+test-core-full-decode:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_full_decode --Mdir $(BUILD_DIR)/core-full-decode -I../tb $(RTL) ../tb/tb_core_full_decode.sv
+	./$(BUILD_DIR)/core-full-decode/Vtb_core_full_decode $(SIM_ARGS)

@@ -25,6 +25,7 @@ module ppc_bus60x_arbiter #(
   input  logic [31:0] dmem_req_addr_i,
   input  logic [31:0] dmem_req_wdata_i,
   input  logic [3:0]  dmem_req_wstrb_i,
+  input  logic [5:0]  dmem_req_attr_i,
   output logic        dmem_rsp_valid_o,
   input  logic        dmem_rsp_ready_i,
   output logic [31:0] dmem_rsp_rdata_o,
@@ -37,6 +38,7 @@ module ppc_bus60x_arbiter #(
   output logic [31:0] bus_req_addr_o,
   output logic [31:0] bus_req_wdata_o,
   output logic [3:0]  bus_req_wstrb_o,
+  output logic [5:0]  bus_req_attr_o,
   input  logic        bus_rsp_valid_i,
   output logic        bus_rsp_ready_o,
   input  logic [31:0] bus_rsp_rdata_i,
@@ -60,6 +62,7 @@ module ppc_bus60x_arbiter #(
   logic [31:0] request_addr_q;
   logic [31:0] request_wdata_q;
   logic [3:0] request_wstrb_q;
+  logic [5:0] request_attr_q;
   logic ifetch_error_q;
   logic choose_instruction, choose_data;
 
@@ -86,6 +89,7 @@ module ppc_bus60x_arbiter #(
     bus_req_addr_o = request_addr_q;
     bus_req_wdata_o = request_wdata_q;
     bus_req_wstrb_o = request_wstrb_q;
+    bus_req_attr_o = request_attr_q;
 
     imem_rsp_valid_o = 1'b0;
     imem_rsp_insn_o = bus_rsp_rdata_i;
@@ -125,6 +129,7 @@ module ppc_bus60x_arbiter #(
       request_addr_q <= 32'b0;
       request_wdata_q <= 32'b0;
       request_wstrb_q <= 4'b0;
+      request_attr_q <= 6'b0;
       ifetch_error_q <= 1'b0;
     end else begin
       unique case (state_q)
@@ -137,6 +142,7 @@ module ppc_bus60x_arbiter #(
             request_addr_q <= imem_req_addr_i;
             request_wdata_q <= 32'b0;
             request_wstrb_q <= 4'b1111;
+            request_attr_q <= 6'b0;
             state_q <= ROUTER_OFFER;
           end else if (choose_data) begin
             owner_instruction_q <= 1'b0;
@@ -146,6 +152,7 @@ module ppc_bus60x_arbiter #(
             request_addr_q <= dmem_req_addr_i;
             request_wdata_q <= dmem_req_wdata_i;
             request_wstrb_q <= dmem_req_wstrb_i;
+            request_attr_q <= dmem_req_attr_i;
             state_q <= ROUTER_OFFER;
           end
         end

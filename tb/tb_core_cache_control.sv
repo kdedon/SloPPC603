@@ -47,6 +47,10 @@ module tb_core_cache_control;
     .RESET_PC(32'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_CACHE_INSTRUCTIONS(1'b1)
   ) dut (
+    .icache_ctl_ready_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(dprobe), .icbi_req_valid_o(icbi_valid),
     .icbi_req_ready_i(icbi_ready), .icbi_req_ea_o(icbi_ea),
     .tlb_inv_req_valid_o(unused_tlb_inv_core[0]),

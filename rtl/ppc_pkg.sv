@@ -29,7 +29,9 @@ package ppc_pkg;
     DATA_PAGE_MISS = 3'd2,
     DATA_PAGE_CHANGED = 3'd3,
     DATA_DSI_DIRECT_STORE = 3'd4,
-    DATA_MACHINE_CHECK = 3'd5
+    DATA_MACHINE_CHECK = 3'd5,
+    // eciwx/ecowx with EAR[E] = 0.
+    DATA_DSI_EXTERNAL = 3'd6
   } data_fault_t;
   // Response-bound context for a diagnostic page miss or changed-bit store.
   // The router captures these fields with the accepted translation request.
@@ -115,7 +117,7 @@ package ppc_pkg;
   typedef enum logic [1:0] {
     CARRY_ZERO, CARRY_ONE, CARRY_CA
   } carry_in_t;
-  typedef enum logic [4:0] {
+  typedef enum logic [5:0] {
     SPECIAL_NONE, SPECIAL_B, SPECIAL_BC, SPECIAL_BCLR, SPECIAL_BCCTR,
     SPECIAL_MFSPR, SPECIAL_MTSPR,
     SPECIAL_LOAD, SPECIAL_STORE, SPECIAL_MFCR, SPECIAL_MTCRF,
@@ -124,8 +126,22 @@ package ppc_pkg;
     SPECIAL_PROGRAM_PRIV, SPECIAL_MFMSR,
     SPECIAL_ISYNC, SPECIAL_SYNC, SPECIAL_EIEIO, SPECIAL_ALIGNMENT, SPECIAL_ISI, SPECIAL_MTMSR,
     SPECIAL_MFSR, SPECIAL_MTSR, SPECIAL_TLBIE,
-    SPECIAL_TLBLD, SPECIAL_TLBLI, SPECIAL_TLBSYNC, SPECIAL_ICBI
+    SPECIAL_TLBLD, SPECIAL_TLBLI, SPECIAL_TLBSYNC, SPECIAL_ICBI,
+    // tw/twi; branch_bo carries TO.
+    SPECIAL_TRAP,
+    // Floating-point class. Dispatch turns it into SPECIAL_FP_UNAVAILABLE
+    // while MSR[FP] = 0 or no FPU is present.
+    SPECIAL_FPU, SPECIAL_FP_UNAVAILABLE
   } special_op_t;
+  // 60x transfer class of a data request (UM Table 7-1).
+  typedef enum logic [1:0] {
+    DMEM_NORMAL, DMEM_ATOMIC, DMEM_EXTERNAL
+  } dmem_kind_t;
+  typedef struct packed {
+    dmem_kind_t kind;
+    // eciwx/ecowx resource ID, EAR[28:31]: TBST || TSIZ[0:2].
+    logic [3:0] rid;
+  } dmem_attr_t;
   typedef enum logic [2:0] {
     CR_LOGIC_AND, CR_LOGIC_ANDC, CR_LOGIC_EQV, CR_LOGIC_NAND,
     CR_LOGIC_NOR, CR_LOGIC_OR, CR_LOGIC_ORC, CR_LOGIC_XOR
@@ -151,6 +167,8 @@ package ppc_pkg;
   localparam logic [9:0] SPR_SDR1 = 10'd25;
   localparam logic [9:0] SPR_SRR0 = 10'd26;
   localparam logic [9:0] SPR_SRR1 = 10'd27;
+  localparam logic [9:0] SPR_EAR = 10'd282;
+  localparam logic [9:0] SPR_PVR = 10'd287;
   localparam logic [9:0] SPR_TBL_READ = 10'd268;
   localparam logic [9:0] SPR_TBU_READ = 10'd269;
   localparam logic [9:0] SPR_SPRG0 = 10'd272;
@@ -166,6 +184,8 @@ package ppc_pkg;
   localparam logic [9:0] SPR_IMISS = 10'd980;
   localparam logic [9:0] SPR_ICMP = 10'd981;
   localparam logic [9:0] SPR_RPA = 10'd982;
+  localparam logic [9:0] SPR_HID0 = 10'd1008;
+  localparam logic [9:0] SPR_HID1 = 10'd1009;
   localparam logic [9:0] SPR_IABR = 10'd1010;
   // XER
   localparam int XER_SO_BIT = 31;
@@ -242,6 +262,8 @@ package ppc_pkg;
     // lwarx / stwcx.
     logic mem_reserve;
     logic mem_conditional;
+    // eciwx / ecowx.
+    logic mem_external;
     // Completes without a memory access.
     logic mem_skip;
     // Not the last micro-op of its instruction.
@@ -333,22 +355,24 @@ package ppc_pkg;
     return next_msr;
   endfunction
 
-  typedef enum logic [3:0] {
-    EVENT_SC              = 4'd0,
-    EVENT_PROGRAM_ILLEGAL = 4'd1,
-    EVENT_PROGRAM_PRIV    = 4'd2,
-    EVENT_RFI             = 4'd3,
-    EVENT_ALIGNMENT       = 4'd4,
-    EVENT_ISI             = 4'd5,
-    EVENT_EXTERNAL        = 4'd6,
-    EVENT_DECREMENTER     = 4'd7,
-    EVENT_DSI             = 4'd8,
-    EVENT_TLB_I_MISS      = 4'd9,
-    EVENT_TLB_D_LOAD      = 4'd10,
-    EVENT_TLB_D_STORE     = 4'd11,
-    EVENT_MACHINE_CHECK   = 4'd12,
-    EVENT_TRACE           = 4'd13,
-    EVENT_IABR            = 4'd14
+  typedef enum logic [4:0] {
+    EVENT_SC              = 5'd0,
+    EVENT_PROGRAM_ILLEGAL = 5'd1,
+    EVENT_PROGRAM_PRIV    = 5'd2,
+    EVENT_RFI             = 5'd3,
+    EVENT_ALIGNMENT       = 5'd4,
+    EVENT_ISI             = 5'd5,
+    EVENT_EXTERNAL        = 5'd6,
+    EVENT_DECREMENTER     = 5'd7,
+    EVENT_DSI             = 5'd8,
+    EVENT_TLB_I_MISS      = 5'd9,
+    EVENT_TLB_D_LOAD      = 5'd10,
+    EVENT_TLB_D_STORE     = 5'd11,
+    EVENT_MACHINE_CHECK   = 5'd12,
+    EVENT_TRACE           = 5'd13,
+    EVENT_IABR            = 5'd14,
+    EVENT_PROGRAM_TRAP    = 5'd15,
+    EVENT_FP_UNAVAILABLE  = 5'd16
   } exception_event_t;
   // ---- end MSR and exception events ---------------------------------------
 
@@ -360,6 +384,15 @@ package ppc_pkg;
   localparam logic [31:0] SDR1_RESET = 32'h0000_0000;
   // DSISR and SPRG0-3 are fully architected; no mask needed.
   localparam logic [31:0] DSISR_RESET = 32'h0000_0000;
+  // HID0 (UM Table 2-2): every named PID7v bit is stored; reserved bits read
+  // as zero. Only ICE and ICFI act (instruction cache); the rest have no
+  // implemented feature to control. Hard reset clears HID0 and HID1.
+  localparam logic [31:0] HID0_WMASK = 32'hbff9_fc99;
+  localparam int HID0_ICE = 15;
+  localparam int HID0_ICFI = 11;
+  // EAR: E (manual bit 0) and RID (manual bits 28-31, UM 2.1.1).
+  localparam logic [31:0] EAR_WMASK = 32'h8000_000f;
+  localparam int EAR_E = 31;
   localparam logic [31:0] SPRG_RESET = 32'h0000_0000;
   // ---- end SPR write masks and reset values -------------------------------
 endpackage

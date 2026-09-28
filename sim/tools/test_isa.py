@@ -44,7 +44,7 @@ class IsaMetadataTest(unittest.TestCase):
         broken["decode_entries"].append(alias)
         with self.assertRaisesRegex(isa_generate.MetadataError, "overlapping decode masks"):
             isa_generate.validate(broken, self.sources, self.timing)
-        broken["allowed_overlaps"] = [{"entries": ["addi", "addi-collision"], "reason": "test-only exact alias"}]
+        broken["allowed_overlaps"].append({"entries": ["addi", "addi-collision"], "reason": "test-only exact alias"})
         isa_generate.validate(broken, self.sources, self.timing)
 
     def test_invalid_schema_required_field_mask_and_timing_are_rejected(self):
@@ -89,15 +89,17 @@ class IsaMetadataTest(unittest.TestCase):
         self.assertEqual(enabled("mfsprg0"), set(names) - {"default"})
         self.assertEqual(enabled("mtmsr"), set(names) - {"default", "supervisor", "cache",
                                                           "byte_reverse", "multiple_string", "reservation"})
-        self.assertEqual(enabled("lmw"), {"multiple_string", "all"})
-        self.assertEqual(enabled("stswx"), {"multiple_string", "all"})
-        self.assertEqual(enabled("lwbrx"), {"byte_reverse", "all"})
-        self.assertEqual(enabled("stwcx."), {"reservation", "all"})
-        self.assertEqual(enabled("icbi"), {"cache", "reservation", "all"})
-        self.assertEqual(enabled("dcbi"), {"cache", "reservation", "all"})
-        self.assertEqual(enabled("tlbie"), {"tlbie", "all"})
-        self.assertEqual(enabled("mfdmiss"), {"tlb_miss", "all"})
-        self.assertEqual(enabled("mfdcmp"), {"tlb_load", "tlb_miss", "all"})
+        self.assertEqual(enabled("lmw"), {"multiple_string", "all_base", "all"})
+        self.assertEqual(enabled("stswx"), {"multiple_string", "all_base", "all"})
+        self.assertEqual(enabled("lwbrx"), {"byte_reverse", "all_base", "all"})
+        self.assertEqual(enabled("stwcx."), {"reservation", "all_base", "all"})
+        self.assertEqual(enabled("icbi"), {"cache", "reservation", "all_base", "all"})
+        self.assertEqual(enabled("dcbi"), {"cache", "reservation", "all_base", "all"})
+        self.assertEqual(enabled("tlbie"), {"tlbie", "all_base", "all"})
+        self.assertEqual(enabled("mfdmiss"), {"tlb_miss", "all_base", "all"})
+        self.assertEqual(enabled("mfdcmp"), {"tlb_load", "tlb_miss", "all_base", "all"})
+        for entry_id in ("tw", "twi", "eciwx", "mthid0", "mfpvr", "sync_l", "lfd", "fadd", "mtfsf", "stfiwx"):
+            self.assertEqual(enabled(entry_id), {"full_decode", "all"})
         self.assertEqual(enabled("mtdmiss"), set())
 
     def test_invalid_opt_in_profile_entries_are_rejected(self):
@@ -108,6 +110,8 @@ class IsaMetadataTest(unittest.TestCase):
             ("dcbz", "mask", "0xfc0007ff", "reserved fields"),
             ("dcbi", "privilege", "user", "privilege must be supervisor"),
             ("icbi", "privilege", "supervisor", "privilege must be user"),
+            ("fadd", "mask", "0xfc0007fe", "full-decode encoding changed"),
+            ("mthid0", "privilege", "user", "full-decode profile"),
             ("stwcx.", "value", "0x7c00012c", "extension encoding"),
             ("lwarx", "serialization", "execution_sync", "serialization changed"),
             ("stmw", "semantic_class", "load_multiple", "only lmw"),

@@ -2,6 +2,14 @@
 
 
 
+## 2026-09-28 final signoff on the complete MVP RTL
+
+Recorded: `./quartus/integrated/build.sh --docker` and
+`./quartus/report-target-paths.sh integrated --docker`, merge of the full-decode
+branch onto `4ba4353` plus uncommitted merge resolution, 2026-09-28. **Meets
+50 MHz** at every corner (slow 100 C, slow -40 C, fast 100 C, fast -40 C):
+setup +4.739 / +4.619 / +8.630 / +8.821 ns and hold +0.281 / +0.252 / +0.145 / +0.113 ns. Fmax 65.02 MHz; at 15.152 ns 9 endpoints fail, worst -0.229 ns.
+
 ## 2026-09-28 gate-3 timing: unreset payloads, registered IQ head, contract SDC
 
 Recorded: `./quartus/integrated/build.sh --docker` and

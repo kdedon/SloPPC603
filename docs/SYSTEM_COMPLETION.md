@@ -19,7 +19,7 @@ acceptance evidence are still required. The aggregate is `sum(weight × completi
 / 100`, rounded to a whole percent. Keep weights fixed between rounds unless the
 user changes scope. Treat small score changes as bookkeeping, not velocity.
 
-**MVP estimate: about 90% complete (weighted 90.3%; planning range 60–95%).** The
+**MVP estimate: about 92% complete (weighted 91.8%; planning range 80–100%).** The
 remaining work is concentrated in platform exceptions (machine check, trace,
 debug) and timing closure. These are
 hard acceptance blockers regardless of the weighted score. Final FPGA acceptance
@@ -30,19 +30,19 @@ is currently unmet.
 | System | Weight | Complete | Accepted capability | Gaps and deliberate shortcuts |
 | --- | ---: | ---: | --- | --- |
 | Fetch and dispatch | 4% | 92% | Buffered fetch, precise supported fetch faults, drain/refetch on live context and events; reset/interleaving stress in branch-heavy translated code and inhibited fetches on the translated cached top | One outstanding instruction request with reserved queue capacity; single dispatch. |
-| Integer execution, multiply/divide, GPR/CR/XER | 9% | 86% | Broad scalar arithmetic/Boolean/rotate/shift/compare corpus, tagged flags, iterative divide, compiled integer firmware | Explicit XER access now supports state saving; compiler/ISA subset remains explicit; multiply latency counter does not establish a pipelined product datapath. |
+| Integer execution, multiply/divide, GPR/CR/XER | 9% | 90% | Every encoding executes or takes the manual's exception (illegal and invalid forms at 0x700, `tw`/`twi` traps, FP forms at 0x800 with MSR[FP] held 0; 85,376-word decode sweep); Broad scalar arithmetic/Boolean/rotate/shift/compare corpus, tagged flags, iterative divide, compiled integer firmware | Explicit XER access now supports state saving; compiler/ISA subset remains explicit; multiply latency counter does not establish a pipelined product datapath. |
 | Rename, completion and recovery | 7% | 85% | Tagged dependencies, ordered retirement, retained-prefix recovery, precise supported events | Five rename slots/CQ entries; finite generation-token lifetime contract; recovery timing and unsupported diagnostic ownership remain bounded policies. |
 | Branches and control flow | 4% | 93% | Direct/conditional/LR/CTR branches, handler entry and RFI | Serialized companion lane; prediction, folding and dual issue excluded. A page-crossing branch storm under EXT/DEC, bus retries and resets covers the combined path. |
-| Load/store and memory ordering | 7% | 92% | BE scalar D/indexed/update operations; `lmw`/`stmw` and string forms cracked per register with precise restart; `lwarx`/`stwcx.` reservation; byte-reverse; unaligned scalars split in hardware with DR=1 page-cross alignment; DSI/TLB-miss restart mid-access; ordered stores, load cancellation/drain, alignment faults and resumable BAT and page protection DSI; denied accesses suppress destination/base/memory effects; translated `dcbf`/`dcbst`/`dcbi`/`dcbz` probes with DSI/TLB-miss and no transfer; guarded CI stores write once across ARTRY | Serialized; no data cache, so `dcbz` always takes alignment; data TEA is a precise machine check, untyped router errors remain diagnostic; atomic bus transfer types not driven; multiple/string timing not modeled. |
-| Supervisor state and synchronous exceptions | 8% | 92% | SC/RFI, live MTMSR/MFMSR, selected SPRs, program/alignment, every ISI and DSI cause of the supported instructions (protection, guarded, N, direct-store T=1, software page fault); `dcbz` alignment with Table 4-13 DSISR and privileged `dcbi`; DAR/DSISR capture and handler repair/retry | Machine check (0x200) from TEA with ME/RI and `checkstop_o`, MSR SE/BE/POW, single-step and branch trace (0xD00) and IABR (0x1300) are accepted. LE/ILE/FP writes are rejected (big-endian, no FPU); no MCP/DPE/APE/CKSTP_IN or soft stop; trace/IABR inside TGPR handlers halt diagnostically; undefined and FP opcodes halt instead of trapping (decode-completion round). |
+| Load/store and memory ordering | 7% | 94% | BE scalar D/indexed/update operations; `lmw`/`stmw` and string forms cracked per register with precise restart; `lwarx`/`stwcx.` reservation; byte-reverse; unaligned scalars split in hardware with DR=1 page-cross alignment; DSI/TLB-miss restart mid-access; ordered stores, load cancellation/drain, alignment faults and resumable BAT and page protection DSI; denied accesses suppress destination/base/memory effects; translated `dcbf`/`dcbst`/`dcbi`/`dcbz` probes with DSI/TLB-miss and no transfer; guarded CI stores write once across ARTRY | Serialized; no data cache, so `dcbz` always takes alignment; data TEA is a precise machine check, untyped router errors remain diagnostic; `eciwx`/`ecowx` with EAR DSI and the atomic/external-control 60x transfer types are accepted; multiple/string timing not modeled. |
+| Supervisor state and synchronous exceptions | 8% | 95% | SC/RFI, live MTMSR/MFMSR, selected SPRs, program/alignment, every ISI and DSI cause of the supported instructions (protection, guarded, N, direct-store T=1, software page fault); `dcbz` alignment with Table 4-13 DSISR and privileged `dcbi`; DAR/DSISR capture and handler repair/retry | Machine check (0x200) from TEA with ME/RI and `checkstop_o`, MSR SE/BE/POW, single-step and branch trace (0xD00) and IABR (0x1300) are accepted. LE/ILE/FP writes are rejected (big-endian, no FPU); no MCP/DPE/APE/CKSTP_IN or soft stop; trace/IABR inside TGPR handlers halt diagnostically; PVR/HID0/HID1/EAR implemented; HID0 ILOCK stored without effect. |
 | External interrupts and TB/DEC | 7% | 88% | EE masks, precise resume PC, admitted EXT latching, TB64/DEC32, priority and retirement-only writes; translated cached IRQ/refill drain, DEC-to-EXT promotion and RFI hits; hundreds of seeded EXT/DEC events per run across TLB misses, reloads, held bus tenures and resets on the translated cached top | Synchronous pins/tick; no CDC or bus-clock divider; local bounded event-recognition policy; board-level reset and interrupt-controller behavior open. |
 | BAT translation and live context | 10% | 88% | CPU-owned privileged BAT SPR reads/writes, retirement-only mapping changes, cancellation/drain, live IR/DR/PR, supported instruction/data-protection faults; compiled mapping replacement with pending EXT/DEC; IBAT remap, WIMG and IR changes over cached lines and BAT-over-TLB priority under retries and resets | Abstract, scalar 60x and bounded cached 60x paths accepted; final timing remains open. Malformed/overlapping candidates terminate diagnostically by local policy; deterministic zero reset differs from silicon. |
 | Segment registers, page TLB and software refill | 14% | 95% | CPU-owned SR/SDR1/compare/RPA; SR/SDR1 context changes under ARTRY/DRTRY/holds; TLBLD/TLBLI, TLBIE and TLBSYNC against sole I/D banks; precise PP/N/G/direct-store exceptions; architectural I/load/store miss and C=0 entry with full-EA/HASH capture, TGPR, primary/secondary PTEG search, R/C writeback, PP/key checks, ordinary failed-search ISI/DSI and refill/RFI retry; LRU replacement, remap and invalidation verified under EXT/DEC and reset stress on the translated cached top | True misses report the per-set TLB LRU way in SRR1.WAY; changed-bit hits retain the matched way. Software fixture is single-writer, using a halfword R/C update for stores; concurrent PTE writers and nested misses are outside its contract. Bounded SDR1/provenance checks and read-only real-mode miss SPR policy; loads require V=1/H=0, supported RPA shape and IR=DR=0; TLBISYNC is treated as negated. External-management frontend coherence and final timing remain open. |
 | 60x physical transport | 7% | 88% | Scalar master and separate four-beat line reads; seeded ARTRY/DRTRY (corrupted cancelled beats, multi-cycle DRTRY) and held tenures across every translated MMU stress mode; translated scalar wrapper runs real search/fault ELFs, with physical PA/byte lanes, ARTRY/DRTRY, TEA/reset checks; seeded ARTRY/DRTRY/held-fill stress and compiled firmware on the translated cached top | Scalar path fixes CI=1/WT=0/GBL=0; cached wrapper permits WIMG=0 instruction fills only. Full WIMG/coherence behavior remains open. TEA on data, scalar fetch and line fill (partial fill discarded) enters machine check or checkstop in the MVP profile; the default profile keeps diagnostics; one active-address reset point covered. No full snoop/parity/timing conformance. |
-| Instruction cache and maintenance | 5% | 95% | 16-KiB four-way physical cache, block-RAM data array, translated WIMG=0 fills/hits, scalar bypass, remap and explicit stale-code invalidate/restart, denied warm-line suppression and partial-fill TEA/reset; CPU `icbi` drains held/retried fills then clears the set; `dcbst`/`sync`/`icbi`/`isync` code patching under EXT/DEC, mode and BAT changes, retries and external maintenance | Conservative WIMG policy; no HID0 (external maintenance stands in); no automatic code coherence (not architected). External maintenance is not a CPU/store barrier. |
+| Instruction cache and maintenance | 5% | 97% | 16-KiB four-way physical cache, block-RAM data array, translated WIMG=0 fills/hits, scalar bypass, remap and explicit stale-code invalidate/restart, denied warm-line suppression and partial-fill TEA/reset; CPU `icbi` drains held/retried fills then clears the set; `dcbst`/`sync`/`icbi`/`isync` code patching under EXT/DEC, mode and BAT changes, retries and external maintenance | Conservative WIMG policy; HID0 ICE/ICFI drive cache maintenance (every ICE change invalidates, more than required); no automatic code coherence (not architected). External maintenance is not a CPU/store barrier. |
 | Toolchain and reproducible builds | 4% | 90% | Pinned compiler, BE ELF loader, twenty-two compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes; MMU stress has nine), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility or release packaging claim. |
 | Integration and verification | 7% | 95% | Collected line coverage with a waiver-gated control-arm review, one `make -C sim ci` gate and a 64-seed reference-acceptance run; independent directed/reference tests, seeded cached-top cache-maintenance stress with a scripted ARTRY/DRTRY/hold 60x target, 259 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives; seeded nine-mode MMU/event/reset stress on the MVP-profile translated cached top | Search/fault/stress firmware covers the combined supervisor/page-MMU/cache/bus path with bus retries and seeded TEA machine checks; no formal verification or toggle coverage; the compiled corpus is not compared with DingusPPC. |
-| FPGA fit, timing and release | 7% | 85% | Reviewed boundary timing contract ([interface timing](INTERFACE_TIMING_CONTRACT.md)) implemented by all three measurement SDCs without blanket false paths; translated, cached physical and timer/BAT tops meet 50 MHz setup and hold at every corner on `710b517` (Fmax 65.24 / 63.20 / 70.28 MHz at the worst slow corner); timer/BAT also meets 66 MHz | Final signoff fits after the decode-completion merge; 66 MHz on the cached tops (I-cache data → router → decode → IQ). Board bring-up excluded. New RTL changes require fresh fit before timing claims. |
+| FPGA fit, timing and release | 7% | 95% | Reviewed boundary timing contract ([interface timing](INTERFACE_TIMING_CONTRACT.md)) implemented by all three measurement SDCs; final signoff fits on the complete MVP RTL: translated, cached physical and timer/BAT tops meet 50 MHz setup and hold at every corner (Fmax 61.41 / 65.02 / 72.70 MHz at the worst slow corner); timer/BAT also meets 66 MHz | 66 MHz on the cached tops (translated misses by 1.133 ns on I-cache data → decode → IQ; needs a registered fetch-to-decode stage). Board bring-up excluded. New RTL changes require fresh fit before timing claims. |
 
 Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](references/ISA_MATRIX.md),
 [alignment](ALIGNMENT_VERIFICATION.md), [live context](LIVE_CONTEXT_VERIFICATION.md),
@@ -60,7 +60,7 @@ completion denominator.
 
 ## Full-603e estimate and systems outside this MVP
 
-**Approximately 49% of full-603e project scope (weighted 48.59%; judgment range
+**Approximately 50% of full-603e project scope (weighted 50.03%; judgment range
 40–50%)** follows the [2026-09-23 weighting audit](FULL_CPU_COMPLETION_AUDIT.md).
 Original category weights are preserved; broad execution, branch/LSU and memory
 categories now explicitly allocate weight to unimplemented systems. This corrects
@@ -179,6 +179,7 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Load/store extensions round, 2026-09-27 | 85.01% → 85.94% | Load/store 90%, integer 86%. Multiple/string, `lwarx`/`stwcx.`, byte-reverse and hardware-split unaligned scalars with precise mid-access restart. Fresh on the merge: `make -C sim ci` and coverage; fit inherited from the branch (same RTL). See [verification](LOAD_STORE_EXTENSIONS_VERIFICATION.md). |
 | Machine check, trace and IABR round, 2026-09-28 | 85.94% → 87.46% | Supervisor 92%, load/store 92%, 60x 88%, integration 95%. TEA machine check and checkstop, trace, IABR, integrated with cracked instructions; seeded TEA in the MMU stress. Fresh on the branch head (`60e0916`, same tree as the merge): `make -C sim ci` and translated fit. See [verification](EXCEPTION_MACHINE_CHECK_TRACE_VERIFICATION.md). |
 | Gate-3 timing round, 2026-09-28 | 87.46% → 90.26% | FPGA 45% → 85%. Interface timing contract and SDCs; reset off datapath storage, registered IQ head, ungated wake payload. Fresh on the branch (`710b517`, same tree as the merge): `make -C sim ci` and fits of all three tops. See [interface timing](INTERFACE_TIMING_CONTRACT.md). |
+| Full decode and final signoff round, 2026-09-28 | 90.26% → 91.80% | Integer 90%, load/store 94%, supervisor 95%, instruction cache 97%, FPGA 95%. No encoding halts; final `ci` and fits of all three tops on the combined RTL. See [verification](FULL_DECODE_VERIFICATION.md). |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.
@@ -852,4 +853,31 @@ attributable to this round alone.
 **MVP 87.46% → 90.26% (about 90%):** FPGA 45% → 85%. Remaining: final signoff
 fits after the decode-completion merge, 66 MHz on the cached tops (I-cache data
 through decode into the IQ).
+
+## Full decode and final signoff round (2026-09-28)
+
+Recorded: `make -C sim -j2 ci`, `./quartus/{translated,integrated,timer-bat}/build.sh
+--docker` and `./quartus/report-target-paths.sh <top> --docker`, merge of the
+full-decode branch (`1a98067`) onto `4ba4353` plus uncommitted merge
+resolution, 2026-09-28. `ci` passes: 532 PASS lines, 231 + 28 + 15 Python
+tests, container firmware build, 31 compiled-firmware profiles, coverage 76.6%
+(1,414 of 1,847 lines, 19 runs). Every top meets 50 MHz setup and hold at every
+corner:
+
+| Top | Setup slack, slow 100 C / -40 C (ns) | Worst hold (ns) | Fmax, worst slow corner | 66 MHz |
+| --- | --- | ---: | ---: | --- |
+| Translated | +3.715 / +3.722 | +0.117 | 61.41 MHz | misses by 1.133 ns, 500 endpoints |
+| Cached physical | +4.739 / +4.619 | +0.113 | 65.02 MHz | misses by 0.229 ns, 9 endpoints |
+| Timer/BAT | +6.244 / +6.654 | +0.116 | 72.70 MHz | meets |
+
+`ENABLE_FULL_DECODE` makes every 32-bit word execute or take the manual's
+exception: illegal and invalid forms at 0x700, `tw`/`twi`, FP forms at 0x800
+with MSR[FP] held 0, PVR/HID0/HID1/EAR, `eciwx`/`ecowx`, and the atomic and
+external-control 60x transfer types ([contract](FULL_DECODE.md),
+[verification](FULL_DECODE_VERIFICATION.md)). The larger decode sits on the
+fetch-to-IQ path, so the translated Fmax fell from 65.24 to 61.41 MHz; the worst
+66 MHz path runs from the I-cache data RAM through decode into the IQ entries.
+
+**MVP 90.26% → 91.80%:** integer 86% → 90%, load/store 92% → 94%,
+supervisor 92% → 95%, instruction cache 95% → 97%, FPGA 85% → 95%.
 

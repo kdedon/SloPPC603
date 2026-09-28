@@ -21,7 +21,11 @@ module ppc_special #(
   // Any-offset 1..4 byte accesses, split across two words when needed.
   parameter bit ENABLE_UNALIGNED_DATAPATH = 1'b0,
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
-  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
+  parameter bit ENABLE_FULL_DECODE = 1'b0,
+  parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
+  parameter logic [31:0] HID0_RESET = 32'h0000_0000,
+  parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -143,7 +147,12 @@ module ppc_special #(
   input ppc_pkg::page_miss_t dmem_rsp_page_miss_i,
   output logic icbi_req_valid_o,
   input logic icbi_req_ready_i,
-  output logic [31:0] icbi_req_ea_o
+  output logic [31:0] icbi_req_ea_o,
+  output ppc_pkg::dmem_attr_t dmem_req_attr_o,
+  output logic icache_ctl_valid_o,
+  input logic icache_ctl_ready_i,
+  output logic icache_ctl_enable_o,
+  output logic icache_ctl_invalidate_o
 );
   import ppc_pkg::*;
 
@@ -164,7 +173,7 @@ module ppc_special #(
     S_CONTEXT_DRAIN, S_CONTEXT_INSTALL, S_CONTEXT_REDIRECT, S_CONTEXT_ABORT,
     S_INTERRUPT_COMMIT, S_TIMER_RESULT, S_EXCEPTION_HALT,
     S_MMU_OFFER, S_MMU_WAIT, S_MMU_RESULT, S_MMU_ABORT, S_MMU_ACK, S_MMU_REDIRECT,
-    S_BRANCH_REDIRECT, S_ICBI, S_CHECKSTOP
+    S_BRANCH_REDIRECT, S_ICBI, S_CHECKSTOP, S_ICACHE_CTL
   } state_t;
   state_t state_q;
   // The shared uop record carries fields for other lanes.
@@ -185,6 +194,9 @@ module ppc_special #(
   logic [31:0] dcmp_q, icmp_q, rpa_q;
   logic [31:0] sdr1_q, iabr_q;
   logic [31:0] imiss_q, dmiss_q, hash1_q, hash2_q;
+  logic [31:0] hid0_q, ear_q;
+  logic trap_taken_q, trap_event, hid0_write, dispatch_hid0_write;
+  logic icache_change, external_denied;
   page_miss_t fetch_page_miss_q, miss_context;
   logic fetch_page_miss_opcode, data_page_miss_opcode;
   logic miss_derive_valid, miss_provenance_valid, miss_eligible;
@@ -265,6 +277,27 @@ module ppc_special #(
     (uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd25);
   assign dispatch_sdr1_write = ENABLE_SDR1 &&
     (uop_i.special_op == SPECIAL_MTSPR) && (uop_i.spr == 10'd25);
+  assign hid0_write = ENABLE_FULL_DECODE &&
+    (uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == SPR_HID0);
+  assign dispatch_hid0_write = ENABLE_FULL_DECODE &&
+    (uop_i.special_op == SPECIAL_MTSPR) && (uop_i.spr == SPR_HID0);
+  // Changing ICE or setting ICFI drains fetch, acts on the cache, then
+  // refetches the next instruction (UM 3.1.3).
+  assign icache_change = hid0_write &&
+    ((a_q[HID0_ICE] != hid0_q[HID0_ICE]) || a_q[HID0_ICFI]);
+  assign icache_ctl_valid_o = ENABLE_FULL_DECODE && rst_ni &&
+                              (state_q == S_ICACHE_CTL);
+  assign icache_ctl_enable_o = hid0_q[HID0_ICE];
+  assign icache_ctl_invalidate_o = hid0_q[HID0_ICFI];
+  assign trap_event = (uop_q.special_op == SPECIAL_TRAP) && trap_taken_q;
+  // eciwx/ecowx with EAR[E] = 0 take a DSI without a bus transfer.
+  assign external_denied = ENABLE_FULL_DECODE && uop_q.mem_external &&
+                           !ear_q[EAR_E];
+  assign dmem_req_attr_o.kind =
+    (ENABLE_FULL_DECODE && uop_q.mem_external) ? DMEM_EXTERNAL :
+    (ENABLE_RESERVATION && (uop_q.mem_reserve || uop_q.mem_conditional)) ?
+      DMEM_ATOMIC : DMEM_NORMAL;
+  assign dmem_req_attr_o.rid = ear_q[3:0];
   assign tlb_fill_cmp = (uop_i.special_op == SPECIAL_TLBLD) ? dcmp_q : icmp_q;
   // Accept only miss-shaped seeds whose compare word matches the EA that
   // selects the TLB entry.
@@ -374,12 +407,15 @@ module ppc_special #(
     (ENABLE_EXTERNAL_INTERRUPTS ? 32'h0007_3f03 : 32'h0007_bf03) &
     ~(ENABLE_TGPR ? 32'h0002_0000 : 32'b0) &
     ~(ENABLE_MACHINE_CHECK ? MACHINE_CHECK_MSR_MASK : 32'b0) &
-    ~(ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0);
+    ~(ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0) &
+    // FP is accepted and reads as zero; FE0/FE1 are stored without effect.
+    ~(ENABLE_FULL_DECODE ? 32'h0000_2900 : 32'b0);
   localparam logic [31:0] LIVE_SUPPORTED_MASK =
     (ENABLE_EXTERNAL_INTERRUPTS ? 32'h0000_c070 : 32'h0000_4070) |
     (ENABLE_TGPR ? 32'h0002_0000 : 32'b0) |
     (ENABLE_MACHINE_CHECK ? MACHINE_CHECK_MSR_MASK : 32'b0) |
-    (ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0);
+    (ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0) |
+    (ENABLE_FULL_DECODE ? 32'h0000_0900 : 32'b0);
 
   // TGPR mode excludes EE, PR, IR, DR and trace.
   function automatic logic live_mode_supported(input logic [31:0] value);
@@ -391,7 +427,9 @@ module ppc_special #(
     return (op == SPECIAL_MTMSR) || (op == SPECIAL_RFI) ||
            (op == SPECIAL_SC) || (op == SPECIAL_PROGRAM_ILLEGAL) ||
            (op == SPECIAL_PROGRAM_PRIV) || (op == SPECIAL_ALIGNMENT) ||
-           (op == SPECIAL_ISI);
+           (op == SPECIAL_ISI) ||
+           (ENABLE_FULL_DECODE &&
+            ((op == SPECIAL_TRAP) || (op == SPECIAL_FP_UNAVAILABLE)));
   endfunction
   assign dispatch_context = ENABLE_LIVE_CONTEXT && context_operation(uop_i.special_op);
   assign frontend_fence_o = rst_ni && fence_q;
@@ -461,6 +499,10 @@ module ppc_special #(
       10'd274: exec_value = sprg_q[2];
       10'd275: exec_value = sprg_q[3];
       10'd1010: exec_value = iabr_q;
+      10'd1008: exec_value = hid0_q;
+      10'd1009: exec_value = {PLL_CFG, 28'b0};
+      10'd282: exec_value = ear_q;
+      10'd287: exec_value = PVR_VALUE;
       default: exec_value = '0;
     endcase
 
@@ -517,7 +559,8 @@ module ppc_special #(
            (uop_q.special_op == SPECIAL_PROGRAM_ILLEGAL) ||
            (uop_q.special_op == SPECIAL_PROGRAM_PRIV) ||
            (uop_q.special_op == SPECIAL_ALIGNMENT) ||
-           (uop_q.special_op == SPECIAL_ISI)) &&
+           (uop_q.special_op == SPECIAL_ISI) ||
+           (uop_q.special_op == SPECIAL_FP_UNAVAILABLE) || trap_event) &&
           exception_entry_unsupported && !fetch_machine_check)
         result_o.fault = 1'b1;
     end else if (state_q == S_MMU_RESULT) begin
@@ -533,6 +576,16 @@ module ppc_special #(
     end
   end
 
+  // tw/twi TO bits 0-4 (branch_bo[4:0]): <, >, =, <u, >u (PEM 4.2.4.6).
+  function automatic logic trap_condition(input logic [4:0] to,
+                                          input logic [31:0] a,
+                                          input logic [31:0] b);
+    return (to[4] && ($signed(a) < $signed(b))) ||
+           (to[3] && ($signed(a) > $signed(b))) ||
+           (to[2] && (a == b)) ||
+           (to[1] && (a < b)) ||
+           (to[0] && (a > b));
+  endfunction
   function automatic logic [31:0] swap_bytes(input logic [31:0] value,
                                              input logic [2:0] count);
     return (count == 3'd2) ? {16'b0, value[7:0], value[15:8]} :
@@ -699,7 +752,8 @@ module ppc_special #(
   assign dsi_event = ((uop_q.special_op == SPECIAL_LOAD) ||
                       (uop_q.special_op == SPECIAL_STORE)) &&
                      ((memory_result_q.data_fault == DATA_DSI_PROTECTION) ||
-                      (memory_result_q.data_fault == DATA_DSI_DIRECT_STORE));
+                      (memory_result_q.data_fault == DATA_DSI_DIRECT_STORE) ||
+                      (memory_result_q.data_fault == DATA_DSI_EXTERNAL));
   // Data is never cached here, so a translated dcbz takes the 603e
   // caching-inhibited alignment exception.
   assign block_zero_event = ENABLE_CACHE_INSTRUCTIONS && uop_q.block_zero &&
@@ -768,6 +822,16 @@ module ppc_special #(
           exception_event_valid = !exception_entry_unsupported;
           exception_event_kind = EVENT_PROGRAM_PRIV;
         end
+        SPECIAL_TRAP: begin
+          exception_event_valid = ENABLE_FULL_DECODE && trap_taken_q &&
+                                  !exception_entry_unsupported;
+          exception_event_kind = EVENT_PROGRAM_TRAP;
+        end
+        SPECIAL_FP_UNAVAILABLE: begin
+          exception_event_valid = ENABLE_FULL_DECODE &&
+                                  !exception_entry_unsupported;
+          exception_event_kind = EVENT_FP_UNAVAILABLE;
+        end
         default: ;
       endcase
     end
@@ -793,7 +857,8 @@ module ppc_special #(
     .RESET_MSR(MSR_RESET),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
-    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE)
   ) exception_state (
     .clk_i, .rst_ni,
     .event_valid_i(exception_event_valid),
@@ -833,6 +898,7 @@ module ppc_special #(
     (interrupt_q || (state_q == S_MMU_ACK) || (state_q == S_MMU_REDIRECT) ||
      bat_csr_commit_o || segment_csr_commit_o || tlb_inv_commit_o ||
      tlb_fill_commit_o || exception_event_valid || (state_q == S_EXCEPTION_RESULT) ||
+     (state_q == S_ICACHE_CTL) || ((state_q == S_HOLD) && commit_match && icache_change) ||
      (state_q == S_EXCEPTION_HALT) || checkstop_commit || (state_q == S_CHECKSTOP) ||
      ((state_q == S_HOLD) && commit_match && sdr1_write &&
       !sdr1_write_invalid_q) ||
@@ -851,10 +917,13 @@ module ppc_special #(
   assign hold_commit = step_run && (state_q == S_HOLD) && commit_match;
   logic dispatch_fenced, context_install, exception_result_accept;
   assign dispatch_fenced = dispatch_context || dispatch_bat || dispatch_segment ||
-                           dispatch_tlbie || dispatch_tlb_fill || dispatch_sdr1_write;
+                           dispatch_tlbie || dispatch_tlb_fill || dispatch_sdr1_write ||
+                           dispatch_hid0_write;
   assign context_install = (ENABLE_LIVE_CONTEXT &&
     (uop_q.special_op == SPECIAL_MTMSR) && !mtmsr_unsupported) ||
-    (sdr1_write && !sdr1_write_invalid_q);
+    (sdr1_write && !sdr1_write_invalid_q) ||
+    // Fenced fetch discarded responses; refetch after the instruction.
+    hid0_write || (ENABLE_FULL_DECODE && (uop_q.special_op == SPECIAL_TRAP));
   assign exception_result_accept = exception_result_valid &&
     (!data_exception_event || !ENABLE_LIVE_CONTEXT ||
      (frontend_quiescent_i && memory_quiescent_i));
@@ -910,6 +979,8 @@ module ppc_special #(
           killed_d = 1'b1;
           if (icbi_req_ready_i) state_d = S_IDLE;
         end
+        // The HID0 write has committed; finish the handshake.
+        S_ICACHE_CTL: if (icache_ctl_ready_i) state_d = S_CONTEXT_ABORT;
         S_EXCEPTION_HALT, S_CHECKSTOP: ;
         default: state_d = fence_q ? S_CONTEXT_ABORT : S_IDLE;
       endcase
@@ -957,14 +1028,19 @@ module ppc_special #(
             fence_d = 1'b1;
             state_d = S_CHECKSTOP;
           end else if (exception_event_valid) state_d = S_EXCEPTION_RESULT;
+          else if (icache_change) state_d = S_ICACHE_CTL;
           else if (context_install) state_d = S_CONTEXT_INSTALL;
           else begin
             fence_d = 1'b0;
             state_d = branch_redirect_taken ? S_BRANCH_REDIRECT : S_IDLE;
           end
         end
+        S_ICACHE_CTL: if (icache_ctl_ready_i) state_d = S_CONTEXT_INSTALL;
         S_MEM_PREP: begin
-          if (misaligned || mem_skip) state_d = S_MEM_RESULT;
+          if (external_denied) begin
+            fence_d = 1'b1;
+            state_d = S_MEM_RESULT;
+          end else if (misaligned || mem_skip) state_d = S_MEM_RESULT;
           else if ((uop_q.special_op == SPECIAL_LOAD) || store_authorize_i)
             state_d = S_MEM_OFFER;
         end
@@ -1030,8 +1106,8 @@ module ppc_special #(
         S_CONTEXT_REDIRECT: if (redirect_accepted_i) interrupt_q <= 1'b0;
         S_HOLD: if (commit_match && !(tlb_fill_operation && mmu_error_q) &&
                     !(mmu_operation && !mmu_error_q) && !exception_event_valid &&
-                    context_install)
-          context_target_q <= (sdr1_write ||
+                    (context_install || icache_change))
+          context_target_q <= icache_change ? pc_q + 32'd4 : (sdr1_write ||
             (ENABLE_TGPR && (uop_q.special_op == SPECIAL_MTMSR))) ?
             mmu_resume_target_q : pc_q + 32'd4;
         S_EXCEPTION_RESULT: if (exception_result_accept && exception_result_supported &&
@@ -1059,6 +1135,7 @@ module ppc_special #(
       fetch_page_miss_q <= '0;
       fetch_miss_eligible_q <= 1'b0;
       timer_read_q <= 1'b0;
+      trap_taken_q <= 1'b0;
     end else if (interrupt_accept) begin
       pc_q <= interrupt_pc_i;
       uop_q <= '0;
@@ -1077,6 +1154,7 @@ module ppc_special #(
       xer_flags_q <= xer_flags_i;
       xer_byte_count_q <= xer_byte_count_i;
       ea_q <= a_i + b_i;
+      trap_taken_q <= trap_condition(uop_i.branch_bo, a_i, b_i);
     end
   end
 
@@ -1148,6 +1226,8 @@ module ppc_special #(
       dmiss_q <= '0;
       hash1_q <= '0;
       hash2_q <= '0;
+      hid0_q <= HID0_RESET & HID0_WMASK;
+      ear_q <= '0;
       timer_read_value_q <= '0;
     end else begin
       if (dispatch_fire)
@@ -1173,6 +1253,8 @@ module ppc_special #(
             10'd275: sprg_q[3] <= a_q;
             // IABR[31] (translation enable) is stored but ignored.
             10'd1010: if (ENABLE_DEBUG_EXCEPTIONS) iabr_q <= a_q;
+            10'd1008: if (ENABLE_FULL_DECODE) hid0_q <= a_q & HID0_WMASK;
+            10'd282: if (ENABLE_FULL_DECODE) ear_q <= a_q & EAR_WMASK;
             default: ;
           endcase
         end
@@ -1198,9 +1280,12 @@ module ppc_special #(
         end
         if (exception_event_valid && dsi_event) begin
           dar_q <= access_ea;
-          // UM Table 4-11: protection bit 4, direct-store bit 5, store bit 6.
+          // UM Table 4-11: protection bit 4, direct-store bit 5, store bit 6,
+          // eciwx/ecowx with EAR[E] = 0 bit 11.
           dsisr_q <= ((memory_result_q.data_fault == DATA_DSI_DIRECT_STORE) ?
-                      32'h0400_0000 : 32'h0800_0000) |
+                      32'h0400_0000 :
+                      (memory_result_q.data_fault == DATA_DSI_EXTERNAL) ?
+                      32'h0010_0000 : 32'h0800_0000) |
             ((uop_q.special_op == SPECIAL_STORE) ?
              32'h0200_0000 : 32'b0);
         end
@@ -1254,7 +1339,14 @@ module ppc_special #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni) memory_result_q <= '0;
     else if (step_run) begin
-      if ((state_q == S_MEM_PREP) && (misaligned || mem_skip)) begin
+      if ((state_q == S_MEM_PREP) && external_denied) begin
+        memory_result_q <= '0;
+        memory_result_q.producer <= producer_q;
+        if (ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT &&
+            !exception_entry_unsupported)
+          memory_result_q.data_fault <= DATA_DSI_EXTERNAL;
+        else memory_result_q.fault <= 1'b1;
+      end else if ((state_q == S_MEM_PREP) && (misaligned || mem_skip)) begin
         memory_result_q <= '0;
         memory_result_q.producer <= producer_q;
         memory_result_q.fault <= misaligned;

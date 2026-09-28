@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "status": "P03x_168_default_plus_10_opt_in_integration_forms",
+  "status": "P03x_168_default_plus_10_opt_in_integration_forms_plus_63_full_decode_forms",
   "scope": {
-    "executable_decode_entries": "Entries with implementation.status=implemented form the default decoder profile; implemented_opt_in_supervisor and implemented_opt_in_serialization entries require ENABLE_SUPERVISOR_EXCEPTIONS=1; implemented_opt_in_profile entries require every parameter in implementation.feature_profile.",
-    "source_inventory": "Appendix A is indexed completely; reviewed families now include seven bounded supervisor and three architectural-serialization opt-in forms in addition to the 168-form default subset.",
+    "executable_decode_entries": "Entries with implementation.status=implemented form the default decoder profile; implemented_opt_in_supervisor and implemented_opt_in_serialization entries require ENABLE_SUPERVISOR_EXCEPTIONS=1; implemented_opt_in_profile entries require every parameter in implementation.feature_profile. With ENABLE_FULL_DECODE, every encoding outside the enabled entries takes the illegal-instruction program exception instead of a diagnostic.",
+    "source_inventory": "Appendix A is indexed completely; reviewed families now include seven bounded supervisor and three architectural-serialization opt-in forms in addition to the 168-form default subset. The 63 full-decode entries (traps, external control, PVR/HID0/HID1/EAR moves, SYNC with bits 9-10 set, and the floating-point forms) are reviewed against Table A-1 rows; the inventory row statuses are unchanged.",
     "acceptance_gate": "P03 remains open until every required form has complete reserved-field and variant legality metadata."
   },
   "sources": {
@@ -21428,6 +21428,4471 @@
           "table": "6-6"
         }
       ]
+    },
+    {
+      "id": "tw",
+      "mnemonic": "tw",
+      "family": "tw",
+      "semantic_class": "full_decode_trap",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c000008",
+      "primary_opcode": 31,
+      "unit": "Integer",
+      "operands": [
+        "TO",
+        "rA",
+        "rB"
+      ],
+      "writes": [],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T64-020",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 368,
+          "printed_page": "A-8",
+          "table": "A-1",
+          "rows": [
+            "A1-222"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 187,
+          "printed_page": "4-29",
+          "section": "4.5.7",
+          "role": "primary_trap_program_exception"
+        }
+      ]
+    },
+    {
+      "id": "twi",
+      "mnemonic": "twi",
+      "family": "twi",
+      "semantic_class": "full_decode_trap",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0x0c000000",
+      "primary_opcode": 3,
+      "unit": "Integer",
+      "operands": [
+        "TO",
+        "rA",
+        "SIMM"
+      ],
+      "writes": [],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T64-001",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 368,
+          "printed_page": "A-8",
+          "table": "A-1",
+          "rows": [
+            "A1-223"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 187,
+          "printed_page": "4-29",
+          "section": "4.5.7",
+          "role": "primary_trap_program_exception"
+        }
+      ]
+    },
+    {
+      "id": "eciwx",
+      "mnemonic": "eciwx",
+      "family": "eciwx",
+      "semantic_class": "full_decode_external_control",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c00026c",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rD",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-017",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "EAR[E] = 0 takes DSI with DSISR bit 11; the transfer drives TT 11100 with EAR[28:31] on TBST/TSIZ."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 362,
+          "printed_page": "A-2",
+          "table": "A-1",
+          "rows": [
+            "A1-042"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 119,
+          "printed_page": "2-41",
+          "section": "2.3.5.4",
+          "role": "primary_external_control"
+        }
+      ]
+    },
+    {
+      "id": "ecowx",
+      "mnemonic": "ecowx",
+      "family": "ecowx",
+      "semantic_class": "full_decode_external_control",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c00036c",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rS",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-022",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "EAR[E] = 0 takes DSI with DSISR bits 6 and 11; the transfer drives TT 10100 with EAR[28:31] on TBST/TSIZ."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 362,
+          "printed_page": "A-2",
+          "table": "A-1",
+          "rows": [
+            "A1-043"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 119,
+          "printed_page": "2-41",
+          "section": "2.3.5.4",
+          "role": "primary_external_control"
+        }
+      ]
+    },
+    {
+      "id": "mfpvr",
+      "mnemonic": "mfpvr",
+      "family": "mfspr",
+      "semantic_class": "full_decode_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1f42a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "PVR"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "Read-only 0x00070200 (PID7v-603e); mtspr PVR is an undefined SPR write."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 84,
+          "printed_page": "2-6",
+          "section": "2.1.1",
+          "role": "primary_register_definition"
+        }
+      ],
+      "spr": 287
+    },
+    {
+      "id": "mfhid0",
+      "mnemonic": "mfhid0",
+      "family": "mfspr",
+      "semantic_class": "full_decode_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c10faa6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "HID0"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "Stored bits 0, 2-12, 15-21, 24, 27, 28, 31; ICE/ICFI act on the instruction cache, others have no effect."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 84,
+          "printed_page": "2-6",
+          "section": "2.1.1",
+          "role": "primary_register_definition"
+        }
+      ],
+      "spr": 1008
+    },
+    {
+      "id": "mthid0",
+      "mnemonic": "mthid0",
+      "family": "mtspr",
+      "semantic_class": "full_decode_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c10fba6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "HID0"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "Stored bits 0, 2-12, 15-21, 24, 27, 28, 31; ICE/ICFI act on the instruction cache, others have no effect."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 84,
+          "printed_page": "2-6",
+          "section": "2.1.1",
+          "role": "primary_register_definition"
+        }
+      ],
+      "spr": 1008
+    },
+    {
+      "id": "mfhid1",
+      "mnemonic": "mfhid1",
+      "family": "mfspr",
+      "semantic_class": "full_decode_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c11faa6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "HID1"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "PLL_CFG in bits 0-3 read-only; writes have no effect."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 84,
+          "printed_page": "2-6",
+          "section": "2.1.1",
+          "role": "primary_register_definition"
+        }
+      ],
+      "spr": 1009
+    },
+    {
+      "id": "mthid1",
+      "mnemonic": "mthid1",
+      "family": "mtspr",
+      "semantic_class": "full_decode_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c11fba6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "HID1"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "PLL_CFG in bits 0-3 read-only; writes have no effect."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 84,
+          "printed_page": "2-6",
+          "section": "2.1.1",
+          "role": "primary_register_definition"
+        }
+      ],
+      "spr": 1009
+    },
+    {
+      "id": "mfear",
+      "mnemonic": "mfear",
+      "family": "mfspr",
+      "semantic_class": "full_decode_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1a42a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rD",
+        "EAR"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "supervisor",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "E and RID (bits 28-31) stored; other bits read zero."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 84,
+          "printed_page": "2-6",
+          "section": "2.1.1",
+          "role": "primary_register_definition"
+        }
+      ],
+      "spr": 282
+    },
+    {
+      "id": "mtear",
+      "mnemonic": "mtear",
+      "family": "mtspr",
+      "semantic_class": "full_decode_system_register",
+      "form": "XFX",
+      "mask": "0xfc1fffff",
+      "value": "0x7c1a43a6",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [
+        "rS"
+      ],
+      "writes": [
+        "EAR"
+      ],
+      "privilege": "supervisor",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "E and RID (bits 28-31) stored; other bits read zero."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-128",
+            "A1-138"
+          ],
+          "role": "primary_mfspr_mtspr_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 84,
+          "printed_page": "2-6",
+          "section": "2.1.1",
+          "role": "primary_register_definition"
+        }
+      ],
+      "spr": 282
+    },
+    {
+      "id": "sync_l",
+      "mnemonic": "sync_l",
+      "family": "sync",
+      "semantic_class": "full_decode_sync_l",
+      "form": "X",
+      "mask": "0xff9fffff",
+      "value": "0x7c0004ac",
+      "primary_opcode": 31,
+      "unit": "SRU",
+      "operands": [],
+      "writes": [],
+      "privilege": "user",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T62-014",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "Bits 9-10 (L in later architecture levels) select weaker syncs; a full sync satisfies them."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 368,
+          "printed_page": "A-8",
+          "table": "A-1",
+          "rows": [
+            "A1-214"
+          ],
+          "role": "primary_encoding"
+        }
+      ]
+    },
+    {
+      "id": "lfs",
+      "mnemonic": "lfs",
+      "family": "lfs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xc0000000",
+      "primary_opcode": 48,
+      "unit": "LSU",
+      "operands": [
+        "frD",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-063",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-097"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "lfsu",
+      "mnemonic": "lfsu",
+      "family": "lfsu",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xc4000000",
+      "primary_opcode": 49,
+      "unit": "LSU",
+      "operands": [
+        "frD",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-064",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-098"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "lfd",
+      "mnemonic": "lfd",
+      "family": "lfd",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xc8000000",
+      "primary_opcode": 50,
+      "unit": "LSU",
+      "operands": [
+        "frD",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-065",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-093"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "lfdu",
+      "mnemonic": "lfdu",
+      "family": "lfdu",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xcc000000",
+      "primary_opcode": 51,
+      "unit": "LSU",
+      "operands": [
+        "frD",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-066",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-094"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "stfs",
+      "mnemonic": "stfs",
+      "family": "stfs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xd0000000",
+      "primary_opcode": 52,
+      "unit": "LSU",
+      "operands": [
+        "frS",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-067",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-190"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "stfsu",
+      "mnemonic": "stfsu",
+      "family": "stfsu",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xd4000000",
+      "primary_opcode": 53,
+      "unit": "LSU",
+      "operands": [
+        "frS",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-068",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-191"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "stfd",
+      "mnemonic": "stfd",
+      "family": "stfd",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xd8000000",
+      "primary_opcode": 54,
+      "unit": "LSU",
+      "operands": [
+        "frS",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-069",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-185"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "stfdu",
+      "mnemonic": "stfdu",
+      "family": "stfdu",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xdc000000",
+      "primary_opcode": 55,
+      "unit": "LSU",
+      "operands": [
+        "frS",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-070",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-186"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "lfsx",
+      "mnemonic": "lfsx",
+      "family": "lfsx",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0x7c00042e",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "frD",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-027",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-100"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "lfsux",
+      "mnemonic": "lfsux",
+      "family": "lfsux",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0x7c00046e",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "frD",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-029",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-099"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "lfdx",
+      "mnemonic": "lfdx",
+      "family": "lfdx",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0x7c0004ae",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "frD",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-031",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-096"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "lfdux",
+      "mnemonic": "lfdux",
+      "family": "lfdux",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0x7c0004ee",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "frD",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-032",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-095"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "stfsx",
+      "mnemonic": "stfsx",
+      "family": "stfsx",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0x7c00052e",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "frS",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-035",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-193"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "stfsux",
+      "mnemonic": "stfsux",
+      "family": "stfsux",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0x7c00056e",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "frS",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-036",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-192"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "stfdx",
+      "mnemonic": "stfdx",
+      "family": "stfdx",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0x7c0005ae",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "frS",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-038",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-188"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "stfdux",
+      "mnemonic": "stfdux",
+      "family": "stfdux",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0x7c0005ee",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "frS",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-039",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-187"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "stfiwx",
+      "mnemonic": "stfiwx",
+      "family": "stfiwx",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0x7c0007ae",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "frS",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-044",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-189"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fdivs",
+      "mnemonic": "fdivs",
+      "family": "fdivs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xec000024",
+      "primary_opcode": 59,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-001",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-060"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fsubs",
+      "mnemonic": "fsubs",
+      "family": "fsubs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xec000028",
+      "primary_opcode": 59,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-002",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-081"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fadds",
+      "mnemonic": "fadds",
+      "family": "fadds",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xec00002a",
+      "primary_opcode": 59,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-003",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-051"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fres",
+      "mnemonic": "fres",
+      "family": "fres",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xec000030",
+      "primary_opcode": 59,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-004",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-074"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fmuls",
+      "mnemonic": "fmuls",
+      "family": "fmuls",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xec000032",
+      "primary_opcode": 59,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-005",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-067"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fmsubs",
+      "mnemonic": "fmsubs",
+      "family": "fmsubs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xec000038",
+      "primary_opcode": 59,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-006",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-065"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fmadds",
+      "mnemonic": "fmadds",
+      "family": "fmadds",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xec00003a",
+      "primary_opcode": 59,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-007",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-062"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fnmsubs",
+      "mnemonic": "fnmsubs",
+      "family": "fnmsubs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xec00003c",
+      "primary_opcode": 59,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-073"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fnmadds",
+      "mnemonic": "fnmadds",
+      "family": "fnmadds",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xec00003e",
+      "primary_opcode": 59,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-009",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-071"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fdiv",
+      "mnemonic": "fdiv",
+      "family": "fdiv",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc000024",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-014",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-059"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fsub",
+      "mnemonic": "fsub",
+      "family": "fsub",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc000028",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-015",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-080"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fadd",
+      "mnemonic": "fadd",
+      "family": "fadd",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc00002a",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-016",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-050"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fsel",
+      "mnemonic": "fsel",
+      "family": "fsel",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc00002e",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-017",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-077"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fmul",
+      "mnemonic": "fmul",
+      "family": "fmul",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc000032",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-018",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-066"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "frsqrte",
+      "mnemonic": "frsqrte",
+      "family": "frsqrte",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc000034",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-019",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-076"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fmsub",
+      "mnemonic": "fmsub",
+      "family": "fmsub",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc000038",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-020",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-064"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fmadd",
+      "mnemonic": "fmadd",
+      "family": "fmadd",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc00003a",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-021",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-061"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fnmsub",
+      "mnemonic": "fnmsub",
+      "family": "fnmsub",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc00003c",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-022",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-072"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fnmadd",
+      "mnemonic": "fnmadd",
+      "family": "fnmadd",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "A",
+      "mask": "0xfc00003e",
+      "value": "0xfc00003e",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frA",
+        "frB",
+        "frC"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-023",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-070"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fcmpu",
+      "mnemonic": "fcmpu",
+      "family": "fcmpu",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc000000",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-010",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-054"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "frsp",
+      "mnemonic": "frsp",
+      "family": "frsp",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc000018",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-011",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-075"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fctiw",
+      "mnemonic": "fctiw",
+      "family": "fctiw",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc00001c",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-012",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-057"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fctiwz",
+      "mnemonic": "fctiwz",
+      "family": "fctiwz",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc00001e",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-013",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-058"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fcmpo",
+      "mnemonic": "fcmpo",
+      "family": "fcmpo",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc000040",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-024",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-053"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "mtfsb1",
+      "mnemonic": "mtfsb1",
+      "family": "mtfsb1",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc00004c",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-025",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-134"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fneg",
+      "mnemonic": "fneg",
+      "family": "fneg",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc000050",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-026",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-069"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "mcrfs",
+      "mnemonic": "mcrfs",
+      "family": "mcrfs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc000080",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-027",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-123"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "mtfsb0",
+      "mnemonic": "mtfsb0",
+      "family": "mtfsb0",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc00008c",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-028",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-133"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fmr",
+      "mnemonic": "fmr",
+      "family": "fmr",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc000090",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-029",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-063"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "mtfsfi",
+      "mnemonic": "mtfsfi",
+      "family": "mtfsfi",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc00010c",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-030",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-136"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fnabs",
+      "mnemonic": "fnabs",
+      "family": "fnabs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc000110",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-031",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-068"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "fabs",
+      "mnemonic": "fabs",
+      "family": "fabs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc000210",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-032",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 363,
+          "printed_page": "A-3",
+          "table": "A-1",
+          "rows": [
+            "A1-049"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "mffs",
+      "mnemonic": "mffs",
+      "family": "mffs",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc00048e",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-033",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-126"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
+    },
+    {
+      "id": "mtfsf",
+      "mnemonic": "mtfsf",
+      "family": "mtfsf",
+      "semantic_class": "full_decode_fp_unavailable",
+      "form": "X",
+      "mask": "0xfc0007fe",
+      "value": "0xfc00058e",
+      "primary_opcode": 63,
+      "unit": "FPU",
+      "operands": [
+        "frD",
+        "frB"
+      ],
+      "writes": [
+        "frD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "ignored",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T65-034",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_LIVE_CONTEXT",
+          "ENABLE_FULL_DECODE"
+        ],
+        "validation": "accepted_full_decode_benches",
+        "note": "No FPU: MSR[FP] never sets, so the form takes FP unavailable (UM 4.5.8). The class follows the primary and extended opcode; reserved fields and Rc are not checked (UM 2.3.1)."
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-135"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 189,
+          "printed_page": "4-31",
+          "section": "4.5.8",
+          "role": "primary_fp_unavailable"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 94,
+          "printed_page": "2-16",
+          "section": "2.3.1",
+          "role": "primary_class_by_opcode"
+        }
+      ]
     }
   ],
   "spr_read_opcode_equivalence": {
@@ -21453,7 +25918,15 @@
       "overlap_kind": "same_decode_semantic_alias"
     }
   ],
-  "allowed_overlaps": [],
+  "allowed_overlaps": [
+    {
+      "entries": [
+        "sync",
+        "sync_l"
+      ],
+      "reason": "sync_l widens sync to any bits 9-10 under ENABLE_FULL_DECODE; both execute as sync."
+    }
+  ],
   "open_gaps": [
     "Transcribe complete masks, fields, side effects, privilege and serialization for the 130 Appendix A source-inventory rows that remain pending after reconciling 96 reviewed source rows.",
     "Resolve the primary-manual Table A-6 rotate-opcode conflict against Tables A-1/A-43 through errata or a matching architecture manual; executable metadata conservatively follows the two agreeing primary tables.",

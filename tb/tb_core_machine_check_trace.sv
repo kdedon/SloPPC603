@@ -48,6 +48,10 @@ module tb_core_machine_check_trace;
     .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1),
     .ENABLE_MULTIPLE_STRING(1'b1)) dut (
+    .icache_ctl_ready_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .clk_i(clk), .rst_ni(rst_n),
     .bat_csr_req_valid_o(unused_bat_csr[47]), .bat_csr_req_ready_i(1'b0),
     .bat_csr_req_write_o(unused_bat_csr[46]), .bat_csr_req_spr_o(unused_bat_csr[45:36]),

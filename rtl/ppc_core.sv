@@ -36,7 +36,17 @@ module ppc_core #(
   // RI and POW become MSR state.
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   // Single-step and branch trace (MSR[SE], MSR[BE]) and the IABR.
-  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
+  // Illegal-instruction, trap and FP-unavailable exceptions for every
+  // encoding; PVR, HID0, HID1, EAR and eciwx/ecowx. The wrapper must honor
+  // dmem_req_attr_o and the instruction-cache control request.
+  parameter bit ENABLE_FULL_DECODE = 1'b0,
+  // PID7v-603e, UM 1.3.1.1.
+  parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
+  // Only ICE is meaningful; it must match the wrapper's cache reset mode.
+  parameter logic [31:0] HID0_RESET = 32'h0000_0000,
+  // HID1 PLL_CFG[0:3] (manual bits 0-3), read-only.
+  parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -117,6 +127,7 @@ module ppc_core #(
   output logic [3:0] dmem_req_wstrb_o,
   // Cache-block probe: translate and check permission, transfer nothing.
   output logic dmem_req_probe_o,
+  output ppc_pkg::dmem_attr_t dmem_req_attr_o,
   input logic dmem_rsp_valid_i,
   output logic dmem_rsp_ready_o,
   input logic [31:0] dmem_rsp_rdata_i,
@@ -127,6 +138,11 @@ module ppc_core #(
   output logic icbi_req_valid_o,
   input logic icbi_req_ready_i,
   output logic [31:0] icbi_req_ea_o,
+  // HID0 write that changes ICE or sets ICFI; held until ready.
+  output logic icache_ctl_valid_o,
+  input logic icache_ctl_ready_i,
+  output logic icache_ctl_enable_o,
+  output logic icache_ctl_invalidate_o,
   output logic retire_valid_o,
   input logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
@@ -280,7 +296,8 @@ module ppc_core #(
     .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
-    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE)
   ) predecode (.insn_i(fetched.insn), .uop_o(push_uop));
   // IABR compares at IQ push. The manual requires a context-synchronizing
   // instruction after mtspr IABR, and its refetch clears older IQ entries.
@@ -343,7 +360,7 @@ module ppc_core #(
     (uop.mem_skip || (uop.mem_seq == SEQ_STRING_IMM) ||
      (uop.mem_seq == SEQ_STRING_INDEXED)) ? 1'b0 :
     ((uop.mem_seq == SEQ_MULTIPLE) || uop.mem_reserve ||
-     uop.mem_conditional || !ENABLE_MISALIGNED_ACCESS) ?
+     uop.mem_conditional || uop.mem_external || !ENABLE_MISALIGNED_ACCESS) ?
       (((uop.mem_size == MEM_WORD) && (dispatch_ea_low != 0)) ||
        ((uop.mem_size == MEM_HALF) && dispatch_ea_low[0])) :
     (uop.mem_size != MEM_BYTE) && msr[MSR_DR] && dispatch_page_cross;
@@ -381,6 +398,11 @@ module ppc_core #(
           uop.spr[SPR_PRIV_BIT]))) begin
       dispatch_uop = '0;
       dispatch_uop.special_op = SPECIAL_PROGRAM_PRIV;
+    end else if (uop.special_op == SPECIAL_FPU) begin
+      // The FPU entry point. No FPU is present, so MSR[FP] never sets and
+      // every FP-class instruction takes FP unavailable (UM 4.5.8).
+      dispatch_uop = '0;
+      dispatch_uop.special_op = SPECIAL_FP_UNAVAILABLE;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && !uop.illegal &&
                  ((uop.special_op == SPECIAL_LOAD) ||
                   (uop.special_op == SPECIAL_STORE)) && dispatch_misaligned) begin
@@ -520,7 +542,9 @@ module ppc_core #(
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
     .ENABLE_UNALIGNED_DATAPATH(ENABLE_MISALIGNED_ACCESS || ENABLE_MULTIPLE_STRING),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
-    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+    .PVR_VALUE(PVR_VALUE), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
@@ -582,7 +606,9 @@ module ppc_core #(
     .dmem_req_wstrb_o, .dmem_req_probe_o, .dmem_rsp_valid_i, .dmem_rsp_ready_o,
     .dmem_rsp_rdata_i, .dmem_rsp_error_i, .dmem_rsp_fault_i,
     .dmem_rsp_page_miss_i,
-    .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o
+    .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o,
+    .dmem_req_attr_o, .icache_ctl_valid_o, .icache_ctl_ready_i,
+    .icache_ctl_enable_o, .icache_ctl_invalidate_o
   );
   assign context_ir_o = msr[MSR_IR];
   assign context_dr_o = msr[MSR_DR];
@@ -664,7 +690,8 @@ module ppc_core #(
     .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
-    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE)
   ) check_decode (.insn_i(iq_head.insn), .uop_o(check_uop));
   always @(posedge clk_i) begin
     logic [1:0] forwarded_ea_low;

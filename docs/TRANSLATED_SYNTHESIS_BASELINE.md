@@ -1,5 +1,37 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-28 final signoff: full decode with gate-3 timing
+
+Recorded: `./quartus/translated/build.sh --docker` and
+`./quartus/report-target-paths.sh translated --docker`, merge of the full-decode
+branch onto `4ba4353` plus uncommitted merge resolution, 2026-09-28. Quartus
+17.0.2, seed 1. **Meets 50 MHz** at every corner with hold passing everywhere:
+setup +3.715 / +3.722 / +7.525 / +7.869 ns and hold +0.187 / +0.206 / +0.137 /
++0.117 ns (slow 100 C, slow -40 C, fast 100 C, fast -40 C). Fmax 61.41 MHz. At
+15.152 ns 500 endpoints fail, worst -1.133 ns from the I-cache way data RAM
+through decode into `core|iq|entries`. The full-decode section below was fitted
+without the gate-3 timing changes.
+
+## 2026-09-28 full decode
+
+Recorded: `./quartus/translated/build.sh --docker` and
+`./quartus/translated/report-critical-paths.sh --docker`, commit `3f70e43`, 2026-09-28.
+Quartus 17.0.2, seed 1. The profile adds `ENABLE_FULL_DECODE` to the
+load/store, machine-check, trace and IABR set. **Meets 50 MHz** at every
+corner with hold passing everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +3.938 | +0.251 |
+| Slow 1100 mV, -40 C | +3.983 | +0.230 |
+| Fast 1100 mV, 100 C | +7.615 | +0.135 |
+| Fast 1100 mV, -40 C | +7.957 | +0.117 |
+
+Fmax 62.26 MHz at slow 100 C, 62.43 MHz at slow -40 C. The worst setup path
+runs from the instruction-cache way-1 data RAM into the IQ storage
+(`core|iq|entries`). 9,881 ALMs, 11,260 registers, 3 DSP blocks, 139,008
+block-memory bits.
+
 ## 2026-09-28 gate-3 timing: unreset payloads, registered IQ head, contract SDC
 
 Recorded: `./quartus/translated/build.sh --docker` and
