@@ -50,6 +50,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
   logic last_bank=0;
   logic [31:0] fault_count_addr,fault_records_addr;
 
+  logic unused_checkstop;
   ppc_core_bat_cached_bus60x #(
     .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
@@ -101,7 +102,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
     .running_o(running),.context_ir_o(cir),.context_dr_o(cdr),
     .context_pr_o(cpr),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),
-    .halted_o(halted),
+    .checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(1'b0),.redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i('0),.redirect_accepted_o(cut_accepted),

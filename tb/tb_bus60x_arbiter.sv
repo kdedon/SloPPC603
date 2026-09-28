@@ -7,7 +7,7 @@ module tb_bus60x_arbiter;
 
   logic iv, ir;
   logic [31:0] ia;
-  logic isv, isr;
+  logic isv, isr, ise;
   logic [31:0] isi;
   logic dv, dr, dw;
   logic [31:0] da, dd;
@@ -29,12 +29,15 @@ module tb_bus60x_arbiter;
     cycles++;
     if (cycles > 2000)
       $fatal(1, "arbiter test watchdog");
+    if (ise)
+      $fatal(1, "default arbiter returned an instruction error");
   end
 
   ppc_bus60x_arbiter dut (
     .clk_i(clk), .rst_ni(rst_n),
     .imem_req_valid_i(iv), .imem_req_ready_o(ir), .imem_req_addr_i(ia),
     .imem_rsp_valid_o(isv), .imem_rsp_ready_i(isr), .imem_rsp_insn_o(isi),
+    .imem_rsp_error_o(ise),
     .dmem_req_valid_i(dv), .dmem_req_ready_o(dr),
     .dmem_req_write_i(dw), .dmem_req_addr_i(da),
     .dmem_req_wdata_i(dd), .dmem_req_wstrb_i(ds),

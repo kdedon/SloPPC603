@@ -9,7 +9,7 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
   logic start_valid=0,start_ready,running,cir,cdr,cpr;
-  logic tv,tr,halted,ifetch_error,protocol_error,bus_busy,pimem_error;
+  logic tv,tr,halted,unused_checkstop,ifetch_error,protocol_error,bus_busy,pimem_error;
   logic irq=0,irq_taken,dec_taken,tick=0,translation_fault;
   logic [31:0] irq_pc,dec_pc;
   retire_packet_t retired;
@@ -75,7 +75,7 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
     .running_o(running),.context_ir_o(cir),.context_dr_o(cdr),
     .context_pr_o(cpr),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),
-    .halted_o(halted),.redirect_valid_i(1'b0),.redirect_all_i(1'b0),
+    .halted_o(halted),.checkstop_o(unused_checkstop),.redirect_valid_i(1'b0),.redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i('0),.redirect_accepted_o(),
     .translation_fault_o(translation_fault),.fault_instruction_o(),.fault_write_o(),

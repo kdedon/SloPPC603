@@ -85,6 +85,7 @@ module ppc_core_bus60x #(
   logic [89:0] unused_tlb_fill;
   logic [41:0] unused_segment_csr;
   logic [33:0] unused_cache_core;
+  logic unused_core_checkstop, unused_imem_rsp_error;
   ppc_core #(
     .RESET_PC(RESET_PC),
     .DIV_LATENCY(DIV_LATENCY),
@@ -162,7 +163,7 @@ module ppc_core_bus60x #(
     .dmem_rsp_rdata_i(dmem_rsp_rdata),
     .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(NO_DATA_FAULT), .dmem_rsp_error_i(dmem_rsp_error),
     .retire_valid_o, .retire_ready_i, .retire_o,
-    .halted_o(core_halted),
+    .halted_o(core_halted), .checkstop_o(unused_core_checkstop),
     .redirect_valid_i, .redirect_all_i, .redirect_keep_pivot_i,
     .redirect_pivot_i, .redirect_target_i, .redirect_accepted_o
   );
@@ -175,6 +176,7 @@ module ppc_core_bus60x #(
     .imem_rsp_valid_o(imem_rsp_valid),
     .imem_rsp_ready_i(imem_rsp_ready),
     .imem_rsp_insn_o(imem_rsp_insn),
+    .imem_rsp_error_o(unused_imem_rsp_error),
     .dmem_req_valid_i(dmem_req_valid),
     .dmem_req_ready_o(dmem_req_ready),
     .dmem_req_write_i(dmem_req_write),

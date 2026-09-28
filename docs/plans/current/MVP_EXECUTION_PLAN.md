@@ -802,3 +802,12 @@ reference acceptance. MVP 83.81% → 85.01%; full audit unchanged. See
 (76.0%); fit inherited from the branch at the same RTL (61.40 MHz). MVP 85.01%
 → 85.94%. See [verification](../../LOAD_STORE_EXTENSIONS_VERIFICATION.md).
 
+## Machine check, trace and IABR round — accepted (2026-09-28)
+
+`ENABLE_MACHINE_CHECK` and `ENABLE_DEBUG_EXCEPTIONS` in the translated profile,
+integrated with cracked instructions; seeded TEA machine checks in the MMU
+stress. Fresh on the branch head `60e0916` (same tree as the merge): `make -C
+sim ci` (459 regression PASS lines, 30 firmware profiles, coverage 75.9%) and
+translated fit (62.72 MHz). MVP 85.94% → 87.46%; full audit 46.79% → 48.59%.
+See [verification](../../EXCEPTION_MACHINE_CHECK_TRACE_VERIFICATION.md).
+

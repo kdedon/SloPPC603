@@ -1,6 +1,41 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-28 load/store extensions plus machine check, trace and IABR
 
+Recorded: `./quartus/translated/build.sh --docker` and
+`./quartus/translated/report-critical-paths.sh --docker`, commit `f90fcac` plus uncommitted docs
+(RTL unchanged since `f0c6049`), 2026-09-28. Quartus 17.0.2, seed 1. The
+profile enables both feature sets. **Meets 50 MHz** at every corner with
+hold passing everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +4.055 | +0.184 |
+| Slow 1100 mV, -40 C | +4.164 | +0.213 |
+| Fast 1100 mV, 100 C | +7.951 | +0.132 |
+| Fast 1100 mV, -40 C | +8.202 | +0.116 |
+
+Fmax 62.72 MHz at slow 100 C, 63.15 MHz at slow -40 C. The worst setup path
+runs from the reset synchronizer `rst_sync_q[1]` into the IQ storage
+(`core|iq|entries`). 9,714 ALMs, 11,236 registers, 3 DSP blocks, 139,008
+block-memory bits.
+
+## 2026-09-28 machine check, trace and IABR enabled
+
+Recorded: `./quartus/translated/build.sh --docker`, commit 7316f6c plus
+uncommitted docs, 2026-09-28. Quartus 17.0.2, seed 1. Profile adds
+`ENABLE_MACHINE_CHECK` and `ENABLE_DEBUG_EXCEPTIONS` and the `checkstop_o`
+port. **Meets 50 MHz** at every corner, hold passing everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +4.910 | +0.257 |
+| Slow 1100 mV, -40 C | +4.881 | +0.239 |
+| Fast 1100 mV, 100 C | +7.861 | +0.141 |
+| Fast 1100 mV, -40 C | +8.128 | +0.118 |
+
+Fmax 66.14 MHz at the worst corner (slow -40 C; 66.27 MHz at slow 100 C).
+9,559 ALMs, 11,152 registers, 3 DSP blocks (from 9,468 / 11,067).
 
 ## 2026-09-27 load/store extensions
 

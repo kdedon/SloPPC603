@@ -31,6 +31,7 @@ module tb_compiled_live_firmware;
   int transitions=0,alias_stores=0;
   logic [49:0] unused_page_ports;
   logic [32:0] unused_icbi_core;
+  logic unused_checkstop;
   ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1)) dut(
     .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
     .icbi_req_ea_o(unused_icbi_core[32:1]),
@@ -82,7 +83,7 @@ module tb_compiled_live_firmware;
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
-    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.halted_o(halted),
+    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(1'b0),.redirect_all_i(1'b0),.redirect_keep_pivot_i(1'b0),
     .redirect_pivot_i('0),.redirect_target_i('0),.redirect_accepted_o(cut_accepted),
     .translation_fault_o(fault),.fault_instruction_o(unused_fi),.fault_write_o(unused_fw),

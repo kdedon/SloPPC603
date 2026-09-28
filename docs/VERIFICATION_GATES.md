@@ -1,11 +1,12 @@
 # Verification gates: CI, coverage and reference acceptance
 
-Recorded: `make -C sim -j2 ci` then `make -C sim clean-cache`, commit 4560b1a plus uncommitted documentation and waiver-reason edits, 2026-09-27.
+Recorded: `make -C sim -j2 ci` then `make -C sim clean-cache`, commit 60e0916 plus uncommitted documentation and waiver edits, 2026-09-28 (`ci` row).
+Recorded: `make -C sim -j2 ci`, commit 4560b1a plus uncommitted documentation and waiver-reason edits, 2026-09-27 (earlier figures below).
 Recorded: `make -C sim -j2 reference-acceptance`, commit 4560b1a plus the same edits, 2026-09-27.
 
 | Gate | Result | Wall time |
 | --- | --- | ---: |
-| `ci` | Pass. Regression (274 Python checks: 231 + 28 + 15), firmware built in the container, 27 compiled-firmware profiles, coverage 74.2% (1,251 of 1,686 `rtl/` points) with 15 waived control arms over 15 runs | 54 min |
+| `ci` | Pass. Regression (274 Python checks: 231 + 28 + 15), firmware built in the container, 30 compiled-firmware profiles, coverage 75.9% (1,344 of 1,771 `rtl/` points) with 14 waived control arms over 18 runs | 42 min |
 | `reference-acceptance` | Pass. Reference 8,500 snapshots; memory, BAT and three cached profiles 9,881 retirements each; stress suites of 32 seeds at 512 blocks with 130,492 and 130,251 snapshots | 7 min |
 
 Times are on the shared development machine with `-j2`; `ci` shares it with
@@ -20,7 +21,7 @@ One command for the continuous gate, in order:
    cross-compiler, else the same build in the pinned container through
    `toolchain/build-in-container.sh`.
 3. `make -C toolchain rtl-all`: every compiled-firmware profile, including
-   `rtl-mmu-stress-cached` and `rtl-mmu-stress-retry`.
+   `rtl-mmu-stress-cached`, `rtl-mmu-stress-retry` and `rtl-mmu-stress-tea`.
 4. `coverage`: the coverage build, runs and summary below.
 
 Run it as `make -C sim -j2 ci`, then `make -C sim clean-cache`. It needs
@@ -29,10 +30,11 @@ Docker (or the cross-compiler) and the sibling DingusPPC checkout that
 
 ## `make -C sim coverage`
 
-Builds `tb_compiled_mmu_stress_firmware` and `tb_compiled_cacheops_firmware`
-with Verilator `--coverage-line` (through `toolchain/run-rtl-smoke.py
---coverage`), runs all fourteen `mmu-stress-retry` modes and the cacheops
-image, and writes one coverage file per run under `sim/build/coverage/`.
+Builds the MMU stress, cacheops and lsu benches with Verilator
+`--coverage-line` (through `toolchain/run-rtl-smoke.py --coverage`), runs all
+fourteen `mmu-stress-retry` modes, both `mmu-stress-tea` modes and the
+cacheops and lsu images, and writes one coverage file per run under
+`sim/build/coverage/`.
 `make -C sim coverage-summary` reruns only the summary.
 
 `sim/tools/coverage_summary.py` merges the runs by source location (a point
@@ -52,6 +54,9 @@ waivers that no longer match an uncovered arm.
 
 Arms this gate reached only after the stimulus was extended:
 
+- `LINE_DATA_ERROR_RELEASE` (line reader): TEA during a line fill. Reached by
+  the `mmu-stress-tea` modes.
+
 - `LANE_WAIT` (router, both lanes): a translation miss arriving while the
   other side's translation is in flight. Reached by the micro-TLB contention
   loop in the MMU stress image.
@@ -65,7 +70,7 @@ Waived arms (reasons in the waiver file):
 | Arm | Why unreached |
 | --- | --- |
 | `default` arms (6 files) | Every enum value has an arm. |
-| `LANE_FATAL`, `ROUTE_IFETCH_FATAL`, `LINE_DATA_ERROR_RELEASE` | Need TEA or an instruction transport error. Directed benches cover them; the stress TEA hook is reserved for the machine-check work. |
+| `LANE_FATAL`, `ROUTE_IFETCH_FATAL` | Need an instruction TEA with `ENABLE_MACHINE_CHECK=0`; the TEA stress enables machine check. `tb_core_bat_bus60x_errors` covers them. |
 | `BUS_ADDR_ABORT`, `LINE_ADDR_ABORT` | Need AACK in the TS cycle, a target protocol violation; `tb_bus60x` and `tb_bus60x_line_read` cover them. |
 | `IC_REFILL_DRAIN` | Flash invalidate while an accepted refill waits for data; the managed wrapper sequences invalidation after the refill. `tb_icache` covers it. |
 | `TLB_REFILL`, `TLB_INVALIDATE_SET`, reserved kind | External TLB management requests; this top ties the port off and CPU loads and `tlbie` use the prepared path. |

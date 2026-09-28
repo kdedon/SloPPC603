@@ -5,6 +5,8 @@
 //   hold_i   withholds each TA while high,
 //   drtry_i  cancels a read beat with DRTRY and replaces it on the same edge,
 //   wait_i   extra cycles before BG, AACK, DBG and each TA.
+// A bench may also set tea_base/tea_bytes: a read beat or write whose
+// doubleword lies in that window ends the data tenure with TEA instead of TA.
 // Writes land in mem on TA; reads return mem at each beat, so a replacement
 // beat carries the current memory value. mem[0] holds BASE_ADDR.
 module bus60x_scripted_target_bfm #(
@@ -56,7 +58,11 @@ module bus60x_scripted_target_bfm #(
   // Each bench reads the subset it needs.
   /* verilator lint_off UNUSEDSIGNAL */
   int tenures = 0, retries = 0, drtries = 0, writes = 0, reads = 0, bursts = 0;
+  int teas = 0;
+  logic [31:0] tea_base = 32'b0;
+  logic [31:0] tea_bytes = 32'b0;
   /* verilator lint_on UNUSEDSIGNAL */
+  logic tea_ended;
 
   initial begin
     bg_n_o = 1'b1;
@@ -67,6 +73,7 @@ module bus60x_scripted_target_bfm #(
     ta_n_o = 1'b1;
     drtry_n_o = 1'b1;
     tea_n_o = 1'b1;
+    tea_ended = 1'b0;
     in_data = 1'b0;
     last_retried = 1'b0;
     addr = 32'b0;
@@ -103,6 +110,21 @@ module bus60x_scripted_target_bfm #(
     return {addr[31:5], 5'b0} + 32'(((int'(addr[4:3]) + index) % 4) * 8);
   endfunction
 
+  function automatic bit tea_hit(input logic [31:0] address);
+    return (tea_bytes != 0) && ((address & ~32'd7) - tea_base < tea_bytes);
+  endfunction
+
+  // TEA replaces TA for one cycle and ends the data tenure.
+  task automatic terminate_tea;
+    @(negedge clk_i);
+    tea_n_o = 1'b0;
+    teas++;
+    tea_ended = 1'b1;
+    @(posedge clk_i);
+    @(negedge clk_i);
+    tea_n_o = 1'b1;
+  endtask
+
   task automatic address_tenure(output logic retried);
     while (br_n_i) @(posedge clk_i);
     delay();
@@ -136,6 +158,10 @@ module bus60x_scripted_target_bfm #(
   task automatic read_beat(input int index);
     delay();
     while (hold_i) @(posedge clk_i);
+    if (tea_hit(beat_address(index))) begin
+      terminate_tea();
+      return;
+    end
     @(negedge clk_i);
     d_o = doubleword(beat_address(index));
     ta_n_o = 1'b0;
@@ -160,9 +186,13 @@ module bus60x_scripted_target_bfm #(
     dbg_n_o = 1'b0;
     do @(posedge clk_i); while (!(dbb_oe_i && !dbb_n_i));
     in_data = 1'b1;
+    tea_ended = 1'b0;
     @(negedge clk_i);
     dbg_n_o = 1'b1;
-    if (write) begin
+    if (write && tea_hit(addr)) begin
+      delay();
+      terminate_tea();
+    end else if (write) begin
       int size;
       delay();
       while (hold_i) @(posedge clk_i);
@@ -178,11 +208,14 @@ module bus60x_scripted_target_bfm #(
       @(negedge clk_i);
       ta_n_o = 1'b1;
     end else begin
-      for (int index = 0; index < (burst ? 4 : 1); index++) read_beat(index);
+      for (int index = 0; index < (burst ? 4 : 1) && !tea_ended; index++)
+        read_beat(index);
       // Normal-mode DRTRY confirmation of the final beat.
-      @(posedge clk_i);
-      if (burst) bursts++;
-      else reads++;
+      if (!tea_ended) begin
+        @(posedge clk_i);
+        if (burst) bursts++;
+        else reads++;
+      end
     end
     in_data = 1'b0;
     d_o = 64'b0;

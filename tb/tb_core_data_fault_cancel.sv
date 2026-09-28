@@ -23,6 +23,7 @@ module tb_core_data_fault_cancel;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
+  logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1)) dut (
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
@@ -88,7 +89,7 @@ module tb_core_data_fault_cancel;
     .decrementer_taken_o(unused_timer[32]),.decrementer_pc_o(unused_timer[31:0]),
     .external_irq_i(1'b0),.interrupt_taken_o(unused_irq[32]),
     .interrupt_pc_o(unused_irq[31:0]),
-    .retire_valid_o(tv),.retire_ready_i(1'b1),.retire_o(retired),.halted_o(halted),
+    .retire_valid_o(tv),.retire_ready_i(1'b1),.retire_o(retired),.checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(cut),.redirect_all_i(1'b1),
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i(32'h100),.redirect_accepted_o(cut_accepted)

@@ -3,6 +3,10 @@
 Recorded: `make -C sim test-core-bat-bus60x-errors`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
 Recorded: `make -C sim test-core-bat-bus60x-errors`, commit 56824e5, 2026-09-27. Pass: 165 checks, 13 retirements, 21 physical offers. With split router lanes, fetch runs beside the data access, so after the data TEA the bench serves the prefetches still outstanding before checking that the bus drained.
 
+This gate covers the default profile. With `ENABLE_MACHINE_CHECK` every TEA
+is a machine check or checkstop instead; see
+[EXCEPTION_MACHINE_CHECK_TRACE.md](EXCEPTION_MACHINE_CHECK_TRACE.md).
+
 `tb_core_bat_bus60x_errors.sv` drives the external 60x pins of
 `ppc_core_bat_bus60x` with the independent target BFM. It uses the real
 wrapper, CPU instructions and target byte RAM; it does not force internal CPU

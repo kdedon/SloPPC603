@@ -35,6 +35,8 @@ module ppc_icache_managed #(
   input  logic         bypass_rsp_valid_i,
   output logic         bypass_rsp_ready_o,
   input  logic [31:0]  bypass_rsp_insn_i,
+  // A returned bypass transfer error completes the fetch as an error.
+  input  logic         bypass_rsp_error_i,
   input  logic         bypass_ifetch_error_i,
 
   output logic         line_req_valid_o,
@@ -128,6 +130,7 @@ module ppc_icache_managed #(
       end else begin
         fetch_rsp_valid_o = bypass_rsp_valid_i;
         fetch_rsp_insn_o = bypass_rsp_insn_i;
+        fetch_rsp_error_o = bypass_rsp_error_i;
         bypass_rsp_ready_o = fetch_rsp_ready_i;
       end
     end

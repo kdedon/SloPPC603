@@ -31,7 +31,7 @@ module tb_core_lsu_extensions;
   data_fault_t rfault;
   page_miss_t rcapsule;
   logic dmiss_q = 1'b0, dmiss_write_q = 1'b0;
-  logic tv, tr, halted;
+  logic tv, tr, halted, unused_checkstop;
   retire_packet_t retired;
   logic ipending = 1'b0, dpending = 1'b0;
   logic [31:0] iaddress = 32'b0, daddress = 32'b0;
@@ -127,7 +127,7 @@ module tb_core_lsu_extensions;
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(irq), .interrupt_taken_o(unused_interrupt[32]),
     .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv), .retire_ready_i(tr),
-    .retire_o(retired), .halted_o(halted),
+    .retire_o(retired), .halted_o(halted), .checkstop_o(unused_checkstop),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b1),
     .redirect_keep_pivot_i(1'b0), .redirect_pivot_i('0),
     .redirect_target_i(32'b0), .redirect_accepted_o(unused_cut)

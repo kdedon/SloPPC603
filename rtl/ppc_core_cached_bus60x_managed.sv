@@ -145,6 +145,7 @@ module ppc_core_cached_bus60x_managed #(
   logic [89:0] unused_tlb_fill;
   logic [41:0] unused_segment_csr;
   logic [33:0] unused_cache_core;
+  logic unused_core_checkstop, unused_imem_rsp_error;
   ppc_core #(
     .RESET_PC(RESET_PC),
     .DIV_LATENCY(DIV_LATENCY),
@@ -222,7 +223,7 @@ module ppc_core_cached_bus60x_managed #(
     .dmem_rsp_rdata_i(dmem_rsp_rdata),
     .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(NO_DATA_FAULT), .dmem_rsp_error_i(dmem_rsp_error),
     .retire_valid_o, .retire_ready_i, .retire_o,
-    .halted_o(core_halted),
+    .halted_o(core_halted), .checkstop_o(unused_core_checkstop),
     .redirect_valid_i, .redirect_all_i, .redirect_keep_pivot_i,
     .redirect_pivot_i, .redirect_target_i, .redirect_accepted_o
   );
@@ -249,6 +250,7 @@ module ppc_core_cached_bus60x_managed #(
     .bypass_rsp_valid_i(bypass_rsp_valid),
     .bypass_rsp_ready_o(bypass_rsp_ready),
     .bypass_rsp_insn_i(bypass_rsp_insn),
+    .bypass_rsp_error_i(1'b0),
     .bypass_ifetch_error_i(scalar_router_ifetch_error),
     .line_req_valid_o(cache_line_req_valid),
     .line_req_ready_i(cache_line_req_ready),
@@ -280,6 +282,7 @@ module ppc_core_cached_bus60x_managed #(
     .imem_rsp_valid_o(bypass_rsp_valid),
     .imem_rsp_ready_i(bypass_rsp_ready),
     .imem_rsp_insn_o(bypass_rsp_insn),
+    .imem_rsp_error_o(unused_imem_rsp_error),
     .dmem_req_valid_i(dmem_req_valid && !transport_ifetch_error),
     .dmem_req_ready_o(dmem_req_ready),
     .dmem_req_write_i(dmem_req_write), .dmem_req_addr_i(dmem_req_addr),

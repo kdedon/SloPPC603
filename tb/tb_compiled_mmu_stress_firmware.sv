@@ -7,7 +7,9 @@
 // seeded ARTRY, DRTRY and held data tenures; modes 9-11 reset in an ARTRY
 // window, a DRTRY replacement or a held fill and imply RETRY. Modes 12 and 13
 // reset inside the branch storm and during a translated cache-inhibited
-// fetch. RAM changes only through pin tenures.
+// fetch. Modes 14 and 15 (15 with RETRY) end seeded tenures with TEA while
+// MSR[RI]=1; each must enter the machine-check handler and retry at SRR0.
+// RAM changes only through pin tenures.
 /* verilator lint_off BLKSEQ */
 module tb_compiled_mmu_stress_firmware;
   import ppc_pkg::*;
@@ -48,15 +50,15 @@ module tb_compiled_mmu_stress_firmware;
 
   localparam logic [31:0] RFI=32'h4c000064;
   int mode=0,retry=0;
-  // TEA injection hook: the bench never asserts TEA until a machine-check
-  // oracle replaces the bus_error check below and sets TEA_PERMILLE.
+  // TEA per mille of would-be TAs, offered only while the architecture
+  // promises recovery (MSR[RI]=1, so not inside any handler).
   int tea_permille=0;
   logic retry_want=0,drtry_want=0,hold_want=0,tea_want=0;
   int hold_until=0;
   logic [31:0] lfsr=0,seed=32'h1;
   int bus_phase=0;
   logic irq=0,tick=0;
-  logic [31:0] ext_count_addr,dec_count_addr,irq_ack_addr,miss_total_addr;
+  logic [31:0] ext_count_addr,dec_count_addr,irq_ack_addr,miss_total_addr,mc_count_addr;
 
   // Per-run counters clear on every reset; totals do not.
   int retires=0,ext_taken=0,dec_taken=0,resumes=0,tgpr_entries=0,fills=0;
@@ -65,12 +67,14 @@ module tb_compiled_mmu_stress_firmware;
   int irq_in_miss=0,irq_in_bus=0,dec_in_miss=0,line_starts=0,page_lines=0;
   int cache_hits=0,cache_misses=0,chained=0,bypass_fetches=0,storm_retires=0;
   int bat_bypass=0,storm_trigger=0;
+  int mc_taken=0,mc_fetch=0,mc_data=0;
   int resets_wanted=0,resets_done=0,next_irq=400;
   logic resume_pending=0,last_tgpr=0,last_irq_tgpr=0;
   logic [31:0] event_pc=0;
   logic [31:0] last_pc=0;
   string summary;
 
+  logic checkstop;
   ppc_core_bat_cached_bus60x #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),
@@ -80,7 +84,7 @@ module tb_compiled_mmu_stress_firmware;
     .ENABLE_PAGE_MISS_RESULTS(1'b1),.ENABLE_PAGE_DATA_EXCEPTIONS(1'b1),
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),
     .ENABLE_TLB_INVALIDATE(1'b1),.ENABLE_TLB_LOAD(1'b1),
-    .ENABLE_TEST_REDIRECT(1'b0)
+    .ENABLE_TEST_REDIRECT(1'b0),.ENABLE_MACHINE_CHECK(1'b1)
   ) dut(
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(interrupt_taken),
@@ -125,7 +129,7 @@ module tb_compiled_mmu_stress_firmware;
     .running_o(running),.context_ir_o(cir),.context_dr_o(cdr),
     .context_pr_o(cpr),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),
-    .halted_o(halted),
+    .checkstop_o(checkstop), .halted_o(halted),
     .redirect_valid_i(1'b0),.redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i('0),.redirect_accepted_o(cut_accepted),
@@ -167,6 +171,7 @@ module tb_compiled_mmu_stress_firmware;
   wire unused_outputs=^{cir,cdr,icache_busy,bat_ready,retired};
   /* verilator lint_on UNUSEDSIGNAL */
   wire tgpr=dut.translated_core.core.msr[17];
+  wire recoverable=dut.translated_core.core.msr[MSR_RI];
   wire tlb_fill_offer=dut.translated_core.tlb_fill_req_valid;
   wire tlb_inv_offer=dut.translated_core.tlb_inv_req_valid;
 
@@ -174,13 +179,13 @@ module tb_compiled_mmu_stress_firmware;
     return $sformatf(" mode=%0d resets=%0d/%0d ext=%0d dec=%0d msr=%08x bus=%08x diag=%b last=%08x",
       mode,resets_done,resets_wanted,ext_taken,dec_taken,
       dut.translated_core.core.msr,a,
-      {halted,cut_accepted,pimem_error,ifetch_error,bus_error,translation_fault},last_pc);
+      {checkstop,halted,cut_accepted,pimem_error,ifetch_error,bus_error,translation_fault},last_pc);
   endfunction
 
   assign tr=rst_n&&(lfsr[2:0]!=3'd0);
   bus60x_retry_target_bfm #(.BEAT_GAP(1)) target(
     .clk_i(clk),.rst_ni(rst_n),.phase_i(bus_phase),
-    .retry_i(retry_want),.drtry_i(drtry_want),.hold_i(hold_want),.tea_i(tea_want),
+    .retry_i(retry_want),.drtry_i(drtry_want),.hold_i(hold_want),.tea_i(tea_want&&recoverable),
     .br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(a),.tt_i(tt),
     .tsiz_i(tsiz),.tbst_n_i(tbst_n),.tc_i(tc),.dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),
     .bg_n_o(bg_n),.aack_n_o(aack_n),.artry_n_o(artry_n),.dbg_n_o(dbg_n),
@@ -263,14 +268,15 @@ module tb_compiled_mmu_stress_firmware;
       retires=0;ext_taken=0;dec_taken=0;resumes=0;tgpr_entries=0;fills=0;
       chained=0;invalidates=0;bypass_fetches=0;bat_bypass=0;storm_retires=0;page_lines=0;
       resume_pending=0;last_tgpr=0;last_irq_tgpr=0;event_pc=0;
+      mc_taken=0;mc_fetch=0;mc_data=0;
       irq<=0;cycles=0;next_irq=400+int'(lfsr[9:0]);
       mailbox_written=0;mailbox_retired=0;
     end else begin
       cycles++;total_cycles++;
       check(cycles<4000000,$sformatf("timeout retires=%0d",retires));
-      check(!halted&&!cut_accepted&&!pimem_error&&!ifetch_error&&
+      check(!checkstop&&!halted&&!cut_accepted&&!pimem_error&&!ifetch_error&&
         !bus_error&&!translation_fault,
-        "unexpected halt, transport or translation diagnostic");
+        "unexpected checkstop, halt, transport or translation diagnostic");
       check(!unused_page_ports[1]&&!bat_rsp&&!bat_rejected&&
         !bat_unsupported&&!bat_config&&!bat_overlap&&bat_invalid==0,
         "external management unexpectedly active");
@@ -309,8 +315,20 @@ module tb_compiled_mmu_stress_firmware;
             $sformatf("RFI resumed at %08x, event saved %08x",retired.pc,event_pc));
           resume_pending=0;resumes++;total_resumes++;
         end
+        // A machine check retires its instruction; the handler's RFI must
+        // resume at that PC.
+        if(retired.fetch_fault==FETCH_MACHINE_CHECK||
+           retired.data_fault==DATA_MACHINE_CHECK)begin
+          check(tea_permille!=0,"machine check without TEA");
+          check(!retired.gpr_write&&!retired.update_write,
+            "machine-checked access wrote a register");
+          mc_taken++;
+          if(retired.fetch_fault==FETCH_MACHINE_CHECK)mc_fetch++;else mc_data++;
+          event_pc=retired.pc;
+        end
         if(retired.insn==RFI&&
-           ((retired.pc>=BASE+32'h500&&retired.pc<BASE+32'h600)||
+           ((retired.pc>=BASE+32'h200&&retired.pc<BASE+32'h300)||
+            (retired.pc>=BASE+32'h500&&retired.pc<BASE+32'h600)||
             (retired.pc>=BASE+32'h900&&retired.pc<BASE+32'ha00)))
           resume_pending=1;
         mailbox_retire();
@@ -373,15 +391,17 @@ module tb_compiled_mmu_stress_firmware;
     if(!$value$plusargs("EXT_COUNT=%h",ext_count_addr)||
        !$value$plusargs("DEC_COUNT=%h",dec_count_addr)||
        !$value$plusargs("IRQ_ACK=%h",irq_ack_addr)||
-       !$value$plusargs("MISS_TOTAL=%h",miss_total_addr))
-      $fatal(1,"EXT_COUNT/DEC_COUNT/IRQ_ACK/MISS_TOTAL required");
+       !$value$plusargs("MISS_TOTAL=%h",miss_total_addr)||
+       !$value$plusargs("MC_COUNT=%h",mc_count_addr))
+      $fatal(1,"EXT_COUNT/DEC_COUNT/IRQ_ACK/MISS_TOTAL/MC_COUNT required");
     if(!$value$plusargs("MODE=%d",mode))mode=0;
     if(!$value$plusargs("RETRY=%d",retry))retry=0;
     if(!$value$plusargs("TEA_PERMILLE=%d",tea_permille))tea_permille=0;
-    if(mode>=9&&mode<=11)retry=1;
+    if((mode>=9&&mode<=11)||mode==15)retry=1;
+    if(mode>=14&&tea_permille==0)tea_permille=15;
     seed=32'h2545f491^(32'(mode)*32'h9e3779b9)^(retry!=0?32'h5bd1e995:32'h0);
     storm_trigger=100+int'(seed[8:0]);
-    resets_wanted=mode==0?0:(mode==7?3:1);
+    resets_wanted=(mode==0||mode>=14)?0:(mode==7?3:1);
     boot;
     while(resets_done<resets_wanted)begin
       wait_trigger;
@@ -405,6 +425,10 @@ module tb_compiled_mmu_stress_firmware;
           "translated line fills, bypass fetches, storm or miss handlers missing");
     if(retry!=0)check(target.retries>0&&target.drtries>0&&target.held>0,
           "RETRY run without ARTRY, DRTRY or held tenures");
+    check(word_at(mc_count_addr)==32'(mc_taken),
+          $sformatf("handler machine checks %0d, bench saw %0d",word_at(mc_count_addr),mc_taken));
+    if(tea_permille!=0)check(mc_fetch>0&&mc_data>0&&mc_taken<=target.teas,
+          "TEA run without fetch and data machine checks, or more checks than TEAs");
     if(mode==0)check(irq_in_miss>0&&irq_in_bus>0&&dec_in_miss>0,
           "no IRQ/DEC overlap with a miss handler or bus tenure");
     summary=$sformatf("PASS compiled MMU stress mode=%0d retry=%0d resets=%0d misses=%0d ext=%0d dec=%0d",
@@ -415,6 +439,8 @@ module tb_compiled_mmu_stress_firmware;
       irq_in_miss,irq_in_bus,dec_in_miss,fills)};
     summary={summary,$sformatf(" lines=%0d page_lines=%0d bypass=%0d bat_bypass=%0d storm=%0d",
       line_starts,page_lines,bypass_fetches,bat_bypass,storm_retires)};
+    summary={summary,$sformatf(" tea=%0d mc=%0d mc_fetch=%0d mc_data=%0d",
+      target.teas,mc_taken,mc_fetch,mc_data)};
     summary={summary,$sformatf(" artry=%0d drtry=%0d held_cycles=%0d total_retires=%0d total_cycles=%0d checks=%0d",
       target.retries,target.drtries,target.held,total_retires,total_cycles,checks)};
     $display("%s",summary);

@@ -3,8 +3,9 @@
 // All physical transactions use that adapter's fixed cache-inhibited policy:
 // CI_N=0, WT_N=1, GBL_N=1, CSE=00, one outstanding scalar owner. BAT/TLB
 // WIMG is metadata here; no coherent cache or attribute mapping is implied.
-// Instruction TEA is a sticky transport stop; the translation owner can
-// remain pending/busy until reset because the arbiter consumes that error.
+// Without machine check, instruction TEA is a sticky transport stop; the
+// translation owner can remain pending/busy until reset because the arbiter
+// consumes that error. With it, every TEA returns as a machine-check fault.
 module ppc_core_bat_bus60x #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter int DIV_LATENCY = 20,
@@ -30,7 +31,9 @@ module ppc_core_bat_bus60x #(
   parameter bit ENABLE_BYTE_REVERSE = 1'b0,
   parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
   parameter bit ENABLE_RESERVATION = 1'b0,
-  parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0
+  parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
+  parameter bit ENABLE_MACHINE_CHECK = 1'b0,
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -95,6 +98,7 @@ module ppc_core_bat_bus60x #(
   input  logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
   output logic halted_o,
+  output logic checkstop_o,
   input  logic redirect_valid_i,
   input  logic redirect_all_i,
   input  logic redirect_keep_pivot_i,
@@ -154,6 +158,7 @@ module ppc_core_bat_bus60x #(
   logic [32:0] unused_icbi;
   logic imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_rsp_insn;
+  logic imem_rsp_error;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
   logic [31:0] dmem_req_addr, dmem_req_wdata;
   logic [3:0] dmem_req_wstrb;
@@ -194,7 +199,9 @@ module ppc_core_bat_bus60x #(
     .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
-    .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS)
+    .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
+    .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
   ) translated_core (
     .clk_i,
     .rst_ni,
@@ -262,7 +269,7 @@ module ppc_core_bat_bus60x #(
     .pimem_rsp_valid_i(imem_rsp_valid),
     .pimem_rsp_ready_o(imem_rsp_ready),
     .pimem_rsp_insn_i(imem_rsp_insn),
-    .pimem_rsp_error_i(1'b0),
+    .pimem_rsp_error_i(imem_rsp_error),
     .pdmem_req_valid_o(dmem_req_valid),
     .pdmem_req_ready_i(dmem_req_ready),
     .pdmem_req_write_o(dmem_req_write),
@@ -280,7 +287,7 @@ module ppc_core_bat_bus60x #(
     .retire_valid_o,
     .retire_ready_i,
     .retire_o,
-    .halted_o(core_halted),
+    .halted_o(core_halted), .checkstop_o,
     .redirect_valid_i,
     .redirect_all_i,
     .redirect_keep_pivot_i,
@@ -300,7 +307,7 @@ module ppc_core_bat_bus60x #(
     .pimem_error_o,
     .busy_o
   );
-  ppc_bus60x_arbiter transport_router (
+  ppc_bus60x_arbiter #(.RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK)) transport_router (
     .clk_i, .rst_ni,
     .imem_req_valid_i(imem_req_valid),
     .imem_req_ready_o(imem_req_ready),
@@ -308,6 +315,7 @@ module ppc_core_bat_bus60x #(
     .imem_rsp_valid_o(imem_rsp_valid),
     .imem_rsp_ready_i(imem_rsp_ready),
     .imem_rsp_insn_o(imem_rsp_insn),
+    .imem_rsp_error_o(imem_rsp_error),
     .dmem_req_valid_i(dmem_req_valid),
     .dmem_req_ready_o(dmem_req_ready),
     .dmem_req_write_i(dmem_req_write),

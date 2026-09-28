@@ -293,6 +293,7 @@ module ppc_completion #(
             result_i.update_value : 32'b0;
         if (result_i.fault || (result_i.data_fault == DATA_DSI_PROTECTION) ||
             (result_i.data_fault == DATA_DSI_DIRECT_STORE) ||
+            (result_i.data_fault == DATA_MACHINE_CHECK) ||
             (ENABLE_TLB_MISS_EXCEPTIONS &&
              ((result_i.data_fault == DATA_PAGE_MISS) ||
               (result_i.data_fault == DATA_PAGE_CHANGED)))) begin

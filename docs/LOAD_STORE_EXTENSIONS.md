@@ -84,8 +84,8 @@ conflicts, and the implementation follows the specific note.
 
 ## Faults in the middle of an access
 
-A DSI or TLB miss on a later micro-op or on the second word of a split access
-enters the handler with SRR0 at the instruction. Earlier micro-ops have
+A DSI, TLB miss or machine check on a later micro-op or on the second word of
+a split access enters the handler with SRR0 at the instruction. Earlier micro-ops have
 committed and a split store's first word is written: UM §2.3.4.3.6–7 allow some
 or all references from the first page. RFI re-executes the instruction from its
 first byte. DAR and DMISS name the faulting word's first byte, which lies in

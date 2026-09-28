@@ -76,14 +76,17 @@ PAGE = {**TIMER, 'page_probe': 0x6000}
 TLBIE = {**PAGE, 'tlbie_data_probe': 0x7000}
 MISS = {'imiss_handler': 0x1000, 'dlmiss_handler': 0x1100, 'dsmiss_handler': 0x1200, 'page_probe': 0x6000}
 FAULT = {**MISS, 'table_search_dsi_vector': 0x300, 'table_search_isi_vector': 0x400}
-STRESS = {**MISS, 'dsi_handler': 0x300, 'isi_handler': 0x400, 'interrupt_handler': 0x500,
+STRESS = {**MISS, 'machine_check_handler': 0x200, 'dsi_handler': 0x300, 'isi_handler': 0x400, 'interrupt_handler': 0x500,
           'decrementer_handler': 0x900}
 del STRESS['page_probe']
 # Bench plusarg: (symbol, minimum size) for the stress image's counters.
 STRESS_SYMBOLS = {'EXT_COUNT': ('stress_ext_count', 4), 'DEC_COUNT': ('stress_dec_count', 4),
-                  'IRQ_ACK': ('irq_ack', 4), 'MISS_TOTAL': ('miss_total', 4)}
+                  'IRQ_ACK': ('irq_ack', 4), 'MISS_TOTAL': ('miss_total', 4),
+                  'MC_COUNT': ('stress_mc_count', 4)}
 CACHEOPS = {'dsi_handler': 0x300, 'interrupt_handler': 0x500, 'alignment_handler': 0x600,
             'decrementer_handler': 0x900}
+MACHINE_CHECK = {'machine_check_handler': 0x200, 'trace_handler': 0xd00, 'iabr_handler': 0x1300,
+                 'bad_routine': 0xdfe0}
 
 # profile: (bench, source lists, fixed-address symbols as offsets from BASE,
 #           +MODE runs: a count or a tuple of modes)
@@ -115,12 +118,15 @@ PROFILES = {
     'mmu-stress-cached': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS,
                           (0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13)),
     'mmu-stress-retry': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, 14),
+    # Seeded TEA machine checks, without and with RETRY.
+    'mmu-stress-tea': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, (14, 15)),
     'cacheops': ('tb_compiled_cacheops_firmware', BAT_CACHED, CACHEOPS, 0),
     'lsu': ('tb_compiled_lsu_firmware', BAT_CACHED, {'alignment_handler': 0x600}, 0),
+    'machine-check': ('tb_compiled_machine_check_firmware', BAT_CACHED, MACHINE_CHECK, 2),
 }
 # Benches whose target is not the default for their source lists.
-SCRIPTED_TARGET = {'cacheops', 'lsu'}
-RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry'}
+SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check'}
+RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry', 'mmu-stress-tea'}
 # Plusargs added to every run of a profile.
 PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1']}
 
