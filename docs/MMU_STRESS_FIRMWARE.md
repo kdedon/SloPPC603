@@ -1,6 +1,6 @@
 # Compiled MMU and event stress on the translated cached 60x top
 
-Recorded: `make -C toolchain rtl-mmu-stress-cached`, commit 4428a5e, 2026-09-27.
+Recorded: `make -C toolchain rtl-mmu-stress-cached rtl-mmu-stress-retry` (inside `make -C sim -j2 ci`), commit 4560b1a plus uncommitted documentation and waiver-reason edits, 2026-09-27.
 
 ## What runs
 
@@ -30,13 +30,24 @@ count events, acknowledge the IRQ with a store and rearm DEC with 160 to
 | Invalidation | 32 `tlbie` clear every set before each iteration. After remapping page A in memory, `sync; tlbie A; sync; tlbsync; sync; isync` makes the next access miss and read the new frame, while page E in set 1 still hits and page B in set 0 misses. |
 | Direct store | Load and store through an SR.T=1 segment: DSI with DAR = EA, DSISR `0x04000000` / `0x06000000`, SRR0 at the access, no destination change. A call into that segment: ISI with SRR0 = target and SRR1[1..4] = `0b0010`. |
 | Page faults | A page with no PTE: DSI DSISR `0x40000000`, DAR = EA (software conversion). A store to a read-only resident page: hardware page DSI DSISR `0x0a000000` with PTE C still clear. |
+| Branch storm | Q0 and Q1 are contiguous EAs mapped to non-adjacent frames (the frame between holds decoy code). A loop entered 64 bytes before the boundary crosses it by fall-through, a conditional branch and `bdnz`, and returns through an LR computed by the callee. Three calls; `tlbie Q1` before the last two makes each take an instruction miss at the boundary mid-loop. The checksum must equal a C model and exactly four instruction misses occur. |
+| BAT and cache | IBAT2 maps EA `0x40000000` to image code (`0x301`, called twice: fill then hit), is remapped to frame code at the same offset (`0x302`: the cached line of the old PA is not used), then made I=1 (`0x302` by a translated scalar fetch). The same routines run in real mode. IBAT3 over the page-mapped P0, with P0 resident in the ITLB, must return the BAT target and take no miss; after IBAT3 is cleared P0 returns its page code. DBAT2 over resident page A and page E returns the BAT frames' signatures. |
+| Micro-TLB contention | Through IBAT2, a loop runs code in six 4-KiB pages and loads from seven data pages, two of them just before a sequential page crossing, so instruction and data micro-TLB misses compete for the translation sequencer. A halfword store and load at word offset 0 check the byte lanes. |
+| Segment context | With page A resident under VSID1, `mtsr` to VSID3 makes A miss and read VSID3's frame; restoring VSID1 hits the old entry without a miss. |
+| Table context | In real mode, `sync; mtspr SDR1; isync` moves to a second 64-KiB table holding only A. After `tlbie` of every set, A reads the new table's frame and E, absent there, takes the software page fault. Restoring SDR1 and invalidating restores the original mapping. |
 
-After the last iteration the image disables EE and requires 44 data-load,
-24 instruction and 4 data-store misses before writing the mailbox.
+After the last iteration the image disables EE and requires 68 data-load,
+44 instruction and 4 data-store misses before writing the mailbox.
 
-The bench seeds an xorshift generator from `+MODE` and uses it for the 60x
-target's BG, AACK, DBG and TA delays, 7/8 retirement acceptance and 3/4
-timer-tick density. It raises the IRQ 150 to 2,200 cycles after each ack and
+The bench seeds an xorshift generator from `+MODE` (and `+RETRY`) and uses
+it for the 60x target's BG, AACK, DBG and TA delays, 7/8 retirement
+acceptance and 3/4 timer-tick density. With `+RETRY=1` the resettable target
+(`tb/bfm/bus60x_retry_target_bfm.sv`) also asserts ARTRY in the cycle after
+10% of AACKs, cancels 8% of read beats with DRTRY (the cancelled beat carries
+inverted data; DRTRY lasts one to three cycles with the replacement TA in the
+last), and holds data tenures 5 to 44 cycles. Every read beat has a
+confirmation cycle before the next TA. `+TEA_PERMILLE` is a TEA injection
+hook, unused until a machine-check oracle replaces the bus-error check. It raises the IRQ 150 to 2,200 cycles after each ack and
 drops it only on the physical write to `irq_ack`. Every cycle it requires no
 halt, redirect, ifetch or bus error, translation diagnostic, external TLB or
 BAT management, cache maintenance or problem state; every 60x tenure must be
@@ -45,7 +56,8 @@ Each EXT or DEC handler's RFI must resume at the PC that event saved, and an
 event taken before that resume must save the same PC. At the mailbox the
 handler's EXT and DEC counts must equal the bench's, with at least eight of
 each, and at least 60 miss-handler entries, translated line fills of the code
-frames and I-cache hits.
+frames, I-cache hits, a translated cache-inhibited fetch and storm
+retirements; a retry run must also see ARTRY, DRTRY and held tenures.
 
 Modes 1 to 8 reset the CPU (four cycles low, then a new start) once, or
 three times for mode 7, and require the image to pass again from reset
@@ -61,40 +73,80 @@ without the first run having reached its mailbox:
 | 6 | In the fourth miss handler, while its R/C write is on the bus |
 | 7 | Three times, at seeded cycles |
 | 8 | While a `tlbie` request is offered, after 40 offer cycles |
+| 9 | In the ARTRY cycle of a miss handler's PTE read (implies RETRY) |
+| 10 | During a DRTRY replacement of a line-fill beat after the first (implies RETRY) |
+| 11 | While a line fill after its first beat is held (implies RETRY) |
+| 12 | After 100 to 611 retirements inside the branch storm |
+| 13 | During the translated cache-inhibited fetch through IBAT2 |
+
+`rtl-mmu-stress-cached` runs modes 0-8, 12 and 13 without retries;
+`rtl-mmu-stress-retry` runs modes 0-13 with `+RETRY=1`.
 
 ## Results
 
-Pass, all nine modes. Final-run figures:
+Pass, all 25 runs (11 without retries, 14 with). Final-run figures; ARTRY,
+DRTRY and held cycles include the runs cut short by resets:
 
-| Mode | Resets | EXT | DEC | Resumes | Chained | Retirements | Cycles |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 0 | 0 | 171 | 187 | 227 | 131 | 24,150 | 436,059 |
-| 1 | 1 | 176 | 191 | 235 | 132 | 24,253 | 438,565 |
-| 2 | 1 | 181 | 189 | 232 | 138 | 24,284 | 438,845 |
-| 3 | 1 | 165 | 188 | 233 | 120 | 24,096 | 434,803 |
-| 4 | 1 | 186 | 190 | 238 | 138 | 24,351 | 440,848 |
-| 5 | 1 | 172 | 185 | 232 | 125 | 24,137 | 435,790 |
-| 6 | 1 | 160 | 185 | 220 | 125 | 24,005 | 432,485 |
-| 7 | 3 | 178 | 189 | 239 | 128 | 24,251 | 438,770 |
-| 8 | 1 | 170 | 187 | 227 | 130 | 24,139 | 436,034 |
+| RETRY | Mode | Resets | EXT | DEC | Resumes | Chained | ARTRY | DRTRY | Held cycles | Retirements | Cycles |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 0 | 0 | 383 | 449 | 569 | 263 | 0 | 0 | 0 | 61,037 | 866,311 |
+| 0 | 1 | 1 | 400 | 460 | 599 | 261 | 0 | 0 | 0 | 61,356 | 873,474 |
+| 0 | 2 | 1 | 406 | 460 | 581 | 285 | 0 | 0 | 0 | 61,422 | 875,230 |
+| 0 | 3 | 1 | 386 | 442 | 556 | 272 | 0 | 0 | 0 | 60,986 | 864,908 |
+| 0 | 4 | 1 | 396 | 459 | 582 | 273 | 0 | 0 | 0 | 61,300 | 872,477 |
+| 0 | 5 | 1 | 415 | 461 | 588 | 288 | 0 | 0 | 0 | 61,533 | 877,578 |
+| 0 | 6 | 1 | 398 | 456 | 579 | 275 | 0 | 0 | 0 | 61,286 | 872,600 |
+| 0 | 7 | 3 | 399 | 460 | 590 | 269 | 0 | 0 | 0 | 61,345 | 873,064 |
+| 0 | 8 | 1 | 405 | 458 | 596 | 267 | 0 | 0 | 0 | 61,387 | 874,734 |
+| 0 | 12 | 1 | 388 | 454 | 572 | 270 | 0 | 0 | 0 | 61,152 | 869,152 |
+| 0 | 13 | 1 | 390 | 449 | 565 | 274 | 0 | 0 | 0 | 61,114 | 868,040 |
+| 1 | 0 | 0 | 457 | 528 | 639 | 346 | 5,022 | 3,087 | 170,874 | 62,799 | 1,119,598 |
+| 1 | 1 | 1 | 468 | 535 | 644 | 359 | 5,675 | 3,429 | 336,194 | 63,004 | 1,264,685 |
+| 1 | 2 | 1 | 452 | 525 | 640 | 337 | 5,689 | 3,463 | 320,550 | 62,708 | 1,245,199 |
+| 1 | 3 | 1 | 470 | 534 | 646 | 358 | 5,924 | 3,566 | 374,799 | 63,014 | 1,299,612 |
+| 1 | 4 | 1 | 462 | 536 | 655 | 343 | 5,858 | 3,588 | 353,880 | 62,950 | 1,279,388 |
+| 1 | 5 | 1 | 459 | 532 | 626 | 365 | 5,392 | 3,320 | 260,621 | 62,869 | 1,196,956 |
+| 1 | 6 | 1 | 440 | 520 | 616 | 344 | 5,624 | 3,454 | 327,293 | 62,516 | 1,245,567 |
+| 1 | 7 | 3 | 466 | 531 | 662 | 335 | 5,326 | 3,327 | 344,132 | 62,934 | 1,182,656 |
+| 1 | 8 | 1 | 445 | 521 | 625 | 341 | 6,339 | 3,815 | 498,307 | 62,583 | 1,395,233 |
+| 1 | 9 | 1 | 474 | 531 | 635 | 370 | 5,826 | 3,362 | 318,512 | 63,022 | 1,252,162 |
+| 1 | 10 | 1 | 474 | 533 | 654 | 353 | 5,461 | 3,386 | 258,097 | 63,046 | 1,198,809 |
+| 1 | 11 | 1 | 452 | 533 | 654 | 331 | 5,336 | 3,403 | 253,625 | 62,804 | 1,189,329 |
+| 1 | 12 | 1 | 462 | 530 | 636 | 356 | 6,252 | 3,959 | 445,264 | 62,878 | 1,356,398 |
+| 1 | 13 | 1 | 448 | 530 | 624 | 354 | 6,347 | 3,877 | 517,911 | 62,724 | 1,416,772 |
 
-Every run takes 72 misses and 68 TLB loads (the four no-PTE misses per run
-do not load). In mode 0 the IRQ was held through 72 miss handlers and
-overlapped 18,603 data-tenure cycles, and DEC stayed pending for 175,566
-cycles inside miss handlers. "Chained" counts events taken before the
-previous handler's resume retired.
+Every run takes 116 misses and 108 TLB loads (the eight no-PTE misses per
+run do not load) and retires 11,164 instructions inside the branch storm.
+In mode 0 without retries the IRQ was held through 116 miss handlers and
+overlapped 37,446 data-tenure cycles, DEC stayed pending for 279,781 cycles
+inside miss handlers, and the bench made 4,671,163 checks; with retries the
+figures are 62,251 and 386,997 cycles and 5,992,776 checks. "Chained" counts
+events taken before the previous handler's resume retired.
 
-Negative control: with the TLB's hit path pointing the LRU bit at the hit
-way instead of the other way, mode 0 fails with mailbox `0x8e000031` (wrong
-SRR1.WAY at the second LRU step).
+Negative controls (temporary RTL edits, reverted):
+
+- TLB hit path pointing the LRU bit at the hit way instead of the other way
+  (commit 4428a5e): mode 0 fails with mailbox `0x8e000031` (wrong SRR1.WAY
+  at the second LRU step).
+The next two ran on ab96df6 plus the uncommitted stress changes, before the
+micro-TLB and multi-cycle DRTRY additions:
+
+- TLB lookup ignoring the VSID (`ppc_tlb_service`):
+  `rtl-mmu-stress-cached` mode 0 fails with mailbox `0x8e0000c1` (VSID3
+  access hit the VSID1 entry).
+- Line reader ignoring DRTRY in its confirmation state
+  (`ppc_bus60x_line_read`): `rtl-mmu-stress-retry` mode 0
+  fails "60x address ownership/overlap" at cycle 69,566.
 
 ## Limits
 
 The IRQ is acknowledged by a bench model, not an interrupt controller. The
-60x target never asserts ARTRY, DRTRY or TEA; retries and errors have their
-own gates. Data stays uncached (the design has no data cache). Resets are
+target never asserts TEA, never starts a data tenure before the ARTRY
+window closes and never violates the protocol; errors have their own gates. Data stays uncached (the design has no data cache). Resets are
 synchronous four-cycle pulses; a reset does not roll back memory, so the
 image rebuilds its page table and frames on every boot. Code frames are
 written before their first fetch in each boot; no instruction is modified
 after it may be cached. The stress relies on the single-writer PTE rule of
 the handler contract; it does not model other bus masters.
+
+Coverage of these runs and the CI gate: [VERIFICATION_GATES.md](VERIFICATION_GATES.md).

@@ -8,7 +8,7 @@ rtl/ppc_bus60x_line_read.sv | default: ; | unreachable: two-bit slot select is c
 rtl/ppc_icache.sv | default: begin | unreachable: every enum value has an arm
 rtl/ppc_icache_managed.sv | default: begin | unreachable: every enum value has an arm
 rtl/ppc_tlb_service.sv | default: response_d.unsupported = 1'b1; | reserved request kind; external management port is tied off here
-rtl/ppc_bat_memory_router.sv | LANE_FATAL: i_state_q <= LANE_FATAL; | needs an instruction transport error (TEA); tb_core_bus60x_ifetch_error and the TEA hook cover it
+rtl/ppc_bat_memory_router.sv | LANE_FATAL: i_state_q <= LANE_FATAL; | needs an instruction transport error (TEA); tb_core_bat_bus60x_errors covers it
 rtl/ppc_bat_memory_router.sv | ROUTE_IFETCH_FATAL: state_q <= ROUTE_IFETCH_FATAL; | needs an instruction transport error (TEA)
 rtl/ppc_bus60x.sv | BUS_ADDR_ABORT: begin | target protocol violation (AACK in the TS cycle); the stress targets are legal
 rtl/ppc_bus60x_line_read.sv | LINE_ADDR_ABORT: begin | target protocol violation (AACK in the TS cycle)
