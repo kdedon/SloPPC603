@@ -39,7 +39,9 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
-  parameter logic [3:0] PLL_CFG = 4'b0000
+  parameter logic [3:0] PLL_CFG = 4'b0000,
+  // Data cache BIU master and 60x snooping.
+  parameter bit ENABLE_DCACHE = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -158,6 +160,13 @@ module ppc_core_bat_cached_bus60x #(
   output logic        addr_oe_o,
   input  logic        aack_n_i,
   input  logic        artry_n_i,
+  // Snooped TS, A, TT and GBL; ARTRY drive for snoop responses.
+  input  logic        snoop_ts_n_i,
+  input  logic [31:0] snoop_a_i,
+  input  logic [4:0]  snoop_tt_i,
+  input  logic        snoop_gbl_n_i,
+  output logic        artry_n_o,
+  output logic        artry_oe_o,
   input  logic        dbg_n_i,
   input  logic        dbb_n_i,
   output logic        dbb_n_o,
@@ -479,7 +488,7 @@ module ppc_core_bat_cached_bus60x #(
   logic [3:0] biu_dmem_req_wstrb;
   ppc_pkg::dmem_attr_t biu_dmem_req_attr;
   logic biu_dmem_rsp_valid, biu_dmem_rsp_ready, biu_dmem_rsp_error;
-  ppc_dcache_slot dcache_slot (
+  ppc_dcache_slot #(.ENABLE_DCACHE(ENABLE_DCACHE)) dcache_slot (
     .clk_i, .rst_ni,
     .lsu_req_valid_i(dmem_req_valid), .lsu_req_ready_o(dmem_req_ready),
     .lsu_req_write_i(dmem_req_write), .lsu_req_addr_i(dmem_req_addr),
@@ -495,7 +504,12 @@ module ppc_core_bat_cached_bus60x #(
     .biu_rsp_rdata_i(biu_dmem_rsp_rdata), .biu_rsp_error_i(biu_dmem_rsp_error)
   );
 
-  ppc_biu #(.RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK)) biu (
+  // Cache ports are unused until the data-cache slot drives them.
+  /* verilator lint_off PINCONNECTEMPTY */
+  ppc_biu #(
+    .RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK),
+    .ENABLE_DCACHE(ENABLE_DCACHE)
+  ) biu (
     .clk_i, .rst_ni,
     .imem_req_valid_i(scalar_imem_req_valid),
     .imem_req_ready_o(scalar_imem_req_ready),
@@ -521,12 +535,25 @@ module ppc_core_bat_cached_bus60x #(
     .line_rsp_ready_i(cache_line_rsp_ready),
     .line_rsp_line_o(cache_line_rsp_data),
     .line_rsp_error_o(cache_line_rsp_error),
+    .dc_req_valid_i(1'b0), .dc_req_ready_o(), .dc_req_kind_i(3'b0),
+    .dc_req_tt_i(5'b0), .dc_req_addr_i(32'b0), .dc_req_be_i(8'b0),
+    .dc_req_wimg_i(4'b0), .dc_req_gbl_i(1'b0), .dc_req_cse_i(2'b0),
+    .dc_req_data_i(256'b0), .dc_rd_valid_o(), .dc_rd_data_o(),
+    .dc_rd_error_o(), .dc_wr_done_o(), .dc_wr_error_o(),
+    .dc_push_valid_i(1'b0), .dc_push_ready_o(), .dc_push_addr_i(32'b0),
+    .dc_push_data_i(256'b0), .dc_push_done_o(), .dc_push_error_o(),
+    .dc_snoop_valid_o(), .dc_snoop_addr_o(), .dc_snoop_tt_o(),
+    .dc_snoop_rsp_valid_i(1'b0), .dc_snoop_rsp_artry_i(1'b0),
+    .dc_snoop_rsp_push_i(1'b0),
     .busy_o(biu_busy), .protocol_error_o(biu_protocol_error),
+    .ts_n_i(snoop_ts_n_i), .a_i(snoop_a_i), .tt_i(snoop_tt_i),
+    .gbl_n_i(snoop_gbl_n_i), .artry_n_o, .artry_oe_o,
     .br_n_o, .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o, .ts_oe_o,
     .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o, .wt_n_o, .gbl_n_o,
     .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbb_n_i,
     .dbb_n_o, .dbb_oe_o, .d_i, .d_o, .d_oe_o, .ta_n_i, .drtry_n_i, .tea_n_i
   );
+  /* verilator lint_on PINCONNECTEMPTY */
 
   assign transport_ifetch_error = pimem_error_o || scalar_router_ifetch_error;
   assign ifetch_error_o = rst_ni && transport_ifetch_error;

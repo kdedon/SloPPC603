@@ -42,20 +42,20 @@ Status: **I** implemented, **T** tied with the stated behavior,
 | BR | out | 1 | I | Bus request. |
 | BG | in | 1 | I | Qualified address grant. |
 | ABB | bidir | 1 | I | Out: address tenure ownership with half-cycle negation. In: another master's tenure. |
-| TS | bidir | 1 | I out, T in | Out: transfer start. In: snoop start, ignored (no snooping). |
-| A[0:31] | bidir | 32 | I out, T in | Out: address. In: snoop address, ignored. |
+| TS | bidir | 1 | I out, I in with `ENABLE_DCACHE` | Out: transfer start. In: snoop start with GBL; ignored without `ENABLE_DCACHE`. |
+| A[0:31] | bidir | 32 | I out, I in with `ENABLE_DCACHE` | Out: address. In: snoop address. |
 | AP[0:3] | bidir | 4 | I out, T in | Out: odd parity per address byte. In: ignored (no snooping). |
 | APE | out, OD | 1 | T | Never asserted: no snoop addresses are checked. |
-| TT[0:4] | bidir | 5 | I out, T in | Out: transfer type. In: snoop type, ignored. |
+| TT[0:4] | bidir | 5 | I out, I in with `ENABLE_DCACHE` | Out: transfer type. In: snoop type. |
 | TSIZ[0:2] | out | 3 | I | Transfer size. |
 | TBST | bidir | 1 | I out, T in | Out: burst. In: snoop attribute, ignored. |
 | TC[0:1] | out | 2 | I | Transfer code. |
 | CI | out | 1 | I | Caching inhibited. |
 | WT | out | 1 | I | Write-through. |
-| GBL | bidir | 1 | I out, T in | Out: global. In: snoop qualifier, ignored. |
+| GBL | bidir | 1 | I out, I in with `ENABLE_DCACHE` | Out: global. In: snoop qualifier. |
 | CSE[0:1] | out | 2 | I | Cache set entry. |
 | AACK | in | 1 | I | Address acknowledge. |
-| ARTRY | bidir | 1 | I in, T out | In: retry. Out: never driven (no snoop response). |
+| ARTRY | bidir | 1 | I in, I out with `ENABLE_DCACHE` | In: retry. Out: snoop retry from TS+2 through AACK+1, then the shared release; never driven without `ENABLE_DCACHE`. |
 
 XATS is not a 603e pin: the 603e reuses its position for CSE1 (UM §1.1.2.1.1).
 
@@ -131,7 +131,8 @@ implemented; HID0[EICE] is stored and inert.
 
 54 signal groups, as in the BUS_SPEC inventory (a bus counts once, DH and DL
 separately, TEST[0:2] as one): 37 implemented, 8 of them with a tied half
-(TS, A, AP, TT, TBST, GBL and DP inputs; ARTRY output); 6 tied (APE, DBWO,
+(TS, A, AP, TT, TBST, GBL and DP inputs; ARTRY output), of which TS, A, TT,
+GBL and ARTRY are implemented with `ENABLE_DCACHE`; 6 tied (APE, DBWO,
 DPE, QREQ, QACK, CLK_OUT); 6 excluded (TRST, TCK, TMS, TDI, TDO, TEST); 5
 power. `ppc603e` has 69 port declarations, 292 bits.
 
@@ -180,7 +181,7 @@ there is no COP port to read it.
 | IMMU, DMMU (BATs, segments, TLBs, table-search support) | `ppc_core_bat`, `ppc_bat_memory_router`, `ppc_bat_translate`, `ppc_bat_service`, `ppc_segment_registers`, `ppc_tlb_ram`, `ppc_tlb_service`, `ppc_micro_tlb`, `ppc_miss_derive` |
 | Instruction cache | `ppc_icache`, `ppc_icache_managed`, `ppc_ram_sdp`, `ppc_ram_lut` |
 | Data cache | `ppc_dcache_slot` (pass-through; see below) |
-| Bus interface unit | `ppc_biu`: `ppc_bus60x_arbiter`, `ppc_bus60x` (scalar master), `ppc_bus60x_line_read` (line master), `ppc_bus60x_two_master` with `ppc_bus60x_master_select` |
+| Bus interface unit | `ppc_biu`: `ppc_bus60x_arbiter`, `ppc_bus60x` (scalar master), `ppc_bus60x_line_read` (line master), `ppc_bus60x_two_master` with `ppc_bus60x_master_select`; with `ENABLE_DCACHE`, `ppc_bus60x_cache_master`, `ppc_bus60x_snoop` and an outer `ppc_bus60x_two_master` ([DATA_CACHE_INTEGRATION.md](DATA_CACHE_INTEGRATION.md#biu-and-snooping)) |
 | FPU | absent: FP instructions take FP unavailable, as on the EC603e |
 | Power management | absent (QREQ tied) |
 | JTAG/COP | absent |
@@ -214,12 +215,11 @@ BIU side: the same request and response fields toward `ppc_biu`'s scalar
 data port (`biu_req_*`, `biu_rsp_*`), used for cache-inhibited and
 write-through traffic.
 
-A cache in the slot also needs, from the BIU, a data line-read port (the
-existing line master with `req_instruction_i=0`, TT 01110, shared with the
-I-cache fill by an arbiter), a line-write port for castouts (burst write,
-TT 00110; the BIU has none yet), and, for coherence, a snoop port driven by
-the TS/A/TT/GBL inputs with an ARTRY response. Those ports belong to the
-cache's integration round.
+The cache's bus side is built: `ppc_biu` with `ENABLE_DCACHE=1` has the
+cache's request, push and snoop ports (`dc_*`) and drives ARTRY from the
+TS/A/TT/GBL inputs, which `ppc603e` and `ppc_core_bat_cached_bus60x` pass
+through. The core top ties the `dc_*` ports idle until the cache is in the
+slot. See [DATA_CACHE_INTEGRATION.md](DATA_CACHE_INTEGRATION.md#biu-and-snooping).
 
 ## Verification
 

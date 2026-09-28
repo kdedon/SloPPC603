@@ -1478,3 +1478,29 @@ test-dcache-mutations:
 	  fi; \
 	  echo "mutation $$m detected: $$(grep -m1 -o 'FAIL: .*' $(BUILD_DIR)/dcache-m$$m.log)"; \
 	done
+
+# Data cache BIU master and 60x snooping: the standalone cache behind the BIU
+# with a second bus master, seeded bus timing and a coherent image, plus
+# injected defects the bench must reject (BIU mutations, and the cache
+# answering a modified snoop hit without a push).
+BIU_DCACHE_RTL := ../rtl/ppc_pkg.sv ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv ../rtl/ppc_bus60x_line_read.sv ../rtl/ppc_bus60x_master_select.sv ../rtl/ppc_bus60x_two_master.sv ../rtl/ppc_bus60x_cache_master.sv ../rtl/ppc_bus60x_snoop.sv ../rtl/ppc_biu.sv $(DCACHE_RTL)
+BIU_DCACHE_SEEDS := 2 3 4 5
+BIU_DCACHE_MUTATIONS := BIU_MUTATION=1 BIU_MUTATION=2 BIU_MUTATION=3 BIU_MUTATION=4 DC_MUTATION=2
+.PHONY: test-biu-dcache-snoop test-biu-dcache-snoop-mutations lint-biu-dcache
+test: test-biu-dcache-snoop test-biu-dcache-snoop-mutations
+lint: lint-biu-dcache
+lint-biu-dcache:
+	$(VERILATOR) --lint-only -Wall --top-module ppc_biu "-GENABLE_DCACHE=1'b1" $(BIU_DCACHE_RTL)
+test-biu-dcache-snoop:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_biu_dcache_snoop --Mdir $(BUILD_DIR)/biu-dcache-snoop $(BIU_DCACHE_RTL) ../tb/tb_biu_dcache_snoop.sv
+	./$(BUILD_DIR)/biu-dcache-snoop/Vtb_biu_dcache_snoop $(SIM_ARGS) +seed=1
+	for seed in $(BIU_DCACHE_SEEDS); do ./$(BUILD_DIR)/biu-dcache-snoop/Vtb_biu_dcache_snoop $(SIM_ARGS) +seed=$$seed || exit 1; done
+test-biu-dcache-snoop-mutations:
+	mkdir -p $(BUILD_DIR)
+	for m in $(BIU_DCACHE_MUTATIONS); do \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_biu_dcache_snoop -G$$m --Mdir $(BUILD_DIR)/biu-dcache-$$m $(BIU_DCACHE_RTL) ../tb/tb_biu_dcache_snoop.sv > $(BUILD_DIR)/biu-dcache-$$m.build.log 2>&1 || { cat $(BUILD_DIR)/biu-dcache-$$m.build.log; exit 1; }; \
+	  if ./$(BUILD_DIR)/biu-dcache-$$m/Vtb_biu_dcache_snoop $(SIM_ARGS) +seed=1 > $(BUILD_DIR)/biu-dcache-$$m.log 2>&1; then \
+	    echo "FAIL: mutation $$m was not detected"; exit 1; \
+	  fi; \
+	  echo "mutation $$m detected: $$(grep -m1 -o 'FAIL: .*' $(BUILD_DIR)/biu-dcache-$$m.log)"; \
+	done

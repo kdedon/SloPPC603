@@ -501,6 +501,9 @@ module ppc_translated_measure (
     .timebase_enable_i(timebase_enable_i_ibq),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),
+    // No data cache in this profile: nothing to snoop.
+    .snoop_ts_n_i(1'b1), .snoop_a_i(32'b0), .snoop_tt_i(5'b0),
+    .snoop_gbl_n_i(1'b1), .artry_n_o(), .artry_oe_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken_o_od),
     .decrementer_pc_o(decrementer_pc_o_od),

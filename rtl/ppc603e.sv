@@ -14,7 +14,10 @@ module ppc603e #(
   parameter logic [3:0] PLL_CFG = 4'b0000,
   // Hard reset clears HID0, ICE included (UM Table 4-8). 1 starts with the
   // instruction cache on, for images that expect it.
-  parameter bit RESET_ICACHE_ENABLE = 1'b0
+  parameter bit RESET_ICACHE_ENABLE = 1'b0,
+  // Data cache bus master and snooping: TS, A, TT and GBL are snooped and
+  // ARTRY answers from the cache.
+  parameter bit ENABLE_DCACHE = 1'b0
 ) (
   // Clocks.
   input  logic        sysclk,
@@ -204,6 +207,7 @@ module ppc603e #(
   logic [31:0] core_a;
   logic [4:0] core_tt;
   logic core_tbst_n, core_ci_n, core_wt_n, core_gbl_n, core_addr_oe;
+  logic core_artry_n, core_artry_oe;
   logic [2:0] core_tsiz;
   logic [1:0] core_tc, core_cse;
   logic core_dbb_n, core_dbb_oe, core_d_oe;
@@ -230,6 +234,7 @@ module ppc603e #(
     .ENABLE_MULTIPLE_STRING(1'b1), .ENABLE_RESERVATION(1'b1),
     .ENABLE_MISALIGNED_ACCESS(1'b1), .ENABLE_MACHINE_CHECK(1'b1),
     .ENABLE_DEBUG_EXCEPTIONS(1'b1), .ENABLE_FULL_DECODE(1'b1),
+    .ENABLE_DCACHE(ENABLE_DCACHE),
     .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG)
   ) cpu (
     .clk_i(sysclk), .rst_ni(core_rst_n),
@@ -281,6 +286,9 @@ module ppc603e #(
     .a_o(core_a), .tt_o(core_tt), .tbst_n_o(core_tbst_n), .tsiz_o(core_tsiz),
     .tc_o(core_tc), .ci_n_o(core_ci_n), .wt_n_o(core_wt_n), .gbl_n_o(core_gbl_n),
     .cse_o(core_cse), .addr_oe_o(core_addr_oe), .aack_n_i, .artry_n_i,
+    .snoop_ts_n_i(ts_n_i), .snoop_a_i(a_i), .snoop_tt_i(tt_i),
+    .snoop_gbl_n_i(gbl_n_i), .artry_n_o(core_artry_n),
+    .artry_oe_o(core_artry_oe),
     .dbg_n_i, .dbb_n_i, .dbb_n_o(core_dbb_n), .dbb_oe_o(core_dbb_oe),
     .d_i({dh_i, dl_i}), .d_o(core_d_o), .d_oe_o(core_d_oe),
     .ta_n_i, .drtry_n_i, .tea_n_i
@@ -317,10 +325,10 @@ module ppc603e #(
   assign dp_o = data_parity(core_d_o);
   assign data_oe_o = core_d_oe && !dbdis_q && !release_outputs;
 
-  // No snooping: ARTRY is never driven and APE never asserts. No inbound
-  // parity checking: DPE never asserts.
-  assign artry_n_o = 1'b1;
-  assign artry_oe_o = 1'b0;
+  // ARTRY answers snoops only with ENABLE_DCACHE. APE never asserts. No
+  // inbound parity checking: DPE never asserts.
+  assign artry_n_o = core_artry_n;
+  assign artry_oe_o = core_artry_oe && !release_outputs;
   assign ape_n_o = 1'b1;
   assign dpe_n_o = 1'b1;
   assign ckstp_out_n_o = !checkstop_q;
@@ -332,10 +340,10 @@ module ppc603e #(
   assign tdo_o = 1'b0;
   assign tdo_oe_o = 1'b0;
 
-  // Snoop inputs, inbound parity, DBWO (one tenure outstanding), JTAG and
-  // LSSD inputs have no function here.
+  // Inbound parity, TBST, DBWO (one tenure outstanding), JTAG and LSSD
+  // inputs have no function here.
   logic unused_pins;
-  assign unused_pins = ^{ts_n_i, a_i, ap_i, tt_i, tbst_n_i, gbl_n_i, dp_i,
+  assign unused_pins = ^{ap_i, tbst_n_i, dp_i,
                          dbwo_n_i, tck_i, tms_i, tdi_i, trst_n_i, test_i,
                          pin_status.smi_taken, retire_valid, retire, halted};
 endmodule
