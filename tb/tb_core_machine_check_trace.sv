@@ -2,6 +2,8 @@
 // recovery, and priority against EXT, DEC, ISI, DSI and TLB misses. Programs
 // log every exception entry (vector, SRR0, SRR1, MSR) through a common
 // handler; the bench compares the log with the expected entry list.
+// Cracked stmw/lswi/stswi cases check that trace and IABR act once per
+// instruction and that a machine check or DSI mid-sequence restarts it.
 /* verilator lint_off BLKSEQ */
 module tb_core_machine_check_trace;
   import ppc_pkg::*;
@@ -42,7 +44,8 @@ module tb_core_machine_check_trace;
     .ENABLE_TIMERS(1'b1), .ENABLE_TGPR(1'b1), .ENABLE_SDR1(1'b1),
     .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_TLB_LOAD(1'b1),
     .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
-    .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut (
+    .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1),
+    .ENABLE_MULTIPLE_STRING(1'b1)) dut (
     .clk_i(clk), .rst_ni(rst_n),
     .bat_csr_req_valid_o(unused_bat_csr[47]), .bat_csr_req_ready_i(1'b0),
     .bat_csr_req_write_o(unused_bat_csr[46]), .bat_csr_req_spr_o(unused_bat_csr[45:36]),
@@ -112,6 +115,9 @@ module tb_core_machine_check_trace;
   logic [31:0] irq_on_data_addr = DC, irq_on_retire_pc = DC, irq_on_mc_head_pc = DC;
   logic expect_halt = 1'b0, open_log = 1'b0;
   int mc_retires = 0;
+  // Retirements per PC: all micro-ops, and final ones (seq_partial clear).
+  int pc_retires [logic [31:0]];
+  int pc_finals [logic [31:0]];
 
   function automatic int unsigned rnd();
     rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
@@ -188,6 +194,13 @@ module tb_core_machine_check_trace;
     e.vector = vector; e.srr0 = srr0; e.srr1 = srr1; e.msr = msr;
     expected.push_back(e);
   endtask
+  function automatic int retires_at(input logic [31:0] pc, input bit finals);
+    if (finals) return (pc_finals.exists(pc) != 0) ? pc_finals[pc] : 0;
+    return (pc_retires.exists(pc) != 0) ? pc_retires[pc] : 0;
+  endfunction
+  function automatic logic [31:0] asm_string_imm(input int xo, input int rt, input int ra, input int nb);
+    return (32'd31 << 26) | (32'(rt) << 21) | (32'(ra) << 16) | (32'(nb) << 11) | (32'(xo) << 1);
+  endfunction
   function automatic logic [31:0] mem_word(input logic [31:0] address);
     return (dmem.exists(address) != 0) ? dmem[address] : 32'b0;
   endfunction
@@ -195,7 +208,7 @@ module tb_core_machine_check_trace;
   task automatic start_scenario;
     rst_n = 1'b0;
     prog.delete(); dmem.delete(); ifault.delete(); dfault.delete();
-    expected.delete();
+    expected.delete(); pc_retires.delete(); pc_finals.delete();
     tick_en = 1'b0; expect_halt = 1'b0; open_log = 1'b0; mc_retires = 0;
     irq_on_data_addr = DC; irq_on_retire_pc = DC; irq_on_mc_head_pc = DC;
     scenarios++;
@@ -344,6 +357,11 @@ module tb_core_machine_check_trace;
                 "machine-checked access wrote a register");
         end
         if (retired.pc == irq_on_retire_pc) irq_request = 1'b1;
+        pc_retires[retired.pc] = (pc_retires.exists(retired.pc) != 0) ?
+          pc_retires[retired.pc] + 1 : 1;
+        if (!retired.seq_partial)
+          pc_finals[retired.pc] = (pc_finals.exists(retired.pc) != 0) ?
+            pc_finals[retired.pc] + 1 : 1;
       end
       if (checkstop) check(dut.frontend_fence, "checkstop fences the front end");
     end
@@ -626,6 +644,124 @@ module tb_core_machine_check_trace;
     expect_entry(32'hd00, 32'h120, 32'h0000_1072, 32'h0000_1040);
     run_scenario(20000);
     check(mem_word(DATA + 16) == 32'h1122_3344, "retried translated load");
+
+    // 12. Machine check in the middle of stmw and lswi restarts the whole
+    // instruction at SRR0; DSI in the middle of stmw reports it at SRR0.
+    start_scenario();
+    load32(3, 32'h0000_1042);                 // ME IP RI
+    emit(asm_mtmsr(3));
+    emit(asm_li(4, int'(DATA + 32'h40)));
+    emit(asm_li(27, 'ha));
+    emit(asm_li(28, 'hb));
+    emit(asm_d(47, 27, 4, 0));         // 0x1c stmw r27,0(r4)
+    emit(asm_li(5, int'(DATA + 32'h80)));
+    emit(asm_string_imm(597, 20, 5, 12));     // 0x24 lswi r20,r5,12
+    emit(asm_li(6, int'(DATA + 32'hc0)));
+    emit(asm_string_imm(725, 20, 6, 12));     // 0x2c stswi r20,r6,12
+    emit(asm_li(7, int'(DATA + 32'h100)));
+    emit(asm_d(47, 27, 7, 0));         // 0x34 stmw r27,0(r7)
+    finish_program();
+    dmem[DATA + 32'h80] = 32'ha1a2_a3a4;
+    dmem[DATA + 32'h84] = 32'hb1b2_b3b4;
+    dmem[DATA + 32'h88] = 32'hc1c2_c3c4;
+    dfault[DATA + 32'h48] = DATA_MACHINE_CHECK;
+    dfault[DATA + 32'h84] = DATA_MACHINE_CHECK;
+    dfault[DATA + 32'h104] = DATA_DSI_PROTECTION;
+    expect_entry(32'h200, 32'h1c, 32'h0004_1042, 32'h0000_0040);
+    expect_entry(32'h200, 32'h24, 32'h0004_1042, 32'h0000_0040);
+    expect_entry(32'h300, 32'h34, 32'h0000_1042, 32'h0000_1040);
+    run_scenario(20000);
+    check(mem_word(DATA + 32'h40) == 32'ha && mem_word(DATA + 32'h44) == 32'hb &&
+          mem_word(DATA + 32'h48) == 32'h40 && mem_word(DATA + 32'h4c) == LOG + 32'd16,
+          "stmw restarted after machine check");
+    check(mem_word(DATA + 32'hc0) == 32'ha1a2_a3a4 && mem_word(DATA + 32'hc4) == 32'hb1b2_b3b4 &&
+          mem_word(DATA + 32'hc8) == 32'hc1c2_c3c4, "lswi restarted after machine check");
+    check(mem_word(DATA + 32'h100) == 32'ha && mem_word(DATA + 32'h104) == 32'h0,
+          "stmw stopped at the DSI word");
+    check(mc_retires == 2, "two machine-checked micro-ops");
+    check(retires_at(32'h1c, 1'b0) == 8 && retires_at(32'h1c, 1'b1) == 1,
+          "stmw: 3 micro-ops to the machine check, 5 on restart");
+    check(retires_at(32'h24, 1'b0) == 5 && retires_at(32'h24, 1'b1) == 1,
+          "lswi: 2 micro-ops to the machine check, 3 on restart");
+    check(retires_at(32'h34, 1'b0) == 2 && retires_at(32'h34, 1'b1) == 0,
+          "stmw: DSI on its second micro-op, skipped by the handler");
+
+    // 13. IABR on stmw traps once, before its first micro-op.
+    start_scenario();
+    load32(3, 32'h0000_1042);
+    emit(asm_mtmsr(3));
+    emit(asm_li(4, int'(DATA + 32'h40)));     // 0x10
+    emit(asm_li(27, 1));
+    emit(asm_li(28, 2));
+    emit(asm_li(3, 'h42));
+    emit(asm_spr(1'b1, 3, 1010));
+    emit(ASM_ISYNC);
+    emit(b_rel(24, 1'b0));                    // 0x28 -> 0x40
+    org(32'h40);
+    emit(asm_d(47, 27, 4, 0));         // 0x40 breakpoint
+    finish_program();
+    expect_entry(32'h1300, 32'h40, 32'h0000_1042, 32'h0000_1040);
+    run_scenario(20000);
+    check(mem_word(DATA + 32'h40) == 1 && mem_word(DATA + 32'h44) == 2, "breakpointed stmw executes");
+    check(retires_at(32'h40, 1'b0) == 6 && retires_at(32'h40, 1'b1) == 2,
+          "IABR entry, then five stmw micro-ops");
+
+    // 14. Single step over stmw and stswi: one trace per instruction. A
+    // machine check in the middle of the stepped stmw is not traced; its
+    // restart is.
+    for (int tea = 0; tea < 2; tea++) begin
+      start_scenario();
+      emit(asm_li(4, int'(DATA + 32'h40)));
+      emit(asm_li(5, int'(DATA + 32'h80)));
+      emit(asm_li(27, 5));
+      load32(20, 32'h1122_3344);
+      load32(21, 32'h5566_7788);
+      load32(3, 32'h0000_1442);               // ME SE IP RI
+      emit(asm_spr(1'b1, 3, 27));
+      emit(asm_li(3, 'h100));
+      emit(asm_spr(1'b1, 3, 26));
+      emit(ASM_RFI);
+      org(32'h100);
+      emit(asm_d(47, 27, 4, 0));       // 0x100 stmw r27,0(r4)
+      emit(asm_string_imm(725, 20, 5, 7));    // 0x104 stswi r20,r5,7
+      load32(3, 32'h0000_1042);               // 0x108
+      emit(asm_mtmsr(3));                     // 0x110
+      finish_program();
+      if (tea != 0) begin
+        dfault[DATA + 32'h48] = DATA_MACHINE_CHECK;
+        expect_entry(32'h200, 32'h100, 32'h0004_1442, 32'h0000_0040);
+      end
+      expect_entry(32'hd00, 32'h104, 32'h0000_1442, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h108, 32'h0000_1442, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h10c, 32'h0000_1442, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h110, 32'h0000_1442, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h114, 32'h0000_1042, 32'h0000_1040);
+      run_scenario(20000);
+      check(mem_word(DATA + 32'h40) == 5 && mem_word(DATA + 32'h80) == 32'h1122_3344 &&
+            mem_word(DATA + 32'h84) == 32'h5566_7700, "stepped stmw and stswi stored");
+      check(retires_at(32'h100, 1'b0) == (tea != 0 ? 8 : 5) && retires_at(32'h100, 1'b1) == 1,
+            "stepped stmw micro-ops");
+      check(retires_at(32'h104, 1'b0) == 2 && retires_at(32'h104, 1'b1) == 1,
+            "stepped stswi micro-ops");
+    end
+
+    // 15. Negative control: the same stmw and stswi with SE clear retire the
+    // same micro-ops and take no trace.
+    start_scenario();
+    emit(asm_li(4, int'(DATA + 32'h40)));
+    emit(asm_li(5, int'(DATA + 32'h80)));
+    load32(3, 32'h0000_1042);
+    emit(asm_spr(1'b1, 3, 27));
+    emit(asm_li(3, 'h100));
+    emit(asm_spr(1'b1, 3, 26));
+    emit(ASM_RFI);
+    org(32'h100);
+    emit(asm_d(47, 27, 4, 0));         // 0x100
+    emit(asm_string_imm(725, 20, 5, 7));      // 0x104
+    finish_program();
+    run_scenario(20000);
+    check(retires_at(32'h100, 1'b0) == 5 && retires_at(32'h104, 1'b0) == 2,
+          "untraced cracked micro-ops");
 
     $display("PASS core machine check, trace and IABR: scenarios=%0d checks=%0d retires=%0d cycles=%0d",
              scenarios, checks, retires, cycles);
