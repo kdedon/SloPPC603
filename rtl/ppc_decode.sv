@@ -10,7 +10,10 @@ module ppc_decode #(
   parameter bit ENABLE_TLB_LOAD = 1'b0,
   parameter bit ENABLE_SDR1 = 1'b0,
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
-  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  parameter bit ENABLE_BYTE_REVERSE = 1'b0,
+  parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
+  parameter bit ENABLE_RESERVATION = 1'b0
 ) (
   input logic [31:0] insn_i,
   output ppc_pkg::uop_t uop_o
@@ -285,6 +288,22 @@ module ppc_decode #(
           endcase
           uop_o.mem_signed = (insn_i[31:26] == 6'd42) ||
                               (insn_i[31:26] == 6'd43);
+        end
+      end
+      6'd46, 6'd47: begin
+        // lmw with rA in the loaded range (rA >= rD, including rA = rD = 0)
+        // is an invalid form (UM 2.3.4.3.6).
+        if (ENABLE_MULTIPLE_STRING && ENABLE_SUPERVISOR_EXCEPTIONS &&
+            (insn_i[26] || (insn_i[20:16] < insn_i[25:21]))) begin
+          uop_o.illegal = 1'b0;
+          uop_o.special_op = insn_i[26] ? SPECIAL_STORE : SPECIAL_LOAD;
+          uop_o.gpr_write = !insn_i[26];
+          uop_o.zero_a = insn_i[20:16] == 5'b0;
+          uop_o.use_imm = 1'b1;
+          uop_o.imm = {{16{insn_i[15]}}, insn_i[15:0]};
+          uop_o.mem_size = MEM_WORD;
+          uop_o.mem_left = 1'b1;
+          uop_o.mem_seq = SEQ_MULTIPLE;
         end
       end
       6'd31: begin
@@ -646,6 +665,47 @@ module ppc_decode #(
                 endcase
                 uop_o.mem_signed = (insn_i[10:1] == 10'd343) ||
                                     (insn_i[10:1] == 10'd375);
+              end
+            end
+            10'd597, 10'd725, 10'd533, 10'd661: begin
+              // lswi/stswi/lswx/stswx. The 603e accepts rA or rB in the
+              // loaded range and a zero XER count (UM 2.3.4.3.7).
+              if (ENABLE_MULTIPLE_STRING && ENABLE_SUPERVISOR_EXCEPTIONS &&
+                  !insn_i[0]) begin
+                uop_o.illegal = 1'b0;
+                uop_o.special_op = insn_i[8] ? SPECIAL_STORE : SPECIAL_LOAD;
+                uop_o.gpr_write = !insn_i[8];
+                uop_o.zero_a = insn_i[20:16] == 5'b0;
+                uop_o.use_imm = insn_i[7];
+                uop_o.mem_size = MEM_WORD;
+                uop_o.mem_left = 1'b1;
+                uop_o.mem_seq = insn_i[7] ? SEQ_STRING_IMM : SEQ_STRING_INDEXED;
+              end
+            end
+            10'd20, 10'd150: begin
+              // lwarx has Rc reserved; stwcx. exists only with Rc = 1.
+              if (ENABLE_RESERVATION && ENABLE_SUPERVISOR_EXCEPTIONS &&
+                  (insn_i[0] == insn_i[8])) begin
+                uop_o.illegal = 1'b0;
+                uop_o.special_op = insn_i[8] ? SPECIAL_STORE : SPECIAL_LOAD;
+                uop_o.gpr_write = !insn_i[8];
+                uop_o.zero_a = insn_i[20:16] == 5'b0;
+                uop_o.mem_size = MEM_WORD;
+                uop_o.mem_reserve = !insn_i[8];
+                uop_o.mem_conditional = insn_i[8];
+                uop_o.needs_flags = insn_i[8];
+                uop_o.write_cr_field = insn_i[8];
+              end
+            end
+            10'd790, 10'd534, 10'd918, 10'd662: begin
+              if (ENABLE_BYTE_REVERSE && ENABLE_SUPERVISOR_EXCEPTIONS &&
+                  !insn_i[0]) begin
+                uop_o.illegal = 1'b0;
+                uop_o.special_op = insn_i[8] ? SPECIAL_STORE : SPECIAL_LOAD;
+                uop_o.gpr_write = !insn_i[8];
+                uop_o.zero_a = insn_i[20:16] == 5'b0;
+                uop_o.mem_size = insn_i[9] ? MEM_HALF : MEM_WORD;
+                uop_o.mem_reverse = 1'b1;
               end
             end
             default: ;

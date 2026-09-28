@@ -14,7 +14,10 @@ module ppc_special #(
   parameter bit ENABLE_SDR1 = 1'b0,
   parameter bit ENABLE_TGPR = 1'b0,
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
-  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  parameter bit ENABLE_RESERVATION = 1'b0,
+  // Any-offset 1..4 byte accesses, split across two words when needed.
+  parameter bit ENABLE_UNALIGNED_DATAPATH = 1'b0
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -186,9 +189,17 @@ module ppc_special #(
   result_packet_t memory_result_q;
   logic commit_match, result_fire, request_fire, response_fire;
   logic [31:0] exec_value;
-  logic [7:0] load_byte;
-  logic [15:0] load_half;
   logic misaligned;
+  // Access geometry: the second word of a split access is beat 1.
+  logic [2:0] mem_nbytes;
+  logic [3:0] mem_mask;
+  logic mem_crossing, beat_q, beat_continue, mem_skip;
+  logic [31:0] beat0_data_q, access_ea, alignment_dar;
+  logic [31:0] store_source, store_left, load_left, load_right, load_value;
+  logic [63:0] store_window, load_window;
+  logic [7:0] strobe_window;
+  // lwarx reservation; only stwcx. clears it (no other bus master).
+  logic reserve_q, conditional_probe;
   logic branch_ctr_ok, branch_cond_ok, branch_redirect_taken;
   logic [31:0] branch_ctr_after;
   logic cr_logic_a, cr_logic_b, cr_logic_value;
@@ -497,61 +508,67 @@ module ppc_special #(
     end
   end
 
+  function automatic logic [31:0] swap_bytes(input logic [31:0] value,
+                                             input logic [2:0] count);
+    return (count == 3'd2) ? {16'b0, value[7:0], value[15:8]} :
+           {value[7:0], value[15:8], value[23:16], value[31:24]};
+  endfunction
   always_comb begin
-    misaligned = ((uop_q.mem_size == MEM_WORD) && (ea_q[1:0] != 0)) ||
-                 ((uop_q.mem_size == MEM_HALF) && ea_q[0]);
+    case (uop_q.mem_size)
+      MEM_BYTE: mem_nbytes = 3'd1;
+      MEM_HALF: mem_nbytes = 3'd2;
+      default: mem_nbytes = 3'd4;
+    endcase
+    if (uop_q.mem_left && (uop_q.mem_bytes != 2'd0))
+      mem_nbytes = {1'b0, uop_q.mem_bytes};
+    case (mem_nbytes)
+      3'd1: mem_mask = 4'b1000;
+      3'd2: mem_mask = 4'b1100;
+      3'd3: mem_mask = 4'b1110;
+      default: mem_mask = 4'b1111;
+    endcase
+    mem_crossing = ENABLE_UNALIGNED_DATAPATH &&
+                   (({1'b0, ea_q[1:0]} + mem_nbytes) > 3'd4);
+    misaligned = !ENABLE_UNALIGNED_DATAPATH &&
+                 (((uop_q.mem_size == MEM_WORD) && (ea_q[1:0] != 0)) ||
+                  ((uop_q.mem_size == MEM_HALF) && ea_q[0]));
+    // Without translation a stwcx. lacking the reservation cannot fault.
+    conditional_probe = ENABLE_RESERVATION && uop_q.mem_conditional && !reserve_q;
+    mem_skip = uop_q.mem_skip || (conditional_probe && !ENABLE_LIVE_CONTEXT);
+    access_ea = beat_q ? {ea_q[31:2] + 30'd1, 2'b0} : ea_q;
+    // UM 4.5.6.2: lmw/stmw alignment saves EA + 4 in DAR.
+    alignment_dar = ea_q + ((uop_q.mem_seq == SEQ_MULTIPLE) ? 32'd4 : 32'd0);
+
+    // Bytes move left-justified through a two-word window at the EA offset.
+    store_source = uop_q.mem_reverse ? swap_bytes(c_q, mem_nbytes) : c_q;
+    store_left = uop_q.mem_left ? c_q : (store_source << {3'd4 - mem_nbytes, 3'b0});
+    store_window = {store_left, 32'b0} >> {ea_q[1:0], 3'b0};
+    strobe_window = {mem_mask, 4'b0} >> ea_q[1:0];
+    load_window = beat_q ? {beat0_data_q, dmem_rsp_rdata_i} : {dmem_rsp_rdata_i, 32'b0};
+    load_left = 32'((load_window << {ea_q[1:0], 3'b0}) >> 32) &
+                {{8{mem_mask[3]}}, {8{mem_mask[2]}}, {8{mem_mask[1]}}, {8{mem_mask[0]}}};
+    load_right = load_left >> {3'd4 - mem_nbytes, 3'b0};
+    if (uop_q.mem_left) load_value = load_left;
+    else if (uop_q.mem_reverse) load_value = swap_bytes(load_right, mem_nbytes);
+    else if (uop_q.mem_signed) load_value = {{16{load_right[15]}}, load_right[15:0]};
+    else load_value = load_right;
+
     dmem_req_valid_o = rst_ni && (state_q == S_MEM_OFFER);
     dmem_req_write_o = (uop_q.special_op == SPECIAL_STORE);
-    dmem_req_probe_o = ENABLE_CACHE_INSTRUCTIONS && uop_q.cache_probe;
-    dmem_req_addr_o = {ea_q[31:2], 2'b0};
-    dmem_req_wdata_o = '0;
-    dmem_req_wstrb_o = '0;
-    case (uop_q.mem_size)
-      MEM_BYTE: begin
-        case (ea_q[1:0])
-          2'd0: begin
-            dmem_req_wdata_o = {c_q[7:0], 24'b0};
-            dmem_req_wstrb_o = 4'b1000;
-          end
-          2'd1: begin
-            dmem_req_wdata_o = {8'b0, c_q[7:0], 16'b0};
-            dmem_req_wstrb_o = 4'b0100;
-          end
-          2'd2: begin
-            dmem_req_wdata_o = {16'b0, c_q[7:0], 8'b0};
-            dmem_req_wstrb_o = 4'b0010;
-          end
-          default: begin
-            dmem_req_wdata_o = {24'b0, c_q[7:0]};
-            dmem_req_wstrb_o = 4'b0001;
-          end
-        endcase
-      end
-      MEM_HALF: begin
-        dmem_req_wdata_o = ea_q[1] ? {16'b0, c_q[15:0]} :
-                                           {c_q[15:0], 16'b0};
-        dmem_req_wstrb_o = ea_q[1] ? 4'b0011 : 4'b1100;
-      end
-      default: begin
-        dmem_req_wdata_o = c_q;
-        dmem_req_wstrb_o = 4'b1111;
-      end
-    endcase
+    dmem_req_probe_o = (ENABLE_CACHE_INSTRUCTIONS && uop_q.cache_probe) ||
+                       (conditional_probe && ENABLE_LIVE_CONTEXT);
+    dmem_req_addr_o = {access_ea[31:2], 2'b0};
+    dmem_req_wdata_o = beat_q ? store_window[31:0] : store_window[63:32];
+    dmem_req_wstrb_o = conditional_probe ? 4'b0 :
+                       beat_q ? strobe_window[3:0] : strobe_window[7:4];
     dmem_rsp_ready_o = rst_ni && ((state_q == S_MEM_WAIT) ||
                                   (state_q == S_MEM_DRAIN));
     store_irrevocable_o = rst_ni &&
       (uop_q.special_op == SPECIAL_STORE) &&
       ((state_q == S_MEM_OFFER) || (state_q == S_MEM_WAIT) ||
        (state_q == S_MEM_RESULT) || (state_q == S_HOLD));
-
-    case (ea_q[1:0])
-      2'd0: load_byte = dmem_rsp_rdata_i[31:24];
-      2'd1: load_byte = dmem_rsp_rdata_i[23:16];
-      2'd2: load_byte = dmem_rsp_rdata_i[15:8];
-      default: load_byte = dmem_rsp_rdata_i[7:0];
-    endcase
-    load_half = ea_q[1] ? dmem_rsp_rdata_i[15:0] :
-                              dmem_rsp_rdata_i[31:16];
+    beat_continue = !beat_q && mem_crossing && !dmem_rsp_error_i &&
+                    (dmem_rsp_fault_i == DATA_OK);
   end
 
   // The request is held until ready reports the invalidation done.
@@ -595,7 +612,7 @@ module ppc_special #(
      (miss_context.dr == msr_o[4]) &&
      (miss_context.pr == msr_o[14]) &&
      !miss_context.write && !miss_context.sr[28]) :
-    ((miss_context.ea == {ea_q[31:2], 2'b0}) &&
+    ((miss_context.ea == {access_ea[31:2], 2'b0}) &&
      (miss_context.ir == msr_o[5]) && miss_context.dr &&
      (miss_context.dr == msr_o[4]) &&
      (miss_context.pr == msr_o[14]) &&
@@ -888,13 +905,14 @@ module ppc_special #(
           end
         end
         S_MEM_PREP: begin
-          if (misaligned) state_d = S_MEM_RESULT;
+          if (misaligned || mem_skip) state_d = S_MEM_RESULT;
           else if ((uop_q.special_op == SPECIAL_LOAD) || store_authorize_i)
             state_d = S_MEM_OFFER;
         end
         S_MEM_OFFER: if (request_fire) state_d = killed_q ? S_MEM_DRAIN : S_MEM_WAIT;
         S_MEM_WAIT: if (response_fire) begin
           if (killed_q) state_d = S_IDLE;
+          else if (beat_continue) state_d = S_MEM_OFFER;
           else begin
             if (mem_response_fence) fence_d = 1'b1;
             state_d = S_MEM_RESULT;
@@ -1102,7 +1120,7 @@ module ppc_special #(
           end else begin
             // The physical data request/capsule is word-aligned. The
             // matching captured LSU EA retains byte/halfword offsets.
-            dmiss_q <= ea_q;
+            dmiss_q <= access_ea;
             dcmp_q <= derived_compare;
           end
           hash1_q <= derived_hash1;
@@ -1110,11 +1128,11 @@ module ppc_special #(
         end
         if (exception_event_valid &&
             ((uop_q.special_op == SPECIAL_ALIGNMENT) || block_zero_event)) begin
-          dar_q <= ea_q;
+          dar_q <= alignment_dar;
           dsisr_q <= {15'b0, uop_q.alignment_dsisr};
         end
         if (exception_event_valid && dsi_event) begin
-          dar_q <= ea_q;
+          dar_q <= access_ea;
           // UM Table 4-11: protection bit 4, direct-store bit 5, store bit 6.
           dsisr_q <= ((memory_result_q.data_fault == DATA_DSI_DIRECT_STORE) ?
                       32'h0400_0000 : 32'h0800_0000) |
@@ -1124,6 +1142,26 @@ module ppc_special #(
         if (branch_lr_write_q) lr_q <= branch_lr_next_q;
         if (branch_ctr_write_q) ctr_q <= branch_ctr_next_q;
       end
+    end
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || dispatch_fire) beat_q <= 1'b0;
+    else if ((state_q == S_MEM_WAIT) && response_fire && !killed_q &&
+             beat_continue) begin
+      beat_q <= 1'b1;
+      beat0_data_q <= dmem_rsp_rdata_i;
+    end
+  end
+  // Set and cleared only when the owning instruction commits.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) reserve_q <= 1'b0;
+    else if (ENABLE_RESERVATION && (state_q == S_HOLD) && commit_match &&
+             ((uop_q.special_op == SPECIAL_LOAD) ||
+              (uop_q.special_op == SPECIAL_STORE)) &&
+             !memory_result_q.fault && (memory_result_q.data_fault == DATA_OK)) begin
+      if (uop_q.mem_reserve) reserve_q <= 1'b1;
+      if (uop_q.mem_conditional) reserve_q <= 1'b0;
     end
   end
 
@@ -1148,14 +1186,17 @@ module ppc_special #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni) memory_result_q <= '0;
     else if (step_run) begin
-      if ((state_q == S_MEM_PREP) && misaligned) begin
+      if ((state_q == S_MEM_PREP) && (misaligned || mem_skip)) begin
         memory_result_q <= '0;
         memory_result_q.producer <= producer_q;
-        memory_result_q.fault <= 1'b1;
+        memory_result_q.fault <= misaligned;
+        memory_result_q.cr0 <= {3'b0, xer_flags_q[2]};
       end
-      if ((state_q == S_MEM_WAIT) && response_fire && !killed_q) begin
+      if ((state_q == S_MEM_WAIT) && response_fire && !killed_q && !beat_continue) begin
         memory_result_q <= '0;
         memory_result_q.producer <= producer_q;
+        // stwcx.: CR0 = 00 || stored || XER[SO].
+        memory_result_q.cr0 <= {2'b0, !conditional_probe, xer_flags_q[2]};
         if (dmem_rsp_error_i) memory_result_q.fault <= 1'b1;
         else begin
           case (dmem_rsp_fault_i)
@@ -1177,12 +1218,7 @@ module ppc_special #(
           endcase
         end
         memory_result_q.update_value <= ea_q;
-        case (uop_q.mem_size)
-          MEM_BYTE: memory_result_q.value <= {24'b0, load_byte};
-          MEM_HALF: memory_result_q.value <= uop_q.mem_signed ?
-            {{16{load_half[15]}}, load_half} : {16'b0, load_half};
-          default: memory_result_q.value <= dmem_rsp_rdata_i;
-        endcase
+        memory_result_q.value <= load_value;
       end
     end
   end

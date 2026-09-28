@@ -73,7 +73,7 @@ module ppc_flags (
     commit_packet_i.pc, commit_packet_i.insn, commit_packet_i.alignment_exception,
     commit_packet_i.fetch_fault,
     commit_packet_i.gpr_write, commit_packet_i.gpr,
-    commit_packet_i.tag, commit_packet_i.value
+    commit_packet_i.tag, commit_packet_i.value, commit_packet_i.seq_partial
   };
 
   always_comb begin

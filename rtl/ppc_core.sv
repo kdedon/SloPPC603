@@ -20,7 +20,17 @@ module ppc_core #(
   parameter bit ENABLE_TEST_REDIRECT = 1'b1,
   // dcbf/dcbst/dcbi/dcbz/dcbt/dcbtst/icbi; the wrapper must honor
   // dmem_req_probe_o and the icbi request.
-  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  // lhbrx/lwbrx/sthbrx/stwbrx.
+  parameter bit ENABLE_BYTE_REVERSE = 1'b0,
+  // lmw/stmw/lswi/lswx/stswi/stswx, cracked at dispatch.
+  parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
+  // lwarx/stwcx.; with live context the wrapper must honor
+  // dmem_req_probe_o for a stwcx. without a reservation.
+  parameter bit ENABLE_RESERVATION = 1'b0,
+  // Unaligned halfword/word accesses split in hardware; only a page-crossing
+  // access under data translation takes the alignment exception.
+  parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -128,7 +138,8 @@ module ppc_core #(
   page_miss_t iq_miss_q, head_page_miss;
   logic iq_miss_valid_q, iq_push_miss, iq_pop_miss;
   logic [IQ_COUNT_WIDTH-1:0] iq_miss_count_q, iq_miss_count_left;
-  uop_t uop, dispatch_uop, push_uop;
+  uop_t uop, iq_uop, dispatch_uop, push_uop;
+  logic iq_pop, seq_last, seq_active;
   retire_packet_t allocation;
   completion_tag_t alloc_producer, retire_producer;
   operand_t src_a, src_b, operand_a, operand_b;
@@ -149,7 +160,7 @@ module ppc_core #(
   logic [31:0] committed_next_pc_q, resume_override_target_q, interrupt_resume_pc;
   assign interrupt_qualified = ENABLE_EXTERNAL_INTERRUPTS &&
     (external_irq_q || (ENABLE_TIMERS && decrementer_pending)) && msr[MSR_EE] && !fault_pending && !halted_o;
-  assign interrupt_admit = interrupt_qualified && cq_empty && normal_idle &&
+  assign interrupt_admit = interrupt_qualified && !seq_active && cq_empty && normal_idle &&
     !special_busy && special_ready && !recovery_accepted;
   assign interrupt_resume_pc = resume_override_valid_q ?
     resume_override_target_q : committed_next_pc_q;
@@ -175,8 +186,9 @@ module ppc_core #(
   completion_tag_t recovery_tags [CQ_DEPTH];
   rename_tag_t alloc_tag;
   logic [31:0] arch_a, arch_b, arch_c, special_a, special_b;
+  logic [31:0] dispatch_ea;
   logic [1:0] dispatch_ea_low;
-  logic dispatch_misaligned;
+  logic dispatch_misaligned, dispatch_page_cross;
   // Committed flag state supplies SO to record logical operations.
   logic [31:0] cr, xer, msr, srr0, srr1;
   logic flags_ready, flags_busy;
@@ -215,6 +227,11 @@ module ppc_core #(
       $fatal(1, "Live context requires supervisor exceptions");
     if (ENABLE_CACHE_INSTRUCTIONS && !ENABLE_SUPERVISOR_EXCEPTIONS)
       $fatal(1, "Cache instructions require supervisor exceptions");
+    if ((ENABLE_BYTE_REVERSE || ENABLE_MULTIPLE_STRING || ENABLE_RESERVATION ||
+         ENABLE_MISALIGNED_ACCESS) && !ENABLE_SUPERVISOR_EXCEPTIONS)
+      $fatal(1, "Load/store extensions require supervisor exceptions");
+    if (ENABLE_RESERVATION && ENABLE_LIVE_CONTEXT && !ENABLE_CACHE_INSTRUCTIONS)
+      $fatal(1, "Translated stwcx. needs the cache-probe request");
   end
   ppc_fetch #(.RESET_PC(RESET_PC)) fetch (
     .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence),
@@ -236,20 +253,31 @@ module ppc_core #(
     .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
-    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
+    .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
+    .ENABLE_RESERVATION(ENABLE_RESERVATION)
   ) predecode (.insn_i(fetched.insn), .uop_o(push_uop));
   ppc_fifo #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t)), .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(recovery_accepted),
     .push_valid_i(fetch_valid), .push_ready_o(fetch_ready),
     .push_data_i({fetched, push_uop}),
-    .pop_valid_o(iq_valid), .pop_ready_i(iq_ready),
-    .pop_data_o({iq_head, uop})
+    .pop_valid_o(iq_valid), .pop_ready_i(iq_pop),
+    .pop_data_o({iq_head, iq_uop})
   );
+  ppc_lsu_sequence #(.ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING)) lsu_sequence (
+    .clk_i, .rst_ni, .clear_i(recovery_accepted),
+    .uop_i((iq_head.fault == FETCH_OK) ? iq_uop : '0),
+    .dispatch_i(dispatch && (iq_head.fault == FETCH_OK)),
+    .ea_i(dispatch_ea), .xer_count_i(xer[XER_BYTE_COUNT_WIDTH-1:0]),
+    .uop_o(uop), .last_o(seq_last), .active_o(seq_active)
+  );
+  assign iq_pop = iq_ready && seq_last;
   // Page-miss context of the oldest IQ page-miss entry, captured only when no
   // other page-miss entry is queued. A younger one never dispatches: the older
   // fault either redirects, which clears the IQ, or halts.
   assign iq_push_miss = fetch_valid && fetch_ready && (fetched.fault == FETCH_PAGE_MISS);
-  assign iq_pop_miss = iq_valid && iq_ready && (iq_head.fault == FETCH_PAGE_MISS);
+  assign iq_pop_miss = iq_valid && iq_pop && (iq_head.fault == FETCH_PAGE_MISS);
   assign iq_miss_count_left = iq_miss_count_q - IQ_COUNT_WIDTH'(iq_pop_miss);
   always_ff @(posedge clk_i) begin
     if (!rst_ni || recovery_accepted) begin
@@ -270,10 +298,23 @@ module ppc_core #(
   // registers supply their operands without the rename/wake path.
   assign special_a = uop.zero_a ? 32'b0 : arch_a;
   assign special_b = uop.use_imm ? uop.imm : arch_b;
-  assign dispatch_ea_low = special_a[1:0] + special_b[1:0];
+  assign dispatch_ea = special_a + special_b;
+  assign dispatch_ea_low = dispatch_ea[1:0];
+  // lmw/stmw/lwarx/stwcx. always need a word-aligned EA. With hardware
+  // splitting, other scalars trap only when crossing a 4-KB page under data
+  // translation (UM 4.5.6.1.1); BAT regions get no special handling.
+  assign dispatch_page_cross = (uop.mem_size == MEM_WORD) ?
+    (dispatch_ea[11:2] == 10'h3ff) && (dispatch_ea_low != 0) :
+    (dispatch_ea[11:0] == 12'hfff);
+  // Strings never trap on alignment in big-endian mode.
   assign dispatch_misaligned =
-    ((uop.mem_size == MEM_WORD) && (dispatch_ea_low != 0)) ||
-    ((uop.mem_size == MEM_HALF) && dispatch_ea_low[0]);
+    (uop.mem_skip || (uop.mem_seq == SEQ_STRING_IMM) ||
+     (uop.mem_seq == SEQ_STRING_INDEXED)) ? 1'b0 :
+    ((uop.mem_seq == SEQ_MULTIPLE) || uop.mem_reserve ||
+     uop.mem_conditional || !ENABLE_MISALIGNED_ACCESS) ?
+      (((uop.mem_size == MEM_WORD) && (dispatch_ea_low != 0)) ||
+       ((uop.mem_size == MEM_HALF) && dispatch_ea_low[0])) :
+    (uop.mem_size != MEM_BYTE) && msr[MSR_DR] && dispatch_page_cross;
   // Privileged forms become a program exception before allocation. The
   // original decoded permissions cannot escape into the CQ or rename state.
   always_comb begin
@@ -314,6 +355,7 @@ module ppc_core #(
       dispatch_uop.special_op = SPECIAL_ALIGNMENT;
       dispatch_uop.gpr_write = 1'b0;
       dispatch_uop.mem_update = 1'b0;
+      dispatch_uop.seq_partial = 1'b0;
     end
   end
   // One GPR write port. An update load's base write follows its destination
@@ -440,7 +482,9 @@ module ppc_core #(
     .ENABLE_TGPR(ENABLE_TGPR),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS),
-    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_RESERVATION(ENABLE_RESERVATION),
+    .ENABLE_UNALIGNED_DATAPATH(ENABLE_MISALIGNED_ACCESS || ENABLE_MULTIPLE_STRING)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
@@ -553,7 +597,9 @@ module ppc_core #(
                        (dispatch_uop.special_op != SPECIAL_NONE);
   assign normal_idle = rs_ready && !issue_valid && issue_ready &&
                        !iu_result_valid;
-  assign iq_ready = !fault_pending && !interrupt_qualified && !update_pending_q && gpr_ready &&
+  // Interrupts wait for the last micro-op of a cracked instruction.
+  assign iq_ready = !fault_pending && (!interrupt_qualified || seq_active) &&
+    !update_pending_q && gpr_ready &&
     !special_busy && cq_ready &&
     (dispatch_uop.illegal ||
      (normal_uop && alloc_ready && rs_ready && flags_ready) ||
@@ -571,7 +617,10 @@ module ppc_core #(
     .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
-    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
+    .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
+    .ENABLE_RESERVATION(ENABLE_RESERVATION)
   ) check_decode (.insn_i(iq_head.insn), .uop_o(check_uop));
   always @(posedge clk_i) begin
     logic [1:0] forwarded_ea_low;
@@ -585,7 +634,7 @@ module ppc_core #(
         else $error("committed and forwarded memory EA low bits disagree");
     end
     if (rst_ni && iq_valid)
-      assert (uop == check_uop) else $error("queued uop disagrees with decode");
+      assert (iq_uop == check_uop) else $error("queued uop disagrees with decode");
     if (rst_ni && dispatch && special_uop)
       assert (cq_empty && !commit && src_a.ready && src_b.ready &&
               src_a.value == arch_a && src_b.value == arch_b)
@@ -624,6 +673,7 @@ module ppc_core #(
     allocation.cr_mask = dispatch_uop.cr_mask;
     allocation.write_cr_bit = dispatch_uop.write_cr_bit;
     allocation.cr_bit = dispatch_uop.cr_bit;
+    allocation.seq_partial = dispatch_uop.seq_partial;
   end
   ppc_completion #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
@@ -690,7 +740,7 @@ module ppc_core #(
       resume_override_valid_q <= 1'b0;
       resume_override_target_q <= RESET_PC;
     end else begin
-      if (commit) committed_next_pc_q <= retire_o.pc + 32'd4;
+      if (commit && !retire_o.seq_partial) committed_next_pc_q <= retire_o.pc + 32'd4;
       if (dispatch) resume_override_valid_q <= 1'b0;
       if (recovery_accepted) begin
         resume_override_valid_q <= 1'b1;

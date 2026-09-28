@@ -126,6 +126,11 @@ package ppc_pkg;
   typedef enum logic [1:0] {
     MEM_BYTE, MEM_HALF, MEM_WORD
   } mem_size_t;
+  // Multiple/string byte-count source; dispatch cracks these into one
+  // micro-op per register.
+  typedef enum logic [1:0] {
+    SEQ_NONE, SEQ_MULTIPLE, SEQ_STRING_IMM, SEQ_STRING_INDEXED
+  } mem_seq_t;
   // SPR numbers
   // Selector = {insn[15:11], insn[20:16]}. Bit 4 (instruction field bit 0)
   // marks a supervisor-only SPR.
@@ -220,6 +225,19 @@ package ppc_pkg;
     cr_logic_op_t cr_logic;
     mem_size_t mem_size;
     logic mem_signed;
+    logic mem_reverse;
+    // Register bytes fill from the most significant end; a load clears the
+    // rest. mem_bytes counts them, 0 meaning 4.
+    logic mem_left;
+    logic [1:0] mem_bytes;
+    mem_seq_t mem_seq;
+    // lwarx / stwcx.
+    logic mem_reserve;
+    logic mem_conditional;
+    // Completes without a memory access.
+    logic mem_skip;
+    // Not the last micro-op of its instruction.
+    logic seq_partial;
     // dcbf/dcbst/dcbi/dcbz: translate and check like the access, no transfer.
     logic cache_probe;
     // dcbz: a translated probe that ends in the alignment exception.
@@ -268,6 +286,8 @@ package ppc_pkg;
     logic [4:0] cr_bit;
     logic [31:0] cr_delta;
     logic [31:0] xer_delta;
+    // More micro-ops of this instruction follow; the PC does not advance.
+    logic seq_partial;
   } retire_packet_t;
 
   // ---- MSR and exception events -------------------------------------------

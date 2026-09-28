@@ -21,6 +21,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_exception_state.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_timer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_miss_derive.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_special.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_lsu_sequence.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../rtl/ppc_core.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ppc_core_measure.sv
 
