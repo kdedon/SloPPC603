@@ -85,7 +85,8 @@ STRESS_SYMBOLS = {'EXT_COUNT': ('stress_ext_count', 4), 'DEC_COUNT': ('stress_de
 CACHEOPS = {'dsi_handler': 0x300, 'interrupt_handler': 0x500, 'alignment_handler': 0x600,
             'decrementer_handler': 0x900}
 
-# profile: (bench, source lists, fixed-address symbols as offsets from BASE, +MODE runs)
+# profile: (bench, source lists, fixed-address symbols as offsets from BASE,
+#           +MODE runs: a count or a tuple of modes)
 PROFILES = {
     'cached-bus': ('tb_compiled_firmware', CACHED, {}, 0),
     'fetch-fault': ('tb_compiled_fetch_firmware', ('files.f',),
@@ -111,11 +112,37 @@ PROFILES = {
     'table-fault-bus': ('tb_compiled_table_bus60x_firmware', BAT_BUS, FAULT, 0),
     'table-search-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, MISS, 0),
     'table-fault-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, FAULT, 0),
-    'mmu-stress-cached': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, 9),
+    'mmu-stress-cached': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS,
+                          (0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13)),
+    'mmu-stress-retry': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, 14),
     'cacheops': ('tb_compiled_cacheops_firmware', BAT_CACHED, CACHEOPS, 0),
 }
 # Benches whose target is not the default for their source lists.
 SCRIPTED_TARGET = {'cacheops'}
+RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry'}
+# Plusargs added to every run of a profile.
+PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1']}
+
+COVERAGE_MAIN = '''#include <memory>
+#include <string>
+#include "verilated.h"
+#include "verilated_cov.h"
+#include "TOP.h"
+int main(int argc, char** argv) {
+    const std::unique_ptr<VerilatedContext> context{new VerilatedContext};
+    context->commandArgs(argc, argv);
+    const std::unique_ptr<TOP> top{new TOP{context.get()}};
+    while (!context->gotFinish()) {
+        top->eval();
+        if (!top->eventsPending()) break;
+        context->time(top->nextTimeSlot());
+    }
+    top->final();
+    const std::string file = context->commandArgsPlusMatch("COVERAGE=");
+    if (!file.empty()) context->coveragep()->write(file.substr(10).c_str());
+    return context->gotFinish() ? 0 : 1;
+}
+'''
 
 
 def main():
@@ -125,6 +152,9 @@ def main():
     parser.add_argument('--build-dir', type=Path, default=Path(__file__).resolve().parent/'build/rtl-smoke')
     parser.add_argument('--verilator', default=str(Path(__file__).resolve().parent.parent/'sim/tools/verilate'))
     parser.add_argument('--jobs', type=int, default=2)
+    parser.add_argument('--coverage', action='store_true',
+                        help='build with line coverage; each run writes cov-<mode>.dat in the build directory')
+    parser.add_argument('--modes', type=int, nargs='+', help='run only these +MODE values')
     args = parser.parse_args()
     top, manifests, offsets, modes = PROFILES[args.profile]
     table_fault_profile = args.profile.startswith('table-fault')
@@ -139,7 +169,7 @@ def main():
             if size < needed or value % 4 or not BASE <= value <= BASE+SIZE-size:
                 raise ValueError(f'invalid fault verification symbol {symbol!r}')
             fault_args.append(f'+{plusarg}={value:08x}')
-    if args.profile == 'mmu-stress-cached':
+    if args.profile.startswith('mmu-stress'):
         for plusarg, (symbol, needed) in STRESS_SYMBOLS.items():
             value, size = symbols.get(symbol.encode(), (0, 0))
             if size < needed or value % 4 or not BASE <= value <= BASE+SIZE-size:
@@ -159,15 +189,29 @@ def main():
     profile_params = ([f'-GFAULT_PROFILE={int(table_fault_profile)}']
                       if manifests in (BAT_BUS, BAT_CACHED) and args.profile.startswith('table-') else [])
     bfms = (['../tb/bfm/bus60x_scripted_target_bfm.sv'] if scripted else
+            ['../tb/bfm/bus60x_retry_target_bfm.sv'] if args.profile in RETRY_TARGET else
             ['../tb/bfm/bus60x_delay_target_bfm.sv'] if manifests in (BAT_BUS, BAT_CACHED) else
             ['../tb/bfm/bus60x_negedge_target_bfm.sv'] if manifests == CACHED else [])
-    subprocess.run([args.verilator, '--binary', '--timing', '--assert', '-Wall', '-j', str(args.jobs),
+    # The --binary main does not save coverage; this one writes +COVERAGE=<file>.
+    mode_flags = ['--binary']
+    if args.coverage:
+        main = build/'coverage_main.cpp'
+        main.write_text(COVERAGE_MAIN.replace('TOP', f'V{top}'))
+        mode_flags = ['--cc', '--exe', '--build', '--coverage-line', str(main)]
+    subprocess.run([args.verilator, *mode_flags, '--timing', '--assert', '-Wall', '-j', str(args.jobs),
                     '--top-module', top, '--Mdir', str(build/'obj'), '-I../tb',
                     *profile_params, *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
-    for mode in (range(modes) if modes else (None,)):
+    if isinstance(modes, int):
+        modes = tuple(range(modes)) if modes else (None,)
+    if args.modes:
+        modes = tuple(args.modes)
+    for mode in modes:
         mode_args = [] if mode is None else [f'+MODE={mode}']
+        if args.coverage:
+            mode_args.append(f'+COVERAGE={build}/cov-{mode}.dat')
         subprocess.run([str(build/'obj'/f'V{top}'), f'+IMAGE={image}',
-                        f'+TOHOST={mailbox:08x}', *fault_args, *mode_args], check=True)
+                        f'+TOHOST={mailbox:08x}', *fault_args, *mode_args,
+                        *PROFILE_ARGS.get(args.profile, [])], check=True)
 
 
 if __name__ == '__main__':
