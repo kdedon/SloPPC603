@@ -92,7 +92,7 @@ module tb_core_bat_machine_check #(
     .a_o(bus_a), .tt_o(tt), .tbst_n_o(tbst_n), .tsiz_o(tsiz), \
     .tc_o(tc), .ci_n_o(), .wt_n_o(), .gbl_n_o(), \
     .cse_o(), .addr_oe_o(), .aack_n_i(aack_n), \
-    .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),.artry_n_i(artry_n), .dbg_n_i(dbg_n), .dbb_n_i(1'b1), \
+    .artry_n_i(artry_n), .dbg_n_i(dbg_n), .dbb_n_i(1'b1), \
     .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe), \
     .d_i(data_in), .d_o(data_out), .d_oe_o(data_oe), \
     .ta_n_i(ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n)
@@ -103,6 +103,7 @@ module tb_core_bat_machine_check #(
       .ENABLE_RUNTIME_BAT(1'b1),
       .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut (
       `MC_COMMON_PORTS,
+      .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),
       .pin_event_i('0), .pin_status_o(),
       .icache_hit_o(), .icache_miss_o(), .icache_busy_o(),
       .maintenance_valid_i(1'b0), .maintenance_ready_o(),
