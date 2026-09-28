@@ -500,10 +500,26 @@ $(BUILD_DIR)/machine-check/smoke.elf: $(BUILD_DIR)/machine-check/crt0.o $(BUILD_
 rtl-machine-check: machine-check
 	$(PYTHON) run-rtl-smoke.py --profile machine-check --elf $(BUILD_DIR)/machine-check/smoke.elf --build-dir $(BUILD_DIR)/rtl-machine-check
 
+.PHONY: full-decode rtl-full-decode
+full-decode: $(BUILD_DIR)/full-decode/smoke.elf $(BUILD_DIR)/full-decode/smoke.bin $(BUILD_DIR)/full-decode/smoke.dump
+$(BUILD_DIR)/full-decode:
+	mkdir -p $@
+$(BUILD_DIR)/full-decode/crt0.o: crt0.S | $(BUILD_DIR)/full-decode
+	$(CC) $(COMMON_ASFLAGS) -mbig-endian -DENABLE_FULL_DECODE_SMOKE -c $< -o $@
+$(BUILD_DIR)/full-decode/main.o: full-decode-smoke.c | $(BUILD_DIR)/full-decode
+	$(CC) $(COMMON_CFLAGS) -mbig-endian -c $< -o $@
+$(BUILD_DIR)/full-decode/handler.o: full-decode-handler.S | $(BUILD_DIR)/full-decode
+	$(CC) $(COMMON_ASFLAGS) -mbig-endian -c $< -o $@
+$(BUILD_DIR)/full-decode/smoke.elf: $(BUILD_DIR)/full-decode/crt0.o $(BUILD_DIR)/full-decode/main.o $(BUILD_DIR)/full-decode/handler.o full-decode.ld
+	$(CC) $(COMMON_CFLAGS) -mbig-endian $(subst link.ld,full-decode.ld,$(COMMON_LDFLAGS)) \
+		-Wl,-Map,$(BUILD_DIR)/full-decode/smoke.map $(filter %.o,$^) -o $@
+rtl-full-decode: full-decode
+	$(PYTHON) run-rtl-smoke.py --profile full-decode --elf $(BUILD_DIR)/full-decode/smoke.elf --build-dir $(BUILD_DIR)/rtl-full-decode
+
 # Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
 # or from `make firmware-all` in the pinned container.
-FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu machine-check
-RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry mmu-stress-tea cacheops lsu machine-check
+FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu machine-check full-decode
+RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry mmu-stress-tea cacheops lsu machine-check full-decode
 FIRMWARE_ELFS := $(FIRMWARE_PROFILES:%=$(BUILD_DIR)/%/smoke.elf)
 CROSS_MISSING := ERROR: $(CC) not found; install the pinned cross-compiler or run make firmware-all in the container (see toolchain/README.md)
 

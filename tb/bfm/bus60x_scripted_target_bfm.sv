@@ -42,6 +42,10 @@ module bus60x_scripted_target_bfm #(
   output logic        tea_n_o
 );
   localparam logic [4:0] TT_WRITE = 5'b00010;
+  localparam logic [4:0] TT_WRITE_ATOMIC = 5'b10010;
+  localparam logic [4:0] TT_EXTERNAL_WRITE = 5'b10100;
+  localparam logic [4:0] TT_EXTERNAL_READ = 5'b11100;
+  logic external;
   logic [7:0] mem [0:MEM_BYTES-1];
   // Attributes of the tenure between TS capture and its end.
   logic [31:0] addr;
@@ -82,6 +86,7 @@ module bus60x_scripted_target_bfm #(
     tt = 5'b0;
     burst = 1'b0;
     write = 1'b0;
+    external = 1'b0;
     instruction = 1'b0;
     tsiz = 3'b0;
     beat = 0;
@@ -135,10 +140,14 @@ module bus60x_scripted_target_bfm #(
     do @(posedge clk_i); while (!(ts_oe_i && !ts_n_i));
     addr = a_i;
     tt = tt_i;
-    burst = !tbst_n_i;
-    write = tt_i == TT_WRITE;
+    // Atomic and external-control transfers are single-beat words; for
+    // eciwx/ecowx TBST and TSIZ carry the EAR resource ID instead.
+    external = (tt_i == TT_EXTERNAL_WRITE) || (tt_i == TT_EXTERNAL_READ);
+    burst = !tbst_n_i && !external;
+    write = (tt_i == TT_WRITE) || (tt_i == TT_WRITE_ATOMIC) ||
+            (tt_i == TT_EXTERNAL_WRITE);
     instruction = tc_i == 2'd2;
-    tsiz = tsiz_i;
+    tsiz = external ? 3'b100 : tsiz_i;
     tenures++;
     @(negedge clk_i);
     bg_n_o = 1'b1;

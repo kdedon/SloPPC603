@@ -87,6 +87,8 @@ STRESS_SYMBOLS = {'EXT_COUNT': ('stress_ext_count', 4), 'DEC_COUNT': ('stress_de
                   'MC_COUNT': ('stress_mc_count', 4)}
 CACHEOPS = {'dsi_handler': 0x300, 'interrupt_handler': 0x500, 'alignment_handler': 0x600,
             'decrementer_handler': 0x900}
+FULL_DECODE = {'dsi_handler': 0x300, 'program_handler': 0x700, 'fp_unavailable_handler': 0x800,
+               'syscall_handler': 0xc00}
 MACHINE_CHECK = {'machine_check_handler': 0x200, 'trace_handler': 0xd00, 'iabr_handler': 0x1300,
                  'bad_routine': 0xdfe0}
 
@@ -125,9 +127,10 @@ PROFILES = {
     'cacheops': ('tb_compiled_cacheops_firmware', BAT_CACHED, CACHEOPS, 0),
     'lsu': ('tb_compiled_lsu_firmware', BAT_CACHED, {'alignment_handler': 0x600}, 0),
     'machine-check': ('tb_compiled_machine_check_firmware', BAT_CACHED, MACHINE_CHECK, 2),
+    'full-decode': ('tb_compiled_full_decode_firmware', BAT_CACHED, FULL_DECODE, 0),
 }
 # Benches whose target is not the default for their source lists.
-SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check'}
+SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check', 'full-decode'}
 RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry', 'mmu-stress-tea'}
 # Plusargs added to every run of a profile.
 PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1']}
