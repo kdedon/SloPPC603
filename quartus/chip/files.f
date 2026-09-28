@@ -35,4 +35,5 @@
 ../../rtl/ppc_dcache_slot.sv
 ../../rtl/ppc_biu.sv
 ../../rtl/ppc_core_bat_cached_bus60x.sv
-ppc_translated_measure.sv
+../../rtl/ppc603e.sv
+ppc603e_measure.sv

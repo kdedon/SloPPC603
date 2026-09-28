@@ -172,7 +172,7 @@ module ppc_core_bat_cached_bus60x #(
 
   logic core_halted;
   logic imem_req_valid, imem_req_ready, managed_fetch_ready;
-  logic [3:0] imem_req_wimg, unused_pdmem_wimg;
+  logic [3:0] imem_req_wimg, dmem_req_wimg;
   logic imem_rsp_error;
   logic [31:0] imem_req_addr;
   logic imem_rsp_valid, imem_rsp_ready;
@@ -325,7 +325,7 @@ module ppc_core_bat_cached_bus60x #(
     .pdmem_req_addr_o(dmem_req_addr),
     .pdmem_req_wdata_o(dmem_req_wdata),
     .pdmem_req_wstrb_o(dmem_req_wstrb),
-    .pdmem_req_wimg_o(unused_pdmem_wimg),
+    .pdmem_req_wimg_o(dmem_req_wimg),
     .pdmem_rsp_valid_i(dmem_rsp_valid),
     .pdmem_rsp_ready_o(dmem_rsp_ready),
     .pdmem_rsp_rdata_i(dmem_rsp_rdata),
@@ -473,6 +473,28 @@ module ppc_core_bat_cached_bus60x #(
     end
   end
 
+  // The data cache belongs between the LSU and the BIU.
+  logic biu_dmem_req_valid, biu_dmem_req_ready, biu_dmem_req_write;
+  logic [31:0] biu_dmem_req_addr, biu_dmem_req_wdata, biu_dmem_rsp_rdata;
+  logic [3:0] biu_dmem_req_wstrb;
+  ppc_pkg::dmem_attr_t biu_dmem_req_attr;
+  logic biu_dmem_rsp_valid, biu_dmem_rsp_ready, biu_dmem_rsp_error;
+  ppc_dcache_slot dcache_slot (
+    .clk_i, .rst_ni,
+    .lsu_req_valid_i(dmem_req_valid), .lsu_req_ready_o(dmem_req_ready),
+    .lsu_req_write_i(dmem_req_write), .lsu_req_addr_i(dmem_req_addr),
+    .lsu_req_wdata_i(dmem_req_wdata), .lsu_req_wstrb_i(dmem_req_wstrb),
+    .lsu_req_wimg_i(dmem_req_wimg), .lsu_req_attr_i(dmem_req_attr),
+    .lsu_rsp_valid_o(dmem_rsp_valid), .lsu_rsp_ready_i(dmem_rsp_ready),
+    .lsu_rsp_rdata_o(dmem_rsp_rdata), .lsu_rsp_error_o(dmem_rsp_error),
+    .biu_req_valid_o(biu_dmem_req_valid), .biu_req_ready_i(biu_dmem_req_ready),
+    .biu_req_write_o(biu_dmem_req_write), .biu_req_addr_o(biu_dmem_req_addr),
+    .biu_req_wdata_o(biu_dmem_req_wdata), .biu_req_wstrb_o(biu_dmem_req_wstrb),
+    .biu_req_attr_o(biu_dmem_req_attr),
+    .biu_rsp_valid_i(biu_dmem_rsp_valid), .biu_rsp_ready_o(biu_dmem_rsp_ready),
+    .biu_rsp_rdata_i(biu_dmem_rsp_rdata), .biu_rsp_error_i(biu_dmem_rsp_error)
+  );
+
   ppc_biu #(.RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK)) biu (
     .clk_i, .rst_ni,
     .imem_req_valid_i(scalar_imem_req_valid),
@@ -483,13 +505,13 @@ module ppc_core_bat_cached_bus60x #(
     .imem_rsp_insn_o(scalar_imem_rsp_insn),
     .imem_rsp_error_o(scalar_imem_rsp_error),
     .ifetch_error_o(scalar_router_ifetch_error),
-    .dmem_req_valid_i(dmem_req_valid && !transport_ifetch_error),
-    .dmem_req_ready_o(dmem_req_ready),
-    .dmem_req_write_i(dmem_req_write), .dmem_req_addr_i(dmem_req_addr),
-    .dmem_req_wdata_i(dmem_req_wdata), .dmem_req_wstrb_i(dmem_req_wstrb),
-    .dmem_req_attr_i(dmem_req_attr),
-    .dmem_rsp_valid_o(dmem_rsp_valid), .dmem_rsp_ready_i(dmem_rsp_ready),
-    .dmem_rsp_rdata_o(dmem_rsp_rdata), .dmem_rsp_error_o(dmem_rsp_error),
+    .dmem_req_valid_i(biu_dmem_req_valid && !transport_ifetch_error),
+    .dmem_req_ready_o(biu_dmem_req_ready),
+    .dmem_req_write_i(biu_dmem_req_write), .dmem_req_addr_i(biu_dmem_req_addr),
+    .dmem_req_wdata_i(biu_dmem_req_wdata), .dmem_req_wstrb_i(biu_dmem_req_wstrb),
+    .dmem_req_attr_i(biu_dmem_req_attr),
+    .dmem_rsp_valid_o(biu_dmem_rsp_valid), .dmem_rsp_ready_i(biu_dmem_rsp_ready),
+    .dmem_rsp_rdata_o(biu_dmem_rsp_rdata), .dmem_rsp_error_o(biu_dmem_rsp_error),
     .line_req_valid_i(cache_line_req_valid),
     .line_req_ready_o(cache_line_req_ready),
     .line_req_line_addr_i(cache_line_addr),
