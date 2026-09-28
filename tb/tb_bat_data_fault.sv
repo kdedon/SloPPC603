@@ -169,17 +169,6 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
     bat_write_rsp_ready_i=1;
     @(posedge clk_i);@(negedge clk_i);bat_write_rsp_ready_i=0;
   endtask
-  task automatic setup_reject(input logic [9:0] spr,input logic [31:0] data);
-    @(negedge clk_i);bat_write_spr_i=spr;bat_write_data_i=data;bat_write_valid_i=1;
-    #1;check(bat_write_ready_o,"malformed setup admission");
-    @(posedge clk_i);@(negedge clk_i);bat_write_valid_i=0;
-    for(int w=0;w<2&&!bat_write_rsp_valid_o;w++)@(negedge clk_i);
-    check(bat_write_rsp_valid_o && bat_write_rsp_rejected_o &&
-          bat_write_rsp_config_error_o && !dmem_rsp_valid_o &&
-          dmem_rsp_fault_o==0,"malformed BAT became a data exception");
-    bat_write_rsp_ready_i=1;
-    @(posedge clk_i);@(negedge clk_i);bat_write_rsp_ready_i=0;
-  endtask
   task automatic request_data(input bit write_req,input logic [31:0] ea);
     @(negedge clk_i);
     dmem_req_valid_i=1;dmem_req_write_i=write_req;dmem_req_addr_i=ea;
@@ -215,8 +204,8 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
     dmem_req_valid_i=0;dmem_req_write_i=0;dmem_req_addr_i=0;
     dmem_req_wdata_i=0;dmem_req_wstrb_i=0;dmem_rsp_ready_i=0;
     repeat(3) @(posedge clk_i);@(negedge clk_i);rst_ni=1;
-    setup_reject(10'd537,32'h80000005); // reserved BATL bit2
-    setup_write(10'd537,32'h80000001); // DBAT0 lower: PP=01, read only
+    // DBAT0 lower: PP=01, read only. Reserved bit 2 is stored as zero.
+    setup_write(10'd537,32'h80000005);
     setup_write(10'd536,32'h00000003); // DBAT0 upper: both modes valid
     @(negedge clk_i);start_valid_i=1;start_dr_i=1;
     #1;check(start_ready_o,"translated start admission");

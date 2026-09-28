@@ -440,10 +440,10 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
     dmem_req_wstrb_i = 4'b0;
     dmem_rsp_ready_i = 1'b0;
 
-    // Setup rejection is atomic and held.  An instruction guarded mapping is
-    // a rejected service configuration in the accepted BAT source profile.
+    // An IBAT W write is stored (PEM Table 2-12 note: boundedly undefined);
+    // the next write replaces it. Unsupported SPRs stay held rejections.
     reset_router();
-    write_bat(10'd529, 32'h4000_0042, 1'b1, 1'b0);
+    write_bat(10'd529, 32'h4000_0042, 1'b0, 1'b0);
     write_bat(10'd700, 32'h1234_5678, 1'b0, 1'b1);
     write_bat(10'd529, 32'h4000_0002, 1'b0, 1'b0);
     write_bat(10'd528, 32'h0000_0003, 1'b0, 1'b0);

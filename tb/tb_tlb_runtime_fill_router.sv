@@ -710,14 +710,19 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       instruction_access(EA, {RPN_B, 12'h234}, 4'h4);
       set_context(0, 0, 0);
 
-      // Other-way duplicate rejection has no early or late mutation.
-      fill_offer(1, EA, VSID_A, 1, 20'hcdef0, 1, 4'h1, 2'b11, 1);
-      check(tlb_entry(1, 1, 1).rpn == RPN_B &&
-            !tlb_fill_ack_valid_o, "duplicate proposal mutated other way");
-      fill_consume();
-      @(posedge clk_i); #1;
-      check(tlb_fill_idle_o && tlb_entry(1, 1, 1).rpn == RPN_B,
-            "duplicate rejection did not drain");
+      // An other-way duplicate is admitted without early mutation; its commit
+      // invalidates the other way, so a lookup never hits both.
+      fill_offer(1, EA, VSID_A, 1, 20'hcdef0, 1, 4'h1, 2'b11, 0);
+      check(tlb_entry(1, 1, 1).rpn == RPN_B && dut.tlb.valid_q[1][0][1] &&
+            !tlb_fill_ack_valid_o, "duplicate proposal mutated before commit");
+      fill_consume(); fill_commit();
+      check(!dut.tlb.valid_q[1][0][1] && dut.tlb.valid_q[1][1][1] &&
+            tlb_entry(1, 1, 1).rpn == 20'hcdef0 && dut.tlb.valid_q[0][0][1],
+            "duplicate commit did not replace the other way");
+      fill_ack_and_idle();
+      fill_entry(1, EA, VSID_A, 0, RPN_A, 1, 4'h6, 2'b10);
+      check(!dut.tlb.valid_q[1][1][1], "reload did not drop the duplicate");
+      fill_entry(1, EA, VSID_B, 1, RPN_B, 1, 4'h2, 2'b10);
 
       // A selected-way replacement does not disturb the other way, bank,
       // or neighboring set; the old value remains until commit.

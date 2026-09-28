@@ -57,9 +57,11 @@ class Model:
         if q['kind'] == 1:
             if q['pr']:
                 s['privileged'] = 1
-            elif any(slot[2] != q['way'] for slot, _ in matches):
-                s['refill_rejected'] = 1
             else:
+                # A load replaces a matching entry in the other way.
+                for slot, _ in matches:
+                    if slot[2] != q['way']:
+                        del self.slots[slot]
                 self.lru[q['bank'], index] = 1 - q['way']
                 self.slots[q['bank'], index, q['way']] = dict(
                     key=key, **{k: q[k] for k in ('rpn', 'c', 'wimg', 'pp')})
@@ -127,7 +129,7 @@ def requests():
         for pr, ks, kp, write in itertools.product(range(2), repeat=4):
             yield request(bank=bank, ea=0x23456fff, vsid=0xabcdef,
                           pr=pr, ks=ks, kp=kp, write=write)
-    # Rejected user mutations, duplicate refills, selected-way overwrites,
+    # Rejected user mutations, duplicate replacement, selected-way overwrites,
     # and T/N/invalid-I-write precedence on both hits and misses.
     for bank in range(2):
         yield request(kind=2, ea=0x55000)
@@ -161,7 +163,8 @@ def generate(path):
             for flag in counts:
                 counts[flag] += s[flag]
             stream.write(f'{pack(REQUEST, q):024x} {total % 33:x} {pack(RESPONSE, s):023x}\n')
-    assert all(counts.values()), counts
+    # Loads replace duplicates, so no response rejects a refill.
+    assert counts.pop('refill_rejected') == 0 and all(counts.values()), counts
     print(f'{total} independent TLB transactions: {counts}')
     return total, counts
 
