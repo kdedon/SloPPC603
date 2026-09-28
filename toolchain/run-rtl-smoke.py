@@ -113,9 +113,10 @@ PROFILES = {
     'table-fault-cached': ('tb_compiled_table_cached_bus60x_firmware', BAT_CACHED, FAULT, 0),
     'mmu-stress-cached': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, 9),
     'cacheops': ('tb_compiled_cacheops_firmware', BAT_CACHED, CACHEOPS, 0),
+    'lsu': ('tb_compiled_lsu_firmware', BAT_CACHED, {'alignment_handler': 0x600}, 0),
 }
 # Benches whose target is not the default for their source lists.
-SCRIPTED_TARGET = {'cacheops'}
+SCRIPTED_TARGET = {'cacheops', 'lsu'}
 
 
 def main():
@@ -125,6 +126,8 @@ def main():
     parser.add_argument('--build-dir', type=Path, default=Path(__file__).resolve().parent/'build/rtl-smoke')
     parser.add_argument('--verilator', default=str(Path(__file__).resolve().parent.parent/'sim/tools/verilate'))
     parser.add_argument('--jobs', type=int, default=2)
+    parser.add_argument('--gparam', action='append', default=[],
+                        help='bench parameter override NAME=VALUE')
     args = parser.parse_args()
     top, manifests, offsets, modes = PROFILES[args.profile]
     table_fault_profile = args.profile.startswith('table-fault')
@@ -163,7 +166,7 @@ def main():
             ['../tb/bfm/bus60x_negedge_target_bfm.sv'] if manifests == CACHED else [])
     subprocess.run([args.verilator, '--binary', '--timing', '--assert', '-Wall', '-j', str(args.jobs),
                     '--top-module', top, '--Mdir', str(build/'obj'), '-I../tb',
-                    *profile_params, *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
+                    *profile_params, *(f'-G{g}' for g in args.gparam), *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
     for mode in (range(modes) if modes else (None,)):
         mode_args = [] if mode is None else [f'+MODE={mode}']
         subprocess.run([str(build/'obj'/f'V{top}'), f'+IMAGE={image}',
