@@ -116,6 +116,30 @@ Each project SDC (`quartus/integrated`, `quartus/timer-bat`,
 TimeQuest's `check_timing` reports min equal to max on every port delay; that
 is the intended zero-delay virtual-pin model.
 
+## C8 Package pins (`ppc603e`)
+
+The package top's ports are the 603e pins ([CHIP_PACKAGE.md](CHIP_PACKAGE.md)).
+C1, C3, C4 and C5 apply with `sysclk` as the clock, plus:
+
+- Asynchronous pins: HRESET, SRESET, INT, SMI, MCP, CKSTP_IN, QACK, TBEN,
+  TLBISYNC and PLL_CFG[0:3] each pass a two-flop synchronizer inside the chip
+  (`pin_meta_q`, then `pin_sync_q`). The system may drive them from any
+  clock; `pin_meta_q` is their only load. HRESET replaces `rst_ni`: the
+  synchronized HRESET (and the checkstop latch) is the core's C2 reset, so an
+  external reset synchronizer is not needed.
+- Minimum widths in SYSCLK cycles, after synchronization: HRESET at least 2
+  (the manual's 255 is the system's obligation), SRESET and MCP at least 2
+  (UM §7.2.9.3, §7.2.9.6.2), INT and SMI held until taken.
+- Bus pins are synchronous (C3, C4). AP and DP are odd parity formed from
+  A and the data bus after the last register: one XOR level per byte on
+  the output cone. DBDIS is registered once before it gates the data enable.
+- Every output enable is forced low while the chip is in hard reset or
+  checkstop; that gating is on the output cone.
+- The measurement project `quartus/chip` implements C7 for these ports:
+  `create_clock` on `sysclk`, zero delays on every virtual pin, one false
+  path from the asynchronous pins to `pin_meta_q` (13 flops), and per-bit
+  boundary registers (`*_ibq`, `*_obq`) for every synchronous pin.
+
 ## Release sign-off checklist
 
 Verified by this repository (rerun before each release):

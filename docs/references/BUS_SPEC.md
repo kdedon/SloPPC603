@@ -79,7 +79,7 @@ Sources: UM §§7.2.1–7.2.8, PDF 280–299 / printed 7-4–7-23; operational q
 | `RSRV` | 1 | out | low | Synchronous reservation state; disabled in reduced-pinout mode. |
 | `QREQ` | 1 | out | low | May assert any cycle; held through quiescent state. |
 | `QACK` | 1 | in | low | After `QREQ`, hold at least one clock. Startup strap selects full/reduced pinout. |
-| `TBEN` | 1 | in | low | May change any cycle; asserted enables time-base count. |
+| `TBEN` | 1 | in | high | May change any cycle; asserted enables time-base count. No overbar on rendered page 7-27. |
 | `TLBISYNC` | 1 | in | low | Stalls after `tlbsync`; startup strap selects 32/64-bit data bus. |
 | `SYSCLK` | 1 | in | clock | Bus clock and PLL reference; cannot be stopped or varied during normal operation. |
 | `CLK_OUT` | 1 | out/tri-state | clock | High-Z by default; HID0 selects CPU, bus, or half-bus test clock. PID7v drives CPU clock during `HRESET`. |

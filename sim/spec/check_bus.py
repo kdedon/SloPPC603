@@ -505,7 +505,7 @@ active_low_ids = {
     "BR", "BG", "ABB", "TS", "APE", "TBST", "GBL", "CI", "WT", "AACK",
     "ARTRY", "DBG", "DBWO", "DBB", "DPE", "DBDIS", "TA", "DRTRY", "TEA",
     "INT", "SMI", "MCP", "CKSTP_IN", "CKSTP_OUT", "HRESET", "SRESET", "RSRV",
-    "QREQ", "QACK", "TBEN", "TLBISYNC", "TRST",
+    "QREQ", "QACK", "TLBISYNC", "TRST",
 }
 required_topics = {
     "address_tenure", "data_tenure", "qualified_grant", "ARTRY", "DRTRY", "TEA",
