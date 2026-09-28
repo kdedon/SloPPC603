@@ -112,3 +112,24 @@ pins; ordering between the I-cache fill path and data writes is the BIU's.
 Not covered: the BIU side on real pins, snoops from a second master beyond the
 scripted pair, page-table WIMG (only BAT WIMG is exercised), guarded-load
 speculation, eciwx/ecowx with the cache, timing (no fit this round).
+
+## Records
+
+Recorded: `make -C sim -j2 ci` (includes `test-core-dcache`, `test-core-dcache-negative` and `make -C toolchain rtl-all` with `rtl-lsu-dcache`), commit 79102c1, 2026-09-28.
+
+- Pass. Regression, 37 compiled-firmware profiles and coverage (rtl/ line
+  coverage 75.9%, 1431/1885) pass; every `ENABLE_DCACHE=0` profile is unchanged
+  in behavior.
+- `test-core-dcache`: checks=184616, retirements=2273, 48 retired load values
+  and 63 load responses checked against the golden memory, 7 exceptions (two
+  alignment, DSI, DTLB load and store miss, precise and asynchronous machine
+  check), bus requests: 25 burst reads, 7 single reads, 5 burst writes, 7
+  single writes, 4 address-only, 1 push, 2 injected errors; 46353 cycles.
+- `test-core-dcache-negative`: mutations 1, 2, 3, 4, 5, 7, 101, 102 and 103 each
+  fail the bench.
+- `rtl-lsu-dcache`: checks=9719670, retirements=120681, 1176 partial
+  (multiple/string) micro-ops, 2 alignment entries, 228 three-byte stores,
+  20702 cache hits, 15 misses and fills; 2361183 cycles.
+
+This establishes the LSU-side connection against a bench BIU. It does not
+establish the BIU side, pin-level behavior with the cache, or timing.
