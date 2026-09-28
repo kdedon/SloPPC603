@@ -143,7 +143,7 @@ RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry', 'mmu-stress-tea'}
 # Bench parameters added to every build of a profile.
 # These images expect the instruction cache on from reset.
 PROFILE_GPARAMS = {profile: ["ICE_AT_RESET=1'b1"] for profile in
-                   ('chip-full-decode', 'chip-machine-check', 'chip-mmu-stress')}
+                   ('chip-full-decode', 'chip-machine-check')}
 PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1'],
                 'chip-machine-check': ['+TEA_BASE=fff0dff0', '+TEA_END=fff0e100']}
 
