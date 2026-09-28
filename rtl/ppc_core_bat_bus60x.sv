@@ -35,7 +35,10 @@ module ppc_core_bat_bus60x #(
   parameter bit ENABLE_RESERVATION = 1'b0,
   parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
-  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
+  parameter bit ENABLE_FULL_DECODE = 1'b0,
+  parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
+  parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -158,6 +161,9 @@ module ppc_core_bat_bus60x #(
   logic [31:0] imem_req_addr;
   logic [3:0] unused_pimem_wimg, unused_pdmem_wimg;
   logic [32:0] unused_icbi;
+  logic [2:0] unused_icache_ctl;
+  ppc_pkg::dmem_attr_t dmem_req_attr;
+  logic [5:0] bus_req_attr;
   logic imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_rsp_insn;
   logic imem_rsp_error;
@@ -203,7 +209,9 @@ module ppc_core_bat_bus60x #(
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
     .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
-    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE), .PVR_VALUE(PVR_VALUE),
+    .PLL_CFG(PLL_CFG)
   ) translated_core (
     .clk_i,
     .rst_ni,
@@ -286,6 +294,10 @@ module ppc_core_bat_bus60x #(
     // No instruction cache: icbi completes at once.
     .icbi_req_valid_o(unused_icbi[0]), .icbi_req_ready_i(1'b1),
     .icbi_req_ea_o(unused_icbi[32:1]),
+    .icache_ctl_valid_o(unused_icache_ctl[0]), .icache_ctl_ready_i(1'b1),
+    .icache_ctl_enable_o(unused_icache_ctl[1]),
+    .icache_ctl_invalidate_o(unused_icache_ctl[2]),
+    .pdmem_req_attr_o(dmem_req_attr),
     .retire_valid_o,
     .retire_ready_i,
     .retire_o,
@@ -324,6 +336,7 @@ module ppc_core_bat_bus60x #(
     .dmem_req_addr_i(dmem_req_addr),
     .dmem_req_wdata_i(dmem_req_wdata),
     .dmem_req_wstrb_i(dmem_req_wstrb),
+    .dmem_req_attr_i(dmem_req_attr),
     .dmem_rsp_valid_o(dmem_rsp_valid),
     .dmem_rsp_ready_i(dmem_rsp_ready),
     .dmem_rsp_rdata_o(dmem_rsp_rdata),
@@ -335,6 +348,7 @@ module ppc_core_bat_bus60x #(
     .bus_req_addr_o(bus_req_addr),
     .bus_req_wdata_o(bus_req_wdata),
     .bus_req_wstrb_o(bus_req_wstrb),
+    .bus_req_attr_o(bus_req_attr),
     .bus_rsp_valid_i(bus_rsp_valid),
     .bus_rsp_ready_o(bus_rsp_ready),
     .bus_rsp_rdata_i(bus_rsp_rdata),
@@ -348,6 +362,7 @@ module ppc_core_bat_bus60x #(
     .req_instruction_i(bus_req_instruction),
     .req_write_i(bus_req_write), .req_addr_i(bus_req_addr),
     .req_wdata_i(bus_req_wdata), .req_wstrb_i(bus_req_wstrb),
+    .req_attr_i(bus_req_attr),
     .rsp_valid_o(bus_rsp_valid), .rsp_ready_i(bus_rsp_ready),
     .rsp_rdata_o(bus_rsp_rdata), .rsp_error_o(bus_rsp_error),
     .busy_o(adapter_busy), .protocol_error_o(bus_protocol_error_o),

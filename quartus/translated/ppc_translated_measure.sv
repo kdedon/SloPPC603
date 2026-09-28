@@ -490,6 +490,7 @@ module ppc_translated_measure (
     .ENABLE_MISALIGNED_ACCESS(1'b1),
     .ENABLE_MACHINE_CHECK(1'b1),
     .ENABLE_DEBUG_EXCEPTIONS(1'b1),
+    .ENABLE_FULL_DECODE(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (.rst_ni(rst_sync_q[1]),
     .clk_i,

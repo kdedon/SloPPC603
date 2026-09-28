@@ -36,6 +36,10 @@ module tb_bus60x_arbiter;
   end
 
   ppc_bus60x_arbiter dut (
+    .dmem_req_attr_i(6'b0),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .bus_req_attr_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .clk_i(clk), .rst_ni(rst_n),
     .imem_req_valid_i(iv), .imem_req_ready_o(ir), .imem_req_addr_i(ia),
     .imem_rsp_valid_o(isv), .imem_rsp_ready_i(isr), .imem_rsp_insn_o(isi),

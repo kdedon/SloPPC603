@@ -15,6 +15,8 @@ module ppc_bus60x (
   input  logic [31:0] req_addr_i,
   input  logic [31:0] req_wdata_i,
   input  logic [3:0]  req_wstrb_i,
+  // Packed ppc_pkg::dmem_attr_t: {kind[1:0], rid[3:0]}.
+  input  logic [5:0]  req_attr_i,
   output logic        rsp_valid_o,
   input  logic        rsp_ready_i,
   output logic [31:0] rsp_rdata_o,
@@ -56,6 +58,12 @@ module ppc_bus60x (
   // TT[0:4], TC[0:1] and TSIZ[0:2] in manual bit order.
   localparam logic [4:0] TT_WRITE_WITH_FLUSH = 5'b00010;
   localparam logic [4:0] TT_READ             = 5'b01010;
+  localparam logic [4:0] TT_WRITE_ATOMIC     = 5'b10010;
+  localparam logic [4:0] TT_READ_ATOMIC      = 5'b11010;
+  localparam logic [4:0] TT_EXTERNAL_WRITE   = 5'b10100;
+  localparam logic [4:0] TT_EXTERNAL_READ    = 5'b11100;
+  localparam logic [1:0] KIND_ATOMIC         = 2'd1;
+  localparam logic [1:0] KIND_EXTERNAL       = 2'd2;
   localparam logic [1:0] TC_DATA             = 2'b00;
   localparam logic [1:0] TC_INSTRUCTION      = 2'b10;
   localparam logic [2:0] TSIZ_1_BYTE         = 3'b001;
@@ -87,6 +95,7 @@ module ppc_bus60x (
   logic [31:0] request_wdata_q;
   logic [3:0]  request_wstrb_q;
   logic [2:0]  request_size_q;
+  logic [5:0]  request_attr_q;
 
   logic [31:0] pending_rdata_q;
   logic        pending_error_q;
@@ -169,9 +178,16 @@ module ppc_bus60x (
     addr_oe_o = abb_oe_o;
 
     a_o = request_addr_q;
-    tt_o = request_write_q ? TT_WRITE_WITH_FLUSH : TT_READ;
-    tbst_n_o = 1'b1;
-    tsiz_o = request_size_q;
+    // UM Table 7-1. eciwx/ecowx drive EAR[28:31] on TBST and TSIZ[0:2]
+    // (UM 7.2.4.2-7.2.4.3).
+    case (request_attr_q[5:4])
+      KIND_ATOMIC: tt_o = request_write_q ? TT_WRITE_ATOMIC : TT_READ_ATOMIC;
+      KIND_EXTERNAL: tt_o = request_write_q ? TT_EXTERNAL_WRITE : TT_EXTERNAL_READ;
+      default: tt_o = request_write_q ? TT_WRITE_WITH_FLUSH : TT_READ;
+    endcase
+    tbst_n_o = (request_attr_q[5:4] == KIND_EXTERNAL) ? !request_attr_q[3] : 1'b1;
+    tsiz_o = (request_attr_q[5:4] == KIND_EXTERNAL) ? request_attr_q[2:0] :
+                                                      request_size_q;
     tc_o = request_instruction_q ? TC_INSTRUCTION : TC_DATA;
     ci_n_o = 1'b0;
     wt_n_o = 1'b1;
@@ -215,6 +231,7 @@ module ppc_bus60x (
       request_wdata_q <= 32'b0;
       request_wstrb_q <= 4'b0;
       request_size_q <= 3'b0;
+      request_attr_q <= 6'b0;
       pending_rdata_q <= 32'b0;
       pending_error_q <= 1'b0;
       rsp_valid_q <= 1'b0;
@@ -244,6 +261,7 @@ module ppc_bus60x (
               request_wdata_q <= req_wdata_i;
               request_wstrb_q <= req_wstrb_i;
               request_size_q <= request_size;
+              request_attr_q <= req_instruction_i ? 6'b0 : req_attr_i;
               pending_rdata_q <= 32'b0;
               pending_error_q <= 1'b0;
               state_q <= BUS_ADDR_REQUEST;

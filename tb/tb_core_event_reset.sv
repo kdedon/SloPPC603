@@ -27,6 +27,10 @@ module tb_core_event_reset;
   logic unused_checkstop;
   ppc_core #(.RESET_PC(0),.ENABLE_SUPERVISOR_EXCEPTIONS(1),.ENABLE_LIVE_CONTEXT(1),
     .ENABLE_EXTERNAL_INTERRUPTS(1),.ENABLE_TIMERS(1)) dut(
+    .icache_ctl_ready_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .tlb_inv_req_valid_o(unused_tlb_inv_core[0]),

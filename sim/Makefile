@@ -1420,3 +1420,13 @@ reference-acceptance: reference-runner-flat
 	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-acceptance-a --seeds $(REFERENCE_SEEDS_A) --blocks 512 $(FLAT_REFERENCE_ARGS)
 	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-acceptance-b --seeds $(REFERENCE_SEEDS_B) --blocks 512 $(FLAT_REFERENCE_ARGS)
 	@echo "PASS: reference acceptance"
+
+# Complete decode: illegal/invalid forms, traps, FP unavailable, HID0/EAR.
+.PHONY: test-decode-sweep test-core-full-decode
+test: test-decode-sweep test-core-full-decode
+test-decode-sweep:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_decode_sweep --Mdir $(BUILD_DIR)/decode-sweep ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_decode_sweep.sv
+	./$(BUILD_DIR)/decode-sweep/Vtb_decode_sweep $(SIM_ARGS)
+test-core-full-decode:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_full_decode --Mdir $(BUILD_DIR)/core-full-decode -I../tb $(RTL) ../tb/tb_core_full_decode.sv
+	./$(BUILD_DIR)/core-full-decode/Vtb_core_full_decode $(SIM_ARGS)

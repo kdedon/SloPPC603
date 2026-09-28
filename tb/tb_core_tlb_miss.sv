@@ -89,6 +89,10 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_TGPR(1'b1),
     .ENABLE_SDR1(1'b1),.ENABLE_PAGE_MISS_RESULTS(1'b1),
     .ENABLE_TLB_LOAD(1'b1),.ENABLE_TLB_MISS_EXCEPTIONS(FEATURE)) dut (
+    .icache_ctl_ready_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .clk_i(clk),.rst_ni(rst_n),

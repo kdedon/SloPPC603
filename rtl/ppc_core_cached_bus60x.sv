@@ -127,6 +127,8 @@ module ppc_core_cached_bus60x #(
   logic [89:0] unused_tlb_fill;
   logic [41:0] unused_segment_csr;
   logic [33:0] unused_cache_core;
+  logic [2:0] unused_icache_ctl;
+  ppc_pkg::dmem_attr_t dmem_req_attr;
   logic unused_core_checkstop;
   ppc_core #(
     .RESET_PC(RESET_PC),
@@ -136,6 +138,11 @@ module ppc_core_cached_bus60x #(
   ) core (
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
+    .dmem_req_attr_o(dmem_req_attr),
+    // No HID0-controlled instruction cache on this path.
+    .icache_ctl_valid_o(unused_icache_ctl[0]), .icache_ctl_ready_i(1'b1),
+    .icache_ctl_enable_o(unused_icache_ctl[1]),
+    .icache_ctl_invalidate_o(unused_icache_ctl[2]),
     .tlb_fill_req_valid_o(unused_tlb_fill[89]),
     .tlb_fill_req_bank_o(unused_tlb_fill[88]),
     .tlb_fill_req_ea_o(unused_tlb_fill[87:56]),
@@ -247,6 +254,7 @@ module ppc_core_cached_bus60x #(
     .req_ready_o(scalar_req_ready), .req_instruction_i(1'b0),
     .req_write_i(dmem_req_write), .req_addr_i(dmem_req_addr),
     .req_wdata_i(dmem_req_wdata), .req_wstrb_i(dmem_req_wstrb),
+    .req_attr_i(dmem_req_attr),
     .rsp_valid_o(scalar_rsp_valid), .rsp_ready_i(dmem_rsp_ready),
     .rsp_rdata_o(scalar_rsp_rdata), .rsp_error_o(scalar_rsp_error),
     .busy_o(scalar_busy), .protocol_error_o(scalar_protocol_error),

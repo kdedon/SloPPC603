@@ -34,6 +34,10 @@ module tb_core_bus60x;
   logic [33:0] unused_cache_core;
   logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0)) dut (
+    .icache_ctl_ready_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .tlb_inv_req_valid_o(unused_tlb_inv_core[0]),
@@ -111,6 +115,7 @@ module tb_core_bus60x;
   logic [63:0] bus_di, bus_do;
   int bus_reads = 0, bus_writes = 0;
   ppc_bus60x bus_adapter (
+    .req_attr_i(6'b0),
     .clk_i(clk), .rst_ni(rst_n),
     .req_valid_i(dv && edge_count%4 == 0), .req_ready_o(adapter_ready), .req_write_i(dw),
     .req_addr_i(da), .req_wdata_i(wd), .req_wstrb_i(st), .req_instruction_i(1'b0),

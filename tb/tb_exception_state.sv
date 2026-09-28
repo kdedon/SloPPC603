@@ -368,7 +368,7 @@ module tb_exception_state;
 
     // Unknown four-bit selectors preserve the committed state.
     held_msr=msr;held_srr0=srr0;held_srr1=srr1;
-    accept_event(exception_event_t'(4'd12), 32'h0000_6000);
+    accept_event(exception_event_t'(5'd12), 32'h0000_6000);
     require(!result_supported && result_target==0 &&
             msr==held_msr && srr0==held_srr0 && srr1==held_srr1,
             "unknown event kind changed architectural state");

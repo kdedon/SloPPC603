@@ -294,6 +294,7 @@ module ppc_completion #(
           packets_q[result_i.producer.index].update_write ?
             result_i.update_value : 32'b0;
         if (result_i.fault || (result_i.data_fault == DATA_DSI_PROTECTION) ||
+            (result_i.data_fault == DATA_DSI_EXTERNAL) ||
             (result_i.data_fault == DATA_DSI_DIRECT_STORE) ||
             (result_i.data_fault == DATA_MACHINE_CHECK) ||
             (ENABLE_TLB_MISS_EXCEPTIONS &&
