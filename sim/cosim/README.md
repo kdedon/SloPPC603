@@ -35,3 +35,8 @@ mismatch against the manuals. The Makefile builds the flat-RAM reference runner 
 With the default `XRAND=1` it also passes `--xrand-seed $(XRAND_SEED)`: the RTL
 is built with `--x-assign unique --x-initial unique`, run with that seed, and the
 manifest records it as `xrand_seed`. `XRAND=0` keeps the zero-initialized build.
+
+`run_firmware_reference.py` (`make -C sim test-reference-firmware`, part of
+`reference-acceptance`) runs compiled firmware images on the whole DingusPPC
+CPU/MMU/exception core through `firmware_runner.cpp` and compares them with the
+RTL benches; see [REFERENCE_FIRMWARE.md](../../docs/REFERENCE_FIRMWARE.md).
