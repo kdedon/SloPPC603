@@ -158,7 +158,9 @@ Each record opens with one line:
 - Cite external code as GitHub permalinks at fixed commits; never reference local paths.
 - Follow `concise-writing` for comments and commit messages.
 - Run long builds and tests as one command that exits, then grep its log for results;
-  do not tail or poll logs. Keep parallel jobs modest (`-j2` per agent when several share a machine).
+  do not tail or poll logs. Never add watcher loops (`until grep ...; sleep`, `while pgrep`):
+  the background command's own exit is the signal. Before reporting, confirm none of your
+  processes remain. Keep parallel jobs modest (`-j2` per agent when several share a machine).
 - Builds go through `sim/tools/verilate`, which deletes Verilator's ~70 MB precompiled
   headers; `make -C sim clean-cache` reclaims any left by other paths. Remove worktrees and
   scratch files when a task ends.
