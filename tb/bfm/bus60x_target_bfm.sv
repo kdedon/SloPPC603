@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Task-driven, non-synthesizable target used by tb_bus60x.sv.  It is kept
 // deliberately simple so the master test controls every grant and termination
 // edge.  The byte array uses architectural addresses BASE_ADDR..BASE_ADDR+255.

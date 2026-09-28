@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Independent expected-state boundaries for update-addressing programs."""
 import unittest
 from control_memory_program import Program, BASE, make_lsu_update

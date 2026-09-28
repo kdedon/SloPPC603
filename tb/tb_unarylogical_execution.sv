@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Unary logical: captured source/SO, exact wake, held result packets.
 /* verilator lint_off BLKSEQ */
 module tb_unarylogical_execution;

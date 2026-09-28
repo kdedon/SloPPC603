@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Shares one 60x pin set between the scalar and line-read masters. Only the
 // selected master drives the pins and sees termination inputs. Per-master

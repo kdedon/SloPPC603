@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Runtime segment/BAT arbitration, transaction ownership, and context exclusion.
 /* verilator lint_off BLKSEQ */
 module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS=1'b1);

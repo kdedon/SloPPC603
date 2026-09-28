@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Explicit v2 full-RAM trace: v1 register fields plus 64 big-endian words."""
 import argparse
 from pathlib import Path

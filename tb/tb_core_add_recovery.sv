@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // XER-writing recovery uses actual instructions to seed sticky SO/OV/CA.
 // No architectural or speculative RTL state is forced.
 /* verilator lint_off BLKSEQ */

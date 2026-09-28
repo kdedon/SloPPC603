@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Independent literal anchors for CR state moves and flag clearing."""
 import unittest
 import control_memory_program as program

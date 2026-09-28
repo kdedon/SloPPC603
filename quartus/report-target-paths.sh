@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 # List failing setup endpoints of an existing fit at another clock period
 # (default 15.152 ns, 66 MHz); the project SDC stays the gate of record.
 # Usage: report-target-paths.sh <integrated|timer-bat|translated> [period_ns] [--docker]

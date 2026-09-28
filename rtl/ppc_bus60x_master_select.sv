@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Fair serialized selector for the scalar and line-read 60x masters.
 // Physical ownership is retained through response consumption and pin release.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Allocate in program order, finish by identity, retire a finished head, and
 // recover to an accepted pre-edge queue prefix.

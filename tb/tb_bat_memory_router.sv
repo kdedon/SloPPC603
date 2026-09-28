@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Direct effective-to-physical routing, fault, setup, and bypass checks.
 /* verilator lint_off BLKSEQ */
 module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);

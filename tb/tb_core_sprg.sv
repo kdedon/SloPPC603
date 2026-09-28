@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core SPRG0-SPRG3 commit, cancellation, privilege, and reset checks.
 /* verilator lint_off BLKSEQ */
 module tb_core_sprg;

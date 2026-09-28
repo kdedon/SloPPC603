@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 module tb_bat_service;
   logic [1:0] unused_bat_transaction;
   logic clk = 0;

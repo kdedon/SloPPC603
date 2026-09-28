@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 module tb_bat_translate;
   logic valid, instruction, write_access, ir, dr, pr;
   logic [31:0] ea;

@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 # Run make targets in the pinned cross-compiler container, from the repo root.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)

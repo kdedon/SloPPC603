@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Fixed-literal CPU decode oracle for DCMP, ICMP and RPA SPR transfers.
 /* verilator lint_off BLKSEQ */
 module tb_tlb_seed_decode;

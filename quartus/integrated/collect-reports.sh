@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 set -euo pipefail
 evidence_dir="${1:?usage: collect-reports.sh EVIDENCE_DIRECTORY}"
 for stage in flow map fit sta; do

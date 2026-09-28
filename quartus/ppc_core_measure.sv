@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 module ppc_core_measure (
   input  logic clk_i,
   input  logic rst_ni,

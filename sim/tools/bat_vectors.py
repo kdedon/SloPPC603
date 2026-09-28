@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Independent interval/arithmetic oracle for the selected-bank BAT contract."""
 import argparse
 from pathlib import Path

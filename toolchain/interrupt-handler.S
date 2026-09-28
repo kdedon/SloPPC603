@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
     .section .exception.interrupt,"ax",@progbits
     .balign 4
     .globl interrupt_handler

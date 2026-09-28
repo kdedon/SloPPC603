@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2026 Kevin Dedon
 // Adapter for the unmodified DingusPPC integer handlers. See REFERENCE_RUNNER.md.
 #include <cpu/ppc/ppcemu.h>
 #include <cpu/ppc/ppcmmu.h>

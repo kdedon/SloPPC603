@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core BAT translation, redirect drain, relocated memory, and bypass.
 /* verilator lint_off BLKSEQ */
 module tb_core_bat;

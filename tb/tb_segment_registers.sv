@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent transaction/model checks for the committed segment-register bank.
 /* verilator lint_off BLKSEQ */
 module tb_segment_registers;

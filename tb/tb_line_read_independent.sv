@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent pin-level line consumer. No shared BFM or DUT state references.
 /* verilator lint_off BLKSEQ */
 module tb_line_read_independent;

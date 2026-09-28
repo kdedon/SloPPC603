@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 .section .pageprobe,"ax",@progbits
 .globl page_probe
 .type page_probe,@function

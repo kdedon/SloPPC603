@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent instruction encoding oracle for optional CPU segment CSR forms.
 /* verilator lint_off BLKSEQ */
 module tb_segment_cpu_decode;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled load/store-extension firmware on the translated cached 60x top
 // with the translated profile's parameters. The pin target retries (ARTRY),
 // replaces read beats (DRTRY), holds line fills and delays at random. The

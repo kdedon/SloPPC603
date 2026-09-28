@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Procedural clock, input drivers and scoreboarding use blocking assignments.
 /* verilator lint_off BLKSEQ */
 module tb_completion;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Exhaust every architecturally reserved field for MCRF and MCRXR.
 module tb_crstate_decode;
   import ppc_pkg::*;

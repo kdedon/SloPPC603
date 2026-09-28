@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Stateless selected-bank 32-bit BAT translation. Caller supplies IBATs for
 // instruction accesses or DBATs for data accesses. VALIDATE_BANK=0 is for

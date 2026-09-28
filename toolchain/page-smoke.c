@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 #include <stdint.h>
 volatile uint32_t tohost __attribute__((section(".tohost")));
 volatile uint32_t irq_count, dec_count, event_order, irq_xer, dec_xer;

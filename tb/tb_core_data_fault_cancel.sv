@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Cancellation of a synchronous DSI response at a real outstanding load.
 // Only public request, response, redirect and retirement ports form the oracle.
 /* verilator lint_off BLKSEQ */

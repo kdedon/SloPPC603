@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent four-beat order, retry, error, and response checks.
 /* verilator lint_off BLKSEQ */
 module tb_bus60x_line_read;

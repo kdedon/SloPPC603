@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Compile ppc_decode per opt-in profile and compare legality with ISA masks."""
 
 from __future__ import annotations

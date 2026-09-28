@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 #include <stdint.h>
 volatile uint32_t tohost __attribute__((section(".tohost"), used));
 extern uint32_t tgpr_probe(void);

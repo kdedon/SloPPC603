@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent channel/owner/fairness checks for ppc_bus60x_arbiter.
 /* verilator lint_off BLKSEQ */
 module tb_bus60x_arbiter;

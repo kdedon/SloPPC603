@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Full-core ADDE OE/Rc validation with an independent three-term arithmetic oracle.
 /* verilator lint_off BLKSEQ */
 module tb_core_adde;

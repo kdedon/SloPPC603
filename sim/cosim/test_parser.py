@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 import json
 import tempfile
 import unittest

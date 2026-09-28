@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Require explicit virtual assignments for every port, including the final one."""
 import argparse
 from pathlib import Path

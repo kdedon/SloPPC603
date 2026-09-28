@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 /* Load/store extension firmware: link.ld with the alignment vector. */
 ENTRY(_start)
 

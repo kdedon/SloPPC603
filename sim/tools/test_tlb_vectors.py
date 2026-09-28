@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Anchor the independent TLB oracle to literal boundary cases."""
 import unittest
 from tlb_vectors import Model, REQUEST, RESPONSE, pack, request

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Literal architectural/collision anchors, independent of implementation helpers.
 /* verilator lint_off BLKSEQ */
 module tb_timer;

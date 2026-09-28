@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // CPU-installed mappings followed by response-bound load, instruction and store miss diagnostics.
 // Physical byte RAM uses independent delayed/backpressured instruction/data ports.
 /* verilator lint_off BLKSEQ */

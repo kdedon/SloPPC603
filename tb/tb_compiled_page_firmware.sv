@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled I/D page-hit firmware with CPU-owned segment switching and live events.
 // Physical byte RAM uses independent delayed/backpressured instruction/data ports.
 /* verilator lint_off BLKSEQ */

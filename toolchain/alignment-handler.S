@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
     .section .exception.alignment,"ax",@progbits
     .balign 4
     .globl alignment_handler

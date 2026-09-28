@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Direct ADD/ADDC execution checks with delayed operand wake and IU stalls.
 /* verilator lint_off BLKSEQ */
 module tb_add_execution;

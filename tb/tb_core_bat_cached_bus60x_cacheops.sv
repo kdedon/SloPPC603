@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Cache control instructions on the translated cached 60x top: translated
 // probe faults, dcbz alignment, dcbi privilege, stale code without icbi,
 // icbi across a retried and held same-set refill with a pending external

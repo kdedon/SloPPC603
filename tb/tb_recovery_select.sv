@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 module tb_recovery_select;
   import ppc_pkg::*;
   localparam int CW = $clog2(CQ_DEPTH+1);

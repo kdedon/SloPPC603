@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Encoded corpus, without expected arithmetic/state copied from the RTL."""
 from collections import Counter
 

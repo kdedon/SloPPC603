@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 #include <stdint.h>
 
 /* Page replacement, invalidation, R/C, direct-store and page-fault checks,

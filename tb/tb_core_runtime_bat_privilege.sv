@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual CPU problem-state BAT access must enter Program before CSR transport.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off UNUSEDSIGNAL */

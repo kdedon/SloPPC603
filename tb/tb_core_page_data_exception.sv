@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual CPU, BAT, committed SR and prefilled DTLB integration. The expected
 // physical effects and GPR results are computed independently of the router.
 // Phases 0-2 cover page PP denial; 3-4 cover direct-store (SR.T=1) segments.

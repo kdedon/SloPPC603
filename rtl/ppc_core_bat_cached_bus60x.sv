@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Opt-in translated physical I-cache plus scalar 60x data/bypass composition.
 // Only authorized physical instruction requests with WIMG=0000 may enter the

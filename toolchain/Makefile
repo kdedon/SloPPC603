@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 CROSS ?= powerpc-linux-gnu-
 BUILD_DIR ?= build
 

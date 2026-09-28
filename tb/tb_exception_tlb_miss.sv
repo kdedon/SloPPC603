@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 module tb_exception_tlb_miss #(
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b1
 );

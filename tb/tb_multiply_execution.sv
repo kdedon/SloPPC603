@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Direct low-word multiply checks with delayed operand wake and IU stalls.
 /* verilator lint_off BLKSEQ */
 module tb_multiply_execution;

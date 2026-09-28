@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // CPU-programmed translation before instruction cache and scalar bypass.
 /* verilator lint_off BLKSEQ */
 module tb_core_bat_cached_bus60x;

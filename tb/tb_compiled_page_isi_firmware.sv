@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled page PP/N/G ISI repair/retry firmware through CPU-seeded ITLB translation and committed MSR context.
 // Physical byte RAM uses independent delayed/backpressured instruction/data ports.
 /* verilator lint_off BLKSEQ */

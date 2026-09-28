@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core update-form atomicity, memory backpressure, faults and recovery.
 /* verilator lint_off BLKSEQ */
 module tb_lsu_update_edges;

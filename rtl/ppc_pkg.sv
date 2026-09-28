@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 package ppc_pkg;
   // Unit and standalone MMU builds import this package without every consumer.

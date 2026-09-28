@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Focused actual-core cache, shared-pin, redirect-drain, and fetch-error test.
 /* verilator lint_off BLKSEQ */
 module tb_core_cached_bus60x;

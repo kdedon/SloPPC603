@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Direct source-backed checks for the standalone exception-state controller.
 /* verilator lint_off BLKSEQ */
 module tb_exception_state;

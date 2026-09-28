@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled timer firmware through real BAT translation and committed MSR context.
 // Physical byte RAM uses independent delayed/backpressured instruction/data ports.
 /* verilator lint_off BLKSEQ */

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Literal architectural XER/CR model; hierarchy only acquires a recovery pivot.
 /* verilator lint_off BLKSEQ */
 module tb_core_xer;

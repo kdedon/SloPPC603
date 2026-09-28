@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Seed stability, control-flow construction and bounded inputs for stress."""
 import argparse
 import hashlib

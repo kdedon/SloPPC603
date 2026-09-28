@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core load/store extensions: split unaligned scalars, byte-reverse,
 // lmw/stmw, strings (with GPR wrap and zero count), lwarx/stwcx. reservation
 // rules, alignment cases, DSI in the middle of a multiple/string/split access

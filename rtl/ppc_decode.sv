@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Decodes the implemented ISA subset; other encodings produce a diagnostic.
 module ppc_decode #(

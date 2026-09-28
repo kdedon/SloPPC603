@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Unsigned immediate placement, mandatory recording and source-conflict gates."""
 import json
 import unittest

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Task-driven responder for the bounded four-beat line-read test.
 module bus60x_line_target_bfm (
   input  logic        clk_i,

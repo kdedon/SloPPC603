@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Group failing setup endpoints from target_paths.tcl by destination register."""
 import re
 import sys

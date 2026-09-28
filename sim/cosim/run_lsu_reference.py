@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Original DingusPPC load/store-extension handlers + flat RAM vs actual core."""
 import argparse
 import json

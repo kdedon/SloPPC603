@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled cache-operation firmware on the translated cached 60x top. The
 // pin target retries (ARTRY), replaces read beats (DRTRY), holds line fills
 // and delays at random; EXT and external cache invalidation also arrive at

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Direct record-operation inputs exercise SO=1 without claiming an XER writer.
 /* verilator lint_off BLKSEQ */
 module tb_record_execution;

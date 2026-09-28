@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Reset-window timing observes interrupt_admit only; expected architectural
 // state comes from retired instructions, public events and context handshakes.
 /* verilator lint_off BLKSEQ */

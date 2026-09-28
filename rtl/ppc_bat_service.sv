@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Serialized committed BAT register and translation service.
 // Reset zeroes BAT storage; 603e hardware reset leaves BATs undefined.

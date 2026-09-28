@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled TGPR preservation and software/RFI bank switching with delayed physical responses.
 // Physical byte RAM uses independent delayed/backpressured instruction/data ports.
 /* verilator lint_off BLKSEQ */

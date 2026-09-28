@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core binding of Chapter 6 divide execute cycles to accepted events.
 /* verilator lint_off BLKSEQ */
 module tb_core_divider_timing #(

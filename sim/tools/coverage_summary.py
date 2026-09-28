@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Summarize Verilator line coverage of rtl/ and gate uncovered control arms.
 
 Points from all inputs merge by source location, so a line counts as covered

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 # Provisional 50 MHz, same-clock measurement with registered virtual I/O.
 # This is not a board or PID7v clock/60x interface constraint set.
 create_clock -name core_clk -period 20.000 [get_ports {clk_i}]

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled-firmware bench scaffolding, included in the bench module body.
 // The bench declares, before this include:
 //   localparam int FW_MEM_BYTES     physical RAM size from BASE

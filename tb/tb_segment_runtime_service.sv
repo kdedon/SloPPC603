@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Prepared segment writes become visible only on a retirement commit edge.
 /* verilator lint_off BLKSEQ */
 module tb_segment_runtime_service;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Literal encoding/selector oracle, independent of production decode helpers.
 module tb_timer_decode;
   import ppc_pkg::*;

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Read-only inventory parser for the local DingusPPC CSV vectors.
 
 This module intentionally does not execute the C++ reference interpreter.

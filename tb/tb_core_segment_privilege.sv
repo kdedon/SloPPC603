@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Problem-state segment access must enter Program before any CSR transport.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off UNUSEDSIGNAL */

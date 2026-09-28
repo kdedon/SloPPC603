@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Exhaust reserved bits, all FXM masks and all source/destination registers.
 module tb_crtransfer_decode;
   import ppc_pkg::*;

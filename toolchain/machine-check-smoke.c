@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 #include <stdint.h>
 
 /* Machine check, trace and IABR under translation on the cached 60x top.

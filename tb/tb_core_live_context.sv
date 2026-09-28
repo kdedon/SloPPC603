@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent public-interface oracle for committed MSR/fetch context fences.
 // Only recovery stimulus observes allocation identity; no state is forced.
 /* verilator lint_off BLKSEQ */

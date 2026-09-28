@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Public retirement/data-port oracle for committed-EA dependency boundaries.
 /* verilator lint_off BLKSEQ */
 module tb_core_alignment_dependencies;

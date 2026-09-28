@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """DIVWU defined semantics and separately labeled undefined-result policy."""
 import unittest
 import control_memory_program as program

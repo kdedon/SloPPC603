@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 ENTRY(_start)
 PHDRS { text PT_LOAD FLAGS(5); data PT_LOAD FLAGS(6); }
 MEMORY { BOOT (rwx) : ORIGIN = 0xfff00000, LENGTH = 64K }

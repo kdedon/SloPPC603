@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Independent software-loaded page-TLB oracle, using a virtual-page dictionary.
 
 The lookup permission table is PEM Table 7-21. Address decomposition and

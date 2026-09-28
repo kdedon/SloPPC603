@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Accepted physical refill drain, maintenance, redirect, and line TEA.
 /* verilator lint_off BLKSEQ */
 module tb_core_bat_cached_bus60x_drain;

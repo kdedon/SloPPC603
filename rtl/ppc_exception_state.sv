@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // 603e MSR/SRR0/SRR1 state for one caller-selected committed-boundary event.
 // The caller detects the oldest fault and arbitrates simultaneous causes.

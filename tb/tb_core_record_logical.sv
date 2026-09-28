@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Full-core record-logical validation with an independent retirement oracle.
 // Normal programs use only architecturally reachable reset state (XER.SO=0).
 /* verilator lint_off BLKSEQ */

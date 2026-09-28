@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 #include <stdint.h>
 volatile uint32_t tohost __attribute__((section(".tohost"), used));
 #define READ(v) __asm__ volatile("mfspr %0,25" : "=r"(v))

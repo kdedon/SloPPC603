@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Exact opt-in SPRG0-SPRG3 decode and default-profile rejection checks.
 /* verilator lint_off BLKSEQ */
 module tb_sprg_decode;

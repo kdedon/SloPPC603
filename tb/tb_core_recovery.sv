@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent ordered instruction/value scoreboard; no RTL state is forced.
 /* verilator lint_off BLKSEQ */
 module tb_core_recovery;

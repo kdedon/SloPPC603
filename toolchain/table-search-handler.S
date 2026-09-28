@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
     /* Bounded 603e software PTEG search. All vector/handler code uses only
        TGPR0..TGPR3; no LR, CTR, XER or normal GPR writes occur before RFI. */
     .section .exception.imiss,"ax",@progbits

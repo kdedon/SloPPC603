@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Small fully associative cache of permitted 4-KiB translations for one side.
 // An entry exists only after the full BAT/page path allowed an access, so a

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Simple dual-port block RAM with a registered, read-enabled output. The
 // output holds while re_i is low. Contents are not reset. Read-during-write

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Remove regenerable compiler headers while preserving simulation evidence."""
 import argparse
 from pathlib import Path

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Architectural trace export for the independently compiled DingusPPC runner.
 // No instruction semantics or expected architectural values live in this bench.
 // EXTENSIONS enables the load/store extensions: a stwcx. probe is a request

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Every operand bit index and reserved Rc value for each CR Boolean opcode.
 module tb_crlogical_decode;
   import ppc_pkg::*;

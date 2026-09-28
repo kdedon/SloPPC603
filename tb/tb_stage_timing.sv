@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // P05c full-core edge observation. All log samples precede nonblocking updates.
 /* verilator lint_off BLKSEQ */
 module tb_stage_timing;

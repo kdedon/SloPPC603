@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Validate bounded P03 ISA metadata and deterministically generate ISA_MATRIX.md."""
 
 from __future__ import annotations

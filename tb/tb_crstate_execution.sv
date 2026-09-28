@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent ppc_special checks for captured MCRF and MCRXR source state.
 // Destination fields are varied exhaustively to catch accidental use as selectors;
 // destination routing itself lives in the completion/flags path, outside this unit.

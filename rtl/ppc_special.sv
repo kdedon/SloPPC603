@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Serialized control, SPR and one-outstanding memory lane. One
 // sequencer owns the lane state; each concern owns its own registers.

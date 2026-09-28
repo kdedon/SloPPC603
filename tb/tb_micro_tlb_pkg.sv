@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Shared operation and result records for the micro-TLB equivalence bench.
 package tb_micro_tlb_pkg;
   localparam int MAX_OPS = 1024;

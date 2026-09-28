@@ -156,6 +156,8 @@ Each record opens with one line:
   behind a named, documented parameter.
 - New RTL changes need a fresh fit before any timing claim.
 - Cite external code as GitHub permalinks at fixed commits; never reference local paths.
+- New source files start with `SPDX-License-Identifier: MIT` and `Copyright (c) 2026 Kevin Dedon`
+  in the file's comment syntax (after any shebang). Do not copy third-party code into the tree.
 - Follow `concise-writing` for comments and commit messages.
 - Run long builds and tests as one command that exits, then grep its log for results;
   do not tail or poll logs. Never add watcher loops (`until grep ...; sleep`, `while pgrep`):

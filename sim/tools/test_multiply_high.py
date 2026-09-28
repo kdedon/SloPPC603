@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Literal high-product boundaries, signedness and XER preservation."""
 import unittest
 import control_memory_program as program

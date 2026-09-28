@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Runtime BAT arbitration, transaction ownership, and context exclusion.
 /* verilator lint_off BLKSEQ */
 module tb_bat_runtime_router;

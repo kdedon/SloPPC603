@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Reusable core wrapper for the bounded unified scalar 60x bus profile.
 module ppc_core_bus60x #(

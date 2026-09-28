@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Public core/CSR transaction model. Recovery identity is observed at allocation.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off UNUSEDSIGNAL */

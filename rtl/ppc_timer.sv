@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // One owner for architected TB/DEC storage and coalesced decrementer requests.
 // timer_tick_i is a level enable sampled in the clk_i domain.

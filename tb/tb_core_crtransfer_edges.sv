@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // CR transfers: architectural preservation, cancellation and retirement cuts.
 /* verilator lint_off BLKSEQ */
 module tb_core_crtransfer_edges;

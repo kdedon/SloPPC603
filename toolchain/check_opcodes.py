@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Require each named instruction form in an ELF's executable sections."""
 
 from __future__ import annotations

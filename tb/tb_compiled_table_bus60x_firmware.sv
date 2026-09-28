@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // The unchanged table-search/table-fault ELF runs through the translated
 // scalar 60x wrapper. RAM behavior is driven only by public 60x pin tenures.
 /* verilator lint_off BLKSEQ */

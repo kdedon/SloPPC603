@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Signed division: defined quotient/flags versus local undefined-result policy."""
 import unittest
 import control_memory_program as program

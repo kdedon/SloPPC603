@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 #include <stdint.h>
 
 /* Load/store extensions in real mode: compiler-generated stmw/lmw prologues,

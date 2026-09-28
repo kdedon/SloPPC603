@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
     /* Software table search plus machine-check, DSI, ISI, external and
        decrementer handlers for the MMU/event stress image. Miss handlers use
        only TGPR0..TGPR3 and SPRG0..2; the others run with EE=0 in real mode,

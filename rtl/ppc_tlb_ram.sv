@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Simple dual-port RAM with a registered read. Callers never read an address
 // on the edge that writes it, so read-during-write behavior is unused.

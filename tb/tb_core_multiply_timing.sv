@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core event binding for conservative Table 6-4 multiply reservations.
 /* verilator lint_off BLKSEQ */
 module tb_core_multiply_timing;

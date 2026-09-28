@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Single-issue core with abstract fetch, data and CSR transports.
 module ppc_core #(

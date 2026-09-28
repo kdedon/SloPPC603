@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled ELF image execution through the supervisor-enabled cached 60x wrapper.
 /* verilator lint_off BLKSEQ */
 module tb_compiled_firmware;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // GPR rename slots with exact-owner wakeup; recovery rebuilds the map from
 // the surviving CQ prefix, oldest first.

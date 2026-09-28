@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // LUT RAM (MLAB) with a synchronous write and an asynchronous read. A write
 // is visible to reads from the next cycle. Contents are not reset.

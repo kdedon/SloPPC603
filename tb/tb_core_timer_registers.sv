@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Counter values are computed from public ticks and accepted retirement writes.
 // Only the named read-execute pulse anchors the architectural snapshot edge.
 /* verilator lint_off BLKSEQ */

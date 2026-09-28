@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Procedural testbench clock and sequential reference model use blocking updates.
 /* verilator lint_off BLKSEQ */
 module tb_core;

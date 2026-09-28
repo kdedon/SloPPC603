@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 #include <stdint.h>
 
 /* Real-mode PTEGs are populated by the CPU, never by the testbench. */

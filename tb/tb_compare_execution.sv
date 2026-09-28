@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compare on the IU adder: signed/unsigned boundaries, SO copy, stalled result.
 /* verilator lint_off BLKSEQ */
 module tb_compare_execution;

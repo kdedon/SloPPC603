@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Load BE firmware into cached-bus, exception, live-context, timer, BAT, or page-hit RTL."""
 import argparse
 from pathlib import Path

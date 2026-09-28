@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 /* Machine-check/trace/IABR firmware: link.ld with fixed 0x200, 0xD00 and
  * 0x1300 vectors, a line-aligned routine that straddles the TEA window and a
  * mode word the bench writes. */

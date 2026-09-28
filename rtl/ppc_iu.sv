@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Registered issue stage. One result per issue; reset cancels held work.
 module ppc_iu #(

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core ordering and refetch checks for the opt-in serialization forms.
 /* verilator lint_off BLKSEQ */
 module tb_core_serialization;

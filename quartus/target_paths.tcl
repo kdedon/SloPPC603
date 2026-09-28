@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 # Re-time a completed fit against another clock period; never fits.
 # Usage: quartus_sta -t target_paths.tcl <revision> <period_ns> <out_file>
 # Rewrites the project SDC's create_clock period, then writes the worst setup

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Independent v2 protocol/schema and encoded-memory coverage anchors."""
 from pathlib import Path
 import tempfile

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Subtract: captured count/SO, pending data or count, held packets.
 /* verilator lint_off BLKSEQ */
 module tb_subtract_execution;

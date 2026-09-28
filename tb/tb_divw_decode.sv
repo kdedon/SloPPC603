@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Exhaustive DIVW register/OE/Rc decode checks for XO491 only.
 module tb_divw_decode;
   import ppc_pkg::*;

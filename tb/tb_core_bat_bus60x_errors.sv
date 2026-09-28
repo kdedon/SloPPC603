@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Pin-driven translated-wrapper transport errors and reset recovery.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off PINCONNECTEMPTY */

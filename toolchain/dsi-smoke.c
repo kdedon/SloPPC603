@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 #include <stdint.h>
 volatile uint32_t tohost __attribute__((section(".tohost"),used));
 volatile uint32_t fault_dar, fault_dsisr, fault_pc, fault_msr, fault_entry_msr, fault_count, repair;

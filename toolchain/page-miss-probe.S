@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 /* Reuse the fixed page/load probes; append the store at fff07008. */
 #include "tlbie-probe.S"
 .section .faultprobe,"ax",@progbits

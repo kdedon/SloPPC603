@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Effective-to-physical instruction/data router: BAT translation with optional
 // segment/TLB page fallback, committed MSR context and retirement-prepared

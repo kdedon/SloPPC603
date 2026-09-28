@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Typed BAT data protection, diagnostic separation, and context/CSR exclusion.
 /* verilator lint_off BLKSEQ */
 module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);

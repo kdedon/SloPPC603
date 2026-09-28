@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Validate and query the source-backed MPC603e bus encoding manifest."""
 
 from __future__ import annotations

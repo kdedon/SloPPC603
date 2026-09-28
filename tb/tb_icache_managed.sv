@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Direct maintenance, icbi, drain, invalidation, and bypass checks.
 /* verilator lint_off BLKSEQ */
 module tb_icache_managed;

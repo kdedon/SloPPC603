@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // CR state operations: architectural preservation, cancellation and retirement cuts.
 /* verilator lint_off BLKSEQ */
 module tb_core_crstate_edges;

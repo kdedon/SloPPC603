@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Translated cached 60x MVP profile: every wrapper port remains a virtual port.
 // Bus data returns are runtime inputs, so decode is not specialized to one program.
 // No behavioral responder, constant memory inputs or folded retirement digest.

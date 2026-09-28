@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Fixed PTEG address anchors from 32-bit PEM hash/SDR1 equations.
 /* verilator lint_off BLKSEQ */
 module tb_miss_derive;

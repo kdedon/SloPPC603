@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Check the bootstrap ELF identity, byte order, and required symbols."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Resettable 60x target, one tenure at a time, with phase-varied delays and
 // bench-steered retries. Delays follow the delay target: BG follows BR except
 // when phase%3==0, AACK 1-3 cycles after TS, DBG skips phase%4==1, the first

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // CPU-programmed translated scalar bus with address retry and provisional read replacement.
 /* verilator lint_off BLKSEQ */
 module tb_core_bat_bus60x_retry;

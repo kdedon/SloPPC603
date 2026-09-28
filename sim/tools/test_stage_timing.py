@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Positive fixtures and deliberate failures independent of the RTL probe."""
 import copy
 import json

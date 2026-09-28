@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Exhaustive exact decode checks for MULHW and MULHWU, including reserved OE.
 module tb_multiply_high_decode;
   import ppc_pkg::*;

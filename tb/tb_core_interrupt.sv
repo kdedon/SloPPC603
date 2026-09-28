@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent retirement/IRQ trace oracle. External IRQ is a synchronous level.
 // Hierarchy is observed only to acquire the exact producer for recovery stimulus.
 /* verilator lint_off BLKSEQ */

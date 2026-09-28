@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Committed PowerPC segment-register bank storing normalized descriptors.
 module ppc_segment_registers #(

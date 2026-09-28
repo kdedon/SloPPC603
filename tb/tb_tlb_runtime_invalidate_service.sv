@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // A CPU invalidation proposal clears both TLB ways/banks only at retirement.
 /* verilator lint_off BLKSEQ */
 module tb_tlb_runtime_invalidate_service;

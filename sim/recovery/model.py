@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Executable recovery policy proposal; not an emulator or RTL verification model.
 
 State transitions use pre-edge eligibility. Producer tokens model the lifetime

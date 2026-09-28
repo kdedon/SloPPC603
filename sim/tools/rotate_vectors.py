@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Expected rlwinm/rlwnm IU results from the rotate_family model, for tb_rotate_execution."""
 
 from __future__ import annotations

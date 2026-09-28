@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Python CR0/XER masked-commit and one-owner lifecycle model; exercised only by its unit tests, not by an RTL bench."""
 
 from __future__ import annotations

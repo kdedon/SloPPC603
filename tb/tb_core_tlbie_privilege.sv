@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Problem-state tlbie and tlbsync enter Program Priv; default-off forms retain
 // the legacy illegal diagnostic halt. Neither may reach the TLB transport.
 // Supervisor tlbsync retires as a no-op with TLBISYNC negated.

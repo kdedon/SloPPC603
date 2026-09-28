@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Free-running 60x target handshake with phase-varied delays, one tenure at
 // a time. BG follows BR except when phase%3==0; AACK comes 1-3 cycles after
 // TS; DBG waits for AACK and skips phase%4==1; each TA waits for a varied

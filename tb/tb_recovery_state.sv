@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Direct sequential CQ/rename recovery checks. This bench supplies only local,
 // cancellable producer responses: a killed token is discarded and never
 // replayed after its finite identity is legally reused.

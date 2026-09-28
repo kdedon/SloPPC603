@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 module tb_bat_runtime_service;
   logic prepare_commit=0, prepare_abort=0, ack_valid, ack_ready=0, idle;
   logic [31:0] model[16];

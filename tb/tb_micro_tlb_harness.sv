@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // One fully featured router driven through an operation list. Records every
 // architectural outcome so two instances can be compared.
 /* verilator lint_off BLKSEQ */

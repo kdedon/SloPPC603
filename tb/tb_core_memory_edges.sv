@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // External memory obligations and architectural side effects around recovery.
 /* verilator lint_off BLKSEQ */
 module tb_core_memory_edges;

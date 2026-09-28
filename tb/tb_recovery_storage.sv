@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 /* verilator lint_off BLKSEQ */
 module tb_recovery_storage;
   import ppc_pkg::*;

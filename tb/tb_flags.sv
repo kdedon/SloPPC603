@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Standalone committed CR/XER and exact single-owner checks.
 /* verilator lint_off BLKSEQ */
 module tb_flags;

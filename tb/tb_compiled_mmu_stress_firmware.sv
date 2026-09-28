@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // The compiled MMU stress image on the translated cached 60x top with the
 // MVP profile. MODE seeds the external IRQ schedule, decrementer ticks, 60x
 // target delays and retirement backpressure. Modes 1-8 also reset the CPU at

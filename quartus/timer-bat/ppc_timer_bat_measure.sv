@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Live BAT + EXT + TB/DEC measurement. Every wrapper port remains observable.
 // No cache/60x composition, fixed memory responder or folded trace.
 module ppc_timer_bat_measure (

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Instruction encoders for hand-assembled bench programs. Register and field
 // arguments are architectural numbers; immediates are truncated to 16 bits.
 function automatic logic [31:0] asm_d(input int op, input int rt, input int ra,

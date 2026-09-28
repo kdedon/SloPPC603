@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Direct DIVWU checks through pending dispatch and stalled registered IU result.
 /* verilator lint_off BLKSEQ */
 module tb_divwu_execution;

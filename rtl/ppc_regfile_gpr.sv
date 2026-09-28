@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // One write port and three asynchronous read ports. Each read port has its own
 // copy so every copy maps to MLAB. After reset the write port zeroes all 32

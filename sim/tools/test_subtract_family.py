@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Encoding policy and literal signed-subtraction oracle anchors."""
 import json
 import unittest

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Exact decode and invalid-form checks for the bounded integer update subset.
 module tb_lsu_update_decode;
   import ppc_pkg::*;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 module tb_regfile_tgpr #(
   parameter bit ENABLE_TGPR = 1'b1
 );

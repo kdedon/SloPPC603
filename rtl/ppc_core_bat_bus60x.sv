@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Opt-in BAT/page translation composition with the existing scalar 60x bus.
 // All physical transactions use that adapter's fixed cache-inhibited policy:

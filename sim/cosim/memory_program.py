@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """All original register corpus plus aligned scalar memory instruction streams."""
 from collections import Counter
 from reference_program import corpus as register_corpus

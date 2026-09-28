@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Validate and query the bounded MPC603e Tables 8-4 through 8-7 contract."""
 
 from __future__ import annotations

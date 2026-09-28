@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled machine-check, trace and IABR firmware on the translated cached
 // 60x top. The pin target ends every tenure in the TEA window with TEA and
 // otherwise retries, replaces read beats, holds fills and delays at random.

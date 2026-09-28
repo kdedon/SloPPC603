@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent abstract-channel checks for the bounded instruction cache.
 /* verilator lint_off BLKSEQ */
 module tb_icache;

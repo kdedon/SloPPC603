@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core data TLB misses on cache-block probes: dcbf/dcbst enter the
 // load-miss vector, dcbi and a C=0 dcbz the store-miss vector, each with the
 // full EA in DMISS; the handler's RFI retries the probe once. The retried

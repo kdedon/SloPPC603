@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Synchronous FIFO without bypass; a pop frees space the next cycle.
 module ppc_fifo #(

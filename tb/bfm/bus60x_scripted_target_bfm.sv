@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Free-running 60x target serving one tenure at a time. The bench steers each
 // tenure from the captured attributes through four policy inputs:
 //   retry_i  sampled for the ARTRY window after AACK; a retried tenure ends

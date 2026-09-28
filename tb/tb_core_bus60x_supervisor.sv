@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Execute the optional supervisor/barrier profile through real scalar bus pins.
 // Disabled mode checks that the same SC still produces the default diagnostic.
 /* verilator lint_off BLKSEQ */

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 set -euo pipefail
 
 for tool in quartus_sh quartus_map quartus_fit quartus_sta; do

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Check timing-transcription structure/provenance, not processor conformance."""
 import argparse
 from collections import Counter

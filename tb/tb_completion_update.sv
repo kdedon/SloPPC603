@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // CQ authorization and fault masking for the second update-form GPR write.
 /* verilator lint_off BLKSEQ */
 module tb_completion_update;

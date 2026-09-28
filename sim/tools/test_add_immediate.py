@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Literal ADDIC semantics and D-form modifier boundaries."""
 import json
 import unittest

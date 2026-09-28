@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Core plus shared startup/runtime-programmed BAT memory router.
 module ppc_core_bat #(

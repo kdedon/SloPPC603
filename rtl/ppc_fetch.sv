@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Abstract fetch transport: one untagged request outstanding, responses are
 // instruction words. The next request is offered on the edge that consumes a

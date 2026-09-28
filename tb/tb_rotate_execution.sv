@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Direct rotate mask/SO capture checks with delayed operand wake and IU stalls.
 /* verilator lint_off BLKSEQ */
 module tb_rotate_execution;

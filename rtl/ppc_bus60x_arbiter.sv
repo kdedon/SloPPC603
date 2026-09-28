@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Fair single-entry router from the core's separate instruction/data channels
 // to one scalar 60x adapter request/response channel.

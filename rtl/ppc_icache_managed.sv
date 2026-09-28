@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Maintenance and enable/bypass control around ppc_icache.
 module ppc_icache_managed #(

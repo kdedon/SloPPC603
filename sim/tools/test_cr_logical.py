@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Literal truth tables, MSB-first CR destinations and source aliases."""
 import unittest
 import control_memory_program as program

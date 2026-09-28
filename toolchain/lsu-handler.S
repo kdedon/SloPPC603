@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 /* Alignment handler: record DAR/DSISR/SRR0, count, skip the instruction. */
     .section .exception.alignment,"ax",@progbits
     .balign 4

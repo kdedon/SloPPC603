@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core self-modifying image, cache maintenance, and bypass transport.
 /* verilator lint_off BLKSEQ */
 module tb_core_cached_bus60x_managed;

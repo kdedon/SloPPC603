@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // End-to-end symbolic-program oracle: all architectural state and byte memory.
 /* verilator lint_off BLKSEQ */
 module tb_core_bus60x;

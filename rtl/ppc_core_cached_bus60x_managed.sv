@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Cached core wrapper with local quiescent maintenance and scalar bypass.
 module ppc_core_cached_bus60x_managed #(

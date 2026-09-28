@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Literal multiplication boundaries independent of RTL datapath/masks."""
 import unittest
 import control_memory_program as program

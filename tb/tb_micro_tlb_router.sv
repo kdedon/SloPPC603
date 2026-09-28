@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Micro-TLB equivalence and invalidation bench. Two fully featured routers,
 // one with the micro-TLB and one without, run the same operation list with
 // independent random memory timing. Every access outcome, CSR status and

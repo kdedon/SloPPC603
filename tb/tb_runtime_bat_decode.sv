@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent SPR encoding oracle for the CPU-programmable BAT profile.
 /* verilator lint_off BLKSEQ */
 module tb_runtime_bat_decode;

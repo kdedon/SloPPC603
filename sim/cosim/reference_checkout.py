@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """DingusPPC checkout checks and tool options shared by every reference runner."""
 from pathlib import Path
 import subprocess

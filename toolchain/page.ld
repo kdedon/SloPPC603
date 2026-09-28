@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
 /* Page-hit firmware variant of link.ld, with the high vector installed. */
 ENTRY(_start)
 

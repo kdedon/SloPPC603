@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Core wrapper with an instruction cache whose line-refill master shares the
 // 60x pins with the scalar data master.

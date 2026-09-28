@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Cracks lmw/stmw/lswi/lswx/stswi/stswx at dispatch into one word micro-op
 // per register. The first micro-op uses the decoded operands; later ones use

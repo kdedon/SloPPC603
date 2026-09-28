@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Committed CR/XER state and one exact-tag speculative flag owner.
 // All architectural updates share the core retirement handshake.

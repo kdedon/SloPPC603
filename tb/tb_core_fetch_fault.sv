@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Port-level oracle for typed synchronous fetch faults, not physical TEA.
 // PEM Table 6-10 and MPC603e UM 4.2.2/Table 4-5 define the saved state.
 /* verilator lint_off BLKSEQ */

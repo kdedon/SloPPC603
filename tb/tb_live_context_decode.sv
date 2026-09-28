@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Independent encoding oracle: PEM printed 8-169 defines primary31, RS,
 // reserved RA/RB=0, XO146 and Rc=0. This bench does not inspect core state.
 module tb_live_context_decode;

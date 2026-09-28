@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core supervisor exception entry, handler execution, return and
 // recovery-edge checks for the opt-in profile.
 /* verilator lint_off BLKSEQ */

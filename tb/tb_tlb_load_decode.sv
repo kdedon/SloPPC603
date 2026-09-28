@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Fixed-word independent decoder oracle for 603e tlbld and tlbli.
 /* verilator lint_off BLKSEQ */
 module tb_tlb_load_decode;

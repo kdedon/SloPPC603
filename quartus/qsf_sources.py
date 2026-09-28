@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Regenerate each project's QSF source assignments from its files.f.
 
 Every PROJECT_DIR holds one *.qsf and a files.f. Existing SYSTEMVERILOG_FILE

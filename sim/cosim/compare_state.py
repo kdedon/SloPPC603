@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Strict version-1 architectural trace comparator, shared by real/negative runs."""
 import argparse
 from pathlib import Path

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Independent stateful transaction oracle for the bounded BAT service.
 
 Uses the prior arithmetic/interval BAT oracle, never simulator hierarchy or RTL

@@ -47,3 +47,10 @@ The core is single-issue; dual dispatch remains the delivery target. `RESET_PC` 
 ## Work remaining
 
 See the [current plan](docs/plans/current/PLAN.md) for priorities, completion status and remaining work.
+
+## License
+
+MIT; see [LICENSE](LICENSE). Copyright (c) 2026 Kevin Dedon. Every source file
+carries an SPDX identifier. `sim/cosim/reference_runner.cpp` is GPL-3.0-or-later
+because it builds against DingusPPC, which is fetched separately and not
+included here.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Compiled firmware on the abstract core. Fault injection is synthetic:
 // no MMU translation producer or physical bus error is being simulated here.
 /* verilator lint_off BLKSEQ */

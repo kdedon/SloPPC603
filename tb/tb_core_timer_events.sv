@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Public retirement/event oracle. Reservation is observed only to time pin changes.
 /* verilator lint_off BLKSEQ */
 module tb_core_timer_events;

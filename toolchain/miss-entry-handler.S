@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
     .section .exception.imiss,"ax",@progbits
     .globl imiss_handler
     .type imiss_handler,@function

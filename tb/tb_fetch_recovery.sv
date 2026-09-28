@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Focused recovery checks for the one-outstanding, untagged fetch transport.
 // Reset requires the external memory model to cancel any pre-reset obligation.
 /* verilator lint_off BLKSEQ */

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Exhaustive reachable arithmetic and recovery; independent modulo oracle.
 /* verilator lint_off BLKSEQ */
 module tb_completion_ring;

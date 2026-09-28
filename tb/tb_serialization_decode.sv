@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Exact opt-in serialization decode and default-profile preservation.
 /* verilator lint_off BLKSEQ */
 module tb_serialization_decode;

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
     .section .exception.dsi,"ax",@progbits
     .globl table_search_dsi_vector
     .type table_search_dsi_vector,@function

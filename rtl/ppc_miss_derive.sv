@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Pure 32-bit page-miss compare and PTEG address derivation.
 // PowerPC Programming Environments Manual, sections 7.6.1.1.2,

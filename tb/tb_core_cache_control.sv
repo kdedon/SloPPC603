@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Actual-core cache control: icbi holds until its invalidation completes and
 // cannot be withdrawn by a cut; probes carry the probe marker and translate
 // as loads or stores; dcbt issues nothing; dcbz ends in alignment after a

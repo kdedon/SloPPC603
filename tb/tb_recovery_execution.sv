@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Local cancellation protocol: cancel is an identity-qualified decision by the caller.
 /* verilator lint_off BLKSEQ */
 module tb_recovery_execution;

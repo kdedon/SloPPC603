@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Standalone P06 preparation. Inputs must describe a valid contiguous CQ ring.
 // Decisions use pre-edge state; the caller applies any surviving retirement later.
 module ppc_recovery_select (

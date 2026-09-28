@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 create_clock -name core_clk -period 20.000 [get_ports {clk_i}]
 derive_clock_uncertainty
 set_input_delay -clock core_clk -max 0.000 [get_ports {rst_ni stimulus_i[*]}]

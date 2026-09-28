@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Focused P05 checks for rename ownership, the one-entry RS, and registered IU.
 // Procedural stimulus intentionally uses blocking assignments between active edges.
 /* verilator lint_off BLKSEQ */

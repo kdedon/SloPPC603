@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Full-core ADDME/ADDZE OE/Rc validation with an independent unary arithmetic oracle.
 /* verilator lint_off BLKSEQ */
 module tb_core_add_unary;

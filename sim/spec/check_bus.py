@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Structural and source-locator checks for the Chapter 7/8 bus manifests."""
 
 from __future__ import annotations

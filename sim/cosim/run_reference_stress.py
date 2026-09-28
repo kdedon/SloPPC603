@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Reproducible multi-seed v2 stress, one reference/RTL build per invocation."""
 import argparse
 from collections import Counter

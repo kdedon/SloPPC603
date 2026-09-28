@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Independent format/diagnostic tests; actual reference-vs-RTL is run_reference.py."""
 from pathlib import Path
 import tempfile

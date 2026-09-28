@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Software-loaded 4-KiB page instruction and data TLBs.
 // Local reset clears valids; 603e hardware reset leaves them unchanged.

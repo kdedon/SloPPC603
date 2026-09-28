@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Compare original handlers with the CPU using startup-programmed BAT translation to physical memory."""
 import argparse
 import json

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 // Negedge-driven 60x target, one tenure at a time. AACK is asserted the
 // negedge after TS for one cycle; DBG follows AACK. Each TA is driven on a
 // negedge while DBB is held, one beat for single transfers and four for a

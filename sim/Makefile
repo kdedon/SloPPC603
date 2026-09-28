@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 VERILATOR ?= $(CURDIR)/tools/verilate
 # The cosim drivers take one executable path; they add the X flags from --xrand-seed.
 VERILATOR_TOOL := $(VERILATOR)
