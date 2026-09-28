@@ -1,6 +1,6 @@
 # 603e package top verification
 
-Recorded: `make -C sim -j2 ci` (includes the four `rtl-chip-*` profiles), commit `491b0eb`;
+Recorded: `make -C sim -j2 ci` (includes the four `rtl-chip-*` profiles), commit `70163c2`;
 `make -C sim test-chip-pins lint-chip`, `./quartus/chip/build.sh --docker` and
 `./quartus/report-target-paths.sh chip --docker`, commit `4274bd0`; 2026-09-28. All pass.
 
@@ -32,24 +32,24 @@ target cannot abandon one) and releases BG only while HRESET is held.
 ## Compiled firmware at the pins
 
 `tb/tb_chip_firmware.sv` loads the image at 0xFFF0_0000 and boots it through
-HRESET. The target retries, delays and replaces read beats at random. The
-pin bench, `chip-lsu` and `chip-mmu-stress` reset with HID0[ICE]=0, as the
-603e does. The full-decode and machine-check images assume the cache-on reset
-of the wrappers they were written for, so their chip profiles build with the
-bench-only `RESET_ICACHE_ENABLE=1`.
+HRESET. The target retries, delays and replaces read beats at random. Every
+profile resets with HID0[ICE]=0, as the 603e does. `chip-full-decode` and
+`chip-machine-check` run `chip-` builds of their images whose `crt0` flash
+invalidates and enables the instruction cache before `main`; the images built
+for the other wrappers are unchanged.
 
 | Target | cycles | writes | tenures | retries | DRTRY | TEA | INT |
 |---|---|---|---|---|---|---|---|
-| `rtl-chip-full-decode` | 25,545 | 155 | 1,559 | 129 | 87 | 0 | 0 |
-| `rtl-chip-lsu` | 2,678,253 | 9,530 | 173,234 | 13,780 | 9,055 | 0 | 0 |
-| `rtl-chip-machine-check` | 11,901 | 75 | 689 | 77 | 44 | 4 | 0 |
-| `rtl-chip-mmu-stress` | 1,554,876 | 6,124 | 98,147 | 7,730 | 4,973 | 0 | 856 |
+| `rtl-chip-full-decode` | 25,776 | 155 | 1,567 | 123 | 82 | 0 | 0 |
+| `rtl-chip-lsu` | 2,678,632 | 9,530 | 173,285 | 13,745 | 8,965 | 0 | 0 |
+| `rtl-chip-machine-check` | 12,009 | 75 | 680 | 54 | 37 | 4 | 0 |
+| `rtl-chip-mmu-stress` | 1,557,409 | 6,136 | 98,360 | 7,831 | 5,026 | 0 | 864 |
 
 ## Full gate
 
-`make -C sim -j2 ci`: 537 PASS lines, 231 + 28 + 15 Python tests, container
-firmware build, 35 compiled-firmware profiles, `rtl/` line coverage 76.2%
-(1,418 of 1,860).
+`make -C sim -j2 ci`: 555 PASS lines, 231 + 28 + 15 Python tests, container
+firmware build, 36 compiled-firmware profiles, `rtl/` line coverage 76.3%
+(1,418 of 1,859).
 
 ## Fit
 
