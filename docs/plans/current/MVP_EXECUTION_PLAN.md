@@ -873,3 +873,9 @@ and fits of the translated, cached physical, timer/BAT and chip tops, all meetin
 50 MHz and 66 MHz at every corner (70.92 / 73.21 / 69.85 / 66.22 MHz). MVP
 88.84% → 89.05%. Next: data-cache integration (wave 2), then release.
 
+## Chip boot round — accepted (2026-09-28)
+
+Chip firmware images set HID0[ICE] in a `CHIP_BOOT` crt0 block; the pin top resets
+with the instruction cache off (UM Table 4-8). Fresh on the branch, same tree as
+the merge: `make -C sim ci`. MVP 89.05% → 89.25%.
+

@@ -11,10 +11,7 @@
 module ppc603e #(
   // The PLL_CFG[0-3] strap this build runs at; HID1[PC0-PC3] reads it.
   // Only the 1:1 and bypass codes match a SYSCLK-clocked core.
-  parameter logic [3:0] PLL_CFG = 4'b0000,
-  // Hard reset clears HID0, ICE included (UM Table 4-8). 1 starts with the
-  // instruction cache on, for images that expect it.
-  parameter bit RESET_ICACHE_ENABLE = 1'b0
+  parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
   // Clocks.
   input  logic        sysclk,
@@ -217,7 +214,8 @@ module ppc603e #(
   /* verilator lint_off PINCONNECTEMPTY */
   ppc_core_bat_cached_bus60x #(
     .RESET_PC(32'hfff0_0100),
-    .RESET_CACHE_ENABLE(RESET_ICACHE_ENABLE),
+    // Hard reset clears HID0, ICE included (UM Table 4-8).
+    .RESET_CACHE_ENABLE(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_EXTERNAL_INTERRUPTS(1'b1), .ENABLE_TIMERS(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1), .ENABLE_SEGMENT_REGISTERS(1'b1),

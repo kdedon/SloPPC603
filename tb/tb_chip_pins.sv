@@ -9,7 +9,6 @@
 module tb_chip_pins;
   localparam logic [31:0] BASE = 32'hfff00000;
   localparam int MEM_BYTES = 65536;
-  localparam bit ICE_AT_RESET = 1'b0;
   logic clk = 1'b0;
   always #5 clk = ~clk;
   `include "chip_harness.svh"

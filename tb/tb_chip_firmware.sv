@@ -5,10 +5,9 @@
 // RAM, and boots from the hard reset vector. The target retries, replaces read beats and waits at random.
 // Options: +IRQ_ACK=<addr> asserts INT until the firmware writes that word;
 // +TEA_BASE/+TEA_END end tenures in that window with TEA. Passes when the
-// firmware writes 1 to +TOHOST with no checkstop. ICE_AT_RESET starts the
-// instruction cache on, for images that expect it.
+// firmware writes 1 to +TOHOST with no checkstop.
 /* verilator lint_off BLKSEQ */
-module tb_chip_firmware #(parameter bit ICE_AT_RESET = 1'b0);
+module tb_chip_firmware;
   localparam logic [31:0] BASE = 32'hfff00000;
   localparam int MEM_BYTES = 262144, IMAGE_BYTES = 65536;
   logic clk = 1'b0;

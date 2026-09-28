@@ -226,12 +226,11 @@ cache's integration round.
 - `make -C sim test-chip-pins`: directed system-pin checks at the pins.
 - `make -C toolchain rtl-chip-mmu-stress rtl-chip-lsu rtl-chip-machine-check rtl-chip-full-decode`:
   compiled firmware booting through HRESET on the chip, observed only at the pins.
-  The chip resets with HID0[ICE]=0 (UM Table 4-8). The full-decode and
-  machine-check images assume the cache-on reset of the wrappers they were
-  written for, and they also run on profiles without HID0, so they cannot
-  set ICE themselves; their chip profiles build with the bench-only
-  `RESET_ICACHE_ENABLE=1`. The pin bench, `chip-lsu` and `chip-mmu-stress`
-  reset like silicon.
+  The chip resets with HID0[ICE]=0 (UM Table 4-8), and every chip bench
+  resets that way. The full-decode and machine-check images assume the
+  cache-on reset of the wrappers they were written for, so the chip profiles
+  run `chip-` builds of them whose `crt0` sets HID0[ICE|ICFI], then ICE,
+  between `isync`s before `main`.
 - `make -C sim lint-chip`: strict lint of `ppc603e` and its measurement wrapper.
 - Fit: `quartus/chip/build.sh --docker`.
 

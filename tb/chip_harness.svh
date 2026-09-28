@@ -26,7 +26,7 @@ logic [0:1] tc, cse;
 logic [0:7] dp;
 logic [63:0] target_data;
 
-ppc603e #(.RESET_ICACHE_ENABLE(ICE_AT_RESET)) dut (
+ppc603e dut (
   .sysclk(clk), .pll_cfg_i(pll_cfg), .clk_out_o(clk_out), .clk_out_oe_o(clk_out_oe),
   .br_n_o(br_n), .bg_n_i(bg_n || bus_block), .abb_n_i(1'b1), .abb_n_o(abb_n), .abb_oe_o(abb_oe),
   .ts_n_i(1'b1), .ts_n_o(ts_n), .ts_oe_o(ts_oe),
