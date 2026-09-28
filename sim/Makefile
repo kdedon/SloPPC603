@@ -1345,3 +1345,14 @@ test-core-machine-check-trace:
 	mkdir -p $(BUILD_DIR)/core-machine-check-trace
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_machine_check_trace --Mdir $(BUILD_DIR)/core-machine-check-trace -I../tb $(RTL) ../tb/tb_core_machine_check_trace.sv
 	for seed in 1 2 4 7; do ./$(BUILD_DIR)/core-machine-check-trace/Vtb_core_machine_check_trace $(SIM_ARGS) +seed=$$seed || exit 1; done
+
+# Machine check from 60x TEA on the translated cached top (line fill and
+# bypass) and the translated scalar top, with the ME=0 checkstop control.
+.PHONY: test-core-bat-machine-check
+test: test-core-bat-machine-check
+test-core-bat-machine-check:
+	mkdir -p $(BUILD_DIR)/core-bat-mc-fill $(BUILD_DIR)/core-bat-mc-bypass $(BUILD_DIR)/core-bat-mc-scalar
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_machine_check --Mdir $(BUILD_DIR)/core-bat-mc-fill -I../tb $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_machine_check.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_machine_check --Mdir $(BUILD_DIR)/core-bat-mc-bypass -I../tb "-GCACHE_ENABLE=1'b0" $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_machine_check.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_machine_check --Mdir $(BUILD_DIR)/core-bat-mc-scalar -I../tb "-GCACHED=1'b0" $(CORE_BAT_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_machine_check.sv
+	for dir in fill bypass scalar; do for mode in 0 1; do ./$(BUILD_DIR)/core-bat-mc-$$dir/Vtb_core_bat_machine_check $(SIM_ARGS) +MODE=$$mode || exit 1; done; done
