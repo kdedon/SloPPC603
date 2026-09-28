@@ -4,6 +4,7 @@ MEMORY { BOOT (rwx) : ORIGIN = 0xfff00000, LENGTH = 64K }
 SECTIONS
 {
   .text.boot ORIGIN(BOOT) + 0x100 : { KEEP(*(.text.boot)) } > BOOT :text
+  .machine_check ORIGIN(BOOT) + 0x200 : { KEEP(*(.exception.machine_check)) } > BOOT :text
   .dsi ORIGIN(BOOT) + 0x300 : { KEEP(*(.exception.dsi)) } > BOOT :text
   .isi ORIGIN(BOOT) + 0x400 : { KEEP(*(.exception.isi)) } > BOOT :text
   .interrupt ORIGIN(BOOT) + 0x500 : { KEEP(*(.exception.interrupt)) } > BOOT :text
@@ -28,6 +29,7 @@ SECTIONS
   __htab_base = 0xfff10000;
   /DISCARD/ : { *(.eh_frame .eh_frame.*) *(.note .note.*) *(.comment) }
   ASSERT(_start == ORIGIN(BOOT) + 0x100, "reset entry moved")
+  ASSERT(machine_check_handler == ORIGIN(BOOT) + 0x200, "machine check vector moved")
   ASSERT(dsi_handler == ORIGIN(BOOT) + 0x300, "DSI vector moved")
   ASSERT(isi_handler == ORIGIN(BOOT) + 0x400, "ISI vector moved")
   ASSERT(interrupt_handler == ORIGIN(BOOT) + 0x500, "EXT vector moved")

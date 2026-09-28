@@ -1376,7 +1376,7 @@ test-core-bat-machine-check:
 	for dir in fill bypass scalar; do for mode in 0 1; do ./$(BUILD_DIR)/core-bat-mc-$$dir/Vtb_core_bat_machine_check $(SIM_ARGS) +MODE=$$mode || exit 1; done; done
 
 # Line coverage of the translated cached 60x top from the compiled MMU stress
-# (all retry modes) and cache-operation firmware. Needs their ELFs (see
+# (all retry and TEA modes) and cache-operation firmware. Needs their ELFs (see
 # toolchain/README.md). The summary gates total rtl/ coverage and every case
 # arm of the control modules against coverage_waivers.txt.
 COVERAGE_DIR := $(BUILD_DIR)/coverage
@@ -1386,6 +1386,7 @@ FIRMWARE_DIR := ../toolchain/build
 coverage:
 	rm -f $(COVERAGE_DIR)/*/cov-*.dat
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile mmu-stress-retry --elf $(FIRMWARE_DIR)/mmu-stress/smoke.elf --build-dir $(COVERAGE_DIR)/mmu-stress-retry
+	python3 ../toolchain/run-rtl-smoke.py --coverage --profile mmu-stress-tea --elf $(FIRMWARE_DIR)/mmu-stress/smoke.elf --build-dir $(COVERAGE_DIR)/mmu-stress-tea
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile cacheops --elf $(FIRMWARE_DIR)/cacheops/smoke.elf --build-dir $(COVERAGE_DIR)/cacheops
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile lsu --elf $(FIRMWARE_DIR)/lsu/smoke.elf --build-dir $(COVERAGE_DIR)/lsu
 	$(MAKE) coverage-summary

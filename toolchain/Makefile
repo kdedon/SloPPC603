@@ -434,7 +434,7 @@ rtl-cacheops: cacheops
 
 # Page replacement, invalidation, context changes, branch storm and faults
 # under EXT/DEC and reset stress; the retry profile adds ARTRY/DRTRY/holds.
-.PHONY: mmu-stress rtl-mmu-stress-cached rtl-mmu-stress-retry
+.PHONY: mmu-stress rtl-mmu-stress-cached rtl-mmu-stress-retry rtl-mmu-stress-tea
 mmu-stress: $(BUILD_DIR)/mmu-stress/smoke.elf $(BUILD_DIR)/mmu-stress/smoke.bin $(BUILD_DIR)/mmu-stress/smoke.dump
 $(BUILD_DIR)/mmu-stress:
 	mkdir -p $@
@@ -451,6 +451,8 @@ rtl-mmu-stress-cached: mmu-stress
 	$(PYTHON) run-rtl-smoke.py --profile mmu-stress-cached --elf $(BUILD_DIR)/mmu-stress/smoke.elf --build-dir $(BUILD_DIR)/rtl-mmu-stress-cached
 rtl-mmu-stress-retry: mmu-stress
 	$(PYTHON) run-rtl-smoke.py --profile mmu-stress-retry --elf $(BUILD_DIR)/mmu-stress/smoke.elf --build-dir $(BUILD_DIR)/rtl-mmu-stress-retry
+rtl-mmu-stress-tea: mmu-stress
+	$(PYTHON) run-rtl-smoke.py --profile mmu-stress-tea --elf $(BUILD_DIR)/mmu-stress/smoke.elf --build-dir $(BUILD_DIR)/rtl-mmu-stress-tea
 
 # Load/store extensions: stmw/lmw, lwarx/stwcx., strings, byte-reverse and
 # unaligned scalars, on the translated cached 60x top.
@@ -499,7 +501,7 @@ rtl-machine-check: machine-check
 # Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
 # or from `make firmware-all` in the pinned container.
 FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu machine-check
-RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry cacheops lsu machine-check
+RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry mmu-stress-tea cacheops lsu machine-check
 FIRMWARE_ELFS := $(FIRMWARE_PROFILES:%=$(BUILD_DIR)/%/smoke.elf)
 CROSS_MISSING := ERROR: $(CC) not found; install the pinned cross-compiler or run make firmware-all in the container (see toolchain/README.md)
 

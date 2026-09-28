@@ -13,6 +13,7 @@ volatile uint32_t miss_log[64][4];
 volatile uint32_t fault_log[8];
 volatile uint32_t stress_ext_count;
 volatile uint32_t stress_dec_count;
+volatile uint32_t stress_mc_count;
 /* Outside .bss so the startup clear is not mistaken for an IRQ ack. */
 volatile uint32_t irq_ack __attribute__((section(".data.irq_ack"))) = 1u;
 volatile uint32_t stress_iterations;
@@ -284,9 +285,9 @@ static uint32_t bat_phase(void) {
   write_ibat(2, 0x40000002u, 0xfff20022u); /* I=1: bypass the cache */
   if (call_page(0x4000e000u) != ID_Y) return 0xb2u;
   write_ibat(2, 0, 0);
-  __asm__ volatile("mtmsr %0; isync" :: "r"(0x00008050u) : "memory");
+  __asm__ volatile("mtmsr %0; isync" :: "r"(0x00009052u) : "memory");
   uint32_t real_y = call_page(CODE_Y), real_x = call_page(CODE_X);
-  __asm__ volatile("mtmsr %0; isync" :: "r"(0x00008070u) : "memory");
+  __asm__ volatile("mtmsr %0; isync" :: "r"(0x00009072u) : "memory");
   if (real_y != ID_Y || real_x != ID_X) return 0xb3u;
 
   uint32_t fetches = miss_type_count[1];
@@ -312,7 +313,7 @@ static uint32_t bat_phase(void) {
 /* SDR1 changes only with IR=DR=0 (PEM Table 2-22), after a sync. */
 static void set_sdr1(uint32_t value) {
   __asm__ volatile("mtmsr %1; isync; sync; mtspr 25,%0; isync; mtmsr %2; isync"
-                   :: "r"(value), "r"(0x00008040u), "r"(0x00008070u) : "memory");
+                   :: "r"(value), "r"(0x00009042u), "r"(0x00009072u) : "memory");
 }
 
 /* Segment and page-table changes: the TLB tags VSIDs, and after SDR1 moves
@@ -467,16 +468,16 @@ int main(void) {
   WSPR(539, 0xfff20002u); WSPR(538, 0xfff20002u);
   WSR(1, VSID1); WSR(2, VSID2); WSR(3, 0x80000000u);
   WSPR(22, 400u);
-  uint32_t mode = 0x00008070u; /* EE, IP, IR, DR */
+  uint32_t mode = 0x00009072u; /* EE, ME, IP, IR, DR, RI */
   __asm__ volatile("mtmsr %0; isync" :: "r"(mode) : "memory");
   for (unsigned it = 0; it < ITERATIONS; ++it) {
     uint32_t r = iteration(it);
     if (r) {
-      __asm__ volatile("mtmsr %0; isync" :: "r"(0x00000070u) : "memory");
+      __asm__ volatile("mtmsr %0; isync" :: "r"(0x00001072u) : "memory");
       return (int)(0x8e000000u | (it << 12) | r);
     }
   }
-  __asm__ volatile("mtmsr %0; isync" :: "r"(0x00000070u) : "memory");
+  __asm__ volatile("mtmsr %0; isync" :: "r"(0x00001072u) : "memory");
   if (miss_type_count[0] != ITERATIONS * 17u ||
       miss_type_count[1] != ITERATIONS * 11u ||
       miss_type_count[2] != ITERATIONS) return 0x8e0000f0;

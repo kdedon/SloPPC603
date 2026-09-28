@@ -1,7 +1,7 @@
-    /* Software table search plus DSI, ISI, external and decrementer handlers
-       for the MMU/event stress image. Miss handlers use only TGPR0..TGPR3
-       and SPRG0..2; the others run with EE=0 in real mode, save r3/r4 in
-       SPRG0/1, and change neither CR, LR, CTR nor XER. */
+    /* Software table search plus machine-check, DSI, ISI, external and
+       decrementer handlers for the MMU/event stress image. Miss handlers use
+       only TGPR0..TGPR3 and SPRG0..2; the others run with EE=0 in real mode,
+       save r3/r4 in SPRG0/1, and change neither CR, LR, CTR nor XER. */
     .section .exception.imiss,"ax",@progbits
     .globl imiss_handler
     .type imiss_handler,@function
@@ -241,6 +241,30 @@ isi_handler:
     mfspr 4,273
     rfi
     .size isi_handler,.-isi_handler
+
+    /* TEA machine check: count and retry at SRR0. SRR1[RI]=0 means the
+       interrupted state is lost. CR is saved in SPRG3. */
+    .section .exception.machine_check,"ax",@progbits
+    .globl machine_check_handler
+    .type machine_check_handler,@function
+machine_check_handler:
+    mtspr 272,3
+    mtspr 273,4
+    mfcr 3
+    mtspr 275,3
+    mfspr 3,27
+    andi. 3,3,2
+    beq- stress_failure
+    lis 4,stress_mc_count@ha
+    lwz 3,stress_mc_count@l(4)
+    addi 3,3,1
+    stw 3,stress_mc_count@l(4)
+    mfspr 3,275
+    mtcrf 255,3
+    mfspr 3,272
+    mfspr 4,273
+    rfi
+    .size machine_check_handler,.-machine_check_handler
 
     /* The bench drops its IRQ level on the physical irq_ack write. */
     .section .exception.interrupt,"ax",@progbits
