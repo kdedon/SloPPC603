@@ -106,6 +106,9 @@ module tb_core_runtime_bat_privilege;
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(dmem_rsp_ready),
     .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
     .external_irq_i(1'b0), .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken), .decrementer_pc_o(decrementer_pc),
     .interrupt_taken_o(interrupt_taken), .interrupt_pc_o(interrupt_pc),
     .retire_valid_o(retire_valid), .retire_ready_i(1'b1), .retire_o(retired),

@@ -96,6 +96,9 @@ module tb_core_page_miss_result #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1);
     .dmem_rsp_valid_i(rv),.dmem_rsp_ready_o(rr),.dmem_rsp_rdata_i(rd),
     .dmem_rsp_error_i(response_error),.dmem_rsp_page_miss_i(d_capsule), .dmem_rsp_fault_i(response_fault),
     .timer_tick_i(1'b0),.timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(unused_timer[32]),.decrementer_pc_o(unused_timer[31:0]),
     .external_irq_i(1'b0),.interrupt_taken_o(unused_irq[32]),
     .interrupt_pc_o(unused_irq[31:0]),

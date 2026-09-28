@@ -103,6 +103,7 @@ module tb_core_bat_machine_check #(
       .ENABLE_RUNTIME_BAT(1'b1),
       .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut (
       `MC_COMMON_PORTS,
+      .pin_event_i('0), .pin_status_o(),
       .icache_hit_o(), .icache_miss_o(), .icache_busy_o(),
       .maintenance_valid_i(1'b0), .maintenance_ready_o(),
       .maintenance_invalidate_i(1'b0), .maintenance_cache_enable_i(1'b0),

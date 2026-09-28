@@ -98,6 +98,9 @@ module tb_core_segment_csr;
     .segment_csr_abort_o(abort),.segment_csr_ack_valid_i(ackv),
     .segment_csr_ack_ready_o(ackr),.segment_csr_idle_i(idle),
     .external_irq_i(1'b0),.timer_tick_i(1'b0),.timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(dec_taken),.decrementer_pc_o(dec_pc),
     .interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .context_ready_i(1'b1),.memory_quiescent_i(1'b1),

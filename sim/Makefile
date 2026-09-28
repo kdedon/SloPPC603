@@ -112,7 +112,7 @@ check-spec:
 	python3 tools/check_stage_timing.py
 	python3 -m unittest discover -s tools -p 'test_*.py'
 	python3 -m unittest discover -s cosim -p 'test_*.py'
-	python3 ../quartus/qsf_sources.py --check ../quartus ../quartus/integrated ../quartus/timer-bat ../quartus/translated ../quartus/icache ../quartus/dcache
+	python3 ../quartus/qsf_sources.py --check ../quartus ../quartus/integrated ../quartus/timer-bat ../quartus/translated ../quartus/icache ../quartus/dcache ../quartus/chip
 test-recovery:
 	python3 -m unittest discover -s recovery -p 'test_*.py'
 test-recovery-select:
@@ -1382,6 +1382,20 @@ test-core-bat-machine-check:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_machine_check --Mdir $(BUILD_DIR)/core-bat-mc-bypass -I../tb "-GCACHE_ENABLE=1'b0" $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_machine_check.sv
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_machine_check --Mdir $(BUILD_DIR)/core-bat-mc-scalar -I../tb "-GCACHED=1'b0" $(CORE_BAT_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_core_bat_machine_check.sv
 	for dir in fill bypass scalar; do for mode in 0 1; do ./$(BUILD_DIR)/core-bat-mc-$$dir/Vtb_core_bat_machine_check $(SIM_ARGS) +MODE=$$mode || exit 1; done; done
+
+# The ppc603e package top: directed system-pin checks at the pins, and lint
+# of the top and its Quartus measurement wrapper.
+CHIP_RTL := $(shell cat ../rtl/chip_files.f)
+.PHONY: test-chip-pins lint-chip
+test: test-chip-pins
+test-chip-pins:
+	mkdir -p $(BUILD_DIR)/chip-pins
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins --Mdir $(BUILD_DIR)/chip-pins -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_chip_pins.sv
+	./$(BUILD_DIR)/chip-pins/Vtb_chip_pins $(SIM_ARGS)
+lint: lint-chip
+lint-chip:
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e $(CHIP_RTL)
+	cd ../quartus/chip && $(VERILATOR) --lint-only -Wall --top-module ppc603e_measure -f files.f
 
 # Line coverage of the translated cached 60x top from the compiled MMU stress
 # (all retry and TEA modes) and cache-operation firmware. Needs their ELFs (see

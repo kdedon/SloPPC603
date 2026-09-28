@@ -851,3 +851,10 @@ Table 6-4 cycle set (mapping inferred; `TIM-U02` open). Inherited from the branc
 check-spec, multiply and data-cache benches. MVP 84.43% → 84.67%. See
 [verification](../../MULTIPLY_TIMING_VERIFICATION.md).
 
+## Chip package round — accepted (2026-09-28)
+
+`rtl/ppc603e.sv` exposes the 603e pins; MCP/SRESET/SMI, checkstop, straps,
+TBEN, RSRV, TLBISYNC and parity; `ppc_biu`; data-cache slot. Fresh on the merge:
+`make -C sim ci`; chip fit (65.39 MHz) inherited from the branch. MVP 84.67% →
+87.67%. See [verification](../../CHIP_PACKAGE_VERIFICATION.md).
+

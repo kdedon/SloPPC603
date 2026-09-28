@@ -92,6 +92,9 @@ module tb_compiled_mmu_stress_firmware;
     .external_irq_i(irq),.interrupt_taken_o(interrupt_taken),
     .interrupt_pc_o(interrupt_pc),
     .timer_tick_i(tick),.timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken),
     .decrementer_pc_o(decrementer_pc),
     .bat_write_valid_i(1'b0),.bat_write_ready_o(bat_ready),

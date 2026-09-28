@@ -46,6 +46,7 @@ module tb_compiled_cacheops_firmware;
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .timer_tick_i(tick),.timebase_enable_i(1'b1),
+    .pin_event_i('0), .pin_status_o(),
     .decrementer_taken_o(dec_taken),.decrementer_pc_o(dec_pc),
     .bat_write_valid_i(1'b0),.bat_write_ready_o(),
     .bat_write_spr_i('0),.bat_write_data_i('0),

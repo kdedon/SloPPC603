@@ -67,6 +67,8 @@ module bus60x_scripted_target_bfm #(
   int teas = 0;
   logic [31:0] tea_base = 32'b0;
   logic [31:0] tea_bytes = 32'b0;
+  // From address capture until the data tenure ends.
+  logic owed = 1'b0;
   /* verilator lint_on UNUSEDSIGNAL */
   logic tea_ended;
 
@@ -149,6 +151,7 @@ module bus60x_scripted_target_bfm #(
     instruction = tc_i == 2'd2;
     tsiz = external ? 3'b100 : tsiz_i;
     tenures++;
+    owed = 1'b1;
     @(negedge clk_i);
     bg_n_o = 1'b1;
     delay();
@@ -237,6 +240,7 @@ module bus60x_scripted_target_bfm #(
     forever begin
       address_tenure(retried);
       if (!retried) data_tenure();
+      owed = 1'b0;
     end
   end
 endmodule

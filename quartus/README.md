@@ -3,7 +3,9 @@
 For the current cached 60x system, use the separate `integrated/` project and
 [current baseline notes](../docs/INTEGRATED_SYNTHESIS_BASELINE.md). The
 `translated/` project fits the translated cached 60x top with the MVP profile;
-see [its baseline](../docs/TRANSLATED_SYNTHESIS_BASELINE.md). This directory's
+see [its baseline](../docs/TRANSLATED_SYNTHESIS_BASELINE.md). The `chip/`
+project fits the `ppc603e` package top with every pin virtual
+([CHIP_PACKAGE.md](../docs/CHIP_PACKAGE.md)). This directory's
 original project and historical evidence remain the bootstrap measurement.
 
 This project targets `5CSEBA6U23I7` at 50 MHz and synthesizes the current core
@@ -29,10 +31,10 @@ QSF source assignments from it with `qsf_sources.py`, and `make -C sim check-spe
 fails if a committed QSF has drifted:
 
 ```sh
-python3 quartus/qsf_sources.py quartus quartus/integrated quartus/timer-bat quartus/translated quartus/icache
+python3 quartus/qsf_sources.py quartus quartus/integrated quartus/timer-bat quartus/translated quartus/icache quartus/chip
 ```
 
-In the `integrated/`, `timer-bat/` and `translated/` tops every virtual data
+In the `integrated/`, `timer-bat/`, `translated/` and `chip/` tops every virtual data
 port passes through one boundary register that models the upstream or
 downstream flop. Their SDCs implement
 [docs/INTERFACE_TIMING_CONTRACT.md](../docs/INTERFACE_TIMING_CONTRACT.md): each
@@ -42,7 +44,7 @@ another period (default 15.152 ns, 66 MHz) and the worst boundary input,
 output and feedthrough path per corner, without refitting:
 
 ```sh
-./quartus/report-target-paths.sh integrated --docker   # or timer-bat, translated
+./quartus/report-target-paths.sh integrated --docker   # or timer-bat, translated, chip
 ```
 
 The top-level clock, synchronous active-low reset, 32-bit instruction stimulus,

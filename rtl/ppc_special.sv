@@ -23,6 +23,8 @@ module ppc_special #(
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
+  // MCP, SRESET and SMI boundaries; TLBISYNC holds tlbsync.
+  parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   parameter logic [3:0] PLL_CFG = 4'b0000
@@ -99,6 +101,8 @@ module ppc_special #(
   input logic interrupt_decrementer_i, external_irq_i,
   // The offered boundary is a pending trace, not EXT/DEC.
   input logic interrupt_trace_i,
+  input ppc_pkg::pin_event_t pin_event_i,
+  output ppc_pkg::pin_status_t pin_status_o,
   input logic timer_tick_i, timebase_enable_i,
   output logic decrementer_taken_o, decrementer_pending_o,
   output logic [31:0] decrementer_pc_o,
@@ -237,6 +241,9 @@ module ppc_special #(
   logic block_zero_event;
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
   logic decrementer_selected_q, trace_selected_q;
+  logic mcp_selected_q, soft_reset_selected_q, smi_selected_q;
+  logic pin_mcp_select, pin_soft_reset_select, pin_smi_select, pin_selected;
+  logic tlbsync_held;
   logic fetch_machine_check, data_machine_check, machine_check_event;
   logic checkstop_commit;
   // External services own committed BAT, segment and TLB state. This lane owns
@@ -523,7 +530,7 @@ module ppc_special #(
     result_o.producer = producer_q;
     result_valid_o = 1'b0;
     if (state_q == S_EXEC) begin
-      result_valid_o = !timer_read;
+      result_valid_o = !timer_read && !tlbsync_held;
       if (uop_q.special_op == SPECIAL_MFSPR) result_o.value = exec_value;
       if (uop_q.special_op == SPECIAL_MTSPR && uop_q.spr == 10'd1)
         result_o.value = a_q;
@@ -764,8 +771,12 @@ module ppc_special #(
     exception_event_kind = EVENT_SC;
     if (ENABLE_EXTERNAL_INTERRUPTS && (state_q == S_INTERRUPT_COMMIT)) begin
       exception_event_valid = 1'b1;
-      exception_event_kind = trace_selected_q ? EVENT_TRACE :
+      exception_event_kind = mcp_selected_q ? EVENT_MACHINE_CHECK_PIN :
+        soft_reset_selected_q ? EVENT_SOFT_RESET :
+        trace_selected_q ? EVENT_TRACE : smi_selected_q ? EVENT_SMI :
         decrementer_selected_q ? EVENT_DECREMENTER : EVENT_EXTERNAL;
+      // UM 4.5.2.2: MCP with ME=0 enters the checkstop state instead.
+      if (mcp_selected_q && !msr_o[MSR_ME]) exception_event_valid = 1'b0;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && (state_q == S_HOLD) &&
         commit_match) begin
       case (uop_q.special_op)
@@ -837,7 +848,7 @@ module ppc_special #(
     end
   end
   assign interrupt_taken_o = rst_ni && (state_q == S_INTERRUPT_COMMIT) &&
-    !decrementer_selected_q && !trace_selected_q &&
+    !decrementer_selected_q && !trace_selected_q && !pin_selected &&
     exception_event_valid && exception_event_ready;
   assign decrementer_taken_o = rst_ni && (state_q == S_INTERRUPT_COMMIT) &&
     decrementer_selected_q && exception_event_valid && exception_event_ready;
@@ -1005,7 +1016,9 @@ module ppc_special #(
           state_d = S_IDLE;
         end
         S_BRANCH_REDIRECT: if (redirect_accepted_i) state_d = S_IDLE;
-        S_INTERRUPT_COMMIT: if (exception_event_ready) state_d = S_EXCEPTION_RESULT;
+        S_INTERRUPT_COMMIT:
+          if (mcp_selected_q && !msr_o[MSR_ME]) state_d = S_CHECKSTOP;
+          else if (exception_event_ready) state_d = S_EXCEPTION_RESULT;
         S_CONTEXT_ABORT: if (frontend_quiescent_i && memory_quiescent_i) begin
           fence_d = 1'b0;
           state_d = S_IDLE;
@@ -1081,19 +1094,50 @@ module ppc_special #(
     end
   end
 
+  // Pin boundaries. The core offers a boundary only when one qualifies, and
+  // MCP/SRESET never wait on MSR[EE].
+  assign pin_mcp_select = ENABLE_PIN_INTERRUPTS && pin_event_i.mcp;
+  assign pin_soft_reset_select = ENABLE_PIN_INTERRUPTS && pin_event_i.soft_reset &&
+    !pin_event_i.mcp;
+  assign pin_smi_select = ENABLE_PIN_INTERRUPTS && pin_event_i.smi && msr_o[MSR_EE] &&
+    !pin_event_i.mcp && !pin_event_i.soft_reset &&
+    !(ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i);
+  assign pin_selected = mcp_selected_q || soft_reset_selected_q || smi_selected_q;
+  // UM 8.8.2: TLBISYNC stops completion at a tlbsync.
+  assign tlbsync_held = ENABLE_PIN_INTERRUPTS && pin_event_i.tlbisync &&
+    (uop_q.special_op == SPECIAL_TLBSYNC);
+  always_comb begin
+    pin_status_o = '0;
+    pin_status_o.reservation = reserve_q;
+    pin_status_o.mcp_enable = hid0_q[HID0_EMCP];
+    pin_status_o.machine_check_enable = msr_o[MSR_ME];
+    pin_status_o.mcp_taken = interrupt_accept && pin_mcp_select;
+    pin_status_o.soft_reset_taken = interrupt_accept && pin_soft_reset_select;
+    pin_status_o.smi_taken = interrupt_accept && pin_smi_select;
+  end
+
   // Exception and interrupt sequencer.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       interrupt_q <= 1'b0;
       decrementer_selected_q <= 1'b0;
       trace_selected_q <= 1'b0;
+      mcp_selected_q <= 1'b0;
+      soft_reset_selected_q <= 1'b0;
+      smi_selected_q <= 1'b0;
       context_target_q <= '0;
     end else if (interrupt_accept) begin
-      // The selected boundary is now irrevocable.
+      // The selected boundary is now irrevocable. UM Table 4-2 order: MCP,
+      // SRESET, then the traced instruction's trace, SMI, EXT, DEC.
       interrupt_q <= 1'b1;
-      trace_selected_q <= ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i;
+      mcp_selected_q <= pin_mcp_select;
+      soft_reset_selected_q <= pin_soft_reset_select;
+      smi_selected_q <= pin_smi_select;
+      trace_selected_q <= ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i &&
+        !pin_mcp_select && !pin_soft_reset_select;
       decrementer_selected_q <= ENABLE_TIMERS && interrupt_decrementer_i &&
-        !(ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i);
+        !(ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i) &&
+        !pin_mcp_select && !pin_soft_reset_select && !pin_smi_select;
     end else if (dispatch_fire) begin
       interrupt_q <= 1'b0;
     end else if (step_run) begin

@@ -220,6 +220,10 @@ module ppc_core_bat_bus60x #(
     .interrupt_pc_o,
     .timer_tick_i,
     .timebase_enable_i,
+    // Only the chip top drives pin events.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o,
     .decrementer_pc_o,
     .bat_write_valid_i,

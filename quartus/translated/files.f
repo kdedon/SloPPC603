@@ -32,5 +32,7 @@
 ../../rtl/ppc_bus60x_master_select.sv
 ../../rtl/ppc_bus60x_two_master.sv
 ../../rtl/ppc_icache_managed.sv
+../../rtl/ppc_dcache_slot.sv
+../../rtl/ppc_biu.sv
 ../../rtl/ppc_core_bat_cached_bus60x.sv
 ppc_translated_measure.sv

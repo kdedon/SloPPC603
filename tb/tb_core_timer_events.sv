@@ -75,6 +75,9 @@ module tb_core_timer_events;
     .segment_csr_ack_valid_i(1'b0), .segment_csr_ack_ready_o(unused_segment_csr[0]),
     .segment_csr_idle_i(1'b1),
     .clk_i(clk),.rst_ni(rst_n),.timer_tick_i(tick),.timebase_enable_i(1'b0),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .external_irq_i(irq),.interrupt_taken_o(ext),.interrupt_pc_o(ep),
     .decrementer_taken_o(dec),.decrementer_pc_o(dp),
     .imem_req_valid_o(iv),.imem_req_ready_i(ir),.imem_req_addr_o(ia),

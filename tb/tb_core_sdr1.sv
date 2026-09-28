@@ -97,6 +97,9 @@ module tb_core_sdr1 #(parameter bit FEATURE=1'b1);
     .tlb_fill_ack_ready_o(unused_tlb_fill[0]),
     .tlb_fill_idle_i(1'b1),
     .external_irq_i(1'b0),.timer_tick_i(1'b0),.timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(dec_taken),.decrementer_pc_o(dec_pc),
     .interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .context_ready_i(1'b1),.memory_quiescent_i(1'b1),

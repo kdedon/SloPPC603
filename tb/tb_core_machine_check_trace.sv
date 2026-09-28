@@ -85,6 +85,9 @@ module tb_core_machine_check_trace;
     .tlb_fill_abort_o(unused_tlb_fill[1]), .tlb_fill_ack_valid_i(1'b0),
     .tlb_fill_ack_ready_o(unused_tlb_fill[0]), .tlb_fill_idle_i(1'b1),
     .external_irq_i(irq), .timer_tick_i(tick_en), .timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(dec_taken), .decrementer_pc_o(dec_pc),
     .interrupt_taken_o(irq_taken), .interrupt_pc_o(irq_pc),
     .context_ready_i(1'b1), .memory_quiescent_i(!dpend),

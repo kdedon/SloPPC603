@@ -372,8 +372,31 @@ package ppc_pkg;
     EVENT_TRACE           = 5'd13,
     EVENT_IABR            = 5'd14,
     EVENT_PROGRAM_TRAP    = 5'd15,
-    EVENT_FP_UNAVAILABLE  = 5'd16
+    EVENT_FP_UNAVAILABLE  = 5'd16,
+    // Pin-driven asynchronous events.
+    EVENT_SOFT_RESET      = 5'd17,
+    EVENT_SMI             = 5'd18,
+    EVENT_MACHINE_CHECK_PIN = 5'd19
   } exception_event_t;
+
+  // Chip-pin events into the core, already synchronized. soft_reset and mcp
+  // are latched edges held until pin_status_t acknowledges them; smi and
+  // tlbisync are levels.
+  typedef struct packed {
+    logic mcp;
+    logic soft_reset;
+    logic smi;
+    logic tlbisync;
+  } pin_event_t;
+  // Core state the chip pins need.
+  typedef struct packed {
+    logic reservation;       // RSRV
+    logic mcp_enable;        // HID0[EMCP]
+    logic machine_check_enable; // MSR[ME]
+    logic mcp_taken;         // pulses when a latched MCP is consumed
+    logic soft_reset_taken;  // pulses when a latched SRESET is consumed
+    logic smi_taken;
+  } pin_status_t;
   // ---- end MSR and exception events ---------------------------------------
 
   // ---- SPR write masks and reset values -----------------------------------
@@ -385,11 +408,12 @@ package ppc_pkg;
   // DSISR and SPRG0-3 are fully architected; no mask needed.
   localparam logic [31:0] DSISR_RESET = 32'h0000_0000;
   // HID0 (UM Table 2-2): every named PID7v bit is stored; reserved bits read
-  // as zero. Only ICE and ICFI act (instruction cache); the rest have no
-  // implemented feature to control. Hard reset clears HID0 and HID1.
+  // as zero. ICE and ICFI act (instruction cache), and EMCP on the chip top;
+  // the rest have no implemented feature to control. Hard reset clears HID0 and HID1.
   localparam logic [31:0] HID0_WMASK = 32'hbff9_fc99;
   localparam int HID0_ICE = 15;
   localparam int HID0_ICFI = 11;
+  localparam int HID0_EMCP = 31;
   // EAR: E (manual bit 0) and RID (manual bits 28-31, UM 2.1.1).
   localparam logic [31:0] EAR_WMASK = 32'h8000_000f;
   localparam int EAR_E = 31;

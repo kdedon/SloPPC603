@@ -73,6 +73,7 @@ BAT = ('files.f', 'bat_service_files.f', 'core_bat_files.f')
 BAT_BUS = BAT + ('bus_files.f', 'system_files.f', 'core_bat_bus60x_files.f')
 BAT_CACHED = BAT + ('bus_files.f', 'system_files.f', 'line_read_files.f', 'icache_files.f',
                     'cached_system_files.f', 'cache_control_files.f', 'core_bat_cached_bus60x_files.f')
+CHIP = ('chip_files.f',)
 TIMER = {'interrupt_handler': 0x500, 'decrementer_handler': 0x900}
 PAGE = {**TIMER, 'page_probe': 0x6000}
 TLBIE = {**PAGE, 'tlbie_data_probe': 0x7000}
@@ -128,12 +129,23 @@ PROFILES = {
     'lsu': ('tb_compiled_lsu_firmware', BAT_CACHED, {'alignment_handler': 0x600}, 0),
     'machine-check': ('tb_compiled_machine_check_firmware', BAT_CACHED, MACHINE_CHECK, 2),
     'full-decode': ('tb_compiled_full_decode_firmware', BAT_CACHED, FULL_DECODE, 0),
+    # The package top, pins only.
+    'chip-mmu-stress': ('tb_chip_firmware', CHIP, STRESS, 0),
+    'chip-lsu': ('tb_chip_firmware', CHIP, {'alignment_handler': 0x600}, 0),
+    'chip-machine-check': ('tb_chip_firmware', CHIP, MACHINE_CHECK, 0),
+    'chip-full-decode': ('tb_chip_firmware', CHIP, FULL_DECODE, 0),
 }
 # Benches whose target is not the default for their source lists.
-SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check', 'full-decode'}
+SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check', 'full-decode', 'chip-mmu-stress',
+                   'chip-lsu', 'chip-machine-check', 'chip-full-decode'}
 RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry', 'mmu-stress-tea'}
 # Plusargs added to every run of a profile.
-PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1']}
+# Bench parameters added to every build of a profile.
+# These images expect the instruction cache on from reset.
+PROFILE_GPARAMS = {profile: ["ICE_AT_RESET=1'b1"] for profile in
+                   ('chip-full-decode', 'chip-machine-check')}
+PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1'],
+                'chip-machine-check': ['+TEA_BASE=fff0dff0', '+TEA_END=fff0e100']}
 
 COVERAGE_MAIN = '''#include <memory>
 #include <string>
@@ -183,7 +195,7 @@ def main():
             if size < needed or value % 4 or not BASE <= value <= BASE+SIZE-size:
                 raise ValueError(f'invalid fault verification symbol {symbol!r}')
             fault_args.append(f'+{plusarg}={value:08x}')
-    if args.profile.startswith('mmu-stress'):
+    if 'mmu-stress' in args.profile:
         for plusarg, (symbol, needed) in STRESS_SYMBOLS.items():
             value, size = symbols.get(symbol.encode(), (0, 0))
             if size < needed or value % 4 or not BASE <= value <= BASE+SIZE-size:
@@ -214,7 +226,7 @@ def main():
         mode_flags = ['--cc', '--exe', '--build', '--coverage-line', str(main)]
     subprocess.run([args.verilator, *mode_flags, '--timing', '--assert', '-Wall', '-j', str(args.jobs),
                     '--top-module', top, '--Mdir', str(build/'obj'), '-I../tb',
-                    *profile_params, *(f'-G{g}' for g in args.gparam), *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
+                    *profile_params, *(f'-G{g}' for g in [*PROFILE_GPARAMS.get(args.profile, []), *args.gparam]), *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
     if isinstance(modes, int):
         modes = tuple(range(modes)) if modes else (None,)
     if args.modes:
