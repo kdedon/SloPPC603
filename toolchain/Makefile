@@ -500,7 +500,7 @@ $(BUILD_DIR)/machine-check/smoke.elf: $(BUILD_DIR)/machine-check/crt0.o $(BUILD_
 rtl-machine-check: machine-check
 	$(PYTHON) run-rtl-smoke.py --profile machine-check --elf $(BUILD_DIR)/machine-check/smoke.elf --build-dir $(BUILD_DIR)/rtl-machine-check
 
-.PHONY: full-decode rtl-full-decode
+.PHONY: full-decode rtl-full-decode rtl-full-decode-negative
 full-decode: $(BUILD_DIR)/full-decode/smoke.elf $(BUILD_DIR)/full-decode/smoke.bin $(BUILD_DIR)/full-decode/smoke.dump
 $(BUILD_DIR)/full-decode:
 	mkdir -p $@
@@ -515,6 +515,14 @@ $(BUILD_DIR)/full-decode/smoke.elf: $(BUILD_DIR)/full-decode/crt0.o $(BUILD_DIR)
 		-Wl,-Map,$(BUILD_DIR)/full-decode/smoke.map $(filter %.o,$^) -o $@
 rtl-full-decode: full-decode
 	$(PYTHON) run-rtl-smoke.py --profile full-decode --elf $(BUILD_DIR)/full-decode/smoke.elf --build-dir $(BUILD_DIR)/rtl-full-decode
+# The same image without full decode must reject its first full-decode form.
+rtl-full-decode-negative: full-decode
+	mkdir -p $(BUILD_DIR)/rtl-full-decode-negative
+	if $(PYTHON) run-rtl-smoke.py --profile full-decode --gparam FULL_DECODE=0 \
+		--elf $(BUILD_DIR)/full-decode/smoke.elf --build-dir $(BUILD_DIR)/rtl-full-decode-negative \
+		> $(BUILD_DIR)/rtl-full-decode-negative/run.log 2>&1; then exit 1; fi
+	grep "known legal retirement.*insn=04000000" $(BUILD_DIR)/rtl-full-decode-negative/run.log
+	@echo "PASS: rtl-full-decode-negative rejected the image without full decode"
 
 # Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
 # or from `make firmware-all` in the pinned container.

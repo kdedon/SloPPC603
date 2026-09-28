@@ -6,8 +6,9 @@
 // and eciwx/ecowx (TT 11100/10100, TBST||TSIZ = EAR RID), that HID0 ICE=0
 // fetches are single-beat inhibited reads and ICE=1 fetches line fills, and
 // the count of HID0 cache requests (writes that change nothing make none).
+// With FULL_DECODE=0 the same image must stop at its first full-decode form.
 /* verilator lint_off BLKSEQ */
-module tb_compiled_full_decode_firmware;
+module tb_compiled_full_decode_firmware #(parameter bit FULL_DECODE = 1'b1);
   import ppc_pkg::*;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
@@ -56,7 +57,7 @@ module tb_compiled_full_decode_firmware;
     .ENABLE_TLB_LOAD(1'b1),.ENABLE_BYTE_REVERSE(1'b1),.ENABLE_MULTIPLE_STRING(1'b1),
     .ENABLE_RESERVATION(1'b1),.ENABLE_MISALIGNED_ACCESS(1'b1),
     .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_DEBUG_EXCEPTIONS(1'b1),
-    .ENABLE_FULL_DECODE(1'b1)) dut(
+    .ENABLE_FULL_DECODE(FULL_DECODE)) dut(
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .timer_tick_i(tick),.timebase_enable_i(1'b1),
