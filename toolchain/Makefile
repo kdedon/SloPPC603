@@ -480,10 +480,26 @@ rtl-lsu-negative: lsu
 	grep "known legal retirement.*insn=bd" $(BUILD_DIR)/rtl-lsu-negative/run.log
 	@echo "PASS: rtl-lsu-negative rejected stmw with the extensions disabled"
 
+.PHONY: machine-check rtl-machine-check
+machine-check: $(BUILD_DIR)/machine-check/smoke.elf $(BUILD_DIR)/machine-check/smoke.bin $(BUILD_DIR)/machine-check/smoke.dump
+$(BUILD_DIR)/machine-check:
+	mkdir -p $@
+$(BUILD_DIR)/machine-check/crt0.o: crt0.S | $(BUILD_DIR)/machine-check
+	$(CC) $(COMMON_ASFLAGS) -mbig-endian -DENABLE_MACHINE_CHECK_SMOKE -c $< -o $@
+$(BUILD_DIR)/machine-check/main.o: machine-check-smoke.c | $(BUILD_DIR)/machine-check
+	$(CC) $(COMMON_CFLAGS) -mbig-endian -c $< -o $@
+$(BUILD_DIR)/machine-check/handler.o: machine-check-handler.S | $(BUILD_DIR)/machine-check
+	$(CC) $(COMMON_ASFLAGS) -mbig-endian -c $< -o $@
+$(BUILD_DIR)/machine-check/smoke.elf: $(BUILD_DIR)/machine-check/crt0.o $(BUILD_DIR)/machine-check/main.o $(BUILD_DIR)/machine-check/handler.o machine-check.ld
+	$(CC) $(COMMON_CFLAGS) -mbig-endian $(subst link.ld,machine-check.ld,$(COMMON_LDFLAGS)) \
+		-Wl,-Map,$(BUILD_DIR)/machine-check/smoke.map $(filter %.o,$^) -o $@
+rtl-machine-check: machine-check
+	$(PYTHON) run-rtl-smoke.py --profile machine-check --elf $(BUILD_DIR)/machine-check/smoke.elf --build-dir $(BUILD_DIR)/rtl-machine-check
+
 # Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
 # or from `make firmware-all` in the pinned container.
-FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu
-RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry cacheops lsu
+FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu machine-check
+RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry cacheops lsu machine-check
 FIRMWARE_ELFS := $(FIRMWARE_PROFILES:%=$(BUILD_DIR)/%/smoke.elf)
 CROSS_MISSING := ERROR: $(CC) not found; install the pinned cross-compiler or run make firmware-all in the container (see toolchain/README.md)
 

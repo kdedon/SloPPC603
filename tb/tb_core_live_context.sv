@@ -39,6 +39,7 @@ module tb_core_live_context #(
     logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
+  logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_LIVE_CONTEXT),
       .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
@@ -97,7 +98,7 @@ module tb_core_live_context #(
       .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
-    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.halted_o(halted),
+    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.checkstop_o(unused_checkstop), .halted_o(halted),
       .context_valid_o(cv),.context_ready_i(cr),.context_ir_o(ci),.context_dr_o(cd),.context_pr_o(cp),
       .memory_quiescent_i(unused_memory_quiescent),
       .redirect_valid_i(red),.redirect_all_i(red_all),.redirect_keep_pivot_i(red_keep),
@@ -109,6 +110,7 @@ module tb_core_live_context #(
   end else begin : bat_core
     logic [49:0] unused_page_ports;
   logic [32:0] unused_icbi_core;
+  logic unused_checkstop1;
   ppc_core_bat #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_LIVE_CONTEXT),
       .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (
     .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
@@ -159,7 +161,7 @@ module tb_core_live_context #(
       .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
-    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.halted_o(halted),
+    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.checkstop_o(unused_checkstop1), .halted_o(halted),
       .redirect_valid_i(red),.redirect_all_i(red_all),.redirect_keep_pivot_i(red_keep),
       .redirect_pivot_i(pivot),.redirect_target_i(red_target),.redirect_accepted_o(red_accept),
       .translation_fault_o(fault_status[0]),.fault_instruction_o(fault_status[1]),.fault_write_o(fault_status[2]),

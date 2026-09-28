@@ -448,3 +448,19 @@ syndromes and exact DAR/SRR0. The pin target retries, replaces read beats,
 holds line fills and delays at random, and EXT, DEC and external cache
 invalidation arrive throughout. See [contract](../docs/CACHE_CONTROL.md) and
 [verification](../docs/CACHE_CONTROL_VERIFICATION.md).
+
+## Machine check, trace and IABR profile
+
+`make rtl-machine-check` runs `machine-check-smoke.c` with
+`machine-check-handler.S` and `machine-check.ld` through
+`ppc_core_bat_cached_bus60x` with `ENABLE_MACHINE_CHECK` and
+`ENABLE_DEBUG_EXCEPTIONS`. The pin target ends every tenure in
+`[0xfff0dff0, 0xfff0e100)` with TEA. Under translation the firmware takes
+machine checks on a load, a store and a line fill that fails on its third
+beat, checks SRR0/SRR1/MSR and recovers each time (the handler's RFI restores
+ME); then it single-steps a sequence entered through SRR1/RFI, branch-traces
+a taken and a not-taken branch, and traps once on an enabled IABR but not on
+a disabled one. Mode 1 is the negative control: with ME=0 the first TEA must
+enter checkstop with no vector fetch. The target retries, replaces read beats,
+holds fills and delays at random. See [contract](../docs/EXCEPTION_MACHINE_CHECK_TRACE.md)
+and [verification](../docs/EXCEPTION_MACHINE_CHECK_TRACE_VERIFICATION.md).

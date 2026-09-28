@@ -35,6 +35,7 @@ module tb_compiled_segment_firmware;
   assign external_irq=running&&phase>=1&&interrupts==0;
   logic [49:0] unused_page_ports;
   logic [32:0] unused_icbi_core;
+  logic unused_checkstop;
   ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
                  .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),.ENABLE_RUNTIME_BAT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1)) dut(
     .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
@@ -87,7 +88,7 @@ module tb_compiled_segment_firmware;
     .pdmem_req_valid_o(dv),.pdmem_req_ready_i(dr),.pdmem_req_write_o(dw),
     .pdmem_req_addr_o(da),.pdmem_req_wdata_o(wd),.pdmem_req_wstrb_o(st),.pdmem_req_wimg_o(dwimg),
     .pdmem_rsp_valid_i(rv),.pdmem_rsp_ready_o(rr),.pdmem_rsp_rdata_i(rd),.pdmem_rsp_error_i(1'b0),
-    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.halted_o(halted),
+    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(1'b0),.redirect_all_i(1'b0),.redirect_keep_pivot_i(1'b0),
     .redirect_pivot_i('0),.redirect_target_i('0),.redirect_accepted_o(cut_accepted),
     .translation_fault_o(fault),.fault_instruction_o(unused_fi),.fault_write_o(unused_fw),

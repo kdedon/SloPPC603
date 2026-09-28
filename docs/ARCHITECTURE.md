@@ -224,3 +224,13 @@ reserves an IQ slot; one offered on a consume edge does not, and its response
 waits in a one-entry fetch buffer if the IQ is full (a fault response is
 refetched instead). The router accepts only when idle,
 so translated fetch does not stream.
+
+## Machine check, trace and IABR
+
+Behind `ENABLE_MACHINE_CHECK`, a 60x TEA returns as a typed fault
+(`FETCH_MACHINE_CHECK`, `DATA_MACHINE_CHECK`) that rides with its instruction
+to commit, where the special lane enters 0x200 or, with MSR[ME]=0, the
+checkstop state (`checkstop_o`). Behind `ENABLE_DEBUG_EXCEPTIONS`, trace
+reuses the interrupt boundary after each armed instruction (dispatch
+serializes while SE or BE is set) and IABR marks matching IQ entries at push.
+See [the contract](EXCEPTION_MACHINE_CHECK_TRACE.md).

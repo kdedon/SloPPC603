@@ -101,6 +101,7 @@ module tb_core_cache_probe_miss;
     end
   end
 
+  logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_TGPR(1'b1), .ENABLE_SDR1(1'b1),
     .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_TLB_LOAD(1'b1),
@@ -153,7 +154,7 @@ module tb_core_cache_probe_miss;
     .dmem_rsp_valid_i(drv), .dmem_rsp_ready_o(drr),
     .dmem_rsp_rdata_i(32'hdead_beef), .dmem_rsp_error_i(1'b0),
     .dmem_rsp_page_miss_i(d_capsule), .dmem_rsp_fault_i(d_fault),
-    .retire_valid_o(tv), .retire_ready_i(tr), .retire_o(retired), .halted_o(halted),
+    .retire_valid_o(tv), .retire_ready_i(tr), .retire_o(retired), .checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b1), .redirect_keep_pivot_i(1'b0),
     .redirect_pivot_i('0), .redirect_target_i(32'b0), .redirect_accepted_o(unused_cut));
 

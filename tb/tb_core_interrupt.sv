@@ -24,6 +24,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
+  logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0),.DIV_LATENCY(37),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(ENABLE_EXTERNAL_INTERRUPTS)) dut (
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
@@ -79,7 +80,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
     .dmem_req_valid_o(dv),.dmem_req_ready_i(dr),.dmem_req_write_o(dw),.dmem_req_addr_o(da),
     .dmem_req_wdata_o(wd),.dmem_req_wstrb_o(st),.dmem_rsp_valid_i(rv),.dmem_rsp_ready_o(rr),
     .dmem_rsp_rdata_i(32'haabb0011),.dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
-    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.halted_o(halted),
+    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.checkstop_o(unused_checkstop), .halted_o(halted),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(irq),.interrupt_taken_o(taken),.interrupt_pc_o(irq_pc),

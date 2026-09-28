@@ -30,7 +30,10 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_BYTE_REVERSE = 1'b0,
   parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
   parameter bit ENABLE_RESERVATION = 1'b0,
-  parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0
+  parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
+  // A TEA on a fetch, fill or data tenure enters machine check or checkstop.
+  parameter bit ENABLE_MACHINE_CHECK = 1'b0,
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -95,6 +98,7 @@ module ppc_core_bat_cached_bus60x #(
   input  logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
   output logic halted_o,
+  output logic checkstop_o,
   input  logic redirect_valid_i,
   input  logic redirect_all_i,
   input  logic redirect_keep_pivot_i,
@@ -184,6 +188,7 @@ module ppc_core_bat_cached_bus60x #(
   logic [31:0] bypass_req_addr;
   logic bypass_rsp_valid, bypass_rsp_ready;
   logic [31:0] bypass_rsp_insn;
+  logic bypass_rsp_error;
 
   logic scalar_req_valid, scalar_req_instruction, scalar_req_write;
   logic [31:0] scalar_req_addr, scalar_req_wdata;
@@ -234,6 +239,7 @@ module ppc_core_bat_cached_bus60x #(
   logic [31:0] scalar_imem_req_addr;
   logic scalar_imem_rsp_valid, scalar_imem_rsp_ready;
   logic [31:0] scalar_imem_rsp_insn;
+  logic scalar_imem_rsp_error;
 
   ppc_core_bat #(
     .RESET_PC(RESET_PC),
@@ -259,7 +265,9 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
-    .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS)
+    .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
+    .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
   ) translated_core (
     .clk_i,
     .rst_ni,
@@ -344,7 +352,7 @@ module ppc_core_bat_cached_bus60x #(
     .retire_valid_o,
     .retire_ready_i,
     .retire_o,
-    .halted_o(core_halted),
+    .halted_o(core_halted), .checkstop_o,
     .redirect_valid_i,
     .redirect_all_i,
     .redirect_keep_pivot_i,
@@ -387,6 +395,7 @@ module ppc_core_bat_cached_bus60x #(
     .bypass_rsp_valid_i(bypass_rsp_valid),
     .bypass_rsp_ready_o(bypass_rsp_ready),
     .bypass_rsp_insn_i(bypass_rsp_insn),
+    .bypass_rsp_error_i(bypass_rsp_error),
     .bypass_ifetch_error_i(scalar_router_ifetch_error),
     .line_req_valid_o(cache_line_req_valid),
     .line_req_ready_i(cache_line_req_ready),
@@ -422,14 +431,15 @@ module ppc_core_bat_cached_bus60x #(
   assign bypass_rsp_valid = scalar_imem_rsp_valid &&
     physical_fetch_busy_q && route_managed_q;
   assign bypass_rsp_insn = scalar_imem_rsp_insn;
+  assign bypass_rsp_error = scalar_imem_rsp_error;
   assign scalar_imem_rsp_ready = route_managed_q ? bypass_rsp_ready :
     (physical_fetch_busy_q && imem_rsp_ready);
   assign imem_rsp_valid = physical_fetch_busy_q &&
     (route_managed_q ? cache_fetch_rsp_valid : scalar_imem_rsp_valid);
   assign imem_rsp_insn = route_managed_q ? cache_fetch_rsp_insn :
     scalar_imem_rsp_insn;
-  assign imem_rsp_error = physical_fetch_busy_q && route_managed_q &&
-    cache_fetch_rsp_error;
+  assign imem_rsp_error = physical_fetch_busy_q &&
+    (route_managed_q ? cache_fetch_rsp_error : scalar_imem_rsp_error);
   assign cache_fetch_rsp_ready = physical_fetch_busy_q && route_managed_q &&
     imem_rsp_ready;
 
@@ -456,7 +466,7 @@ module ppc_core_bat_cached_bus60x #(
     end
   end
 
-  ppc_bus60x_arbiter scalar_router (
+  ppc_bus60x_arbiter #(.RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK)) scalar_router (
     .clk_i, .rst_ni,
     .imem_req_valid_i(scalar_imem_req_valid),
     .imem_req_ready_o(scalar_imem_req_ready),
@@ -464,6 +474,7 @@ module ppc_core_bat_cached_bus60x #(
     .imem_rsp_valid_o(scalar_imem_rsp_valid),
     .imem_rsp_ready_i(scalar_imem_rsp_ready),
     .imem_rsp_insn_o(scalar_imem_rsp_insn),
+    .imem_rsp_error_o(scalar_imem_rsp_error),
     .dmem_req_valid_i(dmem_req_valid && !transport_ifetch_error),
     .dmem_req_ready_o(dmem_req_ready),
     .dmem_req_write_i(dmem_req_write), .dmem_req_addr_i(dmem_req_addr),

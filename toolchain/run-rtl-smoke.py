@@ -84,6 +84,8 @@ STRESS_SYMBOLS = {'EXT_COUNT': ('stress_ext_count', 4), 'DEC_COUNT': ('stress_de
                   'IRQ_ACK': ('irq_ack', 4), 'MISS_TOTAL': ('miss_total', 4)}
 CACHEOPS = {'dsi_handler': 0x300, 'interrupt_handler': 0x500, 'alignment_handler': 0x600,
             'decrementer_handler': 0x900}
+MACHINE_CHECK = {'machine_check_handler': 0x200, 'trace_handler': 0xd00, 'iabr_handler': 0x1300,
+                 'bad_routine': 0xdfe0}
 
 # profile: (bench, source lists, fixed-address symbols as offsets from BASE,
 #           +MODE runs: a count or a tuple of modes)
@@ -117,9 +119,10 @@ PROFILES = {
     'mmu-stress-retry': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, 14),
     'cacheops': ('tb_compiled_cacheops_firmware', BAT_CACHED, CACHEOPS, 0),
     'lsu': ('tb_compiled_lsu_firmware', BAT_CACHED, {'alignment_handler': 0x600}, 0),
+    'machine-check': ('tb_compiled_machine_check_firmware', BAT_CACHED, MACHINE_CHECK, 2),
 }
 # Benches whose target is not the default for their source lists.
-SCRIPTED_TARGET = {'cacheops', 'lsu'}
+SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check'}
 RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry'}
 # Plusargs added to every run of a profile.
 PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1']}

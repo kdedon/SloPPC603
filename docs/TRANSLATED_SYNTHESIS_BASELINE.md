@@ -1,6 +1,21 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-28 machine check, trace and IABR enabled
 
+Recorded: `./quartus/translated/build.sh --docker`, commit 7316f6c plus
+uncommitted docs, 2026-09-28. Quartus 17.0.2, seed 1. Profile adds
+`ENABLE_MACHINE_CHECK` and `ENABLE_DEBUG_EXCEPTIONS` and the `checkstop_o`
+port. **Meets 50 MHz** at every corner, hold passing everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +4.910 | +0.257 |
+| Slow 1100 mV, -40 C | +4.881 | +0.239 |
+| Fast 1100 mV, 100 C | +7.861 | +0.141 |
+| Fast 1100 mV, -40 C | +8.128 | +0.118 |
+
+Fmax 66.14 MHz at the worst corner (slow -40 C; 66.27 MHz at slow 100 C).
+9,559 ALMs, 11,152 registers, 3 DSP blocks (from 9,468 / 11,067).
 
 ## 2026-09-27 load/store extensions
 

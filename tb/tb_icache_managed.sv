@@ -49,6 +49,7 @@ module tb_icache_managed;
     .bypass_rsp_valid_i(bypass_rsp_valid),
     .bypass_rsp_ready_o(bypass_rsp_ready),
     .bypass_rsp_insn_i(bypass_rsp_insn),
+    .bypass_rsp_error_i(1'b0),
     .bypass_ifetch_error_i(bypass_ifetch_error),
     .line_req_valid_o(line_req_valid), .line_req_ready_i(line_req_ready),
     .line_req_line_addr_o(line_req_addr),

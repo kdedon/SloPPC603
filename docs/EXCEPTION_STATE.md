@@ -59,10 +59,13 @@ MSR[IP] is SystemVerilog `msr[6]` and manual SRR1 cause bit 12 is `srr1[19]`.
 | 6 | External interrupt | `event_pc_i` architectural next PC | high SRR1 half clears; low half saves MSR | IP base + `0x500` |
 | 7 | Decrementer | `event_pc_i` architectural next PC | full-function saved MSR, no cause | IP base + `0x900` |
 | 8 | Data-storage protection | `event_pc_i` faulting instruction PC | high SRR1 half clears; low half saves MSR | IP base + `0x300` |
+| 12 | Machine check (ME=1) | `event_pc_i` next instruction to complete | SRR1 manual bit 13 (TEA); low half saves MSR; ME clears | IP base + `0x200` |
+| 13 | Trace | `event_pc_i` next instruction | low half saves MSR | IP base + `0xD00` |
+| 14 | Instruction address breakpoint | `event_pc_i` matching instruction | low half saves MSR | IP base + `0x1300` |
 
 External event 6 and decrementer event 7 require EE set and TGPR clear;
 otherwise they reject without state mutation. DEC uses the full-function
-`0x87c0ffff` save mask, unlike external event 6. Encodings 0 through 8 are assigned; 9 through 15 reject without state mutation. The timer/DEC integration is described in [TIMERS.md](TIMERS.md). Selection, level semantics and
+`0x87c0ffff` save mask, unlike external event 6. Encodings 9 through 11 are the TLB misses ([EXCEPTION_TLB_MISS.md](EXCEPTION_TLB_MISS.md)); 12 through 14 are described in [EXCEPTION_MACHINE_CHECK_TRACE.md](EXCEPTION_MACHINE_CHECK_TRACE.md); 15 rejects without state mutation. The timer/DEC integration is described in [TIMERS.md](TIMERS.md). Selection, level semantics and
 precise resume-PC ownership belong to the caller; see
 [EXTERNAL_INTERRUPTS.md](EXTERNAL_INTERRUPTS.md).
 
