@@ -25,8 +25,12 @@ using namespace dppc_interpreter;
 static constexpr uint32_t RAM_BASE = 0x1000, RAM_BYTES = 256;
 static std::array<uint8_t,RAM_BYTES> flat_ram{};
 static uint32_t ram_offset(uint32_t address, unsigned size) {
+#ifndef REFERENCE_LSU
+    // The load/store-extension lane models the 603e split of unaligned
+    // big-endian accesses as a byte-serial access.
     if ((address & (size-1)) != 0)
         throw std::runtime_error("flat RAM misaligned access");
+#endif
     if (address < RAM_BASE || uint64_t(address) + size > uint64_t(RAM_BASE) + RAM_BYTES)
         throw std::runtime_error("flat RAM outside range");
     return address-RAM_BASE;
@@ -50,6 +54,11 @@ template void mmu_write_vmem<uint32_t>(uint32_t,uint32_t,uint32_t);
 void ppc_exception_handler(Except_Type, uint32_t) {
     throw std::runtime_error("unsupported original reference exception");
 }
+#ifdef REFERENCE_LSU
+void ppc_alignment_exception(uint32_t, uint32_t) {
+    throw std::runtime_error("unsupported original reference alignment exception");
+}
+#endif
 
 static PPCOpcode memory_handler(uint32_t w) {
     unsigned primary=w>>26, xo=(w>>1)&1023;
@@ -71,7 +80,27 @@ static PPCOpcode memory_handler(uint32_t w) {
     case 43: selected=ppc_lhau; load=update=true; break;
     case 44: selected=ppc_st<uint16_t>; break;
     case 45: selected=ppc_stu<uint16_t>; update=true; break;
+#ifdef REFERENCE_LSU
+    // lmw with rA in the loaded range is an invalid form (UM 2.3.4.3.6).
+    case 46: return ra < rt ? ppc_lmw : nullptr;
+    case 47: return ppc_stmw;
+#endif
     case 31:
+#ifdef REFERENCE_LSU
+        if (xo == 150) return (w&1) ? ppc_stwcx : nullptr;
+        if (!(w&1)) switch (xo) {
+        case 20: return ppc_lwarx;
+        case 597: return ppc_lswi;
+        case 533: return ppc_lswx;
+        case 725: return ppc_stswi;
+        case 661: return ppc_stswx;
+        case 790: return ppc_lhbrx;
+        case 534: return ppc_lwbrx;
+        case 918: return ppc_sthbrx;
+        case 662: return ppc_stwbrx;
+        default: break;
+        }
+#endif
         if (w&1) return nullptr;
         switch (xo) {
         case 23: selected=ppc_lzx<uint32_t>; load=true; break;
@@ -203,6 +232,9 @@ static PPCOpcode handler(uint32_t w) {
             if (rc) return nullptr;
             if (spr == 8) return xo == 467 ? fixed_spr<8,true> : fixed_spr<8,false>;
             if (spr == 9) return xo == 467 ? fixed_spr<9,true> : fixed_spr<9,false>;
+#ifdef REFERENCE_LSU
+            if (spr == 1) return xo == 467 ? fixed_spr<1,true> : fixed_spr<1,false>;
+#endif
             return nullptr;
         }
         case 0: return (w & 0x600001) ? nullptr : ppc_cmp;

@@ -1,7 +1,12 @@
 // Architectural trace export for the independently compiled DingusPPC runner.
 // No instruction semantics or expected architectural values live in this bench.
+// EXTENSIONS enables the load/store extensions: a stwcx. probe is a request
+// without a RAM change, and continuation micro-ops of a cracked multiple or
+// string export no snapshot; the instruction's last micro-op does.
 /* verilator lint_off BLKSEQ */
-module tb_core_memory_reference;
+module tb_core_memory_reference #(
+  parameter bit EXTENSIONS = 1'b0
+);
   logic [41:0] unused_segment_csr;
   logic [47:0] unused_bat_csr;
   import ppc_pkg::*;
@@ -35,9 +40,15 @@ module tb_core_memory_reference;
   logic [3:0] unused_context;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
-  logic [33:0] unused_cache_core;
-  ppc_core #(.RESET_PC(32'b0)) dut (
-    .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
+  logic [33:1] unused_cache_core;
+  logic probe;
+  ppc_core #(
+    .RESET_PC(32'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(EXTENSIONS),
+    .ENABLE_CACHE_INSTRUCTIONS(EXTENSIONS), .ENABLE_BYTE_REVERSE(EXTENSIONS),
+    .ENABLE_MULTIPLE_STRING(EXTENSIONS), .ENABLE_RESERVATION(EXTENSIONS),
+    .ENABLE_MISALIGNED_ACCESS(EXTENSIONS)
+  ) dut (
+    .dmem_req_probe_o(probe), .icbi_req_valid_o(unused_cache_core[1]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .tlb_inv_req_valid_o(unused_tlb_inv_core[0]),
     .tlb_inv_req_ready_i(1'b0),
@@ -127,13 +138,14 @@ module tb_core_memory_reference;
       if (drsp_valid && rr) memory_pending <= 0;
       if (dv && !dreq_ready) memory_stalls++;
       if (dv && dreq_ready) begin
-        assert (!memory_pending && da[1:0] == 0 && da >= 32'h1000 && da <= 32'h10fc && st != 0)
+        assert (!memory_pending && da[1:0] == 0 && da >= 32'h1000 && da <= 32'h10fc &&
+                ((st != 0) != (EXTENSIONS && probe)) && (!probe || dw))
           else $fatal(1, "invalid aligned flat-RAM request");
         memory_pending <= 1;
         memory_delay <= 2 + cycle_count % 4;
         memory_requests++;
         drsp_data <= {ram[da-32'h1000],ram[da-32'h1000+1],ram[da-32'h1000+2],ram[da-32'h1000+3]};
-        if (dw) begin
+        if (dw && !probe) begin
           memory_writes++;
           for (int byte_lane=0; byte_lane<4; byte_lane++)
             if (st[3-byte_lane]) ram[da-32'h1000+32'(byte_lane)] <= wd[31-8*byte_lane -: 8];
@@ -150,8 +162,9 @@ module tb_core_memory_reference;
         held_word <= memory[ia[15:2]];
         delay_count <= cycle_count % 3;
       end
-      if (tv && tr) begin
-        assert (!retired.illegal && !$isunknown(retired))
+      if (tv && tr && !(EXTENSIONS && retired.seq_partial)) begin
+        assert (!retired.illegal && !$isunknown(retired) &&
+                retired.data_fault == DATA_OK && !retired.alignment_exception)
           else $fatal(1, "unsupported/unknown retirement in reference program");
         $fwrite(trace_file, "%08x %08x ", retired.pc, retired.insn);
         #1;
