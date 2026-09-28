@@ -33,19 +33,20 @@ def runner_inputs(ref):
     return {str(path):digest(path) for path in files}
 
 
-def build_reference(build, ref, *, flat_ram=False, prebuilt=None):
+def build_reference(build, ref, *, flat_ram=False, prebuilt=None, lsu=False):
     """Compile the runner into build, or reuse one from a prebuilt directory."""
     if prebuilt is not None:
         prebuilt=prebuilt.resolve()
         record=json.loads((prebuilt/'reference-build.json').read_text())
         runner=prebuilt/'reference_runner'
-        if record['flat_ram']!=flat_ram or record['inputs']!=runner_inputs(ref) or record['runner']!=digest(runner):
+        if record['flat_ram']!=flat_ram or record.get('lsu',False)!=lsu or record['inputs']!=runner_inputs(ref) or record['runner']!=digest(runner):
             raise RuntimeError(f'prebuilt reference runner in {prebuilt} is stale or mismatched; rebuild it')
         return runner,record['compile_command']
     runner=build/'reference_runner'
     cppargs=['g++','-std=c++20','-O2','-fwrapv','-flto','-ffunction-sections','-fdata-sections',
              '-DSUPPORTS_PPC_LITTLE_ENDIAN_MODE=0','-DSUPPORTS_MEMORY_CTRL_ENDIAN_MODE=0',
              *(['-DREFERENCE_FLAT_RAM=1'] if flat_ram else []),
+             *(['-DREFERENCE_LSU=1'] if lsu else []),
              '-I'+str(ref),'-I'+str(ref/'thirdparty/loguru'),
              HERE/'reference_runner.cpp',ref/'cpu/ppc/ppcopcodes.cpp','-Wl,--gc-sections','-o',runner]
     inputs=runner_inputs(ref)
@@ -54,7 +55,7 @@ def build_reference(build, ref, *, flat_ram=False, prebuilt=None):
         raise RuntimeError('reference sources changed during compile; rerun after source freeze')
     cppargs=[str(x) for x in cppargs]
     (build/'reference-build.json').write_text(json.dumps(
-        {'flat_ram':flat_ram,'inputs':inputs,'runner':digest(runner),'compile_command':cppargs},indent=2)+'\n')
+        {'flat_ram':flat_ram,'lsu':lsu,'inputs':inputs,'runner':digest(runner),'compile_command':cppargs},indent=2)+'\n')
     return runner,cppargs
 
 

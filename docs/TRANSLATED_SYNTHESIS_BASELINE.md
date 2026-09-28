@@ -2,6 +2,27 @@
 
 
 
+## 2026-09-27 load/store extensions
+
+Recorded: `./quartus/translated/build.sh --docker` and
+`./quartus/translated/report-critical-paths.sh --docker`, commit `d1824e5`,
+2026-09-27. Quartus 17.0.2, seed 1, Standard Fit. The profile adds
+`ENABLE_BYTE_REVERSE`, `ENABLE_MULTIPLE_STRING`, `ENABLE_RESERVATION` and
+`ENABLE_MISALIGNED_ACCESS` ([LOAD_STORE_EXTENSIONS.md](LOAD_STORE_EXTENSIONS.md)).
+**Meets 50 MHz** at every corner with hold passing everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +3.713 | +0.251 |
+| Slow 1100 mV, -40 C | +3.978 | +0.239 |
+| Fast 1100 mV, 100 C | +7.688 | +0.136 |
+| Fast 1100 mV, -40 C | +8.022 | +0.118 |
+
+Fmax 61.40 MHz at the worst corner (62.41 MHz at slow -40 C), from 65.37 MHz.
+The worst path is unchanged in kind: `special|timer_read_q` through the special
+result and completion wake into `station|entry.b.value[31]`. 9,652 ALMs
+(+184), 11,171 registers (+104), 3 DSP blocks, 139,008 block-memory bits.
+
 ## 2026-09-27 66 MHz round: registered I/O, IQ decode at push
 
 Recorded: `./quartus/translated/build.sh --docker` and

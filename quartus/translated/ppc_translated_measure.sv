@@ -478,6 +478,10 @@ module ppc_translated_measure (
     .ENABLE_TLB_INVALIDATE(1'b1),
     .ENABLE_TLB_LOAD(1'b1),
     .ENABLE_CACHE_INSTRUCTIONS(1'b1),
+    .ENABLE_BYTE_REVERSE(1'b1),
+    .ENABLE_MULTIPLE_STRING(1'b1),
+    .ENABLE_RESERVATION(1'b1),
+    .ENABLE_MISALIGNED_ACCESS(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (.rst_ni(rst_sync_q[1]),
     .clk_i,

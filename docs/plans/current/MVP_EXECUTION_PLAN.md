@@ -794,3 +794,11 @@ regression, container firmware build, 27 firmware profiles, coverage) and
 reference acceptance. MVP 83.81% → 85.01%; full audit unchanged. See
 [verification gates](../../VERIFICATION_GATES.md).
 
+## Load/store extensions round — accepted (2026-09-27)
+
+`ENABLE_BYTE_REVERSE`, `ENABLE_MULTIPLE_STRING`, `ENABLE_RESERVATION` and
+`ENABLE_MISALIGNED_ACCESS` in the translated profile. Fresh on the merge: `make
+-C sim ci` (433 regression PASS lines, 28 firmware profiles) and coverage
+(76.0%); fit inherited from the branch at the same RTL (61.40 MHz). MVP 85.01%
+→ 85.94%. See [verification](../../LOAD_STORE_EXTENSIONS_VERIFICATION.md).
+

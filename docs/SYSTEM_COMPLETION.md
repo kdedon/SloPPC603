@@ -19,7 +19,7 @@ acceptance evidence are still required. The aggregate is `sum(weight × completi
 / 100`, rounded to a whole percent. Keep weights fixed between rounds unless the
 user changes scope. Treat small score changes as bookkeeping, not velocity.
 
-**MVP estimate: about 85% complete (weighted 85.0%; planning range 60–85%).** The
+**MVP estimate: about 86% complete (weighted 85.9%; planning range 60–90%).** The
 remaining work is concentrated in platform exceptions (machine check, trace,
 debug) and timing closure. These are
 hard acceptance blockers regardless of the weighted score. Final FPGA acceptance
@@ -30,10 +30,10 @@ is currently unmet.
 | System | Weight | Complete | Accepted capability | Gaps and deliberate shortcuts |
 | --- | ---: | ---: | --- | --- |
 | Fetch and dispatch | 4% | 92% | Buffered fetch, precise supported fetch faults, drain/refetch on live context and events; reset/interleaving stress in branch-heavy translated code and inhibited fetches on the translated cached top | One outstanding instruction request with reserved queue capacity; single dispatch. |
-| Integer execution, multiply/divide, GPR/CR/XER | 9% | 85% | Broad scalar arithmetic/Boolean/rotate/shift/compare corpus, tagged flags, iterative divide, compiled integer firmware | Explicit XER access now supports state saving; compiler/ISA subset remains explicit; multiply latency counter does not establish a pipelined product datapath. |
+| Integer execution, multiply/divide, GPR/CR/XER | 9% | 86% | Broad scalar arithmetic/Boolean/rotate/shift/compare corpus, tagged flags, iterative divide, compiled integer firmware | Explicit XER access now supports state saving; compiler/ISA subset remains explicit; multiply latency counter does not establish a pipelined product datapath. |
 | Rename, completion and recovery | 7% | 85% | Tagged dependencies, ordered retirement, retained-prefix recovery, precise supported events | Five rename slots/CQ entries; finite generation-token lifetime contract; recovery timing and unsupported diagnostic ownership remain bounded policies. |
 | Branches and control flow | 4% | 93% | Direct/conditional/LR/CTR branches, handler entry and RFI | Serialized companion lane; prediction, folding and dual issue excluded. A page-crossing branch storm under EXT/DEC, bus retries and resets covers the combined path. |
-| Load/store and memory ordering | 7% | 78% | BE scalar D/indexed/update operations, ordered stores, load cancellation/drain, alignment faults and resumable BAT and page protection DSI; denied accesses suppress destination/base/memory effects; translated `dcbf`/`dcbst`/`dcbi`/`dcbz` probes with DSI/TLB-miss and no transfer; guarded CI stores write once across ARTRY | Serialized aligned subset; no data cache, so `dcbz` always takes alignment; supported page misses now enter refill handlers; transport errors remain diagnostic; no atomics/string/multiple forms. |
+| Load/store and memory ordering | 7% | 90% | BE scalar D/indexed/update operations; `lmw`/`stmw` and string forms cracked per register with precise restart; `lwarx`/`stwcx.` reservation; byte-reverse; unaligned scalars split in hardware with DR=1 page-cross alignment; DSI/TLB-miss restart mid-access; ordered stores, load cancellation/drain, alignment faults and resumable BAT and page protection DSI; denied accesses suppress destination/base/memory effects; translated `dcbf`/`dcbst`/`dcbi`/`dcbz` probes with DSI/TLB-miss and no transfer; guarded CI stores write once across ARTRY | Serialized; no data cache, so `dcbz` always takes alignment; transport errors remain diagnostic; atomic bus transfer types not driven; multiple/string timing not modeled. |
 | Supervisor state and synchronous exceptions | 8% | 80% | SC/RFI, live MTMSR/MFMSR, selected SPRs, program/alignment, every ISI and DSI cause of the supported instructions (protection, guarded, N, direct-store T=1, software page fault); `dcbz` alignment with Table 4-13 DSISR and privileged `dcbi`; DAR/DSISR capture and handler repair/retry | Supported MSR mask only (no ME/RI/FP/SE/BE/POW/LE); machine check, trace, IABR and other platform/debug exceptions are not implemented: TEA stays a diagnostic or checkstop-like halt. |
 | External interrupts and TB/DEC | 7% | 88% | EE masks, precise resume PC, admitted EXT latching, TB64/DEC32, priority and retirement-only writes; translated cached IRQ/refill drain, DEC-to-EXT promotion and RFI hits; hundreds of seeded EXT/DEC events per run across TLB misses, reloads, held bus tenures and resets on the translated cached top | Synchronous pins/tick; no CDC or bus-clock divider; local bounded event-recognition policy; board-level reset and interrupt-controller behavior open. |
 | BAT translation and live context | 10% | 88% | CPU-owned privileged BAT SPR reads/writes, retirement-only mapping changes, cancellation/drain, live IR/DR/PR, supported instruction/data-protection faults; compiled mapping replacement with pending EXT/DEC; IBAT remap, WIMG and IR changes over cached lines and BAT-over-TLB priority under retries and resets | Abstract, scalar 60x and bounded cached 60x paths accepted; final timing remains open. Malformed/overlapping candidates terminate diagnostically by local policy; deterministic zero reset differs from silicon. |
@@ -176,6 +176,7 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Gate-1 MMU/event round, 2026-09-27 | 81.51% → 82.66% | Page TLB 90% → 94%; supervisor 75% → 78%; interrupts/timers 85% → 88%; integration 85% → 87%. |
 | Cache maintenance and held-refill round, 2026-09-27 | 82.66% → 83.81% | Cache 95%, load/store 78%, supervisor 80%, 60x 80%, integration 89%. |
 | Verification breadth round, 2026-09-27 | 83.81% → 85.01% | Fetch 92%, branches 93%, BAT/context 88%, segment/page 95%, 60x 83%, integration 94%. Seeded ARTRY/DRTRY/held-tenure retry stress with SR/SDR1/PTE changes, branch storm and BAT/cache collisions; line coverage, `ci` and reference-acceptance targets. No production RTL change. Checks inherited from the branch head (`4560b1a`); see [verification gates](VERIFICATION_GATES.md). |
+| Load/store extensions round, 2026-09-27 | 85.01% → 85.94% | Load/store 90%, integer 86%. Multiple/string, `lwarx`/`stwcx.`, byte-reverse and hardware-split unaligned scalars with precise mid-access restart. Fresh on the merge: `make -C sim ci` and coverage; fit inherited from the branch (same RTL). See [verification](LOAD_STORE_EXTENSIONS_VERIFICATION.md). |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.
@@ -780,3 +781,21 @@ BAT/context 85% → 88%, segment/page 94% → 95%, 60x 80% → 83%, integration
 89% → 94%. The full audit is unchanged (verification only). Open: TEA in the
 stress (waits on machine check), DingusPPC comparison of the compiled corpus,
 formal verification and toggle coverage.
+
+## Load/store extensions round (2026-09-27)
+
+Recorded: `make -C sim -j2 ci` and `make -C sim coverage` on the merge of the
+load/store branch onto `2970961`, 2026-09-27; see
+[verification](LOAD_STORE_EXTENSIONS_VERIFICATION.md). `lmw`/`stmw` and the
+string forms crack into per-register micro-ops that restart precisely on a
+mid-sequence DSI or TLB miss; `lwarx`/`stwcx.` keep a reservation per PEM
+§4.2.6; byte-reverse forms; unaligned scalars split in hardware, with alignment
+only for page crossings under DR=1 and the forms the manual requires. The
+translated fit meets 50 MHz; Fmax fell from 65.37 to 61.40 MHz.
+
+**MVP 85.01% → 85.94% (about 86%):** load/store 78% → 90%, integer 85% → 86%.
+The integer audit found forms still missing: `tw`/`twi`, PVR/HID0/HID1/EAR
+moves, `eciwx`/`ecowx`; undefined encodings and FP forms halt instead of taking
+the illegal-instruction and FP-unavailable exceptions. A decode-completion round
+owns them.
+

@@ -116,9 +116,10 @@ PROFILES = {
                           (0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13)),
     'mmu-stress-retry': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, 14),
     'cacheops': ('tb_compiled_cacheops_firmware', BAT_CACHED, CACHEOPS, 0),
+    'lsu': ('tb_compiled_lsu_firmware', BAT_CACHED, {'alignment_handler': 0x600}, 0),
 }
 # Benches whose target is not the default for their source lists.
-SCRIPTED_TARGET = {'cacheops'}
+SCRIPTED_TARGET = {'cacheops', 'lsu'}
 RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry'}
 # Plusargs added to every run of a profile.
 PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1']}
@@ -155,6 +156,8 @@ def main():
     parser.add_argument('--coverage', action='store_true',
                         help='build with line coverage; each run writes cov-<mode>.dat in the build directory')
     parser.add_argument('--modes', type=int, nargs='+', help='run only these +MODE values')
+    parser.add_argument('--gparam', action='append', default=[],
+                        help='bench parameter override NAME=VALUE')
     args = parser.parse_args()
     top, manifests, offsets, modes = PROFILES[args.profile]
     table_fault_profile = args.profile.startswith('table-fault')
@@ -200,7 +203,7 @@ def main():
         mode_flags = ['--cc', '--exe', '--build', '--coverage-line', str(main)]
     subprocess.run([args.verilator, *mode_flags, '--timing', '--assert', '-Wall', '-j', str(args.jobs),
                     '--top-module', top, '--Mdir', str(build/'obj'), '-I../tb',
-                    *profile_params, *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
+                    *profile_params, *(f'-G{g}' for g in args.gparam), *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
     if isinstance(modes, int):
         modes = tuple(range(modes)) if modes else (None,)
     if args.modes:

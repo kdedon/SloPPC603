@@ -26,7 +26,11 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_TLB_LOAD = 1'b0,
   parameter bit ENABLE_TEST_REDIRECT = 1'b1,
   parameter bit ENABLE_MICRO_TLB = 1'b1,
-  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  parameter bit ENABLE_BYTE_REVERSE = 1'b0,
+  parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
+  parameter bit ENABLE_RESERVATION = 1'b0,
+  parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -251,7 +255,11 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT),
     .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
-    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
+    .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
+    .ENABLE_RESERVATION(ENABLE_RESERVATION),
+    .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS)
   ) translated_core (
     .clk_i,
     .rst_ni,

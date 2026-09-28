@@ -58,6 +58,7 @@ module ppc_bus60x (
   localparam logic [1:0] TC_INSTRUCTION      = 2'b10;
   localparam logic [2:0] TSIZ_1_BYTE         = 3'b001;
   localparam logic [2:0] TSIZ_2_BYTES        = 3'b010;
+  localparam logic [2:0] TSIZ_3_BYTES        = 3'b011;
   localparam logic [2:0] TSIZ_4_BYTES        = 3'b100;
 
   typedef enum logic [3:0] {
@@ -133,6 +134,10 @@ module ppc_bus60x (
       4'b0001: begin request_byte_offset = 2'd3; request_size = TSIZ_1_BYTE; end
       4'b1100: begin request_byte_offset = 2'd0; request_size = TSIZ_2_BYTES; end
       4'b0011: begin request_byte_offset = 2'd2; request_size = TSIZ_2_BYTES; end
+      // Misaligned transfers within a word (UM Table 8-5).
+      4'b0110: begin request_byte_offset = 2'd1; request_size = TSIZ_2_BYTES; end
+      4'b1110: begin request_byte_offset = 2'd0; request_size = TSIZ_3_BYTES; end
+      4'b0111: begin request_byte_offset = 2'd1; request_size = TSIZ_3_BYTES; end
       4'b1111: begin request_byte_offset = 2'd0; request_size = TSIZ_4_BYTES; end
       default: begin request_shape_valid = 1'b0; request_byte_offset = 2'b00; request_size = 3'b000; end
     endcase

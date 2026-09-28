@@ -452,10 +452,38 @@ rtl-mmu-stress-cached: mmu-stress
 rtl-mmu-stress-retry: mmu-stress
 	$(PYTHON) run-rtl-smoke.py --profile mmu-stress-retry --elf $(BUILD_DIR)/mmu-stress/smoke.elf --build-dir $(BUILD_DIR)/rtl-mmu-stress-retry
 
+# Load/store extensions: stmw/lmw, lwarx/stwcx., strings, byte-reverse and
+# unaligned scalars, on the translated cached 60x top.
+LSU_FORMS := lmw stmw lwarx stwcx. lswi stswi lswx stswx lwbrx stwbrx lhbrx sthbrx
+.PHONY: lsu rtl-lsu rtl-lsu-negative
+lsu: $(BUILD_DIR)/lsu/smoke.elf $(BUILD_DIR)/lsu/smoke.bin $(BUILD_DIR)/lsu/smoke.dump
+$(BUILD_DIR)/lsu:
+	mkdir -p $@
+$(BUILD_DIR)/lsu/crt0.o: crt0.S | $(BUILD_DIR)/lsu
+	$(CC) $(COMMON_ASFLAGS) -mbig-endian -DENABLE_LSU_SMOKE -c $< -o $@
+$(BUILD_DIR)/lsu/main.o: lsu-smoke.c | $(BUILD_DIR)/lsu
+	$(CC) $(COMMON_CFLAGS) -mbig-endian -mmultiple -c $< -o $@
+$(BUILD_DIR)/lsu/handler.o: lsu-handler.S | $(BUILD_DIR)/lsu
+	$(CC) $(COMMON_ASFLAGS) -mbig-endian -c $< -o $@
+$(BUILD_DIR)/lsu/smoke.elf: $(BUILD_DIR)/lsu/crt0.o $(BUILD_DIR)/lsu/main.o $(BUILD_DIR)/lsu/handler.o lsu.ld
+	$(CC) $(COMMON_CFLAGS) -mbig-endian $(subst link.ld,lsu.ld,$(COMMON_LDFLAGS)) \
+		-Wl,-Map,$(BUILD_DIR)/lsu/smoke.map $(filter %.o,$^) -o $@
+rtl-lsu: lsu
+	$(PYTHON) check_opcodes.py $(BUILD_DIR)/lsu/smoke.elf $(LSU_FORMS)
+	$(PYTHON) run-rtl-smoke.py --profile lsu --elf $(BUILD_DIR)/lsu/smoke.elf --build-dir $(BUILD_DIR)/rtl-lsu
+# The same image with the extensions disabled must reject its first stmw.
+rtl-lsu-negative: lsu
+	mkdir -p $(BUILD_DIR)/rtl-lsu-negative
+	if $(PYTHON) run-rtl-smoke.py --profile lsu --gparam LSU_EXTENSIONS=0 \
+		--elf $(BUILD_DIR)/lsu/smoke.elf --build-dir $(BUILD_DIR)/rtl-lsu-negative \
+		> $(BUILD_DIR)/rtl-lsu-negative/run.log 2>&1; then exit 1; fi
+	grep "known legal retirement.*insn=bd" $(BUILD_DIR)/rtl-lsu-negative/run.log
+	@echo "PASS: rtl-lsu-negative rejected stmw with the extensions disabled"
+
 # Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
 # or from `make firmware-all` in the pinned container.
-FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops
-RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry cacheops
+FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu
+RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry cacheops lsu
 FIRMWARE_ELFS := $(FIRMWARE_PROFILES:%=$(BUILD_DIR)/%/smoke.elf)
 CROSS_MISSING := ERROR: $(CC) not found; install the pinned cross-compiler or run make firmware-all in the container (see toolchain/README.md)
 

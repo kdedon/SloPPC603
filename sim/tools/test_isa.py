@@ -85,9 +85,14 @@ class IsaMetadataTest(unittest.TestCase):
 
         self.assertEqual(enabled("addi"), set(names))
         self.assertEqual(enabled("mfsprg0"), set(names) - {"default"})
-        self.assertEqual(enabled("mtmsr"), set(names) - {"default", "supervisor", "cache"})
-        self.assertEqual(enabled("icbi"), {"cache", "all"})
-        self.assertEqual(enabled("dcbi"), {"cache", "all"})
+        self.assertEqual(enabled("mtmsr"), set(names) - {"default", "supervisor", "cache",
+                                                          "byte_reverse", "multiple_string", "reservation"})
+        self.assertEqual(enabled("lmw"), {"multiple_string", "all"})
+        self.assertEqual(enabled("stswx"), {"multiple_string", "all"})
+        self.assertEqual(enabled("lwbrx"), {"byte_reverse", "all"})
+        self.assertEqual(enabled("stwcx."), {"reservation", "all"})
+        self.assertEqual(enabled("icbi"), {"cache", "reservation", "all"})
+        self.assertEqual(enabled("dcbi"), {"cache", "reservation", "all"})
         self.assertEqual(enabled("tlbie"), {"tlbie", "all"})
         self.assertEqual(enabled("mfdmiss"), {"tlb_miss", "all"})
         self.assertEqual(enabled("mfdcmp"), {"tlb_load", "tlb_miss", "all"})
@@ -101,6 +106,9 @@ class IsaMetadataTest(unittest.TestCase):
             ("dcbz", "mask", "0xfc0007ff", "reserved fields"),
             ("dcbi", "privilege", "user", "privilege must be supervisor"),
             ("icbi", "privilege", "supervisor", "privilege must be user"),
+            ("stwcx.", "value", "0x7c00012c", "extension encoding"),
+            ("lwarx", "serialization", "execution_sync", "serialization changed"),
+            ("stmw", "semantic_class", "load_multiple", "only lmw"),
         ]
         for entry_id, key, value, message in cases:
             with self.subTest(entry=entry_id):

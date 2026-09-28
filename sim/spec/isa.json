@@ -20402,6 +20402,1032 @@
           "role": "primary_unit_and_serialization"
         }
       ]
+    },
+    {
+      "id": "lmw",
+      "mnemonic": "lmw",
+      "family": "lmw",
+      "semantic_class": "load_multiple",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xb8000000",
+      "primary_opcode": 46,
+      "unit": "LSU",
+      "operands": [
+        "rD",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "rD..r31"
+      ],
+      "privilege": "user",
+      "serialization": "dispatch_and_execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-061",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_MULTIPLE_STRING"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-110"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 110,
+          "printed_page": "2-32",
+          "section": "2.3.4.3.6",
+          "role": "primary_multiple_invalid_form_and_restart"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 184,
+          "printed_page": "4-26",
+          "section": "4.5.6",
+          "role": "primary_alignment_conditions",
+          "table": "4-13"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 187,
+          "printed_page": "4-29",
+          "section": "4.5.6.2",
+          "role": "primary_multiple_alignment_dar"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ],
+      "field_constraints": [
+        {
+          "field": "rA",
+          "rule": "less_than_rD",
+          "incorrect_encoding": "invalid_form"
+        }
+      ]
+    },
+    {
+      "id": "stmw",
+      "mnemonic": "stmw",
+      "family": "stmw",
+      "semantic_class": "store_multiple",
+      "form": "D",
+      "mask": "0xfc000000",
+      "value": "0xbc000000",
+      "primary_opcode": 47,
+      "unit": "LSU",
+      "operands": [
+        "rS",
+        "d",
+        "rA_or_zero"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "execution_sync",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "absent",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-062",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_MULTIPLE_STRING"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-199"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 110,
+          "printed_page": "2-32",
+          "section": "2.3.4.3.6",
+          "role": "primary_multiple_restart"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 184,
+          "printed_page": "4-26",
+          "section": "4.5.6",
+          "role": "primary_alignment_conditions",
+          "table": "4-13"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 187,
+          "printed_page": "4-29",
+          "section": "4.5.6.2",
+          "role": "primary_multiple_alignment_dar"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "lswi",
+      "mnemonic": "lswi",
+      "family": "lswi",
+      "semantic_class": "load_string",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c0004aa",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rD",
+        "rA_or_zero",
+        "NB"
+      ],
+      "writes": [
+        "rD..rD+ceil(NB/4)-1 mod 32"
+      ],
+      "privilege": "user",
+      "serialization": "dispatch_and_execution_sync",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-030",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_MULTIPLE_STRING"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-111"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 111,
+          "printed_page": "2-33",
+          "section": "2.3.4.3.7",
+          "role": "primary_string_valid_forms_and_restart"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "lswx",
+      "mnemonic": "lswx",
+      "family": "lswx",
+      "semantic_class": "load_string",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c00042a",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rD",
+        "rA_or_zero",
+        "rB",
+        "XER[25-31]"
+      ],
+      "writes": [
+        "rD..rD+ceil(n/4)-1 mod 32"
+      ],
+      "privilege": "user",
+      "serialization": "dispatch_and_execution_sync",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-025",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_MULTIPLE_STRING"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-112"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 111,
+          "printed_page": "2-33",
+          "section": "2.3.4.3.7",
+          "role": "primary_string_valid_forms_and_restart"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "stswi",
+      "mnemonic": "stswi",
+      "family": "stswi",
+      "semantic_class": "store_string",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c0005aa",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rS",
+        "rA_or_zero",
+        "NB"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "execution_sync",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-037",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_MULTIPLE_STRING"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-200"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 111,
+          "printed_page": "2-33",
+          "section": "2.3.4.3.7",
+          "role": "primary_string_restart"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "stswx",
+      "mnemonic": "stswx",
+      "family": "stswx",
+      "semantic_class": "store_string",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c00052a",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rS",
+        "rA_or_zero",
+        "rB",
+        "XER[25-31]"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "execution_sync",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-033",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_MULTIPLE_STRING"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-201"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 111,
+          "printed_page": "2-33",
+          "section": "2.3.4.3.7",
+          "role": "primary_string_restart"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "lwarx",
+      "mnemonic": "lwarx",
+      "family": "lwarx",
+      "semantic_class": "load_reserve",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c000028",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rD",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "rD",
+        "reservation"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-001",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_CACHE_INSTRUCTIONS",
+          "ENABLE_RESERVATION"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-114"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 117,
+          "printed_page": "2-39",
+          "section": "2.3.6.1",
+          "role": "primary_reservation_rules",
+          "table": "2-31"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 184,
+          "printed_page": "4-26",
+          "section": "4.5.6",
+          "role": "primary_alignment_conditions",
+          "table": "4-13"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "stwcx.",
+      "mnemonic": "stwcx.",
+      "family": "stwcx.",
+      "semantic_class": "store_conditional",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c00012d",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rS",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "memory",
+        "CR0",
+        "reservation"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_1",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-008",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_CACHE_INSTRUCTIONS",
+          "ENABLE_RESERVATION"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-204"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 117,
+          "printed_page": "2-39",
+          "section": "2.3.6.1",
+          "role": "primary_reservation_rules",
+          "table": "2-31"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 184,
+          "printed_page": "4-26",
+          "section": "4.5.6",
+          "role": "primary_alignment_conditions",
+          "table": "4-13"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 181,
+          "printed_page": "4-23",
+          "section": "4.5.3",
+          "role": "primary_dsi_register_settings",
+          "table": "4-11"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "lhbrx",
+      "mnemonic": "lhbrx",
+      "family": "lhbrx",
+      "semantic_class": "byte_reverse_load",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c00062c",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rD",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-040",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_BYTE_REVERSE"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 364,
+          "printed_page": "A-4",
+          "table": "A-1",
+          "rows": [
+            "A1-105"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 109,
+          "printed_page": "2-31",
+          "section": "2.3.4.3.5",
+          "role": "primary_byte_reverse",
+          "table": "2-22"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 186,
+          "printed_page": "4-28",
+          "section": "4.5.6.1.1",
+          "role": "primary_page_crossing_alignment"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "lwbrx",
+      "mnemonic": "lwbrx",
+      "family": "lwbrx",
+      "semantic_class": "byte_reverse_load",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c00042c",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rD",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "rD"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-026",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_BYTE_REVERSE"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 365,
+          "printed_page": "A-5",
+          "table": "A-1",
+          "rows": [
+            "A1-117"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 109,
+          "printed_page": "2-31",
+          "section": "2.3.4.3.5",
+          "role": "primary_byte_reverse",
+          "table": "2-22"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 186,
+          "printed_page": "4-28",
+          "section": "4.5.6.1.1",
+          "role": "primary_page_crossing_alignment"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "sthbrx",
+      "mnemonic": "sthbrx",
+      "family": "sthbrx",
+      "semantic_class": "byte_reverse_store",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c00072c",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rS",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-041",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_BYTE_REVERSE"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-195"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 109,
+          "printed_page": "2-31",
+          "section": "2.3.4.3.5",
+          "role": "primary_byte_reverse",
+          "table": "2-22"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 186,
+          "printed_page": "4-28",
+          "section": "4.5.6.1.1",
+          "role": "primary_page_crossing_alignment"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
+    },
+    {
+      "id": "stwbrx",
+      "mnemonic": "stwbrx",
+      "family": "stwbrx",
+      "semantic_class": "byte_reverse_store",
+      "form": "X",
+      "mask": "0xfc0007ff",
+      "value": "0x7c00052c",
+      "primary_opcode": 31,
+      "unit": "LSU",
+      "operands": [
+        "rS",
+        "rA_or_zero",
+        "rB"
+      ],
+      "writes": [
+        "memory"
+      ],
+      "privilege": "user",
+      "serialization": "none",
+      "reserved_bits": [
+        {
+          "field": "Rc",
+          "architectural_bits": "31",
+          "word_bits": "0",
+          "required": 0,
+          "incorrect_encoding": "invalid_form"
+        }
+      ],
+      "modifiers": {
+        "OE": "absent",
+        "Rc": "fixed_0",
+        "AA": "absent",
+        "LK": "absent"
+      },
+      "timing_row": "TIM-T66-034",
+      "variants": {
+        "PID6-603e": "legal",
+        "PID7v-603e": "legal",
+        "EC603e": "legal",
+        "603": "pending_reconciliation",
+        "602": "pending_missing_primary"
+      },
+      "implementation": {
+        "status": "implemented_opt_in_profile",
+        "feature_profile": [
+          "ENABLE_SUPERVISOR_EXCEPTIONS",
+          "ENABLE_BYTE_REVERSE"
+        ],
+        "validation": "accepted_lsu_extension_benches"
+      },
+      "evidence": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 367,
+          "printed_page": "A-7",
+          "table": "A-1",
+          "rows": [
+            "A1-203"
+          ],
+          "role": "primary_encoding"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 109,
+          "printed_page": "2-31",
+          "section": "2.3.4.3.5",
+          "role": "primary_byte_reverse",
+          "table": "2-22"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 186,
+          "printed_page": "4-28",
+          "section": "4.5.6.1.1",
+          "role": "primary_page_crossing_alignment"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 274,
+          "printed_page": "6-28",
+          "section": "6.6",
+          "role": "primary_unit_and_serialization",
+          "table": "6-6"
+        }
+      ]
     }
   ],
   "spr_read_opcode_equivalence": {

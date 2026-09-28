@@ -34,6 +34,9 @@ PROFILES: list[tuple[str, frozenset[str]]] = [
     ("sdr1", frozenset({SUP, LIVE, "ENABLE_SDR1"})),
     ("tlb_miss", frozenset({SUP, LIVE, "ENABLE_SDR1", "ENABLE_TLB_LOAD", "ENABLE_TLB_MISS_EXCEPTIONS"})),
     ("cache", frozenset({SUP, "ENABLE_CACHE_INSTRUCTIONS"})),
+    ("byte_reverse", frozenset({SUP, "ENABLE_BYTE_REVERSE"})),
+    ("multiple_string", frozenset({SUP, "ENABLE_MULTIPLE_STRING"})),
+    ("reservation", frozenset({SUP, "ENABLE_CACHE_INSTRUCTIONS", "ENABLE_RESERVATION"})),
     ("all", frozenset(DECODE_PARAMETERS)),
 ]
 
@@ -62,6 +65,9 @@ def _term(entry: dict[str, object], ignored: int, read_xo: list[int]) -> str:
     if "allowed_bo" in entry:
         allowed = " || ".join(f"(((word >> 21) & 31) == {bo})" for bo in entry["allowed_bo"])  # type: ignore[union-attr]
         term = f"({term} && ({allowed}))"
+    if entry.get("semantic_class") == "load_multiple":
+        # rA in the loaded range (rA >= rD, including rA = rD = 0) is invalid.
+        term = f"({term} && (((word >> 16) & 31) < ((word >> 21) & 31)))"
     if entry.get("semantic_class") == "lsu_update":
         term = f"({term} && (((word >> 16) & 31) != 0))"
         if "rD" in entry.get("writes", []):  # type: ignore[operator]

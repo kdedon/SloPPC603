@@ -10,8 +10,10 @@ This routes the existing aligned-access restriction through a precise exception
 mechanism. It does not implement the complete 603e misalignment policy. A real
 603e can split many big-endian scalar unaligned accesses internally; the bounded
 profile still traps all odd halfwords and all non-word-aligned words. Byte
-accesses never trigger this alignment check. Floating point, multiple/string,
-reservation and cache-management alignment cases remain outside this slice.
+accesses never trigger this alignment check. With `ENABLE_MISALIGNED_ACCESS=1`
+the core splits unaligned scalars and traps only page crossings under data
+translation; multiple, string and reservation alignment rules are in
+[LOAD_STORE_EXTENSIONS.md](LOAD_STORE_EXTENSIONS.md).
 
 ## Authoritative sources
 
