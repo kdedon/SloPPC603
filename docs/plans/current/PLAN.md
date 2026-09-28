@@ -42,6 +42,13 @@ Generated builds, logs and reports are excluded from version control.
    RTL meet 50 MHz setup and hold on all three tops. Open: 66 MHz on the cached
    tops (registered fetch-to-decode stage) and the remaining scorecard gaps.
 
+4. MVP completion (scope set 2026-09-28): a snooping MEI data cache built and
+   integrated behind the LSU and BIU; a top whose ports are exactly the 603e pins,
+   with internal blocks grouped as on the chip; a 603e-timed multiplier; the
+   remaining diagnostic halts replaced by manual behavior; the compiled corpus
+   compared against DingusPPC; a registered fetch-to-decode stage toward 66 MHz;
+   then release packaging and final signoff fits.
+
 Timing targets: 50 MHz is the provisional MVP constraint; 66 MHz, the original
 603e's clock, is the aspirational target. Fit records report Fmax against both.
 
