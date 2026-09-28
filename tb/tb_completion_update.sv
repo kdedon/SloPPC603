@@ -45,7 +45,7 @@ module tb_completion_update;
                             retired.cr_field, retired.write_cr_fields,
                             retired.cr_mask, retired.write_cr_bit,
                             retired.cr_bit, retired.cr_delta,
-                            retired.xer_delta, retired.pc, retired.insn,
+                            retired.xer_delta, retired.seq_partial, retired.pc, retired.insn,
                             retired.tag};
 
   task automatic require(input logic condition, input string message);
