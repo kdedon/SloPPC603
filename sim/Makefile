@@ -1334,3 +1334,45 @@ test-core-bat-cached-bus60x-timer:
 	mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x-timer
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x_timer --Mdir $(BUILD_DIR)/core-bat-cached-bus60x-timer $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_bat_cached_bus60x_timer.sv
 	./$(BUILD_DIR)/core-bat-cached-bus60x-timer/Vtb_core_bat_cached_bus60x_timer $(SIM_ARGS)
+
+# Line coverage of the translated cached 60x top from the compiled MMU stress
+# (all retry modes) and cache-operation firmware. Needs their ELFs (see
+# toolchain/README.md). The summary gates total rtl/ coverage and every case
+# arm of the control modules against coverage_waivers.txt.
+COVERAGE_DIR := $(BUILD_DIR)/coverage
+COVERAGE_MIN ?= 72
+FIRMWARE_DIR := ../toolchain/build
+.PHONY: coverage coverage-summary
+coverage:
+	rm -f $(COVERAGE_DIR)/*/cov-*.dat
+	python3 ../toolchain/run-rtl-smoke.py --coverage --profile mmu-stress-retry --elf $(FIRMWARE_DIR)/mmu-stress/smoke.elf --build-dir $(COVERAGE_DIR)/mmu-stress-retry
+	python3 ../toolchain/run-rtl-smoke.py --coverage --profile cacheops --elf $(FIRMWARE_DIR)/cacheops/smoke.elf --build-dir $(COVERAGE_DIR)/cacheops
+	$(MAKE) coverage-summary
+coverage-summary:
+	python3 tools/coverage_summary.py --waivers coverage_waivers.txt --min-total $(COVERAGE_MIN) $(COVERAGE_DIR)/*/cov-*.dat
+
+# The continuous gate: regression, every compiled-firmware profile and the
+# coverage summary. Builds the firmware with the host cross-compiler, or in
+# the pinned container when the compiler is absent.
+CROSS_GCC := powerpc-linux-gnu-gcc
+.PHONY: ci ci-firmware
+ci:
+	$(MAKE) regression
+	$(MAKE) ci-firmware
+	$(MAKE) -C ../toolchain rtl-all
+	$(MAKE) coverage
+	@echo "PASS: ci (regression, compiled firmware, coverage)"
+ci-firmware:
+	if command -v $(CROSS_GCC) >/dev/null 2>&1; then $(MAKE) -C ../toolchain firmware-all; \
+	else ../toolchain/build-in-container.sh firmware-all; fi
+
+# Long DingusPPC comparison, outside regression: every reference profile
+# plus 64 stress seeds at the generator's 512-block maximum.
+REFERENCE_SEEDS_A := 1,2,3,4,5,6,7,8,9,a,b,c,d,e,f,10,11,12,13,14,15,16,17,18,19,1a,1b,1c,1d,1e,1f,20
+REFERENCE_SEEDS_B := 603e,deadbeef,21,22,23,24,25,26,27,28,29,2a,2b,2c,2d,2e,2f,30,31,32,33,34,35,36,37,38,39,3a,3b,3c,3d,3e
+.PHONY: reference-acceptance
+reference-acceptance: reference-runner-flat
+	$(MAKE) test-reference test-reference-memory test-reference-bat test-reference-cached test-reference-managed test-reference-cache-disabled
+	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-acceptance-a --seeds $(REFERENCE_SEEDS_A) --blocks 512 $(FLAT_REFERENCE_ARGS)
+	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-acceptance-b --seeds $(REFERENCE_SEEDS_B) --blocks 512 $(FLAT_REFERENCE_ARGS)
+	@echo "PASS: reference acceptance"

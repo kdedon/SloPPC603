@@ -71,6 +71,8 @@ docker run --rm --network none --user "$(id -u):$(id -g)" \
 make -C toolchain -j2 rtl-all
 ```
 
+`toolchain/build-in-container.sh <targets>` runs the same container command.
+
 ## Compiled firmware execution
 
 With the local cross-compiler and Verilator installed:
@@ -425,11 +427,13 @@ translation router while an older instruction needs a data transaction.
 
 `make mmu-stress` builds a self-checking page-table image: TLB replacement
 by LRU way, R/C updates, `tlbie`/`tlbsync` remapping, direct-store and
-page-fault DSI/ISI, repeated under external and decrementer interrupts.
-`make rtl-mmu-stress-cached` runs it on `ppc_core_bat_cached_bus60x` with the
-MVP profile in nine seeded modes; eight reset the CPU mid-run (during miss
-handlers, TLB loads and invalidates, line fills, held IRQs or DEC entry) and
-require a clean rerun. See [stress evidence](../docs/MMU_STRESS_FIRMWARE.md).
+page-fault DSI/ISI, a page-crossing branch storm, BAT remap/WIMG/IR and
+BAT-over-TLB checks, and segment and SDR1 changes, repeated under external
+and decrementer interrupts. `make rtl-mmu-stress-cached` runs it on
+`ppc_core_bat_cached_bus60x` with the MVP profile in eleven seeded modes;
+`make rtl-mmu-stress-retry` runs fourteen modes with seeded ARTRY, DRTRY and
+held data tenures. Most modes reset the CPU mid-run and require a clean
+rerun. See [stress evidence](../docs/MMU_STRESS_FIRMWARE.md).
 
 ## Cache control profile
 

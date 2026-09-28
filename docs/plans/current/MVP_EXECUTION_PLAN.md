@@ -783,3 +783,14 @@ both mutation controls rejected. Fresh: full regression, `rtl-all`, translated
 fit (52.31 MHz after tying off the special-lane cancel without the test
 redirect). MVP 82.66% → 83.81%; full audit 46.29% → 46.79%. See
 [verification](../../CACHE_CONTROL_VERIFICATION.md).
+
+## Verification breadth round — accepted (2026-09-27)
+
+Seeded ARTRY/DRTRY/held-tenure retries across the translated MMU stress, with
+SR/SDR1/PTE context changes, a page-crossing branch storm and BAT/cache
+collisions; `make -C sim coverage`, `ci` and `reference-acceptance` targets.
+No production RTL change. Inherited from the branch head `4560b1a`: `ci` (full
+regression, container firmware build, 27 firmware profiles, coverage) and
+reference acceptance. MVP 83.81% → 85.01%; full audit unchanged. See
+[verification gates](../../VERIFICATION_GATES.md).
+

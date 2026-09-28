@@ -3,7 +3,11 @@
 // target delays and retirement backpressure. Modes 1-8 also reset the CPU at
 // a chosen point (during a PTE read or R/C write in a miss handler, a TLB
 // load or invalidate, a translated line fill, a held IRQ, a DEC entry or at
-// random cycles) and require the image to pass again from reset. RAM changes only through pin tenures.
+// random cycles) and require the image to pass again from reset. RETRY adds
+// seeded ARTRY, DRTRY and held data tenures; modes 9-11 reset in an ARTRY
+// window, a DRTRY replacement or a held fill and imply RETRY. Modes 12 and 13
+// reset inside the branch storm and during a translated cache-inhibited
+// fetch. RAM changes only through pin tenures.
 /* verilator lint_off BLKSEQ */
 module tb_compiled_mmu_stress_firmware;
   import ppc_pkg::*;
@@ -27,7 +31,7 @@ module tb_compiled_mmu_stress_firmware;
   logic [3:0] unused_fault_invalid_entry;
 
   logic br_n,bg_n,abb_n,abb_oe,ts_n,ts_oe,addr_oe;
-  logic dbb_n,dbb_oe,d_oe,aack_n,dbg_n,ta_n,tbst_n;
+  logic dbb_n,dbb_oe,d_oe,aack_n,dbg_n,ta_n,tbst_n,artry_n,drtry_n,tea_n;
   logic ci_n,wt_n,gbl_n;
   logic [31:0] a;
   logic [4:0] tt;
@@ -39,11 +43,16 @@ module tb_compiled_mmu_stress_firmware;
   logic [31:0] pin_done_addr=0;
   int pin_done_size=0;
   int cycles=0;
-  localparam int FW_MEM_BYTES=196608;
+  localparam int FW_MEM_BYTES=262144;
   `include "compiled_firmware.svh"
 
   localparam logic [31:0] RFI=32'h4c000064;
-  int mode=0;
+  int mode=0,retry=0;
+  // TEA injection hook: the bench never asserts TEA until a machine-check
+  // oracle replaces the bus_error check below and sets TEA_PERMILLE.
+  int tea_permille=0;
+  logic retry_want=0,drtry_want=0,hold_want=0,tea_want=0;
+  int hold_until=0;
   logic [31:0] lfsr=0,seed=32'h1;
   int bus_phase=0;
   logic irq=0,tick=0;
@@ -54,10 +63,12 @@ module tb_compiled_mmu_stress_firmware;
   int invalidates=0;
   int total_retires=0,total_ext=0,total_dec=0,total_resumes=0,total_cycles=0;
   int irq_in_miss=0,irq_in_bus=0,dec_in_miss=0,line_starts=0,page_lines=0;
-  int cache_hits=0,cache_misses=0,chained=0;
+  int cache_hits=0,cache_misses=0,chained=0,bypass_fetches=0,storm_retires=0;
+  int bat_bypass=0,storm_trigger=0;
   int resets_wanted=0,resets_done=0,next_irq=400;
   logic resume_pending=0,last_tgpr=0,last_irq_tgpr=0;
   logic [31:0] event_pc=0;
+  logic [31:0] last_pc=0;
   string summary;
 
   ppc_core_bat_cached_bus60x #(
@@ -145,10 +156,10 @@ module tb_compiled_mmu_stress_firmware;
     .tbst_n_o(tbst_n),.tsiz_o(tsiz),.tc_o(tc),
     .ci_n_o(ci_n),.wt_n_o(wt_n),.gbl_n_o(gbl_n),
     .cse_o(cse),.addr_oe_o(addr_oe),
-    .aack_n_i(aack_n),.artry_n_i(1'b1),.dbg_n_i(dbg_n),
+    .aack_n_i(aack_n),.artry_n_i(artry_n),.dbg_n_i(dbg_n),
     .dbb_n_i(dbb_oe?dbb_n:1'b1),.dbb_n_o(dbb_n),
     .dbb_oe_o(dbb_oe),.d_i(d_i),.d_o(d_o),.d_oe_o(d_oe),
-    .ta_n_i(ta_n),.drtry_n_i(1'b1),.tea_n_i(1'b1)
+    .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n)
   );
 
   // Observed only through the oracle's own fields.
@@ -160,17 +171,20 @@ module tb_compiled_mmu_stress_firmware;
   wire tlb_inv_offer=dut.translated_core.tlb_inv_req_valid;
 
   function automatic string check_detail();
-    return $sformatf(" mode=%0d resets=%0d/%0d ext=%0d dec=%0d msr=%08x bus=%08x",
+    return $sformatf(" mode=%0d resets=%0d/%0d ext=%0d dec=%0d msr=%08x bus=%08x diag=%b last=%08x",
       mode,resets_done,resets_wanted,ext_taken,dec_taken,
-      dut.translated_core.core.msr,a);
+      dut.translated_core.core.msr,a,
+      {halted,cut_accepted,pimem_error,ifetch_error,bus_error,translation_fault},last_pc);
   endfunction
 
   assign tr=rst_n&&(lfsr[2:0]!=3'd0);
-  bus60x_delay_target_bfm #(.BEAT_GAP(1)) target(
+  bus60x_retry_target_bfm #(.BEAT_GAP(1)) target(
     .clk_i(clk),.rst_ni(rst_n),.phase_i(bus_phase),
+    .retry_i(retry_want),.drtry_i(drtry_want),.hold_i(hold_want),.tea_i(tea_want),
     .br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(a),.tt_i(tt),
     .tsiz_i(tsiz),.tbst_n_i(tbst_n),.tc_i(tc),.dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),
-    .bg_n_o(bg_n),.aack_n_o(aack_n),.dbg_n_o(dbg_n),.ta_n_o(ta_n));
+    .bg_n_o(bg_n),.aack_n_o(aack_n),.artry_n_o(artry_n),.dbg_n_o(dbg_n),
+    .ta_n_o(ta_n),.drtry_n_o(drtry_n),.tea_n_o(tea_n));
   always_comb begin
     beat_addr=target.transfer_burst ?
       (target.transfer_addr&32'hffffffe0)+
@@ -180,17 +194,26 @@ module tb_compiled_mmu_stress_firmware;
     if(target.transfer_pending&&!target.transfer_write)
       for(int lane=0;lane<8;lane++)
         d_i[63-8*lane -:8]=mem[int'(beat_addr-BASE)+lane];
+    // A beat that DRTRY will cancel carries corrupt data.
+    if(target.offer&&!target.transfer_write&&drtry_want)d_i=~d_i;
   end
 
   function automatic logic [31:0] xorshift(input logic [31:0] x);
     x^=x<<13;x^=x>>17;x^=x<<5;
     return x;
   endfunction
-  // Seeded stimulus: bus phase, retirement stalls, DEC ticks.
+  // Seeded stimulus: bus phase, retirement stalls, DEC ticks and, with RETRY,
+  // ARTRY 10%, DRTRY 8% of read beats and data tenures held 5-44 cycles.
   always @(posedge clk) begin
     lfsr<=lfsr==0?seed:xorshift(lfsr);
     bus_phase<=int'(lfsr[15:0]);
     tick<=rst_n&&(lfsr[5:4]!=2'd0);
+    retry_want<=retry!=0&&lfsr[22:16]<7'd13;
+    drtry_want<=retry!=0&&lfsr[29:23]<7'd10;
+    tea_want<=tea_permille!=0&&int'(lfsr[31:22])<tea_permille;
+    if(retry!=0&&target.data_ok&&hold_until<=cycles&&lfsr[31:26]<6'd3)
+      hold_until<=cycles+5+int'(lfsr[13:8])%40;
+    hold_want<=hold_until>cycles;
   end
 
   always @(posedge clk) begin : pin_ram
@@ -208,8 +231,10 @@ module tb_compiled_mmu_stress_firmware;
           check(tt==5'b01110&&tsiz==2&&ci_n&&tc==2&&a[2:0]==0,
             "60x cacheable instruction-line shape");
           line_starts++;
-          if(a>=32'hfff28000&&a<32'hfff2b000)page_lines++;
+          if(a>=32'hfff28000&&a<32'hfff30000)page_lines++;
         end else begin
+          if(tc==2)bypass_fetches++;
+          if(tc==2&&cir&&a[31:12]==20'hfff2e)bat_bypass++;
           check(tt==5'b01010||tt==5'b00010,"60x scalar transaction type");
           check(!ci_n&&(tsiz==1||tsiz==2||tsiz==4),
             "60x cache-inhibited scalar size/attribute");
@@ -236,7 +261,7 @@ module tb_compiled_mmu_stress_firmware;
   always @(posedge clk) begin : oracle
     if(!rst_n)begin
       retires=0;ext_taken=0;dec_taken=0;resumes=0;tgpr_entries=0;fills=0;
-      chained=0;invalidates=0;
+      chained=0;invalidates=0;bypass_fetches=0;bat_bypass=0;storm_retires=0;page_lines=0;
       resume_pending=0;last_tgpr=0;last_irq_tgpr=0;event_pc=0;
       irq<=0;cycles=0;next_irq=400+int'(lfsr[9:0]);
       mailbox_written=0;mailbox_retired=0;
@@ -263,6 +288,7 @@ module tb_compiled_mmu_stress_firmware;
       if(tlb_inv_offer)invalidates++;
       if(icache_hit)cache_hits++;
       if(icache_miss)cache_misses++;
+      if(tv&&tr&&retired.pc>=32'h20060f00&&retired.pc<32'h20061100)storm_retires++;
 
       if(interrupt_taken||decrementer_taken)begin
         check(!(interrupt_taken&&decrementer_taken),"EXT and DEC in one cycle");
@@ -288,6 +314,7 @@ module tb_compiled_mmu_stress_firmware;
             (retired.pc>=BASE+32'h900&&retired.pc<BASE+32'ha00)))
           resume_pending=1;
         mailbox_retire();
+        last_pc=retired.pc;
       end
 
       // One IRQ at a time; it drops on the handler's physical ack write.
@@ -327,6 +354,14 @@ module tb_compiled_mmu_stress_firmware;
       6:wait(tgpr_entries>=4&&tgpr&&target.transfer_pending&&
              target.transfer_write);
       8:wait(invalidates>=40&&tlb_inv_offer);
+      9:wait(tgpr&&target.retry_window&&target.retry_q&&
+             !target.transfer_write&&!target.transfer_instruction);
+      10:wait(target.replace_q&&target.transfer_burst&&target.beat>=1);
+      11:wait(hold_want&&target.transfer_burst&&target.data_ok&&target.beat>=1);
+      12:wait(storm_retires>=storm_trigger);
+      13:wait(target.transfer_pending&&target.transfer_instruction&&
+              !target.transfer_burst&&target.data_ok&&cir&&
+              target.transfer_addr[31:12]==20'hfff2e);
       default:repeat(3000+int'(lfsr[15:0]))@(posedge clk);
     endcase
     repeat(mode==5?3:0)@(posedge clk);
@@ -341,7 +376,11 @@ module tb_compiled_mmu_stress_firmware;
        !$value$plusargs("MISS_TOTAL=%h",miss_total_addr))
       $fatal(1,"EXT_COUNT/DEC_COUNT/IRQ_ACK/MISS_TOTAL required");
     if(!$value$plusargs("MODE=%d",mode))mode=0;
-    seed=32'h2545f491^(32'(mode)*32'h9e3779b9);
+    if(!$value$plusargs("RETRY=%d",retry))retry=0;
+    if(!$value$plusargs("TEA_PERMILLE=%d",tea_permille))tea_permille=0;
+    if(mode>=9&&mode<=11)retry=1;
+    seed=32'h2545f491^(32'(mode)*32'h9e3779b9)^(retry!=0?32'h5bd1e995:32'h0);
+    storm_trigger=100+int'(seed[8:0]);
     resets_wanted=mode==0?0:(mode==7?3:1);
     boot;
     while(resets_done<resets_wanted)begin
@@ -361,18 +400,23 @@ module tb_compiled_mmu_stress_firmware;
     check(ext_taken>=8&&dec_taken>=8&&
           resumes+chained>=ext_taken+dec_taken-1&&resumes>chained,
           "too few events or resumes in the final run");
-    check(page_lines>0&&cache_hits>0&&cache_misses>0&&tgpr_entries>=60,
-          "translated line fills or miss handlers missing");
+    check(page_lines>0&&cache_hits>0&&cache_misses>0&&tgpr_entries>=60&&
+          bat_bypass>0&&storm_retires>0,
+          "translated line fills, bypass fetches, storm or miss handlers missing");
+    if(retry!=0)check(target.retries>0&&target.drtries>0&&target.held>0,
+          "RETRY run without ARTRY, DRTRY or held tenures");
     if(mode==0)check(irq_in_miss>0&&irq_in_bus>0&&dec_in_miss>0,
           "no IRQ/DEC overlap with a miss handler or bus tenure");
-    summary=$sformatf("PASS compiled MMU stress mode=%0d resets=%0d misses=%0d ext=%0d dec=%0d",
-      mode,resets_done,word_at(miss_total_addr),ext_taken,dec_taken);
+    summary=$sformatf("PASS compiled MMU stress mode=%0d retry=%0d resets=%0d misses=%0d ext=%0d dec=%0d",
+      mode,retry,resets_done,word_at(miss_total_addr),ext_taken,dec_taken);
     summary={summary,$sformatf(" resumes=%0d chained=%0d retires=%0d cycles=%0d",
       resumes,chained,retires,cycles)};
     summary={summary,$sformatf(" irq_in_miss=%0d irq_in_bus=%0d dec_in_miss=%0d fills=%0d",
       irq_in_miss,irq_in_bus,dec_in_miss,fills)};
-    summary={summary,$sformatf(" lines=%0d page_lines=%0d total_retires=%0d total_cycles=%0d checks=%0d",
-      line_starts,page_lines,total_retires,total_cycles,checks)};
+    summary={summary,$sformatf(" lines=%0d page_lines=%0d bypass=%0d bat_bypass=%0d storm=%0d",
+      line_starts,page_lines,bypass_fetches,bat_bypass,storm_retires)};
+    summary={summary,$sformatf(" artry=%0d drtry=%0d held_cycles=%0d total_retires=%0d total_cycles=%0d checks=%0d",
+      target.retries,target.drtries,target.held,total_retires,total_cycles,checks)};
     $display("%s",summary);
     $finish;
   end

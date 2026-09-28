@@ -296,4 +296,56 @@ stress_store_pc:
     stw 4,0(3)
     blr
     .size stress_store,.-stress_store
+    /* Branch storm, copied so blob+0x100 is a page boundary: the first
+       0x100 bytes end page Q0, the rest start page Q1. storm(r3, r4=count)
+       crosses the boundary by fall-through, a conditional branch and bdnz,
+       and returns through LR computed by the callee. */
+    .section .text.storm,"ax",@progbits
+    .balign 4
+    .globl storm_blob
+storm_blob:
+    .space 0xc0
+storm_entry:
+    mflr 0
+    mtctr 4
+    li 5,0
+storm_loop:
+    addi 5,5,1
+    andi. 6,5,3
+    beq storm_even
+    cmpwi 1,6,2
+    beq 1,storm_two
+    xor 3,3,5
+    b storm_tail
+storm_two:
+    addi 3,3,0x11
+    b storm_tail
+    .org storm_blob+0xfc
+storm_tail:
+    add 3,3,5
+storm_q1:
+    rotlwi 3,3,3
+    bl storm_sub
+    bdnz storm_loop
+    mtlr 0
+    blr
+storm_even:
+    subf 3,5,3
+    b storm_q1
+storm_sub:
+    mflr 8
+    bl storm_skip
+    addi 3,3,1000
+storm_skip:
+    mflr 7
+    addi 7,7,24
+    mtlr 7
+    blr
+    addi 3,3,2000
+    xori 3,3,0x5a5a
+    mtlr 8
+    blr
+    .org storm_blob+0x200
+    .size storm_blob,.-storm_blob
+
     .section .note.GNU-stack,"",@progbits

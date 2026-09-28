@@ -19,7 +19,7 @@ acceptance evidence are still required. The aggregate is `sum(weight × completi
 / 100`, rounded to a whole percent. Keep weights fixed between rounds unless the
 user changes scope. Treat small score changes as bookkeeping, not velocity.
 
-**MVP estimate: about 84% complete (weighted 83.8%; planning range 60–85%).** The
+**MVP estimate: about 85% complete (weighted 85.0%; planning range 60–85%).** The
 remaining work is concentrated in platform exceptions (machine check, trace,
 debug) and timing closure. These are
 hard acceptance blockers regardless of the weighted score. Final FPGA acceptance
@@ -29,19 +29,19 @@ is currently unmet.
 
 | System | Weight | Complete | Accepted capability | Gaps and deliberate shortcuts |
 | --- | ---: | ---: | --- | --- |
-| Fetch and dispatch | 4% | 90% | Buffered fetch, precise supported fetch faults, drain/refetch on live context and events | One outstanding instruction request with reserved queue capacity; single dispatch; additional reset/interleaving stress open. |
+| Fetch and dispatch | 4% | 92% | Buffered fetch, precise supported fetch faults, drain/refetch on live context and events; reset/interleaving stress in branch-heavy translated code and inhibited fetches on the translated cached top | One outstanding instruction request with reserved queue capacity; single dispatch. |
 | Integer execution, multiply/divide, GPR/CR/XER | 9% | 85% | Broad scalar arithmetic/Boolean/rotate/shift/compare corpus, tagged flags, iterative divide, compiled integer firmware | Explicit XER access now supports state saving; compiler/ISA subset remains explicit; multiply latency counter does not establish a pipelined product datapath. |
 | Rename, completion and recovery | 7% | 85% | Tagged dependencies, ordered retirement, retained-prefix recovery, precise supported events | Five rename slots/CQ entries; finite generation-token lifetime contract; recovery timing and unsupported diagnostic ownership remain bounded policies. |
-| Branches and control flow | 4% | 90% | Direct/conditional/LR/CTR branches, handler entry and RFI | Serialized companion lane; prediction, folding and dual issue excluded; Broader event/control-flow collisions on the combined path remain open. |
+| Branches and control flow | 4% | 93% | Direct/conditional/LR/CTR branches, handler entry and RFI | Serialized companion lane; prediction, folding and dual issue excluded. A page-crossing branch storm under EXT/DEC, bus retries and resets covers the combined path. |
 | Load/store and memory ordering | 7% | 78% | BE scalar D/indexed/update operations, ordered stores, load cancellation/drain, alignment faults and resumable BAT and page protection DSI; denied accesses suppress destination/base/memory effects; translated `dcbf`/`dcbst`/`dcbi`/`dcbz` probes with DSI/TLB-miss and no transfer; guarded CI stores write once across ARTRY | Serialized aligned subset; no data cache, so `dcbz` always takes alignment; supported page misses now enter refill handlers; transport errors remain diagnostic; no atomics/string/multiple forms. |
 | Supervisor state and synchronous exceptions | 8% | 80% | SC/RFI, live MTMSR/MFMSR, selected SPRs, program/alignment, every ISI and DSI cause of the supported instructions (protection, guarded, N, direct-store T=1, software page fault); `dcbz` alignment with Table 4-13 DSISR and privileged `dcbi`; DAR/DSISR capture and handler repair/retry | Supported MSR mask only (no ME/RI/FP/SE/BE/POW/LE); machine check, trace, IABR and other platform/debug exceptions are not implemented: TEA stays a diagnostic or checkstop-like halt. |
 | External interrupts and TB/DEC | 7% | 88% | EE masks, precise resume PC, admitted EXT latching, TB64/DEC32, priority and retirement-only writes; translated cached IRQ/refill drain, DEC-to-EXT promotion and RFI hits; hundreds of seeded EXT/DEC events per run across TLB misses, reloads, held bus tenures and resets on the translated cached top | Synchronous pins/tick; no CDC or bus-clock divider; local bounded event-recognition policy; board-level reset and interrupt-controller behavior open. |
-| BAT translation and live context | 10% | 85% | CPU-owned privileged BAT SPR reads/writes, retirement-only mapping changes, cancellation/drain, live IR/DR/PR, supported instruction/data-protection faults; compiled mapping replacement with pending EXT/DEC | Abstract, scalar 60x and bounded cached 60x paths accepted; final timing and broader context/cache collisions remain open. Malformed/overlapping candidates terminate diagnostically by local policy; deterministic zero reset differs from silicon. |
-| Segment registers, page TLB and software refill | 14% | 94% | CPU-owned SR/SDR1/compare/RPA; TLBLD/TLBLI, TLBIE and TLBSYNC against sole I/D banks; precise PP/N/G/direct-store exceptions; architectural I/load/store miss and C=0 entry with full-EA/HASH capture, TGPR, primary/secondary PTEG search, R/C writeback, PP/key checks, ordinary failed-search ISI/DSI and refill/RFI retry; LRU replacement, remap and invalidation verified under EXT/DEC and reset stress on the translated cached top | True misses report the per-set TLB LRU way in SRR1.WAY; changed-bit hits retain the matched way. Software fixture is single-writer, using a halfword R/C update for stores; concurrent PTE writers and nested misses are outside its contract. Bounded SDR1/provenance checks and read-only real-mode miss SPR policy; loads require V=1/H=0, supported RPA shape and IR=DR=0; TLBISYNC is treated as negated. External-management frontend coherence and final timing remain open. |
-| 60x physical transport | 7% | 80% | Scalar master and separate four-beat line reads; translated scalar wrapper runs real search/fault ELFs, with physical PA/byte lanes, ARTRY/DRTRY, TEA/reset checks; seeded ARTRY/DRTRY/held-fill stress and compiled firmware on the translated cached top | Scalar path fixes CI=1/WT=0/GBL=0; cached wrapper permits WIMG=0 instruction fills only. Full WIMG/coherence behavior remains open. Data errors are diagnostics, instruction errors are reset-only terminal stops; one active-address reset point covered. No full snoop/parity/timing conformance. |
+| BAT translation and live context | 10% | 88% | CPU-owned privileged BAT SPR reads/writes, retirement-only mapping changes, cancellation/drain, live IR/DR/PR, supported instruction/data-protection faults; compiled mapping replacement with pending EXT/DEC; IBAT remap, WIMG and IR changes over cached lines and BAT-over-TLB priority under retries and resets | Abstract, scalar 60x and bounded cached 60x paths accepted; final timing remains open. Malformed/overlapping candidates terminate diagnostically by local policy; deterministic zero reset differs from silicon. |
+| Segment registers, page TLB and software refill | 14% | 95% | CPU-owned SR/SDR1/compare/RPA; SR/SDR1 context changes under ARTRY/DRTRY/holds; TLBLD/TLBLI, TLBIE and TLBSYNC against sole I/D banks; precise PP/N/G/direct-store exceptions; architectural I/load/store miss and C=0 entry with full-EA/HASH capture, TGPR, primary/secondary PTEG search, R/C writeback, PP/key checks, ordinary failed-search ISI/DSI and refill/RFI retry; LRU replacement, remap and invalidation verified under EXT/DEC and reset stress on the translated cached top | True misses report the per-set TLB LRU way in SRR1.WAY; changed-bit hits retain the matched way. Software fixture is single-writer, using a halfword R/C update for stores; concurrent PTE writers and nested misses are outside its contract. Bounded SDR1/provenance checks and read-only real-mode miss SPR policy; loads require V=1/H=0, supported RPA shape and IR=DR=0; TLBISYNC is treated as negated. External-management frontend coherence and final timing remain open. |
+| 60x physical transport | 7% | 83% | Scalar master and separate four-beat line reads; seeded ARTRY/DRTRY (corrupted cancelled beats, multi-cycle DRTRY) and held tenures across every translated MMU stress mode; translated scalar wrapper runs real search/fault ELFs, with physical PA/byte lanes, ARTRY/DRTRY, TEA/reset checks; seeded ARTRY/DRTRY/held-fill stress and compiled firmware on the translated cached top | Scalar path fixes CI=1/WT=0/GBL=0; cached wrapper permits WIMG=0 instruction fills only. Full WIMG/coherence behavior remains open. Data errors are diagnostics, instruction errors are reset-only terminal stops; one active-address reset point covered. No full snoop/parity/timing conformance. |
 | Instruction cache and maintenance | 5% | 95% | 16-KiB four-way physical cache, block-RAM data array, translated WIMG=0 fills/hits, scalar bypass, remap and explicit stale-code invalidate/restart, denied warm-line suppression and partial-fill TEA/reset; CPU `icbi` drains held/retried fills then clears the set; `dcbst`/`sync`/`icbi`/`isync` code patching under EXT/DEC, mode and BAT changes, retries and external maintenance | Conservative WIMG policy; no HID0 (external maintenance stands in); no automatic code coherence (not architected). External maintenance is not a CPU/store barrier. |
 | Toolchain and reproducible builds | 4% | 90% | Pinned compiler, BE ELF loader, twenty-two compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes; MMU stress has nine), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility or release packaging claim. |
-| Integration and verification | 7% | 89% | Independent directed/reference tests, seeded cached-top cache-maintenance stress with a scripted ARTRY/DRTRY/hold 60x target, 259 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives; seeded nine-mode MMU/event/reset stress on the MVP-profile translated cached top | Search/fault/stress firmware covers the combined supervisor/page-MMU/cache/bus path; no ARTRY/TEA in the stress; no formal/collected HDL coverage/continuous CI gate; long reference acceptance remains open. |
+| Integration and verification | 7% | 94% | Collected line coverage with a waiver-gated control-arm review, one `make -C sim ci` gate and a 64-seed reference-acceptance run; independent directed/reference tests, seeded cached-top cache-maintenance stress with a scripted ARTRY/DRTRY/hold 60x target, 259 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives; seeded nine-mode MMU/event/reset stress on the MVP-profile translated cached top | Search/fault/stress firmware covers the combined supervisor/page-MMU/cache/bus path with bus retries; no TEA in the stress; no formal verification or toggle coverage; the compiled corpus is not compared with DingusPPC. |
 | FPGA fit, timing and release | 7% | 45% | Current cached physical and separately timer-enabled BAT designs fit Cyclone V with archived evidence; all three tops meet 50 MHz setup and hold at every corner with registered virtual I/O: cached physical 66.04 MHz and timer/BAT 69.51 MHz also meet the 66 MHz target; translated MVP 65.37 MHz | The translated top misses 66 MHz by 0.145 ns (special result → wake → rename → station). No board I/O timing contract or release signoff. New RTL changes require fresh fit before timing claims. |
 
 Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](references/ISA_MATRIX.md),
@@ -175,6 +175,7 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Bounded cached-timer round, 2026-09-23 | 80.81% (unchanged) | Verification only. |
 | Gate-1 MMU/event round, 2026-09-27 | 81.51% → 82.66% | Page TLB 90% → 94%; supervisor 75% → 78%; interrupts/timers 85% → 88%; integration 85% → 87%. |
 | Cache maintenance and held-refill round, 2026-09-27 | 82.66% → 83.81% | Cache 95%, load/store 78%, supervisor 80%, 60x 80%, integration 89%. |
+| Verification breadth round, 2026-09-27 | 83.81% → 85.01% | Fetch 92%, branches 93%, BAT/context 88%, segment/page 95%, 60x 83%, integration 94%. Seeded ARTRY/DRTRY/held-tenure retry stress with SR/SDR1/PTE changes, branch storm and BAT/cache collisions; line coverage, `ci` and reference-acceptance targets. No production RTL change. Checks inherited from the branch head (`4560b1a`); see [verification gates](VERIFICATION_GATES.md). |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.
@@ -752,3 +753,30 @@ test redirect fixed it ([fit](TRANSLATED_SYNTHESIS_BASELINE.md)).
 60x transport 78% → 80%, integration 87% → 89%. Full-603e audit 46.29% → 46.79%. Remaining for
 this area: page-table context changes under randomized ARTRY (gate 1's stress
 has bus delays but no ARTRY), no data cache or HID0.
+
+## Verification breadth round (2026-09-27)
+
+Recorded: `make -C sim -j2 ci` and `make -C sim -j2 reference-acceptance`,
+commit `4560b1a` (branch head; docs edits only uncommitted), 2026-09-27. Both
+pass: `ci` runs regression (274 Python checks), the container firmware build,
+27 compiled-firmware profiles and coverage in 54 minutes; reference acceptance
+compares every DingusPPC profile plus 64 stress seeds at 512 blocks. The merge
+onto main adds no RTL, so these results are inherited, not rerun.
+
+The new retry target (`tb/bfm/bus60x_retry_target_bfm.sv`) adds seeded ARTRY,
+one-to-three-cycle DRTRY with corrupted cancelled beats, and held tenures. The
+MMU stress now changes SR, SDR1 and PTEs under those retries, runs a
+page-crossing branch storm, remaps IBATs over cached lines and checks BAT
+priority over resident TLB entries: 25 runs in 11 plain and 14 retry modes,
+each with about 5,000–6,300 ARTRY and 3,100–4,000 DRTRY. Line coverage is
+74.2% of `rtl/` points (minimum 72%) with every control case arm reached or
+waived with a reason. Negative controls (VSID ignored in TLB lookup, DRTRY
+ignored by the line reader) fail as required
+([verification gates](VERIFICATION_GATES.md),
+[MMU stress](MMU_STRESS_FIRMWARE.md)).
+
+**MVP 83.81% → 85.01% (about 85%):** fetch 90% → 92%, branches 90% → 93%,
+BAT/context 85% → 88%, segment/page 94% → 95%, 60x 80% → 83%, integration
+89% → 94%. The full audit is unchanged (verification only). Open: TEA in the
+stress (waits on machine check), DingusPPC comparison of the compiled corpus,
+formal verification and toggle coverage.

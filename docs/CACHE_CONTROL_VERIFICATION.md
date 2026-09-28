@@ -47,6 +47,7 @@ Run on commit 39c40f8 with a temporary RTL edit, then reverted:
 ## Not established
 
 Data cache behavior (none exists), hardware `dcbz` zeroing, address-only
-broadcasts, page-table (segment/TLB) context changes under randomized retries
-(the stress uses BAT translation), the physical-only wrappers, and cache
-operation timing.
+broadcasts, the physical-only wrappers, and cache operation timing.
+Page-table context changes (SR, SDR1, `tlbie`, PTE updates) and BAT remap,
+WIMG and IR changes over cached lines under randomized retries are covered
+by `rtl-mmu-stress-retry` ([MMU stress](MMU_STRESS_FIRMWARE.md)), not here.
