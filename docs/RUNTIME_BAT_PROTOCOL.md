@@ -22,8 +22,9 @@ architectural state. Architectural scope and local validation policy are in
 Router pins use the same `bat_csr_` names with opposite direction suffixes.
 Error is the OR of service unsupported, privileged, write-rejected, config,
 overlap, invalid-input and nonzero invalid-entry status. It is meaningful only
-with response-valid. A rejection is the existing terminal diagnostic outcome,
-not a new architectural BAT-write exception. Read data and status remain stable
+with response-valid. Supervisor writes never reject
+([DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md)); the remaining errors are
+unreachable from the CPU. Read data and status remain stable
 while stalled; no response payload is meaningful without valid.
 
 Only one transaction may be outstanding. A successful prepared write reserves
@@ -57,9 +58,8 @@ edge after acceptance; abort on either edge drops the proposal. New pins are `pr
 `commit_ack_valid_o`, `commit_ack_ready_i` and `transaction_idle_o`.
 Idle is low during reset and otherwise requires no response, reservation or ack.
 Legacy instances tie commit/abort/ack-ready low and leave new outputs explicitly
-unused. Proposal validation uses the same candidate-bank encoding, active-entry
-alignment and overlap checks as a startup write. Inactive staging remains legal;
-no additional bank or weaker runtime validation is introduced.
+unused. A proposal stores the value with reserved fields cleared, like a
+startup write; no bank validation applies.
 
 ## Router arbitration and drain
 

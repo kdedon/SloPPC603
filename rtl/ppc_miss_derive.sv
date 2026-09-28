@@ -17,7 +17,6 @@ module ppc_miss_derive (
   logic [15:0] htaborg;
   logic [8:0] htabmask;
   logic [18:0] primary_hash, secondary_hash;
-  logic mask_contiguous, base_aligned;
   // Hash derivation ignores byte offset; IMISS/DMISS retain the full EA
   // despite the manual's "effective page address" figure caption.
   logic _unused_context_bits;
@@ -25,13 +24,14 @@ module ppc_miss_derive (
 
   assign htaborg = sdr1_i[31:16];
   assign htabmask = sdr1_i[8:0];
-  // 0, 1, 3, ... 1ff select tables of 2^(16+k) bytes, k=0..9.
-  assign mask_contiguous = (htabmask & (htabmask + 9'd1)) == 9'd0;
-  assign base_aligned = (htaborg & {7'b0, htabmask}) == 16'd0;
+  // PEM 7.6.1.4.2 defines the PTEG address as an AND with HTABMASK and an
+  // OR with HTABORG. A non-contiguous mask or unaligned base is a
+  // programming error; the same bitwise formula applies to it.
   // The 603e direct-store T segment does not enter a hashed lookup. Segment
   // no-execute N is deliberately not rejected here because data misses use it.
-  assign valid_o = !sr_i[31] && sdr1_i[15:9] == 7'd0 &&
-                   mask_contiguous && base_aligned;
+  assign valid_o = !sr_i[31];
+  logic _unused_reserved_sdr1;
+  assign _unused_reserved_sdr1 = ^sdr1_i[15:9];
   assign primary_hash = sr_i[18:0] ^ {3'b0, ea_i[27:12]};
   assign secondary_hash = ~primary_hash;
 

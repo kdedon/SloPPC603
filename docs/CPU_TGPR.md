@@ -16,9 +16,11 @@ in TGPR mode. An architectural miss event that automatically sets TGPR is a
 later increment; this one tests the bank and context transition through
 supervisor `mtmsr` and `rfi`.
 
-When enabled, a supervisor `mtmsr` may set MSR[TGPR] only with MSR[PR], [EE],
-[IR] and [DR] all zero. An unsupported prospective mode returns the existing
-context diagnostic and does not change MSR or bank selection. `mtmsr` still
+When enabled, a supervisor `mtmsr` may set MSR[TGPR] with any other supported
+mode bits; the next exception entry or `rfi` clears it (UM Table 4-7,
+[DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md)). An unsupported
+prospective mode (LE or ILE) returns the context diagnostic and does not
+change MSR or bank selection. `mtmsr` still
 uses the live-context frontend fence and waits for old fetch/data traffic to
 drain. It changes committed MSR only at matching retirement, blocks a
 same-edge external recovery cut, then installs context and refetches from the

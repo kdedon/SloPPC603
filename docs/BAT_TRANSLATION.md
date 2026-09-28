@@ -91,15 +91,17 @@ does not cause a guarded fault because that check applies only with IR enabled.
 
 The translation math uses a masked effective-address comparison and a masked
 offset combined with BRPN. The overlap check compares common significant bits
-of two aligned effective ranges. No first-hit priority is exposed for overlapping
-applicable mappings: a validated bank has at most one applicable match, so the
-hit entry's attributes, base and mask are an AND-OR select over the match mask.
+of two aligned effective ranges. When several applicable entries match (only
+possible without validation), the lowest-numbered one supplies the attributes,
+base and mask, an AND-OR select over the one-hot winner. The manuals make
+overlap a programming error with unpredictable results (UM 5.3).
 
 Parameter `VALIDATE_BANK` defaults to 1, which gives the behavior above.
-`VALIDATE_BANK=0` is for a caller that stores only banks already accepted by a
-validating instance: it omits the invalid-entry and overlap checks, whose
-outputs read zero, and only instruction+write sets `config_error_o`. Its result
-is defined only for such validated banks. No code was copied from DingusPPC or Linux: they were
+`VALIDATE_BANK=0`, used by the BAT service, omits the invalid-entry and
+overlap checks, whose outputs read zero, and only instruction+write sets
+`config_error_o`. It translates any stored bank deterministically: BL applies
+bitwise, BEPI compares as written and the lowest-numbered match wins
+([DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md)). No code was copied from DingusPPC or Linux: they were
 consulted initially but the official manuals determine this implementation.
 In particular, the input validator rejects unaligned BAT bases instead of the
 reference emulator's silent masking of those bits.

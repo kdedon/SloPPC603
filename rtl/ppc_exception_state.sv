@@ -98,6 +98,8 @@ module ppc_exception_state #(
             key, instruction, way, store_access, saved_msr_low};
   endfunction
 
+  // UM Table 4-7: every entry clears TGPR, whatever its old value; only the
+  // TLB misses set it again.
   function automatic logic [31:0] exception_msr(input logic [31:0] old_msr);
     logic [31:0] next_msr;
     begin
@@ -153,53 +155,43 @@ module ppc_exception_state #(
         if (event_pc_i[1:0] == 2'b00) begin
           unique case (event_kind_i)
             EVENT_SC: begin
-              if (!msr_q[MSR_TGPR]) begin
-                srr0_q <= event_pc_i + 32'd4;
-                srr1_q <= exception_srr1(msr_q, 32'b0);
-                msr_q <= exception_msr(msr_q);
-                result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0c00);
-              end
+              srr0_q <= event_pc_i + 32'd4;
+              srr1_q <= exception_srr1(msr_q, 32'b0);
+              msr_q <= exception_msr(msr_q);
+              result_supported_q <= 1'b1;
+              result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0c00);
             end
             EVENT_PROGRAM_ILLEGAL: begin
-              if (!msr_q[MSR_TGPR]) begin
-                srr0_q <= event_pc_i;
-                srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_ILLEGAL);
-                msr_q <= exception_msr(msr_q);
-                result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
-              end
+              srr0_q <= event_pc_i;
+              srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_ILLEGAL);
+              msr_q <= exception_msr(msr_q);
+              result_supported_q <= 1'b1;
+              result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
             end
             EVENT_PROGRAM_PRIV: begin
-              if (!msr_q[MSR_TGPR]) begin
-                srr0_q <= event_pc_i;
-                srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_PRIV);
-                msr_q <= exception_msr(msr_q);
-                result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
-              end
+              srr0_q <= event_pc_i;
+              srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_PRIV);
+              msr_q <= exception_msr(msr_q);
+              result_supported_q <= 1'b1;
+              result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
             end
             EVENT_PROGRAM_TRAP: begin
-              if (!msr_q[MSR_TGPR]) begin
-                srr0_q <= event_pc_i;
-                srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_TRAP);
-                msr_q <= exception_msr(msr_q);
-                result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
-              end
+              srr0_q <= event_pc_i;
+              srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_TRAP);
+              msr_q <= exception_msr(msr_q);
+              result_supported_q <= 1'b1;
+              result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
             end
             EVENT_FP_UNAVAILABLE: begin
               // PEM Table 6-15: SRR1 1-4 and 10-15 clear.
-              if (!msr_q[MSR_TGPR]) begin
-                srr0_q <= event_pc_i;
-                srr1_q <= exception_srr1(msr_q, 32'b0);
-                msr_q <= exception_msr(msr_q);
-                result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0800);
-              end
+              srr0_q <= event_pc_i;
+              srr1_q <= exception_srr1(msr_q, 32'b0);
+              msr_q <= exception_msr(msr_q);
+              result_supported_q <= 1'b1;
+              result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0800);
             end
             EVENT_ISI: begin
-              if (!msr_q[MSR_TGPR] && ((event_isi_cause_i == FETCH_ISI_PROTECTION) ||
+              if (((event_isi_cause_i == FETCH_ISI_PROTECTION) ||
                                 (event_isi_cause_i == FETCH_ISI_GUARDED))) begin
                 srr0_q <= event_pc_i;
                 // PEM Table 6-10: manual bit 4 protection, bit 3 guarded.
@@ -212,7 +204,7 @@ module ppc_exception_state #(
               end
             end
             EVENT_DECREMENTER: begin
-              if (msr_q[MSR_EE] && !msr_q[MSR_TGPR]) begin
+              if (msr_q[MSR_EE]) begin
                 srr0_q <= event_pc_i;
                 // DEC saves the full SRR1 MSR subset; external saves the low half.
                 srr1_q <= msr_q & MSR_SRR1_MASK;
@@ -222,7 +214,7 @@ module ppc_exception_state #(
               end
             end
             EVENT_EXTERNAL: begin
-              if (msr_q[MSR_EE] && !msr_q[MSR_TGPR]) begin
+              if (msr_q[MSR_EE]) begin
                 srr0_q <= event_pc_i;
                 // UM Table 4-12: next instruction EA and low-half MSR only.
                 srr1_q <= msr_q & 32'h0000_ffff;
@@ -232,28 +224,24 @@ module ppc_exception_state #(
               end
             end
             EVENT_ALIGNMENT: begin
-              if (!msr_q[MSR_TGPR]) begin
-                srr0_q <= event_pc_i;
-                // Table 4-13 explicitly clears manual bits 0..15.
-                srr1_q <= msr_q & 32'h0000_ffff;
-                msr_q <= exception_msr(msr_q);
-                result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0600);
-              end
+              srr0_q <= event_pc_i;
+              // Table 4-13 explicitly clears manual bits 0..15.
+              srr1_q <= msr_q & 32'h0000_ffff;
+              msr_q <= exception_msr(msr_q);
+              result_supported_q <= 1'b1;
+              result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0600);
             end
             EVENT_DSI: begin
-              if (!msr_q[MSR_TGPR]) begin
-                srr0_q <= event_pc_i;
-                // UM Table 4-11 clears manual SRR1 bits 0..15.
-                srr1_q <= msr_q & 32'h0000_ffff;
-                msr_q <= exception_msr(msr_q);
-                result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0300);
-              end
+              srr0_q <= event_pc_i;
+              // UM Table 4-11 clears manual SRR1 bits 0..15.
+              srr1_q <= msr_q & 32'h0000_ffff;
+              msr_q <= exception_msr(msr_q);
+              result_supported_q <= 1'b1;
+              result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0300);
             end
             EVENT_TLB_I_MISS, EVENT_TLB_D_LOAD,
             EVENT_TLB_D_STORE: begin
-              if (ENABLE_TLB_MISS_EXCEPTIONS && !msr_q[MSR_TGPR]) begin
+              if (ENABLE_TLB_MISS_EXCEPTIONS) begin
                 srr0_q <= event_pc_i;
                 srr1_q <= miss_srr1(msr_q[26:22], msr_q[15:0], event_miss_cr0_i,
                   event_miss_key_i, event_kind_i == EVENT_TLB_I_MISS,
@@ -269,9 +257,9 @@ module ppc_exception_state #(
               end
             end
             EVENT_MACHINE_CHECK: begin
-              // UM Table 4-10: taken in any state, TGPR included; checkstop
-              // (ME=0) belongs to the caller. Clearing ME follows the table
-              // note that a second TEA checkstops until the handler sets ME.
+              // Checkstop (ME=0) belongs to the caller. Clearing ME follows
+              // the UM Table 4-10 note that a second TEA checkstops until the
+              // handler sets ME.
               if (ENABLE_MACHINE_CHECK && msr_q[MSR_ME]) begin
                 srr0_q <= event_pc_i;
                 srr1_q <= (msr_q & 32'h0000_ffff) | SRR1_MACHINE_CHECK_TEA;
@@ -282,7 +270,7 @@ module ppc_exception_state #(
             end
             EVENT_TRACE, EVENT_IABR: begin
               // UM Tables 4-15 and 4-17: manual SRR1 bits 0..15 clear.
-              if (ENABLE_DEBUG_EXCEPTIONS && !msr_q[MSR_TGPR]) begin
+              if (ENABLE_DEBUG_EXCEPTIONS) begin
                 srr0_q <= event_pc_i;
                 srr1_q <= msr_q & 32'h0000_ffff;
                 msr_q <= exception_msr(msr_q);
@@ -295,13 +283,11 @@ module ppc_exception_state #(
               if (msr_q[MSR_PR]) begin
                 // RFI in problem state is itself a privileged instruction
                 // program exception; use the caller's faulting RFI PC.
-                if (!msr_q[MSR_TGPR]) begin
-                  srr0_q <= event_pc_i;
-                  srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_PRIV);
-                  msr_q <= exception_msr(msr_q);
-                  result_supported_q <= 1'b1;
-                  result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
-                end
+                srr0_q <= event_pc_i;
+                srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_PRIV);
+                msr_q <= exception_msr(msr_q);
+                result_supported_q <= 1'b1;
+                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
               end else begin
                 msr_q <= rfi_msr(msr_q, srr1_q) & MSR_STORED_MASK;
                 result_supported_q <= 1'b1;

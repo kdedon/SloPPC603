@@ -2,9 +2,11 @@
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Stateless selected-bank 32-bit BAT translation. Caller supplies IBATs for
-// instruction accesses or DBATs for data accesses. VALIDATE_BANK=0 is for
-// callers that only store banks that already passed validation: it drops the
-// whole-bank configuration checks, whose outputs then read zero.
+// instruction accesses or DBATs for data accesses. VALIDATE_BANK=0 drops the
+// whole-bank configuration checks, whose outputs then read zero. Overlapping
+// valid entries are a programming error with unpredictable results (UM 5.3
+// implementation note, PEM 7.4.2); the lowest-numbered match wins. BL acts
+// bitwise, so a BL value outside PEM Table 7-10 masks the bits it sets.
 module ppc_bat_translate #(
   parameter bit VALIDATE_BANK = 1'b1
 ) (
@@ -39,6 +41,7 @@ module ppc_bat_translate #(
   logic overlaps;
   logic translation_enabled;
   logic [31:0] hit_lower, hit_mask;
+  logic [3:0] winner;
 
   // PEM Table 7-10: twelve masks, 128 KiB through 256 MiB.
   function automatic logic legal_length(input logic [10:0] bl);
@@ -97,6 +100,7 @@ module ppc_bat_translate #(
     pp_o = '0;
     hit_lower = '0;
     hit_mask = '0;
+    winner = '0;
     if (valid_i) begin
       invalid_entry_o = bad;
       overlap_o = overlaps;
@@ -110,15 +114,17 @@ module ppc_bat_translate #(
           // 603e UM §5.2: real-mode instruction/data attributes differ.
           wimg_o = instruction_i ? 4'b0001 : 4'b0011;
         end else begin
-          // A validated bank has at most one applicable match, so the hit
-          // entry is an AND-OR select rather than a priority chain.
-          for (integer i = 0; i < 4; i++) begin
+          for (integer i = 0; i < 4; i++)
             match_o[i] = batu_i[i][msr_pr_i ? 0 : 1] &&
               (ea_i & address_mask[i]) == (batu_i[i] & 32'hfffe0000);
-            hit_lower |= {32{match_o[i]}} & batl_i[i];
-            hit_mask |= {32{match_o[i]}} & address_mask[i];
+          winner = match_o & ~{match_o[2:0] | {match_o[1:0], 1'b0} |
+                                    {match_o[0], 2'b0}, 1'b0};
+          for (integer i = 0; i < 4; i++) begin
+            hit_lower |= {32{winner[i]}} & batl_i[i];
+            hit_mask |= {32{winner[i]}} & address_mask[i];
           end
-          hit_index_o = {match_o[3] | match_o[2], match_o[3] | match_o[1]};
+          hit_index_o = {winner[3] | winner[2],
+                         winner[3] | winner[1]};
           bat_hit_o = |match_o;
           bat_miss_o = !bat_hit_o;
           if (bat_hit_o) begin

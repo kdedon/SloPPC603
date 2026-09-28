@@ -53,7 +53,9 @@ Entry:
   before another TEA, which is only meaningful if entry clears it. RFI
   restores ME from SRR1.
 - Machine check is taken with MSR[TGPR]=1 (a TEA in a TLB-miss handler);
-  entry clears TGPR, and SRR1[RI]=0 marks it unrecoverable.
+  entry clears TGPR, and SRR1[RI]=0 marks it unrecoverable. Trace, IABR and
+  every other exception are also taken with TGPR=1 and clear it (UM Table
+  4-7; [DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md)).
 
 Checkstop: a machine check with MSR[ME]=0 retires the faulting instruction
 without a vector, fences the front end and holds the special lane in
@@ -83,7 +85,7 @@ has `seq_partial` clear.
 | Bits | Policy |
 |---|---|
 | ME, RI | Stored; MTMSR, MFMSR, SRR1 save and RFI restore. |
-| SE, BE | Stored, as above; trace behavior below. TGPR=1 with SE or BE rejects. |
+| SE, BE | Stored, as above; trace behavior below. They combine with TGPR=1. |
 | POW | Stored and read back; cleared on exception entry, not in SRR1. HID0 is not implemented and reads zero, so no DOZE/NAP/SLEEP mode is selected and POW has no effect (UM §9: POW enables only the HID0-selected mode). |
 | LE, ILE | Rejected: MTMSR or RFI setting either faults (diagnostic halt). The MVP is big-endian only. |
 | FP, FE0, FE1 | Rejected as before (no FPU). |
@@ -122,8 +124,6 @@ has `seq_partial` clear.
   takes a machine check for every TEA; this core ties the fault to the
   fetched instruction so SRR0 names it.
 
-- Trace or IABR entry with MSR[TGPR]=1 is rejected (diagnostic), like the
-  other synchronous exceptions in a TLB-miss handler.
 - No soft stop or COP actions.
 
 See [verification](EXCEPTION_MACHINE_CHECK_TRACE_VERIFICATION.md).

@@ -478,6 +478,15 @@ module ppc_core_bat #(
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     !(probe_q && (pdmem_req_valid_o || pdmem_rsp_ready_o)))
     else $error("cache-block probe reached the physical data port");
+  // With every translation outcome typed, the CPU can reach no untyped
+  // router fault: the services report exactly one cause per access, BAT
+  // storage takes any value and TLB loads never leave a double hit.
+  localparam bit FULLY_TYPED = ENABLE_TLB_MISS_EXCEPTIONS &&
+    ENABLE_PAGE_DATA_EXCEPTIONS && ENABLE_PAGE_INSTRUCTION_EXCEPTIONS &&
+    ENABLE_MACHINE_CHECK;
+  assert property (@(posedge clk_i) disable iff (!rst_ni)
+    FULLY_TYPED |-> !translation_fault_o && !page_fault_o && !ifetch_fatal)
+    else $error("untyped router fault reached the CPU");
   // synthesis translate_on
 
   assign halted_o = core_halted || ifetch_fatal;

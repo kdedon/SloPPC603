@@ -91,6 +91,9 @@ FULL_DECODE = {'dsi_handler': 0x300, 'program_handler': 0x700, 'fp_unavailable_h
                'syscall_handler': 0xc00}
 MACHINE_CHECK = {'machine_check_handler': 0x200, 'trace_handler': 0xd00, 'iabr_handler': 0x1300,
                  'bad_routine': 0xdfe0}
+RESIDUALS = {'dsi_handler': 0x300, 'alignment_handler': 0x600, 'program_handler': 0x700,
+             'decrementer_handler': 0x900, 'syscall_handler': 0xc00, 'trace_handler': 0xd00,
+             'dtlb_load_handler': 0x1100, 'dtlb_store_handler': 0x1200, 'iabr_handler': 0x1300}
 
 # profile: (bench, source lists, fixed-address symbols as offsets from BASE,
 #           +MODE runs: a count or a tuple of modes)
@@ -128,9 +131,10 @@ PROFILES = {
     'lsu': ('tb_compiled_lsu_firmware', BAT_CACHED, {'alignment_handler': 0x600}, 0),
     'machine-check': ('tb_compiled_machine_check_firmware', BAT_CACHED, MACHINE_CHECK, 2),
     'full-decode': ('tb_compiled_full_decode_firmware', BAT_CACHED, FULL_DECODE, 0),
+    'residuals': ('tb_compiled_residuals_firmware', BAT_CACHED, RESIDUALS, 0),
 }
 # Benches whose target is not the default for their source lists.
-SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check', 'full-decode'}
+SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check', 'full-decode', 'residuals'}
 RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry', 'mmu-stress-tea'}
 # Plusargs added to every run of a profile.
 PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1']}

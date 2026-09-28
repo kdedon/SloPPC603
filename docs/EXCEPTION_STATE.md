@@ -63,7 +63,7 @@ MSR[IP] is SystemVerilog `msr[6]` and manual SRR1 cause bit 12 is `srr1[19]`.
 | 13 | Trace | `event_pc_i` next instruction | low half saves MSR | IP base + `0xD00` |
 | 14 | Instruction address breakpoint | `event_pc_i` matching instruction | low half saves MSR | IP base + `0x1300` |
 
-External event 6 and decrementer event 7 require EE set and TGPR clear;
+External event 6 and decrementer event 7 require EE set;
 otherwise they reject without state mutation. DEC uses the full-function
 `0x87c0ffff` save mask, unlike external event 6. Encodings 9 through 11 are the TLB misses ([EXCEPTION_TLB_MISS.md](EXCEPTION_TLB_MISS.md)); 12 through 14 are described in [EXCEPTION_MACHINE_CHECK_TRACE.md](EXCEPTION_MACHINE_CHECK_TRACE.md); 15 rejects without state mutation. The timer/DEC integration is described in [TIMERS.md](TIMERS.md). Selection, level semantics and
 precise resume-PC ownership belong to the caller; see
@@ -86,10 +86,10 @@ to new LE. The IP value sampled from the old MSR selects `0x0000_0000` or
 Supervisor RFI replaces only the `0x87C0_FFFF` subset in the current MSR from
 SRR1, preserves partial-function fields outside the subset, clears TGPR, and
 targets `{SRR0[31:2], 2'b00}`. Problem-state RFI becomes the selected
-privileged-instruction program exception. A supervisor RFI is supported with
-TGPR set because the processor manual explicitly defines its clearing. Other
-selected exception entries while TGPR is set reject because nested temporary
-GPR-bank semantics are outside this standalone state block.
+privileged-instruction program exception. Every event is accepted whatever
+the old TGPR value: UM Table 4-7 clears TGPR on every exception entry except
+the TLB misses, which set it
+([DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md)).
 
 Alignment and DSI routing, including their DAR/DSISR metadata contracts, are
 documented in [ALIGNMENT_EXCEPTIONS.md](ALIGNMENT_EXCEPTIONS.md) and
@@ -127,8 +127,6 @@ state change for:
 
 - unknown event encodings;
 - a non-word-aligned committed event PC;
-- system-call or program entry while TGPR is set;
-- problem-state RFI while TGPR is also set; or
 - RFI with `rfi_pending_exception_i` set.
 
 The last case is rejected because the architecture requires the highest

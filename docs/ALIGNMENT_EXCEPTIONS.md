@@ -3,8 +3,9 @@
 With `ENABLE_SUPERVISOR_EXCEPTIONS=1`, a supported scalar halfword or word
 load/store whose effective address violates the current natural-alignment
 restriction enters the alignment handler. The disabled profile retains its
-ordered terminal diagnostic. Generic data-bus errors remain diagnostics; they
-are not reclassified as DSI or alignment exceptions.
+ordered terminal diagnostic. Data-bus errors are machine checks where that
+feature is enabled and diagnostics otherwise; they are never reclassified as
+DSI or alignment exceptions.
 
 This routes the existing aligned-access restriction through a precise exception
 mechanism. It does not implement the complete 603e misalignment policy. A real
