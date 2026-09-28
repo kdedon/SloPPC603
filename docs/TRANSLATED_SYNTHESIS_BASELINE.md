@@ -1,5 +1,25 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-28 full decode
+
+Recorded: `./quartus/translated/build.sh --docker` and
+`./quartus/translated/report-critical-paths.sh --docker`, commit `3f70e43`, 2026-09-28.
+Quartus 17.0.2, seed 1. The profile adds `ENABLE_FULL_DECODE` to the
+load/store, machine-check, trace and IABR set. **Meets 50 MHz** at every
+corner with hold passing everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +3.938 | +0.251 |
+| Slow 1100 mV, -40 C | +3.983 | +0.230 |
+| Fast 1100 mV, 100 C | +7.615 | +0.135 |
+| Fast 1100 mV, -40 C | +7.957 | +0.117 |
+
+Fmax 62.26 MHz at slow 100 C, 62.43 MHz at slow -40 C. The worst setup path
+runs from the instruction-cache way-1 data RAM into the IQ storage
+(`core|iq|entries`). 9,881 ALMs, 11,260 registers, 3 DSP blocks, 139,008
+block-memory bits.
+
 ## 2026-09-28 load/store extensions plus machine check, trace and IABR
 
 Recorded: `./quartus/translated/build.sh --docker` and
