@@ -64,6 +64,20 @@ diagnostic halt (`halted_o` without `checkstop_o`).
 Not implemented: MCP, DPE, APE (no such inputs), CKSTP_IN, HID0[EMCP], and
 the completed store queue (stores are performed before commit).
 
+## Cracked instructions
+
+With [load/store extensions](LOAD_STORE_EXTENSIONS.md), `lmw`, `stmw` and the
+string forms retire one micro-op per word under the same PC; only the last
+has `seq_partial` clear.
+
+- Trace arms only on the last micro-op: one trace per instruction, SRR0 the
+  next instruction. A micro-op that takes an exception disarms it.
+- IABR marks the IQ entry before cracking, so a breakpointed instruction
+  traps once with no micro-op performed.
+- A machine check or DSI on any micro-op enters with SRR0 at the
+  instruction; RFI restarts it from its first word. Words already written
+  stay written (UM §2.3.4.3.6–7).
+
 ## MSR
 
 | Bits | Policy |

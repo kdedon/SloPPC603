@@ -1,6 +1,7 @@
 # Compiled MMU and event stress on the translated cached 60x top
 
 Recorded: `make -C toolchain rtl-mmu-stress-cached rtl-mmu-stress-retry` (inside `make -C sim -j2 ci`), commit 4560b1a plus uncommitted documentation and waiver-reason edits, 2026-09-27.
+Recorded: `make -C toolchain rtl-mmu-stress-tea` (inside `make -C sim -j2 ci`), commit 60e0916, 2026-09-28 (TEA section).
 
 ## What runs
 
@@ -46,8 +47,8 @@ acceptance and 3/4 timer-tick density. With `+RETRY=1` the resettable target
 10% of AACKs, cancels 8% of read beats with DRTRY (the cancelled beat carries
 inverted data; DRTRY lasts one to three cycles with the replacement TA in the
 last), and holds data tenures 5 to 44 cycles. Every read beat has a
-confirmation cycle before the next TA. `+TEA_PERMILLE` is a TEA injection
-hook, unused until a machine-check oracle replaces the bus-error check. It raises the IRQ 150 to 2,200 cycles after each ack and
+confirmation cycle before the next TA. `+TEA_PERMILLE` ends that share of
+would-be TAs with TEA (see [TEA machine checks](#tea-machine-checks)). It raises the IRQ 150 to 2,200 cycles after each ack and
 drops it only on the physical write to `irq_ack`. Every cycle it requires no
 halt, redirect, ifetch or bus error, translation diagnostic, external TLB or
 BAT management, cache maintenance or problem state; every 60x tenure must be
@@ -80,7 +81,8 @@ without the first run having reached its mailbox:
 | 13 | During the translated cache-inhibited fetch through IBAT2 |
 
 `rtl-mmu-stress-cached` runs modes 0-8, 12 and 13 without retries;
-`rtl-mmu-stress-retry` runs modes 0-13 with `+RETRY=1`.
+`rtl-mmu-stress-retry` runs modes 0-13 with `+RETRY=1`;
+`rtl-mmu-stress-tea` runs modes 14 and 15 (below).
 
 ## Results
 
@@ -138,10 +140,38 @@ micro-TLB and multi-cycle DRTRY additions:
   (`ppc_bus60x_line_read`): `rtl-mmu-stress-retry` mode 0
   fails "60x address ownership/overlap" at cycle 69,566.
 
+## TEA machine checks
+
+The image runs with MSR[ME] and MSR[RI] set outside handlers and has a
+0x200 handler that fails the run if SRR1[RI] is clear, else counts the entry
+and returns to SRR0. The bench runs the top with `ENABLE_MACHINE_CHECK=1`.
+Modes 14 and 15 (15 with RETRY) set `TEA_PERMILLE=15`: the target ends 1.5%
+of would-be TAs with TEA, offered only while MSR[RI]=1, so never inside a
+handler, where RI=0 marks the saved state unrecoverable.
+
+The oracle replaces the bus-error expectation for these runs:
+
+- a retirement with `FETCH_MACHINE_CHECK` or `DATA_MACHINE_CHECK` occurs only
+  when TEA is enabled, writes no register, and the handler's RFI must resume
+  at its PC;
+- checkstop, halt and every transport diagnostic stay forbidden;
+- at the mailbox the handler's count equals the bench's, both fetch and data
+  machine checks occurred, and machine checks do not exceed TEAs (a TEA on a
+  discarded prefetch takes none);
+- every other check of the stress still holds.
+
+| RETRY | Mode | TEA | Machine checks (fetch / data) | EXT | DEC | ARTRY | DRTRY | Retirements | Cycles | Checks |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 14 | 96 | 85 (9 / 76) | 409 | 488 | 0 | 0 | 63,241 | 913,267 | 4,927,851 |
+| 1 | 15 | 86 | 77 (15 / 62) | 483 | 569 | 5,257 | 3,299 | 64,891 | 1,175,046 | 6,292,818 |
+
+Both runs also go through `make -C sim coverage`; they reach the line
+reader's TEA release arm.
+
 ## Limits
 
 The IRQ is acknowledged by a bench model, not an interrupt controller. The
-target never asserts TEA, never starts a data tenure before the ARTRY
+target asserts TEA only in modes 14 and 15 and only while MSR[RI]=1, never starts a data tenure before the ARTRY
 window closes and never violates the protocol; errors have their own gates. Data stays uncached (the design has no data cache). Resets are
 synchronous four-cycle pulses; a reset does not roll back memory, so the
 image rebuilds its page table and frames on every boot. Code frames are

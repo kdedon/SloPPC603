@@ -29,6 +29,24 @@ the bench compares the full list.
 | 10 | IABR precedes the trace of the same instruction; ISI at a breakpoint address comes first. |
 | 11 | ITLB miss precedes IABR at the same address; a traced load taking a DTLB miss is traced only after its retry. |
 
+## Cracked instructions
+
+Recorded: `make -C sim test-core-machine-check-trace` (inside `make -C sim -j2 ci`), commit 60e0916, 2026-09-28.
+
+The core bench also enables `ENABLE_MULTIPLE_STRING`. Pass on seeds 1, 2, 4
+and 7: 16 scenarios, 1578 checks, 1132 retirements per seed. The bench counts
+retirements per PC, all micro-ops and final ones (`seq_partial` clear).
+
+| Scenario | Establishes |
+|---|---|
+| 12 | TEA on the third word of `stmw` and the second word of `lswi`: 0x200 with SRR0 at the instruction; RFI reruns every micro-op (8 and 5 retirements, one final each) and memory and registers hold the full result. DSI on the second word of `stmw`: 0x300 at the instruction, first word written, second not. |
+| 13 | IABR on `stmw`: one 0x1300 entry with no micro-op performed, then five micro-ops. |
+| 14 | Single step over `stmw` (5 micro-ops) and `stswi` (2): one trace each, SRR0 the next instruction. With TEA on the stepped `stmw`'s third word: machine check, no trace for the aborted attempt, one trace after the restart. |
+| 15 | Negative control: SE clear, the same micro-ops retire and no trace is logged. |
+
+Mutation check (temporary edit, reverted): arming the trace on every micro-op
+fails scenario 14 with "trace-mode dispatch overlapped older work".
+
 ## Translated tops with 60x TEA
 
 `make -C sim test-core-bat-machine-check` (in `regression`) runs
@@ -64,6 +82,12 @@ control): checkstop with no tohost write and no vector fetch.
 MC/debug lint profiles for `ppc_core`, the router and both translated tops.
 Existing TEA diagnostic benches (`test-core-bat-bus60x-errors`,
 `test-core-bus60x-ifetch-error`) still pass with the features disabled.
+
+After merging with the load/store extensions, `make -C sim -j2 ci` (commit
+60e0916, 2026-09-28) passes: regression, container firmware build, 30
+compiled-firmware profiles including `machine-check`, `lsu` and
+`mmu-stress-tea` ([MMU stress](MMU_STRESS_FIRMWARE.md#tea-machine-checks)),
+and coverage 75.9%.
 
 ## Not established
 

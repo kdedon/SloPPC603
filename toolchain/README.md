@@ -432,7 +432,8 @@ BAT-over-TLB checks, and segment and SDR1 changes, repeated under external
 and decrementer interrupts. `make rtl-mmu-stress-cached` runs it on
 `ppc_core_bat_cached_bus60x` with the MVP profile in eleven seeded modes;
 `make rtl-mmu-stress-retry` runs fourteen modes with seeded ARTRY, DRTRY and
-held data tenures. Most modes reset the CPU mid-run and require a clean
+held data tenures; `make rtl-mmu-stress-tea` runs two with seeded TEA, each
+recovered by the image's machine-check handler. Most modes reset the CPU mid-run and require a clean
 rerun. See [stress evidence](../docs/MMU_STRESS_FIRMWARE.md).
 
 ## Cache control profile
