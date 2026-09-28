@@ -184,8 +184,9 @@ module tb_core_control_memory;
           require(halted && retirements == expected_retirements, "terminal state/count mismatch");
           require(read_requests >= 20 && write_requests >= 20 && request_stalls > 0 && retire_stalls > 0,
                   "missing memory/retirement backpressure coverage");
-          $display("PASS control/memory program: checks=%0d retire=%0d reads=%0d writes=%0d request-stalls=%0d retire-stalls=%0d",
-                   checks, retirements, read_requests, write_requests, request_stalls, retire_stalls);
+          $display("PASS control/memory program: checks=%0d retire=%0d reads=%0d writes=%0d request-stalls=%0d retire-stalls=%0d cycles=%0d",
+                   checks, retirements, read_requests, write_requests, request_stalls, retire_stalls,
+                   edge_count);
           $fclose(expected_fd);
           $finish;
         end

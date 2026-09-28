@@ -1,5 +1,29 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-28 iterative multiplier
+
+Recorded: `./quartus/translated/build.sh --docker` and
+`./quartus/report-target-paths.sh translated --docker`, commit `9213494`,
+2026-09-28. Quartus 17.0.2, seed 1. The IU multiplier is now one 33x9 partial
+product per cycle into a 64-bit accumulator ([MULTIPLY_TIMING.md](MULTIPLY_TIMING.md)).
+**Meets 50 MHz** at every corner with hold passing everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +3.887 | +0.243 |
+| Slow 1100 mV, -40 C | +3.672 | +0.238 |
+| Fast 1100 mV, 100 C | +7.569 | +0.133 |
+| Fast 1100 mV, -40 C | +7.919 | +0.116 |
+
+Fmax 62.06 MHz at slow 100 C, 61.24 MHz at slow -40 C. 10,245 ALMs, 11,758
+registers, 2 DSP blocks (one fewer than the 33x33 product), 139,008 block-memory
+bits. At 15.152 ns 810 / 702 endpoints fail at the slow corners, none in the
+multiplier; the worst are -1.176 ns (slow -40 C) from the I-cache way data RAM
+and -0.961 ns (slow 100 C) within the IQ head register. Retimed at
+15.152 ns, the worst multiplier path (digit register through the DSP into the
+accumulator) has +1.700 ns slack at slow -40 C and +2.088 ns at slow 100 C; the
+accumulator to completion packet path has +2.177 ns.
+
 ## 2026-09-28 final signoff: full decode with gate-3 timing
 
 Recorded: `./quartus/translated/build.sh --docker` and
