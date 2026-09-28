@@ -1,5 +1,35 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-28 fetch-to-decode register: 66 MHz
+
+Recorded: `make -C sim -j2 ci`, `./quartus/translated/build.sh --docker` and
+`./quartus/report-target-paths.sh translated --docker`, commit `f68868a`,
+2026-09-28. Quartus 17.0.2, seed 1. **Meets 50 MHz and 66 MHz** at every
+corner with hold passing everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Setup slack, 66 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: | ---: |
+| Slow 1100 mV, 100 C | +4.945 | +0.097 | +0.256 |
+| Slow 1100 mV, -40 C | +5.117 | +0.269 | +0.243 |
+| Fast 1100 mV, 100 C | +8.009 | +3.161 | +0.141 |
+| Fast 1100 mV, -40 C | +8.337 | +3.489 | +0.116 |
+
+Fmax 66.42 MHz at slow 100 C, 67.19 MHz at slow -40 C (from 61.41). The
+66 MHz column is the 50 MHz slack less 4.848 ns;
+`report-target-paths.sh` at 15.152 ns finds no failing endpoint. 9,960 ALMs,
+11,839 registers, 3 DSP blocks, 139,008 block-memory bits.
+
+RTL change: a one-entry register between fetch and the IQ holds the fetched
+word, PC, fault and page-miss context; decode and the IABR compare read it at
+IQ push (see [ARCHITECTURE.md](ARCHITECTURE.md#fetch-to-decode-register)).
+The I-cache data RAM now reaches only that register.
+
+Next paths (`report-target-paths.sh translated 14.286 --docker`, 70 MHz):
+1,671 endpoints fail, worst -0.769 ns, all from the IQ head register through
+dispatch gating into the IQ head, CQ packets, RS entries and special-unit
+operand registers. Closing them needs a dispatch-stage split (registered
+dispatch-ready and a decoded operand stage), not a local fix.
+
 ## 2026-09-28 final signoff: full decode with gate-3 timing
 
 Recorded: `./quartus/translated/build.sh --docker` and

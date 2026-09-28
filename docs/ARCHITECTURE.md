@@ -244,3 +244,13 @@ register in its cycle. It accepts when empty or when the IQ accepts, and it
 clears with the IQ on an accepted redirect. Fetch credit therefore covers
 IQ_DEPTH + 1 entries, and every fetched instruction reaches the IQ one cycle
 later.
+
+Recorded: `make -C toolchain rtl-all`, commit `6c66bb4` (before) and commit
+`a9e139f` plus the bench change committed as `f68868a` (after), 2026-09-28.
+All 31 profiles pass. CPI (cycles per retirement, bench memory models with
+their injected stalls) rises by 0 to 4.7%: BE smoke 6.00 to 6.01, table
+search 6.55 to 6.77, segment 7.45 to 7.80, page DSI 7.79 to 8.12, cached
+table search 15.55 to 15.70, load/store extensions 22.47 unchanged, MMU
+stress modes +0.5 to +1.9%. Summed over the 63 PASS lines, CPI goes from
+17.033 to 17.221 (+1.1%). Interrupt-driven benches retire slightly different
+counts because interrupt arrival shifts relative to fetch.
