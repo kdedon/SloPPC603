@@ -34,9 +34,12 @@ python3 quartus/qsf_sources.py quartus quartus/integrated quartus/timer-bat quar
 
 In the `integrated/`, `timer-bat/` and `translated/` tops every virtual data
 port passes through one boundary register that models the upstream or
-downstream flop; their SDCs cut only the pin-to-register hop, so every timed
-path is register to register. To list failing endpoints of a completed fit
-at another period (default 15.152 ns, 66 MHz) without refitting:
+downstream flop. Their SDCs implement
+[docs/INTERFACE_TIMING_CONTRACT.md](../docs/INTERFACE_TIMING_CONTRACT.md): each
+port's false path reaches only its own boundary register, so every timed path
+is register to register. To list failing endpoints of a completed fit at
+another period (default 15.152 ns, 66 MHz) and the worst boundary input,
+output and feedthrough path per corner, without refitting:
 
 ```sh
 ./quartus/report-target-paths.sh integrated --docker   # or timer-bat, translated

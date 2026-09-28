@@ -1,5 +1,41 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-28 gate-3 timing: unreset payloads, registered IQ head, contract SDC
+
+Recorded: `./quartus/translated/build.sh --docker` and
+`./quartus/report-target-paths.sh translated --docker`, commit `710b517`
+plus uncommitted docs, 2026-09-28. Quartus 17.0.2, seed 1. **Meets 50 MHz**
+at every corner with hold passing everywhere; 66 MHz misses by 0.176 ns.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +4.763 | +0.227 |
+| Slow 1100 mV, -40 C | +4.672 | +0.239 |
+| Fast 1100 mV, 100 C | +7.400 | +0.133 |
+| Fast 1100 mV, -40 C | +7.797 | +0.116 |
+
+Fmax 65.63 MHz at slow 100 C, 65.24 MHz at slow -40 C (from 62.72 / 63.15).
+At 15.152 ns 19 endpoints fail: I-cache data RAM through decode into the IQ
+entries (-0.176 ns) and head (-0.099 ns), and the IQ head through the
+dispatch EA/alignment check into the CQ allocation (-0.104 ns). The reset
+synchronizer's worst path now has +1.022 ns at 66 MHz (2,651 loads). 10,091
+ALMs, 11,575 registers, 3 DSP blocks, 139,008 block-memory bits.
+
+Boundary paths at 15.152 ns, slow 100 C (worst slack per class): input
++3.773 ns (`retire_ready_i` into the special unit), output +5.054 ns
+(into `interrupt_pc_o`), feedthrough +9.954 ns (`tlb_mgmt_req_valid_i` to
+`start_ready_o`).
+
+RTL changes: IQ, RS entry and rename value/owner payloads lose their reset;
+the IQ output comes from a head register; the wake payload no longer
+depends on the finish qualification; the special/IU result payload is
+steered by the registered special busy state. The SDC now implements
+[INTERFACE_TIMING_CONTRACT.md](INTERFACE_TIMING_CONTRACT.md): each port's
+false path reaches only its own boundary register, bit by bit. The timed
+path set is unchanged from the previous SDC; re-timing the previous
+translated fit with both SDCs gave the same worst setup slack at every corner
+and the same slow-corner hold slack.
+
 ## 2026-09-28 load/store extensions plus machine check, trace and IABR
 
 Recorded: `./quartus/translated/build.sh --docker` and
