@@ -1294,7 +1294,26 @@ test-core-bat-cached-bus60x:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x --Mdir $(BUILD_DIR)/core-bat-cached-bus60x $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_bat_cached_bus60x.sv
 	./$(BUILD_DIR)/core-bat-cached-bus60x/Vtb_core_bat_cached_bus60x $(SIM_ARGS)
 # Translated cached top with the data cache in its slot.
-DCACHE_CORE_PARAMS := "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_BYTE_REVERSE=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_MISALIGNED_ACCESS=1'b1" "-GENABLE_MACHINE_CHECK=1'b1" "-GENABLE_PIN_INTERRUPTS=1'b1" "-GENABLE_DCACHE=1'b1"
+DCACHE_CORE_PARAMS := "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_BYTE_REVERSE=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_MISALIGNED_ACCESS=1'b1" "-GENABLE_MACHINE_CHECK=1'b1" "-GENABLE_PIN_INTERRUPTS=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_DCACHE=1'b1"
+# Data cache in the translated cached top on the bench BIU; the mutations
+# must fail.
+.PHONY: test-core-dcache test-core-dcache-negative
+test: test-core-dcache test-core-dcache-negative
+DCACHE_CORE_TB := -I../tb $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/bfm/dcache_biu_bfm.sv ../tb/tb_core_dcache.sv
+test-core-dcache:
+	mkdir -p $(BUILD_DIR)/core-dcache
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_dcache --Mdir $(BUILD_DIR)/core-dcache $(DCACHE_CORE_TB)
+	./$(BUILD_DIR)/core-dcache/Vtb_core_dcache $(SIM_ARGS)
+test-core-dcache-negative:
+	mkdir -p $(BUILD_DIR)/core-dcache-negative
+	for m in 1 2 3 4 5 7 101 102 103; do \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_dcache -GMUTATION=$$m --Mdir $(BUILD_DIR)/core-dcache-negative/m$$m $(DCACHE_CORE_TB) > $(BUILD_DIR)/core-dcache-negative/build$$m.log 2>&1 || exit 1; \
+	  if ./$(BUILD_DIR)/core-dcache-negative/m$$m/Vtb_core_dcache > $(BUILD_DIR)/core-dcache-negative/run$$m.log 2>&1; then \
+	    echo "FAIL: mutation $$m passed"; exit 1; fi; \
+	  echo "mutation $$m rejected: $$(grep -m1 -o '%Fatal.*\|%Error.*' $(BUILD_DIR)/core-dcache-negative/run$$m.log | cut -c1-120)"; \
+	  rm -rf $(BUILD_DIR)/core-dcache-negative/m$$m; \
+	done
+	@echo "PASS: data cache core mutations rejected"
 lint: lint-core-bat-cached-bus60x
 lint-core-bat-cached-bus60x:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_cached_bus60x $(CORE_BAT_CACHED_BUS60X_RTL)

@@ -130,6 +130,8 @@ PROFILES = {
     'mmu-stress-tea': ('tb_compiled_mmu_stress_firmware', BAT_CACHED, STRESS, (14, 15)),
     'cacheops': ('tb_compiled_cacheops_firmware', BAT_CACHED, CACHEOPS, 0),
     'lsu': ('tb_compiled_lsu_firmware', BAT_CACHED, {'alignment_handler': 0x600}, 0),
+    # The same image with the data cache on from reset, on the bench BIU.
+    'lsu-dcache': ('tb_compiled_lsu_dcache_firmware', BAT_CACHED, {'alignment_handler': 0x600}, 0),
     'machine-check': ('tb_compiled_machine_check_firmware', BAT_CACHED, MACHINE_CHECK, 2),
     'full-decode': ('tb_compiled_full_decode_firmware', BAT_CACHED, FULL_DECODE, 0),
     # The package top, pins only.
@@ -140,7 +142,7 @@ PROFILES = {
     'residuals': ('tb_compiled_residuals_firmware', BAT_CACHED, RESIDUALS, 0),
 }
 # Benches whose target is not the default for their source lists.
-SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check', 'full-decode', 'chip-mmu-stress',
+SCRIPTED_TARGET = {'cacheops', 'lsu', 'lsu-dcache', 'machine-check', 'full-decode', 'chip-mmu-stress',
                    'chip-lsu', 'chip-machine-check', 'chip-full-decode', 'residuals'}
 RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry', 'mmu-stress-tea'}
 # Plusargs added to every run of a profile.
@@ -220,7 +222,9 @@ def main():
     scripted = args.profile in SCRIPTED_TARGET
     profile_params = ([f'-GFAULT_PROFILE={int(table_fault_profile)}']
                       if manifests in (BAT_BUS, BAT_CACHED) and args.profile.startswith('table-') else [])
-    bfms = (['../tb/bfm/bus60x_scripted_target_bfm.sv'] if scripted else
+    bfms = (['../tb/bfm/bus60x_scripted_target_bfm.sv', '../tb/bfm/dcache_biu_bfm.sv']
+            if args.profile == 'lsu-dcache' else
+            ['../tb/bfm/bus60x_scripted_target_bfm.sv'] if scripted else
             ['../tb/bfm/bus60x_retry_target_bfm.sv'] if args.profile in RETRY_TARGET else
             ['../tb/bfm/bus60x_delay_target_bfm.sv'] if manifests in (BAT_BUS, BAT_CACHED) else
             ['../tb/bfm/bus60x_negedge_target_bfm.sv'] if manifests == CACHED else [])

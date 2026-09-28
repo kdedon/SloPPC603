@@ -459,7 +459,7 @@ rtl-mmu-stress-tea: mmu-stress
 # Load/store extensions: stmw/lmw, lwarx/stwcx., strings, byte-reverse and
 # unaligned scalars, on the translated cached 60x top.
 LSU_FORMS := lmw stmw lwarx stwcx. lswi stswi lswx stswx lwbrx stwbrx lhbrx sthbrx
-.PHONY: lsu rtl-lsu rtl-lsu-negative
+.PHONY: lsu rtl-lsu rtl-lsu-dcache rtl-lsu-negative
 lsu: $(BUILD_DIR)/lsu/smoke.elf $(BUILD_DIR)/lsu/smoke.bin $(BUILD_DIR)/lsu/smoke.dump
 $(BUILD_DIR)/lsu:
 	mkdir -p $@
@@ -476,6 +476,8 @@ rtl-lsu: lsu
 	$(PYTHON) check_opcodes.py $(BUILD_DIR)/lsu/smoke.elf $(LSU_FORMS)
 	$(PYTHON) run-rtl-smoke.py --profile lsu --elf $(BUILD_DIR)/lsu/smoke.elf --build-dir $(BUILD_DIR)/rtl-lsu
 # The same image with the extensions disabled must reject its first stmw.
+rtl-lsu-dcache: lsu
+	$(PYTHON) run-rtl-smoke.py --profile lsu-dcache --elf $(BUILD_DIR)/lsu/smoke.elf --build-dir $(BUILD_DIR)/rtl-lsu-dcache
 rtl-lsu-negative: lsu
 	mkdir -p $(BUILD_DIR)/rtl-lsu-negative
 	if $(PYTHON) run-rtl-smoke.py --profile lsu --gparam LSU_EXTENSIONS=0 \
@@ -555,7 +557,7 @@ rtl-residuals: residuals
 # Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
 # or from `make firmware-all` in the pinned container.
 FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu machine-check full-decode residuals
-RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry mmu-stress-tea cacheops lsu machine-check full-decode chip-mmu-stress chip-lsu chip-machine-check chip-full-decode residuals
+RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry mmu-stress-tea cacheops lsu lsu-dcache machine-check full-decode chip-mmu-stress chip-lsu chip-machine-check chip-full-decode residuals
 FIRMWARE_ELFS := $(FIRMWARE_PROFILES:%=$(BUILD_DIR)/%/smoke.elf)
 CROSS_MISSING := ERROR: $(CC) not found; install the pinned cross-compiler or run make firmware-all in the container (see toolchain/README.md)
 

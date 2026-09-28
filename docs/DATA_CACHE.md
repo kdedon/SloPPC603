@@ -1,8 +1,9 @@
 # Data cache contract
 
 `rtl/ppc_dcache.sv` (with `ppc_dcache_pkg.sv`, `ppc_ram_sdp_be.sv`, `ppc_ram_lut.sv`;
-list in `rtl/dcache_files.f`) is the 603e data cache as a standalone module. It is
-not yet connected to the core. Acceptance evidence:
+list in `rtl/dcache_files.f`) is the 603e data cache. Its LSU side is connected
+behind `ENABLE_DCACHE` ([DATA_CACHE_INTEGRATION.md](DATA_CACHE_INTEGRATION.md)).
+Acceptance evidence:
 [DATA_CACHE_VERIFICATION.md](DATA_CACHE_VERIFICATION.md).
 
 Source of truth: 603e UM chapter 3 (PDF 127-158), Table 7-1/7-2 (PDF 285-287) as

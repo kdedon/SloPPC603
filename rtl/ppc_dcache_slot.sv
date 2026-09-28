@@ -9,7 +9,9 @@
 // docs/DATA_CACHE_INTEGRATION.md.
 module ppc_dcache_slot #(
   parameter bit ENABLE_DCACHE = 1'b0,
-  // Nonzero injects one named cache defect for negative tests only.
+  // Nonzero injects one named defect for negative tests only: below 100 in
+  // the cache; 101 wrong word half, 102 stwcx. always succeeds, 103 drops
+  // the asynchronous error, 104 no sync ahead of eciwx/ecowx.
   parameter int DCACHE_MUTATION = 0
 ) (
   input  logic        clk_i,
@@ -202,7 +204,7 @@ module ppc_dcache_slot #(
           word_q <= lsu_req_addr_i[2];
           op_q <= lsu_op;
           if (lsu_external) begin
-            ext_q <= X_SYNC_REQ;
+            ext_q <= (DCACHE_MUTATION == 104) ? X_BIU_REQ : X_SYNC_REQ;
             ext_write_q <= lsu_req_write_i;
             ext_addr_q <= lsu_req_addr_i;
             ext_wdata_q <= lsu_req_wdata_i;
@@ -233,10 +235,12 @@ module ppc_dcache_slot #(
     // Status of an operation without data returns in bit 0.
     always_comb begin
       lsu_rsp_valid_o = 1'b0;
-      lsu_rsp_rdata_o = word_q ? dc_rsp_data[31:0] : dc_rsp_data[63:32];
+      lsu_rsp_rdata_o = (word_q ^ (DCACHE_MUTATION == 101)) ?
+                        dc_rsp_data[31:0] : dc_rsp_data[63:32];
       lsu_rsp_error_o = dc_rsp_error;
       if (op_q == DC_DCBZ) lsu_rsp_rdata_o = {31'b0, dc_rsp_align};
-      else if (op_q == DC_STWCX) lsu_rsp_rdata_o = {31'b0, dc_rsp_stwcx_ok};
+      else if (op_q == DC_STWCX) lsu_rsp_rdata_o = {31'b0,
+        dc_rsp_stwcx_ok || (DCACHE_MUTATION == 102)};
       if (ext_q == X_IDLE) lsu_rsp_valid_o = dc_rsp_valid;
       else if (ext_q == X_BIU_WAIT) begin
         lsu_rsp_valid_o = biu_rsp_valid_i;
@@ -245,7 +249,9 @@ module ppc_dcache_slot #(
       end
     end
 
-    ppc_dcache #(.MUTATION(DCACHE_MUTATION)) dcache (
+    logic dc_async_error;
+    assign async_error_o = dc_async_error && (DCACHE_MUTATION != 103);
+    ppc_dcache #(.MUTATION(DCACHE_MUTATION < 100 ? DCACHE_MUTATION : 0)) dcache (
       .clk_i, .rst_ni,
       .req_valid_i(dc_req_valid), .req_ready_o(dc_req_ready),
       .req_op_i(dc_req_op), .req_addr_i(lsu_req_addr_i),
@@ -265,7 +271,7 @@ module ppc_dcache_slot #(
       .snoop_rsp_valid_o, .snoop_rsp_artry_o, .snoop_rsp_hit_o,
       .snoop_rsp_push_o,
       .busy_o(dc_busy), .resv_valid_o, .hit_o(dc_hit), .miss_o(dc_miss),
-      .async_error_o, .protocol_error_o
+      .async_error_o(dc_async_error), .protocol_error_o
     );
     assign busy_o = dc_busy || (ext_q != X_IDLE);
 
