@@ -291,9 +291,13 @@ module tb_core_sdr1 #(parameter bit FEATURE=1'b1);
                 "feature-off transfer gained permission");
           done<=1;
         end else if((mode==5||mode==6)&&retired.pc==12)begin
-          check(retired.illegal&&!retired.gpr_write&&
-                dut.special.sdr1_q==0,
-                "translated SDR1 write was not diagnostic and side-effect-free");
+          // PEM Table 2-22 leaves this undefined; the 603e only hashes with
+          // SDR1, so the write takes effect.
+          check(!retired.illegal&&!retired.gpr_write,
+                "translated SDR1 write was rejected");
+        end else if((mode==5||mode==6)&&retired.pc==16)begin
+          check(dut.special.sdr1_q==32'h0034,
+                "translated SDR1 write did not take effect");
           done<=1;
         end else if(mode==8)begin
           if(retired.pc==32'h200)check(0,"superseded retained target retired");
@@ -377,8 +381,7 @@ module tb_core_sdr1 #(parameter bit FEATURE=1'b1);
             "same-edge irrevocable write/refetch state");
       for(int m=5;m<=7;m++)begin
         reset_case(m,0);wait(done);@(negedge clk);
-        check(dut.special.sdr1_q==0&&
-              (m==7?!halted:halted),
+        check(dut.special.sdr1_q==(m==7?0:32'h0034)&&!halted,
               "translated SDR1 read/write policy");
       end
     end else begin
