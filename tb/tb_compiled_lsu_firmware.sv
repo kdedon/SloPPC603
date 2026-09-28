@@ -35,6 +35,7 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
   function automatic string check_detail();
     return $sformatf(" bus=%08x",bus_a);
   endfunction
+  `define FW_DUMP_ARRAY target.mem
   `include "compiled_firmware.svh"
 
   /* verilator lint_off PINCONNECTEMPTY */
