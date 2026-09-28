@@ -100,7 +100,7 @@ module tb_exception_tlb_miss #(
     logic [31:0] old_msr;
     logic [31:0] pc;
     old_msr = ip ? 32'h8540_c073 : 32'h8540_c033;
-    pc = 32'h2000_2000 + {26'b0, kind, 2'b00};
+    pc = 32'h2000_2000 + {25'b0, kind, 2'b00};
     load_state(old_msr, 32'h1234_5000, 32'h8765_4000);
     offer_event(kind, pc, cr0, key, way);
     if (ENABLE_TLB_MISS_EXCEPTIONS) begin

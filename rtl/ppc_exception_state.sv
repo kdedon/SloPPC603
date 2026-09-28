@@ -9,7 +9,8 @@ module ppc_exception_state #(
   parameter logic [31:0] RESET_SRR1 = 32'b0,
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
-  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
+  parameter bit ENABLE_FULL_DECODE = 1'b0
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -49,9 +50,9 @@ module ppc_exception_state #(
   localparam logic [31:0] SRR1_PROGRAM_ILLEGAL = 32'h0008_0000;
   localparam logic [31:0] SRR1_PROGRAM_PRIV    = 32'h0004_0000;
   localparam logic [31:0] SRR1_PROGRAM_TRAP    = 32'h0002_0000;
-  // No FPU: MSR[FP] never sets, as on the EC603e (UM 4.5.8).
-  localparam logic [31:0] MSR_STORED_MASK =
-    MSR_IMPLEMENTED_MASK & ~(32'd1 << MSR_FP);
+  // Full decode has no FPU: MSR[FP] never sets, as on the EC603e (UM 4.5.8).
+  localparam logic [31:0] MSR_STORED_MASK = ENABLE_FULL_DECODE ?
+    (MSR_IMPLEMENTED_MASK & ~(32'd1 << MSR_FP)) : MSR_IMPLEMENTED_MASK;
   // Machine check cause: manual bit 13 TEA.
   localparam logic [31:0] SRR1_MACHINE_CHECK_TEA = 32'h0004_0000;
 
