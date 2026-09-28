@@ -56,6 +56,7 @@ module tb_compiled_residuals_firmware;
     .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_DEBUG_EXCEPTIONS(1'b1),
     .ENABLE_FULL_DECODE(1'b1)) dut(
     .clk_i(clk),.rst_ni(rst_n),
+    .pin_event_i('0), .pin_status_o(),
     .external_irq_i(1'b0),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .timer_tick_i(tick),.timebase_enable_i(1'b1),
     .decrementer_taken_o(dec_taken),.decrementer_pc_o(dec_pc),
