@@ -532,9 +532,9 @@ module ppc_special #(
     misaligned = !ENABLE_UNALIGNED_DATAPATH &&
                  (((uop_q.mem_size == MEM_WORD) && (ea_q[1:0] != 0)) ||
                   ((uop_q.mem_size == MEM_HALF) && ea_q[0]));
-    // Without translation a stwcx. lacking the reservation cannot fault.
+    // A stwcx. without the reservation still checks translation (UM 4.5.3).
     conditional_probe = ENABLE_RESERVATION && uop_q.mem_conditional && !reserve_q;
-    mem_skip = uop_q.mem_skip || (conditional_probe && !ENABLE_LIVE_CONTEXT);
+    mem_skip = uop_q.mem_skip;
     access_ea = beat_q ? {ea_q[31:2] + 30'd1, 2'b0} : ea_q;
     // UM 4.5.6.2: lmw/stmw alignment saves EA + 4 in DAR.
     alignment_dar = ea_q + ((uop_q.mem_seq == SEQ_MULTIPLE) ? 32'd4 : 32'd0);
@@ -556,7 +556,7 @@ module ppc_special #(
     dmem_req_valid_o = rst_ni && (state_q == S_MEM_OFFER);
     dmem_req_write_o = (uop_q.special_op == SPECIAL_STORE);
     dmem_req_probe_o = (ENABLE_CACHE_INSTRUCTIONS && uop_q.cache_probe) ||
-                       (conditional_probe && ENABLE_LIVE_CONTEXT);
+                       (ENABLE_CACHE_INSTRUCTIONS && conditional_probe);
     dmem_req_addr_o = {access_ea[31:2], 2'b0};
     dmem_req_wdata_o = beat_q ? store_window[31:0] : store_window[63:32];
     dmem_req_wstrb_o = conditional_probe ? 4'b0 :

@@ -25,8 +25,7 @@ module ppc_core #(
   parameter bit ENABLE_BYTE_REVERSE = 1'b0,
   // lmw/stmw/lswi/lswx/stswi/stswx, cracked at dispatch.
   parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
-  // lwarx/stwcx.; with live context the wrapper must honor
-  // dmem_req_probe_o for a stwcx. without a reservation.
+  // lwarx/stwcx.; a stwcx. without the reservation issues a store probe.
   parameter bit ENABLE_RESERVATION = 1'b0,
   // Unaligned halfword/word accesses split in hardware; only a page-crossing
   // access under data translation takes the alignment exception.
@@ -230,8 +229,8 @@ module ppc_core #(
     if ((ENABLE_BYTE_REVERSE || ENABLE_MULTIPLE_STRING || ENABLE_RESERVATION ||
          ENABLE_MISALIGNED_ACCESS) && !ENABLE_SUPERVISOR_EXCEPTIONS)
       $fatal(1, "Load/store extensions require supervisor exceptions");
-    if (ENABLE_RESERVATION && ENABLE_LIVE_CONTEXT && !ENABLE_CACHE_INSTRUCTIONS)
-      $fatal(1, "Translated stwcx. needs the cache-probe request");
+    if (ENABLE_RESERVATION && !ENABLE_CACHE_INSTRUCTIONS)
+      $fatal(1, "stwcx. needs the cache-probe request");
   end
   ppc_fetch #(.RESET_PC(RESET_PC)) fetch (
     .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence),

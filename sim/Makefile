@@ -1306,6 +1306,13 @@ test-core-cache-control:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_cache_control --Mdir $(BUILD_DIR)/core-cache-control -I../tb $(RTL) ../tb/tb_core_cache_control.sv
 	./$(BUILD_DIR)/core-cache-control/Vtb_core_cache_control $(SIM_ARGS)
 
+.PHONY: test-core-lsu-extensions
+test: test-core-lsu-extensions
+test-core-lsu-extensions:
+	mkdir -p $(BUILD_DIR)/core-lsu-extensions
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_lsu_extensions --Mdir $(BUILD_DIR)/core-lsu-extensions -I../tb $(RTL) ../tb/tb_core_lsu_extensions.sv
+	./$(BUILD_DIR)/core-lsu-extensions/Vtb_core_lsu_extensions $(SIM_ARGS)
+
 .PHONY: test-core-cache-probe-miss
 test: test-core-cache-probe-miss
 test-core-cache-probe-miss:
