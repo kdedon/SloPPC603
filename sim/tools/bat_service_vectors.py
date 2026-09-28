@@ -10,14 +10,14 @@ import argparse
 import random
 from pathlib import Path
 
-from bat_vectors import expected as translate
+from bat_vectors import expected_stored as translate
 
 
 class Model:
     def __init__(self):
         self.banks = [[(0, 0) for _ in range(4)] for _ in range(2)]
         self.counts = {'translation': 0, 'write': 0, 'read': 0,
-                       'privileged': 0, 'unsupported': 0, 'rejected': 0}
+                       'privileged': 0, 'unsupported': 0}
 
     def accept(self, kind, ea, spr, data, ir, dr, pr):
         response = kind * 2**134 + ea * 2**102 + spr * 2**92
@@ -36,23 +36,11 @@ class Model:
         if kind == 3:
             self.counts['read'] += 1
             return response + self.banks[bank][entry][lower] * 2**60
+        # Every write is stored with reserved fields cleared (PEM Table 2-12).
+        data &= 0xfffe007b if lower else 0xfffe1fff
         candidate = self.banks[bank].copy()
         old = candidate[entry]
         candidate[entry] = (old[0], data) if lower else (data, old[1])
-        if lower:
-            bad_encoding = bool((data // 128) % 1024 or (data // 4) % 2 or
-                                (bank == 0 and (data // 64) % 2))
-        else:
-            length = (data // 4) % 2048
-            bad_encoding = bool((data // 8192) % 16 or (length + 1) & length)
-        observation = translate(32 + (bank == 0)*16, 0, candidate)
-        if bad_encoding or observation & 2**50:
-            self.counts['rejected'] += 1
-            bad_entries = (observation // 2**44) % 16
-            if bad_encoding:
-                bad_entries |= 2**entry
-            overlap = (observation // 2**48) % 2
-            return response + 2**57 + 2**50 + overlap*2**48 + bad_entries*2**44
         self.counts['write'] += 1
         self.banks[bank] = candidate
         return response
@@ -87,8 +75,8 @@ def requests():
                         for enables in range(4):
                             yield 0, base+16, spr, 0, enables//2, enables%2, 0
                             yield 2, base+16, spr, 0, enables//2, enables%2, 1
-    # Invalid candidate updates must preserve both the partner half and every
-    # previously accepted mapping. Read each bank after rejected transactions.
+    # Formerly rejected values: reserved bits, invalid BL, IBAT W, misaligned
+    # BRPN. Each is stored as masked; read every bank after it.
     mutations = [0xffffffff, 0x20020007, 0x2000000b, 0x20002003,
                  0x80000006, 0x80000042, 0x80010002, 0x00000000]
     for spr in range(528, 544):
@@ -97,8 +85,8 @@ def requests():
                 yield 4, 0x76543210, spr, data, 1, 1, pr
                 for read_spr in range(528, 544):
                     yield 3, 0, read_spr, 0, 0, 0, 0
-    # Exact aliases of an existing bank entry reject for overlapping privilege;
-    # then a disabled lower half + privilege-disjoint alias is legal.
+    # Aliases of an existing entry resolve to the lowest-numbered match, then
+    # a privilege-disjoint alias.
     for bank in range(2):
         for way in range(4):
             yield 4, 0, 528 + bank*8 + way*2, 0, 0, 0, 0
