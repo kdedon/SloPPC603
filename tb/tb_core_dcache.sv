@@ -237,6 +237,9 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     li32(10,32'h8200); emit(asm_stw(7,0,10)); emit(asm_dcbi(0,10)); emit(asm_lwz(8,0,10));
     li32(10,32'h8300); emit(asm_dcbt(0,10)); emit(asm_lwz(8,4,10));
     li32(10,32'h8400); emit(asm_dcbtst(0,10)); emit(asm_stw(7,8,10)); emit(asm_lwz(8,8,10));
+    // Misses on a non-critical double word, then hits on the rest.
+    li32(10,32'h8900); emit(asm_lwz(8,32'h18,10)); emit(asm_lwz(8,0,10));
+    emit(asm_lwz(8,8,10)); emit(asm_stw(7,32'h14,10)); emit(asm_lwz(8,32'h10,10));
     emit(32'h7c00_04ac); emit(32'h7c00_06ac);
     // D: write-through page.
     emit(asm_stw(7,0,2)); emit(asm_lwz(8,0,2)); emit(asm_stw(26,4,2));
@@ -297,6 +300,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   logic [3:0] lsu_wstrb;
   dmem_attr_t lsu_attr;
   int flushed[$];
+  int syncs=0;
   int noopti_accepts=-1;
   function automatic logic [31:0] gold_word(input logic [31:2] a);
     int o;
@@ -329,6 +333,12 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
               check(biu.mem[flushed[i]+k]==gold[flushed[i]+k],
                     $sformatf("flushed line %08x not in memory", flushed[i]));
             flushed.delete();
+            // Write-through and inhibited stores are in memory after sync.
+            for (int a=32'h2_0000;a<32'h2_0100;a++)
+              check(biu.mem[a]==gold[a],$sformatf("write-through %08x not in memory at sync",a));
+            for (int a=32'h4_0000;a<32'h4_0100;a++)
+              check(biu.mem[a]==gold[a],$sformatf("inhibited %08x not in memory at sync",a));
+            syncs++;
           end
           CACHE_OP_DCBT: if (noopti_accepts>=0) begin
             check(biu.n_accepted==noopti_accepts,"NOOPTI touch reached the bus");
@@ -457,7 +467,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     check(expected.size()==0,$sformatf("%0d exceptions not taken",expected.size()));
     check(noopti_accepts==-2,"NOOPTI touch not observed");
     check(biu.n_read_burst>0&&biu.n_read_single>0&&biu.n_write_burst>0&&
-          biu.n_write_single>0&&biu.n_addr_only>=3&&biu.n_errors==2&&biu.n_push>0&&snoop_artry>0&&
+          biu.n_write_single>0&&biu.n_addr_only>=3&&biu.n_errors==2&&biu.n_push>0&&snoop_artry>0&&syncs>=3&&
           biu.tt_count[TT_RWITM]>0&&biu.tt_count[TT_WRITE_KILL]>0,
           $sformatf("coverage rb=%0d rs=%0d wb=%0d ws=%0d ao=%0d err=%0d",biu.n_read_burst,
                     biu.n_read_single,biu.n_write_burst,biu.n_write_single,biu.n_addr_only,biu.n_errors));
