@@ -75,22 +75,13 @@ module ppc_rename (
 
   // Payload writes ignore recovery; valid/ready/owner gate every read, so
   // stale bits in a freed slot are harmless.
-  always_ff @(posedge clk_i) begin
-    if (!rst_ni) begin
-      for (int i = 0; i < GPR_RENAME_DEPTH; i++) values[i] <= '0;
-    end else if (wake_match) begin
-      values[wake_i.tag] <= wake_i.value;
-    end
-  end
+  always_ff @(posedge clk_i)
+    if (wake_match) values[wake_i.tag] <= wake_i.value;
 
   // Only allocation changes a slot's owner; recovery leaves it intact.
-  always_ff @(posedge clk_i) begin
-    if (!rst_ni) begin
-      for (int i = 0; i < GPR_RENAME_DEPTH; i++) owners[i] <= '0;
-    end else if (alloc_i && alloc_ready_o) begin
-      owners[alloc_tag_o] <= alloc_producer_i;
-    end
-  end
+  // Unreset: read only through valid or map_valid.
+  always_ff @(posedge clk_i)
+    if (alloc_i && alloc_ready_o) owners[alloc_tag_o] <= alloc_producer_i;
 
   // synthesis translate_off
   for (genvar slot = 0; slot < GPR_RENAME_DEPTH; slot++) begin : owner_invariants

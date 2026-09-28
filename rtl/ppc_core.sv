@@ -487,8 +487,8 @@ module ppc_core #(
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni)
-      assert (!(special_result_valid && iu_result_valid))
-        else $error("special and IU results offered together");
+      assert (!(special_busy && iu_result_valid))
+        else $error("IU result offered while the special lane is busy");
   end
   // Only IU results produce operands a held RS entry waits for, so every wait
   // takes the back-to-back bypass.
@@ -589,10 +589,11 @@ module ppc_core #(
   assign context_pr_o = msr[MSR_PR];
 
   assign result_valid = special_result_valid || iu_result_valid;
-  assign result = special_result_valid ? special_result : iu_result;
-  assign special_result_ready = result_ready && special_result_valid;
   // A special op dispatches only into an idle IU and blocks dispatch until
-  // it finishes, so the two result sources are never valid together.
+  // it finishes, so the two result sources are never valid together and the
+  // registered busy state can steer the payload.
+  assign result = special_busy ? special_result : iu_result;
+  assign special_result_ready = result_ready && special_result_valid;
   assign iu_result_ready = result_ready;
   // Classify held identities without depending on cancel-masked valid signals.
   always_comb begin
