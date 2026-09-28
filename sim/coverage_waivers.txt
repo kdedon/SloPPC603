@@ -1,0 +1,18 @@
+# Control-module case arms that `make coverage` does not reach, with the
+# reason. Format: rtl file | source line, whitespace collapsed | reason.
+# A waiver matches every line of that file with the same text.
+rtl/ppc_bat_memory_router.sv | default: begin | unreachable: every enum value has an arm
+rtl/ppc_bus60x.sv | default: begin | unreachable: every enum value has an arm
+rtl/ppc_bus60x_line_read.sv | default: begin | unreachable: every enum value has an arm
+rtl/ppc_bus60x_line_read.sv | default: ; | unreachable: two-bit slot select is complete
+rtl/ppc_icache.sv | default: begin | unreachable: every enum value has an arm
+rtl/ppc_icache_managed.sv | default: begin | unreachable: every enum value has an arm
+rtl/ppc_tlb_service.sv | default: response_d.unsupported = 1'b1; | reserved request kind; external management port is tied off here
+rtl/ppc_bat_memory_router.sv | LANE_FATAL: i_state_q <= LANE_FATAL; | needs an instruction transport error (TEA); tb_core_bus60x_ifetch_error and the TEA hook cover it
+rtl/ppc_bat_memory_router.sv | ROUTE_IFETCH_FATAL: state_q <= ROUTE_IFETCH_FATAL; | needs an instruction transport error (TEA)
+rtl/ppc_bus60x.sv | BUS_ADDR_ABORT: begin | target protocol violation (AACK in the TS cycle); the stress targets are legal
+rtl/ppc_bus60x_line_read.sv | LINE_ADDR_ABORT: begin | target protocol violation (AACK in the TS cycle)
+rtl/ppc_bus60x_line_read.sv | LINE_DATA_ERROR_RELEASE: begin | needs TEA or an illegal DRTRY during a line fill
+rtl/ppc_icache.sv | IC_REFILL_DRAIN: begin | flash invalidate while an accepted refill awaits data; the managed wrapper holds invalidation until the refill ends (tb_icache covers the drain)
+rtl/ppc_tlb_service.sv | TLB_REFILL: begin | external management refill; this top ties the port off and CPU loads use the prepared path
+rtl/ppc_tlb_service.sv | TLB_INVALIDATE_SET: begin | external management invalidate; CPU tlbie uses the prepared path
