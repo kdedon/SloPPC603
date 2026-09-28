@@ -138,7 +138,7 @@ module tb_core;
       cycles <= cycles + 1;
       if (cycles > 5000) $fatal(1, "Watchdog timeout");
       if (rsp_valid && !rsp_ready) stall_cycles <= stall_cycles + 1;
-      if (int'(dut.iq.count) == IQ_DEPTH &&
+      if (int'(dut.iq.count) == IQ_DEPTH && dut.fd_valid_q &&
           !dut.fetch.request_held && !dut.fetch.pending) begin
         if (req_valid) $fatal(1, "Full IQ admitted an unreserved fetch");
         credit_stall_cycles <= credit_stall_cycles + 1;

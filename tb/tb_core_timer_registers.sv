@@ -139,7 +139,7 @@ module tb_core_timer_registers;
       default:return addi(0,0,0);
     endcase
   endfunction
-  assign tick=rst_n&&cycles%3!=0;
+  assign tick=rst_n&&cycles%3!=1;
   assign tben=cycles%11>=3;
   assign ir=rst_n&&!ipending&&cycles%3!=1;
   assign sv=rst_n&&ipending&&idelay==0;

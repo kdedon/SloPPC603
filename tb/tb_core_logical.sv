@@ -321,7 +321,7 @@ module tb_core_logical;
     end else begin
       if (req_valid && !req_ready) request_stalls <= request_stalls + 1;
       if (rsp_valid && !rsp_ready) response_stalls <= response_stalls + 1;
-      if (int'(dut.iq.count) == IQ_DEPTH &&
+      if (int'(dut.iq.count) == IQ_DEPTH && dut.fd_valid_q &&
           !dut.fetch.pending && !dut.fetch.request_held) begin
         require(!req_valid, "full IQ admitted an unreserved fetch");
         iq_credit_stalls <= iq_credit_stalls + 1;

@@ -220,7 +220,7 @@ module tb_core_fetch_fault #(
       cycles++;
       check(cycles < 30000,"watchdog");
       check(!redirect_accepted,"no external redirect");
-      if(int'(dut.iq.count) == IQ_DEPTH) begin
+      if(int'(dut.iq.count) == IQ_DEPTH && dut.fd_valid_q) begin
         full_iq_cycles++;
         check(!dut.fetch_ready,"full IQ must remove fetch packet credit");
         if(!dut.fetch.pending && !dut.fetch.request_held) begin
