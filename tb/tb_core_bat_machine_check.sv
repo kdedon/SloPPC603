@@ -108,7 +108,8 @@ module tb_core_bat_machine_check #(
       .maintenance_valid_i(1'b0), .maintenance_ready_o(),
       .maintenance_invalidate_i(1'b0), .maintenance_cache_enable_i(1'b0),
       .maintenance_done_valid_o(), .maintenance_done_ready_i(1'b0),
-      .cache_enabled_o(), .maintenance_busy_o()
+      .cache_enabled_o(), .dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
+    .maintenance_busy_o()
     );
   end else begin : scalar
     ppc_core_bat_bus60x #(.RESET_PC(32'b0),

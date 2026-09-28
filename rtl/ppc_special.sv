@@ -17,6 +17,8 @@ module ppc_special #(
   parameter bit ENABLE_TGPR = 1'b0,
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  // Cache-block instructions, lwarx/stwcx. and sync go to a data cache.
+  parameter bit ENABLE_DATA_CACHE = 1'b0,
   parameter bit ENABLE_RESERVATION = 1'b0,
   // Any-offset 1..4 byte accesses, split across two words when needed.
   parameter bit ENABLE_UNALIGNED_DATAPATH = 1'b0,
@@ -228,6 +230,10 @@ module ppc_special #(
   logic [7:0] strobe_window;
   // lwarx reservation; only stwcx. clears it (no other bus master).
   logic reserve_q, conditional_probe;
+  // Data-cache lane operations: sync and touches are memory requests, a
+  // touch that faults is a no-op, and a cache op's status returns in bit 0
+  // of the response word (dcbz alignment, stwcx. stored).
+  logic cache_sync, cache_touch, mem_killable, block_zero_align_q;
   logic branch_ctr_ok, branch_cond_ok, branch_redirect_taken;
   logic [31:0] branch_ctr_after;
   logic cr_logic_a, cr_logic_b, cr_logic_value;
@@ -241,7 +247,8 @@ module ppc_special #(
   logic block_zero_event;
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
   logic decrementer_selected_q, trace_selected_q;
-  logic mcp_selected_q, soft_reset_selected_q, smi_selected_q;
+  logic mcp_selected_q, soft_reset_selected_q, smi_selected_q, tea_selected_q;
+  logic pin_machine_check;
   logic pin_mcp_select, pin_soft_reset_select, pin_smi_select, pin_selected;
   logic tlbsync_held;
   logic fetch_machine_check, data_machine_check, machine_check_event;
@@ -301,11 +308,20 @@ module ppc_special #(
   // eciwx/ecowx with EAR[E] = 0 take a DSI without a bus transfer.
   assign external_denied = ENABLE_FULL_DECODE && uop_q.mem_external &&
                            !ear_q[EAR_E];
+  assign cache_sync = ENABLE_DATA_CACHE && (uop_q.special_op == SPECIAL_SYNC);
+  assign cache_touch = ENABLE_DATA_CACHE &&
+    ((uop_q.cache_op == CACHE_OP_DCBT) || (uop_q.cache_op == CACHE_OP_DCBTST));
+  assign mem_killable = (uop_q.special_op == SPECIAL_LOAD) || cache_sync;
   assign dmem_req_attr_o.kind =
+    (ENABLE_DATA_CACHE && (cache_sync || (uop_q.cache_op != CACHE_OP_NONE))) ?
+      DMEM_CACHE :
     (ENABLE_FULL_DECODE && uop_q.mem_external) ? DMEM_EXTERNAL :
     (ENABLE_RESERVATION && (uop_q.mem_reserve || uop_q.mem_conditional)) ?
       DMEM_ATOMIC : DMEM_NORMAL;
-  assign dmem_req_attr_o.rid = ear_q[3:0];
+  assign dmem_req_attr_o.rid =
+    !ENABLE_DATA_CACHE ? ear_q[3:0] :
+    cache_sync ? {1'b0, CACHE_OP_SYNC} :
+    (uop_q.cache_op != CACHE_OP_NONE) ? {1'b0, uop_q.cache_op} : ear_q[3:0];
   assign tlb_fill_cmp = (uop_i.special_op == SPECIAL_TLBLD) ? dcmp_q : icmp_q;
   // UM 2.1.2.3: the entry takes V and VSID from the compare word and the
   // page index from rB; H, API and the RPA R and reserved bits are unused.
@@ -609,7 +625,9 @@ module ppc_special #(
                  (((uop_q.mem_size == MEM_WORD) && (ea_q[1:0] != 0)) ||
                   ((uop_q.mem_size == MEM_HALF) && ea_q[0]));
     // A stwcx. without the reservation still checks translation (UM 4.5.3).
-    conditional_probe = ENABLE_RESERVATION && uop_q.mem_conditional && !reserve_q;
+    // With a data cache the reservation lives there.
+    conditional_probe = ENABLE_RESERVATION && !ENABLE_DATA_CACHE &&
+                        uop_q.mem_conditional && !reserve_q;
     mem_skip = uop_q.mem_skip;
     access_ea = beat_q ? {ea_q[31:2] + 30'd1, 2'b0} : ea_q;
     // UM 4.5.6.2: lmw/stmw alignment saves EA + 4 in DAR.
@@ -749,15 +767,20 @@ module ppc_special #(
                       (memory_result_q.data_fault == DATA_DSI_EXTERNAL));
   // Data is never cached here, so a translated dcbz takes the 603e
   // caching-inhibited alignment exception.
+  // With a data cache, only when the cache refuses (W=1, I=1 or a locked
+  // miss).
   assign block_zero_event = ENABLE_CACHE_INSTRUCTIONS && uop_q.block_zero &&
     (uop_q.special_op == SPECIAL_STORE) && !memory_result_q.fault &&
-    (memory_result_q.data_fault == DATA_OK);
+    (memory_result_q.data_fault == DATA_OK) &&
+    (!ENABLE_DATA_CACHE || block_zero_align_q);
   always_comb begin
     exception_event_valid = 1'b0;
     exception_event_kind = EVENT_SC;
     if (ENABLE_EXTERNAL_INTERRUPTS && (state_q == S_INTERRUPT_COMMIT)) begin
       exception_event_valid = 1'b1;
-      exception_event_kind = mcp_selected_q ? EVENT_MACHINE_CHECK_PIN :
+      // An asynchronous TEA reports as a TEA machine check (SRR1 bit 13).
+      exception_event_kind = mcp_selected_q ?
+          (tea_selected_q ? EVENT_MACHINE_CHECK : EVENT_MACHINE_CHECK_PIN) :
         soft_reset_selected_q ? EVENT_SOFT_RESET :
         trace_selected_q ? EVENT_TRACE : smi_selected_q ? EVENT_SMI :
         decrementer_selected_q ? EVENT_DECREMENTER : EVENT_EXTERNAL;
@@ -936,7 +959,9 @@ module ppc_special #(
       killed_d = 1'b0;
       fence_d = dispatch_fenced;
       if ((uop_i.special_op == SPECIAL_LOAD) ||
-          (uop_i.special_op == SPECIAL_STORE)) state_d = S_MEM_PREP;
+          (uop_i.special_op == SPECIAL_STORE) ||
+          (ENABLE_DATA_CACHE && (uop_i.special_op == SPECIAL_SYNC)))
+        state_d = S_MEM_PREP;
       else if (ENABLE_CACHE_INSTRUCTIONS &&
                (uop_i.special_op == SPECIAL_ICBI)) state_d = S_ICBI;
       else if (dispatch_fenced) state_d = S_CONTEXT_DRAIN;
@@ -959,11 +984,11 @@ module ppc_special #(
           fence_d = 1'b0;
           state_d = S_IDLE;
         end
-        S_MEM_OFFER: if (uop_q.special_op == SPECIAL_LOAD) begin
+        S_MEM_OFFER: if (mem_killable) begin
           killed_d = 1'b1;
           if (request_fire) state_d = S_MEM_DRAIN;
         end
-        S_MEM_WAIT: if (uop_q.special_op == SPECIAL_LOAD) begin
+        S_MEM_WAIT: if (mem_killable) begin
           killed_d = 1'b1;
           state_d = response_fire ? S_IDLE : S_MEM_DRAIN;
         end
@@ -1037,7 +1062,7 @@ module ppc_special #(
             fence_d = 1'b1;
             state_d = S_MEM_RESULT;
           end else if (misaligned || mem_skip) state_d = S_MEM_RESULT;
-          else if ((uop_q.special_op == SPECIAL_LOAD) || store_authorize_i)
+          else if (mem_killable || store_authorize_i)
             state_d = S_MEM_OFFER;
         end
         S_MEM_OFFER: if (request_fire) state_d = killed_q ? S_MEM_DRAIN : S_MEM_WAIT;
@@ -1079,11 +1104,14 @@ module ppc_special #(
 
   // Pin boundaries. The core offers a boundary only when one qualifies, and
   // MCP/SRESET never wait on MSR[EE].
-  assign pin_mcp_select = ENABLE_PIN_INTERRUPTS && pin_event_i.mcp;
+  // A latched asynchronous TEA shares the MCP boundary; MCP goes first.
+  assign pin_machine_check = pin_event_i.mcp ||
+    (ENABLE_DATA_CACHE && pin_event_i.tea);
+  assign pin_mcp_select = ENABLE_PIN_INTERRUPTS && pin_machine_check;
   assign pin_soft_reset_select = ENABLE_PIN_INTERRUPTS && pin_event_i.soft_reset &&
-    !pin_event_i.mcp;
+    !pin_machine_check;
   assign pin_smi_select = ENABLE_PIN_INTERRUPTS && pin_event_i.smi && msr_o[MSR_EE] &&
-    !pin_event_i.mcp && !pin_event_i.soft_reset &&
+    !pin_machine_check && !pin_event_i.soft_reset &&
     !(ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i);
   assign pin_selected = mcp_selected_q || soft_reset_selected_q || smi_selected_q;
   // UM 8.8.2: TLBISYNC stops completion at a tlbsync.
@@ -1094,7 +1122,15 @@ module ppc_special #(
     pin_status_o.reservation = reserve_q;
     pin_status_o.mcp_enable = hid0_q[HID0_EMCP];
     pin_status_o.machine_check_enable = msr_o[MSR_ME];
-    pin_status_o.mcp_taken = interrupt_accept && pin_mcp_select;
+    pin_status_o.mcp_taken = interrupt_accept && pin_mcp_select &&
+                             pin_event_i.mcp;
+    pin_status_o.tea_taken = interrupt_accept && pin_mcp_select &&
+                             !pin_event_i.mcp;
+    pin_status_o.dcache_enable = hid0_q[HID0_DCE];
+    pin_status_o.dcache_lock = hid0_q[HID0_DLOCK];
+    pin_status_o.dcache_flash_invalidate = hid0_q[HID0_DCFI];
+    pin_status_o.noop_touch = hid0_q[HID0_NOOPTI];
+    pin_status_o.broadcast_enable = hid0_q[HID0_ABE];
     pin_status_o.soft_reset_taken = interrupt_accept && pin_soft_reset_select;
     pin_status_o.smi_taken = interrupt_accept && pin_smi_select;
   end
@@ -1106,6 +1142,7 @@ module ppc_special #(
       decrementer_selected_q <= 1'b0;
       trace_selected_q <= 1'b0;
       mcp_selected_q <= 1'b0;
+      tea_selected_q <= 1'b0;
       soft_reset_selected_q <= 1'b0;
       smi_selected_q <= 1'b0;
       context_target_q <= '0;
@@ -1114,6 +1151,7 @@ module ppc_special #(
       // SRESET, then the traced instruction's trace, SMI, EXT, DEC.
       interrupt_q <= 1'b1;
       mcp_selected_q <= pin_mcp_select;
+      tea_selected_q <= pin_mcp_select && !pin_event_i.mcp;
       soft_reset_selected_q <= pin_soft_reset_select;
       smi_selected_q <= pin_smi_select;
       trace_selected_q <= ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i &&
@@ -1355,10 +1393,18 @@ module ppc_special #(
         DATA_MACHINE_CHECK: mem_response_fence = ENABLE_MACHINE_CHECK &&
           ENABLE_LIVE_CONTEXT;
         DATA_OK: mem_response_fence = ENABLE_CACHE_INSTRUCTIONS &&
-          uop_q.block_zero && ENABLE_LIVE_CONTEXT;
+          uop_q.block_zero && ENABLE_LIVE_CONTEXT &&
+          (!ENABLE_DATA_CACHE || dmem_rsp_rdata_i[0]);
         default: ;
       endcase
     end
+    if (cache_touch) mem_response_fence = 1'b0;
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) block_zero_align_q <= 1'b0;
+    else if (step_run && (state_q == S_MEM_WAIT) && response_fire)
+      block_zero_align_q <= ENABLE_DATA_CACHE && dmem_rsp_rdata_i[0] &&
+                            !dmem_rsp_error_i;
   end
   always_ff @(posedge clk_i) begin
     if (!rst_ni) memory_result_q <= '0;
@@ -1379,7 +1425,9 @@ module ppc_special #(
         memory_result_q <= '0;
         memory_result_q.producer <= producer_q;
         // stwcx.: CR0 = 00 || stored || XER[SO].
-        memory_result_q.cr0 <= {2'b0, !conditional_probe, xer_flags_q[2]};
+        memory_result_q.cr0 <= {2'b0,
+          ENABLE_DATA_CACHE ? dmem_rsp_rdata_i[0] : !conditional_probe,
+          xer_flags_q[2]};
         if (dmem_rsp_error_i) memory_result_q.fault <= 1'b1;
         else begin
           case (dmem_rsp_fault_i)
@@ -1406,6 +1454,12 @@ module ppc_special #(
         end
         memory_result_q.update_value <= ea_q;
         memory_result_q.value <= load_value;
+        // A touch never reports a fault.
+        if (cache_touch) begin
+          memory_result_q.fault <= 1'b0;
+          memory_result_q.data_fault <= DATA_OK;
+          memory_result_q.page_miss <= '0;
+        end
       end
     end
   end

@@ -195,8 +195,9 @@ benches.
 
 `ppc_dcache_slot` sits between the LSU's physical port and the BIU's scalar
 data port inside `ppc_core_bat_cached_bus60x`. With `ENABLE_DCACHE=0` (the
-only value accepted today) every access passes straight through, as with
-HID0[DCE]=0.
+default, and the chip's value) every access passes straight through, as with
+HID0[DCE]=0. With `ENABLE_DCACHE=1` the slot holds `ppc_dcache` and exports
+its BIU ports; see [DATA_CACHE_INTEGRATION.md](DATA_CACHE_INTEGRATION.md).
 
 LSU side (from translation; one access outstanding; valid/ready handshakes,
 a request is held stable until accepted, a response until taken):

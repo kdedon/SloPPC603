@@ -879,3 +879,10 @@ Chip firmware images set HID0[ICE] in a `CHIP_BOOT` crt0 block; the pin top rese
 with the instruction cache off (UM Table 4-8). Fresh on the branch, same tree as
 the merge: `make -C sim ci`. MVP 89.05% → 89.25%.
 
+## Data cache LSU round — accepted (2026-09-28)
+
+The data cache sits in `ppc_dcache_slot` behind `ENABLE_DCACHE` and serves the
+core's loads, stores, cache operations, reservation and sync; its bus side is
+exported for the BIU round. Fresh on the merge: `make -C sim ci`. MVP 89.25% →
+91.25%. See [integration](../../DATA_CACHE_INTEGRATION.md).
+

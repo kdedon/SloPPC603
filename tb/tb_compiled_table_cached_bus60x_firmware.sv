@@ -131,6 +131,10 @@ module tb_compiled_table_cached_bus60x_firmware #(
     .maintenance_done_valid_o(maintenance_done),
     .maintenance_done_ready_i(1'b1),
     .cache_enabled_o(cache_enabled),
+    // No data cache in this profile.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .maintenance_busy_o(maintenance_busy),
     .br_n_o(br_n),.bg_n_i(bg_n),
     .abb_n_i(abb_oe?abb_n:1'b1),.abb_n_o(abb_n),.abb_oe_o(abb_oe),

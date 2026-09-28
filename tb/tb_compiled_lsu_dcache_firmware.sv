@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
-// Compiled cache-operation firmware on the translated cached 60x top. The
-// pin target retries (ARTRY), replaces read beats (DRTRY), holds line fills
-// and delays at random; EXT and external cache invalidation also arrive at
-// random. The firmware checks its own results and reports through tohost.
+// The compiled load/store-extension firmware with the data cache in the
+// translated cached top, on from reset, and its BIU ports on the bench BIU
+// (seeded delays). Instruction fetch keeps the randomized pin target. The
+// mailbox is seen at the LSU port, since cached stores need not reach the
+// bus; after the mailbox the bench flushes nothing and checks coverage.
 /* verilator lint_off BLKSEQ */
-module tb_compiled_cacheops_firmware;
+module tb_compiled_lsu_dcache_firmware;
+  localparam bit LSU_EXTENSIONS = 1'b1;
   import ppc_pkg::*;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
   logic start_valid=0,start_ready,running,cir,cdr,cpr;
-  logic tv,tr,halted,ifetch_error,protocol_error,bus_busy,pimem_error;
+  logic tv,tr,halted,unused_checkstop,ifetch_error,protocol_error,bus_busy,pimem_error;
   logic irq=0,irq_taken,dec_taken,tick=0,translation_fault;
   logic [31:0] irq_pc,dec_pc;
   retire_packet_t retired;
@@ -28,21 +30,37 @@ module tb_compiled_cacheops_firmware;
   int bfm_wait=0;
   int unsigned rng=32'h2468ace1;
   int cycles=0,retires=0,hold_until=0;
-  int icbi_count=0,ext_count=0,dec_count=0,maintenance_commands=0;
-  int align_entries=0,dsi_entries=0,cache_hits=0,cache_misses=0,held_fills=0;
-  int busy_cycles=0,maintenance_busy_cycles=0;
+  int align_entries=0,cache_hits=0,cache_misses=0,held_fills=0;
+  int split_writes=0,partials=0;
+  logic lsu_write;
+  logic [31:0] lsu_addr,lsu_wdata;
+  logic [3:0] lsu_wstrb;
+  dmem_attr_t lsu_attr;
   localparam int FW_MEM_BYTES=65536;
   function automatic string check_detail();
-    return $sformatf(" bus=%08x icbi=%0d",bus_a,icbi_count);
+    return $sformatf(" bus=%08x",bus_a);
   endfunction
+  `define FW_DUMP_ARRAY biu.mem
+  ppc_pkg::dcache_bus_out_t dc_out;
+  ppc_pkg::dcache_bus_in_t dc_in;
+  logic dc_busy;
+  int dc_hits=0,dc_misses=0;
   `include "compiled_firmware.svh"
 
   /* verilator lint_off PINCONNECTEMPTY */
-  logic unused_checkstop;
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'hfff00100),.ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
-    .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1),
-    .ENABLE_TIMERS(1'b1),.ENABLE_CACHE_INSTRUCTIONS(1'b1)) dut(
+    .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),
+    .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),
+    .ENABLE_SDR1(1'b1),.ENABLE_TGPR(1'b1),.ENABLE_TLB_MISS_EXCEPTIONS(1'b1),
+    .ENABLE_PAGE_TRANSLATION(1'b1),.ENABLE_PAGE_MISS_RESULTS(1'b1),
+    .ENABLE_PAGE_DATA_EXCEPTIONS(1'b1),.ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),
+    .ENABLE_TLB_INVALIDATE(1'b1),.ENABLE_TLB_LOAD(1'b1),
+    .ENABLE_CACHE_INSTRUCTIONS(1'b1),
+    .ENABLE_BYTE_REVERSE(LSU_EXTENSIONS),.ENABLE_MULTIPLE_STRING(LSU_EXTENSIONS),
+    .ENABLE_RESERVATION(LSU_EXTENSIONS),.ENABLE_MISALIGNED_ACCESS(LSU_EXTENSIONS),
+    .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_PIN_INTERRUPTS(1'b1),
+    .ENABLE_DCACHE(1'b1),.RESET_DCACHE_ENABLE(1'b1)) dut(
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .timer_tick_i(tick),.timebase_enable_i(1'b1),
@@ -72,7 +90,7 @@ module tb_compiled_cacheops_firmware;
     .running_o(running),.context_ir_o(cir),.context_dr_o(cdr),
     .context_pr_o(cpr),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),
-    .checkstop_o(unused_checkstop), .halted_o(halted),.redirect_valid_i(1'b0),.redirect_all_i(1'b0),
+    .halted_o(halted),.checkstop_o(unused_checkstop),.redirect_valid_i(1'b0),.redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i('0),.redirect_accepted_o(),
     .translation_fault_o(translation_fault),.fault_instruction_o(),.fault_write_o(),
@@ -88,7 +106,7 @@ module tb_compiled_cacheops_firmware;
     .maintenance_invalidate_i(1'b1),.maintenance_cache_enable_i(1'b1),
     .maintenance_done_valid_o(maintenance_done_valid),
     .maintenance_done_ready_i(maintenance_done_ready),
-    .cache_enabled_o(cache_enabled),.dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
+    .cache_enabled_o(cache_enabled),.dcache_bus_o(dc_out),.dcache_bus_i(dc_in),.dcache_busy_o(dc_busy),
     .maintenance_busy_o(maintenance_busy),
     .br_n_o(br_n),.bg_n_i(bg_n),.abb_n_i(1'b1),
     .abb_n_o(abb_n),.abb_oe_o(abb_oe),.ts_n_o(ts_n),.ts_oe_o(ts_oe),
@@ -109,7 +127,14 @@ module tb_compiled_cacheops_firmware;
     .bg_n_o(bg_n),.aack_n_o(aack_n),.artry_n_o(artry_n),.dbg_n_o(dbg_n),
     .d_o(data_in),.ta_n_o(ta_n),.drtry_n_o(drtry_n),.tea_n_o(tea_n)
   );
+  dcache_biu_bfm #(.BASE_ADDR(BASE),.MEM_BYTES(FW_MEM_BYTES)) biu(
+    .clk_i(clk),.rst_ni(rst_n),.bus_i(dc_out),.bus_o(dc_in));
   assign tr=rst_n&&retire_enable;
+  // Interrupt, cache-status and maintenance outputs are idle in this profile.
+  logic unused_outputs;
+  assign unused_outputs=^{running,irq_pc,dec_pc,cache_busy,cache_enabled,
+                          maintenance_ready,maintenance_done_valid,maintenance_busy,dc_busy,
+                          lsu_attr.rid};
 
   function automatic int unsigned rnd();
     rng^=rng<<13; rng^=rng>>17; rng^=rng<<5;
@@ -129,32 +154,34 @@ module tb_compiled_cacheops_firmware;
       end
       if(cache_hit)cache_hits++;
       if(cache_miss)cache_misses++;
-      if(cache_busy)busy_cycles++;
-      if(maintenance_busy)maintenance_busy_cycles++;
-      if(maintenance_done_valid)check(cache_enabled,"invalidation keeps the cache enabled");
-      if(dut.icbi_req_valid&&dut.icbi_req_ready)icbi_count++;
-      if(irq_taken)begin
-        ext_count++;
-        check(irq&&irq_pc>=BASE,"accepted EXT");
-        irq<=0;
+      check(!irq_taken&&!dec_taken,"no interrupt source is active");
+      check(!addr_oe||!ts_oe||ts_n||tc==2,"data reached the 60x pins past the cache");
+      if(dut.dcache_slot.g_cache.dc_hit)dc_hits++;
+      if(dut.dcache_slot.g_cache.dc_miss)dc_misses++;
+      // Mirror each store at the LSU port so the mailbox rule sees it.
+      if(dut.dcache_slot.lsu_req_valid_i&&dut.dcache_slot.lsu_req_ready_o)begin
+        lsu_write=dut.dcache_slot.lsu_req_write_i;lsu_addr=dut.dcache_slot.lsu_req_addr_i;
+        lsu_wdata=dut.dcache_slot.lsu_req_wdata_i;lsu_wstrb=dut.dcache_slot.lsu_req_wstrb_i;
+        lsu_attr=dut.dcache_slot.lsu_req_attr_i;
+        if(lsu_write&&lsu_attr.kind!=DMEM_CACHE&&(lsu_wstrb==4'b1110||lsu_wstrb==4'b0111))
+          split_writes++;
       end
-      if(dec_taken)begin
-        dec_count++;
-        check(dec_pc>=BASE,"accepted DEC");
-      end
-      // Mirror each written word so the mailbox rule sees it.
-      if(!ta_n&&dbb_oe&&tt==5'b00010&&bus_a>=BASE&&bus_a<BASE+32'(FW_MEM_BYTES))begin
-        int size;
-        size=(tsiz==0)?8:int'(tsiz);
-        for(int k=0;k<size;k++)
-          mem[int'(bus_a-BASE)+k]=data_out[63-8*(int'(bus_a[2:0])+k) -:8];
-        mailbox_store(bus_a,size==4);
+      if(dut.dcache_slot.lsu_rsp_valid_o&&dut.dcache_slot.lsu_rsp_ready_i&&lsu_write&&
+         lsu_attr.kind!=DMEM_CACHE&&!dut.dcache_slot.lsu_rsp_error_o&&
+         (lsu_attr.kind!=DMEM_ATOMIC||dut.dcache_slot.lsu_rsp_rdata_o[0]))begin
+        int first;
+        first=-1;
+        for(int k=0;k<4;k++)if(lsu_wstrb[3-k])begin
+          mem[int'(lsu_addr-BASE)+k]=lsu_wdata[31-8*k -:8];
+          if(first<0)first=k;
+        end
+        mailbox_store(lsu_addr+32'(first),lsu_wstrb==4'hf);
       end
       if(tv&&tr)begin
         retires++;
         check(^retired!==1'bx&&!retired.illegal,"known legal retirement");
         if(retired.pc==BASE+32'h600)align_entries++;
-        if(retired.pc==BASE+32'h300)dsi_entries++;
+        if(retired.seq_partial)partials++;
         mailbox_retire();
       end
     end
@@ -173,50 +200,27 @@ module tb_compiled_cacheops_firmware;
       hold_until=cycles+5+int'(rnd()%40);
       held_fills++;
     end
-    if(rst_n&&dut.icbi_req_valid&&target.in_data&&target.burst&&
-       hold_until<=cycles&&rnd()%2==0)
-      hold_until=cycles+8+int'(rnd()%16);
     bfm_hold=hold_until>cycles;
-    if(rst_n&&running&&!irq&&!mailbox_written&&rnd()%3000==0)irq=1;
-  end
-
-  initial begin : maintenance_control
-    wait(rst_n&&running);
-    forever begin
-      repeat(4000+int'(rnd()%8000))@(posedge clk);
-      if(mailbox_written)break;
-      @(negedge clk);
-      maintenance_valid=1;
-      #1;
-      while(!maintenance_ready)begin @(negedge clk);#1;end
-      @(posedge clk);
-      @(negedge clk);
-      maintenance_valid=0;
-      maintenance_commands++;
-      while(!maintenance_done_valid)@(negedge clk);
-      repeat(int'(rnd()%20))@(negedge clk);
-      maintenance_done_ready=1;
-      @(posedge clk);
-      @(negedge clk);
-      maintenance_done_ready=0;
-    end
   end
 
   initial begin
     load_image();
-    for(int i=0;i<FW_MEM_BYTES;i++)target.mem[i]=mem[i];
+    for(int i=0;i<FW_MEM_BYTES;i++)begin target.mem[i]=mem[i];biu.mem[i]=mem[i];end
     repeat(4)@(negedge clk);rst_n=1;
     @(negedge clk);start_valid=1;
     do @(posedge clk);while(!start_ready);
     @(negedge clk);start_valid=0;
     wait(mailbox_retired);
     repeat(20)@(posedge clk);
-    check(icbi_count>=64&&align_entries==1&&dsi_entries==5&&dec_count>0&&
-          cache_hits>0&&cache_misses>0&&target.retries>0&&target.drtries>0&&
-          held_fills>0&&busy_cycles>0&&cir&&cdr&&!cpr,"cache-operation firmware coverage");
-    $display("PASS compiled cache operations: checks=%0d retires=%0d cycles=%0d icbi=%0d ext=%0d dec=%0d maint=%0d retries=%0d drtries=%0d held=%0d hits=%0d misses=%0d",
-      checks,retires,cycles,icbi_count,ext_count,dec_count,maintenance_commands,
-      target.retries,target.drtries,held_fills,cache_hits,cache_misses);
+    check(align_entries==2&&partials>0&&split_writes>0&&dc_hits>0&&dc_misses>0&&
+          biu.n_read_burst>0&&!cir&&!cdr&&!cpr,
+          $sformatf("coverage align=%0d partial=%0d three_byte=%0d hits=%0d retries=%0d drtries=%0d ctx=%0d%0d%0d",
+                    align_entries,partials,split_writes,cache_hits,target.retries,
+                    target.drtries,cir,cdr,cpr));
+    $display("PASS compiled load/store extensions with data cache: checks=%0d retires=%0d partial=%0d cycles=%0d align=%0d three_byte_stores=%0d dcache_hits=%0d dcache_misses=%0d fills=%0d castouts=%0d single_reads=%0d single_writes=%0d icache_hits=%0d icache_misses=%0d held=%0d",
+      checks,retires,partials,cycles,align_entries,split_writes,dc_hits,dc_misses,
+      biu.n_read_burst,biu.n_write_burst,biu.n_read_single,biu.n_write_single,
+      cache_hits,cache_misses,held_fills);
     $finish;
   end
 endmodule

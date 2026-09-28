@@ -24,6 +24,8 @@ module ppc_core_bat #(
   parameter bit ENABLE_TEST_REDIRECT = 1'b1,
   parameter bit ENABLE_MICRO_TLB = 1'b1,
   parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  // Cache-block instructions, lwarx/stwcx. and sync go to a data cache.
+  parameter bit ENABLE_DATA_CACHE = 1'b0,
   parameter bit ENABLE_BYTE_REVERSE = 1'b0,
   parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
   parameter bit ENABLE_RESERVATION = 1'b0,
@@ -159,6 +161,14 @@ module ppc_core_bat #(
   logic dmem_rsp_valid, dmem_rsp_ready, dmem_rsp_error;
   logic [31:0] dmem_rsp_rdata;
   logic dmem_req_probe, probe_q, probe_rsp_q;
+  logic sync_req, sync_offer_q, sync_wait_q, router_quiescent;
+  logic router_dmem_req_ready, router_dmem_rsp_valid, router_dmem_rsp_error;
+  logic [31:0] router_dmem_rsp_rdata;
+  ppc_pkg::data_fault_t router_dmem_rsp_fault;
+  ppc_pkg::page_miss_t router_dmem_rsp_page_miss;
+  logic router_pdmem_req_write;
+  logic [31:0] router_pdmem_req_addr, router_pdmem_req_wdata;
+  logic [3:0] router_pdmem_req_wstrb, router_pdmem_req_wimg;
   ppc_pkg::dmem_attr_t dmem_req_attr, attr_q;
   logic router_pdmem_req_valid, router_pdmem_req_ready;
   logic router_pdmem_rsp_valid, router_pdmem_rsp_ready;
@@ -231,6 +241,7 @@ module ppc_core_bat #(
     .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT),
     .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_DATA_CACHE(ENABLE_DATA_CACHE),
     .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
@@ -411,14 +422,18 @@ module ppc_core_bat #(
     .running_o, .context_ir_o, .context_dr_o, .context_pr_o,
     .context_valid_i(context_valid), .context_ready_o(context_ready),
     .context_ir_i(committed_ir), .context_dr_i(committed_dr),
-    .context_pr_i(committed_pr), .quiescent_o(memory_quiescent),
+    .context_pr_i(committed_pr), .quiescent_o(router_quiescent),
     .pimem_req_valid_o, .pimem_req_ready_i, .pimem_req_addr_o,
     .pimem_req_wimg_o, .pimem_rsp_valid_i, .pimem_rsp_ready_o,
     .pimem_rsp_insn_i, .pimem_rsp_error_i,
     .pdmem_req_valid_o(router_pdmem_req_valid),
-    .pdmem_req_ready_i(router_pdmem_req_ready), .pdmem_req_write_o,
-    .pdmem_req_addr_o, .pdmem_req_wdata_o, .pdmem_req_wstrb_o,
-    .pdmem_req_wimg_o, .pdmem_rsp_valid_i(router_pdmem_rsp_valid),
+    .pdmem_req_ready_i(router_pdmem_req_ready),
+    .pdmem_req_write_o(router_pdmem_req_write),
+    .pdmem_req_addr_o(router_pdmem_req_addr),
+    .pdmem_req_wdata_o(router_pdmem_req_wdata),
+    .pdmem_req_wstrb_o(router_pdmem_req_wstrb),
+    .pdmem_req_wimg_o(router_pdmem_req_wimg),
+    .pdmem_rsp_valid_i(router_pdmem_rsp_valid),
     .pdmem_rsp_ready_o(router_pdmem_rsp_ready),
     .pdmem_rsp_rdata_i(probe_q ? 32'b0 : pdmem_rsp_rdata_i),
     .pdmem_rsp_error_i(!probe_q && pdmem_rsp_error_i),
@@ -427,13 +442,16 @@ module ppc_core_bat #(
     .imem_rsp_ready_i(imem_rsp_ready), .imem_rsp_insn_o(imem_rsp_insn),
     .imem_rsp_fault_o(imem_rsp_fault),
     .imem_rsp_page_miss_o(imem_rsp_page_miss),
-    .dmem_req_valid_i(dmem_req_valid), .dmem_req_ready_o(dmem_req_ready),
+    .dmem_req_valid_i(dmem_req_valid && !sync_req),
+    .dmem_req_ready_o(router_dmem_req_ready),
     .dmem_req_write_i(dmem_req_write), .dmem_req_addr_i(dmem_req_addr),
     .dmem_req_wdata_i(dmem_req_wdata), .dmem_req_wstrb_i(dmem_req_wstrb),
-    .dmem_rsp_valid_o(dmem_rsp_valid), .dmem_rsp_ready_i(dmem_rsp_ready),
-    .dmem_rsp_fault_o(dmem_rsp_fault),
-    .dmem_rsp_page_miss_o(dmem_rsp_page_miss),
-    .dmem_rsp_rdata_o(dmem_rsp_rdata), .dmem_rsp_error_o(dmem_rsp_error),
+    .dmem_rsp_valid_o(router_dmem_rsp_valid),
+    .dmem_rsp_ready_i(dmem_rsp_ready && !sync_wait_q),
+    .dmem_rsp_fault_o(router_dmem_rsp_fault),
+    .dmem_rsp_page_miss_o(router_dmem_rsp_page_miss),
+    .dmem_rsp_rdata_o(router_dmem_rsp_rdata),
+    .dmem_rsp_error_o(router_dmem_rsp_error),
     .translation_fault_o, .fault_instruction_o, .fault_write_o, .fault_ea_o,
     .fault_miss_o, .fault_protection_o, .fault_guarded_o, .fault_config_o,
     .fault_invalid_input_o, .fault_invalid_entry_o, .pimem_error_o,
@@ -452,26 +470,56 @@ module ppc_core_bat #(
     else $error("page instruction exceptions require supervisor and page translation");
   // synthesis translate_on
 
-  // A translated cache-block probe completes here instead of on the physical
-  // port. The data lane holds one request, so its accepted flag covers the
-  // router's physical offer and response.
-  assign router_pdmem_req_ready = probe_q ? !probe_rsp_q : pdmem_req_ready_i;
-  assign pdmem_req_valid_o = router_pdmem_req_valid && !probe_q;
+  // Without a data cache a translated cache-block probe completes here
+  // instead of on the physical port. The data lane holds one request, so its
+  // accepted flag covers the router's physical offer and response.
+  assign router_pdmem_req_ready = probe_q ? !probe_rsp_q :
+                                  (pdmem_req_ready_i && !sync_offer_q);
+  // sync has no address: it bypasses translation straight to the cache.
+  assign sync_req = ENABLE_DATA_CACHE &&
+    (dmem_req_attr.kind == ppc_pkg::DMEM_CACHE) &&
+    (dmem_req_attr.rid == {1'b0, ppc_pkg::CACHE_OP_SYNC});
+  assign dmem_req_ready = sync_req ? !(sync_offer_q || sync_wait_q) :
+                                     router_dmem_req_ready;
+  assign memory_quiescent = router_quiescent && !sync_offer_q && !sync_wait_q;
+  assign pdmem_req_valid_o = sync_offer_q || (router_pdmem_req_valid && !probe_q);
+  assign pdmem_req_write_o = !sync_offer_q && router_pdmem_req_write;
+  assign pdmem_req_addr_o = sync_offer_q ? 32'b0 : router_pdmem_req_addr;
+  assign pdmem_req_wdata_o = sync_offer_q ? 32'b0 : router_pdmem_req_wdata;
+  assign pdmem_req_wstrb_o = sync_offer_q ? 4'b0 : router_pdmem_req_wstrb;
+  assign pdmem_req_wimg_o = sync_offer_q ? 4'b0011 : router_pdmem_req_wimg;
   // The lane has one data obligation, so the physical request belongs to
   // the last accepted virtual one.
   assign pdmem_req_attr_o = attr_q;
-  assign router_pdmem_rsp_valid = probe_q ? probe_rsp_q : pdmem_rsp_valid_i;
-  assign pdmem_rsp_ready_o = router_pdmem_rsp_ready && !probe_q;
+  assign router_pdmem_rsp_valid = probe_q ? probe_rsp_q :
+                                  (pdmem_rsp_valid_i && !sync_wait_q);
+  assign pdmem_rsp_ready_o = sync_wait_q ? dmem_rsp_ready :
+                             (router_pdmem_rsp_ready && !probe_q);
+  assign dmem_rsp_valid = sync_wait_q ? pdmem_rsp_valid_i : router_dmem_rsp_valid;
+  assign dmem_rsp_fault = sync_wait_q ? ppc_pkg::DATA_OK : router_dmem_rsp_fault;
+  assign dmem_rsp_page_miss = sync_wait_q ? '0 : router_dmem_rsp_page_miss;
+  assign dmem_rsp_rdata = sync_wait_q ? 32'b0 : router_dmem_rsp_rdata;
+  assign dmem_rsp_error = !sync_wait_q && router_dmem_rsp_error;
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       probe_q <= 1'b0;
       probe_rsp_q <= 1'b0;
+      sync_offer_q <= 1'b0;
+      sync_wait_q <= 1'b0;
       attr_q <= '0;
     end else begin
       if (dmem_req_valid && dmem_req_ready) begin
-        probe_q <= ENABLE_CACHE_INSTRUCTIONS && dmem_req_probe;
+        probe_q <= ENABLE_CACHE_INSTRUCTIONS && !ENABLE_DATA_CACHE &&
+                   dmem_req_probe;
+        sync_offer_q <= sync_req;
         attr_q <= dmem_req_attr;
       end
+      if (sync_offer_q && pdmem_req_ready_i) begin
+        sync_offer_q <= 1'b0;
+        sync_wait_q <= 1'b1;
+      end
+      if (sync_wait_q && pdmem_rsp_valid_i && dmem_rsp_ready)
+        sync_wait_q <= 1'b0;
       if (probe_q && router_pdmem_req_valid && !probe_rsp_q)
         probe_rsp_q <= 1'b1;
       else if (probe_rsp_q && router_pdmem_rsp_ready)
