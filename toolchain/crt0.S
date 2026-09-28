@@ -24,7 +24,7 @@ _start:
 .Lbss_done:
     lis 4,tohost@ha
     stw 0,tohost@l(4)
-#if defined(ENABLE_ALIGNMENT_SMOKE) || defined(ENABLE_FETCH_SMOKE) || defined(ENABLE_LIVE_SMOKE) || defined(ENABLE_IRQ_SMOKE) || defined(ENABLE_TIMER_SMOKE) || defined(ENABLE_RUNTIME_BAT_SMOKE) || defined(ENABLE_DSI_SMOKE) || defined(ENABLE_SEGMENT_SMOKE) || defined(ENABLE_PAGE_SMOKE) || defined(ENABLE_TLBIE_SMOKE) || defined(ENABLE_TLBLOAD_SMOKE) || defined(ENABLE_PAGE_DSI_SMOKE) || defined(ENABLE_PAGE_ISI_SMOKE) || defined(ENABLE_CACHEOPS_SMOKE) || defined(ENABLE_LSU_SMOKE) || defined(ENABLE_MACHINE_CHECK_SMOKE) || defined(ENABLE_FULL_DECODE_SMOKE)
+#if defined(ENABLE_ALIGNMENT_SMOKE) || defined(ENABLE_FETCH_SMOKE) || defined(ENABLE_LIVE_SMOKE) || defined(ENABLE_IRQ_SMOKE) || defined(ENABLE_TIMER_SMOKE) || defined(ENABLE_RUNTIME_BAT_SMOKE) || defined(ENABLE_DSI_SMOKE) || defined(ENABLE_SEGMENT_SMOKE) || defined(ENABLE_PAGE_SMOKE) || defined(ENABLE_TLBIE_SMOKE) || defined(ENABLE_TLBLOAD_SMOKE) || defined(ENABLE_PAGE_DSI_SMOKE) || defined(ENABLE_PAGE_ISI_SMOKE) || defined(ENABLE_CACHEOPS_SMOKE) || defined(ENABLE_LSU_SMOKE) || defined(ENABLE_MACHINE_CHECK_SMOKE) || defined(ENABLE_FULL_DECODE_SMOKE) || defined(ENABLE_RESIDUALS_SMOKE)
     /* Select high exception vectors using the currently supported RFI path. */
     lis 5,.Lsupervisor_ready@ha
     addi 5,5,.Lsupervisor_ready@l

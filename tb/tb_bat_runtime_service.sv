@@ -116,16 +116,16 @@ module tb_bat_runtime_service;
   endtask
 
 
-  task automatic prepare(input logic [9:0] selector,input logic[31:0] data,input bit reject);
+  task automatic prepare(input logic [9:0] selector,input logic[31:0] data);
     send(5,0,selector,data,0,0,0);
-    check(rsp_rejected==reject&&!rsp_privileged&&!rsp_unsupported,"prepare result class");
+    check(!rsp_rejected&&!rsp_privileged&&!rsp_unsupported,"prepare result class");
     check(!ack_valid&&!idle,"prepare is not a committed write");
     repeat(3)begin
       @(posedge clk);#1;
       check(rsp_valid&&!req_ready&&!ack_valid,"held prepare response permitted reuse/ack");
     end
     consume();
-    check(idle==reject,"successful prepare must retain reservation after response");
+    check(!idle,"prepare must retain reservation after response");
   endtask
   task automatic commit_prepared;
     @(negedge clk);prepare_commit=1;
@@ -141,7 +141,7 @@ module tb_bat_runtime_service;
     check(!ack_valid,"abort fabricated write acknowledgment");
   endtask
   task automatic committed(input logic [9:0] selector,input logic[31:0] data);
-    prepare(selector,data,0);commit_prepared();model[selector-528]=data;get(selector,data);
+    prepare(selector,data);commit_prepared();model[selector-528]=data;get(selector,data);
   endtask
   initial begin
     logic[136:0] held_response;
@@ -152,7 +152,7 @@ module tb_bat_runtime_service;
     for(int i=0;i<16;i++)begin
       logic[31:0] value;
       value=(32'(i+1)<<17)|(i%2==1?32'd2:0);
-      prepare(10'(528+i),value,0);abort_prepared();check(idle,"abort did not release reservation");get(10'(528+i),0);
+      prepare(10'(528+i),value);abort_prepared();check(idle,"abort did not release reservation");get(10'(528+i),0);
       committed(10'(528+i),value);
     end
     for(int i=0;i<16;i++)get(10'(528+i),model[i]);
@@ -176,25 +176,27 @@ module tb_bat_runtime_service;
     @(posedge clk);#1;prepare_abort=0;
     check(rsp_valid&&!ack_valid&&!rsp_rejected,"validation-cycle abort lost response");consume();
     check(idle,"validation-cycle abort retained proposal");get(528,model[0]);
-    // Local rejections do not mutate any bank half.
-    prepare(528,32'h00000014,1);get(528,model[0]); // malformed inactive BL
-    prepare(528,32'h00002000,1);get(528,model[0]); // reserved upper bit
-    prepare(529,32'h00000004,1);get(529,model[1]); // reserved lower bit
+    // Any value is stored; reserved fields read as zero (PEM Table 2-12).
+    committed(528,32'h00000014); // inactive BL outside PEM Table 7-10
+    prepare(528,32'h00002000);commit_prepared();model[0]=0;get(528,0); // reserved upper bit
+    prepare(529,32'h00000004);commit_prepared();model[1]=0;get(529,0); // reserved lower bit
     send(5,0,528,0,1,0,0);check(rsp_privileged&&!rsp_rejected,"user prepare must reject privilege");consume();check(idle,"privileged rejection reserved bank");
     send(5,0,527,0,0,0,0);check(rsp_unsupported,"out-of-range prepare selector accepted");consume();
-    // Disable/lower/upper staging; active overlap and alignment reject only
-    // activation, while safe inactive intermediate addresses remain legal.
+    // Disable/lower/upper staging. An overlapping activation resolves to the
+    // lowest-numbered entry; a BRPN bit under BL ORs with the offset.
     reset_service();foreach(model[i])model[i]=0;
     committed(529,32'h00020002);committed(528,32'h00000002);
     send(0,32'h1000,0,0,0,1,0);check(rsp_status[8]&&rsp_status[6]&&rsp_pa==32'h21000,"committed instruction translation");consume();
-    committed(531,32'h00060002);prepare(530,32'h00000002,1);get(530,0);get(528,2);
+    committed(531,32'h00060002);committed(530,32'h00000002);get(528,2);
+    send(0,32'h1000,0,0,0,1,0);check(rsp_status[8]&&rsp_match==4'b0011&&rsp_index==0&&rsp_pa==32'h21000,"overlap did not resolve to entry 0");consume();
     committed(528,0);committed(529,32'h00040002);committed(528,32'h00020002);
     send(0,32'h21000,0,0,0,1,0);check(rsp_status[8]&&rsp_pa==32'h41000,"replacement translation used mixed bank halves");consume();
-    committed(528,0);committed(529,32'h00020002);prepare(528,32'h0000000e,1);get(528,0);
+    committed(528,0);committed(529,32'h00020002);committed(528,32'h0000000e);
+    send(0,32'h41000,0,0,0,1,0);check(rsp_status[8]&&rsp_index==0&&rsp_pa==32'h61000,"BRPN under BL did not OR with the offset");consume();
     // Reset clears proposal/response/ack plus the documented reset-zero bank.
     for(int phase=0;phase<3;phase++)begin
       if(phase==0)send(5,0,528,32'h00080000,0,0,0);
-      else begin prepare(528,32'h00080000,0);if(phase==2)begin
+      else begin prepare(528,32'h00080000);if(phase==2)begin
         @(negedge clk);prepare_commit=1;@(posedge clk);#1;prepare_commit=0;check(ack_valid,"reset ack fixture");
       end end
       reset_service();check(idle&&!ack_valid,"reset retained transaction state");

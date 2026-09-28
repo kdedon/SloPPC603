@@ -177,13 +177,21 @@ module tb_exception_tlb_miss #(
     run_miss_case(1'b1, EVENT_TLB_D_STORE, 4'h3, 1'b1, 1'b1,
                   32'h300b_c073, 32'hfff0_1200);
 
-    // Unsupported contexts and malformed PC never change any state.
+    // UM Table 4-7: a miss taken in TGPR mode sets TGPR again and
+    // overwrites SRR0/SRR1.
     load_state(32'h0002_0000, 32'h9876_5000, 32'h1234_5678);
     offer_event(EVENT_TLB_I_MISS, 32'h2000_0000, 4'hc, 1'b1, 1'b1);
-    check_bit("nested TGPR reject", result_supported_o, 1'b0);
-    check_word("nested MSR unchanged", msr_o, 32'h0002_0000);
-    check_word("nested SRR0 unchanged", srr0_o, 32'h9876_5000);
+    check_bit("nested TGPR miss taken", result_supported_o,
+              ENABLE_TLB_MISS_EXCEPTIONS);
+    check_word("nested MSR", msr_o, 32'h0002_0000);
+    check_word("nested SRR0", srr0_o,
+               ENABLE_TLB_MISS_EXCEPTIONS ? 32'h2000_0000 : 32'h9876_5000);
+    check_word("nested SRR1", srr1_o,
+               ENABLE_TLB_MISS_EXCEPTIONS ? 32'hc00e_0000 : 32'h1234_5678);
+    check_word("nested target", result_target_o,
+               ENABLE_TLB_MISS_EXCEPTIONS ? 32'h0000_1000 : 32'b0);
     drain_result();
+    // Malformed PC never changes any state.
     load_state(32'h0000_0000, 32'h9876_5000, 32'h1234_5678);
     offer_event(EVENT_TLB_D_LOAD, 32'h2000_0002, 4'hc, 1'b1, 1'b1);
     check_bit("unaligned PC reject", result_supported_o, 1'b0);

@@ -199,7 +199,7 @@ module ppc_special #(
   logic [31:0] sdr1_q, iabr_q;
   logic [31:0] imiss_q, dmiss_q, hash1_q, hash2_q;
   logic [31:0] hid0_q, ear_q;
-  logic trap_taken_q, trap_event, hid0_write, dispatch_hid0_write;
+  logic trap_taken_q, hid0_write, dispatch_hid0_write;
   logic icache_change, external_denied;
   page_miss_t fetch_page_miss_q, miss_context;
   logic fetch_page_miss_opcode, data_page_miss_opcode;
@@ -210,9 +210,9 @@ module ppc_special #(
   logic fetch_miss_eligible_q, fetch_miss_eligible;
   logic [31:0] dispatch_miss_unused [4];
   logic data_changed_cause;
-  logic miss_spr_read_invalid, miss_event_commit, data_exception_event;
+  logic miss_event_commit, data_exception_event;
   logic [31:0] derived_miss_page, derived_compare, derived_hash1, derived_hash2;
-  logic sdr1_write, dispatch_sdr1_write, sdr1_write_invalid_q;
+  logic sdr1_write, dispatch_sdr1_write;
   logic killed_q;
   result_packet_t memory_result_q;
   logic commit_match, result_fire, request_fire, response_fire;
@@ -237,7 +237,7 @@ module ppc_special #(
   logic [31:0] exception_result_target;
   logic exception_state_load_valid, exception_state_load_ready;
   logic [2:0] exception_state_load_enable;
-  logic rfi_state_unsupported, exception_entry_unsupported, dsi_event;
+  logic rfi_state_unsupported, dsi_event;
   logic block_zero_event;
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
   logic decrementer_selected_q, trace_selected_q;
@@ -250,6 +250,7 @@ module ppc_special #(
   // only the fenced transaction, response and latest retained target.
   logic bat_operation, segment_operation, tlbie_operation;
   logic tlb_fill_opcode, tlb_fill_operation, tlb_fill_local_error_q;
+  logic tlb_fill_invalidate_q;
   logic dispatch_bat, dispatch_segment, dispatch_tlbie, dispatch_tlb_fill;
   logic [31:0] tlb_fill_cmp;
   logic tlb_fill_seed_invalid;
@@ -272,7 +273,8 @@ module ppc_special #(
     ((uop_i.special_op == SPECIAL_MFSR) ||
      (uop_i.special_op == SPECIAL_MTSR));
   assign tlbie_operation = ENABLE_TLB_INVALIDATE &&
-    (uop_q.special_op == SPECIAL_TLBIE);
+    ((uop_q.special_op == SPECIAL_TLBIE) ||
+     (tlb_fill_opcode && tlb_fill_invalidate_q));
   assign dispatch_tlbie = ENABLE_TLB_INVALIDATE &&
     (uop_i.special_op == SPECIAL_TLBIE);
   assign tlb_fill_opcode = (uop_q.special_op == SPECIAL_TLBLD) ||
@@ -296,7 +298,6 @@ module ppc_special #(
                               (state_q == S_ICACHE_CTL);
   assign icache_ctl_enable_o = hid0_q[HID0_ICE];
   assign icache_ctl_invalidate_o = hid0_q[HID0_ICFI];
-  assign trap_event = (uop_q.special_op == SPECIAL_TRAP) && trap_taken_q;
   // eciwx/ecowx with EAR[E] = 0 take a DSI without a bus transfer.
   assign external_denied = ENABLE_FULL_DECODE && uop_q.mem_external &&
                            !ear_q[EAR_E];
@@ -306,13 +307,15 @@ module ppc_special #(
       DMEM_ATOMIC : DMEM_NORMAL;
   assign dmem_req_attr_o.rid = ear_q[3:0];
   assign tlb_fill_cmp = (uop_i.special_op == SPECIAL_TLBLD) ? dcmp_q : icmp_q;
-  // Accept only miss-shaped seeds whose compare word matches the EA that
-  // selects the TLB entry.
-  assign tlb_fill_seed_invalid = !tlb_fill_cmp[31] || tlb_fill_cmp[6] ||
-    (tlb_fill_cmp[5:0] != b_i[27:22]) ||
-    (|rpa_q[11:9]) || rpa_q[2] || (|msr_o[5:4]);
+  // UM 2.1.2.3: the entry takes V and VSID from the compare word and the
+  // page index from rB; H, API and the RPA R and reserved bits are unused.
+  // V=0 leaves the selected entry invalid: the load becomes a tlbie of its
+  // congruence class, which also drops the other way and the other TLB.
+  assign tlb_fill_seed_invalid = !tlb_fill_cmp[31];
+  logic _unused_tlb_fill_cmp;
+  assign _unused_tlb_fill_cmp = ^tlb_fill_cmp[6:0];
   assign tlb_fill_operation = ENABLE_TLB_LOAD && tlb_fill_opcode &&
-                              !tlb_fill_local_error_q;
+                              !tlb_fill_local_error_q && !tlb_fill_invalidate_q;
   assign mmu_operation = bat_operation || segment_operation || tlbie_operation ||
                          tlb_fill_operation;
   assign mmu_req_write = (bat_operation &&
@@ -424,10 +427,9 @@ module ppc_special #(
     (ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0) |
     (ENABLE_FULL_DECODE ? 32'h0000_0900 : 32'b0);
 
-  // TGPR mode excludes EE, PR, IR, DR and trace.
+  // TGPR combines with any other mode: every exception entry clears it.
   function automatic logic live_mode_supported(input logic [31:0] value);
-    return !(|(value & LIVE_UNSUPPORTED_MASK)) &&
-      (!value[17] || (!(|value[15:14]) && !(|value[5:4]) && !(|value[10:9])));
+    return !(|(value & LIVE_UNSUPPORTED_MASK));
   endfunction
 
   function automatic logic context_operation(input special_op_t op);
@@ -555,20 +557,9 @@ module ppc_special #(
           mtmsr_unsupported) result_o.fault = 1'b1;
       if ((uop_q.special_op == SPECIAL_RFI) &&
           rfi_state_unsupported) result_o.fault = 1'b1;
-      if (miss_spr_read_invalid ||
-          (fetch_page_miss_opcode && !fetch_miss_eligible))
-        result_o.fault = 1'b1;
-      if (sdr1_write && sdr1_write_invalid_q)
+      if (fetch_page_miss_opcode && !fetch_miss_eligible)
         result_o.fault = 1'b1;
       if (tlb_fill_opcode && tlb_fill_local_error_q)
-        result_o.fault = 1'b1;
-      if (((uop_q.special_op == SPECIAL_SC) ||
-           (uop_q.special_op == SPECIAL_PROGRAM_ILLEGAL) ||
-           (uop_q.special_op == SPECIAL_PROGRAM_PRIV) ||
-           (uop_q.special_op == SPECIAL_ALIGNMENT) ||
-           (uop_q.special_op == SPECIAL_ISI) ||
-           (uop_q.special_op == SPECIAL_FP_UNAVAILABLE) || trap_event) &&
-          exception_entry_unsupported && !fetch_machine_check)
         result_o.fault = 1'b1;
     end else if (state_q == S_MMU_RESULT) begin
       result_valid_o = !cancel_i;
@@ -705,8 +696,9 @@ module ppc_special #(
       (uop_q.special_op == SPECIAL_STORE)) &&
      (!data_changed_cause ||
       (uop_q.special_op == SPECIAL_STORE)));
+  // UM Table 4-7: a miss taken in TGPR mode sets TGPR again.
   assign miss_eligible = ENABLE_TLB_MISS_EXCEPTIONS &&
-    !msr_o[17] && miss_derive_valid && miss_provenance_valid;
+    miss_derive_valid && miss_provenance_valid;
   ppc_miss_derive dispatch_miss_derive (
     .ea_i(dispatch_page_miss_i.ea), .sr_i(dispatch_page_miss_i.sr),
     .sdr1_i(sdr1_q), .valid_o(dispatch_fetch_miss_valid),
@@ -717,18 +709,13 @@ module ppc_special #(
   assign _unused_dispatch_miss = ^{dispatch_miss_unused[0], dispatch_miss_unused[1],
                                    dispatch_miss_unused[2], dispatch_miss_unused[3]};
   assign dispatch_fetch_miss_eligible = ENABLE_TLB_MISS_EXCEPTIONS &&
-    !msr_o[17] && dispatch_fetch_miss_valid &&
+    dispatch_fetch_miss_valid &&
     (dispatch_page_miss_i.ea == pc_i) && dispatch_page_miss_i.ir &&
     (dispatch_page_miss_i.ir == msr_o[5]) &&
     (dispatch_page_miss_i.dr == msr_o[4]) &&
     (dispatch_page_miss_i.pr == msr_o[14]) &&
     !dispatch_page_miss_i.write && !dispatch_page_miss_i.sr[28];
   assign fetch_miss_eligible = ENABLE_TLB_MISS_EXCEPTIONS && fetch_miss_eligible_q;
-  assign miss_spr_read_invalid = ENABLE_TLB_MISS_EXCEPTIONS &&
-    (uop_q.special_op == SPECIAL_MFSPR) &&
-    ((uop_q.spr == 10'd976) || (uop_q.spr == 10'd978) ||
-     (uop_q.spr == 10'd979) || (uop_q.spr == 10'd980)) &&
-    (|msr_o[5:4]);
   // The committed miss changes MSR before its held redirect is consumed,
   // so use the captured result kind.
   assign data_exception_event = dsi_event || block_zero_event ||
@@ -743,7 +730,6 @@ module ppc_special #(
   assign rfi_state_unsupported = ENABLE_LIVE_CONTEXT ?
     !live_mode_supported(rfi_msr(msr_o, srr1_o)) :
     |(srr1_o & RFI_UNSUPPORTED_ACTIVE_MASK);
-  assign exception_entry_unsupported = msr_o[17];
   assign fetch_machine_check = ENABLE_MACHINE_CHECK &&
     (uop_q.special_op == SPECIAL_ISI) &&
     (uop_q.fetch_fault == FETCH_MACHINE_CHECK);
@@ -786,18 +772,18 @@ module ppc_special #(
             exception_event_kind = EVENT_MACHINE_CHECK;
           end else if (ENABLE_DEBUG_EXCEPTIONS &&
                        (uop_q.fetch_fault == FETCH_IABR)) begin
-            exception_event_valid = !exception_entry_unsupported;
+            exception_event_valid = 1'b1;
             exception_event_kind = EVENT_IABR;
           end else if (fetch_page_miss_opcode) begin
             exception_event_valid = fetch_miss_eligible;
             exception_event_kind = EVENT_TLB_I_MISS;
           end else begin
-            exception_event_valid = !exception_entry_unsupported;
+            exception_event_valid = 1'b1;
             exception_event_kind = EVENT_ISI;
           end
         end
         SPECIAL_ALIGNMENT: begin
-          exception_event_valid = !exception_entry_unsupported;
+          exception_event_valid = 1'b1;
           exception_event_kind = EVENT_ALIGNMENT;
         end
         SPECIAL_LOAD, SPECIAL_STORE: begin
@@ -810,15 +796,15 @@ module ppc_special #(
               (uop_q.special_op == SPECIAL_STORE) ?
                 EVENT_TLB_D_STORE : EVENT_TLB_D_LOAD;
           end else if (block_zero_event) begin
-            exception_event_valid = !exception_entry_unsupported;
+            exception_event_valid = 1'b1;
             exception_event_kind = EVENT_ALIGNMENT;
           end else begin
-            exception_event_valid = !exception_entry_unsupported && dsi_event;
+            exception_event_valid = dsi_event;
             exception_event_kind = EVENT_DSI;
           end
         end
         SPECIAL_SC: begin
-          exception_event_valid = !exception_entry_unsupported;
+          exception_event_valid = 1'b1;
           exception_event_kind = EVENT_SC;
         end
         SPECIAL_RFI: begin
@@ -826,21 +812,19 @@ module ppc_special #(
           exception_event_kind = EVENT_RFI;
         end
         SPECIAL_PROGRAM_ILLEGAL: begin
-          exception_event_valid = !exception_entry_unsupported;
+          exception_event_valid = 1'b1;
           exception_event_kind = EVENT_PROGRAM_ILLEGAL;
         end
         SPECIAL_PROGRAM_PRIV: begin
-          exception_event_valid = !exception_entry_unsupported;
+          exception_event_valid = 1'b1;
           exception_event_kind = EVENT_PROGRAM_PRIV;
         end
         SPECIAL_TRAP: begin
-          exception_event_valid = ENABLE_FULL_DECODE && trap_taken_q &&
-                                  !exception_entry_unsupported;
+          exception_event_valid = ENABLE_FULL_DECODE && trap_taken_q;
           exception_event_kind = EVENT_PROGRAM_TRAP;
         end
         SPECIAL_FP_UNAVAILABLE: begin
-          exception_event_valid = ENABLE_FULL_DECODE &&
-                                  !exception_entry_unsupported;
+          exception_event_valid = ENABLE_FULL_DECODE;
           exception_event_kind = EVENT_FP_UNAVAILABLE;
         end
         default: ;
@@ -911,8 +895,7 @@ module ppc_special #(
      tlb_fill_commit_o || exception_event_valid || (state_q == S_EXCEPTION_RESULT) ||
      (state_q == S_ICACHE_CTL) || ((state_q == S_HOLD) && commit_match && icache_change) ||
      (state_q == S_EXCEPTION_HALT) || checkstop_commit || (state_q == S_CHECKSTOP) ||
-     ((state_q == S_HOLD) && commit_match && sdr1_write &&
-      !sdr1_write_invalid_q) ||
+     ((state_q == S_HOLD) && commit_match && sdr1_write) ||
      (state_q == S_CONTEXT_INSTALL) || (state_q == S_CONTEXT_REDIRECT) ||
      (ENABLE_LIVE_CONTEXT && exception_state_load_valid &&
       (uop_q.special_op == SPECIAL_MTMSR)));
@@ -932,7 +915,7 @@ module ppc_special #(
                            dispatch_hid0_write;
   assign context_install = (ENABLE_LIVE_CONTEXT &&
     (uop_q.special_op == SPECIAL_MTMSR) && !mtmsr_unsupported) ||
-    (sdr1_write && !sdr1_write_invalid_q) ||
+    sdr1_write ||
     // Fenced fetch discarded responses; refetch after the instruction.
     hid0_write || (ENABLE_FULL_DECODE && (uop_q.special_op == SPECIAL_TRAP));
   assign exception_result_accept = exception_result_valid &&
@@ -1265,7 +1248,6 @@ module ppc_special #(
       rpa_q <= '0;
       sdr1_q <= SDR1_RESET;
       iabr_q <= '0;
-      sdr1_write_invalid_q <= 1'b0;
       imiss_q <= '0;
       dmiss_q <= '0;
       hash1_q <= '0;
@@ -1274,8 +1256,6 @@ module ppc_special #(
       ear_q <= '0;
       timer_read_value_q <= '0;
     end else begin
-      if (dispatch_fire)
-        sdr1_write_invalid_q <= dispatch_sdr1_write && (|msr_o[5:4]);
       if (timer_read_execute && step_run) timer_read_value_q <= exec_value;
       if (hold_commit) begin
         if ((uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd8))
@@ -1286,7 +1266,7 @@ module ppc_special #(
           case (uop_q.spr)
             10'd18: dsisr_q <= a_q;
             10'd19: dar_q <= a_q;
-            10'd25: if (ENABLE_SDR1 && !sdr1_write_invalid_q)
+            10'd25: if (ENABLE_SDR1)
               sdr1_q <= a_q & SDR1_WMASK;
             10'd977: if (ENABLE_TLB_LOAD) dcmp_q <= a_q;
             10'd981: if (ENABLE_TLB_LOAD) icmp_q <= a_q;
@@ -1370,12 +1350,12 @@ module ppc_special #(
       case (dmem_rsp_fault_i)
         DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE:
           mem_response_fence = ENABLE_SUPERVISOR_EXCEPTIONS &&
-            !exception_entry_unsupported && ENABLE_LIVE_CONTEXT;
+            ENABLE_LIVE_CONTEXT;
         DATA_PAGE_MISS, DATA_PAGE_CHANGED: mem_response_fence = miss_eligible;
         DATA_MACHINE_CHECK: mem_response_fence = ENABLE_MACHINE_CHECK &&
           ENABLE_LIVE_CONTEXT;
         DATA_OK: mem_response_fence = ENABLE_CACHE_INSTRUCTIONS &&
-          uop_q.block_zero && !exception_entry_unsupported && ENABLE_LIVE_CONTEXT;
+          uop_q.block_zero && ENABLE_LIVE_CONTEXT;
         default: ;
       endcase
     end
@@ -1386,8 +1366,7 @@ module ppc_special #(
       if ((state_q == S_MEM_PREP) && external_denied) begin
         memory_result_q <= '0;
         memory_result_q.producer <= producer_q;
-        if (ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT &&
-            !exception_entry_unsupported)
+        if (ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT)
           memory_result_q.data_fault <= DATA_DSI_EXTERNAL;
         else memory_result_q.fault <= 1'b1;
       end else if ((state_q == S_MEM_PREP) && (misaligned || mem_skip)) begin
@@ -1404,10 +1383,9 @@ module ppc_special #(
         if (dmem_rsp_error_i) memory_result_q.fault <= 1'b1;
         else begin
           case (dmem_rsp_fault_i)
-            DATA_OK: if (uop_q.block_zero && exception_entry_unsupported)
-              memory_result_q.fault <= 1'b1;
+            DATA_OK: ;
             DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE: begin
-              if (ENABLE_SUPERVISOR_EXCEPTIONS && !exception_entry_unsupported)
+              if (ENABLE_SUPERVISOR_EXCEPTIONS)
                 memory_result_q.data_fault <= dmem_rsp_fault_i;
               else memory_result_q.fault <= 1'b1;
             end
@@ -1441,6 +1419,7 @@ module ppc_special #(
       mmu_resume_target_q <= '0;
       tlb_fill_payload_q <= '0;
       tlb_fill_local_error_q <= 1'b0;
+      tlb_fill_invalidate_q <= 1'b0;
     end else begin
       if (dispatch_fire) mmu_resume_target_q <= pc_i + 32'd4;
       else if ((mmu_operation || sdr1_write ||
@@ -1452,7 +1431,10 @@ module ppc_special #(
           ea: b_i, vsid: tlb_fill_cmp[30:7], way: srr1_o[17],
           rpn: rpa_q[31:12], c: rpa_q[7], wimg: rpa_q[6:3],
           pp: rpa_q[1:0]};
-        tlb_fill_local_error_q <= dispatch_tlb_fill && tlb_fill_seed_invalid;
+        tlb_fill_local_error_q <= dispatch_tlb_fill && tlb_fill_seed_invalid &&
+                                  !ENABLE_TLB_INVALIDATE;
+        tlb_fill_invalidate_q <= dispatch_tlb_fill && tlb_fill_seed_invalid &&
+                                 ENABLE_TLB_INVALIDATE;
         mmu_error_q <= 1'b0;
         mmu_response_pending_q <= 1'b0;
       end else begin
@@ -1480,6 +1462,18 @@ module ppc_special #(
       if (fetch_page_miss_opcode && ((state_q == S_EXEC) || (state_q == S_HOLD)))
         assert (fetch_miss_eligible == miss_eligible)
           else $error("registered fetch-miss eligibility went stale");
+      // Context changes drain and refetch, so a miss always carries the
+      // committed context and the diagnostic miss fault is unreachable.
+      if (ENABLE_TLB_MISS_EXCEPTIONS && (state_q == S_HOLD) && commit_match &&
+          fetch_page_miss_opcode)
+        assert (fetch_miss_eligible)
+          else $error("fetch page miss lost its capture provenance");
+      if (ENABLE_TLB_MISS_EXCEPTIONS && (state_q == S_MEM_WAIT) && response_fire &&
+          !killed_q && !cancel_i && !dmem_rsp_error_i &&
+          ((dmem_rsp_fault_i == DATA_PAGE_MISS) ||
+           (dmem_rsp_fault_i == DATA_PAGE_CHANGED)))
+        assert (miss_eligible)
+          else $error("data page miss lost its capture provenance");
       assert (timer_read_q == reads_timer(uop_q.special_op, uop_q.spr))
         else $error("registered timer-read decode disagrees with the held uop");
       if (tlb_fill_commit_o)

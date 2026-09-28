@@ -30,8 +30,9 @@ MSR[17]/TGPR. The result target is offset `0x1000`, `0x1100`, or `0x1200`
 under the captured old MSR[IP], with the physical high prefix chosen by IP.
 The offsets require a 13-bit vector input internally.
 
-A disabled event, unaligned PC, or event while TGPR is already active returns
-`result_supported_o=0` without changing MSR/SRR0/SRR1. State-load collisions
+A disabled event or unaligned PC returns
+`result_supported_o=0` without changing MSR/SRR0/SRR1. A miss taken while
+TGPR is already set is accepted and sets it again (UM Table 4-7). State-load collisions
 obey the existing event priority; no load is accepted while a result is held.
 The result remains stable under backpressure. The existing 603e-specific
 `rfi` behavior still clears TGPR even if SRR1.WAY is one (Table 2-1 and

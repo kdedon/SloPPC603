@@ -6,6 +6,9 @@ The isolated runner executes original DingusPPC instruction handlers and compare
 
 Seeded mixed-program stress lane: [REFERENCE_STRESS.md](REFERENCE_STRESS.md).
 
+Compiled firmware images are compared separately; see
+[REFERENCE_FIRMWARE.md](REFERENCE_FIRMWARE.md).
+
 ## Reproduce
 
 From the repository root:

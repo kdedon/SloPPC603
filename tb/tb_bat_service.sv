@@ -85,12 +85,11 @@ module tb_bat_service;
     @(negedge clk); rsp_ready = 0;
   endtask
 
-  task automatic put(input logic [9:0] spr, input logic [31:0] data, input logic reject);
+  task automatic put(input logic [9:0] spr, input logic [31:0] data);
     send(3'd4, 32'h11223344, spr, data, 0, 0, 0);
-    check(!rsp_privileged && !rsp_unsupported && rsp_rejected == reject && rsp_data == 0,
+    check(!rsp_privileged && !rsp_unsupported && !rsp_rejected && rsp_data == 0,
           "CSR write result class");
-    if (!reject) check(observed[56:0] == 0, "successful write has no translation result");
-    else check(rsp_status[2] && !rsp_status[8], "rejected write gives local config error");
+    check(observed[56:0] == 0, "write has no translation result");
     consume();
   endtask
 
@@ -220,9 +219,9 @@ module tb_bat_service;
         spr_number = 10'(528 + b * 8 + e * 2);
         upper_value = 32'h80000003 + 32'(e) * 32'h20000;
         lower_value = (b == 0 ? 32'h10000002 : 32'h2000002a) + 32'(e) * 32'h20000;
-        put(spr_number + 10'd1, lower_value, 0);
+        put(spr_number + 10'd1, lower_value);
         get(spr_number, 0);
-        put(spr_number, upper_value, 0);
+        put(spr_number, upper_value);
         get(spr_number + 10'd1, lower_value);
         get(spr_number, upper_value);
         translated(b == 0 ? 3'd0 : 3'd1, 32'h80001234 + 32'(e) * 32'h20000,
@@ -245,34 +244,42 @@ module tb_bat_service;
     check(rsp_unsupported, "unknown request kind unsupported"); consume();
     get(536, 32'h80000003);
 
-    // Bad writes leave both halves and the opposite bank untouched.
-    put(536, 32'h80002003, 1); // upper reserved
-    put(537, 32'h20000006, 1); // lower reserved
-    put(536, 32'h8000000b, 1); // noncontiguous BL
-    put(529, 32'h10000042, 1); // unsupported IBAT W
-    put(536, 32'h80000007, 1); // 256KiB overlaps entry1
-    get(536, 32'h80000003); get(537, 32'h2000002a);
+    // Reserved fields are stored as zero (PEM Table 2-12).
+    put(536, 32'h80002003); get(536, 32'h80000003);
+    put(537, 32'h20000006); get(537, 32'h20000002);
+    put(537, 32'h2000002a);
+    // A BL outside PEM Table 7-10 masks bitwise: BL=2 drops EA bit 18, so
+    // 0x8004_xxxx also hits entry 0, which wins the overlap with entry 2.
+    put(536, 32'h8000000b); get(536, 32'h8000000b);
+    translated(1, 32'h80041234, 0, 9'h140, 32'h20041234, 4'h5, 2, 4'b0101, 0);
+    // IBAT W is stored (PEM Table 2-12 note: boundedly undefined).
+    put(529, 32'h10000042); get(529, 32'h10000042);
+    put(529, 32'h10000002);
+    // Overlapping valid entries: the lowest-numbered match translates.
+    put(536, 32'h80000007); get(536, 32'h80000007);
+    translated(1, 32'h80021234, 0, 9'h140, 32'h20021234, 4'h5, 2, 4'b0011, 0);
     get(528, 32'h80000003); get(529, 32'h10000002);
 
-    // Disable/lower/upper reconfiguration; failed enable cannot clobber a
-    // prepared partner. Other active entries remain intact.
-    put(536, 0, 0);
+    // Disable/lower/upper reconfiguration. Other active entries remain intact.
+    put(536, 0);
     translated(1, 32'h80001234, 0, 9'h020, 0, 0, 0, 0, 0);
-    put(537, 32'h30020002, 0);
-    put(536, 32'h90000007, 1); // candidate BRPN not 256KiB aligned
-    get(536, 0); get(537, 32'h30020002);
-    put(537, 32'h30000002, 0);
-    put(536, 32'h90000007, 0);
+    put(537, 32'h30020002);
+    // A BRPN bit under the 256KiB mask ORs with the offset (PEM 2.1).
+    put(536, 32'h90000007);
+    get(536, 32'h90000007); get(537, 32'h30020002);
+    translated(1, 32'h90001234, 0, 9'h140, 32'h30021234, 0, 2, 1, 0);
+    put(537, 32'h30000002);
+    put(536, 32'h90000007);
     translated(1, 32'h90031234, 1, 9'h140, 32'h30031234, 0, 2, 1, 0);
     translated(0, 32'h80001234, 0, 9'h140, 32'h10001234, 0, 2, 1, 0);
 
     // Privilege-validity miss, read-only store fault, specific guarded I fault.
-    put(536, 32'h90000006, 0);
+    put(536, 32'h90000006);
     translated(1, 32'h90001234, 1, 9'h020, 0, 0, 0, 0, 0);
-    put(537, 32'h30000001, 0);
+    put(537, 32'h30000001);
     translated(2, 32'h90001234, 0, 9'h050, 0, 0, 1, 1, 0);
     translated(1, 32'h90001234, 0, 9'h140, 32'h30001234, 0, 1, 1, 0);
-    put(529, 32'h1000000a, 0);
+    put(529, 32'h1000000a);
     translated(0, 32'h80001234, 0, 9'h048, 0, 1, 2, 1, 0);
     send(0, 32'hdeadbeef, 0, 0, 0, 0, 1);
     check(rsp_status == 9'h180 && rsp_pa == 32'hdeadbeef && rsp_wimg == 1,

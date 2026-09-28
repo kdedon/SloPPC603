@@ -311,14 +311,18 @@ module tb_exception_state #(
       end
       consume_result();
     end
-    for(int rejected=0;rejected<2;rejected++)begin
-      load_state(3'b001,(rejected != 0) ? 32'h00028000 : 32'h00000000,0,0);
-      held_msr=msr;held_srr0=srr0;held_srr1=srr1;
-      accept_event(EVENT_EXTERNAL,32'h2340);
-      require(!result_supported && result_target==0 &&
-              msr==held_msr && srr0==held_srr0 && srr1==held_srr1,"masked/TGPR IRQ mutated state");
-      consume_result();
-    end
+    load_state(3'b001,32'h00000000,0,0);
+    held_msr=msr;held_srr0=srr0;held_srr1=srr1;
+    accept_event(EVENT_EXTERNAL,32'h2340);
+    require(!result_supported && result_target==0 &&
+            msr==held_msr && srr0==held_srr0 && srr1==held_srr1,"masked IRQ mutated state");
+    consume_result();
+    // UM Table 4-7: entry from TGPR mode clears it; SRR1 never holds TGPR.
+    load_state(3'b111,32'h00028000,0,0);
+    accept_event(EVENT_EXTERNAL,32'h2340);
+    require(result_supported && result_target==32'h500 &&
+            srr0==32'h2340 && srr1==32'h8000 && msr==0,"TGPR-mode IRQ entry");
+    consume_result();
 
     // DEC differs from external IRQ: full-function MSR fields are saved.
     for(int prefix=0;prefix<2;prefix++)begin
@@ -336,14 +340,17 @@ module tb_exception_state #(
       end
       consume_result();
     end
-    for(int rejected=0;rejected<2;rejected++)begin
-      load_state(3'b001,(rejected!=0)?32'h00028000:32'h00000000,0,0);
-      held_msr=msr;held_srr0=srr0;held_srr1=srr1;
-      accept_event(EVENT_DECREMENTER,32'h3450);
-      require(!result_supported && result_target==0 &&
-              msr==held_msr && srr0==held_srr0 && srr1==held_srr1,"masked/TGPR DEC mutated state");
-      consume_result();
-    end
+    load_state(3'b001,32'h00000000,0,0);
+    held_msr=msr;held_srr0=srr0;held_srr1=srr1;
+    accept_event(EVENT_DECREMENTER,32'h3450);
+    require(!result_supported && result_target==0 &&
+            msr==held_msr && srr0==held_srr0 && srr1==held_srr1,"masked DEC mutated state");
+    consume_result();
+    load_state(3'b111,32'h00028000,0,0);
+    accept_event(EVENT_DECREMENTER,32'h3450);
+    require(result_supported && result_target==32'h900 &&
+            srr0==32'h3450 && srr1==32'h8000 && msr==0,"TGPR-mode DEC entry");
+    consume_result();
 
     // Supervisor RFI restores the implemented SRR1 subset, preserves partial
     // function bits, clears TGPR, and aligns the saved target. SRR1 reserved
@@ -378,8 +385,8 @@ module tb_exception_state #(
     held_srr0 = srr0;
     held_srr1 = srr1;
 
-    // Misaligned boundaries, unknown causes, and nested non-RFI events in
-    // TGPR mode are explicit no-state-change rejections.
+    // Misaligned boundaries and unknown causes are explicit no-state-change
+    // rejections.
     accept_event(EVENT_SC, 32'h0000_6002);
     require(!result_supported && result_target == 0,
             "misaligned committed boundary was accepted");
@@ -395,19 +402,20 @@ module tb_exception_state #(
             "unknown event kind changed architectural state");
     consume_result();
 
+    // UM Table 4-7: a program exception in TGPR mode is taken and clears it.
     load_state(3'b001, 32'h0002_0000, 32'b0, 32'b0);
-    held_srr0 = srr0;
-    held_srr1 = srr1;
     accept_event(EVENT_PROGRAM_ILLEGAL, 32'h0000_7000);
-    require(!result_supported && msr == 32'h0002_0000 &&
-            srr0 == held_srr0 && srr1 == held_srr1,
-            "TGPR-mode nested program event was not rejected");
+    require(result_supported && result_target == 32'h0000_0700 &&
+            msr == 32'h0000_0000 && srr0 == 32'h0000_7000 &&
+            srr1 == 32'h0008_0000,
+            "TGPR-mode program event did not enter with TGPR clear");
     consume_result();
+    held_srr1 = srr1;
 
     // Individual state-load enables are atomic and do not imply mtmsr/mtspr
     // decode semantics.
     load_state(3'b010, 32'hffff_ffff, 32'h0bad_f00d, 32'hffff_ffff);
-    require(msr == 32'h0002_0000 && srr0 == 32'h0bad_f00d &&
+    require(msr == 32'h0000_0000 && srr0 == 32'h0bad_f00d &&
             srr1 == held_srr1, "state load enable mask is wrong");
 
     // Reset cancels a held result and restores all configured reset values.

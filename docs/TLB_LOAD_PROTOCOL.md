@@ -36,8 +36,9 @@ The router has matching `tlb_fill_*` pins with reversed directions. It routes
 accepted fill fields to service kind 5 and supplies the **committed router
 context PR** for privilege checking; the CPU does not supply a separate PR
 bit. A successful preparation changes no TLB entry. The service checks PR
-before duplicate-tag rejection and snapshots the complete bank, set, way,
-tag and payload. The router captures the accepted EA and bank to verify that
+and snapshots the complete bank, set, way, tag and payload, and whether the
+tag already sits in the other way; commit then invalidates that duplicate so
+the latest load wins. The router captures the accepted EA and bank to verify that
 the held service response is kind 5 for that request; it combines provenance
 failure with the service's `privileged`, `refill_rejected`, `unsupported` and
 `invalid_input` flags in `tlb_fill_rsp_error`. Failed preparation creates no
@@ -46,11 +47,11 @@ response, holds abort if a proposal could exist, and waits for fill `idle`; an
 identity error must not strand the owner. The router does not derive a VSID
 from a current SR or add another TLB bank.
 
-The CPU validates seeded operands **before** offering a request: compare
-V=1, H=0, compare API equal to accepted old rB[27:22], RPA reserved bits
-[11:9] and [2] zero, and MSR.IR=DR=0. For the bounded slice, malformed seeds
-or translated execution produce a diagnostic with no TLB mutation; this is
-not a claim of silicon behavior for those inputs. The core selects DCMP and
+The entry takes V and VSID from the compare word and EA[4:14] from rB (UM
+2.1.2.3); H, the compare API and the RPA R and reserved bits are unused, and
+the load runs with any IR/DR. A compare word with V=0 leaves the entry
+invalid: the CPU issues a `tlbie` of that congruence class instead of a fill
+([DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md)). The core selects DCMP and
 the data bank for `tlbld`, ICMP and the instruction bank for `tlbli`. Compare
 VSID is bits [30:7]; RPA RPN is [31:12], C bit 7, WIMG [6:3], PP [1:0].
 [`TLB_REFILL_DEPENDENCIES.md`](TLB_REFILL_DEPENDENCIES.md) records the manual references and unresolved

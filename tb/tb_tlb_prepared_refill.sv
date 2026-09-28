@@ -160,12 +160,26 @@ module tb_tlb_prepared_refill #(
           !rsp_refill_rejected_o,"kind5 privilege-first/feature gate");
     consume();
     check(transaction_idle_o,"rejected proposal retained reservation");
+    // A duplicate in the opposite way is admitted; its commit replaces the
+    // duplicate so a lookup never hits both ways.
     request(3'd5,0,EA,A,0,1,20'h99999,1,4'hc,2'b01);
     check(rsp_unsupported_o==!RUNTIME_REFILL &&
-          rsp_refill_rejected_o==RUNTIME_REFILL &&
+          !rsp_refill_rejected_o &&
           !rsp_privileged_o,"duplicate-other-way proposal classification");
     consume();
-    check(transaction_idle_o,"duplicate proposal retained reservation");
+    if(RUNTIME_REFILL)begin
+      check(!transaction_idle_o,"duplicate proposal lost its reservation");
+      abort_reserved();
+      baseline_lookup();
+      request(3'd5,0,EA,A,0,1,20'h99999,1,4'hc,2'b01);
+      consume();
+      commit_reserved();
+      lookup(0,EA,A,1,32'h99999234,4'hc,2'b01,1);
+      lookup(0,EA,B,0,0,0,0,0);
+      lookup(1,EA,A,1,32'hcdef0234,4'h6,2'b10,1);
+      refill(0,0,EA,A,20'habcde,1,4'h4,2'b10);
+      refill(0,1,EA,B,20'hbcdef,1,4'h2,2'b10);
+    end else check(transaction_idle_o,"unsupported proposal retained reservation");
     baseline_lookup();
 
     request(3'd5,0,EA,A,0,0,20'h11111,0,4'ha,2'b01);

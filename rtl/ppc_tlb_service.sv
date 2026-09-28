@@ -105,7 +105,7 @@ module ppc_tlb_service #(
   logic response_valid_q, request_fire, fill_commit, invalidate_commit;
   logic prepare_invalidate, prepare_refill;
   logic prepared_q, prepared_is_refill_q, commit_ack_q;
-  logic prepared_bank_q, prepared_way_q;
+  logic prepared_bank_q, prepared_way_q, prepared_duplicate_q;
   logic [4:0] prepared_set_q;
   entry_t prepared_entry_q;
   logic [4:0] set_index;
@@ -219,8 +219,8 @@ module ppc_tlb_service #(
       end
       TLB_REFILL: begin
         if (request_q.pr) response_d.privileged = 1'b1;
-        // Local unambiguous-bank policy; source does not define a duplicate winner.
-        else if (matched[!request_q.way]) response_d.refill_rejected = 1'b1;
+        // The manual leaves duplicate tags undefined. A load replaces a
+        // matching entry in the other way so a lookup never hits both.
         else fill_commit = lookup_q;
       end
       TLB_INVALIDATE_SET: begin
@@ -235,8 +235,6 @@ module ppc_tlb_service #(
       TLB_PREPARE_REFILL: begin
         if (!ENABLE_RUNTIME_REFILL) response_d.unsupported = 1'b1;
         else if (request_q.pr) response_d.privileged = 1'b1;
-        // Match the immediate-refill duplicate policy at preparation.
-        else if (matched[!request_q.way]) response_d.refill_rejected = 1'b1;
         else prepare_refill = !request_q.abort && !prepare_abort_i;
       end
       default: response_d.unsupported = 1'b1;
@@ -255,6 +253,7 @@ module ppc_tlb_service #(
       prepared_is_refill_q <= 1'b0;
       prepared_bank_q <= 1'b0;
       prepared_way_q <= 1'b0;
+      prepared_duplicate_q <= 1'b0;
       prepared_set_q <= '0;
       prepared_entry_q <= '0;
       commit_ack_q <= 1'b0;
@@ -268,6 +267,8 @@ module ppc_tlb_service #(
                  (!response_valid_q || rsp_ready_i)) begin
           if (prepared_is_refill_q) begin
             valid_q[prepared_bank_q][prepared_way_q][prepared_set_q] <= 1'b1;
+            if (prepared_duplicate_q)
+              valid_q[prepared_bank_q][!prepared_way_q][prepared_set_q] <= 1'b0;
             lru_q[prepared_bank_q][prepared_set_q] <= !prepared_way_q;
           end else begin
             for (int bank = 0; bank < 2; bank++) begin
@@ -313,11 +314,14 @@ module ppc_tlb_service #(
           prepared_is_refill_q <= 1'b1;
           prepared_bank_q <= request_q.bank;
           prepared_way_q <= request_q.way;
+          prepared_duplicate_q <= matched[!request_q.way];
           prepared_set_q <= set_index;
           prepared_entry_q <= refill_entry;
         end
         if (fill_commit) begin
           valid_q[request_q.bank][request_q.way][set_index] <= 1'b1;
+          if (matched[!request_q.way])
+            valid_q[request_q.bank][!request_q.way][set_index] <= 1'b0;
           lru_q[request_q.bank][set_index] <= !request_q.way;
         end
         if (response_d.hit)
@@ -348,6 +352,9 @@ module ppc_tlb_service #(
       else $error("TLB lookup overlaps a held response or reservation");
     if (ram_write) assert (!request_fire)
       else $error("TLB entry write coincides with a read");
+    // Loads replace duplicates, so the invalid_input double hit is unreachable.
+    if (lookup_q && (request_q.kind == TLB_LOOKUP)) assert (matched != 2'b11)
+      else $error("TLB lookup hit both ways");
   end
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     rsp_valid_o && !rsp_ready_i |=>

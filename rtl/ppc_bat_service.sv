@@ -3,6 +3,9 @@
 `default_nettype none
 // Serialized committed BAT register and translation service.
 // Reset zeroes BAT storage; 603e hardware reset leaves BATs undefined.
+// Every supervisor write is stored with its reserved fields cleared. The
+// manuals leave invalid BL values, IBAT W and overlapping valid entries
+// undefined (UM 5.3, PEM 7.4.2); translation handles them deterministically.
 module ppc_bat_service #(
   parameter bit ENABLE_RUNTIME_BAT = 1'b0
 ) (
@@ -71,20 +74,19 @@ module ppc_bat_service #(
 
   // [bank] is 0 for instruction and 1 for data. [entry] is architectural 0..3.
   logic [1:0][3:0][31:0] upper_q, lower_q;
-  logic [3:0][31:0] candidate_upper, candidate_lower;
   logic translation_request, csr_request, valid_spr, bank, translation_bank;
-  logic csr_write_candidate, encoding_bad, write_ok, request_fire;
+  logic csr_write_candidate, request_fire;
   logic [1:0] entry_index, write_entry;
   logic write_bank;
-  logic [11:0] length_plus_one, extended_length;
-  translation_t translation, candidate;
+  logic [31:0] write_value;
+  translation_t translation;
   response_t response_q, response_d, write_response;
   logic response_valid_q;
   logic prepared_q, ack_q, prepare_request;
   logic [3:0] prepared_spr_q;
   logic [31:0] prepared_data_q;
-  // A validated CSR write takes three edges: capture, validate into the
-  // response and a store flag, then store. Nothing else is accepted meanwhile.
+  // A CSR write takes three edges: capture, respond with a store flag, then
+  // store. Nothing else is accepted meanwhile.
   logic write_q, write_prepare_q, write_abort_q, write_store_q;
   logic [31:0] write_ea_q, write_data_q;
   logic [3:0] write_spr_q;
@@ -125,25 +127,15 @@ module ppc_bat_service #(
                           valid_spr && !req_pr_i;
   end
 
+  // BATU keeps BEPI, BL, Vs and Vp; BATL keeps BRPN, WIMG and PP.
+  localparam logic [31:0] BATU_WMASK = 32'hfffe_1fff;
+  localparam logic [31:0] BATL_WMASK = 32'hfffe_007b;
   always_comb begin
     write_bank = write_spr_q[3];
     write_entry = write_spr_q[2:1];
-    candidate_upper = upper_q[write_bank];
-    candidate_lower = lower_q[write_bank];
-    extended_length = {1'b0, write_data_q[12:2]};
-    length_plus_one = extended_length + 12'd1;
-    // Reserved writes are rejected locally, not silently masked. All table BL
-    // masks have contiguous low ones, including zero and all eleven ones.
-    encoding_bad = write_spr_q[0] ?
-      ((write_data_q & 32'h0001ff84) != 0 ||
-       (!write_bank && write_data_q[6])) :
-      ((write_data_q & 32'h0001e000) != 0 ||
-       (extended_length & length_plus_one) != 0);
-    if (write_spr_q[0]) candidate_lower[write_entry] = write_data_q;
-    else candidate_upper[write_entry] = write_data_q;
+    write_value = write_data_q & (write_spr_q[0] ? BATL_WMASK : BATU_WMASK);
   end
 
-  // Only validated banks commit, so translation skips the bank checks.
   ppc_bat_translate #(.VALIDATE_BANK(1'b0)) translator (
     .valid_i(req_valid_i && translation_request),
     .instruction_i(req_kind_i == BAT_TRANSLATE_I),
@@ -161,28 +153,6 @@ module ppc_bat_service #(
     .hit_index_o(translation.index), .pa_o(translation.physical),
     .wimg_o(translation.attributes), .pp_o(translation.protection)
   );
-
-  // A CSR write substitutes its data into the addressed bank and validates the
-  // whole candidate bank. Real mode keeps the match logic constant.
-  ppc_bat_translate #(.VALIDATE_BANK(1'b1)) bank_check (
-    .valid_i(write_q), .instruction_i(!write_bank),
-    .write_i(1'b0), .ea_i(32'b0),
-    .msr_ir_i(1'b0), .msr_dr_i(1'b0), .msr_pr_i(1'b0),
-    .batu_i(candidate_upper), .batl_i(candidate_lower),
-    .allow_o(candidate.status[8]), .bypass_o(candidate.status[7]),
-    .bat_hit_o(candidate.status[6]), .bat_miss_o(candidate.status[5]),
-    .protection_fault_o(candidate.status[4]),
-    .guarded_fault_o(candidate.status[3]),
-    .config_error_o(candidate.status[2]),
-    .invalid_input_o(candidate.status[1]), .overlap_o(candidate.status[0]),
-    .invalid_entry_o(candidate.bad), .match_o(candidate.matched),
-    .hit_index_o(candidate.index), .pa_o(candidate.physical),
-    .wimg_o(candidate.attributes), .pp_o(candidate.protection)
-  );
-  logic _unused_candidate;
-  assign _unused_candidate = ^{candidate.status[8:3], candidate.status[1],
-    candidate.matched, candidate.index, candidate.physical,
-    candidate.attributes, candidate.protection};
 
   always_comb begin
     response_d = '0;
@@ -208,14 +178,6 @@ module ppc_bat_service #(
     write_response.ea = write_ea_q;
     // SPRs 528..543 share the upper six bits.
     write_response.spr = {6'b100001, write_spr_q};
-    write_ok = !encoding_bad && !candidate.status[2];
-    if (!write_ok) begin
-      write_response.write_rejected = 1'b1;
-      write_response.translation.status[2] = 1'b1;
-      write_response.translation.status[0] = candidate.status[0];
-      write_response.translation.bad = candidate.bad;
-      if (encoding_bad) write_response.translation.bad[write_entry] = 1'b1;
-    end
   end
 
   always_ff @(posedge clk_i) begin
@@ -254,17 +216,17 @@ module ppc_bat_service #(
         write_q <= 1'b0;
         response_valid_q <= 1'b1;
         response_q <= write_response;
-        if (write_ok && !write_prepare_q) write_store_q <= 1'b1;
-        if (write_ok && write_prepare_q && !write_abort_q) begin
+        if (!write_prepare_q) write_store_q <= 1'b1;
+        if (write_prepare_q && !write_abort_q) begin
           prepared_q <= 1'b1;
           prepared_spr_q <= write_spr_q;
-          prepared_data_q <= write_data_q;
+          prepared_data_q <= write_value;
         end
       end
       if (write_store_q) begin
         write_store_q <= 1'b0;
-        if (write_spr_q[0]) lower_q[write_bank][write_entry] <= write_data_q;
-        else upper_q[write_bank][write_entry] <= write_data_q;
+        if (write_spr_q[0]) lower_q[write_bank][write_entry] <= write_value;
+        else upper_q[write_bank][write_entry] <= write_value;
       end
       if (ENABLE_RUNTIME_BAT && prepare_commit_i && prepared_q && !prepare_abort_i) begin
         if (prepared_spr_q[0])

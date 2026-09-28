@@ -19,37 +19,28 @@ The official [Programming Environments, MPCFPE/AD Rev.1](https://www.nxp.com/doc
 corroborates the exact supervisor SPR mapping in Table 8-10, PDF 569 / 8-157
 (read), and Table 8-15, PDF 586 / 8-174 (write). Chapter 2 introduction, PDF 63 /
 2-1, permits reserved-bit writes but leaves readback of written ones undefined.
-This service instead rejects such writes as an explicit local input restriction.
+This service stores every supervisor write with its reserved fields cleared, so
+they read back as zero ([DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md)).
 Source hash, BAT field/length/permission locators and the specific 603e IBAT G
 versus generic PEM conflict are recorded in [BAT_TRANSLATION.md](BAT_TRANSLATION.md).
 
-No source defines this service's transactional interface or atomic rejection
-policy. Those are implementation choices:
+No source defines this service's transactional interface. Its choices:
 
 - Synchronous reset zeroes all sixteen 32-bit storage registers and drops the
   response. This deterministic local invalid-bank initialization is **not** the
   physical 603e reset state. Software initialization requirements on silicon
   remain unchanged. Reset assertion immediately gates both valid/ready outputs;
   storage changes at the reset sampling edge.
-- Each successful write updates exactly one addressed 32-bit half. The partner
-  half, other entries and opposite bank remain unchanged. Readback returns the
-  last accepted value exactly. Accepted reserved bits are always zero.
-- All nonzero reserved-field writes are rejected, as are non-table upper BL
-  masks and IBAT lower W=1. No reserved bits are silently masked. An inactive
-  lower register may hold a base not aligned for its current upper BL; activation
-  subsequently checks the complete pair. Inactive upper entries still require
-  legal BL and zero reserved bits at this write interface.
-- Before commit, a candidate write is substituted into a copy of the selected
-  four-entry bank and checked by the existing translator's whole-bank validator.
-  Active misaligned bases, intersecting effective ranges with shared privilege
-  validity, and other translator configuration errors reject the write and
-  preserve the entire old bank. Rejection is independent of requested IR/DR.
-  This is stricter than software-visible `mtspr` behavior; it does not emulate
-  intermediate invalid BAT states, hardware corruption or architectural faults.
-- The supported reconfiguration sequence is: disable the old upper valid bits,
-  write the lower half, then write a valid new upper half. A failed enable leaves
-  the old inactive upper and the prepared lower half intact. Direct valid-to-valid
-  updates are allowed if the resulting bank passes validation.
+- Each write updates exactly one addressed 32-bit half. The partner half,
+  other entries and opposite bank remain unchanged. Readback returns the
+  written value with reserved fields cleared (BATU `0xfffe1fff`, BATL
+  `0xfffe007b` keep the defined fields).
+- No write is rejected. Non-table BL values, BEPI/BRPN bits under the BL mask
+  and IBAT W=1 are stored; the manuals leave their translation undefined
+  (PEM 7.4.2, PEM Table 2-12 note). Translation applies BL bitwise, compares
+  BEPI as written, ORs BRPN with the offset and ignores W on fetches.
+- Overlapping valid entries are a programming error with unpredictable results
+  (UM 5.3). Translation uses the lowest-numbered matching entry.
 
 ## Interface and ordering
 
@@ -96,20 +87,16 @@ Inputs for a stalled request must remain stable under ordinary valid/ready rules
 
 `rsp_valid_o` is the only response qualifier. Successful CSR reads return the
 stored half in `rsp_data_o`; successful writes return zero data and no translation
-flags. `rsp_privileged_o`, `rsp_unsupported_o`, and `rsp_write_rejected_o`
-distinguish rejected service operations. A write rejection also sets local
-configuration error; the invalid-entry mask identifies an invalid candidate or
-the entry targeted by an invalid encoding. Overlap identifies a whole-bank
-collision. These are diagnostics, not ISI/DSI/program exception events.
+flags. `rsp_privileged_o` and `rsp_unsupported_o` distinguish rejected service
+operations; `rsp_write_rejected_o` and the configuration, overlap and
+invalid-entry flags are always zero.
 
 Translation results preserve the existing translator contract: real-mode bypass,
 BAT hit/miss, protection/guarded/configuration diagnostics, index/match mask,
 PA/WIMG/PP. PA is usable only with `rsp_allow_o`; a miss returns no identity
 mapping. WIMG attributes remain metadata rather than implemented cache/bus
-ordering. Because only validated banks commit, translation uses a
-`VALIDATE_BANK=0` translator on the committed bank, and translation responses
-carry zero invalid-entry, overlap and configuration flags. A second, validating
-translator checks write candidates in real mode.
+ordering. Translation uses a `VALIDATE_BANK=0` translator on the committed
+bank, so responses carry zero invalid-entry, overlap and configuration flags.
 
 ## Verification and reproduction
 

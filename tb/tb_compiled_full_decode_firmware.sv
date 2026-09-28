@@ -42,6 +42,7 @@ module tb_compiled_full_decode_firmware #(parameter bit FULL_DECODE = 1'b1);
   function automatic string check_detail();
     return $sformatf(" bus=%08x tt=%05b",bus_a,tt);
   endfunction
+  `define FW_DUMP_ARRAY target.mem
   `include "compiled_firmware.svh"
 
   /* verilator lint_off PINCONNECTEMPTY */

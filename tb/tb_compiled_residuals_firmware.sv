@@ -1,59 +1,63 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
-// Compiled load/store-extension firmware on the translated cached 60x top
-// with the translated profile's parameters. The pin target retries (ARTRY),
-// replaces read beats (DRTRY), holds line fills and delays at random. The
-// firmware checks its own results and reports through tohost. With
-// LSU_EXTENSIONS=0 the same image must stop at its first extension form.
+// Compiled residuals firmware on the translated cached 60x top with the MVP
+// feature set. The firmware checks its own handler records; the bench checks
+// that no diagnostic halt, untyped translation fault or transport error
+// occurs, that exactly one decrementer entry is taken and no external one.
 /* verilator lint_off BLKSEQ */
-module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
+module tb_compiled_residuals_firmware;
   import ppc_pkg::*;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
   logic start_valid=0,start_ready,running,cir,cdr,cpr;
-  logic tv,tr,halted,unused_checkstop,ifetch_error,protocol_error,bus_busy,pimem_error;
-  logic irq=0,irq_taken,dec_taken,tick=0,translation_fault;
-  logic [31:0] irq_pc,dec_pc;
+  logic tv,tr,halted,ifetch_error,protocol_error,bus_busy,pimem_error;
+  logic irq_taken,dec_taken,tick=0,translation_fault;
+  logic [31:0] irq_pc;
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] dec_pc;
+  logic cache_hit,cache_miss,cache_busy,cache_enabled,maintenance_busy,ci_n;
+  /* verilator lint_on UNUSEDSIGNAL */
+  // Only the fields the checks use are read.
+  /* verilator lint_off UNUSEDSIGNAL */
   retire_packet_t retired;
-  logic br_n,bg_n,abb_n,abb_oe,ts_n,ts_oe,tbst_n,ci_n,wt_n,gbl_n,addr_oe;
+  logic maintenance_ready;
+  /* verilator lint_on UNUSEDSIGNAL */
+  logic br_n,bg_n,abb_n,abb_oe,ts_n,ts_oe,tbst_n,wt_n,gbl_n,addr_oe;
   logic [31:0] bus_a;
   logic [4:0] tt;
   logic [2:0] tsiz;
   logic [1:0] tc,cse;
   logic aack_n,artry_n,dbg_n,dbb_n,dbb_oe,data_oe,ta_n,drtry_n,tea_n;
   logic [63:0] data_in,data_out;
-  logic cache_hit,cache_miss,cache_busy,cache_enabled;
-  logic maintenance_valid=0,maintenance_ready,maintenance_done_valid;
-  logic maintenance_done_ready=0,maintenance_busy;
-  logic bfm_retry=0,bfm_hold=0,bfm_drtry=0,retire_enable=1;
+  logic maintenance_done_valid;
+  logic bfm_retry=0,bfm_drtry=0,retire_enable=1;
   int bfm_wait=0;
-  int unsigned rng=32'h2468ace1;
-  int cycles=0,retires=0,hold_until=0;
-  int align_entries=0,cache_hits=0,cache_misses=0,held_fills=0;
-  int split_writes=0,partials=0;
+  int unsigned rng=32'h1357acef;
+  int cycles=0,retires=0;
+  int dec_entries=0,data_cycles=0;
   localparam int FW_MEM_BYTES=65536;
   function automatic string check_detail();
-    return $sformatf(" bus=%08x",bus_a);
+    return $sformatf(" bus=%08x tt=%05b",bus_a,tt);
   endfunction
-  `define FW_DUMP_ARRAY target.mem
   `include "compiled_firmware.svh"
 
   /* verilator lint_off PINCONNECTEMPTY */
+  logic unused_checkstop;
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'hfff00100),.ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
-    .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),
-    .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),
-    .ENABLE_SDR1(1'b1),.ENABLE_TGPR(1'b1),.ENABLE_TLB_MISS_EXCEPTIONS(1'b1),
-    .ENABLE_PAGE_TRANSLATION(1'b1),.ENABLE_PAGE_MISS_RESULTS(1'b1),
-    .ENABLE_PAGE_DATA_EXCEPTIONS(1'b1),.ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),
-    .ENABLE_TLB_INVALIDATE(1'b1),.ENABLE_TLB_LOAD(1'b1),
-    .ENABLE_CACHE_INSTRUCTIONS(1'b1),
-    .ENABLE_BYTE_REVERSE(LSU_EXTENSIONS),.ENABLE_MULTIPLE_STRING(LSU_EXTENSIONS),
-    .ENABLE_RESERVATION(LSU_EXTENSIONS),.ENABLE_MISALIGNED_ACCESS(LSU_EXTENSIONS)) dut(
+    .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1),
+    .ENABLE_TIMERS(1'b1),.ENABLE_CACHE_INSTRUCTIONS(1'b1),
+    .ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_SDR1(1'b1),.ENABLE_TGPR(1'b1),
+    .ENABLE_TLB_MISS_EXCEPTIONS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1),
+    .ENABLE_PAGE_MISS_RESULTS(1'b1),.ENABLE_PAGE_DATA_EXCEPTIONS(1'b1),
+    .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),.ENABLE_TLB_INVALIDATE(1'b1),
+    .ENABLE_TLB_LOAD(1'b1),.ENABLE_BYTE_REVERSE(1'b1),.ENABLE_MULTIPLE_STRING(1'b1),
+    .ENABLE_RESERVATION(1'b1),.ENABLE_MISALIGNED_ACCESS(1'b1),
+    .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_DEBUG_EXCEPTIONS(1'b1),
+    .ENABLE_FULL_DECODE(1'b1)) dut(
     .clk_i(clk),.rst_ni(rst_n),
-    .external_irq_i(irq),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
+    .external_irq_i(1'b0),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .timer_tick_i(tick),.timebase_enable_i(1'b1),
-    .pin_event_i('0), .pin_status_o(),
     .decrementer_taken_o(dec_taken),.decrementer_pc_o(dec_pc),
     .bat_write_valid_i(1'b0),.bat_write_ready_o(),
     .bat_write_spr_i('0),.bat_write_data_i('0),
@@ -79,7 +83,7 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
     .running_o(running),.context_ir_o(cir),.context_dr_o(cdr),
     .context_pr_o(cpr),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),
-    .halted_o(halted),.checkstop_o(unused_checkstop),.redirect_valid_i(1'b0),.redirect_all_i(1'b0),
+    .checkstop_o(unused_checkstop), .halted_o(halted),.redirect_valid_i(1'b0),.redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i('0),.redirect_accepted_o(),
     .translation_fault_o(translation_fault),.fault_instruction_o(),.fault_write_o(),
@@ -90,11 +94,11 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
     .bus_protocol_error_o(protocol_error),.bus_busy_o(bus_busy),
     .icache_hit_o(cache_hit),.icache_miss_o(cache_miss),
     .icache_busy_o(cache_busy),
-    .maintenance_valid_i(maintenance_valid),
+    .maintenance_valid_i(1'b0),
     .maintenance_ready_o(maintenance_ready),
     .maintenance_invalidate_i(1'b1),.maintenance_cache_enable_i(1'b1),
     .maintenance_done_valid_o(maintenance_done_valid),
-    .maintenance_done_ready_i(maintenance_done_ready),
+    .maintenance_done_ready_i(1'b0),
     .cache_enabled_o(cache_enabled),.maintenance_busy_o(maintenance_busy),
     .br_n_o(br_n),.bg_n_i(bg_n),.abb_n_i(1'b1),
     .abb_n_o(abb_n),.abb_oe_o(abb_oe),.ts_n_o(ts_n),.ts_oe_o(ts_oe),
@@ -111,15 +115,11 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
     .clk_i(clk),.br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(bus_a),
     .tt_i(tt),.tbst_n_i(tbst_n),.tsiz_i(tsiz),.tc_i(tc),
     .dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.d_i(data_out),.d_oe_i(data_oe),
-    .retry_i(bfm_retry),.hold_i(bfm_hold),.drtry_i(bfm_drtry),.wait_i(bfm_wait),
+    .retry_i(bfm_retry),.hold_i(1'b0),.drtry_i(bfm_drtry),.wait_i(bfm_wait),
     .bg_n_o(bg_n),.aack_n_o(aack_n),.artry_n_o(artry_n),.dbg_n_o(dbg_n),
     .d_o(data_in),.ta_n_o(ta_n),.drtry_n_o(drtry_n),.tea_n_o(tea_n)
   );
   assign tr=rst_n&&retire_enable;
-  // Interrupt, cache-status and maintenance outputs are idle in this profile.
-  logic unused_outputs;
-  assign unused_outputs=^{running,irq_pc,dec_pc,cache_busy,cache_enabled,
-                          maintenance_ready,maintenance_done_valid,maintenance_busy};
 
   function automatic int unsigned rnd();
     rng^=rng<<13; rng^=rng>>17; rng^=rng<<5;
@@ -129,21 +129,16 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
   always @(posedge clk)begin
     cycles++;
     if(rst_n)begin
-      check(cycles<3000000,"cache-operation firmware watchdog");
+      check(cycles<2000000,"residuals firmware watchdog");
       check(!halted&&!ifetch_error&&!pimem_error&&!protocol_error&&!translation_fault,
         "unexpected transport, translation or core diagnostic");
-      if(addr_oe&&ts_oe&&!ts_n)begin
+      check(!maintenance_done_valid,"CPU cache requests complete internally");
+      check(!irq_taken&&irq_pc==0,"no external interrupt entry");
+      if(dec_taken)dec_entries++;
+      if(target.in_data)data_cycles++;
+      if(addr_oe&&ts_oe&&!ts_n)
         check(abb_oe&&!abb_n&&bus_busy&&wt_n&&gbl_n&&cse==0&&bus_a>=BASE,
           "address ownership and range");
-        if(tc!=2)check(tbst_n&&!ci_n,"scalar inhibited data");
-      end
-      if(cache_hit)cache_hits++;
-      if(cache_miss)cache_misses++;
-      check(!irq_taken&&!dec_taken,"no interrupt source is active");
-      // 60x read-atomic / write-with-flush-atomic encodings are not used:
-      // the data path is uncached and there is no other bus master.
-      if(addr_oe&&ts_oe&&!ts_n&&tt==5'b00010&&tsiz==3)split_writes++;
-      // Mirror each written word so the mailbox rule sees it.
       if(!ta_n&&dbb_oe&&tt==5'b00010&&bus_a>=BASE&&bus_a<BASE+32'(FW_MEM_BYTES))begin
         int size;
         size=(tsiz==0)?8:int'(tsiz);
@@ -154,8 +149,6 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
       if(tv&&tr)begin
         retires++;
         check(^retired!==1'bx&&!retired.illegal,"known legal retirement");
-        if(retired.pc==BASE+32'h600)align_entries++;
-        if(retired.seq_partial)partials++;
         mailbox_retire();
       end
     end
@@ -170,11 +163,6 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
     bfm_retry=rnd()%100<10;
     bfm_drtry=rnd()%100<8;
     retire_enable=rnd()%8!=0;
-    if(rst_n&&target.in_data&&target.burst&&hold_until<=cycles&&rnd()%100<5)begin
-      hold_until=cycles+5+int'(rnd()%40);
-      held_fills++;
-    end
-    bfm_hold=hold_until>cycles;
   end
 
   initial begin
@@ -186,14 +174,11 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
     @(negedge clk);start_valid=0;
     wait(mailbox_retired);
     repeat(20)@(posedge clk);
-    check(align_entries==2&&partials>0&&split_writes>0&&
-          target.retries>0&&target.drtries>0&&!cir&&!cdr&&!cpr,
-          $sformatf("coverage align=%0d partial=%0d three_byte=%0d hits=%0d retries=%0d drtries=%0d ctx=%0d%0d%0d",
-                    align_entries,partials,split_writes,cache_hits,target.retries,
-                    target.drtries,cir,cdr,cpr));
-    $display("PASS compiled load/store extensions: checks=%0d retires=%0d partial=%0d cycles=%0d align=%0d three_byte_writes=%0d retries=%0d drtries=%0d held=%0d hits=%0d misses=%0d",
-      checks,retires,partials,cycles,align_entries,split_writes,
-      target.retries,target.drtries,held_fills,cache_hits,cache_misses);
+    check(dec_entries==1,$sformatf("decrementer entries=%0d",dec_entries));
+    check(target.retries>0&&target.drtries>0&&data_cycles>0,"bus retry coverage");
+    check(running&&cir&&cdr&&!cpr,"ends translated in supervisor state");
+    $display("PASS compiled residuals: checks=%0d retires=%0d cycles=%0d dec_entries=%0d retries=%0d drtries=%0d",
+      checks,retires,cycles,dec_entries,target.retries,target.drtries);
     $finish;
   end
 endmodule

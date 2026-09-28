@@ -251,9 +251,20 @@ module tb_core_tgpr #(parameter bit FEATURE=1'b1);
                   "latest retained target did not use temp r0");
             done<=1;
           end
-        end else if(retired.pc==8)begin
+        // Mode 7 sets EE, which this profile (no external interrupts)
+        // rejects regardless of TGPR.
+        end else if((mode==7||mode==10)&&retired.pc==8)begin
           check(retired.illegal&&!retired.gpr_write&&!dut.msr[17],
                 "unsupported TGPR mode gained write permission");
+          done<=1;
+        end else if(retired.pc==8)begin
+          // UM Table 2-1: TGPR with PR, IR or DR is accepted.
+          check(!retired.illegal&&!retired.gpr_write,
+                "TGPR with PR/IR/DR was rejected");
+        end else if(retired.pc==12)begin
+          check(dut.msr==(32'h0002_0000|(mode==6?32'h4000:
+                          mode==8?32'h0020:32'h0010)),
+                "TGPR with PR/IR/DR did not install the MSR");
           done<=1;
         end
       end
@@ -323,8 +334,10 @@ module tb_core_tgpr #(parameter bit FEATURE=1'b1);
             "same-edge RFI commit corrupted bank restore");
       for(int m=6;m<=9;m++)begin
         reset_case(m);wait(done);@(negedge clk);
-        check(halted&&!dut.msr[17]&&context_installs==0,
-              "unsupported PR/EE/IR/DR TGPR mode mutated context");
+        if(m==7)check(halted&&!dut.msr[17]&&context_installs==0,
+              "EE without the interrupt profile mutated context");
+        else check(!halted&&dut.msr[17]&&context_installs==1,
+              "TGPR with PR/IR/DR did not switch context once");
       end
     end else begin
       reset_case(10);wait(done);@(negedge clk);

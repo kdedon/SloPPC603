@@ -45,6 +45,36 @@ def expected(controls, ea, pairs):
             (1 << (40 + index)) | (index << 38) | (pa << 6) | (wimg << 2) | pp)
 
 
+def expected_stored(controls, ea, pairs):
+    """Unvalidated banks as a BAT service stores them. BL masks bitwise, the
+    BRPN ORs with the offset and the lowest-numbered match wins (UM 5.3,
+    PEM 7.4.2)."""
+    valid, instruction, write, ir, dr, user = [(controls >> n) & 1 for n in range(5, -1, -1)]
+    if not valid:
+        return 0
+    if instruction and write:
+        return (1 << 50) | (1 << 49)
+    if not (ir if instruction else dr):
+        return (1 << 56) | (1 << 55) | (ea << 6) | ((1 if instruction else 3) << 2)
+    matched = 0
+    for index, (upper, lower) in enumerate(pairs):
+        offset = ((upper // 4) % 2048) * 131072 + 131071
+        if upper & (1 if user else 2) and ea & ~offset == upper & 0xfffe0000:
+            matched |= 1 << index
+    if not matched:
+        return 1 << 53
+    index = (matched & -matched).bit_length() - 1
+    upper, lower = pairs[index]
+    offset = ((upper // 4) % 2048) * 131072 + 131071
+    wimg, pp = (lower // 8) % 16, lower % 4
+    denied = pp == 0 or (write and pp != 2)
+    guarded = bool(instruction and wimg % 2)
+    allow = not denied and not guarded
+    pa = (lower & 0xfffe0000) | (ea & offset) if allow else 0
+    return ((int(allow) << 56) | (1 << 54) | (int(denied) << 52) | (int(guarded) << 51) |
+            (matched << 40) | (index << 38) | (pa << 6) | (wimg << 2) | pp)
+
+
 def vectors():
     for power in range(12):
         size = 131072 * 2**power

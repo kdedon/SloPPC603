@@ -15,16 +15,16 @@ Verification: [MISS_DERIVATION_VERIFICATION.md](MISS_DERIVATION_VERIFICATION.md)
 The interface is `ea_i[31:0]`, `sr_i[31:0]`, `sdr1_i[31:0]` and outputs
 `valid_o`, `miss_page_o[31:0]`, `compare_o[31:0]`, `hash1_o[31:0]`, and
 `hash2_o[31:0]`. All four data outputs are exactly zero when `valid_o=0`.
-This is validation of inputs to the *derivation*. The core's SDR1 write
-already drops the reserved bits, so from the core only the mask and base
-checks can fail.
+`valid_o` is only segment T clear (`SR[31]=0` in HDL): a direct-store segment
+never misses.
 
-For a valid input, architectural SDR1 bits 0–15 are HTABORG (HDL
-`SDR1[31:16]`), bits 16–22 are reserved (`[15:9]=0`), and bits 23–31 are
-HTABMASK (`[8:0]`). HTABMASK must be a run of low-order ones, including zero
-and all nine ones. If the mask has `k` ones, the low `k` HTABORG bits must be
-zero, giving a table aligned to its `2^(16+k)`-byte size. Segment T must be
-zero (`SR[31]=0` in HDL). Segment N is not rejected: it is relevant to
+Architectural SDR1 bits 0–15 are HTABORG (HDL `SDR1[31:16]`), bits 16–22 are
+reserved (`[15:9]`, ignored), and bits 23–31 are HTABMASK (`[8:0]`). PEM
+7.6.1.4.2 requires HTABMASK to be a run of low-order ones and HTABORG to be
+aligned to it, and defines the PTEG address bits as the masked hash ORed with
+HTABORG. A malformed mask or unaligned base is a programming error; the
+formula below applies bitwise to it rather than rejecting the miss
+([DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md)). Segment N is not rejected: it is relevant to
 instruction permission, while a data miss may carry N=1.
 
 In HDL bit numbering, the 19-bit primary hash is

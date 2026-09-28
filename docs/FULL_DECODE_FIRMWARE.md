@@ -51,5 +51,6 @@ and size.
 ## Not established
 
 No real FPU, FPSCR or FP-enabled program exceptions (MSR[FP] never sets).
-Exceptions in TGPR mode remain diagnostics. The bench checks transfer
+Exceptions in TGPR mode are covered by
+[DIAGNOSTIC_RESIDUALS_FIRMWARE.md](DIAGNOSTIC_RESIDUALS_FIRMWARE.md). The bench checks transfer
 classes on the pins, not a device that decodes the resource ID.

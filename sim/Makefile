@@ -1431,13 +1431,18 @@ ci-firmware:
 	if command -v $(CROSS_GCC) >/dev/null 2>&1; then $(MAKE) -C ../toolchain firmware-all; \
 	else ../toolchain/build-in-container.sh firmware-all; fi
 
+# Compiled firmware on DingusPPC and the RTL: retirement lockstep and final RAM.
+.PHONY: test-reference-firmware
+test-reference-firmware: reference-checkout ci-firmware
+	python3 cosim/run_firmware_reference.py --build-dir $(BUILD_DIR)/reference-firmware --reference $(REFERENCE_DIR)
+
 # Long DingusPPC comparison, outside regression: every reference profile
 # plus 64 stress seeds at the generator's 512-block maximum.
 REFERENCE_SEEDS_A := 1,2,3,4,5,6,7,8,9,a,b,c,d,e,f,10,11,12,13,14,15,16,17,18,19,1a,1b,1c,1d,1e,1f,20
 REFERENCE_SEEDS_B := 603e,deadbeef,21,22,23,24,25,26,27,28,29,2a,2b,2c,2d,2e,2f,30,31,32,33,34,35,36,37,38,39,3a,3b,3c,3d,3e
 .PHONY: reference-acceptance
 reference-acceptance: reference-runner-flat
-	$(MAKE) test-reference test-reference-memory test-reference-bat test-reference-cached test-reference-managed test-reference-cache-disabled
+	$(MAKE) test-reference test-reference-memory test-reference-bat test-reference-cached test-reference-managed test-reference-cache-disabled test-reference-firmware
 	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-acceptance-a --seeds $(REFERENCE_SEEDS_A) --blocks 512 $(FLAT_REFERENCE_ARGS)
 	python3 cosim/run_reference_stress.py --build-dir $(BUILD_DIR)/reference-acceptance-b --seeds $(REFERENCE_SEEDS_B) --blocks 512 $(FLAT_REFERENCE_ARGS)
 	@echo "PASS: reference acceptance"

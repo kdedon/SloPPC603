@@ -165,14 +165,19 @@ module tb_tlb_service;
         end
       end
     end
-    // Duplicate refill rejected atomically; selected-way remap preserves partner.
+    // A load whose tag sits in the other way replaces it, so a lookup never
+    // hits both ways. Loading way 1 also overwrites that way's old tag.
     r = '0; r.kind = 1; r.ea = 32'h12300000; r.vsid = 24'h804201;
     r.way = 1; r.rpn = 20'h12345; r.pp = 2; r.c = 1;
-    e = echo(r); e.refill_rejected = 1; transact(r, e);
-    r.kind = 0; transact(r, hit(r, 0, 32'hfc000000, 2, 2, 1));
+    transact(r, echo(r));
+    r.kind = 0; transact(r, hit(r, 1, 32'h12345000, 0, 2, 1));
     r.kind = 1; r.way = 0; transact(r, echo(r));
     r.kind = 0; transact(r, hit(r, 0, 32'h12345000, 0, 2, 1));
-    r.vsid = 24'h804202; transact(r, hit(r, 1, 32'hfc020000, 2, 2, 1));
+    r.vsid = 24'h804202; e = echo(r); e.miss = 1; transact(r, e);
+    r.kind = 1; r.way = 1; r.rpn = 20'hfc020; r.wimg = 2; transact(r, echo(r));
+    r.kind = 0; transact(r, hit(r, 1, 32'hfc020000, 2, 2, 1));
+    r.vsid = 24'h804201; transact(r, hit(r, 0, 32'h12345000, 0, 2, 1));
+    r.vsid = 24'h804202;
     // A privileged failure cannot invalidate or replace existing state.
     r.kind = 2; r.pr = 1; e = echo(r); e.privileged = 1; transact(r, e);
     r.kind = 1; e = echo(r); e.privileged = 1; transact(r, e);

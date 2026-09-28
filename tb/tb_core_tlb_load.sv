@@ -169,7 +169,7 @@ module tb_core_tlb_load #(parameter bit FEATURE=1'b1);
       case(pc)
         44:return 32'h38a0_0020; // r5=MSR.DR
         48:return 32'h7ca0_0124; // mtmsr r5
-        52:return 32'h7c00_ffa4; // translated TLBLD diagnostic
+        52:return 32'h7c00_ffa4; // translated TLBLD
         default:;
       endcase
       if(pc>=44)return 32'h4800_0000;
@@ -213,7 +213,8 @@ module tb_core_tlb_load #(parameter bit FEATURE=1'b1);
       check(cycles<4000,"watchdog");
       check((mode==12||mode==15||!cv)&&!dv&&!inv_req&&!inv_commit&&!inv_abort&&
             !dec_taken&&!irq_taken,"unexpected architectural transport");
-      if(mode<5||mode==14||mode==16)check(!halted,"unexpected halt");
+      if(mode<5||(mode>=7&&mode<=10)||mode==14||mode==15||mode==16)
+        check(!halted,"unexpected halt");
       if(iv&&ir)begin
         check(!ipending,"fetch obligation overwritten");
         ipending<=1;fetched<=instruction(ia);
@@ -228,7 +229,7 @@ module tb_core_tlb_load #(parameter bit FEATURE=1'b1);
               fill_way==(mode==14)&&fill_rpn==20'habcde&&fill_c&&
               fill_wimg==4'h1&&fill_pp==2'b11,
               "captured EA/VSID/way/RPA payload changed");
-        check((dut.special.pc_q==(mode==14?32'd60:32'd44)&&fill_bank) ||
+        check((dut.special.pc_q==(mode==14?32'd60:mode==15?32'd52:32'd44)&&fill_bank) ||
               (dut.special.pc_q==(mode==14?32'd64:32'd48)&&!fill_bank),
               "TLBLD/TLBLI selected wrong bank");
       end
@@ -358,17 +359,24 @@ module tb_core_tlb_load #(parameter bit FEATURE=1'b1);
       check(requests==1&&commits==0&&tlb_valid==0&&halted&&
             aborts>0&&!prepared&&!ackq,
             "rejected response stranded a prepared proposal");
-      for(int m=6;m<=10;m++)begin
+      // V=0 needs the invalidate path, absent in this profile.
+      reset_case(6,0);wait(done);@(negedge clk);
+      check(requests==0&&commits==0&&tlb_valid==0&&halted,
+            "V=0 seed without TLB invalidate reached router");
+      // UM 2.1.2.3: H, API and the RPA R and reserved bits are unused, so
+      // these loads commit the same payload as a clean one.
+      for(int m=7;m<=10;m++)begin
         reset_case(m,0);wait(done);@(negedge clk);
-        check(requests==0&&commits==0&&tlb_valid==0&&halted,
-              "malformed seed reached router or mutated TLB");
+        check(requests==1&&commits==1&&tlb_valid==2'b10&&!halted,
+              "unused CMP/RPA fields changed the TLB load");
       end
       reset_case(14,0);wait(done);@(negedge clk);
       check(requests==2&&commits==2&&tlb_valid==2'b11,
             "different CMP VSIDs and SRR1.WAY=1 refill both banks");
       reset_case(15,0);wait(done);@(negedge clk);
-      check(requests==0&&commits==0&&tlb_valid==0&&halted,
-            "translated-mode TLB load offered a request");
+      // UM 2.3.8: tlbld with translation enabled is permitted.
+      check(requests==1&&commits==1&&tlb_valid==2'b10&&!halted,
+            "translated-mode TLB load did not commit");
       for(int c=0;c<2;c++)begin
         reset_case(12,c);wait(done);@(negedge clk);
         check(requests==0&&commits==0&&tlb_valid==0&&

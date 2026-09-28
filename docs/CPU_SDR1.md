@@ -21,9 +21,10 @@ alter MSR or the router's translation context on this path.
 
 The Programming Environments Manual, Rev. 1, Table 2-22 and its notes
 (printed 2-42), says altering SDR1 while MSR[IR] or MSR[DR] is one has
-undefined results. This bounded core reports such a write as a diagnostic
-fault and does not change SDR1. Reads are allowed in otherwise supported
-modes. The same source requires a `sync` before `mtspr SDR1` and a
+undefined results. The core stores such a write like any other: the 603e
+uses SDR1 only to form HASH1/HASH2, so later misses hash with the new value
+([DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md)). Reads are allowed in
+otherwise supported modes. The same source requires a `sync` before `mtspr SDR1` and a
 context-synchronizing operation afterward: the former protects page-table R/C
 updates, and the latter orders subsequent translated accesses. The core's
 fence/drain/refetch gives the needed ordering for its modeled outstanding
@@ -41,6 +42,6 @@ SPR capture or architectural TLB miss entry uses SDR1 in this increment.
 
 Acceptance requires feature-off decode, literal selector and XO-alias decode,
 masked reset/read/write roundtrips, problem-state rejection before
-allocation, translated-write diagnostic with zero mutation, held retirement,
+allocation, translated-mode writes, held retirement,
 precommit cancellation, drain before update, irrevocable committed refetch at
 `PC+4`, and preservation of unrelated MMU behavior.

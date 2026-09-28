@@ -92,6 +92,9 @@ FULL_DECODE = {'dsi_handler': 0x300, 'program_handler': 0x700, 'fp_unavailable_h
                'syscall_handler': 0xc00}
 MACHINE_CHECK = {'machine_check_handler': 0x200, 'trace_handler': 0xd00, 'iabr_handler': 0x1300,
                  'bad_routine': 0xdfe0}
+RESIDUALS = {'dsi_handler': 0x300, 'alignment_handler': 0x600, 'program_handler': 0x700,
+             'decrementer_handler': 0x900, 'syscall_handler': 0xc00, 'trace_handler': 0xd00,
+             'dtlb_load_handler': 0x1100, 'dtlb_store_handler': 0x1200, 'iabr_handler': 0x1300}
 
 # profile: (bench, source lists, fixed-address symbols as offsets from BASE,
 #           +MODE runs: a count or a tuple of modes)
@@ -134,10 +137,11 @@ PROFILES = {
     'chip-lsu': ('tb_chip_firmware', CHIP, {'alignment_handler': 0x600}, 0),
     'chip-machine-check': ('tb_chip_firmware', CHIP, MACHINE_CHECK, 0),
     'chip-full-decode': ('tb_chip_firmware', CHIP, FULL_DECODE, 0),
+    'residuals': ('tb_compiled_residuals_firmware', BAT_CACHED, RESIDUALS, 0),
 }
 # Benches whose target is not the default for their source lists.
 SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check', 'full-decode', 'chip-mmu-stress',
-                   'chip-lsu', 'chip-machine-check', 'chip-full-decode'}
+                   'chip-lsu', 'chip-machine-check', 'chip-full-decode', 'residuals'}
 RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry', 'mmu-stress-tea'}
 # Plusargs added to every run of a profile.
 # Bench parameters added to every build of a profile.
@@ -181,6 +185,8 @@ def main():
     parser.add_argument('--modes', type=int, nargs='+', help='run only these +MODE values')
     parser.add_argument('--gparam', action='append', default=[],
                         help='bench parameter override NAME=VALUE')
+    parser.add_argument('--plusarg', action='append', default=[],
+                        help='extra simulation plusarg, e.g. +TRACE=<file>')
     args = parser.parse_args()
     top, manifests, offsets, modes = PROFILES[args.profile]
     table_fault_profile = args.profile.startswith('table-fault')
@@ -237,7 +243,7 @@ def main():
             mode_args.append(f'+COVERAGE={build}/cov-{mode}.dat')
         subprocess.run([str(build/'obj'/f'V{top}'), f'+IMAGE={image}',
                         f'+TOHOST={mailbox:08x}', *fault_args, *mode_args,
-                        *PROFILE_ARGS.get(args.profile, [])], check=True)
+                        *PROFILE_ARGS.get(args.profile, []), *args.plusarg], check=True)
 
 
 if __name__ == '__main__':

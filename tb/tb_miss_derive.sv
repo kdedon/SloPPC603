@@ -52,19 +52,23 @@ module tb_miss_derive;
     check(valid_o&&compare_o==32'h891a_2b00&&
           hash1_o==32'h1000_15c0,"SR.N incorrectly changed derivation");
     expect_invalid(32'h1000_1234,32'h8012_3456,32'h1000_0000);
-    expect_invalid(32'h1000_1234,32'h0012_3456,32'h1000_0200);
-    expect_invalid(32'h1000_1234,32'h0012_3456,32'h1001_0001);
-    expect_invalid(32'h1000_1234,32'h0012_3456,32'h1000_0005);
+    // PEM 7.6.1.4.2: HTABORG ORs with the masked hash bitwise, so reserved
+    // SDR1 bits, an unaligned HTABORG and a non-contiguous mask all hash.
+    expect_vector(32'h1000_1234,32'h0012_3456,32'h1000_0200,
+                  32'h1000_1234,32'h891a_2b00,32'h1000_15c0,32'h1000_ea00);
+    expect_vector(32'h1000_1234,32'h0012_3456,32'h1001_0001,
+                  32'h1000_1234,32'h891a_2b00,32'h1001_15c0,32'h1001_ea00);
+    expect_vector(32'h1000_1234,32'h0012_3456,32'h1000_0005,
+                  32'h1000_1234,32'h891a_2b00,32'h1005_15c0,32'h1000_ea00);
     for(int mask=0;mask<512;mask++)begin
-      bit contiguous;
-      contiguous=((mask&(mask+1))==0);
+      logic [18:0] hash;
       ea_i=32'h55aa_ba98;sr_i=32'h00c0_ffee;
       sdr1_i={16'h0000,7'b0,9'(mask)};#1;
-      check(valid_o==contiguous,
-            "HTABMASK contiguous-low-ones validity");
-      if(!contiguous)
-        check({miss_page_o,compare_o,hash1_o,hash2_o}==128'b0,
-              "invalid mask leaked derivation outputs");
+      hash=sr_i[18:0]^{3'b0,ea_i[27:12]};
+      check(valid_o&&
+            hash1_o=={7'b0,hash[18:10]&9'(mask),hash[9:0],6'b0}&&
+            hash2_o=={7'b0,~hash[18:10]&9'(mask),~hash[9:0],6'b0},
+            "HTABMASK bitwise hash");
     end
     $display("PASS miss derivation checks=%0d",checks);
     $finish;

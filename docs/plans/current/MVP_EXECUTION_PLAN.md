@@ -858,3 +858,11 @@ TBEN, RSRV, TLBISYNC and parity; `ppc_biu`; data-cache slot. Fresh on the merge:
 `make -C sim ci`; chip fit (65.39 MHz) inherited from the branch. MVP 84.67% →
 87.67%. See [verification](../../CHIP_PACKAGE_VERIFICATION.md).
 
+## Diagnostic residuals round — accepted (2026-09-28)
+
+Translated-profile diagnostic halts replaced with manual behavior or asserted
+unreachable; only MSR[LE]/ILE remains (out of scope). Compiled firmware compared
+against DingusPPC (`test-reference-firmware`). Inherited from the branch: `ci`,
+reference-acceptance, translated fit (63.37 MHz); fresh on the merge: lint,
+check-spec. MVP 87.67% → 88.84%. See [residuals](../../DIAGNOSTIC_RESIDUALS.md).
+
