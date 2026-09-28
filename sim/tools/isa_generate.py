@@ -56,11 +56,32 @@ DECODE_PARAMETERS = (
     "ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_LIVE_CONTEXT", "ENABLE_TIMERS",
     "ENABLE_RUNTIME_BAT", "ENABLE_SEGMENT_REGISTERS", "ENABLE_TLB_INVALIDATE",
     "ENABLE_TLB_LOAD", "ENABLE_SDR1", "ENABLE_TLB_MISS_EXCEPTIONS",
-    "ENABLE_CACHE_INSTRUCTIONS",
+    "ENABLE_CACHE_INSTRUCTIONS", "ENABLE_BYTE_REVERSE", "ENABLE_MULTIPLE_STRING",
+    "ENABLE_RESERVATION",
 )
 # Cache control needs supervisor exceptions only: dcbz alignment, probe DSI
 # and dcbi privilege use the base exception path.
 CACHE_PROFILE = ["ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_CACHE_INSTRUCTIONS"]
+# Load/store extensions. stwcx. without a reservation reuses the cache probe.
+MULTIPLE_PROFILE = ["ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_MULTIPLE_STRING"]
+BYTE_REVERSE_PROFILE = ["ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_BYTE_REVERSE"]
+RESERVATION_PROFILE = ["ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_CACHE_INSTRUCTIONS", "ENABLE_RESERVATION"]
+LSU_EXTENSION_FORMS = {
+    # id: (mask, value, profile, serialization)
+    "lmw": (0xFC000000, 46 << 26, MULTIPLE_PROFILE, "dispatch_and_execution_sync"),
+    "stmw": (0xFC000000, 47 << 26, MULTIPLE_PROFILE, "execution_sync"),
+    "lswi": (0xFC0007FF, (31 << 26) | (597 << 1), MULTIPLE_PROFILE, "dispatch_and_execution_sync"),
+    "lswx": (0xFC0007FF, (31 << 26) | (533 << 1), MULTIPLE_PROFILE, "dispatch_and_execution_sync"),
+    "stswi": (0xFC0007FF, (31 << 26) | (725 << 1), MULTIPLE_PROFILE, "execution_sync"),
+    "stswx": (0xFC0007FF, (31 << 26) | (661 << 1), MULTIPLE_PROFILE, "execution_sync"),
+    "lwarx": (0xFC0007FF, (31 << 26) | (20 << 1), RESERVATION_PROFILE, "none"),
+    "stwcx.": (0xFC0007FF, (31 << 26) | (150 << 1) | 1, RESERVATION_PROFILE, "none"),
+    "lhbrx": (0xFC0007FF, (31 << 26) | (790 << 1), BYTE_REVERSE_PROFILE, "none"),
+    "lwbrx": (0xFC0007FF, (31 << 26) | (534 << 1), BYTE_REVERSE_PROFILE, "none"),
+    "sthbrx": (0xFC0007FF, (31 << 26) | (918 << 1), BYTE_REVERSE_PROFILE, "none"),
+    "stwbrx": (0xFC0007FF, (31 << 26) | (662 << 1), BYTE_REVERSE_PROFILE, "none"),
+}
+LSU_EXTENSION_PROFILES = [MULTIPLE_PROFILE, BYTE_REVERSE_PROFILE, RESERVATION_PROFILE]
 PROFILE_STATUSES = {"implemented_opt_in_profile", "manual_conflict_rejected"}
 SPR_READ_XO = (339, 371)
 SPR_WRITE_XO = 467
@@ -91,6 +112,7 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
     # UM section 3.7: only dcbi is supervisor-level among the cache forms.
     user_forms = {"dcbf", "dcbst", "dcbt", "dcbtst", "dcbz", "icbi"}
     seen_x = set()
+    seen_lsu = set()
     for entry in spec["decode_entries"]:
         status = entry["implementation"].get("status")
         if status not in PROFILE_STATUSES:
@@ -100,6 +122,20 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
             raise MetadataError(f"{entry['id']}: feature_profile must list known decode parameters")
         if "ENABLE_SUPERVISOR_EXCEPTIONS" not in profile:
             raise MetadataError(f"{entry['id']}: opt-in profile requires supervisor exceptions")
+        if entry["id"] in LSU_EXTENSION_FORMS:
+            mask, value, expected_profile, serialization = LSU_EXTENSION_FORMS[entry["id"]]
+            if (_number(entry["mask"], "mask"), _number(entry["value"], "value")) != (mask, value):
+                raise MetadataError(f"{entry['id']}: load/store extension encoding changed")
+            if profile != expected_profile or entry["unit"] != "LSU" or entry["privilege"] != "user":
+                raise MetadataError(f"{entry['id']}: load/store extension profile, unit or privilege changed")
+            if entry["serialization"] != serialization:
+                raise MetadataError(f"{entry['id']}: Table 6-6 serialization changed")
+            if (entry["id"] == "lmw") != (entry.get("semantic_class") == "load_multiple"):
+                raise MetadataError(f"{entry['id']}: only lmw models the rA-in-range invalid form")
+            seen_lsu.add(entry["id"])
+            continue
+        if profile in LSU_EXTENSION_PROFILES:
+            raise MetadataError(f"{entry['id']}: unreviewed load/store extension form")
         if len(profile) > 1 and "ENABLE_LIVE_CONTEXT" not in profile and profile != CACHE_PROFILE:
             raise MetadataError(f"{entry['id']}: MMU/timer profiles require live context")
         if "ENABLE_CACHE_INSTRUCTIONS" in profile and profile != CACHE_PROFILE:
@@ -131,6 +167,8 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
             seen_x.add(entry["id"])
     if seen_x != set(x_forms):
         raise MetadataError(f"missing opt-in X-forms: {sorted(set(x_forms) - seen_x)}")
+    if seen_lsu != set(LSU_EXTENSION_FORMS):
+        raise MetadataError(f"missing load/store extension forms: {sorted(set(LSU_EXTENSION_FORMS) - seen_lsu)}")
 
 
 def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, Any]) -> None:
@@ -1616,7 +1654,7 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
         "",
         f"This bounded preparation covers {len(entries)} reviewed decode entries: {default_count} implemented by default and {supervisor_count + serialization_count} available only with `ENABLE_SUPERVISOR_EXCEPTIONS=1`. The opt-in forms comprise {supervisor_count} supervisor forms plus ISYNC, SYNC, and EIEIO. This does not complete P03, the 603e exception architecture, or the cache/bus ordering architecture.",
         "",
-        f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBSYNC/TLBLD/TLBLI, the cache control forms and the XER, timer, BAT, SDR1 and TLB-miss SPR moves) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} forms whose manual passages conflict are recorded as `manual_conflict_rejected` and stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
+        f"A further {profile_count} `implemented_opt_in_profile` entries (MTMSR, segment-register moves, TLBIE/TLBSYNC/TLBLD/TLBLI, the cache control forms, the XER, timer, BAT, SDR1 and TLB-miss SPR moves, and the load/store multiple, string, reservation and byte-reverse forms) decode only when every parameter in their `feature_profile` is set. {not_implemented_count} forms whose manual passages conflict are recorded as `manual_conflict_rejected` and stay rejected. {spec['spr_read_opcode_equivalence']['rule']}",
         "",
         "Secondary 601UM and DingusPPC evidence is tagged only as an encoding/semantics cross-check. The 603e UM controls implementation-specific support, and neither secondary source is a timing oracle.",
         "",

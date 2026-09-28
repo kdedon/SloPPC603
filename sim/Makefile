@@ -54,6 +54,8 @@ lint:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_BYTE_REVERSE=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_MISALIGNED_ACCESS=1'b1" $(RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_segment_registers $(SEGMENT_REGISTER_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
@@ -528,6 +530,11 @@ test-reference: reference-checkout
 	python3 cosim/run_reference.py --build-dir $(BUILD_DIR)/reference $(REFERENCE_ARGS)
 
 .PHONY: test-lsu-update-decode test-completion-update test-lsu-update-edges test-bus60x
+.PHONY: test-lsu-extensions-decode
+test: test-lsu-extensions-decode
+test-lsu-extensions-decode:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_lsu_extensions_decode --Mdir $(BUILD_DIR)/lsu-extensions-decode ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_lsu_extensions_decode.sv
+	./$(BUILD_DIR)/lsu-extensions-decode/Vtb_lsu_extensions_decode $(SIM_ARGS)
 test-lsu-update-decode:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_lsu_update_decode --Mdir $(BUILD_DIR)/lsu-update-decode ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_lsu_update_decode.sv
 	./$(BUILD_DIR)/lsu-update-decode/Vtb_lsu_update_decode $(SIM_ARGS)
@@ -582,6 +589,10 @@ test-bus60x-line-read:
 	./$(BUILD_DIR)/bus60x-line-read/Vtb_bus60x_line_read $(SIM_ARGS)
 test-reference-memory: reference-runner-flat
 	python3 cosim/run_memory_reference.py --build-dir $(BUILD_DIR)/reference-memory $(FLAT_REFERENCE_ARGS)
+.PHONY: test-reference-lsu
+test: test-reference-lsu
+test-reference-lsu: reference-checkout
+	python3 cosim/run_lsu_reference.py --build-dir $(BUILD_DIR)/reference-lsu $(REFERENCE_ARGS)
 
 .PHONY: test-multiply-timing test-core-multiply-timing test-icache test-icache-bus60x test-reference-stress
 test: test-multiply-timing test-core-multiply-timing test-icache test-icache-bus60x test-reference-stress
