@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CSEBA6U23I7
+set_global_assignment -name TOP_LEVEL_ENTITY ppc_dcache_measure
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 1
+set_global_assignment -name SEED 1
+set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
+set_global_assignment -name SDC_FILE ppc603e_dcache.sdc
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dcache_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_ram_sdp_be.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_ram_lut.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dcache.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ppc_dcache_measure.sv
+set_instance_assignment -name VIRTUAL_PIN ON -to clk_i
+set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni
+set_instance_assignment -name VIRTUAL_PIN ON -to req_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to req_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to req_op_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to req_addr_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to req_be_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to req_wdata_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to req_wimg_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_data_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_error_o
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_align_o
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_stwcx_ok_o
+set_instance_assignment -name VIRTUAL_PIN ON -to hid0_dce_i
+set_instance_assignment -name VIRTUAL_PIN ON -to hid0_dlock_i
+set_instance_assignment -name VIRTUAL_PIN ON -to hid0_dcfi_i
+set_instance_assignment -name VIRTUAL_PIN ON -to hid0_noopti_i
+set_instance_assignment -name VIRTUAL_PIN ON -to hid0_abe_i
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_kind_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_tt_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_addr_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_be_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_wimg_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_gbl_o
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_cse_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_data_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_rd_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_rd_data_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_rd_error_i
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_wr_done_i
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_wr_error_i
+set_instance_assignment -name VIRTUAL_PIN ON -to push_req_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to push_req_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to push_req_addr_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to push_req_data_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to push_done_i
+set_instance_assignment -name VIRTUAL_PIN ON -to push_error_i
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_addr_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_tt_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_rsp_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_rsp_artry_o
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_rsp_hit_o
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_rsp_push_o
+set_instance_assignment -name VIRTUAL_PIN ON -to busy_o
+set_instance_assignment -name VIRTUAL_PIN ON -to resv_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to hit_o
+set_instance_assignment -name VIRTUAL_PIN ON -to miss_o
+set_instance_assignment -name VIRTUAL_PIN ON -to async_error_o
+set_instance_assignment -name VIRTUAL_PIN ON -to protocol_error_o
+
+set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"

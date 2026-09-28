@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // 603e data cache: 16 KiB, four ways, 32-byte lines, physical index and tag,
-// MEI coherence with snoop pushes. Behaviour and ports: docs/DATA_CACHE.md.
+// MEI coherence with snoop pushes.
 //
 // One LSU operation runs at a time. It is registered on acceptance, looked
 // up in S_LOOKUP (tag MLABs read asynchronously, data M10Ks read in the
