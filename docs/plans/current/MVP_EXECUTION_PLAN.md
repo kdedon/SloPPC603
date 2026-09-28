@@ -827,3 +827,12 @@ profiles, coverage 76.6%) and fits of all three tops, each meeting 50 MHz setup
 and hold at every corner (61.41 / 65.02 / 72.70 MHz). MVP 90.26% → 91.80%.
 See [verification](../../FULL_DECODE_VERIFICATION.md).
 
+## Scope change (2026-09-28)
+
+Data cache with coherence, pin-level chip package and 603e-timed multiplier move
+into the MVP; other contracted design choices are accepted. Weights rebalanced
+(data cache 10%, chip package 4%). MVP 91.80% → 80.93% by denominator change.
+Wave 1 in progress: chip package, fetch-to-decode stage, residual halts and
+corpus comparison, standalone data cache, multiplier. Wave 2 integrates the
+data cache into the LSU and BIU; wave 3 is release and signoff.
+

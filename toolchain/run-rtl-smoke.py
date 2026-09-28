@@ -173,6 +173,8 @@ def main():
     parser.add_argument('--modes', type=int, nargs='+', help='run only these +MODE values')
     parser.add_argument('--gparam', action='append', default=[],
                         help='bench parameter override NAME=VALUE')
+    parser.add_argument('--plusarg', action='append', default=[],
+                        help='extra simulation plusarg, e.g. +TRACE=<file>')
     args = parser.parse_args()
     top, manifests, offsets, modes = PROFILES[args.profile]
     table_fault_profile = args.profile.startswith('table-fault')
@@ -229,7 +231,7 @@ def main():
             mode_args.append(f'+COVERAGE={build}/cov-{mode}.dat')
         subprocess.run([str(build/'obj'/f'V{top}'), f'+IMAGE={image}',
                         f'+TOHOST={mailbox:08x}', *fault_args, *mode_args,
-                        *PROFILE_ARGS.get(args.profile, [])], check=True)
+                        *PROFILE_ARGS.get(args.profile, []), *args.plusarg], check=True)
 
 
 if __name__ == '__main__':
