@@ -745,6 +745,8 @@ module ppc_bat_memory_router #(
 
   // Setup writes and running translations serialize through the committed
   // BAT service.  A setup response must be consumed before start is accepted.
+  // The service samples the payload only with valid, so the CSR payload does
+  // not wait for the slot arbitration.
   always_comb begin
     bat_req_valid = 1'b0;
     bat_req_kind = BAT_SPR_WRITE;
@@ -760,8 +762,8 @@ module ppc_bat_memory_router #(
       bat_req_ea = request_ea_q;
       bat_req_spr = 10'b0;
       bat_req_data = 32'b0;
-    end else if (csr_offer) begin
-      bat_req_valid = bat_csr_req_valid_i;
+    end else begin
+      bat_req_valid = csr_offer && bat_csr_req_valid_i;
       bat_req_kind = bat_csr_req_write_i ? BAT_PREPARE_WRITE : BAT_SPR_READ;
       bat_req_spr = bat_csr_req_spr_i;
       bat_req_data = bat_csr_req_data_i;

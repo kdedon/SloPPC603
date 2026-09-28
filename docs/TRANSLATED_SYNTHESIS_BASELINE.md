@@ -2,6 +2,33 @@
 
 
 
+## 2026-09-27 66 MHz round: registered I/O, IQ decode at push
+
+Recorded: `./quartus/translated/build.sh --docker` and
+`./quartus/report-target-paths.sh translated --docker`, commit `fe62f24`,
+2026-09-27. Quartus 17.0.2, seed 1. **Meets 50 MHz** at every corner with
+hold passing everywhere; 66 MHz misses by 0.145 ns.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +4.703 | +0.263 |
+| Slow 1100 mV, -40 C | +4.774 | +0.245 |
+| Fast 1100 mV, 100 C | +8.025 | +0.140 |
+| Fast 1100 mV, -40 C | +8.284 | +0.122 |
+
+Fmax 65.37 MHz at the worst corner (slow 100 C; 65.68 MHz at slow -40 C),
+from 52.00 MHz after gate 2. At 15.152 ns 26 endpoints fail, all from
+`special|state_q` through the special result valid, the completion finish
+and wake, and rename forwarding into `station|entry` (-0.145 ns) or
+`rename|values` (-0.051 ns). 9,468 ALMs, 11,067 registers, 3 DSP blocks.
+
+Method changes in this fit, so earlier sections are not directly comparable:
+every data port of the measurement top now passes through one boundary
+register (the SDC cuts only the pin-to-register hop), and the fitter runs
+Standard Fit instead of Auto Fit. The 66 MHz column re-times the same fit
+with `./quartus/report-target-paths.sh <top> --docker`; the 50 MHz SDC stays
+the gate of record.
+
 ## 2026-09-27 refit after merging gate 2
 
 Recorded: `./quartus/translated/build.sh --docker`, merge of the gate-2 branch onto

@@ -128,12 +128,7 @@ module ppc_core #(
   page_miss_t iq_miss_q, head_page_miss;
   logic iq_miss_valid_q, iq_push_miss, iq_pop_miss;
   logic [IQ_COUNT_WIDTH-1:0] iq_miss_count_q, iq_miss_count_left;
-  uop_t uop, dispatch_uop;
-  // Only the source indexes of the push-side decode are kept.
-  /* verilator lint_off UNUSEDSIGNAL */
-  uop_t push_uop;
-  /* verilator lint_on UNUSEDSIGNAL */
-  logic [4:0] head_src_a, head_src_b, head_src_c;
+  uop_t uop, dispatch_uop, push_uop;
   retire_packet_t allocation;
   completion_tag_t alloc_producer, retire_producer;
   operand_t src_a, src_b, operand_a, operand_b;
@@ -231,8 +226,7 @@ module ppc_core #(
     .rsp_fault_i(imem_rsp_fault_i),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready), .packet_o(fetched)
   );
-  // GPR source indexes are predecoded at IQ push so register-file and rename
-  // reads start from the queue output instead of the full decoder.
+  // Instructions are decoded at IQ push; dispatch starts from the queued uop.
   ppc_decode #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
@@ -244,12 +238,12 @@ module ppc_core #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
   ) predecode (.insn_i(fetched.insn), .uop_o(push_uop));
-  ppc_fifo #(.WIDTH($bits(fetch_packet_t) + 15), .DEPTH(IQ_DEPTH)) iq (
+  ppc_fifo #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t)), .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(recovery_accepted),
     .push_valid_i(fetch_valid), .push_ready_o(fetch_ready),
-    .push_data_i({fetched, push_uop.src_a, push_uop.src_b, push_uop.src_c}),
+    .push_data_i({fetched, push_uop}),
     .pop_valid_o(iq_valid), .pop_ready_i(iq_ready),
-    .pop_data_o({iq_head, head_src_a, head_src_b, head_src_c})
+    .pop_data_o({iq_head, uop})
   );
   // Page-miss context of the oldest IQ page-miss entry, captured only when no
   // other page-miss entry is queued. A younger one never dispatches: the older
@@ -272,17 +266,6 @@ module ppc_core #(
   end
   assign head_page_miss = (ENABLE_PAGE_MISS_RESULTS && iq_miss_valid_q &&
     (iq_head.fault == FETCH_PAGE_MISS)) ? iq_miss_q : '0;
-  ppc_decode #(
-    .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
-    .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
-    .ENABLE_TIMERS(ENABLE_TIMERS), .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
-    .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
-    .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
-    .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
-    .ENABLE_SDR1(ENABLE_SDR1),
-    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
-    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
-  ) decode (.insn_i(iq_head.insn), .uop_o(uop));
   // Special uops dispatch only with an empty CQ and idle IU, so committed
   // registers supply their operands without the rename/wake path.
   assign special_a = uop.zero_a ? 32'b0 : arch_a;
@@ -368,14 +351,14 @@ module ppc_core #(
   end
   // synthesis translate_on
   ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR)) regfile (
-    .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR]), .read_a_i(head_src_a), .read_b_i(head_src_b),
-    .read_c_i(head_src_c), .read_a_o(arch_a), .read_b_o(arch_b),
+    .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR]), .read_a_i(uop.src_a), .read_b_i(uop.src_b),
+    .read_c_i(uop.src_c), .read_a_o(arch_a), .read_b_o(arch_b),
     .read_c_o(arch_c), .write_i(gpr_port_write),
     .write_reg_i(gpr_port_reg), .write_value_i(gpr_port_value),
     .ready_o(gpr_ready)
   );
   ppc_rename rename (
-    .clk_i, .rst_ni, .read_a_i(head_src_a), .read_b_i(head_src_b),
+    .clk_i, .rst_ni, .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .arch_a_i(arch_a), .arch_b_i(arch_b), .read_a_o(src_a), .read_b_o(src_b),
     .alloc_ready_o(alloc_ready), .alloc_tag_o(alloc_tag),
     .alloc_i(dispatch && dispatch_uop.gpr_write),
@@ -578,6 +561,18 @@ module ppc_core #(
       (!dispatch_uop.gpr_write || alloc_ready)));
   assign dispatch = iq_valid && iq_ready;
   // synthesis translate_off
+  uop_t check_uop;
+  ppc_decode #(
+    .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
+    .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
+    .ENABLE_TIMERS(ENABLE_TIMERS), .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
+    .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
+    .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
+    .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
+    .ENABLE_SDR1(ENABLE_SDR1),
+    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
+  ) check_decode (.insn_i(iq_head.insn), .uop_o(check_uop));
   always @(posedge clk_i) begin
     logic [1:0] forwarded_ea_low;
     forwarded_ea_low = (uop.zero_a ? 2'b0 : src_a.value[1:0]) +
@@ -590,13 +585,14 @@ module ppc_core #(
         else $error("committed and forwarded memory EA low bits disagree");
     end
     if (rst_ni && iq_valid)
-      assert (head_src_a == uop.src_a && head_src_b == uop.src_b &&
-              head_src_c == uop.src_c)
-        else $error("predecoded GPR sources disagree with decode");
+      assert (uop == check_uop) else $error("queued uop disagrees with decode");
     if (rst_ni && dispatch && special_uop)
       assert (cq_empty && !commit && src_a.ready && src_b.ready &&
               src_a.value == arch_a && src_b.value == arch_b)
         else $error("special dispatch saw an uncommitted GPR source");
+    if (rst_ni && (special_exception_redirect || special_branch_redirect))
+      assert (cq_empty && normal_idle)
+        else $error("internal redirect found in-flight work");
     if (rst_ni && ENABLE_PAGE_MISS_RESULTS && dispatch &&
         (iq_head.fault == FETCH_PAGE_MISS))
       assert (iq_miss_valid_q)

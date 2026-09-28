@@ -3,7 +3,8 @@
 // recover to an accepted pre-edge queue prefix.
 module ppc_completion #(
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
-  // Clear: only whole-queue recovery is legal and no survivor walk is built.
+  // Clear: recovery is only legal with an empty queue (the serialized lane's
+  // redirects), so no kill vector or survivor walk is built.
   parameter bit ENABLE_PIVOT_RECOVERY = 1'b1
 ) (
   input logic clk_i,
@@ -82,7 +83,8 @@ module ppc_completion #(
   always @(posedge clk_i) begin
     if (rst_ni) begin
       if (!ENABLE_PIVOT_RECOVERY && redirect_valid_i)
-        assert (redirect_all_i) else $error("pivot recovery is disabled");
+        assert (redirect_all_i && (count_q == '0))
+          else $error("recovery without pivot support needs an empty queue");
       assert (int'(head_q) < CQ_DEPTH) else $error("CQ head out of range");
       assert (int'(tail_q) < CQ_DEPTH) else $error("CQ tail out of range");
       assert (int'(count_q) <= CQ_DEPTH) else $error("CQ count out of range");
@@ -120,13 +122,15 @@ module ppc_completion #(
     if (!ENABLE_PIVOT_RECOVERY) begin
       redirect_found = 1'b1;
       retained = '0;
+      redirect_candidate_kill = '0;
     end
     redirect_candidate_survivors = COUNT_WIDTH'(retained);
     redirect_candidate_tail =
       ring_offset(head_q, retained);
     redirect_accepted_o = redirect_valid_i && redirect_found;
     // An offered finished head is irrevocable even when ready on this edge.
-    if ((count_q != '0) && (head_q < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
+    if (ENABLE_PIVOT_RECOVERY && (count_q != '0) &&
+        (head_q < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
         done_q[head_q] && redirect_candidate_kill[head_q])
       redirect_accepted_o = 1'b0;
 

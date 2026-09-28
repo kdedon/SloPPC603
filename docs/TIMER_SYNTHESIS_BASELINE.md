@@ -2,6 +2,32 @@
 
 
 
+## 2026-09-27 66 MHz round: registered I/O, IQ decode at push
+
+Recorded: `./quartus/timer-bat/build.sh --docker` and
+`./quartus/report-target-paths.sh timer-bat --docker`, commit `fe62f24`,
+2026-09-27. Quartus 17.0.2, seed 1. **Meets 50 MHz and 66 MHz** at every
+corner; hold passes at every corner, so the virtual-input hold misses of
+the previous fits are gone.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +5.785 | +0.250 |
+| Slow 1100 mV, -40 C | +5.613 | +0.196 |
+| Fast 1100 mV, 100 C | +11.913 | +0.138 |
+| Fast 1100 mV, -40 C | +13.326 | +0.121 |
+
+Fmax 69.51 MHz at the worst corner (slow -40 C; 70.35 MHz at slow 100 C),
+from 54.33 MHz after gate 2. No endpoint fails at 15.152 ns. 5,654 ALMs,
+7,212 registers, no block RAM (the IQ left M10K), 3 DSP blocks.
+
+Method changes in this fit, so earlier sections are not directly comparable:
+every data port of the measurement top now passes through one boundary
+register (the SDC cuts only the pin-to-register hop), and the fitter runs
+Standard Fit instead of Auto Fit. The 66 MHz column re-times the same fit
+with `./quartus/report-target-paths.sh <top> --docker`; the 50 MHz SDC stays
+the gate of record.
+
 ## 2026-09-27 refit after merging gate 2
 
 Recorded: `./quartus/timer-bat/build.sh --docker`, merge of the gate-2 branch onto
