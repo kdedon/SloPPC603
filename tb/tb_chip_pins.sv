@@ -49,81 +49,91 @@ module tb_chip_pins;
     end
   end
 
+  // Image write pointer shared by the emit tasks.
+  logic [31:0] at;
   function automatic int unsigned mfspr(input int rt, input int spr);
     return asm_spr(1'b0, rt, spr);
   endfunction
-  task automatic emit(inout logic [31:0] at, input logic [31:0] insn);
+  task automatic emit(input logic [31:0] insn);
     put_word(at, insn);
     at += 4;
   endtask
   // Loads a 32-bit constant into rt.
-  task automatic emit_const(inout logic [31:0] at, input int rt, input logic [31:0] value);
-    emit(at, asm_lis(rt, int'(value[31:16])));
-    emit(at, asm_ori(rt, rt, int'(value[15:0])));
+  task automatic emit_const(input int rt, input logic [31:0] value);
+    emit(asm_lis(rt, int'(value[31:16])));
+    emit(asm_ori(rt, rt, int'(value[15:0])));
   endtask
 
   // Handlers common to every case; r31 holds DATA.
   task automatic load_handlers;
-    logic [31:0] at;
     for (int i = 0; i < MEM_BYTES; i++) memory.mem[i] = 8'h00;
     at = BASE + 32'h100;
-    emit_const(at, 31, DATA);
-    emit(at, mfspr(4, 26));
-    emit(at, asm_stw(4, RESET_SRR0, 31));
-    emit(at, asm_lwz(3, RESETS, 31));
-    emit(at, asm_addi(3, 3, 1));
-    emit(at, asm_stw(3, RESETS, 31));
-    emit(at, asm_ba(MAIN, 1'b0));
+    emit_const(31, DATA);
+    emit(mfspr(4, 26));
+    emit(asm_stw(4, RESET_SRR0, 31));
+    emit(asm_lwz(3, RESETS, 31));
+    emit(asm_addi(3, 3, 1));
+    emit(asm_stw(3, RESETS, 31));
+    emit(asm_ba(MAIN, 1'b0));
     at = BASE + 32'h200;
-    emit(at, mfspr(4, 27));
-    emit(at, asm_stw(4, MC_SRR1, 31));
-    emit(at, asm_li(4, 'h200));
-    emit(at, asm_stw(4, MC_MARK, 31));
-    emit(at, RFI);
+    emit(mfspr(4, 27));
+    emit(asm_stw(4, MC_SRR1, 31));
+    emit(asm_li(4, 'h200));
+    emit(asm_stw(4, MC_MARK, 31));
+    emit(RFI);
     at = BASE + 32'h500;
-    emit(at, asm_li(4, 'h500));
-    emit(at, asm_stw(4, EXT_MARK, 31));
-    emit(at, RFI);
+    emit(asm_li(4, 'h500));
+    emit(asm_stw(4, EXT_MARK, 31));
+    emit(RFI);
     at = BASE + 32'h1400;
-    emit(at, mfspr(4, 27));
-    emit(at, asm_stw(4, SMI_SRR1, 31));
-    emit(at, asm_li(4, 'h1400));
-    emit(at, asm_stw(4, SMI_MARK, 31));
-    emit(at, RFI);
+    emit(mfspr(4, 27));
+    emit(asm_stw(4, SMI_SRR1, 31));
+    emit(asm_li(4, 'h1400));
+    emit(asm_stw(4, SMI_MARK, 31));
+    emit(RFI);
     check(at < MAIN, "handler layout");
   endtask
 
   // MAIN prologue: optional HID0 and MSR writes, then returns the address
   // after them.
-  task automatic prologue(inout logic [31:0] at, input logic [31:0] hid0,
+  task automatic prologue(input logic [31:0] hid0,
                           input logic [31:0] msr);
-    emit_const(at, 3, hid0);
-    emit(at, asm_spr(1'b1, 3, 1008));
-    emit_const(at, 3, msr);
-    emit(at, asm_mtmsr(3));
+    emit_const(3, hid0);
+    emit(asm_spr(1'b1, 3, 1008));
+    emit_const(3, msr);
+    emit(asm_mtmsr(3));
   endtask
   // Counting store loop at `at`.
-  task automatic emit_loop(inout logic [31:0] at);
+  task automatic emit_loop;
     logic [31:0] top;
     top = at;
-    emit(at, asm_addi(5, 5, 1));
-    emit(at, asm_stw(5, LOOPS, 31));
-    emit(at, asm_ba(top, 1'b0));
+    emit(asm_addi(5, 5, 1));
+    emit(asm_stw(5, LOOPS, 31));
+    emit(asm_ba(top, 1'b0));
   endtask
   task automatic loop_program(input logic [31:0] hid0, input logic [31:0] msr);
-    logic [31:0] at;
     load_handlers();
     at = MAIN;
-    prologue(at, hid0, msr);
-    emit_loop(at);
+    prologue(hid0, msr);
+    emit_loop();
     check(at < DATA, "program layout");
   endtask
 
+  // The target cannot abandon a data tenure, so a reset or checkstop is
+  // applied with BG withheld and the last tenure finished.
+  task automatic wait_bus_idle;
+    bus_block = 1'b1;
+    do @(negedge clk);
+    while (!(dbg_n && ta_n && !memory.owed && !memory.in_data && !addr_oe && !dbb_oe && !ts_oe));
+  endtask
   task automatic hard_reset;
-    @(negedge clk);
+    wait_bus_idle();
     hreset_n = 1'b0;
     repeat (8) @(negedge clk);
     check(outputs_released() && ckstp_out_n, "outputs released during HRESET");
+    // The previous program may have stored after the image was loaded.
+    for (int i = 0; i < 'h40; i += 4) put_word(DATA + 32'(i), 32'h0);
+    bus_block = 1'b0;
     fetches = 0;
     hreset_n = 1'b1;
   endtask
@@ -132,7 +142,7 @@ module tb_chip_pins;
     int n;
     n = 0;
     while (mem_word(DATA + offset) != value && n < limit) begin
-      @(posedge clk);
+      @(negedge clk);
       n++;
     end
     check(mem_word(DATA + offset) == value,
@@ -143,17 +153,10 @@ module tb_chip_pins;
   task automatic running(input int more, input string what);
     logic [31:0] start;
     start = mem_word(DATA + LOOPS);
-    repeat (3000) @(posedge clk);
+    repeat (3000) @(negedge clk);
     check(mem_word(DATA + LOOPS) >= start + 32'(more),
           $sformatf("%s: loops %0d -> %0d, fetches=%0d pc=%08x", what, start,
                     mem_word(DATA + LOOPS), fetches, dut.retire.pc));
-  endtask
-  // The target cannot abandon a data tenure, so a reset or checkstop is
-  // applied with BG withheld and the last tenure finished.
-  task automatic wait_bus_idle;
-    bus_block = 1'b1;
-    do @(negedge clk);
-    while (!(dbg_n && ta_n && !memory.in_data && !addr_oe && !dbb_oe && !ts_oe));
   endtask
   task automatic pulse(ref logic pin, input int width);
     @(negedge clk);
@@ -163,12 +166,12 @@ module tb_chip_pins;
   endtask
   task automatic expect_checkstop(input string what);
     int quiet;
-    repeat (6) @(posedge clk);
+    repeat (6) @(negedge clk);
     check(!ckstp_out_n, {what, ": CKSTP_OUT asserted"});
     bus_block = 1'b0;
     quiet = fetches;
     for (int i = 0; i < 200; i++) begin
-      @(posedge clk);
+      @(negedge clk);
       check(outputs_released() && !ckstp_out_n, {what, ": outputs released"});
     end
     check(fetches == quiet, {what, ": no bus activity"});
@@ -226,7 +229,7 @@ module tb_chip_pins;
     wait_word(RESETS, 1, 6000, "boot");
     running(3, "loop");
     pulse(mcp_n, 3);
-    repeat (3000) @(posedge clk);
+    repeat (3000) @(negedge clk);
     check(mem_word(DATA + MC_MARK) == 0 && ckstp_out_n, "HID0[EMCP]=0 ignores MCP");
     running(3, "still running");
   endtask
@@ -241,7 +244,7 @@ module tb_chip_pins;
     expect_checkstop("MCP with MSR[ME]=0");
     check(mem_word(DATA + MC_MARK) == 0, "no machine check vector");
     hard_reset();
-    wait_word(RESETS, 2, 6000, "HRESET leaves checkstop");
+    wait_word(RESETS, 1, 6000, "HRESET leaves checkstop");
     check(ckstp_out_n, "HRESET negates CKSTP_OUT");
   endtask
 
@@ -253,10 +256,10 @@ module tb_chip_pins;
     ckstp_in_n = 1'b0;
     expect_checkstop("CKSTP_IN");
     ckstp_in_n = 1'b1;
-    repeat (50) @(posedge clk);
+    repeat (50) @(negedge clk);
     check(!ckstp_out_n, "checkstop holds after CKSTP_IN negates");
     hard_reset();
-    wait_word(RESETS, 2, 6000, "HRESET leaves checkstop");
+    wait_word(RESETS, 1, 6000, "HRESET leaves checkstop");
   endtask
 
   task automatic case_straps;
@@ -278,28 +281,28 @@ module tb_chip_pins;
   endtask
 
   task automatic case_tben;
-    logic [31:0] at, top;
+    logic [31:0] top;
     load_handlers();
     at = MAIN;
     top = at;
-    emit(at, 32'h7c0c_42e6 | (32'd6 << 21));
-    emit(at, asm_stw(6, TB_VALUE, 31));
-    emit(at, asm_ba(top, 1'b0));
+    emit(32'h7c0c_42e6 | (32'd6 << 21));
+    emit(asm_stw(6, TB_VALUE, 31));
+    emit(asm_ba(top, 1'b0));
     tben = 1'b0;
     hard_reset();
     wait_word(RESETS, 1, 6000, "boot");
-    repeat (1500) @(posedge clk);
+    repeat (1500) @(negedge clk);
     check(tb_values.size() > 4, "time base stores");
     foreach (tb_values[i]) check(tb_values[i] == 0, "TBEN=0 holds the time base");
     tb_values.delete();
     tben = 1'b1;
-    repeat (2000) @(posedge clk);
+    repeat (2000) @(negedge clk);
     check(tb_values.size() > 4 && tb_values[$] > tb_values[0] &&
           tb_values[$] - tb_values[0] <= 32'd500, "TBEN=1 counts once per four clocks");
     tben = 1'b0;
-    repeat (20) @(posedge clk);
+    repeat (20) @(negedge clk);
     tb_values.delete();
-    repeat (1500) @(posedge clk);
+    repeat (1500) @(negedge clk);
     check(tb_values.size() > 4 && tb_values[$] == tb_values[0], "TBEN=0 stops the time base");
     tben = 1'b1;
   endtask
@@ -311,7 +314,7 @@ module tb_chip_pins;
     // EE=0: SMI and INT wait.
     @(negedge clk);
     smi_n = 1'b0;
-    repeat (3000) @(posedge clk);
+    repeat (3000) @(negedge clk);
     check(mem_word(DATA + SMI_MARK) == 0, "MSR[EE]=0 masks SMI");
     smi_n = 1'b1;
     loop_program(32'h0, MSR_IP | MSR_ME | MSR_EE);
@@ -333,25 +336,25 @@ module tb_chip_pins;
   endtask
 
   task automatic case_rsrv;
-    logic [31:0] at, spin1, spin2;
+    logic [31:0] spin1, spin2;
     load_handlers();
     at = MAIN;
-    emit(at, asm_li(8, 'h40));
-    emit(at, 32'h7c00_0028 | (32'd7 << 21) | (32'd31 << 16) | (32'd8 << 11));
-    emit(at, asm_li(9, 100));
-    emit(at, asm_spr(1'b1, 9, 9));
+    emit(asm_li(8, 'h40));
+    emit(32'h7c00_0028 | (32'd7 << 21) | (32'd31 << 16) | (32'd8 << 11));
+    emit(asm_li(9, 100));
+    emit(asm_spr(1'b1, 9, 9));
     spin1 = at;
-    emit(at, asm_bc(16, 0, 0));
-    emit(at, asm_li(3, 1));
-    emit(at, asm_stw(3, STEP, 31));
-    emit(at, asm_li(9, 100));
-    emit(at, asm_spr(1'b1, 9, 9));
+    emit(asm_bc(16, 0, 0));
+    emit(asm_li(3, 1));
+    emit(asm_stw(3, STEP, 31));
+    emit(asm_li(9, 100));
+    emit(asm_spr(1'b1, 9, 9));
     spin2 = at;
-    emit(at, asm_bc(16, 0, 0));
-    emit(at, 32'h7c00_012d | (32'd7 << 21) | (32'd31 << 16) | (32'd8 << 11));
-    emit(at, asm_li(3, 2));
-    emit(at, asm_stw(3, STEP, 31));
-    emit_loop(at);
+    emit(asm_bc(16, 0, 0));
+    emit(32'h7c00_012d | (32'd7 << 21) | (32'd31 << 16) | (32'd8 << 11));
+    emit(asm_li(3, 2));
+    emit(asm_stw(3, STEP, 31));
+    emit_loop();
     hard_reset();
     check(rsrv_n, "no reservation at reset");
     wait_word(STEP, 1, 8000, "lwarx step");
@@ -362,21 +365,20 @@ module tb_chip_pins;
   endtask
 
   task automatic case_tlbisync;
-    logic [31:0] at;
     load_handlers();
     at = MAIN;
-    emit(at, SYNC);
-    emit(at, TLBSYNC);
-    emit(at, asm_li(3, 1));
-    emit(at, asm_stw(3, SYNC_MARK, 31));
-    emit_loop(at);
+    emit(SYNC);
+    emit(TLBSYNC);
+    emit(asm_li(3, 1));
+    emit(asm_stw(3, SYNC_MARK, 31));
+    emit_loop();
     check(at < DATA, "program layout");
     hard_reset();
     // Negated through the strap, asserted before the program reaches tlbsync.
     @(negedge clk);
     tlbisync_n = 1'b0;
     wait_word(RESETS, 1, 6000, "boot");
-    repeat (3000) @(posedge clk);
+    repeat (3000) @(negedge clk);
     check(mem_word(DATA + SYNC_MARK) == 0, "TLBISYNC holds completion at tlbsync");
     tlbisync_n = 1'b1;
     wait_word(SYNC_MARK, 1, 6000, "tlbsync completes after TLBISYNC negates");
