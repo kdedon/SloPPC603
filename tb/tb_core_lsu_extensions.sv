@@ -29,13 +29,15 @@ module tb_core_lsu_extensions;
   logic [31:0] da, wd, rdata;
   logic [3:0] st;
   data_fault_t rfault;
+  page_miss_t rcapsule;
+  logic dmiss_q = 1'b0, dmiss_write_q = 1'b0;
   logic tv, tr, halted;
   retire_packet_t retired;
   logic ipending = 1'b0, dpending = 1'b0;
   logic [31:0] iaddress = 32'b0, daddress = 32'b0;
   logic dfault_q = 1'b0;
   int ddelay = 0, cycles = 0, checks = 0;
-  logic irq = 1'b0, irq_armed = 1'b0, fault_armed = 1'b0;
+  logic irq = 1'b0, irq_armed = 1'b0, fault_armed = 1'b0, miss_armed = 1'b0;
 
   logic [31:0] prog [logic [31:0]];
   logic [7:0] mem [logic [31:0]];
@@ -57,7 +59,9 @@ module tb_core_lsu_extensions;
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_EXTERNAL_INTERRUPTS(1'b1),
     .ENABLE_CACHE_INSTRUCTIONS(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_BYTE_REVERSE(1'b1), .ENABLE_MULTIPLE_STRING(1'b1),
-    .ENABLE_RESERVATION(1'b1), .ENABLE_MISALIGNED_ACCESS(1'b1)
+    .ENABLE_RESERVATION(1'b1), .ENABLE_MISALIGNED_ACCESS(1'b1),
+    .ENABLE_TGPR(1'b1), .ENABLE_SDR1(1'b1), .ENABLE_PAGE_MISS_RESULTS(1'b1),
+    .ENABLE_TLB_LOAD(1'b1), .ENABLE_TLB_MISS_EXCEPTIONS(1'b1)
   ) dut (
     .dmem_req_probe_o(dprobe), .icbi_req_valid_o(unused_icbi[32]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_icbi[31:0]),
@@ -118,7 +122,7 @@ module tb_core_lsu_extensions;
     .dmem_req_wdata_o(wd), .dmem_req_wstrb_o(st),
     .dmem_rsp_valid_i(rv), .dmem_rsp_ready_o(rr),
     .dmem_rsp_rdata_i(rdata), .dmem_rsp_error_i(1'b0),
-    .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(rfault),
+    .dmem_rsp_page_miss_i(rcapsule), .dmem_rsp_fault_i(rfault),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(irq), .interrupt_taken_o(unused_interrupt[32]),
@@ -204,6 +208,8 @@ module tb_core_lsu_extensions;
     emit_pc = 32'h4000;
     interval_requests[0] = 0;
     interval_stores[0] = 0;
+    emit(asm_d(15, 3, 0, 'h1000));     // lis r3,0x1000
+    emit(asm_spr(1, 3, 25));           // SDR1
     emit(asm_li(1, 'h2000));
     emit(asm_li(2, 6));
     emit(asm_li(9, 'h2010));
@@ -304,6 +310,20 @@ module tb_core_lsu_extensions;
     emit(asm_li(3, 0));
     emit(asm_mtmsr(3));
     mark(11);
+    // TLB miss on the second page under DR=1, then restart.
+    emit(asm_li(3, 'h10));
+    emit(asm_mtmsr(3));
+    mark(13);
+    for (int k = 24; k < 32; k++) emit(asm_li(k, 0));
+    expect_event(32'h1100, 32'h3000, 32'b0, emit_pc);
+    emit(asm_d(46, 24, 14, 0));        // lmw r24,0(r14): r14 = 0x2ff0
+    mark(14);
+    for (int k = 24; k < 32; k++) emit(asm_li(k, 'h6000 + k));
+    expect_event(32'h1200, 32'h3000, 32'b0, emit_pc);
+    emit(asm_xf(725, 24, 15, 8, 0));   // stswi r24,r15,8: r15 = 0x2ffe
+    mark(15);
+    emit(asm_li(3, 0));
+    emit(asm_mtmsr(3));
     // F: an interrupt waits for the whole lmw.
     emit(asm_li(3, 0));
     emit(asm_d(24, 3, 3, 'h8000));     // ori r3,r3,0x8000 (EE)
@@ -330,6 +350,11 @@ module tb_core_lsu_extensions;
       prog[bases[i] + 'h500] = asm_spr(0, 2, 26);
       prog[bases[i] + 'h504] = ASM_RFI;
       prog[bases[i] + 'hc00] = ASM_RFI;
+      for (int v = 'h1100; v <= 'h1200; v += 'h100) begin
+        prog[bases[i] + v] = asm_spr(0, 2, 976);
+        prog[bases[i] + v + 4] = asm_spr(0, 2, 26);
+        prog[bases[i] + v + 8] = ASM_RFI;
+      end
     end
   endtask
 
@@ -339,7 +364,15 @@ module tb_core_lsu_extensions;
   assign dr = rst_n && !dpending;
   assign rv = rst_n && dpending && ddelay == 0;
   assign rdata = w(daddress);
-  assign rfault = (dpending && dfault_q) ? DATA_DSI_PROTECTION : DATA_OK;
+  assign rfault = (dpending && dfault_q) ? DATA_DSI_PROTECTION :
+                  (dpending && dmiss_q) ? DATA_PAGE_MISS : DATA_OK;
+  always_comb begin
+    rcapsule = '0;
+    rcapsule.ea = daddress;
+    rcapsule.sr = 32'h4012_3456;
+    rcapsule.dr = 1'b1;
+    rcapsule.write = dmiss_write_q;
+  end
   assign tr = rst_n && cycles % 7 != 3;
 
   task automatic check(input bit ok, input string why);
@@ -431,6 +464,16 @@ module tb_core_lsu_extensions;
         check_gpr(4, 32'h444, "page-crossing lwz under DR");
         check_gpr(5, w(32'h2ff1), "in-page split under DR");
       end
+      14: begin
+        check_interval(13, 13, 0);
+        for (int k = 24; k < 32; k++) check_gpr(k, w(32'h2ff0 + 4 * (k - 24)), "lmw after miss");
+      end
+      15: begin
+        check_interval(14, 6, 5);
+        for (int k = 0; k < 8; k++)
+          check(m(32'h2ffe + k) == 8'(32'h6000 + 24 + k / 4 >> (8 * (3 - k % 4))),
+                "stswi after miss");
+      end
       12: begin
         for (int k = 25; k < 32; k++) check_gpr(k, 32'h1250 + k - 25, "interrupted lmw");
       end
@@ -459,6 +502,8 @@ module tb_core_lsu_extensions;
       if (dv && dr) begin
         logic fault;
         fault = fault_armed && da[31:12] == 20'h00003;
+        dmiss_q <= miss_armed && da[31:12] == 20'h00003;
+        dmiss_write_q <= dw;
         dpending <= 1'b1;
         daddress <= da;
         dfault_q <= fault;
@@ -468,7 +513,7 @@ module tb_core_lsu_extensions;
         if (dprobe) begin
           probes++;
           check(dw && st == 4'b0, "stwcx. probe is a strobeless store");
-        end else if (dw && !fault) begin
+        end else if (dw && !fault && !(miss_armed && da[31:12] == 20'h00003)) begin
           for (int b = 0; b < 4; b++)
             if (st[3-b]) mem[da + 32'(b)] = wd[31-8*b -: 8];
           stores++;
@@ -492,6 +537,7 @@ module tb_core_lsu_extensions;
           interval_requests[id] = 0;
           interval_stores[id] = 0;
           if (id == 6 || id == 7 || id == 8 || id == 9) fault_armed <= 1'b1;
+          if (id == 13 || id == 14) miss_armed <= 1'b1;
           if (id == 11) irq_armed <= 1'b1;
         end
         if (at(retired.pc, 12'h300) || at(retired.pc, 12'h600)) begin
@@ -523,6 +569,24 @@ module tb_core_lsu_extensions;
           events_seen++;
         end
         if (at(retired.pc, 12'hc00)) sc_entries++;
+        if (retired.pc[11:0] == 12'h100 || retired.pc[11:0] == 12'h200) begin
+          if (retired.pc == 32'h1100 || retired.pc == 32'h1200 ||
+              retired.pc == 32'hfff01100 || retired.pc == 32'hfff01200) begin
+            current.vector = {16'h0, retired.pc[15:0]};
+            current.dar = retired.value;
+            current.dsisr = 32'b0;
+            miss_armed <= 1'b0;
+          end
+        end
+        if (retired.pc == 32'h1104 || retired.pc == 32'h1204 ||
+            retired.pc == 32'hfff01104 || retired.pc == 32'hfff01204) begin
+          current.srr0 = retired.value;
+          check(expected_events.size() > 0 && current.vector == expected_events[0].vector &&
+                current.dar == expected_events[0].dar && current.srr0 == expected_events[0].srr0,
+                $sformatf("miss event got %04x/%08x/%08x", current.vector, current.dar, current.srr0));
+          void'(expected_events.pop_front());
+          events_seen++;
+        end
       end
     end
   end

@@ -130,7 +130,7 @@ module ppc_core_measure (
                        retire.page_miss.ea ^ retire.page_miss.sr ^
                        {27'b0, retire.page_miss.pr, retire.page_miss.ir,
                         retire.page_miss.dr, retire.page_miss.write, retire.page_miss.way} ^
-                       {31'b0, retire.rename_owned} ^
+                       {30'b0, retire.rename_owned, retire.seq_partial} ^
                        retire.update_value ^
                        retire.cr_delta ^ retire.xer_delta ^ {29'b0, retire.cr_field} ^
                        {23'b0, retire.cr_mask, retire.write_cr_fields} ^
