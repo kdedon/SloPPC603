@@ -91,8 +91,15 @@ module tb_completion;
     input logic expect_wake, input rename_tag_t expected_rename
   );
     @(negedge clk);
-    result_packet.producer = tag;
-    result_packet.value = value;
+    // One whole write: under Verilator 5.020 member-only writes here did
+    // not re-evaluate the DUT's wake payload.
+    begin
+      result_packet_t packet;
+      packet = result_packet;
+      packet.producer = tag;
+      packet.value = value;
+      result_packet = packet;
+    end
     result_valid = 1'b1;
     #1;
     require(result_ready, "response transport must drain outside reset");

@@ -175,8 +175,15 @@ module tb_recovery_state;
     input logic expect_wake
   );
     @(negedge clk);
-    result_packet.producer = producer;
-    result_packet.value = value;
+    // One whole write: under Verilator 5.020 member-only writes here did
+    // not re-evaluate the DUT's wake payload.
+    begin
+      result_packet_t packet;
+      packet = result_packet;
+      packet.producer = producer;
+      packet.value = value;
+      result_packet = packet;
+    end
     result_valid = 1'b1;
     #1;
     require(result_ready, "result transport did not drain");
