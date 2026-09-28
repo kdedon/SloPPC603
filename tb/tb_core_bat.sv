@@ -111,6 +111,9 @@ module tb_core_bat;
     .page_needs_changed_o(unused_page_ports[48]),
     .page_config_o(unused_page_ports[49]),.timer_tick_i(1'b0),
     .timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
     .interrupt_pc_o(unused_interrupt[31:0]), .checkstop_o(unused_checkstop), .*);

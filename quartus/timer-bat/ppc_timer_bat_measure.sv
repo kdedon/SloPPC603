@@ -316,6 +316,9 @@ module ppc_timer_bat_measure (
     .interrupt_pc_o(interrupt_pc_o_od),
     .timer_tick_i(timer_tick_i_ibq),
     .timebase_enable_i(timebase_enable_i_ibq),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken_o_od),
     .decrementer_pc_o(decrementer_pc_o_od),
     .bat_write_valid_i(bat_write_valid_i_ibq),

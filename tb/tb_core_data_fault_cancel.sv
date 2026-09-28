@@ -92,6 +92,9 @@ module tb_core_data_fault_cancel;
     .dmem_rsp_valid_i(rv),.dmem_rsp_ready_o(rr),.dmem_rsp_rdata_i(32'b0),
     .dmem_rsp_error_i(1'b0),.dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(DATA_DSI_PROTECTION),
     .timer_tick_i(1'b0),.timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(unused_timer[32]),.decrementer_pc_o(unused_timer[31:0]),
     .external_irq_i(1'b0),.interrupt_taken_o(unused_irq[32]),
     .interrupt_pc_o(unused_irq[31:0]),

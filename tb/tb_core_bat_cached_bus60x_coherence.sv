@@ -117,6 +117,7 @@ module tb_core_bat_cached_bus60x_coherence;
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(),.interrupt_pc_o(),
     .timer_tick_i(1'b0),.timebase_enable_i(1'b0),
+    .pin_event_i('0), .pin_status_o(),
     .decrementer_taken_o(),.decrementer_pc_o(),
     .bat_write_valid_i(1'b0),.bat_write_ready_o(),
     .bat_write_spr_i('0),.bat_write_data_i('0),

@@ -31,6 +31,7 @@ module ppc_core_bat #(
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
+  parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   parameter logic [3:0] PLL_CFG = 4'b0000
@@ -42,6 +43,8 @@ module ppc_core_bat #(
   output logic [31:0] interrupt_pc_o,
   input  logic timer_tick_i,
   input  logic timebase_enable_i,
+  input  ppc_pkg::pin_event_t pin_event_i,
+  output ppc_pkg::pin_status_t pin_status_o,
   output logic decrementer_taken_o,
   output logic [31:0] decrementer_pc_o,
   input  logic bat_write_valid_i,
@@ -234,6 +237,7 @@ module ppc_core_bat #(
     .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+    .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE), .PVR_VALUE(PVR_VALUE),
     .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) core (
@@ -283,6 +287,7 @@ module ppc_core_bat #(
     .bat_csr_ack_ready_o(bat_csr_ack_ready), .bat_csr_idle_i(bat_csr_idle),
     .external_irq_i, .interrupt_taken_o, .interrupt_pc_o,
     .timer_tick_i, .timebase_enable_i, .decrementer_taken_o, .decrementer_pc_o,
+    .pin_event_i, .pin_status_o,
     .imem_req_valid_o(imem_req_valid),
     .imem_req_ready_i(imem_req_ready), .imem_req_addr_o(imem_req_addr),
     .imem_rsp_valid_i(imem_rsp_valid), .imem_rsp_ready_o(imem_rsp_ready),

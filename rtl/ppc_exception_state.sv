@@ -53,8 +53,9 @@ module ppc_exception_state #(
   // Full decode has no FPU: MSR[FP] never sets, as on the EC603e (UM 4.5.8).
   localparam logic [31:0] MSR_STORED_MASK = ENABLE_FULL_DECODE ?
     (MSR_IMPLEMENTED_MASK & ~(32'd1 << MSR_FP)) : MSR_IMPLEMENTED_MASK;
-  // Machine check cause: manual bit 13 TEA.
+  // Machine check causes: manual bit 12 MCP, bit 13 TEA.
   localparam logic [31:0] SRR1_MACHINE_CHECK_TEA = 32'h0004_0000;
+  localparam logic [31:0] SRR1_MACHINE_CHECK_MCP = 32'h0008_0000;
 
   logic [31:0] msr_q, srr0_q, srr1_q;
   logic result_valid_q, result_supported_q;
@@ -278,6 +279,34 @@ module ppc_exception_state #(
                 msr_q <= exception_msr(msr_q) & ~(32'd1 << MSR_ME);
                 result_supported_q <= 1'b1;
                 result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0200);
+              end
+            end
+            EVENT_MACHINE_CHECK_PIN: begin
+              // UM Table 4-10 with manual SRR1 bit 12 (MCP); ME as for TEA.
+              if (msr_q[MSR_ME]) begin
+                srr0_q <= event_pc_i;
+                srr1_q <= (msr_q & 32'h0000_ffff) | SRR1_MACHINE_CHECK_MCP;
+                msr_q <= exception_msr(msr_q) & ~(32'd1 << MSR_ME);
+                result_supported_q <= 1'b1;
+                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0200);
+              end
+            end
+            EVENT_SOFT_RESET: begin
+              // UM Table 4-9: nonmaskable, taken in any state.
+              srr0_q <= event_pc_i;
+              srr1_q <= msr_q & 32'h0000_ffff;
+              msr_q <= exception_msr(msr_q);
+              result_supported_q <= 1'b1;
+              result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0100);
+            end
+            EVENT_SMI: begin
+              // UM Table 4-19: as external, at 0x1400.
+              if (msr_q[MSR_EE] && !msr_q[MSR_TGPR]) begin
+                srr0_q <= event_pc_i;
+                srr1_q <= msr_q & 32'h0000_ffff;
+                msr_q <= exception_msr(msr_q);
+                result_supported_q <= 1'b1;
+                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h1400);
               end
             end
             EVENT_TRACE, EVENT_IABR: begin

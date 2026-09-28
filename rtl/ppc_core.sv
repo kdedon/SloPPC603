@@ -41,6 +41,9 @@ module ppc_core #(
   // encoding; PVR, HID0, HID1, EAR and eciwx/ecowx. The wrapper must honor
   // dmem_req_attr_o and the instruction-cache control request.
   parameter bit ENABLE_FULL_DECODE = 1'b0,
+  // MCP, SRESET and SMI exceptions and TLBISYNC from pin_event_i; needs
+  // ENABLE_EXTERNAL_INTERRUPTS.
+  parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   // PID7v-603e, UM 1.3.1.1.
   parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
@@ -105,6 +108,8 @@ module ppc_core #(
 
   input logic external_irq_i,
   input logic timer_tick_i, timebase_enable_i,
+  input ppc_pkg::pin_event_t pin_event_i,
+  output ppc_pkg::pin_status_t pin_status_o,
   output logic decrementer_taken_o,
   output logic [31:0] decrementer_pc_o,
   output logic interrupt_taken_o,
@@ -184,13 +189,18 @@ module ppc_core #(
   logic frontend_fence, frontend_quiescent;
   logic interrupt_qualified, interrupt_admit, resume_override_valid_q;
   logic decrementer_pending, external_irq_q;
+  pin_event_t pin_event_q;
+  logic pin_interrupt;
   logic [31:0] committed_next_pc_q, resume_override_target_q, interrupt_resume_pc;
   // A pending trace follows the instruction it traces, ahead of EXT/DEC. A
   // machine check at the IQ head outranks EXT/DEC (UM Table 4-2).
   assign fetch_machine_check_head = ENABLE_MACHINE_CHECK && iq_valid &&
     (iq_head.fault == FETCH_MACHINE_CHECK);
+  // MCP and SRESET do not wait on MSR[EE]; SMI does.
+  assign pin_interrupt = ENABLE_PIN_INTERRUPTS && !fetch_machine_check_head &&
+    (pin_event_q.mcp || pin_event_q.soft_reset || (pin_event_q.smi && msr[MSR_EE]));
   assign interrupt_qualified = ENABLE_EXTERNAL_INTERRUPTS &&
-    ((ENABLE_DEBUG_EXCEPTIONS && trace_pending_q) ||
+    ((ENABLE_DEBUG_EXCEPTIONS && trace_pending_q) || pin_interrupt ||
      ((external_irq_q || (ENABLE_TIMERS && decrementer_pending)) &&
       msr[MSR_EE] && !fetch_machine_check_head)) &&
     !fault_pending && !halted_o;
@@ -544,6 +554,7 @@ module ppc_core #(
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+    .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .PVR_VALUE(PVR_VALUE), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
@@ -581,6 +592,7 @@ module ppc_core #(
     .interrupt_valid_i(interrupt_admit), .interrupt_pc_i(interrupt_resume_pc),
     .interrupt_decrementer_i(ENABLE_TIMERS && !external_irq_q),
     .interrupt_trace_i(ENABLE_DEBUG_EXCEPTIONS && trace_pending_q),
+    .pin_event_i(pin_event_q), .pin_status_o,
     .external_irq_i(external_irq_q),
     .timer_tick_i, .timebase_enable_i, .decrementer_taken_o, .decrementer_pc_o,
     .decrementer_pending_o(decrementer_pending),
@@ -827,9 +839,11 @@ module ppc_core #(
       halted_o <= 1'b0;
       fault_producer <= '0;
       external_irq_q <= 1'b0;
+      pin_event_q <= '0;
     end else begin
       // Registered so the pin never reaches dispatch combinationally.
       external_irq_q <= ENABLE_EXTERNAL_INTERRUPTS && external_irq_i;
+      pin_event_q <= ENABLE_PIN_INTERRUPTS ? pin_event_i : '0;
       if (fault_killed) fault_pending <= 1'b0;
       if (dispatch && dispatch_uop.illegal) begin
         fault_pending <= 1'b1;

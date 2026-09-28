@@ -37,6 +37,7 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
+  parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
   parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
@@ -47,6 +48,8 @@ module ppc_core_bat_cached_bus60x #(
   output logic [31:0] interrupt_pc_o,
   input  logic timer_tick_i,
   input  logic timebase_enable_i,
+  input  ppc_pkg::pin_event_t pin_event_i,
+  output ppc_pkg::pin_status_t pin_status_o,
   output logic decrementer_taken_o,
   output logic [31:0] decrementer_pc_o,
   input  logic bat_write_valid_i,
@@ -279,6 +282,7 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+    .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE), .PVR_VALUE(PVR_VALUE),
     // HID0[ICE] starts in the cache's reset mode.
     .HID0_RESET(RESET_CACHE_ENABLE ? (32'd1 << ppc_pkg::HID0_ICE) : 32'd0),
@@ -291,6 +295,7 @@ module ppc_core_bat_cached_bus60x #(
     .interrupt_pc_o,
     .timer_tick_i,
     .timebase_enable_i,
+    .pin_event_i, .pin_status_o,
     .decrementer_taken_o,
     .decrementer_pc_o,
     .bat_write_valid_i,

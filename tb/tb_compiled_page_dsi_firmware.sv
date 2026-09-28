@@ -81,6 +81,9 @@ module tb_compiled_page_dsi_firmware;
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(external_irq),.interrupt_taken_o(interrupt_taken),.interrupt_pc_o(unused_interrupt_pc),
     .timer_tick_i(1'b0),.timebase_enable_i(1'b0),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken),.decrementer_pc_o(unused_decrementer_pc),
     .bat_write_valid_i(bat_valid),.bat_write_ready_o(bat_ready),
     .bat_write_spr_i(bat_spr),.bat_write_data_i(bat_data),

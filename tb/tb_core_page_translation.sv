@@ -62,6 +62,9 @@ module tb_core_page_translation #(parameter bit ENABLE_MICRO_TLB = 1'b1);
     /* verilator lint_on PINCONNECTEMPTY */
     .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
     .icbi_req_ea_o(unused_icbi_core[32:1]),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .external_irq_i(1'b0),.timer_tick_i(1'b0),.timebase_enable_i(1'b1),.checkstop_o(unused_checkstop), .*);
 
   integer checks=0,cycles=0,phase=0,loads=0,physical_reads=0;

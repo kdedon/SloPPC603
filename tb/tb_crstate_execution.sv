@@ -116,6 +116,9 @@ module tb_crstate_execution;
     .bat_recovery_retained_i(1'b0), .bat_recovery_target_i(32'b0),
     .clk_i(clk), .rst_ni(rst_n),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(timer_outputs[33]), .decrementer_pc_o(timer_outputs[31:0]),
     .decrementer_pending_o(timer_outputs[32]),
     .interrupt_decrementer_i(1'b0), .external_irq_i(1'b0), .interrupt_trace_i(1'b0),

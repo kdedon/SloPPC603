@@ -76,6 +76,9 @@ module tb_compiled_irq_firmware;
     .page_config_o(unused_page_ports[49]),
     .clk_i(clk),.rst_ni(rst_n),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(external_irq),.interrupt_taken_o(interrupt_taken),.interrupt_pc_o(interrupt_pc),
     .bat_write_valid_i(bat_valid),.bat_write_ready_o(bat_ready),
