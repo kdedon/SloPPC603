@@ -32,15 +32,17 @@ class TlbOracleTests(unittest.TestCase):
         m.accept(request(kind=1, bank=1, pp=0, rpn=1, c=1))
         self.assertEqual(m.accept(request(bank=1, write=1))['pa'], 4096)
 
-    def test_duplicate_rejection_and_invalidation(self):
+    def test_duplicate_replacement_and_invalidation(self):
         m = Model()
         for bank in (0, 1):
             for way in (0, 1):
                 m.accept(request(kind=1, bank=bank, ea=way*0x20000,
                                  way=way, vsid=3, rpn=way+1, pp=2))
-        self.assertEqual(m.accept(request(kind=1, bank=1, way=1, vsid=3))['refill_rejected'], 1)
+        # The tag in way 0 moves to way 1, overwriting that way's old tag.
+        self.assertEqual(m.accept(request(kind=1, bank=1, way=1, vsid=3, rpn=9))['refill_rejected'], 0)
         self.assertEqual(m.accept(request(kind=2, pr=1))['privileged'], 1)
-        self.assertEqual(len(m.slots), 4)
+        self.assertEqual(len(m.slots), 3)
+        self.assertEqual(m.slots[1, 0, 1]['rpn'], 9)
         m.accept(request(kind=2, ea=0xfffe0000, vsid=0xffffff))
         self.assertEqual(len(m.slots), 0)
 
