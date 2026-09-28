@@ -18,11 +18,9 @@ module ppc_iu #(
 );
   import ppc_pkg::*;
   localparam int DIV_COUNT_WIDTH = DIV_LATENCY <= 1 ? 1 : $clog2(DIV_LATENCY);
-  localparam int MULTIPLY_COUNT_WIDTH = $clog2(6);
   logic occupied;
   issue_packet_t held;
   logic [DIV_COUNT_WIDTH-1:0] divide_cycles_left;
-  logic [MULTIPLY_COUNT_WIDTH-1:0] multiply_cycles_left;
   logic held_divide, held_multiply, held_complete;
   logic divider_start, divider_cancel, divider_signed;
   logic divider_busy, divider_quotient_valid;
@@ -34,9 +32,14 @@ module ppc_iu #(
   logic add_overflow, operation_overflow, final_so;
   logic held_compare, compare_eq, compare_gt;
   logic issue_multiply, issue_multiply_signed;
-  logic signed [32:0] multiply_a_q, multiply_b_q;
-  logic signed [65:0] multiply_product_q;
-  logic [1:0] _unused_multiply_product_high;
+  logic multiply_active, multiply_done, multiply_last;
+  logic multiply_a_sign_q, multiply_b_sign_q;
+  logic [4:0] multiply_step;
+  logic signed [8:0] multiply_digit, multiply_next_digit;
+  logic signed [32:0] multiply_a;
+  logic [32:7] multiply_b;
+  logic signed [41:0] multiply_partial;
+  logic [63:0] multiply_addend, multiply_acc;
   logic multiply_overflow;
   logic divide_by_zero;
   logic signed_divide_exception;
@@ -76,7 +79,7 @@ module ppc_iu #(
     (held.ctrl.op == ALU_MULHWU);
   assign held_complete = held_divide ?
     ((divide_cycles_left == '0) && divider_quotient_valid && !divider_busy) :
-    (!held_multiply || (multiply_cycles_left == '0));
+    (!held_multiply || multiply_done);
   // Cancel frees the slot for a same-edge replacement.
   assign issue_ready_o = rst_ni &&
     (!occupied || cancel_i || (result_valid_o && result_ready_i));
@@ -109,23 +112,94 @@ module ppc_iu #(
                    33'(add_carry_in);
   assign add_overflow = (add_operand_a[31] == held.b[31]) &&
                         (add_sum[31] != add_operand_a[31]);
-  // One signed 33x33 DSP product serves signed and unsigned forms. Inputs
-  // register at issue and the product one edge later, inside the shortest
-  // (3-cycle) reservation.
+  // Radix-256 multiplier: one signed 33x9 partial product per cycle, rB
+  // digits taken low byte first. Each digit is the signed byte plus the
+  // previous byte's sign bit, so iteration stops once the remaining rB bits
+  // are sign extension. Latency is therefore 1 + significant rB bytes: 2-3
+  // for MULLI, 2-5 for MULLW/MULHW and 2-6 for MULHWU, whose zero extension
+  // adds a fifth digit when rB bit 31 is set.
   assign issue_multiply = (issue_i.ctrl.op == ALU_MULLI) ||
     (issue_i.ctrl.op == ALU_MULLW) || (issue_i.ctrl.op == ALU_MULHW) ||
     (issue_i.ctrl.op == ALU_MULHWU);
   assign issue_multiply_signed = issue_i.ctrl.op != ALU_MULHWU;
+  assign multiply_a = {multiply_a_sign_q, held.a};
+  assign multiply_b = {multiply_b_sign_q, held.b[31:7]};
+  // expect: DSP 33x9 signed, unregistered
+  assign multiply_partial = multiply_a * multiply_digit;
+  always_comb begin
+    case (multiply_step)
+      5'b00010: multiply_addend = {{14{multiply_partial[41]}}, multiply_partial, 8'b0};
+      5'b00100: multiply_addend = {{6{multiply_partial[41]}}, multiply_partial, 16'b0};
+      5'b01000: multiply_addend = {multiply_partial[39:0], 24'b0};
+      5'b10000: multiply_addend = {multiply_partial[31:0], 32'b0};
+      default: multiply_addend = {{22{multiply_partial[41]}}, multiply_partial};
+    endcase
+  end
+  // The step just taken is the last when the rB bits above it all equal
+  // its top bit.
+  always_comb begin
+    case (multiply_step)
+      5'b00010: begin
+        multiply_last = &multiply_b[32:15] || !(|multiply_b[32:15]);
+        multiply_next_digit = {multiply_b[23], multiply_b[23:16]} +
+                              9'(multiply_b[15]);
+      end
+      5'b00100: begin
+        multiply_last = &multiply_b[32:23] || !(|multiply_b[32:23]);
+        multiply_next_digit = {multiply_b[31], multiply_b[31:24]} +
+                              9'(multiply_b[23]);
+      end
+      5'b01000: begin
+        multiply_last = multiply_b[32] == multiply_b[31];
+        multiply_next_digit = {9{multiply_b[32]}} + 9'(multiply_b[31]);
+      end
+      5'b10000: begin
+        multiply_last = 1'b1;
+        multiply_next_digit = '0;
+      end
+      default: begin
+        multiply_last = &multiply_b[32:7] || !(|multiply_b[32:7]);
+        multiply_next_digit = {multiply_b[15], multiply_b[15:8]} +
+                              9'(multiply_b[7]);
+      end
+    endcase
+  end
   always_ff @(posedge clk_i) begin
     if (issue_valid_i && issue_ready_o && issue_multiply) begin
-      multiply_a_q <= {issue_multiply_signed && issue_i.a[31], issue_i.a};
-      multiply_b_q <= {issue_multiply_signed && issue_i.b[31], issue_i.b};
+      multiply_a_sign_q <= issue_multiply_signed && issue_i.a[31];
+      multiply_b_sign_q <= issue_multiply_signed && issue_i.b[31];
+      multiply_step <= 5'b00001;
+      multiply_digit <= {issue_i.b[7], issue_i.b[7:0]};
+      multiply_acc <= '0;
+    end else if (multiply_active) begin
+      multiply_step <= multiply_step << 1;
+      multiply_digit <= multiply_next_digit;
+      multiply_acc <= multiply_acc + multiply_addend;
     end
-    multiply_product_q <= multiply_a_q * multiply_b_q;
   end
-  assign _unused_multiply_product_high = multiply_product_q[65:64];
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      multiply_active <= 1'b0;
+      multiply_done <= 1'b0;
+    end else begin
+      if (multiply_active && multiply_last) begin
+        multiply_active <= 1'b0;
+        multiply_done <= 1'b1;
+      end
+      if (cancel_i || (result_valid_o && result_ready_i)) begin
+        multiply_active <= 1'b0;
+        multiply_done <= 1'b0;
+      end
+      if (issue_valid_i && issue_ready_o) begin
+        multiply_active <= issue_multiply;
+        multiply_done <= 1'b0;
+      end
+    end
+  end
+  // Signed operands give a product that fits 64 bits; the unsigned one
+  // is exact modulo 2^64.
   assign multiply_overflow =
-    multiply_product_q[63:32] != {32{multiply_product_q[31]}};
+    multiply_acc[63:32] != {32{multiply_acc[31]}};
   assign divide_by_zero = held.b == 0;
   assign signed_divide_exception = divide_by_zero ||
     ((held.a == 32'h8000_0000) && (held.b == 32'hffff_ffff));
@@ -185,10 +259,10 @@ module ppc_iu #(
       ALU_CNTLZW: result_value = {26'b0, leading_zeros};
       ALU_EXTSB: result_value = {{24{held.a[7]}}, held.a[7:0]};
       ALU_EXTSH: result_value = {{16{held.a[15]}}, held.a[15:0]};
-      ALU_MULLI: result_value = multiply_product_q[31:0];
-      ALU_MULLW: result_value = multiply_product_q[31:0];
-      ALU_MULHW: result_value = multiply_product_q[63:32];
-      ALU_MULHWU: result_value = multiply_product_q[63:32];
+      ALU_MULLI: result_value = multiply_acc[31:0];
+      ALU_MULLW: result_value = multiply_acc[31:0];
+      ALU_MULHW: result_value = multiply_acc[63:32];
+      ALU_MULHWU: result_value = multiply_acc[63:32];
       ALU_DIVWU: result_value = divider_quotient;
       ALU_DIVW: result_value = divider_quotient;
       ALU_OR: result_value = held.a | held.b;
@@ -209,17 +283,12 @@ module ppc_iu #(
     if (!rst_ni) begin
       occupied <= 1'b0;
       divide_cycles_left <= '0;
-      multiply_cycles_left <= '0;
     end else begin
       if (occupied && held_divide && (divide_cycles_left != '0) && !cancel_i)
         divide_cycles_left <= divide_cycles_left - 1'b1;
-      if (occupied && held_multiply && (multiply_cycles_left != '0) &&
-          !cancel_i)
-        multiply_cycles_left <= multiply_cycles_left - 1'b1;
       if (cancel_i || (result_valid_o && result_ready_i)) begin
         occupied <= 1'b0;
         divide_cycles_left <= '0;
-        multiply_cycles_left <= '0;
       end
       if (issue_valid_i && issue_ready_o) begin
         occupied <= 1'b1;
@@ -227,14 +296,6 @@ module ppc_iu #(
           divide_cycles_left <= DIV_COUNT_WIDTH'(DIV_LATENCY - 1);
         else
           divide_cycles_left <= '0;
-        case (issue_i.ctrl.op)
-          // Table 6-4 maximum for each family.
-          ALU_MULLI: multiply_cycles_left <= MULTIPLY_COUNT_WIDTH'(3 - 1);
-          ALU_MULLW, ALU_MULHW:
-            multiply_cycles_left <= MULTIPLY_COUNT_WIDTH'(5 - 1);
-          ALU_MULHWU: multiply_cycles_left <= MULTIPLY_COUNT_WIDTH'(6 - 1);
-          default: multiply_cycles_left <= '0;
-        endcase
       end
     end
   end

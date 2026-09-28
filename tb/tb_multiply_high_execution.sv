@@ -57,6 +57,22 @@ module tb_multiply_high_execution;
     .result_o(result)
   );
 
+  // Table 6-4 latency: one cycle plus the significant bytes of rB,
+  // zero-extended for MULHWU.
+  function automatic int multiply_cycles(input logic unsigned_b,
+                                         input logic [31:0] b);
+    logic signed [32:0] value, upper;
+    int bytes;
+    value = {!unsigned_b && b[31], b};
+    bytes = 1;
+    upper = value >>> 7;
+    while ((upper != 0) && (upper != -1)) begin
+      bytes++;
+      upper = value >>> (8 * bytes - 1);
+    end
+    return bytes + 1;
+  endfunction
+
   task automatic require(input logic condition, input string message);
     assert (condition) else $fatal(1, "%s", message);
     checks++;
@@ -126,9 +142,8 @@ module tb_multiply_high_execution;
     #1;
     wake_valid = 1'b0;
 
-    // This bounded reservation chooses the maximum Table 6-4 latency:
-    // five cycles for MULHW and six for MULHWU.
-    repeat ((operation == ALU_MULHWU) ? 5 : 4) begin
+    // Table 6-4 latency 2--5 for MULHW and 2--6 for MULHWU, selected by rB.
+    repeat (multiply_cycles(operation == ALU_MULHWU, source_b) - 1) begin
       require(!result_valid && !issue_ready,
               "multiply-high result became visible before reserved finish");
       @(posedge clk);

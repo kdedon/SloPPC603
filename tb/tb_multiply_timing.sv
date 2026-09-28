@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
-// Direct IU checks for the conservative Table 6-4 multiply reservations.
+// Direct IU checks for the operand-dependent multiply datapath: exact
+// Table 6-4 latency per rB class, product and flags against a reference
+// model over edge and random operands, backpressure and cancellation.
 /* verilator lint_off BLKSEQ */
 module tb_multiply_timing;
   import ppc_pkg::*;
+
+  localparam int RANDOM_CASES = 20000;
 
   logic clk = 1'b0;
   logic rst_n = 1'b0;
@@ -15,6 +19,7 @@ module tb_multiply_timing;
   logic result_valid, result_ready;
   result_packet_t result;
   int checks = 0;
+  int class_count [4][7];
 
   ppc_iu dut (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(cancel),
@@ -27,12 +32,36 @@ module tb_multiply_timing;
     checks++;
   endtask
 
-  function automatic int latency(input alu_op_t operation);
+  function automatic int op_index(input alu_op_t operation);
     case (operation)
-      ALU_MULLI: return 3;
-      ALU_MULLW, ALU_MULHW: return 5;
-      ALU_MULHWU: return 6;
-      default: return 1;
+      ALU_MULLI: return 0;
+      ALU_MULLW: return 1;
+      ALU_MULHW: return 2;
+      default: return 3;
+    endcase
+  endfunction
+
+  // Smallest two's-complement byte count holding rB (zero-extended for
+  // MULHWU), plus one cycle.
+  function automatic int latency(input alu_op_t operation,
+                                 input logic [31:0] b);
+    longint value;
+    int bytes;
+    if (operation == ALU_MULHWU) value = longint'({32'b0, b});
+    else value = longint'({{32{b[31]}}, b});
+    bytes = 1;
+    while (!((value >= -(64'sd1 <<< (8 * bytes - 1))) &&
+             (value < (64'sd1 <<< (8 * bytes - 1)))))
+      bytes++;
+    return bytes + 1;
+  endfunction
+
+  // Table 6-4 cycle sets.
+  function automatic logic listed(input alu_op_t operation, input int cycles);
+    case (operation)
+      ALU_MULLI: return (cycles >= 2) && (cycles <= 3);
+      ALU_MULLW, ALU_MULHW: return (cycles >= 2) && (cycles <= 5);
+      default: return (cycles >= 2) && (cycles <= 6);
     endcase
   endfunction
 
@@ -58,21 +87,31 @@ module tb_multiply_timing;
     return packet;
   endfunction
 
-  function automatic result_packet_t make_result(
-    input completion_tag_t producer,
-    input logic [31:0] value,
-    input logic ov,
-    input logic so,
-    input logic [3:0] cr0
-  );
-    result_packet_t packet;
-    packet = '0;
-    packet.producer = producer;
-    packet.value = value;
-    packet.ov = ov;
-    packet.so = so;
-    packet.cr0 = cr0;
-    return packet;
+  function automatic result_packet_t model(input issue_packet_t packet);
+    result_packet_t expected;
+    logic [63:0] product;
+    logic [31:0] value;
+    logic overflow, so;
+    expected = '0;
+    expected.producer = packet.ctrl.producer;
+    if (packet.ctrl.op == ALU_MULHWU)
+      product = {32'b0, packet.a} * {32'b0, packet.b};
+    else
+      product = 64'($signed({{32{packet.a[31]}}, packet.a}) *
+                    $signed({{32{packet.b[31]}}, packet.b}));
+    value = ((packet.ctrl.op == ALU_MULLI) || (packet.ctrl.op == ALU_MULLW)) ?
+      product[31:0] : product[63:32];
+    overflow = product[63:32] != {32{product[31]}};
+    so = packet.ctrl.so_in || overflow;
+    expected.value = value;
+    if (packet.ctrl.write_ov_so) begin
+      expected.ov = overflow;
+      expected.so = so;
+    end
+    if (packet.ctrl.write_cr_field)
+      expected.cr0 = {value[31], !value[31] && (value != 0), value == 0,
+                      packet.ctrl.write_ov_so ? so : packet.ctrl.so_in};
+    return expected;
   endfunction
 
   task automatic accept(input issue_packet_t packet);
@@ -87,53 +126,93 @@ module tb_multiply_timing;
     issue_valid = 1'b0;
   endtask
 
-  task automatic expect_earliest_finish(
-    input alu_op_t operation,
-    input result_packet_t expected
-  );
-    int reserved_cycles;
-    reserved_cycles = latency(operation);
-    result_ready = 1'b1;
-    for (int execute_cycle = 1; execute_cycle <= reserved_cycles;
-         execute_cycle++) begin
-      require(dut.occupied, "multiply reservation released before finish");
-      if (execute_cycle < reserved_cycles) begin
-        require(!result_valid && !issue_ready,
-                "multiply exposed result or issue slot before E+N");
-        @(posedge clk);
-        #1;
-      end else begin
-        require(result_valid && issue_ready && result == expected,
-                "multiply final-cycle result packet mismatch");
-      end
+  // Checks the result is hidden for N-1 cycles, offered in cycle N and,
+  // after `stall` sampled backpressure edges, accepted exactly once.
+  task automatic expect_finish(input issue_packet_t packet, input int stall);
+    int cycles;
+    logic [1:0] index;
+    result_packet_t expected;
+    cycles = latency(packet.ctrl.op, packet.b);
+    expected = model(packet);
+    require(listed(packet.ctrl.op, cycles), "latency outside Table 6-4 set");
+    index = 2'(op_index(packet.ctrl.op));
+    class_count[index][cycles] = class_count[index][cycles] + 1;
+    result_ready = 1'b0;
+    for (int execute_cycle = 1; execute_cycle < cycles; execute_cycle++) begin
+      require(dut.occupied && !result_valid && !issue_ready,
+              $sformatf("tag %02h cycle %0d of %0d: result or issue slot before E+N",
+                        packet.ctrl.producer.generation, execute_cycle, cycles));
+      @(posedge clk);
+      #1;
     end
+    for (int held_cycle = 0; held_cycle < stall; held_cycle++) begin
+      require(result_valid && !issue_ready && result == expected,
+              "multiply result missing or unstable under backpressure");
+      @(posedge clk);
+      #1;
+    end
+    result_ready = 1'b1;
+    #1;
+    if (!(result_valid && issue_ready && result == expected))
+      $fatal(1, "op %0d a=%08h b=%08h: got %08h ov%0b so%0b cr%h, want %08h ov%0b so%0b cr%h",
+             packet.ctrl.op, packet.a, packet.b, result.value, result.ov,
+             result.so, result.cr0, expected.value, expected.ov, expected.so,
+             expected.cr0);
+    checks++;
     @(posedge clk);
     #1;
-    require(!result_valid && !dut.occupied,
-            "multiply earliest finish was not accepted exactly once");
     result_ready = 1'b0;
+    require(!result_valid && !dut.occupied,
+            "multiply finish was not accepted exactly once");
   endtask
 
-  task automatic expect_visible(input int reserved_cycles);
-    for (int execute_cycle = 1; execute_cycle <= reserved_cycles;
-         execute_cycle++) begin
-      if (execute_cycle < reserved_cycles) begin
-        require(dut.occupied && !result_valid && !issue_ready,
-                "multiply reservation ended before held-result boundary");
-        @(posedge clk);
-        #1;
-      end else begin
-        require(result_valid && !issue_ready,
-                "multiply result missing under backpressure");
-      end
-    end
+  task automatic run_case(input alu_op_t operation, input logic [7:0] tag,
+                          input logic [31:0] a, input logic [31:0] b,
+                          input logic [2:0] flags, input int stall);
+    issue_packet_t packet;
+    logic [31:0] operand_b;
+    logic oe, rc;
+    operand_b = (operation == ALU_MULLI) ? {{16{b[15]}}, b[15:0]} : b;
+    oe = (operation == ALU_MULLW) && flags[1];
+    rc = (operation != ALU_MULLI) && flags[2];
+    packet = make_issue(operation, tag, a, operand_b, flags[0], oe, rc);
+    accept(packet);
+    expect_finish(packet, stall);
   endtask
+
+  localparam int EDGE_COUNT = 32;
+  logic [31:0] edges [EDGE_COUNT] = '{
+    32'h0000_0000, 32'h0000_0001, 32'hffff_ffff, 32'h0000_0002,
+    32'h0000_007f, 32'h0000_0080, 32'hffff_ff80, 32'hffff_ff7f,
+    32'h0000_00ff, 32'h0000_0100, 32'h0000_7fff, 32'h0000_8000,
+    32'hffff_8000, 32'hffff_7fff, 32'h0000_ffff, 32'h0001_0000,
+    32'h007f_ffff, 32'h0080_0000, 32'hff80_0000, 32'hff7f_ffff,
+    32'h00ff_ffff, 32'h0100_0000, 32'h7fff_ffff, 32'h8000_0000,
+    32'h8000_0001, 32'hffff_fffe, 32'h5555_5555, 32'haaaa_aaaa,
+    32'h0001_0001, 32'h7f7f_7f7f, 32'h8080_8080, 32'hc000_0000
+  };
+
+  // Random operands with a uniformly chosen significant-byte count.
+  function automatic logic [31:0] random_operand();
+    logic [31:0] value;
+    int bytes;
+    value = $urandom;
+    bytes = $urandom_range(4, 1);
+    if (bytes < 4)
+      value = ($urandom_range(1, 0) != 0) ?
+        (value | (32'hffff_ffff << (8 * bytes - 1))) :
+        (value & ~(32'hffff_ffff << (8 * bytes - 1)));
+    return value;
+  endfunction
 
   assert property (@(posedge clk) disable iff (!rst_n)
     result_valid && !result_ready && !cancel |=>
       cancel || (result_valid && $stable(result)));
 
   initial begin
+    alu_op_t ops [4] = '{ALU_MULLI, ALU_MULLW, ALU_MULHW, ALU_MULHWU};
+    issue_packet_t packet;
+    int tag;
     issue_valid = 1'b0;
     issue = '0;
     result_ready = 1'b0;
@@ -142,38 +221,47 @@ module tb_multiply_timing;
     repeat (2) @(posedge clk);
     @(negedge clk);
     rst_n = 1'b1;
-    require(IQ_DEPTH == 6, "fixture package-depth assumption changed");
 
-    // Each family uses the maximum latency printed in its Table 6-4 row.
-    issue = make_issue(ALU_MULLI, 8'h11, 32'hffff_fffd, 32'd7,
-                       1'b0, 1'b0, 1'b0);
-    accept(issue);
-    expect_earliest_finish(ALU_MULLI,
-      make_result(issue.ctrl.producer, 32'hffff_ffeb, 1'b0, 1'b0, 4'b0));
+    // Literal classes against Table 6-4: the reference latency function
+    // itself must give each listed count.
+    require(latency(ALU_MULLI, 32'h0000_007f) == 2 &&
+            latency(ALU_MULLI, 32'hffff_8000) == 3 &&
+            latency(ALU_MULLW, 32'hffff_ff80) == 2 &&
+            latency(ALU_MULLW, 32'h0000_0080) == 3 &&
+            latency(ALU_MULLW, 32'h0080_0000) == 5 &&
+            latency(ALU_MULHW, 32'h8000_0000) == 5 &&
+            latency(ALU_MULHWU, 32'h7fff_ffff) == 5 &&
+            latency(ALU_MULHWU, 32'h8000_0000) == 6 &&
+            latency(ALU_MULHWU, 32'hffff_ffff) == 6 &&
+            latency(ALU_MULHWU, 32'h0000_ff00) == 4,
+            "reference latency classes");
 
-    issue = make_issue(ALU_MULLW, 8'h22, 32'h4000_0000, 32'd4,
-                       1'b0, 1'b1, 1'b1);
-    accept(issue);
-    expect_earliest_finish(ALU_MULLW,
-      make_result(issue.ctrl.producer, 32'b0, 1'b1, 1'b1, 4'h3));
+    // Every edge pair through every operation, rotating OE/Rc/SO-in.
+    tag = 0;
+    foreach (ops[o])
+      for (int i = 0; i < EDGE_COUNT; i++)
+        for (int j = 0; j < EDGE_COUNT; j++) begin
+          run_case(ops[o], 8'(tag), edges[i], edges[j], 3'(tag), 0);
+          tag++;
+        end
 
-    issue = make_issue(ALU_MULHW, 8'h33, 32'h8000_0000, 32'd2,
-                       1'b1, 1'b0, 1'b1);
-    accept(issue);
-    expect_earliest_finish(ALU_MULHW,
-      make_result(issue.ctrl.producer, 32'hffff_ffff, 1'b0, 1'b0, 4'h9));
+    // Random operands, flags and backpressure.
+    for (int n = 0; n < RANDOM_CASES; n++) begin
+      run_case(ops[$urandom_range(3, 0)], 8'(n), random_operand(),
+               random_operand(), 3'($urandom_range(7, 0)),
+               ($urandom_range(7, 0) == 0) ? $urandom_range(3, 1) : 0);
+    end
 
-    issue = make_issue(ALU_MULHWU, 8'h44, 32'hffff_ffff,
-                       32'hffff_ffff, 1'b0, 1'b0, 1'b1);
-    accept(issue);
-    expect_earliest_finish(ALU_MULHWU,
-      make_result(issue.ctrl.producer, 32'hffff_fffe, 1'b0, 1'b0, 4'h8));
+    for (int o = 0; o < 4; o++)
+      for (int c = 2; c <= 6; c++)
+        require((class_count[o][c] > 0) == listed(ops[o], c),
+                "a Table 6-4 latency was never exercised or is unlisted");
 
     // An executing multiply blocks unrelated issues. Exact cancellation may
     // replace it on the same edge without leaking its result or flags.
-    issue = make_issue(ALU_MULHWU, 8'h55, 32'hffff_ffff,
-                       32'hffff_ffff, 1'b0, 1'b0, 1'b1);
-    accept(issue);
+    packet = make_issue(ALU_MULHWU, 8'h55, 32'hffff_ffff,
+                        32'hffff_ffff, 1'b0, 1'b0, 1'b1);
+    accept(packet);
     repeat (2) begin
       @(posedge clk);
       #1;
@@ -181,36 +269,59 @@ module tb_multiply_timing;
               "unfinished multiply admitted an unrelated operation");
     end
     @(negedge clk);
-    issue = make_issue(ALU_ADD, 8'h56, 32'd8, 32'd9,
-                       1'b0, 1'b0, 1'b0);
+    packet = make_issue(ALU_ADD, 8'h56, 32'd8, 32'd9, 1'b0, 1'b0, 1'b0);
+    issue = packet;
     issue_valid = 1'b1;
     cancel = 1'b1;
     result_ready = 1'b1;
     #1;
     require(issue_ready && !result_valid,
-            "mid-reservation cancellation did not admit replacement");
+            "mid-execute cancellation did not admit replacement");
     @(posedge clk);
     #1;
     cancel = 1'b0;
     issue_valid = 1'b0;
     #1;
-    require(result_valid && result ==
-            make_result(issue.ctrl.producer, 32'd17, 1'b0, 1'b0, 4'b0),
+    require(result_valid && result.value == 32'd17 && result.cr0 == 4'b0,
             "same-edge replacement result mismatch");
     @(posedge clk);
     #1;
     result_ready = 1'b0;
     require(!result_valid, "replacement result repeated");
 
-    // Cancel a result already visible at its first finish boundary and replace
-    // it with a fresh three-cycle MULLI reservation.
-    issue = make_issue(ALU_MULLW, 8'h66, 32'd5, 32'd6,
-                       1'b0, 1'b0, 1'b0);
-    accept(issue);
-    expect_visible(5);
+    // Cancel a long multiply mid-execute and replace it with a short one on
+    // the same edge: the replacement gets a fresh schedule and product.
+    packet = make_issue(ALU_MULLW, 8'h60, 32'h1234_5678, 32'h8765_4321,
+                        1'b0, 1'b1, 1'b1);
+    accept(packet);
+    @(posedge clk);
+    #1;
     @(negedge clk);
-    issue = make_issue(ALU_MULLI, 8'h67, 32'd7, 32'd8,
-                       1'b0, 1'b0, 1'b0);
+    packet = make_issue(ALU_MULLW, 8'h61, 32'd9, 32'd7, 1'b1, 1'b1, 1'b1);
+    issue = packet;
+    issue_valid = 1'b1;
+    cancel = 1'b1;
+    #1;
+    require(issue_ready && !result_valid, "mid-execute cancel leaked result");
+    @(posedge clk);
+    #1;
+    cancel = 1'b0;
+    issue_valid = 1'b0;
+    #1;
+    expect_finish(packet, 0);
+
+    // Cancel a result already visible at its first finish boundary and
+    // replace it with a fresh MULLI.
+    packet = make_issue(ALU_MULLW, 8'h66, 32'd5, 32'h0001_0006,
+                        1'b0, 1'b0, 1'b0);
+    accept(packet);
+    repeat (latency(ALU_MULLW, packet.b) - 1) @(posedge clk);
+    #1;
+    require(result_valid && !issue_ready, "multiply result not offered");
+    @(negedge clk);
+    packet = make_issue(ALU_MULLI, 8'h67, 32'd7, 32'hffff_f000,
+                        1'b0, 1'b0, 1'b0);
+    issue = packet;
     issue_valid = 1'b1;
     cancel = 1'b1;
     result_ready = 1'b1;
@@ -222,16 +333,14 @@ module tb_multiply_timing;
     cancel = 1'b0;
     issue_valid = 1'b0;
     #1;
-    expect_earliest_finish(ALU_MULLI,
-      make_result(issue.ctrl.producer, 32'd56, 1'b0, 1'b0, 4'b0));
+    expect_finish(packet, 0);
 
-    // A completed result remains stable for a sampled stalled edge, then an
-    // exact cancellation destroys it without a handshake.
-    issue = make_issue(ALU_MULHW, 8'h77, 32'h8000_0000, 32'd2,
-                       1'b0, 1'b0, 1'b1);
-    accept(issue);
-    expect_visible(5);
-    @(posedge clk);
+    // A completed result survives a sampled stall; an exact cancellation
+    // then destroys it without a handshake.
+    packet = make_issue(ALU_MULHW, 8'h77, 32'h8000_0000, 32'd2,
+                        1'b0, 1'b0, 1'b1);
+    accept(packet);
+    repeat (latency(ALU_MULHW, packet.b)) @(posedge clk);
     #1;
     require(result_valid && result.value == 32'hffff_ffff,
             "held multiply result did not survive sampled stall");
@@ -246,12 +355,18 @@ module tb_multiply_timing;
     require(!dut.occupied && !result_valid,
             "cancelled held multiply remained occupied");
 
-    $display("PASS multiply timing: fixed maxima 3/5/5/6, accepted finish, cancellation/replacement (%0d checks)", checks);
+    $display("PASS multiply timing: %0d edge pairs x 4 ops, %0d random; latency classes MULLI 2:%0d 3:%0d, MULLW 2:%0d 3:%0d 4:%0d 5:%0d, MULHW 2:%0d 3:%0d 4:%0d 5:%0d, MULHWU 2:%0d 3:%0d 4:%0d 5:%0d 6:%0d (%0d checks)",
+             EDGE_COUNT * EDGE_COUNT, RANDOM_CASES,
+             class_count[0][2], class_count[0][3],
+             class_count[1][2], class_count[1][3], class_count[1][4], class_count[1][5],
+             class_count[2][2], class_count[2][3], class_count[2][4], class_count[2][5],
+             class_count[3][2], class_count[3][3], class_count[3][4], class_count[3][5],
+             class_count[3][6], checks);
     $finish;
   end
 
   initial begin
-    #20000;
+    #20_000_000;
     $fatal(1, "multiply timing watchdog");
   end
 endmodule

@@ -327,7 +327,7 @@ module tb_core_add_recovery;
       require(!dut.iu_result_valid && dut.iu.divide_cycles_left != 0,
               "divide kill must exercise the reserved busy interval");
     if (MULTIPLY_PROFILE && mode == 1)
-      require(!dut.iu_result_valid && dut.iu.multiply_cycles_left != 0,
+      require(!dut.iu_result_valid && dut.iu.multiply_active,
               "multiply kill must exercise the reserved busy interval");
     require(retire_valid && retired.pc == 8, "older barrier must be finished and stalled");
     barrier = dut.retire_producer;
