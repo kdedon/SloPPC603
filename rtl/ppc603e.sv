@@ -110,7 +110,7 @@ module ppc603e #(
   import ppc_pkg::*;
 
   initial begin
-    if (!(PLL_CFG inside {4'b0000, 4'b0001, 4'b0010, 4'b0011}))
+    if (PLL_CFG[3:2] != 2'b00)
       $fatal(1, "ppc603e: PLL_CFG must select 1:1 or PLL bypass");
   end
 
