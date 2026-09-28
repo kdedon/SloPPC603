@@ -86,6 +86,16 @@ rejects `ENABLE_DCACHE=1`).
 
 ### Verification
 
+Recorded: `make -C sim -j2 ci`, commit 5d0a0ec, 2026-09-28. Pass: regression
+(including the three targets below), every compiled-firmware profile, and
+coverage (76.3% of rtl/ lines). Seeds 1-5 of `test-biu-dcache-snoop`, 3000 LSU
+operations each after the directed cases: 4638-4941 second-master tenures,
+1889-2044 of them retried by this processor's ARTRY, 402-441 pushes each
+preceding any other master's tenure, 3206-3311 processor tenures (308-332
+injected retries, 197-223 address-only, 161-190 split halves, 850-924 DRTRY
+beats, 2 TEA), 42076-43209 checks, ARTRY checked on 90185-93621 cycles. All
+five mutations fail as intended.
+
 `make -C sim test-biu-dcache-snoop` builds `tb/tb_biu_dcache_snoop.sv`: the
 standalone `ppc_dcache` behind `ppc_biu` (`ENABLE_DCACHE=1`), with a bench
 arbiter (processor first), memory controller and second master on one 60x bus.
