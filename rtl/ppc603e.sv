@@ -111,12 +111,14 @@ module ppc603e #(
 
   initial begin
     if (!(PLL_CFG inside {4'b0000, 4'b0001, 4'b0010, 4'b0011}))
-      $error("ppc603e: PLL_CFG must select 1:1 or PLL bypass");
+      $fatal(1, "ppc603e: PLL_CFG must select 1:1 or PLL bypass");
   end
 
   // Asynchronous pins pass two flops. pin_meta_q is the only load of each pin.
+  // Powering up at zero holds the core in reset until HRESET is sampled.
   localparam int NSYNC = 13;
-  logic [NSYNC-1:0] pin_meta_q, pin_sync_q, pin_async;
+  logic [NSYNC-1:0] pin_meta_q = '0, pin_sync_q = '0;
+  logic [NSYNC-1:0] pin_async;
   assign pin_async = {hreset_n_i, int_n_i, smi_n_i, mcp_n_i, sreset_n_i,
                       ckstp_in_n_i, qack_n_i, tben_i, tlbisync_n_i, pll_cfg_i};
   always_ff @(posedge sysclk) begin

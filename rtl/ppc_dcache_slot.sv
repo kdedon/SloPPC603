@@ -38,7 +38,7 @@ module ppc_dcache_slot #(
   input  logic        biu_rsp_error_i
 );
   initial begin
-    if (ENABLE_DCACHE) $error("ppc_dcache_slot: no data cache is integrated");
+    if (ENABLE_DCACHE) $fatal(1, "ppc_dcache_slot: no data cache is integrated");
   end
 
   assign biu_req_valid_o = lsu_req_valid_i;
