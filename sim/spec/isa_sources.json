@@ -2723,7 +2723,7 @@
     "source_limits": [
       "The secondary MULLI pseudocode prints prod[0-48] and rD=prod[16-48], an internally inconsistent 49/33-bit range; the adjacent prose unambiguously specifies the low-order 32 bits of the signed register-by-SIMM product.",
       "The secondary 601 MULLW pseudocode uses 64-bit register slice notation although the 601 and 603e operands are 32-bit; the adjacent prose defines a 64-bit product of two 32-bit values and a low-order 32-bit result.",
-      "Table 6-4 lists MULLI 2/3 and MULLW 2/3/4/5 execute-cycle possibilities without mapping operands to counts. The bounded IU selects the documented maximum 3/5-cycle reservations; lower silicon-selected timing remains unresolved."
+      "Table 6-4 lists MULLI 2/3 and MULLW 2/3/4/5 execute-cycle possibilities without mapping operands to counts. The IU takes one cycle plus the significant two's-complement bytes of rB (the SIMM for MULLI), which generates exactly each listed set; that operand mapping is inferred, not transcribed."
     ]
   },
   "reviewed_multiply_high_family": {
@@ -2783,7 +2783,7 @@
     "source_limits": [
       "The secondary 601 pseudocode uses 64-bit register slice notation and marks the non-result half of rD undefined; the adjacent prose unambiguously defines a 32-bit destination containing product bits 63:32.",
       "The secondary 601 descriptions state that MQ becomes undefined. MQ is not exposed by this bounded 603e scaffold, so that 601-specific microarchitectural side effect is not imported.",
-      "Table 6-4 lists MULHW 2/3/4/5 and MULHWU 2/3/4/5/6 execute-cycle possibilities without mapping operands to counts. The bounded IU selects the documented maximum 5/6-cycle reservations; lower silicon-selected timing remains unresolved."
+      "Table 6-4 lists MULHW 2/3/4/5 and MULHWU 2/3/4/5/6 execute-cycle possibilities without mapping operands to counts. The IU takes one cycle plus the significant two's-complement bytes of rB, zero-extended for MULHWU, which generates exactly each listed set; that operand mapping is inferred, not transcribed."
     ]
   },
   "reviewed_divwu_family": {

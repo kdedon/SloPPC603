@@ -843,3 +843,11 @@ Inherited from the branch (`02a2404`): regression and a standalone fit at 69.9
 MHz; fresh on the merge: lint, check-spec, `test-dcache` and all seven mutations
 caught. MVP 80.93% → 84.43%. See [verification](../../DATA_CACHE_VERIFICATION.md).
 
+## Multiplier round — accepted (2026-09-28)
+
+Iterative 33×9 DSP product datapath with rB byte-class early-out matching every
+Table 6-4 cycle set (mapping inferred; `TIM-U02` open). Inherited from the branch
+(`9213494`): `make -C sim ci` and translated fit; fresh on the merge: lint,
+check-spec, multiply and data-cache benches. MVP 84.43% → 84.67%. See
+[verification](../../MULTIPLY_TIMING_VERIFICATION.md).
+

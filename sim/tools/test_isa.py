@@ -834,16 +834,16 @@ class IsaProseMetadataTest(unittest.TestCase):
     def test_multiply_low_exact_encodings_effects_and_timing_boundary_prose(self):
         semantics = self.spec["multiply_low_semantics"]
         self.assertIn("complete signed product", semantics["profiles"][1]["overflow"])
-        self.assertIn("MULLI 3", semantics["implementation_timing"])
-        self.assertIn("MULLW 5", semantics["implementation_timing"])
+        self.assertIn("MULLI 2-3", semantics["implementation_timing"])
+        self.assertIn("MULLW 2-5", semantics["implementation_timing"])
         self.assertIn("accepted finish at E+N", semantics["implementation_timing"])
         self.assertIn("does not complete P08", semantics["implementation_timing"])
 
     def test_multiply_high_exact_encodings_reserved_oe_and_result_contract_prose(self):
         semantics = self.spec["multiply_high_semantics"]
         self.assertIn("signed interpretation", semantics["flag_rule"])
-        self.assertIn("MULHW 5", semantics["implementation_timing"])
-        self.assertIn("MULHWU 6", semantics["implementation_timing"])
+        self.assertIn("MULHW 2-5", semantics["implementation_timing"])
+        self.assertIn("MULHWU 2-6", semantics["implementation_timing"])
         self.assertIn("accepted finish at E+N", semantics["implementation_timing"])
         self.assertIn("does not complete P08", semantics["implementation_timing"])
 

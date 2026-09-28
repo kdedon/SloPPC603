@@ -11313,7 +11313,7 @@
           "rtl/ppc_flags.sv"
         ],
         "validation": "accepted_multiply_low_benches",
-        "timing": "conservative_maximum_Table6-4_reservation; E+3 accepted finish; lower operand-selected timing unresolved"
+        "timing": "rB_byte_class_Table6-4; E+2..E+3 accepted finish; operand mapping inferred"
       },
       "evidence": [
         {
@@ -11382,7 +11382,7 @@
           "rtl/ppc_flags.sv"
         ],
         "validation": "accepted_multiply_low_benches",
-        "timing": "conservative_maximum_Table6-4_reservation; E+5 accepted finish; lower operand-selected timing unresolved"
+        "timing": "rB_byte_class_Table6-4; E+2..E+5 accepted finish; operand mapping inferred"
       },
       "evidence": [
         {
@@ -11453,7 +11453,7 @@
           "rtl/ppc_flags.sv"
         ],
         "validation": "accepted_multiply_low_benches",
-        "timing": "conservative_maximum_Table6-4_reservation; E+5 accepted finish; lower operand-selected timing unresolved"
+        "timing": "rB_byte_class_Table6-4; E+2..E+5 accepted finish; operand mapping inferred"
       },
       "evidence": [
         {
@@ -11525,7 +11525,7 @@
           "rtl/ppc_flags.sv"
         ],
         "validation": "accepted_multiply_low_benches",
-        "timing": "conservative_maximum_Table6-4_reservation; E+5 accepted finish; lower operand-selected timing unresolved"
+        "timing": "rB_byte_class_Table6-4; E+2..E+5 accepted finish; operand mapping inferred"
       },
       "evidence": [
         {
@@ -11598,7 +11598,7 @@
           "rtl/ppc_flags.sv"
         ],
         "validation": "accepted_multiply_low_benches",
-        "timing": "conservative_maximum_Table6-4_reservation; E+5 accepted finish; lower operand-selected timing unresolved"
+        "timing": "rB_byte_class_Table6-4; E+2..E+5 accepted finish; operand mapping inferred"
       },
       "evidence": [
         {
@@ -11677,7 +11677,7 @@
           "rtl/ppc_flags.sv"
         ],
         "validation": "accepted_multiply_high_benches",
-        "timing": "conservative_maximum_Table6-4_reservation; E+5 accepted finish; lower operand-selected timing unresolved"
+        "timing": "rB_byte_class_Table6-4; E+2..E+5 accepted finish; operand mapping inferred"
       },
       "evidence": [
         {
@@ -11756,7 +11756,7 @@
           "rtl/ppc_flags.sv"
         ],
         "validation": "accepted_multiply_high_benches",
-        "timing": "conservative_maximum_Table6-4_reservation; E+5 accepted finish; lower operand-selected timing unresolved"
+        "timing": "rB_byte_class_Table6-4; E+2..E+5 accepted finish; operand mapping inferred"
       },
       "evidence": [
         {
@@ -11834,7 +11834,7 @@
           "rtl/ppc_flags.sv"
         ],
         "validation": "accepted_multiply_high_benches",
-        "timing": "conservative_maximum_Table6-4_reservation; E+6 accepted finish; lower operand-selected timing unresolved"
+        "timing": "rB_byte_class_Table6-4; E+2..E+6 accepted finish; operand mapping inferred"
       },
       "evidence": [
         {
@@ -11913,7 +11913,7 @@
           "rtl/ppc_flags.sv"
         ],
         "validation": "accepted_multiply_high_benches",
-        "timing": "conservative_maximum_Table6-4_reservation; E+6 accepted finish; lower operand-selected timing unresolved"
+        "timing": "rB_byte_class_Table6-4; E+2..E+6 accepted finish; operand mapping inferred"
       },
       "evidence": [
         {
@@ -26624,7 +26624,7 @@
     "timing_note": "603e timing row TIM-T63-012 prints 1& and carries dispatch plus completion serialization; TIM-T63-001 carries completion serialization. The current serialized lane is conservative and does not establish cycle timing."
   },
   "multiply_low_semantics": {
-    "scope": "MULLI and the four MULLW OE/Rc forms with conservative maximum-latency IU reservation; lower operand-selected timings and silicon scheduling equivalence remain outside this bounded slice.",
+    "scope": "MULLI and the four MULLW OE/Rc forms with rB byte-class IU latency; silicon operand mapping and scheduling equivalence remain outside this bounded slice.",
     "profiles": [
       {
         "id": "MULLOW-mulli",
@@ -26652,10 +26652,10 @@
     "low_word_note": "The low 32 result bits are identical for signed and unsigned interpretations; signed interpretation controls only MULLW overflow.",
     "ca_rule": "MULLI and every MULLW form preserve XER.CA.",
     "record_rule": "MULLW Rc=1 writes CR0 from the signed low-word result and the final sticky SO.",
-    "implementation_timing": "The bounded IU reserves the documented Table 6-4 maximum: MULLI 3 and MULLW 5 execute cycles, with accepted finish at E+N. The primary source does not map operands to the lower listed counts; operand-dependent silicon selection remains unresolved, so this does not complete P08."
+    "implementation_timing": "The IU accumulates one 33x9 partial product per significant rB byte: MULLI 2-3 and MULLW 2-5 execute cycles, with accepted finish at E+N. The primary source does not map operands to the listed counts; the rB byte-class mapping is inferred from the sets, so this does not complete P08."
   },
   "multiply_high_semantics": {
-    "scope": "MULHW and MULHWU with both Rc values and conservative maximum-latency IU reservation; 64-bit multiply forms, lower operand-selected timings, and silicon scheduling equivalence remain outside this bounded slice.",
+    "scope": "MULHW and MULHWU with both Rc values and rB byte-class IU latency; 64-bit multiply forms, silicon operand mapping and scheduling equivalence remain outside this bounded slice.",
     "profiles": [
       {
         "id": "MULHIGH-mulhw",
@@ -26680,7 +26680,7 @@
     ],
     "reserved_oe": "The XO-form bit in the OE position is reserved and must be zero; setting it has boundedly undefined encoding behavior and is rejected by this decoder.",
     "flag_rule": "Both families preserve XER.CA, XER.OV, and XER.SO. Rc=1 writes CR0 from the signed interpretation of the 32-bit high-word result and current XER.SO, including MULHWU results whose bit31 is one.",
-    "implementation_timing": "The bounded IU reserves the documented Table 6-4 maximum: MULHW 5 and MULHWU 6 execute cycles, with accepted finish at E+N. The primary source does not map operands to the lower listed counts; operand-dependent silicon selection remains unresolved, so this does not complete P08."
+    "implementation_timing": "The IU accumulates one 33x9 partial product per significant rB byte: MULHW 2-5 and MULHWU 2-6 execute cycles, with accepted finish at E+N. The primary source does not map operands to the listed counts; the rB byte-class mapping is inferred from the sets, so this does not complete P08."
   },
   "divide_unsigned_semantics": {
     "scope": "DIVWU with all four OE/Rc forms only; remainder production and silicon-identical internal divider organization remain outside this bounded slice.",

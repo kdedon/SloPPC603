@@ -4,7 +4,7 @@ Round 30 adds MULHW/MULHWU with Rc clear or set: four forms, bringing the functi
 
 All XER bits are preserved. Rc writes CR0 according to the signed interpretation of the 32-bit result and captured SO; other CR fields remain unchanged. In particular, unsigned multiplication can produce a high word with its sign bit set, which records LT. The OE-position bit is reserved, so setting it is illegal rather than requesting overflow behavior.
 
-Two ALU operations reuse the tagged IU completion and retirement paths. No interfaces or packet fields change. The current milestone adds conservative multicycle reservation; [MULTIPLY_TIMING.md](MULTIPLY_TIMING.md) defines its accepted-edge contract and limits.
+Two ALU operations reuse the tagged IU completion and retirement paths. No interfaces or packet fields change. [MULTIPLY_TIMING.md](MULTIPLY_TIMING.md) defines the iterative product datapath, its operand-dependent latency and edge contract.
 
 ## Source contract
 
@@ -12,7 +12,7 @@ Primary 603e UM Table A-41 at PDF396 identifies both as XO forms with a fixed-ze
 
 Secondary MPC601UM PDF695/696 (printed 10-141/10-142) supplies signed and unsigned high-product semantics. Its pseudocode uses 64-bit register slices and describes undefined upper register bits; this 32-bit implementation follows the adjacent 32-bit operand/result prose. The 601-specific MQ side effect is not imported into the 603e. ISA metadata retains these boundaries.
 
-Primary timing rows TIM-T64-030 and TIM-T64-023 list MULHW 2/3/4/5 and MULHWU 2/3/4/5/6 cycle possibilities. The manual does not map operands to those counts. The bounded IU selects the documented maximum, producing accepted finish at E+5 and E+6 respectively. Lower operand-selected timing and silicon multiplier scheduling remain unresolved. No new FPGA fit or timing claim is made.
+Primary timing rows TIM-T64-030 and TIM-T64-023 list MULHW 2/3/4/5 and MULHWU 2/3/4/5/6 cycle possibilities. The manual does not map operands to those counts. The IU takes one cycle plus the significant bytes of rB, zero-extended for MULHWU, giving accepted finish at E+2..E+5 and E+2..E+6; that mapping is inferred from the listed sets. Silicon multiplier scheduling remains unconfirmed.
 
 ## Validation
 

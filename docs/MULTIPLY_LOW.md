@@ -1,6 +1,6 @@
 # Low-word multiplication
 
-Round 29 added MULLI and the four MULLW OE/Rc forms. They use the tagged IU result, GPR forwarding and recovery path. The current milestone adds conservative multicycle reservation; [MULTIPLY_TIMING.md](MULTIPLY_TIMING.md) defines its accepted-edge contract and limits.
+Round 29 added MULLI and the four MULLW OE/Rc forms. They use the tagged IU result, GPR forwarding and recovery path. [MULTIPLY_TIMING.md](MULTIPLY_TIMING.md) defines the iterative product datapath, its operand-dependent latency and edge contract.
 
 MULLI multiplies a real rA (including r0) by the sign-extended 16-bit immediate and writes the low 32 product bits, without changing CR or XER. MULLW multiplies two signed 32-bit inputs and writes the low 32 bits. OE sets OV when the full signed product cannot fit in signed 32 bits and accumulates sticky SO. Rc classifies the low-word result and records the final SO. CA and non-CR0 fields remain unchanged. Source/destination register aliases are supported by existing operand capture.
 
@@ -12,7 +12,7 @@ Primary 603e UM PDF366 (Table A-1), PDF389 (D-form) and PDF396 (XO-form) anchor 
 
 Secondary MPC601UM PDF697/698 (printed 10-143/10-144) provides semantics. Its MULLI product slices have an off-by-one width inconsistency, and the MULLW pseudocode uses 64-bit register slices despite the 32-bit context. The bounded implementation follows the low-32-bit prose and explicit signed overflow rule; the discrepancies remain in ISA source metadata. 601-specific MQ effects and timing are not imported into the 603e.
 
-The primary timing records TIM-T64-002 and TIM-T64-039 list 2/3-cycle MULLI and 2/3/4/5-cycle MULLW cases. The manual does not map operands to those counts. The bounded IU selects the documented maximum, producing accepted finish at E+3 and E+5 respectively. Lower operand-selected timing, a staged multiplier datapath, dual issue and silicon scheduling equivalence remain open. No new FPGA timing or fit claim is made.
+The primary timing records TIM-T64-002 and TIM-T64-039 list 2/3-cycle MULLI and 2/3/4/5-cycle MULLW cases. The manual does not map operands to those counts. The IU takes one cycle plus the significant bytes of rB (the SIMM for MULLI), giving accepted finish at E+2..E+3 and E+2..E+5; that mapping is inferred from the listed sets. Dual issue and silicon scheduling equivalence remain open.
 
 ## Validation
 

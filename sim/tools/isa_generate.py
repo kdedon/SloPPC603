@@ -429,7 +429,7 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
     expected_multiply_limits = [
         "The secondary MULLI pseudocode prints prod[0-48] and rD=prod[16-48], an internally inconsistent 49/33-bit range; the adjacent prose unambiguously specifies the low-order 32 bits of the signed register-by-SIMM product.",
         "The secondary 601 MULLW pseudocode uses 64-bit register slice notation although the 601 and 603e operands are 32-bit; the adjacent prose defines a 64-bit product of two 32-bit values and a low-order 32-bit result.",
-        "Table 6-4 lists MULLI 2/3 and MULLW 2/3/4/5 execute-cycle possibilities without mapping operands to counts. The bounded IU selects the documented maximum 3/5-cycle reservations; lower silicon-selected timing remains unresolved.",
+        "Table 6-4 lists MULLI 2/3 and MULLW 2/3/4/5 execute-cycle possibilities without mapping operands to counts. The IU takes one cycle plus the significant two's-complement bytes of rB (the SIMM for MULLI), which generates exactly each listed set; that operand mapping is inferred, not transcribed.",
     ]
     if reviewed_multiply_source.get("source_limits") != expected_multiply_limits:
         raise MetadataError("multiply-low source transcription limits changed")
@@ -451,7 +451,7 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
     expected_multiply_high_limits = [
         "The secondary 601 pseudocode uses 64-bit register slice notation and marks the non-result half of rD undefined; the adjacent prose unambiguously defines a 32-bit destination containing product bits 63:32.",
         "The secondary 601 descriptions state that MQ becomes undefined. MQ is not exposed by this bounded 603e scaffold, so that 601-specific microarchitectural side effect is not imported.",
-        "Table 6-4 lists MULHW 2/3/4/5 and MULHWU 2/3/4/5/6 execute-cycle possibilities without mapping operands to counts. The bounded IU selects the documented maximum 5/6-cycle reservations; lower silicon-selected timing remains unresolved.",
+        "Table 6-4 lists MULHW 2/3/4/5 and MULHWU 2/3/4/5/6 execute-cycle possibilities without mapping operands to counts. The IU takes one cycle plus the significant two's-complement bytes of rB, zero-extended for MULHWU, which generates exactly each listed set; that operand mapping is inferred, not transcribed.",
     ]
     if (reviewed_multiply_high_source.get("primary_encoding") != expected_multiply_high_primary or
         reviewed_multiply_high_source.get("secondary_semantics") != expected_multiply_high_secondary or
@@ -1225,8 +1225,8 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
     if set(multiply_profiles) != {"MULLOW-mulli", "MULLOW-mullw"}:
         raise MetadataError("multiply-low profiles must cover MULLI and MULLW")
     if (multiply_semantics.get("ca_rule") != "MULLI and every MULLW form preserve XER.CA." or
-        "MULLI 3" not in multiply_semantics.get("implementation_timing", "") or
-        "MULLW 5" not in multiply_semantics.get("implementation_timing", "") or
+        "MULLI 2-3" not in multiply_semantics.get("implementation_timing", "") or
+        "MULLW 2-5" not in multiply_semantics.get("implementation_timing", "") or
         "accepted finish at E+N" not in multiply_semantics.get("implementation_timing", "") or
         "does not complete P08" not in multiply_semantics.get("implementation_timing", "")):
         raise MetadataError("multiply-low CA or bounded timing contract changed")
@@ -1271,7 +1271,7 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
             implementation.get("rtl") != expected_multiply_rtl or
             implementation.get("validation") != "accepted_multiply_low_benches" or
             implementation.get("timing") !=
-            f"conservative_maximum_Table6-4_reservation; E+{expected_latency} accepted finish; lower operand-selected timing unresolved"):
+            f"rB_byte_class_Table6-4; E+2..E+{expected_latency} accepted finish; operand mapping inferred"):
             raise MetadataError(f"{entry['id']}: multiply-low implementation boundary changed")
 
     multiply_high_semantics = spec.get("multiply_high_semantics", {})
@@ -1282,8 +1282,8 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
         raise MetadataError("multiply-high profiles must cover MULHW and MULHWU")
     if ("reserved and must be zero" not in multiply_high_semantics.get("reserved_oe", "") or
         "signed interpretation" not in multiply_high_semantics.get("flag_rule", "") or
-        "MULHW 5" not in multiply_high_semantics.get("implementation_timing", "") or
-        "MULHWU 6" not in multiply_high_semantics.get("implementation_timing", "") or
+        "MULHW 2-5" not in multiply_high_semantics.get("implementation_timing", "") or
+        "MULHWU 2-6" not in multiply_high_semantics.get("implementation_timing", "") or
         "accepted finish at E+N" not in multiply_high_semantics.get("implementation_timing", "") or
         "does not complete P08" not in multiply_high_semantics.get("implementation_timing", "")):
         raise MetadataError("multiply-high reserved-bit, flag, or timing contract changed")
@@ -1325,7 +1325,7 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
             implementation.get("rtl") != expected_high_rtl or
             implementation.get("validation") != "accepted_multiply_high_benches" or
             implementation.get("timing") !=
-            f"conservative_maximum_Table6-4_reservation; E+{expected_latency} accepted finish; lower operand-selected timing unresolved"):
+            f"rB_byte_class_Table6-4; E+2..E+{expected_latency} accepted finish; operand mapping inferred"):
             raise MetadataError(f"{entry['id']}: multiply-high implementation boundary changed")
 
     divwu_semantics = spec.get("divide_unsigned_semantics", {})
@@ -1749,13 +1749,13 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
         "",
         "MCRF and MCRXR add two exact CR state-transfer forms. MCRF copies one complete pre-instruction CR field to another and handles source/destination aliases before replacement. MCRXR writes `{old XER.SO, old XER.OV, old XER.CA, 0}` to the selected CR field and clears SO/OV/CA in the same retirement; every other CR and XER bit and all GPRs are preserved. Primary Tables A-37/A-36 on PDF395/392 fix masks `0xfc63ffff`/`0xfc7fffff`; tagged 601UM PDFs673/675 supply semantics. Figure 2-7 and Table 2-8 on 601UM PDFs61-62 establish reserved XER bit 3 as zero. The primary 603e UM delegates the architectural XER layout to the unavailable Programming Environments Manual, so that provenance limit remains explicit. MCRFS and newer OCRF forms are outside this slice.",
         "",
-        "MULLI and the four MULLW OE/Rc forms add signed low-word multiply. Both return the low 32 product bits; MULLW OE sets OV when the complete signed product cannot be represented in 32 bits and makes SO sticky, while Rc records the signed low word and final SO in CR0. Every form preserves CA. Primary A-1/A-3/A-34/A-41 and timing rows TIM-T64-002/039 fix the encodings and list 2/3 and 2/3/4/5 execute-cycle possibilities. The source does not map operands to those counts. The bounded IU therefore reserves the conservative documented maxima, with accepted finish at E+3 for MULLI and E+5 for MULLW. Lower silicon-selected timing remains unresolved, so this does not complete P08.",
+        "MULLI and the four MULLW OE/Rc forms add signed low-word multiply. Both return the low 32 product bits; MULLW OE sets OV when the complete signed product cannot be represented in 32 bits and makes SO sticky, while Rc records the signed low word and final SO in CR0. Every form preserves CA. Primary A-1/A-3/A-34/A-41 and timing rows TIM-T64-002/039 fix the encodings and list 2/3 and 2/3/4/5 execute-cycle possibilities. The source does not map operands to those counts. The IU takes one cycle plus the significant bytes of rB, accepting finish at E+2..E+3 for MULLI and E+2..E+5 for MULLW; the mapping is inferred from the listed sets, so this does not complete P08.",
         "",
-        "MULHW and MULHWU add four XO-form entries with Rc variable and the OE-position bit reserved zero. They place signed or unsigned product bits 63:32 in rD, preserve every XER field, and use the signed interpretation of that 32-bit result when Rc writes CR0; thus unsigned multiplication may still record LT when result bit31 is one. Primary A-1/A-3/A-41 and timing rows TIM-T64-030/023 establish exact encoding and list 2/3/4/5 or 2/3/4/5/6 execute-cycle possibilities. The source does not map operands to those counts. The bounded IU reserves the conservative maxima, with accepted finish at E+5 for MULHW and E+6 for MULHWU. Lower silicon-selected timing remains unresolved, so this does not complete P08.",
+        "MULHW and MULHWU add four XO-form entries with Rc variable and the OE-position bit reserved zero. They place signed or unsigned product bits 63:32 in rD, preserve every XER field, and use the signed interpretation of that 32-bit result when Rc writes CR0; thus unsigned multiplication may still record LT when result bit31 is one. Primary A-1/A-3/A-41 and timing rows TIM-T64-030/023 establish exact encoding and list 2/3/4/5 or 2/3/4/5/6 execute-cycle possibilities. The source does not map operands to those counts. The IU takes one cycle plus the significant bytes of rB, zero-extended for MULHWU, accepting finish at E+2..E+5 for MULHW and E+2..E+6 for MULHWU; the mapping is inferred from the listed sets, so this does not complete P08.",
         "",
-        "DIVWU adds four XO459 OE/Rc forms with unsigned quotient semantics and no remainder destination. A zero divisor leaves rD and CR0 LT/GT/EQ architecturally undefined; OE-enabled OV=1, sticky SO, and CR0.SO remain defined. This scaffold detects the zero divisor before iteration and chooses deterministic rD=0/CR0 EQ for those undefined fields, a local policy rather than an ISA requirement. CA is preserved. Primary A-1/A-3/A-41, TIM-T64-045, and tagged 601UM PDF603 establish the contract. A synthesizable 16-step radix-4 divider feeds a nonpipelined IU reservation with PID7v 20-cycle default or configured PID6 37-cycle accepted finish; wider P08 multiply timing and silicon-internal equivalence remain open.",
+        "DIVWU adds four XO459 OE/Rc forms with unsigned quotient semantics and no remainder destination. A zero divisor leaves rD and CR0 LT/GT/EQ architecturally undefined; OE-enabled OV=1, sticky SO, and CR0.SO remain defined. This scaffold detects the zero divisor before iteration and chooses deterministic rD=0/CR0 EQ for those undefined fields, a local policy rather than an ISA requirement. CA is preserved. Primary A-1/A-3/A-41, TIM-T64-045, and tagged 601UM PDF603 establish the contract. A synthesizable 16-step radix-4 divider feeds a nonpipelined IU reservation with PID7v 20-cycle default or configured PID6 37-cycle accepted finish; silicon-internal equivalence remains open.",
         "",
-        "DIVW adds four XO491 OE/Rc forms. Normal signed quotients truncate toward zero. A zero divisor and INT_MIN divided by -1 leave rD and CR0 LT/GT/EQ architecturally undefined; this scaffold detects both before magnitude iteration and chooses local-policy rD=0/CR0 EQ while retaining defined OE OV, sticky SO, CR0.SO, and CA preservation. Primary A-1/A-3/A-41, TIM-T64-047, and tagged 601UM PDF601 establish the contract. A synthesizable 16-step radix-4 divider feeds a nonpipelined IU reservation with PID7v 20-cycle default or configured PID6 37-cycle accepted finish; wider P08 multiply timing and silicon-internal equivalence remain open.",
+        "DIVW adds four XO491 OE/Rc forms. Normal signed quotients truncate toward zero. A zero divisor and INT_MIN divided by -1 leave rD and CR0 LT/GT/EQ architecturally undefined; this scaffold detects both before magnitude iteration and chooses local-policy rD=0/CR0 EQ while retaining defined OE OV, sticky SO, CR0.SO, and CA preservation. Primary A-1/A-3/A-41, TIM-T64-047, and tagged 601UM PDF601 establish the contract. A synthesizable 16-step radix-4 divider feeds a nonpipelined IU reservation with PID7v 20-cycle default or configured PID6 37-cycle accepted finish; silicon-internal equivalence remains open.",
         "",
         "LBZU/LBZUX, LHZU/LHZUX, LHAU/LHAUX, LWZU/LWZUX, STBU/STBUX, STHU/STHUX and STWU/STWUX add fourteen aligned integer LSU update forms. Every selected form requires rA nonzero; loads also require rA different from rD, and indexed bit 31 is reserved zero. Effective addresses use pre-instruction operands, so store rS=rA and indexed source aliases store the old source before updating the base. Successful loads retire loaded rD and effective-address rA together. Stores retire rA only after the acknowledged store; faults or accepted cuts suppress the base update. Primary UM section 2.3.4.3.3-.4 PDFs107-109, A-1 PDFs364-367, A-13/A-14 PDFs381-382, and tagged 601UM instruction pages establish the bounded contract.",
         "",

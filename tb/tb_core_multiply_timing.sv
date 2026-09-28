@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
-// Actual-core event binding for conservative Table 6-4 multiply reservations.
+// Actual-core event binding for operand-dependent multiply latency.
 /* verilator lint_off BLKSEQ */
 module tb_core_multiply_timing;
   logic [41:0] unused_segment_csr;
@@ -116,10 +116,10 @@ module tb_core_multiply_timing;
   function automatic logic [31:0] instruction(input logic [31:0] pc);
     case (pc)
       32'h00: return 32'h3820_0002; // addi r1,0,2
-      32'h04: return 32'h1c41_0003; // mulli r2,r1,3 => 6, latency 3
-      32'h08: return 32'h3862_0001; // addi r3,r2,1 => 7
-      32'h0c: return 32'h7c83_09d7; // mullw. r4,r3,r1 => 14, latency 5
-      32'h10: return 32'h38a4_0001; // addi r5,r4,1 => 15
+      32'h04: return 32'h1c41_1003; // mulli r2,r1,0x1003 => 0x2006, 16-bit SIMM: 3
+      32'h08: return 32'h3862_0001; // addi r3,r2,1 => 0x2007
+      32'h0c: return 32'h7c83_09d7; // mullw. r4,r3,r1 => 0x400e, 8-bit rB: 2
+      32'h10: return 32'h38a4_0001; // addi r5,r4,1 => 0x400f
       default: return 32'b0;
     endcase
   endfunction
@@ -176,17 +176,17 @@ module tb_core_multiply_timing;
                   dut.iu_result.producer == mulli_producer),
                 "MULLI result visible before E+3");
       if (mullw_issue_edge >= 0 && mullw_finish_edge < 0 &&
-          (cycles - mullw_issue_edge) < 5)
+          (cycles - mullw_issue_edge) < 2)
         require(!(dut.iu_result_valid &&
                   dut.iu_result.producer == mullw_producer),
-                "MULLW result visible before E+5");
+                "MULLW result visible before E+2");
 
       if (dut.iu_result_valid && dut.iu_result_ready &&
           dut.iu_result.producer == mulli_producer &&
           dut.iu.held.ctrl.op == ALU_MULLI) begin
         require((cycles - mulli_issue_edge) == 3,
                 "MULLI accepted finish was not E+3");
-        require(dut.iu_result.value == 6 && dut.iu_result.cr0 == 0,
+        require(dut.iu_result.value == 32'h2006 && dut.iu_result.cr0 == 0,
                 "MULLI result packet mismatch");
         require(!(retire_valid && retire_ready && retired.pc == 4),
                 "MULLI retired on its finish edge");
@@ -195,9 +195,9 @@ module tb_core_multiply_timing;
       if (dut.iu_result_valid && dut.iu_result_ready &&
           dut.iu_result.producer == mullw_producer &&
           dut.iu.held.ctrl.op == ALU_MULLW) begin
-        require((cycles - mullw_issue_edge) == 5,
-                "MULLW accepted finish was not E+5");
-        require(dut.iu_result.value == 14 && dut.iu_result.cr0 == 4'h4,
+        require((cycles - mullw_issue_edge) == 2,
+                "MULLW accepted finish was not E+2");
+        require(dut.iu_result.value == 32'h400e && dut.iu_result.cr0 == 4'h4,
                 "MULLW result/CR0 packet mismatch");
         require(!(retire_valid && retire_ready && retired.pc == 12),
                 "MULLW retired on its finish edge");
@@ -205,11 +205,11 @@ module tb_core_multiply_timing;
       end
 
       if (dut.issue_valid && dut.issue_ready && dut.issue.ctrl.op == ALU_ADD &&
-          dut.issue.a == 6 && dut.issue.b == 1)
+          dut.issue.a == 32'h2006 && dut.issue.b == 1)
         require(mulli_finish_edge == cycles,
                 "MULLI dependent did not wake on accepted finish");
       if (dut.issue_valid && dut.issue_ready && dut.issue.ctrl.op == ALU_ADD &&
-          dut.issue.a == 14 && dut.issue.b == 1)
+          dut.issue.a == 32'h400e && dut.issue.b == 1)
         require(mullw_finish_edge == cycles,
                 "MULLW dependent did not wake on accepted finish");
 
@@ -217,15 +217,15 @@ module tb_core_multiply_timing;
         case (commits)
           0: require(retired.pc == 0 && retired.gpr == 1 && retired.value == 2,
                      "setup retirement mismatch");
-          1: require(retired.pc == 4 && retired.gpr == 2 && retired.value == 6,
+          1: require(retired.pc == 4 && retired.gpr == 2 && retired.value == 32'h2006,
                      "MULLI retirement mismatch");
-          2: require(retired.pc == 8 && retired.gpr == 3 && retired.value == 7,
+          2: require(retired.pc == 8 && retired.gpr == 3 && retired.value == 32'h2007,
                      "first dependent retirement mismatch");
           3: require(retired.pc == 12 && retired.gpr == 4 &&
-                     retired.value == 14 && retired.write_cr_field &&
+                     retired.value == 32'h400e && retired.write_cr_field &&
                      retired.cr_delta == 32'h4000_0000,
                      "MULLW retirement mismatch");
-          4: require(retired.pc == 16 && retired.gpr == 5 && retired.value == 15,
+          4: require(retired.pc == 16 && retired.gpr == 5 && retired.value == 32'h400f,
                      "second dependent retirement mismatch");
           5: require(retired.pc == 20 && retired.illegal && !retired.gpr_write,
                      "terminal diagnostic mismatch");
@@ -248,13 +248,13 @@ module tb_core_multiply_timing;
     @(negedge clk);
     require(commits == 6, "program did not retire exact stream");
     require(mulli_finish_edge - mulli_issue_edge == 3 &&
-            mullw_finish_edge - mullw_issue_edge == 5,
-            "missing conservative multiply timing observations");
-    require(dut.regfile.gpr[2] == 6 && dut.regfile.gpr[3] == 7 &&
-            dut.regfile.gpr[4] == 14 && dut.regfile.gpr[5] == 15 &&
+            mullw_finish_edge - mullw_issue_edge == 2,
+            "missing operand-class multiply timing observations");
+    require(dut.regfile.gpr[2] == 32'h2006 && dut.regfile.gpr[3] == 32'h2007 &&
+            dut.regfile.gpr[4] == 32'h400e && dut.regfile.gpr[5] == 32'h400f &&
             dut.cr == 32'h4000_0000,
             "final multiply/dependent architectural state mismatch");
-    $display("PASS core multiply timing: MULLI E+3, MULLW E+5, same-edge dependent wake (%0d checks)", checks);
+    $display("PASS core multiply timing: MULLI 16-bit SIMM E+3, MULLW 8-bit rB E+2, same-edge dependent wake (%0d checks)", checks);
     $finish;
   end
 

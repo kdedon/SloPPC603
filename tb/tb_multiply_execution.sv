@@ -57,6 +57,22 @@ module tb_multiply_execution;
     .result_o(result)
   );
 
+  // Table 6-4 latency: one cycle plus the significant bytes of rB,
+  // zero-extended for MULHWU.
+  function automatic int multiply_cycles(input logic unsigned_b,
+                                         input logic [31:0] b);
+    logic signed [32:0] value, upper;
+    int bytes;
+    value = {!unsigned_b && b[31], b};
+    bytes = 1;
+    upper = value >>> 7;
+    while ((upper != 0) && (upper != -1)) begin
+      bytes++;
+      upper = value >>> (8 * bytes - 1);
+    end
+    return bytes + 1;
+  endfunction
+
   task automatic require(input logic condition, input string message);
     assert (condition) else $fatal(1, "%s", message);
     checks++;
@@ -132,9 +148,8 @@ module tb_multiply_execution;
     #1;
     wake_valid = 1'b0;
 
-    // Table 6-4 permits MULLW execute latencies 2--5. The bounded IU
-    // reservation intentionally selects the conservative five-cycle case.
-    repeat (4) begin
+    // Table 6-4 permits MULLW execute latencies 2--5, selected by rB.
+    repeat (multiply_cycles(1'b0, source_b) - 1) begin
       require(!result_valid && !issue_ready,
               "MULLW result became visible before its reserved finish cycle");
       @(posedge clk);
