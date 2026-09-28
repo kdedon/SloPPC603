@@ -1,6 +1,6 @@
 # System completion scorecard
 
-Updated: 2026-09-27. Scope: single-issue, big-endian integer CPU with supervisor
+Updated: 2026-09-28. Scope: single-issue, big-endian integer CPU with supervisor
 mode, a snooping MEI data cache, a pin-accurate chip boundary, resumable exceptions, external/decrementer interrupts, CPU-managed BAT
 and page translation, and an integrated cache/60x path. FPGA acceptance also
 requires reviewed constraints and passing setup/hold. Board bring-up is excluded.
