@@ -1,5 +1,25 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-28 diagnostic residuals replaced with manual behavior
+
+Recorded: `./quartus/translated/build.sh --docker` and
+`./quartus/translated/report-critical-paths.sh --docker`, commit `4498a25`
+plus uncommitted doc edits, 2026-09-28. Quartus 17.0.2, seed 1. The RTL is
+that of [DIAGNOSTIC_RESIDUALS.md](DIAGNOSTIC_RESIDUALS.md). **Meets 50 MHz**
+at every corner with hold passing everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +4.220 | +0.257 |
+| Slow 1100 mV, -40 C | +4.278 | +0.224 |
+| Fast 1100 mV, 100 C | +7.947 | +0.137 |
+| Fast 1100 mV, -40 C | +8.264 | +0.119 |
+
+Fmax 63.37 MHz at slow 100 C, 63.61 MHz at slow -40 C. The worst setup path
+runs from the I-cache way-0 data RAM into the IQ storage (`core|iq|entries`);
+the worst hold path is `special|mmu_resume_target_q` to `context_target_q`.
+9,939 ALMs, 11,483 registers, 3 DSP blocks, 139,008 block-memory bits.
+
 ## 2026-09-28 final signoff: full decode with gate-3 timing
 
 Recorded: `./quartus/translated/build.sh --docker` and
