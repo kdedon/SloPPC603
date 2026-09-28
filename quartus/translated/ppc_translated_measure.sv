@@ -589,6 +589,10 @@ module ppc_translated_measure (
     .maintenance_done_valid_o(maintenance_done_valid_o_od),
     .maintenance_done_ready_i(maintenance_done_ready_i_ibq),
     .cache_enabled_o(cache_enabled_o_od),
+    // The data cache is absent from this profile.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .dcache_bus_o(), .dcache_bus_i('0), .dcache_busy_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .maintenance_busy_o(maintenance_busy_o_od),
     .br_n_o(br_n_o_od),
     .bg_n_i(bg_n_i_ibq),

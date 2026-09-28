@@ -39,7 +39,14 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
-  parameter logic [3:0] PLL_CFG = 4'b0000
+  parameter logic [3:0] PLL_CFG = 4'b0000,
+  // Data cache in the slot; its BIU ports leave through dcache_bus_o/_i.
+  // Needs cache instructions, reservation, machine check and the pin
+  // interrupt path (asynchronous TEA).
+  parameter bit ENABLE_DCACHE = 1'b0,
+  // Bench only: HID0[DCE] set at reset for images that never set it.
+  parameter bit RESET_DCACHE_ENABLE = 1'b0,
+  parameter int DCACHE_MUTATION = 0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -139,6 +146,9 @@ module ppc_core_bat_cached_bus60x #(
   input  logic maintenance_done_ready_i,
   output logic cache_enabled_o,
   output logic maintenance_busy_o,
+  output ppc_pkg::dcache_bus_out_t dcache_bus_o,
+  input  ppc_pkg::dcache_bus_in_t dcache_bus_i,
+  output logic dcache_busy_o,
   output logic        br_n_o,
   input  logic        bg_n_i,
   input  logic        abb_n_i,
@@ -191,6 +201,8 @@ module ppc_core_bat_cached_bus60x #(
   logic cache_line_rsp_valid, cache_line_rsp_ready, cache_line_rsp_error;
   logic [255:0] cache_line_rsp_data;
   logic cache_protocol_error;
+  ppc_pkg::pin_event_t core_pin_event;
+  ppc_pkg::pin_status_t core_pin_status;
 
   logic bypass_req_valid, bypass_req_ready;
   logic [31:0] bypass_req_addr;
@@ -239,6 +251,7 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT),
     .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_DATA_CACHE(ENABLE_DCACHE),
     .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
@@ -248,7 +261,9 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE), .PVR_VALUE(PVR_VALUE),
     // HID0[ICE] starts in the cache's reset mode.
-    .HID0_RESET(RESET_CACHE_ENABLE ? (32'd1 << ppc_pkg::HID0_ICE) : 32'd0),
+    .HID0_RESET((RESET_CACHE_ENABLE ? (32'd1 << ppc_pkg::HID0_ICE) : 32'd0) |
+                ((ENABLE_DCACHE && RESET_DCACHE_ENABLE) ?
+                   (32'd1 << ppc_pkg::HID0_DCE) : 32'd0)),
     .PLL_CFG(PLL_CFG)
   ) translated_core (
     .clk_i,
@@ -258,7 +273,7 @@ module ppc_core_bat_cached_bus60x #(
     .interrupt_pc_o,
     .timer_tick_i,
     .timebase_enable_i,
-    .pin_event_i, .pin_status_o,
+    .pin_event_i(core_pin_event), .pin_status_o(core_pin_status),
     .decrementer_taken_o,
     .decrementer_pc_o,
     .bat_write_valid_i,
@@ -479,7 +494,24 @@ module ppc_core_bat_cached_bus60x #(
   logic [3:0] biu_dmem_req_wstrb;
   ppc_pkg::dmem_attr_t biu_dmem_req_attr;
   logic biu_dmem_rsp_valid, biu_dmem_rsp_ready, biu_dmem_rsp_error;
-  ppc_dcache_slot dcache_slot (
+  // A cache bus error with no instruction to blame is held until the core
+  // takes it as a TEA machine check.
+  logic dcache_async_error, dcache_protocol_error, dcache_resv, tea_pending_q;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) tea_pending_q <= 1'b0;
+    else if (dcache_async_error) tea_pending_q <= 1'b1;
+    else if (core_pin_status.tea_taken) tea_pending_q <= 1'b0;
+  end
+  always_comb begin
+    core_pin_event = pin_event_i;
+    core_pin_event.tea = pin_event_i.tea || tea_pending_q;
+    pin_status_o = core_pin_status;
+    if (ENABLE_DCACHE) pin_status_o.reservation = dcache_resv;
+  end
+
+  ppc_dcache_slot #(
+    .ENABLE_DCACHE(ENABLE_DCACHE), .DCACHE_MUTATION(DCACHE_MUTATION)
+  ) dcache_slot (
     .clk_i, .rst_ni,
     .lsu_req_valid_i(dmem_req_valid), .lsu_req_ready_o(dmem_req_ready),
     .lsu_req_write_i(dmem_req_write), .lsu_req_addr_i(dmem_req_addr),
@@ -492,7 +524,34 @@ module ppc_core_bat_cached_bus60x #(
     .biu_req_wdata_o(biu_dmem_req_wdata), .biu_req_wstrb_o(biu_dmem_req_wstrb),
     .biu_req_attr_o(biu_dmem_req_attr),
     .biu_rsp_valid_i(biu_dmem_rsp_valid), .biu_rsp_ready_o(biu_dmem_rsp_ready),
-    .biu_rsp_rdata_i(biu_dmem_rsp_rdata), .biu_rsp_error_i(biu_dmem_rsp_error)
+    .biu_rsp_rdata_i(biu_dmem_rsp_rdata), .biu_rsp_error_i(biu_dmem_rsp_error),
+    .hid0_dce_i(core_pin_status.dcache_enable),
+    .hid0_dlock_i(core_pin_status.dcache_lock),
+    .hid0_dcfi_i(core_pin_status.dcache_flash_invalidate),
+    .hid0_noopti_i(core_pin_status.noop_touch),
+    .hid0_abe_i(core_pin_status.broadcast_enable),
+    .async_error_o(dcache_async_error), .protocol_error_o(dcache_protocol_error),
+    .busy_o(dcache_busy_o), .resv_valid_o(dcache_resv),
+    .bus_req_valid_o(dcache_bus_o.req_valid),
+    .bus_req_ready_i(dcache_bus_i.req_ready),
+    .bus_req_kind_o(dcache_bus_o.req_kind), .bus_req_tt_o(dcache_bus_o.req_tt),
+    .bus_req_addr_o(dcache_bus_o.req_addr), .bus_req_be_o(dcache_bus_o.req_be),
+    .bus_req_wimg_o(dcache_bus_o.req_wimg), .bus_req_gbl_o(dcache_bus_o.req_gbl),
+    .bus_req_cse_o(dcache_bus_o.req_cse), .bus_req_data_o(dcache_bus_o.req_data),
+    .bus_rd_valid_i(dcache_bus_i.rd_valid), .bus_rd_data_i(dcache_bus_i.rd_data),
+    .bus_rd_error_i(dcache_bus_i.rd_error), .bus_wr_done_i(dcache_bus_i.wr_done),
+    .bus_wr_error_i(dcache_bus_i.wr_error),
+    .push_req_valid_o(dcache_bus_o.push_valid),
+    .push_req_ready_i(dcache_bus_i.push_ready),
+    .push_req_addr_o(dcache_bus_o.push_addr),
+    .push_req_data_o(dcache_bus_o.push_data),
+    .push_done_i(dcache_bus_i.push_done), .push_error_i(dcache_bus_i.push_error),
+    .snoop_valid_i(dcache_bus_i.snoop_valid), .snoop_addr_i(dcache_bus_i.snoop_addr),
+    .snoop_tt_i(dcache_bus_i.snoop_tt),
+    .snoop_rsp_valid_o(dcache_bus_o.snoop_rsp_valid),
+    .snoop_rsp_artry_o(dcache_bus_o.snoop_rsp_artry),
+    .snoop_rsp_hit_o(dcache_bus_o.snoop_rsp_hit),
+    .snoop_rsp_push_o(dcache_bus_o.snoop_rsp_push)
   );
 
   ppc_biu #(.RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK)) biu (
@@ -531,7 +590,14 @@ module ppc_core_bat_cached_bus60x #(
   assign transport_ifetch_error = pimem_error_o || scalar_router_ifetch_error;
   assign ifetch_error_o = rst_ni && transport_ifetch_error;
   assign halted_o = core_halted || ifetch_error_o;
-  assign bus_protocol_error_o = cache_protocol_error || biu_protocol_error;
+  assign bus_protocol_error_o = cache_protocol_error || biu_protocol_error ||
+    dcache_protocol_error;
+  // synthesis translate_off
+  initial assert (!ENABLE_DCACHE || (ENABLE_CACHE_INSTRUCTIONS &&
+    ENABLE_RESERVATION && ENABLE_MACHINE_CHECK && ENABLE_PIN_INTERRUPTS &&
+    ENABLE_EXTERNAL_INTERRUPTS))
+    else $fatal(1, "the data cache needs cache instructions, reservation, machine check and pin interrupts");
+  // synthesis translate_on
   assign bus_busy_o = biu_busy || icache_busy_o || physical_fetch_busy_q ||
     ifetch_error_o;
 

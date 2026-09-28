@@ -180,6 +180,8 @@ module ppc603e #(
   assign pin_event.soft_reset = sreset_pending_q && sreset_n;
   assign pin_event.smi = !smi_n;
   assign pin_event.tlbisync = !tlbisync_n;
+  // The core composition raises its own asynchronous TEA.
+  assign pin_event.tea = 1'b0;
 
   // The time base and decrementer count once per four bus clocks.
   logic timer_tick;
@@ -274,7 +276,8 @@ module ppc603e #(
     .maintenance_valid_i(1'b0), .maintenance_ready_o(),
     .maintenance_invalidate_i(1'b0), .maintenance_cache_enable_i(1'b0),
     .maintenance_done_valid_o(), .maintenance_done_ready_i(1'b1),
-    .cache_enabled_o(), .maintenance_busy_o(),
+    .cache_enabled_o(), .dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
+    .maintenance_busy_o(),
     .br_n_o(core_br_n), .bg_n_i, .abb_n_i,
     .abb_n_o(core_abb_n), .abb_oe_o(core_abb_oe),
     .ts_n_o(core_ts_n), .ts_oe_o(core_ts_oe),
@@ -337,7 +340,10 @@ module ppc603e #(
   logic unused_pins;
   assign unused_pins = ^{ts_n_i, a_i, ap_i, tt_i, tbst_n_i, gbl_n_i, dp_i,
                          dbwo_n_i, tck_i, tms_i, tdi_i, trst_n_i, test_i,
-                         pin_status.smi_taken, retire_valid, retire, halted};
+                         pin_status.smi_taken, pin_status.tea_taken,
+                         pin_status.dcache_enable, pin_status.dcache_lock,
+                         pin_status.dcache_flash_invalidate, pin_status.noop_touch,
+                         pin_status.broadcast_enable, retire_valid, retire, halted};
 endmodule
 /* verilator lint_on ASCRANGE */
 `default_nettype wire

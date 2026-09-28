@@ -158,6 +158,7 @@ module tb_compiled_mmu_stress_firmware;
     .maintenance_done_valid_o(maintenance_done),
     .maintenance_done_ready_i(1'b1),
     .cache_enabled_o(cache_enabled),
+    .dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
     .maintenance_busy_o(maintenance_busy),
     .br_n_o(br_n),.bg_n_i(bg_n),
     .abb_n_i(abb_oe?abb_n:1'b1),.abb_n_o(abb_n),.abb_oe_o(abb_oe),

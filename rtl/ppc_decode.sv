@@ -15,6 +15,8 @@ module ppc_decode #(
   parameter bit ENABLE_SDR1 = 1'b0,
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  // Cache-block instructions, lwarx/stwcx. and sync go to a data cache.
+  parameter bit ENABLE_DATA_CACHE = 1'b0,
   parameter bit ENABLE_BYTE_REVERSE = 1'b0,
   parameter bit ENABLE_MULTIPLE_STRING = 1'b0,
   parameter bit ENABLE_RESERVATION = 1'b0,
@@ -627,10 +629,20 @@ module ppc_decode #(
                 uop_o.zero_a = insn_i[20:16] == 5'b0;
                 case (insn_i[10:1])
                   10'd278, 10'd246: begin
-                    // dcbt/dcbtst: with no data cache the touch is a no-op.
-                    uop_o.op = ALU_OR;
-                    uop_o.zero_a = 1'b1;
-                    uop_o.use_imm = 1'b1;
+                    if (ENABLE_DATA_CACHE) begin
+                      // dcbt/dcbtst: a load-translated touch; any fault
+                      // makes it a no-op.
+                      uop_o.special_op = SPECIAL_LOAD;
+                      uop_o.mem_size = MEM_BYTE;
+                      uop_o.cache_probe = 1'b1;
+                      uop_o.cache_op = (insn_i[10:1] == 10'd278) ?
+                                       CACHE_OP_DCBT : CACHE_OP_DCBTST;
+                    end else begin
+                      // dcbt/dcbtst: with no data cache the touch is a no-op.
+                      uop_o.op = ALU_OR;
+                      uop_o.zero_a = 1'b1;
+                      uop_o.use_imm = 1'b1;
+                    end
                   end
                   10'd982: uop_o.special_op = SPECIAL_ICBI;
                   default: begin
@@ -642,6 +654,13 @@ module ppc_decode #(
                     uop_o.cache_probe = 1'b1;
                     uop_o.block_zero = insn_i[10:1] == 10'd1014;
                     uop_o.privileged = insn_i[10:1] == 10'd470;
+                    if (ENABLE_DATA_CACHE)
+                      case (insn_i[10:1])
+                        10'd86: uop_o.cache_op = CACHE_OP_DCBF;
+                        10'd54: uop_o.cache_op = CACHE_OP_DCBST;
+                        10'd470: uop_o.cache_op = CACHE_OP_DCBI;
+                        default: uop_o.cache_op = CACHE_OP_DCBZ;
+                      endcase
                   end
                 endcase
               end

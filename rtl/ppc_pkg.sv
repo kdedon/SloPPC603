@@ -134,14 +134,20 @@ package ppc_pkg;
     SPECIAL_FPU, SPECIAL_FP_UNAVAILABLE
   } special_op_t;
   // 60x transfer class of a data request (UM Table 7-1).
+  // DMEM_CACHE is a data-cache operation (cache_op_t in rid); it reaches only
+  // a data cache, never the bus.
   typedef enum logic [1:0] {
-    DMEM_NORMAL, DMEM_ATOMIC, DMEM_EXTERNAL
+    DMEM_NORMAL, DMEM_ATOMIC, DMEM_EXTERNAL, DMEM_CACHE
   } dmem_kind_t;
   typedef struct packed {
     dmem_kind_t kind;
     // eciwx/ecowx resource ID, EAR[28:31]: TBST || TSIZ[0:2].
     logic [3:0] rid;
   } dmem_attr_t;
+  typedef enum logic [2:0] {
+    CACHE_OP_NONE, CACHE_OP_DCBF, CACHE_OP_DCBST, CACHE_OP_DCBI,
+    CACHE_OP_DCBZ, CACHE_OP_DCBT, CACHE_OP_DCBTST, CACHE_OP_SYNC
+  } cache_op_t;
   typedef enum logic [2:0] {
     CR_LOGIC_AND, CR_LOGIC_ANDC, CR_LOGIC_EQV, CR_LOGIC_NAND,
     CR_LOGIC_NOR, CR_LOGIC_OR, CR_LOGIC_ORC, CR_LOGIC_XOR
@@ -272,6 +278,8 @@ package ppc_pkg;
     logic cache_probe;
     // dcbz: a translated probe that ends in the alignment exception.
     logic block_zero;
+    // Data-cache operation of a cache-block instruction.
+    cache_op_t cache_op;
     logic privileged;
     // Low 17 bits of alignment DSISR; reserved high bits are always zero.
     logic [16:0] alignment_dsisr;
@@ -387,6 +395,9 @@ package ppc_pkg;
     logic soft_reset;
     logic smi;
     logic tlbisync;
+    // Latched bus error on a posted data-cache write or late fill beat;
+    // held until tea_taken.
+    logic tea;
   } pin_event_t;
   // Core state the chip pins need.
   typedef struct packed {
@@ -396,7 +407,48 @@ package ppc_pkg;
     logic mcp_taken;         // pulses when a latched MCP is consumed
     logic soft_reset_taken;  // pulses when a latched SRESET is consumed
     logic smi_taken;
+    logic tea_taken;
+    // HID0 data-cache controls, as levels.
+    logic dcache_enable;     // DCE
+    logic dcache_lock;       // DLOCK
+    logic dcache_flash_invalidate; // DCFI
+    logic noop_touch;        // NOOPTI
+    logic broadcast_enable;  // ABE
   } pin_status_t;
+  // Data-cache BIU ports (docs/DATA_CACHE.md) bundled for the core
+  // composition's boundary.
+  typedef struct packed {
+    logic         req_valid;
+    logic [2:0]   req_kind;
+    logic [4:0]   req_tt;
+    logic [31:0]  req_addr;
+    logic [7:0]   req_be;
+    logic [3:0]   req_wimg;
+    logic         req_gbl;
+    logic [1:0]   req_cse;
+    logic [255:0] req_data;
+    logic         push_valid;
+    logic [31:0]  push_addr;
+    logic [255:0] push_data;
+    logic         snoop_rsp_valid;
+    logic         snoop_rsp_artry;
+    logic         snoop_rsp_hit;
+    logic         snoop_rsp_push;
+  } dcache_bus_out_t;
+  typedef struct packed {
+    logic         req_ready;
+    logic         rd_valid;
+    logic [63:0]  rd_data;
+    logic         rd_error;
+    logic         wr_done;
+    logic         wr_error;
+    logic         push_ready;
+    logic         push_done;
+    logic         push_error;
+    logic         snoop_valid;
+    logic [31:0]  snoop_addr;
+    logic [4:0]   snoop_tt;
+  } dcache_bus_in_t;
   // ---- end MSR and exception events ---------------------------------------
 
   // ---- SPR write masks and reset values -----------------------------------
@@ -413,6 +465,11 @@ package ppc_pkg;
   localparam logic [31:0] HID0_WMASK = 32'hbff9_fc99;
   localparam int HID0_ICE = 15;
   localparam int HID0_ICFI = 11;
+  localparam int HID0_DCE = 14;
+  localparam int HID0_DLOCK = 12;
+  localparam int HID0_DCFI = 10;
+  localparam int HID0_ABE = 3;
+  localparam int HID0_NOOPTI = 0;
   localparam int HID0_EMCP = 31;
   // EAR: E (manual bit 0) and RID (manual bits 28-31, UM 2.1.1).
   localparam logic [31:0] EAR_WMASK = 32'h8000_000f;

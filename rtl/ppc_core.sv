@@ -23,6 +23,8 @@ module ppc_core #(
   // dcbf/dcbst/dcbi/dcbz/dcbt/dcbtst/icbi; the wrapper must honor
   // dmem_req_probe_o and the icbi request.
   parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  // Cache-block instructions, lwarx/stwcx. and sync go to a data cache.
+  parameter bit ENABLE_DATA_CACHE = 1'b0,
   // lhbrx/lwbrx/sthbrx/stwbrx.
   parameter bit ENABLE_BYTE_REVERSE = 1'b0,
   // lmw/stmw/lswi/lswx/stswi/stswx, cracked at dispatch.
@@ -198,7 +200,8 @@ module ppc_core #(
     (iq_head.fault == FETCH_MACHINE_CHECK);
   // MCP and SRESET do not wait on MSR[EE]; SMI does.
   assign pin_interrupt = ENABLE_PIN_INTERRUPTS && !fetch_machine_check_head &&
-    (pin_event_q.mcp || pin_event_q.soft_reset || (pin_event_q.smi && msr[MSR_EE]));
+    (pin_event_q.mcp || (ENABLE_DATA_CACHE && pin_event_q.tea) ||
+     pin_event_q.soft_reset || (pin_event_q.smi && msr[MSR_EE]));
   assign interrupt_qualified = ENABLE_EXTERNAL_INTERRUPTS &&
     ((ENABLE_DEBUG_EXCEPTIONS && trace_pending_q) || pin_interrupt ||
      ((external_irq_q || (ENABLE_TIMERS && decrementer_pending)) &&
@@ -319,6 +322,7 @@ module ppc_core #(
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_DATA_CACHE(ENABLE_DATA_CACHE),
     .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
@@ -565,6 +569,7 @@ module ppc_core #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS),
     .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_DATA_CACHE(ENABLE_DATA_CACHE),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
     .ENABLE_UNALIGNED_DATAPATH(ENABLE_MISALIGNED_ACCESS || ENABLE_MULTIPLE_STRING),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
@@ -715,6 +720,7 @@ module ppc_core #(
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_DATA_CACHE(ENABLE_DATA_CACHE),
     .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
