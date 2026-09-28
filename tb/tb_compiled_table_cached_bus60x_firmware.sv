@@ -66,6 +66,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
     .interrupt_pc_o(unused_interrupt_pc),
     .timer_tick_i(1'b0),.timebase_enable_i(1'b0),
     /* verilator lint_off PINCONNECTEMPTY */
+    .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),
     .pin_event_i('0), .pin_status_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken),
@@ -138,7 +139,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
     .tbst_n_o(tbst_n),.tsiz_o(tsiz),.tc_o(tc),
     .ci_n_o(ci_n),.wt_n_o(wt_n),.gbl_n_o(gbl_n),
     .cse_o(cse),.addr_oe_o(addr_oe),
-    .aack_n_i(aack_n),.snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),.artry_n_i(1'b1),.dbg_n_i(dbg_n),
+    .aack_n_i(aack_n),.artry_n_i(1'b1),.dbg_n_i(dbg_n),
     .dbb_n_i(dbb_oe?dbb_n:1'b1),.dbb_n_o(dbb_n),
     .dbb_oe_o(dbb_oe),.d_i(d_i),.d_o(d_o),.d_oe_o(d_oe),
     .ta_n_i(ta_n),.drtry_n_i(1'b1),.tea_n_i(1'b1)
