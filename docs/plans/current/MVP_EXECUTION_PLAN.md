@@ -836,3 +836,10 @@ Wave 1 in progress: chip package, fetch-to-decode stage, residual halts and
 corpus comparison, standalone data cache, multiplier. Wave 2 integrates the
 data cache into the LSU and BIU; wave 3 is release and signoff.
 
+## Standalone data cache round — accepted (2026-09-28)
+
+`rtl/ppc_dcache.sv` per [DATA_CACHE.md](../../DATA_CACHE.md), not yet integrated.
+Inherited from the branch (`02a2404`): regression and a standalone fit at 69.9
+MHz; fresh on the merge: lint, check-spec, `test-dcache` and all seven mutations
+caught. MVP 80.93% → 84.43%. See [verification](../../DATA_CACHE_VERIFICATION.md).
+

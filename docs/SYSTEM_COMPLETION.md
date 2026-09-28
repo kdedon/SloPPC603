@@ -19,7 +19,7 @@ acceptance evidence are still required. The aggregate is `sum(weight × completi
 / 100`, rounded to a whole percent. Keep weights fixed between rounds unless the
 user changes scope. Treat small score changes as bookkeeping, not velocity.
 
-**MVP estimate: about 81% complete (weighted 80.9%; planning range 75–90%).** The
+**MVP estimate: about 84% complete (weighted 84.4%; planning range 75–90%).** The
 remaining work is concentrated in platform exceptions (machine check, trace,
 debug) and timing closure. These are
 hard acceptance blockers regardless of the weighted score. Final FPGA acceptance
@@ -43,7 +43,7 @@ is currently unmet.
 | Toolchain and reproducible builds | 3% | 90% | Pinned compiler, BE ELF loader, twenty-two compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes; MMU stress has nine), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility or release packaging claim. |
 | Integration and verification | 6% | 95% | Collected line coverage with a waiver-gated control-arm review, one `make -C sim ci` gate and a 64-seed reference-acceptance run; independent directed/reference tests, seeded cached-top cache-maintenance stress with a scripted ARTRY/DRTRY/hold 60x target, 259 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives; seeded nine-mode MMU/event/reset stress on the MVP-profile translated cached top | Search/fault/stress firmware covers the combined supervisor/page-MMU/cache/bus path with bus retries and seeded TEA machine checks; no formal verification or toggle coverage; the compiled corpus is not compared with DingusPPC. |
 | FPGA fit, timing and release | 7% | 95% | Reviewed boundary timing contract ([interface timing](INTERFACE_TIMING_CONTRACT.md)) implemented by all three measurement SDCs; final signoff fits on the complete MVP RTL: translated, cached physical and timer/BAT tops meet 50 MHz setup and hold at every corner (Fmax 61.41 / 65.02 / 72.70 MHz at the worst slow corner); timer/BAT also meets 66 MHz | 66 MHz on the cached tops (translated misses by 1.133 ns on I-cache data → decode → IQ; needs a registered fetch-to-decode stage). Board bring-up excluded. New RTL changes require fresh fit before timing claims. |
-| Data cache, writeback and coherence | 10% | 0% | Standalone cache contract and module in progress | 16-KiB four-way MEI data cache with snooping, castouts, WIMG and real cache-control instructions; not yet built or integrated. |
+| Data cache, writeback and coherence | 10% | 35% | Standalone 16-KiB four-way MEI cache ([contract](DATA_CACHE.md)): critical-word fills, castout and snoop-push buffers, snoop ARTRY/push, Table 3-8 operations, reservation, HID0 DCE/DLOCK/DCFI; seeded random bench against a memory image with seven mutations caught; standalone fit at 69.9 MHz | Not integrated: LSU alignment/extension and exception mapping, BIU ordering/TT/TSIZ/ARTRY window, snoop from the pins, replacing the uncached data path. |
 | Chip package and pin interface | 4% | 10% | 60x master pins and the interface timing contract exist on the measurement tops | A top whose ports are exactly the 603e pins (MCP, CKSTP, SRESET/HRESET, SMI, TBEN, RSRV, TLBISYNC, parity), internal blocks grouped as on the chip, pin-level bench and fit. |
 
 Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](references/ISA_MATRIX.md),
@@ -183,6 +183,7 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Gate-3 timing round, 2026-09-28 | 87.46% → 90.26% | FPGA 45% → 85%. Interface timing contract and SDCs; reset off datapath storage, registered IQ head, ungated wake payload. Fresh on the branch (`710b517`, same tree as the merge): `make -C sim ci` and fits of all three tops. See [interface timing](INTERFACE_TIMING_CONTRACT.md). |
 | Full decode and final signoff round, 2026-09-28 | 90.26% → 91.80% | Integer 90%, load/store 94%, supervisor 95%, instruction cache 97%, FPGA 95%. No encoding halts; final `ci` and fits of all three tops on the combined RTL. See [verification](FULL_DECODE_VERIFICATION.md). |
 | Scope change, 2026-09-28 | 91.80% → 80.93% | User added the data cache (with coherence), a pin-level chip package and a 603e-style multiplier to the MVP, and accepted the other contracted design choices (single dispatch, one outstanding fetch, five rename slots, big-endian, integrator-owned interrupt synchronization). Weights rebalanced to fit two new rows; fetch and branches 100%, rename and interrupts 95%. No new checks. |
+| Standalone data cache round, 2026-09-28 | 80.93% → 84.43% | Data cache 0% → 35%. Inherited from the branch (`02a2404`): regression and the cache fit; fresh on the merge: lint, check-spec, test-dcache and the seven mutations. See [verification](DATA_CACHE_VERIFICATION.md). |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.
