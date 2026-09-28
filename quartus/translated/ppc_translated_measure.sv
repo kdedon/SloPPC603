@@ -65,6 +65,7 @@ module ppc_translated_measure (
   input logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
   output logic halted_o,
+  output logic checkstop_o,
   input logic redirect_valid_i,
   input logic redirect_all_i,
   input logic redirect_keep_pivot_i,
@@ -295,6 +296,9 @@ module ppc_translated_measure (
   logic halted_o_od, halted_o_obq;
   always_ff @(posedge clk_i) halted_o_obq <= halted_o_od;
   assign halted_o = halted_o_obq;
+  logic checkstop_o_od, checkstop_o_obq;
+  always_ff @(posedge clk_i) checkstop_o_obq <= checkstop_o_od;
+  assign checkstop_o = checkstop_o_obq;
   logic redirect_valid_i_ibq;
   always_ff @(posedge clk_i) redirect_valid_i_ibq <= redirect_valid_i;
   logic redirect_all_i_ibq;
@@ -478,6 +482,8 @@ module ppc_translated_measure (
     .ENABLE_TLB_INVALIDATE(1'b1),
     .ENABLE_TLB_LOAD(1'b1),
     .ENABLE_CACHE_INSTRUCTIONS(1'b1),
+    .ENABLE_MACHINE_CHECK(1'b1),
+    .ENABLE_DEBUG_EXCEPTIONS(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (.rst_ni(rst_sync_q[1]),
     .clk_i,
@@ -541,7 +547,7 @@ module ppc_translated_measure (
     .retire_valid_o(retire_valid_o_od),
     .retire_ready_i(retire_ready_i_ibq),
     .retire_o(retire_o_od),
-    .halted_o(halted_o_od),
+    .checkstop_o(checkstop_o_od), .halted_o(halted_o_od),
     .redirect_valid_i(redirect_valid_i_ibq),
     .redirect_all_i(redirect_all_i_ibq),
     .redirect_keep_pivot_i(redirect_keep_pivot_i_ibq),

@@ -104,6 +104,7 @@ set_instance_assignment -name VIRTUAL_PIN ON -to retire_valid_o
 set_instance_assignment -name VIRTUAL_PIN ON -to retire_ready_i
 set_instance_assignment -name VIRTUAL_PIN ON -to retire_o.*
 set_instance_assignment -name VIRTUAL_PIN ON -to halted_o
+set_instance_assignment -name VIRTUAL_PIN ON -to checkstop_o
 set_instance_assignment -name VIRTUAL_PIN ON -to redirect_valid_i
 set_instance_assignment -name VIRTUAL_PIN ON -to redirect_all_i
 set_instance_assignment -name VIRTUAL_PIN ON -to redirect_keep_pivot_i

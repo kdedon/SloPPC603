@@ -36,6 +36,7 @@ module tb_core_multiply_timing;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
+  logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0)) dut (
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
@@ -100,7 +101,7 @@ module tb_core_multiply_timing;
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
     .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(retire_valid), .retire_ready_i(retire_ready),
-    .retire_o(retired), .halted_o(halted),
+    .retire_o(retired), .checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0), .redirect_pivot_i('0),
     .redirect_target_i(32'b0), .redirect_accepted_o(unused_redirect_accepted)

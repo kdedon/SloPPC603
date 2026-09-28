@@ -35,6 +35,7 @@ module tb_core_runtime_bat_privilege;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
+  logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_RUNTIME_BAT(1'b1)) dut (
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
@@ -102,7 +103,7 @@ module tb_core_runtime_bat_privilege;
     .decrementer_taken_o(decrementer_taken), .decrementer_pc_o(decrementer_pc),
     .interrupt_taken_o(interrupt_taken), .interrupt_pc_o(interrupt_pc),
     .retire_valid_o(retire_valid), .retire_ready_i(1'b1), .retire_o(retired),
-    .halted_o(halted), .redirect_valid_i(1'b0), .redirect_all_i(1'b0),
+    .checkstop_o(unused_checkstop), .halted_o(halted), .redirect_valid_i(1'b0), .redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0), .redirect_pivot_i('0),
     .redirect_target_i(32'b0), .redirect_accepted_o(redirect_accepted)
   );

@@ -14,7 +14,9 @@ module ppc_special #(
   parameter bit ENABLE_SDR1 = 1'b0,
   parameter bit ENABLE_TGPR = 1'b0,
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
-  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  parameter bit ENABLE_MACHINE_CHECK = 1'b0,
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -86,6 +88,8 @@ module ppc_special #(
   input logic [31:0] bat_recovery_target_i,
   input logic interrupt_valid_i,
   input logic interrupt_decrementer_i, external_irq_i,
+  // The offered boundary is a pending trace, not EXT/DEC.
+  input logic interrupt_trace_i,
   input logic timer_tick_i, timebase_enable_i,
   output logic decrementer_taken_o, decrementer_pending_o,
   output logic [31:0] decrementer_pc_o,
@@ -108,6 +112,12 @@ module ppc_special #(
   output logic exception_irrevocable_o,
   // A committed event the exception state rejected; the lane stops.
   output logic exception_halt_o,
+  // The committing instruction takes an exception (or checkstop) instead of
+  // completing normally.
+  output logic exception_commit_o,
+  // Machine check with MSR[ME]=0: the lane stops until reset.
+  output logic checkstop_o,
+  output logic [31:0] iabr_o,
   output logic busy_o,
   output ppc_pkg::completion_tag_t producer_o,
   output logic store_irrevocable_o,
@@ -149,7 +159,7 @@ module ppc_special #(
     S_CONTEXT_DRAIN, S_CONTEXT_INSTALL, S_CONTEXT_REDIRECT, S_CONTEXT_ABORT,
     S_INTERRUPT_COMMIT, S_TIMER_RESULT, S_EXCEPTION_HALT,
     S_MMU_OFFER, S_MMU_WAIT, S_MMU_RESULT, S_MMU_ABORT, S_MMU_ACK, S_MMU_REDIRECT,
-    S_BRANCH_REDIRECT, S_ICBI
+    S_BRANCH_REDIRECT, S_ICBI, S_CHECKSTOP
   } state_t;
   state_t state_q;
   // The shared uop record carries fields for other lanes.
@@ -168,7 +178,7 @@ module ppc_special #(
   logic [31:0] sprg_q [4];
   logic [31:0] dar_q, dsisr_q;
   logic [31:0] dcmp_q, icmp_q, rpa_q;
-  logic [31:0] sdr1_q;
+  logic [31:0] sdr1_q, iabr_q;
   logic [31:0] imiss_q, dmiss_q, hash1_q, hash2_q;
   page_miss_t fetch_page_miss_q, miss_context;
   logic fetch_page_miss_opcode, data_page_miss_opcode;
@@ -201,7 +211,9 @@ module ppc_special #(
   logic rfi_state_unsupported, exception_entry_unsupported, dsi_event;
   logic block_zero_event;
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
-  logic decrementer_selected_q;
+  logic decrementer_selected_q, trace_selected_q;
+  logic fetch_machine_check, data_machine_check, machine_check_event;
+  logic checkstop_commit;
   // External services own committed BAT, segment and TLB state. This lane owns
   // only the fenced transaction, response and latest retained target.
   logic bat_operation, segment_operation, tlbie_operation;
@@ -341,16 +353,25 @@ module ppc_special #(
     assign unused_timer_inputs = ^{timer_tick_i, timebase_enable_i, timer_write};
   end endgenerate
   logic [31:0] context_target_q, mtmsr_value;
+  // Machine check adds ME, RI and POW; POW is stored without effect because
+  // no HID0 power mode is selectable. Debug exceptions add SE and BE.
+  localparam logic [31:0] MACHINE_CHECK_MSR_MASK = 32'h0004_1002;
+  localparam logic [31:0] DEBUG_MSR_MASK = 32'h0000_0600;
   localparam logic [31:0] LIVE_UNSUPPORTED_MASK =
     (ENABLE_EXTERNAL_INTERRUPTS ? 32'h0007_3f03 : 32'h0007_bf03) &
-    ~(ENABLE_TGPR ? 32'h0002_0000 : 32'b0);
+    ~(ENABLE_TGPR ? 32'h0002_0000 : 32'b0) &
+    ~(ENABLE_MACHINE_CHECK ? MACHINE_CHECK_MSR_MASK : 32'b0) &
+    ~(ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0);
   localparam logic [31:0] LIVE_SUPPORTED_MASK =
     (ENABLE_EXTERNAL_INTERRUPTS ? 32'h0000_c070 : 32'h0000_4070) |
-    (ENABLE_TGPR ? 32'h0002_0000 : 32'b0);
+    (ENABLE_TGPR ? 32'h0002_0000 : 32'b0) |
+    (ENABLE_MACHINE_CHECK ? MACHINE_CHECK_MSR_MASK : 32'b0) |
+    (ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0);
 
+  // TGPR mode excludes EE, PR, IR, DR and trace.
   function automatic logic live_mode_supported(input logic [31:0] value);
     return !(|(value & LIVE_UNSUPPORTED_MASK)) &&
-      (!value[17] || (!(|value[15:14]) && !(|value[5:4])));
+      (!value[17] || (!(|value[15:14]) && !(|value[5:4]) && !(|value[10:9])));
   endfunction
 
   function automatic logic context_operation(input special_op_t op);
@@ -426,6 +447,7 @@ module ppc_special #(
       10'd273: exec_value = sprg_q[1];
       10'd274: exec_value = sprg_q[2];
       10'd275: exec_value = sprg_q[3];
+      10'd1010: exec_value = iabr_q;
       default: exec_value = '0;
     endcase
 
@@ -483,7 +505,8 @@ module ppc_special #(
            (uop_q.special_op == SPECIAL_PROGRAM_PRIV) ||
            (uop_q.special_op == SPECIAL_ALIGNMENT) ||
            (uop_q.special_op == SPECIAL_ISI)) &&
-          exception_entry_unsupported) result_o.fault = 1'b1;
+          exception_entry_unsupported && !fetch_machine_check)
+        result_o.fault = 1'b1;
     end else if (state_q == S_MMU_RESULT) begin
       result_valid_o = !cancel_i;
       result_o.value = mmu_value_q;
@@ -630,6 +653,7 @@ module ppc_special #(
   // The committed miss changes MSR before its held redirect is consumed,
   // so use the captured result kind.
   assign data_exception_event = dsi_event || block_zero_event ||
+    data_machine_check ||
     (ENABLE_TLB_MISS_EXCEPTIONS && data_page_miss_opcode &&
      !memory_result_q.fault);
   assign miss_event_commit = exception_event_valid &&
@@ -641,6 +665,18 @@ module ppc_special #(
     !live_mode_supported(rfi_msr(msr_o, srr1_o)) :
     |(srr1_o & RFI_UNSUPPORTED_ACTIVE_MASK);
   assign exception_entry_unsupported = msr_o[17];
+  assign fetch_machine_check = ENABLE_MACHINE_CHECK &&
+    (uop_q.special_op == SPECIAL_ISI) &&
+    (uop_q.fetch_fault == FETCH_MACHINE_CHECK);
+  assign data_machine_check = ENABLE_MACHINE_CHECK &&
+    ((uop_q.special_op == SPECIAL_LOAD) ||
+     (uop_q.special_op == SPECIAL_STORE)) &&
+    !memory_result_q.fault &&
+    (memory_result_q.data_fault == DATA_MACHINE_CHECK);
+  assign machine_check_event = fetch_machine_check || data_machine_check;
+  // UM 4.5.2.2: a machine check with ME=0 enters the checkstop state.
+  assign checkstop_commit = (state_q == S_HOLD) && commit_match &&
+    machine_check_event && !msr_o[MSR_ME];
   assign dsi_event = ((uop_q.special_op == SPECIAL_LOAD) ||
                       (uop_q.special_op == SPECIAL_STORE)) &&
                      ((memory_result_q.data_fault == DATA_DSI_PROTECTION) ||
@@ -655,12 +691,20 @@ module ppc_special #(
     exception_event_kind = EVENT_SC;
     if (ENABLE_EXTERNAL_INTERRUPTS && (state_q == S_INTERRUPT_COMMIT)) begin
       exception_event_valid = 1'b1;
-      exception_event_kind = decrementer_selected_q ? EVENT_DECREMENTER : EVENT_EXTERNAL;
+      exception_event_kind = trace_selected_q ? EVENT_TRACE :
+        decrementer_selected_q ? EVENT_DECREMENTER : EVENT_EXTERNAL;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && (state_q == S_HOLD) &&
         commit_match) begin
       case (uop_q.special_op)
         SPECIAL_ISI: begin
-          if (fetch_page_miss_opcode) begin
+          if (fetch_machine_check) begin
+            exception_event_valid = msr_o[MSR_ME];
+            exception_event_kind = EVENT_MACHINE_CHECK;
+          end else if (ENABLE_DEBUG_EXCEPTIONS &&
+                       (uop_q.fetch_fault == FETCH_IABR)) begin
+            exception_event_valid = !exception_entry_unsupported;
+            exception_event_kind = EVENT_IABR;
+          end else if (fetch_page_miss_opcode) begin
             exception_event_valid = fetch_miss_eligible;
             exception_event_kind = EVENT_TLB_I_MISS;
           end else begin
@@ -673,7 +717,10 @@ module ppc_special #(
           exception_event_kind = EVENT_ALIGNMENT;
         end
         SPECIAL_LOAD, SPECIAL_STORE: begin
-          if (data_page_miss_opcode) begin
+          if (data_machine_check) begin
+            exception_event_valid = msr_o[MSR_ME];
+            exception_event_kind = EVENT_MACHINE_CHECK;
+          end else if (data_page_miss_opcode) begin
             exception_event_valid = !memory_result_q.fault && miss_eligible;
             exception_event_kind =
               (uop_q.special_op == SPECIAL_STORE) ?
@@ -707,7 +754,8 @@ module ppc_special #(
     end
   end
   assign interrupt_taken_o = rst_ni && (state_q == S_INTERRUPT_COMMIT) &&
-    !decrementer_selected_q && exception_event_valid && exception_event_ready;
+    !decrementer_selected_q && !trace_selected_q &&
+    exception_event_valid && exception_event_ready;
   assign decrementer_taken_o = rst_ni && (state_q == S_INTERRUPT_COMMIT) &&
     decrementer_selected_q && exception_event_valid && exception_event_ready;
   assign decrementer_pc_o = decrementer_taken_o ? pc_q : 32'b0;
@@ -724,7 +772,9 @@ module ppc_special #(
 
   ppc_exception_state #(
     .RESET_MSR(MSR_RESET),
-    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)
+    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+    .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
   ) exception_state (
     .clk_i, .rst_ni,
     .event_valid_i(exception_event_valid),
@@ -754,13 +804,17 @@ module ppc_special #(
   assign exception_commit_target_o = (state_q == S_MMU_REDIRECT) ? mmu_resume_target_q : ENABLE_LIVE_CONTEXT ?
     context_target_q : exception_result_target;
   assign exception_halt_o = (state_q == S_EXCEPTION_HALT);
+  assign checkstop_o = rst_ni && (state_q == S_CHECKSTOP);
+  assign exception_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
+    (exception_event_valid || checkstop_commit);
+  assign iabr_o = iabr_q;
   // Block external cuts on the event-commit edge and until the exception
   // redirect has been presented. The exception itself has already committed.
   assign exception_irrevocable_o = rst_ni &&
     (interrupt_q || (state_q == S_MMU_ACK) || (state_q == S_MMU_REDIRECT) ||
      bat_csr_commit_o || segment_csr_commit_o || tlb_inv_commit_o ||
      tlb_fill_commit_o || exception_event_valid || (state_q == S_EXCEPTION_RESULT) ||
-     (state_q == S_EXCEPTION_HALT) ||
+     (state_q == S_EXCEPTION_HALT) || checkstop_commit || (state_q == S_CHECKSTOP) ||
      ((state_q == S_HOLD) && commit_match && sdr1_write &&
       !sdr1_write_invalid_q) ||
      (state_q == S_CONTEXT_INSTALL) || (state_q == S_CONTEXT_REDIRECT) ||
@@ -837,7 +891,7 @@ module ppc_special #(
           killed_d = 1'b1;
           if (icbi_req_ready_i) state_d = S_IDLE;
         end
-        S_EXCEPTION_HALT: ;
+        S_EXCEPTION_HALT, S_CHECKSTOP: ;
         default: state_d = fence_q ? S_CONTEXT_ABORT : S_IDLE;
       endcase
     end else begin
@@ -880,7 +934,10 @@ module ppc_special #(
           if (tlb_fill_operation && mmu_error_q) state_d = S_MMU_ABORT;
           else if (mmu_operation && !mmu_error_q)
             state_d = mmu_req_write ? S_MMU_ACK : S_MMU_REDIRECT;
-          else if (exception_event_valid) state_d = S_EXCEPTION_RESULT;
+          else if (checkstop_commit) begin
+            fence_d = 1'b1;
+            state_d = S_CHECKSTOP;
+          end else if (exception_event_valid) state_d = S_EXCEPTION_RESULT;
           else if (context_install) state_d = S_CONTEXT_INSTALL;
           else begin
             fence_d = 1'b0;
@@ -933,11 +990,14 @@ module ppc_special #(
     if (!rst_ni) begin
       interrupt_q <= 1'b0;
       decrementer_selected_q <= 1'b0;
+      trace_selected_q <= 1'b0;
       context_target_q <= '0;
     end else if (interrupt_accept) begin
       // The selected boundary is now irrevocable.
       interrupt_q <= 1'b1;
-      decrementer_selected_q <= ENABLE_TIMERS && interrupt_decrementer_i;
+      trace_selected_q <= ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i;
+      decrementer_selected_q <= ENABLE_TIMERS && interrupt_decrementer_i &&
+        !(ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i);
     end else if (dispatch_fire) begin
       interrupt_q <= 1'b0;
     end else if (step_run) begin
@@ -1062,6 +1122,7 @@ module ppc_special #(
       icmp_q <= '0;
       rpa_q <= '0;
       sdr1_q <= SDR1_RESET;
+      iabr_q <= '0;
       sdr1_write_invalid_q <= 1'b0;
       imiss_q <= '0;
       dmiss_q <= '0;
@@ -1090,6 +1151,8 @@ module ppc_special #(
             10'd273: sprg_q[1] <= a_q;
             10'd274: sprg_q[2] <= a_q;
             10'd275: sprg_q[3] <= a_q;
+            // IABR[31] (translation enable) is stored but ignored.
+            10'd1010: if (ENABLE_DEBUG_EXCEPTIONS) iabr_q <= a_q;
             default: ;
           endcase
         end
@@ -1128,9 +1191,10 @@ module ppc_special #(
   end
 
   // Serialized memory lane: one outstanding data obligation.
-  // Transport faults and unrecognized typed causes remain diagnostics. Only
-  // an enabled protection or direct-store denial is DSI, and only an exact,
-  // well-formed page miss becomes a resumable miss event.
+  // Untyped transport faults and unrecognized causes remain diagnostics. Only
+  // an enabled protection or direct-store denial is DSI, a typed TEA is a
+  // machine check, and only an exact, well-formed page miss becomes a
+  // resumable miss event.
   always_comb begin
     mem_response_fence = 1'b0;
     if (!dmem_rsp_error_i) begin
@@ -1139,6 +1203,8 @@ module ppc_special #(
           mem_response_fence = ENABLE_SUPERVISOR_EXCEPTIONS &&
             !exception_entry_unsupported && ENABLE_LIVE_CONTEXT;
         DATA_PAGE_MISS, DATA_PAGE_CHANGED: mem_response_fence = miss_eligible;
+        DATA_MACHINE_CHECK: mem_response_fence = ENABLE_MACHINE_CHECK &&
+          ENABLE_LIVE_CONTEXT;
         DATA_OK: mem_response_fence = ENABLE_CACHE_INSTRUCTIONS &&
           uop_q.block_zero && !exception_entry_unsupported && ENABLE_LIVE_CONTEXT;
         default: ;
@@ -1164,6 +1230,11 @@ module ppc_special #(
             DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE: begin
               if (ENABLE_SUPERVISOR_EXCEPTIONS && !exception_entry_unsupported)
                 memory_result_q.data_fault <= dmem_rsp_fault_i;
+              else memory_result_q.fault <= 1'b1;
+            end
+            DATA_MACHINE_CHECK: begin
+              if (ENABLE_MACHINE_CHECK)
+                memory_result_q.data_fault <= DATA_MACHINE_CHECK;
               else memory_result_q.fault <= 1'b1;
             end
             DATA_PAGE_MISS, DATA_PAGE_CHANGED: begin

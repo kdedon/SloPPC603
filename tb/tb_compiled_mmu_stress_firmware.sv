@@ -60,6 +60,7 @@ module tb_compiled_mmu_stress_firmware;
   logic [31:0] event_pc=0;
   string summary;
 
+  logic unused_checkstop;
   ppc_core_bat_cached_bus60x #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),
@@ -114,7 +115,7 @@ module tb_compiled_mmu_stress_firmware;
     .running_o(running),.context_ir_o(cir),.context_dr_o(cdr),
     .context_pr_o(cpr),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),
-    .halted_o(halted),
+    .checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(1'b0),.redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i('0),.redirect_accepted_o(cut_accepted),

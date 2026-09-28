@@ -57,6 +57,7 @@ module tb_crstate_execution;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_special;
+  logic [33:0] unused_debug_special;
   ppc_special dut (
     .dmem_req_probe_o(unused_cache_special[0]), .icbi_req_valid_o(unused_cache_special[1]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_special[33:2]),
@@ -111,7 +112,7 @@ module tb_crstate_execution;
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .decrementer_taken_o(timer_outputs[33]), .decrementer_pc_o(timer_outputs[31:0]),
     .decrementer_pending_o(timer_outputs[32]),
-    .interrupt_decrementer_i(1'b0), .external_irq_i(1'b0),
+    .interrupt_decrementer_i(1'b0), .external_irq_i(1'b0), .interrupt_trace_i(1'b0),
     .interrupt_valid_i(1'b0), .interrupt_pc_i(32'b0),
     .interrupt_taken_o(interrupt_outputs[32]), .interrupt_pc_o(interrupt_outputs[31:0]),
     .frontend_quiescent_i(1'b1), .memory_quiescent_i(1'b1),
@@ -133,6 +134,8 @@ module tb_crstate_execution;
     .msr_o(supervisor_outputs[65:34]), .srr0_o(supervisor_outputs[97:66]),
     .srr1_o(supervisor_outputs[129:98]),
     .exception_halt_o(supervisor_outputs[130]),
+    .exception_commit_o(unused_debug_special[0]), .checkstop_o(unused_debug_special[1]),
+    .iabr_o(unused_debug_special[33:2]),
     .dmem_req_valid_o(dmem_req_valid), .dmem_req_ready_i(dmem_req_ready),
     .dmem_req_write_o(dmem_req_write), .dmem_req_addr_o(dmem_req_addr),
     .dmem_req_wdata_o(dmem_req_wdata), .dmem_req_wstrb_o(dmem_req_wstrb),

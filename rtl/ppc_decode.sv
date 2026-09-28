@@ -10,7 +10,8 @@ module ppc_decode #(
   parameter bit ENABLE_TLB_LOAD = 1'b0,
   parameter bit ENABLE_SDR1 = 1'b0,
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
-  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
 ) (
   input logic [31:0] insn_i,
   output ppc_pkg::uop_t uop_o
@@ -595,7 +596,8 @@ module ppc_decode #(
                   (selector == SPR_HASH2) || (selector == SPR_IMISS))) ||
                 (ENABLE_TLB_LOAD &&
                  ((selector == SPR_DCMP) || (selector == SPR_ICMP) ||
-                  (selector == SPR_RPA)));
+                  (selector == SPR_RPA))) ||
+                (ENABLE_DEBUG_EXCEPTIONS && (selector == SPR_IABR));
               // 603e ignores the MFTB/MFSPR XO difference, so XO 371 reads every
               // supported selector. Privilege is checked in the core.
               if (!insn_i[0] && selector_supported) begin

@@ -21,7 +21,9 @@ module ppc_core_bat #(
   parameter bit ENABLE_TLB_LOAD = 1'b0,
   parameter bit ENABLE_TEST_REDIRECT = 1'b1,
   parameter bit ENABLE_MICRO_TLB = 1'b1,
-  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  parameter bit ENABLE_MACHINE_CHECK = 1'b0,
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -109,6 +111,7 @@ module ppc_core_bat #(
   input  logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
   output logic halted_o,
+  output logic checkstop_o,
   input  logic redirect_valid_i,
   input  logic redirect_all_i,
   input  logic redirect_keep_pivot_i,
@@ -208,7 +211,9 @@ module ppc_core_bat #(
     .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
     .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT),
-    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
   ) core (
     .tlb_fill_req_valid_o(tlb_fill_req_valid),
     .tlb_fill_req_bank_o(tlb_fill_req_bank),
@@ -276,7 +281,7 @@ module ppc_core_bat #(
     .dmem_rsp_rdata_i(dmem_rsp_rdata), .dmem_rsp_error_i(dmem_rsp_error),
     .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o,
     .retire_valid_o, .retire_ready_i, .retire_o,
-    .halted_o(core_halted), .redirect_valid_i, .redirect_all_i,
+    .halted_o(core_halted), .checkstop_o, .redirect_valid_i, .redirect_all_i,
     .redirect_keep_pivot_i, .redirect_pivot_i, .redirect_target_i,
     .redirect_accepted_o
   );
@@ -291,6 +296,7 @@ module ppc_core_bat #(
     .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
     .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
     .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
+    .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DATA_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT)) router (
     .tlb_fill_req_valid_i(tlb_fill_req_valid),
     .tlb_fill_req_bank_i(tlb_fill_req_bank),

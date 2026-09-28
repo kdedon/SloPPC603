@@ -37,6 +37,7 @@ module tb_core_runtime_bat;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
+  logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_RUNTIME_BAT(1'b1)) dut (
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
@@ -97,7 +98,7 @@ module tb_core_runtime_bat;
     .dmem_req_valid_o(dv),.dmem_req_ready_i(dr),.dmem_req_write_o(dw),
     .dmem_req_addr_o(da),.dmem_req_wdata_o(wd),.dmem_req_wstrb_o(ws),
     .dmem_rsp_valid_i(drv),.dmem_rsp_ready_o(drr),.dmem_rsp_rdata_i(32'b0),.dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
-    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.halted_o(halted),
+    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(red),.redirect_all_i(!red_keep),.redirect_keep_pivot_i(red_keep),
     .redirect_pivot_i(pivot),.redirect_target_i(red_target),.redirect_accepted_o(red_accept));
   function automatic logic [31:0] spr(input bit write_spr,input int rt,input int number);

@@ -49,6 +49,7 @@ module tb_core_bat_cached_bus60x_drain;
   endfunction
 
   /* verilator lint_off PINCONNECTEMPTY */
+  logic unused_checkstop;
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_RUNTIME_BAT(1'b1)) dut(
@@ -80,7 +81,7 @@ module tb_core_bat_cached_bus60x_drain;
     .running_o(running),.context_ir_o(cir),.context_dr_o(cdr),
     .context_pr_o(cpr),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),
-    .halted_o(halted),.redirect_valid_i(redirect_valid),.redirect_all_i(redirect_all),
+    .checkstop_o(unused_checkstop), .halted_o(halted),.redirect_valid_i(redirect_valid),.redirect_all_i(redirect_all),
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i(redirect_target),.redirect_accepted_o(redirect_accepted),
     .translation_fault_o(),.fault_instruction_o(),.fault_write_o(),

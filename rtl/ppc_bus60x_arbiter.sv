@@ -1,7 +1,11 @@
 `default_nettype none
 // Fair single-entry router from the core's separate instruction/data channels
 // to one scalar 60x adapter request/response channel.
-module ppc_bus60x_arbiter (
+module ppc_bus60x_arbiter #(
+  // Return an instruction transfer error as an errored response instead of
+  // stopping in the fatal state.
+  parameter bit RETURN_IFETCH_ERROR = 1'b0
+) (
   input  logic        clk_i,
   input  logic        rst_ni,
 
@@ -11,6 +15,7 @@ module ppc_bus60x_arbiter (
   output logic        imem_rsp_valid_o,
   input  logic        imem_rsp_ready_i,
   output logic [31:0] imem_rsp_insn_o,
+  output logic        imem_rsp_error_o,
 
   input  logic        dmem_req_valid_i,
   output logic        dmem_req_ready_o,
@@ -82,6 +87,7 @@ module ppc_bus60x_arbiter (
 
     imem_rsp_valid_o = 1'b0;
     imem_rsp_insn_o = bus_rsp_rdata_i;
+    imem_rsp_error_o = RETURN_IFETCH_ERROR && bus_rsp_error_i;
     dmem_rsp_valid_o = 1'b0;
     dmem_rsp_rdata_o = bus_rsp_rdata_i;
     dmem_rsp_error_o = bus_rsp_error_i;
@@ -89,7 +95,7 @@ module ppc_bus60x_arbiter (
 
     if (rst_ni && (state_q == ROUTER_RESPONSE)) begin
       if (owner_instruction_q) begin
-        if (bus_rsp_valid_i && bus_rsp_error_i) begin
+        if (!RETURN_IFETCH_ERROR && bus_rsp_valid_i && bus_rsp_error_i) begin
           // Consume an instruction error without manufacturing an instruction
           // response.  The state machine enters a reset-only transport stop.
           bus_rsp_ready_o = 1'b1;
@@ -149,7 +155,7 @@ module ppc_bus60x_arbiter (
 
         ROUTER_RESPONSE: begin
           if (bus_rsp_valid_i && bus_rsp_ready_o) begin
-            if (owner_instruction_q && bus_rsp_error_i) begin
+            if (!RETURN_IFETCH_ERROR && owner_instruction_q && bus_rsp_error_i) begin
               ifetch_error_q <= 1'b1;
               state_q <= ROUTER_IFETCH_FATAL;
             end else begin

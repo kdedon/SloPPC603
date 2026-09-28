@@ -34,6 +34,7 @@ module tb_core_sprg;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
+  logic unused_checkstop;
   ppc_core #(
     .RESET_PC(32'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1)
   ) dut (
@@ -102,7 +103,7 @@ module tb_core_sprg;
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
     .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(retire_valid), .retire_ready_i(retire_ready),
-    .retire_o(retired), .halted_o(halted),
+    .retire_o(retired), .checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(redirect_valid), .redirect_all_i(redirect_all),
     .redirect_keep_pivot_i(redirect_keep),
     .redirect_pivot_i(redirect_pivot), .redirect_target_i(redirect_target),

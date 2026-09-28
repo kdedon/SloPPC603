@@ -21,6 +21,7 @@ module tb_core_timer_registers;
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
+  logic unused_checkstop;
   ppc_core #(.RESET_PC(0),.ENABLE_SUPERVISOR_EXCEPTIONS(1),.ENABLE_LIVE_CONTEXT(1),
     .ENABLE_EXTERNAL_INTERRUPTS(1),.ENABLE_TIMERS(1)) dut (
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
@@ -78,7 +79,7 @@ module tb_core_timer_registers;
     .dmem_req_valid_o(unused_dmem[0]),.dmem_req_ready_i(1'b0),.dmem_req_write_o(unused_dmem[1]),
     .dmem_req_addr_o(unused_dmem[33:2]),.dmem_req_wdata_o(unused_dmem[65:34]),.dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0),.dmem_rsp_ready_o(unused_dmem[70]),.dmem_rsp_rdata_i(32'b0),.dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
-    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.halted_o(halted),
+    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.checkstop_o(unused_checkstop), .halted_o(halted),
     .context_valid_o(cv),.context_ready_i(cr),.context_ir_o(ci),.context_dr_o(cd),.context_pr_o(cp),
     .memory_quiescent_i(1'b1),.redirect_valid_i(red),.redirect_all_i(1'b0),.redirect_keep_pivot_i(1'b0),
     .redirect_pivot_i(pivot),.redirect_target_i(32'h100),.redirect_accepted_o(red_accept));

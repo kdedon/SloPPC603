@@ -50,13 +50,14 @@ module tb_core_page_instruction_exception #(parameter bit ENABLE_MICRO_TLB = 1'b
   logic [31:0] interrupt_pc_o,decrementer_pc_o;
 
   logic [32:0] unused_icbi_core;
+  logic unused_checkstop;
   ppc_core_bat #(.RESET_PC(32'b0),.ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1),
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1)) dut (
     .icbi_req_valid_o(unused_icbi_core[0]), .icbi_req_ready_i(1'b1),
     .icbi_req_ea_o(unused_icbi_core[32:1]),
-    .external_irq_i(1'b0),.timer_tick_i(1'b0),.timebase_enable_i(1'b1),.*);
+    .external_irq_i(1'b0),.timer_tick_i(1'b0),.timebase_enable_i(1'b1),.checkstop_o(unused_checkstop), .*);
 
   integer checks=0,cycles=0,phase=0,faults=0,handler_reads=0;
   integer held_retire=0,denied_physical=0,old_fetch_drains=0;

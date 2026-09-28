@@ -19,13 +19,15 @@ package ppc_pkg;
     rename_tag_t tag;
     completion_tag_t producer;
   } operand_t;
-  // Synchronous data-translation faults. Transport errors remain separate.
+  // Synchronous data faults. DATA_MACHINE_CHECK is a bus TEA returned for
+  // machine-check entry; other transport errors remain separate.
   typedef enum logic [2:0] {
     DATA_OK = 3'd0,
     DATA_DSI_PROTECTION = 3'd1,
     DATA_PAGE_MISS = 3'd2,
     DATA_PAGE_CHANGED = 3'd3,
-    DATA_DSI_DIRECT_STORE = 3'd4
+    DATA_DSI_DIRECT_STORE = 3'd4,
+    DATA_MACHINE_CHECK = 3'd5
   } data_fault_t;
   // Response-bound context for a diagnostic page miss or changed-bit store.
   // The router captures these fields with the accepted translation request.
@@ -55,12 +57,15 @@ package ppc_pkg;
     rename_tag_t tag;
     logic [31:0] value;
   } wake_packet_t;
-  // Synchronous translation faults. Bus TEA takes the transport-fatal path.
+  // Fetch-borne events. FETCH_MACHINE_CHECK is a bus TEA on the fetch;
+  // FETCH_IABR marks an instruction address breakpoint match at IQ push.
   typedef enum logic [2:0] {
     FETCH_OK = 3'd0,
     FETCH_ISI_PROTECTION = 3'd1,
     FETCH_ISI_GUARDED = 3'd2,
-    FETCH_PAGE_MISS = 3'd3
+    FETCH_PAGE_MISS = 3'd3,
+    FETCH_MACHINE_CHECK = 3'd4,
+    FETCH_IABR = 3'd5
   } fetch_fault_t;
   // The core holds the page-miss context beside the IQ, not per entry.
   typedef struct packed {
@@ -154,6 +159,7 @@ package ppc_pkg;
   localparam logic [9:0] SPR_IMISS = 10'd980;
   localparam logic [9:0] SPR_ICMP = 10'd981;
   localparam logic [9:0] SPR_RPA = 10'd982;
+  localparam logic [9:0] SPR_IABR = 10'd1010;
   // XER
   localparam int XER_SO_BIT = 31;
   localparam int XER_CA_BIT = 29;
@@ -278,6 +284,9 @@ package ppc_pkg;
   localparam int MSR_EE   = 15;
   localparam int MSR_PR   = 14;
   localparam int MSR_FP   = 13;
+  localparam int MSR_ME   = 12;
+  localparam int MSR_SE   = 10;
+  localparam int MSR_BE   = 9;
   localparam int MSR_IP   = 6;
   localparam int MSR_IR   = 5;
   localparam int MSR_DR   = 4;
@@ -314,7 +323,10 @@ package ppc_pkg;
     EVENT_DSI             = 4'd8,
     EVENT_TLB_I_MISS      = 4'd9,
     EVENT_TLB_D_LOAD      = 4'd10,
-    EVENT_TLB_D_STORE     = 4'd11
+    EVENT_TLB_D_STORE     = 4'd11,
+    EVENT_MACHINE_CHECK   = 4'd12,
+    EVENT_TRACE           = 4'd13,
+    EVENT_IABR            = 4'd14
   } exception_event_t;
   // ---- end MSR and exception events ---------------------------------------
 

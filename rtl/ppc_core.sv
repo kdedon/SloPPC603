@@ -20,7 +20,12 @@ module ppc_core #(
   parameter bit ENABLE_TEST_REDIRECT = 1'b1,
   // dcbf/dcbst/dcbi/dcbz/dcbt/dcbtst/icbi; the wrapper must honor
   // dmem_req_probe_o and the icbi request.
-  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0
+  parameter bit ENABLE_CACHE_INSTRUCTIONS = 1'b0,
+  // Bus TEA on fetch or data enters machine check (ME=1) or checkstop; ME,
+  // RI and POW become MSR state.
+  parameter bit ENABLE_MACHINE_CHECK = 1'b0,
+  // Single-step and branch trace (MSR[SE], MSR[BE]) and the IABR.
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -115,6 +120,8 @@ module ppc_core #(
   input logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
   output logic halted_o,
+  // Checkstop state: a machine check with MSR[ME]=0. Only reset leaves it.
+  output logic checkstop_o,
   // External test recovery (ENABLE_TEST_REDIRECT). Internal redirects take
   // priority; architectural exception entry remains outside this interface.
   input logic redirect_valid_i, redirect_all_i, redirect_keep_pivot_i,
@@ -142,13 +149,23 @@ module ppc_core #(
   logic special_cancel, special_store_irrevocable, special_branch_redirect;
   logic special_kill;
   logic special_exception_redirect, special_exception_irrevocable;
-  logic special_exception_halt;
+  logic special_exception_halt, special_exception_commit;
+  logic [31:0] iabr;
+  logic trace_mode, trace_armed_q, trace_pending_q, fetch_machine_check_head;
+  fetch_packet_t queued;
   logic frontend_fence, frontend_quiescent;
   logic interrupt_qualified, interrupt_admit, resume_override_valid_q;
   logic decrementer_pending, external_irq_q;
   logic [31:0] committed_next_pc_q, resume_override_target_q, interrupt_resume_pc;
+  // A pending trace follows the instruction it traces, ahead of EXT/DEC. A
+  // machine check at the IQ head outranks EXT/DEC (UM Table 4-2).
+  assign fetch_machine_check_head = ENABLE_MACHINE_CHECK && iq_valid &&
+    (iq_head.fault == FETCH_MACHINE_CHECK);
   assign interrupt_qualified = ENABLE_EXTERNAL_INTERRUPTS &&
-    (external_irq_q || (ENABLE_TIMERS && decrementer_pending)) && msr[MSR_EE] && !fault_pending && !halted_o;
+    ((ENABLE_DEBUG_EXCEPTIONS && trace_pending_q) ||
+     ((external_irq_q || (ENABLE_TIMERS && decrementer_pending)) &&
+      msr[MSR_EE] && !fetch_machine_check_head)) &&
+    !fault_pending && !halted_o;
   assign interrupt_admit = interrupt_qualified && cq_empty && normal_idle &&
     !special_busy && special_ready && !recovery_accepted;
   assign interrupt_resume_pc = resume_override_valid_q ?
@@ -184,7 +201,7 @@ module ppc_core #(
   logic _unused_flags_state;
   logic _unused_control_state;
   assign _unused_flags_state = ^{cr, xer[30:0], flags_busy, flags_owner};
-  assign _unused_control_state = ^{lr, ctr, msr[31:15], msr[13:0],
+  assign _unused_control_state = ^{lr, ctr, msr[31:15], msr[13:11], msr[8:0], iabr[0],
                                    srr0, srr1};
 
   initial begin
@@ -215,6 +232,11 @@ module ppc_core #(
       $fatal(1, "Live context requires supervisor exceptions");
     if (ENABLE_CACHE_INSTRUCTIONS && !ENABLE_SUPERVISOR_EXCEPTIONS)
       $fatal(1, "Cache instructions require supervisor exceptions");
+    if (ENABLE_MACHINE_CHECK && (!ENABLE_LIVE_CONTEXT || !ENABLE_SUPERVISOR_EXCEPTIONS))
+      $fatal(1, "Machine check requires live supervisor context");
+    if (ENABLE_DEBUG_EXCEPTIONS && (!ENABLE_EXTERNAL_INTERRUPTS ||
+        !ENABLE_LIVE_CONTEXT || !ENABLE_SUPERVISOR_EXCEPTIONS))
+      $fatal(1, "Debug exceptions require the interrupt boundary and live supervisor context");
   end
   ppc_fetch #(.RESET_PC(RESET_PC)) fetch (
     .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence),
@@ -236,12 +258,21 @@ module ppc_core #(
     .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
-    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
   ) predecode (.insn_i(fetched.insn), .uop_o(push_uop));
+  // IABR compares at IQ push. The manual requires a context-synchronizing
+  // instruction after mtspr IABR, and its refetch clears older IQ entries.
+  always_comb begin
+    queued = fetched;
+    if (ENABLE_DEBUG_EXCEPTIONS && iabr[1] && (fetched.fault == FETCH_OK) &&
+        (fetched.pc[31:2] == iabr[31:2]))
+      queued.fault = FETCH_IABR;
+  end
   ppc_fifo #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t)), .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(recovery_accepted),
     .push_valid_i(fetch_valid), .push_ready_o(fetch_ready),
-    .push_data_i({fetched, push_uop}),
+    .push_data_i({queued, push_uop}),
     .pop_valid_o(iq_valid), .pop_ready_i(iq_ready),
     .pop_data_o({iq_head, uop})
   );
@@ -287,7 +318,9 @@ module ppc_core #(
           ((iq_head.fault == FETCH_ISI_PROTECTION) ||
            (iq_head.fault == FETCH_ISI_GUARDED) ||
            (ENABLE_TLB_MISS_EXCEPTIONS &&
-            (iq_head.fault == FETCH_PAGE_MISS))))
+            (iq_head.fault == FETCH_PAGE_MISS)) ||
+           (ENABLE_MACHINE_CHECK && (iq_head.fault == FETCH_MACHINE_CHECK)) ||
+           (ENABLE_DEBUG_EXCEPTIONS && (iq_head.fault == FETCH_IABR))))
         dispatch_uop.special_op = SPECIAL_ISI;
       else
         dispatch_uop.illegal = 1'b1;
@@ -440,7 +473,9 @@ module ppc_core #(
     .ENABLE_TGPR(ENABLE_TGPR),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS),
-    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
@@ -476,6 +511,7 @@ module ppc_core #(
     .tlb_fill_ack_valid_i, .tlb_fill_ack_ready_o, .tlb_fill_idle_i,
     .interrupt_valid_i(interrupt_admit), .interrupt_pc_i(interrupt_resume_pc),
     .interrupt_decrementer_i(ENABLE_TIMERS && !external_irq_q),
+    .interrupt_trace_i(ENABLE_DEBUG_EXCEPTIONS && trace_pending_q),
     .external_irq_i(external_irq_q),
     .timer_tick_i, .timebase_enable_i, .decrementer_taken_o, .decrementer_pc_o,
     .decrementer_pending_o(decrementer_pending),
@@ -492,6 +528,7 @@ module ppc_core #(
     .exception_commit_target_o(special_exception_target),
     .exception_irrevocable_o(special_exception_irrevocable),
     .exception_halt_o(special_exception_halt),
+    .exception_commit_o(special_exception_commit), .checkstop_o, .iabr_o(iabr),
     .busy_o(special_busy),
     .producer_o(special_producer), .store_irrevocable_o(special_store_irrevocable),
     .lr_o(lr), .ctr_o(ctr), .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1),
@@ -553,10 +590,14 @@ module ppc_core #(
                        (dispatch_uop.special_op != SPECIAL_NONE);
   assign normal_idle = rs_ready && !issue_valid && issue_ready &&
                        !iu_result_valid;
+  // Trace mode runs one instruction at a time so its trace boundary is
+  // precise.
+  assign trace_mode = ENABLE_DEBUG_EXCEPTIONS && (msr[MSR_SE] || msr[MSR_BE]);
   assign iq_ready = !fault_pending && !interrupt_qualified && !update_pending_q && gpr_ready &&
     !special_busy && cq_ready &&
     (dispatch_uop.illegal ||
-     (normal_uop && alloc_ready && rs_ready && flags_ready) ||
+     (normal_uop && alloc_ready && rs_ready && flags_ready &&
+      (!trace_mode || (cq_empty && normal_idle))) ||
      (special_uop && cq_empty && normal_idle && special_ready && flags_ready &&
       (!dispatch_uop.gpr_write || alloc_ready)));
   assign dispatch = iq_valid && iq_ready;
@@ -571,7 +612,8 @@ module ppc_core #(
     .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
     .ENABLE_SDR1(ENABLE_SDR1),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
-    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS)
+    .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+    .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS)
   ) check_decode (.insn_i(iq_head.insn), .uop_o(check_uop));
   always @(posedge clk_i) begin
     logic [1:0] forwarded_ea_low;
@@ -718,7 +760,8 @@ module ppc_core #(
         fault_pending <= 1'b1;
         fault_producer <= result.producer;
       end
-      if ((commit && retire_o.illegal) || special_exception_halt) halted_o <= 1'b1;
+      if ((commit && retire_o.illegal) || special_exception_halt || checkstop_o)
+        halted_o <= 1'b1;
 
       // synthesis translate_off
       if (special_exception_redirect)
@@ -727,5 +770,31 @@ module ppc_core #(
       // synthesis translate_on
     end
   end
+  // Trace arming uses the MSR the instruction executes under. An instruction
+  // that takes an exception, rfi (an event) and isync are not traced
+  // (UM 4.5.11).
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || !ENABLE_DEBUG_EXCEPTIONS) begin
+      trace_armed_q <= 1'b0;
+      trace_pending_q <= 1'b0;
+    end else begin
+      if (dispatch)
+        trace_armed_q <= trace_mode && !dispatch_uop.illegal &&
+          ((msr[MSR_SE] && (dispatch_uop.special_op != SPECIAL_ISYNC)) ||
+           (msr[MSR_BE] && ((dispatch_uop.special_op == SPECIAL_B) ||
+                            (dispatch_uop.special_op == SPECIAL_BC) ||
+                            (dispatch_uop.special_op == SPECIAL_BCLR) ||
+                            (dispatch_uop.special_op == SPECIAL_BCCTR))));
+      if (commit) trace_pending_q <= trace_armed_q && !special_exception_commit;
+      else if (interrupt_admit) trace_pending_q <= 1'b0;
+    end
+  end
+  // synthesis translate_off
+  always @(posedge clk_i) begin
+    if (rst_ni && ENABLE_DEBUG_EXCEPTIONS && dispatch && trace_mode)
+      assert (cq_empty && normal_idle && !special_busy && !trace_pending_q)
+        else $error("trace-mode dispatch overlapped older work");
+  end
+  // synthesis translate_on
 endmodule
 `default_nettype wire

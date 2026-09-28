@@ -52,6 +52,8 @@ build-core-bus60x-unified:
 lint:
 	cd ../quartus/timer-bat && $(VERILATOR) --lint-only -Wall --top-module ppc_timer_bat_measure -f files.f
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" $(RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_MACHINE_CHECK=1'b1" "-GENABLE_DEBUG_EXCEPTIONS=1'b1" $(RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_MACHINE_CHECK=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
@@ -62,6 +64,7 @@ lint:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_service $(BAT_SERVICE_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_memory_router "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_memory_router "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_MICRO_TLB=1'b0" $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv
+	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_memory_router "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_DATA_EXCEPTIONS=1'b1" "-GENABLE_MACHINE_CHECK=1'b1" $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_cached_bus60x_managed $(RTL) $(BUS_RTL) $(SYSTEM_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) $(CACHE_CONTROL_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_cached_bus60x_managed "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" $(RTL) $(BUS_RTL) $(SYSTEM_RTL) $(LINE_RTL) $(ICACHE_RTL) $(CACHED_SYSTEM_RTL) $(CACHE_CONTROL_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_bat_translate $(BAT_RTL)
@@ -1247,7 +1250,7 @@ test-core-bat-bus60x:
 lint: lint-core-bat-bus60x
 lint-core-bat-bus60x:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_bus60x $(CORE_BAT_BUS60X_RTL)
-	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_bus60x "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(CORE_BAT_BUS60X_RTL)
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_bus60x "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_MACHINE_CHECK=1'b1" "-GENABLE_DEBUG_EXCEPTIONS=1'b1" $(CORE_BAT_BUS60X_RTL)
 
 .PHONY: test-core-bat-bus60x-retry
 test: test-core-bat-bus60x-retry
@@ -1274,7 +1277,7 @@ test-core-bat-cached-bus60x:
 lint: lint-core-bat-cached-bus60x
 lint-core-bat-cached-bus60x:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_cached_bus60x $(CORE_BAT_CACHED_BUS60X_RTL)
-	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_cached_bus60x "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(CORE_BAT_CACHED_BUS60X_RTL)
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc_core_bat_cached_bus60x "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_MACHINE_CHECK=1'b1" "-GENABLE_DEBUG_EXCEPTIONS=1'b1" $(CORE_BAT_CACHED_BUS60X_RTL)
 
 .PHONY: test-core-bat-cached-bus60x-drain
 test: test-core-bat-cached-bus60x-drain
@@ -1334,3 +1337,11 @@ test-core-bat-cached-bus60x-timer:
 	mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x-timer
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x_timer --Mdir $(BUILD_DIR)/core-bat-cached-bus60x-timer $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_bat_cached_bus60x_timer.sv
 	./$(BUILD_DIR)/core-bat-cached-bus60x-timer/Vtb_core_bat_cached_bus60x_timer $(SIM_ARGS)
+
+# Machine check, trace and IABR: causes, saved state, recovery and priority.
+.PHONY: test-core-machine-check-trace
+test: test-core-machine-check-trace
+test-core-machine-check-trace:
+	mkdir -p $(BUILD_DIR)/core-machine-check-trace
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_machine_check_trace --Mdir $(BUILD_DIR)/core-machine-check-trace -I../tb $(RTL) ../tb/tb_core_machine_check_trace.sv
+	for seed in 1 2 4 7; do ./$(BUILD_DIR)/core-machine-check-trace/Vtb_core_machine_check_trace $(SIM_ARGS) +seed=$$seed || exit 1; done

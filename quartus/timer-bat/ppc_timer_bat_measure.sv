@@ -263,6 +263,7 @@ module ppc_timer_bat_measure (
   assign busy_o = busy_o_obq;
 
   logic [32:0] unused_icbi_core;
+  logic unused_checkstop;
   ppc_core_bat #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),
@@ -353,7 +354,7 @@ module ppc_timer_bat_measure (
     .retire_valid_o(retire_valid_o_od),
     .retire_ready_i(retire_ready_i_ibq),
     .retire_o(retire_o_od),
-    .halted_o(halted_o_od),
+    .checkstop_o(unused_checkstop), .halted_o(halted_o_od),
     .redirect_valid_i(redirect_valid_i_ibq),
     .redirect_all_i(redirect_all_i_ibq),
     .redirect_keep_pivot_i(redirect_keep_pivot_i_ibq),

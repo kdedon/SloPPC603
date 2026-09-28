@@ -16,6 +16,9 @@ module ppc_bat_memory_router #(
   parameter bit ENABLE_PAGE_INSTRUCTION_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_PAGE_MISS_RESULTS = 1'b0,
   parameter bit ENABLE_MICRO_TLB = 1'b1,
+  // A physical TEA returns as a machine-check fault instead of stopping the
+  // instruction lane or reporting an untyped data error.
+  parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter int MICRO_TLB_ENTRIES = 4
 ) (
   input  logic clk_i,
@@ -664,7 +667,7 @@ module ppc_bat_memory_router #(
   assign lane_accept_ok = rst_ni && running_q && owner_q == OWN_NONE &&
                           !ifetch_fatal_q;
   assign i_finish = i_state_q == LANE_RESPONSE && pimem_rsp_valid_i &&
-                    !pimem_rsp_error_i && imem_rsp_ready;
+                    (ENABLE_MACHINE_CHECK || !pimem_rsp_error_i) && imem_rsp_ready;
   assign d_finish = d_state_q == LANE_RESPONSE && pdmem_rsp_valid_i &&
                     dmem_rsp_ready;
   assign imem_req_ready = lane_accept_ok &&
@@ -910,12 +913,17 @@ module ppc_bat_memory_router #(
     imem_rsp_fault_o = FETCH_OK;
     pimem_rsp_ready_o = 1'b0;
     if (rst_ni && i_state_q == LANE_RESPONSE) begin
-      // A physical instruction error is consumed here and never returned.
-      if (pimem_rsp_valid_i && pimem_rsp_error_i)
+      // Without machine check a physical instruction error is consumed here
+      // and never returned.
+      if (!ENABLE_MACHINE_CHECK && pimem_rsp_valid_i && pimem_rsp_error_i)
         pimem_rsp_ready_o = 1'b1;
       else begin
         imem_rsp_valid = pimem_rsp_valid_i;
         pimem_rsp_ready_o = imem_rsp_ready;
+        if (ENABLE_MACHINE_CHECK && pimem_rsp_error_i) begin
+          imem_rsp_insn = 32'b0;
+          imem_rsp_fault_o = FETCH_MACHINE_CHECK;
+        end
       end
     end else if (rst_ni && state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
       imem_rsp_valid = 1'b1;
@@ -930,7 +938,11 @@ module ppc_bat_memory_router #(
     pdmem_rsp_ready_o = 1'b0;
     if (rst_ni && d_state_q == LANE_RESPONSE) begin
       dmem_rsp_valid = pdmem_rsp_valid_i;
-      dmem_rsp_error = pdmem_rsp_error_i;
+      dmem_rsp_error = !ENABLE_MACHINE_CHECK && pdmem_rsp_error_i;
+      if (ENABLE_MACHINE_CHECK && pdmem_rsp_error_i) begin
+        dmem_rsp_rdata = 32'b0;
+        dmem_rsp_fault_o = DATA_MACHINE_CHECK;
+      end
       pdmem_rsp_ready_o = dmem_rsp_ready;
     end else if (rst_ni && state_q == ROUTE_DATA_FAULT_RESPONSE) begin
       dmem_rsp_valid = 1'b1;
@@ -1070,7 +1082,7 @@ module ppc_bat_memory_router #(
         end
         LANE_OFFER: if (pimem_req_ready_i) i_state_q <= LANE_RESPONSE;
         LANE_RESPONSE: begin
-          if (pimem_rsp_valid_i && pimem_rsp_error_i) begin
+          if (!ENABLE_MACHINE_CHECK && pimem_rsp_valid_i && pimem_rsp_error_i) begin
             pimem_error_q <= 1'b1;
             ifetch_fatal_q <= 1'b1;
             i_state_q <= LANE_FATAL;

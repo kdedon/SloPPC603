@@ -5,7 +5,9 @@ module ppc_exception_state #(
   parameter logic [31:0] RESET_MSR  = ppc_pkg::MSR_RESET,
   parameter logic [31:0] RESET_SRR0 = 32'b0,
   parameter logic [31:0] RESET_SRR1 = 32'b0,
-  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0
+  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
+  parameter bit ENABLE_MACHINE_CHECK = 1'b0,
+  parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -44,6 +46,8 @@ module ppc_exception_state #(
   // Program exception causes: manual bit 12 illegal and bit 13 privileged.
   localparam logic [31:0] SRR1_PROGRAM_ILLEGAL = 32'h0008_0000;
   localparam logic [31:0] SRR1_PROGRAM_PRIV    = 32'h0004_0000;
+  // Machine check cause: manual bit 13 TEA.
+  localparam logic [31:0] SRR1_MACHINE_CHECK_TEA = 32'h0004_0000;
 
   logic [31:0] msr_q, srr0_q, srr1_q;
   logic result_valid_q, result_supported_q;
@@ -236,6 +240,29 @@ module ppc_exception_state #(
                   event_kind_i == EVENT_TLB_I_MISS ? 13'h1000 :
                     (event_kind_i == EVENT_TLB_D_LOAD ? 13'h1100 :
                                                        13'h1200));
+              end
+            end
+            EVENT_MACHINE_CHECK: begin
+              // UM Table 4-10: taken in any state, TGPR included; checkstop
+              // (ME=0) belongs to the caller. Clearing ME follows the table
+              // note that a second TEA checkstops until the handler sets ME.
+              if (ENABLE_MACHINE_CHECK && msr_q[MSR_ME]) begin
+                srr0_q <= event_pc_i;
+                srr1_q <= (msr_q & 32'h0000_ffff) | SRR1_MACHINE_CHECK_TEA;
+                msr_q <= exception_msr(msr_q) & ~(32'd1 << MSR_ME);
+                result_supported_q <= 1'b1;
+                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0200);
+              end
+            end
+            EVENT_TRACE, EVENT_IABR: begin
+              // UM Tables 4-15 and 4-17: manual SRR1 bits 0..15 clear.
+              if (ENABLE_DEBUG_EXCEPTIONS && !msr_q[MSR_TGPR]) begin
+                srr0_q <= event_pc_i;
+                srr1_q <= msr_q & 32'h0000_ffff;
+                msr_q <= exception_msr(msr_q);
+                result_supported_q <= 1'b1;
+                result_target_q <= exception_vector(msr_q[MSR_IP],
+                  event_kind_i == EVENT_TRACE ? 13'h0d00 : 13'h1300);
               end
             end
             EVENT_RFI: begin
