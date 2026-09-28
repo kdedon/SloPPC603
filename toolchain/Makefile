@@ -524,16 +524,31 @@ rtl-full-decode-negative: full-decode
 	grep "known legal retirement.*insn=04000000" $(BUILD_DIR)/rtl-full-decode-negative/run.log
 	@echo "PASS: rtl-full-decode-negative rejected the image without full decode"
 
-# The package top, driven only at its pins.
+# The package top, driven only at its pins. The chip images boot like the
+# 603e: crt0 enables the instruction cache, which resets off.
+define CHIP_IMAGE
+.PHONY: chip-$(1)
+chip-$(1): $(BUILD_DIR)/chip-$(1)/smoke.elf $(BUILD_DIR)/chip-$(1)/smoke.bin $(BUILD_DIR)/chip-$(1)/smoke.dump
+$(BUILD_DIR)/chip-$(1):
+	mkdir -p $$@
+$(BUILD_DIR)/chip-$(1)/crt0.o: crt0.S | $(BUILD_DIR)/chip-$(1)
+	$$(CC) $$(COMMON_ASFLAGS) -mbig-endian -D$(2) -DCHIP_BOOT -c $$< -o $$@
+$(BUILD_DIR)/chip-$(1)/smoke.elf: $(BUILD_DIR)/chip-$(1)/crt0.o $(BUILD_DIR)/$(1)/main.o $(BUILD_DIR)/$(1)/handler.o $(1).ld
+	$$(CC) $$(COMMON_CFLAGS) -mbig-endian $$(subst link.ld,$(1).ld,$$(COMMON_LDFLAGS)) \
+		-Wl,-Map,$(BUILD_DIR)/chip-$(1)/smoke.map $$(filter %.o,$$^) -o $$@
+endef
+$(eval $(call CHIP_IMAGE,machine-check,ENABLE_MACHINE_CHECK_SMOKE))
+$(eval $(call CHIP_IMAGE,full-decode,ENABLE_FULL_DECODE_SMOKE))
+
 .PHONY: rtl-chip-mmu-stress rtl-chip-lsu rtl-chip-machine-check rtl-chip-full-decode
 rtl-chip-mmu-stress: mmu-stress
 	$(PYTHON) run-rtl-smoke.py --profile chip-mmu-stress --elf $(BUILD_DIR)/mmu-stress/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-mmu-stress
 rtl-chip-lsu: lsu
 	$(PYTHON) run-rtl-smoke.py --profile chip-lsu --elf $(BUILD_DIR)/lsu/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-lsu
-rtl-chip-machine-check: machine-check
-	$(PYTHON) run-rtl-smoke.py --profile chip-machine-check --elf $(BUILD_DIR)/machine-check/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-machine-check
-rtl-chip-full-decode: full-decode
-	$(PYTHON) run-rtl-smoke.py --profile chip-full-decode --elf $(BUILD_DIR)/full-decode/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-full-decode
+rtl-chip-machine-check: chip-machine-check
+	$(PYTHON) run-rtl-smoke.py --profile chip-machine-check --elf $(BUILD_DIR)/chip-machine-check/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-machine-check
+rtl-chip-full-decode: chip-full-decode
+	$(PYTHON) run-rtl-smoke.py --profile chip-full-decode --elf $(BUILD_DIR)/chip-full-decode/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-full-decode
 
 
 .PHONY: residuals rtl-residuals
@@ -554,7 +569,7 @@ rtl-residuals: residuals
 
 # Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
 # or from `make firmware-all` in the pinned container.
-FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu machine-check full-decode residuals
+FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu machine-check full-decode chip-machine-check chip-full-decode residuals
 RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry mmu-stress-tea cacheops lsu machine-check full-decode chip-mmu-stress chip-lsu chip-machine-check chip-full-decode residuals
 FIRMWARE_ELFS := $(FIRMWARE_PROFILES:%=$(BUILD_DIR)/%/smoke.elf)
 CROSS_MISSING := ERROR: $(CC) not found; install the pinned cross-compiler or run make firmware-all in the container (see toolchain/README.md)

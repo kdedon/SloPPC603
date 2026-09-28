@@ -144,10 +144,6 @@ SCRIPTED_TARGET = {'cacheops', 'lsu', 'machine-check', 'full-decode', 'chip-mmu-
                    'chip-lsu', 'chip-machine-check', 'chip-full-decode', 'residuals'}
 RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry', 'mmu-stress-tea'}
 # Plusargs added to every run of a profile.
-# Bench parameters added to every build of a profile.
-# These images expect the instruction cache on from reset.
-PROFILE_GPARAMS = {profile: ["ICE_AT_RESET=1'b1"] for profile in
-                   ('chip-full-decode', 'chip-machine-check')}
 PROFILE_ARGS = {'mmu-stress-retry': ['+RETRY=1'],
                 'chip-machine-check': ['+TEA_BASE=fff0dff0', '+TEA_END=fff0e100']}
 
@@ -232,7 +228,7 @@ def main():
         mode_flags = ['--cc', '--exe', '--build', '--coverage-line', str(main)]
     subprocess.run([args.verilator, *mode_flags, '--timing', '--assert', '-Wall', '-j', str(args.jobs),
                     '--top-module', top, '--Mdir', str(build/'obj'), '-I../tb',
-                    *profile_params, *(f'-G{g}' for g in [*PROFILE_GPARAMS.get(args.profile, []), *args.gparam]), *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
+                    *profile_params, *(f'-G{g}' for g in args.gparam), *sources, *bfms, f'../tb/{top}.sv'], cwd=root/'sim', check=True)
     if isinstance(modes, int):
         modes = tuple(range(modes)) if modes else (None,)
     if args.modes:
