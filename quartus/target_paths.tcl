@@ -5,7 +5,9 @@
 # Rewrites the project SDC's create_clock period, then writes the worst setup
 # path per failing endpoint at every corner (corner, slack, from, to) to
 # <out_file>, and the full path of the worst endpoint in each of the 40 worst
-# destination-register groups at the first corner to <out_file>.paths.txt.
+# destination-register groups at the first corner to <out_file>.paths.txt,
+# and the worst boundary input, output and feedthrough path per corner to
+# <out_file>.boundary.txt.
 set revision [lindex $quartus(args) 0]
 set period [lindex $quartus(args) 1]
 set out_file [lindex $quartus(args) 2]
@@ -58,5 +60,28 @@ foreach cond [get_available_operating_conditions] {
   }
 }
 close $out
+
+# Boundary budget: worst setup path per class at every corner. The core-side
+# delay of a class is period minus slack; docs/INTERFACE_TIMING_CONTRACT.md
+# states the budget it must meet.
+set ibq [get_keepers -nowarn {*_ibq*}]
+set obq [get_keepers -nowarn {*_obq*}]
+set boundary [open "${out_file}.boundary.txt" w]
+foreach cond [get_available_operating_conditions] {
+  set_operating_conditions $cond
+  update_timing_netlist
+  foreach {class paths} [list \
+      input [get_timing_paths -setup -from $ibq -npaths 1] \
+      output [get_timing_paths -setup -to $obq -npaths 1] \
+      feedthrough [get_timing_paths -setup -from $ibq -to $obq -npaths 1]] {
+    set line "$cond\t$class\tnone"
+    foreach_in_collection path $paths {
+      set line "$cond\t$class\t[get_path_info $path -slack]\t[get_node_info -name [get_path_info $path -from]]\t[get_node_info -name [get_path_info $path -to]]"
+    }
+    puts $boundary $line
+    post_message "boundary: $line"
+  }
+}
+close $boundary
 delete_timing_netlist
 project_close

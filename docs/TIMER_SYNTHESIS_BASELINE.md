@@ -2,6 +2,34 @@
 
 
 
+## 2026-09-28 gate-3 timing: unreset payloads, registered IQ head, contract SDC
+
+Recorded: `./quartus/timer-bat/build.sh --docker` and
+`./quartus/report-target-paths.sh timer-bat --docker`, commit `f4425cd`
+(RTL and SDC identical to `710b517`), 2026-09-28. Quartus 17.0.2, seed 1.
+**Meets 50 MHz and 66 MHz** at every corner; hold passes everywhere.
+
+| Corner | Setup slack, 50 MHz (ns) | Hold slack (ns) |
+| --- | ---: | ---: |
+| Slow 1100 mV, 100 C | +5.771 | +0.251 |
+| Slow 1100 mV, -40 C | +6.116 | +0.239 |
+| Fast 1100 mV, 100 C | +12.179 | +0.137 |
+| Fast 1100 mV, -40 C | +13.472 | +0.122 |
+
+Fmax 70.28 MHz at slow 100 C, 72.03 MHz at slow -40 C (from 70.35 / 69.51
+at `fe62f24`, before the load/store-extension, machine check and trace
+merges). No endpoint fails at 15.152 ns. 5,912 ALMs, 7,502 registers, no
+block RAM, 3 DSP blocks.
+
+Boundary paths at 15.152 ns, slow 100 C: input +3.410 ns (`pimem_rsp_insn_i`
+into the IQ), output +4.879 ns (into `retire_o`), feedthrough +7.216 ns
+(`pimem_rsp_valid_i` to `interrupt_pc_o`). The SDC now implements
+[INTERFACE_TIMING_CONTRACT.md](INTERFACE_TIMING_CONTRACT.md): each port's
+false path reaches only its own boundary register, bit by bit. The timed
+path set is unchanged from the previous SDC; re-timing the previous
+translated fit with both SDCs gave the same worst setup slack at every corner
+and the same slow-corner hold slack.
+
 ## 2026-09-27 66 MHz round: registered I/O, IQ decode at push
 
 Recorded: `./quartus/timer-bat/build.sh --docker` and

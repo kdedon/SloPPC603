@@ -30,3 +30,5 @@ else
     "${image}" /opt/intelFPGA_lite/quartus/bin/quartus_sta "${args[@]}"
 fi
 python3 "${script_dir}/group_paths.py" "${script_dir}/${top}/${out}"
+echo "boundary paths (corner, class, slack, from, to):"
+cat "${script_dir}/${top}/${out}.boundary.txt"

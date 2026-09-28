@@ -19,7 +19,7 @@ acceptance evidence are still required. The aggregate is `sum(weight × completi
 / 100`, rounded to a whole percent. Keep weights fixed between rounds unless the
 user changes scope. Treat small score changes as bookkeeping, not velocity.
 
-**MVP estimate: about 87% complete (weighted 87.5%; planning range 60–90%).** The
+**MVP estimate: about 90% complete (weighted 90.3%; planning range 60–95%).** The
 remaining work is concentrated in platform exceptions (machine check, trace,
 debug) and timing closure. These are
 hard acceptance blockers regardless of the weighted score. Final FPGA acceptance
@@ -42,7 +42,7 @@ is currently unmet.
 | Instruction cache and maintenance | 5% | 95% | 16-KiB four-way physical cache, block-RAM data array, translated WIMG=0 fills/hits, scalar bypass, remap and explicit stale-code invalidate/restart, denied warm-line suppression and partial-fill TEA/reset; CPU `icbi` drains held/retried fills then clears the set; `dcbst`/`sync`/`icbi`/`isync` code patching under EXT/DEC, mode and BAT changes, retries and external maintenance | Conservative WIMG policy; no HID0 (external maintenance stands in); no automatic code coherence (not architected). External maintenance is not a CPU/store barrier. |
 | Toolchain and reproducible builds | 4% | 90% | Pinned compiler, BE ELF loader, twenty-two compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes; MMU stress has nine), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility or release packaging claim. |
 | Integration and verification | 7% | 95% | Collected line coverage with a waiver-gated control-arm review, one `make -C sim ci` gate and a 64-seed reference-acceptance run; independent directed/reference tests, seeded cached-top cache-maintenance stress with a scripted ARTRY/DRTRY/hold 60x target, 259 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives; seeded nine-mode MMU/event/reset stress on the MVP-profile translated cached top | Search/fault/stress firmware covers the combined supervisor/page-MMU/cache/bus path with bus retries and seeded TEA machine checks; no formal verification or toggle coverage; the compiled corpus is not compared with DingusPPC. |
-| FPGA fit, timing and release | 7% | 45% | Current cached physical and separately timer-enabled BAT designs fit Cyclone V with archived evidence; all three tops meet 50 MHz setup and hold at every corner with registered virtual I/O: cached physical 66.04 MHz and timer/BAT 69.51 MHz also meet the 66 MHz target; translated MVP 62.72 MHz | The translated top with machine check and the load/store extensions reaches 62.72 MHz (worst path reset synchronizer → IQ storage), short of 66 MHz. No board I/O timing contract or release signoff. New RTL changes require fresh fit before timing claims. |
+| FPGA fit, timing and release | 7% | 85% | Reviewed boundary timing contract ([interface timing](INTERFACE_TIMING_CONTRACT.md)) implemented by all three measurement SDCs without blanket false paths; translated, cached physical and timer/BAT tops meet 50 MHz setup and hold at every corner on `710b517` (Fmax 65.24 / 63.20 / 70.28 MHz at the worst slow corner); timer/BAT also meets 66 MHz | Final signoff fits after the decode-completion merge; 66 MHz on the cached tops (I-cache data → router → decode → IQ). Board bring-up excluded. New RTL changes require fresh fit before timing claims. |
 
 Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](references/ISA_MATRIX.md),
 [alignment](ALIGNMENT_VERIFICATION.md), [live context](LIVE_CONTEXT_VERIFICATION.md),
@@ -178,6 +178,7 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Verification breadth round, 2026-09-27 | 83.81% → 85.01% | Fetch 92%, branches 93%, BAT/context 88%, segment/page 95%, 60x 83%, integration 94%. Seeded ARTRY/DRTRY/held-tenure retry stress with SR/SDR1/PTE changes, branch storm and BAT/cache collisions; line coverage, `ci` and reference-acceptance targets. No production RTL change. Checks inherited from the branch head (`4560b1a`); see [verification gates](VERIFICATION_GATES.md). |
 | Load/store extensions round, 2026-09-27 | 85.01% → 85.94% | Load/store 90%, integer 86%. Multiple/string, `lwarx`/`stwcx.`, byte-reverse and hardware-split unaligned scalars with precise mid-access restart. Fresh on the merge: `make -C sim ci` and coverage; fit inherited from the branch (same RTL). See [verification](LOAD_STORE_EXTENSIONS_VERIFICATION.md). |
 | Machine check, trace and IABR round, 2026-09-28 | 85.94% → 87.46% | Supervisor 92%, load/store 92%, 60x 88%, integration 95%. TEA machine check and checkstop, trace, IABR, integrated with cracked instructions; seeded TEA in the MMU stress. Fresh on the branch head (`60e0916`, same tree as the merge): `make -C sim ci` and translated fit. See [verification](EXCEPTION_MACHINE_CHECK_TRACE_VERIFICATION.md). |
+| Gate-3 timing round, 2026-09-28 | 87.46% → 90.26% | FPGA 45% → 85%. Interface timing contract and SDCs; reset off datapath storage, registered IQ head, ungated wake payload. Fresh on the branch (`710b517`, same tree as the merge): `make -C sim ci` and fits of all three tops. See [interface timing](INTERFACE_TIMING_CONTRACT.md). |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.
@@ -824,4 +825,31 @@ recovering handler: 96 and 86 TEAs, 85 and 77 machine checks in modes 14 and 15
 covering this round and the load/store extensions: load/store 67% → 75%,
 supervisor 70% → 80%, 60x 65% → 70%, coherence and reservations 0% → 10%
 (local reservation, no snooping).
+
+## Gate-3 timing round (2026-09-28)
+
+Recorded: `make -C sim -j2 ci` and `./quartus/{translated,integrated,timer-bat}/build.sh
+--docker` on `710b517` (timer-bat on `f4425cd`, same RTL and SDC), 2026-09-28; the
+merge onto main adds no change. `ci` passes (coverage 75.9%). All three tops
+meet 50 MHz setup and hold at every corner:
+
+| Top | Setup slack, slow 100 C / -40 C (ns) | Worst hold (ns) | Fmax, worst slow corner | 66 MHz |
+| --- | --- | ---: | ---: | --- |
+| Translated | +4.763 / +4.672 | +0.116 | 65.24 MHz | misses by 0.176 ns |
+| Cached physical | +4.239 / +4.178 | +0.133 | 63.20 MHz | misses by 0.670 ns |
+| Timer/BAT | +5.771 / +6.116 | +0.122 | 70.28 MHz | meets |
+
+The [interface timing contract](INTERFACE_TIMING_CONTRACT.md) defines clock,
+reset, register-to-register boundary budgets, the falling-edge ABB/DBB release
+and interrupt synchronization; each SDC cuts only port-to-boundary-register hops
+and the reset synchronizer input. RTL: datapath payloads (IQ, RS, rename values)
+lose their reset, the IQ output comes from a head register, the wake payload no
+longer waits on the finish checks, and the special/IU result select uses the
+registered busy flag. Behavior is unchanged. The cached-physical top was last fitted
+before the load/store and machine-check merges, so its drop from 66.04 MHz is not
+attributable to this round alone.
+
+**MVP 87.46% → 90.26% (about 90%):** FPGA 45% → 85%. Remaining: final signoff
+fits after the decode-completion merge, 66 MHz on the cached tops (I-cache data
+through decode into the IQ).
 

@@ -811,3 +811,11 @@ sim ci` (459 regression PASS lines, 30 firmware profiles, coverage 75.9%) and
 translated fit (62.72 MHz). MVP 85.94% → 87.46%; full audit 46.79% → 48.59%.
 See [verification](../../EXCEPTION_MACHINE_CHECK_TRACE_VERIFICATION.md).
 
+## Gate-3 timing round — accepted (2026-09-28)
+
+Interface timing contract implemented by the three measurement SDCs; reset off
+datapath storage, registered IQ head, ungated wake payload. Fresh on the branch
+(`710b517`, same tree as the merge): `make -C sim ci` and fits of all three
+tops, each meeting 50 MHz setup and hold at every corner (65.24 / 63.20 / 70.28
+MHz). MVP 87.46% → 90.26%. See [interface timing](../../INTERFACE_TIMING_CONTRACT.md).
+

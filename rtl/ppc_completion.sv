@@ -192,7 +192,12 @@ module ppc_completion #(
 
     finish_accept = 1'b0;
     wake_valid_o = 1'b0;
+    // Meaningful only with wake_valid_o; keeps the finish checks out of the
+    // wake payload.
     wake_o = '0;
+    wake_o.producer = result_i.producer;
+    wake_o.tag = packets_q[result_i.producer.index].tag;
+    wake_o.value = result_i.value;
     // Qualify against the accepted pre-edge survivor set. A rejected redirect
     // has no effect on ordinary progress.
     if (result_valid_i && result_ready_o &&
@@ -206,9 +211,6 @@ module ppc_completion #(
         if (packets_q[result_i.producer.index].gpr_write && !result_i.fault &&
             (result_i.data_fault == DATA_OK)) begin
           wake_valid_o = 1'b1;
-          wake_o.producer = result_i.producer;
-          wake_o.tag = packets_q[result_i.producer.index].tag;
-          wake_o.value = result_i.value;
         end
       end
     end
