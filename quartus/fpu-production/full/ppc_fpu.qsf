@@ -50,3 +50,5 @@ set_instance_assignment -name VIRTUAL_PIN ON -to "commit1_tag_i.*"
 set_instance_assignment -name VIRTUAL_PIN ON -to "commit1_ready_o"
 set_instance_assignment -name VIRTUAL_PIN ON -to forward1_valid_o
 set_instance_assignment -name VIRTUAL_PIN ON -to "forward1_o.*"
+set_instance_assignment -name VIRTUAL_PIN ON -to "forward_data_o.*"
+set_instance_assignment -name VIRTUAL_PIN ON -to "forward1_data_o.*"

@@ -31,6 +31,46 @@ def edge_values(single):
     return base + [x | (1 << 63) for x in base]
 
 
+def random_denormal(rng):
+    fraction = rng.getrandbits(52) >> rng.randrange(52)
+    return (rng.getrandbits(1) << 63) | max(fraction, 1)
+
+
+def random_normal(rng, low, high):
+    return ((rng.getrandbits(1) << 63) | (rng.randrange(low, high) << 52) |
+            rng.getrandbits(52))
+
+
+def denormal_cases(op, rng):
+    """Denormal operands against near-cancelling and far-aligned partners."""
+    cases = []
+    for _ in range(24):
+        a = random_denormal(rng)
+        if op == 'frsp':
+            cases.append((0, a, 0, 'denormal'))
+        elif op in ('add', 'sub'):
+            partner = rng.choice((random_denormal(rng),
+                                  random_normal(rng, 1, 3),
+                                  random_normal(rng, 1, 110)))
+            cases.append((a, partner, 0, 'denormal'))
+            cases.append((partner, a, 0, 'denormal'))
+        else:
+            c = rng.choice((random_denormal(rng),
+                            random_normal(rng, 1023, 2047),
+                            random_normal(rng, 1, 2047)))
+            if op == 'mul':
+                cases.append((a, 0, c, 'denormal'))
+                continue
+            product = arithmetic('mul', a, 0, c)['result']
+            b = product ^ (1 << 63) if op in ('madd', 'nmadd') else product
+            b ^= rng.getrandbits(2)
+            if rng.getrandbits(1):
+                b = random_denormal(rng)
+            cases.append((a, b, c, 'denormal'))
+            cases.append((c, b, a, 'denormal'))
+    return cases
+
+
 def packets(ops, random_count, seed):
     rng = random.Random(seed)
     for op in ops:
@@ -142,6 +182,8 @@ def packets(ops, random_count, seed):
                 cases.extend((0, x, 0, 'round-boundary') for x in
                              (0x380fffffe0000000, 0x36a0000000000000,
                               0x47f0000000000000, 0x3800000000000000))
+            if not single and op in {'add', 'sub', 'mul', 'frsp'} | THREE:
+                cases.extend(denormal_cases(op, rng))
             for _ in range(random_count):
                 width = 32 if single else 64
                 raw = [rng.getrandbits(width) for _ in range(3)]

@@ -36,6 +36,9 @@ module tb_ppc_fpu_shell;
     ppc_fpu_forward_t forward_o;
     logic forward1_valid_o;
     ppc_fpu_forward_t forward1_o;
+    ppc_fpu_forward_data_t forward_data_o, forward1_data_o;
+    ppc_fpu_forward_data_t last_forward_data;
+    logic payload_due, payload1_due;
     int checks;
     ppc_fpu_result_t held;
     ppc_fpu_forward_t last_forward;
@@ -58,6 +61,21 @@ module tb_ppc_fpu_shell;
                 (!forward_valid_o || forward1_o.tag == forward_o.tag ||
                  !(forward1_o.fpr_write || forward1_o.cr_write)))
                 $fatal(1, "invalid second forward packet=%h", forward1_o);
+        end
+
+
+    // A notification's payload arrives on the following cycle.
+    always @(posedge clk_i)
+        if (!rst_ni) begin
+            payload_due <= 1'b0;
+            payload1_due <= 1'b0;
+            last_forward_data <= '0;
+        end else begin
+            if (!payload1_due && forward1_data_o != '0)
+                $fatal(1, "second forward payload without notification");
+            payload_due <= forward_valid_o;
+            payload1_due <= forward1_valid_o;
+            if (payload_due) last_forward_data <= forward_data_o;
         end
 
     always @(posedge clk_i)
@@ -248,6 +266,15 @@ module tb_ppc_fpu_shell;
         checks = checks + 3;
     endtask
 
+    function automatic logic forward_payload_matches(
+        input ppc_fpu_forward_data_t data);
+        return (!last_forward.fpr_write ||
+                (data.fpr_value == result_o.fpr_value &&
+                 data.fpr_sp == result_o.fpr_sp &&
+                 data.fpr_lt == result_o.fpr_lt)) &&
+               (!last_forward.cr_write || data.cr_value == result_o.cr_value);
+    endfunction
+
     task automatic await_result(input completion_tag_t identity);
         int waited;
         ppc_fpu_forward_t expected_forward;
@@ -263,13 +290,11 @@ module tb_ppc_fpu_shell;
             expected_forward.tag = result_o.tag;
             expected_forward.fpr_write = result_o.fpr_write;
             expected_forward.fpr_index = result_o.fpr_index;
-            expected_forward.fpr_value = result_o.fpr_value;
-            expected_forward.fpr_sp = result_o.fpr_sp;
-            expected_forward.fpr_lt = result_o.fpr_lt;
             expected_forward.cr_write = result_o.cr_write;
             expected_forward.cr_field = result_o.cr_field;
-            expected_forward.cr_value = result_o.cr_value;
-            if (last_forward !== expected_forward)
+            if (last_forward !== expected_forward ||
+                !forward_payload_matches(payload_due ? forward_data_o :
+                                         last_forward_data))
                 $fatal(1, "forward packet differs from completed result tag=%h", identity);
         end
         held = result_o;
@@ -381,7 +406,7 @@ module tb_ppc_fpu_shell;
         @(negedge clk_i);
         if (!mem_req_valid_o || !mem_req_o.write || mem_req_o.tag != identity ||
             mem_req_o.ea != ea || mem_req_o.size_bytes != size_bytes ||
-            mem_req_o.data != bits)
+            mem_req_o.data != 64'd0)
             $fatal(1, "store preparation packet");
         mem_req_ready_i = 1'b1;
         @(posedge clk_i);
@@ -405,8 +430,9 @@ module tb_ppc_fpu_shell;
                 result_o.gpr_update || result_o.fault_code != 4'hb ||
                 result_o.fault_info != 32'h12345678)
                 $fatal(1, "store fault disposition");
-        end else if (result_o.exception != FPU_NO_EXCEPTION || !result_o.store) begin
-            $fatal(1, "prepared store result");
+        end else if (result_o.exception != FPU_NO_EXCEPTION || !result_o.store ||
+                     store_o.data != bits) begin
+            $fatal(1, "prepared store result data %h", store_o.data);
         end
         checks = checks + 4;
     endtask
@@ -480,8 +506,8 @@ module tb_ppc_fpu_shell;
             attempts++;
             if (attempts > 40) $fatal(1, "dependent stfd did not launch");
         end
-        if (mem_req_o.data != 64'h4818_0000_0000_0000)
-            $fatal(1, "dependent stfd data %h", mem_req_o.data);
+        if (mem_req_o.data != 64'd0)
+            $fatal(1, "dependent stfd preparation data %h", mem_req_o.data);
         mem_req_ready_i = 1'b1;
         @(posedge clk_i);
         #1;
@@ -503,7 +529,8 @@ module tb_ppc_fpu_shell;
         if (result_o.fpr_value != 64'h4818_0000_0000_0000) $fatal(1, "dependent fmr");
         commit(tag(2, 252));
         await_result(tag(3, 253));
-        if (!result_o.store) $fatal(1, "dependent stfd result");
+        if (!result_o.store || store_o.data != 64'h4818_0000_0000_0000)
+            $fatal(1, "dependent stfd result data %h", store_o.data);
         @(negedge clk_i);
         abort_valid_i = 1'b1;
         abort_tag_i = tag(3, 253);

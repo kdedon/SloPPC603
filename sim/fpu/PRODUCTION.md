@@ -7,6 +7,39 @@ the manuals' per-instruction execution latency and initiation interval,
 ordered forwarding and retirement, and 602 operand tags and emulation traps.
 Detailed `Recorded:` entries retain each result's exact source scope.
 
+## Store data, forward payload and unnormalized stage 1
+
+Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production
+lint-fpu-stream lint-fpu-dual`, commit `063a063` (RTL and benches identical to
+`6866d82`), 2026-09-29. Pass. Raw arithmetic: 603e 209,696 vectors (201,632
+before the new denormal group) and 602 181,952 vectors, 0 mismatches; per-op
+latency minima and maxima unchanged (3, 3–4 for double multiply and fused,
+18/33 divide). Estimates 11,958 and 17,628, 0 mismatches. Reference unit
+tests 21. Shell 910 checks; 602 173 checks; exact-timing 71/52 responses;
+streams 32/32/32 in both builds; dual 32/24; flush/reset 4 and cancel-offset
+76 per build. All four lint targets clean.
+
+This establishes:
+
+- Preparation packets carry zero data; every checked store's data appears in
+  the authorized descriptor, including a `stfd` whose source finishes in its
+  preparation cycle (`0x4818000000000000`, filled from the reply).
+- Forward payloads arrive one cycle after their notification and match the
+  held result for every checked shell and 602 instruction, the dual-lane
+  compare/load pair and every stream result; payload outputs are zero after
+  cycles with no notification.
+- Dependent `fadd`, `fmr` and `stfd` distances remain 3, 3 and same-cycle
+  store launch; stream forward delay remains 3.
+- Unnormalized denormal operands in add, multiply, fused and `frsp` produce
+  the reference results over 8,064 new double vectors (1,152 per add, sub
+  and fused op, 576 for `mul` and `frsp`; `denormal` group: random denormals against denormal, small-normal,
+  near-cancelling and far partners, all RN and enable modes).
+- Divide special-operand classification one cycle after acceptance keeps
+  latency 18 single and 33 double.
+
+It does not establish fitted timing, or a numerical proof beyond the argument
+in [`docs/FPU_PIPELINE_DESIGN.md`](../../docs/FPU_PIPELINE_DESIGN.md).
+
 ## Registered finish and stfs store rule
 
 Recorded: `make -C sim -j2 test-fpu-all lint-fpu-production lint-fpu-stream

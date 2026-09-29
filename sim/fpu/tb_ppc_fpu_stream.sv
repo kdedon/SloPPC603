@@ -38,6 +38,8 @@ module tb_ppc_fpu_stream #(
     ppc_fpu_forward_t forward_o;
     logic forward1_valid_o;
     ppc_fpu_forward_t forward1_o;
+    ppc_fpu_forward_data_t forward_data_o, forward1_data_o;
+    logic payload_due, payload1_due;
 
     logic automatic_commit;
     logic auto_commit_valid;
@@ -106,8 +108,20 @@ module tb_ppc_fpu_stream #(
             cycle_count <= 0;
             committed <= 0;
             forwarded <= 0;
+            payload_due <= 1'b0;
+            payload1_due <= 1'b0;
         end else begin
             cycle_count <= cycle_count + 1;
+            // A notification's payload arrives on the following cycle.
+            payload_due <= automatic_commit && forward_valid_o;
+            if (payload_due && forward_data_o.fpr_value != expected_value)
+                $fatal(1, "%s stream forward payload %h",
+                       CPU_602 ? "602" : "603e", forward_data_o);
+            payload1_due <= automatic_commit && forward1_valid_o &&
+                forward1_o.fpr_write;
+            if (payload1_due && forward1_data_o.fpr_value != expected_value)
+                $fatal(1, "%s stream second forward payload %h",
+                       CPU_602 ? "602" : "603e", forward1_data_o);
             if (automatic_commit && issue_valid_i && issue_ready_o) begin
                 ordinal = (int'(issue_i.tag.generation) - 32'd40) * 4 +
                           int'(issue_i.tag.index);
@@ -126,8 +140,7 @@ module tb_ppc_fpu_stream #(
             if (automatic_commit && forward_valid_o) begin
                 ordinal = (int'(forward_o.tag.generation) - 32'd40) * 4 +
                           int'(forward_o.tag.index);
-                if (ordinal != forwarded || !forward_o.fpr_write ||
-                    forward_o.fpr_value != expected_value)
+                if (ordinal != forwarded || !forward_o.fpr_write)
                     $fatal(1, "%s stream forward tag/data/duplicate packet=%h",
                            CPU_602 ? "602" : "603e", forward_o);
                 if (cycle_count + 1 - issue_cycle[ordinal] != 3)

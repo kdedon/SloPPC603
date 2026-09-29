@@ -34,6 +34,8 @@ module tb_ppc_fpu_dual #(
     logic [31:0] inspect_fpscr_o, inspect_sp_o, inspect_lt_o;
     logic forward_valid_o, forward1_valid_o;
     ppc_fpu_forward_t forward_o, forward1_o;
+    ppc_fpu_forward_data_t forward_data_o, forward1_data_o;
+    logic compare_payload_due, load_payload_due, load_payload_bus1;
     logic saw_compare_cr, saw_load_fpr, saw_dual_forward;
     int held_issue_accepts, held_mem_requests;
     int checks;
@@ -71,6 +73,27 @@ module tb_ppc_fpu_dual #(
         return p;
     endfunction
 
+    // Notification payloads arrive on the following cycle.
+    always @(posedge clk_i)
+        if (!rst_ni) begin
+            compare_payload_due <= 1'b0;
+            load_payload_due <= 1'b0;
+            load_payload_bus1 <= 1'b0;
+        end else begin
+            if (compare_payload_due && forward_data_o.cr_value != 4'h8)
+                $fatal(1, "compare forward payload %h", forward_data_o);
+            if (load_payload_due &&
+                (load_payload_bus1 ? forward1_data_o.fpr_value :
+                 forward_data_o.fpr_value) !=
+                (CPU_602 ? 64'h000000003f800000 : 64'h3ff0000000000000))
+                $fatal(1, "load forward payload %h/%h", forward_data_o,
+                       forward1_data_o);
+            compare_payload_due <= forward_valid_o && forward_o.tag == tag(90);
+            load_payload_due <= (forward_valid_o && forward_o.tag == tag(91)) ||
+                (forward1_valid_o && forward1_o.tag == tag(91));
+            load_payload_bus1 <= forward1_valid_o && forward1_o.tag == tag(91);
+        end
+
     always @(posedge clk_i)
         if (!rst_ni) begin
             saw_compare_cr <= 1'b0;
@@ -85,7 +108,7 @@ module tb_ppc_fpu_dual #(
                 held_mem_requests <= held_mem_requests + 1;
             if (forward_valid_o && forward_o.tag == tag(90)) begin
                 if (!forward_o.cr_write || forward_o.cr_field != 3'd5 ||
-                    forward_o.cr_value != 4'h8 || forward_o.fpr_write)
+                    forward_o.fpr_write)
                     $fatal(1, "compare forward malformed %h", forward_o);
                 saw_compare_cr <= 1'b1;
             end
@@ -98,9 +121,7 @@ module tb_ppc_fpu_dual #(
                 if (!forward_valid_o || forward1_o.tag == forward_o.tag)
                     $fatal(1, "second forward has no distinct older packet %h", forward1_o);
                 if (forward1_o.tag == tag(91)) begin
-                    if (!forward1_o.fpr_write || forward1_o.fpr_index != 5'd4 ||
-                        forward1_o.fpr_value != (CPU_602 ? 64'h000000003f800000 :
-                                                64'h3ff0000000000000))
+                    if (!forward1_o.fpr_write || forward1_o.fpr_index != 5'd4)
                         $fatal(1, "paired load forward malformed %h", forward1_o);
                     saw_load_fpr <= 1'b1;
                     if (forward_o.tag == tag(90)) saw_dual_forward <= 1'b1;

@@ -75,18 +75,6 @@ module ppc_fpu_arith #(
     } mul_parts_t;
 
     typedef struct packed {
-        logic [53:0] p00;
-        logic [51:0] p11;
-        logic [53:0] mid;
-    } mul_mid_t;
-
-    typedef struct packed {
-        logic [53:0] p00;
-        logic [51:0] p11;
-        logic [54:0] cross_sum;
-    } mul_low_t;
-
-    typedef struct packed {
         logic [159:0] x;
         logic [159:0] y;
         logic signed [15:0] exp_x;
@@ -805,18 +793,30 @@ module ppc_fpu_arith #(
         return out;
     endfunction
 
+    // Denormal operands stay unnormalized: the 112-bit sum keeps every
+    // product and addend bit above the rounding position unless the result
+    // is already below the denormal range, and the add stage normalizes.
+    function automatic logic [52:0] raw_sig(input logic [62:0] magnitude);
+        return {magnitude[62:52] != 11'd0, magnitude[51:0]};
+    endfunction
+
+    function automatic logic signed [15:0] raw_exp(input logic [10:0] biased);
+        return biased == 11'd0 ? -16'sd1022 :
+            $signed({5'd0, biased}) - 16'sd1023;
+    endfunction
+
     function automatic finite_operands_t prepare_operands(
         input logic [63:0] a_bits, input logic [63:0] b_bits,
         input logic [63:0] c_bits
     );
         finite_operands_t out;
         out = '0;
-        out.a_sig = finite_sig(a_bits[62:0]);
-        out.b_sig = finite_sig(b_bits[62:0]);
-        out.c_sig = finite_sig(c_bits[62:0]);
-        out.a_exp = finite_exp(a_bits[62:0]);
-        out.b_exp = finite_exp(b_bits[62:0]);
-        out.c_exp = finite_exp(c_bits[62:0]);
+        out.a_sig = raw_sig(a_bits[62:0]);
+        out.b_sig = raw_sig(b_bits[62:0]);
+        out.c_sig = raw_sig(c_bits[62:0]);
+        out.a_exp = raw_exp(a_bits[62:52]);
+        out.b_exp = raw_exp(b_bits[62:52]);
+        out.c_exp = raw_exp(c_bits[62:52]);
         out.a_sign = a_bits[63];
         out.b_sign = b_bits[63];
         out.c_sign = c_bits[63];
@@ -835,28 +835,14 @@ module ppc_fpu_arith #(
         return out;
     endfunction
 
-    function automatic mul_mid_t multiply_mid(input mul_parts_t parts);
-        mul_mid_t out;
-        out = '0;
-        out.p00 = parts.p00;
-        out.p11 = parts.p11;
-        out.mid = {1'b0, parts.p01} + {1'b0, parts.p10};
-        return out;
-    endfunction
-
-    function automatic mul_low_t multiply_low(input mul_mid_t middle);
-        mul_low_t out;
-        out = '0;
-        out.p00 = middle.p00;
-        out.p11 = middle.p11;
-        out.cross_sum = {28'd0, middle.p00[53:27]} + {1'b0, middle.mid};
-        return out;
-    endfunction
-
-    function automatic logic [105:0] multiply_finish(input mul_low_t low);
+    // The three middle partial products share one ternary adder.
+    function automatic logic [105:0] multiply_sum(input mul_parts_t parts);
+        logic [54:0] cross_sum;
         logic [51:0] upper;
-        upper = low.p11 + {24'd0, low.cross_sum[54:27]};
-        return {upper, low.cross_sum[26:0], low.p00[26:0]};
+        cross_sum = {28'd0, parts.p00[53:27]} + {2'd0, parts.p01} +
+            {2'd0, parts.p10};
+        upper = parts.p11 + {24'd0, cross_sum[54:27]};
+        return {upper, cross_sum[26:0], parts.p00[26:0]};
     endfunction
 
     function automatic finite_prep_t prepare_finite(
@@ -1539,8 +1525,7 @@ module ppc_fpu_arith #(
         multiply_double_next.finite = multiply_q.finite;
         multiply_double_next.special_rsp = multiply_q.special_rsp;
         if (multiply_q.finite) begin
-            multiply_double_product = multiply_finish(multiply_low(
-                multiply_mid(multiply_q.products)));
+            multiply_double_product = multiply_sum(multiply_q.products);
             multiply_double_prep = prepare_finite(multiply_q.req.op,
                 multiply_q.operands.a_sig, multiply_q.operands.b_sig,
                 multiply_q.operands.a_exp, multiply_q.operands.b_exp,
@@ -1770,27 +1755,26 @@ module ppc_fpu_arith #(
                 div_b_raw_q <= req_operands.b[62:0];
                 div_a_sign_q <= req_operands.a[63];
                 div_b_sign_q <= req_operands.b[63];
-                div_result_sign_q <=
-                    ((req_operands.op != FP_FRES) && req_operands.a[63]) ^
-                    req_operands.b[63];
-                if (req_operands.b[62:0] != 63'd0 &&
-                    req_operands.b[62:52] != 11'h7ff &&
-                    (req_operands.op == FP_FRES ||
-                    (req_operands.a[62:0] != 63'd0 &&
-                    req_operands.a[62:52] != 11'h7ff))) begin
-                    divide_special_pending_q <= 1'b0;
-                    divide_state_q <= DIV_START;
-                end else begin
-                    divide_special_pending_q <= 1'b1;
-                    divide_special_count_q <=
-                        (CPU_602 || req_operands.op == FP_FRES ||
-                        req_operands.single_result) ?
-                        6'd18 : 6'd33;
-                    divide_state_q <= DIV_SPECIAL;
-                end
+                divide_special_pending_q <= 1'b0;
+                divide_state_q <= DIV_START;
             end else begin
                 case (divide_state_q)
-                    DIV_START: begin
+                    // Special operands are classified from the registered
+                    // operands; the accepted edge counts as their first cycle.
+                    DIV_START: if (!(div_b_raw_q != 63'd0 &&
+                        div_b_raw_q[62:52] != 11'h7ff &&
+                        (divide_req_q.op == FP_FRES ||
+                        (div_a_raw_q != 63'd0 &&
+                        div_a_raw_q[62:52] != 11'h7ff)))) begin
+                        divide_special_pending_q <= 1'b1;
+                        divide_special_count_q <=
+                            divide_req_q.single_result ||
+                            divide_req_q.op == FP_FRES ? 6'd17 : 6'd32;
+                        divide_state_q <= DIV_SPECIAL;
+                    end else begin
+                        div_result_sign_q <=
+                            (divide_req_q.op != FP_FRES && div_a_sign_q) ^
+                            div_b_sign_q;
                         div_result_exp_q <= div_start_a_exp -
                             div_start_b_exp;
                         div_denominator_q <= div_start_b_sig;

@@ -126,13 +126,22 @@ order remain obligations of the eventual integration interface.
 ## Registered finish
 
 The arithmetic unit's rounded result is registered in its response queue on
-the finish edge. Same-cycle uses of the unregistered finish value are limited
-to three places:
+the finish edge. The only same-cycle use of the unregistered finish value is
+a 2:1 operand mux directly in front of the arithmetic input and divider
+registers, selected per operand (`req_fwd_i`). The 602 build also reads it
+for its late emulation-trap and single-range checks. Divide special-operand
+classification reads the registered divider operands, one cycle after
+acceptance, with an unchanged count.
 
-- a 2:1 operand mux directly in front of the arithmetic input and divider
-  registers, selected per operand (`req_fwd_i`);
-- store data in the preparation packet and its pending copy;
-- the forwarding buses' payload.
+Store data is not in the preparation packet. A store whose source finishes in
+its preparation cycle marks its pending entry, which takes the formatted
+value from the registered reply on the next cycle; the store descriptor reads
+the reply directly if it is authorized in that cycle. Forward notifications
+still appear on the finish cycle, from registered state; their payload
+follows one cycle later from a register or, for a finishing result, from the
+registered reply and the FPSCR prefix captured at the notification. A younger
+CR1 result waits one cycle behind an older result announced in the same
+cycle.
 
 The mux selects come from a per-entry `finishing` bit, set one cycle early
 from the unit's `next_finish_valid_o/next_finish_tag_o`. Readiness uses
@@ -147,15 +156,36 @@ are registered.
 
 Execution latency is unchanged: dependent `fadd`, `fmr` and `stfd` distances
 match the previous RTL (3, 3 and same-cycle store launch), and the forward bus
-still presents results on the finish cycle. The 602 build still gates source
+still announces results on the finish cycle. The 602 build still gates source
 readiness and store traps on its late emulation-trap and single-range checks.
 The pending queue still shifts on retirement; a circular buffer remains open.
 
-Open timing work: the fitted worst path is now finish → single narrowing →
-store preparation data; registering store data behind the reply needs the
-packet contract to allow late data. The shifting pending queue, the
-combinational `issue_ready_o` (decode, commit and abort terms), the forward
-payload and the arithmetic stages themselves remain.
+Open timing work: the shifting pending queue, now the fitted worst path
+(pending state through issue, retirement and shift selection into every
+entry), the combinational `issue_ready_o` (decode, commit and abort terms),
+the 602 late trap checks, and the add and rounding stages.
+
+## Arithmetic stage 1
+
+Add, multiply, fused and `frsp` operands enter the first stage unnormalized:
+a denormal keeps its raw significand with exponent −1022, so no leading-zero
+count or shift precedes the multiplier or the exponent difference. The add
+stage already normalizes its 112-bit sum. Its operand fields hold the full
+53-bit addend and 106-bit product, so no significant bit is lost unless the
+result lies below the denormal range: with k leading zeros in a product
+(k ≤ 52 for one denormal factor), the sum's leading one stays at least 57
+positions above the jam bit; a cancellation deep enough to matter needs an
+alignment distance at most k, which shifts no addend bit past the field. Two
+denormal factors put the product below 2^−2043, where only its sticky bit
+survives. Single operations take binary32-representable operands, which are
+normal binary64 values.
+
+The double multiply's second cycle adds the three middle 27-bit partial
+products in one ternary adder before the high product.
+
+Remaining stage-1 work: carry the product as a carry-save pair into the add
+stage, align the addend beside the multiplier, and store class tags with FPR
+bits so special-operand classification leaves the first stage.
 
 ## Memory and 602 tag SPRs
 

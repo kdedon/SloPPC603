@@ -35,6 +35,9 @@ module tb_ppc_fpu_602;
     ppc_fpu_forward_t forward_o;
     logic forward1_valid_o;
     ppc_fpu_forward_t forward1_o;
+    ppc_fpu_forward_data_t forward_data_o, forward1_data_o;
+    ppc_fpu_forward_data_t last_forward_data;
+    logic payload_due, payload1_due;
     ppc_fpu_forward_t last_forward;
     ppc_fpu_result_t held_result;
     ppc_fpu_mem_t held_mem_req;
@@ -55,6 +58,21 @@ module tb_ppc_fpu_602;
                 $fatal(1, "602 exposed second result packet=%h", result1_o);
             if (forward1_valid_o)
                 $fatal(1, "602 exposed second forward packet=%h", forward1_o);
+        end
+
+
+    // A notification's payload arrives on the following cycle.
+    always @(posedge clk_i)
+        if (!rst_ni) begin
+            payload_due <= 1'b0;
+            payload1_due <= 1'b0;
+            last_forward_data <= '0;
+        end else begin
+            if (!payload1_due && forward1_data_o != '0)
+                $fatal(1, "second forward payload without notification");
+            payload_due <= forward_valid_o;
+            payload1_due <= forward1_valid_o;
+            if (payload_due) last_forward_data <= forward_data_o;
         end
 
     always @(posedge clk_i)
@@ -114,6 +132,15 @@ module tb_ppc_fpu_602;
         issue_valid_i = 1'b0;
     endtask
 
+    function automatic logic forward_payload_matches(
+        input ppc_fpu_forward_data_t data);
+        return (!last_forward.fpr_write ||
+                (data.fpr_value == result_o.fpr_value &&
+                 data.fpr_sp == result_o.fpr_sp &&
+                 data.fpr_lt == result_o.fpr_lt)) &&
+               (!last_forward.cr_write || data.cr_value == result_o.cr_value);
+    endfunction
+
     task automatic await_result(input completion_tag_t identity);
         int attempts;
         ppc_fpu_forward_t expected_forward;
@@ -131,13 +158,11 @@ module tb_ppc_fpu_602;
             expected_forward.tag = result_o.tag;
             expected_forward.fpr_write = result_o.fpr_write;
             expected_forward.fpr_index = result_o.fpr_index;
-            expected_forward.fpr_value = result_o.fpr_value;
-            expected_forward.fpr_sp = result_o.fpr_sp;
-            expected_forward.fpr_lt = result_o.fpr_lt;
             expected_forward.cr_write = result_o.cr_write;
             expected_forward.cr_field = result_o.cr_field;
-            expected_forward.cr_value = result_o.cr_value;
-            if (last_forward !== expected_forward)
+            if (last_forward !== expected_forward ||
+                !forward_payload_matches(payload_due ? forward_data_o :
+                                         last_forward_data))
                 $fatal(1, "602 forward packet differs from result");
         end
         held_result = result_o;
@@ -154,7 +179,11 @@ module tb_ppc_fpu_602;
         commit_tag_i = identity;
         commit_valid_i = 1'b1;
         #1;
-        if (result_o.store && (!store_valid_o || store_o !== held_mem_req))
+        // Store data travels only in the authorized descriptor.
+        if (result_o.store && (!store_valid_o ||
+            {store_o.tag, store_o.ea, store_o.size_bytes, store_o.write} !==
+            {held_mem_req.tag, held_mem_req.ea, held_mem_req.size_bytes,
+             held_mem_req.write}))
             $fatal(1, "602 store not authorized by matching commit");
         accepted = 1'b0;
         attempts = 0;
