@@ -1508,16 +1508,45 @@ test-core-full-decode:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_full_decode --Mdir $(BUILD_DIR)/core-full-decode -I../tb $(RTL) ../tb/tb_core_full_decode.sv
 	./$(BUILD_DIR)/core-full-decode/Vtb_core_full_decode $(SIM_ARGS)
 
-# CPU variants (cpu_variant_e encoding): chip lint, divide latency and
-# PVR/HID0/HID1 read-back on each implemented variant; CPU_603 and CPU_602
-# must fail elaboration.
+# CPU variants (cpu_variant_e encoding): chip lint, divide latency,
+# PVR/HID0/HID1 read-back and SRR1[KEY] on each implemented variant; CPU_603
+# and CPU_602 must fail elaboration. cpu_cfg() flags, PLL_CFG codes and SPR
+# decode are checked on every variant. The PID6 reference run compares
+# against DingusPPC MPC603E.
 VARIANT_IDS := 0 1 2
 VARIANT_REJECTED := 3 4
-.PHONY: variant-matrix
+VARIANT_ALL := 0 1 2 3 4
+# Strap codes a build must refuse, as VARIANT-PLL-message: PID7v has no 1:1
+# ratio; a PID6 2:1 code is legal but not 1:1; 0111 is no PID6 code.
+VARIANT_PLL_REJECTS := 0-0-code 1-4-1to1 1-7-code
+.PHONY: variant-matrix test-reference-pid6
 regression: variant-matrix
 variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-reject-,$(VARIANT_REJECTED)) \
-                $(addprefix variant-divider-,$(VARIANT_IDS)) $(addprefix variant-full-decode-,$(VARIANT_IDS))
+                $(addprefix variant-divider-,$(VARIANT_IDS)) $(addprefix variant-full-decode-,$(VARIANT_IDS)) \
+                $(addprefix variant-config-,$(VARIANT_ALL)) $(addprefix variant-tlb-miss-,$(VARIANT_ALL)) \
+                $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6
 	@echo "PASS: variant-matrix (variants $(VARIANT_IDS) built and checked; $(VARIANT_REJECTED) rejected)"
+variant-config-%:
+	mkdir -p $(BUILD_DIR)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_variant_config -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-config-$* ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_variant_config.sv
+	./$(BUILD_DIR)/variant-config-$*/Vtb_variant_config $(SIM_ARGS)
+variant-tlb-miss-%:
+	mkdir -p $(BUILD_DIR)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_tlb_miss -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-tlb-miss-$* $(EXCEPTION_RTL) ../tb/tb_exception_tlb_miss.sv
+	./$(BUILD_DIR)/variant-tlb-miss-$*/Vtb_exception_tlb_miss $(SIM_ARGS)
+variant-pll-reject-%:
+	mkdir -p $(BUILD_DIR)/variant-pll
+	v=$(word 1,$(subst -, ,$*)); p=$(word 2,$(subst -, ,$*)); \
+	if $(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=$$v -GPLL=$$p $(CHIP_RTL) ../tb/tb_variant_lint.sv \
+	   > $(BUILD_DIR)/variant-pll/$*.log 2>&1; then echo "FAIL: variant $$v PLL_CFG $$p elaborated"; exit 1; fi
+	grep -q "$(if $(filter code,$(word 3,$(subst -, ,$*))),is not a code of,is not 1:1)" $(BUILD_DIR)/variant-pll/$*.log
+	@echo "PASS: variant $(word 1,$(subst -, ,$*)) PLL_CFG $(word 2,$(subst -, ,$*)) rejected"
+# PLL bypass is legal on PID6 as well as its 1:1 default.
+variant-pll-accept:
+	$(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=1 -GPLL=3 $(CHIP_RTL) ../tb/tb_variant_lint.sv
+	@echo "PASS: variant 1 PLL_CFG 0011 accepted"
+test-reference-pid6: reference-checkout
+	python3 cosim/run_reference.py --build-dir $(BUILD_DIR)/reference-pid6 --model MPC603E $(REFERENCE_ARGS)
 variant-lint-%:
 	$(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=$* $(CHIP_RTL) ../tb/tb_variant_lint.sv
 variant-reject-%:

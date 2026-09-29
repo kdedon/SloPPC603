@@ -9,7 +9,7 @@
 logic int_n = 1'b1, smi_n = 1'b1, mcp_n = 1'b1, ckstp_in_n = 1'b1;
 logic hreset_n = 1'b0, sreset_n = 1'b1, qack_n = 1'b0, tben = 1'b1;
 logic tlbisync_n = 1'b1, dbdis_n = 1'b1;
-logic [0:3] pll_cfg = 4'b0000;
+logic [0:3] pll_cfg = ppc_pkg::pll_cfg_default(ppc_pkg::CPU_PID7V_603E);
 logic bfm_retry = 1'b0, bfm_hold = 1'b0, bfm_drtry = 1'b0;
 // Hides the shared TS from the chip's snooper (negative controls).
 logic snoop_hide = 1'b0;

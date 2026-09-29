@@ -4,6 +4,8 @@
 // 603e MSR/SRR0/SRR1 state for one caller-selected committed-boundary event.
 // The caller detects the oldest fault and arbitrates simultaneous causes.
 module ppc_exception_state #(
+  // Part the build models; the 603 has no SRR1[KEY] (UM C.2).
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   parameter logic [31:0] RESET_MSR  = ppc_pkg::MSR_RESET,
   parameter logic [31:0] RESET_SRR0 = 32'b0,
   parameter logic [31:0] RESET_SRR1 = 32'b0,
@@ -45,6 +47,7 @@ module ppc_exception_state #(
   output logic [31:0] srr1_o
 );
   import ppc_pkg::*;
+  localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
 
   // Program exception causes: manual bit 12 illegal and bit 13 privileged.
   localparam logic [31:0] SRR1_PROGRAM_ILLEGAL = 32'h0008_0000;
@@ -246,7 +249,8 @@ module ppc_exception_state #(
               if (ENABLE_TLB_MISS_EXCEPTIONS) begin
                 srr0_q <= event_pc_i;
                 srr1_q <= miss_srr1(msr_q[26:22], msr_q[15:0], event_miss_cr0_i,
-                  event_miss_key_i, event_kind_i == EVENT_TLB_I_MISS,
+                  CPU_CFG.has_srr1_key && event_miss_key_i,
+                  event_kind_i == EVENT_TLB_I_MISS,
                   event_miss_way_i, event_kind_i == EVENT_TLB_D_STORE);
                 // Table 4-16: miss entry uses the ordinary exception state
                 // changes plus the separate temporary r0..r3 bank.

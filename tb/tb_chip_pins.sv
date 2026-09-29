@@ -335,7 +335,7 @@ module tb_chip_pins;
     pll_cfg = 4'b0100;
     hard_reset();
     expect_checkstop("PLL_CFG strap");
-    pll_cfg = 4'b0000;
+    pll_cfg = ppc_pkg::pll_cfg_default(ppc_pkg::CPU_PID7V_603E);
     hard_reset();
     wait_word(RESETS, 1, 6000, "supported straps boot");
   endtask

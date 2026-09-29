@@ -23,12 +23,15 @@ module ppc_decode #(
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   // Illegal and invalid forms, traps, FP class, PVR/HID0/HID1/EAR and
   // eciwx/ecowx.
-  parameter bit ENABLE_FULL_DECODE = 1'b0
+  parameter bit ENABLE_FULL_DECODE = 1'b0,
+  // Part the build models; HID1 and EAR exist only where cpu_cfg() says so.
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E
 ) (
   input logic [31:0] insn_i,
   output ppc_pkg::uop_t uop_o
 );
   import ppc_pkg::*;
+  localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
 
   function automatic logic [31:0] make_rotate_mask(
     input logic [4:0] mb,
@@ -444,7 +447,8 @@ module ppc_decode #(
             end
             10'd310, 10'd438: begin
               // eciwx/ecowx: word access, EA = (rA|0) + rB, Rc reserved.
-              if (ENABLE_FULL_DECODE && !insn_i[0]) begin
+              // Parts without EAR lack them (602UM 2.3.7).
+              if (ENABLE_FULL_DECODE && CPU_CFG.has_ear && !insn_i[0]) begin
                 uop_o.illegal = 1'b0;
                 uop_o.special_op = insn_i[8] ? SPECIAL_STORE : SPECIAL_LOAD;
                 uop_o.gpr_write = !insn_i[8];
@@ -730,8 +734,9 @@ module ppc_decode #(
                   (selector == SPR_RPA))) ||
                 (ENABLE_DEBUG_EXCEPTIONS && (selector == SPR_IABR)) ||
                 (ENABLE_FULL_DECODE &&
-                 ((selector == SPR_HID0) || (selector == SPR_HID1) ||
-                  (selector == SPR_EAR) ||
+                 ((selector == SPR_HID0) ||
+                  (CPU_CFG.has_hid1 && (selector == SPR_HID1)) ||
+                  (CPU_CFG.has_ear && (selector == SPR_EAR)) ||
                   (read_form && (selector == SPR_PVR))));
               spr_form_privileged = selector[SPR_PRIV_BIT];
               // 603e ignores the MFTB/MFSPR XO difference, so XO 371 reads every

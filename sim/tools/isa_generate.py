@@ -750,7 +750,7 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
                 raise MetadataError(f"{entry['id']}: reviewed ADD forms are user-level and non-serializing")
             expected_variants = {
                 "PID6-603e": "legal", "PID7v-603e": "legal", "EC603e": "legal",
-                "603": "pending_reconciliation", "602": "pending_missing_primary",
+                "603": "legal", "602": "pending_missing_primary",
             }
             if entry["variants"] != expected_variants:
                 raise MetadataError(f"{entry['id']}: reviewed ADD-family variant status changed")
@@ -837,7 +837,7 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
         raise MetadataError("register-logical family must contain 16 concrete Rc forms")
     expected_variants = {
         "PID6-603e": "legal", "PID7v-603e": "legal", "EC603e": "legal",
-        "603": "pending_reconciliation", "602": "pending_missing_primary",
+        "603": "legal", "602": "pending_missing_primary",
     }
     for family, xo in logical_xo.items():
         family_entries = [entry for entry in logical_entries if entry["family"] == family]

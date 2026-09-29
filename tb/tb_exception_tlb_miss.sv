@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
+// VARIANT is the cpu_variant_e encoding; the 603 has no SRR1[KEY].
 module tb_exception_tlb_miss #(
-  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b1
+  parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b1,
+  parameter int VARIANT = 0
 );
   import ppc_pkg::*;
+  localparam cpu_variant_e CPU_VARIANT = cpu_variant_e'(VARIANT);
+  // SRR1 manual bit 12.
+  localparam logic [31:0] KEY_BIT = 32'h0008_0000;
+  localparam logic [31:0] KEY_MASK = cpu_cfg(CPU_VARIANT).has_srr1_key ? '1 : ~KEY_BIT;
   logic clk_i = 1'b0;
   always #5 clk_i <= ~clk_i;
   logic rst_ni;
@@ -23,7 +29,8 @@ module tb_exception_tlb_miss #(
   int checks;
 
   ppc_exception_state #(
-    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS)
+    .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+    .CPU_VARIANT(CPU_VARIANT)
   ) dut (.*);
 
   task automatic check_bit(input string label, input logic actual,
@@ -107,7 +114,8 @@ module tb_exception_tlb_miss #(
       check_bit("supported miss event", result_supported_o, 1'b1);
       check_word("miss vector", result_target_o, expected_target);
       check_word("miss SRR0", srr0_o, pc);
-      check_word("miss SRR1", srr1_o, expected_srr1);
+      check_word("miss SRR1", srr1_o, expected_srr1 & KEY_MASK);
+      check_bit("miss SRR1 KEY", srr1_o[19], key && KEY_MASK[19]);
       check_word("miss MSR", msr_o,
                  ip ? 32'h0002_0040 : 32'h0002_0000);
       check_bit("TGPR set", msr_o[17], 1'b1);
@@ -187,7 +195,7 @@ module tb_exception_tlb_miss #(
     check_word("nested SRR0", srr0_o,
                ENABLE_TLB_MISS_EXCEPTIONS ? 32'h2000_0000 : 32'h9876_5000);
     check_word("nested SRR1", srr1_o,
-               ENABLE_TLB_MISS_EXCEPTIONS ? 32'hc00e_0000 : 32'h1234_5678);
+               ENABLE_TLB_MISS_EXCEPTIONS ? 32'hc00e_0000 & KEY_MASK : 32'h1234_5678);
     check_word("nested target", result_target_o,
                ENABLE_TLB_MISS_EXCEPTIONS ? 32'h0000_1000 : 32'b0);
     drain_result();
@@ -253,8 +261,8 @@ module tb_exception_tlb_miss #(
       drain_result();
     end
 
-    $display("PASS TLB miss exception state enabled=%0d: %0d checks",
-             ENABLE_TLB_MISS_EXCEPTIONS, checks);
+    $display("PASS TLB miss exception state enabled=%0d variant=%0d: %0d checks",
+             ENABLE_TLB_MISS_EXCEPTIONS, VARIANT, checks);
     $finish;
   end
 endmodule

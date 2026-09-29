@@ -44,6 +44,12 @@ module tb_core_full_decode #(
   logic ipending = 1'b0, dpending = 1'b0;
   logic [31:0] iaddress = 32'b0, daddress = 32'b0;
   int cycles = 0, checks = 0, ctl_delay = 0;
+  // Only broadcast_enable is read.
+  /* verilator lint_off UNUSEDSIGNAL */
+  pin_status_t pin_status;
+  /* verilator lint_on UNUSEDSIGNAL */
+  logic broadcast_seen = 1'b0;
+  always @(posedge clk) if (pin_status.broadcast_enable) broadcast_seen <= 1'b1;
 
   logic [31:0] prog [logic [31:0]];
   logic [31:0] mem [logic [31:0]];
@@ -126,9 +132,7 @@ module tb_core_full_decode #(
     .dmem_rsp_valid_i(rv), .dmem_rsp_ready_o(rr), .dmem_rsp_rdata_i(rdata),
     .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(DATA_OK),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
-    /* verilator lint_off PINCONNECTEMPTY */
-    .pin_event_i('0), .pin_status_o(),
-    /* verilator lint_on PINCONNECTEMPTY */
+    .pin_event_i('0), .pin_status_o(pin_status),
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
     .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv), .retire_ready_i(tr),
@@ -256,11 +260,16 @@ module tb_core_full_decode #(
     // PVR, HID1, HID0, EAR.
     emit(asm_spr(0, 7, 287));
     emit_check(7, CFG.pvr);
-    emit(asm_spr(0, 7, 1009));
-    emit_check(7, 32'ha000_0000);
-    emit(asm_spr(1, 5, 1009));                          // HID1 write: no effect
-    emit(asm_spr(0, 7, 1009));
-    emit_check(7, 32'ha000_0000);
+    if (CFG.has_hid1) begin
+      emit(asm_spr(0, 7, 1009));
+      emit_check(7, 32'ha000_0000);
+      emit(asm_spr(1, 5, 1009));                        // HID1 write: no effect
+      emit(asm_spr(0, 7, 1009));
+      emit_check(7, 32'ha000_0000);
+    end else begin
+      emit_exc(asm_spr(0, 7, 1009), 32'h700, MSR0 | ILLEGAL);
+      emit_exc(asm_spr(1, 5, 1009), 32'h700, MSR0 | ILLEGAL);
+    end
     emit(asm_spr(0, 7, 1008));
     emit_check(7, 32'h0);
     emit(asm_spr(1, 5, 1008));                          // ICE=1, ICFI=1: request
@@ -422,6 +431,9 @@ module tb_core_full_decode #(
     check(!xfers[3].write && xfers[3].attr.kind == DMEM_ATOMIC, "lwarx class");
     check(xfers[4].write && xfers[4].attr.kind == DMEM_ATOMIC, "stwcx. class");
     check(xfers[5].attr.kind == DMEM_EXTERNAL, "user eciwx class");
+    // HID0[ABE] reaches the broadcast pin status only where it exists.
+    check(broadcast_seen == CFG.has_abe_ifem,
+          $sformatf("ABE broadcast seen=%0b", broadcast_seen));
     check(ctls.size() == 2 && ctls[0].enable && ctls[0].invalidate &&
           !ctls[1].enable && !ctls[1].invalidate,
           $sformatf("HID0 cache requests=%0d", ctls.size()));
