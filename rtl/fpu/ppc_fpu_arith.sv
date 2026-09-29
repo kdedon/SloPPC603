@@ -1434,6 +1434,8 @@ module ppc_fpu_arith #(
     logic signed [15:0] add_scale;
     logic signed [15:0] add_normal_exponent;
     logic signed [15:0] add_exponent_plus_one;
+    logic signed [15:0] add_efm_plus_one;
+    logic signed [15:0] add_scaled_plus_one;
     logic [15:0] add_denorm_abs;
     logic [7:0] add_normal_left_shift;
     logic add_tiny_before;
@@ -1554,6 +1556,8 @@ module ppc_fpu_arith #(
         add_scale = '0;
         add_normal_exponent = '0;
         add_exponent_plus_one = '0;
+        add_efm_plus_one = '0;
+        add_scaled_plus_one = '0;
         add_denorm_abs = '0;
         add_normal_left_shift = '0;
         add_tiny_before = 1'b0;
@@ -1583,18 +1587,20 @@ module ppc_fpu_arith #(
                 add_result.finite_value.magnitude[159] ? 8'd0 :
                 (add_result.leading_zero - 8'd1);
             // LZ=0 for a carry into bit 159, so one expression handles
-            // both right-one and left-normalized exponent cases.
+            // both right-one and left-normalized exponent cases. The
+            // leading-zero count enters each term last.
             add_exponent_plus_one = aligned_q.plan.exponent + 16'sd1;
-            add_normal_exponent = add_exponent_plus_one -
+            add_efm_plus_one = aligned_q.plan.exponent -
+                add_min_exponent + 16'sd1;
+            add_scaled_plus_one = add_exponent_plus_one + add_scale;
+            // A zero magnitude is the only 160 count; a carry into bit 159
+            // has count zero.
+            add_tiny_before = add_result.leading_zero != 8'd160 &&
+                add_efm_plus_one < $signed({8'd0, add_result.leading_zero});
+            add_normal_exponent =
+                ((add_tiny_before && aligned_q.req.ue) ?
+                    add_scaled_plus_one : add_exponent_plus_one) -
                 $signed({8'd0, add_result.leading_zero});
-            add_tiny_before =
-                add_result.finite_value.magnitude != 160'd0 &&
-                (add_result.finite_value.magnitude[159] ?
-                    (add_exponent_from_min < -16'sd1) :
-                    (add_exponent_from_min <
-                        $signed({8'd0, add_normal_left_shift})));
-            if (add_tiny_before && aligned_q.req.ue)
-                add_normal_exponent += add_scale;
             add_next.normal_left_shift = add_normal_left_shift;
             add_next.normal_exponent = add_normal_exponent;
             add_next.tiny_before = add_tiny_before;
