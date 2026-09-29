@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 // The compiled load/store-extension firmware with the data cache in the
-// translated cached top, on from reset, and its BIU ports on the bench BIU
-// (seeded delays). Instruction fetch keeps the randomized pin target. The
-// mailbox is seen at the LSU port, since cached stores need not reach the
-// bus; after the mailbox the bench flushes nothing and checks coverage.
+// translated cached top, on from reset, on one randomized 60x memory with
+// instruction fetch. The mailbox is seen at the LSU port, since cached
+// stores need not reach the bus; after the mailbox the bench flushes nothing
+// and checks coverage.
 /* verilator lint_off BLKSEQ */
 module tb_compiled_lsu_dcache_firmware;
   localparam bit LSU_EXTENSIONS = 1'b1;
@@ -40,10 +40,10 @@ module tb_compiled_lsu_dcache_firmware;
   function automatic string check_detail();
     return $sformatf(" bus=%08x",bus_a);
   endfunction
-  `define FW_DUMP_ARRAY biu.mem
-  ppc_pkg::dcache_bus_out_t dc_out;
-  ppc_pkg::dcache_bus_in_t dc_in;
-  logic dc_busy;
+  `define FW_DUMP_ARRAY target.mem
+  logic dc_busy,snoop_ts_n,snoop_gbl_n,cpu_artry_n,cpu_artry_oe;
+  logic [31:0] snoop_a;
+  logic [4:0] snoop_tt;
   int dc_hits=0,dc_misses=0;
   `include "compiled_firmware.svh"
 
@@ -106,30 +106,31 @@ module tb_compiled_lsu_dcache_firmware;
     .maintenance_invalidate_i(1'b1),.maintenance_cache_enable_i(1'b1),
     .maintenance_done_valid_o(maintenance_done_valid),
     .maintenance_done_ready_i(maintenance_done_ready),
-    .cache_enabled_o(cache_enabled),.dcache_bus_o(dc_out),.dcache_bus_i(dc_in),.dcache_busy_o(dc_busy),
+    .cache_enabled_o(cache_enabled),.dcache_busy_o(dc_busy),
     .maintenance_busy_o(maintenance_busy),
     .br_n_o(br_n),.bg_n_i(bg_n),.abb_n_i(1'b1),
     .abb_n_o(abb_n),.abb_oe_o(abb_oe),.ts_n_o(ts_n),.ts_oe_o(ts_oe),
     .a_o(bus_a),.tt_o(tt),.tbst_n_o(tbst_n),.tsiz_o(tsiz),
     .tc_o(tc),.ci_n_o(ci_n),.wt_n_o(wt_n),.gbl_n_o(gbl_n),
     .cse_o(cse),.addr_oe_o(addr_oe),.aack_n_i(aack_n),
-    .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),
+    .snoop_ts_n_i(snoop_ts_n),.snoop_a_i(snoop_a),.snoop_tt_i(snoop_tt),.snoop_gbl_n_i(snoop_gbl_n),
+    .artry_n_o(cpu_artry_n),.artry_oe_o(cpu_artry_oe),
     .artry_n_i(artry_n),.dbg_n_i(dbg_n),.dbb_n_i(1'b1),
     .dbb_n_o(dbb_n),.dbb_oe_o(dbb_oe),
     .d_i(data_in),.d_o(data_out),.d_oe_o(data_oe),
     .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n)
   );
   /* verilator lint_on PINCONNECTEMPTY */
-  bus60x_scripted_target_bfm #(.BASE_ADDR(BASE),.MEM_BYTES(FW_MEM_BYTES)) target(
+  bus60x_coherent_bfm #(.BASE_ADDR(BASE),.MEM_BYTES(FW_MEM_BYTES)) target(
     .clk_i(clk),.br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(bus_a),
-    .tt_i(tt),.tbst_n_i(tbst_n),.tsiz_i(tsiz),.tc_i(tc),
-    .dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.d_i(data_out),.d_oe_i(data_oe),
+    .tt_i(tt),.tbst_n_i(tbst_n),.tsiz_i(tsiz),.tc_i(tc),.ci_n_i(ci_n),.wt_n_i(wt_n),
+    .gbl_n_i(gbl_n),.dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.d_i(data_out),.d_oe_i(data_oe),
+    .artry_n_i(cpu_artry_n),.artry_oe_i(cpu_artry_oe),
     .retry_i(bfm_retry),.hold_i(bfm_hold),.drtry_i(bfm_drtry),.wait_i(bfm_wait),
     .bg_n_o(bg_n),.aack_n_o(aack_n),.artry_n_o(artry_n),.dbg_n_o(dbg_n),
-    .d_o(data_in),.ta_n_o(ta_n),.drtry_n_o(drtry_n),.tea_n_o(tea_n)
+    .d_o(data_in),.ta_n_o(ta_n),.drtry_n_o(drtry_n),.tea_n_o(tea_n),
+    .bus_ts_n_o(snoop_ts_n),.bus_a_o(snoop_a),.bus_tt_o(snoop_tt),.bus_gbl_n_o(snoop_gbl_n)
   );
-  dcache_biu_bfm #(.BASE_ADDR(BASE),.MEM_BYTES(FW_MEM_BYTES)) biu(
-    .clk_i(clk),.rst_ni(rst_n),.bus_i(dc_out),.bus_o(dc_in));
   assign tr=rst_n&&retire_enable;
   // Interrupt, cache-status and maintenance outputs are idle in this profile.
   logic unused_outputs;
@@ -149,14 +150,12 @@ module tb_compiled_lsu_dcache_firmware;
       check(!halted&&!ifetch_error&&!pimem_error&&!protocol_error&&!translation_fault,
         "unexpected transport, translation or core diagnostic");
       if(addr_oe&&ts_oe&&!ts_n)begin
-        check(abb_oe&&!abb_n&&bus_busy&&wt_n&&gbl_n&&cse==0&&bus_a>=BASE,
+        check(abb_oe&&!abb_n&&bus_busy&&cse==0&&bus_a>=BASE,
           "address ownership and range");
-        if(tc!=2)check(tbst_n&&!ci_n,"scalar inhibited data");
       end
       if(cache_hit)cache_hits++;
       if(cache_miss)cache_misses++;
       check(!irq_taken&&!dec_taken,"no interrupt source is active");
-      check(!addr_oe||!ts_oe||ts_n||tc==2,"data reached the 60x pins past the cache");
       if(dut.dcache_slot.g_cache.dc_hit)dc_hits++;
       if(dut.dcache_slot.g_cache.dc_miss)dc_misses++;
       // Mirror each store at the LSU port so the mailbox rule sees it.
@@ -206,7 +205,7 @@ module tb_compiled_lsu_dcache_firmware;
 
   initial begin
     load_image();
-    for(int i=0;i<FW_MEM_BYTES;i++)begin target.mem[i]=mem[i];biu.mem[i]=mem[i];end
+    for(int i=0;i<FW_MEM_BYTES;i++)target.mem[i]=mem[i];
     repeat(4)@(negedge clk);rst_n=1;
     @(negedge clk);start_valid=1;
     do @(posedge clk);while(!start_ready);
@@ -214,13 +213,13 @@ module tb_compiled_lsu_dcache_firmware;
     wait(mailbox_retired);
     repeat(20)@(posedge clk);
     check(align_entries==2&&partials>0&&split_writes>0&&dc_hits>0&&dc_misses>0&&
-          biu.n_read_burst>0&&!cir&&!cdr&&!cpr,
+          target.n_read_burst>0&&!cir&&!cdr&&!cpr,
           $sformatf("coverage align=%0d partial=%0d three_byte=%0d hits=%0d retries=%0d drtries=%0d ctx=%0d%0d%0d",
                     align_entries,partials,split_writes,cache_hits,target.retries,
                     target.drtries,cir,cdr,cpr));
     $display("PASS compiled load/store extensions with data cache: checks=%0d retires=%0d partial=%0d cycles=%0d align=%0d three_byte_stores=%0d dcache_hits=%0d dcache_misses=%0d fills=%0d castouts=%0d single_reads=%0d single_writes=%0d icache_hits=%0d icache_misses=%0d held=%0d",
       checks,retires,partials,cycles,align_entries,split_writes,dc_hits,dc_misses,
-      biu.n_read_burst,biu.n_write_burst,biu.n_read_single,biu.n_write_single,
+      target.n_read_burst,target.n_write_burst,target.n_read_single,target.n_write_single,
       cache_hits,cache_misses,held_fills);
     $finish;
   end

@@ -1,17 +1,24 @@
 # Data cache integration
 
-How the standalone data cache ([DATA_CACHE.md](DATA_CACHE.md)) connects to the
-core and the 60x bus. Each side has its own section.
+How the data cache ([DATA_CACHE.md](DATA_CACHE.md)) connects to the core and
+the 60x bus. In `ppc_core_bat_cached_bus60x #(.ENABLE_DCACHE(1))` the LSU feeds
+`ppc_dcache` in `ppc_dcache_slot`, whose BIU ports drive `ppc_biu`'s `dc_*`
+ports: the cache master and the snooper share the pins with fetch and the
+scalar master.
+
+```
+LSU -> ppc_dcache_slot -+-> ppc_dcache --dc_*--> ppc_biu: cache master --+
+                        |                             snooper <- TS,A,TT,GBL; -> ARTRY
+                        +-> eciwx/ecowx --> scalar master --+            |
+fetch -> I-cache ------------------> line master -----------+-- pins ----+
+```
+
+`ppc603e` and the translated measurement top build with `ENABLE_DCACHE=1`;
+HID0[DCE] resets to 0 and firmware enables the cache. Every other profile keeps
+`ENABLE_DCACHE=0`, where the slot passes the LSU through to the scalar master
+and the BIU has no cache master or snooper.
 
 ## LSU side
-
-`ppc_core_bat_cached_bus60x #(.ENABLE_DCACHE(1))` places `ppc_dcache`
-([DATA_CACHE.md](DATA_CACHE.md)) in `ppc_dcache_slot` between the LSU's
-physical port and the BIU. With `ENABLE_DCACHE=0` (default; every existing
-profile and the chip) the slot is the old pass-through and the core behaves as
-before. The cache's BIU ports leave the top as `dcache_bus_o`/`dcache_bus_i`
-(`ppc_pkg::dcache_bus_out_t`/`dcache_bus_in_t`, the contract's BIU ports
-bundled); connecting them to `ppc_biu` is the integration round's work.
 
 Source of truth: 603e UM chapter 3, §4.5 (exceptions) and Table 2-2 (HID0:
 DCE bit 17, DLOCK 19, DCFI 21, ABE 28, NOOPTI 31).
@@ -77,16 +84,6 @@ carries the status: alignment refused, or stored.
 Speculation: loads and sync may be offered before older instructions finish and
 are withdrawn on recovery as before; stores and cache-block stores wait for
 authorization. Guarded loads are not yet held to non-speculative issue.
-
-### BIU side for the integration round
-
-`ppc_biu` must take the contract's BIU ports ([DATA_CACHE.md](DATA_CACHE.md),
-BIU ports): one in-order request port (burst and single reads, burst and
-single writes, address-only), read beats with errors, in-order write/address-only
-completions, the push port ahead of other traffic, and the snoop port driven
-from the 60x snoop inputs with ARTRY from the response. It keeps the scalar
-data port for eciwx/ecowx. Instruction fetch and data traffic then share the
-pins; ordering between the I-cache fill path and data writes is the BIU's.
 
 ### Verification
 
@@ -216,9 +213,23 @@ tenure), and DBWO enveloped pushes.
 `ppc_core_bat_cached_bus60x` and `ppc603e` pass `ENABLE_DCACHE` to the slot and
 the BIU; the core top carries `snoop_ts_n_i`, `snoop_a_i`, `snoop_tt_i`,
 `snoop_gbl_n_i`, `artry_n_o` and `artry_oe_o`, and `ppc603e` connects them to
-TS, A, TT, GBL and ARTRY. The core top ties the BIU's `dc_*` ports idle: the
-integration round connects them to the cache in `ppc_dcache_slot` (which still
-rejects `ENABLE_DCACHE=1`).
+TS, A, TT, GBL and ARTRY. Inside the core top the slot's bus ports
+(`ppc_pkg::dcache_bus_out_t`/`dcache_bus_in_t`) drive the BIU's `dc_*` ports;
+the snoop response's hit flag is unused.
+
+### Ordering
+
+- Cached data: the cache master serves one request at a time in acceptance
+  order, pushes first; the cache itself orders loads after older stores.
+- eciwx/ecowx: the slot runs a cache sync (all posted writes complete) before
+  the scalar tenure and accepts nothing until it ends. The transfer does not
+  look up the cache; software keeps the word out of it (dcbf).
+- Fetch and fills: the outer master select alternates between the
+  fetch/scalar group and the cache master. Instruction coherence stays with
+  software (dcbst, sync, icbi, isync), as on the 603e; sync completes only
+  after the cache's writes have finished on the bus.
+- A snoop push keeps BR asserted and hides the group's request until the push
+  starts its address tenure.
 
 ### Verification
 

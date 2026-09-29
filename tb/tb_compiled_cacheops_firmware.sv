@@ -88,7 +88,7 @@ module tb_compiled_cacheops_firmware;
     .maintenance_invalidate_i(1'b1),.maintenance_cache_enable_i(1'b1),
     .maintenance_done_valid_o(maintenance_done_valid),
     .maintenance_done_ready_i(maintenance_done_ready),
-    .cache_enabled_o(cache_enabled),.dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
+    .cache_enabled_o(cache_enabled),.dcache_busy_o(),
     .maintenance_busy_o(maintenance_busy),
     .br_n_o(br_n),.bg_n_i(bg_n),.abb_n_i(1'b1),
     .abb_n_o(abb_n),.abb_oe_o(abb_oe),.ts_n_o(ts_n),.ts_oe_o(ts_oe),

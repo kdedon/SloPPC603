@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
-// ppc603e on a scripted 60x target, connected pin to pin. Included in a bench
-// body after `clk` is declared. The bench drives the input pin variables and
-// the target policy (bfm_retry, bfm_hold, bfm_drtry, bfm_wait); RAM is
-// memory.mem from BASE for MEM_BYTES.
+// ppc603e on a 60x memory with a second bus master, connected pin to pin.
+// Included in a bench body after `clk` is declared. The bench drives the
+// input pin variables and the target policy (bfm_retry, bfm_hold, bfm_drtry,
+// bfm_wait); RAM is memory.mem from BASE for MEM_BYTES. The address bus
+// (TS, A, TT, GBL) and ARTRY are shared with the second master.
 /* verilator lint_off ASCRANGE */
 logic int_n = 1'b1, smi_n = 1'b1, mcp_n = 1'b1, ckstp_in_n = 1'b1;
 logic hreset_n = 1'b0, sreset_n = 1'b1, qack_n = 1'b0, tben = 1'b1;
 logic tlbisync_n = 1'b1, dbdis_n = 1'b1;
 logic [0:3] pll_cfg = 4'b0000;
 logic bfm_retry = 1'b0, bfm_hold = 1'b0, bfm_drtry = 1'b0;
+// Hides the shared TS from the chip's snooper (negative controls).
+logic snoop_hide = 1'b0;
 // Withholds BG from the chip, so no new tenure starts.
 logic bus_block = 1'b0;
 int bfm_wait = 0;
@@ -25,14 +28,17 @@ logic [0:2] tsiz;
 logic [0:1] tc, cse;
 logic [0:7] dp;
 logic [63:0] target_data;
+logic bus_ts_n, bus_gbl_n;
+logic [31:0] bus_a;
+logic [4:0] bus_tt;
 
 ppc603e dut (
   .sysclk(clk), .pll_cfg_i(pll_cfg), .clk_out_o(clk_out), .clk_out_oe_o(clk_out_oe),
   .br_n_o(br_n), .bg_n_i(bg_n || bus_block), .abb_n_i(1'b1), .abb_n_o(abb_n), .abb_oe_o(abb_oe),
-  .ts_n_i(1'b1), .ts_n_o(ts_n), .ts_oe_o(ts_oe),
-  .a_i('0), .a_o(a), .ap_i('1), .ap_o(ap), .ape_n_o(ape_n),
-  .tt_i('0), .tt_o(tt), .tsiz_o(tsiz), .tbst_n_i(1'b1), .tbst_n_o(tbst_n),
-  .tc_o(tc), .ci_n_o(ci_n), .wt_n_o(wt_n), .gbl_n_i(1'b1), .gbl_n_o(gbl_n),
+  .ts_n_i(bus_ts_n || snoop_hide), .ts_n_o(ts_n), .ts_oe_o(ts_oe),
+  .a_i(bus_a), .a_o(a), .ap_i('1), .ap_o(ap), .ape_n_o(ape_n),
+  .tt_i(bus_tt), .tt_o(tt), .tsiz_o(tsiz), .tbst_n_i(1'b1), .tbst_n_o(tbst_n),
+  .tc_o(tc), .ci_n_o(ci_n), .wt_n_o(wt_n), .gbl_n_i(bus_gbl_n), .gbl_n_o(gbl_n),
   .cse_o(cse), .addr_oe_o(addr_oe),
   .aack_n_i(aack_n), .artry_n_i(artry_n), .artry_n_o(artry_out_n), .artry_oe_o(artry_oe),
   .dbg_n_i(dbg_n), .dbwo_n_i(1'b1), .dbb_n_i(1'b1), .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe),
@@ -47,19 +53,20 @@ ppc603e dut (
   .test_i(3'b111)
 );
 
-bus60x_scripted_target_bfm #(.BASE_ADDR(BASE), .MEM_BYTES(MEM_BYTES)) memory (
+bus60x_coherent_bfm #(.BASE_ADDR(BASE), .MEM_BYTES(MEM_BYTES)) memory (
   .clk_i(clk), .br_n_i(br_n), .ts_n_i(ts_n), .ts_oe_i(ts_oe), .a_i(a),
-  .tt_i(tt), .tbst_n_i(tbst_n), .tsiz_i(tsiz), .tc_i(tc),
-  .dbb_n_i(dbb_n), .dbb_oe_i(dbb_oe), .d_i({dh_out, dl_out}), .d_oe_i(data_oe),
+  .tt_i(tt), .tbst_n_i(tbst_n), .tsiz_i(tsiz), .tc_i(tc), .ci_n_i(ci_n), .wt_n_i(wt_n),
+  .gbl_n_i(gbl_n), .dbb_n_i(dbb_n), .dbb_oe_i(dbb_oe), .d_i({dh_out, dl_out}),
+  .d_oe_i(data_oe), .artry_n_i(artry_out_n), .artry_oe_i(artry_oe),
   .retry_i(bfm_retry), .hold_i(bfm_hold), .drtry_i(bfm_drtry), .wait_i(bfm_wait),
   .bg_n_o(bg_n), .aack_n_o(aack_n), .artry_n_o(artry_n), .dbg_n_o(dbg_n),
-  .d_o(target_data), .ta_n_o(ta_n), .drtry_n_o(drtry_n), .tea_n_o(tea_n)
+  .d_o(target_data), .ta_n_o(ta_n), .drtry_n_o(drtry_n), .tea_n_o(tea_n),
+  .bus_ts_n_o(bus_ts_n), .bus_a_o(bus_a), .bus_tt_o(bus_tt), .bus_gbl_n_o(bus_gbl_n)
 );
 
 // Attribute pins no check reads.
 logic unused_harness;
-assign unused_harness = ^{abb_n, ci_n, wt_n, gbl_n, artry_out_n, clk_out, tdo, cse,
-                          memory.in_data};
+assign unused_harness = ^{abb_n, clk_out, tdo, cse, memory.in_data};
 
 // Pin-level write monitor: the address tenure's attributes, then each TA of
 // our data tenure. One tenure is outstanding at a time.

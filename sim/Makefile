@@ -1299,7 +1299,7 @@ DCACHE_CORE_PARAMS := "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTE
 # must fail.
 .PHONY: test-core-dcache test-core-dcache-negative
 test: test-core-dcache test-core-dcache-negative
-DCACHE_CORE_TB := -I../tb $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/bfm/dcache_biu_bfm.sv ../tb/tb_core_dcache.sv
+DCACHE_CORE_TB := -I../tb $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_core_dcache.sv
 test-core-dcache:
 	mkdir -p $(BUILD_DIR)/core-dcache
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_dcache --Mdir $(BUILD_DIR)/core-dcache $(DCACHE_CORE_TB)
@@ -1408,11 +1408,28 @@ test-core-bat-machine-check:
 # The ppc603e package top: directed system-pin checks at the pins, and lint
 # of the top and its Quartus measurement wrapper.
 CHIP_RTL := $(shell cat ../rtl/chip_files.f)
+.PHONY: test-chip-dcache-coherence test-chip-dcache-coherence-negative
+test: test-chip-dcache-coherence test-chip-dcache-coherence-negative
+CHIP_COHERENCE_TB := -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_dcache_coherence.sv
+test-chip-dcache-coherence:
+	mkdir -p $(BUILD_DIR)/chip-dcache-coherence
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence --Mdir $(BUILD_DIR)/chip-dcache-coherence $(CHIP_COHERENCE_TB)
+	for s in 1 2 3; do ./$(BUILD_DIR)/chip-dcache-coherence/Vtb_chip_dcache_coherence +SEED=$$s $(SIM_ARGS) || exit 1; done
+test-chip-dcache-coherence-negative:
+	mkdir -p $(BUILD_DIR)/chip-dcache-coherence-negative
+	for m in 1 2; do \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence -GMUTATION=$$m --Mdir $(BUILD_DIR)/chip-dcache-coherence-negative/m$$m $(CHIP_COHERENCE_TB) > $(BUILD_DIR)/chip-dcache-coherence-negative/build$$m.log 2>&1 || exit 1; \
+	  if ./$(BUILD_DIR)/chip-dcache-coherence-negative/m$$m/Vtb_chip_dcache_coherence > $(BUILD_DIR)/chip-dcache-coherence-negative/run$$m.log 2>&1; then \
+	    echo "FAIL: mutation $$m passed"; exit 1; fi; \
+	  echo "mutation $$m rejected: $$(grep -m1 -o '%Fatal.*\|%Error.*' $(BUILD_DIR)/chip-dcache-coherence-negative/run$$m.log | cut -c1-120)"; \
+	  rm -rf $(BUILD_DIR)/chip-dcache-coherence-negative/m$$m; \
+	done
+	@echo "PASS: chip coherence negative controls rejected"
 .PHONY: test-chip-pins lint-chip
 test: test-chip-pins
 test-chip-pins:
 	mkdir -p $(BUILD_DIR)/chip-pins
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins --Mdir $(BUILD_DIR)/chip-pins -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_scripted_target_bfm.sv ../tb/tb_chip_pins.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins --Mdir $(BUILD_DIR)/chip-pins -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_pins.sv
 	./$(BUILD_DIR)/chip-pins/Vtb_chip_pins $(SIM_ARGS)
 lint: lint-chip
 lint-chip:
@@ -1420,7 +1437,8 @@ lint-chip:
 	cd ../quartus/chip && $(VERILATOR) --lint-only -Wall --top-module ppc603e_measure -f files.f
 
 # Line coverage of the translated cached 60x top from the compiled MMU stress
-# (all retry and TEA modes) and cache-operation firmware. Needs their ELFs (see
+# (all retry and TEA modes) and cache-operation firmware, and of the data
+# cache, its bus master and snooper from the LSU image and the chip MMU stress. Needs their ELFs (see
 # toolchain/README.md). The summary gates total rtl/ coverage and every case
 # arm of the control modules against coverage_waivers.txt.
 COVERAGE_DIR := $(BUILD_DIR)/coverage
@@ -1434,6 +1452,8 @@ coverage:
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile cacheops --elf $(FIRMWARE_DIR)/cacheops/smoke.elf --build-dir $(COVERAGE_DIR)/cacheops
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile lsu --elf $(FIRMWARE_DIR)/lsu/smoke.elf --build-dir $(COVERAGE_DIR)/lsu
 	python3 ../toolchain/run-rtl-smoke.py --coverage --profile full-decode --elf $(FIRMWARE_DIR)/full-decode/smoke.elf --build-dir $(COVERAGE_DIR)/full-decode
+	python3 ../toolchain/run-rtl-smoke.py --coverage --profile lsu-dcache --elf $(FIRMWARE_DIR)/lsu/smoke.elf --build-dir $(COVERAGE_DIR)/lsu-dcache
+	python3 ../toolchain/run-rtl-smoke.py --coverage --profile chip-mmu-stress --elf $(FIRMWARE_DIR)/chip-mmu-stress/smoke.elf --build-dir $(COVERAGE_DIR)/chip-mmu-stress
 	$(MAKE) coverage-summary
 coverage-summary:
 	python3 tools/coverage_summary.py --waivers coverage_waivers.txt --min-total $(COVERAGE_MIN) $(COVERAGE_DIR)/*/cov-*.dat

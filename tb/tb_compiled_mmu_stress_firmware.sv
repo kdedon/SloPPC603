@@ -161,7 +161,7 @@ module tb_compiled_mmu_stress_firmware;
     .cache_enabled_o(cache_enabled),
     // No data cache in this profile.
     /* verilator lint_off PINCONNECTEMPTY */
-    .dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
+    .dcache_busy_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .maintenance_busy_o(maintenance_busy),
     .br_n_o(br_n),.bg_n_i(bg_n),

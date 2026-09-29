@@ -12,9 +12,9 @@ module ppc603e #(
   // The PLL_CFG[0-3] strap this build runs at; HID1[PC0-PC3] reads it.
   // Only the 1:1 and bypass codes match a SYSCLK-clocked core.
   parameter logic [3:0] PLL_CFG = 4'b0000,
-  // Data cache bus master and snooping: TS, A, TT and GBL are snooped and
-  // ARTRY answers from the cache.
-  parameter bit ENABLE_DCACHE = 1'b0
+  // Data cache, bus master and snooper: TS, A, TT and GBL are snooped and
+  // ARTRY answers from the cache. HID0[DCE] resets to 0 (UM Table 4-8).
+  parameter bit ENABLE_DCACHE = 1'b1
 ) (
   // Clocks.
   input  logic        sysclk,
@@ -279,7 +279,7 @@ module ppc603e #(
     .maintenance_valid_i(1'b0), .maintenance_ready_o(),
     .maintenance_invalidate_i(1'b0), .maintenance_cache_enable_i(1'b0),
     .maintenance_done_valid_o(), .maintenance_done_ready_i(1'b1),
-    .cache_enabled_o(), .dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
+    .cache_enabled_o(), .dcache_busy_o(),
     .maintenance_busy_o(),
     .br_n_o(core_br_n), .bg_n_i, .abb_n_i,
     .abb_n_o(core_abb_n), .abb_oe_o(core_abb_oe),

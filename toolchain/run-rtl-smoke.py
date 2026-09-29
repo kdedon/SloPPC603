@@ -142,6 +142,7 @@ PROFILES = {
     'residuals': ('tb_compiled_residuals_firmware', BAT_CACHED, RESIDUALS, 0),
 }
 # Benches whose target is not the default for their source lists.
+COHERENT_TARGET = {'lsu-dcache', 'chip-mmu-stress', 'chip-lsu', 'chip-machine-check', 'chip-full-decode'}
 SCRIPTED_TARGET = {'cacheops', 'lsu', 'lsu-dcache', 'machine-check', 'full-decode', 'chip-mmu-stress',
                    'chip-lsu', 'chip-machine-check', 'chip-full-decode', 'residuals'}
 RETRY_TARGET = {'mmu-stress-cached', 'mmu-stress-retry', 'mmu-stress-tea'}
@@ -218,8 +219,8 @@ def main():
     scripted = args.profile in SCRIPTED_TARGET
     profile_params = ([f'-GFAULT_PROFILE={int(table_fault_profile)}']
                       if manifests in (BAT_BUS, BAT_CACHED) and args.profile.startswith('table-') else [])
-    bfms = (['../tb/bfm/bus60x_scripted_target_bfm.sv', '../tb/bfm/dcache_biu_bfm.sv']
-            if args.profile == 'lsu-dcache' else
+    bfms = (['../tb/bfm/bus60x_coherent_bfm.sv']
+            if args.profile in COHERENT_TARGET else
             ['../tb/bfm/bus60x_scripted_target_bfm.sv'] if scripted else
             ['../tb/bfm/bus60x_retry_target_bfm.sv'] if args.profile in RETRY_TARGET else
             ['../tb/bfm/bus60x_delay_target_bfm.sv'] if manifests in (BAT_BUS, BAT_CACHED) else

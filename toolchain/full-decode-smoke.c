@@ -96,20 +96,23 @@ int main(void) {
     __asm__ volatile(".long 0xfca00890" ::: "memory");
     if (fp_count != 3) return 0x80000311;
 
-    /* PVR and HID0; ICE starts set (the cache reset mode). */
+    /* PVR and HID0; ICE starts set (the cache reset mode). DCE stays as
+       the boot code left it: the data cache may hold modified lines. */
+    unsigned dce = READ_SPR(1008) & 0x00004000u;
     if (READ_SPR(287) != 0x00070200u) return 0x80000400;
-    if (READ_SPR(1008) != 0x00008000u) return 0x80000401;
+    if (READ_SPR(1008) != (0x00008000u | dce)) return 0x80000401;
     v = work(40);
-    WRITE_SPR(1008, 0x00008800);            /* ICFI: flash invalidate */
-    WRITE_SPR(1008, 0x00008000);            /* no change: no request */
+    WRITE_SPR(1008, 0x00008800u | dce);     /* ICFI: flash invalidate */
+    WRITE_SPR(1008, 0x00008000u | dce);     /* no change: no request */
     if (work(40) != v) return 0x80000402;
-    WRITE_SPR(1008, 0x00000000);            /* ICE off: single-beat fetch */
-    if (work(40) != v || READ_SPR(1008) != 0) return 0x80000403;
-    WRITE_SPR(1008, 0x00008000);            /* ICE on */
+    WRITE_SPR(1008, dce);                   /* ICE off: single-beat fetch */
+    if (work(40) != v || READ_SPR(1008) != dce) return 0x80000403;
+    WRITE_SPR(1008, 0x00008000u | dce);     /* ICE on */
     if (work(40) != v) return 0x80000404;
-    WRITE_SPR(1008, 0xffffffffu);
-    if (READ_SPR(1008) != 0xbff9fc99u) return 0x80000405;
-    WRITE_SPR(1008, 0x00008000);            /* ICE unchanged: no request */
+    /* Every bit, less DCFI while the data cache is on. */
+    WRITE_SPR(1008, dce ? ~0x00000400u : 0xffffffffu);
+    if (READ_SPR(1008) != (dce ? 0xbff9f899u : 0xbff9fc99u)) return 0x80000405;
+    WRITE_SPR(1008, 0x00008000u | dce);     /* ICE unchanged: no request */
     if (work(40) != v) return 0x80000406;
 
     /* eciwx/ecowx: DSI with EAR[E] = 0, transfers with EAR[E] = 1. */
@@ -124,6 +127,8 @@ int main(void) {
         ext_out != 0) return 0x80000501;
     WRITE_SPR(282, 0x80000005u);
     if (READ_SPR(282) != 0x80000005u) return 0x80000502;
+    /* External transfers bypass the data cache: keep both words out of it. */
+    __asm__ volatile("dcbf 0,%0; dcbf 0,%1; sync" :: "r"(&ext_word), "r"(&ext_out) : "memory");
     __asm__ volatile("eciwx %0,0,%1" : "=r"(v) : "r"(&ext_word) : "memory");
     if (v != 0x13572468u) return 0x80000503;
     __asm__ volatile("ecowx %0,0,%1" :: "r"(0x2468aceu), "r"(&ext_out) : "memory");
