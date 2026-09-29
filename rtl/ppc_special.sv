@@ -162,6 +162,8 @@ module ppc_special #(
 );
   import ppc_pkg::*;
   localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
+  localparam bit HAS_602 = cpu_has_602_ext(CPU_VARIANT);
+  localparam logic [31:0] MSR_MASK = msr_implemented(HAS_602);
 
   typedef struct packed {
     logic bank;
@@ -243,7 +245,9 @@ module ppc_special #(
   logic exception_result_valid, exception_result_supported;
   logic [31:0] exception_result_target;
   logic exception_state_load_valid, exception_state_load_ready;
-  logic [2:0] exception_state_load_enable;
+  logic [3:0] exception_state_load_enable;
+  // 602 SPRs; ESASRR lives with the MSR.
+  logic [31:0] tcr_q, ibr_q, sebr_q, ser_q, sp_q, lt_q, esasrr;
   logic rfi_state_unsupported, dsi_event;
   logic block_zero_event;
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
@@ -443,7 +447,8 @@ module ppc_special #(
     (ENABLE_TGPR ? 32'h0002_0000 : 32'b0) |
     (ENABLE_MACHINE_CHECK ? MACHINE_CHECK_MSR_MASK : 32'b0) |
     (ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0) |
-    (ENABLE_FULL_DECODE ? 32'h0000_0900 : 32'b0);
+    (ENABLE_FULL_DECODE ? 32'h0000_0900 : 32'b0) |
+    (HAS_602 ? MSR_602_MASK : 32'b0);
 
   // TGPR combines with any other mode: every exception entry clears it.
   function automatic logic live_mode_supported(input logic [31:0] value);
@@ -456,13 +461,16 @@ module ppc_special #(
            (op == SPECIAL_PROGRAM_PRIV) || (op == SPECIAL_ALIGNMENT) ||
            (op == SPECIAL_ISI) ||
            (ENABLE_FULL_DECODE &&
-            ((op == SPECIAL_TRAP) || (op == SPECIAL_FP_UNAVAILABLE)));
+            ((op == SPECIAL_TRAP) || (op == SPECIAL_FP_UNAVAILABLE))) ||
+           (ENABLE_FULL_DECODE && HAS_602 &&
+            ((op == SPECIAL_EMULATION_TRAP) || (op == SPECIAL_ESA) ||
+             (op == SPECIAL_DSA)));
   endfunction
   assign dispatch_context = ENABLE_LIVE_CONTEXT && context_operation(uop_i.special_op);
   assign frontend_fence_o = rst_ni && fence_q;
   assign context_valid_o = rst_ni && (state_q == S_CONTEXT_INSTALL);
   assign mtmsr_unsupported = !live_mode_supported(a_q);
-  assign mtmsr_value = (msr_o & ~MSR_IMPLEMENTED_MASK) | (a_q & LIVE_SUPPORTED_MASK);
+  assign mtmsr_value = (msr_o & ~MSR_MASK) | (a_q & LIVE_SUPPORTED_MASK);
 
   // Restored MSR bits rfi cannot honor without live context.
   localparam logic [31:0] RFI_UNSUPPORTED_ACTIVE_MASK = 32'h0000_bf33;
@@ -530,6 +538,13 @@ module ppc_special #(
       10'd1009: exec_value = {PLL_CFG, 28'b0} & CPU_CFG.hid1_rmask;
       10'd282: exec_value = ear_q;
       10'd287: exec_value = CPU_CFG.pvr;
+      10'd984: exec_value = tcr_q;
+      10'd986: exec_value = ibr_q;
+      10'd987: exec_value = esasrr;
+      10'd990: exec_value = sebr_q;
+      10'd991: exec_value = ser_q;
+      10'd1021: exec_value = sp_q;
+      10'd1022: exec_value = lt_q;
       default: exec_value = '0;
     endcase
 
@@ -555,7 +570,9 @@ module ppc_special #(
       if (uop_q.special_op == SPECIAL_MTSPR && uop_q.spr == 10'd1)
         result_o.value = a_q;
       if (uop_q.special_op == SPECIAL_MFMSR)
-        result_o.value = msr_o & MSR_IMPLEMENTED_MASK;
+        result_o.value = msr_o & MSR_MASK;
+      if (uop_q.special_op == SPECIAL_MFROM)
+        result_o.value = {25'b0, mfrom_rom(a_q[9:0])};
       if (uop_q.special_op == SPECIAL_MFCR)
         result_o.value = cr_snapshot_q;
       if (uop_q.special_op == SPECIAL_MTCRF)
@@ -748,7 +765,7 @@ module ppc_special #(
      (exception_event_kind == EVENT_TLB_D_STORE));
 
   assign rfi_state_unsupported = ENABLE_LIVE_CONTEXT ?
-    !live_mode_supported(rfi_msr(msr_o, srr1_o)) :
+    !live_mode_supported(rfi_msr(msr_o, srr1_o, MSR_MASK)) :
     |(srr1_o & RFI_UNSUPPORTED_ACTIVE_MASK);
   assign fetch_machine_check = ENABLE_MACHINE_CHECK &&
     (uop_q.special_op == SPECIAL_ISI) &&
@@ -853,6 +870,15 @@ module ppc_special #(
           exception_event_valid = ENABLE_FULL_DECODE;
           exception_event_kind = EVENT_FP_UNAVAILABLE;
         end
+        SPECIAL_EMULATION_TRAP: begin
+          exception_event_valid = ENABLE_FULL_DECODE && HAS_602;
+          exception_event_kind = EVENT_EMULATION_TRAP;
+        end
+        SPECIAL_ESA, SPECIAL_DSA: begin
+          exception_event_valid = ENABLE_FULL_DECODE && HAS_602;
+          exception_event_kind = (uop_q.special_op == SPECIAL_ESA) ?
+                                 EVENT_ESA : EVENT_DSA;
+        end
         default: ;
       endcase
     end
@@ -867,12 +893,13 @@ module ppc_special #(
   assign exception_state_load_valid = ENABLE_SUPERVISOR_EXCEPTIONS &&
     (state_q == S_HOLD) && commit_match &&
     (((uop_q.special_op == SPECIAL_MTSPR) &&
-      ((uop_q.spr == 10'd26) || (uop_q.spr == 10'd27))) ||
+      ((uop_q.spr == 10'd26) || (uop_q.spr == 10'd27) ||
+       (HAS_602 && (uop_q.spr == SPR_ESASRR)))) ||
      (ENABLE_LIVE_CONTEXT && (uop_q.special_op == SPECIAL_MTMSR) &&
       !mtmsr_unsupported));
   assign exception_state_load_enable = (uop_q.special_op == SPECIAL_MTMSR) ?
-    3'b001 : (uop_q.spr == 10'd26) ?
-    3'b010 : 3'b100;
+    4'b0001 : (uop_q.spr == 10'd26) ? 4'b0010 :
+    (uop_q.spr == 10'd27) ? 4'b0100 : 4'b1000;
 
   ppc_exception_state #(
     .CPU_VARIANT(CPU_VARIANT),
@@ -891,6 +918,8 @@ module ppc_special #(
     .event_miss_key_i(miss_context.pr ? miss_context.sr[29] :
                                         miss_context.sr[30]),
     .event_miss_way_i(miss_context.way),
+    // The page SE bits arrive with the 602 MMU; until then esa is refused.
+    .event_esa_enable_i(1'b0),
     .result_valid_o(exception_result_valid),
     .result_ready_i((state_q == S_EXCEPTION_RESULT) &&
       (!data_exception_event || !ENABLE_LIVE_CONTEXT ||
@@ -901,7 +930,8 @@ module ppc_special #(
     .state_load_ready_o(exception_state_load_ready),
     .state_load_enable_i(exception_state_load_enable),
     .state_load_msr_i(mtmsr_value), .state_load_srr0_i(a_q),
-    .state_load_srr1_i(a_q), .msr_o, .srr0_o, .srr1_o
+    .state_load_srr1_i(a_q), .state_load_esasrr_i(a_q),
+    .msr_o, .srr0_o, .srr1_o, .esasrr_o(esasrr)
   );
   assign exception_commit_redirect_o = rst_ni &&
     ((state_q == S_MMU_REDIRECT) || (ENABLE_LIVE_CONTEXT && (state_q == S_CONTEXT_REDIRECT)) ||
@@ -1302,6 +1332,12 @@ module ppc_special #(
       hash2_q <= '0;
       hid0_q <= HID0_RESET & CPU_CFG.hid0_wmask;
       ear_q <= '0;
+      tcr_q <= '0;
+      ibr_q <= '0;
+      sebr_q <= '0;
+      ser_q <= '0;
+      sp_q <= '0;
+      lt_q <= '0;
       timer_read_value_q <= '0;
     end else begin
       if (timer_read_execute && step_run) timer_read_value_q <= exec_value;
@@ -1327,6 +1363,12 @@ module ppc_special #(
             10'd1010: if (ENABLE_DEBUG_EXCEPTIONS) iabr_q <= a_q;
             10'd1008: if (ENABLE_FULL_DECODE) hid0_q <= a_q & CPU_CFG.hid0_wmask;
             10'd282: if (ENABLE_FULL_DECODE && CPU_CFG.has_ear) ear_q <= a_q & EAR_WMASK;
+            10'd984: if (ENABLE_FULL_DECODE && HAS_602) tcr_q <= a_q & TCR_WMASK;
+            10'd986: if (ENABLE_FULL_DECODE && HAS_602) ibr_q <= a_q & IBR_WMASK;
+            10'd990: if (ENABLE_FULL_DECODE && HAS_602) sebr_q <= a_q & SEBR_WMASK;
+            10'd991: if (ENABLE_FULL_DECODE && HAS_602) ser_q <= a_q;
+            10'd1021: if (ENABLE_FULL_DECODE && HAS_602) sp_q <= a_q;
+            10'd1022: if (ENABLE_FULL_DECODE && HAS_602) lt_q <= a_q;
             default: ;
           endcase
         end

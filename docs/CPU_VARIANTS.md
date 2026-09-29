@@ -103,7 +103,9 @@ SRR1[KEY].
 
 Main: little-endian mode is excluded ([RELEASE.md](RELEASE.md)); `MSR[LE]`
 is only copied from ILE on entry. The misaligned-LE split therefore has no
-consumer yet. Vectors 0x1500/0x1600 and IBR do not exist. A misaligned
+consumer yet. On the 602, `ppc_exception_state` enters the 0x1600 emulation
+trap under the MSR[IP] prefix and stores MSR[AP, SA] (V7); the IBR prefix
+and the 0x1500 watchdog do not exist. A misaligned
 eciwx/ecowx takes the alignment exception on every variant, PID6 included:
 splitting an external-control transfer needs LSU and BIU work, deferred to
 V13 with the misaligned-LE split (`cfg.misaligned_ecxwx_hw` has no consumer).
@@ -125,6 +127,10 @@ V13 with the misaligned-LE split (`cfg.misaligned_ecxwx_hw` has no consumer).
 Unimplemented SPRs follow the PEM rule (illegal-instruction program exception)
 in every variant.
 
+Main (V7): the 602 HID0 mask is `0x8af97caf`; TCR, IBR, SEBR, SER, SP and LT
+are stored in `ppc_special.sv` and ESASRR in `ppc_exception_state.sv`, masked
+as [FULL_DECODE.md](FULL_DECODE.md#602) lists. Only ESASRR has an effect yet.
+
 Main (V3): `ppc_decode.sv` accepts HID1 only when `cfg.has_hid1` and EAR,
 eciwx and ecowx only when `cfg.has_ear`; otherwise they take the
 illegal-instruction program exception (privileged-instruction in problem
@@ -145,9 +151,15 @@ PID6, and the ABE broadcast pin status is tied off there (V2).
 | Dispatch | 2 per cycle, SRU executes add/cmp | = | no add/cmp in SRU | **1 per cycle**, 4-entry IQ, no SRU |
 | Source | UM App. B PDF 407–410 | = | UM §C.2.1.4–5 PDF 430–431; §C.2.3 PDF 432 | 602UM §1.2.3 PDF 61 / 1-25; §2.3.4.3.6 PDF 126–127 / 2-50–2-51; §2.3.7 PDF 141–144 / 2-65–2-68; App. A PDF 416–428; PDF 212, 316 |
 
-Main: [ISA_MATRIX.md](references/ISA_MATRIX.md) already carries a `Variants`
-column (`603:pending_reconciliation`, `602:pending_missing_primary`), generated
-from `sim/spec/isa.json`. `ppc_decode.sv` has one table.
+Main: [ISA_MATRIX.md](references/ISA_MATRIX.md) carries a `Variants` column
+generated from `sim/spec/isa.json`. The 602 column (V7) marks the strings,
+double-precision arithmetic and fctiw `emulation_trap`, eciwx/ecowx
+`illegal`, the other FP forms and FP loads/stores `tag_checked` (executed only
+when the SP/LT tags allow, V12), and the rest `legal`; esa, dsa and mfrom are
+602-only and absent from the matrix. `ppc_decode.sv` has one table; the 602
+rows are in [FULL_DECODE.md](FULL_DECODE.md#602). The 602 has one dispatch
+per cycle and no SRU; the core is single-issue with no SRU, so nothing
+changes.
 
 ### 1.7 Integer and LSU timing
 
@@ -245,8 +257,8 @@ function automatic cpu_cfg_t cpu_cfg(cpu_variant_e v);  // PID7v defaults, one c
 function automatic bit cpu_variant_supported(cpu_variant_e v);
 ```
 
-The 602 HID0 masks are zero until its layout is encoded (V7); its build is
-rejected before then.
+The 602 HID0 mask follows 602UM Table 2-7 (V7); its core build stays
+rejected until V8–V11.
 
 Consumers copy the record into a local `localparam` at the top of the module, as
 `hdl-design-organization` §2 prescribes. Structural sizes (sets, ways, TLB sets)
@@ -360,6 +372,16 @@ choice and a test of that choice, not a fidelity claim:
 - PVR revision fields for all variants (manuals give only starting levels).
 - 602 TLB index: Figure 5-9 and two tables give EA16–19 and 16 `tlbie`s; §2.3.6.3.3
   prose and the `tlbld`/`tlbli` pseudocode say EA15–19 and 32. V6 follows the figure.
+- 602 HID0[SL]: Table 2-7 gives bit 26, Figure 2-5 draws it at 25; the table
+  is used.
+- 602 mfrom in problem state: its entry says illegal instruction, 602UM
+  4.5.7.2 says privileged for every supervisor instruction; privileged is used.
+- 602 esa/dsa refusal: a program exception with no named SRR1 cause; the
+  privileged cause (bit 13) is used.
+- 602 rfi and MSR[AP, SA]: exceptions clear them and SRR1 bits 8–9; rfi loads
+  them from SRR1 like bits 5–7 (PEM rfi), so an exception return drops an esa
+  session unless the handler sets them.
+- 602 SP/LT reset: undefined on the part; zero in simulation.
 
 ## Status
 
@@ -370,7 +392,8 @@ choice and a test of that choice, not a fidelity claim:
 | V2 | Done: PID6 stores neither HID0[IFEM] nor HID0[ABE], and its ABE broadcast pin status is tied off; `ppc603e` rejects a `PLL_CFG` outside the variant's table or not running the bus 1:1, and defaults to PLL bypass on PID7v and EC603e; `test-reference-pid6` runs the reference corpus with the RTL at PID6 against DingusPPC `MPC603E`. Open: PID6 misaligned eciwx/ecowx in hardware (deferred to V13, see §1.4) |
 | V3 | Done: `cfg.has_hid1`, `cfg.has_ear` and `cfg.has_srr1_key` gate decode (HID1; EAR, eciwx, ecowx) and SRR1[KEY]; absent SPRs take the illegal-instruction program exception; ISA-matrix 603 column is `legal` for all 335 reviewed forms (UM App. C lists no ISA difference) |
 | V6 | Done: `TLB_SETS` (32 or 16, other values fail elaboration) sizes `ppc_tlb_service`, its entry RAMs, the router's micro-TLB set flush and `tlbie`/`tlbld`/`tlbli` set selection; `ppc_core_bat` derives it from `cfg.tlb_sets` unless a bench overrides it. 16 sets index EA16–19 and tag EA4–15 (602UM Figure 5-9; the manual's EA15–19 prose is a 603e copy, see [TLB_SERVICE.md](TLB_SERVICE.md#geometry-parameter)). Miss derivation (IMISS/DMISS, ICMP/DCMP, HASH1/HASH2) and SRR1[WAY] need no change. The 602 NE/SE/WE bits and protection-only mode stay for V9 |
-| V4, V5, V7 onward | Not started |
+| V7 | Done: 602 decode (strings and double-precision FP to the emulation trap, eciwx/ecowx and EAR illegal, esa/dsa/mfrom, TCR/IBR/ESASRR/SEBR/SER/SP/LT), HID0 mask, MSR[AP, SA], ESASRR with esa/dsa, and a minimal 0x1600 entry under the MSR[IP] prefix; ISA-matrix 602 column filled. The 602 core stays rejected. Open for V8: IBR vector prefix, 0x1500 watchdog from TCR. Open for V9: the esa SE bit (`event_esa_enable_i` is tied low, so esa is refused in the core) |
+| V4, V5, V8 onward | Not started |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
 behave the same. DingusPPC distinguishes PID6 from PID7v only by PVR, and
@@ -406,6 +429,23 @@ slow-corner Fmax 67.54 MHz; at 15.152 ns (66 MHz) 0 failing endpoints. 11,426
 ALMs, 52 RAM blocks, 2 DSP blocks. Before this round the variant code did not
 analyze in Quartus 18.1 (module-scope `$fatal` generate blocks, `inside`, struct
 member select in a parameter); V6 fixed those.
+Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 6cc2577, 2026-09-29.
+Pass (V7): 603 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line
+coverage 74.4% (1775/2386, 14 waived arms, 21 runs; the new 602 arms of
+`ppc_special` and `ppc_exception_state` are unreachable while the 602 core is
+rejected). `variant-matrix` adds: `variant-decode-sweep-1..4` (85376 probes
+each; on the 602, 36 string words to the emulation trap, 5140 FP words to
+`SPECIAL_FPU_EMULATE`, esa/dsa, mfrom and the seven 602 SPRs decoded, EAR and
+eciwx/ecowx illegal; on the others none of these); `tb_exception_602` on
+variants 0–4 (50 checks on the 602: AP/SA storage and entry clear, SRR1
+exclusion, rfi restore, 0x1600 entry, esa/dsa success and refusal, ESASRR
+mask; 31 on the others: nothing stored, the three 602 events rejected);
+`tb_variant_config` 1078 checks per variant (602 HID0 mask, 602 forms and
+SPRs, all 1024 mfrom indices against the formula); `variant-special-lint-602`
+(`ppc_special` elaborates cleanly at `CPU_602`). `tb_core_full_decode` 8817
+checks, 729 retirements on 0–2. This does not establish any 602 core
+behavior: IBR relocation, the watchdog, esa SE gating and the 602 MMU,
+caches and bus remain.
 
 Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 9d5b8ff, 2026-09-29.
 Pass: 593 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage

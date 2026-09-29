@@ -131,7 +131,12 @@ package ppc_pkg;
     SPECIAL_TRAP,
     // Floating-point class. Dispatch turns it into SPECIAL_FP_UNAVAILABLE
     // while MSR[FP] = 0 or no FPU is present.
-    SPECIAL_FPU, SPECIAL_FP_UNAVAILABLE
+    SPECIAL_FPU, SPECIAL_FP_UNAVAILABLE,
+    // 602 (602UM 2.3.4.3.6, 2.3.7, 4.5.18): the emulation trap; a
+    // double-precision FP form, which becomes FP unavailable while MSR[FP] = 0
+    // and the emulation trap otherwise; esa, dsa and mfrom.
+    SPECIAL_EMULATION_TRAP, SPECIAL_FPU_EMULATE,
+    SPECIAL_ESA, SPECIAL_DSA, SPECIAL_MFROM
   } special_op_t;
   // 60x transfer class of a data request (UM Table 7-1).
   // DMEM_CACHE is a data-cache operation (cache_op_t in rid); it reaches only
@@ -193,6 +198,14 @@ package ppc_pkg;
   localparam logic [9:0] SPR_HID0 = 10'd1008;
   localparam logic [9:0] SPR_HID1 = 10'd1009;
   localparam logic [9:0] SPR_IABR = 10'd1010;
+  // 602 only (602UM Table 2-6; SP is 1021, see 2.1.2.4.1).
+  localparam logic [9:0] SPR_TCR = 10'd984;
+  localparam logic [9:0] SPR_IBR = 10'd986;
+  localparam logic [9:0] SPR_ESASRR = 10'd987;
+  localparam logic [9:0] SPR_SEBR = 10'd990;
+  localparam logic [9:0] SPR_SER = 10'd991;
+  localparam logic [9:0] SPR_SP = 10'd1021;
+  localparam logic [9:0] SPR_LT = 10'd1022;
   // XER
   localparam int XER_SO_BIT = 31;
   localparam int XER_CA_BIT = 29;
@@ -330,6 +343,8 @@ package ppc_pkg;
 
   // ---- MSR and exception events -------------------------------------------
   // HDL bit = 31 - manual bit.
+  localparam int MSR_AP   = 23;  // 602 only
+  localparam int MSR_SA   = 22;  // 602 only
   localparam int MSR_POW  = 18;
   localparam int MSR_TGPR = 17;
   localparam int MSR_ILE  = 16;
@@ -350,14 +365,18 @@ package ppc_pkg;
   localparam logic [31:0] MSR_SRR1_MASK = 32'h87c0_ffff;
   // Hard reset: IP=1 (UM 4.5.1).
   localparam logic [31:0] MSR_RESET = 32'h0000_0040;
+  // 602 AP and SA (602UM Table 2-1). Exception entry clears them and does
+  // not save them in SRR1 (602UM Table 4-8); rfi restores them from SRR1.
+  localparam logic [31:0] MSR_602_MASK = 32'h00c0_0000;
 
   function automatic logic [31:0] rfi_msr(
     input logic [31:0] old_msr,
-    input logic [31:0] saved_srr1
+    input logic [31:0] saved_srr1,
+    input logic [31:0] implemented = MSR_IMPLEMENTED_MASK
   );
     logic [31:0] next_msr;
     next_msr = ((old_msr & ~MSR_SRR1_MASK) | (saved_srr1 & MSR_SRR1_MASK)) &
-               MSR_IMPLEMENTED_MASK;
+               implemented;
     // rfi always clears the 603e TGPR bit.
     next_msr[MSR_TGPR] = 1'b0;
     return next_msr;
@@ -385,7 +404,11 @@ package ppc_pkg;
     EVENT_SOFT_RESET      = 5'd17,
     EVENT_SMI             = 5'd18,
     EVENT_MACHINE_CHECK_PIN = 5'd19,
-    EVENT_MACHINE_CHECK_APE = 5'd20
+    EVENT_MACHINE_CHECK_APE = 5'd20,
+    // 602 only.
+    EVENT_EMULATION_TRAP  = 5'd21,
+    EVENT_ESA             = 5'd22,
+    EVENT_DSA             = 5'd23
   } exception_event_t;
 
   // Chip-pin events into the core, already synchronized. soft_reset and mcp
@@ -488,6 +511,10 @@ package ppc_pkg;
   localparam logic [31:0] HID0_MASK_PID7V = 32'hbff9_fc99;
   // PID6 lacks IFEM (bit 24) and ABE (bit 28).
   localparam logic [31:0] HID0_MASK_PID6 = 32'hbff9_fc11;
+  // 602 (602UM Table 2-7): EMCP, SBCLK, ECLK, DOZE, NAP, SLEEP, DPM, RISEG,
+  // NHR, DCE, ILOCK, DLOCK, ICFI, DCFI, PO, SL (bit 26 per the table; the
+  // figure draws it at 25), WIMG. No ICE.
+  localparam logic [31:0] HID0_MASK_602 = 32'h8af9_7caf;
   function automatic cpu_cfg_t cpu_cfg(cpu_variant_e v);
     cpu_cfg_t c;
     c.pvr = 32'h0007_0101;
@@ -547,10 +574,8 @@ package ppc_pkg;
         c.icache_ways = 3'd2;
         c.dcache_ways = 3'd2;
         c.tlb_sets = 6'd16;
-        // The 602 HID0 layout (602UM Table 2-7) is not encoded; nothing is
-        // stored.
-        c.hid0_wmask = 32'h0;
-        c.hid0_rmask = 32'h0;
+        c.hid0_wmask = HID0_MASK_602;
+        c.hid0_rmask = HID0_MASK_602;
         c.has_ear = 1'b0;
         c.has_abe_ifem = 1'b0;
         c.misaligned_le_hw = 1'b0;
@@ -576,7 +601,37 @@ package ppc_pkg;
     c = cpu_cfg(v);
     return int'(c.tlb_sets);
   endfunction
+  function automatic bit cpu_has_602_ext(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return c.has_602_ext;
+  endfunction
   /* verilator lint_on UNUSEDSIGNAL */
+  // MSR bits the variant stores.
+  function automatic logic [31:0] msr_implemented(logic has_602_ext);
+    return MSR_IMPLEMENTED_MASK | (has_602_ext ? MSR_602_MASK : 32'b0);
+  endfunction
+  // 602 mfrom ROM: 7-bit round(256 * log10(1 + 10^(-i/256))) for i < 602,
+  // zero beyond (602UM 2.3.7). The table falls monotonically, so entry i
+  // counts the steps above i; MFROM_STEP[v-1] is the first index below v.
+  localparam logic [9:0] MFROM_STEP [77] = '{
+    10'd601, 10'd478, 10'd421, 10'd383, 10'd355, 10'd332, 10'd313, 10'd296,
+    10'd282, 10'd269, 10'd258, 10'd247, 10'd237, 10'd228, 10'd220, 10'd212,
+    10'd204, 10'd197, 10'd191, 10'd184, 10'd178, 10'd172, 10'd167, 10'd161,
+    10'd156, 10'd151, 10'd146, 10'd142, 10'd137, 10'd133, 10'd129, 10'd125,
+    10'd121, 10'd117, 10'd113, 10'd109, 10'd106, 10'd102, 10'd99, 10'd95,
+    10'd92, 10'd89, 10'd85, 10'd82, 10'd79, 10'd76, 10'd73, 10'd70, 10'd68,
+    10'd65, 10'd62, 10'd59, 10'd57, 10'd54, 10'd51, 10'd49, 10'd46, 10'd44,
+    10'd41, 10'd39, 10'd37, 10'd34, 10'd32, 10'd30, 10'd27, 10'd25, 10'd23,
+    10'd21, 10'd18, 10'd16, 10'd14, 10'd12, 10'd10, 10'd8, 10'd6, 10'd4,
+    10'd2};
+  function automatic logic [6:0] mfrom_rom(input logic [9:0] index);
+    logic [6:0] value;
+    value = '0;
+    for (int v = 0; v < 77; v++)
+      if (index < MFROM_STEP[v]) value = value + 7'd1;
+    return value;
+  endfunction
   // Variants whose differences from the PID7v are all implemented.
   function automatic bit cpu_variant_supported(cpu_variant_e v);
     return (v == CPU_PID7V_603E) || (v == CPU_PID6_603E) || (v == CPU_EC603E);
@@ -634,6 +689,13 @@ package ppc_pkg;
   localparam int HID0_EBA = 29;
   // EAR: E (manual bit 0) and RID (manual bits 28-31, UM 2.1.1).
   localparam logic [31:0] EAR_WMASK = 32'h8000_000f;
+  // 602 SPRs (602UM 2.1.2.3-4); SER, SP and LT are fully defined. Hard
+  // reset clears IBR (2.1.2.4.3); the rest reset to zero here, which for SP
+  // and LT is a simulation choice, not a silicon value (2.1.2.4.1).
+  localparam logic [31:0] TCR_WMASK = 32'hfe00_0000;     // TI, CRE, L2E, NWE, WIE, SLT
+  localparam logic [31:0] IBR_WMASK = 32'hffff_0000;
+  localparam logic [31:0] ESASRR_WMASK = 32'h0000_000f;  // PR, AP, SA, EE
+  localparam logic [31:0] SEBR_WMASK = 32'hfffe_0000;
   localparam int EAR_E = 31;
   localparam logic [31:0] SPRG_RESET = 32'h0000_0000;
   // ---- end SPR write masks and reset values -------------------------------

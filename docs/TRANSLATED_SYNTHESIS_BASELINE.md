@@ -1,5 +1,16 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-29 CPU variant round V7 (602 decode and SPRs)
+
+Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,
+merge of `cpu-variant-v7` onto `8d536b2` plus uncommitted merge resolution, 2026-09-29.
+**Meets 50 MHz** at every corner: setup +4.933 / +4.450 / +7.632 / +7.959 ns, hold
++0.250 / +0.239 / +0.126 / +0.112 ns (slow 100 C, slow -40 C, fast 100 C, fast -40 C).
+**Misses 66 MHz:** 15 endpoints fail at 15.152 ns, worst -0.398 ns, all from
+`special|a_q` into `station|entry`, `completion|packets_q` and `rename|values`. The V6
+fit on `8d536b2` met 66 MHz at 67.54 MHz, so the V7 special-lane additions deepen this
+path in the PID7v build; restoring 66 MHz is the first optimization item.
+
 ## 2026-09-28 data cache on
 
 Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,
