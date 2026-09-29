@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
+# Resource and timing measurement of the demonstration system (docs/DEMO_SOC.md).
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CSEBA6U23I7
+set_global_assignment -name TOP_LEVEL_ENTITY ppc603e_demo_soc
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 2
+set_global_assignment -name SEED 1
+set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
+set_global_assignment -name SDC_FILE ppc603e_demo.sdc
+set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fifo.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fetch.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_decode.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dispatch.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_divider.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_iu.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_regfile_gpr.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_rename.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_completion.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_flags.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_exception_state.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_timer.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_miss_derive.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_special.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_lsu_sequence.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bat_translate.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bat_service.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_segment_registers.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_tlb_ram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_tlb_service.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_micro_tlb.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bat_memory_router.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core_bat.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_arbiter.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_line_read.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_ram_sdp.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_ram_lut.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_icache.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_master_select.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_two_master.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_icache_managed.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dcache_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_ram_sdp_be.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dcache.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dcache_slot.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_cache_master.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_snoop.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_biu.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core_bat_cached_bus60x.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc603e.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_bus60x_target.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_ram_sp_be.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_ram_dp_be.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_video.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/ppc603e_demo_soc.sv
+set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni
+set_instance_assignment -name VIRTUAL_PIN ON -to int_n_i
+set_instance_assignment -name VIRTUAL_PIN ON -to ce_pix_o
+set_instance_assignment -name VIRTUAL_PIN ON -to r_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to g_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to b_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to hs_o
+set_instance_assignment -name VIRTUAL_PIN ON -to vs_o
+set_instance_assignment -name VIRTUAL_PIN ON -to de_o
+set_instance_assignment -name VIRTUAL_PIN ON -to hblank_o
+set_instance_assignment -name VIRTUAL_PIN ON -to vblank_o
+set_instance_assignment -name VIRTUAL_PIN ON -to console_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to console_data_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to exit_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to exit_code_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to checkstop_o
