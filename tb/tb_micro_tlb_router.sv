@@ -317,14 +317,14 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
                     sr_value(1'(rnd(0, 1)), 1'(rnd(0, 1)),
                              rnd(0, 7) == 0, vsid)));
         2, 3: begin
-          int load;
-          load = tlb_entry(OP_TLBLD, 1'(rnd(0, 1)),
+          int fill;
+          fill = tlb_entry(OP_TLBLD, 1'(rnd(0, 1)),
                     {ea[31:12], 12'b0}, vsid, 1'(rnd(0, 1)),
                     rpn, rnd(0, 3) != 0,
                     4'(rnd(0, 15)) & 4'b1110,
                     2'(rnd(0, 3)));
           // 602: random NE, SE and the protection-only word's low bits.
-          if (HAS_602) ops[load].ext = 5'(rnd(0, 31));
+          if (HAS_602) ops[fill].ext = 5'(rnd(0, 31));
         end
         4: void'(tlbie(ea));
         5: void'(tlb_entry(OP_MGMT, 1'(rnd(0, 1)),
@@ -367,7 +367,7 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
   endfunction
 
   initial begin
-    int accesses, hits;
+    int accesses, hits, esa_records;
     record_t r;
     rng_state = 32'h2545_f491 ^ (32'(SEED) * 32'h9e37_79b9);
     directed();
@@ -379,10 +379,14 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
     check(fast.record_count == slow.record_count,
           $sformatf("record counts differ: %0d vs %0d", fast.record_count,
                     slow.record_count));
-    for (int i = 0; i < fast.record_count; i++)
+    esa_records = 0;
+    for (int i = 0; i < fast.record_count; i++) begin
+      if (fast.records[i].esa != 2'b00) esa_records++;
       check(fast.records[i] == slow.records[i],
             $sformatf("record %0d differs:\n  micro-TLB %s\n  slow path %s", i,
                       show(fast.records[i]), show(slow.records[i])));
+    end
+    if (HAS_602) check(esa_records > 0, "no fetch carried an esa permission");
 
     foreach (expects[e]) begin
       r = fast.records[first_record(expects[e].op)];
@@ -421,8 +425,8 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
       $display("stream %0d: 64 fetches in %0d cycles with micro-TLB, %0d without",
                i, fast.stream_cycles[i], slow.stream_cycles[i]);
     check(hits * 2 > accesses, "micro-TLB hit fewer than half the accesses");
-    $display("tb_micro_tlb_router PASS: sets=%0d %0d checks, %0d operations, %0d records, %0d cycles",
-             TLB_SETS, checks, op_count, fast.record_count, fast.cycle);
+    $display("tb_micro_tlb_router PASS: sets=%0d 602=%0b %0d checks, %0d operations, %0d records (%0d with esa), %0d cycles",
+             TLB_SETS, HAS_602, checks, op_count, fast.record_count, esa_records, fast.cycle);
     $finish;
   end
 

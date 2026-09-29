@@ -143,6 +143,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1,
     logic c;
     logic [3:0] wimg;
     logic [1:0] pp;
+    logic ext;
   } tlb_entry_t;
   function automatic tlb_entry_t tlb_entry(input bit bank, input bit way,
                                            input logic [SET_W-1:0] set);

@@ -19,6 +19,7 @@ module tb_fetch_recovery;
   logic rsp_valid, rsp_ready;
   logic [31:0] rsp_insn;
   fetch_fault_t rsp_fault;
+  esa_enable_t rsp_esa = ESA_DENIED;
   logic packet_valid, packet_ready;
   fetch_packet_t packet;
   logic unused_quiescent;
@@ -29,7 +30,7 @@ module tb_fetch_recovery;
     .redirect_i(redirect), .redirect_target_i(redirect_target),
     .req_valid_o(req_valid), .req_ready_i(req_ready), .req_addr_o(req_addr),
     .rsp_valid_i(rsp_valid), .rsp_ready_o(rsp_ready), .rsp_insn_i(rsp_insn), .rsp_fault_i(rsp_fault),
-    .rsp_esa_i(ppc_pkg::ESA_DENIED),
+    .rsp_esa_i(rsp_esa),
     .quiescent_o(unused_quiescent), .packet_valid_o(packet_valid), .packet_ready_i(packet_ready), .packet_o(packet)
   );
 
@@ -87,12 +88,13 @@ module tb_fetch_recovery;
     @(negedge clk);
     rsp_insn = instruction;
     rsp_fault = FETCH_OK;
+    rsp_esa = esa_enable_t'(instruction[1:0]);
     rsp_valid = 1'b1;
     packet_ready = 1'b1;
     #1;
     require(rsp_ready && packet_valid, "ordinary response handshake absent");
-    require(packet.pc == expected_pc && packet.insn == instruction && packet.fault == FETCH_OK,
-            "ordinary response packet wrong");
+    require(packet.pc == expected_pc && packet.insn == instruction && packet.fault == FETCH_OK &&
+            packet.esa == rsp_esa, "ordinary response packet wrong");
     @(posedge clk);
     #1;
     rsp_valid = 1'b0;

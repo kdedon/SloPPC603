@@ -138,6 +138,8 @@ module tb_special_watchdog;
   logic icache_ctl_valid_o;
   logic icache_ctl_enable_o;
   logic icache_ctl_invalidate_o;
+  logic [4:0] tlb_fill_req_ext_o;
+  ppc_pkg::mmu_602_t mmu_602_o;
   /* verilator lint_on UNUSEDSIGNAL */
   ppc_special #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
