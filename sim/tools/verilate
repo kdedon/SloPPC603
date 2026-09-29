@@ -3,6 +3,12 @@
 # Copyright (c) 2026 Kevin Dedon
 # Runs Verilator, then deletes the precompiled headers left in the model
 # directory. Each is about 70 MB and only speeds up the build that made it.
+# Cache C++ objects when ccache is installed. The precompiled headers need
+# the sloppiness settings to be cacheable.
+if [ -z "${OBJCACHE+x}" ] && command -v ccache >/dev/null 2>&1; then
+  export OBJCACHE=ccache
+  export CCACHE_SLOPPINESS="${CCACHE_SLOPPINESS:-pch_defines,time_macros,include_file_mtime,include_file_ctime}"
+fi
 mdir=obj_dir
 prev=
 for arg in "$@"; do
