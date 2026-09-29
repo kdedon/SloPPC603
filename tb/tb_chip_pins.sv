@@ -299,7 +299,8 @@ module tb_chip_pins;
     check(tb_values.size() > 4 && tb_values[$] > tb_values[0] &&
           tb_values[$] - tb_values[0] <= 32'd500, "TBEN=1 counts once per four clocks");
     tben = 1'b0;
-    repeat (20) @(negedge clk);
+    // Posted stores from before the stop drain first.
+    repeat (200) @(negedge clk);
     tb_values.delete();
     repeat (1500) @(negedge clk);
     check(tb_values.size() > 4 && tb_values[$] == tb_values[0], "TBEN=0 stops the time base");

@@ -119,6 +119,12 @@ module ppc_translated_measure (
   output logic addr_oe_o,
   input logic aack_n_i,
   input logic artry_n_i,
+  input logic snoop_ts_n_i,
+  input logic [31:0] snoop_a_i,
+  input logic [4:0] snoop_tt_i,
+  input logic snoop_gbl_n_i,
+  output logic artry_n_o,
+  output logic artry_oe_o,
   input logic dbg_n_i,
   input logic dbb_n_i,
   output logic dbb_n_o,
@@ -441,6 +447,20 @@ module ppc_translated_measure (
   always_ff @(posedge clk_i) aack_n_i_ibq <= aack_n_i;
   logic artry_n_i_ibq;
   always_ff @(posedge clk_i) artry_n_i_ibq <= artry_n_i;
+  logic snoop_ts_n_i_ibq;
+  always_ff @(posedge clk_i) snoop_ts_n_i_ibq <= snoop_ts_n_i;
+  logic [31:0] snoop_a_i_ibq;
+  always_ff @(posedge clk_i) snoop_a_i_ibq <= snoop_a_i;
+  logic [4:0] snoop_tt_i_ibq;
+  always_ff @(posedge clk_i) snoop_tt_i_ibq <= snoop_tt_i;
+  logic snoop_gbl_n_i_ibq;
+  always_ff @(posedge clk_i) snoop_gbl_n_i_ibq <= snoop_gbl_n_i;
+  logic artry_n_o_od, artry_n_o_obq;
+  always_ff @(posedge clk_i) artry_n_o_obq <= artry_n_o_od;
+  assign artry_n_o = artry_n_o_obq;
+  logic artry_oe_o_od, artry_oe_o_obq;
+  always_ff @(posedge clk_i) artry_oe_o_obq <= artry_oe_o_od;
+  assign artry_oe_o = artry_oe_o_obq;
   logic dbg_n_i_ibq;
   always_ff @(posedge clk_i) dbg_n_i_ibq <= dbg_n_i;
   logic dbb_n_i_ibq;
@@ -491,6 +511,8 @@ module ppc_translated_measure (
     .ENABLE_MACHINE_CHECK(1'b1),
     .ENABLE_DEBUG_EXCEPTIONS(1'b1),
     .ENABLE_FULL_DECODE(1'b1),
+    .ENABLE_PIN_INTERRUPTS(1'b1),
+    .ENABLE_DCACHE(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
   ) dut (.rst_ni(rst_sync_q[1]),
     .clk_i,
@@ -501,6 +523,9 @@ module ppc_translated_measure (
     .timebase_enable_i(timebase_enable_i_ibq),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),
+    .snoop_ts_n_i(snoop_ts_n_i_ibq), .snoop_a_i(snoop_a_i_ibq),
+    .snoop_tt_i(snoop_tt_i_ibq), .snoop_gbl_n_i(snoop_gbl_n_i_ibq),
+    .artry_n_o(artry_n_o_od), .artry_oe_o(artry_oe_o_od),
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken_o_od),
     .decrementer_pc_o(decrementer_pc_o_od),
@@ -591,7 +616,7 @@ module ppc_translated_measure (
     .cache_enabled_o(cache_enabled_o_od),
     // The data cache is absent from this profile.
     /* verilator lint_off PINCONNECTEMPTY */
-    .dcache_bus_o(), .dcache_bus_i('0), .dcache_busy_o(),
+    .dcache_busy_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .maintenance_busy_o(maintenance_busy_o_od),
     .br_n_o(br_n_o_od),

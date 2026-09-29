@@ -103,12 +103,13 @@ module tb_core_bat_machine_check #(
       .ENABLE_RUNTIME_BAT(1'b1),
       .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut (
       `MC_COMMON_PORTS,
+      .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),
       .pin_event_i('0), .pin_status_o(),
       .icache_hit_o(), .icache_miss_o(), .icache_busy_o(),
       .maintenance_valid_i(1'b0), .maintenance_ready_o(),
       .maintenance_invalidate_i(1'b0), .maintenance_cache_enable_i(1'b0),
       .maintenance_done_valid_o(), .maintenance_done_ready_i(1'b0),
-      .cache_enabled_o(), .dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
+      .cache_enabled_o(), .dcache_busy_o(),
     .maintenance_busy_o()
     );
   end else begin : scalar

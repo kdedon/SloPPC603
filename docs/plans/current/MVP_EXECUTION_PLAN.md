@@ -886,3 +886,10 @@ core's loads, stores, cache operations, reservation and sync; its bus side is
 exported for the BIU round. Fresh on the merge: `make -C sim ci`. MVP 89.25% →
 91.25%. See [integration](../../DATA_CACHE_INTEGRATION.md).
 
+## Data cache integration round — accepted (2026-09-28)
+
+BIU cache master, 60x snooping and pin wiring joined to the LSU side; the cache is
+on in `ppc603e` and the translated top. Fresh on the merge: `make -C sim ci` and
+translated/chip fits (both meet 66 MHz). MVP 91.25% → 95.73%. Next: wave 3,
+release packaging and final signoff. See [integration](../../DATA_CACHE_INTEGRATION.md).
+

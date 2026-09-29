@@ -416,7 +416,7 @@ package ppc_pkg;
     logic broadcast_enable;  // ABE
   } pin_status_t;
   // Data-cache BIU ports (docs/DATA_CACHE.md) bundled for the core
-  // composition's boundary.
+  // composition, between the cache slot and the BIU.
   typedef struct packed {
     logic         req_valid;
     logic [2:0]   req_kind;

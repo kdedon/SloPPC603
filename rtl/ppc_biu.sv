@@ -3,10 +3,15 @@
 `default_nettype none
 // Bus interface unit: the 60x masters behind one pin set. The scalar master
 // carries uncached instruction reads and every data access; the line master
-// carries cache-line reads. One address tenure is outstanding at a time.
+// carries cache-line reads. With ENABLE_DCACHE a third master serves the
+// data cache's request and push ports, and the snoop front end answers other
+// masters' global tenures. One address tenure is outstanding at a time.
 module ppc_biu #(
   // A TEA on an instruction read returns an error response.
-  parameter bit RETURN_IFETCH_ERROR = 1'b0
+  parameter bit RETURN_IFETCH_ERROR = 1'b0,
+  parameter bit ENABLE_DCACHE = 1'b0,
+  // Negative-test mutations of the cache master and snoop front end.
+  parameter int MUTATION = 0
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -46,6 +51,35 @@ module ppc_biu #(
   output logic [255:0] line_rsp_line_o,
   output logic        line_rsp_error_o,
 
+  // Data cache BIU ports (docs/DATA_CACHE.md).
+  input  logic         dc_req_valid_i,
+  output logic         dc_req_ready_o,
+  input  logic [2:0]   dc_req_kind_i,
+  input  logic [4:0]   dc_req_tt_i,
+  input  logic [31:0]  dc_req_addr_i,
+  input  logic [7:0]   dc_req_be_i,
+  input  logic [3:0]   dc_req_wimg_i,
+  input  logic         dc_req_gbl_i,
+  input  logic [1:0]   dc_req_cse_i,
+  input  logic [255:0] dc_req_data_i,
+  output logic         dc_rd_valid_o,
+  output logic [63:0]  dc_rd_data_o,
+  output logic         dc_rd_error_o,
+  output logic         dc_wr_done_o,
+  output logic         dc_wr_error_o,
+  input  logic         dc_push_valid_i,
+  output logic         dc_push_ready_o,
+  input  logic [31:0]  dc_push_addr_i,
+  input  logic [255:0] dc_push_data_i,
+  output logic         dc_push_done_o,
+  output logic         dc_push_error_o,
+  output logic         dc_snoop_valid_o,
+  output logic [31:0]  dc_snoop_addr_o,
+  output logic [4:0]   dc_snoop_tt_o,
+  input  logic         dc_snoop_rsp_valid_i,
+  input  logic         dc_snoop_rsp_artry_i,
+  input  logic         dc_snoop_rsp_push_i,
+
   output logic        busy_o,
   output logic        protocol_error_o,
 
@@ -66,8 +100,15 @@ module ppc_biu #(
   output logic        gbl_n_o,
   output logic [1:0]  cse_o,
   output logic        addr_oe_o,
+  // Snoop inputs: the shared TS, A, TT and GBL pins.
+  input  logic        ts_n_i,
+  input  logic [31:0] a_i,
+  input  logic [4:0]  tt_i,
+  input  logic        gbl_n_i,
   input  logic        aack_n_i,
   input  logic        artry_n_i,
+  output logic        artry_n_o,
+  output logic        artry_oe_o,
   input  logic        dbg_n_i,
   input  logic        dbb_n_i,
   output logic        dbb_n_o,
@@ -114,6 +155,20 @@ module ppc_biu #(
   logic [63:0] line_d_o;
   logic line_d_oe, line_ta_n, line_drtry_n, line_tea_n;
   logic selector_busy, selector_protocol_error;
+  // Pin side of the instruction and scalar group.
+  logic grp_br_n, grp_bg_n, grp_abb_in_n;
+  logic grp_abb_n, grp_abb_oe, grp_ts_n, grp_ts_oe;
+  logic [31:0] grp_a;
+  logic [4:0] grp_tt;
+  logic grp_tbst_n;
+  logic [2:0] grp_tsiz;
+  logic [1:0] grp_tc, grp_cse;
+  logic grp_ci_n, grp_wt_n, grp_gbl_n, grp_addr_oe;
+  logic grp_aack_n, grp_artry_n, grp_dbg_n, grp_dbb_in_n;
+  logic grp_dbb_n, grp_dbb_oe;
+  logic [63:0] grp_d_o;
+  logic grp_d_oe, grp_ta_n, grp_drtry_n, grp_tea_n;
+  logic grp_busy, dcache_busy, dcache_protocol_error;
 
   ppc_bus60x_arbiter #(.RETURN_IFETCH_ERROR(RETURN_IFETCH_ERROR)) scalar_router (
     .clk_i, .rst_ni,
@@ -224,14 +279,186 @@ module ppc_biu #(
     .line_ta_n_o(line_ta_n), .line_drtry_n_o(line_drtry_n),
     .line_tea_n_o(line_tea_n),
     .busy_o(selector_busy), .protocol_error_o(selector_protocol_error),
-    .br_n_o, .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o, .ts_oe_o,
-    .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o, .wt_n_o, .gbl_n_o,
-    .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbb_n_i,
-    .dbb_n_o, .dbb_oe_o, .d_o, .d_oe_o, .ta_n_i, .drtry_n_i, .tea_n_i
+    .br_n_o(grp_br_n), .bg_n_i(grp_bg_n), .abb_n_i(grp_abb_in_n),
+    .abb_n_o(grp_abb_n), .abb_oe_o(grp_abb_oe), .ts_n_o(grp_ts_n),
+    .ts_oe_o(grp_ts_oe), .a_o(grp_a), .tt_o(grp_tt), .tbst_n_o(grp_tbst_n),
+    .tsiz_o(grp_tsiz), .tc_o(grp_tc), .ci_n_o(grp_ci_n), .wt_n_o(grp_wt_n),
+    .gbl_n_o(grp_gbl_n), .cse_o(grp_cse), .addr_oe_o(grp_addr_oe),
+    .aack_n_i(grp_aack_n), .artry_n_i(grp_artry_n), .dbg_n_i(grp_dbg_n),
+    .dbb_n_i(grp_dbb_in_n), .dbb_n_o(grp_dbb_n), .dbb_oe_o(grp_dbb_oe),
+    .d_o(grp_d_o), .d_oe_o(grp_d_oe), .ta_n_i(grp_ta_n),
+    .drtry_n_i(grp_drtry_n), .tea_n_i(grp_tea_n)
   );
 
-  assign busy_o = selector_busy || scalar_router_busy || scalar_busy || line_busy;
+  assign grp_busy = selector_busy || scalar_busy || line_busy;
+
+  generate
+  if (ENABLE_DCACHE) begin : g_dcache
+    logic cm_br_n, cm_bg_n, cm_abb_in_n;
+    logic cm_abb_n, cm_abb_oe, cm_ts_n, cm_ts_oe;
+    logic [31:0] cm_a;
+    logic [4:0] cm_tt;
+    logic cm_tbst_n;
+    logic [2:0] cm_tsiz;
+    logic [1:0] cm_tc, cm_cse;
+    logic cm_ci_n, cm_wt_n, cm_gbl_n, cm_addr_oe;
+    logic cm_aack_n, cm_artry_n, cm_dbg_n, cm_dbb_in_n;
+    logic cm_dbb_n, cm_dbb_oe;
+    logic [63:0] cm_d_o;
+    logic cm_d_oe, cm_ta_n, cm_drtry_n, cm_tea_n;
+    logic cm_busy, cm_protocol_error, push_hold, push_accept, push_wait;
+    logic push_due;
+    logic outer_br_n, outer_busy, outer_protocol_error, snoop_protocol_error;
+    logic outer_ts_oe;
+
+    ppc_bus60x_cache_master #(.MUTATION(MUTATION)) cache_bus (
+      .clk_i, .rst_ni,
+      .req_valid_i(dc_req_valid_i), .req_ready_o(dc_req_ready_o),
+      .req_kind_i(dc_req_kind_i), .req_tt_i(dc_req_tt_i),
+      .req_addr_i(dc_req_addr_i), .req_be_i(dc_req_be_i),
+      .req_wimg_i(dc_req_wimg_i), .req_gbl_i(dc_req_gbl_i),
+      .req_cse_i(dc_req_cse_i), .req_data_i(dc_req_data_i),
+      .rd_valid_o(dc_rd_valid_o), .rd_data_o(dc_rd_data_o),
+      .rd_error_o(dc_rd_error_o),
+      .wr_done_o(dc_wr_done_o), .wr_error_o(dc_wr_error_o),
+      .push_valid_i(dc_push_valid_i), .push_ready_o(dc_push_ready_o),
+      .push_addr_i(dc_push_addr_i), .push_data_i(dc_push_data_i),
+      .push_done_o(dc_push_done_o), .push_error_o(dc_push_error_o),
+      .push_hold_i(push_hold), .push_accept_o(push_accept),
+      .push_wait_o(push_wait),
+      .busy_o(cm_busy), .protocol_error_o(cm_protocol_error),
+      .br_n_o(cm_br_n), .bg_n_i(cm_bg_n), .abb_n_i(cm_abb_in_n),
+      .abb_n_o(cm_abb_n), .abb_oe_o(cm_abb_oe), .ts_n_o(cm_ts_n),
+      .ts_oe_o(cm_ts_oe), .a_o(cm_a), .tt_o(cm_tt), .tbst_n_o(cm_tbst_n),
+      .tsiz_o(cm_tsiz), .tc_o(cm_tc), .ci_n_o(cm_ci_n), .wt_n_o(cm_wt_n),
+      .gbl_n_o(cm_gbl_n), .cse_o(cm_cse), .addr_oe_o(cm_addr_oe),
+      .aack_n_i(cm_aack_n), .artry_n_i(cm_artry_n), .dbg_n_i(cm_dbg_n),
+      .dbb_n_i(cm_dbb_in_n), .dbb_n_o(cm_dbb_n), .dbb_oe_o(cm_dbb_oe),
+      .d_i(d_i), .d_o(cm_d_o), .d_oe_o(cm_d_oe), .ta_n_i(cm_ta_n),
+      .drtry_n_i(cm_drtry_n), .tea_n_i(cm_tea_n)
+    );
+
+    // While a push is due the group's request is hidden, so the cache master
+    // wins the next tenure.
+    ppc_bus60x_two_master outer_mux (
+      .clk_i, .rst_ni,
+      .scalar_busy_i(grp_busy), .scalar_br_n_i(grp_br_n || push_due),
+      .scalar_bg_n_o(grp_bg_n), .scalar_abb_n_o(grp_abb_in_n),
+      .scalar_abb_n_i(grp_abb_n), .scalar_abb_oe_i(grp_abb_oe),
+      .scalar_ts_n_i(grp_ts_n), .scalar_ts_oe_i(grp_ts_oe),
+      .scalar_a_i(grp_a), .scalar_tt_i(grp_tt),
+      .scalar_tbst_n_i(grp_tbst_n), .scalar_tsiz_i(grp_tsiz),
+      .scalar_tc_i(grp_tc), .scalar_ci_n_i(grp_ci_n),
+      .scalar_wt_n_i(grp_wt_n), .scalar_gbl_n_i(grp_gbl_n),
+      .scalar_cse_i(grp_cse), .scalar_addr_oe_i(grp_addr_oe),
+      .scalar_aack_n_o(grp_aack_n), .scalar_artry_n_o(grp_artry_n),
+      .scalar_dbg_n_o(grp_dbg_n), .scalar_dbb_n_o(grp_dbb_in_n),
+      .scalar_dbb_n_i(grp_dbb_n), .scalar_dbb_oe_i(grp_dbb_oe),
+      .scalar_d_i(grp_d_o), .scalar_d_oe_i(grp_d_oe),
+      .scalar_ta_n_o(grp_ta_n), .scalar_drtry_n_o(grp_drtry_n),
+      .scalar_tea_n_o(grp_tea_n),
+      .line_busy_i(cm_busy), .line_br_n_i(cm_br_n),
+      .line_bg_n_o(cm_bg_n), .line_abb_n_o(cm_abb_in_n),
+      .line_abb_n_i(cm_abb_n), .line_abb_oe_i(cm_abb_oe),
+      .line_ts_n_i(cm_ts_n), .line_ts_oe_i(cm_ts_oe),
+      .line_a_i(cm_a), .line_tt_i(cm_tt),
+      .line_tbst_n_i(cm_tbst_n), .line_tsiz_i(cm_tsiz),
+      .line_tc_i(cm_tc), .line_ci_n_i(cm_ci_n),
+      .line_wt_n_i(cm_wt_n), .line_gbl_n_i(cm_gbl_n),
+      .line_cse_i(cm_cse), .line_addr_oe_i(cm_addr_oe),
+      .line_aack_n_o(cm_aack_n), .line_artry_n_o(cm_artry_n),
+      .line_dbg_n_o(cm_dbg_n), .line_dbb_n_o(cm_dbb_in_n),
+      .line_dbb_n_i(cm_dbb_n), .line_dbb_oe_i(cm_dbb_oe),
+      .line_d_i(cm_d_o), .line_d_oe_i(cm_d_oe),
+      .line_ta_n_o(cm_ta_n), .line_drtry_n_o(cm_drtry_n),
+      .line_tea_n_o(cm_tea_n),
+      .busy_o(outer_busy), .protocol_error_o(outer_protocol_error),
+      .br_n_o(outer_br_n), .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o,
+      .ts_oe_o(outer_ts_oe), .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o,
+      .wt_n_o, .gbl_n_o, .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i,
+      .dbb_n_i, .dbb_n_o, .dbb_oe_o, .d_o, .d_oe_o, .ta_n_i, .drtry_n_i,
+      .tea_n_i
+    );
+
+    ppc_bus60x_snoop #(.MUTATION(MUTATION)) snoop (
+      .clk_i, .rst_ni,
+      .ts_n_i, .a_i, .tt_i, .gbl_n_i,
+      .own_ts_oe_i(outer_ts_oe), .aack_n_i,
+      .snoop_valid_o(dc_snoop_valid_o), .snoop_addr_o(dc_snoop_addr_o),
+      .snoop_tt_o(dc_snoop_tt_o),
+      .snoop_rsp_valid_i(dc_snoop_rsp_valid_i),
+      .snoop_rsp_artry_i(dc_snoop_rsp_artry_i),
+      .snoop_rsp_push_i(dc_snoop_rsp_push_i),
+      .push_accept_i(push_accept), .push_hold_o(push_hold),
+      .artry_n_o, .artry_oe_o, .protocol_error_o(snoop_protocol_error)
+    );
+
+    // A due push keeps BR asserted until its tenure starts; UM §8.3.1 allows
+    // BR without a following tenure.
+    assign push_due = push_hold || push_wait;
+    assign br_n_o = outer_br_n && !push_due;
+    assign ts_oe_o = outer_ts_oe;
+    assign dcache_busy = outer_busy || cm_busy || push_hold;
+    assign dcache_protocol_error = outer_protocol_error || cm_protocol_error ||
+      snoop_protocol_error;
+  end else begin : g_no_dcache
+    assign br_n_o = grp_br_n;
+    assign grp_bg_n = bg_n_i;
+    assign grp_abb_in_n = abb_n_i;
+    assign abb_n_o = grp_abb_n;
+    assign abb_oe_o = grp_abb_oe;
+    assign ts_n_o = grp_ts_n;
+    assign ts_oe_o = grp_ts_oe;
+    assign a_o = grp_a;
+    assign tt_o = grp_tt;
+    assign tbst_n_o = grp_tbst_n;
+    assign tsiz_o = grp_tsiz;
+    assign tc_o = grp_tc;
+    assign ci_n_o = grp_ci_n;
+    assign wt_n_o = grp_wt_n;
+    assign gbl_n_o = grp_gbl_n;
+    assign cse_o = grp_cse;
+    assign addr_oe_o = grp_addr_oe;
+    assign grp_aack_n = aack_n_i;
+    assign grp_artry_n = artry_n_i;
+    assign grp_dbg_n = dbg_n_i;
+    assign grp_dbb_in_n = dbb_n_i;
+    assign dbb_n_o = grp_dbb_n;
+    assign dbb_oe_o = grp_dbb_oe;
+    assign d_o = grp_d_o;
+    assign d_oe_o = grp_d_oe;
+    assign grp_ta_n = ta_n_i;
+    assign grp_drtry_n = drtry_n_i;
+    assign grp_tea_n = tea_n_i;
+
+    // No data cache: nothing is snooped and ARTRY is never driven.
+    assign dc_req_ready_o = 1'b0;
+    assign dc_rd_valid_o = 1'b0;
+    assign dc_rd_data_o = 64'b0;
+    assign dc_rd_error_o = 1'b0;
+    assign dc_wr_done_o = 1'b0;
+    assign dc_wr_error_o = 1'b0;
+    assign dc_push_ready_o = 1'b0;
+    assign dc_push_done_o = 1'b0;
+    assign dc_push_error_o = 1'b0;
+    assign dc_snoop_valid_o = 1'b0;
+    assign dc_snoop_addr_o = 32'b0;
+    assign dc_snoop_tt_o = 5'b0;
+    assign artry_n_o = 1'b1;
+    assign artry_oe_o = 1'b0;
+    assign dcache_busy = 1'b0;
+    assign dcache_protocol_error = 1'b0;
+    logic unused_dcache;
+    assign unused_dcache = ^{dc_req_valid_i, dc_req_kind_i, dc_req_tt_i,
+      dc_req_addr_i, dc_req_be_i, dc_req_wimg_i, dc_req_gbl_i, dc_req_cse_i,
+      dc_req_data_i, dc_push_valid_i, dc_push_addr_i, dc_push_data_i,
+      dc_snoop_rsp_valid_i, dc_snoop_rsp_artry_i, dc_snoop_rsp_push_i,
+      ts_n_i, a_i, tt_i, gbl_n_i};
+  end
+  endgenerate
+
+  assign busy_o = grp_busy || scalar_router_busy || dcache_busy;
   assign protocol_error_o = scalar_protocol_error || line_protocol_error ||
-    selector_protocol_error;
+    selector_protocol_error || dcache_protocol_error;
 endmodule
 `default_nettype wire

@@ -25,13 +25,21 @@ _start:
     lis 4,tohost@ha
     stw 0,tohost@l(4)
 #ifdef CHIP_BOOT
-    /* The 603e resets with the instruction cache off: invalidate and enable it. */
+    /* The 603e resets with both caches off: invalidate and enable the
+       instruction cache, then the data cache. */
     isync
     li 5,0
     ori 5,5,0x8800
     mtspr 1008,5
     li 5,0
     ori 5,5,0x8000
+    mtspr 1008,5
+    isync
+    sync
+    ori 5,5,0x4400
+    mtspr 1008,5
+    li 5,0
+    ori 5,5,0xc000
     mtspr 1008,5
     isync
 #endif
@@ -47,9 +55,25 @@ _start:
 #endif
     bl main
     lis 4,tohost@ha
+#ifdef CHIP_BOOT
+    /* The mailbox leaves the data cache so the bus sees it. */
+    addi 4,4,tohost@l
+    stw 3,0(4)
+    dcbf 0,4
+    sync
+#else
     stw 3,tohost@l(4)
+#endif
 1:
     b 1b
     .size _start,.-_start
 
     .section .note.GNU-stack,"",@progbits
+#ifdef CHIP_BOOT
+    /* Tells the image it runs with the data cache on. */
+    .section .rodata
+    .globl chip_boot
+    .p2align 2
+chip_boot:
+    .long 1
+#endif

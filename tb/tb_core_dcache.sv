@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
-// The translated cached top with the data cache in its slot, on the bench
-// BIU. A hand-assembled program runs with DR=1 over four DBATs (cacheable
+// The translated cached top with the data cache, its BIU and snooper on a
+// 60x memory with a second bus master. A hand-assembled program runs with DR=1 over four DBATs (cacheable
 // M=1, write-through, caching-inhibited guarded, read-only) and unmapped
 // space. A golden memory follows every store, dcbz, dcbi and flash
 // invalidate at the LSU port; every load response and every retired
@@ -20,9 +20,10 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   logic [31:0] irq_pc,dec_pc;
   retire_packet_t retired;
   pin_status_t pin_status;
-  dcache_bus_out_t dc_out;
-  dcache_bus_in_t dc_in;
-  logic dc_busy;
+  logic dc_busy,snoop_ts_n,snoop_gbl_n,cpu_artry_n,cpu_artry_oe;
+  logic [31:0] snoop_a;
+  logic [4:0] snoop_tt;
+  logic bfm_retry=0,bfm_drtry=0;
   logic br_n,bg_n,abb_n,abb_oe,ts_n,ts_oe,tbst_n,ci_n,wt_n,gbl_n,addr_oe;
   logic [31:0] bus_a;
   logic [4:0] tt;
@@ -98,36 +99,38 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     .maintenance_done_valid_o(maintenance_done_valid),
     .maintenance_done_ready_i(1'b0),
     .cache_enabled_o(cache_enabled),
-    .dcache_bus_o(dc_out),.dcache_bus_i(dc_in),.dcache_busy_o(dc_busy),
+    .dcache_busy_o(dc_busy),
     .maintenance_busy_o(maintenance_busy),
     .br_n_o(br_n),.bg_n_i(bg_n),.abb_n_i(1'b1),
     .abb_n_o(abb_n),.abb_oe_o(abb_oe),.ts_n_o(ts_n),.ts_oe_o(ts_oe),
     .a_o(bus_a),.tt_o(tt),.tbst_n_o(tbst_n),.tsiz_o(tsiz),
     .tc_o(tc),.ci_n_o(ci_n),.wt_n_o(wt_n),.gbl_n_o(gbl_n),
     .cse_o(cse),.addr_oe_o(addr_oe),.aack_n_i(aack_n),
+    .snoop_ts_n_i(snoop_ts_n),.snoop_a_i(snoop_a),.snoop_tt_i(snoop_tt),.snoop_gbl_n_i(snoop_gbl_n),
+    .artry_n_o(cpu_artry_n),.artry_oe_o(cpu_artry_oe),
     .artry_n_i(artry_n),.dbg_n_i(dbg_n),.dbb_n_i(1'b1),
     .dbb_n_o(dbb_n),.dbb_oe_o(dbb_oe),
     .d_i(data_in),.d_o(data_out),.d_oe_o(data_oe),
     .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n)
   );
   /* verilator lint_on PINCONNECTEMPTY */
-  bus60x_scripted_target_bfm #(.BASE_ADDR(0),.MEM_BYTES(65536)) target(
+  bus60x_coherent_bfm #(.BASE_ADDR(0),.MEM_BYTES(MEM_BYTES),.SEED(SEED)) biu(
     .clk_i(clk),.br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(bus_a),
-    .tt_i(tt),.tbst_n_i(tbst_n),.tsiz_i(tsiz),.tc_i(tc),
-    .dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.d_i(data_out),.d_oe_i(data_oe),
-    .retry_i(1'b0),.hold_i(1'b0),.drtry_i(1'b0),.wait_i(bfm_wait),
+    .tt_i(tt),.tbst_n_i(tbst_n),.tsiz_i(tsiz),.tc_i(tc),.ci_n_i(ci_n),.wt_n_i(wt_n),
+    .gbl_n_i(gbl_n),.dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.d_i(data_out),.d_oe_i(data_oe),
+    .artry_n_i(cpu_artry_n),.artry_oe_i(cpu_artry_oe),
+    .retry_i(bfm_retry),.hold_i(1'b0),.drtry_i(bfm_drtry),.wait_i(bfm_wait),
     .bg_n_o(bg_n),.aack_n_o(aack_n),.artry_n_o(artry_n),.dbg_n_o(dbg_n),
-    .d_o(data_in),.ta_n_o(ta_n),.drtry_n_o(drtry_n),.tea_n_o(tea_n)
+    .d_o(data_in),.ta_n_o(ta_n),.drtry_n_o(drtry_n),.tea_n_o(tea_n),
+    .bus_ts_n_o(snoop_ts_n),.bus_a_o(snoop_a),.bus_tt_o(snoop_tt),.bus_gbl_n_o(snoop_gbl_n)
   );
-  dcache_biu_bfm #(.MEM_BYTES(MEM_BYTES),.SEED(SEED)) biu(
-    .clk_i(clk),.rst_ni(rst_n),.bus_i(dc_out),.bus_o(dc_in));
   assign tr=rst_n;
   logic unused_outputs;
   assign unused_outputs=^{running,irq_pc,dec_pc,cache_busy,cache_enabled,cache_hit,cache_miss,
                           maintenance_ready,maintenance_done_valid,maintenance_busy,
-                          abb_n,abb_oe,addr_oe,tbst_n,ci_n,wt_n,gbl_n,cse,dbb_n,dbb_oe,
+                          abb_n,abb_oe,addr_oe,cse,
                           pin_status,cir,cdr,cpr,bus_busy,dc_busy,noopti_touch_pc,
-                          target.in_data};
+                          biu.in_data};
 
   task automatic check(input logic ok, input string message);
     checks++;
@@ -313,7 +316,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
       lsu_wdata=dut.dcache_slot.lsu_req_wdata_i; lsu_wstrb=dut.dcache_slot.lsu_req_wstrb_i;
       lsu_attr=dut.dcache_slot.lsu_req_attr_i;
       if (lsu_attr.kind==DMEM_CACHE && lsu_attr.rid[2:0]==CACHE_OP_DCBT &&
-          pin_status.noop_touch) noopti_accepts=biu.n_accepted;
+          pin_status.noop_touch) noopti_accepts=biu.data_tenures;
     end
     if (dut.dcache_slot.lsu_rsp_valid_o && dut.dcache_slot.lsu_rsp_ready_i) begin
       logic [31:0] d;
@@ -341,7 +344,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
             syncs++;
           end
           CACHE_OP_DCBT: if (noopti_accepts>=0) begin
-            check(biu.n_accepted==noopti_accepts,"NOOPTI touch reached the bus");
+            check(biu.data_tenures==noopti_accepts,"NOOPTI touch reached the bus");
             noopti_accepts=-2;
           end
           default: ;
@@ -363,13 +366,39 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   // A retried snoop is repeated, as the other master would.
   int snoop_artry=0;
   task automatic snoop_pair;
-    logic artry;
-    biu.snoop(32'h8080,TT_READ,artry);
+    bit artry;
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [255:0] line;  // Contents are checked by the coherence bench.
+    /* verilator lint_on UNUSEDSIGNAL */
+    biu.om_run(TT_READ,32'h8080,1'b1,1'b1,'0,2+int'(biu.rnd()%4),line,artry);
     snoop_artry+=int'(artry);
-    do begin
-      biu.snoop(32'h8080,TT_RWITM,artry);
-      snoop_artry+=int'(artry);
-    end while (artry);
+    biu.om_run(TT_RWITM,32'h8080,1'b1,1'b1,'0,2+int'(biu.rnd()%4),line,artry);
+    snoop_artry+=int'(artry);
+  endtask
+
+  // A data tenure of the expected kind from shortly before the retirement
+  // on; posted writes and broadcasts reach the bus after it.
+  int tenure_waits=0,tenure_checks=0;
+  task automatic expect_tenure(input pc_check_e k, input logic [4:0] t, input int since);
+    int deadline;
+    bit found;
+    deadline=biu.cycle+2000;
+    found=0;
+    tenure_waits++;
+    while (!found) begin
+      foreach (biu.hist[i]) if (!found && !biu.hist[i].claimed && biu.hist[i].cycle>=since) begin
+        case (k)
+          PC_READ_SINGLE: found=int'(biu.hist[i].kind)==int'(BUS_READ_SINGLE)&&biu.hist[i].ci;
+          PC_WRITE_SINGLE: found=int'(biu.hist[i].kind)==int'(BUS_WRITE_SINGLE);
+          default: found=int'(biu.hist[i].kind)==int'(BUS_ADDR_ONLY)&&biu.hist[i].tt==t;
+        endcase
+        if (found) begin biu.hist[i].claimed=1; tenure_waits--; tenure_checks++; end
+      end
+      if (!found) begin
+        check(biu.cycle<deadline,$sformatf("no %s tenure (tt=%05b) after retirement",k.name(),t));
+        @(posedge clk);
+      end
+    end
   endtask
 
   // ---- Retirement checks ----------------------------------------------------
@@ -407,12 +436,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
           c=pc_checks[retired.pc];
           case (c.kind)
             PC_VALUE: check(retired.value==c.value,$sformatf("value %08x",retired.value));
-            PC_READ_SINGLE: check(biu.last.kind==BUS_READ_SINGLE&&biu.last.wimg[2],
-                                  "locked or disabled miss must be a caching-inhibited single read");
-            PC_WRITE_SINGLE: check(biu.last.kind==BUS_WRITE_SINGLE,
-                                   "locked or disabled store miss must be a single write");
-            default: check(biu.last.kind==BUS_ADDR_ONLY&&biu.last.tt==c.tt,
-                           $sformatf("ABE broadcast tt=%05b",biu.last.tt));
+            default: fork expect_tenure(c.kind,c.tt,biu.cycle-64); join_none
           endcase
         end
         if (retired.pc inside {32'h200,32'h300,32'h600,32'h1100,32'h1200}) begin
@@ -440,26 +464,29 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   always @(posedge clk) begin
     #2;
     bfm_wait=(biu.rnd()%4==0)?int'(biu.rnd()%3):0;
+    bfm_retry=biu.rnd()%100<6;
+    bfm_drtry=biu.rnd()%100<5;
   end
 
   initial begin
     foreach (shadow[i]) shadow[i]=0;
     for (int i=0;i<MEM_BYTES;i++) begin gold[i]=pattern(i); biu.mem[i]=gold[i]; end
-    for (int i=0;i<65536;i++) target.mem[i]=8'h0;
     build();
     foreach (prog[a]) for (int k=0;k<4;k++) begin
-      target.mem[int'(a)+k]=prog[a][31-8*k -: 8];
       biu.mem[int'(a)+k]=prog[a][31-8*k -: 8];
       gold[int'(a)+k]=prog[a][31-8*k -: 8];
     end
-    biu.read_error_dw=32'h8500;
-    biu.write_error_dw=32'h2_0040;
+    biu.tea_write_commits=1;
+    biu.tea_once.push_back(32'h8500);
+    biu.tea_once.push_back(32'h2_0040);
     repeat(4)@(negedge clk);rst_n=1;
     @(negedge clk);start_valid=1;
     do @(posedge clk);while(!start_ready);
     @(negedge clk);start_valid=0;
     wait(end_retires>0);
     repeat(20)@(posedge clk);
+    while (tenure_waits!=0) @(posedge clk);
+    check(tenure_checks>0,"no bus tenure checks");
     for (int a=32'h8000;a<32'hd000;a++)
       check(biu.mem[a]==gold[a],$sformatf("memory %08x=%02x expected %02x",a,biu.mem[a],gold[a]));
     for (int a=32'h2_0000;a<32'h2_0100;a++) check(biu.mem[a]==gold[a],"write-through memory");
@@ -471,9 +498,10 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
           biu.tt_count[TT_RWITM]>0&&biu.tt_count[TT_WRITE_KILL]>0,
           $sformatf("coverage rb=%0d rs=%0d wb=%0d ws=%0d ao=%0d err=%0d",biu.n_read_burst,
                     biu.n_read_single,biu.n_write_burst,biu.n_write_single,biu.n_addr_only,biu.n_errors));
-    $display("PASS data cache core: checks=%0d retires=%0d load_values=%0d load_responses=%0d exceptions=%0d bus: read_burst=%0d read_single=%0d write_burst=%0d write_single=%0d addr_only=%0d push=%0d errors=%0d cycles=%0d",
+    $display("PASS data cache core: checks=%0d retires=%0d load_values=%0d load_responses=%0d exceptions=%0d bus: read_burst=%0d read_single=%0d write_burst=%0d write_single=%0d addr_only=%0d push=%0d errors=%0d retries=%0d drtries=%0d snoops=%0d snoop_retries=%0d cycles=%0d",
       checks,retires,load_checks,rsp_checks,taken,biu.n_read_burst,biu.n_read_single,
-      biu.n_write_burst,biu.n_write_single,biu.n_addr_only,biu.n_push,biu.n_errors,cycles);
+      biu.n_write_burst,biu.n_write_single,biu.n_addr_only,biu.n_push,biu.n_errors,
+      biu.retries,biu.drtries,biu.om_tenures,biu.om_retried,cycles);
     $finish;
   end
 endmodule

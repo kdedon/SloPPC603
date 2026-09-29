@@ -66,6 +66,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
     .interrupt_pc_o(unused_interrupt_pc),
     .timer_tick_i(1'b0),.timebase_enable_i(1'b0),
     /* verilator lint_off PINCONNECTEMPTY */
+    .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),
     .pin_event_i('0), .pin_status_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken),
@@ -133,7 +134,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
     .cache_enabled_o(cache_enabled),
     // No data cache in this profile.
     /* verilator lint_off PINCONNECTEMPTY */
-    .dcache_bus_o(),.dcache_bus_i('0),.dcache_busy_o(),
+    .dcache_busy_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .maintenance_busy_o(maintenance_busy),
     .br_n_o(br_n),.bg_n_i(bg_n),

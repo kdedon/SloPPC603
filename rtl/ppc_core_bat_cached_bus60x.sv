@@ -4,8 +4,9 @@
 // Opt-in translated physical I-cache plus scalar 60x data/bypass composition.
 // Only authorized physical instruction requests with WIMG=0000 may enter the
 // line cache. Other WIMG values bypass it through the cache-inhibited scalar
-// bus. Data is scalar. CPU icbi invalidates one set; there is no automatic
-// code coherence or HID0.
+// bus. Data is scalar, or with ENABLE_DCACHE goes through the data cache,
+// whose bus master and snooper share the 60x pins with fetch. CPU icbi
+// invalidates one set; there is no automatic code coherence.
 module ppc_core_bat_cached_bus60x #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter int DIV_LATENCY = 20,
@@ -40,7 +41,7 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
   parameter logic [3:0] PLL_CFG = 4'b0000,
-  // Data cache in the slot; its BIU ports leave through dcache_bus_o/_i.
+  // Data cache in the slot, bus master and snooper in the BIU.
   // Needs cache instructions, reservation, machine check and the pin
   // interrupt path (asynchronous TEA).
   parameter bit ENABLE_DCACHE = 1'b0,
@@ -146,8 +147,6 @@ module ppc_core_bat_cached_bus60x #(
   input  logic maintenance_done_ready_i,
   output logic cache_enabled_o,
   output logic maintenance_busy_o,
-  output ppc_pkg::dcache_bus_out_t dcache_bus_o,
-  input  ppc_pkg::dcache_bus_in_t dcache_bus_i,
   output logic dcache_busy_o,
   output logic        br_n_o,
   input  logic        bg_n_i,
@@ -168,6 +167,13 @@ module ppc_core_bat_cached_bus60x #(
   output logic        addr_oe_o,
   input  logic        aack_n_i,
   input  logic        artry_n_i,
+  // Snooped TS, A, TT and GBL; ARTRY drive for snoop responses.
+  input  logic        snoop_ts_n_i,
+  input  logic [31:0] snoop_a_i,
+  input  logic [4:0]  snoop_tt_i,
+  input  logic        snoop_gbl_n_i,
+  output logic        artry_n_o,
+  output logic        artry_oe_o,
   input  logic        dbg_n_i,
   input  logic        dbb_n_i,
   output logic        dbb_n_o,
@@ -494,6 +500,11 @@ module ppc_core_bat_cached_bus60x #(
   logic [3:0] biu_dmem_req_wstrb;
   ppc_pkg::dmem_attr_t biu_dmem_req_attr;
   logic biu_dmem_rsp_valid, biu_dmem_rsp_ready, biu_dmem_rsp_error;
+  ppc_pkg::dcache_bus_out_t dc_out;
+  ppc_pkg::dcache_bus_in_t dc_in;
+  // The BIU needs only ARTRY and push from a snoop response.
+  logic unused_snoop_hit;
+  assign unused_snoop_hit = dc_out.snoop_rsp_hit;
   // A cache bus error with no instruction to blame is held until the core
   // takes it as a TEA machine check.
   logic dcache_async_error, dcache_protocol_error, dcache_resv, tea_pending_q;
@@ -532,29 +543,32 @@ module ppc_core_bat_cached_bus60x #(
     .hid0_abe_i(core_pin_status.broadcast_enable),
     .async_error_o(dcache_async_error), .protocol_error_o(dcache_protocol_error),
     .busy_o(dcache_busy_o), .resv_valid_o(dcache_resv),
-    .bus_req_valid_o(dcache_bus_o.req_valid),
-    .bus_req_ready_i(dcache_bus_i.req_ready),
-    .bus_req_kind_o(dcache_bus_o.req_kind), .bus_req_tt_o(dcache_bus_o.req_tt),
-    .bus_req_addr_o(dcache_bus_o.req_addr), .bus_req_be_o(dcache_bus_o.req_be),
-    .bus_req_wimg_o(dcache_bus_o.req_wimg), .bus_req_gbl_o(dcache_bus_o.req_gbl),
-    .bus_req_cse_o(dcache_bus_o.req_cse), .bus_req_data_o(dcache_bus_o.req_data),
-    .bus_rd_valid_i(dcache_bus_i.rd_valid), .bus_rd_data_i(dcache_bus_i.rd_data),
-    .bus_rd_error_i(dcache_bus_i.rd_error), .bus_wr_done_i(dcache_bus_i.wr_done),
-    .bus_wr_error_i(dcache_bus_i.wr_error),
-    .push_req_valid_o(dcache_bus_o.push_valid),
-    .push_req_ready_i(dcache_bus_i.push_ready),
-    .push_req_addr_o(dcache_bus_o.push_addr),
-    .push_req_data_o(dcache_bus_o.push_data),
-    .push_done_i(dcache_bus_i.push_done), .push_error_i(dcache_bus_i.push_error),
-    .snoop_valid_i(dcache_bus_i.snoop_valid), .snoop_addr_i(dcache_bus_i.snoop_addr),
-    .snoop_tt_i(dcache_bus_i.snoop_tt),
-    .snoop_rsp_valid_o(dcache_bus_o.snoop_rsp_valid),
-    .snoop_rsp_artry_o(dcache_bus_o.snoop_rsp_artry),
-    .snoop_rsp_hit_o(dcache_bus_o.snoop_rsp_hit),
-    .snoop_rsp_push_o(dcache_bus_o.snoop_rsp_push)
+    .bus_req_valid_o(dc_out.req_valid),
+    .bus_req_ready_i(dc_in.req_ready),
+    .bus_req_kind_o(dc_out.req_kind), .bus_req_tt_o(dc_out.req_tt),
+    .bus_req_addr_o(dc_out.req_addr), .bus_req_be_o(dc_out.req_be),
+    .bus_req_wimg_o(dc_out.req_wimg), .bus_req_gbl_o(dc_out.req_gbl),
+    .bus_req_cse_o(dc_out.req_cse), .bus_req_data_o(dc_out.req_data),
+    .bus_rd_valid_i(dc_in.rd_valid), .bus_rd_data_i(dc_in.rd_data),
+    .bus_rd_error_i(dc_in.rd_error), .bus_wr_done_i(dc_in.wr_done),
+    .bus_wr_error_i(dc_in.wr_error),
+    .push_req_valid_o(dc_out.push_valid),
+    .push_req_ready_i(dc_in.push_ready),
+    .push_req_addr_o(dc_out.push_addr),
+    .push_req_data_o(dc_out.push_data),
+    .push_done_i(dc_in.push_done), .push_error_i(dc_in.push_error),
+    .snoop_valid_i(dc_in.snoop_valid), .snoop_addr_i(dc_in.snoop_addr),
+    .snoop_tt_i(dc_in.snoop_tt),
+    .snoop_rsp_valid_o(dc_out.snoop_rsp_valid),
+    .snoop_rsp_artry_o(dc_out.snoop_rsp_artry),
+    .snoop_rsp_hit_o(dc_out.snoop_rsp_hit),
+    .snoop_rsp_push_o(dc_out.snoop_rsp_push)
   );
 
-  ppc_biu #(.RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK)) biu (
+  ppc_biu #(
+    .RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK),
+    .ENABLE_DCACHE(ENABLE_DCACHE)
+  ) biu (
     .clk_i, .rst_ni,
     .imem_req_valid_i(scalar_imem_req_valid),
     .imem_req_ready_o(scalar_imem_req_ready),
@@ -580,7 +594,25 @@ module ppc_core_bat_cached_bus60x #(
     .line_rsp_ready_i(cache_line_rsp_ready),
     .line_rsp_line_o(cache_line_rsp_data),
     .line_rsp_error_o(cache_line_rsp_error),
+    .dc_req_valid_i(dc_out.req_valid), .dc_req_ready_o(dc_in.req_ready),
+    .dc_req_kind_i(dc_out.req_kind), .dc_req_tt_i(dc_out.req_tt),
+    .dc_req_addr_i(dc_out.req_addr), .dc_req_be_i(dc_out.req_be),
+    .dc_req_wimg_i(dc_out.req_wimg), .dc_req_gbl_i(dc_out.req_gbl),
+    .dc_req_cse_i(dc_out.req_cse), .dc_req_data_i(dc_out.req_data),
+    .dc_rd_valid_o(dc_in.rd_valid), .dc_rd_data_o(dc_in.rd_data),
+    .dc_rd_error_o(dc_in.rd_error), .dc_wr_done_o(dc_in.wr_done),
+    .dc_wr_error_o(dc_in.wr_error),
+    .dc_push_valid_i(dc_out.push_valid), .dc_push_ready_o(dc_in.push_ready),
+    .dc_push_addr_i(dc_out.push_addr), .dc_push_data_i(dc_out.push_data),
+    .dc_push_done_o(dc_in.push_done), .dc_push_error_o(dc_in.push_error),
+    .dc_snoop_valid_o(dc_in.snoop_valid), .dc_snoop_addr_o(dc_in.snoop_addr),
+    .dc_snoop_tt_o(dc_in.snoop_tt),
+    .dc_snoop_rsp_valid_i(dc_out.snoop_rsp_valid),
+    .dc_snoop_rsp_artry_i(dc_out.snoop_rsp_artry),
+    .dc_snoop_rsp_push_i(dc_out.snoop_rsp_push),
     .busy_o(biu_busy), .protocol_error_o(biu_protocol_error),
+    .ts_n_i(snoop_ts_n_i), .a_i(snoop_a_i), .tt_i(snoop_tt_i),
+    .gbl_n_i(snoop_gbl_n_i), .artry_n_o, .artry_oe_o,
     .br_n_o, .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o, .ts_oe_o,
     .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o, .wt_n_o, .gbl_n_o,
     .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbb_n_i,

@@ -201,8 +201,7 @@ next state; data RAM outputs are selected with the registered hit way.
   aligns and extends load data, and maps `rsp_error_o`, `rsp_align_o` and
   `async_error_o` to machine check, alignment and machine check exceptions.
 - HID0 DCE, DLOCK, DCFI, NOOPTI and ABE wiring (DCFI as a level while set).
-- A BIU that keeps `bus_req` order, derives TSIZ and A29-31 from `be`, drives
-  TT/GBL/CI/WT/CSE, performs pushes first after a push-flagged ARTRY, and turns the
-  snoop response into ARTRY within the 60x window.
+- The BIU side is built: `ppc_biu` with `ENABLE_DCACHE`
+  ([DATA_CACHE_INTEGRATION.md](DATA_CACHE_INTEGRATION.md#biu-and-snooping)).
 - Ordering with the I-cache fill path and the existing uncached data path, which the
   cache replaces.

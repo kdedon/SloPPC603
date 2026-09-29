@@ -46,6 +46,8 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dcache_pkg.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_ram_sdp_be.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dcache.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_dcache_slot.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_cache_master.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_snoop.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_biu.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core_bat_cached_bus60x.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ppc_translated_measure.sv
@@ -164,6 +166,12 @@ set_instance_assignment -name VIRTUAL_PIN ON -to cse_o[*]
 set_instance_assignment -name VIRTUAL_PIN ON -to addr_oe_o
 set_instance_assignment -name VIRTUAL_PIN ON -to aack_n_i
 set_instance_assignment -name VIRTUAL_PIN ON -to artry_n_i
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_ts_n_i
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_a_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_tt_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_gbl_n_i
+set_instance_assignment -name VIRTUAL_PIN ON -to artry_n_o
+set_instance_assignment -name VIRTUAL_PIN ON -to artry_oe_o
 set_instance_assignment -name VIRTUAL_PIN ON -to dbg_n_i
 set_instance_assignment -name VIRTUAL_PIN ON -to dbb_n_i
 set_instance_assignment -name VIRTUAL_PIN ON -to dbb_n_o

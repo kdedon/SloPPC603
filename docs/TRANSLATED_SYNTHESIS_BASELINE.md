@@ -1,5 +1,16 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-28 data cache on
+
+Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,
+merge of the data-cache integration branch (`3529a0e`) onto `b907e59` plus
+uncommitted merge resolution, 2026-09-28. The profile enables `ENABLE_DCACHE`
+with registered snoop and ARTRY ports. **Meets 50 MHz and 66 MHz** at every
+corner: setup +5.016 / +5.172 / +8.040 / +8.308 ns, hold +0.251 / +0.239 /
++0.137 / +0.118 ns (slow 100 C, slow -40 C, fast 100 C, fast -40 C). Fmax 66.74
+MHz; no endpoint fails at 15.152 ns. 11,403 ALMs, 13,806 registers, 270,080
+block-memory bits.
+
 ## 2026-09-28 signoff with the fetch-to-decode register
 
 Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,

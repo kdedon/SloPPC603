@@ -84,3 +84,13 @@ merge of `fetch-decode-stage` onto `e73215f` plus uncommitted merge resolution,
 +7.317 / +7.721 ns, hold +0.253 / +0.242 / +0.134 / +0.118 ns. Fmax 66.22 MHz;
 no endpoint fails at 15.152 ns.
 
+## 2026-09-28 signoff fit with the data cache on
+
+Recorded: `./quartus/chip/build.sh --docker` and `./quartus/report-target-paths.sh chip --docker`,
+merge of the data-cache integration branch (`3529a0e`) onto `b907e59` plus
+uncommitted merge resolution, 2026-09-28. Meets 50 MHz at every corner (setup
++3.398 / +3.662 / +5.867 / +6.623 ns, hold +0.255 / +0.241 / +0.137 / +0.118 ns)
+and 66 MHz: no endpoint fails at 15.152 ns; the tightest boundary path at 66 MHz
+is an output (`pin_sync_q` to `ap_o`) at +3.292 ns. The 50 MHz worst setup path
+was not identified in this run, so no Fmax is derived from it.
+

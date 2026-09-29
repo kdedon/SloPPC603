@@ -17,7 +17,7 @@ volatile uint32_t stress_ext_count;
 volatile uint32_t stress_dec_count;
 volatile uint32_t stress_mc_count;
 /* Outside .bss so the startup clear is not mistaken for an IRQ ack. */
-volatile uint32_t irq_ack __attribute__((section(".data.irq_ack"))) = 1u;
+volatile uint32_t irq_ack __attribute__((section(".data.irq_ack"))) = 0u;
 volatile uint32_t stress_iterations;
 
 extern uint32_t stress_load(uint32_t ea);
@@ -184,6 +184,20 @@ static uint32_t lane_expected(void) {
   return LANE_COUNT * sum;
 }
 
+/* Defined by the chip boot code, which turns the data cache on. */
+extern const uint32_t chip_boot __attribute__((weak));
+
+/* Written code leaves the data cache before anything fetches it. */
+static void flush_code(uint32_t base, uint32_t bytes) {
+  if (!&chip_boot) return;
+  for (uint32_t a = base; a < base + bytes; a += 32u)
+    __asm__ volatile("dcbst 0,%0" :: "r"(a) : "memory");
+  __asm__ volatile("sync" ::: "memory");
+  for (uint32_t a = base; a < base + bytes; a += 32u)
+    __asm__ volatile("icbi 0,%0" :: "r"(a) : "memory");
+  __asm__ volatile("sync; isync" ::: "memory");
+}
+
 static void seed_frames(void) {
   for (unsigned n = 0; n < 8; ++n)
     *(volatile uint32_t *)(uintptr_t)frame(n) = signature(n);
@@ -208,7 +222,9 @@ static void seed_frames(void) {
     volatile uint32_t *code = (volatile uint32_t *)(uintptr_t)code_at[i];
     code[0] = 0x38600000u | code_id[i];
     code[1] = 0x4e800020u;
+    flush_code(code_at[i], 8u);
   }
+  flush_code(frame(8), 8u << 12);
   __asm__ volatile("sync" ::: "memory");
 }
 
