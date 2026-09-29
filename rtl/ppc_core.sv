@@ -773,6 +773,9 @@ module ppc_core #(
       if (dispatch) perf_special_mem_q <= special_uop && perf_head_mem;
       perf_o.retire <= retire_valid_o;
       perf_o.iq_full <= fd_valid_q && !iq_push_ready;
+      perf_o.branch <= dispatch && special_uop && perf_head_branch;
+      perf_o.memory <= dispatch && special_uop && perf_head_mem;
+      perf_o.branch_redirect <= recovery_accepted && special_branch_redirect;
       perf_o.slot <= perf_slot;
     end
   end

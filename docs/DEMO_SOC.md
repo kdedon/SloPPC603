@@ -74,6 +74,9 @@ stores. Offsets are from `0xf0100000`.
 | `0x108` | `PERF_RETIRED` | R | Retired instructions |
 | `0x10c` | `PERF_IQ_FULL` | R | Cycles the fetch-to-decode register held a word the IQ could not take |
 | `0x110`–`0x148` | `PERF_SLOT[15]` | R | Cycles by dispatch-slot cause; they sum to `PERF_CYCLES` |
+| `0x150` | `PERF_BRANCHES` | R | Branches dispatched |
+| `0x154` | `PERF_MEMORY` | R | Loads and stores dispatched (each micro-op of a multiple or string) |
+| `0x158` | `PERF_REDIRECTS` | R | Branch redirects (taken branches) |
 | `0x400`–`0x7fc` | `PALETTE[256]` | W | `0x00RRGGBB`; reads return 0 |
 
 The performance counters (`soc_perf_counters`, `rtl/soc/soc_perf_counters.sv`) are

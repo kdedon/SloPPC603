@@ -45,6 +45,9 @@ void perf_report(const char *name)
     perf_line(slot[n], count, retired);
   }
   perf_line("iq_full", SOC_PERF_IQ_FULL, retired);
+  perf_line("branches", SOC_PERF_BRANCHES, retired);
+  perf_line("loads_stores", SOC_PERF_MEMORY, retired);
+  perf_line("redirects", SOC_PERF_REDIRECTS, retired);
   if (sum != cycles) fail("perf slot counts do not sum to cycles");
 }
 

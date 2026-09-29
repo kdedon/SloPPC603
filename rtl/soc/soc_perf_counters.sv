@@ -5,7 +5,9 @@
 // per dispatch-slot cause (docs/DEMO_SOC.md, docs/PERFORMANCE.md). The event
 // is registered before the counters, so no core path reaches an adder.
 // Word 0 is control: bit 0 RUN (reset 1) counts; writing bit 1 clears every
-// counter. Words 1-3 are CYCLES, RETIRED, IQ_FULL; word 4 + n counts slot n.
+// counter. Words 1-3 are CYCLES, RETIRED, IQ_FULL; word 4 + n counts slot n;
+// words 20-22 count dispatched branches, dispatched loads and stores, and
+// branch redirects.
 module soc_perf_counters (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -18,7 +20,7 @@ module soc_perf_counters (
   output logic [63:0] rdata_o
 );
   localparam int NSLOT = 16;
-  localparam int NWORD = 4 + NSLOT;
+  localparam int NWORD = 4 + NSLOT + 3;
 
   ppc_pkg::perf_event_t event_q;
   logic run_q;
@@ -39,6 +41,9 @@ module soc_perf_counters (
         count_q[1] <= count_q[1] + 32'd1;
         if (event_q.retire) count_q[2] <= count_q[2] + 32'd1;
         if (event_q.iq_full) count_q[3] <= count_q[3] + 32'd1;
+        if (event_q.branch) count_q[20] <= count_q[20] + 32'd1;
+        if (event_q.memory) count_q[21] <= count_q[21] + 32'd1;
+        if (event_q.branch_redirect) count_q[22] <= count_q[22] + 32'd1;
         for (int n = 0; n < NSLOT; n++)
           if (event_q.slot == 4'(n)) count_q[4 + n] <= count_q[4 + n] + 32'd1;
       end

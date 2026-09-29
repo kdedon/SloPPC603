@@ -35,6 +35,9 @@
 #define SOC_PERF_IQ_FULL SOC_REG(0x10c)
 #define SOC_PERF_SLOT(n) SOC_REG(0x110 + 4 * (n))
 #define SOC_PERF_SLOTS 15
+#define SOC_PERF_BRANCHES SOC_REG(0x150)
+#define SOC_PERF_MEMORY SOC_REG(0x154)
+#define SOC_PERF_REDIRECTS SOC_REG(0x158)
 
 #define SOC_FB ((volatile uint8_t *)SOC_FB_BASE)
 

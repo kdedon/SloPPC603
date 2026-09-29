@@ -353,6 +353,10 @@ package ppc_pkg;
     logic retire;
     // The fetch-to-decode register holds a word the IQ cannot take.
     logic iq_full;
+    // A branch or a load/store dispatched; a branch redirected fetch.
+    logic branch;
+    logic memory;
+    logic branch_redirect;
     perf_slot_e slot;
   } perf_event_t;
 
