@@ -16,7 +16,7 @@ Sources: [`rtl/soc/`](../rtl/soc) (synthesizable), [`tb/soc/tb_demo_soc.sv`](../
 | `ppc603e_demo_soc` | `rtl/soc/ppc603e_demo_soc.sv` | Top: processor, 60x target, decode, RAMs, registers, video |
 | `soc_bus60x_target` | `rtl/soc/soc_bus60x_target.sv` | Arbiter and target for one master; one tenure at a time |
 | `soc_ram_sp_be` | `rtl/soc/soc_ram_sp_be.sv` | Program RAM, 64-bit words, byte enables, `$readmemh` preload |
-| `soc_ram_dp_be` | `rtl/soc/soc_ram_dp_be.sv` | Framebuffer: CPU read/write port, video read port |
+| `soc_ram_dp_be` | `rtl/soc/soc_ram_dp_be.sv` | Framebuffer: CPU read/write port, video read port (two copies sharing the writes) |
 | `soc_video` | `rtl/soc/soc_video.sv` | Timing, scan-out and 256-entry palette |
 
 One clock drives everything; the processor's `HRESET` is the system reset. The
@@ -136,11 +136,11 @@ not part of `test` or `ci`.
 
 ## Results
 
-Recorded: `make -C sim lint-demo-soc demo-all`, commit 7707726, 2026-09-29. All pass.
+Recorded: `make -C sim lint-demo-soc demo-all`, commit 64c0f1f, 2026-09-29. All pass.
 
 | Image | Cycles | Retired | CPI | Bus tenures | Result |
 |---|---:|---:|---:|---:|---|
-| `hello` | 38,168,405 | 13,249,205 | 2.881 | 37,538 | Mandelbrot 37,479,241 cycles, checksum `adb5c49f` |
+| `hello` | 38,168,410 | 13,249,206 | 2.881 | 37,539 | Mandelbrot 37,479,241 cycles, checksum `adb5c49f` |
 | `dhrystone` | 8,220,915 | 1,448,042 | 5.677 | 29,424 | 3,430.3 cycles/run; 14,575 Dhrystones/s at 50 MHz = 8.30 DMIPS; **0.165 DMIPS/MHz**; 23 checks, 0 mismatches |
 | `coremark` | 16,855,951 | 3,336,510 | 5.052 | 29,945 | 1,539,929 cycles/iteration; 32.469 iterations/s at 50 MHz; **0.649 CoreMark/MHz**; `crcfinal` `0xfcaf`, performance-run seeds, no CRC error |
 
@@ -160,3 +160,39 @@ What this establishes: the package top boots from RAM with both caches and data
 translation on, runs three compiled programs to completion with correct results through
 the 60x target, and scans out a well-formed frame. It does not cover a second bus
 master, interrupts, or timing on hardware.
+
+### Fit
+
+Recorded: `quartus/demo/build.sh`, commit 64c0f1f, 2026-09-29. Quartus 17.0.2 Lite,
+5CSEBA6U23I7, seed 1, 20 ns clock, every port virtual with zero I/O delay. The fit
+passes and timing is met at every corner.
+
+| Resource | Used |
+|---|---|
+| ALMs | 10,401 / 41,910 (25%) |
+| Registers | 11,824 |
+| Block memory bits | 3,684,096 / 5,662,720 (65%) |
+| M10K blocks | 469 / 553 (85%) |
+| DSP blocks | 2 / 112 |
+
+| Corner | Fmax | Setup slack | Hold slack |
+|---|---:|---:|---:|
+| Slow 1100 mV 100 °C | 68.79 MHz | +5.464 ns | +0.248 ns |
+| Slow 1100 mV −40 °C | 69.45 MHz | +5.602 ns | +0.237 ns |
+| Fast 1100 mV 100 °C | | +8.153 ns | +0.133 ns |
+| Fast 1100 mV −40 °C | | +8.343 ns | +0.118 ns |
+
+The 256 KiB program RAM and the two framebuffer copies take most of the block RAM. The
+fit measures resources and internal timing only: no board I/O timing, and the RAM is
+not preloaded (`RAM_INIT` empty).
+
+## MiSTer wrapper: next steps
+
+- An `emu` top that instantiates `ppc603e_demo_soc` with `CE_DIV` matched to the
+  video clock, and drives `CE_PIXEL`, `VGA_*` and `VGA_DE` from the scan-out ports.
+- Firmware loading through `hps_io` `ioctl` into program RAM with the processor held
+  in reset, replacing the bench's `$readmemh`.
+- Program memory and the framebuffer in SDRAM or DDRAM behind the 60x target, with
+  the framebuffer handed to the framework's `MISTER_FB` scaler; that frees the block
+  RAM and allows larger programs.
+- Console output to the OSD or a UART, and the exit register to a status LED.

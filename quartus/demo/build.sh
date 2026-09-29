@@ -20,8 +20,11 @@ if [[ -f "${out}/ppc603e_demo.fit.summary" ]]; then
     "${out}/ppc603e_demo.fit.summary" || true
 fi
 if [[ -f "${out}/ppc603e_demo.sta.rpt" ]]; then
-  grep -A6 "; Slow 1100mV 85C Model Fmax Summary" "${out}/ppc603e_demo.sta.rpt" | grep -E "MHz" || true
-  grep -A4 "Slow 1100mV 85C Model Setup Summary" "${out}/ppc603e_demo.sta.rpt" | grep -E "^; clk" || true
+  for corner in "Slow 1100mV 100C" "Slow 1100mV -40C" "Fast 1100mV 100C" "Fast 1100mV -40C"; do
+    echo "${corner}: fmax $(grep -A6 "; ${corner} Model Fmax Summary" "${out}/ppc603e_demo.sta.rpt" | grep -m1 -oE "[0-9.]+ MHz" | head -1 || echo n/a)," \
+      "setup $(grep -A5 "; ${corner} Model Setup Summary" "${out}/ppc603e_demo.sta.rpt" | grep -m1 "^; clk" | cut -d';' -f3)," \
+      "hold $(grep -A5 "; ${corner} Model Hold Summary" "${out}/ppc603e_demo.sta.rpt" | grep -m1 "^; clk" | cut -d';' -f3)"
+  done
 fi
 echo "quartus exit status ${status}"
 if [[ "${1:-}" == --clean ]]; then
