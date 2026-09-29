@@ -118,6 +118,7 @@ module tb_crstate_execution;
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),
+    .watchdog_interrupt_o(), .watchdog_reset_o(), .watchdog_reseto_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(timer_outputs[33]), .decrementer_pc_o(timer_outputs[31:0]),
     .decrementer_pending_o(timer_outputs[32]),

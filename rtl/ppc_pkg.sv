@@ -408,7 +408,8 @@ package ppc_pkg;
     // 602 only.
     EVENT_EMULATION_TRAP  = 5'd21,
     EVENT_ESA             = 5'd22,
-    EVENT_DSA             = 5'd23
+    EVENT_DSA             = 5'd23,
+    EVENT_WATCHDOG        = 5'd24
   } exception_event_t;
 
   // Chip-pin events into the core, already synchronized. soft_reset and mcp
@@ -713,6 +714,12 @@ package ppc_pkg;
   // reset clears IBR (2.1.2.4.3); the rest reset to zero here, which for SP
   // and LT is a simulation choice, not a silicon value (2.1.2.4.1).
   localparam logic [31:0] TCR_WMASK = 32'hfe00_0000;     // TI, CRE, L2E, NWE, WIE, SLT
+  // TCR fields (602UM Table 2-14): TI is manual bits 0-1.
+  localparam int TCR_CRE = 29;
+  localparam int TCR_L2E = 28;
+  localparam int TCR_NWE = 27;
+  localparam int TCR_WIE = 26;
+  localparam int TCR_SLT = 25;
   localparam logic [31:0] IBR_WMASK = 32'hffff_0000;
   localparam logic [31:0] ESASRR_WMASK = 32'h0000_000f;  // PR, AP, SA, EE
   localparam logic [31:0] SEBR_WMASK = 32'hfffe_0000;

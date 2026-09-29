@@ -111,6 +111,7 @@ module tb_special_lint #(
   logic dispatch_ready_o;
   ppc_pkg::pin_status_t pin_status_o;
   logic decrementer_taken_o, decrementer_pending_o;
+  logic watchdog_interrupt_o, watchdog_reset_o, watchdog_reseto_o;
   logic [31:0] decrementer_pc_o;
   logic interrupt_taken_o;
   logic [31:0] interrupt_pc_o;

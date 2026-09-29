@@ -30,6 +30,8 @@ module ppc_exception_state #(
   input  logic        event_miss_way_i,
   // 602 esa: the SE bit of the page or block holding the esa.
   input  logic        event_esa_enable_i,
+  // 602 IBR prefix (IBR manual bits 0-15); unused on other variants.
+  input  logic [15:0] ibr_i,
 
   output logic        result_valid_o,
   input  logic        result_ready_i,
@@ -136,12 +138,23 @@ module ppc_exception_state #(
     end
   endfunction
 
-  function automatic logic [31:0] exception_vector(
+  // MSR[IP] selects 0xFFF0 or 0x0000 as the prefix.
+  function automatic logic [31:0] fixed_vector(
     input logic ip,
     input logic [12:0] offset
   );
     return (ip ? 32'hfff0_0000 : 32'h0000_0000) |
            {19'b0, offset};
+  endfunction
+
+  // 602UM Table 2-15: with MSR[IP] clear, the 602 takes the prefix from IBR
+  // for all but system reset, machine check and IABR.
+  function automatic logic [31:0] exception_vector(
+    input logic ip,
+    input logic [12:0] offset
+  );
+    return (HAS_602 && !ip) ? {ibr_i, 3'b0, offset} :
+                              fixed_vector(ip, offset);
   endfunction
 
   always_ff @(posedge clk_i) begin
@@ -288,7 +301,7 @@ module ppc_exception_state #(
                 srr1_q <= (msr_q & 32'h0000_ffff) | SRR1_MACHINE_CHECK_TEA;
                 msr_q <= exception_msr(msr_q) & ~(32'd1 << MSR_ME);
                 result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0200);
+                result_target_q <= fixed_vector(msr_q[MSR_IP], 13'h0200);
               end
             end
             EVENT_MACHINE_CHECK_PIN, EVENT_MACHINE_CHECK_APE: begin
@@ -300,7 +313,7 @@ module ppc_exception_state #(
                    SRR1_MACHINE_CHECK_APE : SRR1_MACHINE_CHECK_MCP);
                 msr_q <= exception_msr(msr_q) & ~(32'd1 << MSR_ME);
                 result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0200);
+                result_target_q <= fixed_vector(msr_q[MSR_IP], 13'h0200);
               end
             end
             EVENT_SOFT_RESET: begin
@@ -309,7 +322,7 @@ module ppc_exception_state #(
               srr1_q <= msr_q & 32'h0000_ffff;
               msr_q <= exception_msr(msr_q);
               result_supported_q <= 1'b1;
-              result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0100);
+              result_target_q <= fixed_vector(msr_q[MSR_IP], 13'h0100);
             end
             EVENT_SMI: begin
               // UM Table 4-19: as external, at 0x1400.
@@ -328,8 +341,9 @@ module ppc_exception_state #(
                 srr1_q <= msr_q & 32'h0000_ffff;
                 msr_q <= exception_msr(msr_q);
                 result_supported_q <= 1'b1;
-                result_target_q <= exception_vector(msr_q[MSR_IP],
-                  event_kind_i == EVENT_TRACE ? 13'h0d00 : 13'h1300);
+                result_target_q <= (event_kind_i == EVENT_TRACE) ?
+                  exception_vector(msr_q[MSR_IP], 13'h0d00) :
+                  fixed_vector(msr_q[MSR_IP], 13'h1300);
               end
             end
             EVENT_RFI: begin
@@ -347,8 +361,18 @@ module ppc_exception_state #(
                 result_target_q <= {srr0_q[31:2], 2'b00};
               end
             end
+            EVENT_WATCHDOG: begin
+              // 602UM Table 4-22: maskable by EE, as the decrementer.
+              if (HAS_602 && msr_q[MSR_EE]) begin
+                srr0_q <= event_pc_i;
+                srr1_q <= msr_q & 32'h0000_ffff;
+                msr_q <= exception_msr(msr_q);
+                result_supported_q <= 1'b1;
+                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h1500);
+              end
+            end
             EVENT_EMULATION_TRAP: begin
-              // 602UM Table 4-23. The IBR vector prefix is not modelled.
+              // 602UM Table 4-23.
               if (HAS_602) begin
                 srr0_q <= event_pc_i;
                 srr1_q <= msr_q & 32'h0000_ffff;
