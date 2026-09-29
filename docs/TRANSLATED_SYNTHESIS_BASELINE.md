@@ -1,5 +1,15 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-29 special-lane result path shortened
+
+Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,
+commit c0ebe1a, 2026-09-29. `mfrom` is looked up at dispatch into a register, and the 602
+SPR reads fold to zero on other variants, so the PID7v special-lane result mux is back
+to its pre-V7 depth. **Meets 50 MHz and 66 MHz** at every corner: setup +5.608 / +5.808 /
++7.656 / +7.995 ns, hold +0.156 / +0.197 / +0.126 / +0.105 ns (slow 100 C, slow -40 C,
+fast 100 C, fast -40 C); worst internal path 14.39 ns (69.5 MHz). No endpoint fails
+at 15.152 ns. The performance-event port is open in this top, so its logic is pruned.
+
 ## 2026-09-29 CPU variant round V7 (602 decode and SPRs)
 
 Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,
