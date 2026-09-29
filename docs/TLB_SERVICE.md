@@ -24,6 +24,36 @@ Page numbers below are **one-based PDF pages**, followed by the printed page. Th
 
 Figure 5-7, Figure 5-17 and PEM Table 7-21 were visually inspected as well as text-extracted. In HDL numbering, set index is `EA[16:12]`, page tag is `EA[27:17]`, and offset is `EA[11:0]`. EA[31:28] selects the caller's segment register and is **not** compared separately. Two segment numbers resolving to the same VSID therefore alias when their remaining page address agrees. Different VSIDs retain separate translations, including when only a high VSID bit differs. RPN is 20 bits and the allowed PA is `{RPN, EA[11:0]}`.
 
+## Geometry parameter
+
+`TLB_SETS` (32 or 16, anything else fails elaboration) sizes the service, the
+router's micro-TLB set flush and the entry RAMs (`2 × TLB_SETS` words per way).
+`ppc_core_bat` takes `cpu_cfg(CPU_VARIANT).tlb_sets` unless its own `TLB_SETS`
+is nonzero; benches use that override to run the 16-set geometry on a core the
+602 variant cannot yet build. The 32-set build is unchanged.
+
+| Sets | Set index (manual / HDL) | Page tag (manual / HDL) | `tlbie` sweep |
+| --- | --- | --- | --- |
+| 32 (603e, 603) | EA15–19 / `EA[16:12]` | EA4–14 / `EA[27:17]` | 32 |
+| 16 (602) | EA16–19 / `EA[15:12]` | EA4–15 / `EA[27:16]` | 16 |
+
+602 source: 602UM Figure 5-9 and prose, PDF 256–257 / 5-34–5-35 (EA16–19 select
+two entries; EA10–15 extend the API compare); Table 2-50, PDF 141 / 2-65, and the
+`tlbie` table, PDF 245 / 5-23 (index EA[16–19], 16 invalidations). The same
+manual contradicts itself: §2.3.6.3.3 prose on PDF 141 / 2-65 and the `tlbld`/`tlbli`
+pseudocode on PDF 145 / 2-69 still say EA15–19 and 32 `tlbie`s, copied from the
+603e. The figure and both tables win.
+
+Set count does not enter miss derivation. IMISS/DMISS hold the EA, ICMP/DCMP the
+VSID and API, and HASH1/HASH2 the PTEG addresses of the architected hash; the
+602 formats match the 603e (602UM Table 2-11, PDF 92 / 2-16). SRR1[WAY] is the
+per-set LRU bit at either geometry.
+
+Not implemented here: the 602 per-page NE/SE/WE bits and protection-only mode
+(HID0[PO]), in which the same entries hold 32 per-page permission bits and
+translation is bypassed (602UM §5.6, PDF 280+ / 5-58+). They widen `entry_t`
+and add a lookup mode; that is CPU-variant round V9.
+
 ## Transactions and held responses
 
 A request is accepted on a rising edge with `req_valid_i && req_ready_o`. With no runtime proposal, held commit acknowledgment or request in classification, `req_ready_o = rst_ni && (!response_valid || rsp_ready_i)`. The accepting edge captures the request and reads both ways of the addressed set from entry RAM. The next edge classifies it from that registered read, registers its entire response and, for a successful kind-1 refill or kind-2 invalidate, changes storage. Every response therefore appears one cycle later than the acceptance edge would allow with flop storage. No request is accepted during classification, so no read shares an edge with a write. A held response blocks every following request; a runtime proposal or acknowledgment also reserves the slot. When an ordinary old response is consumed, one new request may be accepted on that same edge.
