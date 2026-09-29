@@ -3,7 +3,10 @@
 // The translated cached top with the data cache, its BIU and snooper on a
 // 60x memory with a second bus master. A hand-assembled program runs with DR=1 over four DBATs (cacheable
 // M=1, write-through, caching-inhibited guarded, read-only) and unmapped
-// space. A golden memory follows every store, dcbz, dcbi and flash
+// space, then over four TLB pages loaded by tlbld (cacheable M=1,
+// write-through, caching-inhibited guarded, cacheable guarded). Guarded
+// loads on paths that never complete (after a taken branch, a trap and a
+// DSI) and touches to guarded pages must not reach the bus. A golden memory follows every store, dcbz, dcbi and flash
 // invalidate at the LSU port; every load response and every retired
 // lbz/lhz/lha/lwz value is checked against it, and memory must equal it
 // after the final flush. Exceptions are checked by their handlers' SPR reads.
@@ -37,8 +40,16 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   int cycles=0,checks=0,retires=0,load_checks=0,rsp_checks=0,end_retires=0;
   localparam int MEM_BYTES=1<<20;
   localparam logic [31:0] START=32'h2000;
+  localparam logic [31:0] PAGE=32'h9_0000;
+  // Lines only guarded loads on never-completed paths name.
+  localparam logic [31:0] POISON [6] = '{32'h4_0800, PAGE+32'h2800, PAGE+32'h3800,
+                                         PAGE+32'h2840, PAGE+32'h3880, PAGE+32'h38a0};
   logic [7:0] gold [0:MEM_BYTES-1];
   logic [31:0] shadow [0:31];
+  // Address parity is checked by the pin bench.
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [3:0] unused_ap;
+  /* verilator lint_on UNUSEDSIGNAL */
 
   /* verilator lint_off PINCONNECTEMPTY */
   ppc_core_bat_cached_bus60x #(.RESET_PC(START),.ENABLE_TEST_REDIRECT(1'b0),
@@ -122,7 +133,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     .retry_i(bfm_retry),.hold_i(1'b0),.drtry_i(bfm_drtry),.wait_i(bfm_wait),
     .bg_n_o(bg_n),.aack_n_o(aack_n),.artry_n_o(artry_n),.dbg_n_o(dbg_n),
     .d_o(data_in),.ta_n_o(ta_n),.drtry_n_o(drtry_n),.tea_n_o(tea_n),
-    .bus_ts_n_o(snoop_ts_n),.bus_a_o(snoop_a),.bus_tt_o(snoop_tt),.bus_gbl_n_o(snoop_gbl_n)
+    .bus_ts_n_o(snoop_ts_n),.bus_a_o(snoop_a),.bus_tt_o(snoop_tt),.bus_gbl_n_o(snoop_gbl_n),.bus_ap_o(unused_ap)
   );
   assign tr=rst_n;
   logic unused_outputs;
@@ -168,7 +179,10 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     expected.push_back(e);
   endtask
   // Per-PC checks at retirement: expected value, or a bus-request kind.
-  typedef enum int {PC_VALUE, PC_READ_SINGLE, PC_WRITE_SINGLE, PC_ADDR_ONLY} pc_check_e;
+  // The *_AT kinds also match the tenure's address (value) by double word
+  // (singles) or line (bursts).
+  typedef enum int {PC_VALUE, PC_READ_SINGLE, PC_WRITE_SINGLE, PC_ADDR_ONLY,
+                    PC_READ_BURST_AT, PC_READ_SINGLE_AT, PC_WRITE_SINGLE_AT} pc_check_e;
   typedef struct {pc_check_e kind; logic [31:0] value; logic [4:0] tt;} pc_check_t;
   pc_check_t pc_checks [logic [31:0]];
   task automatic at_pc(input pc_check_e k, input logic [31:0] v=0, input logic [4:0] t=0);
@@ -193,6 +207,9 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     handler(32'h600,1);   // alignment: skip
     handler(32'h1100,1);  // DTLB load miss: skip
     handler(32'h1200,1);  // DTLB store miss: skip
+    // Program (trap): skip the trap and the instruction after it.
+    pc=32'h700;
+    emit(asm_spr(0,22,SRR0)); emit(asm_addi(22,22,8)); emit(asm_spr(1,22,SRR0)); emit(RFI);
     pc=START;
     // DBAT0 cacheable M=1, DBAT1 W=1, DBAT2 I=1 G=1, DBAT3 read-only.
     li32(5,32'h0000_0003); emit(asm_spr(1,5,536)); li32(5,32'h0000_0012); emit(asm_spr(1,5,537));
@@ -286,6 +303,46 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     at_pc(PC_ADDR_ONLY,0,TT_CLEAN); emit(asm_dcbst(0,10));
     at_pc(PC_ADDR_ONLY,0,TT_KILL); emit(asm_dcbi(0,10));
     li32(5,ICE|DCE); emit(asm_spr(1,5,HID0));
+    // L: TLB pages (UM 5.4.2: tlbld from DCMP and RPA, way from SRR1).
+    // EA = PA; RPA has R=C=1, PP=2 and the page's WIMG.
+    li32(5,32'h0000_0123); emit(32'h7c00_01a4|(32'(5)<<21));     // mtsr 0,r5
+    li32(5,0); emit(asm_spr(1,5,SRR1));
+    for (int k=0;k<4;k++) begin
+      logic [3:0] wimg;
+      wimg=(k==0)?4'b0010:(k==1)?4'b1010:(k==2)?4'b0101:4'b0011;
+      li32(5,32'h8000_0000|(32'h123<<7)); emit(asm_spr(1,5,977));
+      li32(5,PAGE+32'(k)*32'h1000|32'h180|(32'(wimg)<<3)|32'h2); emit(asm_spr(1,5,982));
+      li32(10,PAGE+32'(k)*32'h1000); emit(32'h7c00_07a4|(32'(10)<<11)); // tlbld r10
+    end
+    li32(12,PAGE); li32(13,PAGE+32'h1000); li32(14,PAGE+32'h2000); li32(15,PAGE+32'h3000);
+    // Cacheable M=1: a store miss fills (RWITM), then hits.
+    at_pc(PC_READ_BURST_AT,PAGE); emit(asm_stw(7,0,12));
+    emit(asm_lwz(8,0,12)); emit(asm_lbz(8,5,12)); emit(asm_lwz(8,32'h1c,12));
+    // Write-through: stores write single beats; a load fills, then hits.
+    at_pc(PC_WRITE_SINGLE_AT,PAGE+32'h1000); emit(asm_stw(7,0,13));
+    at_pc(PC_READ_BURST_AT,PAGE+32'h1000); emit(asm_lwz(8,0,13));
+    at_pc(PC_WRITE_SINGLE_AT,PAGE+32'h1004); emit(asm_stw(26,4,13));
+    emit(asm_lwz(8,4,13));
+    // Caching-inhibited guarded: single beats; dcbz takes alignment.
+    at_pc(PC_READ_SINGLE_AT,PAGE+32'h2000); emit(asm_lwz(8,0,14));
+    at_pc(PC_WRITE_SINGLE_AT,PAGE+32'h2008); emit(asm_stw(7,8,14));
+    at_pc(PC_READ_SINGLE_AT,PAGE+32'h2008); emit(asm_lwz(8,8,14));
+    expect_exc(32'h600,pc,PAGE+32'h2000,32'hffff_ffff); emit(asm_dcbz(0,14));
+    // Cacheable guarded: an architecturally executed load fills.
+    at_pc(PC_READ_BURST_AT,PAGE+32'h3020); emit(asm_lwz(8,32'h20,15));
+    emit(asm_stw(7,32'h24,15)); emit(asm_lwz(8,32'h24,15));
+    emit(32'h7c00_04ac);
+    // M: guarded loads on paths that never complete.
+    emit(asm_ba(pc+8,0)); emit(asm_lwz(8,32'h800,3));
+    li32(9,0); emit(asm_cmpwi(9,0)); emit(asm_bc(12,2,8)); emit(asm_lwz(8,32'h800,14));
+    emit(32'h7fe0_0008); emit(asm_lwz(8,32'h800,15));             // tw 31,0,0
+    expect_exc(32'h300,pc,32'h6_0000,32'h0a00_0000); emit(asm_stw(7,0,4));
+    emit(asm_ba(pc+8,0)); emit(asm_lwz(8,32'h840,14));
+    // UM 3.7.2: touches to a guarded page are no-ops.
+    emit(asm_addi(10,15,32'h880)); emit(asm_dcbt(0,10));
+    emit(asm_addi(10,15,32'h8a0)); emit(asm_dcbtst(0,10));
+    emit(asm_dcbf(0,12)); emit(asm_dcbf(0,13)); emit(asm_addi(10,15,32'h20)); emit(asm_dcbf(0,10));
+    emit(32'h7c00_04ac);
     // K: flush everything, then sync.
     li32(9,32'h8000); li32(5,32'h280); emit(asm_spr(1,5,9));
     emit(asm_dcbf(0,9)); emit(asm_addi(9,9,32)); emit(asm_bc(16,0,-8));
@@ -341,6 +398,10 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
               check(biu.mem[a]==gold[a],$sformatf("write-through %08x not in memory at sync",a));
             for (int a=32'h4_0000;a<32'h4_0100;a++)
               check(biu.mem[a]==gold[a],$sformatf("inhibited %08x not in memory at sync",a));
+            for (int a=int'(PAGE)+'h1000;a<int'(PAGE)+'h1100;a++)
+              check(biu.mem[a]==gold[a],$sformatf("write-through page %08x not in memory at sync",a));
+            for (int a=int'(PAGE)+'h2000;a<int'(PAGE)+'h2100;a++)
+              check(biu.mem[a]==gold[a],$sformatf("inhibited page %08x not in memory at sync",a));
             syncs++;
           end
           CACHE_OP_DCBT: if (noopti_accepts>=0) begin
@@ -379,7 +440,8 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   // A data tenure of the expected kind from shortly before the retirement
   // on; posted writes and broadcasts reach the bus after it.
   int tenure_waits=0,tenure_checks=0;
-  task automatic expect_tenure(input pc_check_e k, input logic [4:0] t, input int since);
+  task automatic expect_tenure(input pc_check_e k, input logic [4:0] t, input int since,
+                              input logic [31:3] addr=0);
     int deadline;
     bit found;
     deadline=biu.cycle+2000;
@@ -390,6 +452,12 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
         case (k)
           PC_READ_SINGLE: found=int'(biu.hist[i].kind)==int'(BUS_READ_SINGLE)&&biu.hist[i].ci;
           PC_WRITE_SINGLE: found=int'(biu.hist[i].kind)==int'(BUS_WRITE_SINGLE);
+          PC_READ_BURST_AT: found=int'(biu.hist[i].kind)==int'(BUS_READ_BURST)&&
+                                  biu.hist[i].addr[31:5]==addr[31:5]&&!biu.hist[i].ci;
+          PC_READ_SINGLE_AT: found=int'(biu.hist[i].kind)==int'(BUS_READ_SINGLE)&&
+                                   biu.hist[i].addr[31:3]==addr[31:3]&&biu.hist[i].ci;
+          PC_WRITE_SINGLE_AT: found=int'(biu.hist[i].kind)==int'(BUS_WRITE_SINGLE)&&
+                                    biu.hist[i].addr[31:3]==addr[31:3];
           default: found=int'(biu.hist[i].kind)==int'(BUS_ADDR_ONLY)&&biu.hist[i].tt==t;
         endcase
         if (found) begin biu.hist[i].claimed=1; tenure_waits--; tenure_checks++; end
@@ -436,7 +504,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
           c=pc_checks[retired.pc];
           case (c.kind)
             PC_VALUE: check(retired.value==c.value,$sformatf("value %08x",retired.value));
-            default: fork expect_tenure(c.kind,c.tt,biu.cycle-64); join_none
+            default: fork expect_tenure(c.kind,c.tt,biu.cycle-64,c.value[31:3]); join_none
           endcase
         end
         if (retired.pc inside {32'h200,32'h300,32'h600,32'h1100,32'h1200}) begin
@@ -477,6 +545,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
       gold[int'(a)+k]=prog[a][31-8*k -: 8];
     end
     biu.tea_write_commits=1;
+    biu.cpu_pipeline_pct=50;
     biu.tea_once.push_back(32'h8500);
     biu.tea_once.push_back(32'h2_0040);
     repeat(4)@(negedge clk);rst_n=1;
@@ -491,6 +560,11 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
       check(biu.mem[a]==gold[a],$sformatf("memory %08x=%02x expected %02x",a,biu.mem[a],gold[a]));
     for (int a=32'h2_0000;a<32'h2_0100;a++) check(biu.mem[a]==gold[a],"write-through memory");
     for (int a=32'h4_0000;a<32'h4_0100;a++) check(biu.mem[a]==gold[a],"inhibited memory");
+    for (int a=int'(PAGE);a<int'(PAGE)+'h4000;a++)
+      check(biu.mem[a]==gold[a],$sformatf("page memory %08x=%02x expected %02x",a,biu.mem[a],gold[a]));
+    foreach (biu.hist[i]) foreach (POISON[j])
+      check(biu.hist[i].addr[31:5]!=POISON[j][31:5],
+            $sformatf("guarded load on a never-completed path reached the bus: %08x",biu.hist[i].addr));
     check(expected.size()==0,$sformatf("%0d exceptions not taken",expected.size()));
     check(noopti_accepts==-2,"NOOPTI touch not observed");
     check(biu.n_read_burst>0&&biu.n_read_single>0&&biu.n_write_burst>0&&
@@ -498,10 +572,10 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
           biu.tt_count[TT_RWITM]>0&&biu.tt_count[TT_WRITE_KILL]>0,
           $sformatf("coverage rb=%0d rs=%0d wb=%0d ws=%0d ao=%0d err=%0d",biu.n_read_burst,
                     biu.n_read_single,biu.n_write_burst,biu.n_write_single,biu.n_addr_only,biu.n_errors));
-    $display("PASS data cache core: checks=%0d retires=%0d load_values=%0d load_responses=%0d exceptions=%0d bus: read_burst=%0d read_single=%0d write_burst=%0d write_single=%0d addr_only=%0d push=%0d errors=%0d retries=%0d drtries=%0d snoops=%0d snoop_retries=%0d cycles=%0d",
+    $display("PASS data cache core: checks=%0d retires=%0d load_values=%0d load_responses=%0d exceptions=%0d bus: read_burst=%0d read_single=%0d write_burst=%0d write_single=%0d addr_only=%0d push=%0d errors=%0d retries=%0d drtries=%0d snoops=%0d snoop_retries=%0d snoops_over_pending_data=%0d tenure_checks=%0d cycles=%0d",
       checks,retires,load_checks,rsp_checks,taken,biu.n_read_burst,biu.n_read_single,
       biu.n_write_burst,biu.n_write_single,biu.n_addr_only,biu.n_push,biu.n_errors,
-      biu.retries,biu.drtries,biu.om_tenures,biu.om_retried,cycles);
+      biu.retries,biu.drtries,biu.om_tenures,biu.om_retried,biu.om_overlapped,tenure_checks,cycles);
     $finish;
   end
 endmodule

@@ -81,9 +81,16 @@ carries the status: alignment refused, or stored.
   `pin_status_t`. While DCFI is set the cache invalidates and accepts nothing;
   software clears it.
 
-Speculation: loads and sync may be offered before older instructions finish and
-are withdrawn on recovery as before; stores and cache-block stores wait for
-authorization. Guarded loads are not yet held to non-speculative issue.
+Speculation and guarded storage: a memory operation dispatches only with the
+completion queue empty and the integer lane idle, so every older instruction
+has completed; branches, traps, `sc` and exceptions resolve in the same
+serialized lane before a younger instruction dispatches. In the chip
+configuration (`ENABLE_TEST_REDIRECT=0`) nothing withdraws an offered load
+(`ppc_core` asserts it), so every load that reaches the cache is in the
+execution path, and a guarded load (G=1, cached or not) is never performed out
+of order (UM §3.5.4, §3.5.5.2). The test redirect port, which only benches
+enable, can still withdraw an offered load and models a flush the chip never
+makes. dcbt and dcbtst to a guarded page are no-ops (UM §3.7.2).
 
 ### Verification
 
@@ -115,8 +122,15 @@ authorization. Guarded loads are not yet held to non-speculative issue.
   string, multiple, byte-reverse and misaligned forms, two alignment exceptions)
   with the cache on from reset, on the same randomized 60x memory as fetch.
 
-Not covered here: page-table WIMG (only BAT WIMG is exercised), guarded-load
-speculation. Pin-level and coherence checks are under
+The same program then loads four DTLB entries with `tlbld` (EA = PA, WIMG
+from the RPA) and checks each page's bus traffic by address at retirement:
+cacheable M=1 (a store miss fills by RWITM, then hits), write-through (single
+writes, a load fills), caching-inhibited guarded (single reads and writes;
+dcbz takes alignment with DAR) and cacheable guarded (an executed load fills).
+Guarded loads placed after a taken `b`, a taken `beq`, a `tw` trap and a DSI,
+none of which complete, and dcbt/dcbtst to the cacheable guarded page, must
+leave no data tenure to their lines. Memory must equal the golden copy over
+the pages after a dcbf of their lines. Pin-level and coherence checks are under
 [Integrated verification](#integrated-verification).
 
 ### Records (LSU side against the bench BIU model, superseded)
@@ -207,10 +221,16 @@ starts the push before any queued or retried request. BR without a tenure while
 the push data is read is allowed (§8.3.1). The arbiter must grant this
 processor while its BR is asserted, as §8.3.2 expects after ARTRY.
 
+Address parity: `ppc603e` checks AP on a snooped TS with GBL when HID0[EBA]
+is set and asserts APE in the second cycle after TS; the error takes a machine
+check (SRR1 bit 15) or checkstops with MSR[ME]=0 (UM §8.3.2.1, §7.2.3.3). The
+manual specifies no ARTRY for a parity error, so the snoop proceeds.
+
 Not implemented: negating BR for a cycle after another snooper's ARTRY
-(§7.2.5.2.2), ARTRY on address parity errors, pipelining the push ahead of a
-request whose address tenure is already accepted (the push waits for that data
-tenure), and DBWO enveloped pushes.
+(§7.2.5.2.2) and pipelining the push ahead of a request whose address tenure
+is already accepted (the push waits for that data tenure). DBWO enveloping is
+optional and never applies here; see the DBWO section of
+[CHIP_PACKAGE.md](CHIP_PACKAGE.md#dbwo).
 
 ### Pin wiring
 
@@ -286,7 +306,11 @@ The joined design is verified under
 ## Integrated verification
 
 Benches run on `tb/bfm/bus60x_coherent_bfm.sv`: one 60x memory, an arbiter
-and a second bus master serving one tenure at a time. The processor's TS, A,
+and a second bus master. The second master can pipeline address tenures
+(`om_pipeline_pct`: a second TS in the cycle after the first's AACK when no
+ARTRY was seen by AACK, UM §7.2.1.2) and run address tenures while a processor
+data tenure is pending (`cpu_pipeline_pct`); data tenures follow address
+order. The processor's TS, A,
 TT and GBL are shared with the second master; its ARTRY retries the second
 master, which then grants the processor its push and reissues the command.
 The model fails on processor ARTRY outside a second-master snoop window.
@@ -316,7 +340,11 @@ The model fails on processor ARTRY outside a second-master snoop window.
   Firmware adjustments for a write-back cache: mmu-stress pushes the code it
   writes (dcbst, sync, icbi, isync) before fetching it; full-decode keeps DCE
   in its HID0 writes, leaves out DCFI while the cache is on, and flushes the
-  eciwx/ecowx words.
+  eciwx/ecowx words. mmu-stress ends with a page-table WIMG phase: PTEs map one
+  frame as write-through, caching-inhibited guarded, cacheable and cacheable
+  guarded pages; a write-through store is visible through the inhibited alias,
+  an inhibited access to a modified line reads the pushed value, and dcbst and
+  dcbf reach memory. The cache-less profiles run it without dcbst and dcbf.
 - `make -C toolchain rtl-lsu-dcache`: the LSU image on the shared memory.
 - `make -C sim coverage` adds `lsu-dcache` and `chip-mmu-stress`.
 
@@ -345,6 +373,5 @@ Recorded: `make -C sim -j2 ci`, commit 1f2b66c, 2026-09-29.
 Established: the cache, BIU cache master and snooper together at the core and
 pin tops; coherent results against a second master's reads, RWITMs,
 write-with-kill, write-with-flush, kill, flush and clean on shared lines; the
-chip images with the cache on. Not established: pipelined address tenures from
-the other master (the model serializes tenures), page-table WIMG, eciwx/ecowx
-against cached copies (software flushes them), guarded-load speculation.
+chip images with the cache on. Not established: eciwx/ecowx against cached
+copies (software flushes them).

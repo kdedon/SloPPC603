@@ -893,3 +893,10 @@ on in `ppc603e` and the translated top. Fresh on the merge: `make -C sim ci` and
 translated/chip fits (both meet 66 MHz). MVP 91.25% → 95.73%. Next: wave 3,
 release packaging and final signoff. See [integration](../../DATA_CACHE_INTEGRATION.md).
 
+## MVP signoff — accepted (2026-09-29)
+
+Last functional gaps closed and `make -C sim release-check` passed on the release
+commit: ci, reference-acceptance and all four fits meeting 50 MHz and 66 MHz.
+MVP 95.73% → 97.20%. See the signoff section in
+[SYSTEM_COMPLETION.md](../../SYSTEM_COMPLETION.md).
+

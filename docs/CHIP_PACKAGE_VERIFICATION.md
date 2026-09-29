@@ -10,7 +10,7 @@ Contract: [CHIP_PACKAGE.md](CHIP_PACKAGE.md).
 
 `make -C sim test-chip-pins` (`tb/tb_chip_pins.sv`) drives and observes only
 the `ppc603e` pins. Each case hard-resets the chip into a small program; its
-handlers store markers to RAM over the bus. PASS: checks=1122, cycles=54923.
+handlers store markers to RAM over the bus. PASS: checks=1352, cycles=74139.
 
 | Case | Establishes |
 |---|---|
@@ -25,6 +25,9 @@ handlers store markers to RAM over the bus. PASS: checks=1122, cycles=54923.
 | SMI | MSR[EE]=0 masks SMI; with EE=1, SMI and INT together enter 0x1400 before 0x500; SRR1 high half is zero and holds EE |
 | RSRV | Negated at reset, asserted after `lwarx`, negated after `stwcx.` |
 | TLBISYNC | Asserted TLBISYNC holds completion at `tlbsync`; negation lets it complete |
+| APE | HID0[EBA]=1, MSR[ME]=1: a second-master global read with correct AP, and one with wrong AP but GBL negated, leave APE negated; with wrong AP and GBL, APE asserts for exactly one cycle, the second after TS, and the chip enters 0x200 with SRR1[15] the only high bit set; `rfi` resumes |
+| APE disabled | HID0[EBA]=0: wrong AP asserts no APE, no machine check, no checkstop |
+| APE with ME=0 | Checkstop, outputs released, no 0x200 entry; HRESET reboots |
 
 The bench's hard reset withholds BG until any owed data tenure ends (the
 target cannot abandon one) and releases BG only while HRESET is held.

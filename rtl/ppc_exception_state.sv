@@ -56,6 +56,7 @@ module ppc_exception_state #(
   // Machine check causes: manual bit 12 MCP, bit 13 TEA.
   localparam logic [31:0] SRR1_MACHINE_CHECK_TEA = 32'h0004_0000;
   localparam logic [31:0] SRR1_MACHINE_CHECK_MCP = 32'h0008_0000;
+  localparam logic [31:0] SRR1_MACHINE_CHECK_APE = 32'h0001_0000;
 
   logic [31:0] msr_q, srr0_q, srr1_q;
   logic result_valid_q, result_supported_q;
@@ -269,11 +270,13 @@ module ppc_exception_state #(
                 result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0200);
               end
             end
-            EVENT_MACHINE_CHECK_PIN: begin
-              // UM Table 4-10 with manual SRR1 bit 12 (MCP); ME as for TEA.
+            EVENT_MACHINE_CHECK_PIN, EVENT_MACHINE_CHECK_APE: begin
+              // UM Table 4-10: SRR1 bit 12 (MCP) or 15 (APE); ME as for TEA.
               if (msr_q[MSR_ME]) begin
                 srr0_q <= event_pc_i;
-                srr1_q <= (msr_q & 32'h0000_ffff) | SRR1_MACHINE_CHECK_MCP;
+                srr1_q <= (msr_q & 32'h0000_ffff) |
+                  (event_kind_i == EVENT_MACHINE_CHECK_APE ?
+                   SRR1_MACHINE_CHECK_APE : SRR1_MACHINE_CHECK_MCP);
                 msr_q <= exception_msr(msr_q) & ~(32'd1 << MSR_ME);
                 result_supported_q <= 1'b1;
                 result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0200);

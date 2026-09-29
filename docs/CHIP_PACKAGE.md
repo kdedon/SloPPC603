@@ -44,8 +44,8 @@ Status: **I** implemented, **T** tied with the stated behavior,
 | ABB | bidir | 1 | I | Out: address tenure ownership with half-cycle negation. In: another master's tenure. |
 | TS | bidir | 1 | I | Out: transfer start. In: snoop start with GBL. |
 | A[0:31] | bidir | 32 | I | Out: address. In: snoop address. |
-| AP[0:3] | bidir | 4 | I out, T in | Out: odd parity per address byte. In: ignored (no snooping). |
-| APE | out, OD | 1 | T | Never asserted: no snoop addresses are checked. |
+| AP[0:3] | bidir | 4 | I | Out: odd parity per address byte. In: checked against A on another master's TS with GBL (UM §8.3.2.1). |
+| APE | out, OD | 1 | I | With HID0[EBA]=1, asserted for one cycle in the second cycle after a snooped TS whose AP is wrong (UM §7.2.3.3); the error takes a machine check with SRR1[15], or checkstops with MSR[ME]=0. |
 | TT[0:4] | bidir | 5 | I | Out: transfer type. In: snoop type. |
 | TSIZ[0:2] | out | 3 | I | Transfer size. |
 | TBST | bidir | 1 | I out, T in | Out: burst. In: snoop attribute, ignored. |
@@ -64,7 +64,7 @@ XATS is not a 603e pin: the 603e reuses its position for CSE1 (UM §1.1.2.1.1).
 | Signal | Dir | Width | Status | Behavior |
 |---|---|---:|---|---|
 | DBG | in | 1 | I | Qualified data grant. |
-| DBWO | in | 1 | T | Ignored. One address tenure is outstanding at a time, so a write never waits behind a pipelined read; UM §7.2.6.2 then ignores DBWO. |
+| DBWO | in | 1 | T | Ignored; see [DBWO](#dbwo). |
 | DBB | bidir | 1 | I | Out: data tenure ownership with half-cycle negation. In: another master's tenure. |
 | DH[0:31], DL[0:31] | bidir | 64 | I | 64-bit data bus. |
 | DP[0:7] | bidir | 8 | I out, T in | Out: odd parity per data byte. In: not checked. |
@@ -130,11 +130,30 @@ implemented; HID0[EICE] is stored and inert.
 ### Counts
 
 54 signal groups, as in the BUS_SPEC inventory (a bus counts once, DH and DL
-separately, TEST[0:2] as one): 37 implemented, 3 of them with a tied half
-(AP, TBST and DP inputs); TS, A, TT, GBL and ARTRY are whole with
-`ENABLE_DCACHE=1`, the chip's value (each has a tied half at 0); 6 tied (APE, DBWO,
-DPE, QREQ, QACK, CLK_OUT); 6 excluded (TRST, TCK, TMS, TDI, TDO, TEST); 5
-power. `ppc603e` has 69 port declarations, 292 bits.
+separately, TEST[0:2] as one): 38 implemented, 2 of them with a tied half
+(TBST and DP inputs); TS, A, TT, GBL and ARTRY are whole with
+`ENABLE_DCACHE=1`, the chip's value (each has a tied half at 0); AP and APE
+are whole in every build; 5 tied (DBWO, DPE, QREQ, QACK, CLK_OUT); 6 excluded
+(TRST, TCK, TMS, TDI, TDO, TEST); 5 power.
+
+### DBWO
+
+DBWO lets the system run a queued write data tenure (typically a snoop push)
+ahead of an older read whose address tenure is already acknowledged
+(UM §8.10). It is optional: "most system implementations will not need this
+capability; for these applications, DBWO should remain negated" (§8.10, PDF
+page 8-44). The 603e also ignores it when no write address tenure is pending
+(§7.2.6.2). This BIU acknowledges at most one address tenure before its data
+tenure completes, so a write address tenure never follows an unfinished read
+and DBWO never has a write to select; ignoring it is the manual's behavior in
+that state.
+
+System requirement that follows: a push waits for the processor's pending
+data tenure. The system must complete that data tenure while the snooped
+master is being retried; it may not make the read's data depend on the retried
+master's transaction. The coherent model checks this ordering (second-master
+address tenures issued while a processor data tenure is pending, pushes after
+it). `ppc603e` has 69 port declarations, 292 bits.
 
 ## Exceptions from pins
 
@@ -144,7 +163,8 @@ SRR0 = the next instruction. MCP therefore waits for that boundary rather
 than interrupting a hung access; a TEA still ends a hung tenure. Priority
 (Table 4-2): MCP, SRESET, then a pending trace, SMI, INT, DEC. MCP and
 SRESET do not wait for MSR[EE]; SRESET is taken in any state. A machine
-check clears MSR[ME] on entry, as the TEA machine check does.
+check clears MSR[ME] on entry, as the TEA machine check does. A snoop address
+parity error (APE) shares the MCP boundary after MCP and an asynchronous TEA.
 
 The core parameter `ENABLE_PIN_INTERRUPTS` enables these boundaries and the
 TLBISYNC hold; the chip top sets it. Its `pin_event_i` carries the latched

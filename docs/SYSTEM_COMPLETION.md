@@ -19,7 +19,7 @@ acceptance evidence are still required. The aggregate is `sum(weight × completi
 / 100`, rounded to a whole percent. Keep weights fixed between rounds unless the
 user changes scope. Treat small score changes as bookkeeping, not velocity.
 
-**MVP estimate: about 96% complete (weighted 95.7%; planning range 75–90%).** The
+**MVP estimate: about 97% complete (weighted 97.2%); MVP release check passed 2026-09-29.** The
 remaining work is concentrated in platform exceptions (machine check, trace,
 debug) and timing closure. These are
 hard acceptance blockers regardless of the weighted score. Final FPGA acceptance
@@ -40,11 +40,11 @@ is currently unmet.
 | Segment registers, page TLB and software refill | 11% | 97% | CPU-owned SR/SDR1/compare/RPA; SR/SDR1 context changes under ARTRY/DRTRY/holds; TLBLD/TLBLI, TLBIE and TLBSYNC against sole I/D banks; precise PP/N/G/direct-store exceptions; architectural I/load/store miss and C=0 entry with full-EA/HASH capture, TGPR, primary/secondary PTEG search, R/C writeback, PP/key checks, ordinary failed-search ISI/DSI and refill/RFI retry; LRU replacement, remap and invalidation verified under EXT/DEC and reset stress on the translated cached top | True misses report the per-set TLB LRU way in SRR1.WAY; changed-bit hits retain the matched way. Software fixture is single-writer, using a halfword R/C update for stores; concurrent PTE writers and nested misses are outside its contract. Bounded SDR1/provenance checks and read-only real-mode miss SPR policy; loads require V=1/H=0, supported RPA shape and IR=DR=0; TLBISYNC is treated as negated. External-management frontend coherence and final timing remain open. |
 | 60x physical transport | 6% | 95% | Scalar master and separate four-beat line reads; seeded ARTRY/DRTRY (corrupted cancelled beats, multi-cycle DRTRY) and held tenures across every translated MMU stress mode; translated scalar wrapper runs real search/fault ELFs, with physical PA/byte lanes, ARTRY/DRTRY, TEA/reset checks; seeded ARTRY/DRTRY/held-fill stress and compiled firmware on the translated cached top | Scalar path fixes CI=1/WT=0/GBL=0; cached wrapper permits WIMG=0 instruction fills only. Cached data with WIMG, GBL snooping, ARTRY windows and push priority are accepted with the data cache. TEA on data, scalar fetch and line fill (partial fill discarded) enters machine check or checkstop in the MVP profile; the default profile keeps diagnostics; one active-address reset point covered. No full snoop/parity/timing conformance. |
 | Instruction cache and maintenance | 4% | 97% | 16-KiB four-way physical cache, block-RAM data array, translated WIMG=0 fills/hits, scalar bypass, remap and explicit stale-code invalidate/restart, denied warm-line suppression and partial-fill TEA/reset; CPU `icbi` drains held/retried fills then clears the set; `dcbst`/`sync`/`icbi`/`isync` code patching under EXT/DEC, mode and BAT changes, retries and external maintenance | Conservative WIMG policy; HID0 ICE/ICFI drive cache maintenance (every ICE change invalidates, more than required); no automatic code coherence (not architected). External maintenance is not a CPU/store barrier. |
-| Toolchain and reproducible builds | 3% | 90% | Pinned compiler, BE ELF loader, twenty-two compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes; MMU stress has nine), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility. The release package ([RELEASE.md](RELEASE.md), `make -C sim release-check`, `release-archive`) has no full release-check pass on a release commit yet. |
-| Integration and verification | 6% | 98% | Collected line coverage with a waiver-gated control-arm review, one `make -C sim ci` gate and a 64-seed reference-acceptance run; independent directed/reference tests, seeded cached-top cache-maintenance stress with a scripted ARTRY/DRTRY/hold 60x target, 259 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives; seeded nine-mode MMU/event/reset stress on the MVP-profile translated cached top | Search/fault/stress firmware covers the combined supervisor/page-MMU/cache/bus path with bus retries and seeded TEA machine checks; no formal verification or toggle coverage; six compiled images match DingusPPC instruction by instruction; images with bench-injected events or the 603e software TLB reload are not comparable. |
-| FPGA fit, timing and release | 7% | 99% | Reviewed boundary timing contract implemented by the measurement SDCs; with the data cache on, translated (66.74 MHz) and chip tops meet 50 MHz and 66 MHz setup and hold at every corner; cached physical (72.86 MHz) and timer/BAT (75.36 MHz) also meet 66 MHz | Translated margin at 66 MHz is thin (+0.17 ns); board bring-up excluded; new RTL changes require fresh fits. |
-| Data cache, writeback and coherence | 10% | 90% | 16-KiB four-way write-back MEI cache integrated end to end ([integration](DATA_CACHE_INTEGRATION.md)): LSU → cache → BIU cache master and 60x snooper; on in `ppc603e` and the translated top with HID0[DCE]=0 at reset; coherence against a DMA master verified at the pins (reads, RWITM, write-with-kill/flush, kill, flush, clean, ARTRY and push); core bench 191,813 checks and chip firmware with the cache on | Page-table WIMG and guarded-load speculation untested; pipelined address tenures from other masters untested; no DBWO pushes. |
-| Chip package and pin interface | 4% | 97% | Top `ppc603e` whose ports are the 603e pins ([package](CHIP_PACKAGE.md)): MCP, SRESET, SMI, checkstop, straps, TBEN, RSRV, TLBISYNC, parity and snooping (TS/A/TT/GBL in, ARTRY out); chip images boot with ICE and DCE enabled in software and pass mmu-stress, lsu, machine-check and full-decode with the cache on; pin-level coherence bench with a DMA master; fit meets 66 MHz | No JTAG/COP or power management (excluded); address-parity ARTRY not implemented. |
+| Toolchain and reproducible builds | 3% | 100% | Pinned compiler, BE ELF loader, twenty-two compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes; MMU stress has nine), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility claim. |
+| Integration and verification | 6% | 99% | Collected line coverage with a waiver-gated control-arm review, one `make -C sim ci` gate and a 64-seed reference-acceptance run; independent directed/reference tests, seeded cached-top cache-maintenance stress with a scripted ARTRY/DRTRY/hold 60x target, 259 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives; seeded nine-mode MMU/event/reset stress on the MVP-profile translated cached top | No formal verification or toggle coverage; images with bench-injected events or 603e software TLB reload are not comparable with DingusPPC. |
+| FPGA fit, timing and release | 7% | 100% | Release check on the MVP release commit: translated (66.89 MHz), cached physical (69.65), timer/BAT (70.43) and chip (67.29) tops meet 50 MHz and 66 MHz setup and hold at every corner with no SDC critical warning ([release](RELEASE.md)) | Board bring-up excluded; new RTL changes require fresh fits. |
+| Data cache, writeback and coherence | 10% | 100% | 16-KiB four-way write-back MEI cache integrated end to end ([integration](DATA_CACHE_INTEGRATION.md)): LSU → cache → BIU cache master and 60x snooper; on in `ppc603e` and the translated top with HID0[DCE]=0 at reset; coherence against a DMA master verified at the pins (reads, RWITM, write-with-kill/flush, kill, flush, clean, ARTRY and push); core bench 191,813 checks and chip firmware with the cache on | None in MVP scope: page-table WIMG, guarded-load ordering, pipelined foreign address tenures and snooped address parity are verified; DBWO is ignored as the manual permits for this configuration. |
+| Chip package and pin interface | 4% | 98% | Top `ppc603e` whose ports are the 603e pins ([package](CHIP_PACKAGE.md)): MCP, SRESET, SMI, checkstop, straps, TBEN, RSRV, TLBISYNC, parity and snooping (TS/A/TT/GBL in, ARTRY out); chip images boot with ICE and DCE enabled in software and pass mmu-stress, lsu, machine-check and full-decode with the cache on; pin-level coherence bench with a DMA master; fit meets 66 MHz | Inbound data parity is not checked (DPE never asserted); JTAG/COP and power management excluded. |
 
 Evidence: [core recovery](CORE_RECOVERY.md), [integer ISA inventory](references/ISA_MATRIX.md),
 [alignment](ALIGNMENT_VERIFICATION.md), [live context](LIVE_CONTEXT_VERIFICATION.md),
@@ -191,6 +191,7 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Chip boot round, 2026-09-28 | 89.05% → 89.25% | Chip package 85% → 90%. Chip images enable HID0[ICE] in software; the reset strap is removed. Fresh on the branch, same tree as the merge (`46c5dd7`): `make -C sim ci` (555 PASS lines, 36 firmware profiles). See [verification](CHIP_PACKAGE_VERIFICATION.md). |
 | Data cache LSU round, 2026-09-28 | 89.25% → 91.25% | Data cache 35% → 55%. Core load/store side connected behind `ENABLE_DCACHE` (default off). Fresh on the merge: `make -C sim ci` (542 PASS lines). See [integration](DATA_CACHE_INTEGRATION.md). |
 | Data cache integration round, 2026-09-28 | 91.25% → 95.73% | Data cache 90%, load/store 97%, 60x 95%, chip package 97%, FPGA 99%. BIU cache master, 60x snooping, cache on in the chip and translated tops. Fresh on the merge: `make -C sim ci` (553 PASS lines, 37 firmware profiles, coverage 75.8%) and translated/chip fits; cached-physical and timer/BAT fits inherited from the branch (their files unchanged). See [integration](DATA_CACHE_INTEGRATION.md). |
+| MVP signoff round, 2026-09-29 | 95.73% → 97.20% | Page WIMG, guarded loads, pipelined snoops, snooped address parity; `make -C sim release-check` passes on the release commit (ci, reference-acceptance, four fits with STA and 66 MHz paths). Data cache 100%, chip 98%, FPGA 100%, toolchain 100%, integration 99%. |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.
@@ -951,4 +952,27 @@ after ICE). Coherence is checked at the pins against a DMA master on three seeds
 
 **MVP 91.25% → 95.73%:** data cache 55% → 90%, load/store 94% → 97%, 60x 88%
 → 95%, chip package 90% → 97%, FPGA 98% → 99%.
+
+## MVP signoff (2026-09-29)
+
+Recorded: `make -C sim release-check RELEASE_ARGS="--allow-dirty -j 2"`, merge of the
+MVP-gaps branch (`c55ed4c`) onto `94d7ed5` plus uncommitted merge resolution,
+2026-09-29. Every step passes: `ci` (552 PASS lines, coverage 76.5%, 1,773 of
+2,317), `reference-acceptance`, and the translated, cached-physical, timer/BAT
+and chip fits with STA and 66 MHz target paths.
+
+| Top | Setup slack, slow 100 C / -40 C (ns) | Worst hold (ns) | Fmax | 66 MHz |
+| --- | --- | ---: | ---: | --- |
+| Translated | +5.050 / +5.111 | +0.107 | 66.89 MHz | meets |
+| Cached physical | +5.643 / +5.706 | +0.101 | 69.65 MHz | meets |
+| Timer/BAT | +5.802 / +5.890 | +0.118 | 70.43 MHz | meets |
+| Chip (`ppc603e`) | +5.138 / +5.175 | +0.118 | 67.29 MHz | meets |
+
+This round adds page-table WIMG tests with the data cache, guarded loads that
+never reach the bus speculatively, snooping of pipelined address tenures from
+other masters, and address-parity checking on snooped tenures; DBWO stays
+ignored as the manual permits here.
+
+**MVP 95.73% → 97.20%.** Remaining gaps are listed in the rows; none blocks
+the release.
 
