@@ -340,7 +340,11 @@ The model fails on processor ARTRY outside a second-master snoop window.
   Firmware adjustments for a write-back cache: mmu-stress pushes the code it
   writes (dcbst, sync, icbi, isync) before fetching it; full-decode keeps DCE
   in its HID0 writes, leaves out DCFI while the cache is on, and flushes the
-  eciwx/ecowx words.
+  eciwx/ecowx words. mmu-stress ends with a page-table WIMG phase: PTEs map one
+  frame as write-through, caching-inhibited guarded, cacheable and cacheable
+  guarded pages; a write-through store is visible through the inhibited alias,
+  an inhibited access to a modified line reads the pushed value, and dcbst and
+  dcbf reach memory. The phase also runs in the cache-less profiles.
 - `make -C toolchain rtl-lsu-dcache`: the LSU image on the shared memory.
 - `make -C sim coverage` adds `lsu-dcache` and `chip-mmu-stress`.
 

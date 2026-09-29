@@ -163,7 +163,8 @@ SRR0 = the next instruction. MCP therefore waits for that boundary rather
 than interrupting a hung access; a TEA still ends a hung tenure. Priority
 (Table 4-2): MCP, SRESET, then a pending trace, SMI, INT, DEC. MCP and
 SRESET do not wait for MSR[EE]; SRESET is taken in any state. A machine
-check clears MSR[ME] on entry, as the TEA machine check does.
+check clears MSR[ME] on entry, as the TEA machine check does. A snoop address
+parity error (APE) shares the MCP boundary after MCP and an asynchronous TEA.
 
 The core parameter `ENABLE_PIN_INTERRUPTS` enables these boundaries and the
 TLBISYNC hold; the chip top sets it. Its `pin_event_i` carries the latched
