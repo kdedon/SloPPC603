@@ -539,6 +539,11 @@ module ppc_fpu_arith #(
         logic carry_out;
         logic signed [15:0] max_exp;
         logic signed [15:0] scale;
+        logic signed [15:0] exp_up;
+        logic signed [15:0] exp_base_scaled;
+        logic signed [15:0] exp_up_scaled;
+        logic overflow_base;
+        logic overflow_up;
         out = '0;
         out.exponent = value.exponent;
         out.sign = value.sign;
@@ -581,25 +586,28 @@ module ppc_fpu_arith #(
                 (11'd897 - {5'd0, base_single_lz});
             carry_out = value.increment && (&kept[23:0]);
             if (value.increment) kept[23:0] = rounded_up[23:0];
-            if (carry_out) begin
-                kept[23:0] = 24'h800000;
-                out.exponent += 16'sd1;
-            end
+            if (carry_out) kept[23:0] = 24'h800000;
             out.wide = {kept[23:0], 29'd0};
         end else begin
             carry_out = value.increment && (&kept);
             if (value.increment) kept = rounded_up;
-            if (carry_out) begin
-                kept = {1'b1, 52'd0};
-                out.exponent += 16'sd1;
-            end
+            if (carry_out) kept = {1'b1, 52'd0};
             out.wide = kept;
         end
-        out.overflow = out.exponent > max_exp;
+        // Exponent candidates and overflow for both carry cases are formed
+        // beside the incrementer; its carry selects them.
+        exp_up = value.exponent + 16'sd1;
+        overflow_base = value.exponent > max_exp;
+        overflow_up = value.exponent >= max_exp;
+        exp_base_scaled = value.exponent - scale;
+        exp_up_scaled = exp_up - scale;
+        out.overflow = carry_out ? overflow_up : overflow_base;
         out.ox = out.overflow;
         if (out.overflow && oe)
-            out.exponent -= scale;
-        else if (out.overflow) begin
+            out.exponent = carry_out ? exp_up_scaled : exp_base_scaled;
+        else
+            out.exponent = carry_out ? exp_up : value.exponent;
+        if (out.overflow && !oe) begin
             out.fi = 1'b1;
             out.xx = 1'b1;
         end
