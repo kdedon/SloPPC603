@@ -344,7 +344,7 @@ The model fails on processor ARTRY outside a second-master snoop window.
   frame as write-through, caching-inhibited guarded, cacheable and cacheable
   guarded pages; a write-through store is visible through the inhibited alias,
   an inhibited access to a modified line reads the pushed value, and dcbst and
-  dcbf reach memory. The phase also runs in the cache-less profiles.
+  dcbf reach memory. The cache-less profiles run it without dcbst and dcbf.
 - `make -C toolchain rtl-lsu-dcache`: the LSU image on the shared memory.
 - `make -C sim coverage` adds `lsu-dcache` and `chip-mmu-stress`.
 
