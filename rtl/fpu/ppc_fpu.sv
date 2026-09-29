@@ -230,7 +230,8 @@ module ppc_fpu #(
   logic [PENDING_IDX_BITS-1:0] exec_index;
   logic exec_found;
   logic second_exec_found;
-  logic [PENDING_IDX_BITS-1:0] second_exec_index;
+  logic [PENDING_IDX_BITS-1:0] second_exec_slot;
+  logic exec_kind_mem, exec_kind_fpu;
   logic exec_fire;
   logic arith_rsp_match;
   logic mem_rsp_match;
@@ -300,6 +301,42 @@ module ppc_fpu #(
   logic work1_mem_fill;
   logic [63:0] reply_raw;
   ppc_fpu_result_t work1_result;
+
+  // One-hot oldest set slot.
+  function automatic logic [PENDING_DEPTH-1:0] oldest_of(
+      input logic [PENDING_IDX_BITS-1:0] head,
+      input logic [PENDING_DEPTH-1:0] set);
+    logic [PENDING_DEPTH-1:0] out;
+    begin
+      for (integer s = 0; s < PENDING_DEPTH; s++) begin
+        out[s] = set[s];
+        for (integer t = 0; t < PENDING_DEPTH; t++)
+          if (t != s && set[t] &&
+              age_of(head, PENDING_IDX_BITS'(t)) <
+                age_of(head, PENDING_IDX_BITS'(s)))
+            out[s] = 1'b0;
+      end
+      return out;
+    end
+  endfunction
+
+  // One-hot youngest set slot.
+  function automatic logic [PENDING_DEPTH-1:0] youngest_of(
+      input logic [PENDING_IDX_BITS-1:0] head,
+      input logic [PENDING_DEPTH-1:0] set);
+    logic [PENDING_DEPTH-1:0] out;
+    begin
+      for (integer s = 0; s < PENDING_DEPTH; s++) begin
+        out[s] = set[s];
+        for (integer t = 0; t < PENDING_DEPTH; t++)
+          if (t != s && set[t] &&
+              age_of(head, PENDING_IDX_BITS'(t)) >
+                age_of(head, PENDING_IDX_BITS'(s)))
+            out[s] = 1'b0;
+      end
+      return out;
+    end
+  endfunction
 
   // Physical slot of age k.
   function automatic logic [PENDING_IDX_BITS-1:0] slot_of(
@@ -527,24 +564,30 @@ module ppc_fpu #(
   function automatic source_t read_source(input logic [4:0] reg_index,
                                           input logic [2:0] older_count);
     source_t s;
+    logic [PENDING_DEPTH-1:0] older_match;
+    logic [PENDING_DEPTH-1:0] newest;
     begin
       s = '0;
       s.ready = 1'b1;
       s.raw = {{(64-FPR_BITS){1'b0}}, fpr_q[reg_index]};
       s.sp = CPU_602 && sp_q[31-reg_index];
       s.lt = CPU_602 && lt_q[31-reg_index];
+      for (integer i = 0; i < PENDING_DEPTH; i++)
+        older_match[i] = pending_q[i].valid && pending_q[i].dest_fpr &&
+            pending_q[i].issue.insn[25:21] == reg_index &&
+            age_of(head_q, PENDING_IDX_BITS'(i)) < older_count;
+      newest = youngest_of(head_q, older_match);
       for (integer i = 0; i < PENDING_DEPTH; i++) begin
-        if (i < int'(older_count) && pv[i].valid &&
-            pv[i].dest_fpr && pv[i].issue.insn[25:21] == reg_index) begin
+        if (newest[i]) begin
           s.ready = 1'b0;
-          if ((pv[i].done || pv[i].local_wait == 2'd1) &&
-              pv[i].result.fpr_write &&
-              pv[i].result.exception == FPU_NO_EXCEPTION) begin
+          if ((pending_q[i].done || pending_q[i].local_wait == 2'd1) &&
+              pending_q[i].result.fpr_write &&
+              pending_q[i].result.exception == FPU_NO_EXCEPTION) begin
             s.ready = 1'b1;
-            s.raw = pv[i].result.fpr_value;
-            s.sp = pv[i].result.fpr_sp;
-            s.lt = pv[i].result.fpr_lt;
-          end else if (pv[i].finishing && arith_finish_write) begin
+            s.raw = pending_q[i].result.fpr_value;
+            s.sp = pending_q[i].result.fpr_sp;
+            s.lt = pending_q[i].result.fpr_lt;
+          end else if (pending_q[i].finishing && arith_finish_write) begin
             // The value exists only at the arithmetic input and local-stage
             // forward points; other consumers wait for the registered reply.
             // A trapping value aborts every younger consumer before it
@@ -552,31 +595,31 @@ module ppc_fpu #(
             s.ready = 1'b1;
             s.fwd = 1'b1;
             s.raw = '0;
-            s.sp = CPU_602 && pv[i].decoded.op != FP_FCTIWZ;
-            s.lt = CPU_602 && pv[i].decoded.op == FP_FCTIWZ;
-          end else if (arith_rsp_valid && arith_rsp.tag == pv[i].issue.tag &&
+            s.sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
+            s.lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
+          end else if (arith_rsp_valid && arith_rsp.tag == pending_q[i].issue.tag &&
                        !numeric_emulation_trap(arith_rsp.invalid, arith_rsp.ox,
                            arith_rsp.ux, arith_rsp.zx, arith_rsp.xx,
                            arith_rsp.tiny_before_round, fpscr_q[7:2]) &&
                        arith_rsp.write_result) begin
             s.ready = 1'b1;
             s.raw = CPU_602 ?
-                {32'd0, (pv[i].decoded.op == FP_FCTIWZ ?
+                {32'd0, (pending_q[i].decoded.op == FP_FCTIWZ ?
                   arith_rsp.result[31:0] : narrow_single(arith_rsp.result))} :
                 arith_rsp.result;
-            s.sp = CPU_602 && pv[i].decoded.op != FP_FCTIWZ;
-            s.lt = CPU_602 && pv[i].decoded.op == FP_FCTIWZ;
-          end else if (mem_rsp_match && mem_rsp_index == PENDING_IDX_BITS'(i) &&
-                       mem_rsp_i.tag == pv[i].issue.tag &&
-                       pv[i].decoded.kind == DK_MEMORY &&
-                       pv[i].decoded.mem_load && !mem_rsp_i.fault &&
-                       (!CPU_602 || pv[i].decoded.mem_single ||
+            s.sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
+            s.lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
+          end else if (mem_rsp_match && mem_rsp_slot == PENDING_IDX_BITS'(i) &&
+                       mem_rsp_i.tag == pending_q[i].issue.tag &&
+                       pending_q[i].decoded.kind == DK_MEMORY &&
+                       pending_q[i].decoded.mem_load && !mem_rsp_i.fault &&
+                       (!CPU_602 || pending_q[i].decoded.mem_single ||
                         single_fits_double(mem_rsp_i.data))) begin
             s.ready = 1'b1;
             s.raw = CPU_602 ?
-                {32'd0,(pv[i].decoded.mem_single ?
+                {32'd0,(pending_q[i].decoded.mem_single ?
                   mem_rsp_i.data[31:0] : narrow_single(mem_rsp_i.data))} :
-                (pv[i].decoded.mem_single ?
+                (pending_q[i].decoded.mem_single ?
                   widen_single(mem_rsp_i.data[31:0]) : mem_rsp_i.data);
             s.sp = CPU_602;
             s.lt = 1'b0;
@@ -849,10 +892,6 @@ module ppc_fpu #(
   always_comb begin
     for (integer k = 0; k < PENDING_DEPTH; k++)
       pv[k] = pending_q[slot_of(head_q, 3'(k))];
-    arith_rsp_slot = slot_of(head_q, 3'(arith_rsp_index));
-    mem_rsp_slot = slot_of(head_q, 3'(mem_rsp_index));
-    exec_slot = slot_of(head_q, 3'(exec_index));
-    work1_old_slot = slot_of(head_q, 3'(work1_old_index));
     forward_slot = slot_of(head_q, 3'(forward_index));
     forward1_slot = slot_of(head_q, 3'(forward1_index));
   end
@@ -870,37 +909,46 @@ module ppc_fpu #(
 
   // One waiting reservation entry is permitted. Ready independent operands
   // bypass it and enter the arithmetic pipe on the dispatch handshake.
+  // Oldest-first picks run on physical slots; an age compare that depends
+  // only on the registered head replaces the rotated scan.
   always_comb begin
-    exec_found = 1'b0;
-    exec_index = '0;
-    for (integer i = 0; i < PENDING_DEPTH; i++) begin
-      if (!exec_found && i < int'(pending_count_q) &&
-          pv[i].valid && !pv[i].started) begin
-        exec_found = 1'b1;
-        exec_index = PENDING_IDX_BITS'(i);
+    logic [PENDING_DEPTH-1:0] unstarted;
+    logic [PENDING_DEPTH-1:0] exec_sel;
+    logic [PENDING_DEPTH-1:0] pair_cand;
+    logic [PENDING_DEPTH-1:0] second_sel;
+    logic exec_is_mem, exec_is_fpu;
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      unstarted[i] = pending_q[i].valid && !pending_q[i].started;
+    exec_sel = oldest_of(head_q, unstarted);
+    exec_found = |unstarted;
+    exec_slot = '0;
+    exec_is_mem = 1'b0;
+    exec_is_fpu = 1'b0;
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      if (exec_sel[i]) begin
+        exec_slot |= PENDING_IDX_BITS'(i);
+        exec_is_mem |= pending_q[i].decoded.kind == DK_MEMORY;
+        exec_is_fpu |= is_fpu_exec(pending_q[i].decoded.kind);
       end
-    end
-    second_exec_found = 1'b0;
-    second_exec_index = '0;
-    for (integer i = 0; i < PENDING_DEPTH; i++) begin
-      if (exec_found && !second_exec_found &&
-          i < int'(pending_count_q) && pv[i].valid &&
-          !pv[i].started && i != int'(exec_index) &&
-          ((is_fpu_exec(pv[exec_index].decoded.kind) &&
-            pv[i].decoded.kind == DK_MEMORY) ||
-           (pv[exec_index].decoded.kind == DK_MEMORY &&
-            is_fpu_exec(pv[i].decoded.kind)))) begin
-        second_exec_found = 1'b1;
-        second_exec_index = PENDING_IDX_BITS'(i);
-      end
-    end
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      pair_cand[i] = unstarted[i] && !exec_sel[i] &&
+          ((exec_is_fpu && pending_q[i].decoded.kind == DK_MEMORY) ||
+           (exec_is_mem && is_fpu_exec(pending_q[i].decoded.kind)));
+    second_sel = oldest_of(head_q, pair_cand);
+    second_exec_found = |pair_cand;
+    second_exec_slot = '0;
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      if (second_sel[i]) second_exec_slot |= PENDING_IDX_BITS'(i);
+    exec_index = PENDING_IDX_BITS'(age_of(head_q, exec_slot));
+    exec_kind_mem = exec_is_mem;
+    exec_kind_fpu = exec_is_fpu;
     barrier_present = barrier_q;
     duplicate_tag = 1'b0;
     duplicate1_tag = 1'b0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
-      if (i < int'(pending_count_q) && pv[i].valid) begin
-        if (pv[i].issue.tag == issue_i.tag) duplicate_tag = 1'b1;
-        if (pv[i].issue.tag == issue1_i.tag) duplicate1_tag = 1'b1;
+      if (pending_q[i].valid) begin
+        if (pending_q[i].issue.tag == issue_i.tag) duplicate_tag = 1'b1;
+        if (pending_q[i].issue.tag == issue1_i.tag) duplicate1_tag = 1'b1;
       end
     end
   end
@@ -908,24 +956,26 @@ module ppc_fpu #(
   always_comb begin
     arith_rsp_match = 1'b0;
     mem_rsp_match = 1'b0;
-    arith_rsp_index = '0;
-    mem_rsp_index = '0;
+    arith_rsp_slot = '0;
+    mem_rsp_slot = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
-      if (i < int'(pending_count_q) && pv[i].valid) begin
-        if (arith_rsp_valid && pv[i].started &&
-            pv[i].decoded.kind == DK_ARITH &&
-            pv[i].issue.tag == arith_rsp.tag) begin
+      if (pending_q[i].valid) begin
+        if (arith_rsp_valid && pending_q[i].started &&
+            pending_q[i].decoded.kind == DK_ARITH &&
+            pending_q[i].issue.tag == arith_rsp.tag) begin
           arith_rsp_match = 1'b1;
-          arith_rsp_index = PENDING_IDX_BITS'(i);
+          arith_rsp_slot = PENDING_IDX_BITS'(i);
         end
-        if (mem_rsp_valid_i && pv[i].started &&
-            pv[i].decoded.kind == DK_MEMORY &&
-            pv[i].issue.tag == mem_rsp_i.tag) begin
+        if (mem_rsp_valid_i && pending_q[i].started &&
+            pending_q[i].decoded.kind == DK_MEMORY &&
+            pending_q[i].issue.tag == mem_rsp_i.tag) begin
           mem_rsp_match = 1'b1;
-          mem_rsp_index = PENDING_IDX_BITS'(i);
+          mem_rsp_slot = PENDING_IDX_BITS'(i);
         end
       end
     end
+    arith_rsp_index = PENDING_IDX_BITS'(age_of(head_q, arith_rsp_slot));
+    mem_rsp_index = PENDING_IDX_BITS'(age_of(head_q, mem_rsp_slot));
   end
 
   always_comb begin
@@ -1037,9 +1087,9 @@ module ppc_fpu #(
     dec1_write = writes_fpr(decoded1.kind, decoded1.op, decoded1.mem_load);
     pair_ok = !second_exec_found;
     ready_if_mem = !exec_found ||
-        (pair_ok && is_fpu_exec(pv[exec_index].decoded.kind));
+        (pair_ok && exec_kind_fpu);
     ready_if_exec = (!exec_found ||
-        (pair_ok && pv[exec_index].decoded.kind == DK_MEMORY)) && !div_busy;
+        (pair_ok && exec_kind_mem)) && !div_busy;
     retire_credit = (retire_fire && pv[0].dest_fpr) ||
         (retire1_fire && pv[1].dest_fpr);
     retire_credit2 = retire_fire && pv[0].dest_fpr &&
@@ -1078,14 +1128,14 @@ module ppc_fpu #(
     work_valid = 1'b0;
     work_dispatch = 1'b0;
     if (exec_found) begin
-      work_issue.tag = pv[exec_index].issue.tag;
-      work_issue.insn = pv[exec_index].issue.insn;
-      work_issue.msr_fp = pv[exec_index].issue.msr_fp;
-      work_issue.msr_fe0 = pv[exec_index].issue.msr_fe0;
-      work_issue.msr_fe1 = pv[exec_index].issue.msr_fe1;
-      work_issue.msr_pr = pv[exec_index].issue.msr_pr;
-      work_decoded = pv[exec_index].decoded;
-      work_ea = pv[exec_index].result.ea;
+      work_issue.tag = pending_q[exec_slot].issue.tag;
+      work_issue.insn = pending_q[exec_slot].issue.insn;
+      work_issue.msr_fp = pending_q[exec_slot].issue.msr_fp;
+      work_issue.msr_fe0 = pending_q[exec_slot].issue.msr_fe0;
+      work_issue.msr_fe1 = pending_q[exec_slot].issue.msr_fe1;
+      work_issue.msr_pr = pending_q[exec_slot].issue.msr_pr;
+      work_decoded = pending_q[exec_slot].decoded;
+      work_ea = pending_q[exec_slot].result.ea;
       work_valid = 1'b1;
     end else if (issue_valid_i) begin
       work_issue.tag = issue_i.tag;
@@ -1191,15 +1241,17 @@ module ppc_fpu #(
     work1_valid = 1'b0;
     work1_old = 1'b0;
     work1_old_index = '0;
+    work1_old_slot = '0;
     if (second_exec_found) begin
-      work1_issue.tag = pv[second_exec_index].issue.tag;
-      work1_issue.insn = pv[second_exec_index].issue.insn;
-      work1_issue.msr_fp = pv[second_exec_index].issue.msr_fp;
-      work1_decoded = pv[second_exec_index].decoded;
-      work1_ea = pv[second_exec_index].result.ea;
+      work1_issue.tag = pending_q[second_exec_slot].issue.tag;
+      work1_issue.insn = pending_q[second_exec_slot].issue.insn;
+      work1_issue.msr_fp = pending_q[second_exec_slot].issue.msr_fp;
+      work1_decoded = pending_q[second_exec_slot].decoded;
+      work1_ea = pending_q[second_exec_slot].result.ea;
       work1_valid = 1'b1;
       work1_old = 1'b1;
-      work1_old_index = second_exec_index;
+      work1_old_index = PENDING_IDX_BITS'(age_of(head_q, second_exec_slot));
+      work1_old_slot = second_exec_slot;
     end else if (exec_found && issue_valid_i) begin
       work1_issue.tag = issue_i.tag;
       work1_issue.insn = issue_i.insn;
@@ -1683,19 +1735,19 @@ module ppc_fpu #(
       else begin
         pending_d[arith_rsp_slot].result.fpr_write = arith_rsp.write_result;
         pending_d[arith_rsp_slot].result.fpr_value = CPU_602 ?
-            {32'd0,(pv[arith_rsp_index].decoded.op == FP_FCTIWZ ?
+            {32'd0,(pending_q[arith_rsp_slot].decoded.op == FP_FCTIWZ ?
               arith_rsp.result[31:0] : narrow_single(arith_rsp.result))} :
             arith_rsp.result;
         pending_d[arith_rsp_slot].result.fpr_sp =
-            CPU_602 && pv[arith_rsp_index].decoded.op != FP_FCTIWZ;
+            CPU_602 && pending_q[arith_rsp_slot].decoded.op != FP_FCTIWZ;
         pending_d[arith_rsp_slot].result.fpr_lt =
-            CPU_602 && pv[arith_rsp_index].decoded.op == FP_FCTIWZ;
+            CPU_602 && pending_q[arith_rsp_slot].decoded.op == FP_FCTIWZ;
       end
     end
     if (mem_rsp_match && mem_rsp_ready_o) begin
-      mem_incoming_result = memory_result(pv[mem_rsp_index].result,
-          pv[mem_rsp_index].decoded.mem_load,
-          pv[mem_rsp_index].decoded.mem_single, mem_rsp_i);
+      mem_incoming_result = memory_result(pending_q[mem_rsp_slot].result,
+          pending_q[mem_rsp_slot].decoded.mem_load,
+          pending_q[mem_rsp_slot].decoded.mem_single, mem_rsp_i);
       pending_d[mem_rsp_slot].result = mem_incoming_result;
       pending_d[mem_rsp_slot].done = 1'b1;
     end
