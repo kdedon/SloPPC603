@@ -112,7 +112,7 @@ check-spec:
 	python3 tools/check_stage_timing.py
 	python3 -m unittest discover -s tools -p 'test_*.py'
 	python3 -m unittest discover -s cosim -p 'test_*.py'
-	python3 ../quartus/qsf_sources.py --check ../quartus ../quartus/integrated ../quartus/timer-bat ../quartus/translated ../quartus/icache ../quartus/dcache ../quartus/chip
+	python3 ../quartus/qsf_sources.py --check ../quartus ../quartus/integrated ../quartus/timer-bat ../quartus/translated ../quartus/icache ../quartus/dcache ../quartus/chip ../quartus/demo
 test-recovery:
 	python3 -m unittest discover -s recovery -p 'test_*.py'
 test-recovery-select:
@@ -1555,3 +1555,27 @@ test-biu-dcache-snoop-mutations:
 	  fi; \
 	  echo "mutation $$m detected: $$(grep -m1 -o 'FAIL: .*' $(BUILD_DIR)/biu-dcache-$$m.log)"; \
 	done
+
+# Demonstration system (rtl/soc, docs/DEMO_SOC.md): firmware from toolchain/demo on the
+# processor package with block RAM and a framebuffer. demo-<name> runs one image and
+# writes the scanned-out frame to $(BUILD_DIR)/demo/<name>.png. Firmware builds in the
+# pinned container unless DEMO_FW_MAKE is overridden; benchmark sources are fetched first.
+DEMO_RTL := $(CHIP_RTL) $(shell cat ../rtl/soc/files.f)
+DEMO_FW_DIR ?= ../toolchain/build/demo
+DEMO_FW_MAKE ?= ../toolchain/build-in-container.sh -f demo/Makefile
+DEMO_NAMES := hello dhrystone coremark
+.PHONY: lint-demo-soc demo-soc-model demo-firmware demo-all $(addprefix demo-,$(DEMO_NAMES))
+lint: lint-demo-soc
+lint-demo-soc:
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_demo_soc $(DEMO_RTL)
+	$(VERILATOR) --lint-only --timing -Wall --top-module tb_demo_soc $(DEMO_RTL) ../tb/soc/tb_demo_soc.sv
+demo-soc-model:
+	mkdir -p $(BUILD_DIR)/demo
+	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_demo_soc --Mdir $(BUILD_DIR)/demo/model $(DEMO_RTL) ../tb/soc/tb_demo_soc.sv
+demo-firmware:
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) all
+$(addprefix demo-,$(DEMO_NAMES)): demo-%: demo-soc-model demo-firmware
+	./$(BUILD_DIR)/demo/model/Vtb_demo_soc $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/$*.hex +NAME=$* +PPM=$(BUILD_DIR)/demo/$*.ppm
+	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/$*.ppm $(BUILD_DIR)/demo/$*.png
+demo-all: $(addprefix demo-,$(DEMO_NAMES))
