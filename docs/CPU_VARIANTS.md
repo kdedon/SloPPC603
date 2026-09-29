@@ -400,6 +400,24 @@ The 603 and 602 still fail elaboration of the core; their SPR presence,
 SRR1[KEY] and PLL tables are checked at unit level (`tb_variant_config`,
 `tb_exception_tlb_miss`).
 
+Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 6cc2577, 2026-09-29.
+Pass (V7): 603 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line
+coverage 74.4% (1775/2386, 14 waived arms, 21 runs; the new 602 arms of
+`ppc_special` and `ppc_exception_state` are unreachable while the 602 core is
+rejected). `variant-matrix` adds: `variant-decode-sweep-1..4` (85376 probes
+each; on the 602, 36 string words to the emulation trap, 5140 FP words to
+`SPECIAL_FPU_EMULATE`, esa/dsa, mfrom and the seven 602 SPRs decoded, EAR and
+eciwx/ecowx illegal; on the others none of these); `tb_exception_602` on
+variants 0–4 (50 checks on the 602: AP/SA storage and entry clear, SRR1
+exclusion, rfi restore, 0x1600 entry, esa/dsa success and refusal, ESASRR
+mask; 31 on the others: nothing stored, the three 602 events rejected);
+`tb_variant_config` 1078 checks per variant (602 HID0 mask, 602 forms and
+SPRs, all 1024 mfrom indices against the formula); `variant-special-lint-602`
+(`ppc_special` elaborates cleanly at `CPU_602`). `tb_core_full_decode` 8817
+checks, 729 retirements on 0–2. This does not establish any 602 core
+behavior: IBR relocation, the watchdog, esa SE gating and the 602 MMU,
+caches and bus remain.
+
 Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 9d5b8ff, 2026-09-29.
 Pass: 593 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage
 76.5% (1771/2315, 14 waived arms, 21 runs). `variant-matrix` adds to the V1
