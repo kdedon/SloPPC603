@@ -3,7 +3,8 @@
 """Independent software-loaded page-TLB oracle, using a virtual-page dictionary.
 
 The lookup permission table is PEM Table 7-21. Address decomposition and
-indexed invalidation are UM 5.4.3.1/2. See docs/TLB_SERVICE.md for the local
+indexed invalidation are UM 5.4.3.1/2; the 602 indexes 16 sets with EA16..19
+(602UM 5.4.4). See docs/TLB_SERVICE.md for the local
 refill/response contract. This model does not import or inspect RTL.
 """
 import argparse
@@ -40,7 +41,8 @@ def request(**fields):
 
 
 class Model:
-    def __init__(self):
+    def __init__(self, sets=32):
+        self.sets = sets
         # Slots are identified independently from the virtual-page key.
         self.slots = {}
         # UM Table 5-10: SRR1[WAY] is the per-set LRU way; reset state is 0.
@@ -50,7 +52,7 @@ class Model:
         s = dict.fromkeys(RESPONSE, 0)
         s.update(kind=q['kind'], bank=q['bank'], ea=q['ea'])
         page = (q['ea'] % 0x10000000) // 4096
-        index = page % 32
+        index = page % self.sets
         key = (q['vsid'], page)
         matches = [(slot, entry) for slot, entry in self.slots.items()
                    if slot[0] == q['bank'] and entry['key'] == key]
@@ -100,28 +102,28 @@ class Model:
         return s
 
 
-def requests():
-    # All 128 entries, tags distinguish both banks and both ways in every set.
-    for bank, index, way in itertools.product(range(2), range(32), range(2)):
-        ea = (index + 32*way)*4096
+def requests(sets=32):
+    # Every entry; tags distinguish both banks and both ways in every set.
+    for bank, index, way in itertools.product(range(2), range(sets), range(2)):
+        ea = (index + sets*way)*4096
         yield request(kind=1, bank=bank, ea=ea, vsid=0x123456,
-                      way=way, rpn=0x80000+index+32*way+64*bank, c=1, pp=2)
-    for bank, index, way, offset in itertools.product(range(2), range(32),
+                      way=way, rpn=0x80000+index+sets*way+2*sets*bank, c=1, pp=2)
+    for bank, index, way, offset in itertools.product(range(2), range(sets),
                                                      range(2), (0, 1, 4095)):
-        yield request(bank=bank, ea=(index+32*way)*4096+offset, vsid=0x123456)
+        yield request(bank=bank, ea=(index+sets*way)*4096+offset, vsid=0x123456)
     # Same VSID/page aliases across segment selectors; different VSID must miss.
     for segment, bank, way in itertools.product(range(16), range(2), range(2)):
-        yield request(bank=bank, ea=segment*0x10000000+way*0x20000+0xfff,
+        yield request(bank=bank, ea=segment*0x10000000+way*sets*4096+0xfff,
                       vsid=0x123456)
-        yield request(bank=bank, ea=segment*0x10000000+way*0x20000,
+        yield request(bank=bank, ea=segment*0x10000000+way*sets*4096,
                       vsid=0x123457)
     # Invalidation is set-only, both ways/banks; unselected sets must survive.
-    for index in range(32):
+    for index in range(sets):
         yield request(kind=2, bank=index % 2, ea=0xfffff000-index*4096,
                       vsid=0xffffff)
         for bank, way in itertools.product(range(2), range(2)):
-            yield request(bank=bank, ea=(31-index+32*way)*4096, vsid=0x123456)
-            yield request(bank=bank, ea=(32*way)*4096, vsid=0x123456)
+            yield request(bank=bank, ea=(sets-1-index+sets*way)*4096, vsid=0x123456)
+            yield request(bank=bank, ea=(sets*way)*4096, vsid=0x123456)
     # Exhaustive page permissions, attributes, banks, selected keys, and C.
     for bank, pp, c, wimg in itertools.product(range(2), range(4), range(2), range(16)):
         yield request(kind=1, bank=bank, ea=0x23456000, vsid=0xabcdef,
@@ -152,24 +154,26 @@ def requests():
                       c=rng.randrange(2), wimg=rng.randrange(16), pp=rng.randrange(4))
 
 
-def generate(path):
-    model = Model()
+def generate(path, sets=32):
+    model = Model(sets)
     counts = dict.fromkeys(list(RESPONSE)[3:15], 0)
     total = 0
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('w') as stream:
-        for total, q in enumerate(requests(), 1):
+        for total, q in enumerate(requests(sets), 1):
             s = model.accept(q)
             for flag in counts:
                 counts[flag] += s[flag]
             stream.write(f'{pack(REQUEST, q):024x} {total % 33:x} {pack(RESPONSE, s):023x}\n')
     # Loads replace duplicates, so no response rejects a refill.
     assert counts.pop('refill_rejected') == 0 and all(counts.values()), counts
-    print(f'{total} independent TLB transactions: {counts}')
+    print(f'{total} independent TLB transactions, {sets} sets: {counts}')
     return total, counts
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--output', type=Path, required=True)
-    generate(parser.parse_args().output)
+    parser.add_argument('--sets', type=int, choices=(16, 32), default=32)
+    args = parser.parse_args()
+    generate(args.output, args.sets)

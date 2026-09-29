@@ -8,7 +8,8 @@
 /* verilator lint_off BLKSEQ */
 // Bench helpers take full-width ints and records and use only some bits.
 /* verilator lint_off UNUSEDSIGNAL */
-module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED = 1);
+module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED = 1,
+  parameter int TLB_SETS = 32);
   import tb_micro_tlb_pkg::*;
 
   logic clk_i = 1'b0;
@@ -28,9 +29,9 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
   } expect_t;
   expect_t expects [$];
 
-  tb_micro_tlb_harness #(.ENABLE_MICRO_TLB(1'b1), .NAME("micro-TLB")) fast (
+  tb_micro_tlb_harness #(.ENABLE_MICRO_TLB(1'b1), .NAME("micro-TLB"), .TLB_SETS(TLB_SETS)) fast (
     .clk_i, .ops, .op_count, .go_i(go), .done_o(fast_done));
-  tb_micro_tlb_harness #(.ENABLE_MICRO_TLB(1'b0), .NAME("slow path")) slow (
+  tb_micro_tlb_harness #(.ENABLE_MICRO_TLB(1'b0), .NAME("slow path"), .TLB_SETS(TLB_SETS)) slow (
     .clk_i, .ops, .op_count, .go_i(go), .done_o(slow_done));
 
   localparam logic [23:0] VSID_A = 24'h000123, VSID_B = 24'h000456;
@@ -253,8 +254,9 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
     unique case (sel)
       0, 1: base = 32'h0000_0000 + 32'(rnd(0, 3)) * 32'h1000;
       2: base = 32'h0002_0000 + 32'(rnd(0, 1)) * 32'h1000;
+      // Pages one set stride apart share a TLB set.
       3: base = 32'h1000_0000 + 32'(rnd(0, 2)) * 32'h1000 +
-                32'(rnd(0, 2)) * 32'h2_0000;
+                32'(rnd(0, 2)) * 32'(TLB_SETS * 4096);
       default: base = 32'h2000_0000 + 32'(rnd(0, 1)) * 32'h1000;
     endcase
     return base + 32'(rnd(0, 63)) * 32'd4;
@@ -405,8 +407,8 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
       $display("stream %0d: 64 fetches in %0d cycles with micro-TLB, %0d without",
                i, fast.stream_cycles[i], slow.stream_cycles[i]);
     check(hits * 2 > accesses, "micro-TLB hit fewer than half the accesses");
-    $display("tb_micro_tlb_router PASS: %0d checks, %0d operations, %0d records, %0d cycles",
-             checks, op_count, fast.record_count, fast.cycle);
+    $display("tb_micro_tlb_router PASS: sets=%0d %0d checks, %0d operations, %0d records, %0d cycles",
+             TLB_SETS, checks, op_count, fast.record_count, fast.cycle);
     $finish;
   end
 
