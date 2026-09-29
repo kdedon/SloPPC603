@@ -7,7 +7,8 @@
 /* verilator lint_off UNUSEDSIGNAL */
 module tb_micro_tlb_harness #(
   parameter bit ENABLE_MICRO_TLB = 1'b1,
-  parameter string NAME = "harness"
+  parameter string NAME = "harness",
+  parameter int TLB_SETS = 32
 ) (
   input logic clk_i,
   input tb_micro_tlb_pkg::op_t ops [tb_micro_tlb_pkg::MAX_OPS],
@@ -129,7 +130,8 @@ module tb_micro_tlb_harness #(
     .ENABLE_TLB_INVALIDATE(1'b1), .ENABLE_TLB_LOAD(1'b1),
     .ENABLE_DATA_EXCEPTIONS(1'b1), .ENABLE_PAGE_DATA_EXCEPTIONS(1'b1),
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),
-    .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB)
+    .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
+    .TLB_SETS(TLB_SETS)
   ) dut (.*);
 
   localparam int TIMEOUT = 400;

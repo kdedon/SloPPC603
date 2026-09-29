@@ -166,10 +166,10 @@ module ppc_core #(
   output logic redirect_accepted_o
 );
   import ppc_pkg::*;
-  localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
   localparam int DIV_LATENCY_EFFECTIVE =
-    DIV_LATENCY != 0 ? DIV_LATENCY : int'(CPU_CFG.div_latency);
+    DIV_LATENCY != 0 ? DIV_LATENCY : cpu_div_latency(CPU_VARIANT);
   // Elaboration fails for a variant whose differences are not all built.
+  // synthesis translate_off
   if (CPU_VARIANT == CPU_603) begin : g_reject_603
     $fatal(1, "CPU_VARIANT CPU_603 is not implemented (caches, SPR presence, direct-store, 2:2 stores)");
   end else if (CPU_VARIANT == CPU_602) begin : g_reject_602
@@ -177,6 +177,7 @@ module ppc_core #(
   end else if (!cpu_variant_supported(CPU_VARIANT)) begin : g_reject_unknown
     $fatal(1, "CPU_VARIANT %0d is not a known variant", CPU_VARIANT);
   end
+  // synthesis translate_on
   fetch_packet_t fetched, iq_head;
   localparam int IQ_COUNT_WIDTH = $clog2(IQ_DEPTH + 1);
   page_miss_t iq_miss_q, head_page_miss;

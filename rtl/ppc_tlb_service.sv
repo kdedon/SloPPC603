@@ -5,7 +5,9 @@
 // Local reset clears valids; 603e hardware reset leaves them unchanged.
 module ppc_tlb_service #(
   parameter bit ENABLE_RUNTIME_INVALIDATE = 1'b0,
-  parameter bit ENABLE_RUNTIME_REFILL = 1'b0
+  parameter bit ENABLE_RUNTIME_REFILL = 1'b0,
+  // Sets per TLB (two ways each): 32 on the 603e and 603, 16 on the 602.
+  parameter int TLB_SETS = 32
 ) (
   input logic clk_i, rst_ni,
   input logic prepare_commit_i, prepare_abort_i,
@@ -42,9 +44,18 @@ module ppc_tlb_service #(
   output logic rsp_c_o, rsp_r_o
 );
   import ppc_pkg::*;
+  // The set index is the low EA page bits (UM EA15..19, 602UM EA16..19);
+  // the remaining EA4 page bits form the tag.
+  localparam int SET_W = $clog2(TLB_SETS);
+  localparam int TAG_W = 16 - SET_W;
+  // synthesis translate_off
+  if (TLB_SETS != 32 && TLB_SETS != 16) begin : g_reject_sets
+    $fatal(1, "TLB_SETS %0d is not a 603e (32) or 602 (16) geometry", TLB_SETS);
+  end
+  // synthesis translate_on
   typedef struct packed {
     logic [23:0] vsid;
-    logic [10:0] page_tag;
+    logic [TAG_W-1:0] page_tag;
     logic [19:0] rpn;
     logic c;
     logic [3:0] wimg;
@@ -82,14 +93,14 @@ module ppc_tlb_service #(
   // flops so reset and tlbie clear them at once. A request reads both ways on
   // its accepting edge; the next edge classifies it from the registered read
   // and registers the response.
-  logic [1:0][1:0][31:0] valid_q;
+  logic [1:0][1:0][TLB_SETS-1:0] valid_q;
   // One LRU bit per set and bank names the way to replace next (UM Table
   // 5-10, SRR1[WAY]). A hit or refill of one way points it at the other.
-  logic [1:0][31:0] lru_q;
+  logic [1:0][TLB_SETS-1:0] lru_q;
   entry_t [1:0] entry_rd;
   logic ram_write;
   logic [1:0] ram_write_way;
-  logic [5:0] ram_write_addr;
+  logic [SET_W:0] ram_write_addr;
   entry_t ram_write_data;
   request_t request_q;
   logic lookup_q;
@@ -106,9 +117,9 @@ module ppc_tlb_service #(
   logic prepare_invalidate, prepare_refill;
   logic prepared_q, prepared_is_refill_q, commit_ack_q;
   logic prepared_bank_q, prepared_way_q, prepared_duplicate_q;
-  logic [4:0] prepared_set_q;
+  logic [SET_W-1:0] prepared_set_q;
   entry_t prepared_entry_q;
-  logic [4:0] set_index;
+  logic [SET_W-1:0] set_index;
   logic [1:0] matched;
   logic selected_way, selected_key, protection_denied, prepared_write;
 
@@ -147,24 +158,25 @@ module ppc_tlb_service #(
 
   genvar ram_way;
   generate for (ram_way = 0; ram_way < 2; ram_way = ram_way + 1) begin : g_way
-    ppc_tlb_ram #(.WIDTH($bits(entry_t)), .DEPTH(64)) entries (
+    ppc_tlb_ram #(.WIDTH($bits(entry_t)), .DEPTH(2 * TLB_SETS)) entries (
       .clk_i,
       .write_i(ram_write && ram_write_way[ram_way]),
       .write_addr_i(ram_write_addr), .write_data_i(ram_write_data),
-      .read_addr_i({req_bank_i, req_ea_i[16:12]}),
+      .read_addr_i({req_bank_i, req_ea_i[12 +: SET_W]}),
       .read_data_o(entry_rd[ram_way])
     );
   end endgenerate
 
   always_comb begin
-    // Manual EA15..19 -> HDL [16:12]; EA4..14 -> HDL [27:17].
+    // 32 sets: EA15..19 -> HDL [16:12], tag EA4..14 -> [27:17].
+    // 16 sets: EA16..19 -> HDL [15:12], tag EA4..15 -> [27:16].
     // EA0..3 selects the caller's segment register and is deliberately not tagged.
-    set_index = request_q.ea[16:12];
+    set_index = request_q.ea[12 +: SET_W];
     matched = '0;
     for (int way = 0; way < 2; way++) begin
       matched[way] = valid_q[request_q.bank][way][set_index] &&
         entry_rd[way].vsid == request_q.vsid &&
-        entry_rd[way].page_tag == request_q.ea[27:17];
+        entry_rd[way].page_tag == request_q.ea[27 -: TAG_W];
     end
     selected_way = matched[1];
     selected_entry.rpn = entry_rd[selected_way].rpn;
@@ -177,7 +189,7 @@ module ppc_tlb_service #(
       (request_q.write && (selected_entry.pp == 2'b11 ||
                       (selected_key && selected_entry.pp == 2'b01)));
     refill_entry.vsid = request_q.vsid;
-    refill_entry.page_tag = request_q.ea[27:17];
+    refill_entry.page_tag = request_q.ea[27 -: TAG_W];
     refill_entry.rpn = request_q.rpn;
     refill_entry.c = request_q.c;
     refill_entry.wimg = request_q.wimg;

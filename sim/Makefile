@@ -1009,6 +1009,28 @@ test-micro-tlb-router:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_micro_tlb_router -GSEED=2 -GRANDOM_OPS=900 --Mdir $(BUILD_DIR)/micro-tlb-router-seed2 $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv $(MICRO_TLB_TB)
 	./$(BUILD_DIR)/micro-tlb-router-seed2/Vtb_micro_tlb_router $(SIM_ARGS)
 
+# 16-set TLB geometry (602UM 5.4.4: EA16..19 index): service direct tests and
+# independent vectors, prepared refill, runtime fill, micro-TLB differential
+# and the translated core. The 32-set runs are the targets above.
+.PHONY: test-tlb-geometry-16
+test: test-tlb-geometry-16
+test-tlb-geometry-16:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_tlb_service -GTLB_SETS=16 --Mdir $(BUILD_DIR)/tlb-service-16 $(TLB_SERVICE_RTL) ../tb/tb_tlb_service.sv
+	./$(BUILD_DIR)/tlb-service-16/Vtb_tlb_service $(SIM_ARGS)
+	python3 tools/tlb_vectors.py --sets 16 --output $(BUILD_DIR)/tlb-service-16/vectors.txt
+	./$(BUILD_DIR)/tlb-service-16/Vtb_tlb_service $(SIM_ARGS) +VECTORS=$(BUILD_DIR)/tlb-service-16/vectors.txt
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_tlb_prepared_refill "-GRUNTIME_INVALIDATE=1'b1" "-GRUNTIME_REFILL=1'b1" -GTLB_SETS=16 --Mdir $(BUILD_DIR)/tlb-prepared-refill-16 $(TLB_SERVICE_RTL) ../tb/tb_tlb_prepared_refill.sv
+	./$(BUILD_DIR)/tlb-prepared-refill-16/Vtb_tlb_prepared_refill $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_tlb_runtime_fill_router -GTLB_SETS=16 --Mdir $(BUILD_DIR)/tlb-runtime-fill-router-16 $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv ../tb/tb_tlb_runtime_fill_router.sv
+	./$(BUILD_DIR)/tlb-runtime-fill-router-16/Vtb_tlb_runtime_fill_router $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_micro_tlb_router -GSEED=2 -GRANDOM_OPS=900 -GTLB_SETS=16 --Mdir $(BUILD_DIR)/micro-tlb-router-16 $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv $(MICRO_TLB_TB)
+	./$(BUILD_DIR)/micro-tlb-router-16/Vtb_micro_tlb_router $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_translation -GTLB_SETS=16 --Mdir $(BUILD_DIR)/core-page-translation-16 $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_translation.sv
+	./$(BUILD_DIR)/core-page-translation-16/Vtb_core_page_translation $(SIM_ARGS)
+	if $(VERILATOR) --lint-only -Wall --top-module ppc_tlb_service -GTLB_SETS=64 $(TLB_SERVICE_RTL) > $(BUILD_DIR)/tlb-service-16/reject.log 2>&1; then echo "FAIL: TLB_SETS=64 elaborated"; exit 1; fi
+	grep -q "is not a 603e (32) or 602 (16) geometry" $(BUILD_DIR)/tlb-service-16/reject.log
+	@echo "PASS: 16-set TLB geometry; TLB_SETS=64 rejected"
+
 # Opt-in supervisor tlbie with retirement-committed four-entry set invalidation.
 .PHONY: lint-tlbie-integration test-tlbie-decode test-core-tlbie test-core-tlbie-privilege test-tlb-runtime-invalidate-service test-tlb-runtime-invalidate-router
 lint: lint-tlbie-integration

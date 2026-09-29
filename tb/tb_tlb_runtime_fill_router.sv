@@ -2,7 +2,11 @@
 // Copyright (c) 2026 Kevin Dedon
 // Runtime segment/BAT arbitration, transaction ownership, and context exclusion.
 /* verilator lint_off BLKSEQ */
-module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
+module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1,
+  parameter int TLB_SETS = 32);
+  // Set index EA[12 +: SET_W]; the tag is the remaining EA4 page bits.
+  localparam int SET_W = $clog2(TLB_SETS);
+  localparam int TAG_W = 16 - SET_W;
   logic clk_i = 1'b0;
   always #5 clk_i = ~clk_i;
   logic rst_ni;
@@ -126,20 +130,20 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1), .ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1), .ENABLE_TLB_INVALIDATE(1'b1),
-    .ENABLE_TLB_LOAD(ENABLE_FILL)) dut (.imem_rsp_page_miss_o(unused_imem_page_miss),
+    .ENABLE_TLB_LOAD(ENABLE_FILL), .TLB_SETS(TLB_SETS)) dut (.imem_rsp_page_miss_o(unused_imem_page_miss),
     .dmem_rsp_page_miss_o(unused_dmem_page_miss),
     .*);
 
   typedef struct packed {
     logic [23:0] vsid;
-    logic [10:0] page_tag;
+    logic [TAG_W-1:0] page_tag;
     logic [19:0] rpn;
     logic c;
     logic [3:0] wimg;
     logic [1:0] pp;
   } tlb_entry_t;
   function automatic tlb_entry_t tlb_entry(input bit bank, input bit way,
-                                           input logic [4:0] set);
+                                           input logic [SET_W-1:0] set);
     return way ? dut.tlb.g_way[1].entries.mem[{bank, set}] :
                  dut.tlb.g_way[0].entries.mem[{bank, set}];
   endfunction
@@ -601,15 +605,16 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       input logic [23:0] vsid, input bit way, input logic [19:0] rpn,
       input bit changed, input logic [3:0] wimg, input logic [1:0] pp);
     fill_offer(bank, ea, vsid, way, rpn, changed, wimg, pp, 0);
-    check(!dut.tlb.valid_q[bank][way][ea[16:12]],
+    check(!dut.tlb.valid_q[bank][way][ea[12 +: SET_W]],
           "prepared fill mutated valid bit before commit");
     fill_consume();
     fill_commit();
-    check(dut.tlb.valid_q[bank][way][ea[16:12]] &&
-          tlb_entry(bank, way, ea[16:12]).rpn == rpn &&
-          tlb_entry(bank, way, ea[16:12]).wimg == wimg &&
-          tlb_entry(bank, way, ea[16:12]).c == changed &&
-          tlb_entry(bank, way, ea[16:12]).pp == pp,
+    check(dut.tlb.valid_q[bank][way][ea[12 +: SET_W]] &&
+          tlb_entry(bank, way, ea[12 +: SET_W]).page_tag == ea[27 -: TAG_W] &&
+          tlb_entry(bank, way, ea[12 +: SET_W]).rpn == rpn &&
+          tlb_entry(bank, way, ea[12 +: SET_W]).wimg == wimg &&
+          tlb_entry(bank, way, ea[12 +: SET_W]).c == changed &&
+          tlb_entry(bank, way, ea[12 +: SET_W]).pp == pp,
           "committed fill entry did not match accepted payload");
     fill_ack_and_idle();
   endtask
@@ -878,9 +883,9 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       @(negedge clk_i); rst_ni = 1;
       #1; check(tlb_fill_idle_o && !dut.tlb.valid_q[1][0][8],
                 "reset did not clear fill owner and local valid bit");
-      // Sweep the complete 5-bit set decoder in both banks and ways.
+      // Sweep the complete set decoder in both banks and ways.
       start_router(0, 0, 0);
-      for (int set_idx = 0; set_idx < 32; set_idx++) begin
+      for (int set_idx = 0; set_idx < TLB_SETS; set_idx++) begin
         for (int bank_idx = 0; bank_idx < 2; bank_idx++) begin
           for (int way_idx = 0; way_idx < 2; way_idx++) begin
             fill_entry(bank_idx[0],
@@ -893,7 +898,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1);
       check(&dut.tlb.valid_q[0][0] && &dut.tlb.valid_q[0][1] &&
             &dut.tlb.valid_q[1][0] && &dut.tlb.valid_q[1][1],
             "full bank/way/set sweep missed an entry");
-      $display("PASS runtime TLB fill router: %0d checks", checks);
+      $display("PASS runtime TLB fill router: sets=%0d %0d checks", TLB_SETS, checks);
       $finish;
     end
   end

@@ -57,6 +57,21 @@ class TlbOracleTests(unittest.TestCase):
         self.assertEqual(m.accept(request(bank=1, vsid=3))['way'], 1)
         self.assertEqual(m.accept(request(bank=0, vsid=3))['way'], 0)
 
+    def test_sixteen_set_geometry(self):
+        # 602UM 5.4.4: EA16..19 index 16 sets, so page 0x10 shares set 0.
+        m = Model(16)
+        m.accept(request(kind=1, bank=1, ea=0x00000000, way=0, vsid=4, rpn=1, pp=2))
+        m.accept(request(kind=1, bank=1, ea=0x00010000, way=1, vsid=4, rpn=2, pp=2))
+        self.assertEqual(m.accept(request(bank=1, ea=0x00010abc, vsid=4))['pa'], 0x2abc)
+        self.assertEqual(m.accept(request(bank=1, ea=0x00020000, vsid=4))['way'], 0)
+        m.accept(request(kind=2, ea=0xffff0000))
+        self.assertEqual(len(m.slots), 0)
+        # With 32 sets the same two pages sit in different sets.
+        m = Model()
+        m.accept(request(kind=1, bank=1, ea=0x00000000, vsid=4, rpn=1, pp=2))
+        m.accept(request(kind=2, ea=0xffff0000))
+        self.assertEqual(len(m.slots), 1)
+
     def test_fault_precedence(self):
         m = Model()
         m.accept(request(kind=1, wimg=1, pp=0))
