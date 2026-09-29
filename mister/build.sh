@@ -42,6 +42,11 @@ flock /tmp/ppc603e-quartus.lock docker run --rm --network none --user "$(id -u):
 mv "${here}/ppc603e.qsf.keep" "${here}/ppc603e.qsf"
 
 out="${here}/output_files"
+# A RAM whose init file was not read would boot from zeros.
+if grep -q "Critical Warning (127002)" "${here}/output_files.log"; then
+  echo "firmware: memory init file not read" >&2
+  status=1
+fi
 if [[ -f "${out}/ppc603e.fit.summary" ]]; then
   grep -E "Logic utilization|Total registers|Total block memory bits|Total RAM Blocks|Total DSP Blocks|Total PLLs" \
     "${out}/ppc603e.fit.summary" || true

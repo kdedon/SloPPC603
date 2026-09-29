@@ -15,7 +15,9 @@ module soc_ram_sp_be #(
   input  logic [63:0]              wdata_i,
   output logic [63:0]              rdata_o
 );
-  (* ramstyle = "M10K, no_rw_check" *) logic [63:0] mem [DEPTH];
+  // Byte-lane layout lets synthesis infer one RAM with byte enables, which
+  // keeps the $readmemh contents.
+  (* ramstyle = "M10K, no_rw_check" *) logic [7:0][7:0] mem [DEPTH];
 
   generate
     if (INIT_FILE != "") begin : g_init
@@ -26,7 +28,7 @@ module soc_ram_sp_be #(
   // Byte writes nested under the read enable do not infer block RAM.
   always_ff @(posedge clk_i) begin
     for (int b = 0; b < 8; b++)
-      if (req_i && we_i[b]) mem[addr_i][8*b +: 8] <= wdata_i[8*b +: 8];
+      if (req_i && we_i[b]) mem[addr_i][b] <= wdata_i[8*b +: 8];
     if (req_i) rdata_o <= mem[addr_i];
   end
 endmodule
