@@ -2,7 +2,11 @@
 // Copyright (c) 2026 Kevin Dedon
 // Independent pin-level line consumer. No shared BFM or DUT state references.
 /* verilator lint_off BLKSEQ */
-module tb_icache_bus60x;
+module tb_icache_bus60x #(
+  // Geometry under test: 603e 128 x 4, 603 128 x 2, 602 64 x 2.
+  parameter int SETS = 128,
+  parameter int WAYS = 4
+);
   logic clk=0, rst_n=0;
   always #5 clk=~clk;
   logic qv, qr, qi, rv, rr, error, busy, protocol_error;
@@ -25,7 +29,7 @@ module tb_icache_bus60x;
   logic fv,fr,fsv,fsr,fse,kill,invalidate,invalidate_done;
   logic [31:0] fa,insn;
   logic cache_busy,hit,miss,cache_error;
-  ppc_icache cache (
+  ppc_icache #(.SET_COUNT(SETS), .WAY_COUNT(WAYS)) cache (
     .clk_i(clk),.rst_ni(rst_n),.fetch_valid_i(fv),.fetch_ready_o(fr),.fetch_addr_i(fa),
     .fetch_rsp_valid_o(fsv),.fetch_rsp_ready_i(fsr),.fetch_rsp_insn_o(insn),
     .fetch_rsp_error_o(fse),.kill_i(kill),.invalidate_i(invalidate),
@@ -173,9 +177,16 @@ module tb_icache_bus60x;
       for(int lane=0;lane<8;lane++) hit_fetch(32'h2000+32'(word*32+lane*4));
     end
     // Same-set conflicts exercise storage tags and strict LRU through pins.
-    miss_fetch(32'h4000);miss_fetch(32'h5000);miss_fetch(32'h6000);miss_fetch(32'h7000);
-    hit_fetch(32'h4000);miss_fetch(32'h8000);
-    hit_fetch(32'h6000);hit_fetch(32'h7000);hit_fetch(32'h4000);
+    // Multiples of 0x1000 share set 0 in every geometry.
+    if(WAYS>2) begin
+      miss_fetch(32'h4000);miss_fetch(32'h5000);miss_fetch(32'h6000);miss_fetch(32'h7000);
+      hit_fetch(32'h4000);miss_fetch(32'h8000);
+      hit_fetch(32'h6000);hit_fetch(32'h7000);hit_fetch(32'h4000);
+    end else begin
+      miss_fetch(32'h4000);miss_fetch(32'h5000);
+      hit_fetch(32'h4000);miss_fetch(32'h8000);
+      hit_fetch(32'h8000);hit_fetch(32'h4000);
+    end
     miss_fetch(32'h5000);
     // Kill after a physical address was accepted: finish bus tenure, discard line.
     fetch_request(32'h9014);address_phase(0);data_grant();
@@ -209,7 +220,7 @@ module tb_icache_bus60x;
     @(negedge clk);invalidate=0;fsr=0;
     repeat(3) begin @(posedge clk);#1;check(!fsv,"invalidate kept held hit");end
     miss_fetch(32'hb004);
-    $display("PASS cache + physical burst: %0d checks, %0d fetch responses, %0d bursts",checks,responses,addresses);
+    $display("PASS cache + physical burst (%0d sets x %0d ways): %0d checks, %0d fetch responses, %0d bursts",SETS,WAYS,checks,responses,addresses);
     $finish;
   end
   initial begin #200000; $fatal(1,"cache/bus watchdog");end

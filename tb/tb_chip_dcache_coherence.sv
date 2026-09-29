@@ -17,12 +17,19 @@
 // MUTATION (negative controls): 1 hides TS from the processor's snooper,
 // 2 makes the DMA engine ignore ARTRY.
 module tb_chip_dcache_coherence #(parameter int unsigned SEED = 32'h0c0d_e7e1,
-                                  parameter int ROUNDS = 6, parameter int MUTATION = 0);
+                                  parameter int ROUNDS = 6, parameter int MUTATION = 0,
+                                  parameter int SETS = 128, parameter int WAYS = 4);
   localparam logic [31:0] BASE = 32'hfff00000;
   localparam int MEM_BYTES = 262144;
   logic clk = 1'b0;
   always #5 clk = ~clk;
   `include "chip_harness.svh"
+  // The shared harness instantiates the chip without parameters; the
+  // geometry reaches it here so the other chip benches stay unchanged.
+  /* verilator lint_off DEFPARAM */
+  defparam dut.ICACHE_SETS = SETS, dut.ICACHE_WAYS = WAYS,
+           dut.DCACHE_SETS = SETS, dut.DCACHE_WAYS = WAYS;
+  /* verilator lint_on DEFPARAM */
   `include "ppc_asm.svh"
 
   localparam logic [31:0] MBOX = BASE + 32'h1_0000, BUF_A = BASE + 32'h1_1000;

@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Kevin Dedon
 // CPU-driven BAT remap, explicit cache maintenance, and warmed-line denial.
 /* verilator lint_off BLKSEQ */
-module tb_core_bat_cached_bus60x_coherence;
+module tb_core_bat_cached_bus60x_coherence #(parameter int SETS = 128, parameter int WAYS = 4);
   import ppc_pkg::*;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
@@ -112,6 +112,7 @@ module tb_core_bat_cached_bus60x_coherence;
   /* verilator lint_off PINCONNECTEMPTY */
   logic unused_checkstop;
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0),
+    .ICACHE_SETS(SETS),.ICACHE_WAYS(WAYS),.DCACHE_SETS(SETS),.DCACHE_WAYS(WAYS),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1)) dut(
     .clk_i(clk),.rst_ni(rst_n),

@@ -59,6 +59,14 @@ busy period is needed.
 | LRU ranks | one 128 × 8 MLAB, four 2-bit ranks per set | none; seeded on first install |
 | Data | four 256 × 128 simple-dual-port M10K RAMs, one per way; row = half line, address `{set, word[2]}` | none |
 
+The table is the 603e geometry. `ppc_icache` and `ppc_icache_managed` take
+`SET_COUNT` (128 or 64) and `WAY_COUNT` (4 or 2); the tag is 27 − log2 sets
+bits, each set holds `WAY_COUNT` ranks of log2 ways bits, and any other value
+fails elaboration. The core tops set them from `cpu_cfg(CPU_VARIANT)` (603e
+128 × 4, 603 128 × 2, 602 64 × 2), with `ICACHE_SETS`/`ICACHE_WAYS` overrides
+for benches; `make -C sim cache-geometry` runs the cache benches at 128 × 2
+and 64 × 2.
+
 `rtl/ppc_ram_lut.sv` and `rtl/ppc_ram_sdp.sv` are the only RAM
 descriptions; each pins the RAM style and leaves same-address
 read-during-write undefined, which the controller never relies on.

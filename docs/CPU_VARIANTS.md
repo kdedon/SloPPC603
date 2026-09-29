@@ -62,9 +62,9 @@ transactions; HID0[IFEM] (bit 24) drives the M attribute on instruction fetches
 protection-only mode (602UM PDF 89 / 2-13). A miss to a locked cache runs
 cache-inhibited (602UM §3.2.3.2 PDF 157 / 3-5), as on the 603e.
 
-Main: `ppc_icache.sv` and `ppc_dcache.sv` hard-code `SET_COUNT = 128`,
-`WAY_COUNT = 4`, 32-byte lines; `ppc_dcache.sv` also hard-codes `SET_BITS = 7`,
-`TAG_BITS = 20`. The D-cache forwards the critical double word on the first
+Main: `ppc_icache.sv` and `ppc_dcache.sv` take `SET_COUNT` and `WAY_COUNT`
+(V4); tag, index and LRU widths follow, and the core tops set them from
+`cpu_cfg()`. Lines are 32 bytes. The D-cache forwards the critical double word on the first
 beat ([DATA_CACHE.md](DATA_CACHE.md)), which is PID7v behavior. `HID0_WMASK`
 in `ppc_pkg.sv` is the PID7v mask.
 
