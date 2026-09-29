@@ -292,6 +292,7 @@ module ppc_biu #(
 
   assign grp_busy = selector_busy || scalar_busy || line_busy;
 
+  generate
   if (ENABLE_DCACHE) begin : g_dcache
     logic cm_br_n, cm_bg_n, cm_abb_in_n;
     logic cm_abb_n, cm_abb_oe, cm_ts_n, cm_ts_oe;
@@ -454,6 +455,7 @@ module ppc_biu #(
       dc_snoop_rsp_valid_i, dc_snoop_rsp_artry_i, dc_snoop_rsp_push_i,
       ts_n_i, a_i, tt_i, gbl_n_i};
   end
+  endgenerate
 
   assign busy_o = grp_busy || scalar_router_busy || dcache_busy;
   assign protocol_error_o = scalar_protocol_error || line_protocol_error ||

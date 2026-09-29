@@ -87,9 +87,13 @@ authorization. Guarded loads are not yet held to non-speculative issue.
 
 ### Verification
 
-- `make -C sim test-core-dcache`: `tb/tb_core_dcache.sv` on the bench BIU
-  `tb/bfm/dcache_biu_bfm.sv` (seeded ready, start and beat gaps; scripted read
-  and write errors; scripted snoops). A hand-assembled program runs with DR=1
+- `make -C sim test-core-dcache`: `tb/tb_core_dcache.sv`, the core top with
+  its real BIU on `tb/bfm/bus60x_coherent_bfm.sv` (one 60x memory for fetch and
+  data, a second bus master; seeded waits, 6% ARTRY and 5% DRTRY on processor
+  tenures, one-shot TEA on a fill and on a posted write; two snoops from the
+  second master). Bus-kind checks at retirement (single reads, single writes,
+  ABE broadcasts) match the next data tenure of that kind, since stores and
+  broadcasts are posted. A hand-assembled program runs with DR=1
   over DBATs for cacheable M=1, write-through, caching-inhibited guarded and
   read-only memory: all load/store sizes, misaligned splits across words,
   double words and lines, stmw/lmw, stswi/lswi, lwarx/stwcx. (success, lost
@@ -109,13 +113,13 @@ authorization. Guarded loads are not yet held to non-speculative issue.
   error dropped).
 - `make -C toolchain rtl-lsu-dcache`: the compiled LSU image (lwarx/stwcx.,
   string, multiple, byte-reverse and misaligned forms, two alignment exceptions)
-  with the cache on from reset, instruction fetch on the randomized pin target.
+  with the cache on from reset, on the same randomized 60x memory as fetch.
 
-Not covered: the BIU side on real pins, snoops from a second master beyond the
-scripted pair, page-table WIMG (only BAT WIMG is exercised), guarded-load
-speculation, eciwx/ecowx with the cache, timing (no fit this round).
+Not covered here: page-table WIMG (only BAT WIMG is exercised), guarded-load
+speculation. Pin-level and coherence checks are under
+[Integrated verification](#integrated-verification).
 
-### Records
+### Records (LSU side against the bench BIU model, superseded)
 
 Recorded: `make -C sim -j2 ci` (includes `test-core-dcache`, `test-core-dcache-negative` and `make -C toolchain rtl-all` with `rtl-lsu-dcache`), commit 79102c1, 2026-09-28.
 
@@ -133,8 +137,8 @@ Recorded: `make -C sim -j2 ci` (includes `test-core-dcache`, `test-core-dcache-n
   (multiple/string) micro-ops, 2 alignment entries, 228 three-byte stores,
   20702 cache hits, 15 misses and fills; 2361183 cycles.
 
-This establishes the LSU-side connection against a bench BIU. It does not
-establish the BIU side, pin-level behavior with the cache, or timing.
+This established the LSU-side connection against a bench BIU model, since
+replaced by the real BIU.
 
 ## BIU and snooping
 
@@ -276,6 +280,71 @@ a push.
 
 `make -C sim lint-biu-dcache` lints `ppc_biu` with `ENABLE_DCACHE=1`.
 
-Not established: the cache on the core's LSU; the instruction/scalar group
-sharing the bus with the cache master under snoop traffic; timing (no fit this
-round).
+The joined design is verified under
+[Integrated verification](#integrated-verification).
+
+## Integrated verification
+
+Benches run on `tb/bfm/bus60x_coherent_bfm.sv`: one 60x memory, an arbiter
+and a second bus master serving one tenure at a time. The processor's TS, A,
+TT and GBL are shared with the second master; its ARTRY retries the second
+master, which then grants the processor its push and reissues the command.
+The model fails on processor ARTRY outside a second-master snoop window.
+
+- `make -C sim test-core-dcache`, `test-core-dcache-negative`: see
+  [LSU side](#verification), now through the real BIU.
+- `make -C sim test-chip-dcache-coherence`: `tb/tb_chip_dcache_coherence.sv`,
+  the `ppc603e` pins with a hand-assembled program in real mode (data WIMG
+  0011, every line global) against a DMA engine, seeds 1-3, six rounds each.
+  Per round the processor writes buffers A, B and D (modified lines), syncs
+  and posts GO; the engine polls GO with global reads, RWITMs each A line and
+  checks it, writes it back plus one (write-with-kill), optionally kills and
+  then rewrites each B line (write-with-kill), optionally flushes each D line
+  and writes one word of it (single write-with-flush), then posts DONE. The
+  processor polls DONE while counting in E, then checks every word of A, B and
+  D against the engine's values and its own markers. The engine reads random
+  E words between its commands and checks each counter's tag and that it never
+  decreases. Processor tenures take 6% ARTRY, 5% DRTRY and random waits.
+- `make -C sim test-chip-dcache-coherence-negative`: mutation 1 (TS hidden
+  from the snooper) and 2 (the engine ignores ARTRY) must fail.
+- `make -C sim test-chip-pins`: the pin bench with the cache built in and
+  HID0[DCE]=0.
+- `make -C toolchain rtl-chip-mmu-stress rtl-chip-lsu rtl-chip-machine-check
+  rtl-chip-full-decode`: the chip images boot with the CHIP_BOOT crt0, which
+  enables ICE, then DCE after a DCFI, and flushes the result mailbox. The bench
+  sees the IRQ acknowledgment word through global reads of the second master.
+  Firmware adjustments for a write-back cache: mmu-stress pushes the code it
+  writes (dcbst, sync, icbi, isync) before fetching it; full-decode keeps DCE
+  in its HID0 writes, leaves out DCFI while the cache is on, and flushes the
+  eciwx/ecowx words.
+- `make -C toolchain rtl-lsu-dcache`: the LSU image on the shared memory.
+- `make -C sim coverage` adds `lsu-dcache` and `chip-mmu-stress`.
+
+### Records
+
+Recorded: `make -C sim -j2 ci`, commit 1f2b66c, 2026-09-29.
+
+- Pass: regression, 37 compiled-firmware profiles, coverage (rtl/ line coverage
+  75.8%, 1752/2311, 21 runs).
+- `test-core-dcache`: checks=191813, retirements=2273, 48 retired load values
+  and 63 load responses checked, 7 exceptions; data tenures 25 burst reads,
+  7 single reads, 6 burst writes, 7 single writes, 4 address-only, 1 push,
+  2 TEA; 173 injected ARTRY, 147 DRTRY, 4 second-master tenures (2 retried);
+  48731 cycles. Negative: mutations 1, 2, 3, 4, 5, 7, 101, 102, 103 fail.
+- `test-chip-dcache-coherence`, seeds 1-3: 374385-375903 cycles, 14976-15100
+  second-master tenures, 116-128 commands retried by ARTRY (339-371 retried
+  tenures, 1177-1250 ARTRY cycles), 123-135 pushes, 384 DMA word checks and
+  4489-4543 E checks per seed, 1116-1147 injected processor retries. Negative:
+  mutation 1 fails by watchdog, mutation 2 on a stale RWITM line.
+- Chip firmware with the cache: mmu-stress 824692 cycles, 383 interrupts,
+  1089 snoop retries of the acknowledgment polls, 424 pushes, 499 burst
+  writes; lsu 2334589 cycles; machine-check 10740 cycles, 4 TEA; full-decode
+  24111 cycles.
+- `test-biu-dcache-snoop` seeds 1-5 and `test-chip-pins` unchanged.
+
+Established: the cache, BIU cache master and snooper together at the core and
+pin tops; coherent results against a second master's reads, RWITMs,
+write-with-kill, write-with-flush, kill, flush and clean on shared lines; the
+chip images with the cache on. Not established: pipelined address tenures from
+the other master (the model serializes tenures), page-table WIMG, eciwx/ecowx
+against cached copies (software flushes them), guarded-load speculation.

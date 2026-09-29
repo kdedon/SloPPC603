@@ -89,6 +89,11 @@ module ppc_dcache_slot #(
   import ppc_pkg::*;
   import ppc_dcache_pkg::*;
 
+  typedef enum logic [2:0] {
+    X_IDLE, X_SYNC_REQ, X_SYNC_WAIT, X_BIU_REQ, X_BIU_WAIT
+  } ext_state_e;
+
+  generate
   if (!ENABLE_DCACHE) begin : g_pass
     assign biu_req_valid_o = lsu_req_valid_i;
     assign lsu_req_ready_o = biu_req_ready_i;
@@ -132,9 +137,6 @@ module ppc_dcache_slot #(
                            push_req_ready_i, push_done_i, push_error_i,
                            snoop_valid_i, snoop_addr_i, snoop_tt_i};
   end else begin : g_cache
-    typedef enum logic [2:0] {
-      X_IDLE, X_SYNC_REQ, X_SYNC_WAIT, X_BIU_REQ, X_BIU_WAIT
-    } ext_state_e;
     ext_state_e ext_q;
     logic lsu_external;
     logic [3:0] lsu_op;
@@ -286,5 +288,6 @@ module ppc_dcache_slot #(
       else $error("data access reached the cache with no byte lanes");
     // synthesis translate_on
   end
+  endgenerate
 endmodule
 `default_nettype wire
