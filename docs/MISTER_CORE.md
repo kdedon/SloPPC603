@@ -158,7 +158,20 @@ retirement count that differs from the processor's by more than the one-cycle sa
 skew. It renders the DDR3 framebuffer through the palette to
 `sim/build/mister/mister-03.png`.
 
-RESULTS_SMOKE
+Recorded: `make -C sim lint check-spec mister-smoke`, commit d2edf70, 2026-09-29. All pass.
+
+| Measure | Value |
+|---|---:|
+| Cycles from reset to the summary | 43,197,624 |
+| Instructions retired | 14,248,078 |
+| Framebuffer stores = DDRAM writes | 104,944 |
+| Bus tenures | 96,517 |
+| Mandelbrot | 37,479,235 cycles, CPI 2.85 |
+| Dhrystone, 200 runs | 3,427.7 cycles/run, 0.166 DMIPS/MHz, CPI 5.80 |
+| CoreMark, 1 iteration | 1,541,554 cycles, 0.648 CoreMark/MHz, CRCs match, CPI 5.10 |
+
+The rates agree with the simulation images in [DEMO_SOC.md](DEMO_SOC.md#results) to
+within their run lengths.
 
 It does not cover `hps_io`, the OSD, the PLL, the framework scaler, the full-length
 runs, or DDR3 read-back by the scaler.

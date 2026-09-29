@@ -24,6 +24,7 @@ mister/db/
 mister/incremental_db/
 mister/output_files/
 mister/*.qws
+mister/*.keep
 
 # Development logs, reports and dated FPGA evidence archives
 *.log

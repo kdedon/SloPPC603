@@ -167,10 +167,11 @@ module ppc603e_demo_soc #(
     .addr_i(ram_offset[3 +: RAM_AW]), .wdata_i(wdata), .rdata_o(ram_rdata)
   );
 
+  generate
   if (FB_EXTERNAL) begin : g_fb_external
+    logic unused_video;
     assign fb_rdata = '0;
     assign fb_video_data = '0;
-    logic unused_video;
     assign unused_video = ^{fb_video_en, fb_video_addr};
   end else begin : g_fb_internal
     soc_ram_dp_be #(.DEPTH(FB_WORDS)) framebuffer (
@@ -179,6 +180,7 @@ module ppc603e_demo_soc #(
       .b_en_i(fb_video_en), .b_addr_i(fb_video_addr), .b_rdata_o(fb_video_data)
     );
   end
+  endgenerate
   assign fb_we_o = FB_EXTERNAL && req && we && sel == SEL_FB;
   assign fb_addr_o = 14'(fb_offset[31:3]);
   assign fb_be_o = be;

@@ -4,7 +4,8 @@
 # Builds the MiSTer core: fetches the framework, builds the firmware image in
 # the pinned cross-compiler container, generates files.qip and compiles in the
 # pinned Quartus image. Prints resources, the worst slack of every clock at
-# every corner, and the .rbf path; fails on a negative slack.
+# every corner, and the .rbf path; fails on a negative slack. With --clean,
+# only the .rbf and the fit and timing summaries are kept afterwards.
 set -euo pipefail
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd -- "${here}/.." && pwd)"
@@ -30,12 +31,15 @@ cp "${repo}/toolchain/build/demo/mister.hex" "${here}/firmware/mister.hex"
 } > "${here}/files.qip"
 
 rm -rf "${here}/output_files" "${here}/build_id.v"
+# Quartus writes every sourced assignment back into the project file.
+cp "${here}/ppc603e.qsf" "${here}/ppc603e.qsf.keep"
 status=0
 # One Quartus build at a time on a shared machine.
 flock /tmp/ppc603e-quartus.lock docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
   --workdir /work/mister "${image}" \
   /opt/intelFPGA_lite/quartus/bin/quartus_sh --flow compile ppc603e -c ppc603e \
   > "${here}/output_files.log" 2>&1 || status=$?
+mv "${here}/ppc603e.qsf.keep" "${here}/ppc603e.qsf"
 
 out="${here}/output_files"
 if [[ -f "${out}/ppc603e.fit.summary" ]]; then
@@ -54,4 +58,8 @@ if [[ -f "${out}/ppc603e.rbf" ]]; then
   echo "rbf: ${out}/ppc603e.rbf (${short})"
 fi
 echo "quartus exit status ${status}"
+if [[ "${1:-}" == --clean ]]; then
+  rm -rf "${here}/db" "${here}/incremental_db" "${here}"/*.qws
+  find "${out}" -type f ! -name '*.rbf' ! -name '*.summary' -delete 2>/dev/null || true
+fi
 exit "${status}"
