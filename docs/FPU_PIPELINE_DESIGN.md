@@ -160,9 +160,10 @@ still announces results on the finish cycle. The 602 build still gates source
 readiness and store traps on its late emulation-trap and single-range checks.
 The pending queue still shifts on retirement; a circular buffer remains open.
 
-Open timing work: the shifting pending queue, the combinational
-`issue_ready_o` (decode, commit and abort terms), the 602 late trap checks and
-the arithmetic stages themselves.
+Open timing work: the shifting pending queue, now the fitted worst path
+(pending state through issue, retirement and shift selection into every
+entry), the combinational `issue_ready_o` (decode, commit and abort terms),
+the 602 late trap checks, and the add and rounding stages.
 
 ## Arithmetic stage 1
 

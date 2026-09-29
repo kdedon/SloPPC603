@@ -25,6 +25,28 @@ The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not 
 
 ## Recorded synthesis evidence
 
+### Store data, forward payload and unnormalized stage 1, fitted 603e
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit`, commit
+`3df7174`, 2026-09-29. Exit zero; one physical pin (`clk_i`), 20 ns clock,
+zero-delay virtual I/O. The report now also lists the worst path to each of
+300 endpoints (`setup_endpoints.txt`).
+
+| Build | Fitted ALMs | Registers | DSP | Post-fit Fmax | 20 ns slack |
+|---|---:|---:|---:|---:|---:|
+| `8fb66f6` | 27,606 | 8,300 | 5 | 27.24 MHz | −16.709 ns |
+| `3df7174` | 27,848 | 8,795 | 5 | 37.68 MHz | −6.537 ns |
+
+All 300 worst endpoints are pending-queue registers (`result.gpr_value`,
+`result.ea`, `result.fpscr_value`, `fault_info`, `fpr_value`, `mem.data`),
+launched from `pending_q[*].started`/`valid` through issue, retirement and
+shift selection (−6.537 to −5.655 ns). Worst path into each arithmetic stage:
+multiply −1.354 ns (was −6.288), aligned −1.862 (−8.664), add −4.956
+(−2.685), divider −5.526 (−9.368; now pending state → operand forward mux →
+divider operand), response −4.493 (−7.353; rounding into the reply RAM).
+The ALM count includes ALMs holding virtual pins. Neither 50 nor 66 MHz is
+met; this is a fit and timing measurement, not closure.
+
 ### Registered finish, fitted 603e
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit`, commit
