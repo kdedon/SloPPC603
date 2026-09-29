@@ -59,7 +59,7 @@ cycles) or interrupts.
 
 ## Pipelined load/store path
 
-Recorded: `make -C sim demo-dhrystone demo-coremark` with the arguments of the first breakdown, commit 045ff63, 2026-09-29.
+Recorded: `make -C sim demo-dhrystone demo-coremark` with the arguments of the first breakdown, commit c9e3c08, 2026-09-29.
 Both pass (Dhrystone checks match, CoreMark CRCs match); the retired counts equal the
 first breakdown's, so the instruction stream is unchanged.
 
@@ -116,6 +116,11 @@ All pass: lsu-dcache 120,681 retirements in 2,360,629 cycles (7,356,785 checks),
 stress cached modes 0-8 and 12-13 and TEA modes 14-15 (about 62,000 retirements each,
 122 TLB misses, interrupts inside misses and bus tenures), page-miss, DSI (8 load and
 4 store faults), alignment and the uncached LSU image.
+
+Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`, commit c9e3c08, 2026-09-29.
+The translated top still meets 66 MHz: no endpoint fails at 15.152 ns, worst internal
+path 14.71 ns (68.0 MHz; it was 14.39 ns). Details in
+[TRANSLATED_SYNTHESIS_BASELINE.md](TRANSLATED_SYNTHESIS_BASELINE.md).
 
 What remains: the lane still holds one access at a time, so back-to-back accesses
 cost 5 cycles each, not the 603e's 2; the router's translated-offer register and the
