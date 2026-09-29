@@ -1782,27 +1782,26 @@ module ppc_fpu_arith #(
                 div_b_raw_q <= req_operands.b[62:0];
                 div_a_sign_q <= req_operands.a[63];
                 div_b_sign_q <= req_operands.b[63];
-                div_result_sign_q <=
-                    ((req_operands.op != FP_FRES) && req_operands.a[63]) ^
-                    req_operands.b[63];
-                if (req_operands.b[62:0] != 63'd0 &&
-                    req_operands.b[62:52] != 11'h7ff &&
-                    (req_operands.op == FP_FRES ||
-                    (req_operands.a[62:0] != 63'd0 &&
-                    req_operands.a[62:52] != 11'h7ff))) begin
-                    divide_special_pending_q <= 1'b0;
-                    divide_state_q <= DIV_START;
-                end else begin
-                    divide_special_pending_q <= 1'b1;
-                    divide_special_count_q <=
-                        (CPU_602 || req_operands.op == FP_FRES ||
-                        req_operands.single_result) ?
-                        6'd18 : 6'd33;
-                    divide_state_q <= DIV_SPECIAL;
-                end
+                divide_special_pending_q <= 1'b0;
+                divide_state_q <= DIV_START;
             end else begin
                 case (divide_state_q)
-                    DIV_START: begin
+                    // Special operands are classified from the registered
+                    // operands; the accepted edge counts as their first cycle.
+                    DIV_START: if (!(div_b_raw_q != 63'd0 &&
+                        div_b_raw_q[62:52] != 11'h7ff &&
+                        (divide_req_q.op == FP_FRES ||
+                        (div_a_raw_q != 63'd0 &&
+                        div_a_raw_q[62:52] != 11'h7ff)))) begin
+                        divide_special_pending_q <= 1'b1;
+                        divide_special_count_q <=
+                            divide_req_q.single_result ||
+                            divide_req_q.op == FP_FRES ? 6'd17 : 6'd32;
+                        divide_state_q <= DIV_SPECIAL;
+                    end else begin
+                        div_result_sign_q <=
+                            (divide_req_q.op != FP_FRES && div_a_sign_q) ^
+                            div_b_sign_q;
                         div_result_exp_q <= div_start_a_exp -
                             div_start_b_exp;
                         div_denominator_q <= div_start_b_sig;

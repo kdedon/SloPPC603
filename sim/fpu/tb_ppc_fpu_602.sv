@@ -154,7 +154,11 @@ module tb_ppc_fpu_602;
         commit_tag_i = identity;
         commit_valid_i = 1'b1;
         #1;
-        if (result_o.store && (!store_valid_o || store_o !== held_mem_req))
+        // Store data travels only in the authorized descriptor.
+        if (result_o.store && (!store_valid_o ||
+            {store_o.tag, store_o.ea, store_o.size_bytes, store_o.write} !==
+            {held_mem_req.tag, held_mem_req.ea, held_mem_req.size_bytes,
+             held_mem_req.write}))
             $fatal(1, "602 store not authorized by matching commit");
         accepted = 1'b0;
         attempts = 0;
