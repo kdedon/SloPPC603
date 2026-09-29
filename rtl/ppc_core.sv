@@ -166,9 +166,8 @@ module ppc_core #(
   output logic redirect_accepted_o
 );
   import ppc_pkg::*;
-  localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
   localparam int DIV_LATENCY_EFFECTIVE =
-    DIV_LATENCY != 0 ? DIV_LATENCY : int'(CPU_CFG.div_latency);
+    DIV_LATENCY != 0 ? DIV_LATENCY : cpu_div_latency(CPU_VARIANT);
   // Elaboration fails for a variant whose differences are not all built.
   // synthesis translate_off
   if (CPU_VARIANT == CPU_603) begin : g_reject_603

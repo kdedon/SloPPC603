@@ -563,6 +563,20 @@ package ppc_pkg;
     endcase
     return c;
   endfunction
+  // Scalar fields for parameter expressions, where Quartus 18.1 cannot
+  // select a member of a struct constant. Each reads one field of the record.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic int cpu_div_latency(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return int'(c.div_latency);
+  endfunction
+  function automatic int cpu_tlb_sets(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return int'(c.tlb_sets);
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   // Variants whose differences from the PID7v are all implemented.
   function automatic bit cpu_variant_supported(cpu_variant_e v);
     return (v == CPU_PID7V_603E) || (v == CPU_PID6_603E) || (v == CPU_EC603E);

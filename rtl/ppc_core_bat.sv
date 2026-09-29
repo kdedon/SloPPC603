@@ -152,9 +152,8 @@ module ppc_core_bat #(
   output logic pimem_error_o,
   output logic busy_o
 );
-  localparam ppc_pkg::cpu_cfg_t CPU_CFG = ppc_pkg::cpu_cfg(CPU_VARIANT);
   localparam int TLB_SETS_EFFECTIVE =
-    TLB_SETS != 0 ? TLB_SETS : int'(CPU_CFG.tlb_sets);
+    TLB_SETS != 0 ? TLB_SETS : ppc_pkg::cpu_tlb_sets(CPU_VARIANT);
   ppc_pkg::page_miss_t imem_rsp_page_miss, dmem_rsp_page_miss;
   logic core_rst_n, core_halted, ifetch_fatal;
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
