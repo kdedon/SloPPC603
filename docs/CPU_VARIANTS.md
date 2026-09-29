@@ -488,7 +488,7 @@ choice and a test of that choice, not a fidelity claim:
 | V7 | Done: 602 decode (strings and double-precision FP to the emulation trap, eciwx/ecowx and EAR illegal, esa/dsa/mfrom, TCR/IBR/ESASRR/SEBR/SER/SP/LT), HID0 mask, MSR[AP, SA], ESASRR with esa/dsa, and a minimal 0x1600 entry under the MSR[IP] prefix; ISA-matrix 602 column filled. The 602 core stays rejected. Open for V9: the esa SE bit (`event_esa_enable_i` is tied low, so esa is refused in the core) |
 | V8 | Done: IBR vector prefix for every 602 exception but system reset, machine check and IABR; 0x1500 watchdog from TCR (`ppc_watchdog`: TI period on time-base carries, WIE, NWE service, L2E/CRE second level with SLT, RESETO and core soft reset); watchdog ranked below DEC; emulation trap through IBR. `ppc_core` offers the watchdog boundary but still rejects the 602. Open: RESETO pin (V11), the esa SE bit (V9) |
 | V4 | Done: `ppc_icache`, `ppc_icache_managed` and `ppc_dcache` take `SET_COUNT` (128 or 64) and `WAY_COUNT` (4 or 2), other values fail elaboration; tag, index, way-valid, dirty/valid state and LRU widths (ways × log2 ways) follow, strict LRU seeds way w at rank w, flash invalidate clears one flop per set, and HID0 lock bits are geometry independent. The core tops take the geometry from `cpu_icache_sets()` etc. unless `ICACHE_SETS`/`ICACHE_WAYS`/`DCACHE_SETS`/`DCACHE_WAYS` override it. CSE carries the way number zero-extended to two bits; the 603 one-bit pin stays for V5 |
-| V9 | Implemented, verification incomplete (handoff checkpoint): 602 MMU (see [602 MMU](#602-mmu)): IBAT NE/SE, ITLB NE/SE, MSR[AP] keys, HID0[WIMG] in real and protection-only mode, protection-only mode with SR0 keys, per-page NE/WE entries and SEBR/SER esa gating; esa permission fetched with each instruction and resolved in `ppc_special`, so `event_esa_enable_i` is live; esa without SE is an illegal instruction. The 602 core stays rejected, so the path is checked at module level and linted in the 603e core builds |
+| V9 | Done: 602 MMU (see [602 MMU](#602-mmu)): IBAT NE/SE, ITLB NE/SE, MSR[AP] keys, HID0[WIMG] in real and protection-only mode, protection-only mode with SR0 keys, per-page NE/WE entries and SEBR/SER esa gating; esa permission fetched with each instruction and resolved in `ppc_special`, so `event_esa_enable_i` is live; esa without SE is an illegal instruction. The 602 core stays rejected, so the path is checked at module level and linted in the 603e core builds |
 | V5, V10 onward | Not started |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
@@ -498,6 +498,24 @@ consistency of the integer path at PID6, not any PID6-specific behavior.
 The 603 and 602 still fail elaboration of the core; their SPR presence,
 SRR1[KEY] and PLL tables are checked at unit level (`tb_variant_config`,
 `tb_exception_tlb_miss`).
+
+Recorded: `make -C sim test-tlb-geometry-16 test-micro-tlb-router test-bat-runtime-service test-bat-runtime-router test-bat-data-fault test-tlb-service test-tlb-independent test-tlb-runtime-fill-router test-tlb-runtime-invalidate-router test-tlb-runtime-invalidate-service test-tlb-prepared-refill test-bat-memory-router test-page-data-exception-router test-page-instruction-exception-router test-page-memory-router test-page-miss-result-router test-segment-runtime-router test-fetch-recovery test-crstate-execution test-core-fetch-fault test-core-bat test-core-page-data-exception test-core-page-instruction-exception test-core-page-miss-result test-core-page-translation test-core-tlb-miss test-core-tlb-load test-core-tlbie test-exception-tlb-miss test-core-full-decode variant-matrix`, commit d00854f, 2026-09-29.
+Pass (V9), focused benches only (lint, `check-spec`, `test-bat*` and
+`variant-mmu-602-*` passed at 130a829; `regression` not rerun):
+`tb_micro_tlb_router` at 602, 16 sets, seed 3: 3584 checks, 964 operations,
+3547 micro-TLB and slow-path records identical, 431 fetches carrying an esa
+code, with random HID0[PO], MSR[AP] and TLB NE/SE/WE words; the same bench
+at 603e settings (32 and 16 sets) 2426, 3519 and 3519 checks.
+`tb_mmu_602` 75 checks on the 602, 40 on variants 0–3; `tb_exception_602`
+258 and 234; `tb_special_watchdog` 18; `tb_fetch_recovery` 342 (esa carried
+from response to packet); TLB service 5345 (32 sets) and 3617 (16 sets)
+direct checks, 1215182 and 1187366 vector checks; runtime fill router 1235
+and 723; core TLB load 4661, tlbie 1731, page ISI 2372/2644, DSI 1673/1826,
+typed fetch 15008; `tb_core_full_decode` 8817 checks, 729 retirements on
+variants 0–2; `test-reference-pid6` 8500 snapshots. This establishes the
+602 MMU at module level and that HAS_602=0 leaves the 603e bench results
+unchanged. It does not establish any 602 core build: the core still rejects
+the 602.
 
 Recorded: `make -C sim -j2 ci` (includes `regression`, `variant-matrix` and `cache-geometry`), commit bbe98eb, 2026-09-29.
 Pass (V4): 635 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage
