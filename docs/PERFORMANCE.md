@@ -107,7 +107,9 @@ Recorded: `make -C sim lint test-core test-core-recovery test-core-lsu-update te
 All pass, including the data-cache mutations (rejected) and the recovery bench with
 pivot redirects; `test-dcache-mutations` passes on 9494ff6, whose cache RTL is the
 same. `test-core-lsu-extensions` caught an early offer of an alignment-faulting access
-during this round. These establish that DSI,
+during this round. On c9e3c08, which changes only the cache's status clear,
+`make -C sim lint test-dcache test-dcache-mutations test-core-dcache test-core-dcache-negative test-chip-dcache-coherence test-chip-dcache-coherence-negative test-biu-dcache-snoop test-core-bat-machine-check test-core-lsu-extensions`
+passes. These establish that DSI,
 alignment, TLB miss, machine check (precise and TEA), reservations, update forms,
 strings and multiples keep their results and saved state; they do not measure timing.
 
