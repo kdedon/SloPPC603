@@ -75,18 +75,6 @@ module ppc_fpu_arith #(
     } mul_parts_t;
 
     typedef struct packed {
-        logic [53:0] p00;
-        logic [51:0] p11;
-        logic [53:0] mid;
-    } mul_mid_t;
-
-    typedef struct packed {
-        logic [53:0] p00;
-        logic [51:0] p11;
-        logic [54:0] cross_sum;
-    } mul_low_t;
-
-    typedef struct packed {
         logic [159:0] x;
         logic [159:0] y;
         logic signed [15:0] exp_x;
@@ -847,28 +835,14 @@ module ppc_fpu_arith #(
         return out;
     endfunction
 
-    function automatic mul_mid_t multiply_mid(input mul_parts_t parts);
-        mul_mid_t out;
-        out = '0;
-        out.p00 = parts.p00;
-        out.p11 = parts.p11;
-        out.mid = {1'b0, parts.p01} + {1'b0, parts.p10};
-        return out;
-    endfunction
-
-    function automatic mul_low_t multiply_low(input mul_mid_t middle);
-        mul_low_t out;
-        out = '0;
-        out.p00 = middle.p00;
-        out.p11 = middle.p11;
-        out.cross_sum = {28'd0, middle.p00[53:27]} + {1'b0, middle.mid};
-        return out;
-    endfunction
-
-    function automatic logic [105:0] multiply_finish(input mul_low_t low);
+    // The three middle partial products share one ternary adder.
+    function automatic logic [105:0] multiply_sum(input mul_parts_t parts);
+        logic [54:0] cross_sum;
         logic [51:0] upper;
-        upper = low.p11 + {24'd0, low.cross_sum[54:27]};
-        return {upper, low.cross_sum[26:0], low.p00[26:0]};
+        cross_sum = {28'd0, parts.p00[53:27]} + {2'd0, parts.p01} +
+            {2'd0, parts.p10};
+        upper = parts.p11 + {24'd0, cross_sum[54:27]};
+        return {upper, cross_sum[26:0], parts.p00[26:0]};
     endfunction
 
     function automatic finite_prep_t prepare_finite(
@@ -1551,8 +1525,7 @@ module ppc_fpu_arith #(
         multiply_double_next.finite = multiply_q.finite;
         multiply_double_next.special_rsp = multiply_q.special_rsp;
         if (multiply_q.finite) begin
-            multiply_double_product = multiply_finish(multiply_low(
-                multiply_mid(multiply_q.products)));
+            multiply_double_product = multiply_sum(multiply_q.products);
             multiply_double_prep = prepare_finite(multiply_q.req.op,
                 multiply_q.operands.a_sig, multiply_q.operands.b_sig,
                 multiply_q.operands.a_exp, multiply_q.operands.b_exp,
