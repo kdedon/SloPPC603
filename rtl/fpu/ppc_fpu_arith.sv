@@ -805,18 +805,30 @@ module ppc_fpu_arith #(
         return out;
     endfunction
 
+    // Denormal operands stay unnormalized: the 112-bit sum keeps every
+    // product and addend bit above the rounding position unless the result
+    // is already below the denormal range, and the add stage normalizes.
+    function automatic logic [52:0] raw_sig(input logic [62:0] magnitude);
+        return {magnitude[62:52] != 11'd0, magnitude[51:0]};
+    endfunction
+
+    function automatic logic signed [15:0] raw_exp(input logic [10:0] biased);
+        return biased == 11'd0 ? -16'sd1022 :
+            $signed({5'd0, biased}) - 16'sd1023;
+    endfunction
+
     function automatic finite_operands_t prepare_operands(
         input logic [63:0] a_bits, input logic [63:0] b_bits,
         input logic [63:0] c_bits
     );
         finite_operands_t out;
         out = '0;
-        out.a_sig = finite_sig(a_bits[62:0]);
-        out.b_sig = finite_sig(b_bits[62:0]);
-        out.c_sig = finite_sig(c_bits[62:0]);
-        out.a_exp = finite_exp(a_bits[62:0]);
-        out.b_exp = finite_exp(b_bits[62:0]);
-        out.c_exp = finite_exp(c_bits[62:0]);
+        out.a_sig = raw_sig(a_bits[62:0]);
+        out.b_sig = raw_sig(b_bits[62:0]);
+        out.c_sig = raw_sig(c_bits[62:0]);
+        out.a_exp = raw_exp(a_bits[62:52]);
+        out.b_exp = raw_exp(b_bits[62:52]);
+        out.c_exp = raw_exp(c_bits[62:52]);
         out.a_sign = a_bits[63];
         out.b_sign = b_bits[63];
         out.c_sign = c_bits[63];
