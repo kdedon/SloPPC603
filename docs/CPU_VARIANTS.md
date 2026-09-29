@@ -273,8 +273,9 @@ take `parameter int VARIANT` and cast it to `cpu_variant_e`.
 ### 2.3 Verification matrix
 
 Variant-neutral benches (integer ALU, recovery, rename) run on the default only.
-Variant-sensitive checks run on each variant through one make target, proposed
-`make -C sim variant-matrix`, which loops `CPU_VARIANT` over the four values:
+Variant-sensitive checks run on each variant through one make target,
+`make -C sim variant-matrix` (part of `regression`). The table is the target
+matrix; [status](#status) lists what the target runs today.
 
 | Check | PID7v | PID6 | 603 | 602 |
 |---|---|---|---|---|
@@ -342,7 +343,31 @@ choice and a test of that choice, not a fidelity claim:
   contract).
 - PVR revision fields for all variants (manuals give only starting levels).
 
+## Status
+
+| Round | State |
+|---|---|
+| V0 | Done: `cpu_variant_e`, `cpu_cfg_t`, `cpu_cfg()`, `cpu_variant_supported()`; `ppc_core` fails elaboration for `CPU_603` and `CPU_602` with a message naming the missing work |
+| V1 | Done: `CPU_VARIANT` on `ppc603e`, every core wrapper and measurement top, down to `ppc_core` and `ppc_special`; PVR, divide latency and HID0/HID1 read and write masks come from `cpu_cfg()`; PID7v PVR is `0x00070101` in RTL, reference runner, ISA metadata and firmware |
+| V2 onward | Not started |
+
+EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
+behave the same. The full-decode bench checks PVR and HID0 read-back per
+variant; HID1 absence and EAR absence wait for V3.
+
+Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 22a007b plus an uncommitted edit to this document, 2026-09-29.
+Pass: 560 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage
+75.8% (1752/2311, 14 waived arms, 21 runs). `variant-matrix`: chip lint on
+variants 0 (PID7v), 1 (PID6) and 2 (EC603e); variants 3 (603) and 4 (602)
+rejected at elaboration; `tb_core_divider_timing` at 20, 37 and 20 cycles
+(58, 92, 58 checks); `tb_core_full_decode` 8816 checks, 729 retirements on
+each. This establishes that the variant parameter elaborates, selects PVR,
+divide latency and HID0 masks, and leaves the PID7v gates green. It does not
+establish PID6 reference agreement (V2) or any 603/602 behavior.
+
 ## Open questions
+
+Settled by the [decisions](#decisions-2026-09-28) below; kept for context.
 
 1. PVR revisions: keep `0x00070200` (PID7v level with IFEM/ABE) or match the
    reference's `0x00070101`? Values for PID6 (`0x00060100`?), 603 (`0x00030100`?)
