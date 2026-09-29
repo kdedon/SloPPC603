@@ -69,6 +69,7 @@ int main(void)
     fail("timebase does not track the cycle counter");
   }
 
+  SOC_CONSOLE = '\n';
   con_goto(0, 26);
   con_color(14, 0);
   printf("Mandelbrot %dx%d: %lu cycles\n", MB_W, MB_H, (unsigned long)cycles);

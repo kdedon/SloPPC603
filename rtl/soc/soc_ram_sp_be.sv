@@ -6,7 +6,7 @@
 // 16-digit word per line, byte 0 in the top bits).
 module soc_ram_sp_be #(
   parameter int DEPTH = 32768,
-  parameter string INIT_FILE = ""
+  parameter INIT_FILE = ""
 ) (
   input  logic                     clk_i,
   input  logic                     req_i,
@@ -17,7 +17,11 @@ module soc_ram_sp_be #(
 );
   (* ramstyle = "M10K" *) logic [63:0] mem [DEPTH];
 
-  initial if (INIT_FILE != "") $readmemh(INIT_FILE, mem);
+  generate
+    if (INIT_FILE != "") begin : g_init
+      initial $readmemh(INIT_FILE, mem);
+    end
+  endgenerate
 
   always_ff @(posedge clk_i)
     if (req_i) begin

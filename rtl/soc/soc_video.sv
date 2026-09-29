@@ -15,8 +15,8 @@ module soc_video #(
   parameter int V_FP = 4,
   parameter int V_SYNC = 3,
   parameter int V_BP = 15,
-  localparam int WORDS = H_ACTIVE * V_ACTIVE / 8,
-  localparam int AW = $clog2(WORDS)
+  // Derived; not for override.
+  parameter int AW = $clog2(H_ACTIVE * V_ACTIVE / 8)
 ) (
   input  logic          clk_i,
   input  logic          rst_ni,

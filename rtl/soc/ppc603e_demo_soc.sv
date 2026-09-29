@@ -8,7 +8,7 @@
 module ppc603e_demo_soc #(
   parameter logic [31:0] RAM_BASE = 32'hfff0_0000,
   parameter int RAM_BYTES = 262144,
-  parameter string RAM_INIT = "",
+  parameter RAM_INIT = "",
   parameter int CE_DIV = 8
 ) (
   input  logic       clk_i,
@@ -121,8 +121,8 @@ module ppc603e_demo_soc #(
     return SEL_RAM;
   endfunction
 
+  logic unused_hit;
   always_comb begin
-    logic unused_hit;
     claim_sel = sel_e'(decode(claim_addr, claim));
     beat_byte = {beat_addr, 3'b000};
     sel = sel_e'(decode(beat_byte, unused_hit));

@@ -68,8 +68,8 @@ module soc_bus60x_target (
                              : addr_q[31:3];
 
   // Single beats carry TSIZ bytes from the address offset; 0 means eight.
+  logic [3:0] size;
   always_comb begin
-    logic [3:0] size;
     size = (tsiz_q == 3'd0) ? 4'd8 : {1'b0, tsiz_q};
     single_be = '0;
     for (int lane = 0; lane < 8; lane++)
