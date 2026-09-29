@@ -178,4 +178,29 @@ runs, or DDR3 read-back by the scaler.
 
 ### Build
 
-RESULTS_FIT
+Recorded: `mister/build.sh`, commit 0d0a634, 2026-09-29. Quartus 17.0.2 Lite, seed 2,
+multi-corner fitting and analysis. **Not yet usable on hardware**: the build fails its
+own check because Quartus drops the program RAM contents (Critical Warning 127002:
+the byte-enable RAM is split into eight 8-bit RAMs and the `$readmemh` data is passed to
+them as an unreadable init file), so the processor would boot from zeros. Resources
+and timing below are for that netlist; filling the RAM does not change its structure.
+
+| Resource | Used |
+|---|---|
+| ALMs | 17,198 / 41,910 (41%) |
+| Registers | 23,080 |
+| Block memory bits | 1,710,523 / 5,662,720 (30%) |
+| M10K blocks | 240 / 553 (43%) |
+| DSP blocks | 35 / 112 |
+| PLLs | 3 / 6 |
+
+Every clock meets setup, hold, recovery and removal at all four corners (slow and fast,
+100 °C and −40 °C). Core clock (50 MHz): worst setup slack +3.399 ns (slow, −40 °C),
+worst hold slack +0.078 ns (fast, −40 °C). The smallest slack of any clock is +0.078 ns.
+Seed 1 without multi-corner fitting left the scaler HDMI clock at −0.120 ns at the slow
+−40 °C corner.
+
+Open: carry the firmware into the program RAM. The next step is a Quartus-only RAM
+body in `soc_ram_sp_be` (an `altsyncram` with `width_byteena_a = 8` and `init_file`
+set to a `.mif` that `build.sh` generates from `mister.hex`), keeping the inferred
+array for Verilator; then rebuild and confirm `build.sh` passes.
