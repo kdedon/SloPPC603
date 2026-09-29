@@ -591,7 +591,7 @@ test-crstate-decode:
 
 .PHONY: test-crstate-execution
 test-crstate-execution:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_crstate_execution --Mdir $(BUILD_DIR)/crstate-execution $(EXCEPTION_RTL) ../rtl/ppc_timer.sv ../rtl/ppc_miss_derive.sv ../rtl/ppc_special.sv ../tb/tb_crstate_execution.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_crstate_execution --Mdir $(BUILD_DIR)/crstate-execution $(EXCEPTION_RTL) ../rtl/ppc_timer.sv ../rtl/ppc_miss_derive.sv ../rtl/ppc_watchdog.sv ../rtl/ppc_special.sv ../tb/tb_crstate_execution.sv
 	./$(BUILD_DIR)/crstate-execution/Vtb_crstate_execution $(SIM_ARGS)
 
 .PHONY: test-core-multiply test-multiply-recovery test-multiply-overflow-recovery
@@ -1721,7 +1721,7 @@ variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-re
                 $(addprefix variant-config-,$(VARIANT_ALL)) $(addprefix variant-tlb-miss-,$(VARIANT_ALL)) \
                 $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6 \
                 $(addprefix variant-decode-sweep-,$(filter-out 0,$(VARIANT_ALL))) $(addprefix variant-exception-602-,$(VARIANT_ALL)) \
-                variant-special-lint-602
+                variant-special-lint-602 variant-watchdog-602
 	@echo "PASS: variant-matrix (variants $(VARIANT_IDS) built and checked; $(VARIANT_REJECTED) rejected)"
 # 602 decode, SPR and ESA/MSR checks below the rejected core: the decode
 # sweep and exception state at each variant, and the SRU lane linted with
@@ -1734,6 +1734,12 @@ variant-exception-602-%:
 	mkdir -p $(BUILD_DIR)
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_602 -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-exception-602-$* $(EXCEPTION_RTL) ../tb/tb_exception_602.sv
 	./$(BUILD_DIR)/variant-exception-602-$*/Vtb_exception_602 $(SIM_ARGS)
+variant-watchdog-602:
+	mkdir -p $(BUILD_DIR)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_watchdog --Mdir $(BUILD_DIR)/variant-watchdog-602 ../rtl/ppc_pkg.sv ../rtl/ppc_watchdog.sv ../tb/tb_watchdog.sv
+	./$(BUILD_DIR)/variant-watchdog-602/Vtb_watchdog $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_special_watchdog --Mdir $(BUILD_DIR)/variant-special-watchdog-602 $(RTL) ../tb/tb_special_watchdog.sv
+	./$(BUILD_DIR)/variant-special-watchdog-602/Vtb_special_watchdog $(SIM_ARGS)
 variant-special-lint-602:
 	$(VERILATOR) --lint-only -Wall --top-module tb_special_lint -GVARIANT=4 $(RTL) ../tb/tb_special_lint.sv
 	@echo "PASS: ppc_special linted at CPU_602"

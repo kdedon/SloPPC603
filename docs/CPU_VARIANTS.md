@@ -103,9 +103,13 @@ SRR1[KEY].
 
 Main: little-endian mode is excluded ([RELEASE.md](RELEASE.md)); `MSR[LE]`
 is only copied from ILE on entry. The misaligned-LE split therefore has no
-consumer yet. On the 602, `ppc_exception_state` enters the 0x1600 emulation
-trap under the MSR[IP] prefix and stores MSR[AP, SA] (V7); the IBR prefix
-and the 0x1500 watchdog do not exist. A misaligned
+consumer yet. On the 602, `ppc_exception_state` stores MSR[AP, SA] (V7) and
+takes the vector prefix from IBR when MSR[IP] is clear, except for system
+reset, machine check and IABR, which keep `0x0000` (V8, Table 2-15). The
+0x1600 emulation trap and the 0x1500 watchdog use that prefix and save
+SRR0 = the instruction (trap) or the next instruction (watchdog) and SRR1 =
+MSR bits 16–31 (Tables 4-22, 4-23). `ppc_watchdog` owns TCR and raises the
+watchdog from the time base (see [602 watchdog](#602-watchdog)). A misaligned
 eciwx/ecowx takes the alignment exception on every variant, PID6 included:
 splitting an external-control transfer needs LSU and BIU work, deferred to
 V13 with the misaligned-LE split (`cfg.misaligned_ecxwx_hw` has no consumer).
@@ -128,8 +132,30 @@ Unimplemented SPRs follow the PEM rule (illegal-instruction program exception)
 in every variant.
 
 Main (V7): the 602 HID0 mask is `0x8af97caf`; TCR, IBR, SEBR, SER, SP and LT
-are stored in `ppc_special.sv` and ESASRR in `ppc_exception_state.sv`, masked
-as [FULL_DECODE.md](FULL_DECODE.md#602) lists. Only ESASRR has an effect yet.
+are stored in `ppc_special.sv` (TCR in `ppc_watchdog.sv`) and ESASRR in
+`ppc_exception_state.sv`, masked as [FULL_DECODE.md](FULL_DECODE.md#602)
+lists. ESASRR, IBR and TCR have an effect (V8); SEBR, SER, SP and LT not yet.
+
+### 602 watchdog
+
+`ppc_watchdog` (602UM §2.1.2.4.2, §4.5.17) ends a period on the time-base
+increment that carries out of TB bits 22+TI..0, i.e. every 2^(23+TI)
+increments (TI 0b00: TBL bit 8 sets). A TB write suppresses that edge's
+increment and so its carry. At a period end:
+
+| State | TCR | Effect |
+|---|---|---|
+| RESETO asserted | any | RESETO released; the sequence restarts |
+| no interrupt outstanding, or NWE = 1 | WIE | 0x1500 request pending until taken; NWE cleared |
+| interrupt outstanding and NWE = 0 | WIE, L2E | SLT set, RESETO asserted; with CRE also a core soft reset |
+| otherwise | — | nothing |
+
+The 0x1500 request is maskable by MSR[EE] and ranks below DEC (Table 4-3,
+priority 6): `ppc_special` selects it only when neither EXT nor DEC is
+pending, and an EXT arriving during the drain replaces it, as for DEC. The
+core soft reset enters `EVENT_SOFT_RESET` (0x0100, MSR[IP] prefix, never
+IBR) through the SRESET path without acknowledging the SRESET pin. RESETO
+is `watchdog_reseto_o` of `ppc_special`; it has no chip pin until V11.
 
 Main (V3): `ppc_decode.sv` accepts HID1 only when `cfg.has_hid1` and EAR,
 eciwx and ecowx only when `cfg.has_ear`; otherwise they take the
@@ -342,7 +368,7 @@ editing; cache and bus rounds wait for those branches to merge.
 | V5 | 603 caches (8 KiB/2-way, CSE width), 603 store 2:2, 603 reference runs; direct-store per user decision | caches, `ppc603e.sv`, LSU | V3, V4 |
 | V6 | TLB geometry parameter; 602 16-set TLB and HASH/miss derivation | `ppc_tlb_service.sv`, `ppc_miss_derive.sv` | V1 |
 | V7 | 602 decode: strings and FP-less DP → 0x1600, eciwx/ecowx → program, esa/dsa/mfrom, MSR AP/SA, 602 SPR storage (TCR/IBR/ESASRR/SER/SEBR, SP/LT) | `ppc_decode.sv`, `ppc_special.sv`, `ppc_pkg.sv` | V3 |
-| V8 | 602 exceptions: IBR vector prefix, emulation trap 0x1600, watchdog 0x1500 from TCR | `ppc_exception_state.sv`, `ppc_timer.sv` | V7 |
+| V8 | 602 exceptions: IBR vector prefix, emulation trap 0x1600, watchdog 0x1500 from TCR | `ppc_exception_state.sv`, `ppc_watchdog.sv`, `ppc_special.sv` | V7 |
 | V9 | 602 MMU: IBAT NE/SE, TLB NE/SE/WE, esa gating, protection-only mode, HID0[WIMG] defaults | BAT/TLB/fault paths | V6, V7 |
 | V10 | 602 caches (4 KiB/2-way, no ICE) and 602 multiply timing | caches, `ppc_iu.sv` | V4 |
 | V11 | `ppc602` package top: multiplexed A/D bus, T32, PFADDR, RESETO; pin bench; fit | new files | V10, BIU merge |
@@ -382,6 +408,20 @@ choice and a test of that choice, not a fidelity claim:
   them from SRR1 like bits 5–7 (PEM rfi), so an exception return drops an esa
   session unless the handler sets them.
 - 602 SP/LT reset: undefined on the part; zero in simulation.
+- 602 watchdog period: Table 2-14 counts "clock cycles", §4.5.17 a carry out
+  of a time-base bit; the time base is used, so a period is 2^(23+TI) TB
+  increments, not processor clocks.
+- 602 TCR[NWE]: Table 2-14 says 1 disables the next interrupt, §4.5.17 says
+  the handler services the timer by setting it. NWE = 1 at a period end is
+  read as "serviced": the interrupt is raised again and NWE cleared, so the
+  handler sets it once per interrupt. Without it the next period escalates.
+- 602 TCR[L2E] and TCR[CRE]: L2E gates the second-level event (SLT, RESETO),
+  CRE additionally the core soft reset. WIE gates both levels; a pending
+  RESETO is released at the next period end whatever WIE holds.
+- 602 soft-reset vector: Tables 2-15 and 4-2 give `0000`/`FFF0` by MSR[IP];
+  the text after Table 2-15 says 0xFFF0_0100. The tables are used.
+- 602 watchdog core reset: modeled as the SRESET exception (§4.5.17 "soft
+  reset to the processor core"); the manual gives no SRR1 cause bits.
 
 ## Status
 
@@ -392,9 +432,10 @@ choice and a test of that choice, not a fidelity claim:
 | V2 | Done: PID6 stores neither HID0[IFEM] nor HID0[ABE], and its ABE broadcast pin status is tied off; `ppc603e` rejects a `PLL_CFG` outside the variant's table or not running the bus 1:1, and defaults to PLL bypass on PID7v and EC603e; `test-reference-pid6` runs the reference corpus with the RTL at PID6 against DingusPPC `MPC603E`. Open: PID6 misaligned eciwx/ecowx in hardware (deferred to V13, see §1.4) |
 | V3 | Done: `cfg.has_hid1`, `cfg.has_ear` and `cfg.has_srr1_key` gate decode (HID1; EAR, eciwx, ecowx) and SRR1[KEY]; absent SPRs take the illegal-instruction program exception; ISA-matrix 603 column is `legal` for all 335 reviewed forms (UM App. C lists no ISA difference) |
 | V6 | Done: `TLB_SETS` (32 or 16, other values fail elaboration) sizes `ppc_tlb_service`, its entry RAMs, the router's micro-TLB set flush and `tlbie`/`tlbld`/`tlbli` set selection; `ppc_core_bat` derives it from `cfg.tlb_sets` unless a bench overrides it. 16 sets index EA16–19 and tag EA4–15 (602UM Figure 5-9; the manual's EA15–19 prose is a 603e copy, see [TLB_SERVICE.md](TLB_SERVICE.md#geometry-parameter)). Miss derivation (IMISS/DMISS, ICMP/DCMP, HASH1/HASH2) and SRR1[WAY] need no change. The 602 NE/SE/WE bits and protection-only mode stay for V9 |
-| V7 | Done: 602 decode (strings and double-precision FP to the emulation trap, eciwx/ecowx and EAR illegal, esa/dsa/mfrom, TCR/IBR/ESASRR/SEBR/SER/SP/LT), HID0 mask, MSR[AP, SA], ESASRR with esa/dsa, and a minimal 0x1600 entry under the MSR[IP] prefix; ISA-matrix 602 column filled. The 602 core stays rejected. Open for V8: IBR vector prefix, 0x1500 watchdog from TCR. Open for V9: the esa SE bit (`event_esa_enable_i` is tied low, so esa is refused in the core) |
+| V7 | Done: 602 decode (strings and double-precision FP to the emulation trap, eciwx/ecowx and EAR illegal, esa/dsa/mfrom, TCR/IBR/ESASRR/SEBR/SER/SP/LT), HID0 mask, MSR[AP, SA], ESASRR with esa/dsa, and a minimal 0x1600 entry under the MSR[IP] prefix; ISA-matrix 602 column filled. The 602 core stays rejected. Open for V9: the esa SE bit (`event_esa_enable_i` is tied low, so esa is refused in the core) |
+| V8 | Done: IBR vector prefix for every 602 exception but system reset, machine check and IABR; 0x1500 watchdog from TCR (`ppc_watchdog`: TI period on time-base carries, WIE, NWE service, L2E/CRE second level with SLT, RESETO and core soft reset); watchdog ranked below DEC; emulation trap through IBR. `ppc_core` offers the watchdog boundary but still rejects the 602. Open: RESETO pin (V11), the esa SE bit (V9) |
 | V4 | Done: `ppc_icache`, `ppc_icache_managed` and `ppc_dcache` take `SET_COUNT` (128 or 64) and `WAY_COUNT` (4 or 2), other values fail elaboration; tag, index, way-valid, dirty/valid state and LRU widths (ways × log2 ways) follow, strict LRU seeds way w at rank w, flash invalidate clears one flop per set, and HID0 lock bits are geometry independent. The core tops take the geometry from `cpu_icache_sets()` etc. unless `ICACHE_SETS`/`ICACHE_WAYS`/`DCACHE_SETS`/`DCACHE_WAYS` override it. CSE carries the way number zero-extended to two bits; the 603 one-bit pin stays for V5 |
-| V5, V8 onward | Not started |
+| V5, V9 onward | Not started |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
 behave the same. DingusPPC distinguishes PID6 from PID7v only by PVR, and
@@ -461,6 +502,27 @@ slow-corner Fmax 67.54 MHz; at 15.152 ns (66 MHz) 0 failing endpoints. 11,426
 ALMs, 52 RAM blocks, 2 DSP blocks. Before this round the variant code did not
 analyze in Quartus 18.1 (module-scope `$fatal` generate blocks, `inside`, struct
 member select in a parameter); V6 fixed those.
+Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 7c1a9c4, 2026-09-29.
+Pass (V8): 647 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line
+coverage 74.1% (1776/2398, 14 waived arms, 21 runs). `variant-matrix` adds:
+`tb_exception_602` on variants 0–4 (257 checks on the 602, 234 on the
+others): every supported event's vector at MSR[IP] 0 and 1 with IBR
+`0x1234`, IBR used on the 602 only and never for system reset, machine
+check or IABR; the 0x1500 entry (SRR0, SRR1 = MSR 16–31, MSR, EE mask) and
+the emulation trap through IBR; watchdog rejected off the 602.
+`variant-watchdog-602`: `tb_watchdog` 104 checks (TCR mask, each TI period
+and its neighbors, held time base, NWE service and clear, L2E/CRE second
+level with SLT, RESETO and core reset, RESETO release and restart,
+same-edge TCR write) and `tb_special_watchdog` 18 checks (`ppc_special` at
+`CPU_602`: IBR and TCR through mtspr/mfspr, a TB carry raising the
+watchdog, EXT and DEC taken first at `IBR|0x0500`/`IBR|0x0900`, the
+watchdog at `IBR|0x1500` with SRR0/SRR1, then an unserviced period taking
+the soft reset at `0x00000100` with SLT and RESETO, SRESET pin not
+acknowledged). Variants 0–2 pass the unchanged core and firmware benches.
+No fit was run for V8 (the coordinator runs batch gates). This does not
+establish a 602 core build: the core still rejects `CPU_602`, so the
+watchdog boundary offer in `ppc_core` is unexercised.
+
 Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 6cc2577, 2026-09-29.
 Pass (V7): 603 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line
 coverage 74.4% (1775/2386, 14 waived arms, 21 runs; the new 602 arms of

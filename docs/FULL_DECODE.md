@@ -155,8 +155,8 @@ With `CPU_VARIANT = CPU_602` decode follows the 602 (602UM 2.1.2, 2.3.4,
 
 | SPR | Stored bits | Effect |
 |---|---|---|
-| TCR | TI, CRE, L2E, NWE, WIE, SLT (bits 0–6) | None yet (watchdog) |
-| IBR | Bits 0–15 | None yet (vector prefix) |
+| TCR | TI, CRE, L2E, NWE, WIE, SLT (bits 0–6) | Watchdog; hardware clears NWE and sets SLT |
+| IBR | Bits 0–15 | Vector prefix with MSR[IP] clear |
 | ESASRR | PR, AP, SA, EE (bits 28–31) | Written by esa, read by dsa |
 | SEBR | Bits 0–14 | None yet (protection-only mode) |
 | SER, SP, LT | All | None yet |
@@ -170,8 +170,10 @@ instruction; dsa restores them. esa with SA set or from a page without SE,
 and dsa with SA clear, take a program exception with the privileged cause
 (the manual names none). The page SE bits come from the 602 MMU, so esa is
 refused in the core until then. The emulation trap saves SRR0 = the
-instruction, SRR1 = MSR bits 16–31, and vectors to 0x1600 under the MSR[IP]
-prefix; the IBR prefix is not modelled.
+instruction, SRR1 = MSR bits 16–31, and vectors to 0x1600. Every 602
+exception but system reset, machine check and IABR takes its prefix from
+IBR when MSR[IP] is clear; the watchdog is described in
+[CPU_VARIANTS.md](CPU_VARIANTS.md#602-watchdog).
 
 A stwcx. without the reservation still issues only its strobeless probe. There
 is no data cache, so lwarx never uses RWITM-atomic.

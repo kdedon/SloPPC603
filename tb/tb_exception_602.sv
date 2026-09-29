@@ -3,9 +3,10 @@
 `default_nettype none
 // 602 MSR and ESA state at unit level, on any CPU_VARIANT: MSR[AP, SA]
 // storage, their clear on exception entry and absence from SRR1, rfi
-// restore, the 0x1600 emulation trap, esa/dsa and ESASRR (602UM Tables 2-1,
-// 2-13, 4-8, 4-23; 2.3.7). Other variants must store neither AP/SA nor
-// ESASRR and reject the three 602 events.
+// restore, the 0x1600 emulation trap, the 0x1500 watchdog, the IBR vector
+// prefix, esa/dsa and ESASRR (602UM Tables 2-1, 2-13, 2-15, 4-8, 4-22, 4-23;
+// 2.3.7). Other variants must store neither AP/SA nor ESASRR, ignore IBR and
+// reject the four 602 events.
 module tb_exception_602 #(
   parameter int VARIANT = 4
 );
@@ -27,6 +28,7 @@ module tb_exception_602 #(
   fetch_fault_t event_isi_cause_i;
   logic [3:0] event_miss_cr0_i;
   logic event_miss_key_i, event_miss_way_i, event_esa_enable_i;
+  logic [15:0] ibr_i;
   logic result_valid_o, result_ready_i, result_supported_o;
   logic [31:0] result_target_o;
   logic state_load_valid_i, state_load_ready_o;
@@ -36,7 +38,10 @@ module tb_exception_602 #(
   logic [31:0] msr_o, srr0_o, srr1_o, esasrr_o;
   int checks = 0;
 
-  ppc_exception_state #(.CPU_VARIANT(CPU_VARIANT)) dut (.*);
+  ppc_exception_state #(
+    .CPU_VARIANT(CPU_VARIANT), .ENABLE_TLB_MISS_EXCEPTIONS(1'b1),
+    .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1)
+  ) dut (.*);
 
   task automatic check(input string label, input logic [31:0] actual,
                        input logic [31:0] expected);
@@ -85,6 +90,21 @@ module tb_exception_602 #(
     result_ready_i = 1'b0;
   endtask
 
+  localparam logic [31:0] ME = 32'd1 << MSR_ME;
+  localparam int N_VECTOR = 19;
+  localparam exception_event_t VECTOR_EVENTS [N_VECTOR] = '{
+    EVENT_SOFT_RESET, EVENT_MACHINE_CHECK, EVENT_MACHINE_CHECK_PIN,
+    EVENT_DSI, EVENT_ALIGNMENT, EVENT_EXTERNAL, EVENT_PROGRAM_ILLEGAL,
+    EVENT_PROGRAM_PRIV, EVENT_PROGRAM_TRAP, EVENT_FP_UNAVAILABLE,
+    EVENT_DECREMENTER, EVENT_SC, EVENT_TRACE, EVENT_TLB_I_MISS,
+    EVENT_TLB_D_LOAD, EVENT_TLB_D_STORE, EVENT_IABR, EVENT_SMI, EVENT_ISI};
+  localparam logic [15:0] VECTOR_OFFSETS [N_VECTOR] = '{
+    16'h0100, 16'h0200, 16'h0200, 16'h0300, 16'h0600, 16'h0500, 16'h0700,
+    16'h0700, 16'h0700, 16'h0800, 16'h0900, 16'h0c00, 16'h0d00, 16'h1000,
+    16'h1100, 16'h1200, 16'h1300, 16'h1400, 16'h0400};
+  localparam bit VECTOR_IBR [N_VECTOR] = '{
+    1'b0, 1'b0, 1'b0, 1'b1, 1'b1, 1'b1, 1'b1, 1'b1, 1'b1, 1'b1, 1'b1, 1'b1,
+    1'b1, 1'b1, 1'b1, 1'b1, 1'b0, 1'b1, 1'b1};
   logic ok;
   logic [31:0] target, msr_before;
   initial begin
@@ -97,6 +117,7 @@ module tb_exception_602 #(
     event_miss_key_i = 1'b0;
     event_miss_way_i = 1'b0;
     event_esa_enable_i = 1'b0;
+    ibr_i = 16'h0;
     result_ready_i = 1'b0;
     state_load_valid_i = 1'b0;
     state_load_enable_i = 4'b0;
@@ -184,6 +205,49 @@ module tb_exception_602 #(
       take(EVENT_DSA, 32'h0000_6000, 1'b0, ok, target);
       check("dsa rejected", 32'(ok), 32'd0);
     end
+
+    // Vector prefix for every supported event (602UM Table 2-15): MSR[IP]
+    // gives 0xFFF0; otherwise IBR, except system reset, machine check and
+    // IABR, which use 0x0000. Other variants ignore IBR.
+    ibr_i = 16'h1234;
+    event_isi_cause_i = FETCH_ISI_PROTECTION;
+    for (int ip = 0; ip < 2; ip++) begin
+      for (int i = 0; i < N_VECTOR; i++) begin
+        // ME for machine checks, EE for the maskable events.
+        load(4'b0001, (ip != 0 ? IP : 32'b0) | EE | ME, 32'b0, 32'b0);
+        take(VECTOR_EVENTS[i], 32'h0000_7000, 1'b0, ok, target);
+        check($sformatf("event %0d ip %0d supported", VECTOR_EVENTS[i], ip),
+              32'(ok), 32'd1);
+        check($sformatf("event %0d ip %0d target", VECTOR_EVENTS[i], ip),
+              target, {ip != 0 ? 16'hfff0 :
+                       (V602 && VECTOR_IBR[i]) ? 16'h1234 : 16'h0000,
+                       VECTOR_OFFSETS[i]});
+      end
+    end
+
+    // Watchdog (602UM Table 4-22): SRR0 the next instruction, SRR1 0-15
+    // clear, MSR as any entry; masked by EE; rejected off the 602.
+    load(4'b0001, EE | PR | AP | SA | ME | 32'h0000_0030, 32'b0, 32'b0);
+    msr_before = msr_o;
+    take(EVENT_WATCHDOG, 32'h0000_8000, 1'b0, ok, target);
+    check("watchdog supported", 32'(ok), 32'(V602));
+    if (V602) begin
+      check("watchdog target", target, 32'h1234_1500);
+      check("watchdog SRR0", srr0_o, 32'h0000_8000);
+      check("watchdog SRR1", srr1_o, msr_before & 32'h0000_ffff);
+      check("watchdog MSR", msr_o, ME);
+    end else begin
+      check("rejected watchdog leaves MSR", msr_o, msr_before);
+    end
+    load(4'b0001, PR, 32'b0, 32'b0);
+    take(EVENT_WATCHDOG, 32'h0000_8000, 1'b0, ok, target);
+    check("watchdog masked by EE", 32'(ok), 32'd0);
+    check("masked watchdog leaves MSR", msr_o, PR);
+
+    // The emulation trap uses IBR as well.
+    load(4'b0001, EE, 32'b0, 32'b0);
+    take(EVENT_EMULATION_TRAP, 32'h0000_9000, 1'b0, ok, target);
+    if (V602) check("emulation trap IBR target", target, 32'h1234_1600);
 
     $display("PASS tb_exception_602 variant=%0d: %0d checks", VARIANT, checks);
     $finish;

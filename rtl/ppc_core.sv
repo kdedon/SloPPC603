@@ -205,6 +205,7 @@ module ppc_core #(
   logic frontend_fence, frontend_quiescent;
   logic interrupt_qualified, interrupt_admit, resume_override_valid_q;
   logic decrementer_pending, external_irq_q;
+  logic watchdog_interrupt, watchdog_reset, watchdog_reseto;
   pin_event_t pin_event_q;
   logic pin_interrupt;
   logic [31:0] committed_next_pc_q, resume_override_target_q, interrupt_resume_pc;
@@ -218,7 +219,9 @@ module ppc_core #(
      pin_event_q.ape || pin_event_q.soft_reset || (pin_event_q.smi && msr[MSR_EE]));
   assign interrupt_qualified = ENABLE_EXTERNAL_INTERRUPTS &&
     ((ENABLE_DEBUG_EXCEPTIONS && trace_pending_q) || pin_interrupt ||
-     ((external_irq_q || (ENABLE_TIMERS && decrementer_pending)) &&
+     (watchdog_reset && !fetch_machine_check_head) ||
+    ((external_irq_q || (ENABLE_TIMERS && decrementer_pending) ||
+      watchdog_interrupt) &&
       msr[MSR_EE] && !fetch_machine_check_head)) &&
     !fault_pending && !halted_o;
   assign interrupt_admit = interrupt_qualified && !seq_active && cq_empty && normal_idle &&
@@ -258,7 +261,7 @@ module ppc_core #(
   logic _unused_control_state;
   assign _unused_flags_state = ^{cr, xer[30:0], flags_busy, flags_owner};
   assign _unused_control_state = ^{lr, ctr, msr[31:15], msr[13:11], msr[8:0], iabr[0],
-                                   srr0, srr1};
+                                   srr0, srr1, watchdog_reseto};
 
   initial begin
     if (ENABLE_TLB_MISS_EXCEPTIONS &&
@@ -636,6 +639,8 @@ module ppc_core #(
     .external_irq_i(external_irq_q),
     .timer_tick_i, .timebase_enable_i, .decrementer_taken_o, .decrementer_pc_o,
     .decrementer_pending_o(decrementer_pending),
+    .watchdog_interrupt_o(watchdog_interrupt), .watchdog_reset_o(watchdog_reset),
+    .watchdog_reseto_o(watchdog_reseto),
     .interrupt_taken_o, .interrupt_pc_o,
     .frontend_quiescent_i(frontend_quiescent), .memory_quiescent_i,
     .frontend_fence_o(frontend_fence), .context_valid_o, .context_ready_i,

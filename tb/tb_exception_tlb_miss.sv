@@ -28,6 +28,7 @@ module tb_exception_tlb_miss #(
   logic [31:0] msr_o, srr0_o, srr1_o;
   // ESA state is covered by tb_exception_602.
   logic event_esa_enable_i;
+  logic [15:0] ibr_i;
   logic [31:0] state_load_esasrr_i;
   /* verilator lint_off UNUSEDSIGNAL */
   logic [31:0] esasrr_o;
@@ -160,6 +161,7 @@ module tb_exception_tlb_miss #(
   initial begin
     checks = 0;
     event_esa_enable_i = 1'b0;
+    ibr_i = 16'h0;
     state_load_esasrr_i = 32'b0;
     rst_ni = 1'b0;
     event_valid_i = 1'b0;

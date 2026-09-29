@@ -107,6 +107,8 @@ module ppc_special #(
   output ppc_pkg::pin_status_t pin_status_o,
   input logic timer_tick_i, timebase_enable_i,
   output logic decrementer_taken_o, decrementer_pending_o,
+  // 602 watchdog: pending 0x1500 interrupt, pending core soft reset, RESETO.
+  output logic watchdog_interrupt_o, watchdog_reset_o, watchdog_reseto_o,
   output logic [31:0] decrementer_pc_o,
   input logic [31:0] interrupt_pc_i,
   output logic interrupt_taken_o,
@@ -251,7 +253,8 @@ module ppc_special #(
   logic rfi_state_unsupported, dsi_event;
   logic block_zero_event;
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
-  logic decrementer_selected_q, trace_selected_q;
+  logic decrementer_selected_q, trace_selected_q, watchdog_selected_q;
+  logic watchdog_reset_select, watchdog_taken, watchdog_reset_taken;
   logic mcp_selected_q, soft_reset_selected_q, smi_selected_q, tea_selected_q;
   logic ape_selected_q, pin_tea;
   logic pin_machine_check;
@@ -429,6 +432,31 @@ module ppc_special #(
     assign decrementer_pending_o = 1'b0;
     logic unused_timer_inputs;
     assign unused_timer_inputs = ^{timer_tick_i, timebase_enable_i, timer_write};
+  end endgenerate
+  generate if (HAS_602 && ENABLE_FULL_DECODE) begin : watchdog_enabled
+    ppc_watchdog watchdog (
+      .clk_i, .rst_ni,
+      // A TB write suppresses the increment on that edge.
+      .timebase_increment_i(ENABLE_TIMERS && timer_tick_i && timebase_enable_i &&
+        !(timer_write && (uop_q.spr != 10'd22))),
+      .timebase_i(timebase[25:0]),
+      .tcr_write_i(hold_commit && (uop_q.special_op == SPECIAL_MTSPR) &&
+        (uop_q.spr == SPR_TCR)),
+      .tcr_value_i(a_q),
+      .interrupt_accept_i(watchdog_taken),
+      .reset_accept_i(watchdog_reset_taken),
+      .tcr_o(tcr_q),
+      .interrupt_pending_o(watchdog_interrupt_o),
+      .reset_pending_o(watchdog_reset_o),
+      .reseto_o(watchdog_reseto_o)
+    );
+  end else begin : watchdog_disabled
+    assign tcr_q = '0;
+    assign watchdog_interrupt_o = 1'b0;
+    assign watchdog_reset_o = 1'b0;
+    assign watchdog_reseto_o = 1'b0;
+    logic unused_watchdog;
+    assign unused_watchdog = ^{watchdog_taken, watchdog_reset_taken};
   end endgenerate
   logic [31:0] context_target_q, mtmsr_value;
   // Machine check adds ME, RI and POW; POW is stored without effect because
@@ -803,7 +831,8 @@ module ppc_special #(
            ape_selected_q ? EVENT_MACHINE_CHECK_APE : EVENT_MACHINE_CHECK_PIN) :
         soft_reset_selected_q ? EVENT_SOFT_RESET :
         trace_selected_q ? EVENT_TRACE : smi_selected_q ? EVENT_SMI :
-        decrementer_selected_q ? EVENT_DECREMENTER : EVENT_EXTERNAL;
+        decrementer_selected_q ? EVENT_DECREMENTER :
+        watchdog_selected_q ? EVENT_WATCHDOG : EVENT_EXTERNAL;
       // UM 4.5.2.2: MCP with ME=0 enters the checkstop state instead.
       if (mcp_selected_q && !msr_o[MSR_ME]) exception_event_valid = 1'b0;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && (state_q == S_HOLD) &&
@@ -885,10 +914,13 @@ module ppc_special #(
   end
   assign interrupt_taken_o = rst_ni && (state_q == S_INTERRUPT_COMMIT) &&
     !decrementer_selected_q && !trace_selected_q && !pin_selected &&
-    exception_event_valid && exception_event_ready;
+    !watchdog_selected_q && exception_event_valid && exception_event_ready;
   assign decrementer_taken_o = rst_ni && (state_q == S_INTERRUPT_COMMIT) &&
     decrementer_selected_q && exception_event_valid && exception_event_ready;
   assign decrementer_pc_o = decrementer_taken_o ? pc_q : 32'b0;
+  assign watchdog_taken = rst_ni && (state_q == S_INTERRUPT_COMMIT) &&
+    watchdog_selected_q && exception_event_valid && exception_event_ready;
+  assign watchdog_reset_taken = interrupt_accept && watchdog_reset_select;
   assign interrupt_pc_o = interrupt_taken_o ? pc_q : 32'b0;
   assign exception_state_load_valid = ENABLE_SUPERVISOR_EXCEPTIONS &&
     (state_q == S_HOLD) && commit_match &&
@@ -920,6 +952,7 @@ module ppc_special #(
     .event_miss_way_i(miss_context.way),
     // The page SE bits arrive with the 602 MMU; until then esa is refused.
     .event_esa_enable_i(1'b0),
+    .ibr_i(ibr_q[31:16]),
     .result_valid_o(exception_result_valid),
     .result_ready_i((state_q == S_EXCEPTION_RESULT) &&
       (!data_exception_event || !ENABLE_LIVE_CONTEXT ||
@@ -1143,8 +1176,11 @@ module ppc_special #(
   assign pin_tea = ENABLE_DATA_CACHE && pin_event_i.tea;
   assign pin_machine_check = pin_event_i.mcp || pin_tea || pin_event_i.ape;
   assign pin_mcp_select = ENABLE_PIN_INTERRUPTS && pin_machine_check;
-  assign pin_soft_reset_select = ENABLE_PIN_INTERRUPTS && pin_event_i.soft_reset &&
-    !pin_machine_check;
+  // The 602 watchdog core reset is a soft reset (602UM 4.5.17).
+  assign watchdog_reset_select = watchdog_reset_o && !pin_machine_check &&
+    !(ENABLE_PIN_INTERRUPTS && pin_event_i.soft_reset);
+  assign pin_soft_reset_select = (ENABLE_PIN_INTERRUPTS && pin_event_i.soft_reset &&
+    !pin_machine_check) || watchdog_reset_select;
   assign pin_smi_select = ENABLE_PIN_INTERRUPTS && pin_event_i.smi && msr_o[MSR_EE] &&
     !pin_machine_check && !pin_event_i.soft_reset &&
     !(ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i);
@@ -1169,7 +1205,8 @@ module ppc_special #(
     pin_status_o.dcache_flash_invalidate = hid0_q[HID0_DCFI];
     pin_status_o.noop_touch = hid0_q[HID0_NOOPTI];
     pin_status_o.broadcast_enable = CPU_CFG.has_abe_ifem && hid0_q[HID0_ABE];
-    pin_status_o.soft_reset_taken = interrupt_accept && pin_soft_reset_select;
+    pin_status_o.soft_reset_taken = interrupt_accept && pin_soft_reset_select &&
+      !watchdog_reset_select;
     pin_status_o.smi_taken = interrupt_accept && pin_smi_select;
   end
 
@@ -1178,6 +1215,7 @@ module ppc_special #(
     if (!rst_ni) begin
       interrupt_q <= 1'b0;
       decrementer_selected_q <= 1'b0;
+      watchdog_selected_q <= 1'b0;
       trace_selected_q <= 1'b0;
       mcp_selected_q <= 1'b0;
       tea_selected_q <= 1'b0;
@@ -1196,7 +1234,13 @@ module ppc_special #(
       smi_selected_q <= pin_smi_select;
       trace_selected_q <= ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i &&
         !pin_mcp_select && !pin_soft_reset_select;
+      // 602UM Table 4-3: the watchdog ranks below DEC.
       decrementer_selected_q <= ENABLE_TIMERS && interrupt_decrementer_i &&
+        !(ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i) &&
+        !pin_mcp_select && !pin_soft_reset_select && !pin_smi_select &&
+        !(watchdog_interrupt_o && !decrementer_pending_o);
+      watchdog_selected_q <= watchdog_interrupt_o && msr_o[MSR_EE] &&
+        interrupt_decrementer_i && !decrementer_pending_o &&
         !(ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i) &&
         !pin_mcp_select && !pin_soft_reset_select && !pin_smi_select;
     end else if (dispatch_fire) begin
@@ -1206,8 +1250,10 @@ module ppc_special #(
         // Initial EXT remains latched on withdrawal. Only a provisional
         // DEC reservation can promote to EXT at the final offer boundary.
         S_CONTEXT_DRAIN: if (frontend_quiescent_i && memory_quiescent_i &&
-                             interrupt_q && decrementer_selected_q && external_irq_i)
+                             interrupt_q && external_irq_i) begin
           decrementer_selected_q <= 1'b0;
+          watchdog_selected_q <= 1'b0;
+        end
         S_CONTEXT_REDIRECT: if (redirect_accepted_i) interrupt_q <= 1'b0;
         S_HOLD: if (commit_match && !(tlb_fill_operation && mmu_error_q) &&
                     !(mmu_operation && !mmu_error_q) && !exception_event_valid &&
@@ -1332,7 +1378,6 @@ module ppc_special #(
       hash2_q <= '0;
       hid0_q <= HID0_RESET & CPU_CFG.hid0_wmask;
       ear_q <= '0;
-      tcr_q <= '0;
       ibr_q <= '0;
       sebr_q <= '0;
       ser_q <= '0;
@@ -1363,7 +1408,6 @@ module ppc_special #(
             10'd1010: if (ENABLE_DEBUG_EXCEPTIONS) iabr_q <= a_q;
             10'd1008: if (ENABLE_FULL_DECODE) hid0_q <= a_q & CPU_CFG.hid0_wmask;
             10'd282: if (ENABLE_FULL_DECODE && CPU_CFG.has_ear) ear_q <= a_q & EAR_WMASK;
-            10'd984: if (ENABLE_FULL_DECODE && HAS_602) tcr_q <= a_q & TCR_WMASK;
             10'd986: if (ENABLE_FULL_DECODE && HAS_602) ibr_q <= a_q & IBR_WMASK;
             10'd990: if (ENABLE_FULL_DECODE && HAS_602) sebr_q <= a_q & SEBR_WMASK;
             10'd991: if (ENABLE_FULL_DECODE && HAS_602) ser_q <= a_q;
