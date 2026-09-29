@@ -179,6 +179,13 @@ denormal factors put the product below 2^−2043, where only its sticky bit
 survives. Single operations take binary32-representable operands, which are
 normal binary64 values.
 
+The double multiply's second cycle adds the three middle 27-bit partial
+products in one ternary adder before the high product.
+
+Remaining stage-1 work: carry the product as a carry-save pair into the add
+stage, align the addend beside the multiplier, and store class tags with FPR
+bits so special-operand classification leaves the first stage.
+
 ## Memory and 602 tag SPRs
 
 Memory packets retain complete instruction tags. Fault-free preparation does not
