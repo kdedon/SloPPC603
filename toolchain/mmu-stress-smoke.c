@@ -485,12 +485,10 @@ enum {
   PAGE_MG = 0x10100000u
 };
 #define WORD(ea) (*(volatile uint32_t *)(uintptr_t)(ea))
-/* Cache-block pushes run only with the data cache on. */
+/* Cache-block pushes run only in the chip images, which have the data cache. */
 #define CACHE_OP(op, ea) do { if (dce) __asm__ volatile(op " 0,%0; sync" :: "r"(ea) : "memory"); } while (0)
 static uint32_t wimg_phase(void) {
-  uint32_t hid0;
-  __asm__ volatile("mfspr %0,1008" : "=r"(hid0));
-  const int dce = (hid0 & 0x4000u) != 0;
+  const int dce = &chip_boot != 0;
   if (!install(VSID1, PAGE_WT, 0, 15, 2u | (0xau << 3)) ||
       !install(VSID1, PAGE_CI, 0, 15, 2u | (0x5u << 3)) ||
       !install(VSID1, PAGE_CB, 0, 15, 2u) ||
