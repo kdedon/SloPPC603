@@ -14,6 +14,7 @@ Sources: [`rtl/soc/`](../rtl/soc) (synthesizable), [`tb/soc/tb_demo_soc.sv`](../
 | Block | File | Role |
 |---|---|---|
 | `ppc603e_demo_soc` | `rtl/soc/ppc603e_demo_soc.sv` | Top: processor, 60x target, decode, RAMs, registers, video |
+| `soc_perf_counters` | `rtl/soc/soc_perf_counters.sv` | Performance counters in the register window |
 | `soc_bus60x_target` | `rtl/soc/soc_bus60x_target.sv` | Arbiter and target for one master; one tenure at a time |
 | `soc_ram_sp_be` | `rtl/soc/soc_ram_sp_be.sv` | Program RAM, 64-bit words, byte enables, `$readmemh` preload |
 | `soc_ram_dp_be` | `rtl/soc/soc_ram_dp_be.sv` | Framebuffer: CPU read/write port, video read port (two copies sharing the writes) |
@@ -68,7 +69,42 @@ stores. Offsets are from `0xf0100000`.
 | `0x024` | `FB_STRIDE` | R | Bytes per line, 320 |
 | `0x028` | `FB_SIZE` | R | Width in bits 31:16 (320), height in bits 15:0 (240) |
 | `0x02c` | `FB_FORMAT` | R | 3: 8 bits per pixel, indexed (the MiSTer `FB_FORMAT` code) |
+| `0x100` | `PERF_CTRL` | R/W | bit 0: `RUN`, counters advance while set (reset 1); writing bit 1 clears every counter |
+| `0x104` | `PERF_CYCLES` | R | Cycles counted while `RUN` |
+| `0x108` | `PERF_RETIRED` | R | Retired instructions |
+| `0x10c` | `PERF_IQ_FULL` | R | Cycles the fetch-to-decode register held a word the IQ could not take |
+| `0x110`–`0x148` | `PERF_SLOT[15]` | R | Cycles by dispatch-slot cause; they sum to `PERF_CYCLES` |
 | `0x400`–`0x7fc` | `PALETTE[256]` | W | `0x00RRGGBB`; reads return 0 |
+
+The performance counters (`soc_perf_counters`, `rtl/soc/soc_perf_counters.sv`) are
+32 bits and wrap. They take the processor's `perf_o` event, which is not a 603e pin
+and has no architectural effect; the event and the counter inputs are registered, so
+the counts lag the pipeline by two cycles. `PERF_SLOT[n]` counts the cycles whose
+single dispatch slot had outcome `n`:
+
+| n | Offset | Cause |
+|---:|---|---|
+| 0 | `0x110` | Dispatch: an instruction left the IQ |
+| 1 | `0x114` | Fetch empty: IQ empty, no redirect or bus fetch pending |
+| 2 | `0x118` | I-cache miss: IQ empty while a line fill or uncached fetch is on the bus |
+| 3 | `0x11c` | Branch refetch: IQ empty after a taken-branch redirect, until the target arrives |
+| 4 | `0x120` | Exception refetch: IQ empty after any other redirect (exception, `rfi`, `isync`, MMU resume), or dispatch held for a fault or interrupt |
+| 5 | `0x124` | Drain for branch: a branch waits for the completion queue and IU to empty |
+| 6 | `0x128` | Drain for load/store: a load or store waits for the machine to empty |
+| 7 | `0x12c` | Drain for another special-lane instruction |
+| 8 | `0x130` | Special lane busy with a non-memory instruction |
+| 9 | `0x134` | Load/store busy: the special lane holds a load or store with no bus access |
+| 10 | `0x138` | D-cache miss: the load or store has a bus access in progress |
+| 11 | `0x13c` | Completion queue or rename full |
+| 12 | `0x140` | Reservation station full |
+| 13 | `0x144` | Waiting for the XER/CR flags token |
+| 14 | `0x148` | Other (register-file write port, trace mode) |
+
+`perf_start`, `perf_stop` and `perf_report` in the runtime clear, run and print them.
+`dhrystone` and `coremark` count their timed windows and print one `perf` line per
+cause: the count and its cycles per retired instruction. The bench checks
+`PERF_RETIRED` against the processor's retirement strobe; the firmware checks that
+the slot counts sum to `PERF_CYCLES`.
 
 The timebase advances once per four processor clocks while `CTRL[0]` is set.
 

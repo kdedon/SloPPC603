@@ -113,7 +113,10 @@ module ppc603e #(
   input  logic        trst_n_i,
   output logic        tdo_o,
   output logic        tdo_oe_o,
-  input  logic [0:2]  test_i
+  input  logic [0:2]  test_i,
+
+  // Performance events for a system counter block; not a 603e pin.
+  output ppc_pkg::perf_event_t perf_o
 );
   import ppc_pkg::*;
 
@@ -292,7 +295,7 @@ module ppc603e #(
     .halted_o(halted), .checkstop_o(core_checkstop),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0), .redirect_pivot_i('0),
-    .redirect_target_i('0), .redirect_accepted_o(),
+    .redirect_target_i('0), .redirect_accepted_o(), .perf_o,
     .translation_fault_o(), .fault_instruction_o(), .fault_write_o(),
     .fault_ea_o(), .fault_miss_o(), .fault_protection_o(),
     .fault_guarded_o(), .fault_config_o(), .fault_invalid_input_o(),

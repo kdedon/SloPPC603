@@ -36,6 +36,16 @@ module tb_demo_soc;
     if (console_valid) $write("%c", console_data);
   end
 
+  // The counter block's RETIRED against the retire strobe, which reaches
+  // the counters through the core's and the SoC's event registers.
+  logic [1:0] retire_delay = '0;
+  longint unsigned perf_retired = 0;
+  always @(posedge clk) begin
+    retire_delay <= {retire_delay[0], soc.cpu.retire_valid};
+    if (soc.perf.we_i && soc.perf.word_i == 5'd0 && soc.perf.wdata_i[1]) perf_retired = 0;
+    else if (soc.perf.run_q && retire_delay[1]) perf_retired++;
+  end
+
   // Scan-out capture: waits for vertical blank, then takes the next
   // H_ACTIVE x V_ACTIVE pixels with DE set.
   logic [7:0] frame [H_ACTIVE * V_ACTIVE * 3];
@@ -102,6 +112,8 @@ module tb_demo_soc;
       exit_code == 0 ? "PASS" : "FAIL", name, exit_code, run_cycles, run_retired,
       real'(run_cycles) / real'(run_retired), soc.tenures, soc.frames_q, ppm);
     if (exit_code != 0) $fatal(1, "firmware exit code %08x", exit_code);
+    if (perf_retired[31:0] != soc.perf.count_q[2])
+      $fatal(1, "perf RETIRED %0d, retire strobes %0d", soc.perf.count_q[2], perf_retired);
     $finish;
   end
 endmodule

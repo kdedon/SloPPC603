@@ -44,6 +44,9 @@ module tb_core_live_context #(
   logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_LIVE_CONTEXT),
       .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
@@ -122,6 +125,9 @@ module tb_core_live_context #(
   logic unused_checkstop1;
   ppc_core_bat #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_LIVE_CONTEXT),
       .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pdmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),

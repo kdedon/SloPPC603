@@ -163,7 +163,9 @@ module ppc_core #(
   input logic redirect_valid_i, redirect_all_i, redirect_keep_pivot_i,
   input ppc_pkg::completion_tag_t redirect_pivot_i,
   input logic [31:0] redirect_target_i,
-  output logic redirect_accepted_o
+  output logic redirect_accepted_o,
+  // Performance events; no architectural effect.
+  output ppc_pkg::perf_event_t perf_o
 );
   import ppc_pkg::*;
   localparam int DIV_LATENCY_EFFECTIVE =
@@ -727,6 +729,53 @@ module ppc_core #(
      (special_uop && cq_empty && normal_idle && special_ready && flags_ready &&
       (!dispatch_uop.gpr_write || alloc_ready)));
   assign dispatch = iq_valid && iq_ready;
+
+  // Performance events: the cause of each cycle without a dispatch. The
+  // cause and all its inputs only feed the registered event.
+  logic [1:0] perf_refetch_q;  // 1: branch redirect, 2: other redirect
+  logic perf_special_mem_q;
+  logic perf_head_branch, perf_head_mem;
+  perf_slot_e perf_slot;
+  assign perf_head_branch = (dispatch_uop.special_op == SPECIAL_B) ||
+    (dispatch_uop.special_op == SPECIAL_BC) ||
+    (dispatch_uop.special_op == SPECIAL_BCLR) ||
+    (dispatch_uop.special_op == SPECIAL_BCCTR);
+  assign perf_head_mem = (dispatch_uop.special_op == SPECIAL_LOAD) ||
+    (dispatch_uop.special_op == SPECIAL_STORE);
+  always_comb begin
+    perf_slot = PERF_OTHER;
+    if (dispatch) perf_slot = PERF_DISPATCH;
+    else if (!iq_valid) begin
+      if (perf_refetch_q == 2'd1) perf_slot = PERF_BRANCH_REFETCH;
+      else if ((perf_refetch_q == 2'd2) || fault_pending || frontend_fence)
+        perf_slot = PERF_EXCEPTION_REFETCH;
+      else perf_slot = PERF_FETCH_EMPTY;
+    end else if (fault_pending || (interrupt_qualified && !seq_active))
+      perf_slot = PERF_EXCEPTION_REFETCH;
+    else if (special_busy)
+      perf_slot = perf_special_mem_q ? PERF_LSU_BUSY : PERF_SPECIAL_BUSY;
+    else if (special_uop && !(cq_empty && normal_idle))
+      perf_slot = perf_head_branch ? PERF_DRAIN_BRANCH :
+                  perf_head_mem ? PERF_DRAIN_MEMORY : PERF_DRAIN_OTHER;
+    else if (!cq_ready || !alloc_ready) perf_slot = PERF_CQ_FULL;
+    else if (normal_uop && !rs_ready) perf_slot = PERF_RS_FULL;
+    else if (!flags_ready) perf_slot = PERF_FLAGS_WAIT;
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      perf_refetch_q <= '0;
+      perf_special_mem_q <= 1'b0;
+      perf_o <= '0;
+    end else begin
+      if (recovery_accepted)
+        perf_refetch_q <= special_branch_redirect ? 2'd1 : 2'd2;
+      else if (iq_valid) perf_refetch_q <= '0;
+      if (dispatch) perf_special_mem_q <= special_uop && perf_head_mem;
+      perf_o.retire <= retire_valid_o;
+      perf_o.iq_full <= fd_valid_q && !iq_push_ready;
+      perf_o.slot <= perf_slot;
+    end
+  end
   // synthesis translate_off
   uop_t check_uop;
   ppc_decode #(

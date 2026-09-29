@@ -126,6 +126,8 @@ module ppc_core_bat_cached_bus60x #(
   input  ppc_pkg::completion_tag_t redirect_pivot_i,
   input  logic [31:0] redirect_target_i,
   output logic redirect_accepted_o,
+  // Performance events; ICACHE_MISS and DCACHE_MISS are refined here.
+  output ppc_pkg::perf_event_t perf_o,
   output logic translation_fault_o,
   output logic fault_instruction_o,
   output logic fault_write_o,
@@ -196,6 +198,7 @@ module ppc_core_bat_cached_bus60x #(
   localparam int DC_WAYS = DCACHE_WAYS != 0 ? DCACHE_WAYS : ppc_pkg::cpu_dcache_ways(CPU_VARIANT);
 
   logic core_halted;
+  ppc_pkg::perf_event_t core_perf;
   logic imem_req_valid, imem_req_ready, managed_fetch_ready;
   logic [3:0] imem_req_wimg, dmem_req_wimg;
   logic imem_rsp_error;
@@ -376,6 +379,7 @@ module ppc_core_bat_cached_bus60x #(
     .redirect_pivot_i,
     .redirect_target_i,
     .redirect_accepted_o,
+    .perf_o(core_perf),
     .translation_fault_o,
     .fault_instruction_o,
     .fault_write_o,
@@ -651,5 +655,39 @@ module ppc_core_bat_cached_bus60x #(
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     maintenance_done_valid_o && !maintenance_done_ready_i
       |=> maintenance_done_valid_o);
+
+  // Performance events. A fetch that reaches the bus (line fill or uncached
+  // fetch) marks IQ-empty cycles as I-cache misses until its response; a
+  // load or store that reaches the bus marks LSU-busy cycles as D-cache
+  // misses until its response. The flags are registered to line up with the
+  // core's registered event.
+  logic perf_ifetch_bus_q;
+  logic perf_lsu_out_q, perf_lsu_bus_q, perf_lsu_miss_q;
+  logic perf_ifetch_bus, perf_lsu_bus;
+  assign perf_ifetch_bus = cache_line_req_valid || scalar_imem_req_valid ||
+    (perf_ifetch_bus_q && !(imem_rsp_valid && imem_rsp_ready));
+  assign perf_lsu_bus = perf_lsu_out_q &&
+    (perf_lsu_bus_q || biu_dmem_req_valid || dc_out.req_valid);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      perf_ifetch_bus_q <= 1'b0;
+      perf_lsu_out_q <= 1'b0;
+      perf_lsu_bus_q <= 1'b0;
+      perf_lsu_miss_q <= 1'b0;
+    end else begin
+      perf_ifetch_bus_q <= perf_ifetch_bus;
+      if (dmem_rsp_valid && dmem_rsp_ready) perf_lsu_out_q <= 1'b0;
+      else if (dmem_req_valid && dmem_req_ready) perf_lsu_out_q <= 1'b1;
+      perf_lsu_bus_q <= perf_lsu_bus && !(dmem_rsp_valid && dmem_rsp_ready);
+      perf_lsu_miss_q <= perf_lsu_bus;
+    end
+  end
+  always_comb begin
+    perf_o = core_perf;
+    if ((core_perf.slot == ppc_pkg::PERF_FETCH_EMPTY) && perf_ifetch_bus_q)
+      perf_o.slot = ppc_pkg::PERF_ICACHE_MISS;
+    if ((core_perf.slot == ppc_pkg::PERF_LSU_BUSY) && perf_lsu_miss_q)
+      perf_o.slot = ppc_pkg::PERF_DCACHE_MISS;
+  end
 endmodule
 `default_nettype wire

@@ -81,6 +81,10 @@ int dhry_scanf(const char *fmt, ...)
 
 int times(struct tms *buf)
 {
+  /* Dhrystone reads the time twice: at the start and the end of the runs. */
+  static int calls;
+  if (calls++ == 0) perf_start();
+  else perf_stop();
   buf->tms_utime = (clock_t)(uint32_t)soc_cycles();
   buf->tms_stime = buf->tms_cutime = buf->tms_cstime = 0;
   return (int)buf->tms_utime;
@@ -122,6 +126,9 @@ int main(void)
          (unsigned long)(dmips_mhz_milli % 1000));
   printf("checks:          %d, mismatches %d\n", checks, mismatches);
   if (mismatches != 0 || checks < 20) fail("Dhrystone results");
+  con_screen(0);
+  perf_report("dhrystone");
+  con_screen(1);
   con_color(10, 1);
   printf("dhrystone: PASS\n");
   return 0;

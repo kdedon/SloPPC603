@@ -50,6 +50,7 @@ module tb_compiled_lsu_firmware #(parameter bit LSU_EXTENSIONS = 1'b1);
     .ENABLE_CACHE_INSTRUCTIONS(1'b1),
     .ENABLE_BYTE_REVERSE(LSU_EXTENSIONS),.ENABLE_MULTIPLE_STRING(LSU_EXTENSIONS),
     .ENABLE_RESERVATION(LSU_EXTENSIONS),.ENABLE_MISALIGNED_ACCESS(LSU_EXTENSIONS)) dut(
+    .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .timer_tick_i(tick),.timebase_enable_i(1'b1),

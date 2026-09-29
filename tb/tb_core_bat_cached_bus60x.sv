@@ -114,6 +114,7 @@ module tb_core_bat_cached_bus60x;
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_RUNTIME_BAT(1'b1)) dut(
+    .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(),.interrupt_pc_o(),
     .timer_tick_i(1'b0),.timebase_enable_i(1'b0),

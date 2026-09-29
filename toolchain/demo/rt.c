@@ -11,6 +11,43 @@ uint64_t soc_cycles(void)
   return ((uint64_t)SOC_CYCLE_HI << 32) | lo;
 }
 
+void perf_start(void)
+{
+  SOC_PERF_CTRL = 2;
+  SOC_PERF_CTRL = 1;
+}
+
+void perf_stop(void) { SOC_PERF_CTRL = 0; }
+
+static void perf_line(const char *label, uint32_t count, uint32_t retired)
+{
+  uint32_t milli = (uint32_t)((uint64_t)count * 1000 / retired);
+  printf("perf %-16s %10lu %2lu.%03lu\n", label, (unsigned long)count,
+         (unsigned long)(milli / 1000), (unsigned long)(milli % 1000));
+}
+
+void perf_report(const char *name)
+{
+  static const char *const slot[SOC_PERF_SLOTS] = {
+    "dispatch", "fetch_empty", "icache_miss", "branch_refetch",
+    "except_refetch", "drain_branch", "drain_memory", "drain_other",
+    "special_busy", "lsu_busy", "dcache_miss", "cq_full", "rs_full",
+    "flags_wait", "other"};
+  uint32_t cycles = SOC_PERF_CYCLES, retired = SOC_PERF_RETIRED;
+  uint32_t sum = 0;
+  if (retired == 0) retired = 1;
+  printf("perf %s: cycles %lu retired %lu\n", name, (unsigned long)cycles,
+         (unsigned long)retired);
+  perf_line("cpi", cycles, retired);
+  for (int n = 0; n < SOC_PERF_SLOTS; n++) {
+    uint32_t count = SOC_PERF_SLOT(n);
+    sum += count;
+    perf_line(slot[n], count, retired);
+  }
+  perf_line("iq_full", SOC_PERF_IQ_FULL, retired);
+  if (sum != cycles) fail("perf slot counts do not sum to cycles");
+}
+
 uint64_t soc_timebase(void)
 {
   uint32_t hi, lo, again;

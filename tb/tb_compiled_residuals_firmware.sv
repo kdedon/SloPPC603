@@ -55,6 +55,7 @@ module tb_compiled_residuals_firmware;
     .ENABLE_RESERVATION(1'b1),.ENABLE_MISALIGNED_ACCESS(1'b1),
     .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_DEBUG_EXCEPTIONS(1'b1),
     .ENABLE_FULL_DECODE(1'b1)) dut(
+    .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .pin_event_i('0), .pin_status_o(),
     .external_irq_i(1'b0),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),

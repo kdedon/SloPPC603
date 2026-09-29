@@ -58,6 +58,9 @@ module tb_core_page_data_exception #(parameter bit ENABLE_MICRO_TLB = 1'b1);
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1),
     .ENABLE_PAGE_DATA_EXCEPTIONS(1'b1)) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pdmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),

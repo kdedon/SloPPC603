@@ -191,6 +191,8 @@ module ppc_special #(
   /* verilator lint_on UNUSEDSIGNAL */
   completion_tag_t producer_q;
   logic [31:0] a_q, b_q, c_q, pc_q, cr_snapshot_q;
+  // mfrom ROM output, looked up at dispatch to keep it off the result path.
+  logic [6:0] mfrom_q;
   logic [2:0] xer_flags_q;
   logic [6:0] xer_byte_count_q;
   logic [31:0] ea_q;
@@ -538,13 +540,13 @@ module ppc_special #(
       10'd1009: exec_value = {PLL_CFG, 28'b0} & CPU_CFG.hid1_rmask;
       10'd282: exec_value = ear_q;
       10'd287: exec_value = CPU_CFG.pvr;
-      10'd984: exec_value = tcr_q;
-      10'd986: exec_value = ibr_q;
-      10'd987: exec_value = esasrr;
-      10'd990: exec_value = sebr_q;
-      10'd991: exec_value = ser_q;
-      10'd1021: exec_value = sp_q;
-      10'd1022: exec_value = lt_q;
+      10'd984: exec_value = HAS_602 ? tcr_q : '0;
+      10'd986: exec_value = HAS_602 ? ibr_q : '0;
+      10'd987: exec_value = HAS_602 ? esasrr : '0;
+      10'd990: exec_value = HAS_602 ? sebr_q : '0;
+      10'd991: exec_value = HAS_602 ? ser_q : '0;
+      10'd1021: exec_value = HAS_602 ? sp_q : '0;
+      10'd1022: exec_value = HAS_602 ? lt_q : '0;
       default: exec_value = '0;
     endcase
 
@@ -571,8 +573,8 @@ module ppc_special #(
         result_o.value = a_q;
       if (uop_q.special_op == SPECIAL_MFMSR)
         result_o.value = msr_o & MSR_MASK;
-      if (uop_q.special_op == SPECIAL_MFROM)
-        result_o.value = {25'b0, mfrom_rom(a_q[9:0])};
+      if (HAS_602 && (uop_q.special_op == SPECIAL_MFROM))
+        result_o.value = {25'b0, mfrom_q};
       if (uop_q.special_op == SPECIAL_MFCR)
         result_o.value = cr_snapshot_q;
       if (uop_q.special_op == SPECIAL_MTCRF)
@@ -1241,6 +1243,7 @@ module ppc_special #(
       fetch_miss_eligible_q <= 1'b0;
       timer_read_q <= 1'b0;
       trap_taken_q <= 1'b0;
+      mfrom_q <= '0;
     end else if (interrupt_accept) begin
       pc_q <= interrupt_pc_i;
       uop_q <= '0;
@@ -1260,6 +1263,7 @@ module ppc_special #(
       xer_byte_count_q <= xer_byte_count_i;
       ea_q <= a_i + b_i;
       trap_taken_q <= trap_condition(uop_i.branch_bo, a_i, b_i);
+      mfrom_q <= HAS_602 ? mfrom_rom(a_i[9:0]) : '0;
     end
   end
 

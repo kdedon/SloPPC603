@@ -163,6 +163,9 @@ module ppc_core_cached_bus60x_managed #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
   ) core (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
     .dmem_req_attr_o(dmem_req_attr),

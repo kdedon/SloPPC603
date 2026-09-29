@@ -32,6 +32,9 @@ module tb_core_page_miss_result #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1);
   logic unused_checkstop;
   ppc_core #(.RESET_PC(32'b0),
     .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS)) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),

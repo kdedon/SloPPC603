@@ -42,6 +42,8 @@ module ppc603e_demo_soc #(
   localparam int RAM_WORDS = RAM_BYTES / 8;
   localparam int RAM_AW = $clog2(RAM_WORDS);
   localparam logic [31:0] SOC_ID = 32'h3630_3365;  // "603e"
+  // The PLL strap must match the package's configured code.
+  localparam logic [3:0] PLL_CFG = ppc_pkg::pll_cfg_default(ppc_pkg::CPU_PID7V_603E);
 
   // ---- processor ------------------------------------------------------------
   /* verilator lint_off ASCRANGE */
@@ -60,8 +62,10 @@ module ppc603e_demo_soc #(
 
   // Parity, snoop-attribute, test and clock outputs have no load here.
   /* verilator lint_off PINCONNECTEMPTY */
+  ppc_pkg::perf_event_t cpu_perf;
   ppc603e cpu (
-    .sysclk(clk_i), .pll_cfg_i(4'b0000), .clk_out_o(), .clk_out_oe_o(),
+    .perf_o(cpu_perf),
+    .sysclk(clk_i), .pll_cfg_i(PLL_CFG), .clk_out_o(), .clk_out_oe_o(),
     .br_n_o(br_n), .bg_n_i(bg_n), .abb_n_i(1'b1), .abb_n_o(), .abb_oe_o(),
     .ts_n_i(!(ts_oe && !ts_n)), .ts_n_o(ts_n), .ts_oe_o(ts_oe),
     .a_i(a_pin), .a_o(a_pin), .ap_i('1), .ap_o(), .ape_n_o(),
@@ -173,6 +177,16 @@ module ppc603e_demo_soc #(
   assign io_word = {beat_byte[11:3], !be[7]};
   assign io_wdata = be[7] ? wdata[63:32] : wdata[31:0];
 
+  // Performance counters at 0x100-0x17f.
+  logic perf_range;
+  logic [63:0] perf_rdata;
+  assign perf_range = beat_byte[11:7] == 5'd2;
+  soc_perf_counters perf (
+    .clk_i, .rst_ni, .event_i(cpu_perf),
+    .we_i(io_we && perf_range), .word_i(io_word[4:0]), .wdata_i(io_wdata[1:0]),
+    .rdata_o(perf_rdata)
+  );
+
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       cycle_q <= '0;
@@ -201,7 +215,7 @@ module ppc603e_demo_soc #(
           // Framebuffer geometry: base, stride; width, height, MiSTer FB_FORMAT.
           9'd4: io_rdata_q <= {FB_BASE, 32'(FB_WIDTH)};
           9'd5: io_rdata_q <= {16'(FB_WIDTH), 16'(FB_HEIGHT), 32'(FB_FORMAT)};
-          default: io_rdata_q <= '0;
+          default: io_rdata_q <= perf_range ? perf_rdata : '0;
         endcase
       end
       if (io_we)

@@ -23,8 +23,16 @@ static CORE_TICKS start_ticks, stop_ticks;
 static int performance_run, crc_errors, crcfinal_seen;
 static unsigned crcfinal;
 
-void start_time(void) { start_ticks = (CORE_TICKS)soc_cycles(); }
-void stop_time(void) { stop_ticks = (CORE_TICKS)soc_cycles(); }
+void start_time(void)
+{
+  perf_start();
+  start_ticks = (CORE_TICKS)soc_cycles();
+}
+void stop_time(void)
+{
+  stop_ticks = (CORE_TICKS)soc_cycles();
+  perf_stop();
+}
 CORE_TICKS get_time(void) { return stop_ticks - start_ticks; }
 secs_ret time_in_secs(CORE_TICKS ticks) { return ticks / SOC_CLOCK_HZ; }
 
@@ -99,6 +107,9 @@ int main(void)
     printf("performance seeds %d, crc errors %d\n", performance_run, crc_errors);
     fail("CoreMark validation");
   }
+  con_screen(0);
+  perf_report("coremark");
+  con_screen(1);
   con_color(10, 4);
   printf("CRCs match: coremark PASS\n");
   return 0;

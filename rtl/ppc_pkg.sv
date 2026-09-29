@@ -340,6 +340,21 @@ package ppc_pkg;
     // More micro-ops of this instruction follow; the PC does not advance.
     logic seq_partial;
   } retire_packet_t;
+  // Performance events, registered one cycle after the cycle they describe.
+  // slot says what the single dispatch slot did that cycle, so the slot
+  // counts partition the cycles (docs/PERFORMANCE.md).
+  typedef enum logic [3:0] {
+    PERF_DISPATCH, PERF_FETCH_EMPTY, PERF_ICACHE_MISS, PERF_BRANCH_REFETCH,
+    PERF_EXCEPTION_REFETCH, PERF_DRAIN_BRANCH, PERF_DRAIN_MEMORY,
+    PERF_DRAIN_OTHER, PERF_SPECIAL_BUSY, PERF_LSU_BUSY, PERF_DCACHE_MISS,
+    PERF_CQ_FULL, PERF_RS_FULL, PERF_FLAGS_WAIT, PERF_OTHER
+  } perf_slot_e;
+  typedef struct packed {
+    logic retire;
+    // The fetch-to-decode register holds a word the IQ cannot take.
+    logic iq_full;
+    perf_slot_e slot;
+  } perf_event_t;
 
   // ---- MSR and exception events -------------------------------------------
   // HDL bit = 31 - manual bit.

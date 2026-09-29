@@ -34,6 +34,9 @@ logic [3:0] bus_ap;
 logic [4:0] bus_tt;
 
 ppc603e dut (
+  /* verilator lint_off PINCONNECTEMPTY */
+  .perf_o(),
+  /* verilator lint_on PINCONNECTEMPTY */
   .sysclk(clk), .pll_cfg_i(pll_cfg), .clk_out_o(clk_out), .clk_out_oe_o(clk_out_oe),
   .br_n_o(br_n), .bg_n_i(bg_n || bus_block), .abb_n_i(1'b1), .abb_n_o(abb_n), .abb_oe_o(abb_oe),
   .ts_n_i(bus_ts_n || snoop_hide), .ts_n_o(ts_n), .ts_oe_o(ts_oe),
