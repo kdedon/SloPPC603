@@ -201,7 +201,8 @@ module ppc_core #(
   logic special_result_select;
   logic [4:0] special_mem_dst;
   logic [31:0] gpr_mapped;
-  logic dispatch_mem_plain, mem_sources_committed, special_drained, overlap_dispatch_ok;
+  logic dispatch_mem_plain, mem_sources_committed, mem_sources_committed_q;
+  logic special_drained, overlap_dispatch_ok;
   logic cq_retire_valid;
   logic special_cancel, special_store_irrevocable, special_branch_redirect;
   logic special_kill;
@@ -753,20 +754,30 @@ module ppc_core #(
   // reads is committed: older work cannot fault or redirect, and it takes a
   // fault only at completion. Younger integer work may dispatch behind it
   // unless it reads the access's destination.
-  assign dispatch_mem_plain = !trace_mode &&
-    ((dispatch_uop.special_op == SPECIAL_LOAD) ||
-     (dispatch_uop.special_op == SPECIAL_STORE)) &&
-    (dispatch_uop.mem_seq == SEQ_NONE) && !dispatch_uop.mem_update &&
-    !dispatch_uop.mem_reserve && !dispatch_uop.mem_conditional &&
-    !dispatch_uop.mem_external && !dispatch_uop.mem_skip &&
-    !dispatch_uop.cache_probe && !dispatch_uop.block_zero &&
-    (dispatch_uop.cache_op == CACHE_OP_NONE);
+  // Decoded from the queued uop, not the fault-substituted one, to keep the
+  // EA adder off the dispatch path; an alignment fault then also skips the
+  // drain, and takes its exception at the completion-queue head.
+  assign dispatch_mem_plain = !trace_mode && !uop.illegal &&
+    (iq_head.fault == FETCH_OK) &&
+    ((uop.special_op == SPECIAL_LOAD) || (uop.special_op == SPECIAL_STORE)) &&
+    (uop.mem_seq == SEQ_NONE) && !uop.mem_update &&
+    !uop.mem_reserve && !uop.mem_conditional &&
+    !uop.mem_external && !uop.mem_skip &&
+    !uop.cache_probe && !uop.block_zero &&
+    (uop.cache_op == CACHE_OP_NONE);
   assign mem_sources_committed =
-    (dispatch_uop.zero_a || !gpr_mapped[uop.src_a]) &&
-    (dispatch_uop.use_imm || !gpr_mapped[uop.src_b]) &&
-    ((dispatch_uop.special_op != SPECIAL_STORE) || !gpr_mapped[uop.src_c]);
+    (uop.zero_a || !gpr_mapped[uop.src_a]) &&
+    (uop.use_imm || !gpr_mapped[uop.src_b]) &&
+    ((uop.special_op != SPECIAL_STORE) || !gpr_mapped[uop.src_c]);
+  // The check is registered: the head is unchanged while nothing dispatches
+  // or recovers, and only dispatch adds a mapping.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) mem_sources_committed_q <= 1'b0;
+    else mem_sources_committed_q <= mem_sources_committed && iq_valid &&
+                                    !dispatch && !recovery_accepted;
+  end
   assign special_drained = (cq_empty && normal_idle) ||
-    (dispatch_mem_plain && mem_sources_committed);
+    (dispatch_mem_plain && mem_sources_committed_q);
   assign overlap_dispatch_ok = special_mem_overlap && normal_uop &&
     !(special_mem_dst_valid &&
       ((uop.src_a == special_mem_dst) || (uop.src_b == special_mem_dst)));

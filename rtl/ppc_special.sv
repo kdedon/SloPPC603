@@ -90,7 +90,8 @@ module ppc_special #(
   output logic dispatch_ready_o,
   input ppc_pkg::uop_t uop_i,
   input ppc_pkg::completion_tag_t producer_i,
-  // A plain load or store: it needs no commit-time action unless it faults.
+  // A plain load or store, or its alignment exception: it needs no
+  // commit-time action unless it faults.
   input logic dispatch_overlap_i,
   input logic [31:0] pc_i,
   input ppc_pkg::page_miss_t dispatch_page_miss_i,
@@ -1054,7 +1055,8 @@ module ppc_special #(
       fence_d = dispatch_fenced;
       // A plain access has nothing to check before its offer.
       if (ENABLE_UNALIGNED_DATAPATH && dispatch_overlap_i &&
-          ((uop_i.special_op == SPECIAL_LOAD) || store_authorize_i))
+          ((uop_i.special_op == SPECIAL_LOAD) ||
+           ((uop_i.special_op == SPECIAL_STORE) && store_authorize_i)))
         state_d = S_MEM_OFFER;
       else if ((uop_i.special_op == SPECIAL_LOAD) ||
           (uop_i.special_op == SPECIAL_STORE) ||
