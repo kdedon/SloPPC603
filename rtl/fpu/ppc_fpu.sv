@@ -200,6 +200,8 @@ module ppc_fpu #(
   logic [30:0] src_d;
   logic [30:0] work1_d_raw;
   logic [30:0] finish_store_word;
+  logic finish_trap;
+  logic store_d_ready, work1_store_d_ready;
   logic src_a_sp, src_b_sp, src_c_sp, src_d_sp;
   logic src_b_lt, src_d_lt;
   source_t source_a, source_b, source_c, source_d;
@@ -239,11 +241,13 @@ module ppc_fpu #(
   logic [1:0] retire_count;
   logic dispatch_fire;
   logic dispatch1_fire;
-  logic [2:0] fpr_after_retire;
+  logic dec_exec, dec_mem, dec_write, dec1_exec, dec1_mem, dec1_write;
+  logic pair_ok, ready_if_mem, ready_if_exec;
+  logic retire_credit, retire_credit2, space_ok, space1_ok;
+  logic fpr_ok, fpr1_ok;
   logic div_busy;
   logic barrier_present;
   logic source_waiting;
-  logic [2:0] fpr_pending_count;
   logic [31:0] prefix_fpscr;
   forward_candidate_t fwd0;
   forward_candidate_t fwd1;
@@ -540,12 +544,11 @@ module ppc_fpu #(
             s.raw = pv[i].result.fpr_value;
             s.sp = pv[i].result.fpr_sp;
             s.lt = pv[i].result.fpr_lt;
-          end else if (pv[i].finishing && arith_finish_write &&
-                       !numeric_emulation_trap(arith_finish.invalid, arith_finish.ox,
-                           arith_finish.ux, arith_finish.zx, arith_finish.xx,
-                           arith_finish.tiny_before_round, fpscr_q[7:2])) begin
+          end else if (pv[i].finishing && arith_finish_write) begin
             // The value exists only at the arithmetic input and local-stage
             // forward points; other consumers wait for the registered reply.
+            // A trapping value aborts every younger consumer before it
+            // commits, so only stores wait on the trap check.
             s.ready = 1'b1;
             s.fwd = 1'b1;
             s.raw = '0;
@@ -892,7 +895,6 @@ module ppc_fpu #(
       end
     end
     barrier_present = barrier_q;
-    fpr_pending_count = fpr_count_q;
     duplicate_tag = 1'b0;
     duplicate1_tag = 1'b0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
@@ -1025,36 +1027,47 @@ module ppc_fpu #(
     retire1_fire = commit1_ready_o;
     retire_count = {1'b0,retire_fire} + {1'b0,retire1_fire};
     after_retire_count = pending_count_q - {1'b0,retire_count};
-    fpr_after_retire = fpr_pending_count -
-        {2'd0,(retire_fire && pv[0].dest_fpr)} -
-        {2'd0,(retire1_fire && pv[1].dest_fpr)};
+    // State-only readiness is formed per decode class; the lane decode,
+    // retirement credits and handshakes select it last.
+    dec_exec = is_fpu_exec(decoded.kind);
+    dec_mem = decoded.kind == DK_MEMORY;
+    dec_write = writes_fpr(decoded.kind, decoded.op, decoded.mem_load);
+    dec1_exec = is_fpu_exec(decoded1.kind);
+    dec1_mem = decoded1.kind == DK_MEMORY;
+    dec1_write = writes_fpr(decoded1.kind, decoded1.op, decoded1.mem_load);
+    pair_ok = !second_exec_found;
+    ready_if_mem = !exec_found ||
+        (pair_ok && is_fpu_exec(pv[exec_index].decoded.kind));
+    ready_if_exec = (!exec_found ||
+        (pair_ok && pv[exec_index].decoded.kind == DK_MEMORY)) && !div_busy;
+    retire_credit = (retire_fire && pv[0].dest_fpr) ||
+        (retire1_fire && pv[1].dest_fpr);
+    retire_credit2 = retire_fire && pv[0].dest_fpr &&
+        retire1_fire && pv[1].dest_fpr;
+    space_ok = pending_count_q != 3'(PENDING_DEPTH) || retire_fire;
+    space1_ok = pending_count_q < 3'(PENDING_DEPTH-1) ||
+        (pending_count_q == 3'(PENDING_DEPTH-1) && retire_fire) ||
+        retire1_fire;
+    fpr_ok = !dec_write || fpr_count_q != 3'd4 || retire_credit;
+    case ({1'b0, dec_write} + {1'b0, dec1_write})
+      2'd0: fpr1_ok = 1'b1;
+      2'd1: fpr1_ok = fpr_count_q < 3'd4 || retire_credit;
+      default: fpr1_ok = fpr_count_q < 3'd3 ||
+          (fpr_count_q == 3'd3 && retire_credit) || retire_credit2;
+    endcase
     issue_ready_o = rst_ni && !kill_all_i && !abort_valid_i &&
         !barrier_present && !duplicate_tag &&
-        (!exec_found ||
-         (!second_exec_found &&
-         ((is_fpu_exec(pv[exec_index].decoded.kind) &&
-           decoded.kind == DK_MEMORY) ||
-          (pv[exec_index].decoded.kind == DK_MEMORY &&
-           is_fpu_exec(decoded.kind))))) &&
-        (!is_fpu_exec(decoded.kind) || !div_busy) &&
-        (after_retire_count < 3'(PENDING_DEPTH)) &&
+        (dec_mem ? ready_if_mem : dec_exec ? ready_if_exec : !exec_found) &&
         (!is_barrier(decoded.kind, decoded.op) || pending_count_q == 3'd0) &&
-        (fpr_after_retire +
-         {2'd0,writes_fpr(decoded.kind, decoded.op, decoded.mem_load)} <= 3'd4);
+        space_ok && fpr_ok;
     dispatch_fire = issue_valid_i && issue_ready_o;
     issue1_ready_o = dispatch_fire && !exec_found &&
         !kill_all_i && !abort_valid_i && !barrier_present &&
         !is_barrier(decoded.kind, decoded.op) &&
         !is_barrier(decoded1.kind, decoded1.op) &&
         issue1_i.tag != issue_i.tag && !duplicate1_tag &&
-        ((is_fpu_exec(decoded.kind) && decoded1.kind == DK_MEMORY) ||
-         (decoded.kind == DK_MEMORY && is_fpu_exec(decoded1.kind))) &&
-        (!is_fpu_exec(decoded1.kind) || !div_busy) &&
-        (after_retire_count + 3'd1 < 3'(PENDING_DEPTH)) &&
-        (fpr_after_retire +
-         {2'd0,writes_fpr(decoded.kind, decoded.op, decoded.mem_load)} +
-         {2'd0,writes_fpr(decoded1.kind, decoded1.op, decoded1.mem_load)}
-         <= 3'd4);
+        ((dec_exec && dec1_mem) || (dec_mem && dec1_exec)) &&
+        (!dec1_exec || !div_busy) && space1_ok && fpr1_ok;
     dispatch1_fire = issue1_valid_i && issue1_ready_o;
   end
 
@@ -1103,6 +1116,7 @@ module ppc_fpu #(
     src_b = source_b.raw;
     src_c = source_c.raw;
     src_d = source_d.fwd ? finish_store_word : source_d.raw[30:0];
+    store_d_ready = source_d.ready && !(source_d.fwd && finish_trap);
     src_a_sp = source_a.sp;
     src_b_sp = source_b.sp;
     src_c_sp = source_c.sp;
@@ -1137,12 +1151,12 @@ module ppc_fpu #(
       use_d = 1'b1;
     source_waiting = (use_a && !source_a.ready) ||
         (use_b && !source_b.ready) || (use_c && !source_c.ready) ||
-        (use_d && !source_d.ready) ||
+        (use_d && !store_d_ready) ||
         (!is_fpu_exec(work_decoded.kind) &&
          ((use_a && source_a.fwd) || (use_b && source_b.fwd) ||
           (use_c && source_c.fwd)));
     sources_ready = !source_waiting;
-    mem_sources_ready = !work_decoded.mem_store || source_d.ready;
+    mem_sources_ready = !work_decoded.mem_store || store_d_ready;
     mem_tags_ok = !CPU_602 || !work_decoded.mem_store ||
         (work_decoded.mem_integer ? source_d.lt : source_d.sp);
     operand_tags_ok = 1'b1;
@@ -1212,6 +1226,7 @@ module ppc_fpu #(
     work1_d = read_source(work1_issue.insn[25:21],
         work1_old ? 3'(work1_old_index) : pending_count_q);
     work1_d_raw = work1_d.fwd ? finish_store_word : work1_d.raw[30:0];
+    work1_store_d_ready = work1_d.ready && !(work1_d.fwd && finish_trap);
     work1_select_b = CPU_602 ?
         (((work1_a.raw[30:23] == 8'hff) && work1_a.raw[22:0] != 23'd0) ||
          (work1_a.raw[31] && work1_a.raw[30:0] != 31'd0)) :
@@ -1249,7 +1264,7 @@ module ppc_fpu #(
         writes_fpr(decoded.kind, decoded.op, decoded.mem_load) &&
         issue_i.insn[25:21] == work1_issue.insn[25:21];
     work1_mem_sources_ready =
-        (!work1_decoded.mem_store || work1_d.ready) &&
+        (!work1_decoded.mem_store || work1_store_d_ready) &&
         !work1_mem_lane0_dep;
     work1_mem_tags_ok = !CPU_602 || !work1_decoded.mem_store ||
         (work1_decoded.mem_integer ? work1_d.lt : work1_d.sp);
@@ -1257,7 +1272,7 @@ module ppc_fpu #(
         (!work1_use_a || work1_a.ready) &&
         (!work1_use_b || work1_b.ready) &&
         (!work1_use_c || work1_c.ready) &&
-        (!work1_use_d || work1_d.ready);
+        (!work1_use_d || work1_store_d_ready);
     work1_tags_ok = 1'b1;
     if (CPU_602) begin
       if (work1_decoded.kind == DK_ARITH) begin
@@ -1350,6 +1365,9 @@ module ppc_fpu #(
   // The 602 store trap check is the only register-file consumer of a
   // finishing value.
   assign finish_store_word = 31'(narrow_single(arith_finish.result));
+  assign finish_trap = numeric_emulation_trap(arith_finish.invalid,
+      arith_finish.ox, arith_finish.ux, arith_finish.zx, arith_finish.xx,
+      arith_finish.tiny_before_round, fpscr_q[7:2]);
   assign arith_req_fwd = work1_arith_launch ?
       {work1_c.fwd, work1_b.fwd, work1_a.fwd} :
       {source_c.fwd, source_b.fwd, source_a.fwd};
