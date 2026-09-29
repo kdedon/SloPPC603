@@ -340,3 +340,17 @@ choice and a test of that choice, not a fidelity claim:
    as a documented deviation, or model the PID7v ratio range?
 5. Include EC603e (no FPU, FP-unavailable on every FP form) as a fifth value?
    It is cheap once `cfg.fpu` exists.
+
+## Decisions (2026-09-28)
+
+The user settled the open questions:
+
+- **602 pins:** a separate `ppc602` pin top with the 602's multiplexed 64-bit
+  address/data bus.
+- **603 direct-store:** implement the XATS protocol for T=1 segments on the 603.
+- **PVR:** PID7v reports `0x00070101`, matching the reference model; PID6
+  `0x00060101`, 603 `0x00030101`, 602 `0x00050101`, chosen as first revisions.
+- **EC603e:** a fifth variant (603e without the FPU; FP instructions take
+  FP-unavailable).
+- **Clock ratios:** model the core-to-bus clock ratios the silicon supports,
+  with the BIU on a bus clock enable, instead of running every variant 1:1.
