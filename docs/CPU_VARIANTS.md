@@ -1,12 +1,15 @@
 # CPU variant contract
 
 One elaboration parameter, `CPU_VARIANT`, selects the part the core models:
-**PID7v-603e** (default), **PID6-603e**, **603** or **602**. This document fixes
-what differs between them, what main implements today, how the difference is
-parameterized, and how each variant is verified. It is a source contract and
-plan; no RTL implements `CPU_VARIANT` yet.
+**PID7v-603e** (default), **PID6-603e**, **EC603e**, **603** or **602**. This
+document fixes what differs between them, what main implements today, how the
+difference is parameterized, and how each variant is verified. Rounds V0 and V1
+are implemented ([status](#status)); the "Main:" notes below describe the tree
+before V1 unless they say otherwise.
 
-EC603e (603e without FPU) is not a target here; see [open questions](#open-questions).
+EC603e is the PID7v-603e without the FPU: same PVR, divide latency and HID0,
+and every FP instruction takes FP-unavailable. The UM covers both parts; the
+shared PVR is a best-effort reading.
 
 ## Sources
 
@@ -193,12 +196,13 @@ watchdog.
 
 ### 2.1 Package
 
-`ppc_pkg.sv` gains one enum and one derived record; nothing else selects a
-variant.
+`ppc_pkg.sv` holds one enum and one derived record; nothing else selects a
+variant. As implemented in V0:
 
 ```systemverilog
-typedef enum logic [1:0] {
-  CPU_PID7V_603E, CPU_PID6_603E, CPU_603, CPU_602
+typedef enum logic [2:0] {
+  CPU_PID7V_603E = 3'd0, CPU_PID6_603E = 3'd1, CPU_EC603E = 3'd2,
+  CPU_603 = 3'd3, CPU_602 = 3'd4
 } cpu_variant_e;
 
 typedef enum logic [1:0] { FPU_NONE, FPU_DP, FPU_602_SP } fpu_kind_e;
@@ -210,26 +214,37 @@ typedef struct packed {
   logic [2:0]  icache_ways, dcache_ways;   // 4 or 2
   logic [5:0]  tlb_sets;                   // 32 or 16
   logic [31:0] hid0_wmask, hid0_rmask;
+  logic [31:0] hid1_rmask;                 // PLL_CFG bits; 0 on the 603
   logic        has_hid1, has_ear, has_srr1_key, has_abe_ifem;
   logic        misaligned_le_hw, misaligned_ecxwx_hw;
   logic        store_two_cycle;            // 603 2:2 stores
   logic        mul_602_timing;
   logic        has_602_ext;                // esa/dsa/mfrom, IBR, TCR, ESA SPRs, AP/SA, PO
   logic        string_emulation_trap;
+  logic        has_direct_store;           // 603 XATS on T=1
   fpu_kind_e   fpu;
 } cpu_cfg_t;
 
-function automatic cpu_cfg_t cpu_cfg(cpu_variant_e v);  // one case, named fields
+function automatic cpu_cfg_t cpu_cfg(cpu_variant_e v);  // PID7v defaults, one case
+function automatic bit cpu_variant_supported(cpu_variant_e v);
 ```
 
-Consumers copy fields into local `localparam`s at the top of the module, as
+The 602 HID0 masks are zero until its layout is encoded (V7); its build is
+rejected before then.
+
+Consumers copy the record into a local `localparam` at the top of the module, as
 `hdl-design-organization` §2 prescribes. Structural sizes (sets, ways, TLB sets)
 go through `generate if` or localparam arithmetic; no file-list selection.
 
-Existing parameters are retired in two steps: first `DIV_LATENCY`, `PVR_VALUE`
-and `HID0_RESET` default from `cpu_cfg(CPU_VARIANT)` with an elaboration check
-that an explicit override matches; then the overrides are removed once benches
-pass `CPU_VARIANT` instead. `ENABLE_*` profile parameters stay orthogonal.
+V1 retired `PVR_VALUE` outright (no bench overrode it). `DIV_LATENCY` stays on
+`ppc_core` only, default 0 meaning "from the variant"; a nonzero value overrides
+it for benches that stretch the divider (`tb_core_interrupt` uses 37). The
+wrappers dropped `DIV_LATENCY` and pass `CPU_VARIANT`. `HID0_RESET` stays: it
+encodes the wrapper's cache reset mode and is masked by the variant's HID0
+mask. `ENABLE_*` profile parameters stay orthogonal.
+
+Verilator cannot set an enum parameter from `-G`, so benches and the lint top
+take `parameter int VARIANT` and cast it to `cpu_variant_e`.
 
 ### 2.2 Files and behavior per difference
 

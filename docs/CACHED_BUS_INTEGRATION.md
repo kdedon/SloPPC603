@@ -74,7 +74,7 @@ machine-check boundary.
 
 ## Parameters, hierarchy, and file lists
 
-The wrapper passes `RESET_PC` and `DIV_LATENCY` to its
+The wrapper passes `RESET_PC` and `CPU_VARIANT` to its
 internal core instance, whose stable hierarchical name is `core`.  Its public
 retirement, redirect, and physical pin interfaces otherwise follow
 `ppc_core_bus60x`.

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
-module ppc_core_measure (
+module ppc_core_measure #(
+  // Part the build models; see cpu_cfg().
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E
+) (
   input  logic clk_i,
   input  logic rst_ni,
   input  logic [31:0] stimulus_i,
@@ -30,7 +33,7 @@ module ppc_core_measure (
   logic [41:0] unused_segment_csr;
   logic [33:0] unused_cache_core;
   logic unused_checkstop;
-  ppc_core dut (
+  ppc_core #(.CPU_VARIANT(CPU_VARIANT)) dut (
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),

@@ -2,7 +2,7 @@
 
 Recorded: `make -C sim test-iterative-divider test-divider-timing test-core-divider-timing test-core-divider-timing-pid6`, commit pre-repository snapshot, imported in 3e727b6, date not recorded.
 
-This bounded P08 milestone implements `divw[o][.]` and `divwu[o][.]` with a synthesizable iterative quotient datapath and source-backed integer-unit latency. `ppc_iu` defaults to the PID7v value of 20 processor clock cycles. Setting `ppc_core.DIV_LATENCY` or `ppc_iu.DIV_LATENCY` to 37 selects the PID6 value.
+This bounded P08 milestone implements `divw[o][.]` and `divwu[o][.]` with a synthesizable iterative quotient datapath and source-backed integer-unit latency. `ppc_iu` defaults to the PID7v value of 20 processor clock cycles. `ppc_core` takes the latency from `CPU_VARIANT` (37 for PID6, [CPU_VARIANTS.md](CPU_VARIANTS.md)); a nonzero `ppc_core.DIV_LATENCY` overrides it for benches.
 
 The quotient datapath contains no SystemVerilog division operator. Its fixed 16-step radix-4 restoring algorithm is a scaffold implementation choice; it is not claimed to reproduce the internal divider organization of either 603e revision.
 

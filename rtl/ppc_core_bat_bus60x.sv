@@ -10,7 +10,7 @@
 // consumes that error. With it, every TEA returns as a machine-check fault.
 module ppc_core_bat_bus60x #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
-  parameter int DIV_LATENCY = 20,
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   // Includes the existing serialized ISYNC/SYNC/EIEIO profile.
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
@@ -37,7 +37,6 @@ module ppc_core_bat_bus60x #(
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
-  parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
   parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
   input  logic clk_i,
@@ -185,7 +184,7 @@ module ppc_core_bat_bus60x #(
   // interpreted by this cache-inhibited 60x transport profile.
   ppc_core_bat #(
     .RESET_PC(RESET_PC),
-    .DIV_LATENCY(DIV_LATENCY),
+    .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
     .ENABLE_EXTERNAL_INTERRUPTS(ENABLE_EXTERNAL_INTERRUPTS),
@@ -210,7 +209,7 @@ module ppc_core_bat_bus60x #(
     .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
-    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE), .PVR_VALUE(PVR_VALUE),
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
     .PLL_CFG(PLL_CFG)
   ) translated_core (
     .clk_i,

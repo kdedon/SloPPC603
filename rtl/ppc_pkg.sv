@@ -451,6 +451,119 @@ package ppc_pkg;
   } dcache_bus_in_t;
   // ---- end MSR and exception events ---------------------------------------
 
+  // ---- CPU variant configuration ------------------------------------------
+  // The part the core models. EC603e is the PID7v-603e without the FPU.
+  typedef enum logic [2:0] {
+    CPU_PID7V_603E = 3'd0,
+    CPU_PID6_603E = 3'd1,
+    CPU_EC603E = 3'd2,
+    CPU_603 = 3'd3,
+    CPU_602 = 3'd4
+  } cpu_variant_e;
+  typedef enum logic [1:0] { FPU_NONE, FPU_DP, FPU_602_SP } fpu_kind_e;
+  typedef struct packed {
+    logic [31:0] pvr;
+    logic [5:0]  div_latency;          // divw/divwu cycles (UM Table 6-4)
+    logic [7:0]  icache_sets, dcache_sets;
+    logic [2:0]  icache_ways, dcache_ways;
+    logic [5:0]  tlb_sets;             // per I or D TLB, two ways
+    logic [31:0] hid0_wmask, hid0_rmask;
+    logic [31:0] hid1_rmask;           // PLL_CFG; HID1 is read-only
+    logic        has_hid1, has_ear, has_srr1_key, has_abe_ifem;
+    logic        misaligned_le_hw;     // misaligned LE single access in hardware
+    logic        misaligned_ecxwx_hw;  // misaligned eciwx/ecowx in hardware
+    logic        store_two_cycle;      // 2:2 stores
+    logic        mul_602_timing;
+    logic        has_602_ext;          // esa/dsa/mfrom, IBR, TCR, ESA SPRs, MSR AP/SA, PO
+    logic        string_emulation_trap;
+    logic        has_direct_store;     // T=1 segments use the XATS protocol
+    fpu_kind_e   fpu;
+  } cpu_cfg_t;
+  // PID7v HID0: EMCP..NHR, ICE..DCFI, IFEM, FBIOB, ABE, NOOPTI (UM Table 2-2).
+  localparam logic [31:0] HID0_MASK_PID7V = 32'hbff9_fc99;
+  // PID6 lacks IFEM (bit 24) and ABE (bit 28).
+  localparam logic [31:0] HID0_MASK_PID6 = 32'hbff9_fc11;
+  function automatic cpu_cfg_t cpu_cfg(cpu_variant_e v);
+    cpu_cfg_t c;
+    c.pvr = 32'h0007_0101;
+    c.div_latency = 6'd20;
+    c.icache_sets = 8'd128;
+    c.dcache_sets = 8'd128;
+    c.icache_ways = 3'd4;
+    c.dcache_ways = 3'd4;
+    c.tlb_sets = 6'd32;
+    c.hid0_wmask = HID0_MASK_PID7V;
+    c.hid0_rmask = HID0_MASK_PID7V;
+    c.hid1_rmask = 32'hf000_0000;
+    c.has_hid1 = 1'b1;
+    c.has_ear = 1'b1;
+    c.has_srr1_key = 1'b1;
+    c.has_abe_ifem = 1'b1;
+    c.misaligned_le_hw = 1'b1;
+    c.misaligned_ecxwx_hw = 1'b0;
+    c.store_two_cycle = 1'b0;
+    c.mul_602_timing = 1'b0;
+    c.has_602_ext = 1'b0;
+    c.string_emulation_trap = 1'b0;
+    c.has_direct_store = 1'b0;
+    c.fpu = FPU_DP;
+    case (v)
+      CPU_PID6_603E: begin
+        c.pvr = 32'h0006_0101;
+        c.div_latency = 6'd37;
+        c.hid0_wmask = HID0_MASK_PID6;
+        c.hid0_rmask = HID0_MASK_PID6;
+        c.has_abe_ifem = 1'b0;
+        c.misaligned_le_hw = 1'b0;
+        c.misaligned_ecxwx_hw = 1'b1;
+      end
+      CPU_EC603E: c.fpu = FPU_NONE;
+      CPU_603: begin
+        c.pvr = 32'h0003_0101;
+        c.div_latency = 6'd37;
+        c.icache_ways = 3'd2;
+        c.dcache_ways = 3'd2;
+        c.hid0_wmask = HID0_MASK_PID6;
+        c.hid0_rmask = HID0_MASK_PID6;
+        c.hid1_rmask = 32'h0;
+        c.has_hid1 = 1'b0;
+        c.has_srr1_key = 1'b0;
+        c.has_abe_ifem = 1'b0;
+        c.misaligned_le_hw = 1'b0;
+        c.misaligned_ecxwx_hw = 1'b1;
+        c.store_two_cycle = 1'b1;
+        c.has_direct_store = 1'b1;
+      end
+      CPU_602: begin
+        c.pvr = 32'h0005_0101;
+        c.div_latency = 6'd37;
+        c.icache_sets = 8'd64;
+        c.dcache_sets = 8'd64;
+        c.icache_ways = 3'd2;
+        c.dcache_ways = 3'd2;
+        c.tlb_sets = 6'd16;
+        // The 602 HID0 layout (602UM Table 2-7) is not encoded; nothing is
+        // stored.
+        c.hid0_wmask = 32'h0;
+        c.hid0_rmask = 32'h0;
+        c.has_ear = 1'b0;
+        c.has_abe_ifem = 1'b0;
+        c.misaligned_le_hw = 1'b0;
+        c.mul_602_timing = 1'b1;
+        c.has_602_ext = 1'b1;
+        c.string_emulation_trap = 1'b1;
+        c.fpu = FPU_602_SP;
+      end
+      default: ;
+    endcase
+    return c;
+  endfunction
+  // Variants whose differences from the PID7v are all implemented.
+  function automatic bit cpu_variant_supported(cpu_variant_e v);
+    return (v == CPU_PID7V_603E) || (v == CPU_PID6_603E) || (v == CPU_EC603E);
+  endfunction
+  // ---- end CPU variant configuration --------------------------------------
+
   // ---- SPR write masks and reset values -----------------------------------
   // Hard reset clears all three (UM Table 4-8).
   // SDR1: HTABORG manual 0-15, reserved 16-22, HTABMASK 23-31. Reserved bits
@@ -459,10 +572,10 @@ package ppc_pkg;
   localparam logic [31:0] SDR1_RESET = 32'h0000_0000;
   // DSISR and SPRG0-3 are fully architected; no mask needed.
   localparam logic [31:0] DSISR_RESET = 32'h0000_0000;
-  // HID0 (UM Table 2-2): every named PID7v bit is stored; reserved bits read
-  // as zero. ICE and ICFI act (instruction cache), and EMCP on the chip top;
-  // the rest have no implemented feature to control. Hard reset clears HID0 and HID1.
-  localparam logic [31:0] HID0_WMASK = 32'hbff9_fc99;
+  // HID0 (UM Table 2-2): every named bit of the variant is stored
+  // (cpu_cfg().hid0_wmask); reserved bits read as zero. ICE and ICFI act
+  // (instruction cache), and EMCP on the chip top; the rest have no
+  // implemented feature to control. Hard reset clears HID0 and HID1.
   localparam int HID0_ICE = 15;
   localparam int HID0_ICFI = 11;
   localparam int HID0_DCE = 14;

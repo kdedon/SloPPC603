@@ -6,8 +6,13 @@
 // EAR[E] DSI and the external-control transfer class, lwarx/stwcx. atomic
 // class, sync with L set, and problem-state privilege on undefined SPRs.
 /* verilator lint_off BLKSEQ */
-module tb_core_full_decode;
+// VARIANT is the cpu_variant_e encoding; PVR and HID0 follow it.
+module tb_core_full_decode #(
+  parameter int VARIANT = 0
+);
   import ppc_pkg::*;
+  localparam cpu_variant_e CPU_VARIANT = cpu_variant_e'(VARIANT);
+  localparam cpu_cfg_t CFG = cpu_cfg(CPU_VARIANT);
   `include "ppc_asm.svh"
   logic [41:0] unused_segment_csr;
   logic [47:0] unused_bat_csr;
@@ -73,7 +78,7 @@ module tb_core_full_decode;
     .RESET_PC(32'h4000), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_CACHE_INSTRUCTIONS(1'b1),
     .ENABLE_RESERVATION(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
-    .ENABLE_FULL_DECODE(1'b1), .PLL_CFG(4'b1010)
+    .ENABLE_FULL_DECODE(1'b1), .PLL_CFG(4'b1010), .CPU_VARIANT(CPU_VARIANT)
   ) dut (
     .dmem_req_attr_o(attr), .icache_ctl_valid_o(cv), .icache_ctl_ready_i(cready),
     .icache_ctl_enable_o(cen), .icache_ctl_invalidate_o(cinv),
@@ -250,7 +255,7 @@ module tb_core_full_decode;
     emit_exc(32'hfc00_0090, 32'h800, MSR0);             // fmr
     // PVR, HID1, HID0, EAR.
     emit(asm_spr(0, 7, 287));
-    emit_check(7, 32'h0007_0200);
+    emit_check(7, CFG.pvr);
     emit(asm_spr(0, 7, 1009));
     emit_check(7, 32'ha000_0000);
     emit(asm_spr(1, 5, 1009));                          // HID1 write: no effect
@@ -260,7 +265,7 @@ module tb_core_full_decode;
     emit_check(7, 32'h0);
     emit(asm_spr(1, 5, 1008));                          // ICE=1, ICFI=1: request
     emit(asm_spr(0, 7, 1008));
-    emit_check(7, HID0_WMASK);
+    emit_check(7, CFG.hid0_rmask);
     emit_li32(8, 32'h0000_8000);                        // ICE=1, ICFI=0: none
     emit(asm_spr(1, 8, 1008));
     emit(asm_li(8, 0));

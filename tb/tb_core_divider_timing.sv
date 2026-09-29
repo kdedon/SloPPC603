@@ -3,11 +3,14 @@
 // Actual-core binding of Chapter 6 divide execute cycles to accepted events.
 /* verilator lint_off BLKSEQ */
 module tb_core_divider_timing #(
-  parameter int DIV_LATENCY = 20
+  // cpu_variant_e encoding; the divide latency follows the variant.
+  parameter int VARIANT = 0
 );
   logic [41:0] unused_segment_csr;
   logic [47:0] unused_bat_csr;
   import ppc_pkg::*;
+  localparam cpu_variant_e CPU_VARIANT = cpu_variant_e'(VARIANT);
+  localparam int DIV_LATENCY = int'(cpu_cfg(CPU_VARIANT).div_latency);
   logic [32:0] unused_decrementer;
   logic [32:0] unused_interrupt;
 
@@ -41,7 +44,7 @@ module tb_core_divider_timing #(
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
   logic unused_checkstop;
-  ppc_core #(.DIV_LATENCY(DIV_LATENCY), .RESET_PC(32'b0)) dut (
+  ppc_core #(.CPU_VARIANT(CPU_VARIANT), .RESET_PC(32'b0)) dut (
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),

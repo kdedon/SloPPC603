@@ -3,7 +3,11 @@
 `default_nettype none
 // Single-issue core with abstract fetch, data and CSR transports.
 module ppc_core #(
-  parameter int DIV_LATENCY = 20,
+  // Part the build models; see cpu_cfg().
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
+  // divw/divwu latency override for benches that stretch the divider;
+  // 0 takes the variant latency.
+  parameter int DIV_LATENCY = 0,
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
@@ -46,8 +50,6 @@ module ppc_core #(
   // MCP, SRESET and SMI exceptions and TLBISYNC from pin_event_i; needs
   // ENABLE_EXTERNAL_INTERRUPTS.
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
-  // PID7v-603e, UM 1.3.1.1.
-  parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   // HID1 PLL_CFG[0:3] (manual bits 0-3), read-only.
@@ -164,6 +166,17 @@ module ppc_core #(
   output logic redirect_accepted_o
 );
   import ppc_pkg::*;
+  localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
+  localparam int DIV_LATENCY_EFFECTIVE =
+    DIV_LATENCY != 0 ? DIV_LATENCY : int'(CPU_CFG.div_latency);
+  // Elaboration fails for a variant whose differences are not all built.
+  if (CPU_VARIANT == CPU_603) begin : g_reject_603
+    $fatal(1, "CPU_VARIANT CPU_603 is not implemented (caches, SPR presence, direct-store, 2:2 stores)");
+  end else if (CPU_VARIANT == CPU_602) begin : g_reject_602
+    $fatal(1, "CPU_VARIANT CPU_602 is not implemented (602 decode, exceptions, MMU, caches, bus)");
+  end else if (!cpu_variant_supported(CPU_VARIANT)) begin : g_reject_unknown
+    $fatal(1, "CPU_VARIANT %0d is not a known variant", CPU_VARIANT);
+  end
   fetch_packet_t fetched, iq_head;
   localparam int IQ_COUNT_WIDTH = $clog2(IQ_DEPTH + 1);
   page_miss_t iq_miss_q, head_page_miss;
@@ -551,7 +564,7 @@ module ppc_core #(
         else $error("RS operand waits on a producer outside the IU");
   end
   // synthesis translate_on
-  ppc_iu #(.DIV_LATENCY(DIV_LATENCY)) iu (
+  ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE)) iu (
     .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid), .issue_ready_o(issue_ready),
     .issue_i(issue), .result_valid_o(iu_result_valid),
     .result_ready_i(iu_result_ready), .result_o(iu_result)
@@ -576,7 +589,7 @@ module ppc_core #(
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
-    .PVR_VALUE(PVR_VALUE), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
+    .CPU_VARIANT(CPU_VARIANT), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),

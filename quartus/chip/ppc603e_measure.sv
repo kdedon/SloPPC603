@@ -4,7 +4,10 @@
 // boundary register (*_ibq, *_obq) standing in for the system's flop;
 // asynchronous pins go straight to the chip's own synchronizer.
 /* verilator lint_off ASCRANGE */
-module ppc603e_measure (
+module ppc603e_measure #(
+  // Part the build models; see cpu_cfg().
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E
+) (
   input logic sysclk,
   input logic [0:3] pll_cfg_i,
   output logic clk_out_o,
@@ -225,7 +228,7 @@ module ppc603e_measure (
   logic [0:2] test_i_ibq;
   always_ff @(posedge sysclk) test_i_ibq <= test_i;
 
-  ppc603e dut (
+  ppc603e #(.CPU_VARIANT(CPU_VARIANT)) dut (
     .sysclk,
     .pll_cfg_i,
     .clk_out_o(clk_out_o_od),

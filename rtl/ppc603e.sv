@@ -9,6 +9,8 @@
 // Ranges follow the manual's bit numbering.
 /* verilator lint_off ASCRANGE */
 module ppc603e #(
+  // Part the build models; see cpu_cfg().
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   // The PLL_CFG[0-3] strap this build runs at; HID1[PC0-PC3] reads it.
   // Only the 1:1 and bypass codes match a SYSCLK-clocked core.
   parameter logic [3:0] PLL_CFG = 4'b0000,
@@ -219,7 +221,7 @@ module ppc603e #(
   // Management and status outputs of the wrapper have no pin.
   /* verilator lint_off PINCONNECTEMPTY */
   ppc_core_bat_cached_bus60x #(
-    .RESET_PC(32'hfff0_0100),
+    .RESET_PC(32'hfff0_0100), .CPU_VARIANT(CPU_VARIANT),
     // Hard reset clears HID0, ICE included (UM Table 4-8).
     .RESET_CACHE_ENABLE(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
