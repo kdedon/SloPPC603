@@ -163,10 +163,12 @@ Each record opens with one line:
   do not tail or poll logs. Never add watcher loops (`until grep ...; sleep`, `while pgrep`):
   the background command's own exit is the signal. Before reporting, confirm none of your
   processes remain. Keep parallel jobs modest (`-j2` per agent when several share a machine).
-- The machine runs at most one Quartus build and one full simulation gate at a time. Wrap
-  every Quartus build or `report-target-paths.sh` in `flock /tmp/ppc603e-quartus.lock`, and
-  every `ci`, `regression`, `release-check` or `test-fpu-all` run in
-  `flock /tmp/ppc603e-sim.lock`; the command waits its turn. Focused benches need no lock.
+- Full gates run once per batch of merged work, not per agent. An agent runs lint,
+  `check-spec` and the focused benches for its area (and `test-fpu-all` for FPU changes),
+  then reports; the coordinator merges the batch and runs `ci`, the FPU suite and the
+  Quartus fits once, bisecting the batch's merges if the gate fails. Any Quartus build or
+  `report-target-paths.sh` runs under `flock /tmp/ppc603e-quartus.lock`, and any `ci`,
+  `regression`, `release-check` or `test-fpu-all` run under `flock /tmp/ppc603e-sim.lock`.
 - Builds go through `sim/tools/verilate`, which deletes Verilator's ~70 MB precompiled
   headers; `make -C sim clean-cache` reclaims any left by other paths. Remove worktrees and
   scratch files when a task ends.
