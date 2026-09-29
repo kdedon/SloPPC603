@@ -173,7 +173,7 @@ module ppc_core #(
   if (CPU_VARIANT == CPU_603) begin : g_reject_603
     $fatal(1, "CPU_VARIANT CPU_603 is not implemented (caches, SPR presence, direct-store, 2:2 stores)");
   end else if (CPU_VARIANT == CPU_602) begin : g_reject_602
-    $fatal(1, "CPU_VARIANT CPU_602 is not implemented (602 decode, exceptions, MMU, caches, bus)");
+    $fatal(1, "CPU_VARIANT CPU_602 is not implemented (IBR, watchdog, MMU, caches, bus)");
   end else if (!cpu_variant_supported(CPU_VARIANT)) begin : g_reject_unknown
     $fatal(1, "CPU_VARIANT %0d is not a known variant", CPU_VARIANT);
   end
@@ -442,11 +442,15 @@ module ppc_core #(
           uop.spr[SPR_PRIV_BIT]))) begin
       dispatch_uop = '0;
       dispatch_uop.special_op = SPECIAL_PROGRAM_PRIV;
-    end else if (uop.special_op == SPECIAL_FPU) begin
+    end else if ((uop.special_op == SPECIAL_FPU) ||
+                 (uop.special_op == SPECIAL_FPU_EMULATE)) begin
       // The FPU entry point. No FPU is present, so MSR[FP] never sets and
-      // every FP-class instruction takes FP unavailable (UM 4.5.8).
+      // every FP-class instruction takes FP unavailable (UM 4.5.8). A 602
+      // double-precision form takes the emulation trap once FP is enabled.
       dispatch_uop = '0;
-      dispatch_uop.special_op = SPECIAL_FP_UNAVAILABLE;
+      dispatch_uop.special_op =
+        ((uop.special_op == SPECIAL_FPU_EMULATE) && msr[MSR_FP]) ?
+        SPECIAL_EMULATION_TRAP : SPECIAL_FP_UNAVAILABLE;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && !uop.illegal &&
                  ((uop.special_op == SPECIAL_LOAD) ||
                   (uop.special_op == SPECIAL_STORE)) && dispatch_misaligned) begin

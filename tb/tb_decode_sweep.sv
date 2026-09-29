@@ -6,8 +6,16 @@
 // space. No word may decode to a diagnostic (illegal). Words the profile
 // without ENABLE_FULL_DECODE accepts must decode identically; FP, trap,
 // eciwx/ecowx and the new SPRs must be rejected there (negative control).
-module tb_decode_sweep;
+// VARIANT selects the part: the 602 adds its emulation-trap classes (strings,
+// double-precision FP), esa/dsa/mfrom and its SPRs, and drops EAR and
+// eciwx/ecowx (602UM 2.1.2, 2.3.4.3.6, 2.3.7, 4.5.7.2).
+module tb_decode_sweep #(
+  parameter int VARIANT = 0
+);
   import ppc_pkg::*;
+  localparam cpu_variant_e CPU_VARIANT = cpu_variant_e'(VARIANT);
+  localparam cpu_cfg_t CFG = cpu_cfg(CPU_VARIANT);
+  localparam bit V602 = CFG.has_602_ext;
   logic [31:0] insn;
   uop_t full, base;
 
@@ -19,7 +27,7 @@ module tb_decode_sweep;
     .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_CACHE_INSTRUCTIONS(1'b1),
     .ENABLE_BYTE_REVERSE(1'b1), .ENABLE_MULTIPLE_STRING(1'b1),
     .ENABLE_RESERVATION(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1),
-    .ENABLE_FULL_DECODE(1'b1)
+    .ENABLE_FULL_DECODE(1'b1), .CPU_VARIANT(CPU_VARIANT)
   ) full_decode (.insn_i(insn), .uop_o(full));
   ppc_decode #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
@@ -29,11 +37,13 @@ module tb_decode_sweep;
     .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_CACHE_INSTRUCTIONS(1'b1),
     .ENABLE_BYTE_REVERSE(1'b1), .ENABLE_MULTIPLE_STRING(1'b1),
     .ENABLE_RESERVATION(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1),
-    .ENABLE_FULL_DECODE(1'b0)
+    .ENABLE_FULL_DECODE(1'b0), .CPU_VARIANT(CPU_VARIANT)
   ) base_decode (.insn_i(insn), .uop_o(base));
 
-  typedef enum int {C_OTHER, C_ILLEGAL, C_FPU, C_TRAP, C_NEW} cls_t;
+  typedef enum int {C_OTHER, C_ILLEGAL, C_FPU, C_TRAP, C_NEW,
+                    C_EMUL, C_FPEMU, C_ESA, C_MFROM} cls_t;
   int probes = 0, n_same = 0, n_illegal = 0, n_fpu = 0, n_trap = 0, n_new = 0;
+  int n_emul = 0, n_fpemu = 0, n_esa = 0, n_mfrom = 0;
   int n_priv = 0;
 
   // Reference classification from UM Table A-1 and UM 2.3.1.3.
@@ -53,7 +63,10 @@ module tb_decode_sweep;
       6'd48, 6'd49, 6'd50, 6'd51, 6'd52, 6'd53, 6'd54, 6'd55: return C_FPU;
       6'd59: return (axo inside {5'd18, 5'd20, 5'd21, 5'd24, 5'd25, 5'd28,
                                  5'd29, 5'd30, 5'd31}) ? C_FPU : C_ILLEGAL;
-      6'd63: return ((axo inside {5'd18, 5'd20, 5'd21, 5'd23, 5'd25, 5'd26,
+      6'd63: if (V602 && ((axo inside {5'd18, 5'd20, 5'd21, 5'd25, 5'd28, 5'd29,
+                                     5'd30, 5'd31}) || (xo == 10'd14)))
+               return C_FPEMU;
+             else return ((axo inside {5'd18, 5'd20, 5'd21, 5'd23, 5'd25, 5'd26,
                                   5'd28, 5'd29, 5'd30, 5'd31}) ||
                      (xo inside {10'd0, 10'd12, 10'd14, 10'd15, 10'd32, 10'd38,
                                  10'd40, 10'd64, 10'd70, 10'd72, 10'd134,
@@ -63,10 +76,22 @@ module tb_decode_sweep;
         if (xo inside {10'd535, 10'd567, 10'd599, 10'd631, 10'd663, 10'd695,
                        10'd727, 10'd759, 10'd983}) return C_FPU;
         if (xo == 10'd4) return w[0] ? C_ILLEGAL : C_TRAP;
-        if ((xo == 10'd310 || xo == 10'd438) && !w[0]) return C_NEW;
+        if ((xo == 10'd310 || xo == 10'd438) && !w[0])
+          return CFG.has_ear ? C_NEW : C_ILLEGAL;
+        if (V602 && (xo inside {10'd597, 10'd725, 10'd533, 10'd661}))
+          return w[0] ? C_ILLEGAL : C_EMUL;
+        if (V602 && (xo inside {10'd596, 10'd628}))
+          return ((w[25:11] == 0) && !w[0]) ? C_ESA : C_ILLEGAL;
+        if (V602 && (xo == 10'd265))
+          return ((w[15:11] == 0) && !w[0]) ? C_MFROM : C_ILLEGAL;
         if ((xo inside {10'd339, 10'd371, 10'd467}) && !w[0] &&
-            ((spr == SPR_HID0) || (spr == SPR_HID1) || (spr == SPR_EAR) ||
-             ((xo != 10'd467) && (spr == SPR_PVR)))) return C_NEW;
+            ((spr == SPR_HID0) || (CFG.has_hid1 && (spr == SPR_HID1)) ||
+             (CFG.has_ear && (spr == SPR_EAR)) ||
+             ((xo != 10'd467) && (spr == SPR_PVR)) ||
+             (V602 && (spr inside {SPR_TCR, SPR_IBR, SPR_ESASRR, SPR_SEBR,
+                                   SPR_SER, SPR_SP, SPR_LT})))) return C_NEW;
+        if ((xo inside {10'd339, 10'd371, 10'd467}) && !w[0] &&
+            ((spr == SPR_HID1) || (spr == SPR_EAR))) return C_ILLEGAL;
         if ((xo == 10'd598) && ((w & ~32'h0060_0000) == 32'h7c00_04ac) &&
             (w != 32'h7c00_04ac)) return C_NEW;
         return C_OTHER;
@@ -103,6 +128,28 @@ module tb_decode_sweep;
         if (full.special_op != SPECIAL_TRAP || full.branch_bo != w[25:21]) fail("trap");
         if (base_ok) fail("trap accepted without full decode");
         n_trap++;
+      end
+      C_EMUL: begin
+        if (full.special_op != SPECIAL_EMULATION_TRAP) fail("602 string not emulation trap");
+        if (base_ok) fail("602 string accepted without full decode");
+        n_emul++;
+      end
+      C_FPEMU: begin
+        if (full.special_op != SPECIAL_FPU_EMULATE) fail("602 DP form not emulated");
+        if (base_ok) fail("602 DP form accepted without full decode");
+        n_fpemu++;
+      end
+      C_ESA: begin
+        if (full.special_op != (w[6] ? SPECIAL_DSA : SPECIAL_ESA) || full.privileged)
+          fail("602 esa/dsa");
+        if (base_ok) fail("602 esa/dsa accepted without full decode");
+        n_esa++;
+      end
+      C_MFROM: begin
+        if (full.special_op != SPECIAL_MFROM || !full.privileged || !full.gpr_write ||
+            full.src_a != w[20:16] || full.dst != w[25:21]) fail("602 mfrom");
+        if (base_ok) fail("602 mfrom accepted without full decode");
+        n_mfrom++;
       end
       C_NEW: begin
         if (full.special_op inside {SPECIAL_PROGRAM_ILLEGAL, SPECIAL_NONE})
@@ -151,8 +198,12 @@ module tb_decode_sweep;
         if (full.special_op == SPECIAL_PROGRAM_ILLEGAL &&
             full.privileged != spr[4]) fail("undefined SPR privilege");
       end
-    $display("PASS tb_decode_sweep: probes=%0d unchanged=%0d illegal=%0d fp=%0d trap=%0d new=%0d privileged_undefined=%0d",
-             probes, n_same, n_illegal, n_fpu, n_trap, n_new, n_priv);
+    // Every variant sees its own classes; the others must stay empty.
+    if (V602 != (n_emul > 0 && n_fpemu > 0 && n_esa > 0 && n_mfrom > 0)) fail("602 class coverage");
+    if (!V602 && (n_emul + n_fpemu + n_esa + n_mfrom != 0)) fail("602 class on another part");
+    $display("PASS tb_decode_sweep variant=%0d: probes=%0d unchanged=%0d illegal=%0d fp=%0d trap=%0d new=%0d privileged_undefined=%0d emulation=%0d fp_emulated=%0d esa_dsa=%0d mfrom=%0d",
+             VARIANT, probes, n_same, n_illegal, n_fpu, n_trap, n_new, n_priv,
+             n_emul, n_fpemu, n_esa, n_mfrom);
     $finish;
   end
 endmodule

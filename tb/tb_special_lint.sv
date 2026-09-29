@@ -1,0 +1,155 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
+`default_nettype none
+// Lint top: ppc_special with a CPU_VARIANT the core still rejects. Inputs
+// are tied to zero and outputs left open; only elaboration is checked.
+module tb_special_lint #(
+  parameter int VARIANT = 4
+) ();
+  localparam ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::cpu_variant_e'(VARIANT);
+  wire clk_i = '0;
+  wire rst_ni = '0;
+  wire bat_csr_req_ready_i = '0;
+  wire bat_csr_rsp_valid_i = '0;
+  wire [31:0] bat_csr_rsp_data_i = '0;
+  wire bat_csr_rsp_error_i = '0;
+  wire bat_csr_ack_valid_i = '0;
+  wire bat_csr_idle_i = '0;
+  wire segment_csr_req_ready_i = '0;
+  wire segment_csr_rsp_valid_i = '0;
+  wire [31:0] segment_csr_rsp_data_i = '0;
+  wire segment_csr_rsp_error_i = '0;
+  wire segment_csr_ack_valid_i = '0;
+  wire segment_csr_idle_i = '0;
+  wire tlb_inv_req_ready_i = '0;
+  wire tlb_inv_rsp_valid_i = '0;
+  wire tlb_inv_rsp_error_i = '0;
+  wire tlb_inv_ack_valid_i = '0;
+  wire tlb_inv_idle_i = '0;
+  wire tlb_fill_req_ready_i = '0;
+  wire tlb_fill_rsp_valid_i = '0;
+  wire tlb_fill_rsp_error_i = '0;
+  wire tlb_fill_ack_valid_i = '0;
+  wire tlb_fill_idle_i = '0;
+  wire dispatch_valid_i = '0;
+  ppc_pkg::uop_t uop_i;
+  assign uop_i = '0;
+  ppc_pkg::completion_tag_t producer_i;
+  assign producer_i = '0;
+  wire [31:0] pc_i = '0;
+  ppc_pkg::page_miss_t dispatch_page_miss_i;
+  assign dispatch_page_miss_i = '0;
+  wire [31:0] a_i = '0;
+  wire [31:0] b_i = '0;
+  wire [31:0] c_i = '0;
+  wire [31:0] cr_i = '0;
+  wire [2:0] xer_flags_i = '0;
+  wire [6:0] xer_byte_count_i = '0;
+  wire cancel_i = '0;
+  wire bat_recovery_retained_i = '0;
+  wire [31:0] bat_recovery_target_i = '0;
+  wire interrupt_valid_i = '0;
+  wire interrupt_decrementer_i = '0;
+  wire external_irq_i = '0;
+  wire interrupt_trace_i = '0;
+  ppc_pkg::pin_event_t pin_event_i;
+  assign pin_event_i = '0;
+  wire timer_tick_i = '0;
+  wire timebase_enable_i = '0;
+  wire [31:0] interrupt_pc_i = '0;
+  wire frontend_quiescent_i = '0;
+  wire memory_quiescent_i = '0;
+  wire context_ready_i = '0;
+  wire redirect_accepted_i = '0;
+  wire store_authorize_i = '0;
+  wire commit_i = '0;
+  ppc_pkg::completion_tag_t commit_tag_i;
+  assign commit_tag_i = '0;
+  wire result_ready_i = '0;
+  wire dmem_req_ready_i = '0;
+  wire dmem_rsp_valid_i = '0;
+  wire [31:0] dmem_rsp_rdata_i = '0;
+  wire dmem_rsp_error_i = '0;
+  ppc_pkg::data_fault_t dmem_rsp_fault_i;
+  assign dmem_rsp_fault_i = ppc_pkg::data_fault_t'(0);
+  ppc_pkg::page_miss_t dmem_rsp_page_miss_i;
+  assign dmem_rsp_page_miss_i = '0;
+  wire icbi_req_ready_i = '0;
+  wire icache_ctl_ready_i = '0;
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic bat_csr_req_valid_o;
+  logic bat_csr_req_write_o;
+  logic [9:0] bat_csr_req_spr_o;
+  logic [31:0] bat_csr_req_data_o;
+  logic bat_csr_rsp_ready_o;
+  logic bat_csr_commit_o, bat_csr_abort_o;
+  logic bat_csr_ack_ready_o;
+  logic segment_csr_req_valid_o;
+  logic segment_csr_req_write_o;
+  logic [3:0] segment_csr_req_index_o;
+  logic [31:0] segment_csr_req_data_o;
+  logic segment_csr_rsp_ready_o;
+  logic segment_csr_commit_o, segment_csr_abort_o;
+  logic segment_csr_ack_ready_o;
+  logic tlb_inv_req_valid_o;
+  logic [31:0] tlb_inv_req_ea_o;
+  logic tlb_inv_rsp_ready_o;
+  logic tlb_inv_commit_o, tlb_inv_abort_o;
+  logic tlb_inv_ack_ready_o;
+  logic tlb_fill_req_valid_o;
+  logic tlb_fill_req_bank_o;
+  logic [31:0] tlb_fill_req_ea_o;
+  logic [23:0] tlb_fill_req_vsid_o;
+  logic tlb_fill_req_way_o;
+  logic [19:0] tlb_fill_req_rpn_o;
+  logic tlb_fill_req_c_o;
+  logic [3:0] tlb_fill_req_wimg_o;
+  logic [1:0] tlb_fill_req_pp_o;
+  logic tlb_fill_rsp_ready_o;
+  logic tlb_fill_commit_o, tlb_fill_abort_o;
+  logic tlb_fill_ack_ready_o;
+  logic dispatch_ready_o;
+  ppc_pkg::pin_status_t pin_status_o;
+  logic decrementer_taken_o, decrementer_pending_o;
+  logic [31:0] decrementer_pc_o;
+  logic interrupt_taken_o;
+  logic [31:0] interrupt_pc_o;
+  logic frontend_fence_o, context_valid_o;
+  logic result_valid_o;
+  ppc_pkg::result_packet_t result_o;
+  logic branch_commit_redirect_o;
+  logic [31:0] branch_commit_target_o;
+  logic exception_commit_redirect_o;
+  logic [31:0] exception_commit_target_o;
+  logic exception_irrevocable_o;
+  logic exception_halt_o;
+  logic exception_commit_o;
+  logic checkstop_o;
+  logic [31:0] iabr_o;
+  logic busy_o;
+  ppc_pkg::completion_tag_t producer_o;
+  logic store_irrevocable_o;
+  logic [31:0] lr_o, ctr_o;
+  logic [31:0] msr_o, srr0_o, srr1_o;
+  logic dmem_req_valid_o;
+  logic dmem_req_write_o;
+  logic [31:0] dmem_req_addr_o;
+  logic [31:0] dmem_req_wdata_o;
+  logic [3:0] dmem_req_wstrb_o;
+  logic dmem_req_probe_o;
+  logic dmem_rsp_ready_o;
+  logic icbi_req_valid_o;
+  logic [31:0] icbi_req_ea_o;
+  ppc_pkg::dmem_attr_t dmem_req_attr_o;
+  logic icache_ctl_valid_o;
+  logic icache_ctl_enable_o;
+  logic icache_ctl_invalidate_o;
+  /* verilator lint_on UNUSEDSIGNAL */
+  ppc_special #(
+    .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
+    .ENABLE_EXTERNAL_INTERRUPTS(1'b1), .ENABLE_TIMERS(1'b1),
+    .ENABLE_TLB_LOAD(1'b1), .ENABLE_FULL_DECODE(1'b1),
+    .CPU_VARIANT(CPU_VARIANT)
+  ) dut (.*);
+endmodule
+`default_nettype wire

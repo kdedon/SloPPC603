@@ -21,6 +21,9 @@ module tb_exception_state #(
   logic [2:0] state_load_enable;
   logic [31:0] state_load_msr, state_load_srr0, state_load_srr1;
   logic [31:0] msr, srr0, srr1;
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] esasrr_unused;
+  /* verilator lint_on UNUSEDSIGNAL */
   int checks = 0;
 
   ppc_exception_state #(.ENABLE_FULL_DECODE(FULL_DECODE)) dut (
@@ -34,11 +37,12 @@ module tb_exception_state #(
     .result_target_o(result_target),
     .state_load_valid_i(state_load_valid),
     .state_load_ready_o(state_load_ready),
-    .state_load_enable_i(state_load_enable),
+    .state_load_enable_i({1'b0, state_load_enable}),
     .state_load_msr_i(state_load_msr),
     .state_load_srr0_i(state_load_srr0),
     .state_load_srr1_i(state_load_srr1),
-    .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1)
+    .state_load_esasrr_i(32'b0), .event_esa_enable_i(1'b0),
+    .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1), .esasrr_o(esasrr_unused)
   );
 
   task automatic require(input logic condition, input string message);

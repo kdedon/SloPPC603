@@ -1524,8 +1524,24 @@ regression: variant-matrix
 variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-reject-,$(VARIANT_REJECTED)) \
                 $(addprefix variant-divider-,$(VARIANT_IDS)) $(addprefix variant-full-decode-,$(VARIANT_IDS)) \
                 $(addprefix variant-config-,$(VARIANT_ALL)) $(addprefix variant-tlb-miss-,$(VARIANT_ALL)) \
-                $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6
+                $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6 \
+                $(addprefix variant-decode-sweep-,$(filter-out 0,$(VARIANT_ALL))) $(addprefix variant-exception-602-,$(VARIANT_ALL)) \
+                variant-special-lint-602
 	@echo "PASS: variant-matrix (variants $(VARIANT_IDS) built and checked; $(VARIANT_REJECTED) rejected)"
+# 602 decode, SPR and ESA/MSR checks below the rejected core: the decode
+# sweep and exception state at each variant, and the SRU lane linted with
+# the 602 personality.
+variant-decode-sweep-%:
+	mkdir -p $(BUILD_DIR)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_decode_sweep -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-decode-sweep-$* ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_decode_sweep.sv
+	./$(BUILD_DIR)/variant-decode-sweep-$*/Vtb_decode_sweep $(SIM_ARGS)
+variant-exception-602-%:
+	mkdir -p $(BUILD_DIR)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_602 -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-exception-602-$* $(EXCEPTION_RTL) ../tb/tb_exception_602.sv
+	./$(BUILD_DIR)/variant-exception-602-$*/Vtb_exception_602 $(SIM_ARGS)
+variant-special-lint-602:
+	$(VERILATOR) --lint-only -Wall --top-module tb_special_lint -GVARIANT=4 $(RTL) ../tb/tb_special_lint.sv
+	@echo "PASS: ppc_special linted at CPU_602"
 variant-config-%:
 	mkdir -p $(BUILD_DIR)
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_variant_config -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-config-$* ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_variant_config.sv

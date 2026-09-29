@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
-// 603e MSR/SRR0/SRR1 state for one caller-selected committed-boundary event.
+// 603e MSR/SRR0/SRR1 (and 602 ESASRR) state for one caller-selected
+// committed-boundary event.
 // The caller detects the oldest fault and arbitrates simultaneous causes.
 module ppc_exception_state #(
   // Part the build models; the 603 has no SRR1[KEY] (UM C.2).
@@ -27,6 +28,8 @@ module ppc_exception_state #(
   input  logic [3:0]  event_miss_cr0_i,
   input  logic        event_miss_key_i,
   input  logic        event_miss_way_i,
+  // 602 esa: the SE bit of the page or block holding the esa.
+  input  logic        event_esa_enable_i,
 
   output logic        result_valid_o,
   input  logic        result_ready_i,
@@ -37,14 +40,17 @@ module ppc_exception_state #(
   // load stalls.
   input  logic        state_load_valid_i,
   output logic        state_load_ready_o,
-  input  logic [2:0]  state_load_enable_i,
+  // Enables: MSR, SRR0, SRR1, ESASRR.
+  input  logic [3:0]  state_load_enable_i,
   input  logic [31:0] state_load_msr_i,
   input  logic [31:0] state_load_srr0_i,
   input  logic [31:0] state_load_srr1_i,
+  input  logic [31:0] state_load_esasrr_i,
 
   output logic [31:0] msr_o,
   output logic [31:0] srr0_o,
-  output logic [31:0] srr1_o
+  output logic [31:0] srr1_o,
+  output logic [31:0] esasrr_o
 );
   import ppc_pkg::*;
   localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
@@ -53,15 +59,18 @@ module ppc_exception_state #(
   localparam logic [31:0] SRR1_PROGRAM_ILLEGAL = 32'h0008_0000;
   localparam logic [31:0] SRR1_PROGRAM_PRIV    = 32'h0004_0000;
   localparam logic [31:0] SRR1_PROGRAM_TRAP    = 32'h0002_0000;
+  localparam logic [31:0] MSR_MASK = msr_implemented(CPU_CFG.has_602_ext);
   // Full decode has no FPU: MSR[FP] never sets, as on the EC603e (UM 4.5.8).
   localparam logic [31:0] MSR_STORED_MASK = ENABLE_FULL_DECODE ?
-    (MSR_IMPLEMENTED_MASK & ~(32'd1 << MSR_FP)) : MSR_IMPLEMENTED_MASK;
+    (MSR_MASK & ~(32'd1 << MSR_FP)) : MSR_MASK;
+  // MSR bits an exception saves in SRR1; never the 602 AP and SA.
+  localparam logic [31:0] SRR1_SAVE_MASK = MSR_SRR1_MASK & ~MSR_602_MASK;
   // Machine check causes: manual bit 12 MCP, bit 13 TEA.
   localparam logic [31:0] SRR1_MACHINE_CHECK_TEA = 32'h0004_0000;
   localparam logic [31:0] SRR1_MACHINE_CHECK_MCP = 32'h0008_0000;
   localparam logic [31:0] SRR1_MACHINE_CHECK_APE = 32'h0001_0000;
 
-  logic [31:0] msr_q, srr0_q, srr1_q;
+  logic [31:0] msr_q, srr0_q, srr1_q, esasrr_q;
   logic result_valid_q, result_supported_q;
   logic [31:0] result_target_q;
   logic slot_available, event_fire, state_load_fire;
@@ -69,6 +78,7 @@ module ppc_exception_state #(
   assign msr_o = msr_q;
   assign srr0_o = srr0_q;
   assign srr1_o = srr1_q;
+  assign esasrr_o = esasrr_q;
   // Reset immediately withdraws an old response from the external handshake;
   // the registered state itself resets on the next active clock edge.
   assign result_valid_o = rst_ni && result_valid_q;
@@ -85,7 +95,7 @@ module ppc_exception_state #(
     input logic [31:0] old_msr,
     input logic [31:0] cause
   );
-    return (old_msr & MSR_SRR1_MASK) | cause;
+    return (old_msr & SRR1_SAVE_MASK) | cause;
   endfunction
 
   function automatic logic [31:0] miss_srr1(
@@ -109,6 +119,8 @@ module ppc_exception_state #(
     logic [31:0] next_msr;
     begin
       next_msr = old_msr;
+      next_msr[MSR_AP] = 1'b0;
+      next_msr[MSR_SA] = 1'b0;
       next_msr[MSR_POW] = 1'b0;
       next_msr[MSR_TGPR] = 1'b0;
       next_msr[MSR_EE] = 1'b0;
@@ -119,7 +131,7 @@ module ppc_exception_state #(
       next_msr[MSR_DR] = 1'b0;
       next_msr[MSR_RI] = 1'b0;
       next_msr[MSR_LE] = old_msr[MSR_ILE];
-      return next_msr & MSR_IMPLEMENTED_MASK;
+      return next_msr & MSR_MASK;
     end
   endfunction
 
@@ -133,9 +145,10 @@ module ppc_exception_state #(
 
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
-      msr_q <= RESET_MSR & MSR_IMPLEMENTED_MASK;
+      msr_q <= RESET_MSR & MSR_MASK;
       srr0_q <= RESET_SRR0;
       srr1_q <= RESET_SRR1;
+      esasrr_q <= 32'b0;
       result_valid_q <= 1'b0;
       result_supported_q <= 1'b0;
       result_target_q <= 32'b0;
@@ -149,6 +162,8 @@ module ppc_exception_state #(
           msr_q <= state_load_msr_i & MSR_STORED_MASK;
         if (state_load_enable_i[1]) srr0_q <= state_load_srr0_i;
         if (state_load_enable_i[2]) srr1_q <= state_load_srr1_i;
+        if (state_load_enable_i[3] && CPU_CFG.has_602_ext)
+          esasrr_q <= state_load_esasrr_i & ESASRR_WMASK;
       end
 
       if (event_fire) begin
@@ -212,7 +227,7 @@ module ppc_exception_state #(
               if (msr_q[MSR_EE]) begin
                 srr0_q <= event_pc_i;
                 // DEC saves the full SRR1 MSR subset; external saves the low half.
-                srr1_q <= msr_q & MSR_SRR1_MASK;
+                srr1_q <= msr_q & SRR1_SAVE_MASK;
                 msr_q <= exception_msr(msr_q);
                 result_supported_q <= 1'b1;
                 result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0900);
@@ -248,7 +263,8 @@ module ppc_exception_state #(
             EVENT_TLB_D_STORE: begin
               if (ENABLE_TLB_MISS_EXCEPTIONS) begin
                 srr0_q <= event_pc_i;
-                srr1_q <= miss_srr1(msr_q[26:22], msr_q[15:0], event_miss_cr0_i,
+                srr1_q <= miss_srr1(msr_q[26:22] & SRR1_SAVE_MASK[26:22],
+                  msr_q[15:0], event_miss_cr0_i,
                   CPU_CFG.has_srr1_key && event_miss_key_i,
                   event_kind_i == EVENT_TLB_I_MISS,
                   event_miss_way_i, event_kind_i == EVENT_TLB_D_STORE);
@@ -325,9 +341,50 @@ module ppc_exception_state #(
                 result_supported_q <= 1'b1;
                 result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
               end else begin
-                msr_q <= rfi_msr(msr_q, srr1_q) & MSR_STORED_MASK;
+                msr_q <= rfi_msr(msr_q, srr1_q, MSR_MASK) & MSR_STORED_MASK;
                 result_supported_q <= 1'b1;
                 result_target_q <= {srr0_q[31:2], 2'b00};
+              end
+            end
+            EVENT_EMULATION_TRAP: begin
+              // 602UM Table 4-23. The IBR vector prefix is not modelled.
+              if (CPU_CFG.has_602_ext) begin
+                srr0_q <= event_pc_i;
+                srr1_q <= msr_q & 32'h0000_ffff;
+                msr_q <= exception_msr(msr_q);
+                result_supported_q <= 1'b1;
+                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h1600);
+              end
+            end
+            EVENT_ESA, EVENT_DSA: begin
+              // 602UM 2.3.7: esa saves PR, AP, SA, EE in ESASRR and enters
+              // supervisor access; dsa restores them. esa with SA set or off
+              // an SE page, and dsa with SA clear, take a program exception;
+              // the manual names no SRR1 cause, the privileged one is used.
+              if (CPU_CFG.has_602_ext) begin
+                result_supported_q <= 1'b1;
+                if ((event_kind_i == EVENT_ESA) ?
+                    (msr_q[MSR_SA] || !event_esa_enable_i) : !msr_q[MSR_SA]) begin
+                  srr0_q <= event_pc_i;
+                  srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_PRIV);
+                  msr_q <= exception_msr(msr_q);
+                  result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
+                end else begin
+                  if (event_kind_i == EVENT_ESA) begin
+                    esasrr_q <= {28'b0, msr_q[MSR_PR], msr_q[MSR_AP],
+                                 msr_q[MSR_SA], msr_q[MSR_EE]};
+                    msr_q[MSR_PR] <= 1'b0;
+                    msr_q[MSR_AP] <= 1'b0;
+                    msr_q[MSR_SA] <= 1'b1;
+                    msr_q[MSR_EE] <= 1'b0;
+                  end else begin
+                    msr_q[MSR_PR] <= esasrr_q[3];
+                    msr_q[MSR_AP] <= esasrr_q[2];
+                    msr_q[MSR_SA] <= esasrr_q[1];
+                    msr_q[MSR_EE] <= esasrr_q[0];
+                  end
+                  result_target_q <= event_pc_i + 32'd4;
+                end
               end
             end
             default: begin
@@ -356,7 +413,8 @@ module ppc_exception_state #(
       end
       if (state_load_fire) begin
         assert (!$isunknown({state_load_enable_i, state_load_msr_i,
-                             state_load_srr0_i, state_load_srr1_i}))
+                             state_load_srr0_i, state_load_srr1_i,
+                             state_load_esasrr_i}))
           else $error("accepted exception state load contains unknown fields");
       end
       // synthesis translate_on

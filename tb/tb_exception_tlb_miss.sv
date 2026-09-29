@@ -23,9 +23,15 @@ module tb_exception_tlb_miss #(
   logic result_supported_o;
   logic [31:0] result_target_o;
   logic state_load_valid_i, state_load_ready_o;
-  logic [2:0] state_load_enable_i;
+  logic [3:0] state_load_enable_i;
   logic [31:0] state_load_msr_i, state_load_srr0_i, state_load_srr1_i;
   logic [31:0] msr_o, srr0_o, srr1_o;
+  // ESA state is covered by tb_exception_602.
+  logic event_esa_enable_i;
+  logic [31:0] state_load_esasrr_i;
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] esasrr_o;
+  /* verilator lint_on UNUSEDSIGNAL */
   int checks;
 
   ppc_exception_state #(
@@ -52,7 +58,7 @@ module tb_exception_tlb_miss #(
                             input logic [31:0] srr1);
     @(negedge clk_i);
     state_load_valid_i = 1'b1;
-    state_load_enable_i = 3'b111;
+    state_load_enable_i = 4'b0111;
     state_load_msr_i = msr;
     state_load_srr0_i = srr0;
     state_load_srr1_i = srr1;
@@ -61,7 +67,7 @@ module tb_exception_tlb_miss #(
     @(posedge clk_i);
     #1;
     state_load_valid_i = 1'b0;
-    check_word("loaded MSR", msr_o, msr & MSR_IMPLEMENTED_MASK);
+    check_word("loaded MSR", msr_o, msr & msr_implemented(cpu_cfg(CPU_VARIANT).has_602_ext));
     check_word("loaded SRR0", srr0_o, srr0);
     check_word("loaded SRR1", srr1_o, srr1);
   endtask
@@ -128,13 +134,13 @@ module tb_exception_tlb_miss #(
       check_word("disabled result target", result_target_o, 32'b0);
       check_word("disabled SRR0", srr0_o, 32'h1234_5000);
       check_word("disabled SRR1", srr1_o, 32'h8765_4000);
-      check_word("disabled MSR", msr_o, old_msr & MSR_IMPLEMENTED_MASK);
+      check_word("disabled MSR", msr_o, old_msr & msr_implemented(cpu_cfg(CPU_VARIANT).has_602_ext));
     end
     // An unconsumed result excludes a concurrent state load; its metadata and
     // architectural state remain stable under backpressure.
     @(negedge clk_i);
     state_load_valid_i = 1'b1;
-    state_load_enable_i = 3'b111;
+    state_load_enable_i = 4'b0111;
     state_load_msr_i = 32'hffff_ffff;
     state_load_srr0_i = 32'hffff_ffff;
     state_load_srr1_i = 32'hffff_ffff;
@@ -153,6 +159,8 @@ module tb_exception_tlb_miss #(
 
   initial begin
     checks = 0;
+    event_esa_enable_i = 1'b0;
+    state_load_esasrr_i = 32'b0;
     rst_ni = 1'b0;
     event_valid_i = 1'b0;
     event_kind_i = EVENT_SC;
@@ -163,7 +171,7 @@ module tb_exception_tlb_miss #(
     event_miss_way_i = 1'b0;
     result_ready_i = 1'b0;
     state_load_valid_i = 1'b0;
-    state_load_enable_i = 3'b0;
+    state_load_enable_i = 4'b0;
     state_load_msr_i = 32'b0;
     state_load_srr0_i = 32'b0;
     state_load_srr1_i = 32'b0;
@@ -217,7 +225,7 @@ module tb_exception_tlb_miss #(
     event_miss_key_i = 1'b0;
     event_miss_way_i = 1'b0;
     state_load_valid_i = 1'b1;
-    state_load_enable_i = 3'b111;
+    state_load_enable_i = 4'b0111;
     state_load_msr_i = 32'hffff_ffff;
     state_load_srr0_i = 32'hffff_ffff;
     state_load_srr1_i = 32'hffff_ffff;

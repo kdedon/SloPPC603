@@ -88,7 +88,7 @@ and FE1 are stored and have no effect: no FP-enabled exception can occur.
 | SPR | Number | Read | Write |
 |---|---|---|---|
 | PVR | 287 | `cpu_cfg(CPU_VARIANT).pvr`: 0x00070101 PID7v and EC603e, 0x00060101 PID6 ([CPU_VARIANTS.md](CPU_VARIANTS.md)) | Illegal (privileged in problem state) |
-| HID0 | 1008 | Stored bits | Masked by `cpu_cfg().hid0_wmask`: 0xbff9fc99 PID7v and EC603e, 0xbff9fc11 PID6 (no IFEM, ABE) |
+| HID0 | 1008 | Stored bits | Masked by `cpu_cfg().hid0_wmask`: 0xbff9fc99 PID7v and EC603e, 0xbff9fc11 PID6 (no IFEM, ABE), 0x8af97caf 602 |
 | HID1 | 1009 | `PLL_CFG` in bits 0–3, rest zero | Accepted, no effect (read-only); illegal on the 603 |
 | EAR | 282 | E and RID | Masked to E (bit 0) and RID (bits 28–31); illegal, with eciwx/ecowx, on the 602 |
 
@@ -137,6 +137,41 @@ with the lane's single outstanding request; `ppc_bus60x_arbiter` and
 | stwcx. with the reservation | 10010 write-with-flush-atomic |
 | eciwx / ecowx | 11100 / 10100, TBST‖TSIZ = RID |
 | Other loads / stores | 01010 / 00010 (unchanged) |
+
+## 602
+
+With `CPU_VARIANT = CPU_602` decode follows the 602 (602UM 2.1.2, 2.3.4,
+2.3.7, 4.5.7.2, 4.5.18):
+
+| Words | Decode | Taken as |
+|---|---|---|
+| lswi, lswx, stswi, stswx (Rc = 0) | `SPECIAL_EMULATION_TRAP` | Emulation trap 0x1600; `ENABLE_MULTIPLE_STRING` is ignored |
+| fadd, fsub, fmul, fdiv, fmadd, fmsub, fnmadd, fnmsub, fctiw | `SPECIAL_FPU_EMULATE` | FP unavailable while MSR[FP] = 0, emulation trap otherwise |
+| Other FP forms | `SPECIAL_FPU` | FP unavailable; SP/LT tag checks arrive with the 602 FPU |
+| eciwx, ecowx, mfspr/mtspr EAR | Illegal | Program 0x700 |
+| esa (X-form XO 596), dsa (XO 628), all other fields zero | `SPECIAL_ESA`, `SPECIAL_DSA` | User level; see below |
+| mfrom rD,rA (XO 265, rB = 0, Rc = 0) | `SPECIAL_MFROM`, privileged | rD = ROM(rA[22:31]), zero at index 602 and above; privileged program exception in problem state |
+| mfspr/mtspr TCR 984, IBR 986, ESASRR 987, SEBR 990, SER 991, SP 1021, LT 1022 | SPR access | Supervisor-only |
+
+| SPR | Stored bits | Effect |
+|---|---|---|
+| TCR | TI, CRE, L2E, NWE, WIE, SLT (bits 0–6) | None yet (watchdog) |
+| IBR | Bits 0–15 | None yet (vector prefix) |
+| ESASRR | PR, AP, SA, EE (bits 28–31) | Written by esa, read by dsa |
+| SEBR | Bits 0–14 | None yet (protection-only mode) |
+| SER, SP, LT | All | None yet |
+
+Hard reset clears all seven; for SP and LT this is a simulation choice, the
+part leaves them undefined. MSR[AP] (bit 8) and MSR[SA] (bit 9) are stored:
+every exception clears them and saves neither in SRR1; rfi loads them from
+SRR1 bits 8 and 9, as it does bits 5–7. esa saves PR, AP, SA and EE in
+ESASRR, sets SA and clears the other three, and continues at the next
+instruction; dsa restores them. esa with SA set or from a page without SE,
+and dsa with SA clear, take a program exception with the privileged cause
+(the manual names none). The page SE bits come from the 602 MMU, so esa is
+refused in the core until then. The emulation trap saves SRR0 = the
+instruction, SRR1 = MSR bits 16–31, and vectors to 0x1600 under the MSR[IP]
+prefix; the IBR prefix is not modelled.
 
 A stwcx. without the reservation still issues only its strobeless probe. There
 is no data cache, so lwarx never uses RWITM-atomic.

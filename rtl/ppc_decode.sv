@@ -24,7 +24,8 @@ module ppc_decode #(
   // Illegal and invalid forms, traps, FP class, PVR/HID0/HID1/EAR and
   // eciwx/ecowx.
   parameter bit ENABLE_FULL_DECODE = 1'b0,
-  // Part the build models; HID1 and EAR exist only where cpu_cfg() says so.
+  // Part the build models; HID1 and EAR exist only where cpu_cfg() says so,
+  // and the 602 forms and SPRs only on the 602.
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E
 ) (
   input logic [31:0] insn_i,
@@ -66,6 +67,14 @@ module ppc_decode #(
       5'd23, 5'd26: return primary == 6'd63;  // fsel, frsqrte
       default: return 1'b0;
     endcase
+  endfunction
+  // 602 forms that always take the emulation trap: double-precision
+  // arithmetic and fctiw (602UM 2.3.4.2.5-7).
+  function automatic logic fp_602_emulated(input logic [5:0] primary,
+                                           input logic [9:0] xo);
+    return (primary == 6'd63) &&
+           ((xo[4:0] inside {5'd18, 5'd20, 5'd21, 5'd25, 5'd28, 5'd29,
+                             5'd30, 5'd31}) || (xo == 10'd14));
   endfunction
   function automatic logic fp_x_form(input logic [9:0] xo);
     case (xo)
@@ -126,7 +135,9 @@ module ppc_decode #(
             (fp_a_form(insn_i[31:26], insn_i[5:1]) ||
              ((insn_i[31:26] == 6'd63) && fp_x_form(insn_i[10:1])))) begin
           uop_o.illegal = 1'b0;
-          uop_o.special_op = SPECIAL_FPU;
+          uop_o.special_op = (CPU_CFG.fpu == FPU_602_SP) &&
+                             fp_602_emulated(insn_i[31:26], insn_i[10:1]) ?
+                             SPECIAL_FPU_EMULATE : SPECIAL_FPU;
         end
       end
       6'd7: begin
@@ -737,7 +748,12 @@ module ppc_decode #(
                  ((selector == SPR_HID0) ||
                   (CPU_CFG.has_hid1 && (selector == SPR_HID1)) ||
                   (CPU_CFG.has_ear && (selector == SPR_EAR)) ||
-                  (read_form && (selector == SPR_PVR))));
+                  (read_form && (selector == SPR_PVR)))) ||
+                (ENABLE_FULL_DECODE && CPU_CFG.has_602_ext &&
+                 ((selector == SPR_TCR) || (selector == SPR_IBR) ||
+                  (selector == SPR_ESASRR) || (selector == SPR_SEBR) ||
+                  (selector == SPR_SER) || (selector == SPR_SP) ||
+                  (selector == SPR_LT)));
               spr_form_privileged = selector[SPR_PRIV_BIT];
               // 603e ignores the MFTB/MFSPR XO difference, so XO 371 reads every
               // supported selector. Privilege is checked in the core.
@@ -793,8 +809,14 @@ module ppc_decode #(
             end
             10'd597, 10'd725, 10'd533, 10'd661: begin
               // lswi/stswi/lswx/stswx. The 603e accepts rA or rB in the
-              // loaded range and a zero XER count (UM 2.3.4.3.7).
-              if (ENABLE_MULTIPLE_STRING && ENABLE_SUPERVISOR_EXCEPTIONS &&
+              // loaded range and a zero XER count (UM 2.3.4.3.7). The 602
+              // traps every form to its emulation handler (602UM 2.3.4.3.6).
+              if (CPU_CFG.string_emulation_trap) begin
+                if (ENABLE_FULL_DECODE && !insn_i[0]) begin
+                  uop_o.illegal = 1'b0;
+                  uop_o.special_op = SPECIAL_EMULATION_TRAP;
+                end
+              end else if (ENABLE_MULTIPLE_STRING && ENABLE_SUPERVISOR_EXCEPTIONS &&
                   !insn_i[0]) begin
                 uop_o.illegal = 1'b0;
                 uop_o.special_op = insn_i[8] ? SPECIAL_STORE : SPECIAL_LOAD;
@@ -804,6 +826,27 @@ module ppc_decode #(
                 uop_o.mem_size = MEM_WORD;
                 uop_o.mem_left = 1'b1;
                 uop_o.mem_seq = insn_i[7] ? SEQ_STRING_IMM : SEQ_STRING_INDEXED;
+              end
+            end
+            10'd596, 10'd628: begin
+              // 602 esa/dsa: every field but the opcodes is reserved.
+              if (ENABLE_FULL_DECODE && CPU_CFG.has_602_ext &&
+                  (insn_i[25:11] == 15'b0) && !insn_i[0]) begin
+                uop_o.illegal = 1'b0;
+                uop_o.special_op = insn_i[6] ? SPECIAL_DSA : SPECIAL_ESA;
+              end
+            end
+            10'd265: begin
+              // 602 mfrom rD,rA: rB and Rc reserved. Supervisor-level; its
+              // entry says illegal in problem state, 602UM 4.5.7.2 says
+              // privileged for every supervisor instruction. The core raises
+              // the latter.
+              if (ENABLE_FULL_DECODE && CPU_CFG.has_602_ext &&
+                  (insn_i[15:11] == 5'b0) && !insn_i[0]) begin
+                uop_o.illegal = 1'b0;
+                uop_o.special_op = SPECIAL_MFROM;
+                uop_o.gpr_write = 1'b1;
+                uop_o.privileged = 1'b1;
               end
             end
             10'd20, 10'd150: begin

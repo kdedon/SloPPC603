@@ -3,7 +3,8 @@
 `default_nettype none
 // Unit checks of one CPU_VARIANT, including variants the core still rejects:
 // cpu_cfg() SPR-presence flags and PLL_CFG codes against the manuals, and
-// decode of HID1, EAR and eciwx/ecowx as each flag requires.
+// decode of HID1, EAR and eciwx/ecowx as each flag requires; the 602 HID0
+// mask, forms and SPRs, and the mfrom ROM against its formula.
 module tb_variant_config #(
   parameter int VARIANT = 0
 );
@@ -43,13 +44,15 @@ module tb_variant_config #(
 
   // Expected presence per variant: UM 1.3.1.1, Tables 2-2/2-3, App. C (603);
   // 602UM Table 2-6 (602).
-  bit exp_hid1, exp_ear, exp_key, exp_abe;
+  bit exp_hid1, exp_ear, exp_key, exp_abe, exp_602;
+  localparam int spr_602 [7] = '{984, 986, 987, 990, 991, 1021, 1022};
   logic [3:0] legal_codes [$];
   initial begin
     exp_hid1 = CPU_VARIANT != CPU_603;
     exp_ear = CPU_VARIANT != CPU_602;
     exp_key = CPU_VARIANT != CPU_603;
     exp_abe = (CPU_VARIANT == CPU_PID7V_603E) || (CPU_VARIANT == CPU_EC603E);
+    exp_602 = CPU_VARIANT == CPU_602;
     case (CPU_VARIANT)
       CPU_PID6_603E: legal_codes = '{4'b0000, 4'b0001, 4'b0010, 4'b0011, 4'b0100,
                                      4'b0101, 4'b0110, 4'b1000, 4'b1010, 4'b1100,
@@ -66,9 +69,13 @@ module tb_variant_config #(
     check(CFG.has_srr1_key == exp_key, "cfg has_srr1_key");
     check(CFG.has_abe_ifem == exp_abe, "cfg has_abe_ifem");
     check((CFG.hid1_rmask != 0) == exp_hid1, "cfg hid1_rmask");
-    // IFEM (bit 24) and ABE (bit 28) are stored only where they exist.
-    check(CFG.hid0_wmask[7] == exp_abe && CFG.hid0_wmask[3] == exp_abe,
-          "cfg HID0 IFEM/ABE mask");
+    // IFEM (bit 24) and ABE (bit 28) are stored only where they exist. The
+    // 602 layout differs (602UM Table 2-7): bit 24 is PO, no ICE (bit 16).
+    if (CPU_VARIANT == CPU_602)
+      check(CFG.hid0_wmask == 32'h8af9_7caf, "cfg 602 HID0 mask");
+    else
+      check(CFG.hid0_wmask[7] == exp_abe && CFG.hid0_wmask[3] == exp_abe,
+            "cfg HID0 IFEM/ABE mask");
     check(CFG.hid0_rmask == CFG.hid0_wmask, "cfg HID0 read mask");
 
     for (int code = 0; code < 16; code++) begin
@@ -90,6 +97,30 @@ module tb_variant_config #(
     expect_legal(32'h7c63_236c, exp_ear, "ecowx");
     expect_legal(asm_spr(1'b0, 3, 1008), 1'b1, "mfspr HID0");
     expect_legal(asm_spr(1'b0, 3, 287), 1'b1, "mfspr PVR");
+    // 602-only forms and SPRs (602UM 2.1.2, 2.3.7); strings trap there.
+    expect_legal(32'h7c00_04a8, exp_602, "esa");
+    expect_legal(32'h7c00_04e8, exp_602, "dsa");
+    expect_legal(32'h7c64_0212, exp_602, "mfrom r3,r4");
+    expect_legal(32'h7c64_2a12, 1'b0, "mfrom with rB");
+    foreach (spr_602[i]) begin
+      expect_legal(asm_spr(1'b0, 3, spr_602[i]), exp_602, $sformatf("mfspr %0d", spr_602[i]));
+      expect_legal(asm_spr(1'b1, 3, spr_602[i]), exp_602, $sformatf("mtspr %0d", spr_602[i]));
+    end
+    insn = 32'h7c64_04aa;  // lswi r3,r4,0
+    #1;
+    check((uop.special_op == SPECIAL_EMULATION_TRAP) == exp_602, "lswi emulation trap");
+    insn = 32'hfc22_182a;  // fadd f1,f2,f3
+    #1;
+    check((uop.special_op == SPECIAL_FPU_EMULATE) == exp_602, "fadd emulated");
+    insn = 32'hec22_182a;  // fadds f1,f2,f3
+    #1;
+    check(uop.special_op == SPECIAL_FPU, "fadds FP class");
+    for (int i = 0; i < 1024; i++) begin
+      int expected;
+      expected = (i < 602) ?
+        int'($floor(256.0 * $log10(1.0 + 10.0 ** (-real'(i) / 256.0)) + 0.5)) : 0;
+      check(int'(mfrom_rom(10'(i))) == expected, $sformatf("mfrom ROM %0d", i));
+    end
     $display("PASS tb_variant_config variant=%0d: %0d checks", VARIANT, checks);
     $finish;
   end
