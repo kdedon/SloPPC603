@@ -7,13 +7,14 @@
 // a store to a read-only entry misses. Entries taken from a page TLB hit also
 // drop when a later lookup hits the same TLB set, which may move its LRU bit.
 module ppc_micro_tlb #(
-  parameter int ENTRIES = 4
+  parameter int ENTRIES = 4,
+  parameter int TLB_SETS = 32
 ) (
   input  logic clk_i,
   input  logic rst_ni,
   input  logic flush_i,
   input  logic set_flush_i,
-  input  logic [4:0] set_flush_index_i,
+  input  logic [$clog2(TLB_SETS)-1:0] set_flush_index_i,
   input  logic [19:0] lookup_page_i,
   input  logic lookup_write_i,
   output logic hit_o,
@@ -82,7 +83,7 @@ module ppc_micro_tlb #(
     end else begin
       for (int i = 0; i < ENTRIES; i++) begin
         if (set_flush_i && from_tlb_q[i] &&
-            page_q[i][4:0] == set_flush_index_i)
+            page_q[i][$clog2(TLB_SETS)-1:0] == set_flush_index_i)
           valid_q[i] <= 1'b0;
       end
       if (fill_i) begin

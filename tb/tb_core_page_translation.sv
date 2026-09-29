@@ -4,7 +4,8 @@
 // physical effects and GPR results are computed independently of the router.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off UNUSEDSIGNAL */
-module tb_core_page_translation #(parameter bit ENABLE_MICRO_TLB = 1'b1);
+module tb_core_page_translation #(parameter bit ENABLE_MICRO_TLB = 1'b1,
+  parameter int TLB_SETS = 0);
   import ppc_pkg::*;
   logic clk_i=0, rst_ni=0;
   always #5 clk_i=~clk_i;
@@ -53,7 +54,7 @@ module tb_core_page_translation #(parameter bit ENABLE_MICRO_TLB = 1'b1);
 
   logic [32:0] unused_icbi_core;
   logic unused_checkstop;
-  ppc_core_bat #(.RESET_PC(32'b0),.ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
+  ppc_core_bat #(.RESET_PC(32'b0),.ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),.TLB_SETS(TLB_SETS),.ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1)) dut (
     .icache_ctl_ready_i(1'b1),
@@ -277,6 +278,7 @@ module tb_core_page_translation #(parameter bit ENABLE_MICRO_TLB = 1'b1);
     check(load_killed && loads==0 && physical_reads==1 && physical_writes==0 &&
       dut.core.regfile.gpr[6]==0 && segment_commits==1,
       "canceled page load changed GPR or failed to drain");
-    $display("PASS actual-core page integration: %0d checks",checks);$finish;
+    $display("PASS actual-core page integration: sets=%0d %0d checks",
+      TLB_SETS == 0 ? 32 : TLB_SETS,checks);$finish;
   end
 endmodule

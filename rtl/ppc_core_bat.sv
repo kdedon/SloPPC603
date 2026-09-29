@@ -35,7 +35,9 @@ module ppc_core_bat #(
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
-  parameter logic [3:0] PLL_CFG = 4'b0000
+  parameter logic [3:0] PLL_CFG = 4'b0000,
+  // Sets per TLB; 0 takes the variant's geometry.
+  parameter int TLB_SETS = 0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -150,6 +152,8 @@ module ppc_core_bat #(
   output logic pimem_error_o,
   output logic busy_o
 );
+  localparam int TLB_SETS_EFFECTIVE =
+    TLB_SETS != 0 ? TLB_SETS : ppc_pkg::cpu_tlb_sets(CPU_VARIANT);
   ppc_pkg::page_miss_t imem_rsp_page_miss, dmem_rsp_page_miss;
   logic core_rst_n, core_halted, ifetch_fatal;
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
@@ -336,6 +340,7 @@ module ppc_core_bat #(
     .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
     .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
+    .TLB_SETS(TLB_SETS_EFFECTIVE),
     .ENABLE_DATA_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT)) router (
     .tlb_fill_req_valid_i(tlb_fill_req_valid),
     .tlb_fill_req_bank_i(tlb_fill_req_bank),

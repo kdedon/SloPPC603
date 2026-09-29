@@ -5,7 +5,8 @@
 /* verilator lint_off BLKSEQ */
 module tb_tlb_prepared_refill #(
   parameter bit RUNTIME_REFILL = 1'b0,
-  parameter bit RUNTIME_INVALIDATE = 1'b0
+  parameter bit RUNTIME_INVALIDATE = 1'b0,
+  parameter int TLB_SETS = 32
 );
   logic clk_i=0;
   always #5 clk_i=~clk_i;
@@ -38,7 +39,7 @@ module tb_tlb_prepared_refill #(
   localparam logic [31:0] OTHER=32'h1000_3234;
   localparam logic [23:0] A=24'h123456,B=24'h654321;
   ppc_tlb_service #(.ENABLE_RUNTIME_INVALIDATE(RUNTIME_INVALIDATE),
-    .ENABLE_RUNTIME_REFILL(RUNTIME_REFILL)) dut (.*);
+    .ENABLE_RUNTIME_REFILL(RUNTIME_REFILL), .TLB_SETS(TLB_SETS)) dut (.*);
 
   task automatic check(input bit good,input string why);
     checks++;
@@ -359,8 +360,8 @@ module tb_tlb_prepared_refill #(
     request(3'd2,0,OTHER,0,0,0,0,1,0,2);
     consume();
     lookup(0,OTHER,A,0,0,0,0,0);
-    $display("PASS prepared TLB refill inv=%0d fill=%0d checks=%0d",
-      RUNTIME_INVALIDATE,RUNTIME_REFILL,checks);
+    $display("PASS prepared TLB refill inv=%0d fill=%0d sets=%0d checks=%0d",
+      RUNTIME_INVALIDATE,RUNTIME_REFILL,TLB_SETS,checks);
     $finish;
   end
   initial begin #500000; $fatal(1,"prepared refill watchdog"); end

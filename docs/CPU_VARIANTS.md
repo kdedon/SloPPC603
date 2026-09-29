@@ -82,8 +82,8 @@ in `ppc_pkg.sv` is the PID7v mask.
 | tlbsync | TLBISYNC pin | = | = | no-op, no pin |
 | Source | UM PDF 43, 73 / 1-3, 1-33 | = | UM §C.2 PDF 428 / C-16; §C.2.1 PDF 428–431 / C-16–C-19 | 602UM §1.1.1 PDF 38–40 / 1-2–1-4; Table 2-4 PDF 86 / 2-10; §2.1.1.2 PDF 84 / 2-8; §5.1.1 PDF 228–229 / 5-6–5-7; §5.4.4 PDF 255–256 / 5-33–5-34; §5.6 PDF 280+ / 5-58+; PDF 141 / 2-65 |
 
-Main: `ppc_tlb_service.sv` stores 64 entries per bank and indexes with
-`ea[16:12]`; `ppc_bat_translate.sv` has four entries; `ppc_completion.sv`
+Main: `ppc_tlb_service.sv` takes `TLB_SETS` from `cfg.tlb_sets` (V6): 32 sets
+indexed by `ea[16:12]`, or 16 indexed by `ea[15:12]`; `ppc_bat_translate.sv` has four entries; `ppc_completion.sv`
 raises `DATA_DSI_DIRECT_STORE` for T=1; `ppc_exception_state.sv` forms
 SRR1[KEY].
 
@@ -358,6 +358,8 @@ choice and a test of that choice, not a fidelity claim:
 - 602 SP SPR number (Table 2-6 prints 102; resolved as 1021 in the FPU_602
   contract).
 - PVR revision fields for all variants (manuals give only starting levels).
+- 602 TLB index: Figure 5-9 and two tables give EA16–19 and 16 `tlbie`s; §2.3.6.3.3
+  prose and the `tlbld`/`tlbli` pseudocode say EA15–19 and 32. V6 follows the figure.
 
 ## Status
 
@@ -367,7 +369,8 @@ choice and a test of that choice, not a fidelity claim:
 | V1 | Done: `CPU_VARIANT` on `ppc603e`, every core wrapper and measurement top, down to `ppc_core` and `ppc_special`; PVR, divide latency and HID0/HID1 read and write masks come from `cpu_cfg()`; PID7v PVR is `0x00070101` in RTL, reference runner, ISA metadata and firmware |
 | V2 | Done: PID6 stores neither HID0[IFEM] nor HID0[ABE], and its ABE broadcast pin status is tied off; `ppc603e` rejects a `PLL_CFG` outside the variant's table or not running the bus 1:1, and defaults to PLL bypass on PID7v and EC603e; `test-reference-pid6` runs the reference corpus with the RTL at PID6 against DingusPPC `MPC603E`. Open: PID6 misaligned eciwx/ecowx in hardware (deferred to V13, see §1.4) |
 | V3 | Done: `cfg.has_hid1`, `cfg.has_ear` and `cfg.has_srr1_key` gate decode (HID1; EAR, eciwx, ecowx) and SRR1[KEY]; absent SPRs take the illegal-instruction program exception; ISA-matrix 603 column is `legal` for all 335 reviewed forms (UM App. C lists no ISA difference) |
-| V4 onward | Not started |
+| V6 | Done: `TLB_SETS` (32 or 16, other values fail elaboration) sizes `ppc_tlb_service`, its entry RAMs, the router's micro-TLB set flush and `tlbie`/`tlbld`/`tlbli` set selection; `ppc_core_bat` derives it from `cfg.tlb_sets` unless a bench overrides it. 16 sets index EA16–19 and tag EA4–15 (602UM Figure 5-9; the manual's EA15–19 prose is a 603e copy, see [TLB_SERVICE.md](TLB_SERVICE.md#geometry-parameter)). Miss derivation (IMISS/DMISS, ICMP/DCMP, HASH1/HASH2) and SRR1[WAY] need no change. The 602 NE/SE/WE bits and protection-only mode stay for V9 |
+| V4, V5, V7 onward | Not started |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
 behave the same. DingusPPC distinguishes PID6 from PID7v only by PVR, and
@@ -376,6 +379,33 @@ consistency of the integer path at PID6, not any PID6-specific behavior.
 The 603 and 602 still fail elaboration of the core; their SPR presence,
 SRR1[KEY] and PLL tables are checked at unit level (`tb_variant_config`,
 `tb_exception_tlb_miss`).
+
+Recorded: `make -C sim -j2 ci` (includes `regression`, `variant-matrix` and `test-tlb-geometry-16`), commit 72c9781, 2026-09-29.
+Pass (V6): 601 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage
+76.5% (1771/2315, 14 waived arms, 21 runs). Per geometry:
+
+| Bench | 32 sets | 16 sets |
+| --- | --- | --- |
+| `tb_tlb_service` direct | 876 transactions, 5345 checks | 588, 3617 |
+| `tb_tlb_service` + `tlb_vectors.py` oracle | 17364 transactions | 16964 transactions |
+| `tb_tlb_prepared_refill` (inv=1 fill=1) | 419 checks | 419 checks |
+| `tb_tlb_runtime_fill_router` | 1235 checks | 723 checks |
+| `tb_micro_tlb_router` seed 2, 900 random ops | 3519 checks | 3519 checks |
+| `tb_core_page_translation` (`ppc_core_bat`) | 928 checks | 928 checks |
+
+The 32-set oracle corpus is byte-identical to the one before V6. `TLB_SETS=64`
+fails elaboration. A mutation indexing the 16-set TLB with `EA[16:13]` fails the
+direct bench. `tb_core_tlb_load` and `tb_core_tlb_miss` instantiate `ppc_core`
+without TLB storage, so geometry does not reach them; they run once. This does
+not establish a 602 core build, 602 page protection or protection-only mode, or
+the compiled MMU firmware at 16 sets.
+
+Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`, commit 72c9781, 2026-09-29.
+Fit succeeds; 50 MHz met at every corner (worst setup +5.194 ns, hold +0.103 ns);
+slow-corner Fmax 67.54 MHz; at 15.152 ns (66 MHz) 0 failing endpoints. 11,426
+ALMs, 52 RAM blocks, 2 DSP blocks. Before this round the variant code did not
+analyze in Quartus 18.1 (module-scope `$fatal` generate blocks, `inside`, struct
+member select in a parameter); V6 fixed those.
 
 Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 9d5b8ff, 2026-09-29.
 Pass: 593 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
-module tb_tlb_service;
+module tb_tlb_service #(parameter int TLB_SETS = 32);
+  localparam int SET_W = $clog2(TLB_SETS);
   logic clk = 0;
   always #5 clk <= !clk;
   logic rst_n = 0, req_valid = 0, req_ready, rsp_valid, rsp_ready = 0;
@@ -35,7 +36,7 @@ module tb_tlb_service;
   logic unused_runtime_ack, unused_runtime_idle;
   assign rsp.kind = expanded_rsp_kind[1:0];
   int checks = 0, transactions = 0;
-  ppc_tlb_service dut (
+  ppc_tlb_service #(.TLB_SETS(TLB_SETS)) dut (
     .prepare_commit_i(1'b0), .prepare_abort_i(1'b0),
     .commit_ack_valid_o(unused_runtime_ack),
     .commit_ack_ready_i(1'b1),
@@ -89,16 +90,22 @@ module tb_tlb_service;
     check(rsp === expected, $sformatf("%s expected=%023h actual=%023h", label_text, expected, rsp));
   endtask
   // Per-set LRU shadow (UM Table 5-10): a miss reports the way not used last.
-  logic [1:0][31:0] lru_model = '0;
+  logic [1:0][TLB_SETS-1:0] lru_model = '0;
+  // Takes the whole EA and uses only its index bits.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic [SET_W-1:0] set_of(input logic [31:0] ea);
+    return ea[12 +: SET_W];
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   // Responses echo kind, bank and EA; a refill also needs its request way.
   function automatic response_t with_lru(input response_t e);
     response_t result;
     result = e;
-    if (e.miss) result.way = lru_model[e.bank][e.ea[16:12]];
+    if (e.miss) result.way = lru_model[e.bank][set_of(e.ea)];
     return result;
   endfunction
   task automatic note_lru(input logic [1:0] kind, input bit bank,
-                          input logic [4:0] set, input bit refill_way,
+                          input logic [SET_W-1:0] set, input bit refill_way,
                           input bit hit_now, input bit hit_way, input bit blocked);
     if (hit_now) lru_model[bank][set] = !hit_way;
     if (kind == 2'd1 && !blocked) lru_model[bank][set] = !refill_way;
@@ -115,7 +122,7 @@ module tb_tlb_service;
     end
     @(negedge clk); rsp_ready = 1;
     tick(); check(!rsp_valid, "response consumed");
-    note_lru(want.kind, want.bank, want.ea[16:12], r.way, want.hit, want.way,
+    note_lru(want.kind, want.bank, set_of(want.ea), r.way, want.hit, want.way,
              want.privileged || want.refill_rejected);
   endtask
   task automatic reset_service;
@@ -140,10 +147,10 @@ module tb_tlb_service;
     // Entire geometry, two banks, two ways; explicit distinct contexts coexist.
     for (int bank = 0; bank < 2; bank++) begin
       for (int way = 0; way < 2; way++) begin
-        for (int set_no = 0; set_no < 32; set_no++) begin
+        for (int set_no = 0; set_no < TLB_SETS; set_no++) begin
           r = '0; r.kind = 1; r.bank = 1'(bank); r.way = 1'(way);
           r.ea = 32'h12300000 + 32'(set_no * 4096);
-          r.vsid = 24'h804201 + 24'(way); r.rpn = 20'hfc000 + 20'(bank * 64 + way * 32 + set_no);
+          r.vsid = 24'h804201 + 24'(way); r.rpn = 20'hfc000 + 20'((bank * 2 + way) * TLB_SETS + set_no);
           r.c = 1; r.pp = 2; r.wimg = 4'b0010;
           transact(r, echo(r));
         end
@@ -151,17 +158,22 @@ module tb_tlb_service;
     end
     for (int bank = 0; bank < 2; bank++) begin
       for (int way = 0; way < 2; way++) begin
-        for (int set_no = 0; set_no < 32; set_no++) begin
+        for (int set_no = 0; set_no < TLB_SETS; set_no++) begin
           r = '0; r.bank = 1'(bank);
           // Different segment nibble and nonzero offset: VSID owns context identity.
           r.ea = 32'he2300000 + 32'(set_no * 4096) + 4095;
           r.vsid = 24'h804201 + 24'(way);
-          physical = 32'hfc000000 + 32'((bank * 64 + way * 32 + set_no) * 4096) + 4095;
+          physical = 32'hfc000000 + 32'(((bank * 2 + way) * TLB_SETS + set_no) * 4096) + 4095;
           transact(r, hit(r, 1'(way), physical, 2, 2, 1), set_no == 0 ? 3 : 0);
           r.vsid = r.vsid ^ 24'h800000; e = echo(r); e.miss = 1;
           transact(r, e); // High VSID bit matters.
           r.vsid = r.vsid ^ 24'h800000; r.ea = r.ea ^ 32'h00020000;
           e = echo(r); e.miss = 1; transact(r, e); // Extra EA tag bit beyond API matters.
+          if (TLB_SETS == 16) begin
+            // EA15 is a tag bit, not an index bit, with 16 sets.
+            r.ea = r.ea ^ 32'h00030000;
+            e = echo(r); e.miss = 1; transact(r, e);
+          end
         end
       end
     end
@@ -183,7 +195,7 @@ module tb_tlb_service;
     r.kind = 1; e = echo(r); e.privileged = 1; transact(r, e);
     r.kind = 0; transact(r, hit(r, 1, 32'hfc020000, 2, 2, 1));
     // Each indexed invalidate clears four entries, irrespective of API/VSID/bank.
-    for (int set_no = 0; set_no < 32; set_no++) begin
+    for (int set_no = 0; set_no < TLB_SETS; set_no++) begin
       r = '0; r.kind = 2; r.bank = 1; r.ea = 32'hffe00000 + 32'(set_no * 4096);
       r.vsid = 24'hffffff; transact(r, echo(r));
       for (int bank = 0; bank < 2; bank++) begin
@@ -192,9 +204,10 @@ module tb_tlb_service;
           r.vsid = 24'h804201 + 24'(way); e = echo(r); e.miss = 1; transact(r, e);
         end
       end
-      if (set_no != 31) begin
+      if (set_no != TLB_SETS - 1) begin
         r.kind = 0; r.bank = 1; r.ea = 32'h12300000 + 32'((set_no + 1) * 4096);
-        r.vsid = 24'h804202; physical = 32'hfc060000 + 32'((set_no + 1) * 4096);
+        r.vsid = 24'h804202;
+        physical = 32'hfc000000 + 32'((3 * TLB_SETS + set_no + 1) * 4096);
         transact(r, hit(r, 1, physical, 2, 2, 1));
       end
     end
@@ -244,13 +257,13 @@ module tb_tlb_service;
     r = '0; r.bank = 1; r.ea = 32'h45678123; r.vsid = 24'h123456;
     held = hit(r, 0, 32'hab123123, 15, 3, 0);
     @(negedge clk); req = r; req_valid = 1; rsp_ready = 1;
-    accept_tick(); transactions++; compare(held, "snapshot initial"); note_lru(held.kind, held.bank, held.ea[16:12], r.way, held.hit, held.way, 0);
+    accept_tick(); transactions++; compare(held, "snapshot initial"); note_lru(held.kind, held.bank, set_of(held.ea), r.way, held.hit, held.way, 0);
     next_r = r; next_r.kind = 1; next_r.rpn = 20'hfedcb; next_r.pp = 2; next_r.c = 1;
     next_e = echo(next_r);
     @(negedge clk); req = next_r; rsp_ready = 0;
     repeat (5) begin tick(); check(!req_ready, "held blocks remap"); compare(held, "immutable snapshot"); end
     @(negedge clk); rsp_ready = 1; #1; check(req_ready, "turnover accepts remap");
-    accept_tick(); transactions++; compare(next_e, "remap response"); note_lru(next_e.kind, next_e.bank, next_e.ea[16:12], next_r.way, 0, 0, 0);
+    accept_tick(); transactions++; compare(next_e, "remap response"); note_lru(next_e.kind, next_e.bank, set_of(next_e.ea), next_r.way, 0, 0, 0);
     @(negedge clk); req_valid = 0; tick(); check(!rsp_valid, "remap consumed");
     transact(r, hit(r, 0, 32'hfedcb123, 0, 2, 1));
     // Reset while a live response and another refill are offered cancels both.
@@ -336,7 +349,7 @@ module tb_tlb_service;
     reset_service();
     if ($value$plusargs("VECTORS=%s", vector_path)) vectors(vector_path);
     else direct_tests();
-    $display("TLB service PASS transactions=%0d checks=%0d", transactions, checks);
+    $display("TLB service PASS sets=%0d transactions=%0d checks=%0d", TLB_SETS, transactions, checks);
     $finish;
   end
   initial begin

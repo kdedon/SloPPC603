@@ -113,11 +113,13 @@ module ppc603e #(
 
   // Unimplemented variants are rejected by the core.
   localparam bit CHECK_PLL = cpu_variant_supported(CPU_VARIANT);
+  // synthesis translate_off
   if (CHECK_PLL && !pll_cfg_legal(CPU_VARIANT, PLL_CFG)) begin : g_reject_pll_code
     $fatal(1, "ppc603e: PLL_CFG %04b is not a code of CPU_VARIANT %0d", PLL_CFG, CPU_VARIANT);
   end else if (CHECK_PLL && !pll_cfg_bus_1to1(PLL_CFG)) begin : g_reject_pll_ratio
     $fatal(1, "ppc603e: PLL_CFG %04b is not 1:1 or PLL bypass; the core runs 1:1", PLL_CFG);
   end
+  // synthesis translate_on
 
   // Asynchronous pins pass two flops. pin_meta_q is the only load of each pin.
   // Powering up at zero holds the core in reset until HRESET is sampled.

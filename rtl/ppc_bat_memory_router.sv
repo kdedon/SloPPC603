@@ -21,7 +21,8 @@ module ppc_bat_memory_router #(
   // A physical TEA returns as a machine-check fault instead of stopping the
   // instruction lane or reporting an untyped data error.
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
-  parameter int MICRO_TLB_ENTRIES = 4
+  parameter int MICRO_TLB_ENTRIES = 4,
+  parameter int TLB_SETS = 32
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -722,11 +723,11 @@ module ppc_bat_memory_router #(
     (ENABLE_TLB_LOAD && tlb_fill_owner && tlb_fill_commit_i) ||
     tlb_mgmt_owner;
 
-  ppc_micro_tlb #(.ENTRIES(MICRO_TLB_ENTRIES)) i_utlb (
+  ppc_micro_tlb #(.ENTRIES(MICRO_TLB_ENTRIES), .TLB_SETS(TLB_SETS)) i_utlb (
     .clk_i, .rst_ni,
     .flush_i(utlb_flush),
     .set_flush_i(route_set_touch && owner_instruction_q),
-    .set_flush_index_i(request_ea_q[16:12]),
+    .set_flush_index_i(request_ea_q[12 +: $clog2(TLB_SETS)]),
     .lookup_page_i(imem_req_addr[31:12]), .lookup_write_i(1'b0),
     .hit_o(i_hit_raw), .hit_rpn_o(i_hit_rpn), .hit_wimg_o(i_hit_wimg),
     .fill_i(ENABLE_MICRO_TLB && route_allow && owner_instruction_q),
@@ -735,11 +736,11 @@ module ppc_bat_memory_router #(
     .fill_from_tlb_i(route_from_tlb)
   );
 
-  ppc_micro_tlb #(.ENTRIES(MICRO_TLB_ENTRIES)) d_utlb (
+  ppc_micro_tlb #(.ENTRIES(MICRO_TLB_ENTRIES), .TLB_SETS(TLB_SETS)) d_utlb (
     .clk_i, .rst_ni,
     .flush_i(utlb_flush),
     .set_flush_i(route_set_touch && !owner_instruction_q),
-    .set_flush_index_i(request_ea_q[16:12]),
+    .set_flush_index_i(request_ea_q[12 +: $clog2(TLB_SETS)]),
     .lookup_page_i(dmem_req_addr[31:12]), .lookup_write_i(dmem_req_write),
     .hit_o(d_hit_raw), .hit_rpn_o(d_hit_rpn), .hit_wimg_o(d_hit_wimg),
     .fill_i(ENABLE_MICRO_TLB && route_allow && !owner_instruction_q),
@@ -817,7 +818,8 @@ module ppc_bat_memory_router #(
   // invalidations commit at acceptance; CPU page lookups only observe it.
   ppc_tlb_service #(
     .ENABLE_RUNTIME_INVALIDATE(ENABLE_TLB_INVALIDATE),
-    .ENABLE_RUNTIME_REFILL(ENABLE_TLB_LOAD)
+    .ENABLE_RUNTIME_REFILL(ENABLE_TLB_LOAD),
+    .TLB_SETS(TLB_SETS)
   ) tlb (
     .clk_i, .rst_ni,
     .prepare_commit_i(running_q &&
