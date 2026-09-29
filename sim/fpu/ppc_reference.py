@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Standalone PowerPC FP result model layered over exact integer arithmetic."""
 from reference import B32, B64, calculate, decode, pack_ratio
 

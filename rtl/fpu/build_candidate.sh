@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 set -euo pipefail
 
 if [[ $# -ne 2 || ( "$1" != 0 && "$1" != 1 ) ]]; then

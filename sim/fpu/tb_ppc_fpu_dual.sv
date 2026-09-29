@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Public-port ordered FP + LSU reservation and paired-retirement checks.
 module tb_ppc_fpu_dual #(

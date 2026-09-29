@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Independent raw-bit corpus for the compile-time MPC602 arithmetic unit.
 
 All architectural source operands are binary32 values widened exactly into

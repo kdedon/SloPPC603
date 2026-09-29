@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 module tb_ppc_fpu_shell;
     import ppc_pkg::*;
@@ -426,6 +428,99 @@ module tb_ppc_fpu_shell;
         checks = checks + 1;
     endtask
 
+    // Forward-bus and store-launch cycles for the dependent-distance test.
+    localparam int FMR_DISTANCE = 3;
+    localparam int STFD_DISTANCE = 0;
+    int cycle_now = 0;
+    int forward_cycle [0:255];
+    int store_launch_cycle = -1;
+    always @(posedge clk_i) begin
+        cycle_now <= cycle_now + 1;
+        if (forward_valid_o) forward_cycle[forward_o.tag.generation] <= cycle_now;
+        if (forward1_valid_o) forward_cycle[forward1_o.tag.generation] <= cycle_now;
+        if (mem_req_valid_o && mem_req_o.write && mem_req_o.tag.generation == 8'd253 &&
+            store_launch_cycle < 0)
+            store_launch_cycle <= cycle_now;
+    end
+
+    task automatic send_when_ready(input logic [31:0] instruction,
+                                   input completion_tag_t identity,
+                                   input logic [31:0] base);
+        int attempts;
+        @(negedge clk_i);
+        issue_i = '0;
+        issue_i.tag = identity;
+        issue_i.insn = instruction;
+        issue_i.gpr_a = base;
+        issue_i.msr_fp = 1'b1;
+        issue_valid_i = 1'b1;
+        attempts = 0;
+        #1;
+        while (!issue_ready_o) begin
+            @(negedge clk_i);
+            #1;
+            attempts++;
+            if (attempts > 40) $fatal(1, "dependent issue timeout tag=%h", identity);
+        end
+        @(posedge clk_i);
+        #1;
+        issue_valid_i = 1'b0;
+    endtask
+
+    // Back-to-back consumers of an arithmetic result: fadd, fmr and stfd.
+    task automatic dependent_distances();
+        int attempts;
+        send_issue(fp_insn(63, 21, 28, 28, 21), tag(0, 250), 0, 0, 1'b1);
+        send_when_ready(fp_insn(63, 22, 21, 28, 21), tag(1, 251), 0);
+        send_when_ready(fp_insn(63, 23, 0, 22, 72), tag(2, 252), 0);
+        send_when_ready(dform(54, 22, 1, 0), tag(3, 253), 32'h00006000);
+        attempts = 0;
+        while (!(mem_req_valid_o && mem_req_o.tag == tag(3, 253))) begin
+            @(negedge clk_i);
+            attempts++;
+            if (attempts > 40) $fatal(1, "dependent stfd did not launch");
+        end
+        if (mem_req_o.data != 64'h4818_0000_0000_0000)
+            $fatal(1, "dependent stfd data %h", mem_req_o.data);
+        mem_req_ready_i = 1'b1;
+        @(posedge clk_i);
+        #1;
+        mem_req_ready_i = 1'b0;
+        @(negedge clk_i);
+        mem_rsp_i = '0;
+        mem_rsp_i.tag = tag(3, 253);
+        mem_rsp_valid_i = 1'b1;
+        @(posedge clk_i);
+        #1;
+        mem_rsp_valid_i = 1'b0;
+        await_result(tag(0, 250));
+        if (result_o.fpr_value != 64'h4810_0000_0000_0000) $fatal(1, "dependent producer");
+        commit(tag(0, 250));
+        await_result(tag(1, 251));
+        if (result_o.fpr_value != 64'h4818_0000_0000_0000) $fatal(1, "dependent fadd");
+        commit(tag(1, 251));
+        await_result(tag(2, 252));
+        if (result_o.fpr_value != 64'h4818_0000_0000_0000) $fatal(1, "dependent fmr");
+        commit(tag(2, 252));
+        await_result(tag(3, 253));
+        if (!result_o.store) $fatal(1, "dependent stfd result");
+        @(negedge clk_i);
+        abort_valid_i = 1'b1;
+        abort_tag_i = tag(3, 253);
+        @(posedge clk_i);
+        #1;
+        abort_valid_i = 1'b0;
+        $display("DEPENDENT fadd->fadd=%0d fadd->fmr=%0d fadd->stfd=%0d",
+                 forward_cycle[251] - forward_cycle[250],
+                 forward_cycle[252] - forward_cycle[251],
+                 store_launch_cycle - forward_cycle[251]);
+        if (forward_cycle[251] - forward_cycle[250] != 3 ||
+            forward_cycle[252] - forward_cycle[251] != FMR_DISTANCE ||
+            store_launch_cycle - forward_cycle[251] != STFD_DISTANCE)
+            $fatal(1, "dependent distance changed");
+        checks = checks + 8;
+    endtask
+
     initial begin
         rst_ni = 1'b0;
         issue_valid_i = 1'b0;
@@ -582,6 +677,7 @@ module tb_ppc_fpu_shell;
         stfs_large(5'd29, 64'h7e37_e43c_8800_759c, 32'h71bf_21e4, 8'd244);
         stfs_large(5'd30, 64'hfe37_e43c_8800_759c, 32'hf1bf_21e4, 8'd246);
         stfs_large(5'd31, 64'h7fef_ffff_ffff_ffff, 32'h7f7f_ffff, 8'd248);
+        dependent_distances();
 
         send_issue(fp_aform(63, 7, 6, 2, 5, 23, 1'b1), tag(0, 18), 0, 0, 1'b1);
         await_result(tag(0, 18));

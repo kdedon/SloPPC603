@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Raw architectural arithmetic packets from the independent PPC model."""
 import argparse
 from pathlib import Path

@@ -123,6 +123,34 @@ pending state. Neither cancellation path publishes a store, changes FPR tags, or
 updates architectural FPSCR/CR. Core-wide serialization and global retirement
 order remain obligations of the eventual integration interface.
 
+## Registered finish
+
+The arithmetic unit's rounded result is registered in its response queue on
+the finish edge. Same-cycle uses of the unregistered finish value are limited
+to three places:
+
+- a 2:1 operand mux directly in front of the arithmetic input and divider
+  registers, selected per operand (`req_fwd_i`);
+- store data in the preparation packet and its pending copy;
+- the forwarding buses' payload.
+
+The mux selects come from a per-entry `finishing` bit, set one cycle early
+from the unit's `next_finish_valid_o/next_finish_tag_o`. Readiness uses
+`finish_write_o`, which depends only on registered state. A move or select
+that captures a finishing operand marks it and substitutes the registered reply
+in its second stage; a select whose selector is finishing waits for both
+alternatives. Retirement, FPSCR, CR, FPR writes and pending capture read the
+registered reply one cycle after finish; the previous RTL could retire on the
+finish cycle itself. Same-edge retirement still frees queue and rename credits,
+so sustained single-cycle issue is unchanged. The FPR-rename and barrier counts
+are registered.
+
+Execution latency is unchanged: dependent `fadd`, `fmr` and `stfd` distances
+match the previous RTL (3, 3 and same-cycle store launch), and the forward bus
+still presents results on the finish cycle. The 602 build still gates source
+readiness and store traps on its late emulation-trap and single-range checks.
+The pending queue still shifts on retirement; a circular buffer remains open.
+
 ## Memory and 602 tag SPRs
 
 Memory packets retain complete instruction tags. Fault-free preparation does not

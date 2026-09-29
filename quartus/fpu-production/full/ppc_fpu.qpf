@@ -1,2 +1,4 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 QUARTUS_VERSION = "17.0"
 PROJECT_REVISION = "ppc_fpu"

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Public-port dispatch, forward, and retirement throughput check.
 module tb_ppc_fpu_stream #(

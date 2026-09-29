@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 #include "Vss_fpu_candidate.h"
 #include "verilated.h"
 #include <algorithm>

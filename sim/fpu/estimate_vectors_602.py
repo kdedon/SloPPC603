@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Independent 602 FRSQRTE bound, binary32-result and status oracle.
 
 The 602 manual specifies one-part-in-32 accuracy but no exact table bits.

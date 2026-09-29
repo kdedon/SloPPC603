@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Verify and print the reciprocal-square-root estimate constants."""
 
 from decimal import Decimal, getcontext

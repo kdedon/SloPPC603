@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Deterministic raw-bit corpus and independent result comparison."""
 import argparse
 from collections import Counter

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Independent acceptance checks for the 603e FPU execution pipeline.
 // Cycle zero is the rising edge at which a request is accepted. A result
@@ -22,14 +24,39 @@ module tb_ppc_fpu_timing #(
     ppc_fpu_arith_rsp_t finish_o;
     logic flush_i;
 
+    wire [2:0] req_fwd_i = 3'b000;
+    logic finish_write_o;
+    logic next_finish_valid_o;
+    completion_tag_t next_finish_tag_o;
     ppc_fpu_arith #(.CPU_602(CPU_602)) dut (
         .clk_i(clk_i), .rst_ni(rst_ni), .req_valid_i(req_valid_i),
-        .req_ready_o(req_ready_o), .req_i(req_i), .rsp_valid_o(rsp_valid_o),
+        .req_ready_o(req_ready_o), .req_i(req_i), .req_fwd_i(req_fwd_i), .rsp_valid_o(rsp_valid_o),
         .div_busy_o(div_busy_o),
         .rsp_ready_i(rsp_ready_i), .rsp_o(rsp_o),
         .finish_valid_o(finish_valid_o), .finish_o(finish_o),
+        .finish_write_o(finish_write_o),
+        .next_finish_valid_o(next_finish_valid_o),
+        .next_finish_tag_o(next_finish_tag_o),
         .flush_i(flush_i)
     );
+
+    // Every finish is announced one cycle earlier with its tag.
+    logic predicted_q;
+    completion_tag_t predicted_tag_q;
+    int predicted_finishes = 0;
+    always @(posedge clk_i) begin
+        if (!rst_ni) begin
+            predicted_q <= 1'b0;
+        end else begin
+            if (finish_valid_o !== (predicted_q && !flush_i) ||
+                (finish_valid_o && finish_o.tag !== predicted_tag_q) ||
+                finish_write_o !== (finish_valid_o && finish_o.write_result))
+                $fatal(1, "finish prediction mismatch");
+            if (finish_valid_o) predicted_finishes <= predicted_finishes + 1;
+            predicted_q <= next_finish_valid_o;
+            predicted_tag_q <= next_finish_tag_o;
+        end
+    end
 
     int cycle_count;
     int accepted_cycle [0:2047];
@@ -405,6 +432,8 @@ module tb_ppc_fpu_timing #(
             wait_for_checked(base_count + 2);
         end
 
+        $display("%s FPU finish predictions PASS: %0d",
+                 CPU_602 ? " 602" : "603e", predicted_finishes);
         $display("%s FPU timing checks PASS: %0d responses",
                  CPU_602 ? "602" : "603e", checked);
         $finish;

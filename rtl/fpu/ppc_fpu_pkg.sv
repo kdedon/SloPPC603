@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 package ppc_fpu_pkg;
   import ppc_pkg::completion_tag_t;

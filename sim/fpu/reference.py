@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """Exact integer IEEE binary32/binary64 oracle, version 1.
 
 All finite values are signed integers times powers of two. Rounding happens once

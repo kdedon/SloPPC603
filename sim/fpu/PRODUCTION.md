@@ -7,6 +7,33 @@ the manuals' per-instruction execution latency and initiation interval,
 ordered forwarding and retirement, and 602 operand tags and emulation traps.
 Detailed `Recorded:` entries retain each result's exact source scope.
 
+## Registered finish and stfs store rule
+
+Recorded: `make -C sim -j2 test-fpu-all lint-fpu-production lint-fpu-stream
+lint-fpu-dual`, commit `92816c6`, 2026-09-29. Pass. Raw arithmetic: 603e
+201,632 vectors and 602 181,952 vectors, 0 mismatches; per-operation latency
+minima and maxima match the `83259ce` run exactly. Estimates: 11,958 (603e)
+and 17,628 (602) vectors, 0 mismatches. Shell 910 checks; 602 173 checks;
+exact-timing 71/52 responses; streams 32/32/32 in both builds; dual 32/24;
+flush/reset 4 and cancel-offset 76 per build. All four lint targets clean.
+
+This establishes:
+
+- `stfs` of a double whose exponent exceeds single range stores
+  `FRS[0:1] || FRS[5:34]`; four new shell checks cover biased exponents 1152,
+  2019 (both signs) and 2046, e.g. 2^129 stores `0x40000000` and 1e300
+  `0x71bf21e4`. The previous RTL failed them.
+- Every arithmetic finish is announced one cycle early with its tag and
+  `finish_write_o` matches the delivered packet (201,747, 182,083, 11,958,
+  17,628, 71 and 52 predictions across the arithmetic benches).
+- A back-to-back `fadd`, dependent `fadd`, `fmr` and `stfd` keep forward-bus
+  distances 3 and 3 and a same-cycle store launch, identical to `55d4063`
+  measured with the same bench.
+
+It does not establish fitted timing (see
+[`quartus/fpu-production/README.md`](../../quartus/fpu-production/README.md)),
+nor behavior of the still-shifting pending queue beyond these benches.
+
 At the `cb871b4` checkpoint, the production arithmetic oracle was
 `ppc_reference.py` (SHA-256
 `defbd974681295392a673cec2c0020877f4a26c6cb2e1c42209c588a71627956`),

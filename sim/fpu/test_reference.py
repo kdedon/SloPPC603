@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 import unittest
 from reference import B32, B64, calculate, calculate_fma, pack
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 module ppc_fpu_arith #(
     parameter bit CPU_602 = 1'b0
@@ -8,11 +10,15 @@ module ppc_fpu_arith #(
     output logic req_ready_o,
     output logic div_busy_o,
     input  ppc_fpu_pkg::ppc_fpu_arith_req_t req_i,
+    input  logic [2:0] req_fwd_i,
     output logic rsp_valid_o,
     input  logic rsp_ready_i,
     output ppc_fpu_pkg::ppc_fpu_arith_rsp_t rsp_o,
     output logic finish_valid_o,
     output ppc_fpu_pkg::ppc_fpu_arith_rsp_t finish_o,
+    output logic finish_write_o,
+    output logic next_finish_valid_o,
+    output ppc_pkg::completion_tag_t next_finish_tag_o,
     input  logic flush_i
 );
     import ppc_fpu_pkg::*;
@@ -279,6 +285,7 @@ module ppc_fpu_arith #(
     ppc_fpu_arith_rsp_t pushed_response;
     logic divide_request;
     logic divide_finishing;
+    ppc_fpu_arith_req_t req_operands;
     logic [54:0] div_trial;
     logic [52:0] div_remainder_next;
     logic [54:0] div_quotient_next;
@@ -1679,6 +1686,24 @@ module ppc_fpu_arith #(
     assign retire = rsp_valid_o && rsp_ready_i;
     assign finish_valid_o = rst_ni && !flush_i && push_response;
     assign finish_o = pushed_response;
+    // Derived from registered state only: special, conversion and divide
+    // write suppression is known before rounding completes.
+    assign finish_write_o = finish_valid_o && pushed_response.write_result;
+    assign next_finish_valid_o = rst_ni && !flush_i && (aligned_valid_q ||
+        divide_state_q == DIV_ROUND ||
+        (divide_state_q == DIV_SPECIAL &&
+            divide_special_count_q == 6'd2));
+    assign next_finish_tag_o = aligned_valid_q ? aligned_q.req.tag :
+        divide_req_q.tag;
+
+    // A dependent operand finishing this cycle is taken here, directly in
+    // front of the input registers.
+    always_comb begin
+        req_operands = req_i;
+        if (req_fwd_i[0]) req_operands.a = pushed_response.result;
+        if (req_fwd_i[1]) req_operands.b = pushed_response.result;
+        if (req_fwd_i[2]) req_operands.c = pushed_response.result;
+    end
 
     always_comb begin
         push_response = add_valid_q;
@@ -1711,7 +1736,7 @@ module ppc_fpu_arith #(
             outstanding_q <= 3'd0;
         end else begin
             input_valid_q <= accept && !divide_request;
-            if (accept && !divide_request) input_q <= req_i;
+            if (accept && !divide_request) input_q <= req_operands;
             multiply_valid_q <= input_valid_q &&
                 multiply_next.dp_multiply;
             if (input_valid_q && multiply_next.dp_multiply) begin
@@ -1731,35 +1756,35 @@ module ppc_fpu_arith #(
             if (aligned_valid_q) add_q <= add_next;
 
             if (accept && divide_request) begin
-                divide_req_q.tag <= req_i.tag;
-                divide_req_q.op <= req_i.op;
-                divide_req_q.rn <= req_i.rn;
-                divide_req_q.ni <= req_i.ni;
-                divide_req_q.oe <= req_i.oe;
-                divide_req_q.ue <= req_i.ue;
-                divide_req_q.ve <= req_i.ve;
-                divide_req_q.ze <= req_i.ze;
+                divide_req_q.tag <= req_operands.tag;
+                divide_req_q.op <= req_operands.op;
+                divide_req_q.rn <= req_operands.rn;
+                divide_req_q.ni <= req_operands.ni;
+                divide_req_q.oe <= req_operands.oe;
+                divide_req_q.ue <= req_operands.ue;
+                divide_req_q.ve <= req_operands.ve;
+                divide_req_q.ze <= req_operands.ze;
                 divide_req_q.single_result <=
-                    CPU_602 || req_i.single_result;
-                div_a_raw_q <= req_i.a[62:0];
-                div_b_raw_q <= req_i.b[62:0];
-                div_a_sign_q <= req_i.a[63];
-                div_b_sign_q <= req_i.b[63];
+                    CPU_602 || req_operands.single_result;
+                div_a_raw_q <= req_operands.a[62:0];
+                div_b_raw_q <= req_operands.b[62:0];
+                div_a_sign_q <= req_operands.a[63];
+                div_b_sign_q <= req_operands.b[63];
                 div_result_sign_q <=
-                    ((req_i.op != FP_FRES) && req_i.a[63]) ^
-                    req_i.b[63];
-                if (req_i.b[62:0] != 63'd0 &&
-                    req_i.b[62:52] != 11'h7ff &&
-                    (req_i.op == FP_FRES ||
-                    (req_i.a[62:0] != 63'd0 &&
-                    req_i.a[62:52] != 11'h7ff))) begin
+                    ((req_operands.op != FP_FRES) && req_operands.a[63]) ^
+                    req_operands.b[63];
+                if (req_operands.b[62:0] != 63'd0 &&
+                    req_operands.b[62:52] != 11'h7ff &&
+                    (req_operands.op == FP_FRES ||
+                    (req_operands.a[62:0] != 63'd0 &&
+                    req_operands.a[62:52] != 11'h7ff))) begin
                     divide_special_pending_q <= 1'b0;
                     divide_state_q <= DIV_START;
                 end else begin
                     divide_special_pending_q <= 1'b1;
                     divide_special_count_q <=
-                        (CPU_602 || req_i.op == FP_FRES ||
-                        req_i.single_result) ?
+                        (CPU_602 || req_operands.op == FP_FRES ||
+                        req_operands.single_result) ?
                         6'd18 : 6'd33;
                     divide_state_q <= DIV_SPECIAL;
                 end

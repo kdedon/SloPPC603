@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 # Same-clock virtual ports; post-map measurement, not board timing.
 create_clock -name fpu_clk -period 20.000 [get_ports {clk_i}]
 derive_clock_uncertainty

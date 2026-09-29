@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 project_open ppc_fpu
 create_timing_netlist -post_map
 read_sdc ppc_fpu.sdc

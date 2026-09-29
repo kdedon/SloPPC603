@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 module tb_ppc_fpu_estimates #(
     parameter bit CPU_602 = 1'b0
@@ -29,7 +31,29 @@ module tb_ppc_fpu_estimates #(
     ppc_fpu_arith_rsp_t finished_packet;
     logic finished_seen;
 
+    wire [2:0] req_fwd_i = 3'b000;
+    logic finish_write_o;
+    logic next_finish_valid_o;
+    completion_tag_t next_finish_tag_o;
     ppc_fpu_arith #(.CPU_602(CPU_602)) dut (.*);
+
+    // Every finish is announced one cycle earlier with its tag.
+    logic predicted_q;
+    completion_tag_t predicted_tag_q;
+    int predicted_finishes = 0;
+    always @(posedge clk_i) begin
+        if (!rst_ni) begin
+            predicted_q <= 1'b0;
+        end else begin
+            if (finish_valid_o !== (predicted_q && !flush_i) ||
+                (finish_valid_o && finish_o.tag !== predicted_tag_q) ||
+                finish_write_o !== (finish_valid_o && finish_o.write_result))
+                $fatal(1, "finish prediction mismatch");
+            if (finish_valid_o) predicted_finishes <= predicted_finishes + 1;
+            predicted_q <= next_finish_valid_o;
+            predicted_tag_q <= next_finish_tag_o;
+        end
+    end
 
     always @(posedge clk_i)
         if (div_busy_o && req_ready_o)
@@ -134,6 +158,7 @@ module tb_ppc_fpu_estimates #(
         end
         $fclose(input_file);
         $fclose(output_file);
+        $display("PASS estimate finish predictions=%0d", predicted_finishes);
         $display("PASS estimate transport vectors=%0d", count);
         for (int operation = 0; operation < 2; operation++)
             for (int special = 0; special < 2; special++)

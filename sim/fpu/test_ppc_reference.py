@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 import unittest
 from ppc_reference import arithmetic, DEFAULT_NAN, SNAN, VC, CVI, IMZ
 

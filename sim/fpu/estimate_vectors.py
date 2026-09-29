@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
 """603e estimate qualification from PEM pp. 509-513 and exact rational bounds.
 
 The manuals permit implementation-dependent estimate bits. This oracle therefore
