@@ -2,7 +2,11 @@
 // Copyright (c) 2026 Kevin Dedon
 // Direct maintenance, icbi, drain, invalidation, and bypass checks.
 /* verilator lint_off BLKSEQ */
-module tb_icache_managed;
+module tb_icache_managed #(
+  // Geometry under test: 603e 128 x 4, 603 128 x 2, 602 64 x 2.
+  parameter int SETS = 128,
+  parameter int WAYS = 4
+);
   logic clk = 1'b0, rst_n = 1'b0;
   always #5 clk = ~clk;
 
@@ -31,7 +35,7 @@ module tb_icache_managed;
   integer hit_pulses = 0, miss_pulses = 0, icbi_commands = 0;
   logic allow_protocol_error = 1'b0;
 
-  ppc_icache_managed dut (
+  ppc_icache_managed #(.SET_COUNT(SETS), .WAY_COUNT(WAYS)) dut (
     .clk_i(clk), .rst_ni(rst_n),
     .fetch_valid_i(fetch_valid), .fetch_ready_o(fetch_ready),
     .fetch_addr_i(fetch_addr), .fetch_rsp_valid_o(fetch_rsp_valid),
@@ -569,8 +573,8 @@ module tb_icache_managed;
     check(!maintenance_busy && maintenance_ready && protocol_error,
           "illegal state recovers to run with sticky diagnostic");
 
-    $display("PASS: tb_icache_managed %0d checks, %0d fetches, %0d line, %0d bypass, %0d maintenance, %0d icbi",
-             checks, fetches, line_requests, bypass_requests,
+    $display("PASS: tb_icache_managed %0d sets x %0d ways, %0d checks, %0d fetches, %0d line, %0d bypass, %0d maintenance, %0d icbi",
+             SETS, WAYS, checks, fetches, line_requests, bypass_requests,
              maintenance_commands, icbi_commands);
     $finish;
   end

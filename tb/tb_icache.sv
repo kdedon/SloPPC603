@@ -2,7 +2,15 @@
 // Copyright (c) 2026 Kevin Dedon
 // Independent abstract-channel checks for the bounded instruction cache.
 /* verilator lint_off BLKSEQ */
-module tb_icache;
+module tb_icache #(
+  // Geometry under test: 603e 128 x 4, 603 128 x 2, 602 64 x 2.
+  parameter int SETS = 128,
+  parameter int WAYS = 4
+);
+  localparam int SET_BITS = $clog2(SETS);
+  localparam int LINES = SETS * WAYS;
+  localparam logic [31:0] WAY_STRIDE = 32'(SETS * 32);
+  localparam logic [31:0] CAPACITY_MASK = 32'(LINES * 32 - 1);
   logic clk = 1'b0;
   logic rst_n = 1'b0;
   always #5 clk = ~clk;
@@ -28,7 +36,7 @@ module tb_icache;
   int stream_hit_count = 0;
   int stream_best_cycles = 0;
 
-  ppc_icache dut (
+  ppc_icache #(.SET_COUNT(SETS), .WAY_COUNT(WAYS)) dut (
     .clk_i(clk), .rst_ni(rst_n),
     .fetch_valid_i(fetch_valid), .fetch_ready_o(fetch_ready),
     .fetch_addr_i(fetch_addr), .fetch_rsp_valid_o(fetch_rsp_valid),
@@ -74,7 +82,7 @@ module tb_icache;
   endfunction
 
   function automatic logic [31:0] permutation_addr(input integer line_index);
-    return 32'h0000_00c0 + 32'h0000_1000 * line_index;
+    return 32'h0000_00c0 + WAY_STRIDE * line_index;
   endfunction
 
   function automatic logic [31:0] permutation_seed(input integer line_index);
@@ -304,9 +312,9 @@ module tb_icache;
   task automatic check_lru_victim(input integer victim_index);
     begin
       pulse_invalidate();
-      // Invalid ways fill in deterministic way order.  After A/B/C/D, A is
-      // LRU.  Touching victim-1 down through A makes victim the oldest line.
-      for (integer line_index = 0; line_index < 4; line_index++) begin
+      // Invalid ways fill in deterministic way order, leaving the first line
+      // LRU. Touching victim-1 down through it makes victim the oldest line.
+      for (integer line_index = 0; line_index < WAYS; line_index++) begin
         refill_fetch(permutation_addr(line_index) + 8*line_index,
                      permutation_seed(line_index), 0, 0);
       end
@@ -315,10 +323,10 @@ module tb_icache;
         hit_fetch(permutation_addr(touch_index),
                   permutation_seed(touch_index), 0);
       end
-      refill_fetch(permutation_addr(4), permutation_seed(4), 0, 0);
+      refill_fetch(permutation_addr(WAYS), permutation_seed(WAYS), 0, 0);
       issue_fetch(permutation_addr(victim_index), 1'b0, 1'b1);
       pulse_kill();
-      for (integer line_index = 0; line_index < 5; line_index++) begin
+      for (integer line_index = 0; line_index <= WAYS; line_index++) begin
         if (line_index != victim_index)
           hit_fetch(permutation_addr(line_index),
                     permutation_seed(line_index), 0);
@@ -331,7 +339,7 @@ module tb_icache;
     return 32'ha000_0000 ^ (32'h0102_0409 * line_index);
   endfunction
 
-  // Stream hits over the resident 16 KB image. Requests stay offered and a
+  // Stream hits over the resident image (the whole cache). Requests stay offered and a
   // new one is accepted on the edge that consumes each response. Without
   // stalls, count responses take count + 1 cycles. With stalls, the held
   // response and its RAM word must survive changing addresses.
@@ -345,7 +353,7 @@ module tb_icache;
       responded = 0;
       stream_cycles = 0;
       @(negedge clk);
-      fetch_addr = {18'b0, lfsr[13:2], 2'b00};
+      fetch_addr = lfsr & CAPACITY_MASK & ~32'd3;
       fetch_valid = 1'b1;
       fetch_rsp_ready = 1'b1;
       while (responded < count) begin
@@ -369,7 +377,7 @@ module tb_icache;
           responded++;
         end
         if (fire_req)
-          expect_q.push_back(line_word(fill_seed(integer'(fetch_addr[13:5])),
+          expect_q.push_back(line_word(fill_seed(integer'(fetch_addr >> 5)),
                                        fetch_addr[4:2]));
         else if (stalls && expect_q.size() != 0)
           check(fetch_rsp_valid, "stalled stream holds its response");
@@ -377,9 +385,10 @@ module tb_icache;
         // Revisit the same set often to chain LRU updates. A stalled offer
         // may change address; the held response must not.
         if (fire_req || stalls)
-          fetch_addr = lfsr[4] ? {18'b0, lfsr[9:8], fetch_addr[11:5],
-                                  lfsr[7:5], 2'b00} :
-                                 {18'b0, lfsr[13:2], 2'b00};
+          fetch_addr = lfsr[4] ? ((32'(lfsr[9:8]) << (SET_BITS + 5)) |
+                                  (fetch_addr & (WAY_STRIDE - 32)) |
+                                  32'({lfsr[7:5], 2'b00})) & CAPACITY_MASK :
+                                 lfsr & CAPACITY_MASK & ~32'd3;
         if (stalls) fetch_rsp_ready = lfsr[3] | lfsr[11];
         fetch_valid = responded + expect_q.size() < count;
       end
@@ -422,7 +431,8 @@ module tb_icache;
   endtask
 
   initial begin
-    localparam logic [31:0] WORD_LINE = 32'h0000_1fe0;
+    // Last set of the second way.
+    localparam logic [31:0] WORD_LINE = 2 * WAY_STRIDE - 32'd32;
     localparam logic [31:0] WORD_SEED = 32'h8100_2200;
     localparam logic [31:0] SET5_BASE = 32'h0000_00a0;
     localparam logic [31:0] SEED_A = 32'ha100_0000;
@@ -431,6 +441,10 @@ module tb_icache;
     localparam logic [31:0] SEED_D = 32'hd400_0000;
     localparam logic [31:0] SEED_E = 32'he500_0000;
     logic [31:0] addr_a, addr_b, addr_c, addr_d, addr_e;
+    // A resident line other than A after E replaces B, and the victim of
+    // the chained-LRU case.
+    logic [31:0] addr_other, addr_chain;
+    logic [31:0] seed_chain;
 
     fetch_valid = 1'b0;
     fetch_addr = 32'b0;
@@ -443,28 +457,33 @@ module tb_icache;
     line_rsp_error = 1'b0;
 
     addr_a = SET5_BASE;
-    addr_b = SET5_BASE + 32'h0000_1000;
-    addr_c = SET5_BASE + 32'h0000_2000;
-    addr_d = SET5_BASE + 32'h0000_3000;
-    addr_e = SET5_BASE + 32'h0000_4000;
+    addr_b = SET5_BASE + WAY_STRIDE;
+    addr_c = SET5_BASE + 2 * WAY_STRIDE;
+    addr_d = SET5_BASE + 3 * WAY_STRIDE;
+    addr_e = SET5_BASE + 4 * WAY_STRIDE;
+    addr_other = WAYS > 2 ? addr_c : addr_e;
+    addr_chain = WAYS > 2 ? addr_d : addr_b;
+    seed_chain = WAYS > 2 ? SEED_D : SEED_B;
 
     reset_dut();
 
-    // Refill from critical DW3 into set 127, then select every canonical word.
+    // Refill from critical DW3 into the last set, then select every canonical word.
     refill_fetch(WORD_LINE + 32'd28, WORD_SEED, 3, 3);
     for (integer word = 0; word < 8; word++)
       hit_fetch(WORD_LINE + 4*word, WORD_SEED, word == 3 ? 2 : 0);
 
-    // Fill four ways in one set from all four critical doubleword positions.
+    // Fill every way of one set, each from its own critical doubleword.
     refill_fetch(addr_a + 32'd0,  SEED_A, 0, 0);
     refill_fetch(addr_b + 32'd8,  SEED_B, 0, 0);
-    refill_fetch(addr_c + 32'd16, SEED_C, 0, 0);
-    refill_fetch(addr_d + 32'd24, SEED_D, 0, 0);
+    if (WAYS > 2) begin
+      refill_fetch(addr_c + 32'd16, SEED_C, 0, 0);
+      refill_fetch(addr_d + 32'd24, SEED_D, 0, 0);
+    end
 
-    // Exact LRU order after fills is D,C,B,A.  Touch A then C, leaving B LRU;
-    // E must replace B while A/C/D remain hits.
+    // After the fills A is LRU. Touch A (then C with four ways), leaving B
+    // LRU; E must replace B while the other lines remain hits.
     hit_fetch(addr_a, SEED_A, 0);
-    hit_fetch(addr_c, SEED_C, 0);
+    if (WAYS > 2) hit_fetch(addr_c, SEED_C, 0);
     refill_fetch(addr_e, SEED_E, 0, 0);
     issue_fetch(addr_b, 1'b0, 1'b1);
     check(line_req_valid, "strict LRU evicts B after A/C touches");
@@ -472,8 +491,10 @@ module tb_icache;
     check(!line_req_valid && !busy && !fetch_rsp_valid,
           "kill retracts unaccepted refill request");
     hit_fetch(addr_a, SEED_A, 0);
-    hit_fetch(addr_c, SEED_C, 0);
-    hit_fetch(addr_d, SEED_D, 0);
+    if (WAYS > 2) begin
+      hit_fetch(addr_c, SEED_C, 0);
+      hit_fetch(addr_d, SEED_D, 0);
+    end
     hit_fetch(addr_e, SEED_E, 0);
 
     // Accepted refill is irrevocable on its transport.  Kill drains a same-
@@ -511,7 +532,7 @@ module tb_icache;
     check(!busy, "held hit killed without handshake residue");
 
     // Invalidate suppresses a ready held response and clears every valid way.
-    issue_fetch(addr_c, 1'b1, 1'b0);
+    issue_fetch(addr_other, 1'b1, 1'b0);
     @(negedge clk);
     fetch_rsp_ready = 1'b1;
     invalidate = 1'b1;
@@ -579,8 +600,8 @@ module tb_icache;
     expect_fetch_response(32'b0, 1'b1, 0);
 
     // Exercise every possible strict-LRU victim using independent access
-    // permutations, while checking that the other three lines remain hits.
-    for (integer victim_index = 0; victim_index < 4; victim_index++)
+    // permutations, while checking that the other lines remain hits.
+    for (integer victim_index = 0; victim_index < WAYS; victim_index++)
       check_lru_victim(victim_index);
 
     // Reset cancels both an offered refill and an accepted refill wait.
@@ -596,9 +617,9 @@ module tb_icache;
     // words in reverse line order. This catches aliases in both the flattened
     // way/set RAM address and the registered word selector. No refill may occur
     // during this readback, even while a different request is offered stalled.
-    for (integer line_index = 0; line_index < 512; line_index++)
+    for (integer line_index = 0; line_index < LINES; line_index++)
       refill_fetch(32'(line_index * 32), fill_seed(line_index), 0, 0);
-    for (integer line_index = 511; line_index >= 0; line_index--) begin
+    for (integer line_index = LINES - 1; line_index >= 0; line_index--) begin
       for (integer word_index = 0; word_index < 8; word_index++)
         hit_fetch(32'(line_index * 32 + word_index * 4),
                   fill_seed(line_index), word_index == 3 ? 2 : 0);
@@ -609,36 +630,45 @@ module tb_icache;
 
     // Back-to-back hits to one set chain their registered LRU updates; a
     // miss on the next consume edge must see all of them. After A/B/C/D,
-    // touching B, A, C leaves D as the victim for E.
+    // touching B, A, C leaves D as the victim for E; with two ways, after
+    // A/B, touching B, A leaves B.
     reset_dut();
     refill_fetch(addr_a, SEED_A, 0, 0);
     refill_fetch(addr_b, SEED_B, 0, 0);
-    refill_fetch(addr_c, SEED_C, 0, 0);
-    refill_fetch(addr_d, SEED_D, 0, 0);
+    if (WAYS > 2) begin
+      refill_fetch(addr_c, SEED_C, 0, 0);
+      refill_fetch(addr_d, SEED_D, 0, 0);
+    end
     issue_fetch(addr_b, 1'b1, 1'b0);
     consume_and_issue(addr_a, line_word(SEED_B, addr_b[4:2]), 1'b1);
-    consume_and_issue(addr_c, line_word(SEED_A, addr_a[4:2]), 1'b1);
-    consume_and_issue(addr_e, line_word(SEED_C, addr_c[4:2]), 1'b0);
+    if (WAYS > 2) begin
+      consume_and_issue(addr_c, line_word(SEED_A, addr_a[4:2]), 1'b1);
+      consume_and_issue(addr_e, line_word(SEED_C, addr_c[4:2]), 1'b0);
+    end else begin
+      consume_and_issue(addr_e, line_word(SEED_A, addr_a[4:2]), 1'b0);
+    end
     accept_line_request(addr_e, addr_e[4:3], 0);
     send_line_response(make_line(SEED_E), 1'b0);
     expect_fetch_response(line_word(SEED_E, addr_e[4:2]), 1'b0, 0);
     hit_fetch(addr_a, SEED_A, 0);
-    hit_fetch(addr_b, SEED_B, 0);
-    hit_fetch(addr_c, SEED_C, 0);
+    if (WAYS > 2) begin
+      hit_fetch(addr_b, SEED_B, 0);
+      hit_fetch(addr_c, SEED_C, 0);
+    end
     hit_fetch(addr_e, SEED_E, 0);
-    issue_fetch(addr_d, 1'b0, 1'b1);
-    check(line_req_valid, "chained LRU updates evict D");
+    issue_fetch(addr_chain, 1'b0, 1'b1);
+    check(line_req_valid, "chained LRU updates evict the oldest line");
     pulse_kill();
 
     // A refill response consumed on its first cycle overlaps the install
     // cycle; the next request waits one cycle and then hits the new line.
-    issue_fetch(addr_d + 32'd4, 1'b0, 1'b1);
-    accept_line_request(addr_d, 2'd0, 0);
-    send_line_response(make_line(SEED_D), 1'b0);
+    issue_fetch(addr_chain + 32'd4, 1'b0, 1'b1);
+    accept_line_request(addr_chain, 2'd0, 0);
+    send_line_response(make_line(seed_chain), 1'b0);
     check(fetch_rsp_valid && busy && !fetch_ready &&
-          fetch_rsp_insn == line_word(SEED_D, 3'd1),
+          fetch_rsp_insn == line_word(seed_chain, 3'd1),
           "refill response overlaps the install cycle");
-    fetch_addr = addr_d + 32'd8;
+    fetch_addr = addr_chain + 32'd8;
     fetch_valid = 1'b1;
     fetch_rsp_ready = 1'b1;
     @(posedge clk);
@@ -646,7 +676,7 @@ module tb_icache;
     check(!fetch_rsp_valid && fetch_ready, "install completes after one cycle");
     @(posedge clk);
     #1;
-    check(hit && fetch_rsp_valid && fetch_rsp_insn == line_word(SEED_D, 3'd2),
+    check(hit && fetch_rsp_valid && fetch_rsp_insn == line_word(seed_chain, 3'd2),
           "first hit after install");
     @(negedge clk);
     fetch_valid = 1'b0;
@@ -656,8 +686,8 @@ module tb_icache;
           "classification pulses cover every aligned accepted fetch");
     check(accepted_line_requests >= 7,
           "multiple replacements and cancellation paths accepted refills");
-    $display("PASS: tb_icache %0d checks, %0d fetches, %0d hits, %0d misses, %0d line requests, %0d streamed hits (200 in %0d cycles)",
-             checks, accepted_fetches, hit_pulses, miss_pulses,
+    $display("PASS: tb_icache %0d sets x %0d ways, %0d checks, %0d fetches, %0d hits, %0d misses, %0d line requests, %0d streamed hits (200 in %0d cycles)",
+             SETS, WAYS, checks, accepted_fetches, hit_pulses, miss_pulses,
              accepted_line_requests, stream_hit_count, stream_best_cycles);
     $finish;
   end

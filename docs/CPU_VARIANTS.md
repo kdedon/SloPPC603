@@ -62,9 +62,9 @@ transactions; HID0[IFEM] (bit 24) drives the M attribute on instruction fetches
 protection-only mode (602UM PDF 89 / 2-13). A miss to a locked cache runs
 cache-inhibited (602UM §3.2.3.2 PDF 157 / 3-5), as on the 603e.
 
-Main: `ppc_icache.sv` and `ppc_dcache.sv` hard-code `SET_COUNT = 128`,
-`WAY_COUNT = 4`, 32-byte lines; `ppc_dcache.sv` also hard-codes `SET_BITS = 7`,
-`TAG_BITS = 20`. The D-cache forwards the critical double word on the first
+Main: `ppc_icache.sv` and `ppc_dcache.sv` take `SET_COUNT` and `WAY_COUNT`
+(V4); tag, index and LRU widths follow, and the core tops set them from
+`cpu_cfg()`. Lines are 32 bytes. The D-cache forwards the critical double word on the first
 beat ([DATA_CACHE.md](DATA_CACHE.md)), which is PID7v behavior. `HID0_WMASK`
 in `ppc_pkg.sv` is the PID7v mask.
 
@@ -393,7 +393,8 @@ choice and a test of that choice, not a fidelity claim:
 | V3 | Done: `cfg.has_hid1`, `cfg.has_ear` and `cfg.has_srr1_key` gate decode (HID1; EAR, eciwx, ecowx) and SRR1[KEY]; absent SPRs take the illegal-instruction program exception; ISA-matrix 603 column is `legal` for all 335 reviewed forms (UM App. C lists no ISA difference) |
 | V6 | Done: `TLB_SETS` (32 or 16, other values fail elaboration) sizes `ppc_tlb_service`, its entry RAMs, the router's micro-TLB set flush and `tlbie`/`tlbld`/`tlbli` set selection; `ppc_core_bat` derives it from `cfg.tlb_sets` unless a bench overrides it. 16 sets index EA16–19 and tag EA4–15 (602UM Figure 5-9; the manual's EA15–19 prose is a 603e copy, see [TLB_SERVICE.md](TLB_SERVICE.md#geometry-parameter)). Miss derivation (IMISS/DMISS, ICMP/DCMP, HASH1/HASH2) and SRR1[WAY] need no change. The 602 NE/SE/WE bits and protection-only mode stay for V9 |
 | V7 | Done: 602 decode (strings and double-precision FP to the emulation trap, eciwx/ecowx and EAR illegal, esa/dsa/mfrom, TCR/IBR/ESASRR/SEBR/SER/SP/LT), HID0 mask, MSR[AP, SA], ESASRR with esa/dsa, and a minimal 0x1600 entry under the MSR[IP] prefix; ISA-matrix 602 column filled. The 602 core stays rejected. Open for V8: IBR vector prefix, 0x1500 watchdog from TCR. Open for V9: the esa SE bit (`event_esa_enable_i` is tied low, so esa is refused in the core) |
-| V4, V5, V8 onward | Not started |
+| V4 | Done: `ppc_icache`, `ppc_icache_managed` and `ppc_dcache` take `SET_COUNT` (128 or 64) and `WAY_COUNT` (4 or 2), other values fail elaboration; tag, index, way-valid, dirty/valid state and LRU widths (ways × log2 ways) follow, strict LRU seeds way w at rank w, flash invalidate clears one flop per set, and HID0 lock bits are geometry independent. The core tops take the geometry from `cpu_icache_sets()` etc. unless `ICACHE_SETS`/`ICACHE_WAYS`/`DCACHE_SETS`/`DCACHE_WAYS` override it. CSE carries the way number zero-extended to two bits; the 603 one-bit pin stays for V5 |
+| V5, V8 onward | Not started |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
 behave the same. DingusPPC distinguishes PID6 from PID7v only by PVR, and
@@ -402,6 +403,37 @@ consistency of the integer path at PID6, not any PID6-specific behavior.
 The 603 and 602 still fail elaboration of the core; their SPR presence,
 SRR1[KEY] and PLL tables are checked at unit level (`tb_variant_config`,
 `tb_exception_tlb_miss`).
+
+Recorded: `make -C sim -j2 ci` (includes `regression`, `variant-matrix` and `cache-geometry`), commit bbe98eb, 2026-09-29.
+Pass (V4): 635 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage
+76.4% (1771/2319). The default targets run 128 × 4; `cache-geometry` builds the
+same benches with `-GSETS -GWAYS` and `cache-geo-reject` checks that 128 × 8,
+32 × 2 and 256 × 4 fail elaboration. Per geometry:
+
+| Bench | 128 × 4 | 128 × 2 | 64 × 2 |
+| --- | --- | --- | --- |
+| `tb_icache` | 60883 checks | 31854 | 17646 |
+| `tb_icache_managed` | 267 checks | 267 | 267 |
+| `tb_icache_bus60x` | 3805 checks | 3602 | 3602 |
+| `tb_dcache` seed 1 (seeds 1–3 run) | 555653 checks | 561881 | 636237 |
+| `tb_biu_dcache_snoop` seeds 1–5 | pass | pass | pass |
+| `tb_core_dcache` | 219150 checks, 2374 retires | same | same |
+| `tb_core_bat_cached_bus60x_coherence` | 2144 checks | 2144 | 2144 |
+| `tb_chip_dcache_coherence` seeds 1–3 | pass (189 read bursts, seed 1) | pass (1246) | pass (1246) |
+
+At 128 × 4 the rewritten I-cache benches give the same check counts as before
+V4 and the D-cache random streams are unchanged. D-cache and BIU mutations were
+rejected at all three geometries when the benches were written; the negative
+targets in `ci` run at 128 × 4. This does not establish a 603 or 602 core build,
+the 603 CSE pin width, or the 602's missing ICE.
+
+Recorded: `./quartus/translated/build.sh --docker`, `./quartus/chip/build.sh --docker` and `./quartus/report-target-paths.sh <top> --docker` for both, commit bbe98eb, 2026-09-29.
+Both fits succeed. Translated: 50 MHz met at every corner (worst setup +5.194 ns,
+hold +0.103 ns), slow-corner Fmax 67.54 MHz, 0 failing endpoints at 66 MHz;
+10,403 ALMs, 52 RAM blocks. Chip: worst setup +3.305 ns, hold +0.115 ns,
+slow-corner Fmax 68.35 MHz, 0 failing endpoints at 66 MHz; 11,426 ALMs, 52 RAM
+blocks. Both tops build the 603e geometry, so this shows the parameterization
+costs no timing at 128 × 4, not the 2-way fits.
 
 Recorded: `make -C sim -j2 ci` (includes `regression`, `variant-matrix` and `test-tlb-geometry-16`), commit 72c9781, 2026-09-29.
 Pass (V6): 601 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage

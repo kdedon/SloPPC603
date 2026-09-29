@@ -3,12 +3,16 @@
 `default_nettype none
 // Physically addressed 603e-shaped instruction cache with line refill.
 //
-// Lookup cycle: the set index reads all four tag RAMs (MLAB, asynchronous)
-// and all four data RAMs (M10K, registered) at once. The next cycle selects
+// Lookup cycle: the set index reads every way's tag RAM (MLAB, asynchronous)
+// and data RAM (M10K, registered) at once. The next cycle selects
 // the word with the registered one-hot hit. The LRU update is registered and
 // applied a cycle after the hit. A new lookup is accepted on the edge that
 // consumes the previous response, so hits stream one per cycle.
-module ppc_icache (
+module ppc_icache #(
+  // 603e: 128 sets x 4 ways; 603: 128 x 2; 602: 64 x 2.
+  parameter int SET_COUNT = 128,
+  parameter int WAY_COUNT = 4
+) (
   input  logic         clk_i,
   input  logic         rst_ni,
 
@@ -23,7 +27,7 @@ module ppc_icache (
   input  logic         kill_i,
   input  logic         invalidate_i,
   output logic         invalidate_done_o,
-  // Clears all four ways of the set that holds this address. The caller
+  // Clears every way of the set that holds this address. The caller
   // drains refills and responses first.
   input  logic         invalidate_set_i,
   input  logic [31:0]  invalidate_set_addr_i,
@@ -43,8 +47,6 @@ module ppc_icache (
   output logic         miss_o,
   output logic         protocol_error_o
 );
-  localparam int SET_COUNT = 128;
-  localparam int WAY_COUNT = 4;
   localparam int LINE_BYTES = 32;
   localparam int OFFSET_BITS = $clog2(LINE_BYTES);
   localparam int WORD_BITS = $clog2(LINE_BYTES / 4);
@@ -65,15 +67,26 @@ module ppc_icache (
   } icache_state_t;
 
   icache_state_t state_q;
-  // Rank zero is MRU and rank three is LRU; a valid set's ranks are a
-  // permutation. The RAM holds no reset state: the first fill of an
-  // all-invalid set seeds ranks {0,1,2,3} before the touch.
+  // Rank zero is MRU and rank WAY_COUNT-1 is LRU; a valid set's ranks are
+  // a permutation. The RAM holds no reset state: the first fill of an
+  // all-invalid set seeds way w with rank w before the touch.
   typedef logic [WAY_COUNT-1:0][WAY_BITS-1:0] lru_ranks_t;
-  localparam lru_ranks_t LRU_SEED = {2'd3, 2'd2, 2'd1, 2'd0};
+  function automatic lru_ranks_t lru_seed();
+    lru_ranks_t seed;
+    for (int w = 0; w < WAY_COUNT; w++) seed[w] = WAY_BITS'(w);
+    return seed;
+  endfunction
+  localparam lru_ranks_t LRU_SEED = lru_seed();
+
+  // synthesis translate_off
+  if ((WAY_COUNT != 2 && WAY_COUNT != 4) || (SET_COUNT != 64 && SET_COUNT != 128)) begin : g_bad_geometry
+    $fatal(1, "ppc_icache: unsupported geometry %0d sets x %0d ways", SET_COUNT, WAY_COUNT);
+  end
+  // synthesis translate_on
 
   // A way is valid when its set's flop and its bit in the way-valid RAM are
-  // both set. Flash invalidate and reset clear only the 128 set flops; the
-  // first install into a cleared set rewrites all four way bits.
+  // both set. Flash invalidate and reset clear only the per-set flops; the
+  // first install into a cleared set rewrites every way bit.
   logic [SET_COUNT-1:0] set_valid_q;
   logic [WAY_COUNT-1:0] way_valid_rdata, way_valid_wdata, victim_onehot;
   logic [WAY_COUNT-1:0][TAG_BITS-1:0] tag_rdata;

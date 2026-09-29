@@ -3,7 +3,9 @@
 `default_nettype none
 // Maintenance and enable/bypass control around ppc_icache.
 module ppc_icache_managed #(
-  parameter logic RESET_CACHE_ENABLE = 1'b1
+  parameter logic RESET_CACHE_ENABLE = 1'b1,
+  parameter int SET_COUNT = 128,
+  parameter int WAY_COUNT = 4
 ) (
   input  logic         clk_i,
   input  logic         rst_ni,
@@ -81,7 +83,7 @@ module ppc_icache_managed #(
   logic command_priority, icbi_start;
   logic fetch_accept_enable;
 
-  ppc_icache cache (
+  ppc_icache #(.SET_COUNT(SET_COUNT), .WAY_COUNT(WAY_COUNT)) cache (
     .clk_i, .rst_ni,
     .fetch_valid_i(cache_fetch_valid), .fetch_ready_o(cache_fetch_ready),
     .fetch_addr_i(fetch_addr_i), .fetch_rsp_valid_o(cache_rsp_valid),

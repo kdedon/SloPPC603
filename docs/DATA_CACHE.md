@@ -29,6 +29,15 @@ valid[3:0]} and the LRU ranks in 128 × 8 MLABs; 128 set-valid flops qualify the
 state word so flash invalidate is one cycle. Tag and state MLABs are read
 asynchronously and written in the cycle that decides the change.
 
+Geometry: `ppc_dcache` takes `SET_COUNT` (128 or 64) and `WAY_COUNT` (4 or 2);
+index, tag (27 − log2 sets bits), state-word and LRU widths (ways × log2 ways)
+follow, and any other value fails elaboration. The core tops set them from
+`cpu_cfg(CPU_VARIANT)` (603e 128 × 4, 603 128 × 2, 602 64 × 2), with
+`DCACHE_SETS`/`DCACHE_WAYS` overrides for benches. CSE carries the way number,
+zero-extended to two bits. The table above is the 603e geometry; `make -C sim
+cache-geometry` runs the cache benches at 128 × 2 and 64 × 2
+([CPU_VARIANTS.md](CPU_VARIANTS.md)).
+
 The tag port is single ported, as on the 603e (§3.6.3): a snoop lookup takes it for
 one cycle and any cache-side tag access waits.
 

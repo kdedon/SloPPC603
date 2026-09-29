@@ -23,6 +23,9 @@ module tb_biu_dcache_snoop;
   // Cache mutation (ppc_dcache MUTATION) and BIU mutation.
   parameter int DC_MUTATION = 0;
   parameter int BIU_MUTATION = 0;
+  // Cache geometry: 128 x 4 (603e), 128 x 2 (603), 64 x 2 (602).
+  parameter int SETS = 128;
+  parameter int WAYS = 4;
 
   logic clk = 1'b0;
   logic rst_n = 1'b0;
@@ -91,7 +94,7 @@ module tb_biu_dcache_snoop;
   assign tt_wire = addr_oe ? tt_o : (om_addr_oe ? om_tt : 5'd0);
   assign gbl_wire = addr_oe ? gbl_n_o : (om_addr_oe ? om_gbl_n : 1'b1);
 
-  ppc_dcache #(.MUTATION(DC_MUTATION)) dcache (
+  ppc_dcache #(.MUTATION(DC_MUTATION), .SET_COUNT(SETS), .WAY_COUNT(WAYS)) dcache (
     .clk_i(clk), .rst_ni(rst_n),
     .req_valid_i(req_valid), .req_ready_o(req_ready), .req_op_i(req_op),
     .req_addr_i(req_addr), .req_be_i(req_be), .req_wdata_i(req_wdata),
@@ -201,11 +204,13 @@ module tb_biu_dcache_snoop;
     return v;
   endfunction
 
+  // Tags step by the way size, so every tag of a set shares its index.
+  localparam logic [31:0] WAY_BYTES = 32'(SETS * 32);
   function automatic logic [31:0] shared_line(input int tag, input int set);
-    return SHARED_BASE + 32'(tag) * 32'h1000 + 32'(set) * 32'h20;
+    return SHARED_BASE + 32'(tag) * WAY_BYTES + 32'(set) * 32'h20;
   endfunction
   function automatic logic [31:0] plain_line(input int tag);
-    return PLAIN_BASE + 32'(tag) * 32'h1000 + 32'h20;
+    return PLAIN_BASE + 32'(tag) * WAY_BYTES + 32'h20;
   endfunction
 
   // ------------------------------------------------------------ bookkeeping
@@ -956,13 +961,13 @@ module tb_biu_dcache_snoop;
 
     // Snoop during a castout: fill a set with modified lines, force a castout
     // of the oldest, and snoop it while the castout's data tenure waits.
-    for (int t = 0; t < 4; t++)
+    for (int t = 0; t < WAYS; t++)
       lsu(DC_STORE, shared_line(t, 2), 4'b0010, 8'hff, {32'(t), 32'hdead_beef});
     quiesce();
     begin
       int retried_mark = om_retried;
       fork
-        lsu(DC_STORE, shared_line(4, 2), 4'b0010, 8'hff, 64'h0123_4567_89ab_cdef);
+        lsu(DC_STORE, shared_line(WAYS, 2), 4'b0010, 8'hff, 64'h0123_4567_89ab_cdef);
         begin
           logic [31:0] victim = shared_line(0, 2);
           while (!(db_state == 1 && job.cpu && job.write &&
@@ -1032,8 +1037,8 @@ module tb_biu_dcache_snoop;
     end
     check(split_tenures > 0, "no split single-beat tenures");
     check(drtry_beats > 0 && cpu_retries > 0, "no DRTRY or processor retries");
-    $display("PASS: tb_biu_dcache_snoop seed=%0d ops=%0d lsu=%0d om=%0d om_retried=%0d pushes=%0d push_order=%0d cpu_tenures=%0d cpu_retries=%0d addr_only=%0d splits=%0d drtry=%0d tea=%0d snoop_cycles=%0d releases=%0d data_checks=%0d checks=%0d cycles=%0d",
-             seed, ops, lsu_done, om_done, om_retried, pushes, push_order_checks,
+    $display("PASS: tb_biu_dcache_snoop %0dx%0d seed=%0d ops=%0d lsu=%0d om=%0d om_retried=%0d pushes=%0d push_order=%0d cpu_tenures=%0d cpu_retries=%0d addr_only=%0d splits=%0d drtry=%0d tea=%0d snoop_cycles=%0d releases=%0d data_checks=%0d checks=%0d cycles=%0d",
+             SETS, WAYS, seed, ops, lsu_done, om_done, om_retried, pushes, push_order_checks,
              cpu_tenures, cpu_retries, addr_only_tenures, split_tenures, drtry_beats,
              tea_injected, snoop_checks, release_checks, data_checks, checks, cyc);
     $finish;

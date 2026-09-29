@@ -1844,3 +1844,61 @@ $(addprefix demo-,$(DEMO_NAMES)): demo-%: demo-soc-model demo-firmware
 	./$(BUILD_DIR)/demo/model/Vtb_demo_soc $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/$*.hex +NAME=$* +PPM=$(BUILD_DIR)/demo/$*.ppm
 	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/$*.ppm $(BUILD_DIR)/demo/$*.png
 demo-all: $(addprefix demo-,$(DEMO_NAMES))
+# Cache geometry as a bench parameter: the 603 (128 sets x 2 ways) and 602
+# (64 x 2) geometries on the standalone and integrated cache benches, which
+# the default targets run at 128 x 4. A target is cache-geo-<bench>-<sets>x<ways>.
+CACHE_GEOMETRIES := 128x2 64x2
+CACHE_GEO_BENCHES := icache icache-bus60x icache-managed dcache biu-dcache-snoop \
+                     core-dcache core-bat-cached-bus60x-coherence chip-dcache-coherence
+CACHE_GEO_TOP_icache := tb_icache
+CACHE_GEO_SRC_icache := $(ICACHE_RTL) ../tb/tb_icache.sv
+CACHE_GEO_RUNS_icache := +geometry
+CACHE_GEO_TOP_icache-bus60x := tb_icache_bus60x
+CACHE_GEO_SRC_icache-bus60x := $(ICACHE_RTL) $(LINE_RTL) ../tb/tb_icache_bus60x.sv
+CACHE_GEO_RUNS_icache-bus60x := +geometry
+CACHE_GEO_TOP_icache-managed := tb_icache_managed
+CACHE_GEO_SRC_icache-managed := $(ICACHE_RTL) ../rtl/ppc_icache_managed.sv ../tb/tb_icache_managed.sv
+CACHE_GEO_RUNS_icache-managed := +geometry
+CACHE_GEO_TOP_dcache := tb_dcache
+CACHE_GEO_SRC_dcache := $(DCACHE_RTL) ../tb/tb_dcache.sv
+CACHE_GEO_RUNS_dcache := +seed=1 $(addprefix +seed=,$(DCACHE_SEEDS))
+CACHE_GEO_TOP_biu-dcache-snoop := tb_biu_dcache_snoop
+CACHE_GEO_SRC_biu-dcache-snoop := $(BIU_DCACHE_RTL) ../tb/tb_biu_dcache_snoop.sv
+CACHE_GEO_RUNS_biu-dcache-snoop := +seed=1 $(addprefix +seed=,$(BIU_DCACHE_SEEDS))
+CACHE_GEO_TOP_core-dcache := tb_core_dcache
+CACHE_GEO_SRC_core-dcache := $(DCACHE_CORE_TB)
+CACHE_GEO_RUNS_core-dcache := +geometry
+CACHE_GEO_TOP_core-bat-cached-bus60x-coherence := tb_core_bat_cached_bus60x_coherence
+CACHE_GEO_SRC_core-bat-cached-bus60x-coherence := $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_bat_cached_bus60x_coherence.sv
+CACHE_GEO_RUNS_core-bat-cached-bus60x-coherence := +geometry
+CACHE_GEO_TOP_chip-dcache-coherence := tb_chip_dcache_coherence
+CACHE_GEO_SRC_chip-dcache-coherence := $(CHIP_COHERENCE_TB)
+CACHE_GEO_RUNS_chip-dcache-coherence := +SEED=1 +SEED=2 +SEED=3
+geo_tag = $(lastword $(subst -, ,$1))
+geo_bench = $(patsubst %-$(call geo_tag,$1),%,$1)
+geo_sets = $(word 1,$(subst x, ,$(call geo_tag,$1)))
+geo_ways = $(word 2,$(subst x, ,$(call geo_tag,$1)))
+.PHONY: cache-geometry
+regression: cache-geometry
+cache-geometry: $(foreach b,$(CACHE_GEO_BENCHES),$(addprefix cache-geo-$(b)-,$(CACHE_GEOMETRIES))) \
+                cache-geo-reject
+	@echo "PASS: cache-geometry ($(CACHE_GEO_BENCHES) at $(CACHE_GEOMETRIES))"
+# Any other geometry fails elaboration.
+.PHONY: cache-geo-reject
+cache-geo-reject:
+	mkdir -p $(BUILD_DIR)/cache-geo-reject
+	for g in 128x8 32x2 256x4; do s=$${g%x*}; w=$${g#*x}; \
+	  for m in "ppc_icache $(ICACHE_RTL)" "ppc_dcache $(DCACHE_RTL)"; do set -- $$m; top=$$1; shift; \
+	    if $(VERILATOR) --lint-only -Wall --top-module $$top -GSET_COUNT=$$s -GWAY_COUNT=$$w $$@ \
+	       > $(BUILD_DIR)/cache-geo-reject/$$top-$$g.log 2>&1; then echo "FAIL: $$top $$g elaborated"; exit 1; fi; \
+	    grep -q "unsupported geometry" $(BUILD_DIR)/cache-geo-reject/$$top-$$g.log || exit 1; \
+	  done; done
+	@echo "PASS: cache geometries 128x8, 32x2 and 256x4 rejected"
+cache-geo-%:
+	mkdir -p $(BUILD_DIR)/cache-geo-$*
+	$(VERILATOR) --binary --timing --assert -Wall --top-module $(CACHE_GEO_TOP_$(call geo_bench,$*)) \
+	  -GSETS=$(call geo_sets,$*) -GWAYS=$(call geo_ways,$*) --Mdir $(BUILD_DIR)/cache-geo-$* \
+	  -I../tb $(CACHE_GEO_SRC_$(call geo_bench,$*))
+	for r in $(CACHE_GEO_RUNS_$(call geo_bench,$*)); do \
+	  ./$(BUILD_DIR)/cache-geo-$*/V$(CACHE_GEO_TOP_$(call geo_bench,$*)) $(SIM_ARGS) $$r || exit 1; done
+	rm -rf $(BUILD_DIR)/cache-geo-$*

@@ -13,6 +13,9 @@
 module tb_dcache;
   import ppc_dcache_pkg::*;
   parameter int MUTATION = 0;
+  // Cache geometry: 128 x 4 (603e), 128 x 2 (603), 64 x 2 (602).
+  parameter int SETS = 128;
+  parameter int WAYS = 4;
 
   logic clk = 1'b0;
   logic rst_n = 1'b0;
@@ -50,7 +53,7 @@ module tb_dcache;
   logic snoop_rsp_valid, snoop_rsp_artry, snoop_rsp_hit, snoop_rsp_push;
   logic busy, resv_valid, hit_evt, miss_evt, async_error, protocol_error;
 
-  ppc_dcache #(.MUTATION(MUTATION)) dut (
+  ppc_dcache #(.MUTATION(MUTATION), .SET_COUNT(SETS), .WAY_COUNT(WAYS)) dut (
     .clk_i(clk), .rst_ni(rst_n),
     .req_valid_i(req_valid), .req_ready_o(req_ready), .req_op_i(req_op),
     .req_addr_i(req_addr), .req_be_i(req_be), .req_wdata_i(req_wdata),
@@ -416,6 +419,7 @@ module tb_dcache;
     r = rnd_b(10);
     region = r < 8 ? int'(r % 4) : int'(4 + r % 2);
     set = rnd_b(8) == 0 ? 127 : int'(rnd_b(4));
+    if (SETS < 128 && set != 127 && rnd_b(2) != 0) set += 64;
     return mk(region, int'(rnd_b(6)), set, int'(rnd_b(4)));
   endfunction
 
@@ -788,15 +792,15 @@ module tb_dcache;
     check(!r_ok, "a snooped RWITM cancels the reservation");
     directed_tests++;
 
-    // D8: strict LRU replacement within one set.
-    for (int t = 0; t < 4; t++) acc(DC_LOAD, mk(1, t, 9, 0));
+    // D8: strict LRU replacement within one set: fill every way, touch
+    // tag 0, and the next line evicts tag 1.
+    for (int t = 0; t < WAYS; t++) acc(DC_LOAD, mk(1, t, 9, 0));
     acc(DC_LOAD, mk(1, 0, 9, 0));
     mark_trace();
-    acc(DC_LOAD, mk(1, 4, 9, 0));
-    expect_trace("fifth line fills", 1, RB, TT_RWITM, RB, 0);
+    acc(DC_LOAD, mk(1, WAYS, 9, 0));
+    expect_trace("line beyond the ways fills", 1, RB, TT_RWITM, RB, 0);
     acc(DC_LOAD, mk(1, 0, 9, 0));
-    acc(DC_LOAD, mk(1, 2, 9, 0));
-    acc(DC_LOAD, mk(1, 3, 9, 0));
+    for (int t = 2; t < WAYS; t++) acc(DC_LOAD, mk(1, t, 9, 0));
     expect_trace("recent lines stay", 0, RB, 0, RB, 0);
     acc(DC_LOAD, mk(1, 1, 9, 0));
     expect_trace("the LRU line was the victim", 1, RB, TT_RWITM, RB, 0);
@@ -845,10 +849,10 @@ module tb_dcache;
         hold_beats = 0;
       end
     join
-    for (int t = 0; t < 4; t++) st(mk(1, t, 13, 0), 64'(t));
+    for (int t = 0; t < WAYS; t++) st(mk(1, t, 13, 0), 64'(t));
     hold_req = 1;
     fork
-      acc(DC_LOAD, mk(1, 4, 13, 0));
+      acc(DC_LOAD, mk(1, WAYS, 13, 0));
       begin
         int guard;
         guard = 0;
@@ -946,6 +950,8 @@ module tb_dcache;
     else if (r < 94) region = 4 + int'(rnd_a(2));
     else region = 6 + int'(rnd_a(2));
     set = rnd_a(10) == 0 ? 127 : int'(rnd_a(4));
+    // With 64 sets, address bit 11 is a tag bit: sets s and s+64 alias.
+    if (SETS < 128 && set != 127 && rnd_a(2) != 0) set += 64;
     return mk(region, int'(rnd_a(6)), set, int'(rnd_a(4))) | 32'(rnd_a(8));
   endfunction
   function automatic logic [7:0] random_be_a();
@@ -986,8 +992,10 @@ module tb_dcache;
   task automatic flush_pool();
     for (int region = 0; region < 4; region++)
       for (int tag = 0; tag < 6; tag++)
-        for (int s = 0; s < 5; s++)
+        for (int s = 0; s < 5; s++) begin
           acc(DC_DCBF, mk(region, tag, s == 4 ? 127 : s, 0));
+          if (SETS < 128 && s < 4) acc(DC_DCBF, mk(region, tag, s + 64, 0));
+        end
     acc(DC_SYNC, 0);
   endtask
 
@@ -1051,8 +1059,8 @@ module tb_dcache;
           async_seen, async_expect));
     check(push_seen == push_expect, "every flagged push arrived");
     check(n_snoop_during_fill > 0 && n_snoop_during_cob > 0, "snoops overlapped fills and castouts");
-    $display("PASS: tb_dcache seed=%0d ops=%0d phase_ops=%0d checks=%0d cycles=%0d",
-             seed, n_ops, phase_ops, checks, cycles);
+    $display("PASS: tb_dcache %0dx%0d seed=%0d ops=%0d phase_ops=%0d checks=%0d cycles=%0d",
+             SETS, WAYS, seed, n_ops, phase_ops, checks, cycles);
     $display("  fills=%0d castouts=%0d singles=%0d addr_only=%0d snoops=%0d artry=%0d pushes=%0d",
              n_fill, n_castout, n_single, n_addr_only, n_snoops, n_artry, n_push);
     $display("  snoops_during_fill=%0d snoops_during_castout=%0d max_retries=%0d async_errors=%0d",

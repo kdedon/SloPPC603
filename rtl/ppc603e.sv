@@ -16,7 +16,13 @@ module ppc603e #(
   parameter logic [3:0] PLL_CFG = ppc_pkg::pll_cfg_default(CPU_VARIANT),
   // Data cache, bus master and snooper: TS, A, TT and GBL are snooped and
   // ARTRY answers from the cache. HID0[DCE] resets to 0 (UM Table 4-8).
-  parameter bit ENABLE_DCACHE = 1'b1
+  parameter bit ENABLE_DCACHE = 1'b1,
+  // Cache geometry; zero takes the variant's. Benches set it to run the
+  // 603 and 602 geometries on a 603e core.
+  parameter int ICACHE_SETS = 0,
+  parameter int ICACHE_WAYS = 0,
+  parameter int DCACHE_SETS = 0,
+  parameter int DCACHE_WAYS = 0
 ) (
   // Clocks.
   input  logic        sysclk,
@@ -235,6 +241,8 @@ module ppc603e #(
   /* verilator lint_off PINCONNECTEMPTY */
   ppc_core_bat_cached_bus60x #(
     .RESET_PC(32'hfff0_0100), .CPU_VARIANT(CPU_VARIANT),
+    .ICACHE_SETS(ICACHE_SETS), .ICACHE_WAYS(ICACHE_WAYS),
+    .DCACHE_SETS(DCACHE_SETS), .DCACHE_WAYS(DCACHE_WAYS),
     // Hard reset clears HID0, ICE included (UM Table 4-8).
     .RESET_CACHE_ENABLE(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
