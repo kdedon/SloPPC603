@@ -863,7 +863,14 @@ module ppc_dcache #(
       if (st_we) set_valid_q[st_waddr] <= 1'b1;
       if (state_q == S_IDLE && hid0_dcfi_i && MUTATION != 7) set_valid_q <= '0;
 
-      if (rsp_valid_q && rsp_ready_i) rsp_valid_q <= 1'b0;
+      // Status clears with the response, so an early load hit sets only
+      // valid and data.
+      if (rsp_valid_q && rsp_ready_i) begin
+        rsp_valid_q <= 1'b0;
+        rsp_error_q <= 1'b0;
+        rsp_align_q <= 1'b0;
+        rsp_ok_q <= 1'b0;
+      end
 
       // Write queue: pops come back in request order.
       if (wq_pop && wq_cob_q[0]) cob_valid_q <= 1'b0;
@@ -918,9 +925,6 @@ module ppc_dcache #(
             end else if (lk_read && early_data_q) begin
               rsp_valid_q <= 1'b1;
               rsp_data_q <= data_rdata[lk_way];
-              rsp_error_q <= 1'b0;
-              rsp_align_q <= 1'b0;
-              rsp_ok_q <= 1'b0;
               state_q <= S_IDLE;
             end else if (lk_read) begin
               state_q <= S_READ_DATA;
