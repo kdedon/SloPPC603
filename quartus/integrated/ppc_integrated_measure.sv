@@ -2,7 +2,10 @@
 // Copyright (c) 2026 Kevin Dedon
 // Current integrated subset measurement: all runtime controls and outputs remain ports.
 // No behavioral responder, constant memory inputs, or folded retirement digest.
-module ppc_integrated_measure (
+module ppc_integrated_measure #(
+  // Part the build models; see cpu_cfg().
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E
+) (
   input  logic clk_i,
   input  logic rst_ni,
 
@@ -213,6 +216,7 @@ module ppc_integrated_measure (
   always_ff @(posedge clk_i) tea_n_i_ibq <= tea_n_i;
 
   ppc_core_cached_bus60x_managed #(
+    .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .RESET_CACHE_ENABLE(1'b0),
     .ENABLE_TEST_REDIRECT(1'b0)

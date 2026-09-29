@@ -9,7 +9,7 @@
 // invalidates one set; there is no automatic code coherence.
 module ppc_core_bat_cached_bus60x #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
-  parameter int DIV_LATENCY = 20,
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   parameter logic RESET_CACHE_ENABLE = 1'b1,
   // Includes the existing serialized ISYNC/SYNC/EIEIO profile.
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
@@ -39,7 +39,6 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
-  parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
   parameter logic [3:0] PLL_CFG = 4'b0000,
   // Data cache in the slot, bus master and snooper in the BIU.
   // Needs cache instructions, reservation, machine check and the pin
@@ -238,7 +237,7 @@ module ppc_core_bat_cached_bus60x #(
 
   ppc_core_bat #(
     .RESET_PC(RESET_PC),
-    .DIV_LATENCY(DIV_LATENCY),
+    .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
     .ENABLE_EXTERNAL_INTERRUPTS(ENABLE_EXTERNAL_INTERRUPTS),
@@ -265,7 +264,7 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
-    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE), .PVR_VALUE(PVR_VALUE),
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
     // HID0[ICE] starts in the cache's reset mode.
     .HID0_RESET((RESET_CACHE_ENABLE ? (32'd1 << ppc_pkg::HID0_ICE) : 32'd0) |
                 ((ENABLE_DCACHE && RESET_DCACHE_ENABLE) ?

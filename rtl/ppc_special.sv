@@ -27,7 +27,7 @@ module ppc_special #(
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   // MCP, SRESET and SMI boundaries; TLBISYNC holds tlbsync.
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
-  parameter logic [31:0] PVR_VALUE = 32'h0007_0200,
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
@@ -161,6 +161,7 @@ module ppc_special #(
   output logic icache_ctl_invalidate_o
 );
   import ppc_pkg::*;
+  localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
 
   typedef struct packed {
     logic bank;
@@ -525,10 +526,10 @@ module ppc_special #(
       10'd274: exec_value = sprg_q[2];
       10'd275: exec_value = sprg_q[3];
       10'd1010: exec_value = iabr_q;
-      10'd1008: exec_value = hid0_q;
-      10'd1009: exec_value = {PLL_CFG, 28'b0};
+      10'd1008: exec_value = hid0_q & CPU_CFG.hid0_rmask;
+      10'd1009: exec_value = {PLL_CFG, 28'b0} & CPU_CFG.hid1_rmask;
       10'd282: exec_value = ear_q;
-      10'd287: exec_value = PVR_VALUE;
+      10'd287: exec_value = CPU_CFG.pvr;
       default: exec_value = '0;
     endcase
 
@@ -1298,7 +1299,7 @@ module ppc_special #(
       dmiss_q <= '0;
       hash1_q <= '0;
       hash2_q <= '0;
-      hid0_q <= HID0_RESET & HID0_WMASK;
+      hid0_q <= HID0_RESET & CPU_CFG.hid0_wmask;
       ear_q <= '0;
       timer_read_value_q <= '0;
     end else begin
@@ -1323,7 +1324,7 @@ module ppc_special #(
             10'd275: sprg_q[3] <= a_q;
             // IABR[31] (translation enable) is stored but ignored.
             10'd1010: if (ENABLE_DEBUG_EXCEPTIONS) iabr_q <= a_q;
-            10'd1008: if (ENABLE_FULL_DECODE) hid0_q <= a_q & HID0_WMASK;
+            10'd1008: if (ENABLE_FULL_DECODE) hid0_q <= a_q & CPU_CFG.hid0_wmask;
             10'd282: if (ENABLE_FULL_DECODE) ear_q <= a_q & EAR_WMASK;
             default: ;
           endcase

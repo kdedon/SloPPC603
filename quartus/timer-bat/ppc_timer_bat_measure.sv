@@ -2,7 +2,10 @@
 // Copyright (c) 2026 Kevin Dedon
 // Live BAT + EXT + TB/DEC measurement. Every wrapper port remains observable.
 // No cache/60x composition, fixed memory responder or folded trace.
-module ppc_timer_bat_measure (
+module ppc_timer_bat_measure #(
+  // Part the build models; see cpu_cfg().
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E
+) (
   input  logic clk_i,
   input  logic rst_ni,
   input  logic external_irq_i,
@@ -267,6 +270,7 @@ module ppc_timer_bat_measure (
   logic [32:0] unused_icbi_core;
   logic unused_checkstop;
   ppc_core_bat #(
+    .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_EXTERNAL_INTERRUPTS(1'b1),

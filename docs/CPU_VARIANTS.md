@@ -1,12 +1,15 @@
 # CPU variant contract
 
 One elaboration parameter, `CPU_VARIANT`, selects the part the core models:
-**PID7v-603e** (default), **PID6-603e**, **603** or **602**. This document fixes
-what differs between them, what main implements today, how the difference is
-parameterized, and how each variant is verified. It is a source contract and
-plan; no RTL implements `CPU_VARIANT` yet.
+**PID7v-603e** (default), **PID6-603e**, **EC603e**, **603** or **602**. This
+document fixes what differs between them, what main implements today, how the
+difference is parameterized, and how each variant is verified. Rounds V0 and V1
+are implemented ([status](#status)); the "Main:" notes below describe the tree
+before V1 unless they say otherwise.
 
-EC603e (603e without FPU) is not a target here; see [open questions](#open-questions).
+EC603e is the PID7v-603e without the FPU: same PVR, divide latency and HID0,
+and every FP instruction takes FP-unavailable. The UM covers both parts; the
+shared PVR is a best-effort reading.
 
 ## Sources
 
@@ -193,12 +196,13 @@ watchdog.
 
 ### 2.1 Package
 
-`ppc_pkg.sv` gains one enum and one derived record; nothing else selects a
-variant.
+`ppc_pkg.sv` holds one enum and one derived record; nothing else selects a
+variant. As implemented in V0:
 
 ```systemverilog
-typedef enum logic [1:0] {
-  CPU_PID7V_603E, CPU_PID6_603E, CPU_603, CPU_602
+typedef enum logic [2:0] {
+  CPU_PID7V_603E = 3'd0, CPU_PID6_603E = 3'd1, CPU_EC603E = 3'd2,
+  CPU_603 = 3'd3, CPU_602 = 3'd4
 } cpu_variant_e;
 
 typedef enum logic [1:0] { FPU_NONE, FPU_DP, FPU_602_SP } fpu_kind_e;
@@ -210,26 +214,37 @@ typedef struct packed {
   logic [2:0]  icache_ways, dcache_ways;   // 4 or 2
   logic [5:0]  tlb_sets;                   // 32 or 16
   logic [31:0] hid0_wmask, hid0_rmask;
+  logic [31:0] hid1_rmask;                 // PLL_CFG bits; 0 on the 603
   logic        has_hid1, has_ear, has_srr1_key, has_abe_ifem;
   logic        misaligned_le_hw, misaligned_ecxwx_hw;
   logic        store_two_cycle;            // 603 2:2 stores
   logic        mul_602_timing;
   logic        has_602_ext;                // esa/dsa/mfrom, IBR, TCR, ESA SPRs, AP/SA, PO
   logic        string_emulation_trap;
+  logic        has_direct_store;           // 603 XATS on T=1
   fpu_kind_e   fpu;
 } cpu_cfg_t;
 
-function automatic cpu_cfg_t cpu_cfg(cpu_variant_e v);  // one case, named fields
+function automatic cpu_cfg_t cpu_cfg(cpu_variant_e v);  // PID7v defaults, one case
+function automatic bit cpu_variant_supported(cpu_variant_e v);
 ```
 
-Consumers copy fields into local `localparam`s at the top of the module, as
+The 602 HID0 masks are zero until its layout is encoded (V7); its build is
+rejected before then.
+
+Consumers copy the record into a local `localparam` at the top of the module, as
 `hdl-design-organization` §2 prescribes. Structural sizes (sets, ways, TLB sets)
 go through `generate if` or localparam arithmetic; no file-list selection.
 
-Existing parameters are retired in two steps: first `DIV_LATENCY`, `PVR_VALUE`
-and `HID0_RESET` default from `cpu_cfg(CPU_VARIANT)` with an elaboration check
-that an explicit override matches; then the overrides are removed once benches
-pass `CPU_VARIANT` instead. `ENABLE_*` profile parameters stay orthogonal.
+V1 retired `PVR_VALUE` outright (no bench overrode it). `DIV_LATENCY` stays on
+`ppc_core` only, default 0 meaning "from the variant"; a nonzero value overrides
+it for benches that stretch the divider (`tb_core_interrupt` uses 37). The
+wrappers dropped `DIV_LATENCY` and pass `CPU_VARIANT`. `HID0_RESET` stays: it
+encodes the wrapper's cache reset mode and is masked by the variant's HID0
+mask. `ENABLE_*` profile parameters stay orthogonal.
+
+Verilator cannot set an enum parameter from `-G`, so benches and the lint top
+take `parameter int VARIANT` and cast it to `cpu_variant_e`.
 
 ### 2.2 Files and behavior per difference
 
@@ -258,8 +273,9 @@ pass `CPU_VARIANT` instead. `ENABLE_*` profile parameters stay orthogonal.
 ### 2.3 Verification matrix
 
 Variant-neutral benches (integer ALU, recovery, rename) run on the default only.
-Variant-sensitive checks run on each variant through one make target, proposed
-`make -C sim variant-matrix`, which loops `CPU_VARIANT` over the four values:
+Variant-sensitive checks run on each variant through one make target,
+`make -C sim variant-matrix` (part of `regression`). The table is the target
+matrix; [status](#status) lists what the target runs today.
 
 | Check | PID7v | PID6 | 603 | 602 |
 |---|---|---|---|---|
@@ -327,7 +343,31 @@ choice and a test of that choice, not a fidelity claim:
   contract).
 - PVR revision fields for all variants (manuals give only starting levels).
 
+## Status
+
+| Round | State |
+|---|---|
+| V0 | Done: `cpu_variant_e`, `cpu_cfg_t`, `cpu_cfg()`, `cpu_variant_supported()`; `ppc_core` fails elaboration for `CPU_603` and `CPU_602` with a message naming the missing work |
+| V1 | Done: `CPU_VARIANT` on `ppc603e`, every core wrapper and measurement top, down to `ppc_core` and `ppc_special`; PVR, divide latency and HID0/HID1 read and write masks come from `cpu_cfg()`; PID7v PVR is `0x00070101` in RTL, reference runner, ISA metadata and firmware |
+| V2 onward | Not started |
+
+EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
+behave the same. The full-decode bench checks PVR and HID0 read-back per
+variant; HID1 absence and EAR absence wait for V3.
+
+Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 22a007b plus an uncommitted edit to this document, 2026-09-29.
+Pass: 560 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage
+75.8% (1752/2311, 14 waived arms, 21 runs). `variant-matrix`: chip lint on
+variants 0 (PID7v), 1 (PID6) and 2 (EC603e); variants 3 (603) and 4 (602)
+rejected at elaboration; `tb_core_divider_timing` at 20, 37 and 20 cycles
+(58, 92, 58 checks); `tb_core_full_decode` 8816 checks, 729 retirements on
+each. This establishes that the variant parameter elaborates, selects PVR,
+divide latency and HID0 masks, and leaves the PID7v gates green. It does not
+establish PID6 reference agreement (V2) or any 603/602 behavior.
+
 ## Open questions
+
+Settled by the [decisions](#decisions-2026-09-28) below; kept for context.
 
 1. PVR revisions: keep `0x00070200` (PID7v level with IFEM/ABE) or match the
    reference's `0x00070101`? Values for PID6 (`0x00060100`?), 603 (`0x00030100`?)

@@ -124,8 +124,6 @@ int main(int argc, char** argv) {
         is_deterministic = true;
         gProfilerObj.reset(new Profiler());
         ppc_cpu_init(&memory, PPC_VER::MPC603EV, false, 25000000ULL);
-        // Same 603ev version as the RTL's PVR_VALUE; the revision is a part choice.
-        ppc_state.spr[SPR::PVR] = 0x00070200U;
         // Harness-installed state (BATs), applied through the reference's SPR path.
         for (int i = 6; i < argc; ++i) {
             std::string arg = argv[i];

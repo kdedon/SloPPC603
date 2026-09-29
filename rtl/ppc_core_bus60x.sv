@@ -4,7 +4,7 @@
 // Reusable core wrapper for the bounded unified scalar 60x bus profile.
 module ppc_core_bus60x #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
-  parameter int DIV_LATENCY = 20,
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   // Includes the existing serialized ISYNC/SYNC/EIEIO profile.
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_TEST_REDIRECT = 1'b1
@@ -93,7 +93,7 @@ module ppc_core_bus60x #(
   logic unused_core_checkstop, unused_imem_rsp_error;
   ppc_core #(
     .RESET_PC(RESET_PC),
-    .DIV_LATENCY(DIV_LATENCY),
+    .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_TEST_REDIRECT(ENABLE_TEST_REDIRECT)
   ) core (

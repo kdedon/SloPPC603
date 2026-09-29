@@ -581,7 +581,7 @@ test-core-divider-timing:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_divider_timing --Mdir $(BUILD_DIR)/core-divider-timing $(RTL) ../tb/tb_core_divider_timing.sv
 	./$(BUILD_DIR)/core-divider-timing/Vtb_core_divider_timing $(SIM_ARGS)
 test-core-divider-timing-pid6:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_divider_timing -GDIV_LATENCY=37 --Mdir $(BUILD_DIR)/core-divider-timing-pid6 $(RTL) ../tb/tb_core_divider_timing.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_divider_timing -GVARIANT=1 --Mdir $(BUILD_DIR)/core-divider-timing-pid6 $(RTL) ../tb/tb_core_divider_timing.sv
 	./$(BUILD_DIR)/core-divider-timing-pid6/Vtb_core_divider_timing $(SIM_ARGS)
 
 .PHONY: test-line-read-independent
@@ -1507,6 +1507,31 @@ test-decode-sweep:
 test-core-full-decode:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_full_decode --Mdir $(BUILD_DIR)/core-full-decode -I../tb $(RTL) ../tb/tb_core_full_decode.sv
 	./$(BUILD_DIR)/core-full-decode/Vtb_core_full_decode $(SIM_ARGS)
+
+# CPU variants (cpu_variant_e encoding): chip lint, divide latency and
+# PVR/HID0/HID1 read-back on each implemented variant; CPU_603 and CPU_602
+# must fail elaboration.
+VARIANT_IDS := 0 1 2
+VARIANT_REJECTED := 3 4
+.PHONY: variant-matrix
+regression: variant-matrix
+variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-reject-,$(VARIANT_REJECTED)) \
+                $(addprefix variant-divider-,$(VARIANT_IDS)) $(addprefix variant-full-decode-,$(VARIANT_IDS))
+	@echo "PASS: variant-matrix (variants $(VARIANT_IDS) built and checked; $(VARIANT_REJECTED) rejected)"
+variant-lint-%:
+	$(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=$* $(CHIP_RTL) ../tb/tb_variant_lint.sv
+variant-reject-%:
+	mkdir -p $(BUILD_DIR)/variant-reject
+	if $(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=$* $(CHIP_RTL) ../tb/tb_variant_lint.sv \
+	   > $(BUILD_DIR)/variant-reject/$*.log 2>&1; then echo "FAIL: variant $* elaborated"; exit 1; fi
+	grep -q "is not implemented" $(BUILD_DIR)/variant-reject/$*.log
+	@echo "PASS: variant $* rejected at elaboration"
+variant-divider-%:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_divider_timing -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-divider-$* $(RTL) ../tb/tb_core_divider_timing.sv
+	./$(BUILD_DIR)/variant-divider-$*/Vtb_core_divider_timing $(SIM_ARGS)
+variant-full-decode-%:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_full_decode -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-full-decode-$* -I../tb $(RTL) ../tb/tb_core_full_decode.sv
+	./$(BUILD_DIR)/variant-full-decode-$*/Vtb_core_full_decode $(SIM_ARGS)
 
 # Standalone data cache: directed MEI checks plus seeded random traffic, and
 # injected defects the bench must reject.

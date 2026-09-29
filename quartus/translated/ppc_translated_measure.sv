@@ -3,7 +3,10 @@
 // Translated cached 60x MVP profile: every wrapper port remains a virtual port.
 // Bus data returns are runtime inputs, so decode is not specialized to one program.
 // No behavioral responder, constant memory inputs or folded retirement digest.
-module ppc_translated_measure (
+module ppc_translated_measure #(
+  // Part the build models; see cpu_cfg().
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E
+) (
   input logic clk_i,
   input logic rst_ni,
   input logic external_irq_i,
@@ -487,6 +490,7 @@ module ppc_translated_measure (
   always_ff @(posedge clk_i) tea_n_i_ibq <= tea_n_i;
 
   ppc_core_bat_cached_bus60x #(
+    .CPU_VARIANT(CPU_VARIANT),
     .RESET_CACHE_ENABLE(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),

@@ -76,7 +76,7 @@ adapter activity.
 
 ## Wrapper structure and files
 
-`ppc_core_bus60x` passes `RESET_PC` and `DIV_LATENCY` to an
+`ppc_core_bus60x` passes `RESET_PC` and `CPU_VARIANT` to an
 internal core instance named `core`.  It exposes the core retirement and
 external recovery interfaces unchanged alongside the explicit 60x pins.  It
 instantiates:
