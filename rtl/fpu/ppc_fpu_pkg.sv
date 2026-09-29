@@ -113,17 +113,21 @@ package ppc_fpu_pkg;
     logic store;
   } ppc_fpu_result_t;
 
+  // Forward notification; its payload follows on the next cycle.
   typedef struct packed {
     completion_tag_t tag;
     logic fpr_write;
     logic [4:0] fpr_index;
+    logic cr_write;
+    logic [2:0] cr_field;
+  } ppc_fpu_forward_t;
+
+  typedef struct packed {
     logic [63:0] fpr_value;
     logic fpr_sp;
     logic fpr_lt;
-    logic cr_write;
-    logic [2:0] cr_field;
     logic [3:0] cr_value;
-  } ppc_fpu_forward_t;
+  } ppc_fpu_forward_data_t;
 
   typedef struct packed {
     completion_tag_t tag;

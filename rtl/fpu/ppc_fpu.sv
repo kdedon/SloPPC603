@@ -42,7 +42,9 @@ module ppc_fpu #(
     output logic forward_valid_o,
     output ppc_fpu_pkg::ppc_fpu_forward_t forward_o,
     output logic forward1_valid_o,
-    output ppc_fpu_pkg::ppc_fpu_forward_t forward1_o
+    output ppc_fpu_pkg::ppc_fpu_forward_t forward1_o,
+    output ppc_fpu_pkg::ppc_fpu_forward_data_t forward_data_o,
+    output ppc_fpu_pkg::ppc_fpu_forward_data_t forward1_data_o
 );
   import ppc_pkg::completion_tag_t;
   import ppc_fpu_pkg::*;
@@ -124,6 +126,28 @@ module ppc_fpu #(
     logic [31:0] insn;
     logic msr_fp;
   } work1_t;
+
+  typedef struct packed {
+    completion_tag_t tag;
+    logic fpr_write;
+    logic [4:0] fpr_index;
+    logic [63:0] fpr_value;
+    logic fpr_sp;
+    logic fpr_lt;
+    logic cr_write;
+    logic [2:0] cr_field;
+    logic [3:0] cr_value;
+    logic reply;
+    logic [31:0] prefix;
+    logic fctiwz;
+  } forward_candidate_t;
+  typedef struct packed {
+    logic valid;
+    logic reply;
+    logic [31:0] prefix;
+    logic fctiwz;
+    ppc_fpu_forward_data_t data;
+  } forward_payload_t;
 
   pending_t pending_q [0:PENDING_DEPTH-1];
   pending_t pending_d [0:PENDING_DEPTH-1];
@@ -215,6 +239,10 @@ module ppc_fpu #(
   logic source_waiting;
   logic [2:0] fpr_pending_count;
   logic [31:0] prefix_fpscr;
+  forward_candidate_t fwd0;
+  forward_candidate_t fwd1;
+  forward_payload_t fwd0_payload_d, fwd0_payload_q;
+  forward_payload_t fwd1_payload_d, fwd1_payload_q;
   logic prefix_known;
   work_t work_issue;
   decoded_t work_decoded;
@@ -1573,15 +1601,15 @@ module ppc_fpu #(
     sp_d = sp_q;
     lt_d = lt_q;
     if (forward_valid_o && forward_from_pending) begin
-      if (forward_o.fpr_write)
+      if (fwd0.fpr_write)
         pending_d[forward_index].fpr_forwarded = 1'b1;
-      if (forward_o.cr_write)
+      if (fwd0.cr_write)
         pending_d[forward_index].cr_forwarded = 1'b1;
     end
     if (forward1_valid_o && forward1_from_pending) begin
-      if (forward1_o.fpr_write)
+      if (fwd1.fpr_write)
         pending_d[forward1_index].fpr_forwarded = 1'b1;
-      if (forward1_o.cr_write)
+      if (fwd1.cr_write)
         pending_d[forward1_index].cr_forwarded = 1'b1;
     end
     mem_incoming_result = '0;
@@ -1816,7 +1844,8 @@ module ppc_fpu #(
   // result and a load FPR result that may retire together.  A CR result has
   // priority on the first bus; remaining results stay queued for a later bus.
   always_comb begin
-    ppc_fpu_forward_t candidate;
+    forward_candidate_t candidate;
+    logic reply_candidate;
     ppc_fpu_arith_rsp_t ar;
     logic [31:0] candidate_fpscr;
     logic candidate_exception;
@@ -1832,19 +1861,21 @@ module ppc_fpu #(
     candidate_fpr_new = 1'b0;
     candidate_cr_new = 1'b0;
     ready = 1'b0;
+    reply_candidate = 1'b0;
     prefix_fpscr = fpscr_q;
     prefix_known = 1'b1;
-    forward_o = '0;
+    fwd0 = '0;
     forward_valid_o = 1'b0;
     forward_from_pending = 1'b0;
     forward_index = '0;
-    forward1_o = '0;
+    fwd1 = '0;
     forward1_valid_o = 1'b0;
     forward1_from_pending = 1'b0;
     forward1_index = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
       if (i < int'(pending_count_q) && pending_q[i].valid) begin
         ready = pending_q[i].done || pending_q[i].local_wait == 2'd1;
+        reply_candidate = 1'b0;
         candidate = '0;
         candidate.tag = pending_q[i].issue.tag;
         candidate.fpr_index = pending_q[i].result.fpr_index;
@@ -1867,6 +1898,7 @@ module ppc_fpu #(
             ar = arith_finish;
             ready = 1'b1;
             arith_metadata_valid = 1'b1;
+            reply_candidate = 1'b1;
           end else if (!ready && arith_rsp_match &&
                        arith_rsp.tag == pending_q[i].issue.tag) begin
             ar = arith_rsp;
@@ -1875,12 +1907,16 @@ module ppc_fpu #(
           end
           if (arith_metadata_valid) begin
             candidate.tag = ar.tag;
+            candidate.reply = reply_candidate;
+            candidate.prefix = prefix_fpscr;
+            candidate.fctiwz = pending_q[i].decoded.op == FP_FCTIWZ;
             candidate_exception = numeric_emulation_trap(ar.invalid, ar.ox,
                 ar.ux, ar.zx, ar.xx, ar.tiny_before_round, prefix_fpscr[7:2]);
             candidate_fpscr = arithmetic_fpscr(prefix_fpscr, ar.invalid,
                 ar.ox, ar.ux, ar.zx, ar.xx, ar.fr, ar.fi, ar.frfi_valid,
                 ar.fprf, ar.fprf_valid, ar.fpcc, ar.compare_valid);
-            candidate.fpr_write = ar.write_result && !candidate_exception;
+            candidate.fpr_write = (reply_candidate ? arith_finish_write :
+                ar.write_result) && !candidate_exception;
             candidate.fpr_value = CPU_602 ?
                 {32'd0,(pending_q[i].decoded.op == FP_FCTIWZ ? ar.result[31:0] :
                  narrow_single(ar.result))} : ar.result;
@@ -1892,7 +1928,12 @@ module ppc_fpu #(
                 pending_q[i].issue.insn[25:23] : 3'd1;
             candidate.cr_value = ar.compare_valid ? ar.fpcc :
                 candidate_fpscr[31:28];
-            if (!candidate_exception) prefix_fpscr = candidate_fpscr;
+            // A finishing result's value and status come from its reply.
+            if (reply_candidate) begin
+              candidate.fpr_value = '0;
+              candidate.cr_value = '0;
+            end
+            else if (!candidate_exception) prefix_fpscr = candidate_fpscr;
           end else prefix_known = 1'b0;
         end else if (pending_q[i].decoded.kind == DK_MEMORY && !ready &&
                      mem_rsp_match && mem_rsp_i.tag == pending_q[i].issue.tag) begin
@@ -1927,26 +1968,91 @@ module ppc_fpu #(
             forward_from_pending = 1'b1;
             forward_index = PENDING_IDX_BITS'(i);
             forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
-            forward_o = candidate;
-          end else if (!forward_o.cr_write && candidate_cr_new) begin
+            fwd0 = candidate;
+          end else if (!fwd0.cr_write && candidate_cr_new) begin
             // Promote a completed CR value without losing the displaced FPR.
             // An earlier second FPR packet remains in its queue slot.
             forward1_from_pending = forward_from_pending;
             forward1_index = forward_index;
             forward1_valid_o = forward_valid_o;
-            forward1_o = forward_o;
+            fwd1 = fwd0;
             forward_from_pending = 1'b1;
             forward_index = PENDING_IDX_BITS'(i);
             forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
-            forward_o = candidate;
+            fwd0 = candidate;
           end else if (!forward1_from_pending) begin
             forward1_from_pending = 1'b1;
             forward1_index = PENDING_IDX_BITS'(i);
             forward1_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
-            forward1_o = candidate;
+            fwd1 = candidate;
           end
         end
+        // Younger CR results wait for a finishing result's reply.
+        if (reply_candidate) prefix_known = 1'b0;
       end
+    end
+  end
+
+  // Identity fields travel in the notification, not the payload.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic forward_payload_t forward_payload(
+      input logic valid, input forward_candidate_t candidate);
+  /* verilator lint_on UNUSEDSIGNAL */
+    forward_payload_t out;
+    out.valid = valid;
+    out.reply = candidate.reply;
+    out.prefix = candidate.prefix;
+    out.fctiwz = candidate.fctiwz;
+    out.data.fpr_value = candidate.fpr_value;
+    out.data.fpr_sp = candidate.fpr_sp;
+    out.data.fpr_lt = candidate.fpr_lt;
+    out.data.cr_value = candidate.cr_value;
+    return out;
+  endfunction
+
+  // A payload announced with a finishing result comes from the registered
+  // reply and the status prefix captured at the announcement.
+  function automatic ppc_fpu_forward_data_t payload_data(
+      input forward_payload_t payload);
+    ppc_fpu_forward_data_t out;
+    // CR1 copies only the status high nibble.
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [31:0] status;
+    /* verilator lint_on UNUSEDSIGNAL */
+    out = payload.data;
+    if (payload.reply) begin
+      status = arithmetic_fpscr(payload.prefix, arith_rsp.invalid,
+          arith_rsp.ox, arith_rsp.ux, arith_rsp.zx, arith_rsp.xx,
+          arith_rsp.fr, arith_rsp.fi, arith_rsp.frfi_valid, arith_rsp.fprf,
+          arith_rsp.fprf_valid, arith_rsp.fpcc, arith_rsp.compare_valid);
+      out.fpr_value = CPU_602 ?
+          {32'd0, (payload.fctiwz ? arith_rsp.result[31:0] :
+           narrow_single(arith_rsp.result))} : arith_rsp.result;
+      out.cr_value = arith_rsp.compare_valid ? arith_rsp.fpcc :
+          status[31:28];
+    end
+    if (!payload.valid) out = '0;
+    return out;
+  endfunction
+
+  assign forward_o = '{tag: fwd0.tag, fpr_write: fwd0.fpr_write,
+      fpr_index: fwd0.fpr_index, cr_write: fwd0.cr_write,
+      cr_field: fwd0.cr_field};
+  assign forward1_o = '{tag: fwd1.tag, fpr_write: fwd1.fpr_write,
+      fpr_index: fwd1.fpr_index, cr_write: fwd1.cr_write,
+      cr_field: fwd1.cr_field};
+  assign fwd0_payload_d = forward_payload(forward_valid_o, fwd0);
+  assign fwd1_payload_d = forward_payload(forward1_valid_o, fwd1);
+  assign forward_data_o = payload_data(fwd0_payload_q);
+  assign forward1_data_o = payload_data(fwd1_payload_q);
+
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      fwd0_payload_q <= '0;
+      fwd1_payload_q <= '0;
+    end else begin
+      fwd0_payload_q <= fwd0_payload_d;
+      fwd1_payload_q <= fwd1_payload_d;
     end
   end
 endmodule
