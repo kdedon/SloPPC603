@@ -1,0 +1,186 @@
+# Standalone FPU pipeline design
+
+This is the implementation plan for replacing the serialized backend and shell.
+It is not verification evidence. Both elaborations must meet the architectural
+contracts in [FPU_CONTRACT.md](FPU_CONTRACT.md) and
+[FPU_602_CONTRACT.md](FPU_602_CONTRACT.md), including original execution latency
+and throughput. CPU integration remains separate.
+
+## Compile-time personalities
+
+`CPU_602=0` selects the 603e implementation; `CPU_602=1` selects the 602.
+There is no runtime personality input. The 603e bank stores 32 binary64 words;
+the 602 bank stores 32 binary32/raw words with architectural SP/LT tags. The
+602 arithmetic adapter widens tagged binary32 operands exactly for shared
+arithmetic and stores the directly rounded binary32 result. Software-emulated
+double operands never enter hardware arithmetic as invented zero-filled values.
+
+## Arithmetic execution
+
+Execution starts when the arithmetic request handshake accepts an instruction.
+Count that rising edge as zero. Without downstream stalls, response availability
+must occur at edge 3 for ordinary operations, edge 4 for 603e double multiply or
+fused operations, edge 18 for single divide and reciprocal, and edge 33 for 603e
+double divide. Ordinary initiation interval is one cycle; 603e double multiply
+and fused initiation interval is two. Divide and reciprocal block new arithmetic
+issue until execution completes. Special operands retain their opcode's timing.
+[603e UM §6.4.3, Table 6-5, physical PDF 264, 272–273;
+602 UM §6.4.4, Table 6-5, physical PDF 305, 315–316]
+
+The common datapath has multiply/alignment, add, and round/convert stages. Double
+multiply uses two cycles in its multiply stage. Fused operations preserve the
+exact product and cancellation bits until their one final rounding. Near/far
+alignment optimizations require a numerical argument that discarded bits cannot
+reappear after cancellation. Area or frequency pressure cannot justify extra
+execution stages under this contract.
+
+Response credits are reserved at acceptance. Four credits cover the standalone
+rename capacity and guarantee completed packets survive downstream backpressure.
+Responses preserve instruction order and full completion tags. Flush clears all
+pipeline, divider, and response-valid state. Tests must cover simultaneous enqueue
+and dequeue, held responses, full capacity, and recovery during every stage.
+
+## Dispatch, forwarding, and retirement
+
+The shell has two ordered dispatch lanes, `issue_valid_i/issue_ready_o/issue_i`
+and `issue1_valid_i/issue1_ready_o/issue1_i`. Lane 1 can handshake only when
+lane 0 handshakes on the same edge. A paired issue contains one FPU arithmetic,
+move, or select operation and one floating-point LSU operation, in either lane
+order. Status controls, tag SPR accesses, and 602 `fctiwz` serialize and cannot
+pair. Queue space and rename credits are checked for the entire accepted prefix;
+lane 1 failure does not revoke an accepted lane 0. The integrator may present an
+unaccepted lane-1 instruction as lane 0 on the next edge. These lanes preserve
+the manual's independent FPU and LSU dispatch opportunities without implying
+the standalone FPU itself supplies the core's three-way general dispatcher.
+[602 UM §§1.1.3.1.3, 6.3.2, 6.4.4–5, Tables 6-5–6,
+physical PDF 45, 299, 304–305, 315–318]
+
+The FPU and LSU each have an operand reservation opportunity, independent of
+which dispatch lane supplied the instruction. A stalled arithmetic request must not
+block a ready FP load or store, and an LSU request backpressure must not consume
+arithmetic initiation bandwidth. Both resources publish full-tag completions
+into the shared four- or five-entry pending queue. The 602 retires one oldest
+instruction per edge. The 603e may also retire a following successful load when
+the two results use at most one CR update and one FPR update; this includes a
+compare plus load or an authorized store plus load. Same-edge retirement may
+free queue slots and FPR rename credits for an accepted issue prefix. Pair tests
+cover both lane orders, a waiting
+producer with independent opposite-resource work, fault/abort of either lane,
+and sustained FPU II1 concurrent with the LSU's externally prepared requests.
+[603e UM §6.6.1.3, physical PDF 268; 602 UM §6.3.2, physical PDF 299]
+
+The shell issue handshake represents dispatch. Operand reservation and backend
+execution acceptance are distinct events; dispatch delay must not be counted as
+an extra arithmetic execution stage or used to conceal excess execution latency.
+Move/select capture operand bits and tags in one full-tagged FPU stage register;
+the following stage computes the result while the next move/select may capture
+its own operands. The shared stage is safe because a dispatch pair contains at
+most one FPU instruction.
+Ready independent instructions need a direct dispatch path when an obligatory
+reservation cycle would prevent sustained issue with four rename entries.
+The shell may decode and read a presented candidate before the late completion
+credit decision; backend and LSU requests, pending records, and forwarding are
+qualified by the actual accepted issue prefix. A held rejected lane produces no
+execution or memory side effect.
+Likewise, an arriving head result must be usable for retirement without an
+unnecessary holding-register cycle. Acceptance tests cover the complete shell's
+steady issue rate and dependent producer-to-consumer distance, not only the
+backend's isolated latency.
+The shell owns four FPR rename entries and pending instruction records. Source
+bindings select the youngest older producer and retain its full identity until
+the value arrives. Completion snooping updates waiting operands; rereading the
+architectural bank after a stall cannot substitute for correct bindings.
+[603e UM §6.3.3.1, physical PDF 258; 602 UM §§1.2.2.2, 6.4.3,
+physical PDF 56, 304–305]
+
+Pending capacity is five instructions for 603e and four for 602, selected at
+elaboration. The 602 has four completion buffers and retires at most one
+instruction per cycle. FPR rename capacity remains four in both builds.
+[603e UM §6.3.3.1, physical PDF 258; 602 UM §§1.1.3.1.3, 6.3.2,
+physical PDF 45, 299]
+
+Finished FPR values and CR results are forwarded before architectural retirement.
+Two forwarding packets preserve a same-edge CR result and load FPR result when
+both 603e instructions retire together. A CR result takes the first forwarding
+bus so the BPU can resolve the branch without waiting for retirement; the second
+bus carries the remaining value. Each packet includes the full completion tag,
+destination, value, validity, and 602 SP/LT tags where applicable. CR forwarding
+excludes `mcrfs`. Architectural
+updates remain exact-tag, in-order, commit-only. A held oldest result is stable;
+independent younger instructions may execute and finish while it awaits commit.
+[603e UM §§6.4.3, 6.6.1.3, physical PDF 264, 268]
+
+Arithmetic stores raw exception and rounding metadata in pending records. At
+ordered retirement, FPSCR effects combine with the committed FPSCR so concurrent
+instructions cannot overwrite each other's sticky causes. Early Rc forwarding
+must include relevant older pending status effects. FPSCR control instructions
+serialize against older and younger FP instructions; speculative full-FPSCR
+snapshots are insufficient unless rollback and intervening effects are proven.
+
+An abort discards the matching instruction and younger work; stale responses
+cannot match a reused entry by slot alone. Global kill flushes all execution and
+pending state. Neither cancellation path publishes a store, changes FPR tags, or
+updates architectural FPSCR/CR. Core-wide serialization and global retirement
+order remain obligations of the eventual integration interface.
+
+## Registered finish
+
+The arithmetic unit's rounded result is registered in its response queue on
+the finish edge. Same-cycle uses of the unregistered finish value are limited
+to three places:
+
+- a 2:1 operand mux directly in front of the arithmetic input and divider
+  registers, selected per operand (`req_fwd_i`);
+- store data in the preparation packet and its pending copy;
+- the forwarding buses' payload.
+
+The mux selects come from a per-entry `finishing` bit, set one cycle early
+from the unit's `next_finish_valid_o/next_finish_tag_o`. Readiness uses
+`finish_write_o`, which depends only on registered state. A move or select
+that captures a finishing operand marks it and substitutes the registered reply
+in its second stage; a select whose selector is finishing waits for both
+alternatives. Retirement, FPSCR, CR, FPR writes and pending capture read the
+registered reply one cycle after finish; the previous RTL could retire on the
+finish cycle itself. Same-edge retirement still frees queue and rename credits,
+so sustained single-cycle issue is unchanged. The FPR-rename and barrier counts
+are registered.
+
+Execution latency is unchanged: dependent `fadd`, `fmr` and `stfd` distances
+match the previous RTL (3, 3 and same-cycle store launch), and the forward bus
+still presents results on the finish cycle. The 602 build still gates source
+readiness and store traps on its late emulation-trap and single-range checks.
+The pending queue still shifts on retirement; a circular buffer remains open.
+
+Open timing work: the fitted worst path is now finish → single narrowing →
+store preparation data; registering store data behind the reply needs the
+packet contract to allow late data. The shifting pending queue, the
+combinational `issue_ready_o` (decode, commit and abort terms), the forward
+payload and the arithmetic stages themselves remain.
+
+## Memory and 602 tag SPRs
+
+Memory packets retain complete instruction tags. Fault-free preparation does not
+authorize a store: publication requires the matching commit and store acceptance.
+Out-of-order load responses must reach the correct pending entry. The external
+LSU owns translation, atomic transport, cache timing, and fault priority; tests
+with an ideal LSU establish the FPU-side latency and initiation requirements,
+not cache-system timing. The 602 target is 2:1 for single loads/stores and
+`stfiwx`, and 3:2 for double loads/stores under the manual's assumptions.
+[602 UM §6.8.5, Table 6-6, physical PDF 316–318]
+
+The 602 SP/LT `mfspr` and `mtspr` operations use the same tagged issue/retirement
+path. `msr_pr` permits supervisor-access checks; the GPR source/result fields carry
+the raw tag word. Tag writes serialize and commit atomically. Explicit emulation
+and privileged-instruction dispositions distinguish these faults from numeric
+program exceptions and FP-unavailable. Inspect outputs expose committed tags.
+[602 UM Table 2-6, §2.1.2.4.1, physical PDF 87, 97]
+
+## Acceptance
+
+Separate elaborations must pass independent raw-bit arithmetic, personality
+semantics, exact execution-cycle and sustained initiation tests. Shell tests
+must show rename dependency forwarding, early CR availability, delayed commit,
+memory faults, cancellation, and stable backpressure. Strict lint covers both
+elaborations. Fresh Quartus synthesis and timing measurements cover the changed
+RTL at 50 MHz and report the 66 MHz margin separately. Prior serialized-backend
+measurements are historical and do not establish this implementation's timing.

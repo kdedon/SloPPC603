@@ -54,9 +54,21 @@ Timing targets: 50 MHz is the provisional MVP constraint; 66 MHz, the original
 
 For the full 603e, dual issue, branch prediction, data cache/coherence, floating
 point, endian/variant features and timing fidelity remain major workstreams.
-Floating point has an investigation and phased plan in the
-[FPU reuse assessment](../../FPU_REUSE_ASSESSMENT.md); its first steps are an FPU
-contract and an isolated arithmetic-backend experiment.
+Floating point has manual-backed [603e](../../FPU_CONTRACT.md) and
+[602](../../FPU_602_CONTRACT.md) contracts and a completed isolated donor
+experiment. The donor failed qualification and was removed. The replacement standalone module
+selects 603e or 602 at compile time and must match original instruction latency
+and throughput. The coherent baseline passes both personalities’ numerical, exact-cycle,
+public-shell, paired dispatch/retirement and strict lint gates in
+[verification](../../../sim/fpu/PRODUCTION.md), including full-queue admission
+and 602 SPR timing. Frequency closure and the documented silicon-semantics
+gaps remain open. The first
+place-and-route fit of the 603e FPU measured 26.09 MHz and 26,085 ALMs; the
+registered-result round (T1, `fpu-timing`) reached 27.24 MHz. Both miss 50 and
+66 MHz; the timing plan (T1–T6) is in the FPU docs. See the
+[FPU assessment](../../FPU_REUSE_ASSESSMENT.md) for the remaining semantic and
+implementation gaps. A separate process owns CPU integration; existing core
+RTL and file lists remain outside this workstream.
 Do not infer full CPU completion from the restricted MVP score.
 
 After each accepted implementation round, update the scorecard's affected rows

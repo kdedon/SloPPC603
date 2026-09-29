@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
+set_global_assignment -name FAMILY "Cyclone V"
+set_global_assignment -name DEVICE 5CSEBA6U23I7
+set_global_assignment -name TOP_LEVEL_ENTITY ppc_fpu_arith
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 2
+set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"
+set_global_assignment -name SDC_FILE ppc_fpu.sdc
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/ppc_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_arith.sv
+set_instance_assignment -name VIRTUAL_PIN ON -to clk_i
+set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni
+set_instance_assignment -name VIRTUAL_PIN ON -to req_valid_i
+set_instance_assignment -name VIRTUAL_PIN ON -to req_ready_o
+set_instance_assignment -name VIRTUAL_PIN ON -to req_i.*
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_ready_i
+set_instance_assignment -name VIRTUAL_PIN ON -to rsp_o.*
+set_instance_assignment -name VIRTUAL_PIN ON -to flush_i
+set_instance_assignment -name VIRTUAL_PIN ON -to finish_valid_o
+set_instance_assignment -name VIRTUAL_PIN ON -to "finish_o.*"
+set_instance_assignment -name VIRTUAL_PIN ON -to div_busy_o

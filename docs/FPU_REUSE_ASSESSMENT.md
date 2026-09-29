@@ -1,6 +1,55 @@
 # FPU reuse assessment and implementation plan
 
-Reviewed 2026-09-22. Scope: [MiSTer-devel/N64_MiSTer](https://github.com/MiSTer-devel/N64_MiSTer/tree/eb5554af01bb97bdf3d295aed02a989ac10ccee4) and [Grabulosaure/ss](https://github.com/Grabulosaure/ss/tree/70203e26e981069710e934600fd55b9d866a9e5b) as FPU donors for this CPU. Each donor was investigated independently; the decisive source paths were then reviewed together to reach the conclusions below. This is an investigation and proposed plan; it does not implement an FPU or change the current integer MVP scope.
+Reviewed 2026-09-22. Scope: [MiSTer-devel/N64_MiSTer](https://github.com/MiSTer-devel/N64_MiSTer/tree/eb5554af01bb97bdf3d295aed02a989ac10ccee4) and [Grabulosaure/ss](https://github.com/Grabulosaure/ss/tree/70203e26e981069710e934600fd55b9d866a9e5b) as FPU donors for this CPU. Each donor was investigated independently; the decisive source paths were then reviewed together to reach the conclusions below. The original investigation is retained below; the implementation status records subsequent standalone work. The integer MVP scope is unchanged.
+
+## Implementation status — 2026-09-27
+
+F0: [FPU contract](FPU_CONTRACT.md) records the architectural instruction/status
+rules, manual citations, donor boundary and explicit source conflicts. The
+contract selects consistent instruction/table rules where passages disagree;
+NI status details and exact-mask behavior remain documented limits.
+F1 experiment is complete under `rtl/fpu/` and `sim/fpu/`, isolated from core
+file lists. **The donor fails the numerical exit gate:** both split/direct
+variants mismatch 16,879 of 47,736 independent vectors; strict qualification
+fails deliberately. Both pass strict lint. Synthesis-only results are
+3,375/3,099 ALUTs and 11/4 DSP blocks; both estimate 32.2 MHz before fit, below
+50 MHz and the 66 MHz aspiration. See [numeric qualification](../sim/fpu/README.md)
+and [Quartus measurement](../quartus/fpu/README.md) for commands, counts and limits.
+Retain the finite arithmetic patterns only after independent verification;
+replace donor classification, rounding, packing, conversions and PPC status.
+The unchanged F1 experiment remains a benchmark for the standalone unit. A
+separate process owns CPU integration; this standalone result does not establish
+full CPU completion.
+
+The complete standalone **603e/602 pipeline remains in progress**. The
+[602 contract](FPU_602_CONTRACT.md) pins its primary user manual and records
+the distinct tag, exception, register and instruction rules. The replacement
+[pipeline](FPU_PIPELINE_DESIGN.md) selects its personality at compile time and
+must meet original instruction latency and throughput. A coherent baseline
+(shell `f2c8e36`, arithmetic `20c2329`) passes `test-fpu-all lint`: 201,632
+603e and 181,952 602 raw-bit cases; 11,958/17,628 estimate checks; 851/173
+public-shell checks; 71/52 exact-cycle responses; 32-operation streams in both
+personalities; 28/24 paired dispatch/retirement checks; and 63 strict lint
+invocations with no warnings or errors. Later timing changes require their own
+acceptance records. The baseline includes full-queue admission, rejected
+second-lane isolation and 602 SPR transfer timing.
+The 112-bit add/fused lane includes directed cancellation and halfway-tail
+checks. Its arithmetic post-map estimate is **28.8 MHz**; the measured two-lane
+603e/602 shells estimate **19.7/17.7 MHz**. All miss 50 and 66 MHz. No completion or
+fitted timing claim is made for the replacement. See
+[verification](../sim/fpu/PRODUCTION.md) and
+[measurements](../quartus/fpu-production/README.md) for exact commands and scope.
+
+The historical serialized 603e checkpoint `cb871b4` passed 200,000 raw arithmetic
+packets, 11,958 estimates, 851 shell checks and 76 cancellation offsets. Its
+full-unit post-map estimate was 10,364 ALMs, 12,102 ALUTs, 7,122 registers,
+zero RAM and four DSP blocks at 50.5 MHz; arithmetic-only reached 50.8 MHz.
+Those measurements do not apply to the replacement pipeline. The old shell had
+only one instruction in flight and lacked 602 support and original scheduling.
+See [verification history](../sim/fpu/PRODUCTION.md) and
+[measurement evidence](../quartus/fpu-production/README.md) for reproducible
+commands and limitations. Exact silicon NI status and the cited source conflicts
+remain documented semantic gaps; selected-policy tests do not resolve them.
 
 ## Decision
 
@@ -144,6 +193,14 @@ Run prior integer regressions as well as FP integration tests. Measure isolated 
 
 **Exit:** reviewed numeric/architectural coverage, reproducible mixed-language or SV build, clean integer regression, and separately recorded functional and timing acceptance. No donor game/OS success or whole-system fit substitutes for these gates.
 
-## Recommended next implementation task
+## Next acceptance work
 
-Complete F0 and a tightly bounded F1 feasibility experiment before scheduling a wholesale FPU port. The concrete deliverable is a raw-bit arithmetic harness, a semantics-gap table, a source/provenance manifest and an area/latency comparison of the implementations below. SS reuse is authorized; N64 contributes valuable resource-sharing techniques without requiring adoption of its MIPS control or numeric policies. The largest unavoidable new blocks are the PPC architectural shell and fused arithmetic.
+Both compile-time personalities pass the recorded standalone functional and
+instruction-cycle baseline, including four rename credits and pipelined issue.
+Frequency closure remains open: full 603e and 602 post-map Fmax are 19.7 and
+17.7 MHz, below both 50 and 66 MHz. See [FPU_ARITHMETIC.md](FPU_ARITHMETIC.md)
+and the [measurement records](../quartus/fpu-production/README.md).
+The separate integration process must connect the tagged interface to completion,
+CR/MSR, FPR dependencies and the atomic LSU protocol, then run CPU-level FP and
+integer regressions. Preserve the failed F1 candidate as reproducible comparison
+evidence; production uses the independently verified SV backend.
