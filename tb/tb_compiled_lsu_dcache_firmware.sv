@@ -42,6 +42,10 @@ module tb_compiled_lsu_dcache_firmware;
   endfunction
   `define FW_DUMP_ARRAY target.mem
   logic dc_busy,snoop_ts_n,snoop_gbl_n,cpu_artry_n,cpu_artry_oe;
+  // Address parity is checked by the pin bench.
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [3:0] unused_ap;
+  /* verilator lint_on UNUSEDSIGNAL */
   logic [31:0] snoop_a;
   logic [4:0] snoop_tt;
   int dc_hits=0,dc_misses=0;
@@ -129,7 +133,7 @@ module tb_compiled_lsu_dcache_firmware;
     .retry_i(bfm_retry),.hold_i(bfm_hold),.drtry_i(bfm_drtry),.wait_i(bfm_wait),
     .bg_n_o(bg_n),.aack_n_o(aack_n),.artry_n_o(artry_n),.dbg_n_o(dbg_n),
     .d_o(data_in),.ta_n_o(ta_n),.drtry_n_o(drtry_n),.tea_n_o(tea_n),
-    .bus_ts_n_o(snoop_ts_n),.bus_a_o(snoop_a),.bus_tt_o(snoop_tt),.bus_gbl_n_o(snoop_gbl_n)
+    .bus_ts_n_o(snoop_ts_n),.bus_a_o(snoop_a),.bus_tt_o(snoop_tt),.bus_gbl_n_o(snoop_gbl_n),.bus_ap_o(unused_ap)
   );
   assign tr=rst_n&&retire_enable;
   // Interrupt, cache-status and maintenance outputs are idle in this profile.

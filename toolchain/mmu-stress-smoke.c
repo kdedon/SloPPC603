@@ -477,6 +477,39 @@ static uint32_t iteration(unsigned it) {
   return 0;
 }
 
+/* Page-table WIMG over frame 15: W=1 (WM), I=1 G=1, cacheable (M=0) and
+   M=1 G=1 pages, each on its own line, with an I=1 G=1 alias to read memory
+   behind the cache. The stale-alias check needs the data cache on. */
+enum {
+  PAGE_WT = 0x100a0000u, PAGE_CI = 0x100c0000u, PAGE_CB = 0x100e0000u,
+  PAGE_MG = 0x10100000u
+};
+#define WORD(ea) (*(volatile uint32_t *)(uintptr_t)(ea))
+#define CACHE_OP(op, ea) __asm__ volatile(op " 0,%0; sync" :: "r"(ea) : "memory")
+static uint32_t wimg_phase(void) {
+  uint32_t hid0;
+  __asm__ volatile("mfspr %0,1008" : "=r"(hid0));
+  if (!install(VSID1, PAGE_WT, 0, 15, 2u | (0xau << 3)) ||
+      !install(VSID1, PAGE_CI, 0, 15, 2u | (0x5u << 3)) ||
+      !install(VSID1, PAGE_CB, 0, 15, 2u) ||
+      !install(VSID1, PAGE_MG, 0, 15, 2u | (0x3u << 3))) return 0xd0u;
+  __asm__ volatile("sync" ::: "memory");
+  WORD(PAGE_WT + 0x40u) = 0x77000001u;
+  if (WORD(PAGE_CI + 0x40u) != 0x77000001u) return 0xd1u;
+  if (WORD(PAGE_WT + 0x40u) != 0x77000001u) return 0xd2u;
+  WORD(PAGE_CI + 0x80u) = 0x77000002u;
+  if (WORD(PAGE_CB + 0x80u) != 0x77000002u) return 0xd3u;
+  WORD(PAGE_CB + 0x80u) = 0x77000003u;
+  if ((hid0 & 0x4000u) && WORD(PAGE_CI + 0x80u) != 0x77000002u) return 0xd4u;
+  CACHE_OP("dcbst", PAGE_CB + 0x80u);
+  if (WORD(PAGE_CI + 0x80u) != 0x77000003u) return 0xd5u;
+  WORD(PAGE_MG + 0xc0u) = 0x77000004u;
+  if (WORD(PAGE_MG + 0xc0u) != 0x77000004u) return 0xd6u;
+  CACHE_OP("dcbf", PAGE_MG + 0xc0u);
+  if (WORD(PAGE_CI + 0xc0u) != 0x77000004u) return 0xd7u;
+  return 0;
+}
+
 int main(void) {
   seed_frames();
   WSPR(25, HTAB);
@@ -499,5 +532,7 @@ int main(void) {
   if (miss_type_count[0] != ITERATIONS * 17u ||
       miss_type_count[1] != ITERATIONS * 11u ||
       miss_type_count[2] != ITERATIONS) return 0x8e0000f0;
+  uint32_t w = wimg_phase();
+  if (w) return (int)(0x8e000000u | w);
   return 1;
 }

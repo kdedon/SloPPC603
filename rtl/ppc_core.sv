@@ -201,7 +201,7 @@ module ppc_core #(
   // MCP and SRESET do not wait on MSR[EE]; SMI does.
   assign pin_interrupt = ENABLE_PIN_INTERRUPTS && !fetch_machine_check_head &&
     (pin_event_q.mcp || (ENABLE_DATA_CACHE && pin_event_q.tea) ||
-     pin_event_q.soft_reset || (pin_event_q.smi && msr[MSR_EE]));
+     pin_event_q.ape || pin_event_q.soft_reset || (pin_event_q.smi && msr[MSR_EE]));
   assign interrupt_qualified = ENABLE_EXTERNAL_INTERRUPTS &&
     ((ENABLE_DEBUG_EXCEPTIONS && trace_pending_q) || pin_interrupt ||
      ((external_irq_q || (ENABLE_TIMERS && decrementer_pending)) &&

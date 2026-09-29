@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 // 60x system around a snooping processor: arbiter, memory target and a
-// second bus master, one tenure at a time (no address pipelining).
+// second bus master. The second master may pipeline its address tenures: a
+// second TS in the cycle after AACK, and address tenures while a processor
+// data tenure is pending. Data tenures follow address order.
 //
 // Processor tenures follow the scripted-target policy inputs (retry_i,
 // hold_i, drtry_i, wait_i) and the TEA window (tea_base/tea_bytes) plus
@@ -60,7 +62,9 @@ module bus60x_coherent_bfm #(
   output logic        bus_ts_n_o,
   output logic [31:0] bus_a_o,
   output logic [4:0]  bus_tt_o,
-  output logic        bus_gbl_n_o
+  output logic        bus_gbl_n_o,
+  // Odd byte parity of bus_a_o; wrong on a command queued with om_bad_parity.
+  output logic [3:0]  bus_ap_o
 );
   localparam logic [4:0] TT_EXTERNAL_WRITE = 5'b10100;
   localparam logic [4:0] TT_EXTERNAL_READ = 5'b11100;
@@ -71,7 +75,7 @@ module bus60x_coherent_bfm #(
   // Second-master command: TT, address, global, data (line, or the word in
   // bits 255:224 for a single write), cycles from TS to AACK.
   typedef struct {logic [4:0] tt; logic [31:0] addr; logic global; logic burst;
-                  logic [255:0] data; int aack_d; int ticket;} om_t;
+                  logic [255:0] data; int aack_d; int ticket; bit bad_parity;} om_t;
 
   logic [7:0] mem [0:MEM_BYTES-1];
   /* verilator lint_off UNUSEDSIGNAL */
@@ -82,6 +86,11 @@ module bus60x_coherent_bfm #(
   int n_addr_only = 0, n_push = 0, n_errors = 0;
   int tt_count [0:31];
   int om_tenures = 0, om_retried = 0, om_artry_cycles = 0;
+  // Second-master TS in the cycle after the previous AACK, and second-master
+  // address tenures run while a processor data tenure is pending.
+  int om_pipelined = 0, om_overlapped = 0;
+  // Of those, retried second tenures and retries needing a push.
+  int om_pipelined_retried = 0, om_overlap_retried = 0;
   ten_t last;
   // Completed data-side tenures, with the cycle of their address tenure.
   typedef struct {kind_e kind; logic [4:0] tt; logic [31:0] addr; logic ci; int cycle; bit claimed;} hist_t;
@@ -94,6 +103,10 @@ module bus60x_coherent_bfm #(
   bit tea_write_commits = 1'b0;
   // Negative control: the second master proceeds through ARTRY.
   bit ignore_artry = 1'b0;
+  // Commands queued while set drive wrong AP[1] in their TS cycle.
+  bit om_bad_parity = 1'b0;
+  // Percent chances of the two address-pipelining cases above.
+  int om_pipeline_pct = 0, cpu_pipeline_pct = 0;
   logic owed = 1'b0, in_data = 1'b0;
   /* verilator lint_on UNUSEDSIGNAL */
   int unsigned rng = SEED;
@@ -101,13 +114,16 @@ module bus60x_coherent_bfm #(
   logic [255:0] om_result [int];
   int om_next_ticket = 0;
   bit om_first_retried [int];
+  bit om_discard [int];
 
   logic [31:0] addr;
   logic [4:0] tt;
   logic burst, write, external, tea_ended;
   logic [2:0] tsiz;
   logic target_artry_n;
-  logic om_drive, om_ts_n, om_gbl_n, om_window;
+  logic om_drive, om_ts_n, om_gbl_n, om_ap_flip;
+  int om_window;
+  int pending_ticket = -1;
   logic [31:0] om_a;
   logic [4:0] om_tt;
   logic push_due;
@@ -118,12 +134,15 @@ module bus60x_coherent_bfm #(
   assign bus_a_o = om_drive ? om_a : a_i;
   assign bus_tt_o = om_drive ? om_tt : tt_i;
   assign bus_gbl_n_o = om_drive ? om_gbl_n : gbl_n_i;
+  // Bit 3 is AP0 (A[0:7]); a bad-parity command flips AP1.
+  assign bus_ap_o = {~^bus_a_o[31:24], ~^bus_a_o[23:16] ^ om_ap_flip,
+                     ~^bus_a_o[15:8], ~^bus_a_o[7:0]};
 
   initial begin
     bg_n_o = 1'b1; aack_n_o = 1'b1; target_artry_n = 1'b1; dbg_n_o = 1'b1;
     d_o = 64'b0; ta_n_o = 1'b1; drtry_n_o = 1'b1; tea_n_o = 1'b1;
     om_drive = 1'b0; om_ts_n = 1'b1; om_gbl_n = 1'b1; om_a = '0; om_tt = '0;
-    om_window = 1'b0; push_due = 1'b0; push_line = '0;
+    om_window = 0; om_ap_flip = 1'b0; push_due = 1'b0; push_line = '0;
     addr = '0; tt = '0; burst = 1'b0; write = 1'b0; external = 1'b0;
     tea_ended = 1'b0; tsiz = '0;
     last = '{K_ADDR_ONLY, 5'b0, 32'b0, 1'b0, 1'b0, 1'b0, 1'b0};
@@ -347,6 +366,7 @@ module bus60x_coherent_bfm #(
     c.tt = cmd_tt; c.addr = cmd_addr; c.global = global; c.burst = cmd_burst;
     c.data = data; c.aack_d = (aack_d < 1) ? 1 : aack_d;
     c.ticket = om_next_ticket++;
+    c.bad_parity = om_bad_parity;
     om_first_retried[c.ticket] = 1'b0;
     om_q.push_back(c);
     while (om_result.exists(c.ticket) == 0) @(posedge clk_i);
@@ -355,31 +375,43 @@ module bus60x_coherent_bfm #(
     om_result.delete(c.ticket);
     om_first_retried.delete(c.ticket);
   endtask
+  // Queues one command without waiting; its result is discarded.
+  function automatic void om_post(input logic [4:0] cmd_tt, input logic [31:0] cmd_addr,
+                                  input logic global, input logic cmd_burst,
+                                  input logic [255:0] data, input int aack_d);
+    om_t c;
+    c.tt = cmd_tt; c.addr = cmd_addr; c.global = global; c.burst = cmd_burst;
+    c.data = data; c.aack_d = (aack_d < 1) ? 1 : aack_d;
+    c.ticket = om_next_ticket++;
+    c.bad_parity = om_bad_parity;
+    om_first_retried[c.ticket] = 1'b0;
+    om_discard[c.ticket] = 1'b1;
+    om_q.push_back(c);
+  endfunction
 
-  task automatic om_tenure(input om_t c, output logic retried, input bit first);
-    logic [31:0] line;
+  // Address tenure up to and including the AACK cycle. retried reports
+  // ARTRY sampled from TS+1 through AACK; om_close samples AACK+1.
+  task automatic om_address(input om_t c, output logic retried);
     int d;
     retried = 1'b0;
-    line = {c.addr[31:5], 5'b0};
     @(negedge clk_i);
     om_drive = 1'b1;
     om_ts_n = 1'b0;
-    om_a = c.burst ? line : c.addr;
+    om_a = c.burst ? {c.addr[31:5], 5'b0} : c.addr;
     om_tt = c.tt;
     om_gbl_n = !c.global;
-    om_window = 1'b1;
+    om_ap_flip = c.bad_parity;
+    om_window++;
     om_tenures++;
     @(posedge clk_i);  // TS cycle
     @(negedge clk_i);
     om_ts_n = 1'b1;
+    om_ap_flip = 1'b0;
     d = c.aack_d;
-    for (int k = 1; k <= d + 1; k++) begin
+    for (int k = 1; k <= d; k++) begin
       if (k == d) begin
         @(negedge clk_i);
         aack_n_o = 1'b0;
-      end else if (k == d + 1) begin
-        @(negedge clk_i);
-        aack_n_o = 1'b1;
       end
       @(posedge clk_i);
       if (artry_oe_i && !artry_n_i) begin
@@ -387,36 +419,103 @@ module bus60x_coherent_bfm #(
         om_artry_cycles++;
       end
     end
+  endtask
+
+  // The ARTRY window (AACK+1), then the retry bookkeeping.
+  task automatic om_close(input om_t c, inout logic retried, input bit first);
     @(negedge clk_i);
-    om_window = 1'b0;
-    om_drive = 1'b0;
+    aack_n_o = 1'b1;
+    @(posedge clk_i);
+    if (artry_oe_i && !artry_n_i) begin
+      retried = 1'b1;
+      om_artry_cycles++;
+    end
+    @(negedge clk_i);
+    om_window--;
+    if (om_window == 0) om_drive = 1'b0;
     if (retried && ignore_artry) begin
       push_due = 1'b1;
-      push_line = line[31:5];
+      push_line = c.addr[31:5];
       retried = 1'b0;
     end
     if (retried) begin
       om_retried++;
       if (first) om_first_retried[c.ticket] = 1'b1;
       push_due = 1'b1;
-      push_line = line[31:5];
-      return;
+      push_line = c.addr[31:5];
     end
-    // Data tenure: memory moves directly while the bus is held.
+  endtask
+
+  // Data tenure: memory moves directly while the bus is held.
+  task automatic om_data(input om_t c);
+    logic [31:0] base;
+    base = c.burst ? {c.addr[31:5], 5'b0} : c.addr;
     if (c.tt[1] || c.tt == TT_EXTERNAL_READ || c.tt == TT_EXTERNAL_WRITE) begin
       logic [255:0] value;
       value = '0;
       repeat (c.burst ? 4 : 1) @(posedge clk_i);
       if (c.tt[3]) begin
         for (int k = 0; k < (c.burst ? 32 : 4); k++)
-          value[255-8*k -: 8] = in_memory(om_a + 32'(k)) ? mem[int'(om_a + 32'(k) - BASE_ADDR)] : 8'h0;
+          value[255-8*k -: 8] = in_memory(base + 32'(k)) ? mem[int'(base + 32'(k) - BASE_ADDR)] : 8'h0;
       end else begin
         for (int k = 0; k < (c.burst ? 32 : 4); k++)
-          put_byte(om_a + 32'(k), c.data[255-8*k -: 8]);
+          put_byte(base + 32'(k), c.data[255-8*k -: 8]);
       end
       om_result[c.ticket] = value;
     end else begin
       om_result[c.ticket] = '0;
+    end
+    if (om_discard.exists(c.ticket) != 0) begin
+      om_result.delete(c.ticket);
+      om_first_retried.delete(c.ticket);
+      om_discard.delete(c.ticket);
+    end
+  endtask
+
+  // Address tenures of up to two queued commands. With om_pipeline_pct the
+  // second TS follows the first's AACK in the next cycle (UM 7.2.1.2: a
+  // qualified grant is checked in the AACK cycle) when no ARTRY was seen
+  // by AACK. Acknowledged commands wait in om_acked for their data tenures,
+  // which follow address order.
+  om_t om_acked [$];
+  task automatic om_addresses();
+    om_t c1, c2;
+    logic r1, r2;
+    bit f1, two;
+    c1 = om_q[0];
+    f1 = pending_ticket != c1.ticket;
+    pending_ticket = c1.ticket;
+    om_address(c1, r1);
+    two = !r1 && om_q.size() > 1 && (rnd() % 100) < om_pipeline_pct;
+    if (!two) begin
+      om_close(c1, r1, f1);
+      if (!r1) begin
+        om_acked.push_back(c1);
+        void'(om_q.pop_front());
+      end
+      return;
+    end
+    c2 = om_q[1];
+    om_pipelined++;
+    fork
+      om_close(c1, r1, f1);
+      om_address(c2, r2);
+    join
+    om_close(c2, r2, 1'b1);
+    if (r2) om_pipelined_retried++;
+    // A late retry of the first also cancels the second.
+    if (r1) return;
+    om_acked.push_back(c1);
+    void'(om_q.pop_front());
+    pending_ticket = c2.ticket;
+    if (r2) return;
+    om_acked.push_back(c2);
+    void'(om_q.pop_front());
+  endtask
+  task automatic om_drain;
+    while (om_acked.size() != 0) begin
+      om_data(om_acked[0]);
+      void'(om_acked.pop_front());
     end
   endtask
 
@@ -424,16 +523,13 @@ module bus60x_coherent_bfm #(
 
   // The processor asserts ARTRY only in a second-master snoop window.
   always @(posedge clk_i)
-    if (artry_oe_i && !artry_n_i && !om_window)
+    if (artry_oe_i && !artry_n_i && om_window == 0)
       $fatal(1, "%m: processor ARTRY outside a snoop window");
 
   initial begin : serve
     logic retried, taken;
-    bit last_cpu, first;
-    om_t c;
-    int pending_ticket;
+    bit last_cpu;
     last_cpu = 1'b0;
-    pending_ticket = -1;
     forever begin
       @(posedge clk_i);
       if (br_n_i && om_q.size() == 0) continue;
@@ -448,15 +544,22 @@ module bus60x_coherent_bfm #(
         cpu_address_tenure(taken, retried);
         if (!taken) continue;
         last_cpu = 1'b1;
-        if (!retried && (tt[1] || external)) cpu_data_tenure();
+        if (!retried && (tt[1] || external)) begin
+          // Second-master address tenures ahead of this data tenure; their
+          // data follows it.
+          if (om_q.size() != 0 && (rnd() % 100) < cpu_pipeline_pct) begin
+            om_overlapped++;
+            om_addresses();
+            if (push_due) om_overlap_retried++;
+          end
+          cpu_data_tenure();
+          om_drain();
+        end
         owed = 1'b0;
       end else if (om_q.size() != 0) begin
-        c = om_q[0];
-        first = pending_ticket != c.ticket;
-        pending_ticket = c.ticket;
-        om_tenure(c, retried, first);
+        om_addresses();
+        om_drain();
         last_cpu = 1'b0;
-        if (!retried) void'(om_q.pop_front());
       end
     end
   end

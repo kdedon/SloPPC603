@@ -384,7 +384,8 @@ package ppc_pkg;
     // Pin-driven asynchronous events.
     EVENT_SOFT_RESET      = 5'd17,
     EVENT_SMI             = 5'd18,
-    EVENT_MACHINE_CHECK_PIN = 5'd19
+    EVENT_MACHINE_CHECK_PIN = 5'd19,
+    EVENT_MACHINE_CHECK_APE = 5'd20
   } exception_event_t;
 
   // Chip-pin events into the core, already synchronized. soft_reset and mcp
@@ -398,6 +399,8 @@ package ppc_pkg;
     // Latched bus error on a posted data-cache write or late fill beat;
     // held until tea_taken.
     logic tea;
+    // Latched snoop address parity error; held until ape_taken.
+    logic ape;
   } pin_event_t;
   // Core state the chip pins need.
   typedef struct packed {
@@ -414,6 +417,8 @@ package ppc_pkg;
     logic dcache_flash_invalidate; // DCFI
     logic noop_touch;        // NOOPTI
     logic broadcast_enable;  // ABE
+    logic address_parity_enable; // EBA
+    logic ape_taken;
   } pin_status_t;
   // Data-cache BIU ports (docs/DATA_CACHE.md) bundled for the core
   // composition, between the cache slot and the BIU.
@@ -471,6 +476,7 @@ package ppc_pkg;
   localparam int HID0_ABE = 3;
   localparam int HID0_NOOPTI = 0;
   localparam int HID0_EMCP = 31;
+  localparam int HID0_EBA = 29;
   // EAR: E (manual bit 0) and RID (manual bits 28-31, UM 2.1.1).
   localparam logic [31:0] EAR_WMASK = 32'h8000_000f;
   localparam int EAR_E = 31;

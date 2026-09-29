@@ -3,7 +3,8 @@
 // Directed checks of the ppc603e system pins, driven and observed only at the
 // pins: HRESET, SRESET, MCP (taken, ignored with HID0[EMCP]=0, checkstop with
 // MSR[ME]=0), CKSTP_IN/CKSTP_OUT, start-up straps, TBEN, SMI (priority over
-// INT, masked by MSR[EE]), RSRV and TLBISYNC. Each case hard-resets the chip
+// INT, masked by MSR[EE]), RSRV, TLBISYNC and snoop address parity (APE in
+// the second cycle after TS, machine check, checkstop, HID0[EBA]=0). Each case hard-resets the chip
 // into a small program; handlers record markers in RAM through the bus.
 /* verilator lint_off BLKSEQ */
 module tb_chip_pins;
@@ -29,6 +30,8 @@ module tb_chip_pins;
   logic [31:0] first_fetch = '0, pc;
   logic [31:0] tb_values [$];
   string mark_order = "";
+  // Second-master TS cycles and APE cycles.
+  int om_ts_cycles [$], ape_cycles [$];
 
   task automatic check(input logic ok, input string message);
     checks++;
@@ -41,6 +44,8 @@ module tb_chip_pins;
       if (fetches == 0) first_fetch = a;
       fetches++;
     end
+    if (!bus_ts_n && memory.om_drive) om_ts_cycles.push_back(cycles);
+    if (!ape_n) ape_cycles.push_back(cycles);
     if (wr_fire) begin
       if (wr_addr == DATA + TB_VALUE) tb_values.push_back(wr_addr[2] ? dl_out : dh_out);
       if (wr_addr == DATA + SMI_MARK) mark_order = {mark_order, "S"};
@@ -247,6 +252,62 @@ module tb_chip_pins;
     check(ckstp_out_n, "HRESET negates CKSTP_OUT");
   endtask
 
+  // One global second-master read; bad drives wrong AP[1] in its TS cycle.
+  task automatic snoop_read(input bit bad, input bit global);
+    om_ts_cycles.delete();
+    ape_cycles.delete();
+    memory.om_bad_parity = bad;
+    memory.om_post(5'b01010, DATA + 32'h40, global, 1'b0, '0, 2);
+    memory.om_bad_parity = 1'b0;
+    wait (om_ts_cycles.size() != 0);
+    repeat (6) @(negedge clk);
+  endtask
+  localparam logic [31:0] HID0_EBA = 32'h2000_0000;
+  task automatic case_ape;
+    loop_program(HID0_EBA, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    snoop_read(1'b0, 1'b1);
+    check(ape_cycles.size() == 0, "correct AP: no APE");
+    snoop_read(1'b1, 1'b0);
+    check(ape_cycles.size() == 0, "GBL negated: no APE");
+    snoop_read(1'b1, 1'b1);
+    check(ape_cycles.size() == 1 && ape_cycles[0] == om_ts_cycles[0] + 2,
+          $sformatf("APE once, two cycles after TS (TS %0d, APE %0d cycles, first %0d)",
+                    om_ts_cycles[0], ape_cycles.size(),
+                    ape_cycles.size() != 0 ? ape_cycles[0] : -1));
+    wait_word(MC_MARK, 'h200, 6000, "APE enters 0x200");
+    check((mem_word(DATA + MC_SRR1) & 32'hffff_0000) == 32'h0001_0000,
+          $sformatf("APE SRR1=%08x has only bit 15", mem_word(DATA + MC_SRR1)));
+    check(ckstp_out_n, "no checkstop");
+    running(3, "rfi resumes");
+  endtask
+  task automatic case_ape_disabled;
+    loop_program(32'h0, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    snoop_read(1'b1, 1'b1);
+    repeat (3000) @(negedge clk);
+    check(ape_cycles.size() == 0 && mem_word(DATA + MC_MARK) == 0 && ckstp_out_n,
+          "HID0[EBA]=0 ignores address parity");
+    running(3, "still running");
+  endtask
+  task automatic case_ape_checkstop;
+    loop_program(HID0_EBA, MSR_IP);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    snoop_read(1'b1, 1'b1);
+    check(ape_cycles.size() == 1, "APE asserted");
+    wait_bus_idle();
+    expect_checkstop("APE with MSR[ME]=0");
+    check(mem_word(DATA + MC_MARK) == 0, "no machine check vector");
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "HRESET leaves checkstop");
+  endtask
+
   task automatic case_ckstp_in;
     loop_program(32'h0, MSR_IP);
     hard_reset();
@@ -397,6 +458,9 @@ module tb_chip_pins;
     case_smi();
     case_rsrv();
     case_tlbisync();
+    case_ape();
+    case_ape_disabled();
+    case_ape_checkstop();
     $display("PASS chip pins: checks=%0d cycles=%0d", checks, cycles);
     $finish;
   end

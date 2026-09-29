@@ -248,6 +248,7 @@ module ppc_special #(
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
   logic decrementer_selected_q, trace_selected_q;
   logic mcp_selected_q, soft_reset_selected_q, smi_selected_q, tea_selected_q;
+  logic ape_selected_q, pin_tea;
   logic pin_machine_check;
   logic pin_mcp_select, pin_soft_reset_select, pin_smi_select, pin_selected;
   logic tlbsync_held;
@@ -780,7 +781,8 @@ module ppc_special #(
       exception_event_valid = 1'b1;
       // An asynchronous TEA reports as a TEA machine check (SRR1 bit 13).
       exception_event_kind = mcp_selected_q ?
-          (tea_selected_q ? EVENT_MACHINE_CHECK : EVENT_MACHINE_CHECK_PIN) :
+          (tea_selected_q ? EVENT_MACHINE_CHECK :
+           ape_selected_q ? EVENT_MACHINE_CHECK_APE : EVENT_MACHINE_CHECK_PIN) :
         soft_reset_selected_q ? EVENT_SOFT_RESET :
         trace_selected_q ? EVENT_TRACE : smi_selected_q ? EVENT_SMI :
         decrementer_selected_q ? EVENT_DECREMENTER : EVENT_EXTERNAL;
@@ -1104,9 +1106,10 @@ module ppc_special #(
 
   // Pin boundaries. The core offers a boundary only when one qualifies, and
   // MCP/SRESET never wait on MSR[EE].
-  // A latched asynchronous TEA shares the MCP boundary; MCP goes first.
-  assign pin_machine_check = pin_event_i.mcp ||
-    (ENABLE_DATA_CACHE && pin_event_i.tea);
+  // A latched asynchronous TEA and a snoop address parity error share the
+  // MCP boundary, in the order MCP, TEA, APE.
+  assign pin_tea = ENABLE_DATA_CACHE && pin_event_i.tea;
+  assign pin_machine_check = pin_event_i.mcp || pin_tea || pin_event_i.ape;
   assign pin_mcp_select = ENABLE_PIN_INTERRUPTS && pin_machine_check;
   assign pin_soft_reset_select = ENABLE_PIN_INTERRUPTS && pin_event_i.soft_reset &&
     !pin_machine_check;
@@ -1125,7 +1128,10 @@ module ppc_special #(
     pin_status_o.mcp_taken = interrupt_accept && pin_mcp_select &&
                              pin_event_i.mcp;
     pin_status_o.tea_taken = interrupt_accept && pin_mcp_select &&
-                             !pin_event_i.mcp;
+                             !pin_event_i.mcp && pin_tea;
+    pin_status_o.ape_taken = interrupt_accept && pin_mcp_select &&
+                             !pin_event_i.mcp && !pin_tea;
+    pin_status_o.address_parity_enable = hid0_q[HID0_EBA];
     pin_status_o.dcache_enable = hid0_q[HID0_DCE];
     pin_status_o.dcache_lock = hid0_q[HID0_DLOCK];
     pin_status_o.dcache_flash_invalidate = hid0_q[HID0_DCFI];
@@ -1143,6 +1149,7 @@ module ppc_special #(
       trace_selected_q <= 1'b0;
       mcp_selected_q <= 1'b0;
       tea_selected_q <= 1'b0;
+      ape_selected_q <= 1'b0;
       soft_reset_selected_q <= 1'b0;
       smi_selected_q <= 1'b0;
       context_target_q <= '0;
@@ -1151,7 +1158,8 @@ module ppc_special #(
       // SRESET, then the traced instruction's trace, SMI, EXT, DEC.
       interrupt_q <= 1'b1;
       mcp_selected_q <= pin_mcp_select;
-      tea_selected_q <= pin_mcp_select && !pin_event_i.mcp;
+      tea_selected_q <= pin_mcp_select && !pin_event_i.mcp && pin_tea;
+      ape_selected_q <= pin_mcp_select && !pin_event_i.mcp && !pin_tea;
       soft_reset_selected_q <= pin_soft_reset_select;
       smi_selected_q <= pin_smi_select;
       trace_selected_q <= ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i &&

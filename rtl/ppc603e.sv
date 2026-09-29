@@ -139,6 +139,7 @@ module ppc603e #(
   logic strap_reject_q, checkstop_q, core_rst_n, release_outputs;
   logic core_checkstop, mcp_edge, mcp_pending_q, sreset_edge, sreset_pending_q;
   logic mcp_n_q, sreset_n_q, start_pending_q;
+  logic ape_check_q, ape_error_q, ape_out_q, ape_pending_q;
   logic [1:0] tb_phase_q;
   pin_status_t pin_status;
   pin_event_t pin_event;
@@ -159,10 +160,16 @@ module ppc603e #(
       checkstop_q <= 1'b0;
       mcp_pending_q <= 1'b0;
       sreset_pending_q <= 1'b0;
+      ape_pending_q <= 1'b0;
     end else begin
       if (!ckstp_in_n || strap_reject_q || core_checkstop ||
-          (mcp_edge && pin_status.mcp_enable && !pin_status.machine_check_enable))
+          (mcp_edge && pin_status.mcp_enable && !pin_status.machine_check_enable) ||
+          (ape_error_q && !pin_status.machine_check_enable))
         checkstop_q <= 1'b1;
+      if (ape_error_q && pin_status.machine_check_enable)
+        ape_pending_q <= 1'b1;
+      else if (pin_status.ape_taken)
+        ape_pending_q <= 1'b0;
       // HID0[EMCP]=0 ignores MCP.
       if (mcp_edge && pin_status.mcp_enable && pin_status.machine_check_enable)
         mcp_pending_q <= 1'b1;
@@ -182,6 +189,7 @@ module ppc603e #(
   assign pin_event.tlbisync = !tlbisync_n;
   // The core composition raises its own asynchronous TEA.
   assign pin_event.tea = 1'b0;
+  assign pin_event.ape = ape_pending_q;
 
   // The time base and decrementer count once per four bus clocks.
   logic timer_tick;
@@ -326,11 +334,28 @@ module ppc603e #(
   assign dp_o = data_parity(core_d_o);
   assign data_oe_o = core_d_oe && !dbdis_q && !release_outputs;
 
-  // ARTRY answers snoops only with ENABLE_DCACHE. APE never asserts. No
-  // inbound parity checking: DPE never asserts.
+  // UM 8.3.2.1: with HID0[EBA], another master's TS with GBL is checked
+  // against AP. An error asserts APE in the second cycle after TS and takes
+  // a machine check (SRR1 bit 15), or checkstops with MSR[ME]=0.
+  always_ff @(posedge sysclk) begin
+    if (!core_rst_n) begin
+      ape_check_q <= 1'b0;
+      ape_error_q <= 1'b0;
+      ape_out_q <= 1'b0;
+    end else begin
+      ape_check_q <= !ts_n_i && !gbl_n_i && !core_ts_oe &&
+                     pin_status.address_parity_enable &&
+                     (ap_i != addr_parity(a_i));
+      ape_error_q <= ape_check_q;
+      ape_out_q <= ape_check_q;
+    end
+  end
+
+  // ARTRY answers snoops only with ENABLE_DCACHE. No inbound data parity
+  // checking: DPE never asserts.
   assign artry_n_o = core_artry_n;
   assign artry_oe_o = core_artry_oe && !release_outputs;
-  assign ape_n_o = 1'b1;
+  assign ape_n_o = !ape_out_q;
   assign dpe_n_o = 1'b1;
   assign ckstp_out_n_o = !checkstop_q;
   assign rsrv_n_o = !pin_status.reservation || release_outputs;
@@ -341,10 +366,10 @@ module ppc603e #(
   assign tdo_o = 1'b0;
   assign tdo_oe_o = 1'b0;
 
-  // Inbound parity, TBST, DBWO (one tenure outstanding), JTAG and LSSD
+  // Inbound data parity, TBST, DBWO (one tenure outstanding), JTAG and LSSD
   // inputs have no function here.
   logic unused_pins;
-  assign unused_pins = ^{ap_i, tbst_n_i, dp_i,
+  assign unused_pins = ^{tbst_n_i, dp_i,
                          dbwo_n_i, tck_i, tms_i, tdi_i, trst_n_i, test_i,
                          pin_status.smi_taken, pin_status.tea_taken,
                          pin_status.dcache_enable, pin_status.dcache_lock,
