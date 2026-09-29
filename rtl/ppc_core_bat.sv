@@ -152,6 +152,9 @@ module ppc_core_bat #(
   output logic pimem_error_o,
   output logic busy_o
 );
+  localparam ppc_pkg::cpu_cfg_t CPU_CFG = ppc_pkg::cpu_cfg(CPU_VARIANT);
+  localparam int TLB_SETS_EFFECTIVE =
+    TLB_SETS != 0 ? TLB_SETS : int'(CPU_CFG.tlb_sets);
   ppc_pkg::page_miss_t imem_rsp_page_miss, dmem_rsp_page_miss;
   logic core_rst_n, core_halted, ifetch_fatal;
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
@@ -338,7 +341,7 @@ module ppc_core_bat #(
     .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
     .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
-    .TLB_SETS(TLB_SETS != 0 ? TLB_SETS : int'(ppc_pkg::cpu_cfg(CPU_VARIANT).tlb_sets)),
+    .TLB_SETS(TLB_SETS_EFFECTIVE),
     .ENABLE_DATA_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT)) router (
     .tlb_fill_req_valid_i(tlb_fill_req_valid),
     .tlb_fill_req_bank_i(tlb_fill_req_bank),

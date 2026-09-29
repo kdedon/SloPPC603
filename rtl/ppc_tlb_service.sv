@@ -48,9 +48,11 @@ module ppc_tlb_service #(
   // the remaining EA4 page bits form the tag.
   localparam int SET_W = $clog2(TLB_SETS);
   localparam int TAG_W = 16 - SET_W;
+  // synthesis translate_off
   if (TLB_SETS != 32 && TLB_SETS != 16) begin : g_reject_sets
     $fatal(1, "TLB_SETS %0d is not a 603e (32) or 602 (16) geometry", TLB_SETS);
   end
+  // synthesis translate_on
   typedef struct packed {
     logic [23:0] vsid;
     logic [TAG_W-1:0] page_tag;
