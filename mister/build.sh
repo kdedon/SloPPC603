@@ -51,7 +51,7 @@ if grep -q "Critical Warning (127002)" "${here}/output_files.log"; then
 fi
 if [[ -f "${out}/ppc603e.fit.rpt" ]]; then
   # The program RAM's row of the fitter RAM summary names its init file.
-  if ! grep -m1 "mister.mif" "${out}/ppc603e.fit.rpt" | tr -s ' '; then
+  if ! grep -m1 "mister.mif" "${out}/ppc603e.fit.rpt" | sed "s/ ; M10K_X.*//" | tr -s " "; then
     echo "firmware: program RAM has no init file" >&2
     status=1
   fi

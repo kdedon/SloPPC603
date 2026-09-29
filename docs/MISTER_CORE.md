@@ -18,7 +18,9 @@ summary), [`tb/mister/tb_mister.sv`](../tb/mister/tb_mister.sv) (Verilator bench
 
 - One clock, `clk_sys` at 50 MHz, drives the processor, the SoC, `DDRAM_CLK`, `CLK_VIDEO`
   and the scaler palette port.
-- Program RAM: 128 KiB of block RAM at `0xfff00000`, preloaded with `mister.hex`. The
+- Program RAM: 128 KiB of block RAM at `0xfff00000`, preloaded with the firmware image
+  (`mister.hex` in simulation, `mister.mif` in synthesis, where `soc_ram_sp_be` instantiates
+  `altsyncram` with byte enables because the inferred RAM loses its contents). The
   benchmarks run entirely from on-chip memory, so their numbers carry no DDR3 latency.
 - Framebuffer: 320 × 240, 8-bit indexed, at DDR3 byte address `0x30000000`, shown by the
   framework scaler (`MISTER_FB`, `MISTER_FB_PALETTE`; `FB_FORMAT` 3, stride 320).
@@ -104,11 +106,14 @@ Needs Docker, network access for the framework and benchmark sources, and about
    [Template_MiSTer at 3ea1134](https://github.com/MiSTer-devel/Template_MiSTer/tree/3ea1134cf05d62c2b1db30362277a823d739ced2),
    `sys/` only, into `mister/sys/`, checked against a SHA-256 digest of the tree;
 2. fetches the benchmark sources and builds `mister.hex` in the cross-compiler container,
-   copying it to `mister/firmware/`;
+   copying it to `mister/firmware/` and converting it to `mister.mif` (16384 64-bit words)
+   with `mister/hex2mif.py`;
 3. generates `mister/files.qip` from `rtl/chip_files.f` and `rtl/soc/files.f`;
 4. compiles in the Quartus image (under `flock /tmp/ppc603e-quartus.lock`) and prints
-   resources, the worst slack of every clock at every corner, and the `.rbf` path. A
-   negative slack fails the build.
+   resources, the program RAM's row of the fitter RAM summary (which names its init
+   file), the worst slack of every clock at every corner, and the `.rbf` path. A
+   negative slack, an unread init file (Critical Warning 127002) or a program RAM
+   without `mister.mif` fails the build. `--clean` keeps only the `.rbf` and summaries.
 
 The output is `mister/output_files/ppc603e.rbf`. It and everything else the build
 writes under `mister/` are ignored by git.
@@ -158,7 +163,7 @@ retirement count that differs from the processor's by more than the one-cycle sa
 skew. It renders the DDR3 framebuffer through the palette to
 `sim/build/mister/mister-03.png`.
 
-Recorded: `make -C sim lint check-spec mister-smoke`, commit d2edf70, 2026-09-29. All pass.
+Recorded: `make -C sim lint check-spec mister-smoke`, commit 283c4ea plus the uncommitted `soc_ram_sp_be` change later committed as e1b0910, 2026-09-29. All pass; the counts below are unchanged from the first run at d2edf70.
 
 | Measure | Value |
 |---|---:|
@@ -178,29 +183,30 @@ runs, or DDR3 read-back by the scaler.
 
 ### Build
 
-Recorded: `mister/build.sh`, commit 0d0a634, 2026-09-29. Quartus 17.0.2 Lite, seed 2,
-multi-corner fitting and analysis. **Not yet usable on hardware**: the build fails its
-own check because Quartus drops the program RAM contents (Critical Warning 127002:
-the byte-enable RAM is split into eight 8-bit RAMs and the `$readmemh` data is passed to
-them as an unreadable init file), so the processor would boot from zeros. Resources
-and timing below are for that netlist; filling the RAM does not change its structure.
+Recorded: `mister/build.sh --clean`, commit e1b0910, 2026-09-29. Quartus 17.0.2 Lite, seed 2,
+multi-corner fitting and analysis. Exit status 0, no critical warnings. The fitter RAM
+summary places the program RAM (`soc_ram_sp_be|altsyncram`, single port, 16384 × 64,
+128 M10K blocks) with init file `firmware/mister.mif`, so the firmware is in the
+bitstream.
 
 | Resource | Used |
 |---|---|
-| ALMs | 17,198 / 41,910 (41%) |
-| Registers | 23,080 |
+| ALMs | 17,160 / 41,910 (41%) |
+| Registers | 23,125 |
 | Block memory bits | 1,710,523 / 5,662,720 (30%) |
 | M10K blocks | 240 / 553 (43%) |
 | DSP blocks | 35 / 112 |
 | PLLs | 3 / 6 |
 
 Every clock meets setup, hold, recovery and removal at all four corners (slow and fast,
-100 °C and −40 °C). Core clock (50 MHz): worst setup slack +3.399 ns (slow, −40 °C),
+100 °C and −40 °C). Core clock (50 MHz): worst setup slack +3.410 ns (slow, −40 °C),
 worst hold slack +0.078 ns (fast, −40 °C). The smallest slack of any clock is +0.078 ns.
 Seed 1 without multi-corner fitting left the scaler HDMI clock at −0.120 ns at the slow
 −40 °C corner.
 
-Open: carry the firmware into the program RAM. The next step is a Quartus-only RAM
-body in `soc_ram_sp_be` (an `altsyncram` with `width_byteena_a = 8` and `init_file`
-set to a `.mif` that `build.sh` generates from `mister.hex`), keeping the inferred
-array for Verilator; then rebuild and confirm `build.sh` passes.
+`mister/output_files/ppc603e.rbf` (3,241,960 bytes), SHA-256
+`2b72c1d9bdfb3e7d87444bd97fbb425a1fe19aeb47b7917b5d46b3ef23e642af`. The firmware embeds
+the commit, so a rebuild at another commit gives a different digest.
+
+Not covered: running on a DE10-Nano. The `quartus/demo` project also compiles
+`soc_ram_sp_be` (without an init file) and was not rebuilt.
