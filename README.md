@@ -2,6 +2,19 @@
 
 A SystemVerilog CPU working toward the machine described in [the original design brief](docs/plans/current/ORIGINAL_DESIGN_BRIEF.md). It is **not yet a complete or cycle-faithful 603e**.
 
+## Release and quick start
+
+[docs/RELEASE.md](docs/RELEASE.md) defines the MVP release: scope, exclusions,
+configuration of record, pinned tools and reproduction. History is in
+[CHANGELOG.md](CHANGELOG.md).
+
+```sh
+./toolchain/build-container.sh                           # pinned cross-compiler
+make -C sim release-check RELEASE_ARGS=--skip-quartus    # simulation gates
+make -C sim release-check                                # plus the four fits (Docker)
+make -C sim release-archive                              # source tarball and manifest
+```
+
 ## Repository layout
 
 This directory is the standalone Git repository. The original parent workspace,

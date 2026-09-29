@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
+# Writes <out>/ppc603e-<version>.tar.gz from committed sources only, plus a
+# manifest of the commit, pinned images and local tool versions.
+# Usage: release-archive [--ref REF] [--version NAME] [--out DIR] [--dry-run]
+set -euo pipefail
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+ref=HEAD version="" out="${repo_dir}/sim/build/release" dry_run=0
+while (($#)); do
+  case "$1" in
+    --ref) shift; ref="${1:?--ref needs a value}" ;;
+    --version) shift; version="${1:?--version needs a value}" ;;
+    --out) shift; out="${1:?--out needs a value}" ;;
+    --dry-run) dry_run=1 ;;
+    *) echo "usage: $0 [--ref REF] [--version NAME] [--out DIR] [--dry-run]" >&2; exit 2 ;;
+  esac
+  shift
+done
+cd "${repo_dir}"
+commit="$(git rev-parse --verify "${ref}^{commit}")"
+[[ -n "${version}" ]] || version="$(git describe --tags --always "${commit}")"
+[[ "${version}" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "bad version name: ${version}" >&2; exit 2; }
+name="ppc603e-${version}"
+archive="${out}/${name}.tar.gz"
+manifest="${out}/${name}.manifest.txt"
+if ((dry_run)); then
+  echo "would write ${archive} and ${manifest} from ${commit}"
+  exit 0
+fi
+
+# Reads a pin from a committed file so the manifest matches the archive.
+pin() { git show "${commit}:$1" | grep -oE "$2" | sed -n 1p; }
+ver() { command -v "$1" >/dev/null 2>&1 && "$@" 2>&1 | sed -n 1p || echo "not installed"; }
+
+mkdir -p "${out}"
+git archive --format=tar.gz --prefix="${name}/" -o "${archive}" "${commit}"
+{
+  echo "name: ${name}"
+  echo "commit: ${commit}"
+  echo "commit date: $(git show -s --format=%cI "${commit}")"
+  echo "archive sha256: $(sha256sum "${archive}" | cut -d' ' -f1)"
+  echo "quartus image: $(pin quartus/translated/build.sh 'theypsilon/quartus-lite-c5@sha256:[0-9a-f]+')"
+  echo "toolchain image: $(pin toolchain/build-in-container.sh 'ppc603e-cross:[A-Za-z0-9.-]+')"
+  echo "toolchain base: $(pin toolchain/Dockerfile 'debian:[^ ]+@sha256:[0-9a-f]+')"
+  echo "dingusppc LAST_VERIFIED: $(pin sim/cosim/reference_checkout.py '[0-9a-f]{40}')"
+  echo "host verilator: $(ver verilator --version)"
+  echo "host python3: $(ver python3 --version)"
+  echo "host g++: $(ver g++ --version)"
+  echo "host make: $(ver make --version)"
+  echo "host git: $(ver git --version)"
+  echo "host cross gcc: $(ver powerpc-linux-gnu-gcc --version)"
+} > "${manifest}"
+cat "${manifest}"
+echo "Wrote ${archive}"
