@@ -43,6 +43,7 @@ module tb_compiled_cacheops_firmware;
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1),
     .ENABLE_TIMERS(1'b1),.ENABLE_CACHE_INSTRUCTIONS(1'b1)) dut(
+    .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .timer_tick_i(tick),.timebase_enable_i(1'b1),

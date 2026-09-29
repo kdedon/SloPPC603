@@ -139,6 +139,7 @@ module ppc_core_bat #(
   input  ppc_pkg::completion_tag_t redirect_pivot_i,
   input  logic [31:0] redirect_target_i,
   output logic redirect_accepted_o,
+  output ppc_pkg::perf_event_t perf_o,
   output logic translation_fault_o,
   output logic fault_instruction_o,
   output logic fault_write_o,
@@ -326,7 +327,7 @@ module ppc_core_bat #(
     .retire_valid_o, .retire_ready_i, .retire_o,
     .halted_o(core_halted), .checkstop_o, .redirect_valid_i, .redirect_all_i,
     .redirect_keep_pivot_i, .redirect_pivot_i, .redirect_target_i,
-    .redirect_accepted_o
+    .redirect_accepted_o, .perf_o
   );
 
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),

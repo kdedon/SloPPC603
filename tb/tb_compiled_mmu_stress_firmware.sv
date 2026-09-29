@@ -88,6 +88,9 @@ module tb_compiled_mmu_stress_firmware;
     .ENABLE_TLB_INVALIDATE(1'b1),.ENABLE_TLB_LOAD(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0),.ENABLE_MACHINE_CHECK(1'b1)
   ) dut(
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(interrupt_taken),
     .interrupt_pc_o(interrupt_pc),

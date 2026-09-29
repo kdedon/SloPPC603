@@ -57,6 +57,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc603e.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_bus60x_target.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_ram_sp_be.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_ram_dp_be.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_perf_counters.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_video.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/ppc603e_demo_soc.sv
 set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni

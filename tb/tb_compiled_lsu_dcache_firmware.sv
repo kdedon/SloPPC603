@@ -65,6 +65,7 @@ module tb_compiled_lsu_dcache_firmware;
     .ENABLE_RESERVATION(LSU_EXTENSIONS),.ENABLE_MISALIGNED_ACCESS(LSU_EXTENSIONS),
     .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_PIN_INTERRUPTS(1'b1),
     .ENABLE_DCACHE(1'b1),.RESET_DCACHE_ENABLE(1'b1)) dut(
+    .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
     .timer_tick_i(tick),.timebase_enable_i(1'b1),

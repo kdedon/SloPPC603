@@ -71,6 +71,14 @@ Fmax 65.39 MHz at slow 100 C, 64.98 MHz at slow -40 C. At 15.152 ns (66 MHz)
 29 endpoints fail, worst -0.237 ns, from the I-cache data RAM to the
 instruction queue. Pin boundary paths keep at least 6.25 ns of slack.
 
+Recorded: `./quartus/chip/build.sh --docker` and `./quartus/report-target-paths.sh chip --docker`,
+commit c0ebe1a, 2026-09-29 (after the 602 decode round and the special-lane result
+fix). Meets 50 MHz at every corner: setup +4.190 / +4.227 / +6.676 / +7.206 ns, hold
++0.251 / +0.239 / +0.125 / +0.104 ns (slow 100 C, slow -40 C, fast 100 C, fast -40 C).
+**No endpoint fails at 15.152 ns (66 MHz)**; the worst pin boundary path has 3.34 ns
+(output, slow -40 C). `perf_o` is open in `ppc603e_measure`, so the event logic is
+pruned.
+
 ## What this establishes
 
 The pin-level top boots from HRESET, honours the straps, takes MCP, SRESET

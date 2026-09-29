@@ -518,7 +518,11 @@ module ppc_translated_measure #(
     .ENABLE_PIN_INTERRUPTS(1'b1),
     .ENABLE_DCACHE(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
-  ) dut (.rst_ni(rst_sync_q[1]),
+  ) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .rst_ni(rst_sync_q[1]),
     .clk_i,
     .external_irq_i(external_irq_i_ibq),
     .interrupt_taken_o(interrupt_taken_o_od),

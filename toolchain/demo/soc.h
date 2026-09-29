@@ -28,6 +28,16 @@
 #define SOC_FB_SIZE SOC_REG(0x28)
 #define SOC_FB_FORMAT SOC_REG(0x2c)
 #define SOC_PALETTE(i) SOC_REG(0x400 + 4 * (i))
+/* Performance counters: PERF_CTRL bit 0 runs them, writing bit 1 clears. */
+#define SOC_PERF_CTRL SOC_REG(0x100)
+#define SOC_PERF_CYCLES SOC_REG(0x104)
+#define SOC_PERF_RETIRED SOC_REG(0x108)
+#define SOC_PERF_IQ_FULL SOC_REG(0x10c)
+#define SOC_PERF_SLOT(n) SOC_REG(0x110 + 4 * (n))
+#define SOC_PERF_SLOTS 15
+#define SOC_PERF_BRANCHES SOC_REG(0x150)
+#define SOC_PERF_MEMORY SOC_REG(0x154)
+#define SOC_PERF_REDIRECTS SOC_REG(0x158)
 
 #define SOC_FB ((volatile uint8_t *)SOC_FB_BASE)
 
@@ -55,6 +65,11 @@ int strcmp(const char *a, const char *b);
 size_t strlen(const char *s);
 /* Reports a failed check on the console and exits with code 1. */
 void fail(const char *what);
+/* Performance counters over a measured window; the report prints the
+ * cycles per retired instruction by dispatch-slot cause. */
+void perf_start(void);
+void perf_stop(void);
+void perf_report(const char *name);
 
 extern const uint8_t font8x8[95][8];
 

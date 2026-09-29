@@ -229,6 +229,9 @@ module ppc603e_measure #(
   always_ff @(posedge sysclk) test_i_ibq <= test_i;
 
   ppc603e #(.CPU_VARIANT(CPU_VARIANT)) dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .sysclk,
     .pll_cfg_i,
     .clk_out_o(clk_out_o_od),

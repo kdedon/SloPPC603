@@ -61,6 +61,9 @@ module tb_compiled_table_cached_bus60x_firmware #(
     .ENABLE_TLB_LOAD(1'b1),.ENABLE_TLB_INVALIDATE(FAULT_PROFILE!=0),
     .ENABLE_PAGE_MISS_RESULTS(1'b1),.ENABLE_TLB_MISS_EXCEPTIONS(1'b1)
   ) dut(
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(interrupt_taken),
     .interrupt_pc_o(unused_interrupt_pc),

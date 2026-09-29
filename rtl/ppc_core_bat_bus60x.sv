@@ -212,6 +212,9 @@ module ppc_core_bat_bus60x #(
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
     .PLL_CFG(PLL_CFG)
   ) translated_core (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .perf_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .clk_i,
     .rst_ni,
     .external_irq_i,
