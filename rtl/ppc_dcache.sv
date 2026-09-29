@@ -143,9 +143,11 @@ module ppc_dcache #(
   endfunction
   localparam lru_ranks_t LRU_SEED = lru_seed();
 
+  // synthesis translate_off
   if ((WAY_COUNT != 2 && WAY_COUNT != 4) || (SET_COUNT != 64 && SET_COUNT != 128)) begin : g_bad_geometry
     $fatal(1, "ppc_dcache: unsupported geometry %0d sets x %0d ways", SET_COUNT, WAY_COUNT);
   end
+  // synthesis translate_on
 
   dc_state_e state_q;
   push_state_e push_st_q;

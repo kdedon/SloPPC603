@@ -190,11 +190,10 @@ module ppc_core_bat_cached_bus60x #(
   input  logic        drtry_n_i,
   input  logic        tea_n_i
 );
-  localparam ppc_pkg::cpu_cfg_t CACHE_CFG = ppc_pkg::cpu_cfg(CPU_VARIANT);
-  localparam int IC_SETS = ICACHE_SETS != 0 ? ICACHE_SETS : int'(CACHE_CFG.icache_sets);
-  localparam int IC_WAYS = ICACHE_WAYS != 0 ? ICACHE_WAYS : int'(CACHE_CFG.icache_ways);
-  localparam int DC_SETS = DCACHE_SETS != 0 ? DCACHE_SETS : int'(CACHE_CFG.dcache_sets);
-  localparam int DC_WAYS = DCACHE_WAYS != 0 ? DCACHE_WAYS : int'(CACHE_CFG.dcache_ways);
+  localparam int IC_SETS = ICACHE_SETS != 0 ? ICACHE_SETS : ppc_pkg::cpu_icache_sets(CPU_VARIANT);
+  localparam int IC_WAYS = ICACHE_WAYS != 0 ? ICACHE_WAYS : ppc_pkg::cpu_icache_ways(CPU_VARIANT);
+  localparam int DC_SETS = DCACHE_SETS != 0 ? DCACHE_SETS : ppc_pkg::cpu_dcache_sets(CPU_VARIANT);
+  localparam int DC_WAYS = DCACHE_WAYS != 0 ? DCACHE_WAYS : ppc_pkg::cpu_dcache_ways(CPU_VARIANT);
 
   logic core_halted;
   logic imem_req_valid, imem_req_ready, managed_fetch_ready;

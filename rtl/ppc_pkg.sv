@@ -576,6 +576,26 @@ package ppc_pkg;
     c = cpu_cfg(v);
     return int'(c.tlb_sets);
   endfunction
+  function automatic int cpu_icache_sets(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return int'(c.icache_sets);
+  endfunction
+  function automatic int cpu_icache_ways(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return int'(c.icache_ways);
+  endfunction
+  function automatic int cpu_dcache_sets(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return int'(c.dcache_sets);
+  endfunction
+  function automatic int cpu_dcache_ways(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return int'(c.dcache_ways);
+  endfunction
   /* verilator lint_on UNUSEDSIGNAL */
   // Variants whose differences from the PID7v are all implemented.
   function automatic bit cpu_variant_supported(cpu_variant_e v);

@@ -78,9 +78,11 @@ module ppc_icache #(
   endfunction
   localparam lru_ranks_t LRU_SEED = lru_seed();
 
+  // synthesis translate_off
   if ((WAY_COUNT != 2 && WAY_COUNT != 4) || (SET_COUNT != 64 && SET_COUNT != 128)) begin : g_bad_geometry
     $fatal(1, "ppc_icache: unsupported geometry %0d sets x %0d ways", SET_COUNT, WAY_COUNT);
   end
+  // synthesis translate_on
 
   // A way is valid when its set's flop and its bit in the way-valid RAM are
   // both set. Flash invalidate and reset clear only the per-set flops; the

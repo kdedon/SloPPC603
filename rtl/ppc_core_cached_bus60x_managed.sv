@@ -75,9 +75,8 @@ module ppc_core_cached_bus60x_managed #(
   input  logic        tea_n_i
 );
   // Named constants: Quartus 17 rejects package-scoped enum port actuals.
-  localparam ppc_pkg::cpu_cfg_t CACHE_CFG = ppc_pkg::cpu_cfg(CPU_VARIANT);
-  localparam int IC_SETS = ICACHE_SETS != 0 ? ICACHE_SETS : int'(CACHE_CFG.icache_sets);
-  localparam int IC_WAYS = ICACHE_WAYS != 0 ? ICACHE_WAYS : int'(CACHE_CFG.icache_ways);
+  localparam int IC_SETS = ICACHE_SETS != 0 ? ICACHE_SETS : ppc_pkg::cpu_icache_sets(CPU_VARIANT);
+  localparam int IC_WAYS = ICACHE_WAYS != 0 ? ICACHE_WAYS : ppc_pkg::cpu_icache_ways(CPU_VARIANT);
   localparam ppc_pkg::fetch_fault_t NO_FETCH_FAULT = ppc_pkg::FETCH_OK;
   localparam ppc_pkg::data_fault_t NO_DATA_FAULT = ppc_pkg::DATA_OK;
   logic core_halted;

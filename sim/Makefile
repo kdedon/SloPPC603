@@ -1668,8 +1668,20 @@ geo_sets = $(word 1,$(subst x, ,$(call geo_tag,$1)))
 geo_ways = $(word 2,$(subst x, ,$(call geo_tag,$1)))
 .PHONY: cache-geometry
 regression: cache-geometry
-cache-geometry: $(foreach b,$(CACHE_GEO_BENCHES),$(addprefix cache-geo-$(b)-,$(CACHE_GEOMETRIES)))
+cache-geometry: $(foreach b,$(CACHE_GEO_BENCHES),$(addprefix cache-geo-$(b)-,$(CACHE_GEOMETRIES))) \
+                cache-geo-reject
 	@echo "PASS: cache-geometry ($(CACHE_GEO_BENCHES) at $(CACHE_GEOMETRIES))"
+# Any other geometry fails elaboration.
+.PHONY: cache-geo-reject
+cache-geo-reject:
+	mkdir -p $(BUILD_DIR)/cache-geo-reject
+	for g in 128x8 32x2 256x4; do s=$${g%x*}; w=$${g#*x}; \
+	  for m in "ppc_icache $(ICACHE_RTL)" "ppc_dcache $(DCACHE_RTL)"; do set -- $$m; top=$$1; shift; \
+	    if $(VERILATOR) --lint-only -Wall --top-module $$top -GSET_COUNT=$$s -GWAY_COUNT=$$w $$@ \
+	       > $(BUILD_DIR)/cache-geo-reject/$$top-$$g.log 2>&1; then echo "FAIL: $$top $$g elaborated"; exit 1; fi; \
+	    grep -q "unsupported geometry" $(BUILD_DIR)/cache-geo-reject/$$top-$$g.log || exit 1; \
+	  done; done
+	@echo "PASS: cache geometries 128x8, 32x2 and 256x4 rejected"
 cache-geo-%:
 	mkdir -p $(BUILD_DIR)/cache-geo-$*
 	$(VERILATOR) --binary --timing --assert -Wall --top-module $(CACHE_GEO_TOP_$(call geo_bench,$*)) \
