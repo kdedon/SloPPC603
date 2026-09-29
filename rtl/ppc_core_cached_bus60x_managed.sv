@@ -5,6 +5,10 @@
 module ppc_core_cached_bus60x_managed #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
+  // Cache geometry; zero takes the variant's. Benches set it to run the
+  // 603 and 602 geometries on a 603e core.
+  parameter int ICACHE_SETS = 0,
+  parameter int ICACHE_WAYS = 0,
   parameter logic RESET_CACHE_ENABLE = 1'b1,
   // Includes the existing serialized ISYNC/SYNC/EIEIO profile.
   parameter bit ENABLE_SUPERVISOR_EXCEPTIONS = 1'b0,
@@ -71,6 +75,9 @@ module ppc_core_cached_bus60x_managed #(
   input  logic        tea_n_i
 );
   // Named constants: Quartus 17 rejects package-scoped enum port actuals.
+  localparam ppc_pkg::cpu_cfg_t CACHE_CFG = ppc_pkg::cpu_cfg(CPU_VARIANT);
+  localparam int IC_SETS = ICACHE_SETS != 0 ? ICACHE_SETS : int'(CACHE_CFG.icache_sets);
+  localparam int IC_WAYS = ICACHE_WAYS != 0 ? ICACHE_WAYS : int'(CACHE_CFG.icache_ways);
   localparam ppc_pkg::fetch_fault_t NO_FETCH_FAULT = ppc_pkg::FETCH_OK;
   localparam ppc_pkg::data_fault_t NO_DATA_FAULT = ppc_pkg::DATA_OK;
   logic core_halted;
@@ -244,7 +251,8 @@ module ppc_core_cached_bus60x_managed #(
 
   logic unused_icbi_ready;
   ppc_icache_managed #(
-    .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE)
+    .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE),
+    .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS)
   ) managed_cache (
     .clk_i, .rst_ni,
     .fetch_valid_i(imem_req_valid && !transport_ifetch_error),

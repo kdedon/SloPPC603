@@ -12,7 +12,9 @@ module ppc_dcache_slot #(
   // Nonzero injects one named defect for negative tests only: below 100 in
   // the cache; 101 wrong word half, 102 stwcx. always succeeds, 103 drops
   // the asynchronous error, 104 no sync ahead of eciwx/ecowx.
-  parameter int DCACHE_MUTATION = 0
+  parameter int DCACHE_MUTATION = 0,
+  parameter int DCACHE_SETS = 128,
+  parameter int DCACHE_WAYS = 4
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -253,7 +255,10 @@ module ppc_dcache_slot #(
 
     logic dc_async_error;
     assign async_error_o = dc_async_error && (DCACHE_MUTATION != 103);
-    ppc_dcache #(.MUTATION(DCACHE_MUTATION < 100 ? DCACHE_MUTATION : 0)) dcache (
+    ppc_dcache #(
+      .MUTATION(DCACHE_MUTATION < 100 ? DCACHE_MUTATION : 0),
+      .SET_COUNT(DCACHE_SETS), .WAY_COUNT(DCACHE_WAYS)
+    ) dcache (
       .clk_i, .rst_ni,
       .req_valid_i(dc_req_valid), .req_ready_o(dc_req_ready),
       .req_op_i(dc_req_op), .req_addr_i(lsu_req_addr_i),

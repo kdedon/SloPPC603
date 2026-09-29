@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
-// 603e data cache: 16 KiB, four ways, 32-byte lines, physical index and tag,
-// MEI coherence with snoop pushes.
+// 603-family data cache: 32-byte lines, physical index and tag, MEI
+// coherence with snoop pushes. 603e: 16 KiB, 128 sets x 4 ways; 603: 8 KiB,
+// 128 x 2; 602: 4 KiB, 64 x 2.
 //
 // One LSU operation runs at a time. It is registered on acceptance, looked
 // up in S_LOOKUP (tag MLABs read asynchronously, data M10Ks read in the
@@ -14,7 +15,9 @@
 // buffer, which has its own BIU port.
 module ppc_dcache #(
   // Nonzero injects one named defect for the bench's negative tests only.
-  parameter int MUTATION = 0
+  parameter int MUTATION = 0,
+  parameter int SET_COUNT = 128,
+  parameter int WAY_COUNT = 4
 ) (
   input  logic         clk_i,
   input  logic         rst_ni,
@@ -79,14 +82,13 @@ module ppc_dcache #(
 );
   import ppc_dcache_pkg::*;
 
-  localparam int SET_COUNT = 128;
-  localparam int WAY_COUNT = 4;
-  localparam int SET_BITS = 7;
-  localparam int WAY_BITS = 2;
-  localparam int TAG_BITS = 20;
+  localparam int SET_BITS = $clog2(SET_COUNT);
+  localparam int WAY_BITS = $clog2(WAY_COUNT);
+  localparam int TAG_BITS = 27 - SET_BITS;
   localparam int LINE_BITS = 27;
+  localparam int LRU_BITS = WAY_COUNT * WAY_BITS;
   localparam int WQ_DEPTH = 4;
-  localparam logic [WAY_BITS-1:0] LRU_RANK = 2'd3;
+  localparam logic [WAY_BITS-1:0] LRU_RANK = WAY_BITS'(WAY_COUNT - 1);
 
   // Plan steps in execution order.
   localparam int P_COB = 0;
@@ -131,10 +133,19 @@ module ppc_dcache #(
     SN_KILL
   } snoop_class_e;
 
-  // Rank zero is MRU, rank three LRU; a set with any valid way holds a
-  // permutation, seeded by its first install.
+  // Rank zero is MRU, rank WAY_COUNT-1 LRU; a set with any valid way holds
+  // a permutation, seeded with way w at rank w by its first install.
   typedef logic [WAY_COUNT-1:0][WAY_BITS-1:0] lru_ranks_t;
-  localparam lru_ranks_t LRU_SEED = {2'd3, 2'd2, 2'd1, 2'd0};
+  function automatic lru_ranks_t lru_seed();
+    lru_ranks_t seed;
+    for (int w = 0; w < WAY_COUNT; w++) seed[w] = WAY_BITS'(w);
+    return seed;
+  endfunction
+  localparam lru_ranks_t LRU_SEED = lru_seed();
+
+  if ((WAY_COUNT != 2 && WAY_COUNT != 4) || (SET_COUNT != 64 && SET_COUNT != 128)) begin : g_bad_geometry
+    $fatal(1, "ppc_dcache: unsupported geometry %0d sets x %0d ways", SET_COUNT, WAY_COUNT);
+  end
 
   dc_state_e state_q;
   push_state_e push_st_q;
@@ -213,7 +224,7 @@ module ppc_dcache #(
   logic [7:0] data_be;
   logic [63:0] data_wdata;
 
-  // State RAM word: {dirty[3:0], valid[3:0]}, qualified by set_valid_q.
+  // State RAM word: {dirty, valid}, one bit per way each, qualified by set_valid_q.
   logic st_we;
   logic [SET_BITS-1:0] st_waddr;
   logic [2*WAY_COUNT-1:0] st_wdata;
@@ -269,7 +280,7 @@ module ppc_dcache #(
     .clk_i, .we_i(st_we), .waddr_i(st_waddr), .wdata_i(st_wdata),
     .raddr_i(rd_set), .rdata_o(st_rdata)
   );
-  ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(2*WAY_COUNT)) lru_ram (
+  ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(LRU_BITS)) lru_ram (
     .clk_i, .we_i(lru_we), .waddr_i(req_set), .wdata_i(lru_wdata),
     .raddr_i(rd_set), .rdata_o(lru_rdata)
   );
@@ -641,7 +652,7 @@ module ppc_dcache #(
     bus_req_be_o = req_be_q;
     bus_req_wimg_o = {req_w, req_i || ci_q, req_m, req_g};
     bus_req_gbl_o = req_m;
-    bus_req_cse_o = way_q;
+    bus_req_cse_o = 2'(way_q);
     bus_req_data_o = {192'b0, req_wdata_q};
     unique case (state_q)
       S_COB_REQ: begin
