@@ -1473,6 +1473,15 @@ ci-firmware:
 	if command -v $(CROSS_GCC) >/dev/null 2>&1; then $(MAKE) -C ../toolchain firmware-all; \
 	else ../toolchain/build-in-container.sh firmware-all; fi
 
+# Release gates in one command: ci, reference acceptance and the four fits.
+# RELEASE_ARGS passes --skip-quartus, --allow-dirty, --dry-run or -j N.
+.PHONY: release-check release-archive
+release-check:
+	tools/release-check $(RELEASE_ARGS)
+# Source tarball and tool manifest in $(BUILD_DIR)/release.
+release-archive:
+	tools/release-archive --out $(abspath $(BUILD_DIR))/release $(RELEASE_ARGS)
+
 # Compiled firmware on DingusPPC and the RTL: retirement lockstep and final RAM.
 .PHONY: test-reference-firmware
 test-reference-firmware: reference-checkout ci-firmware

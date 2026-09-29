@@ -142,19 +142,37 @@ C1, C3, C4 and C5 apply with `sysclk` as the clock, plus:
 
 ## Release sign-off checklist
 
-Verified by this repository (rerun before each release):
+Verified by this repository (rerun before each release). `make -C sim
+release-check` runs every item but the last two ([RELEASE.md](RELEASE.md)).
+Every item is pending: the final RTL round is still open, so each needs a
+fresh run on the release commit. Latest evidence per item:
 
-- [ ] `make -C sim ci` passes on the release commit.
-- [ ] Each of `./quartus/{translated,integrated,timer-bat}/build.sh --docker`
+- [ ] `make -C sim ci` passes on the release commit. Latest:
+      [DATA_CACHE_INTEGRATION.md](DATA_CACHE_INTEGRATION.md#records), `1f2b66c`.
+- [ ] `make -C sim reference-acceptance` passes on the release commit. Latest:
+      [REFERENCE_FIRMWARE.md](REFERENCE_FIRMWARE.md#results), `c9ebe33`.
+- [ ] Each of `./quartus/{translated,integrated,timer-bat,chip}/build.sh --docker`
       meets 50 MHz setup and hold at all four corners with the SDCs above.
+      Latest: translated and chip with the data cache on
+      ([translated](TRANSLATED_SYNTHESIS_BASELINE.md#2026-09-28-data-cache-on),
+      [chip](CHIP_PACKAGE_VERIFICATION.md#2026-09-28-signoff-fit-with-the-data-cache-on));
+      integrated and timer-bat before the data-cache merge
+      ([integrated](INTEGRATED_SYNTHESIS_BASELINE.md#2026-09-28-signoff-with-the-fetch-to-decode-register),
+      [timer-bat](TIMER_SYNTHESIS_BASELINE.md#2026-09-28-signoff-with-the-fetch-to-decode-register)).
 - [ ] `./quartus/report-target-paths.sh <top> --docker` recorded for each top:
       66 MHz slack and the worst boundary input, output and feedthrough paths.
+      Latest: the same four records; the chip record lacks a 50 MHz worst
+      setup path.
 - [ ] No critical warning from the SDCs (missing reset flop or unpaired port).
-- [ ] Unconstrained-path summary is empty in each `.sta.rpt`.
+      Checked by `release-check`; no current record states it.
+- [ ] Unconstrained-path summary is empty in each `.sta.rpt`. Manual read;
+      last stated for integrated in
+      [INTEGRATED_SYNTHESIS_BASELINE.md](INTEGRATED_SYNTHESIS_BASELINE.md#2026-09-27-reset-synchronizer-refit).
 - [ ] Dated baseline sections updated in
       [TRANSLATED_SYNTHESIS_BASELINE.md](TRANSLATED_SYNTHESIS_BASELINE.md),
-      [INTEGRATED_SYNTHESIS_BASELINE.md](INTEGRATED_SYNTHESIS_BASELINE.md) and
-      [TIMER_SYNTHESIS_BASELINE.md](TIMER_SYNTHESIS_BASELINE.md).
+      [INTEGRATED_SYNTHESIS_BASELINE.md](INTEGRATED_SYNTHESIS_BASELINE.md),
+      [TIMER_SYNTHESIS_BASELINE.md](TIMER_SYNTHESIS_BASELINE.md) and
+      [CHIP_PACKAGE_VERIFICATION.md](CHIP_PACKAGE_VERIFICATION.md).
 
 Excluded; owned by board bring-up:
 

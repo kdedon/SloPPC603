@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
+# Runs every release gate in order, logs each to sim/build/release-check/ and
+# prints a PASS/FAIL summary. Later gates still run after a failure.
+# Usage: release-check [--skip-quartus] [--allow-dirty] [--dry-run] [-j N]
+set -uo pipefail
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+tops=(translated integrated timer-bat chip)
+skip_quartus=0 allow_dirty=0 dry_run=0 jobs=2
+while (($#)); do
+  case "$1" in
+    --skip-quartus) skip_quartus=1 ;;
+    --allow-dirty) allow_dirty=1 ;;
+    --dry-run) dry_run=1 ;;
+    -j) shift; jobs="${1:?-j needs a count}" ;;
+    -j[0-9]*) jobs="${1#-j}" ;;
+    *) echo "usage: $0 [--skip-quartus] [--allow-dirty] [--dry-run] [-j N]" >&2; exit 2 ;;
+  esac
+  shift
+done
+[[ "${jobs}" =~ ^[1-9][0-9]*$ ]] || { echo "bad job count: ${jobs}" >&2; exit 2; }
+cd "${repo_dir}"
+commit="$(git rev-parse --short HEAD)"
+dirty="$(git status --porcelain --untracked-files=no)"
+if [[ -n "${dirty}" && ${allow_dirty} -eq 0 ]]; then
+  echo "ERROR: tracked files modified; commit first or pass --allow-dirty" >&2
+  exit 2
+fi
+log_dir="sim/build/release-check"
+names=() results=()
+
+run() {
+  local name="$1"; shift
+  names+=("${name}")
+  if ((dry_run)); then
+    printf 'would run [%s]: %s\n' "${name}" "$*"
+    results+=("DRY")
+    return
+  fi
+  echo "== ${name}: $*"
+  if "$@" > "${log_dir}/${name}.log" 2>&1; then results+=("PASS"); else results+=("FAIL"); fi
+  echo "   ${results[-1]} (${log_dir}/${name}.log)"
+}
+
+# A fit passes when TimeQuest raised no critical warning: that covers unmet
+# setup/hold at any corner and SDC problems such as unmatched ports.
+sta_gate() {
+  local top="$1" rpt
+  rpt="$(ls quartus/"${top}"/output_files/*.sta.rpt 2>/dev/null | head -n1)"
+  [[ -s "${rpt}" ]] || { echo "missing STA report for ${top}"; return 1; }
+  grep -E 'Critical Warning \(332' "${rpt}" && return 1
+  grep -E 'Unconstrained|Worst-case (setup|hold) slack' "${rpt}" | head -n 20
+  return 0
+}
+
+((dry_run)) || mkdir -p "${log_dir}"
+run ci make -C sim -j"${jobs}" ci
+run reference-acceptance make -C sim -j"${jobs}" reference-acceptance
+if ((skip_quartus)); then
+  for top in "${tops[@]}"; do names+=("fit-${top}"); results+=("SKIP"); done
+else
+  for top in "${tops[@]}"; do
+    run "fit-${top}" "./quartus/${top}/build.sh" --docker
+    run "sta-${top}" sta_gate "${top}"
+    run "paths-${top}" ./quartus/report-target-paths.sh "${top}" --docker
+  done
+fi
+
+echo
+echo "Release check, commit ${commit}${dirty:+ plus uncommitted changes}, $(date -u +%F):"
+status=0
+for i in "${!names[@]}"; do
+  printf '  %-22s %s\n' "${names[$i]}" "${results[$i]}"
+  [[ "${results[$i]}" == FAIL ]] && status=1
+done
+if ((dry_run)); then echo "DRY RUN"; exit 0; fi
+((status)) && echo "FAIL: release check" || echo "PASS: release check"
+exit "${status}"
