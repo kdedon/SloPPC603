@@ -303,7 +303,7 @@ module tb_ppc_fpu_shell;
         if (!mem_req_valid_o || mem_req_o.write || mem_req_o.size_bytes != 4'd8 ||
             mem_req_o.ea != 32'h00001000 || mem_req_o.tag != identity ||
             mem_req_o.data != 64'd0)
-            $fatal(1, "lfd preparation packet");
+            $fatal(1, "lfd preparation packet %h", mem_req_o);
         mem_req_ready_i = 1'b1;
         @(posedge clk_i);
         #1;
@@ -407,6 +407,23 @@ module tb_ppc_fpu_shell;
             $fatal(1, "prepared store result");
         end
         checks = checks + 4;
+    endtask
+
+    // Store rule for exponents above single range: WORD = FRS[0:1] || FRS[5:34].
+    task automatic stfs_large(input logic [4:0] register_index,
+                              input logic [63:0] bits, input logic [31:0] word,
+                              input logic [7:0] generation);
+        load_fpr(register_index, bits, generation);
+        prepare_store(dform(52, register_index, 1, 0), tag(0, generation + 8'd1),
+                      32'h00005000, 32'h00005000, 4'd4, {32'd0, word}, 1'b0);
+        @(negedge clk_i);
+        abort_valid_i = 1'b1;
+        abort_tag_i = tag(0, generation + 8'd1);
+        @(posedge clk_i);
+        #1;
+        abort_valid_i = 1'b0;
+        if (store_valid_o) $fatal(1, "aborted large-exponent stfs visible");
+        checks = checks + 1;
     endtask
 
     initial begin
@@ -561,6 +578,10 @@ module tb_ppc_fpu_shell;
         abort_valid_i = 1'b0;
         if (store_valid_o) $fatal(1, "aborted stfs visible");
         checks = checks + 2;
+        stfs_large(5'd28, 64'h4800_0000_0000_0000, 32'h4000_0000, 8'd242);
+        stfs_large(5'd29, 64'h7e37_e43c_8800_759c, 32'h71bf_21e4, 8'd244);
+        stfs_large(5'd30, 64'hfe37_e43c_8800_759c, 32'hf1bf_21e4, 8'd246);
+        stfs_large(5'd31, 64'h7fef_ffff_ffff_ffff, 32'h7f7f_ffff, 8'd248);
 
         send_issue(fp_aform(63, 7, 6, 2, 5, 23, 1'b1), tag(0, 18), 0, 0, 1'b1);
         await_result(tag(0, 18));

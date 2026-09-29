@@ -330,11 +330,8 @@ module ppc_fpu #(
       s = '0;
       s[31] = d[63];
       exponent = int'(d[62:52]);
-      if (exponent == 2047) begin
-        s[30:23] = 8'hff;
-        s[22:0] = d[51:29];
-      end else if (exponent >= 897) begin
-        s[30:23] = 8'(exponent - 896);
+      if (exponent >= 897) begin
+        s[30:23] = {d[62], d[58:52]};
         s[22:0] = d[51:29];
       end else if (exponent != 0) begin
         sig = {1'b1, d[51:0]};
