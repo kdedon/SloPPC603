@@ -82,9 +82,16 @@ carries the status: alignment refused, or stored.
   software clears it.
 
 Speculation and guarded storage: a memory operation dispatches only with the
-completion queue empty and the integer lane idle, so every older instruction
-has completed; branches, traps, `sc` and exceptions resolve in the same
-serialized lane before a younger instruction dispatches. In the chip
+completion queue empty and the integer lane idle, except a plain load or store
+(no update, reservation, string, multiple, cache op or external access, trace
+off), which dispatches as soon as the lane is free and none of its source GPRs
+has an uncommitted producer. Older work still in flight is then integer work,
+which cannot fault or redirect, so the access is in the execution path;
+branches, traps, `sc` and exceptions still resolve in the serialized lane
+before a younger instruction dispatches. A faulting plain access takes its
+exception when it reaches the completion-queue head; retirement stops after
+that commit and the exception's recovery removes the younger integer work that
+dispatched behind it ([PERFORMANCE.md](PERFORMANCE.md#pipelined-loadstore-path)). In the chip
 configuration (`ENABLE_TEST_REDIRECT=0`) nothing withdraws an offered load
 (`ppc_core` asserts it), so every load that reaches the cache is in the
 execution path, and a guarded load (G=1, cached or not) is never performed out

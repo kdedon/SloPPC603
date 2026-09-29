@@ -37,7 +37,7 @@ Only one data obligation is outstanding. A held request cannot be withdrawn or c
 
 ## Store authorization and faults
 
-A store waits at the serialized CQ head for `retire_ready_i` to authorize a latched reservation. Its request is offered only after that edge. Reservation authorizes the external memory effect and makes the store irrevocable through the later response and retirement handshake. Lowering ready afterward must not retract the request or permit cancellation. The final retirement handshake records completion; it is distinct from the earlier external-effect authorization. This is an explicit extension of the retirement-ready contract.
+A store waits for `retire_ready_i` to authorize a latched reservation; a plain store can be authorized behind older integer work that has not retired, which cannot fault ([PERFORMANCE.md](PERFORMANCE.md#pipelined-loadstore-path)). Its request is offered only after that edge. Reservation authorizes the external memory effect and makes the store irrevocable through the later response and retirement handshake. Lowering ready afterward must not retract the request or permit cancellation. The final retirement handshake records completion; it is distinct from the earlier external-effect authorization. This is an explicit extension of the retirement-ready contract.
 
 Misaligned halfword/word accesses produce a diagnostic before any data request. Error responses produce an ordered diagnostic without a load destination write. Killed errors produce no diagnostic. Faults still use the bootstrap halt mechanism: exception vectors, MSR/DAR/DSISR, translation, caches and physical 60x bus handling remain later work. Reset clears state and valid outputs; the environment must cancel its pre-reset memory obligations.
 

@@ -742,7 +742,7 @@ module ppc_core #(
   // Interrupts wait for the last micro-op of a cracked instruction.
   assign iq_ready = !fault_pending && (!interrupt_qualified || seq_active) &&
     !update_pending_q && gpr_ready && cq_ready &&
-    (!special_busy || overlap_dispatch_ok) &&
+    (!special_busy || overlap_dispatch_ok || special_ready) &&
     (dispatch_uop.illegal ||
      (normal_uop && alloc_ready && rs_ready && flags_ready &&
       (!trace_mode || (cq_empty && normal_idle))) ||

@@ -538,12 +538,17 @@ module ppc_special #(
   assign mem_overlap_o = overlap_q &&
     ((state_q == S_MEM_PREP) || (state_q == S_MEM_OFFER) ||
      (state_q == S_MEM_WAIT) || (state_q == S_MEM_RESULT));
-  assign mem_dst_valid_o = mem_overlap_o && uop_q.gpr_write;
+  // A released result wakes its readers on the result edge.
+  assign mem_dst_valid_o = mem_overlap_o && uop_q.gpr_write &&
+    !((state_q == S_MEM_RESULT) && mem_released);
   assign mem_dst_o = uop_q.dst;
   assign retire_hold_o = retire_hold_q;
   assign result_select_o = result_select_q;
   assign producer_o = producer_q;
-  assign dispatch_ready_o = (state_q == S_IDLE) && !cancel_i;
+  // The next plain access may dispatch on the releasing result edge.
+  assign dispatch_ready_o = !cancel_i && ((state_q == S_IDLE) ||
+    ((state_q == S_MEM_RESULT) && mem_released && result_ready_i &&
+     dispatch_overlap_i));
   assign commit_match = commit_i && (commit_tag_i == producer_q);
   assign result_fire = result_valid_o && result_ready_i;
   assign request_fire = dmem_req_valid_o && dmem_req_ready_i;
@@ -1017,7 +1022,7 @@ module ppc_special #(
   // admission. A held operation either cancels or runs its state.
   logic interrupt_accept, dispatch_fire, step_run, hold_commit;
   assign interrupt_accept = ENABLE_EXTERNAL_INTERRUPTS && interrupt_valid_i &&
-                            dispatch_ready_o;
+                            (state_q == S_IDLE) && !cancel_i;
   assign dispatch_fire = dispatch_valid_i && dispatch_ready_o;
   assign step_run = !cancel_i && (state_q != S_IDLE);
   assign hold_commit = step_run && (state_q == S_HOLD) && commit_match;
