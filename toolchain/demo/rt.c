@@ -11,6 +11,14 @@ uint64_t soc_cycles(void)
   return ((uint64_t)SOC_CYCLE_HI << 32) | lo;
 }
 
+uint64_t soc_retired(void)
+{
+  uint32_t lo = SOC_RETIRED_LO;
+  return ((uint64_t)SOC_RETIRED_HI << 32) | lo;
+}
+
+struct demo_result demo_hello, demo_dhry, demo_cm;
+
 uint64_t soc_timebase(void)
 {
   uint32_t hi, lo, again;

@@ -297,7 +297,11 @@ module ppc603e_measure #(
     .trst_n_i(trst_n_i_ibq),
     .tdo_o(tdo_o_od),
     .tdo_oe_o(tdo_oe_o_od),
-    .test_i(test_i_ibq)
+    .test_i(test_i_ibq),
+    // Debug strobe, not a 603e pin.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .dbg_retire_o()
+    /* verilator lint_on PINCONNECTEMPTY */
   );
 endmodule
 /* verilator lint_on ASCRANGE */

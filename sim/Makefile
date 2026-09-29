@@ -1844,6 +1844,26 @@ $(addprefix demo-,$(DEMO_NAMES)): demo-%: demo-soc-model demo-firmware
 	./$(BUILD_DIR)/demo/model/Vtb_demo_soc $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/$*.hex +NAME=$* +PPM=$(BUILD_DIR)/demo/$*.ppm
 	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/$*.ppm $(BUILD_DIR)/demo/$*.png
 demo-all: $(addprefix demo-,$(DEMO_NAMES))
+
+# MiSTer core body (mister/, docs/MISTER_CORE.md) with a DDRAM model. mister-smoke
+# runs the MiSTer image; MISTER_MODE is the MODE register byte (bits 1:0 program:
+# 0 hello, 1 Dhrystone, 2 CoreMark, 3 all; bit 2 full length, off by default).
+MISTER_RTL := $(DEMO_RTL) ../mister/rtl/ppc603e_mister.sv
+MISTER_MODE ?= 03
+.PHONY: lint-mister mister-model mister-firmware mister-smoke
+lint: lint-mister
+lint-mister:
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_mister $(MISTER_RTL)
+	$(VERILATOR) --lint-only --timing -Wall --top-module tb_mister $(MISTER_RTL) ../tb/mister/tb_mister.sv
+mister-model:
+	mkdir -p $(BUILD_DIR)/mister
+	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_mister --Mdir $(BUILD_DIR)/mister/model $(MISTER_RTL) ../tb/mister/tb_mister.sv
+mister-firmware:
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) mister GIT_SHORT=$$(git rev-parse --short HEAD)
+mister-smoke: mister-model mister-firmware
+	timeout 3600 ./$(BUILD_DIR)/mister/model/Vtb_mister $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=$(MISTER_MODE) +PPM=$(BUILD_DIR)/mister/mister-$(MISTER_MODE).ppm
+	python3 tools/ppm_to_png.py $(BUILD_DIR)/mister/mister-$(MISTER_MODE).ppm $(BUILD_DIR)/mister/mister-$(MISTER_MODE).png
 # Cache geometry as a bench parameter: the 603 (128 sets x 2 ways) and 602
 # (64 x 2) geometries on the standalone and integrated cache benches, which
 # the default targets run at 128 x 4. A target is cache-geo-<bench>-<sets>x<ways>.

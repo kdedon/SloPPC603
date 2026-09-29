@@ -99,6 +99,25 @@ _reset:
     lis 1,__stack_top@ha
     addi 1,1,__stack_top@l
     stwu 0,-16(1)
+    /* Copy initialised data from its load image when that is elsewhere, so a
+     * reset restarts the program with fresh data. */
+    lis 5,__data_load@ha
+    addi 5,5,__data_load@l
+    lis 6,__data_start@ha
+    addi 6,6,__data_start@l
+    lis 7,__data_end@ha
+    addi 7,7,__data_end@l
+    cmplw 5,6
+    beq .Ldata_done
+.Ldata:
+    cmplw 6,7
+    bge .Ldata_done
+    lwz 8,0(5)
+    stw 8,0(6)
+    addi 5,5,4
+    addi 6,6,4
+    b .Ldata
+.Ldata_done:
     lis 5,__bss_start@ha
     addi 5,5,__bss_start@l
     lis 6,__bss_end@ha

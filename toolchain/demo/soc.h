@@ -27,6 +27,11 @@
 #define SOC_FB_STRIDE SOC_REG(0x24)
 #define SOC_FB_SIZE SOC_REG(0x28)
 #define SOC_FB_FORMAT SOC_REG(0x2c)
+/* Clock in MHz (31:16) and host mode bits (7:0). */
+#define SOC_MODE SOC_REG(0x30)
+#define SOC_TENURES SOC_REG(0x34)
+#define SOC_RETIRED_LO SOC_REG(0x38)
+#define SOC_RETIRED_HI SOC_REG(0x3c)
 #define SOC_PALETTE(i) SOC_REG(0x400 + 4 * (i))
 
 #define SOC_FB ((volatile uint8_t *)SOC_FB_BASE)
@@ -34,6 +39,17 @@
 /* Runtime (rt.c). */
 uint64_t soc_cycles(void);
 uint64_t soc_timebase(void);
+uint64_t soc_retired(void);
+
+/* Each program's result for the MiSTer summary: a timed window and its
+ * score in thousandths; ok is set when the program's own checks pass. */
+struct demo_result {
+  uint64_t cycles, retired;
+  uint32_t count, milli, ok;
+};
+extern struct demo_result demo_hello, demo_dhry, demo_cm;
+/* Run lengths, set before a program starts. */
+extern int demo_dhry_runs, demo_cm_iterations;
 void con_putc(int c);
 void con_puts(const char *s);
 /* Screen text: 8x8 cells, 40 columns by 30 rows. */

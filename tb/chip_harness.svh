@@ -51,7 +51,11 @@ ppc603e dut (
   .rsrv_n_o(rsrv_n), .qreq_n_o(qreq_n), .qack_n_i(qack_n), .tben_i(tben),
   .tlbisync_n_i(tlbisync_n),
   .tck_i(1'b0), .tms_i(1'b1), .tdi_i(1'b1), .trst_n_i(1'b0), .tdo_o(tdo), .tdo_oe_o(tdo_oe),
-  .test_i(3'b111)
+  .test_i(3'b111),
+  // Retirement strobe: the benches count retirements through the hierarchy.
+  /* verilator lint_off PINCONNECTEMPTY */
+  .dbg_retire_o()
+  /* verilator lint_on PINCONNECTEMPTY */
 );
 
 bus60x_coherent_bfm #(.BASE_ADDR(BASE), .MEM_BYTES(MEM_BYTES)) memory (

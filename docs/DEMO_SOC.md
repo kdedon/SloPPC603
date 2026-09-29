@@ -68,6 +68,10 @@ stores. Offsets are from `0xf0100000`.
 | `0x024` | `FB_STRIDE` | R | Bytes per line, 320 |
 | `0x028` | `FB_SIZE` | R | Width in bits 31:16 (320), height in bits 15:0 (240) |
 | `0x02c` | `FB_FORMAT` | R | 3: 8 bits per pixel, indexed (the MiSTer `FB_FORMAT` code) |
+| `0x030` | `MODE` | R | Clock in MHz in bits 31:16 (`SYS_MHZ`); the `mode_i` port in bits 7:0 |
+| `0x034` | `TENURES` | R | 60x address tenures since reset |
+| `0x038` | `RETIRED_LO` | R | Instructions retired since reset, low word; reading it latches the high word |
+| `0x03c` | `RETIRED_HI` | R | High word latched by the last `RETIRED_LO` read |
 | `0x400`–`0x7fc` | `PALETTE[256]` | W | `0x00RRGGBB`; reads return 0 |
 
 The timebase advances once per four processor clocks while `CTRL[0]` is set.
@@ -187,13 +191,11 @@ The 256 KiB program RAM and the two framebuffer copies take most of the block RA
 fit measures resources and internal timing only: no board I/O timing, and the RAM is
 not preloaded (`RAM_INIT` empty).
 
-## MiSTer wrapper: next steps
+## External framebuffer
 
-- An `emu` top that instantiates `ppc603e_demo_soc` with `CE_DIV` matched to the
-  video clock, and drives `CE_PIXEL`, `VGA_*` and `VGA_DE` from the scan-out ports.
-- Firmware loading through `hps_io` `ioctl` into program RAM with the processor held
-  in reset, replacing the bench's `$readmemh`.
-- Program memory and the framebuffer in SDRAM or DDRAM behind the 60x target, with
-  the framebuffer handed to the framework's `MISTER_FB` scaler; that frees the block
-  RAM and allows larger programs.
-- Console output to the OSD or a UART, and the exit register to a status LED.
+With `FB_EXTERNAL = 1` the framebuffer is not on chip. Framebuffer stores leave through
+the `fb_*` ports (doubleword index, byte lanes, data) and palette writes through
+`pal_*`; `fb_hold_i` holds off the next bus grant while the receiver cannot take four
+more stores. Framebuffer reads end with TEA: the firmware only writes the framebuffer.
+The scan-out keeps its timing and shows palette entry 0. The MiSTer core uses this
+mode; see [MISTER_CORE.md](MISTER_CORE.md).

@@ -113,7 +113,9 @@ module ppc603e #(
   input  logic        trst_n_i,
   output logic        tdo_o,
   output logic        tdo_oe_o,
-  input  logic [0:2]  test_i
+  input  logic [0:2]  test_i,
+  // Not a 603e pin: one instruction retired this cycle, for system counters.
+  output logic        dbg_retire_o
 );
   import ppc_pkg::*;
 
@@ -389,7 +391,8 @@ module ppc603e #(
                          pin_status.smi_taken, pin_status.tea_taken,
                          pin_status.dcache_enable, pin_status.dcache_lock,
                          pin_status.dcache_flash_invalidate, pin_status.noop_touch,
-                         pin_status.broadcast_enable, retire_valid, retire, halted};
+                         pin_status.broadcast_enable, retire, halted};
+  assign dbg_retire_o = retire_valid;
 endmodule
 /* verilator lint_on ASCRANGE */
 `default_nettype wire

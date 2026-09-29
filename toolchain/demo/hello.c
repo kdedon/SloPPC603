@@ -42,7 +42,7 @@ int main(void)
   con_goto(0, 0);
   printf("PowerPC 603e demo system");
 
-  uint64_t c0 = soc_cycles(), t0 = soc_timebase();
+  uint64_t r0 = soc_retired(), c0 = soc_cycles(), t0 = soc_timebase();
   uint32_t sum = 0;
   /* Real axis -2.25..0.75, imaginary -1.0..1.0. */
   for (int y = 0; y < MB_H; y++) {
@@ -60,6 +60,7 @@ int main(void)
     }
   }
   uint64_t cycles = soc_cycles() - c0, ticks = soc_timebase() - t0;
+  uint64_t retired = soc_retired() - r0;
 
   /* The timebase counts once per four processor clocks. */
   uint64_t expect = cycles / 4;
@@ -75,6 +76,7 @@ int main(void)
   printf("Mandelbrot %dx%d: %lu cycles\n", MB_W, MB_H, (unsigned long)cycles);
   printf("timebase %lu ticks, sum %08x\n", (unsigned long)ticks, (unsigned)sum);
   con_color(10, 0);
+  demo_hello = (struct demo_result){cycles, retired, (uint32_t)sum, 0, 1};
   printf("hello: PASS");
   SOC_CONSOLE = '\n';
   return 0;
