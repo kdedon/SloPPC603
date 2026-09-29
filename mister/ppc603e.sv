@@ -100,7 +100,7 @@ wire  [7:0] r, g, b;
 wire        exit_valid, checkstop;
 wire [31:0] exit_code;
 
-ppc603e_mister #(.RAM_INIT("firmware/mister.hex")) core
+ppc603e_mister #(.RAM_INIT("firmware/mister.mif")) core
 (
 	.clk_i(clk_sys),
 	.rst_i(core_reset),
