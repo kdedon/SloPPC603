@@ -381,7 +381,7 @@ module tb_ppc_fpu_shell;
         @(negedge clk_i);
         if (!mem_req_valid_o || !mem_req_o.write || mem_req_o.tag != identity ||
             mem_req_o.ea != ea || mem_req_o.size_bytes != size_bytes ||
-            mem_req_o.data != bits)
+            mem_req_o.data != 64'd0)
             $fatal(1, "store preparation packet");
         mem_req_ready_i = 1'b1;
         @(posedge clk_i);
@@ -405,8 +405,9 @@ module tb_ppc_fpu_shell;
                 result_o.gpr_update || result_o.fault_code != 4'hb ||
                 result_o.fault_info != 32'h12345678)
                 $fatal(1, "store fault disposition");
-        end else if (result_o.exception != FPU_NO_EXCEPTION || !result_o.store) begin
-            $fatal(1, "prepared store result");
+        end else if (result_o.exception != FPU_NO_EXCEPTION || !result_o.store ||
+                     store_o.data != bits) begin
+            $fatal(1, "prepared store result data %h", store_o.data);
         end
         checks = checks + 4;
     endtask
@@ -480,8 +481,8 @@ module tb_ppc_fpu_shell;
             attempts++;
             if (attempts > 40) $fatal(1, "dependent stfd did not launch");
         end
-        if (mem_req_o.data != 64'h4818_0000_0000_0000)
-            $fatal(1, "dependent stfd data %h", mem_req_o.data);
+        if (mem_req_o.data != 64'd0)
+            $fatal(1, "dependent stfd preparation data %h", mem_req_o.data);
         mem_req_ready_i = 1'b1;
         @(posedge clk_i);
         #1;
@@ -503,7 +504,8 @@ module tb_ppc_fpu_shell;
         if (result_o.fpr_value != 64'h4818_0000_0000_0000) $fatal(1, "dependent fmr");
         commit(tag(2, 252));
         await_result(tag(3, 253));
-        if (!result_o.store) $fatal(1, "dependent stfd result");
+        if (!result_o.store || store_o.data != 64'h4818_0000_0000_0000)
+            $fatal(1, "dependent stfd result data %h", store_o.data);
         @(negedge clk_i);
         abort_valid_i = 1'b1;
         abort_tag_i = tag(3, 253);

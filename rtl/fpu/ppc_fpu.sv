@@ -99,6 +99,7 @@ module ppc_fpu #(
     logic cr_forwarded;
     logic [1:0] local_wait;
     ppc_fpu_mem_t mem;
+    logic store_fill;
   } pending_t;
   typedef struct packed {
     logic valid;
@@ -165,9 +166,9 @@ module ppc_fpu #(
   logic [63:0] src_a;
   logic [63:0] src_b;
   logic [63:0] src_c;
-  logic [63:0] src_d;
-  logic [63:0] work1_d_raw;
-  logic [63:0] finish_store_raw;
+  logic [30:0] src_d;
+  logic [30:0] work1_d_raw;
+  logic [30:0] finish_store_word;
   logic src_a_sp, src_b_sp, src_c_sp, src_d_sp;
   logic src_b_lt, src_d_lt;
   source_t source_a, source_b, source_c, source_d;
@@ -256,6 +257,11 @@ module ppc_fpu #(
   logic combined_arith_launch;
   ppc_fpu_arith_req_t work1_arith_req;
   ppc_fpu_mem_t work1_mem_req;
+  ppc_fpu_mem_t mem_pending;
+  ppc_fpu_mem_t work1_mem_pending;
+  logic mem_fill;
+  logic work1_mem_fill;
+  logic [63:0] reply_raw;
   ppc_fpu_result_t work1_result;
 
   function automatic logic [31:0] normalize_fpscr(input logic [31:0] f);
@@ -335,6 +341,16 @@ module ppc_fpu #(
       end
       return d;
     end
+  endfunction
+
+  function automatic logic [63:0] store_data(input logic integer_word,
+                                             input logic single,
+                                             input logic [63:0] raw);
+    if (CPU_602)
+      return integer_word || single ? {32'd0, raw[31:0]} :
+          widen_single(raw[31:0]);
+    return integer_word ? {32'd0, raw[31:0]} :
+        single ? {32'd0, narrow_single(raw)} : raw;
   endfunction
 
   function automatic logic [31:0] narrow_single(input logic [63:0] d);
@@ -928,6 +944,9 @@ module ppc_fpu #(
         second_result.fpr_write;
     result1_o = second_result;
     store_o = pending_q[0].mem;
+    if (pending_q[0].store_fill)
+      store_o.data = store_data(pending_q[0].decoded.mem_integer,
+          pending_q[0].decoded.mem_single, reply_raw);
     store_valid_o = result_valid_o && head_result.store && commit_match;
     commit_ready_o = result_valid_o && commit_match &&
         (!head_result.store || store_ready_i);
@@ -1016,7 +1035,7 @@ module ppc_fpu #(
     src_a = source_a.raw;
     src_b = source_b.raw;
     src_c = source_c.raw;
-    src_d = source_d.fwd ? finish_store_raw : source_d.raw;
+    src_d = source_d.fwd ? finish_store_word : source_d.raw[30:0];
     src_a_sp = source_a.sp;
     src_b_sp = source_b.sp;
     src_c_sp = source_c.sp;
@@ -1125,7 +1144,7 @@ module ppc_fpu #(
         work1_old ? 3'(work1_old_index) : pending_count_q);
     work1_d = read_source(work1_issue.insn[25:21],
         work1_old ? 3'(work1_old_index) : pending_count_q);
-    work1_d_raw = work1_d.fwd ? finish_store_raw : work1_d.raw;
+    work1_d_raw = work1_d.fwd ? finish_store_word : work1_d.raw[30:0];
     work1_select_b = CPU_602 ?
         (((work1_a.raw[30:23] == 8'hff) && work1_a.raw[22:0] != 23'd0) ||
          (work1_a.raw[31] && work1_a.raw[30:0] != 31'd0)) :
@@ -1251,23 +1270,19 @@ module ppc_fpu #(
     work1_mem_req.size_bytes =
         (work1_decoded.mem_single || work1_decoded.mem_integer) ? 4'd4 : 4'd8;
     work1_mem_req.write = work1_decoded.mem_store;
-    if (CPU_602)
-      work1_mem_req.data = work1_decoded.mem_integer ||
-          work1_decoded.mem_single ? {32'd0,work1_d_raw[31:0]} :
-          widen_single(work1_d_raw[31:0]);
-    else
-      work1_mem_req.data = work1_decoded.mem_integer ?
-          {32'd0,work1_d_raw[31:0]} :
-          work1_decoded.mem_single ?
-          {32'd0,narrow_single(work1_d_raw)} : work1_d_raw;
+    // Store data reaches the LSU only in the authorized store descriptor.
+    // A source finishing this cycle is filled from the reply next cycle.
+    work1_mem_pending = work1_mem_req;
+    work1_mem_pending.data = store_data(work1_decoded.mem_integer,
+        work1_decoded.mem_single, work1_d.raw);
+    work1_mem_fill = work1_decoded.mem_store && work1_d.fwd;
     work1_fire = (work1_arith_launch && arith_req_ready) ||
         (work1_mem_launch && mem_req_ready_i) || work1_local_launch;
   end
   assign combined_arith_launch = arith_launch || work1_arith_launch;
-  // Store data is the only register-file consumer of a finishing value; it
-  // feeds the preparation packet and its pending copy.
-  assign finish_store_raw = CPU_602 ?
-      {32'd0, narrow_single(arith_finish.result)} : arith_finish.result;
+  // The 602 store trap check is the only register-file consumer of a
+  // finishing value.
+  assign finish_store_word = 31'(narrow_single(arith_finish.result));
   assign arith_req_fwd = work1_arith_launch ?
       {work1_c.fwd, work1_b.fwd, work1_a.fwd} :
       {source_c.fwd, source_b.fwd, source_a.fwd};
@@ -1330,13 +1345,10 @@ module ppc_fpu #(
     mem_req_o.size_bytes = (work_decoded.mem_single || work_decoded.mem_integer) ?
         4'd4 : 4'd8;
     mem_req_o.write = work_decoded.mem_store;
-    if (CPU_602) begin
-      mem_req_o.data = work_decoded.mem_integer ? {32'd0,src_d[31:0]} :
-          work_decoded.mem_single ? {32'd0,src_d[31:0]} :
-          widen_single(src_d[31:0]);
-    end else
-      mem_req_o.data = work_decoded.mem_integer ? {32'd0,src_d[31:0]} :
-          work_decoded.mem_single ? {32'd0,narrow_single(src_d)} : src_d;
+    mem_pending = mem_req_o;
+    mem_pending.data = store_data(work_decoded.mem_integer,
+        work_decoded.mem_single, source_d.raw);
+    mem_fill = work_decoded.mem_store && source_d.fwd;
     if (work1_mem_launch) mem_req_o = work1_mem_req;
     mem_req_valid_o = mem_launch || work1_mem_launch;
     exec_fire = (arith_launch && arith_req_ready) ||
@@ -1533,11 +1545,11 @@ module ppc_fpu #(
     end
   end
 
+  assign reply_raw = CPU_602 ? {32'd0, narrow_single(arith_rsp.result)} :
+      arith_rsp.result;
+
   // A local-stage operand forwarded last cycle is now the registered reply.
   always_comb begin
-    logic [63:0] reply_raw;
-    reply_raw = CPU_602 ? {32'd0, narrow_single(arith_rsp.result)} :
-        arith_rsp.result;
     local_a = local_stage_q.a;
     local_b = local_stage_q.b;
     local_c = local_stage_q.c;
@@ -1606,7 +1618,8 @@ module ppc_fpu #(
         pending_d[exec_index].result = exec_result;
         pending_d[exec_index].local_wait = local_latency(work_decoded.kind);
       end else if (mem_launch) begin
-        pending_d[exec_index].mem = mem_req_o;
+        pending_d[exec_index].mem = mem_pending;
+        pending_d[exec_index].store_fill = mem_fill;
         pending_d[exec_index].result = exec_result;
       end
     end
@@ -1617,10 +1630,17 @@ module ppc_fpu #(
         pending_d[work1_old_index].local_wait =
             local_latency(work1_decoded.kind);
       end else if (work1_mem_launch) begin
-        pending_d[work1_old_index].mem = work1_mem_req;
+        pending_d[work1_old_index].mem = work1_mem_pending;
+        pending_d[work1_old_index].store_fill = work1_mem_fill;
         pending_d[work1_old_index].result = work1_result;
       end
     end
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      if (pending_q[i].store_fill) begin
+        pending_d[i].mem.data = store_data(pending_q[i].decoded.mem_integer,
+            pending_q[i].decoded.mem_single, reply_raw);
+        pending_d[i].store_fill = 1'b0;
+      end
     for (integer i = 0; i < PENDING_DEPTH; i++)
       if (i < int'(pending_count_q) && pending_q[i].valid &&
           pending_q[i].started && !pending_q[i].done &&
@@ -1672,7 +1692,8 @@ module ppc_fpu #(
           pending_d[dispatch_index].local_wait =
               local_latency(work_decoded.kind);
         end else if (mem_launch) begin
-          pending_d[dispatch_index].mem = mem_req_o;
+          pending_d[dispatch_index].mem = mem_pending;
+          pending_d[dispatch_index].store_fill = mem_fill;
           pending_d[dispatch_index].result = exec_result;
         end
       end
@@ -1683,7 +1704,8 @@ module ppc_fpu #(
           pending_d[dispatch_index].local_wait =
               local_latency(work1_decoded.kind);
         end else if (work1_mem_launch) begin
-          pending_d[dispatch_index].mem = work1_mem_req;
+          pending_d[dispatch_index].mem = work1_mem_pending;
+          pending_d[dispatch_index].store_fill = work1_mem_fill;
           pending_d[dispatch_index].result = work1_result;
         end
       end
@@ -1711,7 +1733,8 @@ module ppc_fpu #(
           pending_d[dispatch1_index].local_wait =
               local_latency(work1_decoded.kind);
         end else if (work1_mem_launch) begin
-          pending_d[dispatch1_index].mem = work1_mem_req;
+          pending_d[dispatch1_index].mem = work1_mem_pending;
+          pending_d[dispatch1_index].store_fill = work1_mem_fill;
           pending_d[dispatch1_index].result = work1_result;
         end
       end
