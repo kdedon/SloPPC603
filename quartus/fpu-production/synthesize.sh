@@ -69,7 +69,7 @@ for variant in "${variants[@]}"; do
   (cd "${repo_dir}" && sha256sum "${sources[@]}" "${project_inputs[@]}") > "${manifest}.after"
   cmp "${manifest}.before" "${manifest}.after"
   if (( fitted )); then cp "${project_dir}/output_files/ppc_fpu.fit.summary" "${reports_dir}/"; fi
-  for report in ppc_fpu.map.rpt clocks.txt check_timing.txt fmax.txt setup.txt hold.txt unconstrained.txt; do
+  for report in ppc_fpu.map.rpt clocks.txt check_timing.txt fmax.txt setup.txt setup_endpoints.txt hold.txt unconstrained.txt; do
     cp "${project_dir}/output_files/${report}" "${reports_dir}/"
   done
   for report in "${project_dir}"/output_files/stage_*.txt; do
