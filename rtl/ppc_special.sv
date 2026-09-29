@@ -90,6 +90,8 @@ module ppc_special #(
   output logic dispatch_ready_o,
   input ppc_pkg::uop_t uop_i,
   input ppc_pkg::completion_tag_t producer_i,
+  // A plain load or store: it needs no commit-time action unless it faults.
+  input logic dispatch_overlap_i,
   input logic [31:0] pc_i,
   input ppc_pkg::page_miss_t dispatch_page_miss_i,
   input logic [31:0] a_i, b_i, c_i,
@@ -136,6 +138,15 @@ module ppc_special #(
   output logic checkstop_o,
   output logic [31:0] iabr_o,
   output logic busy_o,
+  // A plain load or store runs before its result: younger integer work may
+  // dispatch unless it reads mem_dst_o.
+  output logic mem_overlap_o,
+  output logic mem_dst_valid_o,
+  output logic [4:0] mem_dst_o,
+  // After an event commits, younger work waits for the redirect.
+  output logic retire_hold_o,
+  // Registered: the lane owns the shared result port this cycle.
+  output logic result_select_o,
   output ppc_pkg::completion_tag_t producer_o,
   output logic store_irrevocable_o,
   output logic [31:0] lr_o, ctr_o,
@@ -223,6 +234,7 @@ module ppc_special #(
   logic [31:0] derived_miss_page, derived_compare, derived_hash1, derived_hash2;
   logic sdr1_write, dispatch_sdr1_write;
   logic killed_q;
+  logic overlap_q, overlap_d, retire_hold_q, result_select_q, mem_released;
   result_packet_t memory_result_q;
   logic commit_match, result_fire, request_fire, response_fire;
   logic [31:0] exec_value;
@@ -522,6 +534,14 @@ module ppc_special #(
   endfunction
 
   assign busy_o = (state_q != S_IDLE);
+  // A faulting plain access moves on to S_HOLD, which blocks dispatch.
+  assign mem_overlap_o = overlap_q &&
+    ((state_q == S_MEM_PREP) || (state_q == S_MEM_OFFER) ||
+     (state_q == S_MEM_WAIT) || (state_q == S_MEM_RESULT));
+  assign mem_dst_valid_o = mem_overlap_o && uop_q.gpr_write;
+  assign mem_dst_o = uop_q.dst;
+  assign retire_hold_o = retire_hold_q;
+  assign result_select_o = result_select_q;
   assign producer_o = producer_q;
   assign dispatch_ready_o = (state_q == S_IDLE) && !cancel_i;
   assign commit_match = commit_i && (commit_tag_i == producer_q);
@@ -1027,7 +1047,11 @@ module ppc_special #(
     end else if (dispatch_fire) begin
       killed_d = 1'b0;
       fence_d = dispatch_fenced;
-      if ((uop_i.special_op == SPECIAL_LOAD) ||
+      // A plain access has nothing to check before its offer.
+      if (ENABLE_UNALIGNED_DATAPATH && dispatch_overlap_i &&
+          ((uop_i.special_op == SPECIAL_LOAD) || store_authorize_i))
+        state_d = S_MEM_OFFER;
+      else if ((uop_i.special_op == SPECIAL_LOAD) ||
           (uop_i.special_op == SPECIAL_STORE) ||
           (ENABLE_DATA_CACHE && (uop_i.special_op == SPECIAL_SYNC)))
         state_d = S_MEM_PREP;
@@ -1143,7 +1167,7 @@ module ppc_special #(
             state_d = S_MEM_RESULT;
           end
         end
-        S_MEM_RESULT: if (result_fire) state_d = S_HOLD;
+        S_MEM_RESULT: if (result_fire) state_d = mem_released ? S_IDLE : S_HOLD;
         S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
         S_ICBI: if (icbi_req_ready_i) state_d = killed_q ? S_IDLE : S_EXEC;
         S_EXCEPTION_RESULT: if (exception_result_accept) begin
@@ -1159,15 +1183,37 @@ module ppc_special #(
       endcase
     end
   end
+  // A plain access that completes without a fault retires with no lane
+  // action, so the lane releases on its result.
+  always_comb begin
+    overlap_d = overlap_q;
+    if (interrupt_accept) overlap_d = 1'b0;
+    else if (dispatch_fire) overlap_d = dispatch_overlap_i;
+  end
+  assign mem_released = overlap_q && !fence_q && !memory_result_q.fault &&
+    (memory_result_q.data_fault == DATA_OK);
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       state_q <= S_IDLE;
       fence_q <= 1'b0;
       killed_q <= 1'b0;
+      overlap_q <= 1'b0;
+      retire_hold_q <= 1'b0;
+      result_select_q <= 1'b0;
     end else begin
       state_q <= state_d;
       fence_q <= fence_d;
       killed_q <= killed_d;
+      overlap_q <= overlap_d;
+      result_select_q <= (state_d != S_IDLE) && !(overlap_d &&
+        ((state_d == S_MEM_PREP) || (state_d == S_MEM_OFFER) ||
+         (state_d == S_MEM_WAIT)));
+      retire_hold_q <= (state_d == S_EXCEPTION_RESULT) ||
+        (state_d == S_EXCEPTION_HALT) || (state_d == S_CHECKSTOP) ||
+        (state_d == S_CONTEXT_INSTALL) || (state_d == S_CONTEXT_REDIRECT) ||
+        (state_d == S_CONTEXT_ABORT) || (state_d == S_MMU_ACK) ||
+        (state_d == S_MMU_REDIRECT) || (state_d == S_MMU_ABORT) ||
+        (state_d == S_ICACHE_CTL) || (state_d == S_BRANCH_REDIRECT);
     end
   end
 

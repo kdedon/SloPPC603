@@ -197,6 +197,12 @@ module ppc_core #(
   logic rs_ready, issue_valid, issue_ready, result_valid, result_ready, wake_valid;
   logic iu_result_valid, iu_result_ready;
   logic special_result_valid, special_result_ready, special_ready, special_busy;
+  logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
+  logic special_result_select;
+  logic [4:0] special_mem_dst;
+  logic [31:0] gpr_mapped;
+  logic dispatch_mem_plain, mem_sources_committed, special_drained, overlap_dispatch_ok;
+  logic cq_retire_valid;
   logic special_cancel, special_store_irrevocable, special_branch_redirect;
   logic special_kill;
   logic special_exception_redirect, special_exception_irrevocable;
@@ -512,6 +518,7 @@ module ppc_core #(
   ppc_rename rename (
     .clk_i, .rst_ni, .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .arch_a_i(arch_a), .arch_b_i(arch_b), .read_a_o(src_a), .read_b_o(src_b),
+    .mapped_o(gpr_mapped),
     .alloc_ready_o(alloc_ready), .alloc_tag_o(alloc_tag),
     .alloc_i(dispatch && dispatch_uop.gpr_write),
     .alloc_reg_i(dispatch_uop.dst),
@@ -563,8 +570,10 @@ module ppc_core #(
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni)
-      assert (!(special_busy && iu_result_valid))
-        else $error("IU result offered while the special lane is busy");
+      assert (!(special_result_valid && !special_result_select) &&
+              (special_result_select == (special_busy && !(special_mem_overlap &&
+                                          !special_result_valid))))
+        else $error("result port selection disagrees with the special lane");
   end
   // Only IU results produce operands a held RS entry waits for, so every wait
   // takes the back-to-back bypass.
@@ -604,6 +613,7 @@ module ppc_core #(
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
+    .dispatch_overlap_i(dispatch_mem_plain),
     .producer_i(alloc_producer), .pc_i(iq_head.pc),
     .dispatch_page_miss_i(head_page_miss),
     .a_i(special_a), .b_i(special_b), .c_i(arch_c),
@@ -658,6 +668,9 @@ module ppc_core #(
     .exception_halt_o(special_exception_halt),
     .exception_commit_o(special_exception_commit), .checkstop_o, .iabr_o(iabr),
     .busy_o(special_busy),
+    .mem_overlap_o(special_mem_overlap), .mem_dst_valid_o(special_mem_dst_valid),
+    .mem_dst_o(special_mem_dst), .retire_hold_o(special_retire_hold),
+    .result_select_o(special_result_select),
     .producer_o(special_producer), .store_irrevocable_o(special_store_irrevocable),
     .lr_o(lr), .ctr_o(ctr), .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1),
     .dmem_req_valid_o, .dmem_req_ready_i,
@@ -677,9 +690,11 @@ module ppc_core #(
   // A special op dispatches only into an idle IU and blocks dispatch until
   // it finishes, so the two result sources are never valid together and the
   // registered busy state can steer the payload.
-  assign result = special_busy ? special_result : iu_result;
+  // Integer work overlapping a plain load or store waits one cycle when both
+  // finish together.
+  assign result = special_result_select ? special_result : iu_result;
   assign special_result_ready = result_ready && special_result_valid;
-  assign iu_result_ready = result_ready;
+  assign iu_result_ready = result_ready && !special_result_select;
   // Classify held identities without depending on cancel-masked valid signals.
   always_comb begin
     rs_cancel = 1'b0;
@@ -726,13 +741,35 @@ module ppc_core #(
   assign trace_mode = ENABLE_DEBUG_EXCEPTIONS && (msr[MSR_SE] || msr[MSR_BE]);
   // Interrupts wait for the last micro-op of a cracked instruction.
   assign iq_ready = !fault_pending && (!interrupt_qualified || seq_active) &&
-    !update_pending_q && gpr_ready &&
-    !special_busy && cq_ready &&
+    !update_pending_q && gpr_ready && cq_ready &&
+    (!special_busy || overlap_dispatch_ok) &&
     (dispatch_uop.illegal ||
      (normal_uop && alloc_ready && rs_ready && flags_ready &&
       (!trace_mode || (cq_empty && normal_idle))) ||
-     (special_uop && cq_empty && normal_idle && special_ready && flags_ready &&
+     (special_uop && special_drained && special_ready && flags_ready &&
       (!dispatch_uop.gpr_write || alloc_ready)));
+  // A plain load or store (no update, reservation, string, multiple, cache
+  // op or external access) needs no drain when every source register it
+  // reads is committed: older work cannot fault or redirect, and it takes a
+  // fault only at completion. Younger integer work may dispatch behind it
+  // unless it reads the access's destination.
+  assign dispatch_mem_plain = !trace_mode &&
+    ((dispatch_uop.special_op == SPECIAL_LOAD) ||
+     (dispatch_uop.special_op == SPECIAL_STORE)) &&
+    (dispatch_uop.mem_seq == SEQ_NONE) && !dispatch_uop.mem_update &&
+    !dispatch_uop.mem_reserve && !dispatch_uop.mem_conditional &&
+    !dispatch_uop.mem_external && !dispatch_uop.mem_skip &&
+    !dispatch_uop.cache_probe && !dispatch_uop.block_zero &&
+    (dispatch_uop.cache_op == CACHE_OP_NONE);
+  assign mem_sources_committed =
+    (dispatch_uop.zero_a || !gpr_mapped[uop.src_a]) &&
+    (dispatch_uop.use_imm || !gpr_mapped[uop.src_b]) &&
+    ((dispatch_uop.special_op != SPECIAL_STORE) || !gpr_mapped[uop.src_c]);
+  assign special_drained = (cq_empty && normal_idle) ||
+    (dispatch_mem_plain && mem_sources_committed);
+  assign overlap_dispatch_ok = special_mem_overlap && normal_uop &&
+    !(special_mem_dst_valid &&
+      ((uop.src_a == special_mem_dst) || (uop.src_b == special_mem_dst)));
   assign dispatch = iq_valid && iq_ready;
 
   // Performance events: the cause of each cycle without a dispatch. The
@@ -759,7 +796,7 @@ module ppc_core #(
       perf_slot = PERF_EXCEPTION_REFETCH;
     else if (special_busy)
       perf_slot = perf_special_mem_q ? PERF_LSU_BUSY : PERF_SPECIAL_BUSY;
-    else if (special_uop && !(cq_empty && normal_idle))
+    else if (special_uop && !special_drained)
       perf_slot = perf_head_branch ? PERF_DRAIN_BRANCH :
                   perf_head_mem ? PERF_DRAIN_MEMORY : PERF_DRAIN_OTHER;
     else if (!cq_ready || !alloc_ready) perf_slot = PERF_CQ_FULL;
@@ -775,7 +812,7 @@ module ppc_core #(
       if (recovery_accepted)
         perf_refetch_q <= special_branch_redirect ? 2'd1 : 2'd2;
       else if (iq_valid) perf_refetch_q <= '0;
-      if (dispatch) perf_special_mem_q <= special_uop && perf_head_mem;
+      if (dispatch && special_uop) perf_special_mem_q <= perf_head_mem;
       perf_o.retire <= retire_valid_o;
       perf_o.iq_full <= fd_valid_q && !iq_push_ready;
       perf_o.branch <= dispatch && special_uop && perf_head_branch;
@@ -810,7 +847,8 @@ module ppc_core #(
                        (uop.use_imm ? uop.imm[1:0] : src_b.value[1:0]);
     if (rst_ni && dispatch && !uop.illegal && iq_head.fault == FETCH_OK &&
         ((uop.special_op == SPECIAL_LOAD) || (uop.special_op == SPECIAL_STORE))) begin
-      assert (cq_empty && !commit && !recovery_accepted)
+      assert (((cq_empty && !commit) ||
+               (dispatch_mem_plain && mem_sources_committed)) && !recovery_accepted)
         else $error("memory dispatch violated committed-EA serialization");
       assert (forwarded_ea_low == dispatch_ea_low)
         else $error("committed and forwarded memory EA low bits disagree");
@@ -818,11 +856,13 @@ module ppc_core #(
     if (rst_ni && iq_valid)
       assert (iq_uop == check_uop) else $error("queued uop disagrees with decode");
     if (rst_ni && dispatch && special_uop)
-      assert (cq_empty && !commit && src_a.ready && src_b.ready &&
-              src_a.value == arch_a && src_b.value == arch_b)
+      assert ((cq_empty && !commit && src_a.ready && src_b.ready &&
+               src_a.value == arch_a && src_b.value == arch_b) ||
+              (dispatch_mem_plain && mem_sources_committed))
         else $error("special dispatch saw an uncommitted GPR source");
+    // Work younger than a faulting plain access is removed by its redirect.
     if (rst_ni && (special_exception_redirect || special_branch_redirect))
-      assert (cq_empty && normal_idle)
+      assert ((cq_empty && normal_idle) || special_exception_redirect)
         else $error("internal redirect found in-flight work");
     if (rst_ni && ENABLE_PAGE_MISS_RESULTS && dispatch &&
         (iq_head.fault == FETCH_PAGE_MISS))
@@ -867,7 +907,8 @@ module ppc_core #(
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
-    .retire_valid_o, .retire_ready_i, .retire_o, .retire_tag_o(retire_producer),
+    .retire_valid_o(cq_retire_valid), .retire_ready_i(retire_ready_i && !special_retire_hold),
+    .retire_o, .retire_tag_o(retire_producer),
     .redirect_valid_i(selected_redirect_valid),
     .redirect_all_i(selected_redirect_all),
     .redirect_keep_pivot_i(selected_redirect_keep),
@@ -887,6 +928,7 @@ module ppc_core #(
     .cr_o(cr), .xer_o(xer),
     .flags_busy_o(flags_busy), .flags_owner_o(flags_owner)
   );
+  assign retire_valid_o = cq_retire_valid && !special_retire_hold;
   assign commit = retire_valid_o && retire_ready_i;
   // Committed exceptions, taken branches and ISYNC redirect from registered
   // special-unit state on the edge after commit, when the serialized machine
