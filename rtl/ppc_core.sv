@@ -340,7 +340,8 @@ module ppc_core #(
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
-    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE)
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+    .CPU_VARIANT(CPU_VARIANT)
   ) predecode (.insn_i(fd_packet_q.insn), .uop_o(push_uop));
   // IABR compares at IQ push. The manual requires a context-synchronizing
   // instruction after mtspr IABR, and its refetch clears older IQ entries.
@@ -738,7 +739,8 @@ module ppc_core #(
     .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
-    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE)
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+    .CPU_VARIANT(CPU_VARIANT)
   ) check_decode (.insn_i(iq_head.insn), .uop_o(check_uop));
   always @(posedge clk_i) begin
     logic [1:0] forwarded_ea_low;

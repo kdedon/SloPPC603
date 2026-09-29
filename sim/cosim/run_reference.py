@@ -92,7 +92,9 @@ def main():
         raise RuntimeError(f'implemented non-memory forms not exercised: {uncovered_nonmemory}')
     sources=[(PROJECT/'sim'/line).resolve() for line in (PROJECT/'rtl/files.f').read_text().splitlines() if line.strip()]
     bench=PROJECT/'tb/tb_core_reference.sv'
-    rtlargs=[args.verilator,'--binary','--timing','--assert','-Wall','--top-module','tb_core_reference',
+    # The RTL models the same part as the reference: PID7v or PID6.
+    variant=1 if args.model=='MPC603E' else 0
+    rtlargs=[args.verilator,'--binary','--timing','--assert','-Wall','--top-module','tb_core_reference',f'-GVARIANT={variant}',
              '--Mdir',build/'rtl',*xrand_build_flags(args.xrand_seed),*sources,bench]
     command(rtlargs,build/'rtl-build.log')
     rtlrun=[build/'rtl/Vtb_core_reference',f'+PROGRAM={program}',f'+TRACE={actual}',

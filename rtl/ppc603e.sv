@@ -13,7 +13,7 @@ module ppc603e #(
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   // The PLL_CFG[0-3] strap this build runs at; HID1[PC0-PC3] reads it.
   // Only the 1:1 and bypass codes match a SYSCLK-clocked core.
-  parameter logic [3:0] PLL_CFG = 4'b0000,
+  parameter logic [3:0] PLL_CFG = ppc_pkg::pll_cfg_default(CPU_VARIANT),
   // Data cache, bus master and snooper: TS, A, TT and GBL are snooped and
   // ARTRY answers from the cache. HID0[DCE] resets to 0 (UM Table 4-8).
   parameter bit ENABLE_DCACHE = 1'b1
@@ -111,9 +111,12 @@ module ppc603e #(
 );
   import ppc_pkg::*;
 
-  initial begin
-    if (PLL_CFG[3:2] != 2'b00)
-      $fatal(1, "ppc603e: PLL_CFG must select 1:1 or PLL bypass");
+  // Unimplemented variants are rejected by the core.
+  localparam bit CHECK_PLL = cpu_variant_supported(CPU_VARIANT);
+  if (CHECK_PLL && !pll_cfg_legal(CPU_VARIANT, PLL_CFG)) begin : g_reject_pll_code
+    $fatal(1, "ppc603e: PLL_CFG %04b is not a code of CPU_VARIANT %0d", PLL_CFG, CPU_VARIANT);
+  end else if (CHECK_PLL && !pll_cfg_bus_1to1(PLL_CFG)) begin : g_reject_pll_ratio
+    $fatal(1, "ppc603e: PLL_CFG %04b is not 1:1 or PLL bypass; the core runs 1:1", PLL_CFG);
   end
 
   // Asynchronous pins pass two flops. pin_meta_q is the only load of each pin.

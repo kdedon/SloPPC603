@@ -99,7 +99,7 @@ CKSTP_OUT reports it.
 | TBEN | in | 1 | I | Active high. Gates the time base; DEC keeps counting ([TIMER_CONTRACT.md](TIMER_CONTRACT.md)). |
 | TLBISYNC | in | 1 | I | Holds a tlbsync, and so completion after it, while asserted. Strap: must be negated at HRESET negation (64-bit bus). |
 | SYSCLK | in | 1 | I | Bus and processor clock. The time base ticks once per four SYSCLK cycles. |
-| PLL_CFG[0:3] | in | 4 | I | Strap; must equal the build's `PLL_CFG` (1:1 or bypass code), which HID1[PC0–PC3] returns. |
+| PLL_CFG[0:3] | in | 4 | I | Strap; must equal the build's `PLL_CFG`, which HID1[PC0–PC3] returns. The build accepts only a code the variant lists that runs the bus 1:1; the default is PLL bypass (`0011`) on PID7v and EC603e, which have no 1:1 ratio, and `0000` on PID6 ([CPU_VARIANTS.md](CPU_VARIANTS.md)). |
 | CLK_OUT | out, tri | 1 | T | Always high impedance (the default); HID0 SBCLK/ECLK have no effect. |
 | TRST, TCK, TMS, TDI | in | 4 | X | JTAG boundary scan and COP are not implemented; inputs ignored. |
 | TDO | out, tri | 1 | X | Always high impedance. |

@@ -3,7 +3,7 @@
 One elaboration parameter, `CPU_VARIANT`, selects the part the core models:
 **PID7v-603e** (default), **PID6-603e**, **EC603e**, **603** or **602**. This
 document fixes what differs between them, what main implements today, how the
-difference is parameterized, and how each variant is verified. Rounds V0 and V1
+difference is parameterized, and how each variant is verified. Rounds V0–V3
 are implemented ([status](#status)); the "Main:" notes below describe the tree
 before V1 unless they say otherwise.
 
@@ -103,7 +103,10 @@ SRR1[KEY].
 
 Main: little-endian mode is excluded ([RELEASE.md](RELEASE.md)); `MSR[LE]`
 is only copied from ILE on entry. The misaligned-LE split therefore has no
-consumer yet. Vectors 0x1500/0x1600 and IBR do not exist.
+consumer yet. Vectors 0x1500/0x1600 and IBR do not exist. A misaligned
+eciwx/ecowx takes the alignment exception on every variant, PID6 included:
+splitting an external-control transfer needs LSU and BIU work, deferred to
+V13 with the misaligned-LE split (`cfg.misaligned_ecxwx_hw` has no consumer).
 
 ### 1.5 Special-purpose registers
 
@@ -122,8 +125,12 @@ consumer yet. Vectors 0x1500/0x1600 and IBR do not exist.
 Unimplemented SPRs follow the PEM rule (illegal-instruction program exception)
 in every variant.
 
-Main: `ppc_special.sv` decodes PVR, HID0, HID1, EAR, IABR and the miss SPRs
-unconditionally; `SPR_*` numbers and `HID0_WMASK` live in `ppc_pkg.sv`.
+Main (V3): `ppc_decode.sv` accepts HID1 only when `cfg.has_hid1` and EAR,
+eciwx and ecowx only when `cfg.has_ear`; otherwise they take the
+illegal-instruction program exception (privileged-instruction in problem
+state, as for any undefined supervisor SPR). `ppc_exception_state.sv` writes
+SRR1[KEY] only when `cfg.has_srr1_key`. HID0 IFEM and ABE are not stored on
+PID6, and the ABE broadcast pin status is tied off there (V2).
 
 ### 1.6 Instruction set
 
@@ -180,6 +187,15 @@ the core runs 1:1 from SYSCLK and `PLL_CFG` must be the 1:1 or bypass code.
 PID7v lists no 1:1 ratio, so today's default top is a PID7v programming model on
 a PID6-style clock. The 602 cannot reuse `ppc603e.sv`: it needs a separate
 `ppc602` package top with a mux/demux adapter over the internal bus.
+
+Main (V2): `ppc603e.sv` rejects at elaboration a `PLL_CFG` that is not a code
+of the variant (`pll_cfg_legal()`: PID6 UM Table 7-10; PID7v and EC603e the
+same without 1:1 and 1.5:1, UM §1.1; 603 Table C-4; 602 602HW Table 11) or
+that does not run the bus 1:1 (`pll_cfg_bus_1to1()`). The default
+(`pll_cfg_default()`) is PLL bypass `0011` on PID7v and EC603e, their only
+code with a 1:1 bus, and `0000` on PID6. The PID7v 4.5:1–6:1 codes are not
+in the UM and are rejected. Core wrappers below the pin top keep
+`PLL_CFG = 0` for HID1 read-back only.
 
 ### 1.9 Power management
 
@@ -289,7 +305,7 @@ matrix; [status](#status) lists what the target runs today.
 | `test-tlb-service`, `test-core-tlb-miss`, `test-core-tlb-load` | ✓ | ✓ | no KEY | 16 sets |
 | `test-core-bat*`, `test-core-cache-control` | ✓ | ✓ (no ABE) | ✓ | NE/SE |
 | `test-chip-pins`, `test-chip-dcache-coherence` | ✓ | ✓ | CSE 1 bit | 602 top bench |
-| `test-reference*` (DingusPPC) | `MPC603EV` | `MPC603E` | `MPC603` | none: self-checking only |
+| `test-reference*` (DingusPPC) | `MPC603EV` | `MPC603E` (`test-reference-pid6`) | `MPC603` | none: self-checking only |
 | `make -C toolchain rtl-all` | ✓ | subset | subset | 602 firmware set |
 | `release-check` | ✓ | — | — | — |
 | Quartus fit | release | — | area only | area + pin top |
@@ -349,11 +365,17 @@ choice and a test of that choice, not a fidelity claim:
 |---|---|
 | V0 | Done: `cpu_variant_e`, `cpu_cfg_t`, `cpu_cfg()`, `cpu_variant_supported()`; `ppc_core` fails elaboration for `CPU_603` and `CPU_602` with a message naming the missing work |
 | V1 | Done: `CPU_VARIANT` on `ppc603e`, every core wrapper and measurement top, down to `ppc_core` and `ppc_special`; PVR, divide latency and HID0/HID1 read and write masks come from `cpu_cfg()`; PID7v PVR is `0x00070101` in RTL, reference runner, ISA metadata and firmware |
-| V2 onward | Not started |
+| V2 | Done: PID6 stores neither HID0[IFEM] nor HID0[ABE], and its ABE broadcast pin status is tied off; `ppc603e` rejects a `PLL_CFG` outside the variant's table or not running the bus 1:1, and defaults to PLL bypass on PID7v and EC603e; `test-reference-pid6` runs the reference corpus with the RTL at PID6 against DingusPPC `MPC603E`. Open: PID6 misaligned eciwx/ecowx in hardware (deferred to V13, see §1.4) |
+| V3 | Done: `cfg.has_hid1`, `cfg.has_ear` and `cfg.has_srr1_key` gate decode (HID1; EAR, eciwx, ecowx) and SRR1[KEY]; absent SPRs take the illegal-instruction program exception; ISA-matrix 603 column is `legal` for all 335 reviewed forms (UM App. C lists no ISA difference) |
+| V4 onward | Not started |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
-behave the same. The full-decode bench checks PVR and HID0 read-back per
-variant; HID1 absence and EAR absence wait for V3.
+behave the same. DingusPPC distinguishes PID6 from PID7v only by PVR, and
+the reference corpus does not read PVR, so the PID6 reference run shows
+consistency of the integer path at PID6, not any PID6-specific behavior.
+The 603 and 602 still fail elaboration of the core; their SPR presence,
+SRR1[KEY] and PLL tables are checked at unit level (`tb_variant_config`,
+`tb_exception_tlb_miss`).
 
 Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 22a007b plus an uncommitted edit to this document, 2026-09-29.
 Pass: 560 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage

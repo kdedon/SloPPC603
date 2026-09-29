@@ -567,6 +567,35 @@ package ppc_pkg;
   function automatic bit cpu_variant_supported(cpu_variant_e v);
     return (v == CPU_PID7V_603E) || (v == CPU_PID6_603E) || (v == CPU_EC603E);
   endfunction
+  // PLL_CFG[0:3] codes the variant's PLL accepts, clock-off excluded. PID6:
+  // UM Table 7-10. PID7v and EC603e: Table 7-10 without 1:1 and 1.5:1 (UM
+  // 1.1); their 4.5:1-6:1 codes are not given in the UM. 603: Table C-4.
+  // 602: 602HW Table 11.
+  function automatic bit pll_cfg_legal(cpu_variant_e v, logic [3:0] code);
+    case (v)
+      CPU_PID6_603E:
+        return code inside {4'b0000, 4'b0001, 4'b0010, 4'b0011, 4'b0100,
+                            4'b0101, 4'b0110, 4'b1000, 4'b1010, 4'b1100,
+                            4'b1110};
+      CPU_603:
+        return code inside {4'b0000, 4'b0001, 4'b0010, 4'b0011, 4'b0100,
+                            4'b0101, 4'b1000, 4'b1001, 4'b1100};
+      CPU_602:
+        return code inside {4'b0100, 4'b0101, 4'b1000, 4'b1001};
+      default:
+        return code inside {4'b0011, 4'b0100, 4'b0101, 4'b0110, 4'b1000,
+                            4'b1010, 4'b1110};
+    endcase
+  endfunction
+  // Codes that run the bus at the core clock: the 1:1 rows and PLL bypass.
+  function automatic bit pll_cfg_bus_1to1(logic [3:0] code);
+    return code inside {4'b0000, 4'b0001, 4'b0010, 4'b0011};
+  endfunction
+  // The core runs 1:1 with the bus. PID7v and EC603e have no 1:1 ratio, so
+  // their only such code is PLL bypass; the 602 has none.
+  function automatic logic [3:0] pll_cfg_default(cpu_variant_e v);
+    return ((v == CPU_PID7V_603E) || (v == CPU_EC603E)) ? 4'b0011 : 4'b0000;
+  endfunction
   // ---- end CPU variant configuration --------------------------------------
 
   // ---- SPR write masks and reset values -----------------------------------

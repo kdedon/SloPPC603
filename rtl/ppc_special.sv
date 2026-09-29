@@ -875,6 +875,7 @@ module ppc_special #(
     3'b010 : 3'b100;
 
   ppc_exception_state #(
+    .CPU_VARIANT(CPU_VARIANT),
     .RESET_MSR(MSR_RESET),
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
@@ -1137,7 +1138,7 @@ module ppc_special #(
     pin_status_o.dcache_lock = hid0_q[HID0_DLOCK];
     pin_status_o.dcache_flash_invalidate = hid0_q[HID0_DCFI];
     pin_status_o.noop_touch = hid0_q[HID0_NOOPTI];
-    pin_status_o.broadcast_enable = hid0_q[HID0_ABE];
+    pin_status_o.broadcast_enable = CPU_CFG.has_abe_ifem && hid0_q[HID0_ABE];
     pin_status_o.soft_reset_taken = interrupt_accept && pin_soft_reset_select;
     pin_status_o.smi_taken = interrupt_accept && pin_smi_select;
   end
@@ -1325,7 +1326,7 @@ module ppc_special #(
             // IABR[31] (translation enable) is stored but ignored.
             10'd1010: if (ENABLE_DEBUG_EXCEPTIONS) iabr_q <= a_q;
             10'd1008: if (ENABLE_FULL_DECODE) hid0_q <= a_q & CPU_CFG.hid0_wmask;
-            10'd282: if (ENABLE_FULL_DECODE) ear_q <= a_q & EAR_WMASK;
+            10'd282: if (ENABLE_FULL_DECODE && CPU_CFG.has_ear) ear_q <= a_q & EAR_WMASK;
             default: ;
           endcase
         end

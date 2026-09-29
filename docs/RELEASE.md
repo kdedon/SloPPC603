@@ -37,7 +37,7 @@ history is in [CHANGELOG.md](../CHANGELOG.md).
 ## Configuration of record
 
 - Top: `ppc603e` in `rtl/ppc603e.sv`, compiled from `rtl/chip_files.f`, with
-  default parameters (`ENABLE_DCACHE=1`, `PLL_CFG=0`). It instantiates the
+  default parameters (`ENABLE_DCACHE=1`, `PLL_CFG=4'b0011`, PLL bypass). It instantiates the
   cached 60x core with the translated MVP profile, full decode and
   `RESET_PC=0xfff00100`.
 - Fit projects: `quartus/chip` (package top) and `quartus/translated`
