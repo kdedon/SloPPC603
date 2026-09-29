@@ -137,6 +137,7 @@ not part of `test` or `ci`.
 ## Results
 
 Recorded: `make -C sim lint-demo-soc demo-all`, commit 64c0f1f, 2026-09-29. All pass.
+On the same commit, `make -C sim -j2 ci` passes (553 PASS lines, rtl line coverage 75.8%).
 
 | Image | Cycles | Retired | CPI | Bus tenures | Result |
 |---|---:|---:|---:|---:|---|
