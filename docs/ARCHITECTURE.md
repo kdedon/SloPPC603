@@ -115,6 +115,8 @@ The diagram above describes the ordinary IU path. [CONTROL_MEMORY.md](CONTROL_ME
 
 The new data interface is an uncached aligned-word transport with big-endian byte enables and one response per load/store request. It does not expose physical bus pins or translation. A taken branch redirects on the edge after it commits and wins over an external redirect, whose acceptance output stays false on that edge. A cancelled load keeps any held offer and drains its reply. Stores require a latched retirement authorization before making an irrevocable offer.
 
+Plain loads and stores are the exception to the drain: they dispatch when their sources are committed, let younger integer work dispatch behind them and release the lane on a fault-free result ([PERFORMANCE.md](PERFORMANCE.md#pipelined-loadstore-path)).
+
 A faulted load suppresses GPR write/wake and enters terminal diagnostic halt; its rename allocation remains until reset. Resumable exceptions must explicitly reclaim that ownership. No new Quartus fit or timing measurement accompanies this lane.
 
 [SLW/SRW](LOGICAL_SHIFTS.md) use the existing two-operand registered IU path, consume low-six-bit counts and preserve XER. No interfaces change. SRAW/SRAWI now share ALU_SRAW in an explicitly widened five-bit enum; they replace CA from discarded negative-source bits and preserve OV/SO.

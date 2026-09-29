@@ -57,6 +57,71 @@ lane, loads/stores and branches, not to fetch, rename, the completion queue or t
 IU. It does not measure cold caches, a slow memory (the 60x target answers in two
 cycles) or interrupts.
 
+## Pipelined load/store path
+
+Recorded: `make -C sim demo-dhrystone demo-coremark` with the arguments of the first breakdown, commit a26da0d, 2026-09-29.
+Both pass (Dhrystone checks match, CoreMark CRCs match); the retired counts equal the
+first breakdown's, so the instruction stream is unchanged.
+
+A plain load or store (no update, reservation, string, multiple, cache op or
+external access, trace off) now:
+
+- dispatches without the drain when none of its source GPRs has an uncommitted
+  producer: older in-flight work is integer work, which cannot fault or redirect;
+- goes from dispatch straight to its offer, with no preparation cycle;
+- lets younger integer work dispatch behind it, except an instruction that reads its
+  destination; that instruction dispatches on the result edge through the wake bypass;
+- releases the lane on a fault-free result instead of holding it until retirement,
+  and the next plain access dispatches on that edge.
+
+A faulting plain access keeps the old path: it holds the lane, takes its exception at
+the completion-queue head, retirement stops after that commit, and the redirect
+removes the whole queue, including the integer work dispatched behind it. The data
+cache answers a load hit from the lookup cycle ([DATA_CACHE.md](DATA_CACHE.md#timing)).
+A load hit now occupies the lane for 5 cycles: offer, translate, lookup, response,
+result.
+
+| Cause | Dhrystone before | after | CoreMark before | after |
+|---|---:|---:|---:|---:|
+| Dispatch | 1.000 | 1.000 | 1.000 | 1.000 |
+| Fetch empty | 0.279 | 0.351 | 0.363 | 0.402 |
+| Branch refetch | 0.536 | 0.515 | 0.609 | 0.604 |
+| Drain for branch | 0.513 | 0.518 | 0.580 | 0.588 |
+| Drain for load/store | 0.439 | 0.299 | 0.220 | 0.173 |
+| Drain for other special | 0.008 | 0.010 | 0.012 | 0.013 |
+| Special lane busy (non-memory) | 0.415 | 0.415 | 0.455 | 0.455 |
+| Load/store busy | 2.484 | 1.606 | 1.758 | 0.964 |
+| Reservation station full | 0.032 | 0.027 | 0.011 | 0.011 |
+| Flags token wait | 0.000 | 0.000 | 0.049 | 0.049 |
+| Other (incl. misses, CQ full) | 0.084 | 0.084 | 0.036 | 0.037 |
+| **CPI** | **5.794** | **4.830** | **5.098** | **4.302** |
+
+Cycles: Dhrystone 1,709,727 to 1,425,222 (-16.6%), CoreMark 3,081,430 to 2,600,304
+(-15.6%). Per load or store, load/store busy falls from 7.7 to 5.0 cycles and the
+drain before it from 1.4 to 0.9 on Dhrystone. Load/store busy now also counts integer
+instructions waiting for a load's destination.
+
+Recorded: `make -C sim lint test-core test-core-recovery test-core-lsu-update test-core-lsu-extensions test-core-alignment test-core-alignment-dependencies test-core-page-data-exception test-core-tlb-miss test-core-dcache test-core-dcache-negative test-core-machine-check-trace test-core-bat-machine-check test-chip-dcache-coherence test-core-bus60x-update test-core-control-memory test-core-compare`, commit a26da0d, 2026-09-29.
+All pass, including the data-cache mutations (rejected) and the recovery bench with
+pivot redirects; `test-dcache`, `test-dcache-mutations` and `test-completion` pass on
+9494ff6, whose cache and completion RTL is the same. These establish that DSI,
+alignment, TLB miss, machine check (precise and TEA), reservations, update forms,
+strings and multiples keep their results and saved state; they do not measure timing.
+
+Recorded: `make -C toolchain rtl-lsu-dcache rtl-mmu-stress-cached rtl-mmu-stress-tea rtl-page-miss rtl-dsi rtl-alignment rtl-lsu` (ELFs built with `toolchain/build-in-container.sh`), commit a26da0d, 2026-09-29.
+All pass: lsu-dcache 120,681 retirements in 2,360,629 cycles (7,356,785 checks), MMU
+stress cached modes 0-8 and 12-13 and TEA modes 14-15 (about 62,000 retirements each,
+122 TLB misses, interrupts inside misses and bus tenures), page-miss, DSI (8 load and
+4 store faults), alignment and the uncached LSU image.
+
+What remains: the lane still holds one access at a time, so back-to-back accesses
+cost 5 cycles each, not the 603e's 2; the router's translated-offer register and the
+special lane's result register are each one cycle that a two-stage LSU (address and
+translation, then cache and result) would overlap with the next access. A source
+produced by unretired work still drains (0.30 CPI on Dhrystone); reading ready
+rename values at dispatch would remove most of it, at the cost of a rename mux
+ahead of the dispatch EA adder. Branches still drain the whole machine.
+
 ## Optimizations, ranked
 
 Estimated CPI gain is the removed share of the counted causes, for Dhrystone /
