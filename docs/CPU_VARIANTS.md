@@ -377,6 +377,19 @@ The 603 and 602 still fail elaboration of the core; their SPR presence,
 SRR1[KEY] and PLL tables are checked at unit level (`tb_variant_config`,
 `tb_exception_tlb_miss`).
 
+Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 9d5b8ff, 2026-09-29.
+Pass: 593 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage
+76.5% (1771/2315, 14 waived arms, 21 runs). `variant-matrix` adds to the V1
+set: `tb_variant_config` 33 checks on each of variants 0–4 (cpu_cfg flags,
+HID0 IFEM/ABE masks, all 16 PLL_CFG codes, HID1/EAR/eciwx/ecowx decode);
+`tb_exception_tlb_miss` 194 checks on each of 0–4 (SRR1[KEY] cleared on the
+603); PLL_CFG `0000` rejected on PID7v, `0100` and `0111` rejected and
+`0011` accepted on PID6; `tb_core_full_decode` 8817 checks, 729 retirements
+on 0–2 (ABE broadcast seen only on PID7v and EC603e); `test-reference-pid6`
+8500 snapshots, 142 encoding groups against DingusPPC `MPC603E` 5b292af4d7b3.
+`test-chip-pins` passes with the PLL-bypass default. This does not establish
+PID6 misaligned eciwx/ecowx, any 603/602 core build, or non-1:1 clock ratios.
+
 Recorded: `make -C sim -j2 ci` (includes `regression` and `variant-matrix`), commit 22a007b plus an uncommitted edit to this document, 2026-09-29.
 Pass: 560 PASS lines, 37 compiled-firmware RTL profiles, rtl/ line coverage
 75.8% (1752/2311, 14 waived arms, 21 runs). `variant-matrix`: chip lint on
