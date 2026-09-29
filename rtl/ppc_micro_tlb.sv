@@ -5,7 +5,9 @@
 // An entry exists only after the full BAT/page path allowed an access, so a
 // hit repeats that result. Data entries record whether a store was allowed;
 // a store to a read-only entry misses. Entries taken from a page TLB hit also
-// drop when a later lookup hits the same TLB set, which may move its LRU bit.
+// drop when a later lookup hits the same TLB set, which may move its LRU bit;
+// each entry keeps the set its fill named. Entries also repeat the 602 esa
+// permission of their page.
 module ppc_micro_tlb #(
   parameter int ENTRIES = 4,
   parameter int TLB_SETS = 32
@@ -20,10 +22,13 @@ module ppc_micro_tlb #(
   output logic hit_o,
   output logic [19:0] hit_rpn_o,
   output logic [3:0] hit_wimg_o,
+  output ppc_pkg::esa_enable_t hit_esa_o,
   input  logic fill_i,
   input  logic [19:0] fill_page_i,
   input  logic [19:0] fill_rpn_i,
   input  logic [3:0] fill_wimg_i,
+  input  ppc_pkg::esa_enable_t fill_esa_i,
+  input  logic [$clog2(TLB_SETS)-1:0] fill_set_i,
   input  logic fill_write_ok_i,
   input  logic fill_from_tlb_i
 );
@@ -32,6 +37,9 @@ module ppc_micro_tlb #(
   logic [ENTRIES-1:0] valid_q, write_ok_q, from_tlb_q;
   logic [ENTRIES-1:0][19:0] page_q, rpn_q;
   logic [ENTRIES-1:0][3:0] wimg_q;
+  logic [ENTRIES-1:0][1:0] esa_q;
+  logic [ENTRIES-1:0][$clog2(TLB_SETS)-1:0] set_q;
+  logic [1:0] hit_esa;
   logic [INDEX_W-1:0] next_q, victim;
   logic [ENTRIES-1:0] match, permitted, fill_match;
   logic fill_matched;
@@ -41,14 +49,17 @@ module ppc_micro_tlb #(
   always_comb begin
     hit_rpn_o = '0;
     hit_wimg_o = '0;
+    hit_esa = '0;
     for (int i = 0; i < ENTRIES; i++) begin
       match[i] = valid_q[i] && page_q[i] == lookup_page_i;
       permitted[i] = match[i] && (!lookup_write_i || write_ok_q[i]);
       hit_rpn_o = hit_rpn_o | ({20{match[i]}} & rpn_q[i]);
       hit_wimg_o = hit_wimg_o | ({4{match[i]}} & wimg_q[i]);
+      hit_esa = hit_esa | ({2{match[i]}} & esa_q[i]);
     end
     hit_o = |permitted;
   end
+  assign hit_esa_o = ppc_pkg::esa_enable_t'(hit_esa);
 
   // A fill replaces the entry holding its page, else an invalid entry, else
   // the round-robin victim.
@@ -83,7 +94,7 @@ module ppc_micro_tlb #(
     end else begin
       for (int i = 0; i < ENTRIES; i++) begin
         if (set_flush_i && from_tlb_q[i] &&
-            page_q[i][$clog2(TLB_SETS)-1:0] == set_flush_index_i)
+            set_q[i] == set_flush_index_i)
           valid_q[i] <= 1'b0;
       end
       if (fill_i) begin
@@ -100,6 +111,8 @@ module ppc_micro_tlb #(
       page_q[victim] <= fill_page_i;
       rpn_q[victim] <= fill_rpn_i;
       wimg_q[victim] <= fill_wimg_i;
+      esa_q[victim] <= fill_esa_i;
+      set_q[victim] <= fill_set_i;
       write_ok_q[victim] <= fill_write_ok_i;
       from_tlb_q[victim] <= fill_from_tlb_i;
     end

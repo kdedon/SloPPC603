@@ -78,6 +78,10 @@ module ppc_special #(
   output logic tlb_fill_req_c_o,
   output logic [3:0] tlb_fill_req_wimg_o,
   output logic [1:0] tlb_fill_req_pp_o,
+  // 602 RPA bits {20, NE, SE, R, 29}; zero on other variants.
+  output logic [4:0] tlb_fill_req_ext_o,
+  // 602 MSR[AP], HID0[PO] and HID0[WIMG] for translation.
+  output ppc_pkg::mmu_602_t mmu_602_o,
   input logic tlb_fill_rsp_valid_i,
   output logic tlb_fill_rsp_ready_o,
   input logic tlb_fill_rsp_error_i,
@@ -176,6 +180,7 @@ module ppc_special #(
     logic c;
     logic [3:0] wimg;
     logic [1:0] pp;
+    logic [4:0] ext;
   } tlb_fill_payload_t;
 
   typedef enum logic [4:0] {
@@ -379,7 +384,10 @@ module ppc_special #(
                                 tlb_fill_operation;
   assign {tlb_fill_req_bank_o, tlb_fill_req_ea_o, tlb_fill_req_vsid_o,
     tlb_fill_req_way_o, tlb_fill_req_rpn_o, tlb_fill_req_c_o,
-    tlb_fill_req_wimg_o, tlb_fill_req_pp_o} = tlb_fill_payload_q;
+    tlb_fill_req_wimg_o, tlb_fill_req_pp_o, tlb_fill_req_ext_o} =
+    tlb_fill_payload_q;
+  assign mmu_602_o = HAS_602 ?
+    '{ap: msr_o[MSR_AP], po: hid0_q[HID0_PO], wimg: hid0_q[3:0]} : '0;
   assign tlb_fill_rsp_ready_o = mmu_rsp_ready && tlb_fill_operation;
   assign tlb_fill_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
                              tlb_fill_operation && !mmu_error_q;
@@ -952,8 +960,9 @@ module ppc_special #(
     .event_miss_key_i(miss_context.pr ? miss_context.sr[29] :
                                         miss_context.sr[30]),
     .event_miss_way_i(miss_context.way),
-    // The page SE bits arrive with the 602 MMU; until then esa is refused.
-    .event_esa_enable_i(1'b0),
+    // The esa's fetched page or block permission (602UM 5.1.1.1, 5.6.2).
+    .event_esa_enable_i(HAS_602 &&
+      esa_permitted(uop_q.esa, pc_q, sebr_q, ser_q)),
     .ibr_i(ibr_q[31:16]),
     .result_valid_o(exception_result_valid),
     .result_ready_i((state_q == S_EXCEPTION_RESULT) &&
@@ -1584,7 +1593,8 @@ module ppc_special #(
         tlb_fill_payload_q <= '{bank: (uop_i.special_op == SPECIAL_TLBLD),
           ea: b_i, vsid: tlb_fill_cmp[30:7], way: srr1_o[17],
           rpn: rpa_q[31:12], c: rpa_q[7], wimg: rpa_q[6:3],
-          pp: rpa_q[1:0]};
+          pp: rpa_q[1:0],
+          ext: HAS_602 ? {rpa_q[11:8], rpa_q[2]} : 5'b0};
         tlb_fill_local_error_q <= dispatch_tlb_fill && tlb_fill_seed_invalid &&
                                   !ENABLE_TLB_INVALIDATE;
         tlb_fill_invalidate_q <= dispatch_tlb_fill && tlb_fill_seed_invalid &&

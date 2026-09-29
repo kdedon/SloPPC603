@@ -136,6 +136,9 @@ module ppc_core_cached_bus60x #(
   logic [2:0] unused_icache_ctl;
   ppc_pkg::dmem_attr_t dmem_req_attr;
   logic unused_core_checkstop;
+  // No MMU on this path: the 602 translation ports stay idle.
+  logic [4:0] unused_tlb_fill_ext;
+  ppc_pkg::mmu_602_t unused_mmu_602;
   ppc_core #(
     .RESET_PC(RESET_PC),
     .CPU_VARIANT(CPU_VARIANT),
@@ -214,6 +217,8 @@ module ppc_core_cached_bus60x #(
     .imem_rsp_ready_o(imem_rsp_ready),
     .imem_rsp_insn_i(imem_rsp_insn),
     .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(NO_FETCH_FAULT),
+    .imem_rsp_esa_i(ppc_pkg::ESA_DENIED),
+    .tlb_fill_req_ext_o(unused_tlb_fill_ext), .mmu_602_o(unused_mmu_602),
     .dmem_req_valid_o(dmem_req_valid),
     .dmem_req_ready_i(dmem_req_ready),
     .dmem_req_write_o(dmem_req_write),

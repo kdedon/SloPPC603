@@ -26,6 +26,7 @@ module ppc_fetch #(
   output logic rsp_ready_o,
   input logic [31:0] rsp_insn_i,
   input ppc_pkg::fetch_fault_t rsp_fault_i,
+  input ppc_pkg::esa_enable_t rsp_esa_i,
   output logic packet_valid_o,
   input logic packet_ready_i,
   output ppc_pkg::fetch_packet_t packet_o
@@ -39,6 +40,7 @@ module ppc_fetch #(
   // request: no request is offered while it is full or the queue is full.
   logic buf_valid;
   logic [31:0] buf_pc, buf_insn;
+  ppc_pkg::esa_enable_t buf_esa;
   logic consume, live, to_buf, replay, offer, accept;
   logic pending_d, request_held_d, redirect_pending_d;
   logic [31:0] pc_d;
@@ -67,10 +69,12 @@ module ppc_fetch #(
       packet_o.pc = buf_pc;
       packet_o.insn = buf_insn;
       packet_o.fault = FETCH_OK;
+      packet_o.esa = buf_esa;
     end else begin
       packet_o.pc = pc;
       packet_o.insn = rsp_insn_i;
       packet_o.fault = rsp_fault_i;
+      packet_o.esa = rsp_esa_i;
     end
   end
 
@@ -140,6 +144,7 @@ module ppc_fetch #(
     if (to_buf) begin
       buf_pc <= pc;
       buf_insn <= rsp_insn_i;
+      buf_esa <= rsp_esa_i;
     end
   end
 

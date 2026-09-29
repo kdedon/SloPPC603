@@ -22,7 +22,8 @@ module tb_bat_runtime_service;
                      rsp_status, rsp_bad, rsp_match, rsp_index,
                      rsp_pa, rsp_wimg, rsp_pp};
 
-  ppc_bat_service #(.ENABLE_RUNTIME_BAT(1'b1)) dut (
+  logic unused_rsp_se_1;
+  ppc_bat_service #(.ENABLE_RUNTIME_BAT(1'b1)) dut (.default_wimg_i(4'b0), .rsp_se_o(unused_rsp_se_1),
     .prepare_commit_i(prepare_commit), .prepare_abort_i(prepare_abort), .commit_ack_ready_i(ack_ready),
     .commit_ack_valid_o(ack_valid), .transaction_idle_o(idle),
     .clk_i(clk), .rst_ni(rst_n), .req_valid_i(req_valid), .req_ready_o(req_ready),

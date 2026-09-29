@@ -45,12 +45,15 @@ module tb_core_memory_reference #(
   logic [33:1] unused_cache_core;
   logic probe;
   logic unused_checkstop;
+  logic [5:0] unused_mmu_602;
+  logic [4:0] unused_tlb_fill_ext;
   ppc_core #(
     .RESET_PC(32'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(EXTENSIONS),
     .ENABLE_CACHE_INSTRUCTIONS(EXTENSIONS), .ENABLE_BYTE_REVERSE(EXTENSIONS),
     .ENABLE_MULTIPLE_STRING(EXTENSIONS), .ENABLE_RESERVATION(EXTENSIONS),
     .ENABLE_MISALIGNED_ACCESS(EXTENSIONS)
-  ) dut (
+  ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+    .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

@@ -33,6 +33,8 @@ package tb_micro_tlb_pkg;
     logic [3:0] wimg;
     logic [1:0] pp;
     logic ir, dr, pr;
+    logic po, ap;         // 602 context: HID0[PO], MSR[AP]
+    logic [4:0] ext;      // 602 RPA bits {20, NE, SE, R, 29}
   } op_t;
 
   // One architectural outcome: an access response or a CSR status.
@@ -50,5 +52,6 @@ package tb_micro_tlb_pkg;
     logic [31:0] data;
     logic [68:0] page_miss;
     logic [15:0] sticky;     // translation and page diagnostic outputs
+    logic [1:0] esa;         // 602 esa permission of a fetch
   } record_t;
 endpackage

@@ -33,7 +33,11 @@ module ppc_core_measure #(
   logic [41:0] unused_segment_csr;
   logic [33:0] unused_cache_core;
   logic unused_checkstop;
+  logic [4:0] unused_tlb_fill_ext;
+  ppc_pkg::mmu_602_t unused_mmu_602;
   ppc_core #(.CPU_VARIANT(CPU_VARIANT)) dut (
+    .imem_rsp_esa_i(ppc_pkg::ESA_DENIED),
+    .tlb_fill_req_ext_o(unused_tlb_fill_ext), .mmu_602_o(unused_mmu_602),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

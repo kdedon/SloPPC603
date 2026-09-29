@@ -102,6 +102,7 @@ module ppc_core #(
   output logic tlb_fill_req_c_o,
   output logic [3:0] tlb_fill_req_wimg_o,
   output logic [1:0] tlb_fill_req_pp_o,
+  output logic [4:0] tlb_fill_req_ext_o,
   input logic tlb_fill_rsp_valid_i,
   output logic tlb_fill_rsp_ready_o,
   input logic tlb_fill_rsp_error_i,
@@ -120,6 +121,7 @@ module ppc_core #(
   output logic [31:0] interrupt_pc_o,
   input logic context_ready_i, memory_quiescent_i,
   output logic context_valid_o, context_ir_o, context_dr_o, context_pr_o,
+  output ppc_pkg::mmu_602_t mmu_602_o,
   output logic imem_req_valid_o,
   input logic imem_req_ready_i,
   output logic [31:0] imem_req_addr_o,
@@ -127,6 +129,7 @@ module ppc_core #(
   output logic imem_rsp_ready_o,
   input logic [31:0] imem_rsp_insn_i,
   input ppc_pkg::fetch_fault_t imem_rsp_fault_i,
+  input ppc_pkg::esa_enable_t imem_rsp_esa_i,
   input ppc_pkg::page_miss_t imem_rsp_page_miss_i,
   output logic dmem_req_valid_o,
   input logic dmem_req_ready_i,
@@ -311,7 +314,7 @@ module ppc_core #(
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
     .req_addr_o(imem_req_addr_o), .rsp_valid_i(imem_rsp_valid_i),
     .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i),
-    .rsp_fault_i(imem_rsp_fault_i),
+    .rsp_fault_i(imem_rsp_fault_i), .rsp_esa_i(imem_rsp_esa_i),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready), .packet_o(fetched)
   );
   // Fetch-to-decode register: the fetched word, its PC, fault and page-miss
@@ -418,6 +421,7 @@ module ppc_core #(
   // original decoded permissions cannot escape into the CQ or rename state.
   always_comb begin
     dispatch_uop = uop;
+    dispatch_uop.esa = iq_head.esa;
     if (iq_head.fault != FETCH_OK) begin
       // A fault response has no instruction to decode. Its raw payload stays
       // in the diagnostic trace but can grant no execution/write permission.
@@ -630,7 +634,8 @@ module ppc_core #(
     .tlb_fill_req_valid_o, .tlb_fill_req_ready_i,
     .tlb_fill_req_bank_o, .tlb_fill_req_ea_o, .tlb_fill_req_vsid_o,
     .tlb_fill_req_way_o, .tlb_fill_req_rpn_o, .tlb_fill_req_c_o,
-    .tlb_fill_req_wimg_o, .tlb_fill_req_pp_o,
+    .tlb_fill_req_wimg_o, .tlb_fill_req_pp_o, .tlb_fill_req_ext_o,
+    .mmu_602_o,
     .tlb_fill_rsp_valid_i, .tlb_fill_rsp_ready_o, .tlb_fill_rsp_error_i,
     .tlb_fill_commit_o, .tlb_fill_abort_o,
     .tlb_fill_ack_valid_i, .tlb_fill_ack_ready_o, .tlb_fill_idle_i,

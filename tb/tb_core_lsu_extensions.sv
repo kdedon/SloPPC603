@@ -56,6 +56,8 @@ module tb_core_lsu_extensions;
   event_t current;
   int events_seen = 0, sc_entries = 0;
 
+  logic [5:0] unused_mmu_602;
+  logic [4:0] unused_tlb_fill_ext;
   ppc_core #(
     .RESET_PC(32'h4000), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_EXTERNAL_INTERRUPTS(1'b1),
@@ -64,7 +66,8 @@ module tb_core_lsu_extensions;
     .ENABLE_RESERVATION(1'b1), .ENABLE_MISALIGNED_ACCESS(1'b1),
     .ENABLE_TGPR(1'b1), .ENABLE_SDR1(1'b1), .ENABLE_PAGE_MISS_RESULTS(1'b1),
     .ENABLE_TLB_LOAD(1'b1), .ENABLE_TLB_MISS_EXCEPTIONS(1'b1)
-  ) dut (
+  ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+    .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

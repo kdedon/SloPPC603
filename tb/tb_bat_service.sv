@@ -21,7 +21,8 @@ module tb_bat_service;
                      rsp_status, rsp_bad, rsp_match, rsp_index,
                      rsp_pa, rsp_wimg, rsp_pp};
 
-  ppc_bat_service dut (
+  logic unused_rsp_se_1;
+  ppc_bat_service dut (.default_wimg_i(4'b0), .rsp_se_o(unused_rsp_se_1),
     .prepare_commit_i(1'b0), .prepare_abort_i(1'b0), .commit_ack_ready_i(1'b1),
     .commit_ack_valid_o(unused_bat_transaction[1]), .transaction_idle_o(unused_bat_transaction[0]),
     .clk_i(clk), .rst_ni(rst_n), .req_valid_i(req_valid), .req_ready_o(req_ready),

@@ -8,7 +8,8 @@
 module tb_micro_tlb_harness #(
   parameter bit ENABLE_MICRO_TLB = 1'b1,
   parameter string NAME = "harness",
-  parameter int TLB_SETS = 32
+  parameter int TLB_SETS = 32,
+  parameter bit HAS_602 = 1'b0
 ) (
   input logic clk_i,
   input tb_micro_tlb_pkg::op_t ops [tb_micro_tlb_pkg::MAX_OPS],
@@ -124,6 +125,9 @@ module tb_micro_tlb_harness #(
     fault_instruction_o, fault_write_o, fault_ea_o, fault_invalid_entry_o,
     busy_o, start_ready_o};
 
+  ppc_pkg::mmu_602_t mmu_602_i;
+  logic [4:0] tlb_fill_req_ext_i;
+  ppc_pkg::esa_enable_t imem_rsp_esa;
   ppc_bat_memory_router #(
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_RUNTIME_BAT(1'b1),
     .ENABLE_SEGMENT_REGISTERS(1'b1), .ENABLE_PAGE_TRANSLATION(1'b1),
@@ -132,7 +136,8 @@ module tb_micro_tlb_harness #(
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),
     .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .TLB_SETS(TLB_SETS)
-  ) dut (.*);
+  ) dut (.mmu_602_i('0), .tlb_fill_req_ext_i(5'b0),
+    .imem_rsp_esa_o(imem_rsp_esa), .*);
 
   localparam int TIMEOUT = 400;
 
@@ -264,6 +269,7 @@ module tb_micro_tlb_harness #(
         r.ea = addr - 32'd4;
         r.offered = i_offered; r.pa = i_pa; r.wimg = i_wimg;
         r.fault = imem_rsp_fault_o; r.data = imem_rsp_insn_o;
+        r.esa = imem_rsp_esa;
         r.page_miss = imem_rsp_page_miss_o;
         if (i_offered && imem_rsp_insn_o != word_at(i_pa))
           fail("instruction word does not match its physical address");
@@ -425,7 +431,7 @@ module tb_micro_tlb_harness #(
     tlb_fill_req_ea_i = op.ea; tlb_fill_req_vsid_i = op.vsid;
     tlb_fill_req_way_i = op.way; tlb_fill_req_rpn_i = op.rpn;
     tlb_fill_req_c_i = op.c; tlb_fill_req_wimg_i = op.wimg;
-    tlb_fill_req_pp_i = op.pp;
+    tlb_fill_req_pp_i = op.pp; tlb_fill_req_ext_i = op.ext;
     `WAIT_TRUE(tlb_fill_req_ready_o, "tlbld request");
     @(negedge clk_i); tlb_fill_req_valid_i = 0;
     `WAIT_TRUE(tlb_fill_rsp_valid_o, "tlbld response");
@@ -520,6 +526,7 @@ module tb_micro_tlb_harness #(
     tlb_fill_req_way_i = 0; tlb_fill_req_rpn_i = 0;
     tlb_fill_req_c_i = 0; tlb_fill_req_wimg_i = 0;
     tlb_fill_req_pp_i = 0; tlb_fill_rsp_ready_i = 0;
+    tlb_fill_req_ext_i = 0; mmu_602_i = '0;
     tlb_fill_commit_i = 0; tlb_fill_abort_i = 0;
     tlb_fill_ack_ready_i = 0;
     tlb_mgmt_req_valid_i = 0; tlb_mgmt_req_kind_i = 0;
@@ -562,7 +569,10 @@ module tb_micro_tlb_harness #(
         OP_SR: sr_write(ops[i].index, ops[i].ea);
         OP_TLBIE: tlbie(ops[i].ea);
         OP_TLBLD: tlbld(ops[i]);
-        OP_CONTEXT: set_context(ops[i].ir, ops[i].dr, ops[i].pr);
+        OP_CONTEXT: begin
+          mmu_602_i = '{ap: ops[i].ap, po: ops[i].po, wimg: 4'b0110};
+          set_context(ops[i].ir, ops[i].dr, ops[i].pr);
+        end
         OP_MGMT: manage(ops[i]);
         OP_STREAM: stream(ops[i].ea, int'(ops[i].count) * 16);
         default: fail("unknown operation");

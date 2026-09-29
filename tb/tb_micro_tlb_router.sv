@@ -9,7 +9,7 @@
 // Bench helpers take full-width ints and records and use only some bits.
 /* verilator lint_off UNUSEDSIGNAL */
 module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED = 1,
-  parameter int TLB_SETS = 32);
+  parameter int TLB_SETS = 32, parameter bit HAS_602 = 1'b0);
   import tb_micro_tlb_pkg::*;
 
   logic clk_i = 1'b0;
@@ -29,9 +29,11 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
   } expect_t;
   expect_t expects [$];
 
-  tb_micro_tlb_harness #(.ENABLE_MICRO_TLB(1'b1), .NAME("micro-TLB"), .TLB_SETS(TLB_SETS)) fast (
+  tb_micro_tlb_harness #(.ENABLE_MICRO_TLB(1'b1), .NAME("micro-TLB"), .TLB_SETS(TLB_SETS),
+    .HAS_602(HAS_602)) fast (
     .clk_i, .ops, .op_count, .go_i(go), .done_o(fast_done));
-  tb_micro_tlb_harness #(.ENABLE_MICRO_TLB(1'b0), .NAME("slow path"), .TLB_SETS(TLB_SETS)) slow (
+  tb_micro_tlb_harness #(.ENABLE_MICRO_TLB(1'b0), .NAME("slow path"), .TLB_SETS(TLB_SETS),
+    .HAS_602(HAS_602)) slow (
     .clk_i, .ops, .op_count, .go_i(go), .done_o(slow_done));
 
   localparam logic [23:0] VSID_A = 24'h000123, VSID_B = 24'h000456;
@@ -314,17 +316,29 @@ module tb_micro_tlb_router #(parameter int RANDOM_OPS = 600, parameter int SEED 
         1: void'(sr(rnd(0, 1) != 0 ? 4'd1 : 4'd2,
                     sr_value(1'(rnd(0, 1)), 1'(rnd(0, 1)),
                              rnd(0, 7) == 0, vsid)));
-        2, 3: void'(tlb_entry(OP_TLBLD, 1'(rnd(0, 1)),
+        2, 3: begin
+          int load;
+          load = tlb_entry(OP_TLBLD, 1'(rnd(0, 1)),
                     {ea[31:12], 12'b0}, vsid, 1'(rnd(0, 1)),
                     rpn, rnd(0, 3) != 0,
                     4'(rnd(0, 15)) & 4'b1110,
-                    2'(rnd(0, 3))));
+                    2'(rnd(0, 3)));
+          // 602: random NE, SE and the protection-only word's low bits.
+          if (HAS_602) ops[load].ext = 5'(rnd(0, 31));
+        end
         4: void'(tlbie(ea));
         5: void'(tlb_entry(OP_MGMT, 1'(rnd(0, 1)),
                     {ea[31:12], 12'b0}, vsid, 1'(rnd(0, 1)),
                     rpn, 1'b1, 4'b0000, 2'b10));
-        6: void'(context_op(rnd(0, 4) != 0, rnd(0, 4) != 0,
-                            rnd(0, 3) == 0));
+        6: begin
+          int install;
+          install = context_op(rnd(0, 4) != 0, rnd(0, 4) != 0,
+                               rnd(0, 3) == 0);
+          if (HAS_602) begin
+            ops[install].po = rnd(0, 1) != 0;
+            ops[install].ap = rnd(0, 3) == 0;
+          end
+        end
         default: begin
           fetches = rnd(0, 3);
           datas = rnd(fetches == 0 ? 1 : 0, 3);

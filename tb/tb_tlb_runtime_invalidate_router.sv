@@ -111,9 +111,11 @@ module tb_tlb_runtime_invalidate_router;
     page_guarded_o, page_direct_store_o, page_needs_changed_o};
   logic [4:0] unused_tlb_fill_router;
   logic [68:0] unused_imem_page_miss, unused_dmem_page_miss;
+  logic [1:0] unused_imem_rsp_esa_1;
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1), .ENABLE_SEGMENT_REGISTERS(1'b1),
-    .ENABLE_PAGE_TRANSLATION(1'b1), .ENABLE_TLB_INVALIDATE(1'b1)) dut (    .imem_rsp_page_miss_o(unused_imem_page_miss),
+    .ENABLE_PAGE_TRANSLATION(1'b1), .ENABLE_TLB_INVALIDATE(1'b1)) dut (.mmu_602_i('0), .tlb_fill_req_ext_i(5'b0),
+    .imem_rsp_esa_o(unused_imem_rsp_esa_1),     .imem_rsp_page_miss_o(unused_imem_page_miss),
     .dmem_rsp_page_miss_o(unused_dmem_page_miss),
     .tlb_fill_req_valid_i(1'b0),
     .tlb_fill_req_ready_o(unused_tlb_fill_router[0]),

@@ -33,7 +33,10 @@ module tb_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
   logic unused_checkstop;
-  ppc_core dut (
+  logic [5:0] unused_mmu_602;
+  logic [4:0] unused_tlb_fill_ext;
+  ppc_core dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+    .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */
@@ -88,7 +91,7 @@ module tb_core;
     .segment_csr_abort_o(unused_segment_csr[1]),
     .segment_csr_ack_valid_i(1'b0), .segment_csr_ack_ready_o(unused_segment_csr[0]),
     .segment_csr_idle_i(1'b1),
-    .clk_i(clk), .rst_ni(rst_n), 
+    .clk_i(clk), .rst_ni(rst_n),
     .dmem_req_valid_o(unused_dmem[0]), .dmem_req_ready_i(1'b0),
     .dmem_req_write_o(unused_dmem[1]), .dmem_req_addr_o(unused_dmem[33:2]),
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),

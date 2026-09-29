@@ -80,12 +80,15 @@ module tb_core_full_decode #(
   localparam logic [31:0] ILLEGAL = 32'h0008_0000, PRIV = 32'h0004_0000,
                           TRAP = 32'h0002_0000;
 
+  logic [5:0] unused_mmu_602;
+  logic [4:0] unused_tlb_fill_ext;
   ppc_core #(
     .RESET_PC(32'h4000), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_CACHE_INSTRUCTIONS(1'b1),
     .ENABLE_RESERVATION(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_FULL_DECODE(1'b1), .PLL_CFG(4'b1010), .CPU_VARIANT(CPU_VARIANT)
-  ) dut (
+  ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+    .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

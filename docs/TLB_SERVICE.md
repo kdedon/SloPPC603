@@ -54,6 +54,17 @@ Not implemented here: the 602 per-page NE/SE/WE bits and protection-only mode
 translation is bypassed (602UM §5.6, PDF 280+ / 5-58+). They widen `entry_t`
 and add a lookup mode; that is CPU-variant round V9.
 
+### 602 entries
+
+With `HAS_602` each entry also keeps RPA bits 20–23 and 29 and a
+protection-only flag, so a load stores the whole RPA word (602UM Figure
+5-17). An ITLB hit with NE denies the fetch before the PP check and a hit
+with SE reports `ESA_ALLOWED`. A protection-only request (`req_po_i`)
+indexes by EA11–14 and tags EA0–10 with SR0's VSID; its entry's RPA bit n
+is the NE or WE bit of page n of the 128-KiB region, chosen by EA15–19
+(602UM Figures 5-22 to 5-24). Entries match only requests of their own mode.
+The 602 requires the 16-set geometry.
+
 ## Transactions and held responses
 
 A request is accepted on a rising edge with `req_valid_i && req_ready_o`. With no runtime proposal, held commit acknowledgment or request in classification, `req_ready_o = rst_ni && (!response_valid || rsp_ready_i)`. The accepting edge captures the request and reads both ways of the addressed set from entry RAM. The next edge classifies it from that registered read, registers its entire response and, for a successful kind-1 refill or kind-2 invalidate, changes storage. Every response therefore appears one cycle later than the acceptance edge would allow with flop storage. No request is accepted during classification, so no read shares an edge with a write. A held response blocks every following request; a runtime proposal or acknowledgment also reserves the slot. When an ordinary old response is consumed, one new request may be accepted on that same edge.

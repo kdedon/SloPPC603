@@ -54,7 +54,9 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
   logic [4:0] unused_tlb_inv_router;
   logic [4:0] unused_tlb_fill_router;
   logic [68:0] unused_imem_page_miss, unused_dmem_page_miss;
-  ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (
+  logic [1:0] unused_imem_rsp_esa_1;
+  ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (.mmu_602_i('0), .tlb_fill_req_ext_i(5'b0),
+    .imem_rsp_esa_o(unused_imem_rsp_esa_1),
     .imem_rsp_page_miss_o(unused_imem_page_miss),
     .dmem_rsp_page_miss_o(unused_dmem_page_miss),
     .tlb_inv_req_valid_i(1'b0),

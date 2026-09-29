@@ -383,15 +383,18 @@ module ppc_exception_state #(
             end
             EVENT_ESA, EVENT_DSA: begin
               // 602UM 2.3.7: esa saves PR, AP, SA, EE in ESASRR and enters
-              // supervisor access; dsa restores them. esa with SA set or off
-              // an SE page, and dsa with SA clear, take a program exception;
-              // the manual names no SRR1 cause, the privileged one is used.
+              // supervisor access; dsa restores them. esa off an SE page is
+              // an illegal instruction (602UM 5.1.1.1, 2.3.9.2.2). esa with
+              // SA set and dsa with SA clear take a program exception with
+              // no named cause; the privileged one is used.
               if (HAS_602) begin
                 result_supported_q <= 1'b1;
                 if ((event_kind_i == EVENT_ESA) ?
                     (msr_q[MSR_SA] || !event_esa_enable_i) : !msr_q[MSR_SA]) begin
                   srr0_q <= event_pc_i;
-                  srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_PRIV);
+                  srr1_q <= exception_srr1(msr_q,
+                    ((event_kind_i == EVENT_ESA) && !msr_q[MSR_SA]) ?
+                      SRR1_PROGRAM_ILLEGAL : SRR1_PROGRAM_PRIV);
                   msr_q <= exception_msr(msr_q);
                   result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
                 end else begin

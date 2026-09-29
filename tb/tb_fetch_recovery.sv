@@ -29,6 +29,7 @@ module tb_fetch_recovery;
     .redirect_i(redirect), .redirect_target_i(redirect_target),
     .req_valid_o(req_valid), .req_ready_i(req_ready), .req_addr_o(req_addr),
     .rsp_valid_i(rsp_valid), .rsp_ready_o(rsp_ready), .rsp_insn_i(rsp_insn), .rsp_fault_i(rsp_fault),
+    .rsp_esa_i(ppc_pkg::ESA_DENIED),
     .quiescent_o(unused_quiescent), .packet_valid_o(packet_valid), .packet_ready_i(packet_ready), .packet_o(packet)
   );
 

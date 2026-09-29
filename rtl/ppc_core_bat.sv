@@ -180,6 +180,9 @@ module ppc_core_bat #(
   logic committed_ir, committed_dr, committed_pr;
   logic router_start_ready, start_context_supported;
   ppc_pkg::fetch_fault_t imem_rsp_fault;
+  ppc_pkg::esa_enable_t imem_rsp_esa;
+  ppc_pkg::mmu_602_t mmu_602;
+  logic [4:0] tlb_fill_req_ext;
   ppc_pkg::data_fault_t dmem_rsp_fault;
   logic bat_csr_req_valid, bat_csr_req_ready, bat_csr_req_write;
   logic [9:0] bat_csr_req_spr;
@@ -307,8 +310,9 @@ module ppc_core_bat #(
     .imem_req_ready_i(imem_req_ready), .imem_req_addr_o(imem_req_addr),
     .imem_rsp_valid_i(imem_rsp_valid), .imem_rsp_ready_o(imem_rsp_ready),
     .imem_rsp_insn_i(imem_rsp_insn),
-    .imem_rsp_fault_i(imem_rsp_fault),
+    .imem_rsp_fault_i(imem_rsp_fault), .imem_rsp_esa_i(imem_rsp_esa),
     .imem_rsp_page_miss_i(imem_rsp_page_miss),
+    .mmu_602_o(mmu_602), .tlb_fill_req_ext_o(tlb_fill_req_ext),
     .context_valid_o(context_valid), .context_ready_i(context_ready),
     .context_ir_o(committed_ir), .context_dr_o(committed_dr),
     .context_pr_o(committed_pr), .memory_quiescent_i(memory_quiescent),
@@ -342,6 +346,7 @@ module ppc_core_bat #(
     .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .TLB_SETS(TLB_SETS_EFFECTIVE),
+    .HAS_602(ppc_pkg::cpu_has_602_ext(CPU_VARIANT)),
     .ENABLE_DATA_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT)) router (
     .tlb_fill_req_valid_i(tlb_fill_req_valid),
     .tlb_fill_req_bank_i(tlb_fill_req_bank),
@@ -351,7 +356,7 @@ module ppc_core_bat #(
     .tlb_fill_req_rpn_i(tlb_fill_req_rpn),
     .tlb_fill_req_c_i(tlb_fill_req_c),
     .tlb_fill_req_wimg_i(tlb_fill_req_wimg),
-    .tlb_fill_req_pp_i(tlb_fill_req_pp),
+    .tlb_fill_req_pp_i(tlb_fill_req_pp), .tlb_fill_req_ext_i(tlb_fill_req_ext),
     .tlb_fill_rsp_ready_i(tlb_fill_rsp_ready),
     .tlb_fill_commit_i(tlb_fill_commit),
     .tlb_fill_abort_i(tlb_fill_abort),
@@ -427,7 +432,8 @@ module ppc_core_bat #(
     .running_o, .context_ir_o, .context_dr_o, .context_pr_o,
     .context_valid_i(context_valid), .context_ready_o(context_ready),
     .context_ir_i(committed_ir), .context_dr_i(committed_dr),
-    .context_pr_i(committed_pr), .quiescent_o(router_quiescent),
+    .context_pr_i(committed_pr), .mmu_602_i(mmu_602),
+    .quiescent_o(router_quiescent),
     .pimem_req_valid_o, .pimem_req_ready_i, .pimem_req_addr_o,
     .pimem_req_wimg_o, .pimem_rsp_valid_i, .pimem_rsp_ready_o,
     .pimem_rsp_insn_i, .pimem_rsp_error_i,
@@ -445,7 +451,7 @@ module ppc_core_bat #(
     .imem_req_valid_i(imem_req_valid), .imem_req_ready_o(imem_req_ready),
     .imem_req_addr_i(imem_req_addr), .imem_rsp_valid_o(imem_rsp_valid),
     .imem_rsp_ready_i(imem_rsp_ready), .imem_rsp_insn_o(imem_rsp_insn),
-    .imem_rsp_fault_o(imem_rsp_fault),
+    .imem_rsp_fault_o(imem_rsp_fault), .imem_rsp_esa_o(imem_rsp_esa),
     .imem_rsp_page_miss_o(imem_rsp_page_miss),
     .dmem_req_valid_i(dmem_req_valid && !sync_req),
     .dmem_req_ready_o(router_dmem_req_ready),
