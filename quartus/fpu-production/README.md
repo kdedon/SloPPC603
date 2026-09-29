@@ -15,6 +15,8 @@ Run all variants after the RTL has stabilized:
 ./quartus/fpu-production/synthesize.sh --docker arith
 ./quartus/fpu-production/synthesize.sh --docker full602
 ./quartus/fpu-production/synthesize.sh --docker arith602
+# Fit the 603e shell with clk_i on a real pin (about 40 minutes):
+./quartus/fpu-production/synthesize.sh --docker fullfit
 ```
 
 The script uses Quartus 17.0.2 Lite from the same pinned Cyclone V image as `quartus/icache/synthesize.sh`, targets `5CSEBA6U23I7`, and sets `NUM_PARALLEL_PROCESSORS=2`. Each project creates a 20 ns `clk_i` clock and zero min/max delays on virtual inputs and outputs. All interface bits are assigned virtual pins. The script checks that Quartus reports zero physical pins, compares source/configuration hashes before and after each map, and prints ALUTs, estimated ALMs, registers, memory bits, DSP blocks, Fmax against 50/66 MHz, worst setup slack and the ten worst setup paths. It also reports Quartus warnings for review and the worst path into each arithmetic pipeline stage, so a faster overall path does not hide a remaining stage bottleneck.
@@ -22,6 +24,28 @@ The script uses Quartus 17.0.2 Lite from the same pinned Cyclone V image as `qua
 The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not run the fitter, so its ALM estimate and timing are not fitted-area or timing-closure results. `output_files/full/reports/` and `output_files/arith/reports/` are generated build outputs.
 
 ## Recorded synthesis evidence
+
+### Registered finish, fitted 603e
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit`, commit
+`8fb66f6`, 2026-09-29. Exit zero. `quartus_map`, `quartus_fit` and post-fit
+TimeQuest on the 603e `ppc_fpu` with `clk_i` on a physical pin and all other
+ports virtual (zero-delay I/O constraints, 20 ns clock).
+
+| Build | Fitted ALMs | Registers | DSP | Post-fit Fmax | 20 ns slack |
+|---|---:|---:|---:|---:|---:|
+| `83259ce` (audit, same flow) | 26,085 | — | — | 26.09 MHz | −18.322 ns |
+| `8fb66f6` | 27,606 | 8,300 | 5 | 27.24 MHz | −16.709 ns |
+
+The ten worst paths now run from the add-stage registers
+(`add_q.normal_left_shift`, `add_q.denorm_shift`) through rounding and single
+narrowing to `mem_req_o.data[3:2]`: finishing store data forwarded to the
+preparation packet (31.8 ns data delay, −4.7 ns clock skew to the virtual
+output). Worst path into each arithmetic stage: add −2.685 ns, aligned
+−8.664 ns, multiply −6.288 ns, divider −9.368 ns, response −7.353 ns. The
+fitted ALM count includes ALMs holding virtual pins. Neither 50 nor 66 MHz is
+met; this is a fit and timing measurement, not closure.
+
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker arith`, commit
 `5cd6432` plus uncommitted pipeline/package changes, 2026-09-27.

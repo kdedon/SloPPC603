@@ -151,6 +151,12 @@ still presents results on the finish cycle. The 602 build still gates source
 readiness and store traps on its late emulation-trap and single-range checks.
 The pending queue still shifts on retirement; a circular buffer remains open.
 
+Open timing work: the fitted worst path is now finish → single narrowing →
+store preparation data; registering store data behind the reply needs the
+packet contract to allow late data. The shifting pending queue, the
+combinational `issue_ready_o` (decode, commit and abort terms), the forward
+payload and the arithmetic stages themselves remain.
+
 ## Memory and 602 tag SPRs
 
 Memory packets retain complete instruction tags. Fault-free preparation does not

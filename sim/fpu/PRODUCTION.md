@@ -10,7 +10,7 @@ Detailed `Recorded:` entries retain each result's exact source scope.
 ## Registered finish and stfs store rule
 
 Recorded: `make -C sim -j2 test-fpu-all lint-fpu-production lint-fpu-stream
-lint-fpu-dual`, commit `92816c6`, 2026-09-29. Pass. Raw arithmetic: 603e
+lint-fpu-dual`, commit `92816c6` (sources identical to `8fb66f6`), 2026-09-29. Pass. Raw arithmetic: 603e
 201,632 vectors and 602 181,952 vectors, 0 mismatches; per-operation latency
 minima and maxima match the `83259ce` run exactly. Estimates: 11,958 (603e)
 and 17,628 (602) vectors, 0 mismatches. Shell 910 checks; 602 173 checks;
