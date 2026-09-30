@@ -192,7 +192,11 @@ module ppc_fpu #(
   logic [2:0] fpr_count_d;
   logic barrier_q;
   logic barrier_d;
-  logic [FPR_BITS-1:0] fpr_q [0:31];
+  logic [1:0] fpr_we;
+  logic [1:0][4:0] fpr_waddr;
+  logic [1:0][FPR_BITS-1:0] fpr_wdata;
+  logic [8:0][4:0] fpr_raddr;
+  logic [8:0][FPR_BITS-1:0] fpr_rdata;
   logic [31:0] fpscr_q;
   logic [31:0] proposed_fpscr;
   logic [31:0] issue_ea;
@@ -556,6 +560,7 @@ module ppc_fpu #(
   endfunction
 
   function automatic source_t read_source(input logic [4:0] reg_index,
+                                          input logic [FPR_BITS-1:0] stored,
                                           input logic [PENDING_DEPTH-1:0] older);
     source_t s;
     logic [PENDING_DEPTH-1:0] older_match;
@@ -563,7 +568,7 @@ module ppc_fpu #(
     begin
       s = '0;
       s.ready = 1'b1;
-      s.raw = {{(64-FPR_BITS){1'b0}}, fpr_q[reg_index]};
+      s.raw = {{(64-FPR_BITS){1'b0}}, stored};
       s.sp = CPU_602 && sp_q[31-reg_index];
       s.lt = CPU_602 && lt_q[31-reg_index];
       for (integer i = 0; i < PENDING_DEPTH; i++)
@@ -1155,13 +1160,13 @@ module ppc_fpu #(
     src_b_index = work_issue.insn[15:11];
     src_c_index = work_issue.insn[10:6];
     src_d_index = work_issue.insn[25:21];
-    source_a = read_source(src_a_index, work_dispatch ?
+    source_a = read_source(src_a_index, fpr_rdata[0], work_dispatch ?
         {PENDING_DEPTH{1'b1}} : exec_older);
-    source_b = read_source(src_b_index, work_dispatch ?
+    source_b = read_source(src_b_index, fpr_rdata[1], work_dispatch ?
         {PENDING_DEPTH{1'b1}} : exec_older);
-    source_c = read_source(src_c_index, work_dispatch ?
+    source_c = read_source(src_c_index, fpr_rdata[2], work_dispatch ?
         {PENDING_DEPTH{1'b1}} : exec_older);
-    source_d = read_source(src_d_index, work_dispatch ?
+    source_d = read_source(src_d_index, fpr_rdata[3], work_dispatch ?
         {PENDING_DEPTH{1'b1}} : exec_older);
     src_a = source_a.raw;
     src_b = source_b.raw;
@@ -1268,13 +1273,13 @@ module ppc_fpu #(
     end
     work1_admitted = work1_old ||
         (exec_found ? dispatch_fire : dispatch1_fire);
-    work1_a = read_source(work1_issue.insn[20:16],
+    work1_a = read_source(work1_issue.insn[20:16], fpr_rdata[4],
         work1_old ? second_older : {PENDING_DEPTH{1'b1}});
-    work1_b = read_source(work1_issue.insn[15:11],
+    work1_b = read_source(work1_issue.insn[15:11], fpr_rdata[5],
         work1_old ? second_older : {PENDING_DEPTH{1'b1}});
-    work1_c = read_source(work1_issue.insn[10:6],
+    work1_c = read_source(work1_issue.insn[10:6], fpr_rdata[6],
         work1_old ? second_older : {PENDING_DEPTH{1'b1}});
-    work1_d = read_source(work1_issue.insn[25:21],
+    work1_d = read_source(work1_issue.insn[25:21], fpr_rdata[7],
         work1_old ? second_older : {PENDING_DEPTH{1'b1}});
     work1_d_raw = work1_d.fwd ? finish_store_word : work1_d.raw[30:0];
     work1_store_d_ready = work1_d.ready && !(work1_d.fwd && finish_trap);
@@ -1919,7 +1924,6 @@ module ppc_fpu #(
       sp_q <= '0;
       lt_q <= '0;
       deferred_abort_flush_q <= 1'b0;
-      for (integer i = 0; i < 32; i++) fpr_q[i] <= '0;
     end else begin
       local_stage_q <= kill_all_i ? '0 : local_stage_d;
       for (integer i = 0; i < PENDING_DEPTH; i++) pending_q[i] <= pending_d[i];
@@ -1942,17 +1946,54 @@ module ppc_fpu #(
         deferred_abort_flush_q <= 1'b1;
       if (retire_fire &&
           (head_result.exception == FPU_NO_EXCEPTION ||
-           head_result.exception == FPU_FP_ENABLED)) begin
-        if (head_result.fpr_write)
-          fpr_q[head_result.fpr_index] <= FPR_BITS'(head_result.fpr_value);
-        if (head_result.fpscr_write) fpscr_q <= head_result.fpscr_value;
-      end
-      if (retire1_fire && second_result.fpr_write)
-        fpr_q[second_result.fpr_index] <= FPR_BITS'(second_result.fpr_value);
+           head_result.exception == FPU_FP_ENABLED) &&
+          head_result.fpscr_write)
+        fpscr_q <= head_result.fpscr_value;
     end
   end
 
-  assign inspect_fpr_o = {{(64-FPR_BITS){1'b0}},fpr_q[inspect_fpr_index_i]};
+  assign fpr_we[0] = retire_fire && head_result.fpr_write &&
+      (head_result.exception == FPU_NO_EXCEPTION ||
+       head_result.exception == FPU_FP_ENABLED);
+  assign fpr_we[1] = retire1_fire && second_result.fpr_write;
+  assign fpr_waddr[0] = head_result.fpr_index;
+  assign fpr_waddr[1] = second_result.fpr_index;
+  assign fpr_wdata[0] = FPR_BITS'(head_result.fpr_value);
+  assign fpr_wdata[1] = FPR_BITS'(second_result.fpr_value);
+
+  // Read indices repeat the work-slot selection so the storage reads do not
+  // loop through the issue logic that consumes them.
+  always_comb begin
+    logic [25:6] insn0;
+    logic [25:6] insn1;
+    insn0 = '0;
+    if (exec_found) insn0 = pending_q[exec_slot].issue.insn[25:6];
+    else if (issue_valid_i) insn0 = issue_i.insn[25:6];
+    insn1 = '0;
+    if (second_exec_found) insn1 = pending_q[second_exec_slot].issue.insn[25:6];
+    else if (exec_found && issue_valid_i) insn1 = issue_i.insn[25:6];
+    else if (!exec_found && issue1_valid_i) insn1 = issue1_i.insn[25:6];
+    fpr_raddr[0] = insn0[20:16];
+    fpr_raddr[1] = insn0[15:11];
+    fpr_raddr[2] = insn0[10:6];
+    fpr_raddr[3] = insn0[25:21];
+    fpr_raddr[4] = insn1[20:16];
+    fpr_raddr[5] = insn1[15:11];
+    fpr_raddr[6] = insn1[10:6];
+    fpr_raddr[7] = insn1[25:21];
+    fpr_raddr[8] = inspect_fpr_index_i;
+  end
+
+  ppc_fpu_fprs #(.WIDTH(FPR_BITS), .READS(9)) fprs (
+    .clk_i,
+    .rst_ni,
+    .we_i(fpr_we),
+    .waddr_i(fpr_waddr),
+    .wdata_i(fpr_wdata),
+    .raddr_i(fpr_raddr),
+    .rdata_o(fpr_rdata)
+  );
+  assign inspect_fpr_o = {{(64-FPR_BITS){1'b0}}, fpr_rdata[8]};
   assign inspect_fpscr_o = fpscr_q;
   assign inspect_sp_o = CPU_602 ? sp_q : 32'd0;
   assign inspect_lt_o = CPU_602 ? lt_q : 32'd0;
