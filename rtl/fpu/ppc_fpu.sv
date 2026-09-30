@@ -351,6 +351,22 @@ module ppc_fpu #(
     end
   endfunction
 
+  // The oldest CR result takes the first bus and displaces the oldest
+  // other result to the second; otherwise the two oldest go in order.
+  // Returns {second, first}.
+  function automatic logic [2*PENDING_DEPTH-1:0] forward_pick(
+      input logic [PENDING_DEPTH-1:0] elig,
+      input logic [PENDING_DEPTH-1:0] cr_new);
+    logic [PENDING_DEPTH-1:0] e1, e2, cr_first;
+    begin
+      e1 = oldest_of(elig);
+      e2 = oldest_of(elig & ~e1);
+      cr_first = oldest_of(elig & cr_new);
+      if (|cr_first) return {(cr_first == e1 ? e2 : e1), cr_first};
+      return {e2, e1};
+    end
+  endfunction
+
   // One-hot youngest set slot.
   function automatic logic [PENDING_DEPTH-1:0] youngest_of(
       input logic [PENDING_DEPTH-1:0] set);
@@ -1886,7 +1902,9 @@ module ppc_fpu #(
     logic [PENDING_DEPTH-1:0] exc;
     logic [PENDING_DEPTH-1:0] cr_new;
     logic [PENDING_DEPTH-1:0] elig;
-    logic [PENDING_DEPTH-1:0] e1, e2, cr_first;
+    logic [PENDING_DEPTH-1:0] finishing_slot;
+    logic finish_trap;
+    logic [2*PENDING_DEPTH-1:0] pick_open, pick_trap;
     arith_flags_t slot_ar [0:PENDING_DEPTH-1];
     logic [PENDING_DEPTH-1:0] slot_rsp_value;
     logic [PENDING_DEPTH-1:0] slot_meta, slot_reply, slot_trap;
@@ -1922,9 +1940,10 @@ module ppc_fpu #(
           meta = 1'b1;
         end
       end
-      // A finishing reply's flags reach only its own trap and write checks;
-      // its CR value and sticky causes come from the registered reply.
-      trap = flags_trap(CPU_602, ar, fpscr_q);
+      // A finishing reply's flags reach only its own trap, which selects
+      // between the two picks below; its CR value and sticky causes come
+      // from the registered reply.
+      trap = !reply && flags_trap(CPU_602, ar, fpscr_q);
       slot_ar[i] = ar;
       slot_known[i] = ar_known;
       slot_rsp_value[i] = rsp_value;
@@ -2011,18 +2030,13 @@ module ppc_fpu #(
           (c.fpr_write || c.cr_write);
       slot_candidate[i] = c;
     end
-    // The oldest CR result takes the first bus and displaces the oldest
-    // other result to the second; otherwise the two oldest go in order.
-    e1 = oldest_of(elig);
-    e2 = oldest_of(elig & ~e1);
-    cr_first = oldest_of(elig & cr_new);
-    if (|cr_first) begin
-      fwd0_sel = cr_first;
-      fwd1_sel = cr_first == e1 ? e2 : e1;
-    end else begin
-      fwd0_sel = e1;
-      fwd1_sel = e2;
-    end
+    // At most one slot finishes. Its trap only removes it from the
+    // eligible set, so both picks form beside the rounder.
+    finishing_slot = slot_reply & ready;
+    finish_trap = flags_trap(CPU_602, flags_of(arith_finish), fpscr_q);
+    pick_open = forward_pick(elig, cr_new);
+    pick_trap = forward_pick(elig & ~finishing_slot, cr_new);
+    {fwd1_sel, fwd0_sel} = finish_trap ? pick_trap : pick_open;
     fwd0 = '0;
     fwd1 = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin

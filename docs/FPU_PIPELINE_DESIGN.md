@@ -224,10 +224,12 @@ Fitted at `2ae952b` (both builds), the shell is off the 603e worst path. Its
 worst register path is a pending entry's started flag into another entry's
 value word through the launch and store-fill selects (−3.03 ns at 20 ns);
 the add-stage exponent (−3.17 ns) and the divider's operand capture
-(−2.52 ns) are the arithmetic limits. The 602 build, fitted at `cc540bd`,
-reaches 49.56 MHz (−0.178 ns); its worst path is a finishing reply's
-numeric-trap flags into the forward pick
-([record](../quartus/fpu-production/README.md)).
+(−2.52 ns) are the arithmetic limits. Fitted at `201b936`, the 602 build
+reaches 50.14 MHz (+0.056 ns) and the 603e 50.45 MHz (+0.177 ns)
+([record](../quartus/fpu-production/README.md)). A finishing reply's 602
+numeric trap selects between two forward picks, one without the finishing
+slot, so it no longer passes through the pickers. The 602 worst path is the
+started-flag path into a value word above.
 
 ## Arithmetic stage 1
 
