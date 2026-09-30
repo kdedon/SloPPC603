@@ -5,7 +5,7 @@ description: Load when writing or reviewing instruction decode, predecode, decod
 
 # CPU decode and control words
 
-Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer).
+Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer), Z486 = i486 + x87 (nand2mario/z486).
 
 ## 1. Decode once, carry the record
 
@@ -88,6 +88,11 @@ Evidence links point at the reference cores on GitHub, pinned to the reviewed co
   "retire from registers" state. ARM7 [`core:205-275`](https://github.com/MiSTer-devel/Atari7800_MiSTer/blob/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi/arm7tdmi_core.sv#L205-L275), [`1491-1504`](https://github.com/MiSTer-devel/Atari7800_MiSTer/blob/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi/arm7tdmi_core.sv#L1491-L1504). Good for LSU misses and `dcbz`.
 - **Priority-list walk** (lmw/stmw, free-list pick): registered rest-mask, lowest-set-bit isolate
   `x & (~x + 1)`, OR-tree encoder, computed one step ahead. ARM7 [`core:222-226`](https://github.com/MiSTer-devel/Atari7800_MiSTer/blob/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi/arm7tdmi_core.sv#L222-L226), [`1354-1360`](https://github.com/MiSTer-devel/Atari7800_MiSTer/blob/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi/arm7tdmi_core.sv#L1354-L1360), [`3074-3079`](https://github.com/MiSTer-devel/Atari7800_MiSTer/blob/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi/arm7tdmi_core.sv#L3074-L3079).
+
+- **Generated microcode with build-time hazard checks.** A script is the source of truth for the control
+  store, emits RTL/MIF forms and rejects words where two lanes drive one resource. Z486 x87
+  [`build_x87_microcode.py:492-546`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/build_x87_microcode.py#L492-L546). Store the ROM in M10K;
+  a sparse `case` can become thousands of LUTs ([`x87_ucode_rom.sv:15-22`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_ucode_rom.sv#L15-L22)).
 
 ## 5. Review checklist
 

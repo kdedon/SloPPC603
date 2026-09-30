@@ -5,11 +5,12 @@ description: Load when a CPU core misses timing, when reviewing RTL for fmax bef
 
 # CPU fmax: critical loops and fixes
 
-Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer).
+Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer), Z486 = i486 + x87 (nand2mario/z486).
 
 **Reality check from the reference cores:** SS reaches 54 MHz slow-corner against a 65 MHz target
 in a Quartus build of its SS5 revision; ARM7 fails by 0.8 ns standalone and 2.5 ns in-system at 71.6 MHz; PSX and SH2
-close only because they run at 34 and 28.6 MHz. N64 closes at 93.75 MHz by aggressively registering
+close only because they run at 34 and 28.6 MHz. Z486 reports 57.95 MHz on Cyclone V yet ships at
+85 MHz on MiSTer; a release clock is not a timing result. N64 closes at 93.75 MHz by aggressively registering
 selects and by some shortcuts it should not have taken. Plan the 603e for timing from the start.
 
 ## 1. The loops to protect
@@ -38,12 +39,20 @@ selects and by some shortcuts it should not have taken. Plan the 603e for timing
 - **Registered near-full with headroom** instead of combinational full. PSX/N64 FIFOs.
 - **Next-item pickers computed one step ahead** (lowest-set-bit isolate + OR-tree encode). ARM7 [`core:1354-1360`](https://github.com/MiSTer-devel/Atari7800_MiSTer/blob/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi/arm7tdmi_core.sv#L1354-L1360).
 - **Keep the CPU's registered option inputs local**: re-register OSD/config bits before use. N64 [`cpu.vhd:2981-2982`](https://github.com/MiSTer-devel/N64_MiSTer/blob/eb5554af01bb97bdf3d295aed02a989ac10ccee4/rtl/cpu.vhd#L2981-L2982).
+- **Iterative units instead of multicycle constraints.** Z486's FPU steps one registered operation per
+  cycle (1–4 bit shifts, one adder, DSP limbs with registered carries) and needs no SDC exception
+  ([`x87_executor.sv:242-258`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_executor.sv#L242-L258)). Only where the latency contract allows it.
+- **Microcode ROM loop**: unregistered M10K `q` → condition mux → next address → M10K address register is
+  one cycle ([`x87_sequencer.sv:26-44`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_sequencer.sv#L26-L44)). Keep conditions registered
+  and the flow decode flat; register `q` and pipeline the branch if it limits.
 - **`KEEP` a target adder** so the condition acts as a late select (SS `syn_npc_dec_c`) — a partial mitigation, not a fix.
 
 ## 3. Fan-out
 
 - High-fanout control (global stall, flush, retire/done, mispredict) → **compute one edge early and replicate
   per consumer group** with `/* synthesis dont_merge maxfan = N */`. ARM7 [`core:243-253`](https://github.com/MiSTer-devel/Atari7800_MiSTer/blob/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi/arm7tdmi_core.sv#L243-L253).
+- A high-fanout *address* into parallel compares (TLB ways, tag banks): one `KEEP` copy per consumer
+  group. Z486 [`paging_tlb.sv:103-117`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/paging_tlb.sv#L103-L117).
 - A single global `stall = 0` enable over the whole core forces reliance on physical-synthesis duplication
   (N64 QSF). Prefer per-unit valid/ready.
 - Don't reset datapath registers or arrays; reset fan-out is real and blocks RAM inference (ARM7 [`core:2550-2654`](https://github.com/MiSTer-devel/Atari7800_MiSTer/blob/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi/arm7tdmi_core.sv#L2550-L2654)).
