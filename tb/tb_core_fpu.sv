@@ -294,7 +294,9 @@ module tb_core_fpu #(
       end
     end
     check(fp_released > 0, "no overlapped FP load was released");
-    check((stall == 0) || (fp_store_cancels > 0), "no FP replay cancelled an overlapped store");
+    // COMPACT holds one FP instruction, so no FP store overlaps.
+    check(FPU_IMPL != 0 || (stall == 0) || (fp_store_cancels > 0),
+          "no FP replay cancelled an overlapped store");
     if (failures != 0) $fatal(1, "tb_core_fpu: %0d of %0d checks failed", failures, checks);
     $display("PASS tb_core_fpu: checks=%0d words=%0d probes=%0d spacings=%0d retires=%0d fp_retires=%0d released_loads=%0d store_cancels=%0d cycles=%0d stall=%0d",
              checks, expects.size(), probes, spacing_checks, retires, fp_retires,
