@@ -251,20 +251,62 @@ parameter.
 | Snoop quirk | — | — | burst loads not snooped between beats 3–4 (64-bit) or 6–8 (32-bit) | injected snoops during burst reads |
 | Source | UM PDF 44–45 / 1-4–1-5; Ch. 7–8 | = | UM §C.1.1 PDF 413–414; Table C-4 PDF 424–425; §C.1.7–8 PDF 427–428 | 602UM PDF 38, 41 / 1-2, 1-5; §7.1–7.1.1 Fig. 7-1 PDF 321–324 / 7-1–7-4; §8.1.2 PDF 357 / 8-5 |
 
-Main: `rtl/ppc603e.sv` is the 60x package top ([CHIP_PACKAGE.md](CHIP_PACKAGE.md));
-the core runs 1:1 from SYSCLK and `PLL_CFG` must be the 1:1 or bypass code.
-PID7v lists no 1:1 ratio, so today's default top is a PID7v programming model on
-a PID6-style clock. The 602 cannot reuse `ppc603e.sv`: it needs a separate
-`ppc602` package top with a mux/demux adapter over the internal bus.
+Main: `rtl/ppc603e.sv` is the 60x package top ([CHIP_PACKAGE.md](CHIP_PACKAGE.md)).
+The 602 cannot reuse `ppc603e.sv`: it needs a separate `ppc602` package top
+with a mux/demux adapter over the internal bus.
 
 Main (V2): `ppc603e.sv` rejects at elaboration a `PLL_CFG` that is not a code
 of the variant (`pll_cfg_legal()`: PID6 UM Table 7-10; PID7v and EC603e the
-same without 1:1 and 1.5:1, UM §1.1; 603 Table C-4; 602 602HW Table 11) or
-that does not run the bus 1:1 (`pll_cfg_bus_1to1()`). The default
-(`pll_cfg_default()`) is PLL bypass `0011` on PID7v and EC603e, their only
-code with a 1:1 bus, and `0000` on PID6. The PID7v 4.5:1–6:1 codes are not
-in the UM and are rejected. Core wrappers below the pin top keep
+same without 1:1 and 1.5:1, UM §1.1; 603 Table C-4; 602 602HW Table 11). The
+default (`pll_cfg_default()`) is PLL bypass `0011` on PID7v and EC603e, their
+only code with a 1:1 bus, and `0000` on PID6. The PID7v 4.5:1–6:1 codes are
+not in the UM and are rejected. Core wrappers below the pin top keep
 `PLL_CFG = 0` for HID1 read-back only.
+
+Clock ratios (per the [decision](#decisions-2026-09-28)): the pin top runs
+the bus at the strap's ratio. `pll_cfg_ratio2()` returns processor clocks per
+SYSCLK, doubled: 603e codes per UM Table 7-10 (1:1, 1.5:1, 2:1, 2.5:1, 3:1,
+3.5:1, 4:1; PID7v and EC603e from 2:1, plus bypass at 1:1); 603 and 602
+PLL_CFG[0-1] as 1:1 to 4:1 (UM Table C-4 note 4, 602HW Table 11). The FPGA
+keeps one clock, the processor clock; `ppc_bus_clock_enable` turns the ratio
+into `bus_ce_o`, high in each cycle that ends at a SYSCLK edge, and every 60x
+master, arbiter, the snooper, the pin-top APE/DBDIS/RSRV logic and the
+time-base divider advance on it. Half ratios place the mid-cycle SYSCLK edge
+at the next processor edge (edges alternately R+1 and R cycles apart for
+R+0.5:1). Timing contract:
+[INTERFACE_TIMING_CONTRACT.md](INTERFACE_TIMING_CONTRACT.md#c8-package-pins-ppc603e).
+The default strap stays 1:1, where the enable is constant and the bus is
+cycle-for-cycle unchanged.
+
+Recorded: `make -C sim test-chip-pins test-chip-dcache-coherence test-chip-ratios test-core-bat-cached-bus60x test-core-bat-cached-bus60x-ratios test-biu-dcache-snoop variant-config-0 variant-config-1`, commit 9c51533, 2026-09-29.
+Pass. `test-chip-ratios` (PID7v PLL_CFG 0100, 0110, 1000, 1110, 1010: 2:1,
+2.5:1, 3:1, 3.5:1, 4:1): `tb_chip_pins` 1353 checks each, and
+`tb_chip_dcache_coherence` seeds 1 and 2 at each ratio (6 rounds, about
+33 000 DMA tenures, 360-400 snoop retries). The harness checks that no bus
+output changes between SYSCLK edges, and the coherent BFM samples and drives
+only on them. `test-core-bat-cached-bus60x-ratios` runs the translated
+cached top at 1.5:1 to 4:1 (41 retirements each). `tb_variant_config`
+checks `pll_cfg_ratio2()` for all 16 codes on every variant. At 1:1
+`tb_chip_pins` gives checks=1352 cycles=74139, as on main; with
+`SIM_ARGS=` (no random initial values), `test-chip-dcache-coherence` and
+`test-core-bat-cached-bus60x-stress` print the same lines as main. With the
+default random initial values they differ, because the added registers shift
+the random stream.
+
+Recorded: `python3 toolchain/run-rtl-smoke.py --profile chip-mmu-stress [--gparam PLL=4|8|6]` (as `make -C toolchain rtl-chip-ratios` and `rtl-chip-mmu-stress`), commit 9c51533, 2026-09-29.
+Pass. Compiled MMU stress on the pin top: 1:1 cycles=838834 tenures=39487,
+identical to main; 2:1 cycles=1541534 tenures=39823; 3:1 cycles=2381837
+tenures=40235; 2.5:1 cycles=1916480 tenures=40294; 279 writes each. This
+establishes protocol and results at every PID7v ratio in simulation. It does
+not establish the 1.5:1 row on the pin top (PID6 only; covered on the
+translated top) or any board-level SYSCLK timing.
+
+Recorded: `./quartus/translated/build.sh --docker`, `./quartus/chip/build.sh --docker`, then `./quartus/report-target-paths.sh translated|chip --docker`, commit 9c51533, 2026-09-29.
+Default strap (1:1). Translated: 11,398 ALMs, slow 100 C Fmax 67.26 MHz,
+setup slack +5.132 ns at 20 ns. Chip: 10,422 ALMs, Fmax 67.8 MHz, setup
+slack +4.066 ns. Both: 0 failing endpoints at 15.152 ns (66 MHz) at every
+corner. At 1:1 the enable is constant and the ratio logic folds away. The
+fit establishes nothing for a non-default strap.
 
 ### 1.9 Power management
 

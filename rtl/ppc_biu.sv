@@ -15,6 +15,9 @@ module ppc_biu #(
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
+  // High in the cycle that ends at a SYSCLK edge; the 60x side advances
+  // only then.
+  input  logic        bus_ce_i,
 
   // Uncached instruction reads.
   input  logic        imem_req_valid_i,
@@ -195,7 +198,7 @@ module ppc_biu #(
   );
 
   ppc_bus60x scalar_bus (
-    .clk_i, .rst_ni,
+    .clk_i, .rst_ni, .bus_ce_i,
     .req_valid_i(scalar_req_valid), .req_ready_o(scalar_req_ready),
     .req_instruction_i(scalar_req_instruction),
     .req_write_i(scalar_req_write), .req_addr_i(scalar_req_addr),
@@ -220,7 +223,7 @@ module ppc_biu #(
   );
 
   ppc_bus60x_line_read line_bus (
-    .clk_i, .rst_ni,
+    .clk_i, .rst_ni, .bus_ce_i,
     .req_valid_i(line_req_valid_i),
     .req_ready_o(line_req_ready_o),
     .req_line_addr_i(line_req_line_addr_i),
@@ -247,7 +250,7 @@ module ppc_biu #(
   );
 
   ppc_bus60x_two_master pin_mux (
-    .clk_i, .rst_ni,
+    .clk_i, .rst_ni, .bus_ce_i,
     .scalar_busy_i(scalar_busy), .scalar_br_n_i(scalar_br_n),
     .scalar_bg_n_o(scalar_bg_n), .scalar_abb_n_o(scalar_abb_in_n),
     .scalar_abb_n_i(scalar_abb_n), .scalar_abb_oe_i(scalar_abb_oe),
@@ -312,7 +315,7 @@ module ppc_biu #(
     logic outer_ts_oe;
 
     ppc_bus60x_cache_master #(.MUTATION(MUTATION)) cache_bus (
-      .clk_i, .rst_ni,
+      .clk_i, .rst_ni, .bus_ce_i,
       .req_valid_i(dc_req_valid_i), .req_ready_o(dc_req_ready_o),
       .req_kind_i(dc_req_kind_i), .req_tt_i(dc_req_tt_i),
       .req_addr_i(dc_req_addr_i), .req_be_i(dc_req_be_i),
@@ -341,7 +344,7 @@ module ppc_biu #(
     // While a push is due the group's request is hidden, so the cache master
     // wins the next tenure.
     ppc_bus60x_two_master outer_mux (
-      .clk_i, .rst_ni,
+      .clk_i, .rst_ni, .bus_ce_i,
       .scalar_busy_i(grp_busy), .scalar_br_n_i(grp_br_n || push_due),
       .scalar_bg_n_o(grp_bg_n), .scalar_abb_n_o(grp_abb_in_n),
       .scalar_abb_n_i(grp_abb_n), .scalar_abb_oe_i(grp_abb_oe),
@@ -381,7 +384,7 @@ module ppc_biu #(
     );
 
     ppc_bus60x_snoop #(.MUTATION(MUTATION)) snoop (
-      .clk_i, .rst_ni,
+      .clk_i, .rst_ni, .bus_ce_i,
       .ts_n_i, .a_i, .tt_i, .gbl_n_i,
       .own_ts_oe_i(outer_ts_oe), .aack_n_i,
       .snoop_valid_o(dc_snoop_valid_o), .snoop_addr_o(dc_snoop_addr_o),

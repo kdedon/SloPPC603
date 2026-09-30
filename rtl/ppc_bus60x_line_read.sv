@@ -6,6 +6,8 @@
 module ppc_bus60x_line_read (
   input  logic         clk_i,
   input  logic         rst_ni,
+  // High in the cycle that ends at a SYSCLK edge.
+  input  logic         bus_ce_i,
 
   input  logic         req_valid_i,
   output logic         req_ready_o,
@@ -123,17 +125,28 @@ module ppc_bus60x_line_read (
   // Every entry to LINE_BEAT_CONFIRM coincides with TA, so capturing on any
   // TA leaves the candidate correct wherever it is consumed.
   always_ff @(posedge clk_i) begin
-    if (!ta_n_i)
-      provisional_q <= d_i;
-    if (line_clear)
-      line_q <= 256'b0;
-    else if (line_commit)
-      line_q <= insert_doubleword(line_q, current_slot, provisional_q);
+    if (bus_ce_i) begin
+      if (!ta_n_i)
+        provisional_q <= d_i;
+      if (line_clear)
+        line_q <= 256'b0;
+      else if (line_commit)
+        line_q <= insert_doubleword(line_q, current_slot, provisional_q);
+    end
   end
 
+  // Justification: (reg-a) idle through the last SYSCLK cycle; (reg-a) the
+  // bus runs slower than the processor. Below 1:1 a request is taken only
+  // after a full idle bus cycle, so both arbiter levels see this master free
+  // at an edge between tenures and can hand the bus to another. At 1:1 the
+  // processor's own request latency leaves that gap.
+  logic idle_q, slow_q = 1'b0;
+
   always_comb begin
-    req_ready_o = rst_ni && (state_q == LINE_IDLE) && !rsp_valid_q;
-    rsp_valid_o = rst_ni && rsp_valid_q;
+    req_ready_o = rst_ni && bus_ce_i && (idle_q || !slow_q) &&
+                  (state_q == LINE_IDLE) &&
+                  !rsp_valid_q;
+    rsp_valid_o = rst_ni && bus_ce_i && rsp_valid_q;
     rsp_line_o = line_q;
     rsp_error_o = rsp_error_q;
     protocol_error_o = rst_ni && protocol_error_q;
@@ -172,6 +185,12 @@ module ppc_bus60x_line_read (
     d_oe_o = 1'b0;
   end
 
+  always_ff @(posedge clk_i) if (!bus_ce_i) slow_q <= 1'b1;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) idle_q <= 1'b1;
+    else if (bus_ce_i) idle_q <= (state_q == LINE_IDLE) && !rsp_valid_q;
+  end
+
   always_ff @(negedge clk_i) begin
     if (!rst_ni) begin
       addr_release_half_q <= 1'b0;
@@ -196,7 +215,7 @@ module ppc_bus60x_line_read (
       data_release_pending_q <= 1'b0;
       final_release_started_q <= 1'b0;
       release_oe_cycle_q <= 1'b0;
-    end else begin
+    end else if (bus_ce_i) begin
       if (rsp_valid_q && rsp_ready_i)
         rsp_valid_q <= 1'b0;
 

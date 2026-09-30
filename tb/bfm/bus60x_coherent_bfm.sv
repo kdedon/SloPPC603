@@ -28,6 +28,8 @@ module bus60x_coherent_bfm #(
   parameter int unsigned SEED = 32'h2468_ace1
 ) (
   input  logic        clk_i,
+  // High in the cycle that ends at a SYSCLK edge.
+  input  logic        bus_ce_i,
   input  logic        br_n_i,
   input  logic        ts_n_i,
   input  logic        ts_oe_i,
@@ -66,6 +68,18 @@ module bus60x_coherent_bfm #(
   // Odd byte parity of bus_a_o; wrong on a command queued with om_bad_parity.
   output logic [3:0]  bus_ap_o
 );
+  // SYSCLK edges are the clk_i edges ending a cycle with bus_ce_i high. The
+  // model samples on them and drives after the next falling clk_i edge.
+  // bus_ce_i is read at the falling edge, so no rising-edge update races it.
+  logic ce_q = 1'b1, first_q = 1'b1;
+  always @(negedge clk_i) ce_q <= bus_ce_i;
+  always @(posedge clk_i) first_q <= ce_q;
+  task automatic bus_rise;
+    do @(posedge clk_i); while (!ce_q);
+  endtask
+  task automatic bus_fall;
+    do @(negedge clk_i); while (!first_q);
+  endtask
   localparam logic [4:0] TT_EXTERNAL_WRITE = 5'b10100;
   localparam logic [4:0] TT_EXTERNAL_READ = 5'b11100;
   localparam logic [4:0] TT_WRITE_KILL = 5'b00110;
@@ -187,16 +201,16 @@ module bus60x_coherent_bfm #(
   task automatic delay;
     int count;
     count = wait_i;
-    repeat (count) @(posedge clk_i);
+    repeat (count) bus_rise();
   endtask
   task automatic terminate_tea;
-    @(negedge clk_i);
+    bus_fall();
     tea_n_o = 1'b0;
     teas++;
     n_errors++;
     tea_ended = 1'b1;
-    @(posedge clk_i);
-    @(negedge clk_i);
+    bus_rise();
+    bus_fall();
     tea_n_o = 1'b1;
   endtask
 
@@ -209,15 +223,15 @@ module bus60x_coherent_bfm #(
     logic ci_n_q;
     taken = 1'b0;
     retried = 1'b0;
-    @(negedge clk_i);
+    bus_fall();
     bg_n_o = 1'b0;
     idle = 0;
     do begin
-      @(posedge clk_i);
+      bus_rise();
       if (br_n_i && !(ts_oe_i && !ts_n_i)) idle++;
     end while (!(ts_oe_i && !ts_n_i) && idle < 4);
     if (!(ts_oe_i && !ts_n_i)) begin
-      @(negedge clk_i);
+      bus_fall();
       bg_n_o = 1'b1;
       return;
     end
@@ -250,18 +264,18 @@ module bus60x_coherent_bfm #(
     tenures++;
     if (tc_i != 2'd2) data_tenures++;
     owed = 1'b1;
-    @(negedge clk_i);
+    bus_fall();
     bg_n_o = 1'b1;
     delay();
-    @(negedge clk_i);
+    bus_fall();
     aack_n_o = 1'b0;
-    @(posedge clk_i);
-    @(negedge clk_i);
+    bus_rise();
+    bus_fall();
     aack_n_o = 1'b1;
     retried = retry_i;
     target_artry_n = !retried;
-    @(posedge clk_i);
-    @(negedge clk_i);
+    bus_rise();
+    bus_fall();
     target_artry_n = 1'b1;
     if (retried) retries++;
     else begin
@@ -284,22 +298,22 @@ module bus60x_coherent_bfm #(
 
   task automatic read_beat(input int index);
     delay();
-    while (hold_i) @(posedge clk_i);
+    while (hold_i) bus_rise();
     if (tea_hit(beat_address(index))) begin
       terminate_tea();
       return;
     end
-    @(negedge clk_i);
+    bus_fall();
     d_o = doubleword(beat_address(index));
     ta_n_o = 1'b0;
-    @(posedge clk_i);
-    @(negedge clk_i);
+    bus_rise();
+    bus_fall();
     if (drtry_i) begin
       drtries++;
       drtry_n_o = 1'b0;
       d_o = doubleword(beat_address(index));
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       drtry_n_o = 1'b1;
     end
     ta_n_o = 1'b1;
@@ -309,7 +323,7 @@ module bus60x_coherent_bfm #(
     int size, offset;
     logic [31:0] base;
     delay();
-    while (hold_i) @(posedge clk_i);
+    while (hold_i) bus_rise();
     base = beat_address(index);
     size = burst ? 8 : ((tsiz == 3'b000) ? 8 : int'(tsiz));
     offset = burst ? 0 : int'(addr[2:0]);
@@ -320,24 +334,24 @@ module bus60x_coherent_bfm #(
       terminate_tea();
       return;
     end
-    @(negedge clk_i);
+    bus_fall();
     ta_n_o = 1'b0;
-    @(posedge clk_i);
+    bus_rise();
     if (!d_oe_i) $fatal(1, "%m: write TA without driven data");
     for (int k = 0; k < size; k++)
       put_byte((burst ? base : addr) + 32'(k), d_i[63-8*(offset + k) -: 8]);
-    @(negedge clk_i);
+    bus_fall();
     ta_n_o = 1'b1;
   endtask
 
   task automatic cpu_data_tenure;
     delay();
-    @(negedge clk_i);
+    bus_fall();
     dbg_n_o = 1'b0;
-    do @(posedge clk_i); while (!(dbb_oe_i && !dbb_n_i));
+    do bus_rise(); while (!(dbb_oe_i && !dbb_n_i));
     in_data = 1'b1;
     tea_ended = 1'b0;
-    @(negedge clk_i);
+    bus_fall();
     dbg_n_o = 1'b1;
     for (int index = 0; index < (burst ? 4 : 1) && !tea_ended; index++)
       if (write) write_beat(index);
@@ -346,7 +360,7 @@ module bus60x_coherent_bfm #(
       if (write) writes++;
       else begin
         // DRTRY confirmation of the final beat.
-        @(posedge clk_i);
+        bus_rise();
         if (burst) bursts++;
         else reads++;
       end
@@ -369,7 +383,7 @@ module bus60x_coherent_bfm #(
     c.bad_parity = om_bad_parity;
     om_first_retried[c.ticket] = 1'b0;
     om_q.push_back(c);
-    while (om_result.exists(c.ticket) == 0) @(posedge clk_i);
+    while (om_result.exists(c.ticket) == 0) bus_rise();
     result = om_result[c.ticket];
     first_retried = om_first_retried[c.ticket];
     om_result.delete(c.ticket);
@@ -394,7 +408,7 @@ module bus60x_coherent_bfm #(
   task automatic om_address(input om_t c, output logic retried);
     int d;
     retried = 1'b0;
-    @(negedge clk_i);
+    bus_fall();
     om_drive = 1'b1;
     om_ts_n = 1'b0;
     om_a = c.burst ? {c.addr[31:5], 5'b0} : c.addr;
@@ -403,17 +417,17 @@ module bus60x_coherent_bfm #(
     om_ap_flip = c.bad_parity;
     om_window++;
     om_tenures++;
-    @(posedge clk_i);  // TS cycle
-    @(negedge clk_i);
+    bus_rise();  // TS cycle
+    bus_fall();
     om_ts_n = 1'b1;
     om_ap_flip = 1'b0;
     d = c.aack_d;
     for (int k = 1; k <= d; k++) begin
       if (k == d) begin
-        @(negedge clk_i);
+        bus_fall();
         aack_n_o = 1'b0;
       end
-      @(posedge clk_i);
+      bus_rise();
       if (artry_oe_i && !artry_n_i) begin
         retried = 1'b1;
         om_artry_cycles++;
@@ -423,14 +437,14 @@ module bus60x_coherent_bfm #(
 
   // The ARTRY window (AACK+1), then the retry bookkeeping.
   task automatic om_close(input om_t c, inout logic retried, input bit first);
-    @(negedge clk_i);
+    bus_fall();
     aack_n_o = 1'b1;
-    @(posedge clk_i);
+    bus_rise();
     if (artry_oe_i && !artry_n_i) begin
       retried = 1'b1;
       om_artry_cycles++;
     end
-    @(negedge clk_i);
+    bus_fall();
     om_window--;
     if (om_window == 0) om_drive = 1'b0;
     if (retried && ignore_artry) begin
@@ -453,7 +467,7 @@ module bus60x_coherent_bfm #(
     if (c.tt[1] || c.tt == TT_EXTERNAL_READ || c.tt == TT_EXTERNAL_WRITE) begin
       logic [255:0] value;
       value = '0;
-      repeat (c.burst ? 4 : 1) @(posedge clk_i);
+      repeat (c.burst ? 4 : 1) bus_rise();
       if (c.tt[3]) begin
         for (int k = 0; k < (c.burst ? 32 : 4); k++)
           value[255-8*k -: 8] = in_memory(base + 32'(k)) ? mem[int'(base + 32'(k) - BASE_ADDR)] : 8'h0;
@@ -519,11 +533,11 @@ module bus60x_coherent_bfm #(
     end
   endtask
 
-  always @(posedge clk_i) cycle++;
+  always @(posedge clk_i) if (ce_q) cycle++;
 
   // The processor asserts ARTRY only in a second-master snoop window.
   always @(posedge clk_i)
-    if (artry_oe_i && !artry_n_i && om_window == 0)
+    if (ce_q && artry_oe_i && !artry_n_i && om_window == 0)
       $fatal(1, "%m: processor ARTRY outside a snoop window");
 
   initial begin : serve
@@ -531,13 +545,13 @@ module bus60x_coherent_bfm #(
     bit last_cpu;
     last_cpu = 1'b0;
     forever begin
-      @(posedge clk_i);
+      bus_rise();
       if (br_n_i && om_q.size() == 0) continue;
       // After a snoop retry the processor gets the bus for its push.
       if (push_due) begin
         int spin;
         spin = 0;
-        while (br_n_i && spin < 8) begin @(posedge clk_i); spin++; end
+        while (br_n_i && spin < 8) begin bus_rise(); spin++; end
         if (br_n_i) push_due = 1'b0;
       end else delay();
       if (!br_n_i && (push_due || om_q.size() == 0 || !last_cpu)) begin

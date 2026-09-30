@@ -43,7 +43,7 @@ module tb_bus60x_line_read;
   localparam logic [63:0] DW3 = 64'h98a9_bacb_dced_fe0f;
   localparam logic [255:0] BASE_LINE = {DW0, DW1, DW2, DW3};
 
-  ppc_bus60x_line_read dut (
+  ppc_bus60x_line_read dut (.bus_ce_i(1'b1),
     .clk_i(clk), .rst_ni(rst_n),
     .req_valid_i(req_valid), .req_ready_o(req_ready),
     .req_line_addr_i(req_line_addr), .req_critical_dw_i(req_critical_dw),

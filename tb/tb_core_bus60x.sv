@@ -123,7 +123,7 @@ module tb_core_bus60x;
   logic [1:0] tc, cse;
   logic [63:0] bus_di, bus_do;
   int bus_reads = 0, bus_writes = 0;
-  ppc_bus60x bus_adapter (
+  ppc_bus60x bus_adapter (.bus_ce_i(1'b1),
     .req_attr_i(6'b0),
     .clk_i(clk), .rst_ni(rst_n),
     .req_valid_i(dv && edge_count%4 == 0), .req_ready_o(adapter_ready), .req_write_i(dw),

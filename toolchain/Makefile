@@ -552,6 +552,14 @@ rtl-chip-lsu: chip-lsu
 	$(PYTHON) run-rtl-smoke.py --profile chip-lsu --elf $(BUILD_DIR)/chip-lsu/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-lsu
 rtl-chip-machine-check: chip-machine-check
 	$(PYTHON) run-rtl-smoke.py --profile chip-machine-check --elf $(BUILD_DIR)/chip-machine-check/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-machine-check
+# The chip MMU stress at processor:bus ratios 2:1, 2.5:1 and 3:1 (PID7v
+# PLL_CFG 0100, 0110, 1000).
+CHIP_RATIO_PLLS ?= 4 6 8
+.PHONY: rtl-chip-ratios
+rtl-chip-ratios: chip-mmu-stress
+	for p in $(CHIP_RATIO_PLLS); do \
+	  $(PYTHON) run-rtl-smoke.py --profile chip-mmu-stress --gparam PLL=$$p --elf $(BUILD_DIR)/chip-mmu-stress/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-ratio-$$p || exit 1; \
+	done
 rtl-chip-full-decode: chip-full-decode
 	$(PYTHON) run-rtl-smoke.py --profile chip-full-decode --elf $(BUILD_DIR)/chip-full-decode/smoke.elf --build-dir $(BUILD_DIR)/rtl-chip-full-decode
 
@@ -575,7 +583,7 @@ rtl-residuals: residuals
 # Every compiled-firmware RTL profile. ELFs come from the host cross-compiler
 # or from `make firmware-all` in the pinned container.
 FIRMWARE_PROFILES := be alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault mmu-stress cacheops lsu machine-check full-decode chip-mmu-stress chip-lsu chip-machine-check chip-full-decode residuals
-RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry mmu-stress-tea cacheops lsu machine-check full-decode chip-mmu-stress chip-lsu chip-machine-check chip-full-decode residuals lsu-dcache
+RTL_PROFILES := smoke alignment fetch-fault live-context external-interrupt timer runtime-bat dsi segment page tlbie tlbload page-dsi page-isi page-miss sdr1 tgpr miss-entry table-search table-fault table-search-bus table-fault-bus table-search-cached table-fault-cached mmu-stress-cached mmu-stress-retry mmu-stress-tea cacheops lsu machine-check full-decode chip-mmu-stress chip-lsu chip-machine-check chip-full-decode residuals lsu-dcache chip-ratios
 FIRMWARE_ELFS := $(FIRMWARE_PROFILES:%=$(BUILD_DIR)/%/smoke.elf)
 CROSS_MISSING := ERROR: $(CC) not found; install the pinned cross-compiler or run make firmware-all in the container (see toolchain/README.md)
 

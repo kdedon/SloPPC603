@@ -135,6 +135,31 @@ C1, C3, C4 and C5 apply with `sysclk` as the clock, plus:
   the output cone. DBDIS is registered once before it gates the data enable.
 - Every output enable is forced low while the chip is in hard reset or
   checkstop; that gating is on the output cone.
+- SYSCLK and the FPGA clock. `sysclk` is the processor clock and the only
+  clock. SYSCLK is `sysclk` divided by the `PLL_CFG` ratio, carried as the
+  enable `bus_ce_o`: a SYSCLK rising edge is a `sysclk` rising edge that ends
+  a cycle with `bus_ce_o` high. `bus_ce_o` is a register
+  (`ppc_bus_clock_enable`) counting free from power-up. An integer ratio N
+  enables one cycle in N; a half ratio R+0.5 repeats over 2R+1 cycles with
+  edges R+1 and R cycles apart, because the silicon edge that falls
+  mid-cycle moves to the next `sysclk` edge. At 1:1 (the default strap)
+  `bus_ce_o` is the constant 1 and the logic it gates folds away.
+- Every 60x master, the arbiters, the snooper, the APE and DBDIS registers
+  and the time-base divider advance only on SYSCLK edges. Bus inputs need
+  setup only to those edges and may change anywhere between them. Bus
+  outputs change only in the first `sysclk` cycle after a SYSCLK edge (the
+  ABB, DBB and ARTRY releases half a `sysclk` cycle into it), and hold to
+  the next edge; hard reset and checkstop release enables at any cycle.
+  The system samples bus outputs and drives bus inputs on the same
+  enabled edges.
+- Timing stays single-cycle at `sysclk`: no multicycle path is claimed for
+  the N-cycle bus paths, so a fit at the processor frequency covers every
+  ratio.
+- Responses to the core are shown in the last `sysclk` cycle of the SYSCLK
+  cycle that holds them. Below 1:1 a master takes a new request only after
+  one idle SYSCLK cycle, so the two arbiter levels can hand the bus over
+  between back-to-back tenures; at 1:1 the core's request latency leaves
+  that gap and the rule is off.
 - The measurement project `quartus/chip` implements C7 for these ports:
   `create_clock` on `sysclk`, zero delays on every virtual pin, one false
   path from the asynchronous pins to `pin_meta_q` (13 flops), and per-bit
@@ -179,7 +204,8 @@ Excluded; owned by board bring-up:
 
 - Physical 60x pins: IOE registers, pin assignments, board trace delays and
   the 603e AC specifications (input setup/hold, output valid/hold to SYSCLK).
-- Bus-to-core clock ratios and PLL configuration; PID7v has no 1:1 mode.
+- A physical SYSCLK pin: dividing the clock onto a board net and the AC
+  timing to it. The model provides only `bus_ce_o`.
 - Asynchronous synchronizers for interrupt, timer and reset sources, and
   their MTBF.
 - Hardware tests on a DE10-Nano: reset sequencing, power-up state and

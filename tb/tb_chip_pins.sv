@@ -7,7 +7,7 @@
 // the second cycle after TS, machine check, checkstop, HID0[EBA]=0). Each case hard-resets the chip
 // into a small program; handlers record markers in RAM through the bus.
 /* verilator lint_off BLKSEQ */
-module tb_chip_pins;
+module tb_chip_pins #(parameter int PLL = -1);
   localparam logic [31:0] BASE = 32'hfff00000;
   localparam int MEM_BYTES = 65536;
   logic clk = 1'b0;
@@ -33,12 +33,18 @@ module tb_chip_pins;
   // Second-master TS cycles and APE cycles.
   int om_ts_cycles [$], ape_cycles [$];
 
+  // The falling clock edge in a cycle that ends at a SYSCLK edge. Waits
+  // count SYSCLK cycles.
+  task automatic bus_fall;
+    do @(negedge clk); while (!bus_ce);
+  endtask
   task automatic check(input logic ok, input string message);
     checks++;
     if (!ok) $fatal(1, "%s cycle=%0d", message, cycles);
   endtask
 
-  always @(posedge clk) begin
+  // Counts and samples SYSCLK cycles.
+  always @(posedge clk) if (bus_ce) begin
     cycles++;
     if (ts_oe && !ts_n && tc[0:1] == 2'b10) begin
       if (fetches == 0) first_fetch = a;
@@ -127,13 +133,13 @@ module tb_chip_pins;
   // applied with BG withheld and the last tenure finished.
   task automatic wait_bus_idle;
     bus_block = 1'b1;
-    do @(negedge clk);
+    do bus_fall();
     while (!(dbg_n && ta_n && !memory.owed && !memory.in_data && !addr_oe && !dbb_oe && !ts_oe));
   endtask
   task automatic hard_reset;
     wait_bus_idle();
     hreset_n = 1'b0;
-    repeat (8) @(negedge clk);
+    repeat (8) bus_fall();
     check(outputs_released() && ckstp_out_n, "outputs released during HRESET");
     // The previous program may have stored after the image was loaded.
     for (int i = 0; i < 'h40; i += 4) put_word(DATA + 32'(i), 32'h0);
@@ -146,7 +152,7 @@ module tb_chip_pins;
     int n;
     n = 0;
     while (mem_word(DATA + offset) != value && n < limit) begin
-      @(negedge clk);
+      bus_fall();
       n++;
     end
     check(mem_word(DATA + offset) == value,
@@ -157,25 +163,25 @@ module tb_chip_pins;
   task automatic running(input int more, input string what);
     logic [31:0] start;
     start = mem_word(DATA + LOOPS);
-    repeat (3000) @(negedge clk);
+    repeat (3000) bus_fall();
     check(mem_word(DATA + LOOPS) >= start + 32'(more),
           $sformatf("%s: loops %0d -> %0d, fetches=%0d pc=%08x", what, start,
                     mem_word(DATA + LOOPS), fetches, dut.retire.pc));
   endtask
   task automatic pulse(ref logic pin, input int width);
-    @(negedge clk);
+    bus_fall();
     pin = 1'b0;
-    repeat (width) @(negedge clk);
+    repeat (width) bus_fall();
     pin = 1'b1;
   endtask
   task automatic expect_checkstop(input string what);
     int quiet;
-    repeat (6) @(negedge clk);
+    repeat (6) bus_fall();
     check(!ckstp_out_n, {what, ": CKSTP_OUT asserted"});
     bus_block = 1'b0;
     quiet = fetches;
     for (int i = 0; i < 200; i++) begin
-      @(negedge clk);
+      bus_fall();
       check(outputs_released() && !ckstp_out_n, {what, ": outputs released"});
     end
     check(fetches == quiet, {what, ": no bus activity"});
@@ -191,10 +197,10 @@ module tb_chip_pins;
     // Assert mid-run: outputs release within five clocks.
     wait_bus_idle();
     hreset_n = 1'b0;
-    repeat (5) @(negedge clk);
+    repeat (5) bus_fall();
     check(outputs_released(), "HRESET releases outputs within five clocks");
     bus_block = 1'b0;
-    repeat (20) @(negedge clk);
+    repeat (20) bus_fall();
     fetches = 0;
     hreset_n = 1'b1;
     wait_word(RESETS, 2, 6000, "second HRESET boot");
@@ -233,7 +239,7 @@ module tb_chip_pins;
     wait_word(RESETS, 1, 6000, "boot");
     running(3, "loop");
     pulse(mcp_n, 3);
-    repeat (3000) @(negedge clk);
+    repeat (3000) bus_fall();
     check(mem_word(DATA + MC_MARK) == 0 && ckstp_out_n, "HID0[EMCP]=0 ignores MCP");
     running(3, "still running");
   endtask
@@ -260,7 +266,7 @@ module tb_chip_pins;
     memory.om_post(5'b01010, DATA + 32'h40, global, 1'b0, '0, 2);
     memory.om_bad_parity = 1'b0;
     wait (om_ts_cycles.size() != 0);
-    repeat (6) @(negedge clk);
+    repeat (6) bus_fall();
   endtask
   localparam logic [31:0] HID0_EBA = 32'h2000_0000;
   task automatic case_ape;
@@ -289,7 +295,7 @@ module tb_chip_pins;
     wait_word(RESETS, 1, 6000, "boot");
     running(3, "loop");
     snoop_read(1'b1, 1'b1);
-    repeat (3000) @(negedge clk);
+    repeat (3000) bus_fall();
     check(ape_cycles.size() == 0 && mem_word(DATA + MC_MARK) == 0 && ckstp_out_n,
           "HID0[EBA]=0 ignores address parity");
     running(3, "still running");
@@ -316,7 +322,7 @@ module tb_chip_pins;
     ckstp_in_n = 1'b0;
     expect_checkstop("CKSTP_IN");
     ckstp_in_n = 1'b1;
-    repeat (50) @(negedge clk);
+    repeat (50) bus_fall();
     check(!ckstp_out_n, "checkstop holds after CKSTP_IN negates");
     hard_reset();
     wait_word(RESETS, 1, 6000, "HRESET leaves checkstop");
@@ -332,10 +338,10 @@ module tb_chip_pins;
     hard_reset();
     expect_checkstop("32-bit data bus strap");
     tlbisync_n = 1'b1;
-    pll_cfg = 4'b0100;
+    pll_cfg = (CHIP_PLL_CFG == 4'b0100) ? 4'b0101 : 4'b0100;
     hard_reset();
     expect_checkstop("PLL_CFG strap");
-    pll_cfg = ppc_pkg::pll_cfg_default(ppc_pkg::CPU_PID7V_603E);
+    pll_cfg = CHIP_PLL_CFG;
     hard_reset();
     wait_word(RESETS, 1, 6000, "supported straps boot");
   endtask
@@ -351,19 +357,19 @@ module tb_chip_pins;
     tben = 1'b0;
     hard_reset();
     wait_word(RESETS, 1, 6000, "boot");
-    repeat (1500) @(negedge clk);
+    repeat (1500) bus_fall();
     check(tb_values.size() > 4, "time base stores");
     foreach (tb_values[i]) check(tb_values[i] == 0, "TBEN=0 holds the time base");
     tb_values.delete();
     tben = 1'b1;
-    repeat (2000) @(negedge clk);
+    repeat (2000) bus_fall();
     check(tb_values.size() > 4 && tb_values[$] > tb_values[0] &&
           tb_values[$] - tb_values[0] <= 32'd500, "TBEN=1 counts once per four clocks");
     tben = 1'b0;
     // Posted stores from before the stop drain first.
-    repeat (200) @(negedge clk);
+    repeat (200) bus_fall();
     tb_values.delete();
-    repeat (1500) @(negedge clk);
+    repeat (1500) bus_fall();
     check(tb_values.size() > 4 && tb_values[$] == tb_values[0], "TBEN=0 stops the time base");
     tben = 1'b1;
   endtask
@@ -373,9 +379,9 @@ module tb_chip_pins;
     hard_reset();
     wait_word(RESETS, 1, 6000, "boot");
     // EE=0: SMI and INT wait.
-    @(negedge clk);
+    bus_fall();
     smi_n = 1'b0;
-    repeat (3000) @(negedge clk);
+    repeat (3000) bus_fall();
     check(mem_word(DATA + SMI_MARK) == 0, "MSR[EE]=0 masks SMI");
     smi_n = 1'b1;
     loop_program(32'h0, MSR_IP | MSR_ME | MSR_EE);
@@ -383,7 +389,7 @@ module tb_chip_pins;
     wait_word(RESETS, 1, 6000, "boot with EE");
     running(3, "loop");
     mark_order = "";
-    @(negedge clk);
+    bus_fall();
     smi_n = 1'b0;
     int_n = 1'b0;
     wait_word(SMI_MARK, 'h1400, 6000, "SMI enters 0x1400");
@@ -392,7 +398,10 @@ module tb_chip_pins;
           (mem_word(DATA + SMI_SRR1) & MSR_EE) != 0, "SMI SRR1 is the MSR low half");
     wait_word(EXT_MARK, 'h500, 6000, "INT follows");
     int_n = 1'b1;
-    check(mark_order.substr(0, 1) == "SE", {"SMI before INT: ", mark_order});
+    // SMI is a level: with a slow bus it may be taken again before the
+    // bench sees the mark and negates it.
+    check(mark_order.len() >= 2 && mark_order[0] == "S" &&
+          mark_order[mark_order.len() - 1] == "E", {"SMI before INT: ", mark_order});
     running(3, "rfi resumes");
   endtask
 
@@ -436,17 +445,17 @@ module tb_chip_pins;
     check(at < DATA, "program layout");
     hard_reset();
     // Negated through the strap, asserted before the program reaches tlbsync.
-    @(negedge clk);
+    bus_fall();
     tlbisync_n = 1'b0;
     wait_word(RESETS, 1, 6000, "boot");
-    repeat (3000) @(negedge clk);
+    repeat (3000) bus_fall();
     check(mem_word(DATA + SYNC_MARK) == 0, "TLBISYNC holds completion at tlbsync");
     tlbisync_n = 1'b1;
     wait_word(SYNC_MARK, 1, 6000, "tlbsync completes after TLBISYNC negates");
   endtask
 
   initial begin
-    repeat (4) @(negedge clk);
+    repeat (4) bus_fall();
     case_hreset();
     case_sreset();
     case_mcp();

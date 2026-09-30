@@ -1540,6 +1540,19 @@ test-core-bat-cached-bus60x:
 	mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x --Mdir $(BUILD_DIR)/core-bat-cached-bus60x $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_bat_cached_bus60x.sv
 	./$(BUILD_DIR)/core-bat-cached-bus60x/Vtb_core_bat_cached_bus60x $(SIM_ARGS)
+# The same bench with the bus at 1.5:1, 2:1, 2.5:1, 3:1, 3.5:1 and 4:1
+# (processor clocks per SYSCLK, doubled).
+CORE_RATIO2S ?= 3 4 5 6 7 8
+.PHONY: test-core-bat-cached-bus60x-ratios
+test: test-core-bat-cached-bus60x-ratios
+test-core-bat-cached-bus60x-ratios:
+	for r in $(CORE_RATIO2S); do \
+	  mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x-r$$r; \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x -GBUS_RATIO2=$$r --Mdir $(BUILD_DIR)/core-bat-cached-bus60x-r$$r $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_bat_cached_bus60x.sv || exit 1; \
+	  ./$(BUILD_DIR)/core-bat-cached-bus60x-r$$r/Vtb_core_bat_cached_bus60x $(SIM_ARGS) || exit 1; \
+	  rm -rf $(BUILD_DIR)/core-bat-cached-bus60x-r$$r; \
+	done
+	@echo "PASS: translated cached top at ratio x2 $(CORE_RATIO2S)"
 # Translated cached top with the data cache in its slot.
 DCACHE_CORE_PARAMS := "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_BYTE_REVERSE=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_MISALIGNED_ACCESS=1'b1" "-GENABLE_MACHINE_CHECK=1'b1" "-GENABLE_PIN_INTERRUPTS=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_DCACHE=1'b1"
 # Data cache in the translated cached top on the bench BIU; the mutations
@@ -1678,6 +1691,22 @@ test-chip-pins:
 	mkdir -p $(BUILD_DIR)/chip-pins
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins --Mdir $(BUILD_DIR)/chip-pins -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_pins.sv
 	./$(BUILD_DIR)/chip-pins/Vtb_chip_pins $(SIM_ARGS)
+# The pin and coherence benches at processor:bus ratios other than 1:1,
+# as PID7v PLL_CFG codes: 2:1, 2.5:1, 3:1, 3.5:1 and 4:1. RATIO_PLLS
+# selects a subset.
+RATIO_PLLS ?= 4 6 8 14 10
+.PHONY: test-chip-ratios
+test: test-chip-ratios
+test-chip-ratios:
+	for p in $(RATIO_PLLS); do \
+	  mkdir -p $(BUILD_DIR)/chip-pins-pll$$p $(BUILD_DIR)/chip-coherence-pll$$p; \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins -GPLL=$$p --Mdir $(BUILD_DIR)/chip-pins-pll$$p -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_pins.sv || exit 1; \
+	  ./$(BUILD_DIR)/chip-pins-pll$$p/Vtb_chip_pins $(SIM_ARGS) || exit 1; \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence -GPLL=$$p --Mdir $(BUILD_DIR)/chip-coherence-pll$$p $(CHIP_COHERENCE_TB) || exit 1; \
+	  for s in 1 2; do ./$(BUILD_DIR)/chip-coherence-pll$$p/Vtb_chip_dcache_coherence +SEED=$$s $(SIM_ARGS) || exit 1; done; \
+	  rm -rf $(BUILD_DIR)/chip-pins-pll$$p $(BUILD_DIR)/chip-coherence-pll$$p; \
+	done
+	@echo "PASS: chip pins and coherence at PLL_CFG $(RATIO_PLLS)"
 lint: lint-chip
 lint-chip:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e $(CHIP_RTL)
@@ -1765,7 +1794,7 @@ VARIANT_REJECTED := 3 4
 VARIANT_ALL := 0 1 2 3 4
 # Strap codes a build must refuse, as VARIANT-PLL-message: PID7v has no 1:1
 # ratio; a PID6 2:1 code is legal but not 1:1; 0111 is no PID6 code.
-VARIANT_PLL_REJECTS := 0-0-code 1-4-1to1 1-7-code
+VARIANT_PLL_REJECTS := 0-0 0-12 1-7
 .PHONY: variant-matrix test-reference-pid6
 regression: variant-matrix
 variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-reject-,$(VARIANT_REJECTED)) \
@@ -1814,12 +1843,15 @@ variant-pll-reject-%:
 	v=$(word 1,$(subst -, ,$*)); p=$(word 2,$(subst -, ,$*)); \
 	if $(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=$$v -GPLL=$$p $(CHIP_RTL) ../tb/tb_variant_lint.sv \
 	   > $(BUILD_DIR)/variant-pll/$*.log 2>&1; then echo "FAIL: variant $$v PLL_CFG $$p elaborated"; exit 1; fi
-	grep -q "$(if $(filter code,$(word 3,$(subst -, ,$*))),is not a code of,is not 1:1)" $(BUILD_DIR)/variant-pll/$*.log
+	grep -q "is not a code of" $(BUILD_DIR)/variant-pll/$*.log
 	@echo "PASS: variant $(word 1,$(subst -, ,$*)) PLL_CFG $(word 2,$(subst -, ,$*)) rejected"
-# PLL bypass is legal on PID6 as well as its 1:1 default.
+# PLL bypass on PID6, and non-1:1 ratios: PID7v 2:1 and 3.5:1, PID6 1.5:1.
+VARIANT_PLL_ACCEPTS := 1-3 0-4 0-14 1-12
 variant-pll-accept:
-	$(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=1 -GPLL=3 $(CHIP_RTL) ../tb/tb_variant_lint.sv
-	@echo "PASS: variant 1 PLL_CFG 0011 accepted"
+	for vp in $(VARIANT_PLL_ACCEPTS); do \
+	  $(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=$${vp%-*} -GPLL=$${vp#*-} $(CHIP_RTL) ../tb/tb_variant_lint.sv || exit 1; \
+	done
+	@echo "PASS: PLL_CFG accepted: $(VARIANT_PLL_ACCEPTS)"
 test-reference-pid6: reference-checkout
 	python3 cosim/run_reference.py --build-dir $(BUILD_DIR)/reference-pid6 --model MPC603E $(REFERENCE_ARGS)
 variant-lint-%:

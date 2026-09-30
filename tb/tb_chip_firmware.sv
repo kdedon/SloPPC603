@@ -8,7 +8,7 @@
 // +TEA_BASE/+TEA_END end tenures in that window with TEA. Passes when the
 // firmware writes 1 to +TOHOST with no checkstop.
 /* verilator lint_off BLKSEQ */
-module tb_chip_firmware;
+module tb_chip_firmware #(parameter int PLL = -1);
   localparam logic [31:0] BASE = 32'hfff00000;
   localparam int MEM_BYTES = 262144, IMAGE_BYTES = 65536;
   logic clk = 1'b0;

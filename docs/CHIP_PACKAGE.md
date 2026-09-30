@@ -21,10 +21,17 @@ in [references/BUS_SPEC.md](references/BUS_SPEC.md).
 - Dedicated push-pull outputs (BR, RSRV, QREQ) drive their negated level
   while the chip is in hard reset or checkstop; the model has no separate
   high-impedance state for them.
-- `sysclk` is both the bus clock and the processor clock (1:1). Every other
-  port is synchronous to it except the asynchronous inputs, which pass a
-  two-flop synchronizer inside the chip (`pin_meta_q`, `pin_sync_q`):
-  HRESET, SRESET, INT, SMI, MCP, CKSTP_IN, QACK, TBEN, TLBISYNC, PLL_CFG.
+- `sysclk` is the processor clock, the FPGA's only clock. SYSCLK, the bus
+  clock, runs at the `PLL_CFG` ratio below it: its rising edges are the
+  `sysclk` edges that end a cycle with `bus_ce_o` high. `bus_ce_o` is not a
+  603e pin; the system runs its 60x logic on it as a clock enable. At 1:1
+  it is always high. Bus pins are sampled only on SYSCLK edges and change
+  only in the first `sysclk` cycle after one
+  ([INTERFACE_TIMING_CONTRACT.md](INTERFACE_TIMING_CONTRACT.md#c8-package-pins-ppc603e)).
+  Every other port is synchronous to `sysclk` except the asynchronous
+  inputs, which pass a two-flop synchronizer inside the chip (`pin_meta_q`,
+  `pin_sync_q`): HRESET, SRESET, INT, SMI, MCP, CKSTP_IN, QACK, TBEN,
+  TLBISYNC, PLL_CFG.
 - Retirement, halt and fault status are not pins. Benches observe them
   through hierarchical probes (`dut.retire`, `dut.retire_valid`,
   `dut.halted`); the management ports of the wrapped core are tied inside
@@ -98,8 +105,8 @@ CKSTP_OUT reports it.
 | QACK | in | 1 | T | Strap only: must be asserted at HRESET negation (full pinout). |
 | TBEN | in | 1 | I | Active high. Gates the time base; DEC keeps counting ([TIMER_CONTRACT.md](TIMER_CONTRACT.md)). |
 | TLBISYNC | in | 1 | I | Holds a tlbsync, and so completion after it, while asserted. Strap: must be negated at HRESET negation (64-bit bus). |
-| SYSCLK | in | 1 | I | Bus and processor clock. The time base ticks once per four SYSCLK cycles. |
-| PLL_CFG[0:3] | in | 4 | I | Strap; must equal the build's `PLL_CFG`, which HID1[PC0–PC3] returns. The build accepts only a code the variant lists that runs the bus 1:1; the default is PLL bypass (`0011`) on PID7v and EC603e, which have no 1:1 ratio, and `0000` on PID6 ([CPU_VARIANTS.md](CPU_VARIANTS.md)). |
+| SYSCLK | in | 1 | I | Bus clock, modeled as `bus_ce_o` on the processor clock `sysclk` (`PLL_CFG` sets the ratio). The time base ticks once per four SYSCLK cycles. |
+| PLL_CFG[0:3] | in | 4 | I | Strap; must equal the build's `PLL_CFG`, which HID1[PC0–PC3] returns. The build accepts any code the variant lists and runs the bus at that code's ratio; the default is PLL bypass (`0011`, 1:1) on PID7v and EC603e, which have no 1:1 PLL ratio, and `0000` on PID6 ([CPU_VARIANTS.md](CPU_VARIANTS.md#18-bus-pins-and-clocks)). |
 | CLK_OUT | out, tri | 1 | T | Always high impedance (the default); HID0 SBCLK/ECLK have no effect. |
 | TRST, TCK, TMS, TDI | in | 4 | X | JTAG boundary scan and COP are not implemented; inputs ignored. |
 | TDO | out, tri | 1 | X | Always high impedance. |

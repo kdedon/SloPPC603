@@ -90,7 +90,8 @@ module ppc603e_demo_soc #(
   /* verilator lint_off PINCONNECTEMPTY */
   ppc_pkg::perf_event_t cpu_perf;
   ppc603e #(.CPU_VARIANT(ppc_pkg::CPU_PID7V_603E), .PLL_CFG(PLL_CFG)) cpu (
-    .perf_o(cpu_perf),
+    // The default strap runs the bus 1:1: the enable is always high.
+    .perf_o(cpu_perf), .bus_ce_o(),
     .sysclk(clk_i), .pll_cfg_i(PLL_CFG), .clk_out_o(), .clk_out_oe_o(),
     .br_n_o(br_n), .bg_n_i(bg_n), .abb_n_i(1'b1), .abb_n_o(), .abb_oe_o(),
     .ts_n_i(!(ts_oe && !ts_n)), .ts_n_o(ts_n), .ts_oe_o(ts_oe),

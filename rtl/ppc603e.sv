@@ -4,15 +4,16 @@
 // 603e package top. Every port is a signal pin of UM Figure 7-1 under its
 // manual name (active-low as _n, bit 0 the most significant). A three-state
 // pin is split into _i, _o and an enable; one enable covers each group whose
-// members always drive together. SYSCLK is the processor clock (1:1 bus).
+// members always drive together. The sysclk port is the processor clock;
+// the 60x bus runs at the PLL_CFG ratio below it, advancing on bus_ce_o.
 // Pin behavior, ties and exclusions: docs/CHIP_PACKAGE.md.
 // Ranges follow the manual's bit numbering.
 /* verilator lint_off ASCRANGE */
 module ppc603e #(
   // Part the build models; see cpu_cfg().
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
-  // The PLL_CFG[0-3] strap this build runs at; HID1[PC0-PC3] reads it.
-  // Only the 1:1 and bypass codes match a SYSCLK-clocked core.
+  // The PLL_CFG[0-3] strap this build runs at; HID1[PC0-PC3] reads it and
+  // it sets the processor-to-bus clock ratio.
   parameter logic [3:0] PLL_CFG = ppc_pkg::pll_cfg_default(CPU_VARIANT),
   // Data cache, bus master and snooper: TS, A, TT and GBL are snooped and
   // ARTRY answers from the cache. HID0[DCE] resets to 0 (UM Table 4-8).
@@ -24,7 +25,8 @@ module ppc603e #(
   parameter int DCACHE_SETS = 0,
   parameter int DCACHE_WAYS = 0
 ) (
-  // Clocks.
+  // Clocks. sysclk is the processor clock, not the bus clock: SYSCLK
+  // rises at the end of each cycle with bus_ce_o high.
   input  logic        sysclk,
   input  logic [0:3]  pll_cfg_i,
   output logic        clk_out_o,
@@ -115,6 +117,8 @@ module ppc603e #(
   output logic        tdo_oe_o,
   input  logic [0:2]  test_i,
 
+  // SYSCLK as an enable for the system's 60x logic; not a 603e pin.
+  output logic        bus_ce_o,
   // Performance events for a system counter block; not a 603e pin.
   output ppc_pkg::perf_event_t perf_o
 );
@@ -125,10 +129,21 @@ module ppc603e #(
   // synthesis translate_off
   if (CHECK_PLL && !pll_cfg_legal(CPU_VARIANT, PLL_CFG)) begin : g_reject_pll_code
     $fatal(1, "ppc603e: PLL_CFG %04b is not a code of CPU_VARIANT %0d", PLL_CFG, CPU_VARIANT);
-  end else if (CHECK_PLL && !pll_cfg_bus_1to1(PLL_CFG)) begin : g_reject_pll_ratio
-    $fatal(1, "ppc603e: PLL_CFG %04b is not 1:1 or PLL bypass; the core runs 1:1", PLL_CFG);
   end
   // synthesis translate_on
+
+  // Processor clocks per SYSCLK, doubled; an unchecked variant runs 1:1.
+  localparam int BUS_RATIO2 = (pll_cfg_ratio2(CPU_VARIANT, PLL_CFG) == 0) ? 2 :
+    pll_cfg_ratio2(CPU_VARIANT, PLL_CFG);
+  logic bus_ce;
+  ppc_bus_clock_enable #(.RATIO2(BUS_RATIO2)) bus_clock (
+    .clk_i(sysclk), .bus_ce_o(bus_ce)
+  );
+  assign bus_ce_o = bus_ce;
+  // Justification: (reg-a) the first processor cycle after a SYSCLK edge,
+  // when a pin driven from processor state may change.
+  logic bus_first_q = 1'b1;
+  always_ff @(posedge sysclk) bus_first_q <= bus_ce;
 
   // Asynchronous pins pass two flops. pin_meta_q is the only load of each pin.
   // Powering up at zero holds the core in reset until HRESET is sampled.
@@ -155,7 +170,7 @@ module ppc603e #(
   logic strap_reject_q, checkstop_q, core_rst_n, release_outputs;
   logic core_checkstop, mcp_edge, mcp_pending_q, sreset_edge, sreset_pending_q;
   logic mcp_n_q, sreset_n_q, start_pending_q;
-  logic ape_check_q, ape_error_q, ape_out_q, ape_pending_q;
+  logic ape_check_q, ape_error_q, ape_out_q, ape_pending_q, ape_event;
   logic [1:0] tb_phase_q;
   pin_status_t pin_status;
   pin_event_t pin_event;
@@ -168,6 +183,8 @@ module ppc603e #(
   // ME=0 stop the processor until HRESET. The core is then held in reset and
   // every output released except CKSTP_OUT.
   assign mcp_edge = mcp_n_q && !mcp_n;
+  // An address parity error counts once per bus cycle.
+  assign ape_event = ape_error_q && bus_ce;
   assign sreset_edge = sreset_n_q && !sreset_n;
   always_ff @(posedge sysclk) begin
     mcp_n_q <= mcp_n;
@@ -180,9 +197,9 @@ module ppc603e #(
     end else begin
       if (!ckstp_in_n || strap_reject_q || core_checkstop ||
           (mcp_edge && pin_status.mcp_enable && !pin_status.machine_check_enable) ||
-          (ape_error_q && !pin_status.machine_check_enable))
+          (ape_event && !pin_status.machine_check_enable))
         checkstop_q <= 1'b1;
-      if (ape_error_q && pin_status.machine_check_enable)
+      if (ape_event && pin_status.machine_check_enable)
         ape_pending_q <= 1'b1;
       else if (pin_status.ape_taken)
         ape_pending_q <= 1'b0;
@@ -211,9 +228,9 @@ module ppc603e #(
   logic timer_tick;
   always_ff @(posedge sysclk) begin
     if (!core_rst_n) tb_phase_q <= '0;
-    else tb_phase_q <= tb_phase_q + 2'd1;
+    else if (bus_ce) tb_phase_q <= tb_phase_q + 2'd1;
   end
-  assign timer_tick = tb_phase_q == 2'd3;
+  assign timer_tick = bus_ce && (tb_phase_q == 2'd3);
 
   // Hard reset leaves MSR[IP]=1, IR=DR=PR=0; start once per reset.
   logic start_ready;
@@ -224,7 +241,7 @@ module ppc603e #(
 
   // DBDIS releases the write data drivers in the following cycle.
   logic dbdis_q;
-  always_ff @(posedge sysclk) dbdis_q <= !dbdis_n_i;
+  always_ff @(posedge sysclk) if (bus_ce) dbdis_q <= !dbdis_n_i;
 
   logic core_br_n, core_abb_n, core_abb_oe, core_ts_n, core_ts_oe;
   logic [31:0] core_a;
@@ -263,7 +280,7 @@ module ppc603e #(
     .ENABLE_DCACHE(ENABLE_DCACHE),
     .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG)
   ) cpu (
-    .clk_i(sysclk), .rst_ni(core_rst_n),
+    .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(bus_ce),
     .external_irq_i(!int_n), .interrupt_taken_o(), .interrupt_pc_o(),
     .timer_tick_i(timer_tick), .timebase_enable_i(tben),
     .pin_event_i(pin_event), .pin_status_o(pin_status),
@@ -355,12 +372,14 @@ module ppc603e #(
   // UM 8.3.2.1: with HID0[EBA], another master's TS with GBL is checked
   // against AP. An error asserts APE in the second cycle after TS and takes
   // a machine check (SRR1 bit 15), or checkstops with MSR[ME]=0.
+  // A checkstop between SYSCLK edges clears them at the next edge, so APE
+  // stays asserted for its whole bus cycle.
   always_ff @(posedge sysclk) begin
-    if (!core_rst_n) begin
+    if (!hreset_n || (bus_ce && !core_rst_n)) begin
       ape_check_q <= 1'b0;
       ape_error_q <= 1'b0;
       ape_out_q <= 1'b0;
-    end else begin
+    end else if (bus_ce) begin
       ape_check_q <= !ts_n_i && !gbl_n_i && !core_ts_oe &&
                      pin_status.address_parity_enable &&
                      (ap_i != addr_parity(a_i));
@@ -376,7 +395,11 @@ module ppc603e #(
   assign ape_n_o = !ape_out_q;
   assign dpe_n_o = 1'b1;
   assign ckstp_out_n_o = !checkstop_q;
-  assign rsrv_n_o = !pin_status.reservation || release_outputs;
+  // RSRV follows the reservation from SYSCLK edges.
+  logic rsrv_n, rsrv_n_q;
+  assign rsrv_n = bus_first_q ? !pin_status.reservation : rsrv_n_q;
+  always_ff @(posedge sysclk) rsrv_n_q <= rsrv_n;
+  assign rsrv_n_o = rsrv_n || release_outputs;
   // No power-saving modes: quiescence is never requested.
   assign qreq_n_o = 1'b1;
   assign clk_out_o = 1'b0;

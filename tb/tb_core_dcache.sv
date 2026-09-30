@@ -66,7 +66,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     .ENABLE_MULTIPLE_STRING(1'b1),.ENABLE_RESERVATION(1'b1),
     .ENABLE_MISALIGNED_ACCESS(1'b1),.ENABLE_MACHINE_CHECK(1'b1),
     .ENABLE_PIN_INTERRUPTS(1'b1),.ENABLE_FULL_DECODE(1'b1),.ENABLE_DCACHE(1'b1),
-    .DCACHE_MUTATION(MUTATION)) dut(
+    .DCACHE_MUTATION(MUTATION)) dut(.bus_ce_i(1'b1),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
@@ -128,7 +128,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n)
   );
   /* verilator lint_on PINCONNECTEMPTY */
-  bus60x_coherent_bfm #(.BASE_ADDR(0),.MEM_BYTES(MEM_BYTES),.SEED(SEED)) biu(
+  bus60x_coherent_bfm #(.BASE_ADDR(0),.MEM_BYTES(MEM_BYTES),.SEED(SEED)) biu(.bus_ce_i(1'b1),
     .clk_i(clk),.br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(bus_a),
     .tt_i(tt),.tbst_n_i(tbst_n),.tsiz_i(tsiz),.tc_i(tc),.ci_n_i(ci_n),.wt_n_i(wt_n),
     .gbl_n_i(gbl_n),.dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.d_i(data_out),.d_oe_i(data_oe),

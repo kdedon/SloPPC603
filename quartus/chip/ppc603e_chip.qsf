@@ -52,6 +52,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_cache_master
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_snoop.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_biu.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core_bat_cached_bus60x.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus_clock_enable.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc603e.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ppc603e_measure.sv
 set_instance_assignment -name VIRTUAL_PIN ON -to sysclk
