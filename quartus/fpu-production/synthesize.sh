@@ -50,11 +50,17 @@ for variant in "${variants[@]}"; do
     sed -i '/VIRTUAL_PIN ON -to clk_i$/d' "${project_dir}/ppc_fpu.qsf"
     sed -i 's/create_timing_netlist -post_map/create_timing_netlist/' "${project_dir}/timing.tcl"
   fi
+  if (( fitted )) && [[ "${base_variant}" == full ]]; then
+    # Fit the shell behind one boundary register per port.
+    sed -i 's/TOP_LEVEL_ENTITY ppc_fpu$/TOP_LEVEL_ENTITY ppc_fpu_measure/' "${project_dir}/ppc_fpu.qsf"
+    echo 'set_global_assignment -name SYSTEMVERILOG_FILE ../../../ppc_fpu_measure.sv' >> "${project_dir}/ppc_fpu.qsf"
+  fi
   sources=(rtl/ppc_pkg.sv rtl/fpu/ppc_fpu_pkg.sv rtl/fpu/ppc_fpu_arith_pkg.sv rtl/fpu/ppc_fpu_unpack.sv
     rtl/fpu/ppc_fpu_multiplier.sv rtl/fpu/ppc_fpu_align_plan.sv rtl/fpu/ppc_fpu_aligner.sv
     rtl/fpu/ppc_fpu_adder.sv rtl/fpu/ppc_fpu_convert.sv rtl/fpu/ppc_fpu_rounder.sv
     rtl/fpu/ppc_fpu_divider.sv rtl/fpu/ppc_fpu_arith.sv)
   if [[ "${base_variant}" == full ]]; then sources+=(rtl/ppc_ram_lut.sv rtl/fpu/ppc_fpu_fprs.sv rtl/fpu/ppc_fpu.sv); fi
+  if (( fitted )) && [[ "${base_variant}" == full ]]; then sources+=(quartus/fpu-production/ppc_fpu_measure.sv); fi
   manifest="${script_dir}/output_files/${variant}/sources.sha256"
   project_inputs=(
     "quartus/fpu-production/output_files/${variant}/project/ppc_fpu.qpf"
@@ -103,12 +109,14 @@ start = next(i for i, line in enumerate(lines) if "Compilation Hierarchy Node" i
 header = [cell.strip() for cell in lines[start].strip().strip(";").split(";")]
 wanted = ["ALMs needed", "Dedicated Logic Registers", "Block Memory Bits", "M10Ks", "DSP Blocks"]
 columns = [next(i for i, cell in enumerate(header) if cell.startswith(name)) for name in wanted]
+# A measurement wrapper adds one hierarchy level.
+depth = 12 if "|ppc_fpu_measure" in lines[start + 2] else 9
 for line in lines[start + 2:]:
     if not line.startswith(";"):
         break
     cells = line.strip().strip(";").split(";")
     name = cells[0].rstrip()
-    if len(name) - len(name.lstrip()) > 9:
+    if len(name) - len(name.lstrip()) > depth:
         continue
     print(f"{name[:56]:56}" + "".join(f"{cells[i].strip():>14}" for i in columns))
 PY
