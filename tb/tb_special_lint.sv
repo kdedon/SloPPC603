@@ -154,6 +154,7 @@ module tb_special_lint #(
   logic icache_ctl_valid_o;
   logic icache_ctl_enable_o;
   logic icache_ctl_invalidate_o;
+  logic power_stop_o;
   logic [4:0] tlb_fill_req_ext_o;
   ppc_pkg::mmu_602_t mmu_602_o;
   logic mem_overlap_o;

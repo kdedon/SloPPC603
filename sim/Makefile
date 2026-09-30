@@ -1705,12 +1705,16 @@ test-chip-dcache-coherence-negative:
 	  rm -rf $(BUILD_DIR)/chip-dcache-coherence-negative/m$$m; \
 	done
 	@echo "PASS: chip coherence negative controls rejected"
-.PHONY: test-chip-pins lint-chip
-test: test-chip-pins
+.PHONY: test-chip-pins test-chip-power lint-chip
+test: test-chip-pins test-chip-power
 test-chip-pins:
 	mkdir -p $(BUILD_DIR)/chip-pins
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins --Mdir $(BUILD_DIR)/chip-pins -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_pins.sv
 	./$(BUILD_DIR)/chip-pins/Vtb_chip_pins $(SIM_ARGS)
+test-chip-power:
+	mkdir -p $(BUILD_DIR)/chip-power
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_power --Mdir $(BUILD_DIR)/chip-power -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_power.sv
+	./$(BUILD_DIR)/chip-power/Vtb_chip_power $(SIM_ARGS)
 # The pin and coherence benches at processor:bus ratios other than 1:1,
 # as PID7v PLL_CFG codes: 2:1, 2.5:1, 3:1, 3.5:1 and 4:1. RATIO_PLLS
 # selects a subset.

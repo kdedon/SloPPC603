@@ -66,7 +66,7 @@ module tb_crstate_execution;
   ppc_special dut (
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
-    .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
+    .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(), .power_stop_o(),
     .tlb_fill_req_ext_o(), .mmu_602_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(unused_cache_special[0]), .icbi_req_valid_o(unused_cache_special[1]),

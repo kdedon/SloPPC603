@@ -225,6 +225,8 @@ module ppc603e #(
   // The core composition raises its own asynchronous TEA.
   assign pin_event.tea = 1'b0;
   assign pin_event.ape = ape_pending_q;
+  // QACK counts only once QREQ is on the pin.
+  assign pin_event.qack = !qack_n && !qreq_n;
 
   // The time base and decrementer count once per four bus clocks.
   logic timer_tick;
@@ -332,7 +334,8 @@ module ppc603e #(
     .a_o(core_a), .tt_o(core_tt), .tbst_n_o(core_tbst_n), .tsiz_o(core_tsiz),
     .tc_o(core_tc), .ci_n_o(core_ci_n), .wt_n_o(core_wt_n), .gbl_n_o(core_gbl_n),
     .cse_o(core_cse), .addr_oe_o(core_addr_oe), .aack_n_i, .artry_n_i,
-    .snoop_ts_n_i(ts_n_i), .snoop_a_i(a_i), .snoop_tt_i(tt_i),
+    // Quiesced for nap or sleep: no snooping.
+    .snoop_ts_n_i(ts_n_i || pin_status.quiesced), .snoop_a_i(a_i), .snoop_tt_i(tt_i),
     .snoop_gbl_n_i(gbl_n_i), .artry_n_o(core_artry_n),
     .artry_oe_o(core_artry_oe),
     .dbg_n_i, .dbb_n_i, .dbb_n_o(core_dbb_n), .dbb_oe_o(core_dbb_oe),
@@ -402,8 +405,11 @@ module ppc603e #(
   assign rsrv_n = bus_first_q ? !pin_status.reservation : rsrv_n_q;
   always_ff @(posedge sysclk) rsrv_n_q <= rsrv_n;
   assign rsrv_n_o = rsrv_n || release_outputs;
-  // No power-saving modes: quiescence is never requested.
-  assign qreq_n_o = 1'b1;
+  // QREQ follows the core from SYSCLK edges (UM 8.7.4).
+  logic qreq_n, qreq_n_q;
+  assign qreq_n = bus_first_q ? !pin_status.qreq : qreq_n_q;
+  always_ff @(posedge sysclk) qreq_n_q <= qreq_n;
+  assign qreq_n_o = qreq_n || release_outputs;
   assign clk_out_o = 1'b0;
   assign clk_out_oe_o = 1'b0;
   assign tdo_o = 1'b0;

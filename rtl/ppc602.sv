@@ -144,6 +144,7 @@ module ppc602 #(
   assign pin_event.tea = tea_pending_q;
   // No address parity.
   assign pin_event.ape = 1'b0;
+  assign pin_event.qack = !qack_n && pin_status.qreq;
 
   // The time base counts once per four bus clocks (602UM 2.1.2.4).
   logic timer_tick;
@@ -244,7 +245,8 @@ module ppc602 #(
     .a_o(c_a), .tt_o(c_tt), .tbst_n_o(c_tbst_n), .tsiz_o(c_tsiz),
     .tc_o(c_tc), .ci_n_o(c_ci_n), .wt_n_o(c_wt_n), .gbl_n_o(c_gbl_n),
     .cse_o(), .addr_oe_o(), .aack_n_i(c_aack_n), .artry_n_i(1'b1),
-    .snoop_ts_n_i(c_snoop_ts_n), .snoop_a_i(c_snoop_a), .snoop_tt_i(c_snoop_tt),
+    // Quiesced for nap or sleep: no snooping.
+    .snoop_ts_n_i(c_snoop_ts_n || pin_status.quiesced), .snoop_a_i(c_snoop_a), .snoop_tt_i(c_snoop_tt),
     .snoop_gbl_n_i(c_snoop_gbl_n), .artry_n_o(c_artry_n),
     .artry_oe_o(c_artry_oe),
     .dbg_n_i(c_dbg_n), .dbb_n_i(1'b1), .dbb_n_o(c_dbb_n), .dbb_oe_o(c_dbb_oe),
@@ -284,18 +286,16 @@ module ppc602 #(
   // pull-down keeps it asserted.
   assign reseto_n_o = !pin_status.watchdog_reseto;
   assign reseto_oe_o = !release_outputs;
-  // No power-saving modes: quiescence is never requested.
-  assign qreq_n_o = 1'b1;
+  assign qreq_n_o = !pin_status.qreq || release_outputs;
   // CLK_OUT is high impedance by default (602UM 7.2.11.2).
   assign clk_out_o = 1'b0;
   assign clk_out_oe_o = 1'b0;
   assign tdo_o = 1'b0;
   assign tdo_oe_o = 1'b0;
 
-  // QACK's start-up strap selects no mode on the 602; JTAG and LSSD inputs
-  // have no function here.
+  // JTAG and LSSD inputs have no function here.
   logic unused_pins;
-  assign unused_pins = ^{qack_n, tck_i, tms_i, tdi_i, trst_n_i, lssd_mode_n_i,
+  assign unused_pins = ^{tck_i, tms_i, tdi_i, trst_n_i, lssd_mode_n_i,
                          l1_tstclk_i, l2_tstclk_i, perf, pin_status, halted,
                          retire_valid, retire};
 endmodule
