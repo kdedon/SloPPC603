@@ -45,6 +45,8 @@ module tb_chip_dcache_coherence #(parameter int unsigned SEED = 32'h0c0d_e7e1,
 
   int unsigned rng = SEED;
   int cycles = 0, rounds_done = 0, e_checks = 0, word_checks = 0, polls = 0;
+  // 1:1 takes about 0.5M cycles and 3.5:1 about 1.8M; allow for 4:1.
+  localparam int WATCHDOG = (PLL < 0) ? 2000000 : 4000000;
   int unsigned e_last [0:15];
   function automatic int unsigned rnd();
     rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
@@ -262,7 +264,7 @@ module tb_chip_dcache_coherence #(parameter int unsigned SEED = 32'h0c0d_e7e1,
   always @(posedge clk) begin
     cycles++;
     if (hreset_n) begin
-      if (cycles > 2000000) $fatal(1, "watchdog cycle=%0d rounds=%0d", cycles, rounds_done);
+      if (cycles > WATCHDOG) $fatal(1, "watchdog cycle=%0d rounds=%0d", cycles, rounds_done);
       if (!ckstp_out_n) $fatal(1, "checkstop cycle=%0d pc=%08x", cycles, dut.retire.pc);
       if (!qreq_n || !ape_n || !dpe_n) $fatal(1, "unexpected QREQ, APE or DPE");
       if (dut.retire_valid && dut.retire.pc >= BASE + 32'h200 && dut.retire.pc < FAIL)
