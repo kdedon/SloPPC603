@@ -2,6 +2,53 @@
 
 Evidence for [FPU core integration](FPU_CORE_INTEGRATION.md).
 
+## Overlapped FP accesses and 64-bit data path
+
+Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-chip-fpu`, commit `be93c21`, 2026-09-30.
+Commit `7e6ecfe` differs in RTL only by a comment.
+
+All passed.
+
+| Bench | Result |
+| --- | --- |
+| `test-core-fpu` (`DMEM_BITS=64`), `+STALL=1` | 2598 checks, 1503 words; 6945 retirements, 2502 FP; 855 released loads; 32412 cycles |
+| `test-core-fpu`, `+STALL=0` | 2667 checks, 27 latency and 41 spacing probes; 30011 cycles (36085 on `9cac3a6`) |
+| `test-core-fpu-split` (`DMEM_BITS=32`), `+STALL=0` | 1574 checks, same probes with split-doubleword values; 32087 cycles |
+| `test-chip-fpu` | self-check passes; 1 eight-byte single-beat read and 1 write (`+MIN_DWORDS=1`); 88268 cycles |
+
+The no-stall runs check exactly every row of the
+[contract table](FPU_CORE_INTEGRATION.md#execution-model): `fmr`, `fsel` and
+FPSCR instructions now retire at dispatch + 4 (Table 6-5 1-1-1, like `fadd`);
+`lfs`/`lfd` 6, stores 7 (8 and 9 for split doublewords); four independent
+loads 15 cycles first to last, stores 18; an `lfd` followed by three `addi`
+dispatching on consecutive cycles; `stfd` of an `fadd` result retiring 6
+cycles after it; `lwz`/`stw` references at 5. The 64-bit bench model checks
+that every doubleword request is aligned with all eight strobes. A directed
+case takes an FP enabled exception at an `fsub` with an overlapped `stfd`
+behind it: the replay cancels the store (counted, required non-zero), which
+then stores once. `test-chip-fpu` clears HID0[DCE] around an `lfd` and `stfd`
+on lines the cache never holds; the target counts one TSIZ 000, TBST-negated
+read and write. Cached FP accesses go through the data cache as eight-byte
+requests.
+
+Recorded: `make -C sim -j2 -k lint check-spec test-core test-core-recovery test-core-lsu-update test-core-lsu-extensions test-core-alignment test-core-alignment-dependencies test-core-page-data-exception test-core-tlb-miss test-core-dcache test-core-dcache-negative test-core-machine-check-trace test-core-bat-machine-check test-chip-dcache-coherence test-core-bus60x-update test-core-control-memory test-dcache test-completion test-biu-dcache-snoop test-core-full-decode test-chip-pins`, commit `be93c21`, 2026-09-30.
+All pass (exit 0), including the data-cache mutations (rejected). These cover
+the FPU-less builds, whose logic the change leaves as it was.
+
+Recorded: `make -C sim -j2 test-selftest-fpu demo-whetstone-hf`, commit `7e6ecfe`, 2026-09-30.
+Both pass. Whetstone hard-float: 492,105 cycles, 20.321 MWIPS at 50 MHz
+(0.4064/MHz); on `9eb20d9` the same image took 702,049 cycles, 14.244 MWIPS
+(the 64-bit path and `fmr` fix alone, `c340749`: 16.394). The self-test
+retires 19,088,576 instructions with no failed case.
+
+A Quartus 17 analysis and elaboration of the `ppc603e` pin top with
+`ENABLE_FPU=1` (chip file list plus `rtl/fpu_files.f`) passed on `be93c21`
+with 0 errors; the warnings are unused-signal notices. No fit was run.
+
+Not established: fitted area and timing; Table 6-6 latency and interval (see
+the contract's limits); FP update forms in the overlapped path (serialized);
+eight-byte scalar transfers without the data cache.
+
 ## Pipelined FP issue
 
 Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-chip-fpu variant-special-lint-602 test-crstate-execution` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit `9cac3a6`, 2026-09-30.

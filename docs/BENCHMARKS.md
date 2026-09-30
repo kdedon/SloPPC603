@@ -280,6 +280,11 @@ and gives their rates in simulation. The rates rest on the simulated memory syst
 not run. The soft-float rate measures soft-fp and musl on the integer core; the
 hard-float rate is set by the serialized FPU lane (CPI 7) and is not a 603e figure.
 
+Recorded: `make -C sim demo-whetstone-hf`, commit `7e6ecfe`, 2026-09-30. Passes;
+module values match. With FP loads and stores overlapped and doublewords moved in one
+access ([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md)), `whetstone-hf` takes
+492,105 cycles: 20.321 MWIPS at 50 MHz (0.4064/MHz), from 14.244 on `9eb20d9`.
+
 ## MiSTer cores
 
 The default MiSTer image (`mister.hex`, `toolchain/demo/mister.c`) holds hello, Dhrystone
