@@ -100,7 +100,11 @@ Queued, in order:
    pinned MiSTer framework revision (GPL-2) and flag GPL-3 suite builds. The
    GitHub workflows (quick checks on push, rolling MiSTer build on main,
    tagged releases with fits) wait until they are enabled.
-4. COMPACT FPU (`FPU_IMPL`) for both personalities; 602 FPU (V12); 603 with
+4. Pipelined FP issue: a dedicated FP dispatch/retire path using the FPU's
+   pipelining and second lane, so core-level FP latency and issue rate match
+   Table 6-5 (the first integration serializes FP through the special lane,
+   +4 cycles, one FP instruction in flight); 64-bit FP bus accesses.
+5. COMPACT FPU (`FPU_IMPL`) for both personalities; 602 FPU (V12); 603 with
    XATS (V5); two-stage LSU (P3); dual dispatch.
 
 After each accepted implementation round, update the scorecard's affected rows
