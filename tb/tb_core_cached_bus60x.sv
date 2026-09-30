@@ -242,11 +242,13 @@ module tb_core_cached_bus60x;
     end
   endtask
 
-  task automatic redirect_all_to(input logic [31:0] target);
+  // A finished CQ head cannot be cut, and branches finish at dispatch; with
+  // drain_head the old stream keeps retiring until the cut is accepted.
+  task automatic redirect_all_to(input logic [31:0] target, input logic drain_head);
     integer timeout;
     begin
       @(negedge clk);
-      retire_enable = 1'b0;
+      retire_enable = drain_head;
       redirect_target = target;
       redirect_all = 1'b1;
       redirect_valid = 1'b1;
@@ -257,6 +259,7 @@ module tb_core_cached_bus60x;
       end
       check(redirect_accepted, "external redirect was not accepted");
       @(posedge clk);
+      retire_enable = 1'b0;
       @(negedge clk);
       redirect_valid = 1'b0;
       redirect_all = 1'b0;
@@ -321,7 +324,7 @@ module tb_core_cached_bus60x;
     apply_reset();
     while (!(dut.line_busy && dbb_oe)) @(posedge clk);
     check(cache_busy, "redirect fixture lacks active cache refill");
-    redirect_all_to(32'h0000_0080);
+    redirect_all_to(32'h0000_0080, 1'b0);
     wait_for_halt(600);
     check(phase_retires == 2 && !ifetch_error,
           "redirect refill drain did not reach target cleanly");
@@ -333,7 +336,7 @@ module tb_core_cached_bus60x;
     normal_start_bursts = line_bursts;
     normal_start_hits = hit_pulses;
     while (loop_branches < 4) @(posedge clk);
-    redirect_all_to(32'h0000_0080);
+    redirect_all_to(32'h0000_0080, 1'b1);
     wait_for_halt(1000);
     check(phase_retires == 2 && !ifetch_error,
           "normal program redirect target failed");
