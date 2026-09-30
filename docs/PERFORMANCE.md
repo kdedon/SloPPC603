@@ -185,9 +185,8 @@ All pass. `test-core-bat-machine-check` needed its program changed: it cleared t
 target's fetch error with a store and then branched into the failing line, expecting
 the fetch to wait for the store. A folded branch fetches its target first, which the
 architecture allows; the program now puts `sync; isync` between them.
-`test-reference-lsu` and `test-reference-memory` fail with a memory-word mismatch, on
-this commit and equally on the pipelined load/store head (3904087); they are not
-caused by this change and are left open.
+`test-reference-lsu` and `test-reference-memory` failed on this commit and on the
+pipelined load/store head (3904087); see [Store ordering fix](#store-ordering-fix).
 
 Recorded: `make -C toolchain rtl-lsu-dcache rtl-mmu-stress-cached rtl-mmu-stress-tea rtl-full-decode rtl-machine-check rtl-external-interrupt rtl-timer rtl-page-miss rtl-dsi rtl-alignment rtl-lsu rtl-live-context rtl-fetch-fault` (ELFs built with `toolchain/build-in-container.sh`), commit e26f202, 2026-09-29.
 All pass: MMU stress modes 0-8 and 12-15 with interrupts inside misses and bus tenures,
@@ -204,6 +203,47 @@ What remains: a taken branch that cannot fold (`bclr`, `bcctr`, a mispredicted `
 still costs about 4 cycles of refetch, and a folded one leaves a gap when the IQ runs dry.
 A branch target cache or a return stack would fold `blr`; a second outstanding fetch
 would shorten each refetch.
+
+## Store ordering fix
+
+`test-reference-lsu` and `test-reference-memory` failed on the pipelined load/store
+path. First divergence: `sth` at 0x330 retires with RAM already holding the younger
+misaligned `stwx` at 0x334. The plain-access path offered a store while older work
+was still unretired. The 603e holds a store "in the store queue until the completion
+logic signals that the store operation is to be completed to memory" (UM §1.1.4.3,
+PDF 51 / 1-11), so the RTL was wrong, not the comparison. A plain store still
+dispatches without the drain, but its request waits in the preparation state until
+it is the completion-queue head; dispatch into an empty queue offers at once. Loads
+are unchanged. `ppc_core` now asserts that every store request comes from the queue
+head; with the gate removed, `test-reference-lsu` stops on that assertion.
+
+The same round found `test-core-alignment-disabled` failing: with supervisor
+exceptions off, a misaligned plain access faults in the preparation state and holds
+the lane while older integer work retires, which the hold assertion did not allow.
+Only the assertion changed.
+
+Recorded: `make -C sim test-reference-lsu test-reference-memory`, commit 22cf693, 2026-09-29.
+Both pass: LSU 530 snapshots, 431 requests, 220 stores, 3 negative comparisons; memory
+9,881 snapshots, 168 forms, 13 negative comparisons.
+
+Recorded: `make -C sim lint test-core test-core-recovery test-core-lsu-update test-core-lsu-extensions test-core-alignment test-core-alignment-disabled test-core-alignment-dependencies test-core-page-data-exception test-core-tlb-miss test-core-dcache test-core-dcache-negative test-chip-dcache-coherence test-core-branch-recovery test-core-machine-check-trace test-core-bat-machine-check test-completion test-completion-flags test-completion-cr-fields test-completion-cr-bits test-completion-update test-completion-ring test-recovery-state test-core-control-memory variant-watchdog-602 variant-special-lint-602`, commit 22cf693, 2026-09-29.
+All pass. `test-completion-update` needed the branch retire bits added to its unused
+list (a lint failure since the branch unit).
+
+Recorded: `make -C toolchain rtl-lsu-dcache rtl-mmu-stress-cached rtl-full-decode` (ELFs built with `toolchain/build-in-container.sh`), commit 22cf693, 2026-09-29.
+All pass: lsu-dcache 120,681 retirements in 2,360,513 cycles (unchanged), MMU stress
+cached modes 0-8 and 12-13, full decode 1,302 retirements.
+
+Recorded: `make -C sim demo-dhrystone demo-coremark` with the arguments of the first breakdown, commit 22cf693, 2026-09-29.
+Both pass. CPI: Dhrystone 3.991 to 4.096, CoreMark 3.130 to 3.177; the increase is
+load/store busy (1.601 to 1.706 and 0.936 to 0.983), stores waiting for older work to
+retire.
+
+Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`, commit 22cf693, 2026-09-29.
+The translated top meets 50 MHz and 66 MHz: no endpoint fails at 15.152 ns, worst
+setup slack 5.165 ns at 20 ns (14.835 ns, 67.4 MHz), hold slack 0.101 ns, 11,802 ALMs.
+This is also the first passing fit of the branch unit with the branch class
+predecoded at IQ push.
 
 ## Optimizations, ranked
 
