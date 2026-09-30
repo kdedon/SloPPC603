@@ -37,7 +37,8 @@ CHIP_BASE, CHIP_IMAGE_BYTES = 0xfff00000, 0x10000
 def use_chip_layout():
     global CHIP, RESET_PC, DATA, RES, LOG, DONE
     CHIP = True
-    RESET_PC, DATA = 0xfff01000, 0xfff0c000
+    # Code starts above the TLB miss vectors.
+    RESET_PC, DATA = 0xfff02000, 0xfff0c000
     RES, LOG, DONE = 0xfff10000, 0xfff20000, 0xfff3ff00
 MSR_FP, MSR_IP, FE0, FE1 = 0x2000, 0x40, 0x800, 0x100
 SRR1_ILLEGAL, SRR1_FP = 0x00080000, 0x00100000
@@ -213,6 +214,59 @@ def handlers(p):
         for insn in seq:
             p.words[pc] = insn
             pc += 4
+
+
+# Chip TLB miss handlers (MSR[TGPR] set: r0-r3 are scratch). They log SRR0,
+# SRR1, DMISS and the vector like the other handlers, then load a TLB entry
+# mapping EA to EA + 0xeff00000 (R, C, PP=2) and retry.
+VIRT_OFFSET = 0xeff00000
+
+
+def miss_handlers(p):
+    for vector in (0x1100, 0x1200):
+        pc = 0xfff00000 | vector
+        seq = [x_form(31, 1, 976 & 31, 976 >> 5, 339),       # mfspr r1, DMISS
+               x_form(31, 0, 26, 0, 339), d_form(36, 0, 29, 0),
+               x_form(31, 0, 27, 0, 339), d_form(36, 0, 29, 4),
+               d_form(36, 1, 29, 8), d_form(14, 0, 0, 0), d_form(36, 0, 29, 12),
+               d_form(14, 0, 0, vector), d_form(36, 0, 29, 16),
+               d_form(14, 29, 29, 20),
+               d_form(15, 2, 0, VIRT_OFFSET >> 16), x_form(31, 2, 1, 2, 266),
+               (21 << 26) | (2 << 21) | (2 << 16) | (0 << 11) | (0 << 6) | (19 << 1),
+               d_form(24, 2, 2, 0x182),
+               x_form(31, 2, 982 & 31, 982 >> 5, 467),        # mtspr RPA
+               x_form(31, 0, 0, 1, 978),                      # tlbld r1
+               x_form(31, 0, 27, 0, 339),
+               (31 << 26) | (0 << 21) | (0x80 << 12) | (144 << 1),  # mtcrf 0x80
+               x_form(19, 0, 0, 0, 50)]
+        for insn in seq:
+            p.words[pc] = insn
+            pc += 4
+
+
+def tlb_miss(p):
+    """DTLB load and store misses on FP accesses under data translation,
+    with a pipelined fadd between them."""
+    p.load_fpr(1, ONE)
+    src = p.data(0x3ff8000000000000)
+    dst = p.result_slot(2)
+    p.li32(5, src - VIRT_OFFSET)
+    p.li32(6, dst - VIRT_OFFSET)
+    p.li32(7, 0x123)
+    p.emit((31 << 26) | (7 << 21) | (((src - VIRT_OFFSET) >> 28) << 16) | (210 << 1))
+    p.emit(SYNC)
+    p.mtmsr(p.msr | 0x10)
+    at = p.emit(d_form(50, 24, 5, 0))                 # lfd f24, 0(r5)
+    p.event(0x1100, at, None, src - VIRT_OFFSET, 0)
+    p.emit(a_form(63, 24, 24, 1, 0, 21))              # fadd f24, f24, f1
+    at = p.emit(d_form(54, 24, 6, 0))                 # stfd f24, 0(r6)
+    p.event(0x1200, at, None, dst - VIRT_OFFSET, 0)
+    p.mtmsr(p.msr & ~0x10)
+    p.expect(dst, 0x40040000)
+    p.expect(dst + 4, 0)
+    p.fpscr = 0x4000
+    p.check_fpscr()
+    p.clear_fpscr()
 
 
 def dsisr_d(insn):
@@ -609,6 +663,11 @@ def latency(p):
             pcs.append(p.emit(insn))
             src = 4 + k
         p.spacings.append(('R', pcs[0], pcs[-1], 3 * lat))
+    # FPSCR instructions block FP dispatch until they complete.
+    for name in ('mtfsfi', 'mffs'):
+        p.emit(SYNC)
+        pcs = [p.emit(forms[name]), p.emit(forms[name])]
+        p.spacings.append(('R', pcs[0], pcs[1], 3))
     # Mixed integer and FP: one dispatch per cycle, integer retirement in
     # order behind the FP instructions.
     p.emit(SYNC)
@@ -627,6 +686,9 @@ def build(seed, count):
     directed(p)
     random_cases(p, rng, count)
     in_flight(p)
+    if CHIP:
+        miss_handlers(p)
+        tlb_miss(p)
     latency(p)
     if not CHIP:
         p.emit(d_form(36, 0, 30, 0))      # stw r0 to DONE ends the run
@@ -634,7 +696,7 @@ def build(seed, count):
     for i, (vector, srr0, srr1, dar, dsisr) in enumerate(p.log):
         base = LOG + 20 * i
         p.expect(base, srr0)
-        p.expect(base + 4, srr1)
+        p.expect(base + 4, srr1 or 0, 0 if srr1 is None else 0xffffffff)
         p.expect(base + 8, dar or 0, 0 if dar is None else 0xffffffff)
         p.expect(base + 12, dsisr or 0, 0 if dsisr is None else 0xffffffff)
         p.expect(base + 16, vector)

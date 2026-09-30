@@ -2,6 +2,15 @@
 
 Evidence for [FPU core integration](FPU_CORE_INTEGRATION.md).
 
+## Pipelined FP issue
+
+RECORD_PLACEHOLDER
+
+The earlier records below cover the serialized lane, which FP loads and
+stores still use; their latency figures for arithmetic rows are superseded.
+
+## Serialized integration
+
 Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-chip-fpu`, commit `a6f9b73`, 2026-09-30.
 
 All passed. Lint now also covers `ppc_core` with `ENABLE_FPU=1` and the

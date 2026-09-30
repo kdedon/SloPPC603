@@ -6,47 +6,68 @@
 unavailable and MSR[FP] never sets under full decode. `ENABLE_FPU=1` requires
 `ENABLE_FULL_DECODE` and `ENABLE_LIVE_CONTEXT` (MSR[FP] and MSR[FE0/FE1] change
 only through `mtmsr` and `rfi`) and a variant whose `cpu_cfg().fpu` is
-`FPU_DP`; elaboration fails otherwise. `ppc_core_bat`, `ppc_core_bat_bus60x`,
+`FPU_DP`, and `ENABLE_TEST_REDIRECT=0` (a pivot recovery would need tagged
+FPU aborts); elaboration fails otherwise. `ppc_core_bat`, `ppc_core_bat_bus60x`,
 `ppc_core_bat_cached_bus60x` and the `ppc603e` pin top pass the parameter
 through with default 0. Builds with the FPU add `rtl/ppc_ram_lut.sv` (already
 in the cache lists) and `rtl/fpu_files.f`; every other list carries only
 `ppc_fpu_pkg.sv`.
 
-## Execution model: serialized
+## Execution model
 
-Every FP instruction is a special-lane operation. It dispatches only into an
-empty completion queue with the IU idle, and blocks younger dispatch until it
-retires (or, for a store, until its bus writes complete). The FPU therefore
-never holds more than one instruction, and FP work never overlaps integer
-work or other FP work.
+FP arithmetic, move, select, compare and FPSCR instructions (primary opcodes
+59 and 63) issue into the FPU in the dispatch cycle. They read no GPR, so
+dispatch needs only a CQ entry and FPU issue readiness; they dispatch behind
+and ahead of integer work, one instruction per cycle like everything else.
+The FPU resolves FPR dependencies, forwarding, initiation intervals and
+FPSCR barriers itself. The CQ entry allocates finished; it retires when the
+FPU's oldest held result carries its tag and no exception, and the FPU
+commits in the same cycle. So the core adds nothing to Table 6-5: an
+instruction dispatched in cycle n retires in cycle n + latency + 1, the
+completion cycle of UM Figure 6-3.
 
-This is an explicit throughput trade, not a conformance claim. Table 6-5
-latencies inside the FPU are preserved; the lane adds four cycles
-(issue register, result capture, completion finish, retirement), and the
-Table 6-5 initiation intervals (1 or 2 cycles) are not met: back-to-back
-independent FP instructions issue one per dispatch-to-retirement latency.
-Pipelined overlap needs the FPU's second issue lane, forwarding outputs and
-tagged commit connected to a non-serialized dispatch path; that is future work.
+FP loads and stores keep the serialized lane (below). They wait for an empty
+CQ, so the FPU is empty when one issues, and the lane and the pipelined path
+never hold FPU work together. Plain integer loads and stores do not dispatch
+while pipelined FP work is in flight; an FP instruction may dispatch behind
+an overlapping plain access.
 
-Measured dispatch-to-retirement cycles, no retirement stalls, operands normal
-([verification](FPU_CORE_INTEGRATION_VERIFICATION.md)):
+CR updates (`fcmpu`, `fcmpo`, `mcrfs`, Rc=1) come from the FPU's result at
+retirement. FP CR writers do not take the flag token; CR writes apply in
+retirement order, and a branch reading CR waits while any FP CR writer is in
+flight. Integer CR readers other than branches already drain the CQ.
 
-| Instruction | Table 6-5 latency | Measured | Measured − 4 |
-| --- | --- | --- | --- |
-| `fadd(s)`, `fmuls`, `fmadds`, `frsp`, `fctiw`, `fcmpu`, `frsqrte` | 3 | 7 | 3 |
-| `fmul`, `fmadd` (double) | 4 | 8 | 4 |
-| `fdivs`, `fres` | 18 | 22 | 18 |
-| `fdiv` | 33 | 37 | 33 |
-| `fmr`, `fsel`, `mffs`, `mtfsf`, `mtfsfi`, `mcrfs` | 3 | 6 | 2 |
-| `lfs` / `lfd` | 2 | 8 / 10 | — |
-| `stfs`, `stfiwx` / `stfd` | 2 | 9 / 11 | — |
+Trace mode, and the one FP instruction that follows an FP exception replay,
+use the serialized lane instead.
 
-The move and FPSCR rows show the FPU returning those results one cycle earlier
-than the arithmetic rows; the standalone timing record owns that schedule.
-Memory rows include the bench's one-cycle memory: each word is a separate
-request and response.
+Measured without retirement stalls
+([verification](FPU_CORE_INTEGRATION_VERIFICATION.md)). Latency is
+dispatch-to-retirement of an isolated instruction; spacing is between the
+retirement of the first and last of a group issued back to back after a
+`sync` (four instances, two for divides and estimates, three intervals).
 
-## Lane sequence
+| Instruction | Table 6-5 latency / interval | Latency | Independent spacing | Dependent spacing |
+| --- | --- | --- | --- | --- |
+| `fadd(s)`, `fmuls`, `fmadds`, `frsp`, `fctiw`, `frsqrte` | 3 / 1 | 4 | 3 (1 each) | 9 (3 each) |
+| `fcmpu` (distinct crfD) | 3 / 1 | 4 | 3 | — |
+| `fmul`, `fmadd` (double) | 4 / 2 | 5 | 6 (2 each) | 12 (4 each) |
+| `fdivs`, `fres` | 18 / 18 | 19 | 18 | — |
+| `fdiv` | 33 / 33 | 34 | 33 | — |
+| `fmr`, `fsel` | 3 / 1 | 3 | 3 | 9 (3 each) |
+| `mffs`, `mtfsf`, `mtfsfi`, `mcrfs` | 3, blocking | 3 | 3 (`mffs`, `mtfsfi` pairs) | — |
+| `lfs` / `lfd` (serialized lane) | 2 / 1 | 8 / 10 | — | — |
+| `stfs`, `stfiwx` / `stfd` (serialized lane) | 2 / 1 | 9 / 11 | — | — |
+| `add` (integer reference) | 1 | 3 | — | — |
+
+`fmr`, `fsel` and the FPSCR instructions retire one cycle early in
+isolation: the standalone FPU returns them after two cycles (its timing
+record owns that schedule), while a dependent `fmr` or `fsel` still waits the
+Table 6-5 three cycles. Mixed streams (`fadd`, `addi`, `fmuls`, `addi`,
+`fmadd`, `addi`) dispatch one per cycle; each `addi` retires the cycle after
+the older FP instruction. Memory rows include the bench's one-cycle memory:
+each word is a separate request and response.
+
+## Lane sequence (loads and stores)
 
 1. Dispatch captures the instruction word, the committed GPR values of rA and
    rB and the MSR, then offers the FPU issue packet.
@@ -73,7 +94,23 @@ An instruction that does not write its allocated CR field or update-form base
 (an exception, or a form the FPU rejects) rewrites the committed value: the
 lane runs alone, so nothing else can have changed it.
 
+The lane also runs any FP arithmetic instruction in trace mode and the one
+that follows an FP exception replay.
+
 ## Exceptions
+
+A pipelined FP instruction whose result carries an exception does not retire.
+One cycle after its result reaches the CQ head, a recovery removes it and
+everything younger (the FPU discards its work on the following edge), and
+fetch restarts at its address. It then re-executes alone in the serialized
+lane, which raises the exception below. Nothing younger has retired and the
+FPU commits nothing for the removed instruction, so the replay sees the same
+FPRs and FPSCR and reproduces the result. The cost is the refetch and one
+serialized execution, only for instructions that take an exception.
+
+An older exception (a DSI on a plain integer load, say) removes younger
+pipelined FP work the same way. Branches resolve at dispatch, so an FP
+instruction behind a taken branch never dispatches.
 
 FPU results map onto the existing special-lane events; SRR0 is the
 instruction's address in every case.
@@ -100,11 +137,12 @@ page, a case the integer split stores share.
 
 ## Limits
 
-- Serialized issue, as above; no FP/IU overlap and no second retirement lane.
+- FP loads and stores are serialized (empty CQ, younger dispatch blocked);
+  the FPU's second issue lane and second retirement lane stay unused. The
+  integer core retires one instruction per cycle.
+- FP exceptions pay a refetch and a serialized replay.
 - A doubleword access is two 32-bit bus transactions; another bus master can
   observe or change memory between them.
-- Recovery that cancels the lane (the test-only redirect port) aborts the
-  FPU instruction by tag; no bench exercises it.
 - An `mtmsr` or `rfi` that sets FE0/FE1 while FPSCR[FEX]=1 does not raise the
   deferred FP enabled exception.
 - Not tested at the system level: TLB miss and page-changed faults on FP
