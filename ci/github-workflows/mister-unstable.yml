@@ -35,8 +35,8 @@ jobs:
         run: mister/build.sh --clean
       - name: Release notes
         run: |
-          python3 ci/release_notes.py --unstable --title "Unstable build" \
-            --since "$(git describe --tags --abbrev=0 --exclude unstable 2>/dev/null || git rev-list --max-parents=0 HEAD)" \
+          previous="$(git describe --tags --abbrev=0 --exclude unstable 2>/dev/null || true)"
+          python3 ci/release_notes.py --unstable --title "Unstable build" ${previous:+--since "${previous}"} \
             build/mister/*.json > notes.md
       - name: Publish
         env:
