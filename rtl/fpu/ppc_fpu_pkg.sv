@@ -4,6 +4,14 @@
 package ppc_fpu_pkg;
   import ppc_pkg::completion_tag_t;
 
+  // FPU implementation. FULL (ppc_fpu) keeps Table 6-5 latencies and
+  // throughput; COMPACT (ppc_fpu_compact) gives identical results with one
+  // instruction in flight and longer latencies, for less area.
+  typedef enum logic {
+    FPU_IMPL_FULL = 1'b0,
+    FPU_IMPL_COMPACT = 1'b1
+  } fpu_impl_e;
+
   // invalid[n] corresponds to the architected FPSCR cause named here.
   typedef enum logic [3:0] {
     INV_SNAN = 4'd0,

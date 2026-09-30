@@ -10,7 +10,10 @@
 // I pc0 pc1 cycles (dispatch spacing), P lo hi (DSI-protected words),
 // D addr (a store there ends the run).
 /* verilator lint_off BLKSEQ */
-module tb_core_fpu;
+module tb_core_fpu #(
+  // 0 FULL, 1 COMPACT (ppc_fpu_pkg::fpu_impl_e).
+  parameter int FPU_IMPL = 0
+);
   import ppc_pkg::*;
   logic clk = 1'b0, rst_n = 1'b0;
   always #5 clk = ~clk;
@@ -65,7 +68,8 @@ module tb_core_fpu;
   ppc_core #(
     .RESET_PC(32'h0000_1000), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
-    .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1)
+    .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1),
+    .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL))
   ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
     .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
@@ -183,7 +187,8 @@ module tb_core_fpu;
           latency = cycles - dispatch_cycle[retired.pc];
           $display("LATENCY pc=%08x insn=%08x dispatch-to-retire=%0d", retired.pc,
                    retired.insn, latency);
-          check(latency == probe_cycles[retired.pc],
+          // COMPACT latencies are reported, not checked.
+          check(FPU_IMPL != 0 || latency == probe_cycles[retired.pc],
                 $sformatf("latency pc=%08x got %0d expected %0d", retired.pc, latency,
                           probe_cycles[retired.pc]));
           probes++;
@@ -254,7 +259,7 @@ module tb_core_fpu;
         $display("SPACING %s pc=%08x..%08x cycles=%0d expected=%0d",
                  spacings[i].dispatch ? "dispatch" : "retire", spacings[i].first,
                  spacings[i].last, b - a, spacings[i].cycles);
-        check(seen && (b - a == int'(spacings[i].cycles)),
+        check(seen && (FPU_IMPL != 0 || b - a == int'(spacings[i].cycles)),
               $sformatf("spacing pc=%08x..%08x got %0d expected %0d", spacings[i].first,
                         spacings[i].last, b - a, spacings[i].cycles));
         spacing_checks++;

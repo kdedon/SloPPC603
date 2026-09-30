@@ -65,6 +65,7 @@ lint:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_FPU=1'b1" "-GENABLE_TEST_REDIRECT=1'b0" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(FPU_CORE_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc603e "-GENABLE_FPU=1'b1" $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f)
+	$(VERILATOR) --lint-only -Wall --top-module tb_fpu_impl_lint -GFPU_IMPL=1 $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f) ../tb/tb_fpu_impl_lint.sv
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_segment_registers $(SEGMENT_REGISTER_RTL)
@@ -1918,6 +1919,15 @@ test-core-fpu:
 	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=0 $(SIM_ARGS)
 
+# The same program with FPU_IMPL=COMPACT; latencies are printed, not checked.
+.PHONY: test-core-fpu-compact
+test-core-fpu-compact:
+	mkdir -p $(BUILD_DIR)/core-fpu-compact
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 -GFPU_IMPL=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-compact $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-fpu-compact/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM)
+	./$(BUILD_DIR)/core-fpu-compact/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-compact/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/core-fpu-compact/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-compact/program.txt +STALL=0 $(SIM_ARGS)
+
 .PHONY: test-decode-sweep test-core-full-decode
 test: test-decode-sweep test-core-full-decode
 test-decode-sweep:
@@ -2099,6 +2109,11 @@ demo-soc-model:
 demo-soc-fpu-model:
 	mkdir -p $(BUILD_DIR)/demo
 	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" --Mdir $(BUILD_DIR)/demo/model-fpu $(DEMO_FPU_RTL) ../tb/soc/tb_demo_soc.sv
+# The same SoC with FPU_IMPL=COMPACT.
+.PHONY: demo-soc-fpu-compact-model
+demo-soc-fpu-compact-model:
+	mkdir -p $(BUILD_DIR)/demo
+	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" -GFPU_IMPL=1 --Mdir $(BUILD_DIR)/demo/model-fpu-compact $(DEMO_FPU_RTL) ../tb/soc/tb_demo_soc.sv
 demo-firmware:
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) all
@@ -2129,6 +2144,11 @@ test-selftest-fpu: demo-soc-fpu-model
 	$(DEMO_FW_MAKE) selftest
 	timeout 3600 ./$(BUILD_DIR)/demo/model-fpu/Vtb_demo_soc $(SIM_ARGS) +MAX_CYCLES=400000000 +IMAGE=$(DEMO_FW_DIR)/selftest.hex +NAME=selftest-fpu +PPM=$(BUILD_DIR)/demo/selftest-fpu.ppm
 	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/selftest-fpu.ppm $(BUILD_DIR)/demo/selftest-fpu.png
+.PHONY: test-selftest-fpu-compact
+test-selftest-fpu-compact: demo-soc-fpu-compact-model
+	$(DEMO_FW_MAKE) selftest
+	timeout 3600 ./$(BUILD_DIR)/demo/model-fpu-compact/Vtb_demo_soc $(SIM_ARGS) +MAX_CYCLES=400000000 +IMAGE=$(DEMO_FW_DIR)/selftest.hex +NAME=selftest-fpu-compact +PPM=$(BUILD_DIR)/demo/selftest-fpu-compact.ppm
+	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/selftest-fpu-compact.ppm $(BUILD_DIR)/demo/selftest-fpu-compact.png
 # Whetstone built hard-float, on the SoC with the FPU; the MiSTer layout too.
 .PHONY: demo-whetstone-hf demo-mister-whetstone-hf
 demo-whetstone-hf: demo-soc-fpu-model demo-bench-firmware

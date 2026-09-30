@@ -12,18 +12,21 @@
 # 256 KiB of program RAM instead of hello, Dhrystone and CoreMark; with
 # --suite selftest, the opcode self-test (docs/SELFTEST.md); with --suite
 # whetstone, Whetstone. --fpu adds the floating-point unit to the processor;
-# Whetstone then runs its hard-float build.
+# Whetstone then runs its hard-float build. --fpu-compact adds the COMPACT
+# FPU instead: the same results in less area, with longer latencies.
 set -euo pipefail
 clean=0
 native=0
 fpu=0
+fpu_compact=0
 suite=""
-usage() { echo "usage: $0 [--clean] [--native] [--fpu] [--suite nbench|embench|selftest|whetstone]" >&2; exit 2; }
+usage() { echo "usage: $0 [--clean] [--native] [--fpu|--fpu-compact] [--suite nbench|embench|selftest|whetstone]" >&2; exit 2; }
 while (($#)); do
   case "$1" in
     --clean) clean=1 ;;
     --native) native=1 ;;
     --fpu) fpu=1 ;;
+    --fpu-compact) fpu=1; fpu_compact=1 ;;
     --suite)
       shift
       case "${1:-}" in nbench | embench | selftest | whetstone) suite="$1" ;; *) usage ;; esac
@@ -82,6 +85,9 @@ fi
 if [[ "${fpu}" == 1 ]]; then
   echo 'set_global_assignment -name VERILOG_MACRO "MISTER_FPU=1"' >> "${here}/ppc603e.qsf"
 fi
+if [[ "${fpu_compact}" == 1 ]]; then
+  echo 'set_global_assignment -name VERILOG_MACRO "MISTER_FPU_COMPACT=1"' >> "${here}/ppc603e.qsf"
+fi
 status=0
 # One Quartus build at a time on a shared machine.
 flock /tmp/ppc603e-quartus.lock docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
@@ -118,6 +124,7 @@ fi
 if [[ -f "${out}/ppc603e.rbf" ]]; then
   rbf="${out}/ppc603e.rbf"
   fpu_part="$([[ "${fpu}" == 1 ]] && echo _fpu || true)"
+  if [[ "${fpu_compact}" == 1 ]]; then fpu_part=_fpu_compact; fi
   if [[ -n "${suite}${fpu_part}" ]]; then
     rbf="${out}/ppc603e${suite:+_${suite}}${fpu_part}.rbf"
     mv "${out}/ppc603e.rbf" "${rbf}"

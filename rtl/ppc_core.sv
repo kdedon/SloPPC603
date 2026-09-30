@@ -54,6 +54,7 @@ module ppc_core #(
   // and FPSCR instructions dispatch straight into the FPU and overlap other
   // work; FP loads and stores run through the serialized lane.
   parameter bit ENABLE_FPU = 1'b0,
+  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   // HID1 PLL_CFG[0:3] (manual bits 0-3), read-only.
@@ -794,7 +795,7 @@ module ppc_core #(
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
-    .ENABLE_FPU(ENABLE_FPU),
+    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL),
     .CPU_VARIANT(CPU_VARIANT), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),

@@ -45,6 +45,7 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_FPU = 1'b0,
+  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [3:0] PLL_CFG = 4'b0000,
   // Data cache in the slot, bus master and snooper in the BIU.
@@ -281,7 +282,7 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
-    .ENABLE_FPU(ENABLE_FPU),
+    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL),
     // HID0[ICE] starts in the cache's reset mode.
     .HID0_RESET((RESET_CACHE_ENABLE ? (32'd1 << ppc_pkg::HID0_ICE) : 32'd0) |
                 ((ENABLE_DCACHE && RESET_DCACHE_ENABLE) ?

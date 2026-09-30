@@ -10,3 +10,5 @@
 ../rtl/fpu/ppc_fpu_arith.sv
 ../rtl/fpu/ppc_fpu_fprs.sv
 ../rtl/fpu/ppc_fpu.sv
+../rtl/fpu/ppc_fpu_arith_compact.sv
+../rtl/fpu/ppc_fpu_compact.sv
