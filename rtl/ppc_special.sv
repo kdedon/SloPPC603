@@ -221,6 +221,9 @@ module ppc_special #(
   logic [31:0] a_q, b_q, c_q, pc_q, cr_snapshot_q;
   // mfrom ROM output, looked up at dispatch to keep it off the result path.
   logic [6:0] mfrom_q;
+  logic [6:0] mfrom_entries [1024];
+  always_comb
+    for (int i = 0; i < 1024; i++) mfrom_entries[i] = MFROM_TABLE[7*i +: 7];
   logic [2:0] xer_flags_q;
   logic [6:0] xer_byte_count_q;
   logic [31:0] ea_q;
@@ -1384,7 +1387,7 @@ module ppc_special #(
       xer_byte_count_q <= xer_byte_count_i;
       ea_q <= a_i + b_i;
       trap_taken_q <= trap_condition(uop_i.branch_bo, a_i, b_i);
-      mfrom_q <= HAS_602 ? mfrom_rom(a_i[9:0]) : '0;
+      mfrom_q <= HAS_602 ? mfrom_entries[a_i[9:0]] : '0;
     end
   end
 
