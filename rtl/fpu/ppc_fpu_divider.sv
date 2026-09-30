@@ -49,7 +49,7 @@ module ppc_fpu_divider #(
     logic div_single;
     logic div_lead;
     logic signed [15:0] div_min_exp;
-    logic signed [15:0] div_norm_exp;
+    logic signed [15:0] div_from_min_up;
     logic signed [15:0] div_from_min;
     logic [15:0] div_denorm_abs;
     logic [53:0] div_start_difference;
@@ -104,8 +104,8 @@ module ppc_fpu_divider #(
         divide_req_q.op == FP_FRES;
     assign div_lead = div_sum_q.magnitude[158];
     assign div_min_exp = div_single ? -16'sd126 : -16'sd1022;
-    assign div_norm_exp = div_sum_q.exponent - (div_lead ? 16'sd0 : 16'sd1);
     assign div_from_min = div_sum_q.exponent - div_min_exp;
+    assign div_from_min_up = div_from_min + 16'sd1;
     assign div_denorm_abs = div_from_min[15] ? -div_from_min : div_from_min;
 
     always_comb begin
@@ -123,10 +123,13 @@ module ppc_fpu_divider #(
             round_o.finite = 1'b1;
             round_o.sum = div_sum_q;
             round_o.normal_left_shift = div_lead ? 8'd0 : 8'd1;
-            round_o.tiny_before = div_norm_exp < div_min_exp;
-            round_o.normal_exponent = (round_o.tiny_before &&
-                divide_req_q.ue) ? div_norm_exp +
-                (div_single ? 16'sd192 : 16'sd1536) : div_norm_exp;
+            round_o.leading_zero = div_lead ? 8'd1 : 8'd2;
+            round_o.exponent_up = div_sum_q.exponent + 16'sd1;
+            round_o.scaled_up = div_sum_q.exponent + 16'sd1 +
+                (div_single ? 16'sd192 : 16'sd1536);
+            round_o.tiny_always = div_from_min_up[15];
+            round_o.tiny_limit = div_from_min_up > 16'sd255 ?
+                8'd255 : div_from_min_up[7:0];
             round_o.denorm_right = div_from_min[15];
             round_o.denorm_shift = div_denorm_abs >= 16'd160 ?
                 8'd160 : div_denorm_abs[7:0];

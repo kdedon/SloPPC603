@@ -157,8 +157,14 @@ typedef struct packed {
     conv_parts_t conversion_parts;
     finite_sum_t sum;
     logic [7:0] normal_left_shift;
-    logic signed [15:0] normal_exponent;
-    logic tiny_before;
+    // The rounder resolves the exponent from the leading-zero count:
+    // exponent + 1 and its scaled form, less the count, and tiny when the
+    // count exceeds exponent - minimum + 1 (always when that is negative).
+    logic [7:0] leading_zero;
+    logic signed [15:0] exponent_up;
+    logic signed [15:0] scaled_up;
+    logic tiny_always;
+    logic [7:0] tiny_limit;
     logic [7:0] denorm_shift;
     logic denorm_right;
 } round_input_t;
