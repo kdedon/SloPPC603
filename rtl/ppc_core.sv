@@ -338,7 +338,7 @@ module ppc_core #(
     // Test recovery with a pivot would need tagged FPU aborts.
     if (ENABLE_FPU && ENABLE_TEST_REDIRECT)
       $fatal(1, "The FPU requires ENABLE_TEST_REDIRECT=0");
-    if (ENABLE_FPU && (cpu_cfg(CPU_VARIANT).fpu != FPU_DP))
+    if (ENABLE_FPU && !cpu_has_fpu_dp(CPU_VARIANT))
       $fatal(1, "The FPU is attached only to double-precision (603e) variants");
     if (ENABLE_DEBUG_EXCEPTIONS && (!ENABLE_EXTERNAL_INTERRUPTS ||
         !ENABLE_LIVE_CONTEXT || !ENABLE_SUPERVISOR_EXCEPTIONS))
@@ -1233,7 +1233,9 @@ module ppc_core #(
   // FP tags in program order; entry 0 is the oldest.
   completion_tag_t fp_tags_q [CQ_DEPTH];
   logic [CQ_DEPTH-1:0] fp_cr_q;
-  logic [$clog2(CQ_DEPTH+1)-1:0] fp_count_q;
+  localparam int FP_COUNT_WIDTH = $clog2(CQ_DEPTH + 1);
+  logic [FP_COUNT_WIDTH-1:0] fp_count_q, fp_slot;
+  assign fp_slot = fp_count_q - FP_COUNT_WIDTH'(fp_commit);
   assign fp_pending = fp_count_q != '0;
   always_comb begin
     fp_cr_pending = 1'b0;
@@ -1278,11 +1280,10 @@ module ppc_core #(
             fp_cr_q[i] <= fp_cr_q[i+1];
           end
         if (dispatch && fp_uop) begin
-          fp_tags_q[fp_count_q - $bits(fp_count_q)'(fp_commit)] <= alloc_producer;
-          fp_cr_q[fp_count_q - $bits(fp_count_q)'(fp_commit)] <= dispatch_uop.write_cr_field;
+          fp_tags_q[fp_slot] <= alloc_producer;
+          fp_cr_q[fp_slot] <= dispatch_uop.write_cr_field;
         end
-        fp_count_q <= fp_count_q + $bits(fp_count_q)'(dispatch && fp_uop) -
-                      $bits(fp_count_q)'(fp_commit);
+        fp_count_q <= fp_slot + FP_COUNT_WIDTH'(dispatch && fp_uop);
       end
       fp_replay_req_q <= fp_head && fp_head_match && !fp_head_ok && !recovery_accepted;
       if (fp_replay) fp_replay_q <= 1'b1;

@@ -2035,10 +2035,10 @@ module ppc_special #(
       end
     end
   end
-  if (ENABLE_FPU) begin : g_fpu
+  generate if (ENABLE_FPU) begin : g_fpu
     /* verilator lint_off PINCONNECTEMPTY */
     ppc_fpu #(.CPU_602(1'b0)) fpu (
-      .clk_i, .rst_ni,
+      .clk_i(clk_i), .rst_ni(rst_ni),
       .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
       .issue_i(fpu_issue_valid ? fpu_issue : fp_issue),
       .issue1_valid_i(1'b0), .issue1_ready_o(), .issue1_i('0),
@@ -2093,6 +2093,6 @@ module ppc_special #(
     logic _unused_fpu;
     assign _unused_fpu = ^{fpu_issue, fpu_mem_rsp, fpu_store_ready, fpu_abort_valid,
                            fpu_store_valid};
-  end
+  end endgenerate
 endmodule
 `default_nettype wire
