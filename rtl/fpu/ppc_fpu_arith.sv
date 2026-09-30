@@ -290,7 +290,9 @@ module ppc_fpu_arith #(
             outstanding_q <= 3'd0;
         end else begin
             input_valid_q <= accept && !divide_request;
-            if (accept && !divide_request) input_q <= req_operands;
+            // Operands load whenever admission is open; only the valid bit
+            // waits for a request.
+            if (req_ready_o && !divide_request) input_q <= req_operands;
             multiply_valid_q <= input_valid_q &&
                 in_dp_multiply;
             if (input_valid_q && in_dp_multiply) begin

@@ -93,7 +93,9 @@ The shell must pass strict Verilator lint with no blanket waivers. Numerical acc
 The module uses `clk_i` and active-low synchronous reset `rst_ni`. The
 architectural FPR bank has 32 entries of 64 bits for 603e or 32 bits for 602;
 FPSCR is 32 bits in both. The 602 additionally owns SP/LT tag words. Inspect
-ports expose committed state only. Pending instruction records retain source
+ports expose committed state only. The FPR inspect port shares an operand read
+and is valid in cycles without a second read candidate: no lane-1 issue, no
+lane-0 issue behind a waiting entry, and no waiting pair partner. Pending instruction records retain source
 bindings, raw arithmetic metadata, memory disposition and completion identity.
 See the pipeline design for execution latency, initiation interval, response
 credits and the external LSU timing boundary.

@@ -7,6 +7,36 @@ the manuals' per-instruction execution latency and initiation interval,
 ordered forwarding and retirement, and 602 operand tags and emulation traps.
 Detailed `Recorded:` entries retain each result's exact source scope.
 
+## Shell area round: one value per entry, bindings, 603e rounder window
+
+Recorded: `make -C sim -j2 test-fpu-all test-fpu-testfloat lint-fpu-production
+lint-fpu-timing lint-fpu-stream lint-fpu-dual lint-fpu-estimates-602`, commit
+`2ae952b`, 2026-09-30. Pass. Every `PASS` line matches the `4318d67` round:
+TestFloat 2,092,736 (603e) and 1,043,512 (602) vectors with 0 mismatches;
+raw arithmetic 209,811/182,083, cluster 40,115/22,131 finish predictions;
+estimates 11,958/17,628; host oracle 1,408,506 comparisons, 0 mismatches;
+shell 910; 602 173; exact timing 71/52 responses; streams 32/32/32; dual
+32/24; enabled exceptions 3000 cases per personality (808 FP-enabled and 188
+suppressed on 603e; 1,075 traps on 602); operand-binding hazards 640/648;
+flush/reset 4 and cancel-offset 76 per build; all lint targets clean.
+
+The exact-cycle timing, stream and dual benches pass unchanged, so every
+Table 6-5 latency and initiation interval holds. What changed: pending
+entries keep one 64-bit value word and derive tags, indices and the store
+descriptor from the issue record; forward candidates, abort and in-flight
+checks form per physical slot; sources bind to producer slots at dispatch;
+six FPR reads, with the inspection port sharing the second context's frC
+read; per-slot operand values, one launch value bus, and waiting or free
+slots written without the launch decision; a stored and tracked `fsel`
+class; the 603e rounder shifts bits 159:48 and double divide's remainder
+sticky moves to bit 48.
+
+The inspection port is now valid only while no second operand-read
+candidate is present; every bench reads it in such cycles. During
+development each step also ran a scratch lockstep comparison of the new and
+`995d20b` shells under the same random traffic (loads, stores, aborts, kills,
+dual issue, `fsel`); it is not a committed bench and is not evidence here.
+
 ## Area round: instanced datapath, MLAB FPRs, shared units
 
 Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production

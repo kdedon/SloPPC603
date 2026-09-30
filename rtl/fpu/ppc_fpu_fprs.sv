@@ -8,7 +8,7 @@
 // Reads are combinational and return the value before this cycle's writes.
 module ppc_fpu_fprs #(
     parameter int WIDTH = 64,
-    parameter int READS = 9
+    parameter int READS = 6
 ) (
     input  logic clk_i,
     input  logic rst_ni,

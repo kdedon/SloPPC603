@@ -1067,9 +1067,10 @@ function automatic finite_sum_t prepare_division_sum(
         out.magnitude = {1'b0, quotient[26:0], 132'd0};
     else
         out.magnitude = {1'b0, quotient, 104'd0};
+    // The remainder is sticky-only and stays inside the rounder's window.
     if (single_result || op == FP_FRES)
         out.magnitude[96] |= remainder_nonzero;
-    else out.magnitude[0] |= remainder_nonzero;
+    else out.magnitude[48] |= remainder_nonzero;
     out.exponent = result_exponent;
     out.sign = result_sign;
     return out;
@@ -1304,8 +1305,10 @@ function automatic logic [63:0] shift_right_jam64(
     return work;
 endfunction
 
-// A single-only datapath keeps every finite magnitude in bits 159:96, so
-// the shifts run on that window; bits below it only feed the sticky bit.
+// Every finite magnitude lies in bits 159:48: the add lane is 112 bits and
+// the divider's remainder sticky sits at bit 96 or 48. The shifts run on
+// that window. A single-only datapath uses bits 159:96, since bits below
+// them only feed the sticky bit.
 function automatic round_work_t direct_round_work(
     input logic narrow,
     input finite_sum_t value,
@@ -1340,16 +1343,15 @@ function automatic round_work_t direct_round_work(
             out.exponent = normal_exponent;
         end
     end else if (out.tiny_before && !ue) begin
-        if (denorm_right)
-            out.magnitude = shift_right_jam(value.magnitude,
-                {24'd0, denorm_shift});
-        else out.magnitude = value.magnitude <<
-            {24'd0, denorm_shift};
+        out.magnitude = denorm_right ?
+            {shift_right_jam112(value.magnitude[159:48], denorm_shift),
+                48'd0} :
+            {value.magnitude[159:48] << denorm_shift, 48'd0};
         out.exponent = min_exp;
     end else begin
         out.magnitude = value.magnitude[159] ?
-            shift_right_jam(value.magnitude, 1) :
-            (value.magnitude << normal_left_shift);
+            {shift_right_jam112(value.magnitude[159:48], 8'd1), 48'd0} :
+            {value.magnitude[159:48] << normal_left_shift, 48'd0};
         out.exponent = normal_exponent;
     end
     return out;
