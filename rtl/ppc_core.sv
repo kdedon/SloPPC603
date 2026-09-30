@@ -51,7 +51,7 @@ module ppc_core #(
   // ENABLE_EXTERNAL_INTERRUPTS.
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   // Attach the FPU: FP instructions execute one at a time through the
-  // serialized lane instead of taking FP unavailable. Needs full decode.
+  // serialized lane instead of taking FP unavailable.
   parameter bit ENABLE_FPU = 1'b0,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -325,8 +325,9 @@ module ppc_core #(
       $fatal(1, "stwcx. needs the cache-probe request");
     if (ENABLE_MACHINE_CHECK && (!ENABLE_LIVE_CONTEXT || !ENABLE_SUPERVISOR_EXCEPTIONS))
       $fatal(1, "Machine check requires live supervisor context");
-    if (ENABLE_FPU && (!ENABLE_FULL_DECODE || !ENABLE_SUPERVISOR_EXCEPTIONS))
-      $fatal(1, "The FPU requires full decode and supervisor exceptions");
+    // MSR[FP] and MSR[FE0/FE1] change only through live context.
+    if (ENABLE_FPU && (!ENABLE_FULL_DECODE || !ENABLE_LIVE_CONTEXT))
+      $fatal(1, "The FPU requires full decode and live supervisor context");
     if (ENABLE_FPU && (cpu_cfg(CPU_VARIANT).fpu != FPU_DP))
       $fatal(1, "The FPU is attached only to double-precision (603e) variants");
     if (ENABLE_DEBUG_EXCEPTIONS && (!ENABLE_EXTERNAL_INTERRUPTS ||
