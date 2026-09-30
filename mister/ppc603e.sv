@@ -5,7 +5,8 @@
 // through the framework scaler (MISTER_FB_PALETTE), and the native video
 // output carries a blank 320 x 240; the OSD can save the screen to a mounted
 // file. Without it the framebuffer is 320 x 240 in block RAM and leaves as
-// native video at 15.6 kHz and 59.6 Hz.
+// native video at 15.6 kHz and 59.6 Hz. MISTER_BENCH builds a benchmark
+// suite image with 256 KiB of program RAM and no program menu.
 module emu
 (
 	`include "sys/emu_ports.vh"
@@ -49,13 +50,21 @@ assign VIDEO_ARX = 13'd4;
 assign VIDEO_ARY = 13'd3;
 `endif
 
+`ifdef MISTER_BENCH
+localparam int RAM_BYTES = 262144;
+`else
+localparam int RAM_BYTES = 131072;
+`endif
+
 // Status bits: 0 restart, 2:1 program, 3 length, 4 save screen.
 `include "build_id.v"
 localparam CONF_STR = {
 	"PPC603e;;",
+`ifndef MISTER_BENCH
 	"-;",
 	"O[2:1],Program,Hello,Dhrystone,CoreMark,Run all;",
 	"O[3],Length,Full,Smoke test;",
+`endif
 	"-;",
 `ifdef MISTER_FB
 	"S0,PFB,Screen file;",
@@ -151,7 +160,7 @@ always @(posedge clk_sys)
 	if (img_mounted) save_file_ok <= FB_EXTERNAL && !img_readonly && img_size >= 64'(SAVE_BYTES);
 
 ppc603e_mister #(
-	.RAM_INIT("firmware/mister.mif"), .FB_EXTERNAL(FB_EXTERNAL),
+	.RAM_INIT("firmware/mister.mif"), .RAM_BYTES(RAM_BYTES), .FB_EXTERNAL(FB_EXTERNAL),
 	.FB_WIDTH(SCREEN_W), .FB_HEIGHT(SCREEN_H)
 ) core
 (

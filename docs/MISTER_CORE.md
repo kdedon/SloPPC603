@@ -135,11 +135,11 @@ firmware clears the bottom eight text rows and draws the summary there:
 
 ```
 603e PVR 00070101 50MHz 1a2b3c4
-Hello MB 37479241 cyc CPI 2.88
+Hello MB 37479241 cyc CPI 2.88 lsu 0.61 dcmiss 0.42 brref 0.30
 Dhry 343030000/100000 0.165 DMIPS/MHz
-     CPI 5.68 ret 60400000
+     CPI 5.68 ret 60400000 dcmiss 1.20 lsu 0.95 drmem 0.80
 CM 0.649/MHz 400 it CRC ok CPI 5.05
-   cyc 615971600 ret 121900000
+   cyc 615971600 ret 121900000 lsu 0.90 dcmiss 0.85 brref 0.60
 All cyc 1000000000 ret 190000000
 CPI 5.26 bus 1234567 PASS
 ```
@@ -147,7 +147,16 @@ CPI 5.26 bus 1234567 PASS
 (Values illustrative.) Lines appear only for the programs that ran. `Dhry` shows the
 cycles in Dhrystone's timed loop, the run count and DMIPS/MHz (Dhrystones per second /
 1757 per MHz); `CM` shows CoreMark iterations per million cycles, the iteration count and
-the CRC check; each program's CPI covers its timed window. `All` counts cycles and
+the CRC check; each program's CPI covers its timed window. When the line has room (80
+columns at 1080p, not at 320 × 240), the three largest stall causes of that window follow,
+each as its cycles per retired instruction, from the performance counters' dispatch-slot
+counts (`PERF_SLOT`, [DEMO_SOC.md](DEMO_SOC.md)): `fetch` fetch empty, `icmiss` I-cache
+miss, `brref` branch refetch, `exref` exception refetch, `drbr`/`drmem`/`droth` drains
+for a branch, a load or store, or another special-lane instruction, `spec` special lane
+busy, `lsu` load/store busy, `dcmiss` D-cache miss, `cqfull` completion queue or rename
+full, `rsfull` reservation station full, `flags` XER/CR flags wait, `other`. The dispatch
+share (about 1.00) is left out. Each program also prints the full breakdown on the
+console (`perf_report`). `All` counts cycles and
 retired instructions from reset, and `bus` the 60x address tenures (cache line fills,
 cache-inhibited accesses and castouts). Retirements come from the processor's
 retirement event (`perf_o.retire`, a debug output that is not a 603e pin). A failed check
@@ -156,11 +165,12 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh [--clean] [--native]
+mister/build.sh [--clean] [--native] [--suite nbench|embench]
 ```
 
 `--native` builds the 320 × 240 native-video variant; the default is the 1920 × 1080 DDR3
-framebuffer. Needs Docker, network access for the framework and benchmark sources, and about
+framebuffer. `--suite` builds a core for one benchmark suite instead of hello, Dhrystone
+and CoreMark (see [Benchmark suite cores](#benchmark-suite-cores)). Needs Docker, network access for the framework and benchmark sources, and about
 12 GB for the pinned Quartus 17.0.2 image. The script:
 
 1. fetches the framework with `mister/fetch-framework.sh`:
@@ -178,6 +188,32 @@ framebuffer. Needs Docker, network access for the framework and benchmark source
 
 The output is `mister/output_files/ppc603e.rbf`. It and everything else the build
 writes under `mister/` are ignored by git.
+
+### Benchmark suite cores
+
+nbench and Embench-IoT ([BENCHMARKS.md](BENCHMARKS.md)) do not fit beside the other
+programs in 128 KiB, so each gets its own core:
+
+```sh
+mister/build.sh --clean --suite nbench    # mister/output_files/ppc603e_nbench.rbf
+mister/build.sh --clean --suite embench   # mister/output_files/ppc603e_embench.rbf
+```
+
+Each builds with the `MISTER_BENCH` macro: 256 KiB of program RAM (32768-word
+`mister.mif`, about 128 more M10K blocks) and no `Program` or `Length` menu. The firmware
+is `mister-nbench.hex` or `mister-embench.hex` from `toolchain/demo/Makefile`: the
+`-full` suite sizes linked with `toolchain/demo/mister-bench.ld`, which, like
+`mister.ld`, keeps a copy of the data section for start-up to restore, so `Restart`
+reruns the suite. The suite draws its table and ends with its photo line and the
+performance-counter breakdown; the OSD then shows `Finished: PASS` or `FAIL`. Neither
+has run on hardware yet; estimated from the simulation rates, nbench takes about half a
+minute at 50 MHz (each test runs at least `NB_SECS`, 2 s) and Embench about a minute and
+a half. The performance counters are 32 bits, so a suite-wide `perf_report` over more
+than 2^32 cycles (86 s at 50 MHz) wraps and its CPI lines are wrong; the per-test cycle
+counts are 64 bits. The screen save works as in the default core.
+
+`make -C sim demo-mister-nbench demo-mister-embench` runs the simulation-size images
+with the same layout on the demo SoC bench.
 
 ### Licensing
 
@@ -234,7 +270,7 @@ a DDRAM command changing under `BUSY`, a read and a write together, a DDRAM writ
 differs from the framebuffer store queued for it (address, byte lanes, data, order), a
 write outside the framebuffer, any store left undelivered at exit, a DDR3 framebuffer
 that differs from the stores seen on the bus, or an SoC retirement count that differs
-from the processor's by more than the one-cycle sampling skew. It then saves the screen
+from the processor's by more than its two-cycle lag plus the sampling skew. It then saves the screen
 through a model of the framework's SD block interface (sector requests in order,
 bytes read four clocks after each address) and checks every byte of the file: header,
 palette against the palette writes, pixels against DDR3. It writes the picture to

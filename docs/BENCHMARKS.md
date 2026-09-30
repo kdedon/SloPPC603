@@ -63,8 +63,8 @@ nbench deviates from the reference sizes in two places:
 Every other array is at the reference size, so the integer and memory indices are
 comparable, up to the single-run and run-length differences below.
 
-The MiSTer core has 128 KiB of program RAM (`mister/rtl/ppc603e_mister.sv`,
-`RAM_BYTES = 131072`). Neither suite fits; see [MiSTer menu](#mister-menu).
+The default MiSTer core has 128 KiB of program RAM, which neither suite fits; each
+suite has its own 256 KiB core instead (see [MiSTer cores](#mister-cores)).
 
 Larger data would need a data region outside the block RAM. The option considered: DDR3
 through the HPS `DDRAM` port behind the 60x target, as a second slave with an Avalon
@@ -198,22 +198,14 @@ their scores and photo lines. It does not establish full-size scores: `nbench-fu
 `embench-full` build but have not been run (billions of cycles in simulation); run them
 on hardware. The smoke indices are not comparable with published figures.
 
-## MiSTer menu
+## MiSTer cores
 
-The MiSTer image (`mister.hex`, `toolchain/demo/mister.c`) holds hello, Dhrystone and
-CoreMark behind a selector in 128 KiB. The benchmark images cannot join it as they are:
-`embench` alone is about 229 KiB. To offer them from the MiSTer menu:
-
-1. Raise the program RAM to 256 KiB: `RAM_BYTES = 262144` in
-   `mister/rtl/ppc603e_mister.sv` and `LENGTH = 256K` in `toolchain/demo/mister.ld`.
-   That adds 128 M10K blocks (240 to about 368 of 553 in the recorded fit).
-2. Load a program at run time rather than from the `.mif`: an OSD file entry
-   (`F,BIN,Load program;` in `CONF_STR`) streamed through `hps_io`'s `ioctl` download
-   into the program RAM at byte offset `0x100` (the `.bin` files start at the reset
-   entry, `0xfff00100`), with the processor held in `HRESET` during the download and
-   released after it.
-3. Ship `nbench-full.bin` and `embench-full.bin` from `toolchain/build/demo/`. Each
-   prints its screen and photo line and exits; the summary screen can show the photo
-   line as the result.
-
-Until then the MiSTer build does not include them.
+The default MiSTer image (`mister.hex`, `toolchain/demo/mister.c`) holds hello, Dhrystone
+and CoreMark behind a selector in 128 KiB; `embench` alone is about 187 KiB. Each suite
+therefore builds as its own core with 256 KiB of program RAM:
+`mister/build.sh --suite nbench` or `--suite embench`
+([MISTER_CORE.md](MISTER_CORE.md#benchmark-suite-cores)). Their images,
+`mister-nbench.hex` and `mister-embench.hex`, are the `-full` sizes linked with
+`toolchain/demo/mister-bench.ld`, which keeps a copy of the data section so a restart
+reruns the suite; `make -C sim demo-mister-nbench demo-mister-embench` runs the
+simulation sizes with that layout.

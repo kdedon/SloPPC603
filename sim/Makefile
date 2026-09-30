@@ -1868,6 +1868,12 @@ demo-bench-firmware:
 $(addprefix demo-,$(BENCH_NAMES)): demo-%: demo-soc-model demo-bench-firmware
 	timeout 7200 ./$(BUILD_DIR)/demo/model/Vtb_demo_soc $(SIM_ARGS) +MAX_CYCLES=2000000000 +IMAGE=$(DEMO_FW_DIR)/$*.hex +NAME=$* +PPM=$(BUILD_DIR)/demo/$*.ppm
 	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/$*.ppm $(BUILD_DIR)/demo/$*.png
+# The MiSTer suite images' layout (mister/build.sh --suite), at simulation size.
+.PHONY: $(addprefix demo-mister-,$(BENCH_NAMES))
+$(addprefix demo-mister-,$(BENCH_NAMES)): demo-mister-%: demo-soc-model
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) mister-$*
+	timeout 7200 ./$(BUILD_DIR)/demo/model/Vtb_demo_soc $(SIM_ARGS) +MAX_CYCLES=2000000000 +IMAGE=$(DEMO_FW_DIR)/mister-$*-smoke.hex +NAME=mister-$* +PPM=$(BUILD_DIR)/demo/mister-$*.ppm
 
 # MiSTer core body (mister/, docs/MISTER_CORE.md) with a DDRAM model. mister-smoke
 # runs the MiSTer image; MISTER_MODE is the MODE register byte (bits 1:0 program:

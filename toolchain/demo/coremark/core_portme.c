@@ -117,7 +117,10 @@ int main(void)
   con_screen(0);
   perf_report("coremark");
   con_screen(1);
-  demo_cm = (struct demo_result){cycles, stop_retired - start_retired, (uint32_t)iters, per_mhz_milli, 1};
+  demo_cm = (struct demo_result){
+      .cycles = cycles, .retired = stop_retired - start_retired,
+      .count = (uint32_t)iters, .milli = per_mhz_milli, .ok = 1};
+  perf_brief(&demo_cm);
   con_color(10, 4);
   printf("CRCs match: coremark PASS\n");
   return 0;

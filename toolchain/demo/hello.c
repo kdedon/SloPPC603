@@ -60,10 +60,12 @@ int main(void)
       known = 1;
     }
 
+  perf_start();
   uint64_t r0 = soc_retired(), c0 = soc_cycles(), t0 = soc_timebase();
   uint32_t sum = mandelbrot(mb_y, mb_w, mb_h);
   uint64_t cycles = soc_cycles() - c0, ticks = soc_timebase() - t0;
   uint64_t retired = soc_retired() - r0;
+  perf_stop();
 
   /* The timebase counts once per four processor clocks. */
   uint64_t expect = cycles / 4;
@@ -80,7 +82,10 @@ int main(void)
   printf("Mandelbrot %dx%d: %lu cycles\n", mb_w, mb_h, (unsigned long)cycles);
   printf("timebase %lu ticks, sum %08x\n", (unsigned long)ticks, (unsigned)sum);
   con_color(10, 0);
-  demo_hello = (struct demo_result){cycles, retired, (uint32_t)sum, 0, 1};
+  demo_hello = (struct demo_result){
+      .cycles = cycles, .retired = retired,
+      .count = (uint32_t)sum, .milli = 0, .ok = 1};
+  perf_brief(&demo_hello);
   printf("hello: PASS");
   SOC_CONSOLE = '\n';
   return 0;

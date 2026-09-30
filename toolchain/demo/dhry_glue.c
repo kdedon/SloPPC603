@@ -137,7 +137,10 @@ int main(void)
   con_screen(0);
   perf_report("dhrystone");
   con_screen(1);
-  demo_dhry = (struct demo_result){cycles, retired1 - retired0, (uint32_t)runs, dmips_mhz_milli, 1};
+  demo_dhry = (struct demo_result){
+      .cycles = cycles, .retired = retired1 - retired0,
+      .count = (uint32_t)runs, .milli = dmips_mhz_milli, .ok = 1};
+  perf_brief(&demo_dhry);
   con_color(10, 1);
   printf("dhrystone: PASS\n");
   return 0;

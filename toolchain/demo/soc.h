@@ -53,6 +53,9 @@ uint64_t soc_retired(void);
 struct demo_result {
   uint64_t cycles, retired;
   uint32_t count, milli, ok;
+  /* The largest non-dispatch slot causes and their CPI in hundredths. */
+  uint8_t stall[3];
+  uint16_t stall_cpi[3];
 };
 extern struct demo_result demo_hello, demo_dhry, demo_cm;
 /* Run lengths, set before a program starts. */
@@ -94,6 +97,9 @@ void fail(const char *what);
 void perf_start(void);
 void perf_stop(void);
 void perf_report(const char *name);
+/* Fills r's stall fields from the stopped counters. */
+void perf_brief(struct demo_result *r);
+extern const char *const perf_short[SOC_PERF_SLOTS];
 
 extern const uint8_t font8x8[95][8];
 

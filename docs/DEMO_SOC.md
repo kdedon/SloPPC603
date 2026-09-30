@@ -108,8 +108,9 @@ single dispatch slot had outcome `n`:
 | 14 | `0x148` | Other (register-file write port, trace mode) |
 
 `perf_start`, `perf_stop` and `perf_report` in the runtime clear, run and print them.
-`dhrystone` and `coremark` count their timed windows and print one `perf` line per
-cause: the count and its cycles per retired instruction. The bench checks
+`dhrystone`, `coremark`, `nbench` and `embench` count their timed windows and print one
+`perf` line per cause: the count and its cycles per retired instruction. `perf_brief`
+keeps a window's three largest stall causes for the MiSTer summary. The bench checks
 `PERF_RETIRED` against the processor's retirement strobe; the firmware checks that
 the slot counts sum to `PERF_CYCLES`.
 

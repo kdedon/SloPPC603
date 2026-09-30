@@ -37,6 +37,15 @@ static void put_cpi(uint64_t cycles, uint64_t retired)
   printf("CPI %lu.%02lu", (unsigned long)(c / 100), (unsigned long)(c % 100));
 }
 
+/* The three largest stall causes, when the line has room for them. */
+static void put_stalls(const struct demo_result *r, int used)
+{
+  if (con_cols - used < 36) return;
+  for (int k = 0; k < 3; k++)
+    printf(" %s %lu.%02lu", perf_short[r->stall[k]], (unsigned long)(r->stall_cpi[k] / 100),
+           (unsigned long)(r->stall_cpi[k] % 100));
+}
+
 static void put_milli(uint32_t v)
 {
   printf("%lu.%03lu", (unsigned long)(v / 1000), (unsigned long)(v % 1000));
@@ -58,6 +67,7 @@ static void summary(uint32_t program, uint32_t mode)
   if (program == PROG_HELLO || program == PROG_ALL) {
     printf("Hello MB %lu cyc ", (unsigned long)demo_hello.cycles);
     put_cpi(demo_hello.cycles, demo_hello.retired);
+    put_stalls(&demo_hello, 32);
     printf("\n");
   }
   if (program == PROG_DHRY || program == PROG_ALL) {
@@ -65,15 +75,19 @@ static void summary(uint32_t program, uint32_t mode)
     put_milli(demo_dhry.milli);
     printf(" DMIPS/MHz\n     ");
     put_cpi(demo_dhry.cycles, demo_dhry.retired);
-    printf(" ret %lu\n", (unsigned long)demo_dhry.retired);
+    printf(" ret %lu", (unsigned long)demo_dhry.retired);
+    put_stalls(&demo_dhry, 28);
+    printf("\n");
   }
   if (program == PROG_CM || program == PROG_ALL) {
     printf("CM ");
     put_milli(demo_cm.milli);
     printf("/MHz %lu it CRC ok ", (unsigned long)demo_cm.count);
     put_cpi(demo_cm.cycles, demo_cm.retired);
-    printf("\n   cyc %lu ret %lu\n", (unsigned long)demo_cm.cycles,
+    printf("\n   cyc %lu ret %lu", (unsigned long)demo_cm.cycles,
            (unsigned long)demo_cm.retired);
+    put_stalls(&demo_cm, 26);
+    printf("\n");
   }
   printf("All cyc %lu ret %lu\n", (unsigned long)cycles, (unsigned long)retired);
   put_cpi(cycles, retired);

@@ -26,6 +26,31 @@ static void perf_line(const char *label, uint32_t count, uint32_t retired)
          (unsigned long)(milli / 1000), (unsigned long)(milli % 1000));
 }
 
+const char *const perf_short[SOC_PERF_SLOTS] = {
+  "disp", "fetch", "icmiss", "brref", "exref", "drbr", "drmem", "droth",
+  "spec", "lsu", "dcmiss", "cqfull", "rsfull", "flags", "other"};
+
+void perf_brief(struct demo_result *r)
+{
+  uint32_t retired = SOC_PERF_RETIRED;
+  if (retired == 0) retired = 1;
+  for (int k = 0; k < 3; k++) {
+    uint32_t best = 0;
+    int slot = 0;
+    for (int n = 1; n < SOC_PERF_SLOTS; n++) {
+      uint32_t count = SOC_PERF_SLOT(n);
+      int taken = 0;
+      for (int j = 0; j < k; j++) taken |= r->stall[j] == n;
+      if (!taken && count > best) {
+        best = count;
+        slot = n;
+      }
+    }
+    r->stall[k] = (uint8_t)slot;
+    r->stall_cpi[k] = (uint16_t)((uint64_t)best * 100 / retired);
+  }
+}
+
 void perf_report(const char *name)
 {
   static const char *const slot[SOC_PERF_SLOTS] = {

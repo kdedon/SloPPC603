@@ -33,7 +33,8 @@ LDFLAGS := $(ARCH) -nostdlib -nostartfiles -no-pie -Wl,--build-id=none -Wl,--gc-
 RT_OBJ := $(OUT)/crt0.o $(OUT)/rt.o $(OUT)/font.o
 CM_SRC := core_list_join core_main core_matrix core_state core_util
 
-.PHONY: all hello dhrystone coremark mister benchmarks nbench nbench-full embench embench-full
+.PHONY: all hello dhrystone coremark mister benchmarks nbench nbench-full embench embench-full \
+	mister-nbench mister-embench
 all: hello dhrystone coremark
 hello: $(OUT)/hello.hex
 dhrystone: $(OUT)/dhrystone.hex
@@ -95,7 +96,7 @@ $(MI)/dhry_glue.o: demo/dhry_glue.c demo/soc.h | $(MI)
 $(MI)/core_portme.o: demo/coremark/core_portme.c demo/coremark/core_portme.h | $(MI)
 	$(CC) $(CFLAGS) $(CM_CFLAGS) -Dmain=coremark_demo -c $< -o $@
 $(OUT)/mister.elf: LDFLAGS := $(subst demo/demo.ld,demo/mister.ld,$(LDFLAGS))
-$(OUT)/mister.elf: $(MISTER_OBJ) demo/mister.ld
+$(OUT)/mister.elf: $(MISTER_OBJ) demo/mister.ld demo/mister-sections.ld
 .PHONY: FORCE
 FORCE:
 
@@ -222,6 +223,25 @@ $(OUT)/emb-full/glue.o: demo/embench/embench_glue.c $(OUT)/emb_table.h demo/benc
 	$(CC) $(BENCH_CFLAGS) $(OWN_CFLAGS) -I$(OUT) -DEMB_DIV=1 -c $< -o $@
 $(OUT)/embench.elf: $(RT_OBJ) $(OUT)/emb-smoke/benchmarks.o $(OUT)/emb-smoke/glue.o $(FP_OBJ) demo/demo.ld
 $(OUT)/embench-full.elf: $(RT_OBJ) $(OUT)/emb-full/benchmarks.o $(OUT)/emb-full/glue.o $(FP_OBJ) demo/demo.ld
+
+# MiSTer benchmark suite images: the full sizes in 256 KiB, data copied at
+# start-up. The -smoke images link the simulation sizes the same way.
+MISTER_BENCH_LD := $(subst demo/demo.ld,demo/mister-bench.ld,$(LDFLAGS))
+MISTER_BENCH_DEPS := $(FP_OBJ) demo/mister-bench.ld demo/mister-sections.ld
+mister-nbench: $(OUT)/mister-nbench.hex $(OUT)/mister-nbench-smoke.hex
+mister-embench: $(OUT)/mister-embench.hex $(OUT)/mister-embench-smoke.hex
+$(OUT)/mister-nbench.elf $(OUT)/mister-nbench-smoke.elf: \
+	LDFLAGS := -Wl,--defsym=__stack_size=0x2000 $(MISTER_BENCH_LD)
+$(OUT)/mister-embench.elf $(OUT)/mister-embench-smoke.elf: \
+	LDFLAGS := -Wl,--defsym=__stack_size=0x5000 $(MISTER_BENCH_LD)
+$(OUT)/mister-nbench.elf: $(RT_OBJ) $(NB)/full/nbench1.o $(NB)/full/glue.o $(NB)/emfloat.o \
+	$(NB)/misc.o $(MISTER_BENCH_DEPS)
+$(OUT)/mister-nbench-smoke.elf: $(RT_OBJ) $(NB)/smoke/nbench1.o $(NB)/smoke/glue.o \
+	$(NB)/emfloat.o $(NB)/misc.o $(MISTER_BENCH_DEPS)
+$(OUT)/mister-embench.elf: $(RT_OBJ) $(OUT)/emb-full/benchmarks.o $(OUT)/emb-full/glue.o \
+	$(MISTER_BENCH_DEPS)
+$(OUT)/mister-embench-smoke.elf: $(RT_OBJ) $(OUT)/emb-smoke/benchmarks.o \
+	$(OUT)/emb-smoke/glue.o $(MISTER_BENCH_DEPS)
 
 # The processor has no FPU: reject any floating-point instruction.
 $(OUT)/%.elf:

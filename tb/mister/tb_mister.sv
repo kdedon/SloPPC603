@@ -245,8 +245,9 @@ module tb_mister #(
     repeat (400) @(posedge clk);
     if (FB_EXTERNAL && (expect_q.size() != 0 || accepted != stores))
       $fatal(1, "framebuffer stores %0d, DDRAM writes %0d", stores, accepted);
-    // The two counts are sampled in the same edge from different processes.
-    if (dut.soc.retired_q + 64'd1 < 64'(retired) || dut.soc.retired_q > 64'(retired) + 64'd1)
+    // The counter lags the core by two cycles (perf event and counter
+    // registers), and the two counts are sampled from different processes.
+    if (dut.soc.retired_q + 64'd3 < 64'(retired) || dut.soc.retired_q > 64'(retired))
       $fatal(1, "retirement counter %0d, core retired %0d", dut.soc.retired_q, retired);
     if (FB_EXTERNAL) begin
       for (int i = 0; i < FB_W * FB_H; i++) begin
