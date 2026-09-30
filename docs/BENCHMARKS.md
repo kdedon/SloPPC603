@@ -259,7 +259,7 @@ on hardware. The smoke indices are not comparable with published figures.
 ### Whetstone
 
 Recorded: `make -C sim demo-whetstone demo-whetstone-hf demo-mister-whetstone
-demo-mister-whetstone-hf`, commit @COMMIT@, 2026-09-30. All pass.
+demo-mister-whetstone-hf`, commit a7158bd, 2026-09-30. All pass.
 
 | Image | SoC | Whetstone cycles (LOOP 2) | Retired | CPI | MWIPS at 50 MHz | MWIPS/MHz |
 |---|---|---:|---:|---:|---:|---:|

@@ -48,6 +48,13 @@ No processor bug was found. One reading was settled from the manual before the
 case ran: a misaligned `lmw`/`stmw` puts EA + 4 in DAR (UM 4.5.6, the note after
 Table 4-14) where Table 4-13 says EA; the model follows the note and the RTL agrees.
 
+Recorded: `make -C sim test-selftest`, commit 32df478, 2026-09-30.
+
+Pass after the FP cases were added: `selftest 603e PVR 00070101 no FPU: 1047 cases,
+1047 pass, 0 fail`, 62,632,886 cycles, 16,386,305 retirements, 14 pages. The 171 cases
+that need the FPU are skipped and the FP group is the 41 FP-unavailable cases, as
+before.
+
 ## 603e image on the demo SoC with the FPU
 
 Recorded: `make -C sim test-selftest-fpu`, commit bbfa9c6, 2026-09-30.
