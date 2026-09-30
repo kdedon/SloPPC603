@@ -261,7 +261,8 @@ module ppc_iu #(
   assign result_o.ov = held.ctrl.write_ov_so ? operation_overflow : 1'b0;
   assign result_o.so = held.ctrl.write_ov_so ? final_so : 1'b0;
   // A short MULLI's low word comes straight from the first-step product
-  // until the accumulator holds it.
+  // until the accumulator holds it. MULLI writes no CR0, so CR0 reads the
+  // other results only.
   assign result_value = mulli_short_q ? multiply_partial[31:0] : alu_value;
   assign result_o.value = result_value;
   // Compares issue as ~a + b + 1 = b - a. Carry out means b >= a unsigned;
@@ -273,9 +274,9 @@ module ppc_iu #(
   assign result_o.cr0 = !held.ctrl.write_cr_field ? 4'b0 :
     held_compare ? {!compare_gt && !compare_eq, compare_gt, compare_eq,
                     held.ctrl.so_in} : {
-    result_value[31],
-    !result_value[31] && (result_value != 0),
-    result_value == 0,
+    alu_value[31],
+    !alu_value[31] && (alu_value != 0),
+    alu_value == 0,
     held.ctrl.write_ov_so ? final_so : held.ctrl.so_in
   };
   always_comb begin
@@ -330,5 +331,12 @@ module ppc_iu #(
       end
     end
   end
+  // synthesis translate_off
+  always_ff @(posedge clk_i) begin
+    if (rst_ni && mulli_short_q)
+      assert (held.ctrl.op == ALU_MULLI && !held.ctrl.write_cr_field)
+        else $error("short MULLI result with a CR0 update");
+  end
+  // synthesis translate_on
 endmodule
 `default_nettype wire
