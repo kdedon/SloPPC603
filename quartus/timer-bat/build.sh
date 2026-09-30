@@ -54,3 +54,6 @@ if ! cmp -s "${evidence_dir}/source-before.sha256" "${evidence_dir}/source-after
 fi
 if (( build_status != 0 )); then exit "${build_status}"; fi
 "${script_dir}/collect-reports.sh" "${evidence_dir}"
+python3 "${script_dir}/../fit_summary.py" --name timer-bat --dir "${evidence_dir}" --revision ppc603e_timer_bat \
+  --image "$([[ "${mode}" == --docker ]] && echo "${image}")" --out "${evidence_dir}/summary.json"
+cp "${evidence_dir}/summary.json" "${script_dir}/output_files/ppc603e_timer_bat.summary.json"

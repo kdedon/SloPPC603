@@ -87,6 +87,10 @@ for variant in "${variants[@]}"; do
   for report in "${project_dir}"/output_files/stage_*.txt; do
     if [[ -f "${report}" ]]; then cp "${report}" "${reports_dir}/"; fi
   done
+  if (( fitted )); then
+    python3 "${script_dir}/../fit_summary.py" --name "fpu-${variant}" --dir "${reports_dir}" --revision ppc_fpu \
+      --image "${image}" --out "${reports_dir}/summary.json"
+  fi
   map_report="${reports_dir}/ppc_fpu.map.rpt"
   expected_pins=0
   if (( fitted )); then expected_pins=1; fi
