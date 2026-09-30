@@ -144,7 +144,8 @@ typedef struct packed {
     logic finite;
     logic conversion;
     ppc_fpu_arith_rsp_t special_rsp;
-    operand_t conversion_operand;
+    special_t conversion_operand;
+    logic conversion_too_large;
     align_plan_t plan;
 } add_input_t;
 
@@ -632,31 +633,40 @@ function automatic logic [52:0] rsqrt_significand(
     return estimate_sig;
 endfunction
 
-function automatic conv_parts_t prepare_conversion(input operand_t source);
+// The aligner has shifted the significand so that lane bit 79 has weight
+// one: bits 111:79 are the integer part, 78 the guard, 77:0 the sticky.
+function automatic conv_parts_t prepare_conversion(
+    input special_t source, input logic too_large, input logic [111:0] lane
+);
     conv_parts_t out;
-    int unsigned shift;
     out = '0;
     out.sign = source.sign;
     out.snan = source.snan;
     out.nan = source.nan;
-    out.invalid_value = source.nan || source.inf;
+    out.invalid_value = source.nan || source.inf ||
+        (too_large && !source.zero);
     if (!out.invalid_value && !source.zero) begin
-        if (source.exp >= 16'sd32) begin
-            out.invalid_value = 1'b1;
-        end else if (source.exp < -16'sd1) begin
-            out.sticky_bit = 1'b1;
-        end else begin
-            shift = int'(16'sd52) - int'(source.exp);
-            out.whole = 33'(source.sig >> shift);
-            if (shift != 0 && shift <= 53) begin
-                out.guard_bit = source.sig[shift-1];
-                for (int i = 0; i < 53; i++) begin
-                    if (i < int'(shift-1))
-                        out.sticky_bit |= source.sig[i];
-                end
-            end
-        end
+        out.whole = lane[111:79];
+        out.guard_bit = lane[78];
+        out.sticky_bit = |lane[77:0];
     end
+    return out;
+endfunction
+
+// fctiw places the raw significand like frsp and shifts it by 31 - exponent,
+// saturating as the add alignment does; exponents from 32 up are invalid.
+function automatic align_plan_t conversion_plan(
+    input logic [52:0] sig, input logic signed [15:0] exponent
+);
+    align_plan_t out;
+    logic signed [15:0] distance;
+    out = '0;
+    out.y = {1'b0, sig, 106'd0};
+    out.shift_y = 1'b1;
+    distance = 16'sd31 - exponent;
+    if (distance < 16'sd0) out.distance = 8'd0;
+    else if (distance >= 16'sd160) out.distance = 8'd160;
+    else out.distance = distance[7:0];
     return out;
 endfunction
 

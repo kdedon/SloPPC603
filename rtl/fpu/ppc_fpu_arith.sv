@@ -50,7 +50,8 @@ module ppc_fpu_arith #(
     logic in_conversion;
     logic in_dp_multiply;
     ppc_fpu_arith_rsp_t in_special_rsp;
-    operand_t in_conversion_operand;
+    special_t in_conversion_operand;
+    logic in_conversion_too_large;
     finite_operands_t in_operands;
     align_plan_t shared_plan;
     finite_sum_t add_sum;
@@ -92,6 +93,7 @@ module ppc_fpu_arith #(
         .dp_multiply_o(in_dp_multiply),
         .special_rsp_o(in_special_rsp),
         .conversion_operand_o(in_conversion_operand),
+        .conversion_too_large_o(in_conversion_too_large),
         .operands_o(in_operands)
     );
 
@@ -120,7 +122,7 @@ module ppc_fpu_arith #(
     // its second cycle never meets a new input and both share one plan.
     ppc_fpu_align_plan plan (
         .valid_i(multiply_valid_q ? multiply_q.finite :
-            in_finite && !in_dp_multiply),
+            (in_finite || in_conversion) && !in_dp_multiply),
         .op_i(multiply_valid_q ? multiply_q.req.op : input_q.op),
         .operands_i(multiply_valid_q ? multiply_q.operands : in_operands),
         .product_i(multiply_valid_q ? double_product : multiply_product),
@@ -133,6 +135,7 @@ module ppc_fpu_arith #(
         multiply_double_next.conversion = 1'b0;
         multiply_double_next.special_rsp = multiply_q.special_rsp;
         multiply_double_next.conversion_operand = '0;
+        multiply_double_next.conversion_too_large = 1'b0;
         multiply_double_next.plan = shared_plan;
     end
 
@@ -143,6 +146,7 @@ module ppc_fpu_arith #(
         multiply_basic_next.special_rsp = in_special_rsp;
         multiply_basic_next.conversion_operand =
             in_conversion_operand;
+        multiply_basic_next.conversion_too_large = in_conversion_too_large;
         multiply_basic_next.plan = shared_plan;
     end
 
@@ -181,6 +185,8 @@ module ppc_fpu_arith #(
     ppc_fpu_convert convert (
         .valid_i(aligned_q.conversion),
         .source_i(aligned_q.conversion_operand),
+        .too_large_i(aligned_q.conversion_too_large),
+        .lane_i(aligned_y),
         .parts_o(add_conversion_parts),
         .tag_i(add_q.req.tag),
         .op_i(add_q.req.op),

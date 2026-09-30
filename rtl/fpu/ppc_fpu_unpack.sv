@@ -14,7 +14,8 @@ module ppc_fpu_unpack #(
     output logic multiply_o,
     output logic dp_multiply_o,
     output ppc_fpu_pkg::ppc_fpu_arith_rsp_t special_rsp_o,
-    output ppc_fpu_arith_pkg::operand_t conversion_operand_o,
+    output ppc_fpu_arith_pkg::special_t conversion_operand_o,
+    output logic conversion_too_large_o,
     output ppc_fpu_arith_pkg::finite_operands_t operands_o
 );
     import ppc_fpu_pkg::*;
@@ -43,11 +44,14 @@ module ppc_fpu_unpack #(
             default: begin end
         endcase
         conversion_operand_o = '0;
+        conversion_too_large_o = 1'b0;
         operands_o = '0;
         special_rsp_o = '0;
-        if (conversion_o)
-            conversion_operand_o = unpack(req_i.b);
-        else if (finite_o)
+        if (conversion_o) begin
+            conversion_operand_o = classify_special(req_i.b);
+            conversion_too_large_o = req_i.b[62:52] >= 11'd1055;
+            operands_o = prepare_operands(req_i.a, req_i.b, req_i.c);
+        end else if (finite_o)
             operands_o = prepare_operands(req_i.a, req_i.b, req_i.c);
         else
             special_rsp_o = calculate(CPU_602, req_i.tag, req_i.op,

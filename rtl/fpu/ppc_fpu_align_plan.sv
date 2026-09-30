@@ -16,7 +16,10 @@ module ppc_fpu_align_plan (
 
     always_comb begin
         plan_o = '0;
-        if (valid_i)
+        if (valid_i && (op_i == ppc_fpu_pkg::FP_FCTIW ||
+            op_i == ppc_fpu_pkg::FP_FCTIWZ))
+            plan_o = conversion_plan(operands_i.b_sig, operands_i.b_exp);
+        else if (valid_i)
             plan_o = plan_alignment(prepare_finite(op_i,
                 operands_i.a_sig, operands_i.b_sig,
                 operands_i.a_exp, operands_i.b_exp, operands_i.c_exp,
