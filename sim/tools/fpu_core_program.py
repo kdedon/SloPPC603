@@ -440,6 +440,76 @@ def fp_enabled(p):
     p.clear_fpscr()
 
 
+def in_flight(p):
+    """Exceptions and cancellation with pipelined FP work in flight. Each
+    younger instruction accumulates, so one that retired before the
+    exception would run twice after the handler returns to it."""
+    three = 0x4008000000000000
+    p.clear_fpscr()
+    p.load_fpr(7, PINF)
+    p.load_fpr(6, ONE)
+    p.load_fpr(4, HALF)
+    p.load_fpr(1, ONE)
+    p.load_fpr(2, TWO)
+    p.li32(10, 0)
+    # FP enabled (VXISI with VE) at a pipelined fsub, an addi and an fadd
+    # dispatched behind it.
+    p.mtmsr(p.msr | FE0 | FE1)
+    p.emit(x_form(63, 24, 0, 0, 38))            # mtfsb1 24 (VE)
+    p.emit(SYNC)
+    at = p.emit(a_form(63, 4, 7, 7, 0, 20))     # fsub f4, f7, f7
+    p.emit(d_form(14, 10, 10, 1))               # addi r10, r10, 1
+    younger = p.emit(a_form(63, 6, 6, 1, 0, 21))  # fadd f6, f6, f1
+    p.spacings.append(('I', at, younger, 2))
+    p.event(0x700, at, p.msr | SRR1_FP)
+    # FEX stays set, so the fadd, run once after the handler, takes its own
+    # FP enabled exception with its result and FPRF +normal committed.
+    p.event(0x700, younger, p.msr | SRR1_FP)
+    p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 23) | (1 << 31) | (1 << 14))
+    p.mtmsr(p.msr & ~(FE0 | FE1))
+    p.check_fpscr()
+    p.clear_fpscr()
+    p.store_fpr(4, HALF)
+    p.store_fpr(6, TWO)
+    p.store_gpr(10, 1)
+    # A branch reading a CR field an FP compare in flight writes; a taken
+    # branch skips an FP instruction.
+    p.emit(SYNC)
+    p.emit((63 << 26) | (2 << 23) | (1 << 16) | (2 << 11))  # fcmpu cr2, f1, f2
+    p.emit((16 << 26) | (12 << 21) | (8 << 16) | 8)        # bt cr2[lt], +8
+    p.emit(d_form(14, 10, 10, 100))
+    p.emit((18 << 26) | 8)                                 # b +8
+    p.emit(a_form(63, 6, 6, 1, 0, 21))
+    p.set_cr_field(2, 0b1000)
+    p.check_cr()
+    p.clear_fpscr()
+    p.store_gpr(10, 1)
+    p.store_fpr(6, TWO)
+    if CHIP:
+        return
+    # DSI at a plain integer load cancels an fadd and an addi dispatched
+    # behind it.
+    p.emit(SYNC)
+    at = p.emit(d_form(32, 11, 31, 0))          # lwz r11, 0(r31)
+    younger = p.emit(a_form(63, 6, 6, 1, 0, 21))
+    p.emit(d_form(14, 10, 10, 1))
+    p.spacings.append(('I', at, younger, 1))
+    p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
+    p.store_fpr(6, three)
+    p.store_gpr(10, 2)
+    # DSI on an FP load and an FP store behind an older pipelined fadd,
+    # which retires first.
+    p.load_fpr(6, ONE)
+    p.emit(SYNC)
+    p.emit(a_form(63, 6, 6, 1, 0, 21))
+    at = p.emit(d_form(50, 24, 31, 0))          # lfd f24, 0(r31)
+    p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
+    p.emit(a_form(63, 6, 6, 1, 0, 21))
+    at = p.emit(d_form(54, 6, 31, 8))           # stfd f6, 8(r31)
+    p.event(0x300, at, p.msr, PROT_LO + 8, 0x0a000000)
+    p.store_fpr(6, three)
+
+
 def random_cases(p, rng, count):
     base_msr = p.msr
     for _ in range(count):
@@ -556,6 +626,7 @@ def build(seed, count):
     handlers(p)
     directed(p)
     random_cases(p, rng, count)
+    in_flight(p)
     latency(p)
     if not CHIP:
         p.emit(d_form(36, 0, 30, 0))      # stw r0 to DONE ends the run

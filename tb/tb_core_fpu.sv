@@ -168,7 +168,9 @@ module tb_core_fpu;
       end
       if (dut.dispatch && (probe_cycles.exists(dut.iq_head.pc) != 0))
         dispatch_cycle[dut.iq_head.pc] = cycles;
-      if (dut.dispatch) dispatch_at[dut.iq_head.pc] = cycles;
+      // First dispatch: a replayed instruction dispatches again.
+      if (dut.dispatch && (dispatch_at.exists(dut.iq_head.pc) == 0))
+        dispatch_at[dut.iq_head.pc] = cycles;
       if (tv && tr) retire_at[retired.pc] = cycles;
       if (tv && tr) begin
         retires++;
