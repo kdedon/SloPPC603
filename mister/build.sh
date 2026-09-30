@@ -110,11 +110,11 @@ if [[ -f "${out}/ppc603e.rbf" ]]; then
   what="${short}, ${suite:-hello/Dhrystone/CoreMark}, $([[ "${native}" == 1 ]] && echo "native video" || echo "1920x1080 DDR3 framebuffer")"
   echo "rbf: ${rbf} (${what})"
   # A timing-clean build is published under the MiSTer name convention,
-  # core_YYYYMMDD.rbf; a same-day rebuild replaces it. BUILDS.txt maps
+  # core_YYYYMMDD_HHMM.rbf, so no build overwrites another. BUILDS.txt maps
   # each published file to its commit.
   if [[ "${status}" == 0 ]]; then
     pub="${repo}/build/mister"
-    name="PPC603e${suite:+_${suite}}$([[ "${native}" == 1 ]] && echo _native)_$(date +%Y%m%d).rbf"
+    name="PPC603e${suite:+_${suite}}$([[ "${native}" == 1 ]] && echo _native)_$(date +%Y%m%d_%H%M).rbf"
     mkdir -p "${pub}"
     cp "${rbf}" "${pub}/${name}"
     echo "$(date '+%F %H:%M') ${name} ${what} sha256 $(sha256sum "${pub}/${name}" | cut -c1-16)" >> "${pub}/BUILDS.txt"
