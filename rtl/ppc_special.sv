@@ -226,8 +226,13 @@ module ppc_special #(
   logic branch_taken_q, branch_ctr_write_q, branch_lr_write_q;
   logic [31:0] branch_target_q, branch_ctr_next_q, branch_lr_next_q;
   logic [31:0] lr_q, ctr_q;
-  // SPRG0..SPRG3; rst_ni models hard reset.
-  logic [31:0] sprg_q [4];
+  // SPRG0..SPRG3; rst_ni models hard reset. The values live in LUT RAM,
+  // which cannot be reset; an entry not written since reset reads as
+  // SPRG_RESET.
+  (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] sprg_q [4];
+  logic [3:0]  sprg_written_q;
+  logic        sprg_we;
+  logic [31:0] sprg_read;
   logic [31:0] dar_q, dsisr_q;
   logic [31:0] dcmp_q, icmp_q, rpa_q;
   logic [31:0] sdr1_q, iabr_q;
@@ -601,10 +606,10 @@ module ppc_special #(
       10'd977: exec_value = dcmp_q;
       10'd981: exec_value = icmp_q;
       10'd982: exec_value = rpa_q;
-      10'd272: exec_value = sprg_q[0];
-      10'd273: exec_value = sprg_q[1];
-      10'd274: exec_value = sprg_q[2];
-      10'd275: exec_value = sprg_q[3];
+      10'd272: exec_value = sprg_read;
+      10'd273: exec_value = sprg_read;
+      10'd274: exec_value = sprg_read;
+      10'd275: exec_value = sprg_read;
       10'd1010: exec_value = iabr_q;
       10'd1008: exec_value = hid0_q & CPU_CFG.hid0_rmask;
       10'd1009: exec_value = {PLL_CFG, 28'b0} & CPU_CFG.hid1_rmask;
@@ -1432,15 +1437,26 @@ module ppc_special #(
     end
   end
 
+  assign sprg_we = rst_ni && hold_commit &&
+                   (uop_q.special_op == SPECIAL_MTSPR) &&
+                   (uop_q.spr[9:2] == 8'd68);
+  assign sprg_read = sprg_written_q[uop_q.spr[1:0]] ?
+                     sprg_q[uop_q.spr[1:0]] : SPRG_RESET;
+
+  always_ff @(posedge clk_i) begin
+    if (sprg_we) sprg_q[uop_q.spr[1:0]] <= a_q;
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) sprg_written_q <= '0;
+    else if (sprg_we) sprg_written_q[uop_q.spr[1:0]] <= 1'b1;
+  end
+
   // SPR file. Every write lands on the matching retirement edge.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       lr_q <= '0;
       ctr_q <= '0;
-      sprg_q[0] <= SPRG_RESET;
-      sprg_q[1] <= SPRG_RESET;
-      sprg_q[2] <= SPRG_RESET;
-      sprg_q[3] <= SPRG_RESET;
       dar_q <= '0;
       dsisr_q <= DSISR_RESET;
       dcmp_q <= '0;
@@ -1476,10 +1492,6 @@ module ppc_special #(
             10'd977: if (ENABLE_TLB_LOAD) dcmp_q <= a_q;
             10'd981: if (ENABLE_TLB_LOAD) icmp_q <= a_q;
             10'd982: if (ENABLE_TLB_LOAD) rpa_q <= a_q;
-            10'd272: sprg_q[0] <= a_q;
-            10'd273: sprg_q[1] <= a_q;
-            10'd274: sprg_q[2] <= a_q;
-            10'd275: sprg_q[3] <= a_q;
             // IABR[31] (translation enable) is stored but ignored.
             10'd1010: if (ENABLE_DEBUG_EXCEPTIONS) iabr_q <= a_q;
             10'd1008: if (ENABLE_FULL_DECODE) hid0_q <= a_q & CPU_CFG.hid0_wmask;
