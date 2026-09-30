@@ -144,6 +144,14 @@ module ppc_fpu #(
     logic [2:0][PENDING_DEPTH-1:0] producer;
   } pending_t;
   typedef struct packed {
+    logic record;
+    status_t st;
+    logic [1:0] local_wait;
+    logic mem_write;
+    logic store_fill;
+    logic value_write;
+  } launch_t;
+  typedef struct packed {
     logic valid;
     completion_tag_t tag;
     logic is_move;
@@ -357,6 +365,8 @@ module ppc_fpu #(
   logic arith_from_work;
   ppc_fpu_mem_t work1_mem_req;
   logic [63:0] mem_value;
+  logic [63:0] launch_value;
+  launch_t launch0, launch1;
   logic [63:0] work1_mem_value;
   logic mem_fill;
   logic work1_mem_fill;
@@ -1846,6 +1856,53 @@ module ppc_fpu #(
     end
   end
 
+  // Launch records. Only stores and the serialized status and SPR reads
+  // produce a value at launch, and a context holding one excludes a second
+  // from the other context, so the value has one source.
+  // Reads only the kind and store bit.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic valued_kind(input decoded_t d);
+  /* verilator lint_on UNUSEDSIGNAL */
+    return (d.kind == DK_MEMORY && d.mem_store) || d.kind == DK_MFFS ||
+        d.kind == DK_MTFS || d.kind == DK_MCRFS ||
+        (CPU_602 && d.kind == DK_MFSPR);
+  endfunction
+
+  always_comb begin
+    launch_value = !valued_kind(work_decoded) ? work1_mem_value :
+        work_decoded.kind == DK_MEMORY ? mem_value :
+        value_of(work_decoded.kind, exec_result);
+    launch0 = '0;
+    launch0.record = local_launch || mem_launch;
+    launch0.st = status_of(exec_result);
+    launch0.local_wait = local_launch ? local_latency(work_decoded.kind) : 2'd0;
+    launch0.mem_write = mem_launch && work_decoded.mem_store;
+    launch0.store_fill = mem_launch && mem_fill;
+    launch0.value_write = valued_kind(work_decoded);
+    launch1 = '0;
+    launch1.record = work1_local_launch || work1_mem_launch;
+    launch1.st = status_of(work1_result);
+    launch1.local_wait = work1_local_launch ?
+        local_latency(work1_decoded.kind) : 2'd0;
+    launch1.mem_write = work1_mem_launch && work1_decoded.mem_store;
+    launch1.store_fill = work1_mem_launch && work1_mem_fill;
+    launch1.value_write = valued_kind(work1_decoded);
+  end
+
+  function automatic pending_t launched(input pending_t e, input launch_t l);
+    pending_t o;
+    o = e;
+    o.started = 1'b1;
+    if (l.record) begin
+      o.st = l.st;
+      o.local_wait = l.local_wait;
+      o.mem_write = l.mem_write;
+      o.store_fill = l.store_fill;
+      if (l.value_write) o.value = launch_value;
+    end
+    return o;
+  endfunction
+
   // Only one local FPU instruction can launch per edge, and a work context
   // holding a move or select excludes a second one. The operand registers
   // load from that context every cycle; only the valid bit waits for launch.
@@ -1959,34 +2016,10 @@ module ppc_fpu #(
             value_of(DK_MEMORY, mem_incoming_result);
       pending_d[mem_rsp_slot].done = 1'b1;
     end
-    if (exec_found && exec_fire) begin
-      pending_d[exec_slot].started = 1'b1;
-      if (local_launch) begin
-        pending_d[exec_slot].st = status_of(exec_result);
-        pending_d[exec_slot].value = value_of(work_decoded.kind, exec_result);
-        pending_d[exec_slot].local_wait = local_latency(work_decoded.kind);
-      end else if (mem_launch) begin
-        pending_d[exec_slot].mem_write = work_decoded.mem_store;
-        pending_d[exec_slot].value = mem_value;
-        pending_d[exec_slot].store_fill = mem_fill;
-        pending_d[exec_slot].st = status_of(exec_result);
-      end
-    end
-    if (work1_old && work1_fire) begin
-      pending_d[work1_old_slot].started = 1'b1;
-      if (work1_local_launch) begin
-        pending_d[work1_old_slot].st = status_of(work1_result);
-        pending_d[work1_old_slot].value =
-            value_of(work1_decoded.kind, work1_result);
-        pending_d[work1_old_slot].local_wait =
-            local_latency(work1_decoded.kind);
-      end else if (work1_mem_launch) begin
-        pending_d[work1_old_slot].mem_write = work1_decoded.mem_store;
-        pending_d[work1_old_slot].value = work1_mem_value;
-        pending_d[work1_old_slot].store_fill = work1_mem_fill;
-        pending_d[work1_old_slot].st = status_of(work1_result);
-      end
-    end
+    if (exec_found && exec_fire)
+      pending_d[exec_slot] = launched(pending_d[exec_slot], launch0);
+    if (work1_old && work1_fire)
+      pending_d[work1_old_slot] = launched(pending_d[work1_old_slot], launch1);
     for (integer i = 0; i < PENDING_DEPTH; i++)
       if (pending_q[i].valid &&
           pending_q[i].started && !pending_q[i].done &&
@@ -2024,34 +2057,10 @@ module ppc_fpu #(
       for (integer k = 0; k < 3; k++)
         pending_d[tail_q].producer[k] =
             (work_dispatch ? bind0[k] : bind1[k]) & ~retiring;
-      if (work_dispatch && exec_fire) begin
-        pending_d[tail_q].started = 1'b1;
-        if (local_launch) begin
-          pending_d[tail_q].st = status_of(exec_result);
-          pending_d[tail_q].value = value_of(work_decoded.kind, exec_result);
-          pending_d[tail_q].local_wait =
-              local_latency(work_decoded.kind);
-        end else if (mem_launch) begin
-          pending_d[tail_q].mem_write = work_decoded.mem_store;
-          pending_d[tail_q].value = mem_value;
-          pending_d[tail_q].store_fill = mem_fill;
-          pending_d[tail_q].st = status_of(exec_result);
-        end
-      end
-      if (exec_found && work1_fire) begin
-        pending_d[tail_q].started = 1'b1;
-        if (work1_local_launch) begin
-          pending_d[tail_q].st = status_of(work1_result);
-          pending_d[tail_q].value = value_of(work1_decoded.kind, work1_result);
-          pending_d[tail_q].local_wait =
-              local_latency(work1_decoded.kind);
-        end else if (work1_mem_launch) begin
-          pending_d[tail_q].mem_write = work1_decoded.mem_store;
-          pending_d[tail_q].value = work1_mem_value;
-          pending_d[tail_q].store_fill = work1_mem_fill;
-          pending_d[tail_q].st = status_of(work1_result);
-        end
-      end
+      if (work_dispatch && exec_fire)
+        pending_d[tail_q] = launched(pending_d[tail_q], launch0);
+      if (exec_found && work1_fire)
+        pending_d[tail_q] = launched(pending_d[tail_q], launch1);
       pending_count_d = after_retire_count + 3'd1;
     end
     if (dispatch1_fire) begin
@@ -2061,20 +2070,8 @@ module ppc_fpu #(
         pending_d[tail1_q].producer[k] =
             dec_write && issue_i.insn[25:21] == work1_index[k] ?
             PENDING_DEPTH'(1) << tail_q : bind1[k] & ~retiring;
-      if (work1_fire) begin
-        pending_d[tail1_q].started = 1'b1;
-        if (work1_local_launch) begin
-          pending_d[tail1_q].st = status_of(work1_result);
-          pending_d[tail1_q].value = value_of(work1_decoded.kind, work1_result);
-          pending_d[tail1_q].local_wait =
-              local_latency(work1_decoded.kind);
-        end else if (work1_mem_launch) begin
-          pending_d[tail1_q].mem_write = work1_decoded.mem_store;
-          pending_d[tail1_q].value = work1_mem_value;
-          pending_d[tail1_q].store_fill = work1_mem_fill;
-          pending_d[tail1_q].st = status_of(work1_result);
-        end
-      end
+      if (work1_fire)
+        pending_d[tail1_q] = launched(pending_d[tail1_q], launch1);
       pending_count_d = after_retire_count + 3'd2;
     end
     if (abort_match) begin
