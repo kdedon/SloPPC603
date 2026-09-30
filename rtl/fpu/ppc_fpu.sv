@@ -232,8 +232,8 @@ module ppc_fpu #(
   logic [1:0] fpr_we;
   logic [1:0][4:0] fpr_waddr;
   logic [1:0][FPR_BITS-1:0] fpr_wdata;
-  logic [8:0][4:0] fpr_raddr;
-  logic [8:0][FPR_BITS-1:0] fpr_rdata;
+  logic [5:0][4:0] fpr_raddr;
+  logic [5:0][FPR_BITS-1:0] fpr_rdata;
   logic [31:0] fpscr_q;
   logic [31:0] proposed_fpscr;
   logic [31:0] issue_ea;
@@ -303,7 +303,7 @@ module ppc_fpu #(
   logic work_dispatch;
   logic work_admitted;
   logic [31:0] work_ea;
-  logic [4:0] src_a_index, src_b_index, src_c_index, src_d_index;
+  logic [4:0] src_a_index, src_b_index, src_c_index;
   logic arith_launch;
   logic mem_launch;
   logic local_launch;
@@ -708,6 +708,12 @@ module ppc_fpu #(
     return r.fpr_value;
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
+
+  // D- and X-form FP loads and stores; RA is a GPR, so the first FPR
+  // lookup reads frS instead.
+  function automatic logic memory_form(input logic [5:0] primary);
+    return primary[5:3] == 3'b110 || primary == 6'd31;
+  endfunction
 
   // fsel takes frB when frA is a NaN or less than zero.
   function automatic logic selects_b(input logic [63:0] v);
@@ -1330,18 +1336,18 @@ module ppc_fpu #(
       work_dispatch = 1'b1;
     end
     work_admitted = !work_dispatch || dispatch_fire;
-    src_a_index = work_issue.insn[20:16];
+    // A memory form's first lookup reads the store source frS.
+    src_a_index = memory_form(work_issue.insn[31:26]) ?
+        work_issue.insn[25:21] : work_issue.insn[20:16];
     src_b_index = work_issue.insn[15:11];
     src_c_index = work_issue.insn[10:6];
-    src_d_index = work_issue.insn[25:21];
     source_a = read_source(src_a_index, fpr_rdata[0], work_dispatch ?
         {PENDING_DEPTH{1'b1}} : exec_older);
     source_b = read_source(src_b_index, fpr_rdata[1], work_dispatch ?
         {PENDING_DEPTH{1'b1}} : exec_older);
     source_c = read_source(src_c_index, fpr_rdata[2], work_dispatch ?
         {PENDING_DEPTH{1'b1}} : exec_older);
-    source_d = read_source(src_d_index, fpr_rdata[3], work_dispatch ?
-        {PENDING_DEPTH{1'b1}} : exec_older);
+    source_d = source_a;
     src_a = source_a.raw;
     src_b = source_b.raw;
     src_c = source_c.raw;
@@ -1443,14 +1449,14 @@ module ppc_fpu #(
     end
     work1_admitted = work1_old ||
         (exec_found ? dispatch_fire : dispatch1_fire);
-    work1_a = read_source(work1_issue.insn[20:16], fpr_rdata[4],
+    work1_a = read_source(memory_form(work1_issue.insn[31:26]) ?
+        work1_issue.insn[25:21] : work1_issue.insn[20:16], fpr_rdata[3],
         work1_old ? second_older : {PENDING_DEPTH{1'b1}});
-    work1_b = read_source(work1_issue.insn[15:11], fpr_rdata[5],
+    work1_b = read_source(work1_issue.insn[15:11], fpr_rdata[4],
         work1_old ? second_older : {PENDING_DEPTH{1'b1}});
-    work1_c = read_source(work1_issue.insn[10:6], fpr_rdata[6],
+    work1_c = read_source(work1_issue.insn[10:6], fpr_rdata[5],
         work1_old ? second_older : {PENDING_DEPTH{1'b1}});
-    work1_d = read_source(work1_issue.insn[25:21], fpr_rdata[7],
-        work1_old ? second_older : {PENDING_DEPTH{1'b1}});
+    work1_d = work1_a;
     work1_d_raw = work1_d.fwd ? finish_store_word : work1_d.raw[30:0];
     work1_store_d_ready = work1_d.ready && !(work1_d.fwd && finish_trap);
     work1_select_b = work1_a.selb;
@@ -2115,28 +2121,30 @@ module ppc_fpu #(
 
   // Read indices repeat the work-slot selection so the storage reads do not
   // loop through the issue logic that consumes them.
+  // The inspection port shares the second context's frC read and is valid
+  // while that context is empty.
   always_comb begin
-    logic [25:6] insn0;
-    logic [25:6] insn1;
+    logic [31:6] insn0;
+    logic [31:6] insn1;
+    logic context1;
     insn0 = '0;
-    if (exec_found) insn0 = pending_q[exec_slot].issue.insn[25:6];
-    else if (issue_valid_i) insn0 = issue_i.insn[25:6];
+    if (exec_found) insn0 = pending_q[exec_slot].issue.insn[31:6];
+    else if (issue_valid_i) insn0 = issue_i.insn[31:6];
     insn1 = '0;
-    if (second_exec_found) insn1 = pending_q[second_exec_slot].issue.insn[25:6];
-    else if (exec_found && issue_valid_i) insn1 = issue_i.insn[25:6];
-    else if (!exec_found && issue1_valid_i) insn1 = issue1_i.insn[25:6];
-    fpr_raddr[0] = insn0[20:16];
+    context1 = 1'b1;
+    if (second_exec_found) insn1 = pending_q[second_exec_slot].issue.insn[31:6];
+    else if (exec_found && issue_valid_i) insn1 = issue_i.insn[31:6];
+    else if (!exec_found && issue1_valid_i) insn1 = issue1_i.insn[31:6];
+    else context1 = 1'b0;
+    fpr_raddr[0] = memory_form(insn0[31:26]) ? insn0[25:21] : insn0[20:16];
     fpr_raddr[1] = insn0[15:11];
     fpr_raddr[2] = insn0[10:6];
-    fpr_raddr[3] = insn0[25:21];
-    fpr_raddr[4] = insn1[20:16];
-    fpr_raddr[5] = insn1[15:11];
-    fpr_raddr[6] = insn1[10:6];
-    fpr_raddr[7] = insn1[25:21];
-    fpr_raddr[8] = inspect_fpr_index_i;
+    fpr_raddr[3] = memory_form(insn1[31:26]) ? insn1[25:21] : insn1[20:16];
+    fpr_raddr[4] = insn1[15:11];
+    fpr_raddr[5] = context1 ? insn1[10:6] : inspect_fpr_index_i;
   end
 
-  ppc_fpu_fprs #(.WIDTH(FPR_BITS), .READS(9)) fprs (
+  ppc_fpu_fprs #(.WIDTH(FPR_BITS), .READS(6)) fprs (
     .clk_i,
     .rst_ni,
     .we_i(fpr_we),
@@ -2145,7 +2153,7 @@ module ppc_fpu #(
     .raddr_i(fpr_raddr),
     .rdata_o(fpr_rdata)
   );
-  assign inspect_fpr_o = {{(64-FPR_BITS){1'b0}}, fpr_rdata[8]};
+  assign inspect_fpr_o = {{(64-FPR_BITS){1'b0}}, fpr_rdata[5]};
   assign inspect_fpscr_o = fpscr_q;
   assign inspect_sp_o = CPU_602 ? sp_q : 32'd0;
   assign inspect_lt_o = CPU_602 ? lt_q : 32'd0;
