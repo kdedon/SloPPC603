@@ -48,6 +48,9 @@ module ppc_fpu #(
 );
   import ppc_pkg::completion_tag_t;
   import ppc_fpu_pkg::*;
+  import ppc_fpu_arith_pkg::operand_602;
+  import ppc_fpu_arith_pkg::word_602;
+  import ppc_fpu_arith_pkg::fits_602;
 
   localparam int PENDING_DEPTH = CPU_602 ? 4 : 5;
   localparam int PENDING_IDX_BITS = CPU_602 ? 2 : 3;
@@ -554,28 +557,6 @@ module ppc_fpu #(
       return s;
     end
   endfunction
-
-  // 602 binary32 word in binary64 layout. A denormal keeps a zero exponent
-  // field and its raw fraction, which the arithmetic scales by 2^-126;
-  // every other word is its exact binary64 value.
-  function automatic logic [63:0] operand_602(input logic [31:0] s);
-    logic [10:0] e;
-    begin
-      if (s[30:23] == 8'hff) e = 11'h7ff;
-      else if (s[30:23] == 8'd0) e = 11'd0;
-      else e = {s[30], {3{~s[30]}}, s[29:23]};
-      return {s[31], e, s[22:0], 29'd0};
-    end
-  endfunction
-
-  // Inverse of operand_602; exact for every binary64 value that is zero,
-  // infinite, NaN or a normal binary32. A written 602 result is never a
-  // binary32 denormal: underflow traps or delivers zero.
-  /* verilator lint_off UNUSEDSIGNAL */
-  function automatic logic [31:0] word_602(input logic [63:0] d);
-    return {d[63], d[62], d[58:52], d[51:29]};
-  endfunction
-  /* verilator lint_on UNUSEDSIGNAL */
 
   // stfd needs a finite, non-denormal binary32 source.
   function automatic logic stfd_traps(input logic [30:0] w);
@@ -1754,10 +1735,7 @@ module ppc_fpu #(
         widen_single(mem_rsp_i.data[31:0]);
     load_double = CPU_602 ? {32'd0, word_602(mem_rsp_i.data)} :
         mem_rsp_i.data;
-    // Zero, or a normal binary32 exponent with no fraction bits below it.
-    load_fits = !CPU_602 || mem_rsp_i.data[62:0] == 63'd0 ||
-        (mem_rsp_i.data[62:52] >= 11'd897 &&
-         mem_rsp_i.data[62:52] <= 11'd1150 && mem_rsp_i.data[28:0] == 29'd0);
+    load_fits = !CPU_602 || fits_602(mem_rsp_i.data[62:0]);
   end
   // Only one context can launch arithmetic in a cycle, and a context
   // holding arithmetic excludes the other, so operands follow the kind.

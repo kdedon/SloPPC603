@@ -22,6 +22,8 @@ module ppc_fpu_arith_compact #(
     input  logic [2:0] req_fwd_i,
     /* verilator lint_on UNUSEDSIGNAL */
     output logic rsp_valid_o,
+    // A reply is held; unlike rsp_valid_o, not withdrawn by flush_i.
+    output logic rsp_held_o,
     input  logic rsp_ready_i,
     output ppc_fpu_pkg::ppc_fpu_arith_rsp_t rsp_o,
     output logic finish_valid_o,
@@ -204,7 +206,7 @@ module ppc_fpu_arith_compact #(
     assign div_sig = finite_sig(state_q == S_DIVA ? input_q.a[62:0] :
         input_q.b[62:0]) & SIG_MASK;
     assign div_exp = finite_exp(state_q == S_DIVA ? input_q.a[62:0] :
-        input_q.b[62:0]);
+        input_q.b[62:0], CPU_602);
     assign div_trial = {rem_q, 1'b0} - {1'b0, den_q};
     assign rem_next = (div_trial[53] ? {rem_q[51:0], 1'b0} : div_trial[52:0]) &
         SIG_MASK;
@@ -284,6 +286,7 @@ module ppc_fpu_arith_compact #(
          state_q == S_NORM);
     assign next_finish_tag_o = input_q.tag;
     assign rsp_valid_o = rst_ni && !flush_i && rsp_valid_q;
+    assign rsp_held_o = rst_ni && rsp_valid_q;
     assign rsp_o = rsp_q;
     assign div_busy_o = rst_ni && !flush_i &&
         (state_q == S_DIVA || state_q == S_DIVB || state_q == S_DIVI);

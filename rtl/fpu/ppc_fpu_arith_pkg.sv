@@ -282,6 +282,32 @@ function automatic logic [52:0] finite_sig(input logic [62:0] magnitude);
     return significand;
 endfunction
 
+// 602 binary32 word in binary64 layout. A denormal keeps a zero exponent
+// field and its raw fraction, which the arithmetic scales by 2^-126;
+// every other word is its exact binary64 value.
+function automatic logic [63:0] operand_602(input logic [31:0] s);
+    logic [10:0] e;
+    if (s[30:23] == 8'hff) e = 11'h7ff;
+    else if (s[30:23] == 8'd0) e = 11'd0;
+    else e = {s[30], {3{~s[30]}}, s[29:23]};
+    return {s[31], e, s[22:0], 29'd0};
+endfunction
+
+// Inverse of operand_602; exact for every binary64 value that is zero,
+// infinite, NaN or a normal binary32. A written 602 result is never a
+// binary32 denormal: underflow traps or delivers zero.
+/* verilator lint_off UNUSEDSIGNAL */
+function automatic logic [31:0] word_602(input logic [63:0] d);
+    return {d[63], d[62], d[58:52], d[51:29]};
+endfunction
+/* verilator lint_on UNUSEDSIGNAL */
+
+// Zero, or a normal binary32 exponent with no fraction bits below it.
+function automatic logic fits_602(input logic [62:0] d);
+    return d == 63'd0 ||
+        (d[62:52] >= 11'd897 && d[62:52] <= 11'd1150 && d[28:0] == 29'd0);
+endfunction
+
 // cpu_602: a zero exponent field holds a binary32 denormal fraction.
 function automatic logic signed [15:0] finite_exp(input logic [62:0] magnitude,
     input logic cpu_602);

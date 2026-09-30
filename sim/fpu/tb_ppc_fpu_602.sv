@@ -203,10 +203,12 @@ module tb_ppc_fpu_602;
 
     // Set to answer the next preparation with a fault.
     logic mem_fault_next;
+`ifndef FPU_COMPACT
     int filled_stores;
     always @(posedge clk_i)
         if (dut.launch0.store_fill && dut.mem_launch && dut.exec_fire)
             filled_stores <= filled_stores + 1;
+`endif
 
     task automatic reply_memory(input completion_tag_t identity,
         input logic [63:0] data);
@@ -408,7 +410,9 @@ module tb_ppc_fpu_602;
         kill_all_i = 1'b0;
         mem_req_ready_i = 1'b0;
         mem_fault_next = 1'b0;
+`ifndef FPU_COMPACT
         filled_stores = 0;
+`endif
         mem_rsp_valid_i = 1'b0;
         mem_rsp_i = '0;
         store_ready_i = 1'b1;
@@ -659,6 +663,28 @@ module tb_ppc_fpu_602;
         // word, and the trap outranks a preparation fault; a backpressured
         // offer stays offered and traps from the register value.
         load_single(5'd16, 32'h7f800000);
+`ifdef FPU_COMPACT
+        // COMPACT holds one instruction, so the store reads the written
+        // sum and traps without preparing.
+        begin
+            completion_tag_t producer;
+            issue_word(aform(6'd59, 5'd17, 5'd16, 5'd9, 5'd0, 5'd21), 32'd0,
+                       1'b0, 1'b0, 1'b0, producer);
+            await_result(producer);
+            if (result_o.exception != FPU_NO_EXCEPTION ||
+                result_o.fpr_value[31:0] != 32'h7f800000)
+                $fatal(1, "602 infinite fadds failed");
+            commit(producer);
+            issue_word(dform(6'd55, 5'd17, 5'd1, 16'd8), 32'd0,
+                       1'b0, 1'b0, 1'b0, identity);
+            await_result(identity);
+            if (result_o.exception != FPU_EMULATION_TRAP || result_o.store ||
+                result_o.gpr_update || store_valid_o)
+                $fatal(1, "602 stfdu of infinity exc=%0d", result_o.exception);
+            commit(identity);
+            checks += 3;
+        end
+`else
         for (int variant = 0; variant < 3; variant++) begin
             completion_tag_t producer;
             int prior_filled;
@@ -708,6 +734,7 @@ module tb_ppc_fpu_602;
                 $fatal(1, "602 stfdu variant=%0d fill count", variant);
             checks += 3;
         end
+`endif
 
         // Unlike 603e, a misaligned 602 FP load still reaches the LSU.
         issue_word(dform(6'd48, 5'd10, 5'd1, 16'd1), 32'd0,

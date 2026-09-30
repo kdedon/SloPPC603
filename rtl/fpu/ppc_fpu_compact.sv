@@ -56,6 +56,9 @@ module ppc_fpu_compact #(
 );
   import ppc_pkg::completion_tag_t;
   import ppc_fpu_pkg::*;
+  import ppc_fpu_arith_pkg::operand_602;
+  import ppc_fpu_arith_pkg::word_602;
+  import ppc_fpu_arith_pkg::fits_602;
 
   localparam int FPR_BITS = CPU_602 ? 32 : 64;
 
@@ -270,7 +273,7 @@ module ppc_fpu_compact #(
                                              input logic [63:0] raw);
     if (CPU_602)
       return integer_word || single ? {32'd0, raw[31:0]} :
-          widen_single(raw[31:0]);
+          operand_602(raw[31:0]);
     return integer_word ? {32'd0, raw[31:0]} :
         single ? {32'd0, narrow_single(raw)} : raw;
   endfunction
@@ -317,7 +320,7 @@ module ppc_fpu_compact #(
   function automatic logic [63:0] format_reply(input ppc_fpu_op_t op,
                                                input logic [63:0] result);
     return CPU_602 ? {32'd0, (op == FP_FCTIWZ ? result[31:0] :
-        narrow_single(result))} : result;
+        word_602(result))} : result;
   endfunction
 
   function automatic ppc_fpu_result_t numeric_result(
@@ -793,9 +796,9 @@ module ppc_fpu_compact #(
     arith_req = '0;
     arith_req.tag = issue_q.tag;
     arith_req.op = dec_q.op;
-    arith_req.a = CPU_602 ? widen_single(src_a[31:0]) : src_a;
-    arith_req.b = CPU_602 ? widen_single(src_b[31:0]) : src_b;
-    arith_req.c = CPU_602 ? widen_single(src_c[31:0]) : src_c;
+    arith_req.a = CPU_602 ? operand_602(src_a[31:0]) : src_a;
+    arith_req.b = CPU_602 ? operand_602(src_b[31:0]) : src_b;
+    arith_req.c = CPU_602 ? operand_602(src_c[31:0]) : src_c;
     arith_req.rn = fpscr_q[1:0];
     arith_req.ni = fpscr_q[2];
     arith_req.ve = fpscr_q[7];
@@ -816,6 +819,7 @@ module ppc_fpu_compact #(
     .req_i(arith_req),
     .req_fwd_i(3'b000),
     .rsp_valid_o(arith_rsp_valid),
+    .rsp_held_o(arith_rsp_held),
     .rsp_ready_i(1'b1), .rsp_o(arith_rsp),
     .finish_valid_o(arith_finish_valid), .finish_o(arith_finish),
     .finish_write_o(arith_finish_write),
@@ -825,9 +829,11 @@ module ppc_fpu_compact #(
     .flush_i(arith_flush)
   );
   // The finish bypass and credit outputs serve pipelined shells.
+  logic arith_rsp_held;
   logic unused_finish;
   assign unused_finish = ^{arith_finish_valid, arith_finish, arith_finish_write,
-      arith_next_finish_valid, arith_next_finish_tag, arith_div_busy};
+      arith_next_finish_valid, arith_next_finish_tag, arith_div_busy,
+      arith_rsp_held};
 
   // Memory preparation.
   always_comb begin
@@ -846,14 +852,11 @@ module ppc_fpu_compact #(
   end
 
   always_comb begin
-    logic [31:0] narrowed;
-    narrowed = narrow_single(mem_rsp_i.data);
     load_single = CPU_602 ? {32'd0, mem_rsp_i.data[31:0]} :
         widen_single(mem_rsp_i.data[31:0]);
-    load_double = CPU_602 ? {32'd0, narrowed} : mem_rsp_i.data;
-    load_fits = !CPU_602 || (mem_rsp_i.data[62:52] != 11'h7ff &&
-        (narrowed[30:23] != 8'd0 || narrowed[22:0] == 23'd0) &&
-        widen_single(narrowed) == mem_rsp_i.data);
+    load_double = CPU_602 ? {32'd0, word_602(mem_rsp_i.data)} :
+        mem_rsp_i.data;
+    load_fits = !CPU_602 || fits_602(mem_rsp_i.data[62:0]);
   end
 
   assign arith_rsp_take = busy_q && phase_q == PH_ARITH && arith_rsp_valid &&
