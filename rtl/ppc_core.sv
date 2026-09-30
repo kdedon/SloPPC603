@@ -328,7 +328,7 @@ module ppc_core #(
     // MSR[FP] and MSR[FE0/FE1] change only through live context.
     if (ENABLE_FPU && (!ENABLE_FULL_DECODE || !ENABLE_LIVE_CONTEXT))
       $fatal(1, "The FPU requires full decode and live supervisor context");
-    if (ENABLE_FPU && (cpu_cfg(CPU_VARIANT).fpu != FPU_DP))
+    if (ENABLE_FPU && !cpu_has_fpu_dp(CPU_VARIANT))
       $fatal(1, "The FPU is attached only to double-precision (603e) variants");
     if (ENABLE_DEBUG_EXCEPTIONS && (!ENABLE_EXTERNAL_INTERRUPTS ||
         !ENABLE_LIVE_CONTEXT || !ENABLE_SUPERVISOR_EXCEPTIONS))
