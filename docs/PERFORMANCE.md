@@ -194,8 +194,11 @@ All pass: MMU stress modes 0-8 and 12-15 with interrupts inside misses and bus t
 full decode (1,302 retirements), machine check (mode 0 includes 7 trace and 1 IABR events),
 lsu-dcache 120,681 retirements in 2,360,513 cycles.
 
-Fit: not yet run on this change; the translated top must be refitted before any timing
-claim (it met 66 MHz on c9e3c08).
+Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`, commit e26f202, 2026-09-29.
+The fit completes but misses 66 MHz: 22 endpoints fail at 15.152 ns, worst slack -0.666 ns, all on
+the IQ head-pointer loop (branch decode at the IQ head ahead of the dispatch decision).
+Commit 42c2571 moves that decode to IQ push (four predecoded bits per entry); its refit
+is still to be run, so no timing claim is made for this round.
 
 What remains: a taken branch that cannot fold (`bclr`, `bcctr`, a mispredicted `bc`)
 still costs about 4 cycles of refetch, and a folded one leaves a gap when the IQ runs dry.
