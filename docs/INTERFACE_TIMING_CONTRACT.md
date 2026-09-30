@@ -140,6 +140,24 @@ C1, C3, C4 and C5 apply with `sysclk` as the clock, plus:
   path from the asynchronous pins to `pin_meta_q` (13 flops), and per-bit
   boundary registers (`*_ibq`, `*_obq`) for every synchronous pin.
 
+## C9 Package pins (`ppc602`)
+
+The 602 top's ports are the 602 pins ([CHIP_PACKAGE_602.md](CHIP_PACKAGE_602.md)).
+C1, C3 and C4 apply with `sysclk` as the clock (PLL bypass, 1:1), plus:
+
+- Asynchronous pins: HRESET, SRESET, INT, SMI, MCP, CKSTP_IN, QACK, TBEN and
+  PLL_CFG[0:3] pass the two-flop synchronizer (`pin_meta_q`, 12 flops); the
+  C8 widths apply. RESETO is a synchronous output.
+- The multiplexed bus `d_i`/`d_o` and every other bus pin are synchronous.
+  BR, TS, BB, D and the enables come from registers in `ppc602_bus` or
+  `ppc602`, except the snoop ARTRY, which is combinational from the core's
+  snoop response as on the 603e top. No half-cycle release (C5 does not
+  apply): TS and BB precharge for a full cycle.
+- Every output enable except CKSTP_OUT's is forced low in hard reset or
+  checkstop.
+- The measurement project `quartus/chip602` implements C7 for these ports as
+  C8 does for `quartus/chip`.
+
 ## Release sign-off checklist
 
 Verified by this repository (rerun before each release). `make -C sim

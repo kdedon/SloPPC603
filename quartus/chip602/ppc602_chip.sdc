@@ -25,8 +25,9 @@ set_output_delay -clock core_clk -min 0.000 [all_outputs]
 # asynchronous. Each reaches only its first synchronizer flop (pin_meta_q);
 # everything after it is timed.
 set pin_meta [get_registers -nowarn {*pin_meta_q*}]
-if {[get_collection_size $pin_meta] != 12} {
-  post_message -type critical_warning "expected 12 pin synchronizer flops"
+# QACK has no function on the 602, so its flop is removed: 11 remain.
+if {[get_collection_size $pin_meta] != 11} {
+  post_message -type critical_warning "expected 11 pin synchronizer flops"
 }
 set_false_path -from $async_in -to $pin_meta
 
