@@ -2001,6 +2001,13 @@ demo-bench-firmware:
 $(addprefix demo-,$(BENCH_NAMES)): demo-%: demo-soc-model demo-bench-firmware
 	timeout 7200 ./$(BUILD_DIR)/demo/model/Vtb_demo_soc $(SIM_ARGS) +MAX_CYCLES=2000000000 +IMAGE=$(DEMO_FW_DIR)/$*.hex +NAME=$* +PPM=$(BUILD_DIR)/demo/$*.ppm
 	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/$*.ppm $(BUILD_DIR)/demo/$*.png
+# Opcode self-test (docs/SELFTEST.md): the 603e image on the demo SoC, which
+# exits with the number of failed cases.
+.PHONY: test-selftest
+test-selftest: demo-soc-model
+	$(DEMO_FW_MAKE) selftest
+	timeout 3600 ./$(BUILD_DIR)/demo/model/Vtb_demo_soc $(SIM_ARGS) +MAX_CYCLES=400000000 +IMAGE=$(DEMO_FW_DIR)/selftest.hex +NAME=selftest +PPM=$(BUILD_DIR)/demo/selftest.ppm
+	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/selftest.ppm $(BUILD_DIR)/demo/selftest.png
 # The MiSTer suite images' layout (mister/build.sh --suite), at simulation size.
 .PHONY: $(addprefix demo-mister-,$(BENCH_NAMES))
 $(addprefix demo-mister-,$(BENCH_NAMES)): demo-mister-%: demo-soc-model

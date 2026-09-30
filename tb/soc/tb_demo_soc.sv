@@ -4,7 +4,7 @@
 // firmware writes the exit register, one scanned-out frame is captured to a
 // PPM file and a summary line is printed.
 // Plusargs: +IMAGE=<hex> (64-bit words for RAM), +PPM=<path>, +NAME=<label>,
-// +MAX_CYCLES=<n>. Passes when the exit code is 0 with no checkstop.
+// +MAX_CYCLES=<n>, +TRACE=<n>. Passes when the exit code is 0 with no checkstop.
 /* verilator lint_off BLKSEQ */
 module tb_demo_soc;
   localparam int H_ACTIVE = 320, V_ACTIVE = 240;
@@ -29,12 +29,18 @@ module tb_demo_soc;
   );
   /* verilator lint_on PINCONNECTEMPTY */
 
-  longint unsigned cycles = 0, retired = 0, max_cycles = 64'd400_000_000;
+  // +TRACE=<n>: print each retirement (PC, instruction) from retirement n on.
+  longint unsigned cycles = 0, retired = 0, max_cycles = 64'd400_000_000, trace_from = '1;
   logic running = 1'b0;
   always @(posedge clk) begin
     if (running) begin
       cycles++;
-      if (soc.cpu.retire_valid) retired++;
+      if (soc.cpu.retire_valid) begin
+        if (retired >= trace_from)
+          $display("retire %0d cycle %0d pc %08x insn %08x", retired, cycles,
+                   soc.cpu.retire.pc, soc.cpu.retire.insn);
+        retired++;
+      end
       if (checkstop) $fatal(1, "checkstop cycle=%0d pc=%08x", cycles, soc.cpu.retire.pc);
       if (cycles > max_cycles) $fatal(1, "watchdog cycle=%0d last pc=%08x", cycles, soc.cpu.retire.pc);
     end
@@ -97,6 +103,7 @@ module tb_demo_soc;
     if (!$value$plusargs("PPM=%s", ppm)) ppm = "";
     if (!$value$plusargs("NAME=%s", name)) name = "demo";
     void'($value$plusargs("MAX_CYCLES=%d", max_cycles));
+    void'($value$plusargs("TRACE=%d", trace_from));
     $readmemh(image, soc.ram.mem);
     repeat (8) @(posedge clk);
     rst_n = 1'b1;
