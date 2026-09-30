@@ -20,6 +20,12 @@ SECTIONS
     *(.rodata .rodata.*)
   } > RAM
 
+  /* Constant tables of the hard-float libgcc helpers (PIC). */
+  .got2 ALIGN(8) :
+  {
+    *(.got2)
+  } > RAM
+
   .data ALIGN(8) : AT(ADDR(.data) + SIZEOF(.data))
   {
     __data_start = .;

@@ -19,7 +19,9 @@ module ppc603e_demo_soc #(
   parameter int FB_HEIGHT = 240,
   parameter logic [31:0] FB_BASE = 32'hf000_0000,
   // Processor clock in MHz, reported in the MODE register.
-  parameter int SYS_MHZ = 50
+  parameter int SYS_MHZ = 50,
+  // Floating-point unit in the processor, reported in MODE bit 8.
+  parameter bit ENABLE_FPU = 1'b0
 ) (
   input  logic       clk_i,
   // Synchronous, active low; also the processor's HRESET.
@@ -91,7 +93,9 @@ module ppc603e_demo_soc #(
   // Parity, snoop-attribute, test and clock outputs have no load here.
   /* verilator lint_off PINCONNECTEMPTY */
   ppc_pkg::perf_event_t cpu_perf;
-  ppc603e #(.CPU_VARIANT(ppc_pkg::CPU_PID7V_603E), .PLL_CFG(PLL_CFG)) cpu (
+  ppc603e #(
+    .CPU_VARIANT(ppc_pkg::CPU_PID7V_603E), .PLL_CFG(PLL_CFG), .ENABLE_FPU(ENABLE_FPU)
+  ) cpu (
     // The default strap runs the bus 1:1: the enable is always high.
     .perf_o(cpu_perf), .bus_ce_o(),
     .sysclk(clk_i), .pll_cfg_i(PLL_CFG), .clk_out_o(), .clk_out_oe_o(),
@@ -264,7 +268,7 @@ module ppc603e_demo_soc #(
           // Framebuffer geometry: base, stride; width, height, MiSTer FB_FORMAT.
           9'd4: io_rdata_q <= {FB_BASE, 32'(FB_WIDTH)};
           9'd5: io_rdata_q <= {16'(FB_WIDTH), 16'(FB_HEIGHT), 32'(FB_FORMAT)};
-          9'd6: io_rdata_q <= {16'(SYS_MHZ), 8'b0, mode_i, tenures};
+          9'd6: io_rdata_q <= {16'(SYS_MHZ), 7'b0, ENABLE_FPU, mode_i, tenures};
           9'd7: begin
             io_rdata_q <= {retired_q[31:0], retired_hi_q};
             if (be[7]) retired_hi_q <= retired_q[63:32];

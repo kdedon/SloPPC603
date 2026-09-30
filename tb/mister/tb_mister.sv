@@ -22,7 +22,8 @@ module tb_mister #(
   // the fixed map before the geometry registers.
   parameter logic [31:0] FB_BASE = 32'hf020_0000,
   // DDRAM busy pattern seed.
-  parameter logic [15:0] BUSY_SEED = 16'hace1
+  parameter logic [15:0] BUSY_SEED = 16'hace1,
+  parameter bit ENABLE_FPU = 1'b0
 );
   localparam int SECTORS = 3 + (FB_W * FB_H + 511) / 512;
   localparam logic [28:0] FB_WORD = 29'h0600_0000;  // 0x30000000 / 8
@@ -45,7 +46,8 @@ module tb_mister #(
   logic [23:0] pal_data;
   logic [31:0] exit_code;
 
-  ppc603e_mister #(.FB_EXTERNAL(FB_EXTERNAL), .FB_WIDTH(FB_W), .FB_HEIGHT(FB_H), .FB_BASE(FB_BASE)) dut (
+  ppc603e_mister #(.FB_EXTERNAL(FB_EXTERNAL), .FB_WIDTH(FB_W), .FB_HEIGHT(FB_H), .FB_BASE(FB_BASE),
+    .ENABLE_FPU(ENABLE_FPU)) dut (
     .clk_i(clk), .rst_i(rst), .mode_i(mode), .input_i('0),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
     .pal_we_o(pal_we), .pal_addr_o(pal_addr), .pal_data_o(pal_data),

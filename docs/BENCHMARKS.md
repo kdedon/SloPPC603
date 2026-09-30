@@ -1,8 +1,9 @@
-# Benchmarks: nbench and Embench-IoT
+# Benchmarks: nbench, Embench-IoT and Whetstone
 
 Two benchmark suites run on the demonstration system ([DEMO_SOC.md](DEMO_SOC.md))
-alongside Dhrystone and CoreMark: nbench (BYTEmark) and Embench-IoT. Their sources are
-fetched at pinned commits and never committed; the harness, C library subset and build
+alongside Dhrystone and CoreMark: nbench (BYTEmark) and Embench-IoT; so does Whetstone,
+built for both the FPU-less processor and `ENABLE_FPU`. Their sources are
+fetched at pinned revisions and never committed; the harness, C library subset and build
 glue in `toolchain/demo/` are this project's (MIT).
 
 ## Sources and licences
@@ -16,6 +17,7 @@ its SHA-256 and caches it under `toolchain/build/demo/src` (git-ignored).
 | Embench-IoT 1.0 | <https://github.com/embench/embench-iot/tree/0466a18e4f6b47e19598d7c6ba72916d54b68f65> (tag `embench-1.0`) | GPL-3.0-or-later (benchmarks carry their own compatible notices) |
 | soft-fp | <https://github.com/gcc-mirror/gcc/tree/2ee5e4300186a92ad73f1a1a64cb918dc76c8d67/libgcc/soft-fp> (GCC 12.2.0, the pinned compiler's version) | GPL-3.0 with the GCC Runtime Library Exception |
 | libm | <https://github.com/kraj/musl/tree/0784374d561435f7c787a555aeab8ede699ed298/src/math> (musl 1.2.5) | MIT |
+| Whetstone 1.2 | <https://www.netlib.org/benchmark/whetstone.c> (Rich Painter's C conversion of the double-precision Whetstone, 22 March 1998), fetched from the archived copy <https://web.archive.org/web/20241229210241id_/https://www.netlib.org/benchmark/whetstone.c>: netlib keeps no revisions, so the snapshot and its SHA-256 are the pin | Painter Engineering notice: permission "to use, duplicate, and publish this text and program as long as it includes this entire comment block and limited rights reference" |
 
 Consequences for built images:
 
@@ -26,16 +28,23 @@ Consequences for built images:
   do not redistribute built images without checking the terms yourself.
 - soft-fp's runtime exception and musl's MIT licence place no condition on the images
   beyond the notices.
+- Whetstone's notice permits redistribution provided the whole opening comment block goes
+  with the program. The build extracts that block from the fetched file and links it into
+  every Whetstone image as a string (`whet_notice`), so an image or `.rbf` built from it
+  carries the notice. It is not an open-source licence; nothing else in it restricts an
+  `.rbf`.
 
 ## Floating point
 
-The processor has no FPU, and the toolchain's `libgcc` holds only hard-float versions of
-the arithmetic helpers (`__adddf3` is an `fadd`). The benchmark images therefore link
-GCC's soft-fp routines, compiled here with `-msoft-float`, and musl's double-precision
-`sin`, `cos`, `atan`, `acos`, `exp`, `log`, `pow`, `sqrt`, `floor` and `fabs`. Every
-image is still checked for floating-point instructions after linking. Floating-point
-scores measure integer emulation of IEEE arithmetic: they are not comparable with a
-real 603e, which has a hardware FPU.
+The default processor has no FPU, and the toolchain's `libgcc` holds only hard-float
+versions of the arithmetic helpers (`__adddf3` is an `fadd`). The benchmark images
+therefore link GCC's soft-fp routines, compiled here with `-msoft-float`, and musl's
+double-precision `sin`, `cos`, `atan`, `acos`, `exp`, `log`, `pow`, `sqrt`, `floor` and
+`fabs`. Every image except the hard-float Whetstone ones is checked for floating-point
+instructions after linking. Floating-point scores of these images measure integer
+emulation of IEEE arithmetic: they are not comparable with a real 603e, which has a
+hardware FPU. The hard-float Whetstone images (see [Whetstone](#whetstone)) are the
+exception; nbench and Embench have no hard-float build yet.
 
 ## Memory
 
@@ -142,13 +151,56 @@ program fails if any fails. The photo line: `EMBENCH 50MHz <score>/MHz 19/19 PAS
 Embench postdates the 603e, so there are no historical 603e numbers. Its reference is
 the Cortex-M4 at 1.0 per MHz.
 
+## Whetstone
+
+The netlib C Whetstone (double precision, modules 5 and 12 omitted as in the source)
+is built twice from the same source:
+
+- soft-float (`whetstone`, `-msoft-float`), for the processor without an FPU, with the
+  soft-fp routines and musl's `sin`, `cos`, `atan`, `exp`, `log` and `sqrt`;
+- hard-float (`whetstone-hf`, `-mhard-float`), for `ENABLE_FPU` builds. Every object
+  that passes doubles (runtime, C library subset, musl) is rebuilt hard-float, the
+  toolchain's own libgcc supplies the conversion helpers, and start-up sets MSR[FP].
+  `sqrt` stays musl's software routine: the 603e has no `fsqrt`, so the compiler never
+  emits it for `-mcpu=603e`.
+
+`whet_glue.c` compiles the source unchanged with `main`, `printf`, `time` and `atol`
+renamed. The program's `time()` calls return 1 and 2 (one second, so its own
+duration check passes) while the glue reads the cycle counter at each, and its output is
+discarded except the `PRINTOUT` lines: those give each module's loop count and results,
+which the glue compares with a host model of the program (`bench_gen.py whetstone`,
+Python doubles, the same operation order). A run passes when all ten module lines match
+the model within a relative 1e-12. The rating is the program's own, 100 × `LOOP`
+thousand Whetstone instructions per run:
+
+    MWIPS = 0.1 × LOOP × runs × clock / cycles,  MWIPS/MHz = 0.1 × LOOP × runs × 10^6 / cycles
+
+Other Whetstone versions (for example Roy Longbottom's `whets.c`, which times each
+module and scales its loop counts) define their MWIPS differently; compare only with
+figures from this program.
+
+`PRINTOUT` adds ten captured calls per run, outside the module loops. The source asks
+for final timings without it; the calls cost about a thousand cycles per run, under
+0.2% of the shortest run here.
+
+| Image | LOOP | Runs |
+|---|---:|---|
+| `whetstone`, `whetstone-hf` (simulation) | 2 (`WHET_SMOKE_LOOP`) | 1 |
+| `whetstone-full`, `whetstone-hf-full`, `mister-whetstone`, `mister-whetstone-hf` | 100 (`WHET_LOOP`) | repeated until `WHET_SECS` (10) seconds have passed |
+
+The photo line: `WHETSTONE 50MHz soft-float|FPU <MWIPS> MWIPS <per MHz>/MHz PASS`. The
+FPU executes one floating-point instruction at a time
+([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md#execution-model-serialized)), so the
+hard-float figure is not a 603e's.
+
 ## Running
 
 ```sh
-make -C sim demo-nbench      # or demo-embench
+make -C sim demo-nbench      # or demo-embench, demo-whetstone
+make -C sim demo-whetstone-hf   # hard-float, on the SoC with ENABLE_FPU
 ```
 
-Each target fetches the sources, builds all four benchmark images in the pinned
+Each target fetches the sources, builds every benchmark image in the pinned
 container (`make -f demo/Makefile benchmarks`), builds the model and runs the short
 image, writing `sim/build/demo/<name>.png`. The full images are
 `toolchain/build/demo/nbench-full.{hex,bin}` and `embench-full.{hex,bin}`; they run in
@@ -204,6 +256,30 @@ their scores and photo lines. It does not establish full-size scores: `nbench-fu
 `embench-full` build but have not been run (billions of cycles in simulation); run them
 on hardware. The smoke indices are not comparable with published figures.
 
+### Whetstone
+
+Recorded: `make -C sim demo-whetstone demo-whetstone-hf demo-mister-whetstone
+demo-mister-whetstone-hf`, commit a7158bd, 2026-09-30. All pass.
+
+| Image | SoC | Whetstone cycles (LOOP 2) | Retired | CPI | MWIPS at 50 MHz | MWIPS/MHz |
+|---|---|---:|---:|---:|---:|---:|
+| `whetstone` | default | 8,234,435 | 3,225,131 | 2.556 | 1.214 | 0.0243 |
+| `whetstone-hf` | `ENABLE_FPU` | 882,036 | 127,040 | 6.989 | 11.337 | 0.2267 |
+
+Retired and CPI are the performance-counter window around the run. All ten module
+lines matched the host model exactly (bit for bit) in both builds. The MiSTer-layout
+images give the same figures (hard-float 11.338 MWIPS: its window differs by a few
+cycles). On the default SoC the hard-float image exits `0xe0000800` after 4,952
+cycles, at its first floating-point instruction (after the targets above, in `sim/`:
+`./build/demo/model/Vtb_demo_soc +IMAGE=../toolchain/build/demo/whetstone-hf.hex`,
+which fails the bench as expected).
+
+This establishes that both builds compute Whetstone's module values as the host does
+and gives their rates in simulation. The rates rest on the simulated memory system
+(block RAM, one bus master); the full-length images (`WHET_LOOP` 100 for 10 s) have
+not run. The soft-float rate measures soft-fp and musl on the integer core; the
+hard-float rate is set by the serialized FPU lane (CPI 7) and is not a 603e figure.
+
 ## MiSTer cores
 
 The default MiSTer image (`mister.hex`, `toolchain/demo/mister.c`) holds hello, Dhrystone
@@ -215,3 +291,10 @@ therefore builds as its own core with 256 KiB of program RAM:
 `toolchain/demo/mister-bench.ld`, which keeps a copy of the data section so a restart
 reruns the suite; `make -C sim demo-mister-nbench demo-mister-embench` runs the
 simulation sizes with that layout.
+
+Whetstone builds the same way: `mister/build.sh --suite whetstone` runs
+`mister-whetstone.hex` (soft-float) on the FPU-less core, and
+`mister/build.sh --fpu --suite whetstone` runs `mister-whetstone-hf.hex` on a core with
+`ENABLE_FPU`. `make -C sim demo-mister-whetstone demo-mister-whetstone-hf` runs their
+simulation sizes. The screen ends with the photo line and the performance-counter
+breakdown; the OSD shows `Finished: PASS` when every run's module values match.

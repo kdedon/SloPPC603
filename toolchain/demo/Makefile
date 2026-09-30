@@ -34,7 +34,8 @@ RT_OBJ := $(OUT)/crt0.o $(OUT)/rt.o $(OUT)/font.o
 CM_SRC := core_list_join core_main core_matrix core_state core_util
 
 .PHONY: all hello dhrystone coremark mister benchmarks nbench nbench-full embench embench-full \
-	mister-nbench mister-embench
+	mister-nbench mister-embench whetstone whetstone-full whetstone-hf whetstone-hf-full \
+	mister-whetstone mister-whetstone-hf
 all: hello dhrystone coremark
 hello: $(OUT)/hello.hex
 dhrystone: $(OUT)/dhrystone.hex
@@ -109,7 +110,8 @@ GCC_INC = $(shell $(CC) -print-file-name=include)
 BENCH_CFLAGS = $(subst -Idemo -Idemo/include,-nostdinc -isystem $(GCC_INC) -Idemo/libc -Idemo/include -Idemo,$(CFLAGS)) \
 	-mlong-double-64
 FP_OBJ := demo/Makefile $(OUT)/bench.o $(OUT)/libc.o $(OUT)/libm.a $(OUT)/softfp.a
-BENCH_IMAGES := nbench nbench-full embench embench-full
+BENCH_IMAGES := nbench nbench-full embench embench-full whetstone whetstone-full whetstone-hf \
+	whetstone-hf-full
 benchmarks: $(BENCH_IMAGES)
 # A smaller stack leaves the RAM to code, data and heap; the programs check
 # their stack depth. The symbol must precede the linker script.
@@ -242,6 +244,87 @@ $(OUT)/mister-embench.elf: $(RT_OBJ) $(OUT)/emb-full/benchmarks.o $(OUT)/emb-ful
 	$(MISTER_BENCH_DEPS)
 $(OUT)/mister-embench-smoke.elf: $(RT_OBJ) $(OUT)/emb-smoke/benchmarks.o \
 	$(OUT)/emb-smoke/glue.o $(MISTER_BENCH_DEPS)
+
+# ---- Whetstone (docs/BENCHMARKS.md) -------------------------------------------
+# The netlib C Whetstone, built soft-float for the processor without an FPU
+# and hard-float (-hf) for ENABLE_FPU builds. A hard-float image recompiles
+# everything that passes doubles and links the toolchain's hard-float libgcc
+# instead of soft-fp. The short images run WHET_SMOKE_LOOP once; the full
+# ones repeat WHET_LOOP for at least WHET_SECS seconds.
+WHET_SMOKE_LOOP ?= 2
+WHET_LOOP ?= 100
+WHET_SECS ?= 10
+WH := $(OUT)/whet
+HF := $(OUT)/hf
+ARCH_HF := $(subst -msoft-float,-mhard-float,$(ARCH))
+HF_CFLAGS = $(subst -msoft-float,-mhard-float,$(CFLAGS))
+HF_BENCH_CFLAGS = $(subst -msoft-float,-mhard-float,$(BENCH_CFLAGS))
+WHET_CFLAGS := -std=gnu89 -w -DPRINTOUT -Dmain=whet_main -Dprintf=whet_printf -Dtime=whet_time \
+	-Datol=whet_atol -Dstderr=0
+WHET_GLUE_DEPS = demo/whetstone/whet_glue.c demo/bench.h demo/soc.h demo/Makefile
+WHET_smoke = -DWHET_SECS=0
+WHET_full = -DWHET_SECS=$(WHET_SECS)
+WHET_LOOP_smoke = $(WHET_SMOKE_LOOP)
+WHET_LOOP_full = $(WHET_LOOP)
+HF_RT_OBJ := $(HF)/crt0.o $(HF)/rt.o $(HF)/font.o
+HF_FP_OBJ := demo/Makefile $(HF)/bench.o $(HF)/libc.o $(HF)/libm.a
+HF_IMAGES := whetstone-hf whetstone-hf-full mister-whetstone-hf mister-whetstone-hf-smoke
+whetstone: $(OUT)/whetstone.hex
+whetstone-full: $(OUT)/whetstone-full.hex
+whetstone-hf: $(OUT)/whetstone-hf.hex
+whetstone-hf-full: $(OUT)/whetstone-hf-full.hex
+mister-whetstone: $(OUT)/mister-whetstone.hex $(OUT)/mister-whetstone-smoke.hex
+mister-whetstone-hf: $(OUT)/mister-whetstone-hf.hex $(OUT)/mister-whetstone-hf-smoke.hex
+
+$(WH)/smoke $(WH)/full $(HF) $(HF)/libm:
+	mkdir -p $@
+$(WH)/%/whet_ref.h: $(SRC)/whetstone/whetstone.c demo/bench_gen.py demo/Makefile | $(WH)/%
+	$(PYTHON) demo/bench_gen.py whetstone $< $(WHET_LOOP_$*) $@
+$(WH)/whetstone.o: $(SRC)/whetstone/whetstone.c | $(WH)/smoke
+	$(CC) $(BENCH_CFLAGS) $(WHET_CFLAGS) -c $< -o $@
+$(WH)/whetstone-hf.o: $(SRC)/whetstone/whetstone.c | $(WH)/smoke
+	$(CC) $(HF_BENCH_CFLAGS) $(WHET_CFLAGS) -c $< -o $@
+$(WH)/%/glue.o: $(WHET_GLUE_DEPS) $(WH)/%/whet_ref.h
+	$(CC) $(BENCH_CFLAGS) $(OWN_CFLAGS) -I$(WH)/$* $(WHET_$*) -c $< -o $@
+$(WH)/%/glue-hf.o: $(WHET_GLUE_DEPS) $(WH)/%/whet_ref.h
+	$(CC) $(HF_BENCH_CFLAGS) $(OWN_CFLAGS) -I$(WH)/$* $(WHET_$*) -c $< -o $@
+
+$(HF)/crt0.o: demo/crt0.S | $(HF)
+	$(CC) $(ARCH_HF) -DCRT0_FP -c $< -o $@
+$(HF)/rt.o: demo/rt.c demo/soc.h | $(HF)
+	$(CC) $(HF_CFLAGS) $(RT_CFLAGS) -c $< -o $@
+$(HF)/font.o: demo/font.c demo/soc.h | $(HF)
+	$(CC) $(HF_CFLAGS) $(OWN_CFLAGS) -c $< -o $@
+$(HF)/bench.o: demo/bench.c demo/bench.h demo/soc.h | $(HF)
+	$(CC) $(HF_BENCH_CFLAGS) $(OWN_CFLAGS) -c $< -o $@
+$(HF)/libc.o: demo/libc/libc.c $(wildcard demo/libc/*.h) demo/soc.h | $(HF)
+	$(CC) $(HF_BENCH_CFLAGS) $(RT_CFLAGS) -c $< -o $@
+$(HF)/libm/%.o: $(SRC)/libm/src/math/%.c | $(HF)/libm
+	$(CC) $(subst -msoft-float,-mhard-float,$(LIBM_CFLAGS)) -c $< -o $@
+$(HF)/libm.a: $(addprefix $(HF)/libm/,$(addsuffix .o,$(LIBM_SRC)))
+	rm -f $@
+	$(AR) rcs $@ $^
+
+$(OUT)/whetstone.elf: $(RT_OBJ) $(WH)/whetstone.o $(WH)/smoke/glue.o $(FP_OBJ) demo/demo.ld
+$(OUT)/whetstone-full.elf: $(RT_OBJ) $(WH)/whetstone.o $(WH)/full/glue.o $(FP_OBJ) demo/demo.ld
+$(OUT)/whetstone-hf.elf: $(HF_RT_OBJ) $(WH)/whetstone-hf.o $(WH)/smoke/glue-hf.o $(HF_FP_OBJ) \
+	demo/demo.ld
+$(OUT)/whetstone-hf-full.elf: $(HF_RT_OBJ) $(WH)/whetstone-hf.o $(WH)/full/glue-hf.o $(HF_FP_OBJ) \
+	demo/demo.ld
+$(OUT)/mister-whetstone.elf $(OUT)/mister-whetstone-smoke.elf \
+$(OUT)/mister-whetstone-hf.elf $(OUT)/mister-whetstone-hf-smoke.elf: LDFLAGS := $(MISTER_BENCH_LD)
+$(OUT)/mister-whetstone.elf: $(RT_OBJ) $(WH)/whetstone.o $(WH)/full/glue.o $(MISTER_BENCH_DEPS)
+$(OUT)/mister-whetstone-smoke.elf: $(RT_OBJ) $(WH)/whetstone.o $(WH)/smoke/glue.o \
+	$(MISTER_BENCH_DEPS)
+$(OUT)/mister-whetstone-hf.elf: $(HF_RT_OBJ) $(WH)/whetstone-hf.o $(WH)/full/glue-hf.o \
+	$(HF_FP_OBJ) demo/mister-bench.ld demo/mister-sections.ld
+$(OUT)/mister-whetstone-hf-smoke.elf: $(HF_RT_OBJ) $(WH)/whetstone-hf.o $(WH)/smoke/glue-hf.o \
+	$(HF_FP_OBJ) demo/mister-bench.ld demo/mister-sections.ld
+# Hard-float images: the same link without the floating-point check.
+$(addprefix $(OUT)/,$(addsuffix .elf,$(HF_IMAGES))): $(OUT)/%.elf:
+	$(CC) $(subst -msoft-float,-mhard-float,$(LDFLAGS)) -Wl,-Map,$(OUT)/$*.map $(filter %.o,$^) \
+	  -Wl,--start-group $(filter %.a,$^) -Wl,--end-group -lgcc -o $@
+	$(OBJDUMP) -d $@ > $(OUT)/$*.dump
 
 # ---- opcode self-test (docs/SELFTEST.md) -------------------------------------
 # One image per variant; the cases and expected values come from gen.py, and
