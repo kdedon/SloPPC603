@@ -31,7 +31,7 @@ module tb_chip_power #(parameter int PLL = -1);
   localparam logic [4:0] TT_KILL = 5'b01100;
 
   int checks = 0, cycles = 0, fetches = 0, chip_ts = 0;
-  logic [31:0] pow_at;
+  logic [31:0] pow_at, late_at;
 
   task automatic bus_fall;
     do @(negedge clk); while (!bus_ce);
@@ -125,6 +125,7 @@ module tb_chip_power #(parameter int PLL = -1);
     emit(ISYNC);
     if (late_hid0 != 0) begin
       emit_const(3, late_hid0);
+      late_at = at;
       emit(asm_spr(1'b1, 3, 1008));
     end
     emit(asm_li(4, 1));
@@ -170,7 +171,7 @@ module tb_chip_power #(parameter int PLL = -1);
   // that it starts no tenure for `quiet` cycles.
   task automatic expect_asleep(input int quiet, input string what);
     int start;
-    repeat (400) bus_fall();
+    repeat (1000) bus_fall();
     check(mem_word(DATA + AFTER) == 0, {what, ": nothing after the POW mtmsr runs"});
     start = chip_ts;
     repeat (quiet) bus_fall();
@@ -362,6 +363,19 @@ module tb_chip_power #(parameter int PLL = -1);
     check(qreq_n, "no QREQ");
   endtask
 
+  // POW first, then HID0[DOZE]: the HID0 write enters doze.
+  task automatic case_hid0_entry;
+    power_program(32'h0, MSR_IP | MSR_ME | MSR_EE, 0, 1'b0, DOZE);
+    hard_reset();
+    boot("late boot");
+    expect_asleep(400, "doze by HID0 write");
+    pulse(int_n, 3);
+    wait_word(EXT_MARK, 'h500, 6000, "INT wakes");
+    check(mem_word(DATA + EXT_SRR0) == late_at + 4,
+          $sformatf("SRR0=%08x follows the HID0 write", mem_word(DATA + EXT_SRR0)));
+    wait_word(AFTER, 1, 6000, "resumes");
+  endtask
+
   // Two mode bits with POW reject explicitly: mtmsr, then mtspr HID0.
   task automatic case_reject;
     power_program(DOZE | NAP, MSR_IP | MSR_ME | MSR_EE, 0, 1'b0);
@@ -389,6 +403,7 @@ module tb_chip_power #(parameter int PLL = -1);
     case_sleep_sreset();
     case_doze_hreset();
     case_no_mode();
+    case_hid0_entry();
     case_reject();
     $display("PASS chip power: checks=%0d cycles=%0d", checks, cycles);
     $finish;
