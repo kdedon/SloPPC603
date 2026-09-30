@@ -247,6 +247,36 @@ R+0.5:1). Timing contract:
 The default strap stays 1:1, where the enable is constant and the bus is
 cycle-for-cycle unchanged.
 
+Recorded: `make -C sim test-chip-pins test-chip-dcache-coherence test-chip-ratios test-core-bat-cached-bus60x test-core-bat-cached-bus60x-ratios test-biu-dcache-snoop variant-config-0 variant-config-1`, commit 9c51533, 2026-09-29.
+Pass. `test-chip-ratios` (PID7v PLL_CFG 0100, 0110, 1000, 1110, 1010: 2:1,
+2.5:1, 3:1, 3.5:1, 4:1): `tb_chip_pins` 1353 checks each, and
+`tb_chip_dcache_coherence` seeds 1 and 2 at each ratio (6 rounds, about
+33 000 DMA tenures, 360-400 snoop retries). The harness checks that no bus
+output changes between SYSCLK edges, and the coherent BFM samples and drives
+only on them. `test-core-bat-cached-bus60x-ratios` runs the translated
+cached top at 1.5:1 to 4:1 (41 retirements each). `tb_variant_config`
+checks `pll_cfg_ratio2()` for all 16 codes on every variant. At 1:1
+`tb_chip_pins` gives checks=1352 cycles=74139, as on main; with
+`SIM_ARGS=` (no random initial values), `test-chip-dcache-coherence` and
+`test-core-bat-cached-bus60x-stress` print the same lines as main. With the
+default random initial values they differ, because the added registers shift
+the random stream.
+
+Recorded: `python3 toolchain/run-rtl-smoke.py --profile chip-mmu-stress [--gparam PLL=4|8|6]` (as `make -C toolchain rtl-chip-ratios` and `rtl-chip-mmu-stress`), commit 9c51533, 2026-09-29.
+Pass. Compiled MMU stress on the pin top: 1:1 cycles=838834 tenures=39487,
+identical to main; 2:1 cycles=1541534 tenures=39823; 3:1 cycles=2381837
+tenures=40235; 2.5:1 cycles=1916480 tenures=40294; 279 writes each. This
+establishes protocol and results at every PID7v ratio in simulation. It does
+not establish the 1.5:1 row on the pin top (PID6 only; covered on the
+translated top) or any board-level SYSCLK timing.
+
+Recorded: `./quartus/translated/build.sh --docker`, `./quartus/chip/build.sh --docker`, then `./quartus/report-target-paths.sh translated|chip --docker`, commit 9c51533, 2026-09-29.
+Default strap (1:1). Translated: 11,398 ALMs, slow 100 C Fmax 67.26 MHz,
+setup slack +5.132 ns at 20 ns. Chip: 10,422 ALMs, Fmax 67.8 MHz, setup
+slack +4.066 ns. Both: 0 failing endpoints at 15.152 ns (66 MHz) at every
+corner. At 1:1 the enable is constant and the ratio logic folds away. The
+fit establishes nothing for a non-default strap.
+
 ### 1.9 Power management
 
 | | PID7v-603e | PID6-603e | 603 | 602 |
