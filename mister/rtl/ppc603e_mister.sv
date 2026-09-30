@@ -26,7 +26,8 @@ module ppc603e_mister #(
   parameter logic [31:0] FB_BASE = 32'hf020_0000,
   // Byte address of the framebuffer in DDR3, 512-byte aligned.
   parameter logic [31:0] FB_DDR_BASE = 32'h3000_0000,
-  parameter bit ENABLE_FPU = 1'b0
+  parameter bit ENABLE_FPU = 1'b0,
+  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL
 ) (
   input  logic        clk_i,
   // Synchronous, active high.
@@ -91,7 +92,7 @@ module ppc603e_mister #(
   ppc603e_demo_soc #(
     .RAM_INIT(RAM_INIT), .RAM_BYTES(RAM_BYTES), .CE_DIV(8), .FB_EXTERNAL(FB_EXTERNAL),
     .FB_WIDTH(FB_WIDTH), .FB_HEIGHT(FB_HEIGHT), .FB_BASE(FB_BASE), .SYS_MHZ(SYS_MHZ),
-    .ENABLE_FPU(ENABLE_FPU)
+    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL)
   ) soc (
     .clk_i, .rst_ni(!rst_i), .int_n_i(1'b1), .mode_i, .input_i,
     .ce_pix_o, .r_o, .g_o, .b_o, .hs_o, .vs_o, .de_o,

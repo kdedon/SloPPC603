@@ -45,7 +45,11 @@ module tb_ppc_fpu_shell;
     logic [31:0] expected_status;
     completion_tag_t status_tag;
 
+`ifdef FPU_COMPACT
+    ppc_fpu_compact dut (.*);
+`else
     ppc_fpu dut (.*);
+`endif
     assign issue1_valid_i = 1'b0;
     assign issue1_i = '0;
     assign commit1_valid_i = 1'b0;
@@ -704,7 +708,10 @@ module tb_ppc_fpu_shell;
         stfs_large(5'd29, 64'h7e37_e43c_8800_759c, 32'h71bf_21e4, 8'd244);
         stfs_large(5'd30, 64'hfe37_e43c_8800_759c, 32'hf1bf_21e4, 8'd246);
         stfs_large(5'd31, 64'h7fef_ffff_ffff_ffff, 32'h7f7f_ffff, 8'd248);
+`ifndef FPU_COMPACT
+        // Overlapped dependent issue and its cycle distances are FULL only.
         dependent_distances();
+`endif
 
         send_issue(fp_aform(63, 7, 6, 2, 5, 23, 1'b1), tag(0, 18), 0, 0, 1'b1);
         await_result(tag(0, 18));

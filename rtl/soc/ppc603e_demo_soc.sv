@@ -21,7 +21,8 @@ module ppc603e_demo_soc #(
   // Processor clock in MHz, reported in the MODE register.
   parameter int SYS_MHZ = 50,
   // Floating-point unit in the processor, reported in MODE bit 8.
-  parameter bit ENABLE_FPU = 1'b0
+  parameter bit ENABLE_FPU = 1'b0,
+  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL
 ) (
   input  logic       clk_i,
   // Synchronous, active low; also the processor's HRESET.
@@ -94,7 +95,8 @@ module ppc603e_demo_soc #(
   /* verilator lint_off PINCONNECTEMPTY */
   ppc_pkg::perf_event_t cpu_perf;
   ppc603e #(
-    .CPU_VARIANT(ppc_pkg::CPU_PID7V_603E), .PLL_CFG(PLL_CFG), .ENABLE_FPU(ENABLE_FPU)
+    .CPU_VARIANT(ppc_pkg::CPU_PID7V_603E), .PLL_CFG(PLL_CFG), .ENABLE_FPU(ENABLE_FPU),
+    .FPU_IMPL(FPU_IMPL)
   ) cpu (
     // The default strap runs the bus 1:1: the enable is always high.
     .perf_o(cpu_perf), .bus_ce_o(),

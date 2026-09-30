@@ -38,6 +38,7 @@ module ppc_core_bat_bus60x #(
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_FPU = 1'b0,
+  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
   input  logic clk_i,
@@ -211,7 +212,7 @@ module ppc_core_bat_bus60x #(
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
-    .ENABLE_FPU(ENABLE_FPU),
+    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL),
     .PLL_CFG(PLL_CFG)
   ) translated_core (
     /* verilator lint_off PINCONNECTEMPTY */

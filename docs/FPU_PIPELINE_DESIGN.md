@@ -326,29 +326,13 @@ The shell's own logic is now about 8.9k ALMs for the 603e and 7.9k for the
 602, down from 13.0k and 10.9k; the 603e build fits in about 15.5k ALMs,
 inside the ~18k budget beside the MiSTer core.
 
-## COMPACT design notes
+## COMPACT
 
-A later `FPU_IMPL` parameter will select COMPACT: one iterative datapath,
-bit-identical to the pipelined one, slower, for both personalities. It is
-not implemented. Proposed reuse:
-
-- `ppc_fpu_unpack`, `ppc_fpu_align_plan`, `ppc_fpu_convert` and the
-  `ppc_fpu_arith_pkg` functions unchanged: they are combinational and hold the
-  PowerPC special-operand, NaN and conversion rules.
-- `ppc_fpu_rounder` unchanged as the single rounding point; COMPACT feeds it
-  the same `round_input_t` record the add stage and divider produce.
-- `ppc_fpu_divider` unchanged: it is already iterative and hands its quotient
-  to the rounder.
-- `ppc_fpu_fprs` unchanged.
-- New: a sequencer that reuses one `ppc_fpu_adder` and `ppc_fpu_aligner` per
-  step, and a multiplier that forms the double product from one 27×27 DSP over
-  four cycles (or one 24×24 for the 602), with partial products summed in the
-  adder's lane.
-
-COMPACT cannot meet Table 6-5 latencies; like any timing trade it must sit
-behind the named parameter, with the exact-cycle benches run only for the
-default. The bit-exact suites (TestFloat, raw, cluster, estimates) apply to
-both.
+`FPU_IMPL=FPU_IMPL_COMPACT` selects `ppc_fpu_compact`: the same results with
+one instruction in flight and a sequenced arithmetic unit, for both
+personalities. It does not meet Table 6-5; its cycle counts, design and area
+are in [COMPACT FPU](FPU_COMPACT.md). The exact-cycle, stream and dual benches
+run for FULL only; the numerical and architectural benches run for both.
 
 ## Memory and 602 tag SPRs
 

@@ -53,7 +53,11 @@ module tb_ppc_fpu_estimates #(
     logic finish_write_o;
     logic next_finish_valid_o;
     completion_tag_t next_finish_tag_o;
+`ifdef FPU_COMPACT
+    ppc_fpu_arith_compact #(.CPU_602(CPU_602)) dut (.*);
+`else
     ppc_fpu_arith #(.CPU_602(CPU_602)) dut (.*);
+`endif
 
     // Every finish is announced one cycle earlier with its tag.
     logic predicted_q;

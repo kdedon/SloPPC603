@@ -5,6 +5,9 @@ This directory measures the standalone FPU RTL in four configurations:
 - `full`: 603e top `ppc_fpu`, including register file, FPSCR, decode and memory interface.
 - `arith`: 603e top `ppc_fpu_arith`, the arithmetic request/response interface.
 - `full602`, `arith602`: the same tops elaborated with `CPU_602=1`.
+- `compact`, `arithcompact` and their `602` forms: the COMPACT unit
+  (`FPU_IMPL`, [COMPACT FPU](../../docs/FPU_COMPACT.md)), `ppc_fpu_compact`
+  and `ppc_fpu_arith_compact`.
 
 Run all variants after the RTL has stabilized:
 
@@ -18,6 +21,9 @@ Run all variants after the RTL has stabilized:
 # Fit the 603e or 602 shell with clk_i on a real pin (about 40 minutes each):
 ./quartus/fpu-production/synthesize.sh --docker fullfit
 ./quartus/fpu-production/synthesize.sh --docker full602fit
+# Fit the COMPACT unit (a few minutes each):
+./quartus/fpu-production/synthesize.sh --docker compactfit
+./quartus/fpu-production/synthesize.sh --docker compact602fit
 ```
 
 A fit variant also prints fitted ALMs, registers, block memory and DSP use per
@@ -57,6 +63,37 @@ through the arithmetic flush gate into forward picks and operand views
 next, an issue word into a pending value (−0.118 ns). 50 MHz is not met;
 these are fit and timing measurements, not closure. Cycle counts are
 unchanged (`test-fpu-timing-602`, `test-fpu-602`).
+
+### COMPACT unit, fitted 603e and 602
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker compactfit` and
+`./quartus/fpu-production/synthesize.sh --docker compact602fit`, commit
+`25e5137`, 2026-09-30. Exit zero each; one physical pin (`clk_i`), 20 ns
+clock, zero-delay virtual I/O, `ppc_fpu_compact` behind the boundary
+registers. FULL columns are the `2ae952b` fits below.
+
+| Instance | 603e FULL | 603e COMPACT | 602 FULL | 602 COMPACT |
+|---|---:|---:|---:|---:|
+| shell own logic | 8,860 | 764 | 7,875 | 1,436 |
+| FPR storage | 688 | 121 | 214 | 62 |
+| arithmetic total | 5,916 | 2,665 | 3,804 | 1,688 |
+| — own logic (sequencer, lane, divider, rounding) | — | 1,935 | — | 1,255 |
+| — unpack/classify | 430 | 393 | 389 | 309 |
+| — alignment plan | 202 | 255 | 123 | 125 |
+| — multiplier | 79 | 83 | 0 | 0 |
+| **FPU instance ALMs** | **15,465** | **3,551** | **11,893** | **3,187** |
+| FPU instance registers | — | 1,432 | — | 1,155 |
+| DSP blocks | 5 | 5 | 1 | 1 |
+| Post-fit Fmax | 43.17 MHz | 55.06 MHz | 31.81 MHz | 53.19 MHz |
+| Worst setup slack at 20 ns | −3.166 ns | +1.839 ns | −11.441 ns | +1.201 ns |
+
+COMPACT is 77% (603e) and 73% (602) smaller and meets 50 MHz in both
+personalities; 66 MHz is not met. The 603e worst path is the divide start:
+state and operand `a` through the normalizer and first subtraction into the
+remainder (17.5 ns). The 602 worst path is the launch cycle: the held
+instruction through decode, FPR read and the local result into the value
+word (18.5 ns). These are fit and timing measurements of the standalone
+unit, not closure inside the core.
 
 ### Shell storage, bindings and 603e rounder window, fitted 603e and 602
 

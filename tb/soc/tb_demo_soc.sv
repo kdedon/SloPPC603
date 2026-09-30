@@ -7,7 +7,9 @@
 // +MAX_CYCLES=<n>, +TRACE=<n>. Passes when the exit code is 0 with no checkstop.
 /* verilator lint_off BLKSEQ */
 module tb_demo_soc #(
-  parameter bit ENABLE_FPU = 1'b0
+  parameter bit ENABLE_FPU = 1'b0,
+  // 0 FULL, 1 COMPACT (ppc_fpu_pkg::fpu_impl_e).
+  parameter int FPU_IMPL = 0
 );
   localparam int H_ACTIVE = 320, V_ACTIVE = 240;
   logic clk = 1'b0;
@@ -20,7 +22,8 @@ module tb_demo_soc #(
 
   // The external framebuffer ports are unused with the on-chip framebuffer.
   /* verilator lint_off PINCONNECTEMPTY */
-  ppc603e_demo_soc #(.CE_DIV(2), .ENABLE_FPU(ENABLE_FPU)) soc (
+  ppc603e_demo_soc #(.CE_DIV(2), .ENABLE_FPU(ENABLE_FPU),
+    .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL))) soc (
     .clk_i(clk), .rst_ni(rst_n), .int_n_i(1'b1), .mode_i(8'h00), .input_i('0),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
     .hblank_o(hblank), .vblank_o(vblank),

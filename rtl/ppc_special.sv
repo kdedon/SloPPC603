@@ -33,6 +33,7 @@ module ppc_special #(
   // 64 carries an aligned FP doubleword as one access: all eight strobes,
   // the word at EA in the upper half. Narrower accesses use the low half.
   parameter int DMEM_BITS = 32,
+  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   parameter logic [3:0] PLL_CFG = 4'b0000
@@ -2098,28 +2099,53 @@ module ppc_special #(
   end
   generate if (ENABLE_FPU) begin : g_fpu
     /* verilator lint_off PINCONNECTEMPTY */
-    ppc_fpu #(.CPU_602(1'b0)) fpu (
-      .clk_i(clk_i), .rst_ni(rst_ni),
-      .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
-      .issue_i(fpu_issue_valid ? fpu_issue : fp_issue),
-      .issue1_valid_i(1'b0), .issue1_ready_o(), .issue1_i('0),
-      .result_valid_o(fpu_result_valid), .result_o(fpu_result),
-      .result1_valid_o(), .result1_o(),
-      .commit_valid_i(fpu_commit_valid || fp_commit_valid_i),
-      .commit_tag_i(fpu_commit_valid ? producer_q : fp_commit_tag_i),
-      .commit_ready_o(fpu_commit_ready),
-      .commit1_valid_i(1'b0), .commit1_tag_i('0), .commit1_ready_o(),
-      .abort_valid_i(fpu_abort_valid), .abort_tag_i(producer_q), .kill_all_i(fp_kill_i),
-      .mem_req_valid_o(fpu_mem_req_valid), .mem_req_ready_i(fpu_mem_req_ready),
-      .mem_req_o(fpu_mem_req),
-      .mem_rsp_valid_i(fpu_mem_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
-      .mem_rsp_i(fpu_mem_rsp),
-      .store_valid_o(fpu_store_valid), .store_ready_i(fpu_store_ready), .store_o(fpu_store),
-      .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(),
-      .inspect_sp_o(), .inspect_lt_o(),
-      .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
-      .forward_data_o(), .forward1_data_o()
-    );
+    if (FPU_IMPL == ppc_fpu_pkg::FPU_IMPL_COMPACT) begin : g_compact
+      ppc_fpu_compact #(.CPU_602(1'b0)) fpu (
+        .clk_i(clk_i), .rst_ni(rst_ni),
+        .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
+        .issue_i(fpu_issue_valid ? fpu_issue : fp_issue),
+        .issue1_valid_i(1'b0), .issue1_ready_o(), .issue1_i('0),
+        .result_valid_o(fpu_result_valid), .result_o(fpu_result),
+        .result1_valid_o(), .result1_o(),
+        .commit_valid_i(fpu_commit_valid || fp_commit_valid_i),
+        .commit_tag_i(fpu_commit_valid ? producer_q : fp_commit_tag_i),
+        .commit_ready_o(fpu_commit_ready),
+        .commit1_valid_i(1'b0), .commit1_tag_i('0), .commit1_ready_o(),
+        .abort_valid_i(fpu_abort_valid), .abort_tag_i(producer_q), .kill_all_i(fp_kill_i),
+        .mem_req_valid_o(fpu_mem_req_valid), .mem_req_ready_i(fpu_mem_req_ready),
+        .mem_req_o(fpu_mem_req),
+        .mem_rsp_valid_i(fpu_mem_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
+        .mem_rsp_i(fpu_mem_rsp),
+        .store_valid_o(fpu_store_valid), .store_ready_i(fpu_store_ready), .store_o(fpu_store),
+        .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(),
+        .inspect_sp_o(), .inspect_lt_o(),
+        .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
+        .forward_data_o(), .forward1_data_o()
+      );
+    end else begin : g_full
+      ppc_fpu #(.CPU_602(1'b0)) fpu (
+        .clk_i(clk_i), .rst_ni(rst_ni),
+        .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
+        .issue_i(fpu_issue_valid ? fpu_issue : fp_issue),
+        .issue1_valid_i(1'b0), .issue1_ready_o(), .issue1_i('0),
+        .result_valid_o(fpu_result_valid), .result_o(fpu_result),
+        .result1_valid_o(), .result1_o(),
+        .commit_valid_i(fpu_commit_valid || fp_commit_valid_i),
+        .commit_tag_i(fpu_commit_valid ? producer_q : fp_commit_tag_i),
+        .commit_ready_o(fpu_commit_ready),
+        .commit1_valid_i(1'b0), .commit1_tag_i('0), .commit1_ready_o(),
+        .abort_valid_i(fpu_abort_valid), .abort_tag_i(producer_q), .kill_all_i(fp_kill_i),
+        .mem_req_valid_o(fpu_mem_req_valid), .mem_req_ready_i(fpu_mem_req_ready),
+        .mem_req_o(fpu_mem_req),
+        .mem_rsp_valid_i(fpu_mem_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
+        .mem_rsp_i(fpu_mem_rsp),
+        .store_valid_o(fpu_store_valid), .store_ready_i(fpu_store_ready), .store_o(fpu_store),
+        .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(),
+        .inspect_sp_o(), .inspect_lt_o(),
+        .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
+        .forward_data_o(), .forward1_data_o()
+      );
+    end
     /* verilator lint_on PINCONNECTEMPTY */
     // synthesis translate_off
     always @(posedge clk_i) begin

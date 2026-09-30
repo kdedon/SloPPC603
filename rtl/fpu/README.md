@@ -10,6 +10,9 @@ the arithmetic units (`ppc_fpu_unpack.sv`, `ppc_fpu_multiplier.sv`,
 (`PPC_FPU_ARITH_RTL`, `PPC_FPU_SHELL_RTL`) holds the list. Core file lists
 carry `ppc_fpu_pkg.sv`; `rtl/fpu_files.f` lists the modules for
 `ENABLE_FPU` builds ([core integration](../../docs/FPU_CORE_INTEGRATION.md)).
+`ppc_fpu_compact.sv` and `ppc_fpu_arith_compact.sv` are the area-reduced
+COMPACT unit selected by `FPU_IMPL` ([COMPACT FPU](../../docs/FPU_COMPACT.md));
+they follow `ppc_fpu_arith.sv` in compile order.
 
 - [Architectural contract](../../docs/FPU_CONTRACT.md): manual rules and explicit source conflicts.
 - [Integration interface](../../docs/FPU_INTERFACE.md): ownership, commit, cancellation and LSU obligations.

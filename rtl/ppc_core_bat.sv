@@ -36,6 +36,7 @@ module ppc_core_bat #(
   parameter bit ENABLE_FPU = 1'b0,
   // 64 carries an aligned FP doubleword as one physical access.
   parameter int DMEM_BITS = 32,
+  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   parameter logic [3:0] PLL_CFG = 4'b0000,
@@ -263,7 +264,7 @@ module ppc_core_bat #(
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
-    .ENABLE_FPU(ENABLE_FPU), .DMEM_BITS(DMEM_BITS),
+    .ENABLE_FPU(ENABLE_FPU), .DMEM_BITS(DMEM_BITS), .FPU_IMPL(FPU_IMPL),
     .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) core (
     .tlb_fill_req_valid_o(tlb_fill_req_valid),
