@@ -644,6 +644,11 @@ package ppc_pkg;
     c = cpu_cfg(v);
     return c.has_602_ext;
   endfunction
+  function automatic bit cpu_mul_602_timing(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return c.mul_602_timing;
+  endfunction
   function automatic int cpu_icache_sets(cpu_variant_e v);
     cpu_cfg_t c;
     c = cpu_cfg(v);
@@ -693,6 +698,11 @@ package ppc_pkg;
   // Variants whose differences from the PID7v are all implemented.
   function automatic bit cpu_variant_supported(cpu_variant_e v);
     return (v == CPU_PID7V_603E) || (v == CPU_PID6_603E) || (v == CPU_EC603E);
+  endfunction
+  // Variants the core builds: the 602 core lacks only its FPU personality;
+  // its bus and pins belong to a separate top.
+  function automatic bit cpu_core_supported(cpu_variant_e v);
+    return cpu_variant_supported(v) || (v == CPU_602);
   endfunction
   // PLL_CFG[0:3] codes the variant's PLL accepts, clock-off excluded. PID6:
   // UM Table 7-10. PID7v and EC603e: Table 7-10 without 1:1 and 1.5:1 (UM
@@ -745,6 +755,14 @@ package ppc_pkg;
   localparam int HID0_NOOPTI = 0;
   localparam int HID0_EMCP = 31;
   localparam int HID0_EBA = 29;
+  /* verilator lint_off UNUSEDSIGNAL */
+  // HID0[ICE] is stored; without it the instruction cache is always enabled.
+  function automatic bit cpu_has_hid0_ice(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return c.hid0_wmask[HID0_ICE];
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   // 602 HID0 (602UM Table 2-7): PO is manual bit 24, the real-mode and
   // protection-only default WIMG manual bits 28-31.
   localparam int HID0_PO = 7;

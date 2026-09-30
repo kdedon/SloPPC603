@@ -393,8 +393,10 @@ module ppc_core_bat_cached_bus60x #(
     .pimem_error_o,
     .busy_o
   );
+  // Without HID0[ICE] the instruction cache is enabled from reset.
   ppc_icache_managed #(
-    .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE),
+    .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE ||
+                        !ppc_pkg::cpu_has_hid0_ice(CPU_VARIANT)),
     .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS)
   ) managed_cache (
     .clk_i, .rst_ni,

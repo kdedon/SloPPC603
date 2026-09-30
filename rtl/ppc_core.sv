@@ -177,9 +177,7 @@ module ppc_core #(
   // synthesis translate_off
   if (CPU_VARIANT == CPU_603) begin : g_reject_603
     $fatal(1, "CPU_VARIANT CPU_603 is not implemented (caches, SPR presence, direct-store, 2:2 stores)");
-  end else if (CPU_VARIANT == CPU_602) begin : g_reject_602
-    $fatal(1, "CPU_VARIANT CPU_602 is not implemented (IBR, watchdog, MMU, caches, bus)");
-  end else if (!cpu_variant_supported(CPU_VARIANT)) begin : g_reject_unknown
+  end else if (!cpu_core_supported(CPU_VARIANT)) begin : g_reject_unknown
     $fatal(1, "CPU_VARIANT %0d is not a known variant", CPU_VARIANT);
   end
   // synthesis translate_on
@@ -736,7 +734,10 @@ module ppc_core #(
         else $error("RS operand waits on a producer outside the IU");
   end
   // synthesis translate_on
-  ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE)) iu (
+  ppc_iu #(
+    .DIV_LATENCY(DIV_LATENCY_EFFECTIVE),
+    .MUL_602_TIMING(cpu_mul_602_timing(CPU_VARIANT))
+  ) iu (
     .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid), .issue_ready_o(issue_ready),
     .issue_i(issue), .result_valid_o(iu_result_valid),
     .result_ready_i(iu_result_ready), .result_o(iu_result)

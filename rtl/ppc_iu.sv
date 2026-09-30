@@ -5,7 +5,10 @@
 module ppc_iu #(
   // PID7v divw/divwu execute latency. Set to 37 for the PID6 timing model.
   // The radix-4 engine needs 16 iteration edges after its start edge.
-  parameter int DIV_LATENCY = 20
+  parameter int DIV_LATENCY = 20,
+  // 602 multiply timing: the first partial product is formed on the issue
+  // edge, one cycle earlier, with a floor of two cycles for register forms.
+  parameter bit MUL_602_TIMING = 1'b0
 ) (
   input logic clk_i, rst_ni,
   input logic cancel_i,
@@ -41,6 +44,10 @@ module ppc_iu #(
   logic signed [41:0] multiply_partial;
   logic [63:0] multiply_addend, multiply_acc;
   logic multiply_overflow;
+  logic signed [8:0] issue_digit, issue_next_digit;
+  logic signed [32:0] issue_a;
+  logic signed [41:0] issue_partial;
+  logic issue_mulli_short;
   logic divide_by_zero;
   logic signed_divide_exception;
   logic [4:0] rotate_amount;
@@ -117,7 +124,9 @@ module ppc_iu #(
   // previous byte's sign bit, so iteration stops once the remaining rB bits
   // are sign extension. Latency is therefore 1 + significant rB bytes: 2-3
   // for MULLI, 2-5 for MULLW/MULHW and 2-6 for MULHWU, whose zero extension
-  // adds a fifth digit when rB bit 31 is set.
+  // adds a fifth digit when rB bit 31 is set. With MUL_602_TIMING the
+  // first digit is accumulated on the issue edge: 1-2 for MULLI, 2-4 for
+  // MULLW/MULHW and 2-5 for MULHWU.
   assign issue_multiply = (issue_i.ctrl.op == ALU_MULLI) ||
     (issue_i.ctrl.op == ALU_MULLW) || (issue_i.ctrl.op == ALU_MULHW) ||
     (issue_i.ctrl.op == ALU_MULHWU);
@@ -126,6 +135,16 @@ module ppc_iu #(
   assign multiply_b = {multiply_b_sign_q, held.b[31:7]};
   // expect: DSP 33x9 signed, unregistered
   assign multiply_partial = multiply_a * multiply_digit;
+  assign issue_digit = {issue_i.b[7], issue_i.b[7:0]};
+  assign issue_next_digit = {issue_i.b[15], issue_i.b[15:8]} +
+                            9'(issue_i.b[7]);
+  // expect: DSP 33x9 signed, unregistered; present only with MUL_602_TIMING
+  assign issue_a = {issue_multiply_signed && issue_i.a[31], issue_i.a};
+  assign issue_partial = MUL_602_TIMING ? 42'(issue_a * issue_digit) : '0;
+  // A MULLI immediate within one signed byte completes on the issue edge.
+  assign issue_mulli_short = MUL_602_TIMING &&
+    (issue_i.ctrl.op == ALU_MULLI) &&
+    (&issue_i.b[31:7] || !(|issue_i.b[31:7]));
   always_comb begin
     case (multiply_step)
       5'b00010: multiply_addend = {{14{multiply_partial[41]}}, multiply_partial, 8'b0};
@@ -168,9 +187,15 @@ module ppc_iu #(
     if (issue_valid_i && issue_ready_o && issue_multiply) begin
       multiply_a_sign_q <= issue_multiply_signed && issue_i.a[31];
       multiply_b_sign_q <= issue_multiply_signed && issue_i.b[31];
-      multiply_step <= 5'b00001;
-      multiply_digit <= {issue_i.b[7], issue_i.b[7:0]};
-      multiply_acc <= '0;
+      if (MUL_602_TIMING) begin
+        multiply_step <= 5'b00010;
+        multiply_digit <= issue_next_digit;
+        multiply_acc <= {{22{issue_partial[41]}}, issue_partial};
+      end else begin
+        multiply_step <= 5'b00001;
+        multiply_digit <= issue_digit;
+        multiply_acc <= '0;
+      end
     end else if (multiply_active) begin
       multiply_step <= multiply_step << 1;
       multiply_digit <= multiply_next_digit;
@@ -191,8 +216,8 @@ module ppc_iu #(
         multiply_done <= 1'b0;
       end
       if (issue_valid_i && issue_ready_o) begin
-        multiply_active <= issue_multiply;
-        multiply_done <= 1'b0;
+        multiply_active <= issue_multiply && !issue_mulli_short;
+        multiply_done <= issue_mulli_short;
       end
     end
   end

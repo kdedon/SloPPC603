@@ -120,10 +120,12 @@ module ppc603e #(
 );
   import ppc_pkg::*;
 
-  // Unimplemented variants are rejected by the core.
+  // The core rejects the 603; the 602 needs its own multiplexed-bus top.
   localparam bit CHECK_PLL = cpu_variant_supported(CPU_VARIANT);
   // synthesis translate_off
-  if (CHECK_PLL && !pll_cfg_legal(CPU_VARIANT, PLL_CFG)) begin : g_reject_pll_code
+  if (CPU_VARIANT == CPU_602) begin : g_reject_602
+    $fatal(1, "ppc603e: CPU_VARIANT CPU_602 is not implemented on the 603e pins (multiplexed 602 bus)");
+  end else if (CHECK_PLL && !pll_cfg_legal(CPU_VARIANT, PLL_CFG)) begin : g_reject_pll_code
     $fatal(1, "ppc603e: PLL_CFG %04b is not a code of CPU_VARIANT %0d", PLL_CFG, CPU_VARIANT);
   end else if (CHECK_PLL && !pll_cfg_bus_1to1(PLL_CFG)) begin : g_reject_pll_ratio
     $fatal(1, "ppc603e: PLL_CFG %04b is not 1:1 or PLL bypass; the core runs 1:1", PLL_CFG);

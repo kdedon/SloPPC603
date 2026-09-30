@@ -62,6 +62,20 @@ transactions; HID0[IFEM] (bit 24) drives the M attribute on instruction fetches
 protection-only mode (602UM PDF 89 / 2-13). A miss to a locked cache runs
 cache-inhibited (602UM §3.2.3.2 PDF 157 / 3-5), as on the 603e.
 
+602 I-cache enable: the instruction cache is always enabled. HID0 bit 16 is
+"not used" (Table 2-7, PDF 89 / 2-13), no other HID0 bit enables it, the
+hard-reset state is HID0 = 0 with every cache block invalidated (Table 4-9,
+PDF 201 / 4-19), and §3.2.3 (PDF 157 / 3-5) describes only invalidation
+(ICFI) and locking (ILOCK), with no disabling subsection, where §3.3.3.2
+describes disabling the D-cache with DCE. An I-fetch bypasses the cache only
+through WIMG I = 1 or a miss while ILOCK is set.
+
+Main (V10): `cpu_has_hid0_ice()` reads the variant's HID0 mask. Without ICE,
+`ppc_special` drives the I-cache enable high and a HID0 write drains fetch
+only for ICFI; the cached wrappers reset the I-cache enabled whatever
+`RESET_CACHE_ENABLE` asks. The external maintenance port of the wrappers
+can still disable it (a test path, not a 602 pin).
+
 Main: `ppc_icache.sv` and `ppc_dcache.sv` take `SET_COUNT` and `WAY_COUNT`
 (V4); tag, index and LRU widths follow, and the core tops set them from
 `cpu_cfg()`. Lines are 32 bytes. The D-cache forwards the critical double word on the first
@@ -230,14 +244,16 @@ changes.
 | Store | 2:1 | = | **2:2** | 2:1 |
 | Source | UM PDF 45, 74, 251 / 1-5, 1-34, 6-5; Table 6-4 PDF 270–272 / 6-24–6-26 | = | UM §C.2.2 PDF 431–432 / C-19–C-20 | 602UM Table 6-2 PDF 311–313 / 6-23–6-25; Table 6-6 PDF 316–318 |
 
-The 602 multiply entries are in stage notation; read as totals they are one
-cycle shorter than the 603e sets for mullw/mulhw. Treat this reading as
-best-effort.
+The 602 multiply entries are clocks per stage separated by dashes (602UM
+§6.8, PDF 310 / 6-22). Their sums are mulli 1–2, mullw/mulhw 2–4 and
+mulhwu 2–5: one cycle less than the 603e per rB class, with a floor of two
+for register forms. Treat the class mapping as best-effort.
 
 Main: `DIV_LATENCY` (default 20, `$fatal` below 17) in `ppc_iu.sv` and every
 wrapper; `test-core-divider-timing-pid6` already runs with 37. Multiply latency
-is a datapath property ([MULTIPLY_TIMING.md](MULTIPLY_TIMING.md)), with no
-parameter.
+is a datapath property ([MULTIPLY_TIMING.md](MULTIPLY_TIMING.md)); V10 adds
+`MUL_602_TIMING` on `ppc_iu`, set from `cfg.mul_602_timing`, which forms the
+first partial product on the issue edge.
 
 ### 1.8 Bus, pins and clocks
 
@@ -337,7 +353,7 @@ take `parameter int VARIANT` and cast it to `cpu_variant_e`.
 |---|---|---|
 | PVR | `ppc_special.sv`, wrappers | `cfg.pvr` |
 | Divide | `ppc_iu.sv` | `cfg.div_latency`; keep the `$fatal` bound |
-| Multiply (602) | `ppc_iu.sv` | one cycle less per class when `mul_602_timing` |
+| Multiply (602) | `ppc_iu.sv` | one cycle less per class when `mul_602_timing`, register forms at least 2 |
 | HID0/HID1/EAR masks | `ppc_pkg.sv`, `ppc_special.sv`, `ppc_decode.sv` | per-variant WMASK/RMASK; absent SPR → illegal |
 | ABE/IFEM | `ppc_special.sv`, BIU pin status | tied 0 unless `has_abe_ifem` |
 | Cache geometry | `ppc_icache.sv`, `ppc_dcache.sv`, `ppc_dcache_pkg.sv`, `ppc_ram_*` | sets/ways/tag width from cfg; LRU width follows ways; 602 has no ICE |
@@ -420,7 +436,10 @@ choice and a test of that choice, not a fidelity claim:
   PID7v improvements).
 - 602 multiply latencies (stage notation in Table 6-2).
 - 602 ICE: §3.2.3 speaks of disabling the I-cache, but Table 2-7 (PDF 89) marks bit 16
-  unused.
+  unused and the section has no disabling subsection; the I-cache is always
+  enabled (§1.2). §2.1.2.4.3 (PDF 100) says soft reset leaves "the
+  instruction cache disabled", while §4.5.1.2 (PDF 202) and Table 4-10 name
+  no cache change; soft reset leaves the I-cache enabled and valid.
 - 603 IABR vector: App. C heading 0x01400 versus body reference to 0x1300.
 - PID7v "cache control instructions require HID0[ABE]" (UM PDF 44): read as
   "broadcast requires ABE", not as an execution gate.
