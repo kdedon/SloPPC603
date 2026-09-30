@@ -46,7 +46,7 @@ module tb_mister #(
   logic [31:0] exit_code;
 
   ppc603e_mister #(.FB_EXTERNAL(FB_EXTERNAL), .FB_WIDTH(FB_W), .FB_HEIGHT(FB_H), .FB_BASE(FB_BASE)) dut (
-    .clk_i(clk), .rst_i(rst), .mode_i(mode),
+    .clk_i(clk), .rst_i(rst), .mode_i(mode), .input_i('0),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
     .pal_we_o(pal_we), .pal_addr_o(pal_addr), .pal_data_o(pal_data),
     .ddram_busy_i(ddram_busy), .ddram_addr_o(ddram_addr), .ddram_burstcnt_o(ddram_burstcnt),

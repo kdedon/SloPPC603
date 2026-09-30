@@ -19,7 +19,7 @@ module tb_demo_soc;
   // The external framebuffer ports are unused with the on-chip framebuffer.
   /* verilator lint_off PINCONNECTEMPTY */
   ppc603e_demo_soc #(.CE_DIV(2)) soc (
-    .clk_i(clk), .rst_ni(rst_n), .int_n_i(1'b1), .mode_i(8'h00),
+    .clk_i(clk), .rst_ni(rst_n), .int_n_i(1'b1), .mode_i(8'h00), .input_i('0),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
     .hblank_o(hblank), .vblank_o(vblank),
     .console_valid_o(console_valid), .console_data_o(console_data),

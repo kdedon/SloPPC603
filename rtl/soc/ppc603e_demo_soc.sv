@@ -27,6 +27,8 @@ module ppc603e_demo_soc #(
   input  logic       int_n_i,
   // Host-defined bits reported in the MODE register.
   input  logic [7:0] mode_i,
+  // Host input word reported in the INPUT register (docs/DEMO_SOC.md).
+  input  logic [31:0] input_i,
   // Video, positive syncs, updated on ce_pix_o.
   output logic       ce_pix_o,
   output logic [7:0] r_o,
@@ -209,7 +211,7 @@ module ppc603e_demo_soc #(
   logic [9:0] io_word;
   logic [31:0] io_wdata;
   logic [63:0] cycle_q, retired_q;
-  logic [31:0] cycle_hi_q, retired_hi_q, frames_q, exit_code_q;
+  logic [31:0] cycle_hi_q, retired_hi_q, frames_q, exit_code_q, input_q;
   logic video_en_q, frame, exit_valid_q, console_valid_q;
   logic [7:0] console_data_q;
 
@@ -243,8 +245,10 @@ module ppc603e_demo_soc #(
       exit_valid_q <= 1'b0;
       exit_code_q <= '0;
       io_rdata_q <= '0;
+      input_q <= '0;
     end else begin
       cycle_q <= cycle_q + 64'd1;
+      input_q <= input_i;
       if (cpu_perf.retire) retired_q <= retired_q + 64'd1;
       console_valid_q <= 1'b0;
       if (frame) frames_q <= frames_q + 32'd1;
@@ -265,6 +269,7 @@ module ppc603e_demo_soc #(
             io_rdata_q <= {retired_q[31:0], retired_hi_q};
             if (be[7]) retired_hi_q <= retired_q[63:32];
           end
+          9'd8: io_rdata_q <= {input_q, 32'b0};
           default: io_rdata_q <= perf_range ? perf_rdata : '0;
         endcase
       end
