@@ -409,8 +409,8 @@ module ppc_special #(
     tlb_fill_req_way_o, tlb_fill_req_rpn_o, tlb_fill_req_c_o,
     tlb_fill_req_wimg_o, tlb_fill_req_pp_o, tlb_fill_req_ext_o} =
     tlb_fill_payload_q;
-  assign mmu_602_o = HAS_602 ?
-    '{ap: msr_o[MSR_AP], po: hid0_q[HID0_PO], wimg: hid0_q[3:0]} : '0;
+  // Packed as mmu_602_t {ap, po, wimg}.
+  assign mmu_602_o = HAS_602 ? {msr_o[MSR_AP], hid0_q[HID0_PO], hid0_q[3:0]} : '0;
   assign tlb_fill_rsp_ready_o = mmu_rsp_ready && tlb_fill_operation;
   assign tlb_fill_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
                              tlb_fill_operation && !mmu_error_q;
