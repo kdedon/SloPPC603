@@ -1858,6 +1858,16 @@ $(addprefix demo-,$(DEMO_NAMES)): demo-%: demo-soc-model demo-firmware
 	./$(BUILD_DIR)/demo/model/Vtb_demo_soc $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/$*.hex +NAME=$* +PPM=$(BUILD_DIR)/demo/$*.ppm
 	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/$*.ppm $(BUILD_DIR)/demo/$*.png
 demo-all: $(addprefix demo-,$(DEMO_NAMES))
+# nbench and Embench-IoT (docs/BENCHMARKS.md): short fixed sizes; the -full
+# images, built alongside, are for hardware.
+BENCH_NAMES := nbench embench
+.PHONY: demo-bench-firmware $(addprefix demo-,$(BENCH_NAMES))
+demo-bench-firmware:
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) benchmarks
+$(addprefix demo-,$(BENCH_NAMES)): demo-%: demo-soc-model demo-bench-firmware
+	timeout 7200 ./$(BUILD_DIR)/demo/model/Vtb_demo_soc $(SIM_ARGS) +MAX_CYCLES=2000000000 +IMAGE=$(DEMO_FW_DIR)/$*.hex +NAME=$* +PPM=$(BUILD_DIR)/demo/$*.ppm
+	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/$*.ppm $(BUILD_DIR)/demo/$*.png
 
 # MiSTer core body (mister/, docs/MISTER_CORE.md) with a DDRAM model. mister-smoke
 # runs the MiSTer image; MISTER_MODE is the MODE register byte (bits 1:0 program:

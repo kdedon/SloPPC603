@@ -44,7 +44,9 @@ SECTIONS
 
   __heap_start = ALIGN(8);
   __stack_top = ORIGIN(RAM) + LENGTH(RAM);
-  __heap_end = __stack_top - 0x8000;
+  /* Stack reservation; an image may set its own with --defsym. */
+  __stack_size = DEFINED(__stack_size) ? __stack_size : 0x8000;
+  __heap_end = __stack_top - __stack_size;
 
   /DISCARD/ :
   {
