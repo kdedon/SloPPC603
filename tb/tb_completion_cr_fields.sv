@@ -42,8 +42,9 @@ module tb_completion_cr_fields;
      allocation.write_ov_so || allocation.write_cr_field || allocation.write_cr_fields);
 
   logic cq_empty, unused_cq_finish;
+  logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] unused_cq_head;
   ppc_completion completion (
-    .finish_accept_o(unused_cq_finish), .empty_o(cq_empty), .clk_i(clk), .rst_ni(rst_n),
+    .finish_accept_o(unused_cq_finish), .empty_o(cq_empty), .head_index_o(unused_cq_head), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(alloc_valid), .alloc_ready_o(alloc_ready),
     .alloc_i(allocation), .alloc_tag_o(alloc_tag),
     .result_valid_i(result_valid), .result_ready_o(result_ready),

@@ -14,6 +14,8 @@ module ppc_completion #(
   input logic alloc_valid_i,
   output logic alloc_ready_o,
   output logic empty_o,
+  // Slot of the oldest entry; meaningful while the queue is not empty.
+  output logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] head_index_o,
   input ppc_pkg::retire_packet_t alloc_i,
   output ppc_pkg::completion_tag_t alloc_tag_o,
   input logic result_valid_i,
@@ -144,6 +146,7 @@ module ppc_completion #(
   assign alloc_ready_o = !redirect_accepted_o &&
                          (count_q < COUNT_WIDTH'(CQ_DEPTH));
   assign empty_o = (count_q == 0);
+  assign head_index_o = head_q;
   // Even a stale or killed response drains so that it cannot block a producer.
   assign result_ready_o = 1'b1;
   assign alloc_fire = alloc_valid_i && alloc_ready_o;

@@ -203,6 +203,7 @@ module ppc_core #(
   logic [31:0] gpr_mapped;
   logic dispatch_mem_plain, mem_sources_committed, mem_sources_committed_q;
   logic special_drained, overlap_dispatch_ok;
+  logic [CQ_INDEX_WIDTH-1:0] cq_head;
   logic cq_retire_valid;
   logic special_cancel, special_store_irrevocable, special_branch_redirect;
   logic special_kill;
@@ -807,7 +808,8 @@ module ppc_core #(
     .frontend_quiescent_i(frontend_quiescent), .memory_quiescent_i,
     .frontend_fence_o(frontend_fence), .context_valid_o, .context_ready_i,
     .redirect_accepted_i(recovery_accepted),
-    .store_authorize_i(retire_ready_i), .commit_i(commit),
+    .store_authorize_i(retire_ready_i), .queue_empty_i(cq_empty),
+    .queue_head_i(cq_head), .commit_i(commit),
     .commit_tag_i(retire_producer), .result_valid_o(special_result_valid),
     .result_ready_i(special_result_ready), .result_o(special_result),
     .branch_commit_redirect_o(special_branch_redirect),
@@ -872,6 +874,12 @@ module ppc_core #(
   always @(posedge clk_i)
     if (rst_ni && !ENABLE_TEST_REDIRECT)
       assert (!special_kill) else $error("special-unit redirect killed the special lane");
+  // UM 1.1.4.3: no store is performed ahead of an older, uncompleted
+  // instruction.
+  always @(posedge clk_i)
+    if (rst_ni && dmem_req_valid_o && dmem_req_write_o)
+      assert (!cq_empty && (cq_head == special_producer.index))
+        else $error("store offered behind an older uncompleted instruction");
   // synthesis translate_on
   // Ownership demand is derived from decoded reads/writes at the atomic
   // dispatch boundary; a diagnostic can never acquire the token.
@@ -1078,7 +1086,7 @@ module ppc_core #(
     .ENABLE_PIVOT_RECOVERY(ENABLE_TEST_REDIRECT)
   ) completion (
     .clk_i, .rst_ni, .alloc_valid_i(dispatch), .alloc_ready_o(cq_ready),
-    .empty_o(cq_empty),
+    .empty_o(cq_empty), .head_index_o(cq_head),
     .alloc_i(allocation), .alloc_tag_o(alloc_producer),
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     .finish_accept_o(cq_finish_accept),

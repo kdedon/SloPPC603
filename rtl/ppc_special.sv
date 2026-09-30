@@ -120,6 +120,11 @@ module ppc_special #(
   input logic context_ready_i, redirect_accepted_i,
   output logic frontend_fence_o, context_valid_o,
   input logic store_authorize_i,
+  // UM 1.1.4.3 (1-11): a store is performed only once every older instruction has
+  // completed. Dispatch into an empty queue, or the lane's access at the
+  // queue head.
+  input logic queue_empty_i,
+  input logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] queue_head_i,
   input logic commit_i,
   input ppc_pkg::completion_tag_t commit_tag_i,
   // Retirement of a branch resolved at dispatch.
@@ -1059,7 +1064,8 @@ module ppc_special #(
       // A plain access has nothing to check before its offer.
       if (ENABLE_UNALIGNED_DATAPATH && dispatch_overlap_i &&
           ((uop_i.special_op == SPECIAL_LOAD) ||
-           ((uop_i.special_op == SPECIAL_STORE) && store_authorize_i)))
+           ((uop_i.special_op == SPECIAL_STORE) && store_authorize_i &&
+            queue_empty_i)))
         state_d = S_MEM_OFFER;
       else if ((uop_i.special_op == SPECIAL_LOAD) ||
           (uop_i.special_op == SPECIAL_STORE) ||
@@ -1165,7 +1171,8 @@ module ppc_special #(
             fence_d = 1'b1;
             state_d = S_MEM_RESULT;
           end else if (misaligned || mem_skip) state_d = S_MEM_RESULT;
-          else if (mem_killable || store_authorize_i)
+          else if (mem_killable ||
+                   (store_authorize_i && (queue_head_i == producer_q.index)))
             state_d = S_MEM_OFFER;
         end
         S_MEM_OFFER: if (request_fire) state_d = killed_q ? S_MEM_DRAIN : S_MEM_WAIT;
@@ -1719,8 +1726,10 @@ module ppc_special #(
       if (dispatch_fire)
         assert (!(ENABLE_EXTERNAL_INTERRUPTS && interrupt_valid_i))
           else $error("interrupt boundary offered with a dispatch");
+      // Older work dispatched ahead of a plain access may retire while the
+      // access holds its fault.
       if (commit_i && (state_q == S_HOLD))
-        assert (commit_match)
+        assert (commit_match || overlap_q)
           else $error("serialized special retirement identity mismatch");
       if (exception_event_valid)
         assert (exception_event_ready)

@@ -62,6 +62,8 @@ module tb_special_lint #(
   wire context_ready_i = '0;
   wire redirect_accepted_i = '0;
   wire store_authorize_i = '0;
+  wire queue_empty_i = '0;
+  wire [ppc_pkg::CQ_INDEX_WIDTH-1:0] queue_head_i = '0;
   wire commit_i = '0;
   ppc_pkg::completion_tag_t commit_tag_i;
   assign commit_tag_i = '0;
