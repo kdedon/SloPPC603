@@ -2333,7 +2333,7 @@ module ppc_fpu #(
   // as an OR, which is all CR1 (FX, FEX, VX, OX) reads of the prefix.
   localparam logic [31:0] STICKY_BITS = 32'h1ff8_0700;
   always_comb begin
-    arith_flags_t ar;
+    arith_flags_t ar, ar_known;
     logic rsp_value;
     logic [31:0] acc;
     logic [3:0] cr1;
@@ -2348,6 +2348,7 @@ module ppc_fpu #(
     arith_flags_t slot_ar [0:PENDING_DEPTH-1];
     logic [PENDING_DEPTH-1:0] slot_rsp_value;
     logic [PENDING_DEPTH-1:0] slot_meta, slot_reply, slot_trap;
+    arith_flags_t slot_known [0:PENDING_DEPTH-1];
     logic [31:0] slot_sticky [0:PENDING_DEPTH-1];
     acc = '0;
     cr1 = '0;
@@ -2357,6 +2358,7 @@ module ppc_fpu #(
     elig = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
       ar = pending_q[i].arith;
+      ar_known = pending_q[i].arith;
       rsp_value = 1'b0;
       meta = pending_q[i].arith_done;
       reply = 1'b0;
@@ -2370,20 +2372,25 @@ module ppc_fpu #(
         end else if (!ready[i] && arith_rsp_match &&
                      arith_rsp.tag == pending_q[i].issue.tag) begin
           ar = flags_of(arith_rsp);
+          ar_known = ar;
           rsp_value = 1'b1;
           ready[i] = 1'b1;
           meta = 1'b1;
         end
       end
+      // A finishing reply's flags reach only its own trap and write checks;
+      // its CR value and sticky causes come from the registered reply.
       trap = flags_trap(ar, fpscr_q);
       slot_ar[i] = ar;
+      slot_known[i] = ar_known;
       slot_rsp_value[i] = rsp_value;
       slot_meta[i] = meta;
       slot_reply[i] = reply;
       slot_trap[i] = trap;
-      slot_sticky[i] = flags_fpscr(32'd0, ar) & STICKY_BITS;
+      slot_sticky[i] = flags_fpscr(32'd0, ar_known) & STICKY_BITS;
       contributes[i] = pending_q[i].valid &&
-          pending_q[i].decoded.kind == DK_ARITH && meta && !reply && !trap;
+          pending_q[i].decoded.kind == DK_ARITH && meta && !reply &&
+          !flags_trap(ar_known, fpscr_q);
       // Younger CR results wait behind unknown or finishing status.
       unknown[i] = pending_q[i].valid &&
           pending_q[i].decoded.kind == DK_ARITH && (!meta || reply);
@@ -2420,7 +2427,7 @@ module ppc_fpu #(
           c.prefix = slot_prefix[i];
           c.fctiwz = pending_q[i].decoded.op == FP_FCTIWZ;
           exc[i] = slot_trap[i];
-          cr1 = 4'(flags_fpscr(slot_prefix[i], slot_ar[i]) >> 28);
+          cr1 = 4'(flags_fpscr(slot_prefix[i], slot_known[i]) >> 28);
           c.fpr_write = (slot_reply[i] ? arith_finish_write :
               slot_ar[i].write_result) && !exc[i];
           c.rsp_value = slot_rsp_value[i];
@@ -2430,7 +2437,7 @@ module ppc_fpu #(
               (slot_ar[i].compare_valid || pending_q[i].issue.insn[0]);
           c.cr_field = slot_ar[i].compare_valid ?
               pending_q[i].issue.insn[25:23] : 3'd1;
-          c.cr_value = slot_ar[i].compare_valid ? slot_ar[i].fpcc :
+          c.cr_value = slot_known[i].compare_valid ? slot_known[i].fpcc :
               cr1;
           // A finishing result's value and status come from its reply.
           if (slot_reply[i]) begin
