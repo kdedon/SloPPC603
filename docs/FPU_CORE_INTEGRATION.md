@@ -11,7 +11,9 @@ FPU aborts); elaboration fails otherwise. `ppc_core_bat`, `ppc_core_bat_bus60x`,
 `ppc_core_bat_cached_bus60x` and the `ppc603e` pin top pass the parameter
 through with default 0. Builds with the FPU add `rtl/ppc_ram_lut.sv` (already
 in the cache lists) and `rtl/fpu_files.f`; every other list carries only
-`ppc_fpu_pkg.sv`.
+`ppc_fpu_pkg.sv`. `FPU_IMPL` selects `ppc_fpu` (FULL, the default and the
+timing below) or `ppc_fpu_compact` ([COMPACT](FPU_COMPACT.md): same results,
+one instruction in flight, longer latencies).
 
 ## Execution model
 

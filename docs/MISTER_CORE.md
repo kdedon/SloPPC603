@@ -174,7 +174,7 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh [--clean] [--native] [--fpu] [--suite nbench|embench|selftest|whetstone]
+mister/build.sh [--clean] [--native] [--fpu|--fpu-compact] [--suite nbench|embench|selftest|whetstone]
 ```
 
 `--native` builds the 320 × 240 native-video variant; the default is the 1920 × 1080 DDR3
@@ -239,7 +239,9 @@ one `make -C sim test-selftest` runs.
 switches to its hard-float image, `mister-whetstone-hf.hex`. The file name gains `_fpu`:
 `ppc603e_whetstone_fpu.rbf`, published as `PPC603e_whetstone_fpu_<date>.rbf`. The
 self-test core with `--fpu` runs its floating-point cases as well
-([SELFTEST.md](SELFTEST.md#floating-point)).
+([SELFTEST.md](SELFTEST.md#floating-point)). `--fpu-compact` does the same with the
+[COMPACT FPU](FPU_COMPACT.md) (`MISTER_FPU_COMPACT`); the name gains `_fpu_compact`.
+It has not been built for the board.
 
 ```sh
 mister/build.sh --clean --fpu --suite whetstone   # mister/output_files/ppc603e_whetstone_fpu.rbf

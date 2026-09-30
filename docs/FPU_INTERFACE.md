@@ -9,6 +9,9 @@ defines the acceptance schedule. A coherent dual-personality baseline passes
 the [functional and cycle tests](../sim/fpu/PRODUCTION.md). Frequency closure
 remains open: full-module post-map estimates are 19.7/17.7 MHz against 50 MHz.
 The semantics limits in both contracts remain explicit.
+`ppc_fpu_compact` ([COMPACT](FPU_COMPACT.md)) implements this interface with
+one instruction in flight: it never accepts the second lanes, never
+forwards, and keeps no Table 6-5 cycle counts.
 
 The issue interface carries the core's full `ppc_pkg::completion_tag_t`
 (3-bit queue index and 8-bit generation). Four FPR destination credits allow
