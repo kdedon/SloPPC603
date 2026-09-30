@@ -25,7 +25,9 @@ module ppc_bat_memory_router #(
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter int MICRO_TLB_ENTRIES = 4,
   parameter int TLB_SETS = 32,
-  parameter bit HAS_602 = 1'b0
+  parameter bit HAS_602 = 1'b0,
+  // Data path width: 64 adds FP doubleword accesses (eight strobes).
+  parameter int DMEM_BITS = 32
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -160,12 +162,12 @@ module ppc_bat_memory_router #(
   input  logic        pdmem_req_ready_i,
   output logic        pdmem_req_write_o,
   output logic [31:0] pdmem_req_addr_o,
-  output logic [31:0] pdmem_req_wdata_o,
-  output logic [3:0]  pdmem_req_wstrb_o,
+  output logic [DMEM_BITS-1:0] pdmem_req_wdata_o,
+  output logic [DMEM_BITS/8-1:0] pdmem_req_wstrb_o,
   output logic [3:0]  pdmem_req_wimg_o,
   input  logic        pdmem_rsp_valid_i,
   output logic        pdmem_rsp_ready_o,
-  input  logic [31:0] pdmem_rsp_rdata_i,
+  input  logic [DMEM_BITS-1:0] pdmem_rsp_rdata_i,
   input  logic        pdmem_rsp_error_i,
 
   input  logic        imem_req_valid_i,
@@ -182,11 +184,11 @@ module ppc_bat_memory_router #(
   output logic        dmem_req_ready_o,
   input  logic        dmem_req_write_i,
   input  logic [31:0] dmem_req_addr_i,
-  input  logic [31:0] dmem_req_wdata_i,
-  input  logic [3:0]  dmem_req_wstrb_i,
+  input  logic [DMEM_BITS-1:0] dmem_req_wdata_i,
+  input  logic [DMEM_BITS/8-1:0] dmem_req_wstrb_i,
   output logic        dmem_rsp_valid_o,
   input  logic        dmem_rsp_ready_i,
-  output logic [31:0] dmem_rsp_rdata_o,
+  output logic [DMEM_BITS-1:0] dmem_rsp_rdata_o,
   output logic        dmem_rsp_error_o,
   output ppc_pkg::data_fault_t dmem_rsp_fault_o,
   output ppc_pkg::page_miss_t dmem_rsp_page_miss_o,
@@ -242,8 +244,10 @@ module ppc_bat_memory_router #(
 
   route_state_t state_q;
   lane_state_t i_state_q, d_state_q;
-  logic [31:0] i_ea_q, d_ea_q, i_pa_q, d_pa_q, d_wdata_q;
-  logic [3:0] i_wimg_q, d_wimg_q, d_wstrb_q;
+  logic [31:0] i_ea_q, d_ea_q, i_pa_q, d_pa_q;
+  logic [DMEM_BITS-1:0] d_wdata_q;
+  logic [DMEM_BITS/8-1:0] d_wstrb_q;
+  logic [3:0] i_wimg_q, d_wimg_q;
   logic d_write_q;
   logic lanes_idle, lane_accept_ok, i_accept, d_accept, i_finish, d_finish;
   logic i_hit, d_hit, i_hit_raw, d_hit_raw;
@@ -277,10 +281,11 @@ module ppc_bat_memory_router #(
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_req_addr, imem_rsp_insn;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
-  logic [31:0] dmem_req_addr, dmem_req_wdata;
-  logic [3:0] dmem_req_wstrb;
+  logic [31:0] dmem_req_addr;
+  logic [DMEM_BITS-1:0] dmem_req_wdata;
+  logic [DMEM_BITS/8-1:0] dmem_req_wstrb;
   logic dmem_rsp_valid, dmem_rsp_ready, dmem_rsp_error;
-  logic [31:0] dmem_rsp_rdata;
+  logic [DMEM_BITS-1:0] dmem_rsp_rdata;
   logic choose_instruction, choose_data;
 
   logic bat_req_valid, bat_req_ready;
@@ -988,13 +993,13 @@ module ppc_bat_memory_router #(
       dmem_rsp_valid = pdmem_rsp_valid_i;
       dmem_rsp_error = !ENABLE_MACHINE_CHECK && pdmem_rsp_error_i;
       if (ENABLE_MACHINE_CHECK && pdmem_rsp_error_i) begin
-        dmem_rsp_rdata = 32'b0;
+        dmem_rsp_rdata = '0;
         dmem_rsp_fault_o = DATA_MACHINE_CHECK;
       end
       pdmem_rsp_ready_o = dmem_rsp_ready;
     end else if (rst_ni && state_q == ROUTE_DATA_FAULT_RESPONSE) begin
       dmem_rsp_valid = 1'b1;
-      dmem_rsp_rdata = 32'b0;
+      dmem_rsp_rdata = '0;
       dmem_rsp_error = data_fault_q == DATA_OK;
       dmem_rsp_fault_o = data_fault_q;
     end
@@ -1025,8 +1030,8 @@ module ppc_bat_memory_router #(
       i_wimg_q <= 4'b0;
       d_wimg_q <= 4'b0;
       d_write_q <= 1'b0;
-      d_wdata_q <= 32'b0;
-      d_wstrb_q <= 4'b0;
+      d_wdata_q <= '0;
+      d_wstrb_q <= '0;
       owner_q <= OWN_NONE;
       tlb_fill_ea_q <= 32'b0;
       tlb_fill_bank_q <= 1'b0;

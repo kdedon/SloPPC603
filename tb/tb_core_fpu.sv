@@ -8,20 +8,26 @@
 // Image lines: M addr data (memory), E addr value mask (expected word),
 // L pc cycles (latency probe), R pc0 pc1 cycles (retirement spacing),
 // I pc0 pc1 cycles (dispatch spacing), P lo hi (DSI-protected words),
-// D addr (a store there ends the run).
+// D addr (a store there ends the run). DMEM_BITS=64 answers a doubleword
+// request (upper strobes set) with both words in one response.
 /* verilator lint_off BLKSEQ */
-module tb_core_fpu;
+module tb_core_fpu #(parameter int DMEM_BITS = 64);
   import ppc_pkg::*;
   logic clk = 1'b0, rst_n = 1'b0;
   always #5 clk = ~clk;
   logic iv, ir, sv, sr;
   logic [31:0] ia, iw;
   logic dv, dr, dw, rv, rr;
-  logic [31:0] da, wd, rdata;
-  logic [3:0] st;
+  logic [31:0] da;
+  logic [DMEM_BITS-1:0] wd, rdata;
+  logic [DMEM_BITS/8-1:0] st;
+  logic [63:0] wd64;
+  logic [7:0] st8;
+  logic dword_q = 1'b0;
   data_fault_t dfault;
   logic tv, tr, halted;
   /* verilator lint_off UNUSEDSIGNAL */
+  logic [63:0] rdata64;  // upper half unused on a 32-bit path
   retire_packet_t retired;
   dmem_attr_t attr;
   pin_status_t pin_status;
@@ -65,7 +71,7 @@ module tb_core_fpu;
   ppc_core #(
     .RESET_PC(32'h0000_1000), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
-    .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1)
+    .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1), .DMEM_BITS(DMEM_BITS)
   ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
     .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
@@ -138,8 +144,17 @@ module tb_core_fpu;
   assign iw = read_word(iaddress);
   assign dr = rst_n && !dpending && !done;
   assign rv = dpending;
-  assign rdata = dwrite_q ? 32'b0 : read_word(daddress);
-  assign dfault = protected_word(daddress) ? DATA_DSI_PROTECTION : DATA_OK;
+  always_comb begin
+    wd64 = '0;
+    wd64[DMEM_BITS-1:0] = wd;
+    st8 = '0;
+    st8[DMEM_BITS/8-1:0] = st;
+    rdata64 = dwrite_q ? 64'b0 : dword_q ?
+      {read_word(daddress), read_word(daddress + 32'd4)} : {32'b0, read_word(daddress)};
+  end
+  assign rdata = rdata64[DMEM_BITS-1:0];
+  assign dfault = (protected_word(daddress) || (dword_q && protected_word(daddress + 32'd4))) ?
+                  DATA_DSI_PROTECTION : DATA_OK;
 
   always @(posedge clk) begin
     cycles++;
@@ -157,11 +172,19 @@ module tb_core_fpu;
         dpending <= 1'b1;
         daddress <= da;
         dwrite_q <= dw;
-        if (dw && !protected_word(da)) begin
+        dword_q <= st8[7:4] != 4'b0;
+        if (st8[7:4] != 4'b0) begin
+          check(da[2:0] == 3'b0 && st8 == 8'hff,
+                $sformatf("doubleword request addr=%08x strobes=%02x", da, st8));
+          if (dw && !protected_word(da) && !protected_word(da + 32'd4)) begin
+            mem[da] = wd64[63:32];
+            mem[da + 32'd4] = wd64[31:0];
+          end
+        end else if (dw && !protected_word(da)) begin
           logic [31:0] old;
           old = read_word(da);
           for (int b = 0; b < 4; b++)
-            if (st[b]) old[8*b +: 8] = wd[8*b +: 8];
+            if (st8[b]) old[8*b +: 8] = wd64[8*b +: 8];
           mem[da] = old;
         end
         if (dw && (da == done_addr)) done <= 1'b1;

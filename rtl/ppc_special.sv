@@ -30,6 +30,9 @@ module ppc_special #(
   // Attach the FPU: FP loads and stores run through this lane; other FP
   // instructions arrive on the pipelined FP port.
   parameter bit ENABLE_FPU = 1'b0,
+  // 64 carries an aligned FP doubleword as one access: all eight strobes,
+  // the word at EA in the upper half. Narrower accesses use the low half.
+  parameter int DMEM_BITS = 32,
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   parameter logic [3:0] PLL_CFG = 4'b0000
@@ -172,12 +175,12 @@ module ppc_special #(
   input logic dmem_req_ready_i,
   output logic dmem_req_write_o,
   output logic [31:0] dmem_req_addr_o,
-  output logic [31:0] dmem_req_wdata_o,
-  output logic [3:0] dmem_req_wstrb_o,
+  output logic [DMEM_BITS-1:0] dmem_req_wdata_o,
+  output logic [DMEM_BITS/8-1:0] dmem_req_wstrb_o,
   output logic dmem_req_probe_o,
   input logic dmem_rsp_valid_i,
   output logic dmem_rsp_ready_o,
-  input logic [31:0] dmem_rsp_rdata_i,
+  input logic [DMEM_BITS-1:0] dmem_rsp_rdata_i,
   input logic dmem_rsp_error_i,
   input ppc_pkg::data_fault_t dmem_rsp_fault_i,
   input ppc_pkg::page_miss_t dmem_rsp_page_miss_i,
@@ -282,6 +285,13 @@ module ppc_special #(
   logic [3:0] mem_mask;
   logic mem_crossing, beat_q, beat_continue, mem_skip;
   logic [31:0] beat0_data_q, access_ea, alignment_dar;
+  // Low word of the response and the word request; fpu_wide selects one
+  // doubleword access instead.
+  logic [31:0] rsp_word, req_wdata_word;
+  logic [3:0] req_wstrb_word;
+  logic [63:0] rsp_dword, req_wdata;
+  logic [7:0] req_wstrb;
+  logic fpu_wide;
   logic [31:0] store_source, store_left, load_left, load_right, load_value;
   logic [63:0] store_window, load_window;
   logic [7:0] strobe_window;
@@ -812,7 +822,7 @@ module ppc_special #(
     store_left = uop_q.mem_left ? c_q : (store_source << {3'd4 - mem_nbytes, 3'b0});
     store_window = {store_left, 32'b0} >> {ea_q[1:0], 3'b0};
     strobe_window = {mem_mask, 4'b0} >> ea_q[1:0];
-    load_window = beat_q ? {beat0_data_q, dmem_rsp_rdata_i} : {dmem_rsp_rdata_i, 32'b0};
+    load_window = beat_q ? {beat0_data_q, rsp_word} : {rsp_word, 32'b0};
     load_left = 32'((load_window << {ea_q[1:0], 3'b0}) >> 32) &
                 {{8{mem_mask[3]}}, {8{mem_mask[2]}}, {8{mem_mask[1]}}, {8{mem_mask[0]}}};
     load_right = load_left >> {3'd4 - mem_nbytes, 3'b0};
@@ -826,9 +836,9 @@ module ppc_special #(
     dmem_req_probe_o = (ENABLE_CACHE_INSTRUCTIONS && uop_q.cache_probe) ||
                        (ENABLE_CACHE_INSTRUCTIONS && conditional_probe);
     dmem_req_addr_o = {access_ea[31:2], 2'b0};
-    dmem_req_wdata_o = beat_q ? store_window[31:0] : store_window[63:32];
-    dmem_req_wstrb_o = conditional_probe ? 4'b0 :
-                       beat_q ? strobe_window[3:0] : strobe_window[7:4];
+    req_wdata_word = beat_q ? store_window[31:0] : store_window[63:32];
+    req_wstrb_word = conditional_probe ? 4'b0 :
+                     beat_q ? strobe_window[3:0] : strobe_window[7:4];
     dmem_rsp_ready_o = rst_ni && ((state_q == S_MEM_WAIT) ||
                                   (state_q == S_MEM_DRAIN));
     store_irrevocable_o = rst_ni &&
@@ -837,10 +847,18 @@ module ppc_special #(
        (state_q == S_MEM_RESULT) || (state_q == S_HOLD));
     // An FP access is a word-aligned word or doubleword.
     if (fpu_access) begin
-      dmem_req_wdata_o = (fpu_double_q && !beat_q) ? fpu_data_q[63:32] : fpu_data_q[31:0];
-      dmem_req_wstrb_o = 4'hf;
+      req_wdata_word = (fpu_double_q && !beat_q) ? fpu_data_q[63:32] : fpu_data_q[31:0];
+      req_wstrb_word = 4'hf;
     end
-    beat_continue = !beat_q && (mem_crossing || (fpu_access && fpu_double_q)) &&
+    req_wdata = {32'b0, req_wdata_word};
+    req_wstrb = {4'b0, req_wstrb_word};
+    if (fpu_wide) begin
+      req_wdata = fpu_data_q;
+      req_wstrb = 8'hff;
+    end
+    dmem_req_wdata_o = req_wdata[DMEM_BITS-1:0];
+    dmem_req_wstrb_o = req_wstrb[DMEM_BITS/8-1:0];
+    beat_continue = !beat_q && (mem_crossing || (fpu_access && fpu_double_q && !fpu_wide)) &&
                     !dmem_rsp_error_i && (dmem_rsp_fault_i == DATA_OK);
   end
 
@@ -1673,7 +1691,7 @@ module ppc_special #(
     else if ((state_q == S_MEM_WAIT) && response_fire && !killed_q &&
              beat_continue) begin
       beat_q <= 1'b1;
-      beat0_data_q <= dmem_rsp_rdata_i;
+      beat0_data_q <= rsp_word;
     end
   end
   // Set and cleared only when the owning instruction commits.
@@ -1705,7 +1723,7 @@ module ppc_special #(
           ENABLE_LIVE_CONTEXT;
         DATA_OK: mem_response_fence = ENABLE_CACHE_INSTRUCTIONS &&
           uop_q.block_zero && ENABLE_LIVE_CONTEXT &&
-          (!ENABLE_DATA_CACHE || dmem_rsp_rdata_i[0]);
+          (!ENABLE_DATA_CACHE || rsp_word[0]);
         default: ;
       endcase
     end
@@ -1714,7 +1732,7 @@ module ppc_special #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni) block_zero_align_q <= 1'b0;
     else if (step_run && (state_q == S_MEM_WAIT) && response_fire)
-      block_zero_align_q <= ENABLE_DATA_CACHE && dmem_rsp_rdata_i[0] &&
+      block_zero_align_q <= ENABLE_DATA_CACHE && rsp_word[0] &&
                             !dmem_rsp_error_i;
   end
   always_ff @(posedge clk_i) begin
@@ -1737,7 +1755,7 @@ module ppc_special #(
         memory_result_q.producer <= producer_q;
         // stwcx.: CR0 = 00 || stored || XER[SO].
         memory_result_q.cr0 <= {2'b0,
-          ENABLE_DATA_CACHE ? dmem_rsp_rdata_i[0] : !conditional_probe,
+          ENABLE_DATA_CACHE ? rsp_word[0] : !conditional_probe,
           xer_flags_q[2]};
         if (dmem_rsp_error_i) memory_result_q.fault <= 1'b1;
         else begin
@@ -1954,6 +1972,16 @@ module ppc_special #(
   assign fpu_access = ENABLE_FPU && fpu_q &&
     ((uop_q.special_op == SPECIAL_LOAD) || (uop_q.special_op == SPECIAL_STORE));
   assign fpu_exception = fpu_result.exception != ppc_fpu_pkg::FPU_NO_EXCEPTION;
+  assign rsp_word = dmem_rsp_rdata_i[31:0];
+  always_comb begin
+    rsp_dword = '0;
+    rsp_dword[DMEM_BITS-1:0] = dmem_rsp_rdata_i;
+  end
+  // The upper halves are constant in a 32-bit build.
+  logic _unused_wide;
+  assign _unused_wide = ^{req_wdata, req_wstrb};
+  // An FP doubleword that crosses no doubleword boundary.
+  assign fpu_wide = (DMEM_BITS == 64) && fpu_access && fpu_double_q && !ea_q[2];
   assign late_exception_event = data_exception_event || fpu_exception_q;
   assign fpu_issue_valid = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_ISSUE);
   assign fpu_mem_req_ready = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_WAIT);
@@ -2023,8 +2051,8 @@ module ppc_special #(
       if (fpu_mem_rsp_valid && fpu_mem_rsp_ready) fpu_access_q <= 1'b0;
       if (step_run && fpu_access_q && (state_q == S_MEM_WAIT) && response_fire &&
           !killed_q && !beat_continue) begin
-        fpu_data_q <= fpu_double_q ? {beat0_data_q, dmem_rsp_rdata_i} :
-                                     {32'b0, dmem_rsp_rdata_i};
+        fpu_data_q <= fpu_wide ? rsp_dword :
+                      fpu_double_q ? {beat0_data_q, rsp_word} : {32'b0, rsp_word};
         fpu_mem_fault_q <= dmem_rsp_error_i || (dmem_rsp_fault_i != DATA_OK);
       end
       if (fpu_result_take)

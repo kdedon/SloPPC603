@@ -34,6 +34,8 @@ module ppc_core_bat #(
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_FPU = 1'b0,
+  // 64 carries an aligned FP doubleword as one physical access.
+  parameter int DMEM_BITS = 32,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   parameter logic [3:0] PLL_CFG = 4'b0000,
@@ -113,13 +115,13 @@ module ppc_core_bat #(
   input  logic pdmem_req_ready_i,
   output logic pdmem_req_write_o,
   output logic [31:0] pdmem_req_addr_o,
-  output logic [31:0] pdmem_req_wdata_o,
-  output logic [3:0] pdmem_req_wstrb_o,
+  output logic [DMEM_BITS-1:0] pdmem_req_wdata_o,
+  output logic [DMEM_BITS/8-1:0] pdmem_req_wstrb_o,
   output logic [3:0] pdmem_req_wimg_o,
   output ppc_pkg::dmem_attr_t pdmem_req_attr_o,
   input  logic pdmem_rsp_valid_i,
   output logic pdmem_rsp_ready_o,
-  input  logic [31:0] pdmem_rsp_rdata_i,
+  input  logic [DMEM_BITS-1:0] pdmem_rsp_rdata_i,
   input  logic pdmem_rsp_error_i,
   // icbi: ready reports the four ways at EA's set invalidated.
   output logic icbi_req_valid_o,
@@ -161,19 +163,22 @@ module ppc_core_bat #(
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_req_addr, imem_rsp_insn;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
-  logic [31:0] dmem_req_addr, dmem_req_wdata;
-  logic [3:0] dmem_req_wstrb;
+  logic [31:0] dmem_req_addr;
+  logic [DMEM_BITS-1:0] dmem_req_wdata;
+  logic [DMEM_BITS/8-1:0] dmem_req_wstrb;
   logic dmem_rsp_valid, dmem_rsp_ready, dmem_rsp_error;
-  logic [31:0] dmem_rsp_rdata;
+  logic [DMEM_BITS-1:0] dmem_rsp_rdata;
   logic dmem_req_probe, probe_q, probe_rsp_q;
   logic sync_req, sync_offer_q, sync_wait_q, router_quiescent;
   logic router_dmem_req_ready, router_dmem_rsp_valid, router_dmem_rsp_error;
-  logic [31:0] router_dmem_rsp_rdata;
+  logic [DMEM_BITS-1:0] router_dmem_rsp_rdata;
   ppc_pkg::data_fault_t router_dmem_rsp_fault;
   ppc_pkg::page_miss_t router_dmem_rsp_page_miss;
   logic router_pdmem_req_write;
-  logic [31:0] router_pdmem_req_addr, router_pdmem_req_wdata;
-  logic [3:0] router_pdmem_req_wstrb, router_pdmem_req_wimg;
+  logic [31:0] router_pdmem_req_addr;
+  logic [DMEM_BITS-1:0] router_pdmem_req_wdata;
+  logic [DMEM_BITS/8-1:0] router_pdmem_req_wstrb;
+  logic [3:0] router_pdmem_req_wimg;
   ppc_pkg::dmem_attr_t dmem_req_attr, attr_q;
   logic router_pdmem_req_valid, router_pdmem_req_ready;
   logic router_pdmem_rsp_valid, router_pdmem_rsp_ready;
@@ -258,7 +263,7 @@ module ppc_core_bat #(
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
-    .ENABLE_FPU(ENABLE_FPU),
+    .ENABLE_FPU(ENABLE_FPU), .DMEM_BITS(DMEM_BITS),
     .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) core (
     .tlb_fill_req_valid_o(tlb_fill_req_valid),
@@ -349,6 +354,7 @@ module ppc_core_bat #(
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .TLB_SETS(TLB_SETS_EFFECTIVE),
     .HAS_602(ppc_pkg::cpu_has_602_ext(CPU_VARIANT)),
+    .DMEM_BITS(DMEM_BITS),
     .ENABLE_DATA_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT)) router (
     .tlb_fill_req_valid_i(tlb_fill_req_valid),
     .tlb_fill_req_bank_i(tlb_fill_req_bank),
@@ -448,7 +454,7 @@ module ppc_core_bat #(
     .pdmem_req_wimg_o(router_pdmem_req_wimg),
     .pdmem_rsp_valid_i(router_pdmem_rsp_valid),
     .pdmem_rsp_ready_o(router_pdmem_rsp_ready),
-    .pdmem_rsp_rdata_i(probe_q ? 32'b0 : pdmem_rsp_rdata_i),
+    .pdmem_rsp_rdata_i(probe_q ? '0 : pdmem_rsp_rdata_i),
     .pdmem_rsp_error_i(!probe_q && pdmem_rsp_error_i),
     .imem_req_valid_i(imem_req_valid), .imem_req_ready_o(imem_req_ready),
     .imem_req_addr_i(imem_req_addr), .imem_rsp_valid_o(imem_rsp_valid),
@@ -498,8 +504,8 @@ module ppc_core_bat #(
   assign pdmem_req_valid_o = sync_offer_q || (router_pdmem_req_valid && !probe_q);
   assign pdmem_req_write_o = !sync_offer_q && router_pdmem_req_write;
   assign pdmem_req_addr_o = sync_offer_q ? 32'b0 : router_pdmem_req_addr;
-  assign pdmem_req_wdata_o = sync_offer_q ? 32'b0 : router_pdmem_req_wdata;
-  assign pdmem_req_wstrb_o = sync_offer_q ? 4'b0 : router_pdmem_req_wstrb;
+  assign pdmem_req_wdata_o = sync_offer_q ? '0 : router_pdmem_req_wdata;
+  assign pdmem_req_wstrb_o = sync_offer_q ? '0 : router_pdmem_req_wstrb;
   assign pdmem_req_wimg_o = sync_offer_q ? 4'b0011 : router_pdmem_req_wimg;
   // The lane has one data obligation, so the physical request belongs to
   // the last accepted virtual one.
@@ -511,7 +517,7 @@ module ppc_core_bat #(
   assign dmem_rsp_valid = sync_wait_q ? pdmem_rsp_valid_i : router_dmem_rsp_valid;
   assign dmem_rsp_fault = sync_wait_q ? ppc_pkg::DATA_OK : router_dmem_rsp_fault;
   assign dmem_rsp_page_miss = sync_wait_q ? '0 : router_dmem_rsp_page_miss;
-  assign dmem_rsp_rdata = sync_wait_q ? 32'b0 : router_dmem_rsp_rdata;
+  assign dmem_rsp_rdata = sync_wait_q ? '0 : router_dmem_rsp_rdata;
   assign dmem_rsp_error = !sync_wait_q && router_dmem_rsp_error;
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin

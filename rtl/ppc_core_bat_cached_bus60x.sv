@@ -208,11 +208,14 @@ module ppc_core_bat_cached_bus60x #(
   logic [31:0] imem_req_addr;
   logic imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_rsp_insn;
+  // FP doublewords reach the data cache as one access.
+  localparam int DMEM_BITS = (ENABLE_FPU && ENABLE_DCACHE) ? 64 : 32;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
-  logic [31:0] dmem_req_addr, dmem_req_wdata;
-  logic [3:0] dmem_req_wstrb;
+  logic [31:0] dmem_req_addr;
+  logic [DMEM_BITS-1:0] dmem_req_wdata;
+  logic [DMEM_BITS/8-1:0] dmem_req_wstrb;
   logic dmem_rsp_valid, dmem_rsp_ready, dmem_rsp_error;
-  logic [31:0] dmem_rsp_rdata;
+  logic [DMEM_BITS-1:0] dmem_rsp_rdata;
 
   logic cache_fetch_rsp_valid, cache_fetch_rsp_ready, cache_fetch_rsp_error;
   logic [31:0] cache_fetch_rsp_insn;
@@ -281,7 +284,7 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
-    .ENABLE_FPU(ENABLE_FPU),
+    .ENABLE_FPU(ENABLE_FPU), .DMEM_BITS(DMEM_BITS),
     // HID0[ICE] starts in the cache's reset mode.
     .HID0_RESET((RESET_CACHE_ENABLE ? (32'd1 << ppc_pkg::HID0_ICE) : 32'd0) |
                 ((ENABLE_DCACHE && RESET_DCACHE_ENABLE) ?
@@ -542,7 +545,7 @@ module ppc_core_bat_cached_bus60x #(
 
   ppc_dcache_slot #(
     .ENABLE_DCACHE(ENABLE_DCACHE), .DCACHE_MUTATION(DCACHE_MUTATION),
-    .DCACHE_SETS(DC_SETS), .DCACHE_WAYS(DC_WAYS)
+    .DCACHE_SETS(DC_SETS), .DCACHE_WAYS(DC_WAYS), .LSU_BITS(DMEM_BITS)
   ) dcache_slot (
     .clk_i, .rst_ni,
     .lsu_req_valid_i(dmem_req_valid), .lsu_req_ready_o(dmem_req_ready),

@@ -575,6 +575,13 @@ module ppc_fpu #(
     return 2'd3;
   endfunction
 
+  // Moves, selects and FPSCR instructions finish in the third stage (Table
+  // 6-5 1-1-1) and retire from the registered result like arithmetic; only
+  // their dependents see the value a cycle earlier.
+  function automatic logic spr_transfer(input decode_kind_t kind);
+    return CPU_602 && (kind == DK_MFSPR || kind == DK_MTSPR);
+  endfunction
+
   function automatic logic is_fpu_exec(input decode_kind_t kind);
     return kind == DK_ARITH || kind == DK_MOVE || kind == DK_FSEL;
   endfunction
@@ -1326,7 +1333,7 @@ module ppc_fpu #(
     abort_match = abort_valid_i && matching_abort;
     result_valid_o = rst_ni && !kill_all_i && !abort_match &&
         head_available && (pv[0].done ||
-          pv[0].local_wait == 2'd1 ||
+          (pv[0].local_wait == 2'd1 && spr_transfer(pv[0].decoded.kind)) ||
           (pv[0].decoded.kind == DK_ARITH &&
            arith_rsp_head) ||
           (pv[0].decoded.kind == DK_MEMORY &&

@@ -54,6 +54,8 @@ module ppc_core #(
   // and FPSCR instructions dispatch straight into the FPU and overlap other
   // work; FP loads and stores run through the serialized lane.
   parameter bit ENABLE_FPU = 1'b0,
+  // 64 moves an aligned FP doubleword in one data access; see ppc_special.
+  parameter int DMEM_BITS = 32,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   // HID1 PLL_CFG[0:3] (manual bits 0-3), read-only.
@@ -139,14 +141,14 @@ module ppc_core #(
   input logic dmem_req_ready_i,
   output logic dmem_req_write_o,
   output logic [31:0] dmem_req_addr_o,
-  output logic [31:0] dmem_req_wdata_o,
-  output logic [3:0] dmem_req_wstrb_o,
+  output logic [DMEM_BITS-1:0] dmem_req_wdata_o,
+  output logic [DMEM_BITS/8-1:0] dmem_req_wstrb_o,
   // Cache-block probe: translate and check permission, transfer nothing.
   output logic dmem_req_probe_o,
   output ppc_pkg::dmem_attr_t dmem_req_attr_o,
   input logic dmem_rsp_valid_i,
   output logic dmem_rsp_ready_o,
-  input logic [31:0] dmem_rsp_rdata_i,
+  input logic [DMEM_BITS-1:0] dmem_rsp_rdata_i,
   input logic dmem_rsp_error_i,
   input ppc_pkg::data_fault_t dmem_rsp_fault_i,
   input ppc_pkg::page_miss_t dmem_rsp_page_miss_i,
@@ -340,6 +342,8 @@ module ppc_core #(
       $fatal(1, "The FPU requires ENABLE_TEST_REDIRECT=0");
     if (ENABLE_FPU && !cpu_has_fpu_dp(CPU_VARIANT))
       $fatal(1, "The FPU is attached only to double-precision (603e) variants");
+    if ((DMEM_BITS != 32) && ((DMEM_BITS != 64) || !ENABLE_FPU))
+      $fatal(1, "DMEM_BITS is 32, or 64 with the FPU");
     if (ENABLE_DEBUG_EXCEPTIONS && (!ENABLE_EXTERNAL_INTERRUPTS ||
         !ENABLE_LIVE_CONTEXT || !ENABLE_SUPERVISOR_EXCEPTIONS))
       $fatal(1, "Debug exceptions require the interrupt boundary and live supervisor context");
@@ -794,7 +798,7 @@ module ppc_core #(
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
-    .ENABLE_FPU(ENABLE_FPU),
+    .ENABLE_FPU(ENABLE_FPU), .DMEM_BITS(DMEM_BITS),
     .CPU_VARIANT(CPU_VARIANT), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),

@@ -58,17 +58,18 @@ TABLE_6_5 = {
     'fcmpu': (3, 1), 'frsp': (3, 1), 'fctiw': (3, 1), 'mffs': (3, 3),
     'mtfsf': (3, 3), 'mtfsfi': (3, 3), 'mcrfs': (3, 3),
 }
-# The standalone FPU finishes moves, fsel and FPSCR instructions one cycle
-# before Table 6-5; its timing record owns that schedule.
-FPU_EARLY = {'fsel', 'fmr', 'mffs', 'mtfsf', 'mtfsfi', 'mcrfs'}
 # Figure 6-3: an instruction dispatched in cycle n executes from n+1 and
 # completes the cycle after its last execute stage.
-LATENCY = {name: lat + 1 - (name in FPU_EARLY)
-           for name, (lat, _) in TABLE_6_5.items()}
-# FP loads and stores run through the serialized lane: word accesses, one
-# cycle of bench memory each.
-LATENCY.update({'lfd': 10, 'lfs': 8, 'stfd': 11, 'stfs': 9, 'stfiwx': 9,
+LATENCY = {name: lat + 1 for name, (lat, _) in TABLE_6_5.items()}
+# FP loads and stores run through the serialized lane with one cycle of
+# bench memory per access. A 32-bit data path splits a doubleword into two
+# word accesses; a 64-bit one moves it in one.
+LATENCY.update({'lfd': 8, 'lfs': 8, 'stfd': 9, 'stfs': 9, 'stfiwx': 9,
                 'add': 3})
+
+
+def use_split_doublewords():
+    LATENCY.update({'lfd': 10, 'stfd': 11})
 SYNC = (31 << 26) | (598 << 1)
 
 
@@ -753,9 +754,12 @@ def main():
     parser.add_argument('--chip-image')
     parser.add_argument('--seed', type=lambda s: int(s, 0), default=0x603e)
     parser.add_argument('--random', type=int, default=200)
+    parser.add_argument('--dmem-bits', type=int, choices=(32, 64), default=64)
     args = parser.parse_args()
     if args.chip_image:
         use_chip_layout()
+    if args.dmem_bits == 32:
+        use_split_doublewords()
     p = build(args.seed, args.random)
     print(f'fpu_core_program: {len(p.words)} words, {len(p.expects)} expected, '
           f'{len(p.log)} exceptions, {len(p.probes)} probes')

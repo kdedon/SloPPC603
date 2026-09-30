@@ -64,6 +64,7 @@ lint:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_BYTE_REVERSE=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_MISALIGNED_ACCESS=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_FPU=1'b1" "-GENABLE_TEST_REDIRECT=1'b0" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(FPU_CORE_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_FPU=1'b1" -GDMEM_BITS=64 "-GENABLE_TEST_REDIRECT=1'b0" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(FPU_CORE_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc603e "-GENABLE_FPU=1'b1" $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
@@ -1831,7 +1832,7 @@ reference-acceptance: reference-runner-flat
 # Complete decode: illegal/invalid forms, traps, FP unavailable, HID0/EAR.
 # FPU attached to the core: directed, random enabled-exception and latency
 # program; runs with and without retirement stalls.
-.PHONY: test-core-fpu
+.PHONY: test-core-fpu test-core-fpu-split
 FPU_CORE_IMAGE := $(BUILD_DIR)/core-fpu/program.txt
 FPU_CORE_SEED ?= 0x603e
 FPU_CORE_RANDOM ?= 200
@@ -1841,6 +1842,15 @@ test-core-fpu:
 	python3 tools/fpu_core_program.py --image $(FPU_CORE_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM)
 	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=0 $(SIM_ARGS)
+
+# The same program over a 32-bit data path: doublewords split into two words.
+FPU_CORE_SPLIT_IMAGE := $(BUILD_DIR)/core-fpu-split/program.txt
+test-core-fpu-split:
+	mkdir -p $(BUILD_DIR)/core-fpu-split
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_core_fpu -GDMEM_BITS=32 --Mdir $(BUILD_DIR)/core-fpu-split $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_program.py --image $(FPU_CORE_SPLIT_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --dmem-bits 32
+	./$(BUILD_DIR)/core-fpu-split/Vtb_core_fpu +IMAGE=$(FPU_CORE_SPLIT_IMAGE) +STALL=1 +SEED=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/core-fpu-split/Vtb_core_fpu +IMAGE=$(FPU_CORE_SPLIT_IMAGE) +STALL=0 $(SIM_ARGS)
 
 .PHONY: test-decode-sweep test-core-full-decode
 test: test-decode-sweep test-core-full-decode
