@@ -307,6 +307,7 @@ int main(void)
     interactive(failed, pvr);
   }
   for (int p = 0; p < pages; p++) draw_page(p, failed, pvr);
+  con_screen(0);
   con_console(1);
   printf("selftest %s: %d pages drawn\n", ST_VARIANT, pages);
   return failed;
