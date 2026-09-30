@@ -73,6 +73,7 @@ stores. Offsets are from `0xf0100000`.
 | `0x034` | `TENURES` | R | 60x address tenures since reset |
 | `0x038` | `RETIRED_LO` | R | Instructions retired since reset, low word; reading it latches the high word |
 | `0x03c` | `RETIRED_HI` | R | High word latched by the last `RETIRED_LO` read |
+| `0x040` | `INPUT` | R | The `input_i` port, registered: bits 3:0 right, left, down, up; bit 4 A; bit 5 B; bit 31 an input device is present. The simulation bench ties it to 0 |
 | `0x100` | `PERF_CTRL` | R/W | bit 0: `RUN`, counters advance while set (reset 1); writing bit 1 clears every counter |
 | `0x104` | `PERF_CYCLES` | R | Cycles counted while `RUN` |
 | `0x108` | `PERF_RETIRED` | R | Retired instructions |
