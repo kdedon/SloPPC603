@@ -426,6 +426,29 @@ def make_control_program():
     e('illegal')
     return p
 
+def make_branch_recovery():
+    # A backward bge predicted taken falls through while a divw is in flight,
+    # then r9 is written back to back and read with the quotient. Swept over
+    # code alignment, filler between the divide and the chain, and whether
+    # the divide issues before the loop or after its exit.
+    p=Program();e=p.emit
+    e('addi',1,0,BASE);e('addi',22,0,0x1234);e('addi',23,0,0)
+    for case in range(48):
+        pad,gap,early=case%8,(case//8)%3,case//24
+        for _ in range(pad):e('ori',0,0,0)
+        e('mulli',28,22,3);e('addi',9,0,7+case)
+        e('stw',9,1,(case%16)*4);e('lwz',9,1,(case%16)*4)
+        if early:e('divw',10,28,9,0,0)
+        e('addi',21,0,3)
+        p.label(f'loop{case}');e('addi',21,21,-1);e('cmpi',0,21,0)
+        e('bc',4,0,f'loop{case}',0,0)
+        if not early:e('divw',10,28,9,0,0)
+        for _ in range(gap):e('addi',23,23,1)
+        e('subf',9,9,28,0,0);e('mulli',9,9,7);e('subf',20,10,9,0,0)
+        e('addi',22,20,case);e('stw',20,1,64+(case%16)*4)
+    e('illegal')
+    return p
+
 def make_shifts():
     p=make_program()
     # Prefix real SO=0 record shifts; relocation uses symbolic labels.
@@ -853,9 +876,9 @@ def make_lsu_update():
     for _ in range(8):e('lwzu',6,4,4);e('add',7,6,4)
     e('illegal');return p
 
-def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=False, subcarry=False, subextend=False, subunary=False, subimmediate=False, addimmediate=False, andimmediate=False, unarylogical=False, crtransfer=False, crlogical=False, crstate=False, multiply=False, multiply_high=False, divide_unsigned=False, divide_signed=False, lsu_update=False, compare=False):
+def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=False, subcarry=False, subextend=False, subunary=False, subimmediate=False, addimmediate=False, andimmediate=False, unarylogical=False, crtransfer=False, crlogical=False, crstate=False, multiply=False, multiply_high=False, divide_unsigned=False, divide_signed=False, lsu_update=False, compare=False, branch_recovery=False):
     output.mkdir(parents=True,exist_ok=True)
-    p=make_compare() if compare else make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_control_program()
+    p=make_branch_recovery() if branch_recovery else make_compare() if compare else make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_control_program()
     assert p.encode(0,'mflr',(3,))==0x7c6802a6
     assert p.encode(0,'mtctr',(3,))==0x7c6903a6
     assert p.encode(0,'bclr',(20,0,0))==0x4e800020
@@ -912,9 +935,10 @@ if __name__=='__main__':
     ap.add_argument('--divide-signed',action='store_true')
     ap.add_argument('--lsu-update',action='store_true')
     ap.add_argument('--compare',action='store_true')
+    ap.add_argument('--branch-recovery',action='store_true')
     # Both fixtures fit signed D-form immediates; 0x6000 separates unified
     # bus data RAM from the instruction image below 0x4000.
     ap.add_argument('--memory-base',type=lambda x:int(x,0),choices=(0x1000,0x6000),default=BASE)
     args=ap.parse_args()
     BASE=args.memory_base
-    write(args.output,args.shifts,args.arithmetic_shifts,args.insert,args.subtract,args.subcarry,args.subextend,args.subunary,args.subimmediate,args.addimmediate,args.andimmediate,args.unarylogical,args.crtransfer,args.crlogical,args.crstate,args.multiply,args.multiply_high,args.divide_unsigned,args.divide_signed,args.lsu_update,args.compare)
+    write(args.output,args.shifts,args.arithmetic_shifts,args.insert,args.subtract,args.subcarry,args.subextend,args.subunary,args.subimmediate,args.addimmediate,args.andimmediate,args.unarylogical,args.crtransfer,args.crlogical,args.crstate,args.multiply,args.multiply_high,args.divide_unsigned,args.divide_signed,args.lsu_update,args.compare,args.branch_recovery)
