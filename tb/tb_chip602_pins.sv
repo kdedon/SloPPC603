@@ -6,7 +6,7 @@
 // words and a misaligned word; then directed cases: a castout carrying
 // PFADDR ahead of its fill, a snoop retry and push to a second master,
 // INT, SRESET, TEA on a load and a posted store, and RESETO from the
-// watchdog and during HRESET.
+// watchdog and during HRESET, and nap with the QREQ/QACK handshake.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off ASCRANGE */
 module tb_chip602_pins;
@@ -15,7 +15,7 @@ module tb_chip602_pins;
   localparam logic [31:0] MAIN = BASE + 32'h2000;
   localparam logic [31:0] DATA = BASE + 32'h8000;
   localparam int RESETS = 'h00, RESET_SRR0 = 'h04, MC_COUNT = 'h10, EXT_MARK = 'h18;
-  localparam int WD_MARK = 'h1c, LOOPS = 'h30, DONE = 'h3c;
+  localparam int WD_MARK = 'h1c, DEC_MARK = 'h20, LOOPS = 'h30, DONE = 'h3c;
   localparam logic [31:0] RFI = 32'h4c00_0064;
   localparam logic [31:0] MSR_ME = 32'h1000, MSR_EE = 32'h8000, MSR_IP = 32'h40;
   localparam logic [31:0] HID0_DCE = 32'h4000;
@@ -30,6 +30,7 @@ module tb_chip602_pins;
   logic [0:63] dbus, d_o;
   logic ckstp_out_n, reseto_n, reseto_oe, qreq_n, clk_out, clk_out_oe;
   logic tdo, tdo_oe;
+  logic qack_n = 1'b0, qreq_ok = 1'b0;
 
   ppc602 dut (
     .sysclk(clk), .pll_cfg_i(4'b0010), .clk_out_o(clk_out), .clk_out_oe_o(clk_out_oe),
@@ -40,7 +41,7 @@ module tb_chip602_pins;
     .int_n_i(int_n), .smi_n_i(smi_n), .mcp_n_i(mcp_n), .ckstp_in_n_i(ckstp_in_n),
     .ckstp_out_n_o(ckstp_out_n), .hreset_n_i(hreset_n), .sreset_n_i(sreset_n),
     .reseto_n_o(reseto_n), .reseto_oe_o(reseto_oe), .qreq_n_o(qreq_n),
-    .qack_n_i(1'b0), .tben_i(1'b1), .tck_i(1'b0), .tms_i(1'b1), .tdi_i(1'b1),
+    .qack_n_i(qack_n), .tben_i(1'b1), .tck_i(1'b0), .tms_i(1'b1), .tdi_i(1'b1),
     .trst_n_i(1'b0), .tdo_o(tdo), .tdo_oe_o(tdo_oe), .lssd_mode_n_i(1'b1),
     .l1_tstclk_i(1'b0), .l2_tstclk_i(1'b0)
   );
@@ -57,7 +58,7 @@ module tb_chip602_pins;
   always @(posedge clk) begin
     cycles++;
     if (hreset_n && !ckstp_out_n) $fatal(1, "checkstop cycle=%0d", cycles);
-    if (!qreq_n || clk_out_oe || tdo_oe || clk_out || tdo) $fatal(1, "QREQ, CLK_OUT or TDO active");
+    if ((!qreq_n && !qreq_ok) || clk_out_oe || tdo_oe || clk_out || tdo) $fatal(1, "QREQ, CLK_OUT or TDO active");
     // Output enables that must never overlap.
     if (d_oe && memory.tgt_d_oe) $fatal(1, "D driven by CPU and target cycle=%0d", cycles);
   end
@@ -390,6 +391,46 @@ module tb_chip602_pins;
     check(reseto_oe && reseto_n, "RESETO negated after HRESET");
   endtask
 
+  // ---- Nap: QREQ, QACK, DEC wake ----------------------------------------------
+  task automatic nap_case;
+    int n;
+    load_handlers();
+    mtspr(1008, 32'h0040_0000);
+    mtmsr(MSR_EE | MSR_ME | MSR_IP);
+    mtspr(22, 300);
+    emit(32'h7c00_04ac);
+    mtmsr(MSR_EE | MSR_ME | MSR_IP | 32'h0004_0000);
+    emit(32'h4c00_012c);
+    done_mark(32'h0a90, 1'b0);
+    halt();
+    begin
+      logic [31:0] main_end;
+      main_end = at;
+      at = BASE + 32'h900;
+      emit(asm_li(4, 'h900));
+      emit(asm_stw(4, DEC_MARK, 31));
+      emit(asm_lis(4, 'h7fff));
+      emit(asm_spr(1'b1, 4, 22));
+      emit(RFI);
+      check(main_end < DATA, "layout");
+    end
+    qreq_ok = 1'b1;
+    qack_n = 1'b1;
+    hard_reset();
+    n = 0;
+    while (qreq_n && n < 20000) begin @(negedge clk); n++; end
+    check(!qreq_n && mem_word(DATA + DONE) == 0, "nap asserts QREQ");
+    repeat (50) @(negedge clk);
+    check(!dut.pin_status.quiesced, "no quiescence before QACK");
+    qack_n = 1'b0;
+    repeat (4) @(negedge clk);
+    check(dut.pin_status.quiesced, "QACK quiesces");
+    wait_word(DATA + DEC_MARK, 32'h900, 20000, "DEC wakes nap");
+    check(qreq_n, "wake negates QREQ");
+    wait_word(DATA + DONE, 32'h0a90, 5000, "resumes after the POW mtmsr");
+    qreq_ok = 1'b0;
+  endtask
+
   initial begin
     repeat (4) @(negedge clk);
     boot_case(1'b0, 0, 0);
@@ -402,6 +443,7 @@ module tb_chip602_pins;
     int_sreset_case();
     tea_case();
     reseto_case();
+    nap_case();
     $display("PASS: tb_chip602_pins %0d checks, %0d cycles", checks, cycles);
     $finish;
   end
