@@ -127,6 +127,8 @@ module ppc_fpu #(
     logic dest_fpr;
     ppc_fpu_issue_t issue;
     decoded_t decoded;
+    // First lookup's register: frS for a load or store, else frA.
+    logic [4:0] src_a;
     logic [31:0] ea;
     status_t st;
     // FPR result, store data, fault information, proposed FPSCR or SPR
@@ -689,11 +691,13 @@ module ppc_fpu #(
   function automatic pending_t new_entry(input pending_t old,
                                          input ppc_fpu_issue_t is,
                                          input decoded_t d,
+                                         input logic [4:0] first_src,
                                          input logic [31:0] ea);
     pending_t e;
     e = old;
     e.issue = is;
     e.decoded = d;
+    e.src_a = first_src;
     e.dest_fpr = writes_fpr(d.kind, d.op, d.mem_load);
     e.ea = ea;
     return e;
@@ -1415,8 +1419,7 @@ module ppc_fpu #(
     end
     work_admitted = !work_dispatch || dispatch_fire;
     // A memory form's first lookup reads the store source frS.
-    src_a_index = memory_form(work_issue.insn[31:26]) ?
-        work_issue.insn[25:21] : work_issue.insn[20:16];
+    src_a_index = exec_found ? exec_entry.src_a : lane_index[0][0];
     src_b_index = work_issue.insn[15:11];
     src_c_index = work_issue.insn[10:6];
     // A waiting entry reads its bound producers; a dispatching one binds
@@ -1526,8 +1529,8 @@ module ppc_fpu #(
     end
     work1_admitted = work1_old ||
         (exec_found ? dispatch_fire : dispatch1_fire);
-    work1_index[0] = memory_form(work1_issue.insn[31:26]) ?
-        work1_issue.insn[25:21] : work1_issue.insn[20:16];
+    work1_index[0] = work1_old ? second_entry.src_a :
+        lane_index[exec_found ? 0 : 1][0];
     work1_index[1] = work1_issue.insn[15:11];
     work1_index[2] = work1_issue.insn[10:6];
     for (integer k = 0; k < 3; k++)
@@ -2127,7 +2130,8 @@ module ppc_fpu #(
     // own next state.
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
       if (space_ok && tail_q == PENDING_IDX_BITS'(i)) begin
-        pending_d[i] = new_entry(pending_d[i], issue_i, decoded, issue_ea);
+        pending_d[i] = new_entry(pending_d[i], issue_i, decoded,
+            lane_index[0][0], issue_ea);
         for (integer k = 0; k < 3; k++)
           pending_d[i].producer[k] =
               (work_dispatch ? bind0[k] : bind1[k]) & ~retiring;
@@ -2142,7 +2146,8 @@ module ppc_fpu #(
         end
       end
       if (space1_ok && tail1_q == PENDING_IDX_BITS'(i)) begin
-        pending_d[i] = new_entry(pending_d[i], issue1_i, decoded1, issue1_ea);
+        pending_d[i] = new_entry(pending_d[i], issue1_i, decoded1,
+            lane_index[1][0], issue1_ea);
         // A source written by the paired lane-0 instruction binds to it.
         for (integer k = 0; k < 3; k++)
           pending_d[i].producer[k] =
@@ -2264,22 +2269,23 @@ module ppc_fpu #(
   // The inspection port shares the second context's frC read and is valid
   // while that context is empty.
   always_comb begin
-    logic [31:6] insn0;
-    logic [31:6] insn1;
+    logic [15:6] insn0;
+    logic [15:6] insn1;
     logic context1;
     insn0 = '0;
-    if (exec_found) insn0 = exec_entry.issue.insn[31:6];
-    else if (issue_valid_i) insn0 = issue_i.insn[31:6];
+    if (exec_found) insn0 = exec_entry.issue.insn[15:6];
+    else if (issue_valid_i) insn0 = issue_i.insn[15:6];
     insn1 = '0;
     context1 = 1'b1;
-    if (second_exec_found) insn1 = second_entry.issue.insn[31:6];
-    else if (exec_found && issue_valid_i) insn1 = issue_i.insn[31:6];
-    else if (!exec_found && issue1_valid_i) insn1 = issue1_i.insn[31:6];
+    if (second_exec_found) insn1 = second_entry.issue.insn[15:6];
+    else if (exec_found && issue_valid_i) insn1 = issue_i.insn[15:6];
+    else if (!exec_found && issue1_valid_i) insn1 = issue1_i.insn[15:6];
     else context1 = 1'b0;
-    fpr_raddr[0] = memory_form(insn0[31:26]) ? insn0[25:21] : insn0[20:16];
+    fpr_raddr[0] = exec_found ? exec_entry.src_a : lane_index[0][0];
     fpr_raddr[1] = insn0[15:11];
     fpr_raddr[2] = insn0[10:6];
-    fpr_raddr[3] = memory_form(insn1[31:26]) ? insn1[25:21] : insn1[20:16];
+    fpr_raddr[3] = second_exec_found ? second_entry.src_a :
+        lane_index[exec_found ? 0 : 1][0];
     fpr_raddr[4] = insn1[15:11];
     fpr_raddr[5] = context1 ? insn1[10:6] : inspect_fpr_index_i;
   end
