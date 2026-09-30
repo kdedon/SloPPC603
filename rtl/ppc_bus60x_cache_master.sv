@@ -12,6 +12,8 @@ module ppc_bus60x_cache_master #(
 ) (
   input  logic         clk_i,
   input  logic         rst_ni,
+  // High in the cycle that ends at a SYSCLK edge.
+  input  logic         bus_ce_i,
 
   input  logic         req_valid_i,
   output logic         req_ready_o,
@@ -199,18 +201,27 @@ module ppc_bus60x_cache_master #(
                    ((rq_kind_q == K_READ_SINGLE || rq_kind_q == K_WRITE_SINGLE) &&
                     !rq_plan_q.ok);
 
+  // Justification: (reg-a) idle through the last SYSCLK cycle; (reg-a) the
+  // bus runs slower than the processor. Below 1:1 a request is taken only
+  // after a full idle bus cycle, so both arbiter levels see this master free
+  // at an edge between tenures and can hand the bus to another. At 1:1 the
+  // processor's own request latency leaves that gap.
+  logic idle_q, slow_q = 1'b0;
+
   always_comb begin
-    req_ready_o = rst_ni && state_q == S_IDLE && !rq_valid_q && !pu_valid_q &&
+    req_ready_o = rst_ni && bus_ce_i && (idle_q || !slow_q) &&
+                  state_q == S_IDLE && !rq_valid_q && !pu_valid_q &&
                   !push_valid_i && !push_hold_i;
-    push_ready_o = rst_ni && !pu_valid_q;
+    push_ready_o = rst_ni && bus_ce_i && !pu_valid_q;
     push_accept_o = push_valid_i && push_ready_o;
     push_wait_o = pu_valid_q && (state_q == S_IDLE || !act_push_q);
-    rd_valid_o = rd_valid_q;
+    // Pulses registered on a SYSCLK edge show for one cycle.
+    rd_valid_o = rd_valid_q && bus_ce_i;
     rd_data_o = rd_data_q;
     rd_error_o = rd_error_q;
-    wr_done_o = wr_done_q;
+    wr_done_o = wr_done_q && bus_ce_i;
     wr_error_o = wr_error_q;
-    push_done_o = push_done_q;
+    push_done_o = push_done_q && bus_ce_i;
     push_error_o = push_error_q;
     busy_o = rst_ni && (state_q != S_IDLE || rq_valid_q || pu_valid_q);
     protocol_error_o = rst_ni && protocol_error_q;
@@ -248,8 +259,15 @@ module ppc_bus60x_cache_master #(
   end
 
   always_ff @(posedge clk_i) begin
-    if (!ta_n_i)
+    if (bus_ce_i && !ta_n_i)
       provisional_q <= d_i;
+  end
+
+  always_ff @(posedge clk_i) if (!bus_ce_i) slow_q <= 1'b1;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) idle_q <= 1'b1;
+    else if (bus_ce_i)
+      idle_q <= state_q == S_IDLE && !rq_valid_q && !pu_valid_q;
   end
 
   always_ff @(negedge clk_i) begin
@@ -367,7 +385,7 @@ module ppc_bus60x_cache_master #(
       push_done_q <= 1'b0;
       push_error_q <= 1'b0;
       protocol_error_q <= 1'b0;
-    end else begin
+    end else if (bus_ce_i) begin
       rd_valid_q <= 1'b0;
       rd_error_q <= 1'b0;
       wr_done_q <= 1'b0;

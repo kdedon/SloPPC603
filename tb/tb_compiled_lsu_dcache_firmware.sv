@@ -64,7 +64,7 @@ module tb_compiled_lsu_dcache_firmware;
     .ENABLE_BYTE_REVERSE(LSU_EXTENSIONS),.ENABLE_MULTIPLE_STRING(LSU_EXTENSIONS),
     .ENABLE_RESERVATION(LSU_EXTENSIONS),.ENABLE_MISALIGNED_ACCESS(LSU_EXTENSIONS),
     .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_PIN_INTERRUPTS(1'b1),
-    .ENABLE_DCACHE(1'b1),.RESET_DCACHE_ENABLE(1'b1)) dut(
+    .ENABLE_DCACHE(1'b1),.RESET_DCACHE_ENABLE(1'b1)) dut(.bus_ce_i(1'b1),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),
@@ -126,7 +126,7 @@ module tb_compiled_lsu_dcache_firmware;
     .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n)
   );
   /* verilator lint_on PINCONNECTEMPTY */
-  bus60x_coherent_bfm #(.BASE_ADDR(BASE),.MEM_BYTES(FW_MEM_BYTES)) target(
+  bus60x_coherent_bfm #(.BASE_ADDR(BASE),.MEM_BYTES(FW_MEM_BYTES)) target(.bus_ce_i(1'b1),
     .clk_i(clk),.br_n_i(br_n),.ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(bus_a),
     .tt_i(tt),.tbst_n_i(tbst_n),.tsiz_i(tsiz),.tc_i(tc),.ci_n_i(ci_n),.wt_n_i(wt_n),
     .gbl_n_i(gbl_n),.dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.d_i(data_out),.d_oe_i(data_oe),

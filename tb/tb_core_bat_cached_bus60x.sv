@@ -2,10 +2,13 @@
 // Copyright (c) 2026 Kevin Dedon
 // CPU-programmed translation before instruction cache and scalar bypass.
 /* verilator lint_off BLKSEQ */
-module tb_core_bat_cached_bus60x;
+// BUS_RATIO2 runs the 60x side at that processor:bus ratio, doubled.
+module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
   import ppc_pkg::*;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
+  logic bus_ce;
+  ppc_bus_clock_enable #(.RATIO2(BUS_RATIO2)) bus_clock(.clk_i(clk),.bus_ce_o(bus_ce));
   logic start_valid=0,start_ready,running,cir,cdr,cpr;
   logic tv,tr,halted,ifetch_error,protocol_error,bus_busy,pimem_error,redirect_accepted;
   retire_packet_t retired;
@@ -113,7 +116,7 @@ module tb_core_bat_cached_bus60x;
   logic unused_checkstop;
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
-    .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_RUNTIME_BAT(1'b1)) dut(
+    .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_RUNTIME_BAT(1'b1)) dut(.bus_ce_i(bus_ce),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(),.interrupt_pc_o(),
@@ -172,7 +175,7 @@ module tb_core_bat_cached_bus60x;
     .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n)
   );
   /* verilator lint_on PINCONNECTEMPTY */
-  bus60x_target_bfm #(.BASE_ADDR(32'b0),.MEM_BYTES(8192)) target(
+  bus60x_target_bfm #(.BASE_ADDR(32'b0),.MEM_BYTES(8192)) target(.bus_ce_i(bus_ce),
     .clk_i(clk),.br_n_i(br_n),.abb_n_i(abb_n),.abb_oe_i(abb_oe),
     .ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(bus_a),
     .dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.bg_n_o(bg_n),
@@ -184,7 +187,7 @@ module tb_core_bat_cached_bus60x;
   always @(posedge clk)begin
     cycles++;
     if(rst_n)begin
-      check(cycles<10000,"direct composition watchdog");
+      check(cycles<5000*BUS_RATIO2,"direct composition watchdog");
       check(!halted&&!ifetch_error&&!pimem_error&&!protocol_error&&
             !redirect_accepted&&(!running||!cpr),"unexpected fault, redirect, or PR");
       if(tv&&!tr)retire_stalls++;
@@ -193,7 +196,8 @@ module tb_core_bat_cached_bus60x;
       if(cache_miss)cache_misses++;
       check(cache_enabled&&!maintenance_busy&&!maintenance_done_valid,
         "cache maintenance unexpectedly active");
-      if(addr_oe&&ts_oe&&!ts_n)begin
+      // Pins are sampled on SYSCLK edges.
+      if(bus_ce&&addr_oe&&ts_oe&&!ts_n)begin
         address_offers++;
         check(abb_oe&&!abb_n&&bus_busy&&wt_n&&gbl_n&&cse==0,
               "shared address tenure/attributes");
@@ -230,7 +234,7 @@ module tb_core_bat_cached_bus60x;
         end
       end
       if(dbb_oe)check(bus_busy,"data tenure without busy owner");
-      if(!ta_n&&dbb_oe)begin
+      if(bus_ce&&!ta_n&&dbb_oe)begin
         if(tt==5'b00010)begin
           check(data_oe&&bus_a==32'h1004,
             "write data without physical target ownership");

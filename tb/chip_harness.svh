@@ -4,12 +4,17 @@
 // Included in a bench body after `clk` is declared. The bench drives the
 // input pin variables and the target policy (bfm_retry, bfm_hold, bfm_drtry,
 // bfm_wait); RAM is memory.mem from BASE for MEM_BYTES. The address bus
-// (TS, A, TT, GBL) and ARTRY are shared with the second master.
+// (TS, A, TT, GBL) and ARTRY are shared with the second master. The bench
+// declares parameter PLL, the strap (negative: the PID7v default); the
+// memory and the pin checks run on the chip's SYSCLK enable.
 /* verilator lint_off ASCRANGE */
 logic int_n = 1'b1, smi_n = 1'b1, mcp_n = 1'b1, ckstp_in_n = 1'b1;
 logic hreset_n = 1'b0, sreset_n = 1'b1, qack_n = 1'b0, tben = 1'b1;
 logic tlbisync_n = 1'b1, dbdis_n = 1'b1;
-logic [0:3] pll_cfg = ppc_pkg::pll_cfg_default(ppc_pkg::CPU_PID7V_603E);
+localparam logic [3:0] CHIP_PLL_CFG =
+  (PLL < 0) ? ppc_pkg::pll_cfg_default(ppc_pkg::CPU_PID7V_603E) : 4'(PLL);
+logic [0:3] pll_cfg = CHIP_PLL_CFG;
+logic bus_ce;
 logic bfm_retry = 1'b0, bfm_hold = 1'b0, bfm_drtry = 1'b0;
 // Hides the shared TS from the chip's snooper (negative controls).
 logic snoop_hide = 1'b0;
@@ -33,9 +38,9 @@ logic [31:0] bus_a;
 logic [3:0] bus_ap;
 logic [4:0] bus_tt;
 
-ppc603e dut (
+ppc603e #(.PLL_CFG(CHIP_PLL_CFG)) dut (
   /* verilator lint_off PINCONNECTEMPTY */
-  .perf_o(),
+  .perf_o(), .bus_ce_o(bus_ce),
   /* verilator lint_on PINCONNECTEMPTY */
   .sysclk(clk), .pll_cfg_i(pll_cfg), .clk_out_o(clk_out), .clk_out_oe_o(clk_out_oe),
   .br_n_o(br_n), .bg_n_i(bg_n || bus_block), .abb_n_i(1'b1), .abb_n_o(abb_n), .abb_oe_o(abb_oe),
@@ -57,7 +62,7 @@ ppc603e dut (
   .test_i(3'b111)
 );
 
-bus60x_coherent_bfm #(.BASE_ADDR(BASE), .MEM_BYTES(MEM_BYTES)) memory (
+bus60x_coherent_bfm #(.BASE_ADDR(BASE), .MEM_BYTES(MEM_BYTES)) memory (.bus_ce_i(bus_ce),
   .clk_i(clk), .br_n_i(br_n), .ts_n_i(ts_n), .ts_oe_i(ts_oe), .a_i(a),
   .tt_i(tt), .tbst_n_i(tbst_n), .tsiz_i(tsiz), .tc_i(tc), .ci_n_i(ci_n), .wt_n_i(wt_n),
   .gbl_n_i(gbl_n), .dbb_n_i(dbb_n), .dbb_oe_i(dbb_oe), .d_i({dh_out, dl_out}),
@@ -80,12 +85,12 @@ logic wr_pending_q = 1'b0;
 logic wr_fire;
 logic [31:0] wr_addr;
 always @(posedge clk) begin
-  if (ts_oe && !ts_n) begin
+  if (bus_ce && ts_oe && !ts_n) begin
     wr_addr_q <= a;
     wr_pending_q <= (tt == 5'b00010) || (tt == 5'b10010);
   end
 end
-assign wr_fire = wr_pending_q && !ta_n && dbb_oe && data_oe;
+assign wr_fire = bus_ce && wr_pending_q && !ta_n && dbb_oe && data_oe;
 assign wr_addr = wr_addr_q;
 
 // Odd parity on every driven address and data byte.
@@ -98,6 +103,24 @@ always @(posedge clk) begin
   if (data_oe)
     for (int i = 0; i < 8; i++)
       if (^{dout[63-8*i -: 8], dp[i]} !== 1'b1) $fatal(1, "data parity byte %0d", i);
+end
+
+// Outputs change only in the first cycle after a SYSCLK edge (the
+// half-cycle releases fall inside it); hard reset and checkstop release
+// them at any cycle.
+logic pins_first_q = 1'b1, pins_live_q = 1'b0;
+logic [137:0] pins_q = '0;
+logic [137:0] pins_now;
+assign pins_now = {br_n, abb_n, abb_oe, ts_n, ts_oe, a, ap, ape_n, tt, tsiz,
+                   tbst_n, tc, ci_n, wt_n, gbl_n, cse, addr_oe, artry_out_n,
+                   artry_oe, dbb_n, dbb_oe, data_oe, data_oe ? dout : 64'b0,
+                   data_oe ? dp : 8'b0, rsrv_n, qreq_n};
+always @(posedge clk) begin
+  if (pins_live_q && dut.core_rst_n && !pins_first_q && pins_now !== pins_q)
+    $fatal(1, "pins changed between SYSCLK edges: %h -> %h", pins_q, pins_now);
+  pins_first_q <= bus_ce;
+  pins_live_q <= dut.core_rst_n;
+  pins_q <= pins_now;
 end
 
 function automatic logic [31:0] mem_word(input logic [31:0] address);

@@ -101,7 +101,7 @@ module tb_core_bat_machine_check #(
       .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
       .ENABLE_EXTERNAL_INTERRUPTS(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
       .ENABLE_RUNTIME_BAT(1'b1),
-      .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut (
+      .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut (.bus_ce_i(1'b1),
       .perf_o(),
       `MC_COMMON_PORTS,
       .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),

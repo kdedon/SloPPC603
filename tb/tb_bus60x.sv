@@ -39,7 +39,7 @@ module tb_bus60x;
   assign abb_n = external_abb_n;
   assign dbb_n = external_dbb_n;
 
-  ppc_bus60x dut (
+  ppc_bus60x dut (.bus_ce_i(1'b1),
     .req_attr_i(6'b0),
     .clk_i(clk), .rst_ni(rst_n),
     .req_valid_i(req_valid), .req_ready_o(req_ready),
@@ -62,7 +62,7 @@ module tb_bus60x;
     .tea_n_i(tea_n)
   );
 
-  bus60x_target_bfm target (
+  bus60x_target_bfm target (.bus_ce_i(1'b1),
     .clk_i(clk), .br_n_i(br_n), .abb_n_i(abb_n_driven),
     .abb_oe_i(abb_oe), .ts_n_i(ts_n), .ts_oe_i(ts_oe),
     .a_i(bus_a), .dbb_n_i(dbb_n_driven), .dbb_oe_i(dbb_oe),

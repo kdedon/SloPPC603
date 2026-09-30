@@ -88,6 +88,20 @@ module tb_variant_config #(
     check(pll_cfg_legal(CPU_VARIANT, pll_cfg_default(CPU_VARIANT)) ==
           (CPU_VARIANT != CPU_602), "default PLL_CFG legal");
     check(pll_cfg_bus_1to1(pll_cfg_default(CPU_VARIANT)), "default PLL_CFG 1:1");
+    // Processor:bus ratio, doubled, per code. 603e: UM Table 7-10 (PID7v
+    // without 1:1 and 1.5:1); 603: UM Table C-4; 602: 602HW Table 11.
+    begin
+      int ratio2 [16];
+      unique case (CPU_VARIANT)
+        CPU_603:       ratio2 = '{2, 2, 2, 2, 4, 4, 0, 0, 6, 6, 0, 0, 8, 0, 0, 0};
+        CPU_602:       ratio2 = '{0, 0, 0, 0, 4, 4, 0, 0, 6, 6, 0, 0, 0, 0, 0, 0};
+        CPU_PID6_603E: ratio2 = '{2, 2, 2, 2, 4, 4, 5, 0, 6, 0, 8, 0, 3, 0, 7, 0};
+        default:       ratio2 = '{0, 0, 0, 2, 4, 4, 5, 0, 6, 0, 8, 0, 0, 0, 7, 0};
+      endcase
+      for (int code = 0; code < 16; code++)
+        check(pll_cfg_ratio2(CPU_VARIANT, 4'(code)) == ratio2[code],
+              $sformatf("PLL_CFG %04b ratio", 4'(code)));
+    end
 
     expect_legal(asm_spr(1'b0, 3, 1009), exp_hid1, "mfspr HID1");
     expect_legal(asm_spr(1'b1, 3, 1009), exp_hid1, "mtspr HID1");

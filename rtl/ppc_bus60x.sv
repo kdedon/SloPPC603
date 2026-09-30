@@ -7,6 +7,8 @@
 module ppc_bus60x (
   input  logic        clk_i,
   input  logic        rst_ni,
+  // High in the cycle that ends at a SYSCLK edge; see ppc_bus_clock_enable.
+  input  logic        bus_ce_i,
 
   input  logic        req_valid_i,
   output logic        req_ready_o,
@@ -158,9 +160,18 @@ module ppc_bus60x (
       request_shape_valid = 1'b0;
   end
 
+  // Justification: (reg-a) idle through the last SYSCLK cycle; (reg-a) the
+  // bus runs slower than the processor. Below 1:1 a request is taken only
+  // after a full idle bus cycle, so both arbiter levels see this master free
+  // at an edge between tenures and can hand the bus to another. At 1:1 the
+  // processor's own request latency leaves that gap.
+  logic idle_q, slow_q = 1'b0;
+
   always_comb begin
-    req_ready_o = rst_ni && (state_q == BUS_IDLE) && !rsp_valid_q;
-    rsp_valid_o = rst_ni && rsp_valid_q;
+    req_ready_o = rst_ni && bus_ce_i && (idle_q || !slow_q) &&
+                  (state_q == BUS_IDLE) &&
+                  !rsp_valid_q;
+    rsp_valid_o = rst_ni && bus_ce_i && rsp_valid_q;
     rsp_rdata_o = rsp_rdata_q;
     rsp_error_o = rsp_error_q;
     protocol_error_o = rst_ni && protocol_error_q;
@@ -212,6 +223,12 @@ module ppc_bus60x (
   // Physical ABB/DBB release is modeled at the falling edge.  OE remains
   // asserted until the following rising edge, avoiding a combinational clock
   // dependency while still providing the documented half-clock negation.
+  always_ff @(posedge clk_i) if (!bus_ce_i) slow_q <= 1'b1;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) idle_q <= 1'b1;
+    else if (bus_ce_i) idle_q <= (state_q == BUS_IDLE) && !rsp_valid_q;
+  end
+
   always_ff @(negedge clk_i) begin
     if (!rst_ni) begin
       addr_release_half_q <= 1'b0;
@@ -240,7 +257,7 @@ module ppc_bus60x (
       protocol_error_q <= 1'b0;
       addr_release_pending_q <= 1'b0;
       data_release_pending_q <= 1'b0;
-    end else begin
+    end else if (bus_ce_i) begin
       if (rsp_valid_q && rsp_ready_i)
         rsp_valid_q <= 1'b0;
 
