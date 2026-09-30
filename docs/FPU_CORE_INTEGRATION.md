@@ -5,11 +5,11 @@
 `ENABLE_FPU=0`, keeps the previous behavior: FP-class opcodes take FP
 unavailable and MSR[FP] never sets under full decode. `ENABLE_FPU=1` requires
 `ENABLE_FULL_DECODE` and `ENABLE_LIVE_CONTEXT` (MSR[FP] and MSR[FE0/FE1] change
-only through `mtmsr` and `rfi`) and a variant whose `cpu_cfg().fpu` is
-`FPU_DP`, and `ENABLE_TEST_REDIRECT=0` (a pivot recovery would need tagged
+only through `mtmsr` and `rfi`) and a 603e variant (`cpu_cfg().fpu` is
+`FPU_DP`) or the 602 ([below](#602-personality)), and `ENABLE_TEST_REDIRECT=0` (a pivot recovery would need tagged
 FPU aborts); elaboration fails otherwise. `ppc_core_bat`, `ppc_core_bat_bus60x`,
-`ppc_core_bat_cached_bus60x` and the `ppc603e` pin top pass the parameter
-through with default 0. Builds with the FPU add `rtl/ppc_ram_lut.sv` (already
+`ppc_core_bat_cached_bus60x` and the `ppc603e` and `ppc602` pin tops pass the
+parameter through with default 0. Builds with the FPU add `rtl/ppc_ram_lut.sv` (already
 in the cache lists) and `rtl/fpu_files.f`; every other list carries only
 `ppc_fpu_pkg.sv`. `FPU_IMPL` selects `ppc_fpu` (FULL, the default and the
 timing below) or `ppc_fpu_compact` ([COMPACT](FPU_COMPACT.md): same results,
@@ -193,22 +193,43 @@ split stores share.
   load and store misses on `lfd`/`stfd` are tested on the pin top only.
 - FPSCR instructions let the next FP instruction issue only after they
   retire.
-- The 602 personality (V12) is rejected at elaboration; see below.
 
-## 602 personality (V12)
+## 602 personality
 
-Attaching `ppc_fpu #(.CPU_602(1))` to the 602 core needs:
+With `CPU_VARIANT=CPU_602` the lane attaches the FPU with `CPU_602=1` (FULL or
+COMPACT); the execution model above is unchanged.
 
-- Decode: route every FP form to the FPU as `SPECIAL_FPU`; the FPU owns the
-  emulation-trap decision (double-precision forms and operand SP/LT tags), so
-  `SPECIAL_FPU_EMULATE` and the core's 602 emulation split go away.
-- SP and LT (SPR 1021/1022) move from the special lane's SPR file to the FPU's
-  tagged path: `mtspr` data travels as `gpr_b`, and `mfspr` needs a GPR
-  destination allocated at dispatch and written from the FPU's GPR proposal.
-- Unaligned FP loads are legal on the 602: the lane must split a 4- or 8-byte
-  access at any byte offset (the unaligned integer datapath does up to two
-  words; a misaligned doubleword needs three).
-- The completion controller must add the 602's variable stall when a disabled
-  sticky exception sets with MSR[FE]=0 (602 UM §4.5.7.1).
-- `FPU_EMULATION_TRAP` and `FPU_PRIVILEGED` already map to the `0x1600` and
-  privileged program events.
+- Decode sends every FP form to the FPU, which decides the emulation trap
+  (`0x1600`): double-precision arithmetic, `fctiw`, a source without its SP
+  or LT tag, `lfd` of a value that is no normal binary32, `stfd` of NaN,
+  infinity or a denormal, and an enabled numeric exception regardless of
+  MSR[FE0/FE1] (602 UM 4.5.7.1, [contract](FPU_602_CONTRACT.md)). `fsqrt(s)`
+  stays illegal (4.5.7.2). An FPSCR write that sets FEX with FE0 or FE1 set
+  is the FP enabled program exception (Table 4-2).
+- SP (SPR 1021) and LT (1022) live in the FPU. `mtspr`, `mfspr` and the
+  `mftb` form of them run in the serialized lane: `mtspr` data travels as
+  `gpr_b`, and the FPU's GPR proposal writes `mfspr`'s rD at retirement.
+  They are privileged, checked at dispatch, and need no MSR[FP]. Without the
+  FPU the special lane keeps both registers.
+- FP loads are legal at any byte offset (602 UM 2.2.3): the lane reads the
+  two words an `lfs` spans, or the three of an `lfd`, and returns the bytes
+  at EA. A DSI on the first word reports DAR = EA, on a later word its word
+  address, as split integer accesses do. An unaligned access always uses
+  word transfers. Unaligned FP stores take the alignment exception.
+- With MSR[FE0] = MSR[FE1] = 0, an FP result whose FPSCR proposal sets an
+  exception sticky bit (OX, UX, ZX, XX or a VX cause) that the committed
+  FPSCR lacks retires one cycle late: the completion serialization of 602
+  UM 4.5.7.1 and 6.8.7, which allow one or two cycles and give no rule for
+  two. Later results setting the same bit do not stall.
+
+602 limits:
+
+- FP arithmetic in the serialized lane (trace mode) does not take the
+  sticky-bit stall.
+- `mtspr` to SP or LT drains the queue; 602 UM 6.7.2 dispatch-serializes
+  only the `mfspr` forms.
+- The 602 memory timing of Table 6-6 (`lfd`/`stfd` 3:2) is not modeled; FP
+  accesses follow the lane described above. COMPACT's latencies are its
+  own ([FPU_COMPACT.md](FPU_COMPACT.md)).
+- Without the data cache a doubleword or an unaligned load is several bus
+  transactions; another master can change memory between them.

@@ -1831,7 +1831,7 @@ lint-chip:
 
 # The ppc602 package top: 602 bus BFM with directed pin checks and a program
 # boot in 64- and 32-bit data modes, and lint of the top and its Quartus
-# measurement wrapper.
+# measurement wrapper, without and with the FPU.
 CHIP602_RTL := $(shell cat ../rtl/chip602_files.f)
 .PHONY: test-chip602-pins lint-chip602
 test: test-chip602-pins

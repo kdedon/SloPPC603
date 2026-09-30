@@ -1719,11 +1719,13 @@ module ppc_special #(
     end else if ((state_q == S_MEM_WAIT) && response_fire && !killed_q &&
                  beat_continue) begin
       beat_q <= 1'b1;
-      beat2_q <= beat_q;
+      beat2_q <= FPU_UNALIGNED && beat_q;
       if (!beat_q) beat0_data_q <= rsp_word;
-      else beat1_data_q <= rsp_word;
     end
   end
+  always_ff @(posedge clk_i)
+    if (FPU_UNALIGNED && (state_q == S_MEM_WAIT) && response_fire && beat_q)
+      beat1_data_q <= rsp_word;
   // Set and cleared only when the owning instruction commits.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) reserve_q <= 1'b0;

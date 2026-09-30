@@ -146,8 +146,8 @@ With `CPU_VARIANT = CPU_602` decode follows the 602 (602UM 2.1.2, 2.3.4,
 | Words | Decode | Taken as |
 |---|---|---|
 | lswi, lswx, stswi, stswx (Rc = 0) | `SPECIAL_EMULATION_TRAP` | Emulation trap 0x1600; `ENABLE_MULTIPLE_STRING` is ignored |
-| fadd, fsub, fmul, fdiv, fmadd, fmsub, fnmadd, fnmsub, fctiw | `SPECIAL_FPU_EMULATE` | FP unavailable while MSR[FP] = 0, emulation trap otherwise |
-| Other FP forms | `SPECIAL_FPU` | FP unavailable; SP/LT tag checks arrive with the 602 FPU |
+| fadd, fsub, fmul, fdiv, fmadd, fmsub, fnmadd, fnmsub, fctiw | `SPECIAL_FPU_EMULATE`; `SPECIAL_FPU` with `ENABLE_FPU` | FP unavailable while MSR[FP] = 0, emulation trap otherwise |
+| Other FP forms | `SPECIAL_FPU` | FP unavailable; with `ENABLE_FPU` the FPU checks SP/LT tags ([602 FPU](FPU_CORE_INTEGRATION.md#602-personality)) |
 | eciwx, ecowx, mfspr/mtspr EAR | Illegal | Program 0x700 |
 | esa (X-form XO 596), dsa (XO 628), all other fields zero | `SPECIAL_ESA`, `SPECIAL_DSA` | User level; see below |
 | mfrom rD,rA (XO 265, rB = 0, Rc = 0) | `SPECIAL_MFROM`, privileged | rD = ROM(rA[22:31]), zero at index 602 and above; privileged program exception in problem state |
@@ -159,7 +159,8 @@ With `CPU_VARIANT = CPU_602` decode follows the 602 (602UM 2.1.2, 2.3.4,
 | IBR | Bits 0–15 | Vector prefix with MSR[IP] clear |
 | ESASRR | PR, AP, SA, EE (bits 28–31) | Written by esa, read by dsa |
 | SEBR | Bits 0–14 | None yet (protection-only mode) |
-| SER, SP, LT | All | None yet |
+| SER | All | None yet |
+| SP, LT | All | FPR tags; with `ENABLE_FPU` they live in the FPU |
 
 Hard reset clears all seven; for SP and LT this is a simulation choice, the
 part leaves them undefined. MSR[AP] (bit 8) and MSR[SA] (bit 9) are stored:
