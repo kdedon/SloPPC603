@@ -5,7 +5,15 @@ outcome. Open entries say what would settle them.
 
 ## BUG-01: Dhrystone `Int_2_Loc` mismatch on the native-video MiSTer build
 
-Status: not reproduced; no CPU fault found. Open until it recurs.
+Status: likely explained by BUG-02; closed unless it recurs with the
+BUG-02 fix.
+
+BUG-02 is a write under reset that corrupts one random doubleword of the
+loaded image in some Verilator X-random models. A changed instruction or
+data word that stays legal gives exactly this signature: one wrong result,
+deterministic for one model, gone after any change that reshuffles the
+random initial values. The original run's RTL is lost, so this is not
+proven.
 
 ### Report
 
@@ -116,9 +124,8 @@ failed this way before the change; the `XRAND_SEED=2` run above passes.
 
 ## BUG-02: illegal-instruction exception on a legal `mr` in the MiSTer DDR3 build
 
-Status: open; reproduces with one model build and X seed, cause not found.
-
-Recorded: `make -C sim mister-smoke`, commit 1a2beba, 2026-09-29. Fails.
+Status: fixed. A write to SoC RAM before the first reset edge corrupted the
+loaded image. SoC bench fault; the CPU is not involved.
 
 ### Report
 
@@ -127,27 +134,64 @@ After the MiSTer framebuffer core merged onto the performance-counter round,
 exits with `e0000700` at 959,714 cycles, 114,470 retirements, during hello's
 Mandelbrot. The exception is taken at cycle 625,534 with SRR0 `fff03e44`
 and SRR1 `00080070`: SRR1[12], illegal instruction. The image holds
-`7e549378` (`mr r20,r18`) there, so the processor decoded a word other than
-the one in memory.
+`7e549378` (`mr r20,r18`) there.
+
+### Cause
+
+`soc_bus60x_target` drove its beat port from registers that reset
+synchronously: `req_o`/`we_o` were `write_q && !ta_n_o`. Until the first
+reset edge those registers hold the simulator's initial values, and the
+SoC RAM has no reset, so the first clock edge under reset could write one
+doubleword. With seed 1 the model starts with `write_q=1`, `ta_n_o=0`,
+`wr_addr_q` ending in `0x3e40`, `addr_q[2:0]=4` and `tsiz_q=5`: the edge
+writes bytes 4-7 of RAM doubleword `0x03e40`, the `mr` at `fff03e44`, after
+`$readmemh` loaded it. Fetch, cache and decode then handled the corrupted
+word correctly.
+
+On hardware the registers power up at zero, so this needs reset asserted
+during a beat; the fault is mainly one of simulation, but reset now blocks
+the side effect either way.
+
+### How it was found
+
+Instrumenting the model (displays, FST tracing, ring buffers) shifts
+Verilator's random initial values, and every instrumented model passed. The
+unmodified model was bisected instead: in the generated
+`___ctor_var_reset`, a range of assignments was zeroed while each random
+draw was kept, so the other variables kept their values. Eleven rebuilds
+of that one file isolated `soc.target.write_q`; zeroing it alone makes
+seed 1 pass.
+
+### Fix
+
+`req_o` and the write beat are qualified with `rst_ni` in
+`rtl/soc/soc_bus60x_target.sv`, so the target requests no read or write
+beat while reset is asserted. The benches' console output is also ignored
+before the first reset edge (the stray first character in some seeds).
+
+`test-soc-target-reset` (`tb/soc/tb_soc_target_reset.sv`, in `test`)
+checks that no beat is requested before the first edge, or after reset
+arrives during a write beat or a read beat. On the unfixed target it fails
+3 of 13 checks; with the fix it passes.
+
+### Guard
+
+`make -C sim -j2 xrand-sweep` reruns the SoC target, core full-decode,
+chip pins, demo hello and MiSTer hello (DDR3 and native) benches with X
+seeds 1-8 plus all-zero and all-one initial state (60 runs); each model
+builds once. It belongs in the batch gate next to `ci`.
 
 ### Checks
 
-- Deterministic for one model binary and seed. Adding a bench variable
-  (which shifts Verilator's random initial values) makes the run pass;
-  adding only `$display` statements keeps the failure.
-- The same model with X seeds 2 to 8, and with all-zero and all-one initial
-  values, runs past 2 million cycles without the exception.
-- The native build (`MISTER_FB=0`) with seed 1 passes, as do `demo-hello`,
-  `demo-dhrystone`, `demo-coremark`, `demo-nbench` and `demo-embench`.
-- The pre-merge MiSTer branch (9758fef) passes `mister-smoke`, but its
-  random initial values differ, so this does not place the fault in the
-  merge.
+Recorded: `make -C sim mister-smoke`, commit 4d52bc5, 2026-09-29. Fails as
+reported (`exit=e0000700 cycles=959714 retired=114470`).
 
-What this establishes: some state without a reset value reaches the
-instruction path (fetch, I-cache fill or decode) in the DDR3 build. It does
-not say which register.
+Recorded: `make -C sim test-soc-target-reset`, commit 4d52bc5 plus the fix
+in this entry, 2026-09-29. PASS, 13 checks; with the target reverted to
+4d52bc5 it fails 3 of 13.
 
-Next step: rerun the failing model with `+TRACE` and follow the fetch of
-`fff03e40`-`fff03e5f` (the I-cache line fill and the fetch-to-decode
-register) before cycle 625,534; list the registers without resets on that
-path and give them resets one at a time.
+Not yet recorded: `mister-smoke` seed 1 with the fix, and a complete
+`xrand-sweep`. The first sweep run passed its soc-target-reset, core
+full-decode and chip-pins runs (30 of 60) and stopped on `demo-hello` seed 2
+at `DE is not the complement of the blanks`, a bench check sampling video
+outputs before reset; the bench now checks only out of reset.

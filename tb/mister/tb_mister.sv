@@ -94,7 +94,8 @@ module tb_mister #(
       if (checkstop) $fatal(1, "checkstop cycle=%0d", cycles);
       if (cycles > max_cycles) $fatal(1, "watchdog cycle=%0d pc=%08x", cycles, dut.soc.cpu.retire.pc);
     end
-    if (console_valid) $write("%c", console_data);
+    // The console register is undefined until the first reset edge.
+    if (!rst && console_valid) $write("%c", console_data);
     if (pal_we) palette[pal_addr] = pal_data;
     // save_done_o is undefined until the first reset edge.
     if (save_done && !rst) saves++;

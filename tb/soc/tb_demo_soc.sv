@@ -38,7 +38,8 @@ module tb_demo_soc;
       if (checkstop) $fatal(1, "checkstop cycle=%0d pc=%08x", cycles, soc.cpu.retire.pc);
       if (cycles > max_cycles) $fatal(1, "watchdog cycle=%0d last pc=%08x", cycles, soc.cpu.retire.pc);
     end
-    if (console_valid) $write("%c", console_data);
+    // The console register is undefined until the first reset edge.
+    if (rst_n && console_valid) $write("%c", console_data);
   end
 
   // The counter block's RETIRED against the retire strobe, which reaches
@@ -72,7 +73,7 @@ module tb_demo_soc;
   int de_run = 0, lines = 0;
   logic de_prev = 1'b0;
   always @(posedge clk)
-    if (ce_pix) begin
+    if (rst_n && ce_pix) begin
       if (de) de_run++;
       if ((hs || vs) && de) $fatal(1, "sync inside the active area");
       if (de != !(hblank || vblank)) $fatal(1, "DE is not the complement of the blanks");

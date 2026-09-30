@@ -1848,6 +1848,12 @@ lint: lint-demo-soc
 lint-demo-soc:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_demo_soc $(DEMO_RTL)
 	$(VERILATOR) --lint-only --timing -Wall --top-module tb_demo_soc $(DEMO_RTL) ../tb/soc/tb_demo_soc.sv
+# The demo SoC's 60x target requests no memory beat under reset.
+.PHONY: test-soc-target-reset
+test: test-soc-target-reset
+test-soc-target-reset:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_soc_target_reset --Mdir $(BUILD_DIR)/soc-target-reset ../rtl/soc/soc_bus60x_target.sv ../tb/soc/tb_soc_target_reset.sv
+	./$(BUILD_DIR)/soc-target-reset/Vtb_soc_target_reset $(SIM_ARGS)
 demo-soc-model:
 	mkdir -p $(BUILD_DIR)/demo
 	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_demo_soc --Mdir $(BUILD_DIR)/demo/model $(DEMO_RTL) ../tb/soc/tb_demo_soc.sv
@@ -1904,6 +1910,36 @@ mister-smoke: mister-model mister-firmware
 	timeout 3600 ./$(MISTER_OUT)/model/Vtb_mister $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=$(MISTER_MODE) +PPM=$(MISTER_OUT)/mister-$(MISTER_MODE).ppm +SAVE=$(MISTER_OUT)/screen-$(MISTER_MODE).pfb
 	python3 tools/ppm_to_png.py $(MISTER_OUT)/mister-$(MISTER_MODE).ppm $(MISTER_OUT)/mister-$(MISTER_MODE).png
 	if [ "$(MISTER_FB)" = 1 ]; then python3 ../mister/fb2png.py $(MISTER_OUT)/screen-$(MISTER_MODE).pfb $(MISTER_OUT)/screen-$(MISTER_MODE).png; fi
+# Uninitialized-state sweep: core, chip, demo SoC and MiSTer benches rerun
+# with several random initial values (XRAND builds) plus all-zero and all-one
+# state, so a register or memory that is used or written before reset
+# fails on some seed. Each model builds once; runs are separate targets, so
+# `make -j2 xrand-sweep` runs two at a time. Logs go to $(BUILD_DIR)/xrand.
+XRAND_SWEEP_SEEDS ?= 1 2 3 4 5 6 7 8 zero ones
+XRAND_SWEEP_BENCHES := soc-target-reset core-full-decode chip-pins demo-hello mister-fb1 mister-fb0
+xrand_args = $(if $(filter zero,$1),+verilator+rand+reset+0,$(if $(filter ones,$1),+verilator+rand+reset+1,+verilator+seed+$1 +verilator+rand+reset+2))
+XRAND_CMD_soc-target-reset := ./$(BUILD_DIR)/soc-target-reset/Vtb_soc_target_reset
+XRAND_CMD_core-full-decode := ./$(BUILD_DIR)/core-full-decode/Vtb_core_full_decode
+XRAND_CMD_chip-pins := ./$(BUILD_DIR)/chip-pins/Vtb_chip_pins
+XRAND_CMD_demo-hello := ./$(BUILD_DIR)/demo/model/Vtb_demo_soc +IMAGE=$(DEMO_FW_DIR)/hello.hex +NAME=hello
+XRAND_CMD_mister-fb1 := ./$(BUILD_DIR)/mister/fb1/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=00
+XRAND_CMD_mister-fb0 := ./$(BUILD_DIR)/mister/fb0/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=00
+XRAND_SWEEP_RUNS := $(foreach b,$(XRAND_SWEEP_BENCHES),$(foreach s,$(XRAND_SWEEP_SEEDS),xrand-run-$b-$s))
+.PHONY: xrand-sweep xrand-models $(XRAND_SWEEP_RUNS)
+xrand-models:
+	$(MAKE) XRAND=1 test-soc-target-reset test-core-full-decode test-chip-pins demo-soc-model demo-firmware mister-firmware
+	$(MAKE) XRAND=1 mister-model MISTER_FB=1
+	$(MAKE) XRAND=1 mister-model MISTER_FB=0
+	mkdir -p $(BUILD_DIR)/xrand
+xrand_seed = $(lastword $(subst -, ,$1))
+xrand_bench = $(patsubst xrand-run-%-$(call xrand_seed,$1),%,$1)
+$(XRAND_SWEEP_RUNS): xrand-models
+	@if timeout 1800 $(XRAND_CMD_$(call xrand_bench,$@)) $(call xrand_args,$(call xrand_seed,$@)) \
+	    > $(BUILD_DIR)/xrand/$(patsubst xrand-run-%,%,$@).log 2>&1; then \
+	  echo "PASS $@"; \
+	else echo "FAIL $@"; grep -a -m3 'FAIL\|%Fatal\|%Error' $(BUILD_DIR)/xrand/$(patsubst xrand-run-%,%,$@).log; exit 1; fi
+xrand-sweep: $(XRAND_SWEEP_RUNS)
+	@echo "PASS: xrand sweep, $(words $(XRAND_SWEEP_RUNS)) runs ($(XRAND_SWEEP_BENCHES)) x ($(XRAND_SWEEP_SEEDS))"
 # Cache geometry as a bench parameter: the 603 (128 sets x 2 ways) and 602
 # (64 x 2) geometries on the standalone and integrated cache benches, which
 # the default targets run at 128 x 4. A target is cache-geo-<bench>-<sets>x<ways>.

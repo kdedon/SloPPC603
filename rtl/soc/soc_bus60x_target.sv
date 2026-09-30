@@ -160,9 +160,11 @@ module soc_bus60x_target (
     end
   end
 
+  // The state is undefined until the first reset edge, and the slaves'
+  // memories have no reset, so a beat is never requested under reset.
   logic write_beat;
-  assign write_beat = write_q && !ta_n_o;
-  assign req_o = (state_q == S_READ && claimed_q) || write_beat;
+  assign write_beat = rst_ni && write_q && !ta_n_o;
+  assign req_o = rst_ni && ((state_q == S_READ && claimed_q) || write_beat);
   assign we_o = write_beat;
   assign addr_o = write_beat ? wr_addr_q : beat_addr;
   assign be_o = burst_q ? 8'hff : single_be;
