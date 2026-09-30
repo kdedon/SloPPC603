@@ -346,7 +346,7 @@ check-spec:
 	python3 tools/check_stage_timing.py
 	python3 -m unittest discover -s tools -p 'test_*.py'
 	python3 -m unittest discover -s cosim -p 'test_*.py'
-	python3 ../quartus/qsf_sources.py --check ../quartus ../quartus/integrated ../quartus/timer-bat ../quartus/translated ../quartus/icache ../quartus/dcache ../quartus/chip ../quartus/demo
+	python3 ../quartus/qsf_sources.py --check ../quartus ../quartus/integrated ../quartus/timer-bat ../quartus/translated ../quartus/icache ../quartus/dcache ../quartus/chip ../quartus/chip602 ../quartus/demo
 test-recovery:
 	python3 -m unittest discover -s recovery -p 'test_*.py'
 test-recovery-select:
@@ -1729,6 +1729,21 @@ lint-chip:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e $(CHIP_RTL)
 	cd ../quartus/chip && $(VERILATOR) --lint-only -Wall --top-module ppc603e_measure -f files.f
 
+# The ppc602 package top: 602 bus BFM with directed pin checks and a program
+# boot in 64- and 32-bit data modes, and lint of the top and its Quartus
+# measurement wrapper.
+CHIP602_RTL := $(shell cat ../rtl/chip602_files.f)
+.PHONY: test-chip602-pins lint-chip602
+test: test-chip602-pins
+test-chip602-pins:
+	mkdir -p $(BUILD_DIR)/chip602-pins
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip602_pins --Mdir $(BUILD_DIR)/chip602-pins -I../tb $(CHIP602_RTL) ../tb/bfm/bus602_bfm.sv ../tb/tb_chip602_pins.sv
+	./$(BUILD_DIR)/chip602-pins/Vtb_chip602_pins $(SIM_ARGS)
+lint: lint-chip602
+lint-chip602:
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc602 $(CHIP602_RTL)
+	cd ../quartus/chip602 && $(VERILATOR) --lint-only -Wall --top-module ppc602_measure -f files.f
+
 # Line coverage of the translated cached 60x top from the compiled MMU stress
 # (all retry and TEA modes) and cache-operation firmware, and of the data
 # cache, its bus master and snooper from the LSU image and the chip MMU stress. Needs their ELFs (see
@@ -1808,6 +1823,8 @@ test-core-full-decode:
 # against DingusPPC MPC603E.
 VARIANT_IDS := 0 1 2
 VARIANT_REJECTED := 3 4
+# Variants the core builds; the 603e pin top still rejects the 602.
+VARIANT_CORE_IDS := 0 1 2 4
 VARIANT_ALL := 0 1 2 3 4
 # Strap codes a build must refuse, as VARIANT-PLL-message: PID7v has no 1:1
 # ratio; a PID6 2:1 code is legal but not 1:1; 0111 is no PID6 code.
@@ -1815,13 +1832,14 @@ VARIANT_PLL_REJECTS := 0-0 0-12 1-7
 .PHONY: variant-matrix test-reference-pid6
 regression: variant-matrix
 variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-reject-,$(VARIANT_REJECTED)) \
-                $(addprefix variant-divider-,$(VARIANT_IDS)) $(addprefix variant-full-decode-,$(VARIANT_IDS)) \
+                $(addprefix variant-divider-,$(VARIANT_CORE_IDS)) $(addprefix variant-full-decode-,$(VARIANT_CORE_IDS)) \
+                variant-multiply-timing-0 variant-multiply-timing-4 variant-icache-602 \
                 $(addprefix variant-config-,$(VARIANT_ALL)) $(addprefix variant-tlb-miss-,$(VARIANT_ALL)) \
                 $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6 \
                 $(addprefix variant-decode-sweep-,$(filter-out 0,$(VARIANT_ALL))) $(addprefix variant-exception-602-,$(VARIANT_ALL)) \
                 $(addprefix variant-mmu-602-,$(VARIANT_ALL)) \
                 variant-special-lint-602 variant-watchdog-602
-	@echo "PASS: variant-matrix (variants $(VARIANT_IDS) built and checked; $(VARIANT_REJECTED) rejected)"
+	@echo "PASS: variant-matrix (chip variants $(VARIANT_IDS), core variants $(VARIANT_CORE_IDS) built and checked; chip $(VARIANT_REJECTED) rejected)"
 # 602 decode, SPR and ESA/MSR checks below the rejected core: the decode
 # sweep and exception state at each variant, and the SRU lane linted with
 # the 602 personality.
@@ -1882,6 +1900,13 @@ variant-reject-%:
 variant-divider-%:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_divider_timing -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-divider-$* $(RTL) ../tb/tb_core_divider_timing.sv
 	./$(BUILD_DIR)/variant-divider-$*/Vtb_core_divider_timing $(SIM_ARGS)
+# 602 core on the cached 60x wrapper: I-cache without ICE, ICFI, PVR, multiply.
+variant-icache-602:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_602 --Mdir $(BUILD_DIR)/variant-icache-602 $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_602.sv
+	./$(BUILD_DIR)/variant-icache-602/Vtb_core_602 $(SIM_ARGS)
+variant-multiply-timing-%:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_multiply_timing -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-multiply-timing-$* $(RTL) ../tb/tb_multiply_timing.sv
+	./$(BUILD_DIR)/variant-multiply-timing-$*/Vtb_multiply_timing $(SIM_ARGS)
 variant-full-decode-%:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_full_decode -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-full-decode-$* -I../tb $(RTL) ../tb/tb_core_full_decode.sv
 	./$(BUILD_DIR)/variant-full-decode-$*/Vtb_core_full_decode $(SIM_ARGS)

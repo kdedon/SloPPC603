@@ -5,6 +5,8 @@
 // with instruction-cache control requests, HID1, EAR, eciwx/ecowx with the
 // EAR[E] DSI and the external-control transfer class, lwarx/stwcx. atomic
 // class, sync with L set, and problem-state privilege on undefined SPRs.
+// Without EAR (602) EAR, eciwx and ecowx are illegal and only ICFI requests
+// an instruction-cache action.
 /* verilator lint_off BLKSEQ */
 // VARIANT is the cpu_variant_e encoding; PVR and HID0 follow it.
 module tb_core_full_decode #(
@@ -13,6 +15,8 @@ module tb_core_full_decode #(
   import ppc_pkg::*;
   localparam cpu_variant_e CPU_VARIANT = cpu_variant_e'(VARIANT);
   localparam cpu_cfg_t CFG = cpu_cfg(CPU_VARIANT);
+  // First lwz transfer: after eciwx and ecowx where EAR exists.
+  localparam int XF = cpu_has_602_ext(CPU_VARIANT) ? 0 : 2;
   `include "ppc_asm.svh"
   logic [41:0] unused_segment_csr;
   logic [47:0] unused_bat_csr;
@@ -287,26 +291,36 @@ module tb_core_full_decode #(
     emit(asm_spr(1, 8, 1008));                          // ICE 1->0: request
     emit(asm_spr(0, 7, 1008));
     emit_check(7, 32'h0);
-    emit(asm_spr(1, 5, 282));
-    emit(asm_spr(0, 7, 282));
-    emit_check(7, 32'h8000_000f);
-    // eciwx/ecowx: EAR[E] = 0 is a DSI, EAR[E] = 1 transfers with the RID.
-    emit(asm_li(9, 0));
-    emit(asm_spr(1, 9, 282));
-    emit(asm_li(10, 'h2100));
-    emit_dsi(asm_xf(310, 11, 0, 10, 0), 32'h0010_0000, 32'h2100);
-    emit_dsi(asm_xf(438, 11, 10, 0, 0), 32'h0210_0000, 32'h2100);
-    emit_li32(9, 32'h8000_0005);
-    emit(asm_spr(1, 9, 282));
-    emit(asm_xf(310, 11, 0, 10, 0));                    // eciwx r11,0,r10
-    emit_check(11, 32'h1234_5678);
-    emit(asm_li(12, 'h7777));
-    emit(asm_xf(438, 12, 10, 0, 0));                    // ecowx r12,r10,0
-    emit(asm_d(32, 13, 10, 0));
-    emit_check(13, 32'h7777);
-    emit(asm_li(14, 'h2102));
-    expect_at(32'h600, MSR0, 1'b0, 32'b0, 32'b0);
-    emit(asm_xf(310, 11, 0, 14, 0));                    // misaligned eciwx
+    if (CFG.has_ear) begin
+      emit(asm_spr(1, 5, 282));
+      emit(asm_spr(0, 7, 282));
+      emit_check(7, 32'h8000_000f);
+      // eciwx/ecowx: EAR[E] = 0 is a DSI, EAR[E] = 1 transfers with the RID.
+      emit(asm_li(9, 0));
+      emit(asm_spr(1, 9, 282));
+      emit(asm_li(10, 'h2100));
+      emit_dsi(asm_xf(310, 11, 0, 10, 0), 32'h0010_0000, 32'h2100);
+      emit_dsi(asm_xf(438, 11, 10, 0, 0), 32'h0210_0000, 32'h2100);
+      emit_li32(9, 32'h8000_0005);
+      emit(asm_spr(1, 9, 282));
+      emit(asm_xf(310, 11, 0, 10, 0));                    // eciwx r11,0,r10
+      emit_check(11, 32'h1234_5678);
+      emit(asm_li(12, 'h7777));
+      emit(asm_xf(438, 12, 10, 0, 0));                    // ecowx r12,r10,0
+      emit(asm_d(32, 13, 10, 0));
+      emit_check(13, 32'h7777);
+      emit(asm_li(14, 'h2102));
+      expect_at(32'h600, MSR0, 1'b0, 32'b0, 32'b0);
+      emit(asm_xf(310, 11, 0, 14, 0));                    // misaligned eciwx
+    end else begin
+      // No EAR: EAR, eciwx and ecowx are illegal instructions.
+      emit_exc(asm_spr(1, 5, 282), 32'h700, MSR0 | ILLEGAL);
+      emit_exc(asm_spr(0, 7, 282), 32'h700, MSR0 | ILLEGAL);
+      emit(asm_li(10, 'h2100));
+      emit_exc(asm_xf(310, 11, 0, 10, 0), 32'h700, MSR0 | ILLEGAL);
+      emit_exc(asm_xf(438, 11, 10, 0, 0), 32'h700, MSR0 | ILLEGAL);
+      emit(asm_d(32, 13, 10, 0));
+    end
     // lwarx/stwcx. atomic class; sync with L set.
     emit(asm_xf(20, 15, 0, 10, 0));
     emit(asm_xf(150, 12, 0, 10, 1));
@@ -323,8 +337,14 @@ module tb_core_full_decode #(
     emit_exc(32'hfc00_002a, 32'h800, 32'h4040);                 // fadd
     emit_exc(asm_tw(4, 0, 0), 32'h700, 32'h4040 | TRAP);
     emit_exc(32'h0400_0000, 32'h700, 32'h4040 | ILLEGAL);
-    emit(asm_xf(310, 11, 0, 10, 0));                    // eciwx is user level
-    emit_check(11, 32'h7777);
+    if (CFG.has_ear) begin
+      emit(asm_xf(310, 11, 0, 10, 0));                  // eciwx is user level
+      emit_check(11, 32'h7777);
+    end else begin
+      emit_exc(asm_xf(310, 11, 0, 10, 0), 32'h700, 32'h4040 | ILLEGAL);
+      emit(asm_li(11, 'h55));                           // handler returns here
+      emit_check(11, 32'h55);
+    end
     done_pc = emit_pc;
     emit(ASM_SELF);
     // Handlers write only r2 and resume after the faulting instruction.
@@ -426,23 +446,34 @@ module tb_core_full_decode #(
     rst_n = 1'b1;
     wait (iv && ir && ia == done_pc);
     repeat (40) @(posedge clk);
-    check(expected.size() == 0, $sformatf("events left=%0d", expected.size()));
+    check(expected.size() == 0, $sformatf("events left=%0d next=%03x/%08x", expected.size(),
+                                          (expected.size() != 0) ? expected[0].vector : '0,
+                                          (expected.size() != 0) ? expected[0].srr0 : '0));
     // Transfers: eciwx read, ecowx write, lwz, lwarx, stwcx., user eciwx.
-    check(xfers.size() == 6, $sformatf("transfers=%0d", xfers.size()));
-    check(!xfers[0].write && xfers[0].attr.kind == DMEM_EXTERNAL && xfers[0].attr.rid == 4'h5,
-          "eciwx class and RID");
-    check(xfers[1].write && xfers[1].attr.kind == DMEM_EXTERNAL && xfers[1].attr.rid == 4'h5,
-          "ecowx class and RID");
-    check(!xfers[2].write && xfers[2].attr.kind == DMEM_NORMAL, "lwz class");
-    check(!xfers[3].write && xfers[3].attr.kind == DMEM_ATOMIC, "lwarx class");
-    check(xfers[4].write && xfers[4].attr.kind == DMEM_ATOMIC, "stwcx. class");
-    check(xfers[5].attr.kind == DMEM_EXTERNAL, "user eciwx class");
+    // Without EAR only lwz, lwarx and stwcx. transfer.
+    if (CFG.has_ear) begin
+      check(xfers.size() == 6, $sformatf("transfers=%0d", xfers.size()));
+      check(!xfers[0].write && xfers[0].attr.kind == DMEM_EXTERNAL && xfers[0].attr.rid == 4'h5,
+            "eciwx class and RID");
+      check(xfers[1].write && xfers[1].attr.kind == DMEM_EXTERNAL && xfers[1].attr.rid == 4'h5,
+            "ecowx class and RID");
+      check(xfers[5].attr.kind == DMEM_EXTERNAL, "user eciwx class");
+    end else
+      check(xfers.size() == 3, $sformatf("transfers=%0d", xfers.size()));
+    check(!xfers[XF].write && xfers[XF].attr.kind == DMEM_NORMAL, "lwz class");
+    check(!xfers[XF + 1].write && xfers[XF + 1].attr.kind == DMEM_ATOMIC, "lwarx class");
+    check(xfers[XF + 2].write && xfers[XF + 2].attr.kind == DMEM_ATOMIC, "stwcx. class");
     // HID0[ABE] reaches the broadcast pin status only where it exists.
     check(broadcast_seen == CFG.has_abe_ifem,
           $sformatf("ABE broadcast seen=%0b", broadcast_seen));
-    check(ctls.size() == 2 && ctls[0].enable && ctls[0].invalidate &&
-          !ctls[1].enable && !ctls[1].invalidate,
-          $sformatf("HID0 cache requests=%0d", ctls.size()));
+    // Without ICE the I-cache stays enabled and only ICFI requests.
+    if (cpu_has_hid0_ice(CPU_VARIANT))
+      check(ctls.size() == 2 && ctls[0].enable && ctls[0].invalidate &&
+            !ctls[1].enable && !ctls[1].invalidate,
+            $sformatf("HID0 cache requests=%0d", ctls.size()));
+    else
+      check(ctls.size() == 1 && ctls[0].enable && ctls[0].invalidate,
+            $sformatf("HID0 cache requests=%0d", ctls.size()));
     $display("PASS tb_core_full_decode: checks=%0d events=%0d retires=%0d transfers=%0d cache_requests=%0d",
              checks, events, retires, xfers.size(), ctls.size());
     $finish;

@@ -189,6 +189,7 @@ module ppc_special #(
   import ppc_pkg::*;
   localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
   localparam bit HAS_602 = cpu_has_602_ext(CPU_VARIANT);
+  localparam bit HAS_ICE = cpu_has_hid0_ice(CPU_VARIANT);
   localparam logic [31:0] MSR_MASK = msr_implemented(HAS_602);
 
   typedef struct packed {
@@ -335,12 +336,13 @@ module ppc_special #(
   assign dispatch_hid0_write = ENABLE_FULL_DECODE &&
     (uop_i.special_op == SPECIAL_MTSPR) && (uop_i.spr == SPR_HID0);
   // Changing ICE or setting ICFI drains fetch, acts on the cache, then
-  // refetches the next instruction (UM 3.1.3).
+  // refetches the next instruction (UM 3.1.3). Without an ICE bit the
+  // instruction cache is always enabled.
   assign icache_change = hid0_write &&
-    ((a_q[HID0_ICE] != hid0_q[HID0_ICE]) || a_q[HID0_ICFI]);
+    ((HAS_ICE && (a_q[HID0_ICE] != hid0_q[HID0_ICE])) || a_q[HID0_ICFI]);
   assign icache_ctl_valid_o = ENABLE_FULL_DECODE && rst_ni &&
                               (state_q == S_ICACHE_CTL);
-  assign icache_ctl_enable_o = hid0_q[HID0_ICE];
+  assign icache_ctl_enable_o = !HAS_ICE || hid0_q[HID0_ICE];
   assign icache_ctl_invalidate_o = hid0_q[HID0_ICFI];
   // eciwx/ecowx with EAR[E] = 0 take a DSI without a bus transfer.
   assign external_denied = ENABLE_FULL_DECODE && uop_q.mem_external &&
@@ -407,8 +409,8 @@ module ppc_special #(
     tlb_fill_req_way_o, tlb_fill_req_rpn_o, tlb_fill_req_c_o,
     tlb_fill_req_wimg_o, tlb_fill_req_pp_o, tlb_fill_req_ext_o} =
     tlb_fill_payload_q;
-  assign mmu_602_o = HAS_602 ?
-    '{ap: msr_o[MSR_AP], po: hid0_q[HID0_PO], wimg: hid0_q[3:0]} : '0;
+  // Packed as mmu_602_t {ap, po, wimg}.
+  assign mmu_602_o = HAS_602 ? {msr_o[MSR_AP], hid0_q[HID0_PO], hid0_q[3:0]} : '0;
   assign tlb_fill_rsp_ready_o = mmu_rsp_ready && tlb_fill_operation;
   assign tlb_fill_commit_o = rst_ni && (state_q == S_HOLD) && commit_match &&
                              tlb_fill_operation && !mmu_error_q;
@@ -1274,6 +1276,7 @@ module ppc_special #(
     pin_status_o.ape_taken = interrupt_accept && pin_mcp_select &&
                              !pin_event_i.mcp && !pin_tea;
     pin_status_o.address_parity_enable = hid0_q[HID0_EBA];
+    pin_status_o.watchdog_reseto = watchdog_reseto_o;
     pin_status_o.dcache_enable = hid0_q[HID0_DCE];
     pin_status_o.dcache_lock = hid0_q[HID0_DLOCK];
     pin_status_o.dcache_flash_invalidate = hid0_q[HID0_DCFI];
