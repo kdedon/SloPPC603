@@ -9,7 +9,17 @@ set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"
 set_global_assignment -name SDC_FILE ppc_fpu.sdc
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/ppc_pkg.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_arith_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_unpack.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_multiplier.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_align_plan.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_aligner.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_adder.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_convert.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_rounder.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_divider.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_arith.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_fprs.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu.sv
 set_instance_assignment -name VIRTUAL_PIN ON -to clk_i
 set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni

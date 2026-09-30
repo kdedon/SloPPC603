@@ -7,11 +7,11 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
 image='theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70'
-usage='usage: synthesize.sh [--docker] [full|arith|full602|arith602|fullfit|all]'
+usage='usage: synthesize.sh [--docker] [full|arith|full602|arith602|fullfit|full602fit|all]'
 [[ "${1:---docker}" == --docker ]] || { echo "${usage}" >&2; exit 2; }
 variant_choice="${2:-all}"
 case "${variant_choice}" in
-  full|arith|full602|arith602|fullfit|all) ;;
+  full|arith|full602|arith602|fullfit|full602fit|all) ;;
   *) echo "${usage}" >&2; exit 2 ;;
 esac
 [[ $# -le 2 ]] || { echo "${usage}" >&2; exit 2; }
@@ -30,8 +30,8 @@ docker run --rm --network none --user "$(id -u):$(id -g)" \
   --volume "${repo_dir}:/work" --workdir /work "${image}" \
   /opt/intelFPGA_lite/quartus/bin/quartus_sh --version
 for variant in "${variants[@]}"; do
-  base_variant="${variant%602}"
-  base_variant="${base_variant%fit}"
+  base_variant="${variant%fit}"
+  base_variant="${base_variant%602}"
   fitted=0
   if [[ "${variant}" == *fit ]]; then fitted=1; fi
   project_dir="${script_dir}/output_files/${variant}/project"
@@ -40,7 +40,7 @@ for variant in "${variants[@]}"; do
   rm -f "${reports_dir}"/*
   cp "${script_dir}/${base_variant}/ppc_fpu.qpf" "${script_dir}/${base_variant}/ppc_fpu.qsf" \
     "${script_dir}/ppc_fpu.sdc" "${script_dir}/timing.tcl" "${project_dir}/"
-  if [[ "${variant}" == *602 ]]; then
+  if [[ "${variant}" == *602 || "${variant}" == *602fit ]]; then
     echo 'set_parameter -name CPU_602 1' >> "${project_dir}/ppc_fpu.qsf"
   else
     echo 'set_parameter -name CPU_602 0' >> "${project_dir}/ppc_fpu.qsf"
@@ -50,8 +50,11 @@ for variant in "${variants[@]}"; do
     sed -i '/VIRTUAL_PIN ON -to clk_i$/d' "${project_dir}/ppc_fpu.qsf"
     sed -i 's/create_timing_netlist -post_map/create_timing_netlist/' "${project_dir}/timing.tcl"
   fi
-  sources=(rtl/ppc_pkg.sv rtl/fpu/ppc_fpu_pkg.sv rtl/fpu/ppc_fpu_arith.sv)
-  if [[ "${base_variant}" == full ]]; then sources+=(rtl/fpu/ppc_fpu.sv); fi
+  sources=(rtl/ppc_pkg.sv rtl/fpu/ppc_fpu_pkg.sv rtl/fpu/ppc_fpu_arith_pkg.sv rtl/fpu/ppc_fpu_unpack.sv
+    rtl/fpu/ppc_fpu_multiplier.sv rtl/fpu/ppc_fpu_align_plan.sv rtl/fpu/ppc_fpu_aligner.sv
+    rtl/fpu/ppc_fpu_adder.sv rtl/fpu/ppc_fpu_convert.sv rtl/fpu/ppc_fpu_rounder.sv
+    rtl/fpu/ppc_fpu_divider.sv rtl/fpu/ppc_fpu_arith.sv)
+  if [[ "${base_variant}" == full ]]; then sources+=(rtl/fpu/ppc_fpu_fprs.sv rtl/fpu/ppc_fpu.sv); fi
   manifest="${script_dir}/output_files/${variant}/sources.sha256"
   project_inputs=(
     "quartus/fpu-production/output_files/${variant}/project/ppc_fpu.qpf"
@@ -68,7 +71,9 @@ for variant in "${variants[@]}"; do
   run "${variant}" quartus_sta -t timing.tcl
   (cd "${repo_dir}" && sha256sum "${sources[@]}" "${project_inputs[@]}") > "${manifest}.after"
   cmp "${manifest}.before" "${manifest}.after"
-  if (( fitted )); then cp "${project_dir}/output_files/ppc_fpu.fit.summary" "${reports_dir}/"; fi
+  if (( fitted )); then
+    cp "${project_dir}/output_files/ppc_fpu.fit.summary" "${project_dir}/output_files/ppc_fpu.fit.rpt" "${reports_dir}/"
+  fi
   for report in ppc_fpu.map.rpt clocks.txt check_timing.txt fmax.txt setup.txt setup_endpoints.txt hold.txt unconstrained.txt; do
     cp "${project_dir}/output_files/${report}" "${reports_dir}/"
   done
@@ -88,6 +93,25 @@ for variant in "${variants[@]}"; do
   if (( fitted )); then
     echo "${variant} fitted summary:"
     grep -E 'Logic utilization|Total registers|Total block memory bits|Total DSP Blocks|Total pins' "${reports_dir}/ppc_fpu.fit.summary"
+    echo "${variant} fitted ALMs by entity (ALMs needed, registers, MLAB bits, M10K bits, DSP):"
+    python3 - "${reports_dir}/ppc_fpu.fit.rpt" <<'PY'
+import re
+import sys
+text = open(sys.argv[1], encoding="latin-1").read()
+lines = text.split("; Fitter Resource Utilization by Entity", 1)[1].splitlines()
+start = next(i for i, line in enumerate(lines) if "Compilation Hierarchy Node" in line)
+header = [cell.strip() for cell in lines[start].strip().strip(";").split(";")]
+wanted = ["ALMs needed", "Dedicated Logic Registers", "Block Memory Bits", "M10Ks", "DSP Blocks"]
+columns = [next(i for i, cell in enumerate(header) if cell.startswith(name)) for name in wanted]
+for line in lines[start + 2:]:
+    if not line.startswith(";"):
+        break
+    cells = line.strip().strip(";").split(";")
+    name = cells[0].rstrip()
+    if len(name) - len(name.lstrip()) > 6:
+        continue
+    print(f"{name[:56]:56}" + "".join(f"{cells[i].strip():>14}" for i in columns))
+PY
   fi
   python3 - "${reports_dir}" <<'PY'
 import re

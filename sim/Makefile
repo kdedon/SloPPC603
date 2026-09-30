@@ -98,7 +98,10 @@ test-fpu-reference:
 	python3 -m unittest discover -s fpu -p 'test_*.py'
 
 .PHONY: test-fpu-arith-initial test-fpu-arith test-fpu-arith-602
-PPC_FPU_ARITH_RTL := ../rtl/ppc_pkg.sv ../rtl/fpu/ppc_fpu_pkg.sv ../rtl/fpu/ppc_fpu_arith.sv
+PPC_FPU_ARITH_RTL := ../rtl/ppc_pkg.sv ../rtl/fpu/ppc_fpu_pkg.sv ../rtl/fpu/ppc_fpu_arith_pkg.sv \
+  ../rtl/fpu/ppc_fpu_unpack.sv ../rtl/fpu/ppc_fpu_multiplier.sv ../rtl/fpu/ppc_fpu_align_plan.sv ../rtl/fpu/ppc_fpu_aligner.sv ../rtl/fpu/ppc_fpu_adder.sv ../rtl/fpu/ppc_fpu_convert.sv ../rtl/fpu/ppc_fpu_rounder.sv ../rtl/fpu/ppc_fpu_divider.sv \
+  ../rtl/fpu/ppc_fpu_arith.sv
+PPC_FPU_SHELL_RTL := ../rtl/fpu/ppc_fpu_fprs.sv ../rtl/fpu/ppc_fpu.sv
 PPC_FPU_ARITH_BUILD := $(BUILD_DIR)/ppc-fpu-arith
 PPC_FPU_ARITH_602_BUILD := $(BUILD_DIR)/ppc-fpu-arith-602
 PPC_FPU_ARITH_INITIAL := $(BUILD_DIR)/fpu/production-initial.txt
@@ -160,10 +163,10 @@ $(PPC_FPU_ENABLED_603): $(PPC_FPU_ENABLED_PY)
 $(PPC_FPU_ENABLED_602): $(PPC_FPU_ENABLED_PY)
 	mkdir -p $(BUILD_DIR)/fpu
 	python3 fpu/enabled_vectors.py --personality 602 --vectors $@ --count 3000 --seed 0xe7ab602
-$(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_603_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
-$(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
+$(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_enabled.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_603_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_enabled.sv
+$(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_enabled.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_602_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_enabled.sv
 test-fpu-enabled-603: $(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled $(PPC_FPU_ENABLED_603)
 	./$(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled +VECTORS=$(PPC_FPU_ENABLED_603)
 test-fpu-enabled-602: $(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled $(PPC_FPU_ENABLED_602)
@@ -214,16 +217,16 @@ lint: lint-fpu-timing
 
 .PHONY: test-fpu-shell
 PPC_FPU_SHELL_BUILD := $(BUILD_DIR)/ppc-fpu-shell
-$(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_shell.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_shell --Mdir $(PPC_FPU_SHELL_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_shell.sv
+$(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_shell.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_shell --Mdir $(PPC_FPU_SHELL_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_shell.sv
 
 test-fpu-shell: $(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell
 	./$(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell
 
 .PHONY: test-fpu-602
 PPC_FPU_602_BUILD := $(BUILD_DIR)/ppc-fpu-602
-$(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_602.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_602 --Mdir $(PPC_FPU_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_602.sv
+$(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_602.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_602 --Mdir $(PPC_FPU_602_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_602.sv
 
 test-fpu-602: $(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602
 	./$(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602
@@ -231,11 +234,11 @@ test-fpu-602: $(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602
 .PHONY: test-fpu-stream-603 test-fpu-stream-602 lint-fpu-stream
 PPC_FPU_STREAM_603_BUILD := $(BUILD_DIR)/ppc-fpu-stream-603
 PPC_FPU_STREAM_602_BUILD := $(BUILD_DIR)/ppc-fpu-stream-602
-$(PPC_FPU_STREAM_603_BUILD)/Vtb_ppc_fpu_stream: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_stream --Mdir $(PPC_FPU_STREAM_603_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
+$(PPC_FPU_STREAM_603_BUILD)/Vtb_ppc_fpu_stream: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_stream --Mdir $(PPC_FPU_STREAM_603_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
 
-$(PPC_FPU_STREAM_602_BUILD)/Vtb_ppc_fpu_stream: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_stream --Mdir $(PPC_FPU_STREAM_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
+$(PPC_FPU_STREAM_602_BUILD)/Vtb_ppc_fpu_stream: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_stream --Mdir $(PPC_FPU_STREAM_602_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
 
 test-fpu-stream-603: $(PPC_FPU_STREAM_603_BUILD)/Vtb_ppc_fpu_stream
 	./$(PPC_FPU_STREAM_603_BUILD)/Vtb_ppc_fpu_stream
@@ -244,19 +247,19 @@ test-fpu-stream-602: $(PPC_FPU_STREAM_602_BUILD)/Vtb_ppc_fpu_stream
 	./$(PPC_FPU_STREAM_602_BUILD)/Vtb_ppc_fpu_stream
 
 lint-fpu-stream:
-	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b0" --top-module tb_ppc_fpu_stream $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
-	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b1" --top-module tb_ppc_fpu_stream $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b0" --top-module tb_ppc_fpu_stream $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b1" --top-module tb_ppc_fpu_stream $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
 
 lint: lint-fpu-stream
 
 .PHONY: test-fpu-dual-603 test-fpu-dual-602 lint-fpu-dual
 PPC_FPU_DUAL_603_BUILD := $(BUILD_DIR)/ppc-fpu-dual-603
 PPC_FPU_DUAL_602_BUILD := $(BUILD_DIR)/ppc-fpu-dual-602
-$(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_603_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+$(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_603_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
 
-$(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+$(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_602_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
 
 test-fpu-dual-603: $(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual
 	./$(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual
@@ -265,8 +268,8 @@ test-fpu-dual-602: $(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual
 	./$(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual
 
 lint-fpu-dual:
-	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
-	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
 
 lint: lint-fpu-dual
 
@@ -321,8 +324,8 @@ test-fpu-all: test-fpu test-fpu-arith-602 test-fpu-estimates-602 \
 
 .PHONY: lint-fpu-production
 lint-fpu-production:
-	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv
-	$(VERILATOR) --lint-only -Wall "-GCPU_602=1'b1" --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv
+	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL)
+	$(VERILATOR) --lint-only -Wall "-GCPU_602=1'b1" --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL)
 
 lint: lint-fpu-production
 test-core:
