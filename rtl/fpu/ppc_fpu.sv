@@ -213,7 +213,7 @@ module ppc_fpu #(
   // older_q[t][s]: slot t holds an older position than slot s.
   logic [PENDING_DEPTH-1:0] older_q [0:PENDING_DEPTH-1];
   logic [PENDING_IDX_BITS-1:0] arith_rsp_slot, mem_rsp_slot;
-  logic [PENDING_IDX_BITS-1:0] exec_slot, work1_old_slot;
+  logic [PENDING_IDX_BITS-1:0] exec_slot;
   local_stage_t local_stage_q;
   local_stage_t local_stage_d;
   logic [2:0] pending_count_q;
@@ -292,6 +292,8 @@ module ppc_fpu #(
   logic older_arith_pending;
   logic sources_ready;
   logic [2:0][PENDING_DEPTH-1:0] bind0, bind1;
+  pending_t exec_entry, second_entry;
+  logic [PENDING_DEPTH-1:0] exec_pick, second_pick;
   logic [2:0][4:0] work1_index;
   logic [PENDING_DEPTH-1:0] retiring;
   logic exec_found;
@@ -1158,6 +1160,15 @@ module ppc_fpu #(
           ((exec_is_fpu && pending_q[i].decoded.kind == DK_MEMORY) ||
            (exec_is_mem && is_fpu_exec(pending_q[i].decoded.kind)));
     second_sel = oldest_of(pair_cand);
+    exec_pick = exec_sel;
+    second_pick = second_sel;
+    // The work contexts read their entries through the one-hot picks.
+    exec_entry = '0;
+    second_entry = '0;
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (exec_sel[i]) exec_entry |= pending_q[i];
+      if (second_sel[i]) second_entry |= pending_q[i];
+    end
     second_exec_found = |pair_cand;
     second_exec_slot = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++)
@@ -1352,14 +1363,14 @@ module ppc_fpu #(
     work_valid = 1'b0;
     work_dispatch = 1'b0;
     if (exec_found) begin
-      work_issue.tag = pending_q[exec_slot].issue.tag;
-      work_issue.insn = pending_q[exec_slot].issue.insn;
-      work_issue.msr_fp = pending_q[exec_slot].issue.msr_fp;
-      work_issue.msr_fe0 = pending_q[exec_slot].issue.msr_fe0;
-      work_issue.msr_fe1 = pending_q[exec_slot].issue.msr_fe1;
-      work_issue.msr_pr = pending_q[exec_slot].issue.msr_pr;
-      work_decoded = pending_q[exec_slot].decoded;
-      work_ea = pending_q[exec_slot].ea;
+      work_issue.tag = exec_entry.issue.tag;
+      work_issue.insn = exec_entry.issue.insn;
+      work_issue.msr_fp = exec_entry.issue.msr_fp;
+      work_issue.msr_fe0 = exec_entry.issue.msr_fe0;
+      work_issue.msr_fe1 = exec_entry.issue.msr_fe1;
+      work_issue.msr_pr = exec_entry.issue.msr_pr;
+      work_decoded = exec_entry.decoded;
+      work_ea = exec_entry.ea;
       work_valid = 1'b1;
     end else if (issue_valid_i) begin
       work_issue.tag = issue_i.tag;
@@ -1381,7 +1392,7 @@ module ppc_fpu #(
     src_c_index = work_issue.insn[10:6];
     // A waiting entry reads its bound producers; a dispatching one binds
     // to the youngest pending writers.
-    for (integer k = 0; k < 3; k++) bind0[k] = pending_q[exec_slot].producer[k];
+    for (integer k = 0; k < 3; k++) bind0[k] = exec_entry.producer[k];
     if (work_dispatch) begin
       bind0[0] = writer_of(src_a_index);
       bind0[1] = writer_of(src_b_index);
@@ -1465,16 +1476,14 @@ module ppc_fpu #(
     work1_ea = '0;
     work1_valid = 1'b0;
     work1_old = 1'b0;
-    work1_old_slot = '0;
     if (second_exec_found) begin
-      work1_issue.tag = pending_q[second_exec_slot].issue.tag;
-      work1_issue.insn = pending_q[second_exec_slot].issue.insn;
-      work1_issue.msr_fp = pending_q[second_exec_slot].issue.msr_fp;
-      work1_decoded = pending_q[second_exec_slot].decoded;
-      work1_ea = pending_q[second_exec_slot].ea;
+      work1_issue.tag = second_entry.issue.tag;
+      work1_issue.insn = second_entry.issue.insn;
+      work1_issue.msr_fp = second_entry.issue.msr_fp;
+      work1_decoded = second_entry.decoded;
+      work1_ea = second_entry.ea;
       work1_valid = 1'b1;
       work1_old = 1'b1;
-      work1_old_slot = second_exec_slot;
     end else if (exec_found && issue_valid_i) begin
       work1_issue.tag = issue_i.tag;
       work1_issue.insn = issue_i.insn;
@@ -1497,7 +1506,7 @@ module ppc_fpu #(
     work1_index[1] = work1_issue.insn[15:11];
     work1_index[2] = work1_issue.insn[10:6];
     for (integer k = 0; k < 3; k++)
-      bind1[k] = work1_old ? pending_q[second_exec_slot].producer[k] :
+      bind1[k] = work1_old ? second_entry.producer[k] :
           writer_of(work1_index[k]);
     work1_a = read_source(work1_index[0], fpr_rdata[3], bind1[0]);
     work1_b = read_source(work1_index[1], fpr_rdata[4], bind1[1]);
@@ -2046,15 +2055,16 @@ module ppc_fpu #(
             value_of(DK_MEMORY, mem_incoming_result);
       pending_d[mem_rsp_slot].done = 1'b1;
     end
-    if (exec_found)
-      pending_d[exec_slot] = record_launch(pending_d[exec_slot], launch0);
-    if (work1_old)
-      pending_d[work1_old_slot] =
-          record_launch(pending_d[work1_old_slot], launch1);
-    if (exec_found && exec_fire)
-      pending_d[exec_slot] = launched(pending_d[exec_slot], launch0);
-    if (work1_old && work1_fire)
-      pending_d[work1_old_slot] = launched(pending_d[work1_old_slot], launch1);
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (exec_pick[i]) begin
+        pending_d[i] = record_launch(pending_d[i], launch0);
+        if (exec_fire) pending_d[i] = launched(pending_d[i], launch0);
+      end
+      if (second_pick[i]) begin
+        pending_d[i] = record_launch(pending_d[i], launch1);
+        if (work1_fire) pending_d[i] = launched(pending_d[i], launch1);
+      end
+    end
     for (integer i = 0; i < PENDING_DEPTH; i++)
       if (pending_q[i].valid &&
           pending_q[i].started && !pending_q[i].done &&
@@ -2220,11 +2230,11 @@ module ppc_fpu #(
     logic [31:6] insn1;
     logic context1;
     insn0 = '0;
-    if (exec_found) insn0 = pending_q[exec_slot].issue.insn[31:6];
+    if (exec_found) insn0 = exec_entry.issue.insn[31:6];
     else if (issue_valid_i) insn0 = issue_i.insn[31:6];
     insn1 = '0;
     context1 = 1'b1;
-    if (second_exec_found) insn1 = pending_q[second_exec_slot].issue.insn[31:6];
+    if (second_exec_found) insn1 = second_entry.issue.insn[31:6];
     else if (exec_found && issue_valid_i) insn1 = issue_i.insn[31:6];
     else if (!exec_found && issue1_valid_i) insn1 = issue1_i.insn[31:6];
     else context1 = 1'b0;
