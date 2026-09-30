@@ -783,7 +783,7 @@ module ppc_decode #(
                 end
                 uop_o.gpr_write = read_form;
                 uop_o.src_a = insn_i[25:21];
-                // The FPU owns the 602 SP and LT tags; mtspr data is rB.
+                // The FPU owns the 602 SP and LT tags and takes rS as rB.
                 if (ENABLE_FPU && HAS_602 &&
                     ((selector == SPR_SP) || (selector == SPR_LT))) begin
                   uop_o.special_op = SPECIAL_FPU;

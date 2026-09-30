@@ -7,7 +7,10 @@ interface `rtl/ppc602_bus.sv`. Sources: 602UM ch. 7 (signals) and ch. 8
 (bus), 602HW §1.5 (pinout) and Table 11 (PLL). The 602UM scan is pinned in
 [FPU_602_CONTRACT.md](FPU_602_CONTRACT.md); 602HW is `MPC602EC.PDF`
 ([references/SOURCES.md](references/SOURCES.md)). The 603e top is
-[CHIP_PACKAGE.md](CHIP_PACKAGE.md).
+[CHIP_PACKAGE.md](CHIP_PACKAGE.md). Parameters `ENABLE_FPU` (default 0) and
+`FPU_IMPL` attach the [602 FPU](FPU_CORE_INTEGRATION.md#602-personality);
+`quartus/chip602/analyze.sh [--fpu|--fpu-compact]` elaborates the
+measurement top with it.
 
 ## Port conventions
 
