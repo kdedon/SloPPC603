@@ -680,19 +680,33 @@ module ppc_fpu #(
     end
   endfunction
 
-  function automatic pending_t new_entry(input ppc_fpu_issue_t is,
+  function automatic pending_t new_entry(input pending_t old,
+                                         input ppc_fpu_issue_t is,
                                          input decoded_t d,
                                          input logic [31:0] ea);
     pending_t e;
-    e = '0;
-    e.valid = 1'b1;
+    e = old;
     e.issue = is;
     e.decoded = d;
     e.dest_fpr = writes_fpr(d.kind, d.op, d.mem_load);
     e.ea = ea;
-    e.st.gpr_update = d.kind == DK_MEMORY && d.mem_update;
-    e.st.cr_field = is.insn[25:23];
     return e;
+  endfunction
+
+  function automatic pending_t dispatched(input pending_t e);
+    pending_t o;
+    o = e;
+    o.valid = 1'b1;
+    o.started = 1'b0;
+    o.done = 1'b0;
+    o.finishing = 1'b0;
+    o.arith_done = 1'b0;
+    o.fpr_forwarded = 1'b0;
+    o.cr_forwarded = 1'b0;
+    o.local_wait = '0;
+    o.mem_write = 1'b0;
+    o.store_fill = 1'b0;
+    return o;
   endfunction
 
   /* verilator lint_off UNUSEDSIGNAL */
@@ -1889,17 +1903,33 @@ module ppc_fpu #(
     launch1.value_write = valued_kind(work1_decoded);
   end
 
+  // Launch sets only flags; the record's status and value are written
+  // every cycle while the entry waits (see record_launch).
+  /* verilator lint_off UNUSEDSIGNAL */
   function automatic pending_t launched(input pending_t e, input launch_t l);
+  /* verilator lint_on UNUSEDSIGNAL */
     pending_t o;
     o = e;
     o.started = 1'b1;
     if (l.record) begin
-      o.st = l.st;
       o.local_wait = l.local_wait;
       o.mem_write = l.mem_write;
       o.store_fill = l.store_fill;
-      if (l.value_write) o.value = launch_value;
     end
+    return o;
+  endfunction
+
+  // A waiting or free slot's status and value are unused until launch, so
+  // its context's record is written without waiting for the launch
+  // decision.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic pending_t record_launch(input pending_t e,
+                                             input launch_t l);
+  /* verilator lint_on UNUSEDSIGNAL */
+    pending_t o;
+    o = e;
+    o.st = l.st;
+    if (l.value_write) o.value = launch_value;
     return o;
   endfunction
 
@@ -2016,6 +2046,11 @@ module ppc_fpu #(
             value_of(DK_MEMORY, mem_incoming_result);
       pending_d[mem_rsp_slot].done = 1'b1;
     end
+    if (exec_found)
+      pending_d[exec_slot] = record_launch(pending_d[exec_slot], launch0);
+    if (work1_old)
+      pending_d[work1_old_slot] =
+          record_launch(pending_d[work1_old_slot], launch1);
     if (exec_found && exec_fire)
       pending_d[exec_slot] = launched(pending_d[exec_slot], launch0);
     if (work1_old && work1_fire)
@@ -2052,11 +2087,29 @@ module ppc_fpu #(
     for (integer i = 0; i < PENDING_DEPTH; i++)
       for (integer k = 0; k < 3; k++)
         pending_d[i].producer[k] &= ~retiring;
-    if (dispatch_fire) begin
-      pending_d[tail_q] = new_entry(issue_i, decoded, issue_ea);
+    // A free tail slot takes the presented instruction every cycle; only
+    // its flags wait for the dispatch handshake.
+    if (space_ok) begin
+      pending_d[tail_q] = new_entry(pending_d[tail_q], issue_i, decoded,
+                                    issue_ea);
       for (integer k = 0; k < 3; k++)
         pending_d[tail_q].producer[k] =
             (work_dispatch ? bind0[k] : bind1[k]) & ~retiring;
+      pending_d[tail_q] = record_launch(pending_d[tail_q],
+          work_dispatch ? launch0 : launch1);
+    end
+    if (space1_ok) begin
+      pending_d[tail1_q] = new_entry(pending_d[tail1_q], issue1_i, decoded1,
+                                     issue1_ea);
+      // A source written by the paired lane-0 instruction binds to it.
+      for (integer k = 0; k < 3; k++)
+        pending_d[tail1_q].producer[k] =
+            dec_write && issue_i.insn[25:21] == work1_index[k] ?
+            PENDING_DEPTH'(1) << tail_q : bind1[k] & ~retiring;
+      pending_d[tail1_q] = record_launch(pending_d[tail1_q], launch1);
+    end
+    if (dispatch_fire) begin
+      pending_d[tail_q] = dispatched(pending_d[tail_q]);
       if (work_dispatch && exec_fire)
         pending_d[tail_q] = launched(pending_d[tail_q], launch0);
       if (exec_found && work1_fire)
@@ -2064,12 +2117,7 @@ module ppc_fpu #(
       pending_count_d = after_retire_count + 3'd1;
     end
     if (dispatch1_fire) begin
-      pending_d[tail1_q] = new_entry(issue1_i, decoded1, issue1_ea);
-      // A source written by the paired lane-0 instruction binds to it.
-      for (integer k = 0; k < 3; k++)
-        pending_d[tail1_q].producer[k] =
-            dec_write && issue_i.insn[25:21] == work1_index[k] ?
-            PENDING_DEPTH'(1) << tail_q : bind1[k] & ~retiring;
+      pending_d[tail1_q] = dispatched(pending_d[tail1_q]);
       if (work1_fire)
         pending_d[tail1_q] = launched(pending_d[tail1_q], launch1);
       pending_count_d = after_retire_count + 3'd2;
