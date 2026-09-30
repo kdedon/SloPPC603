@@ -4,7 +4,11 @@
 // boundary register (*_ibq, *_obq) standing in for the system's flop;
 // asynchronous pins go straight to the chip's own synchronizer.
 /* verilator lint_off ASCRANGE */
-module ppc602_measure (
+module ppc602_measure #(
+  // The FPU, FULL or COMPACT.
+  parameter bit ENABLE_FPU = 1'b0,
+  parameter bit FPU_COMPACT = 1'b0
+) (
   input logic sysclk,
   input logic [0:3] pll_cfg_i,
   output logic clk_out_o,
@@ -132,7 +136,9 @@ module ppc602_measure (
   always_ff @(posedge sysclk) l1_tstclk_i_ibq <= l1_tstclk_i;
   logic l2_tstclk_i_ibq;
   always_ff @(posedge sysclk) l2_tstclk_i_ibq <= l2_tstclk_i;
-  ppc602 dut (
+  localparam ppc_fpu_pkg::fpu_impl_e IMPL =
+    FPU_COMPACT ? ppc_fpu_pkg::FPU_IMPL_COMPACT : ppc_fpu_pkg::FPU_IMPL_FULL;
+  ppc602 #(.ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(IMPL)) dut (
     .sysclk,
     .pll_cfg_i,
     .clk_out_o(clk_out_o_od),

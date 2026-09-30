@@ -217,7 +217,9 @@ module ppc_special #(
   output logic fp_store_cancellable_o,
   input logic fp_commit_valid_i,
   input ppc_pkg::completion_tag_t fp_commit_tag_i,
-  input logic fp_kill_i
+  input logic fp_kill_i,
+  // Committed FPSCR.
+  output logic [31:0] fp_fpscr_o
 );
   import ppc_pkg::*;
   localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
@@ -296,6 +298,11 @@ module ppc_special #(
   logic [3:0] mem_mask;
   logic mem_crossing, beat_q, beat_continue, mem_skip;
   logic [31:0] beat0_data_q, access_ea, alignment_dar;
+  // A 602 FP load at any byte offset: up to three words, beat 2 the third.
+  localparam bit FPU_UNALIGNED = ENABLE_FPU && HAS_602;
+  logic beat2_q, fpu_unaligned;
+  logic [31:0] beat1_data_q;
+  logic [95:0] fpu_window;
   // Low word of the response and the word request; fpu_wide selects one
   // doubleword access instead.
   logic [31:0] rsp_word, req_wdata_word;
@@ -721,8 +728,8 @@ module ppc_special #(
       10'd987: exec_value = HAS_602 ? esasrr : '0;
       10'd990: exec_value = HAS_602 ? sebr_q : '0;
       10'd991: exec_value = HAS_602 ? ser_q : '0;
-      10'd1021: exec_value = HAS_602 ? sp_q : '0;
-      10'd1022: exec_value = HAS_602 ? lt_q : '0;
+      10'd1021: exec_value = (HAS_602 && !ENABLE_FPU) ? sp_q : '0;
+      10'd1022: exec_value = (HAS_602 && !ENABLE_FPU) ? lt_q : '0;
       default: exec_value = '0;
     endcase
 
@@ -829,7 +836,7 @@ module ppc_special #(
     conditional_probe = ENABLE_RESERVATION && !ENABLE_DATA_CACHE &&
                         uop_q.mem_conditional && !reserve_q;
     mem_skip = uop_q.mem_skip;
-    access_ea = beat_q ? {ea_q[31:2] + 30'd1, 2'b0} : ea_q;
+    access_ea = beat_q ? {ea_q[31:2] + (beat2_q ? 30'd2 : 30'd1), 2'b0} : ea_q;
     // UM 4.5.6.2: lmw/stmw alignment saves EA + 4 in DAR.
     alignment_dar = ea_q + ((uop_q.mem_seq == SEQ_MULTIPLE) ? 32'd4 : 32'd0);
 
@@ -874,7 +881,9 @@ module ppc_special #(
     end
     dmem_req_wdata_o = req_wdata[DMEM_BITS-1:0];
     dmem_req_wstrb_o = req_wstrb[DMEM_BITS/8-1:0];
-    beat_continue = !beat_q && (mem_crossing || (fpu_access && fpu_double_q && !fpu_wide)) &&
+    beat_continue = ((!beat_q && (mem_crossing ||
+                       (fpu_access && !fpu_wide && (fpu_double_q || fpu_unaligned)))) ||
+                     (beat_q && !beat2_q && fpu_double_q && fpu_unaligned)) &&
                     !dmem_rsp_error_i && (dmem_rsp_fault_i == DATA_OK);
   end
 
@@ -1659,8 +1668,8 @@ module ppc_special #(
             10'd986: if (ENABLE_FULL_DECODE && HAS_602) ibr_q <= a_q & IBR_WMASK;
             10'd990: if (ENABLE_FULL_DECODE && HAS_602) sebr_q <= a_q & SEBR_WMASK;
             10'd991: if (ENABLE_FULL_DECODE && HAS_602) ser_q <= a_q;
-            10'd1021: if (ENABLE_FULL_DECODE && HAS_602) sp_q <= a_q;
-            10'd1022: if (ENABLE_FULL_DECODE && HAS_602) lt_q <= a_q;
+            10'd1021: if (ENABLE_FULL_DECODE && HAS_602 && !ENABLE_FPU) sp_q <= a_q;
+            10'd1022: if (ENABLE_FULL_DECODE && HAS_602 && !ENABLE_FPU) lt_q <= a_q;
             default: ;
           endcase
         end
@@ -1704,13 +1713,19 @@ module ppc_special #(
   end
 
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || dispatch_fire) beat_q <= 1'b0;
-    else if ((state_q == S_MEM_WAIT) && response_fire && !killed_q &&
-             beat_continue) begin
+    if (!rst_ni || dispatch_fire) begin
+      beat_q <= 1'b0;
+      beat2_q <= 1'b0;
+    end else if ((state_q == S_MEM_WAIT) && response_fire && !killed_q &&
+                 beat_continue) begin
       beat_q <= 1'b1;
-      beat0_data_q <= rsp_word;
+      beat2_q <= FPU_UNALIGNED && beat_q;
+      if (!beat_q) beat0_data_q <= rsp_word;
     end
   end
+  always_ff @(posedge clk_i)
+    if (FPU_UNALIGNED && (state_q == S_MEM_WAIT) && response_fire && beat_q)
+      beat1_data_q <= rsp_word;
   // Set and cleared only when the owning instruction commits.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) reserve_q <= 1'b0;
@@ -1816,6 +1831,8 @@ module ppc_special #(
         memory_result_q.producer <= producer_q;
         memory_result_q.update_value <= (!fpu_exception && fpu_result.gpr_update) ?
           fpu_result.gpr_value : a_q;
+        // A 602 mfspr of SP or LT.
+        memory_result_q.value <= fpu_result.gpr_value;
         memory_result_q.cr0 <= (fpu_result.cr_write &&
           ((fpu_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION) ||
            (fpu_result.exception == ppc_fpu_pkg::FPU_FP_ENABLED))) ?
@@ -1998,7 +2015,14 @@ module ppc_special #(
   logic _unused_wide;
   assign _unused_wide = ^{req_wdata, req_wstrb};
   // An FP doubleword that crosses no doubleword boundary.
-  assign fpu_wide = (DMEM_BITS == 64) && fpu_access && fpu_double_q && !ea_q[2];
+  assign fpu_wide = (DMEM_BITS == 64) && fpu_access && fpu_double_q && (ea_q[2:0] == 3'b0);
+  assign fpu_unaligned = FPU_UNALIGNED && fpu_access && (ea_q[1:0] != 2'b0);
+  // The accessed words, shifted to the EA's byte offset.
+  always_comb begin
+    fpu_window = beat2_q ? {beat0_data_q, beat1_data_q, rsp_word} :
+                 beat_q ? {beat0_data_q, rsp_word, 32'b0} : {rsp_word, 64'b0};
+    if (FPU_UNALIGNED) fpu_window = fpu_window << {ea_q[1:0], 3'b0};
+  end
   assign late_exception_event = data_exception_event || fpu_exception_q;
   assign fpu_issue_valid = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_ISSUE);
   assign fpu_mem_req_ready = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_WAIT);
@@ -2065,12 +2089,14 @@ module ppc_special #(
     end else if (dispatch_fire) begin
       fpu_q <= ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU);
       // lfs, lfd and their update and indexed forms.
-      fp_load_q <= (insn_i[31:26] == 6'd31) ? !insn_i[8] :
+      fp_load_q <= (insn_i[31:26] == 6'd31) ? (insn_i[10] && !insn_i[8]) :
                    ((insn_i[31:26] != 6'd59) && (insn_i[31:26] != 6'd63) && !insn_i[28]);
       fpu_issued_q <= ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU) && dispatch_overlap_i;
       fpu_access_q <= 1'b0;
       fpu_exception_q <= 1'b0;
       insn_q <= insn_i;
+      // The FPU decodes mftb (XO 371) of SP or LT as the mfspr it is.
+      if (insn_i[31:26] == 6'd31 && insn_i[10:1] == 10'd371) insn_q[10:1] <= 10'd339;
     end else begin
       if (fpu_issue_valid && fpu_issue_ready) fpu_issued_q <= 1'b1;
       if (fpu_abort_valid || (fpu_commit_valid && fpu_commit_ready) || fp_load_release_o)
@@ -2085,7 +2111,7 @@ module ppc_special #(
       if (step_run && fpu_access_q && (state_q == S_MEM_WAIT) && response_fire &&
           !killed_q && !beat_continue) begin
         fpu_data_q <= fpu_wide ? rsp_dword :
-                      fpu_double_q ? {beat0_data_q, rsp_word} : {32'b0, rsp_word};
+                      fpu_double_q ? fpu_window[95:32] : {32'b0, fpu_window[95:64]};
         fpu_mem_fault_q <= dmem_rsp_error_i || (dmem_rsp_fault_i != DATA_OK);
       end
       if (fpu_result_take)
@@ -2100,7 +2126,7 @@ module ppc_special #(
   generate if (ENABLE_FPU) begin : g_fpu
     /* verilator lint_off PINCONNECTEMPTY */
     if (FPU_IMPL == ppc_fpu_pkg::FPU_IMPL_COMPACT) begin : g_compact
-      ppc_fpu_compact #(.CPU_602(1'b0)) fpu (
+      ppc_fpu_compact #(.CPU_602(HAS_602)) fpu (
         .clk_i(clk_i), .rst_ni(rst_ni),
         .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
         .issue_i(fpu_issue_valid ? fpu_issue : fp_issue),
@@ -2117,13 +2143,13 @@ module ppc_special #(
         .mem_rsp_valid_i(fpu_mem_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
         .mem_rsp_i(fpu_mem_rsp),
         .store_valid_o(fpu_store_valid), .store_ready_i(fpu_store_ready), .store_o(fpu_store),
-        .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(),
+        .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(fp_fpscr_o),
         .inspect_sp_o(), .inspect_lt_o(),
         .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
         .forward_data_o(), .forward1_data_o()
       );
     end else begin : g_full
-      ppc_fpu #(.CPU_602(1'b0)) fpu (
+      ppc_fpu #(.CPU_602(HAS_602)) fpu (
         .clk_i(clk_i), .rst_ni(rst_ni),
         .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
         .issue_i(fpu_issue_valid ? fpu_issue : fp_issue),
@@ -2140,7 +2166,7 @@ module ppc_special #(
         .mem_rsp_valid_i(fpu_mem_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
         .mem_rsp_i(fpu_mem_rsp),
         .store_valid_o(fpu_store_valid), .store_ready_i(fpu_store_ready), .store_o(fpu_store),
-        .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(),
+        .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(fp_fpscr_o),
         .inspect_sp_o(), .inspect_lt_o(),
         .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
         .forward_data_o(), .forward1_data_o()
@@ -2185,6 +2211,7 @@ module ppc_special #(
     assign fpu_mem_rsp_ready = 1'b0;
     assign fpu_store_valid = 1'b0;
     assign fpu_store = '0;
+    assign fp_fpscr_o = '0;
     logic _unused_fpu;
     assign _unused_fpu = ^{fpu_issue, fpu_mem_rsp, fpu_store_ready, fpu_abort_valid,
                            fpu_store_valid};

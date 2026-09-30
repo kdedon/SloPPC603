@@ -138,7 +138,8 @@ module ppc_decode #(
             (fp_a_form(insn_i[31:26], insn_i[5:1]) ||
              ((insn_i[31:26] == 6'd63) && fp_x_form(insn_i[10:1])))) begin
           uop_o.illegal = 1'b0;
-          uop_o.special_op = HAS_602 &&
+          // With the FPU attached, the FPU decides the 602 emulation trap.
+          uop_o.special_op = HAS_602 && !ENABLE_FPU &&
                              fp_602_emulated(insn_i[31:26], insn_i[10:1]) ?
                              SPECIAL_FPU_EMULATE : SPECIAL_FPU;
           // fcmpu, fcmpo and mcrfs write crfD; record forms write CR1.
@@ -782,6 +783,13 @@ module ppc_decode #(
                 end
                 uop_o.gpr_write = read_form;
                 uop_o.src_a = insn_i[25:21];
+                // The FPU owns the 602 SP and LT tags and takes rS as rB.
+                if (ENABLE_FPU && HAS_602 &&
+                    ((selector == SPR_SP) || (selector == SPR_LT))) begin
+                  uop_o.special_op = SPECIAL_FPU;
+                  uop_o.privileged = 1'b1;
+                  uop_o.src_b = insn_i[25:21];
+                end
               end
             end
             10'd23, 10'd55, 10'd87, 10'd119,

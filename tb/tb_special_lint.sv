@@ -159,7 +159,9 @@ module tb_special_lint #(
   logic fp_issue_ready_o, fp_result_valid_o;
   ppc_fpu_pkg::ppc_fpu_result_t fp_result_o;
   logic fp_issue_valid_i = 1'b0, fp_commit_valid_i = 1'b0, fp_kill_i = 1'b0;
-  logic [31:0] fp_issue_insn_i = '0;
+  logic [31:0] fp_issue_insn_i = '0, fp_issue_a_i = '0, fp_issue_b_i = '0;
+  logic fp_load_overlap_o, fp_load_release_o, fp_store_cancellable_o;
+  logic [31:0] fp_fpscr_o;
   ppc_pkg::completion_tag_t fp_issue_tag_i = '0, fp_commit_tag_i = '0;
   logic [4:0] tlb_fill_req_ext_o;
   ppc_pkg::mmu_602_t mmu_602_o;

@@ -1831,7 +1831,7 @@ lint-chip:
 
 # The ppc602 package top: 602 bus BFM with directed pin checks and a program
 # boot in 64- and 32-bit data modes, and lint of the top and its Quartus
-# measurement wrapper.
+# measurement wrapper, without and with the FPU.
 CHIP602_RTL := $(shell cat ../rtl/chip602_files.f)
 .PHONY: test-chip602-pins lint-chip602
 test: test-chip602-pins
@@ -1843,6 +1843,8 @@ lint: lint-chip602
 lint-chip602:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc602 $(CHIP602_RTL)
 	cd ../quartus/chip602 && $(VERILATOR) --lint-only -Wall --top-module ppc602_measure -f files.f
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc602 "-GENABLE_FPU=1'b1" $(CHIP602_RTL) $(shell cat ../rtl/fpu_files.f)
+	cd ../quartus/chip602 && $(VERILATOR) --lint-only -Wall --top-module ppc602_measure "-GENABLE_FPU=1'b1" "-GFPU_COMPACT=1'b1" -f files.f $(patsubst ../%,../../%,$(shell cat ../rtl/fpu_files.f))
 
 # Line coverage of the translated cached 60x top from the compiled MMU stress
 # (all retry and TEA modes) and cache-operation firmware, and of the data
@@ -1937,6 +1939,17 @@ test-core-fpu-compact:
 	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-fpu-compact/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM)
 	./$(BUILD_DIR)/core-fpu-compact/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-compact/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu-compact/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-compact/program.txt +STALL=0 $(SIM_ARGS)
+
+# The 602 core with its FPU, FULL and COMPACT: SP/LT tags, emulation traps,
+# unaligned loads and the sticky-bit completion stall.
+FPU_CORE_602_SEED ?= 0x602
+.PHONY: test-core-fpu-602 test-core-fpu-602-compact
+test-core-fpu-602 test-core-fpu-602-compact: test-core-fpu-602%:
+	mkdir -p $(BUILD_DIR)/core-fpu-602$*
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 -GCPU_VARIANT=4 $(if $*,-GFPU_IMPL=1) --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-602$* $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_602_program.py --image $(BUILD_DIR)/core-fpu-602$*/program.txt --seed $(FPU_CORE_602_SEED) --random $(FPU_CORE_RANDOM)
+	./$(BUILD_DIR)/core-fpu-602$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-602$*/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/core-fpu-602$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-602$*/program.txt +STALL=0 $(SIM_ARGS)
 
 .PHONY: test-decode-sweep test-core-full-decode
 test: test-decode-sweep test-core-full-decode
