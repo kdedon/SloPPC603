@@ -217,6 +217,72 @@ underflow-scaled exponent. Rounding forms the exponent, its scaled form and
 the overflow test for both increment-carry cases beside the incrementer; the
 carry selects them. Both changes keep every latency.
 
+## Arithmetic units and area
+
+`ppc_fpu_arith` instantiates one of each block so the fitter reports area per
+instance: `ppc_fpu_unpack` (class bits, special results, raw operand fields),
+`ppc_fpu_multiplier` (single product, and the 603e's registered 27-bit partial
+products), `ppc_fpu_align_plan`, `ppc_fpu_aligner`, `ppc_fpu_adder` (sum, LZC
+and the rounder's shift amounts), `ppc_fpu_convert`, `ppc_fpu_rounder` and
+`ppc_fpu_divider`. The combinational steps live in `ppc_fpu_arith_pkg`.
+Sharing, with every latency unchanged:
+
+- One alignment plan serves the single path in stage 1 and the double
+  multiply's second cycle; admission stops while a double multiply is in the
+  input stage, so the two never meet.
+- The larger-exponent operand becomes x, so only y is shifted. The adder is
+  symmetric in its operands.
+- `fctiw`/`fctiwz` plan a right shift of the raw significand by 31 − exponent;
+  the aligned lane gives the integer part (bits 111:79), guard and sticky.
+- Divide and `fres` results, including special operands, load the add-stage
+  register one cycle before they are due and round in the pipeline rounder.
+  The divider blocks admission, so the pipeline is empty then.
+
+FPRs live in `ppc_fpu_fprs`: per write port one MLAB bank, copied per read
+port (eight operand reads plus the inspection port), and a live-value table
+of flops selecting the bank with each register's latest value. A register not
+written since reset reads zero; reads are combinational and return the value
+before the cycle's writes, as the flop array did. The 602's SP/LT tags stay in
+flops.
+
+The 602 build narrows by construction: its operands are
+binary32-representable, so the low 29 significand bits are constant zero into
+the multiplier, add lane and divider; the aligned y lane folds bits 47:0 into
+a sticky bit 48 (below every single guard bit even after cancellation, which
+only occurs at alignment distances of at most one); and the rounder shifts
+only the 64-bit window of bits 159:96 that single magnitudes occupy. Single
+divide places its remainder sticky at bit 96 in both builds. Fitted area per
+block is in [quartus/fpu-production/README.md](../quartus/fpu-production/README.md).
+
+The remaining large block is the shell's own logic (about 13.0k ALMs for the
+603e, 10.9k for the 602): the pending queue, its per-entry results and
+operand lookup. Reaching the ~18k ALM budget beside the MiSTer core now
+depends on that queue, not on the arithmetic.
+
+## COMPACT design notes
+
+A later `FPU_IMPL` parameter will select COMPACT: one iterative datapath,
+bit-identical to the pipelined one, slower, for both personalities. It is
+not implemented. Proposed reuse:
+
+- `ppc_fpu_unpack`, `ppc_fpu_align_plan`, `ppc_fpu_convert` and the
+  `ppc_fpu_arith_pkg` functions unchanged: they are combinational and hold the
+  PowerPC special-operand, NaN and conversion rules.
+- `ppc_fpu_rounder` unchanged as the single rounding point; COMPACT feeds it
+  the same `round_input_t` record the add stage and divider produce.
+- `ppc_fpu_divider` unchanged: it is already iterative and hands its quotient
+  to the rounder.
+- `ppc_fpu_fprs` unchanged.
+- New: a sequencer that reuses one `ppc_fpu_adder` and `ppc_fpu_aligner` per
+  step, and a multiplier that forms the double product from one 27×27 DSP over
+  four cycles (or one 24×24 for the 602), with partial products summed in the
+  adder's lane.
+
+COMPACT cannot meet Table 6-5 latencies; like any timing trade it must sit
+behind the named parameter, with the exact-cycle benches run only for the
+default. The bit-exact suites (TestFloat, raw, cluster, estimates) apply to
+both.
+
 ## Memory and 602 tag SPRs
 
 Memory packets retain complete instruction tags. Fault-free preparation does not

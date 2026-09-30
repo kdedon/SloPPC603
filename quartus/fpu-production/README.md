@@ -15,15 +15,61 @@ Run all variants after the RTL has stabilized:
 ./quartus/fpu-production/synthesize.sh --docker arith
 ./quartus/fpu-production/synthesize.sh --docker full602
 ./quartus/fpu-production/synthesize.sh --docker arith602
-# Fit the 603e shell with clk_i on a real pin (about 40 minutes):
+# Fit the 603e or 602 shell with clk_i on a real pin (about 40 minutes each):
 ./quartus/fpu-production/synthesize.sh --docker fullfit
+./quartus/fpu-production/synthesize.sh --docker full602fit
 ```
+
+A fit variant also prints fitted ALMs, registers, block memory and DSP use per
+instance from the fitter's "Resource Utilization by Entity" table.
 
 The script uses Quartus 17.0.2 Lite from the same pinned Cyclone V image as `quartus/icache/synthesize.sh`, targets `5CSEBA6U23I7`, and sets `NUM_PARALLEL_PROCESSORS=2`. Each project creates a 20 ns `clk_i` clock and zero min/max delays on virtual inputs and outputs. All interface bits are assigned virtual pins. The script checks that Quartus reports zero physical pins, compares source/configuration hashes before and after each map, and prints ALUTs, estimated ALMs, registers, memory bits, DSP blocks, Fmax against 50/66 MHz, worst setup slack and the ten worst setup paths. It also reports Quartus warnings for review and the worst path into each arithmetic pipeline stage, so a faster overall path does not hide a remaining stage bottleneck.
 
 The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not run the fitter, so its ALM estimate and timing are not fitted-area or timing-closure results. `output_files/full/reports/` and `output_files/arith/reports/` are generated build outputs.
 
 ## Recorded synthesis evidence
+
+### Per-block area, shared datapath and MLAB FPRs, fitted 603e and 602
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit` and
+`./quartus/fpu-production/synthesize.sh --docker full602fit`, commits
+`4df8136` (before: datapath split into instances, behavior unchanged) and
+`4318d67` (after), 2026-09-30. Exit zero each; one physical pin (`clk_i`),
+20 ns clock, zero-delay virtual I/O. ALMs include ALMs holding virtual pins.
+
+| Instance | 603e before | 603e after | 602 before | 602 after |
+|---|---:|---:|---:|---:|
+| shell (`ppc_fpu` own logic) | 16,898 | 12,995 | 13,077 | 10,877 |
+| FPR storage (`fprs`) | 1,655 | 984 | 715 | 302 |
+| arithmetic total | 8,459 | 6,210 | 6,970 | 4,086 |
+| — arithmetic own logic (stage registers, reply queue) | 1,008 | 1,029 | 1,023 | 1,078 |
+| — unpack/classify | 483 | 431 | 439 | 395 |
+| — multiplier | 79 | 79 | 0 | 0 |
+| — alignment plan | 96 + 144 | 201 | 127 | 116 |
+| — aligner | 785 | 410 | 678 | 319 |
+| — adder, LZC, normalize shifts | 1,090 | 991 | 1,044 | 488 |
+| — conversion | 237 | 36 | 224 | 34 |
+| — rounder | 1,748 | 1,945 | 1,604 | 858 |
+| — divider | 2,791 | 1,088 | 1,832 | 799 |
+| **Total fitted ALMs** | **27,011** | **20,188** | **20,762** | **15,265** |
+| Registers | 8,462 | 5,714 | 6,415 | 4,223 |
+| DSP blocks | 5 | 5 | 1 | 1 |
+| Post-fit Fmax | 37.02 MHz | 37.23 MHz | 30.12 MHz | 32.20 MHz |
+| Worst setup slack at 20 ns | −7.016 ns | −6.863 ns | −13.204 ns | −11.054 ns |
+
+Against the last recorded 603e fit (`591876e`: 26,654 ALMs, 36.12 MHz) the
+603e build is 6,466 ALMs smaller and 1.1 MHz faster. The 602 build had never
+been fitted; before this round it kept the double-width add lane, rounder and
+divider (only the double multiplier dropped out). The shell's own logic fell by
+about 3,900 (603e) and 2,200 (602) ALMs, most likely the flop array's read
+multiplexers, which the fitter had counted in the shell.
+
+603e worst path: pending-queue state (`pending_q[0].decoded.kind`) through
+issue selection into the local-stage operand registers (`local_stage_q.b/c`,
+26.3 ns). 602 worst path: rounder input (`add_q.sum`) through rounding, the
+finish forward and memory-request formation to the virtual `mem_req_o`
+outputs (26.2 ns, including −4.66 ns clock skew to virtual I/O). Neither 50
+nor 66 MHz is met; these are fit and timing measurements, not closure.
 
 ### Circular pending queue, late readiness, add and rounding terms, fitted 603e
 

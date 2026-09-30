@@ -7,6 +7,29 @@ the manuals' per-instruction execution latency and initiation interval,
 ordered forwarding and retirement, and 602 operand tags and emulation traps.
 Detailed `Recorded:` entries retain each result's exact source scope.
 
+## Area round: instanced datapath, MLAB FPRs, shared units
+
+Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production
+lint-fpu-stream lint-fpu-dual test-fpu-testfloat`, commits `4df8136`,
+`b153b97`, `5620792`, `1a4b753`, `bbe2401` and `4318d67` (one run per commit),
+2026-09-29 to 2026-09-30. Pass. Every run printed the same `PASS` lines as
+the `8feaa06` + `fpu-testfloat` baseline: TestFloat 2,092,736 (603e) and
+1,043,512 (602) vectors with 0 mismatches; raw arithmetic 209,811/182,083,
+cluster 40,115/22,131 finish predictions; estimates 11,958/17,628; shell 910;
+enabled exceptions 3000 cases per personality; operand-binding hazards 648/640;
+flush/reset 4 and cancel-offset 76 per build; all lint targets clean.
+
+The exact-cycle timing, stream and dual benches pass unchanged, so every
+Table 6-5 latency and initiation interval holds with divides and conversions
+routed through the shared aligner and rounder. What changed per commit:
+the datapath split into instances (`4df8136`); FPRs in MLAB with a live-value
+table (`b153b97`); one alignment plan, one aligner, divider through the
+pipeline rounder (`5620792`); `fctiw` through the aligner (`1a4b753`);
+602 single-width narrowing (`bbe2401`); Quartus 17 generate syntax
+(`4318d67`). The 602 narrowing relies on 602 operands being
+binary32-representable; the 602 TestFloat, raw, cluster and enabled suites
+exercise that contract but do not feed a non-single operand to the 602.
+
 ## Berkeley TestFloat cross-check
 
 Recorded: `make -C sim test-fpu-testfloat`, commit `f11d41b`, 2026-09-29.
