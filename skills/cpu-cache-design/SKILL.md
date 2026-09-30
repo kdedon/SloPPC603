@@ -5,7 +5,7 @@ description: Load when designing or reviewing an L1 instruction or data cache fo
 
 # L1 cache design on Cyclone V
 
-Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer).
+Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer), Z486 = i486 + x87 (nand2mario/z486).
 
 603e target: 16 KB 4-way I and D, 32 B lines,
 128 sets, PLRU, D-cache write-back with MEI, 60x bursts critical-double-word-first.
@@ -28,6 +28,8 @@ Evidence links point at the reference cores on GitHub, pinned to the reviewed co
   is one data RAM per way read in parallel and selected late.
 - **Duplicated tag copies for parallel candidate addresses** (sequential vs branch target), selected
   late. N64 [`cpu.vhd:2143-2166`](https://github.com/MiSTer-devel/N64_MiSTer/blob/eb5554af01bb97bdf3d295aed02a989ac10ccee4/rtl/cpu.vhd#L2143-L2166), [`cpu_instrcache.vhd:87-109`](https://github.com/MiSTer-devel/N64_MiSTer/blob/eb5554af01bb97bdf3d295aed02a989ac10ccee4/rtl/cpu_instrcache.vhd#L87-L109). MLAB tags make the copy cheap.
+- **Valid bit inside the tag RAM word, read as one word.** Separate valid/tag slices or valid flops made
+  Quartus infer extra read ports and push arrays into logic. Z486 [`l1_cache.sv:111-135`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/l1_cache.sv#L111-L135).
 - **Tag write → read bypass** when a write lands on the index already being read (registered-read tags).
   N64 [`cpu_datacache.vhd:187`](https://github.com/MiSTer-devel/N64_MiSTer/blob/eb5554af01bb97bdf3d295aed02a989ac10ccee4/rtl/cpu_datacache.vhd#L187), [`325-340`](https://github.com/MiSTer-devel/N64_MiSTer/blob/eb5554af01bb97bdf3d295aed02a989ac10ccee4/rtl/cpu_datacache.vhd#L325-L340).
 

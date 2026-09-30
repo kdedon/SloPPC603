@@ -5,7 +5,7 @@ description: Load when implementing or reviewing a CPU register file, rename buf
 
 # CPU register files on FPGA
 
-Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer).
+Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer), Z486 = i486 + x87 (nand2mario/z486).
 
 ## 1. Storage choice
 
@@ -77,6 +77,10 @@ Evidence links point at the reference cores on GitHub, pinned to the reviewed co
 - 64-bit FPRs as two 32-bit halves with independent write enables support partial writes and paired
   modes. N64 [`cpu.vhd:876-947`](https://github.com/MiSTer-devel/N64_MiSTer/blob/eb5554af01bb97bdf3d295aed02a989ac10ccee4/rtl/cpu.vhd#L876-L947); SS [`fpu_regs_2r1w.vhd:62-101`](https://github.com/Grabulosaure/ss/blob/70203e26e981069710e934600fd55b9d866a9e5b/src/cpu/fpu_regs_2r1w.vhd#L62-L101). PowerPC always writes 64 bits (singles
   are stored as doubles), so a plain 64-bit array usually suffices.
+- **Store raw architectural bits; classify at read.** Z486 keeps x87 registers in one dual-port M10K
+  without reset and decodes at the consumer ([`x87_stack_mem.sv:20-74`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_stack_mem.sv#L20-L74),
+  [`x87_control.sv:251-253`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_control.sv#L251-L253)). For FPRs a 2–3 bit class tag written
+  beside the value takes classification off the operand path.
 - **Spare depth is free storage**: SS stores its deferred-trap queue in unused FPR rows
   ([`fpu_simple.vhd:259-262`](https://github.com/Grabulosaure/ss/blob/70203e26e981069710e934600fd55b9d866a9e5b/src/cpu/fpu_simple.vhd#L259-L262)). FPR rename buffers can share spare rows of the FPR RAM.
 
@@ -85,7 +89,7 @@ Evidence links point at the reference cores on GitHub, pinned to the reviewed co
 - [ ] Read ports counted for worst-case dual dispatch (incl. rS for stores, rA for update forms, CR/XER/LR/CTR).
 - [ ] One MLAB copy per read port, one wrapper module, RDW declared don't-care.
 - [ ] Explicit forwarding covers write→read same index, with a directed test.
-- [ ] No reset on array contents.
+- [ ] No reset on array contents (FPRs included).
 - [ ] All writes pass through a fixed set of funnelled ports; enables carry the late signals.
 - [ ] Architectural→physical mapping happens once, before hazard logic.
 - [ ] Savestate/debug access reuses existing ports with priority.

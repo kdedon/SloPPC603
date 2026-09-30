@@ -1,11 +1,11 @@
 ---
 name: cpu-reference-cores
-description: Load when you need precedent for a CPU microarchitecture decision (pipeline, forwarding, regfile, cache, TLB, exceptions, mul/div, FPU, bus, trace/savestate) and want to see how a shipping MiSTer/FPGA CPU did it. Indexes five mined cores — N64 VR4300, PSX R3000A, Saturn SH-2, SparcStation SPARC V8, Atari7800 ARM7TDMI — with per-core reports carrying file:line evidence and ranked 603e lessons.
+description: Load when you need precedent for a CPU microarchitecture decision (pipeline, forwarding, regfile, cache, TLB, exceptions, mul/div, FPU, bus, trace/savestate) and want to see how a shipping MiSTer/FPGA CPU did it. Indexes six mined cores — N64 VR4300, PSX R3000A, Saturn SH-2, SparcStation SPARC V8, Atari7800 ARM7TDMI, z486 with x87 FPU — with per-core reports carrying file:line evidence and ranked 603e lessons.
 ---
 
 # Reference CPU cores — index and citation key
 
-Five FPGA CPUs were read in depth. Each report in `references/` has one section per design
+Six FPGA CPUs were read in depth. Each report in `references/` has one section per design
 dimension with file:line evidence, then a ranked "Top transferable lessons for a 603e core" list.
 Links are pinned to the reviewed commits; line numbers refer to those commits.
 
@@ -16,6 +16,7 @@ Links are pinned to the reviewed commits; line numbers refer to those commits.
 | **SH2** | Hitachi SH7604 (SH-2) + SH7034 | [MiSTer-devel/Saturn_MiSTer](https://github.com/MiSTer-devel/Saturn_MiSTer/tree/a23bbb22c8c9a43926ee2196875e257d225291b7/rtl/SH) | SystemVerilog | 28.6 MHz (57 MHz, CE/2) | `references/saturn-sh2.md` |
 | **SS** | SPARC V8 (MicroSPARC-II/SuperSPARC personality) | [Grabulosaure/ss](https://github.com/Grabulosaure/ss/tree/70203e26e981069710e934600fd55b9d866a9e5b/src/cpu) | VHDL | 65 MHz target, 54 MHz achieved | `references/ss-sparc.md` |
 | **ARM7** | ARM7TDMI | [MiSTer-devel/Atari7800_MiSTer](https://github.com/MiSTer-devel/Atari7800_MiSTer/tree/0dc8ad2e3ff724af57ba84c913e035a4c97733e8/rtl/arm7tdmi) | SystemVerilog | 71.58 MHz, fails by 0.8–2.5 ns | `references/a7800-arm7tdmi.md` |
+| **Z486** | i486-class x86 + x87 FPU | [nand2mario/z486](https://github.com/nand2mario/z486/tree/53dc450e01302c174f75fc9280417a4dc5884863) | SystemVerilog | 57.95 MHz DE10-Nano fit; MiSTer release at 85 MHz | `references/z486-x87.md` |
 
 Line numbers were spot-checked, not all re-verified; open the source before quoting a line as fact.
 
@@ -45,6 +46,12 @@ Line numbers were spot-checked, not all re-verified; open the source before quot
   corrections, replicated `dont_merge maxfan` retire flags, disciplined SDC with loud guards.
   *Weak:* still fails timing; raw memory response enters bypass; 140 loose signals instead of a
   struct; resets datapath arrays; no in-repo tests.
+- **Z486** — the area reference for an FPU beside a CPU on Cyclone V: binary64-width x87 in ~5.6k ALMs.
+  One work register, adder and rounder shared by all ops; 53×53 multiply as four 27×27 DSP limbs with
+  carries over registered steps; shared div/sqrt recurrence; FP registers in M10K; horizontal microcode
+  from a generator that rejects lane conflicts. Also valid-in-tag-word caches and `KEEP` address replicas.
+  *Weak:* incomplete x87 (53-bit significand), no FMA, one op at a time, variable latency; released clock
+  exceeds the reported Fmax.
 
 ## How to use a report
 

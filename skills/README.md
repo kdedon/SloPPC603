@@ -17,7 +17,7 @@ in its frontmatter decides when it triggers. Skills can also be read directly as
 
 | Skill | Use for |
 |---|---|
-| `cpu-reference-cores` | Index of five mined FPGA CPUs (N64 VR4300, PSX R3000A, Saturn SH-2, SPARC V8, ARM7TDMI) with full reports. |
+| `cpu-reference-cores` | Index of six mined FPGA CPUs (N64 VR4300, PSX R3000A, Saturn SH-2, SPARC V8, ARM7TDMI, z486 + x87) with full reports. |
 | `cpu-pipeline-control` | Stall, flush, hazards, forwarding, operand capture. |
 | `cpu-decode-control` | Decode records, predecode, microcode, exception pseudo-ops. |
 | `cpu-register-files` | MLAB/M10K/flop regfiles, ports, RDW, rename-by-index. |

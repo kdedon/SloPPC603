@@ -1,11 +1,11 @@
 ---
 name: cpu-fpu-design
-description: Load when planning, implementing or reviewing a floating-point unit for an FPGA CPU — IU/FPU interlock and precise commit, FP register file and rename, datapath sharing (shifter, rounder, LZC, multiplier), iterative vs pipelined ops, divide/sqrt/reciprocal-estimate (fdiv, fres, frsqrte), IEEE corner cases, PowerPC FPSCR flag semantics and NaN propagation, and per-op verification against a softfloat reference. Lessons from SPARC, VR4300 and PSX GTE FPGA datapaths.
+description: Load when planning, implementing or reviewing a floating-point unit for an FPGA CPU — IU/FPU interlock and precise commit, FP register file and rename, datapath sharing (shifter, rounder, LZC, multiplier), iterative vs pipelined ops, divide/sqrt/reciprocal-estimate (fdiv, fres, frsqrte), IEEE corner cases, PowerPC FPSCR flag semantics and NaN propagation, and per-op verification against a softfloat reference. Lessons from SPARC, VR4300, PSX GTE and z486 x87 FPGA datapaths, including area and fmax budgeting for an FPU beside a CPU on Cyclone V.
 ---
 
 # FPU design for an FPGA CPU
 
-Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer).
+Evidence links point at the reference cores on GitHub, pinned to the reviewed commits: N64 = VR4300 (N64_MiSTer), PSX = R3000A (PSX_MiSTer), SH2 = SH-2 (Saturn_MiSTer), SS = SPARC V8 (Grabulosaure/ss), ARM7 = ARM7TDMI (Atari7800_MiSTer), Z486 = i486 + x87 (nand2mario/z486).
 
 PowerPC specifics: 64-bit FPRs (singles stored as doubles), fused
 multiply-add, FPSCR with sticky exception bits, FX/FEX/VX summaries, FR/FI, FPRF result class.
@@ -65,6 +65,47 @@ multiply-add, FPSCR with sticky exception bits, FX/FEX/VX summaries, FR/FI, FPRF
 - Single-precision ops round to single and store as double; `frsp` handles the conversion and its flags.
 - Enabled FP exceptions: precise vs imprecise modes (MSR[FE0/FE1]); SPARC's deferred-trap queue does not apply.
 
+## 4a. Area and fmax budget on a mid-size FPGA
+
+Z486 fits a binary64-width x87 in about **5.6k ALMs** on Cyclone V (21,906 vs 16,329 ALMs with and without
+it, [`README.md:44-53`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/README.md#L44-L53)). It has no FMA, runs one op at a time and has variable
+latency, so it is a floor, not a target. Estimate: a pipelined PowerPC FPU with FMA and exact 603e timing should
+land near 10–12k ALMs; much more means duplicated datapath.
+
+- **Attribute area before optimising.** Put unpack, multiplier, aligner, adder/LZC/normaliser, rounder,
+  divider and FPR storage in separate instances so the Quartus hierarchy report gives ALMs per block.
+  Functions called from several places synthesise one copy per call site.
+- **Instantiate the wide pieces once**: one aligner, one adder with LZC, one rounder. Z486 uses one work
+  register and one adder for both the sum and the rounding increment
+  ([`x87_executor.sv:227-240`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_executor.sv#L227-L240)). Conversions, `frsp`, divide and
+  estimate results enter that rounder instead of owning one.
+- **53×53 on Cyclone V = four 27×27 DSP blocks.** Register the limb sums across steps so no cycle carries a
+  106-bit carry-propagate add ([`x87_executor.sv:242-258`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_executor.sv#L242-L258),
+  [`2200-2231`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_executor.sv#L2200-L2231)). Feed DSPs from captured operand registers held for
+  the whole op ([`x87_control.sv:995-998`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_control.sv#L995-L998)), never from a forwarding bus.
+- **One recurrence for divide and square root**, one subtractor, then the shared rounder
+  ([`x87_executor.sv:260-275`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_executor.sv#L260-L275)). Pick radix from the latency contract:
+  radix-2 at 1 bit/cycle needs ~55 cycles for double; the 603e's 33-cycle double divide needs 2 bits/cycle.
+- **FP registers in RAM, raw format, no reset**; classify at read. Z486 keeps its registers in one
+  dual-port M10K ([`x87_stack_mem.sv:20-74`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_stack_mem.sv#L20-L74)). A 32×64 flop array with
+  reset and two write ports costs ~2k registers plus a 64-bit 32:1 mux per read port.
+- **Iterative loops trade latency for area**: 1–4 bit align/normalise steps replace barrel shifters and LZC
+  trees ([`build_x87_microcode.py:312-333`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/build_x87_microcode.py#L312-L333)). The latency is
+  data-dependent, so on the 603e it may only sit behind a named timing-profile parameter or serve ops with
+  no pipelined contract.
+- **Microcode for rare sequences**: horizontal words, a generator that rejects two lanes driving one
+  resource ([`build_x87_microcode.py:492-546`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/build_x87_microcode.py#L492-L546)), and the store
+  in M10K, not a `case` ([`x87_ucode_rom.sv:15-22`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_ucode_rom.sv#L15-L22)). Keep the ROM output
+  → condition → next-address loop short; it is one M10K read plus a mux per cycle.
+- **Rare wide state through a narrow datapath**: Z486 runs 83-bit CORDIC in 28-bit limbs from a RAM scratch
+  ([`x87_cordic_scratch.sv:1-27`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/x87/x87_cordic_scratch.sv#L1-L27)).
+- **No multicycle SDC for FPU paths.** Iterative units that step one registered operation per cycle need
+  none; Z486's board SDC has none.
+
+x87-only, not transferable: register stack and TOP, 80-bit format and precision control, CORDIC/log/exp
+tables, FPREM/BCD, the 387 port protocol and `ERROR#` deferred exceptions, x87 NaN selection. Z486 also
+keeps only 53 significand bits, so it is no evidence for extended-precision or FMA correctness.
+
 ## 5. Verification
 
 - **Per-op sim trace**: op, rounding mode, operands, result, FPSCR before/after, written to a file and
@@ -72,6 +113,9 @@ multiply-add, FPSCR with sticky exception bits, FX/FEX/VX summaries, FR/FI, FPRF
 - Directed corners: ±0, ±inf, QNaN/SNaN in each operand position, denormal in/out, overflow/underflow at
   each rounding mode, exact vs inexact, fmadd cancellation, int conversions at bounds.
 - Randomized differential against the reference for every op and rounding mode, deterministic seeds.
+- Berkeley TestFloat vectors per op and rounding mode into a standalone bench (Z486
+  [`run_x87_testfloat.sh:22-40`](https://github.com/nand2mario/z486/blob/53dc450e01302c174f75fc9280417a4dc5884863/tests/run_x87_testfloat.sh#L22-L40)); PowerPC flags and NaNs still need
+  their own checks.
 
 ## 6. Checklist
 
@@ -82,3 +126,6 @@ multiply-add, FPSCR with sticky exception bits, FX/FEX/VX summaries, FR/FI, FPRF
 - [ ] Denormals handled in hardware; NI mode defined.
 - [ ] FPSCR sticky/summary/FPRF semantics tested per op.
 - [ ] Softfloat differential with recorded seeds passes before integration.
+- [ ] Per-block ALMs known from the hierarchy report; aligner, adder/LZC and rounder instantiated once.
+- [ ] FPRs in MLAB/M10K without reset; multiplier fed from held operand registers.
+- [ ] Any variable-latency or longer-latency unit sits behind a named, documented parameter.
