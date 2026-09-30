@@ -718,6 +718,8 @@ module ppc_special #(
     end else if (state_q == S_MEM_RESULT) begin
       result_valid_o = 1'b1;
       result_o = memory_result_q;
+      // Equal to memory_result_q.producer; keeps the state out of the tag.
+      result_o.producer = producer_q;
     end
   end
 
@@ -1791,6 +1793,9 @@ module ppc_special #(
       if (exception_state_load_valid)
         assert (exception_state_load_ready)
           else $error("committing SRR state write was not accepted");
+      if (state_q == S_MEM_RESULT)
+        assert (memory_result_q.producer == producer_q)
+          else $error("memory result belongs to another producer");
       if (interrupt_q)
         assert (!cancel_i && !result_valid_o && !dmem_req_valid_o)
           else $error("selected interrupt acquired an instruction side effect");
