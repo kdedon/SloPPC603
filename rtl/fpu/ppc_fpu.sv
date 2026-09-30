@@ -1341,11 +1341,10 @@ module ppc_fpu #(
       store_o.size_bytes = (pv[0].decoded.mem_single ||
                             pv[0].decoded.mem_integer) ? 4'd4 : 4'd8;
       store_o.write = 1'b1;
-      store_o.data = pv[0].value;
-    end
-    if (pv[0].store_fill)
       store_o.data = store_data(pv[0].decoded.mem_integer,
-          pv[0].decoded.mem_single, reply_raw);
+          pv[0].decoded.mem_single,
+          pv[0].store_fill ? reply_raw : pv[0].value);
+    end
     store_valid_o = result_valid_o && head_result.store && commit_match;
     commit_ready_o = result_valid_o && commit_match &&
         (!head_result.store || store_ready_i);
@@ -1659,11 +1658,10 @@ module ppc_fpu #(
     work1_mem_req.size_bytes =
         (work1_decoded.mem_single || work1_decoded.mem_integer) ? 4'd4 : 4'd8;
     work1_mem_req.write = work1_decoded.mem_store;
-    // Store data reaches the LSU only in the authorized store descriptor.
-    // A source finishing this cycle is filled from the reply next cycle.
-    work1_mem_value = work1_decoded.mem_store ?
-        store_data(work1_decoded.mem_integer, work1_decoded.mem_single,
-                   work1_d.raw) : '0;
+    // Store data reaches the LSU only in the authorized store descriptor,
+    // which converts the raw source register held in the entry. A source
+    // finishing this cycle is filled from the reply next cycle.
+    work1_mem_value = work1_decoded.mem_store ? work1_d.raw : '0;
     work1_mem_fill = work1_decoded.mem_store && work1_d.fwd;
     work1_fire = (work1_arith_launch && arith_req_ready) ||
         (work1_mem_launch && mem_req_ready_i) || work1_local_launch;
@@ -1755,8 +1753,7 @@ module ppc_fpu #(
     mem_req_o.size_bytes = (work_decoded.mem_single || work_decoded.mem_integer) ?
         4'd4 : 4'd8;
     mem_req_o.write = work_decoded.mem_store;
-    mem_value = work_decoded.mem_store ? store_data(work_decoded.mem_integer,
-        work_decoded.mem_single, source_d.raw) : '0;
+    mem_value = work_decoded.mem_store ? source_d.raw : '0;
     mem_fill = work_decoded.mem_store && source_d.fwd;
     if (work1_mem_launch) mem_req_o = work1_mem_req;
     mem_req_valid_o = mem_launch || work1_mem_launch;
@@ -2082,8 +2079,7 @@ module ppc_fpu #(
     // faults, so the fault information written below wins.
     for (integer i = 0; i < PENDING_DEPTH; i++)
       if (pending_q[i].store_fill) begin
-        pending_d[i].value = store_data(pending_q[i].decoded.mem_integer,
-            pending_q[i].decoded.mem_single, reply_raw);
+        pending_d[i].value = reply_raw;
         pending_d[i].store_fill = 1'b0;
       end
     if (mem_rsp_match && mem_rsp_ready_o) begin
