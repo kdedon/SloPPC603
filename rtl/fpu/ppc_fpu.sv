@@ -86,6 +86,38 @@ module ppc_fpu #(
     logic [63:0] raw;
     logic sp;
   } local_operand_t;
+  // Arithmetic status kept until retirement; the value lives in `value`.
+  typedef struct packed {
+    logic write_result;
+    logic [8:0] invalid;
+    logic ox;
+    logic ux;
+    logic zx;
+    logic xx;
+    logic fr;
+    logic fi;
+    logic frfi_valid;
+    logic [4:0] fprf;
+    logic fprf_valid;
+    logic [3:0] fpcc;
+    logic compare_valid;
+    logic tiny_before_round;
+  } arith_flags_t;
+  // Result disposition. Tag, indices and addresses come from the issue
+  // record; the one data word is in `value`.
+  typedef struct packed {
+    ppc_fpu_exception_t exception;
+    logic [3:0] fault_code;
+    logic fpr_write;
+    logic fpr_sp;
+    logic fpr_lt;
+    logic fpscr_write;
+    logic cr_write;
+    logic [2:0] cr_field;
+    logic [3:0] cr_value;
+    logic gpr_update;
+    logic store;
+  } status_t;
   typedef struct packed {
     logic valid;
     logic started;
@@ -94,13 +126,17 @@ module ppc_fpu #(
     logic dest_fpr;
     ppc_fpu_issue_t issue;
     decoded_t decoded;
-    ppc_fpu_result_t result;
-    ppc_fpu_arith_rsp_t arith;
+    logic [31:0] ea;
+    status_t st;
+    // FPR result, store data, fault information, proposed FPSCR or SPR
+    // read, by instruction kind.
+    logic [63:0] value;
+    arith_flags_t arith;
     logic arith_done;
     logic fpr_forwarded;
     logic cr_forwarded;
     logic [1:0] local_wait;
-    ppc_fpu_mem_t mem;
+    logic mem_write;
     logic store_fill;
   } pending_t;
   typedef struct packed {
@@ -273,6 +309,7 @@ module ppc_fpu #(
   logic mem_eligible;
   logic local_fpu_uses_pipe;
   ppc_fpu_result_t mem_incoming_result;
+  ppc_fpu_result_t local_result;
   logic commit_match;
   logic abort_match;
   work1_t work1_issue;
@@ -299,8 +336,8 @@ module ppc_fpu #(
   logic combined_arith_launch;
   ppc_fpu_arith_req_t work1_arith_req;
   ppc_fpu_mem_t work1_mem_req;
-  ppc_fpu_mem_t mem_pending;
-  ppc_fpu_mem_t work1_mem_pending;
+  logic [63:0] mem_value;
+  logic [63:0] work1_mem_value;
   logic mem_fill;
   logic work1_mem_fill;
   logic [63:0] reply_raw;
@@ -519,8 +556,52 @@ module ppc_fpu #(
     end
   endfunction
 
+  // Field extractors: each reads only part of its record.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic arith_flags_t flags_of(input ppc_fpu_arith_rsp_t ar);
+    arith_flags_t f;
+    f.write_result = ar.write_result;
+    f.invalid = ar.invalid;
+    f.ox = ar.ox;
+    f.ux = ar.ux;
+    f.zx = ar.zx;
+    f.xx = ar.xx;
+    f.fr = ar.fr;
+    f.fi = ar.fi;
+    f.frfi_valid = ar.frfi_valid;
+    f.fprf = ar.fprf;
+    f.fprf_valid = ar.fprf_valid;
+    f.fpcc = ar.fpcc;
+    f.compare_valid = ar.compare_valid;
+    f.tiny_before_round = ar.tiny_before_round;
+    return f;
+  endfunction
+
+  function automatic logic flags_trap(input arith_flags_t ar,
+                                      input logic [31:0] f);
+    return numeric_emulation_trap(ar.invalid, ar.ox, ar.ux, ar.zx, ar.xx,
+                                  ar.tiny_before_round, f[7:2]);
+  endfunction
+
+  function automatic logic [31:0] flags_fpscr(input logic [31:0] old_f,
+                                              input arith_flags_t ar);
+    return arithmetic_fpscr(old_f, ar.invalid, ar.ox, ar.ux, ar.zx, ar.xx,
+        ar.fr, ar.fi, ar.frfi_valid, ar.fprf, ar.fprf_valid, ar.fpcc,
+        ar.compare_valid);
+  endfunction
+
+  /* verilator lint_on UNUSEDSIGNAL */
+
+  // Stored format of the registered arithmetic reply.
+  function automatic logic [63:0] format_reply(input ppc_fpu_op_t op);
+    return CPU_602 ? {32'd0, (op == FP_FCTIWZ ? arith_rsp.result[31:0] :
+        reply_raw[31:0])} : arith_rsp.result;
+  endfunction
+
+  // `value` is the stored-format result (see format_reply).
   function automatic ppc_fpu_result_t numeric_result(
-      input ppc_fpu_result_t base, input ppc_fpu_arith_rsp_t ar,
+      input ppc_fpu_result_t base, input arith_flags_t ar,
+      input logic [63:0] value,
       input ppc_fpu_op_t op, input logic rc, input logic [2:0] cr_field,
       input logic fe0, input logic fe1, input logic [31:0] old_f
   );
@@ -528,22 +609,15 @@ module ppc_fpu #(
     logic [31:0] next_f;
     begin
       out = base;
-      out.tag = ar.tag;
-      next_f = arithmetic_fpscr(old_f, ar.invalid, ar.ox,
-          ar.ux, ar.zx, ar.xx, ar.fr,
-          ar.fi, ar.frfi_valid, ar.fprf,
-          ar.fprf_valid, ar.fpcc, ar.compare_valid);
-      if (numeric_emulation_trap(ar.invalid, ar.ox, ar.ux, ar.zx,
-                                 ar.xx, ar.tiny_before_round, old_f[7:2])) begin
+      next_f = flags_fpscr(old_f, ar);
+      if (flags_trap(ar, old_f)) begin
         out.exception = FPU_EMULATION_TRAP;
         out.fpr_write = 1'b0;
         out.fpscr_write = 1'b0;
         out.cr_write = 1'b0;
       end else begin
         out.fpr_write = ar.write_result;
-        out.fpr_value = CPU_602 ?
-            {32'd0, (op == FP_FCTIWZ ? ar.result[31:0] :
-              narrow_single(ar.result))} : ar.result;
+        out.fpr_value = value;
         out.fpr_sp = CPU_602 && op != FP_FCTIWZ;
         out.fpr_lt = CPU_602 && op == FP_FCTIWZ;
         out.fpscr_write = 1'b1;
@@ -558,6 +632,77 @@ module ppc_fpu #(
       return out;
     end
   endfunction
+
+  function automatic pending_t new_entry(input ppc_fpu_issue_t is,
+                                         input decoded_t d,
+                                         input logic [31:0] ea);
+    pending_t e;
+    e = '0;
+    e.valid = 1'b1;
+    e.issue = is;
+    e.decoded = d;
+    e.dest_fpr = writes_fpr(d.kind, d.op, d.mem_load);
+    e.ea = ea;
+    e.st.gpr_update = d.kind == DK_MEMORY && d.mem_update;
+    e.st.cr_field = is.insn[25:23];
+    return e;
+  endfunction
+
+  /* verilator lint_off UNUSEDSIGNAL */
+  // Full result view of a pending entry.
+  function automatic ppc_fpu_result_t entry_result(input pending_t p);
+    ppc_fpu_result_t r;
+    logic spr_read;
+    begin
+      spr_read = CPU_602 && p.decoded.kind == DK_MFSPR;
+      r.tag = p.issue.tag;
+      r.exception = p.st.exception;
+      r.ea = p.ea;
+      r.fault_code = p.st.fault_code;
+      r.fault_info = p.st.exception == FPU_MEMORY_FAULT ? p.value[31:0] : '0;
+      r.fpr_index = p.issue.insn[25:21];
+      r.fpr_write = p.st.fpr_write;
+      r.fpr_value = p.st.fpr_write ? p.value : '0;
+      r.fpr_sp = p.st.fpr_sp;
+      r.fpr_lt = p.st.fpr_lt;
+      r.fpscr_write = p.st.fpscr_write;
+      r.fpscr_value = p.st.fpscr_write ? p.value[31:0] : '0;
+      r.cr_write = p.st.cr_write;
+      r.cr_field = p.st.cr_field;
+      r.cr_value = p.st.cr_value;
+      r.gpr_update = p.st.gpr_update;
+      r.gpr_index = spr_read ? p.issue.insn[25:21] : p.issue.insn[20:16];
+      r.gpr_value = spr_read ? p.value[31:0] : p.ea;
+      r.store = p.st.store;
+      return r;
+    end
+  endfunction
+
+  function automatic status_t status_of(input ppc_fpu_result_t r);
+    status_t st;
+    st.exception = r.exception;
+    st.fault_code = r.fault_code;
+    st.fpr_write = r.fpr_write;
+    st.fpr_sp = r.fpr_sp;
+    st.fpr_lt = r.fpr_lt;
+    st.fpscr_write = r.fpscr_write;
+    st.cr_write = r.cr_write;
+    st.cr_field = r.cr_field;
+    st.cr_value = r.cr_value;
+    st.gpr_update = r.gpr_update;
+    st.store = r.store;
+    return st;
+  endfunction
+
+  // The one data word a result keeps.
+  function automatic logic [63:0] value_of(input decode_kind_t kind,
+                                           input ppc_fpu_result_t r);
+    if (r.exception == FPU_MEMORY_FAULT) return {32'd0, r.fault_info};
+    if (kind == DK_MTFS || kind == DK_MCRFS) return {32'd0, r.fpscr_value};
+    if (CPU_602 && kind == DK_MFSPR) return {32'd0, r.gpr_value};
+    return r.fpr_value;
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
 
   function automatic source_t read_source(input logic [4:0] reg_index,
                                           input logic [FPR_BITS-1:0] stored,
@@ -580,12 +725,12 @@ module ppc_fpu #(
         if (newest[i]) begin
           s.ready = 1'b0;
           if ((pending_q[i].done || pending_q[i].local_wait == 2'd1) &&
-              pending_q[i].result.fpr_write &&
-              pending_q[i].result.exception == FPU_NO_EXCEPTION) begin
+              pending_q[i].st.fpr_write &&
+              pending_q[i].st.exception == FPU_NO_EXCEPTION) begin
             s.ready = 1'b1;
-            s.raw = pending_q[i].result.fpr_value;
-            s.sp = pending_q[i].result.fpr_sp;
-            s.lt = pending_q[i].result.fpr_lt;
+            s.raw = pending_q[i].value;
+            s.sp = pending_q[i].st.fpr_sp;
+            s.lt = pending_q[i].st.fpr_lt;
           end else if (pending_q[i].finishing && arith_finish_write) begin
             // The value exists only at the arithmetic input and local-stage
             // forward points; other consumers wait for the registered reply.
@@ -602,10 +747,7 @@ module ppc_fpu #(
                            arith_rsp.tiny_before_round, fpscr_q[7:2]) &&
                        arith_rsp.write_result) begin
             s.ready = 1'b1;
-            s.raw = CPU_602 ?
-                {32'd0, (pending_q[i].decoded.op == FP_FCTIWZ ?
-                  arith_rsp.result[31:0] : narrow_single(arith_rsp.result))} :
-                arith_rsp.result;
+            s.raw = format_reply(pending_q[i].decoded.op);
             s.sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
             s.lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
           end else if (mem_rsp_match && mem_rsp_slot == PENDING_IDX_BITS'(i) &&
@@ -748,6 +890,7 @@ module ppc_fpu #(
             if (!single_fits_double(reply.data)) begin
               r.exception = FPU_EMULATION_TRAP;
               r.fpr_write = 1'b0;
+              r.fpr_value = '0;
               r.gpr_update = 1'b0;
             end else r.fpr_value = {32'd0,narrow_single(reply.data)};
           end
@@ -1011,21 +1154,24 @@ module ppc_fpu #(
   end
 
   always_comb begin
+    ppc_fpu_result_t head_base;
     head_result = '0;
+    head_base = entry_result(pv[0]);
     head_available = pending_count_q != 3'd0 && pv[0].valid;
     if (head_available) begin
-      head_result = pv[0].result;
+      head_result = head_base;
       if ((pv[0].decoded.kind == DK_MOVE ||
            pv[0].decoded.kind == DK_FSEL) && head_result.cr_write)
         head_result.cr_value = fpscr_q[31:28];
       if (pv[0].decoded.kind == DK_ARITH) begin
         if (pv[0].arith_done)
-          head_result = numeric_result(pv[0].result, pv[0].arith,
+          head_result = numeric_result(head_base, pv[0].arith, pv[0].value,
               pv[0].decoded.op, pv[0].issue.insn[0],
               pv[0].issue.insn[25:23],
               pv[0].issue.msr_fe0, pv[0].issue.msr_fe1, fpscr_q);
         else if (arith_rsp_head) begin
-          head_result = numeric_result(pv[0].result, arith_rsp,
+          head_result = numeric_result(head_base, flags_of(arith_rsp),
+              format_reply(pv[0].decoded.op),
               pv[0].decoded.op, pv[0].issue.insn[0],
               pv[0].issue.insn[25:23],
               pv[0].issue.msr_fe0,
@@ -1033,7 +1179,7 @@ module ppc_fpu #(
         end
       end else if (pv[0].decoded.kind == DK_MEMORY &&
                    mem_rsp_head) begin
-        head_result = memory_result(pv[0].result,
+        head_result = memory_result(head_base,
             pv[0].decoded.mem_load, pv[0].decoded.mem_single,
             mem_rsp_i);
       end
@@ -1052,10 +1198,10 @@ module ppc_fpu #(
     result_o = head_result;
     second_result = '0;
     if (pending_count_q > 3'd1 && pv[1].valid) begin
-      second_result = pv[1].result;
+      second_result = entry_result(pv[1]);
       if (pv[1].decoded.kind == DK_MEMORY &&
           mem_rsp_second)
-        second_result = memory_result(pv[1].result,
+        second_result = memory_result(entry_result(pv[1]),
             pv[1].decoded.mem_load,
             pv[1].decoded.mem_single, mem_rsp_i);
     end
@@ -1070,7 +1216,15 @@ module ppc_fpu #(
         second_result.exception == FPU_NO_EXCEPTION &&
         second_result.fpr_write;
     result1_o = second_result;
-    store_o = pv[0].mem;
+    store_o = '0;
+    if (pv[0].mem_write) begin
+      store_o.tag = pv[0].issue.tag;
+      store_o.ea = pv[0].ea;
+      store_o.size_bytes = (pv[0].decoded.mem_single ||
+                            pv[0].decoded.mem_integer) ? 4'd4 : 4'd8;
+      store_o.write = 1'b1;
+      store_o.data = pv[0].value;
+    end
     if (pv[0].store_fill)
       store_o.data = store_data(pv[0].decoded.mem_integer,
           pv[0].decoded.mem_single, reply_raw);
@@ -1141,7 +1295,7 @@ module ppc_fpu #(
       work_issue.msr_fe1 = pending_q[exec_slot].issue.msr_fe1;
       work_issue.msr_pr = pending_q[exec_slot].issue.msr_pr;
       work_decoded = pending_q[exec_slot].decoded;
-      work_ea = pending_q[exec_slot].result.ea;
+      work_ea = pending_q[exec_slot].ea;
       work_valid = 1'b1;
     end else if (issue_valid_i) begin
       work_issue.tag = issue_i.tag;
@@ -1252,7 +1406,7 @@ module ppc_fpu #(
       work1_issue.insn = pending_q[second_exec_slot].issue.insn;
       work1_issue.msr_fp = pending_q[second_exec_slot].issue.msr_fp;
       work1_decoded = pending_q[second_exec_slot].decoded;
-      work1_ea = pending_q[second_exec_slot].result.ea;
+      work1_ea = pending_q[second_exec_slot].ea;
       work1_valid = 1'b1;
       work1_old = 1'b1;
       work1_old_slot = second_exec_slot;
@@ -1410,9 +1564,9 @@ module ppc_fpu #(
     work1_mem_req.write = work1_decoded.mem_store;
     // Store data reaches the LSU only in the authorized store descriptor.
     // A source finishing this cycle is filled from the reply next cycle.
-    work1_mem_pending = work1_mem_req;
-    work1_mem_pending.data = store_data(work1_decoded.mem_integer,
-        work1_decoded.mem_single, work1_d.raw);
+    work1_mem_value = work1_decoded.mem_store ?
+        store_data(work1_decoded.mem_integer, work1_decoded.mem_single,
+                   work1_d.raw) : '0;
     work1_mem_fill = work1_decoded.mem_store && work1_d.fwd;
     work1_fire = (work1_arith_launch && arith_req_ready) ||
         (work1_mem_launch && mem_req_ready_i) || work1_local_launch;
@@ -1486,9 +1640,8 @@ module ppc_fpu #(
     mem_req_o.size_bytes = (work_decoded.mem_single || work_decoded.mem_integer) ?
         4'd4 : 4'd8;
     mem_req_o.write = work_decoded.mem_store;
-    mem_pending = mem_req_o;
-    mem_pending.data = store_data(work_decoded.mem_integer,
-        work_decoded.mem_single, source_d.raw);
+    mem_value = work_decoded.mem_store ? store_data(work_decoded.mem_integer,
+        work_decoded.mem_single, source_d.raw) : '0;
     mem_fill = work_decoded.mem_store && source_d.fwd;
     if (work1_mem_launch) mem_req_o = work1_mem_req;
     mem_req_valid_o = mem_launch || work1_mem_launch;
@@ -1728,62 +1881,69 @@ module ppc_fpu #(
         pending_d[forward1_slot].cr_forwarded = 1'b1;
     end
     mem_incoming_result = '0;
+    local_result = '0;
     if (arith_rsp_match) begin
-      pending_d[arith_rsp_slot].arith = arith_rsp;
+      pending_d[arith_rsp_slot].arith = flags_of(arith_rsp);
       pending_d[arith_rsp_slot].arith_done = 1'b1;
       pending_d[arith_rsp_slot].done = 1'b1;
-      if (numeric_emulation_trap(arith_rsp.invalid, arith_rsp.ox,
-          arith_rsp.ux, arith_rsp.zx, arith_rsp.xx,
-          arith_rsp.tiny_before_round, fpscr_q[7:2]))
-        pending_d[arith_rsp_slot].result.exception = FPU_EMULATION_TRAP;
+      if (flags_trap(flags_of(arith_rsp), fpscr_q))
+        pending_d[arith_rsp_slot].st.exception = FPU_EMULATION_TRAP;
       else begin
-        pending_d[arith_rsp_slot].result.fpr_write = arith_rsp.write_result;
-        pending_d[arith_rsp_slot].result.fpr_value = CPU_602 ?
-            {32'd0,(pending_q[arith_rsp_slot].decoded.op == FP_FCTIWZ ?
-              arith_rsp.result[31:0] : narrow_single(arith_rsp.result))} :
-            arith_rsp.result;
-        pending_d[arith_rsp_slot].result.fpr_sp =
+        pending_d[arith_rsp_slot].st.fpr_write = arith_rsp.write_result;
+        pending_d[arith_rsp_slot].value =
+            format_reply(pending_q[arith_rsp_slot].decoded.op);
+        pending_d[arith_rsp_slot].st.fpr_sp =
             CPU_602 && pending_q[arith_rsp_slot].decoded.op != FP_FCTIWZ;
-        pending_d[arith_rsp_slot].result.fpr_lt =
+        pending_d[arith_rsp_slot].st.fpr_lt =
             CPU_602 && pending_q[arith_rsp_slot].decoded.op == FP_FCTIWZ;
       end
     end
+    // A store filled from the reply keeps no data once its preparation
+    // faults, so the fault information written below wins.
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      if (pending_q[i].store_fill) begin
+        pending_d[i].value = store_data(pending_q[i].decoded.mem_integer,
+            pending_q[i].decoded.mem_single, reply_raw);
+        pending_d[i].store_fill = 1'b0;
+      end
     if (mem_rsp_match && mem_rsp_ready_o) begin
-      mem_incoming_result = memory_result(pending_q[mem_rsp_slot].result,
+      mem_incoming_result = memory_result(entry_result(pending_q[mem_rsp_slot]),
           pending_q[mem_rsp_slot].decoded.mem_load,
           pending_q[mem_rsp_slot].decoded.mem_single, mem_rsp_i);
-      pending_d[mem_rsp_slot].result = mem_incoming_result;
+      pending_d[mem_rsp_slot].st = status_of(mem_incoming_result);
+      if (mem_rsp_i.fault || pending_q[mem_rsp_slot].decoded.mem_load)
+        pending_d[mem_rsp_slot].value =
+            value_of(DK_MEMORY, mem_incoming_result);
       pending_d[mem_rsp_slot].done = 1'b1;
     end
     if (exec_found && exec_fire) begin
       pending_d[exec_slot].started = 1'b1;
       if (local_launch) begin
-        pending_d[exec_slot].result = exec_result;
+        pending_d[exec_slot].st = status_of(exec_result);
+        pending_d[exec_slot].value = value_of(work_decoded.kind, exec_result);
         pending_d[exec_slot].local_wait = local_latency(work_decoded.kind);
       end else if (mem_launch) begin
-        pending_d[exec_slot].mem = mem_pending;
+        pending_d[exec_slot].mem_write = work_decoded.mem_store;
+        pending_d[exec_slot].value = mem_value;
         pending_d[exec_slot].store_fill = mem_fill;
-        pending_d[exec_slot].result = exec_result;
+        pending_d[exec_slot].st = status_of(exec_result);
       end
     end
     if (work1_old && work1_fire) begin
       pending_d[work1_old_slot].started = 1'b1;
       if (work1_local_launch) begin
-        pending_d[work1_old_slot].result = work1_result;
+        pending_d[work1_old_slot].st = status_of(work1_result);
+        pending_d[work1_old_slot].value =
+            value_of(work1_decoded.kind, work1_result);
         pending_d[work1_old_slot].local_wait =
             local_latency(work1_decoded.kind);
       end else if (work1_mem_launch) begin
-        pending_d[work1_old_slot].mem = work1_mem_pending;
+        pending_d[work1_old_slot].mem_write = work1_decoded.mem_store;
+        pending_d[work1_old_slot].value = work1_mem_value;
         pending_d[work1_old_slot].store_fill = work1_mem_fill;
-        pending_d[work1_old_slot].result = work1_result;
+        pending_d[work1_old_slot].st = status_of(work1_result);
       end
     end
-    for (integer i = 0; i < PENDING_DEPTH; i++)
-      if (pending_q[i].store_fill) begin
-        pending_d[i].mem.data = store_data(pending_q[i].decoded.mem_integer,
-            pending_q[i].decoded.mem_single, reply_raw);
-        pending_d[i].store_fill = 1'b0;
-      end
     for (integer i = 0; i < PENDING_DEPTH; i++)
       if (pending_q[i].valid &&
           pending_q[i].started && !pending_q[i].done &&
@@ -1792,12 +1952,15 @@ module ppc_fpu #(
             local_stage_q.tag == pending_q[i].issue.tag &&
             pending_q[i].local_wait == 2'd3 &&
             (pending_q[i].decoded.kind == DK_MOVE ||
-             pending_q[i].decoded.kind == DK_FSEL))
-          pending_d[i].result = finish_local_data(pending_q[i].result,
+             pending_q[i].decoded.kind == DK_FSEL)) begin
+          local_result = finish_local_data(entry_result(pending_q[i]),
               local_stage_q.move_kind,
               pending_q[i].decoded.kind == DK_MOVE,
               pending_q[i].issue.insn[0],
               local_a, local_b, local_c, local_stage_q.c_lt);
+          pending_d[i].st = status_of(local_result);
+          pending_d[i].value = local_result.fpr_value;
+        end
         pending_d[i].local_wait = pending_q[i].local_wait - 2'd1;
         if (pending_q[i].local_wait == 2'd1) pending_d[i].done = 1'b1;
       end
@@ -1806,71 +1969,51 @@ module ppc_fpu #(
     head_d = slot_of(head_q, 3'(retire_count));
     pending_count_d = after_retire_count;
     if (dispatch_fire) begin
-      pending_d[tail_q] = '0;
-      pending_d[tail_q].valid = 1'b1;
-      pending_d[tail_q].issue = issue_i;
-      pending_d[tail_q].decoded = decoded;
-      pending_d[tail_q].dest_fpr =
-          writes_fpr(decoded.kind, decoded.op, decoded.mem_load);
-      pending_d[tail_q].result.tag = issue_i.tag;
-      pending_d[tail_q].result.ea = issue_ea;
-      pending_d[tail_q].result.fpr_index = issue_i.insn[25:21];
-      pending_d[tail_q].result.gpr_index = issue_i.insn[20:16];
-      pending_d[tail_q].result.gpr_value = issue_ea;
-      pending_d[tail_q].result.gpr_update =
-          decoded.kind == DK_MEMORY && decoded.mem_update;
-      pending_d[tail_q].result.cr_field = issue_i.insn[25:23];
+      pending_d[tail_q] = new_entry(issue_i, decoded, issue_ea);
       if (work_dispatch && exec_fire) begin
         pending_d[tail_q].started = 1'b1;
         if (local_launch) begin
-          pending_d[tail_q].result = exec_result;
+          pending_d[tail_q].st = status_of(exec_result);
+          pending_d[tail_q].value = value_of(work_decoded.kind, exec_result);
           pending_d[tail_q].local_wait =
               local_latency(work_decoded.kind);
         end else if (mem_launch) begin
-          pending_d[tail_q].mem = mem_pending;
+          pending_d[tail_q].mem_write = work_decoded.mem_store;
+          pending_d[tail_q].value = mem_value;
           pending_d[tail_q].store_fill = mem_fill;
-          pending_d[tail_q].result = exec_result;
+          pending_d[tail_q].st = status_of(exec_result);
         end
       end
       if (exec_found && work1_fire) begin
         pending_d[tail_q].started = 1'b1;
         if (work1_local_launch) begin
-          pending_d[tail_q].result = work1_result;
+          pending_d[tail_q].st = status_of(work1_result);
+          pending_d[tail_q].value = value_of(work1_decoded.kind, work1_result);
           pending_d[tail_q].local_wait =
               local_latency(work1_decoded.kind);
         end else if (work1_mem_launch) begin
-          pending_d[tail_q].mem = work1_mem_pending;
+          pending_d[tail_q].mem_write = work1_decoded.mem_store;
+          pending_d[tail_q].value = work1_mem_value;
           pending_d[tail_q].store_fill = work1_mem_fill;
-          pending_d[tail_q].result = work1_result;
+          pending_d[tail_q].st = status_of(work1_result);
         end
       end
       pending_count_d = after_retire_count + 3'd1;
     end
     if (dispatch1_fire) begin
-      pending_d[tail1_q] = '0;
-      pending_d[tail1_q].valid = 1'b1;
-      pending_d[tail1_q].issue = issue1_i;
-      pending_d[tail1_q].decoded = decoded1;
-      pending_d[tail1_q].dest_fpr =
-          writes_fpr(decoded1.kind, decoded1.op, decoded1.mem_load);
-      pending_d[tail1_q].result.tag = issue1_i.tag;
-      pending_d[tail1_q].result.ea = issue1_ea;
-      pending_d[tail1_q].result.fpr_index = issue1_i.insn[25:21];
-      pending_d[tail1_q].result.gpr_index = issue1_i.insn[20:16];
-      pending_d[tail1_q].result.gpr_value = issue1_ea;
-      pending_d[tail1_q].result.gpr_update =
-          decoded1.kind == DK_MEMORY && decoded1.mem_update;
-      pending_d[tail1_q].result.cr_field = issue1_i.insn[25:23];
+      pending_d[tail1_q] = new_entry(issue1_i, decoded1, issue1_ea);
       if (work1_fire) begin
         pending_d[tail1_q].started = 1'b1;
         if (work1_local_launch) begin
-          pending_d[tail1_q].result = work1_result;
+          pending_d[tail1_q].st = status_of(work1_result);
+          pending_d[tail1_q].value = value_of(work1_decoded.kind, work1_result);
           pending_d[tail1_q].local_wait =
               local_latency(work1_decoded.kind);
         end else if (work1_mem_launch) begin
-          pending_d[tail1_q].mem = work1_mem_pending;
+          pending_d[tail1_q].mem_write = work1_decoded.mem_store;
+          pending_d[tail1_q].value = work1_mem_value;
           pending_d[tail1_q].store_fill = work1_mem_fill;
-          pending_d[tail1_q].result = work1_result;
+          pending_d[tail1_q].st = status_of(work1_result);
         end
       end
       pending_count_d = after_retire_count + 3'd2;
@@ -2004,7 +2147,8 @@ module ppc_fpu #(
   always_comb begin
     forward_candidate_t candidate;
     logic reply_candidate;
-    ppc_fpu_arith_rsp_t ar;
+    arith_flags_t ar;
+    logic [63:0] ar_value;
     logic [31:0] candidate_fpscr;
     logic candidate_exception;
     logic arith_metadata_valid;
@@ -2013,6 +2157,7 @@ module ppc_fpu #(
     logic ready;
     candidate = '0;
     ar = '0;
+    ar_value = '0;
     candidate_fpscr = '0;
     candidate_exception = 1'b0;
     arith_metadata_valid = 1'b0;
@@ -2036,48 +2181,44 @@ module ppc_fpu #(
         reply_candidate = 1'b0;
         candidate = '0;
         candidate.tag = pv[i].issue.tag;
-        candidate.fpr_index = pv[i].result.fpr_index;
-        candidate.fpr_write = pv[i].result.fpr_write;
-        candidate.fpr_value = pv[i].result.fpr_value;
-        candidate.fpr_sp = pv[i].result.fpr_sp;
-        candidate.fpr_lt = pv[i].result.fpr_lt;
-        candidate.cr_write = pv[i].result.cr_write;
-        candidate.cr_field = pv[i].result.cr_field;
-        candidate.cr_value = pv[i].result.cr_value;
+        candidate.fpr_index = pv[i].issue.insn[25:21];
+        candidate.fpr_write = pv[i].st.fpr_write;
+        candidate.fpr_value = pv[i].value;
+        candidate.fpr_sp = pv[i].st.fpr_sp;
+        candidate.fpr_lt = pv[i].st.fpr_lt;
+        candidate.cr_write = pv[i].st.cr_write;
+        candidate.cr_field = pv[i].st.cr_field;
+        candidate.cr_value = pv[i].st.cr_value;
         if ((pv[i].decoded.kind == DK_MOVE ||
              pv[i].decoded.kind == DK_FSEL) && candidate.cr_write)
           candidate.cr_value = prefix_fpscr[31:28];
-        candidate_exception = pv[i].result.exception != FPU_NO_EXCEPTION &&
-            pv[i].result.exception != FPU_FP_ENABLED;
+        candidate_exception = pv[i].st.exception != FPU_NO_EXCEPTION &&
+            pv[i].st.exception != FPU_FP_ENABLED;
         if (pv[i].decoded.kind == DK_ARITH) begin
           ar = pv[i].arith;
+          ar_value = pv[i].value;
           arith_metadata_valid = pv[i].arith_done;
           if (!ready && arith_finish_valid && pv[i].finishing) begin
-            ar = arith_finish;
+            ar = flags_of(arith_finish);
             ready = 1'b1;
             arith_metadata_valid = 1'b1;
             reply_candidate = 1'b1;
           end else if (!ready && arith_rsp_match &&
                        arith_rsp.tag == pv[i].issue.tag) begin
-            ar = arith_rsp;
+            ar = flags_of(arith_rsp);
+            ar_value = format_reply(pv[i].decoded.op);
             ready = 1'b1;
             arith_metadata_valid = 1'b1;
           end
           if (arith_metadata_valid) begin
-            candidate.tag = ar.tag;
             candidate.reply = reply_candidate;
             candidate.prefix = prefix_fpscr;
             candidate.fctiwz = pv[i].decoded.op == FP_FCTIWZ;
-            candidate_exception = numeric_emulation_trap(ar.invalid, ar.ox,
-                ar.ux, ar.zx, ar.xx, ar.tiny_before_round, prefix_fpscr[7:2]);
-            candidate_fpscr = arithmetic_fpscr(prefix_fpscr, ar.invalid,
-                ar.ox, ar.ux, ar.zx, ar.xx, ar.fr, ar.fi, ar.frfi_valid,
-                ar.fprf, ar.fprf_valid, ar.fpcc, ar.compare_valid);
+            candidate_exception = flags_trap(ar, prefix_fpscr);
+            candidate_fpscr = flags_fpscr(prefix_fpscr, ar);
             candidate.fpr_write = (reply_candidate ? arith_finish_write :
                 ar.write_result) && !candidate_exception;
-            candidate.fpr_value = CPU_602 ?
-                {32'd0,(pv[i].decoded.op == FP_FCTIWZ ? ar.result[31:0] :
-                 narrow_single(ar.result))} : ar.result;
+            candidate.fpr_value = ar_value;
             candidate.fpr_sp = CPU_602 && pv[i].decoded.op != FP_FCTIWZ;
             candidate.fpr_lt = CPU_602 && pv[i].decoded.op == FP_FCTIWZ;
             candidate.cr_write = !candidate_exception &&
