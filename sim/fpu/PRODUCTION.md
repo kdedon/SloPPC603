@@ -7,6 +7,50 @@ the manuals' per-instruction execution latency and initiation interval,
 ordered forwarding and retirement, and 602 operand tags and emulation traps.
 Detailed `Recorded:` entries retain each result's exact source scope.
 
+## Enabled exceptions, clustered operands and host cross-check
+
+Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production
+lint-fpu-stream lint-fpu-dual`, commit `042eed5`, 2026-09-29. Pass. Prior
+counts unchanged: raw 603e 209,696 and 602 181,952 vectors, 0 mismatches;
+estimates 11,958/17,628; shell 910; 602 173; exact-timing 71/52; streams
+32/32/32; dual 32/24; flush/reset 4 and cancel-offset 76 per build; all four
+lint targets clean. Reference unit tests 22 (one new). New targets:
+
+- `test-fpu-arith-cluster` / `-602`: 40,000 and 22,000 exponent-clustered
+  vectors (cancellation, fused alignment Δ≤2, tiny, overflow, denormal) with
+  random RN and VE/OE/UE/ZE/NI, 0 mismatches, per-op latencies unchanged.
+- `test-fpu-enabled-603` / `-602`: 3,000 arithmetic instructions each through
+  the shell with random FPSCR enables (VE/OE/UE/ZE/XE, NI, RN), FE0/FE1 and
+  Rc; every enable raises an enabled exception in the set. 603e: 808
+  `FPU_FP_ENABLED` results, 188 suppressed writes;
+  exception kind, delivered or adjusted-exponent value, FPSCR proposal and
+  committed FPR/FPSCR and CR1 all match. 602: 1,075 emulation traps with no
+  FPR, FPSCR or CR effect; non-trapping results and SP/LT tags match.
+- The same benches' operand-binding phase: 640 (603e) and 648 (602) cases
+  of an older `fadd`/`fdiv` producer of fr3 with a younger `fmul`, load or
+  `fmr` producer, consumed by `fadd` or a store, over issue gaps 0–3 and load
+  delays up to 42 cycles. The consumer always receives the younger value;
+  148 cases had the older producer finish while the consumer waited. On
+  602, 8 cases abort a trapping `fadds` whose arithmetic and `stfs`
+  consumers are queued: no consumer result, no store preparation, state
+  unchanged, and execution resumes with the committed value.
+- `test-fpu-oracle-host`: the Python model against host binary64 arithmetic,
+  glibc `fma`/`fmaf`, double-to-float conversion and `lrint` in all four
+  rounding modes with exception flags: 1,408,506 comparisons, 0 mismatches.
+
+Found and fixed: the oracle set VXISI for a fused operation with a NaN
+factor and an infinite addend; the product is NaN, so PEM gives a quiet NaN
+without an invalid cause. The RTL was already correct. No RTL bug was found.
+
+This does not establish SRR0/SRR1 formation: the core maps
+`FPU_FP_ENABLED` to the program vector with SRR1[11] and does not yet
+integrate the FPU. Berkeley SoftFloat/TestFloat cross-checking was not run
+(building fetched third-party code needs the user's approval); the host
+check covers the same operations except directed-mode binary32 fused
+results already covered by `fmaf`. Infinity times zero plus a quiet NaN is
+excluded from the host invalid-flag comparison: IEEE leaves it to the
+implementation and PEM §3.3.6.1.1 makes it VXIMZ.
+
 ## Circular pending queue, late issue readiness, add and rounding terms
 
 Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production
@@ -26,8 +70,8 @@ This establishes that the circular queue, the late-selected issue readiness,
 the reordered add-stage exponent and tiny terms and the carry-selected
 rounding exponent reproduce every checked result, forward, retirement and
 cycle of the previous RTL. It does not establish fitted timing, or directed
-coverage of a 602 consumer of a trapping finishing value (its younger work is
-aborted by the trap).
+coverage of a 602 consumer of a trapping finishing value (added in the next
+round above).
 
 ## Store data, forward payload and unnormalized stage 1
 
