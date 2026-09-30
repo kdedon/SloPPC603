@@ -15,7 +15,6 @@ module ppc_fpu_adder (
     input  logic [1:0] rn_i,
     input  logic single_i,
     output ppc_fpu_arith_pkg::finite_sum_t sum_o,
-    output logic [7:0] normal_left_shift_o,
     output logic [7:0] leading_zero_o,
     output logic signed [15:0] exponent_up_o,
     output logic signed [15:0] scaled_up_o,
@@ -37,7 +36,6 @@ module ppc_fpu_adder (
     always_comb begin
         result = '0;
         sum_o = '0;
-        normal_left_shift_o = '0;
         leading_zero_o = '0;
         exponent_up_o = '0;
         scaled_up_o = '0;
@@ -57,8 +55,6 @@ module ppc_fpu_adder (
             exponent_from_min = exponent_i - min_exponent;
             // A carry into bit 159 has count zero and a zero sum count 160.
             leading_zero_o = result.leading_zero;
-            normal_left_shift_o = result.finite_value.magnitude[159] ?
-                8'd0 : (result.leading_zero - 8'd1);
             exponent_up_o = exponent_i + 16'sd1;
             scaled_up_o = exponent_i + 16'sd1 +
                 (single_i ? 16'sd192 : 16'sd1536);

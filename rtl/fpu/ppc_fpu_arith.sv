@@ -55,7 +55,6 @@ module ppc_fpu_arith #(
     finite_operands_t in_operands;
     align_plan_t shared_plan;
     finite_sum_t add_sum;
-    logic [7:0] add_normal_left_shift;
     logic [7:0] add_leading_zero;
     logic signed [15:0] add_exponent_up;
     logic signed [15:0] add_scaled_up;
@@ -177,7 +176,6 @@ module ppc_fpu_arith #(
         .rn_i(aligned_q.req.rn),
         .single_i(add_single),
         .sum_o(add_sum),
-        .normal_left_shift_o(add_normal_left_shift),
         .leading_zero_o(add_leading_zero),
         .exponent_up_o(add_exponent_up),
         .scaled_up_o(add_scaled_up),
@@ -208,7 +206,6 @@ module ppc_fpu_arith #(
         add_next.special_rsp = aligned_q.special_rsp;
         add_next.conversion_parts = add_conversion_parts;
         add_next.sum = add_sum;
-        add_next.normal_left_shift = add_normal_left_shift;
         add_next.leading_zero = add_leading_zero;
         add_next.exponent_up = add_exponent_up;
         add_next.scaled_up = add_scaled_up;
@@ -221,7 +218,6 @@ module ppc_fpu_arith #(
     // Response stage.
     ppc_fpu_rounder #(.CPU_602(CPU_602)) rounder (
         .sum_i(add_q.sum),
-        .normal_left_shift_i(add_q.normal_left_shift),
         .leading_zero_i(add_q.leading_zero),
         .exponent_up_i(add_q.exponent_up),
         .scaled_up_i(add_q.scaled_up),

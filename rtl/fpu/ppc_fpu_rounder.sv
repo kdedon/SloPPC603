@@ -6,7 +6,6 @@ module ppc_fpu_rounder #(
     parameter bit CPU_602 = 1'b0
 ) (
     input  ppc_fpu_arith_pkg::finite_sum_t sum_i,
-    input  logic [7:0] normal_left_shift_i,
     input  logic [7:0] leading_zero_i,
     input  logic signed [15:0] exponent_up_i,
     input  logic signed [15:0] scaled_up_i,
@@ -39,7 +38,7 @@ module ppc_fpu_rounder #(
     assign normal_exponent = tiny_before && ue_i ?
         exponent_scaled : exponent_plain;
 
-    assign rsp_o = round_finite(CPU_602, sum_i, normal_left_shift_i,
+    assign rsp_o = round_finite(CPU_602, sum_i, leading_zero_i,
         normal_exponent, tiny_before, denorm_shift_i, denorm_right_i,
         tag_i, op_i, single_i, rn_i, ni_i, oe_i, ue_i);
 endmodule

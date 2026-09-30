@@ -162,7 +162,6 @@ typedef struct packed {
     ppc_fpu_arith_rsp_t special_rsp;
     conv_parts_t conversion_parts;
     finite_sum_t sum;
-    logic [7:0] normal_left_shift;
     // The rounder resolves the exponent from the leading-zero count:
     // exponent + 1 and its scaled form, less the count, and tiny when the
     // count exceeds exponent - minimum + 1 (always when that is negative).
@@ -1344,20 +1343,26 @@ function automatic round_work_t direct_round_work(
     input finite_sum_t value,
     input logic single_result,
     input logic ue,
-    input logic [7:0] normal_left_shift,
+    input logic [7:0] leading_zero,
     input logic signed [15:0] normal_exponent,
     input logic tiny_before,
     input logic [7:0] denorm_shift,
     input logic denorm_right
 );
     round_work_t out;
+    logic [62:0] narrow_normal;
+    logic [110:0] wide_normal;
     logic signed [15:0] min_exp;
     out = '0;
     out.sign = value.sign;
     out.negate_final = value.negate_final;
     out.exponent = value.exponent;
     min_exp = single_result ? -16'sd126 : -16'sd1022;
-    if (value.magnitude == 160'd0) return out;
+    // Only a zero magnitude has count 160. A nonzero count puts the
+    // leading one at the top; the fixed one-bit right shift drops a zero.
+    if (leading_zero == 8'd160) return out;
+    narrow_normal = 63'((value.magnitude[159:96] << leading_zero) >> 1);
+    wide_normal = 111'((value.magnitude[159:48] << leading_zero) >> 1);
     out.tiny_before = tiny_before;
     if (narrow) begin
         if (out.tiny_before && !ue) begin
@@ -1369,7 +1374,7 @@ function automatic round_work_t direct_round_work(
         end else begin
             out.magnitude = value.magnitude[159] ?
                 {shift_right_jam64(value.magnitude[159:96], 8'd1), 96'd0} :
-                {value.magnitude[159:96] << normal_left_shift, 96'd0};
+                {1'b0, narrow_normal, 96'd0};
             out.exponent = normal_exponent;
         end
     end else if (out.tiny_before && !ue) begin
@@ -1381,7 +1386,7 @@ function automatic round_work_t direct_round_work(
     end else begin
         out.magnitude = value.magnitude[159] ?
             {shift_right_jam112(value.magnitude[159:48], 8'd1), 48'd0} :
-            {value.magnitude[159:48] << normal_left_shift, 48'd0};
+            {1'b0, wide_normal, 48'd0};
         out.exponent = normal_exponent;
     end
     return out;
@@ -1390,7 +1395,7 @@ endfunction
 function automatic ppc_fpu_arith_rsp_t round_finite(
     input logic cpu_602,
     input finite_sum_t value,
-    input logic [7:0] normal_left_shift,
+    input logic [7:0] leading_zero,
     input logic signed [15:0] normal_exponent,
     input logic tiny_before,
     input logic [7:0] denorm_shift,
@@ -1412,7 +1417,7 @@ function automatic ppc_fpu_arith_rsp_t round_finite(
         op == FP_FRES;
     normalized = value;
     work = direct_round_work(cpu_602, normalized, single_result, ue,
-        normal_left_shift, normal_exponent, tiny_before,
+        leading_zero, normal_exponent, tiny_before,
         denorm_shift, denorm_right);
     pre = prepare_round_mantissa(work, single_result, rn);
     post = round_mantissa(pre, single_result, oe, ue);

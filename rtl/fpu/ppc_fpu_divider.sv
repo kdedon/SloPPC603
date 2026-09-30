@@ -122,7 +122,6 @@ module ppc_fpu_divider #(
         if (divide_state_q != DIV_SPECIAL) begin
             round_o.finite = 1'b1;
             round_o.sum = div_sum_q;
-            round_o.normal_left_shift = div_lead ? 8'd0 : 8'd1;
             round_o.leading_zero = div_lead ? 8'd1 : 8'd2;
             round_o.exponent_up = div_sum_q.exponent + 16'sd1;
             round_o.scaled_up = div_sum_q.exponent + 16'sd1 +
