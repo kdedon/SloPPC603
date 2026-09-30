@@ -64,6 +64,7 @@ lint:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_BYTE_REVERSE=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_MISALIGNED_ACCESS=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_FPU=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(FPU_CORE_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc603e "-GENABLE_FPU=1'b1" $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_segment_registers $(SEGMENT_REGISTER_RTL)
@@ -1710,6 +1711,17 @@ test-chip-dcache-coherence-negative:
 	@echo "PASS: chip coherence negative controls rejected"
 .PHONY: test-chip-pins lint-chip
 test: test-chip-pins
+# The core FPU program, self-checking, on the package top with the data cache
+# enabled (FP accesses through the D-cache and 60x bus).
+.PHONY: test-chip-fpu
+FPU_CHIP_IMAGE := $(BUILD_DIR)/chip-fpu/program.hex
+FPU_CHIP_RANDOM ?= 40
+test-chip-fpu:
+	mkdir -p $(BUILD_DIR)/chip-fpu
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+CHIP_ENABLE_FPU=1 --top-module tb_chip_firmware --Mdir $(BUILD_DIR)/chip-fpu -I../tb $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_firmware.sv
+	python3 tools/fpu_core_program.py --chip-image $(FPU_CHIP_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CHIP_RANDOM)
+	./$(BUILD_DIR)/chip-fpu/Vtb_chip_firmware +IMAGE=$(FPU_CHIP_IMAGE) +TOHOST=fff3ff00 $(SIM_ARGS)
+
 test-chip-pins:
 	mkdir -p $(BUILD_DIR)/chip-pins
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins --Mdir $(BUILD_DIR)/chip-pins -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_pins.sv

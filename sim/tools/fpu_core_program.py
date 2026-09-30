@@ -11,6 +11,11 @@ generator, each with its own FPSCR, MSR[FE0/FE1] and Rc. Expected words come
 from the independent Python reference model; exception handlers log SRR0,
 SRR1, DAR, DSISR and the vector to memory. The latency section probes
 dispatch-to-retirement cycles of independent instructions.
+
+--chip-image writes a self-checking byte image for tb_chip_firmware instead:
+the program runs from the hard reset vector with the data cache enabled,
+compares every expected word itself and reports through the mailbox. It
+omits the DSI section, which needs a protected region.
 """
 import argparse
 from pathlib import Path
@@ -25,6 +30,15 @@ from production_vectors import widen  # noqa: E402
 RESET_PC = 0x1000
 DATA, RES, LOG, DONE = 0x40000, 0x50000, 0x60000, 0x70000
 PROT_LO, PROT_HI = 0x7F000, 0x7FFFC
+CHIP = False
+CHIP_BASE, CHIP_IMAGE_BYTES = 0xfff00000, 0x10000
+
+
+def use_chip_layout():
+    global CHIP, RESET_PC, DATA, RES, LOG, DONE
+    CHIP = True
+    RESET_PC, DATA = 0xfff01000, 0xfff0c000
+    RES, LOG, DONE = 0xfff10000, 0xfff20000, 0xfff3ff00
 MSR_FP, MSR_IP, FE0, FE1 = 0x2000, 0x40, 0x800, 0x100
 SRR1_ILLEGAL, SRR1_FP = 0x00080000, 0x00100000
 VECTORS = (0x300, 0x600, 0x700, 0x800)
@@ -201,6 +215,12 @@ def directed(p):
     p.li32(20, DATA)
     p.li32(31, PROT_LO)
     p.li32(30, DONE)
+    if CHIP:
+        # HID0[DCE]: FP accesses go through the data cache.
+        p.emit(x_form(31, 5, 1008 & 31, 1008 >> 5, 339))
+        p.emit(d_form(24, 5, 5, 0x4000))
+        p.emit(x_form(31, 5, 1008 & 31, 1008 >> 5, 467))
+        p.emit(x_form(19, 0, 0, 0, 150))
     zero = p.data(0)
     # Illegal outranks FP unavailable: a reserved field (fadd with frC) and
     # the unimplemented fsqrt, both with MSR[FP] = 0.
@@ -374,6 +394,12 @@ def directed(p):
         p.store_gpr(20, DATA)
     # DSI: protected load, store (store bit) and a doubleword whose second
     # word faults; an update form leaves its base.
+    if not CHIP:
+        dsi(p)
+    fp_enabled(p)
+
+
+def dsi(p):
     p.load_fpr(24, ONE)
     at = p.emit(d_form(50, 24, 31, 0))
     p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
@@ -383,6 +409,9 @@ def directed(p):
     p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
     p.store_fpr(24, ONE)
     p.store_gpr(31, PROT_LO)
+
+
+def fp_enabled(p):
     # FP enabled program exception from mtfsb1 with FE0|FE1 set; FPSCR keeps
     # the update.
     p.clear_fpscr()
@@ -461,8 +490,9 @@ def build(seed, count):
     directed(p)
     random_cases(p, rng, count)
     latency(p)
-    p.emit(d_form(36, 0, 30, 0))          # stw r0 to DONE ends the run
-    p.emit(18 << 26)                      # b .
+    if not CHIP:
+        p.emit(d_form(36, 0, 30, 0))      # stw r0 to DONE ends the run
+        p.emit(18 << 26)                  # b .
     for i, (vector, srr0, srr1, dar, dsisr) in enumerate(p.log):
         base = LOG + 20 * i
         p.expect(base, srr0)
@@ -471,24 +501,71 @@ def build(seed, count):
         p.expect(base + 12, dsisr or 0, 0 if dsisr is None else 0xffffffff)
         p.expect(base + 16, vector)
     p.expect(LOG + 20 * len(p.log) + 16, 0)
+    if CHIP:
+        self_check(p)
     return p
+
+
+def self_check(p):
+    """Compare every expected word; the mailbox gets 1, or 2 on a mismatch."""
+    p.probes = {}
+    p.words[0xfff00100] = (18 << 26) | ((RESET_PC - 0xfff00100) & 0x3fffffc)
+    branches = []
+    for addr, value, mask in p.expects:
+        if mask == 0:
+            continue
+        p.li32(6, addr)
+        p.emit(d_form(32, 5, 6, 0))
+        if mask != 0xffffffff:
+            p.li32(8, mask)
+            p.emit(x_form(31, 5, 5, 8, 28))
+        p.li32(7, value & mask)
+        p.emit(x_form(31, 0, 5, 7, 0))    # cmpw r5, r7
+        p.emit((16 << 26) | (12 << 21) | (2 << 16) | 8)
+        branches.append(p.emit(0))
+    for mailbox in (1, 2):
+        if mailbox == 2:
+            for at in branches:
+                p.words[at] = (18 << 26) | ((p.pc - at) & 0x3fffffc)
+        p.emit(d_form(14, 5, 0, mailbox))
+        p.emit(d_form(36, 5, 30, 0))
+        p.emit(x_form(31, 0, 0, 30, 86))  # dcbf 0, r30
+        p.emit(x_form(31, 0, 0, 0, 598))  # sync
+        p.emit(18 << 26)
+    assert p.pc <= DATA, 'code overlaps data'
+
+
+def write_chip_image(p, path):
+    image = bytearray(CHIP_IMAGE_BYTES)
+    for addr, word in p.words.items():
+        offset = addr - CHIP_BASE
+        assert 0 <= offset < CHIP_IMAGE_BYTES, hex(addr)
+        image[offset:offset + 4] = word.to_bytes(4, 'big')
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(''.join(f'{b:02x}\n' for b in image))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--image', required=True)
+    parser.add_argument('--image')
+    parser.add_argument('--chip-image')
     parser.add_argument('--seed', type=lambda s: int(s, 0), default=0x603e)
     parser.add_argument('--random', type=int, default=200)
     args = parser.parse_args()
+    if args.chip_image:
+        use_chip_layout()
     p = build(args.seed, args.random)
+    print(f'fpu_core_program: {len(p.words)} words, {len(p.expects)} expected, '
+          f'{len(p.log)} exceptions, {len(p.probes)} probes')
+    if args.chip_image:
+        write_chip_image(p, args.chip_image)
+        return
     lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0']
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]
     lines += [f'L {pc:08x} {cycles:x} 0' for pc, cycles in p.probes.items()]
     Path(args.image).parent.mkdir(parents=True, exist_ok=True)
     Path(args.image).write_text('\n'.join(lines) + '\n')
-    print(f'fpu_core_program: {len(p.words)} words, {len(p.expects)} expected, '
-          f'{len(p.log)} exceptions, {len(p.probes)} probes')
 
 
 if __name__ == '__main__':
