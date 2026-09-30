@@ -35,6 +35,38 @@ The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not 
 
 ## Recorded synthesis evidence
 
+### 602 forward pick after the finishing trap, fitted 602 and 603e
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full602fit`,
+`./quartus/fpu-production/synthesize.sh --docker fullfit`, commit `201b936`,
+2026-09-30. Exit zero each; one physical pin (`clk_i`), 20 ns clock,
+zero-delay virtual I/O.
+
+| Measure | 602 | 603e |
+|---|---:|---:|
+| Post-fit Fmax | 50.14 MHz | 50.45 MHz |
+| Worst setup slack at 20 ns | +0.056 ns | +0.177 ns |
+| `ppc_fpu:g_full.fpu` ALMs | 8,631 | 13,167 |
+| Total fitted ALMs | 10,168 | 14,711 |
+| Registers | 4,429 | 5,530 |
+| DSP blocks | 1 | 5 |
+
+The forward pickers now run twice, with and without the finishing slot, and
+the finishing reply's 602 trap selects between the results. The trap no
+longer passes through the eligible set and the oldest-slot pickers; its
+path to `fwd1_payload_q` went from −0.178 ns to +1.16 ns. The issue-word
+path (−0.118 ns at `cc540bd`) is off the worst list. 602 worst path: a
+pending entry's started flag into another entry's value word through the
+launch and store-fill selects (+0.056 ns). 603e worst path: the add-stage
+count through the rounder into the arithmetic operand register (+0.177 ns);
+the 603e logic is unchanged by this commit (the trap is constant there), so
+its drop from the 51.55 MHz noted in the plan is fitter variation over the
+batch 7 sources. Stage worst slacks, 602: aligned +3.48, add +1.59, divider
++1.53, response +3.19 ns; 603e: multiply +3.47, aligned +3.01, add +0.74,
+divider +0.20, response +0.45 ns. Both builds meet 50 MHz in this fit with
+under 0.2 ns margin; 66 MHz is not met. Cycle counts are unchanged
+(`test-fpu-timing-602` 52 responses, `test-fpu-timing-603` 71).
+
 ### 602 conversion and flush-gate paths, fitted 602
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker full602fit`,
