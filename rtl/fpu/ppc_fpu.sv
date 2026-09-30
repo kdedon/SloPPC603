@@ -81,6 +81,7 @@ module ppc_fpu #(
     logic [63:0] raw;
     logic sp;
     logic lt;
+    logic selb;
   } source_t;
   typedef struct packed {
     logic [63:0] raw;
@@ -223,6 +224,7 @@ module ppc_fpu #(
   completion_tag_t arith_next_finish_tag;
   logic [2:0] arith_req_fwd;
   local_operand_t local_a, local_b, local_c;
+  source_t slot_src [0:PENDING_DEPTH-1];
   logic [2:0] fpr_count_q;
   logic [2:0] fpr_count_d;
   logic barrier_q;
@@ -245,7 +247,10 @@ module ppc_fpu #(
   logic store_d_ready, work1_store_d_ready;
   logic src_a_sp, src_b_sp, src_c_sp, src_d_sp;
   logic src_b_lt, src_d_lt;
+  // Only operand a's fsel class is read.
+  /* verilator lint_off UNUSEDSIGNAL */
   source_t source_a, source_b, source_c, source_d;
+  /* verilator lint_on UNUSEDSIGNAL */
   logic use_a, use_b, use_c, use_d;
   logic select_b;
   logic operand_tags_ok;
@@ -315,7 +320,10 @@ module ppc_fpu #(
   logic work1_valid;
   logic work1_old;
   logic work1_admitted;
+  // Only operand a's fsel class is read.
+  /* verilator lint_off UNUSEDSIGNAL */
   source_t work1_a, work1_b, work1_c, work1_d;
+  /* verilator lint_on UNUSEDSIGNAL */
   logic work1_use_a, work1_use_b, work1_use_c, work1_use_d;
   logic work1_sources_ready;
   logic work1_tags_ok;
@@ -701,6 +709,18 @@ module ppc_fpu #(
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
 
+  // fsel takes frB when frA is a NaN or less than zero.
+  function automatic logic selects_b(input logic [63:0] v);
+    return CPU_602 ?
+        (((v[30:23] == 8'hff) && v[22:0] != 23'd0) ||
+         (v[31] && v[30:0] != 31'd0)) :
+        (((v[62:52] == 11'h7ff) && v[51:0] != 52'd0) ||
+         (v[63] && v[62:0] != 63'd0));
+  endfunction
+
+  // The youngest older pending writer supplies the operand; otherwise the
+  // register file does. Per-slot values and readiness are shared by all
+  // lookups (slot_src). Value bits of a source that is not ready are unused.
   function automatic source_t read_source(input logic [4:0] reg_index,
                                           input logic [FPR_BITS-1:0] stored,
                                           input logic [PENDING_DEPTH-1:0] older);
@@ -708,61 +728,21 @@ module ppc_fpu #(
     logic [PENDING_DEPTH-1:0] older_match;
     logic [PENDING_DEPTH-1:0] newest;
     begin
-      s = '0;
-      s.ready = 1'b1;
-      s.raw = {{(64-FPR_BITS){1'b0}}, stored};
-      s.sp = CPU_602 && sp_q[31-reg_index];
-      s.lt = CPU_602 && lt_q[31-reg_index];
       for (integer i = 0; i < PENDING_DEPTH; i++)
         older_match[i] = pending_q[i].valid && pending_q[i].dest_fpr &&
             pending_q[i].issue.insn[25:21] == reg_index &&
             older[i];
       newest = youngest_of(older_match);
-      for (integer i = 0; i < PENDING_DEPTH; i++) begin
-        if (newest[i]) begin
-          s.ready = 1'b0;
-          if ((pending_q[i].done || pending_q[i].local_wait == 2'd1) &&
-              pending_q[i].st.fpr_write &&
-              pending_q[i].st.exception == FPU_NO_EXCEPTION) begin
-            s.ready = 1'b1;
-            s.raw = pending_q[i].value;
-            s.sp = pending_q[i].st.fpr_sp;
-            s.lt = pending_q[i].st.fpr_lt;
-          end else if (pending_q[i].finishing && arith_finish_write) begin
-            // The value exists only at the arithmetic input and local-stage
-            // forward points; other consumers wait for the registered reply.
-            // A trapping value aborts every younger consumer before it
-            // commits, so only stores wait on the trap check.
-            s.ready = 1'b1;
-            s.fwd = 1'b1;
-            s.raw = '0;
-            s.sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
-            s.lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
-          end else if (arith_rsp_valid && arith_rsp.tag == pending_q[i].issue.tag &&
-                       !numeric_emulation_trap(arith_rsp.invalid, arith_rsp.ox,
-                           arith_rsp.ux, arith_rsp.zx, arith_rsp.xx,
-                           arith_rsp.tiny_before_round, fpscr_q[7:2]) &&
-                       arith_rsp.write_result) begin
-            s.ready = 1'b1;
-            s.raw = format_reply(pending_q[i].decoded.op);
-            s.sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
-            s.lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
-          end else if (mem_rsp_match && mem_rsp_slot == PENDING_IDX_BITS'(i) &&
-                       mem_rsp_i.tag == pending_q[i].issue.tag &&
-                       pending_q[i].decoded.kind == DK_MEMORY &&
-                       pending_q[i].decoded.mem_load && !mem_rsp_i.fault &&
-                       (!CPU_602 || pending_q[i].decoded.mem_single ||
-                        single_fits_double(mem_rsp_i.data))) begin
-            s.ready = 1'b1;
-            s.raw = CPU_602 ?
-                {32'd0,(pending_q[i].decoded.mem_single ?
-                  mem_rsp_i.data[31:0] : narrow_single(mem_rsp_i.data))} :
-                (pending_q[i].decoded.mem_single ?
-                  widen_single(mem_rsp_i.data[31:0]) : mem_rsp_i.data);
-            s.sp = CPU_602;
-            s.lt = 1'b0;
-          end
-        end
+      s = '0;
+      if (|newest) begin
+        for (integer i = 0; i < PENDING_DEPTH; i++)
+          if (newest[i]) s |= slot_src[i];
+      end else begin
+        s.ready = 1'b1;
+        s.raw = {{(64-FPR_BITS){1'b0}}, stored};
+        s.sp = CPU_602 && sp_q[31-reg_index];
+        s.lt = CPU_602 && lt_q[31-reg_index];
+        s.selb = selects_b(s.raw);
       end
       return s;
     end
@@ -1031,6 +1011,55 @@ module ppc_fpu #(
   always_comb begin
     pv[0] = pending_q[head_q];
     pv[1] = pending_q[head1_q];
+  end
+
+  // Operand view of each pending destination: its stored result, the
+  // finishing arithmetic value (taken at the operand registers), the
+  // registered arithmetic reply, or an arriving load.
+  always_comb begin
+    logic [63:0] load_value;
+    logic load_ok;
+    load_value = CPU_602 ?
+        {32'd0, (mem_rsp_i.data[31:0])} : widen_single(mem_rsp_i.data[31:0]);
+    load_ok = 1'b1;
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      slot_src[i] = '0;
+      slot_src[i].raw = pending_q[i].value;
+      slot_src[i].sp = pending_q[i].st.fpr_sp;
+      slot_src[i].lt = pending_q[i].st.fpr_lt;
+      if ((pending_q[i].done || pending_q[i].local_wait == 2'd1) &&
+          pending_q[i].st.fpr_write &&
+          pending_q[i].st.exception == FPU_NO_EXCEPTION) begin
+        slot_src[i].ready = 1'b1;
+      end else if (pending_q[i].finishing && arith_finish_write) begin
+        // A trapping value aborts every younger consumer before it
+        // commits, so only stores wait on the trap check.
+        slot_src[i].ready = 1'b1;
+        slot_src[i].fwd = 1'b1;
+        slot_src[i].raw = '0;
+        slot_src[i].sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
+        slot_src[i].lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
+      end else if (arith_rsp_valid && arith_rsp.tag == pending_q[i].issue.tag &&
+                   !flags_trap(flags_of(arith_rsp), fpscr_q) &&
+                   arith_rsp.write_result) begin
+        slot_src[i].ready = 1'b1;
+        slot_src[i].raw = format_reply(pending_q[i].decoded.op);
+        slot_src[i].sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
+        slot_src[i].lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
+      end else if (mem_rsp_match && mem_rsp_slot == PENDING_IDX_BITS'(i) &&
+                   mem_rsp_i.tag == pending_q[i].issue.tag &&
+                   pending_q[i].decoded.kind == DK_MEMORY &&
+                   pending_q[i].decoded.mem_load && !mem_rsp_i.fault) begin
+        load_ok = !CPU_602 || pending_q[i].decoded.mem_single ||
+            single_fits_double(mem_rsp_i.data);
+        slot_src[i].ready = load_ok;
+        slot_src[i].raw = pending_q[i].decoded.mem_single ? load_value :
+            CPU_602 ? {32'd0, narrow_single(mem_rsp_i.data)} : mem_rsp_i.data;
+        slot_src[i].sp = CPU_602;
+        slot_src[i].lt = 1'b0;
+      end
+      slot_src[i].selb = selects_b(slot_src[i].raw);
+    end
   end
 
   always_comb begin
@@ -1328,11 +1357,7 @@ module ppc_fpu #(
     use_b = 1'b0;
     use_c = 1'b0;
     use_d = 1'b0;
-    select_b = CPU_602 ?
-        (((src_a[30:23] == 8'hff) && src_a[22:0] != 23'd0) ||
-         (src_a[31] && src_a[30:0] != 31'd0)) :
-        (((src_a[62:52] == 11'h7ff) && src_a[51:0] != 52'd0) ||
-         (src_a[63] && src_a[62:0] != 63'd0));
+    select_b = source_a.selb;
     if (work_decoded.kind == DK_ARITH) begin
       use_a = !(work_decoded.op == FP_FRSP || work_decoded.op == FP_FCTIW ||
           work_decoded.op == FP_FCTIWZ || work_decoded.op == FP_FRES ||
@@ -1428,12 +1453,7 @@ module ppc_fpu #(
         work1_old ? second_older : {PENDING_DEPTH{1'b1}});
     work1_d_raw = work1_d.fwd ? finish_store_word : work1_d.raw[30:0];
     work1_store_d_ready = work1_d.ready && !(work1_d.fwd && finish_trap);
-    work1_select_b = CPU_602 ?
-        (((work1_a.raw[30:23] == 8'hff) && work1_a.raw[22:0] != 23'd0) ||
-         (work1_a.raw[31] && work1_a.raw[30:0] != 31'd0)) :
-        (((work1_a.raw[62:52] == 11'h7ff) &&
-          work1_a.raw[51:0] != 52'd0) ||
-         (work1_a.raw[63] && work1_a.raw[62:0] != 63'd0));
+    work1_select_b = work1_a.selb;
     work1_use_a = 1'b0;
     work1_use_b = 1'b0;
     work1_use_c = 1'b0;
@@ -1796,13 +1816,17 @@ module ppc_fpu #(
     end
   end
 
-  // Only one local FPU instruction can launch per edge. Capture its operands
-  // once, with the full producer tag, then resolve MOVE/FSEL data next edge.
+  // Only one local FPU instruction can launch per edge, and a work context
+  // holding a move or select excludes a second one. The operand registers
+  // load from that context every cycle; only the valid bit waits for launch.
   always_comb begin
-    local_stage_d = '0;
-    if (local_launch && (work_decoded.kind == DK_MOVE ||
-                         work_decoded.kind == DK_FSEL)) begin
-      local_stage_d.valid = 1'b1;
+    logic work_local;
+    work_local = work_decoded.kind == DK_MOVE || work_decoded.kind == DK_FSEL;
+    local_stage_d.valid =
+        (local_launch && work_local) ||
+        (work1_local_launch && (work1_decoded.kind == DK_MOVE ||
+                                work1_decoded.kind == DK_FSEL));
+    if (work_local) begin
       local_stage_d.tag = work_issue.tag;
       local_stage_d.move_kind = work_decoded.move_kind;
       local_stage_d.a.raw = source_a.raw;
@@ -1813,10 +1837,7 @@ module ppc_fpu #(
       local_stage_d.c.sp = source_c.sp;
       local_stage_d.c_lt = source_c.lt;
       local_stage_d.fwd = {source_c.fwd, source_b.fwd, source_a.fwd};
-    end else if (work1_local_launch &&
-                 (work1_decoded.kind == DK_MOVE ||
-                  work1_decoded.kind == DK_FSEL)) begin
-      local_stage_d.valid = 1'b1;
+    end else begin
       local_stage_d.tag = work1_issue.tag;
       local_stage_d.move_kind = work1_decoded.move_kind;
       local_stage_d.a.raw = work1_a.raw;
@@ -2055,7 +2076,8 @@ module ppc_fpu #(
       lt_q <= '0;
       deferred_abort_flush_q <= 1'b0;
     end else begin
-      local_stage_q <= kill_all_i ? '0 : local_stage_d;
+      local_stage_q <= local_stage_d;
+      local_stage_q.valid <= local_stage_d.valid && !kill_all_i;
       for (integer i = 0; i < PENDING_DEPTH; i++) pending_q[i] <= pending_d[i];
       pending_count_q <= pending_count_d;
       head_q <= head_d;
