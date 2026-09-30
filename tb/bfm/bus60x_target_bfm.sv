@@ -8,6 +8,8 @@ module bus60x_target_bfm #(
   parameter int MEM_BYTES = 256
 ) (
   input  logic        clk_i,
+  // High in the cycle that ends at a SYSCLK edge.
+  input  logic        bus_ce_i,
   input  logic        br_n_i,
   input  logic        abb_n_i,
   input  logic        abb_oe_i,
@@ -25,6 +27,18 @@ module bus60x_target_bfm #(
   output logic        drtry_n_o,
   output logic        tea_n_o
 );
+  // SYSCLK edges are the clk_i edges ending a cycle with bus_ce_i high. The
+  // model samples on them and drives after the next falling clk_i edge.
+  // bus_ce_i is read at the falling edge, so no rising-edge update races it.
+  logic ce_q = 1'b1, first_q = 1'b1;
+  always @(negedge clk_i) ce_q <= bus_ce_i;
+  always @(posedge clk_i) first_q <= ce_q;
+  task automatic bus_rise;
+    do @(posedge clk_i); while (!ce_q);
+  endtask
+  task automatic bus_fall;
+    do @(negedge clk_i); while (!first_q);
+  endtask
   logic [7:0] mem [0:MEM_BYTES-1];
   logic [31:0] captured_addr;
   integer index;
@@ -47,7 +61,7 @@ module bus60x_target_bfm #(
     integer cycle;
     begin
       for (cycle = 0; cycle < count; cycle = cycle + 1)
-        @(posedge clk_i);
+        bus_rise();
     end
   endtask
 
@@ -56,7 +70,7 @@ module bus60x_target_bfm #(
     begin
       cycle = 0;
       while (br_n_i && cycle < limit) begin
-        @(posedge clk_i);
+        bus_rise();
         cycle = cycle + 1;
       end
       if (br_n_i)
@@ -74,31 +88,31 @@ module bus60x_target_bfm #(
     begin
       wait_for_address_request(64);
       wait_cycles(bg_wait);
-      @(negedge clk_i);
+      bus_fall();
       bg_n_o = 1'b0;
       cycle = 0;
       while (!(abb_oe_i && !abb_n_i && ts_oe_i && !ts_n_i) && cycle < 64) begin
-        @(posedge clk_i);
+        bus_rise();
         cycle = cycle + 1;
       end
       if (!(abb_oe_i && !abb_n_i && ts_oe_i && !ts_n_i))
         $fatal(1, "BFM timed out waiting for TS/ABB");
       captured_addr = a_i;
-      @(negedge clk_i);
+      bus_fall();
       bg_n_o = 1'b1;
       if (early_artry_only)
         artry_n_o = 1'b0;
       wait_cycles(aack_wait);
-      @(negedge clk_i);
+      bus_fall();
       if (early_artry_only)
         artry_n_o = 1'b1;
       aack_n_o = 1'b0;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       aack_n_o = 1'b1;
       artry_n_o = retry ? 1'b0 : 1'b1;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       artry_n_o = 1'b1;
     end
   endtask
@@ -109,16 +123,16 @@ module bus60x_target_bfm #(
     begin
       timeout = 0;
       while (br_n_i && timeout < 64) begin
-        @(posedge clk_i);
+        bus_rise();
         timeout++;
       end
       if (br_n_i) $fatal(1, "%m timed out waiting for BR");
       wait_cycles(bg_wait);
-      @(negedge clk_i);
+      bus_fall();
       bg_n_o = 1'b0;
       timeout = 0;
       do begin
-        @(negedge clk_i);
+        bus_fall();
         timeout++;
       end while (!(abb_oe_i && !abb_n_i && ts_oe_i && !ts_n_i) &&
                  timeout < 64);
@@ -127,7 +141,7 @@ module bus60x_target_bfm #(
       captured_addr = a_i;
       bg_n_o = 1'b1;
       aack_n_o = 1'b0;
-      @(negedge clk_i);
+      bus_fall();
       aack_n_o = 1'b1;
     end
   endtask
@@ -136,16 +150,16 @@ module bus60x_target_bfm #(
     integer cycle;
     begin
       wait_cycles(dbg_wait);
-      @(negedge clk_i);
+      bus_fall();
       dbg_n_o = 1'b0;
       cycle = 0;
       while (!(dbb_oe_i && !dbb_n_i) && cycle < 64) begin
-        @(posedge clk_i);
+        bus_rise();
         cycle = cycle + 1;
       end
       if (!(dbb_oe_i && !dbb_n_i))
         $fatal(1, "BFM timed out waiting for DBB");
-      @(negedge clk_i);
+      bus_fall();
       dbg_n_o = 1'b1;
     end
   endtask
@@ -168,12 +182,12 @@ module bus60x_target_bfm #(
     begin
       wait_cycles(ta_wait);
       drive_memory_data();
-      @(negedge clk_i);
+      bus_fall();
       ta_n_o = 1'b0;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       ta_n_o = 1'b1;
-      @(posedge clk_i); // normal-mode DRTRY confirmation
+      bus_rise(); // normal-mode DRTRY confirmation
       d_o = 64'b0;
     end
   endtask
@@ -181,10 +195,10 @@ module bus60x_target_bfm #(
   task automatic acknowledge_write(input integer ta_wait);
     begin
       wait_cycles(ta_wait);
-      @(negedge clk_i);
+      bus_fall();
       ta_n_o = 1'b0;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       ta_n_o = 1'b1;
     end
   endtask
@@ -192,10 +206,10 @@ module bus60x_target_bfm #(
   task automatic terminate_with_tea(input integer wait_count);
     begin
       wait_cycles(wait_count);
-      @(negedge clk_i);
+      bus_fall();
       tea_n_o = 1'b0;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       tea_n_o = 1'b1;
     end
   endtask
@@ -208,16 +222,16 @@ module bus60x_target_bfm #(
   );
     begin
       d_o = value;
-      @(negedge clk_i);
+      bus_fall();
       ta_n_o = 1'b0;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       ta_n_o = simultaneous_next ? 1'b0 : 1'b1;
       drtry_n_o = cancel ? 1'b0 : 1'b1;
       if (simultaneous_next)
         d_o = next_value;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       ta_n_o = 1'b1;
       if (!simultaneous_next && cancel)
         d_o = next_value;
@@ -229,11 +243,11 @@ module bus60x_target_bfm #(
   // rising edge.
   task automatic sample_ta(input logic [63:0] value);
     begin
-      @(negedge clk_i);
+      bus_fall();
       d_o = value;
       ta_n_o = 1'b0;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       ta_n_o = 1'b1;
     end
   endtask
@@ -248,22 +262,22 @@ module bus60x_target_bfm #(
       ta_n_o = replacement_valid ? 1'b0 : 1'b1;
       if (replacement_valid)
         d_o = replacement_value;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       ta_n_o = 1'b1;
     end
   endtask
 
   task automatic set_drtry(input logic asserted);
     begin
-      @(negedge clk_i);
+      bus_fall();
       drtry_n_o = asserted ? 1'b0 : 1'b1;
     end
   endtask
 
   task automatic set_artry(input logic asserted);
     begin
-      @(negedge clk_i);
+      bus_fall();
       artry_n_o = asserted ? 1'b0 : 1'b1;
     end
   endtask
@@ -275,13 +289,13 @@ module bus60x_target_bfm #(
     input logic [63:0] value
   );
     begin
-      @(negedge clk_i);
+      bus_fall();
       d_o = value;
       ta_n_o = ta_asserted ? 1'b0 : 1'b1;
       tea_n_o = tea_asserted ? 1'b0 : 1'b1;
       drtry_n_o = drtry_asserted ? 1'b0 : 1'b1;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       ta_n_o = 1'b1;
       tea_n_o = 1'b1;
       drtry_n_o = 1'b1;
@@ -291,8 +305,8 @@ module bus60x_target_bfm #(
   task automatic sample_confirmation_tea;
     begin
       tea_n_o = 1'b0;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       tea_n_o = 1'b1;
     end
   endtask
@@ -300,15 +314,15 @@ module bus60x_target_bfm #(
   task automatic finish_replacement(input logic confirm);
     begin
       if (!confirm) begin
-        @(negedge clk_i);
+        bus_fall();
         ta_n_o = 1'b0;
-        @(posedge clk_i);
-        @(negedge clk_i);
+        bus_rise();
+        bus_fall();
         ta_n_o = 1'b1;
       end
       drtry_n_o = 1'b1;
-      @(posedge clk_i);
-      @(negedge clk_i);
+      bus_rise();
+      bus_fall();
       d_o = 64'b0;
     end
   endtask

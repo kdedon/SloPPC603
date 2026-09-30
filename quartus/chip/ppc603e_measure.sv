@@ -230,7 +230,7 @@ module ppc603e_measure #(
 
   ppc603e #(.CPU_VARIANT(CPU_VARIANT)) dut (
     /* verilator lint_off PINCONNECTEMPTY */
-    .perf_o(),
+    .perf_o(), .bus_ce_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .sysclk,
     .pll_cfg_i,

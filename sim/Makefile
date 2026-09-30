@@ -98,7 +98,10 @@ test-fpu-reference:
 	python3 -m unittest discover -s fpu -p 'test_*.py'
 
 .PHONY: test-fpu-arith-initial test-fpu-arith test-fpu-arith-602
-PPC_FPU_ARITH_RTL := ../rtl/ppc_pkg.sv ../rtl/fpu/ppc_fpu_pkg.sv ../rtl/fpu/ppc_fpu_arith.sv
+PPC_FPU_ARITH_RTL := ../rtl/ppc_pkg.sv ../rtl/fpu/ppc_fpu_pkg.sv ../rtl/fpu/ppc_fpu_arith_pkg.sv \
+  ../rtl/fpu/ppc_fpu_unpack.sv ../rtl/fpu/ppc_fpu_multiplier.sv ../rtl/fpu/ppc_fpu_align_plan.sv ../rtl/fpu/ppc_fpu_aligner.sv ../rtl/fpu/ppc_fpu_adder.sv ../rtl/fpu/ppc_fpu_convert.sv ../rtl/fpu/ppc_fpu_rounder.sv ../rtl/fpu/ppc_fpu_divider.sv \
+  ../rtl/fpu/ppc_fpu_arith.sv
+PPC_FPU_SHELL_RTL := ../rtl/ppc_ram_lut.sv ../rtl/fpu/ppc_fpu_fprs.sv ../rtl/fpu/ppc_fpu.sv
 PPC_FPU_ARITH_BUILD := $(BUILD_DIR)/ppc-fpu-arith
 PPC_FPU_ARITH_602_BUILD := $(BUILD_DIR)/ppc-fpu-arith-602
 PPC_FPU_ARITH_INITIAL := $(BUILD_DIR)/fpu/production-initial.txt
@@ -160,10 +163,10 @@ $(PPC_FPU_ENABLED_603): $(PPC_FPU_ENABLED_PY)
 $(PPC_FPU_ENABLED_602): $(PPC_FPU_ENABLED_PY)
 	mkdir -p $(BUILD_DIR)/fpu
 	python3 fpu/enabled_vectors.py --personality 602 --vectors $@ --count 3000 --seed 0xe7ab602
-$(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_603_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
-$(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
+$(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_enabled.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_603_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_enabled.sv
+$(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_enabled.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_602_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_enabled.sv
 test-fpu-enabled-603: $(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled $(PPC_FPU_ENABLED_603)
 	./$(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled +VECTORS=$(PPC_FPU_ENABLED_603)
 test-fpu-enabled-602: $(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled $(PPC_FPU_ENABLED_602)
@@ -173,6 +176,23 @@ test-fpu-enabled-602: $(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled $(PPC_FPU
 .PHONY: test-fpu-oracle-host
 test-fpu-oracle-host:
 	cd fpu && python3 host_check.py --count 20000 --seed 0x1eee754
+
+# Berkeley TestFloat level-1 cases through the model and the arithmetic
+# bench. Fetches pinned third-party sources into $(BUILD_DIR)/testfloat.
+.PHONY: test-fpu-testfloat test-fpu-testfloat-603 test-fpu-testfloat-602
+TESTFLOAT_GEN := $(BUILD_DIR)/testfloat/testfloat_gen
+TESTFLOAT_FUSED_STRIDE ?= 613
+$(TESTFLOAT_GEN): fpu/fetch-softfloat.sh
+	fpu/fetch-softfloat.sh $(BUILD_DIR)/testfloat
+test-fpu-testfloat-603: $(TESTFLOAT_GEN) $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith
+	python3 fpu/testfloat_vectors.py --gen $(TESTFLOAT_GEN) --personality 603e --fused-stride $(TESTFLOAT_FUSED_STRIDE) --vectors $(BUILD_DIR)/fpu/testfloat-603.txt
+	./$(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(BUILD_DIR)/fpu/testfloat-603.txt
+	rm -f $(BUILD_DIR)/fpu/testfloat-603.txt
+test-fpu-testfloat-602: $(TESTFLOAT_GEN) $(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith
+	python3 fpu/testfloat_vectors.py --gen $(TESTFLOAT_GEN) --personality 602 --fused-stride $(TESTFLOAT_FUSED_STRIDE) --vectors $(BUILD_DIR)/fpu/testfloat-602.txt
+	./$(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(BUILD_DIR)/fpu/testfloat-602.txt
+	rm -f $(BUILD_DIR)/fpu/testfloat-602.txt
+test-fpu-testfloat: test-fpu-testfloat-603 test-fpu-testfloat-602
 
 .PHONY: test-fpu-timing-603 test-fpu-timing-602 lint-fpu-timing
 PPC_FPU_TIMING_603_BUILD := $(BUILD_DIR)/ppc-fpu-timing-603
@@ -197,16 +217,16 @@ lint: lint-fpu-timing
 
 .PHONY: test-fpu-shell
 PPC_FPU_SHELL_BUILD := $(BUILD_DIR)/ppc-fpu-shell
-$(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_shell.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_shell --Mdir $(PPC_FPU_SHELL_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_shell.sv
+$(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_shell.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_shell --Mdir $(PPC_FPU_SHELL_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_shell.sv
 
 test-fpu-shell: $(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell
 	./$(PPC_FPU_SHELL_BUILD)/Vtb_ppc_fpu_shell
 
 .PHONY: test-fpu-602
 PPC_FPU_602_BUILD := $(BUILD_DIR)/ppc-fpu-602
-$(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_602.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_602 --Mdir $(PPC_FPU_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_602.sv
+$(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_602.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_ppc_fpu_602 --Mdir $(PPC_FPU_602_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_602.sv
 
 test-fpu-602: $(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602
 	./$(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602
@@ -214,11 +234,11 @@ test-fpu-602: $(PPC_FPU_602_BUILD)/Vtb_ppc_fpu_602
 .PHONY: test-fpu-stream-603 test-fpu-stream-602 lint-fpu-stream
 PPC_FPU_STREAM_603_BUILD := $(BUILD_DIR)/ppc-fpu-stream-603
 PPC_FPU_STREAM_602_BUILD := $(BUILD_DIR)/ppc-fpu-stream-602
-$(PPC_FPU_STREAM_603_BUILD)/Vtb_ppc_fpu_stream: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_stream --Mdir $(PPC_FPU_STREAM_603_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
+$(PPC_FPU_STREAM_603_BUILD)/Vtb_ppc_fpu_stream: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_stream --Mdir $(PPC_FPU_STREAM_603_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
 
-$(PPC_FPU_STREAM_602_BUILD)/Vtb_ppc_fpu_stream: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_stream --Mdir $(PPC_FPU_STREAM_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
+$(PPC_FPU_STREAM_602_BUILD)/Vtb_ppc_fpu_stream: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_stream --Mdir $(PPC_FPU_STREAM_602_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
 
 test-fpu-stream-603: $(PPC_FPU_STREAM_603_BUILD)/Vtb_ppc_fpu_stream
 	./$(PPC_FPU_STREAM_603_BUILD)/Vtb_ppc_fpu_stream
@@ -227,19 +247,19 @@ test-fpu-stream-602: $(PPC_FPU_STREAM_602_BUILD)/Vtb_ppc_fpu_stream
 	./$(PPC_FPU_STREAM_602_BUILD)/Vtb_ppc_fpu_stream
 
 lint-fpu-stream:
-	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b0" --top-module tb_ppc_fpu_stream $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
-	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b1" --top-module tb_ppc_fpu_stream $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_stream.sv
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b0" --top-module tb_ppc_fpu_stream $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b1" --top-module tb_ppc_fpu_stream $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_stream.sv
 
 lint: lint-fpu-stream
 
 .PHONY: test-fpu-dual-603 test-fpu-dual-602 lint-fpu-dual
 PPC_FPU_DUAL_603_BUILD := $(BUILD_DIR)/ppc-fpu-dual-603
 PPC_FPU_DUAL_602_BUILD := $(BUILD_DIR)/ppc-fpu-dual-602
-$(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_603_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+$(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_603_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
 
-$(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+$(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual: $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual --Mdir $(PPC_FPU_DUAL_602_BUILD) $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
 
 test-fpu-dual-603: $(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual
 	./$(PPC_FPU_DUAL_603_BUILD)/Vtb_ppc_fpu_dual
@@ -248,8 +268,8 @@ test-fpu-dual-602: $(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual
 	./$(PPC_FPU_DUAL_602_BUILD)/Vtb_ppc_fpu_dual
 
 lint-fpu-dual:
-	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
-	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b0" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
+	$(VERILATOR) --lint-only --timing -Wall "-GCPU_602=1'b1" --top-module tb_ppc_fpu_dual $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL) fpu/tb_ppc_fpu_dual.sv
 
 lint: lint-fpu-dual
 
@@ -304,8 +324,8 @@ test-fpu-all: test-fpu test-fpu-arith-602 test-fpu-estimates-602 \
 
 .PHONY: lint-fpu-production
 lint-fpu-production:
-	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv
-	$(VERILATOR) --lint-only -Wall "-GCPU_602=1'b1" --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv
+	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL)
+	$(VERILATOR) --lint-only -Wall "-GCPU_602=1'b1" --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL)
 
 lint: lint-fpu-production
 test-core:
@@ -329,7 +349,7 @@ check-spec:
 	python3 tools/check_stage_timing.py
 	python3 -m unittest discover -s tools -p 'test_*.py'
 	python3 -m unittest discover -s cosim -p 'test_*.py'
-	python3 ../quartus/qsf_sources.py --check ../quartus ../quartus/integrated ../quartus/timer-bat ../quartus/translated ../quartus/icache ../quartus/dcache ../quartus/chip ../quartus/demo
+	python3 ../quartus/qsf_sources.py --check ../quartus ../quartus/integrated ../quartus/timer-bat ../quartus/translated ../quartus/icache ../quartus/dcache ../quartus/chip ../quartus/chip602 ../quartus/demo
 test-recovery:
 	python3 -m unittest discover -s recovery -p 'test_*.py'
 test-recovery-select:
@@ -1540,6 +1560,19 @@ test-core-bat-cached-bus60x:
 	mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x --Mdir $(BUILD_DIR)/core-bat-cached-bus60x $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_bat_cached_bus60x.sv
 	./$(BUILD_DIR)/core-bat-cached-bus60x/Vtb_core_bat_cached_bus60x $(SIM_ARGS)
+# The same bench with the bus at 1.5:1, 2:1, 2.5:1, 3:1, 3.5:1 and 4:1
+# (processor clocks per SYSCLK, doubled).
+CORE_RATIO2S ?= 3 4 5 6 7 8
+.PHONY: test-core-bat-cached-bus60x-ratios
+test: test-core-bat-cached-bus60x-ratios
+test-core-bat-cached-bus60x-ratios:
+	for r in $(CORE_RATIO2S); do \
+	  mkdir -p $(BUILD_DIR)/core-bat-cached-bus60x-r$$r; \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_bat_cached_bus60x -GBUS_RATIO2=$$r --Mdir $(BUILD_DIR)/core-bat-cached-bus60x-r$$r $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_bat_cached_bus60x.sv || exit 1; \
+	  ./$(BUILD_DIR)/core-bat-cached-bus60x-r$$r/Vtb_core_bat_cached_bus60x $(SIM_ARGS) || exit 1; \
+	  rm -rf $(BUILD_DIR)/core-bat-cached-bus60x-r$$r; \
+	done
+	@echo "PASS: translated cached top at ratio x2 $(CORE_RATIO2S)"
 # Translated cached top with the data cache in its slot.
 DCACHE_CORE_PARAMS := "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_RUNTIME_BAT=1'b1" "-GENABLE_EXTERNAL_INTERRUPTS=1'b1" "-GENABLE_TIMERS=1'b1" "-GENABLE_SEGMENT_REGISTERS=1'b1" "-GENABLE_SDR1=1'b1" "-GENABLE_TGPR=1'b1" "-GENABLE_TLB_MISS_EXCEPTIONS=1'b1" "-GENABLE_PAGE_TRANSLATION=1'b1" "-GENABLE_PAGE_MISS_RESULTS=1'b1" "-GENABLE_PAGE_DATA_EXCEPTIONS=1'b1" "-GENABLE_PAGE_INSTRUCTION_EXCEPTIONS=1'b1" "-GENABLE_TLB_INVALIDATE=1'b1" "-GENABLE_TLB_LOAD=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_BYTE_REVERSE=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_MISALIGNED_ACCESS=1'b1" "-GENABLE_MACHINE_CHECK=1'b1" "-GENABLE_PIN_INTERRUPTS=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_DCACHE=1'b1"
 # Data cache in the translated cached top on the bench BIU; the mutations
@@ -1678,10 +1711,41 @@ test-chip-pins:
 	mkdir -p $(BUILD_DIR)/chip-pins
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins --Mdir $(BUILD_DIR)/chip-pins -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_pins.sv
 	./$(BUILD_DIR)/chip-pins/Vtb_chip_pins $(SIM_ARGS)
+# The pin and coherence benches at processor:bus ratios other than 1:1,
+# as PID7v PLL_CFG codes: 2:1, 2.5:1, 3:1, 3.5:1 and 4:1. RATIO_PLLS
+# selects a subset.
+RATIO_PLLS ?= 4 6 8 14 10
+.PHONY: test-chip-ratios
+test: test-chip-ratios
+test-chip-ratios:
+	for p in $(RATIO_PLLS); do \
+	  mkdir -p $(BUILD_DIR)/chip-pins-pll$$p $(BUILD_DIR)/chip-coherence-pll$$p; \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins -GPLL=$$p --Mdir $(BUILD_DIR)/chip-pins-pll$$p -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_pins.sv || exit 1; \
+	  ./$(BUILD_DIR)/chip-pins-pll$$p/Vtb_chip_pins $(SIM_ARGS) || exit 1; \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence -GPLL=$$p --Mdir $(BUILD_DIR)/chip-coherence-pll$$p $(CHIP_COHERENCE_TB) || exit 1; \
+	  for s in 1 2; do ./$(BUILD_DIR)/chip-coherence-pll$$p/Vtb_chip_dcache_coherence +SEED=$$s $(SIM_ARGS) || exit 1; done; \
+	  rm -rf $(BUILD_DIR)/chip-pins-pll$$p $(BUILD_DIR)/chip-coherence-pll$$p; \
+	done
+	@echo "PASS: chip pins and coherence at PLL_CFG $(RATIO_PLLS)"
 lint: lint-chip
 lint-chip:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e $(CHIP_RTL)
 	cd ../quartus/chip && $(VERILATOR) --lint-only -Wall --top-module ppc603e_measure -f files.f
+
+# The ppc602 package top: 602 bus BFM with directed pin checks and a program
+# boot in 64- and 32-bit data modes, and lint of the top and its Quartus
+# measurement wrapper.
+CHIP602_RTL := $(shell cat ../rtl/chip602_files.f)
+.PHONY: test-chip602-pins lint-chip602
+test: test-chip602-pins
+test-chip602-pins:
+	mkdir -p $(BUILD_DIR)/chip602-pins
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip602_pins --Mdir $(BUILD_DIR)/chip602-pins -I../tb $(CHIP602_RTL) ../tb/bfm/bus602_bfm.sv ../tb/tb_chip602_pins.sv
+	./$(BUILD_DIR)/chip602-pins/Vtb_chip602_pins $(SIM_ARGS)
+lint: lint-chip602
+lint-chip602:
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc602 $(CHIP602_RTL)
+	cd ../quartus/chip602 && $(VERILATOR) --lint-only -Wall --top-module ppc602_measure -f files.f
 
 # Line coverage of the translated cached 60x top from the compiled MMU stress
 # (all retry and TEA modes) and cache-operation firmware, and of the data
@@ -1762,20 +1826,23 @@ test-core-full-decode:
 # against DingusPPC MPC603E.
 VARIANT_IDS := 0 1 2
 VARIANT_REJECTED := 3 4
+# Variants the core builds; the 603e pin top still rejects the 602.
+VARIANT_CORE_IDS := 0 1 2 4
 VARIANT_ALL := 0 1 2 3 4
 # Strap codes a build must refuse, as VARIANT-PLL-message: PID7v has no 1:1
 # ratio; a PID6 2:1 code is legal but not 1:1; 0111 is no PID6 code.
-VARIANT_PLL_REJECTS := 0-0-code 1-4-1to1 1-7-code
+VARIANT_PLL_REJECTS := 0-0 0-12 1-7
 .PHONY: variant-matrix test-reference-pid6
 regression: variant-matrix
 variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-reject-,$(VARIANT_REJECTED)) \
-                $(addprefix variant-divider-,$(VARIANT_IDS)) $(addprefix variant-full-decode-,$(VARIANT_IDS)) \
+                $(addprefix variant-divider-,$(VARIANT_CORE_IDS)) $(addprefix variant-full-decode-,$(VARIANT_CORE_IDS)) \
+                variant-multiply-timing-0 variant-multiply-timing-4 variant-icache-602 \
                 $(addprefix variant-config-,$(VARIANT_ALL)) $(addprefix variant-tlb-miss-,$(VARIANT_ALL)) \
                 $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6 \
                 $(addprefix variant-decode-sweep-,$(filter-out 0,$(VARIANT_ALL))) $(addprefix variant-exception-602-,$(VARIANT_ALL)) \
                 $(addprefix variant-mmu-602-,$(VARIANT_ALL)) \
                 variant-special-lint-602 variant-watchdog-602
-	@echo "PASS: variant-matrix (variants $(VARIANT_IDS) built and checked; $(VARIANT_REJECTED) rejected)"
+	@echo "PASS: variant-matrix (chip variants $(VARIANT_IDS), core variants $(VARIANT_CORE_IDS) built and checked; chip $(VARIANT_REJECTED) rejected)"
 # 602 decode, SPR and ESA/MSR checks below the rejected core: the decode
 # sweep and exception state at each variant, and the SRU lane linted with
 # the 602 personality.
@@ -1814,12 +1881,15 @@ variant-pll-reject-%:
 	v=$(word 1,$(subst -, ,$*)); p=$(word 2,$(subst -, ,$*)); \
 	if $(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=$$v -GPLL=$$p $(CHIP_RTL) ../tb/tb_variant_lint.sv \
 	   > $(BUILD_DIR)/variant-pll/$*.log 2>&1; then echo "FAIL: variant $$v PLL_CFG $$p elaborated"; exit 1; fi
-	grep -q "$(if $(filter code,$(word 3,$(subst -, ,$*))),is not a code of,is not 1:1)" $(BUILD_DIR)/variant-pll/$*.log
+	grep -q "is not a code of" $(BUILD_DIR)/variant-pll/$*.log
 	@echo "PASS: variant $(word 1,$(subst -, ,$*)) PLL_CFG $(word 2,$(subst -, ,$*)) rejected"
-# PLL bypass is legal on PID6 as well as its 1:1 default.
+# PLL bypass on PID6, and non-1:1 ratios: PID7v 2:1 and 3.5:1, PID6 1.5:1.
+VARIANT_PLL_ACCEPTS := 1-3 0-4 0-14 1-12
 variant-pll-accept:
-	$(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=1 -GPLL=3 $(CHIP_RTL) ../tb/tb_variant_lint.sv
-	@echo "PASS: variant 1 PLL_CFG 0011 accepted"
+	for vp in $(VARIANT_PLL_ACCEPTS); do \
+	  $(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=$${vp%-*} -GPLL=$${vp#*-} $(CHIP_RTL) ../tb/tb_variant_lint.sv || exit 1; \
+	done
+	@echo "PASS: PLL_CFG accepted: $(VARIANT_PLL_ACCEPTS)"
 test-reference-pid6: reference-checkout
 	python3 cosim/run_reference.py --build-dir $(BUILD_DIR)/reference-pid6 --model MPC603E $(REFERENCE_ARGS)
 variant-lint-%:
@@ -1833,6 +1903,13 @@ variant-reject-%:
 variant-divider-%:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_divider_timing -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-divider-$* $(RTL) ../tb/tb_core_divider_timing.sv
 	./$(BUILD_DIR)/variant-divider-$*/Vtb_core_divider_timing $(SIM_ARGS)
+# 602 core on the cached 60x wrapper: I-cache without ICE, ICFI, PVR, multiply.
+variant-icache-602:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_602 --Mdir $(BUILD_DIR)/variant-icache-602 $(CORE_BAT_CACHED_BUS60X_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_core_602.sv
+	./$(BUILD_DIR)/variant-icache-602/Vtb_core_602 $(SIM_ARGS)
+variant-multiply-timing-%:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_multiply_timing -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-multiply-timing-$* $(RTL) ../tb/tb_multiply_timing.sv
+	./$(BUILD_DIR)/variant-multiply-timing-$*/Vtb_multiply_timing $(SIM_ARGS)
 variant-full-decode-%:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_full_decode -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-full-decode-$* -I../tb $(RTL) ../tb/tb_core_full_decode.sv
 	./$(BUILD_DIR)/variant-full-decode-$*/Vtb_core_full_decode $(SIM_ARGS)

@@ -6,6 +6,8 @@
 module ppc_bus60x_master_select (
   input  logic clk_i,
   input  logic rst_ni,
+  // High in the cycle that ends at a SYSCLK edge.
+  input  logic bus_ce_i,
   input  logic scalar_br_n_i,
   input  logic scalar_busy_i,
   input  logic scalar_pins_released_i,
@@ -65,7 +67,7 @@ module ppc_bus60x_master_select (
       // Seed scalar as the previous owner so a first tie selects line refill.
       last_completed_line_q <= 1'b0;
       protocol_error_q <= 1'b0;
-    end else begin
+    end else if (bus_ce_i) begin
       unique case (owner_q)
         OWNER_NONE: begin
           if (choose_scalar)

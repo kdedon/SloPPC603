@@ -64,17 +64,17 @@ module tb_segment_runtime_service;
     request(3'd4, 4'd7, 32'h7fab_cdef, 0);
     check(rsp_data_o == 32'h70ab_cdef && !rsp_privileged_o &&
           !rsp_unsupported_o, "T0 prepare normalization");
-    check(dut.sr_q[7] == 0 && !transaction_idle_o, "prepare mutated bank");
+    check((dut.sr_q[7] & {32{dut.sr_written_q[7]}}) == 0 && !transaction_idle_o, "prepare mutated bank");
     repeat (3) begin
       @(posedge clk_i); #1;
       check(rsp_valid_o && rsp_data_o == 32'h70ab_cdef && !req_ready_o,
             "held response/reservation");
     end
     consume();
-    check(dut.sr_q[7] == 0 && !req_ready_o, "consumption committed bank");
+    check((dut.sr_q[7] & {32{dut.sr_written_q[7]}}) == 0 && !req_ready_o, "consumption committed bank");
     @(negedge clk_i); prepare_commit_i = 1;
     @(posedge clk_i); #1; prepare_commit_i = 0;
-    check(dut.sr_q[7] == 32'h70ab_cdef && commit_ack_valid_o,
+    check((dut.sr_q[7] & {32{dut.sr_written_q[7]}}) == 32'h70ab_cdef && commit_ack_valid_o,
           "retirement commit visibility/ack");
     repeat (3) begin
       @(posedge clk_i); #1;
@@ -87,11 +87,11 @@ module tb_segment_runtime_service;
     read_sr(4'd7, 32'h70ab_cdef, 0);
 
     request(3'd4, 4'd7, 32'h8fab_cdef, 0);
-    check(rsp_data_o == 32'h8fab_cdef && dut.sr_q[7] == 32'h70ab_cdef,
+    check(rsp_data_o == 32'h8fab_cdef && (dut.sr_q[7] & {32{dut.sr_written_q[7]}}) == 32'h70ab_cdef,
           "T1 prepare changed committed descriptor");
     @(negedge clk_i); prepare_abort_i = 1;
     @(posedge clk_i); #1; prepare_abort_i = 0;
-    check(rsp_valid_o && !commit_ack_valid_o && dut.sr_q[7] == 32'h70ab_cdef,
+    check(rsp_valid_o && !commit_ack_valid_o && (dut.sr_q[7] & {32{dut.sr_written_q[7]}}) == 32'h70ab_cdef,
           "abort withdrew response or changed descriptor");
     consume();
     check(transaction_idle_o, "abort did not free reservation");
@@ -101,7 +101,7 @@ module tb_segment_runtime_service;
     check(rsp_privileged_o && rsp_data_o == 0 && !rsp_unsupported_o,
           "PR prepare not rejected");
     consume();
-    check(transaction_idle_o && dut.sr_q[8] == 0, "PR changed bank");
+    check(transaction_idle_o && (dut.sr_q[8] & {32{dut.sr_written_q[8]}}) == 0, "PR changed bank");
     read_sr(4'd7, 0, 1);
 
     // A cancel coincident with request acceptance wins over retention.
@@ -110,7 +110,7 @@ module tb_segment_runtime_service;
     req_data_i = 32'h8000_0012; req_pr_i = 0;
     req_valid_i = 1; prepare_abort_i = 1;
     @(posedge clk_i); #1;
-    check(rsp_valid_o && dut.sr_q[9] == 0 && !commit_ack_valid_o,
+    check(rsp_valid_o && (dut.sr_q[9] & {32{dut.sr_written_q[9]}}) == 0 && !commit_ack_valid_o,
           "accept/abort collision");
     @(negedge clk_i); req_valid_i = 0; prepare_abort_i = 0;
     consume();
@@ -118,10 +118,10 @@ module tb_segment_runtime_service;
 
     // Response consumption and retirement may coincide on one edge.
     request(3'd4, 4'd11, 32'h8fab_cdef, 0);
-    check(dut.sr_q[11] == 0, "T1 preparation mutated bank");
+    check((dut.sr_q[11] & {32{dut.sr_written_q[11]}}) == 0, "T1 preparation mutated bank");
     @(negedge clk_i); rsp_ready_i = 1; prepare_commit_i = 1;
     @(posedge clk_i); #1;
-    check(!rsp_valid_o && dut.sr_q[11] == 32'h8fab_cdef &&
+    check(!rsp_valid_o && (dut.sr_q[11] & {32{dut.sr_written_q[11]}}) == 32'h8fab_cdef &&
           commit_ack_valid_o, "same-edge consume/commit");
     @(negedge clk_i); rsp_ready_i = 0; prepare_commit_i = 0;
     commit_ack_ready_i = 1;
@@ -134,7 +134,7 @@ module tb_segment_runtime_service;
 
     // Legacy committed write still changes its selected entry at acceptance.
     request(3'd1, 4'd10, 32'h8fab_cdef, 0);
-    check(dut.sr_q[10] == 32'h8fab_cdef && rsp_data_o == 32'h8fab_cdef,
+    check((dut.sr_q[10] & {32{dut.sr_written_q[10]}}) == 32'h8fab_cdef && rsp_data_o == 32'h8fab_cdef,
           "legacy write behavior changed");
     consume();
     request(3'd3, 4'd10, 0, 0);

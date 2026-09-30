@@ -39,7 +39,7 @@ module tb_icache_bus60x #(
     .line_rsp_error_i(error),.busy_o(cache_busy),.hit_o(hit),.miss_o(miss),
     .protocol_error_o(cache_error)
   );
-  ppc_bus60x_line_read bus (
+  ppc_bus60x_line_read bus (.bus_ce_i(1'b1),
     .clk_i(clk),.rst_ni(rst_n),
     .req_valid_i(qv),.req_ready_o(qr),.req_line_addr_i(line_addr),
     .req_critical_dw_i(critical),.req_instruction_i(qi),

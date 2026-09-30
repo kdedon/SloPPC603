@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 
 getcontext().prec = 100
-source = Path(__file__).with_name("ppc_fpu_arith.sv").read_text()
+source = Path(__file__).with_name("ppc_fpu_arith_pkg.sv").read_text()
 for odd in (0, 1):
     for index in range(16):
         midpoint_num = (33 + 2 * index) * (2 if odd else 1)

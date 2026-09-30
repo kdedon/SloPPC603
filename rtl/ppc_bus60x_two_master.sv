@@ -7,6 +7,8 @@
 module ppc_bus60x_two_master (
   input  logic        clk_i,
   input  logic        rst_ni,
+  // High in the cycle that ends at a SYSCLK edge.
+  input  logic        bus_ce_i,
 
   input  logic        scalar_busy_i,
   input  logic        scalar_br_n_i,
@@ -111,7 +113,7 @@ module ppc_bus60x_two_master (
                               !line_d_oe_i;
 
   ppc_bus60x_master_select selector (
-    .clk_i, .rst_ni,
+    .clk_i, .rst_ni, .bus_ce_i,
     .scalar_br_n_i, .scalar_busy_i,
     .scalar_pins_released_i(scalar_pins_released),
     .scalar_bg_n_o, .line_br_n_i, .line_busy_i,

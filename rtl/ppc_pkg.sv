@@ -480,6 +480,7 @@ package ppc_pkg;
     logic broadcast_enable;  // ABE
     logic address_parity_enable; // EBA
     logic ape_taken;
+    logic watchdog_reseto;   // 602 RESETO request
   } pin_status_t;
   // Data-cache BIU ports (docs/DATA_CACHE.md) bundled for the core
   // composition, between the cache slot and the BIU.
@@ -644,6 +645,11 @@ package ppc_pkg;
     c = cpu_cfg(v);
     return c.has_602_ext;
   endfunction
+  function automatic bit cpu_mul_602_timing(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return c.mul_602_timing;
+  endfunction
   function automatic int cpu_icache_sets(cpu_variant_e v);
     cpu_cfg_t c;
     c = cpu_cfg(v);
@@ -694,6 +700,11 @@ package ppc_pkg;
   function automatic bit cpu_variant_supported(cpu_variant_e v);
     return (v == CPU_PID7V_603E) || (v == CPU_PID6_603E) || (v == CPU_EC603E);
   endfunction
+  // Variants the core builds: the 602 core lacks only its FPU personality;
+  // its bus and pins belong to a separate top.
+  function automatic bit cpu_core_supported(cpu_variant_e v);
+    return cpu_variant_supported(v) || (v == CPU_602);
+  endfunction
   // PLL_CFG[0:3] codes the variant's PLL accepts, clock-off excluded. PID6:
   // UM Table 7-10. PID7v and EC603e: Table 7-10 without 1:1 and 1.5:1 (UM
   // 1.1); their 4.5:1-6:1 codes are not given in the UM. 603: Table C-4.
@@ -717,8 +728,28 @@ package ppc_pkg;
   function automatic bit pll_cfg_bus_1to1(logic [3:0] code);
     return code <= 4'b0011;
   endfunction
-  // The core runs 1:1 with the bus. PID7v and EC603e have no 1:1 ratio, so
-  // their only such code is PLL bypass; the 602 has none.
+  // Core clocks per bus clock, doubled, for a code of the variant; 0 for a
+  // code it lacks. 603e: UM Table 7-10. 603 and 602: PLL_CFG[0-1] select
+  // 1:1 to 4:1 (UM Table C-4 note 4; 602HW Table 11).
+  function automatic int pll_cfg_ratio2(cpu_variant_e v, logic [3:0] code);
+    int ratio2;
+    if ((v == CPU_603) || (v == CPU_602))
+      ratio2 = 2 * (int'(code[3:2]) + 1);
+    else
+      case (code)
+        4'b0000, 4'b0001, 4'b0010, 4'b0011: ratio2 = 2;
+        4'b1100: ratio2 = 3;
+        4'b0100, 4'b0101: ratio2 = 4;
+        4'b0110: ratio2 = 5;
+        4'b1000: ratio2 = 6;
+        4'b1110: ratio2 = 7;
+        4'b1010: ratio2 = 8;
+        default: ratio2 = 0;
+      endcase
+    return pll_cfg_legal(v, code) ? ratio2 : 0;
+  endfunction
+  // The default strap runs the bus at the core clock. PID7v and EC603e have
+  // no 1:1 ratio, so their only such code is PLL bypass; the 602 has none.
   function automatic logic [3:0] pll_cfg_default(cpu_variant_e v);
     return ((v == CPU_PID7V_603E) || (v == CPU_EC603E)) ? 4'b0011 : 4'b0000;
   endfunction
@@ -745,6 +776,14 @@ package ppc_pkg;
   localparam int HID0_NOOPTI = 0;
   localparam int HID0_EMCP = 31;
   localparam int HID0_EBA = 29;
+  /* verilator lint_off UNUSEDSIGNAL */
+  // HID0[ICE] is stored; without it the instruction cache is always enabled.
+  function automatic bit cpu_has_hid0_ice(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return c.hid0_wmask[HID0_ICE];
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   // 602 HID0 (602UM Table 2-7): PO is manual bit 24, the real-mode and
   // protection-only default WIMG manual bits 28-31.
   localparam int HID0_PO = 7;

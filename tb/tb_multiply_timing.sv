@@ -1,11 +1,16 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 // Direct IU checks for the operand-dependent multiply datapath: exact
-// Table 6-4 latency per rB class, product and flags against a reference
-// model over edge and random operands, backpressure and cancellation.
+// latency per rB class (603e Table 6-4, or 602 Table 6-2 with VARIANT=4),
+// product and flags against a reference model over edge and random
+// operands, backpressure and cancellation.
 /* verilator lint_off BLKSEQ */
-module tb_multiply_timing;
+module tb_multiply_timing #(
+  parameter int VARIANT = 0
+);
   import ppc_pkg::*;
+
+  localparam bit MUL_602 = cpu_mul_602_timing(cpu_variant_e'(VARIANT));
 
   localparam int RANDOM_CASES = 20000;
 
@@ -21,7 +26,7 @@ module tb_multiply_timing;
   int checks = 0;
   int class_count [4][7];
 
-  ppc_iu dut (
+  ppc_iu #(.MUL_602_TIMING(MUL_602)) dut (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(cancel),
     .issue_valid_i(issue_valid), .issue_ready_o(issue_ready), .issue_i(issue),
     .result_valid_o(result_valid), .result_ready_i(result_ready), .result_o(result)
@@ -42,7 +47,8 @@ module tb_multiply_timing;
   endfunction
 
   // Smallest two's-complement byte count holding rB (zero-extended for
-  // MULHWU), plus one cycle.
+  // MULHWU), plus one cycle. The 602 takes one cycle less, at least two
+  // for register forms.
   function automatic int latency(input alu_op_t operation,
                                  input logic [31:0] b);
     longint value;
@@ -53,11 +59,19 @@ module tb_multiply_timing;
     while (!((value >= -(64'sd1 <<< (8 * bytes - 1))) &&
              (value < (64'sd1 <<< (8 * bytes - 1)))))
       bytes++;
-    return bytes + 1;
+    if (!MUL_602) return bytes + 1;
+    if (operation == ALU_MULLI) return bytes;
+    return (bytes < 2) ? 2 : bytes;
   endfunction
 
-  // Table 6-4 cycle sets.
+  // Table 6-4 cycle sets; 602 Table 6-2 stage sums.
   function automatic logic listed(input alu_op_t operation, input int cycles);
+    if (MUL_602)
+      case (operation)
+        ALU_MULLI: return (cycles >= 1) && (cycles <= 2);
+        ALU_MULLW, ALU_MULHW: return (cycles >= 2) && (cycles <= 4);
+        default: return (cycles >= 2) && (cycles <= 5);
+      endcase
     case (operation)
       ALU_MULLI: return (cycles >= 2) && (cycles <= 3);
       ALU_MULLW, ALU_MULHW: return (cycles >= 2) && (cycles <= 5);
@@ -134,7 +148,7 @@ module tb_multiply_timing;
     result_packet_t expected;
     cycles = latency(packet.ctrl.op, packet.b);
     expected = model(packet);
-    require(listed(packet.ctrl.op, cycles), "latency outside Table 6-4 set");
+    require(listed(packet.ctrl.op, cycles), "latency outside the listed set");
     index = 2'(op_index(packet.ctrl.op));
     class_count[index][cycles] = class_count[index][cycles] + 1;
     result_ready = 1'b0;
@@ -224,17 +238,30 @@ module tb_multiply_timing;
 
     // Literal classes against Table 6-4: the reference latency function
     // itself must give each listed count.
-    require(latency(ALU_MULLI, 32'h0000_007f) == 2 &&
-            latency(ALU_MULLI, 32'hffff_8000) == 3 &&
-            latency(ALU_MULLW, 32'hffff_ff80) == 2 &&
-            latency(ALU_MULLW, 32'h0000_0080) == 3 &&
-            latency(ALU_MULLW, 32'h0080_0000) == 5 &&
-            latency(ALU_MULHW, 32'h8000_0000) == 5 &&
-            latency(ALU_MULHWU, 32'h7fff_ffff) == 5 &&
-            latency(ALU_MULHWU, 32'h8000_0000) == 6 &&
-            latency(ALU_MULHWU, 32'hffff_ffff) == 6 &&
-            latency(ALU_MULHWU, 32'h0000_ff00) == 4,
-            "reference latency classes");
+    if (MUL_602)
+      require(latency(ALU_MULLI, 32'h0000_007f) == 1 &&
+              latency(ALU_MULLI, 32'hffff_8000) == 2 &&
+              latency(ALU_MULLW, 32'hffff_ff80) == 2 &&
+              latency(ALU_MULLW, 32'h0000_0080) == 2 &&
+              latency(ALU_MULLW, 32'h0000_8000) == 3 &&
+              latency(ALU_MULLW, 32'h0080_0000) == 4 &&
+              latency(ALU_MULHW, 32'h8000_0000) == 4 &&
+              latency(ALU_MULHWU, 32'h7fff_ffff) == 4 &&
+              latency(ALU_MULHWU, 32'h8000_0000) == 5 &&
+              latency(ALU_MULHWU, 32'h0000_ff00) == 3,
+              "602 reference latency classes");
+    else
+      require(latency(ALU_MULLI, 32'h0000_007f) == 2 &&
+              latency(ALU_MULLI, 32'hffff_8000) == 3 &&
+              latency(ALU_MULLW, 32'hffff_ff80) == 2 &&
+              latency(ALU_MULLW, 32'h0000_0080) == 3 &&
+              latency(ALU_MULLW, 32'h0080_0000) == 5 &&
+              latency(ALU_MULHW, 32'h8000_0000) == 5 &&
+              latency(ALU_MULHWU, 32'h7fff_ffff) == 5 &&
+              latency(ALU_MULHWU, 32'h8000_0000) == 6 &&
+              latency(ALU_MULHWU, 32'hffff_ffff) == 6 &&
+              latency(ALU_MULHWU, 32'h0000_ff00) == 4,
+              "reference latency classes");
 
     // Every edge pair through every operation, rotating OE/Rc/SO-in.
     tag = 0;
@@ -253,9 +280,9 @@ module tb_multiply_timing;
     end
 
     for (int o = 0; o < 4; o++)
-      for (int c = 2; c <= 6; c++)
+      for (int c = 1; c <= 6; c++)
         require((class_count[o][c] > 0) == listed(ops[o], c),
-                "a Table 6-4 latency was never exercised or is unlisted");
+                "a listed latency was never exercised or is unlisted");
 
     // An executing multiply blocks unrelated issues. Exact cancellation may
     // replace it on the same edge without leaking its result or flags.
@@ -355,9 +382,9 @@ module tb_multiply_timing;
     require(!dut.occupied && !result_valid,
             "cancelled held multiply remained occupied");
 
-    $display("PASS multiply timing: %0d edge pairs x 4 ops, %0d random; latency classes MULLI 2:%0d 3:%0d, MULLW 2:%0d 3:%0d 4:%0d 5:%0d, MULHW 2:%0d 3:%0d 4:%0d 5:%0d, MULHWU 2:%0d 3:%0d 4:%0d 5:%0d 6:%0d (%0d checks)",
-             EDGE_COUNT * EDGE_COUNT, RANDOM_CASES,
-             class_count[0][2], class_count[0][3],
+    $display("PASS multiply timing (%0s): %0d edge pairs x 4 ops, %0d random; latency classes MULLI 1:%0d 2:%0d 3:%0d, MULLW 2:%0d 3:%0d 4:%0d 5:%0d, MULHW 2:%0d 3:%0d 4:%0d 5:%0d, MULHWU 2:%0d 3:%0d 4:%0d 5:%0d 6:%0d (%0d checks)",
+             MUL_602 ? "602" : "603e", EDGE_COUNT * EDGE_COUNT, RANDOM_CASES,
+             class_count[0][1], class_count[0][2], class_count[0][3],
              class_count[1][2], class_count[1][3], class_count[1][4], class_count[1][5],
              class_count[2][2], class_count[2][3], class_count[2][4], class_count[2][5],
              class_count[3][2], class_count[3][3], class_count[3][4], class_count[3][5],

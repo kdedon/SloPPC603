@@ -62,6 +62,12 @@ module tb_segment_registers;
     if (cycles > 4000) $fatal(1, "segment-register watchdog");
   end
 
+  // Architectural value of an entry: storage is not reset, so entries not
+  // written since reset read as zero.
+  function automatic logic [31:0] bank(input logic [3:0] index);
+    return dut.sr_q[index] & {32{dut.sr_written_q[index]}};
+  endfunction
+
   task automatic reset_bank;
     begin
       @(negedge clk_i);
@@ -74,7 +80,7 @@ module tb_segment_registers;
       repeat (2) @(posedge clk_i);
       for (int index = 0; index < 16; index++) begin
         model[index] = 32'b0;
-        check(dut.sr_q[index] == 0,
+        check(bank(4'(index)) == 0 && !dut.sr_written_q[index],
               "local reset did not clear a segment register");
       end
       @(negedge clk_i);
@@ -189,7 +195,7 @@ module tb_segment_registers;
       transact(3'd1, 1'b0, 4'(index),
                {4'((index + 5) & 15), 28'h00abc00 | 28'(index)},
                source, 1'b0);
-      check(dut.sr_q[index] == normalize(source),
+      check(bank(4'(index)) == normalize(source),
             "direct write did not commit only normalized selected word");
     end
 
@@ -213,7 +219,7 @@ module tb_segment_registers;
       transact(3'd1, 1'b1, 4'(15-index),
                {4'(index), 28'h0a50000 | 28'(index * 193 + 7)},
                source, 1'b0);
-      check(dut.sr_q[index] == source,
+      check(bank(4'(index)) == source,
             "indexed write did not select EA high nibble exactly");
     end
     for (int index = 0; index < 16; index++)
@@ -224,16 +230,16 @@ module tb_segment_registers;
     // and T=1. T=1 retains all 32 opaque bits; T=0 clears only HDL 27:24.
     transact(3'd1, 1'b0, 4'd5, 32'h0123_4567,
              32'h7fab_cdef, 1'b0);
-    check(model[5] == 32'h70ab_cdef && dut.sr_q[5] == 32'h70ab_cdef,
+    check(model[5] == 32'h70ab_cdef && bank(5) == 32'h70ab_cdef,
           "literal T=0 7fabcdef normalization mismatch");
     transact(3'd0, 1'b0, 4'd5, 32'hf000_0001, 32'b0, 1'b0);
     transact(3'd1, 1'b1, 4'd0, 32'h5000_00a5,
              32'hffff_ffff, 1'b0);
-    check(model[5] == 32'hffff_ffff && dut.sr_q[5] == 32'hffff_ffff,
+    check(model[5] == 32'hffff_ffff && bank(5) == 32'hffff_ffff,
           "literal T=1 full-word retention mismatch");
     transact(3'd1, 1'b0, 4'd5, 32'h0bad_0005,
              32'h7fab_cdef, 1'b0);
-    check(model[5] == 32'h70ab_cdef && dut.sr_q[5] == 32'h70ab_cdef,
+    check(model[5] == 32'h70ab_cdef && bank(5) == 32'h70ab_cdef,
           "same-entry T=1 to T=0 normalization mismatch");
     transact(3'd2, 1'b0, 4'd14, 32'h5abc_def0,
              32'h0000_0000, 1'b1);
@@ -253,7 +259,7 @@ module tb_segment_registers;
     old_value = model[6];
     transact(3'd1, 1'b0, 4'd6, 32'h9000_0001,
              32'h8123_4567, 1'b1);
-    check(model[6] == old_value && dut.sr_q[6] == old_value,
+    check(model[6] == old_value && bank(6) == old_value,
           "privileged write changed segment state");
     transact(3'd0, 1'b1, 4'd1, 32'h6000_1234,
              32'hffff_ffff, 1'b1);
@@ -265,7 +271,7 @@ module tb_segment_registers;
     old_value = model[7];
     transact(3'd3, 1'b1, 4'd2, 32'h7000_00ef,
              32'hdead_beef, 1'b1);
-    check(model[7] == old_value && dut.sr_q[7] == old_value,
+    check(model[7] == old_value && bank(7) == old_value,
           "unsupported request changed segment state");
 
     // Hold a snapshot while offering a write and mutating all live fields.
@@ -287,7 +293,7 @@ module tb_segment_registers;
     repeat (3) begin
       #1;
       check(!req_ready_o && rsp_valid_o && observed == held_response &&
-            dut.sr_q[9] == old_value,
+            bank(9) == old_value,
             "offered write changed held snapshot or bank early");
       req_indexed_i = !req_indexed_i;
       req_index_i = req_index_i + 4'd1;
@@ -296,7 +302,7 @@ module tb_segment_registers;
       @(posedge clk_i);
       #1;
       for (int index = 0; index < 16; index++)
-        check(dut.sr_q[index] == model[index],
+        check(bank(4'(index)) == model[index],
               "blocked mutated write changed an unselected bank word");
       @(negedge clk_i);
     end
@@ -317,7 +323,7 @@ module tb_segment_registers;
     check(rsp_valid_o && rsp_kind_o == 3'd1 && rsp_index_o == 4'd9 &&
           rsp_address_o == 32'haaaa_5555 &&
           rsp_data_o == 32'h70ab_cdef && !rsp_privileged_o &&
-          !rsp_unsupported_o && dut.sr_q[9] == 32'h70ab_cdef,
+          !rsp_unsupported_o && bank(9) == 32'h70ab_cdef,
           "turnover write response/commit mismatch");
 
     // Hold that write result while offering a snapshot. It remains blocked;
@@ -379,7 +385,7 @@ module tb_segment_registers;
     for (int index = 0; index < 16; index++) begin
       model[index] = 32'b0;
       #1;
-      check(dut.sr_q[index] == 0,
+      check(bank(4'(index)) == 0,
             "reset with held response/offered write retained state");
     end
     @(negedge clk_i);

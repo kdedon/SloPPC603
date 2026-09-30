@@ -259,8 +259,10 @@ module ppc_core_cached_bus60x_managed #(
   );
 
   logic unused_icbi_ready;
+  // Without HID0[ICE] the instruction cache is enabled from reset.
   ppc_icache_managed #(
-    .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE),
+    .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE ||
+                        !ppc_pkg::cpu_has_hid0_ice(CPU_VARIANT)),
     .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS)
   ) managed_cache (
     .clk_i, .rst_ni,
@@ -337,7 +339,7 @@ module ppc_core_cached_bus60x_managed #(
     .busy_o(scalar_router_busy)
   );
 
-  ppc_bus60x scalar_bus (
+  ppc_bus60x scalar_bus (.bus_ce_i(1'b1),
     .clk_i, .rst_ni,
     .req_valid_i(scalar_req_valid), .req_ready_o(scalar_req_ready),
     .req_instruction_i(scalar_req_instruction),
@@ -362,7 +364,7 @@ module ppc_core_cached_bus60x_managed #(
     .drtry_n_i(scalar_drtry_n), .tea_n_i(scalar_tea_n)
   );
 
-  ppc_bus60x_line_read line_bus (
+  ppc_bus60x_line_read line_bus (.bus_ce_i(1'b1),
     .clk_i, .rst_ni,
     .req_valid_i(cache_line_req_valid),
     .req_ready_o(cache_line_req_ready),
@@ -389,7 +391,7 @@ module ppc_core_cached_bus60x_managed #(
     .drtry_n_i(line_drtry_n), .tea_n_i(line_tea_n)
   );
 
-  ppc_bus60x_two_master pin_mux (
+  ppc_bus60x_two_master pin_mux (.bus_ce_i(1'b1),
     .clk_i, .rst_ni,
     .scalar_busy_i(scalar_busy), .scalar_br_n_i(scalar_br_n),
     .scalar_bg_n_o(scalar_bg_n), .scalar_abb_n_o(scalar_abb_in_n),

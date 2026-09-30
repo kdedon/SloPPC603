@@ -53,7 +53,7 @@ module tb_core_bus60x_ifetch_error;
     .ta_n_i(ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n)
   );
 
-  bus60x_target_bfm #(.BASE_ADDR(32'h0000_1000)) target (
+  bus60x_target_bfm #(.BASE_ADDR(32'h0000_1000)) target (.bus_ce_i(1'b1),
     .clk_i(clk), .br_n_i(br_n), .abb_n_i(abb_n_driven),
     .abb_oe_i(abb_oe), .ts_n_i(ts_n), .ts_oe_i(ts_oe),
     .a_i(bus_a), .dbb_n_i(dbb_n_driven), .dbb_oe_i(dbb_oe),

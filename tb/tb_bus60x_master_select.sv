@@ -11,7 +11,7 @@ module tb_bus60x_master_select;
   int checks = 0, cycles = 0, completions = 0;
   logic allow_protocol_error = 1'b0;
 
-  ppc_bus60x_master_select dut (
+  ppc_bus60x_master_select dut (.bus_ce_i(1'b1),
     .clk_i(clk), .rst_ni(rst_n),
     .scalar_br_n_i(scalar_br_n), .scalar_busy_i(scalar_busy),
     .scalar_pins_released_i(scalar_released), .scalar_bg_n_o(scalar_bg_n),

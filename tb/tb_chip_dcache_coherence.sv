@@ -18,7 +18,8 @@
 // 2 makes the DMA engine ignore ARTRY.
 module tb_chip_dcache_coherence #(parameter int unsigned SEED = 32'h0c0d_e7e1,
                                   parameter int ROUNDS = 6, parameter int MUTATION = 0,
-                                  parameter int SETS = 128, parameter int WAYS = 4);
+                                  parameter int SETS = 128, parameter int WAYS = 4,
+                                  parameter int PLL = -1);
   localparam logic [31:0] BASE = 32'hfff00000;
   localparam int MEM_BYTES = 262144;
   logic clk = 1'b0;

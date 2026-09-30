@@ -22,7 +22,7 @@ module tb_line_read_independent;
   logic [1:0] wanted_critical;
   logic wanted_instruction;
 
-  ppc_bus60x_line_read dut (
+  ppc_bus60x_line_read dut (.bus_ce_i(1'b1),
     .clk_i(clk),.rst_ni(rst_n),
     .req_valid_i(qv),.req_ready_o(qr),.req_line_addr_i(line_addr),
     .req_critical_dw_i(critical),.req_instruction_i(qi),

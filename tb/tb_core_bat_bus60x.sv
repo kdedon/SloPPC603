@@ -124,7 +124,7 @@ module tb_core_bat_bus60x;
     .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n)
   );
   /* verilator lint_on PINCONNECTEMPTY */
-  bus60x_target_bfm #(.BASE_ADDR(32'b0),.MEM_BYTES(8192)) target(
+  bus60x_target_bfm #(.BASE_ADDR(32'b0),.MEM_BYTES(8192)) target(.bus_ce_i(1'b1),
     .clk_i(clk),.br_n_i(br_n),.abb_n_i(abb_n),.abb_oe_i(abb_oe),
     .ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(bus_a),
     .dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.bg_n_o(bg_n),

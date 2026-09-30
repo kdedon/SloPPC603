@@ -227,7 +227,7 @@ module ppc_core_bus60x #(
     .ifetch_error_o, .busy_o(router_busy)
   );
 
-  ppc_bus60x bus (
+  ppc_bus60x bus (.bus_ce_i(1'b1),
     .clk_i, .rst_ni,
     .req_valid_i(bus_req_valid), .req_ready_o(bus_req_ready),
     .req_instruction_i(bus_req_instruction),

@@ -52,7 +52,7 @@ module tb_core_bat_cached_bus60x_timer;
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1),
-    .ENABLE_TIMERS(1'b1)) dut(
+    .ENABLE_TIMERS(1'b1)) dut(.bus_ce_i(1'b1),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(taken),.interrupt_pc_o(irq_pc),
@@ -109,7 +109,7 @@ module tb_core_bat_cached_bus60x_timer;
     .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n)
   );
   /* verilator lint_on PINCONNECTEMPTY */
-  bus60x_target_bfm #(.BASE_ADDR(32'b0),.MEM_BYTES(8192)) target(
+  bus60x_target_bfm #(.BASE_ADDR(32'b0),.MEM_BYTES(8192)) target(.bus_ce_i(1'b1),
     .clk_i(clk),.br_n_i(br_n),.abb_n_i(abb_n),.abb_oe_i(abb_oe),
     .ts_n_i(ts_n),.ts_oe_i(ts_oe),.a_i(bus_a),
     .dbb_n_i(dbb_n),.dbb_oe_i(dbb_oe),.bg_n_o(bg_n),

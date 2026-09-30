@@ -56,6 +56,8 @@ module ppc_core_bat_cached_bus60x #(
 ) (
   input  logic clk_i,
   input  logic rst_ni,
+  // High in the cycle that ends at a SYSCLK edge; 1 runs the bus 1:1.
+  input  logic bus_ce_i,
   input  logic external_irq_i,
   output logic interrupt_taken_o,
   output logic [31:0] interrupt_pc_o,
@@ -393,8 +395,10 @@ module ppc_core_bat_cached_bus60x #(
     .pimem_error_o,
     .busy_o
   );
+  // Without HID0[ICE] the instruction cache is enabled from reset.
   ppc_icache_managed #(
-    .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE),
+    .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE ||
+                        !ppc_pkg::cpu_has_hid0_ice(CPU_VARIANT)),
     .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS)
   ) managed_cache (
     .clk_i, .rst_ni,
@@ -584,7 +588,7 @@ module ppc_core_bat_cached_bus60x #(
     .RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK),
     .ENABLE_DCACHE(ENABLE_DCACHE)
   ) biu (
-    .clk_i, .rst_ni,
+    .clk_i, .rst_ni, .bus_ce_i,
     .imem_req_valid_i(scalar_imem_req_valid),
     .imem_req_ready_o(scalar_imem_req_ready),
     .imem_req_addr_i(scalar_imem_req_addr),

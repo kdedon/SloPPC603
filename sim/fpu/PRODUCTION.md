@@ -7,6 +7,69 @@ the manuals' per-instruction execution latency and initiation interval,
 ordered forwarding and retirement, and 602 operand tags and emulation traps.
 Detailed `Recorded:` entries retain each result's exact source scope.
 
+## Area round: instanced datapath, MLAB FPRs, shared units
+
+Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production
+lint-fpu-stream lint-fpu-dual test-fpu-testfloat`, commits `4df8136`,
+`b153b97`, `5620792`, `1a4b753`, `bbe2401` and `4318d67` (one run per commit),
+2026-09-29 to 2026-09-30. Pass. Every run printed the same `PASS` lines as
+the `8feaa06` + `fpu-testfloat` baseline: TestFloat 2,092,736 (603e) and
+1,043,512 (602) vectors with 0 mismatches; raw arithmetic 209,811/182,083,
+cluster 40,115/22,131 finish predictions; estimates 11,958/17,628; shell 910;
+enabled exceptions 3000 cases per personality; operand-binding hazards 648/640;
+flush/reset 4 and cancel-offset 76 per build; all lint targets clean.
+
+The exact-cycle timing, stream and dual benches pass unchanged, so every
+Table 6-5 latency and initiation interval holds with divides and conversions
+routed through the shared aligner and rounder. What changed per commit:
+the datapath split into instances (`4df8136`); FPRs in MLAB with a live-value
+table (`b153b97`); one alignment plan, one aligner, divider through the
+pipeline rounder (`5620792`); `fctiw` through the aligner (`1a4b753`);
+602 single-width narrowing (`bbe2401`); Quartus 17 generate syntax
+(`4318d67`). The 602 narrowing relies on 602 operands being
+binary32-representable; the 602 TestFloat, raw, cluster and enabled suites
+exercise that contract but do not feed a non-single operand to the 602.
+
+## Berkeley TestFloat cross-check
+
+Recorded: `make -C sim test-fpu-testfloat`, commit `f11d41b`, 2026-09-29.
+Pass, from a clean fetch. Sources: SoftFloat
+`ucb-bar/berkeley-softfloat-3` commit
+`a0c6494cdc11865811dec815d5c0049fba9d82a8` (archive SHA-256
+`1f719bcc8878be9627f6cfc44a0d6dbddf32bacc70ac81193bcbf2c62f97cbe9`),
+TestFloat `ucb-bar/berkeley-testfloat-3` commit
+`a9c849f1b0eb0264b626d9686ffae167d996e3be` (archive SHA-256
+`54852fd1d11f0109011e54d69952cda097d3c49709ce46e4800353a6e8c764c3`),
+PowerPC specialization and `-tininessbefore`, level 1, all four rounding
+modes. Two-operand functions use every level-1 case (46,464 per function,
+precision and mode); `mulAdd` takes every 613th of 6,133,248.
+
+| Model vs TestFloat, RTL vs model | 603e vectors | 602 vectors | Mismatches |
+|---|---|---|---|
+| `fadd`/`fsub`/`fmul`/`fdiv`, each | 185,856 f64 + 185,856 f32 | 185,856 f32 | 0 |
+| `fmadd`/`fmsub`/`fnmadd`/`fnmsub`, each | 40,024 f64 + 40,024 f32 | 40,024 f32 | 0 |
+| `frsp` (`f64_to_f32`) | 3,072 | — | 0 |
+| `fctiw` / `fctiwz` (`_to_i32 -exact`) | 3,072 / 768 | — / 600 (f32) | 0 |
+| `fcmpu` (`eq`, `lt_quiet`) | 92,928 f64 + 92,928 f32 | 92,928 f32 | 0 |
+| `fcmpo` (`lt`) | 46,464 f64 + 46,464 f32 | 46,464 f32 | 0 |
+| Total | 2,092,736 | 1,043,512 | 0 |
+
+The model matched TestFloat's result bits and five IEEE flags on every
+case after the documented PowerPC mappings; the 603e and 602 arithmetic
+benches matched the model on every vector (result, invalid causes, flags,
+FR/FI, FPRF, FPCC). Mapped cases, 603e / 602: first-NaN rule 138,624 /
+72,032; SoftFloat's fused NaN order (frC before frB) differing from PEM's
+frA, frB, frC 560 / 256; negated fused results 212,052 / 105,564.
+Infinity times zero plus a QNaN did not occur at this stride.
+
+No RTL or model bug was found. Classified PowerPC-versus-IEEE differences:
+fused NaN operand order and infinity times zero plus a QNaN (PEM §3.3.1.7,
+§3.3.6.1.1); SoftFloat's default NaN sign, tininess detection and
+`fctiw` positive saturation are set in the specialization to PEM's rules
+(PEM §3.3.1.7, §3.3.6.2.2, `fctiwx`). Checks run with all enables clear
+and NI=0; enabled exceptions, NI and estimates are covered by the other
+targets, not by this one.
+
 ## Enabled exceptions, clustered operands and host cross-check
 
 Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production

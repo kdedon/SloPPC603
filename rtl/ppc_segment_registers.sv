@@ -36,8 +36,17 @@ module ppc_segment_registers #(
 
   // Architectural SRs have no valid bit. Reset-to-zero is a deterministic
   // local service policy; 603e hard-reset SR contents are source-defined as
-  // unknown and software must initialize them.
-  logic [31:0] sr_q [16];
+  // unknown and software must initialize them. The values live in LUT RAM,
+  // which cannot be reset; sr_written_q clears on reset and masks reads of
+  // registers not written since, so every read still returns zero until the
+  // first write.
+  (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] sr_q [16];
+  logic [15:0] sr_written_q;
+  logic        sr_we;
+  logic [3:0]  sr_waddr;
+  logic [31:0] sr_wdata;
+  logic [31:0] sr_read;
+  logic        commit_fire;
 
   logic        rsp_valid_q;
   seg_req_kind_t rsp_kind_q;
@@ -72,6 +81,26 @@ module ppc_segment_registers #(
   assign transaction_idle_o = rst_ni && !rsp_valid_q &&
                               !prepared_q && !commit_ack_q;
 
+  // A commit needs prepared_q, which blocks requests, so the two writers
+  // never collide on the single write port.
+  assign commit_fire = ENABLE_RUNTIME_SEGMENT && prepare_commit_i &&
+                       !prepare_abort_i && prepared_q &&
+                       (!rsp_valid_q || rsp_ready_i);
+  assign sr_we = rst_ni && (commit_fire ||
+                 (request_fire && req_kind_i == SEG_WRITE && !req_pr_i));
+  assign sr_waddr = commit_fire ? prepared_index_q : request_index;
+  assign sr_wdata = commit_fire ? prepared_data_q : normalized_write_data;
+  assign sr_read = sr_q[request_index] & {32{sr_written_q[request_index]}};
+
+  always_ff @(posedge clk_i) begin
+    if (sr_we) sr_q[sr_waddr] <= sr_wdata;
+  end
+
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) sr_written_q <= '0;
+    else if (sr_we) sr_written_q[sr_waddr] <= 1'b1;
+  end
+
   assign rsp_valid_o = rst_ni && rsp_valid_q;
   assign rsp_kind_o = rsp_kind_q;
   assign rsp_index_o = rsp_index_q;
@@ -93,14 +122,12 @@ module ppc_segment_registers #(
       prepared_index_q <= '0;
       prepared_data_q <= '0;
       commit_ack_q <= 1'b0;
-      for (int unsigned index = 0; index < 16; index++) sr_q[index] <= '0;
     end else begin
       if (ENABLE_RUNTIME_SEGMENT) begin
         if (commit_ack_q && commit_ack_ready_i) commit_ack_q <= 1'b0;
         if (prepare_abort_i) prepared_q <= 1'b0;
         else if (prepare_commit_i && prepared_q &&
                  (!rsp_valid_q || rsp_ready_i)) begin
-          sr_q[prepared_index_q] <= prepared_data_q;
           prepared_q <= 1'b0;
           commit_ack_q <= 1'b1;
         end
@@ -116,16 +143,13 @@ module ppc_segment_registers #(
         case (req_kind_i)
           SEG_READ: begin
             if (req_pr_i) rsp_privileged_q <= 1'b1;
-            else rsp_data_q <= sr_q[request_index];
+            else rsp_data_q <= sr_read;
           end
           SEG_WRITE: begin
             if (req_pr_i) rsp_privileged_q <= 1'b1;
-            else begin
-              sr_q[request_index] <= normalized_write_data;
-              rsp_data_q <= normalized_write_data;
-            end
+            else rsp_data_q <= normalized_write_data;
           end
-          SEG_SNAPSHOT: rsp_data_q <= sr_q[request_index];
+          SEG_SNAPSHOT: rsp_data_q <= sr_read;
           SEG_PREPARE: begin
             if (!ENABLE_RUNTIME_SEGMENT) rsp_unsupported_q <= 1'b1;
             else if (req_pr_i) rsp_privileged_q <= 1'b1;
