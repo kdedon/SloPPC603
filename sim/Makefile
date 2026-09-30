@@ -174,6 +174,23 @@ test-fpu-enabled-602: $(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled $(PPC_FPU
 test-fpu-oracle-host:
 	cd fpu && python3 host_check.py --count 20000 --seed 0x1eee754
 
+# Berkeley TestFloat level-1 cases through the model and the arithmetic
+# bench. Fetches pinned third-party sources into $(BUILD_DIR)/testfloat.
+.PHONY: test-fpu-testfloat test-fpu-testfloat-603 test-fpu-testfloat-602
+TESTFLOAT_GEN := $(BUILD_DIR)/testfloat/testfloat_gen
+TESTFLOAT_FUSED_STRIDE ?= 613
+$(TESTFLOAT_GEN): fpu/fetch-softfloat.sh
+	fpu/fetch-softfloat.sh $(BUILD_DIR)/testfloat
+test-fpu-testfloat-603: $(TESTFLOAT_GEN) $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith
+	python3 fpu/testfloat_vectors.py --gen $(TESTFLOAT_GEN) --personality 603e --fused-stride $(TESTFLOAT_FUSED_STRIDE) --vectors $(BUILD_DIR)/fpu/testfloat-603.txt
+	./$(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(BUILD_DIR)/fpu/testfloat-603.txt
+	rm -f $(BUILD_DIR)/fpu/testfloat-603.txt
+test-fpu-testfloat-602: $(TESTFLOAT_GEN) $(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith
+	python3 fpu/testfloat_vectors.py --gen $(TESTFLOAT_GEN) --personality 602 --fused-stride $(TESTFLOAT_FUSED_STRIDE) --vectors $(BUILD_DIR)/fpu/testfloat-602.txt
+	./$(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(BUILD_DIR)/fpu/testfloat-602.txt
+	rm -f $(BUILD_DIR)/fpu/testfloat-602.txt
+test-fpu-testfloat: test-fpu-testfloat-603 test-fpu-testfloat-602
+
 .PHONY: test-fpu-timing-603 test-fpu-timing-602 lint-fpu-timing
 PPC_FPU_TIMING_603_BUILD := $(BUILD_DIR)/ppc-fpu-timing-603
 PPC_FPU_TIMING_602_BUILD := $(BUILD_DIR)/ppc-fpu-timing-602
