@@ -1096,7 +1096,7 @@ module ppc_core #(
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
-    .retire_valid_o(cq_retire_valid), .retire_ready_i(retire_ready_i && !special_retire_hold),
+    .retire_valid_o(cq_retire_valid), .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o),
     .retire_o, .retire_tag_o(retire_producer),
     .redirect_valid_i(selected_redirect_valid),
     .redirect_all_i(selected_redirect_all),
@@ -1117,7 +1117,9 @@ module ppc_core #(
     .cr_o(cr), .xer_o(xer),
     .flags_busy_o(flags_busy), .flags_owner_o(flags_owner)
   );
-  assign retire_valid_o = cq_retire_valid && !special_retire_hold;
+  // A diagnostic halt retires nothing further: a younger op dispatched
+  // under an outstanding access may already have finished.
+  assign retire_valid_o = cq_retire_valid && !special_retire_hold && !halted_o;
   assign commit = retire_valid_o && retire_ready_i;
   // Committed exceptions, taken branches and ISYNC redirect from registered
   // special-unit state on the edge after commit, when the serialized machine

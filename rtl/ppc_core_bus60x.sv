@@ -59,6 +59,8 @@ module ppc_core_bus60x #(
 );
   // Named constants: Quartus 17 rejects package-scoped enum port actuals.
   localparam ppc_pkg::fetch_fault_t NO_FETCH_FAULT = ppc_pkg::FETCH_OK;
+  // No 602 esa on this wrapper.
+  localparam ppc_pkg::esa_enable_t NO_ESA = ppc_pkg::ESA_DENIED;
   localparam ppc_pkg::data_fault_t NO_DATA_FAULT = ppc_pkg::DATA_OK;
   logic core_halted;
   logic imem_req_valid, imem_req_ready;
@@ -172,7 +174,7 @@ module ppc_core_bus60x #(
     .imem_rsp_ready_o(imem_rsp_ready),
     .imem_rsp_insn_i(imem_rsp_insn),
     .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(NO_FETCH_FAULT),
-    .imem_rsp_esa_i('0),  // ESA_DENIED: no 602 esa on this physical wrapper
+    .imem_rsp_esa_i(NO_ESA),
     .tlb_fill_req_ext_o(unused_tlb_fill_ext), .mmu_602_o(unused_mmu_602),
     .dmem_req_valid_o(dmem_req_valid),
     .dmem_req_ready_i(dmem_req_ready),

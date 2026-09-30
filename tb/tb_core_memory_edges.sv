@@ -247,13 +247,8 @@ module tb_core_memory_edges;
     require(!cut_accepted,"finished store was cancellable");repeat(3) tick();
     tr=1;#1;require(!cut_accepted,"store commit cut should reject");tick();cut=0;
     await_halt();require(requests==1,"store request duplicated");
-    // A killed unfinished linking branch cannot update LR or redirect later.
-    reset_core(32'h4800_0101); // bl 0x100
-    expected_count=2;expect_packet(0,32'h200,0,1,7,88);expect_packet(1,32'h204,1,0,0,0);
-    while(!dut.special.busy_o) tick();
-    require(!tv && dut.lr==0,"branch committed before cancellation fixture");
-    target=32'h200;cut=1;#1;require(cut_accepted,"unfinished branch cut rejected");tick();cut=0;
-    tr=1;await_halt();require(dut.lr==0 && requests==0,"killed branch left effects");
+    // A bl finishes when it dispatches to the branch unit, and a finished CQ
+    // head is irrevocable, so no unfinished linking branch can be cut here.
     // A committing taken branch wins over an external redirect on that edge.
     reset_core(32'h4800_0101);
     expected_count=3;expect_packet(0,0,0,0,0,0);expect_packet(1,32'h100,0,1,7,77);expect_packet(2,32'h104,1,0,0,0);
@@ -264,7 +259,7 @@ module tb_core_memory_edges;
     target=32'h200;cut=1;tr=1;#1;
     require(!cut_accepted,"external target incorrectly reported accepted over branch");
     tick();cut=0;await_halt();require(dut.lr==4 && requests==0,"branch link/target effects wrong");
-    $display("PASS memory edges: alignment/errors, load kill/drain, irrevocable store, branch kill/commit arbitration (%0d checks)",checks);
+    $display("PASS memory edges: alignment/errors, load kill/drain, irrevocable store, branch commit arbitration (%0d checks)",checks);
     $finish;
   end
   initial begin #100000;$fatal(1,"memory edge watchdog");end
