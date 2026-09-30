@@ -60,6 +60,9 @@ module tb_crstate_execution;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_special;
   logic [33:0] unused_debug_special;
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [8:0] unused_overlap;  // Plain-access overlap outputs; no access here.
+  /* verilator lint_on UNUSEDSIGNAL */
   ppc_special dut (
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
@@ -134,6 +137,12 @@ module tb_crstate_execution;
     .a_i(a), .b_i(b), .c_i(c), .cr_i(cr), .xer_flags_i(xer_flags), .xer_byte_count_i(7'b0),
     .cancel_i(cancel), .store_authorize_i(store_authorize),
     .commit_i(commit), .commit_tag_i(commit_tag),
+    .branch_retire_i(1'b0), .branch_retire_lk_i(1'b0), .branch_retire_ctr_i(1'b0),
+    .branch_retire_pc_i(32'b0), .dispatch_overlap_i(1'b0),
+    .queue_empty_i(1'b1), .queue_head_i('0),
+    .mem_overlap_o(unused_overlap[0]), .mem_dst_valid_o(unused_overlap[1]),
+    .mem_dst_o(unused_overlap[6:2]), .retire_hold_o(unused_overlap[7]),
+    .result_select_o(unused_overlap[8]),
     .result_valid_o(result_valid), .result_ready_i(result_ready),
     .result_o(result), .branch_commit_redirect_o(branch_commit_redirect),
     .branch_commit_target_o(branch_commit_target), .busy_o(busy),

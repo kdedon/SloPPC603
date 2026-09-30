@@ -32,6 +32,7 @@ module tb_special_lint #(
   wire tlb_fill_ack_valid_i = '0;
   wire tlb_fill_idle_i = '0;
   wire dispatch_valid_i = '0;
+  wire dispatch_overlap_i = '0;
   ppc_pkg::uop_t uop_i;
   assign uop_i = '0;
   ppc_pkg::completion_tag_t producer_i;
@@ -62,9 +63,17 @@ module tb_special_lint #(
   wire context_ready_i = '0;
   wire redirect_accepted_i = '0;
   wire store_authorize_i = '0;
+  wire queue_empty_i = '0;
+  wire [ppc_pkg::CQ_INDEX_WIDTH-1:0] queue_head_i = '0;
   wire commit_i = '0;
   ppc_pkg::completion_tag_t commit_tag_i;
   assign commit_tag_i = '0;
+  logic branch_retire_i, branch_retire_lk_i, branch_retire_ctr_i;
+  logic [31:0] branch_retire_pc_i;
+  assign branch_retire_i = 1'b0;
+  assign branch_retire_lk_i = 1'b0;
+  assign branch_retire_ctr_i = 1'b0;
+  assign branch_retire_pc_i = '0;
   wire result_ready_i = '0;
   wire dmem_req_ready_i = '0;
   wire dmem_rsp_valid_i = '0;
@@ -147,6 +156,11 @@ module tb_special_lint #(
   logic icache_ctl_invalidate_o;
   logic [4:0] tlb_fill_req_ext_o;
   ppc_pkg::mmu_602_t mmu_602_o;
+  logic mem_overlap_o;
+  logic mem_dst_valid_o;
+  logic [4:0] mem_dst_o;
+  logic retire_hold_o;
+  logic result_select_o;
   /* verilator lint_on UNUSEDSIGNAL */
   ppc_special #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),

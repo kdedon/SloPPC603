@@ -76,7 +76,7 @@ stores. Offsets are from `0xf0100000`.
 | `0x110`–`0x148` | `PERF_SLOT[15]` | R | Cycles by dispatch-slot cause; they sum to `PERF_CYCLES` |
 | `0x150` | `PERF_BRANCHES` | R | Branches dispatched |
 | `0x154` | `PERF_MEMORY` | R | Loads and stores dispatched (each micro-op of a multiple or string) |
-| `0x158` | `PERF_REDIRECTS` | R | Branch redirects (taken branches) |
+| `0x158` | `PERF_REDIRECTS` | R | Branch redirects at dispatch (mispredicted or unfolded taken branches; trace-mode taken branches) |
 | `0x400`–`0x7fc` | `PALETTE[256]` | W | `0x00RRGGBB`; reads return 0 |
 
 The performance counters (`soc_perf_counters`, `rtl/soc/soc_perf_counters.sv`) are
@@ -90,9 +90,9 @@ single dispatch slot had outcome `n`:
 | 0 | `0x110` | Dispatch: an instruction left the IQ |
 | 1 | `0x114` | Fetch empty: IQ empty, no redirect or bus fetch pending |
 | 2 | `0x118` | I-cache miss: IQ empty while a line fill or uncached fetch is on the bus |
-| 3 | `0x11c` | Branch refetch: IQ empty after a taken-branch redirect, until the target arrives |
+| 3 | `0x11c` | Branch refetch: IQ empty after a branch redirect or fold, until the target arrives; also the redirect edge itself |
 | 4 | `0x120` | Exception refetch: IQ empty after any other redirect (exception, `rfi`, `isync`, MMU resume), or dispatch held for a fault or interrupt |
-| 5 | `0x124` | Drain for branch: a branch waits for the completion queue and IU to empty |
+| 5 | `0x124` | Branch wait: a branch waits for an uncommitted LR, CTR or CR producer (in trace mode, for the completion queue and IU to empty) |
 | 6 | `0x128` | Drain for load/store: a load or store waits for the machine to empty |
 | 7 | `0x12c` | Drain for another special-lane instruction |
 | 8 | `0x130` | Special lane busy with a non-memory instruction |

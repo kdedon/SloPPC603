@@ -223,7 +223,10 @@ module tb_core_bat_machine_check #(
     emit(asm_ba(ROUTINE, 1'b1));                    // 0x2030 fetch TEA
     emit(asm_stw(7, int'(RESULT + 4), 0));
     emit(asm_stw(7, int'(CLEAR), 0));
-    emit(asm_ba(ROUTINE, 1'b1));                    // 0x203c clean refetch
+    // Instruction fetch may run ahead of the store; order the refetch.
+    emit(ASM_SYNC);
+    emit(ASM_ISYNC);
+    emit(asm_ba(ROUTINE, 1'b1));                    // 0x2044 clean refetch
     emit(asm_stw(7, int'(RESULT + 8), 0));
     // Single step three instructions, then IABR at 0x2400.
     emit(asm_li(3, 'h1432));                        // ME SE IR DR RI

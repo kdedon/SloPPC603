@@ -22,9 +22,10 @@ module tb_completion_update;
   logic unused_outputs;
   int checks = 0;
 
+  logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] unused_cq_head;
   ppc_completion dut (
     .clk_i(clk), .rst_ni(rst_n), .alloc_valid_i(av), .alloc_ready_o(ar),
-    .empty_o(empty), .alloc_i(allocation), .alloc_tag_o(at),
+    .empty_o(empty), .head_index_o(unused_cq_head), .alloc_i(allocation), .alloc_tag_o(at),
     .result_valid_i(rv), .result_ready_o(rr), .result_i(result),
     .finish_accept_o(fv), .wake_valid_o(wv), .wake_o(wake),
     .retire_valid_o(tv), .retire_ready_i(tr), .retire_o(retired), .retire_tag_o(rt),
@@ -48,7 +49,8 @@ module tb_completion_update;
                             retired.cr_mask, retired.write_cr_bit,
                             retired.cr_bit, retired.cr_delta,
                             retired.xer_delta, retired.seq_partial, retired.pc, retired.insn,
-                            retired.tag};
+                            retired.tag, retired.branch, retired.branch_lk,
+                            retired.branch_ctr};
 
   task automatic require(input logic condition, input string message);
     checks++;

@@ -5,8 +5,8 @@
 // recover to an accepted pre-edge queue prefix.
 module ppc_completion #(
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
-  // Clear: recovery is only legal with an empty queue (the serialized lane's
-  // redirects), so no kill vector or survivor walk is built.
+  // Clear: every recovery removes the whole queue (the serialized lane's
+  // redirects), so no survivor walk is built.
   parameter bit ENABLE_PIVOT_RECOVERY = 1'b1
 ) (
   input logic clk_i,
@@ -14,6 +14,8 @@ module ppc_completion #(
   input logic alloc_valid_i,
   output logic alloc_ready_o,
   output logic empty_o,
+  // Slot of the oldest entry; meaningful while the queue is not empty.
+  output logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] head_index_o,
   input ppc_pkg::retire_packet_t alloc_i,
   output ppc_pkg::completion_tag_t alloc_tag_o,
   input logic result_valid_i,
@@ -85,8 +87,8 @@ module ppc_completion #(
   always @(posedge clk_i) begin
     if (rst_ni) begin
       if (!ENABLE_PIVOT_RECOVERY && redirect_valid_i)
-        assert (redirect_all_i && (count_q == '0))
-          else $error("recovery without pivot support needs an empty queue");
+        assert (redirect_all_i && !retire_fire)
+          else $error("recovery without pivot support must remove the whole queue");
       assert (int'(head_q) < CQ_DEPTH) else $error("CQ head out of range");
       assert (int'(tail_q) < CQ_DEPTH) else $error("CQ tail out of range");
       assert (int'(count_q) <= CQ_DEPTH) else $error("CQ count out of range");
@@ -124,7 +126,7 @@ module ppc_completion #(
     if (!ENABLE_PIVOT_RECOVERY) begin
       redirect_found = 1'b1;
       retained = '0;
-      redirect_candidate_kill = '0;
+      redirect_candidate_kill = active_q;
     end
     redirect_candidate_survivors = COUNT_WIDTH'(retained);
     redirect_candidate_tail =
@@ -144,6 +146,7 @@ module ppc_completion #(
   assign alloc_ready_o = !redirect_accepted_o &&
                          (count_q < COUNT_WIDTH'(CQ_DEPTH));
   assign empty_o = (count_q == 0);
+  assign head_index_o = head_q;
   // Even a stale or killed response drains so that it cannot block a producer.
   assign result_ready_o = 1'b1;
   assign alloc_fire = alloc_valid_i && alloc_ready_o;

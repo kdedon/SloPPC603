@@ -362,7 +362,7 @@ module ppc_dcache #(
   end
 
   // --------------------------------------------------------------- lookup
-  logic cacheable, resv_match, lk_stall, lk_go;
+  logic cacheable, resv_match, lk_stall, lk_go, early_data_q;
   logic [7:0] lk_plan;
   logic [WAY_BITS-1:0] lk_way;
   logic lk_st_we, lk_lru_we, lk_cob, lk_alloc, lk_rsp, lk_align, lk_ok;
@@ -598,6 +598,9 @@ module ppc_dcache #(
   always_comb begin
     if (push_st_q == PU_READ) data_raddr = {push_line_q[SET_BITS-1:0], push_idx_q};
     else if (state_q == S_COB_READ) data_raddr = {req_set, step_idx_q};
+    // An idle cache reads the arriving request's double word, so a load
+    // hit has its data in S_LOOKUP.
+    else if (state_q == S_IDLE) data_raddr = {req_addr_i[5 +: SET_BITS], req_addr_i[4:3]};
     else data_raddr = {req_set, req_dw};
 
     data_way_we = '0;
@@ -769,6 +772,13 @@ module ppc_dcache #(
     state_next = first_step(plan_next);
   end
 
+  // The data RAM output in the first S_LOOKUP cycle is the request's double
+  // word unless a snoop push owned the read port on the accepting edge.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) early_data_q <= 1'b0;
+    else early_data_q <= state_q == S_IDLE && req_valid_i && req_ready_o &&
+                         push_st_q != PU_READ;
+  end
   always_ff @(posedge clk_i) begin
     if (state_q == S_IDLE && req_valid_i && req_ready_o) begin
       req_op_q <= req_op_i;
@@ -853,7 +863,14 @@ module ppc_dcache #(
       if (st_we) set_valid_q[st_waddr] <= 1'b1;
       if (state_q == S_IDLE && hid0_dcfi_i && MUTATION != 7) set_valid_q <= '0;
 
-      if (rsp_valid_q && rsp_ready_i) rsp_valid_q <= 1'b0;
+      // Status clears with the response, so an early load hit sets only
+      // valid and data.
+      if (rsp_valid_q && rsp_ready_i) begin
+        rsp_valid_q <= 1'b0;
+        rsp_error_q <= 1'b0;
+        rsp_align_q <= 1'b0;
+        rsp_ok_q <= 1'b0;
+      end
 
       // Write queue: pops come back in request order.
       if (wq_pop && wq_cob_q[0]) cob_valid_q <= 1'b0;
@@ -904,6 +921,10 @@ module ppc_dcache #(
               rsp_error_q <= lk_err;
               rsp_align_q <= lk_align;
               rsp_ok_q <= lk_ok;
+              state_q <= S_IDLE;
+            end else if (lk_read && early_data_q) begin
+              rsp_valid_q <= 1'b1;
+              rsp_data_q <= data_rdata[lk_way];
               state_q <= S_IDLE;
             end else if (lk_read) begin
               state_q <= S_READ_DATA;

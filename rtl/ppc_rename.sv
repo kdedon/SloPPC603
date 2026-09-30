@@ -8,6 +8,8 @@ module ppc_rename (
   input logic [4:0] read_a_i, read_b_i,
   input logic [31:0] arch_a_i, arch_b_i,
   output ppc_pkg::operand_t read_a_o, read_b_o,
+  // Registers with an uncommitted producer.
+  output logic [31:0] mapped_o,
   output logic alloc_ready_o,
   output ppc_pkg::rename_tag_t alloc_tag_o,
   input logic alloc_i,
@@ -59,6 +61,7 @@ module ppc_rename (
     return operand;
   endfunction
 
+  assign mapped_o = map_valid;
   assign read_a_o = read_operand(read_a_i, arch_a_i);
   assign read_b_o = read_operand(read_b_i, arch_b_i);
 

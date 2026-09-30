@@ -1,5 +1,17 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-29 pipelined load/store path
+
+Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,
+commit c9e3c08, 2026-09-29 ([PERFORMANCE.md](PERFORMANCE.md#pipelined-loadstore-path)).
+**Meets 50 MHz and 66 MHz** at every corner: setup +5.293 / +5.347 / +7.344 / +7.713 ns,
+hold +0.248 / +0.232 / +0.136 / +0.118 ns (slow 100 C, slow -40 C, fast 100 C, fast
+-40 C); worst internal path 14.71 ns (68.0 MHz). No endpoint fails at 15.152 ns.
+Two intermediate fits in this round missed 66 MHz: with the rename-map lookup and the
+fault-substituted uop on the dispatch path (588 endpoints, worst -0.840 ns, all from
+`iq|head_q`), and with the snoop stall in the early load-hit status write (2 endpoints
+into `dcache|rsp_error_q`); both were restructured, not traded.
+
 ## 2026-09-29 special-lane result path shortened
 
 Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,

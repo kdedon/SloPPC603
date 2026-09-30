@@ -413,6 +413,12 @@ test-insert-execution:
 test-insert-recovery: build-core-add-recovery
 	./$(BUILD_DIR)/core-add-recovery/Vtb_core_add_recovery +case=insert $(SIM_ARGS)
 
+.PHONY: test-core-branch-recovery
+# Mispredicted loop exits with a divide in flight and a dependent chain behind.
+test-core-branch-recovery: build-control-memory
+	python3 tools/control_memory_program.py --branch-recovery --output $(BUILD_DIR)/branch-recovery
+	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-recovery
+
 .PHONY: test-core-compare test-compare-execution
 test-core-compare: build-control-memory
 	python3 tools/control_memory_program.py --compare --output $(BUILD_DIR)/compare

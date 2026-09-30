@@ -6,11 +6,15 @@ The current integer CPU accepts explicit recovery requests through its internal/
 
 The interface exists only with `ENABLE_TEST_REDIRECT=1` (the default for
 benches). With it clear the redirect inputs are ignored, `redirect_accepted_o`
-stays low and the CQ builds only whole-machine recovery: internal exception,
+stays low and the CQ builds only whole-machine recovery: internal exception, trace-mode
 branch and ISYNC redirects are all-cuts of an empty serialized machine, so
 the CQ builds no kill vector (assertions check the empty queue). The
 integrated measurement top, the compiled-firmware benches and the managed
-cached reference benches use that production setting.
+cached reference benches use that production setting. A redirect from the
+branch unit (a mispredicted or unfolded branch, or a fold) is not a recovery:
+it redirects fetch and clears the fetch register and, for a mispredicted
+branch, the IQ, which hold only work younger than the branch. A recovery on
+the same edge wins.
 
 `redirect_valid_i` presents a request for the current rising edge. `redirect_all_i` requests an all-cut; otherwise `redirect_pivot_i` names a live completion identity and `redirect_keep_pivot_i` selects whether that pivot survives. `redirect_target_i` supplies the aligned target PC. `redirect_accepted_o` reports the combinational acceptance decision, sampled on that edge.
 

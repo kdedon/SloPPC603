@@ -94,6 +94,9 @@ module ppc_special #(
   output logic dispatch_ready_o,
   input ppc_pkg::uop_t uop_i,
   input ppc_pkg::completion_tag_t producer_i,
+  // A plain load or store, or its alignment exception: it needs no
+  // commit-time action unless it faults.
+  input logic dispatch_overlap_i,
   input logic [31:0] pc_i,
   input ppc_pkg::page_miss_t dispatch_page_miss_i,
   input logic [31:0] a_i, b_i, c_i,
@@ -121,8 +124,16 @@ module ppc_special #(
   input logic context_ready_i, redirect_accepted_i,
   output logic frontend_fence_o, context_valid_o,
   input logic store_authorize_i,
+  // UM 1.1.4.3 (1-11): a store is performed only once every older instruction has
+  // completed. Dispatch into an empty queue, or the lane's access at the
+  // queue head.
+  input logic queue_empty_i,
+  input logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] queue_head_i,
   input logic commit_i,
   input ppc_pkg::completion_tag_t commit_tag_i,
+  // Retirement of a branch resolved at dispatch.
+  input logic branch_retire_i, branch_retire_lk_i, branch_retire_ctr_i,
+  input logic [31:0] branch_retire_pc_i,
   output logic result_valid_o,
   input logic result_ready_i,
   output ppc_pkg::result_packet_t result_o,
@@ -140,6 +151,15 @@ module ppc_special #(
   output logic checkstop_o,
   output logic [31:0] iabr_o,
   output logic busy_o,
+  // A plain load or store runs before its result: younger integer work may
+  // dispatch unless it reads mem_dst_o.
+  output logic mem_overlap_o,
+  output logic mem_dst_valid_o,
+  output logic [4:0] mem_dst_o,
+  // After an event commits, younger work waits for the redirect.
+  output logic retire_hold_o,
+  // Registered: the lane owns the shared result port this cycle.
+  output logic result_select_o,
   output ppc_pkg::completion_tag_t producer_o,
   output logic store_irrevocable_o,
   output logic [31:0] lr_o, ctr_o,
@@ -228,6 +248,7 @@ module ppc_special #(
   logic [31:0] derived_miss_page, derived_compare, derived_hash1, derived_hash2;
   logic sdr1_write, dispatch_sdr1_write;
   logic killed_q;
+  logic overlap_q, overlap_d, retire_hold_q, result_select_q, mem_released;
   result_packet_t memory_result_q;
   logic commit_match, result_fire, request_fire, response_fire;
   logic [31:0] exec_value;
@@ -530,8 +551,21 @@ module ppc_special #(
   endfunction
 
   assign busy_o = (state_q != S_IDLE);
+  // A faulting plain access moves on to S_HOLD, which blocks dispatch.
+  assign mem_overlap_o = overlap_q &&
+    ((state_q == S_MEM_PREP) || (state_q == S_MEM_OFFER) ||
+     (state_q == S_MEM_WAIT) || (state_q == S_MEM_RESULT));
+  // A released result wakes its readers on the result edge.
+  assign mem_dst_valid_o = mem_overlap_o && uop_q.gpr_write &&
+    !((state_q == S_MEM_RESULT) && mem_released);
+  assign mem_dst_o = uop_q.dst;
+  assign retire_hold_o = retire_hold_q;
+  assign result_select_o = result_select_q;
   assign producer_o = producer_q;
-  assign dispatch_ready_o = (state_q == S_IDLE) && !cancel_i;
+  // The next plain access may dispatch on the releasing result edge.
+  assign dispatch_ready_o = !cancel_i && ((state_q == S_IDLE) ||
+    ((state_q == S_MEM_RESULT) && mem_released && result_ready_i &&
+     dispatch_overlap_i));
   assign commit_match = commit_i && (commit_tag_i == producer_q);
   assign result_fire = result_valid_o && result_ready_i;
   assign request_fire = dmem_req_valid_o && dmem_req_ready_i;
@@ -1006,7 +1040,7 @@ module ppc_special #(
   // admission. A held operation either cancels or runs its state.
   logic interrupt_accept, dispatch_fire, step_run, hold_commit;
   assign interrupt_accept = ENABLE_EXTERNAL_INTERRUPTS && interrupt_valid_i &&
-                            dispatch_ready_o;
+                            (state_q == S_IDLE) && !cancel_i;
   assign dispatch_fire = dispatch_valid_i && dispatch_ready_o;
   assign step_run = !cancel_i && (state_q != S_IDLE);
   assign hold_commit = step_run && (state_q == S_HOLD) && commit_match;
@@ -1036,7 +1070,13 @@ module ppc_special #(
     end else if (dispatch_fire) begin
       killed_d = 1'b0;
       fence_d = dispatch_fenced;
-      if ((uop_i.special_op == SPECIAL_LOAD) ||
+      // A plain access has nothing to check before its offer.
+      if (ENABLE_UNALIGNED_DATAPATH && dispatch_overlap_i &&
+          ((uop_i.special_op == SPECIAL_LOAD) ||
+           ((uop_i.special_op == SPECIAL_STORE) && store_authorize_i &&
+            queue_empty_i)))
+        state_d = S_MEM_OFFER;
+      else if ((uop_i.special_op == SPECIAL_LOAD) ||
           (uop_i.special_op == SPECIAL_STORE) ||
           (ENABLE_DATA_CACHE && (uop_i.special_op == SPECIAL_SYNC)))
         state_d = S_MEM_PREP;
@@ -1140,7 +1180,8 @@ module ppc_special #(
             fence_d = 1'b1;
             state_d = S_MEM_RESULT;
           end else if (misaligned || mem_skip) state_d = S_MEM_RESULT;
-          else if (mem_killable || store_authorize_i)
+          else if (mem_killable ||
+                   (store_authorize_i && (queue_head_i == producer_q.index)))
             state_d = S_MEM_OFFER;
         end
         S_MEM_OFFER: if (request_fire) state_d = killed_q ? S_MEM_DRAIN : S_MEM_WAIT;
@@ -1152,7 +1193,7 @@ module ppc_special #(
             state_d = S_MEM_RESULT;
           end
         end
-        S_MEM_RESULT: if (result_fire) state_d = S_HOLD;
+        S_MEM_RESULT: if (result_fire) state_d = mem_released ? S_IDLE : S_HOLD;
         S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
         S_ICBI: if (icbi_req_ready_i) state_d = killed_q ? S_IDLE : S_EXEC;
         S_EXCEPTION_RESULT: if (exception_result_accept) begin
@@ -1168,15 +1209,37 @@ module ppc_special #(
       endcase
     end
   end
+  // A plain access that completes without a fault retires with no lane
+  // action, so the lane releases on its result.
+  always_comb begin
+    overlap_d = overlap_q;
+    if (interrupt_accept) overlap_d = 1'b0;
+    else if (dispatch_fire) overlap_d = dispatch_overlap_i;
+  end
+  assign mem_released = overlap_q && !fence_q && !memory_result_q.fault &&
+    (memory_result_q.data_fault == DATA_OK);
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       state_q <= S_IDLE;
       fence_q <= 1'b0;
       killed_q <= 1'b0;
+      overlap_q <= 1'b0;
+      retire_hold_q <= 1'b0;
+      result_select_q <= 1'b0;
     end else begin
       state_q <= state_d;
       fence_q <= fence_d;
       killed_q <= killed_d;
+      overlap_q <= overlap_d;
+      result_select_q <= (state_d != S_IDLE) && !(overlap_d &&
+        ((state_d == S_MEM_PREP) || (state_d == S_MEM_OFFER) ||
+         (state_d == S_MEM_WAIT)));
+      retire_hold_q <= (state_d == S_EXCEPTION_RESULT) ||
+        (state_d == S_EXCEPTION_HALT) || (state_d == S_CHECKSTOP) ||
+        (state_d == S_CONTEXT_INSTALL) || (state_d == S_CONTEXT_REDIRECT) ||
+        (state_d == S_CONTEXT_ABORT) || (state_d == S_MMU_ACK) ||
+        (state_d == S_MMU_REDIRECT) || (state_d == S_MMU_ABORT) ||
+        (state_d == S_ICACHE_CTL) || (state_d == S_BRANCH_REDIRECT);
     end
   end
 
@@ -1463,6 +1526,8 @@ module ppc_special #(
         if (branch_lr_write_q) lr_q <= branch_lr_next_q;
         if (branch_ctr_write_q) ctr_q <= branch_ctr_next_q;
       end
+      if (branch_retire_i && branch_retire_lk_i) lr_q <= branch_retire_pc_i + 32'd4;
+      if (branch_retire_i && branch_retire_ctr_i) ctr_q <= ctr_q - 32'd1;
     end
   end
 
@@ -1671,8 +1736,10 @@ module ppc_special #(
       if (dispatch_fire)
         assert (!(ENABLE_EXTERNAL_INTERRUPTS && interrupt_valid_i))
           else $error("interrupt boundary offered with a dispatch");
+      // Older work dispatched ahead of a plain access may retire while the
+      // access holds its fault.
       if (commit_i && (state_q == S_HOLD))
-        assert (commit_match)
+        assert (commit_match || overlap_q)
           else $error("serialized special retirement identity mismatch");
       if (exception_event_valid)
         assert (exception_event_ready)

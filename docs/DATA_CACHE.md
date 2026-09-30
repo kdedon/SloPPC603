@@ -195,14 +195,16 @@ cache (they are not snooped, §3.2.3.4).
 
 | Event | Cycles after the accepting edge |
 |---|---|
-| load hit response valid | 2 (lookup, data select) |
+| load hit response valid | 1 (lookup and data select); 2 when a snoop push held the data read port on the accepting edge or the lookup stalls |
 | store hit response valid | 2 (lookup, data write) |
 | miss fill request valid | 2, or 7 with a castout (4 data reads, then the castout request) |
 | snoop response valid | 2 after `snoop_valid_i` is sampled |
 | push request valid | 5 after the push-flagged response |
 
 The lookup cycle is MLAB read, 20-bit compare, state and LRU write data and FSM
-next state; data RAM outputs are selected with the registered hit way.
+next state. An idle cache reads the arriving request's double word, so on a load
+hit the lookup cycle also selects the data RAM outputs with the compared hit way;
+otherwise the next cycle selects them with the registered way.
 
 ## Integration needs
 

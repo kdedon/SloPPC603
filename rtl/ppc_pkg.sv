@@ -352,6 +352,11 @@ package ppc_pkg;
     logic [31:0] xer_delta;
     // More micro-ops of this instruction follow; the PC does not advance.
     logic seq_partial;
+    // A branch resolved at dispatch: value is its next PC. LR takes pc + 4
+    // and CTR decrements when it retires.
+    logic branch;
+    logic branch_lk;
+    logic branch_ctr;
   } retire_packet_t;
   // Performance events, registered one cycle after the cycle they describe.
   // slot says what the single dispatch slot did that cycle, so the slot

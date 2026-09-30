@@ -46,8 +46,9 @@ module tb_recovery_state;
                         retire_packet.gpr_write && !retire_packet.illegal;
 
   logic unused_cq_empty, unused_cq_finish;
+  logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] unused_cq_head;
   ppc_completion completion (
-    .finish_accept_o(unused_cq_finish), .empty_o(unused_cq_empty), .clk_i(clk), .rst_ni(rst_n),
+    .finish_accept_o(unused_cq_finish), .empty_o(unused_cq_empty), .head_index_o(unused_cq_head), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(cq_alloc_valid), .alloc_ready_o(cq_alloc_ready),
     .alloc_i(cq_alloc_packet), .alloc_tag_o(cq_alloc_tag),
     .result_valid_i(result_valid), .result_ready_o(result_ready),
