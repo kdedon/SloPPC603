@@ -126,6 +126,16 @@ class PowerPCReferenceChecks(unittest.TestCase):
         self.assertEqual(result['result'], 0x36a0000000000000)
         self.assertEqual(result['fprf'], 0b10100)
 
+    def test_fused_nan_factor_is_not_infinity_subtraction(self):
+        inf, qnan = 0x7ff0000000000000, 0x7ff8000000000000
+        for op in ('madd', 'msub', 'nmadd', 'nmsub'):
+            for a, c in ((qnan, inf), (inf, qnan), (inf | 1 << 63, qnan)):
+                for b in (inf, inf | 1 << 63):
+                    result = arithmetic(op, a, b, c, ve=True)
+                    self.assertEqual(result['invalid'], 0)
+                    self.assertTrue(result['write_result'])
+                    self.assertEqual(result['result'], qnan)
+
 
 if __name__ == '__main__':
     unittest.main()

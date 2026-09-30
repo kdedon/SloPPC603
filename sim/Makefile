@@ -132,6 +132,48 @@ test-fpu-arith: test-fpu-reference $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith $(PP
 test-fpu-arith-602: test-fpu-reference $(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith $(PPC_FPU_ARITH_602_VECTORS)
 	./$(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_ARITH_602_VECTORS)
 
+# Exponent-clustered operands with random RN and VE/OE/UE/ZE/NI enables.
+.PHONY: test-fpu-arith-cluster test-fpu-arith-cluster-602
+PPC_FPU_CLUSTER_603 := $(BUILD_DIR)/fpu/cluster-603.txt
+PPC_FPU_CLUSTER_602 := $(BUILD_DIR)/fpu/cluster-602.txt
+$(PPC_FPU_CLUSTER_603): fpu/cluster_vectors.py fpu/production_vectors.py fpu/production_vectors_602.py fpu/ppc_reference.py fpu/reference.py
+	mkdir -p $(BUILD_DIR)/fpu
+	python3 fpu/cluster_vectors.py --personality 603e --vectors $@ --count 2000 --seed 0xc105e603
+$(PPC_FPU_CLUSTER_602): fpu/cluster_vectors.py fpu/production_vectors.py fpu/production_vectors_602.py fpu/ppc_reference.py fpu/reference.py
+	mkdir -p $(BUILD_DIR)/fpu
+	python3 fpu/cluster_vectors.py --personality 602 --vectors $@ --count 2000 --seed 0xc105e602
+test-fpu-arith-cluster: $(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith $(PPC_FPU_CLUSTER_603)
+	./$(PPC_FPU_ARITH_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_CLUSTER_603)
+test-fpu-arith-cluster-602: $(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith $(PPC_FPU_CLUSTER_602)
+	./$(PPC_FPU_ARITH_602_BUILD)/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_CLUSTER_602)
+
+# Arithmetic under FPSCR enables with MSR FE0/FE1, through the shell.
+.PHONY: test-fpu-enabled-603 test-fpu-enabled-602
+PPC_FPU_ENABLED_603_BUILD := $(BUILD_DIR)/ppc-fpu-enabled-603
+PPC_FPU_ENABLED_602_BUILD := $(BUILD_DIR)/ppc-fpu-enabled-602
+PPC_FPU_ENABLED_603 := $(BUILD_DIR)/fpu/enabled-603.txt
+PPC_FPU_ENABLED_602 := $(BUILD_DIR)/fpu/enabled-602.txt
+PPC_FPU_ENABLED_PY := fpu/enabled_vectors.py fpu/cluster_vectors.py fpu/production_vectors.py fpu/production_vectors_602.py fpu/ppc_reference.py fpu/reference.py
+$(PPC_FPU_ENABLED_603): $(PPC_FPU_ENABLED_PY)
+	mkdir -p $(BUILD_DIR)/fpu
+	python3 fpu/enabled_vectors.py --personality 603e --vectors $@ --count 3000 --seed 0xe7ab1ed
+$(PPC_FPU_ENABLED_602): $(PPC_FPU_ENABLED_PY)
+	mkdir -p $(BUILD_DIR)/fpu
+	python3 fpu/enabled_vectors.py --personality 602 --vectors $@ --count 3000 --seed 0xe7ab602
+$(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b0" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_603_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
+$(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled: $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 "-GCPU_602=1'b1" --top-module tb_ppc_fpu_enabled --Mdir $(PPC_FPU_ENABLED_602_BUILD) $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu.sv fpu/tb_ppc_fpu_enabled.sv
+test-fpu-enabled-603: $(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled $(PPC_FPU_ENABLED_603)
+	./$(PPC_FPU_ENABLED_603_BUILD)/Vtb_ppc_fpu_enabled +VECTORS=$(PPC_FPU_ENABLED_603)
+test-fpu-enabled-602: $(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled $(PPC_FPU_ENABLED_602)
+	./$(PPC_FPU_ENABLED_602_BUILD)/Vtb_ppc_fpu_enabled +VECTORS=$(PPC_FPU_ENABLED_602)
+
+# The exact-rational oracle against host IEEE arithmetic in all four modes.
+.PHONY: test-fpu-oracle-host
+test-fpu-oracle-host:
+	cd fpu && python3 host_check.py --count 20000 --seed 0x1eee754
+
 .PHONY: test-fpu-timing-603 test-fpu-timing-602 lint-fpu-timing
 PPC_FPU_TIMING_603_BUILD := $(BUILD_DIR)/ppc-fpu-timing-603
 PPC_FPU_TIMING_602_BUILD := $(BUILD_DIR)/ppc-fpu-timing-602
@@ -254,6 +296,8 @@ test-fpu: test-fpu-rsqrt-table test-fpu-arith test-fpu-estimates test-fpu-shell
 
 .PHONY: test-fpu-all
 test-fpu-all: test-fpu test-fpu-arith-602 test-fpu-estimates-602 \
+	test-fpu-arith-cluster test-fpu-arith-cluster-602 \
+	test-fpu-enabled-603 test-fpu-enabled-602 test-fpu-oracle-host \
 	test-fpu-602 test-fpu-timing-603 test-fpu-timing-602 \
 	test-fpu-stream-603 test-fpu-stream-602 \
 	test-fpu-dual-603 test-fpu-dual-602

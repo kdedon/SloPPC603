@@ -112,7 +112,10 @@ def arithmetic(op, a, b=0, c=0, rn=0, single=False, ni=False,
             out['invalid'] |= IMZ
     if op in ('add', 'sub') and ka == kb == 'inf' and (sa != sb if op == 'add' else sa == sb):
         out['invalid'] |= ISI
-    if op in ('madd', 'msub', 'nmadd', 'nmsub') and (ka == 'inf' or kc == 'inf') and kb == 'inf' and not (out['invalid'] & IMZ):
+    # A NaN factor makes the product NaN, not infinite, so no VXISI.
+    if (op in ('madd', 'msub', 'nmadd', 'nmsub') and 'inf' in (ka, kc) and
+            kb == 'inf' and ka not in ('snan', 'qnan') and
+            kc not in ('snan', 'qnan') and not (out['invalid'] & IMZ)):
         product_sign = sa ^ sc
         addend_sign = sb ^ (op in ('msub', 'nmsub'))
         if product_sign != addend_sign:
