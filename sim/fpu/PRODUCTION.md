@@ -7,6 +7,27 @@ the manuals' per-instruction execution latency and initiation interval,
 ordered forwarding and retirement, and 602 operand tags and emulation traps.
 Detailed `Recorded:` entries retain each result's exact source scope.
 
+## Retiming round: exponent, rounder tests, shell picks, divider capture
+
+Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference test-fpu-testfloat
+lint-fpu-production lint-fpu-timing lint-fpu-stream lint-fpu-dual`, commit
+`d00e8ec`, 2026-09-30. Pass. The sorted `PASS` and per-operation vector lines
+are identical to the same targets run at `9a9025f` (FPU RTL of `2ae952b`),
+including TestFloat with 0 mismatches, the raw, cluster and estimate finish
+predictions, the host oracle, shell 910, 602 173, exact timing 71/52
+responses, streams 32/32/32, dual 32/24, enabled exceptions and
+operand-binding hazards; all lint targets clean.
+
+The exact-cycle timing, stream and dual benches pass unchanged, so every
+Table 6-5 latency and initiation interval holds. The changes move logic
+between existing cycles only: the add stage registers the leading-zero count
+and exponent terms that the rounder resolves; rounding tests form beside the
+incrementer; conversion rounding and range checks move to the add stage;
+store data converts in the store descriptor; finishing operand data, CR
+forwarding and the pair pick drop late terms; the divider loads operands
+while a divide may start. The shell benches run a new simulation assertion
+that at most one entry waits per resource; it did not fire.
+
 ## Shell area round: one value per entry, bindings, 603e rounder window
 
 Recorded: `make -C sim -j2 test-fpu-all test-fpu-testfloat lint-fpu-production
