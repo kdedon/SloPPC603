@@ -1110,10 +1110,12 @@ module ppc_fpu #(
           pending_q[i].st.fpr_write &&
           pending_q[i].st.exception == FPU_NO_EXCEPTION) begin
         slot_src[i].ready = 1'b1;
-      end else if (pending_q[i].finishing && arith_finish_write) begin
+      end else if (pending_q[i].finishing) begin
         // A trapping value aborts every younger consumer before it
-        // commits, so only stores wait on the trap check.
-        slot_src[i].ready = 1'b1;
+        // commits, so only stores wait on the trap check. Only readiness
+        // waits for the finishing write; a consumer launches only when
+        // ready.
+        slot_src[i].ready = arith_finish_write;
         slot_src[i].fwd = 1'b1;
         slot_src[i].raw = '0;
         slot_src[i].sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
