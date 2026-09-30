@@ -17,20 +17,20 @@ module ppc_ram_sdp_be #(
   input  logic [$clog2(DEPTH)-1:0] raddr_i,
   output logic [8*BYTES-1:0]       rdata_o
 );
+  // BYTES must be even.
   localparam int PAIRS = BYTES / 2;
 
-  if (BYTES % 2 != 0) begin : g_bad_bytes
-    $error("ppc_ram_sdp_be: BYTES must be even");
-  end
-
-  for (genvar p = 0; p < PAIRS; p++) begin : g_pair
+  genvar gp;
+  generate
+  for (gp = 0; gp < PAIRS; gp = gp + 1) begin : g_pair
     (* ramstyle = "M10K, no_rw_check" *) logic [1:0][7:0] mem [DEPTH];
 
     always_ff @(posedge clk_i) begin
-      if (we_i[2*p])     mem[waddr_i][0] <= wdata_i[16*p +: 8];
-      if (we_i[2*p + 1]) mem[waddr_i][1] <= wdata_i[16*p + 8 +: 8];
-      rdata_o[16*p +: 16] <= mem[raddr_i];
+      if (we_i[2*gp])     mem[waddr_i][0] <= wdata_i[16*gp +: 8];
+      if (we_i[2*gp + 1]) mem[waddr_i][1] <= wdata_i[16*gp + 8 +: 8];
+      rdata_o[16*gp +: 16] <= mem[raddr_i];
     end
   end
+  endgenerate
 endmodule
 `default_nettype wire
