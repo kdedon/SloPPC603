@@ -106,7 +106,7 @@ full length, bits 31:16 the clock in MHz.
 
 | Program | Full | Smoke test | Full-length time at 50 MHz |
 |---|---|---|---|
-| Hello (Mandelbrot) | fixed | fixed | under 1 s |
+| Hello (Mandelbrot) | fixed | fixed | about 25 s at 1920 × 1080 (estimated from 814 cycles per pixel in simulation); under 1 s at 320 × 240 |
 | Dhrystone 2.1 | 100 000 runs | 200 runs | about 7 s |
 | CoreMark | 400 iterations | 1 iteration | about 12 s (CoreMark requires at least 10 s) |
 
@@ -225,59 +225,76 @@ DDR3 region; the firmware clears it.
 ### Simulation smoke run
 
 `make -C sim mister-smoke` builds `tb_mister` and the MiSTer image and runs it with
-`MISTER_MODE=03` (all three programs, smoke-test length). The bench models DDRAM with
-`BUSY` asserted on a pseudo-random quarter of cycles. It fails on a checkstop, a
-watchdog, a non-zero exit code, a DDRAM command changing under `BUSY`, a DDRAM write
-that differs from the framebuffer store queued for it (address, byte lanes, data, order),
-a write outside the framebuffer, any store left undelivered at exit, or an SoC
-retirement count that differs from the processor's by more than the one-cycle sampling
-skew. It renders the DDR3 framebuffer through the palette to
-`sim/build/mister/mister-03.png`.
+`MISTER_MODE=03` (all three programs, smoke-test length) at a 320 × 240 framebuffer, the
+bench's geometry parameters; the firmware takes the geometry from the registers, so the
+same image runs at 1920 × 1080 on hardware. The default (`MISTER_FB=1`) is the DDR3 build.
+Its DDRAM model asserts `BUSY` on a pseudo-random quarter of cycles and returns read
+beats with random gaps. The bench fails on a checkstop, a watchdog, a non-zero exit code,
+a DDRAM command changing under `BUSY`, a read and a write together, a DDRAM write that
+differs from the framebuffer store queued for it (address, byte lanes, data, order), a
+write outside the framebuffer, any store left undelivered at exit, a DDR3 framebuffer
+that differs from the stores seen on the bus, or an SoC retirement count that differs
+from the processor's by more than the one-cycle sampling skew. It then saves the screen
+through a model of the framework's SD block interface (sector requests in order,
+bytes read four clocks after each address) and checks every byte of the file: header,
+palette against the palette writes, pixels against DDR3. It writes the picture to
+`sim/build/mister/fb1/mister-03.png`, the file to `screen-03.pfb` and its
+`mister/fb2png.py` conversion to `screen-03.png`. `MISTER_FB=0` runs the native build:
+it captures one frame from the video outputs, checks the DE and sync structure, compares
+every pixel with the bus stores through the palette, and fails on any DDRAM command.
 
-Recorded: `make -C sim lint check-spec mister-smoke`, commit 283c4ea plus the uncommitted `soc_ram_sp_be` change later committed as e1b0910, 2026-09-29. All pass; the counts below are unchanged from the first run at d2edf70.
+Recorded: `make -C sim lint check-spec mister-smoke`, `make -C sim mister-smoke MISTER_FB=0`,
+`make -C sim demo-hello demo-dhrystone`, commit 64e7929 (run on the uncommitted tree it
+records), 2026-09-29. All pass.
 
-| Measure | Value |
-|---|---:|
-| Cycles from reset to the summary | 43,197,624 |
-| Instructions retired | 14,248,078 |
-| Framebuffer stores = DDRAM writes | 104,944 |
-| Bus tenures | 96,517 |
-| Mandelbrot | 37,479,235 cycles, CPI 2.85 |
-| Dhrystone, 200 runs | 3,427.7 cycles/run, 0.166 DMIPS/MHz, CPI 5.80 |
-| CoreMark, 1 iteration | 1,541,554 cycles, 0.648 CoreMark/MHz, CRCs match, CPI 5.10 |
+| Measure | DDR3 build | Native build |
+|---|---:|---:|
+| Cycles from reset to exit | 41,625,987 | 42,687,368 |
+| Instructions retired | 11,331,858 | 11,449,789 |
+| Framebuffer stores | 154,240 (= DDRAM writes) | 154,240 |
+| Screen file | 153 sectors, every byte checked | — |
 
-The rates agree with the simulation images in [DEMO_SOC.md](DEMO_SOC.md#results) to
-within their run lengths.
+Firmware summary (both builds): Mandelbrot 320 × 128, 33,336,271 cycles, CPI 3.43;
+Dhrystone 200 runs, 685,719 cycles, 0.166 DMIPS/MHz, CPI 5.80; CoreMark 1 iteration,
+1,541,416 cycles, 0.648 CoreMark/MHz, CRCs match, CPI 5.10. The standalone demo SoC
+images (`demo-hello`, `demo-dhrystone`, framebuffer at `0xf0000000`) pass with the same
+firmware sources.
 
-It does not cover `hps_io`, the OSD, the PLL, the framework scaler, the full-length
-runs, or DDR3 read-back by the scaler.
+It does not cover `hps_io`, the OSD, the PLL, the framework scaler, the 1920 × 1080
+geometry in simulation (its checksum comes from `toolchain/demo/mandel_sum.c` on the
+host), the full-length runs, or DDR3 read-back by the scaler.
 
 ### Build
 
-Recorded: `mister/build.sh --clean`, commit e1b0910, 2026-09-29. Quartus 17.0.2 Lite, seed 2,
-multi-corner fitting and analysis. Exit status 0, no critical warnings. The fitter RAM
-summary places the program RAM (`soc_ram_sp_be|altsyncram`, single port, 16384 × 64,
-128 M10K blocks) with init file `firmware/mister.mif`, so the firmware is in the
-bitstream.
+Recorded: `mister/build.sh --clean`, commit 64e7929, 2026-09-29. Default build (1920 × 1080
+DDR3 framebuffer, screen save). Quartus 17.0.2 Lite, seed 2, multi-corner fitting and
+analysis. Exit status 0, no critical warnings. The fitter RAM summary places the program
+RAM (`soc_ram_sp_be|altsyncram`, single port, 16384 × 64, 128 M10K blocks) with init file
+`firmware/mister.mif`, so the firmware is in the bitstream.
 
 | Resource | Used |
 |---|---|
-| ALMs | 17,160 / 41,910 (41%) |
-| Registers | 23,125 |
-| Block memory bits | 1,710,523 / 5,662,720 (30%) |
-| M10K blocks | 240 / 553 (43%) |
+| ALMs | 17,461 / 41,910 (42%) |
+| Registers | 23,560 |
+| Block memory bits | 1,720,923 / 5,662,720 (30%) |
+| M10K blocks | 243 / 553 (44%) |
 | DSP blocks | 35 / 112 |
 | PLLs | 3 / 6 |
 
-Every clock meets setup, hold, recovery and removal at all four corners (slow and fast,
-100 °C and −40 °C). Core clock (50 MHz): worst setup slack +3.410 ns (slow, −40 °C),
-worst hold slack +0.078 ns (fast, −40 °C). The smallest slack of any clock is +0.078 ns.
-Seed 1 without multi-corner fitting left the scaler HDMI clock at −0.120 ns at the slow
-−40 °C corner.
+Block RAM does not drop against the 320 × 240 DDR3 build at e1b0910 (240 M10K): that
+framebuffer was already in DDR3. The three new blocks are the screen-save sector buffer
+and palette copy.
 
-`mister/output_files/ppc603e.rbf` (3,241,960 bytes), SHA-256
-`2b72c1d9bdfb3e7d87444bd97fbb425a1fe19aeb47b7917b5d46b3ef23e642af`. The firmware embeds
+Every clock meets setup, hold, recovery and removal at all four corners (slow and fast,
+100 °C and −40 °C). Core clock (50 MHz): worst setup slack +3.938 ns (slow, −40 °C),
+worst hold slack +0.099 ns (fast, −40 °C). The smallest slack of any clock is +0.077 ns
+(scaler HDMI clock, hold, slow −40 °C).
+
+`mister/output_files/ppc603e.rbf`, copied to `build/mister/PPC603e_64e7929.rbf`
+(3,282,724 bytes), SHA-256
+`068eb597d572e2c987c75484eabaa1465cfc7f002cc8bdebc15b7c056a74cf6b`. The firmware embeds
 the commit, so a rebuild at another commit gives a different digest.
 
-Not covered: running on a DE10-Nano. The `quartus/demo` project also compiles
-`soc_ram_sp_be` (without an init file) and was not rebuilt.
+Not covered: running on a DE10-Nano (1080p picture, `Save screen` with a real SD image),
+the `--native` build (not fitted), and the `quartus/demo` project, which also compiles
+`soc_ram_sp_be` and the demo SoC and was not rebuilt.
