@@ -1,0 +1,12 @@
+../rtl/fpu/ppc_fpu_arith_pkg.sv
+../rtl/fpu/ppc_fpu_unpack.sv
+../rtl/fpu/ppc_fpu_multiplier.sv
+../rtl/fpu/ppc_fpu_align_plan.sv
+../rtl/fpu/ppc_fpu_aligner.sv
+../rtl/fpu/ppc_fpu_adder.sv
+../rtl/fpu/ppc_fpu_convert.sv
+../rtl/fpu/ppc_fpu_rounder.sv
+../rtl/fpu/ppc_fpu_divider.sv
+../rtl/fpu/ppc_fpu_arith.sv
+../rtl/fpu/ppc_fpu_fprs.sv
+../rtl/fpu/ppc_fpu.sv

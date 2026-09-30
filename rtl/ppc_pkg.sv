@@ -148,7 +148,9 @@ package ppc_pkg;
     // double-precision FP form, which becomes FP unavailable while MSR[FP] = 0
     // and the emulation trap otherwise; esa, dsa and mfrom.
     SPECIAL_EMULATION_TRAP, SPECIAL_FPU_EMULATE,
-    SPECIAL_ESA, SPECIAL_DSA, SPECIAL_MFROM
+    SPECIAL_ESA, SPECIAL_DSA, SPECIAL_MFROM,
+    // An FPU instruction that completed with FPSCR[FEX] under MSR[FE0|FE1].
+    SPECIAL_FP_ENABLED
   } special_op_t;
   // 60x transfer class of a data request (UM Table 7-1).
   // DMEM_CACHE is a data-cache operation (cache_op_t in rid); it reaches only
@@ -446,7 +448,9 @@ package ppc_pkg;
     EVENT_EMULATION_TRAP  = 5'd21,
     EVENT_ESA             = 5'd22,
     EVENT_DSA             = 5'd23,
-    EVENT_WATCHDOG        = 5'd24
+    EVENT_WATCHDOG        = 5'd24,
+    // Floating-point enabled program exception (SRR1 bit 11).
+    EVENT_PROGRAM_FP      = 5'd25
   } exception_event_t;
 
   // Chip-pin events into the core, already synchronized. soft_reset and mcp

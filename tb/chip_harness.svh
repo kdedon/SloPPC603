@@ -38,7 +38,11 @@ logic [31:0] bus_a;
 logic [3:0] bus_ap;
 logic [4:0] bus_tt;
 
-ppc603e #(.PLL_CFG(CHIP_PLL_CFG)) dut (
+// +define+CHIP_ENABLE_FPU=1 attaches the FPU.
+`ifndef CHIP_ENABLE_FPU
+`define CHIP_ENABLE_FPU 0
+`endif
+ppc603e #(.PLL_CFG(CHIP_PLL_CFG), .ENABLE_FPU(1'(`CHIP_ENABLE_FPU))) dut (
   /* verilator lint_off PINCONNECTEMPTY */
   .perf_o(), .bus_ce_o(bus_ce),
   /* verilator lint_on PINCONNECTEMPTY */

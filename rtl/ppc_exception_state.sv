@@ -13,7 +13,8 @@ module ppc_exception_state #(
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
-  parameter bit ENABLE_FULL_DECODE = 1'b0
+  parameter bit ENABLE_FULL_DECODE = 1'b0,
+  parameter bit ENABLE_FPU = 1'b0
 ) (
   input  logic        clk_i,
   input  logic        rst_ni,
@@ -62,9 +63,11 @@ module ppc_exception_state #(
   localparam logic [31:0] SRR1_PROGRAM_ILLEGAL = 32'h0008_0000;
   localparam logic [31:0] SRR1_PROGRAM_PRIV    = 32'h0004_0000;
   localparam logic [31:0] SRR1_PROGRAM_TRAP    = 32'h0002_0000;
+  // Manual bit 11: floating-point enabled exception.
+  localparam logic [31:0] SRR1_PROGRAM_FP      = 32'h0010_0000;
   localparam logic [31:0] MSR_MASK = msr_implemented(HAS_602);
-  // Full decode has no FPU: MSR[FP] never sets, as on the EC603e (UM 4.5.8).
-  localparam logic [31:0] MSR_STORED_MASK = ENABLE_FULL_DECODE ?
+  // Full decode without an FPU: MSR[FP] never sets, as on the EC603e (UM 4.5.8).
+  localparam logic [31:0] MSR_STORED_MASK = (ENABLE_FULL_DECODE && !ENABLE_FPU) ?
     (MSR_MASK & ~(32'd1 << MSR_FP)) : MSR_MASK;
   // MSR bits an exception saves in SRR1; never the 602 AP and SA.
   localparam logic [31:0] SRR1_SAVE_MASK = MSR_SRR1_MASK & ~MSR_602_MASK;
@@ -215,6 +218,15 @@ module ppc_exception_state #(
               msr_q <= exception_msr(msr_q);
               result_supported_q <= 1'b1;
               result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
+            end
+            EVENT_PROGRAM_FP: begin
+              if (ENABLE_FPU) begin
+                srr0_q <= event_pc_i;
+                srr1_q <= exception_srr1(msr_q, SRR1_PROGRAM_FP);
+                msr_q <= exception_msr(msr_q);
+                result_supported_q <= 1'b1;
+                result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
+              end
             end
             EVENT_FP_UNAVAILABLE: begin
               // PEM Table 6-15: SRR1 1-4 and 10-15 clear.

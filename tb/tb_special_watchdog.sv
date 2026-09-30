@@ -35,6 +35,8 @@ module tb_special_watchdog;
   ppc_pkg::uop_t uop_i;
   ppc_pkg::completion_tag_t producer_i;
   logic [31:0] pc_i;
+  logic [31:0] insn_i;
+  assign insn_i = 32'b0;
   ppc_pkg::page_miss_t dispatch_page_miss_i;
   logic [31:0] a_i;
   logic [31:0] b_i;

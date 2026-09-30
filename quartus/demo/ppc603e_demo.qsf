@@ -11,6 +11,7 @@ set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
 set_global_assignment -name SDC_FILE ppc603e_demo.sdc
 set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/fpu/ppc_fpu_pkg.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fifo.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fetch.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_decode.sv

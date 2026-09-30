@@ -168,4 +168,5 @@ measurements remain in [production verification](../sim/fpu/PRODUCTION.md) and
 [Quartus evidence](../quartus/fpu-production/README.md). They do not qualify
 the replacement concurrent shell, either 602 elaboration, or original-chip
 latency and throughput. New acceptance records must identify the tested source
-checkpoint. CPU attachment and fitted timing remain separate work.
+checkpoint. [FPU core integration](FPU_CORE_INTEGRATION.md) attaches this
+interface to `ppc_core` with serialized issue; fitted timing remains separate work.

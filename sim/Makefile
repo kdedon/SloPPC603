@@ -28,6 +28,8 @@ TLB_SERVICE_RTL := $(shell cat ../rtl/tlb_service_files.f)
 SEGMENT_REGISTER_RTL := $(shell cat ../rtl/segment_register_files.f)
 CACHE_CONTROL_RTL := $(shell cat ../rtl/cache_control_files.f)
 EXCEPTION_RTL := $(shell cat ../rtl/exception_files.f)
+# The core with ENABLE_FPU; other profiles carry only the FPU package.
+FPU_CORE_RTL := $(RTL) ../rtl/ppc_ram_lut.sv $(shell cat ../rtl/fpu_files.f)
 .PHONY: all lint test test-core test-completion test-execution test-stage check-spec test-recovery test-recovery-select test-recovery-execution test-recovery-state test-core-recovery test-fetch-recovery test-core-logical test-flags test-completion-flags test-record-execution test-core-record-logical test-core-record-edges test-core-add-flags test-core-add-recovery test-add-execution test-core-adde test-core-adde-recovery test-adde-execution test-core-add-unary test-add-unary-execution test-addme-recovery test-addze-recovery test-core-rotate test-rotate-execution test-core-control-memory test-core-memory-edges test-core-shifts test-shift-execution test-slw-recovery test-srw-recovery clean
 # Shared Verilator output directories have a single build owner per invocation.
 # These phony prerequisites keep source/configuration checking in Verilator while
@@ -61,6 +63,8 @@ lint:
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" "-GENABLE_BYTE_REVERSE=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_MISALIGNED_ACCESS=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" "-GENABLE_FULL_DECODE=1'b1" "-GENABLE_FPU=1'b1" "-GENABLE_RESERVATION=1'b1" "-GENABLE_CACHE_INSTRUCTIONS=1'b1" $(FPU_CORE_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc603e "-GENABLE_FPU=1'b1" $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_MULTIPLE_STRING=1'b1" $(RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_core_bat "-GENABLE_SUPERVISOR_EXCEPTIONS=1'b1" "-GENABLE_LIVE_CONTEXT=1'b1" $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL)
 	$(VERILATOR) --lint-only -Wall --top-module ppc_segment_registers $(SEGMENT_REGISTER_RTL)
@@ -661,7 +665,7 @@ test-crstate-decode:
 
 .PHONY: test-crstate-execution
 test-crstate-execution:
-	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_crstate_execution --Mdir $(BUILD_DIR)/crstate-execution $(EXCEPTION_RTL) ../rtl/ppc_timer.sv ../rtl/ppc_miss_derive.sv ../rtl/ppc_watchdog.sv ../rtl/ppc_special.sv ../tb/tb_crstate_execution.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_crstate_execution --Mdir $(BUILD_DIR)/crstate-execution $(EXCEPTION_RTL) ../rtl/fpu/ppc_fpu_pkg.sv ../rtl/ppc_timer.sv ../rtl/ppc_miss_derive.sv ../rtl/ppc_watchdog.sv ../rtl/ppc_special.sv ../tb/tb_crstate_execution.sv
 	./$(BUILD_DIR)/crstate-execution/Vtb_crstate_execution $(SIM_ARGS)
 
 .PHONY: test-core-multiply test-multiply-recovery test-multiply-overflow-recovery
@@ -1707,6 +1711,17 @@ test-chip-dcache-coherence-negative:
 	@echo "PASS: chip coherence negative controls rejected"
 .PHONY: test-chip-pins lint-chip
 test: test-chip-pins
+# The core FPU program, self-checking, on the package top with the data cache
+# enabled (FP accesses through the D-cache and 60x bus).
+.PHONY: test-chip-fpu
+FPU_CHIP_IMAGE := $(BUILD_DIR)/chip-fpu/program.hex
+FPU_CHIP_RANDOM ?= 40
+test-chip-fpu:
+	mkdir -p $(BUILD_DIR)/chip-fpu
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+CHIP_ENABLE_FPU=1 --top-module tb_chip_firmware --Mdir $(BUILD_DIR)/chip-fpu -I../tb $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_firmware.sv
+	python3 tools/fpu_core_program.py --chip-image $(FPU_CHIP_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CHIP_RANDOM)
+	./$(BUILD_DIR)/chip-fpu/Vtb_chip_firmware +IMAGE=$(FPU_CHIP_IMAGE) +TOHOST=fff3ff00 $(SIM_ARGS)
+
 test-chip-pins:
 	mkdir -p $(BUILD_DIR)/chip-pins
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins --Mdir $(BUILD_DIR)/chip-pins -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_pins.sv
@@ -1810,6 +1825,19 @@ reference-acceptance: reference-runner-flat
 	@echo "PASS: reference acceptance"
 
 # Complete decode: illegal/invalid forms, traps, FP unavailable, HID0/EAR.
+# FPU attached to the core: directed, random enabled-exception and latency
+# program; runs with and without retirement stalls.
+.PHONY: test-core-fpu
+FPU_CORE_IMAGE := $(BUILD_DIR)/core-fpu/program.txt
+FPU_CORE_SEED ?= 0x603e
+FPU_CORE_RANDOM ?= 200
+test-core-fpu:
+	mkdir -p $(BUILD_DIR)/core-fpu
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_program.py --image $(FPU_CORE_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM)
+	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=1 +SEED=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=0 $(SIM_ARGS)
+
 .PHONY: test-decode-sweep test-core-full-decode
 test: test-decode-sweep test-core-full-decode
 test-decode-sweep:

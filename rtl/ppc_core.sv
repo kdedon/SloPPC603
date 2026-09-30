@@ -50,6 +50,9 @@ module ppc_core #(
   // MCP, SRESET and SMI exceptions and TLBISYNC from pin_event_i; needs
   // ENABLE_EXTERNAL_INTERRUPTS.
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
+  // Attach the FPU: FP instructions execute one at a time through the
+  // serialized lane instead of taking FP unavailable.
+  parameter bit ENABLE_FPU = 1'b0,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   // HID1 PLL_CFG[0:3] (manual bits 0-3), read-only.
@@ -322,6 +325,11 @@ module ppc_core #(
       $fatal(1, "stwcx. needs the cache-probe request");
     if (ENABLE_MACHINE_CHECK && (!ENABLE_LIVE_CONTEXT || !ENABLE_SUPERVISOR_EXCEPTIONS))
       $fatal(1, "Machine check requires live supervisor context");
+    // MSR[FP] and MSR[FE0/FE1] change only through live context.
+    if (ENABLE_FPU && (!ENABLE_FULL_DECODE || !ENABLE_LIVE_CONTEXT))
+      $fatal(1, "The FPU requires full decode and live supervisor context");
+    if (ENABLE_FPU && (cpu_cfg(CPU_VARIANT).fpu != FPU_DP))
+      $fatal(1, "The FPU is attached only to double-precision (603e) variants");
     if (ENABLE_DEBUG_EXCEPTIONS && (!ENABLE_EXTERNAL_INTERRUPTS ||
         !ENABLE_LIVE_CONTEXT || !ENABLE_SUPERVISOR_EXCEPTIONS))
       $fatal(1, "Debug exceptions require the interrupt boundary and live supervisor context");
@@ -369,6 +377,7 @@ module ppc_core #(
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+    .ENABLE_FPU(ENABLE_FPU),
     .CPU_VARIANT(CPU_VARIANT)
   ) predecode (.insn_i(fd_packet_q.insn), .uop_o(push_uop));
   // IABR compares at IQ push. The manual requires a context-synchronizing
@@ -497,8 +506,8 @@ module ppc_core #(
           uop.spr[SPR_PRIV_BIT]))) begin
       dispatch_pre = '0;
       dispatch_pre.special_op = SPECIAL_PROGRAM_PRIV;
-    end else if ((uop.special_op == SPECIAL_FPU) ||
-                 (uop.special_op == SPECIAL_FPU_EMULATE)) begin
+    end else if (!ENABLE_FPU && ((uop.special_op == SPECIAL_FPU) ||
+                                 (uop.special_op == SPECIAL_FPU_EMULATE))) begin
       // The FPU entry point. No FPU is present, so MSR[FP] never sets and
       // every FP-class instruction takes FP unavailable (UM 4.5.8). A 602
       // double-precision form takes the emulation trap once FP is enabled.
@@ -773,12 +782,13 @@ module ppc_core #(
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
+    .ENABLE_FPU(ENABLE_FPU),
     .CPU_VARIANT(CPU_VARIANT), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
     .dispatch_overlap_i(dispatch_mem_plain),
-    .producer_i(alloc_producer), .pc_i(iq_head.pc),
+    .producer_i(alloc_producer), .pc_i(iq_head.pc), .insn_i(iq_head.insn),
     .branch_retire_i(commit && retire_o.branch),
     .branch_retire_lk_i(retire_o.branch_lk), .branch_retire_ctr_i(retire_o.branch_ctr),
     .branch_retire_pc_i(retire_o.pc),
@@ -1030,6 +1040,7 @@ module ppc_core #(
     .ENABLE_RESERVATION(ENABLE_RESERVATION),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+    .ENABLE_FPU(ENABLE_FPU),
     .CPU_VARIANT(CPU_VARIANT)
   ) check_decode (.insn_i(iq_head.insn), .uop_o(check_uop));
   always @(posedge clk_i) begin

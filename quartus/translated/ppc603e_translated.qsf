@@ -9,6 +9,7 @@ set_global_assignment -name SEED 1
 set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
 set_global_assignment -name SDC_FILE ppc603e_translated.sdc
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/fpu/ppc_fpu_pkg.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fifo.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_fetch.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_decode.sv
