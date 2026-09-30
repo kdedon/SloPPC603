@@ -22,6 +22,29 @@ FPSCR enabled underflow and exception suppression require separate contract
 tests. A characterization count describes gaps; only the strict target passes
 when every compared vector matches.
 
+## Clustered, enabled and host cross-checks
+
+`cluster_vectors.py` draws operands where rounding and exceptions are hard:
+near cancellation, fused addends within two binades of the product, tiny and
+overflowing results and denormal sources, each with random RN and
+VE/OE/UE/ZE/NI. `test-fpu-arith-cluster` and `test-fpu-arith-cluster-602`
+run them through the arithmetic bench.
+
+`enabled_vectors.py` and `tb_ppc_fpu_enabled.sv` drive arithmetic
+instructions through the shell with random FPSCR enables and MSR FE0/FE1,
+checking the exception kind, result suppression or adjusted-exponent
+delivery, the committed FPR and FPSCR, and CR1. The same bench checks operand
+binding when an older producer of a register finishes while a younger one is
+outstanding, and on the 602 that consumers of a finishing value which traps
+vanish with the abort.
+
+`host_check.py` compares the PowerPC model with the host's IEEE binary64
+arithmetic, C library `fma`/`fmaf`, double-to-float conversion and `lrint`
+in all four rounding modes, including exception flags
+(`test-fpu-oracle-host`). The host is x86 glibc; the script documents the
+cases it cannot compare (tininess after rounding, NaN payloads, infinity
+times zero plus a quiet NaN).
+
 ## Donor result
 
 The rejected SS donor mismatched 16,879 of 47,736 vectors; its wrapper, driver
