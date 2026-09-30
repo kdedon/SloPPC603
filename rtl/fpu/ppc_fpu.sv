@@ -129,6 +129,8 @@ module ppc_fpu #(
     decoded_t decoded;
     // First lookup's register: frS for a load or store, else frA.
     logic [4:0] src_a;
+    // fsel class of that register's architectural value, kept current.
+    logic a_class;
     logic [31:0] ea;
     status_t st;
     // FPR result, store data, fault information, proposed FPSCR or SPR
@@ -781,6 +783,14 @@ module ppc_fpu #(
     return primary[5:3] == 3'b110 || primary == 6'd31;
   endfunction
 
+  // Selector class of a register after this cycle's writes.
+  function automatic logic class_now(input logic [4:0] reg_index,
+                                     input logic read_class);
+    if (fpr_we[1] && fpr_waddr[1] == reg_index) return fpr_wdata[1][FPR_BITS];
+    if (fpr_we[0] && fpr_waddr[0] == reg_index) return fpr_wdata[0][FPR_BITS];
+    return read_class;
+  endfunction
+
   // fsel takes frB when frA is a NaN or less than zero.
   function automatic logic selects_b(input logic [63:0] v);
     return CPU_602 ?
@@ -1427,6 +1437,8 @@ module ppc_fpu #(
     for (integer k = 0; k < 3; k++)
       bind0[k] = work_dispatch ? lane_writer[0][k] : exec_entry.producer[k];
     source_a = read_source(src_a_index, fpr_rdata[0], bind0[0]);
+    // A waiting fsel's register-file selector class needs no read.
+    if (!work_dispatch && ~|bind0[0]) source_a.selb = exec_entry.a_class;
     source_b = read_source(src_b_index, fpr_rdata[1], bind0[1]);
     source_c = read_source(src_c_index, fpr_rdata[2], bind0[2]);
     source_d = source_a;
@@ -1537,6 +1549,7 @@ module ppc_fpu #(
       bind1[k] = work1_old ? second_entry.producer[k] :
           lane_writer[exec_found ? 0 : 1][k];
     work1_a = read_source(work1_index[0], fpr_rdata[3], bind1[0]);
+    if (work1_old && ~|bind1[0]) work1_a.selb = second_entry.a_class;
     work1_b = read_source(work1_index[1], fpr_rdata[4], bind1[1]);
     work1_c = read_source(work1_index[2], fpr_rdata[5], bind1[2]);
     work1_d = work1_a;
@@ -2125,6 +2138,14 @@ module ppc_fpu #(
     for (integer i = 0; i < PENDING_DEPTH; i++)
       for (integer k = 0; k < 3; k++)
         pending_d[i].producer[k] &= ~retiring;
+    // Register-file writes refresh the tracked selector classes; the
+    // second port wins on a shared index.
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (fpr_we[0] && fpr_waddr[0] == pending_q[i].src_a)
+        pending_d[i].a_class = fpr_wdata[0][FPR_BITS];
+      if (fpr_we[1] && fpr_waddr[1] == pending_q[i].src_a)
+        pending_d[i].a_class = fpr_wdata[1][FPR_BITS];
+    end
     // A free tail slot takes the presented instruction every cycle; only
     // its flags wait for the dispatch handshake. Each slot reads only its
     // own next state.
@@ -2132,6 +2153,8 @@ module ppc_fpu #(
       if (space_ok && tail_q == PENDING_IDX_BITS'(i)) begin
         pending_d[i] = new_entry(pending_d[i], issue_i, decoded,
             lane_index[0][0], issue_ea);
+        pending_d[i].a_class = class_now(lane_index[0][0],
+            fpr_rdata[work_dispatch ? 0 : 3][FPR_BITS]);
         for (integer k = 0; k < 3; k++)
           pending_d[i].producer[k] =
               (work_dispatch ? bind0[k] : bind1[k]) & ~retiring;
@@ -2148,6 +2171,8 @@ module ppc_fpu #(
       if (space1_ok && tail1_q == PENDING_IDX_BITS'(i)) begin
         pending_d[i] = new_entry(pending_d[i], issue1_i, decoded1,
             lane_index[1][0], issue1_ea);
+        pending_d[i].a_class = class_now(lane_index[1][0],
+            fpr_rdata[3][FPR_BITS]);
         // A source written by the paired lane-0 instruction binds to it.
         for (integer k = 0; k < 3; k++)
           pending_d[i].producer[k] =
