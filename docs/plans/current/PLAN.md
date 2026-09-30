@@ -74,38 +74,27 @@ Do not infer full CPU completion from the restricted MVP score.
 
 ## Work queue
 
-In progress (batch 5): FPU integration into the core; FPU timing toward 50 MHz
-with exact cycle counts; the last `chip602` 66 MHz endpoint, then 603e power
-modes (V14).
+Done (batches 5–6, 2026-09-30): FPU in the core behind `ENABLE_FPU`, with FP
+arithmetic pipelined to Table 6-5 ([integration](../../FPU_CORE_INTEGRATION.md));
+FPU retiming (603e 51.55 MHz post-fit, exact cycle counts); 603e power modes
+(V14); the opcode self-test app ([SELFTEST.md](../../SELFTEST.md)); Whetstone,
+soft- and hard-float ([BENCHMARKS.md](../../BENCHMARKS.md#whetstone)); the SoC
+and MiSTer FPU option (`mister/build.sh --fpu`, awaiting its first fit); CI
+preparation ([CI.md](../../CI.md); workflows drafted, not enabled).
 
 Queued, in order:
 
-1. Opcode self-test app: demo-SoC firmware that runs every instruction group
-   (integer, rotate/shift, compare/CR/branch, load/store forms, SPRs and
-   supervisor state, induced exceptions, cache/TLB ops, FP or FP-unavailable)
-   against expected values generated on the host from manual semantics. It
-   shows a paged grid of pass/fail cells with failure details and waits for a
-   joystick or keyboard press per page (needs a read-only input register fed
-   from `hps_io`); with no input it runs every page and prints a text summary,
-   so the same image is a simulation regression. One build per variant; a
-   MiSTer suite target `selftest`.
-2. Whetstone: fetched at a pinned revision like the other benchmarks, built
-   soft-float (runs on the FPU-less core) and hard-float (after integration),
-   reported as MWIPS and MWIPS/MHz in the demo SoC and on the MiSTer screen.
-   The hard-float MiSTer build needs the FPU in the MiSTer SoC.
-3. CI preparation: pin the Quartus and toolchain images by digest; have the
-   fit and MiSTer scripts emit one machine-readable summary (ALMs, RAM, DSP,
-   slack per clock and corner); a setup script that fetches DingusPPC and the
-   benchmark sources at their pins; release notes that name the commit and the
-   pinned MiSTer framework revision (GPL-2) and flag GPL-3 suite builds. The
-   GitHub workflows (quick checks on push, rolling MiSTer build on main,
-   tagged releases with fits) wait until they are enabled.
-4. Pipelined FP issue: a dedicated FP dispatch/retire path using the FPU's
-   pipelining and second lane, so core-level FP latency and issue rate match
-   Table 6-5 (the first integration serializes FP through the special lane,
-   +4 cycles, one FP instruction in flight); 64-bit FP bus accesses.
-5. COMPACT FPU (`FPU_IMPL`) for both personalities; 602 FPU (V12); 603 with
-   XATS (V5); two-stage LSU (P3); dual dispatch.
+1. FP loads and stores at Table 6-6: pipelined, with single 64-bit accesses
+   through the LSU, D-cache, BIU and 60x (today they serialize and split
+   doublewords into two words). Check the FPU's `fmr`/`fsel`/FPSCR finish
+   cycle against Table 6-5 (it finishes one cycle early).
+2. 602 FPU timing toward 50 MHz (35.69 MHz post-fit), then the 602 FPU in the
+   core (V12).
+3. COMPACT FPU (`FPU_IMPL`) for both personalities.
+4. 603 with XATS (V5); two-stage LSU (P3); dual dispatch.
+5. FPU at 66 MHz: retiming alone is estimated 2–3 ns short per stage; the
+   choice between an FPU at 50 MHz and a parameter-gated extra stage is open.
+6. Enable CI and measure one MiSTer build on a hosted runner.
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or

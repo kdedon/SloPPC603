@@ -5,7 +5,8 @@
 set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
-image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70}"
+. "${script_dir}/../../ci/pins.env"
+image="${QUARTUS_IMAGE:-${QUARTUS_IMAGE_PIN}}"
 case "${1:-local}" in
   local)
     cd "${script_dir}"

@@ -81,7 +81,13 @@ _reset:
     mtspr 538,5
     isync
     mfmsr 5
+#ifdef CRT0_FP
+    /* Hard-float images also set MSR[FP]; without an FPU the first
+     * floating-point instruction exits through the 0x800 vector. */
+    ori 5,5,0x2030
+#else
     ori 5,5,0x0030
+#endif
     mtmsr 5
     isync
 

@@ -20,7 +20,7 @@ module tb_completion_ring;
   logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] unused_cq_head;
   ppc_completion dut(
     .clk_i(clk),.rst_ni(rst_n),.alloc_valid_i(av),.alloc_ready_o(ar),
-    .empty_o(empty), .head_index_o(unused_cq_head),.alloc_i(allocation),.alloc_tag_o(atag),
+    .empty_o(empty), .head_index_o(unused_cq_head),.alloc_i(allocation), .alloc_finished_i(1'b0),.alloc_tag_o(atag),
     .result_valid_i(rv),.result_ready_o(rr),.result_i(result),
     .finish_accept_o(finish),.wake_valid_o(wv),.wake_o(unused_wake),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(unused_retiring),.retire_tag_o(ttag),

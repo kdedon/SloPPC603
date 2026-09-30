@@ -7,7 +7,8 @@
 # <out_file>, and the full path of the worst endpoint in each of the 40 worst
 # destination-register groups at the first corner to <out_file>.paths.txt,
 # and the worst boundary input, output and feedthrough path per corner to
-# <out_file>.boundary.txt.
+# <out_file>.boundary.txt, and the worst setup slack per corner and clock to
+# <out_file>.worst.txt.
 set revision [lindex $quartus(args) 0]
 set period [lindex $quartus(args) 1]
 set out_file [lindex $quartus(args) 2]
@@ -83,5 +84,23 @@ foreach cond [get_available_operating_conditions] {
   }
 }
 close $boundary
+
+# Worst setup slack per corner and clock, passing or not, for the build summary.
+if {[catch {
+  set worst [open "${out_file}.worst.txt" w]
+  foreach cond [get_available_operating_conditions] {
+    set_operating_conditions $cond
+    update_timing_netlist
+    foreach_in_collection clk [get_clocks] {
+      set name [get_clock_info -name $clk]
+      foreach_in_collection path [get_timing_paths -setup -to_clock $clk -npaths 1] {
+        puts $worst "$cond\t$name\t[get_path_info $path -slack]"
+      }
+    }
+  }
+  close $worst
+} message]} {
+  post_message -type warning "worst setup slack not written: $message"
+}
 delete_timing_netlist
 project_close

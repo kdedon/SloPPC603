@@ -30,7 +30,7 @@ if ((dry_run)); then
 fi
 
 # Reads a pin from a committed file so the manifest matches the archive.
-pin() { git show "${commit}:$1" | grep -oE "$2" | sed -n 1p; }
+pin() { local v; v="$(git show "${commit}:$1" 2>/dev/null | grep -oE "$2" | sed -n 1p)"; [[ -n "${v}" ]] && echo "${v}"; }
 ver() { command -v "$1" >/dev/null 2>&1 && "$@" 2>&1 | sed -n 1p || echo "not installed"; }
 
 mkdir -p "${out}"
@@ -40,9 +40,9 @@ git archive --format=tar.gz --prefix="${name}/" -o "${archive}" "${commit}"
   echo "commit: ${commit}"
   echo "commit date: $(git show -s --format=%cI "${commit}")"
   echo "archive sha256: $(sha256sum "${archive}" | cut -d' ' -f1)"
-  echo "quartus image: $(pin quartus/translated/build.sh 'theypsilon/quartus-lite-c5@sha256:[0-9a-f]+')"
-  echo "toolchain image: $(pin toolchain/build-in-container.sh 'ppc603e-cross:[A-Za-z0-9.-]+')"
-  echo "toolchain base: $(pin toolchain/Dockerfile 'debian:[^ ]+@sha256:[0-9a-f]+')"
+  echo "quartus image: $(pin ci/pins.env 'theypsilon/quartus-lite-c5@sha256:[0-9a-f]+' || pin quartus/translated/build.sh 'theypsilon/quartus-lite-c5@sha256:[0-9a-f]+')"
+  echo "toolchain image: $(pin ci/pins.env 'ppc603e-cross:[A-Za-z0-9.-]+' || pin toolchain/build-in-container.sh 'ppc603e-cross:[A-Za-z0-9.-]+')"
+  echo "toolchain base: $(pin ci/pins.env 'debian:[^ ]+@sha256:[0-9a-f]+' || pin toolchain/Dockerfile 'debian:[^ ]+@sha256:[0-9a-f]+')"
   echo "dingusppc LAST_VERIFIED: $(pin sim/cosim/reference_checkout.py '[0-9a-f]{40}')"
   echo "host verilator: $(ver verilator --version)"
   echo "host python3: $(ver python3 --version)"

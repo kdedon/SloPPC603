@@ -67,6 +67,9 @@ module tb_crstate_execution;
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(), .power_stop_o(),
+    .fp_issue_valid_i(1'b0), .fp_issue_ready_o(), .fp_issue_tag_i('0), .fp_issue_insn_i('0),
+    .fp_result_valid_o(), .fp_result_o(), .fp_commit_valid_i(1'b0), .fp_commit_tag_i('0),
+    .fp_kill_i(1'b0),
     .tlb_fill_req_ext_o(), .mmu_602_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(unused_cache_special[0]), .icbi_req_valid_o(unused_cache_special[1]),

@@ -27,7 +27,8 @@ module ppc_special #(
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   // MCP, SRESET and SMI boundaries; TLBISYNC holds tlbsync.
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
-  // FP instructions run one at a time through the attached FPU.
+  // Attach the FPU: FP loads and stores run through this lane; other FP
+  // instructions arrive on the pipelined FP port.
   parameter bit ENABLE_FPU = 1'b0,
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -189,7 +190,20 @@ module ppc_special #(
   output logic icache_ctl_enable_o,
   output logic icache_ctl_invalidate_o,
   // A power-saving mode holds fetch.
-  output logic power_stop_o
+  output logic power_stop_o,
+  // Pipelined FP port: arithmetic, move and FPSCR instructions issued at
+  // dispatch, outside the lane. The lane and this port never hold FPU work
+  // together. The result is the FPU's oldest held result; it commits by tag
+  // at retirement.
+  input logic fp_issue_valid_i,
+  output logic fp_issue_ready_o,
+  input ppc_pkg::completion_tag_t fp_issue_tag_i,
+  input logic [31:0] fp_issue_insn_i,
+  output logic fp_result_valid_o,
+  output ppc_fpu_pkg::ppc_fpu_result_t fp_result_o,
+  input logic fp_commit_valid_i,
+  input ppc_pkg::completion_tag_t fp_commit_tag_i,
+  input logic fp_kill_i
 );
   import ppc_pkg::*;
   localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
@@ -367,7 +381,7 @@ module ppc_special #(
   logic fpu_mem_req_valid, fpu_mem_req_ready, fpu_mem_req_fire;
   logic fpu_mem_rsp_valid, fpu_mem_rsp_ready, fpu_store_valid, fpu_store_ready;
   logic fpu_exception, fpu_access;
-  ppc_fpu_pkg::ppc_fpu_issue_t fpu_issue;
+  ppc_fpu_pkg::ppc_fpu_issue_t fpu_issue, fp_issue;
   ppc_fpu_pkg::ppc_fpu_mem_rsp_t fpu_mem_rsp;
   // The lane reads the proposals it applies; the FPU applies the rest.
   /* verilator lint_off UNUSEDSIGNAL */
@@ -1955,6 +1969,9 @@ module ppc_special #(
       (queue_head_i == producer_q.index)) ||
      ((state_q == S_HOLD) && commit_match));
   assign fpu_abort_valid = ENABLE_FPU && rst_ni && cancel_i && fpu_issued_q;
+  assign fp_issue_ready_o = ENABLE_FPU && fpu_issue_ready && !fpu_issue_valid;
+  assign fp_result_valid_o = ENABLE_FPU && fpu_result_valid;
+  assign fp_result_o = fpu_result;
   always_comb begin
     fpu_issue = '0;
     fpu_issue.tag = producer_q;
@@ -1965,6 +1982,13 @@ module ppc_special #(
     fpu_issue.msr_fe0 = msr_o[11];
     fpu_issue.msr_fe1 = msr_o[8];
     fpu_issue.msr_pr = msr_o[MSR_PR];
+    fp_issue = '0;
+    fp_issue.tag = fp_issue_tag_i;
+    fp_issue.insn = fp_issue_insn_i;
+    fp_issue.msr_fp = msr_o[MSR_FP];
+    fp_issue.msr_fe0 = msr_o[11];
+    fp_issue.msr_fe1 = msr_o[8];
+    fp_issue.msr_pr = msr_o[MSR_PR];
     fpu_mem_rsp = '0;
     fpu_mem_rsp.tag = producer_q;
     fpu_mem_rsp.data = fpu_data_q;
@@ -2016,14 +2040,16 @@ module ppc_special #(
     /* verilator lint_off PINCONNECTEMPTY */
     ppc_fpu #(.CPU_602(1'b0)) fpu (
       .clk_i(clk_i), .rst_ni(rst_ni),
-      .issue_valid_i(fpu_issue_valid), .issue_ready_o(fpu_issue_ready), .issue_i(fpu_issue),
+      .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
+      .issue_i(fpu_issue_valid ? fpu_issue : fp_issue),
       .issue1_valid_i(1'b0), .issue1_ready_o(), .issue1_i('0),
       .result_valid_o(fpu_result_valid), .result_o(fpu_result),
       .result1_valid_o(), .result1_o(),
-      .commit_valid_i(fpu_commit_valid), .commit_tag_i(producer_q),
+      .commit_valid_i(fpu_commit_valid || fp_commit_valid_i),
+      .commit_tag_i(fpu_commit_valid ? producer_q : fp_commit_tag_i),
       .commit_ready_o(fpu_commit_ready),
       .commit1_valid_i(1'b0), .commit1_tag_i('0), .commit1_ready_o(),
-      .abort_valid_i(fpu_abort_valid), .abort_tag_i(producer_q), .kill_all_i(1'b0),
+      .abort_valid_i(fpu_abort_valid), .abort_tag_i(producer_q), .kill_all_i(fp_kill_i),
       .mem_req_valid_o(fpu_mem_req_valid), .mem_req_ready_i(fpu_mem_req_ready),
       .mem_req_o(fpu_mem_req),
       .mem_rsp_valid_i(fpu_mem_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
@@ -2042,13 +2068,20 @@ module ppc_special #(
       if (rst_ni && fpu_result_take && fpu_result.cr_write && !fpu_exception)
         assert (uop_q.write_cr_field && (fpu_result.cr_field == uop_q.cr_field))
           else $error("FPU CR field disagrees with the allocation");
-      if (rst_ni && fpu_commit_valid)
+      if (rst_ni && (fpu_commit_valid || fp_commit_valid_i))
         assert (fpu_commit_ready) else $error("FPU refused a retiring commit");
+      if (rst_ni && (fp_issue_valid_i || fp_commit_valid_i || fp_kill_i))
+        assert (!(fpu_q && (state_q != S_IDLE)) && !fpu_issue_valid &&
+                !fpu_commit_valid && !fpu_abort_valid)
+          else $error("pipelined FP work overlapped the lane's FP instruction");
       if (rst_ni && fpu_store_valid)
         assert (state_q == S_FPU_STORE) else $error("FPU store outside the queue head");
     end
     // synthesis translate_on
   end else begin : g_no_fpu
+    logic _unused_fp_port;
+    assign _unused_fp_port = ^{fp_issue_valid_i, fp_issue_tag_i, fp_issue_insn_i,
+                               fp_commit_valid_i, fp_commit_tag_i, fp_kill_i, fp_issue};
     assign fpu_issue_ready = 1'b0;
     assign fpu_result_valid = 1'b0;
     assign fpu_result = '0;

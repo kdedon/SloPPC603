@@ -4,6 +4,7 @@
 # Run make targets in the pinned cross-compiler container, from the repo root.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
+. "$root/ci/pins.env"
 exec docker run --rm --network none --user "$(id -u):$(id -g)" \
   --volume "$root:/work" --workdir /work/toolchain \
-  ppc603e-cross:bookworm-20250811 make "$@"
+  "${TOOLCHAIN_IMAGE:-$TOOLCHAIN_IMAGE_PIN}" make "$@"

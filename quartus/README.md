@@ -21,10 +21,12 @@ Run these commands from the repository root.
 ```
 
 The default container image is `theypsilon/quartus-lite-c5:17.0.2.docker0`, pinned
-by digest in every build script. Override `QUARTUS_IMAGE` when a reviewed image is
+by digest in `ci/pins.env`, which every build script sources. Override `QUARTUS_IMAGE` when a reviewed image is
 available. A successful build writes
 `quartus/evidence/tool-versions.txt`, `image.txt` for Docker builds, and copies
 the flow summary, fitter report, and timing report into `quartus/evidence/`.
+The per-top builds and `report-target-paths.sh` also write
+`output_files/<revision>.summary.json` ([docs/CI.md](../docs/CI.md#build-summaries)).
 
 Each project's `files.f` owns its source list. Every build script regenerates the
 QSF source assignments from it with `qsf_sources.py`, and `make -C sim check-spec`

@@ -29,7 +29,8 @@ written from the MPC603e User's Manual (UM) and the Programming Environments Man
 [CPU_VARIANTS.md](CPU_VARIANTS.md). It is independent of the RTL and of DingusPPC.
 
 A case's state is every GPR, CR, XER, LR, CTR, the exception outcome (vector, SRR0,
-SRR1, the MSR, DAR, DSISR) and a 256-byte data buffer. Inputs not given take a fixed
+SRR1, the MSR, DAR, DSISR), a 256-byte data buffer and, on a processor with an FPU,
+every FPR and the FPSCR. Inputs not given take a fixed
 default (distinct GPR patterns, a byte pattern in the buffer, CR/XER/LR/CTR zero).
 The runner compares the whole state: the expected state is the input state with the
 case's expected changes applied, each under a mask. Masked bits are the ones the
@@ -67,7 +68,7 @@ the case) are stored as offsets and adjusted by the runner.
 | SPR | SPRG0–3, SRR0/1, DAR, DSISR, XER, LR, CTR, PVR, EAR; `mtmsr`/`mfmsr` including a switch to problem state and turning IR/DR off; `mtsr`/`mfsr`/`mtsrin`/`mfsrin`; `rfi` to supervisor and user; `sync`, `isync`, `eieio`, `mftb` |
 | EXC | `tw`/`twi` taken and not; illegal encodings; privileged instructions in problem state; `sc`; alignment (`lmw`, `stmw`, `lwarx`, `stwcx.`, page-crossing scalars, `dcbz` to cache-inhibited memory); DSI (store through a read-only BAT, direct-store segment, `eciwx`/`ecowx` with EAR[E] clear); ISI (fetch through a no-access BAT); ITLB/DTLB load/store misses |
 | CACHE | `dcbz`, `dcbf`, `dcbst`, `dcbt`, `dcbtst` (data preserved), `dcbi` (discards a modified block), `icbi` (rewritten code runs), `tlbie`, `tlbsync` |
-| FP | every FP opcode takes FP unavailable (0x800); `fsqrt`, `fsqrts` are illegal (UM Table B-1) |
+| FP | every FP opcode takes FP unavailable (0x800); `fsqrt`, `fsqrts` are illegal (UM Table B-1); with an FPU, the cases under [Floating point](#floating-point) |
 
 Exception cases check the vector, SRR0, SRR1 (MSR bits and the cause flags), the
 handler-entry MSR (ME, IP, and TGPR for TLB misses), and DAR/DSISR where the manual
@@ -83,10 +84,37 @@ encodings checked but it does not run yet.
 
 ### Floating point
 
-The demo SoC has no FPU, so MSR[FP] never sets and every FP case expects FP
-unavailable. When `ENABLE_FPU` reaches the SoC, `build_fp` in `gen.py` is where cases
-with MSR[FP] set and computed results go (an FPR state and FPSCR would join the
-compared state); the runner and display need no change.
+The FP-unavailable cases run with MSR[FP] clear, so they hold with or without an FPU.
+The 603e image also carries 171 cases with MSR[FP] set (`build_fp_unit` in `gen.py`),
+marked as needing the FPU. `selftest.c` reads `MODE` bit 8 (`ENABLE_FPU`,
+[DEMO_SOC.md](DEMO_SOC.md#registers)): without an FPU it skips them and leaves the FP
+state out of the comparison; with one, `runner.S` loads every FPR and the FPSCR
+(`mtfsf 0xff`) before the case and stores them after, and they join the compared
+state. One image serves both SoCs.
+
+Expected results of arithmetic, rounding, conversion and compare instructions come
+from the FPU's reference model ([`sim/fpu/ppc_reference.py`](../sim/fpu/ppc_reference.py),
+exact integer arithmetic, with the FPSCR update of
+[`sim/fpu/enabled_vectors.py`](../sim/fpu/enabled_vectors.py)); `gen.py` models the
+moves, `fsel`, estimate specials, FPSCR instructions, record forms, loads and stores
+itself (PEM chapter 3 and the instruction pages). The groups:
+
+| Kind | Cases |
+|---|---|
+| Arithmetic | `fadd`, `fsub`, `fmul`, `fdiv` and single forms: exact and inexact results in all four rounding modes, signed zero, QNaN propagation, VXSNAN, VXISI, VXIMZ, VXZDZ, VXIDI, ZX, overflow, underflow, denormal results, NI |
+| Fused | `fmadd`, `fmsub`, `fnmadd`, `fnmsub` and single forms, including an operand set whose result is exact only with one rounding; VXIMZ and VXISI |
+| Conversion | `frsp` in three rounding modes, overflow, denormal, SNaN; `fctiw`/`fctiwz` with RN, ties, saturation (VXCVI) and NaN |
+| Compare | `fcmpu`/`fcmpo` into CR fields 0–7: ordered results, QNaN and SNaN (VXSNAN, VXVC) |
+| Move, select, estimate | `fmr`, `fneg`, `fabs`, `fnabs` (NaN payloads kept); `fsel` on positive, negative, −0 and NaN; `fres` and `frsqrte` of ±0, +∞, −1 and SNaN |
+| FPSCR | `mffs`, `mtfsf` (all fields, one field, field 0), `mtfsfi`, `mtfsb0`, `mtfsb1` (setting OX also sets FX), `mcrfs` (copies and clears exception bits) |
+| Record forms | 17 `.` forms: CR1 from FX, FEX, VX, OX |
+| Enabled exceptions | FE0 = FE1 = 1 with VE, ZE, OE, UE or XE: program 0x700 with SRR1 bit 11; FPR, FPSCR and CR1 as the PEM exception tables leave them; VE without FE and FE without VE |
+| Load/store | every FP load and store form, update and indexed; single conversion of denormal, zero, infinity and SNaN; `stfs` denormalisation; `stfiwx`; alignment (DAR, DSISR) for four forms; a load in problem state |
+
+Values the manuals leave undefined are masked: the high word after `fctiw`, `fctiwz` and
+`mffs`; FPRF after `fctiw`/`fctiwz`; FR after an overflow with OE clear; FR and FI after
+an estimate of an infinity or QNaN. Single-precision instructions get only operands
+representable in single precision, and estimates only inputs with exact results.
 
 ## Runner
 
@@ -132,6 +160,7 @@ exits with the number of failed cases, so the bench passes only when every case 
 
 ```sh
 make -C sim test-selftest                      # 603e image on the demo SoC bench
+make -C sim test-selftest-fpu                  # the same image on the SoC with ENABLE_FPU
 ./toolchain/build-in-container.sh -f demo/Makefile selftest   # both images
 mister/build.sh --clean --suite selftest       # MiSTer core, PPC603e_selftest_*.rbf
 ```
@@ -143,4 +172,5 @@ the image is `mister-selftest.hex`, the 603e image.
 
 Page-table translation and `tlbld`/`tlbli` beyond their privilege check, the
 decrementer and time base values, HID0/HID1, external interrupts, machine checks,
-little-endian mode and FP arithmetic.
+little-endian mode, FP estimates of finite nonzero values, imprecise FP exception
+modes (only FE0 = FE1 = 1), and FP accesses that fault in translation.

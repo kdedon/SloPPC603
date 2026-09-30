@@ -50,7 +50,7 @@ module tb_recovery_state;
   ppc_completion completion (
     .finish_accept_o(unused_cq_finish), .empty_o(unused_cq_empty), .head_index_o(unused_cq_head), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(cq_alloc_valid), .alloc_ready_o(cq_alloc_ready),
-    .alloc_i(cq_alloc_packet), .alloc_tag_o(cq_alloc_tag),
+    .alloc_i(cq_alloc_packet), .alloc_finished_i(1'b0), .alloc_tag_o(cq_alloc_tag),
     .result_valid_i(result_valid), .result_ready_o(result_ready),
     .result_i(result_packet), .wake_valid_o(wake_valid), .wake_o(wake),
     .retire_valid_o(retire_valid), .retire_ready_i(retire_ready),

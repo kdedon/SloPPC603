@@ -4,10 +4,12 @@
 set -euo pipefail
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-image="${TOOLCHAIN_IMAGE:-ppc603e-cross:bookworm-20250811}"
+. "${repo_dir}/ci/pins.env"
+image="${TOOLCHAIN_IMAGE:-${TOOLCHAIN_IMAGE_PIN}}"
 evidence_dir="${repo_dir}/toolchain/evidence"
 
 docker build --pull=false --provenance=false --build-arg SOURCE_DATE_EPOCH=0 \
+  --build-arg "BASE_IMAGE=${TOOLCHAIN_BASE_IMAGE}" --build-arg "DEBIAN_SNAPSHOT=${TOOLCHAIN_DEBIAN_SNAPSHOT}" \
   --tag "${image}" "${repo_dir}/toolchain"
 mkdir -p "${evidence_dir}"
 docker run --rm \

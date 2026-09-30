@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
+# Quick checks on every push and pull request: strict lint, spec checks and a
+# short set of focused benches. No reference comparison, firmware or Quartus.
+name: quick
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: quick-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # Ubuntu 24.04 packages Verilator 5.020, the project's version.
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends verilator make g++ python3
+          verilator --version | grep -q '^Verilator 5.020 '
+      - name: Lint
+        run: make -C sim lint -j2
+      - name: Spec checks
+        run: make -C sim check-spec
+      - name: Focused benches
+        run: make -C sim -j2 test-core test-core-recovery test-core-tlb-miss test-core-dcache test-chip-pins

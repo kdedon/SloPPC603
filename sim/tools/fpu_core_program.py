@@ -37,7 +37,8 @@ CHIP_BASE, CHIP_IMAGE_BYTES = 0xfff00000, 0x10000
 def use_chip_layout():
     global CHIP, RESET_PC, DATA, RES, LOG, DONE
     CHIP = True
-    RESET_PC, DATA = 0xfff01000, 0xfff0c000
+    # Code starts above the TLB miss vectors.
+    RESET_PC, DATA = 0xfff02000, 0xfff0c000
     RES, LOG, DONE = 0xfff10000, 0xfff20000, 0xfff3ff00
 MSR_FP, MSR_IP, FE0, FE1 = 0x2000, 0x40, 0x800, 0x100
 SRR1_ILLEGAL, SRR1_FP = 0x00080000, 0x00100000
@@ -48,13 +49,27 @@ PINF, NINF, NZERO = 0x7ff0000000000000, 0xfff0000000000000, 1 << 63
 # Host FPSCR bit positions (architectural bit = 31 - host).
 EXCEPTION_BITS = [31 - b for b in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 21, 22, 23)]
 VX_BITS = [31 - b for b in (7, 8, 9, 10, 11, 12, 21, 22, 23)]
-# Dispatch-to-retirement cycles through the serialized lane, no stalls.
-LATENCY = {
-    'fadd': 7, 'fadds': 7, 'fmul': 8, 'fmuls': 7, 'fmadd': 8, 'fmadds': 7,
-    'fdiv': 37, 'fdivs': 22, 'fres': 22, 'frsqrte': 7, 'fsel': 6, 'fmr': 6,
-    'fcmpu': 7, 'frsp': 7, 'fctiw': 7, 'mffs': 6, 'mtfsf': 6, 'mtfsfi': 6,
-    'mcrfs': 6, 'lfd': 10, 'lfs': 8, 'stfd': 11, 'stfs': 9, 'stfiwx': 9,
+# UM Table 6-5: execute latency and initiation interval (the structural
+# minimum for staged rows; divides and estimates block the unit).
+TABLE_6_5 = {
+    'fadd': (3, 1), 'fadds': (3, 1), 'fmul': (4, 2), 'fmuls': (3, 1),
+    'fmadd': (4, 2), 'fmadds': (3, 1), 'fdiv': (33, 33), 'fdivs': (18, 18),
+    'fres': (18, 18), 'frsqrte': (3, 1), 'fsel': (3, 1), 'fmr': (3, 1),
+    'fcmpu': (3, 1), 'frsp': (3, 1), 'fctiw': (3, 1), 'mffs': (3, 3),
+    'mtfsf': (3, 3), 'mtfsfi': (3, 3), 'mcrfs': (3, 3),
 }
+# The standalone FPU finishes moves, fsel and FPSCR instructions one cycle
+# before Table 6-5; its timing record owns that schedule.
+FPU_EARLY = {'fsel', 'fmr', 'mffs', 'mtfsf', 'mtfsfi', 'mcrfs'}
+# Figure 6-3: an instruction dispatched in cycle n executes from n+1 and
+# completes the cycle after its last execute stage.
+LATENCY = {name: lat + 1 - (name in FPU_EARLY)
+           for name, (lat, _) in TABLE_6_5.items()}
+# FP loads and stores run through the serialized lane: word accesses, one
+# cycle of bench memory each.
+LATENCY.update({'lfd': 10, 'lfs': 8, 'stfd': 11, 'stfs': 9, 'stfiwx': 9,
+                'add': 3})
+SYNC = (31 << 26) | (598 << 1)
 
 
 def d_form(op, rt, ra, d):
@@ -103,6 +118,7 @@ class Program:
         self.pc = RESET_PC
         self.expects = []
         self.probes = {}
+        self.spacings = []
         self.data_next = DATA
         self.res_next = RES
         self.log = []
@@ -198,6 +214,59 @@ def handlers(p):
         for insn in seq:
             p.words[pc] = insn
             pc += 4
+
+
+# Chip TLB miss handlers (MSR[TGPR] set: r0-r3 are scratch). They log SRR0,
+# SRR1, DMISS and the vector like the other handlers, then load a TLB entry
+# mapping EA to EA + 0xeff00000 (R, C, PP=2) and retry.
+VIRT_OFFSET = 0xeff00000
+
+
+def miss_handlers(p):
+    for vector in (0x1100, 0x1200):
+        pc = 0xfff00000 | vector
+        seq = [x_form(31, 1, 976 & 31, 976 >> 5, 339),       # mfspr r1, DMISS
+               x_form(31, 0, 26, 0, 339), d_form(36, 0, 29, 0),
+               x_form(31, 0, 27, 0, 339), d_form(36, 0, 29, 4),
+               d_form(36, 1, 29, 8), d_form(14, 0, 0, 0), d_form(36, 0, 29, 12),
+               d_form(14, 0, 0, vector), d_form(36, 0, 29, 16),
+               d_form(14, 29, 29, 20),
+               d_form(15, 2, 0, VIRT_OFFSET >> 16), x_form(31, 2, 1, 2, 266),
+               (21 << 26) | (2 << 21) | (2 << 16) | (0 << 11) | (0 << 6) | (19 << 1),
+               d_form(24, 2, 2, 0x182),
+               x_form(31, 2, 982 & 31, 982 >> 5, 467),        # mtspr RPA
+               x_form(31, 0, 0, 1, 978),                      # tlbld r1
+               x_form(31, 0, 27, 0, 339),
+               (31 << 26) | (0 << 21) | (0x80 << 12) | (144 << 1),  # mtcrf 0x80
+               x_form(19, 0, 0, 0, 50)]
+        for insn in seq:
+            p.words[pc] = insn
+            pc += 4
+
+
+def tlb_miss(p):
+    """DTLB load and store misses on FP accesses under data translation,
+    with a pipelined fadd between them."""
+    p.load_fpr(1, ONE)
+    src = p.data(0x3ff8000000000000)
+    dst = p.result_slot(2)
+    p.li32(5, src - VIRT_OFFSET)
+    p.li32(6, dst - VIRT_OFFSET)
+    p.li32(7, 0x123)
+    p.emit((31 << 26) | (7 << 21) | (((src - VIRT_OFFSET) >> 28) << 16) | (210 << 1))
+    p.emit(SYNC)
+    p.mtmsr(p.msr | 0x10)
+    at = p.emit(d_form(50, 24, 5, 0))                 # lfd f24, 0(r5)
+    p.event(0x1100, at, None, src - VIRT_OFFSET, 0)
+    p.emit(a_form(63, 24, 24, 1, 0, 21))              # fadd f24, f24, f1
+    at = p.emit(d_form(54, 24, 6, 0))                 # stfd f24, 0(r6)
+    p.event(0x1200, at, None, dst - VIRT_OFFSET, 0)
+    p.mtmsr(p.msr & ~0x10)
+    p.expect(dst, 0x40040000)
+    p.expect(dst + 4, 0)
+    p.fpscr = 0x4000
+    p.check_fpscr()
+    p.clear_fpscr()
 
 
 def dsisr_d(insn):
@@ -425,6 +494,76 @@ def fp_enabled(p):
     p.clear_fpscr()
 
 
+def in_flight(p):
+    """Exceptions and cancellation with pipelined FP work in flight. Each
+    younger instruction accumulates, so one that retired before the
+    exception would run twice after the handler returns to it."""
+    three = 0x4008000000000000
+    p.clear_fpscr()
+    p.load_fpr(7, PINF)
+    p.load_fpr(6, ONE)
+    p.load_fpr(4, HALF)
+    p.load_fpr(1, ONE)
+    p.load_fpr(2, TWO)
+    p.li32(10, 0)
+    # FP enabled (VXISI with VE) at a pipelined fsub, an addi and an fadd
+    # dispatched behind it.
+    p.mtmsr(p.msr | FE0 | FE1)
+    p.emit(x_form(63, 24, 0, 0, 38))            # mtfsb1 24 (VE)
+    p.emit(SYNC)
+    at = p.emit(a_form(63, 4, 7, 7, 0, 20))     # fsub f4, f7, f7
+    p.emit(d_form(14, 10, 10, 1))               # addi r10, r10, 1
+    younger = p.emit(a_form(63, 6, 6, 1, 0, 21))  # fadd f6, f6, f1
+    p.spacings.append(('I', at, younger, 2))
+    p.event(0x700, at, p.msr | SRR1_FP)
+    # FEX stays set, so the fadd, run once after the handler, takes its own
+    # FP enabled exception with its result and FPRF +normal committed.
+    p.event(0x700, younger, p.msr | SRR1_FP)
+    p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 23) | (1 << 31) | (1 << 14))
+    p.mtmsr(p.msr & ~(FE0 | FE1))
+    p.check_fpscr()
+    p.clear_fpscr()
+    p.store_fpr(4, HALF)
+    p.store_fpr(6, TWO)
+    p.store_gpr(10, 1)
+    # A branch reading a CR field an FP compare in flight writes; a taken
+    # branch skips an FP instruction.
+    p.emit(SYNC)
+    p.emit((63 << 26) | (2 << 23) | (1 << 16) | (2 << 11))  # fcmpu cr2, f1, f2
+    p.emit((16 << 26) | (12 << 21) | (8 << 16) | 8)        # bt cr2[lt], +8
+    p.emit(d_form(14, 10, 10, 100))
+    p.emit((18 << 26) | 8)                                 # b +8
+    p.emit(a_form(63, 6, 6, 1, 0, 21))
+    p.set_cr_field(2, 0b1000)
+    p.check_cr()
+    p.clear_fpscr()
+    p.store_gpr(10, 1)
+    p.store_fpr(6, TWO)
+    if CHIP:
+        return
+    # DSI at a plain integer load cancels an fadd and an addi dispatched
+    # behind it.
+    p.emit(SYNC)
+    at = p.emit(d_form(32, 11, 31, 0))          # lwz r11, 0(r31)
+    younger = p.emit(a_form(63, 6, 6, 1, 0, 21))
+    p.emit(d_form(14, 10, 10, 1))
+    p.spacings.append(('I', at, younger, 1))
+    p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
+    p.store_fpr(6, three)
+    p.store_gpr(10, 2)
+    # DSI on an FP load and an FP store behind an older pipelined fadd,
+    # which retires first.
+    p.load_fpr(6, ONE)
+    p.emit(SYNC)
+    p.emit(a_form(63, 6, 6, 1, 0, 21))
+    at = p.emit(d_form(50, 24, 31, 0))          # lfd f24, 0(r31)
+    p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
+    p.emit(a_form(63, 6, 6, 1, 0, 21))
+    at = p.emit(d_form(54, 6, 31, 8))           # stfd f6, 8(r31)
+    p.event(0x300, at, p.msr, PROT_LO + 8, 0x0a000000)
+    p.store_fpr(6, three)
+
+
 def random_cases(p, rng, count):
     base_msr = p.msr
     for _ in range(count):
@@ -455,15 +594,8 @@ def random_cases(p, rng, count):
         p.check_cr()
 
 
-def latency(p):
-    p.clear_fpscr()
-    one = p.load_fpr(1, ONE)
-    p.load_fpr(2, TWO)
-    p.load_fpr(3, HALF)
-    slot = p.result_slot(2)
-    p.li32(21, slot)
-    p.li32(8, 0)
-    forms = {
+def latency_forms():
+    return {
         'fadd': a_form(63, 4, 1, 2, 0, 21), 'fadds': a_form(59, 4, 1, 2, 0, 21),
         'fmul': a_form(63, 4, 1, 0, 2, 25), 'fmuls': a_form(59, 4, 1, 0, 2, 25),
         'fmadd': a_form(63, 4, 1, 2, 3, 29), 'fmadds': a_form(59, 4, 1, 2, 3, 29),
@@ -476,11 +608,76 @@ def latency(p):
         'mtfsfi': (63 << 26) | (7 << 23) | (134 << 1), 'mcrfs': (63 << 26) | (2 << 23) | (64 << 1),
         'lfd': d_form(50, 4, 5, 0), 'lfs': d_form(48, 4, 5, 0),
         'stfd': d_form(54, 1, 21, 0), 'stfs': d_form(52, 1, 21, 0),
-        'stfiwx': x_form(31, 1, 21, 8, 983),
+        'stfiwx': x_form(31, 1, 21, 8, 983), 'add': x_form(31, 10, 10, 11, 266),
     }
+
+
+def with_dst(insn, frt):
+    return (insn & ~(31 << 21)) | (frt << 21)
+
+
+def latency(p):
+    """Isolated latency, then retirement spacing of independent and
+    dependent groups and dispatch spacing of mixed streams. Each group
+    follows a sync, which drains the machine while the six-entry IQ fills,
+    so fetch never limits a group."""
+    p.clear_fpscr()
+    one = p.load_fpr(1, ONE)
+    p.load_fpr(2, TWO)
+    p.load_fpr(3, HALF)
+    slot = p.result_slot(2)
+    p.li32(21, slot)
+    p.li32(8, 0)
     p.li32(5, one)
+    forms = latency_forms()
     for name, insn in forms.items():
+        p.emit(SYNC)
         p.probes[p.emit(insn)] = LATENCY[name]
+    # Independent: four instances with distinct destinations retire one
+    # initiation interval apart. Compares write distinct CR fields.
+    for name, (lat, ii) in TABLE_6_5.items():
+        if name.startswith('m'):
+            continue
+        count = 2 if ii > 2 else 4
+        p.emit(SYNC)
+        pcs = []
+        for k in range(count):
+            insn = forms[name]
+            insn = ((insn & ~(7 << 23)) | ((4 + k) << 23)) if name == 'fcmpu' \
+                else with_dst(insn, 4 + k)
+            pcs.append(p.emit(insn))
+        p.spacings.append(('R', pcs[0], pcs[-1], (count - 1) * ii))
+    # Dependent: each instance reads the previous result as frA.
+    for name in ('fadd', 'fadds', 'fmul', 'fmuls', 'fmadd', 'fmadds', 'frsp',
+                 'fmr', 'fsel'):
+        lat = TABLE_6_5[name][0]
+        p.emit(SYNC)
+        pcs = []
+        src = 1
+        for k in range(4):
+            insn = with_dst(forms[name], 4 + k)
+            if name in ('frsp', 'fmr'):
+                insn = (insn & ~(31 << 11)) | (src << 11)
+            else:
+                insn = (insn & ~(31 << 16)) | (src << 16)
+            pcs.append(p.emit(insn))
+            src = 4 + k
+        p.spacings.append(('R', pcs[0], pcs[-1], 3 * lat))
+    # FPSCR instructions block FP issue until they retire: the second issues
+    # the cycle after the first retires, then takes its own latency.
+    for name in ('mtfsfi', 'mffs'):
+        p.emit(SYNC)
+        pcs = [p.emit(forms[name]), p.emit(forms[name])]
+        p.spacings.append(('R', pcs[0], pcs[1], LATENCY[name] + 1))
+    # Mixed integer and FP: one dispatch per cycle, integer retirement in
+    # order behind the FP instructions.
+    p.emit(SYNC)
+    pcs = [p.emit(a_form(63, 4, 1, 2, 0, 21)), p.emit(d_form(14, 10, 10, 1)),
+           p.emit(a_form(59, 5, 1, 0, 2, 25)), p.emit(d_form(14, 11, 11, 1)),
+           p.emit(a_form(63, 6, 1, 2, 3, 29)), p.emit(d_form(14, 12, 12, 1))]
+    p.spacings.append(('I', pcs[0], pcs[-1], 5))
+    p.spacings.append(('R', pcs[0], pcs[1], 1))
+    p.spacings.append(('R', pcs[4], pcs[5], 1))
 
 
 def build(seed, count):
@@ -489,6 +686,10 @@ def build(seed, count):
     handlers(p)
     directed(p)
     random_cases(p, rng, count)
+    in_flight(p)
+    if CHIP:
+        miss_handlers(p)
+        tlb_miss(p)
     latency(p)
     if not CHIP:
         p.emit(d_form(36, 0, 30, 0))      # stw r0 to DONE ends the run
@@ -496,7 +697,7 @@ def build(seed, count):
     for i, (vector, srr0, srr1, dar, dsisr) in enumerate(p.log):
         base = LOG + 20 * i
         p.expect(base, srr0)
-        p.expect(base + 4, srr1)
+        p.expect(base + 4, srr1 or 0, 0 if srr1 is None else 0xffffffff)
         p.expect(base + 8, dar or 0, 0 if dar is None else 0xffffffff)
         p.expect(base + 12, dsisr or 0, 0 if dsisr is None else 0xffffffff)
         p.expect(base + 16, vector)
@@ -509,6 +710,7 @@ def build(seed, count):
 def self_check(p):
     """Compare every expected word; the mailbox gets 1, or 2 on a mismatch."""
     p.probes = {}
+    p.spacings = []
     p.words[0xfff00100] = (18 << 26) | ((RESET_PC - 0xfff00100) & 0x3fffffc)
     branches = []
     for addr, value, mask in p.expects:
@@ -564,6 +766,7 @@ def main():
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]
     lines += [f'L {pc:08x} {cycles:x} 0' for pc, cycles in p.probes.items()]
+    lines += [f'{kind} {a:08x} {b:08x} {cycles:x}' for kind, a, b, cycles in p.spacings]
     Path(args.image).parent.mkdir(parents=True, exist_ok=True)
     Path(args.image).write_text('\n'.join(lines) + '\n')
 

@@ -10,6 +10,8 @@
 #   Embench-IoT:   https://github.com/embench/embench-iot/tree/0466a18e4f6b47e19598d7c6ba72916d54b68f65 (embench-1.0)
 #   soft-fp:       https://github.com/gcc-mirror/gcc/tree/2ee5e4300186a92ad73f1a1a64cb918dc76c8d67/libgcc/soft-fp (GCC 12.2.0)
 #   libm:          https://github.com/kraj/musl/tree/0784374d561435f7c787a555aeab8ede699ed298/src/math (musl 1.2.5)
+#   Whetstone 1.2: https://www.netlib.org/benchmark/whetstone.c as archived on 2024-12-29
+#                  (netlib keeps no revisions; the archive snapshot is the pin)
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 dest="$root/build/demo/src"
@@ -173,4 +175,6 @@ fetch libm "$musl" src/math/__math_uflow.c 9a841197bbe9ade9bbd684f8bc65424a97c48
 fetch libm "$musl" src/math/__math_xflow.c 5feafe10347636884a071a5096f912d5ca4a0939844804ca09b88241405648ad
 fetch libm "$musl" src/math/__math_invalid.c b56440ed59fa1e1aaaf6bf8b672c8bb71eaf844457906f7773da1d67d7ef013b
 fetch libm "$musl" src/math/__math_divzero.c 84aa910bdc5e7ccfed42098c37c44e278aa942d46e5a51d5ee8273336c79e719
+whet="https://web.archive.org/web/20241229210241id_/https://www.netlib.org/benchmark"
+fetch whetstone "$whet" whetstone.c 333e4ceca042c146f63eec605573d16ae8b07166cbc44a17bec1ea97c6f1efbf
 echo "fetch-benchmarks: sources verified in $dest"

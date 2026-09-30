@@ -48,6 +48,31 @@ No processor bug was found. One reading was settled from the manual before the
 case ran: a misaligned `lmw`/`stmw` puts EA + 4 in DAR (UM 4.5.6, the note after
 Table 4-14) where Table 4-13 says EA; the model follows the note and the RTL agrees.
 
+Recorded: `make -C sim test-selftest`, commit 32df478, 2026-09-30.
+
+Pass after the FP cases were added: `selftest 603e PVR 00070101 no FPU: 1047 cases,
+1047 pass, 0 fail`, 62,632,886 cycles, 16,386,305 retirements, 14 pages. The 171 cases
+that need the FPU are skipped and the FP group is the 41 FP-unavailable cases, as
+before.
+
+## 603e image on the demo SoC with the FPU
+
+Recorded: `make -C sim test-selftest-fpu`, commit bbfa9c6, 2026-09-30.
+
+Pass, on the first run. The same `selftest.hex` on the SoC built with `ENABLE_FPU`
+prints `selftest 603e PVR 00070101 FPU: 1218 cases, 1218 pass, 0 fail` and exits 0;
+the bench reports 73,605,507 cycles, 19,088,576 retirements and 17 pages drawn.
+Groups as above, except FP 212: the 41 FP-unavailable cases (MSR[FP] clear) and the
+171 cases with MSR[FP] set ([SELFTEST.md](SELFTEST.md#floating-point)). Every case
+compares all 32 FPRs and the FPSCR as well. `check_enc.py` matched all 1406
+instruction words of the 603e cases and all 1223 of the 602 cases.
+
+This establishes that the serialized FPU lane in the demo SoC agrees with the FPU
+reference model and `gen.py`'s own FP model on those cases, including FPSCR updates,
+CR1 and CR fields, enabled program exceptions (SRR0, SRR1 bit 11) and FP alignment
+DAR/DSISR. It does not establish the estimates of finite values, imprecise exception
+modes, FP accesses that fault in translation, or timing.
+
 ## MiSTer build
 
 MISTER

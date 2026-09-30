@@ -46,7 +46,7 @@ module tb_completion_cr_bits;
   ppc_completion completion (
     .finish_accept_o(unused_cq_finish), .empty_o(cq_empty), .head_index_o(unused_cq_head), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(alloc_valid), .alloc_ready_o(alloc_ready),
-    .alloc_i(allocation), .alloc_tag_o(alloc_tag),
+    .alloc_i(allocation), .alloc_finished_i(1'b0), .alloc_tag_o(alloc_tag),
     .result_valid_i(result_valid), .result_ready_o(result_ready),
     .result_i(result_packet), .wake_valid_o(wake_valid), .wake_o(wake),
     .retire_valid_o(retire_valid), .retire_ready_i(retire_ready),
@@ -68,7 +68,7 @@ module tb_completion_cr_bits;
     .alloc_needs_flags_i(flags_alloc_needs),
     .alloc_tag_i(alloc_tag), .alloc_ready_o(flags_alloc_ready),
     .commit_i(retire_valid && retire_ready),
-    .commit_packet_i(retired), .commit_tag_i(retired_tag),
+    .commit_packet_i(retired), .commit_tag_i(retired_tag), .commit_unowned_i(1'b0),
     .recovery_i(redirect_accepted),
     .recovery_survivor_count_i(survivor_count),
     .recovery_survivor_packet_i(survivor_packets),

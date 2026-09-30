@@ -28,7 +28,7 @@ module tb_flags;
     .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(alloc_valid), .alloc_needs_flags_i(alloc_needs),
     .alloc_tag_i(alloc_tag), .alloc_ready_o(alloc_ready),
-    .commit_i(commit), .commit_packet_i(commit_packet), .commit_tag_i(commit_tag),
+    .commit_i(commit), .commit_packet_i(commit_packet), .commit_tag_i(commit_tag), .commit_unowned_i(1'b0),
     .recovery_i(recovery), .recovery_survivor_count_i(recovery_count),
     .recovery_survivor_packet_i(recovery_packets),
     .recovery_survivor_tag_i(recovery_tags),
