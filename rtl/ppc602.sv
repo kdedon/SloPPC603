@@ -13,7 +13,10 @@ module ppc602 #(
   // SYSCLK-clocked core.
   parameter logic [3:0] PLL_CFG = 4'b0010,
   // See ppc602_bus.
-  parameter int PFADDR_WAIT = 8
+  parameter int PFADDR_WAIT = 8,
+  // The 602 FPU: SP/LT tags and emulation traps (docs/FPU_CORE_INTEGRATION.md).
+  parameter bit ENABLE_FPU = 1'b0,
+  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL
 ) (
   // Clocks.
   input  logic        sysclk,
@@ -193,7 +196,8 @@ module ppc602 #(
     .ENABLE_MISALIGNED_ACCESS(1'b1), .ENABLE_MACHINE_CHECK(1'b1),
     .ENABLE_DEBUG_EXCEPTIONS(1'b1), .ENABLE_FULL_DECODE(1'b1),
     .ENABLE_DCACHE(1'b1),
-    .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG)
+    .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG),
+    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL)
   ) cpu (
     // The internal 60x master runs 1:1 with ppc602_bus (PLL bypass only).
     .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(1'b1),

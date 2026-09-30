@@ -208,6 +208,8 @@ module ppc_core #(
   logic special_fp_load_overlap, special_fp_load_release, special_fp_store_cancellable;
   logic fp_mem_store, fp_mem_issue;
   ppc_fpu_pkg::ppc_fpu_result_t fp_result;
+  logic [31:0] fp_fpscr;
+  logic fp_sticky_hold, fp_sticky_waited_q;
   retire_packet_t cq_retire;
   operand_t src_a, src_b, operand_a, operand_b;
   rs_entry_t rs_entry;
@@ -346,8 +348,8 @@ module ppc_core #(
     // Test recovery with a pivot would need tagged FPU aborts.
     if (ENABLE_FPU && ENABLE_TEST_REDIRECT)
       $fatal(1, "The FPU requires ENABLE_TEST_REDIRECT=0");
-    if (ENABLE_FPU && !cpu_has_fpu_dp(CPU_VARIANT))
-      $fatal(1, "The FPU is attached only to double-precision (603e) variants");
+    if (ENABLE_FPU && !cpu_has_fpu_dp(CPU_VARIANT) && !cpu_has_602_ext(CPU_VARIANT))
+      $fatal(1, "The FPU is attached only to 603e and 602 variants");
     if ((DMEM_BITS != 32) && ((DMEM_BITS != 64) || !ENABLE_FPU))
       $fatal(1, "DMEM_BITS is 32, or 64 with the FPU");
     if (ENABLE_DEBUG_EXCEPTIONS && (!ENABLE_EXTERNAL_INTERRUPTS ||
@@ -890,7 +892,7 @@ module ppc_core #(
     .fp_load_release_o(special_fp_load_release),
     .fp_store_cancellable_o(special_fp_store_cancellable),
     .fp_commit_valid_i(fp_commit), .fp_commit_tag_i(retire_producer),
-    .fp_kill_i(fp_kill_q)
+    .fp_kill_i(fp_kill_q), .fp_fpscr_o(fp_fpscr)
   );
   assign context_ir_o = msr[MSR_IR];
   assign context_dr_o = msr[MSR_DR];
@@ -999,11 +1001,13 @@ module ppc_core #(
     (uop.cache_op == CACHE_OP_NONE);
   // An FP load or store other than an update form goes the same way: it
   // reads only rA (unless zero) and, indexed, rB. Older FP work must be
-  // released loads, so the access is in the execution path.
+  // released loads, so the access is in the execution path. The 602 SP/LT
+  // moves (XO below 512) stay serialized.
   assign dispatch_fp_mem_plain = ENABLE_FPU && !trace_mode && !fp_replay_q &&
     msr[MSR_FP] && !uop.illegal && (iq_head.fault == FETCH_OK) &&
     (uop.special_op == SPECIAL_FPU) && !uop.mem_update &&
-    (iq_head.insn[31:26] != 6'd59) && (iq_head.insn[31:26] != 6'd63);
+    (iq_head.insn[31:26] != 6'd59) && (iq_head.insn[31:26] != 6'd63) &&
+    ((iq_head.insn[31:26] != 6'd31) || iq_head.insn[10]);
   assign mem_sources_committed = (uop.special_op == SPECIAL_FPU) ?
     (((iq_head.insn[20:16] == 5'd0) || !gpr_mapped[uop.src_a]) &&
      ((iq_head.insn[31:26] != 6'd31) || !gpr_mapped[uop.src_b])) :
@@ -1286,7 +1290,17 @@ module ppc_core #(
   assign fp_head_match = fp_result_valid && (fp_result.tag == fp_tags_q[0]);
   assign fp_head_ok = fp_head_match &&
     (fp_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION);
-  assign fp_head_block = fp_head && !fp_head_ok;
+  assign fp_head_block = fp_head && (!fp_head_ok || fp_sticky_hold);
+  // 602 UM 4.5.7.1: with MSR[FE0/FE1] clear, a result that newly sets an
+  // exception sticky bit in the FPSCR completes one cycle late.
+  localparam logic [31:0] FPSCR_STICKY = 32'h1ff8_0700;
+  assign fp_sticky_hold = ENABLE_FPU && cpu_has_602_ext(CPU_VARIANT) && fp_head_ok &&
+    !fp_sticky_waited_q && !msr[11] && !msr[8] && fp_result.fpscr_write &&
+    |(fp_result.fpscr_value & ~fp_fpscr & FPSCR_STICKY);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted || fp_commit) fp_sticky_waited_q <= 1'b0;
+    else if (fp_head && fp_sticky_hold) fp_sticky_waited_q <= 1'b1;
+  end
   // Registered: the FPU result depends on the recovery the replay starts.
   // The blocked head cannot change before that recovery.
   assign fp_replay = fp_replay_req_q && fp_head && !halted_o &&

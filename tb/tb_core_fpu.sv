@@ -8,13 +8,16 @@
 // Image lines: M addr data (memory), E addr value mask (expected word),
 // L pc cycles (latency probe), R pc0 pc1 cycles (retirement spacing),
 // I pc0 pc1 cycles (dispatch spacing), P lo hi (DSI-protected words),
-// D addr (a store there ends the run). DMEM_BITS=64 answers a doubleword
-// request (upper strobes set) with both words in one response.
+// D addr (a store there ends the run), S count (602 sticky-bit completion
+// stalls). DMEM_BITS=64 answers a doubleword request (upper strobes set)
+// with both words in one response.
 /* verilator lint_off BLKSEQ */
 module tb_core_fpu #(
   parameter int DMEM_BITS = 64,
   // 0 FULL, 1 COMPACT (ppc_fpu_pkg::fpu_impl_e).
-  parameter int FPU_IMPL = 0
+  parameter int FPU_IMPL = 0,
+  // cpu_variant_e encoding: 0 PID7v-603e, 4 the 602.
+  parameter int CPU_VARIANT = 0
 );
   import ppc_pkg::*;
   logic clk = 1'b0, rst_n = 1'b0;
@@ -61,6 +64,7 @@ module tb_core_fpu #(
   int stall = 1, seed = 1, max_cycles = 400000;
   // Overlapped FP accesses: released loads, replays that cancelled a store.
   int fp_released = 0, fp_store_cancels = 0;
+  int sticky_stalls = 0, sticky_expect = 0;
   bit done = 1'b0;
   logic ipending = 1'b0, dpending = 1'b0, dwrite_q = 1'b0;
   logic [31:0] iaddress = 32'b0, daddress = 32'b0;
@@ -78,7 +82,8 @@ module tb_core_fpu #(
     .RESET_PC(32'h0000_1000), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1), .DMEM_BITS(DMEM_BITS),
-    .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL))
+    .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL)),
+    .CPU_VARIANT(cpu_variant_e'(CPU_VARIANT))
   ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
     .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
@@ -198,6 +203,7 @@ module tb_core_fpu #(
       end
       if (dut.special_fp_load_release) fp_released++;
       if (dut.fp_replay && dut.special_busy) fp_store_cancels++;
+      if (dut.fp_head && dut.fp_sticky_hold) sticky_stalls++;
       if (dut.dispatch && (probe_cycles.exists(dut.iq_head.pc) != 0))
         dispatch_cycle[dut.iq_head.pc] = cycles;
       // First dispatch: a replayed instruction dispatches again.
@@ -255,6 +261,7 @@ module tb_core_fpu #(
         end
         "P": begin prot_lo = x; prot_hi = y; end
         "D": done_addr = x;
+        "S": sticky_expect = int'(x);
         default: $fatal(1, "tb_core_fpu: bad image tag %s", tag);
       endcase
     end
@@ -294,13 +301,15 @@ module tb_core_fpu #(
       end
     end
     check(fp_released > 0, "no overlapped FP load was released");
+    check(sticky_stalls == sticky_expect,
+          $sformatf("sticky-bit stalls %0d expected %0d", sticky_stalls, sticky_expect));
     // COMPACT holds one FP instruction, so no FP store overlaps.
     check(FPU_IMPL != 0 || (stall == 0) || (fp_store_cancels > 0),
           "no FP replay cancelled an overlapped store");
     if (failures != 0) $fatal(1, "tb_core_fpu: %0d of %0d checks failed", failures, checks);
-    $display("PASS tb_core_fpu: checks=%0d words=%0d probes=%0d spacings=%0d retires=%0d fp_retires=%0d released_loads=%0d store_cancels=%0d cycles=%0d stall=%0d",
+    $display("PASS tb_core_fpu: checks=%0d words=%0d probes=%0d spacings=%0d retires=%0d fp_retires=%0d released_loads=%0d store_cancels=%0d sticky_stalls=%0d cycles=%0d stall=%0d",
              checks, expects.size(), probes, spacing_checks, retires, fp_retires,
-             fp_released, fp_store_cancels, cycles, stall);
+             fp_released, fp_store_cancels, sticky_stalls, cycles, stall);
     $finish;
   end
 endmodule
