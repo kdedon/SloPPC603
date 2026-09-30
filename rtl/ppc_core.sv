@@ -185,7 +185,7 @@ module ppc_core #(
   page_miss_t iq_miss_q, head_page_miss;
   logic iq_miss_valid_q, iq_push_miss, iq_pop_miss;
   logic [IQ_COUNT_WIDTH-1:0] iq_miss_count_q, iq_miss_count_left;
-  uop_t uop, iq_uop, dispatch_uop, push_uop;
+  uop_t uop, iq_uop, dispatch_uop, dispatch_base, push_uop;
   logic iq_pop, seq_last, seq_active;
   retire_packet_t allocation;
   completion_tag_t alloc_producer, retire_producer;
@@ -246,6 +246,8 @@ module ppc_core #(
   logic owner_simple_q, owner_crf_valid_q, bu_cr_valid_q, bu_cr_capture;
   logic [2:0] owner_crf_q;
   logic fd_push, fold_predict, fold_q, iq_folded, bu_redirect;
+  // Branch class predecoded at IQ push, to keep decode off the dispatch path.
+  logic [3:0] push_branch, iq_branch;
   logic [31:0] fold_target, fold_target_q;
   logic [31:0] bu_cr_q, bu_cr;
   completion_tag_t special_producer;
@@ -399,12 +401,12 @@ module ppc_core #(
       fold_target_q <= fold_target;
     end
   end
-  ppc_fifo #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 1), .DEPTH(IQ_DEPTH)) iq (
+  ppc_fifo #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 5), .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(frontend_clear),
     .push_valid_i(fd_push), .push_ready_o(iq_push_ready),
-    .push_data_i({queued, push_uop, fold_predict}),
+    .push_data_i({queued, push_uop, fold_predict, push_branch}),
     .pop_valid_o(iq_valid), .pop_ready_i(iq_pop),
-    .pop_data_o({iq_head, iq_uop, iq_folded})
+    .pop_data_o({iq_head, iq_uop, iq_folded, iq_branch})
   );
   ppc_lsu_sequence #(.ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING)) lsu_sequence (
     .clk_i, .rst_ni, .clear_i(recovery_accepted),
@@ -459,12 +461,12 @@ module ppc_core #(
   // Privileged forms become a program exception before allocation. The
   // original decoded permissions cannot escape into the CQ or rename state.
   always_comb begin
-    dispatch_uop = uop;
+    dispatch_base = uop;
     if (iq_head.fault != FETCH_OK) begin
       // A fault response has no instruction to decode. Its raw payload stays
       // in the diagnostic trace but can grant no execution/write permission.
-      dispatch_uop = '0;
-      dispatch_uop.fetch_fault = iq_head.fault;
+      dispatch_base = '0;
+      dispatch_base.fetch_fault = iq_head.fault;
       if (ENABLE_SUPERVISOR_EXCEPTIONS &&
           ((iq_head.fault == FETCH_ISI_PROTECTION) ||
            (iq_head.fault == FETCH_ISI_GUARDED) ||
@@ -472,9 +474,9 @@ module ppc_core #(
             (iq_head.fault == FETCH_PAGE_MISS)) ||
            (ENABLE_MACHINE_CHECK && (iq_head.fault == FETCH_MACHINE_CHECK)) ||
            (ENABLE_DEBUG_EXCEPTIONS && (iq_head.fault == FETCH_IABR))))
-        dispatch_uop.special_op = SPECIAL_ISI;
+        dispatch_base.special_op = SPECIAL_ISI;
       else
-        dispatch_uop.illegal = 1'b1;
+        dispatch_base.illegal = 1'b1;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && msr[MSR_PR] && !uop.illegal &&
         ((uop.special_op == SPECIAL_RFI) ||
          (uop.special_op == SPECIAL_MTMSR) ||
@@ -488,15 +490,15 @@ module ppc_core #(
          (((uop.special_op == SPECIAL_MFSPR) ||
           (uop.special_op == SPECIAL_MTSPR)) &&
           uop.spr[SPR_PRIV_BIT]))) begin
-      dispatch_uop = '0;
-      dispatch_uop.special_op = SPECIAL_PROGRAM_PRIV;
+      dispatch_base = '0;
+      dispatch_base.special_op = SPECIAL_PROGRAM_PRIV;
     end else if ((uop.special_op == SPECIAL_FPU) ||
                  (uop.special_op == SPECIAL_FPU_EMULATE)) begin
       // The FPU entry point. No FPU is present, so MSR[FP] never sets and
       // every FP-class instruction takes FP unavailable (UM 4.5.8). A 602
       // double-precision form takes the emulation trap once FP is enabled.
-      dispatch_uop = '0;
-      dispatch_uop.special_op =
+      dispatch_base = '0;
+      dispatch_base.special_op =
         ((uop.special_op == SPECIAL_FPU_EMULATE) && msr[MSR_FP]) ?
         SPECIAL_EMULATION_TRAP : SPECIAL_FP_UNAVAILABLE;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && !uop.illegal &&
@@ -504,12 +506,16 @@ module ppc_core #(
                   (uop.special_op == SPECIAL_STORE)) && dispatch_misaligned) begin
       // Preserve operand/EA and syndrome metadata, but never allocate a
       // faulting load destination or commit an update-form base register.
-      dispatch_uop.special_op = SPECIAL_ALIGNMENT;
-      dispatch_uop.gpr_write = 1'b0;
-      dispatch_uop.mem_update = 1'b0;
-      dispatch_uop.seq_partial = 1'b0;
-    end else if (bu_branch) begin
-      // Resolved at dispatch; the IU passes the next PC through as its result.
+      dispatch_base.special_op = SPECIAL_ALIGNMENT;
+      dispatch_base.gpr_write = 1'b0;
+      dispatch_base.mem_update = 1'b0;
+      dispatch_base.seq_partial = 1'b0;
+    end
+  end
+  // A branch resolved at dispatch; the IU passes its next PC through.
+  always_comb begin
+    dispatch_uop = dispatch_base;
+    if (bu_branch) begin
       dispatch_uop.special_op = SPECIAL_NONE;
       dispatch_uop.op = ALU_ADD;
       dispatch_uop.invert_a = 1'b0;
@@ -524,13 +530,19 @@ module ppc_core #(
   // writes one it reads; LR and CTR change when it retires. A taken branch
   // redirects fetch on the next edge and clears only the IQ: everything
   // younger is still there, and an older fault removes the branch itself.
-  assign bu_branch = !trace_mode && (iq_head.fault == FETCH_OK) && !uop.illegal &&
-    ((uop.special_op == SPECIAL_B) || (uop.special_op == SPECIAL_BC) ||
-     (uop.special_op == SPECIAL_BCLR) || (uop.special_op == SPECIAL_BCCTR));
-  assign bu_reads_cr = (uop.special_op != SPECIAL_B) && !uop.branch_bo[4];
+  // {branch, reads CR, reads LR, reads CTR}; a fetch fault is not a branch.
+  assign push_branch[3] = (queued.fault == FETCH_OK) && !push_uop.illegal &&
+    ((push_uop.special_op == SPECIAL_B) || (push_uop.special_op == SPECIAL_BC) ||
+     (push_uop.special_op == SPECIAL_BCLR) || (push_uop.special_op == SPECIAL_BCCTR));
+  assign push_branch[2] = (push_uop.special_op != SPECIAL_B) && !push_uop.branch_bo[4];
+  assign push_branch[1] = (push_uop.special_op == SPECIAL_BCLR);
+  assign push_branch[0] = ((push_uop.special_op != SPECIAL_B) && !push_uop.branch_bo[2]) ||
+                          (push_uop.special_op == SPECIAL_BCCTR);
+  assign bu_branch = !trace_mode && iq_branch[3];
+  assign bu_reads_cr = iq_branch[2];
+  assign bu_reads_lr = iq_branch[1];
+  assign bu_reads_ctr = iq_branch[0];
   assign bu_writes_ctr = (uop.special_op != SPECIAL_B) && !uop.branch_bo[2];
-  assign bu_reads_ctr = bu_writes_ctr || (uop.special_op == SPECIAL_BCCTR);
-  assign bu_reads_lr = (uop.special_op == SPECIAL_BCLR);
   assign bu_ready = !(bu_reads_cr && flags_busy && !bu_cr_valid_q) &&
     !(bu_reads_lr && lr_pending_q) && !(bu_reads_ctr && ctr_pending_q);
   // BO[0..3] are branch_bo[4..1]; the decrement leaves zero when CTR is 1.
@@ -868,10 +880,10 @@ module ppc_core #(
      dispatch_uop.read_so || dispatch_uop.write_xer || dispatch_uop.write_ca ||
      dispatch_uop.write_ov_so || dispatch_uop.write_cr_field ||
      dispatch_uop.write_cr_fields || dispatch_uop.write_cr_bit);
-  assign normal_uop = !dispatch_uop.illegal &&
-                      (dispatch_uop.special_op == SPECIAL_NONE);
-  assign special_uop = !dispatch_uop.illegal &&
-                       (dispatch_uop.special_op != SPECIAL_NONE);
+  assign normal_uop = bu_branch || (!dispatch_base.illegal &&
+                      (dispatch_base.special_op == SPECIAL_NONE));
+  assign special_uop = !bu_branch && !dispatch_base.illegal &&
+                       (dispatch_base.special_op != SPECIAL_NONE);
   assign normal_idle = rs_ready && !issue_valid && issue_ready &&
                        !iu_result_valid;
   // Trace mode runs one instruction at a time so its trace boundary is
@@ -1014,6 +1026,11 @@ module ppc_core #(
                src_a.value == arch_a && src_b.value == arch_b) ||
               (dispatch_mem_plain && mem_sources_committed))
         else $error("special dispatch saw an uncommitted GPR source");
+    if (rst_ni && iq_valid && !seq_active)
+      assert (iq_branch[3] == ((iq_head.fault == FETCH_OK) && !uop.illegal &&
+              ((uop.special_op == SPECIAL_B) || (uop.special_op == SPECIAL_BC) ||
+               (uop.special_op == SPECIAL_BCLR) || (uop.special_op == SPECIAL_BCCTR))))
+        else $error("predecoded branch class disagrees with the queued uop");
     if (rst_ni && dispatch && iq_folded)
       assert (bu_branch) else $error("folded branch left the branch unit");
     // Work younger than a faulting plain access is removed by its redirect.
