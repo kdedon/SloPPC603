@@ -37,7 +37,8 @@ else
 fi
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd -- "${here}/.." && pwd)"
-image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70}"
+. "${here}/../ci/pins.env"
+image="${QUARTUS_IMAGE:-${QUARTUS_IMAGE_PIN}}"
 short="$(git -C "${repo}" rev-parse --short HEAD)"
 if [[ -n "$(git -C "${repo}" status --porcelain -- rtl mister toolchain/demo)" ]]; then
   short="${short}+"
