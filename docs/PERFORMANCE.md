@@ -132,6 +132,76 @@ produced by unretired work still drains (0.33 CPI on Dhrystone); reading ready
 rename values at dispatch would remove most of it, at the cost of a rename mux
 ahead of the dispatch EA adder. Branches still drain the whole machine.
 
+## Branch unit and folding
+
+Recorded: `make -C sim demo-dhrystone demo-coremark` with the arguments of the first breakdown, commit e26f202, 2026-09-29.
+Both pass (Dhrystone checks match, CoreMark CRCs match). The retired counts differ from
+the earlier runs by one or two: the window now closes with a branch still in flight.
+
+Outside trace mode a branch no longer drains the machine or takes the special lane
+([CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit)):
+
+- it resolves at dispatch from the committed LR, CTR and CR, or from a flag owner's
+  finished IU result, and waits only for an uncommitted producer of what it reads;
+- it completes through the IU and updates LR and CTR when it retires;
+- a `b`, or a `bc` predicted taken (backward, or as the y bit says), redirects fetch on
+  the edge after it enters the IQ, while older work still dispatches;
+- a wrong prediction or an unfolded taken branch redirects fetch on the edge after
+  dispatch and clears only the fetch register and IQ.
+
+Three steps, each measured on the same programs (CPI):
+
+| Step | Dhrystone | CoreMark |
+|---|---:|---:|
+| Before (pipelined load/store path) | 4.853 | 4.316 |
+| Resolve at dispatch, redirect on the next edge | 4.313 | 3.699 |
+| Read a finished flag owner's CR | 4.176 | 3.507 |
+| Fold predicted-taken branches at fetch | 3.991 | 3.130 |
+
+| Cause | Dhrystone before | after | CoreMark before | after |
+|---|---:|---:|---:|---:|
+| Dispatch | 1.000 | 0.999 | 1.000 | 1.000 |
+| Fetch empty | 0.330 | 0.152 | 0.400 | 0.212 |
+| Branch refetch | 0.514 | 0.205 | 0.604 | 0.282 |
+| Drain for branch (now: branch waits for LR/CTR/CR) | 0.518 | 0.277 | 0.588 | 0.206 |
+| Drain for load/store | 0.325 | 0.604 | 0.187 | 0.339 |
+| Drain for other special | 0.010 | 0.010 | 0.013 | 0.015 |
+| Special lane busy (non-memory) | 0.415 | 0.016 | 0.455 | 0.015 |
+| Load/store busy | 1.626 | 1.601 | 0.966 | 0.936 |
+| Reservation station full | 0.027 | 0.027 | 0.011 | 0.033 |
+| Flags token wait | 0.000 | 0.003 | 0.049 | 0.050 |
+| Other (incl. misses, CQ full) | 0.084 | 0.090 | 0.037 | 0.037 |
+| **CPI** | **4.853** | **3.991** | **4.316** | **3.130** |
+
+Cycles: Dhrystone 1,432,218 to 1,177,749 (-17.8%), CoreMark 2,608,902 to 1,892,417
+(-27.5%). Redirects at dispatch fall from 0.123 to 0.035 per instruction on Dhrystone
+and from 0.140 to 0.042 on CoreMark; the rest are folded. A branch now waits 1.4 cycles
+on Dhrystone for an uncommitted CR, LR or CTR producer. Plain loads and stores
+drain more, because more integer work is in flight when they reach dispatch: they
+still wait for every source to be committed.
+
+Recorded: `make -C sim lint test-core test-core-recovery test-fetch-recovery test-recovery test-recovery-execution test-core-interrupt test-core-interrupt-disabled test-core-machine-check-trace test-core-bat-machine-check test-core-dcache test-core-dcache-negative test-core-full-decode test-core-crstate test-core-control-memory test-core-live-context test-core-live-context-disabled test-core-timer-events test-crstate-execution test-core-bat-cached-bus60x test-core-bat-cached-bus60x-irq test-core-bat-cached-bus60x-timer test-core-bat-cached-bus60x-stress test-core-bat-live-context test-core-sprg test-core-lsu-extensions test-core-alignment test-core-alignment-dependencies test-core-tlb-miss test-completion test-core-compare test-chip-dcache-coherence test-core-bus60x-update test-core-lsu-update test-core-page-data-exception test-core-cache-control test-reference test-reference-stress`, commit e26f202, 2026-09-29.
+All pass. `test-core-bat-machine-check` needed its program changed: it cleared the
+target's fetch error with a store and then branched into the failing line, expecting
+the fetch to wait for the store. A folded branch fetches its target first, which the
+architecture allows; the program now puts `sync; isync` between them.
+`test-reference-lsu` and `test-reference-memory` fail with a memory-word mismatch, on
+this commit and equally on the pipelined load/store head (3904087); they are not
+caused by this change and are left open.
+
+Recorded: `make -C toolchain rtl-lsu-dcache rtl-mmu-stress-cached rtl-mmu-stress-tea rtl-full-decode rtl-machine-check rtl-external-interrupt rtl-timer rtl-page-miss rtl-dsi rtl-alignment rtl-lsu rtl-live-context rtl-fetch-fault` (ELFs built with `toolchain/build-in-container.sh`), commit e26f202, 2026-09-29.
+All pass: MMU stress modes 0-8 and 12-15 with interrupts inside misses and bus tenures,
+full decode (1,302 retirements), machine check (mode 0 includes 7 trace and 1 IABR events),
+lsu-dcache 120,681 retirements in 2,360,513 cycles.
+
+Fit: not yet run on this change; the translated top must be refitted before any timing
+claim (it met 66 MHz on c9e3c08).
+
+What remains: a taken branch that cannot fold (`bclr`, `bcctr`, a mispredicted `bc`)
+still costs about 4 cycles of refetch, and a folded one leaves a gap when the IQ runs dry.
+A branch target cache or a return stack would fold `blr`; a second outstanding fetch
+would shorten each refetch.
+
 ## Optimizations, ranked
 
 Estimated CPI gain is the removed share of the counted causes, for Dhrystone /
@@ -148,6 +218,7 @@ exposes the next.
 | 6 | Special-lane serialization of the remaining instructions (`mfspr`, `mtcrf`, CR logic) | Drain for other special, part of special lane busy | < 0.05 |
 | 7 | Dual dispatch | Only the dispatch slot itself, which is 1.0 of 5-6 CPI today | ~0 now; 0.2-0.3 after 1-4 |
 
+Item 2 and the folding half of item 4 are done ([Branch unit and folding](#branch-unit-and-folding)).
 Items 1 and 3 together turn the special lane's memory path into an LSU; items 2 and 4
 together are the 603e's branch processing unit. After 1-4 the estimate is about 2.3
 CPI on Dhrystone and 2.1 on CoreMark, where fetch, dual dispatch and the IU start to

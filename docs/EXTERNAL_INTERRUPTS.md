@@ -84,7 +84,8 @@ dispatched, or is replaced by a later accepted redirect. Once that instruction
 is admitted, completion cannot be empty until its retirement or another recovery,
 so IRQ admission cannot observe an intermediate older-instruction PC. At the
 empty interrupt boundary, the override wins if present; otherwise the last
-committed next PC is used. Taken branches, RFI, exception entry, MTMSR refetch and
+committed next PC is used; a branch resolved at dispatch retires its next PC as
+that value. Taken branches, RFI, exception entry, MTMSR refetch and
 external recovery therefore use their accepted effective target, not speculative
 fetch position. No handler PC is derived from the outstanding fetch address.
 
