@@ -190,10 +190,10 @@ module ppc_fpu_arith #(
         .source_i(aligned_q.conversion_operand),
         .too_large_i(aligned_q.conversion_too_large),
         .lane_i(aligned_y),
+        .op_i(aligned_q.req.op),
+        .rn_i(aligned_q.req.rn),
         .parts_o(add_conversion_parts),
         .tag_i(add_q.req.tag),
-        .op_i(add_q.req.op),
-        .rn_i(add_q.req.rn),
         .ve_i(add_q.req.ve),
         .parts_i(add_q.conversion_parts),
         .rsp_o(conversion_response)

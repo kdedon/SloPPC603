@@ -18,10 +18,12 @@ typedef struct packed {
     logic signed [15:0] exp;
 } operand_t;
 
+// The rounding increment and the range check form beside the add; the
+// rounding stage only adds the increment and packs.
 typedef struct packed {
     logic [32:0] whole;
-    logic guard_bit;
-    logic sticky_bit;
+    logic inexact;
+    logic increment;
     logic invalid_value;
     logic sign;
     logic snan;
@@ -670,10 +672,16 @@ endfunction
 // The aligner has shifted the significand so that lane bit 79 has weight
 // one: bits 111:79 are the integer part, 78 the guard, 77:0 the sticky.
 function automatic conv_parts_t prepare_conversion(
-    input special_t source, input logic too_large, input logic [111:0] lane
+    input special_t source, input logic too_large, input logic [111:0] lane,
+    input ppc_fpu_op_t op, input logic [1:0] rn
 );
     conv_parts_t out;
+    logic guard_bit;
+    logic sticky_bit;
+    logic [1:0] mode;
     out = '0;
+    guard_bit = 1'b0;
+    sticky_bit = 1'b0;
     out.sign = source.sign;
     out.snan = source.snan;
     out.nan = source.nan;
@@ -681,8 +689,25 @@ function automatic conv_parts_t prepare_conversion(
         (too_large && !source.zero);
     if (!out.invalid_value && !source.zero) begin
         out.whole = lane[111:79];
-        out.guard_bit = lane[78];
-        out.sticky_bit = |lane[77:0];
+        guard_bit = lane[78];
+        sticky_bit = |lane[77:0];
+    end
+    mode = op == FP_FCTIWZ ? 2'b01 : rn;
+    out.inexact = guard_bit | sticky_bit;
+    case (mode)
+        2'b00: out.increment = guard_bit & (sticky_bit | out.whole[0]);
+        2'b01: out.increment = 1'b0;
+        2'b10: out.increment = !out.sign & out.inexact;
+        default: out.increment = out.sign & out.inexact;
+    endcase
+    // The rounded magnitude exceeds the word range when the unrounded one
+    // does, or equals the limit and rounds up.
+    if (!out.invalid_value) begin
+        if (out.sign ? (out.whole > 33'h08000_0000 ||
+                (out.whole == 33'h08000_0000 && out.increment)) :
+            (out.whole > 33'h07fff_ffff ||
+                (out.whole == 33'h07fff_ffff && out.increment)))
+            out.invalid_value = 1'b1;
     end
     return out;
 endfunction
@@ -706,41 +731,19 @@ endfunction
 
 function automatic ppc_fpu_arith_rsp_t finish_conversion(
     input ppc_pkg::completion_tag_t tag,
-    input ppc_fpu_op_t op,
-    input logic [1:0] rn,
     input logic ve,
     input conv_parts_t parts
 );
     ppc_fpu_arith_rsp_t out;
     logic [32:0] whole;
     logic [31:0] word_value;
-    logic inexact;
-    logic increment;
-    logic invalid_value;
-    logic [1:0] mode;
     out = '0;
     out.tag = tag;
     out.write_result = 1'b1;
     out.frfi_valid = 1'b1;
     out.fprf_valid = 1'b0;
-    mode = op == FP_FCTIWZ ? 2'b01 : rn;
-    whole = parts.whole;
-    invalid_value = parts.invalid_value;
-    inexact = parts.guard_bit | parts.sticky_bit;
-    case (mode)
-        2'b00: increment = parts.guard_bit &
-            (parts.sticky_bit | whole[0]);
-        2'b01: increment = 1'b0;
-        2'b10: increment = !parts.sign & inexact;
-        default: increment = parts.sign & inexact;
-    endcase
-    whole = whole + {32'd0, increment};
-    if (!invalid_value) begin
-        if ((!parts.sign && whole > 33'h07fff_ffff) ||
-            (parts.sign && whole > 33'h08000_0000))
-            invalid_value = 1'b1;
-    end
-    if (invalid_value) begin
+    whole = parts.whole + {32'd0, parts.increment};
+    if (parts.invalid_value) begin
         out.invalid[INV_CVI] = 1'b1;
         out.invalid[INV_SNAN] = parts.snan;
         out.write_result = !ve;
@@ -750,9 +753,9 @@ function automatic ppc_fpu_arith_rsp_t finish_conversion(
     end else begin
         if (parts.sign) word_value = 32'(0 - whole);
         else word_value = whole[31:0];
-        out.fr = increment;
-        out.fi = inexact;
-        out.xx = inexact;
+        out.fr = parts.increment;
+        out.fi = parts.inexact;
+        out.xx = parts.inexact;
     end
     out.result = {32'd0, word_value};
     return out;
