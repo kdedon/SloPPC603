@@ -65,6 +65,12 @@ module tb_special_lint #(
   wire commit_i = '0;
   ppc_pkg::completion_tag_t commit_tag_i;
   assign commit_tag_i = '0;
+  logic branch_retire_i, branch_retire_lk_i, branch_retire_ctr_i;
+  logic [31:0] branch_retire_pc_i;
+  assign branch_retire_i = 1'b0;
+  assign branch_retire_lk_i = 1'b0;
+  assign branch_retire_ctr_i = 1'b0;
+  assign branch_retire_pc_i = '0;
   wire result_ready_i = '0;
   wire dmem_req_ready_i = '0;
   wire dmem_rsp_valid_i = '0;
