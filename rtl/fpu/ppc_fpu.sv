@@ -249,9 +249,10 @@ module ppc_fpu #(
   logic barrier_d;
   logic [1:0] fpr_we;
   logic [1:0][4:0] fpr_waddr;
-  logic [1:0][FPR_BITS-1:0] fpr_wdata;
+  // Each FPR word carries its fsel class above the value.
+  logic [1:0][FPR_BITS:0] fpr_wdata;
   logic [5:0][4:0] fpr_raddr;
-  logic [5:0][FPR_BITS-1:0] fpr_rdata;
+  logic [5:0][FPR_BITS:0] fpr_rdata;
   logic [31:0] fpscr_q;
   logic [31:0] proposed_fpscr;
   logic [31:0] issue_ea;
@@ -296,6 +297,8 @@ module ppc_fpu #(
   pending_t exec_entry, second_entry;
   logic [PENDING_DEPTH-1:0] exec_pick, second_pick;
   logic [2:0][4:0] work1_index;
+  logic [1:0][2:0][4:0] lane_index;
+  logic [1:0][2:0][PENDING_DEPTH-1:0] lane_writer;
   logic [PENDING_DEPTH-1:0] retiring;
   logic exec_found;
   logic second_exec_found;
@@ -798,7 +801,7 @@ module ppc_fpu #(
   // does. Per-slot values and readiness are shared by all lookups
   // (slot_src). Value bits of a source that is not ready are unused.
   function automatic source_t read_source(input logic [4:0] reg_index,
-                                          input logic [FPR_BITS-1:0] stored,
+                                          input logic [FPR_BITS:0] stored,
                                           input logic [PENDING_DEPTH-1:0] producer);
     source_t s;
     begin
@@ -808,10 +811,10 @@ module ppc_fpu #(
           if (producer[i]) s |= slot_src[i];
       end else begin
         s.ready = 1'b1;
-        s.raw = {{(64-FPR_BITS){1'b0}}, stored};
+        s.raw = {{(64-FPR_BITS){1'b0}}, stored[FPR_BITS-1:0]};
         s.sp = CPU_602 && sp_q[31-reg_index];
         s.lt = CPU_602 && lt_q[31-reg_index];
-        s.selb = selects_b(s.raw);
+        s.selb = stored[FPR_BITS];
       end
       return s;
     end
@@ -1122,6 +1125,20 @@ module ppc_fpu #(
     end
   end
 
+  // Source registers of each presented lane and their youngest pending
+  // writers, independent of which work context takes the lane.
+  always_comb begin
+    for (integer l = 0; l < 2; l++) begin
+      logic [31:6] insn;
+      insn = l == 0 ? issue_i.insn[31:6] : issue1_i.insn[31:6];
+      lane_index[l][0] = memory_form(insn[31:26]) ? insn[25:21] : insn[20:16];
+      lane_index[l][1] = insn[15:11];
+      lane_index[l][2] = insn[10:6];
+      for (integer k = 0; k < 3; k++)
+        lane_writer[l][k] = writer_of(lane_index[l][k]);
+    end
+  end
+
   always_comb begin
     decode0 = decode_packet(issue_i.insn[31:25],issue_i.insn[22:0],
                             issue_i.gpr_a,issue_i.gpr_b);
@@ -1399,12 +1416,8 @@ module ppc_fpu #(
     src_c_index = work_issue.insn[10:6];
     // A waiting entry reads its bound producers; a dispatching one binds
     // to the youngest pending writers.
-    for (integer k = 0; k < 3; k++) bind0[k] = exec_entry.producer[k];
-    if (work_dispatch) begin
-      bind0[0] = writer_of(src_a_index);
-      bind0[1] = writer_of(src_b_index);
-      bind0[2] = writer_of(src_c_index);
-    end
+    for (integer k = 0; k < 3; k++)
+      bind0[k] = work_dispatch ? lane_writer[0][k] : exec_entry.producer[k];
     source_a = read_source(src_a_index, fpr_rdata[0], bind0[0]);
     source_b = read_source(src_b_index, fpr_rdata[1], bind0[1]);
     source_c = read_source(src_c_index, fpr_rdata[2], bind0[2]);
@@ -1514,7 +1527,7 @@ module ppc_fpu #(
     work1_index[2] = work1_issue.insn[10:6];
     for (integer k = 0; k < 3; k++)
       bind1[k] = work1_old ? second_entry.producer[k] :
-          writer_of(work1_index[k]);
+          lane_writer[exec_found ? 0 : 1][k];
     work1_a = read_source(work1_index[0], fpr_rdata[3], bind1[0]);
     work1_b = read_source(work1_index[1], fpr_rdata[4], bind1[1]);
     work1_c = read_source(work1_index[2], fpr_rdata[5], bind1[2]);
@@ -2128,7 +2141,7 @@ module ppc_fpu #(
         // A source written by the paired lane-0 instruction binds to it.
         for (integer k = 0; k < 3; k++)
           pending_d[i].producer[k] =
-              dec_write && issue_i.insn[25:21] == work1_index[k] ?
+              dec_write && issue_i.insn[25:21] == lane_index[1][k] ?
               PENDING_DEPTH'(1) << tail_q : bind1[k] & ~retiring;
         pending_d[i] = record_launch(pending_d[i], launch1);
         if (dispatch1_fire) begin
@@ -2236,8 +2249,10 @@ module ppc_fpu #(
   assign fpr_we[1] = retire1_fire && second_result.fpr_write;
   assign fpr_waddr[0] = head_result.fpr_index;
   assign fpr_waddr[1] = second_result.fpr_index;
-  assign fpr_wdata[0] = FPR_BITS'(head_result.fpr_value);
-  assign fpr_wdata[1] = FPR_BITS'(second_result.fpr_value);
+  assign fpr_wdata[0] = {selects_b(head_result.fpr_value),
+                         FPR_BITS'(head_result.fpr_value)};
+  assign fpr_wdata[1] = {selects_b(second_result.fpr_value),
+                         FPR_BITS'(second_result.fpr_value)};
 
   // Read indices repeat the work-slot selection so the storage reads do not
   // loop through the issue logic that consumes them.
@@ -2264,7 +2279,7 @@ module ppc_fpu #(
     fpr_raddr[5] = context1 ? insn1[10:6] : inspect_fpr_index_i;
   end
 
-  ppc_fpu_fprs #(.WIDTH(FPR_BITS), .READS(6)) fprs (
+  ppc_fpu_fprs #(.WIDTH(FPR_BITS + 1), .READS(6)) fprs (
     .clk_i,
     .rst_ni,
     .we_i(fpr_we),
@@ -2273,7 +2288,7 @@ module ppc_fpu #(
     .raddr_i(fpr_raddr),
     .rdata_o(fpr_rdata)
   );
-  assign inspect_fpr_o = {{(64-FPR_BITS){1'b0}}, fpr_rdata[5]};
+  assign inspect_fpr_o = {{(64-FPR_BITS){1'b0}}, fpr_rdata[5][FPR_BITS-1:0]};
   assign inspect_fpscr_o = fpscr_q;
   assign inspect_sp_o = CPU_602 ? sp_q : 32'd0;
   assign inspect_lt_o = CPU_602 ? lt_q : 32'd0;
