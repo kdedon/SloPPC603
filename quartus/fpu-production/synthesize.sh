@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Kevin Dedon
-# Map production FPU variants and run post-map STA. The fullfit variant also
-# fits the 603e shell with clk_i on a real pin and times the fitted netlist.
+# Map production FPU variants and run post-map STA. A *fit variant also fits
+# the shell with clk_i on a real pin and times the fitted netlist. The compact
+# variants measure the FPU_IMPL=COMPACT unit, ppc_fpu_compact.
 set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
 . "${script_dir}/../../ci/pins.env"
 image="${QUARTUS_IMAGE:-${QUARTUS_IMAGE_PIN}}"
-usage='usage: synthesize.sh [--docker] [full|arith|full602|arith602|fullfit|full602fit|all]'
+usage='usage: synthesize.sh [--docker] [full|arith|full602|arith602|fullfit|full602fit|compact|compact602|arithcompact|arithcompact602|compactfit|compact602fit|all]'
 [[ "${1:---docker}" == --docker ]] || { echo "${usage}" >&2; exit 2; }
 variant_choice="${2:-all}"
 case "${variant_choice}" in
-  full|arith|full602|arith602|fullfit|full602fit|all) ;;
+  full|arith|full602|arith602|fullfit|full602fit) ;;
+  compact|compact602|arithcompact|arithcompact602|compactfit|compact602fit|all) ;;
   *) echo "${usage}" >&2; exit 2 ;;
 esac
 [[ $# -le 2 ]] || { echo "${usage}" >&2; exit 2; }
-variants=(full arith full602 arith602)
+variants=(full arith full602 arith602 compact arithcompact compact602 arithcompact602)
 if [[ "${variant_choice}" != all ]]; then variants=("${variant_choice}"); fi
 run() {
   local variant="$1"; shift
@@ -51,17 +53,26 @@ for variant in "${variants[@]}"; do
     sed -i '/VIRTUAL_PIN ON -to clk_i$/d' "${project_dir}/ppc_fpu.qsf"
     sed -i 's/create_timing_netlist -post_map/create_timing_netlist/' "${project_dir}/timing.tcl"
   fi
-  if (( fitted )) && [[ "${base_variant}" == full ]]; then
+  if (( fitted )) && [[ "${base_variant}" == full || "${base_variant}" == compact ]]; then
     # Fit the shell behind one boundary register per port.
-    sed -i 's/TOP_LEVEL_ENTITY ppc_fpu$/TOP_LEVEL_ENTITY ppc_fpu_measure/' "${project_dir}/ppc_fpu.qsf"
+    sed -i -E 's/TOP_LEVEL_ENTITY ppc_fpu(_compact)?$/TOP_LEVEL_ENTITY ppc_fpu_measure/' "${project_dir}/ppc_fpu.qsf"
     echo 'set_global_assignment -name SYSTEMVERILOG_FILE ../../../ppc_fpu_measure.sv' >> "${project_dir}/ppc_fpu.qsf"
+    if [[ "${base_variant}" == compact ]]; then
+      echo 'set_parameter -name COMPACT 1' >> "${project_dir}/ppc_fpu.qsf"
+    fi
   fi
   sources=(rtl/ppc_pkg.sv rtl/fpu/ppc_fpu_pkg.sv rtl/fpu/ppc_fpu_arith_pkg.sv rtl/fpu/ppc_fpu_unpack.sv
     rtl/fpu/ppc_fpu_multiplier.sv rtl/fpu/ppc_fpu_align_plan.sv rtl/fpu/ppc_fpu_aligner.sv
     rtl/fpu/ppc_fpu_adder.sv rtl/fpu/ppc_fpu_convert.sv rtl/fpu/ppc_fpu_rounder.sv
     rtl/fpu/ppc_fpu_divider.sv rtl/fpu/ppc_fpu_arith.sv)
+  if [[ "${base_variant}" == compact || "${base_variant}" == arithcompact ]]; then
+    sources+=(rtl/fpu/ppc_fpu_arith_compact.sv)
+  fi
   if [[ "${base_variant}" == full ]]; then sources+=(rtl/ppc_ram_lut.sv rtl/fpu/ppc_fpu_fprs.sv rtl/fpu/ppc_fpu.sv); fi
-  if (( fitted )) && [[ "${base_variant}" == full ]]; then sources+=(quartus/fpu-production/ppc_fpu_measure.sv); fi
+  if [[ "${base_variant}" == compact ]]; then sources+=(rtl/ppc_ram_lut.sv rtl/fpu/ppc_fpu_compact.sv); fi
+  if (( fitted )) && [[ "${base_variant}" == full || "${base_variant}" == compact ]]; then
+    sources+=(quartus/fpu-production/ppc_fpu_measure.sv)
+  fi
   manifest="${script_dir}/output_files/${variant}/sources.sha256"
   project_inputs=(
     "quartus/fpu-production/output_files/${variant}/project/ppc_fpu.qpf"
