@@ -26,17 +26,22 @@ module ppc_fpu_fprs #(
         if (!rst_ni) begin
             written_q <= '0;
         end else begin
-            for (int port = 0; port < 2; port++) begin
-                if (we_i[port]) begin
-                    written_q[waddr_i[port]] <= 1'b1;
-                    bank_q[waddr_i[port]] <= port[0];
-                end
+            if (we_i[0]) begin
+                written_q[waddr_i[0]] <= 1'b1;
+                bank_q[waddr_i[0]] <= 1'b0;
+            end
+            if (we_i[1]) begin
+                written_q[waddr_i[1]] <= 1'b1;
+                bank_q[waddr_i[1]] <= 1'b1;
             end
         end
     end
 
-    for (genvar port = 0; port < READS; port++) begin : g_read
-        for (genvar bank = 0; bank < 2; bank++) begin : g_bank
+    genvar port;
+    genvar bank;
+    generate
+    for (port = 0; port < READS; port = port + 1) begin : g_read
+        for (bank = 0; bank < 2; bank = bank + 1) begin : g_bank
             ppc_ram_lut #(.DEPTH(32), .WIDTH(WIDTH)) ram (
                 .clk_i,
                 .we_i(rst_ni && we_i[bank]),
@@ -49,5 +54,6 @@ module ppc_fpu_fprs #(
         assign rdata_o[port] = !written_q[raddr_i[port]] ? '0 :
             bank_data[port][bank_q[raddr_i[port]]];
     end
+    endgenerate
 endmodule
 `default_nettype wire
