@@ -70,10 +70,15 @@ module tb_ppc_fpu_enabled #(
     int overlapped[3];
 
     logic [63:0] last_store;
+    int published_stores;
     always @(posedge clk_i)
-        if (!rst_ni) last_store <= '0;
-        else if (store_valid_o && store_ready_i)
+        if (!rst_ni) begin
+            last_store <= '0;
+            published_stores <= 0;
+        end else if (store_valid_o && store_ready_i) begin
             last_store <= CPU_602 ? {32'd0, store_o.data[31:0]} : store_o.data;
+            published_stores <= published_stores + 1;
+        end
 
     // Coverage: the older producer finishes while the consumer is queued
     // behind the younger producer.
@@ -89,7 +94,7 @@ module tb_ppc_fpu_enabled #(
     // Memory model: accepts one preparation at a time and answers after
     // mem_delay cycles with mem_data.
     logic [63:0] mem_data;
-    int mem_delay, mem_wait, store_requests;
+    int mem_delay, mem_wait;
     logic mem_busy;
     completion_tag_t mem_tag;
     assign mem_req_ready_i = !mem_busy;
@@ -98,10 +103,7 @@ module tb_ppc_fpu_enabled #(
             mem_busy <= 1'b0;
             mem_rsp_valid_i <= 1'b0;
             mem_rsp_i <= '0;
-            store_requests <= 0;
         end else begin
-            if (mem_req_valid_o && mem_req_ready_i && mem_req_o.write)
-                store_requests <= store_requests + 1;
             if (mem_rsp_valid_i && mem_rsp_ready_o) begin
                 mem_rsp_valid_i <= 1'b0;
                 mem_busy <= 1'b0;
@@ -263,7 +265,8 @@ module tb_ppc_fpu_enabled #(
 
     // 602: fadds traps on enabled inexact; an arithmetic consumer that
     // starts from its finishing value and a store of it must both vanish
-    // when the core aborts the trapping instruction.
+    // when the core aborts the trapping instruction. The store may prepare
+    // its access, which is side-effect free, but never publishes.
     task automatic trapping_producer(input int gap, input bit store_consumer);
         completion_tag_t producer, consumer, store;
         logic [63:0] prior3, prior4, after3, after4;
@@ -275,7 +278,7 @@ module tb_ppc_fpu_enabled #(
         fpr(5'd3, prior3);
         fpr(5'd4, prior4);
         prior_fpscr = inspect_fpscr_o;
-        prior_stores = store_requests;
+        prior_stores = published_stores;
         issue(aform(5'd21, 5'd3, 5'd1, 5'd6, 5'd0), 1'b0, 1'b0, producer);
         repeat (gap) @(negedge clk_i);
         issue(aform(5'd21, 5'd4, 5'd3, 5'd2, 5'd0), 1'b0, 1'b0, consumer);
@@ -283,8 +286,6 @@ module tb_ppc_fpu_enabled #(
         if (store_consumer)
             issue({6'd52, 5'd3, 5'd1, 16'd0}, 1'b0, 1'b0, store);
         await_result(producer);
-        if (store_consumer && mem_req_valid_o && mem_req_o.tag == store)
-            $fatal(1, "store of trapping value requested preparation gap=%0d", gap);
         if (result_o.exception != FPU_EMULATION_TRAP || result_o.fpr_write ||
             result_o.fpscr_write)
             $fatal(1, "trapping producer gap=%0d exception=%0d", gap,
@@ -298,11 +299,11 @@ module tb_ppc_fpu_enabled #(
         repeat (40) begin
             @(negedge clk_i);
             if (result_valid_o)
-                $fatal(1, "consumer of trapping value survived abort gap=%0d store=%0d tag=%h",
-                       gap, store_consumer, result_o.tag);
+                $fatal(1, "consumer of trapping value survived abort gap=%0d store=%0d/%h tag=%h",
+                       gap, store_consumer, store, result_o.tag);
         end
-        if (store_requests != prior_stores)
-            $fatal(1, "store of trapping value prepared gap=%0d", gap);
+        if (published_stores != prior_stores)
+            $fatal(1, "store of trapping value published gap=%0d", gap);
         fpr(5'd3, after3);
         fpr(5'd4, after4);
         if (after3 !== prior3 || after4 !== prior4 ||

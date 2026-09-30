@@ -239,6 +239,7 @@ module ppc_fpu #(
   ppc_fpu_arith_rsp_t arith_finish;
   logic arith_req_ready;
   logic arith_rsp_valid;
+  logic arith_rsp_held;
   logic arith_rsp_ready;
   logic arith_finish_valid;
   logic arith_finish_write;
@@ -263,10 +264,12 @@ module ppc_fpu #(
   logic [63:0] src_a;
   logic [63:0] src_b;
   logic [63:0] src_c;
-  logic [30:0] src_d;
-  logic [30:0] work1_d_raw;
-  logic [30:0] finish_store_word;
-  logic finish_trap;
+  logic src_d_bad, work1_d_bad;
+  // A preparation offered and not accepted stays offered, even when its
+  // stfd source, forwarded at the offer, turns out to trap.
+  logic offer_q;
+  completion_tag_t offer_tag_q;
+  logic offer_held, work1_offer_held;
   logic store_d_ready, work1_store_d_ready;
   logic src_a_sp, src_b_sp, src_c_sp, src_d_sp;
   logic src_b_lt, src_d_lt;
@@ -526,7 +529,7 @@ module ppc_fpu #(
                                              input logic [63:0] raw);
     if (CPU_602)
       return integer_word || single ? {32'd0, raw[31:0]} :
-          widen_single(raw[31:0]);
+          operand_602(raw[31:0]);
     return integer_word ? {32'd0, raw[31:0]} :
         single ? {32'd0, narrow_single(raw)} : raw;
   endfunction
@@ -550,6 +553,33 @@ module ppc_fpu #(
       end
       return s;
     end
+  endfunction
+
+  // 602 binary32 word in binary64 layout. A denormal keeps a zero exponent
+  // field and its raw fraction, which the arithmetic scales by 2^-126;
+  // every other word is its exact binary64 value.
+  function automatic logic [63:0] operand_602(input logic [31:0] s);
+    logic [10:0] e;
+    begin
+      if (s[30:23] == 8'hff) e = 11'h7ff;
+      else if (s[30:23] == 8'd0) e = 11'd0;
+      else e = {s[30], {3{~s[30]}}, s[29:23]};
+      return {s[31], e, s[22:0], 29'd0};
+    end
+  endfunction
+
+  // Inverse of operand_602; exact for every binary64 value that is zero,
+  // infinite, NaN or a normal binary32. A written 602 result is never a
+  // binary32 denormal: underflow traps or delivers zero.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic [31:0] word_602(input logic [63:0] d);
+    return {d[63], d[62], d[58:52], d[51:29]};
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+
+  // stfd needs a finite, non-denormal binary32 source.
+  function automatic logic stfd_traps(input logic [30:0] w);
+    return w[30:23] == 8'hff || (w[30:23] == 8'd0 && w[22:0] != 23'd0);
   endfunction
 
   function automatic logic single_fits_double(input logic [63:0] d);
@@ -1127,7 +1157,8 @@ module ppc_fpu #(
         slot_src[i].raw = '0;
         slot_src[i].sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
         slot_src[i].lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
-      end else if (arith_rsp_valid && arith_rsp.tag == pending_q[i].issue.tag &&
+      // A flush blocks every launch, so the operand view ignores it.
+      end else if (arith_rsp_held && arith_rsp.tag == pending_q[i].issue.tag &&
                    !flags_trap(flags_of(arith_rsp), fpscr_q) &&
                    arith_rsp.write_result) begin
         slot_src[i].ready = 1'b1;
@@ -1190,6 +1221,18 @@ module ppc_fpu #(
               (wait_other == '0 || (wait_fpu == '0 && wait_mem == '0 &&
                                     $countones(wait_other) == 1)))
         else $error("more than one waiting entry per resource");
+      for (integer i = 0; i < PENDING_DEPTH; i++)
+        if (pending_q[i].valid && pending_q[i].finishing &&
+            !(kill_all_i || safe_abort_flush || deferred_abort_flush))
+          assert (arith_finish_valid &&
+                  arith_finish.tag == pending_q[i].issue.tag)
+            else $error("finishing slot without its reply");
+      if (CPU_602 && arith_rsp_match && arith_rsp.write_result &&
+          pending_q[arith_rsp_slot].decoded.op != FP_FCTIWZ &&
+          !flags_trap(flags_of(arith_rsp), fpscr_q))
+        assert (word_602(arith_rsp.result) == narrow_single(arith_rsp.result))
+          else $error("written 602 result is a binary32 denormal %h",
+                      arith_rsp.result);
     end
   end
   // synthesis translate_on
@@ -1484,8 +1527,9 @@ module ppc_fpu #(
     src_a = source_a.raw;
     src_b = source_b.raw;
     src_c = source_c.raw;
-    src_d = source_d.fwd ? finish_store_word : source_d.raw[30:0];
-    store_d_ready = source_d.ready && !(source_d.fwd && finish_trap);
+    // A finishing source is checked when the reply fills the entry.
+    src_d_bad = !source_d.fwd && stfd_traps(source_d.raw[30:0]);
+    store_d_ready = source_d.ready;
     src_a_sp = source_a.sp;
     src_b_sp = source_b.sp;
     src_c_sp = source_c.sp;
@@ -1592,8 +1636,8 @@ module ppc_fpu #(
     work1_b = read_source(work1_index[1], fpr_rdata[4], bind1[1]);
     work1_c = read_source(work1_index[2], fpr_rdata[5], bind1[2]);
     work1_d = work1_a;
-    work1_d_raw = work1_d.fwd ? finish_store_word : work1_d.raw[30:0];
-    work1_store_d_ready = work1_d.ready && !(work1_d.fwd && finish_trap);
+    work1_d_bad = !work1_d.fwd && stfd_traps(work1_d.raw[30:0]);
+    work1_store_d_ready = work1_d.ready;
     work1_select_b = work1_a.selb;
     work1_use_a = 1'b0;
     work1_use_b = 1'b0;
@@ -1679,9 +1723,7 @@ module ppc_fpu #(
          (CPU_602 && work1_decoded.mem_load)) &&
         !(CPU_602 && work1_decoded.mem_store &&
           !work1_decoded.mem_single && !work1_decoded.mem_integer &&
-          (work1_d_raw[30:23] == 8'hff ||
-           (work1_d_raw[30:23] == 8'd0 &&
-            work1_d_raw[22:0] != 23'd0)));
+          work1_d_bad && !work1_offer_held);
     work1_arith_launch = work1_arith_eligible &&
         !deferred_abort_flush_q && work1_admitted;
     work1_mem_launch = work1_mem_eligible && work1_admitted;
@@ -1708,21 +1750,15 @@ module ppc_fpu #(
   end
   assign combined_arith_launch = arith_launch || work1_arith_launch;
   always_comb begin
-    logic [31:0] narrowed;
-    narrowed = narrow_single(mem_rsp_i.data);
     load_single = CPU_602 ? {32'd0, mem_rsp_i.data[31:0]} :
         widen_single(mem_rsp_i.data[31:0]);
-    load_double = CPU_602 ? {32'd0, narrowed} : mem_rsp_i.data;
-    load_fits = !CPU_602 || (mem_rsp_i.data[62:52] != 11'h7ff &&
-        (narrowed[30:23] != 8'd0 || narrowed[22:0] == 23'd0) &&
-        widen_single(narrowed) == mem_rsp_i.data);
+    load_double = CPU_602 ? {32'd0, word_602(mem_rsp_i.data)} :
+        mem_rsp_i.data;
+    // Zero, or a normal binary32 exponent with no fraction bits below it.
+    load_fits = !CPU_602 || mem_rsp_i.data[62:0] == 63'd0 ||
+        (mem_rsp_i.data[62:52] >= 11'd897 &&
+         mem_rsp_i.data[62:52] <= 11'd1150 && mem_rsp_i.data[28:0] == 29'd0);
   end
-  // The 602 store trap check is the only register-file consumer of a
-  // finishing value.
-  assign finish_store_word = 31'(narrow_single(arith_finish.result));
-  assign finish_trap = numeric_emulation_trap(arith_finish.invalid,
-      arith_finish.ox, arith_finish.ux, arith_finish.zx, arith_finish.xx,
-      arith_finish.tiny_before_round, fpscr_q[7:2]);
   // Only one context can launch arithmetic in a cycle, and a context
   // holding arithmetic excludes the other, so operands follow the kind.
   assign arith_from_work = work_decoded.kind == DK_ARITH;
@@ -1738,9 +1774,9 @@ module ppc_fpu #(
     arith_req = '0;
     arith_req.tag = arith_from_work ? work_issue.tag : work1_issue.tag;
     arith_req.op = arith_from_work ? work_decoded.op : work1_decoded.op;
-    arith_req.a = CPU_602 ? widen_single(op_a[31:0]) : op_a;
-    arith_req.b = CPU_602 ? widen_single(op_b[31:0]) : op_b;
-    arith_req.c = CPU_602 ? widen_single(op_c[31:0]) : op_c;
+    arith_req.a = CPU_602 ? operand_602(op_a[31:0]) : op_a;
+    arith_req.b = CPU_602 ? operand_602(op_b[31:0]) : op_b;
+    arith_req.c = CPU_602 ? operand_602(op_c[31:0]) : op_c;
     arith_req.rn = fpscr_q[1:0];
     arith_req.ni = fpscr_q[2];
     arith_req.ve = fpscr_q[7];
@@ -1766,8 +1802,7 @@ module ppc_fpu #(
           (CPU_602 && work_decoded.mem_load)) &&
         !(CPU_602 && work_decoded.mem_store &&
           !work_decoded.mem_single && !work_decoded.mem_integer &&
-          (src_d[30:23] == 8'hff ||
-           (src_d[30:23] == 8'd0 && src_d[22:0] != 23'd0)));
+          src_d_bad && !offer_held);
     arith_launch = arith_eligible && !deferred_abort_flush_q && work_admitted;
     mem_launch = mem_eligible && work_admitted;
     local_fpu_uses_pipe = work_decoded.kind == DK_MOVE ||
@@ -1806,7 +1841,7 @@ module ppc_fpu #(
       .req_valid_i(combined_arith_launch), .req_ready_o(arith_req_ready),
       .req_i(arith_req),
       .req_fwd_i(arith_req_fwd),
-      .rsp_valid_o(arith_rsp_valid),
+      .rsp_valid_o(arith_rsp_valid), .rsp_held_o(arith_rsp_held),
       .rsp_ready_i(arith_rsp_ready), .rsp_o(arith_rsp),
       .finish_valid_o(arith_finish_valid), .finish_o(arith_finish),
       .finish_write_o(arith_finish_write),
@@ -1898,8 +1933,7 @@ module ppc_fpu #(
             exec_result.gpr_update = 1'b0;
           end else if (CPU_602 && work_decoded.mem_store &&
                        !work_decoded.mem_single && !work_decoded.mem_integer &&
-                       (src_d[30:23] == 8'hff ||
-                        (src_d[30:23] == 8'd0 && src_d[22:0] != 23'd0))) begin
+                       src_d_bad) begin
             exec_result.exception = FPU_EMULATION_TRAP;
             exec_result.gpr_update = 1'b0;
           end else exec_result.store = work_decoded.mem_store;
@@ -1945,9 +1979,7 @@ module ppc_fpu #(
           end else if (CPU_602 && work1_decoded.mem_store &&
                        !work1_decoded.mem_single &&
                        !work1_decoded.mem_integer &&
-                       (work1_d_raw[30:23] == 8'hff ||
-                        (work1_d_raw[30:23] == 8'd0 &&
-                         work1_d_raw[22:0] != 23'd0))) begin
+                       work1_d_bad) begin
             work1_result.exception = FPU_EMULATION_TRAP;
             work1_result.gpr_update = 1'b0;
           end else work1_result.store = work1_decoded.mem_store;
@@ -2059,7 +2091,7 @@ module ppc_fpu #(
     end
   end
 
-  assign reply_raw = CPU_602 ? {32'd0, narrow_single(arith_rsp.result)} :
+  assign reply_raw = CPU_602 ? {32'd0, word_602(arith_rsp.result)} :
       arith_rsp.result;
 
   // A local-stage operand forwarded last cycle is now the registered reply.
@@ -2126,12 +2158,27 @@ module ppc_fpu #(
       mem_incoming_result = memory_result(entry_result(pending_q[mem_rsp_slot]),
           pending_q[mem_rsp_slot].decoded.mem_load,
           pending_q[mem_rsp_slot].decoded.mem_single, mem_rsp_i);
-      pending_d[mem_rsp_slot].st = status_of(mem_incoming_result);
-      if (mem_rsp_i.fault || pending_q[mem_rsp_slot].decoded.mem_load)
-        pending_d[mem_rsp_slot].value =
-            value_of(DK_MEMORY, mem_incoming_result);
+      // A filled stfd's trap outranks its preparation's fault.
+      if (!(CPU_602 &&
+            pending_q[mem_rsp_slot].st.exception == FPU_EMULATION_TRAP)) begin
+        pending_d[mem_rsp_slot].st = status_of(mem_incoming_result);
+        if (mem_rsp_i.fault || pending_q[mem_rsp_slot].decoded.mem_load)
+          pending_d[mem_rsp_slot].value =
+              value_of(DK_MEMORY, mem_incoming_result);
+      end
       pending_d[mem_rsp_slot].done = 1'b1;
     end
+    // An stfd filled from the reply checks the filled word; its access
+    // was prepared without the check and is never published.
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      if (CPU_602 && pending_q[i].store_fill &&
+          !pending_q[i].decoded.mem_single &&
+          !pending_q[i].decoded.mem_integer &&
+          stfd_traps(reply_raw[30:0])) begin
+        pending_d[i].st.exception = FPU_EMULATION_TRAP;
+        pending_d[i].st.gpr_update = 1'b0;
+        pending_d[i].st.store = 1'b0;
+      end
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
       if (exec_pick[i]) begin
         pending_d[i] = record_launch(pending_d[i], launch0);
@@ -2265,6 +2312,13 @@ module ppc_fpu #(
       fpr_count_d = '0;
       barrier_d = 1'b0;
     end
+  end
+
+  assign offer_held = offer_q && offer_tag_q == work_issue.tag;
+  assign work1_offer_held = offer_q && offer_tag_q == work1_issue.tag;
+  always_ff @(posedge clk_i) begin
+    offer_q <= rst_ni && mem_req_valid_o && !mem_req_ready_i;
+    offer_tag_q <= mem_req_o.tag;
   end
 
   always_ff @(posedge clk_i) begin
@@ -2404,7 +2458,9 @@ module ppc_fpu #(
       reply = 1'b0;
       ready[i] = pending_q[i].done || pending_q[i].local_wait == 2'd1;
       if (pending_q[i].decoded.kind == DK_ARITH) begin
-        if (!ready[i] && arith_finish_valid && pending_q[i].finishing) begin
+        // A finishing bit implies the reply this cycle unless a flush
+        // cancels it, and a flush withholds every forward.
+        if (!ready[i] && pending_q[i].finishing) begin
           ar = flags_of(arith_finish);
           ready[i] = 1'b1;
           meta = 1'b1;
@@ -2468,8 +2524,7 @@ module ppc_fpu #(
           c.fctiwz = pending_q[i].decoded.op == FP_FCTIWZ;
           exc[i] = slot_trap[i];
           cr1 = 4'(flags_fpscr(slot_prefix[i], slot_known[i]) >> 28);
-          c.fpr_write = (slot_reply[i] ? arith_finish_write :
-              slot_ar[i].write_result) && !exc[i];
+          c.fpr_write = slot_ar[i].write_result && !exc[i];
           c.rsp_value = slot_rsp_value[i];
           c.fpr_sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
           c.fpr_lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;

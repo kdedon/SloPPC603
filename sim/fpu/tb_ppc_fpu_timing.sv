@@ -25,12 +25,17 @@ module tb_ppc_fpu_timing #(
     logic flush_i;
 
     wire [2:0] req_fwd_i = 3'b000;
+    logic rsp_held_o;
+    always @(posedge clk_i)
+        if (rst_ni && !flush_i && rsp_held_o !== rsp_valid_o)
+            $fatal(1, "held reply differs from valid reply");
     logic finish_write_o;
     logic next_finish_valid_o;
     completion_tag_t next_finish_tag_o;
     ppc_fpu_arith #(.CPU_602(CPU_602)) dut (
         .clk_i(clk_i), .rst_ni(rst_ni), .req_valid_i(req_valid_i),
         .req_ready_o(req_ready_o), .req_i(req_i), .req_fwd_i(req_fwd_i), .rsp_valid_o(rsp_valid_o),
+        .rsp_held_o(rsp_held_o),
         .div_busy_o(div_busy_o),
         .rsp_ready_i(rsp_ready_i), .rsp_o(rsp_o),
         .finish_valid_o(finish_valid_o), .finish_o(finish_o),

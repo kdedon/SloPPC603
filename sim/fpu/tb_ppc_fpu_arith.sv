@@ -15,12 +15,30 @@ module tb_ppc_fpu_arith #(
     logic div_busy_o;
     ppc_fpu_arith_req_t req_i;
     logic rsp_valid_o;
+    logic rsp_held_o;
+    always @(posedge clk_i)
+        if (rst_ni && !flush_i && rsp_held_o !== rsp_valid_o)
+            $fatal(1, "held reply differs from valid reply");
     logic rsp_ready_i;
     ppc_fpu_arith_rsp_t rsp_o;
     logic finish_valid_o;
     ppc_fpu_arith_rsp_t finish_o;
     logic flush_i;
     ppc_fpu_arith_rsp_t expected;
+
+    // The 602 shell's operand encoding: a binary32 denormal keeps a zero
+    // exponent field and its raw fraction. Other values pass unchanged.
+    function automatic logic [63:0] encode_602(input logic [63:0] d);
+        logic [52:0] sig;
+        logic [52:0] kept;
+        int shift;
+        if (!CPU_602 || d[62:52] < 11'd874 || d[62:52] > 11'd896) return d;
+        sig = {1'b1, d[51:0]};
+        shift = 926 - int'(d[62:52]);
+        kept = sig >> shift;
+        if ((kept << shift) != sig) return d;
+        return {d[63], 11'd0, kept[22:0], 29'd0};
+    endfunction
     logic [63:0] result_mask;
     logic [4:0] op_bits;
     logic [63:0] read_a, read_b, read_c;
@@ -218,9 +236,9 @@ module tb_ppc_fpu_arith #(
             req_i.tag.generation = 8'(count / 5);
             expected.tag = req_i.tag;
             req_i.op = ppc_fpu_op_t'(op_bits);
-            req_i.a = read_a;
-            req_i.b = read_b;
-            req_i.c = read_c;
+            req_i.a = encode_602(read_a);
+            req_i.b = encode_602(read_b);
+            req_i.c = encode_602(read_c);
             req_i.rn = read_rn;
             req_i.single_result = read_single;
             req_i.ni = read_ni;

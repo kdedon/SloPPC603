@@ -11,9 +11,14 @@ and throughput. CPU integration remains separate.
 `CPU_602=0` selects the 603e implementation; `CPU_602=1` selects the 602.
 There is no runtime personality input. The 603e bank stores 32 binary64 words;
 the 602 bank stores 32 binary32/raw words with architectural SP/LT tags. The
-602 arithmetic adapter widens tagged binary32 operands exactly for shared
-arithmetic and stores the directly rounded binary32 result. Software-emulated
-double operands never enter hardware arithmetic as invented zero-filled values.
+602 shell hands binary32 operands to the shared arithmetic in binary64 layout:
+a normal, zero, infinite or NaN word takes its exact binary64 encoding, and a
+denormal keeps a zero exponent field with its raw fraction, which the unpack,
+divider and `frsqrte` read as an unnormalized significand scaled by 2^−126.
+Widening therefore needs no leading-zero count. A written result is never a
+binary32 denormal (underflow traps or delivers zero), so narrowing a result to
+the stored binary32 word is a bit select. Software-emulated double operands
+never enter hardware arithmetic as invented zero-filled values.
 
 ## Arithmetic execution
 
@@ -160,10 +165,17 @@ Execution latency is unchanged: dependent `fadd`, `fmr` and `stfd` distances
 match the previous RTL (3, 3 and same-cycle store launch), and the forward bus
 still announces results on the finish cycle.
 
-A 602 source finishing with an emulation trap is ready for FPU consumers:
-the trap aborts every younger instruction before it commits, so a consumer
-that starts from the value never retires. Only stores still wait on the trap
-check, so no store preparation leaves for a value that traps.
+A 602 source finishing with an emulation trap is ready for FPU consumers,
+stores included: the trap aborts every younger instruction before it commits,
+so a consumer that starts from the value never retires, and a store may
+prepare its access (side-effect free) but never publishes. An `stfd` whose
+source finishes in its preparation cycle checks the filled word for NaN,
+infinity or denormal on the next cycle; that emulation trap outranks a
+preparation fault. A preparation offered and not accepted stays offered with
+its fields unchanged; when the source it then reads from a register traps,
+the launch records the trap and the reply is ignored. An `stfd` whose source
+is already in a register or the pending queue traps before any preparation,
+as before.
 
 ## Pending queue
 
@@ -212,10 +224,10 @@ Fitted at `2ae952b` (both builds), the shell is off the 603e worst path. Its
 worst register path is a pending entry's started flag into another entry's
 value word through the launch and store-fill selects (−3.03 ns at 20 ns);
 the add-stage exponent (−3.17 ns) and the divider's operand capture
-(−2.52 ns) are the arithmetic limits. The 602's worst paths leave through
-virtual outputs (finish forward into `mem_req_o`, pending state into
-`forward1_o`), and its worst internal one is pending state into the divider
-operands (−8.49 ns).
+(−2.52 ns) are the arithmetic limits. The 602 build, fitted at `cc540bd`,
+reaches 49.56 MHz (−0.178 ns); its worst path is a finishing reply's
+numeric-trap flags into the forward pick
+([record](../quartus/fpu-production/README.md)).
 
 ## Arithmetic stage 1
 
@@ -293,9 +305,15 @@ bit. The 602's SP/LT tags stay in flops.
 The 602 build narrows by construction: its operands are
 binary32-representable, so the low 29 significand bits are constant zero into
 the multiplier, add lane and divider; the aligned y lane folds bits 47:0 into
-a sticky bit 48 (below every single guard bit even after cancellation, which
-only occurs at alignment distances of at most one); and the rounder shifts
-only the 64-bit window of bits 159:96 that single magnitudes occupy. Single
+a sticky bit 48, formed from the unshifted lane and the distance beside the
+shift; and the rounder shifts only the 64-bit window of bits 159:96 that single
+magnitudes occupy. The fold stays below every single guard bit with
+unnormalized denormal operands: a denormal x has exponent −126, so a y it
+shifts is also denormal at distance zero, and a product x with one denormal
+factor has at most 23 leading zeros, so a y shifted past bit 48 lies below
+half of x and the result's leading one stays at least 38 bits above the
+fold. A product of
+two denormals lies below 2^−250, where only its nonzero sticky matters. Single
 divide places its remainder sticky at bit 96 in both builds.
 
 The 603e rounder shifts the 112-bit window of bits 159:48. Every finite
