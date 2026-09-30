@@ -49,7 +49,7 @@ $(OUT)/font.o: demo/font.c demo/soc.h | $(OUT)
 	$(CC) $(CFLAGS) $(OWN_CFLAGS) -c $< -o $@
 $(OUT)/nofloat.o: demo/nofloat.c demo/soc.h | $(OUT)
 	$(CC) $(CFLAGS) $(OWN_CFLAGS) -c $< -o $@
-$(OUT)/hello.o: demo/hello.c demo/soc.h | $(OUT)
+$(OUT)/hello.o: demo/hello.c demo/soc.h demo/mandel.h | $(OUT)
 	$(CC) $(CFLAGS) $(OWN_CFLAGS) -c $< -o $@
 
 $(OUT)/dhry_1.o: $(SRC)/dhrystone/dhry_1.c | $(OUT)
@@ -83,7 +83,7 @@ $(MI):
 	mkdir -p $@
 $(MI)/mister.o: demo/mister.c demo/soc.h FORCE | $(MI)
 	$(CC) $(CFLAGS) $(OWN_CFLAGS) '-DGIT_SHORT="$(GIT_SHORT)"' -c $< -o $@
-$(MI)/hello.o: demo/hello.c demo/soc.h | $(MI)
+$(MI)/hello.o: demo/hello.c demo/soc.h demo/mandel.h | $(MI)
 	$(CC) $(CFLAGS) $(OWN_CFLAGS) -Dmain=hello_main -c $< -o $@
 # An HZ above any run length keeps Dhrystone's floating-point rate printout
 # off; the glue computes the rates in integers.

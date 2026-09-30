@@ -95,7 +95,7 @@ int times(struct tms *buf)
 int main(void)
 {
   fb_palette_default();
-  fb_clear(1);
+  con_clear(1);
   con_color(15, 1);
   con_screen(1);
   printf("Dhrystone 2.1, %d runs\n", demo_dhry_runs);

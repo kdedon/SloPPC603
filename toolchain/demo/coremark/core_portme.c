@@ -83,7 +83,7 @@ int coremark_main(void);
 int main(void)
 {
   fb_palette_default();
-  fb_clear(4);
+  con_clear(4);
   con_color(15, 4);
   con_screen(1);
   seed4_volatile = demo_cm_iterations;

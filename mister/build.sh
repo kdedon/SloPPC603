@@ -5,8 +5,19 @@
 # the pinned cross-compiler container, generates files.qip and compiles in the
 # pinned Quartus image. Prints resources, the worst slack of every clock at
 # every corner, and the .rbf path; fails on a negative slack. With --clean,
-# only the .rbf and the fit and timing summaries are kept afterwards.
+# only the .rbf and the fit and timing summaries are kept afterwards. With
+# --native, the 320 x 240 framebuffer is on chip and leaves as native video
+# instead of the 1920 x 1080 DDR3 framebuffer shown by the scaler.
 set -euo pipefail
+clean=0
+native=0
+for arg in "$@"; do
+  case "${arg}" in
+    --clean) clean=1 ;;
+    --native) native=1 ;;
+    *) echo "usage: $0 [--clean] [--native]" >&2; exit 2 ;;
+  esac
+done
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd -- "${here}/.." && pwd)"
 image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70}"
@@ -35,6 +46,9 @@ python3 "${here}/hex2mif.py" "${here}/firmware/mister.hex" 16384 "${here}/firmwa
 rm -rf "${here}/output_files" "${here}/build_id.v"
 # Quartus writes every sourced assignment back into the project file.
 cp "${here}/ppc603e.qsf" "${here}/ppc603e.qsf.keep"
+if [[ "${native}" == 1 ]]; then
+  sed -i '/VERILOG_MACRO "MISTER_FB/d' "${here}/ppc603e.qsf"
+fi
 status=0
 # One Quartus build at a time on a shared machine.
 flock /tmp/ppc603e-quartus.lock docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
@@ -69,10 +83,10 @@ if [[ -f "${out}/ppc603e.sta.summary" ]]; then
   fi
 fi
 if [[ -f "${out}/ppc603e.rbf" ]]; then
-  echo "rbf: ${out}/ppc603e.rbf (${short})"
+  echo "rbf: ${out}/ppc603e.rbf (${short}, $([[ "${native}" == 1 ]] && echo "native video" || echo "1920x1080 DDR3 framebuffer"))"
 fi
 echo "quartus exit status ${status}"
-if [[ "${1:-}" == --clean ]]; then
+if [[ "${clean}" == 1 ]]; then
   rm -rf "${here}/db" "${here}/incremental_db" "${here}"/*.qws
   find "${out}" -type f ! -name '*.rbf' ! -name '*.summary' -delete 2>/dev/null || true
 fi

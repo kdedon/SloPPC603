@@ -67,12 +67,13 @@ _reset:
     lis 5,0xfff0
     ori 5,5,0x001e
     mtspr 528,5
-    /* DBAT1: 0xf0000000, 2 MiB, WIMG 0101 (inhibited, guarded). */
+    /* DBAT1: 0xf0000000, 4 MiB, WIMG 0101 (inhibited, guarded): registers
+     * and a framebuffer below them or of up to 2 MiB at 0xf0200000. */
     lis 5,0xf000
     ori 5,5,0x002a
     mtspr 539,5
     lis 5,0xf000
-    ori 5,5,0x003e
+    ori 5,5,0x007e
     mtspr 538,5
     isync
     mfmsr 5

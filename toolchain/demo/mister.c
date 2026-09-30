@@ -3,7 +3,10 @@
 /* MiSTer image: runs the program selected in the MODE register (hello,
  * Dhrystone, CoreMark or all three) at full or smoke-test length, then draws
  * a results summary on the bottom rows of the screen and echoes it to the
- * console. A failed check stops in fail() with its message on screen. */
+ * console. In Run all, the benchmarks write in the bottom text rows only,
+ * so hello's Mandelbrot set stays on screen above the summary. The layout
+ * follows the framebuffer geometry the registers report. A failed check
+ * stops in fail() with its message on screen. */
 #include "soc.h"
 
 #ifndef GIT_SHORT
@@ -45,9 +48,10 @@ static void summary(uint32_t program, uint32_t mode)
   uint32_t tenures = SOC_TENURES;
 
   con_screen(1);
-  fb_rect(0, 22 * 8, SOC_FB_WIDTH, 8 * 8, 0);
+  con_window(0);
+  fb_rect(0, (con_rows - 8) * con_cell, fb_width, 8 * con_cell, 0);
   con_color(15, 0);
-  con_goto(0, 22);
+  con_goto(0, con_rows - 8);
   SOC_CONSOLE = '\n';
   printf("603e PVR %08lx %luMHz %s%s\n", (unsigned long)read_pvr(),
          (unsigned long)MODE_MHZ(mode), GIT_SHORT, MODE_FULL(mode) ? "" : " smoke");
@@ -89,7 +93,10 @@ int main(void)
   demo_dhry_runs = full ? 100000 : 200;
   demo_cm_iterations = full ? 400 : 1;
 
+  fb_init();
   if (program == PROG_HELLO || program == PROG_ALL) hello_main();
+  /* Keep the set: the benchmarks get the text rows below it. */
+  if (program == PROG_ALL) con_window(con_rows - 11);
   if (program == PROG_DHRY || program == PROG_ALL) dhry_demo();
   if (program == PROG_CM || program == PROG_ALL) coremark_demo();
   summary(program, mode);

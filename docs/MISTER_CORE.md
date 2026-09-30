@@ -13,7 +13,7 @@ summary), [`tb/mister/tb_mister.sv`](../tb/mister/tb_mister.sv) (Verilator bench
 | Block | File | Role |
 |---|---|---|
 | `emu` | `mister/ppc603e.sv` | Framework top: `hps_io`, OSD, PLL, reset, video and framebuffer wiring |
-| `ppc603e_mister` | `mister/rtl/ppc603e_mister.sv` | Demo SoC with `FB_EXTERNAL`, posted-write FIFO and DDRAM writer |
+| `ppc603e_mister` | `mister/rtl/ppc603e_mister.sv` | Demo SoC; with `FB_EXTERNAL`, also the posted-write FIFO and DDRAM writer |
 | `pll` | `mister/rtl/pll.v` | 50 MHz core clock from the 50 MHz board clock |
 
 - One clock, `clk_sys` at 50 MHz, drives the processor, the SoC, `DDRAM_CLK`, `CLK_VIDEO`
@@ -22,15 +22,66 @@ summary), [`tb/mister/tb_mister.sv`](../tb/mister/tb_mister.sv) (Verilator bench
   (`mister.hex` in simulation, `mister.mif` in synthesis, where `soc_ram_sp_be` instantiates
   `altsyncram` with byte enables because the inferred RAM loses its contents). The
   benchmarks run entirely from on-chip memory, so their numbers carry no DDR3 latency.
-- Framebuffer: 320 × 240, 8-bit indexed, at DDR3 byte address `0x30000000`, shown by the
-  framework scaler (`MISTER_FB`, `MISTER_FB_PALETTE`; `FB_FORMAT` 3, stride 320).
-  Framebuffer stores enter a 16-entry FIFO and drain one doubleword per DDRAM write;
-  the 60x grant is held off while fewer than four entries are free. The palette writes
-  go straight to the scaler palette. The processor still sees the framebuffer at
-  `0xf0000000`; reads of it end with TEA.
-- The native video output (`VGA_*`) carries the scan-out timing (6.25 MHz pixel enable,
-  400 × 262, 59.6 Hz) with a blank picture; the picture is on the scaler output (HDMI).
+- Framebuffer: 8-bit indexed with a 256-entry RGB palette, stride equal to the width.
+  The firmware reads its address and geometry from the SoC registers (`FB_ADDR`,
+  `FB_STRIDE`, `FB_SIZE`) and lays the screen out to fit. Two builds:
+  - DDR3 framebuffer (default; `MISTER_FB` and `MISTER_FB_PALETTE` in the project):
+    1920 × 1080 at DDR3 byte address `0x30000000` (2,073,600 bytes), shown by the
+    framework scaler (`FB_FORMAT` 3, `FB_STRIDE` 1920, `VIDEO_ARX/ARY` 16:9). The
+    processor sees it at `0xf0200000` (the demo SoC's `FB_BASE` parameter; DBAT1 maps
+    4 MiB from `0xf0000000`); reads of it end with TEA. Framebuffer stores enter a
+    16-entry FIFO and drain one doubleword per DDRAM write; the 60x grant is held off
+    while fewer than four entries are free. The palette writes go straight to the scaler
+    palette and to a copy in the core for screen saves. The native video output carries
+    a blank 320 × 240 (6.25 MHz pixel enable, 400 × 262, 59.6 Hz).
+  - Native video (`mister/build.sh --native`): 320 × 240 with the framebuffer and palette
+    in block RAM in the demo SoC, as in the standalone simulation, scanned out on
+    `VGA_R/G/B`, `VGA_HS/VS`, `VGA_DE` and `CE_PIXEL` at 400 × 262 with a 6.25 MHz pixel
+    enable (15.6 kHz, 59.6 Hz, console 240p timing), `VIDEO_ARX/ARY` 4:3, `FB_EN` absent.
+    No screen save.
 - `MISTER_DISABLE_ALSA` is set: the core has no audio.
+
+### Screenshots and screen saves
+
+The MiSTer screenshot (Win+PrtScr or Alt+ScrLk) cannot capture a `MISTER_FB` picture.
+It copies the scaler's own buffer at DDR3 `0x20000000`
+([scaler.h](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/scaler.h#L31-L32),
+[`mister_scaler_init`](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/scaler.cpp#L38-L80),
+called from [`do_screenshot`](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/scaler.cpp#L539-L556)).
+The scaler fills that buffer from the core's native video; in framebuffer mode it only
+switches its output reads to `FB_BASE`
+([ascal.vhd](https://github.com/MiSTer-devel/Template_MiSTer/blob/3ea1134cf05d62c2b1db30362277a823d739ced2/sys/ascal.vhd#L1705-L1721)),
+so the screenshot shows the blank native video: an all-black image. The native-video
+build does not have this problem.
+
+Instead, the OSD item `Save screen` writes the framebuffer and palette to a file on the
+SD card. The core cannot create files or use the `hps_io` upload path for this: Main_MiSTer
+runs core-requested uploads only for C64/C128
+([user_io.cpp](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/user_io.cpp#L3972-L3976))
+and arcade NVRAM
+([menu.cpp](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/menu.cpp#L2263-L2268)).
+It writes through the generic block interface instead: `Screen file` mounts an existing
+file on SD slot 0, and a user-mounted image never grows
+([user_io.cpp](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/user_io.cpp#L3521-L3535)),
+so the file must already hold 2,075,136 bytes; a 2 MiB file does.
+
+Screen file (`.pfb`), in 512-byte sectors:
+
+| Bytes | Contents |
+|---|---|
+| 0–3 | `PFB1` |
+| 4–5, 6–7, 8–9 | Width, height, stride; little-endian |
+| 10 | Bits per pixel, 8 |
+| 11–511 | Zero |
+| 512–1535 | Palette: 256 entries of R, G, B, 0 |
+| 1536– | Pixels, one palette index per byte, rows top to bottom; the last sector padded |
+
+The save reads each 512-byte sector of pixels from DDR3 with a 64-beat `DDRAM_RD` burst
+(the framebuffer writer waits while the read command is issued), then hands it to the
+HPS; the file takes 4,053 sectors. The processor keeps running, so a save during
+drawing captures a mix of frames. [`mister/fb2png.py`](../mister/fb2png.py) converts a
+file to PNG (`mister/fb2png.py screen.pfb screen.png`) and makes the empty 2 MiB file
+(`mister/fb2png.py --blank screen.pfb`).
 
 ### OSD
 
@@ -38,12 +89,15 @@ summary), [`tb/mister/tb_mister.sv`](../tb/mister/tb_mister.sv) (Verilator bench
 |---|---|---|
 | Program | 2:1 | Hello, Dhrystone, CoreMark, Run all |
 | Length | 3 | Full (default), Smoke test |
+| Screen file | S0 | Mounts the `.pfb` file a save writes (DDR3 build) |
+| Save screen | 4 | Writes the framebuffer and palette to the mounted file (DDR3 build) |
 | Restart | 0 | Resets the processor and runs the selection again |
 
 Changing Program or Length also restarts. The core reports to the OSD info line when a
 program ends: `Finished: PASS`, `Finished: FAIL (see screen)`, or `Checkstop`. The
 numbers are drawn on the screen only; the framework has no way to show core text in
-the OSD. `LED_USER` is on while a program runs.
+the OSD. A save reports `Screen saved`, or `Screen file: mount a writable file of 2 MiB`
+when no suitable file is mounted. `LED_USER` is on while a program runs.
 
 The firmware reads the selection from the SoC `MODE` register: bits 1:0 program, bit 2
 full length, bits 31:16 the clock in MHz.
@@ -71,7 +125,13 @@ suffix when `rtl/`, `mister/` or `toolchain/demo/` has uncommitted changes.
 
 ## Results summary
 
-At the end, the firmware clears the bottom eight text rows and draws (40 columns):
+Text uses the 8 × 8 font scaled to the screen: three times at 1920 × 1080 (24-pixel
+cells, 80 columns by 45 rows), once at 320 × 240 (40 by 30). Hello draws a title row,
+colour bars, and the Mandelbrot set across the full width between the bars and the bottom
+11 text rows (1920 × 744 at 1080p), in passes of 16, 8, 4, 2 and 1 pixel blocks so the
+picture fills in progressively; every pixel is computed once. In Run all, Dhrystone and
+CoreMark write only in the bottom 11 rows, so the set stays on screen. At the end the
+firmware clears the bottom eight text rows and draws the summary there:
 
 ```
 603e PVR 00070101 50MHz 1a2b3c4
@@ -96,10 +156,11 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh
+mister/build.sh [--clean] [--native]
 ```
 
-Needs Docker, network access for the framework and benchmark sources, and about
+`--native` builds the 320 × 240 native-video variant; the default is the 1920 × 1080 DDR3
+framebuffer. Needs Docker, network access for the framework and benchmark sources, and about
 12 GB for the pinned Quartus 17.0.2 image. The script:
 
 1. fetches the framework with `mister/fetch-framework.sh`:
@@ -133,21 +194,31 @@ the summary, and the framework commit above).
    is what the menu shows.
 2. On the MiSTer main menu, open `_Development` (or `_Computer`) and load `PPC603e`.
    Use the HDMI output: the picture comes from the scaler framebuffer. With
-   `direct_video=1` or on the analog output the screen stays blank.
+   `direct_video=1` or on the analog output the screen stays blank. (The `--native`
+   build shows 320 × 240 on HDMI and as 15 kHz RGB on the analog output.)
 3. The default selection runs Hello at once: colour bars, a Mandelbrot set and the
    summary. Open the OSD (F12 or the OSD button), choose `Program`, and pick
    `Dhrystone`, `CoreMark` or `Run all`; the core restarts with it. Each benchmark first
    shows its banner, then its console text, then the summary at the bottom. Run all
-   takes about 20 s.
+   ends on the Mandelbrot set with every program's results below it.
 4. Wait for `Finished: PASS` in the OSD info line (it appears on its own), then report
-   the bottom eight lines: photograph the screen or type the lines. Include the first
-   line: it names the processor version, clock and commit.
+   the bottom eight lines. Include the first line: it names the processor version, clock
+   and commit. To save the screen as a file:
+   1. once, make an empty 2 MiB file on the card, e.g. on the MiSTer
+      `dd if=/dev/zero of=/media/fat/games/PPC603e/screen.pfb bs=1M count=2`
+      (or `mister/fb2png.py --blank screen.pfb` on a PC and copy it to
+      `games/PPC603e/`);
+   2. in the OSD, `Screen file` → pick `screen.pfb`;
+   3. `Save screen`; the info line shows `Screen saved` after a few seconds;
+   4. copy the file off the card and run `mister/fb2png.py screen.pfb screen.png`.
+   Each save overwrites the file. The MiSTer screenshot key gives a black image with
+   this core (see [Screenshots and screen saves](#screenshots-and-screen-saves)).
 5. `Restart` in the OSD repeats a run. To check variation, restart two or three times.
    The Dhrystone and CoreMark timed loops make no framebuffer stores, so their cycle
    counts should repeat exactly; the Mandelbrot count can vary slightly with DDR3 load.
 
-If the screen shows garbage before the first program draws, that is the previous
-contents of that DDR3 region; the firmware clears it within a frame.
+Garbage on the screen before the first program draws is the previous contents of that
+DDR3 region; the firmware clears it.
 
 ## Verification
 

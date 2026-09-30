@@ -6,13 +6,18 @@
 // docs/DEMO_SOC.md for the memory map). One clock; video advances on a
 // pixel enable every CE_DIV clocks. With FB_EXTERNAL the framebuffer is not
 // on chip: its writes and the palette writes leave through the fb_* and pal_*
-// ports, and its reads end with TEA.
+// ports, its reads end with TEA, and the scan-out is a blank 320 x 240.
 module ppc603e_demo_soc #(
   parameter logic [31:0] RAM_BASE = 32'hfff0_0000,
   parameter int RAM_BYTES = 262144,
   parameter RAM_INIT = "",
   parameter int CE_DIV = 8,
   parameter bit FB_EXTERNAL = 1'b0,
+  // Framebuffer geometry, 8-bit indexed, stride FB_WIDTH; FB_WIDTH * FB_HEIGHT
+  // a multiple of 8. FB_BASE must not overlap the registers at 0xf0100000.
+  parameter int FB_WIDTH = 320,
+  parameter int FB_HEIGHT = 240,
+  parameter logic [31:0] FB_BASE = 32'hf000_0000,
   // Processor clock in MHz, reported in the MODE register.
   parameter int SYS_MHZ = 50
 ) (
@@ -41,7 +46,7 @@ module ppc603e_demo_soc #(
   // (bit 7 is byte 0) and data. fb_hold_i holds off the next bus tenure; it
   // must rise while at least four more writes can still be taken.
   output logic       fb_we_o,
-  output logic [13:0] fb_addr_o,
+  output logic [23:0] fb_addr_o,
   output logic [7:0] fb_be_o,
   output logic [63:0] fb_data_o,
   input  logic       fb_hold_i,
@@ -52,12 +57,14 @@ module ppc603e_demo_soc #(
   // Processor checkstop.
   output logic       checkstop_o
 );
-  localparam logic [31:0] FB_BASE = 32'hf000_0000;
   localparam logic [31:0] IO_BASE = 32'hf010_0000;
-  localparam int FB_WIDTH = 320, FB_HEIGHT = 240;
   localparam logic [4:0] FB_FORMAT = 5'b00011;  // 8 bpp indexed
   localparam int FB_WORDS = FB_WIDTH * FB_HEIGHT / 8;
   localparam int FB_AW = $clog2(FB_WORDS);
+  // Scan-out geometry: the framebuffer's, or a blank 320 x 240 without one.
+  localparam int VIDEO_W = FB_EXTERNAL ? 320 : FB_WIDTH;
+  localparam int VIDEO_H = FB_EXTERNAL ? 240 : FB_HEIGHT;
+  localparam int VIDEO_AW = $clog2(VIDEO_W * VIDEO_H / 8);
   localparam int RAM_WORDS = RAM_BYTES / 8;
   localparam int RAM_AW = $clog2(RAM_WORDS);
   localparam logic [31:0] SOC_ID = 32'h3630_3365;  // "603e"
@@ -157,7 +164,7 @@ module ppc603e_demo_soc #(
   logic [63:0] ram_rdata, fb_rdata, io_rdata_q, fb_video_data;
   logic [31:0] ram_offset, fb_offset;
   logic fb_video_en;
-  logic [FB_AW-1:0] fb_video_addr;
+  logic [VIDEO_AW-1:0] fb_video_addr;
 
   assign ram_offset = beat_byte - RAM_BASE;
   assign fb_offset = beat_byte - FB_BASE;
@@ -182,7 +189,7 @@ module ppc603e_demo_soc #(
   end
   endgenerate
   assign fb_we_o = FB_EXTERNAL && req && we && sel == SEL_FB;
-  assign fb_addr_o = 14'(fb_offset[31:3]);
+  assign fb_addr_o = 24'(fb_offset[31:3]);
   assign fb_be_o = be;
   assign fb_data_o = wdata;
 
@@ -282,7 +289,7 @@ module ppc603e_demo_soc #(
     else ce_count_q <= (ce_count_q == ($clog2(CE_DIV + 1))'(CE_DIV - 1)) ? '0 : ce_count_q + 1'b1;
   assign ce_pix_o = ce_count_q == '0;
 
-  soc_video video (
+  soc_video #(.H_ACTIVE(VIDEO_W), .V_ACTIVE(VIDEO_H)) video (
     .clk_i, .rst_ni, .ce_pix_i(ce_pix_o), .enable_i(video_en_q),
     .fb_en_o(fb_video_en), .fb_addr_o(fb_video_addr), .fb_data_i(fb_video_data),
     .pal_we_i(pal_we), .pal_addr_i(io_word[7:0]), .pal_data_i(io_wdata[23:0]),

@@ -7,11 +7,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Memory map (docs/DEMO_SOC.md). */
-#define SOC_FB_BASE 0xf0000000u
+/* Memory map (docs/DEMO_SOC.md). The framebuffer's address and geometry
+ * come from the registers (fb_init). */
 #define SOC_IO_BASE 0xf0100000u
-#define SOC_FB_WIDTH 320
-#define SOC_FB_HEIGHT 240
 #define SOC_CLOCK_HZ 50000000u
 
 #define SOC_REG(off) (*(volatile uint32_t *)(SOC_IO_BASE + (off)))
@@ -34,7 +32,6 @@
 #define SOC_RETIRED_HI SOC_REG(0x3c)
 #define SOC_PALETTE(i) SOC_REG(0x400 + 4 * (i))
 
-#define SOC_FB ((volatile uint8_t *)SOC_FB_BASE)
 
 /* Runtime (rt.c). */
 uint64_t soc_cycles(void);
@@ -50,10 +47,21 @@ struct demo_result {
 extern struct demo_result demo_hello, demo_dhry, demo_cm;
 /* Run lengths, set before a program starts. */
 extern int demo_dhry_runs, demo_cm_iterations;
+/* Framebuffer, 8-bit indexed, read from the registers by fb_init(), which
+ * the fb_ and con_ functions call on first use. */
+extern volatile uint8_t *fb_pixels;
+extern int fb_width, fb_height, fb_stride;
+/* Screen text: 8x8 glyphs scaled by con_scale (1 below 640 pixels wide,
+ * 3 at 1920), con_cols by con_rows cells of con_cell pixels. */
+extern int con_scale, con_cell, con_cols, con_rows;
+void fb_init(void);
 void con_putc(int c);
 void con_puts(const char *s);
-/* Screen text: 8x8 cells, 40 columns by 30 rows. */
 void con_screen(int enable);
+/* Text rows from top down form the text area: con_goto rows count from its
+ * top, the text wraps within it, and con_clear fills it. */
+void con_window(int top);
+void con_clear(uint8_t bg);
 void con_goto(int col, int row);
 void con_color(uint8_t fg, uint8_t bg);
 int printf(const char *fmt, ...);
