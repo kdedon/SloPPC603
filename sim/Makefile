@@ -1852,7 +1852,11 @@ demo-all: $(addprefix demo-,$(DEMO_NAMES))
 MISTER_RTL := $(DEMO_RTL) ../mister/rtl/ppc603e_mister.sv
 MISTER_MODE ?= 03
 MISTER_FB ?= 1
-MISTER_OUT := $(BUILD_DIR)/mister/fb$(MISTER_FB)
+# MISTER_FB_BASE (hex) moves the framebuffer; MISTER_BUSY_SEED (hex) changes the
+# DDRAM busy pattern. Either gives the model its own directory.
+MISTER_GFLAGS := $(if $(MISTER_FB_BASE),-GFB_BASE="32'h$(MISTER_FB_BASE)") \
+                 $(if $(MISTER_BUSY_SEED),-GBUSY_SEED="16'h$(MISTER_BUSY_SEED)")
+MISTER_OUT := $(BUILD_DIR)/mister/fb$(MISTER_FB)$(if $(MISTER_FB_BASE),-$(MISTER_FB_BASE))$(if $(MISTER_BUSY_SEED),-s$(MISTER_BUSY_SEED))
 .PHONY: lint-mister mister-model mister-firmware mister-smoke
 lint: lint-mister
 lint-mister:
@@ -1862,7 +1866,7 @@ lint-mister:
 	$(VERILATOR) --lint-only --timing -Wall --top-module tb_mister -GFB_EXTERNAL="1'b0" $(MISTER_RTL) ../tb/mister/tb_mister.sv
 mister-model:
 	mkdir -p $(MISTER_OUT)
-	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_mister -GFB_EXTERNAL="1'b$(MISTER_FB)" --Mdir $(MISTER_OUT)/model $(MISTER_RTL) ../tb/mister/tb_mister.sv
+	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_mister -GFB_EXTERNAL="1'b$(MISTER_FB)" $(MISTER_GFLAGS) --Mdir $(MISTER_OUT)/model $(MISTER_RTL) ../tb/mister/tb_mister.sv
 mister-firmware:
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) mister GIT_SHORT=$$(git rev-parse --short HEAD)

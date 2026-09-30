@@ -17,7 +17,12 @@
 module tb_mister #(
   parameter bit FB_EXTERNAL = 1'b1,
   parameter int FB_W = 320,
-  parameter int FB_H = 240
+  parameter int FB_H = 240,
+  // Processor address of the framebuffer; 0xf0000000 runs images built for
+  // the fixed map before the geometry registers.
+  parameter logic [31:0] FB_BASE = 32'hf020_0000,
+  // DDRAM busy pattern seed.
+  parameter logic [15:0] BUSY_SEED = 16'hace1
 );
   localparam int SECTORS = 3 + (FB_W * FB_H + 511) / 512;
   localparam logic [28:0] FB_WORD = 29'h0600_0000;  // 0x30000000 / 8
@@ -40,7 +45,7 @@ module tb_mister #(
   logic [23:0] pal_data;
   logic [31:0] exit_code;
 
-  ppc603e_mister #(.FB_EXTERNAL(FB_EXTERNAL), .FB_WIDTH(FB_W), .FB_HEIGHT(FB_H)) dut (
+  ppc603e_mister #(.FB_EXTERNAL(FB_EXTERNAL), .FB_WIDTH(FB_W), .FB_HEIGHT(FB_H), .FB_BASE(FB_BASE)) dut (
     .clk_i(clk), .rst_i(rst), .mode_i(mode),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
     .pal_we_o(pal_we), .pal_addr_o(pal_addr), .pal_data_o(pal_data),
@@ -55,7 +60,7 @@ module tb_mister #(
   );
 
   // Busy for runs of cycles from a 16-bit LFSR.
-  logic [15:0] lfsr = 16'hace1;
+  logic [15:0] lfsr = BUSY_SEED;
   always_ff @(posedge clk) lfsr <= {lfsr[14:0], lfsr[15] ^ lfsr[13] ^ lfsr[12] ^ lfsr[10]};
   assign ddram_busy = lfsr[3:2] == 2'b11;
 
@@ -91,7 +96,8 @@ module tb_mister #(
     end
     if (console_valid) $write("%c", console_data);
     if (pal_we) palette[pal_addr] = pal_data;
-    if (save_done) saves++;
+    // save_done_o is undefined until the first reset edge.
+    if (save_done && !rst) saves++;
     if (dut.soc.req && dut.soc.we && dut.soc.sel == 2'd1) begin
       stores++;
       for (int lane = 0; lane < 8; lane++)
