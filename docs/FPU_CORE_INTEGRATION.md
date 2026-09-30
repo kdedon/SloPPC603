@@ -13,6 +13,16 @@ through with default 0. Builds with the FPU add `rtl/ppc_ram_lut.sv` (already
 in the cache lists) and `rtl/fpu_files.f`; every other list carries only
 `ppc_fpu_pkg.sv`.
 
+`ppc_core` parameter `DMEM_BITS` (32 or 64, 64 only with the FPU) sets the
+data port width. At 64 a doubleword-aligned `lfd`/`stfd` is one access: all
+eight strobes, the word at EA in the upper half; other accesses keep the low
+half and four strobes. `ppc_core_bat`, the router and `ppc_dcache_slot`
+(`LSU_BITS`) carry the width to the data cache, whose 64-bit lanes and
+single-beat bus requests already take eight bytes (one 60x tenure, TSIZ
+000). `ppc_core_bat_cached_bus60x` selects 64 when both the FPU and the data
+cache are present; every other build keeps 32 and splits a doubleword into
+two word accesses.
+
 ## Execution model
 
 FP arithmetic, move, select, compare and FPSCR instructions (primary opcodes
@@ -26,11 +36,25 @@ commits in the same cycle. So the core adds nothing to Table 6-5: an
 instruction dispatched in cycle n retires in cycle n + latency + 1, the
 completion cycle of UM Figure 6-3.
 
-FP loads and stores keep the serialized lane (below). They wait for an empty
-CQ, so the FPU is empty when one issues, and the lane and the pipelined path
-never hold FPU work together. Plain integer loads and stores do not dispatch
-while pipelined FP work is in flight; an FP instruction may dispatch behind
-an overlapping plain access.
+FP loads and stores other than update forms go the way of plain integer
+accesses ([PERFORMANCE.md](PERFORMANCE.md#pipelined-loadstore-path)): outside
+trace mode and replay, with MSR[FP]=1, they dispatch into the load/store lane
+without draining the CQ once rA (unless zero) and, for indexed forms, rB have
+no uncommitted producer, and issue into the FPU in the same cycle. Younger
+integer work dispatches behind them. Ordering and speculation:
+
+- A load dispatches only when every older FP instruction in flight is a
+  released load, so its access is in the execution path. While it holds the
+  lane no FP instruction dispatches, which keeps FPU results in CQ order. On
+  a fault-free result the lane finishes its CQ entry and releases; the FPU
+  commit then happens at retirement through the pipelined port, and the next
+  access dispatches on the release edge.
+- A store may dispatch behind FP work that can still fault, because it writes
+  only at the CQ head. Younger FP instructions may dispatch behind it. If an
+  older FP instruction replays, the recovery cancels the store, which has
+  neither committed in the FPU nor been offered.
+- Plain integer accesses wait only for FP work that can still fault.
+- Update forms, trace mode and a replayed access keep the serialized lane.
 
 CR updates (`fcmpu`, `fcmpo`, `mcrfs`, Rc=1) come from the FPU's result at
 retirement. FP CR writers do not take the flag token; CR writes apply in
@@ -54,28 +78,41 @@ estimates and FPSCR instructions).
 | `fmul`, `fmadd` (double) | 4 / 2 | 5 | 6 (2 each) | 12 (4 each) |
 | `fdivs`, `fres` | 18 / 18 | 19 | 18 | — |
 | `fdiv` | 33 / 33 | 34 | 33 | — |
-| `fmr`, `fsel` | 3 / 1 | 3 | 3 | 9 (3 each) |
-| `mffs`, `mtfsf`, `mtfsfi`, `mcrfs` | 3, blocking | 3 | 4 (`mffs`, `mtfsfi` pairs) | — |
-| `lfs` / `lfd` (serialized lane) | 2 / 1 | 8 / 10 | — | — |
-| `stfs`, `stfiwx` / `stfd` (serialized lane) | 2 / 1 | 9 / 11 | — | — |
+| `fmr`, `fsel` | 3 / 1 | 4 | 3 | 9 (3 each) |
+| `mffs`, `mtfsf`, `mtfsfi`, `mcrfs` | 3, blocking | 4 | 5 (`mffs`, `mtfsfi` pairs) | — |
+| `lfs`, `lfd` | 2 / 1 | 6 | 15 (5 each) | — |
+| `stfs`, `stfiwx`, `stfd` | 2 / 1 | 7 | 18 (6 each) | — |
+| `stfd` of an `fadd` result | — | — | 6 (`fadd` to `stfd` retirement) | — |
+| `lwz`, `stw` (integer reference) | 2 / 1 | 5 | — | — |
 | `add` (integer reference) | 1 | 3 | — | — |
 
-`fmr`, `fsel` and the FPSCR instructions retire one cycle early in
-isolation: the standalone FPU returns them after two cycles (its timing
-record owns that schedule), while a dependent `fmr` or `fsel` still waits the
-Table 6-5 three cycles. Mixed streams (`fadd`, `addi`, `fmuls`, `addi`,
-`fmadd`, `addi`) dispatch one per cycle; each `addi` retires the cycle after
-the older FP instruction. Memory rows include the bench's one-cycle memory:
-each word is a separate request and response.
+Moves, selects and FPSCR instructions finish in their third stage, as Table
+6-5 lists them (1-1-1): they retire from the FPU's registered result like
+arithmetic, while a dependent `fmr` or `fsel` still sees the value after three
+cycles. Mixed streams (`fadd`, `addi`, `fmuls`, `addi`, `fmadd`, `addi`)
+dispatch one per cycle; each `addi` retires the cycle after the older FP
+instruction; an `lfd` followed by three `addi` dispatches them on
+consecutive cycles. Memory rows include the bench's one-cycle memory with
+`DMEM_BITS=64`; with 32 an `lfd` takes 8 and an `stfd` 9, and four take 21
+and 24. Spacing for memory rows is between the dispatches, and equally the
+retirements, of the first and last of four independent accesses.
+
+Table 6-6's 2-cycle latency and 1-cycle interval are not met by any access:
+the lane holds one access at a time (offer, translate, cache, result), as it
+does for integer loads. FP accesses add the FPU's issue-to-request cycle and,
+for stores, the commit at the CQ head before the write. The two-stage LSU
+(P3) is the remaining step.
 
 ## Lane sequence (loads and stores)
 
 1. Dispatch captures the instruction word, the committed GPR values of rA and
    rB and the MSR, then offers the FPU issue packet.
-2. An FP load's memory request becomes a word load (`SPECIAL_LOAD`) at the
-   FPU's EA; a doubleword is two word accesses, EA then EA+4, returned to the
-   FPU as one 64-bit response. Faults are classified exactly as for integer
-   loads (DSI, TLB miss, machine check, transport diagnostic).
+2. An FP load's memory request becomes a load (`SPECIAL_LOAD`) at the FPU's
+   EA. A doubleword is one eight-byte access when `DMEM_BITS=64` and EA is
+   doubleword aligned; otherwise two word accesses, EA then EA+4, returned
+   to the FPU as one 64-bit response. Faults are classified exactly as for
+   integer loads (DSI, TLB miss, machine check, transport diagnostic). The
+   lane takes the FPU's result in the cycle the FPU accepts the response.
 3. A store's preparation request is answered at once without an access. When
    the FPU result arrives without an exception, the lane waits for the queue
    head with retirement authorized (the integer store rule), commits the FPU
@@ -84,7 +121,8 @@ each word is a separate request and response.
 4. Any other result finishes the completion entry and is held until
    retirement, where the FPU commit applies FPR and FPSCR updates. CR1 or
    crfD comes from the FPU's CR proposal; the update-form base comes from its
-   GPR proposal.
+   GPR proposal. An overlapped load that completes without a fault releases
+   the lane here instead (see above).
 
 The FPU interface asks the LSU to prepare a store (translate and check) before
 the FPU publishes its result. Here the check happens at the write, before
@@ -129,30 +167,30 @@ rejects reserved-field forms ahead of MSR[FP], so illegal outranks FP
 unavailable. A late exception fences fetch and waits for fetch and memory
 quiescence before its entry, as a data exception does.
 
-A doubleword whose second word faults reports DAR = EA+4 (the faulting word),
-as the split integer accesses do. Its first word has been read but nothing is
-written. A doubleword store whose second word faults after the first word was
-written leaves that word written; the 603e never splits an aligned
-doubleword, so this can only occur for a word-aligned doubleword crossing a
-page, a case the integer split stores share.
+A split doubleword whose second word faults reports DAR = EA+4 (the faulting
+word), as the split integer accesses do. Its first word has been read but
+nothing is written. A split doubleword store whose second word faults after
+the first word was written leaves that word written. With `DMEM_BITS=64`
+only a word-aligned doubleword that crosses a doubleword boundary splits, and
+only one crossing a page can fault on its second word, a case the integer
+split stores share.
 
 ## Limits
 
-- FP loads and stores are serialized (empty CQ, younger dispatch blocked);
-  the FPU's second issue lane and second retirement lane stay unused. The
+- The lane holds one access at a time; FP loads and stores do not meet Table
+  6-6 (2-cycle latency, 1-cycle interval). Update forms stay serialized. The
+  FPU's second issue lane and second retirement lane stay unused. The
   integer core retires one instruction per cycle.
 - FP exceptions pay a refetch and a serialized replay.
-- A doubleword access is two 32-bit bus transactions; another bus master can
+- Without the data cache (`ppc_core_bat_bus60x`, or `ENABLE_DCACHE=0`) a
+  doubleword access is two 32-bit bus transactions; another bus master can
   observe or change memory between them.
 - An `mtmsr` or `rfi` that sets FE0/FE1 while FPSCR[FEX]=1 does not raise the
   deferred FP enabled exception.
 - Not tested: page-changed faults and machine checks on FP accesses. DTLB
   load and store misses on `lfd`/`stfd` are tested on the pin top only.
-- The standalone FPU returns `fmr`, `fsel` and the FPSCR instructions one
-  cycle before Table 6-5 (their isolated latency is 3, not 4); FPSCR
-  instructions let the next FP instruction issue only after they retire.
-- FP loads and stores do not meet Table 6-6 (2-cycle hit latency, 1-cycle
-  interval).
+- FPSCR instructions let the next FP instruction issue only after they
+  retire.
 - The 602 personality (V12) is rejected at elaboration; see below.
 
 ## 602 personality (V12)

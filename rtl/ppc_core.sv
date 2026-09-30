@@ -52,7 +52,7 @@ module ppc_core #(
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   // Attach the FPU instead of taking FP unavailable. FP arithmetic, move
   // and FPSCR instructions dispatch straight into the FPU and overlap other
-  // work; FP loads and stores run through the serialized lane.
+  // work; FP loads and stores run through the load/store lane.
   parameter bit ENABLE_FPU = 1'b0,
   // 64 moves an aligned FP doubleword in one data access; see ppc_special.
   parameter int DMEM_BITS = 32,

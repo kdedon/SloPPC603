@@ -91,7 +91,10 @@ branches, traps, `sc` and exceptions still resolve in the serialized lane
 before a younger instruction dispatches. A faulting plain access takes its
 exception when it reaches the completion-queue head; retirement stops after
 that commit and the exception's recovery removes the younger integer work that
-dispatched behind it ([PERFORMANCE.md](PERFORMANCE.md#pipelined-loadstore-path)). In the chip
+dispatched behind it ([PERFORMANCE.md](PERFORMANCE.md#pipelined-loadstore-path)). An FP
+load or store without update overlaps the same way; a load also waits until every older
+FP instruction in flight is a load that completed without a fault
+([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md#execution-model)). In the chip
 configuration (`ENABLE_TEST_REDIRECT=0`) nothing withdraws an offered load
 (`ppc_core` asserts it), so every load that reaches the cache is in the
 execution path, and a guarded load (G=1, cached or not) is never performed out
