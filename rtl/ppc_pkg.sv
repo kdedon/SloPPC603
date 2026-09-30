@@ -696,6 +696,13 @@ package ppc_pkg;
       if (index < MFROM_STEP[v]) value = value + 7'd1;
     return value;
   endfunction
+  // The ROM as a flat table, so an index selects an entry directly.
+  function automatic logic [7*1024-1:0] mfrom_table();
+    logic [7*1024-1:0] entries;
+    for (int i = 0; i < 1024; i++) entries[7*i +: 7] = mfrom_rom(10'(i));
+    return entries;
+  endfunction
+  localparam logic [7*1024-1:0] MFROM_TABLE = mfrom_table();
   // Variants whose differences from the PID7v are all implemented.
   function automatic bit cpu_variant_supported(cpu_variant_e v);
     return (v == CPU_PID7V_603E) || (v == CPU_PID6_603E) || (v == CPU_EC603E);

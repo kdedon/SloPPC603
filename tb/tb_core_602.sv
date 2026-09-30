@@ -57,7 +57,7 @@ module tb_core_602;
       'h0c:return imm(11,0,3,3);           // cmpwi r3,3
       'h10:return bne('h10,'h08);
       'h14:return imm(11,0,14,0);          // cmpwi r14,0
-      'h18:return bne('h18,'h80);
+      'h18:return bne('h18,'h64);
       'h1c:return spr(0,4,1008);           // mfspr r4,HID0
       'h20:return imm(24,4,5,'h8000);      // ori r5,r4,0x8000 (bit 16)
       'h24:return spr(1,5,1008);
@@ -76,6 +76,12 @@ module tb_core_602;
       'h58:return 32'h4c00012c;
       'h5c:return imm(14,14,0,1);
       'h60:return br('h60,'h04);
+      'h64:return imm(14,15,0,16);
+      'h68:return xo(16,15,0,265);         // mfrom r16,r15
+      'h6c:return imm(14,15,0,600);
+      'h70:return xo(17,15,0,265);
+      'h74:return imm(14,15,0,300);
+      'h78:return xo(18,15,0,265);
       'h80:return br('h80,'h80);
       default:return 32'h60000000;
     endcase
@@ -204,6 +210,9 @@ module tb_core_602;
           'h38:check(retired.value==32'hffff_fed4,"mulli");
           'h44:check(retired.value==32'hdafa_af71,"mullw");
           'h48:check(retired.value==32'h0123_4566,"mulhwu");
+          'h68:check(retired.value==32'd69,"mfrom 16");
+          'h70:check(retired.value==32'd1,"mfrom 600");
+          'h78:check(retired.value==32'd7,"mfrom 300");
           'h80:done=1;
           default:;
         endcase

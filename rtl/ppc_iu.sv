@@ -6,8 +6,9 @@ module ppc_iu #(
   // PID7v divw/divwu execute latency. Set to 37 for the PID6 timing model.
   // The radix-4 engine needs 16 iteration edges after its start edge.
   parameter int DIV_LATENCY = 20,
-  // 602 multiply timing: the first partial product is formed on the issue
-  // edge, one cycle earlier, with a floor of two cycles for register forms.
+  // 602 multiply timing: the first step multiplies by rB bits 15:0, one
+  // cycle earlier than byte steps, with a floor of two cycles for register
+  // forms; a MULLI whose SIMM fits one signed byte takes one.
   parameter bit MUL_602_TIMING = 1'b0
 ) (
   input logic clk_i, rst_ni,
@@ -20,6 +21,7 @@ module ppc_iu #(
   output ppc_pkg::result_packet_t result_o
 );
   import ppc_pkg::*;
+  localparam int DIGIT_WIDTH = MUL_602_TIMING ? 17 : 9;
   localparam int DIV_COUNT_WIDTH = DIV_LATENCY <= 1 ? 1 : $clog2(DIV_LATENCY);
   logic occupied;
   issue_packet_t held;
@@ -38,16 +40,15 @@ module ppc_iu #(
   logic multiply_active, multiply_done, multiply_last;
   logic multiply_a_sign_q, multiply_b_sign_q;
   logic [4:0] multiply_step;
-  logic signed [8:0] multiply_digit, multiply_next_digit;
+  logic signed [DIGIT_WIDTH-1:0] multiply_digit, multiply_next_digit, issue_digit;
+  logic signed [8:0] multiply_next_byte;
   logic signed [32:0] multiply_a;
   logic [32:7] multiply_b;
-  logic signed [41:0] multiply_partial;
-  logic [63:0] multiply_addend, multiply_acc;
+  logic signed [DIGIT_WIDTH+32:0] multiply_partial;
+  logic [63:0] multiply_partial_ext, multiply_addend, multiply_acc;
   logic multiply_overflow;
-  logic signed [8:0] issue_digit, issue_next_digit;
-  logic signed [32:0] issue_a;
-  logic signed [41:0] issue_partial;
-  logic issue_mulli_short;
+  logic issue_mulli_short, mulli_short_q;
+  logic [31:0] alu_value;
   logic divide_by_zero;
   logic signed_divide_exception;
   logic [4:0] rotate_amount;
@@ -125,33 +126,30 @@ module ppc_iu #(
   // are sign extension. Latency is therefore 1 + significant rB bytes: 2-3
   // for MULLI, 2-5 for MULLW/MULHW and 2-6 for MULHWU, whose zero extension
   // adds a fifth digit when rB bit 31 is set. With MUL_602_TIMING the
-  // first digit is accumulated on the issue edge: 1-2 for MULLI, 2-4 for
-  // MULLW/MULHW and 2-5 for MULHWU.
+  // first step takes rB bits 15:0 as one signed digit: 2 for MULLI, 2-4 for
+  // MULLW/MULHW and 2-5 for MULHWU. A MULLI whose SIMM fits one signed byte
+  // takes 1: its low word is read from the product in the cycle after
+  // issue, while the first step accumulates it.
   assign issue_multiply = (issue_i.ctrl.op == ALU_MULLI) ||
     (issue_i.ctrl.op == ALU_MULLW) || (issue_i.ctrl.op == ALU_MULHW) ||
     (issue_i.ctrl.op == ALU_MULHWU);
   assign issue_multiply_signed = issue_i.ctrl.op != ALU_MULHWU;
   assign multiply_a = {multiply_a_sign_q, held.a};
   assign multiply_b = {multiply_b_sign_q, held.b[31:7]};
-  // expect: DSP 33x9 signed, unregistered
+  // expect: DSP 33x9 (33x17 with MUL_602_TIMING) signed, unregistered
   assign multiply_partial = multiply_a * multiply_digit;
-  assign issue_digit = {issue_i.b[7], issue_i.b[7:0]};
-  assign issue_next_digit = {issue_i.b[15], issue_i.b[15:8]} +
-                            9'(issue_i.b[7]);
-  // expect: DSP 33x9 signed, unregistered; present only with MUL_602_TIMING
-  assign issue_a = {issue_multiply_signed && issue_i.a[31], issue_i.a};
-  assign issue_partial = MUL_602_TIMING ? 42'(issue_a * issue_digit) : '0;
-  // A MULLI immediate within one signed byte completes on the issue edge.
+  assign multiply_partial_ext = 64'(multiply_partial);
+  assign issue_digit = {issue_i.b[DIGIT_WIDTH-2], issue_i.b[DIGIT_WIDTH-2:0]};
   assign issue_mulli_short = MUL_602_TIMING &&
     (issue_i.ctrl.op == ALU_MULLI) &&
     (&issue_i.b[31:7] || !(|issue_i.b[31:7]));
   always_comb begin
     case (multiply_step)
-      5'b00010: multiply_addend = {{14{multiply_partial[41]}}, multiply_partial, 8'b0};
-      5'b00100: multiply_addend = {{6{multiply_partial[41]}}, multiply_partial, 16'b0};
-      5'b01000: multiply_addend = {multiply_partial[39:0], 24'b0};
-      5'b10000: multiply_addend = {multiply_partial[31:0], 32'b0};
-      default: multiply_addend = {{22{multiply_partial[41]}}, multiply_partial};
+      5'b00010: multiply_addend = multiply_partial_ext << 8;
+      5'b00100: multiply_addend = multiply_partial_ext << 16;
+      5'b01000: multiply_addend = multiply_partial_ext << 24;
+      5'b10000: multiply_addend = multiply_partial_ext << 32;
+      default: multiply_addend = multiply_partial_ext;
     endcase
   end
   // The step just taken is the last when the rB bits above it all equal
@@ -160,44 +158,47 @@ module ppc_iu #(
     case (multiply_step)
       5'b00010: begin
         multiply_last = &multiply_b[32:15] || !(|multiply_b[32:15]);
-        multiply_next_digit = {multiply_b[23], multiply_b[23:16]} +
-                              9'(multiply_b[15]);
+        multiply_next_byte = {multiply_b[23], multiply_b[23:16]} +
+                             9'(multiply_b[15]);
       end
       5'b00100: begin
         multiply_last = &multiply_b[32:23] || !(|multiply_b[32:23]);
-        multiply_next_digit = {multiply_b[31], multiply_b[31:24]} +
-                              9'(multiply_b[23]);
+        multiply_next_byte = {multiply_b[31], multiply_b[31:24]} +
+                             9'(multiply_b[23]);
       end
       5'b01000: begin
         multiply_last = multiply_b[32] == multiply_b[31];
-        multiply_next_digit = {9{multiply_b[32]}} + 9'(multiply_b[31]);
+        multiply_next_byte = {9{multiply_b[32]}} + 9'(multiply_b[31]);
       end
       5'b10000: begin
         multiply_last = 1'b1;
-        multiply_next_digit = '0;
+        multiply_next_byte = '0;
       end
       default: begin
-        multiply_last = &multiply_b[32:7] || !(|multiply_b[32:7]);
-        multiply_next_digit = {multiply_b[15], multiply_b[15:8]} +
-                              9'(multiply_b[7]);
+        if (MUL_602_TIMING) begin
+          multiply_last = &multiply_b[32:15] || !(|multiply_b[32:15]);
+          multiply_next_byte = {multiply_b[23], multiply_b[23:16]} +
+                               9'(multiply_b[15]);
+        end else begin
+          multiply_last = &multiply_b[32:7] || !(|multiply_b[32:7]);
+          multiply_next_byte = {multiply_b[15], multiply_b[15:8]} +
+                               9'(multiply_b[7]);
+        end
       end
     endcase
+    multiply_next_digit = DIGIT_WIDTH'(multiply_next_byte);
   end
   always_ff @(posedge clk_i) begin
     if (issue_valid_i && issue_ready_o && issue_multiply) begin
       multiply_a_sign_q <= issue_multiply_signed && issue_i.a[31];
       multiply_b_sign_q <= issue_multiply_signed && issue_i.b[31];
-      if (MUL_602_TIMING) begin
-        multiply_step <= 5'b00010;
-        multiply_digit <= issue_next_digit;
-        multiply_acc <= {{22{issue_partial[41]}}, issue_partial};
-      end else begin
-        multiply_step <= 5'b00001;
-        multiply_digit <= issue_digit;
-        multiply_acc <= '0;
-      end
+      multiply_step <= 5'b00001;
+      multiply_digit <= issue_digit;
+      multiply_acc <= '0;
     end else if (multiply_active) begin
-      multiply_step <= multiply_step << 1;
+      // The 602's first step covers two bytes.
+      multiply_step <= (MUL_602_TIMING && multiply_step[0]) ? 5'b00100 :
+                       multiply_step << 1;
       multiply_digit <= multiply_next_digit;
       multiply_acc <= multiply_acc + multiply_addend;
     end
@@ -206,7 +207,9 @@ module ppc_iu #(
     if (!rst_ni) begin
       multiply_active <= 1'b0;
       multiply_done <= 1'b0;
+      mulli_short_q <= 1'b0;
     end else begin
+      mulli_short_q <= issue_valid_i && issue_ready_o && issue_mulli_short;
       if (multiply_active && multiply_last) begin
         multiply_active <= 1'b0;
         multiply_done <= 1'b1;
@@ -216,7 +219,7 @@ module ppc_iu #(
         multiply_done <= 1'b0;
       end
       if (issue_valid_i && issue_ready_o) begin
-        multiply_active <= issue_multiply && !issue_mulli_short;
+        multiply_active <= issue_multiply;
         multiply_done <= issue_mulli_short;
       end
     end
@@ -235,13 +238,16 @@ module ppc_iu #(
                               add_overflow;
   assign final_so = held.ctrl.so_in | operation_overflow;
   // One left rotator serves every rotate and shift. A right shift by n is a
-  // left rotate by (32 - n) mod 32 masked to the low 32 - n bits.
-  always_comb begin
-    case (held.ctrl.op)
-      ALU_RLWIMI: rotate_amount = held.ctrl.shift;
-      ALU_SRW, ALU_SRAW: rotate_amount = 5'd0 - held.b[4:0];
-      default: rotate_amount = held.b[4:0];
-    endcase
+  // left rotate by (32 - n) mod 32 masked to the low 32 - n bits. The
+  // amount is chosen at issue so the op decode stays off the result path.
+  always_ff @(posedge clk_i) begin
+    if (issue_valid_i && issue_ready_o) begin
+      case (issue_i.ctrl.op)
+        ALU_RLWIMI: rotate_amount <= issue_i.ctrl.shift;
+        ALU_SRW, ALU_SRAW: rotate_amount <= 5'd0 - issue_i.b[4:0];
+        default: rotate_amount <= issue_i.b[4:0];
+      endcase
+    end
   end
   assign rotate_double = {held.a, held.a} << rotate_amount;
   assign {rotate_value, _unused_rotate_low} = rotate_double;
@@ -257,6 +263,10 @@ module ppc_iu #(
     ((held.ctrl.op == ALU_SRAW) ? sraw_ca : add_sum[32]) : 1'b0;
   assign result_o.ov = held.ctrl.write_ov_so ? operation_overflow : 1'b0;
   assign result_o.so = held.ctrl.write_ov_so ? final_so : 1'b0;
+  // A short MULLI's low word comes straight from the first-step product
+  // until the accumulator holds it. MULLI writes no CR0, so CR0 reads the
+  // other results only.
+  assign result_value = mulli_short_q ? multiply_partial[31:0] : alu_value;
   assign result_o.value = result_value;
   // Compares issue as ~a + b + 1 = b - a. Carry out means b >= a unsigned;
   // the true sign of b - a is its sign bit XOR overflow.
@@ -267,38 +277,38 @@ module ppc_iu #(
   assign result_o.cr0 = !held.ctrl.write_cr_field ? 4'b0 :
     held_compare ? {!compare_gt && !compare_eq, compare_gt, compare_eq,
                     held.ctrl.so_in} : {
-    result_value[31],
-    !result_value[31] && (result_value != 0),
-    result_value == 0,
+    alu_value[31],
+    !alu_value[31] && (alu_value != 0),
+    alu_value == 0,
     held.ctrl.write_ov_so ? final_so : held.ctrl.so_in
   };
   always_comb begin
     case (held.ctrl.op)
-      ALU_ADD: result_value = add_sum[31:0];
-      ALU_ROTATE: result_value = rotate_value & held.ctrl.mask;
-      ALU_RLWIMI: result_value = (rotate_value & held.ctrl.mask) |
+      ALU_ADD: alu_value = add_sum[31:0];
+      ALU_ROTATE: alu_value = rotate_value & held.ctrl.mask;
+      ALU_RLWIMI: alu_value = (rotate_value & held.ctrl.mask) |
                                  (held.b & ~held.ctrl.mask);
-      ALU_SLW: result_value = held.b[5] ? 32'b0 : rotate_value & left_mask;
-      ALU_SRW: result_value = held.b[5] ? 32'b0 : rotate_value & right_mask;
-      ALU_SRAW: result_value = sraw_value;
-      ALU_CNTLZW: result_value = {26'b0, leading_zeros};
-      ALU_EXTSB: result_value = {{24{held.a[7]}}, held.a[7:0]};
-      ALU_EXTSH: result_value = {{16{held.a[15]}}, held.a[15:0]};
-      ALU_MULLI: result_value = multiply_acc[31:0];
-      ALU_MULLW: result_value = multiply_acc[31:0];
-      ALU_MULHW: result_value = multiply_acc[63:32];
-      ALU_MULHWU: result_value = multiply_acc[63:32];
-      ALU_DIVWU: result_value = divider_quotient;
-      ALU_DIVW: result_value = divider_quotient;
-      ALU_OR: result_value = held.a | held.b;
-      ALU_XOR: result_value = held.a ^ held.b;
-      ALU_AND: result_value = held.a & held.b;
-      ALU_ANDC: result_value = held.a & ~held.b;
-      ALU_ORC: result_value = held.a | ~held.b;
-      ALU_NAND: result_value = ~(held.a & held.b);
-      ALU_NOR: result_value = ~(held.a | held.b);
-      ALU_EQV: result_value = ~(held.a ^ held.b);
-      default: result_value = '0;
+      ALU_SLW: alu_value = held.b[5] ? 32'b0 : rotate_value & left_mask;
+      ALU_SRW: alu_value = held.b[5] ? 32'b0 : rotate_value & right_mask;
+      ALU_SRAW: alu_value = sraw_value;
+      ALU_CNTLZW: alu_value = {26'b0, leading_zeros};
+      ALU_EXTSB: alu_value = {{24{held.a[7]}}, held.a[7:0]};
+      ALU_EXTSH: alu_value = {{16{held.a[15]}}, held.a[15:0]};
+      ALU_MULLI: alu_value = multiply_acc[31:0];
+      ALU_MULLW: alu_value = multiply_acc[31:0];
+      ALU_MULHW: alu_value = multiply_acc[63:32];
+      ALU_MULHWU: alu_value = multiply_acc[63:32];
+      ALU_DIVWU: alu_value = divider_quotient;
+      ALU_DIVW: alu_value = divider_quotient;
+      ALU_OR: alu_value = held.a | held.b;
+      ALU_XOR: alu_value = held.a ^ held.b;
+      ALU_AND: alu_value = held.a & held.b;
+      ALU_ANDC: alu_value = held.a & ~held.b;
+      ALU_ORC: alu_value = held.a | ~held.b;
+      ALU_NAND: alu_value = ~(held.a & held.b);
+      ALU_NOR: alu_value = ~(held.a | held.b);
+      ALU_EQV: alu_value = ~(held.a ^ held.b);
+      default: alu_value = '0;
     endcase
   end
   always_ff @(posedge clk_i) begin
@@ -324,5 +334,12 @@ module ppc_iu #(
       end
     end
   end
+  // synthesis translate_off
+  always_ff @(posedge clk_i) begin
+    if (rst_ni && mulli_short_q)
+      assert (held.ctrl.op == ALU_MULLI && !held.ctrl.write_cr_field)
+        else $error("short MULLI result with a CR0 update");
+  end
+  // synthesis translate_on
 endmodule
 `default_nettype wire

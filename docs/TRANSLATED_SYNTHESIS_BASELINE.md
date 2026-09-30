@@ -1,5 +1,15 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-09-30 66 MHz round
+
+Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,
+commit 84e0bd4, 2026-09-30. **Meets 50 MHz and 66 MHz** at every corner: setup
++5.286 / +5.362 / +7.351 / +7.733 ns, hold +0.254 / +0.235 / +0.124 / +0.112 ns;
+Fmax 71.39 MHz (slow 100 C), 71.38 MHz (slow -40 C); no endpoint fails at
+15.152 ns, worst +1.144 ns, D-cache `rsp_data_q` +2.001 ns. 11,610 ALMs, 13,696
+registers, 36 RAM blocks, 2 DSP blocks. The batch gate's fit of 995d20b failed 8
+endpoints at 66 MHz (-0.056 ns, D-cache snoop lookup into `rsp_data_q`).
+
 ## 2026-09-29 pipelined load/store path
 
 Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,

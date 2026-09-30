@@ -33,3 +33,7 @@ The firmware has three static multiplies, all MULLI with 8-bit immediates, and i
 ## Fit
 
 Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`, commit `9213494`, 2026-09-28. Meets 50 MHz at every corner (worst setup +3.672 ns, worst hold +0.116 ns), 2 DSP blocks. Retimed at 15.152 ns the worst multiplier path has +1.700 ns slack, so it is not critical at 66 MHz; other paths still fail there. Details: [TRANSLATED_SYNTHESIS_BASELINE.md](TRANSLATED_SYNTHESIS_BASELINE.md).
+
+## 602 first step after issue
+
+Recorded: `make -C sim variant-multiply-timing-4 variant-multiply-timing-0 test-multiply-timing test-core-multiply-timing test-multiply-execution test-multiply-high-execution test-core-multiply test-core-multiply-high variant-icache-602 variant-full-decode-4`, commit 84e0bd4, 2026-09-30. Pass. `tb_multiply_timing` at 602: 144062 checks, every Table 6-2 class exercised (MULLI 1 and 2, MULLW/MULHW 2-4, MULHWU 2-5) and none unlisted; at PID7v 164537 checks. `tb_core_602`: mulli (short SIMM, rA from the IU bypass), mullw and mulhwu values, 1255 checks. Class counts can shift by one between RTL revisions: uninitialised-state randomisation draws from the same generator as the stimulus. The fit is in [CPU_VARIANTS.md](CPU_VARIANTS.md).

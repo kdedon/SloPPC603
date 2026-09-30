@@ -216,8 +216,12 @@ module ppc_dcache #(
   logic [WAY_COUNT-1:0] vld, drt, hitw;
   logic hit, hdirty, any_valid;
   logic [WAY_BITS-1:0] hway, victim;
-  assign rd_set = snp_valid_q ? snp_addr_q[5 +: SET_BITS] : req_set;
-  assign rd_tag = snp_valid_q ? snp_addr_q[31 -: TAG_BITS] : req_tag;
+  // Registered copy of the read address, so the lookup cone starts at a
+  // flop: the snoop address while snp_valid_q, else req_addr_q.
+  logic [SET_BITS-1:0] rd_set_q;
+  logic [TAG_BITS-1:0] rd_tag_q;
+  assign rd_set = rd_set_q;
+  assign rd_tag = rd_tag_q;
 
   // Data arrays: one 512 x 64 byte-enabled RAM per way, addressed {set, dw}.
   logic [SET_BITS+1:0] data_raddr, data_waddr;
@@ -286,6 +290,14 @@ module ppc_dcache #(
     .clk_i, .we_i(lru_we), .waddr_i(req_set), .wdata_i(lru_wdata),
     .raddr_i(rd_set), .rdata_o(lru_rdata)
   );
+
+  // A load hit's data, selected by the one-hot hit vector.
+  logic [63:0] hit_data;
+  always_comb begin
+    hit_data = '0;
+    for (int w = 0; w < WAY_COUNT; w++)
+      hit_data = hit_data | (data_rdata[w] & {64{hitw[w]}});
+  end
 
   always_comb begin
     hit = |hitw;
@@ -810,6 +822,16 @@ module ppc_dcache #(
       snp_addr_q <= snoop_addr_i;
       snp_tt_q <= snoop_tt_i;
     end
+    if (rst_ni && snoop_valid_i) begin
+      rd_set_q <= snoop_addr_i[5 +: SET_BITS];
+      rd_tag_q <= snoop_addr_i[31 -: TAG_BITS];
+    end else if (state_q == S_IDLE && req_valid_i && req_ready_o) begin
+      rd_set_q <= req_addr_i[5 +: SET_BITS];
+      rd_tag_q <= req_addr_i[31 -: TAG_BITS];
+    end else begin
+      rd_set_q <= req_set;
+      rd_tag_q <= req_tag;
+    end
     cob_cap_idx_q <= step_idx_q;
     push_cap_idx_q <= push_idx_q;
   end
@@ -924,7 +946,7 @@ module ppc_dcache #(
               state_q <= S_IDLE;
             end else if (lk_read && early_data_q) begin
               rsp_valid_q <= 1'b1;
-              rsp_data_q <= data_rdata[lk_way];
+              rsp_data_q <= hit_data;
               state_q <= S_IDLE;
             end else if (lk_read) begin
               state_q <= S_READ_DATA;
@@ -1041,6 +1063,11 @@ module ppc_dcache #(
 
   // synthesis translate_off
   always_ff @(posedge clk_i) begin
+    if (rst_ni)
+      assert ({rd_set, rd_tag} == (snp_valid_q ?
+                {snp_addr_q[5 +: SET_BITS], snp_addr_q[31 -: TAG_BITS]} :
+                {req_set, req_tag}))
+        else $error("data cache read address copy diverged");
     if (rst_ni && (lk_go || snp_valid_q))
       assert ($onehot0(hitw)) else $error("data cache holds one line in two ways");
   end

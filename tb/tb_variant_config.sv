@@ -134,6 +134,7 @@ module tb_variant_config #(
       expected = (i < 602) ?
         int'($floor(256.0 * $log10(1.0 + 10.0 ** (-real'(i) / 256.0)) + 0.5)) : 0;
       check(int'(mfrom_rom(10'(i))) == expected, $sformatf("mfrom ROM %0d", i));
+      check(int'(MFROM_TABLE[7*i +: 7]) == expected, $sformatf("mfrom table %0d", i));
     end
     $display("PASS tb_variant_config variant=%0d: %0d checks", VARIANT, checks);
     $finish;
