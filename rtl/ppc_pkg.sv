@@ -480,6 +480,7 @@ package ppc_pkg;
     logic broadcast_enable;  // ABE
     logic address_parity_enable; // EBA
     logic ape_taken;
+    logic watchdog_reseto;   // 602 RESETO request
   } pin_status_t;
   // Data-cache BIU ports (docs/DATA_CACHE.md) bundled for the core
   // composition, between the cache slot and the BIU.

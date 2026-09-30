@@ -1276,6 +1276,7 @@ module ppc_special #(
     pin_status_o.ape_taken = interrupt_accept && pin_mcp_select &&
                              !pin_event_i.mcp && !pin_tea;
     pin_status_o.address_parity_enable = hid0_q[HID0_EBA];
+    pin_status_o.watchdog_reseto = watchdog_reseto_o;
     pin_status_o.dcache_enable = hid0_q[HID0_DCE];
     pin_status_o.dcache_lock = hid0_q[HID0_DLOCK];
     pin_status_o.dcache_flash_invalidate = hid0_q[HID0_DCFI];

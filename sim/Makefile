@@ -1683,6 +1683,21 @@ lint-chip:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e $(CHIP_RTL)
 	cd ../quartus/chip && $(VERILATOR) --lint-only -Wall --top-module ppc603e_measure -f files.f
 
+# The ppc602 package top: 602 bus BFM with directed pin checks and a program
+# boot in 64- and 32-bit data modes, and lint of the top and its Quartus
+# measurement wrapper.
+CHIP602_RTL := $(shell cat ../rtl/chip602_files.f)
+.PHONY: test-chip602-pins lint-chip602
+test: test-chip602-pins
+test-chip602-pins:
+	mkdir -p $(BUILD_DIR)/chip602-pins
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip602_pins --Mdir $(BUILD_DIR)/chip602-pins -I../tb $(CHIP602_RTL) ../tb/bfm/bus602_bfm.sv ../tb/tb_chip602_pins.sv
+	./$(BUILD_DIR)/chip602-pins/Vtb_chip602_pins $(SIM_ARGS)
+lint: lint-chip602
+lint-chip602:
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc602 $(CHIP602_RTL)
+	cd ../quartus/chip602 && $(VERILATOR) --lint-only -Wall --top-module ppc602_measure -f files.f
+
 # Line coverage of the translated cached 60x top from the compiled MMU stress
 # (all retry and TEA modes) and cache-operation firmware, and of the data
 # cache, its bus master and snooper from the LSU image and the chip MMU stress. Needs their ELFs (see
