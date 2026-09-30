@@ -1157,8 +1157,9 @@ module ppc_fpu #(
   always_comb begin
     logic [PENDING_DEPTH-1:0] unstarted;
     logic [PENDING_DEPTH-1:0] exec_sel;
-    logic [PENDING_DEPTH-1:0] pair_cand;
     logic [PENDING_DEPTH-1:0] second_sel;
+    logic [PENDING_DEPTH-1:0] waiting_mem, waiting_fpu;
+    logic [PENDING_DEPTH-1:0] oldest_mem, oldest_fpu;
     logic exec_is_mem, exec_is_fpu;
     for (integer i = 0; i < PENDING_DEPTH; i++)
       unstarted[i] = pending_q[i].valid && !pending_q[i].started;
@@ -1173,11 +1174,15 @@ module ppc_fpu #(
         exec_is_mem |= pending_q[i].decoded.kind == DK_MEMORY;
         exec_is_fpu |= is_fpu_exec(pending_q[i].decoded.kind);
       end
-    for (integer i = 0; i < PENDING_DEPTH; i++)
-      pair_cand[i] = unstarted[i] && !exec_sel[i] &&
-          ((exec_is_fpu && pending_q[i].decoded.kind == DK_MEMORY) ||
-           (exec_is_mem && is_fpu_exec(pending_q[i].decoded.kind)));
-    second_sel = oldest_of(pair_cand);
+    // The pair partner is the oldest waiting entry of the other resource;
+    // both candidates form beside the oldest pick.
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      waiting_mem[i] = unstarted[i] && pending_q[i].decoded.kind == DK_MEMORY;
+      waiting_fpu[i] = unstarted[i] && is_fpu_exec(pending_q[i].decoded.kind);
+    end
+    oldest_mem = oldest_of(waiting_mem);
+    oldest_fpu = oldest_of(waiting_fpu);
+    second_sel = exec_is_fpu ? oldest_mem : exec_is_mem ? oldest_fpu : '0;
     exec_pick = exec_sel;
     second_pick = second_sel;
     // The work contexts read their entries through the one-hot picks.
@@ -1187,7 +1192,7 @@ module ppc_fpu #(
       if (exec_sel[i]) exec_entry |= pending_q[i];
       if (second_sel[i]) second_entry |= pending_q[i];
     end
-    second_exec_found = |pair_cand;
+    second_exec_found = |second_sel;
     second_exec_slot = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++)
       if (second_sel[i]) second_exec_slot |= PENDING_IDX_BITS'(i);
