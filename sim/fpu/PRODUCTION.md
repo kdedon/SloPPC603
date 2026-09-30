@@ -7,6 +7,28 @@ the manuals' per-instruction execution latency and initiation interval,
 ordered forwarding and retirement, and 602 operand tags and emulation traps.
 Detailed `Recorded:` entries retain each result's exact source scope.
 
+## Circular pending queue, late issue readiness, add and rounding terms
+
+Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production
+lint-fpu-stream lint-fpu-dual`, commit `591876e`, 2026-09-29. Pass. The same
+target also passed with the same counts at `150ae79` (circular queue alone),
+`2781d7d` (plus issue readiness, 602 trap gating and add-stage terms),
+`c20f186` (plus rounding carry select) and `64b7927` (physical-slot picks).
+Raw arithmetic: 603e 209,696 and 602 181,952 vectors, 0 mismatches; per-op
+latency minima and maxima unchanged (3, 3–4 for double multiply and fused,
+18/33 divide, estimates 18 and 3). Estimates 11,958 and 17,628, 0
+mismatches. Reference unit tests 21. Shell 910 checks; 602 173 checks;
+exact-timing 71/52 responses with 71/52 finish predictions; streams 32/32/32
+in both builds; dual 32/24; flush/reset 4 and cancel-offset 76 per build.
+All four lint targets clean.
+
+This establishes that the circular queue, the late-selected issue readiness,
+the reordered add-stage exponent and tiny terms and the carry-selected
+rounding exponent reproduce every checked result, forward, retirement and
+cycle of the previous RTL. It does not establish fitted timing, or directed
+coverage of a 602 consumer of a trapping finishing value (its younger work is
+aborted by the trap).
+
 ## Store data, forward payload and unnormalized stage 1
 
 Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production

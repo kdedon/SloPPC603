@@ -129,7 +129,7 @@ The arithmetic unit's rounded result is registered in its response queue on
 the finish edge. The only same-cycle use of the unregistered finish value is
 a 2:1 operand mux directly in front of the arithmetic input and divider
 registers, selected per operand (`req_fwd_i`). The 602 build also reads it
-for its late emulation-trap and single-range checks. Divide special-operand
+for its emulation-trap check on stores and forward notifications. Divide special-operand
 classification reads the registered divider operands, one cycle after
 acceptance, with an unchanged count.
 
@@ -156,14 +156,34 @@ are registered.
 
 Execution latency is unchanged: dependent `fadd`, `fmr` and `stfd` distances
 match the previous RTL (3, 3 and same-cycle store launch), and the forward bus
-still announces results on the finish cycle. The 602 build still gates source
-readiness and store traps on its late emulation-trap and single-range checks.
-The pending queue still shifts on retirement; a circular buffer remains open.
+still announces results on the finish cycle.
 
-Open timing work: the shifting pending queue, now the fitted worst path
-(pending state through issue, retirement and shift selection into every
-entry), the combinational `issue_ready_o` (decode, commit and abort terms),
-the 602 late trap checks, and the add and rounding stages.
+A 602 source finishing with an emulation trap is ready for FPU consumers:
+the trap aborts every younger instruction before it commits, so a consumer
+that starts from the value never retires. Only stores still wait on the trap
+check, so no store preparation leaves for a value that traps.
+
+## Pending queue
+
+The pending queue is a circular buffer. Entries stay in their slots;
+retirement advances a registered head, dispatch writes registered tail
+slots, and cancellation or kill clears valid bits only. Every per-entry
+payload register therefore has one late select, dispatch into its slot, and
+no shift. A registered matrix records which slot is older than which; the
+oldest-reservation and youngest-producer picks and the older-slot masks for
+operand lookup use it directly. The forwarding order and head and second
+retirement read an age-ordered view rotated by the registered head.
+
+`issue_ready_o` and `issue1_ready_o` are formed from registered state per
+decode class. Queue space is "not full, or the head retires"; FPR credits are
+"below the limit, or a retiring entry frees one". The lane decode, retirement
+and abort terms enter last.
+
+Open timing work (fitted worst path at `591876e`): a waiting `fsel` or other
+second-reservation entry picks its operand, tests the selector value, and
+decides readiness and launch in one cycle. The next step is to register the
+reservation pick and the per-entry operand readiness (including the `fsel`
+selector class) one cycle early, so launch reads flops.
 
 ## Arithmetic stage 1
 
@@ -186,6 +206,16 @@ products in one ternary adder before the high product.
 Remaining stage-1 work: carry the product as a carry-save pair into the add
 stage, align the addend beside the multiplier, and store class tags with FPR
 bits so special-operand classification leaves the first stage.
+
+## Add and rounding stages
+
+In the add stage the sum's leading-zero count enters each exponent term last:
+the tiny test compares it against a precomputed `exponent − minimum + 1`
+(count 0 for a carry into the top bit, 160 only for a zero sum), and the
+normal exponent subtracts it from a base already chosen between the plain and
+underflow-scaled exponent. Rounding forms the exponent, its scaled form and
+the overflow test for both increment-carry cases beside the incrementer; the
+carry selects them. Both changes keep every latency.
 
 ## Memory and 602 tag SPRs
 

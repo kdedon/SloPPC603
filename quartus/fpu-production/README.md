@@ -25,6 +25,38 @@ The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not 
 
 ## Recorded synthesis evidence
 
+### Circular pending queue, late readiness, add and rounding terms, fitted 603e
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit`, commits
+`c20f186`, `64b7927` and `591876e`, 2026-09-29. Exit zero each; one physical
+pin (`clk_i`), 20 ns clock, zero-delay virtual I/O.
+
+| Build | Fitted ALMs | Registers | DSP | Post-fit Fmax | 20 ns slack |
+|---|---:|---:|---:|---:|---:|
+| `3df7174` (previous) | 27,848 | 8,795 | 5 | 37.68 MHz | −6.537 ns |
+| `c20f186` | 27,150 | 8,629 | 5 | 37.29 MHz | −6.814 ns |
+| `64b7927` | 26,912 | 8,613 | 5 | 36.34 MHz | −7.516 ns |
+| `591876e` | 26,654 | 8,751 | 5 | 36.12 MHz | −7.685 ns |
+
+Worst path into each arithmetic stage at `591876e` (at `3df7174`): multiply
++0.297 ns (−1.354), aligned −0.943 (−1.862), add −2.745 (−4.956), divider
+−7.193 (−5.526), response −3.153 (−4.493). The add and response stages
+improved; the queue shift is gone, and the ALM count fell by 1,194.
+
+Fmax did not improve. The worst path is now pending state through the
+second reservation pick, that entry's operand lookup, the `fsel` selector
+test on the operand value (which decides whether `b` or `c` must be ready),
+source readiness and launch, into the launched entry's result registers
+(`pending_q[0].started` → `pending_q[2].result.fpr_value`, 27.0 ns). Of the
+300 worst endpoints, 174 are pending-queue registers, 105 divider state
+(`div_sum_q`, `div_work_q`) and 19 arithmetic input operands, all fed by the
+same launch decision. `c20f186` and `64b7927` failed on the same cone through
+a head-rotated scan and an age adder; `591876e` registers the slot-age matrix.
+Hold: 10 violated paths, worst −4.085 ns, all zero-delay virtual inputs
+(`issue1_i.insn`) straight into pending issue registers now that dispatch
+writes a registered tail slot. Neither 50 nor 66 MHz is met; this is a fit
+and timing measurement, not closure.
+
 ### Store data, forward payload and unnormalized stage 1, fitted 603e
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit`, commit
