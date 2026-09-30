@@ -238,13 +238,16 @@ module ppc_iu #(
                               add_overflow;
   assign final_so = held.ctrl.so_in | operation_overflow;
   // One left rotator serves every rotate and shift. A right shift by n is a
-  // left rotate by (32 - n) mod 32 masked to the low 32 - n bits.
-  always_comb begin
-    case (held.ctrl.op)
-      ALU_RLWIMI: rotate_amount = held.ctrl.shift;
-      ALU_SRW, ALU_SRAW: rotate_amount = 5'd0 - held.b[4:0];
-      default: rotate_amount = held.b[4:0];
-    endcase
+  // left rotate by (32 - n) mod 32 masked to the low 32 - n bits. The
+  // amount is chosen at issue so the op decode stays off the result path.
+  always_ff @(posedge clk_i) begin
+    if (issue_valid_i && issue_ready_o) begin
+      case (issue_i.ctrl.op)
+        ALU_RLWIMI: rotate_amount <= issue_i.ctrl.shift;
+        ALU_SRW, ALU_SRAW: rotate_amount <= 5'd0 - issue_i.b[4:0];
+        default: rotate_amount <= issue_i.b[4:0];
+      endcase
+    end
   end
   assign rotate_double = {held.a, held.a} << rotate_amount;
   assign {rotate_value, _unused_rotate_low} = rotate_double;
