@@ -226,6 +226,14 @@ translation on, runs three compiled programs to completion with correct results 
 the 60x target, and scans out a well-formed frame. It does not cover a second bus
 master, interrupts, or timing on hardware.
 
+### FPU option
+
+Recorded: `make -C sim lint check-spec`, commit bbfa9c6, 2026-09-30. Pass; lint now
+includes `ppc603e_demo_soc` and `ppc603e_mister` with `ENABLE_FPU=1`. With the FPU, the
+SoC runs the opcode self-test ([SELFTEST_VERIFICATION.md](SELFTEST_VERIFICATION.md))
+and hard-float Whetstone ([BENCHMARKS.md](BENCHMARKS.md#whetstone)) in simulation. No
+fit with the FPU exists yet ([MISTER_CORE.md](MISTER_CORE.md#fpu-cores)).
+
 ### Fit
 
 Recorded: `quartus/demo/build.sh`, commit 64c0f1f, 2026-09-29. Quartus 17.0.2 Lite,
