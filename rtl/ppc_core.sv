@@ -186,7 +186,8 @@ module ppc_core #(
   page_miss_t iq_miss_q, head_page_miss;
   logic iq_miss_valid_q, iq_push_miss, iq_pop_miss;
   logic [IQ_COUNT_WIDTH-1:0] iq_miss_count_q, iq_miss_count_left;
-  uop_t uop, iq_uop, dispatch_uop, dispatch_base, push_uop;
+  uop_t uop, iq_uop, dispatch_uop, dispatch_base, dispatch_pre, push_uop;
+  logic dispatch_align;
   logic iq_pop, seq_last, seq_active;
   retire_packet_t allocation;
   completion_tag_t alloc_producer, retire_producer;
@@ -463,13 +464,14 @@ module ppc_core #(
   // Privileged forms become a program exception before allocation. The
   // original decoded permissions cannot escape into the CQ or rename state.
   always_comb begin
-    dispatch_base = uop;
-    dispatch_base.esa = iq_head.esa;
+    dispatch_pre = uop;
+    dispatch_pre.esa = iq_head.esa;
+    dispatch_align = 1'b0;
     if (iq_head.fault != FETCH_OK) begin
       // A fault response has no instruction to decode. Its raw payload stays
       // in the diagnostic trace but can grant no execution/write permission.
-      dispatch_base = '0;
-      dispatch_base.fetch_fault = iq_head.fault;
+      dispatch_pre = '0;
+      dispatch_pre.fetch_fault = iq_head.fault;
       if (ENABLE_SUPERVISOR_EXCEPTIONS &&
           ((iq_head.fault == FETCH_ISI_PROTECTION) ||
            (iq_head.fault == FETCH_ISI_GUARDED) ||
@@ -477,9 +479,9 @@ module ppc_core #(
             (iq_head.fault == FETCH_PAGE_MISS)) ||
            (ENABLE_MACHINE_CHECK && (iq_head.fault == FETCH_MACHINE_CHECK)) ||
            (ENABLE_DEBUG_EXCEPTIONS && (iq_head.fault == FETCH_IABR))))
-        dispatch_base.special_op = SPECIAL_ISI;
+        dispatch_pre.special_op = SPECIAL_ISI;
       else
-        dispatch_base.illegal = 1'b1;
+        dispatch_pre.illegal = 1'b1;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && msr[MSR_PR] && !uop.illegal &&
         ((uop.special_op == SPECIAL_RFI) ||
          (uop.special_op == SPECIAL_MTMSR) ||
@@ -493,20 +495,29 @@ module ppc_core #(
          (((uop.special_op == SPECIAL_MFSPR) ||
           (uop.special_op == SPECIAL_MTSPR)) &&
           uop.spr[SPR_PRIV_BIT]))) begin
-      dispatch_base = '0;
-      dispatch_base.special_op = SPECIAL_PROGRAM_PRIV;
+      dispatch_pre = '0;
+      dispatch_pre.special_op = SPECIAL_PROGRAM_PRIV;
     end else if ((uop.special_op == SPECIAL_FPU) ||
                  (uop.special_op == SPECIAL_FPU_EMULATE)) begin
       // The FPU entry point. No FPU is present, so MSR[FP] never sets and
       // every FP-class instruction takes FP unavailable (UM 4.5.8). A 602
       // double-precision form takes the emulation trap once FP is enabled.
-      dispatch_base = '0;
-      dispatch_base.special_op =
+      dispatch_pre = '0;
+      dispatch_pre.special_op =
         ((uop.special_op == SPECIAL_FPU_EMULATE) && msr[MSR_FP]) ?
         SPECIAL_EMULATION_TRAP : SPECIAL_FP_UNAVAILABLE;
     end else if (ENABLE_SUPERVISOR_EXCEPTIONS && !uop.illegal &&
                  ((uop.special_op == SPECIAL_LOAD) ||
                   (uop.special_op == SPECIAL_STORE)) && dispatch_misaligned) begin
+      dispatch_align = 1'b1;
+    end
+  end
+  // The alignment fault depends on the EA adder, so it is applied last and
+  // kept out of the dispatch-ready terms that dispatch_pre can supply: it
+  // leaves the uop special and legal.
+  always_comb begin
+    dispatch_base = dispatch_pre;
+    if (dispatch_align) begin
       // Preserve operand/EA and syndrome metadata, but never allocate a
       // faulting load destination or commit an update-form base register.
       dispatch_base.special_op = SPECIAL_ALIGNMENT;
@@ -894,10 +905,10 @@ module ppc_core #(
      dispatch_uop.read_so || dispatch_uop.write_xer || dispatch_uop.write_ca ||
      dispatch_uop.write_ov_so || dispatch_uop.write_cr_field ||
      dispatch_uop.write_cr_fields || dispatch_uop.write_cr_bit);
-  assign normal_uop = bu_branch || (!dispatch_base.illegal &&
-                      (dispatch_base.special_op == SPECIAL_NONE));
-  assign special_uop = !bu_branch && !dispatch_base.illegal &&
-                       (dispatch_base.special_op != SPECIAL_NONE);
+  assign normal_uop = bu_branch || (!dispatch_pre.illegal &&
+                      (dispatch_pre.special_op == SPECIAL_NONE));
+  assign special_uop = !bu_branch && !dispatch_pre.illegal &&
+                       (dispatch_pre.special_op != SPECIAL_NONE);
   assign normal_idle = rs_ready && !issue_valid && issue_ready &&
                        !iu_result_valid;
   // Trace mode runs one instruction at a time so its trace boundary is
@@ -908,12 +919,12 @@ module ppc_core #(
     (!interrupt_qualified || seq_active) &&
     !update_pending_q && gpr_ready && cq_ready &&
     (!special_busy || overlap_dispatch_ok || special_ready) &&
-    (dispatch_uop.illegal ||
+    (dispatch_pre.illegal ||
      (normal_uop && alloc_ready && rs_ready && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
      (special_uop && special_drained && special_ready && flags_ready &&
-      (!dispatch_uop.gpr_write || alloc_ready)));
+      (!dispatch_pre.gpr_write || dispatch_align || alloc_ready)));
   // A plain load or store (no update, reservation, string, multiple, cache
   // op or external access) needs no drain when every source register it
   // reads is committed: older work cannot fault or redirect, and it takes a
