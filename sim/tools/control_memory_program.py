@@ -404,6 +404,19 @@ def make_program():
     e('cmpi',7,19,1)
     e('bc',12,30,'abs_cond_link',1,1);e('illegal')
     p.label('abs_cond_link');e('mflr',22)
+    # Branches read CTR, LR and CR right behind their producers; backward
+    # branches predicted taken fall through, and a y bit reverses one.
+    e('addi',29,0,3);e('mtctr',29)
+    p.label('tight');e('bc',16,0,'tight',0,0);e('mfctr',31)
+    e('addi',29,0,4);e('addi',30,0,0)
+    p.label('countdown');e('addi',30,30,1);e('addi',29,29,-1);e('cmpi',0,29,0)
+    e('bc',4,2,'countdown',0,0)
+    e('b','leaf',0,1);e('addi',28,28,1);e('b','after_leaf',0,0)
+    p.label('leaf');e('bclr',20,0,0)
+    p.label('after_leaf');e('lwz',14,1,0);e('cmpi',1,14,0)
+    e('bc',12,6,'loaded_eq',0,0);e('addi',27,0,1)
+    p.label('loaded_eq');e('addi',29,0,0)
+    p.label('ybit');e('addi',29,29,1);e('cmpi',0,29,2);e('bc',13,0,'ybit',0,0)
     e('cmpi',7,0,0) # comparison rA0 is a real source register
     e('illegal')
     return p
