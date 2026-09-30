@@ -285,6 +285,7 @@ module ppc_fpu #(
   logic [PENDING_DEPTH-1:0] fwd0_sel, fwd1_sel;
   logic [2:0] abort_index;
   logic [PENDING_DEPTH-1:0] abort_hit;
+  logic [PENDING_DEPTH-1:0] aborted;
   logic abort_index_valid;
   logic safe_abort_flush;
   logic deferred_abort_flush_q;
@@ -1225,6 +1226,12 @@ module ppc_fpu #(
       if (abort_hit[i]) abort_index = age_of(head_q, PENDING_IDX_BITS'(i));
     end
     abort_index_valid = |abort_hit;
+    // The matched entry and every younger one.
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      aborted[i] = 1'b0;
+      for (integer t = 0; t < PENDING_DEPTH; t++)
+        if (abort_hit[t] && (t == i || older_q[t][i])) aborted[i] = 1'b1;
+    end
     safe_abort_flush = abort_valid_i && abort_index_valid;
     for (integer i = 0; i < PENDING_DEPTH; i++)
       for (integer t = 0; t < PENDING_DEPTH; t++)
@@ -2134,9 +2141,7 @@ module ppc_fpu #(
     end
     if (abort_match) begin
       for (integer i = 0; i < PENDING_DEPTH; i++)
-        for (integer t = 0; t < PENDING_DEPTH; t++)
-          if (abort_hit[t] && (t == i || older_q[t][i]))
-            pending_d[i].valid = 1'b0;
+        if (aborted[i]) pending_d[i].valid = 1'b0;
       pending_count_d = abort_index;
     end
     if (kill_all_i) begin
@@ -2154,14 +2159,27 @@ module ppc_fpu #(
         else lt_d = pv[0].issue.gpr_b;
       end
     end
-    fpr_count_d = '0;
-    barrier_d = 1'b0;
-    for (integer i = 0; i < PENDING_DEPTH; i++) begin
-      if (pending_d[i].valid) begin
-        fpr_count_d += {2'd0, pending_d[i].dest_fpr};
-        barrier_d |= is_barrier(pending_d[i].decoded.kind,
-                                pending_d[i].decoded.op);
-      end
+    // Rename credits and the barrier follow retirement and dispatch;
+    // an abort, which excludes both, recounts the survivors.
+    fpr_count_d = fpr_count_q -
+        3'(retire_fire && pv[0].dest_fpr) - 3'(retire1_fire && pv[1].dest_fpr) +
+        3'(dispatch_fire && dec_write) + 3'(dispatch1_fire && dec1_write);
+    barrier_d = (barrier_q && !(retire_fire &&
+        is_barrier(pv[0].decoded.kind, pv[0].decoded.op))) ||
+        (dispatch_fire && is_barrier(decoded.kind, decoded.op));
+    if (abort_match) begin
+      fpr_count_d = '0;
+      barrier_d = 1'b0;
+      for (integer i = 0; i < PENDING_DEPTH; i++)
+        if (pending_q[i].valid && !aborted[i]) begin
+          fpr_count_d += {2'd0, pending_q[i].dest_fpr};
+          barrier_d |= is_barrier(pending_q[i].decoded.kind,
+                                  pending_q[i].decoded.op);
+        end
+    end
+    if (kill_all_i) begin
+      fpr_count_d = '0;
+      barrier_d = 1'b0;
     end
   end
 
