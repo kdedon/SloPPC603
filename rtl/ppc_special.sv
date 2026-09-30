@@ -472,7 +472,9 @@ module ppc_special #(
                                                   input logic [31:0] hid0);
     logic [2:0] mode;
     mode = {hid0[HID0_DOZE], hid0[HID0_NAP], hid0[HID0_SLEEP]};
-    return pow && (ENABLE_POWER_MODES ? ($countones(mode) > 1) : (mode != 3'b0));
+    return pow && (ENABLE_POWER_MODES ?
+      ((mode[2] && mode[1]) || (mode[2] && mode[0]) || (mode[1] && mode[0])) :
+      (mode != 3'b0));
   endfunction
   assign power_mode = ENABLE_POWER_MODES && msr_o[MSR_POW] &&
     (hid0_q[HID0_DOZE] || hid0_q[HID0_NAP] || hid0_q[HID0_SLEEP]);
