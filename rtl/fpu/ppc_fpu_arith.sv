@@ -55,9 +55,11 @@ module ppc_fpu_arith #(
     finite_operands_t in_operands;
     align_plan_t shared_plan;
     finite_sum_t add_sum;
-    logic [7:0] add_normal_left_shift;
-    logic signed [15:0] add_normal_exponent;
-    logic add_tiny_before;
+    logic [7:0] add_leading_zero;
+    logic signed [15:0] add_exponent_up;
+    logic signed [15:0] add_scaled_up;
+    logic add_tiny_always;
+    logic [7:0] add_tiny_limit;
     logic [7:0] add_denorm_shift;
     logic add_denorm_right;
     conv_parts_t add_conversion_parts;
@@ -173,11 +175,12 @@ module ppc_fpu_arith #(
         .exponent_i(aligned_q.plan.exponent),
         .rn_i(aligned_q.req.rn),
         .single_i(add_single),
-        .ue_i(aligned_q.req.ue),
         .sum_o(add_sum),
-        .normal_left_shift_o(add_normal_left_shift),
-        .normal_exponent_o(add_normal_exponent),
-        .tiny_before_o(add_tiny_before),
+        .leading_zero_o(add_leading_zero),
+        .exponent_up_o(add_exponent_up),
+        .scaled_up_o(add_scaled_up),
+        .tiny_always_o(add_tiny_always),
+        .tiny_limit_o(add_tiny_limit),
         .denorm_shift_o(add_denorm_shift),
         .denorm_right_o(add_denorm_right)
     );
@@ -187,10 +190,10 @@ module ppc_fpu_arith #(
         .source_i(aligned_q.conversion_operand),
         .too_large_i(aligned_q.conversion_too_large),
         .lane_i(aligned_y),
+        .op_i(aligned_q.req.op),
+        .rn_i(aligned_q.req.rn),
         .parts_o(add_conversion_parts),
         .tag_i(add_q.req.tag),
-        .op_i(add_q.req.op),
-        .rn_i(add_q.req.rn),
         .ve_i(add_q.req.ve),
         .parts_i(add_q.conversion_parts),
         .rsp_o(conversion_response)
@@ -203,9 +206,11 @@ module ppc_fpu_arith #(
         add_next.special_rsp = aligned_q.special_rsp;
         add_next.conversion_parts = add_conversion_parts;
         add_next.sum = add_sum;
-        add_next.normal_left_shift = add_normal_left_shift;
-        add_next.normal_exponent = add_normal_exponent;
-        add_next.tiny_before = add_tiny_before;
+        add_next.leading_zero = add_leading_zero;
+        add_next.exponent_up = add_exponent_up;
+        add_next.scaled_up = add_scaled_up;
+        add_next.tiny_always = add_tiny_always;
+        add_next.tiny_limit = add_tiny_limit;
         add_next.denorm_shift = add_denorm_shift;
         add_next.denorm_right = add_denorm_right;
     end
@@ -213,9 +218,11 @@ module ppc_fpu_arith #(
     // Response stage.
     ppc_fpu_rounder #(.CPU_602(CPU_602)) rounder (
         .sum_i(add_q.sum),
-        .normal_left_shift_i(add_q.normal_left_shift),
-        .normal_exponent_i(add_q.normal_exponent),
-        .tiny_before_i(add_q.tiny_before),
+        .leading_zero_i(add_q.leading_zero),
+        .exponent_up_i(add_q.exponent_up),
+        .scaled_up_i(add_q.scaled_up),
+        .tiny_always_i(add_q.tiny_always),
+        .tiny_limit_i(add_q.tiny_limit),
         .denorm_shift_i(add_q.denorm_shift),
         .denorm_right_i(add_q.denorm_right),
         .tag_i(add_q.req.tag),

@@ -49,7 +49,7 @@ module ppc_fpu_divider #(
     logic div_single;
     logic div_lead;
     logic signed [15:0] div_min_exp;
-    logic signed [15:0] div_norm_exp;
+    logic signed [15:0] div_from_min_up;
     logic signed [15:0] div_from_min;
     logic [15:0] div_denorm_abs;
     logic [53:0] div_start_difference;
@@ -57,6 +57,7 @@ module ppc_fpu_divider #(
     logic [52:0] div_remainder_next;
     logic [54:0] div_quotient_next;
     logic [1:0] div_digit;
+    logic div_start_special;
 
     // Every 602 operand is binary32-representable: 24 significant bits.
     localparam logic [52:0] SIG_MASK = CPU_602 ? {24'hffffff, 29'd0} : '1;
@@ -104,8 +105,8 @@ module ppc_fpu_divider #(
         divide_req_q.op == FP_FRES;
     assign div_lead = div_sum_q.magnitude[158];
     assign div_min_exp = div_single ? -16'sd126 : -16'sd1022;
-    assign div_norm_exp = div_sum_q.exponent - (div_lead ? 16'sd0 : 16'sd1);
     assign div_from_min = div_sum_q.exponent - div_min_exp;
+    assign div_from_min_up = div_from_min + 16'sd1;
     assign div_denorm_abs = div_from_min[15] ? -div_from_min : div_from_min;
 
     always_comb begin
@@ -122,22 +123,23 @@ module ppc_fpu_divider #(
         if (divide_state_q != DIV_SPECIAL) begin
             round_o.finite = 1'b1;
             round_o.sum = div_sum_q;
-            round_o.normal_left_shift = div_lead ? 8'd0 : 8'd1;
-            round_o.tiny_before = div_norm_exp < div_min_exp;
-            round_o.normal_exponent = (round_o.tiny_before &&
-                divide_req_q.ue) ? div_norm_exp +
-                (div_single ? 16'sd192 : 16'sd1536) : div_norm_exp;
+            round_o.leading_zero = div_lead ? 8'd1 : 8'd2;
+            round_o.exponent_up = div_sum_q.exponent + 16'sd1;
+            round_o.scaled_up = div_sum_q.exponent + 16'sd1 +
+                (div_single ? 16'sd192 : 16'sd1536);
+            round_o.tiny_always = div_from_min_up[15];
+            round_o.tiny_limit = div_from_min_up > 16'sd255 ?
+                8'd255 : div_from_min_up[7:0];
             round_o.denorm_right = div_from_min[15];
             round_o.denorm_shift = div_denorm_abs >= 16'd160 ?
                 8'd160 : div_denorm_abs[7:0];
         end
     end
 
+    // Operands load every cycle a divide may start, so only the state waits
+    // for the start handshake.
     always_ff @(posedge clk_i) begin
-        if (!rst_ni || flush_i) begin
-            divide_state_q <= DIV_IDLE;
-            divide_special_pending_q <= 1'b0;
-        end else if (start_i) begin
+        if (divide_state_q == DIV_IDLE || finishing_o) begin
             divide_req_q.tag <= req_i.tag;
             divide_req_q.op <= req_i.op;
             divide_req_q.rn <= req_i.rn;
@@ -151,56 +153,37 @@ module ppc_fpu_divider #(
             div_b_raw_q <= req_i.b[62:0];
             div_a_sign_q <= req_i.a[63];
             div_b_sign_q <= req_i.b[63];
+        end
+    end
+
+    // Special operands are classified from the registered operands; the
+    // accepted edge counts as their first cycle.
+    assign div_start_special = !(div_b_raw_q != 63'd0 &&
+        div_b_raw_q[62:52] != 11'h7ff &&
+        (divide_req_q.op == FP_FRES ||
+        (div_a_raw_q != 63'd0 && div_a_raw_q[62:52] != 11'h7ff)));
+
+    always_ff @(posedge clk_i) begin
+        if (!rst_ni || flush_i) begin
+            divide_state_q <= DIV_IDLE;
+            divide_special_pending_q <= 1'b0;
+        end else if (start_i) begin
             divide_special_pending_q <= 1'b0;
             divide_state_q <= DIV_START;
         end else begin
             case (divide_state_q)
-                // Special operands are classified from the registered
-                // operands; the accepted edge counts as their first cycle.
-                DIV_START: if (!(div_b_raw_q != 63'd0 &&
-                    div_b_raw_q[62:52] != 11'h7ff &&
-                    (divide_req_q.op == FP_FRES ||
-                    (div_a_raw_q != 63'd0 &&
-                    div_a_raw_q[62:52] != 11'h7ff)))) begin
+                DIV_START: if (div_start_special) begin
                     divide_special_pending_q <= 1'b1;
                     divide_special_count_q <=
                         divide_req_q.single_result ||
                         divide_req_q.op == FP_FRES ? 6'd17 : 6'd32;
                     divide_state_q <= DIV_SPECIAL;
-                end else begin
-                    div_result_sign_q <=
-                        (divide_req_q.op != FP_FRES && div_a_sign_q) ^
-                        div_b_sign_q;
-                    div_result_exp_q <= div_start_a_exp - div_start_b_exp;
-                    div_denominator_q <= div_start_b_sig;
-                    div_denominator_x2_q <= {div_start_b_sig, 1'b0};
-                    div_denominator_x3_q <=
-                        {2'b00, div_start_b_sig} +
-                        {1'b0, div_start_b_sig, 1'b0};
-                    div_remainder_q <= div_start_difference[53] ?
-                        div_start_a_sig : div_start_difference[52:0];
-                    div_quotient_q <= div_start_difference[53] ?
-                        55'd0 : 55'd1;
-                    div_rounds_q <=
-                        (divide_req_q.single_result ||
-                        divide_req_q.op == FP_FRES) ? 5'd13 : 5'd27;
-                    divide_state_q <= DIV_ITER;
-                end
-                DIV_ITER: begin
-                    div_remainder_q <= div_remainder_next;
-                    div_quotient_q <= div_quotient_next;
-                    div_rounds_q <= div_rounds_q - 5'd1;
-                    if (div_rounds_q == 5'd1) begin
-                        div_sum_q <= prepare_division_sum(
-                            divide_req_q.op, divide_req_q.single_result,
-                            div_result_exp_q, div_result_sign_q,
-                            div_quotient_next,
-                            div_remainder_next != 53'd0);
-                        if (divide_req_q.single_result ||
-                            divide_req_q.op == FP_FRES)
-                            divide_state_q <= DIV_SP_NORM_TINY;
-                        else divide_state_q <= DIV_NORM;
-                    end
+                end else divide_state_q <= DIV_ITER;
+                DIV_ITER: if (div_rounds_q == 5'd1) begin
+                    if (divide_req_q.single_result ||
+                        divide_req_q.op == FP_FRES)
+                        divide_state_q <= DIV_SP_NORM_TINY;
+                    else divide_state_q <= DIV_NORM;
                 end
                 // Latency states: the rounder takes the quotient in
                 // DIV_ROUND and delivers it in DIV_PACK.
@@ -211,15 +194,7 @@ module ppc_fpu_divider #(
                 DIV_ROUND: divide_state_q <= DIV_PACK;
                 DIV_PACK: divide_state_q <= DIV_IDLE;
                 DIV_SPECIAL: begin
-                    if (divide_special_pending_q) begin
-                        divide_special_rsp_q <= calculate(CPU_602,
-                            divide_req_q.tag, divide_req_q.op,
-                            {div_a_sign_q, div_a_raw_q},
-                            {div_b_sign_q, div_b_raw_q}, 64'd0,
-                            classify_operand({div_b_sign_q, div_b_raw_q}),
-                            divide_req_q.ve, divide_req_q.ze);
-                        divide_special_pending_q <= 1'b0;
-                    end
+                    divide_special_pending_q <= 1'b0;
                     divide_special_count_q <= divide_special_count_q - 6'd1;
                     if (divide_special_count_q == 6'd1)
                         divide_state_q <= DIV_IDLE;
@@ -227,6 +202,50 @@ module ppc_fpu_divider #(
                 default: begin end
             endcase
         end
+    end
+
+    // The datapath advances by state alone: a start is accepted only in
+    // DIV_IDLE or a finishing state, where these registers hold.
+    always_ff @(posedge clk_i) begin
+        case (divide_state_q)
+            DIV_START: if (!div_start_special) begin
+                div_result_sign_q <=
+                    (divide_req_q.op != FP_FRES && div_a_sign_q) ^
+                    div_b_sign_q;
+                div_result_exp_q <= div_start_a_exp - div_start_b_exp;
+                div_denominator_q <= div_start_b_sig;
+                div_denominator_x2_q <= {div_start_b_sig, 1'b0};
+                div_denominator_x3_q <=
+                    {2'b00, div_start_b_sig} +
+                    {1'b0, div_start_b_sig, 1'b0};
+                div_remainder_q <= div_start_difference[53] ?
+                    div_start_a_sig : div_start_difference[52:0];
+                div_quotient_q <= div_start_difference[53] ?
+                    55'd0 : 55'd1;
+                div_rounds_q <=
+                    (divide_req_q.single_result ||
+                    divide_req_q.op == FP_FRES) ? 5'd13 : 5'd27;
+            end
+            DIV_ITER: begin
+                div_remainder_q <= div_remainder_next;
+                div_quotient_q <= div_quotient_next;
+                div_rounds_q <= div_rounds_q - 5'd1;
+                if (div_rounds_q == 5'd1)
+                    div_sum_q <= prepare_division_sum(
+                        divide_req_q.op, divide_req_q.single_result,
+                        div_result_exp_q, div_result_sign_q,
+                        div_quotient_next,
+                        div_remainder_next != 53'd0);
+            end
+            DIV_SPECIAL: if (divide_special_pending_q)
+                divide_special_rsp_q <= calculate(CPU_602,
+                    divide_req_q.tag, divide_req_q.op,
+                    {div_a_sign_q, div_a_raw_q},
+                    {div_b_sign_q, div_b_raw_q}, 64'd0,
+                    classify_operand({div_b_sign_q, div_b_raw_q}),
+                    divide_req_q.ve, divide_req_q.ze);
+            default: begin end
+        endcase
     end
 endmodule
 `default_nettype wire

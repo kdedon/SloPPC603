@@ -1110,10 +1110,12 @@ module ppc_fpu #(
           pending_q[i].st.fpr_write &&
           pending_q[i].st.exception == FPU_NO_EXCEPTION) begin
         slot_src[i].ready = 1'b1;
-      end else if (pending_q[i].finishing && arith_finish_write) begin
+      end else if (pending_q[i].finishing) begin
         // A trapping value aborts every younger consumer before it
-        // commits, so only stores wait on the trap check.
-        slot_src[i].ready = 1'b1;
+        // commits, so only stores wait on the trap check. Only readiness
+        // waits for the finishing write; a consumer launches only when
+        // ready.
+        slot_src[i].ready = arith_finish_write;
         slot_src[i].fwd = 1'b1;
         slot_src[i].raw = '0;
         slot_src[i].sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
@@ -1164,6 +1166,27 @@ module ppc_fpu #(
     issue1_ea = decode1.ea;
   end
 
+  // synthesis translate_off
+  always @(posedge clk_i) begin
+    if (rst_ni) begin
+      logic [PENDING_DEPTH-1:0] wait_fpu, wait_mem, wait_other;
+      for (integer i = 0; i < PENDING_DEPTH; i++) begin
+        wait_fpu[i] = pending_q[i].valid && !pending_q[i].started &&
+            is_fpu_exec(pending_q[i].decoded.kind);
+        wait_mem[i] = pending_q[i].valid && !pending_q[i].started &&
+            pending_q[i].decoded.kind == DK_MEMORY;
+        wait_other[i] = pending_q[i].valid && !pending_q[i].started &&
+            !is_fpu_exec(pending_q[i].decoded.kind) &&
+            pending_q[i].decoded.kind != DK_MEMORY;
+      end
+      assert ($countones(wait_fpu) <= 1 && $countones(wait_mem) <= 1 &&
+              (wait_other == '0 || (wait_fpu == '0 && wait_mem == '0 &&
+                                    $countones(wait_other) == 1)))
+        else $error("more than one waiting entry per resource");
+    end
+  end
+  // synthesis translate_on
+
   // One waiting reservation entry is permitted. Ready independent operands
   // bypass it and enter the arithmetic pipe on the dispatch handshake.
   // Oldest-first picks run on physical slots; an age compare that depends
@@ -1172,8 +1195,6 @@ module ppc_fpu #(
     logic [PENDING_DEPTH-1:0] unstarted;
     logic [PENDING_DEPTH-1:0] exec_sel;
     logic [PENDING_DEPTH-1:0] second_sel;
-    logic [PENDING_DEPTH-1:0] waiting_mem, waiting_fpu;
-    logic [PENDING_DEPTH-1:0] oldest_mem, oldest_fpu;
     logic exec_is_mem, exec_is_fpu;
     for (integer i = 0; i < PENDING_DEPTH; i++)
       unstarted[i] = pending_q[i].valid && !pending_q[i].started;
@@ -1188,15 +1209,14 @@ module ppc_fpu #(
         exec_is_mem |= pending_q[i].decoded.kind == DK_MEMORY;
         exec_is_fpu |= is_fpu_exec(pending_q[i].decoded.kind);
       end
-    // The pair partner is the oldest waiting entry of the other resource;
-    // both candidates form beside the oldest pick.
-    for (integer i = 0; i < PENDING_DEPTH; i++) begin
-      waiting_mem[i] = unstarted[i] && pending_q[i].decoded.kind == DK_MEMORY;
-      waiting_fpu[i] = unstarted[i] && is_fpu_exec(pending_q[i].decoded.kind);
-    end
-    oldest_mem = oldest_of(waiting_mem);
-    oldest_fpu = oldest_of(waiting_fpu);
-    second_sel = exec_is_fpu ? oldest_mem : exec_is_mem ? oldest_fpu : '0;
+    // Dispatch admits at most one waiting entry per resource, and any other
+    // kind waits alone, so the pair partner is the waiting entry with an
+    // older waiting one; it forms beside the oldest pick.
+    second_sel = '0;
+    for (integer s = 0; s < PENDING_DEPTH; s++)
+      for (integer t = 0; t < PENDING_DEPTH; t++)
+        if (t != s && unstarted[t] && older_q[t][s] && unstarted[s])
+          second_sel[s] = 1'b1;
     exec_pick = exec_sel;
     second_pick = second_sel;
     // The work contexts read their entries through the one-hot picks.
@@ -1341,11 +1361,10 @@ module ppc_fpu #(
       store_o.size_bytes = (pv[0].decoded.mem_single ||
                             pv[0].decoded.mem_integer) ? 4'd4 : 4'd8;
       store_o.write = 1'b1;
-      store_o.data = pv[0].value;
-    end
-    if (pv[0].store_fill)
       store_o.data = store_data(pv[0].decoded.mem_integer,
-          pv[0].decoded.mem_single, reply_raw);
+          pv[0].decoded.mem_single,
+          pv[0].store_fill ? reply_raw : pv[0].value);
+    end
     store_valid_o = result_valid_o && head_result.store && commit_match;
     commit_ready_o = result_valid_o && commit_match &&
         (!head_result.store || store_ready_i);
@@ -1659,11 +1678,10 @@ module ppc_fpu #(
     work1_mem_req.size_bytes =
         (work1_decoded.mem_single || work1_decoded.mem_integer) ? 4'd4 : 4'd8;
     work1_mem_req.write = work1_decoded.mem_store;
-    // Store data reaches the LSU only in the authorized store descriptor.
-    // A source finishing this cycle is filled from the reply next cycle.
-    work1_mem_value = work1_decoded.mem_store ?
-        store_data(work1_decoded.mem_integer, work1_decoded.mem_single,
-                   work1_d.raw) : '0;
+    // Store data reaches the LSU only in the authorized store descriptor,
+    // which converts the raw source register held in the entry. A source
+    // finishing this cycle is filled from the reply next cycle.
+    work1_mem_value = work1_decoded.mem_store ? work1_d.raw : '0;
     work1_mem_fill = work1_decoded.mem_store && work1_d.fwd;
     work1_fire = (work1_arith_launch && arith_req_ready) ||
         (work1_mem_launch && mem_req_ready_i) || work1_local_launch;
@@ -1755,8 +1773,7 @@ module ppc_fpu #(
     mem_req_o.size_bytes = (work_decoded.mem_single || work_decoded.mem_integer) ?
         4'd4 : 4'd8;
     mem_req_o.write = work_decoded.mem_store;
-    mem_value = work_decoded.mem_store ? store_data(work_decoded.mem_integer,
-        work_decoded.mem_single, source_d.raw) : '0;
+    mem_value = work_decoded.mem_store ? source_d.raw : '0;
     mem_fill = work_decoded.mem_store && source_d.fwd;
     if (work1_mem_launch) mem_req_o = work1_mem_req;
     mem_req_valid_o = mem_launch || work1_mem_launch;
@@ -2082,8 +2099,7 @@ module ppc_fpu #(
     // faults, so the fault information written below wins.
     for (integer i = 0; i < PENDING_DEPTH; i++)
       if (pending_q[i].store_fill) begin
-        pending_d[i].value = store_data(pending_q[i].decoded.mem_integer,
-            pending_q[i].decoded.mem_single, reply_raw);
+        pending_d[i].value = reply_raw;
         pending_d[i].store_fill = 1'b0;
       end
     if (mem_rsp_match && mem_rsp_ready_o) begin
@@ -2337,7 +2353,7 @@ module ppc_fpu #(
   // as an OR, which is all CR1 (FX, FEX, VX, OX) reads of the prefix.
   localparam logic [31:0] STICKY_BITS = 32'h1ff8_0700;
   always_comb begin
-    arith_flags_t ar;
+    arith_flags_t ar, ar_known;
     logic rsp_value;
     logic [31:0] acc;
     logic [3:0] cr1;
@@ -2352,6 +2368,7 @@ module ppc_fpu #(
     arith_flags_t slot_ar [0:PENDING_DEPTH-1];
     logic [PENDING_DEPTH-1:0] slot_rsp_value;
     logic [PENDING_DEPTH-1:0] slot_meta, slot_reply, slot_trap;
+    arith_flags_t slot_known [0:PENDING_DEPTH-1];
     logic [31:0] slot_sticky [0:PENDING_DEPTH-1];
     acc = '0;
     cr1 = '0;
@@ -2361,6 +2378,7 @@ module ppc_fpu #(
     elig = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
       ar = pending_q[i].arith;
+      ar_known = pending_q[i].arith;
       rsp_value = 1'b0;
       meta = pending_q[i].arith_done;
       reply = 1'b0;
@@ -2374,20 +2392,25 @@ module ppc_fpu #(
         end else if (!ready[i] && arith_rsp_match &&
                      arith_rsp.tag == pending_q[i].issue.tag) begin
           ar = flags_of(arith_rsp);
+          ar_known = ar;
           rsp_value = 1'b1;
           ready[i] = 1'b1;
           meta = 1'b1;
         end
       end
+      // A finishing reply's flags reach only its own trap and write checks;
+      // its CR value and sticky causes come from the registered reply.
       trap = flags_trap(ar, fpscr_q);
       slot_ar[i] = ar;
+      slot_known[i] = ar_known;
       slot_rsp_value[i] = rsp_value;
       slot_meta[i] = meta;
       slot_reply[i] = reply;
       slot_trap[i] = trap;
-      slot_sticky[i] = flags_fpscr(32'd0, ar) & STICKY_BITS;
+      slot_sticky[i] = flags_fpscr(32'd0, ar_known) & STICKY_BITS;
       contributes[i] = pending_q[i].valid &&
-          pending_q[i].decoded.kind == DK_ARITH && meta && !reply && !trap;
+          pending_q[i].decoded.kind == DK_ARITH && meta && !reply &&
+          !flags_trap(ar_known, fpscr_q);
       // Younger CR results wait behind unknown or finishing status.
       unknown[i] = pending_q[i].valid &&
           pending_q[i].decoded.kind == DK_ARITH && (!meta || reply);
@@ -2424,7 +2447,7 @@ module ppc_fpu #(
           c.prefix = slot_prefix[i];
           c.fctiwz = pending_q[i].decoded.op == FP_FCTIWZ;
           exc[i] = slot_trap[i];
-          cr1 = 4'(flags_fpscr(slot_prefix[i], slot_ar[i]) >> 28);
+          cr1 = 4'(flags_fpscr(slot_prefix[i], slot_known[i]) >> 28);
           c.fpr_write = (slot_reply[i] ? arith_finish_write :
               slot_ar[i].write_result) && !exc[i];
           c.rsp_value = slot_rsp_value[i];
@@ -2434,7 +2457,7 @@ module ppc_fpu #(
               (slot_ar[i].compare_valid || pending_q[i].issue.insn[0]);
           c.cr_field = slot_ar[i].compare_valid ?
               pending_q[i].issue.insn[25:23] : 3'd1;
-          c.cr_value = slot_ar[i].compare_valid ? slot_ar[i].fpcc :
+          c.cr_value = slot_known[i].compare_valid ? slot_known[i].fpcc :
               cr1;
           // A finishing result's value and status come from its reply.
           if (slot_reply[i]) begin

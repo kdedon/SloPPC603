@@ -191,6 +191,18 @@ each cycle from their work context; only the valid, started and pipeline
 flags wait for the dispatch and launch handshakes. Rename credits and the
 barrier count follow retirement and dispatch; only an abort recounts.
 
+A launching store records its raw source register; the head entry's store
+descriptor applies the single, integer-word or 602 conversion. A finishing
+producer's operand view selects the forward by its registered flag, and the
+finishing write gates only readiness. Forwarded CR1 values and older sticky
+causes read registered flags only; a finishing reply's flags reach just its
+own trap and write checks. Dispatch admits one waiting entry per resource and
+any other kind waits alone, so the pair partner is the waiting entry with an
+older waiting one, formed beside the oldest pick (a simulation check asserts
+the invariant). The divider loads its operands every idle or finishing cycle
+and advances its datapath by state, so the start handshake reaches only its
+state register.
+
 `issue_ready_o` and `issue1_ready_o` are formed from registered state per
 decode class. Queue space is "not full, or the head retires"; FPR credits are
 "below the limit, or a retiring entry frees one". The lane decode, retirement
@@ -229,13 +241,23 @@ bits so special-operand classification leaves the first stage.
 
 ## Add and rounding stages
 
-In the add stage the sum's leading-zero count enters each exponent term last:
-the tiny test compares it against a precomputed `exponent − minimum + 1`
-(count 0 for a carry into the top bit, 160 only for a zero sum), and the
-normal exponent subtracts it from a base already chosen between the plain and
-underflow-scaled exponent. Rounding forms the exponent, its scaled form and
-the overflow test for both increment-carry cases beside the incrementer; the
-carry selects them. Both changes keep every latency.
+The add stage registers the sum's leading-zero count (0 for a carry into the
+top bit, 160 only for a zero sum) beside exponent + 1, its underflow-scaled
+form and `exponent − minimum + 1` clamped to 0..255. The rounding stage forms
+the tiny test as an 8-bit compare and both exponent differences in parallel,
+then selects; it normalizes by shifting the count and dropping the vacated low
+bit, and takes count 160 as the zero test. The divider supplies count 1 or 2.
+
+Rounding forms each result test from the unrounded mantissa beside the
+incrementer: nonzero, the leading bit, the exponent at its minimum and the
+biased exponent field, for both increment-carry cases, selected by the carry.
+A single denormal's normalizing count follows from the sum's count and the
+denormalizing shift; the rounded value keeps that count unless kept + 1 is a
+power of two, whose normalized fraction is zero. Integer conversion forms its
+increment, inexact and range check in the add stage, so its write suppression
+is registered before rounding.
+
+These changes keep every latency and initiation interval.
 
 ## Arithmetic units and area
 

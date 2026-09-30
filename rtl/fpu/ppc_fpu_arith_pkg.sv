@@ -18,10 +18,12 @@ typedef struct packed {
     logic signed [15:0] exp;
 } operand_t;
 
+// The rounding increment and the range check form beside the add; the
+// rounding stage only adds the increment and packs.
 typedef struct packed {
     logic [32:0] whole;
-    logic guard_bit;
-    logic sticky_bit;
+    logic inexact;
+    logic increment;
     logic invalid_value;
     logic sign;
     logic snan;
@@ -91,13 +93,22 @@ typedef struct packed {
     logic sign;
     logic negate_final;
     logic tiny_before;
+    // Leading zeros of a single denormal's kept bits placed at bit 52,
+    // from the sum's count and the denormalizing shift.
+    logic [5:0] single_lz;
 } round_work_t;
 
 typedef struct packed {
     logic [52:0] wide;
     logic [52:0] single_normalized_wide;
     logic [10:0] single_denorm_biased_exp;
-    logic signed [15:0] exponent;
+    // Result tests formed from the unrounded mantissa beside the
+    // incrementer: a nonzero result, its leading bit, the exponent at the
+    // minimum and the biased exponent field.
+    logic nonzero;
+    logic lead;
+    logic exponent_is_min;
+    logic [10:0] biased_exponent;
     logic sign;
     logic negate_final;
     logic tiny_before;
@@ -118,6 +129,7 @@ typedef struct packed {
     logic zero;
     logic inexact;
     logic increment;
+    logic [5:0] single_lz;
 } round_pre_t;
 
 typedef struct packed {
@@ -156,9 +168,14 @@ typedef struct packed {
     ppc_fpu_arith_rsp_t special_rsp;
     conv_parts_t conversion_parts;
     finite_sum_t sum;
-    logic [7:0] normal_left_shift;
-    logic signed [15:0] normal_exponent;
-    logic tiny_before;
+    // The rounder resolves the exponent from the leading-zero count:
+    // exponent + 1 and its scaled form, less the count, and tiny when the
+    // count exceeds exponent - minimum + 1 (always when that is negative).
+    logic [7:0] leading_zero;
+    logic signed [15:0] exponent_up;
+    logic signed [15:0] scaled_up;
+    logic tiny_always;
+    logic [7:0] tiny_limit;
     logic [7:0] denorm_shift;
     logic denorm_right;
 } round_input_t;
@@ -417,6 +434,7 @@ function automatic round_pre_t prepare_round_mantissa(
     out.sign = value.sign;
     out.negate_final = value.negate_final;
     out.tiny_before = value.tiny_before;
+    out.single_lz = value.single_lz;
     out.zero = value.magnitude == 0;
     if (out.zero) return out;
     if (single_result) begin
@@ -448,8 +466,12 @@ function automatic round_post_t round_mantissa(
     logic [52:0] base_single_wide;
     logic [52:0] up_single_wide;
     logic [5:0] base_single_lz;
-    logic [5:0] up_single_lz;
+    logic up_power;
+    logic [52:0] base_single_normalized;
+    logic [52:0] up_single_normalized;
+    logic [10:0] up_single_biased;
     logic [5:0] increment_carry;
+    logic signed [15:0] min_exp;
     logic carry_out;
     logic signed [15:0] max_exp;
     logic signed [15:0] scale;
@@ -459,7 +481,6 @@ function automatic round_post_t round_mantissa(
     logic overflow_base;
     logic overflow_up;
     out = '0;
-    out.exponent = value.exponent;
     out.sign = value.sign;
     out.negate_final = value.negate_final;
     out.tiny_before = value.tiny_before;
@@ -490,14 +511,23 @@ function automatic round_post_t round_mantissa(
     if (single_result) begin
         base_single_wide = {value.kept[23:0], 29'd0};
         up_single_wide = {rounded_up[23:0], 29'd0};
-        base_single_lz = leading_zero53(base_single_wide);
-        up_single_lz = leading_zero53(up_single_wide);
-        out.single_normalized_wide = value.increment ?
-            (up_single_wide << up_single_lz) :
-            (base_single_wide << base_single_lz);
-        out.single_denorm_biased_exp = value.increment ?
-            (11'd897 - {5'd0, up_single_lz}) :
+        // The increment moves the leading one only when kept + 1 is a
+        // power of two, whose normalized fraction is zero; otherwise the
+        // rounded value shifts by the unrounded count.
+        base_single_lz = value.single_lz;
+        up_power = &(~value.kept[23:1] | value.kept[22:0]);
+        base_single_normalized = base_single_wide << base_single_lz;
+        up_single_normalized = up_power ? {1'b1, 52'd0} :
+            (up_single_wide << base_single_lz);
+        up_single_biased = value.kept[23:0] == 24'd0 ? 11'd874 :
+            up_power ? (11'd898 - {5'd0, base_single_lz}) :
             (11'd897 - {5'd0, base_single_lz});
+        out.single_normalized_wide = value.increment ?
+            up_single_normalized : base_single_normalized;
+        out.single_denorm_biased_exp = value.increment ?
+            up_single_biased : (11'd897 - {5'd0, base_single_lz});
+        out.nonzero = value.increment || value.kept[23:0] != 24'd0;
+        out.lead = value.kept[23] || (value.increment && &value.kept[22:0]);
         carry_out = value.increment && (&kept[23:0]);
         if (value.increment) kept[23:0] = rounded_up[23:0];
         if (carry_out) kept[23:0] = 24'h800000;
@@ -507,6 +537,8 @@ function automatic round_post_t round_mantissa(
         if (value.increment) kept = rounded_up;
         if (carry_out) kept = {1'b1, 52'd0};
         out.wide = kept;
+        out.nonzero = value.increment || value.kept != 53'd0;
+        out.lead = value.kept[52] || (value.increment && &value.kept[51:0]);
     end
     // Exponent candidates and overflow for both carry cases are formed
     // beside the incrementer; its carry selects them.
@@ -515,12 +547,20 @@ function automatic round_post_t round_mantissa(
     overflow_up = value.exponent >= max_exp;
     exp_base_scaled = value.exponent - scale;
     exp_up_scaled = exp_up - scale;
+    min_exp = single_result ? -16'sd126 : -16'sd1022;
     out.overflow = carry_out ? overflow_up : overflow_base;
     out.ox = out.overflow;
-    if (out.overflow && oe)
-        out.exponent = carry_out ? exp_up_scaled : exp_base_scaled;
-    else
-        out.exponent = carry_out ? exp_up : value.exponent;
+    if (out.overflow && oe) begin
+        out.exponent_is_min = carry_out ? exp_up_scaled == min_exp :
+            exp_base_scaled == min_exp;
+        out.biased_exponent = carry_out ? 11'(exp_up_scaled + 16'sd1023) :
+            11'(exp_base_scaled + 16'sd1023);
+    end else begin
+        out.exponent_is_min = carry_out ? exp_up == min_exp :
+            value.exponent == min_exp;
+        out.biased_exponent = carry_out ? 11'(exp_up + 16'sd1023) :
+            11'(value.exponent + 16'sd1023);
+    end
     if (out.overflow && !oe) begin
         out.fi = 1'b1;
         out.xx = 1'b1;
@@ -536,9 +576,7 @@ function automatic ppc_fpu_arith_rsp_t finish_rounded(
     input logic [1:0] rn, input logic ni, input logic oe
 );
     ppc_fpu_arith_rsp_t out;
-    logic signed [15:0] min_exp;
-    logic signed [15:0] exponent;
-    logic [52:0] wide;
+    logic [51:0] wide;
     logic denorm_result;
     logic deliver_inf;
     logic final_sign;
@@ -553,10 +591,8 @@ function automatic ppc_fpu_arith_rsp_t finish_rounded(
     out.xx = (op == FP_FRES && !cpu_602) ? 1'b0 : value.xx;
     out.fr = value.fr;
     out.fi = value.fi;
-    min_exp = single_result ? -16'sd126 : -16'sd1022;
-    exponent = value.exponent;
-    wide = value.wide;
-    denorm_result = (exponent == min_exp) && !wide[52] && (wide != 0);
+    wide = value.wide[51:0];
+    denorm_result = value.exponent_is_min && !value.lead && value.nonzero;
     deliver_inf = (rn == 2'b00) ||
         (rn == 2'b10 && !value.sign) ||
         (rn == 2'b11 && value.sign);
@@ -569,7 +605,7 @@ function automatic ppc_fpu_arith_rsp_t finish_rounded(
         out.fprf = deliver_inf ?
             (final_sign ? 5'b01001 : 5'b00101) :
             (final_sign ? 5'b01000 : 5'b00100);
-    end else if (wide == 0 ||
+    end else if (!value.nonzero ||
         (ni && (cpu_602 ? value.tiny_before : denorm_result))) begin
         out.result = {final_sign, 63'd0};
         out.fprf = final_sign ? 5'b10010 : 5'b00010;
@@ -583,7 +619,7 @@ function automatic ppc_fpu_arith_rsp_t finish_rounded(
                 value.single_normalized_wide[51:0]};
             out.fprf = final_sign ? 5'b11000 : 5'b10100;
         end else begin
-            out.result = {final_sign, 11'(exponent + 16'sd1023),
+            out.result = {final_sign, value.biased_exponent,
                 wide[51:0]};
             out.fprf = final_sign ? 5'b01000 : 5'b00100;
         end
@@ -636,10 +672,16 @@ endfunction
 // The aligner has shifted the significand so that lane bit 79 has weight
 // one: bits 111:79 are the integer part, 78 the guard, 77:0 the sticky.
 function automatic conv_parts_t prepare_conversion(
-    input special_t source, input logic too_large, input logic [111:0] lane
+    input special_t source, input logic too_large, input logic [111:0] lane,
+    input ppc_fpu_op_t op, input logic [1:0] rn
 );
     conv_parts_t out;
+    logic guard_bit;
+    logic sticky_bit;
+    logic [1:0] mode;
     out = '0;
+    guard_bit = 1'b0;
+    sticky_bit = 1'b0;
     out.sign = source.sign;
     out.snan = source.snan;
     out.nan = source.nan;
@@ -647,8 +689,25 @@ function automatic conv_parts_t prepare_conversion(
         (too_large && !source.zero);
     if (!out.invalid_value && !source.zero) begin
         out.whole = lane[111:79];
-        out.guard_bit = lane[78];
-        out.sticky_bit = |lane[77:0];
+        guard_bit = lane[78];
+        sticky_bit = |lane[77:0];
+    end
+    mode = op == FP_FCTIWZ ? 2'b01 : rn;
+    out.inexact = guard_bit | sticky_bit;
+    case (mode)
+        2'b00: out.increment = guard_bit & (sticky_bit | out.whole[0]);
+        2'b01: out.increment = 1'b0;
+        2'b10: out.increment = !out.sign & out.inexact;
+        default: out.increment = out.sign & out.inexact;
+    endcase
+    // The rounded magnitude exceeds the word range when the unrounded one
+    // does, or equals the limit and rounds up.
+    if (!out.invalid_value) begin
+        if (out.sign ? (out.whole > 33'h08000_0000 ||
+                (out.whole == 33'h08000_0000 && out.increment)) :
+            (out.whole > 33'h07fff_ffff ||
+                (out.whole == 33'h07fff_ffff && out.increment)))
+            out.invalid_value = 1'b1;
     end
     return out;
 endfunction
@@ -672,41 +731,19 @@ endfunction
 
 function automatic ppc_fpu_arith_rsp_t finish_conversion(
     input ppc_pkg::completion_tag_t tag,
-    input ppc_fpu_op_t op,
-    input logic [1:0] rn,
     input logic ve,
     input conv_parts_t parts
 );
     ppc_fpu_arith_rsp_t out;
     logic [32:0] whole;
     logic [31:0] word_value;
-    logic inexact;
-    logic increment;
-    logic invalid_value;
-    logic [1:0] mode;
     out = '0;
     out.tag = tag;
     out.write_result = 1'b1;
     out.frfi_valid = 1'b1;
     out.fprf_valid = 1'b0;
-    mode = op == FP_FCTIWZ ? 2'b01 : rn;
-    whole = parts.whole;
-    invalid_value = parts.invalid_value;
-    inexact = parts.guard_bit | parts.sticky_bit;
-    case (mode)
-        2'b00: increment = parts.guard_bit &
-            (parts.sticky_bit | whole[0]);
-        2'b01: increment = 1'b0;
-        2'b10: increment = !parts.sign & inexact;
-        default: increment = parts.sign & inexact;
-    endcase
-    whole = whole + {32'd0, increment};
-    if (!invalid_value) begin
-        if ((!parts.sign && whole > 33'h07fff_ffff) ||
-            (parts.sign && whole > 33'h08000_0000))
-            invalid_value = 1'b1;
-    end
-    if (invalid_value) begin
+    whole = parts.whole + {32'd0, parts.increment};
+    if (parts.invalid_value) begin
         out.invalid[INV_CVI] = 1'b1;
         out.invalid[INV_SNAN] = parts.snan;
         out.write_result = !ve;
@@ -716,9 +753,9 @@ function automatic ppc_fpu_arith_rsp_t finish_conversion(
     end else begin
         if (parts.sign) word_value = 32'(0 - whole);
         else word_value = whole[31:0];
-        out.fr = increment;
-        out.fi = inexact;
-        out.xx = inexact;
+        out.fr = parts.increment;
+        out.fi = parts.inexact;
+        out.xx = parts.inexact;
     end
     out.result = {32'd0, word_value};
     return out;
@@ -1314,20 +1351,30 @@ function automatic round_work_t direct_round_work(
     input finite_sum_t value,
     input logic single_result,
     input logic ue,
-    input logic [7:0] normal_left_shift,
+    input logic [7:0] leading_zero,
     input logic signed [15:0] normal_exponent,
     input logic tiny_before,
     input logic [7:0] denorm_shift,
     input logic denorm_right
 );
     round_work_t out;
+    logic [62:0] narrow_normal;
+    logic [110:0] wide_normal;
     logic signed [15:0] min_exp;
     out = '0;
     out.sign = value.sign;
     out.negate_final = value.negate_final;
     out.exponent = value.exponent;
     min_exp = single_result ? -16'sd126 : -16'sd1022;
-    if (value.magnitude == 160'd0) return out;
+    // Only a zero magnitude has count 160. A nonzero count puts the
+    // leading one at the top; the fixed one-bit right shift drops a zero.
+    if (leading_zero == 8'd160) return out;
+    narrow_normal = 63'((value.magnitude[159:96] << leading_zero) >> 1);
+    // The sum's leading one sits at bit 159 - count; kept bit 23 is bit 158.
+    // Only a denormalized result reads this, and a zero kept field never.
+    out.single_lz = 6'(denorm_right ? leading_zero - 8'd1 + denorm_shift :
+        leading_zero - 8'd1 - denorm_shift);
+    wide_normal = 111'((value.magnitude[159:48] << leading_zero) >> 1);
     out.tiny_before = tiny_before;
     if (narrow) begin
         if (out.tiny_before && !ue) begin
@@ -1339,7 +1386,7 @@ function automatic round_work_t direct_round_work(
         end else begin
             out.magnitude = value.magnitude[159] ?
                 {shift_right_jam64(value.magnitude[159:96], 8'd1), 96'd0} :
-                {value.magnitude[159:96] << normal_left_shift, 96'd0};
+                {1'b0, narrow_normal, 96'd0};
             out.exponent = normal_exponent;
         end
     end else if (out.tiny_before && !ue) begin
@@ -1351,7 +1398,7 @@ function automatic round_work_t direct_round_work(
     end else begin
         out.magnitude = value.magnitude[159] ?
             {shift_right_jam112(value.magnitude[159:48], 8'd1), 48'd0} :
-            {value.magnitude[159:48] << normal_left_shift, 48'd0};
+            {1'b0, wide_normal, 48'd0};
         out.exponent = normal_exponent;
     end
     return out;
@@ -1360,7 +1407,7 @@ endfunction
 function automatic ppc_fpu_arith_rsp_t round_finite(
     input logic cpu_602,
     input finite_sum_t value,
-    input logic [7:0] normal_left_shift,
+    input logic [7:0] leading_zero,
     input logic signed [15:0] normal_exponent,
     input logic tiny_before,
     input logic [7:0] denorm_shift,
@@ -1382,7 +1429,7 @@ function automatic ppc_fpu_arith_rsp_t round_finite(
         op == FP_FRES;
     normalized = value;
     work = direct_round_work(cpu_602, normalized, single_result, ue,
-        normal_left_shift, normal_exponent, tiny_before,
+        leading_zero, normal_exponent, tiny_before,
         denorm_shift, denorm_right);
     pre = prepare_round_mantissa(work, single_result, rn);
     post = round_mantissa(pre, single_result, oe, ue);
