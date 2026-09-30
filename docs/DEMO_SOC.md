@@ -24,6 +24,10 @@ One clock drives everything; the processor's `HRESET` is the system reset. The
 video path advances on a pixel enable every `CE_DIV` clocks (default 8), so it
 matches a MiSTer `CE_PIXEL` boundary.
 
+`ENABLE_FPU` (default 0) passes to the processor
+([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md)) and reads back in `MODE` bit 8.
+Builds with it add `rtl/fpu_files.f` after `rtl/chip_files.f`.
+
 ### 60x target
 
 - BG answers BR; AACK is asserted two cycles after TS; DBG is asserted with AACK.
@@ -69,7 +73,7 @@ stores. Offsets are from `0xf0100000`.
 | `0x024` | `FB_STRIDE` | R | Bytes per line, 320 |
 | `0x028` | `FB_SIZE` | R | Width in bits 31:16 (320), height in bits 15:0 (240) |
 | `0x02c` | `FB_FORMAT` | R | 3: 8 bits per pixel, indexed (the MiSTer `FB_FORMAT` code) |
-| `0x030` | `MODE` | R | Clock in MHz in bits 31:16 (`SYS_MHZ`); the `mode_i` port in bits 7:0 |
+| `0x030` | `MODE` | R | Clock in MHz in bits 31:16 (`SYS_MHZ`); FPU present (`ENABLE_FPU`) in bit 8; the `mode_i` port in bits 7:0 |
 | `0x034` | `TENURES` | R | 60x address tenures since reset |
 | `0x038` | `RETIRED_LO` | R | Instructions retired since reset, low word; reading it latches the high word |
 | `0x03c` | `RETIRED_HI` | R | High word latched by the last `RETIRED_LO` read |
@@ -138,7 +142,10 @@ output to the `CONSOLE` register and, when enabled, as 8 × 8 text on the frameb
 framebuffer fills; a bump allocator; and the string functions the benchmarks call. The
 5 × 7 font is original. There is no floating point: `%f` prints `?`, and the
 hard-float libgcc helpers are replaced by stubs that fail if called (`nofloat.c`).
-Every image is checked for floating-point instructions after linking.
+Every image is checked for floating-point instructions after linking, except the
+hard-float Whetstone images (`*-hf`, [BENCHMARKS.md](BENCHMARKS.md#whetstone)), which
+need `ENABLE_FPU`: their start-up sets MSR[FP], and without an FPU they exit with
+`0xe0000800` at the first floating-point instruction.
 
 Everything is compiled with the pinned cross compiler at `-O2 -mcpu=603e -msoft-float
 -fno-builtin`.
@@ -174,8 +181,12 @@ result**: a reportable run lasts at least ten seconds, so CoreMark prints that e
 
 ```sh
 make -C sim demo-hello        # or demo-dhrystone, demo-coremark, demo-all
-make -C sim demo-nbench       # or demo-embench; see BENCHMARKS.md
+make -C sim demo-nbench       # or demo-embench, demo-whetstone; see BENCHMARKS.md
+make -C sim demo-whetstone-hf # hard-float Whetstone on the SoC with ENABLE_FPU
+make -C sim test-selftest-fpu # opcode self-test on the SoC with ENABLE_FPU
 ```
+
+The `ENABLE_FPU` model (`demo-soc-fpu-model`) builds in `sim/build/demo/model-fpu`.
 
 Each target fetches the benchmark sources, builds the firmware in the pinned
 container (`toolchain/build-in-container.sh`; override `DEMO_FW_MAKE` to use a local

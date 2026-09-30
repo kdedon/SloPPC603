@@ -92,7 +92,9 @@ Queued, in order:
 2. Whetstone: fetched at a pinned revision like the other benchmarks, built
    soft-float (runs on the FPU-less core) and hard-float (after integration),
    reported as MWIPS and MWIPS/MHz in the demo SoC and on the MiSTer screen.
-   The hard-float MiSTer build needs the FPU in the MiSTer SoC.
+   Both builds run in simulation, the hard-float one on the SoC with
+   `ENABLE_FPU` ([BENCHMARKS.md](../../BENCHMARKS.md#whetstone)); the MiSTer
+   FPU core (`mister/build.sh --fpu`) awaits its first fit.
 3. CI preparation: pin the Quartus and toolchain images by digest; have the
    fit and MiSTer scripts emit one machine-readable summary (ALMs, RAM, DSP,
    slack per clock and corner); a setup script that fetches DingusPPC and the

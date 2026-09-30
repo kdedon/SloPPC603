@@ -174,12 +174,13 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh [--clean] [--native] [--suite nbench|embench]
+mister/build.sh [--clean] [--native] [--fpu] [--suite nbench|embench|selftest|whetstone]
 ```
 
 `--native` builds the 320 × 240 native-video variant; the default is the 1920 × 1080 DDR3
 framebuffer. `--suite` builds a core for one benchmark suite instead of hello, Dhrystone
-and CoreMark (see [Benchmark suite cores](#benchmark-suite-cores)). Needs Docker, network access for the framework and benchmark sources, and about
+and CoreMark (see [Benchmark suite cores](#benchmark-suite-cores)). `--fpu` builds the
+processor with its FPU (see [FPU cores](#fpu-cores)). Needs Docker, network access for the framework and benchmark sources, and about
 12 GB for the pinned Quartus 17.0.2 image. The script:
 
 1. fetches the framework with `mister/fetch-framework.sh`:
@@ -227,6 +228,29 @@ with the same layout on the demo SoC bench.
 `mister/build.sh --clean --suite selftest` builds the opcode self-test
 ([SELFTEST.md](SELFTEST.md)) the same way; its image, `mister-selftest.hex`, is the
 one `make -C sim test-selftest` runs.
+
+`mister/build.sh --clean --suite whetstone` builds Whetstone
+([BENCHMARKS.md](BENCHMARKS.md#whetstone)) soft-float, `mister-whetstone.hex`.
+
+### FPU cores
+
+`--fpu` defines the `MISTER_FPU` macro, which sets `ENABLE_FPU` in the demo SoC, and adds
+`rtl/fpu_files.f` to `files.qip`. The firmware is unchanged except for Whetstone, which
+switches to its hard-float image, `mister-whetstone-hf.hex`. The file name gains `_fpu`:
+`ppc603e_whetstone_fpu.rbf`, published as `PPC603e_whetstone_fpu_<date>.rbf`. The
+self-test core with `--fpu` runs its floating-point cases as well
+([SELFTEST.md](SELFTEST.md#floating-point)).
+
+```sh
+mister/build.sh --clean --fpu --suite whetstone   # mister/output_files/ppc603e_whetstone_fpu.rbf
+```
+
+No FPU core has been fitted yet: at commit 6ff1d89 Quartus 17.0 stops in analysis on
+two constructs of the FPU integration, in every build that compiles the core (with or
+without `--fpu`): the conditional generate block `if (ENABLE_FPU) begin : g_fpu` in
+`rtl/ppc_special.sv`, written without `generate`/`endgenerate` unlike the file's other
+generate blocks (Error 10170, "expecting endmodule"), and the member select on a function call,
+`cpu_cfg(CPU_VARIANT).fpu`, in `rtl/ppc_core.sv` (Error 10170, "expecting ')'").
 
 ### Licensing
 
