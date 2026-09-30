@@ -4,8 +4,8 @@
  * state from in, enters code with rfi under in's MSR, and returns when the
  * case ends: every exception vector stores the register state to out and
  * resumes the caller. A case ends normally by branching to st_done, whose
- * sc the caller recognises by SRR0. Word offsets follow struct st_state
- * (selftest.h). */
+ * sc the caller recognises by SRR0. With st_fp set, the FPRs and FPSCR are
+ * part of the state too. Word offsets follow the field order in selftest.h. */
 #define O_CR 128
 #define O_XER 132
 #define O_LR 136
@@ -16,11 +16,15 @@
 #define O_MSR 156
 #define O_DAR 160
 #define O_DSISR 164
-/* st_save: r1, r2, r13-r31 at 4 * n; LR, CR, MSR and out after them. */
+#define O_FPR 424
+#define O_FPSCR 680
+/* st_save: r1, r2, r13-r31 at 4 * n; LR, CR, MSR and out after them, then a
+ * doubleword for the FPSCR. */
 #define S_LR 128
 #define S_CR 132
 #define S_MSR 136
 #define S_OUT 140
+#define S_FPSCR 144
 
     .section .vectors,"ax",@progbits
     .globl _start
@@ -89,6 +93,21 @@ st_enter:
     mfmsr 0
     stw 0,S_MSR(6)
     stw 4,S_OUT(6)
+    lis 7,st_fp@ha
+    lwz 7,st_fp@l(7)
+    cmpwi 7,0
+    beq 1f
+    /* The FPSCR from the word before it (mtfsf takes the low word), then
+     * the FPRs, with MSR[FP] set until the rfi. */
+    ori 7,0,0x2000
+    mtmsr 7
+    isync
+    lfd 0,O_FPSCR-4(3)
+    mtfsf 0xff,0
+    .irp n,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+    lfd \n,O_FPR+8*\n(3)
+    .endr
+1:
     mtsrr0 5
     lwz 0,O_MSR(3)
     mtsrr1 0
@@ -155,6 +174,24 @@ st_trap:
     stw 3,O_DAR(4)
     mfdsisr 3
     stw 3,O_DSISR(4)
+    lis 3,st_fp@ha
+    lwz 3,st_fp@l(3)
+    cmpwi 3,0
+    beq 1f
+    mfmsr 3
+    ori 3,3,0x2000
+    mtmsr 3
+    isync
+    .irp n,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31
+    stfd \n,O_FPR+8*\n(4)
+    .endr
+    mffs 0
+    lis 3,st_save@ha
+    addi 3,3,st_save@l
+    stfd 0,S_FPSCR(3)
+    lwz 3,S_FPSCR+4(3)
+    stw 3,O_FPSCR(4)
+1:
     mfsprg 3,3
     stw 3,O_MSR(4)
     lis 4,st_save@ha
@@ -176,6 +213,6 @@ st_trap:
     .section .bss
     .align 3
 st_save:
-    .space 144
+    .space 152
 
     .section .note.GNU-stack,"",@progbits

@@ -9,12 +9,37 @@ Writes cases.S (each case's code, as instruction words), cases.h (the case
 table: inputs and expected outputs) and check.S (the same instructions as
 assembler mnemonics, for check_enc.py). Expected results come from the model
 below, written from the manuals: UM (MPC603e User's Manual), PEM
-(Programming Environments Manual) and 602UM for the 602.
+(Programming Environments Manual) and 602UM for the 602. Floating-point
+arithmetic results come from the FPU's reference model (sim/fpu).
 """
 import ast
 import pathlib
 import re
+import struct
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[3] / "sim" / "fpu"))
+try:
+    import dataclasses  # noqa: F401
+except ImportError:
+    # The build container's Python lacks dataclasses; the model needs only a
+    # record with positional fields.
+    import types
+
+    def _dataclass(frozen=False):
+        def wrap(cls):
+            names = list(cls.__annotations__)
+
+            def init(self, *args):
+                for n, v in zip(names, args):
+                    object.__setattr__(self, n, v)
+            cls.__init__ = init
+            return cls
+        return wrap
+    sys.modules["dataclasses"] = types.SimpleNamespace(dataclass=_dataclass)
+from enabled_vectors import INVALID_BITS, fpscr_after, fpscr_mask  # noqa: E402
+from ppc_reference import DEFAULT_NAN, SNAN, SQRT, arithmetic, classify  # noqa: E402
+from reference import decode  # noqa: E402
 
 M32 = 0xFFFFFFFF
 
@@ -33,22 +58,29 @@ IO_EA = 0xF0100FE0  # DBAT1: cache-inhibited register block, unused words
 
 MSR_EE, MSR_PR, MSR_FP, MSR_ME = 0x8000, 0x4000, 0x2000, 0x1000
 MSR_IP, MSR_IR, MSR_DR, MSR_TGPR = 0x40, 0x20, 0x10, 0x20000
+MSR_FE0, MSR_FE1 = 0x800, 0x100
 MSR_SUP = MSR_ME | MSR_IP | MSR_IR | MSR_DR
 MSR_USER = MSR_SUP | MSR_PR
+MSR_FPU = MSR_SUP | MSR_FP
 
 # Program exception SRR1 flags (PEM Table 6-17, UM Table 4-12).
 P_ILLEGAL, P_PRIV, P_TRAP = 0x00080000, 0x00040000, 0x00020000
+P_FPE = 0x00100000  # FP enabled
 
 # State fields, in struct st_state order (selftest.h).
 F_CR, F_XER, F_LR, F_CTR = 32, 33, 34, 35
 F_VEC, F_SRR0, F_SRR1, F_MSR, F_DAR, F_DSISR = 36, 37, 38, 39, 40, 41
 F_BUF = 42
-N_FIELDS = F_BUF + BUF_WORDS
+# FPRs as high and low words, then the FPSCR; loaded and stored only with an FPU.
+F_FPR = F_BUF + BUF_WORDS
+F_FPSCR = F_FPR + 64
+N_FIELDS = F_FPSCR + 1
 FIELD_NAMES = [f"r{i}" for i in range(32)] + [
     "cr", "xer", "lr", "ctr", "vec", "srr0", "srr1", "msr", "dar", "dsisr"] + [
-    f"m{4 * i:02x}" for i in range(BUF_WORDS)]
+    f"m{4 * i:02x}" for i in range(BUF_WORDS)] + [
+    f"f{i}{h}" for i in range(32) for h in "hl"] + ["fpscr"]
 # The value is relative to the case's first instruction.
-REL = 0x80
+REL = 0x100
 
 GROUPS = ["INT", "ROT", "CMP/BR", "LD/ST", "SPR", "EXC", "CACHE", "FP"]
 
@@ -498,6 +530,8 @@ class Machine:
             ins.f["sem"](st)
             return None
         self.legal(st, ins)
+        if ins.f.get("fpop"):
+            return self.fp_op(st, ins)
         g = st["gpr"]
         m = ins.m
         if m in XO_OPS:
@@ -652,6 +686,124 @@ class Machine:
         if "kind" in ins.f:
             return self.mem_op(st, ins)
         raise RuntimeError(f"no model for {m}")
+
+    # -- floating point
+    def fp_op(self, st, ins):
+        w, f = ins.word, st["fpr"]
+        op = w >> 26
+        t, a, b, c = (w >> 21) & 31, (w >> 16) & 31, (w >> 11) & 31, (w >> 6) & 31
+        base = ins.m.rstrip(".")
+        if op not in (59, 63):
+            return self.fp_mem(st, ins, base, t, a, b)
+        old = st["fpscr"]
+        rn, ni = old & 3, (old >> 2) & 1
+        ve, oe, ue, ze = (old >> 7) & 1, (old >> 6) & 1, (old >> 5) & 1, (old >> 4) & 1
+        dc = st.setdefault("dontcare", {})
+        new, fmask = old, M32
+        if base in ("fmr", "fneg", "fabs", "fnabs"):
+            s = 1 << 63
+            f[t] = {"fmr": f[b], "fneg": f[b] ^ s, "fabs": f[b] & ~s, "fnabs": f[b] | s}[base]
+        elif base == "fsel":
+            ka, sa, ma, _ = decode(f[a])
+            ge = ka not in ("snan", "qnan") and (not sa or (ka == "finite" and not ma))
+            f[t] = f[c] if ge else f[b]
+        elif base in FP_ORACLE:
+            name, single = FP_ORACLE[base]
+            exp = arithmetic(name, f[a], f[b], f[c], rn, single, ni, ve, oe, ue, ze)
+            new = fpscr_after(old, exp)
+            fmask = fpscr_mask(exp, oe)
+            if exp["write_result"]:
+                f[t] = exp["result"]
+                if base in ("fctiw", "fctiwz"):
+                    dc[f"f{t}h"] = 0  # undefined (PEM fctiwx)
+            if base in ("fctiw", "fctiwz"):
+                fmask &= ~0x1F000  # FPRF undefined
+        elif base in ("fcmpu", "fcmpo"):
+            exp = arithmetic(base[1:], f[a], f[b], ve=ve)
+            new = (fpscr_after(old, exp) & ~0xF000) | (exp["fpcc"] << 12)
+            self.setcrf(st, t >> 2, exp["fpcc"])
+        elif base in ("fres", "frsqrte"):
+            new, fmask = self.fp_estimate(st, base, t, b, old, ve, ze)
+        elif base == "mffs":
+            f[t] = old
+            dc[f"f{t}h"] = 0  # undefined (PEM mffsx)
+        elif base in ("mtfsf", "mtfsfi"):
+            if base == "mtfsf":
+                fm, src = (w >> 17) & 0xFF, f[b] & M32
+            else:
+                fm, src = 0x80 >> (t >> 2), ((w >> 12) & 15) << (28 - 4 * (t >> 2))
+            m = 0
+            for i in range(8):
+                if fm & (0x80 >> i):
+                    m |= 0xF << (28 - 4 * i)
+            new = fp_summary((old & ~m) | (src & m))
+        elif base in ("mtfsb0", "mtfsb1"):
+            bit = 1 << (31 - t)
+            if t not in (1, 2):
+                new = old & ~bit if base == "mtfsb0" else old | bit
+                if base == "mtfsb1" and bit & FP_EXC_BITS and not old & bit:
+                    new |= 1 << 31
+            new = fp_summary(new)
+        elif base == "mcrfs":
+            sh = 28 - 4 * (a >> 2)
+            self.setcrf(st, t >> 2, old >> sh)
+            new = fp_summary(old & ~(FP_EXC_BITS & (0xF << sh)))
+        else:
+            raise RuntimeError(f"no FP model for {ins.m}")
+        st["fpscr"] = new
+        if fmask != M32:
+            dc["fpscr"] = fmask
+        if w & 1:
+            self.setcrf(st, 1, new >> 28)
+        if st["msr"] & (MSR_FE0 | MSR_FE1) and new >> 30 & 1:
+            raise Trap(0x700, P_FPE)
+        return None
+
+    def fp_estimate(self, st, base, t, b, old, ve, ze):
+        """fres and frsqrte of the inputs with exact results (PEM fresx, frsqrtex)."""
+        kb, sb, mb, _ = decode(st["fpr"][b])
+        exp = dict(result=0, write_result=True, invalid=0, ox=False, ux=False, zx=False,
+                   xx=False, fr=False, fi=False, frfi_valid=True, fprf=0, fprf_valid=True)
+        if kb == "snan":
+            exp["invalid"], res = SNAN, st["fpr"][b] | (1 << 51)
+        elif kb == "qnan":
+            res, exp["frfi_valid"] = st["fpr"][b], False
+        elif base == "frsqrte" and sb and not (kb == "finite" and not mb):
+            exp["invalid"], res = SQRT, DEFAULT_NAN
+        elif kb == "finite" and not mb:
+            exp["zx"], res = True, (sb << 63) | 0x7FF0000000000000
+        elif kb == "inf":
+            res, exp["frfi_valid"] = sb << 63, False
+        else:
+            raise RuntimeError("estimate of a finite nonzero value")
+        exp["write_result"] = not ((ve and exp["invalid"]) or (ze and exp["zx"]))
+        exp["fprf_valid"] = exp["write_result"]
+        exp["fprf"] = classify(res)
+        if exp["write_result"]:
+            st["fpr"][t] = res
+        new = fpscr_after(old, exp)
+        return new, M32 if exp["frfi_valid"] else M32 & ~0x60000
+
+    def fp_mem(self, st, ins, base, t, a, b):
+        g, f = st["gpr"], st["fpr"]
+        indexed = ins.word >> 26 == 31
+        d = s32(ins.word << 16) >> 16
+        ea = (self.ra0(st, a) + (g[b] if indexed else d)) & M32
+        if ea & 3:
+            raise self.align_trap(ea, ins)
+        if base.startswith("lfs"):
+            f[t] = single_to_double(self.load(st, ea, 4, ins))
+        elif base.startswith("lfd"):
+            f[t] = self.load(st, ea, 8, ins)
+        elif base.startswith("stfs"):
+            self.store(st, ea, 4, double_to_single(f[t]), ins)
+        elif base.startswith("stfd"):
+            self.store(st, ea, 8, f[t], ins)
+        elif base == "stfiwx":
+            self.store(st, ea, 4, f[t] & M32, ins)
+        if base.endswith(("u", "ux")):
+            g[a] = ea
+        return None
 
     def xo_op(self, st, ins):
         g = st["gpr"]
@@ -878,7 +1030,8 @@ def default_state():
     mem = bytearray(((i * 29 + 0x5B) ^ (i >> 3)) & 0xFF for i in range(BUF_WORDS * 4))
     return {"gpr": g, "cr": 0, "xer": 0, "lr": 0, "ctr": 0, "msr": MSR_SUP, "srr0": 0,
             "srr1": 0, "dar": 0, "dsisr": 0, "sprg": [0, 0, 0, 0],
-            "sr": [0x80000000 if i == 3 else 0 for i in range(16)], "ear": 0, "mem": mem}
+            "sr": [0x80000000 if i == 3 else 0 for i in range(16)], "ear": 0, "mem": mem,
+            "fpr": [dbits(i * 1.5 + 0.125) for i in range(32)], "fpscr": 0}
 
 
 def flatten(st):
@@ -904,14 +1057,18 @@ def flatten(st):
     mem = st["mem"]
     for i in range(BUF_WORDS):
         put(int.from_bytes(mem[4 * i:4 * i + 4], "big"))
+    for i, v in enumerate(st["fpr"]):
+        put(v >> 32, dc.get(f"f{i}h", M32))
+        put(v & M32, dc.get(f"f{i}l", M32))
+    put(st["fpscr"], dc.get("fpscr", M32))
     return out
 
 
 class Case:
-    def __init__(self, group, name, code, inp=None, msr=MSR_SUP, need=None, note=""):
+    def __init__(self, group, name, code, inp=None, msr=MSR_SUP, need=None, note="", fpu=False):
         self.group, self.name, self.code = group, name, code
         self.inp = inp or {}
-        self.msr, self.need, self.note = msr, need, note
+        self.msr, self.need, self.note, self.fpu = msr, need, note, fpu
 
 
 def lookup_status(isa, ins):
@@ -1298,8 +1455,289 @@ def fp_insns(isa):
     return out
 
 
+def dbits(x):
+    return struct.unpack(">Q", struct.pack(">d", x))[0]
+
+
+def sbits(x):
+    """A value rounded to single precision, as FPR (double) bits."""
+    return dbits(struct.unpack(">f", struct.pack(">f", x))[0])
+
+
+def swidth(x):
+    return struct.unpack(">I", struct.pack(">f", x))[0]
+
+
+def single_to_double(w):
+    """lfs conversion (PEM 3.3.4, Floating-Point Load Instructions)."""
+    s, e, frac = w >> 31, (w >> 23) & 0xFF, w & 0x7FFFFF
+    if e == 0xFF:
+        return (s << 63) | (0x7FF << 52) | (frac << 29)
+    if e == 0:
+        if not frac:
+            return s << 63
+        x = -126
+        while not frac & 0x800000:
+            frac, x = frac << 1, x - 1
+        return (s << 63) | ((x + 1023) << 52) | ((frac & 0x7FFFFF) << 29)
+    return (s << 63) | ((e - 127 + 1023) << 52) | (frac << 29)
+
+
+def double_to_single(v):
+    """stfs conversion (PEM 3.3.4, Floating-Point Store Instructions)."""
+    e = (v >> 52) & 0x7FF
+    if 874 <= e <= 896:
+        frac, x = (1 << 52) | (v & ((1 << 52) - 1)), e - 1023
+        while x < -126:
+            frac, x = frac >> 1, x + 1
+        return ((v >> 63) << 31) | ((frac >> 29) & 0x7FFFFF)
+    return ((v >> 62) << 30) | ((v >> 29) & 0x3FFFFFFF)
+
+
+# FPSCR exception bits (FX, OX, UX, ZX, XX and the invalid causes).
+FP_EXC_BITS = (1 << 31) | (0xF << 25) | sum(1 << b for b in INVALID_BITS)
+
+
+def fp_summary(v):
+    """FPSCR with VX and FEX recomputed (neither can be set directly)."""
+    vx = any(v >> b & 1 for b in INVALID_BITS)
+    v = (v & ~(1 << 29)) | (int(vx) << 29)
+    fex = any(v >> s & v >> e & 1 for s, e in ((29, 7), (28, 6), (27, 5), (26, 4), (25, 3)))
+    return (v & ~(1 << 30)) | (int(fex) << 30)
+
+
+# Instruction to (reference-model operation, single precision).
+FP_ORACLE = {"fadd": ("add", False), "fsub": ("sub", False), "fmul": ("mul", False),
+             "fdiv": ("div", False), "fmadd": ("madd", False), "fmsub": ("msub", False),
+             "fnmadd": ("nmadd", False), "fnmsub": ("nmsub", False), "frsp": ("frsp", False),
+             "fctiw": ("fctiw", False), "fctiwz": ("fctiwz", False)}
+FP_ORACLE.update({k + "s": (v[0], True) for k, v in list(FP_ORACLE.items())
+                  if k in ("fadd", "fsub", "fmul", "fdiv", "fmadd", "fmsub", "fnmadd", "fnmsub")})
+FP_A_XO = {"fdiv": 18, "fsub": 20, "fadd": 21, "fsel": 23, "fres": 24, "fmul": 25,
+           "frsqrte": 26, "fmsub": 28, "fmadd": 29, "fnmsub": 30, "fnmadd": 31}
+FP_X_XO = {"fcmpu": 0, "frsp": 12, "fctiw": 14, "fctiwz": 15, "fcmpo": 32, "mtfsb1": 38,
+           "fneg": 40, "mcrfs": 64, "mtfsb0": 70, "fmr": 72, "mtfsfi": 134, "fnabs": 136,
+           "fabs": 264, "mffs": 583, "mtfsf": 711}
+FP_MEM_D = {"lfs": 48, "lfsu": 49, "lfd": 50, "lfdu": 51, "stfs": 52, "stfsu": 53,
+            "stfd": 54, "stfdu": 55}
+FP_MEM_X = {"lfsx": 535, "lfsux": 567, "lfdx": 599, "lfdux": 631, "stfsx": 663,
+            "stfsux": 695, "stfdx": 727, "stfdux": 759, "stfiwx": 983}
+
+
+def fpi(m, t=0, a=0, b=0, c=0, d=0, w=0):
+    """An FP instruction with MSR[FP] set; m ends in '.' for the record form.
+    Fields: frD t, frA a, frB b, frC c; rA a, rB b or d for memory; w adds
+    raw fields (crfD, FM, IMM)."""
+    base, rc = m.rstrip("."), int(m.endswith("."))
+    if base in FP_MEM_D:
+        word = (FP_MEM_D[base] << 26) | (t << 21) | (a << 16) | (d & 0xFFFF)
+    elif base in FP_MEM_X:
+        word = (31 << 26) | (t << 21) | (a << 16) | (b << 11) | (FP_MEM_X[base] << 1)
+    elif base in FP_X_XO:
+        word = (63 << 26) | (t << 21) | (a << 16) | (b << 11) | (FP_X_XO[base] << 1) | rc
+    else:
+        single = base in FP_ORACLE and FP_ORACLE[base][1] or base == "fres"
+        xo = FP_A_XO[base[:-1] if single and base != "fres" else base]
+        word = ((59 if single else 63) << 26) | (t << 21) | (a << 16) | (b << 11) | (
+            c << 6) | (xo << 1) | rc
+    word |= w
+    return Insn(word, fp_text(m, word), m, fp=True, fpop=True, xform=base in FP_MEM_X)
+
+
+PINF, NINF, PZERO, NZERO = 0x7FF0000000000000, 0xFFF0000000000000, 0, 1 << 63
+QNAN, SNAN_BITS = 0x7FF8000000000000, 0x7FF4000000000000
+MAXD, MIND = 0x7FEFFFFFFFFFFFFF, 0x0010000000000000
+# FPSCR enables and rounding modes.
+VE, OE, UE, ZE, XE, NI = 0x80, 0x40, 0x20, 0x10, 0x08, 0x04
+
+
+def build_fp_unit(B):
+    """With an FPU: MSR[FP] set, results from the reference model."""
+    G = "FP"
+
+    def add(name, code, fpr, fpscr=0, msr=MSR_FPU, **gpr):
+        inp = {f"f{k}": v for k, v in fpr.items()}
+        inp.update(gpr)
+        if fpscr:
+            # Loaded with mtfsf, which recomputes VX and FEX.
+            inp["fpscr"] = fp_summary(fpscr)
+        B.add(G, name, code if isinstance(code, list) else [code], inp=inp, msr=msr, fpu=True)
+
+    def two(m, x, y, fpscr=0, name=None, msr=MSR_FPU):
+        """frD 1 = frA 2 op frB 4 (frC 5 for multiplies)."""
+        base = m.rstrip(".")
+        mul = base in ("fmul", "fmuls")
+        add(name or m, fpi(m, 1, 2, 0 if mul else 4, 5 if mul else 0),
+            {2: x, 5 if mul else 4: y}, fpscr, msr)
+
+    one = dbits(1.0)
+    # Arithmetic, double.
+    two("fadd", dbits(1.5), dbits(2.25))
+    for rn in range(4):
+        two("fadd", one, dbits(2.0 ** -60), rn, f"fadd rn{rn}")
+        two("fadd", dbits(-1.0), dbits(-(2.0 ** -60)), rn, f"fadd -rn{rn}")
+    two("fadd", PINF, NINF, name="fadd vxisi")
+    two("fadd", QNAN | 0x1234, one, name="fadd qnan")
+    two("fadd", SNAN_BITS, one, name="fadd snan")
+    two("fadd", MAXD, MAXD, name="fadd ox")
+    two("fadd", dbits(3.0), dbits(-3.0), name="fadd +0")
+    two("fadd", dbits(3.0), dbits(-3.0), 3, "fadd -0 rn3")
+    two("fsub", dbits(5.0), dbits(3.0))
+    two("fsub", one, dbits(2.0 ** -60), 1, "fsub rn1")
+    two("fsub", PINF, PINF, name="fsub vxisi")
+    two("fmul", dbits(3.0), dbits(7.0))
+    two("fmul", dbits(1 / 3), dbits(3.0), name="fmul inex")
+    two("fmul", PZERO, PINF, name="fmul vximz")
+    two("fmul", MIND, dbits(1 / 3), name="fmul ux")
+    two("fmul", MIND, dbits(0.5), name="fmul denorm")
+    two("fmul", MIND, dbits(1 / 3), NI, "fmul ni")
+    two("fdiv", dbits(6.0), dbits(2.0))
+    for rn in range(4):
+        two("fdiv", one, dbits(3.0), rn, f"fdiv rn{rn}")
+    two("fdiv", one, PZERO, name="fdiv zx")
+    two("fdiv", PZERO, PZERO, name="fdiv vxzdz")
+    two("fdiv", PINF, NINF, name="fdiv vxidi")
+    # Single.
+    two("fadds", sbits(1.5), sbits(2.25))
+    two("fadds", sbits(1.0), sbits(2.0 ** -30), name="fadds inex")
+    two("fadds", sbits(1.0), sbits(2.0 ** -30), 2, "fadds rn2")
+    two("fsubs", sbits(5.5), sbits(0.25))
+    two("fmuls", sbits(3.0), sbits(1 / 3), name="fmuls inex")
+    two("fmuls", sbits(3.0e38), sbits(4.0), name="fmuls ox")
+    two("fmuls", dbits(2.0 ** -126), sbits(1 / 3), name="fmuls ux")
+    two("fdivs", sbits(1.0), sbits(3.0))
+    two("fdivs", sbits(-1.0), PZERO, name="fdivs zx")
+    # Fused multiply-add: one rounding (a*c+b).
+    e = 2.0 ** -30
+    fused = {2: dbits(1 + e), 5: dbits(1 - e), 4: dbits(-1.0)}
+    for m in ("fmadd", "fmsub", "fnmadd", "fnmsub"):
+        add(m, fpi(m, 1, 2, 4, 5), fused)
+        add(m + "s", fpi(m + "s", 1, 2, 4, 5), {2: sbits(1.5), 5: sbits(2.5), 4: sbits(0.75)})
+    add("fmadd 1/3", fpi("fmadd", 1, 2, 4, 5), {2: dbits(1 / 3), 5: dbits(3.0), 4: dbits(-1.0)})
+    add("fmadd vximz", fpi("fmadd", 1, 2, 4, 5), {2: PINF, 5: PZERO, 4: one})
+    add("fmadd vxisi", fpi("fmadd", 1, 2, 4, 5), {2: PINF, 5: one, 4: NINF})
+    add("fmadds inex", fpi("fmadds", 1, 2, 4, 5),
+        {2: sbits(1 + 2.0 ** -20), 5: sbits(1 + 2.0 ** -20), 4: sbits(2.0 ** -22)})
+    # Conversions.
+    for rn in (0, 1, 2):
+        add(f"frsp rn{rn}", fpi("frsp", 1, 0, 4), {4: dbits(1 / 3)}, rn)
+    add("frsp ox", fpi("frsp", 1, 0, 4), {4: dbits(1e300)})
+    add("frsp denorm", fpi("frsp", 1, 0, 4), {4: dbits(1e-40)})
+    add("frsp snan", fpi("frsp", 1, 0, 4), {4: SNAN_BITS})
+    for m, x, rn in (("fctiw", 2.5, 0), ("fctiw", 2.5, 2), ("fctiw", -2.5, 0),
+                     ("fctiw", -2.5, 3), ("fctiwz", 2.7, 0), ("fctiwz", -2.7, 2),
+                     ("fctiw", 3e9, 0), ("fctiw", -3e9, 0), ("fctiw", 2147483647.4, 0)):
+        add(f"{m} {x:g}"[:12], fpi(m, 1, 0, 4), {4: dbits(x)}, rn)
+    add("fctiw snan", fpi("fctiw", 1, 0, 4), {4: SNAN_BITS})
+    add("fctiwz qnan", fpi("fctiwz", 1, 0, 4), {4: QNAN})
+    # Compares into several CR fields.
+    for m, x, y, crf in (("fcmpu", 1.0, 2.0, 0), ("fcmpu", 2.0, 1.0, 3), ("fcmpu", -0.0, 0.0, 7),
+                         ("fcmpo", 1.0, 2.0, 5)):
+        add(f"{m} cr{crf}", fpi(m, crf << 2, 2, 4), {2: dbits(x), 4: dbits(y)})
+    add("fcmpu qnan", fpi("fcmpu", 2 << 2, 2, 4), {2: QNAN, 4: one})
+    add("fcmpu snan", fpi("fcmpu", 2 << 2, 2, 4), {2: one, 4: SNAN_BITS})
+    add("fcmpo qnan", fpi("fcmpo", 6 << 2, 2, 4), {2: QNAN, 4: one})
+    add("fcmpo snan", fpi("fcmpo", 6 << 2, 2, 4), {2: SNAN_BITS, 4: one})
+    # Moves and select: bit copies, NaN payloads kept.
+    for m in ("fmr", "fneg", "fabs", "fnabs"):
+        add(m, fpi(m, 1, 0, 4), {4: dbits(-2.5)})
+        add(m + " nan", fpi(m, 1, 0, 4), {4: SNAN_BITS | 0x5A5})
+    for x, name in ((2.0, "ge"), (-2.0, "lt"), (-0.0, "-0")):
+        add(f"fsel {name}", fpi("fsel", 1, 2, 4, 5), {2: dbits(x), 4: dbits(7.0), 5: dbits(9.0)})
+    add("fsel nan", fpi("fsel", 1, 2, 4, 5), {2: QNAN, 4: dbits(7.0), 5: dbits(9.0)})
+    # Estimates with exact results.
+    for m, x, name in (("fres", PINF, "inf"), ("fres", NZERO, "-0"), ("fres", SNAN_BITS, "snan"),
+                       ("frsqrte", PZERO, "+0"), ("frsqrte", PINF, "inf"),
+                       ("frsqrte", dbits(-1.0), "-1"), ("frsqrte", NZERO, "-0")):
+        add(f"{m} {name}", fpi(m, 1, 0, 4), {4: x})
+    # FPSCR instructions.
+    fx_ox = (1 << 31) | (1 << 28)
+    add("mffs", fpi("mffs", 1), {}, fx_ox | ZE | 2)
+    add("mtfsf ff", fpi("mtfsf", 0, 0, 4, w=0xFF << 17), {4: 0x000000008000078B})
+    add("mtfsf 01", fpi("mtfsf", 0, 0, 4, w=0x01 << 17), {4: 0xFFFFFFFF00000003}, VE)
+    add("mtfsf 80", fpi("mtfsf", 0, 0, 4, w=0x80 << 17), {4: 0x0000000090000000})
+    add("mtfsfi 7", fpi("mtfsfi", 7 << 2, w=3 << 12), {}, VE)
+    add("mtfsfi 6", fpi("mtfsfi", 6 << 2, w=8 << 12), {})
+    add("mtfsb1 rn", fpi("mtfsb1", 31), {})
+    add("mtfsb1 ox", fpi("mtfsb1", 3), {})
+    add("mtfsb0 ze", fpi("mtfsb0", 27), {}, ZE | VE)
+    add("mtfsb0 fex", fpi("mtfsb0", 1), {}, fx_ox | OE | (1 << 30))
+    add("mcrfs 1", fpi("mcrfs", 3 << 2, 1 << 2), {}, fx_ox | (1 << 26))
+    add("mcrfs 7", fpi("mcrfs", 0, 7 << 2), {}, fx_ox | XE | 1)
+    # Record forms: CR1 from FX, FEX, VX, OX.
+    two("fadd.", dbits(1.5), dbits(2.25))
+    two("fadd.", MAXD, MAXD, name="fadd. ox")
+    two("fsub.", PINF, PINF, name="fsub. vxisi")
+    two("fmuls.", sbits(3.0), sbits(5.0))
+    two("fdiv.", one, PZERO, name="fdiv. zx")
+    add("fmadd.", fpi("fmadd.", 1, 2, 4, 5), fused)
+    add("fctiw.", fpi("fctiw.", 1, 0, 4), {4: dbits(3e9)})
+    add("frsp.", fpi("frsp.", 1, 0, 4), {4: dbits(1 / 3)})
+    add("fmr.", fpi("fmr.", 1, 0, 4), {4: dbits(-2.5)}, fx_ox)
+    add("fneg.", fpi("fneg.", 1, 0, 4), {4: one}, 1 << 31)
+    add("fsel.", fpi("fsel.", 1, 2, 4, 5), {2: one, 4: dbits(7.0), 5: dbits(9.0)})
+    add("fres.", fpi("fres.", 1, 0, 4), {4: PZERO})
+    add("mffs.", fpi("mffs.", 1), {}, fx_ox)
+    add("mtfsf.", fpi("mtfsf.", 0, 0, 4, w=0x80 << 17), {4: 0x0000000090000000})
+    add("mtfsfi.", fpi("mtfsfi.", 7 << 2, w=1 << 12), {})
+    add("mtfsb1.", fpi("mtfsb1.", 3), {})
+    add("mtfsb0.", fpi("mtfsb0.", 0), {}, fx_ox)
+    # Enabled exceptions (FE0 = FE1 = 1): program 0x700, SRR1 bit 11.
+    fe = MSR_FPU | MSR_FE0 | MSR_FE1
+    two("fadd", PINF, NINF, VE, "fe ve fadd", fe)
+    two("fadd.", PINF, NINF, VE, "fe ve fadd.", fe)
+    two("fadd", SNAN_BITS, one, VE, "fe ve snan", fe)
+    two("fdiv", one, PZERO, ZE, "fe ze fdiv", fe)
+    two("fmul", MAXD, dbits(4.0), OE, "fe oe fmul", fe)
+    two("fmul", MIND, dbits(1 / 3), UE, "fe ue fmul", fe)
+    two("fmuls", sbits(3.0e38), sbits(4.0), OE, "fe oe fmuls", fe)
+    two("fadd", one, dbits(2.0 ** -60), XE, "fe xe fadd", fe)
+    add("fe ve fcmpo", fpi("fcmpo", 1 << 2, 2, 4), {2: QNAN, 4: one}, VE, fe)
+    add("fe ve fctiw", fpi("fctiw", 1, 0, 4), {4: dbits(3e9)}, VE, fe)
+    add("fe ze fres", fpi("fres", 1, 0, 4), {4: PZERO}, ZE, fe)
+    add("fe mtfsb1", fpi("mtfsb1", 24), {}, 1 << 31 | 1 << 10, fe)
+    two("fadd", PINF, NINF, VE, "ve no fe")
+    two("fadd", PINF, NINF, 0, "fe no ve", fe)
+    # Loads and stores: rA 3 = buffer, rB 6; values placed with stw.
+    buf = {"r3": BUF}
+
+    def mem(name, code, fpr=None, **gpr):
+        add(name, code, fpr or {}, 0, MSR_FPU, **{**buf, **gpr})
+
+    for m, x in (("lfs", 0x3FC00000), ("lfs", 0x00000001), ("lfs", 0x7FA00000),
+                 ("lfs", 0x80000000), ("lfs", 0xFF800000)):
+        mem(f"lfs {x:08x}"[:12], [ldst("stw", 7, 8, 3), fpi(m, 1, 3, d=8)], r7=x)
+    mem("lfsu", [ldst("stw", 7, 16, 3), fpi("lfsu", 1, 3, d=16)], r7=0x40490FDB)
+    mem("lfsx", [ldst("stw", 7, 24, 3), fpi("lfsx", 1, 3, 6)], r6=24, r7=0xC0490FDB)
+    mem("lfsux", [ldst("stw", 7, 32, 3), fpi("lfsux", 1, 3, 6)], r6=32, r7=0x3EAAAAAB)
+    mem("lfd", fpi("lfd", 1, 3, d=8))
+    mem("lfdu", fpi("lfdu", 1, 3, d=40))
+    mem("lfdx", fpi("lfdx", 1, 3, 6), r6=48)
+    mem("lfdux", fpi("lfdux", 1, 3, 6), r6=56)
+    mem("lfd wordal", fpi("lfd", 1, 3, d=12))
+    for name, x in (("stfs", dbits(1.5)), ("stfs denorm", dbits(2.0 ** -140)),
+                    ("stfs snan", SNAN_BITS), ("stfs -denorm", dbits(-(2.0 ** -127)))):
+        mem(name, fpi("stfs", 1, 3, d=8), {1: x})
+    mem("stfsu", fpi("stfsu", 1, 3, d=16), {1: sbits(0.1)})
+    mem("stfsx", fpi("stfsx", 1, 3, 6), {1: sbits(-0.1)}, r6=20)
+    mem("stfsux", fpi("stfsux", 1, 3, 6), {1: sbits(7.0)}, r6=28)
+    mem("stfd", fpi("stfd", 1, 3, d=8), {1: dbits(1 / 3)})
+    mem("stfdu", fpi("stfdu", 1, 3, d=40), {1: SNAN_BITS | 0x123})
+    mem("stfdx", fpi("stfdx", 1, 3, 6), {1: NZERO}, r6=48)
+    mem("stfdux", fpi("stfdux", 1, 3, 6), {1: MIND}, r6=56)
+    mem("stfiwx", fpi("stfiwx", 1, 3, 6), {1: 0x123456789ABCDEF0}, r6=64)
+    mem("lfd align", fpi("lfd", 1, 3, d=10))
+    mem("stfs align", fpi("stfs", 1, 3, d=5), {1: one})
+    mem("lfsx align", fpi("lfsx", 1, 3, 6), r6=2)
+    mem("stfdux alig", fpi("stfdux", 1, 3, 6), {1: one}, r6=6)
+    add("lfd user", fpi("lfd", 1, 3, d=8), {}, 0, MSR_USER | MSR_FP, r3=BUF)
+    # FP load to FP store round trip through an FPR.
+    mem("lfd stfd", [fpi("lfd", 7, 3, d=16), fpi("stfd", 7, 3, d=64)])
+
+
 def build_fp(B, isa):
-    """Without an FPU every FP instruction takes FP unavailable (UM 4.5.8)."""
+    """Without an FPU every FP instruction takes FP unavailable (UM 4.5.8).
+    These cases run with or without an FPU: MSR[FP] is clear."""
     G = "FP"
     isa_name = VARIANTS[B.variant]["isa"]
     for m, w, var in fp_insns(isa):
@@ -1311,8 +1749,8 @@ def build_fp(B, isa):
     for m, v in [("fadd.", 0xFC00002B), ("fmr.", 0xFC000091)]:
         w = fp_word(m, v)
         B.add(G, m, raw(m, w, fp_text(m, w), fp=True), inp={"r3": BUF})
-    # Hook: with an FPU (ST_HAVE_FPU), cases with MSR[FP] set and computed
-    # results belong here.
+    if B.variant == "603e":
+        build_fp_unit(B)
 
 
 # ---- evaluation and output ----------------------------------------------------
@@ -1324,7 +1762,9 @@ def reg_index(k):
 def evaluate(machine, case, isa):
     st = default_state()
     for k, v in case.inp.items():
-        if k.startswith("r"):
+        if re.fullmatch(r"f\d+", k):
+            st["fpr"][int(k[1:])] = v
+        elif k.startswith("r"):
             st["gpr"][int(k[1:])] = v
         else:
             st[k] = v
@@ -1505,7 +1945,7 @@ def main():
         text = "; ".join(t for t in lines)
         g = GROUPS.index(case.group)
         cases_c.append(f"  {{{c_str(case.name[:12])}, {c_str(text[:60])}, st_case_{n}, {g}, "
-                       f"{len(words)}, {in_first}, {in_n}, {ex_first}, {ex_n}}},")
+                       f"{len(words)}, {int(case.fpu)}, {in_first}, {in_n}, {ex_first}, {ex_n}}},")
     (out / "cases.S").write_text("\n".join(asm) + "\n    .section .note.GNU-stack,\"\",@progbits\n")
     (out / "check.S").write_text("\n".join(chk) + "\n")
     hdr = [f"/* Generated by gen.py for the {variant}. */",
@@ -1522,7 +1962,7 @@ def main():
     hdr.append("};")
     hdr += [f"void st_case_{n}(void);" for n in range(len(B.cases))]
     hdr.append("static const struct st_kv st_kv[] = {")
-    hdr += [f"  {{0x{f:02x}, 0x{v:08x}, 0x{m:08x}}}," for f, v, m in kv]
+    hdr += [f"  {{0x{f:03x}, 0x{v:08x}, 0x{m:08x}}}," for f, v, m in kv]
     hdr.append("};")
     hdr.append("static const struct st_case st_cases[ST_NCASES] = {")
     hdr += cases_c
@@ -1534,12 +1974,13 @@ def main():
             i0, i_n, e0, e_n = meta[n]
             print(cases_c[n])
             for f, v, m in kv[int(i0):int(i0) + int(i_n)]:
-                print(f"  in  {FIELD_NAMES[f & 0x7f]:6} {v:08x}{' rel' if f & REL else ''}")
+                print(f"  in  {FIELD_NAMES[f & 0xff]:6} {v:08x}{' rel' if f & REL else ''}")
             for f, v, m in kv[int(e0):int(e0) + int(e_n)]:
-                print(f"  exp {FIELD_NAMES[f & 0x7f]:6} {v:08x} mask {m:08x}"
+                print(f"  exp {FIELD_NAMES[f & 0xff]:6} {v:08x} mask {m:08x}"
                       f"{' rel' if f & REL else ''}")
     counts = {g: sum(1 for c in B.cases if c.group == g) for g in GROUPS}
-    print(f"{variant}: {len(B.cases)} cases " + " ".join(f"{g} {n}" for g, n in counts.items()))
+    print(f"{variant}: {len(B.cases)} cases ({sum(c.fpu for c in B.cases)} need the FPU) " +
+          " ".join(f"{g} {n}" for g, n in counts.items()))
 
 
 if __name__ == "__main__":

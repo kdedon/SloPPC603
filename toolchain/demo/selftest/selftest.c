@@ -5,7 +5,8 @@
  * of cells. With an input device present, it waits on each page: arrows
  * select a cell, whose details show below the grid; A or Enter turns the
  * page, B or Esc turns back. Without one, it draws every page in turn and
- * exits with the number of failed cases. */
+ * exits with the number of failed cases. Cases that need an FPU run only
+ * when the MODE register reports one. */
 #include "soc.h"
 #include "selftest.h"
 #include "cases.h"
@@ -21,9 +22,15 @@
 #define NAME_W 8
 #define DETAIL_ROWS 8
 
-static uint32_t in_st[ST_NFIELDS], exp_st[ST_NFIELDS], mask_st[ST_NFIELDS], act_st[ST_NFIELDS];
-static uint8_t result[ST_NCASES];  /* differing fields, 255 at most */
-static int grid_cols, grid_rows, per_page, pages;
+static uint32_t in_st[ST_NFIELDS] __attribute__((aligned(8)));
+static uint32_t act_st[ST_NFIELDS] __attribute__((aligned(8)));
+static uint32_t exp_st[ST_NFIELDS], mask_st[ST_NFIELDS];
+uint32_t st_fp;
+/* The cases this processor runs, and per case the differing fields (255
+ * at most); both by position in that list. */
+static uint16_t idx[ST_NCASES];
+static uint8_t result[ST_NCASES];
+static int ncases, grid_cols, grid_rows, per_page, pages;
 
 static void st_init(void)
 {
@@ -57,7 +64,7 @@ static int run_case(int n)
   for (int f = 0; f < ST_NFIELDS; f++) in_st[f] = st_default[f];
   for (int k = 0; k < c->in_n; k++) {
     const struct st_kv *kv = &st_kv[c->in_first + k];
-    in_st[kv->field & 0x7f] = kv->value + (kv->field & ST_REL ? base : 0);
+    in_st[kv->field & ST_FIELD] = kv->value + (kv->field & ST_REL ? base : 0);
   }
   for (int f = 0; f < ST_NFIELDS; f++) {
     exp_st[f] = in_st[f];
@@ -66,8 +73,8 @@ static int run_case(int n)
   exp_st[F_VEC] = exp_st[F_SRR0] = exp_st[F_SRR1] = 0;
   for (int k = 0; k < c->ex_n; k++) {
     const struct st_kv *kv = &st_kv[c->ex_first + k];
-    exp_st[kv->field & 0x7f] = kv->value + (kv->field & ST_REL ? base : 0);
-    mask_st[kv->field & 0x7f] = kv->mask;
+    exp_st[kv->field & ST_FIELD] = kv->value + (kv->field & ST_REL ? base : 0);
+    mask_st[kv->field & ST_FIELD] = kv->mask;
   }
   for (int i = 0; i < ST_BUF_WORDS; i++) ST_BUF[i] = in_st[F_BUF + i];
   st_enter(in_st, act_st, c->code);
@@ -77,6 +84,9 @@ static int run_case(int n)
     act_st[F_VEC] = act_st[F_SRR0] = act_st[F_SRR1] = 0;
   }
   for (int i = 0; i < ST_BUF_WORDS; i++) act_st[F_BUF + i] = ST_BUF[i];
+  /* Without an FPU the runner leaves the FP state alone. */
+  if (!st_fp)
+    for (int f = F_FPR; f <= F_FPSCR; f++) act_st[f] = in_st[f];
   int bad = 0;
   for (int f = 0; f < ST_NFIELDS; f++)
     if ((act_st[f] ^ exp_st[f]) & mask_st[f]) bad++;
@@ -91,7 +101,8 @@ static void diff_classes(char *out, int size)
   static const struct { const char *name; int first, last; } cls[] = {
     {"GPR", 0, 31}, {"CR", F_CR, F_CR}, {"XER", F_XER, F_XER}, {"LR", F_LR, F_LR},
     {"CTR", F_CTR, F_CTR}, {"VEC", F_VEC, F_VEC}, {"SRR", F_SRR0, F_SRR1},
-    {"MSR", F_MSR, F_MSR}, {"DAR", F_DAR, F_DSISR}, {"MEM", F_BUF, ST_NFIELDS - 1}};
+    {"MSR", F_MSR, F_MSR}, {"DAR", F_DAR, F_DSISR}, {"MEM", F_BUF, F_FPR - 1},
+    {"FPR", F_FPR, F_FPSCR - 1}, {"FPSCR", F_FPSCR, F_FPSCR}};
   int len = 0;
   out[0] = 0;
   for (unsigned i = 0; i < sizeof cls / sizeof cls[0]; i++)
@@ -157,39 +168,40 @@ static void cell_pos(int n, int *col, int *row)
   *row = 2 + k / grid_cols;
 }
 
-static void draw_cell(int n, int selected)
+static void draw_cell(int s, int selected)
 {
   char name[NAME_W + 1];
   int col, row;
-  cell_pos(n, &col, &row);
+  cell_pos(s, &col, &row);
   uint8_t bg = selected ? 1 : 0;
-  fit(name, st_cases[n].name, NAME_W);
-  put_glyph(col, row, result[n] ? glyph_fail : glyph_pass, result[n] ? 12 : 10, bg);
-  con_color(result[n] ? 15 : 7, bg);
+  fit(name, st_cases[idx[s]].name, NAME_W);
+  put_glyph(col, row, result[s] ? glyph_fail : glyph_pass, result[s] ? 12 : 10, bg);
+  con_color(result[s] ? 15 : 7, bg);
   con_goto(col + 1, row);
   con_puts(name);
 }
 
-static void draw_details(int n)
+static void draw_details(int s)
 {
+  int n = idx[s];
   const struct st_case *c = &st_cases[n];
   int top = con_rows - 1 - DETAIL_ROWS;
   char line[256], cls[64];
   fb_rect(0, top * con_cell, fb_width, DETAIL_ROWS * con_cell, 0);
   snprintf(line, sizeof line, "#%d %s  %s  %s", n, st_group_name[c->group], c->name,
-           result[n] ? "FAIL" : "pass");
-  put_text(0, top, result[n] ? 12 : 10, 0, line);
+           result[s] ? "FAIL" : "pass");
+  put_text(0, top, result[s] ? 12 : 10, 0, line);
   put_text(0, top + 1, 15, 0, c->text);
   /* Operands: the case's inputs. */
   int len = snprintf(line, sizeof line, "in");
   for (int k = 0; k < c->in_n && len < (int)sizeof line - 24; k++) {
     const struct st_kv *kv = &st_kv[c->in_first + k];
     len += snprintf(line + len, sizeof line - (size_t)len, " %s=%lx%s",
-                    st_field_name[kv->field & 0x7f], (unsigned long)kv->value,
+                    st_field_name[kv->field & ST_FIELD], (unsigned long)kv->value,
                     kv->field & ST_REL ? "+pc" : "");
   }
   put_text(0, top + 2, 7, 0, line);
-  if (!result[n]) return;
+  if (!result[s]) return;
   run_case(n);
   diff_classes(cls, sizeof cls);
   snprintf(line, sizeof line, "differ: %s", cls);
@@ -197,8 +209,8 @@ static void draw_details(int n)
   int row = top + 4, shown = 0;
   for (int f = 0; f < ST_NFIELDS; f++) {
     if (!differs(f)) continue;
-    if (row == con_rows - 2 && result[n] - shown > 1) {
-      snprintf(line, sizeof line, "+%d more", result[n] - shown);
+    if (row == con_rows - 2 && result[s] - shown > 1) {
+      snprintf(line, sizeof line, "+%d more", result[s] - shown);
       put_text(0, row, 7, 0, line);
       break;
     }
@@ -214,16 +226,16 @@ static void draw_page(int page, int failed_total, uint32_t pvr)
 {
   char line[128];
   int first = page * per_page, last = first + per_page;
-  if (last > ST_NCASES) last = ST_NCASES;
+  if (last > ncases) last = ncases;
   int bad = 0;
-  for (int n = first; n < last; n++) bad += result[n] != 0;
+  for (int s = first; s < last; s++) bad += result[s] != 0;
   fb_clear(0);
   snprintf(line, sizeof line, "PPC self-test %s PVR %08lx", ST_VARIANT, (unsigned long)pvr);
   put_text(0, 0, 15, 0, line);
-  snprintf(line, sizeof line, "all %d/%d pass  page %d/%d pass", ST_NCASES - failed_total,
-           ST_NCASES, last - first - bad, last - first);
+  snprintf(line, sizeof line, "all %d/%d pass  page %d/%d pass", ncases - failed_total,
+           ncases, last - first - bad, last - first);
   put_text(0, 1, failed_total ? 12 : 10, 0, line);
-  for (int n = first; n < last; n++) draw_cell(n, 0);
+  for (int s = first; s < last; s++) draw_cell(s, 0);
   snprintf(line, sizeof line, "page %d/%d - press A or Enter", page + 1, pages);
   put_text(0, con_rows - 1, 14, 0, line);
 }
@@ -243,10 +255,10 @@ static void interactive(int failed_total, uint32_t pvr)
   int page = 0, sel = 0;
   uint32_t held = SOC_INPUT & 0x3f;
   /* Start at the first failure. */
-  for (int n = 0; n < ST_NCASES; n++)
-    if (result[n]) { page = n / per_page; sel = n; break; }
+  for (int s = 0; s < ncases; s++)
+    if (result[s]) { page = s / per_page; sel = s; break; }
   for (;;) {
-    int first = page * per_page, count = ST_NCASES - first;
+    int first = page * per_page, count = ncases - first;
     if (count > per_page) count = per_page;
     if (sel < first || sel >= first + count) sel = first;
     draw_page(page, failed_total, pvr);
@@ -275,23 +287,27 @@ int main(void)
   int group_pass[ST_NGROUPS] = {0}, group_all[ST_NGROUPS] = {0}, failed = 0;
   uint32_t pvr;
   __asm__ volatile("mfspr %0,287" : "=r"(pvr));
+  st_fp = (SOC_MODE & SOC_MODE_FPU) != 0;
   st_init();
-  for (int n = ST_FIRST; n < ST_NCASES; n++) {
+  for (int n = ST_FIRST; n < ST_NCASES; n++)
+    if (st_fp || !st_cases[n].fpu) idx[ncases++] = (uint16_t)n;
+  for (int s = 0; s < ncases; s++) {
+    int n = idx[s];
 #ifdef ST_PROGRESS
     printf("case %d\n", n);
 #endif
     int bad = run_case(n);
-    result[n] = (uint8_t)(bad > 255 ? 255 : bad);
+    result[s] = (uint8_t)(bad > 255 ? 255 : bad);
     group_all[st_cases[n].group]++;
     if (bad) failed++;
     else group_pass[st_cases[n].group]++;
   }
-  printf("selftest %s PVR %08lx: %d cases, %d pass, %d fail\n", ST_VARIANT,
-         (unsigned long)pvr, ST_NCASES, ST_NCASES - failed, failed);
+  printf("selftest %s PVR %08lx %s: %d cases, %d pass, %d fail\n", ST_VARIANT,
+         (unsigned long)pvr, st_fp ? "FPU" : "no FPU", ncases, ncases - failed, failed);
   for (int g = 0; g < ST_NGROUPS; g++)
     printf("  %-7s %d/%d\n", st_group_name[g], group_pass[g], group_all[g]);
-  for (int n = 0; n < ST_NCASES; n++)
-    if (result[n]) report_failure(n);
+  for (int s = 0; s < ncases; s++)
+    if (result[s]) report_failure(idx[s]);
 
   fb_init();
   fb_palette_default();
@@ -301,7 +317,7 @@ int main(void)
   grid_cols = con_cols / CELL_W;
   grid_rows = con_rows - 3 - DETAIL_ROWS;
   per_page = grid_cols * grid_rows;
-  pages = (ST_NCASES + per_page - 1) / per_page;
+  pages = (ncases + per_page - 1) / per_page;
   if (SOC_INPUT & SOC_IN_PRESENT) {
     SOC_EXIT = (uint32_t)failed;
     interactive(failed, pvr);
