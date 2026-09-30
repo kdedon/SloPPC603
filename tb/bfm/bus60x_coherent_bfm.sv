@@ -97,6 +97,8 @@ module bus60x_coherent_bfm #(
   int teas = 0, data_tenures = 0;
   // Data-side processor tenures by kind.
   int n_read_burst = 0, n_read_single = 0, n_write_burst = 0, n_write_single = 0;
+  // Single-beat eight-byte transfers (TSIZ 000, TBST negated).
+  int n_read_dword = 0, n_write_dword = 0;
   int n_addr_only = 0, n_push = 0, n_errors = 0;
   int tt_count [0:31];
   int om_tenures = 0, om_retried = 0, om_artry_cycles = 0;
@@ -288,9 +290,15 @@ module bus60x_coherent_bfm #(
       end
       if (!instr) case (kind)
         K_READ_BURST: n_read_burst++;
-        K_READ_SINGLE: n_read_single++;
+        K_READ_SINGLE: begin
+          n_read_single++;
+          if (tsiz == 3'b000) n_read_dword++;
+        end
         K_WRITE_BURST: n_write_burst++;
-        K_WRITE_SINGLE: n_write_single++;
+        K_WRITE_SINGLE: begin
+          n_write_single++;
+          if (tsiz == 3'b000) n_write_dword++;
+        end
         default: n_addr_only++;
       endcase
     end

@@ -5,7 +5,8 @@
 // RAM, and boots from the hard reset vector. The target retries, replaces read beats and waits at random.
 // Options: +IRQ_ACK=<addr> asserts INT until that word changes, seen through
 // global reads by the second master (the data cache may hold the store);
-// +TEA_BASE/+TEA_END end tenures in that window with TEA. Passes when the
+// +TEA_BASE/+TEA_END end tenures in that window with TEA; +MIN_DWORDS=<n>
+// requires n eight-byte single-beat reads and writes. Passes when the
 // firmware writes 1 to +TOHOST with no checkstop.
 /* verilator lint_off BLKSEQ */
 module tb_chip_firmware #(parameter int PLL = -1);
@@ -19,7 +20,7 @@ module tb_chip_firmware #(parameter int PLL = -1);
   logic [7:0] image [0:IMAGE_BYTES-1];
   logic [31:0] tohost, irq_ack = '0, tea_base = '0, tea_end = '0;
   int unsigned rng = 32'h603e_c41f;
-  int cycles = 0, writes = 0, irqs = 0, next_irq = 400, ack_polls = 0;
+  int cycles = 0, writes = 0, irqs = 0, next_irq = 400, ack_polls = 0, min_dwords = 0;
   logic [31:0] ack_seen = '0;
   logic done = 1'b0;
   logic unused_write_address;
@@ -86,6 +87,7 @@ module tb_chip_firmware #(parameter int PLL = -1);
     void'($value$plusargs("IRQ_ACK=%h", irq_ack));
     void'($value$plusargs("TEA_BASE=%h", tea_base));
     void'($value$plusargs("TEA_END=%h", tea_end));
+    void'($value$plusargs("MIN_DWORDS=%d", min_dwords));
     foreach (image[i]) image[i] = 8'h00;
     $readmemh(image_path, image, 0, IMAGE_BYTES - 1);
     for (int i = 0; i < IMAGE_BYTES; i++) memory.mem[i] = image[i];
@@ -96,9 +98,13 @@ module tb_chip_firmware #(parameter int PLL = -1);
     hreset_n = 1'b1;
     wait (done);
     repeat (20) @(posedge clk);
-    $display("PASS chip firmware: cycles=%0d writes=%0d irqs=%0d ack_polls=%0d tenures=%0d retries=%0d drtries=%0d teas=%0d read_bursts=%0d write_bursts=%0d snoop_retries=%0d pushes=%0d",
+    if (memory.n_read_dword < min_dwords || memory.n_write_dword < min_dwords)
+      $fatal(1, "expected at least %0d eight-byte single-beat reads and writes, saw %0d and %0d",
+             min_dwords, memory.n_read_dword, memory.n_write_dword);
+    $display("PASS chip firmware: cycles=%0d writes=%0d irqs=%0d ack_polls=%0d tenures=%0d retries=%0d drtries=%0d teas=%0d read_bursts=%0d write_bursts=%0d dword_reads=%0d dword_writes=%0d snoop_retries=%0d pushes=%0d",
       cycles, writes, irqs, ack_polls, memory.tenures, memory.retries, memory.drtries, memory.teas,
-      memory.n_read_burst, memory.n_write_burst, memory.om_retried, memory.n_push);
+      memory.n_read_burst, memory.n_write_burst, memory.n_read_dword, memory.n_write_dword,
+      memory.om_retried, memory.n_push);
     $finish;
   end
 endmodule

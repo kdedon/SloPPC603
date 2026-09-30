@@ -281,6 +281,26 @@ def tlb_miss(p):
     p.clear_fpscr()
 
 
+def uncached_doublewords(p):
+    """With HID0[DCE] clear, an lfd and an stfd are single-beat 8-byte bus
+    tenures. Each uses its own line, which the cache never holds."""
+    value = 0x400921fb54442d18
+    p.data_next = (p.data_next + 31) & ~31
+    src = p.data(value, 0, 0, 0)
+    p.res_next = (p.res_next + 31) & ~31
+    dst = p.result_slot(8)
+    p.li32(5, src)
+    p.li32(6, dst)
+    p.emit(x_form(31, 7, 1008 & 31, 1008 >> 5, 339))   # mfspr r7, HID0
+    p.emit(d_form(26, 7, 8, 0x4000))                   # xori r8, r7, DCE
+    p.emit(x_form(31, 8, 1008 & 31, 1008 >> 5, 467))   # mtspr HID0, r8
+    p.emit(d_form(50, 24, 5, 0))                       # lfd f24, 0(r5)
+    p.emit(d_form(54, 24, 6, 0))                       # stfd f24, 0(r6)
+    p.emit(x_form(31, 7, 1008 & 31, 1008 >> 5, 467))   # mtspr HID0, r7
+    p.expect(dst, value >> 32)
+    p.expect(dst + 4, value & 0xffffffff)
+
+
 def dsisr_d(insn):
     return (((insn >> 26) & 1) << 14) | (((insn >> 27) & 0xf) << 10) | \
         (((insn >> 21) & 31) << 5) | ((insn >> 16) & 31)
@@ -736,6 +756,7 @@ def build(seed, count):
     if CHIP:
         miss_handlers(p)
         tlb_miss(p)
+        uncached_doublewords(p)
     latency(p)
     if not CHIP:
         p.emit(d_form(36, 0, 30, 0))      # stw r0 to DONE ends the run
