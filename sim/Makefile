@@ -421,8 +421,9 @@ test-execution:
 	./$(BUILD_DIR)/execution/Vtb_execution $(SIM_ARGS)
 test-stage:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_stage_timing --Mdir $(BUILD_DIR)/stage $(RTL) ../tb/tb_stage_timing.sv
-	./$(BUILD_DIR)/stage/Vtb_stage_timing $(SIM_ARGS) +TRACE=$(BUILD_DIR)/stage/trace.jsonl
+	./$(BUILD_DIR)/stage/Vtb_stage_timing $(SIM_ARGS) +TRACE=$(BUILD_DIR)/stage/trace.jsonl +DISPATCH_TRACE=$(BUILD_DIR)/stage/events.txt
 	python3 tools/check_stage_timing.py $(BUILD_DIR)/stage/trace.jsonl
+	python3 tools/check_dispatch_trace.py $(BUILD_DIR)/stage/events.txt spec/schedules/stage.txt --stage $(BUILD_DIR)/stage/trace.jsonl
 check-spec:
 	python3 spec/check_timing.py
 	python3 spec/check_bus.py

@@ -1146,6 +1146,31 @@ module ppc_core #(
       assert (iq_miss_valid_q)
         else $error("dispatched fetch page miss without its captured context");
   end
+  // Dispatch/retire event trace, enabled by +DISPATCH_TRACE=<path>. One line
+  // per cycle with an event: "<cycle> D<count> R<count> <dispatch pcs> |
+  // <retire pcs>", cycle 0 being the first edge out of reset.
+  int event_fd = 0;
+  int event_cycle = 0;
+  initial begin
+    string event_path;
+    if ($value$plusargs("DISPATCH_TRACE=%s", event_path)) begin
+      event_fd = $fopen(event_path, "w");
+      if (event_fd == 0) $fatal(1, "cannot open %s", event_path);
+    end
+  end
+  always @(posedge clk_i) begin
+    logic retire_fire;
+    retire_fire = retire_valid_o && retire_ready_i;
+    if (!rst_ni) event_cycle <= 0;
+    else begin
+      event_cycle <= event_cycle + 1;
+      if ((event_fd != 0) && (dispatch || retire_fire))
+        $fwrite(event_fd, "%0d D%0d R%0d%s |%s\n", event_cycle, dispatch,
+                retire_fire, dispatch ? $sformatf(" %08x", iq_head.pc) : "",
+                retire_fire ? $sformatf(" %08x", retire_o.pc) : "");
+    end
+  end
+  final if (event_fd != 0) $fclose(event_fd);
   // synthesis translate_on
   // Completion masks every write permission of a diagnostic allocation.
   always_comb begin
