@@ -520,6 +520,30 @@ The 603 still fails elaboration of the core, and the 602 that of the
 `ppc603e` top; their SPR presence, SRR1[KEY] and PLL tables are checked at
 unit level (`tb_variant_config`, `tb_exception_tlb_miss`).
 
+Recorded: `make -C sim -j2 lint check-spec test-chip-pins test-chip602-pins variant-watchdog-602 variant-special-lint-602 variant-icache-602 variant-matrix`, commit 2a0a987 plus the chip602 project (cc2c29c) and documentation, 2026-09-30.
+Pass (V11), focused benches only (`regression`, firmware not run).
+`tb_chip602_pins`: 64 checks, 5504 cycles. Boot from the hard reset vector
+through the pins in 64- and 32-bit data modes, with and without waits and a
+10% retry rate (52, 128, 180 and 256 data beats; 4 and 5 retries); byte,
+half-word, word and misaligned word stores and loads; the first fetch is a
+burst RWITM with TC 10. A castout carries TC 01 and PFADDR 0x1ffe14 (the
+fill's A0–A20) in both modes, and its fill follows; a second master's global
+RWITM of a modified line is retried once and then returns the pushed store;
+INT, SRESET (SRR0 in the loop), TEA on a load and on a posted store (two
+machine checks); the watchdog asserts RESETO with 0x1500 masked, HRESET
+releases RESETO. `test-chip-pins` (603e top, shared `pin_status_t`): 1352
+checks. Not shown: 2:1 and 3:1 bus ratios, compiled firmware on the 602 top.
+
+Recorded: `flock /tmp/ppc603e-quartus.lock ./quartus/chip602/build.sh --docker`, commit 3466a9f, 2026-09-30.
+Fit passes: 10,356 ALMs (25%), 12,904 registers, 28 RAM blocks (69,952
+bits), 4 DSP blocks, 172 virtual pins and no physical I/O. Timing at the
+20 ns gate is met: worst setup slack 2.512 ns (slow 1100 mV 100 °C;
+57.18 MHz), hold 0.118 ns. The critical path is the 602 multiply's
+issue-edge product: `ppc_iu` `held.ctrl.op` to `multiply_acc`, 2.710 ns slack
+at slow 85 °C (a `quartus_sta` query of the same fit), so the 602 build does
+not reach 66 MHz without moving that product off the issue edge. A seed and
+effort sweep was not run.
+
 Recorded: `make -C sim -j2 lint check-spec variant-lint-0 variant-lint-1 variant-lint-2 variant-reject-3 variant-reject-4 variant-divider-0 variant-divider-4 variant-full-decode-0 variant-full-decode-1 variant-full-decode-2 variant-full-decode-4 variant-multiply-timing-0 variant-multiply-timing-4 variant-icache-602 variant-special-lint-602 test-multiply-timing test-core-multiply-timing test-multiply-execution test-multiply-high-execution test-core-multiply test-core-multiply-high test-core-bat-cached-bus60x test-core-cache-control test-core-bat-cached-bus60x-cacheops`, commit a886653, 2026-09-29.
 Pass (V10), focused benches only (`regression`, firmware and fits not run).
 `tb_core_602` (602 core on the cached 60x wrapper with
