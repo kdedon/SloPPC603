@@ -182,6 +182,11 @@ module ppc_fpu #(
     logic reply;
     logic [31:0] prefix;
     logic fctiwz;
+    // fpr_value holds the stored value; an arriving value replaces it
+    // after the bus pick.
+    logic rsp_value;
+    logic load_value;
+    logic load_single;
   } forward_candidate_t;
   typedef struct packed {
     logic valid;
@@ -615,6 +620,19 @@ module ppc_fpu #(
   function automatic logic [63:0] format_reply(input ppc_fpu_op_t op);
     return CPU_602 ? {32'd0, (op == FP_FCTIWZ ? arith_rsp.result[31:0] :
         reply_raw[31:0])} : arith_rsp.result;
+  endfunction
+
+  // Reads only the value-source fields of the candidate.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic [63:0] arriving_value(
+      input forward_candidate_t c);
+  /* verilator lint_on UNUSEDSIGNAL */
+    if (c.reply) return '0;
+    if (c.rsp_value)
+      return CPU_602 ? {32'd0, (c.fctiwz ? arith_rsp.result[31:0] :
+          reply_raw[31:0])} : arith_rsp.result;
+    if (c.load_value) return c.load_single ? load_single : load_double;
+    return c.fpr_value;
   endfunction
 
   // `value` is the stored-format result (see format_reply).
@@ -2196,7 +2214,7 @@ module ppc_fpu #(
   localparam logic [31:0] STICKY_BITS = 32'h1ff8_0700;
   always_comb begin
     arith_flags_t ar;
-    logic [63:0] ar_value;
+    logic rsp_value;
     logic [31:0] acc;
     logic [3:0] cr1;
     logic meta, reply, trap, known;
@@ -2208,7 +2226,7 @@ module ppc_fpu #(
     logic [PENDING_DEPTH-1:0] elig;
     logic [PENDING_DEPTH-1:0] e1, e2, cr_first;
     arith_flags_t slot_ar [0:PENDING_DEPTH-1];
-    logic [63:0] slot_ar_value [0:PENDING_DEPTH-1];
+    logic [PENDING_DEPTH-1:0] slot_rsp_value;
     logic [PENDING_DEPTH-1:0] slot_meta, slot_reply, slot_trap;
     logic [31:0] slot_sticky [0:PENDING_DEPTH-1];
     acc = '0;
@@ -2219,7 +2237,7 @@ module ppc_fpu #(
     elig = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
       ar = pending_q[i].arith;
-      ar_value = pending_q[i].value;
+      rsp_value = 1'b0;
       meta = pending_q[i].arith_done;
       reply = 1'b0;
       ready[i] = pending_q[i].done || pending_q[i].local_wait == 2'd1;
@@ -2232,14 +2250,14 @@ module ppc_fpu #(
         end else if (!ready[i] && arith_rsp_match &&
                      arith_rsp.tag == pending_q[i].issue.tag) begin
           ar = flags_of(arith_rsp);
-          ar_value = format_reply(pending_q[i].decoded.op);
+          rsp_value = 1'b1;
           ready[i] = 1'b1;
           meta = 1'b1;
         end
       end
       trap = flags_trap(ar, fpscr_q);
       slot_ar[i] = ar;
-      slot_ar_value[i] = ar_value;
+      slot_rsp_value[i] = rsp_value;
       slot_meta[i] = meta;
       slot_reply[i] = reply;
       slot_trap[i] = trap;
@@ -2285,7 +2303,7 @@ module ppc_fpu #(
           cr1 = 4'(flags_fpscr(slot_prefix[i], slot_ar[i]) >> 28);
           c.fpr_write = (slot_reply[i] ? arith_finish_write :
               slot_ar[i].write_result) && !exc[i];
-          c.fpr_value = slot_ar_value[i];
+          c.rsp_value = slot_rsp_value[i];
           c.fpr_sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
           c.fpr_lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
           c.cr_write = !exc[i] &&
@@ -2307,8 +2325,8 @@ module ppc_fpu #(
         if (pending_q[i].decoded.mem_load && !mem_rsp_i.fault) begin
           c.fpr_write = 1'b1;
           c.fpr_sp = CPU_602;
-          c.fpr_value = pending_q[i].decoded.mem_single ? load_single :
-              load_double;
+          c.load_value = 1'b1;
+          c.load_single = pending_q[i].decoded.mem_single;
           if (!pending_q[i].decoded.mem_single) exc[i] = !load_fits;
         end
       end
@@ -2341,6 +2359,8 @@ module ppc_fpu #(
       if (fwd0_sel[i]) fwd0 |= slot_candidate[i];
       if (fwd1_sel[i]) fwd1 |= slot_candidate[i];
     end
+    fwd0.fpr_value = arriving_value(fwd0);
+    fwd1.fpr_value = arriving_value(fwd1);
     forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i && |fwd0_sel;
     forward1_valid_o = rst_ni && !kill_all_i && !abort_valid_i && |fwd1_sel;
   end
