@@ -332,8 +332,9 @@ fit establishes nothing for a non-default strap.
 | Wake sources | INT, SMI, DEC, reset, MCP | = | = | INT, SMI, MCP, DEC, reset; watchdog |
 | Source | UM Ch. 9 PDF 355–360 | = | = | 602UM Ch. 9 |
 
-Main: excluded ([RELEASE.md](RELEASE.md)). Not variant-specific except the 602
-watchdog.
+Implemented in V14 for every variant ([POWER_MANAGEMENT.md](POWER_MANAGEMENT.md)).
+The 602 has the same bits and QREQ/QACK pins; its watchdog follows the time
+base, so it runs in doze and nap and stops in sleep.
 
 ## 2. Parameterization plan
 
@@ -552,7 +553,8 @@ choice and a test of that choice, not a fidelity claim:
 | V9 | Done: 602 MMU (see [602 MMU](#602-mmu)): IBAT NE/SE, ITLB NE/SE, MSR[AP] keys, HID0[WIMG] in real and protection-only mode, protection-only mode with SR0 keys, per-page NE/WE entries and SEBR/SER esa gating; esa permission fetched with each instruction and resolved in `ppc_special`, so `event_esa_enable_i` is live; esa without SE is an illegal instruction. The 602 core stays rejected, so the path is checked at module level and linted in the 603e core builds |
 | V10 | Done: 602 caches at 64 sets × 2 ways from `cpu_cfg()` (V4 geometry); no HID0[ICE], so the I-cache is enabled from reset and only ICFI acts on it (§1.2); 602 multiply timing through `MUL_602_TIMING` (§1.7, [MULTIPLY_TIMING.md](MULTIPLY_TIMING.md#602)). `ppc_core` and the core wrappers build `CPU_602`; the `ppc603e` pin top still rejects it. Open: the 602 FPU personality (V12; as on the 603e builds, MSR[FP] never sets, so FP instructions take FP unavailable), the `ppc602` top, bus and RESETO pin (V11) |
 | V11 | Done: `ppc602` pin top ([CHIP_PACKAGE_602.md](CHIP_PACKAGE_602.md)): every 602 pin, the multiplexed 64-bit bus through `ppc602_bus` in front of the unchanged 60x master (two-transaction queue, RWITM for cacheable reads, only kill broadcast, T32 32-bit data mode, PFADDR and TC 01 on a castout whose fill is queued, snoop retry of queued writes), RESETO from the watchdog (`pin_status_t.watchdog_reseto`), SMI, MCP, checkstop and resets as on the 603e top; `quartus/chip602` with every pin virtual and contract C9. The core runs at SYSCLK in PLL bypass (602UM Table 7-8 test mode); 2:1 and 3:1 wait for the BIU bus clock enable. Open: the FPU personality (V12) |
-| V5, V12 onward | Not started |
+| V14 | Done: doze, nap and sleep from MSR[POW] with one HID0 mode bit ([POWER_MANAGEMENT.md](POWER_MANAGEMENT.md)): fetch held until an exception clears POW; QREQ once idle, QACK stops snooping and, in sleep, the time base and decrementer; QREQ/QACK on both pin tops; two mode bits reject |
+| V5, V12, V13 | Not started |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
 behave the same. DingusPPC distinguishes PID6 from PID7v only by PVR, and

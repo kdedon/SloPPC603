@@ -101,8 +101,8 @@ CKSTP_OUT reports it.
 | Signal | Dir | Width | Status | Behavior |
 |---|---|---:|---|---|
 | RSRV | out | 1 | I | Reservation bit: asserted from a committed lwarx until a stwcx. |
-| QREQ | out | 1 | T | Never asserted: no power-saving mode is implemented (HID0 DOZE/NAP/SLEEP stored, inert). |
-| QACK | in | 1 | T | Strap only: must be asserted at HRESET negation (full pinout). |
+| QREQ | out | 1 | T | Asserted in nap and sleep ([power management](POWER_MANAGEMENT.md)), from SYSCLK edges. |
+| QACK | in | 1 | T | Quiesce acknowledge while QREQ is asserted; strap: must be asserted at HRESET negation (full pinout). |
 | TBEN | in | 1 | I | Active high. Gates the time base; DEC keeps counting ([TIMER_CONTRACT.md](TIMER_CONTRACT.md)). |
 | TLBISYNC | in | 1 | I | Holds a tlbsync, and so completion after it, while asserted. Strap: must be negated at HRESET negation (64-bit bus). |
 | SYSCLK | in | 1 | I | Bus clock, modeled as `bus_ce_o` on the processor clock `sysclk` (`PLL_CFG` sets the ratio). The time base ticks once per four SYSCLK cycles. |
@@ -137,10 +137,10 @@ implemented; HID0[EICE] is stored and inert.
 ### Counts
 
 54 signal groups, as in the BUS_SPEC inventory (a bus counts once, DH and DL
-separately, TEST[0:2] as one): 38 implemented, 2 of them with a tied half
+separately, TEST[0:2] as one): 40 implemented, 2 of them with a tied half
 (TBST and DP inputs); TS, A, TT, GBL and ARTRY are whole with
 `ENABLE_DCACHE=1`, the chip's value (each has a tied half at 0); AP and APE
-are whole in every build; 5 tied (DBWO, DPE, QREQ, QACK, CLK_OUT); 6 excluded
+are whole in every build; 3 tied (DBWO, DPE, CLK_OUT); 6 excluded
 (TRST, TCK, TMS, TDI, TDO, TEST); 5 power.
 
 ### DBWO
@@ -210,7 +210,7 @@ there is no COP port to read it.
 | Data cache | `ppc_dcache_slot` with `ppc_dcache` (see below) |
 | Bus interface unit | `ppc_biu`: `ppc_bus60x_arbiter`, `ppc_bus60x` (scalar master), `ppc_bus60x_line_read` (line master), `ppc_bus60x_two_master` with `ppc_bus60x_master_select`; with `ENABLE_DCACHE`, `ppc_bus60x_cache_master`, `ppc_bus60x_snoop` and an outer `ppc_bus60x_two_master` ([DATA_CACHE_INTEGRATION.md](DATA_CACHE_INTEGRATION.md#biu-and-snooping)) |
 | FPU | absent: FP instructions take FP unavailable, as on the EC603e |
-| Power management | absent (QREQ tied) |
+| Power management | `ppc_special` (MSR[POW], HID0 modes, QREQ/QACK state); fetch stop in `ppc_core`; snoop gating on the pin top |
 | JTAG/COP | absent |
 
 `ppc_core_bat_cached_bus60x` composes the core, I-cache, data-cache slot and

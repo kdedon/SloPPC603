@@ -102,7 +102,8 @@ The pin-level top boots from HRESET, honours the straps, takes MCP, SRESET
 and SMI at the vectors the manual gives, checkstops and recovers only through
 HRESET, and runs compiled images under random retry and DRTRY. It does not
 establish reduced-pinout or 32-bit modes (rejected), data-cache behaviour
-(the slot passes through), or JTAG/COP and power management (absent).
+(the slot passes through) or JTAG/COP (absent). Power management:
+[POWER_MANAGEMENT_VERIFICATION.md](POWER_MANAGEMENT_VERIFICATION.md).
 
 ## 2026-09-28 signoff fit with the fetch-to-decode register
 
