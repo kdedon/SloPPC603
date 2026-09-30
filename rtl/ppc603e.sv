@@ -23,7 +23,9 @@ module ppc603e #(
   parameter int ICACHE_SETS = 0,
   parameter int ICACHE_WAYS = 0,
   parameter int DCACHE_SETS = 0,
-  parameter int DCACHE_WAYS = 0
+  parameter int DCACHE_WAYS = 0,
+  // Attach the FPU; without it FP instructions take FP unavailable.
+  parameter bit ENABLE_FPU = 1'b0
 ) (
   // Clocks. sysclk is the processor clock, not the bus clock: SYSCLK
   // rises at the end of each cycle with bus_ce_o high.
@@ -279,6 +281,7 @@ module ppc603e #(
     .ENABLE_MULTIPLE_STRING(1'b1), .ENABLE_RESERVATION(1'b1),
     .ENABLE_MISALIGNED_ACCESS(1'b1), .ENABLE_MACHINE_CHECK(1'b1),
     .ENABLE_DEBUG_EXCEPTIONS(1'b1), .ENABLE_FULL_DECODE(1'b1),
+    .ENABLE_FPU(ENABLE_FPU),
     .ENABLE_DCACHE(ENABLE_DCACHE),
     .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG)
   ) cpu (

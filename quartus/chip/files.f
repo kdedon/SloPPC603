@@ -1,4 +1,5 @@
 ../../rtl/ppc_pkg.sv
+../../rtl/fpu/ppc_fpu_pkg.sv
 ../../rtl/ppc_fifo.sv
 ../../rtl/ppc_fetch.sv
 ../../rtl/ppc_decode.sv

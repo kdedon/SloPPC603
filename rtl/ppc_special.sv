@@ -27,6 +27,8 @@ module ppc_special #(
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   // MCP, SRESET and SMI boundaries; TLBISYNC holds tlbsync.
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
+  // FP instructions run one at a time through the attached FPU.
+  parameter bit ENABLE_FPU = 1'b0,
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   parameter logic [3:0] PLL_CFG = 4'b0000
@@ -98,6 +100,7 @@ module ppc_special #(
   // commit-time action unless it faults.
   input logic dispatch_overlap_i,
   input logic [31:0] pc_i,
+  input logic [31:0] insn_i,
   input ppc_pkg::page_miss_t dispatch_page_miss_i,
   input logic [31:0] a_i, b_i, c_i,
   input logic [31:0] cr_i,
@@ -210,7 +213,8 @@ module ppc_special #(
     S_CONTEXT_DRAIN, S_CONTEXT_INSTALL, S_CONTEXT_REDIRECT, S_CONTEXT_ABORT,
     S_INTERRUPT_COMMIT, S_TIMER_RESULT, S_EXCEPTION_HALT,
     S_MMU_OFFER, S_MMU_WAIT, S_MMU_RESULT, S_MMU_ABORT, S_MMU_ACK, S_MMU_REDIRECT,
-    S_BRANCH_REDIRECT, S_ICBI, S_CHECKSTOP, S_ICACHE_CTL
+    S_BRANCH_REDIRECT, S_ICBI, S_CHECKSTOP, S_ICACHE_CTL,
+    S_FPU_ISSUE, S_FPU_WAIT, S_FPU_MEM_RSP, S_FPU_STORE
   } state_t;
   state_t state_q;
   // The shared uop record carries fields for other lanes.
@@ -347,6 +351,25 @@ module ppc_special #(
                               (state_q == S_ICACHE_CTL);
   assign icache_ctl_enable_o = !HAS_ICE || hid0_q[HID0_ICE];
   assign icache_ctl_invalidate_o = hid0_q[HID0_ICFI];
+  // FPU lane. The FPU owns FPRs and FPSCR; this lane issues one FP
+  // instruction, serves its memory access, and commits it at retirement.
+  // A store commits to the FPU at the queue head, before its bus write.
+  logic fpu_q, fpu_issued_q, fpu_double_q, fpu_access_q, fpu_mem_fault_q;
+  logic fpu_exception_q, late_exception_event;
+  logic [31:0] insn_q;
+  logic [63:0] fpu_data_q;
+  logic fpu_issue_valid, fpu_issue_ready, fpu_result_valid, fpu_result_take;
+  logic fpu_commit_valid, fpu_commit_ready, fpu_abort_valid;
+  logic fpu_mem_req_valid, fpu_mem_req_ready, fpu_mem_req_fire;
+  logic fpu_mem_rsp_valid, fpu_mem_rsp_ready, fpu_store_valid, fpu_store_ready;
+  logic fpu_exception, fpu_access;
+  ppc_fpu_pkg::ppc_fpu_issue_t fpu_issue;
+  ppc_fpu_pkg::ppc_fpu_mem_rsp_t fpu_mem_rsp;
+  // The lane reads the proposals it applies; the FPU applies the rest.
+  /* verilator lint_off UNUSEDSIGNAL */
+  ppc_fpu_pkg::ppc_fpu_result_t fpu_result;
+  ppc_fpu_pkg::ppc_fpu_mem_t fpu_mem_req, fpu_store;
+  /* verilator lint_on UNUSEDSIGNAL */
   // eciwx/ecowx with EAR[E] = 0 take a DSI without a bus transfer.
   assign external_denied = ENABLE_FULL_DECODE && uop_q.mem_external &&
                            !ear_q[EAR_E];
@@ -506,12 +529,14 @@ module ppc_special #(
     ~(ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0) &
     // FP is accepted and reads as zero; FE0/FE1 are stored without effect.
     ~(ENABLE_FULL_DECODE ? 32'h0000_2900 : 32'b0);
+  // Without an FPU, FP is accepted and reads as zero.
   localparam logic [31:0] LIVE_SUPPORTED_MASK =
     (ENABLE_EXTERNAL_INTERRUPTS ? 32'h0000_c070 : 32'h0000_4070) |
     (ENABLE_TGPR ? 32'h0002_0000 : 32'b0) |
     (ENABLE_MACHINE_CHECK ? MACHINE_CHECK_MSR_MASK : 32'b0) |
     (ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0) |
     (ENABLE_FULL_DECODE ? 32'h0000_0900 : 32'b0) |
+    (ENABLE_FPU ? 32'h0000_2000 : 32'b0) |
     (HAS_602 ? MSR_602_MASK : 32'b0);
 
   // TGPR combines with any other mode: every exception entry clears it.
@@ -757,8 +782,13 @@ module ppc_special #(
       (uop_q.special_op == SPECIAL_STORE) &&
       ((state_q == S_MEM_OFFER) || (state_q == S_MEM_WAIT) ||
        (state_q == S_MEM_RESULT) || (state_q == S_HOLD));
-    beat_continue = !beat_q && mem_crossing && !dmem_rsp_error_i &&
-                    (dmem_rsp_fault_i == DATA_OK);
+    // An FP access is a word-aligned word or doubleword.
+    if (fpu_access) begin
+      dmem_req_wdata_o = (fpu_double_q && !beat_q) ? fpu_data_q[63:32] : fpu_data_q[31:0];
+      dmem_req_wstrb_o = 4'hf;
+    end
+    beat_continue = !beat_q && (mem_crossing || (fpu_access && fpu_double_q)) &&
+                    !dmem_rsp_error_i && (dmem_rsp_fault_i == DATA_OK);
   end
 
   // The request is held until ready reports the invalidation done.
@@ -952,6 +982,10 @@ module ppc_special #(
           exception_event_valid = ENABLE_FULL_DECODE && HAS_602;
           exception_event_kind = EVENT_EMULATION_TRAP;
         end
+        SPECIAL_FP_ENABLED: begin
+          exception_event_valid = ENABLE_FPU;
+          exception_event_kind = EVENT_PROGRAM_FP;
+        end
         SPECIAL_ESA, SPECIAL_DSA: begin
           exception_event_valid = ENABLE_FULL_DECODE && HAS_602;
           exception_event_kind = (uop_q.special_op == SPECIAL_ESA) ?
@@ -988,7 +1022,8 @@ module ppc_special #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
-    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE)
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+    .ENABLE_FPU(ENABLE_FPU)
   ) exception_state (
     .clk_i, .rst_ni,
     .event_valid_i(exception_event_valid),
@@ -1005,7 +1040,7 @@ module ppc_special #(
     .ibr_i(ibr_q[31:16]),
     .result_valid_o(exception_result_valid),
     .result_ready_i((state_q == S_EXCEPTION_RESULT) &&
-      (!data_exception_event || !ENABLE_LIVE_CONTEXT ||
+      (!late_exception_event || !ENABLE_LIVE_CONTEXT ||
        (frontend_quiescent_i && memory_quiescent_i))),
     .result_supported_o(exception_result_supported),
     .result_target_o(exception_result_target),
@@ -1059,7 +1094,7 @@ module ppc_special #(
     // Fenced fetch discarded responses; refetch after the instruction.
     hid0_write || (ENABLE_FULL_DECODE && (uop_q.special_op == SPECIAL_TRAP));
   assign exception_result_accept = exception_result_valid &&
-    (!data_exception_event || !ENABLE_LIVE_CONTEXT ||
+    (!late_exception_event || !ENABLE_LIVE_CONTEXT ||
      (frontend_quiescent_i && memory_quiescent_i));
 
   // Lane sequencer: state, fence and kill ownership.
@@ -1087,6 +1122,7 @@ module ppc_special #(
         state_d = S_MEM_PREP;
       else if (ENABLE_CACHE_INSTRUCTIONS &&
                (uop_i.special_op == SPECIAL_ICBI)) state_d = S_ICBI;
+      else if (ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU)) state_d = S_FPU_ISSUE;
       else if (dispatch_fenced) state_d = S_CONTEXT_DRAIN;
       else state_d = S_EXEC;
     end else if (cancel_i) begin
@@ -1195,9 +1231,22 @@ module ppc_special #(
           else if (beat_continue) state_d = S_MEM_OFFER;
           else begin
             if (mem_response_fence) fence_d = 1'b1;
-            state_d = S_MEM_RESULT;
+            state_d = fpu_q && fpu_access_q ? S_FPU_MEM_RSP : S_MEM_RESULT;
           end
         end
+        S_FPU_ISSUE: if (fpu_issue_ready) state_d = S_FPU_WAIT;
+        S_FPU_WAIT: begin
+          if (fpu_mem_req_fire) state_d = fpu_mem_req.write ? S_FPU_MEM_RSP : S_MEM_OFFER;
+          else if (fpu_result_take) begin
+            // A late exception fences fetch as a data exception does.
+            if (fpu_exception && ENABLE_LIVE_CONTEXT) fence_d = 1'b1;
+            state_d = (fpu_result.store &&
+                       (fpu_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION)) ?
+                      S_FPU_STORE : S_MEM_RESULT;
+          end
+        end
+        S_FPU_MEM_RSP: if (fpu_mem_rsp_ready) state_d = S_FPU_WAIT;
+        S_FPU_STORE: if (fpu_commit_ready) state_d = S_MEM_OFFER;
         S_MEM_RESULT: if (result_fire) state_d = mem_released ? S_IDLE : S_HOLD;
         S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
         S_ICBI: if (icbi_req_ready_i) state_d = killed_q ? S_IDLE : S_EXEC;
@@ -1388,6 +1437,32 @@ module ppc_special #(
       ea_q <= a_i + b_i;
       trap_taken_q <= trap_condition(uop_i.branch_bo, a_i, b_i);
       mfrom_q <= HAS_602 ? mfrom_entries[a_i[9:0]] : '0;
+    end else if (ENABLE_FPU && fpu_q) begin
+      // The FP access runs as a word load or store; an FPU exception
+      // becomes the matching exception op.
+      if (fpu_mem_req_fire && !fpu_mem_req.write) begin
+        uop_q.special_op <= SPECIAL_LOAD;
+        uop_q.mem_size <= MEM_WORD;
+        ea_q <= fpu_mem_req.ea;
+      end
+      if (fpu_commit_valid && fpu_commit_ready && (state_q == S_FPU_STORE)) begin
+        uop_q.special_op <= SPECIAL_STORE;
+        uop_q.mem_size <= MEM_WORD;
+        ea_q <= fpu_store.ea;
+      end
+      if (fpu_result_take)
+        case (fpu_result.exception)
+          ppc_fpu_pkg::FPU_ALIGNMENT: begin
+            uop_q.special_op <= SPECIAL_ALIGNMENT;
+            ea_q <= fpu_result.ea;
+          end
+          ppc_fpu_pkg::FPU_ILLEGAL: uop_q.special_op <= SPECIAL_PROGRAM_ILLEGAL;
+          ppc_fpu_pkg::FPU_UNAVAILABLE: uop_q.special_op <= SPECIAL_FP_UNAVAILABLE;
+          ppc_fpu_pkg::FPU_FP_ENABLED: uop_q.special_op <= SPECIAL_FP_ENABLED;
+          ppc_fpu_pkg::FPU_PRIVILEGED: uop_q.special_op <= SPECIAL_PROGRAM_PRIV;
+          ppc_fpu_pkg::FPU_EMULATION_TRAP: uop_q.special_op <= SPECIAL_EMULATION_TRAP;
+          default: ;
+        endcase
     end
   end
 
@@ -1641,6 +1716,20 @@ module ppc_special #(
           memory_result_q.page_miss <= '0;
         end
       end
+      // A memory fault keeps the access's classification. An update form
+      // that does not update, and an unwritten CR field, rewrite their
+      // committed values: the lane runs alone, so nothing else writes them.
+      if (fpu_result_take &&
+          (fpu_result.exception != ppc_fpu_pkg::FPU_MEMORY_FAULT)) begin
+        memory_result_q <= '0;
+        memory_result_q.producer <= producer_q;
+        memory_result_q.update_value <= (!fpu_exception && fpu_result.gpr_update) ?
+          fpu_result.gpr_value : a_q;
+        memory_result_q.cr0 <= (fpu_result.cr_write &&
+          ((fpu_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION) ||
+           (fpu_result.exception == ppc_fpu_pkg::FPU_FP_ENABLED))) ?
+          fpu_result.cr_value : select_cr_field(cr_snapshot_q, uop_q.cr_field);
+      end
     end
   end
 
@@ -1801,5 +1890,132 @@ module ppc_special #(
       tlb_fill_req_valid_o && $stable(tlb_fill_payload_q))
     else $error("stalled TLB load request changed");
   // synthesis translate_on
+  // FPU lane handshakes. Every handshake is off while recovery cancels the
+  // lane; a cancelled instruction the FPU holds is aborted by its tag.
+  assign fpu_access = ENABLE_FPU && fpu_q &&
+    ((uop_q.special_op == SPECIAL_LOAD) || (uop_q.special_op == SPECIAL_STORE));
+  assign fpu_exception = fpu_result.exception != ppc_fpu_pkg::FPU_NO_EXCEPTION;
+  assign late_exception_event = data_exception_event || fpu_exception_q;
+  assign fpu_issue_valid = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_ISSUE);
+  assign fpu_mem_req_ready = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_WAIT);
+  assign fpu_mem_req_fire = fpu_mem_req_valid && fpu_mem_req_ready;
+  assign fpu_result_take = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_WAIT) &&
+    fpu_result_valid && !fpu_mem_req_valid;
+  assign fpu_mem_rsp_valid = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_MEM_RSP);
+  assign fpu_store_ready = state_q == S_FPU_STORE;
+  // A store commits at the queue head with retirement authorized; any other
+  // FP instruction commits as it retires.
+  assign fpu_commit_valid = ENABLE_FPU && rst_ni && !cancel_i && fpu_issued_q &&
+    (((state_q == S_FPU_STORE) && store_authorize_i &&
+      (queue_head_i == producer_q.index)) ||
+     ((state_q == S_HOLD) && commit_match));
+  assign fpu_abort_valid = ENABLE_FPU && rst_ni && cancel_i && fpu_issued_q;
+  always_comb begin
+    fpu_issue = '0;
+    fpu_issue.tag = producer_q;
+    fpu_issue.insn = insn_q;
+    fpu_issue.gpr_a = a_q;
+    fpu_issue.gpr_b = b_q;
+    fpu_issue.msr_fp = msr_o[MSR_FP];
+    fpu_issue.msr_fe0 = msr_o[11];
+    fpu_issue.msr_fe1 = msr_o[8];
+    fpu_issue.msr_pr = msr_o[MSR_PR];
+    fpu_mem_rsp = '0;
+    fpu_mem_rsp.tag = producer_q;
+    fpu_mem_rsp.data = fpu_data_q;
+    fpu_mem_rsp.fault = fpu_mem_fault_q;
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      fpu_q <= 1'b0;
+      fpu_issued_q <= 1'b0;
+      fpu_double_q <= 1'b0;
+      fpu_access_q <= 1'b0;
+      fpu_mem_fault_q <= 1'b0;
+      fpu_exception_q <= 1'b0;
+      fpu_data_q <= '0;
+      insn_q <= '0;
+    end else if (dispatch_fire) begin
+      fpu_q <= ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU);
+      fpu_issued_q <= 1'b0;
+      fpu_access_q <= 1'b0;
+      fpu_exception_q <= 1'b0;
+      insn_q <= insn_i;
+    end else begin
+      if (fpu_issue_valid && fpu_issue_ready) fpu_issued_q <= 1'b1;
+      if (fpu_abort_valid || (fpu_commit_valid && fpu_commit_ready))
+        fpu_issued_q <= 1'b0;
+      if (fpu_mem_req_fire) begin
+        fpu_double_q <= fpu_mem_req.size_bytes == 4'd8;
+        fpu_access_q <= !fpu_mem_req.write;
+        fpu_mem_fault_q <= 1'b0;
+        fpu_data_q <= '0;
+      end
+      if (fpu_mem_rsp_valid && fpu_mem_rsp_ready) fpu_access_q <= 1'b0;
+      if (step_run && fpu_access_q && (state_q == S_MEM_WAIT) && response_fire &&
+          !killed_q && !beat_continue) begin
+        fpu_data_q <= fpu_double_q ? {beat0_data_q, dmem_rsp_rdata_i} :
+                                     {32'b0, dmem_rsp_rdata_i};
+        fpu_mem_fault_q <= dmem_rsp_error_i || (dmem_rsp_fault_i != DATA_OK);
+      end
+      if (fpu_result_take)
+        fpu_exception_q <= fpu_exception &&
+          (fpu_result.exception != ppc_fpu_pkg::FPU_MEMORY_FAULT);
+      if (fpu_commit_valid && fpu_commit_ready && (state_q == S_FPU_STORE)) begin
+        fpu_data_q <= fpu_store.data;
+        fpu_double_q <= fpu_store.size_bytes == 4'd8;
+      end
+    end
+  end
+  if (ENABLE_FPU) begin : g_fpu
+    /* verilator lint_off PINCONNECTEMPTY */
+    ppc_fpu #(.CPU_602(1'b0)) fpu (
+      .clk_i, .rst_ni,
+      .issue_valid_i(fpu_issue_valid), .issue_ready_o(fpu_issue_ready), .issue_i(fpu_issue),
+      .issue1_valid_i(1'b0), .issue1_ready_o(), .issue1_i('0),
+      .result_valid_o(fpu_result_valid), .result_o(fpu_result),
+      .result1_valid_o(), .result1_o(),
+      .commit_valid_i(fpu_commit_valid), .commit_tag_i(producer_q),
+      .commit_ready_o(fpu_commit_ready),
+      .commit1_valid_i(1'b0), .commit1_tag_i('0), .commit1_ready_o(),
+      .abort_valid_i(fpu_abort_valid), .abort_tag_i(producer_q), .kill_all_i(1'b0),
+      .mem_req_valid_o(fpu_mem_req_valid), .mem_req_ready_i(fpu_mem_req_ready),
+      .mem_req_o(fpu_mem_req),
+      .mem_rsp_valid_i(fpu_mem_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
+      .mem_rsp_i(fpu_mem_rsp),
+      .store_valid_o(fpu_store_valid), .store_ready_i(fpu_store_ready), .store_o(fpu_store),
+      .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(),
+      .inspect_sp_o(), .inspect_lt_o(),
+      .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
+      .forward_data_o(), .forward1_data_o()
+    );
+    /* verilator lint_on PINCONNECTEMPTY */
+    // synthesis translate_off
+    always @(posedge clk_i) begin
+      if (rst_ni && fpu_result_take)
+        assert (fpu_result.tag == producer_q) else $error("FPU result tag mismatch");
+      if (rst_ni && fpu_result_take && fpu_result.cr_write && !fpu_exception)
+        assert (uop_q.write_cr_field && (fpu_result.cr_field == uop_q.cr_field))
+          else $error("FPU CR field disagrees with the allocation");
+      if (rst_ni && fpu_commit_valid)
+        assert (fpu_commit_ready) else $error("FPU refused a retiring commit");
+      if (rst_ni && fpu_store_valid)
+        assert (state_q == S_FPU_STORE) else $error("FPU store outside the queue head");
+    end
+    // synthesis translate_on
+  end else begin : g_no_fpu
+    assign fpu_issue_ready = 1'b0;
+    assign fpu_result_valid = 1'b0;
+    assign fpu_result = '0;
+    assign fpu_commit_ready = 1'b0;
+    assign fpu_mem_req_valid = 1'b0;
+    assign fpu_mem_req = '0;
+    assign fpu_mem_rsp_ready = 1'b0;
+    assign fpu_store_valid = 1'b0;
+    assign fpu_store = '0;
+    logic _unused_fpu;
+    assign _unused_fpu = ^{fpu_issue, fpu_mem_rsp, fpu_store_ready, fpu_abort_valid,
+                           fpu_store_valid};
+  end
 endmodule
 `default_nettype wire

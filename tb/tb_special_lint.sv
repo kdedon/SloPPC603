@@ -38,6 +38,7 @@ module tb_special_lint #(
   ppc_pkg::completion_tag_t producer_i;
   assign producer_i = '0;
   wire [31:0] pc_i = '0;
+  wire [31:0] insn_i = '0;
   ppc_pkg::page_miss_t dispatch_page_miss_i;
   assign dispatch_page_miss_i = '0;
   wire [31:0] a_i = '0;

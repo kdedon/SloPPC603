@@ -24,6 +24,8 @@ module ppc_decode #(
   // Illegal and invalid forms, traps, FP class, PVR/HID0/HID1/EAR and
   // eciwx/ecowx.
   parameter bit ENABLE_FULL_DECODE = 1'b0,
+  // FP uops carry their CR field, update and alignment metadata.
+  parameter bit ENABLE_FPU = 1'b0,
   // Part the build models; HID1 and EAR exist only where cpu_cfg() says so,
   // and the 602 forms and SPRs only on the 602.
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E
@@ -126,6 +128,7 @@ module ppc_decode #(
         if (ENABLE_FULL_DECODE) begin
           uop_o.illegal = 1'b0;
           uop_o.special_op = SPECIAL_FPU;
+          uop_o.mem_update = ENABLE_FPU && insn_i[26];
         end
       end
       6'd59, 6'd63: begin
@@ -138,6 +141,16 @@ module ppc_decode #(
           uop_o.special_op = HAS_602 &&
                              fp_602_emulated(insn_i[31:26], insn_i[10:1]) ?
                              SPECIAL_FPU_EMULATE : SPECIAL_FPU;
+          // fcmpu, fcmpo and mcrfs write crfD; record forms write CR1.
+          if (ENABLE_FPU && (insn_i[31:26] == 6'd63) &&
+              ((insn_i[10:1] == 10'd0) || (insn_i[10:1] == 10'd32) ||
+               (insn_i[10:1] == 10'd64))) begin
+            uop_o.write_cr_field = 1'b1;
+            uop_o.cr_field = insn_i[25:23];
+          end else if (ENABLE_FPU && insn_i[0]) begin
+            uop_o.write_cr_field = 1'b1;
+            uop_o.cr_field = 3'd1;
+          end
         end
       end
       6'd7: begin
@@ -473,6 +486,8 @@ module ppc_decode #(
               if (ENABLE_FULL_DECODE && fp_indexed(insn_i[10:1])) begin
                 uop_o.illegal = 1'b0;
                 uop_o.special_op = SPECIAL_FPU;
+                // lfsux, lfdux, stfsux, stfdux.
+                uop_o.mem_update = ENABLE_FPU && insn_i[6] && (insn_i[10:1] != 10'd983);
               end
             end
             10'd75, 10'd11: begin
@@ -893,7 +908,9 @@ module ppc_decode #(
     // metadata separate from ordinary operands so immediate low bits cannot
     // accidentally select indexed-form syndrome fields.
     if (!uop_o.illegal && ((uop_o.special_op == SPECIAL_LOAD) ||
-                          (uop_o.special_op == SPECIAL_STORE))) begin
+                          (uop_o.special_op == SPECIAL_STORE) ||
+                          (ENABLE_FPU && (uop_o.special_op == SPECIAL_FPU) &&
+                           (insn_i[31:26] != 6'd59) && (insn_i[31:26] != 6'd63)))) begin
       if (insn_i[31:26] == 6'd31)
         uop_o.alignment_dsisr = {insn_i[2:1], insn_i[6], insn_i[10:7],
                                 insn_i[25:21], insn_i[20:16]};
