@@ -29,6 +29,47 @@ The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not 
 
 ## Recorded synthesis evidence
 
+### Shell storage, bindings and 603e rounder window, fitted 603e and 602
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit` and
+`./quartus/fpu-production/synthesize.sh --docker full602fit`, commit
+`2ae952b`, 2026-09-30. Exit zero each; one physical pin (`clk_i`), 20 ns
+clock, zero-delay virtual I/O. "Before" is `4318d67` from the next section.
+
+| Instance | 603e before | 603e after | 602 before | 602 after |
+|---|---:|---:|---:|---:|
+| shell (`ppc_fpu` own logic) | 12,995 | 8,860 | 10,877 | 7,875 |
+| FPR storage (`fprs`) | 984 | 688 | 302 | 214 |
+| arithmetic total | 6,210 | 5,916 | 4,086 | 3,804 |
+| — arithmetic own logic | 1,029 | 1,077 | 1,078 | 823 |
+| — unpack/classify | 431 | 430 | 395 | 389 |
+| — multiplier | 79 | 79 | 0 | 0 |
+| — alignment plan | 201 | 202 | 116 | 123 |
+| — aligner | 410 | 418 | 319 | 318 |
+| — adder, LZC, normalize shifts | 991 | 1,015 | 488 | 484 |
+| — conversion | 36 | 40 | 34 | 38 |
+| — rounder | 1,945 | 1,575 | 858 | 843 |
+| — divider | 1,088 | 1,079 | 799 | 787 |
+| **Total fitted ALMs** | **20,188** | **15,465** | **15,265** | **11,893** |
+| Registers | 5,714 | 4,221 | 4,223 | 3,260 |
+| DSP blocks | 5 | 5 | 1 | 1 |
+| Post-fit Fmax | 37.23 MHz | 43.17 MHz | 32.20 MHz | 31.81 MHz |
+| Worst setup slack at 20 ns | −6.863 ns | −3.166 ns | −11.054 ns | −11.441 ns |
+
+The shell change is storage and structure: one value word per pending
+entry, per-slot operand and forward candidates, producer bindings, six FPR
+reads (twelve bank copies), launch records written without the launch
+decision. The 603e rounder shifts a 112-bit window.
+
+603e worst path moved into the arithmetic add stage: `aligned_q.plan`
+distance into `add_q.normal_exponent` (23.2 ns). The shell's worst register
+path is `pending_q[4].started` into `pending_q[*].value` (−3.03 ns); the
+divider's operand capture is −2.52 ns. 602 worst path is unchanged in kind:
+rounder input through the finish forward into the virtual `mem_req_o`
+(26.5 ns, including −4.73 ns clock skew to virtual I/O); its worst internal
+path is pending state into the divider operands (−8.49 ns). Neither 50 nor
+66 MHz is met; these are fit and timing measurements, not closure.
+
 ### Per-block area, shared datapath and MLAB FPRs, fitted 603e and 602
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit` and

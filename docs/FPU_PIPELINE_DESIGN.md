@@ -86,10 +86,12 @@ Likewise, an arriving head result must be usable for retirement without an
 unnecessary holding-register cycle. Acceptance tests cover the complete shell's
 steady issue rate and dependent producer-to-consumer distance, not only the
 backend's isolated latency.
-The shell owns four FPR rename entries and pending instruction records. Source
-bindings select the youngest older producer and retain its full identity until
-the value arrives. Completion snooping updates waiting operands; rereading the
-architectural bank after a stall cannot substitute for correct bindings.
+The shell owns four FPR rename entries and pending instruction records. Each
+source binds at dispatch to the pending slot of its youngest older producer
+and keeps that binding until the producer retires, when the value is in the
+register file; a slot is reused only after its producer retires. Completion
+snooping updates waiting operands; rereading the architectural bank after a
+stall cannot substitute for correct bindings.
 [603e UM §6.3.3.1, physical PDF 258; 602 UM §§1.2.2.2, 6.4.3,
 physical PDF 56, 304–305]
 
@@ -167,23 +169,41 @@ check, so no store preparation leaves for a value that traps.
 
 The pending queue is a circular buffer. Entries stay in their slots;
 retirement advances a registered head, dispatch writes registered tail
-slots, and cancellation or kill clears valid bits only. Every per-entry
-payload register therefore has one late select, dispatch into its slot, and
-no shift. A registered matrix records which slot is older than which; the
-oldest-reservation and youngest-producer picks and the older-slot masks for
-operand lookup use it directly. The forwarding order and head and second
-retirement read an age-ordered view rotated by the registered head.
+slots, and cancellation or kill clears valid bits only. A registered matrix
+records which slot is older than which; the oldest-reservation, pair-partner,
+youngest-producer and forwarding picks and the abort mask use it directly.
+Only head and second retirement read slots through the registered head.
+
+An entry keeps its issue record, decode, effective address, disposition
+flags, raw arithmetic status, and one 64-bit value word: the FPR result,
+store data, fault information, proposed FPSCR or SPR read, by kind. Tags,
+register indices and GPR update values come from the issue record, so a
+result is stored once. Per-slot operand values, readiness and `fsel`
+selector class form once and every source lookup picks a slot.
+
+A waiting entry reads the producer slots bound at dispatch rather than
+repeating the register compare. It also keeps its first lookup register (frS
+for a load or store, else frA) and the `fsel` class of that register's
+architectural value, refreshed by every register-file write, so a waiting
+`fsel` decides readiness without reading the register file. The status and
+value of a waiting entry, and every field of a free tail slot, are written
+each cycle from their work context; only the valid, started and pipeline
+flags wait for the dispatch and launch handshakes. Rename credits and the
+barrier count follow retirement and dispatch; only an abort recounts.
 
 `issue_ready_o` and `issue1_ready_o` are formed from registered state per
 decode class. Queue space is "not full, or the head retires"; FPR credits are
 "below the limit, or a retiring entry frees one". The lane decode, retirement
 and abort terms enter last.
 
-Open timing work (fitted worst path at `591876e`): a waiting `fsel` or other
-second-reservation entry picks its operand, tests the selector value, and
-decides readiness and launch in one cycle. The next step is to register the
-reservation pick and the per-entry operand readiness (including the `fsel`
-selector class) one cycle early, so launch reads flops.
+Fitted at `2ae952b` (both builds), the shell is off the 603e worst path. Its
+worst register path is a pending entry's started flag into another entry's
+value word through the launch and store-fill selects (−3.03 ns at 20 ns);
+the add-stage exponent (−3.17 ns) and the divider's operand capture
+(−2.52 ns) are the arithmetic limits. The 602's worst paths leave through
+virtual outputs (finish forward into `mem_req_o`, pending state into
+`forward1_o`), and its worst internal one is pending state into the divider
+operands (−8.49 ns).
 
 ## Arithmetic stage 1
 
@@ -239,11 +259,14 @@ Sharing, with every latency unchanged:
   The divider blocks admission, so the pipeline is empty then.
 
 FPRs live in `ppc_fpu_fprs`: per write port one MLAB bank, copied per read
-port (eight operand reads plus the inspection port), and a live-value table
-of flops selecting the bank with each register's latest value. A register not
-written since reset reads zero; reads are combinational and return the value
-before the cycle's writes, as the flop array did. The 602's SP/LT tags stay in
-flops.
+port, and a live-value table of flops selecting the bank with each register's
+latest value. A register not written since reset reads zero; reads are
+combinational and return the value before the cycle's writes, as the flop
+array did. Each work context reads three ports: a load or store reads frS
+through the first, since RA is a GPR. The inspection port shares the second
+context's frC read and is valid while that context is empty, so six reads
+need twelve bank copies. Each word stores its `fsel` class in a spare MLAB
+bit. The 602's SP/LT tags stay in flops.
 
 The 602 build narrows by construction: its operands are
 binary32-representable, so the low 29 significand bits are constant zero into
@@ -251,13 +274,17 @@ the multiplier, add lane and divider; the aligned y lane folds bits 47:0 into
 a sticky bit 48 (below every single guard bit even after cancellation, which
 only occurs at alignment distances of at most one); and the rounder shifts
 only the 64-bit window of bits 159:96 that single magnitudes occupy. Single
-divide places its remainder sticky at bit 96 in both builds. Fitted area per
-block is in [quartus/fpu-production/README.md](../quartus/fpu-production/README.md).
+divide places its remainder sticky at bit 96 in both builds.
 
-The remaining large block is the shell's own logic (about 13.0k ALMs for the
-603e, 10.9k for the 602): the pending queue, its per-entry results and
-operand lookup. Reaching the ~18k ALM budget beside the MiSTer core now
-depends on that queue, not on the arithmetic.
+The 603e rounder shifts the 112-bit window of bits 159:48. Every finite
+magnitude lies there: the add lane is 112 bits, a quotient occupies bits
+158:104, and double divide places its remainder sticky at bit 48, below the
+quotient. Fitted area per block is in
+[quartus/fpu-production/README.md](../quartus/fpu-production/README.md).
+
+The shell's own logic is now about 8.9k ALMs for the 603e and 7.9k for the
+602, down from 13.0k and 10.9k; the 603e build fits in about 15.5k ALMs,
+inside the ~18k budget beside the MiSTer core.
 
 ## COMPACT design notes
 
