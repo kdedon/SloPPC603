@@ -80,18 +80,27 @@ modes (V14).
 
 Queued, in order:
 
-1. Whetstone: fetched at a pinned revision like the other benchmarks, built
+1. Opcode self-test app: demo-SoC firmware that runs every instruction group
+   (integer, rotate/shift, compare/CR/branch, load/store forms, SPRs and
+   supervisor state, induced exceptions, cache/TLB ops, FP or FP-unavailable)
+   against expected values generated on the host from manual semantics. It
+   shows a paged grid of pass/fail cells with failure details and waits for a
+   joystick or keyboard press per page (needs a read-only input register fed
+   from `hps_io`); with no input it runs every page and prints a text summary,
+   so the same image is a simulation regression. One build per variant; a
+   MiSTer suite target `selftest`.
+2. Whetstone: fetched at a pinned revision like the other benchmarks, built
    soft-float (runs on the FPU-less core) and hard-float (after integration),
    reported as MWIPS and MWIPS/MHz in the demo SoC and on the MiSTer screen.
    The hard-float MiSTer build needs the FPU in the MiSTer SoC.
-2. CI preparation: pin the Quartus and toolchain images by digest; have the
+3. CI preparation: pin the Quartus and toolchain images by digest; have the
    fit and MiSTer scripts emit one machine-readable summary (ALMs, RAM, DSP,
    slack per clock and corner); a setup script that fetches DingusPPC and the
    benchmark sources at their pins; release notes that name the commit and the
    pinned MiSTer framework revision (GPL-2) and flag GPL-3 suite builds. The
    GitHub workflows (quick checks on push, rolling MiSTer build on main,
    tagged releases with fits) wait until they are enabled.
-3. COMPACT FPU (`FPU_IMPL`) for both personalities; 602 FPU (V12); 603 with
+4. COMPACT FPU (`FPU_IMPL`) for both personalities; 602 FPU (V12); 603 with
    XATS (V5); two-stage LSU (P3); dual dispatch.
 
 After each accepted implementation round, update the scorecard's affected rows
