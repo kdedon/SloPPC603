@@ -65,7 +65,8 @@ def detail(summaries):
     for s in summaries:
         for clock, analyses in s["slack"].items():
             for analysis, by_corner in analyses.items():
-                rows.append(f"| {s['name']} | `{clock}` | {analysis} | "
+                name = clock.replace("|", "\\|")
+                rows.append(f"| {s['name']} | `{name}` | {analysis} | "
                             + " | ".join(cell(by_corner.get(c), "{:+.3f}") for c in corners) + " |")
     return "\n".join(rows)
 
