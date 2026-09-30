@@ -25,8 +25,9 @@
 #define SOC_FB_STRIDE SOC_REG(0x24)
 #define SOC_FB_SIZE SOC_REG(0x28)
 #define SOC_FB_FORMAT SOC_REG(0x2c)
-/* Clock in MHz (31:16) and host mode bits (7:0). */
+/* Clock in MHz (31:16), FPU present (8) and host mode bits (7:0). */
 #define SOC_MODE SOC_REG(0x30)
+#define SOC_MODE_FPU 0x100u
 #define SOC_TENURES SOC_REG(0x34)
 #define SOC_RETIRED_LO SOC_REG(0x38)
 #define SOC_RETIRED_HI SOC_REG(0x3c)
