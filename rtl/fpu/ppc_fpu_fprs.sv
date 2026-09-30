@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
-// Architectural FPR storage: two write ports (the second wins on a shared
-// index) and READS combinational read ports.
+// Architectural FPR storage in MLAB: one RAM bank per write port, each copied
+// once per read port. A live-value table names the bank holding each
+// register's latest value; the second write port wins on a shared index.
+// Contents are not reset: a register not written since reset reads zero.
+// Reads are combinational and return the value before this cycle's writes.
 module ppc_fpu_fprs #(
     parameter int WIDTH = 64,
     parameter int READS = 9
@@ -15,20 +18,36 @@ module ppc_fpu_fprs #(
     input  logic [READS-1:0][4:0] raddr_i,
     output logic [READS-1:0][WIDTH-1:0] rdata_o
 );
-    logic [WIDTH-1:0] fpr_q [0:31];
+    logic [31:0] written_q;
+    logic [31:0] bank_q;
+    logic [READS-1:0][1:0][WIDTH-1:0] bank_data;
 
     always_ff @(posedge clk_i) begin
         if (!rst_ni) begin
-            for (integer i = 0; i < 32; i++) fpr_q[i] <= '0;
+            written_q <= '0;
         end else begin
-            if (we_i[0]) fpr_q[waddr_i[0]] <= wdata_i[0];
-            if (we_i[1]) fpr_q[waddr_i[1]] <= wdata_i[1];
+            for (int port = 0; port < 2; port++) begin
+                if (we_i[port]) begin
+                    written_q[waddr_i[port]] <= 1'b1;
+                    bank_q[waddr_i[port]] <= port[0];
+                end
+            end
         end
     end
 
-    always_comb begin
-        for (int port = 0; port < READS; port++)
-            rdata_o[port] = fpr_q[raddr_i[port]];
+    for (genvar port = 0; port < READS; port++) begin : g_read
+        for (genvar bank = 0; bank < 2; bank++) begin : g_bank
+            ppc_ram_lut #(.DEPTH(32), .WIDTH(WIDTH)) ram (
+                .clk_i,
+                .we_i(rst_ni && we_i[bank]),
+                .waddr_i(waddr_i[bank]),
+                .wdata_i(wdata_i[bank]),
+                .raddr_i(raddr_i[port]),
+                .rdata_o(bank_data[port][bank])
+            );
+        end
+        assign rdata_o[port] = !written_q[raddr_i[port]] ? '0 :
+            bank_data[port][bank_q[raddr_i[port]]];
     end
 endmodule
 `default_nettype wire

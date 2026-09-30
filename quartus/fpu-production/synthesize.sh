@@ -54,7 +54,7 @@ for variant in "${variants[@]}"; do
     rtl/fpu/ppc_fpu_multiplier.sv rtl/fpu/ppc_fpu_align_plan.sv rtl/fpu/ppc_fpu_aligner.sv
     rtl/fpu/ppc_fpu_adder.sv rtl/fpu/ppc_fpu_convert.sv rtl/fpu/ppc_fpu_rounder.sv
     rtl/fpu/ppc_fpu_divider.sv rtl/fpu/ppc_fpu_arith.sv)
-  if [[ "${base_variant}" == full ]]; then sources+=(rtl/fpu/ppc_fpu_fprs.sv rtl/fpu/ppc_fpu.sv); fi
+  if [[ "${base_variant}" == full ]]; then sources+=(rtl/ppc_ram_lut.sv rtl/fpu/ppc_fpu_fprs.sv rtl/fpu/ppc_fpu.sv); fi
   manifest="${script_dir}/output_files/${variant}/sources.sha256"
   project_inputs=(
     "quartus/fpu-production/output_files/${variant}/project/ppc_fpu.qpf"
@@ -108,7 +108,7 @@ for line in lines[start + 2:]:
         break
     cells = line.strip().strip(";").split(";")
     name = cells[0].rstrip()
-    if len(name) - len(name.lstrip()) > 6:
+    if len(name) - len(name.lstrip()) > 9:
         continue
     print(f"{name[:56]:56}" + "".join(f"{cells[i].strip():>14}" for i in columns))
 PY

@@ -19,6 +19,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_co
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_rounder.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_divider.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_arith.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/ppc_ram_lut.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_fprs.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu.sv
 set_instance_assignment -name VIRTUAL_PIN ON -to clk_i
