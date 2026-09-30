@@ -53,17 +53,19 @@ history is in [CHANGELOG.md](../CHANGELOG.md).
 | --- | --- | --- |
 | Verilator | 5.020 | host |
 | GNU Make, Python 3, g++ (C++20), Git | any current | host |
-| Quartus Prime Lite | 17.0.2, `theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70` | `quartus/*/build.sh` |
-| Cross-compiler | `ppc603e-cross:bookworm-20250811`: gcc-powerpc-linux-gnu 12.2.0-5, binutils 2.40-2, Debian snapshot 20250811 | `toolchain/Dockerfile` |
+| Quartus Prime Lite | 17.0.2, `theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70` | `ci/pins.env` |
+| Cross-compiler | `ppc603e-cross:bookworm-20250811`: gcc-powerpc-linux-gnu 12.2.0-5, binutils 2.40-2, Debian snapshot 20250811 | `ci/pins.env`, `toolchain/Dockerfile` |
 | DingusPPC | `LAST_VERIFIED` in `sim/cosim/reference_checkout.py` | sibling `../dingusppc` |
+
+`ci/setup.sh` fetches DingusPPC, the benchmark sources and the MiSTer framework at
+their pins. CI tooling, build summaries and release notes: [CI.md](CI.md).
 
 ## Reproduce from a clean checkout
 
 ```sh
 git clone <this repository> ppc603e
-git clone https://github.com/dingusdev/dingusppc.git
-git -C dingusppc checkout <LAST_VERIFIED>
 cd ppc603e
+ci/setup.sh                           # DingusPPC at LAST_VERIFIED, benchmarks, framework
 ./toolchain/build-container.sh        # builds the pinned cross-compiler image
 make -C sim release-check             # every gate below, then a summary
 ```
@@ -84,7 +86,8 @@ each step to `sim/build/release-check/`, and runs, in order:
 Pass `RELEASE_ARGS="--skip-quartus"` to run only the simulation gates,
 `--dry-run` to list the steps, or `-j N` for make parallelism (default 2).
 Unconstrained-path summaries and RAM/DSP inference still need a manual read
-of each `.sta.rpt` and `.fit.rpt`.
+of each `.sta.rpt` and `.fit.rpt`. Each fit also writes a JSON summary;
+`python3 ci/release_notes.py` turns the summaries into release notes ([CI.md](CI.md)).
 
 `make -C sim release-archive` writes `sim/build/release/ppc603e-<version>.tar.gz`
 from committed files only, with a manifest of the commit, archive hash, pinned

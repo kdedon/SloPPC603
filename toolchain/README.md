@@ -7,7 +7,8 @@ profile; this smoke program does not exercise floating-point operations.
 
 ## Reproducible container build
 
-The container pins the dated Debian base by registry digest and uses a Debian
+The container pins the dated Debian base by registry digest (in `ci/pins.env`,
+passed as build arguments by `build-container.sh`) and uses a Debian
 snapshot with exact package versions. Snapshot metadata and packages are
 authenticated by APT signatures; HTTP avoids depending on CA state in the bare
 bootstrap image. `build-container.sh` records the resulting local image ID and

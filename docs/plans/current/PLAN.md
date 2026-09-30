@@ -93,13 +93,9 @@ Queued, in order:
    soft-float (runs on the FPU-less core) and hard-float (after integration),
    reported as MWIPS and MWIPS/MHz in the demo SoC and on the MiSTer screen.
    The hard-float MiSTer build needs the FPU in the MiSTer SoC.
-3. CI preparation: pin the Quartus and toolchain images by digest; have the
-   fit and MiSTer scripts emit one machine-readable summary (ALMs, RAM, DSP,
-   slack per clock and corner); a setup script that fetches DingusPPC and the
-   benchmark sources at their pins; release notes that name the commit and the
-   pinned MiSTer framework revision (GPL-2) and flag GPL-3 suite builds. The
-   GitHub workflows (quick checks on push, rolling MiSTer build on main,
-   tagged releases with fits) wait until they are enabled.
+3. CI: pins, build summaries, setup script, release notes and draft workflows
+   are in place ([CI.md](../../CI.md)). Next: enable the workflows and measure
+   one MiSTer build on a hosted runner for disk and time headroom.
 4. Pipelined FP issue: a dedicated FP dispatch/retire path using the FPU's
    pipelining and second lane, so core-level FP latency and issue rate match
    Table 6-5 (the first integration serializes FP through the special lane,
