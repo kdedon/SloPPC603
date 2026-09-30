@@ -4,7 +4,8 @@
 // Area-reduced arithmetic unit with the ppc_fpu_arith interface and results.
 // One operation at a time steps through a single lane register pair, one
 // shifter (alignment, then normalization or denormalization), one adder and
-// the rounding functions of the pipelined unit. Latency is not Table 6-5.
+// the rounding functions of the pipelined unit. Divides run a radix-2
+// restoring recurrence into the same rounding path. Latency is not Table 6-5.
 // The lane holds sum bits 159:48 (603e) or 159:96 (602); every finite
 // magnitude and sticky bit lies there.
 module ppc_fpu_arith_compact #(
@@ -39,8 +40,10 @@ module ppc_fpu_arith_compact #(
 
     typedef enum logic [3:0] {
         S_IDLE, S_IN, S_MUL, S_ALIGN, S_ADD, S_NEG, S_PREP, S_NORM,
-        S_ROUND, S_CONV, S_SPECIAL, S_DIV
+        S_ROUND, S_CONV, S_SPECIAL, S_DIVA, S_DIVB, S_DIVI
     } state_t;
+    // Every 602 operand is binary32-representable: 24 significant bits.
+    localparam logic [52:0] SIG_MASK = CPU_602 ? {24'hffffff, 29'd0} : '1;
 
     state_t state_q;
     ppc_fpu_arith_req_t input_q;
@@ -62,12 +65,17 @@ module ppc_fpu_arith_compact #(
     logic [5:0] single_lz_q;
     logic shift_left_q;
     logic [7:0] shift_amount_q;
+    // Divide recurrence: normalized divisor, remainder, quotient bits.
+    logic [52:0] den_q;
+    logic [52:0] rem_q;
+    logic [53:0] quot_q;
+    logic [5:0] div_count_q;
+    logic div_sign_q;
     ppc_fpu_arith_rsp_t special_q;
     ppc_fpu_arith_rsp_t rsp_q;
     logic rsp_valid_q;
 
     logic accept;
-    logic divide_request;
     logic in_finite;
     logic in_conversion;
     logic multiply_op;
@@ -95,14 +103,14 @@ module ppc_fpu_arith_compact #(
     ppc_fpu_arith_rsp_t pushed;
     logic push;
 
-    logic div_busy;
-    logic div_finishing;
-    logic div_next_finish;
-    // The divider's tag equals the held request's.
-    /* verilator lint_off UNUSEDSIGNAL */
-    ppc_pkg::completion_tag_t div_tag;
-    round_input_t div_round;
-    /* verilator lint_on UNUSEDSIGNAL */
+    logic in_divide;
+    logic div_special;
+    logic div_single;
+    logic [52:0] div_sig;
+    logic signed [15:0] div_exp;
+    logic [53:0] div_trial;
+    logic [52:0] rem_next;
+    logic [54:0] quot_next;
 
     function automatic lane_t reverse(input lane_t v);
         lane_t r;
@@ -149,7 +157,6 @@ module ppc_fpu_arith_compact #(
         return count;
     endfunction
 
-    assign divide_request = req_i.op == FP_DIV || req_i.op == FP_FRES;
     assign req_ready_o = rst_ni && !flush_i && state_q == S_IDLE &&
         !rsp_valid_q;
     assign accept = req_valid_i && req_ready_o;
@@ -184,18 +191,24 @@ module ppc_fpu_arith_compact #(
         .plan_o(plan)
     );
 
-    ppc_fpu_divider #(.CPU_602(CPU_602)) divider (
-        .clk_i,
-        .rst_ni,
-        .flush_i,
-        .start_i(accept && divide_request),
-        .req_i(req_i),
-        .busy_o(div_busy),
-        .finishing_o(div_finishing),
-        .next_finish_o(div_next_finish),
-        .tag_o(div_tag),
-        .round_o(div_round)
-    );
+    // Divide and reciprocal estimate. Special operands take the unpack
+    // response; finite ones normalize a, then b, then take one quotient bit
+    // per cycle, two per radix-4 digit of the pipelined divider.
+    assign in_divide = input_q.op == FP_DIV || input_q.op == FP_FRES;
+    assign div_special = !(input_q.b[62:0] != 63'd0 &&
+        input_q.b[62:52] != 11'h7ff &&
+        (input_q.op == FP_FRES ||
+         (input_q.a[62:0] != 63'd0 && input_q.a[62:52] != 11'h7ff)));
+    assign div_single = CPU_602 || input_q.single_result ||
+        input_q.op == FP_FRES;
+    assign div_sig = finite_sig(state_q == S_DIVA ? input_q.a[62:0] :
+        input_q.b[62:0]) & SIG_MASK;
+    assign div_exp = finite_exp(state_q == S_DIVA ? input_q.a[62:0] :
+        input_q.b[62:0]);
+    assign div_trial = {rem_q, 1'b0} - {1'b0, den_q};
+    assign rem_next = (div_trial[53] ? {rem_q[51:0], 1'b0} : div_trial[52:0]) &
+        SIG_MASK;
+    assign quot_next = {quot_q, !div_trial[53]};
 
     assign round_single = CPU_602 || input_q.single_result ||
         input_q.op == FP_FRSP || input_q.op == FP_FRES;
@@ -265,14 +278,15 @@ module ppc_fpu_arith_compact #(
     assign finish_o = pushed;
     assign finish_write_o = push && pushed.write_result;
     assign next_finish_valid_o = rst_ni && !flush_i &&
-        ((state_q == S_IN && !in_finite && !in_conversion) ||
+        ((state_q == S_IN && !in_finite && !in_conversion &&
+          (!in_divide || div_special)) ||
          (state_q == S_ALIGN && in_conversion) ||
-         state_q == S_NORM ||
-         (state_q == S_DIV && div_next_finish && !div_round.finite));
+         state_q == S_NORM);
     assign next_finish_tag_o = input_q.tag;
     assign rsp_valid_o = rst_ni && !flush_i && rsp_valid_q;
     assign rsp_o = rsp_q;
-    assign div_busy_o = rst_ni && !flush_i && div_busy && !div_finishing;
+    assign div_busy_o = rst_ni && !flush_i &&
+        (state_q == S_DIVA || state_q == S_DIVB || state_q == S_DIVI);
 
     always_ff @(posedge clk_i) begin
         if (!rst_ni || flush_i) begin
@@ -286,9 +300,10 @@ module ppc_fpu_arith_compact #(
                 state_q <= S_IDLE;
             end
             case (state_q)
-                S_IDLE: if (accept) state_q <= divide_request ? S_DIV : S_IN;
+                S_IDLE: if (accept) state_q <= S_IN;
                 S_IN:
-                    if (!in_finite && !in_conversion) state_q <= S_SPECIAL;
+                    if (in_divide) state_q <= div_special ? S_SPECIAL : S_DIVA;
+                    else if (!in_finite && !in_conversion) state_q <= S_SPECIAL;
                     else if (in_dp_multiply) state_q <= S_MUL;
                     else state_q <= S_ALIGN;
                 S_MUL: state_q <= S_ALIGN;
@@ -297,8 +312,9 @@ module ppc_fpu_arith_compact #(
                 S_NEG: state_q <= S_PREP;
                 S_PREP: state_q <= S_NORM;
                 S_NORM: state_q <= S_ROUND;
-                S_DIV: if (div_next_finish)
-                    state_q <= div_round.finite ? S_PREP : S_SPECIAL;
+                S_DIVA: state_q <= S_DIVB;
+                S_DIVB: state_q <= S_DIVI;
+                S_DIVI: if (div_count_q == 6'd1) state_q <= S_PREP;
                 default: begin end
             endcase
         end
@@ -323,14 +339,39 @@ module ppc_fpu_arith_compact #(
         if (state_q == S_ALIGN || state_q == S_NORM) b_q <= shift_out;
         if (state_q == S_ADD || state_q == S_NEG) b_q <= add_sum;
         if (state_q == S_ADD) carry_q <= add_carry;
-        if (state_q == S_DIV && div_next_finish) begin
-            special_q <= div_round.special_rsp;
-            b_q <= div_round.sum.magnitude[159 -: W];
-            exp_q <= div_round.sum.exponent;
-            sign_x_q <= div_round.sum.sign;
-            negate_final_q <= div_round.sum.negate_final;
-            single_operand_q <= 1'b0;
-            same_q <= 1'b1;
+        if (state_q == S_DIVA) begin
+            rem_q <= input_q.op == FP_FRES ? 53'h10000000000000 : div_sig;
+            exp_q <= input_q.op == FP_FRES ? 16'sd0 : div_exp;
+        end
+        if (state_q == S_DIVB) begin : divide_start
+            logic [53:0] difference;
+            difference = {1'b0, rem_q} - {1'b0, div_sig};
+            den_q <= div_sig;
+            rem_q <= difference[53] ? rem_q : difference[52:0];
+            quot_q <= difference[53] ? 54'd0 : 54'd1;
+            exp_q <= exp_q - div_exp;
+            div_sign_q <= (input_q.op != FP_FRES && input_q.a[63]) ^
+                input_q.b[63];
+            div_count_q <= div_single ? 6'd26 : 6'd54;
+        end
+        if (state_q == S_DIVI) begin : divide_step
+            // Only the magnitude and sign are taken; the exponent is exp_q.
+            /* verilator lint_off UNUSEDSIGNAL */
+            finite_sum_t sum;
+            /* verilator lint_on UNUSEDSIGNAL */
+            rem_q <= rem_next;
+            quot_q <= quot_next[53:0];
+            div_count_q <= div_count_q - 6'd1;
+            sum = prepare_division_sum(input_q.op,
+                CPU_602 || input_q.single_result, exp_q, div_sign_q,
+                quot_next, rem_next != 53'd0);
+            if (div_count_q == 6'd1) begin
+                b_q <= sum.magnitude[159 -: W];
+                sign_x_q <= sum.sign;
+                negate_final_q <= 1'b0;
+                single_operand_q <= 1'b0;
+                same_q <= 1'b1;
+            end
         end
         if (state_q == S_PREP) begin : prep
             logic zero;
