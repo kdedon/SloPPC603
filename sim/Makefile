@@ -332,6 +332,82 @@ lint-fpu-production:
 	$(VERILATOR) --lint-only -Wall "-GCPU_602=1'b1" --top-module ppc_fpu $(PPC_FPU_ARITH_RTL) $(PPC_FPU_SHELL_RTL)
 
 lint: lint-fpu-production
+
+# FPU_IMPL=COMPACT: the same numerical and architectural benches against
+# ppc_fpu_compact and ppc_fpu_arith_compact (+define+FPU_COMPACT). Benches that
+# need overlapped instructions or Table 6-5 cycle counts stay FULL only.
+.PHONY: test-fpu-compact lint-fpu-compact test-fpu-testfloat-compact
+.PHONY: test-fpu-compact-arith test-fpu-compact-arith-602
+.PHONY: test-fpu-compact-cluster test-fpu-compact-cluster-602
+.PHONY: test-fpu-compact-estimates test-fpu-compact-estimates-602
+.PHONY: test-fpu-compact-shell test-fpu-compact-602
+.PHONY: test-fpu-compact-enabled-603 test-fpu-compact-enabled-602
+.PHONY: test-fpu-testfloat-compact-603 test-fpu-testfloat-compact-602
+PPC_FPU_COMPACT_ARITH_RTL := $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu_arith_compact.sv
+PPC_FPU_COMPACT_RTL := $(PPC_FPU_COMPACT_ARITH_RTL) ../rtl/ppc_ram_lut.sv ../rtl/fpu/ppc_fpu_compact.sv
+PPC_FPU_COMPACT_BUILD := $(BUILD_DIR)/ppc-fpu-compact
+COMPACT_VERILATE := $(VERILATOR) --binary --timing --assert -Wall -j 2 +define+FPU_COMPACT
+$(PPC_FPU_COMPACT_BUILD)-arith-603/Vtb_ppc_fpu_arith: $(PPC_FPU_COMPACT_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
+	$(COMPACT_VERILATE) "-GCPU_602=1'b0" --top-module tb_ppc_fpu_arith --Mdir $(@D) $(PPC_FPU_COMPACT_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
+$(PPC_FPU_COMPACT_BUILD)-arith-602/Vtb_ppc_fpu_arith: $(PPC_FPU_COMPACT_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
+	$(COMPACT_VERILATE) "-GCPU_602=1'b1" --top-module tb_ppc_fpu_arith --Mdir $(@D) $(PPC_FPU_COMPACT_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv
+$(PPC_FPU_COMPACT_BUILD)-estimates-603/Vtb_ppc_fpu_estimates: $(PPC_FPU_COMPACT_ARITH_RTL) fpu/tb_ppc_fpu_estimates.sv
+	$(COMPACT_VERILATE) "-GCPU_602=1'b0" --top-module tb_ppc_fpu_estimates --Mdir $(@D) $(PPC_FPU_COMPACT_ARITH_RTL) fpu/tb_ppc_fpu_estimates.sv
+$(PPC_FPU_COMPACT_BUILD)-estimates-602/Vtb_ppc_fpu_estimates: $(PPC_FPU_COMPACT_ARITH_RTL) fpu/tb_ppc_fpu_estimates.sv
+	$(COMPACT_VERILATE) "-GCPU_602=1'b1" --top-module tb_ppc_fpu_estimates --Mdir $(@D) $(PPC_FPU_COMPACT_ARITH_RTL) fpu/tb_ppc_fpu_estimates.sv
+$(PPC_FPU_COMPACT_BUILD)-shell/Vtb_ppc_fpu_shell: $(PPC_FPU_COMPACT_RTL) fpu/tb_ppc_fpu_shell.sv
+	$(COMPACT_VERILATE) --top-module tb_ppc_fpu_shell --Mdir $(@D) $(PPC_FPU_COMPACT_RTL) fpu/tb_ppc_fpu_shell.sv
+$(PPC_FPU_COMPACT_BUILD)-602/Vtb_ppc_fpu_602: $(PPC_FPU_COMPACT_RTL) fpu/tb_ppc_fpu_602.sv
+	$(COMPACT_VERILATE) --top-module tb_ppc_fpu_602 --Mdir $(@D) $(PPC_FPU_COMPACT_RTL) fpu/tb_ppc_fpu_602.sv
+$(PPC_FPU_COMPACT_BUILD)-enabled-603/Vtb_ppc_fpu_enabled: $(PPC_FPU_COMPACT_RTL) fpu/tb_ppc_fpu_enabled.sv
+	$(COMPACT_VERILATE) "-GCPU_602=1'b0" --top-module tb_ppc_fpu_enabled --Mdir $(@D) $(PPC_FPU_COMPACT_RTL) fpu/tb_ppc_fpu_enabled.sv
+$(PPC_FPU_COMPACT_BUILD)-enabled-602/Vtb_ppc_fpu_enabled: $(PPC_FPU_COMPACT_RTL) fpu/tb_ppc_fpu_enabled.sv
+	$(COMPACT_VERILATE) "-GCPU_602=1'b1" --top-module tb_ppc_fpu_enabled --Mdir $(@D) $(PPC_FPU_COMPACT_RTL) fpu/tb_ppc_fpu_enabled.sv
+test-fpu-compact-arith: test-fpu-reference $(PPC_FPU_COMPACT_BUILD)-arith-603/Vtb_ppc_fpu_arith $(PPC_FPU_ARITH_ALL)
+	./$(PPC_FPU_COMPACT_BUILD)-arith-603/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_ARITH_ALL)
+test-fpu-compact-arith-602: test-fpu-reference $(PPC_FPU_COMPACT_BUILD)-arith-602/Vtb_ppc_fpu_arith $(PPC_FPU_ARITH_602_VECTORS)
+	./$(PPC_FPU_COMPACT_BUILD)-arith-602/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_ARITH_602_VECTORS)
+test-fpu-compact-cluster: $(PPC_FPU_COMPACT_BUILD)-arith-603/Vtb_ppc_fpu_arith $(PPC_FPU_CLUSTER_603)
+	./$(PPC_FPU_COMPACT_BUILD)-arith-603/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_CLUSTER_603)
+test-fpu-compact-cluster-602: $(PPC_FPU_COMPACT_BUILD)-arith-602/Vtb_ppc_fpu_arith $(PPC_FPU_CLUSTER_602)
+	./$(PPC_FPU_COMPACT_BUILD)-arith-602/Vtb_ppc_fpu_arith +VECTORS=$(PPC_FPU_CLUSTER_602)
+test-fpu-compact-estimates: $(PPC_FPU_COMPACT_BUILD)-estimates-603/Vtb_ppc_fpu_estimates $(PPC_FPU_ESTIMATE_VECTORS)
+	./$(PPC_FPU_COMPACT_BUILD)-estimates-603/Vtb_ppc_fpu_estimates +VECTORS=$(PPC_FPU_ESTIMATE_VECTORS) +OUTPUT=$(BUILD_DIR)/fpu/estimate-compact-results.txt
+	python3 fpu/estimate_vectors.py compare --vectors $(PPC_FPU_ESTIMATE_VECTORS) --results $(BUILD_DIR)/fpu/estimate-compact-results.txt
+test-fpu-compact-estimates-602: $(PPC_FPU_COMPACT_BUILD)-estimates-602/Vtb_ppc_fpu_estimates $(PPC_FPU_ESTIMATE_602_VECTORS)
+	./$(PPC_FPU_COMPACT_BUILD)-estimates-602/Vtb_ppc_fpu_estimates +VECTORS=$(PPC_FPU_ESTIMATE_602_VECTORS) +OUTPUT=$(BUILD_DIR)/fpu/estimate-compact-602-results.txt
+	python3 fpu/estimate_vectors_602.py compare --vectors $(PPC_FPU_ESTIMATE_602_VECTORS) --results $(BUILD_DIR)/fpu/estimate-compact-602-results.txt
+test-fpu-compact-shell: $(PPC_FPU_COMPACT_BUILD)-shell/Vtb_ppc_fpu_shell
+	./$(PPC_FPU_COMPACT_BUILD)-shell/Vtb_ppc_fpu_shell
+test-fpu-compact-602: $(PPC_FPU_COMPACT_BUILD)-602/Vtb_ppc_fpu_602
+	./$(PPC_FPU_COMPACT_BUILD)-602/Vtb_ppc_fpu_602
+test-fpu-compact-enabled-603: $(PPC_FPU_COMPACT_BUILD)-enabled-603/Vtb_ppc_fpu_enabled $(PPC_FPU_ENABLED_603)
+	./$(PPC_FPU_COMPACT_BUILD)-enabled-603/Vtb_ppc_fpu_enabled +VECTORS=$(PPC_FPU_ENABLED_603)
+test-fpu-compact-enabled-602: $(PPC_FPU_COMPACT_BUILD)-enabled-602/Vtb_ppc_fpu_enabled $(PPC_FPU_ENABLED_602)
+	./$(PPC_FPU_COMPACT_BUILD)-enabled-602/Vtb_ppc_fpu_enabled +VECTORS=$(PPC_FPU_ENABLED_602)
+test-fpu-compact: test-fpu-compact-arith test-fpu-compact-arith-602 \
+	test-fpu-compact-cluster test-fpu-compact-cluster-602 \
+	test-fpu-compact-estimates test-fpu-compact-estimates-602 \
+	test-fpu-compact-shell test-fpu-compact-602 \
+	test-fpu-compact-enabled-603 test-fpu-compact-enabled-602
+test-fpu-all: test-fpu-compact
+test-fpu-testfloat-compact-603: $(TESTFLOAT_GEN) $(PPC_FPU_COMPACT_BUILD)-arith-603/Vtb_ppc_fpu_arith
+	python3 fpu/testfloat_vectors.py --gen $(TESTFLOAT_GEN) --personality 603e --fused-stride $(TESTFLOAT_FUSED_STRIDE) --vectors $(BUILD_DIR)/fpu/testfloat-compact-603.txt
+	./$(PPC_FPU_COMPACT_BUILD)-arith-603/Vtb_ppc_fpu_arith +VECTORS=$(BUILD_DIR)/fpu/testfloat-compact-603.txt
+	rm -f $(BUILD_DIR)/fpu/testfloat-compact-603.txt
+test-fpu-testfloat-compact-602: $(TESTFLOAT_GEN) $(PPC_FPU_COMPACT_BUILD)-arith-602/Vtb_ppc_fpu_arith
+	python3 fpu/testfloat_vectors.py --gen $(TESTFLOAT_GEN) --personality 602 --fused-stride $(TESTFLOAT_FUSED_STRIDE) --vectors $(BUILD_DIR)/fpu/testfloat-compact-602.txt
+	./$(PPC_FPU_COMPACT_BUILD)-arith-602/Vtb_ppc_fpu_arith +VECTORS=$(BUILD_DIR)/fpu/testfloat-compact-602.txt
+	rm -f $(BUILD_DIR)/fpu/testfloat-compact-602.txt
+test-fpu-testfloat-compact: test-fpu-testfloat-compact-603 test-fpu-testfloat-compact-602
+test-fpu-testfloat: test-fpu-testfloat-compact
+lint-fpu-compact:
+	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu_compact $(PPC_FPU_COMPACT_RTL)
+	$(VERILATOR) --lint-only -Wall "-GCPU_602=1'b1" --top-module ppc_fpu_compact $(PPC_FPU_COMPACT_RTL)
+	$(VERILATOR) --lint-only -Wall --top-module ppc_fpu_arith_compact $(PPC_FPU_COMPACT_ARITH_RTL)
+	$(VERILATOR) --lint-only -Wall "-GCPU_602=1'b1" --top-module ppc_fpu_arith_compact $(PPC_FPU_COMPACT_ARITH_RTL)
+lint: lint-fpu-compact
+
 test-core:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core --Mdir $(BUILD_DIR) $(RTL) ../tb/tb_core.sv
 	./$(BUILD_DIR)/Vtb_core $(SIM_ARGS)

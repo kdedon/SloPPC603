@@ -44,7 +44,11 @@ module tb_ppc_fpu_602;
     int serial_number;
     int checks;
 
+`ifdef FPU_COMPACT
+    ppc_fpu_compact #(.CPU_602(1'b1)) dut (.*);
+`else
     ppc_fpu #(.CPU_602(1'b1)) dut (.*);
+`endif
     assign issue1_valid_i = 1'b0;
     assign issue1_i = '0;
     assign commit1_valid_i = 1'b0;
@@ -292,6 +296,10 @@ module tb_ppc_fpu_602;
         completion_tag_t identity;
         issue_word(spr_insn(xo, 5'd10, spr), source_gpr,
                    1'b0, 1'b0, 1'b0, identity);
+`ifdef FPU_COMPACT
+        // COMPACT does not keep the SPR transfer cycle counts.
+        if (cycles == 2'd0) $fatal(1, "602 SPR latency code");
+`else
         if ((cycles == 2'd1) != result_valid_o)
             $fatal(1, "602 SPR %0d wrong first-cycle result", spr);
         if (cycles == 2'd2) begin
@@ -300,6 +308,7 @@ module tb_ppc_fpu_602;
             if (!result_valid_o)
                 $fatal(1, "602 SPR %0d missing second-cycle result", spr);
         end
+`endif
         await_result(identity);
         if (result_o.exception != FPU_NO_EXCEPTION)
             $fatal(1, "602 SPR %0d latency result trapped", spr);

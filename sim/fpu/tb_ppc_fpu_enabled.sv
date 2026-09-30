@@ -52,7 +52,11 @@ module tb_ppc_fpu_enabled #(
     ppc_fpu_forward_data_t forward_data_o, forward1_data_o;
     /* verilator lint_on UNUSEDSIGNAL */
 
+`ifdef FPU_COMPACT
+    ppc_fpu_compact #(.CPU_602(CPU_602)) dut (.*);
+`else
     ppc_fpu #(.CPU_602(CPU_602)) dut (.*);
+`endif
     assign issue1_valid_i = 1'b0;
     assign issue1_i = '0;
     assign commit1_valid_i = 1'b0;
@@ -428,6 +432,8 @@ module tb_ppc_fpu_enabled #(
             load(5'd2, TWO);
             load(5'd5, QUARTER);
             load(5'd6, CPU_602 ? 64'h30800000 : 64'h3e10000000000000);
+`ifndef FPU_COMPACT
+            // Overlapped producers and consumers need a pipelined shell.
             for (int divide = 0; divide < 2; divide++)
                 for (int kind = 0; kind < 3; kind++)
                     for (int gap1 = 0; gap1 < 4; gap1++)
@@ -450,6 +456,10 @@ module tb_ppc_fpu_enabled #(
                     end
             $display("PASS ppc_fpu operand-binding hazards cases=%0d overlapped fmul/load/fmr=%0d/%0d/%0d",
                      hazard_cases, overlapped[0], overlapped[1], overlapped[2]);
+`else
+            $display("SKIP ppc_fpu operand-binding hazards cases=%0d: one instruction in flight",
+                     hazard_cases);
+`endif
         end
         $display("PASS ppc_fpu enabled-exception %s cases=%0d fp_enabled=%0d emulation_traps=%0d suppressed=%0d checks=%0d",
                  CPU_602 ? "602" : "603e", count, enabled_count, trap_count,
