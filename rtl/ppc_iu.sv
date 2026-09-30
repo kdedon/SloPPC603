@@ -48,6 +48,9 @@ module ppc_iu #(
   logic [63:0] multiply_partial_ext, multiply_addend, multiply_acc;
   logic multiply_overflow;
   logic issue_mulli_short, mulli_short_q;
+  logic signed [27:0] short_low_part;
+  logic [13:0] short_high_part;
+  logic [31:0] short_product;
   logic [31:0] alu_value;
   logic divide_by_zero;
   logic signed_divide_exception;
@@ -266,7 +269,13 @@ module ppc_iu #(
   // A short MULLI's low word comes straight from the first-step product
   // until the accumulator holds it. MULLI writes no CR0, so CR0 reads the
   // other results only.
-  assign result_value = mulli_short_q ? multiply_partial[31:0] : alu_value;
+  // Its low word as two parallel 18- and 14-bit pieces, off the cascaded
+  // product: the digit is a signed byte.
+  assign short_low_part = $signed({1'b0, held.a[17:0]}) * $signed(multiply_digit[8:0]);
+  assign short_high_part = 14'(held.a[31:18] *
+                               {{5{multiply_digit[8]}}, multiply_digit[8:0]});
+  assign short_product = 32'(short_low_part) + {short_high_part, 18'b0};
+  assign result_value = mulli_short_q ? short_product : alu_value;
   assign result_o.value = result_value;
   // Compares issue as ~a + b + 1 = b - a. Carry out means b >= a unsigned;
   // the true sign of b - a is its sign bit XOR overflow.
@@ -339,6 +348,9 @@ module ppc_iu #(
     if (rst_ni && mulli_short_q)
       assert (held.ctrl.op == ALU_MULLI && !held.ctrl.write_cr_field)
         else $error("short MULLI result with a CR0 update");
+    if (rst_ni && mulli_short_q)
+      assert (short_product == multiply_partial[31:0])
+        else $error("short MULLI pieces disagree with the product");
   end
   // synthesis translate_on
 endmodule
