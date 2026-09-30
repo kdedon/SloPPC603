@@ -139,6 +139,9 @@ module ppc_fpu #(
     logic [1:0] local_wait;
     logic mem_write;
     logic store_fill;
+    // Producer slot of each source (frA or frS, frB, frC), bound at
+    // dispatch; zero reads the register file.
+    logic [2:0][PENDING_DEPTH-1:0] producer;
   } pending_t;
   typedef struct packed {
     logic valid;
@@ -275,7 +278,9 @@ module ppc_fpu #(
   logic deferred_abort_flush;
   logic older_arith_pending;
   logic sources_ready;
-  logic [PENDING_DEPTH-1:0] exec_older, second_older;
+  logic [2:0][PENDING_DEPTH-1:0] bind0, bind1;
+  logic [2:0][4:0] work1_index;
+  logic [PENDING_DEPTH-1:0] retiring;
   logic exec_found;
   logic second_exec_found;
   logic [PENDING_IDX_BITS-1:0] second_exec_slot;
@@ -733,25 +738,29 @@ module ppc_fpu #(
          (v[63] && v[62:0] != 63'd0));
   endfunction
 
-  // The youngest older pending writer supplies the operand; otherwise the
-  // register file does. Per-slot values and readiness are shared by all
-  // lookups (slot_src). Value bits of a source that is not ready are unused.
+  // Youngest pending writer of a register: the producer a dispatching
+  // instruction binds to.
+  function automatic logic [PENDING_DEPTH-1:0] writer_of(
+      input logic [4:0] reg_index);
+    logic [PENDING_DEPTH-1:0] match;
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      match[i] = pending_q[i].valid && pending_q[i].dest_fpr &&
+          pending_q[i].issue.insn[25:21] == reg_index;
+    return youngest_of(match);
+  endfunction
+
+  // A bound producer supplies the operand; otherwise the register file
+  // does. Per-slot values and readiness are shared by all lookups
+  // (slot_src). Value bits of a source that is not ready are unused.
   function automatic source_t read_source(input logic [4:0] reg_index,
                                           input logic [FPR_BITS-1:0] stored,
-                                          input logic [PENDING_DEPTH-1:0] older);
+                                          input logic [PENDING_DEPTH-1:0] producer);
     source_t s;
-    logic [PENDING_DEPTH-1:0] older_match;
-    logic [PENDING_DEPTH-1:0] newest;
     begin
-      for (integer i = 0; i < PENDING_DEPTH; i++)
-        older_match[i] = pending_q[i].valid && pending_q[i].dest_fpr &&
-            pending_q[i].issue.insn[25:21] == reg_index &&
-            older[i];
-      newest = youngest_of(older_match);
       s = '0;
-      if (|newest) begin
+      if (|producer) begin
         for (integer i = 0; i < PENDING_DEPTH; i++)
-          if (newest[i]) s |= slot_src[i];
+          if (producer[i]) s |= slot_src[i];
       end else begin
         s.ready = 1'b1;
         s.raw = {{(64-FPR_BITS){1'b0}}, stored};
@@ -1111,13 +1120,6 @@ module ppc_fpu #(
     second_exec_slot = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++)
       if (second_sel[i]) second_exec_slot |= PENDING_IDX_BITS'(i);
-    exec_older = '0;
-    second_older = '0;
-    for (integer i = 0; i < PENDING_DEPTH; i++)
-      for (integer t = 0; t < PENDING_DEPTH; t++) begin
-        if (exec_sel[t] && older_q[i][t]) exec_older[i] = 1'b1;
-        if (second_sel[t] && older_q[i][t]) second_older[i] = 1'b1;
-      end
     exec_kind_mem = exec_is_mem;
     exec_kind_fpu = exec_is_fpu;
     barrier_present = barrier_q;
@@ -1190,19 +1192,13 @@ module ppc_fpu #(
            pv[0].decoded.kind == DK_FSEL) && head_result.cr_write)
         head_result.cr_value = fpscr_q[31:28];
       if (pv[0].decoded.kind == DK_ARITH) begin
-        if (pv[0].arith_done)
-          head_result = numeric_result(head_base, pv[0].arith, pv[0].value,
+        if (pv[0].arith_done || arith_rsp_head)
+          head_result = numeric_result(head_base,
+              pv[0].arith_done ? pv[0].arith : flags_of(arith_rsp),
+              pv[0].arith_done ? pv[0].value : format_reply(pv[0].decoded.op),
               pv[0].decoded.op, pv[0].issue.insn[0],
               pv[0].issue.insn[25:23],
               pv[0].issue.msr_fe0, pv[0].issue.msr_fe1, fpscr_q);
-        else if (arith_rsp_head) begin
-          head_result = numeric_result(head_base, flags_of(arith_rsp),
-              format_reply(pv[0].decoded.op),
-              pv[0].decoded.op, pv[0].issue.insn[0],
-              pv[0].issue.insn[25:23],
-              pv[0].issue.msr_fe0,
-              pv[0].issue.msr_fe1, fpscr_q);
-        end
       end else if (pv[0].decoded.kind == DK_MEMORY &&
                    mem_rsp_head) begin
         head_result = memory_result(head_base,
@@ -1341,12 +1337,17 @@ module ppc_fpu #(
         work_issue.insn[25:21] : work_issue.insn[20:16];
     src_b_index = work_issue.insn[15:11];
     src_c_index = work_issue.insn[10:6];
-    source_a = read_source(src_a_index, fpr_rdata[0], work_dispatch ?
-        {PENDING_DEPTH{1'b1}} : exec_older);
-    source_b = read_source(src_b_index, fpr_rdata[1], work_dispatch ?
-        {PENDING_DEPTH{1'b1}} : exec_older);
-    source_c = read_source(src_c_index, fpr_rdata[2], work_dispatch ?
-        {PENDING_DEPTH{1'b1}} : exec_older);
+    // A waiting entry reads its bound producers; a dispatching one binds
+    // to the youngest pending writers.
+    for (integer k = 0; k < 3; k++) bind0[k] = pending_q[exec_slot].producer[k];
+    if (work_dispatch) begin
+      bind0[0] = writer_of(src_a_index);
+      bind0[1] = writer_of(src_b_index);
+      bind0[2] = writer_of(src_c_index);
+    end
+    source_a = read_source(src_a_index, fpr_rdata[0], bind0[0]);
+    source_b = read_source(src_b_index, fpr_rdata[1], bind0[1]);
+    source_c = read_source(src_c_index, fpr_rdata[2], bind0[2]);
     source_d = source_a;
     src_a = source_a.raw;
     src_b = source_b.raw;
@@ -1449,13 +1450,16 @@ module ppc_fpu #(
     end
     work1_admitted = work1_old ||
         (exec_found ? dispatch_fire : dispatch1_fire);
-    work1_a = read_source(memory_form(work1_issue.insn[31:26]) ?
-        work1_issue.insn[25:21] : work1_issue.insn[20:16], fpr_rdata[3],
-        work1_old ? second_older : {PENDING_DEPTH{1'b1}});
-    work1_b = read_source(work1_issue.insn[15:11], fpr_rdata[4],
-        work1_old ? second_older : {PENDING_DEPTH{1'b1}});
-    work1_c = read_source(work1_issue.insn[10:6], fpr_rdata[5],
-        work1_old ? second_older : {PENDING_DEPTH{1'b1}});
+    work1_index[0] = memory_form(work1_issue.insn[31:26]) ?
+        work1_issue.insn[25:21] : work1_issue.insn[20:16];
+    work1_index[1] = work1_issue.insn[15:11];
+    work1_index[2] = work1_issue.insn[10:6];
+    for (integer k = 0; k < 3; k++)
+      bind1[k] = work1_old ? pending_q[second_exec_slot].producer[k] :
+          writer_of(work1_index[k]);
+    work1_a = read_source(work1_index[0], fpr_rdata[3], bind1[0]);
+    work1_b = read_source(work1_index[1], fpr_rdata[4], bind1[1]);
+    work1_c = read_source(work1_index[2], fpr_rdata[5], bind1[2]);
     work1_d = work1_a;
     work1_d_raw = work1_d.fwd ? finish_store_word : work1_d.raw[30:0];
     work1_store_d_ready = work1_d.ready && !(work1_d.fwd && finish_trap);
@@ -1899,6 +1903,7 @@ module ppc_fpu #(
         if (slot_candidate[i].cr_write) pending_d[i].cr_forwarded = 1'b1;
       end
     mem_incoming_result = '0;
+    retiring = '0;
     local_result = finish_local_data('0, local_stage_q.move_kind,
         local_stage_q.is_move, local_stage_q.rc, local_a, local_b, local_c,
         local_stage_q.c_lt);
@@ -1989,8 +1994,18 @@ module ppc_fpu #(
     if (retire1_fire) pending_d[head1_q].valid = 1'b0;
     head_d = slot_of(head_q, 3'(retire_count));
     pending_count_d = after_retire_count;
+    // A retiring producer's value is in the register file next cycle.
+    retiring = '0;
+    if (retire_fire) retiring[head_q] = 1'b1;
+    if (retire1_fire) retiring[head1_q] = 1'b1;
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      for (integer k = 0; k < 3; k++)
+        pending_d[i].producer[k] &= ~retiring;
     if (dispatch_fire) begin
       pending_d[tail_q] = new_entry(issue_i, decoded, issue_ea);
+      for (integer k = 0; k < 3; k++)
+        pending_d[tail_q].producer[k] =
+            (work_dispatch ? bind0[k] : bind1[k]) & ~retiring;
       if (work_dispatch && exec_fire) begin
         pending_d[tail_q].started = 1'b1;
         if (local_launch) begin
@@ -2023,6 +2038,11 @@ module ppc_fpu #(
     end
     if (dispatch1_fire) begin
       pending_d[tail1_q] = new_entry(issue1_i, decoded1, issue1_ea);
+      // A source written by the paired lane-0 instruction binds to it.
+      for (integer k = 0; k < 3; k++)
+        pending_d[tail1_q].producer[k] =
+            dec_write && issue_i.insn[25:21] == work1_index[k] ?
+            PENDING_DEPTH'(1) << tail_q : bind1[k] & ~retiring;
       if (work1_fire) begin
         pending_d[tail1_q].started = 1'b1;
         if (work1_local_launch) begin
