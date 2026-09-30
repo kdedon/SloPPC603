@@ -27,7 +27,8 @@ module ppc_special #(
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   // MCP, SRESET and SMI boundaries; TLBISYNC holds tlbsync.
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
-  // FP instructions run one at a time through the attached FPU.
+  // Attach the FPU: FP loads and stores run through this lane; other FP
+  // instructions arrive on the pipelined FP port.
   parameter bit ENABLE_FPU = 1'b0,
   parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
