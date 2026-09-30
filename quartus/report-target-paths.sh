@@ -3,12 +3,12 @@
 # Copyright (c) 2026 Kevin Dedon
 # List failing setup endpoints of an existing fit at another clock period
 # (default 15.152 ns, 66 MHz); the project SDC stays the gate of record.
-# Usage: report-target-paths.sh <integrated|timer-bat|translated|chip> [period_ns] [--docker]
+# Usage: report-target-paths.sh <integrated|timer-bat|translated|chip|chip602> [period_ns] [--docker]
 set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/.." && pwd)"
 image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70}"
-top="${1:?usage: $0 <integrated|timer-bat|translated|chip> [period_ns] [--docker]}"
+top="${1:?usage: $0 <integrated|timer-bat|translated|chip|chip602> [period_ns] [--docker]}"
 period="15.152"
 mode=local
 for arg in "${@:2}"; do
@@ -19,6 +19,7 @@ case "${top}" in
   timer-bat) revision=ppc603e_timer_bat ;;
   translated) revision=ppc603e_translated ;;
   chip) revision=ppc603e_chip ;;
+  chip602) revision=ppc602_chip ;;
   *) echo "unknown top ${top}" >&2; exit 2 ;;
 esac
 out="output_files/${revision}.target-paths.tsv"
