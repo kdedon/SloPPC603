@@ -165,8 +165,8 @@ Each record opens with one line:
   processes remain. Keep parallel jobs modest (`-j2` per agent when several share a machine).
 - Full gates run once per batch of merged work, not per agent. An agent runs lint,
   `check-spec` and the focused benches for its area (and `test-fpu-all` for FPU changes),
-  then reports; the coordinator merges the batch and runs `ci`, the FPU suite and the
-  Quartus fits once, bisecting the batch's merges if the gate fails. Any Quartus build or
+  then reports; the coordinator merges the batch and runs `ci`, `xrand-sweep`, the FPU suite
+  and the Quartus fits once, bisecting the batch's merges if the gate fails. Any Quartus build or
   `report-target-paths.sh` runs under `flock /tmp/ppc603e-quartus.lock`, and any `ci`,
   `regression`, `release-check` or `test-fpu-all` run under `flock /tmp/ppc603e-sim.lock`.
 - Builds go through `sim/tools/verilate`, which deletes Verilator's ~70 MB precompiled
