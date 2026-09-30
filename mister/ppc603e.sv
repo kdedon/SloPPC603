@@ -50,6 +50,12 @@ assign VIDEO_ARX = 13'd4;
 assign VIDEO_ARY = 13'd3;
 `endif
 
+`ifdef MISTER_FPU
+localparam bit ENABLE_FPU = 1'b1;
+`else
+localparam bit ENABLE_FPU = 1'b0;
+`endif
+
 `ifdef MISTER_BENCH
 localparam int RAM_BYTES = 262144;
 `else
@@ -185,7 +191,7 @@ always @(posedge clk_sys)
 
 ppc603e_mister #(
 	.RAM_INIT("firmware/mister.mif"), .RAM_BYTES(RAM_BYTES), .FB_EXTERNAL(FB_EXTERNAL),
-	.FB_WIDTH(SCREEN_W), .FB_HEIGHT(SCREEN_H)
+	.FB_WIDTH(SCREEN_W), .FB_HEIGHT(SCREEN_H), .ENABLE_FPU(ENABLE_FPU)
 ) core
 (
 	.clk_i(clk_sys),
