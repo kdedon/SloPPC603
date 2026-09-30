@@ -663,11 +663,12 @@ def latency(p):
             pcs.append(p.emit(insn))
             src = 4 + k
         p.spacings.append(('R', pcs[0], pcs[-1], 3 * lat))
-    # FPSCR instructions block FP dispatch until they complete.
+    # FPSCR instructions block FP issue until they retire: the second issues
+    # the cycle after the first retires, then takes its own latency.
     for name in ('mtfsfi', 'mffs'):
         p.emit(SYNC)
         pcs = [p.emit(forms[name]), p.emit(forms[name])]
-        p.spacings.append(('R', pcs[0], pcs[1], 3))
+        p.spacings.append(('R', pcs[0], pcs[1], LATENCY[name] + 1))
     # Mixed integer and FP: one dispatch per cycle, integer retirement in
     # order behind the FP instructions.
     p.emit(SYNC)
