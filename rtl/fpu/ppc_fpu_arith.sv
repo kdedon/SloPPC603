@@ -152,7 +152,7 @@ module ppc_fpu_arith #(
 
     // Add stage.
     assign aligned_x = aligned_q.plan.x[159:48];
-    ppc_fpu_aligner aligner (
+    ppc_fpu_aligner #(.CPU_602(CPU_602)) aligner (
         .y_i(aligned_q.plan.y[159:48]),
         .shift_y_i(aligned_q.plan.shift_y),
         .distance_i(aligned_q.plan.distance),

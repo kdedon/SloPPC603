@@ -58,9 +58,11 @@ module ppc_fpu_divider #(
     logic [54:0] div_quotient_next;
     logic [1:0] div_digit;
 
+    // Every 602 operand is binary32-representable: 24 significant bits.
+    localparam logic [52:0] SIG_MASK = CPU_602 ? {24'hffffff, 29'd0} : '1;
     assign div_start_a_sig = divide_req_q.op == FP_FRES ?
-        53'h10000000000000 : finite_sig(div_a_raw_q);
-    assign div_start_b_sig = finite_sig(div_b_raw_q);
+        53'h10000000000000 : finite_sig(div_a_raw_q) & SIG_MASK;
+    assign div_start_b_sig = finite_sig(div_b_raw_q) & SIG_MASK;
     assign div_start_a_exp = divide_req_q.op == FP_FRES ?
         16'sd0 : finite_exp(div_a_raw_q);
     assign div_start_b_exp = finite_exp(div_b_raw_q);
@@ -80,7 +82,7 @@ module ppc_fpu_divider #(
             div_trial -= {2'b00, div_denominator_q};
             div_digit = 2'd1;
         end
-        div_remainder_next = div_trial[52:0];
+        div_remainder_next = div_trial[52:0] & SIG_MASK;
         div_quotient_next = (div_quotient_q << 2) |
             {53'd0, div_digit};
     end

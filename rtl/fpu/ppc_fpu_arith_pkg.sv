@@ -1067,7 +1067,9 @@ function automatic finite_sum_t prepare_division_sum(
         out.magnitude = {1'b0, quotient[26:0], 132'd0};
     else
         out.magnitude = {1'b0, quotient, 104'd0};
-    out.magnitude[0] |= remainder_nonzero;
+    if (single_result || op == FP_FRES)
+        out.magnitude[96] |= remainder_nonzero;
+    else out.magnitude[0] |= remainder_nonzero;
     out.exponent = result_exponent;
     out.sign = result_sign;
     return out;
@@ -1281,7 +1283,31 @@ function automatic add_result_t add_aligned112(
     return out;
 endfunction
 
+function automatic logic [63:0] shift_right_jam64(
+    input logic [63:0] value, input logic [7:0] distance
+);
+    logic [63:0] work;
+    if (distance >= 8'd64) return {63'd0, |value};
+    work = value;
+    if (distance[5])
+        work = (work >> 32) | {63'd0, |work[31:0]};
+    if (distance[4])
+        work = (work >> 16) | {63'd0, |work[15:0]};
+    if (distance[3])
+        work = (work >> 8) | {63'd0, |work[7:0]};
+    if (distance[2])
+        work = (work >> 4) | {63'd0, |work[3:0]};
+    if (distance[1])
+        work = (work >> 2) | {63'd0, |work[1:0]};
+    if (distance[0])
+        work = (work >> 1) | {63'd0, work[0]};
+    return work;
+endfunction
+
+// A single-only datapath keeps every finite magnitude in bits 159:96, so
+// the shifts run on that window; bits below it only feed the sticky bit.
 function automatic round_work_t direct_round_work(
+    input logic narrow,
     input finite_sum_t value,
     input logic single_result,
     input logic ue,
@@ -1300,7 +1326,20 @@ function automatic round_work_t direct_round_work(
     min_exp = single_result ? -16'sd126 : -16'sd1022;
     if (value.magnitude == 160'd0) return out;
     out.tiny_before = tiny_before;
-    if (out.tiny_before && !ue) begin
+    if (narrow) begin
+        if (out.tiny_before && !ue) begin
+            out.magnitude = denorm_right ?
+                {shift_right_jam64(value.magnitude[159:96], denorm_shift),
+                    96'd0} :
+                {value.magnitude[159:96] << denorm_shift, 96'd0};
+            out.exponent = min_exp;
+        end else begin
+            out.magnitude = value.magnitude[159] ?
+                {shift_right_jam64(value.magnitude[159:96], 8'd1), 96'd0} :
+                {value.magnitude[159:96] << normal_left_shift, 96'd0};
+            out.exponent = normal_exponent;
+        end
+    end else if (out.tiny_before && !ue) begin
         if (denorm_right)
             out.magnitude = shift_right_jam(value.magnitude,
                 {24'd0, denorm_shift});
@@ -1340,7 +1379,7 @@ function automatic ppc_fpu_arith_rsp_t round_finite(
     single_result = cpu_602 || single || op == FP_FRSP ||
         op == FP_FRES;
     normalized = value;
-    work = direct_round_work(normalized, single_result, ue,
+    work = direct_round_work(cpu_602, normalized, single_result, ue,
         normal_left_shift, normal_exponent, tiny_before,
         denorm_shift, denorm_right);
     pre = prepare_round_mantissa(work, single_result, rn);
