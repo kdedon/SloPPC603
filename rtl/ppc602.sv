@@ -194,7 +194,8 @@ module ppc602 #(
     .ENABLE_DCACHE(1'b1),
     .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG)
   ) cpu (
-    .clk_i(sysclk), .rst_ni(core_rst_n),
+    // The internal 60x master runs 1:1 with ppc602_bus (PLL bypass only).
+    .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(1'b1),
     .external_irq_i(!int_n), .interrupt_taken_o(), .interrupt_pc_o(),
     .timer_tick_i(timer_tick), .timebase_enable_i(tben),
     .pin_event_i(pin_event), .pin_status_o(pin_status),
