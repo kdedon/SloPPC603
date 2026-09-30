@@ -232,18 +232,12 @@ module tb_core_sprg;
   assign imem_rsp_valid = rst_n && fetch_pending && (fetch_delay == 0);
   assign imem_rsp_insn = instruction(fetch_address);
 
-  // Architectural SPRG value: storage is not reset, so entries not written
-  // since reset read as zero.
-  function automatic logic [31:0] sprg(input logic [1:0] index);
-    return dut.special.sprg_written_q[index] ? dut.special.sprg_q[index] : 32'h0;
-  endfunction
-
   task automatic require(input logic condition, input string message);
     if (!condition) begin
       $display("state msr=%08x srr0=%08x srr1=%08x sprg=%08x/%08x/%08x/%08x gpr20=%08x gpr22=%08x",
                dut.msr, dut.srr0, dut.srr1,
-               sprg(0), sprg(1),
-               sprg(2), sprg(3),
+               dut.special.sprg_q[0], dut.special.sprg_q[1],
+               dut.special.sprg_q[2], dut.special.sprg_q[3],
                dut.regfile.gpr[20], dut.regfile.gpr[22]);
       $fatal(1, "SPRG core check %0d failed: %s phase=%0d edge=%0d pc=%08x insn=%08x",
              checks + 1, message, phase, edge_count, retired.pc, retired.insn);
@@ -306,8 +300,8 @@ module tb_core_sprg;
     rst_n = 1'b1;
     tick();
     require(!halted && dut.msr == 32'h40 && dut.srr0 == 0 && dut.srr1 == 0 &&
-            sprg(0) == 0 && sprg(1) == 0 &&
-            sprg(2) == 0 && sprg(3) == 0 &&
+            dut.special.sprg_q[0] == 0 && dut.special.sprg_q[1] == 0 &&
+            dut.special.sprg_q[2] == 0 && dut.special.sprg_q[3] == 0 &&
             dut.special.dsisr_q == 0 && dut.completion.count_q == 0,
             "hard reset did not clear local supervisor state");
   endtask
@@ -382,14 +376,14 @@ module tb_core_sprg;
     commit_expected(32'h1c, instruction(32'h1c));
     wait_offer(32'h20, instruction(32'h20));
     held_writer = retired;
-    require(sprg(0) == 0 && sprg(1) == 0 &&
-            sprg(2) == 0 && sprg(3) == 0,
+    require(dut.special.sprg_q[0] == 0 && dut.special.sprg_q[1] == 0 &&
+            dut.special.sprg_q[2] == 0 && dut.special.sprg_q[3] == 0,
             "stalled SPRG writer mutated state before retirement");
     repeat (3) begin
       tick();
       require(retire_valid && retired == held_writer &&
-              sprg(0) == 0 && sprg(1) == 0 &&
-              sprg(2) == 0 && sprg(3) == 0,
+              dut.special.sprg_q[0] == 0 && dut.special.sprg_q[1] == 0 &&
+              dut.special.sprg_q[2] == 0 && dut.special.sprg_q[3] == 0,
               "held SPRG writer or precommit state was unstable");
     end
     before_commits = commits;
@@ -397,21 +391,21 @@ module tb_core_sprg;
     tick();
     retire_ready = 1'b0;
     require(commits == before_commits + 1 &&
-            sprg(0) == 32'h1122_3344 &&
-            sprg(1) == 0 && sprg(2) == 0 &&
-            sprg(3) == 0,
+            dut.special.sprg_q[0] == 32'h1122_3344 &&
+            dut.special.sprg_q[1] == 0 && dut.special.sprg_q[2] == 0 &&
+            dut.special.sprg_q[3] == 0,
             "accepted MTSPRG0 did not update only its bank");
     commit_expected(32'h24, instruction(32'h24));
-    require(sprg(0) == 32'h1122_3344 &&
-            sprg(1) == 32'h5566_7788 &&
-            sprg(2) == 0 && sprg(3) == 0,
+    require(dut.special.sprg_q[0] == 32'h1122_3344 &&
+            dut.special.sprg_q[1] == 32'h5566_7788 &&
+            dut.special.sprg_q[2] == 0 && dut.special.sprg_q[3] == 0,
             "MTSPRG1 corrupted bank isolation");
     commit_expected(32'h28, instruction(32'h28));
-    require(sprg(2) == 32'h89ab_cdef &&
-            sprg(3) == 0,
+    require(dut.special.sprg_q[2] == 32'h89ab_cdef &&
+            dut.special.sprg_q[3] == 0,
             "MTSPRG2 full-width commit mismatch");
     commit_expected(32'h2c, instruction(32'h2c));
-    require(sprg(3) == 32'h0bad_c0de,
+    require(dut.special.sprg_q[3] == 32'h0bad_c0de,
             "MTSPRG3 full-width commit mismatch");
 
     wait_offer(32'h30, instruction(32'h30));
@@ -439,10 +433,10 @@ module tb_core_sprg;
     commit_expected(32'h40, instruction(32'h40));
     commit_expected(32'h44, instruction(32'h44));
     commit_expected(32'h48, instruction(32'h48));
-    require(sprg(0) == 32'h1122_3344 &&
-            sprg(1) == 32'h5566_7788 &&
-            sprg(2) == 32'hdead_beef &&
-            sprg(3) == 32'h0bad_c0de,
+    require(dut.special.sprg_q[0] == 32'h1122_3344 &&
+            dut.special.sprg_q[1] == 32'h5566_7788 &&
+            dut.special.sprg_q[2] == 32'hdead_beef &&
+            dut.special.sprg_q[3] == 32'h0bad_c0de,
             "single-bank overwrite changed an unselected SPRG");
     commit_expected(32'h4c, instruction(32'h4c));
     commit_expected(32'h50, instruction(32'h50));
@@ -455,7 +449,7 @@ module tb_core_sprg;
             "post-overwrite SPRG readback mismatch");
     for (logic [31:0] pc = 32'h5c; pc <= 32'h70; pc += 32'd4)
       commit_expected(pc, instruction(pc));
-    require(sprg(1) == 32'hffff_ffff &&
+    require(dut.special.sprg_q[1] == 32'hffff_ffff &&
             dut.special.dsisr_q == 32'hffff_ffff &&
             dut.regfile.gpr[28] == 32'hffff_ffff &&
             dut.regfile.gpr[29] == 32'hffff_ffff,
@@ -482,12 +476,12 @@ module tb_core_sprg;
     tick();
     redirect_valid = 1'b0;
     redirect_all = 1'b0;
-    require(sprg(0) == 0 && sprg(1) == 0 &&
-            sprg(2) == 0 && sprg(3) == 0 &&
+    require(dut.special.sprg_q[0] == 0 && dut.special.sprg_q[1] == 0 &&
+            dut.special.sprg_q[2] == 0 && dut.special.sprg_q[3] == 0 &&
             commits == 2,
             "killed MTSPRG changed state or retired stale completion");
     commit_expected(32'h100, instruction(32'h100));
-    require(dut.regfile.gpr[9] == 7 && sprg(1) == 0,
+    require(dut.regfile.gpr[9] == 7 && dut.special.sprg_q[1] == 0,
             "redirect target or killed-writer suppression failed");
 
     // Seed a secret SPRG and a different destination value in supervisor
@@ -498,7 +492,7 @@ module tb_core_sprg;
       commit_expected(pc, instruction(pc));
     accept_internal_redirect();
     require(dut.msr == 32'h0000_4000 &&
-            sprg(0) == 32'h1357_9bdf &&
+            dut.special.sprg_q[0] == 32'h1357_9bdf &&
             dut.regfile.gpr[20] == 32'h2468_ace0,
             "problem-state MFSPRG fixture setup mismatch");
     wait_offer(32'h100, instruction(32'h100));
@@ -509,7 +503,7 @@ module tb_core_sprg;
     retire_ready = 1'b0;
     accept_internal_redirect();
     require(dut.regfile.gpr[20] == 32'h2468_ace0 &&
-            sprg(0) == 32'h1357_9bdf &&
+            dut.special.sprg_q[0] == 32'h1357_9bdf &&
             dut.srr0 == 32'h100 && dut.srr1 == 32'h0004_4000 &&
             dut.msr == 32'h0000_0000,
             "problem-state MFSPRG leaked data or saved wrong privilege state");
@@ -520,7 +514,7 @@ module tb_core_sprg;
       commit_expected(pc, instruction(pc));
     accept_internal_redirect();
     require(dut.msr == 32'h0000_4000 &&
-            sprg(1) == 32'haaaa_5555 &&
+            dut.special.sprg_q[1] == 32'haaaa_5555 &&
             dut.regfile.gpr[22] == 32'hdead_beef,
             "problem-state MTSPRG fixture setup mismatch");
     wait_offer(32'h100, instruction(32'h100));
@@ -530,7 +524,7 @@ module tb_core_sprg;
     tick();
     retire_ready = 1'b0;
     accept_internal_redirect();
-    require(sprg(1) == 32'haaaa_5555 &&
+    require(dut.special.sprg_q[1] == 32'haaaa_5555 &&
             dut.regfile.gpr[22] == 32'hdead_beef &&
             dut.srr0 == 32'h100 && dut.srr1 == 32'h0004_4000 &&
             dut.msr == 32'h0000_0000,
@@ -538,8 +532,8 @@ module tb_core_sprg;
 
     // The source-defined hard-reset value is zero after nonzero use as well.
     reset_core(1);
-    require(sprg(0) == 0 && sprg(1) == 0 &&
-            sprg(2) == 0 && sprg(3) == 0,
+    require(dut.special.sprg_q[0] == 0 && dut.special.sprg_q[1] == 0 &&
+            dut.special.sprg_q[2] == 0 && dut.special.sprg_q[3] == 0,
             "hard reset retained an SPRG value");
 
     $display("tb_core_sprg: PASS (%0d checks)", checks);
