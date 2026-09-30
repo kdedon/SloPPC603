@@ -1166,6 +1166,27 @@ module ppc_fpu #(
     issue1_ea = decode1.ea;
   end
 
+  // synthesis translate_off
+  always @(posedge clk_i) begin
+    if (rst_ni) begin
+      logic [PENDING_DEPTH-1:0] wait_fpu, wait_mem, wait_other;
+      for (integer i = 0; i < PENDING_DEPTH; i++) begin
+        wait_fpu[i] = pending_q[i].valid && !pending_q[i].started &&
+            is_fpu_exec(pending_q[i].decoded.kind);
+        wait_mem[i] = pending_q[i].valid && !pending_q[i].started &&
+            pending_q[i].decoded.kind == DK_MEMORY;
+        wait_other[i] = pending_q[i].valid && !pending_q[i].started &&
+            !is_fpu_exec(pending_q[i].decoded.kind) &&
+            pending_q[i].decoded.kind != DK_MEMORY;
+      end
+      assert ($countones(wait_fpu) <= 1 && $countones(wait_mem) <= 1 &&
+              (wait_other == '0 || (wait_fpu == '0 && wait_mem == '0 &&
+                                    $countones(wait_other) == 1)))
+        else $error("more than one waiting entry per resource");
+    end
+  end
+  // synthesis translate_on
+
   // One waiting reservation entry is permitted. Ready independent operands
   // bypass it and enter the arithmetic pipe on the dispatch handshake.
   // Oldest-first picks run on physical slots; an age compare that depends
@@ -1174,8 +1195,6 @@ module ppc_fpu #(
     logic [PENDING_DEPTH-1:0] unstarted;
     logic [PENDING_DEPTH-1:0] exec_sel;
     logic [PENDING_DEPTH-1:0] second_sel;
-    logic [PENDING_DEPTH-1:0] waiting_mem, waiting_fpu;
-    logic [PENDING_DEPTH-1:0] oldest_mem, oldest_fpu;
     logic exec_is_mem, exec_is_fpu;
     for (integer i = 0; i < PENDING_DEPTH; i++)
       unstarted[i] = pending_q[i].valid && !pending_q[i].started;
@@ -1190,15 +1209,14 @@ module ppc_fpu #(
         exec_is_mem |= pending_q[i].decoded.kind == DK_MEMORY;
         exec_is_fpu |= is_fpu_exec(pending_q[i].decoded.kind);
       end
-    // The pair partner is the oldest waiting entry of the other resource;
-    // both candidates form beside the oldest pick.
-    for (integer i = 0; i < PENDING_DEPTH; i++) begin
-      waiting_mem[i] = unstarted[i] && pending_q[i].decoded.kind == DK_MEMORY;
-      waiting_fpu[i] = unstarted[i] && is_fpu_exec(pending_q[i].decoded.kind);
-    end
-    oldest_mem = oldest_of(waiting_mem);
-    oldest_fpu = oldest_of(waiting_fpu);
-    second_sel = exec_is_fpu ? oldest_mem : exec_is_mem ? oldest_fpu : '0;
+    // Dispatch admits at most one waiting entry per resource, and any other
+    // kind waits alone, so the pair partner is the waiting entry with an
+    // older waiting one; it forms beside the oldest pick.
+    second_sel = '0;
+    for (integer s = 0; s < PENDING_DEPTH; s++)
+      for (integer t = 0; t < PENDING_DEPTH; t++)
+        if (t != s && unstarted[t] && older_q[t][s] && unstarted[s])
+          second_sel[s] = 1'b1;
     exec_pick = exec_sel;
     second_pick = second_sel;
     // The work contexts read their entries through the one-hot picks.
