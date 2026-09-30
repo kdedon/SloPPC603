@@ -66,6 +66,10 @@ test-core-alignment test-core-data-fault test-core-control-memory
 test-core-lsu-update test-core-cache-control variant-icache-602`: all passed,
 including FP unavailable in `tb_core_full_decode` (8669 checks, 70 events).
 
+The standalone FPU sources are unchanged; `make -C sim -j2 test-fpu-shell`
+passed on commit `1a24ec9` (910 checks). `test-fpu-all` was not run for this
+record; the batch gate runs it.
+
 Not established: overlap or Table 6-5 throughput (the lane is serialized by
 design); TLB miss, page-changed and machine-check faults on FP accesses;
 recovery cancelling an FP instruction; compiled FP firmware (no PowerPC
