@@ -29,6 +29,35 @@ The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not 
 
 ## Recorded synthesis evidence
 
+### 602 conversion and flush-gate paths, fitted 602
+
+Recorded: `./quartus/fpu-production/synthesize.sh --docker full602fit`,
+commits `9eb20d9` (before) and `cc540bd` (after), 2026-09-30. Exit zero each;
+one physical pin (`clk_i`), 20 ns clock, zero-delay virtual I/O.
+
+| Measure | `9eb20d9` | `cc540bd` |
+|---|---:|---:|
+| Post-fit Fmax | 35.69 MHz | 49.56 MHz |
+| Worst setup slack at 20 ns | −8.017 ns | −0.178 ns |
+| `ppc_fpu:fpu` ALMs | 9,467 | 8,540 |
+| Total fitted ALMs | 11,025 | 10,077 |
+| Registers | 4,313 | 4,403 |
+| DSP blocks | 1 | 1 |
+
+Intermediate fits: 48.40 MHz at `da8da8f` (operand encoding, stfd check
+after fill, plan zero tests, aligner sticky), 48.74 MHz at `fa0473c`
+(finishing forward candidate). Removed paths: rounder through
+`narrow_single` into the stfd trap check and launch (−8.0 ns); reply through
+`narrow_single` and `widen_single` into the divider operands (−4.2 ns); lfd
+data through `narrow_single` into the forward payload (−6.2 ns); abort match
+through the arithmetic flush gate into forward picks and operand views
+(−0.66, −0.52 ns). Stage worst slacks: aligned +3.49, add +1.08, divider
++0.49, response +2.80 ns. Remaining worst: a finishing reply's flags (the
+602 numeric trap) into the forward pick and `fwd1_payload_q` (−0.178 ns);
+next, an issue word into a pending value (−0.118 ns). 50 MHz is not met;
+these are fit and timing measurements, not closure. Cycle counts are
+unchanged (`test-fpu-timing-602`, `test-fpu-602`).
+
 ### Shell storage, bindings and 603e rounder window, fitted 603e and 602
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit` and
