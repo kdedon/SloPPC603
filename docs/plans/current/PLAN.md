@@ -91,7 +91,8 @@ Queued, in order:
 2. 602 FPU timing toward 50 MHz (35.69 MHz post-fit), then the 602 FPU in the
    core (V12).
 3. COMPACT FPU (`FPU_IMPL`) for both personalities.
-4. 603 with XATS (V5); two-stage LSU (P3); dual dispatch.
+4. 603 with XATS (V5); two-stage LSU (P3); dual dispatch
+   ([design](../../DUAL_DISPATCH_DESIGN.md)).
 5. FPU at 66 MHz: retiming alone is estimated 2–3 ns short per stage; the
    choice between an FPU at 50 MHz and a parameter-gated extra stage is open.
 6. Enable CI and measure one MiSTer build on a hosted runner.
