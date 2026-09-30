@@ -166,10 +166,11 @@ part leaves them undefined. MSR[AP] (bit 8) and MSR[SA] (bit 9) are stored:
 every exception clears them and saves neither in SRR1; rfi loads them from
 SRR1 bits 8 and 9, as it does bits 5–7. esa saves PR, AP, SA and EE in
 ESASRR, sets SA and clears the other three, and continues at the next
-instruction; dsa restores them. esa with SA set or from a page without SE,
-and dsa with SA clear, take a program exception with the privileged cause
-(the manual names none). The page SE bits come from the 602 MMU, so esa is
-refused in the core until then. The emulation trap saves SRR0 = the
+instruction; dsa restores them. esa from a page or block without SE is an
+illegal instruction (602UM 5.1.1.1); esa with SA set and dsa with SA clear
+take a program exception with the privileged cause (the manual names none).
+The SE permission is fetched with the instruction; see
+[CPU_VARIANTS.md](CPU_VARIANTS.md#602-mmu). The emulation trap saves SRR0 = the
 instruction, SRR1 = MSR bits 16–31, and vectors to 0x1600. Every 602
 exception but system reset, machine check and IABR takes its prefix from
 IBR when MSR[IP] is clear; the watchdog is described in

@@ -26,7 +26,8 @@ module tb_bat_translate;
                    config_error, invalid_input, overlap, invalid_entry, match_bits,
                    hit_index, pa, wimg, pp};
 
-  ppc_bat_translate dut (
+  logic unused_se_1;
+  ppc_bat_translate dut (.default_wimg_i(4'b0), .se_o(unused_se_1),
     .valid_i(valid), .instruction_i(instruction), .write_i(write_access),
     .ea_i(ea), .msr_ir_i(ir), .msr_dr_i(dr), .msr_pr_i(pr),
     .batu_i(batu), .batl_i(batl), .allow_o(allow_access), .bypass_o(bypass),

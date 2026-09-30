@@ -1198,6 +1198,8 @@ test-tlb-geometry-16:
 	./$(BUILD_DIR)/tlb-runtime-fill-router-16/Vtb_tlb_runtime_fill_router $(SIM_ARGS)
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_micro_tlb_router -GSEED=2 -GRANDOM_OPS=900 -GTLB_SETS=16 --Mdir $(BUILD_DIR)/micro-tlb-router-16 $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv $(MICRO_TLB_TB)
 	./$(BUILD_DIR)/micro-tlb-router-16/Vtb_micro_tlb_router $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_micro_tlb_router -GSEED=3 -GRANDOM_OPS=900 -GTLB_SETS=16 "-GHAS_602=1'b1" --Mdir $(BUILD_DIR)/micro-tlb-router-602 $(BAT_SERVICE_RTL) ../rtl/ppc_bat_memory_router.sv $(MICRO_TLB_TB)
+	./$(BUILD_DIR)/micro-tlb-router-602/Vtb_micro_tlb_router $(SIM_ARGS)
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_page_translation -GTLB_SETS=16 --Mdir $(BUILD_DIR)/core-page-translation-16 $(RTL) $(CORE_BAT_SERVICE_RTL) $(CORE_BAT_RTL) ../tb/tb_core_page_translation.sv
 	./$(BUILD_DIR)/core-page-translation-16/Vtb_core_page_translation $(SIM_ARGS)
 	if $(VERILATOR) --lint-only -Wall --top-module ppc_tlb_service -GTLB_SETS=64 $(TLB_SERVICE_RTL) > $(BUILD_DIR)/tlb-service-16/reject.log 2>&1; then echo "FAIL: TLB_SETS=64 elaborated"; exit 1; fi
@@ -1721,6 +1723,7 @@ variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-re
                 $(addprefix variant-config-,$(VARIANT_ALL)) $(addprefix variant-tlb-miss-,$(VARIANT_ALL)) \
                 $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6 \
                 $(addprefix variant-decode-sweep-,$(filter-out 0,$(VARIANT_ALL))) $(addprefix variant-exception-602-,$(VARIANT_ALL)) \
+                $(addprefix variant-mmu-602-,$(VARIANT_ALL)) \
                 variant-special-lint-602 variant-watchdog-602
 	@echo "PASS: variant-matrix (variants $(VARIANT_IDS) built and checked; $(VARIANT_REJECTED) rejected)"
 # 602 decode, SPR and ESA/MSR checks below the rejected core: the decode
@@ -1730,6 +1733,11 @@ variant-decode-sweep-%:
 	mkdir -p $(BUILD_DIR)
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_decode_sweep -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-decode-sweep-$* ../rtl/ppc_pkg.sv ../rtl/ppc_decode.sv ../tb/tb_decode_sweep.sv
 	./$(BUILD_DIR)/variant-decode-sweep-$*/Vtb_decode_sweep $(SIM_ARGS)
+# 602 MMU protection at module level (BAT translate, TLB service, esa).
+variant-mmu-602-%:
+	mkdir -p $(BUILD_DIR)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_mmu_602 -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-mmu-602-$* ../rtl/ppc_pkg.sv ../rtl/ppc_bat_translate.sv ../rtl/ppc_tlb_ram.sv ../rtl/ppc_tlb_service.sv ../tb/tb_mmu_602.sv
+	./$(BUILD_DIR)/variant-mmu-602-$*/Vtb_mmu_602 $(SIM_ARGS)
 variant-exception-602-%:
 	mkdir -p $(BUILD_DIR)
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_exception_602 -GVARIANT=$* --Mdir $(BUILD_DIR)/variant-exception-602-$* $(EXCEPTION_RTL) ../tb/tb_exception_602.sv

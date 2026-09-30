@@ -38,8 +38,9 @@ module tb_tlb_prepared_refill #(
   localparam logic [31:0] NEIGHBOR=32'h1000_2234;
   localparam logic [31:0] OTHER=32'h1000_3234;
   localparam logic [23:0] A=24'h123456,B=24'h654321;
+  logic [1:0] unused_rsp_esa_1;
   ppc_tlb_service #(.ENABLE_RUNTIME_INVALIDATE(RUNTIME_INVALIDATE),
-    .ENABLE_RUNTIME_REFILL(RUNTIME_REFILL), .TLB_SETS(TLB_SETS)) dut (.*);
+    .ENABLE_RUNTIME_REFILL(RUNTIME_REFILL), .TLB_SETS(TLB_SETS)) dut (.req_po_i(1'b0), .req_ext_i(5'b0), .rsp_esa_o(unused_rsp_esa_1), .*);
 
   task automatic check(input bit good,input string why);
     checks++;

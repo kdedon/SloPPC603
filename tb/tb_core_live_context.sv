@@ -42,8 +42,11 @@ module tb_core_live_context #(
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
   logic unused_checkstop;
+  logic [5:0] unused_mmu_602;
+  logic [4:0] unused_tlb_fill_ext;
   ppc_core #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_LIVE_CONTEXT),
-      .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (
+      .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+    .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

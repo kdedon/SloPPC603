@@ -71,11 +71,23 @@ package ppc_pkg;
     FETCH_MACHINE_CHECK = 3'd4,
     FETCH_IABR = 3'd5
   } fetch_fault_t;
+  // 602 esa permission, fetched with each instruction (602UM 5.1.1.1).
+  // Protection-only fetches defer to SEBR and SER when esa executes:
+  // ESA_PO_BASE (SR0 key 0) allows it inside the SEBR region
+  // (Figure 5-28), ESA_PO_SER (key 1) when the page's SER bit is also set
+  // (Figure 5-27).
+  typedef enum logic [1:0] {
+    ESA_DENIED = 2'd0,
+    ESA_ALLOWED = 2'd1,
+    ESA_PO_BASE = 2'd2,
+    ESA_PO_SER = 2'd3
+  } esa_enable_t;
   // The core holds the page-miss context beside the IQ, not per entry.
   typedef struct packed {
     logic [31:0] pc;
     logic [31:0] insn;
     fetch_fault_t fault;
+    esa_enable_t esa;
   } fetch_packet_t;
 
   // MMU request kinds
@@ -253,6 +265,7 @@ package ppc_pkg;
     logic [4:0] shift;
     special_op_t special_op;
     fetch_fault_t fetch_fault;
+    esa_enable_t esa;
     logic [31:0] branch_disp;
     logic branch_aa;
     logic branch_lk;
@@ -727,6 +740,32 @@ package ppc_pkg;
   localparam int HID0_NOOPTI = 0;
   localparam int HID0_EMCP = 31;
   localparam int HID0_EBA = 29;
+  // 602 HID0 (602UM Table 2-7): PO is manual bit 24, the real-mode and
+  // protection-only default WIMG manual bits 28-31.
+  localparam int HID0_PO = 7;
+  // 602 translation context installed with the MSR: MSR[AP] gives
+  // supervisor code user-level memory access (602UM 5.1.5); HID0[PO] and
+  // HID0[WIMG] select protection-only mode and its default attributes.
+  typedef struct packed {
+    logic ap;
+    logic po;
+    logic [3:0] wimg;
+  } mmu_602_t;
+  // SEBR holds EA0-14; EA15-19 select the SER bit, SER bit n is manual bit n.
+  // Reads only SEBR's base field.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic esa_permitted(esa_enable_t code, logic [31:0] pc,
+                                         logic [31:0] sebr, logic [31:0] ser);
+    logic in_region;
+    in_region = pc[31:17] == sebr[31:17];
+    case (code)
+      ESA_ALLOWED: return 1'b1;
+      ESA_PO_BASE: return in_region;
+      ESA_PO_SER:  return in_region && ser[5'd31 - pc[16:12]];
+      default:     return 1'b0;
+    endcase
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   // EAR: E (manual bit 0) and RID (manual bits 28-31, UM 2.1.1).
   localparam logic [31:0] EAR_WMASK = 32'h8000_000f;
   // 602 SPRs (602UM 2.1.2.3-4); SER, SP and LT are fully defined. Hard

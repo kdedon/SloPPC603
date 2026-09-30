@@ -56,8 +56,10 @@ module tb_tlb_runtime_invalidate_service;
     rsp_direct_store_unsupported_o, rsp_needs_changed_o,
     rsp_refill_rejected_o, rsp_invalid_input_o, rsp_match_o,
     rsp_way_o, rsp_wimg_o, rsp_pp_o, rsp_c_o, rsp_r_o};
-  ppc_tlb_service #(.ENABLE_RUNTIME_INVALIDATE(1'b1)) dut (.*);
-  ppc_tlb_service #(.ENABLE_RUNTIME_INVALIDATE(1'b0)) disabled (
+  logic [1:0] unused_rsp_esa_1;
+  ppc_tlb_service #(.ENABLE_RUNTIME_INVALIDATE(1'b1)) dut (.req_po_i(1'b0), .req_ext_i(5'b0), .rsp_esa_o(unused_rsp_esa_1), .*);
+  logic [1:0] unused_rsp_esa_2;
+  ppc_tlb_service #(.ENABLE_RUNTIME_INVALIDATE(1'b0)) disabled (.req_po_i(1'b0), .req_ext_i(5'b0), .rsp_esa_o(unused_rsp_esa_2),
     .clk_i, .rst_ni,
     .prepare_commit_i(1'b0), .prepare_abort_i(1'b0),
     .commit_ack_valid_o(disabled_ack), .commit_ack_ready_i(1'b0),

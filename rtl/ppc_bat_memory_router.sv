@@ -6,6 +6,8 @@
 // BAT, segment and TLB updates. Instruction and data lanes each hold one
 // request. A micro-TLB hit issues the physical request on the next edge; a
 // miss queues for the one shared translation sequence.
+// HAS_602 adds the 602 MMU: IBAT and ITLB NE and SE, MSR[AP], and
+// protection-only mode after a BAT miss (602UM 5.6).
 module ppc_bat_memory_router #(
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
   parameter bit ENABLE_RUNTIME_BAT = 1'b0,
@@ -22,7 +24,8 @@ module ppc_bat_memory_router #(
   // instruction lane or reporting an untyped data error.
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter int MICRO_TLB_ENTRIES = 4,
-  parameter int TLB_SETS = 32
+  parameter int TLB_SETS = 32,
+  parameter bit HAS_602 = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -91,6 +94,8 @@ module ppc_bat_memory_router #(
   input  logic tlb_fill_req_c_i,
   input  logic [3:0] tlb_fill_req_wimg_i,
   input  logic [1:0] tlb_fill_req_pp_i,
+  // 602 RPA bits {20, NE, SE, R, 29}.
+  input  logic [4:0] tlb_fill_req_ext_i,
   output logic tlb_fill_rsp_valid_o,
   input  logic tlb_fill_rsp_ready_i,
   output logic tlb_fill_rsp_error_o,
@@ -138,6 +143,8 @@ module ppc_bat_memory_router #(
   input  logic context_ir_i,
   input  logic context_dr_i,
   input  logic context_pr_i,
+  // 602 context, sampled with start and every context installation.
+  input  ppc_pkg::mmu_602_t mmu_602_i,
   output logic quiescent_o,
 
   output logic        pimem_req_valid_o,
@@ -169,6 +176,8 @@ module ppc_bat_memory_router #(
   output logic [31:0] imem_rsp_insn_o,
   output ppc_pkg::fetch_fault_t imem_rsp_fault_o,
   output ppc_pkg::page_miss_t imem_rsp_page_miss_o,
+  // 602 esa permission of the fetched word's page or block.
+  output ppc_pkg::esa_enable_t imem_rsp_esa_o,
   input  logic        dmem_req_valid_i,
   output logic        dmem_req_ready_o,
   input  logic        dmem_req_write_i,
@@ -251,7 +260,13 @@ module ppc_bat_memory_router #(
   (* dont_merge *) logic bat_setup_q;
   // Private running copy for running_o, which gates the core's reset.
   (* dont_merge *) logic running_out_q;
-  logic request_ir_q, request_dr_q, request_pr_q;
+  logic request_ir_q, request_dr_q, request_pr_q, request_po_q;
+  mmu_602_t mmu_602_q;
+  esa_enable_t i_esa_q, i_hit_esa, route_esa;
+  logic [$clog2(TLB_SETS)-1:0] request_set;
+  // The snapshot address: protection-only mode reads SR0 (602UM 5.6.1).
+  logic [31:0] segment_ea;
+  logic [1:0] unused_d_hit_esa;
   fetch_fault_t fetch_fault_q;
   data_fault_t data_fault_q;
   logic last_grant_data_q, owner_instruction_q, owner_write_q;
@@ -336,11 +351,13 @@ module ppc_bat_memory_router #(
   logic tlb_rsp_privileged, tlb_rsp_refill_rejected;
   logic tlb_rsp_unsupported, tlb_rsp_invalid_input;
   logic tlb_rsp_way, tlb_rsp_c, tlb_rsp_r;
+  esa_enable_t tlb_rsp_esa;
+  logic bat_rsp_se;
   logic page_reply_config, page_reply_allow, clean_bat_page_miss;
   logic clean_page_data_pp;
   logic clean_page_instruction_base;
   logic clean_page_instruction_pp, clean_page_instruction_guarded;
-  logic clean_page_instruction_no_execute;
+  logic clean_page_instruction_no_execute, clean_page_instruction_page_ne;
   logic clean_page_instruction_direct_store, clean_page_data_direct_store;
   logic clean_page_direct_store;
   logic clean_page_miss_base, clean_page_true_miss, clean_page_changed;
@@ -570,6 +587,10 @@ module ppc_bat_memory_router #(
   assign clean_page_instruction_no_execute = clean_page_instruction_base &&
     page_sr_q[28] && tlb_rsp_no_execute &&
     !tlb_rsp_protection && !tlb_rsp_guarded;
+  // 602 page NE (ITLB entry or protection-only NE bit), found by a hit.
+  assign clean_page_instruction_page_ne = HAS_602 &&
+    clean_page_instruction_base && !page_sr_q[28] && tlb_rsp_hit &&
+    tlb_rsp_no_execute && !tlb_rsp_protection && !tlb_rsp_guarded;
   // UM Table 5-3: SR.T=1 without a BAT match is ISI SRR1[3] or DSI
   // DSISR[5]. The service reports it before tag lookup.
   assign clean_page_direct_store = !page_reply_config && page_sr_q[31] &&
@@ -615,6 +636,7 @@ module ppc_bat_memory_router #(
   assign page_typed_fault = owner_instruction_q ?
     (clean_page_true_miss || clean_page_instruction_pp ||
      clean_page_instruction_guarded || clean_page_instruction_no_execute ||
+     clean_page_instruction_page_ne ||
      clean_page_instruction_direct_store) :
     (clean_page_data_pp || clean_page_data_direct_store ||
      clean_page_true_miss || clean_page_changed);
@@ -710,7 +732,15 @@ module ppc_bat_memory_router #(
     (state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid && page_reply_allow);
   assign route_from_tlb = state_q == ROUTE_PAGE_RESPONSE;
   assign route_pa = route_from_tlb ? tlb_rsp_pa : bat_rsp_pa;
-  assign route_wimg = route_from_tlb ? tlb_rsp_wimg : bat_rsp_wimg;
+  // Protection-only pages take HID0[WIMG] (602UM 5.6).
+  assign route_wimg = !route_from_tlb ? bat_rsp_wimg :
+    (request_po_q ? mmu_602_q.wimg : tlb_rsp_wimg);
+  assign route_esa = route_from_tlb ? tlb_rsp_esa :
+    (bat_rsp_se ? ESA_ALLOWED : ESA_DENIED);
+  assign segment_ea = request_po_q ? {4'b0, request_ea_q[27:0]} : request_ea_q;
+  // The request's TLB set; protection-only lookups index by EA11-14.
+  assign request_set = request_po_q ? request_ea_q[17 +: $clog2(TLB_SETS)] :
+                                      request_ea_q[12 +: $clog2(TLB_SETS)];
   // A TLB hit points its set's LRU bit away from the hit way.
   assign route_set_touch = state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid &&
                            tlb_rsp_hit;
@@ -727,12 +757,14 @@ module ppc_bat_memory_router #(
     .clk_i, .rst_ni,
     .flush_i(utlb_flush),
     .set_flush_i(route_set_touch && owner_instruction_q),
-    .set_flush_index_i(request_ea_q[12 +: $clog2(TLB_SETS)]),
+    .set_flush_index_i(request_set),
     .lookup_page_i(imem_req_addr[31:12]), .lookup_write_i(1'b0),
     .hit_o(i_hit_raw), .hit_rpn_o(i_hit_rpn), .hit_wimg_o(i_hit_wimg),
+    .hit_esa_o(i_hit_esa),
     .fill_i(ENABLE_MICRO_TLB && route_allow && owner_instruction_q),
     .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
-    .fill_wimg_i(route_wimg), .fill_write_ok_i(1'b0),
+    .fill_wimg_i(route_wimg), .fill_esa_i(route_esa),
+    .fill_set_i(request_set), .fill_write_ok_i(1'b0),
     .fill_from_tlb_i(route_from_tlb)
   );
 
@@ -740,12 +772,14 @@ module ppc_bat_memory_router #(
     .clk_i, .rst_ni,
     .flush_i(utlb_flush),
     .set_flush_i(route_set_touch && !owner_instruction_q),
-    .set_flush_index_i(request_ea_q[12 +: $clog2(TLB_SETS)]),
+    .set_flush_index_i(request_set),
     .lookup_page_i(dmem_req_addr[31:12]), .lookup_write_i(dmem_req_write),
     .hit_o(d_hit_raw), .hit_rpn_o(d_hit_rpn), .hit_wimg_o(d_hit_wimg),
+    .hit_esa_o(unused_d_hit_esa),
     .fill_i(ENABLE_MICRO_TLB && route_allow && !owner_instruction_q),
     .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
-    .fill_wimg_i(route_wimg), .fill_write_ok_i(owner_write_q),
+    .fill_wimg_i(route_wimg), .fill_esa_i(ESA_DENIED),
+    .fill_set_i(request_set), .fill_write_ok_i(owner_write_q),
     .fill_from_tlb_i(route_from_tlb)
   );
 
@@ -802,9 +836,9 @@ module ppc_bat_memory_router #(
     .req_kind_i(state_q == ROUTE_SEGMENT_OFFER ? SEG_SNAPSHOT :
                 (segment_csr_req_write_i ? SEG_PREPARE : SEG_READ)),
     .req_indexed_i(1'b0),
-    .req_index_i(state_q == ROUTE_SEGMENT_OFFER ? request_ea_q[31:28] :
+    .req_index_i(state_q == ROUTE_SEGMENT_OFFER ? segment_ea[31:28] :
                  segment_csr_req_index_i),
-    .req_address_i(state_q == ROUTE_SEGMENT_OFFER ? request_ea_q : 32'b0),
+    .req_address_i(state_q == ROUTE_SEGMENT_OFFER ? segment_ea : 32'b0),
     .req_data_i(segment_csr_req_data_i),
     .req_pr_i(state_q == ROUTE_SEGMENT_OFFER ? request_pr_q : context_pr_q),
     .rsp_valid_o(segment_rsp_valid), .rsp_ready_i(segment_rsp_ready),
@@ -819,7 +853,7 @@ module ppc_bat_memory_router #(
   ppc_tlb_service #(
     .ENABLE_RUNTIME_INVALIDATE(ENABLE_TLB_INVALIDATE),
     .ENABLE_RUNTIME_REFILL(ENABLE_TLB_LOAD),
-    .TLB_SETS(TLB_SETS)
+    .TLB_SETS(TLB_SETS), .HAS_602(HAS_602)
   ) tlb (
     .clk_i, .rst_ni,
     .prepare_commit_i(running_q &&
@@ -846,6 +880,11 @@ module ppc_bat_memory_router #(
     .req_way_i(tlb_req_way), .req_rpn_i(tlb_req_rpn),
     .req_c_i(tlb_req_c), .req_wimg_i(tlb_req_wimg),
     .req_pp_i(tlb_req_pp),
+    // Lookups follow the request's mode; tlbie and loads the installed one.
+    .req_po_i(state_q == ROUTE_PAGE_OFFER ? request_po_q :
+              (HAS_602 && mmu_602_q.po)),
+    .req_ext_i((tlb_fill_offer && tlb_fill_req_valid_i) ?
+               tlb_fill_req_ext_i : 5'b0),
     .rsp_valid_o(tlb_rsp_valid), .rsp_ready_i(tlb_rsp_ready),
     .rsp_kind_o(tlb_rsp_kind), .rsp_bank_o(tlb_rsp_bank),
     .rsp_ea_o(tlb_rsp_ea), .rsp_allow_o(tlb_rsp_allow),
@@ -861,10 +900,12 @@ module ppc_bat_memory_router #(
     .rsp_invalid_input_o(tlb_rsp_invalid_input),
     .rsp_match_o(tlb_rsp_match), .rsp_way_o(tlb_rsp_way),
     .rsp_pa_o(tlb_rsp_pa), .rsp_wimg_o(tlb_rsp_wimg),
-    .rsp_pp_o(tlb_rsp_pp), .rsp_c_o(tlb_rsp_c), .rsp_r_o(tlb_rsp_r)
+    .rsp_pp_o(tlb_rsp_pp), .rsp_c_o(tlb_rsp_c), .rsp_r_o(tlb_rsp_r),
+    .rsp_esa_o(tlb_rsp_esa)
   );
 
-  ppc_bat_service #(.ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT)) bat (
+  ppc_bat_service #(.ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
+                    .HAS_602(HAS_602)) bat (
     .clk_i, .rst_ni,
     .prepare_commit_i(ENABLE_RUNTIME_BAT && running_q && bat_csr_commit_i),
     .prepare_abort_i(ENABLE_RUNTIME_BAT && running_q && bat_csr_abort_i),
@@ -892,7 +933,8 @@ module ppc_bat_memory_router #(
     .rsp_invalid_entry_o(bat_rsp_invalid_entry),
     .rsp_match_o(bat_rsp_match), .rsp_hit_index_o(bat_rsp_hit_index),
     .rsp_pa_o(bat_rsp_pa), .rsp_wimg_o(bat_rsp_wimg),
-    .rsp_pp_o(bat_rsp_pp)
+    .rsp_pp_o(bat_rsp_pp), .rsp_se_o(bat_rsp_se),
+    .default_wimg_i(mmu_602_q.wimg)
   );
 
   assign bat_write_rsp_rejected_o = bat_rsp_write_rejected;
@@ -915,6 +957,7 @@ module ppc_bat_memory_router #(
     imem_rsp_valid = 1'b0;
     imem_rsp_insn = pimem_rsp_insn_i;
     imem_rsp_fault_o = FETCH_OK;
+    imem_rsp_esa_o = ESA_DENIED;
     pimem_rsp_ready_o = 1'b0;
     if (rst_ni && i_state_q == LANE_RESPONSE) begin
       // Without machine check a physical instruction error is consumed here
@@ -924,6 +967,7 @@ module ppc_bat_memory_router #(
       else begin
         imem_rsp_valid = pimem_rsp_valid_i;
         pimem_rsp_ready_o = imem_rsp_ready;
+        imem_rsp_esa_o = HAS_602 ? i_esa_q : ESA_DENIED;
         if (ENABLE_MACHINE_CHECK && pimem_rsp_error_i) begin
           imem_rsp_insn = 32'b0;
           imem_rsp_fault_o = FETCH_MACHINE_CHECK;
@@ -995,6 +1039,9 @@ module ppc_bat_memory_router #(
       request_ir_q <= 1'b0;
       request_dr_q <= 1'b0;
       request_pr_q <= 1'b0;
+      request_po_q <= 1'b0;
+      mmu_602_q <= '0;
+      i_esa_q <= ESA_DENIED;
       fetch_fault_q <= FETCH_OK;
       data_fault_q <= DATA_OK;
       last_grant_data_q <= 1'b1;
@@ -1047,17 +1094,20 @@ module ppc_bat_memory_router #(
         context_ir_q <= start_ir_i;
         context_dr_q <= start_dr_i;
         context_pr_q <= start_pr_i;
+        mmu_602_q <= HAS_602 ? mmu_602_i : '0;
       end
       if (context_valid_i && context_ready_o) begin
         context_ir_q <= context_ir_i;
         context_dr_q <= context_dr_i;
         context_pr_q <= context_pr_i;
+        mmu_602_q <= HAS_602 ? mmu_602_i : '0;
       end
 
       if (i_accept) begin
         i_ea_q <= imem_req_addr;
         i_pa_q <= {i_hit_rpn, imem_req_addr[11:0]};
         i_wimg_q <= i_hit_wimg;
+        i_esa_q <= i_hit_esa;
       end
       if (d_accept) begin
         d_ea_q <= dmem_req_addr;
@@ -1070,6 +1120,7 @@ module ppc_bat_memory_router #(
       if (route_allow && owner_instruction_q) begin
         i_pa_q <= route_pa;
         i_wimg_q <= route_wimg;
+        i_esa_q <= route_esa;
       end
       if (route_allow && !owner_instruction_q) begin
         d_pa_q <= route_pa;
@@ -1124,7 +1175,11 @@ module ppc_bat_memory_router #(
           if (choose_instruction || choose_data) begin
             request_ir_q <= context_ir_q;
             request_dr_q <= context_dr_q;
-            request_pr_q <= context_pr_q;
+            // MSR[AP] gives supervisor code user-level access.
+            request_pr_q <= context_pr_q || (HAS_602 && mmu_602_q.ap);
+            // Protection-only mode applies after a BAT miss with
+            // translation enabled.
+            request_po_q <= HAS_602 && mmu_602_q.po;
             owner_instruction_q <= choose_instruction;
             if (choose_instruction)
               request_ea_q <= i_state_q == LANE_WAIT ? i_ea_q : imem_req_addr;
@@ -1187,10 +1242,12 @@ module ppc_bat_memory_router #(
         ROUTE_SEGMENT_RESPONSE: begin
           if (segment_rsp_valid) begin
             if (segment_rsp_kind == SEG_SNAPSHOT &&
-                segment_rsp_index == request_ea_q[31:28] &&
-                segment_rsp_address == request_ea_q &&
+                segment_rsp_index == segment_ea[31:28] &&
+                segment_rsp_address == segment_ea &&
                 !segment_rsp_privileged && !segment_rsp_unsupported) begin
-              page_sr_q <= segment_rsp_data;
+              // Protection-only mode ignores SR0 T and N (602UM 5.6.1).
+              page_sr_q <= request_po_q ?
+                (segment_rsp_data & 32'h6fff_ffff) : segment_rsp_data;
               state_q <= ROUTE_PAGE_OFFER;
             end else begin
               // A malformed internal snapshot is an ordered diagnostic.
@@ -1396,7 +1453,7 @@ module ppc_bat_memory_router #(
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     imem_rsp_valid_o && !imem_rsp_ready_i |=>
       imem_rsp_valid_o && $stable({imem_rsp_insn_o, imem_rsp_fault_o,
-                                   imem_rsp_page_miss_o}));
+                                   imem_rsp_page_miss_o, imem_rsp_esa_o}));
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     dmem_rsp_valid_o && !dmem_rsp_ready_i |=>
       dmem_rsp_valid_o &&

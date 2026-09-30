@@ -162,7 +162,7 @@ module tb_exception_602 #(
       check("rejected trap leaves MSR", msr_o, msr_before);
     end
 
-    // esa off an SE page is refused with a program exception.
+    // esa off an SE page is an illegal-instruction program exception.
     load(4'b1001, PR | EE, 32'b0, 32'b0);
     msr_before = msr_o;
     take(EVENT_ESA, 32'h0000_5000, 1'b0, ok, target);
@@ -170,7 +170,7 @@ module tb_exception_602 #(
     if (V602) begin
       check("esa refused target", target, 32'h0000_0700);
       check("esa refused SRR0", srr0_o, 32'h0000_5000);
-      check("esa refused SRR1", srr1_o, (PR | EE) | 32'h0004_0000);
+      check("esa refused SRR1", srr1_o, (PR | EE) | 32'h0008_0000);
     end else begin
       check("rejected esa leaves MSR", msr_o, msr_before);
     end
@@ -189,6 +189,7 @@ module tb_exception_602 #(
       take(EVENT_ESA, 32'h0000_5008, 1'b1, ok, target);
       check("nested esa target", target, 32'h0000_0700);
       check("nested esa SRR0", srr0_o, 32'h0000_5008);
+      check("nested esa SRR1 cause", srr1_o & 32'h000f_0000, 32'h0004_0000);
 
       // dsa restores the saved bits.
       load(4'b0001, SA, 32'b0, 32'b0);

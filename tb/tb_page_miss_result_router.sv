@@ -107,10 +107,12 @@ module tb_page_miss_result_router #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1)
     page_protection_o, page_config_o};
   logic [4:0] unused_tlb_inv_router;
   logic [4:0] unused_tlb_fill_router;
+  logic [1:0] unused_imem_rsp_esa_1;
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1), .ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1),
-    .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS)) dut (
+    .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS)) dut (.mmu_602_i('0), .tlb_fill_req_ext_i(5'b0),
+    .imem_rsp_esa_o(unused_imem_rsp_esa_1),
     .tlb_inv_req_valid_i(1'b0),
     .tlb_inv_req_ready_o(unused_tlb_inv_router[0]),
     .tlb_inv_req_ea_i(32'b0),

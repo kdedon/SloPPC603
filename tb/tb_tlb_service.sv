@@ -36,7 +36,8 @@ module tb_tlb_service #(parameter int TLB_SETS = 32);
   logic unused_runtime_ack, unused_runtime_idle;
   assign rsp.kind = expanded_rsp_kind[1:0];
   int checks = 0, transactions = 0;
-  ppc_tlb_service #(.TLB_SETS(TLB_SETS)) dut (
+  logic [1:0] unused_rsp_esa_1;
+  ppc_tlb_service #(.TLB_SETS(TLB_SETS)) dut (.req_po_i(1'b0), .req_ext_i(5'b0), .rsp_esa_o(unused_rsp_esa_1),
     .prepare_commit_i(1'b0), .prepare_abort_i(1'b0),
     .commit_ack_valid_o(unused_runtime_ack),
     .commit_ack_ready_i(1'b1),

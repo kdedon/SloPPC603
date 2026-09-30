@@ -6,8 +6,11 @@
 // Every supervisor write is stored with its reserved fields cleared. The
 // manuals leave invalid BL values, IBAT W and overlapping valid entries
 // undefined (UM 5.3, PEM 7.4.2); translation handles them deterministically.
+// HAS_602 keeps IBATL NE and SE (602UM Table 2-4) and takes real-mode
+// attributes from HID0[WIMG].
 module ppc_bat_service #(
-  parameter bit ENABLE_RUNTIME_BAT = 1'b0
+  parameter bit ENABLE_RUNTIME_BAT = 1'b0,
+  parameter bit HAS_602 = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -25,6 +28,7 @@ module ppc_bat_service #(
   input  logic req_ir_i,
   input  logic req_dr_i,
   input  logic req_pr_i,
+  input  logic [3:0] default_wimg_i,
   output logic rsp_valid_o,
   input  logic rsp_ready_i,
   output ppc_pkg::bat_req_kind_t rsp_kind_o,
@@ -48,7 +52,8 @@ module ppc_bat_service #(
   output logic [1:0] rsp_hit_index_o,
   output logic [31:0] rsp_pa_o,
   output logic [3:0] rsp_wimg_o,
-  output logic [1:0] rsp_pp_o
+  output logic [1:0] rsp_pp_o,
+  output logic rsp_se_o
 );
   import ppc_pkg::*;
 
@@ -60,6 +65,7 @@ module ppc_bat_service #(
     logic [31:0] physical;
     logic [3:0] attributes;
     logic [1:0] protection;
+    logic se;
   } translation_t;
   typedef struct packed {
     bat_req_kind_t kind;
@@ -110,7 +116,8 @@ module ppc_bat_service #(
   assign {rsp_allow_o, rsp_bypass_o, rsp_hit_o, rsp_miss_o,
           rsp_protection_fault_o, rsp_guarded_fault_o, rsp_config_error_o,
           rsp_invalid_input_o, rsp_overlap_o, rsp_invalid_entry_o,
-          rsp_match_o, rsp_hit_index_o, rsp_pa_o, rsp_wimg_o, rsp_pp_o} =
+          rsp_match_o, rsp_hit_index_o, rsp_pa_o, rsp_wimg_o, rsp_pp_o,
+          rsp_se_o} =
           response_q.translation;
 
   always_comb begin
@@ -130,19 +137,22 @@ module ppc_bat_service #(
   // BATU keeps BEPI, BL, Vs and Vp; BATL keeps BRPN, WIMG and PP.
   localparam logic [31:0] BATU_WMASK = 32'hfffe_1fff;
   localparam logic [31:0] BATL_WMASK = 32'hfffe_007b;
+  localparam logic [31:0] IBATL_602_WMASK = BATL_WMASK | 32'h0000_0600;
   always_comb begin
     write_bank = write_spr_q[3];
     write_entry = write_spr_q[2:1];
-    write_value = write_data_q & (write_spr_q[0] ? BATL_WMASK : BATU_WMASK);
+    write_value = write_data_q & (!write_spr_q[0] ? BATU_WMASK :
+      ((HAS_602 && !write_bank) ? IBATL_602_WMASK : BATL_WMASK));
   end
 
-  ppc_bat_translate #(.VALIDATE_BANK(1'b0)) translator (
+  ppc_bat_translate #(.VALIDATE_BANK(1'b0), .HAS_602(HAS_602)) translator (
     .valid_i(req_valid_i && translation_request),
     .instruction_i(req_kind_i == BAT_TRANSLATE_I),
     .write_i(req_kind_i == BAT_TRANSLATE_WRITE),
     .ea_i(req_ea_i),
     .msr_ir_i(req_ir_i), .msr_dr_i(req_dr_i), .msr_pr_i(req_pr_i),
     .batu_i(upper_q[translation_bank]), .batl_i(lower_q[translation_bank]),
+    .default_wimg_i,
     .allow_o(translation.status[8]), .bypass_o(translation.status[7]),
     .bat_hit_o(translation.status[6]), .bat_miss_o(translation.status[5]),
     .protection_fault_o(translation.status[4]),
@@ -151,7 +161,8 @@ module ppc_bat_service #(
     .invalid_input_o(translation.status[1]), .overlap_o(translation.status[0]),
     .invalid_entry_o(translation.bad), .match_o(translation.matched),
     .hit_index_o(translation.index), .pa_o(translation.physical),
-    .wimg_o(translation.attributes), .pp_o(translation.protection)
+    .wimg_o(translation.attributes), .pp_o(translation.protection),
+    .se_o(translation.se)
   );
 
   always_comb begin
