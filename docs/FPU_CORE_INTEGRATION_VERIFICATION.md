@@ -4,7 +4,67 @@ Evidence for [FPU core integration](FPU_CORE_INTEGRATION.md).
 
 ## Pipelined FP issue
 
-RECORD_PLACEHOLDER
+Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-chip-fpu variant-special-lint-602 test-crstate-execution` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit `9cac3a6`, 2026-09-30.
+
+All passed; `test-fpu-all` reports 36 PASS lines, including 910 shell checks,
+the 603e and 602 timing checks (71 and 52 responses) and 3000 enabled-exception
+cases per personality. The FPU source change is a split of one combinational
+process into three, with unchanged function.
+
+| Bench | Result |
+| --- | --- |
+| `test-core-fpu`, retirement stalls (`+STALL=1`) | 1496 checked words; 6889 retirements, 2481 FP; 38626 cycles |
+| `test-core-fpu`, no stalls (`+STALL=0`) | 1496 words, 25 latency probes, 31 spacing probes; 36085 cycles |
+| `test-chip-fpu` | self-check of the image, including two DTLB misses; 85905 cycles, 108 read bursts |
+
+The no-stall run checks, exact to the cycle, every latency and spacing in the
+[contract table](FPU_CORE_INTEGRATION.md#execution-model): isolated
+dispatch-to-retirement per class; retirement spacing of four independent
+instances per class (two for divides and estimates), including `fcmpu` into
+distinct CR fields; dependent chains of four for `fadd(s)`, `fmul(s)`,
+`fmadd(s)`, `frsp`, `fmr` and `fsel`; `mffs` and `mtfsfi` pairs; and a mixed
+`fadd`/`addi`/`fmuls`/`addi`/`fmadd`/`addi` stream dispatching one per cycle.
+Expectations derive from Table 6-5 and Figure 6-3 in the generator.
+
+With FP work in flight (both runs), the bench establishes:
+
+- FP enabled (VXISI, VE, FE0/FE1) at a pipelined `fsub` with an `addi` and an
+  `fadd` dispatched behind it (a dispatch-spacing probe confirms they were in
+  flight): SRR0 at the `fsub`, the `addi` and `fadd` each take effect once,
+  and the `fadd` then takes its own FP enabled exception because FEX stays
+  set.
+- DSI on a plain `lwz` with an `fadd` and `addi` dispatched behind it: both
+  are removed and run once after the handler.
+- DSI on `lfd` and `stfd` behind an older pipelined `fadd`, which retires
+  first.
+- A branch on a CR field written by an `fcmpu` in flight takes the right
+  path, and an `fadd` behind a taken branch never executes.
+- The earlier directed and 200 random enabled-exception cases, now through
+  the pipelined path and its replay.
+
+`test-chip-fpu` adds the same FP enabled and branch cases on the `ppc603e`
+pin top, and DTLB load and store misses on `lfd` and `stfd` under data
+translation, with a pipelined `fadd` between them: the 0x1100 and 0x1200
+handlers log SRR0 and DMISS, load the TLB entry and retry.
+
+Unchanged behavior with `ENABLE_FPU=0` was checked on commit `3d25ef5` plus
+the uncommitted chip TLB miss test, with `make -C sim -j2 check-spec
+test-completion test-recovery-state test-flags test-completion-flags
+test-completion-cr-fields test-completion-cr-bits test-crstate-execution
+test-completion-update test-completion-ring variant-watchdog-602 test-core
+test-exception-state test-decode-sweep test-core-full-decode
+variant-full-decode-0 variant-full-decode-1 variant-full-decode-2
+variant-full-decode-4 test-core-alignment test-core-data-fault
+test-core-control-memory test-core-lsu-update test-core-cache-control
+variant-icache-602`: all passed. `variant-special-lint-602` failed on a bench
+port list and passed after the fix, on `9cac3a6`.
+
+A Quartus 17 analysis and elaboration of `quartus/chip` (FPU off) passed on
+`9cac3a6` with 0 errors. No fit was run.
+
+Not established: fitted area and timing with pipelined issue; the FPU-on
+Quartus analysis; page-changed and machine-check faults on FP accesses;
+Table 6-6 timing for FP loads and stores (still serialized).
 
 The earlier records below cover the serialized lane, which FP loads and
 stores still use; their latency figures for arithmetic rows are superseded.

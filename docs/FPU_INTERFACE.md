@@ -169,4 +169,7 @@ measurements remain in [production verification](../sim/fpu/PRODUCTION.md) and
 the replacement concurrent shell, either 602 elaboration, or original-chip
 latency and throughput. New acceptance records must identify the tested source
 checkpoint. [FPU core integration](FPU_CORE_INTEGRATION.md) attaches this
-interface to `ppc_core` with serialized issue; fitted timing remains separate work.
+interface to `ppc_core`: arithmetic issues at dispatch, loads and stores through
+the serialized lane; fitted timing remains separate work. The interface is
+unchanged; the module's result, commit and issue logic are separate processes,
+so results never depend combinationally on the commit or issue handshakes.

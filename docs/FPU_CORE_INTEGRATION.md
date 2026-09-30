@@ -44,7 +44,8 @@ Measured without retirement stalls
 ([verification](FPU_CORE_INTEGRATION_VERIFICATION.md)). Latency is
 dispatch-to-retirement of an isolated instruction; spacing is between the
 retirement of the first and last of a group issued back to back after a
-`sync` (four instances, two for divides and estimates, three intervals).
+`sync` (four instances and three intervals; two instances for divides,
+estimates and FPSCR instructions).
 
 | Instruction | Table 6-5 latency / interval | Latency | Independent spacing | Dependent spacing |
 | --- | --- | --- | --- | --- |
@@ -54,7 +55,7 @@ retirement of the first and last of a group issued back to back after a
 | `fdivs`, `fres` | 18 / 18 | 19 | 18 | — |
 | `fdiv` | 33 / 33 | 34 | 33 | — |
 | `fmr`, `fsel` | 3 / 1 | 3 | 3 | 9 (3 each) |
-| `mffs`, `mtfsf`, `mtfsfi`, `mcrfs` | 3, blocking | 3 | 3 (`mffs`, `mtfsfi` pairs) | — |
+| `mffs`, `mtfsf`, `mtfsfi`, `mcrfs` | 3, blocking | 3 | 4 (`mffs`, `mtfsfi` pairs) | — |
 | `lfs` / `lfd` (serialized lane) | 2 / 1 | 8 / 10 | — | — |
 | `stfs`, `stfiwx` / `stfd` (serialized lane) | 2 / 1 | 9 / 11 | — | — |
 | `add` (integer reference) | 1 | 3 | — | — |
@@ -145,8 +146,13 @@ page, a case the integer split stores share.
   observe or change memory between them.
 - An `mtmsr` or `rfi` that sets FE0/FE1 while FPSCR[FEX]=1 does not raise the
   deferred FP enabled exception.
-- Not tested at the system level: TLB miss and page-changed faults on FP
-  accesses (the classification is the integer path's), and machine checks.
+- Not tested: page-changed faults and machine checks on FP accesses. DTLB
+  load and store misses on `lfd`/`stfd` are tested on the pin top only.
+- The standalone FPU returns `fmr`, `fsel` and the FPSCR instructions one
+  cycle before Table 6-5 (their isolated latency is 3, not 4); FPSCR
+  instructions let the next FP instruction issue only after they retire.
+- FP loads and stores do not meet Table 6-6 (2-cycle hit latency, 1-cycle
+  interval).
 - The 602 personality (V12) is rejected at elaboration; see below.
 
 ## 602 personality (V12)
