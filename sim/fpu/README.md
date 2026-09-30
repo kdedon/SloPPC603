@@ -45,6 +45,30 @@ in all four rounding modes, including exception flags
 cases it cannot compare (tininess after rounding, NaN payloads, infinity
 times zero plus a quiet NaN).
 
+## Berkeley TestFloat cross-check
+
+`fetch-softfloat.sh` downloads Berkeley SoftFloat 3 and TestFloat 3 at
+pinned commits, verifies their SHA-256, and builds `testfloat_gen` under
+`sim/build/testfloat` with a PowerPC specialization derived from 8086-SSE
+(first NaN operand quieted, positive default QNaN, tininess before rounding,
+`fctiw` positive saturation `0x7FFFFFFF`). The third-party sources are
+BSD-licensed and never committed.
+
+`testfloat_vectors.py` maps each TestFloat case to PowerPC semantics, checks
+the model's result and five flags against it with all enables clear, and
+writes an arithmetic-bench vector for the RTL. Its docstring lists each
+PowerPC-versus-IEEE mapping with the PEM section. `test-fpu-testfloat`
+runs the 603e (binary64 and binary32) and 602 (binary32) corpora; it is not
+part of `test-fpu-all`.
+
+| TestFloat function | PowerPC instructions |
+|---|---|
+| `f64/f32_add`, `_sub`, `_mul`, `_div` | `fadd[s]`, `fsub[s]`, `fmul[s]`, `fdiv[s]` |
+| `f64/f32_mulAdd` | `fmadd[s]`, `fmsub[s]`, `fnmadd[s]`, `fnmsub[s]` |
+| `f64_to_f32` | `frsp` |
+| `f64_to_i32 -exact` (`f32_to_i32` on 602) | `fctiw`; `fctiwz` from round-toward-zero |
+| `_eq`, `_lt_quiet` / `_lt` | `fcmpu` / `fcmpo` |
+
 ## Donor result
 
 The rejected SS donor mismatched 16,879 of 47,736 vectors; its wrapper, driver
