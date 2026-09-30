@@ -24,7 +24,7 @@ interface `rtl/ppc602_bus.sv`. Sources: 602UM ch. 7 (signals) and ch. 8
   this is a documented deviation until the BIU takes a bus clock enable
   (the bus interface keeps all bus state in `ppc602_bus`, which such an
   enable would qualify). Asynchronous inputs pass a two-flop synchronizer
-  (`pin_meta_q`; QACK's flop has no load and is removed in synthesis): HRESET, SRESET, INT, SMI, MCP, CKSTP_IN, QACK,
+  (`pin_meta_q`): HRESET, SRESET, INT, SMI, MCP, CKSTP_IN, QACK,
   TBEN, PLL_CFG.
 
 ## Signals
@@ -79,8 +79,8 @@ Status: **I** implemented, **T** tied with the stated behavior,
 
 | Signal | Dir | Width | Status | Behavior |
 |---|---|---:|---|---|
-| QREQ | out | 1 | T | Negated: no power-saving modes (V14). |
-| QACK | in | 1 | T | Ignored. §7.2.9.8 carries the 603 reduced-pinout strap; the 602 has no such mode. |
+| QREQ | out | 1 | T | Asserted in nap and sleep ([power management](POWER_MANAGEMENT.md)). |
+| QACK | in | 1 | T | Quiesce acknowledge while QREQ is asserted. §7.2.9.8 carries the 603 reduced-pinout strap; the 602 has no such mode. |
 | TBEN | in | 1 | I | Time-base count enable; the time base counts once per four bus clocks. |
 | SYSCLK | in | 1 | I | Core and bus clock (PLL bypass). |
 | PLL_CFG0–3 | in | 4 | I | Strap; a code other than the build's (0010) checkstops at HRESET release. |

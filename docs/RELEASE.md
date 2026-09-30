@@ -27,7 +27,8 @@ history is in [CHANGELOG.md](../CHANGELOG.md).
 - Floating point (FPR, FPSCR, FP instructions); `MSR[FP]` writes are rejected.
 - Dual dispatch, branch prediction and folding.
 - Little-endian mode (`MSR[LE]`/`ILE`).
-- JTAG/COP, soft stop and power management (doze, nap, sleep).
+- JTAG/COP and soft stop. Power management (doze, nap, sleep) is implemented
+  after this release: [POWER_MANAGEMENT.md](POWER_MANAGEMENT.md).
 - Board bring-up: physical pins, IOE registers, PLL ratios, CDC and
   DE10-Nano hardware tests (see the exclusions in
   [INTERFACE_TIMING_CONTRACT.md](INTERFACE_TIMING_CONTRACT.md#release-sign-off-checklist)).

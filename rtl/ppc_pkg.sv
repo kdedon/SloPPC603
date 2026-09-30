@@ -466,6 +466,7 @@ package ppc_pkg;
     logic tea;
     // Latched snoop address parity error; held until ape_taken.
     logic ape;
+    logic qack;              // QACK level
   } pin_event_t;
   // Core state the chip pins need.
   typedef struct packed {
@@ -485,6 +486,8 @@ package ppc_pkg;
     logic address_parity_enable; // EBA
     logic ape_taken;
     logic watchdog_reseto;   // 602 RESETO request
+    logic qreq;              // QREQ level
+    logic quiesced;          // QACK seen: snooping stops
   } pin_status_t;
   // Data-cache BIU ports (docs/DATA_CACHE.md) bundled for the core
   // composition, between the cache slot and the BIU.
@@ -787,6 +790,10 @@ package ppc_pkg;
   localparam int HID0_NOOPTI = 0;
   localparam int HID0_EMCP = 31;
   localparam int HID0_EBA = 29;
+  // Power-saving mode selects (UM 9.2); DPM is stored without effect.
+  localparam int HID0_DOZE = 23;
+  localparam int HID0_NAP = 22;
+  localparam int HID0_SLEEP = 21;
   /* verilator lint_off UNUSEDSIGNAL */
   // HID0[ICE] is stored; without it the instruction cache is always enabled.
   function automatic bit cpu_has_hid0_ice(cpu_variant_e v);

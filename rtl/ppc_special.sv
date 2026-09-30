@@ -187,7 +187,9 @@ module ppc_special #(
   output logic icache_ctl_valid_o,
   input logic icache_ctl_ready_i,
   output logic icache_ctl_enable_o,
-  output logic icache_ctl_invalidate_o
+  output logic icache_ctl_invalidate_o,
+  // A power-saving mode holds fetch.
+  output logic power_stop_o
 );
   import ppc_pkg::*;
   localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
@@ -241,7 +243,7 @@ module ppc_special #(
   logic [31:0] sdr1_q, iabr_q;
   logic [31:0] imiss_q, dmiss_q, hash1_q, hash2_q;
   logic [31:0] hid0_q, ear_q;
-  logic trap_taken_q, hid0_write, dispatch_hid0_write;
+  logic trap_taken_q, hid0_write, dispatch_hid0_write, hid0_power_unsupported;
   logic icache_change, external_denied;
   page_miss_t fetch_page_miss_q, miss_context;
   logic fetch_page_miss_opcode, data_page_miss_opcode;
@@ -340,6 +342,8 @@ module ppc_special #(
     (uop_i.special_op == SPECIAL_MTSPR) && (uop_i.spr == 10'd25);
   assign hid0_write = ENABLE_FULL_DECODE &&
     (uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == SPR_HID0);
+  assign hid0_power_unsupported = hid0_write &&
+    power_mode_unsupported(msr_o[MSR_POW], a_q);
   assign dispatch_hid0_write = ENABLE_FULL_DECODE &&
     (uop_i.special_op == SPECIAL_MTSPR) && (uop_i.spr == SPR_HID0);
   // Changing ICE or setting ICFI drains fetch, acts on the cache, then
@@ -478,9 +482,40 @@ module ppc_special #(
     commit_match && (uop_q.special_op == SPECIAL_MTSPR) &&
     ((uop_q.spr == 10'd22) || (uop_q.spr == 10'd284) ||
      (uop_q.spr == 10'd285));
+  // Power-saving modes (UM 9.2): MSR[POW] with one of HID0[DOZE,NAP,SLEEP]
+  // holds fetch until an exception clears POW. Nap and sleep raise QREQ once
+  // the lane and memory are idle; QACK then stops snooping, and in sleep
+  // also the time base and decrementer.
+  localparam bit ENABLE_POWER_MODES = ENABLE_EXTERNAL_INTERRUPTS &&
+    ENABLE_MACHINE_CHECK && ENABLE_FULL_DECODE;
+  logic power_mode, power_quiesce, qreq_q, quiesced_q, timer_run;
+  // POW with more than one mode bit, or with any mode bit when no exception
+  // can wake the lane.
+  function automatic logic power_mode_unsupported(input logic pow,
+                                                  input logic [31:0] hid0);
+    logic [2:0] mode;
+    mode = {hid0[HID0_DOZE], hid0[HID0_NAP], hid0[HID0_SLEEP]};
+    return pow && (ENABLE_POWER_MODES ?
+      ((mode[2] && mode[1]) || (mode[2] && mode[0]) || (mode[1] && mode[0])) :
+      (mode != 3'b0));
+  endfunction
+  assign power_mode = ENABLE_POWER_MODES && msr_o[MSR_POW] &&
+    (hid0_q[HID0_DOZE] || hid0_q[HID0_NAP] || hid0_q[HID0_SLEEP]);
+  assign power_quiesce = power_mode && !hid0_q[HID0_DOZE];
+  assign power_stop_o = power_mode;
+  assign timer_run = !(quiesced_q && hid0_q[HID0_SLEEP]);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || !power_quiesce) begin
+      qreq_q <= 1'b0;
+      quiesced_q <= 1'b0;
+    end else begin
+      if ((state_q == S_IDLE) && memory_quiescent_i) qreq_q <= 1'b1;
+      if (qreq_q && pin_event_i.qack) quiesced_q <= 1'b1;
+    end
+  end
   generate if (ENABLE_TIMERS) begin : timers_enabled
     ppc_timer timer (
-      .clk_i, .rst_ni, .timer_tick_i, .timebase_enable_i,
+      .clk_i, .rst_ni, .timer_tick_i(timer_tick_i && timer_run), .timebase_enable_i,
       .write_valid_i(timer_write), .write_spr_i(uop_q.spr),
       .write_value_i(a_q), .decrementer_accept_i(decrementer_taken_o),
       .timebase_o(timebase), .decrementer_o(decrementer), .decrementer_pending_o
@@ -490,13 +525,14 @@ module ppc_special #(
     assign decrementer = '0;
     assign decrementer_pending_o = 1'b0;
     logic unused_timer_inputs;
-    assign unused_timer_inputs = ^{timer_tick_i, timebase_enable_i, timer_write};
+    assign unused_timer_inputs = ^{timer_tick_i, timebase_enable_i, timer_write, timer_run};
   end endgenerate
   generate if (HAS_602 && ENABLE_FULL_DECODE) begin : watchdog_enabled
     ppc_watchdog watchdog (
       .clk_i, .rst_ni,
       // A TB write suppresses the increment on that edge.
-      .timebase_increment_i(ENABLE_TIMERS && timer_tick_i && timebase_enable_i &&
+      .timebase_increment_i(ENABLE_TIMERS && timer_tick_i && timer_run &&
+        timebase_enable_i &&
         !(timer_write && (uop_q.spr != 10'd22))),
       .timebase_i(timebase[25:0]),
       .tcr_write_i(hold_commit && (uop_q.special_op == SPECIAL_MTSPR) &&
@@ -518,8 +554,7 @@ module ppc_special #(
     assign unused_watchdog = ^{watchdog_taken, watchdog_reset_taken};
   end endgenerate
   logic [31:0] context_target_q, mtmsr_value;
-  // Machine check adds ME, RI and POW; POW is stored without effect because
-  // no HID0 power mode is selectable. Debug exceptions add SE and BE.
+  // Machine check adds ME, RI and POW. Debug exceptions add SE and BE.
   localparam logic [31:0] MACHINE_CHECK_MSR_MASK = 32'h0004_1002;
   localparam logic [31:0] DEBUG_MSR_MASK = 32'h0000_0600;
   localparam logic [31:0] LIVE_UNSUPPORTED_MASK =
@@ -558,7 +593,8 @@ module ppc_special #(
   assign dispatch_context = ENABLE_LIVE_CONTEXT && context_operation(uop_i.special_op);
   assign frontend_fence_o = rst_ni && fence_q;
   assign context_valid_o = rst_ni && (state_q == S_CONTEXT_INSTALL);
-  assign mtmsr_unsupported = !live_mode_supported(a_q);
+  assign mtmsr_unsupported = !live_mode_supported(a_q) ||
+    power_mode_unsupported(a_q[MSR_POW], hid0_q);
   assign mtmsr_value = (msr_o & ~MSR_MASK) | (a_q & LIVE_SUPPORTED_MASK);
 
   // Restored MSR bits rfi cannot honor without live context.
@@ -692,6 +728,7 @@ module ppc_special #(
       end
       if ((uop_q.special_op == SPECIAL_MTMSR) &&
           mtmsr_unsupported) result_o.fault = 1'b1;
+      if (hid0_power_unsupported) result_o.fault = 1'b1;
       if ((uop_q.special_op == SPECIAL_RFI) &&
           rfi_state_unsupported) result_o.fault = 1'b1;
       if (fetch_page_miss_opcode && !fetch_miss_eligible)
@@ -708,6 +745,8 @@ module ppc_special #(
     end else if (state_q == S_MEM_RESULT) begin
       result_valid_o = 1'b1;
       result_o = memory_result_q;
+      // Equal to memory_result_q.producer; keeps the state out of the tag.
+      result_o.producer = producer_q;
     end
   end
 
@@ -1337,6 +1376,8 @@ module ppc_special #(
     pin_status_o.soft_reset_taken = interrupt_accept && pin_soft_reset_select &&
       !watchdog_reset_select;
     pin_status_o.smi_taken = interrupt_accept && pin_smi_select;
+    pin_status_o.qreq = qreq_q;
+    pin_status_o.quiesced = quiesced_q;
   end
 
   // Exception and interrupt sequencer.
@@ -1563,7 +1604,8 @@ module ppc_special #(
             10'd275: sprg_q[3] <= a_q;
             // IABR[31] (translation enable) is stored but ignored.
             10'd1010: if (ENABLE_DEBUG_EXCEPTIONS) iabr_q <= a_q;
-            10'd1008: if (ENABLE_FULL_DECODE) hid0_q <= a_q & CPU_CFG.hid0_wmask;
+            10'd1008: if (ENABLE_FULL_DECODE && !hid0_power_unsupported)
+              hid0_q <= a_q & CPU_CFG.hid0_wmask;
             10'd282: if (ENABLE_FULL_DECODE && CPU_CFG.has_ear) ear_q <= a_q & EAR_WMASK;
             10'd986: if (ENABLE_FULL_DECODE && HAS_602) ibr_q <= a_q & IBR_WMASK;
             10'd990: if (ENABLE_FULL_DECODE && HAS_602) sebr_q <= a_q & SEBR_WMASK;
@@ -1842,6 +1884,9 @@ module ppc_special #(
       if (exception_state_load_valid)
         assert (exception_state_load_ready)
           else $error("committing SRR state write was not accepted");
+      if (state_q == S_MEM_RESULT)
+        assert (memory_result_q.producer == producer_q)
+          else $error("memory result belongs to another producer");
       if (interrupt_q)
         assert (!cancel_i && !result_valid_o && !dmem_req_valid_o)
           else $error("selected interrupt acquired an instruction side effect");

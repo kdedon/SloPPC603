@@ -217,7 +217,7 @@ module ppc_core #(
   logic [31:0] iabr;
   logic trace_mode, trace_armed_q, trace_pending_q, fetch_machine_check_head;
   fetch_packet_t queued;
-  logic frontend_fence, frontend_quiescent;
+  logic frontend_fence, frontend_quiescent, power_stop;
   logic interrupt_qualified, interrupt_admit, resume_override_valid_q;
   logic decrementer_pending, external_irq_q;
   logic watchdog_interrupt, watchdog_reset, watchdog_reseto;
@@ -335,7 +335,7 @@ module ppc_core #(
       $fatal(1, "Debug exceptions require the interrupt boundary and live supervisor context");
   end
   ppc_fetch #(.RESET_PC(RESET_PC)) fetch (
-    .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence),
+    .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence || power_stop),
     .quiescent_o(frontend_quiescent),
     .redirect_i(frontend_clear || fold_q), .redirect_target_i(frontend_target),
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
@@ -859,7 +859,7 @@ module ppc_core #(
     .dmem_rsp_page_miss_i,
     .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o,
     .dmem_req_attr_o, .icache_ctl_valid_o, .icache_ctl_ready_i,
-    .icache_ctl_enable_o, .icache_ctl_invalidate_o
+    .icache_ctl_enable_o, .icache_ctl_invalidate_o, .power_stop_o(power_stop)
   );
   assign context_ir_o = msr[MSR_IR];
   assign context_dr_o = msr[MSR_DR];
