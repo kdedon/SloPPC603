@@ -2105,40 +2105,40 @@ module ppc_fpu #(
       for (integer k = 0; k < 3; k++)
         pending_d[i].producer[k] &= ~retiring;
     // A free tail slot takes the presented instruction every cycle; only
-    // its flags wait for the dispatch handshake.
-    if (space_ok) begin
-      pending_d[tail_q] = new_entry(pending_d[tail_q], issue_i, decoded,
-                                    issue_ea);
-      for (integer k = 0; k < 3; k++)
-        pending_d[tail_q].producer[k] =
-            (work_dispatch ? bind0[k] : bind1[k]) & ~retiring;
-      pending_d[tail_q] = record_launch(pending_d[tail_q],
-          work_dispatch ? launch0 : launch1);
+    // its flags wait for the dispatch handshake. Each slot reads only its
+    // own next state.
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (space_ok && tail_q == PENDING_IDX_BITS'(i)) begin
+        pending_d[i] = new_entry(pending_d[i], issue_i, decoded, issue_ea);
+        for (integer k = 0; k < 3; k++)
+          pending_d[i].producer[k] =
+              (work_dispatch ? bind0[k] : bind1[k]) & ~retiring;
+        pending_d[i] = record_launch(pending_d[i],
+            work_dispatch ? launch0 : launch1);
+        if (dispatch_fire) begin
+          pending_d[i] = dispatched(pending_d[i]);
+          if (work_dispatch && exec_fire)
+            pending_d[i] = launched(pending_d[i], launch0);
+          if (exec_found && work1_fire)
+            pending_d[i] = launched(pending_d[i], launch1);
+        end
+      end
+      if (space1_ok && tail1_q == PENDING_IDX_BITS'(i)) begin
+        pending_d[i] = new_entry(pending_d[i], issue1_i, decoded1, issue1_ea);
+        // A source written by the paired lane-0 instruction binds to it.
+        for (integer k = 0; k < 3; k++)
+          pending_d[i].producer[k] =
+              dec_write && issue_i.insn[25:21] == work1_index[k] ?
+              PENDING_DEPTH'(1) << tail_q : bind1[k] & ~retiring;
+        pending_d[i] = record_launch(pending_d[i], launch1);
+        if (dispatch1_fire) begin
+          pending_d[i] = dispatched(pending_d[i]);
+          if (work1_fire) pending_d[i] = launched(pending_d[i], launch1);
+        end
+      end
     end
-    if (space1_ok) begin
-      pending_d[tail1_q] = new_entry(pending_d[tail1_q], issue1_i, decoded1,
-                                     issue1_ea);
-      // A source written by the paired lane-0 instruction binds to it.
-      for (integer k = 0; k < 3; k++)
-        pending_d[tail1_q].producer[k] =
-            dec_write && issue_i.insn[25:21] == work1_index[k] ?
-            PENDING_DEPTH'(1) << tail_q : bind1[k] & ~retiring;
-      pending_d[tail1_q] = record_launch(pending_d[tail1_q], launch1);
-    end
-    if (dispatch_fire) begin
-      pending_d[tail_q] = dispatched(pending_d[tail_q]);
-      if (work_dispatch && exec_fire)
-        pending_d[tail_q] = launched(pending_d[tail_q], launch0);
-      if (exec_found && work1_fire)
-        pending_d[tail_q] = launched(pending_d[tail_q], launch1);
-      pending_count_d = after_retire_count + 3'd1;
-    end
-    if (dispatch1_fire) begin
-      pending_d[tail1_q] = dispatched(pending_d[tail1_q]);
-      if (work1_fire)
-        pending_d[tail1_q] = launched(pending_d[tail1_q], launch1);
-      pending_count_d = after_retire_count + 3'd2;
-    end
+    if (dispatch_fire) pending_count_d = after_retire_count + 3'd1;
+    if (dispatch1_fire) pending_count_d = after_retire_count + 3'd2;
     if (abort_match) begin
       for (integer i = 0; i < PENDING_DEPTH; i++)
         if (aborted[i]) pending_d[i].valid = 1'b0;
