@@ -1,0 +1,49 @@
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 Kevin Dedon */
+/* Fixed-point Mandelbrot arithmetic shared by hello.c and the host tool
+ * that computes its checksums (mandel_sum.c). Coordinates are Q4.12. */
+#ifndef DEMO_MANDEL_H
+#define DEMO_MANDEL_H
+
+#include <stdint.h>
+
+#define MB_MAX_ITER 48
+
+/* Iteration count at c = (cr, ci). */
+static inline int mb_iter(int32_t cr, int32_t ci)
+{
+  int32_t zr = 0, zi = 0;
+  int n;
+  for (n = 0; n < MB_MAX_ITER; n++) {
+    int32_t zr2 = (zr * zr) >> 12, zi2 = (zi * zi) >> 12;
+    if (zr2 + zi2 > (4 << 12)) break;
+    zi = ((zr * zi) >> 11) + ci;
+    zr = zr2 - zi2 + cr;
+  }
+  return n;
+}
+
+/* Pixel pitch for a w x h view that fits real -2.25..0.75 and imaginary
+ * -1.125..1.125, centred on -0.75. */
+static inline int32_t mb_pitch(int w, int h)
+{
+  int32_t a = ((3 << 12) + w - 1) / w, b = ((9 << 10) + h - 1) / h;
+  return a > b ? a : b;
+}
+
+static inline int32_t mb_cr(int x, int w, int32_t pitch) { return -(3 << 10) + (x - w / 2) * pitch; }
+static inline int32_t mb_ci(int y, int h, int32_t pitch) { return (y - h / 2) * pitch; }
+
+/* Palette index: black inside the set, the colour ramp (16-255) outside. */
+static inline uint8_t mb_color(int n)
+{
+  return n == MB_MAX_ITER ? 0 : (uint8_t)(16 + n * 239 / MB_MAX_ITER);
+}
+
+/* Checksum term of one pixel; the sum does not depend on drawing order. */
+static inline uint32_t mb_weight(int n, int x, int y, int w)
+{
+  return (uint32_t)n * (uint32_t)(y * w + x + 1);
+}
+
+#endif

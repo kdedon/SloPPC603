@@ -16,13 +16,18 @@ module tb_demo_soc;
   logic [7:0] r, g, b, console_data;
   logic [31:0] exit_code;
 
+  // The external framebuffer ports are unused with the on-chip framebuffer.
+  /* verilator lint_off PINCONNECTEMPTY */
   ppc603e_demo_soc #(.CE_DIV(2)) soc (
-    .clk_i(clk), .rst_ni(rst_n), .int_n_i(1'b1),
+    .clk_i(clk), .rst_ni(rst_n), .int_n_i(1'b1), .mode_i(8'h00),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
     .hblank_o(hblank), .vblank_o(vblank),
     .console_valid_o(console_valid), .console_data_o(console_data),
-    .exit_valid_o(exit_valid), .exit_code_o(exit_code), .checkstop_o(checkstop)
+    .exit_valid_o(exit_valid), .exit_code_o(exit_code),
+    .fb_we_o(), .fb_addr_o(), .fb_be_o(), .fb_data_o(), .fb_hold_i(1'b0),
+    .pal_we_o(), .pal_addr_o(), .pal_data_o(), .checkstop_o(checkstop)
   );
+  /* verilator lint_on PINCONNECTEMPTY */
 
   longint unsigned cycles = 0, retired = 0, max_cycles = 64'd400_000_000;
   logic running = 1'b0;

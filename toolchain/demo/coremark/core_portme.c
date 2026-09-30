@@ -19,20 +19,26 @@ volatile ee_s32 seed4_volatile = ITERATIONS;
 volatile ee_s32 seed5_volatile = 0;
 ee_u32 default_num_contexts = 1;
 
+int demo_cm_iterations = ITERATIONS;
 static CORE_TICKS start_ticks, stop_ticks;
+static uint64_t start_retired, stop_retired;
 static int performance_run, crc_errors, crcfinal_seen;
 static unsigned crcfinal;
 
 void start_time(void)
 {
   perf_start();
+  start_retired = soc_retired();
   start_ticks = (CORE_TICKS)soc_cycles();
 }
+
 void stop_time(void)
 {
   stop_ticks = (CORE_TICKS)soc_cycles();
+  stop_retired = soc_retired();
   perf_stop();
 }
+
 CORE_TICKS get_time(void) { return stop_ticks - start_ticks; }
 secs_ret time_in_secs(CORE_TICKS ticks) { return ticks / SOC_CLOCK_HZ; }
 
@@ -79,17 +85,18 @@ int coremark_main(void);
 int main(void)
 {
   fb_palette_default();
-  fb_clear(4);
+  con_clear(4);
   con_color(15, 4);
   con_screen(1);
-  printf("CoreMark, %d iterations\n", ITERATIONS);
-  printf("(simulation-sized: not a valid\n CoreMark result)\n");
+  seed4_volatile = demo_cm_iterations;
+  printf("CoreMark, %d iterations\n", demo_cm_iterations);
+  if (demo_cm_iterations < 300) printf("(simulation-sized: not a valid\n CoreMark result)\n");
   con_screen(0);
 
   coremark_main();
 
   CORE_TICKS cycles = get_time();
-  uint64_t iters = ITERATIONS;
+  uint64_t iters = (uint64_t)demo_cm_iterations;
   uint32_t per_sec_milli = (uint32_t)(iters * SOC_CLOCK_HZ * 1000 / cycles);
   /* CoreMark/MHz = iterations / cycles * 1e6, three decimals. */
   uint32_t per_mhz_milli = (uint32_t)(iters * 1000000000ull / cycles);
@@ -97,7 +104,7 @@ int main(void)
   con_screen(1);
   con_goto(0, 4);
   printf("cycles:        %lu\n", (unsigned long)cycles);
-  printf("cycles/iter:   %lu\n", (unsigned long)(cycles / ITERATIONS));
+  printf("cycles/iter:   %lu\n", (unsigned long)(cycles / iters));
   printf("iter/s:        %lu.%03lu at %lu MHz\n", (unsigned long)(per_sec_milli / 1000),
          (unsigned long)(per_sec_milli % 1000), (unsigned long)(SOC_CLOCK_HZ / 1000000));
   printf("CoreMark/MHz:  %lu.%03lu\n", (unsigned long)(per_mhz_milli / 1000),
@@ -110,6 +117,7 @@ int main(void)
   con_screen(0);
   perf_report("coremark");
   con_screen(1);
+  demo_cm = (struct demo_result){cycles, stop_retired - start_retired, (uint32_t)iters, per_mhz_milli, 1};
   con_color(10, 4);
   printf("CRCs match: coremark PASS\n");
   return 0;

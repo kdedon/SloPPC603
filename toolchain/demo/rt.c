@@ -51,6 +51,14 @@ void perf_report(const char *name)
   if (sum != cycles) fail("perf slot counts do not sum to cycles");
 }
 
+uint64_t soc_retired(void)
+{
+  uint32_t lo = SOC_RETIRED_LO;
+  return ((uint64_t)SOC_RETIRED_HI << 32) | lo;
+}
+
+struct demo_result demo_hello, demo_dhry, demo_cm;
+
 uint64_t soc_timebase(void)
 {
   uint32_t hi, lo, again;
@@ -64,11 +72,28 @@ uint64_t soc_timebase(void)
 
 /* ---- framebuffer ---------------------------------------------------------- */
 
+volatile uint8_t *fb_pixels;
+int fb_width, fb_height, fb_stride;
+int con_scale = 1, con_cell = 8, con_cols, con_rows;
+
+void fb_init(void)
+{
+  fb_pixels = (volatile uint8_t *)SOC_FB_ADDR;
+  fb_stride = (int)SOC_FB_STRIDE;
+  fb_width = (int)(SOC_FB_SIZE >> 16);
+  fb_height = (int)(SOC_FB_SIZE & 0xffff);
+  con_scale = fb_width >= 1280 ? 3 : fb_width >= 640 ? 2 : 1;
+  con_cell = 8 * con_scale;
+  con_cols = fb_width / con_cell;
+  con_rows = fb_height / con_cell;
+}
+
 void fb_rect(int x, int y, int w, int h, uint8_t color)
 {
   uint32_t fill = color * 0x01010101u;
+  if (!fb_width) fb_init();
   for (int row = y; row < y + h; row++) {
-    volatile uint8_t *p = SOC_FB + row * SOC_FB_WIDTH + x;
+    volatile uint8_t *p = fb_pixels + row * fb_stride + x;
     int n = w;
     while (n > 0 && ((uintptr_t)p & 3)) { *p++ = color; n--; }
     while (n >= 4) { *(volatile uint32_t *)p = fill; p += 4; n -= 4; }
@@ -78,75 +103,101 @@ void fb_rect(int x, int y, int w, int h, uint8_t color)
 
 void fb_clear(uint8_t color)
 {
-  fb_rect(0, 0, SOC_FB_WIDTH, SOC_FB_HEIGHT, color);
+  if (!fb_width) fb_init();
+  fb_rect(0, 0, fb_width, fb_height, color);
 }
 
-/* Entries 0-15: a VGA-like text palette; 16-255: a colour ramp. */
+/* Entries 0-15: a VGA-like text palette; 16-255: a colour ramp through
+ * the gradient stops below. */
 void fb_palette_default(void)
 {
   static const uint32_t base[16] = {
     0x000000, 0x0000aa, 0x00aa00, 0x00aaaa, 0xaa0000, 0xaa00aa, 0xaa5500, 0xaaaaaa,
     0x555555, 0x5555ff, 0x55ff55, 0x55ffff, 0xff5555, 0xff55ff, 0xffff55, 0xffffff};
   for (int i = 0; i < 16; i++) SOC_PALETTE(i) = base[i];
+  /* Position (0-239) and colour of each stop: deep blue, azure, white,
+   * gold, crimson, violet, near black. */
+  static const uint32_t stop[7][2] = {
+    {0, 0x000764}, {42, 0x206bcb}, {84, 0xedffff}, {126, 0xffaa00},
+    {168, 0xb3122e}, {210, 0x5a1a8c}, {239, 0x0a0214}};
   for (int i = 16; i < 256; i++) {
-    uint32_t t = (uint32_t)(i - 16) * 6;  /* 0..1434 over six segments */
-    uint32_t seg = t / 240, f = (t % 240) * 255 / 239, r, g, b;
-    switch (seg) {
-    case 0: r = 0; g = 0; b = f; break;
-    case 1: r = 0; g = f; b = 255; break;
-    case 2: r = 0; g = 255; b = 255 - f; break;
-    case 3: r = f; g = 255; b = 0; break;
-    case 4: r = 255; g = 255 - f; b = 0; break;
-    default: r = 255; g = f; b = f; break;
+    uint32_t t = (uint32_t)(i - 16), k = 0, rgb = 0;
+    while (k < 5 && t >= stop[k + 1][0]) k++;
+    uint32_t span = stop[k + 1][0] - stop[k][0], f = t - stop[k][0];
+    for (int sh = 16; sh >= 0; sh -= 8) {
+      uint32_t c0 = (stop[k][1] >> sh) & 0xff, c1 = (stop[k + 1][1] >> sh) & 0xff;
+      rgb |= ((c0 * (span - f) + c1 * f) / span) << sh;
     }
-    SOC_PALETTE(i) = (r << 16) | (g << 8) | b;
+    SOC_PALETTE(i) = rgb;
   }
 }
 
 /* ---- console -------------------------------------------------------------- */
 
-#define COLS (SOC_FB_WIDTH / 8)
-#define ROWS (SOC_FB_HEIGHT / 8)
-
-static int con_on, con_col, con_row;
+static int con_on, con_col, con_row, con_top;
 static uint8_t con_fg = 15, con_bg = 0;
 
 void con_screen(int enable) { con_on = enable; }
-void con_goto(int col, int row) { con_col = col; con_row = row; }
 void con_color(uint8_t fg, uint8_t bg) { con_fg = fg; con_bg = bg; }
 
+void con_goto(int col, int row)
+{
+  con_col = col;
+  con_row = con_top + row;
+}
+
+void con_window(int top)
+{
+  con_top = top;
+  con_goto(0, 0);
+}
+
+void con_clear(uint8_t bg)
+{
+  if (!fb_width) fb_init();
+  fb_rect(0, con_top * con_cell, fb_width, fb_height - con_top * con_cell, bg);
+  con_goto(0, 0);
+}
+
+/* One glyph row at a time: each font bit is con_scale pixels wide and each
+ * row con_scale lines tall, stored as words (a cell is a multiple of four
+ * pixels wide and starts on a word boundary). */
 static void draw_glyph(int col, int row, int c)
 {
   const uint8_t *g = font8x8[(c < 0x20 || c > 0x7e) ? 0 : c - 0x20];
-  volatile uint32_t *p = (volatile uint32_t *)(SOC_FB + row * 8 * SOC_FB_WIDTH + col * 8);
-  for (int y = 0; y < 8; y++, p += SOC_FB_WIDTH / 4) {
-    uint32_t w[2];
-    for (int half = 0; half < 2; half++) {
+  int s = con_scale, words = con_cell / 4;
+  volatile uint8_t *p = fb_pixels + row * con_cell * fb_stride + col * con_cell;
+  for (int y = 0; y < 8; y++) {
+    uint32_t line[6];
+    for (int k = 0; k < words; k++) {
       uint32_t v = 0;
-      for (int x = 0; x < 4; x++)
-        v = (v << 8) | ((g[y] << (4 * half + x)) & 0x80 ? con_fg : con_bg);
-      w[half] = v;
+      for (int b = 0; b < 4; b++) {
+        int px = (4 * k + b) / s;
+        v = (v << 8) | ((g[y] << px) & 0x80 ? con_fg : con_bg);
+      }
+      line[k] = v;
     }
-    p[0] = w[0];
-    p[1] = w[1];
+    for (int r = 0; r < s; r++, p += fb_stride)
+      for (int k = 0; k < words; k++) ((volatile uint32_t *)p)[k] = line[k];
   }
 }
 
 static void con_newline(void)
 {
   con_col = 0;
-  if (++con_row == ROWS) con_row = 0;
-  /* The screen wraps: clear the line about to be written. */
-  fb_rect(0, con_row * 8, SOC_FB_WIDTH, 8, con_bg);
+  if (++con_row >= con_rows) con_row = con_top;
+  /* The text area wraps: clear the line about to be written. */
+  fb_rect(0, con_row * con_cell, fb_width, con_cell, con_bg);
 }
 
 void con_putc(int c)
 {
   SOC_CONSOLE = (uint8_t)c;
   if (!con_on) return;
+  if (!fb_width) fb_init();
   if (c == '\n') { con_newline(); return; }
   if (c == '\r') { con_col = 0; return; }
-  if (con_col == COLS) con_newline();
+  if (con_col == con_cols) con_newline();
   draw_glyph(con_col++, con_row, c);
 }
 

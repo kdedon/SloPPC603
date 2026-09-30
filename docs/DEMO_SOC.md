@@ -41,7 +41,7 @@ matches a MiSTer `CE_PIXEL` boundary.
 | Range | Size | Contents | Firmware mapping |
 |---|---|---|---|
 | `0xfff00000`–`0xfff3ffff` | 256 KiB (`RAM_BYTES`) | Program RAM; the image loads here, reset entry at `0xfff00100` | DBAT0, 1 MiB, WIMG `0000` |
-| `0xf0000000`–`0xf0012bff` | 76 800 B | Framebuffer, 320 × 240, 8-bit palette indices, stride 320 | DBAT1, 2 MiB, WIMG `0101` |
+| `0xf0000000`–`0xf0012bff` | 76 800 B | Framebuffer, 320 × 240, 8-bit palette indices, stride 320 (defaults of the `FB_BASE`, `FB_WIDTH`, `FB_HEIGHT` parameters; the MiSTer core uses 1920 × 1080 at `0xf0200000`) | DBAT1, 4 MiB, WIMG `0101` |
 | `0xf0100000`–`0xf0100fff` | 4 KiB | Registers | DBAT1 |
 | anything else | | TEA (machine check) | |
 
@@ -65,10 +65,14 @@ stores. Offsets are from `0xf0100000`.
 | `0x014` | `EXIT` | W | Exit code; 0 is success. The bench stops on the first write |
 | `0x018` | `FRAMES` | R | Frames scanned out since reset |
 | `0x01c` | `STATUS` | R | bit 0: vertical blank |
-| `0x020` | `FB_ADDR` | R | Framebuffer base, `0xf0000000` |
+| `0x020` | `FB_ADDR` | R | Framebuffer base (`FB_BASE`, default `0xf0000000`); firmware takes the base and geometry from these registers |
 | `0x024` | `FB_STRIDE` | R | Bytes per line, 320 |
 | `0x028` | `FB_SIZE` | R | Width in bits 31:16 (320), height in bits 15:0 (240) |
 | `0x02c` | `FB_FORMAT` | R | 3: 8 bits per pixel, indexed (the MiSTer `FB_FORMAT` code) |
+| `0x030` | `MODE` | R | Clock in MHz in bits 31:16 (`SYS_MHZ`); the `mode_i` port in bits 7:0 |
+| `0x034` | `TENURES` | R | 60x address tenures since reset |
+| `0x038` | `RETIRED_LO` | R | Instructions retired since reset, low word; reading it latches the high word |
+| `0x03c` | `RETIRED_HI` | R | High word latched by the last `RETIRED_LO` read |
 | `0x100` | `PERF_CTRL` | R/W | bit 0: `RUN`, counters advance while set (reset 1); writing bit 1 clears every counter |
 | `0x104` | `PERF_CYCLES` | R | Cycles counted while `RUN` |
 | `0x108` | `PERF_RETIRED` | R | Retired instructions |
@@ -226,13 +230,11 @@ The 256 KiB program RAM and the two framebuffer copies take most of the block RA
 fit measures resources and internal timing only: no board I/O timing, and the RAM is
 not preloaded (`RAM_INIT` empty).
 
-## MiSTer wrapper: next steps
+## External framebuffer
 
-- An `emu` top that instantiates `ppc603e_demo_soc` with `CE_DIV` matched to the
-  video clock, and drives `CE_PIXEL`, `VGA_*` and `VGA_DE` from the scan-out ports.
-- Firmware loading through `hps_io` `ioctl` into program RAM with the processor held
-  in reset, replacing the bench's `$readmemh`.
-- Program memory and the framebuffer in SDRAM or DDRAM behind the 60x target, with
-  the framebuffer handed to the framework's `MISTER_FB` scaler; that frees the block
-  RAM and allows larger programs.
-- Console output to the OSD or a UART, and the exit register to a status LED.
+With `FB_EXTERNAL = 1` the framebuffer is not on chip. Framebuffer stores leave through
+the `fb_*` ports (doubleword index, byte lanes, data) and palette writes through
+`pal_*`; `fb_hold_i` holds off the next bus grant while the receiver cannot take four
+more stores. Framebuffer reads end with TEA: the firmware only writes the framebuffer.
+The scan-out keeps its timing and shows palette entry 0. The MiSTer core uses this
+mode; see [MISTER_CORE.md](MISTER_CORE.md).

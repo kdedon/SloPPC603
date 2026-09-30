@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Kevin Dedon */
-/* Demo system RAM: 256 KiB at the reset vector base. */
+/* MiSTer demo image: 128 KiB of RAM at the reset vector base. The data
+ * section runs from a copy made at start-up, so a reset restores it. */
 ENTRY(_start)
 
 MEMORY
 {
-  RAM (rwx) : ORIGIN = 0xfff00000, LENGTH = 256K
+  RAM (rwx) : ORIGIN = 0xfff00000, LENGTH = 128K
 }
 
 SECTIONS
@@ -25,14 +26,15 @@ SECTIONS
     *(.rodata .rodata.*)
   } > RAM
 
-  .data ALIGN(8) :
+  __data_load = ALIGN(8);
+  /* Run address: past the load image, which must stay below it. */
+  .data ORIGIN(RAM) + 0x10000 : AT(__data_load)
   {
     __data_start = .;
     *(.data .data.* .sdata .sdata.*)
     . = ALIGN(8);
     __data_end = .;
   } > RAM
-  __data_load = LOADADDR(.data);
 
   .bss ALIGN(8) (NOLOAD) :
   {
@@ -55,4 +57,5 @@ SECTIONS
 
   ASSERT(_start == ORIGIN(RAM) + 0x100, "reset entry moved")
   ASSERT(__heap_start < __heap_end, "image leaves no heap")
+  ASSERT(__data_load + SIZEOF(.data) <= ADDR(.data), "load image overlaps the data section")
 }

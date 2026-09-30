@@ -32,7 +32,7 @@ LDFLAGS := $(ARCH) -nostdlib -nostartfiles -no-pie -Wl,--build-id=none -Wl,--gc-
 RT_OBJ := $(OUT)/crt0.o $(OUT)/rt.o $(OUT)/font.o
 CM_SRC := core_list_join core_main core_matrix core_state core_util
 
-.PHONY: all hello dhrystone coremark
+.PHONY: all hello dhrystone coremark mister
 all: hello dhrystone coremark
 hello: $(OUT)/hello.hex
 dhrystone: $(OUT)/dhrystone.hex
@@ -49,7 +49,7 @@ $(OUT)/font.o: demo/font.c demo/soc.h | $(OUT)
 	$(CC) $(CFLAGS) $(OWN_CFLAGS) -c $< -o $@
 $(OUT)/nofloat.o: demo/nofloat.c demo/soc.h | $(OUT)
 	$(CC) $(CFLAGS) $(OWN_CFLAGS) -c $< -o $@
-$(OUT)/hello.o: demo/hello.c demo/soc.h | $(OUT)
+$(OUT)/hello.o: demo/hello.c demo/soc.h demo/mandel.h | $(OUT)
 	$(CC) $(CFLAGS) $(OWN_CFLAGS) -c $< -o $@
 
 $(OUT)/dhry_1.o: $(SRC)/dhrystone/dhry_1.c | $(OUT)
@@ -69,6 +69,34 @@ $(OUT)/cm/core_portme.o: demo/coremark/core_portme.c demo/coremark/core_portme.h
 $(OUT)/hello.elf: $(RT_OBJ) $(OUT)/hello.o demo/demo.ld
 $(OUT)/dhrystone.elf: $(RT_OBJ) $(OUT)/dhry_1.o $(OUT)/dhry_2.o $(OUT)/dhry_glue.o $(OUT)/nofloat.o demo/demo.ld
 $(OUT)/coremark.elf: $(RT_OBJ) $(addprefix $(OUT)/cm/,$(addsuffix .o,$(CM_SRC) core_portme)) demo/demo.ld
+
+# MiSTer image: all three programs behind a selector (demo/mister.c), with
+# run lengths set at run time and the data section copied at start-up.
+GIT_SHORT ?= unknown
+MI := $(OUT)/mister
+MISTER_OBJ := $(RT_OBJ) $(OUT)/nofloat.o $(MI)/mister.o $(MI)/hello.o $(MI)/dhry_1.o \
+	$(OUT)/dhry_2.o $(MI)/dhry_glue.o $(addprefix $(OUT)/cm/,$(addsuffix .o,$(CM_SRC))) \
+	$(MI)/core_portme.o
+mister: $(OUT)/mister.hex
+
+$(MI):
+	mkdir -p $@
+$(MI)/mister.o: demo/mister.c demo/soc.h FORCE | $(MI)
+	$(CC) $(CFLAGS) $(OWN_CFLAGS) '-DGIT_SHORT="$(GIT_SHORT)"' -c $< -o $@
+$(MI)/hello.o: demo/hello.c demo/soc.h demo/mandel.h | $(MI)
+	$(CC) $(CFLAGS) $(OWN_CFLAGS) -Dmain=hello_main -c $< -o $@
+# An HZ above any run length keeps Dhrystone's floating-point rate printout
+# off; the glue computes the rates in integers.
+$(MI)/dhry_1.o: $(SRC)/dhrystone/dhry_1.c | $(MI)
+	$(CC) $(CFLAGS) $(DHRY_CFLAGS) -UHZ -DHZ=1000000000 -Dmain=dhry_main -c $< -o $@
+$(MI)/dhry_glue.o: demo/dhry_glue.c demo/soc.h | $(MI)
+	$(CC) $(CFLAGS) $(DHRY_CFLAGS) -Dmain=dhry_demo -c $< -o $@
+$(MI)/core_portme.o: demo/coremark/core_portme.c demo/coremark/core_portme.h | $(MI)
+	$(CC) $(CFLAGS) $(CM_CFLAGS) -Dmain=coremark_demo -c $< -o $@
+$(OUT)/mister.elf: LDFLAGS := $(subst demo/demo.ld,demo/mister.ld,$(LDFLAGS))
+$(OUT)/mister.elf: $(MISTER_OBJ) demo/mister.ld
+.PHONY: FORCE
+FORCE:
 
 # The processor has no FPU: reject any floating-point instruction.
 $(OUT)/%.elf:

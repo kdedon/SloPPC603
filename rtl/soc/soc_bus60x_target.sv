@@ -15,6 +15,8 @@ module soc_bus60x_target (
   input  logic        rst_ni,
   // Master pins, numeric bit order (bit 31 is the MSB, A0 on the 60x).
   input  logic        br_n_i,
+  // Holds off the next bus grant, e.g. while a posted-write queue drains.
+  input  logic        hold_i,
   input  logic        ts_n_i,
   input  logic        ts_oe_i,
   input  logic [31:0] a_i,
@@ -34,6 +36,8 @@ module soc_bus60x_target (
   // Address claim: the slave decoder answers for addr_o combinationally.
   output logic [31:0] claim_addr_o,
   input  logic        claim_i,
+  // The claimed tenure writes; valid with claim_addr_o.
+  output logic        claim_write_o,
   // Beat port. be_o bit 7 is byte lane 0 (d[63:56]).
   output logic        req_o,
   output logic        we_o,
@@ -62,6 +66,7 @@ module soc_bus60x_target (
   assign data_tenure = tt_i[1];
   assign last_beat = !burst_q || beat_q == 2'd3;
   assign claim_addr_o = addr_q;
+  assign claim_write_o = write_q;
 
   // Bursts start at the critical doubleword and wrap within the line.
   assign beat_addr = burst_q ? {addr_q[31:5], addr_q[4:3] + beat_q}
@@ -100,7 +105,7 @@ module soc_bus60x_target (
       aack_n_o <= 1'b1;
       unique case (state_q)
         S_IDLE:
-          if (!br_n_i) begin
+          if (!br_n_i && !hold_i) begin
             bg_n_o <= 1'b0;
             withdraw_q <= '0;
             state_q <= S_GRANT;
