@@ -9,19 +9,20 @@
 # --native, the 320 x 240 framebuffer is on chip and leaves as native video
 # instead of the 1920 x 1080 DDR3 framebuffer shown by the scaler. With
 # --suite nbench or --suite embench, the core runs that benchmark suite from
-# 256 KiB of program RAM instead of hello, Dhrystone and CoreMark.
+# 256 KiB of program RAM instead of hello, Dhrystone and CoreMark; with
+# --suite selftest, the opcode self-test (docs/SELFTEST.md).
 set -euo pipefail
 clean=0
 native=0
 suite=""
-usage() { echo "usage: $0 [--clean] [--native] [--suite nbench|embench]" >&2; exit 2; }
+usage() { echo "usage: $0 [--clean] [--native] [--suite nbench|embench|selftest]" >&2; exit 2; }
 while (($#)); do
   case "$1" in
     --clean) clean=1 ;;
     --native) native=1 ;;
     --suite)
       shift
-      case "${1:-}" in nbench | embench) suite="$1" ;; *) usage ;; esac
+      case "${1:-}" in nbench | embench | selftest) suite="$1" ;; *) usage ;; esac
       ;;
     *) usage ;;
   esac

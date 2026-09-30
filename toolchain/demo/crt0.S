@@ -5,10 +5,12 @@
  * cacheable for fetch and data, the peripheral window cache-inhibited and
  * guarded. Both caches are enabled. main's return
  * value goes to the exit register; an exception exits with 0xe0000000 plus
- * its vector offset. */
+ * its vector offset. With CRT0_OWN_VECTORS the program supplies the
+ * vectors, entering at _reset. */
 #define SPR_HID0 1008
 #define IO_HI 0xf010
 
+#ifndef CRT0_OWN_VECTORS
     .section .vectors,"ax",@progbits
     .globl _start
 _start:                     /* 0x100: system reset */
@@ -38,8 +40,10 @@ _start:                     /* 0x100: system reset */
     vector 0x1200
     vector 0x1300
     vector 0x1400
+#endif
 
     .text
+    .globl _reset
     .type _reset,@function
 _reset:
     li 0,0
@@ -137,6 +141,7 @@ _reset:
 1:  b 1b
     .size _reset,.-_reset
 
+#ifndef CRT0_OWN_VECTORS
     /* Exceptions clear MSR[DR]; restore it so the exit store is inhibited. */
     .type _trap,@function
 _trap:
@@ -150,5 +155,6 @@ _trap:
     sync
 1:  b 1b
     .size _trap,.-_trap
+#endif
 
     .section .note.GNU-stack,"",@progbits

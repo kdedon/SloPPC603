@@ -159,10 +159,11 @@ void fb_palette_default(void)
 
 /* ---- console -------------------------------------------------------------- */
 
-static int con_on, con_col, con_row, con_top;
+static int con_on, con_col, con_row, con_top, con_echo = 1;
 static uint8_t con_fg = 15, con_bg = 0;
 
 void con_screen(int enable) { con_on = enable; }
+void con_console(int enable) { con_echo = enable; }
 void con_color(uint8_t fg, uint8_t bg) { con_fg = fg; con_bg = bg; }
 
 void con_goto(int col, int row)
@@ -217,7 +218,7 @@ static void con_newline(void)
 
 void con_putc(int c)
 {
-  SOC_CONSOLE = (uint8_t)c;
+  if (con_echo) SOC_CONSOLE = (uint8_t)c;
   if (!con_on) return;
   if (!fb_width) fb_init();
   if (c == '\n') { con_newline(); return; }

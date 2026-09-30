@@ -30,6 +30,16 @@
 #define SOC_TENURES SOC_REG(0x34)
 #define SOC_RETIRED_LO SOC_REG(0x38)
 #define SOC_RETIRED_HI SOC_REG(0x3c)
+/* Host input, read-only: bits 3:0 right, left, down, up; 4 A (or Enter);
+ * 5 B (or Esc); 31 set when an input device is present (MiSTer). */
+#define SOC_INPUT SOC_REG(0x40)
+#define SOC_IN_RIGHT 0x01u
+#define SOC_IN_LEFT 0x02u
+#define SOC_IN_DOWN 0x04u
+#define SOC_IN_UP 0x08u
+#define SOC_IN_A 0x10u
+#define SOC_IN_B 0x20u
+#define SOC_IN_PRESENT 0x80000000u
 #define SOC_PALETTE(i) SOC_REG(0x400 + 4 * (i))
 /* Performance counters: PERF_CTRL bit 0 runs them, writing bit 1 clears. */
 #define SOC_PERF_CTRL SOC_REG(0x100)
@@ -71,6 +81,8 @@ void fb_init(void);
 void con_putc(int c);
 void con_puts(const char *s);
 void con_screen(int enable);
+/* Whether screen text is also written to the console register (default). */
+void con_console(int enable);
 /* Text rows from top down form the text area: con_goto rows count from its
  * top, the text wraps within it, and con_clear fills it. */
 void con_window(int top);

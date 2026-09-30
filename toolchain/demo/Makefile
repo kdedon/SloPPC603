@@ -243,6 +243,49 @@ $(OUT)/mister-embench.elf: $(RT_OBJ) $(OUT)/emb-full/benchmarks.o $(OUT)/emb-ful
 $(OUT)/mister-embench-smoke.elf: $(RT_OBJ) $(OUT)/emb-smoke/benchmarks.o \
 	$(OUT)/emb-smoke/glue.o $(MISTER_BENCH_DEPS)
 
+# ---- opcode self-test (docs/SELFTEST.md) -------------------------------------
+# One image per variant; the cases and expected values come from gen.py, and
+# check_enc.py compares its instruction words with the assembler's. The
+# MiSTer image is the 603e image. FP opcodes are the cases' own, so these
+# images skip the floating-point check below.
+ST := $(OUT)/selftest
+ST_LDFLAGS := $(subst demo/demo.ld,demo/selftest/selftest.ld,$(LDFLAGS))
+ST_OBJ := $(ST)/crt0.o $(ST)/runner.o $(OUT)/rt.o $(OUT)/font.o
+# Extra definitions for selftest.c, e.g. ST_DEFS=-DST_FIRST=900.
+ST_DEFS ?=
+.PHONY: selftest mister-selftest
+selftest: $(OUT)/selftest.hex $(OUT)/selftest-602.hex
+mister-selftest: $(OUT)/mister-selftest.hex
+
+.PRECIOUS: $(ST)/%/cases.h $(ST)/%/cases.S $(ST)/%/check.S
+$(ST):
+	mkdir -p $@
+$(ST)/%/cases.h $(ST)/%/cases.S $(ST)/%/check.S: demo/selftest/gen.py ../sim/spec/isa.json
+	$(PYTHON) demo/selftest/gen.py $* ../sim/spec/isa.json $(ST)/$*
+$(ST)/crt0.o: demo/crt0.S | $(ST)
+	$(CC) $(ARCH) -DCRT0_OWN_VECTORS -c $< -o $@
+$(ST)/runner.o: demo/selftest/runner.S | $(ST)
+	$(CC) $(ARCH) -c $< -o $@
+$(ST)/%/cases.o: $(ST)/%/cases.S
+	$(CC) $(ARCH) -c $< -o $@
+$(ST)/%/check.ok: $(ST)/%/check.S $(ST)/%/cases.S demo/selftest/check_enc.py
+	$(CC) $(ARCH) -Wa,-many -c $(ST)/$*/check.S -o $(ST)/$*/check.o
+	$(OBJCOPY) -O binary -j .text $(ST)/$*/check.o $(ST)/$*/check.bin
+	$(PYTHON) demo/selftest/check_enc.py $(ST)/$*/check.bin $(ST)/$*/cases.S
+	touch $@
+$(ST)/%/selftest.o: demo/selftest/selftest.c demo/selftest/selftest.h demo/soc.h $(ST)/%/cases.h
+	$(CC) $(CFLAGS) $(OWN_CFLAGS) $(ST_DEFS) -I$(ST)/$* -Idemo/selftest -c $< -o $@
+$(OUT)/selftest.elf: $(ST_OBJ) $(ST)/603e/selftest.o $(ST)/603e/cases.o $(ST)/603e/check.ok \
+	demo/selftest/selftest.ld demo/mister-sections.ld
+	$(CC) $(ST_LDFLAGS) -Wl,-Map,$(OUT)/selftest.map $(filter %.o,$^) -lgcc -o $@
+	$(OBJDUMP) -d $@ > $(OUT)/selftest.dump
+$(OUT)/selftest-602.elf: $(ST_OBJ) $(ST)/602/selftest.o $(ST)/602/cases.o $(ST)/602/check.ok \
+	demo/selftest/selftest.ld demo/mister-sections.ld
+	$(CC) $(ST_LDFLAGS) -Wl,-Map,$(OUT)/selftest-602.map $(filter %.o,$^) -lgcc -o $@
+	$(OBJDUMP) -d $@ > $(OUT)/selftest-602.dump
+$(OUT)/mister-selftest.hex: $(OUT)/selftest.hex
+	cp $< $@
+
 # The processor has no FPU: reject any floating-point instruction.
 $(OUT)/%.elf:
 	$(CC) $(LDFLAGS) -Wl,-Map,$(OUT)/$*.map $(filter %.o,$^) \

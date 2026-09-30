@@ -31,6 +31,8 @@ module ppc603e_mister #(
   // Synchronous, active high.
   input  logic        rst_i,
   input  logic [7:0]  mode_i,
+  // INPUT register word (docs/MISTER_CORE.md).
+  input  logic [31:0] input_i,
   // Native video, positive syncs, updated on ce_pix_o; blank with FB_EXTERNAL.
   output logic        ce_pix_o,
   output logic [7:0]  r_o,
@@ -89,7 +91,7 @@ module ppc603e_mister #(
     .RAM_INIT(RAM_INIT), .RAM_BYTES(RAM_BYTES), .CE_DIV(8), .FB_EXTERNAL(FB_EXTERNAL),
     .FB_WIDTH(FB_WIDTH), .FB_HEIGHT(FB_HEIGHT), .FB_BASE(FB_BASE), .SYS_MHZ(SYS_MHZ)
   ) soc (
-    .clk_i, .rst_ni(!rst_i), .int_n_i(1'b1), .mode_i,
+    .clk_i, .rst_ni(!rst_i), .int_n_i(1'b1), .mode_i, .input_i,
     .ce_pix_o, .r_o, .g_o, .b_o, .hs_o, .vs_o, .de_o,
     .hblank_o(hblank), .vblank_o(vblank),
     .console_valid_o, .console_data_o, .exit_valid_o, .exit_code_o,

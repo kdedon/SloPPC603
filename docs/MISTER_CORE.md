@@ -102,6 +102,15 @@ when no suitable file is mounted. `LED_USER` is on while a program runs.
 The firmware reads the selection from the SoC `MODE` register: bits 1:0 program, bit 2
 full length, bits 31:16 the clock in MHz.
 
+### Input
+
+The SoC `INPUT` register (`0xf0100040`, [DEMO_SOC.md](DEMO_SOC.md#registers)) carries
+`joystick_0` bits 5:0 from `hps_io` (right, left, down, up, A, B; `J1,A,B` in the
+configuration string), ORed with the keyboard: arrows on bits 3:0, Enter (either) on
+A, Esc on B, each held while the key is down (`ps2_key` press and release events).
+Bit 31 is always set, telling the firmware an input device exists. The opcode
+self-test ([SELFTEST.md](SELFTEST.md)) pages with it; the other programs ignore it.
+
 ### Run lengths
 
 | Program | Full | Smoke test | Full-length time at 50 MHz |
@@ -214,6 +223,10 @@ counts are 64 bits. The screen save works as in the default core.
 
 `make -C sim demo-mister-nbench demo-mister-embench` runs the simulation-size images
 with the same layout on the demo SoC bench.
+
+`mister/build.sh --clean --suite selftest` builds the opcode self-test
+([SELFTEST.md](SELFTEST.md)) the same way; its image, `mister-selftest.hex`, is the
+one `make -C sim test-selftest` runs.
 
 ### Licensing
 

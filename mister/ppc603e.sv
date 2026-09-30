@@ -72,6 +72,7 @@ localparam CONF_STR = {
 	"-;",
 `endif
 	"R[0],Restart;",
+	"J1,A,B;",
 	"I,Running,Finished: PASS,Finished: FAIL (see screen),Checkstop,Screen saved,",
 	"Screen file: mount a writable file of 2 MiB;",
 	"v,1;",
@@ -79,6 +80,8 @@ localparam CONF_STR = {
 };
 
 wire   [1:0] buttons;
+wire  [31:0] joystick_0;
+wire  [10:0] ps2_key;
 wire [127:0] status;
 reg          info_req = 0;
 reg    [7:0] info = 0;
@@ -97,6 +100,8 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.EXT_BUS(),
 	.gamma_bus(),
 	.buttons(buttons),
+	.joystick_0(joystick_0),
+	.ps2_key(ps2_key),
 	.status(status),
 	.status_menumask(16'd0),
 	.info_req(info_req),
@@ -143,6 +148,25 @@ end
 // Mode: program in bits 1:0, full-length runs in bit 2.
 wire [7:0] mode = {5'd0, ~status[3], status[2:1]};
 
+// INPUT register: bits 3:0 right, left, down, up; 4 A; 5 B; 31 present.
+// The keyboard's arrows, Enter and Esc merge into the pad bits.
+reg  [10:0] ps2_q = 0;
+reg   [5:0] keys = 0;
+always @(posedge clk_sys) begin
+	ps2_q <= ps2_key;
+	if (ps2_key[10] != ps2_q[10])
+		case ({ps2_key[8], ps2_key[7:0]})
+			9'h174: keys[0] <= ps2_key[9];
+			9'h16B: keys[1] <= ps2_key[9];
+			9'h172: keys[2] <= ps2_key[9];
+			9'h175: keys[3] <= ps2_key[9];
+			9'h05A, 9'h15A: keys[4] <= ps2_key[9];
+			9'h076: keys[5] <= ps2_key[9];
+			default: ;
+		endcase
+end
+wire [31:0] input_word = {1'b1, 25'd0, joystick_0[5:0] | keys};
+
 wire        ce_pix, hs, vs, de;
 wire  [7:0] r, g, b;
 wire        exit_valid, checkstop;
@@ -167,6 +191,7 @@ ppc603e_mister #(
 	.clk_i(clk_sys),
 	.rst_i(core_reset),
 	.mode_i(mode),
+	.input_i(input_word),
 	.ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
 	.pal_we_o(pal_we), .pal_addr_o(pal_addr), .pal_data_o(pal_data),
 	.ddram_busy_i(DDRAM_BUSY), .ddram_addr_o(DDRAM_ADDR), .ddram_burstcnt_o(DDRAM_BURSTCNT),
