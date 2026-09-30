@@ -56,7 +56,7 @@ This retains T, Ks, Kp, N and the 24-bit VSID while forcing HDL bits 27:24, manu
 
 For T=1 (`req_data_i[31]=1`), all 32 bits are stored and returned unchanged. T=1 changes the meaning of the remaining fields to an opaque direct-store descriptor. The 603e does not support direct-store accesses, so the opt-in page router classifies a snapshot containing T=1 as unsupported through the TLB lookup diagnostic without offering a physical address. This bank does not expose a VSID output and does not reinterpret the low 24 bits.
 
-The bank has no architectural valid bits. `rst_ni=0` clears all entries and the response slot for deterministic standalone testing. That zero initialization is a local policy and is expressly different from the 603e hard-reset value, which is unknown. The interface has no soft-reset input and makes no soft-reset preservation claim.
+The bank has no architectural valid bits. `rst_ni=0` clears all entries and the response slot for deterministic standalone testing. The entries live in LUT RAM, which has no reset; a per-entry written flag cleared by `rst_ni` makes an entry read as zero until its first write, so the observable reset value is unchanged. That zero initialization is a local policy and is expressly different from the 603e hard-reset value, which is unknown. The interface has no soft-reset input and makes no soft-reset preservation claim.
 
 ## Verification
 
