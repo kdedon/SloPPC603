@@ -7,8 +7,9 @@ the arithmetic units (`ppc_fpu_unpack.sv`, `ppc_fpu_multiplier.sv`,
 `ppc_fpu_align_plan.sv`, `ppc_fpu_aligner.sv`, `ppc_fpu_adder.sv`,
 `ppc_fpu_convert.sv`, `ppc_fpu_rounder.sv`, `ppc_fpu_divider.sv`),
 `ppc_fpu_arith.sv`, then `rtl/ppc_ram_lut.sv`, `ppc_fpu_fprs.sv` and `ppc_fpu.sv`. `sim/Makefile`
-(`PPC_FPU_ARITH_RTL`, `PPC_FPU_SHELL_RTL`) holds the list. No core file list
-includes this directory.
+(`PPC_FPU_ARITH_RTL`, `PPC_FPU_SHELL_RTL`) holds the list. Core file lists
+carry `ppc_fpu_pkg.sv`; `rtl/fpu_files.f` lists the modules for
+`ENABLE_FPU` builds ([core integration](../../docs/FPU_CORE_INTEGRATION.md)).
 
 - [Architectural contract](../../docs/FPU_CONTRACT.md): manual rules and explicit source conflicts.
 - [Integration interface](../../docs/FPU_INTERFACE.md): ownership, commit, cancellation and LSU obligations.
