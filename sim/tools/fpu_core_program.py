@@ -48,13 +48,27 @@ PINF, NINF, NZERO = 0x7ff0000000000000, 0xfff0000000000000, 1 << 63
 # Host FPSCR bit positions (architectural bit = 31 - host).
 EXCEPTION_BITS = [31 - b for b in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 21, 22, 23)]
 VX_BITS = [31 - b for b in (7, 8, 9, 10, 11, 12, 21, 22, 23)]
-# Dispatch-to-retirement cycles through the serialized lane, no stalls.
-LATENCY = {
-    'fadd': 7, 'fadds': 7, 'fmul': 8, 'fmuls': 7, 'fmadd': 8, 'fmadds': 7,
-    'fdiv': 37, 'fdivs': 22, 'fres': 22, 'frsqrte': 7, 'fsel': 6, 'fmr': 6,
-    'fcmpu': 7, 'frsp': 7, 'fctiw': 7, 'mffs': 6, 'mtfsf': 6, 'mtfsfi': 6,
-    'mcrfs': 6, 'lfd': 10, 'lfs': 8, 'stfd': 11, 'stfs': 9, 'stfiwx': 9,
+# UM Table 6-5: execute latency and initiation interval (the structural
+# minimum for staged rows; divides and estimates block the unit).
+TABLE_6_5 = {
+    'fadd': (3, 1), 'fadds': (3, 1), 'fmul': (4, 2), 'fmuls': (3, 1),
+    'fmadd': (4, 2), 'fmadds': (3, 1), 'fdiv': (33, 33), 'fdivs': (18, 18),
+    'fres': (18, 18), 'frsqrte': (3, 1), 'fsel': (3, 1), 'fmr': (3, 1),
+    'fcmpu': (3, 1), 'frsp': (3, 1), 'fctiw': (3, 1), 'mffs': (3, 3),
+    'mtfsf': (3, 3), 'mtfsfi': (3, 3), 'mcrfs': (3, 3),
 }
+# The standalone FPU finishes moves, fsel and FPSCR instructions one cycle
+# before Table 6-5; its timing record owns that schedule.
+FPU_EARLY = {'fsel', 'fmr', 'mffs', 'mtfsf', 'mtfsfi', 'mcrfs'}
+# Figure 6-3: an instruction dispatched in cycle n executes from n+1 and
+# completes the cycle after its last execute stage.
+LATENCY = {name: lat + 1 - (name in FPU_EARLY)
+           for name, (lat, _) in TABLE_6_5.items()}
+# FP loads and stores run through the serialized lane: word accesses, one
+# cycle of bench memory each.
+LATENCY.update({'lfd': 10, 'lfs': 8, 'stfd': 11, 'stfs': 9, 'stfiwx': 9,
+                'add': 3})
+SYNC = (31 << 26) | (598 << 1)
 
 
 def d_form(op, rt, ra, d):
@@ -103,6 +117,7 @@ class Program:
         self.pc = RESET_PC
         self.expects = []
         self.probes = {}
+        self.spacings = []
         self.data_next = DATA
         self.res_next = RES
         self.log = []
@@ -455,15 +470,8 @@ def random_cases(p, rng, count):
         p.check_cr()
 
 
-def latency(p):
-    p.clear_fpscr()
-    one = p.load_fpr(1, ONE)
-    p.load_fpr(2, TWO)
-    p.load_fpr(3, HALF)
-    slot = p.result_slot(2)
-    p.li32(21, slot)
-    p.li32(8, 0)
-    forms = {
+def latency_forms():
+    return {
         'fadd': a_form(63, 4, 1, 2, 0, 21), 'fadds': a_form(59, 4, 1, 2, 0, 21),
         'fmul': a_form(63, 4, 1, 0, 2, 25), 'fmuls': a_form(59, 4, 1, 0, 2, 25),
         'fmadd': a_form(63, 4, 1, 2, 3, 29), 'fmadds': a_form(59, 4, 1, 2, 3, 29),
@@ -476,11 +484,70 @@ def latency(p):
         'mtfsfi': (63 << 26) | (7 << 23) | (134 << 1), 'mcrfs': (63 << 26) | (2 << 23) | (64 << 1),
         'lfd': d_form(50, 4, 5, 0), 'lfs': d_form(48, 4, 5, 0),
         'stfd': d_form(54, 1, 21, 0), 'stfs': d_form(52, 1, 21, 0),
-        'stfiwx': x_form(31, 1, 21, 8, 983),
+        'stfiwx': x_form(31, 1, 21, 8, 983), 'add': x_form(31, 10, 10, 11, 266),
     }
+
+
+def with_dst(insn, frt):
+    return (insn & ~(31 << 21)) | (frt << 21)
+
+
+def latency(p):
+    """Isolated latency, then retirement spacing of independent and
+    dependent groups and dispatch spacing of mixed streams. Each group
+    follows a sync, which drains the machine while the six-entry IQ fills,
+    so fetch never limits a group."""
+    p.clear_fpscr()
+    one = p.load_fpr(1, ONE)
+    p.load_fpr(2, TWO)
+    p.load_fpr(3, HALF)
+    slot = p.result_slot(2)
+    p.li32(21, slot)
+    p.li32(8, 0)
     p.li32(5, one)
+    forms = latency_forms()
     for name, insn in forms.items():
+        p.emit(SYNC)
         p.probes[p.emit(insn)] = LATENCY[name]
+    # Independent: four instances with distinct destinations retire one
+    # initiation interval apart. Compares write distinct CR fields.
+    for name, (lat, ii) in TABLE_6_5.items():
+        if name.startswith('m'):
+            continue
+        count = 2 if ii > 2 else 4
+        p.emit(SYNC)
+        pcs = []
+        for k in range(count):
+            insn = forms[name]
+            insn = ((insn & ~(7 << 23)) | ((4 + k) << 23)) if name == 'fcmpu' \
+                else with_dst(insn, 4 + k)
+            pcs.append(p.emit(insn))
+        p.spacings.append(('R', pcs[0], pcs[-1], (count - 1) * ii))
+    # Dependent: each instance reads the previous result as frA.
+    for name in ('fadd', 'fadds', 'fmul', 'fmuls', 'fmadd', 'fmadds', 'frsp',
+                 'fmr', 'fsel'):
+        lat = TABLE_6_5[name][0]
+        p.emit(SYNC)
+        pcs = []
+        src = 1
+        for k in range(4):
+            insn = with_dst(forms[name], 4 + k)
+            if name in ('frsp', 'fmr'):
+                insn = (insn & ~(31 << 11)) | (src << 11)
+            else:
+                insn = (insn & ~(31 << 16)) | (src << 16)
+            pcs.append(p.emit(insn))
+            src = 4 + k
+        p.spacings.append(('R', pcs[0], pcs[-1], 3 * lat))
+    # Mixed integer and FP: one dispatch per cycle, integer retirement in
+    # order behind the FP instructions.
+    p.emit(SYNC)
+    pcs = [p.emit(a_form(63, 4, 1, 2, 0, 21)), p.emit(d_form(14, 10, 10, 1)),
+           p.emit(a_form(59, 5, 1, 0, 2, 25)), p.emit(d_form(14, 11, 11, 1)),
+           p.emit(a_form(63, 6, 1, 2, 3, 29)), p.emit(d_form(14, 12, 12, 1))]
+    p.spacings.append(('I', pcs[0], pcs[-1], 5))
+    p.spacings.append(('R', pcs[0], pcs[1], 1))
+    p.spacings.append(('R', pcs[4], pcs[5], 1))
 
 
 def build(seed, count):
@@ -509,6 +576,7 @@ def build(seed, count):
 def self_check(p):
     """Compare every expected word; the mailbox gets 1, or 2 on a mismatch."""
     p.probes = {}
+    p.spacings = []
     p.words[0xfff00100] = (18 << 26) | ((RESET_PC - 0xfff00100) & 0x3fffffc)
     branches = []
     for addr, value, mask in p.expects:
@@ -564,6 +632,7 @@ def main():
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]
     lines += [f'L {pc:08x} {cycles:x} 0' for pc, cycles in p.probes.items()]
+    lines += [f'{kind} {a:08x} {b:08x} {cycles:x}' for kind, a, b, cycles in p.spacings]
     Path(args.image).parent.mkdir(parents=True, exist_ok=True)
     Path(args.image).write_text('\n'.join(lines) + '\n')
 

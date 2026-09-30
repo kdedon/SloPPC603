@@ -3,10 +3,12 @@
 // ppc_core with ENABLE_FPU runs a generated program (sim/tools/fpu_core_program.py)
 // from one word-addressed memory. The program logs its exceptions to memory;
 // the bench compares expected words and, without retirement stalls,
-// dispatch-to-retirement latency of probed instructions.
+// dispatch-to-retirement latency of probed instructions and the spacing of
+// probed instruction pairs.
 // Image lines: M addr data (memory), E addr value mask (expected word),
-// L pc cycles (latency probe), P lo hi (DSI-protected words), D addr (a
-// store there ends the run).
+// L pc cycles (latency probe), R pc0 pc1 cycles (retirement spacing),
+// I pc0 pc1 cycles (dispatch spacing), P lo hi (DSI-protected words),
+// D addr (a store there ends the run).
 /* verilator lint_off BLKSEQ */
 module tb_core_fpu;
   import ppc_pkg::*;
@@ -39,6 +41,11 @@ module tb_core_fpu;
   expect_t expects[$];
   logic [31:0] probe_cycles [logic [31:0]];
   logic [31:0] dispatch_cycle [logic [31:0]];
+  typedef struct { logic [31:0] first, last, cycles; bit dispatch; } spacing_t;
+  spacing_t spacings[$];
+  int dispatch_at [logic [31:0]];
+  int retire_at [logic [31:0]];
+  int spacing_checks = 0;
   logic [31:0] prot_lo = 32'hffff_ffff, prot_hi = 32'b0, done_addr = 32'hffff_fffc;
   int cycles = 0, checks = 0, failures = 0, retires = 0, probes = 0, fp_retires = 0;
   int stall = 1, seed = 1, max_cycles = 400000;
@@ -161,6 +168,8 @@ module tb_core_fpu;
       end
       if (dut.dispatch && (probe_cycles.exists(dut.iq_head.pc) != 0))
         dispatch_cycle[dut.iq_head.pc] = cycles;
+      if (dut.dispatch) dispatch_at[dut.iq_head.pc] = cycles;
+      if (tv && tr) retire_at[retired.pc] = cycles;
       if (tv && tr) begin
         retires++;
         if (retired.insn[31:26] inside {6'd48, 6'd49, 6'd50, 6'd51, 6'd52, 6'd53,
@@ -204,6 +213,11 @@ module tb_core_fpu;
           expects.push_back(e);
         end
         "L": probe_cycles[x] = y;
+        "R", "I": begin
+          spacing_t sp;
+          sp.first = x; sp.last = y; sp.cycles = z; sp.dispatch = tag == "I";
+          spacings.push_back(sp);
+        end
         "P": begin prot_lo = x; prot_hi = y; end
         "D": done_addr = x;
         default: $fatal(1, "tb_core_fpu: bad image tag %s", tag);
@@ -218,12 +232,36 @@ module tb_core_fpu;
       check(((read_word(expects[i].addr) ^ expects[i].value) & expects[i].mask) == 0,
             $sformatf("word %08x got %08x expected %08x mask %08x", expects[i].addr,
                       read_word(expects[i].addr), expects[i].value, expects[i].mask));
-    if (stall == 0)
+    if (stall == 0) begin
       check(probes == probe_cycles.num(),
             $sformatf("latency probes seen %0d of %0d", probes, probe_cycles.num()));
+      foreach (spacings[i]) begin
+        int a, b;
+        bit seen;
+        if (spacings[i].dispatch) begin
+          seen = (dispatch_at.exists(spacings[i].first) != 0) &&
+                 (dispatch_at.exists(spacings[i].last) != 0);
+          a = seen ? dispatch_at[spacings[i].first] : 0;
+          b = seen ? dispatch_at[spacings[i].last] : 0;
+        end else begin
+          seen = (retire_at.exists(spacings[i].first) != 0) &&
+                 (retire_at.exists(spacings[i].last) != 0);
+          a = seen ? retire_at[spacings[i].first] : 0;
+          b = seen ? retire_at[spacings[i].last] : 0;
+        end
+        $display("SPACING %s pc=%08x..%08x cycles=%0d expected=%0d",
+                 spacings[i].dispatch ? "dispatch" : "retire", spacings[i].first,
+                 spacings[i].last, b - a, spacings[i].cycles);
+        check(seen && (b - a == int'(spacings[i].cycles)),
+              $sformatf("spacing pc=%08x..%08x got %0d expected %0d", spacings[i].first,
+                        spacings[i].last, b - a, spacings[i].cycles));
+        spacing_checks++;
+      end
+    end
     if (failures != 0) $fatal(1, "tb_core_fpu: %0d of %0d checks failed", failures, checks);
-    $display("PASS tb_core_fpu: checks=%0d words=%0d probes=%0d retires=%0d fp_retires=%0d cycles=%0d stall=%0d",
-             checks, expects.size(), probes, retires, fp_retires, cycles, stall);
+    $display("PASS tb_core_fpu: checks=%0d words=%0d probes=%0d spacings=%0d retires=%0d fp_retires=%0d cycles=%0d stall=%0d",
+             checks, expects.size(), probes, spacing_checks, retires, fp_retires, cycles,
+             stall);
     $finish;
   end
 endmodule

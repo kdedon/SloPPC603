@@ -50,8 +50,9 @@ module ppc_core #(
   // MCP, SRESET and SMI exceptions and TLBISYNC from pin_event_i; needs
   // ENABLE_EXTERNAL_INTERRUPTS.
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
-  // Attach the FPU: FP instructions execute one at a time through the
-  // serialized lane instead of taking FP unavailable.
+  // Attach the FPU instead of taking FP unavailable. FP arithmetic, move
+  // and FPSCR instructions dispatch straight into the FPU and overlap other
+  // work; FP loads and stores run through the serialized lane.
   parameter bit ENABLE_FPU = 1'b0,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -194,6 +195,12 @@ module ppc_core #(
   logic iq_pop, seq_last, seq_active;
   retire_packet_t allocation;
   completion_tag_t alloc_producer, retire_producer;
+  // Pipelined FP issue.
+  logic fp_uop, fp_issue_ready, fp_result_valid, fp_replay_q, fp_pending;
+  logic fp_head, fp_head_match, fp_head_ok, fp_head_block, fp_replay;
+  logic fp_commit, fp_replay_req_q, fp_kill_q, fp_cr_pending;
+  ppc_fpu_pkg::ppc_fpu_result_t fp_result;
+  retire_packet_t cq_retire;
   operand_t src_a, src_b, operand_a, operand_b;
   rs_entry_t rs_entry;
   issue_packet_t issue;
@@ -328,6 +335,9 @@ module ppc_core #(
     // MSR[FP] and MSR[FE0/FE1] change only through live context.
     if (ENABLE_FPU && (!ENABLE_FULL_DECODE || !ENABLE_LIVE_CONTEXT))
       $fatal(1, "The FPU requires full decode and live supervisor context");
+    // Test recovery with a pivot would need tagged FPU aborts.
+    if (ENABLE_FPU && ENABLE_TEST_REDIRECT)
+      $fatal(1, "The FPU requires ENABLE_TEST_REDIRECT=0");
     if (ENABLE_FPU && (cpu_cfg(CPU_VARIANT).fpu != FPU_DP))
       $fatal(1, "The FPU is attached only to double-precision (603e) variants");
     if (ENABLE_DEBUG_EXCEPTIONS && (!ENABLE_EXTERNAL_INTERRUPTS ||
@@ -567,6 +577,7 @@ module ppc_core #(
   assign bu_reads_ctr = iq_branch[0];
   assign bu_writes_ctr = (uop.special_op != SPECIAL_B) && !uop.branch_bo[2];
   assign bu_ready = !(bu_reads_cr && flags_busy && !bu_cr_valid_q) &&
+    !(bu_reads_cr && fp_cr_pending) &&
     !(bu_reads_lr && lr_pending_q) && !(bu_reads_ctr && ctr_pending_q);
   // BO[0..3] are branch_bo[4..1]; the decrement leaves zero when CTR is 1.
   assign bu_ctr_ok = uop.branch_bo[2] || ((ctr != 32'd1) ^ uop.branch_bo[1]);
@@ -575,7 +586,8 @@ module ppc_core #(
   // finished result of an uncommitted integer flag owner. The owner is the
   // only uncommitted CR writer, so the merge stays exact until it retires.
   assign bu_cr = (flags_busy && bu_cr_valid_q) ? bu_cr_q : cr;
-  assign bu_cr_capture = iu_result_valid && iu_result_ready && !iu_cancel &&
+  // The merge is exact only while no FP CR write is outstanding.
+  assign bu_cr_capture = !fp_cr_pending && iu_result_valid && iu_result_ready && !iu_cancel &&
     !recovery_accepted && !iu_result.fault && flags_busy && owner_simple_q &&
     (iu_result.producer == flags_owner);
   always_ff @(posedge clk_i) begin
@@ -859,7 +871,12 @@ module ppc_core #(
     .dmem_rsp_page_miss_i,
     .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o,
     .dmem_req_attr_o, .icache_ctl_valid_o, .icache_ctl_ready_i,
-    .icache_ctl_enable_o, .icache_ctl_invalidate_o, .power_stop_o(power_stop)
+    .icache_ctl_enable_o, .icache_ctl_invalidate_o, .power_stop_o(power_stop),
+    .fp_issue_valid_i(dispatch && fp_uop), .fp_issue_ready_o(fp_issue_ready),
+    .fp_issue_tag_i(alloc_producer), .fp_issue_insn_i(iq_head.insn),
+    .fp_result_valid_o(fp_result_valid), .fp_result_o(fp_result),
+    .fp_commit_valid_i(fp_commit), .fp_commit_tag_i(retire_producer),
+    .fp_kill_i(fp_kill_q)
   );
   assign context_ir_o = msr[MSR_IR];
   assign context_dr_o = msr[MSR_DR];
@@ -910,15 +927,24 @@ module ppc_core #(
   // synthesis translate_on
   // Ownership demand is derived from decoded reads/writes at the atomic
   // dispatch boundary; a diagnostic can never acquire the token.
-  assign dispatch_needs_flags = !dispatch_uop.illegal &&
+  // FP CR writers do not take the token: CR writes apply in retirement
+  // order, and CR readers either drain the CQ or are branches, which also
+  // wait for FP CR writers.
+  assign dispatch_needs_flags = !dispatch_uop.illegal && !fp_uop &&
     (dispatch_uop.needs_flags || dispatch_uop.read_ca ||
      dispatch_uop.read_so || dispatch_uop.write_xer || dispatch_uop.write_ca ||
      dispatch_uop.write_ov_so || dispatch_uop.write_cr_field ||
      dispatch_uop.write_cr_fields || dispatch_uop.write_cr_bit);
   assign normal_uop = bu_branch || (!dispatch_pre.illegal &&
                       (dispatch_pre.special_op == SPECIAL_NONE));
-  assign special_uop = !bu_branch && !dispatch_pre.illegal &&
+  assign special_uop = !bu_branch && !dispatch_pre.illegal && !fp_uop &&
                        (dispatch_pre.special_op != SPECIAL_NONE);
+  // FP arithmetic, move and FPSCR forms (primary 59/63) read no GPR. After
+  // an FP exception the replayed instruction takes the serialized lane,
+  // which raises it precisely; so does trace mode.
+  assign fp_uop = ENABLE_FPU && !trace_mode && !fp_replay_q && !bu_branch &&
+    !dispatch_pre.illegal && (dispatch_pre.special_op == SPECIAL_FPU) &&
+    ((iq_head.insn[31:26] == 6'd59) || (iq_head.insn[31:26] == 6'd63));
   assign normal_idle = rs_ready && !issue_valid && issue_ready &&
                        !iu_result_valid;
   // Trace mode runs one instruction at a time so its trace boundary is
@@ -928,8 +954,10 @@ module ppc_core #(
   assign iq_ready = !fault_pending && !bu_redirect_q &&
     (!interrupt_qualified || seq_active) &&
     !update_pending_q && gpr_ready && cq_ready &&
-    (!special_busy || overlap_dispatch_ok || special_ready) &&
+    (!special_busy || overlap_dispatch_ok || (fp_uop && special_mem_overlap) ||
+     special_ready) &&
     (dispatch_pre.illegal ||
+     (fp_uop && fp_issue_ready && flags_ready) ||
      (normal_uop && alloc_ready && rs_ready && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
@@ -962,8 +990,10 @@ module ppc_core #(
     else mem_sources_committed_q <= mem_sources_committed && iq_valid &&
                                     !dispatch && !recovery_accepted;
   end
+  // An FP exception replays through a full recovery, which must not find
+  // the special lane busy, so plain accesses wait for FP work to retire.
   assign special_drained = (cq_empty && normal_idle) ||
-    (dispatch_mem_plain && mem_sources_committed_q);
+    (dispatch_mem_plain && mem_sources_committed_q && !fp_pending);
   assign overlap_dispatch_ok = special_mem_overlap && normal_uop &&
     !(special_mem_dst_valid &&
       ((uop.src_a == special_mem_dst) || (uop.src_b == special_mem_dst)));
@@ -1116,11 +1146,13 @@ module ppc_core #(
     .clk_i, .rst_ni, .alloc_valid_i(dispatch), .alloc_ready_o(cq_ready),
     .empty_o(cq_empty), .head_index_o(cq_head),
     .alloc_i(allocation), .alloc_tag_o(alloc_producer),
+    .alloc_finished_i(fp_uop),
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
-    .retire_valid_o(cq_retire_valid), .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o),
-    .retire_o, .retire_tag_o(retire_producer),
+    .retire_valid_o(cq_retire_valid),
+    .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block),
+    .retire_o(cq_retire), .retire_tag_o(retire_producer),
     .redirect_valid_i(selected_redirect_valid),
     .redirect_all_i(selected_redirect_all),
     .redirect_keep_pivot_i(selected_redirect_keep),
@@ -1135,6 +1167,7 @@ module ppc_core #(
     .alloc_needs_flags_i(dispatch_needs_flags),
     .alloc_tag_i(alloc_producer), .alloc_ready_o(flags_ready),
     .commit_i(commit), .commit_packet_i(retire_o), .commit_tag_i(retire_producer),
+    .commit_unowned_i(fp_head),
     .recovery_i(recovery_accepted), .recovery_survivor_count_i(recovery_count),
     .recovery_survivor_packet_i(recovery_packets), .recovery_survivor_tag_i(recovery_tags),
     .cr_o(cr), .xer_o(xer),
@@ -1142,20 +1175,22 @@ module ppc_core #(
   );
   // A diagnostic halt retires nothing further: a younger op dispatched
   // under an outstanding access may already have finished.
-  assign retire_valid_o = cq_retire_valid && !special_retire_hold && !halted_o;
+  assign retire_valid_o = cq_retire_valid && !special_retire_hold && !halted_o &&
+                          !fp_head_block;
   assign commit = retire_valid_o && retire_ready_i;
   // Committed exceptions, taken branches and ISYNC redirect from registered
   // special-unit state on the edge after commit, when the serialized machine
   // is empty; they win over an external test redirect. Stores and committed
   // exceptions suppress external cuts while their external effect is pending.
   always_comb begin
-    if (special_exception_redirect || special_branch_redirect) begin
+    if (special_exception_redirect || special_branch_redirect || fp_replay) begin
       selected_redirect_valid = 1'b1;
       selected_redirect_all = 1'b1;
       selected_redirect_keep = 1'b0;
       selected_redirect_pivot = '0;
       selected_redirect_target = special_exception_redirect ?
-        special_exception_target : special_branch_target;
+        special_exception_target : special_branch_redirect ?
+        special_branch_target : cq_retire.pc;
     end else begin
       selected_redirect_valid = ENABLE_TEST_REDIRECT && redirect_valid_i && !halted_o &&
         !special_store_irrevocable && !special_exception_irrevocable &&
@@ -1168,7 +1203,7 @@ module ppc_core #(
     end
   end
   assign redirect_accepted_o = recovery_accepted &&
-    !special_branch_redirect && !special_exception_redirect;
+    !special_branch_redirect && !special_exception_redirect && !fp_replay;
   // A redirect survives older retained retirement until a target-stream uop
   // has entered the CQ. From then on CQ nonempty excludes interrupt admission
   // until that stream establishes the next committed PC (or another redirect).
@@ -1187,6 +1222,92 @@ module ppc_core #(
       end
     end
   end
+  // FP entries allocate finished and retire when the FPU's oldest held
+  // result is theirs. An FP exception is not raised here: a recovery removes
+  // the instruction and everything younger, and it re-executes alone in the
+  // serialized lane. Committed FPR and FPSCR are unchanged, so the replay
+  // computes the same result. CR effects come from the FPU at retirement.
+  // The FPU applies FPR, FPSCR and store effects itself.
+  logic _unused_fp_result;
+  assign _unused_fp_result = ^fp_result;
+  // FP tags in program order; entry 0 is the oldest.
+  completion_tag_t fp_tags_q [CQ_DEPTH];
+  logic [CQ_DEPTH-1:0] fp_cr_q;
+  logic [$clog2(CQ_DEPTH+1)-1:0] fp_count_q;
+  assign fp_pending = fp_count_q != '0;
+  always_comb begin
+    fp_cr_pending = 1'b0;
+    for (int i = 0; i < CQ_DEPTH; i++)
+      if ((i < int'(fp_count_q)) && fp_cr_q[i]) fp_cr_pending = 1'b1;
+  end
+  assign fp_head = ENABLE_FPU && fp_pending && cq_retire_valid &&
+    (retire_producer == fp_tags_q[0]);
+  assign fp_head_match = fp_result_valid && (fp_result.tag == fp_tags_q[0]);
+  assign fp_head_ok = fp_head_match &&
+    (fp_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION);
+  assign fp_head_block = fp_head && !fp_head_ok;
+  // Registered: the FPU result depends on the recovery the replay starts.
+  // The blocked head cannot change before that recovery.
+  assign fp_replay = fp_replay_req_q && fp_head && !special_busy && !halted_o;
+  assign fp_commit = commit && fp_head;
+  always_comb begin
+    retire_o = cq_retire;
+    retire_o.needs_flags = cq_retire.needs_flags && !fp_head;
+    if (fp_head)
+      retire_o.cr_delta = cq_retire.write_cr_field ?
+        ({fp_result.cr_value, 28'b0} >> (cq_retire.cr_field * 4)) : 32'b0;
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || !ENABLE_FPU) begin
+      fp_count_q <= '0;
+      fp_replay_q <= 1'b0;
+      fp_replay_req_q <= 1'b0;
+      fp_kill_q <= 1'b0;
+      fp_cr_q <= '0;
+      for (int i = 0; i < CQ_DEPTH; i++) fp_tags_q[i] <= '0;
+    end else begin
+      // Every recovery removes the whole queue. The FPU discards its work
+      // one edge later, which keeps the recovery off its result path; the
+      // frontend refills before an FP instruction can dispatch again.
+      fp_kill_q <= recovery_accepted;
+      if (recovery_accepted) fp_count_q <= '0;
+      else begin
+        if (fp_commit)
+          for (int i = 0; i < CQ_DEPTH - 1; i++) begin
+            fp_tags_q[i] <= fp_tags_q[i+1];
+            fp_cr_q[i] <= fp_cr_q[i+1];
+          end
+        if (dispatch && fp_uop) begin
+          fp_tags_q[fp_count_q - $bits(fp_count_q)'(fp_commit)] <= alloc_producer;
+          fp_cr_q[fp_count_q - $bits(fp_count_q)'(fp_commit)] <= dispatch_uop.write_cr_field;
+        end
+        fp_count_q <= fp_count_q + $bits(fp_count_q)'(dispatch && fp_uop) -
+                      $bits(fp_count_q)'(fp_commit);
+      end
+      fp_replay_req_q <= fp_head && fp_head_match && !fp_head_ok && !recovery_accepted;
+      if (fp_replay) fp_replay_q <= 1'b1;
+      else if (dispatch && special_uop && (dispatch_pre.special_op == SPECIAL_FPU))
+        fp_replay_q <= 1'b0;
+    end
+  end
+  // synthesis translate_off
+  always @(posedge clk_i) begin
+    if (rst_ni && ENABLE_FPU) begin
+      if (fp_head_ok && cq_retire.write_cr_field)
+        assert (fp_result.cr_write && (fp_result.cr_field == cq_retire.cr_field))
+          else $error("FPU CR field disagrees with the allocation");
+      if (dispatch && special_uop && (dispatch_pre.special_op == SPECIAL_FPU))
+        assert (!fp_pending) else $error("serialized FP dispatch behind pipelined FP work");
+      if (fp_replay)
+        assert (recovery_accepted) else $error("FP replay recovery was not accepted");
+      if (recovery_accepted)
+        assert (!fp_commit) else $error("FP retirement during recovery");
+      if (dispatch && fp_uop)
+        assert (!fp_kill_q && (int'(fp_count_q) < CQ_DEPTH))
+          else $error("FP dispatch during an FPU kill or with a full tag queue");
+    end
+  end
+  // synthesis translate_on
   assign gpr_commit = commit && retire_o.gpr_write && !retire_o.illegal;
   assign update_commit = commit && retire_o.update_write && !retire_o.illegal;
   always_ff @(posedge clk_i) begin

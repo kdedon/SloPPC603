@@ -17,6 +17,8 @@ module ppc_completion #(
   // Slot of the oldest entry; meaningful while the queue is not empty.
   output logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] head_index_o,
   input ppc_pkg::retire_packet_t alloc_i,
+  // The entry allocates finished; its unit gates retirement instead.
+  input logic alloc_finished_i,
   output ppc_pkg::completion_tag_t alloc_tag_o,
   input logic result_valid_i,
   output logic result_ready_o,
@@ -289,7 +291,7 @@ module ppc_completion #(
           packets_q[tail_q] <= allocation;
           generations_q[tail_q] <= alloc_tag_o.generation;
           active_q[tail_q] <= 1'b1;
-          done_q[tail_q] <= alloc_i.illegal;
+          done_q[tail_q] <= alloc_i.illegal || alloc_finished_i;
           tail_q <= next_index(tail_q);
         end
       end

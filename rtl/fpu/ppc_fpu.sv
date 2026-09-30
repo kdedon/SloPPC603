@@ -1322,8 +1322,6 @@ module ppc_fpu #(
             mem_rsp_i);
       end
     end
-    commit_match = head_available && commit_valid_i &&
-        commit_tag_i == pv[0].issue.tag;
     matching_abort = abort_index_valid;
     abort_match = abort_valid_i && matching_abort;
     result_valid_o = rst_ni && !kill_all_i && !abort_match &&
@@ -1365,6 +1363,13 @@ module ppc_fpu #(
           pv[0].decoded.mem_single,
           pv[0].store_fill ? reply_raw : pv[0].value);
     end
+  end
+
+  // Commit and issue handshakes are separate processes: results never depend
+  // on them, so an integrator may gate commit and issue on the result.
+  always_comb begin
+    commit_match = head_available && commit_valid_i &&
+        commit_tag_i == pv[0].issue.tag;
     store_valid_o = result_valid_o && head_result.store && commit_match;
     commit_ready_o = result_valid_o && commit_match &&
         (!head_result.store || store_ready_i);
@@ -1374,6 +1379,11 @@ module ppc_fpu #(
     retire1_fire = commit1_ready_o;
     retire_count = {1'b0,retire_fire} + {1'b0,retire1_fire};
     after_retire_count = pending_count_q - {1'b0,retire_count};
+  end
+
+  // Issue readiness is a separate process: results never depend on the issue
+  // handshake, so an integrator may gate issue on retirement.
+  always_comb begin
     // State-only readiness is formed per decode class; the lane decode,
     // retirement credits and handshakes select it last.
     dec_exec = is_fpu_exec(decoded.kind);
@@ -1407,6 +1417,9 @@ module ppc_fpu #(
         (dec_mem ? ready_if_mem : dec_exec ? ready_if_exec : !exec_found) &&
         (!is_barrier(decoded.kind, decoded.op) || pending_count_q == 3'd0) &&
         space_ok && fpr_ok;
+  end
+
+  always_comb begin
     dispatch_fire = issue_valid_i && issue_ready_o;
     issue1_ready_o = dispatch_fire && !exec_found &&
         !kill_all_i && !abort_valid_i && !barrier_present &&

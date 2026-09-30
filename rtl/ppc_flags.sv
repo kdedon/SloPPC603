@@ -13,6 +13,8 @@ module ppc_flags (
   input logic commit_i,
   input ppc_pkg::retire_packet_t commit_packet_i,
   input ppc_pkg::completion_tag_t commit_tag_i,
+  // The retirement writes a CR field without holding the token (FP).
+  input logic commit_unowned_i,
   input logic recovery_i,
   input logic [$clog2(ppc_pkg::CQ_DEPTH+1)-1:0] recovery_survivor_count_i,
   input ppc_pkg::retire_packet_t recovery_survivor_packet_i [ppc_pkg::CQ_DEPTH],
@@ -120,7 +122,7 @@ module ppc_flags (
       // violation, never a stall.
       if (commit_i && commit_writes_flags) begin
         // synthesis translate_off
-        assert (owner_commit)
+        assert (owner_commit || commit_unowned_i)
           else $error("flag-writing retirement does not match flag owner");
         assert (!commit_packet_i.illegal)
           else $error("diagnostic retirement carries flag write permission");
