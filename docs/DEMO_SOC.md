@@ -102,6 +102,13 @@ Every image is checked for floating-point instructions after linking.
 Everything is compiled with the pinned cross compiler at `-O2 -mcpu=603e -msoft-float
 -fno-builtin`.
 
+The `nbench` and `embench` images ([BENCHMARKS.md](BENCHMARKS.md)) add a C library
+subset (`toolchain/demo/libc/`), fetched soft-float routines and libm, and shared
+helpers (`bench.c`). They use the memory map above unchanged, but reserve 8 KiB
+(nbench) or 24 KiB (Embench) of stack instead of the default 32 KiB (`__stack_size` in
+`demo.ld`) to fit in the 256 KiB program RAM. Results are in
+[BENCHMARKS.md](BENCHMARKS.md#results).
+
 | Image | Content | Self-check |
 |---|---|---|
 | `hello` | Colour bars, a 320 × 160 fixed-point Mandelbrot set (Q4.12, 48 iterations), text | Geometry registers; Mandelbrot checksum against a host computation; timebase within ±64 ticks of cycles / 4 |
@@ -126,6 +133,7 @@ result**: a reportable run lasts at least ten seconds, so CoreMark prints that e
 
 ```sh
 make -C sim demo-hello        # or demo-dhrystone, demo-coremark, demo-all
+make -C sim demo-nbench       # or demo-embench; see BENCHMARKS.md
 ```
 
 Each target fetches the benchmark sources, builds the firmware in the pinned
