@@ -13,10 +13,20 @@ module ppc_fpu_aligner #(
     import ppc_fpu_arith_pkg::*;
 
     logic [111:0] shifted;
+    logic [111:0] below48;
+    logic sticky48;
     assign shifted = shift_y_i ? shift_right_jam112(y_i, distance_i) : y_i;
     // Single-only builds fold lane bits 47:0 into a sticky bit 48, below
     // every single rounding position even after a one-bit cancellation.
+    // The fold is formed beside the shift: bit j lands below 48 when
+    // j < 48 + distance.
+    always_comb begin
+        for (int j = 0; j < 112; j++)
+            below48[j] = j < 48 ||
+                (shift_y_i && {1'b0, distance_i} >= 9'(j - 47));
+    end
+    assign sticky48 = |(y_i & below48);
     assign y_o = CPU_602 ?
-        {shifted[111:49], shifted[48] | (|shifted[47:0]), 48'd0} : shifted;
+        {shifted[111:49], shifted[48] | sticky48, 48'd0} : shifted;
 endmodule
 `default_nettype wire

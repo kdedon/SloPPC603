@@ -65,8 +65,8 @@ module ppc_fpu_divider #(
         53'h10000000000000 : finite_sig(div_a_raw_q) & SIG_MASK;
     assign div_start_b_sig = finite_sig(div_b_raw_q) & SIG_MASK;
     assign div_start_a_exp = divide_req_q.op == FP_FRES ?
-        16'sd0 : finite_exp(div_a_raw_q);
-    assign div_start_b_exp = finite_exp(div_b_raw_q);
+        16'sd0 : finite_exp(div_a_raw_q, CPU_602);
+    assign div_start_b_exp = finite_exp(div_b_raw_q, CPU_602);
     assign div_start_difference = {1'b0, div_start_a_sig} -
         {1'b0, div_start_b_sig};
 

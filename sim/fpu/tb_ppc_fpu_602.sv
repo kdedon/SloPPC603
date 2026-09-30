@@ -197,6 +197,13 @@ module tb_ppc_fpu_602;
         commit_valid_i = 1'b0;
     endtask
 
+    // Set to answer the next preparation with a fault.
+    logic mem_fault_next;
+    int filled_stores;
+    always @(posedge clk_i)
+        if (dut.launch0.store_fill && dut.mem_launch && dut.exec_fire)
+            filled_stores <= filled_stores + 1;
+
     task automatic reply_memory(input completion_tag_t identity,
         input logic [63:0] data);
         int attempts;
@@ -220,6 +227,8 @@ module tb_ppc_fpu_602;
         mem_rsp_i = '0;
         mem_rsp_i.tag = identity;
         mem_rsp_i.data = data;
+        mem_rsp_i.fault = mem_fault_next;
+        mem_rsp_i.fault_code = mem_fault_next ? 4'd1 : 4'd0;
         mem_rsp_valid_i = 1'b1;
         #1;
         if (!mem_rsp_ready_o)
@@ -389,6 +398,8 @@ module tb_ppc_fpu_602;
         abort_tag_i = '0;
         kill_all_i = 1'b0;
         mem_req_ready_i = 1'b0;
+        mem_fault_next = 1'b0;
+        filled_stores = 0;
         mem_rsp_valid_i = 1'b0;
         mem_rsp_i = '0;
         store_ready_i = 1'b1;
@@ -633,6 +644,61 @@ module tb_ppc_fpu_602;
             $fatal(1, "602 stfs raw SP store failed");
         commit(identity);
         checks++;
+
+        // An stfdu of an infinite sum traps. Accepted in the sum's finish
+        // cycle, it prepares from the forwarded value and checks the filled
+        // word, and the trap outranks a preparation fault; a backpressured
+        // offer stays offered and traps from the register value.
+        load_single(5'd16, 32'h7f800000);
+        for (int variant = 0; variant < 3; variant++) begin
+            completion_tag_t producer;
+            int prior_filled;
+            int attempts;
+            prior_filled = filled_stores;
+            mem_fault_next = variant == 2;
+            mem_req_ready_i = variant != 0;
+            issue_word(aform(6'd59, 5'd17, 5'd16, 5'd9, 5'd0, 5'd21), 32'd0,
+                       1'b0, 1'b0, 1'b0, producer);
+            issue_word(dform(6'd55, 5'd17, 5'd1, 16'd8), 32'd0,
+                       1'b0, 1'b0, 1'b0, identity);
+            if (variant == 0) reply_memory(identity, 64'd0);
+            else begin
+                attempts = 0;
+                while (!(mem_req_valid_o && mem_req_o.tag == identity)) begin
+                    @(negedge clk_i);
+                    attempts++;
+                    if (attempts > 120) $fatal(1, "602 stfdu preparation timeout");
+                end
+                held_mem_req = mem_req_o;
+                @(posedge clk_i);
+                #2;
+                mem_req_ready_i = 1'b0;
+                @(negedge clk_i);
+                mem_rsp_i = '0;
+                mem_rsp_i.tag = identity;
+                mem_rsp_i.fault = mem_fault_next;
+                mem_rsp_i.fault_code = mem_fault_next ? 4'd1 : 4'd0;
+                mem_rsp_valid_i = 1'b1;
+                @(posedge clk_i);
+                #2;
+                mem_rsp_valid_i = 1'b0;
+            end
+            mem_fault_next = 1'b0;
+            await_result(producer);
+            if (result_o.exception != FPU_NO_EXCEPTION ||
+                result_o.fpr_value[31:0] != 32'h7f800000)
+                $fatal(1, "602 infinite fadds failed");
+            commit(producer);
+            await_result(identity);
+            if (result_o.exception != FPU_EMULATION_TRAP || result_o.store ||
+                result_o.gpr_update || store_valid_o)
+                $fatal(1, "602 stfdu of infinity variant=%0d exc=%0d",
+                       variant, result_o.exception);
+            commit(identity);
+            if (filled_stores != prior_filled + (variant != 0 ? 1 : 0))
+                $fatal(1, "602 stfdu variant=%0d fill count", variant);
+            checks += 3;
+        end
 
         // Unlike 603e, a misaligned 602 FP load still reaches the LSU.
         issue_word(dform(6'd48, 5'd10, 5'd1, 16'd1), 32'd0,

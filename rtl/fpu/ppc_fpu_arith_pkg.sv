@@ -66,6 +66,9 @@ typedef struct packed {
     logic sign_y;
     logic negate_final;
     logic single_operand;
+    // Zero x or y, from the operand significands.
+    logic x_zero;
+    logic y_zero;
 } finite_prep_t;
 
 typedef struct packed {
@@ -279,10 +282,12 @@ function automatic logic [52:0] finite_sig(input logic [62:0] magnitude);
     return significand;
 endfunction
 
-function automatic logic signed [15:0] finite_exp(input logic [62:0] magnitude);
+// cpu_602: a zero exponent field holds a binary32 denormal fraction.
+function automatic logic signed [15:0] finite_exp(input logic [62:0] magnitude,
+    input logic cpu_602);
     logic signed [15:0] exponent;
     if (magnitude[62:52] == 11'd0) begin
-        exponent = -16'sd1022;
+        exponent = cpu_602 ? -16'sd126 : -16'sd1022;
         exponent = exponent -
             16'(leading_zero53({1'b0, magnitude[51:0]}));
     end else exponent = $signed({5'd0, magnitude[62:52]}) - 16'sd1023;
@@ -816,6 +821,7 @@ endfunction
 function automatic finite_prep_t prepare_finite(
     input ppc_fpu_op_t op,
     input logic [52:0] a_sig, input logic [52:0] b_sig,
+    input logic [52:0] c_sig,
     input logic signed [15:0] a_exp,
     input logic signed [15:0] b_exp,
     input logic signed [15:0] c_exp,
@@ -825,12 +831,16 @@ function automatic finite_prep_t prepare_finite(
     finite_prep_t out;
     logic subtract_b;
     out = '0;
+    out.x_zero = 1'b1;
+    out.y_zero = 1'b1;
     subtract_b = op == FP_MSUB || op == FP_NMSUB;
     out.negate_final = op == FP_NMADD || op == FP_NMSUB;
     out.single_operand = op == FP_MUL || op == FP_FRSP;
     if (op == FP_ADD || op == FP_SUB) begin
         out.x = {1'b0, a_sig, 106'd0};
         out.y = {1'b0, b_sig, 106'd0};
+        out.x_zero = a_sig == 53'd0;
+        out.y_zero = b_sig == 53'd0;
         out.exp_x = a_exp;
         out.exp_y = b_exp;
         out.sign_x = a_sign;
@@ -839,15 +849,18 @@ function automatic finite_prep_t prepare_finite(
         op == FP_MSUB || op == FP_NMADD ||
         op == FP_NMSUB) begin
         out.x = {1'b0, product, 53'd0};
+        out.x_zero = a_sig == 53'd0 || c_sig == 53'd0;
         out.exp_x = a_exp + c_exp + 16'sd1;
         out.sign_x = a_sign ^ c_sign;
         if (op != FP_MUL) begin
             out.y = {1'b0, b_sig, 106'd0};
+            out.y_zero = b_sig == 53'd0;
             out.exp_y = b_exp;
             out.sign_y = b_sign ^ subtract_b;
         end
     end else if (op == FP_FRSP) begin
         out.x = {1'b0, b_sig, 106'd0};
+        out.x_zero = b_sig == 53'd0;
         out.exp_x = b_exp;
         out.sign_x = b_sign;
     end
@@ -860,14 +873,14 @@ function automatic align_plan_t plan_alignment(input finite_prep_t prep);
     out = '0;
     out.x = prep.x;
     out.y = prep.y;
-    out.exponent = (prep.x == 0 && prep.y != 0) ?
+    out.exponent = (prep.x_zero && !prep.y_zero) ?
         prep.exp_y : prep.exp_x;
     out.sign_x = prep.sign_x;
     out.sign_y = prep.sign_y;
     out.negate_final = prep.negate_final;
     out.single_operand = prep.single_operand;
     delta = 0;
-    if (prep.y != 0 && prep.x != 0) begin
+    if (!prep.y_zero && !prep.x_zero) begin
         if (prep.exp_x > prep.exp_y) begin
             delta = int'(prep.exp_x) - int'(prep.exp_y);
             out.distance = delta >= 160 ? 8'd160 : 8'(delta);
