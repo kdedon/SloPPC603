@@ -2,6 +2,53 @@
 
 Evidence for [FPU core integration](FPU_CORE_INTEGRATION.md).
 
+## 602 personality
+
+Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-chip-fpu variant-special-lint-602 variant-icache-602 variant-watchdog-602 variant-exception-602-4 variant-decode-sweep-4 test-chip602-pins test-core-full-decode test-decode-sweep test-core-lsu-extensions test-core-alignment test-core-alignment-dependencies test-core-lsu-update test-core-dcache test-chip-pins` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commits `45d768c`–`6258cc3` (RTL final at `6eb5cf2`; later commits change only benches and docs), 2026-09-30.
+
+All passed. `test-fpu-all`: 51 PASS lines.
+
+| Bench | Result |
+| --- | --- |
+| `test-core-fpu-602` (FULL), `+STALL=1` | 1111 checks, 1106 words; 8748 retirements, 3546 FP; 825 released loads; 15 sticky-bit stalls; 40323 cycles |
+| `test-core-fpu-602`, `+STALL=0` | 1114 checks, 2 spacing probes; 37433 cycles |
+| `test-core-fpu-602-compact`, `+STALL=0` | 1114 checks; spacings reported, not checked; 36814 cycles |
+| `test-core-fpu` (603e), `+STALL=0` | 2668 checks, 27 latency and 41 spacing probes; 30011 cycles, unchanged |
+
+`sim/tools/fpu_core_602_program.py` (seed `0x602`, 200 random cases from the
+standalone 602 enabled-exception generator) checks: `fsqrt` illegal with
+MSR[FP]=0; a double `fadd` taking FP unavailable, then the emulation trap
+after the handler enables FP; SP/LT written and read by `mtspr`, `mfspr` and
+the `mftb` form, with MSR[FP]=0 too; tags after `lfs`, `fctiwz` and `mffs`;
+problem-state `mfspr`/`mtspr` of them taking the privileged program
+exception; emulation traps for a source without SP, double arithmetic,
+`fctiw`, `mtfsf` of an SP source, `stfiwx` of an SP source, `stfd` of an LT
+source and `lfd` of 1/3, each leaving frD, FPSCR and tags; single arithmetic,
+`fres` as a divide, `frsp`, moves, `fsel`, `fcmpu`; `lfd` narrowing and
+`stfd` widening; `lfs` at offsets 1, 2, 3, 5, 6, 7 and `lfd`/`lfdx` at
+offsets 1–7 (three words), `lfsu` updating rA; DSI on the second word, the
+third word and the first (DAR = EA); alignment for unaligned `stfs`,
+`stfdu`, `stfsx`; a pipelined trapping `fadds` cancelling the overlapped
+store behind it; the FP enabled program exception of `mtfsb1` with FE set;
+and the exact number of sticky-bit stalls (the bench counts them; a wrong
+count fails). With `+STALL=0` two independent `fadds` retire two cycles
+apart when the second newly sets XX, one cycle apart when XX was already set.
+
+The 603e and FPU-less benches cover the shared lane changes (word beats,
+decode). `variant-special-lint-602` and `variant-watchdog-602` failed on
+the base commit (their benches lacked the lane's FP ports); both benches
+now declare them.
+
+Recorded: `flock /tmp/ppc603e-quartus.lock quartus/chip602/analyze.sh --fpu`, commit `6eb5cf2`, 2026-09-30.
+Quartus 17.0.2 analysis and elaboration of `ppc602_measure` with
+`ENABLE_FPU=1` (FULL): successful, 0 errors, 36 warnings (unused-signal and
+index-width notices). No synthesis or fit.
+
+Not established: fitted area and timing of the 602 top with the FPU; the
+COMPACT elaboration of that top (`analyze.sh --fpu-compact`); 602 Table 6-5
+and 6-6 timing in the core beyond the sticky-bit spacing; the 602 self-test
+image, which has no 602 SoC to run on.
+
 ## Overlapped FP accesses and 64-bit data path
 
 Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-chip-fpu`, commit `be93c21`, 2026-09-30.
