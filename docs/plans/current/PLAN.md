@@ -62,14 +62,37 @@ and throughput. The coherent baseline passes both personalities’ numerical, ex
 public-shell, paired dispatch/retirement and strict lint gates in
 [verification](../../../sim/fpu/PRODUCTION.md), including full-queue admission
 and 602 SPR timing. Frequency closure and the documented silicon-semantics
-gaps remain open. The first
-place-and-route fit of the 603e FPU measured 26.09 MHz and 26,085 ALMs; the
-registered-result round (T1, `fpu-timing`) reached 27.24 MHz. Both miss 50 and
-66 MHz; the timing plan (T1–T6) is in the FPU docs. See the
+gaps remain open. The latest
+603e FPU fit is 15,465 ALMs at 43.17 MHz and the 602 fit 11,893 ALMs at
+31.81 MHz ([production record](../../../sim/fpu/PRODUCTION.md)); both miss 50
+and 66 MHz. Timing work keeps the Table 6-5 cycle counts exact; any change to
+them goes behind a named parameter such as `FPU_IMPL`. See the
 [FPU assessment](../../FPU_REUSE_ASSESSMENT.md) for the remaining semantic and
-implementation gaps. A separate process owns CPU integration; existing core
-RTL and file lists remain outside this workstream.
+implementation gaps. Integration into the core is in progress behind a
+parameter that leaves FPU-less builds unchanged.
 Do not infer full CPU completion from the restricted MVP score.
+
+## Work queue
+
+In progress (batch 5): FPU integration into the core; FPU timing toward 50 MHz
+with exact cycle counts; the last `chip602` 66 MHz endpoint, then 603e power
+modes (V14).
+
+Queued, in order:
+
+1. Whetstone: fetched at a pinned revision like the other benchmarks, built
+   soft-float (runs on the FPU-less core) and hard-float (after integration),
+   reported as MWIPS and MWIPS/MHz in the demo SoC and on the MiSTer screen.
+   The hard-float MiSTer build needs the FPU in the MiSTer SoC.
+2. CI preparation: pin the Quartus and toolchain images by digest; have the
+   fit and MiSTer scripts emit one machine-readable summary (ALMs, RAM, DSP,
+   slack per clock and corner); a setup script that fetches DingusPPC and the
+   benchmark sources at their pins; release notes that name the commit and the
+   pinned MiSTer framework revision (GPL-2) and flag GPL-3 suite builds. The
+   GitHub workflows (quick checks on push, rolling MiSTer build on main,
+   tagged releases with fits) wait until they are enabled.
+3. COMPACT FPU (`FPU_IMPL`) for both personalities; 602 FPU (V12); 603 with
+   XATS (V5); two-stage LSU (P3); dual dispatch.
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or
