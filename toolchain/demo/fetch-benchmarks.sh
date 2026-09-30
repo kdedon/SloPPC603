@@ -21,13 +21,13 @@ fetch() {  # dir url-base file sha256
   if [ -f "$out" ] && echo "$4  $out" | sha256sum -c --status; then
     return
   fi
-  curl -sfL --retry 3 -o "$out.tmp" "$2/$3"
-  if ! echo "$4  $out.tmp" | sha256sum -c --status; then
-    rm -f "$out.tmp"
+  curl -sfL --retry 3 -o "$out.tmp.$$" "$2/$3"
+  if ! echo "$4  $out.tmp.$$" | sha256sum -c --status; then
+    rm -f "$out.tmp.$$"
     echo "fetch-benchmarks: $1/$3 does not match its pinned SHA-256" >&2
     exit 1
   fi
-  mv "$out.tmp" "$out"
+  mv "$out.tmp.$$" "$out"
 }
 
 dhry="$host/Keith-S-Thompson/dhrystone/66bb9df1a5dea67f33437b856bf68ae52bd5c90f/v2.1"

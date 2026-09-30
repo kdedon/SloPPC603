@@ -64,7 +64,15 @@ module tb_recovery_state;
     .recovery_survivor_tag_o(recovery_tags)
   );
 
+  /* verilator lint_off UNUSEDSIGNAL */
+
+  logic [31:0] rename_mapped;  // Mapped-register mask; not checked here.
+
+  /* verilator lint_on UNUSEDSIGNAL */
+
   ppc_rename rename_state (
+
+    .mapped_o(rename_mapped),
     .clk_i(clk), .rst_ni(rst_n),
     .read_a_i(read_a), .read_b_i(read_b),
     .arch_a_i(arch_a), .arch_b_i(arch_b),

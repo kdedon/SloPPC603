@@ -44,7 +44,11 @@ module tb_execution;
     assign empty_packets[slot] = '0;
     assign empty_tags[slot] = '0;
   end
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] rename_mapped;  // Mapped-register mask; not checked here.
+  /* verilator lint_on UNUSEDSIGNAL */
   ppc_rename rename_dut (
+    .mapped_o(rename_mapped),
     .clk_i(clk), .rst_ni(rst_n),
     .read_a_i(rn_read_a), .read_b_i(rn_read_b),
     .arch_a_i(rn_arch_a), .arch_b_i(rn_arch_b),

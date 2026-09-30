@@ -22,7 +22,11 @@ module tb_recovery_storage;
     .clk_i(clk),.rst_ni(rst_n),.clear_i(clear),.push_valid_i(push),
     .push_ready_o(push_ready),.push_data_i(data_in),.pop_valid_o(pop_valid),
     .pop_ready_i(pop),.pop_data_o(data_out));
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] rename_mapped;  // Mapped-register mask; not checked here.
+  /* verilator lint_on UNUSEDSIGNAL */
   ppc_rename rename_unit (
+    .mapped_o(rename_mapped),
     .clk_i(clk),.rst_ni(rst_n),.read_a_i(read_reg),.read_b_i(read_reg),
     .arch_a_i(32'habcd),.arch_b_i(32'habcd),.read_a_o(operand_a),.read_b_o(operand_b),
     .alloc_ready_o(alloc_ready),.alloc_tag_o(alloc_tag),.alloc_i(alloc),
