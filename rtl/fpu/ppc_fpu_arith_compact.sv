@@ -287,12 +287,10 @@ module ppc_fpu_arith_compact #(
             end
             case (state_q)
                 S_IDLE: if (accept) state_q <= divide_request ? S_DIV : S_IN;
-                S_IN: begin
-                    special_q <= in_special_rsp;
+                S_IN:
                     if (!in_finite && !in_conversion) state_q <= S_SPECIAL;
                     else if (in_dp_multiply) state_q <= S_MUL;
                     else state_q <= S_ALIGN;
-                end
                 S_MUL: state_q <= S_ALIGN;
                 S_ALIGN: state_q <= in_conversion ? S_CONV : S_ADD;
                 S_ADD: state_q <= !same_q && !add_carry ? S_NEG : S_PREP;
@@ -309,6 +307,7 @@ module ppc_fpu_arith_compact #(
     // Datapath registers load by state alone.
     always_ff @(posedge clk_i) begin
         if (accept) input_q <= req_i;
+        if (state_q == S_IN) special_q <= in_special_rsp;
         if ((state_q == S_IN && !in_dp_multiply) || state_q == S_MUL) begin
             x_q <= plan.x[159 -: W];
             b_q <= plan.y[159 -: W];

@@ -187,7 +187,7 @@ module ppc_fpu_measure #(
     generate
         if (COMPACT) begin : g_compact
             ppc_fpu_compact #(.CPU_602(CPU_602)) fpu (
-                .clk_i,
+                .clk_i(clk_i),
                 .rst_ni(rst_ni_ibq),
                 .issue_valid_i(issue_valid_i_ibq),
                 .issue_ready_o(issue_ready),
@@ -231,7 +231,7 @@ module ppc_fpu_measure #(
             );
         end else begin : g_full
             ppc_fpu #(.CPU_602(CPU_602)) fpu (
-                .clk_i,
+                .clk_i(clk_i),
                 .rst_ni(rst_ni_ibq),
                 .issue_valid_i(issue_valid_i_ibq),
                 .issue_ready_o(issue_ready),
