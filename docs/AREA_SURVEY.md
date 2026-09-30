@@ -167,8 +167,9 @@ Recorded: `make -C sim lint check-spec` and the focused benches below, commits
   entries were not run (they need the cross-compiler).
 
 Seeded random initialization (the default `SIM_ARGS`) assigns random values in
-design order, so a changed design draws different start values and
-`test-chip-dcache-coherence` cycle counts move by under 0.5%; all runs pass.
+design order, so a changed design draws different start values: at 728c075
+(before the SPRG revert) `test-chip-dcache-coherence` cycle counts under the
+default seed moved by under 0.5%, and all runs passed.
 The benches do not exercise the synthesis `altsyncram` branch of
 `ppc_ram_sdp_be`; its behavior rests on the fit and on hardware.
 
