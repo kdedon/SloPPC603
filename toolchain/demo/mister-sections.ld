@@ -1,13 +1,8 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Kevin Dedon */
-/* Demo system RAM: 256 KiB at the reset vector base. */
-ENTRY(_start)
-
-MEMORY
-{
-  RAM (rwx) : ORIGIN = 0xfff00000, LENGTH = 256K
-}
-
+/* MiSTer image sections, after a RAM region. The data section's load image
+ * follows its run address, and start-up copies it, so a reset restores the
+ * data. */
 SECTIONS
 {
   .vectors ORIGIN(RAM) + 0x100 :
@@ -25,7 +20,7 @@ SECTIONS
     *(.rodata .rodata.*)
   } > RAM
 
-  .data ALIGN(8) :
+  .data ALIGN(8) : AT(ADDR(.data) + SIZEOF(.data))
   {
     __data_start = .;
     *(.data .data.* .sdata .sdata.*)
@@ -34,7 +29,7 @@ SECTIONS
   } > RAM
   __data_load = LOADADDR(.data);
 
-  .bss ALIGN(8) (NOLOAD) :
+  .bss __data_load + SIZEOF(.data) (NOLOAD) :
   {
     __bss_start = .;
     *(.bss .bss.* .sbss .sbss.* COMMON)
@@ -57,4 +52,5 @@ SECTIONS
 
   ASSERT(_start == ORIGIN(RAM) + 0x100, "reset entry moved")
   ASSERT(__heap_start < __heap_end, "image leaves no heap")
+  ASSERT(__data_load == __data_end, "load image does not follow the data section")
 }
