@@ -68,8 +68,8 @@ for variant in "${variants[@]}"; do
   if [[ "${base_variant}" == compact || "${base_variant}" == arithcompact ]]; then
     sources+=(rtl/fpu/ppc_fpu_arith_compact.sv)
   fi
-  if [[ "${base_variant}" == full ]]; then sources+=(rtl/ppc_ram_lut.sv rtl/fpu/ppc_fpu_fprs.sv rtl/fpu/ppc_fpu.sv); fi
-  if [[ "${base_variant}" == compact ]]; then sources+=(rtl/ppc_ram_lut.sv rtl/fpu/ppc_fpu_compact.sv); fi
+  if [[ "${base_variant}" == full ]]; then sources+=(rtl/fpu/ppc_fpu_shell_pkg.sv rtl/ppc_ram_lut.sv rtl/fpu/ppc_fpu_fprs.sv rtl/fpu/ppc_fpu.sv); fi
+  if [[ "${base_variant}" == compact ]]; then sources+=(rtl/fpu/ppc_fpu_shell_pkg.sv rtl/ppc_ram_lut.sv rtl/fpu/ppc_fpu_compact.sv); fi
   if (( fitted )) && [[ "${base_variant}" == full || "${base_variant}" == compact ]]; then
     sources+=(quartus/fpu-production/ppc_fpu_measure.sv)
   fi

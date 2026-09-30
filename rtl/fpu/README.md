@@ -6,7 +6,9 @@ Compile in this order: `rtl/ppc_pkg.sv`, `ppc_fpu_pkg.sv`, `ppc_fpu_arith_pkg.sv
 the arithmetic units (`ppc_fpu_unpack.sv`, `ppc_fpu_multiplier.sv`,
 `ppc_fpu_align_plan.sv`, `ppc_fpu_aligner.sv`, `ppc_fpu_adder.sv`,
 `ppc_fpu_convert.sv`, `ppc_fpu_rounder.sv`, `ppc_fpu_divider.sv`),
-`ppc_fpu_arith.sv`, then `rtl/ppc_ram_lut.sv`, `ppc_fpu_fprs.sv` and `ppc_fpu.sv`. `sim/Makefile`
+`ppc_fpu_arith.sv`, then `ppc_fpu_shell_pkg.sv`, `rtl/ppc_ram_lut.sv`, `ppc_fpu_fprs.sv`
+and `ppc_fpu.sv`. `ppc_fpu_shell_pkg` holds the decode, FPSCR and result
+functions both shells share. `sim/Makefile`
 (`PPC_FPU_ARITH_RTL`, `PPC_FPU_SHELL_RTL`) holds the list. Core file lists
 carry `ppc_fpu_pkg.sv`; `rtl/fpu_files.f` lists the modules for
 `ENABLE_FPU` builds ([core integration](../../docs/FPU_CORE_INTEGRATION.md)).

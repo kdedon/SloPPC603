@@ -1,4 +1,5 @@
 ../rtl/fpu/ppc_fpu_arith_pkg.sv
+../rtl/fpu/ppc_fpu_shell_pkg.sv
 ../rtl/fpu/ppc_fpu_unpack.sv
 ../rtl/fpu/ppc_fpu_multiplier.sv
 ../rtl/fpu/ppc_fpu_align_plan.sv

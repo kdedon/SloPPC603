@@ -107,7 +107,7 @@ test-fpu-reference:
 PPC_FPU_ARITH_RTL := ../rtl/ppc_pkg.sv ../rtl/fpu/ppc_fpu_pkg.sv ../rtl/fpu/ppc_fpu_arith_pkg.sv \
   ../rtl/fpu/ppc_fpu_unpack.sv ../rtl/fpu/ppc_fpu_multiplier.sv ../rtl/fpu/ppc_fpu_align_plan.sv ../rtl/fpu/ppc_fpu_aligner.sv ../rtl/fpu/ppc_fpu_adder.sv ../rtl/fpu/ppc_fpu_convert.sv ../rtl/fpu/ppc_fpu_rounder.sv ../rtl/fpu/ppc_fpu_divider.sv \
   ../rtl/fpu/ppc_fpu_arith.sv
-PPC_FPU_SHELL_RTL := ../rtl/ppc_ram_lut.sv ../rtl/fpu/ppc_fpu_fprs.sv ../rtl/fpu/ppc_fpu.sv
+PPC_FPU_SHELL_RTL := ../rtl/fpu/ppc_fpu_shell_pkg.sv ../rtl/ppc_ram_lut.sv ../rtl/fpu/ppc_fpu_fprs.sv ../rtl/fpu/ppc_fpu.sv
 PPC_FPU_ARITH_BUILD := $(BUILD_DIR)/ppc-fpu-arith
 PPC_FPU_ARITH_602_BUILD := $(BUILD_DIR)/ppc-fpu-arith-602
 PPC_FPU_ARITH_INITIAL := $(BUILD_DIR)/fpu/production-initial.txt
@@ -346,7 +346,7 @@ lint: lint-fpu-production
 .PHONY: test-fpu-compact-enabled-603 test-fpu-compact-enabled-602
 .PHONY: test-fpu-testfloat-compact-603 test-fpu-testfloat-compact-602
 PPC_FPU_COMPACT_ARITH_RTL := $(PPC_FPU_ARITH_RTL) ../rtl/fpu/ppc_fpu_arith_compact.sv
-PPC_FPU_COMPACT_RTL := $(PPC_FPU_COMPACT_ARITH_RTL) ../rtl/ppc_ram_lut.sv ../rtl/fpu/ppc_fpu_compact.sv
+PPC_FPU_COMPACT_RTL := $(PPC_FPU_COMPACT_ARITH_RTL) ../rtl/fpu/ppc_fpu_shell_pkg.sv ../rtl/ppc_ram_lut.sv ../rtl/fpu/ppc_fpu_compact.sv
 PPC_FPU_COMPACT_BUILD := $(BUILD_DIR)/ppc-fpu-compact
 COMPACT_VERILATE := $(VERILATOR) --binary --timing --assert -Wall -j 2 +define+FPU_COMPACT
 $(PPC_FPU_COMPACT_BUILD)-arith-603/Vtb_ppc_fpu_arith: $(PPC_FPU_COMPACT_ARITH_RTL) fpu/tb_ppc_fpu_arith.sv

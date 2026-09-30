@@ -10,6 +10,7 @@ set_global_assignment -name SDC_FILE ppc_fpu.sdc
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/ppc_pkg.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_pkg.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_arith_pkg.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_shell_pkg.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_unpack.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_multiplier.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../../../../rtl/fpu/ppc_fpu_align_plan.sv
