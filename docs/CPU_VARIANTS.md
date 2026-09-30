@@ -586,6 +586,25 @@ at slow 85 °C (a `quartus_sta` query of the same fit), so the 602 build does
 not reach 66 MHz without moving that product off the issue edge. A seed and
 effort sweep was not run.
 
+Recorded: `flock /tmp/ppc603e-quartus.lock ./quartus/chip602/build.sh --docker`,
+retimed at 15.152 ns with `quartus/target_paths.tcl`, commits 995d20b (before)
+and 84e0bd4 (after), 2026-09-30. Quartus 17.0.2, seed 1.
+
+| `chip602` fit | ALMs | Registers | DSP | Fmax slow 100 C / -40 C | Setup (4 corners) | Hold, worst | 66 MHz |
+|---|---|---|---|---|---|---|---|
+| 995d20b | 10,247 | 12,446 | 4 | 57.77 / 57.31 MHz | +2.691 / +2.552 / +6.965 / +7.414 | +0.113 | 176 endpoints, -2.296 ns |
+| 84e0bd4 | 10,225 | 12,503 | 2 | 65.71 / 66.59 MHz | +4.057 / +4.160 / +7.027 / +7.491 | +0.095 | 1 endpoint, -0.067 ns |
+
+Four changes, each exposed by the previous fit: the 602 multiply's first
+product moved off the issue edge ([MULTIPLY_TIMING.md](MULTIPLY_TIMING.md));
+IU CR0 reads the non-multiply results; the rotate amount is chosen at issue;
+dispatch readiness reads the uop before the EA-dependent alignment
+substitution; and `mfrom` indexes a flat table. At 15.152 ns the multiply
+accumulator has +1.946 ns, `mfrom_q` +2.874 ns and the IU operand register
++3.636 ns. The one failing endpoint is the special unit's result into the
+completion queue (`state_q` to `packets_q`, slow 100 C), a path the 603e tops
+share; it is not fixed here. 16 RAM blocks in both.
+
 Recorded: `make -C sim -j2 lint check-spec variant-lint-0 variant-lint-1 variant-lint-2 variant-reject-3 variant-reject-4 variant-divider-0 variant-divider-4 variant-full-decode-0 variant-full-decode-1 variant-full-decode-2 variant-full-decode-4 variant-multiply-timing-0 variant-multiply-timing-4 variant-icache-602 variant-special-lint-602 test-multiply-timing test-core-multiply-timing test-multiply-execution test-multiply-high-execution test-core-multiply test-core-multiply-high test-core-bat-cached-bus60x test-core-cache-control test-core-bat-cached-bus60x-cacheops`, commit a886653, 2026-09-29.
 Pass (V10), focused benches only (`regression`, firmware and fits not run).
 `tb_core_602` (602 core on the cached 60x wrapper with

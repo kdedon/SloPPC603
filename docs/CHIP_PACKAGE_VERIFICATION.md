@@ -79,6 +79,23 @@ fix). Meets 50 MHz at every corner: setup +4.190 / +4.227 / +6.676 / +7.206 ns, 
 (output, slow -40 C). `perf_o` is open in `ppc603e_measure`, so the event logic is
 pruned.
 
+## 2026-09-30 66 MHz round
+
+Recorded: `./quartus/chip/build.sh --docker` and `./quartus/report-target-paths.sh chip --docker`,
+commits 995d20b (before) and 84e0bd4 (after), 2026-09-30. Quartus 17.0.2, seed 1.
+
+| `chip` fit | ALMs | Registers | Fmax slow 100 C / -40 C | Setup (4 corners) | Hold, worst | 66 MHz |
+|---|---|---|---|---|---|---|
+| 995d20b | 10,528 | 12,176 | 67.95 / 68.05 MHz | +4.667 / +4.767 / +6.887 / +7.358 | +0.120 | met, D-cache `rsp_data_q` +0.775 ns |
+| 84e0bd4 | 10,728 | 12,352 | 69.26 / 70.49 MHz | +4.017 / +4.265 / +6.194 / +6.897 | +0.118 | met, D-cache `rsp_data_q` +1.368 ns |
+
+The batch gate's fit of 995d20b missed 66 MHz on `snp_valid_q` to `rsp_data_q`
+(10 endpoints, -0.121 ns); this refit of the same commit met it, so that path
+sat at the placement-noise margin. The D-cache now reads its tags from a
+registered address and selects load-hit data one-hot, so the path starts at the
+tag MLAB read register. The 50 MHz worst setup after is a boundary path; the
+worst internal path at 66 MHz has +0.714 ns. 36 RAM blocks and 2 DSP blocks in both.
+
 ## What this establishes
 
 The pin-level top boots from HRESET, honours the straps, takes MCP, SRESET
