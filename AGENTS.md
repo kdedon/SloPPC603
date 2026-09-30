@@ -155,6 +155,13 @@ Each record opens with one line:
 - Never trade architectural correctness for timing silently. Add a stage, or put the trade
   behind a named, documented parameter.
 - New RTL changes need a fresh fit before any timing claim.
+- Verilator accepts constructs Quartus 17 rejects. An agent that changes RTL runs a
+  Quartus analysis of an affected top (`quartus_map --analysis_and_elaboration`
+  under the Quartus lock) before reporting. Known rejects: `inside`; member
+  selects on function calls or structs in parameter expressions (add a scalar
+  helper in `ppc_pkg`); `if` generate blocks without `generate`; implicit port
+  connections to a module absent from the project; package-qualified or `'0`
+  enum values on ports (use a typed localparam); untyped assignment patterns.
 - Cite external code as GitHub permalinks at fixed commits; never reference local paths.
 - New source files start with `SPDX-License-Identifier: MIT` and `Copyright (c) 2026 Kevin Dedon`
   in the file's comment syntax (after any shebang). Do not copy third-party code into the tree.
