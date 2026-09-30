@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
+"""Write markdown release notes from build summaries, the pins and git metadata."""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from summary_table import detail, table  # noqa: E402
+
+
+def git(*args):
+    return subprocess.run(["git", "-C", str(REPO), *args], capture_output=True, text=True, check=False).stdout.strip()
+
+
+def pin(path, pattern):
+    match = re.search(pattern, (REPO / path).read_text(), re.MULTILINE)
+    return match.group(1) if match else "unknown"
+
+
+def repo_url(explicit):
+    url = explicit
+    if not url and os.environ.get("GITHUB_REPOSITORY"):
+        url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ['GITHUB_REPOSITORY']}"
+    if not url:
+        url = git("remote", "get-url", "origin")
+    url = re.sub(r"^git@([^:]+):", r"https://\1/", url)
+    return re.sub(r"\.git$", "", url)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("summaries", nargs="*", type=Path)
+    parser.add_argument("--title", default="", help="defaults to the tag or 'Unstable build'")
+    parser.add_argument("--tag", default="")
+    parser.add_argument("--since", default="", help="list commits since this ref")
+    parser.add_argument("--repo-url", default="")
+    parser.add_argument("--unstable", action="store_true")
+    args = parser.parse_args()
+
+    summaries = [json.loads(path.read_text()) for path in args.summaries]
+    commit = git("rev-parse", "HEAD")
+    url = repo_url(args.repo_url)
+    framework = pin("mister/fetch-framework.sh", r"^commit=([0-9a-f]{40})")
+    embench = pin("toolchain/demo/fetch-benchmarks.sh", r"embench/embench-iot/([0-9a-f]{40})")
+    pins = dict(line.split("=", 1) for line in (REPO / "ci/pins.env").read_text().splitlines()
+                if "=" in line and not line.startswith("#"))
+    names = [s["name"] for s in summaries]
+
+    out = [f"# {args.title or args.tag or 'Unstable build'}", ""]
+    if args.unstable:
+        out += ["Rolling build of `main`. Not a release: unverified on hardware and replaced by the next push.", ""]
+    out += [f"Commit [`{commit[:12]}`]({url}/tree/{commit}), {git('show', '-s', '--format=%cs', commit)}: "
+            f"{git('show', '-s', '--format=%s', commit)}", ""]
+    stale = sorted({s["name"] for s in summaries if s["commit"] != commit or s["dirty"]})
+    if stale:
+        out += [f"**Warning:** built from another commit or a modified tree: {', '.join(stale)}.", ""]
+
+    if summaries:
+        out += ["## Fit and timing", "", "Slack in ns, worst over clocks and corners; each build's own SDC is the gate.",
+                "", table(summaries), "", "<details><summary>Slack per clock and corner</summary>", "",
+                detail(summaries), "", "</details>", ""]
+
+    out += ["## Pins", "",
+            "| Input | Pin |", "| --- | --- |",
+            f"| Quartus Prime Lite 17.0.2 | `{pins.get('QUARTUS_IMAGE_PIN', 'unknown')}` |",
+            f"| Cross-compiler base | `{pins.get('TOOLCHAIN_BASE_IMAGE', 'unknown')}`, Debian snapshot "
+            f"`{pins.get('TOOLCHAIN_DEBIAN_SNAPSHOT', 'unknown')}` |",
+            f"| DingusPPC (comparison only) | `{pin('sim/cosim/reference_checkout.py', r'^LAST_VERIFIED = .([0-9a-f]{40}).')}` |",
+            f"| MiSTer framework `sys/` (GPL-2.0) | [`{framework[:12]}`]"
+            f"(https://github.com/MiSTer-devel/Template_MiSTer/tree/{framework}/sys) |", ""]
+
+    out += ["## Licences", "",
+            f"The core is MIT. A MiSTer `.rbf` also contains the MiSTer framework (GPL-2.0), so a distributed "
+            f"`.rbf` is covered by GPL-2.0. Its corresponding source is this repository at "
+            f"[`{commit[:12]}`]({url}/tree/{commit}) and the framework at "
+            f"[`{framework[:12]}`](https://github.com/MiSTer-devel/Template_MiSTer/tree/{framework}).", ""]
+    if any("embench" in name for name in names):
+        out += ["**GPL-3.0 build:** the Embench bitstream's program RAM holds Embench-IoT object code "
+                "(GPL-3.0-or-later), so that image is GPL-3.0. Source offer: its corresponding source, offered from "
+                "the same place as the image under GPL-3.0 section 6(d), is "
+                f"this repository at [`{commit[:12]}`]({url}/tree/{commit}), Embench-IoT at "
+                f"[`{embench[:12]}`](https://github.com/embench/embench-iot/tree/{embench}), and the pinned "
+                "compiler and runtime sources listed in `docs/BENCHMARKS.md`; the attached "
+                "`embench-source.tar.gz` holds all of them. Check that the combination with the GPL-2.0 "
+                "framework is acceptable before redistributing the image.", ""]
+    if any("nbench" in name for name in names):
+        out += ["**nbench build:** BYTE's nbench code carries no stated licence. The nbench bitstream is for "
+                "measurement; do not redistribute it without checking the terms.", ""]
+
+    if args.since:
+        log = git("log", "--no-merges", "--format=- %s (`%h`)", f"{args.since}..{commit}")
+        out += [f"## Changes since {args.since}", "", log or "None.", ""]
+    print("\n".join(out).rstrip())
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

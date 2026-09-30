@@ -6,7 +6,8 @@
 set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
-image='theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70'
+. "${script_dir}/../../ci/pins.env"
+image="${QUARTUS_IMAGE:-${QUARTUS_IMAGE_PIN}}"
 usage='usage: synthesize.sh [--docker] [full|arith|full602|arith602|fullfit|full602fit|all]'
 [[ "${1:---docker}" == --docker ]] || { echo "${usage}" >&2; exit 2; }
 variant_choice="${2:-all}"
@@ -86,6 +87,10 @@ for variant in "${variants[@]}"; do
   for report in "${project_dir}"/output_files/stage_*.txt; do
     if [[ -f "${report}" ]]; then cp "${report}" "${reports_dir}/"; fi
   done
+  if (( fitted )); then
+    python3 "${script_dir}/../fit_summary.py" --name "fpu-${variant}" --dir "${reports_dir}" --revision ppc_fpu \
+      --image "${image}" --out "${reports_dir}/summary.json"
+  fi
   map_report="${reports_dir}/ppc_fpu.map.rpt"
   expected_pins=0
   if (( fitted )); then expected_pins=1; fi

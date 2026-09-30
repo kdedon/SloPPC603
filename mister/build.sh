@@ -44,7 +44,8 @@ else
 fi
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd -- "${here}/.." && pwd)"
-image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70}"
+. "${here}/../ci/pins.env"
+image="${QUARTUS_IMAGE:-${QUARTUS_IMAGE_PIN}}"
 short="$(git -C "${repo}" rev-parse --short HEAD)"
 if [[ -n "$(git -C "${repo}" status --porcelain -- rtl mister toolchain/demo)" ]]; then
   short="${short}+"
@@ -123,6 +124,7 @@ if [[ -f "${out}/ppc603e.rbf" ]]; then
   fi
   what="${short}, ${suite:-hello/Dhrystone/CoreMark}${fpu_part:+, FPU}, $([[ "${native}" == 1 ]] && echo "native video" || echo "1920x1080 DDR3 framebuffer")"
   echo "rbf: ${rbf} (${what})"
+  summary_rbf="${rbf}"
   # A timing-clean build is published under the MiSTer name convention,
   # core_YYYYMMDD_HHMM.rbf, so no build overwrites another. BUILDS.txt maps
   # each published file to its commit.
@@ -133,11 +135,16 @@ if [[ -f "${out}/ppc603e.rbf" ]]; then
     cp "${rbf}" "${pub}/${name}"
     echo "$(date '+%F %H:%M') ${name} ${what} sha256 $(sha256sum "${pub}/${name}" | cut -c1-16)" >> "${pub}/BUILDS.txt"
     echo "published: build/mister/${name}"
+    summary_rbf="${pub}/${name}"
   fi
+  label="mister${suite:+-${suite}}$([[ "${native}" == 1 ]] && echo -native || true)"
+  python3 "${repo}/quartus/fit_summary.py" --name "${label}" --dir "${out}" --revision ppc603e --image "${image}" \
+    --note "${what}" --rbf "${summary_rbf}" --out "${out}/${label}.summary.json" || status=1
+  if [[ -n "${pub:-}" ]]; then cp "${out}/${label}.summary.json" "${pub}/${name%.rbf}.json"; fi
 fi
 echo "quartus exit status ${status}"
 if [[ "${clean}" == 1 ]]; then
   rm -rf "${here}/db" "${here}/incremental_db" "${here}"/*.qws
-  find "${out}" -type f ! -name '*.rbf' ! -name '*.summary' -delete 2>/dev/null || true
+  find "${out}" -type f ! -name '*.rbf' ! -name '*.summary' ! -name '*.json' -delete 2>/dev/null || true
 fi
 exit "${status}"

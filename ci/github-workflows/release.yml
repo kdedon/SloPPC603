@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Kevin Dedon
+# Tagged release: the measurement fits with 66 MHz re-timing, the production
+# FPU fits and the MiSTer bitstreams, published with generated release notes.
+# The simulation gates (make -C sim release-check --skip-quartus) run on the
+# maintainer's machine before tagging; this workflow does not repeat them.
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  fit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {top: translated, revision: ppc603e_translated}
+          - {top: integrated, revision: ppc603e_integrated}
+          - {top: timer-bat, revision: ppc603e_timer_bat}
+          - {top: chip, revision: ppc603e_chip}
+          - {top: chip602, revision: ppc602_chip}
+    steps:
+      - uses: actions/checkout@v4
+      - run: ci/free-disk.sh
+      - name: Pull the Quartus image
+        run: |
+          . ci/pins.env
+          docker pull "${QUARTUS_IMAGE_PIN}"
+      - name: Fit
+        run: quartus/${{ matrix.top }}/build.sh --docker
+      - name: Re-time at 66 MHz
+        run: quartus/report-target-paths.sh ${{ matrix.top }} --docker
+      - uses: actions/upload-artifact@v4
+        with:
+          name: summary-${{ matrix.top }}
+          path: quartus/${{ matrix.top }}/output_files/${{ matrix.revision }}.summary.json
+
+  fpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [fullfit, full602fit]
+    steps:
+      - uses: actions/checkout@v4
+      - run: ci/free-disk.sh
+      - name: Install ripgrep
+        run: sudo apt-get install --yes --no-install-recommends ripgrep
+      - name: Pull the Quartus image
+        run: |
+          . ci/pins.env
+          docker pull "${QUARTUS_IMAGE_PIN}"
+      - name: Fit
+        run: |
+          quartus/fpu-production/synthesize.sh --docker ${{ matrix.variant }}
+          cp quartus/fpu-production/output_files/${{ matrix.variant }}/reports/summary.json \
+            fpu-${{ matrix.variant }}.summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: summary-fpu-${{ matrix.variant }}
+          path: fpu-${{ matrix.variant }}.summary.json
+
+  mister:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        # Embench images are GPL-3.0: add "embench" through this variable only
+        # after reviewing docs/CI.md.
+        suite: ${{ fromJSON(vars.MISTER_SUITES || '["default", "selftest"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: ci/free-disk.sh
+      - run: ci/setup.sh benchmarks framework
+      - name: Pull the Quartus image
+        run: |
+          . ci/pins.env
+          docker pull "${QUARTUS_IMAGE_PIN}"
+      - run: toolchain/build-container.sh
+      - name: Build the core
+        run: mister/build.sh --clean ${{ matrix.suite != 'default' && format('--suite {0}', matrix.suite) || '' }}
+      - name: Corresponding source of a GPL-3.0 image
+        if: matrix.suite == 'embench'
+        run: ci/source-archive.sh build/mister/embench-source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mister-${{ matrix.suite }}
+          path: |
+            build/mister/*.rbf
+            build/mister/*.json
+            build/mister/*.tar.gz
+
+  publish:
+    needs: [fit, fpu, mister]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Release notes
+        run: |
+          previous="$(git describe --tags --abbrev=0 --exclude unstable "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          python3 ci/release_notes.py --tag "${GITHUB_REF_NAME}" ${previous:+--since "${previous}"} \
+            $(find artifacts -name '*.json' | sort) > notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --notes-file notes.md \
+            $(find artifacts -type f \( -name '*.rbf' -o -name '*.json' -o -name '*.tar.gz' \) | sort)

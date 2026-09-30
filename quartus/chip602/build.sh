@@ -6,7 +6,8 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
 mode="${1:-local}"
-image="${QUARTUS_IMAGE:-theypsilon/quartus-lite-c5@sha256:f638634df509786bc7507dbcb45673acd6adf32e5278c7b4e64ce67ae8ac2c70}"
+. "${script_dir}/../../ci/pins.env"
+image="${QUARTUS_IMAGE:-${QUARTUS_IMAGE_PIN}}"
 case "${mode}" in local|--docker) ;; *) echo "usage: $0 [--docker]" >&2; exit 2 ;; esac
 python3 "${script_dir}/../qsf_sources.py" "${script_dir}"
 python3 "${script_dir}/../check_virtual_ports.py" "${script_dir}/ppc602_measure.sv" "${script_dir}/ppc602_chip.qsf"
@@ -53,3 +54,6 @@ if ! cmp -s "${evidence_dir}/source-before.sha256" "${evidence_dir}/source-after
 fi
 if (( build_status != 0 )); then exit "${build_status}"; fi
 "${script_dir}/collect-reports.sh" "${evidence_dir}"
+python3 "${script_dir}/../fit_summary.py" --name chip602 --dir "${evidence_dir}" --revision ppc602_chip \
+  --image "$([[ "${mode}" == --docker ]] && echo "${image}")" --out "${evidence_dir}/summary.json"
+cp "${evidence_dir}/summary.json" "${script_dir}/output_files/ppc602_chip.summary.json"

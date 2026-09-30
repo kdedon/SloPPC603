@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Kevin Dedon
-FROM debian:bookworm-20250811-slim@sha256:b1a741487078b369e78119849663d7f1a5341ef2768798f7b7406c4240f86aef
+# The base and snapshot pins come from ci/pins.env via build-container.sh.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
 
-ARG DEBIAN_SNAPSHOT=20250811T000000Z
+ARG DEBIAN_SNAPSHOT
 ARG SOURCE_DATE_EPOCH=0
 
 RUN printf '%s\n' \
