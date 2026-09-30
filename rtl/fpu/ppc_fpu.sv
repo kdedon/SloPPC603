@@ -1212,6 +1212,18 @@ module ppc_fpu #(
               (wait_other == '0 || (wait_fpu == '0 && wait_mem == '0 &&
                                     $countones(wait_other) == 1)))
         else $error("more than one waiting entry per resource");
+      for (integer i = 0; i < PENDING_DEPTH; i++)
+        if (pending_q[i].valid && pending_q[i].finishing &&
+            !(kill_all_i || safe_abort_flush || deferred_abort_flush))
+          assert (arith_finish_valid &&
+                  arith_finish.tag == pending_q[i].issue.tag)
+            else $error("finishing slot without its reply");
+      if (CPU_602 && arith_rsp_match && arith_rsp.write_result &&
+          pending_q[arith_rsp_slot].decoded.op != FP_FCTIWZ &&
+          !flags_trap(flags_of(arith_rsp), fpscr_q))
+        assert (word_602(arith_rsp.result) == narrow_single(arith_rsp.result))
+          else $error("written 602 result is a binary32 denormal %h",
+                      arith_rsp.result);
     end
   end
   // synthesis translate_on
@@ -2437,7 +2449,9 @@ module ppc_fpu #(
       reply = 1'b0;
       ready[i] = pending_q[i].done || pending_q[i].local_wait == 2'd1;
       if (pending_q[i].decoded.kind == DK_ARITH) begin
-        if (!ready[i] && arith_finish_valid && pending_q[i].finishing) begin
+        // A finishing bit implies the reply this cycle unless a flush
+        // cancels it, and a flush withholds every forward.
+        if (!ready[i] && pending_q[i].finishing) begin
           ar = flags_of(arith_finish);
           ready[i] = 1'b1;
           meta = 1'b1;
@@ -2501,8 +2515,7 @@ module ppc_fpu #(
           c.fctiwz = pending_q[i].decoded.op == FP_FCTIWZ;
           exc[i] = slot_trap[i];
           cr1 = 4'(flags_fpscr(slot_prefix[i], slot_known[i]) >> 28);
-          c.fpr_write = (slot_reply[i] ? arith_finish_write :
-              slot_ar[i].write_result) && !exc[i];
+          c.fpr_write = slot_ar[i].write_result && !exc[i];
           c.rsp_value = slot_rsp_value[i];
           c.fpr_sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
           c.fpr_lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
