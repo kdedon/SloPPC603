@@ -54,8 +54,9 @@ GROUPS = ["INT", "ROT", "CMP/BR", "LD/ST", "SPR", "EXC", "CACHE", "FP"]
 
 VARIANTS = {
     # PVR version (UM 2.1.1, 602UM 2.1.1.3); the revision is not fixed.
-    "603e": {"isa": "PID7v-603e", "pvr": 0x00070000, "ear": True},
-    "602": {"isa": "602", "pvr": 0x00050000, "ear": False},
+    "603e": {"isa": "PID7v-603e", "pvr": 0x00070000, "ear": True, "multiple_dar_plus4": True},
+    # The EA + 4 rule for multiples is a 603e note; not established for the 602.
+    "602": {"isa": "602", "pvr": 0x00050000, "ear": False, "multiple_dar_plus4": False},
 }
 
 
@@ -459,8 +460,14 @@ class Machine:
             ds = (((w >> 26) & 1) << 14) | (((w >> 27) & 0xF) << 10)
         ds |= ((w >> 21) & 0x1F) << 5
         ds |= (w >> 16) & 0x1F
-        # DSISR[27-31] (rA) is defined only for update forms (PEM Table 6-12).
+        # DSISR[27-31] (rA) is defined only for update forms (PEM Table 6-12),
+        # DSISR[22-26] not for dcbz (UM Table 4-13).
         m = M32 if ins.m.endswith(("u", "ux")) else M32 & ~0x1F
+        if ins.m == "dcbz":
+            m &= ~0x3E0
+        # A misaligned lmw or stmw puts EA + 4 in DAR (UM 4.5.6.2).
+        if ins.m in ("lmw", "stmw") and self.v["multiple_dar_plus4"]:
+            ea += 4
         return Trap(0x600, dar=ea & M32, dsisr=ds, dsisr_mask=m)
 
     def cross_page(self, st, ea, n):
@@ -725,6 +732,8 @@ class Machine:
             st["lr"] = ("rel", pc + 4)
         if not take:
             return None
+        if m == "bc":
+            return tgt
         if isinstance(tgt, tuple):
             return tgt[1] & ~3 if tgt[0] == "rel" else tgt
         return ("abs", tgt & ~3)
@@ -1111,7 +1120,10 @@ def build_spr(B):
     B.add(G, "mfxer user", mfspr(5, 1), inp={"xer": 0x20000005}, msr=MSR_USER)
     B.add(G, "mfpvr", mfspr(5, 287))
     if VARIANTS[B.variant]["ear"]:
-        B.add(G, "mt/mf ear", [mtspr(282, 3), mfspr(5, 282)], inp={"r3": 0x80000005})
+        # EAR is not reset between cases: leave E clear. With E set, the demo
+        # SoC would take eciwx/ecowx tenures (TT3 = 0) as address-only.
+        B.add(G, "mt/mf ear", [mtspr(282, 3), mfspr(5, 282), mtspr(282, 6)],
+              inp={"r3": 0x80000005, "r6": 0})
     B.add(G, "mfmsr", mfmsr(5))
     B.add(G, "mtmsr pr", [mtmsr(3), dimm("addi", 14, 4, 4, 1)], inp={"r3": MSR_USER})
     B.add(G, "mtmsr dr", [mtmsr(3), dimm("addi", 14, 4, 4, 1), mtmsr(6)],
@@ -1386,7 +1398,7 @@ def run_case(machine, st, code, msr, case):
                 if pc is None:
                     raise RuntimeError("stub return")
                 continue
-            if where - NX_EA < BAT_BYTES:
+            if 0 <= where - NX_EA < BAT_BYTES:
                 return Trap(0x400, target=("abs", where)), pc
             if where >> 28 == MISS_EA >> 28:
                 return Trap(0x1000, target=("abs", where)), pc

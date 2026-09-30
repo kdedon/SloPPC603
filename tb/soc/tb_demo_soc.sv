@@ -42,7 +42,8 @@ module tb_demo_soc;
         retired++;
       end
       if (checkstop) $fatal(1, "checkstop cycle=%0d pc=%08x", cycles, soc.cpu.retire.pc);
-      if (cycles > max_cycles) $fatal(1, "watchdog cycle=%0d last pc=%08x", cycles, soc.cpu.retire.pc);
+      if (cycles > max_cycles)
+        $fatal(1, "watchdog cycle=%0d retired=%0d last pc=%08x", cycles, retired, soc.cpu.retire.pc);
     end
     // The console register is undefined until the first reset edge.
     if (rst_n && console_valid) $write("%c", console_data);

@@ -10,7 +10,8 @@
 #include "selftest.h"
 #include "cases.h"
 
-/* The first case to run; a debugging aid. */
+/* The first case to run, and ST_PROGRESS to print each case number:
+ * debugging aids. */
 #ifndef ST_FIRST
 #define ST_FIRST 0
 #endif
@@ -276,6 +277,9 @@ int main(void)
   __asm__ volatile("mfspr %0,287" : "=r"(pvr));
   st_init();
   for (int n = ST_FIRST; n < ST_NCASES; n++) {
+#ifdef ST_PROGRESS
+    printf("case %d\n", n);
+#endif
     int bad = run_case(n);
     result[n] = (uint8_t)(bad > 255 ? 255 : bad);
     group_all[st_cases[n].group]++;
