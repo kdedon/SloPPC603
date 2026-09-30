@@ -41,6 +41,11 @@ Both pass. Whetstone hard-float: 492,105 cycles, 20.321 MWIPS at 50 MHz
 (the 64-bit path and `fmr` fix alone, `c340749`: 16.394). The self-test
 retires 19,088,576 instructions with no failed case.
 
+Recorded: `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit `7e6ecfe`, 2026-09-30.
+36 PASS lines, including 910 shell checks and the 603e and 602 timing checks
+(71 and 52 responses). The standalone benches do not time retirement of moves;
+the core bench above does.
+
 A Quartus 17 analysis and elaboration of the `ppc603e` pin top with
 `ENABLE_FPU=1` (chip file list plus `rtl/fpu_files.f`) passed on `be93c21`
 with 0 errors; the warnings are unused-signal notices. No fit was run.
