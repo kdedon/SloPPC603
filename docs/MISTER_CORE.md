@@ -296,6 +296,14 @@ Dhrystone 200 runs, 685,719 cycles, 0.166 DMIPS/MHz, CPI 5.80; CoreMark 1 iterat
 images (`demo-hello`, `demo-dhrystone`, framebuffer at `0xf0000000`) pass with the same
 firmware sources.
 
+Recorded: `make -C sim lint check-spec lint-mister mister-smoke`, `make -C sim mister-smoke
+MISTER_FB=0`, commit 1a2beba (merged onto the performance counters), 2026-09-29. Lint,
+check-spec and the native build pass (42,687,368 cycles, 11,496,899 retired). The DDR3
+build fails with X seed 1: an illegal-instruction exception on a legal word during hello
+([BUGS.md](BUGS.md#bug-02-illegal-instruction-exception-on-a-legal-mr-in-the-mister-ddr3-build));
+the same image passed on a model build with other initial values (42,172,533 cycles,
+11,439,695 retired, 153-sector screen file checked).
+
 It does not cover `hps_io`, the OSD, the PLL, the framework scaler, the 1920 × 1080
 geometry in simulation (its checksum comes from `toolchain/demo/mandel_sum.c` on the
 host), the full-length runs, or DDR3 read-back by the scaler.

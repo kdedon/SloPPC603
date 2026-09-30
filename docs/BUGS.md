@@ -113,3 +113,41 @@ With X seeds other than 1, the DDR3 build failed after the firmware passed:
 edge and the bench counted it during reset. The bench now counts saves only
 out of reset; the RTL is unchanged. The same DDR3 configuration with X seed 2
 failed this way before the change; the `XRAND_SEED=2` run above passes.
+
+## BUG-02: illegal-instruction exception on a legal `mr` in the MiSTer DDR3 build
+
+Status: open; reproduces with one model build and X seed, cause not found.
+
+Recorded: `make -C sim mister-smoke`, commit 1a2beba, 2026-09-29. Fails.
+
+### Report
+
+After the MiSTer framebuffer core merged onto the performance-counter round,
+`mister-smoke` (DDR3 build, `+verilator+seed+1 +verilator+rand+reset+2`)
+exits with `e0000700` at 959,714 cycles, 114,470 retirements, during hello's
+Mandelbrot. The exception is taken at cycle 625,534 with SRR0 `fff03e44`
+and SRR1 `00080070`: SRR1[12], illegal instruction. The image holds
+`7e549378` (`mr r20,r18`) there, so the processor decoded a word other than
+the one in memory.
+
+### Checks
+
+- Deterministic for one model binary and seed. Adding a bench variable
+  (which shifts Verilator's random initial values) makes the run pass;
+  adding only `$display` statements keeps the failure.
+- The same model with X seeds 2 to 8, and with all-zero and all-one initial
+  values, runs past 2 million cycles without the exception.
+- The native build (`MISTER_FB=0`) with seed 1 passes, as do `demo-hello`,
+  `demo-dhrystone`, `demo-coremark`, `demo-nbench` and `demo-embench`.
+- The pre-merge MiSTer branch (9758fef) passes `mister-smoke`, but its
+  random initial values differ, so this does not place the fault in the
+  merge.
+
+What this establishes: some state without a reset value reaches the
+instruction path (fetch, I-cache fill or decode) in the DDR3 build. It does
+not say which register.
+
+Next step: rerun the failing model with `+TRACE` and follow the fetch of
+`fff03e40`-`fff03e5f` (the I-cache line fill and the fetch-to-decode
+register) before cycle 625,534; list the registers without resets on that
+path and give them resets one at a time.

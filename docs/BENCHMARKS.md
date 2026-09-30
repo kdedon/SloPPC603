@@ -169,9 +169,15 @@ changes that add these benchmarks, 2026-09-29. Both pass.
 
 Cycles and retirements run from reset to the exit write; the perf window over the
 tests alone is 68,956,117 cycles at CPI 4.397 (nbench) and 60,017,060 cycles at CPI
-4.324 (Embench). This base has no SoC performance counters, so `perf_report` prints
-cycles, retirements and CPI only; with the counters' runtime its per-cause breakdown
-replaces this.
+4.324 (Embench). That base had no SoC performance counters.
+
+Recorded: `make -C sim demo-nbench demo-embench demo-mister-nbench demo-mister-embench`,
+commit 1a2beba, 2026-09-29. All pass. With the performance counters, `perf_report`
+prints the per-cause breakdown of the test window: 70,430,257 cycles, 15,908,512
+retired, CPI 4.427 (nbench); 61,549,013 cycles, 14,117,316 retired, CPI 4.360
+(Embench). From reset to exit: nbench 76,890,055 cycles, CPI 4.444; Embench
+67,914,330 cycles, CPI 4.395. The MiSTer-layout images (`mister-*-smoke.hex`) give the
+same windows within 2,000 cycles.
 
 Embench per benchmark, relative speed per MHz against the Cortex-M4 (repeats divided by 16):
 
