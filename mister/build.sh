@@ -107,7 +107,19 @@ if [[ -f "${out}/ppc603e.rbf" ]]; then
     rbf="${out}/ppc603e_${suite}.rbf"
     mv "${out}/ppc603e.rbf" "${rbf}"
   fi
-  echo "rbf: ${rbf} (${short}, ${suite:-hello/Dhrystone/CoreMark}, $([[ "${native}" == 1 ]] && echo "native video" || echo "1920x1080 DDR3 framebuffer"))"
+  what="${short}, ${suite:-hello/Dhrystone/CoreMark}, $([[ "${native}" == 1 ]] && echo "native video" || echo "1920x1080 DDR3 framebuffer")"
+  echo "rbf: ${rbf} (${what})"
+  # A timing-clean build is published under the MiSTer name convention,
+  # core_YYYYMMDD.rbf; a same-day rebuild replaces it. BUILDS.txt maps
+  # each published file to its commit.
+  if [[ "${status}" == 0 ]]; then
+    pub="${repo}/build/mister"
+    name="PPC603e${suite:+_${suite}}$([[ "${native}" == 1 ]] && echo _native)_$(date +%Y%m%d).rbf"
+    mkdir -p "${pub}"
+    cp "${rbf}" "${pub}/${name}"
+    echo "$(date '+%F %H:%M') ${name} ${what} sha256 $(sha256sum "${pub}/${name}" | cut -c1-16)" >> "${pub}/BUILDS.txt"
+    echo "published: build/mister/${name}"
+  fi
 fi
 echo "quartus exit status ${status}"
 if [[ "${clean}" == 1 ]]; then
