@@ -187,15 +187,14 @@ module ppc_fpu #(
 
   pending_t pending_q [0:PENDING_DEPTH-1];
   pending_t pending_d [0:PENDING_DEPTH-1];
-  // Entries in age order; pv[0] is the head.
-  pending_t pv [0:PENDING_DEPTH-1];
+  // Head and second-oldest entries.
+  pending_t pv [0:1];
   logic [PENDING_IDX_BITS-1:0] head_q, head_d;
   logic [PENDING_IDX_BITS-1:0] head1_q, tail_q, tail1_q;
   // older_q[t][s]: slot t holds an older position than slot s.
   logic [PENDING_DEPTH-1:0] older_q [0:PENDING_DEPTH-1];
   logic [PENDING_IDX_BITS-1:0] arith_rsp_slot, mem_rsp_slot;
   logic [PENDING_IDX_BITS-1:0] exec_slot, work1_old_slot;
-  logic [PENDING_IDX_BITS-1:0] forward_slot, forward1_slot;
   local_stage_t local_stage_q;
   local_stage_t local_stage_d;
   logic [2:0] pending_count_q;
@@ -258,11 +257,11 @@ module ppc_fpu #(
   logic matching_abort;
   logic duplicate_tag;
   logic duplicate1_tag;
-  logic forward_from_pending;
-  logic [PENDING_IDX_BITS-1:0] forward_index;
-  logic forward1_from_pending;
-  logic [PENDING_IDX_BITS-1:0] forward1_index;
-  logic [PENDING_IDX_BITS-1:0] abort_index;
+  forward_candidate_t slot_candidate [0:PENDING_DEPTH-1];
+  logic [31:0] slot_prefix [0:PENDING_DEPTH-1];
+  logic [PENDING_DEPTH-1:0] fwd0_sel, fwd1_sel;
+  logic [2:0] abort_index;
+  logic [PENDING_DEPTH-1:0] abort_hit;
   logic abort_index_valid;
   logic safe_abort_flush;
   logic deferred_abort_flush_q;
@@ -290,12 +289,10 @@ module ppc_fpu #(
   logic div_busy;
   logic barrier_present;
   logic source_waiting;
-  logic [31:0] prefix_fpscr;
   forward_candidate_t fwd0;
   forward_candidate_t fwd1;
   forward_payload_t fwd0_payload_d, fwd0_payload_q;
   forward_payload_t fwd1_payload_d, fwd1_payload_q;
-  logic prefix_known;
   work_t work_issue;
   decoded_t work_decoded;
   logic work_dispatch;
@@ -1032,10 +1029,8 @@ module ppc_fpu #(
   endfunction
 
   always_comb begin
-    for (integer k = 0; k < PENDING_DEPTH; k++)
-      pv[k] = pending_q[slot_of(head_q, 3'(k))];
-    forward_slot = slot_of(head_q, 3'(forward_index));
-    forward1_slot = slot_of(head_q, 3'(forward1_index));
+    pv[0] = pending_q[head_q];
+    pv[1] = pending_q[head1_q];
   end
 
   always_comb begin
@@ -1128,28 +1123,24 @@ module ppc_fpu #(
   end
 
   always_comb begin
+    logic [PENDING_DEPTH-1:0] inflight;
+    abort_hit = '0;
     abort_index = '0;
-    abort_index_valid = 1'b0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
-      if (i < int'(pending_count_q) && pv[i].valid &&
-          pv[i].issue.tag == abort_tag_i) begin
-        abort_index = PENDING_IDX_BITS'(i);
-        abort_index_valid = 1'b1;
-      end
+      abort_hit[i] = pending_q[i].valid && pending_q[i].issue.tag == abort_tag_i;
+      inflight[i] = pending_q[i].valid &&
+          pending_q[i].decoded.kind == DK_ARITH &&
+          pending_q[i].started && !pending_q[i].arith_done &&
+          !pending_q[i].done;
+      if (abort_hit[i]) abort_index = age_of(head_q, PENDING_IDX_BITS'(i));
     end
+    abort_index_valid = |abort_hit;
     safe_abort_flush = abort_valid_i && abort_index_valid;
     for (integer i = 0; i < PENDING_DEPTH; i++)
-      if (i < int'(abort_index) && pv[i].valid &&
-          pv[i].decoded.kind == DK_ARITH &&
-          pv[i].started && !pv[i].arith_done &&
-          !pv[i].done)
-        safe_abort_flush = 1'b0;
-    older_arith_pending = 1'b0;
-    for (integer i = 0; i < PENDING_DEPTH; i++)
-      if (i < int'(pending_count_q) && pv[i].valid &&
-          pv[i].decoded.kind == DK_ARITH &&
-          pv[i].started && !pv[i].arith_done &&
-          !pv[i].done) older_arith_pending = 1'b1;
+      for (integer t = 0; t < PENDING_DEPTH; t++)
+        if (abort_hit[t] && older_q[i][t] && inflight[i])
+          safe_abort_flush = 1'b0;
+    older_arith_pending = |inflight;
     deferred_abort_flush = deferred_abort_flush_q && !older_arith_pending;
   end
 
@@ -1868,18 +1859,12 @@ module ppc_fpu #(
     head_d = head_q;
     sp_d = sp_q;
     lt_d = lt_q;
-    if (forward_valid_o && forward_from_pending) begin
-      if (fwd0.fpr_write)
-        pending_d[forward_slot].fpr_forwarded = 1'b1;
-      if (fwd0.cr_write)
-        pending_d[forward_slot].cr_forwarded = 1'b1;
-    end
-    if (forward1_valid_o && forward1_from_pending) begin
-      if (fwd1.fpr_write)
-        pending_d[forward1_slot].fpr_forwarded = 1'b1;
-      if (fwd1.cr_write)
-        pending_d[forward1_slot].cr_forwarded = 1'b1;
-    end
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      if ((forward_valid_o && fwd0_sel[i]) ||
+          (forward1_valid_o && fwd1_sel[i])) begin
+        if (slot_candidate[i].fpr_write) pending_d[i].fpr_forwarded = 1'b1;
+        if (slot_candidate[i].cr_write) pending_d[i].cr_forwarded = 1'b1;
+      end
     mem_incoming_result = '0;
     local_result = '0;
     if (arith_rsp_match) begin
@@ -2020,8 +2005,10 @@ module ppc_fpu #(
     end
     if (abort_match) begin
       for (integer i = 0; i < PENDING_DEPTH; i++)
-        if (age_of(head_q, PENDING_IDX_BITS'(i)) >= 3'(abort_index)) pending_d[i].valid = 1'b0;
-      pending_count_d = 3'(abort_index);
+        for (integer t = 0; t < PENDING_DEPTH; t++)
+          if (abort_hit[t] && (t == i || older_q[t][i]))
+            pending_d[i].valid = 1'b0;
+      pending_count_d = abort_index;
     end
     if (kill_all_i) begin
       for (integer i = 0; i < PENDING_DEPTH; i++) pending_d[i].valid = 1'b0;
@@ -2144,152 +2131,164 @@ module ppc_fpu #(
   // Forwarding is independent of retirement.  Two packets preserve a CR
   // result and a load FPR result that may retire together.  A CR result has
   // priority on the first bus; remaining results stay queued for a later bus.
+  // Candidates form per physical slot; the older-slot matrix orders them.
+  // An older arithmetic result's sticky causes reach a younger CR1 value
+  // as an OR, which is all CR1 (FX, FEX, VX, OX) reads of the prefix.
+  localparam logic [31:0] STICKY_BITS = 32'h1ff8_0700;
   always_comb begin
-    forward_candidate_t candidate;
-    logic reply_candidate;
     arith_flags_t ar;
     logic [63:0] ar_value;
-    logic [31:0] candidate_fpscr;
-    logic candidate_exception;
-    logic arith_metadata_valid;
-    logic candidate_fpr_new;
-    logic candidate_cr_new;
-    logic ready;
-    candidate = '0;
-    ar = '0;
-    ar_value = '0;
-    candidate_fpscr = '0;
-    candidate_exception = 1'b0;
-    arith_metadata_valid = 1'b0;
-    candidate_fpr_new = 1'b0;
-    candidate_cr_new = 1'b0;
-    ready = 1'b0;
-    reply_candidate = 1'b0;
-    prefix_fpscr = fpscr_q;
-    prefix_known = 1'b1;
-    fwd0 = '0;
-    forward_valid_o = 1'b0;
-    forward_from_pending = 1'b0;
-    forward_index = '0;
-    fwd1 = '0;
-    forward1_valid_o = 1'b0;
-    forward1_from_pending = 1'b0;
-    forward1_index = '0;
+    logic [31:0] acc;
+    logic [3:0] cr1;
+    logic meta, reply, trap, known;
+    forward_candidate_t c;
+    logic [PENDING_DEPTH-1:0] ready;
+    logic [PENDING_DEPTH-1:0] contributes, unknown;
+    logic [PENDING_DEPTH-1:0] exc;
+    logic [PENDING_DEPTH-1:0] cr_new;
+    logic [PENDING_DEPTH-1:0] elig;
+    logic [PENDING_DEPTH-1:0] e1, e2, cr_first;
+    arith_flags_t slot_ar [0:PENDING_DEPTH-1];
+    logic [63:0] slot_ar_value [0:PENDING_DEPTH-1];
+    logic [PENDING_DEPTH-1:0] slot_meta, slot_reply, slot_trap;
+    logic [31:0] slot_sticky [0:PENDING_DEPTH-1];
+    acc = '0;
+    cr1 = '0;
+    known = 1'b1;
+    c = '0;
+    cr_new = '0;
+    elig = '0;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
-      if (i < int'(pending_count_q) && pv[i].valid) begin
-        ready = pv[i].done || pv[i].local_wait == 2'd1;
-        reply_candidate = 1'b0;
-        candidate = '0;
-        candidate.tag = pv[i].issue.tag;
-        candidate.fpr_index = pv[i].issue.insn[25:21];
-        candidate.fpr_write = pv[i].st.fpr_write;
-        candidate.fpr_value = pv[i].value;
-        candidate.fpr_sp = pv[i].st.fpr_sp;
-        candidate.fpr_lt = pv[i].st.fpr_lt;
-        candidate.cr_write = pv[i].st.cr_write;
-        candidate.cr_field = pv[i].st.cr_field;
-        candidate.cr_value = pv[i].st.cr_value;
-        if ((pv[i].decoded.kind == DK_MOVE ||
-             pv[i].decoded.kind == DK_FSEL) && candidate.cr_write)
-          candidate.cr_value = prefix_fpscr[31:28];
-        candidate_exception = pv[i].st.exception != FPU_NO_EXCEPTION &&
-            pv[i].st.exception != FPU_FP_ENABLED;
-        if (pv[i].decoded.kind == DK_ARITH) begin
-          ar = pv[i].arith;
-          ar_value = pv[i].value;
-          arith_metadata_valid = pv[i].arith_done;
-          if (!ready && arith_finish_valid && pv[i].finishing) begin
-            ar = flags_of(arith_finish);
-            ready = 1'b1;
-            arith_metadata_valid = 1'b1;
-            reply_candidate = 1'b1;
-          end else if (!ready && arith_rsp_match &&
-                       arith_rsp.tag == pv[i].issue.tag) begin
-            ar = flags_of(arith_rsp);
-            ar_value = format_reply(pv[i].decoded.op);
-            ready = 1'b1;
-            arith_metadata_valid = 1'b1;
-          end
-          if (arith_metadata_valid) begin
-            candidate.reply = reply_candidate;
-            candidate.prefix = prefix_fpscr;
-            candidate.fctiwz = pv[i].decoded.op == FP_FCTIWZ;
-            candidate_exception = flags_trap(ar, prefix_fpscr);
-            candidate_fpscr = flags_fpscr(prefix_fpscr, ar);
-            candidate.fpr_write = (reply_candidate ? arith_finish_write :
-                ar.write_result) && !candidate_exception;
-            candidate.fpr_value = ar_value;
-            candidate.fpr_sp = CPU_602 && pv[i].decoded.op != FP_FCTIWZ;
-            candidate.fpr_lt = CPU_602 && pv[i].decoded.op == FP_FCTIWZ;
-            candidate.cr_write = !candidate_exception &&
-                (ar.compare_valid || pv[i].issue.insn[0]);
-            candidate.cr_field = ar.compare_valid ?
-                pv[i].issue.insn[25:23] : 3'd1;
-            candidate.cr_value = ar.compare_valid ? ar.fpcc :
-                candidate_fpscr[31:28];
-            // A finishing result's value and status come from its reply.
-            if (reply_candidate) begin
-              candidate.fpr_value = '0;
-              candidate.cr_value = '0;
-            end
-            else if (!candidate_exception) prefix_fpscr = candidate_fpscr;
-          end else prefix_known = 1'b0;
-        end else if (pv[i].decoded.kind == DK_MEMORY && !ready &&
-                     mem_rsp_match && mem_rsp_i.tag == pv[i].issue.tag) begin
-          ready = 1'b1;
-          candidate_exception = mem_rsp_i.fault;
-          if (pv[i].decoded.mem_load && !mem_rsp_i.fault) begin
-            candidate.fpr_write = 1'b1;
-            if (CPU_602) begin
-              candidate.fpr_sp = 1'b1;
-              candidate.fpr_value = {32'd0,mem_rsp_i.data[31:0]};
-              if (!pv[i].decoded.mem_single) begin
-                candidate_exception = !single_fits_double(mem_rsp_i.data);
-                candidate.fpr_value = {32'd0,narrow_single(mem_rsp_i.data)};
-              end
-            end else candidate.fpr_value = pv[i].decoded.mem_single ?
-                widen_single(mem_rsp_i.data[31:0]) : mem_rsp_i.data;
-          end
+      ar = pending_q[i].arith;
+      ar_value = pending_q[i].value;
+      meta = pending_q[i].arith_done;
+      reply = 1'b0;
+      ready[i] = pending_q[i].done || pending_q[i].local_wait == 2'd1;
+      if (pending_q[i].decoded.kind == DK_ARITH) begin
+        if (!ready[i] && arith_finish_valid && pending_q[i].finishing) begin
+          ar = flags_of(arith_finish);
+          ready[i] = 1'b1;
+          meta = 1'b1;
+          reply = 1'b1;
+        end else if (!ready[i] && arith_rsp_match &&
+                     arith_rsp.tag == pending_q[i].issue.tag) begin
+          ar = flags_of(arith_rsp);
+          ar_value = format_reply(pending_q[i].decoded.op);
+          ready[i] = 1'b1;
+          meta = 1'b1;
         end
-        candidate_fpr_new = candidate.fpr_write &&
-            !pv[i].fpr_forwarded;
-        candidate_cr_new = candidate.cr_write &&
-            !pv[i].cr_forwarded &&
-            pv[i].decoded.kind != DK_MCRFS &&
-            (prefix_known || (pv[i].decoded.kind == DK_ARITH &&
-                              (pv[i].decoded.op == FP_CMPU ||
-                               pv[i].decoded.op == FP_CMPO)));
-        if (ready && !candidate_exception &&
-            (candidate_fpr_new || candidate_cr_new)) begin
-          candidate.fpr_write = candidate_fpr_new;
-          candidate.cr_write = candidate_cr_new;
-          if (!forward_from_pending) begin
-            forward_from_pending = 1'b1;
-            forward_index = PENDING_IDX_BITS'(i);
-            forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
-            fwd0 = candidate;
-          end else if (!fwd0.cr_write && candidate_cr_new) begin
-            // Promote a completed CR value without losing the displaced FPR.
-            // An earlier second FPR packet remains in its queue slot.
-            forward1_from_pending = forward_from_pending;
-            forward1_index = forward_index;
-            forward1_valid_o = forward_valid_o;
-            fwd1 = fwd0;
-            forward_from_pending = 1'b1;
-            forward_index = PENDING_IDX_BITS'(i);
-            forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
-            fwd0 = candidate;
-          end else if (!forward1_from_pending) begin
-            forward1_from_pending = 1'b1;
-            forward1_index = PENDING_IDX_BITS'(i);
-            forward1_valid_o = rst_ni && !kill_all_i && !abort_valid_i;
-            fwd1 = candidate;
-          end
-        end
-        // Younger CR results wait for a finishing result's reply.
-        if (reply_candidate) prefix_known = 1'b0;
       end
+      trap = flags_trap(ar, fpscr_q);
+      slot_ar[i] = ar;
+      slot_ar_value[i] = ar_value;
+      slot_meta[i] = meta;
+      slot_reply[i] = reply;
+      slot_trap[i] = trap;
+      slot_sticky[i] = flags_fpscr(32'd0, ar) & STICKY_BITS;
+      contributes[i] = pending_q[i].valid &&
+          pending_q[i].decoded.kind == DK_ARITH && meta && !reply && !trap;
+      // Younger CR results wait behind unknown or finishing status.
+      unknown[i] = pending_q[i].valid &&
+          pending_q[i].decoded.kind == DK_ARITH && (!meta || reply);
     end
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      acc = '0;
+      known = 1'b1;
+      for (integer j = 0; j < PENDING_DEPTH; j++)
+        if (older_q[j][i]) begin
+          if (contributes[j]) acc |= slot_sticky[j];
+          if (unknown[j]) known = 1'b0;
+        end
+      slot_prefix[i] = fpscr_q | acc;
+      slot_prefix[i][31] = fpscr_q[31] | (|(acc & ~fpscr_q));
+      slot_prefix[i] = normalize_fpscr(slot_prefix[i]);
+      c = '0;
+      c.tag = pending_q[i].issue.tag;
+      c.fpr_index = pending_q[i].issue.insn[25:21];
+      c.fpr_write = pending_q[i].st.fpr_write;
+      c.fpr_value = pending_q[i].value;
+      c.fpr_sp = pending_q[i].st.fpr_sp;
+      c.fpr_lt = pending_q[i].st.fpr_lt;
+      c.cr_write = pending_q[i].st.cr_write;
+      c.cr_field = pending_q[i].st.cr_field;
+      c.cr_value = pending_q[i].st.cr_value;
+      if ((pending_q[i].decoded.kind == DK_MOVE ||
+           pending_q[i].decoded.kind == DK_FSEL) && c.cr_write)
+        c.cr_value = slot_prefix[i][31:28];
+      exc[i] = pending_q[i].st.exception != FPU_NO_EXCEPTION &&
+          pending_q[i].st.exception != FPU_FP_ENABLED;
+      if (pending_q[i].decoded.kind == DK_ARITH) begin
+        if (slot_meta[i]) begin
+          c.reply = slot_reply[i];
+          c.prefix = slot_prefix[i];
+          c.fctiwz = pending_q[i].decoded.op == FP_FCTIWZ;
+          exc[i] = slot_trap[i];
+          cr1 = 4'(flags_fpscr(slot_prefix[i], slot_ar[i]) >> 28);
+          c.fpr_write = (slot_reply[i] ? arith_finish_write :
+              slot_ar[i].write_result) && !exc[i];
+          c.fpr_value = slot_ar_value[i];
+          c.fpr_sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
+          c.fpr_lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
+          c.cr_write = !exc[i] &&
+              (slot_ar[i].compare_valid || pending_q[i].issue.insn[0]);
+          c.cr_field = slot_ar[i].compare_valid ?
+              pending_q[i].issue.insn[25:23] : 3'd1;
+          c.cr_value = slot_ar[i].compare_valid ? slot_ar[i].fpcc :
+              cr1;
+          // A finishing result's value and status come from its reply.
+          if (slot_reply[i]) begin
+            c.fpr_value = '0;
+            c.cr_value = '0;
+          end
+        end
+      end else if (pending_q[i].decoded.kind == DK_MEMORY && !ready[i] &&
+                   mem_rsp_match && mem_rsp_i.tag == pending_q[i].issue.tag) begin
+        ready[i] = 1'b1;
+        exc[i] = mem_rsp_i.fault;
+        if (pending_q[i].decoded.mem_load && !mem_rsp_i.fault) begin
+          c.fpr_write = 1'b1;
+          if (CPU_602) begin
+            c.fpr_sp = 1'b1;
+            c.fpr_value = {32'd0,mem_rsp_i.data[31:0]};
+            if (!pending_q[i].decoded.mem_single) begin
+              exc[i] = !single_fits_double(mem_rsp_i.data);
+              c.fpr_value = {32'd0,narrow_single(mem_rsp_i.data)};
+            end
+          end else c.fpr_value = pending_q[i].decoded.mem_single ?
+              widen_single(mem_rsp_i.data[31:0]) : mem_rsp_i.data;
+        end
+      end
+      c.fpr_write = c.fpr_write && !pending_q[i].fpr_forwarded;
+      cr_new[i] = c.cr_write && !pending_q[i].cr_forwarded &&
+          pending_q[i].decoded.kind != DK_MCRFS &&
+          (known || (pending_q[i].decoded.kind == DK_ARITH &&
+                     (pending_q[i].decoded.op == FP_CMPU ||
+                      pending_q[i].decoded.op == FP_CMPO)));
+      c.cr_write = cr_new[i];
+      elig[i] = pending_q[i].valid && ready[i] && !exc[i] &&
+          (c.fpr_write || c.cr_write);
+      slot_candidate[i] = c;
+    end
+    // The oldest CR result takes the first bus and displaces the oldest
+    // other result to the second; otherwise the two oldest go in order.
+    e1 = oldest_of(elig);
+    e2 = oldest_of(elig & ~e1);
+    cr_first = oldest_of(elig & cr_new);
+    if (|cr_first) begin
+      fwd0_sel = cr_first;
+      fwd1_sel = cr_first == e1 ? e2 : e1;
+    end else begin
+      fwd0_sel = e1;
+      fwd1_sel = e2;
+    end
+    fwd0 = '0;
+    fwd1 = '0;
+    for (integer i = 0; i < PENDING_DEPTH; i++) begin
+      if (fwd0_sel[i]) fwd0 |= slot_candidate[i];
+      if (fwd1_sel[i]) fwd1 |= slot_candidate[i];
+    end
+    forward_valid_o = rst_ni && !kill_all_i && !abort_valid_i && |fwd0_sel;
+    forward1_valid_o = rst_ni && !kill_all_i && !abort_valid_i && |fwd1_sel;
   end
 
   // Identity fields travel in the notification, not the payload.
