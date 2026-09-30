@@ -71,7 +71,6 @@ typedef struct packed {
     logic [159:0] y;
     logic signed [15:0] exponent;
     logic [7:0] distance;
-    logic shift_x;
     logic shift_y;
     logic sign_x;
     logic sign_y;
@@ -829,7 +828,13 @@ function automatic align_plan_t plan_alignment(input finite_prep_t prep);
         end else if (prep.exp_y > prep.exp_x) begin
             delta = int'(prep.exp_y) - int'(prep.exp_x);
             out.distance = delta >= 160 ? 8'd160 : 8'(delta);
-            out.shift_x = 1'b1;
+            // The adder is symmetric in its operands, so the
+            // larger-exponent operand moves to x and only y shifts.
+            out.x = prep.y;
+            out.y = prep.x;
+            out.sign_x = prep.sign_y;
+            out.sign_y = prep.sign_x;
+            out.shift_y = 1'b1;
             out.exponent = prep.exp_y;
         end
     end

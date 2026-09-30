@@ -52,8 +52,7 @@ module ppc_fpu_arith #(
     ppc_fpu_arith_rsp_t in_special_rsp;
     operand_t in_conversion_operand;
     finite_operands_t in_operands;
-    align_plan_t basic_plan;
-    align_plan_t double_plan;
+    align_plan_t shared_plan;
     finite_sum_t add_sum;
     logic [7:0] add_normal_left_shift;
     logic signed [15:0] add_normal_exponent;
@@ -79,8 +78,7 @@ module ppc_fpu_arith #(
     logic div_finishing;
     logic div_next_finish;
     ppc_pkg::completion_tag_t div_tag;
-    logic div_push;
-    ppc_fpu_arith_rsp_t div_response;
+    round_input_t div_round;
 
     assign divide_request = req_i.op == FP_DIV || req_i.op == FP_FRES;
 
@@ -118,20 +116,15 @@ module ppc_fpu_arith #(
     );
     assign multiply_product = multiply_op ? single_product : '0;
 
-    ppc_fpu_align_plan plan_basic (
-        .valid_i(in_finite && !in_dp_multiply),
-        .op_i(input_q.op),
-        .operands_i(in_operands),
-        .product_i(multiply_product),
-        .plan_o(basic_plan)
-    );
-
-    ppc_fpu_align_plan plan_double (
-        .valid_i(multiply_q.finite),
-        .op_i(multiply_q.req.op),
-        .operands_i(multiply_q.operands),
-        .product_i(double_product),
-        .plan_o(double_plan)
+    // Admission stops while a double multiply sits in the input stage, so
+    // its second cycle never meets a new input and both share one plan.
+    ppc_fpu_align_plan plan (
+        .valid_i(multiply_valid_q ? multiply_q.finite :
+            in_finite && !in_dp_multiply),
+        .op_i(multiply_valid_q ? multiply_q.req.op : input_q.op),
+        .operands_i(multiply_valid_q ? multiply_q.operands : in_operands),
+        .product_i(multiply_valid_q ? double_product : multiply_product),
+        .plan_o(shared_plan)
     );
 
     always_comb begin
@@ -140,7 +133,7 @@ module ppc_fpu_arith #(
         multiply_double_next.conversion = 1'b0;
         multiply_double_next.special_rsp = multiply_q.special_rsp;
         multiply_double_next.conversion_operand = '0;
-        multiply_double_next.plan = double_plan;
+        multiply_double_next.plan = shared_plan;
     end
 
     always_comb begin
@@ -150,17 +143,15 @@ module ppc_fpu_arith #(
         multiply_basic_next.special_rsp = in_special_rsp;
         multiply_basic_next.conversion_operand =
             in_conversion_operand;
-        multiply_basic_next.plan = basic_plan;
+        multiply_basic_next.plan = shared_plan;
     end
 
     // Add stage.
+    assign aligned_x = aligned_q.plan.x[159:48];
     ppc_fpu_aligner aligner (
-        .x_i(aligned_q.plan.x[159:48]),
         .y_i(aligned_q.plan.y[159:48]),
-        .shift_x_i(aligned_q.plan.shift_x),
         .shift_y_i(aligned_q.plan.shift_y),
         .distance_i(aligned_q.plan.distance),
-        .x_o(aligned_x),
         .y_o(aligned_y)
     );
 
@@ -247,8 +238,7 @@ module ppc_fpu_arith #(
         .finishing_o(div_finishing),
         .next_finish_o(div_next_finish),
         .tag_o(div_tag),
-        .push_o(div_push),
-        .rsp_o(div_response)
+        .round_o(div_round)
     );
 
     assign div_busy_o = rst_ni && !flush_i && div_busy && !div_finishing;
@@ -279,8 +269,8 @@ module ppc_fpu_arith #(
         if (req_fwd_i[2]) req_operands.c = pushed_response.result;
     end
 
-    assign push_response = add_valid_q || div_push;
-    assign pushed_response = div_push ? div_response : round_response;
+    assign push_response = add_valid_q;
+    assign pushed_response = round_response;
 
     always_ff @(posedge clk_i) begin
         if (!rst_ni || flush_i) begin
@@ -309,8 +299,11 @@ module ppc_fpu_arith #(
                 aligned_q <= multiply_basic_next;
             else if (multiply_valid_q)
                 aligned_q <= multiply_double_next;
-            add_valid_q <= aligned_valid_q;
+            // The divider blocks admission, so the pipeline is empty
+            // when its result enters the rounder.
+            add_valid_q <= aligned_valid_q || div_next_finish;
             if (aligned_valid_q) add_q <= add_next;
+            else if (div_next_finish) add_q <= div_round;
 
             if (push_response) begin
                 response_q[response_write_q] <= pushed_response;
