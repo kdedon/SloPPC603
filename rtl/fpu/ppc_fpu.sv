@@ -143,6 +143,8 @@ module ppc_fpu #(
   typedef struct packed {
     logic valid;
     completion_tag_t tag;
+    logic is_move;
+    logic rc;
     logic [1:0] move_kind;
     local_operand_t a;
     local_operand_t b;
@@ -311,7 +313,10 @@ module ppc_fpu #(
   logic mem_eligible;
   logic local_fpu_uses_pipe;
   ppc_fpu_result_t mem_incoming_result;
+  // Only the move/select value and disposition fields are read.
+  /* verilator lint_off UNUSEDSIGNAL */
   ppc_fpu_result_t local_result;
+  /* verilator lint_on UNUSEDSIGNAL */
   logic commit_match;
   logic abort_match;
   work1_t work1_issue;
@@ -339,13 +344,17 @@ module ppc_fpu #(
   logic work1_mem_launch;
   logic work1_fire;
   logic combined_arith_launch;
-  ppc_fpu_arith_req_t work1_arith_req;
+  logic arith_from_work;
   ppc_fpu_mem_t work1_mem_req;
   logic [63:0] mem_value;
   logic [63:0] work1_mem_value;
   logic mem_fill;
   logic work1_mem_fill;
   logic [63:0] reply_raw;
+  // Arriving load data in stored format; a 602 double load traps unless
+  // its value is a single.
+  logic [63:0] load_single, load_double;
+  logic load_fits;
   ppc_fpu_result_t work1_result;
 
   // One-hot oldest set slot.
@@ -850,6 +859,8 @@ module ppc_fpu #(
     end
   endfunction
 
+  // Load data comes from load_single/load_double, formatted once.
+  /* verilator lint_off UNUSEDSIGNAL */
   function automatic ppc_fpu_result_t memory_result(
       input ppc_fpu_result_t base, input logic mem_load,
       input logic mem_single, input ppc_fpu_mem_rsp_t reply
@@ -866,23 +877,19 @@ module ppc_fpu #(
         r.store = 1'b0;
       end else if (mem_load) begin
         r.fpr_write = 1'b1;
-        if (CPU_602) begin
-          r.fpr_value = {32'd0,reply.data[31:0]};
-          r.fpr_sp = 1'b1;
-          if (!mem_single) begin
-            if (!single_fits_double(reply.data)) begin
-              r.exception = FPU_EMULATION_TRAP;
-              r.fpr_write = 1'b0;
-              r.fpr_value = '0;
-              r.gpr_update = 1'b0;
-            end else r.fpr_value = {32'd0,narrow_single(reply.data)};
-          end
-        end else r.fpr_value = mem_single ?
-            widen_single(reply.data[31:0]) : reply.data;
+        r.fpr_value = mem_single ? load_single : load_double;
+        r.fpr_sp = CPU_602;
+        if (!mem_single && !load_fits) begin
+          r.exception = FPU_EMULATION_TRAP;
+          r.fpr_write = 1'b0;
+          r.fpr_value = '0;
+          r.gpr_update = 1'b0;
+        end
       end
       return r;
     end
   endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
 
   function automatic decode_info_t decode_packet(
       input logic [6:0] insn_hi, input logic [22:0] insn_lo,
@@ -1023,11 +1030,6 @@ module ppc_fpu #(
   // finishing arithmetic value (taken at the operand registers), the
   // registered arithmetic reply, or an arriving load.
   always_comb begin
-    logic [63:0] load_value;
-    logic load_ok;
-    load_value = CPU_602 ?
-        {32'd0, (mem_rsp_i.data[31:0])} : widen_single(mem_rsp_i.data[31:0]);
-    load_ok = 1'b1;
     for (integer i = 0; i < PENDING_DEPTH; i++) begin
       slot_src[i] = '0;
       slot_src[i].raw = pending_q[i].value;
@@ -1056,11 +1058,9 @@ module ppc_fpu #(
                    mem_rsp_i.tag == pending_q[i].issue.tag &&
                    pending_q[i].decoded.kind == DK_MEMORY &&
                    pending_q[i].decoded.mem_load && !mem_rsp_i.fault) begin
-        load_ok = !CPU_602 || pending_q[i].decoded.mem_single ||
-            single_fits_double(mem_rsp_i.data);
-        slot_src[i].ready = load_ok;
-        slot_src[i].raw = pending_q[i].decoded.mem_single ? load_value :
-            CPU_602 ? {32'd0, narrow_single(mem_rsp_i.data)} : mem_rsp_i.data;
+        slot_src[i].ready = pending_q[i].decoded.mem_single || load_fits;
+        slot_src[i].raw = pending_q[i].decoded.mem_single ? load_single :
+            load_double;
         slot_src[i].sp = CPU_602;
         slot_src[i].lt = 1'b0;
       end
@@ -1527,22 +1527,6 @@ module ppc_fpu #(
   end
 
   always_comb begin
-    work1_arith_req = '0;
-    work1_arith_req.tag = work1_issue.tag;
-    work1_arith_req.op = work1_decoded.op;
-    work1_arith_req.a = CPU_602 ?
-        widen_single(work1_a.raw[31:0]) : work1_a.raw;
-    work1_arith_req.b = CPU_602 ?
-        widen_single(work1_b.raw[31:0]) : work1_b.raw;
-    work1_arith_req.c = CPU_602 ?
-        widen_single(work1_c.raw[31:0]) : work1_c.raw;
-    work1_arith_req.rn = fpscr_q[1:0];
-    work1_arith_req.ni = fpscr_q[2];
-    work1_arith_req.ve = fpscr_q[7];
-    work1_arith_req.oe = fpscr_q[6];
-    work1_arith_req.ue = fpscr_q[5];
-    work1_arith_req.ze = fpscr_q[4];
-    work1_arith_req.single_result = work1_decoded.single_result;
     work1_arith_eligible = rst_ni && !kill_all_i && !abort_valid_i &&
         work1_valid && work1_sources_ready && work1_tags_ok &&
         work1_decoded.kind == DK_ARITH && work1_issue.msr_fp &&
@@ -1589,30 +1573,48 @@ module ppc_fpu #(
         (work1_mem_launch && mem_req_ready_i) || work1_local_launch;
   end
   assign combined_arith_launch = arith_launch || work1_arith_launch;
+  always_comb begin
+    logic [31:0] narrowed;
+    narrowed = narrow_single(mem_rsp_i.data);
+    load_single = CPU_602 ? {32'd0, mem_rsp_i.data[31:0]} :
+        widen_single(mem_rsp_i.data[31:0]);
+    load_double = CPU_602 ? {32'd0, narrowed} : mem_rsp_i.data;
+    load_fits = !CPU_602 || (mem_rsp_i.data[62:52] != 11'h7ff &&
+        (narrowed[30:23] != 8'd0 || narrowed[22:0] == 23'd0) &&
+        widen_single(narrowed) == mem_rsp_i.data);
+  end
   // The 602 store trap check is the only register-file consumer of a
   // finishing value.
   assign finish_store_word = 31'(narrow_single(arith_finish.result));
   assign finish_trap = numeric_emulation_trap(arith_finish.invalid,
       arith_finish.ox, arith_finish.ux, arith_finish.zx, arith_finish.xx,
       arith_finish.tiny_before_round, fpscr_q[7:2]);
-  assign arith_req_fwd = work1_arith_launch ?
-      {work1_c.fwd, work1_b.fwd, work1_a.fwd} :
-      {source_c.fwd, source_b.fwd, source_a.fwd};
+  // Only one context can launch arithmetic in a cycle, and a context
+  // holding arithmetic excludes the other, so operands follow the kind.
+  assign arith_from_work = work_decoded.kind == DK_ARITH;
+  assign arith_req_fwd = arith_from_work ?
+      {source_c.fwd, source_b.fwd, source_a.fwd} :
+      {work1_c.fwd, work1_b.fwd, work1_a.fwd};
 
   always_comb begin
+    logic [63:0] op_a, op_b, op_c;
+    op_a = arith_from_work ? src_a : work1_a.raw;
+    op_b = arith_from_work ? src_b : work1_b.raw;
+    op_c = arith_from_work ? src_c : work1_c.raw;
     arith_req = '0;
-    arith_req.tag = work_issue.tag;
-    arith_req.op = work_decoded.op;
-    arith_req.a = CPU_602 ? widen_single(src_a[31:0]) : src_a;
-    arith_req.b = CPU_602 ? widen_single(src_b[31:0]) : src_b;
-    arith_req.c = CPU_602 ? widen_single(src_c[31:0]) : src_c;
+    arith_req.tag = arith_from_work ? work_issue.tag : work1_issue.tag;
+    arith_req.op = arith_from_work ? work_decoded.op : work1_decoded.op;
+    arith_req.a = CPU_602 ? widen_single(op_a[31:0]) : op_a;
+    arith_req.b = CPU_602 ? widen_single(op_b[31:0]) : op_b;
+    arith_req.c = CPU_602 ? widen_single(op_c[31:0]) : op_c;
     arith_req.rn = fpscr_q[1:0];
     arith_req.ni = fpscr_q[2];
     arith_req.ve = fpscr_q[7];
     arith_req.oe = fpscr_q[6];
     arith_req.ue = fpscr_q[5];
     arith_req.ze = fpscr_q[4];
-    arith_req.single_result = work_decoded.single_result;
+    arith_req.single_result = arith_from_work ?
+        work_decoded.single_result : work1_decoded.single_result;
     arith_eligible = rst_ni && !kill_all_i && !abort_valid_i && work_valid &&
         sources_ready && operand_tags_ok && work_decoded.kind == DK_ARITH &&
         work_issue.msr_fp &&
@@ -1669,7 +1671,7 @@ module ppc_fpu #(
   ppc_fpu_arith #(.CPU_602(CPU_602)) arithmetic (
       .clk_i(clk_i), .rst_ni(rst_ni),
       .req_valid_i(combined_arith_launch), .req_ready_o(arith_req_ready),
-      .req_i(work1_arith_launch ? work1_arith_req : arith_req),
+      .req_i(arith_req),
       .req_fwd_i(arith_req_fwd),
       .rsp_valid_o(arith_rsp_valid),
       .rsp_ready_i(arith_rsp_ready), .rsp_o(arith_rsp),
@@ -1834,6 +1836,8 @@ module ppc_fpu #(
                                 work1_decoded.kind == DK_FSEL));
     if (work_local) begin
       local_stage_d.tag = work_issue.tag;
+      local_stage_d.is_move = work_decoded.kind == DK_MOVE;
+      local_stage_d.rc = work_issue.insn[0];
       local_stage_d.move_kind = work_decoded.move_kind;
       local_stage_d.a.raw = source_a.raw;
       local_stage_d.a.sp = source_a.sp;
@@ -1845,6 +1849,8 @@ module ppc_fpu #(
       local_stage_d.fwd = {source_c.fwd, source_b.fwd, source_a.fwd};
     end else begin
       local_stage_d.tag = work1_issue.tag;
+      local_stage_d.is_move = work1_decoded.kind == DK_MOVE;
+      local_stage_d.rc = work1_issue.insn[0];
       local_stage_d.move_kind = work1_decoded.move_kind;
       local_stage_d.a.raw = work1_a.raw;
       local_stage_d.a.sp = work1_a.sp;
@@ -1893,7 +1899,9 @@ module ppc_fpu #(
         if (slot_candidate[i].cr_write) pending_d[i].cr_forwarded = 1'b1;
       end
     mem_incoming_result = '0;
-    local_result = '0;
+    local_result = finish_local_data('0, local_stage_q.move_kind,
+        local_stage_q.is_move, local_stage_q.rc, local_a, local_b, local_c,
+        local_stage_q.c_lt);
     if (arith_rsp_match) begin
       pending_d[arith_rsp_slot].arith = flags_of(arith_rsp);
       pending_d[arith_rsp_slot].arith_done = 1'b1;
@@ -1965,13 +1973,14 @@ module ppc_fpu #(
             pending_q[i].local_wait == 2'd3 &&
             (pending_q[i].decoded.kind == DK_MOVE ||
              pending_q[i].decoded.kind == DK_FSEL)) begin
-          local_result = finish_local_data(entry_result(pending_q[i]),
-              local_stage_q.move_kind,
-              pending_q[i].decoded.kind == DK_MOVE,
-              pending_q[i].issue.insn[0],
-              local_a, local_b, local_c, local_stage_q.c_lt);
-          pending_d[i].st = status_of(local_result);
-          pending_d[i].value = local_result.fpr_value;
+          if (pending_q[i].st.exception == FPU_NO_EXCEPTION) begin
+            pending_d[i].st.exception = local_result.exception;
+            pending_d[i].st.fpr_write = local_result.fpr_write;
+            pending_d[i].st.fpr_sp = local_result.fpr_sp;
+            pending_d[i].st.cr_write = local_result.cr_write;
+            pending_d[i].st.cr_field = local_result.cr_field;
+            pending_d[i].value = local_result.fpr_value;
+          end
         end
         pending_d[i].local_wait = pending_q[i].local_wait - 2'd1;
         if (pending_q[i].local_wait == 2'd1) pending_d[i].done = 1'b1;
@@ -2277,15 +2286,10 @@ module ppc_fpu #(
         exc[i] = mem_rsp_i.fault;
         if (pending_q[i].decoded.mem_load && !mem_rsp_i.fault) begin
           c.fpr_write = 1'b1;
-          if (CPU_602) begin
-            c.fpr_sp = 1'b1;
-            c.fpr_value = {32'd0,mem_rsp_i.data[31:0]};
-            if (!pending_q[i].decoded.mem_single) begin
-              exc[i] = !single_fits_double(mem_rsp_i.data);
-              c.fpr_value = {32'd0,narrow_single(mem_rsp_i.data)};
-            end
-          end else c.fpr_value = pending_q[i].decoded.mem_single ?
-              widen_single(mem_rsp_i.data[31:0]) : mem_rsp_i.data;
+          c.fpr_sp = CPU_602;
+          c.fpr_value = pending_q[i].decoded.mem_single ? load_single :
+              load_double;
+          if (!pending_q[i].decoded.mem_single) exc[i] = !load_fits;
         end
       end
       c.fpr_write = c.fpr_write && !pending_q[i].fpr_forwarded;
@@ -2355,7 +2359,7 @@ module ppc_fpu #(
           arith_rsp.fprf_valid, arith_rsp.fpcc, arith_rsp.compare_valid);
       out.fpr_value = CPU_602 ?
           {32'd0, (payload.fctiwz ? arith_rsp.result[31:0] :
-           narrow_single(arith_rsp.result))} : arith_rsp.result;
+           reply_raw[31:0])} : arith_rsp.result;
       out.cr_value = arith_rsp.compare_valid ? arith_rsp.fpcc :
           status[31:28];
     end
