@@ -55,6 +55,8 @@ module tb_core_fpu #(parameter int DMEM_BITS = 64);
   logic [31:0] prot_lo = 32'hffff_ffff, prot_hi = 32'b0, done_addr = 32'hffff_fffc;
   int cycles = 0, checks = 0, failures = 0, retires = 0, probes = 0, fp_retires = 0;
   int stall = 1, seed = 1, max_cycles = 400000;
+  // Overlapped FP accesses: released loads, replays that cancelled a store.
+  int fp_released = 0, fp_store_cancels = 0;
   bit done = 1'b0;
   logic ipending = 1'b0, dpending = 1'b0, dwrite_q = 1'b0;
   logic [31:0] iaddress = 32'b0, daddress = 32'b0;
@@ -189,6 +191,8 @@ module tb_core_fpu #(parameter int DMEM_BITS = 64);
         end
         if (dw && (da == done_addr)) done <= 1'b1;
       end
+      if (dut.special_fp_load_release) fp_released++;
+      if (dut.fp_replay && dut.special_busy) fp_store_cancels++;
       if (dut.dispatch && (probe_cycles.exists(dut.iq_head.pc) != 0))
         dispatch_cycle[dut.iq_head.pc] = cycles;
       // First dispatch: a replayed instruction dispatches again.
@@ -283,10 +287,12 @@ module tb_core_fpu #(parameter int DMEM_BITS = 64);
         spacing_checks++;
       end
     end
+    check(fp_released > 0, "no overlapped FP load was released");
+    check((stall == 0) || (fp_store_cancels > 0), "no FP replay cancelled an overlapped store");
     if (failures != 0) $fatal(1, "tb_core_fpu: %0d of %0d checks failed", failures, checks);
-    $display("PASS tb_core_fpu: checks=%0d words=%0d probes=%0d spacings=%0d retires=%0d fp_retires=%0d cycles=%0d stall=%0d",
-             checks, expects.size(), probes, spacing_checks, retires, fp_retires, cycles,
-             stall);
+    $display("PASS tb_core_fpu: checks=%0d words=%0d probes=%0d spacings=%0d retires=%0d fp_retires=%0d released_loads=%0d store_cancels=%0d cycles=%0d stall=%0d",
+             checks, expects.size(), probes, spacing_checks, retires, fp_retires,
+             fp_released, fp_store_cancels, cycles, stall);
     $finish;
   end
 endmodule

@@ -202,8 +202,18 @@ module ppc_special #(
   output logic fp_issue_ready_o,
   input ppc_pkg::completion_tag_t fp_issue_tag_i,
   input logic [31:0] fp_issue_insn_i,
+  // rA and rB of an overlapped FP load or store, which issues through this
+  // port as it dispatches into the lane.
+  input logic [31:0] fp_issue_a_i, fp_issue_b_i,
   output logic fp_result_valid_o,
   output ppc_fpu_pkg::ppc_fpu_result_t fp_result_o,
+  // An overlapped FP load holds the lane: younger FP work waits so FPU
+  // results stay in retirement order. On its fault-free result the lane
+  // releases it and the port commits it at retirement, by producer_o.
+  output logic fp_load_overlap_o,
+  output logic fp_load_release_o,
+  // An overlapped FP store before its commit: recovery may still cancel it.
+  output logic fp_store_cancellable_o,
   input logic fp_commit_valid_i,
   input ppc_pkg::completion_tag_t fp_commit_tag_i,
   input logic fp_kill_i
@@ -382,7 +392,7 @@ module ppc_special #(
   // FPU lane. The FPU owns FPRs and FPSCR; this lane issues one FP
   // instruction, serves its memory access, and commits it at retirement.
   // A store commits to the FPU at the queue head, before its bus write.
-  logic fpu_q, fpu_issued_q, fpu_double_q, fpu_access_q, fpu_mem_fault_q;
+  logic fpu_q, fpu_issued_q, fpu_double_q, fpu_access_q, fpu_mem_fault_q, fp_load_q;
   logic fpu_exception_q, late_exception_event;
   logic [31:0] insn_q;
   logic [63:0] fpu_data_q;
@@ -624,6 +634,11 @@ module ppc_special #(
   // Restored MSR bits rfi cannot honor without live context.
   localparam logic [31:0] RFI_UNSUPPORTED_ACTIVE_MASK = 32'h0000_bf33;
 
+  function automatic logic fpu_state(input state_t state);
+    return (state == S_FPU_ISSUE) || (state == S_FPU_WAIT) ||
+           (state == S_FPU_MEM_RSP) || (state == S_FPU_STORE);
+  endfunction
+
   function automatic logic [3:0] select_cr_field(
     input logic [31:0] cr,
     input logic [2:0] field
@@ -644,7 +659,7 @@ module ppc_special #(
   // A faulting plain access moves on to S_HOLD, which blocks dispatch.
   assign mem_overlap_o = overlap_q &&
     ((state_q == S_MEM_PREP) || (state_q == S_MEM_OFFER) ||
-     (state_q == S_MEM_WAIT) || (state_q == S_MEM_RESULT));
+     (state_q == S_MEM_WAIT) || (state_q == S_MEM_RESULT) || fpu_state(state_q));
   // A released result wakes its readers on the result edge.
   assign mem_dst_valid_o = mem_overlap_o && uop_q.gpr_write &&
     !((state_q == S_MEM_RESULT) && mem_released);
@@ -1193,7 +1208,8 @@ module ppc_special #(
         state_d = S_MEM_PREP;
       else if (ENABLE_CACHE_INSTRUCTIONS &&
                (uop_i.special_op == SPECIAL_ICBI)) state_d = S_ICBI;
-      else if (ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU)) state_d = S_FPU_ISSUE;
+      else if (ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU))
+        state_d = dispatch_overlap_i ? S_FPU_WAIT : S_FPU_ISSUE;
       else if (dispatch_fenced) state_d = S_CONTEXT_DRAIN;
       else state_d = S_EXEC;
     end else if (cancel_i) begin
@@ -1306,7 +1322,7 @@ module ppc_special #(
           end
         end
         S_FPU_ISSUE: if (fpu_issue_ready) state_d = S_FPU_WAIT;
-        S_FPU_WAIT: begin
+        S_FPU_WAIT, S_FPU_MEM_RSP: begin
           if (fpu_mem_req_fire) state_d = fpu_mem_req.write ? S_FPU_MEM_RSP : S_MEM_OFFER;
           else if (fpu_result_take) begin
             // A late exception fences fetch as a data exception does.
@@ -1314,9 +1330,8 @@ module ppc_special #(
             state_d = (fpu_result.store &&
                        (fpu_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION)) ?
                       S_FPU_STORE : S_MEM_RESULT;
-          end
+          end else if ((state_q == S_FPU_MEM_RSP) && fpu_mem_rsp_ready) state_d = S_FPU_WAIT;
         end
-        S_FPU_MEM_RSP: if (fpu_mem_rsp_ready) state_d = S_FPU_WAIT;
         S_FPU_STORE: if (fpu_commit_ready) state_d = S_MEM_OFFER;
         S_MEM_RESULT: if (result_fire) state_d = mem_released ? S_IDLE : S_HOLD;
         S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
@@ -1342,7 +1357,8 @@ module ppc_special #(
     else if (dispatch_fire) overlap_d = dispatch_overlap_i;
   end
   assign mem_released = overlap_q && !fence_q && !memory_result_q.fault &&
-    (memory_result_q.data_fault == DATA_OK);
+    (memory_result_q.data_fault == DATA_OK) &&
+    (!fpu_q || (!fpu_exception_q && fpu_access));
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       state_q <= S_IDLE;
@@ -1358,7 +1374,7 @@ module ppc_special #(
       overlap_q <= overlap_d;
       result_select_q <= (state_d != S_IDLE) && !(overlap_d &&
         ((state_d == S_MEM_PREP) || (state_d == S_MEM_OFFER) ||
-         (state_d == S_MEM_WAIT)));
+         (state_d == S_MEM_WAIT) || fpu_state(state_d)));
       retire_hold_q <= (state_d == S_EXCEPTION_RESULT) ||
         (state_d == S_EXCEPTION_HALT) || (state_d == S_CHECKSTOP) ||
         (state_d == S_CONTEXT_INSTALL) || (state_d == S_CONTEXT_REDIRECT) ||
@@ -1986,8 +2002,18 @@ module ppc_special #(
   assign fpu_issue_valid = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_ISSUE);
   assign fpu_mem_req_ready = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_WAIT);
   assign fpu_mem_req_fire = fpu_mem_req_valid && fpu_mem_req_ready;
-  assign fpu_result_take = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_WAIT) &&
-    fpu_result_valid && !fpu_mem_req_valid;
+  // Older overlapped loads may still hold results ahead of this one.
+  // A result that the accepted memory response completes is taken at once.
+  assign fpu_result_take = ENABLE_FPU && rst_ni && !cancel_i &&
+    (((state_q == S_FPU_WAIT) && !fpu_mem_req_valid) ||
+     ((state_q == S_FPU_MEM_RSP) && fpu_mem_rsp_ready)) &&
+    fpu_result_valid && (fpu_result.tag == producer_q);
+  assign fp_load_overlap_o = ENABLE_FPU && overlap_q && fpu_q && fp_load_q &&
+    (state_q != S_IDLE);
+  assign fp_load_release_o = ENABLE_FPU && fpu_q && fp_load_q && (state_q == S_MEM_RESULT) &&
+    result_fire && mem_released;
+  assign fp_store_cancellable_o = ENABLE_FPU && overlap_q && fpu_q && !fp_load_q &&
+    fpu_state(state_q);
   assign fpu_mem_rsp_valid = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_MEM_RSP);
   assign fpu_store_ready = state_q == S_FPU_STORE;
   // A store commits at the queue head with retirement authorized; any other
@@ -2013,6 +2039,8 @@ module ppc_special #(
     fp_issue = '0;
     fp_issue.tag = fp_issue_tag_i;
     fp_issue.insn = fp_issue_insn_i;
+    fp_issue.gpr_a = fp_issue_a_i;
+    fp_issue.gpr_b = fp_issue_b_i;
     fp_issue.msr_fp = msr_o[MSR_FP];
     fp_issue.msr_fe0 = msr_o[11];
     fp_issue.msr_fe1 = msr_o[8];
@@ -2025,6 +2053,7 @@ module ppc_special #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       fpu_q <= 1'b0;
+      fp_load_q <= 1'b0;
       fpu_issued_q <= 1'b0;
       fpu_double_q <= 1'b0;
       fpu_access_q <= 1'b0;
@@ -2034,13 +2063,16 @@ module ppc_special #(
       insn_q <= '0;
     end else if (dispatch_fire) begin
       fpu_q <= ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU);
-      fpu_issued_q <= 1'b0;
+      // lfs, lfd and their update and indexed forms.
+      fp_load_q <= (insn_i[31:26] == 6'd31) ? !insn_i[8] :
+                   ((insn_i[31:26] != 6'd59) && (insn_i[31:26] != 6'd63) && !insn_i[28]);
+      fpu_issued_q <= ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU) && dispatch_overlap_i;
       fpu_access_q <= 1'b0;
       fpu_exception_q <= 1'b0;
       insn_q <= insn_i;
     end else begin
       if (fpu_issue_valid && fpu_issue_ready) fpu_issued_q <= 1'b1;
-      if (fpu_abort_valid || (fpu_commit_valid && fpu_commit_ready))
+      if (fpu_abort_valid || (fpu_commit_valid && fpu_commit_ready) || fp_load_release_o)
         fpu_issued_q <= 1'b0;
       if (fpu_mem_req_fire) begin
         fpu_double_q <= fpu_mem_req.size_bytes == 4'd8;
@@ -2098,10 +2130,18 @@ module ppc_special #(
           else $error("FPU CR field disagrees with the allocation");
       if (rst_ni && (fpu_commit_valid || fp_commit_valid_i))
         assert (fpu_commit_ready) else $error("FPU refused a retiring commit");
-      if (rst_ni && (fp_issue_valid_i || fp_commit_valid_i || fp_kill_i))
+      if (rst_ni && fp_issue_valid_i && !dispatch_fire)
+        assert (!fpu_issue_valid && !fp_load_overlap_o &&
+                (!(fpu_q && (state_q != S_IDLE)) || overlap_q))
+          else $error("pipelined FP issue overlapped the lane's FP instruction");
+      if (rst_ni && fp_commit_valid_i)
+        assert (!fpu_commit_valid && !fpu_abort_valid &&
+                (!(fpu_q && (state_q != S_IDLE)) || overlap_q))
+          else $error("pipelined FP commit overlapped the lane's FP instruction");
+      if (rst_ni && fp_kill_i)
         assert (!(fpu_q && (state_q != S_IDLE)) && !fpu_issue_valid &&
                 !fpu_commit_valid && !fpu_abort_valid)
-          else $error("pipelined FP work overlapped the lane's FP instruction");
+          else $error("FP kill overlapped the lane's FP instruction");
       if (rst_ni && fpu_store_valid)
         assert (state_q == S_FPU_STORE) else $error("FPU store outside the queue head");
     end

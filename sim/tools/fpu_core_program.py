@@ -61,15 +61,26 @@ TABLE_6_5 = {
 # Figure 6-3: an instruction dispatched in cycle n executes from n+1 and
 # completes the cycle after its last execute stage.
 LATENCY = {name: lat + 1 for name, (lat, _) in TABLE_6_5.items()}
-# FP loads and stores run through the serialized lane with one cycle of
-# bench memory per access. A 32-bit data path splits a doubleword into two
-# word accesses; a 64-bit one moves it in one.
-LATENCY.update({'lfd': 8, 'lfs': 8, 'stfd': 9, 'stfs': 9, 'stfiwx': 9,
-                'add': 3})
+# FP loads and stores issue into the FPU as they dispatch and access memory
+# through the load/store lane, one cycle of bench memory per access. A
+# 32-bit data path splits a doubleword into two word accesses; a 64-bit one
+# moves it in one. Integer references: add, lwz and stw.
+LATENCY.update({'lfd': 6, 'lfs': 6, 'stfd': 7, 'stfs': 7, 'stfiwx': 7,
+                'add': 3, 'lwz': 5, 'stw': 5})
+
+
+# Dispatch ('issue') and retirement spacing of the first and last of four
+# independent FP accesses, and the retirement spacing of a store behind the
+# arithmetic that produces its data.
+MEMORY_SPACING = {'lfd-issue': 15, 'lfd-retire': 15, 'lfs-issue': 15, 'lfs-retire': 15,
+                  'stfd-issue': 18, 'stfd-retire': 18, 'stfs-issue': 18,
+                  'stfs-retire': 18, 'fadd-stfd': 6}
 
 
 def use_split_doublewords():
-    LATENCY.update({'lfd': 10, 'stfd': 11})
+    LATENCY.update({'lfd': 8, 'stfd': 9})
+    MEMORY_SPACING.update({'lfd-issue': 21, 'lfd-retire': 21, 'stfd-issue': 24,
+                           'stfd-retire': 24, 'fadd-stfd': 8})
 SYNC = (31 << 26) | (598 << 1)
 
 
@@ -520,6 +531,16 @@ def in_flight(p):
     # FEX stays set, so the fadd, run once after the handler, takes its own
     # FP enabled exception with its result and FPRF +normal committed.
     p.event(0x700, younger, p.msr | SRR1_FP)
+    # An overlapped store behind the faulting fsub is cancelled by its
+    # replay and stores once after the handler returns.
+    slot = p.result_slot(2)
+    p.li32(23, slot)
+    p.emit(SYNC)
+    at = p.emit(a_form(63, 4, 7, 7, 0, 20))     # fsub f4, f7, f7
+    p.emit(d_form(54, 1, 23, 0))                # stfd f1, 0(r23)
+    p.event(0x700, at, p.msr | SRR1_FP)
+    p.expect(slot, ONE >> 32)
+    p.expect(slot + 4, ONE & 0xffffffff)
     p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 23) | (1 << 31) | (1 << 14))
     p.mtmsr(p.msr & ~(FE0 | FE1))
     p.check_fpscr()
@@ -610,6 +631,7 @@ def latency_forms():
         'lfd': d_form(50, 4, 5, 0), 'lfs': d_form(48, 4, 5, 0),
         'stfd': d_form(54, 1, 21, 0), 'stfs': d_form(52, 1, 21, 0),
         'stfiwx': x_form(31, 1, 21, 8, 983), 'add': x_form(31, 10, 10, 11, 266),
+        'lwz': d_form(32, 10, 5, 0), 'stw': d_form(36, 10, 21, 0),
     }
 
 
@@ -679,6 +701,29 @@ def latency(p):
     p.spacings.append(('I', pcs[0], pcs[-1], 5))
     p.spacings.append(('R', pcs[0], pcs[1], 1))
     p.spacings.append(('R', pcs[4], pcs[5], 1))
+    fp_memory_streams(p, forms)
+
+
+def fp_memory_streams(p, forms):
+    """FP loads and stores overlap younger work like plain integer
+    accesses: a group of four independent loads or stores, a load followed
+    by integer work, and a store of an arithmetic result."""
+    p.li32(22, p.result_slot(8))
+    for name in ('lfd', 'lfs', 'stfd', 'stfs'):
+        p.emit(SYNC)
+        pcs = [p.emit(with_dst(forms[name], 4 + k) if name.startswith('l')
+                      else (forms[name] & ~(31 << 16)) | (22 << 16) | (8 * k))
+               for k in range(4)]
+        p.spacings.append(('I', pcs[0], pcs[-1], MEMORY_SPACING[name + '-issue']))
+        p.spacings.append(('R', pcs[0], pcs[-1], MEMORY_SPACING[name + '-retire']))
+    p.emit(SYNC)
+    pcs = [p.emit(with_dst(forms['lfd'], 4))] + \
+        [p.emit(d_form(14, 10 + k, 10 + k, 1)) for k in range(3)]
+    p.spacings.append(('I', pcs[0], pcs[-1], 3))
+    p.emit(SYNC)
+    pcs = [p.emit(with_dst(forms['fadd'], 4)),
+           p.emit((forms['stfd'] & ~(31 << 21)) | (4 << 21))]
+    p.spacings.append(('R', pcs[0], pcs[1], MEMORY_SPACING['fadd-stfd']))
 
 
 def build(seed, count):

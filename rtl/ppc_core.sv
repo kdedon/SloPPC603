@@ -201,6 +201,11 @@ module ppc_core #(
   logic fp_uop, fp_issue_ready, fp_result_valid, fp_replay_q, fp_pending;
   logic fp_head, fp_head_match, fp_head_ok, fp_head_block, fp_replay;
   logic fp_commit, fp_replay_req_q, fp_kill_q, fp_cr_pending;
+  // Overlapped FP loads and stores; released loads are safe: they cannot
+  // fault, only commit.
+  logic dispatch_fp_mem_plain, fp_unsafe_pending;
+  logic special_fp_load_overlap, special_fp_load_release, special_fp_store_cancellable;
+  logic fp_mem_store, fp_mem_issue;
   ppc_fpu_pkg::ppc_fpu_result_t fp_result;
   retire_packet_t cq_retire;
   operand_t src_a, src_b, operand_a, operand_b;
@@ -803,7 +808,7 @@ module ppc_core #(
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
     .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
-    .dispatch_overlap_i(dispatch_mem_plain),
+    .dispatch_overlap_i(dispatch_mem_plain || dispatch_fp_mem_plain),
     .producer_i(alloc_producer), .pc_i(iq_head.pc), .insn_i(iq_head.insn),
     .branch_retire_i(commit && retire_o.branch),
     .branch_retire_lk_i(retire_o.branch_lk), .branch_retire_ctr_i(retire_o.branch_ctr),
@@ -876,9 +881,13 @@ module ppc_core #(
     .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o,
     .dmem_req_attr_o, .icache_ctl_valid_o, .icache_ctl_ready_i,
     .icache_ctl_enable_o, .icache_ctl_invalidate_o, .power_stop_o(power_stop),
-    .fp_issue_valid_i(dispatch && fp_uop), .fp_issue_ready_o(fp_issue_ready),
+    .fp_issue_valid_i(dispatch && (fp_uop || fp_mem_issue)), .fp_issue_ready_o(fp_issue_ready),
     .fp_issue_tag_i(alloc_producer), .fp_issue_insn_i(iq_head.insn),
+    .fp_issue_a_i(special_a), .fp_issue_b_i(special_b),
     .fp_result_valid_o(fp_result_valid), .fp_result_o(fp_result),
+    .fp_load_overlap_o(special_fp_load_overlap),
+    .fp_load_release_o(special_fp_load_release),
+    .fp_store_cancellable_o(special_fp_store_cancellable),
     .fp_commit_valid_i(fp_commit), .fp_commit_tag_i(retire_producer),
     .fp_kill_i(fp_kill_q)
   );
@@ -916,12 +925,14 @@ module ppc_core #(
     end
   end
   // Without the test redirect every recovery is the special unit's own
-  // redirect, issued with the CQ empty, so it never kills the special lane.
-  assign special_cancel = ENABLE_TEST_REDIRECT && special_kill;
+  // redirect, issued with the CQ empty, or an FP replay, which may remove
+  // only an overlapped FP store that has not committed.
+  assign special_cancel = (ENABLE_TEST_REDIRECT || ENABLE_FPU) && special_kill;
   // synthesis translate_off
   always @(posedge clk_i)
     if (rst_ni && !ENABLE_TEST_REDIRECT)
-      assert (!special_kill) else $error("special-unit redirect killed the special lane");
+      assert (!special_kill || special_fp_store_cancellable)
+        else $error("special-unit redirect killed the special lane");
   // UM 1.1.4.3: no store is performed ahead of an older, uncompleted
   // instruction.
   always @(posedge clk_i)
@@ -958,7 +969,8 @@ module ppc_core #(
   assign iq_ready = !fault_pending && !bu_redirect_q &&
     (!interrupt_qualified || seq_active) &&
     !update_pending_q && gpr_ready && cq_ready &&
-    (!special_busy || overlap_dispatch_ok || (fp_uop && special_mem_overlap) ||
+    (!special_busy || overlap_dispatch_ok ||
+     (fp_uop && special_mem_overlap && !special_fp_load_overlap) ||
      special_ready) &&
     (dispatch_pre.illegal ||
      (fp_uop && fp_issue_ready && flags_ready) ||
@@ -966,6 +978,7 @@ module ppc_core #(
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
      (special_uop && special_drained && special_ready && flags_ready &&
+      (!dispatch_fp_mem_plain || fp_issue_ready) &&
       (!dispatch_pre.gpr_write || dispatch_align || alloc_ready)));
   // A plain load or store (no update, reservation, string, multiple, cache
   // op or external access) needs no drain when every source register it
@@ -983,10 +996,19 @@ module ppc_core #(
     !uop.mem_external && !uop.mem_skip &&
     !uop.cache_probe && !uop.block_zero &&
     (uop.cache_op == CACHE_OP_NONE);
-  assign mem_sources_committed =
-    (uop.zero_a || !gpr_mapped[uop.src_a]) &&
-    (uop.use_imm || !gpr_mapped[uop.src_b]) &&
-    ((uop.special_op != SPECIAL_STORE) || !gpr_mapped[uop.src_c]);
+  // An FP load or store other than an update form goes the same way: it
+  // reads only rA (unless zero) and, indexed, rB. Older FP work must be
+  // released loads, so the access is in the execution path.
+  assign dispatch_fp_mem_plain = ENABLE_FPU && !trace_mode && !fp_replay_q &&
+    msr[MSR_FP] && !uop.illegal && (iq_head.fault == FETCH_OK) &&
+    (uop.special_op == SPECIAL_FPU) && !uop.mem_update &&
+    (iq_head.insn[31:26] != 6'd59) && (iq_head.insn[31:26] != 6'd63);
+  assign mem_sources_committed = (uop.special_op == SPECIAL_FPU) ?
+    (((iq_head.insn[20:16] == 5'd0) || !gpr_mapped[uop.src_a]) &&
+     ((iq_head.insn[31:26] != 6'd31) || !gpr_mapped[uop.src_b])) :
+    ((uop.zero_a || !gpr_mapped[uop.src_a]) &&
+     (uop.use_imm || !gpr_mapped[uop.src_b]) &&
+     ((uop.special_op != SPECIAL_STORE) || !gpr_mapped[uop.src_c]));
   // The check is registered: the head is unchanged while nothing dispatches
   // or recovers, and only dispatch adds a mapping.
   always_ff @(posedge clk_i) begin
@@ -996,8 +1018,15 @@ module ppc_core #(
   end
   // An FP exception replays through a full recovery, which must not find
   // the special lane busy, so plain accesses wait for FP work to retire.
+  // A store writes only at the completion-queue head, so it may dispatch
+  // behind FP work that can still fault; recovery then cancels it.
+  assign fp_mem_store = (iq_head.insn[31:26] == 6'd31) ? iq_head.insn[8] : iq_head.insn[28];
   assign special_drained = (cq_empty && normal_idle) ||
-    (dispatch_mem_plain && mem_sources_committed_q && !fp_pending);
+    ((dispatch_mem_plain || dispatch_fp_mem_plain) && mem_sources_committed_q &&
+     (!fp_unsafe_pending || (dispatch_fp_mem_plain && fp_mem_store)));
+  // An overlapped FP access issues into the FPU as it dispatches.
+  assign fp_mem_issue = special_uop && dispatch_fp_mem_plain &&
+    (dispatch_pre.special_op == SPECIAL_FPU);
   assign overlap_dispatch_ok = special_mem_overlap && normal_uop &&
     !(special_mem_dst_valid &&
       ((uop.src_a == special_mem_dst) || (uop.src_b == special_mem_dst)));
@@ -1094,7 +1123,7 @@ module ppc_core #(
     if (rst_ni && dispatch && special_uop)
       assert ((cq_empty && !commit && src_a.ready && src_b.ready &&
                src_a.value == arch_a && src_b.value == arch_b) ||
-              (dispatch_mem_plain && mem_sources_committed))
+              ((dispatch_mem_plain || dispatch_fp_mem_plain) && mem_sources_committed))
         else $error("special dispatch saw an uncommitted GPR source");
     if (rst_ni && iq_valid && !seq_active)
       assert (iq_branch[3] == ((iq_head.fault == FETCH_OK) && !uop.illegal &&
@@ -1236,15 +1265,20 @@ module ppc_core #(
   assign _unused_fp_result = ^fp_result;
   // FP tags in program order; entry 0 is the oldest.
   completion_tag_t fp_tags_q [CQ_DEPTH];
-  logic [CQ_DEPTH-1:0] fp_cr_q;
+  logic [CQ_DEPTH-1:0] fp_cr_q, fp_safe_q;
   localparam int FP_COUNT_WIDTH = $clog2(CQ_DEPTH + 1);
   logic [FP_COUNT_WIDTH-1:0] fp_count_q, fp_slot;
+  logic fp_push;
   assign fp_slot = fp_count_q - FP_COUNT_WIDTH'(fp_commit);
   assign fp_pending = fp_count_q != '0;
+  assign fp_push = (dispatch && fp_uop) || special_fp_load_release;
   always_comb begin
     fp_cr_pending = 1'b0;
-    for (int i = 0; i < CQ_DEPTH; i++)
+    fp_unsafe_pending = 1'b0;
+    for (int i = 0; i < CQ_DEPTH; i++) begin
       if ((i < int'(fp_count_q)) && fp_cr_q[i]) fp_cr_pending = 1'b1;
+      if ((i < int'(fp_count_q)) && !fp_safe_q[i]) fp_unsafe_pending = 1'b1;
+    end
   end
   assign fp_head = ENABLE_FPU && fp_pending && cq_retire_valid &&
     (retire_producer == fp_tags_q[0]);
@@ -1254,7 +1288,8 @@ module ppc_core #(
   assign fp_head_block = fp_head && !fp_head_ok;
   // Registered: the FPU result depends on the recovery the replay starts.
   // The blocked head cannot change before that recovery.
-  assign fp_replay = fp_replay_req_q && fp_head && !special_busy && !halted_o;
+  assign fp_replay = fp_replay_req_q && fp_head && !halted_o &&
+    (!special_busy || special_fp_store_cancellable);
   assign fp_commit = commit && fp_head;
   always_comb begin
     retire_o = cq_retire;
@@ -1270,6 +1305,7 @@ module ppc_core #(
       fp_replay_req_q <= 1'b0;
       fp_kill_q <= 1'b0;
       fp_cr_q <= '0;
+      fp_safe_q <= '0;
       for (int i = 0; i < CQ_DEPTH; i++) fp_tags_q[i] <= '0;
     end else begin
       // Every recovery removes the whole queue. The FPU discards its work
@@ -1282,12 +1318,18 @@ module ppc_core #(
           for (int i = 0; i < CQ_DEPTH - 1; i++) begin
             fp_tags_q[i] <= fp_tags_q[i+1];
             fp_cr_q[i] <= fp_cr_q[i+1];
+            fp_safe_q[i] <= fp_safe_q[i+1];
           end
         if (dispatch && fp_uop) begin
           fp_tags_q[fp_slot] <= alloc_producer;
           fp_cr_q[fp_slot] <= dispatch_uop.write_cr_field;
+          fp_safe_q[fp_slot] <= 1'b0;
+        end else if (special_fp_load_release) begin
+          fp_tags_q[fp_slot] <= special_producer;
+          fp_cr_q[fp_slot] <= 1'b0;
+          fp_safe_q[fp_slot] <= 1'b1;
         end
-        fp_count_q <= fp_slot + FP_COUNT_WIDTH'(dispatch && fp_uop);
+        fp_count_q <= fp_slot + FP_COUNT_WIDTH'(fp_push);
       end
       fp_replay_req_q <= fp_head && fp_head_match && !fp_head_ok && !recovery_accepted;
       if (fp_replay) fp_replay_q <= 1'b1;
@@ -1302,12 +1344,16 @@ module ppc_core #(
         assert (fp_result.cr_write && (fp_result.cr_field == cq_retire.cr_field))
           else $error("FPU CR field disagrees with the allocation");
       if (dispatch && special_uop && (dispatch_pre.special_op == SPECIAL_FPU))
-        assert (!fp_pending) else $error("serialized FP dispatch behind pipelined FP work");
+        assert (dispatch_fp_mem_plain ? (fp_mem_store || !fp_unsafe_pending) : !fp_pending)
+          else $error("serialized FP dispatch behind pipelined FP work");
+      if (special_fp_load_release)
+        assert (!(dispatch && fp_uop) && !recovery_accepted)
+          else $error("released FP load raced an FP dispatch or recovery");
       if (fp_replay)
         assert (recovery_accepted) else $error("FP replay recovery was not accepted");
       if (recovery_accepted)
         assert (!fp_commit) else $error("FP retirement during recovery");
-      if (dispatch && fp_uop)
+      if (fp_push)
         assert (!fp_kill_q && (int'(fp_count_q) < CQ_DEPTH))
           else $error("FP dispatch during an FPU kill or with a full tag queue");
     end
