@@ -7,6 +7,34 @@ the manuals' per-instruction execution latency and initiation interval,
 ordered forwarding and retirement, and 602 operand tags and emulation traps.
 Detailed `Recorded:` entries retain each result's exact source scope.
 
+## COMPACT unit
+
+Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference test-fpu-testfloat
+lint-fpu-production lint-fpu-timing lint-fpu-stream lint-fpu-dual
+lint-fpu-estimates-602 lint-fpu-compact` (under the sim lock), plus
+`test-core-fpu`, `test-core-fpu-compact` and `test-selftest-fpu-compact`,
+commit `25e5137`, 2026-09-30. Pass.
+
+FULL results match the `2ae952b` round: TestFloat 2,092,736/1,043,512 vectors
+with 0 mismatches, raw arithmetic 209,811/182,083 and cluster 40,115/22,131
+finish predictions, estimates 11,958/17,628, shell 910, 602 173, enabled
+3000 cases per personality, hazards 640/648; timing, stream and dual pass.
+
+COMPACT (`ppc_fpu_compact`, `ppc_fpu_arith_compact`), same vectors:
+TestFloat 2,092,736 (603e) and 1,043,512 (602) with 0 mismatches; raw
+209,696/181,952 and cluster 40,000/22,000 vectors with 0 mismatches and every
+finish predicted; estimates 11,958/17,628 with 0 mismatches; 76 cancel
+offsets and 4 flush/reset checks per build; shell 895 checks; 602 173;
+enabled exceptions 3000 cases per personality (808 FP-enabled, 188 suppressed
+on 603e; 1,075 traps on 602); all lint clean. The core program passes with
+COMPACT (1,496 words, with and without retirement stalls; latencies printed,
+not checked), and the SoC self-test passes 1,218 of 1,218 FP cases.
+
+Not run for COMPACT, by design: the shell's dependent-distance test, the
+operand-binding hazards and the 602 SPR latency check (they need overlap or
+Table 6-5 cycles), and the timing, stream and dual benches. COMPACT cycle
+counts are in [COMPACT FPU](../../docs/FPU_COMPACT.md).
+
 ## Retiming round: exponent, rounder tests, shell picks, divider capture
 
 Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference test-fpu-testfloat
