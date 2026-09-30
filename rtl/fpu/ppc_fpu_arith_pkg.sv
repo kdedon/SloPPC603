@@ -91,6 +91,9 @@ typedef struct packed {
     logic sign;
     logic negate_final;
     logic tiny_before;
+    // Leading zeros of a single denormal's kept bits placed at bit 52,
+    // from the sum's count and the denormalizing shift.
+    logic [5:0] single_lz;
 } round_work_t;
 
 typedef struct packed {
@@ -124,6 +127,7 @@ typedef struct packed {
     logic zero;
     logic inexact;
     logic increment;
+    logic [5:0] single_lz;
 } round_pre_t;
 
 typedef struct packed {
@@ -428,6 +432,7 @@ function automatic round_pre_t prepare_round_mantissa(
     out.sign = value.sign;
     out.negate_final = value.negate_final;
     out.tiny_before = value.tiny_before;
+    out.single_lz = value.single_lz;
     out.zero = value.magnitude == 0;
     if (out.zero) return out;
     if (single_result) begin
@@ -507,7 +512,7 @@ function automatic round_post_t round_mantissa(
         // The increment moves the leading one only when kept + 1 is a
         // power of two, whose normalized fraction is zero; otherwise the
         // rounded value shifts by the unrounded count.
-        base_single_lz = leading_zero53(base_single_wide);
+        base_single_lz = value.single_lz;
         up_power = &(~value.kept[23:1] | value.kept[22:0]);
         base_single_normalized = base_single_wide << base_single_lz;
         up_single_normalized = up_power ? {1'b1, 52'd0} :
@@ -1362,6 +1367,10 @@ function automatic round_work_t direct_round_work(
     // leading one at the top; the fixed one-bit right shift drops a zero.
     if (leading_zero == 8'd160) return out;
     narrow_normal = 63'((value.magnitude[159:96] << leading_zero) >> 1);
+    // The sum's leading one sits at bit 159 - count; kept bit 23 is bit 158.
+    // Only a denormalized result reads this, and a zero kept field never.
+    out.single_lz = 6'(denorm_right ? leading_zero - 8'd1 + denorm_shift :
+        leading_zero - 8'd1 - denorm_shift);
     wide_normal = 111'((value.magnitude[159:48] << leading_zero) >> 1);
     out.tiny_before = tiny_before;
     if (narrow) begin
