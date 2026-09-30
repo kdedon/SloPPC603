@@ -12,6 +12,8 @@ module ppc_fpu_arith #(
     input  ppc_fpu_pkg::ppc_fpu_arith_req_t req_i,
     input  logic [2:0] req_fwd_i,
     output logic rsp_valid_o,
+    // A reply is held; unlike rsp_valid_o, not withdrawn by flush_i.
+    output logic rsp_held_o,
     input  logic rsp_ready_i,
     output ppc_fpu_pkg::ppc_fpu_arith_rsp_t rsp_o,
     output logic finish_valid_o,
@@ -262,6 +264,7 @@ module ppc_fpu_arith #(
     assign accept = req_valid_i && req_ready_o;
     assign rsp_valid_o = rst_ni && !flush_i &&
         response_count_q != 3'd0;
+    assign rsp_held_o = rst_ni && response_count_q != 3'd0;
     assign rsp_o = response_q[response_read_q];
     assign retire = rsp_valid_o && rsp_ready_i;
     assign finish_valid_o = rst_ni && !flush_i && push_response;

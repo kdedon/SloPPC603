@@ -239,6 +239,7 @@ module ppc_fpu #(
   ppc_fpu_arith_rsp_t arith_finish;
   logic arith_req_ready;
   logic arith_rsp_valid;
+  logic arith_rsp_held;
   logic arith_rsp_ready;
   logic arith_finish_valid;
   logic arith_finish_write;
@@ -1149,7 +1150,8 @@ module ppc_fpu #(
         slot_src[i].raw = '0;
         slot_src[i].sp = CPU_602 && pending_q[i].decoded.op != FP_FCTIWZ;
         slot_src[i].lt = CPU_602 && pending_q[i].decoded.op == FP_FCTIWZ;
-      end else if (arith_rsp_valid && arith_rsp.tag == pending_q[i].issue.tag &&
+      // A flush blocks every launch, so the operand view ignores it.
+      end else if (arith_rsp_held && arith_rsp.tag == pending_q[i].issue.tag &&
                    !flags_trap(flags_of(arith_rsp), fpscr_q) &&
                    arith_rsp.write_result) begin
         slot_src[i].ready = 1'b1;
@@ -1832,7 +1834,7 @@ module ppc_fpu #(
       .req_valid_i(combined_arith_launch), .req_ready_o(arith_req_ready),
       .req_i(arith_req),
       .req_fwd_i(arith_req_fwd),
-      .rsp_valid_o(arith_rsp_valid),
+      .rsp_valid_o(arith_rsp_valid), .rsp_held_o(arith_rsp_held),
       .rsp_ready_i(arith_rsp_ready), .rsp_o(arith_rsp),
       .finish_valid_o(arith_finish_valid), .finish_o(arith_finish),
       .finish_write_o(arith_finish_write),

@@ -13,6 +13,10 @@ module tb_ppc_fpu_estimates #(
     logic req_valid_i, req_ready_o, div_busy_o;
     ppc_fpu_arith_req_t req_i;
     logic rsp_valid_o, rsp_ready_i;
+    logic rsp_held_o;
+    always @(posedge clk_i)
+        if (rst_ni && !flush_i && rsp_held_o !== rsp_valid_o)
+            $fatal(1, "held reply differs from valid reply");
     ppc_fpu_arith_rsp_t rsp_o;
     logic finish_valid_o;
     ppc_fpu_arith_rsp_t finish_o;
