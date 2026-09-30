@@ -404,6 +404,12 @@ def make_program():
     e('cmpi',7,19,1)
     e('bc',12,30,'abs_cond_link',1,1);e('illegal')
     p.label('abs_cond_link');e('mflr',22)
+    e('cmpi',7,0,0) # comparison rA0 is a real source register
+    e('illegal')
+    return p
+
+def make_control_program():
+    p=make_program();p.ops.pop();e=p.emit
     # Branches read CTR, LR and CR right behind their producers; backward
     # branches predicted taken fall through, and a y bit reverses one.
     e('addi',29,0,3);e('mtctr',29)
@@ -417,7 +423,6 @@ def make_program():
     e('bc',12,6,'loaded_eq',0,0);e('addi',27,0,1)
     p.label('loaded_eq');e('addi',29,0,0)
     p.label('ybit');e('addi',29,29,1);e('cmpi',0,29,2);e('bc',13,0,'ybit',0,0)
-    e('cmpi',7,0,0) # comparison rA0 is a real source register
     e('illegal')
     return p
 
@@ -850,7 +855,7 @@ def make_lsu_update():
 
 def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=False, subcarry=False, subextend=False, subunary=False, subimmediate=False, addimmediate=False, andimmediate=False, unarylogical=False, crtransfer=False, crlogical=False, crstate=False, multiply=False, multiply_high=False, divide_unsigned=False, divide_signed=False, lsu_update=False, compare=False):
     output.mkdir(parents=True,exist_ok=True)
-    p=make_compare() if compare else make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_program()
+    p=make_compare() if compare else make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_control_program()
     assert p.encode(0,'mflr',(3,))==0x7c6802a6
     assert p.encode(0,'mtctr',(3,))==0x7c6903a6
     assert p.encode(0,'bclr',(20,0,0))==0x4e800020
