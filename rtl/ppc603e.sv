@@ -4,6 +4,9 @@
 `define PPC_DISPATCH_WIDTH 1
 `endif
 `default_nettype none
+`ifndef PPC_LSU_PIPE
+`define PPC_LSU_PIPE 1'b0
+`endif
 // 603e package top. Every port is a signal pin of UM Figure 7-1 under its
 // manual name (active-low as _n, bit 0 the most significant). A three-state
 // pin is split into _i, _o and an enable; one enable covers each group whose
@@ -32,6 +35,8 @@ module ppc603e #(
   // 2: dual dispatch and retirement.
   parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
+  // Pipelined load/store unit (docs/LSU_PIPELINE.md).
+  parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
   // 603 direct-store sender tag, packet 0 A28-A31 (UM C.1.2.2.1).
   parameter logic [3:0] DS_PID = 4'h0
 ) (
@@ -299,7 +304,7 @@ module ppc603e #(
     .ENABLE_MISALIGNED_ACCESS(1'b1), .ENABLE_MACHINE_CHECK(1'b1),
     .ENABLE_DEBUG_EXCEPTIONS(1'b1), .ENABLE_FULL_DECODE(1'b1),
     .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH),
-    .ENABLE_DCACHE(ENABLE_DCACHE),
+    .ENABLE_DCACHE(ENABLE_DCACHE), .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
     .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG), .DS_PID(DS_PID)
   ) cpu (
     .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(bus_ce),

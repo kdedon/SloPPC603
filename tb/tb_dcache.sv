@@ -16,6 +16,8 @@ module tb_dcache;
   // Cache geometry: 128 x 4 (603e), 128 x 2 (603), 64 x 2 (602).
   parameter int SETS = 128;
   parameter int WAYS = 4;
+  // Load hits answer in their lookup cycle.
+  parameter bit FAST_LOAD_HIT = 1'b0;
 
   logic clk = 1'b0;
   logic rst_n = 1'b0;
@@ -53,7 +55,8 @@ module tb_dcache;
   logic snoop_rsp_valid, snoop_rsp_artry, snoop_rsp_hit, snoop_rsp_push;
   logic busy, resv_valid, hit_evt, miss_evt, async_error, protocol_error;
 
-  ppc_dcache #(.MUTATION(MUTATION), .SET_COUNT(SETS), .WAY_COUNT(WAYS)) dut (
+  ppc_dcache #(.MUTATION(MUTATION), .SET_COUNT(SETS), .WAY_COUNT(WAYS),
+    .FAST_LOAD_HIT(FAST_LOAD_HIT)) dut (
     .clk_i(clk), .rst_ni(rst_n),
     .req_valid_i(req_valid), .req_ready_o(req_ready), .req_op_i(req_op),
     .req_addr_i(req_addr), .req_be_i(req_be), .req_wdata_i(req_wdata),

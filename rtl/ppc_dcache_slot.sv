@@ -13,6 +13,8 @@ module ppc_dcache_slot #(
   // the cache; 101 wrong word half, 102 stwcx. always succeeds, 103 drops
   // the asynchronous error, 104 no sync ahead of eciwx/ecowx.
   parameter int DCACHE_MUTATION = 0,
+  // See ppc_dcache.
+  parameter bit FAST_LOAD_HIT = 1'b0,
   parameter int DCACHE_SETS = 128,
   parameter int DCACHE_WAYS = 4,
   // LSU data width. 64 needs the cache: a request with any of the upper
@@ -282,6 +284,7 @@ module ppc_dcache_slot #(
     assign async_error_o = dc_async_error && (DCACHE_MUTATION != 103);
     ppc_dcache #(
       .MUTATION(DCACHE_MUTATION < 100 ? DCACHE_MUTATION : 0),
+      .FAST_LOAD_HIT(FAST_LOAD_HIT),
       .SET_COUNT(DCACHE_SETS), .WAY_COUNT(DCACHE_WAYS)
     ) dcache (
       .clk_i, .rst_ni,

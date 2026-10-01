@@ -75,7 +75,7 @@ module ppc_lsu_pipe #(
 
   entry_t p1_q [2], p2_q [2];
   logic [1:0] p1_count_q, p2_count_q;
-  logic r_valid_q, rsp_to_lane_q, offered_q, store_done_q;
+  logic r_valid_q, rsp_to_lane_q, offered_q, offered_spec_q, store_done_q;
   logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] store_done_index_q;
   result_packet_t r_q;
 
@@ -114,10 +114,11 @@ module ppc_lsu_pipe #(
   assign p2_valid = p2_count_q != 2'd0;
   assign p1_at_head = store_authorize_i && (queue_head_i == p1_head.producer.index);
   // An offer stands until accepted. A removed entry leaves without an
-  // offer, or withdraws a speculative one; any other offer finishes its
+  // offer, or withdraws one last made speculatively (the older access whose
+  // fault removed it has left P2 by then); any other offer finishes its
   // handshake and its response is dropped.
   assign offer = p1_valid && p1_head.fast &&
-    (p1_head.killed ? (offered_q && !req_spec_o) :
+    (p1_head.killed ? (offered_q && !offered_spec_q) :
      (offered_q || (lane_idle_i && !rsp_to_lane_q && (p2_count_q != 2'd2) &&
                     (!p1_head.store || p1_at_head))));
   assign p1_fire = offer && req_ready_i;
@@ -257,10 +258,12 @@ module ppc_lsu_pipe #(
       r_valid_q <= 1'b0;
       rsp_to_lane_q <= 1'b0;
       offered_q <= 1'b0;
+      offered_spec_q <= 1'b0;
       store_done_q <= 1'b0;
     end else begin
       r_valid_q <= p2_retire && !p2_head.killed && !killed_now(p2_head.producer);
       offered_q <= offer && !req_ready_i;
+      offered_spec_q <= offer && !req_ready_i && req_spec_o;
       if (p2_retire && p2_head.store && !p2_head.killed) store_done_q <= 1'b1;
       else if (queue_head_i != store_done_index_q) store_done_q <= 1'b0;
       if (adopt_fire && p2_adopt) rsp_to_lane_q <= 1'b1;

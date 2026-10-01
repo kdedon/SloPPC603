@@ -1,11 +1,15 @@
 # Pipelined load/store unit
 
-`ppc_core` parameter `ENABLE_LSU_PIPE` (default 0, or `+define+PPC_LSU_PIPE`)
-runs plain integer loads and stores in `ppc_lsu_pipe` instead of the
-serialized special lane. Plain means no update, reservation, string, multiple,
-cache operation or external access, outside trace mode. With 0 the core is
-unchanged. No top enables it yet: the router and data cache behind it still
-take one access at a time (see [Remaining work](#remaining-work)).
+Parameter `ENABLE_LSU_PIPE` runs plain integer loads and stores in
+`ppc_lsu_pipe` instead of the serialized special lane. Plain means no
+update, reservation, string, multiple, cache operation or external access,
+outside trace mode. `ppc_core`, `ppc_core_bat`, `ppc_core_bat_cached_bus60x`,
+`ppc603e`, `ppc603e_demo_soc` and `ppc603e_mister` carry it, each defaulting
+to the `PPC_LSU_PIPE` macro (0 when undefined), so a build enables it with
+the parameter or with `+define+PPC_LSU_PIPE=1` (Quartus:
+`VERILOG_MACRO "PPC_LSU_PIPE=1"`). With 0 every top is unchanged. With a data
+cache, the router and the cache also take one load hit per cycle
+([Cached path](#cached-path)).
 
 ## Stages
 
@@ -67,7 +71,9 @@ perform that way until `spec` drops. The router accepts one only on a
 micro-TLB hit with I=0 while `data_spec_ok_i` is set, which `ppc_core_bat`
 drives from `ENABLE_DATA_SPECULATION` (set by the cached top) and HID0[DCE]
 without HID0[DLOCK]; the uncached tops never accept one. A speculative request may be withdrawn
-before acceptance when the older access faults or recovery removes it; every
+before acceptance when the older access faults or recovery removes it,
+judged by whether it was speculative when last offered, since the faulting
+access has left P2 by the time the entry is marked removed; every
 other request stands until accepted, as the lane's do, and a removed entry's
 response is drained. The micro-TLB never holds a direct-store (T=1) segment,
 so a speculative access to one waits until it is not speculative, then
@@ -75,6 +81,36 @@ takes the direct-store path like a lane access.
 
 A load may be requested once every older access has its response, before
 an older store retires: the store has been performed and cannot fault.
+
+## Cached path
+
+With the unit and a data cache, `ppc_core_bat` sets the router's
+`ENABLE_DATA_PIPELINE` and the cache's `FAST_LOAD_HIT`.
+
+- Router: a plain request (`DMEM_NORMAL`) that hits the data micro-TLB goes
+  to the physical port in the cycle the router accepts it, with the
+  micro-TLB's page and WIMG, and is accepted only when the port takes it.
+  It may follow one access that still awaits its response unless that one
+  is a direct-store access, whose reply `d_ds_q` decodes; at most two are
+  outstanding, answered in order. A miss, or any other class, takes the
+  translation sequence as before, accepted only with no response owed.
+  `pdmem_req_now_o` marks a passed-through request, so `ppc_core_bat` sends
+  its incoming attributes rather than the held ones. The speculation rule
+  is unchanged: a speculative request needs a micro-TLB hit with I=0 and
+  `data_spec_ok_i`.
+- Data cache: a cacheable load hit answers from its first `S_LOOKUP` cycle,
+  from the data RAM output selected by the tag compare. When the answer is
+  taken, the cache accepts the next request in that cycle and looks it up
+  in the next, so hits flow one per cycle. An answer not taken is
+  registered and held, as before. The fast path reads HID0[DCE] as it was
+  in the request's accept cycle; HID0 changes only through the serialized
+  lane, which runs while the unit is idle. Misses, stores, cache
+  operations and inhibited or write-through accesses take the cache's plan
+  as before; the next request waits for their response.
+
+`ppc_dcache_slot` formats each answer from the request it accepted last,
+which is the one answered: a new request is accepted only in the cycle the
+previous answer is taken.
 
 ## Measured timing
 
@@ -93,19 +129,59 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
 - Four `stw`: 12 cycles first to last retirement, 4 each: each offers only
   at the queue head.
 
+Through the router and data cache of the cached top (`test-core-dcache`
+and `test-core-dcache-lsu-pipe`; DR=1 and IR=1 over BATs, the line and the
+loop cached), second pass of a loop of four independent `lwz`, a fifth
+`lwz` and an `add` that uses it:
+
+| | Unit off | Unit on |
+| --- | ---: | ---: |
+| `lwz` retirements after the first | +5 +10 +15 | +1 +4 +5 |
+| dependent `add` after its `lwz` | 2 | 1 |
+| load hits answered in consecutive cycles (whole program) | 0 | 7 |
+
+With the unit on the load path matches ideal memory: offer, answer in the
+cache's lookup cycle, result, so a dependent instruction retires the cycle
+after its load. The spacing of the four loads is set by fetch, which in this
+top supplies about one instruction every two cycles.
+
+Demo SoC (`ppc603e_demo_soc`, 50 MHz model, on-chip RAM over the 60x bus),
+the same images with the unit off and on:
+
+| Benchmark | Unit off | Unit on | Change |
+| --- | ---: | ---: | ---: |
+| Dhrystone 2.1, cycles per run | 2421.8 | 2126.8 | -12.2% |
+| Dhrystones/s at 50 MHz | 20645 | 23508 | +13.9% |
+| CoreMark, cycles per iteration | 959225 | 823314 | -14.2% |
+| Whetstone hard-float, MWIPS at 50 MHz | 20.321 | 22.815 | +12.3% |
+
+The core's own counters attribute the gain to `lsu_busy` (Dhrystone 2.03 M
+to 1.03 M cycles, CoreMark 2.97 M to 0.62 M); FP loads and stores still use
+the lane.
+
+## Default
+
+The unit stays off by default. It passes the benches listed under
+[Verification](#verification) (apart from two `test-core-fpu` probes that
+expect the lane's latency) and gains 12-14% on the demo benchmarks, and
+the chip with it meets 50 MHz, but it lowers the chip's Fmax from 68.3 to
+61.0 MHz, below the 66 MHz target. A 50 MHz build (the demo SoC and the
+MiSTer core) can set it now; making it the default waits for item 1 below.
+
 ## Remaining work
 
-1. Router: accept a request while the previous one awaits its response,
-   passing a micro-TLB hit to the cache in the same cycle.
-2. Data cache: accept a load hit in `S_LOOKUP` and answer it from the lookup
-   cycle, so hits flow one per cycle; then enable the unit on the cached and
-   pin tops and check 66 MHz on the hit path.
-3. Stores at one per cycle: finish a store when translated and checked, and
+1. 66 MHz with the unit: let the cache accept the next request in
+   `S_LOOKUP` without waiting for the tag compare, holding it when the
+   current access misses (with per-request response formatting in
+   `ppc_dcache_slot`), so the unit's P1 shift no longer follows the hit;
+   and keep the one-cycle answer away from the serialized lane's
+   `memory_result_q`.
+2. Stores at one per cycle: finish a store when translated and checked, and
    write it from a committed store queue after retirement, with load
    forwarding or an address check against the queue.
-4. FP loads and stores through the unit, with the FPU's memory port taking
+3. FP loads and stores through the unit, with the FPU's memory port taking
    one access per cycle.
-5. Loads whose base register has an uncommitted producer (operands from
+4. Loads whose base register has an uncommitted producer (operands from
    rename instead of the committed registers).
 
 ## Verification
@@ -182,3 +258,66 @@ What the four fault-path benches showed:
   then withdrew the response without a handshake. It also took a store
   offer seen between clock edges, which follows retirement authorization
   combinationally, as committed.
+
+### Cached path, 2026-10-01
+
+Recorded: `make -C sim lint check-spec test-dcache-fast`, commit 6c62b74,
+2026-10-01. Pass: lint (the chip with the unit on and the FPU is now linted
+too), `check-spec`, and the fast-hit cache bench for seeds 1-3 (546,716,
+561,336 and 534,707 checks).
+
+Recorded: `make -C sim -k -j2 test-core-lsu-timing test-core-fpu test-core-fpu-602 test-core-fpu-compact test-chip-fpu test-bat-memory-router test-page-memory-router test-micro-tlb-router test-bat-data-fault test-tlb-runtime-fill-router test-page-data-exception-router test-core-lsu-extensions test-core-alignment test-core-data-fault test-core-data-fault-disabled test-core-data-fault-cancel test-core-memory-edges test-core-bat-machine-check test-chip-603 test-chip-pins test-core-page-data-exception test-bat-runtime-router test-segment-runtime-router test-page-instruction-exception-router test-page-miss-result-router test-tlb-runtime-invalidate-router test-core-dcache test-core-dcache-lsu-pipe test-dcache test-core-dcache-negative test-chip-dcache-coherence test-core-bat-cached-bus60x test-core-tlb-miss test-core-cache-control`,
+commit 310dc33, 2026-09-30. All pass with the unit off (the default; the
+one `-lsu-pipe` target turns it on). Later commits change only
+`ppc_lsu_pipe`, which a unit-off build does not instantiate. Unit-off
+counts match the earlier records: `test-core-fpu` `lwz` 5 and `stw` 5,
+`test-chip-603` 4,940 cycles, the cached machine-check fill variant 156
+retirements and 7 bursts.
+
+Recorded: `make -C sim -k -j2 BUILD_DIR=build/pipe VERILATOR="tools/verilate +define+PPC_LSU_PIPE=1" test-core test-core-recovery test-core-lsu-extensions test-core-lsu-update test-core-alignment test-core-alignment-disabled test-core-alignment-dependencies test-core-page-data-exception test-core-tlb-miss test-core-dcache test-core-dcache-negative test-core-machine-check-trace test-core-bus60x-update test-core-control-memory test-core-compare test-core-interrupt test-core-bat-cached-bus60x test-core-cache-control test-chip-dcache-coherence test-core-lsu-timing test-core-data-fault test-core-data-fault-disabled test-core-data-fault-cancel test-core-memory-edges test-core-bat-machine-check test-chip-fpu test-chip-603 test-chip-603-fpu test-chip-pins test-core-fpu test-core-fpu-602 test-core-fpu-compact`,
+commit 49d95f3, 2026-10-01. Unit on in every core, so the cached tops run
+the router pass-through and the fast cache hits. All pass except
+`test-core-fpu`, whose two integer latency probes measure 4 where that
+bench expects the lane's 5 (2 of 2,668 checks, as before);
+`test-core-fpu-602` and `-compact` pass. `test-core-dcache` passes 221,981
+checks and `test-core-dcache-negative` rejects all nine mutations;
+`test-chip-dcache-coherence` passes three rounds; `test-chip-603` passes
+(89 checks, 4,943 cycles) and `test-chip-603-fpu` (91 checks).
+
+Recorded: `make -C sim -k REFERENCE_DIR=../../../../../dingusppc test-reference test-reference-memory test-reference-lsu test-reference-stress test-reference-cached test-reference-managed test-reference-cache-disabled test-reference-bat test-reference-firmware test-reference-pid6 test-reference-603`
+(DingusPPC at `/home/kevin/git/ppc/dingusppc`), commit 49d95f3 with
+uncommitted edits to this document only, 2026-10-01. All pass with the
+unit off. The same targets with `BUILD_DIR=build/pipe` and
+`VERILATOR` and `VERILATOR_TOOL` set to a wrapper identical to
+`tools/verilate-lsu-pipe` (committed afterwards in 6c62b74) all pass with
+the unit on; the cached and BAT profiles differ from the unit-off run only
+in request and stall counts (for example 10,065 instruction requests
+against 10,067).
+
+Recorded: `make -C sim -k demo-dhrystone demo-coremark demo-whetstone-hf` and
+the same with `BUILD_DIR=build/pipe VERILATOR="tools/verilate +define+PPC_LSU_PIPE=1"`,
+commit 49d95f3, 2026-10-01. All six runs pass their own checks; the
+figures are in [Measured timing](#measured-timing). They establish the
+cycle counts of these images on the simulated demo SoC, not hardware
+frequency.
+
+Recorded: `./quartus/chip/build.sh --docker` and
+`./quartus/report-target-paths.sh chip --docker` under the Quartus lock,
+commit 49d95f3 with `VERILOG_MACRO "PPC_LSU_PIPE=1"` added to
+`ppc603e_chip.qsf` for that run (unit on), and commit 6c62b74 without it
+(unit off; same RTL), 2026-10-01. Quartus 17.0.2, seed 1; both exited 0
+and Analysis & Synthesis reported 0 errors.
+
+| `chip` fit | ALMs | Registers | M10K | Fmax slow 100 C / -40 C | Setup (4 corners) | 66 MHz (15.152 ns) |
+|---|---|---|---|---|---|---|
+| Unit off | 11,563 | 13,191 | 36 | 68.26 / 68.80 MHz | +5.230 / +5.234 / +7.364 / +7.718 | met: 0 failing endpoints |
+| Unit on | 12,556 | 14,269 | 36 | 60.98 / 60.62 MHz | +3.601 / +3.504 / +7.530 / +7.848 | fails: 2,644 endpoints, -1.344 ns |
+
+The unit meets the 50 MHz gate with 3.5 ns to spare and costs 993 ALMs. It
+misses 66 MHz, which the same RTL meets with the unit off, on three
+groups of paths, worst first: the `ppc_lsu_pipe`
+P1 entries from the IQ and the completion head (-1.344 ns), whose shift
+now follows the cache's acceptance and so its tag compare through the
+router; the IQ entries from themselves (-0.953 ns, 2,049 endpoints); and
+the lane's `memory_result_q` from the cache tag RAM (-0.780 ns), the
+one-cycle answer reaching the serialized lane's result formatting.

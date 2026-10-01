@@ -1722,6 +1722,13 @@ test-core-dcache:
 	mkdir -p $(BUILD_DIR)/core-dcache
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_dcache --Mdir $(BUILD_DIR)/core-dcache $(DCACHE_CORE_TB)
 	./$(BUILD_DIR)/core-dcache/Vtb_core_dcache $(SIM_ARGS)
+# The same program with the pipelined load/store unit: load hits one per cycle.
+.PHONY: test-core-dcache-lsu-pipe
+test: test-core-dcache-lsu-pipe
+test-core-dcache-lsu-pipe:
+	mkdir -p $(BUILD_DIR)/core-dcache-lsu-pipe
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_LSU_PIPE=1 --top-module tb_core_dcache --Mdir $(BUILD_DIR)/core-dcache-lsu-pipe $(DCACHE_CORE_TB)
+	./$(BUILD_DIR)/core-dcache-lsu-pipe/Vtb_core_dcache $(SIM_ARGS)
 test-core-dcache-negative:
 	mkdir -p $(BUILD_DIR)/core-dcache-negative
 	for m in 1 2 3 4 5 7 101 102 103; do \
@@ -1893,6 +1900,7 @@ test-chip-ratios:
 lint: lint-chip
 lint-chip:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e $(CHIP_RTL)
+	$(VERILATOR) --lint-only --assert -Wall +define+PPC_LSU_PIPE=1 --top-module ppc603e "-GENABLE_FPU=1'b1" $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f)
 	cd ../quartus/chip && $(VERILATOR) --lint-only -Wall --top-module ppc603e_measure -f files.f
 
 # The ppc602 package top: 602 bus BFM with directed pin checks and a program
@@ -2144,6 +2152,13 @@ test-dcache:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_dcache --Mdir $(BUILD_DIR)/dcache $(DCACHE_RTL) ../tb/tb_dcache.sv
 	./$(BUILD_DIR)/dcache/Vtb_dcache $(SIM_ARGS) +seed=1
 	for seed in $(DCACHE_SEEDS); do ./$(BUILD_DIR)/dcache/Vtb_dcache $(SIM_ARGS) +seed=$$seed || exit 1; done
+
+# Load hits answered in their lookup cycle (the pipelined load/store unit).
+.PHONY: test-dcache-fast
+test: test-dcache-fast
+test-dcache-fast:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_dcache "-GFAST_LOAD_HIT=1'b1" --Mdir $(BUILD_DIR)/dcache-fast $(DCACHE_RTL) ../tb/tb_dcache.sv
+	for seed in 1 $(DCACHE_SEEDS); do ./$(BUILD_DIR)/dcache-fast/Vtb_dcache $(SIM_ARGS) +seed=$$seed || exit 1; done
 
 test-dcache-mutations:
 	mkdir -p $(BUILD_DIR)

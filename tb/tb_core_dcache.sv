@@ -16,6 +16,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   import ppc_pkg::*;
   import ppc_dcache_pkg::*;
   `include "ppc_asm.svh"
+  localparam bit PIPE = `PPC_LSU_PIPE;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
   logic start_valid=0,start_ready,running,cir,cdr,cpr;
@@ -194,6 +195,9 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     pc_checks[pc]=c;
   endtask
   logic [31:0] end_pc, noopti_touch_pc, snoop_pc;
+  // Load-hit timing probes: four independent lwz, then lwz and a dependent add.
+  logic [31:0] probe_pc [6];
+  int probe_cycle [6];
 
   task automatic handler(input logic [31:0] v, input bit skip);
     pc=v;
@@ -346,6 +350,19 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     emit(asm_addi(10,15,32'h8a0)); emit(asm_dcbtst(0,10));
     emit(asm_dcbf(0,12)); emit(asm_dcbf(0,13)); emit(asm_addi(10,15,32'h20)); emit(asm_dcbf(0,10));
     emit(32'h7c00_04ac);
+    // L: load-hit timing, measured on the second pass with the line and
+    // the code cached.
+    // Fetch translates through IBAT0 so the code streams from the I-cache.
+    li32(5,32'h0000_0003); emit(asm_spr(1,5,528)); li32(5,32'h0000_0002); emit(asm_spr(1,5,529));
+    li32(5,32'h1030); emit(asm_mtmsr(5)); emit(ASM_ISYNC);   // ME, IR, DR
+    li32(20,32'h8c00); emit(asm_lwz(8,0,20));
+    li32(5,2); emit(asm_spr(1,5,9));
+    p=pc;
+    for (int k=0;k<4;k++) begin probe_pc[k]=pc; emit(asm_lwz(16+k,4*k,20)); end
+    probe_pc[4]=pc; emit(asm_lwz(21,16,20));
+    probe_pc[5]=pc; emit(asm_add(22,21,21));
+    emit(asm_bc(16,0,int'(p)-int'(pc)));
+    li32(5,32'h1010); emit(asm_mtmsr(5)); emit(ASM_ISYNC);
     // K: flush everything, then sync.
     li32(9,32'h8000); li32(5,32'h280); emit(asm_spr(1,5,9));
     emit(asm_dcbf(0,9)); emit(asm_addi(9,9,32)); emit(asm_bc(16,0,-8));
@@ -358,6 +375,10 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   endfunction
 
   // ---- LSU-port scoreboard ------------------------------------------------
+  // Accepted requests, answered in order; a load hit may be accepted in
+  // the cycle the previous one is answered.
+  typedef struct {logic write; logic [31:0] addr, wdata; logic [3:0] wstrb; dmem_attr_t attr;} lsu_req_t;
+  lsu_req_t lsu_q[$];
   logic lsu_write;
   logic [31:0] lsu_addr, lsu_wdata;
   logic [3:0] lsu_wstrb;
@@ -374,16 +395,13 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     return {gold[o],gold[o+1],gold[o+2],gold[o+3]};
   endfunction
   always @(posedge clk) if (rst_n) begin
-    if (dut.dcache_slot.lsu_req_valid_i && dut.dcache_slot.lsu_req_ready_o) begin
-      lsu_write=dut.dcache_slot.lsu_req_write_i; lsu_addr=dut.dcache_slot.lsu_req_addr_i;
-      lsu_wdata=dut.dcache_slot.lsu_req_wdata_i; lsu_wstrb=dut.dcache_slot.lsu_req_wstrb_i;
-      lsu_attr=dut.dcache_slot.lsu_req_attr_i;
-      if (lsu_attr.kind==DMEM_CACHE && lsu_attr.rid[2:0]==CACHE_OP_DCBT &&
-          pin_status.noop_touch) noopti_accepts=biu.data_tenures;
-    end
     if (dut.dcache_slot.lsu_rsp_valid_o && dut.dcache_slot.lsu_rsp_ready_i) begin
       logic [31:0] d;
       int o;
+      check(lsu_q.size()!=0,"data response without a request");
+      lsu_write=lsu_q[0].write; lsu_addr=lsu_q[0].addr; lsu_wdata=lsu_q[0].wdata;
+      lsu_wstrb=lsu_q[0].wstrb; lsu_attr=lsu_q[0].attr;
+      void'(lsu_q.pop_front());
       d=dut.dcache_slot.lsu_rsp_rdata_o;
       o=int'({lsu_addr[31:2],2'b0});
       if (dut.dcache_slot.lsu_rsp_error_o) ;
@@ -424,6 +442,16 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
         check(d==gold_word(lsu_addr[31:2]),
               $sformatf("load %08x returned %08x, expected %08x",lsu_addr,d,gold_word(lsu_addr[31:2])));
       end
+    end
+    if (dut.dcache_slot.lsu_req_valid_i && dut.dcache_slot.lsu_req_ready_o) begin
+      lsu_req_t r;
+      r.write=dut.dcache_slot.lsu_req_write_i; r.addr=dut.dcache_slot.lsu_req_addr_i;
+      r.wdata=dut.dcache_slot.lsu_req_wdata_i; r.wstrb=dut.dcache_slot.lsu_req_wstrb_i;
+      r.attr=dut.dcache_slot.lsu_req_attr_i;
+      lsu_q.push_back(r);
+      check(lsu_q.size()<=2,"more than two data requests outstanding");
+      if (r.attr.kind==DMEM_CACHE && r.attr.rid[2:0]==CACHE_OP_DCBT &&
+          pin_status.noop_touch) noopti_accepts=biu.data_tenures;
     end
     // A flash invalidate discards modified data: memory becomes the truth.
     if (pin_status.dcache_flash_invalidate && !$past(pin_status.dcache_flash_invalidate))
@@ -474,6 +502,14 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
       end
     end
   endtask
+
+  // Load hits answered in consecutive cycles, the second accepted while
+  // the first was answered.
+  int hit_pairs=0;
+  always @(posedge clk) if (rst_n && dut.dcache_slot.g_cache.dcache.state_q==1 &&
+                            dut.dcache_slot.g_cache.dc_rsp_valid && dut.dcache_slot.g_cache.dc_rsp_ready &&
+                            dut.dcache_slot.g_cache.dc_req_valid && dut.dcache_slot.g_cache.dc_req_ready)
+    hit_pairs++;
 
   // ---- Retirement checks ----------------------------------------------------
   always @(posedge clk) begin
@@ -530,6 +566,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
         if (retired.gpr_write) shadow[retired.gpr]=retired.value;
         if (retired.update_write) shadow[retired.update_gpr]=retired.update_value;
         if (retired.pc==end_pc) end_retires++;
+        foreach (probe_pc[k]) if (retired.pc==probe_pc[k]) probe_cycle[k]=cycles;
         if (retired.pc==snoop_pc) fork snoop_pair(); join_none
       end
     end
@@ -578,6 +615,11 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
           biu.tt_count[TT_RWITM]>0&&biu.tt_count[TT_WRITE_KILL]>0,
           $sformatf("coverage rb=%0d rs=%0d wb=%0d ws=%0d ao=%0d err=%0d",biu.n_read_burst,
                     biu.n_read_single,biu.n_write_burst,biu.n_write_single,biu.n_addr_only,biu.n_errors));
+    $display("load-hit timing: lwz retirements at +%0d +%0d +%0d; dependent add %0d after its lwz; back-to-back hits %0d",
+      probe_cycle[1]-probe_cycle[0],probe_cycle[2]-probe_cycle[0],probe_cycle[3]-probe_cycle[0],
+      probe_cycle[5]-probe_cycle[4],hit_pairs);
+    if (PIPE) check(probe_cycle[5]-probe_cycle[4]==1 && hit_pairs>0,
+                    "pipelined load hits: back to back, two-cycle load-use");
     $display("PASS data cache core: checks=%0d retires=%0d load_values=%0d load_responses=%0d exceptions=%0d bus: read_burst=%0d read_single=%0d write_burst=%0d write_single=%0d addr_only=%0d push=%0d errors=%0d retries=%0d drtries=%0d snoops=%0d snoop_retries=%0d snoops_over_pending_data=%0d tenure_checks=%0d cycles=%0d",
       checks,retires,load_checks,rsp_checks,taken,biu.n_read_burst,biu.n_read_single,
       biu.n_write_burst,biu.n_write_single,biu.n_addr_only,biu.n_push,biu.n_errors,

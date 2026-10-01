@@ -16,6 +16,9 @@
 module ppc_dcache #(
   // Nonzero injects one named defect for the bench's negative tests only.
   parameter int MUTATION = 0,
+  // A load hit answers from its first S_LOOKUP cycle, and in that cycle the
+  // cache accepts the next request, so hits flow one per cycle.
+  parameter bit FAST_LOAD_HIT = 1'b0,
   parameter int SET_COUNT = 128,
   parameter int WAY_COUNT = 4
 ) (
@@ -384,7 +387,11 @@ module ppc_dcache #(
   logic [LINE_BITS-1:0] lk_cob_line;
   logic [WAY_COUNT-1:0] lk_valid, lk_dirty;
 
-  assign cacheable = hid0_dce_i && !req_i;
+  // With fast hits, HID0[DCE] is taken from the cycle the request was
+  // accepted, so a hit's answer does not wait on the live HID0 bit.
+  logic dce_q;
+  always_ff @(posedge clk_i) dce_q <= hid0_dce_i;
+  assign cacheable = (FAST_LOAD_HIT ? dce_q : hid0_dce_i) && !req_i;
   assign resv_match = resv_valid_q && resv_line_q == req_line;
 
   always_comb begin
@@ -578,6 +585,16 @@ module ppc_dcache #(
     lk_go = state_q == S_LOOKUP && !lk_stall;
   end
 
+  // Fast load hit: the data RAM output of the first lookup cycle is the
+  // answer. It completes when taken; otherwise it is registered as before.
+  logic lk_fast, lk_fast_done, req_accept;
+  // lk_go and lk_read for a cacheable load hit, which never casts out.
+  assign lk_fast = FAST_LOAD_HIT && state_q == S_LOOKUP && req_op_q == DC_LOAD &&
+                   dce_q && !req_i && hit && early_data_q && !snp_valid_q &&
+                   push_st_q != PU_READ && !(push_busy && push_line_q == req_line);
+  assign lk_fast_done = lk_fast && rsp_ready_i;
+  assign req_accept = req_valid_i && req_ready_o;
+
   // ---------------------------------------------------- write queue count
   logic wq_full, wq_push, wq_push_cob, wq_pop;
   logic bus_accept, push_accept;
@@ -612,7 +629,10 @@ module ppc_dcache #(
     else if (state_q == S_COB_READ) data_raddr = {req_set, step_idx_q};
     // An idle cache reads the arriving request's double word, so a load
     // hit has its data in S_LOOKUP.
-    else if (state_q == S_IDLE) data_raddr = {req_addr_i[5 +: SET_BITS], req_addr_i[4:3]};
+    // A first lookup cycle needs no further read for its own request.
+    else if (state_q == S_IDLE ||
+             (FAST_LOAD_HIT && state_q == S_LOOKUP && early_data_q))
+      data_raddr = {req_addr_i[5 +: SET_BITS], req_addr_i[4:3]};
     else data_raddr = {req_set, req_dw};
 
     data_way_we = '0;
@@ -710,9 +730,10 @@ module ppc_dcache #(
     push_req_addr_o = {push_line_q, 5'b00000};
     push_req_data_o = push_data_q;
 
-    req_ready_o = rst_ni && state_q == S_IDLE && !rsp_valid_q && !hid0_dcfi_i;
-    rsp_valid_o = rsp_valid_q;
-    rsp_data_o = rsp_data_q;
+    req_ready_o = rst_ni && !hid0_dcfi_i &&
+                  ((state_q == S_IDLE && !rsp_valid_q) || lk_fast_done);
+    rsp_valid_o = rsp_valid_q || lk_fast;
+    rsp_data_o = lk_fast ? hit_data : rsp_data_q;
     rsp_error_o = rsp_error_q;
     rsp_align_o = rsp_align_q;
     rsp_stwcx_ok_o = rsp_ok_q;
@@ -788,11 +809,10 @@ module ppc_dcache #(
   // word unless a snoop push owned the read port on the accepting edge.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) early_data_q <= 1'b0;
-    else early_data_q <= state_q == S_IDLE && req_valid_i && req_ready_o &&
-                         push_st_q != PU_READ;
+    else early_data_q <= req_accept && push_st_q != PU_READ;
   end
   always_ff @(posedge clk_i) begin
-    if (state_q == S_IDLE && req_valid_i && req_ready_o) begin
+    if (req_accept) begin
       req_op_q <= req_op_i;
       req_addr_q <= req_addr_i;
       req_be_q <= req_be_i;
@@ -825,7 +845,7 @@ module ppc_dcache #(
     if (rst_ni && snoop_valid_i) begin
       rd_set_q <= snoop_addr_i[5 +: SET_BITS];
       rd_tag_q <= snoop_addr_i[31 -: TAG_BITS];
-    end else if (state_q == S_IDLE && req_valid_i && req_ready_o) begin
+    end else if (req_accept) begin
       rd_set_q <= req_addr_i[5 +: SET_BITS];
       rd_tag_q <= req_addr_i[31 -: TAG_BITS];
     end else begin
@@ -944,6 +964,9 @@ module ppc_dcache #(
               rsp_align_q <= lk_align;
               rsp_ok_q <= lk_ok;
               state_q <= S_IDLE;
+            end else if (lk_fast_done) begin
+              state_q <= req_accept ? S_LOOKUP : S_IDLE;
+              rsp_sent_q <= 1'b0;
             end else if (lk_read && early_data_q) begin
               rsp_valid_q <= 1'b1;
               rsp_data_q <= hit_data;
@@ -1068,6 +1091,10 @@ module ppc_dcache #(
                 {snp_addr_q[5 +: SET_BITS], snp_addr_q[31 -: TAG_BITS]} :
                 {req_set, req_tag}))
         else $error("data cache read address copy diverged");
+    if (rst_ni && state_q == S_LOOKUP)
+      assert (!rsp_valid_q) else $error("data cache lookup with a response pending");
+    if (rst_ni && lk_fast)
+      assert (lk_go && lk_read && lk_plan == 8'b0) else $error("fast load hit diverged from lookup");
     if (rst_ni && (lk_go || snp_valid_q))
       assert ($onehot0(hitw)) else $error("data cache holds one line in two ways");
   end

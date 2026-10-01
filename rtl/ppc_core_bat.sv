@@ -4,6 +4,9 @@
 `define PPC_DISPATCH_WIDTH 1
 `endif
 `default_nettype none
+`ifndef PPC_LSU_PIPE
+`define PPC_LSU_PIPE 1'b0
+`endif
 // Core plus shared startup/runtime-programmed BAT memory router.
 module ppc_core_bat #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
@@ -47,6 +50,9 @@ module ppc_core_bat #(
   // A data cache sits behind the router: a speculative access from the
   // pipelined load/store unit may be accepted for a cacheable page.
   parameter bit ENABLE_DATA_SPECULATION = 1'b0,
+  // Pipelined load/store unit (see ppc_core). With a data cache, a micro-TLB
+  // hit also reaches the cache in the cycle the router accepts it.
+  parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -197,7 +203,7 @@ module ppc_core_bat #(
   logic [DMEM_BITS/8-1:0] router_pdmem_req_wstrb;
   logic [3:0] router_pdmem_req_wimg;
   ppc_pkg::dmem_attr_t dmem_req_attr, attr_q;
-  logic router_pdmem_req_ds;
+  logic router_pdmem_req_ds, router_pdmem_req_now;
   logic [25:0] router_pdmem_req_ds_tag;
   logic router_pdmem_req_valid, router_pdmem_req_ready;
   logic router_pdmem_rsp_valid, router_pdmem_rsp_ready;
@@ -258,6 +264,7 @@ module ppc_core_bat #(
   // Keep the core instance name stable for architectural integration tests.
   ppc_core #(
     .RESET_PC(RESET_PC),
+    .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
     .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
@@ -380,6 +387,7 @@ module ppc_core_bat #(
     .HAS_602(ppc_pkg::cpu_has_602_ext(CPU_VARIANT)),
     .HAS_DIRECT_STORE(ENABLE_DIRECT_STORE),
     .DMEM_BITS(DMEM_BITS),
+    .ENABLE_DATA_PIPELINE(ENABLE_LSU_PIPE && ENABLE_DATA_CACHE),
     .ENABLE_DATA_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT)) router (
     .tlb_fill_req_valid_i(tlb_fill_req_valid),
     .tlb_fill_req_bank_i(tlb_fill_req_bank),
@@ -479,6 +487,7 @@ module ppc_core_bat #(
     .pdmem_req_wimg_o(router_pdmem_req_wimg),
     .pdmem_req_ds_o(router_pdmem_req_ds),
     .pdmem_req_ds_tag_o(router_pdmem_req_ds_tag),
+    .pdmem_req_now_o(router_pdmem_req_now),
     .pdmem_rsp_valid_i(router_pdmem_rsp_valid),
     .pdmem_rsp_ready_o(router_pdmem_rsp_ready),
     .pdmem_rsp_rdata_i(probe_q ? '0 : pdmem_rsp_rdata_i),
@@ -538,10 +547,10 @@ module ppc_core_bat #(
   assign pdmem_req_wdata_o = sync_offer_q ? '0 : router_pdmem_req_wdata;
   assign pdmem_req_wstrb_o = sync_offer_q ? '0 : router_pdmem_req_wstrb;
   assign pdmem_req_wimg_o = sync_offer_q ? 4'b0011 : router_pdmem_req_wimg;
-  // The lane has one data obligation, so the physical request belongs to
-  // the last accepted virtual one.
+  // A request the router passes through as it accepts it carries the
+  // incoming attributes; any other belongs to the last accepted one.
   always_comb begin
-    pdmem_req_attr_o = attr_q;
+    pdmem_req_attr_o = router_pdmem_req_now ? dmem_req_attr : attr_q;
     pdmem_req_attr_o.ds = !sync_offer_q && router_pdmem_req_ds;
     pdmem_req_attr_o.ds_tag = router_pdmem_req_ds_tag;
   end
