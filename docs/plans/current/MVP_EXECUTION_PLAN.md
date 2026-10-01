@@ -939,6 +939,8 @@ test-selftest-fpu demo-whetstone-hf`, commit `9eb20d9`, 2026-09-30.
 Pass: `ci` 73.5% (1945/2646); `xrand-sweep` 60 runs; FPU suite; at 66 MHz, 0
 failing endpoints on translated (11,668 ALMs), integrated (5,862), timer-bat
 (5,905), chip (10,689) and chip602 (10,242); FPU 51.55 and 35.69 MHz; MiSTer
-default build timing-clean; `test-selftest-fpu` 1218/1218; `demo-whetstone-hf`
-14.244 MWIPS at 50 MHz. Pending: MiSTer `--suite selftest`, `--fpu --suite
-whetstone` and `--fpu --suite selftest`. MVP 97.20% (unchanged).
+default, `--suite selftest` and `--fpu --suite whetstone` builds
+timing-clean; `test-selftest-fpu` 1218/1218; `demo-whetstone-hf` 14.244 MWIPS
+at 50 MHz. Failed: MiSTer `--fpu --suite selftest`, hold slack −0.044 ns on
+the core clock at the slow corners (setup +0.394 ns); the same RTL with the
+Whetstone image passed. MVP 97.20% (unchanged).
