@@ -2,6 +2,66 @@
 
 Evidence for [FPU core integration](FPU_CORE_INTEGRATION.md).
 
+## Package-top timing with the FPU
+
+Recorded: `flock /tmp/ppc603e-quartus.lock quartus/chip/build.sh --docker --fpu`,
+then `quartus/report-target-paths.sh chip 20 --docker` and
+`quartus/report-target-paths.sh chip --docker` (15.152 ns), 2026-10-01.
+The `ppc603e` package top with `ENABLE_FPU=1` (FULL, 64-bit data path),
+Quartus 17.0.2, seed 1, slow-corner setup slack at the 20 ns gate:
+
+| Sources | 100C | −40C | Failing at 66 MHz | ALMs |
+| --- | --- | --- | --- | --- |
+| `dc1dd13` (batch 8 head `290a73b` plus `--fpu`) | −5.388 | −5.352 | — | 22,651 |
+| `7124e81` | −4.032 (worst corner; 9,466 endpoints) | | 23,257, −8.880 | — |
+| `7b81560` | +0.338 | +0.209 | 21,732, −4.639 | 23,100 |
+| `3b10c94` | +0.704 | +0.746 | 18,489, −4.144 | 23,309 |
+
+Hold slack is positive at all corners on every row (worst +0.059 ns, fast
+−40C, `3b10c94`). At `3b10c94` a 18 ns re-time fails 737 endpoints (−1.296
+ns), so 50 MHz holds with about 0.7 ns margin and 55 MHz does not.
+
+On `dc1dd13` the worst paths (about 30 LUT levels, 25 ns) ran from
+completion retirement (`count_q`, `done_q`) and `checkstop_q` through
+`fp_head`, the FPU commit tag match and rename credit into `issue_ready`,
+through the core's `iq_ready` and dispatch back into the FPU, where the
+issue handshake selected the work slot; from there into decode, FPR reads,
+the divider and arithmetic inputs, the launch value in `pending_q`, and the
+memory request into the lane's `state_q`, `ea_q` and `fpu_data_q`. The
+issue loop through the work slot predates batch 7; batch 7's overlapped FP
+accesses (`c6ce84e`) added the dispatch-cycle memory request and reply
+paths into the lane and the replay cancel in the issue-packet select.
+Fixes, all without cycle changes:
+
+- `7124e81`: the work slot and FPR read indices present the issue packet
+  whenever no pending entry is selected; only the valid bit follows
+  `issue_valid_i`. Issue readiness is formed from state with and without a
+  head retirement, and retirement selects last.
+- `7b81560`: the lane's issue-packet select follows `S_FPU_ISSUE`, not the
+  cancel-gated valid; the FPR inspect read no longer follows the issue
+  valid; `ppc_fpu` `MEM_AT_ISSUE=0` in the lane offers memory requests only
+  from pending entries, which the lane already required (it accepts them
+  only in `S_FPU_WAIT`).
+- `3b10c94`: that select is its own flop, loaded from `state_d`.
+
+At `3b10c94` the 66 MHz worst groups are `pending_q` (−4.144, from the
+completion queue and the issue-packet select through decode), the FPU adder
+(`aligned_q` to `add_q`, −4.102), the lane's `result_select_q` and `state_q`
+(−4.099, −3.425) and the divider inputs (−3.669).
+
+Recorded: `make -C sim -j2 lint check-spec lint-fpu-production
+lint-fpu-stream lint-fpu-dual lint-fpu-compact test-core-fpu
+test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-chip-fpu
+test-selftest-fpu demo-whetstone-hf mister-smoke-fpu` and
+`flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, sources of
+`3b10c94` (lint and `lint-fpu-*` on `7b81560`), 2026-10-01. All passed;
+`test-fpu-all` printed 51 PASS lines. Every cycle count matches `290a73b`:
+`tb_core_fpu` 30,011 cycles (FULL, no stalls, 41 spacings), 32,189 (split
+data path), 33,077 (COMPACT), 37,433 (602); `test-chip-fpu` 88,268 cycles;
+`selftest-fpu` 73,241,611; Whetstone 5,285,692 cycles (20.321 MWIPS at 50
+MHz) and 20.324 MWIPS on the MiSTer smoke bench. Not established: the
+MiSTer FPU build's timing (the coordinator fits it), other seeds.
+
 ## 602 personality
 
 Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-chip-fpu variant-special-lint-602 variant-icache-602 variant-watchdog-602 variant-exception-602-4 variant-decode-sweep-4 test-chip602-pins test-core-full-decode test-decode-sweep test-core-lsu-extensions test-core-alignment test-core-alignment-dependencies test-core-lsu-update test-core-dcache test-chip-pins` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commits `9240cbf`–`aade0b5` (RTL final at `87d9786`; later commits change only benches and docs), 2026-09-30.
