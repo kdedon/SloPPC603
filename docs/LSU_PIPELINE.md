@@ -163,8 +163,8 @@ core), commit 14bcfd3, 2026-09-30. All pass: `test-core`,
 (1,703), `test-core-data-fault-cancel` (421), `test-core-memory-edges`
 (722) and `test-core-bat-machine-check` (all six variants; the cached
 fill variant retires 155 instructions and sees 8 routine bursts against
-156 and 7 with the unit off; the bench reports these counts but does not
-check them, and the cause was not traced).
+156 and 7 with the unit off: the retired sequence is identical except
+that the closing `b .` retires one fewer time before the bench stops).
 
 What the four fault-path benches showed:
 
