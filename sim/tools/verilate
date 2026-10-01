@@ -15,7 +15,12 @@ for arg in "$@"; do
   case "$prev" in -Mdir|--Mdir) mdir=$arg ;; esac
   prev=$arg
 done
-"${VERILATOR_BIN:-verilator}" "$@"
+# PPC_VERILATOR_FLAGS adds build-wide defines (see DISPATCH_WIDTH in the
+# Makefile).
+case "${1:-}" in
+  --version) "${VERILATOR_BIN:-verilator}" "$@" ;;
+  *) "${VERILATOR_BIN:-verilator}" ${PPC_VERILATOR_FLAGS:-} "$@" ;;
+esac
 status=$?
 if [ -d "$mdir" ]; then
   find "$mdir" -maxdepth 1 -name '*.gch' -delete

@@ -39,7 +39,7 @@ module soc_perf_counters (
         for (int i = 1; i < NWORD; i++) count_q[i] <= '0;
       end else if (run_q) begin
         count_q[1] <= count_q[1] + 32'd1;
-        if (event_q.retire) count_q[2] <= count_q[2] + 32'd1;
+        if (event_q.retire) count_q[2] <= count_q[2] + 32'd1 + 32'(event_q.retire1);
         if (event_q.iq_full) count_q[3] <= count_q[3] + 32'd1;
         if (event_q.branch) count_q[20] <= count_q[20] + 32'd1;
         if (event_q.memory) count_q[21] <= count_q[21] + 32'd1;

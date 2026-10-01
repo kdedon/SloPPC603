@@ -18,6 +18,9 @@ module ppc_dispatch (
   input ppc_pkg::rs_entry_t entry_i,
   input logic wake_valid_i,
   input ppc_pkg::wake_packet_t wake_i,
+  // Second wake bus (the SRU's finish port).
+  input logic wake1_valid_i,
+  input ppc_pkg::wake_packet_t wake1_i,
   // IU result accepted this cycle. The producer is valid while the IU holds
   // an op.
   input logic iu_done_i,
@@ -43,6 +46,11 @@ module ppc_dispatch (
         pending.producer == wake_i.producer) begin
       operand.ready = 1'b1;
       operand.value = wake_i.value;
+    end
+    if (!pending.ready && wake1_valid_i && pending.tag == wake1_i.tag &&
+        pending.producer == wake1_i.producer) begin
+      operand.ready = 1'b1;
+      operand.value = wake1_i.value;
     end
     return operand;
   endfunction

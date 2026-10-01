@@ -32,6 +32,8 @@ module tb_completion_update;
     .empty_o(empty), .head_index_o(unused_cq_head), .alloc_i(allocation), .alloc_finished_i(1'b0), .alloc_tag_o(at),
     .result_valid_i(rv), .result_ready_o(rr), .result_i(result),
     .finish_accept_o(fv), .wake_valid_o(wv), .wake_o(wake),
+    .result1_valid_i(1'b0), .result1_i('0),
+    /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
     .retire_valid_o(tv), .retire_ready_i(tr), .retire_o(retired), .retire_tag_o(rt),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0), .redirect_pivot_i('0),

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
+`ifndef PPC_DISPATCH_WIDTH
+`define PPC_DISPATCH_WIDTH 1
+`endif
 `default_nettype none
 // Opt-in BAT/page translation composition with the existing scalar 60x bus.
 // All physical transactions use that adapter's fixed cache-inhibited policy:
@@ -38,6 +41,7 @@ module ppc_core_bat_bus60x #(
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_FPU = 1'b0,
+  parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
@@ -217,7 +221,7 @@ module ppc_core_bat_bus60x #(
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
-    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL),
+    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .PLL_CFG(PLL_CFG)
   ) translated_core (
     /* verilator lint_off PINCONNECTEMPTY */

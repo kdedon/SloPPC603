@@ -28,6 +28,8 @@ module ppc_rename (
   input ppc_pkg::completion_tag_t alloc1_producer_i,
   input logic wake_valid_i,
   input ppc_pkg::wake_packet_t wake_i,
+  input logic wake1_valid_i,
+  input ppc_pkg::wake_packet_t wake1_i,
   input logic release_i,
   input logic [4:0] release_reg_i,
   input ppc_pkg::rename_tag_t release_tag_i,
@@ -47,10 +49,12 @@ module ppc_rename (
   completion_tag_t owners [GPR_RENAME_DEPTH];
   logic [31:0] map_valid;
   rename_tag_t map_tag [32];
-  logic wake_match, release_match, release1_match, alloc_fire, alloc1_fire;
+  logic wake_match, wake1_match, release_match, release1_match, alloc_fire, alloc1_fire;
 
   assign wake_match = wake_valid_i && int'(wake_i.tag) < GPR_RENAME_DEPTH &&
                       valid[wake_i.tag] && owners[wake_i.tag] == wake_i.producer;
+  assign wake1_match = wake1_valid_i && int'(wake1_i.tag) < GPR_RENAME_DEPTH &&
+                       valid[wake1_i.tag] && owners[wake1_i.tag] == wake1_i.producer;
   assign release_match = release_i && int'(release_tag_i) < GPR_RENAME_DEPTH &&
                          valid[release_tag_i] &&
                          owners[release_tag_i] == release_producer_i;
@@ -76,6 +80,11 @@ module ppc_rename (
           wake_i.producer == operand.producer) begin
         operand.ready = 1'b1;
         operand.value = wake_i.value;
+      end
+      if (wake1_match && wake1_i.tag == operand.tag &&
+          wake1_i.producer == operand.producer) begin
+        operand.ready = 1'b1;
+        operand.value = wake1_i.value;
       end
     end
     return operand;
@@ -112,8 +121,10 @@ module ppc_rename (
 
   // Payload writes ignore recovery; valid/ready/owner gate every read, so
   // stale bits in a freed slot are harmless.
-  always_ff @(posedge clk_i)
+  always_ff @(posedge clk_i) begin
     if (wake_match) values[wake_i.tag] <= wake_i.value;
+    if (wake1_match) values[wake1_i.tag] <= wake1_i.value;
+  end
 
   // Only allocation changes a slot's owner; recovery leaves it intact.
   // Unreset: read only through valid or map_valid.
@@ -202,6 +213,11 @@ module ppc_rename (
                 (wake_i.producer == recovery_survivor_tag_i[age])) begin
               ready[recovery_survivor_packet_i[age].tag] <= 1'b1;
             end
+            if (wake1_match &&
+                (wake1_i.tag == recovery_survivor_packet_i[age].tag) &&
+                (wake1_i.producer == recovery_survivor_tag_i[age])) begin
+              ready[recovery_survivor_packet_i[age].tag] <= 1'b1;
+            end
             map_valid[recovery_survivor_packet_i[age].gpr] <= 1'b1;
             map_tag[recovery_survivor_packet_i[age].gpr] <=
               recovery_survivor_packet_i[age].tag;
@@ -211,6 +227,9 @@ module ppc_rename (
     end else begin
       if (wake_match) begin
         ready[wake_i.tag] <= 1'b1;
+      end
+      if (wake1_match) begin
+        ready[wake1_i.tag] <= 1'b1;
       end
       if (release_match) begin
         valid[release_tag_i] <= 1'b0;

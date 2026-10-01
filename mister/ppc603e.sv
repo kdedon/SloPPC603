@@ -55,6 +55,11 @@ localparam bit ENABLE_FPU = 1'b1;
 `else
 localparam bit ENABLE_FPU = 1'b0;
 `endif
+`ifdef MISTER_DUAL
+localparam int DISPATCH_WIDTH = 2;
+`else
+localparam int DISPATCH_WIDTH = 1;
+`endif
 `ifdef MISTER_FPU_COMPACT
 localparam ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_COMPACT;
 `else
@@ -197,7 +202,7 @@ always @(posedge clk_sys)
 ppc603e_mister #(
 	.RAM_INIT("firmware/mister.mif"), .RAM_BYTES(RAM_BYTES), .FB_EXTERNAL(FB_EXTERNAL),
 	.FB_WIDTH(SCREEN_W), .FB_HEIGHT(SCREEN_H), .ENABLE_FPU(ENABLE_FPU),
-	.FPU_IMPL(FPU_IMPL)
+	.FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH)
 ) core
 (
 	.clk_i(clk_sys),

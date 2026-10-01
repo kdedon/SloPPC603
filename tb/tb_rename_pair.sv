@@ -38,7 +38,7 @@ module tb_rename_pair;
     .alloc_reg_i(a0_reg), .alloc_producer_i(a0_prod),
     .alloc1_ready_o(a1_ready), .alloc1_tag_o(a1_tag), .alloc1_i(alloc1),
     .alloc1_reg_i(a1_reg), .alloc1_producer_i(a1_prod),
-    .wake_valid_i(wake_v), .wake_i(wake),
+    .wake_valid_i(wake_v), .wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0),
     .release_i(rel0), .release_reg_i(rel0_reg), .release_tag_i(rel0_tag),
     .release_producer_i(rel0_prod),
     .release1_i(rel1), .release1_reg_i(rel1_reg), .release1_tag_i(rel1_tag),

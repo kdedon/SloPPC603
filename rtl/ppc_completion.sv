@@ -35,6 +35,14 @@ module ppc_completion #(
   output logic finish_accept_o,
   output logic wake_valid_o,
   output ppc_pkg::wake_packet_t wake_o,
+  // Second finish port, for a unit whose results never fault.
+  input logic result1_valid_i,
+  // Its fault fields are only checked.
+  /* verilator lint_off UNUSEDSIGNAL */
+  input ppc_pkg::result_packet_t result1_i,
+  /* verilator lint_on UNUSEDSIGNAL */
+  output logic wake1_valid_o,
+  output ppc_pkg::wake_packet_t wake1_o,
   output logic retire_valid_o,
   input logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
@@ -66,7 +74,7 @@ module ppc_completion #(
   logic [CQ_INDEX_WIDTH-1:0] head_q, tail_q, head1_q, tail1_q;
   logic [COUNT_WIDTH-1:0] count_q;
   retire_packet_t allocation, allocation1;
-  logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept;
+  logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept, finish1_accept;
   logic redirect_found;
   logic [CQ_DEPTH-1:0] redirect_candidate_kill;
   logic [COUNT_WIDTH-1:0] redirect_candidate_survivors;
@@ -109,7 +117,8 @@ module ppc_completion #(
     n.data_fault = DATA_OK;
     n.gpr_write = a.gpr_write && !a.illegal;
     n.rename_owned = n.gpr_write;
-    n.value = '0;
+    // A branch allocates finished with its next PC.
+    n.value = a.branch ? a.value : '0;
     n.update_write = a.update_write && !a.illegal;
     n.update_gpr = n.update_write ? a.update_gpr : 5'b0;
     n.update_value = '0;
@@ -284,6 +293,25 @@ module ppc_completion #(
     end
   end
 
+  always_comb begin
+    finish1_accept = result1_valid_i &&
+      (result1_i.producer.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
+      active_q[result1_i.producer.index] && !done_q[result1_i.producer.index] &&
+      (generations_q[result1_i.producer.index] == result1_i.producer.generation) &&
+      !redirect_kill_o[result1_i.producer.index];
+    wake1_valid_o = finish1_accept && packets_q[result1_i.producer.index].gpr_write;
+    wake1_o.producer = result1_i.producer;
+    wake1_o.tag = packets_q[result1_i.producer.index].tag;
+    wake1_o.value = result1_i.value;
+  end
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni && result1_valid_i)
+      assert (!result1_i.fault && (result1_i.data_fault == DATA_OK) &&
+              !(result_valid_i && (result_i.producer == result1_i.producer)))
+        else $error("second finish port took a fault or a shared producer");
+  // synthesis translate_on
+
   // Rename reconstruction consumes post-commit survivors in oldest-first
   // order. Same-edge finish value/readiness travels independently on wake_o.
   always_comb begin
@@ -447,6 +475,21 @@ module ppc_completion #(
           };
         end
         done_q[result_i.producer.index] <= 1'b1;
+      end
+      if (finish1_accept) begin
+        packets_q[result1_i.producer.index].value <= result1_i.value;
+        packets_q[result1_i.producer.index].update_value <= '0;
+        packets_q[result1_i.producer.index].cr_delta <=
+          packets_q[result1_i.producer.index].write_cr_field ?
+            ({result1_i.cr0, 28'b0} >> (packets_q[result1_i.producer.index].cr_field * 4)) :
+            32'b0;
+        packets_q[result1_i.producer.index].xer_delta <= {
+          packets_q[result1_i.producer.index].write_ov_so ? result1_i.so : 1'b0,
+          packets_q[result1_i.producer.index].write_ov_so ? result1_i.ov : 1'b0,
+          packets_q[result1_i.producer.index].write_ca ? result1_i.ca : 1'b0,
+          29'b0
+        };
+        done_q[result1_i.producer.index] <= 1'b1;
       end
     end
   end

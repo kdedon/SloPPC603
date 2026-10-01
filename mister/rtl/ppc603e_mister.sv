@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
+`ifndef PPC_DISPATCH_WIDTH
+`define PPC_DISPATCH_WIDTH 1
+`endif
 `default_nettype none
 // Demonstration system for the MiSTer framework. With FB_EXTERNAL (default)
 // the framebuffer is in HPS DDR3, where the framework scaler reads it
@@ -27,6 +30,7 @@ module ppc603e_mister #(
   // Byte address of the framebuffer in DDR3, 512-byte aligned.
   parameter logic [31:0] FB_DDR_BASE = 32'h3000_0000,
   parameter bit ENABLE_FPU = 1'b0,
+  parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL
 ) (
   input  logic        clk_i,
@@ -92,7 +96,7 @@ module ppc603e_mister #(
   ppc603e_demo_soc #(
     .RAM_INIT(RAM_INIT), .RAM_BYTES(RAM_BYTES), .CE_DIV(8), .FB_EXTERNAL(FB_EXTERNAL),
     .FB_WIDTH(FB_WIDTH), .FB_HEIGHT(FB_HEIGHT), .FB_BASE(FB_BASE), .SYS_MHZ(SYS_MHZ),
-    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL)
+    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH)
   ) soc (
     .clk_i, .rst_ni(!rst_i), .int_n_i(1'b1), .mode_i, .input_i,
     .ce_pix_o, .r_o, .g_o, .b_o, .hs_o, .vs_o, .de_o,

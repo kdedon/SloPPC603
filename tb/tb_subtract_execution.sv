@@ -49,7 +49,7 @@ module tb_subtract_execution;
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(rs_cancel),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
     .entry_i(dispatch_entry),
-    .wake_valid_i(wake_valid), .wake_i(wake),
+    .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0),
     .iu_done_i(result_valid && result_ready),
     .iu_producer_i(result.producer), .iu_value_i(result.value), .lsu_done_i(1'b0), .lsu_producer_i('0),
     .lsu_value_i(32'b0),

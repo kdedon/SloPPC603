@@ -1,4 +1,5 @@
 sim/build/
+sim/build-*/
 quartus/db/
 quartus/incremental_db/
 quartus/output_files/

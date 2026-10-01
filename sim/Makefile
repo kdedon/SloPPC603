@@ -11,6 +11,12 @@ override VERILATOR += --x-assign unique --x-initial unique
 SIM_ARGS ?= +verilator+seed+$(XRAND_SEED) +verilator+rand+reset+2
 XRAND_REFERENCE_ARGS := --xrand-seed $(XRAND_SEED)
 endif
+# DISPATCH_WIDTH=2 builds every core and wrapper whose width is not set
+# explicitly at that width, in its own build directory.
+ifdef DISPATCH_WIDTH
+export PPC_VERILATOR_FLAGS := +define+PPC_DISPATCH_WIDTH=$(DISPATCH_WIDTH)
+BUILD_DIR ?= build-w$(DISPATCH_WIDTH)
+endif
 BUILD_DIR ?= build
 RTL := $(shell cat ../rtl/files.f)
 BUS_RTL := $(shell cat ../rtl/bus_files.f)
@@ -450,6 +456,17 @@ test-core-recovery:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_recovery --Mdir $(BUILD_DIR)/core-recovery $(RTL) ../tb/tb_core_recovery.sv
 	./$(BUILD_DIR)/core-recovery/Vtb_core_recovery $(SIM_ARGS)
 # Two-word fetch into the shifting IQ; both widths must retire the same stream.
+.PHONY: test-core-dual
+test: test-core-dual
+# One program at dispatch widths 1 and 2: the pair rules at width 2 and the
+# same retirement stream at both.
+test-core-dual:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_dual -GDISPATCH_WIDTH=1 --Mdir $(BUILD_DIR)/core-dual-w1 $(RTL) ../tb/tb_core_dual.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_dual -GDISPATCH_WIDTH=2 --Mdir $(BUILD_DIR)/core-dual-w2 $(RTL) ../tb/tb_core_dual.sv
+	./$(BUILD_DIR)/core-dual-w1/Vtb_core_dual $(SIM_ARGS) +RETIRE_LOG=$(BUILD_DIR)/core-dual-w1/retire.txt
+	./$(BUILD_DIR)/core-dual-w2/Vtb_core_dual $(SIM_ARGS) +RETIRE_LOG=$(BUILD_DIR)/core-dual-w2/retire.txt
+	cmp $(BUILD_DIR)/core-dual-w1/retire.txt $(BUILD_DIR)/core-dual-w2/retire.txt
+	@echo "PASS: widths 1 and 2 retire $$(wc -l < $(BUILD_DIR)/core-dual-w1/retire.txt) identical packets"
 .PHONY: test-core-fetch2
 test: test-core-fetch2
 test-core-fetch2:

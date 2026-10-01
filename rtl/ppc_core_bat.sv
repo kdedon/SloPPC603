@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
+`ifndef PPC_DISPATCH_WIDTH
+`define PPC_DISPATCH_WIDTH 1
+`endif
 `default_nettype none
 // Core plus shared startup/runtime-programmed BAT memory router.
 module ppc_core_bat #(
@@ -34,6 +37,8 @@ module ppc_core_bat #(
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_FPU = 1'b0,
+  // Instructions dispatched and retired per cycle (ppc_core).
+  parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
   // 64 carries an aligned FP doubleword as one physical access.
   parameter int DMEM_BITS = 32,
   // A data cache sits behind the router: a speculative access from the
@@ -275,6 +280,7 @@ module ppc_core_bat #(
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
     .ENABLE_FPU(ENABLE_FPU), .DMEM_BITS(DMEM_BITS), .FPU_IMPL(FPU_IMPL),
+    .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) core (
     .tlb_fill_req_valid_o(tlb_fill_req_valid),
@@ -347,11 +353,11 @@ module ppc_core_bat #(
     .dmem_req_attr_o(dmem_req_attr), .icache_ctl_valid_o, .icache_ctl_ready_i,
     .icache_ctl_enable_o, .icache_ctl_invalidate_o,
     .retire_valid_o, .retire_ready_i, .retire_o,
-    // Pair retirement is not exported.
+    // CQ[1] retires beside the head at width 2; only the head is exported.
     /* verilator lint_off PINCONNECTEMPTY */
     .retire1_valid_o(), .retire1_o(),
     /* verilator lint_on PINCONNECTEMPTY */
-    .retire1_ready_i(1'b0),
+    .retire1_ready_i(DISPATCH_WIDTH == 2),
     .halted_o(core_halted), .checkstop_o, .redirect_valid_i, .redirect_all_i,
     .redirect_keep_pivot_i, .redirect_pivot_i, .redirect_target_i,
     .redirect_accepted_o, .perf_o

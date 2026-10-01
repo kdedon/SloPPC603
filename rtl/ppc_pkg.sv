@@ -393,6 +393,8 @@ package ppc_pkg;
   } perf_slot_e;
   typedef struct packed {
     logic retire;
+    // A second instruction retired beside it from CQ[1].
+    logic retire1;
     // The fetch-to-decode register holds a word the IQ cannot take.
     logic iq_full;
     // A branch or a load/store dispatched; a branch redirected fetch.
@@ -668,6 +670,11 @@ package ppc_pkg;
     cpu_cfg_t c;
     c = cpu_cfg(v);
     return int'(c.tlb_sets);
+  endfunction
+  // The PID7v SRU executes add and compare forms beside the IU (UM 6.4.5).
+  // Other parts are unsourced and keep them in the IU.
+  function automatic bit cpu_has_sru_add_compare(cpu_variant_e v);
+    return (v == CPU_PID7V_603E) || (v == CPU_EC603E);
   endfunction
   function automatic bit cpu_has_602_ext(cpu_variant_e v);
     cpu_cfg_t c;

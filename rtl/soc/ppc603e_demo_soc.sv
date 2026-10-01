@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
+`ifndef PPC_DISPATCH_WIDTH
+`define PPC_DISPATCH_WIDTH 1
+`endif
 `default_nettype none
 // Demonstration system: the ppc603e package on a 60x bus with block RAM,
 // an indexed framebuffer with video scan-out, and a few registers (see
@@ -22,6 +25,7 @@ module ppc603e_demo_soc #(
   parameter int SYS_MHZ = 50,
   // Floating-point unit in the processor, reported in MODE bit 8.
   parameter bit ENABLE_FPU = 1'b0,
+  parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL
 ) (
   input  logic       clk_i,
@@ -96,6 +100,7 @@ module ppc603e_demo_soc #(
   ppc_pkg::perf_event_t cpu_perf;
   ppc603e #(
     .CPU_VARIANT(ppc_pkg::CPU_PID7V_603E), .PLL_CFG(PLL_CFG), .ENABLE_FPU(ENABLE_FPU),
+    .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .FPU_IMPL(FPU_IMPL)
   ) cpu (
     // The default strap runs the bus 1:1: the enable is always high.
@@ -255,7 +260,7 @@ module ppc603e_demo_soc #(
     end else begin
       cycle_q <= cycle_q + 64'd1;
       input_q <= input_i;
-      if (cpu_perf.retire) retired_q <= retired_q + 64'd1;
+      if (cpu_perf.retire) retired_q <= retired_q + 64'd1 + 64'(cpu_perf.retire1);
       console_valid_q <= 1'b0;
       if (frame) frames_q <= frames_q + 32'd1;
       if (io_req && !we) begin

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
+`ifndef PPC_DISPATCH_WIDTH
+`define PPC_DISPATCH_WIDTH 1
+`endif
 `default_nettype none
 // 603e package top. Every port is a signal pin of UM Figure 7-1 under its
 // manual name (active-low as _n, bit 0 the most significant). A three-state
@@ -26,6 +29,8 @@ module ppc603e #(
   parameter int DCACHE_WAYS = 0,
   // Attach the FPU; without it FP instructions take FP unavailable.
   parameter bit ENABLE_FPU = 1'b0,
+  // 2: dual dispatch and retirement.
+  parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   // 603 direct-store sender tag, packet 0 A28-A31 (UM C.1.2.2.1).
   parameter logic [3:0] DS_PID = 4'h0
@@ -293,7 +298,7 @@ module ppc603e #(
     .ENABLE_MULTIPLE_STRING(1'b1), .ENABLE_RESERVATION(1'b1),
     .ENABLE_MISALIGNED_ACCESS(1'b1), .ENABLE_MACHINE_CHECK(1'b1),
     .ENABLE_DEBUG_EXCEPTIONS(1'b1), .ENABLE_FULL_DECODE(1'b1),
-    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL),
+    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .ENABLE_DCACHE(ENABLE_DCACHE),
     .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG), .DS_PID(DS_PID)
   ) cpu (
