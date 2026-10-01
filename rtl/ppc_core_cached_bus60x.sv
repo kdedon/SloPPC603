@@ -137,6 +137,9 @@ module ppc_core_cached_bus60x #(
   logic [33:0] unused_cache_core;
   logic [2:0] unused_icache_ctl;
   ppc_pkg::dmem_attr_t dmem_req_attr;
+  // Set only by the pipelined load/store unit, which this top leaves off.
+  logic unused_attr_spec;
+  assign unused_attr_spec = dmem_req_attr.spec;
   logic unused_core_checkstop;
   // No MMU on this path: the 602 translation ports stay idle.
   logic [4:0] unused_tlb_fill_ext;
@@ -274,7 +277,7 @@ module ppc_core_cached_bus60x #(
     .req_ready_o(scalar_req_ready), .req_instruction_i(1'b0),
     .req_write_i(dmem_req_write), .req_addr_i(dmem_req_addr),
     .req_wdata_i(dmem_req_wdata), .req_wstrb_i(dmem_req_wstrb),
-    .req_attr_i(dmem_req_attr),
+    .req_attr_i({dmem_req_attr.kind, dmem_req_attr.rid}),
     .rsp_valid_o(scalar_rsp_valid), .rsp_ready_i(dmem_rsp_ready),
     .rsp_rdata_o(scalar_rsp_rdata), .rsp_error_o(scalar_rsp_error),
     .busy_o(scalar_busy), .protocol_error_o(scalar_protocol_error),

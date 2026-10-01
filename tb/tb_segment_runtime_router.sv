@@ -88,6 +88,7 @@ module tb_segment_runtime_router;
   logic [4:0] unused_tlb_fill_router;
   logic [68:0] unused_imem_page_miss, unused_dmem_page_miss;
   logic [1:0] unused_imem_rsp_esa_1;
+  logic dmem_req_spec_i = 1'b0, data_spec_ok_i = 1'b0;
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1), .ENABLE_SEGMENT_REGISTERS(1'b1)) dut (.mmu_602_i('0), .tlb_fill_req_ext_i(5'b0),
     .imem_rsp_esa_o(unused_imem_rsp_esa_1),

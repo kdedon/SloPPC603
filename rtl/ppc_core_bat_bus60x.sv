@@ -164,6 +164,9 @@ module ppc_core_bat_bus60x #(
   logic [32:0] unused_icbi;
   logic [2:0] unused_icache_ctl;
   ppc_pkg::dmem_attr_t dmem_req_attr;
+  // Set only by the pipelined load/store unit, which this top leaves off.
+  logic unused_attr_spec;
+  assign unused_attr_spec = dmem_req_attr.spec;
   logic [5:0] bus_req_attr;
   logic imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_rsp_insn;
@@ -345,7 +348,7 @@ module ppc_core_bat_bus60x #(
     .dmem_req_addr_i(dmem_req_addr),
     .dmem_req_wdata_i(dmem_req_wdata),
     .dmem_req_wstrb_i(dmem_req_wstrb),
-    .dmem_req_attr_i(dmem_req_attr),
+    .dmem_req_attr_i({dmem_req_attr.kind, dmem_req_attr.rid}),
     .dmem_rsp_valid_o(dmem_rsp_valid),
     .dmem_rsp_ready_i(dmem_rsp_ready),
     .dmem_rsp_rdata_o(dmem_rsp_rdata),

@@ -182,6 +182,11 @@ module ppc_bat_memory_router #(
   output ppc_pkg::esa_enable_t imem_rsp_esa_o,
   input  logic        dmem_req_valid_i,
   output logic        dmem_req_ready_o,
+  // A speculative request (dmem_attr_t.spec) is accepted only on a
+  // micro-TLB hit to a cacheable page while data_spec_ok_i says the data
+  // cache is present, enabled and unlocked (UM 3.5.5.2).
+  input  logic        dmem_req_spec_i,
+  input  logic        data_spec_ok_i,
   input  logic        dmem_req_write_i,
   input  logic [31:0] dmem_req_addr_i,
   input  logic [DMEM_BITS-1:0] dmem_req_wdata_i,
@@ -703,7 +708,8 @@ module ppc_bat_memory_router #(
   assign imem_req_ready = lane_accept_ok &&
     (i_state_q == LANE_IDLE || i_finish);
   assign dmem_req_ready = lane_accept_ok &&
-    (d_state_q == LANE_IDLE || d_finish);
+    (d_state_q == LANE_IDLE || d_finish) &&
+    (!dmem_req_spec_i || (d_hit && !d_hit_wimg[2] && data_spec_ok_i));
   assign i_accept = imem_req_valid && imem_req_ready;
   assign d_accept = dmem_req_valid && dmem_req_ready;
   assign i_hit = ENABLE_MICRO_TLB && i_hit_raw;
