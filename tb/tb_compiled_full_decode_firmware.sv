@@ -35,6 +35,7 @@ module tb_compiled_full_decode_firmware #(parameter bit FULL_DECODE = 1'b1);
   int unsigned rng=32'h1357acef;
   int cycles=0,retires=0;
   int atomic_reads=0,atomic_writes=0,ext_reads=0,ext_writes=0;
+  int ext_open=0;
   int cache_hits=0,cache_misses=0,busy_cycles=0;
   int bypass_fetches=0,line_fetches=0,cache_requests=0,disable_cycles=0;
   logic [3:0] rids [$];
@@ -140,14 +141,21 @@ module tb_compiled_full_decode_firmware #(parameter bit FULL_DECODE = 1'b1);
       check(!halted&&!ifetch_error&&!pimem_error&&!protocol_error&&!translation_fault,
         "unexpected transport, translation or core diagnostic");
       check(!maintenance_done_valid,"CPU cache requests complete internally");
+      // A retried address tenure runs again; only the last one counts.
+      if(!artry_n&&ext_open!=0)begin
+        if(ext_open==1)ext_reads--;else ext_writes--;
+        void'(rids.pop_back());
+        ext_open=0;
+      end
       if(addr_oe&&ts_oe&&!ts_n)begin
         check(abb_oe&&!abb_n&&bus_busy&&wt_n&&gbl_n&&cse==0&&bus_a>=BASE,
           "address ownership and range");
+        ext_open=0;
         case(tt)
           5'b11010:atomic_reads++;
           5'b10010:atomic_writes++;
-          5'b11100:begin ext_reads++;rids.push_back({!tbst_n,tsiz});end
-          5'b10100:begin ext_writes++;rids.push_back({!tbst_n,tsiz});end
+          5'b11100:begin ext_reads++;rids.push_back({!tbst_n,tsiz});ext_open=1;end
+          5'b10100:begin ext_writes++;rids.push_back({!tbst_n,tsiz});ext_open=2;end
           5'b00010,5'b01010,5'b01110:;
           default:check(0,"unexpected transfer type");
         endcase
@@ -207,7 +215,8 @@ module tb_compiled_full_decode_firmware #(parameter bit FULL_DECODE = 1'b1);
     repeat(20)@(posedge clk);
     check(atomic_reads>=1&&atomic_writes>=1,"lwarx/stwcx. atomic transfer types");
     check(ext_reads==2&&ext_writes==1&&rids.size()==3&&rids[0]==4'h5&&rids[1]==4'h5&&
-          rids[2]==4'ha,"eciwx/ecowx transfer types and resource IDs");
+          rids[2]==4'ha,$sformatf("eciwx/ecowx transfer types and resource IDs reads=%0d writes=%0d rids=%p",
+          ext_reads,ext_writes,rids));
     check(cache_requests==4,$sformatf("HID0 cache requests=%0d",cache_requests));
     check(bypass_fetches>0&&line_fetches>0&&disable_cycles>0&&cache_enabled,
           "ICE=0 single-beat fetch and ICE=1 line fills");
