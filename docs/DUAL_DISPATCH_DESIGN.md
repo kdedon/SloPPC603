@@ -461,6 +461,41 @@ This establishes width-1 cycle equivalence of the slice 2 RTL for those
 benches. It does not make 0a9fe26 pass: the benches need a GPR read view
 (or updated hierarchy) and the two bench fixes before slice 2 is accepted.
 
+Bench fixes. `ppc_regfile_gpr` has a simulation-only `gpr[32]` view (inside
+`synthesis translate_off`): at `DUAL_WRITE=0` bank 0, otherwise each
+register from the bank its live-value-table entry selects; TGPR is not in
+it. Benches read `regfile.gpr[]` as before. `tb_stage_timing` asserts
+`cq1_ok` and not `fpr_write` on each retired `addi`. The `tb_core_recovery`
+model sets `cq1_ok` for `addi` from the allocation rule (integer, not
+serial, not a store), not from DUT state; `fpr_write` stays 0.
+
+Recorded: `make -C sim lint check-spec test-regfile-gpr-ports test-stage test-core-recovery`, commit a69b0e9, 2026-09-30.
+All pass. `test-regfile-gpr-ports` now runs four builds (TGPR on/off ×
+`DUAL_WRITE` 1/0) and compares the view with the model for all 32
+registers and with every non-TGPR read on each check: about 1.29 million
+view checks per build beside 242,880 / 242,688 read checks. Without
+`DUAL_WRITE` port 1 stays idle. A mutation (view always from bank 0) fails
+at `DUAL_WRITE=1`. `test-stage`: 14 retirements, schedule check passes.
+`test-core-recovery`: 1,120 checks, 45 retired, as at the base.
+
+Recorded: `make -C sim -k -j2 <153 targets>`, commit a69b0e9, 2026-09-30.
+The list is every `test-*` target whose own recipe runs a testbench with
+`$(SIM_ARGS)` that instantiates `ppc_core*`, `ppc603e` or `ppc602` or
+includes `chip_harness.svh`, selected from `make -n` output. This
+selection gives 153 targets, two more than the 151 of the trace check,
+whose exact list was not kept. Make exits 0: every target passes.
+
+Recorded: `make -C sim test-reference test-reference-memory test-reference-bat test-reference-cached test-reference-managed test-reference-lsu test-reference-stress test-reference-pid6 test-reference-603 REFERENCE_DIR=<dingusppc>`, commit a69b0e9, 2026-09-30.
+All nine pass against DingusPPC 5b292af4d7b3 with the counts of the
+exported-tree run above: 8,500 snapshots each for `test-reference`, `-pid6`
+and `-603`; 9,881 retirements each on memory, BAT, cached and managed; LSU
+530 snapshots; stress 3 seeds, 3,419 snapshots.
+
+Recorded: Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip`, commit a69b0e9, 2026-09-30.
+The chip top elaborates with 0 errors and 48 warnings; none is new in
+`ppc_regfile_gpr`, since synthesis does not see the view. No fit was run;
+the view adds no synthesized logic.
+
 ## Risks
 
 - **Throughput depends on P3 first.** Today's CPI is about 4 on Dhrystone and
