@@ -198,7 +198,8 @@ module tb_stage_timing;
                !retired.write_cr_field && retired.cr_field == 0 && retired.cr_delta == 0 && retired.xer_delta == 0 &&
                !retired.seq_partial && !retired.branch && !retired.branch_lk && !retired.branch_ctr)
           else $fatal(1, "flag-free stage probe observed flag effects");
-        assert(retired.gpr_write && retired.rename_owned && int'(retired.tag) < GPR_RENAME_DEPTH)
+        assert(retired.gpr_write && retired.rename_owned && int'(retired.tag) < GPR_RENAME_DEPTH &&
+               retired.cq1_ok && !retired.fpr_write)
           else $fatal(1, "legal IU retirement metadata");
         ident = int'(dut.retire_producer);
         assert(finish_edges[ident] >= 0 && edge_number >= finish_edges[ident] + 1)

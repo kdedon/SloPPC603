@@ -2,9 +2,11 @@
 // Copyright (c) 2026 Kevin Dedon
 // Six read and two write ports of the GPR file against a model: every
 // register through every port from each write port, both ports in one cycle,
-// write-write ordering across cycles, and reads in the cycle of a write.
+// write-write ordering across cycles, and reads in the cycle of a write. The
+// architectural view must match the model and every read.
 module tb_regfile_gpr_ports #(
-  parameter bit ENABLE_TGPR = 1'b1
+  parameter bit ENABLE_TGPR = 1'b1,
+  parameter bit DUAL_WRITE = 1'b1
 );
   logic clk_i = 1'b0;
   always #5 clk_i <= ~clk_i;
@@ -15,13 +17,13 @@ module tb_regfile_gpr_ports #(
   logic [4:0] write_reg_i, write1_reg_i;
   logic [31:0] write_value_i, write1_value_i;
 
-  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR)) dut (.*);
+  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR), .DUAL_WRITE(DUAL_WRITE)) dut (.*);
 
   logic [31:0] model_gpr [32];
   logic [31:0] model_tgpr [4];
   logic [5:0][4:0] rd;
   logic [31:0] got [6];
-  int checks, raw_hits [2], both_cycles, single_cycles [2], ww_pairs;
+  int checks, view_checks, raw_hits [2], both_cycles, single_cycles [2], ww_pairs;
 
   assign got[0] = read_a_o;
   assign got[1] = read_b_o;
@@ -53,8 +55,16 @@ module tb_regfile_gpr_ports #(
         $fatal(1, "read port %0d r%0d tgpr=%0b got %08x expected %08x",
                p, rd[p], tgpr_i, got[p], expected(rd[p]));
       checks++;
+      if (!shadowed(rd[p]) && got[p] !== dut.gpr[rd[p]])
+        $fatal(1, "read port %0d r%0d got %08x, view has %08x",
+               p, rd[p], got[p], dut.gpr[rd[p]]);
       if (write_i && rd[p] == write_reg_i) raw_hits[0]++;
       if (write1_i && rd[p] == write1_reg_i) raw_hits[1]++;
+    end
+    for (int r = 0; r < 32; r++) begin
+      if (dut.gpr[r] !== model_gpr[r])
+        $fatal(1, "view r%0d got %08x expected %08x", r, dut.gpr[r], model_gpr[r]);
+      view_checks++;
     end
   endtask
 
@@ -64,8 +74,11 @@ module tb_regfile_gpr_ports #(
   endtask
 
   // Drive at the falling edge, check, then commit both writes on the edge.
+  // Without DUAL_WRITE port 1 stays idle.
   task automatic step(input logic w0, input logic [4:0] r0, input logic [31:0] v0,
-                      input logic w1, input logic [4:0] r1, input logic [31:0] v1);
+                      input logic w1_req, input logic [4:0] r1, input logic [31:0] v1);
+    logic w1;
+    w1 = w1_req && DUAL_WRITE;
     @(negedge clk_i);
     write_i = w0;
     write_reg_i = r0;
@@ -103,6 +116,7 @@ module tb_regfile_gpr_ports #(
 
   initial begin
     checks = 0;
+    view_checks = 0;
     raw_hits = '{0, 0};
     single_cycles = '{0, 0};
     both_cycles = 0;
@@ -155,7 +169,7 @@ module tb_regfile_gpr_ports #(
       step(1'b1, 5'(r), 32'h4500_0000 | r, 1'b0, '0, '0);
       step(1'b0, '0, '0, 1'b1, 5'(r), 32'h4510_0000 | r);
       idle_check();
-      ww_pairs += 2;
+      if (DUAL_WRITE) ww_pairs += 2;
     end
 
     // Random traffic with reads aimed at the written registers, in both
@@ -190,11 +204,11 @@ module tb_regfile_gpr_ports #(
       sweep_reads();
     end
 
-    if (raw_hits[0] == 0 || raw_hits[1] == 0 || both_cycles == 0 ||
-        single_cycles[0] == 0 || single_cycles[1] == 0)
+    if (raw_hits[0] == 0 || single_cycles[0] == 0 ||
+        (DUAL_WRITE && (raw_hits[1] == 0 || both_cycles == 0 || single_cycles[1] == 0)))
       $fatal(1, "coverage hole");
-    $display("PASS GPR ports tgpr=%0d: %0d read checks, %0d single-port-0, %0d single-port-1, %0d dual-write cycles, %0d write-write pairs, same-cycle read-after-write %0d (port 0) %0d (port 1)",
-             ENABLE_TGPR, checks, single_cycles[0], single_cycles[1], both_cycles,
+    $display("PASS GPR ports tgpr=%0d dual_write=%0d: %0d read checks, %0d view checks, %0d single-port-0, %0d single-port-1, %0d dual-write cycles, %0d write-write pairs, same-cycle read-after-write %0d (port 0) %0d (port 1)",
+             ENABLE_TGPR, DUAL_WRITE, checks, view_checks, single_cycles[0], single_cycles[1], both_cycles,
              ww_pairs, raw_hits[0], raw_hits[1]);
     $finish;
   end

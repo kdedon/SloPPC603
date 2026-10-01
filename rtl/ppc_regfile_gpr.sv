@@ -101,6 +101,19 @@ module ppc_regfile_gpr #(
   endgenerate
 
   // synthesis translate_off
+  // Architectural value of each register for testbenches; excludes TGPR.
+  /* verilator lint_off UNUSEDSIGNAL */  // read only by hierarchical reference
+  logic [31:0] gpr [32];
+  /* verilator lint_on UNUSEDSIGNAL */
+  generate if (DUAL_WRITE) begin : g_view_lvt
+    always_comb
+      for (int i = 0; i < 32; i++)
+        gpr[i] = g_lvt.lvt_q[i] ? g_bank[1].g_copy[0].copy[i] : g_bank[0].g_copy[0].copy[i];
+  end else begin : g_view_single
+    always_comb
+      for (int i = 0; i < 32; i++) gpr[i] = g_bank[0].g_copy[0].copy[i];
+  end endgenerate
+
   always @(posedge clk_i) begin
     if (rst_ni && clearing_q)
       assert (!write_i && !write1_i) else $error("GPR write during reset clear");

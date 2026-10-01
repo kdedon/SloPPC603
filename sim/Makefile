@@ -1606,6 +1606,12 @@ test-regfile-gpr-ports:
 	mkdir -p $(BUILD_DIR)/regfile-gpr-ports
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GENABLE_TGPR=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_gpr_ports.sv
 	./$(BUILD_DIR)/regfile-gpr-ports/Vtb_regfile_gpr_ports $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-single
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GDUAL_WRITE=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-single ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_gpr_ports.sv
+	./$(BUILD_DIR)/regfile-gpr-ports-single/Vtb_regfile_gpr_ports $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-single-plain
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GENABLE_TGPR=1'b0" "-GDUAL_WRITE=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports-single-plain ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_gpr_ports.sv
+	./$(BUILD_DIR)/regfile-gpr-ports-single-plain/Vtb_regfile_gpr_ports $(SIM_ARGS)
 
 test-core-tgpr:
 	mkdir -p $(BUILD_DIR)/core-tgpr-enabled

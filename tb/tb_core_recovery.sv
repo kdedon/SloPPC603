@@ -223,6 +223,8 @@ module tb_core_recovery;
           item.packet.gpr_write = 1;
           item.packet.rename_owned = 1;
           item.packet.gpr = 1;
+          // An integer op may retire from CQ[1].
+          item.packet.cq1_ok = 1;
           item.packet.value = speculative_r1 + {{16{dut.allocation.insn[15]}},dut.allocation.insn[15:0]};
         end
         model.push_back(item);
