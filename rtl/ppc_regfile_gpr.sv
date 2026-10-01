@@ -36,6 +36,7 @@ module ppc_regfile_gpr #(
   logic [31:0] bank_value [2][READS];
   logic [31:0] array_read [READS];
   logic [31:0] read_value [READS];
+  genvar bank, port;
 
   assign write_tgpr[0] = ENABLE_TGPR && tgpr_i && write_reg_i[4:2] == 3'b0;
   assign write_tgpr[1] = ENABLE_TGPR && tgpr_i && write1_reg_i[4:2] == 3'b0;
@@ -74,15 +75,15 @@ module ppc_regfile_gpr #(
   end
 
   generate
-    for (genvar bank = 0; bank < 2; bank++) begin : g_bank
-      for (genvar port = 0; port < READS; port++) begin : g_copy
+    for (bank = 0; bank < 2; bank = bank + 1) begin : g_bank
+      for (port = 0; port < READS; port = port + 1) begin : g_copy
         (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] copy [32];
         always_ff @(posedge clk_i)
           if (array_write[bank]) copy[array_reg[bank]] <= array_value[bank];
         assign bank_value[bank][port] = copy[read_reg[port]];
       end
     end
-    for (genvar port = 0; port < READS; port++) begin : g_read
+    for (port = 0; port < READS; port = port + 1) begin : g_read
       assign array_read[port] = lvt_q[read_reg[port]] ? bank_value[1][port] :
                                                          bank_value[0][port];
     end
@@ -100,7 +101,7 @@ module ppc_regfile_gpr #(
 
   generate if (ENABLE_TGPR) begin : tgpr_enabled
     logic [31:0] tgpr [4];
-    for (genvar port = 0; port < READS; port++) begin : g_tgpr_read
+    for (port = 0; port < READS; port = port + 1) begin : g_tgpr_read
       assign read_value[port] = (tgpr_i && read_reg[port][4:2] == 3'b0) ?
                                 tgpr[read_reg[port][1:0]] : array_read[port];
     end
@@ -113,7 +114,7 @@ module ppc_regfile_gpr #(
       end
     end
   end else begin : tgpr_disabled
-    for (genvar port = 0; port < READS; port++) begin : g_plain_read
+    for (port = 0; port < READS; port = port + 1) begin : g_plain_read
       assign read_value[port] = array_read[port];
     end
     logic _unused_tgpr;

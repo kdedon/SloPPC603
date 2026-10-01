@@ -19,7 +19,7 @@ module tb_regfile_tgpr #(
   logic _unused_lane1;
   int checks;
 
-  // The second lane is covered by tb_regfile_gpr_ports.
+  // Second-lane ports idle.
   assign read_a1_i = '0;
   assign read_b1_i = '0;
   assign read_c1_i = '0;
