@@ -92,6 +92,10 @@ module ppc_core_bus60x #(
   logic [33:0] unused_cache_core;
   logic [2:0] unused_icache_ctl;
   ppc_pkg::dmem_attr_t dmem_req_attr;
+  // Access shape and direct-store fields have no use without translation.
+  logic unused_attr;
+  assign unused_attr = ^{dmem_req_attr.fp, dmem_req_attr.bytes,
+    dmem_req_attr.last, dmem_req_attr.ds, dmem_req_attr.ds_tag};
   logic unused_core_checkstop, unused_imem_rsp_error;
   // No MMU on this path: the 602 translation ports stay idle.
   logic [4:0] unused_tlb_fill_ext;
@@ -207,7 +211,7 @@ module ppc_core_bus60x #(
     .dmem_req_addr_i(dmem_req_addr),
     .dmem_req_wdata_i(dmem_req_wdata),
     .dmem_req_wstrb_i(dmem_req_wstrb),
-    .dmem_req_attr_i(dmem_req_attr),
+    .dmem_req_attr_i({dmem_req_attr.kind, dmem_req_attr.rid}),
     .dmem_rsp_valid_o(dmem_rsp_valid),
     .dmem_rsp_ready_i(dmem_rsp_ready),
     .dmem_rsp_rdata_o(dmem_rsp_rdata),

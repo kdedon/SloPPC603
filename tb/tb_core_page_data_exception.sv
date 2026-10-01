@@ -70,7 +70,8 @@ module tb_core_page_data_exception #(parameter bit ENABLE_MICRO_TLB = 1'b1);
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),
     /* verilator lint_on PINCONNECTEMPTY */
-    .external_irq_i(1'b0),.timer_tick_i(1'b0),.timebase_enable_i(1'b1),.checkstop_o(unused_checkstop), .*);
+    .external_irq_i(1'b0),.timer_tick_i(1'b0),.timebase_enable_i(1'b1),.checkstop_o(unused_checkstop),
+    .pdmem_rsp_ds_error_i(1'b0), .*);
 
   integer checks=0,cycles=0,phase=0,denied=0,physical_data=0;
   integer held_retire=0,handler_reads=0;

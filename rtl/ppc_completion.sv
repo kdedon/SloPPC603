@@ -303,6 +303,7 @@ module ppc_completion #(
         if (result_i.fault || (result_i.data_fault == DATA_DSI_PROTECTION) ||
             (result_i.data_fault == DATA_DSI_EXTERNAL) ||
             (result_i.data_fault == DATA_DSI_DIRECT_STORE) ||
+            (result_i.data_fault == DATA_ALIGNMENT_DIRECT_STORE) ||
             (result_i.data_fault == DATA_MACHINE_CHECK) ||
             (ENABLE_TLB_MISS_EXCEPTIONS &&
              ((result_i.data_fault == DATA_PAGE_MISS) ||
@@ -327,7 +328,9 @@ module ppc_completion #(
           packets_q[result_i.producer.index].gpr_write <= 1'b0;
           packets_q[result_i.producer.index].update_write <= 1'b0;
           packets_q[result_i.producer.index].update_gpr <= '0;
-          packets_q[result_i.producer.index].needs_flags <= 1'b0;
+          // A typed fault still returns the flag token it owns (stwcx.).
+          packets_q[result_i.producer.index].needs_flags <=
+            !result_i.fault && packets_q[result_i.producer.index].needs_flags;
           packets_q[result_i.producer.index].write_xer <= 1'b0;
           packets_q[result_i.producer.index].write_ca <= 1'b0;
           packets_q[result_i.producer.index].write_ov_so <= 1'b0;

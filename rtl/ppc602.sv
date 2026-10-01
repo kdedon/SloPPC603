@@ -255,7 +255,7 @@ module ppc602 #(
     .artry_oe_o(c_artry_oe),
     .dbg_n_i(c_dbg_n), .dbb_n_i(1'b1), .dbb_n_o(c_dbb_n), .dbb_oe_o(c_dbb_oe),
     .d_i(c_d_i), .d_o(c_d_o), .d_oe_o(c_d_oe),
-    .ta_n_i(c_ta_n), .drtry_n_i(1'b1), .tea_n_i(c_tea_n)
+    .ta_n_i(c_ta_n), .drtry_n_i(1'b1), .tea_n_i(c_tea_n), .xats_n_i(1'b1), .xats_n_o()
   );
   /* verilator lint_on PINCONNECTEMPTY */
 

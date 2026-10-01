@@ -8,6 +8,8 @@
 // miss queues for the one shared translation sequence.
 // HAS_602 adds the 602 MMU: IBAT and ITLB NE and SE, MSR[AP], and
 // protection-only mode after a BAT miss (602UM 5.6).
+// HAS_DIRECT_STORE gives a data access to a T=1 segment the 603 direct-store
+// treatment (UM C.2.1): a physical request marked ds, or a typed refusal.
 module ppc_bat_memory_router #(
   parameter bit ENABLE_LIVE_CONTEXT = 1'b0,
   parameter bit ENABLE_RUNTIME_BAT = 1'b0,
@@ -26,6 +28,7 @@ module ppc_bat_memory_router #(
   parameter int MICRO_TLB_ENTRIES = 4,
   parameter int TLB_SETS = 32,
   parameter bit HAS_602 = 1'b0,
+  parameter bit HAS_DIRECT_STORE = 1'b0,
   // Data path width: 64 adds FP doubleword accesses (eight strobes).
   parameter int DMEM_BITS = 32
 ) (
@@ -165,10 +168,15 @@ module ppc_bat_memory_router #(
   output logic [DMEM_BITS-1:0] pdmem_req_wdata_o,
   output logic [DMEM_BITS/8-1:0] pdmem_req_wstrb_o,
   output logic [3:0]  pdmem_req_wimg_o,
+  // Direct-store request: packet 0 bits 2-27 ({key, SR[3:27]}).
+  output logic        pdmem_req_ds_o,
+  output logic [25:0] pdmem_req_ds_tag_o,
   input  logic        pdmem_rsp_valid_i,
   output logic        pdmem_rsp_ready_o,
   input  logic [DMEM_BITS-1:0] pdmem_rsp_rdata_i,
   input  logic        pdmem_rsp_error_i,
+  // The direct-store reply carried its error bit.
+  input  logic        pdmem_rsp_ds_error_i,
 
   input  logic        imem_req_valid_i,
   output logic        imem_req_ready_o,
@@ -183,6 +191,8 @@ module ppc_bat_memory_router #(
   input  logic        dmem_req_valid_i,
   output logic        dmem_req_ready_o,
   input  logic        dmem_req_write_i,
+  // Class of the access; read only for direct-store segments.
+  input  ppc_pkg::dmem_attr_t dmem_req_attr_i,
   input  logic [31:0] dmem_req_addr_i,
   input  logic [DMEM_BITS-1:0] dmem_req_wdata_i,
   input  logic [DMEM_BITS/8-1:0] dmem_req_wstrb_i,
@@ -273,6 +283,14 @@ module ppc_bat_memory_router #(
   logic [1:0] unused_d_hit_esa;
   fetch_fault_t fetch_fault_q;
   data_fault_t data_fault_q;
+  // Direct-store state of the data lane: its class, the translated request,
+  // and a cache operation completed as a no-op (UM C.2.1.5).
+  dmem_kind_t d_kind_q;
+  logic d_fp_q, d_ds_q, ds_noop_q, ds_candidate, ds_route;
+  logic [25:0] d_ds_tag_q;
+  logic unused_attr;
+  assign unused_attr = ^{dmem_req_attr_i.rid, dmem_req_attr_i.bytes,
+    dmem_req_attr_i.last, dmem_req_attr_i.ds, dmem_req_attr_i.ds_tag};
   logic last_grant_data_q, owner_instruction_q, owner_write_q;
   logic [31:0] request_ea_q;
   logic [31:0] page_sr_q;
@@ -732,6 +750,13 @@ module ppc_bat_memory_router #(
       (choose_data ? LANE_SLOW : LANE_WAIT);
   end
 
+  // UM C.2.1.1: after a BAT miss a T=1 data access is performed on the
+  // direct-store interface, except lwarx, stwcx., eciwx and ecowx (DSI
+  // DSISR[5]), FP loads and stores (alignment) and cache operations (no-op).
+  assign ds_candidate = HAS_DIRECT_STORE &&
+    state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid && !page_reply_allow &&
+    clean_page_data_direct_store;
+  assign ds_route = ds_candidate && d_kind_q == DMEM_NORMAL && !d_fp_q;
   assign route_allow =
     (state_q == ROUTE_TRANSLATE_RESPONSE && bat_rsp_valid && bat_rsp_allow) ||
     (state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid && page_reply_allow);
@@ -958,6 +983,8 @@ module ppc_bat_memory_router #(
     pdmem_req_wdata_o = d_wdata_q;
     pdmem_req_wstrb_o = d_wstrb_q;
     pdmem_req_wimg_o = d_wimg_q;
+    pdmem_req_ds_o = d_ds_q;
+    pdmem_req_ds_tag_o = d_ds_tag_q;
 
     imem_rsp_valid = 1'b0;
     imem_rsp_insn = pimem_rsp_insn_i;
@@ -995,12 +1022,14 @@ module ppc_bat_memory_router #(
       if (ENABLE_MACHINE_CHECK && pdmem_rsp_error_i) begin
         dmem_rsp_rdata = '0;
         dmem_rsp_fault_o = DATA_MACHINE_CHECK;
+      end else if (d_ds_q && pdmem_rsp_ds_error_i && !pdmem_rsp_error_i) begin
+        dmem_rsp_fault_o = DATA_DSI_DIRECT_STORE_ERROR;
       end
       pdmem_rsp_ready_o = dmem_rsp_ready;
     end else if (rst_ni && state_q == ROUTE_DATA_FAULT_RESPONSE) begin
       dmem_rsp_valid = 1'b1;
       dmem_rsp_rdata = '0;
-      dmem_rsp_error = data_fault_q == DATA_OK;
+      dmem_rsp_error = (data_fault_q == DATA_OK) && !ds_noop_q;
       dmem_rsp_fault_o = data_fault_q;
     end
   end
@@ -1032,6 +1061,11 @@ module ppc_bat_memory_router #(
       d_write_q <= 1'b0;
       d_wdata_q <= '0;
       d_wstrb_q <= '0;
+      d_kind_q <= DMEM_NORMAL;
+      d_fp_q <= 1'b0;
+      d_ds_q <= 1'b0;
+      d_ds_tag_q <= '0;
+      ds_noop_q <= 1'b0;
       owner_q <= OWN_NONE;
       tlb_fill_ea_q <= 32'b0;
       tlb_fill_bank_q <= 1'b0;
@@ -1121,6 +1155,19 @@ module ppc_bat_memory_router #(
         d_write_q <= dmem_req_write;
         d_wdata_q <= dmem_req_wdata;
         d_wstrb_q <= dmem_req_wstrb;
+        d_kind_q <= dmem_req_attr_i.kind;
+        d_fp_q <= dmem_req_attr_i.fp;
+        d_ds_q <= 1'b0;
+      end
+      // Packet 1 is SR[28:31] || EA[4:31]; the access is cache-inhibited
+      // and guarded (UM C.2.1.2). Packet 0 carries Ks, or Kp in problem
+      // state, then SR bits 3-27 (C.1.2.2.1).
+      if (ds_route) begin
+        d_pa_q <= {page_sr_q[3:0], d_ea_q[27:0]};
+        d_wimg_q <= 4'b0101;
+        d_ds_q <= 1'b1;
+        d_ds_tag_q <= {request_pr_q ? page_sr_q[29] : page_sr_q[30],
+                       page_sr_q[28:4]};
       end
       if (route_allow && owner_instruction_q) begin
         i_pa_q <= route_pa;
@@ -1160,7 +1207,8 @@ module ppc_bat_memory_router #(
         LANE_IDLE: if (d_accept) d_state_q <= d_accept_state;
         LANE_WAIT: if (choose_data) d_state_q <= LANE_SLOW;
         LANE_SLOW: begin
-          if (route_allow && !owner_instruction_q) d_state_q <= LANE_OFFER;
+          if ((route_allow && !owner_instruction_q) || ds_route)
+            d_state_q <= LANE_OFFER;
           else if (state_q == ROUTE_DATA_FAULT_RESPONSE && dmem_rsp_ready)
             d_state_q <= LANE_IDLE;
         end
@@ -1286,7 +1334,8 @@ module ppc_bat_memory_router #(
 
         ROUTE_PAGE_RESPONSE: begin
           if (tlb_rsp_valid) begin
-            if (page_reply_allow) begin
+            ds_noop_q <= ds_candidate && d_kind_q == DMEM_CACHE;
+            if (page_reply_allow || ds_route) begin
               state_q <= ROUTE_IDLE;
             end else begin
               // Page misses and C=0 stores carry their request-time context
@@ -1328,6 +1377,8 @@ module ppc_bat_memory_router #(
                 end
               end else begin
                 data_fault_q <= clean_page_data_pp ? DATA_DSI_PROTECTION :
+                  (ds_candidate && d_kind_q == DMEM_CACHE) ? DATA_OK :
+                  (ds_candidate && d_fp_q) ? DATA_ALIGNMENT_DIRECT_STORE :
                   clean_page_data_direct_store ? DATA_DSI_DIRECT_STORE :
                   (clean_page_true_miss ? DATA_PAGE_MISS :
                     (clean_page_changed ? DATA_PAGE_CHANGED : DATA_OK));
@@ -1338,8 +1389,10 @@ module ppc_bat_memory_router #(
         end
 
         ROUTE_DATA_FAULT_RESPONSE: begin
-          if (dmem_rsp_ready)
+          if (dmem_rsp_ready) begin
             state_q <= ROUTE_IDLE;
+            ds_noop_q <= 1'b0;
+          end
         end
 
         ROUTE_IFETCH_FAULT_RESPONSE: begin

@@ -5,11 +5,15 @@
 // carries uncached instruction reads and every data access; the line master
 // carries cache-line reads. With ENABLE_DCACHE a third master serves the
 // data cache's request and push ports, and the snoop front end answers other
-// masters' global tenures. One address tenure is outstanding at a time.
+// masters' global tenures. With ENABLE_DIRECT_STORE a fourth master runs
+// direct-store requests on XATS. One address tenure is outstanding at a time.
 module ppc_biu #(
   // A TEA on an instruction read returns an error response.
   parameter bit RETURN_IFETCH_ERROR = 1'b0,
   parameter bit ENABLE_DCACHE = 1'b0,
+  // 603 direct-store master and its sender tag.
+  parameter bit ENABLE_DIRECT_STORE = 1'b0,
+  parameter logic [3:0] DS_PID = 4'h0,
   // Negative-test mutations of the cache master and snoop front end.
   parameter int MUTATION = 0
 ) (
@@ -42,6 +46,8 @@ module ppc_biu #(
   input  logic        dmem_rsp_ready_i,
   output logic [31:0] dmem_rsp_rdata_o,
   output logic        dmem_rsp_error_o,
+  // A direct-store reply with its error bit ended this response.
+  output logic        dmem_rsp_ds_error_o,
 
   // Cache-line reads, critical double word first.
   input  logic        line_req_valid_i,
@@ -103,6 +109,10 @@ module ppc_biu #(
   output logic        gbl_n_o,
   output logic [1:0]  cse_o,
   output logic        addr_oe_o,
+  // XATS: asserted with packet 0 of a direct-store operation; driven
+  // whenever the address bus is (abb_oe_o).
+  output logic        xats_n_o,
+  input  logic        xats_n_i,
   // Snoop inputs: the shared TS, A, TT and GBL pins.
   input  logic        ts_n_i,
   input  logic [31:0] a_i,
@@ -172,15 +182,34 @@ module ppc_biu #(
   logic [63:0] grp_d_o;
   logic grp_d_oe, grp_ta_n, grp_drtry_n, grp_tea_n;
   logic grp_busy, dcache_busy, dcache_protocol_error;
+  // Pin side of the scalar and line masters, ahead of the direct-store stage.
+  logic sl_br_n, sl_bg_n, sl_abb_in_n;
+  logic sl_abb_n, sl_abb_oe, sl_ts_n, sl_ts_oe;
+  logic [31:0] sl_a;
+  logic [4:0] sl_tt;
+  logic sl_tbst_n;
+  logic [2:0] sl_tsiz;
+  logic [1:0] sl_tc, sl_cse;
+  logic sl_ci_n, sl_wt_n, sl_gbl_n, sl_addr_oe;
+  logic sl_aack_n, sl_artry_n, sl_dbg_n, sl_dbb_in_n;
+  logic sl_dbb_n, sl_dbb_oe;
+  logic [63:0] sl_d_o;
+  logic sl_d_oe, sl_ta_n, sl_drtry_n, sl_tea_n;
+  logic ds_busy, ds_pending, ds_protocol_error;
+  logic ds_select, arb_dmem_req_ready, arb_dmem_rsp_valid, arb_dmem_rsp_error;
+  logic [31:0] arb_dmem_rsp_rdata;
 
   ppc_bus60x_arbiter #(.RETURN_IFETCH_ERROR(RETURN_IFETCH_ERROR)) scalar_router (
     .clk_i, .rst_ni,
     .imem_req_valid_i, .imem_req_ready_o, .imem_req_addr_i,
     .imem_rsp_valid_o, .imem_rsp_ready_i, .imem_rsp_insn_o, .imem_rsp_error_o,
-    .dmem_req_valid_i, .dmem_req_ready_o,
+    .dmem_req_valid_i(dmem_req_valid_i && !ds_select),
+    .dmem_req_ready_o(arb_dmem_req_ready),
     .dmem_req_write_i, .dmem_req_addr_i,
-    .dmem_req_wdata_i, .dmem_req_wstrb_i, .dmem_req_attr_i,
-    .dmem_rsp_valid_o, .dmem_rsp_ready_i, .dmem_rsp_rdata_o, .dmem_rsp_error_o,
+    .dmem_req_wdata_i, .dmem_req_wstrb_i,
+    .dmem_req_attr_i({dmem_req_attr_i.kind, dmem_req_attr_i.rid}),
+    .dmem_rsp_valid_o(arb_dmem_rsp_valid), .dmem_rsp_ready_i,
+    .dmem_rsp_rdata_o(arb_dmem_rsp_rdata), .dmem_rsp_error_o(arb_dmem_rsp_error),
     .bus_req_valid_o(scalar_req_valid),
     .bus_req_ready_i(scalar_req_ready),
     .bus_req_instruction_o(scalar_req_instruction),
@@ -282,18 +311,163 @@ module ppc_biu #(
     .line_ta_n_o(line_ta_n), .line_drtry_n_o(line_drtry_n),
     .line_tea_n_o(line_tea_n),
     .busy_o(selector_busy), .protocol_error_o(selector_protocol_error),
-    .br_n_o(grp_br_n), .bg_n_i(grp_bg_n), .abb_n_i(grp_abb_in_n),
-    .abb_n_o(grp_abb_n), .abb_oe_o(grp_abb_oe), .ts_n_o(grp_ts_n),
-    .ts_oe_o(grp_ts_oe), .a_o(grp_a), .tt_o(grp_tt), .tbst_n_o(grp_tbst_n),
-    .tsiz_o(grp_tsiz), .tc_o(grp_tc), .ci_n_o(grp_ci_n), .wt_n_o(grp_wt_n),
-    .gbl_n_o(grp_gbl_n), .cse_o(grp_cse), .addr_oe_o(grp_addr_oe),
-    .aack_n_i(grp_aack_n), .artry_n_i(grp_artry_n), .dbg_n_i(grp_dbg_n),
-    .dbb_n_i(grp_dbb_in_n), .dbb_n_o(grp_dbb_n), .dbb_oe_o(grp_dbb_oe),
-    .d_o(grp_d_o), .d_oe_o(grp_d_oe), .ta_n_i(grp_ta_n),
-    .drtry_n_i(grp_drtry_n), .tea_n_i(grp_tea_n)
+    .br_n_o(sl_br_n), .bg_n_i(sl_bg_n), .abb_n_i(sl_abb_in_n),
+    .abb_n_o(sl_abb_n), .abb_oe_o(sl_abb_oe), .ts_n_o(sl_ts_n),
+    .ts_oe_o(sl_ts_oe), .a_o(sl_a), .tt_o(sl_tt), .tbst_n_o(sl_tbst_n),
+    .tsiz_o(sl_tsiz), .tc_o(sl_tc), .ci_n_o(sl_ci_n), .wt_n_o(sl_wt_n),
+    .gbl_n_o(sl_gbl_n), .cse_o(sl_cse), .addr_oe_o(sl_addr_oe),
+    .aack_n_i(sl_aack_n), .artry_n_i(sl_artry_n), .dbg_n_i(sl_dbg_n),
+    .dbb_n_i(sl_dbb_in_n), .dbb_n_o(sl_dbb_n), .dbb_oe_o(sl_dbb_oe),
+    .d_o(sl_d_o), .d_oe_o(sl_d_oe), .ta_n_i(sl_ta_n),
+    .drtry_n_i(sl_drtry_n), .tea_n_i(sl_tea_n)
   );
 
-  assign grp_busy = selector_busy || scalar_busy || line_busy;
+  generate
+  if (ENABLE_DIRECT_STORE) begin : g_direct_store
+    logic ds_req_ready, ds_rsp_valid, ds_rsp_error, ds_rsp_ds_error;
+    logic [31:0] ds_rsp_rdata;
+    logic ds_br_n, ds_bg_n, ds_abb_in_n;
+    logic ds_abb_n, ds_abb_oe, ds_ts_n, ds_ts_oe, ds_xats_n;
+    logic [31:0] ds_a;
+    logic [4:0] ds_tt;
+    logic ds_tbst_n;
+    logic [2:0] ds_tsiz;
+    logic [1:0] ds_tc, ds_cse;
+    logic ds_ci_n, ds_wt_n, ds_gbl_n, ds_addr_oe;
+    logic ds_aack_n, ds_artry_n, ds_dbg_n, ds_dbb_in_n;
+    logic ds_dbb_n, ds_dbb_oe;
+    logic [63:0] ds_d_o;
+    logic ds_d_oe, ds_ta_n, ds_drtry_n, ds_tea_n;
+    logic ds_master_busy, ds_select_busy, ds_master_error, ds_select_error;
+
+    assign ds_select = dmem_req_attr_i.ds;
+    ppc_bus60x_direct_store #(.PID(DS_PID)) direct_store (
+      .clk_i, .rst_ni, .bus_ce_i,
+      .req_valid_i(dmem_req_valid_i && ds_select), .req_ready_o(ds_req_ready),
+      .req_write_i(dmem_req_write_i), .req_addr_i(dmem_req_addr_i),
+      .req_wdata_i(dmem_req_wdata_i), .req_wstrb_i(dmem_req_wstrb_i),
+      .req_tag_i(dmem_req_attr_i.ds_tag), .req_bytes_i(dmem_req_attr_i.bytes),
+      .req_last_i(dmem_req_attr_i.last),
+      .rsp_valid_o(ds_rsp_valid), .rsp_ready_i(dmem_rsp_ready_i),
+      .rsp_rdata_o(ds_rsp_rdata), .rsp_error_o(ds_rsp_error),
+      .rsp_ds_error_o(ds_rsp_ds_error),
+      .busy_o(ds_master_busy), .pending_o(ds_pending),
+      .protocol_error_o(ds_master_error),
+      .br_n_o(ds_br_n), .bg_n_i(ds_bg_n), .abb_n_i(ds_abb_in_n),
+      .abb_n_o(ds_abb_n), .abb_oe_o(ds_abb_oe), .ts_n_o(ds_ts_n),
+      .ts_oe_o(ds_ts_oe), .xats_n_o(ds_xats_n), .a_o(ds_a), .tt_o(ds_tt),
+      .tbst_n_o(ds_tbst_n), .tsiz_o(ds_tsiz), .tc_o(ds_tc), .ci_n_o(ds_ci_n),
+      .wt_n_o(ds_wt_n), .gbl_n_o(ds_gbl_n), .cse_o(ds_cse),
+      .addr_oe_o(ds_addr_oe), .aack_n_i(ds_aack_n), .artry_n_i(ds_artry_n),
+      .dbg_n_i(ds_dbg_n), .dbb_n_i(ds_dbb_in_n), .dbb_n_o(ds_dbb_n),
+      .dbb_oe_o(ds_dbb_oe), .d_i(d_i), .d_o(ds_d_o), .d_oe_o(ds_d_oe),
+      .ta_n_i(ds_ta_n), .drtry_n_i(ds_drtry_n), .tea_n_i(ds_tea_n),
+      .xats_n_i, .snoop_a_i(a_i), .snoop_tt_i(tt_i)
+    );
+
+    ppc_bus60x_two_master ds_mux (
+      .clk_i, .rst_ni, .bus_ce_i,
+      .scalar_busy_i(selector_busy || scalar_busy || line_busy),
+      .scalar_br_n_i(sl_br_n),
+      .scalar_bg_n_o(sl_bg_n), .scalar_abb_n_o(sl_abb_in_n),
+      .scalar_abb_n_i(sl_abb_n), .scalar_abb_oe_i(sl_abb_oe),
+      .scalar_ts_n_i(sl_ts_n), .scalar_ts_oe_i(sl_ts_oe),
+      .scalar_a_i(sl_a), .scalar_tt_i(sl_tt),
+      .scalar_tbst_n_i(sl_tbst_n), .scalar_tsiz_i(sl_tsiz),
+      .scalar_tc_i(sl_tc), .scalar_ci_n_i(sl_ci_n),
+      .scalar_wt_n_i(sl_wt_n), .scalar_gbl_n_i(sl_gbl_n),
+      .scalar_cse_i(sl_cse), .scalar_addr_oe_i(sl_addr_oe),
+      .scalar_aack_n_o(sl_aack_n), .scalar_artry_n_o(sl_artry_n),
+      .scalar_dbg_n_o(sl_dbg_n), .scalar_dbb_n_o(sl_dbb_in_n),
+      .scalar_dbb_n_i(sl_dbb_n), .scalar_dbb_oe_i(sl_dbb_oe),
+      .scalar_d_i(sl_d_o), .scalar_d_oe_i(sl_d_oe),
+      .scalar_ta_n_o(sl_ta_n), .scalar_drtry_n_o(sl_drtry_n),
+      .scalar_tea_n_o(sl_tea_n),
+      .line_busy_i(ds_master_busy), .line_br_n_i(ds_br_n),
+      .line_bg_n_o(ds_bg_n), .line_abb_n_o(ds_abb_in_n),
+      .line_abb_n_i(ds_abb_n), .line_abb_oe_i(ds_abb_oe),
+      .line_ts_n_i(ds_ts_n), .line_ts_oe_i(ds_ts_oe),
+      .line_a_i(ds_a), .line_tt_i(ds_tt),
+      .line_tbst_n_i(ds_tbst_n), .line_tsiz_i(ds_tsiz),
+      .line_tc_i(ds_tc), .line_ci_n_i(ds_ci_n),
+      .line_wt_n_i(ds_wt_n), .line_gbl_n_i(ds_gbl_n),
+      .line_cse_i(ds_cse), .line_addr_oe_i(ds_addr_oe),
+      .line_aack_n_o(ds_aack_n), .line_artry_n_o(ds_artry_n),
+      .line_dbg_n_o(ds_dbg_n), .line_dbb_n_o(ds_dbb_in_n),
+      .line_dbb_n_i(ds_dbb_n), .line_dbb_oe_i(ds_dbb_oe),
+      .line_d_i(ds_d_o), .line_d_oe_i(ds_d_oe),
+      .line_ta_n_o(ds_ta_n), .line_drtry_n_o(ds_drtry_n),
+      .line_tea_n_o(ds_tea_n),
+      .busy_o(ds_select_busy), .protocol_error_o(ds_select_error),
+      .br_n_o(grp_br_n), .bg_n_i(grp_bg_n), .abb_n_i(grp_abb_in_n),
+      .abb_n_o(grp_abb_n), .abb_oe_o(grp_abb_oe), .ts_n_o(grp_ts_n),
+      .ts_oe_o(grp_ts_oe), .a_o(grp_a), .tt_o(grp_tt), .tbst_n_o(grp_tbst_n),
+      .tsiz_o(grp_tsiz), .tc_o(grp_tc), .ci_n_o(grp_ci_n), .wt_n_o(grp_wt_n),
+      .gbl_n_o(grp_gbl_n), .cse_o(grp_cse), .addr_oe_o(grp_addr_oe),
+      .aack_n_i(grp_aack_n), .artry_n_i(grp_artry_n), .dbg_n_i(grp_dbg_n),
+      .dbb_n_i(grp_dbb_in_n), .dbb_n_o(grp_dbb_n), .dbb_oe_o(grp_dbb_oe),
+      .d_o(grp_d_o), .d_oe_o(grp_d_oe), .ta_n_i(grp_ta_n),
+      .drtry_n_i(grp_drtry_n), .tea_n_i(grp_tea_n)
+    );
+
+    assign ds_busy = ds_select_busy || ds_master_busy;
+    assign ds_protocol_error = ds_master_error || ds_select_error;
+    assign xats_n_o = ds_xats_n;
+    // One data obligation is outstanding, so one response source is live.
+    assign dmem_req_ready_o = ds_select ? ds_req_ready : arb_dmem_req_ready;
+    assign dmem_rsp_valid_o = arb_dmem_rsp_valid || ds_rsp_valid;
+    assign dmem_rsp_rdata_o = ds_rsp_valid ? ds_rsp_rdata : arb_dmem_rsp_rdata;
+    assign dmem_rsp_error_o = ds_rsp_valid ? ds_rsp_error : arb_dmem_rsp_error;
+    assign dmem_rsp_ds_error_o = ds_rsp_valid && ds_rsp_ds_error;
+  end else begin : g_no_direct_store
+    assign ds_select = 1'b0;
+    assign ds_busy = 1'b0;
+    assign ds_pending = 1'b0;
+    assign ds_protocol_error = 1'b0;
+    assign xats_n_o = 1'b1;
+    assign dmem_req_ready_o = arb_dmem_req_ready;
+    assign dmem_rsp_valid_o = arb_dmem_rsp_valid;
+    assign dmem_rsp_rdata_o = arb_dmem_rsp_rdata;
+    assign dmem_rsp_error_o = arb_dmem_rsp_error;
+    assign dmem_rsp_ds_error_o = 1'b0;
+    assign grp_br_n = sl_br_n;
+    assign sl_bg_n = grp_bg_n;
+    assign sl_abb_in_n = grp_abb_in_n;
+    assign grp_abb_n = sl_abb_n;
+    assign grp_abb_oe = sl_abb_oe;
+    assign grp_ts_n = sl_ts_n;
+    assign grp_ts_oe = sl_ts_oe;
+    assign grp_a = sl_a;
+    assign grp_tt = sl_tt;
+    assign grp_tbst_n = sl_tbst_n;
+    assign grp_tsiz = sl_tsiz;
+    assign grp_tc = sl_tc;
+    assign grp_ci_n = sl_ci_n;
+    assign grp_wt_n = sl_wt_n;
+    assign grp_gbl_n = sl_gbl_n;
+    assign grp_cse = sl_cse;
+    assign grp_addr_oe = sl_addr_oe;
+    assign sl_aack_n = grp_aack_n;
+    assign sl_artry_n = grp_artry_n;
+    assign sl_dbg_n = grp_dbg_n;
+    assign sl_dbb_in_n = grp_dbb_in_n;
+    assign grp_dbb_n = sl_dbb_n;
+    assign grp_dbb_oe = sl_dbb_oe;
+    assign grp_d_o = sl_d_o;
+    assign grp_d_oe = sl_d_oe;
+    assign sl_ta_n = grp_ta_n;
+    assign sl_drtry_n = grp_drtry_n;
+    assign sl_tea_n = grp_tea_n;
+    logic unused_direct_store;
+    assign unused_direct_store = ^{xats_n_i, dmem_req_attr_i.ds,
+      dmem_req_attr_i.ds_tag, dmem_req_attr_i.bytes, dmem_req_attr_i.last};
+  end
+  endgenerate
+  // The fp class has no bus encoding.
+  logic unused_attr_fp;
+  assign unused_attr_fp = dmem_req_attr_i.fp;
+
+  assign grp_busy = selector_busy || scalar_busy || line_busy || ds_busy;
 
   generate
   if (ENABLE_DCACHE) begin : g_dcache
@@ -460,8 +634,8 @@ module ppc_biu #(
   end
   endgenerate
 
-  assign busy_o = grp_busy || scalar_router_busy || dcache_busy;
+  assign busy_o = grp_busy || scalar_router_busy || dcache_busy || ds_pending;
   assign protocol_error_o = scalar_protocol_error || line_protocol_error ||
-    selector_protocol_error || dcache_protocol_error;
+    selector_protocol_error || dcache_protocol_error || ds_protocol_error;
 endmodule
 `default_nettype wire

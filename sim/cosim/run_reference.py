@@ -65,7 +65,7 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--build-dir',type=Path,default=PROJECT/'sim/build/reference')
     ap.add_argument('--reference',type=Path,default=ROOT/'dingusppc')
-    ap.add_argument('--model',choices=['MPC603EV','MPC603E'],default='MPC603EV')
+    ap.add_argument('--model',choices=['MPC603EV','MPC603E','MPC603'],default='MPC603EV')
     add_arguments(ap)
     args=ap.parse_args()
     build=args.build_dir.resolve(); build.mkdir(parents=True,exist_ok=True)
@@ -92,8 +92,8 @@ def main():
         raise RuntimeError(f'implemented non-memory forms not exercised: {uncovered_nonmemory}')
     sources=[(PROJECT/'sim'/line).resolve() for line in (PROJECT/'rtl/files.f').read_text().splitlines() if line.strip()]
     bench=PROJECT/'tb/tb_core_reference.sv'
-    # The RTL models the same part as the reference: PID7v or PID6.
-    variant=1 if args.model=='MPC603E' else 0
+    # The RTL models the same part as the reference: PID7v, PID6 or 603.
+    variant={'MPC603EV':0,'MPC603E':1,'MPC603':3}[args.model]
     rtlargs=[args.verilator,'--binary','--timing','--assert','-Wall','--top-module','tb_core_reference',f'-GVARIANT={variant}',
              '--Mdir',build/'rtl',*xrand_build_flags(args.xrand_seed),*sources,bench]
     command(rtlargs,build/'rtl-build.log')
@@ -181,7 +181,7 @@ def main():
     adapter=[HERE/name for name in ['reference_runner.cpp','run_reference.py','reference_checkout.py','reference_program.py','compare_state.py']]
     manifest={'schema_version':SCHEMA_VERSION,'reference':'DingusPPC original opcode handlers',
               'reference_last_verified':LAST_VERIFIED,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
-              'model':args.model,'pvr':'00070101' if args.model=='MPC603EV' else '00060101',
+              'model':args.model,'pvr':{'MPC603EV':'00070101','MPC603E':'00060101','MPC603':'00030101'}[args.model],
               'include_601':False,'ppc_le':False,'memory_controller_le':False,
               'initial_state':'zero GPR/CR/XER/LR/CTR, PC=0; PVR only model metadata',
               'snapshot_fields':FIELDS,'license':'GPL-3.0-or-later; see copied reference LICENSE',

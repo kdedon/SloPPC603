@@ -38,26 +38,42 @@ logic [31:0] bus_a;
 logic [3:0] bus_ap;
 logic [4:0] bus_tt;
 
-// +define+CHIP_ENABLE_FPU=1 attaches the FPU.
+// +define+CHIP_ENABLE_FPU=1 attaches the FPU; +define+CHIP_VARIANT=n builds
+// another part, CHIP_DS_PID its direct-store tag.
 `ifndef CHIP_ENABLE_FPU
 `define CHIP_ENABLE_FPU 0
 `endif
-ppc603e #(.PLL_CFG(CHIP_PLL_CFG), .ENABLE_FPU(1'(`CHIP_ENABLE_FPU))) dut (
+`ifndef CHIP_VARIANT
+`define CHIP_VARIANT 0
+`endif
+`ifndef CHIP_DS_PID
+`define CHIP_DS_PID 0
+`endif
+// A direct-store controller beside the memory: its active-low grant and
+// termination outputs join the memory's, and it may drive A, TT, XATS and DH.
+logic buc_aack_n = 1'b1, buc_artry_n = 1'b1, buc_dbg_n = 1'b1;
+logic buc_ta_n = 1'b1, buc_tea_n = 1'b1, buc_xats_n = 1'b1, buc_drive = 1'b0;
+logic [31:0] buc_a = '0, buc_dh = '0;
+logic [4:0] buc_tt = '0;
+logic xats_n, xats_oe;
+ppc603e #(.CPU_VARIANT(ppc_pkg::cpu_variant_e'(`CHIP_VARIANT)), .PLL_CFG(CHIP_PLL_CFG),
+  .ENABLE_FPU(1'(`CHIP_ENABLE_FPU)), .DS_PID(4'(`CHIP_DS_PID))) dut (
   /* verilator lint_off PINCONNECTEMPTY */
   .perf_o(), .bus_ce_o(bus_ce),
   /* verilator lint_on PINCONNECTEMPTY */
   .sysclk(clk), .pll_cfg_i(pll_cfg), .clk_out_o(clk_out), .clk_out_oe_o(clk_out_oe),
   .br_n_o(br_n), .bg_n_i(bg_n || bus_block), .abb_n_i(1'b1), .abb_n_o(abb_n), .abb_oe_o(abb_oe),
   .ts_n_i(bus_ts_n || snoop_hide), .ts_n_o(ts_n), .ts_oe_o(ts_oe),
-  .a_i(bus_a), .a_o(a), .ap_i(bus_ap), .ap_o(ap), .ape_n_o(ape_n),
-  .tt_i(bus_tt), .tt_o(tt), .tsiz_o(tsiz), .tbst_n_i(1'b1), .tbst_n_o(tbst_n),
+  .a_i(buc_drive ? buc_a : bus_a), .a_o(a), .ap_i(bus_ap), .ap_o(ap), .ape_n_o(ape_n),
+  .tt_i(buc_drive ? buc_tt : bus_tt), .tt_o(tt), .tsiz_o(tsiz), .tbst_n_i(1'b1), .tbst_n_o(tbst_n),
   .tc_o(tc), .ci_n_o(ci_n), .wt_n_o(wt_n), .gbl_n_i(bus_gbl_n), .gbl_n_o(gbl_n),
   .cse_o(cse), .addr_oe_o(addr_oe),
-  .aack_n_i(aack_n), .artry_n_i(artry_n), .artry_n_o(artry_out_n), .artry_oe_o(artry_oe),
-  .dbg_n_i(dbg_n), .dbwo_n_i(1'b1), .dbb_n_i(1'b1), .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe),
-  .dh_i(target_data[63:32]), .dl_i(target_data[31:0]), .dh_o(dh_out), .dl_o(dl_out),
+  .xats_n_i(xats_oe ? xats_n : buc_xats_n), .xats_n_o(xats_n), .xats_oe_o(xats_oe),
+  .aack_n_i(aack_n && buc_aack_n), .artry_n_i(artry_n && buc_artry_n), .artry_n_o(artry_out_n), .artry_oe_o(artry_oe),
+  .dbg_n_i(dbg_n && buc_dbg_n), .dbwo_n_i(1'b1), .dbb_n_i(1'b1), .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe),
+  .dh_i(buc_ta_n ? target_data[63:32] : buc_dh), .dl_i(target_data[31:0]), .dh_o(dh_out), .dl_o(dl_out),
   .dp_i('1), .dp_o(dp), .data_oe_o(data_oe), .dpe_n_o(dpe_n), .dbdis_n_i(dbdis_n),
-  .ta_n_i(ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n),
+  .ta_n_i(ta_n && buc_ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n && buc_tea_n),
   .int_n_i(int_n), .smi_n_i(smi_n), .mcp_n_i(mcp_n), .ckstp_in_n_i(ckstp_in_n),
   .ckstp_out_n_o(ckstp_out_n), .hreset_n_i(hreset_n), .sreset_n_i(sreset_n),
   .rsrv_n_o(rsrv_n), .qreq_n_o(qreq_n), .qack_n_i(qack_n), .tben_i(tben),
@@ -113,9 +129,9 @@ end
 // half-cycle releases fall inside it); hard reset and checkstop release
 // them at any cycle.
 logic pins_first_q = 1'b1, pins_live_q = 1'b0;
-logic [137:0] pins_q = '0;
-logic [137:0] pins_now;
-assign pins_now = {br_n, abb_n, abb_oe, ts_n, ts_oe, a, ap, ape_n, tt, tsiz,
+logic [139:0] pins_q = '0;
+logic [139:0] pins_now;
+assign pins_now = {xats_n, xats_oe, br_n, abb_n, abb_oe, ts_n, ts_oe, a, ap, ape_n, tt, tsiz,
                    tbst_n, tc, ci_n, wt_n, gbl_n, cse, addr_oe, artry_out_n,
                    artry_oe, dbb_n, dbb_oe, data_oe, data_oe ? dout : 64'b0,
                    data_oe ? dp : 8'b0, rsrv_n, qreq_n};

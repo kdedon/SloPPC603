@@ -182,9 +182,7 @@ module ppc_core #(
     DIV_LATENCY != 0 ? DIV_LATENCY : cpu_div_latency(CPU_VARIANT);
   // Elaboration fails for a variant whose differences are not all built.
   // synthesis translate_off
-  if (CPU_VARIANT == CPU_603) begin : g_reject_603
-    $fatal(1, "CPU_VARIANT CPU_603 is not implemented (caches, SPR presence, direct-store, 2:2 stores)");
-  end else if (!cpu_core_supported(CPU_VARIANT)) begin : g_reject_unknown
+  if (!cpu_core_supported(CPU_VARIANT)) begin : g_reject_unknown
     $fatal(1, "CPU_VARIANT %0d is not a known variant", CPU_VARIANT);
   end
   // synthesis translate_on

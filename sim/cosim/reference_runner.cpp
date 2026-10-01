@@ -266,10 +266,12 @@ static uint32_t word(const std::string& token) {
 
 int main(int argc, char** argv) {
     try {
-        if (argc < 2 || argc > 3) throw std::runtime_error("usage: reference_runner program.hex [MPC603EV|MPC603E]");
+        if (argc < 2 || argc > 3) throw std::runtime_error("usage: reference_runner program.hex [MPC603EV|MPC603E|MPC603]");
         std::string model = argc == 3 ? argv[2] : "MPC603EV";
-        if (model != "MPC603EV" && model != "MPC603E") throw std::runtime_error("unsupported model (602/601/LE disabled)");
-        ppc_state.spr[SPR::PVR] = model == "MPC603EV" ? PPC_VER::MPC603EV : PPC_VER::MPC603E;
+        if (model != "MPC603EV" && model != "MPC603E" && model != "MPC603")
+            throw std::runtime_error("unsupported model (602/601/LE disabled)");
+        ppc_state.spr[SPR::PVR] = model == "MPC603EV" ? PPC_VER::MPC603EV :
+                                  model == "MPC603E" ? PPC_VER::MPC603E : PPC_VER::MPC603;
         std::ifstream input(argv[1]);
         if (!input) throw std::runtime_error("cannot open program");
         std::vector<uint32_t> words;

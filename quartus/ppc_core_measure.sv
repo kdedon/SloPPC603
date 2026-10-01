@@ -146,7 +146,7 @@ module ppc_core_measure #(
                        retire.pc ^ retire.insn ^ retire.value ^ req_addr ^
                        {31'b0, retire.alignment_exception} ^
                        {29'b0, retire.fetch_fault} ^
-                       {29'b0, retire.data_fault} ^
+                       {28'b0, retire.data_fault} ^
                        retire.page_miss.ea ^ retire.page_miss.sr ^
                        {27'b0, retire.page_miss.pr, retire.page_miss.ir,
                         retire.page_miss.dr, retire.page_miss.write, retire.page_miss.way} ^

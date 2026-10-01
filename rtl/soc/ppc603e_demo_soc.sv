@@ -106,7 +106,7 @@ module ppc603e_demo_soc #(
     .a_i(a_pin), .a_o(a_pin), .ap_i('1), .ap_o(), .ape_n_o(),
     .tt_i(tt_pin), .tt_o(tt_pin), .tsiz_o(tsiz_pin), .tbst_n_i(1'b1), .tbst_n_o(tbst_n),
     .tc_o(), .ci_n_o(), .wt_n_o(), .gbl_n_i(gbl_n || !addr_oe), .gbl_n_o(gbl_n),
-    .cse_o(), .addr_oe_o(addr_oe),
+    .cse_o(), .addr_oe_o(addr_oe), .xats_n_i(1'b1), .xats_n_o(), .xats_oe_o(),
     .aack_n_i(aack_n), .artry_n_i(!(artry_oe && !artry_n_o)), .artry_n_o(artry_n_o),
     .artry_oe_o(artry_oe),
     .dbg_n_i(dbg_n), .dbwo_n_i(1'b1), .dbb_n_i(1'b1), .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe),
