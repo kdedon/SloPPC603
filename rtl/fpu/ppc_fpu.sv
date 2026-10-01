@@ -2,7 +2,11 @@
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 module ppc_fpu #(
-    parameter bit CPU_602 = 1'b0
+    parameter bit CPU_602 = 1'b0,
+    // 0: an instruction offers its memory request from its pending entry,
+    // never in its issue cycle. For an LSU that cannot accept a request
+    // in the cycle the instruction issues; timing is then unchanged.
+    parameter bit MEM_AT_ISSUE = 1'b1
 ) (
     input logic clk_i,
     input logic rst_ni,
@@ -1204,7 +1208,8 @@ module ppc_fpu #(
           work1_d_bad && !work1_offer_held);
     work1_arith_launch = work1_arith_eligible &&
         !deferred_abort_flush_q && work1_admitted;
-    work1_mem_launch = work1_mem_eligible && work1_admitted;
+    work1_mem_launch = work1_mem_eligible && work1_admitted &&
+        (MEM_AT_ISSUE || work1_old);
     work1_local_launch = rst_ni && !kill_all_i && !abort_valid_i &&
         work1_valid && work1_admitted &&
         (work1_decoded.kind == DK_MEMORY ?
@@ -1279,7 +1284,8 @@ module ppc_fpu #(
           !work_decoded.mem_single && !work_decoded.mem_integer &&
           src_d_bad && !offer_held);
     arith_launch = arith_eligible && !deferred_abort_flush_q && work_admitted;
-    mem_launch = mem_eligible && work_admitted;
+    mem_launch = mem_eligible && work_admitted &&
+        (MEM_AT_ISSUE || !work_dispatch);
     local_fpu_uses_pipe = work_decoded.kind == DK_MOVE ||
         work_decoded.kind == DK_FSEL || work_decoded.kind == DK_MFFS ||
         work_decoded.kind == DK_MCRFS || work_decoded.kind == DK_MTFS;
@@ -1291,10 +1297,10 @@ module ppc_fpu #(
     arith_rsp_ready = 1'b1;
     // A same-cycle LSU reply waits until its request is registered.
     mem_rsp_ready_o = rst_ni && !kill_all_i &&
-        !(work_valid && work_admitted &&
+        !(work_valid && work_admitted && (MEM_AT_ISSUE || !work_dispatch) &&
           work_decoded.kind == DK_MEMORY &&
           mem_rsp_i.tag == work_issue.tag) &&
-        !(work1_valid && work1_admitted &&
+        !(work1_valid && work1_admitted && (MEM_AT_ISSUE || work1_old) &&
           work1_decoded.kind == DK_MEMORY &&
           mem_rsp_i.tag == work1_issue.tag);
     mem_req_o = '0;
@@ -1857,7 +1863,7 @@ module ppc_fpu #(
   // Read indices repeat the work-slot selection so the storage reads do not
   // loop through the issue logic that consumes them.
   // The inspection port shares the second context's frC read and is valid
-  // while that context is empty.
+  // while no entry waits and no lane-1 issue is offered.
   always_comb begin
     logic [15:6] insn0;
     logic [15:6] insn1;
@@ -1865,7 +1871,7 @@ module ppc_fpu #(
     insn0 = exec_found ? exec_entry.issue.insn[15:6] : issue_i.insn[15:6];
     insn1 = second_exec_found ? second_entry.issue.insn[15:6] :
         exec_found ? issue_i.insn[15:6] : issue1_i.insn[15:6];
-    context1 = second_exec_found || (exec_found ? issue_valid_i : issue1_valid_i);
+    context1 = second_exec_found || exec_found || issue1_valid_i;
     fpr_raddr[0] = exec_found ? exec_entry.src_a : lane_index[0][0];
     fpr_raddr[1] = insn0[15:11];
     fpr_raddr[2] = insn0[10:6];
