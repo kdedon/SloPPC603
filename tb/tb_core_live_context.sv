@@ -113,7 +113,7 @@ module tb_core_live_context #(
       /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
-    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.checkstop_o(unused_checkstop), .halted_o(halted),
+    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired), /* verilator lint_off PINCONNECTEMPTY */ .retire1_valid_o(), .retire1_o(), /* verilator lint_on PINCONNECTEMPTY */ .retire1_ready_i(1'b0),.checkstop_o(unused_checkstop), .halted_o(halted),
       .context_valid_o(cv),.context_ready_i(cr),.context_ir_o(ci),.context_dr_o(cd),.context_pr_o(cp),
       .memory_quiescent_i(unused_memory_quiescent),
       .redirect_valid_i(red),.redirect_all_i(red_all),.redirect_keep_pivot_i(red_keep),

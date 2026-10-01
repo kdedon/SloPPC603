@@ -2,9 +2,12 @@
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Allocate in program order, finish by identity, retire a finished head, and
-// recover to an accepted pre-edge queue prefix.
+// recover to an accepted pre-edge queue prefix. Lane 1 allocates the entry
+// after lane 0's in the same cycle; retire1 offers CQ[1] beside the head.
 module ppc_completion #(
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
+  // Clear: retire1 is never offered.
+  parameter bit ENABLE_PAIR_RETIRE = 1'b0,
   // Clear: every recovery removes the whole queue (the serialized lane's
   // redirects), so no survivor walk is built.
   parameter bit ENABLE_PIVOT_RECOVERY = 1'b1
@@ -20,6 +23,12 @@ module ppc_completion #(
   // The entry allocates finished; its unit gates retirement instead.
   input logic alloc_finished_i,
   output ppc_pkg::completion_tag_t alloc_tag_o,
+  // Lane 1 allocates only beside lane 0.
+  input logic alloc1_valid_i,
+  output logic alloc1_ready_o,
+  input ppc_pkg::retire_packet_t alloc1_i,
+  input logic alloc1_finished_i,
+  output ppc_pkg::completion_tag_t alloc1_tag_o,
   input logic result_valid_i,
   output logic result_ready_o,
   input ppc_pkg::result_packet_t result_i,
@@ -30,6 +39,11 @@ module ppc_completion #(
   input logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
   output ppc_pkg::completion_tag_t retire_tag_o,
+  // CQ[1] retires only with the head, when retire_ready_i also holds.
+  output logic retire1_valid_o,
+  input logic retire1_ready_i,
+  output ppc_pkg::retire_packet_t retire1_o,
+  output ppc_pkg::completion_tag_t retire1_tag_o,
   input logic redirect_valid_i,
   input logic redirect_all_i,
   input logic redirect_keep_pivot_i,
@@ -48,10 +62,11 @@ module ppc_completion #(
   retire_packet_t packets_q [CQ_DEPTH];
   logic [CQ_GENERATION_WIDTH-1:0] generations_q [CQ_DEPTH];
   logic [CQ_DEPTH-1:0] active_q, done_q;
-  logic [CQ_INDEX_WIDTH-1:0] head_q, tail_q;
+  // head1_q and tail1_q are the slots after head_q and tail_q.
+  logic [CQ_INDEX_WIDTH-1:0] head_q, tail_q, head1_q, tail1_q;
   logic [COUNT_WIDTH-1:0] count_q;
-  retire_packet_t allocation;
-  logic alloc_fire, retire_fire, finish_accept;
+  retire_packet_t allocation, allocation1;
+  logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept;
   logic redirect_found;
   logic [CQ_DEPTH-1:0] redirect_candidate_kill;
   logic [COUNT_WIDTH-1:0] redirect_candidate_survivors;
@@ -85,9 +100,62 @@ module ppc_completion #(
     return CQ_INDEX_WIDTH'(sum);
   endfunction
 
+  // Allocation-time fault metadata stays verbatim, including diagnostic
+  // packets: result completion only updates values and execution flags.
+  function automatic retire_packet_t normalize(input retire_packet_t a);
+    retire_packet_t n;
+    n = a;
+    n.alignment_exception = a.alignment_exception && !a.illegal;
+    n.data_fault = DATA_OK;
+    n.gpr_write = a.gpr_write && !a.illegal;
+    n.rename_owned = n.gpr_write;
+    n.value = '0;
+    n.update_write = a.update_write && !a.illegal;
+    n.update_gpr = n.update_write ? a.update_gpr : 5'b0;
+    n.update_value = '0;
+    n.needs_flags = !a.illegal &&
+      (a.needs_flags || a.write_xer || a.write_ca ||
+       a.write_ov_so || a.write_cr_field || a.write_cr_fields ||
+       a.write_cr_bit);
+    n.write_xer = a.write_xer && !a.illegal;
+    n.write_ca = a.write_ca && !a.illegal;
+    n.write_ov_so = a.write_ov_so && !a.illegal;
+    n.write_cr_field = a.write_cr_field && !a.illegal;
+    n.cr_field = a.illegal ? 3'b0 : a.cr_field;
+    n.write_cr_fields = a.write_cr_fields && !a.illegal;
+    n.cr_mask = n.write_cr_fields ? a.cr_mask : 8'b0;
+    n.write_cr_bit = a.write_cr_bit && !a.illegal;
+    n.cr_bit = n.write_cr_bit ? a.cr_bit : 5'b0;
+    n.cr_delta = '0;
+    n.xer_delta = '0;
+    return n;
+  endfunction
+
+  // CQ[1] beside the head: not a store, FP arithmetic or special-lane entry
+  // (cq1_ok), no exception, and together at most two GPR writes, one flag
+  // update, one FPR write and one LR/CTR update. Reads a few packet fields.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic pair_ok(input retire_packet_t older,
+                                   input retire_packet_t younger);
+    return younger.cq1_ok && !younger.illegal && !younger.alignment_exception &&
+           (younger.data_fault == DATA_OK) && (younger.fetch_fault == FETCH_OK) &&
+           (3'(older.gpr_write) + 3'(older.update_write) +
+            3'(younger.gpr_write) + 3'(younger.update_write) <= 3'd2) &&
+           !(older.needs_flags && younger.needs_flags) &&
+           !(older.fpr_write && younger.fpr_write) &&
+           !(older.branch && younger.branch);
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni) begin
+      if (alloc1_valid_i)
+        assert (alloc_valid_i) else $error("CQ lane 1 allocation without lane 0");
+      if (!ENABLE_PAIR_RETIRE)
+        assert (!retire1_valid_o) else $error("retire1 offered without pair retirement");
+      assert (head1_q == next_index(head_q)) else $error("CQ head1 out of step");
+      assert (tail1_q == next_index(tail_q)) else $error("CQ tail1 out of step");
       if (!ENABLE_PIVOT_RECOVERY && redirect_valid_i)
         assert (redirect_all_i && !retire_fire)
           else $error("recovery without pivot support must remove the whole queue");
@@ -139,6 +207,9 @@ module ppc_completion #(
         (head_q < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
         done_q[head_q] && redirect_candidate_kill[head_q])
       redirect_accepted_o = 1'b0;
+    // So is an offered CQ[1].
+    if (ENABLE_PIVOT_RECOVERY && retire1_valid_o && redirect_candidate_kill[head1_q])
+      redirect_accepted_o = 1'b0;
 
     redirect_kill_o = redirect_accepted_o ? redirect_candidate_kill : '0;
     for (int i = 0; i < CQ_DEPTH; i++)
@@ -147,44 +218,26 @@ module ppc_completion #(
 
   assign alloc_ready_o = !redirect_accepted_o &&
                          (count_q < COUNT_WIDTH'(CQ_DEPTH));
+  assign alloc1_ready_o = !redirect_accepted_o &&
+                          (count_q < COUNT_WIDTH'(CQ_DEPTH - 1));
   assign empty_o = (count_q == 0);
   assign head_index_o = head_q;
   // Even a stale or killed response drains so that it cannot block a producer.
   assign result_ready_o = 1'b1;
   assign alloc_fire = alloc_valid_i && alloc_ready_o;
+  assign alloc1_fire = alloc_fire && alloc1_valid_i && alloc1_ready_o;
   assign retire_fire = retire_valid_o && retire_ready_i;
+  assign retire1_fire = retire_fire && retire1_valid_o && retire1_ready_i;
   assign finish_accept_o = finish_accept;
 
   always_comb begin
-    // Keep allocation-time fault metadata verbatim, including diagnostic
-    // packets: result completion only updates values and execution flags.
-    allocation = alloc_i;
-    allocation.alignment_exception = alloc_i.alignment_exception && !alloc_i.illegal;
-    allocation.data_fault = DATA_OK;
-    allocation.gpr_write = alloc_i.gpr_write && !alloc_i.illegal;
-    allocation.rename_owned = allocation.gpr_write;
-    allocation.value = '0;
-    allocation.update_write = alloc_i.update_write && !alloc_i.illegal;
-    allocation.update_gpr = allocation.update_write ? alloc_i.update_gpr : 5'b0;
-    allocation.update_value = '0;
-    allocation.needs_flags = !alloc_i.illegal &&
-      (alloc_i.needs_flags || alloc_i.write_xer || alloc_i.write_ca ||
-       alloc_i.write_ov_so || alloc_i.write_cr_field || alloc_i.write_cr_fields ||
-       alloc_i.write_cr_bit);
-    allocation.write_xer = alloc_i.write_xer && !alloc_i.illegal;
-    allocation.write_ca = alloc_i.write_ca && !alloc_i.illegal;
-    allocation.write_ov_so = alloc_i.write_ov_so && !alloc_i.illegal;
-    allocation.write_cr_field = alloc_i.write_cr_field && !alloc_i.illegal;
-    allocation.cr_field = alloc_i.illegal ? 3'b0 : alloc_i.cr_field;
-    allocation.write_cr_fields = alloc_i.write_cr_fields && !alloc_i.illegal;
-    allocation.cr_mask = allocation.write_cr_fields ? alloc_i.cr_mask : 8'b0;
-    allocation.write_cr_bit = alloc_i.write_cr_bit && !alloc_i.illegal;
-    allocation.cr_bit = allocation.write_cr_bit ? alloc_i.cr_bit : 5'b0;
-    allocation.cr_delta = '0;
-    allocation.xer_delta = '0;
+    allocation = normalize(alloc_i);
+    allocation1 = normalize(alloc1_i);
 
     alloc_tag_o.index = tail_q;
     alloc_tag_o.generation = generations_q[tail_q] + CQ_GENERATION_WIDTH'(1);
+    alloc1_tag_o.index = tail1_q;
+    alloc1_tag_o.generation = generations_q[tail1_q] + CQ_GENERATION_WIDTH'(1);
 
     retire_valid_o = rst_ni && (count_q != '0) && active_q[head_q] && done_q[head_q];
     retire_o = '0;
@@ -193,6 +246,16 @@ module ppc_completion #(
       retire_o = packets_q[head_q];
       retire_tag_o.index = head_q;
       retire_tag_o.generation = generations_q[head_q];
+    end
+    retire1_valid_o = ENABLE_PAIR_RETIRE && retire_valid_o &&
+                      (count_q > COUNT_WIDTH'(1)) && active_q[head1_q] &&
+                      done_q[head1_q] && pair_ok(packets_q[head_q], packets_q[head1_q]);
+    retire1_o = '0;
+    retire1_tag_o = '0;
+    if (retire1_valid_o) begin
+      retire1_o = packets_q[head1_q];
+      retire1_tag_o.index = head1_q;
+      retire1_tag_o.generation = generations_q[head1_q];
     end
 
     finish_accept = 1'b0;
@@ -236,11 +299,12 @@ module ppc_completion #(
     slot = '0;
     if (ENABLE_PIVOT_RECOVERY && redirect_accepted_o) begin
       recovery_survivor_count_o = redirect_candidate_survivors -
-                                  COUNT_WIDTH'(retire_fire);
+                                  COUNT_WIDTH'(retire_fire) -
+                                  COUNT_WIDTH'(retire1_fire);
       for (int age = 0; age < CQ_DEPTH; age++) begin
         slot = ring_offset(head_q, COUNT_WIDTH'(age));
         if ((age < int'(redirect_candidate_survivors)) &&
-            (!retire_fire || (age != 0))) begin
+            (!retire_fire || (age != 0)) && (!retire1_fire || (age != 1))) begin
           recovery_survivor_packet_o[output_age] = packets_q[slot];
           recovery_survivor_tag_o[output_age].index = slot;
           recovery_survivor_tag_o[output_age].generation = generations_q[slot];
@@ -256,43 +320,59 @@ module ppc_completion #(
       done_q <= '0;
       head_q <= '0;
       tail_q <= '0;
+      head1_q <= CQ_INDEX_WIDTH'(1);
+      tail1_q <= CQ_INDEX_WIDTH'(1);
       count_q <= '0;
       for (int i = 0; i < CQ_DEPTH; i++) begin
         packets_q[i] <= '0;
         generations_q[i] <= '0;
       end
     end else begin
+      if (retire1_fire) begin
+        head_q <= next_index(head1_q);
+        head1_q <= next_index(next_index(head1_q));
+      end else if (retire_fire) begin
+        head_q <= head1_q;
+        head1_q <= next_index(head1_q);
+      end
+      if (retire_fire) begin
+        active_q[head_q] <= 1'b0;
+        done_q[head_q] <= 1'b0;
+      end
+      if (retire1_fire) begin
+        active_q[head1_q] <= 1'b0;
+        done_q[head1_q] <= 1'b0;
+      end
       if (redirect_accepted_o) begin
-        count_q <= redirect_candidate_survivors - COUNT_WIDTH'(retire_fire);
+        count_q <= redirect_candidate_survivors - COUNT_WIDTH'(retire_fire) -
+                   COUNT_WIDTH'(retire1_fire);
         tail_q <= redirect_candidate_tail;
-        if (retire_fire) head_q <= next_index(head_q);
+        tail1_q <= next_index(redirect_candidate_tail);
         for (int i = 0; i < CQ_DEPTH; i++) begin
           if (redirect_kill_o[i]) begin
             active_q[i] <= 1'b0;
             done_q[i] <= 1'b0;
           end
         end
-        if (retire_fire) begin
-          active_q[head_q] <= 1'b0;
-          done_q[head_q] <= 1'b0;
-        end
       end else begin
-        case ({alloc_fire, retire_fire})
-          2'b10: count_q <= count_q + COUNT_WIDTH'(1);
-          2'b01: count_q <= count_q - COUNT_WIDTH'(1);
-          default: count_q <= count_q;
-        endcase
-        if (retire_fire) begin
-          active_q[head_q] <= 1'b0;
-          done_q[head_q] <= 1'b0;
-          head_q <= next_index(head_q);
-        end
+        count_q <= count_q + COUNT_WIDTH'(alloc_fire) + COUNT_WIDTH'(alloc1_fire) -
+                   COUNT_WIDTH'(retire_fire) - COUNT_WIDTH'(retire1_fire);
         if (alloc_fire) begin
           packets_q[tail_q] <= allocation;
           generations_q[tail_q] <= alloc_tag_o.generation;
           active_q[tail_q] <= 1'b1;
           done_q[tail_q] <= alloc_i.illegal || alloc_finished_i;
-          tail_q <= next_index(tail_q);
+        end
+        if (alloc1_fire) begin
+          packets_q[tail1_q] <= allocation1;
+          generations_q[tail1_q] <= alloc1_tag_o.generation;
+          active_q[tail1_q] <= 1'b1;
+          done_q[tail1_q] <= alloc1_i.illegal || alloc1_finished_i;
+          tail_q <= next_index(tail1_q);
+          tail1_q <= next_index(next_index(tail1_q));
+        end else if (alloc_fire) begin
+          tail_q <= tail1_q;
+          tail1_q <= next_index(tail1_q);
         end
       end
       if (finish_accept) begin

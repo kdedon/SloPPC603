@@ -108,7 +108,7 @@ module tb_core_page_miss_result #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1);
     .decrementer_taken_o(unused_timer[32]),.decrementer_pc_o(unused_timer[31:0]),
     .external_irq_i(1'b0),.interrupt_taken_o(unused_irq[32]),
     .interrupt_pc_o(unused_irq[31:0]),
-    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired),.checkstop_o(unused_checkstop), .halted_o(halted),
+    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired), /* verilator lint_off PINCONNECTEMPTY */ .retire1_valid_o(), .retire1_o(), /* verilator lint_on PINCONNECTEMPTY */ .retire1_ready_i(1'b0),.checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(redirect_valid),.redirect_all_i(1'b1),
     .redirect_keep_pivot_i(1'b0),.redirect_pivot_i('0),
     .redirect_target_i(32'h40),.redirect_accepted_o(cut)

@@ -193,6 +193,11 @@ module ppc_core_bus60x #(
     .dmem_rsp_rdata_i(dmem_rsp_rdata),
     .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(NO_DATA_FAULT), .dmem_rsp_error_i(dmem_rsp_error),
     .retire_valid_o, .retire_ready_i, .retire_o,
+    // Pair retirement is not exported.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .retire1_valid_o(), .retire1_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .retire1_ready_i(1'b0),
     .halted_o(core_halted), .checkstop_o(unused_core_checkstop),
     .redirect_valid_i, .redirect_all_i, .redirect_keep_pivot_i,
     .redirect_pivot_i, .redirect_target_i, .redirect_accepted_o

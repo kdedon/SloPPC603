@@ -179,6 +179,11 @@ module ppc_core #(
   output logic retire_valid_o,
   input logic retire_ready_i,
   output ppc_pkg::retire_packet_t retire_o,
+  // The packet after retire_o, retiring with it. Never valid at
+  // DISPATCH_WIDTH 1.
+  output logic retire1_valid_o,
+  input logic retire1_ready_i,
+  output ppc_pkg::retire_packet_t retire1_o,
   output logic halted_o,
   // Checkstop state: a machine check with MSR[ME]=0. Only reset leaves it.
   output logic checkstop_o,
@@ -222,7 +227,7 @@ module ppc_core #(
   ppc_fpu_pkg::ppc_fpu_result_t fp_result;
   logic [31:0] fp_fpscr;
   logic fp_sticky_hold, fp_sticky_waited_q;
-  retire_packet_t cq_retire;
+  retire_packet_t cq_retire, cq_retire1;
   operand_t src_a, src_b, operand_a, operand_b;
   rs_entry_t rs_entry;
   issue_packet_t issue;
@@ -271,7 +276,8 @@ module ppc_core #(
   /* verilator lint_on UNUSEDSIGNAL */
   logic next_sources_committed;
   logic [CQ_INDEX_WIDTH-1:0] cq_head;
-  logic cq_retire_valid;
+  logic cq_retire_valid, cq_retire1_valid, commit1, gpr_commit1;
+  completion_tag_t retire1_producer;
   logic special_cancel, special_store_irrevocable, special_branch_redirect;
   logic special_kill;
   logic special_exception_redirect, special_exception_irrevocable;
@@ -322,9 +328,9 @@ module ppc_core #(
   logic fetch_valid, fetch_ready, iq_valid, iq_ready;
   logic alloc_ready, cq_ready, cq_empty, cq_finish_accept;
   logic dispatch, commit, gpr_commit, update_commit, fault_pending;
-  logic gpr_port_write, update_pending_q, gpr_ready;
-  logic [4:0] gpr_port_reg, update_reg_q;
-  logic [31:0] gpr_port_value, update_value_q;
+  logic update_pending_q, gpr_ready, gpr_port1_write;
+  logic [4:0] gpr_port1_reg;
+  logic [31:0] gpr_port1_value;
   logic normal_uop, special_uop, normal_idle;
   logic dispatch_needs_flags;
   logic recovery_accepted, rs_cancel, iu_cancel, fault_killed;
@@ -339,6 +345,15 @@ module ppc_core #(
   completion_tag_t recovery_tags [CQ_DEPTH];
   rename_tag_t alloc_tag;
   logic [31:0] arch_a, arch_b, arch_c, special_a, special_b;
+  // Second dispatch slot's operands and allocations; idle at DISPATCH_WIDTH 1.
+  logic [31:0] arch_a1, arch_b1;
+  completion_tag_t alloc1_producer;
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] arch_c1;
+  operand_t src_a1, src_b1;
+  logic alloc1_ready, cq1_ready;
+  rename_tag_t alloc1_tag;
+  /* verilator lint_on UNUSEDSIGNAL */
   logic [31:0] dispatch_ea;
   logic [1:0] dispatch_ea_low;
   logic dispatch_misaligned, dispatch_page_cross;
@@ -863,57 +878,57 @@ module ppc_core #(
   assign frontend_clear = recovery_accepted || bu_redirect_q;
   assign frontend_target = recovery_accepted ? selected_redirect_target :
                            bu_redirect_q ? bu_target_q : fold_target_q;
-  // One GPR write port. An update load's base write follows its destination
-  // write by one edge; dispatch waits for it (update forms serialize behind
-  // an empty CQ, so no other retirement competes for the port).
-  always_comb begin
-    gpr_port_write = gpr_commit || update_commit || update_pending_q;
-    if (gpr_commit) begin
-      gpr_port_reg = retire_o.gpr;
-      gpr_port_value = retire_o.value;
-    end else if (update_commit) begin
-      gpr_port_reg = retire_o.update_gpr;
-      gpr_port_value = retire_o.update_value;
-    end else begin
-      gpr_port_reg = update_reg_q;
-      gpr_port_value = update_value_q;
-    end
-  end
+  // Port 0 takes the head's destination; port 1 its update base, else the
+  // CQ[1] destination (pair retirement allows two GPR writes in all).
+  // Dispatch still waits one cycle after an update load writes both.
+  assign gpr_port1_write = update_commit || gpr_commit1;
+  assign gpr_port1_reg = update_commit ? retire_o.update_gpr : retire1_o.gpr;
+  assign gpr_port1_value = update_commit ? retire_o.update_value : retire1_o.value;
   always_ff @(posedge clk_i) begin
     if (!rst_ni) update_pending_q <= 1'b0;
     else update_pending_q <= gpr_commit && update_commit;
-    if (gpr_commit && update_commit) begin
-      update_reg_q <= retire_o.update_gpr;
-      update_value_q <= retire_o.update_value;
-    end
   end
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni && update_pending_q)
       assert (!gpr_commit && !update_commit && !dispatch)
-        else $error("deferred update write shared its port or cycle");
+        else $error("update hold shared its cycle");
     if (rst_ni && gpr_commit && update_commit)
       assert (retire_o.gpr != retire_o.update_gpr)
         else $error("update retirement writes alias");
+    if (rst_ni && update_commit)
+      assert (!gpr_commit1) else $error("CQ[1] GPR write beside an update base");
   end
   // synthesis translate_on
   ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR)) regfile (
     .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR]), .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .read_c_i(uop.src_c), .read_a_o(arch_a), .read_b_o(arch_b),
-    .read_c_o(arch_c), .write_i(gpr_port_write),
-    .write_reg_i(gpr_port_reg), .write_value_i(gpr_port_value),
+    .read_c_o(arch_c),
+    // Second dispatch slot's sources.
+    .read_a1_i(5'd0), .read_b1_i(5'd0), .read_c1_i(5'd0),
+    .read_a1_o(arch_a1), .read_b1_o(arch_b1), .read_c1_o(arch_c1),
+    .write_i(gpr_commit), .write_reg_i(retire_o.gpr), .write_value_i(retire_o.value),
+    .write1_i(gpr_port1_write), .write1_reg_i(gpr_port1_reg),
+    .write1_value_i(gpr_port1_value),
     .ready_o(gpr_ready)
   );
   ppc_rename rename (
     .clk_i, .rst_ni, .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .arch_a_i(arch_a), .arch_b_i(arch_b), .read_a_o(src_a), .read_b_o(src_b),
+    .read_a1_i(5'd0), .read_b1_i(5'd0), .arch_a1_i(arch_a1), .arch_b1_i(arch_b1),
+    .read_a1_o(src_a1), .read_b1_o(src_b1),
     .mapped_o(gpr_mapped),
     .alloc_ready_o(alloc_ready), .alloc_tag_o(alloc_tag),
     .alloc_i(dispatch && dispatch_uop.gpr_write),
     .alloc_reg_i(dispatch_uop.dst),
-    .alloc_producer_i(alloc_producer), .wake_valid_i(wake_valid), .wake_i(wake),
+    .alloc_producer_i(alloc_producer),
+    .alloc1_ready_o(alloc1_ready), .alloc1_tag_o(alloc1_tag), .alloc1_i(1'b0),
+    .alloc1_reg_i(5'd0), .alloc1_producer_i(alloc1_producer),
+    .wake_valid_i(wake_valid), .wake_i(wake),
     .release_i(commit && retire_o.rename_owned), .release_reg_i(retire_o.gpr), .release_tag_i(retire_o.tag),
     .release_producer_i(retire_producer),
+    .release1_i(commit1 && retire1_o.rename_owned), .release1_reg_i(retire1_o.gpr),
+    .release1_tag_i(retire1_o.tag), .release1_producer_i(retire1_producer),
     .recovery_i(recovery_accepted), .recovery_survivor_count_i(recovery_count),
     .recovery_survivor_packet_i(recovery_packets), .recovery_survivor_tag_i(recovery_tags)
   );
@@ -1550,21 +1565,28 @@ module ppc_core #(
     allocation.branch = bu_branch;
     allocation.branch_lk = bu_branch && uop.branch_lk;
     allocation.branch_ctr = bu_branch && bu_writes_ctr;
+    allocation.cq1_ok = iq_pair.cq1_ok;
+    allocation.fpr_write = fp_uop && ((iq_pair.unit == UNIT_FPU) || iq_pair.cq1_ok);
   end
   ppc_completion #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+    .ENABLE_PAIR_RETIRE(DISPATCH_WIDTH == 2),
     .ENABLE_PIVOT_RECOVERY(ENABLE_TEST_REDIRECT)
   ) completion (
     .clk_i, .rst_ni, .alloc_valid_i(dispatch), .alloc_ready_o(cq_ready),
     .empty_o(cq_empty), .head_index_o(cq_head),
     .alloc_i(allocation), .alloc_tag_o(alloc_producer),
     .alloc_finished_i(fp_uop),
+    .alloc1_valid_i(1'b0), .alloc1_ready_o(cq1_ready), .alloc1_i(allocation),
+    .alloc1_finished_i(1'b0), .alloc1_tag_o(alloc1_producer),
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
     .retire_valid_o(cq_retire_valid),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block),
     .retire_o(cq_retire), .retire_tag_o(retire_producer),
+    .retire1_valid_o(cq_retire1_valid), .retire1_ready_i(retire1_ready_i),
+    .retire1_o(cq_retire1), .retire1_tag_o(retire1_producer),
     .redirect_valid_i(selected_redirect_valid),
     .redirect_all_i(selected_redirect_all),
     .redirect_keep_pivot_i(selected_redirect_keep),
@@ -1590,6 +1612,9 @@ module ppc_core #(
   assign retire_valid_o = cq_retire_valid && !special_retire_hold && !halted_o &&
                           !fp_head_block;
   assign commit = retire_valid_o && retire_ready_i;
+  assign retire1_valid_o = retire_valid_o && cq_retire1_valid;
+  assign retire1_o = cq_retire1;
+  assign commit1 = commit && retire1_valid_o && retire1_ready_i;
   // Committed exceptions, taken branches and ISYNC redirect from registered
   // special-unit state on the edge after commit, when the serialized machine
   // is empty; they win over an external test redirect. Stores and committed
@@ -1751,6 +1776,7 @@ module ppc_core #(
   // synthesis translate_on
   assign gpr_commit = commit && retire_o.gpr_write && !retire_o.illegal;
   assign update_commit = commit && retire_o.update_write && !retire_o.illegal;
+  assign gpr_commit1 = commit1 && retire1_o.gpr_write && !retire1_o.illegal;
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       fault_pending <= 1'b0;

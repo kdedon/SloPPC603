@@ -118,6 +118,10 @@ module ppc_core_measure #(
     .retire_valid_o(retire_valid),
     .retire_ready_i(1'b1),
     .retire_o(retire),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .retire1_valid_o(), .retire1_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .retire1_ready_i(1'b0),
     .checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b0), .redirect_keep_pivot_i(1'b0),
     .redirect_pivot_i('0), .redirect_target_i('0), .redirect_accepted_o(unused_redirect_accepted)
@@ -151,7 +155,8 @@ module ppc_core_measure #(
                        {27'b0, retire.page_miss.pr, retire.page_miss.ir,
                         retire.page_miss.dr, retire.page_miss.write, retire.page_miss.way} ^
                        {30'b0, retire.rename_owned, retire.seq_partial} ^
-                       {29'b0, retire.branch, retire.branch_lk, retire.branch_ctr} ^
+                       {27'b0, retire.cq1_ok, retire.fpr_write, retire.branch, retire.branch_lk,
+                        retire.branch_ctr} ^
                        retire.update_value ^
                        retire.cr_delta ^ retire.xer_delta ^ {29'b0, retire.cr_field} ^
                        {23'b0, retire.cr_mask, retire.write_cr_fields} ^

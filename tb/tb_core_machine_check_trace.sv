@@ -110,7 +110,7 @@ module tb_core_machine_check_trace;
     .dmem_rsp_page_miss_i(d_capsule),
     .icbi_req_valid_o(unused_cache[1]), .icbi_req_ready_i(1'b1),
     .icbi_req_ea_o(unused_cache[33:2]),
-    .retire_valid_o(tv), .retire_ready_i(tr), .retire_o(retired),
+    .retire_valid_o(tv), .retire_ready_i(tr), .retire_o(retired), /* verilator lint_off PINCONNECTEMPTY */ .retire1_valid_o(), .retire1_o(), /* verilator lint_on PINCONNECTEMPTY */ .retire1_ready_i(1'b0),
     .halted_o(halted), .checkstop_o(checkstop),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b1), .redirect_keep_pivot_i(1'b0),
     .redirect_pivot_i('0), .redirect_target_i(32'b0),

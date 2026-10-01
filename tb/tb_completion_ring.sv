@@ -19,6 +19,10 @@ module tb_completion_ring;
   int checks=0,scenarios=0;
   logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] unused_cq_head;
   ppc_completion dut(
+    /* verilator lint_off PINCONNECTEMPTY */
+    .alloc1_ready_o(), .alloc1_tag_o(), .retire1_valid_o(), .retire1_o(), .retire1_tag_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .alloc1_valid_i(1'b0), .alloc1_i('0), .alloc1_finished_i(1'b0), .retire1_ready_i(1'b0),
     .clk_i(clk),.rst_ni(rst_n),.alloc_valid_i(av),.alloc_ready_o(ar),
     .empty_o(empty), .head_index_o(unused_cq_head),.alloc_i(allocation), .alloc_finished_i(1'b0),.alloc_tag_o(atag),
     .result_valid_i(rv),.result_ready_o(rr),.result_i(result),

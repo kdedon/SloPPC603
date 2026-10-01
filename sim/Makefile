@@ -416,6 +416,8 @@ test-core:
 test-completion:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_completion --Mdir $(BUILD_DIR)/completion ../rtl/ppc_pkg.sv ../rtl/ppc_completion.sv ../tb/tb_completion.sv
 	./$(BUILD_DIR)/completion/Vtb_completion $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_completion_pair --Mdir $(BUILD_DIR)/completion-pair ../rtl/ppc_pkg.sv ../rtl/ppc_completion.sv ../tb/tb_completion_pair.sv
+	./$(BUILD_DIR)/completion-pair/Vtb_completion_pair $(SIM_ARGS)
 test-execution:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_execution --Mdir $(BUILD_DIR)/execution ../rtl/ppc_pkg.sv ../rtl/ppc_rename.sv ../rtl/ppc_dispatch.sv ../rtl/ppc_divider.sv ../rtl/ppc_iu.sv ../tb/tb_execution.sv
 	./$(BUILD_DIR)/execution/Vtb_execution $(SIM_ARGS)
@@ -1586,6 +1588,24 @@ test-regfile-tgpr:
 	mkdir -p $(BUILD_DIR)/regfile-tgpr-disabled
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_tgpr "-GENABLE_TGPR=1'b0" --Mdir $(BUILD_DIR)/regfile-tgpr-disabled ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_tgpr.sv
 	./$(BUILD_DIR)/regfile-tgpr-disabled/Vtb_regfile_tgpr $(SIM_ARGS)
+
+# Rename with two allocations and releases per cycle against a model.
+.PHONY: test-rename-pair
+test: test-rename-pair
+test-rename-pair:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_rename_pair --Mdir $(BUILD_DIR)/rename-pair ../rtl/ppc_pkg.sv ../rtl/ppc_rename.sv ../tb/tb_rename_pair.sv
+	./$(BUILD_DIR)/rename-pair/Vtb_rename_pair $(SIM_ARGS)
+
+# Six-read, two-write GPR file (live-value table) against a model.
+.PHONY: test-regfile-gpr-ports
+test: test-regfile-gpr-ports
+test-regfile-gpr-ports:
+	mkdir -p $(BUILD_DIR)/regfile-gpr-ports-tgpr
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports --Mdir $(BUILD_DIR)/regfile-gpr-ports-tgpr ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_gpr_ports.sv
+	./$(BUILD_DIR)/regfile-gpr-ports-tgpr/Vtb_regfile_gpr_ports $(SIM_ARGS)
+	mkdir -p $(BUILD_DIR)/regfile-gpr-ports
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_regfile_gpr_ports "-GENABLE_TGPR=1'b0" --Mdir $(BUILD_DIR)/regfile-gpr-ports ../rtl/ppc_regfile_gpr.sv ../tb/tb_regfile_gpr_ports.sv
+	./$(BUILD_DIR)/regfile-gpr-ports/Vtb_regfile_gpr_ports $(SIM_ARGS)
 
 test-core-tgpr:
 	mkdir -p $(BUILD_DIR)/core-tgpr-enabled

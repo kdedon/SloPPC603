@@ -44,6 +44,10 @@ module tb_completion_flags;
   logic cq_empty, unused_cq_finish;
   logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] unused_cq_head;
   ppc_completion completion (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .alloc1_ready_o(), .alloc1_tag_o(), .retire1_valid_o(), .retire1_o(), .retire1_tag_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .alloc1_valid_i(1'b0), .alloc1_i('0), .alloc1_finished_i(1'b0), .retire1_ready_i(1'b0),
     .finish_accept_o(unused_cq_finish), .empty_o(cq_empty), .head_index_o(unused_cq_head), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(alloc_valid), .alloc_ready_o(alloc_ready),
     .alloc_i(allocation), .alloc_finished_i(1'b0), .alloc_tag_o(alloc_tag),

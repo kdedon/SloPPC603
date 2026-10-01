@@ -377,6 +377,10 @@ package ppc_pkg;
     logic branch;
     logic branch_lk;
     logic branch_ctr;
+    // May retire from CQ[1]: integer, branch or load (set at allocation).
+    logic cq1_ok;
+    // Writes an FPR (FP arithmetic or FP load).
+    logic fpr_write;
   } retire_packet_t;
   // Performance events, registered one cycle after the cycle they describe.
   // slot says what the single dispatch slot did that cycle, so the slot

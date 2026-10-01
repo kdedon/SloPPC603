@@ -347,6 +347,11 @@ module ppc_core_bat #(
     .dmem_req_attr_o(dmem_req_attr), .icache_ctl_valid_o, .icache_ctl_ready_i,
     .icache_ctl_enable_o, .icache_ctl_invalidate_o,
     .retire_valid_o, .retire_ready_i, .retire_o,
+    // Pair retirement is not exported.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .retire1_valid_o(), .retire1_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .retire1_ready_i(1'b0),
     .halted_o(core_halted), .checkstop_o, .redirect_valid_i, .redirect_all_i,
     .redirect_keep_pivot_i, .redirect_pivot_i, .redirect_target_i,
     .redirect_accepted_o, .perf_o

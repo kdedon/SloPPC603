@@ -48,6 +48,10 @@ module tb_recovery_state;
   logic unused_cq_empty, unused_cq_finish;
   logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] unused_cq_head;
   ppc_completion completion (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .alloc1_ready_o(), .alloc1_tag_o(), .retire1_valid_o(), .retire1_o(), .retire1_tag_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .alloc1_valid_i(1'b0), .alloc1_i('0), .alloc1_finished_i(1'b0), .retire1_ready_i(1'b0),
     .finish_accept_o(unused_cq_finish), .empty_o(unused_cq_empty), .head_index_o(unused_cq_head), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(cq_alloc_valid), .alloc_ready_o(cq_alloc_ready),
     .alloc_i(cq_alloc_packet), .alloc_finished_i(1'b0), .alloc_tag_o(cq_alloc_tag),
@@ -71,6 +75,12 @@ module tb_recovery_state;
   /* verilator lint_on UNUSEDSIGNAL */
 
   ppc_rename rename_state (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .read_a1_o(), .read_b1_o(), .alloc1_ready_o(), .alloc1_tag_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .read_a1_i(5'd0), .read_b1_i(5'd0), .arch_a1_i(32'd0), .arch_b1_i(32'd0),
+    .alloc1_i(1'b0), .alloc1_reg_i(5'd0), .alloc1_producer_i('0),
+    .release1_i(1'b0), .release1_reg_i(5'd0), .release1_tag_i('0), .release1_producer_i('0),
 
     .mapped_o(rename_mapped),
     .clk_i(clk), .rst_ni(rst_n),

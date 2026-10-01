@@ -117,7 +117,7 @@ module tb_core_runtime_bat_privilege;
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken), .decrementer_pc_o(decrementer_pc),
     .interrupt_taken_o(interrupt_taken), .interrupt_pc_o(interrupt_pc),
-    .retire_valid_o(retire_valid), .retire_ready_i(1'b1), .retire_o(retired),
+    .retire_valid_o(retire_valid), .retire_ready_i(1'b1), .retire_o(retired), /* verilator lint_off PINCONNECTEMPTY */ .retire1_valid_o(), .retire1_o(), /* verilator lint_on PINCONNECTEMPTY */ .retire1_ready_i(1'b0),
     .checkstop_o(unused_checkstop), .halted_o(halted), .redirect_valid_i(1'b0), .redirect_all_i(1'b0),
     .redirect_keep_pivot_i(1'b0), .redirect_pivot_i('0),
     .redirect_target_i(32'b0), .redirect_accepted_o(redirect_accepted)

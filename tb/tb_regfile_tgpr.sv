@@ -11,7 +11,22 @@ module tb_regfile_tgpr #(
   logic write_i, ready_o;
   logic [4:0] write_reg_i;
   logic [31:0] write_value_i;
+  logic [4:0] read_a1_i, read_b1_i, read_c1_i;
+  logic [31:0] read_a1_o, read_b1_o, read_c1_o;
+  logic write1_i;
+  logic [4:0] write1_reg_i;
+  logic [31:0] write1_value_i;
+  logic _unused_lane1;
   int checks;
+
+  // The second lane is covered by tb_regfile_gpr_ports.
+  assign read_a1_i = '0;
+  assign read_b1_i = '0;
+  assign read_c1_i = '0;
+  assign write1_i = 1'b0;
+  assign write1_reg_i = '0;
+  assign write1_value_i = '0;
+  assign _unused_lane1 = ^{read_a1_o, read_b1_o, read_c1_o};
 
   ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR)) dut (.*);
 
