@@ -8,10 +8,11 @@ bench_gen.py cstring <name> <input> <output>
 bench_gen.py embench <embench-dir> <output> <benchmark>...
     Embench's reference times (baseline-data/speed.json) and each
     benchmark's LOCAL_SCALE_FACTOR, as an X-macro list.
-bench_gen.py whetstone <whetstone.c> <loop> <output>
+bench_gen.py whetstone <whetstone.c> <loop> <output> [<name>]
     Whetstone's opening comment block (its licence notice) as a C string, and
     the values the program prints per module at the given LOOP, from a model
-    of the program in host double precision.
+    of the program in host double precision. With a name, only the values,
+    as <name>_expected with the LOOP in <NAME>_LOOP.
 """
 import math
 import pathlib
@@ -119,15 +120,20 @@ def whetstone_model(loop):
     return out
 
 
-def whetstone(src, loop, out):
+def whetstone(src, loop, out, name=None):
+    rows = "".join(
+        f"  {{{n}, {j}, {k}, {{{', '.join(float.hex(v) for v in xs)}}}}},\n"
+        for n, j, k, *xs in whetstone_model(int(loop)))
+    if name:
+        pathlib.Path(out).write_text(
+            f"#define {name.upper()}_LOOP {int(loop)}\n"
+            f"static const struct whet_pout {name}_expected[] = {{\n{rows}}};\n")
+        return
     text = pathlib.Path(src).read_text(encoding="ascii")
     notice = text[:text.index("*/") + 2]
     body = "".join(
         '  "' + line.replace("\\", "\\\\").replace('"', '\\"') + '\\n"\n'
         for line in notice.splitlines())
-    rows = "".join(
-        f"  {{{n}, {j}, {k}, {{{', '.join(float.hex(v) for v in xs)}}}}},\n"
-        for n, j, k, *xs in whetstone_model(int(loop)))
     pathlib.Path(out).write_text(
         f"#define WHET_LOOP {int(loop)}\n"
         f"static const char whet_notice[] =\n{body};\n"
@@ -141,6 +147,6 @@ if __name__ == "__main__":
     elif sys.argv[1] == "embench":
         embench(sys.argv[2], sys.argv[3], sys.argv[4:])
     elif sys.argv[1] == "whetstone":
-        whetstone(*sys.argv[2:5])
+        whetstone(*sys.argv[2:6])
     else:
         sys.exit(__doc__)

@@ -35,7 +35,10 @@ module tb_compiled_lsu_dcache_firmware;
   logic lsu_write;
   logic [31:0] lsu_addr,lsu_wdata;
   logic [3:0] lsu_wstrb;
+  // Only kind and rid are checked; the remaining attribute fields are unused here.
+  /* verilator lint_off UNUSEDSIGNAL */
   dmem_attr_t lsu_attr;
+  /* verilator lint_on UNUSEDSIGNAL */
   localparam int FW_MEM_BYTES=65536;
   function automatic string check_detail();
     return $sformatf(" bus=%08x",bus_a);

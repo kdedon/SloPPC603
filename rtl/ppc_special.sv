@@ -407,7 +407,7 @@ module ppc_special #(
   logic fpu_exception_q, late_exception_event;
   logic [31:0] insn_q;
   logic [63:0] fpu_data_q;
-  logic fpu_issue_valid, fpu_issue_ready, fpu_result_valid, fpu_result_take;
+  logic fpu_issue_valid, fpu_issue_sel, fpu_issue_ready, fpu_result_valid, fpu_result_take;
   logic fpu_commit_valid, fpu_commit_ready, fpu_abort_valid;
   logic fpu_mem_req_valid, fpu_mem_req_ready, fpu_mem_req_fire;
   logic fpu_mem_rsp_valid, fpu_mem_rsp_ready, fpu_store_valid, fpu_store_ready;
@@ -2046,6 +2046,11 @@ module ppc_special #(
   end
   assign late_exception_event = data_exception_event || fpu_exception_q;
   assign fpu_issue_valid = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_ISSUE);
+  // The issue packet follows the state alone, from its own register; a
+  // pipelined issue never overlaps this state.
+  always_ff @(posedge clk_i)
+    if (!rst_ni) fpu_issue_sel <= 1'b0;
+    else fpu_issue_sel <= state_d == S_FPU_ISSUE;
   assign fpu_mem_req_ready = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_WAIT);
   assign fpu_mem_req_fire = fpu_mem_req_valid && fpu_mem_req_ready;
   // Older overlapped loads may still hold results ahead of this one.
@@ -2150,7 +2155,7 @@ module ppc_special #(
       ppc_fpu_compact #(.CPU_602(HAS_602)) fpu (
         .clk_i(clk_i), .rst_ni(rst_ni),
         .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
-        .issue_i(fpu_issue_valid ? fpu_issue : fp_issue),
+        .issue_i(fpu_issue_sel ? fpu_issue : fp_issue),
         .issue1_valid_i(1'b0), .issue1_ready_o(), .issue1_i('0),
         .result_valid_o(fpu_result_valid), .result_o(fpu_result),
         .result1_valid_o(), .result1_o(),
@@ -2170,10 +2175,12 @@ module ppc_special #(
         .forward_data_o(), .forward1_data_o()
       );
     end else begin : g_full
-      ppc_fpu #(.CPU_602(HAS_602)) fpu (
+      // The lane takes a memory request only in S_FPU_WAIT, which never
+      // coincides with the instruction's issue.
+      ppc_fpu #(.CPU_602(HAS_602), .MEM_AT_ISSUE(1'b0)) fpu (
         .clk_i(clk_i), .rst_ni(rst_ni),
         .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
-        .issue_i(fpu_issue_valid ? fpu_issue : fp_issue),
+        .issue_i(fpu_issue_sel ? fpu_issue : fp_issue),
         .issue1_valid_i(1'b0), .issue1_ready_o(), .issue1_i('0),
         .result_valid_o(fpu_result_valid), .result_o(fpu_result),
         .result1_valid_o(), .result1_o(),
@@ -2235,7 +2242,7 @@ module ppc_special #(
     assign fp_fpscr_o = '0;
     logic _unused_fpu;
     assign _unused_fpu = ^{fpu_issue, fpu_mem_rsp, fpu_store_ready, fpu_abort_valid,
-                           fpu_store_valid};
+                           fpu_store_valid, fpu_issue_sel};
   end endgenerate
 endmodule
 `default_nettype wire

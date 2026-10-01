@@ -303,3 +303,6 @@ Whetstone builds the same way: `mister/build.sh --suite whetstone` runs
 `ENABLE_FPU`. `make -C sim demo-mister-whetstone demo-mister-whetstone-hf` runs their
 simulation sizes. The screen ends with the photo line and the performance-counter
 breakdown; the OSD shows `Finished: PASS` when every run's module values match.
+`mister/build.sh --fpu` without `--suite` puts hard-float Whetstone in the default
+core's program menu instead, beside hello, Dhrystone and CoreMark
+([MISTER_CORE.md](MISTER_CORE.md#fpu-cores)).

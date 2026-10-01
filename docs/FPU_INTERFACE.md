@@ -9,6 +9,10 @@ defines the acceptance schedule. A coherent dual-personality baseline passes
 the [functional and cycle tests](../sim/fpu/PRODUCTION.md). Frequency closure
 remains open: full-module post-map estimates are 19.7/17.7 MHz against 50 MHz.
 The semantics limits in both contracts remain explicit.
+`ppc_fpu` parameter `MEM_AT_ISSUE` (default 1) lets an instruction offer its
+memory request in its issue cycle. At 0 the request comes from the pending
+entry from the next cycle on, which costs nothing when the LSU cannot accept
+a request in the issue cycle, as in the core's FPU lane.
 `ppc_fpu_compact` ([COMPACT](FPU_COMPACT.md)) implements this interface with
 one instruction in flight: it never accepts the second lanes, never
 forwards, and keeps no Table 6-5 cycle counts.
@@ -97,8 +101,8 @@ The module uses `clk_i` and active-low synchronous reset `rst_ni`. The
 architectural FPR bank has 32 entries of 64 bits for 603e or 32 bits for 602;
 FPSCR is 32 bits in both. The 602 additionally owns SP/LT tag words. Inspect
 ports expose committed state only. The FPR inspect port shares an operand read
-and is valid in cycles without a second read candidate: no lane-1 issue, no
-lane-0 issue behind a waiting entry, and no waiting pair partner. Pending instruction records retain source
+and is valid in cycles without a second read candidate: no lane-1 issue and
+no waiting entry. Pending instruction records retain source
 bindings, raw arithmetic metadata, memory disposition and completion identity.
 See the pipeline design for execution latency, initiation interval, response
 credits and the external LSU timing boundary.

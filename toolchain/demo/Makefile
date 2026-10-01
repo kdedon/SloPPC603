@@ -35,7 +35,7 @@ CM_SRC := core_list_join core_main core_matrix core_state core_util
 
 .PHONY: all hello dhrystone coremark mister benchmarks nbench nbench-full embench embench-full \
 	mister-nbench mister-embench whetstone whetstone-full whetstone-hf whetstone-hf-full \
-	mister-whetstone mister-whetstone-hf
+	mister-whetstone mister-whetstone-hf mister-fpu
 all: hello dhrystone coremark
 hello: $(OUT)/hello.hex
 dhrystone: $(OUT)/dhrystone.hex
@@ -268,7 +268,8 @@ WHET_LOOP_smoke = $(WHET_SMOKE_LOOP)
 WHET_LOOP_full = $(WHET_LOOP)
 HF_RT_OBJ := $(HF)/crt0.o $(HF)/rt.o $(HF)/font.o
 HF_FP_OBJ := demo/Makefile $(HF)/bench.o $(HF)/libc.o $(HF)/libm.a
-HF_IMAGES := whetstone-hf whetstone-hf-full mister-whetstone-hf mister-whetstone-hf-smoke
+HF_IMAGES := whetstone-hf whetstone-hf-full mister-whetstone-hf mister-whetstone-hf-smoke \
+	mister-fpu
 whetstone: $(OUT)/whetstone.hex
 whetstone-full: $(OUT)/whetstone-full.hex
 whetstone-hf: $(OUT)/whetstone-hf.hex
@@ -320,6 +321,24 @@ $(OUT)/mister-whetstone-hf.elf: $(HF_RT_OBJ) $(WH)/whetstone-hf.o $(WH)/full/glu
 	$(HF_FP_OBJ) demo/mister-bench.ld demo/mister-sections.ld
 $(OUT)/mister-whetstone-hf-smoke.elf: $(HF_RT_OBJ) $(WH)/whetstone-hf.o $(WH)/smoke/glue-hf.o \
 	$(HF_FP_OBJ) demo/mister-bench.ld demo/mister-sections.ld
+# FPU MiSTer image (mister/build.sh --fpu): the MiSTer image's integer
+# objects unchanged, plus Whetstone and the double-precision Mandelbrot set
+# built hard-float, in the same RAM. The Whetstone glue carries both LOOPs'
+# reference values; the run length picks one at run time.
+mister-fpu: $(OUT)/mister-fpu.hex
+$(MI)/mister-fpu.o: demo/mister.c demo/soc.h FORCE | $(MI)
+	$(CC) $(CFLAGS) $(OWN_CFLAGS) -DMISTER_FPU '-DGIT_SHORT="$(GIT_SHORT)"' -c $< -o $@
+# No contraction: the host checksum tool computes the same roundings.
+$(MI)/fmandel.o: demo/fmandel.c demo/soc.h demo/mandel.h | $(MI)
+	$(CC) $(HF_CFLAGS) $(OWN_CFLAGS) -ffp-contract=off -c $< -o $@
+$(WH)/full/whet_ref_smoke.h: $(SRC)/whetstone/whetstone.c demo/bench_gen.py demo/Makefile | $(WH)/full
+	$(PYTHON) demo/bench_gen.py whetstone $< $(WHET_SMOKE_LOOP) $@ whet_smoke
+$(WH)/full/glue-demo.o: $(WHET_GLUE_DEPS) $(WH)/full/whet_ref.h $(WH)/full/whet_ref_smoke.h
+	$(CC) $(HF_BENCH_CFLAGS) $(OWN_CFLAGS) -I$(WH)/full -DWHET_DEMO $(WHET_full) -c $< -o $@
+$(OUT)/mister-fpu.elf: LDFLAGS := -Wl,--no-warn-mismatch $(subst demo/demo.ld,demo/mister.ld,$(LDFLAGS))
+$(OUT)/mister-fpu.elf: $(HF)/crt0.o $(filter-out $(OUT)/crt0.o $(MI)/mister.o,$(MISTER_OBJ)) \
+	$(MI)/mister-fpu.o $(MI)/fmandel.o $(WH)/whetstone-hf.o $(WH)/full/glue-demo.o $(HF_FP_OBJ) \
+	demo/mister.ld demo/mister-sections.ld
 # Hard-float images: the same link without the floating-point check.
 $(addprefix $(OUT)/,$(addsuffix .elf,$(HF_IMAGES))): $(OUT)/%.elf:
 	$(CC) $(subst -msoft-float,-mhard-float,$(LDFLAGS)) -Wl,-Map,$(OUT)/$*.map $(filter %.o,$^) \

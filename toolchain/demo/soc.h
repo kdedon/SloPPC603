@@ -69,8 +69,11 @@ struct demo_result {
   uint16_t stall_cpi[3];
 };
 extern struct demo_result demo_hello, demo_dhry, demo_cm;
+/* FPU image only: Whetstone (count in thousands of its instructions) and
+ * the double-precision Mandelbrot. */
+extern struct demo_result demo_whet, demo_fpmb;
 /* Run lengths, set before a program starts. */
-extern int demo_dhry_runs, demo_cm_iterations;
+extern int demo_dhry_runs, demo_cm_iterations, demo_whet_full;
 /* Framebuffer, 8-bit indexed, read from the registers by fb_init(), which
  * the fb_ and con_ functions call on first use. */
 extern volatile uint8_t *fb_pixels;

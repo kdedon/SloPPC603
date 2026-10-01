@@ -2063,7 +2063,9 @@ module ppc_core #(
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni && ENABLE_FPU) begin
-      if (fp_head_ok && cq_retire.write_cr_field)
+      // An FPU result (an FP load's) can be valid, matching a stale head
+      // tag, while a non-FP instruction retires.
+      if (fp_head && fp_head_ok && cq_retire.write_cr_field)
         assert (fp_result.cr_write && (fp_result.cr_field == cq_retire.cr_field))
           else $error("FPU CR field disagrees with the allocation");
       if (dispatch && special_uop && (dispatch_pre.special_op == SPECIAL_FPU))
