@@ -622,7 +622,7 @@ choice and a test of that choice, not a fidelity claim:
 | V11 | Done: `ppc602` pin top ([CHIP_PACKAGE_602.md](CHIP_PACKAGE_602.md)): every 602 pin, the multiplexed 64-bit bus through `ppc602_bus` in front of the unchanged 60x master (two-transaction queue, RWITM for cacheable reads, only kill broadcast, T32 32-bit data mode, PFADDR and TC 01 on a castout whose fill is queued, snoop retry of queued writes), RESETO from the watchdog (`pin_status_t.watchdog_reseto`), SMI, MCP, checkstop and resets as on the 603e top; `quartus/chip602` with every pin virtual and contract C9. The core runs at SYSCLK in PLL bypass (602UM Table 7-8 test mode); 2:1 and 3:1 wait for the BIU bus clock enable. Open: the FPU personality (V12) |
 | V14 | Done: doze, nap and sleep from MSR[POW] with one HID0 mode bit ([POWER_MANAGEMENT.md](POWER_MANAGEMENT.md)): fetch held until an exception clears POW; QREQ once idle, QACK stops snooping and, in sleep, the time base and decrementer; QREQ/QACK on both pin tops; two mode bits reject |
 | V12 | Done: the 602 FPU in the core behind `ENABLE_FPU`, FULL or COMPACT, on `ppc_core` and the `ppc602` top ([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md#602-personality)): the FPU decides the emulation trap, owns SP/LT, takes loads at any byte offset, and a newly set sticky bit stalls completion one cycle |
-| V5 | Done: the 603 core and pin top ([603 direct-store](#603-direct-store)): direct-store segments on XATS with their refusals and no-ops, reply-error DSI, TEA machine check, PID sender tag, one CSE pin, XATS pins; caches 128 × 2 and PVR `0x00030101` from `cpu_cfg()`. Stores take at least two cycles each in the serialized LSU, so 2:2 holds; a pipelined LSU must honor `cfg.store_two_cycle`. Open: lmw/stmw and string forms run one access per register (see best-effort items); the 603 reference run (`test-reference` with DingusPPC `MPC603`) and 603 firmware are not set up |
+| V5 | Done: the 603 core and pin top ([603 direct-store](#603-direct-store)): direct-store segments on XATS with their refusals and no-ops, reply-error DSI, TEA machine check, PID sender tag, one CSE pin, XATS pins; caches 128 × 2 and PVR `0x00030101` from `cpu_cfg()`. Stores take at least two cycles each in the serialized LSU, so 2:2 holds; a pipelined LSU must honor `cfg.store_two_cycle`. `test-reference-603` runs the reference corpus at the 603 against DingusPPC `MPC603`. Open: lmw/stmw and string forms run one access per register (see best-effort items); compiled 603 firmware; a 603 fit |
 | V13 | Not started |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
@@ -632,6 +632,34 @@ consistency of the integer path at PID6, not any PID6-specific behavior.
 The 602 still fails elaboration of the `ppc603e` top; its SPR presence,
 SRR1[KEY] and PLL table are checked at unit level (`tb_variant_config`,
 `tb_exception_tlb_miss`).
+
+Recorded: `make -C sim lint check-spec test-chip-603 test-chip-603-fpu test-reference-603 variant-lint-3 variant-lint-0 variant-reject-4 variant-divider-3 variant-full-decode-3 variant-full-decode-0 variant-config-3 variant-tlb-miss-3 variant-decode-sweep-3 test-chip-pins test-chip-dcache-coherence test-biu-dcache-snoop test-core-dcache test-core-data-fault test-core-page-data-exception test-core-bat-cached-bus60x test-core-bat-cached-bus60x-cacheops test-core-bat-cached-bus60x-coherence test-core-bat-machine-check test-page-memory-router test-micro-tlb-router test-bat-memory-router test-bat-data-fault test-bat-runtime-router test-segment-runtime-router test-page-data-exception-router test-page-instruction-exception-router test-page-miss-result-router test-tlb-runtime-fill-router test-tlb-runtime-invalidate-router`, commit 98432b5, 2026-09-30.
+Pass (V5), focused benches only (`regression`, `variant-matrix` as a whole,
+firmware and fits not run). `tb_chip_603` (603 pin top, `DS_PID` 10, a
+controller model on XATS): 89 checks, 19 direct-store operations, 11
+replies, 6 exceptions, 4940 cycles. It checks PVR `0x00030101`; packet 0
+(key, BUID, controller bits, PID) and packet 1 (SR[28:31] || EA[4:31],
+byte count) of each operation; load request, last and immediate opcodes for
+lwz, lbz and a word-crossing lwz; store last and immediate for stw, sth and
+a word-crossing stw, with data on DH and DL undriven; loaded and stored
+values; a reply for another PID and a misplaced reply ignored; an ARTRY
+repeating the load request; lwarx and stwcx. DSI (DSISR `04000000` and
+`06000000`, no bus operation); dcbf, dcbst, dcbz, dcbt, dcbtst, dcbi and icbi
+with no operation and no exception; a reply error giving DSI DSISR
+`80000000`, DAR the EA, SRR0 the lwz, with r9 loaded; a TEA on a store
+giving a machine check with no reply awaited; a problem-state load with key
+Kp; a fetch from the segment giving ISI SRR1[3]; CSE1 never asserted and a
+data-cache fill into way 1 on CSE0. `test-chip-603-fpu` adds lfs and stfs
+alignment (DAR the EA): 91 checks, 8 exceptions. `test-reference-603`: 8500
+snapshots, 142 encoding groups against DingusPPC `MPC603`. At 603:
+`tb_core_divider_timing` 37 cycles, 92 checks; `tb_core_full_decode` 8782
+checks, 740 retirements; `tb_variant_config` 2118 checks;
+`tb_exception_tlb_miss` 194; decode sweep 85376 probes. PID7v benches pass:
+`tb_chip_pins` 1352 checks, 74139 cycles; `tb_core_dcache` 219205 checks;
+`tb_core_data_fault` 4384; page DSI 1661 and 1826. This does not establish
+direct-store streaming of lmw/stmw/strings as one access, 603 compiled
+firmware, a 603 fit or timing, or a real controller's reply arbitration
+(the bench withholds BG while it replies).
 
 Recorded: `make -C sim -j2 lint check-spec test-chip-pins test-chip602-pins variant-watchdog-602 variant-special-lint-602 variant-icache-602 variant-matrix`, commit 2a0a987 plus the chip602 project (cc2c29c) and documentation, 2026-09-30.
 Pass (V11), focused benches only (`regression`, firmware not run).
