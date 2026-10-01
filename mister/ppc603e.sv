@@ -6,7 +6,9 @@
 // output carries a blank 320 x 240; the OSD can save the screen to a mounted
 // file. Without it the framebuffer is 320 x 240 in block RAM and leaves as
 // native video at 15.6 kHz and 59.6 Hz. MISTER_BENCH builds a benchmark
-// suite image with 256 KiB of program RAM and no program menu.
+// suite image with 256 KiB of program RAM and no program menu. Without it,
+// MISTER_FPU adds Whetstone and the floating-point Mandelbrot set to the
+// program menu.
 module emu
 (
 	`include "sys/emu_ports.vh"
@@ -72,13 +74,18 @@ localparam int RAM_BYTES = 262144;
 localparam int RAM_BYTES = 131072;
 `endif
 
-// Status bits: 0 restart, 2:1 program, 3 length, 4 save screen.
+// Status bits: 0 restart, 2:1 program (7:5 with the FPU), 3 length,
+// 4 save screen.
 `include "build_id.v"
 localparam CONF_STR = {
 	"PPC603e;;",
 `ifndef MISTER_BENCH
 	"-;",
+`ifdef MISTER_FPU
+	"O[7:5],Program,Hello,Dhrystone,CoreMark,Whetstone,FP Mandelbrot,Run all;",
+`else
 	"O[2:1],Program,Hello,Dhrystone,CoreMark,Run all;",
+`endif
 	"O[3],Length,Full,Smoke test;",
 `endif
 	"-;",
@@ -146,23 +153,30 @@ pll pll
 	.locked(pll_locked)
 );
 
-// Restart on the framework reset, the OSD, the user button, a program
-// change, or PLL lock loss; held for 16 clocks.
+`ifdef MISTER_FPU
+wire [2:0] program_sel = status[7:5];
+`else
+wire [2:0] program_sel = {1'b0, status[2:1]};
+`endif
+
+// Restart on the framework reset, the OSD, the user button, a program or
+// length change, or PLL lock loss; held for 16 clocks.
 reg  [2:0] reset_sync = '1;
-reg  [2:0] program_q = 0;
+reg  [3:0] program_q = 0;
 reg  [4:0] reset_count = '1;
-wire       reset_req = reset_sync[2] | status[0] | buttons[1] | ~pll_locked | (program_q != status[3:1]);
+wire       reset_req = reset_sync[2] | status[0] | buttons[1] | ~pll_locked |
+                       (program_q != {program_sel, status[3]});
 wire       core_reset = |reset_count;
 
 always @(posedge clk_sys) begin
 	reset_sync <= {reset_sync[1:0], RESET};
-	program_q <= status[3:1];
+	program_q <= {program_sel, status[3]};
 	if (reset_req) reset_count <= '1;
 	else if (core_reset) reset_count <= reset_count - 1'd1;
 end
 
-// Mode: program in bits 1:0, full-length runs in bit 2.
-wire [7:0] mode = {5'd0, ~status[3], status[2:1]};
+// Mode: program in bits 3 and 1:0, full-length runs in bit 2.
+wire [7:0] mode = {4'd0, program_sel[2], ~status[3], program_sel[1:0]};
 
 // INPUT register: bits 3:0 right, left, down, up; 4 A; 5 B; 31 present.
 // The keyboard's arrows, Enter and Esc merge into the pad bits.

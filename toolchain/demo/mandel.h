@@ -1,7 +1,10 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 Kevin Dedon */
-/* Fixed-point Mandelbrot arithmetic shared by hello.c and the host tool
- * that computes its checksums (mandel_sum.c). Coordinates are Q4.12. */
+/* Mandelbrot arithmetic shared by the firmware and the host tool that
+ * computes its checksums (mandel_sum.c): fixed point in Q4.12 for hello.c,
+ * and the same view in double precision (mbd_) for fmandel.c. Both sides
+ * build the double version without contraction, so the one fused
+ * multiply-add is the explicit one. */
 #ifndef DEMO_MANDEL_H
 #define DEMO_MANDEL_H
 
@@ -33,6 +36,29 @@ static inline int32_t mb_pitch(int w, int h)
 
 static inline int32_t mb_cr(int x, int w, int32_t pitch) { return -(3 << 10) + (x - w / 2) * pitch; }
 static inline int32_t mb_ci(int y, int h, int32_t pitch) { return (y - h / 2) * pitch; }
+
+/* Double precision: the same view, iteration limit and escape test. */
+static inline int mbd_iter(double cr, double ci)
+{
+  double zr = 0.0, zi = 0.0;
+  int n;
+  for (n = 0; n < MB_MAX_ITER; n++) {
+    double zr2 = zr * zr, zi2 = zi * zi;
+    if (zr2 + zi2 > 4.0) break;
+    zi = __builtin_fma(zr + zr, zi, ci);
+    zr = zr2 - zi2 + cr;
+  }
+  return n;
+}
+
+static inline double mbd_pitch(int w, int h)
+{
+  double a = 3.0 / w, b = 2.25 / h;
+  return a > b ? a : b;
+}
+
+static inline double mbd_cr(int x, int w, double pitch) { return -0.75 + (x - w / 2) * pitch; }
+static inline double mbd_ci(int y, int h, double pitch) { return (y - h / 2) * pitch; }
 
 /* Palette index: black inside the set, the colour ramp (16-255) outside. */
 static inline uint8_t mb_color(int n)

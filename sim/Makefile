@@ -2310,6 +2310,17 @@ mister-smoke-fpu:
 	$(DEMO_FW_MAKE) mister-whetstone-hf
 	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu-bench/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-whetstone-hf-smoke.hex +MODE=04 +PPM=$(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.ppm +SAVE=$(BUILD_DIR)/mister/fb1-fpu-bench/screen.pfb
 	python3 ../mister/fb2png.py $(BUILD_DIR)/mister/fb1-fpu-bench/screen.pfb $(BUILD_DIR)/mister/fb1-fpu-bench/screen.png
+# The --fpu core: the FPU image (the MiSTer programs plus Whetstone and the
+# double-precision Mandelbrot set). MISTER_FPU_MODE is the MODE byte, with
+# program bit 2 in bit 3: 09 is Run all at smoke-test length.
+MISTER_FPU_MODE ?= 09
+.PHONY: mister-smoke-fpu-all
+mister-smoke-fpu-all:
+	$(MAKE) mister-model MISTER_FPU=1
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) mister-fpu GIT_SHORT=$$(git rev-parse --short HEAD)
+	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-fpu.hex +MODE=$(MISTER_FPU_MODE) +PPM=$(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).ppm +SAVE=$(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).pfb
+	python3 ../mister/fb2png.py $(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).pfb $(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).png
 # Uninitialized-state sweep: core, chip, demo SoC and MiSTer benches rerun
 # with several random initial values (XRAND builds) plus all-zero and all-one
 # state, so a register or memory that is used or written before reset

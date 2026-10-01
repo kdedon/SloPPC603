@@ -12,8 +12,9 @@
 # 256 KiB of program RAM instead of hello, Dhrystone and CoreMark; with
 # --suite selftest, the opcode self-test (docs/SELFTEST.md); with --suite
 # whetstone, Whetstone. --fpu adds the floating-point unit to the processor;
-# Whetstone then runs its hard-float build. --fpu-compact adds the COMPACT
-# FPU instead: the same results in less area, with longer latencies. --dual
+# the program menu then adds Whetstone and a floating-point Mandelbrot set,
+# and the Whetstone suite runs its hard-float build. --fpu-compact adds the
+# COMPACT FPU instead: the same results in less area, with longer latencies. --dual
 # builds the processor with dual dispatch and retirement (DISPATCH_WIDTH 2).
 set -euo pipefail
 clean=0
@@ -45,7 +46,7 @@ if [[ -n "${suite}" ]]; then
   fi
   ram_bytes=262144
 else
-  firmware="mister"
+  firmware="mister$([[ "${fpu}" == 1 ]] && echo -fpu || true)"
   ram_bytes=131072
 fi
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

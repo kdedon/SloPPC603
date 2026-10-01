@@ -88,6 +88,7 @@ file to PNG (`mister/fb2png.py screen.pfb screen.png`) and makes the empty 2 MiB
 | Item | Status bits | Values |
 |---|---|---|
 | Program | 2:1 | Hello, Dhrystone, CoreMark, Run all |
+| Program (`--fpu` core) | 7:5 | Hello, Dhrystone, CoreMark, Whetstone, FP Mandelbrot, Run all |
 | Length | 3 | Full (default), Smoke test |
 | Screen file | S0 | Mounts the `.pfb` file a save writes (DDR3 build) |
 | Save screen | 4 | Writes the framebuffer and palette to the mounted file (DDR3 build) |
@@ -100,7 +101,9 @@ the OSD. A save reports `Screen saved`, or `Screen file: mount a writable file o
 when no suitable file is mounted. `LED_USER` is on while a program runs.
 
 The firmware reads the selection from the SoC `MODE` register: bits 1:0 program, bit 2
-full length, bits 31:16 the clock in MHz.
+full length, bits 31:16 the clock in MHz. The `--fpu` core numbers its six programs 0–5
+in menu order, with program bit 2 in `MODE` bit 3; Run all is 5 (`MODE` 0x09 at
+smoke-test length).
 
 ### Input
 
@@ -118,6 +121,8 @@ self-test ([SELFTEST.md](SELFTEST.md)) pages with it; the other programs ignore 
 | Hello (Mandelbrot) | fixed | fixed | about 25 s at 1920 × 1080 (estimated from 814 cycles per pixel in simulation); under 1 s at 320 × 240 |
 | Dhrystone 2.1 | 100 000 runs | 200 runs | about 7 s |
 | CoreMark | 400 iterations | 1 iteration | about 12 s (CoreMark requires at least 10 s) |
+| Whetstone (`--fpu`) | `LOOP` 100, repeated for at least 10 s | `LOOP` 2, once | about 10 s |
+| FP Mandelbrot (`--fpu`) | fixed | fixed | about 27 s at 1920 × 1080 (estimated, as hello); under 1 s at 320 × 240 |
 
 Rates use the SoC cycle counter and the clock in `MODE`; they are integer arithmetic, as
 in the simulation images.
@@ -131,6 +136,18 @@ in the simulation images.
 from a copy that `crt0.S` makes at start-up, so a restart gets fresh initialised data.
 `GIT_SHORT` names the commit in the summary; `mister/build.sh` passes it, with a `+`
 suffix when `rtl/`, `mister/` or `toolchain/demo/` has uncommitted changes.
+
+The `--fpu` core's image, `mister-fpu.{elf,hex}` (target `mister-fpu`), links the same
+integer objects, so hello, Dhrystone and CoreMark run the same code as in `mister.hex`
+(only data addresses differ), plus two programs built hard-float: Whetstone
+(`whetstone/whet_glue.c` with `WHET_DEMO`, carrying the reference values of both run
+lengths) and `demo/fmandel.c`, hello's Mandelbrot set in double precision. Soft- and
+hard-float objects pass no floating-point values between them, so the link waives the
+ABI mismatch (`--no-warn-mismatch`); start-up sets `MSR[FP]`. The image fails at start
+on a core without the FPU (`MODE` bit 8). It takes 77 KiB of the 128 KiB RAM with its
+BSS (66 KiB of code and data), against 50 KiB for `mister.hex`, so the `--fpu` core keeps the
+default RAM. The FPU-less core does not get a soft-float Mandelbrot: it would need
+the soft-fp library and would take several minutes at 1920 × 1080.
 
 ## Results summary
 
@@ -153,7 +170,18 @@ All cyc 1000000000 ret 190000000
 CPI 5.26 bus 1234567 PASS
 ```
 
-(Values illustrative.) Lines appear only for the programs that ran. `Dhry` shows the
+(Values illustrative.) Lines appear only for the programs that ran. The `--fpu` core
+adds two lines, so its Run all summary takes ten rows:
+
+```
+FP MB 26037209 cyc 520.744 ms CPI 2.76
+Whet 20.267 MWIPS 0.4053/MHz CPI 1.76
+```
+
+`FP MB` follows `Hello MB` and gives the double-precision set's cycles and time at the
+reported clock; the view, iteration limit, block passes and drawing are hello's, so the
+two cycle counts compare directly. `Whet` follows `CM` and gives Whetstone's MWIPS and
+MWIPS per MHz over its timed runs. `Dhry` shows the
 cycles in Dhrystone's timed loop, the run count and DMIPS/MHz (Dhrystones per second /
 1757 per MHz); `CM` shows CoreMark iterations per million cycles, the iteration count and
 the CRC check; each program's CPI covers its timed window. When the line has room (80
@@ -235,8 +263,12 @@ one `make -C sim test-selftest` runs.
 ### FPU cores
 
 `--fpu` defines the `MISTER_FPU` macro, which sets `ENABLE_FPU` in the demo SoC, and adds
-`rtl/fpu_files.f` to `files.qip`. The firmware is unchanged except for Whetstone, which
-switches to its hard-float image, `mister-whetstone-hf.hex`. The file name gains `_fpu`:
+`rtl/fpu_files.f` to `files.qip`. Without `--suite` it is the default core plus floating
+point: the firmware is `mister-fpu.hex` ([Firmware image](#firmware-image)) in the same
+128 KiB of program RAM (no block RAM change), and the `Program` menu (status bits 7:5)
+adds Whetstone and FP Mandelbrot, both also in Run all, which runs hello, FP Mandelbrot
+(redrawing the same view), Dhrystone, CoreMark and Whetstone. With `--suite whetstone`,
+Whetstone switches to its hard-float image, `mister-whetstone-hf.hex`. The file name gains `_fpu`:
 `ppc603e_whetstone_fpu.rbf`, published as `PPC603e_whetstone_fpu_<date>.rbf`. The
 self-test core with `--fpu` runs its floating-point cases as well
 ([SELFTEST.md](SELFTEST.md#floating-point)). `--fpu-compact` does the same with the
@@ -244,10 +276,11 @@ self-test core with `--fpu` runs its floating-point cases as well
 It has not been built for the board.
 
 ```sh
+mister/build.sh --clean --fpu                     # mister/output_files/ppc603e_fpu.rbf
 mister/build.sh --clean --fpu --suite whetstone   # mister/output_files/ppc603e_whetstone_fpu.rbf
 ```
 
-`make -C sim mister-smoke-fpu` simulates this core
+`make -C sim mister-smoke-fpu-all` and `mister-smoke-fpu` simulate these cores
 ([FPU core in simulation](#fpu-core-in-simulation)).
 
 No FPU core has been fitted yet: at commit 93f121b Quartus 17.0 stops in analysis on
@@ -406,6 +439,51 @@ the host reference (loop count 2). This shows the FPU core and the hard-float im
 at the MiSTer top with the board's file list, macros and RAM size. It does not run the
 full-length image (`WHET_SECS` 10), the 1920 × 1080 geometry, or the board's `mister.mif`
 initialisation, which the build summary checks.
+
+`make -C sim mister-smoke-fpu-all` simulates the `--fpu` core: `MISTER_FPU=1` without
+`MISTER_BENCH` (128 KiB of program RAM), `mister-fpu.hex`, `MODE=09` (Run all, smoke-test
+length; `MISTER_FPU_MODE` picks another program), through the checks above. Its picture
+and screen file go to `sim/build/mister/fb1-fpu/`.
+
+Recorded: `make -C sim mister-smoke-fpu-all mister-smoke demo-whetstone-hf mister-smoke-fpu
+lint check-spec`, and `mister-fpu.hex` on the same model at `MODE` 03 (Whetstone) and 08
+(FP Mandelbrot), commit d782019 plus the uncommitted change that adds them, 2026-10-01.
+All pass.
+
+| Measure | Run all (09) | Whetstone (03) | FP Mandelbrot (08) |
+|---|---:|---:|---:|
+| Cycles from reset to exit | 58,768,151 | 2,263,903 | 27,815,193 |
+| Instructions retired | 21,401,579 | 557,812 | 9,827,505 |
+| Framebuffer stores (= DDRAM writes) | 265,952 | 32,720 | 125,184 |
+| Screen file | 153 sectors, every byte checked | same | same |
+
+Run all summary at 320 × 240:
+
+```
+603e PVR 00070101 50MHz d782019 smoke
+Hello MB 24306906 cyc CPI 2.50
+FP MB 26037209 cyc 520.744 ms CPI 2.76
+Dhry 486076/200 0.234 DMIPS/MHz
+     CPI 4.11 ret 118099
+CM 1.040/MHz 1 it CRC ok CPI 3.18
+   cyc 961245 ret 302202
+Whet 20.267 MWIPS 0.4053/MHz CPI 1.76
+All cyc 57088752 ret 20955070
+CPI 2.72 bus 256834 PASS
+```
+
+The double-precision set takes 7% more cycles than the fixed-point one (26,037,209
+against 24,306,906, the same view of 320 × 128) and its checksum matches the host's.
+Whetstone's 10 modules match the host reference exactly. Hello's cycle count equals
+the FPU-less core's (`mister-smoke` in the same session: 24,306,906); Dhrystone
+(486,076 against 486,474) and CoreMark (961,245 against 961,277) differ by under 0.1%,
+from the image's different addresses. `demo-whetstone-hf` and `mister-smoke-fpu` gave
+20.322 and 20.325 MWIPS. The first standalone Whetstone run stopped on the bench
+assertion "FPU CR field disagrees with the allocation" in `rtl/ppc_core.sv`: it compared an
+FPU result (an FP load's, matching the stale head tag of an empty FP queue) against an
+integer `cmpwi` retiring at the same time. The hardware commits only at the FP head, so
+the assertion now checks only the FP head's retirement. This does not cover the
+full-length runs, the 1920 × 1080 geometry, or the `--fpu-compact` core with this image.
 
 ### Build
 
