@@ -136,8 +136,11 @@ module tb_micro_tlb_harness #(
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),
     .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .TLB_SETS(TLB_SETS), .HAS_602(HAS_602)
-  ) dut (.imem_rsp_esa_o(imem_rsp_esa), .dmem_req_attr_i('0), .pdmem_req_ds_o(),
-    .pdmem_req_ds_tag_o(), .pdmem_rsp_ds_error_i(1'b0), .*);
+  ) dut (.imem_rsp_esa_o(imem_rsp_esa), .dmem_req_attr_i('0),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .pdmem_req_ds_o(), .pdmem_req_ds_tag_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .pdmem_rsp_ds_error_i(1'b0), .*);
 
   localparam int TIMEOUT = 400;
 
@@ -317,7 +320,7 @@ module tb_micro_tlb_harness #(
         r.ea = cur_addr;
         r.offered = d_offered; r.pa = d_pa; r.wimg = d_wimg;
         r.write = d_write; r.wdata = d_wdata; r.wstrb = d_wstrb;
-        r.fault = dmem_rsp_fault_o; r.error = dmem_rsp_error_o;
+        r.fault = 3'(dmem_rsp_fault_o); r.error = dmem_rsp_error_o;
         r.data = dmem_rsp_rdata_o; r.page_miss = dmem_rsp_page_miss_o;
         d_records.push_back(r);
         pending = 0; waited = 0;

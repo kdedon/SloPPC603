@@ -51,7 +51,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
   logic imem_rsp_valid_o, imem_rsp_ready_i;
   logic [31:0] imem_rsp_insn_o;
   logic [2:0] imem_rsp_fault_o;
-  logic [2:0] dmem_rsp_fault_o;
+  logic [3:0] dmem_rsp_fault_o;
   logic dmem_req_valid_i, dmem_req_ready_o, dmem_req_write_i;
   logic [31:0] dmem_req_addr_i, dmem_req_wdata_i;
   logic [3:0] dmem_req_wstrb_i;
@@ -110,7 +110,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1), .ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1),.ENABLE_DATA_EXCEPTIONS(1'b1),
-    .ENABLE_PAGE_DATA_EXCEPTIONS(ENABLE_PAGE_DATA_EXCEPTIONS)) dut (.mmu_602_i('0), .tlb_fill_req_ext_i(5'b0),
+    .ENABLE_PAGE_DATA_EXCEPTIONS(ENABLE_PAGE_DATA_EXCEPTIONS)) dut (.mmu_602_i('0), /* verilator lint_off PINCONNECTEMPTY */ .dmem_req_attr_i('0), .pdmem_req_ds_o(), .pdmem_req_ds_tag_o(), .pdmem_rsp_ds_error_i(1'b0), /* verilator lint_on PINCONNECTEMPTY */ .tlb_fill_req_ext_i(5'b0),
     .imem_rsp_esa_o(unused_imem_rsp_esa_1),
     .imem_rsp_page_miss_o(unused_imem_page_miss),
     .dmem_rsp_page_miss_o(unused_dmem_page_miss),
@@ -299,7 +299,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     @(negedge clk_i); bat_write_rsp_ready_i = 0;
   endtask
 
-  logic [2:0] typed_code = 3'd1;
+  logic [3:0] typed_code = 4'd1;
   task automatic data_access(input bit write_req, input logic [31:0] ea,
       input bit expect_offer, input logic [31:0] expected_pa,
       input logic [3:0] expected_wimg, input bit expect_typed);
@@ -376,7 +376,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     end else begin
       check(dmem_rsp_valid_o && !pdmem_req_valid_o &&
             dmem_rsp_error_o == !expect_typed &&
-            dmem_rsp_fault_o == (expect_typed ? typed_code : 3'd0) &&
+            dmem_rsp_fault_o == (expect_typed ? typed_code : 4'd0) &&
             dmem_rsp_rdata_o == 0 &&
             (expect_typed ? !page_fault_o && !translation_fault_o :
              page_fault_o && translation_fault_o && fault_ea_o == ea &&
@@ -533,7 +533,7 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
     if(mixed_cause)release dut.tlb_rsp_guarded;
     else release dut.tlb_rsp_kind;
     #1;check(dmem_rsp_valid_o&&dmem_rsp_error_o&&
-             dmem_rsp_fault_o==3'd0&&!pdmem_req_valid_o,
+             dmem_rsp_fault_o==4'd0&&!pdmem_req_valid_o,
              "mixed/provenance page response became typed DSI");
     if(!mixed_cause)check(page_config_o,"bad response kind not classified");
     dmem_rsp_ready_i=1;
@@ -600,9 +600,9 @@ module tb_page_data_exception_router #(parameter bit ENABLE_PAGE_DATA_EXCEPTIONS
       manage(2'd1,1,EA,VSID_A,0,RPN_A,1,4'h2,2'b10,0);
       start_router(1,1,0);
       set_sr(4'd1,32'h8000_0000|{8'h00,VSID_A});
-      typed_code=3'd4;
+      typed_code=4'd4;
       data_access(w!=0,EA,0,0,0,ENABLE_PAGE_DATA_EXCEPTIONS);
-      typed_code=3'd1;
+      typed_code=4'd1;
       check(page_direct_store_o==!ENABLE_PAGE_DATA_EXCEPTIONS&&
             !page_protection_o,
             "direct-store segment lost its DSI or diagnostic");

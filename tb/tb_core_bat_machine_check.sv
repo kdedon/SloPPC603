@@ -95,7 +95,7 @@ module tb_core_bat_machine_check #(
     .artry_n_i(artry_n), .dbg_n_i(dbg_n), .dbb_n_i(1'b1), \
     .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe), \
     .d_i(data_in), .d_o(data_out), .d_oe_o(data_oe), \
-    .ta_n_i(ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n), .xats_n_i(1'b1), .xats_n_o()
+    .ta_n_i(ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n)
   generate if (CACHED) begin : cached
     ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0), .RESET_CACHE_ENABLE(CACHE_ENABLE),
       .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
@@ -103,7 +103,7 @@ module tb_core_bat_machine_check #(
       .ENABLE_RUNTIME_BAT(1'b1),
       .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut (.bus_ce_i(1'b1),
       .perf_o(),
-      `MC_COMMON_PORTS,
+      `MC_COMMON_PORTS, .xats_n_i(1'b1), .xats_n_o(),
       .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),
       .pin_event_i('0), .pin_status_o(),
       .icache_hit_o(), .icache_miss_o(), .icache_busy_o(),

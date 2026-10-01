@@ -362,6 +362,9 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   logic [31:0] lsu_addr, lsu_wdata;
   logic [3:0] lsu_wstrb;
   dmem_attr_t lsu_attr;
+  logic unused_lsu_attr;
+  assign unused_lsu_attr = ^{lsu_attr.fp, lsu_attr.bytes, lsu_attr.last,
+                             lsu_attr.ds, lsu_attr.ds_tag};
   int flushed[$];
   int syncs=0;
   int noopti_accepts=-1;
