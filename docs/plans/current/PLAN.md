@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-09-27. This is the active planning entry point. The target for
+Updated: 2026-09-30. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -62,14 +62,14 @@ and throughput. The coherent baseline passes both personalities’ numerical, ex
 public-shell, paired dispatch/retirement and strict lint gates in
 [verification](../../../sim/fpu/PRODUCTION.md), including full-queue admission
 and 602 SPR timing. Frequency closure and the documented silicon-semantics
-gaps remain open. The latest
-603e FPU fit is 15,465 ALMs at 43.17 MHz and the 602 fit 11,893 ALMs at
-31.81 MHz ([production record](../../../sim/fpu/PRODUCTION.md)); both miss 50
-and 66 MHz. Timing work keeps the Table 6-5 cycle counts exact; any change to
+gaps remain open. On `9eb20d9`
+the 603e FPU fits at 51.55 MHz and the 602 at 35.69 MHz
+(`quartus/fpu-production/synthesize.sh --docker fullfit`, `full602fit`); both
+miss 66 MHz and the 602 misses 50. Timing work keeps the Table 6-5 cycle counts exact; any change to
 them goes behind a named parameter such as `FPU_IMPL`. See the
 [FPU assessment](../../FPU_REUSE_ASSESSMENT.md) for the remaining semantic and
-implementation gaps. Integration into the core is in progress behind a
-parameter that leaves FPU-less builds unchanged.
+implementation gaps. The FPU is in the core behind `ENABLE_FPU`, which
+leaves FPU-less builds unchanged.
 Do not infer full CPU completion from the restricted MVP score.
 
 ## Work queue
@@ -91,7 +91,8 @@ Queued, in order:
 2. 602 FPU timing toward 50 MHz (35.69 MHz post-fit), then the 602 FPU in the
    core (V12).
 3. COMPACT FPU (`FPU_IMPL`) for both personalities.
-4. 603 with XATS (V5); two-stage LSU (P3); dual dispatch.
+4. 603 with XATS (V5); two-stage LSU (P3); dual dispatch
+   ([design](../../DUAL_DISPATCH_DESIGN.md)).
 5. FPU at 66 MHz: retiming alone is estimated 2–3 ns short per stage; the
    choice between an FPU at 50 MHz and a parameter-gated extra stage is open.
 6. Enable CI and measure one MiSTer build on a hosted runner.

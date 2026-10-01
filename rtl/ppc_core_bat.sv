@@ -44,7 +44,10 @@ module ppc_core_bat #(
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   parameter logic [3:0] PLL_CFG = 4'b0000,
   // Sets per TLB; 0 takes the variant's geometry.
-  parameter int TLB_SETS = 0
+  parameter int TLB_SETS = 0,
+  // 603 direct-store segments (UM C.2.1); the physical side must carry
+  // pdmem_req_attr_o.ds requests on the XATS protocol.
+  parameter bit ENABLE_DIRECT_STORE = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -127,6 +130,8 @@ module ppc_core_bat #(
   output logic pdmem_rsp_ready_o,
   input  logic [DMEM_BITS-1:0] pdmem_rsp_rdata_i,
   input  logic pdmem_rsp_error_i,
+  // The direct-store reply to this response carried its error bit.
+  input  logic pdmem_rsp_ds_error_i,
   // icbi: ready reports the four ways at EA's set invalidated.
   output logic icbi_req_valid_o,
   input  logic icbi_req_ready_i,
@@ -184,6 +189,8 @@ module ppc_core_bat #(
   logic [DMEM_BITS/8-1:0] router_pdmem_req_wstrb;
   logic [3:0] router_pdmem_req_wimg;
   ppc_pkg::dmem_attr_t dmem_req_attr, attr_q;
+  logic router_pdmem_req_ds;
+  logic [25:0] router_pdmem_req_ds_tag;
   logic router_pdmem_req_valid, router_pdmem_req_ready;
   logic router_pdmem_rsp_valid, router_pdmem_rsp_ready;
   logic context_valid, context_ready, memory_quiescent;
@@ -358,6 +365,7 @@ module ppc_core_bat #(
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .TLB_SETS(TLB_SETS_EFFECTIVE),
     .HAS_602(ppc_pkg::cpu_has_602_ext(CPU_VARIANT)),
+    .HAS_DIRECT_STORE(ENABLE_DIRECT_STORE),
     .DMEM_BITS(DMEM_BITS),
     .ENABLE_DATA_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT)) router (
     .tlb_fill_req_valid_i(tlb_fill_req_valid),
@@ -456,10 +464,13 @@ module ppc_core_bat #(
     .pdmem_req_wdata_o(router_pdmem_req_wdata),
     .pdmem_req_wstrb_o(router_pdmem_req_wstrb),
     .pdmem_req_wimg_o(router_pdmem_req_wimg),
+    .pdmem_req_ds_o(router_pdmem_req_ds),
+    .pdmem_req_ds_tag_o(router_pdmem_req_ds_tag),
     .pdmem_rsp_valid_i(router_pdmem_rsp_valid),
     .pdmem_rsp_ready_o(router_pdmem_rsp_ready),
     .pdmem_rsp_rdata_i(probe_q ? '0 : pdmem_rsp_rdata_i),
     .pdmem_rsp_error_i(!probe_q && pdmem_rsp_error_i),
+    .pdmem_rsp_ds_error_i(!probe_q && pdmem_rsp_ds_error_i),
     .imem_req_valid_i(imem_req_valid), .imem_req_ready_o(imem_req_ready),
     .imem_req_addr_i(imem_req_addr), .imem_rsp_valid_o(imem_rsp_valid),
     .imem_rsp_ready_i(imem_rsp_ready), .imem_rsp_insn_o(imem_rsp_insn),
@@ -467,10 +478,10 @@ module ppc_core_bat #(
     .imem_rsp_page_miss_o(imem_rsp_page_miss),
     .dmem_req_valid_i(dmem_req_valid && !sync_req),
     .dmem_req_ready_o(router_dmem_req_ready),
-    .dmem_req_spec_i(dmem_req_attr.spec),
     .data_spec_ok_i(ENABLE_DATA_SPECULATION && pin_status_o.dcache_enable &&
                     !pin_status_o.dcache_lock),
-    .dmem_req_write_i(dmem_req_write), .dmem_req_addr_i(dmem_req_addr),
+    .dmem_req_write_i(dmem_req_write), .dmem_req_attr_i(dmem_req_attr),
+    .dmem_req_addr_i(dmem_req_addr),
     .dmem_req_wdata_i(dmem_req_wdata), .dmem_req_wstrb_i(dmem_req_wstrb),
     .dmem_rsp_valid_o(router_dmem_rsp_valid),
     .dmem_rsp_ready_i(dmem_rsp_ready && !sync_wait_q),
@@ -516,7 +527,11 @@ module ppc_core_bat #(
   assign pdmem_req_wimg_o = sync_offer_q ? 4'b0011 : router_pdmem_req_wimg;
   // The lane has one data obligation, so the physical request belongs to
   // the last accepted virtual one.
-  assign pdmem_req_attr_o = attr_q;
+  always_comb begin
+    pdmem_req_attr_o = attr_q;
+    pdmem_req_attr_o.ds = !sync_offer_q && router_pdmem_req_ds;
+    pdmem_req_attr_o.ds_tag = router_pdmem_req_ds_tag;
+  end
   assign router_pdmem_rsp_valid = probe_q ? probe_rsp_q :
                                   (pdmem_rsp_valid_i && !sync_wait_q);
   assign pdmem_rsp_ready_o = sync_wait_q ? dmem_rsp_ready :

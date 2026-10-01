@@ -42,7 +42,7 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
   logic imem_rsp_valid_o, imem_rsp_ready_i;
   logic [31:0] imem_rsp_insn_o;
   logic [2:0] imem_rsp_fault_o;
-  logic [2:0] dmem_rsp_fault_o;
+  logic [3:0] dmem_rsp_fault_o;
   logic dmem_req_valid_i, dmem_req_ready_o, dmem_req_write_i;
   logic [31:0] dmem_req_addr_i, dmem_req_wdata_i;
   logic [3:0] dmem_req_wstrb_i;
@@ -79,10 +79,10 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
   logic [4:0] unused_tlb_fill_router;
   logic [68:0] unused_imem_page_miss, unused_dmem_page_miss;
   logic [1:0] unused_imem_rsp_esa_1;
-  logic dmem_req_spec_i = 1'b0, data_spec_ok_i = 1'b0;
+  logic data_spec_ok_i = 1'b0;
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1),
-    .ENABLE_DATA_EXCEPTIONS(ENABLE_DATA_EXCEPTIONS)) dut (.mmu_602_i('0), .tlb_fill_req_ext_i(5'b0),
+    .ENABLE_DATA_EXCEPTIONS(ENABLE_DATA_EXCEPTIONS)) dut (.mmu_602_i('0), /* verilator lint_off PINCONNECTEMPTY */ .dmem_req_attr_i('0), .pdmem_req_ds_o(), .pdmem_req_ds_tag_o(), .pdmem_rsp_ds_error_i(1'b0), /* verilator lint_on PINCONNECTEMPTY */ .tlb_fill_req_ext_i(5'b0),
     .imem_rsp_esa_o(unused_imem_rsp_esa_1),
     .imem_rsp_page_miss_o(unused_imem_page_miss),
     .dmem_rsp_page_miss_o(unused_dmem_page_miss),
@@ -225,7 +225,7 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
            fault_write_o && fault_ea_o==32'h40),"protection provenance");
     for(int hold=0;hold<5;hold++) begin
       #1;check(dmem_rsp_valid_o && dmem_rsp_rdata_o==0 &&
-          dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?3'd1:3'd0) &&
+          dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?4'd1:4'd0) &&
           dmem_rsp_error_o==!ENABLE_DATA_EXCEPTIONS && !pdmem_req_valid_o,
           "held protection response classification");
       @(posedge clk_i);@(negedge clk_i);
@@ -240,14 +240,14 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
     @(posedge clk_i);@(negedge clk_i);dmem_req_valid_i=0;
     context_valid_i=0;bat_csr_req_valid_i=0;
     wait_response();
-    check(context_dr_o && dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?3'd1:3'd0) &&
+    check(context_dr_o && dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?4'd1:4'd0) &&
           dmem_rsp_error_o==!ENABLE_DATA_EXCEPTIONS,
           "held old-context denial was reinterpreted");
     @(negedge clk_i);context_valid_i=1;context_dr_i=0;bat_csr_req_valid_i=1;
     for(int held=0;held<3;held++) begin
       #1;check(dmem_rsp_valid_o && !context_ready_o &&
                !bat_csr_req_ready_o && context_dr_o &&
-               dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?3'd1:3'd0) &&
+               dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?4'd1:4'd0) &&
                dmem_rsp_error_o==!ENABLE_DATA_EXCEPTIONS &&
                !pdmem_req_valid_o,
                "held fault changed under pending context and CSR");
@@ -314,7 +314,7 @@ module tb_bat_data_fault #(parameter bit ENABLE_DATA_EXCEPTIONS=1'b1);
     check((ENABLE_DATA_EXCEPTIONS ? !translation_fault_o :
            (translation_fault_o && fault_protection_o && !fault_write_o &&
             !fault_miss_o && !fault_config_o && fault_ea_o==32'h80)) &&
-          dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?3'd1:3'd0) &&
+          dmem_rsp_fault_o==(ENABLE_DATA_EXCEPTIONS?4'd1:4'd0) &&
           dmem_rsp_error_o==!ENABLE_DATA_EXCEPTIONS && !pdmem_req_valid_o,
           "PP=00 read denial classification or provenance");
     consume_response();

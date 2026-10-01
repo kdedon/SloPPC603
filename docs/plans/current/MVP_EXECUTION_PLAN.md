@@ -900,3 +900,45 @@ commit: ci, reference-acceptance and all four fits meeting 50 MHz and 66 MHz.
 MVP 95.73% → 97.20%. See the signoff section in
 [SYSTEM_COMPLETION.md](../../SYSTEM_COMPLETION.md).
 
+
+## Batch 3 — accepted (2026-09-30)
+
+Outside MVP scope: bus clock ratios, 602 caches and multiply timing (V10), the
+`ppc602` pin top and `chip602` project (V11), FPU and area trims. Its batch
+gate passed on `e7f6a06`, including a timing-clean MiSTer build; the batches
+4+5 gate below also ran on a tree containing it. MVP 97.20%
+(unchanged).
+
+## Batches 4+5 — accepted (2026-09-30)
+
+Outside MVP scope: 602 66 MHz round, FPU shell area and retiming, FPU in the
+core behind `ENABLE_FPU` (default off), power modes (V14), opcode self-test.
+
+Recorded: `make -C sim ci`, `make -C sim xrand-sweep`, `make -C sim test-fpu-all
+test-fpu-reference test-fpu-testfloat lint-fpu-production lint-fpu-stream
+lint-fpu-dual`, `quartus/<top>/build.sh --docker` and
+`quartus/report-target-paths.sh <top> --docker`, `quartus/fpu-production/synthesize.sh
+--docker fullfit` and `full602fit`, `mister/build.sh --clean` and `--suite selftest`,
+commit `020cc8d`, 2026-09-30.
+
+All pass, fresh on this commit. `ci` line coverage 73.9% (1934/2616);
+`xrand-sweep` 60 runs. At 66 MHz, 0 failing endpoints: translated (11,600
+ALMs), integrated (5,882), timer-bat (5,881), chip (10,651); chip602 10,193
+ALMs, 68.68 MHz slow 100 C. FPU 51.55 MHz (603e) and 35.69 MHz (602), both
+short of 66 MHz and the 602 short of 50. MiSTer builds timing-clean. MVP
+97.20% (unchanged).
+
+## Batch 6 — accepted (2026-09-30)
+
+Outside MVP scope: pipelined FP issue to Table 6-5, SoC and MiSTer FPU option,
+Whetstone, FP self-test, CI preparation.
+
+Recorded: the batches 4+5 targets (MiSTer default build only) plus `make -C sim
+test-selftest-fpu demo-whetstone-hf`, commit `9eb20d9`, 2026-09-30.
+
+Pass: `ci` 73.5% (1945/2646); `xrand-sweep` 60 runs; FPU suite; at 66 MHz, 0
+failing endpoints on translated (11,668 ALMs), integrated (5,862), timer-bat
+(5,905), chip (10,689) and chip602 (10,242); FPU 51.55 and 35.69 MHz; MiSTer
+default build timing-clean; `test-selftest-fpu` 1218/1218; `demo-whetstone-hf`
+14.244 MWIPS at 50 MHz. Pending: MiSTer `--suite selftest`, `--fpu --suite
+whetstone` and `--fpu --suite selftest`. MVP 97.20% (unchanged).

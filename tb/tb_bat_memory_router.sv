@@ -20,7 +20,7 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
   logic context_ready_o, quiescent_o;
   logic context_valid_i, context_ir_i, context_dr_i, context_pr_i;
   logic [2:0] imem_rsp_fault_o;
-  logic [2:0] dmem_rsp_fault_o;
+  logic [3:0] dmem_rsp_fault_o;
   logic pimem_req_valid_o, pimem_req_ready_i;
   logic [31:0] pimem_req_addr_o;
   logic [3:0] pimem_req_wimg_o;
@@ -55,8 +55,8 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
   logic [4:0] unused_tlb_fill_router;
   logic [68:0] unused_imem_page_miss, unused_dmem_page_miss;
   logic [1:0] unused_imem_rsp_esa_1;
-  logic dmem_req_spec_i = 1'b0, data_spec_ok_i = 1'b0;
-  ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (.mmu_602_i('0), .tlb_fill_req_ext_i(5'b0),
+  logic data_spec_ok_i = 1'b0;
+  ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (.mmu_602_i('0), /* verilator lint_off PINCONNECTEMPTY */ .dmem_req_attr_i('0), .pdmem_req_ds_o(), .pdmem_req_ds_tag_o(), .pdmem_rsp_ds_error_i(1'b0), /* verilator lint_on PINCONNECTEMPTY */ .tlb_fill_req_ext_i(5'b0),
     .imem_rsp_esa_o(unused_imem_rsp_esa_1),
     .imem_rsp_page_miss_o(unused_imem_page_miss),
     .dmem_rsp_page_miss_o(unused_dmem_page_miss),

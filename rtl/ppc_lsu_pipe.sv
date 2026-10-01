@@ -39,6 +39,8 @@ module ppc_lsu_pipe #(
   // An older access may still fault. An unaccepted speculative request may
   // be withdrawn when that access faults or recovery removes it.
   output logic req_spec_o,
+  // Bytes of the access, for a direct-store segment.
+  output logic [2:0] req_bytes_o,
   input  logic rsp_valid_i,
   output logic rsp_ready_o,
   // Word accesses use the low half of a wider port.
@@ -133,6 +135,7 @@ module ppc_lsu_pipe #(
   assign req_valid_o = offer;
   assign req_write_o = p1_head.store;
   assign req_addr_o = {p1_head.ea[31:2], 2'b00};
+  assign req_bytes_o = p1_nbytes;
   assign req_spec_o = (p2_valid && !p2_q[0].killed) ||
                       ((p2_count_q == 2'd2) && !p2_q[1].killed);
 

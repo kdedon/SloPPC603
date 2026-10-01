@@ -51,7 +51,7 @@ module tb_page_miss_result_router #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1)
   logic imem_rsp_valid_o, imem_rsp_ready_i;
   logic [31:0] imem_rsp_insn_o;
   logic [2:0] imem_rsp_fault_o;
-  logic [2:0] dmem_rsp_fault_o;
+  logic [3:0] dmem_rsp_fault_o;
   logic [68:0] imem_rsp_page_miss_o,dmem_rsp_page_miss_o;
   logic dmem_req_valid_i, dmem_req_ready_o, dmem_req_write_i;
   logic [31:0] dmem_req_addr_i, dmem_req_wdata_i;
@@ -108,11 +108,11 @@ module tb_page_miss_result_router #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1)
   logic [4:0] unused_tlb_inv_router;
   logic [4:0] unused_tlb_fill_router;
   logic [1:0] unused_imem_rsp_esa_1;
-  logic dmem_req_spec_i = 1'b0, data_spec_ok_i = 1'b0;
+  logic data_spec_ok_i = 1'b0;
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1), .ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1),
-    .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS)) dut (.mmu_602_i('0), .tlb_fill_req_ext_i(5'b0),
+    .ENABLE_PAGE_MISS_RESULTS(ENABLE_PAGE_MISS_RESULTS)) dut (.mmu_602_i('0), /* verilator lint_off PINCONNECTEMPTY */ .dmem_req_attr_i('0), .pdmem_req_ds_o(), .pdmem_req_ds_tag_o(), .pdmem_rsp_ds_error_i(1'b0), /* verilator lint_on PINCONNECTEMPTY */ .tlb_fill_req_ext_i(5'b0),
     .imem_rsp_esa_o(unused_imem_rsp_esa_1),
     .tlb_inv_req_valid_i(1'b0),
     .tlb_inv_req_ready_o(unused_tlb_inv_router[0]),
@@ -356,7 +356,7 @@ module tb_page_miss_result_router #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1)
               dmem_rsp_page_miss_o==0,"typed instruction miss/capsule");
       else
         check(dmem_rsp_valid_o&&!dmem_rsp_error_o&&
-              dmem_rsp_fault_o==expected_cause&&dmem_rsp_rdata_o==0&&
+              dmem_rsp_fault_o==4'(expected_cause)&&dmem_rsp_rdata_o==0&&
               dmem_rsp_page_miss_o==expected_snapshot&&
               imem_rsp_page_miss_o==0,"typed data miss/capsule");
       repeat(3)begin
@@ -364,7 +364,7 @@ module tb_page_miss_result_router #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1)
         check((instruction_req?
                  (imem_rsp_valid_o&&imem_rsp_fault_o==expected_cause&&
                   imem_rsp_page_miss_o==expected_snapshot):
-                 (dmem_rsp_valid_o&&dmem_rsp_fault_o==expected_cause&&
+                 (dmem_rsp_valid_o&&dmem_rsp_fault_o==4'(expected_cause)&&
                   dmem_rsp_page_miss_o==expected_snapshot))&&
               !context_ready_o&&!tlb_mgmt_req_ready_o&&
               !pimem_req_valid_o&&!pdmem_req_valid_o,

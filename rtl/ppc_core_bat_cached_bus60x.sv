@@ -54,7 +54,10 @@ module ppc_core_bat_cached_bus60x #(
   parameter bit ENABLE_DCACHE = 1'b0,
   // Bench only: HID0[DCE] set at reset for images that never set it.
   parameter bit RESET_DCACHE_ENABLE = 1'b0,
-  parameter int DCACHE_MUTATION = 0
+  parameter int DCACHE_MUTATION = 0,
+  // 603 direct-store sender tag (UM C.1.2.2.1). The 603 PID register has
+  // no SPR, so the tag is fixed per build.
+  parameter logic [3:0] DS_PID = 4'h0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -176,6 +179,9 @@ module ppc_core_bat_cached_bus60x #(
   output logic        gbl_n_o,
   output logic [1:0]  cse_o,
   output logic        addr_oe_o,
+  // 603 XATS; negated off the 603 and driven with abb_oe_o.
+  output logic        xats_n_o,
+  input  logic        xats_n_i,
   input  logic        aack_n_i,
   input  logic        artry_n_i,
   // Snooped TS, A, TT and GBL; ARTRY drive for snoop responses.
@@ -255,9 +261,12 @@ module ppc_core_bat_cached_bus60x #(
   logic [31:0] scalar_imem_rsp_insn;
   logic scalar_imem_rsp_error;
 
+  localparam bit HAS_DIRECT_STORE = ppc_pkg::cpu_has_direct_store(CPU_VARIANT);
+  logic biu_dmem_rsp_ds_error;
   ppc_core_bat #(
     .RESET_PC(RESET_PC),
     .CPU_VARIANT(CPU_VARIANT),
+    .ENABLE_DIRECT_STORE(HAS_DIRECT_STORE),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
     .ENABLE_EXTERNAL_INTERRUPTS(ENABLE_EXTERNAL_INTERRUPTS),
@@ -372,6 +381,8 @@ module ppc_core_bat_cached_bus60x #(
     .pdmem_rsp_ready_o(dmem_rsp_ready),
     .pdmem_rsp_rdata_i(dmem_rsp_rdata),
     .pdmem_rsp_error_i(dmem_rsp_error),
+    // The slot passes a scalar-port response through in its cycle.
+    .pdmem_rsp_ds_error_i(biu_dmem_rsp_ds_error),
     .icbi_req_valid_o(icbi_req_valid), .icbi_req_ready_i(icbi_req_ready),
     .icbi_req_ea_o(icbi_req_ea),
     .icache_ctl_valid_o(icache_ctl_valid), .icache_ctl_ready_i(icache_ctl_ready),
@@ -593,7 +604,8 @@ module ppc_core_bat_cached_bus60x #(
 
   ppc_biu #(
     .RETURN_IFETCH_ERROR(ENABLE_MACHINE_CHECK),
-    .ENABLE_DCACHE(ENABLE_DCACHE)
+    .ENABLE_DCACHE(ENABLE_DCACHE),
+    .ENABLE_DIRECT_STORE(HAS_DIRECT_STORE), .DS_PID(DS_PID)
   ) biu (
     .clk_i, .rst_ni, .bus_ce_i,
     .imem_req_valid_i(scalar_imem_req_valid),
@@ -611,6 +623,7 @@ module ppc_core_bat_cached_bus60x #(
     .dmem_req_attr_i(biu_dmem_req_attr),
     .dmem_rsp_valid_o(biu_dmem_rsp_valid), .dmem_rsp_ready_i(biu_dmem_rsp_ready),
     .dmem_rsp_rdata_o(biu_dmem_rsp_rdata), .dmem_rsp_error_o(biu_dmem_rsp_error),
+    .dmem_rsp_ds_error_o(biu_dmem_rsp_ds_error), .xats_n_o, .xats_n_i,
     .line_req_valid_i(cache_line_req_valid),
     .line_req_ready_o(cache_line_req_ready),
     .line_req_line_addr_i(cache_line_addr),

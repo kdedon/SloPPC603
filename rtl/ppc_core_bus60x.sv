@@ -92,9 +92,12 @@ module ppc_core_bus60x #(
   logic [33:0] unused_cache_core;
   logic [2:0] unused_icache_ctl;
   ppc_pkg::dmem_attr_t dmem_req_attr;
-  // Set only by the pipelined load/store unit, which this top leaves off.
-  logic unused_attr_spec;
-  assign unused_attr_spec = dmem_req_attr.spec;
+  // Access shape, direct-store and speculation fields have no use without
+  // translation; this top leaves the pipelined unit off.
+  logic unused_attr;
+  assign unused_attr = ^{dmem_req_attr.fp, dmem_req_attr.bytes,
+    dmem_req_attr.last, dmem_req_attr.ds, dmem_req_attr.ds_tag,
+    dmem_req_attr.spec};
   logic unused_core_checkstop, unused_imem_rsp_error;
   // No MMU on this path: the 602 translation ports stay idle.
   logic [4:0] unused_tlb_fill_ext;

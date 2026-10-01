@@ -655,6 +655,10 @@ module ppc_translated_measure #(
     .d_oe_o(d_oe_o_od),
     .ta_n_i(ta_n_i_ibq),
     .drtry_n_i(drtry_n_i_ibq),
-    .tea_n_i(tea_n_i_ibq)
+    .tea_n_i(tea_n_i_ibq),
+    // XATS exists on the 603 only; this build is the 603e.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .xats_n_i(1'b1), .xats_n_o()
+    /* verilator lint_on PINCONNECTEMPTY */
   );
 endmodule

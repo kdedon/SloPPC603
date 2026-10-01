@@ -190,9 +190,7 @@ module ppc_core #(
     DIV_LATENCY != 0 ? DIV_LATENCY : cpu_div_latency(CPU_VARIANT);
   // Elaboration fails for a variant whose differences are not all built.
   // synthesis translate_off
-  if (CPU_VARIANT == CPU_603) begin : g_reject_603
-    $fatal(1, "CPU_VARIANT CPU_603 is not implemented (caches, SPR presence, direct-store, 2:2 stores)");
-  end else if (!cpu_core_supported(CPU_VARIANT)) begin : g_reject_unknown
+  if (!cpu_core_supported(CPU_VARIANT)) begin : g_reject_unknown
     $fatal(1, "CPU_VARIANT %0d is not a known variant", CPU_VARIANT);
   end
   // synthesis translate_on
@@ -236,6 +234,7 @@ module ppc_core #(
   // Pipelined load/store unit.
   logic lsu_route, lsu_ready, lsu_empty, lsu_result_valid, lsu_store_irrevocable;
   logic lsu_req_valid, lsu_req_write, lsu_req_spec, lsu_rsp_ready, lsu_rsp_owner;
+  logic [2:0] lsu_req_bytes;
   logic [31:0] lsu_req_addr;
   logic [DMEM_BITS-1:0] lsu_req_wdata;
   logic [DMEM_BITS/8-1:0] lsu_req_wstrb;
@@ -1125,7 +1124,7 @@ module ppc_core #(
         .req_valid_o(lsu_req_valid), .req_ready_i(dmem_req_ready_i),
         .req_write_o(lsu_req_write), .req_addr_o(lsu_req_addr),
         .req_wdata_o(lsu_req_wdata), .req_wstrb_o(lsu_req_wstrb),
-        .req_spec_o(lsu_req_spec),
+        .req_spec_o(lsu_req_spec), .req_bytes_o(lsu_req_bytes),
         .rsp_valid_i(dmem_rsp_valid_i), .rsp_ready_o(lsu_rsp_ready),
         .rsp_rdata_i(dmem_rsp_rdata_i[31:0]), .rsp_error_i(dmem_rsp_error_i),
         .rsp_fault_i(dmem_rsp_fault_i), .rsp_owner_o(lsu_rsp_owner),
@@ -1146,6 +1145,7 @@ module ppc_core #(
       assign lsu_req_wdata = '0;
       assign lsu_req_wstrb = '0;
       assign lsu_req_spec = 1'b0;
+      assign lsu_req_bytes = '0;
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;
@@ -1187,6 +1187,8 @@ module ppc_core #(
       dmem_req_attr_o = '0;
       dmem_req_attr_o.kind = DMEM_NORMAL;
       dmem_req_attr_o.spec = lsu_req_spec;
+      dmem_req_attr_o.bytes = lsu_req_bytes;
+      dmem_req_attr_o.last = 1'b1;
     end
     dmem_rsp_ready_o = lsu_rsp_owner ? lsu_rsp_ready : sp_rsp_ready;
   end

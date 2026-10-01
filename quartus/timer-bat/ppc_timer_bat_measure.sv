@@ -366,7 +366,7 @@ module ppc_timer_bat_measure #(
     .pdmem_rsp_valid_i(pdmem_rsp_valid_i_ibq),
     .pdmem_rsp_ready_o(pdmem_rsp_ready_o_od),
     .pdmem_rsp_rdata_i(pdmem_rsp_rdata_i_ibq),
-    .pdmem_rsp_error_i(pdmem_rsp_error_i_ibq),
+    .pdmem_rsp_error_i(pdmem_rsp_error_i_ibq), .pdmem_rsp_ds_error_i(1'b0),
     .retire_valid_o(retire_valid_o_od),
     .retire_ready_i(retire_ready_i_ibq),
     .retire_o(retire_o_od),

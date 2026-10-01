@@ -110,7 +110,7 @@ module tb_core_bat_reference;
     .pdmem_req_valid_o(dv), .pdmem_req_ready_i(dreq_ready), .pdmem_req_write_o(dw),
     .pdmem_req_addr_o(da), .pdmem_req_wdata_o(wd), .pdmem_req_wstrb_o(st),
     .pdmem_rsp_valid_i(drsp_valid), .pdmem_rsp_ready_o(rr),
-    .pdmem_rsp_rdata_i(drsp_data), .pdmem_rsp_error_i(1'b0),
+    .pdmem_rsp_rdata_i(drsp_data), .pdmem_rsp_error_i(1'b0), .pdmem_rsp_ds_error_i(1'b0),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),

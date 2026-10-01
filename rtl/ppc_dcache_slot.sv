@@ -4,8 +4,8 @@
 // Data-cache position between the LSU's physical port and the BIU. With no
 // data cache every access passes straight through to the scalar port, as
 // the 603e does with HID0[DCE]=0. With the cache, every word access becomes
-// one double-word cache request and eciwx/ecowx alone use the scalar port,
-// after a cache sync. Contracts: docs/CHIP_PACKAGE.md,
+// one double-word cache request and eciwx/ecowx and direct-store accesses
+// alone use the scalar port, after a cache sync. Contracts: docs/CHIP_PACKAGE.md,
 // docs/DATA_CACHE_INTEGRATION.md.
 module ppc_dcache_slot #(
   parameter bit ENABLE_DCACHE = 1'b0,
@@ -175,7 +175,9 @@ module ppc_dcache_slot #(
     logic [3:0] ext_wstrb_q;
     dmem_attr_t ext_attr_q;
 
-    assign lsu_external = lsu_req_attr_i.kind == DMEM_EXTERNAL;
+    // Direct-store accesses take the same ordered path.
+    assign lsu_external = (lsu_req_attr_i.kind == DMEM_EXTERNAL) ||
+                          lsu_req_attr_i.ds;
     assign lsu_dword = lsu_wstrb[7:4] != 4'b0;
     always_comb begin
       case (lsu_req_attr_i.kind)
