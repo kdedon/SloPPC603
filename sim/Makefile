@@ -421,8 +421,9 @@ test-execution:
 	./$(BUILD_DIR)/execution/Vtb_execution $(SIM_ARGS)
 test-stage:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_stage_timing --Mdir $(BUILD_DIR)/stage $(RTL) ../tb/tb_stage_timing.sv
-	./$(BUILD_DIR)/stage/Vtb_stage_timing $(SIM_ARGS) +TRACE=$(BUILD_DIR)/stage/trace.jsonl
+	./$(BUILD_DIR)/stage/Vtb_stage_timing $(SIM_ARGS) +TRACE=$(BUILD_DIR)/stage/trace.jsonl +DISPATCH_TRACE=$(BUILD_DIR)/stage/events.txt
 	python3 tools/check_stage_timing.py $(BUILD_DIR)/stage/trace.jsonl
+	python3 tools/check_dispatch_trace.py $(BUILD_DIR)/stage/events.txt spec/schedules/stage.txt --stage $(BUILD_DIR)/stage/trace.jsonl
 check-spec:
 	python3 spec/check_timing.py
 	python3 spec/check_bus.py
@@ -446,6 +447,16 @@ test-recovery-state:
 test-core-recovery:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_recovery --Mdir $(BUILD_DIR)/core-recovery $(RTL) ../tb/tb_core_recovery.sv
 	./$(BUILD_DIR)/core-recovery/Vtb_core_recovery $(SIM_ARGS)
+# Two-word fetch into the shifting IQ; both widths must retire the same stream.
+.PHONY: test-core-fetch2
+test: test-core-fetch2
+test-core-fetch2:
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_fetch2 -GFETCH_WIDTH=1 --Mdir $(BUILD_DIR)/core-fetch2-w1 $(RTL) ../tb/tb_core_fetch2.sv
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_fetch2 -GFETCH_WIDTH=2 --Mdir $(BUILD_DIR)/core-fetch2-w2 $(RTL) ../tb/tb_core_fetch2.sv
+	./$(BUILD_DIR)/core-fetch2-w1/Vtb_core_fetch2 $(SIM_ARGS) +RETIRE_LOG=$(BUILD_DIR)/core-fetch2-w1/retire.txt
+	./$(BUILD_DIR)/core-fetch2-w2/Vtb_core_fetch2 $(SIM_ARGS) +RETIRE_LOG=$(BUILD_DIR)/core-fetch2-w2/retire.txt
+	cmp $(BUILD_DIR)/core-fetch2-w1/retire.txt $(BUILD_DIR)/core-fetch2-w2/retire.txt
+	@echo "PASS: widths 1 and 2 retire $$(wc -l < $(BUILD_DIR)/core-fetch2-w1/retire.txt) identical packets"
 test-fetch-recovery:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_fetch_recovery --Mdir $(BUILD_DIR)/fetch-recovery ../rtl/ppc_pkg.sv ../rtl/ppc_fetch.sv ../tb/tb_fetch_recovery.sv
 	./$(BUILD_DIR)/fetch-recovery/Vtb_fetch_recovery $(SIM_ARGS)
@@ -942,6 +953,8 @@ test-core-multiply-timing:
 test-icache:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_icache --Mdir $(BUILD_DIR)/icache $(ICACHE_RTL) ../tb/tb_icache.sv
 	./$(BUILD_DIR)/icache/Vtb_icache $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_icache -GFETCH_WIDTH=2 --Mdir $(BUILD_DIR)/icache-pair $(ICACHE_RTL) ../tb/tb_icache.sv
+	./$(BUILD_DIR)/icache-pair/Vtb_icache $(SIM_ARGS)
 
 test-icache-bus60x:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_icache_bus60x --Mdir $(BUILD_DIR)/icache-bus60x $(ICACHE_RTL) $(LINE_RTL) ../tb/tb_icache_bus60x.sv

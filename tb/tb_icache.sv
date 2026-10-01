@@ -5,7 +5,8 @@
 module tb_icache #(
   // Geometry under test: 603e 128 x 4, 603 128 x 2, 602 64 x 2.
   parameter int SETS = 128,
-  parameter int WAYS = 4
+  parameter int WAYS = 4,
+  parameter int FETCH_WIDTH = 1
 );
   localparam int SET_BITS = $clog2(SETS);
   localparam int LINES = SETS * WAYS;
@@ -19,6 +20,8 @@ module tb_icache #(
   logic [31:0] fetch_addr;
   logic fetch_rsp_valid, fetch_rsp_ready, fetch_rsp_error;
   logic [31:0] fetch_rsp_insn;
+  logic [33*FETCH_WIDTH-2:0] fetch_rsp_all;
+  assign fetch_rsp_insn = fetch_rsp_all[31:0];
   logic kill, invalidate, invalidate_done;
   logic line_req_valid, line_req_ready, line_req_instruction;
   logic [31:0] line_req_line_addr;
@@ -36,12 +39,12 @@ module tb_icache #(
   int stream_hit_count = 0;
   int stream_best_cycles = 0;
 
-  ppc_icache #(.SET_COUNT(SETS), .WAY_COUNT(WAYS)) dut (
+  ppc_icache #(.SET_COUNT(SETS), .WAY_COUNT(WAYS), .FETCH_WIDTH(FETCH_WIDTH)) dut (
     .clk_i(clk), .rst_ni(rst_n),
     .fetch_valid_i(fetch_valid), .fetch_ready_o(fetch_ready),
     .fetch_addr_i(fetch_addr), .fetch_rsp_valid_o(fetch_rsp_valid),
     .fetch_rsp_ready_i(fetch_rsp_ready),
-    .fetch_rsp_insn_o(fetch_rsp_insn),
+    .fetch_rsp_insn_o(fetch_rsp_all),
     .fetch_rsp_error_o(fetch_rsp_error),
     .kill_i(kill), .invalidate_i(invalidate),
     .invalidate_done_o(invalidate_done),
@@ -71,6 +74,23 @@ module tb_icache #(
   );
     return seed ^ (32'h1020_4081 * {29'b0, index});
   endfunction
+
+  // A pair's second word follows from the first: every line is make_line.
+  int pair_responses = 0;
+  if (FETCH_WIDTH == 2) begin : g_pair_check
+    logic [4:2] rsp_addr;
+    always @(posedge clk) begin
+      if (fetch_valid && fetch_ready) rsp_addr <= fetch_addr[4:2];
+      if (rst_n && fetch_rsp_valid && fetch_rsp_all[64]) begin
+        pair_responses++;
+        check(!rsp_addr[2] && !fetch_rsp_error &&
+              (fetch_rsp_all[63:32] == (fetch_rsp_insn ^
+                (32'h1020_4081 * {29'b0, rsp_addr}) ^
+                (32'h1020_4081 * {29'b0, rsp_addr + 3'd1}))),
+              "pair response second word");
+      end
+    end
+  end
 
   function automatic logic [255:0] make_line(input logic [31:0] seed);
     logic [255:0] result;
@@ -686,9 +706,10 @@ module tb_icache #(
           "classification pulses cover every aligned accepted fetch");
     check(accepted_line_requests >= 7,
           "multiple replacements and cancellation paths accepted refills");
-    $display("PASS: tb_icache %0d sets x %0d ways, %0d checks, %0d fetches, %0d hits, %0d misses, %0d line requests, %0d streamed hits (200 in %0d cycles)",
+    check((FETCH_WIDTH == 1) || (pair_responses > 0), "pair responses observed");
+    $display("PASS: tb_icache %0d sets x %0d ways, %0d checks, %0d fetches, %0d hits, %0d misses, %0d line requests, %0d streamed hits (200 in %0d cycles), %0d pair responses",
              SETS, WAYS, checks, accepted_fetches, hit_pulses, miss_pulses,
-             accepted_line_requests, stream_hit_count, stream_best_cycles);
+             accepted_line_requests, stream_hit_count, stream_best_cycles, pair_responses);
     $finish;
   end
 endmodule

@@ -60,7 +60,7 @@ Run from the repository root:
 python3 sim/tools/check_stage_timing.py
 python3 -m unittest discover -s sim/tools -p test_stage_timing.py -v
 verilator --binary --timing --assert -Wall --top-module tb_stage_timing \
-  rtl/ppc_pkg.sv rtl/ppc_fifo.sv \
+  rtl/ppc_pkg.sv rtl/ppc_iq.sv \
   rtl/ppc_fetch.sv rtl/ppc_decode.sv \
   rtl/ppc_regfile_gpr.sv rtl/ppc_rename.sv \
   rtl/ppc_dispatch.sv rtl/ppc_iu.sv \

@@ -60,7 +60,12 @@ module ppc_core #(
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
   // HID1 PLL_CFG[0:3] (manual bits 0-3), read-only.
-  parameter logic [3:0] PLL_CFG = 4'b0000
+  parameter logic [3:0] PLL_CFG = 4'b0000,
+  // Words per fetch response: 2 takes the pair a doubleword responder
+  // returns on imem_rsp_insn_i.
+  parameter int FETCH_WIDTH = 1,
+  // Instructions dispatched per cycle; only 1 is built.
+  parameter int DISPATCH_WIDTH = 1
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -134,7 +139,8 @@ module ppc_core #(
   output logic [31:0] imem_req_addr_o,
   input logic imem_rsp_valid_i,
   output logic imem_rsp_ready_o,
-  input logic [31:0] imem_rsp_insn_i,
+  // FETCH_WIDTH 2: {second word valid, word at addr + 4, word at addr}.
+  input logic [33*FETCH_WIDTH-2:0] imem_rsp_insn_i,
   input ppc_pkg::fetch_fault_t imem_rsp_fault_i,
   input ppc_pkg::esa_enable_t imem_rsp_esa_i,
   input ppc_pkg::page_miss_t imem_rsp_page_miss_i,
@@ -348,36 +354,74 @@ module ppc_core #(
       $fatal(1, "The FPU requires ENABLE_TEST_REDIRECT=0");
     if (ENABLE_FPU && !cpu_has_fpu_dp(CPU_VARIANT) && !cpu_has_602_ext(CPU_VARIANT))
       $fatal(1, "The FPU is attached only to 603e and 602 variants");
+    if ((FETCH_WIDTH != 1) && (FETCH_WIDTH != 2))
+      $fatal(1, "FETCH_WIDTH is 1 or 2");
+    if (DISPATCH_WIDTH != 1)
+      $fatal(1, "DISPATCH_WIDTH 2 is not implemented");
     if ((DMEM_BITS != 32) && ((DMEM_BITS != 64) || !ENABLE_FPU))
       $fatal(1, "DMEM_BITS is 32, or 64 with the FPU");
     if (ENABLE_DEBUG_EXCEPTIONS && (!ENABLE_EXTERNAL_INTERRUPTS ||
         !ENABLE_LIVE_CONTEXT || !ENABLE_SUPERVISOR_EXCEPTIONS))
       $fatal(1, "Debug exceptions require the interrupt boundary and live supervisor context");
   end
-  ppc_fetch #(.RESET_PC(RESET_PC)) fetch (
+  // A 2-wide response is {pair, word at pc + 4, word at pc}.
+  logic imem_rsp_pair, fetch_pair;
+  logic [31:0] imem_rsp_insn1, fetched_insn1;
+  generate
+  if (FETCH_WIDTH == 2) begin : g_rsp_pair
+    assign imem_rsp_pair = imem_rsp_insn_i[64];
+    assign imem_rsp_insn1 = imem_rsp_insn_i[63:32];
+  end else begin : g_rsp_single
+    assign imem_rsp_pair = 1'b0;
+    assign imem_rsp_insn1 = 32'b0;
+  end
+  endgenerate
+  ppc_fetch #(.RESET_PC(RESET_PC), .FETCH_WIDTH(FETCH_WIDTH)) fetch (
     .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence || power_stop),
     .quiescent_o(frontend_quiescent),
     .redirect_i(frontend_clear || fold_q), .redirect_target_i(frontend_target),
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
     .req_addr_o(imem_req_addr_o), .rsp_valid_i(imem_rsp_valid_i),
-    .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i),
+    .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i[31:0]),
     .rsp_fault_i(imem_rsp_fault_i), .rsp_esa_i(imem_rsp_esa_i),
-    .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready), .packet_o(fetched)
+    .rsp_pair_i(imem_rsp_pair), .rsp_insn1_i(imem_rsp_insn1),
+    .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready),
+    .packet_ready2_i(fetch_ready2), .packet_o(fetched),
+    .packet_pair_o(fetch_pair), .packet_insn1_o(fetched_insn1)
   );
-  // Fetch-to-decode register: the fetched word, its PC, fault and page-miss
-  // context are registered before decode. It clears with the IQ.
+  // Fetch-to-decode registers: the fetched words, PC, fault and page-miss
+  // context are registered before decode. They clear with the IQ. The
+  // second word is always FETCH_OK at pc + 4 with the first word's ESA.
   fetch_packet_t fd_packet_q;
   page_miss_t fd_miss_q;
-  logic fd_valid_q, iq_push_ready;
-  assign fetch_ready = !frontend_clear && !fold_q && (!fd_valid_q || iq_push_ready);
+  logic fd_valid_q, fd1_valid_q, fd_push_ok, fetch_ready2;
+  // Read only by the second decoder.
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] fd1_insn_q;
+  /* verilator lint_on UNUSEDSIGNAL */
+  logic iq_push_ready, iq_push2_ready;
+  logic [IQ_COUNT_WIDTH-1:0] iq_count;
+  // The FD words enter the IQ together.
+  assign fd_push_ok = fd1_valid_q ? iq_push2_ready : iq_push_ready;
+  assign fetch_ready = !frontend_clear && !fold_q && (!fd_valid_q || fd_push_ok);
+  // Two words are taken only if the IQ holds them behind the FD words.
+  assign fetch_ready2 = (FETCH_WIDTH == 2) && fetch_ready &&
+    ({1'b0, iq_count} + (IQ_COUNT_WIDTH + 1)'(fd_valid_q) + (IQ_COUNT_WIDTH + 1)'(fd1_valid_q) <=
+     (IQ_COUNT_WIDTH + 1)'(IQ_DEPTH - 2));
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || frontend_clear || fold_q) fd_valid_q <= 1'b0;
-    else if (fetch_ready) fd_valid_q <= fetch_valid;
+    if (!rst_ni || frontend_clear || fold_q) begin
+      fd_valid_q <= 1'b0;
+      fd1_valid_q <= 1'b0;
+    end else if (fetch_ready) begin
+      fd_valid_q <= fetch_valid;
+      fd1_valid_q <= fetch_valid && fetch_pair;
+    end
   end
   always_ff @(posedge clk_i) begin
     if (fetch_valid && fetch_ready) begin
       fd_packet_q <= fetched;
       fd_miss_q <= imem_rsp_page_miss_i;
+      fd1_insn_q <= fetched_insn1;
     end
   end
   // Instructions are decoded at IQ push; dispatch starts from the queued uop.
@@ -402,43 +446,147 @@ module ppc_core #(
   ) predecode (.insn_i(fd_packet_q.insn), .uop_o(push_uop));
   // IABR compares at IQ push. The manual requires a context-synchronizing
   // instruction after mtspr IABR, and its refetch clears older IQ entries.
-  always_comb begin
-    queued = fd_packet_q;
-    if (ENABLE_DEBUG_EXCEPTIONS && iabr[1] && (fd_packet_q.fault == FETCH_OK) &&
-        (fd_packet_q.pc[31:2] == iabr[31:2]))
-      queued.fault = FETCH_IABR;
-  end
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic fetch_packet_t iabr_check(fetch_packet_t p, logic [31:0] bp);
+    fetch_packet_t q;
+    q = p;
+    if (ENABLE_DEBUG_EXCEPTIONS && bp[1] && (p.fault == FETCH_OK) &&
+        (p.pc[31:2] == bp[31:2]))
+      q.fault = FETCH_IABR;
+    return q;
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign queued = iabr_check(fd_packet_q, iabr);
   // Branch folding: a b, or a bc predicted taken (backward unless the y bit
   // says otherwise, or branch always), redirects fetch on the edge after it
-  // enters the IQ, and the word behind it in the fetch register is dropped.
-  // Dispatch resolves the branch and corrects a wrong prediction. Not in
-  // trace mode, whose branches take the serialized path; changing MSR
+  // enters the IQ, and the words behind it in the fetch registers are
+  // dropped. Dispatch resolves the branch and corrects a wrong prediction.
+  // Not in trace mode, whose branches take the serialized path; changing MSR
   // refetches, so no folded entry is queued when trace mode starts.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic folds(fetch_packet_t p, logic trace);
+    return !trace && (p.fault == FETCH_OK) &&
+      ((p.insn[31:26] == 6'd18) ||
+       ((p.insn[31:26] == 6'd16) &&
+        ((p.insn[25] && p.insn[23]) || (p.insn[15] ^ p.insn[21]))));
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   assign fd_push = fd_valid_q && !fold_q;
-  assign fold_predict = !trace_mode && (queued.fault == FETCH_OK) &&
-    ((fd_packet_q.insn[31:26] == 6'd18) ||
-     ((fd_packet_q.insn[31:26] == 6'd16) &&
-      ((fd_packet_q.insn[25] && fd_packet_q.insn[23]) ||
-       (fd_packet_q.insn[15] ^ fd_packet_q.insn[21]))));
-  assign fold_target = (fd_packet_q.insn[1] ? 32'b0 : fd_packet_q.pc) +
-    ((fd_packet_q.insn[31:26] == 6'd18) ?
-      {{6{fd_packet_q.insn[25]}}, fd_packet_q.insn[25:2], 2'b00} :
-      {{16{fd_packet_q.insn[15]}}, fd_packet_q.insn[15:2], 2'b00});
+  assign fold_predict = folds(queued, trace_mode);
+  // Lane 1: the second FD word.
+  fetch_packet_t queued1;
+  logic [31:0] fold_pc;
+  // The LK bit does not change the target.
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] fold_insn;
+  /* verilator lint_on UNUSEDSIGNAL */
+  uop_t push_uop1;
+  logic fold_predict1, iq_push0, iq_push1;
+  logic [3:0] push_branch1;
+  generate
+  if (FETCH_WIDTH == 2) begin : g_lane1
+    ppc_decode #(
+      .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
+      .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
+      .ENABLE_TIMERS(ENABLE_TIMERS), .ENABLE_RUNTIME_BAT(ENABLE_RUNTIME_BAT),
+      .ENABLE_SEGMENT_REGISTERS(ENABLE_SEGMENT_REGISTERS),
+      .ENABLE_TLB_INVALIDATE(ENABLE_TLB_INVALIDATE),
+      .ENABLE_TLB_LOAD(ENABLE_TLB_LOAD),
+      .ENABLE_SDR1(ENABLE_SDR1),
+      .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
+      .ENABLE_CACHE_INSTRUCTIONS(ENABLE_CACHE_INSTRUCTIONS),
+      .ENABLE_DATA_CACHE(ENABLE_DATA_CACHE),
+      .ENABLE_BYTE_REVERSE(ENABLE_BYTE_REVERSE),
+      .ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING),
+      .ENABLE_RESERVATION(ENABLE_RESERVATION),
+      .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
+      .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+      .ENABLE_FPU(ENABLE_FPU),
+      .CPU_VARIANT(CPU_VARIANT)
+    ) predecode1 (.insn_i(fd1_insn_q), .uop_o(push_uop1));
+    always_comb begin
+      fetch_packet_t p;
+      p.pc = {fd_packet_q.pc[31:3], 3'b100};
+      p.insn = fd1_insn_q;
+      p.fault = FETCH_OK;
+      p.esa = fd_packet_q.esa;
+      queued1 = iabr_check(p, iabr);
+    end
+  end else begin : g_lane1_off
+    assign push_uop1 = '0;
+    assign queued1 = '0;
+  end
+  endgenerate
+  assign fold_predict1 = (FETCH_WIDTH == 2) && folds(queued1, trace_mode);
+  // A folding first word drops the second.
+  assign iq_push0 = fd_push && fd_push_ok;
+  assign iq_push1 = iq_push0 && fd1_valid_q && !fold_predict;
+  assign fold_pc = fold_predict ? queued.pc : queued1.pc;
+  assign fold_insn = fold_predict ? queued.insn : queued1.insn;
+  assign fold_target = (fold_insn[1] ? 32'b0 : fold_pc) +
+    ((fold_insn[31:26] == 6'd18) ?
+      {{6{fold_insn[25]}}, fold_insn[25:2], 2'b00} :
+      {{16{fold_insn[15]}}, fold_insn[15:2], 2'b00});
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       fold_q <= 1'b0;
       fold_target_q <= '0;
     end else begin
-      fold_q <= fd_push && iq_push_ready && fold_predict && !frontend_clear;
+      fold_q <= ((iq_push0 && fold_predict) || (iq_push1 && fold_predict1)) &&
+                !frontend_clear;
       fold_target_q <= fold_target;
     end
   end
-  ppc_fifo #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 5), .DEPTH(IQ_DEPTH)) iq (
+  // Pair predecode. dep_prev compares against the preceding pushed word:
+  // the other lane, or the last entry pushed since a clear or fold.
+  iq_pair_t push_pair, push_pair1;
+  logic [1:0] last_writes_q, lane0_writes;
+  logic [4:0] last_dst_q, last_base_q;
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic [2:0] depends(uop_t u, logic [1:0] writes,
+                                         logic [4:0] dst, logic [4:0] base);
+    logic [2:0] d;
+    d[0] = !u.zero_a && ((writes[0] && (u.src_a == dst)) || (writes[1] && (u.src_a == base)));
+    d[1] = !u.use_imm && ((writes[0] && (u.src_b == dst)) || (writes[1] && (u.src_b == base)));
+    d[2] = (writes[0] && (u.src_c == dst)) || (writes[1] && (u.src_c == base));
+    return d;
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign lane0_writes = {push_uop.mem_update, push_uop.gpr_write};
+  always_comb begin
+    push_pair = pair_predecode(push_uop, queued.insn, queued.fault != FETCH_OK);
+    push_pair.dep_prev = depends(push_uop, last_writes_q, last_dst_q, last_base_q);
+    push_pair1 = pair_predecode(push_uop1, queued1.insn, queued1.fault != FETCH_OK);
+    push_pair1.dep_prev = depends(push_uop1, lane0_writes, push_uop.dst, push_uop.src_a);
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || frontend_clear || fold_q) last_writes_q <= '0;
+    else if (iq_push1) begin
+      last_writes_q <= {push_uop1.mem_update, push_uop1.gpr_write};
+      last_dst_q <= push_uop1.dst;
+      last_base_q <= push_uop1.src_a;
+    end else if (iq_push0) begin
+      last_writes_q <= lane0_writes;
+      last_dst_q <= push_uop.dst;
+      last_base_q <= push_uop.src_a;
+    end
+  end
+  // DQ1 and the pair bits feed dual dispatch, which DISPATCH_WIDTH 1 omits.
+  /* verilator lint_off UNUSEDSIGNAL */
+  iq_pair_t iq_pair;
+  logic iq_valid1;
+  logic [$bits(fetch_packet_t) + $bits(uop_t) + 5 + $bits(iq_pair_t) - 1:0] iq_dq1;
+  /* verilator lint_on UNUSEDSIGNAL */
+  ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 5 + $bits(iq_pair_t)),
+           .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(frontend_clear),
-    .push_valid_i(fd_push), .push_ready_o(iq_push_ready),
-    .push_data_i({queued, push_uop, fold_predict, push_branch}),
-    .pop_valid_o(iq_valid), .pop_ready_i(iq_pop),
-    .pop_data_o({iq_head, iq_uop, iq_folded, iq_branch})
+    .push_valid_i({iq_push1, iq_push0}), .push_ready_o(iq_push_ready),
+    .push2_ready_o(iq_push2_ready),
+    .push0_data_i({queued, push_uop, fold_predict, push_branch, push_pair}),
+    .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1}),
+    .pop_i({1'b0, iq_pop}), .valid_o({iq_valid1, iq_valid}),
+    .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair}), .dq1_o(iq_dq1),
+    .count_o(iq_count)
   );
   ppc_lsu_sequence #(.ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING)) lsu_sequence (
     .clk_i, .rst_ni, .clear_i(recovery_accepted),
@@ -451,7 +599,7 @@ module ppc_core #(
   // Page-miss context of the oldest IQ page-miss entry, captured only when no
   // other page-miss entry is queued. A younger one never dispatches: the older
   // fault either redirects, which clears the IQ, or halts.
-  assign iq_push_miss = fd_push && iq_push_ready && (fd_packet_q.fault == FETCH_PAGE_MISS);
+  assign iq_push_miss = iq_push0 && (fd_packet_q.fault == FETCH_PAGE_MISS);
   assign iq_pop_miss = iq_valid && iq_pop && (iq_head.fault == FETCH_PAGE_MISS);
   assign iq_miss_count_left = iq_miss_count_q - IQ_COUNT_WIDTH'(iq_pop_miss);
   always_ff @(posedge clk_i) begin
@@ -574,13 +722,21 @@ module ppc_core #(
   // redirects fetch on the next edge and clears only the IQ: everything
   // younger is still there, and an older fault removes the branch itself.
   // {branch, reads CR, reads LR, reads CTR}; a fetch fault is not a branch.
-  assign push_branch[3] = (queued.fault == FETCH_OK) && !push_uop.illegal &&
-    ((push_uop.special_op == SPECIAL_B) || (push_uop.special_op == SPECIAL_BC) ||
-     (push_uop.special_op == SPECIAL_BCLR) || (push_uop.special_op == SPECIAL_BCCTR));
-  assign push_branch[2] = (push_uop.special_op != SPECIAL_B) && !push_uop.branch_bo[4];
-  assign push_branch[1] = (push_uop.special_op == SPECIAL_BCLR);
-  assign push_branch[0] = ((push_uop.special_op != SPECIAL_B) && !push_uop.branch_bo[2]) ||
-                          (push_uop.special_op == SPECIAL_BCCTR);
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic [3:0] branch_class(uop_t u, fetch_fault_t fault);
+    logic [3:0] c;
+    c[3] = (fault == FETCH_OK) && !u.illegal &&
+      ((u.special_op == SPECIAL_B) || (u.special_op == SPECIAL_BC) ||
+       (u.special_op == SPECIAL_BCLR) || (u.special_op == SPECIAL_BCCTR));
+    c[2] = (u.special_op != SPECIAL_B) && !u.branch_bo[4];
+    c[1] = (u.special_op == SPECIAL_BCLR);
+    c[0] = ((u.special_op != SPECIAL_B) && !u.branch_bo[2]) ||
+           (u.special_op == SPECIAL_BCCTR);
+    return c;
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign push_branch = branch_class(push_uop, queued.fault);
+  assign push_branch1 = branch_class(push_uop1, queued1.fault);
   assign bu_branch = !trace_mode && iq_branch[3];
   assign bu_reads_cr = iq_branch[2];
   assign bu_reads_lr = iq_branch[1];
@@ -1080,7 +1236,7 @@ module ppc_core #(
       else if (iq_valid) perf_refetch_q <= '0;
       if (dispatch && special_uop) perf_special_mem_q <= perf_head_mem;
       perf_o.retire <= retire_valid_o;
-      perf_o.iq_full <= fd_valid_q && !iq_push_ready;
+      perf_o.iq_full <= fd_valid_q && !fd_push_ok;
       perf_o.branch <= dispatch && perf_head_branch;
       perf_o.memory <= dispatch && special_uop && perf_head_mem;
       perf_o.branch_redirect <= (recovery_accepted && special_branch_redirect) ||
@@ -1144,6 +1300,55 @@ module ppc_core #(
       assert (iq_miss_valid_q)
         else $error("dispatched fetch page miss without its captured context");
   end
+  // DQ1 follows DQ0 in program order, and its dep_prev bits match DQ0.
+  /* verilator lint_off UNUSEDSIGNAL */
+  fetch_packet_t dq1_head;
+  /* verilator lint_on UNUSEDSIGNAL */
+  uop_t dq1_uop;
+  logic dq1_folded;
+  logic [3:0] dq1_branch;
+  iq_pair_t dq1_pair;
+  assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair} = iq_dq1;
+  always @(posedge clk_i) begin
+    iq_pair_t dq1_expected;
+    dq1_expected = pair_predecode(dq1_uop, dq1_head.insn, dq1_head.fault != FETCH_OK);
+    dq1_expected.dep_prev = depends(dq1_uop, {iq_uop.mem_update, iq_uop.gpr_write},
+                                    iq_uop.dst, iq_uop.src_a);
+    if (rst_ni && iq_valid && iq_valid1) begin
+      assert (iq_folded || (dq1_head.pc == iq_head.pc + 32'd4))
+        else $error("DQ1 is not the instruction after DQ0");
+      assert ((dq1_branch == branch_class(dq1_uop, dq1_head.fault)) &&
+              (!dq1_folded || dq1_branch[3]))
+        else $error("DQ1 branch bits disagree with its uop");
+      assert (dq1_pair == dq1_expected)
+        else $error("DQ1 pair bits disagree with its uop or DQ0");
+    end
+  end
+  // Dispatch/retire event trace, enabled by +DISPATCH_TRACE=<path>. One line
+  // per cycle with an event: "<cycle> D<count> R<count> <dispatch pcs> |
+  // <retire pcs>", cycle 0 being the first edge out of reset.
+  int event_fd = 0;
+  int event_cycle = 0;
+  initial begin
+    string event_path;
+    if ($value$plusargs("DISPATCH_TRACE=%s", event_path)) begin
+      event_fd = $fopen(event_path, "w");
+      if (event_fd == 0) $fatal(1, "cannot open %s", event_path);
+    end
+  end
+  always @(posedge clk_i) begin
+    logic retire_fire;
+    retire_fire = retire_valid_o && retire_ready_i;
+    if (!rst_ni) event_cycle <= 0;
+    else begin
+      event_cycle <= event_cycle + 1;
+      if ((event_fd != 0) && (dispatch || retire_fire))
+        $fwrite(event_fd, "%0d D%0d R%0d%s |%s\n", event_cycle, dispatch,
+                retire_fire, dispatch ? $sformatf(" %08x", iq_head.pc) : "",
+                retire_fire ? $sformatf(" %08x", retire_o.pc) : "");
+    end
+  end
+  final if (event_fd != 0) $fclose(event_fd);
   // synthesis translate_on
   // Completion masks every write permission of a diagnostic allocation.
   always_comb begin

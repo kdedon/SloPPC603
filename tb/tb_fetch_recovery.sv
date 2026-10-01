@@ -30,7 +30,10 @@ module tb_fetch_recovery;
     .redirect_i(redirect), .redirect_target_i(redirect_target),
     .req_valid_o(req_valid), .req_ready_i(req_ready), .req_addr_o(req_addr),
     .rsp_valid_i(rsp_valid), .rsp_ready_o(rsp_ready), .rsp_insn_i(rsp_insn), .rsp_fault_i(rsp_fault),
-    .rsp_esa_i(rsp_esa),
+    .rsp_esa_i(rsp_esa), .rsp_pair_i(1'b0), .rsp_insn1_i(32'b0), .packet_ready2_i(packet_ready),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .packet_pair_o(), .packet_insn1_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .quiescent_o(unused_quiescent), .packet_valid_o(packet_valid), .packet_ready_i(packet_ready), .packet_o(packet)
   );
 

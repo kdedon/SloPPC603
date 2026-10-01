@@ -12,8 +12,13 @@
 // consume edge may not: if its response finds the queue full, a normal word
 // waits in a one-entry buffer, and a fault response (whose side information
 // is captured at queue entry) is dropped and fetched again.
+//
+// With FETCH_WIDTH 2 a response may also carry the next word (rsp_pair_i,
+// doubleword-aligned requests only). Both words pass on when the queue has
+// two free slots; otherwise the second is dropped and fetched again.
 module ppc_fetch #(
-  parameter logic [31:0] RESET_PC = 32'hfff0_0100
+  parameter logic [31:0] RESET_PC = 32'hfff0_0100,
+  parameter int FETCH_WIDTH = 1
 ) (
   input logic clk_i, rst_ni, stop_i,
   input logic redirect_i,
@@ -27,21 +32,26 @@ module ppc_fetch #(
   input logic [31:0] rsp_insn_i,
   input ppc_pkg::fetch_fault_t rsp_fault_i,
   input ppc_pkg::esa_enable_t rsp_esa_i,
+  input logic rsp_pair_i,
+  input logic [31:0] rsp_insn1_i,
   output logic packet_valid_o,
-  input logic packet_ready_i,
-  output ppc_pkg::fetch_packet_t packet_o
+  input logic packet_ready_i, packet_ready2_i,
+  output ppc_pkg::fetch_packet_t packet_o,
+  // packet_o is followed by the word at pc + 4.
+  output logic packet_pair_o,
+  output logic [31:0] packet_insn1_o
 );
   import ppc_pkg::*;
 
   logic pending, request_held, redirect_pending;
   // pc is the pending request's address, else the next one to offer.
-  logic [31:0] pc, pc_plus4, redirect_target;
+  logic [31:0] pc, pc_plus4, pc_plus8, next_addr, redirect_target;
   // The buffer holds only normal words and never coexists with a pending
   // request: no request is offered while it is full or the queue is full.
   logic buf_valid;
   logic [31:0] buf_pc, buf_insn;
   ppc_pkg::esa_enable_t buf_esa;
-  logic consume, live, to_buf, replay, offer, accept;
+  logic consume, live, to_buf, replay, offer, accept, pair;
   logic pending_d, request_held_d, redirect_pending_d;
   logic [31:0] pc_d;
 
@@ -58,12 +68,17 @@ module ppc_fetch #(
                  (!pending || (consume && !redirect_pending));
   // A held offer remains stable even if the slot indication changes.
   assign req_valid_o = rst_ni && (request_held || offer);
-  assign req_addr_o = pending ? pc_plus4 : pc;
+  assign pair = (FETCH_WIDTH == 2) && live && !redirect_i && packet_ready2_i &&
+                rsp_pair_i && (rsp_fault_i == FETCH_OK) && !pc[2];
+  assign next_addr = pair ? pc_plus8 : pc_plus4;
+  assign req_addr_o = pending ? next_addr : pc;
   assign accept = req_valid_o && req_ready_i;
   assign quiescent_o = !pending && !request_held && !req_valid_o;
   // On the redirect edge itself the cleared downstream queue refuses the
   // packet.
   assign packet_valid_o = buf_valid || live;
+  assign packet_pair_o = pair;
+  assign packet_insn1_o = rsp_insn1_i;
   always_comb begin
     if (buf_valid) begin
       packet_o.pc = buf_pc;
@@ -108,7 +123,7 @@ module ppc_fetch #(
           redirect_pending_d = 1'b0;
           pc_d = redirect_target;
         end else if (!replay) begin
-          pc_d = pc_plus4;
+          pc_d = next_addr;
         end
       end
       if (req_valid_o) request_held_d = !req_ready_i;
@@ -124,6 +139,7 @@ module ppc_fetch #(
       buf_valid <= 1'b0;
       pc <= RESET_PC;
       pc_plus4 <= RESET_PC + 32'd4;
+      pc_plus8 <= RESET_PC + 32'd8;
       redirect_target <= RESET_PC;
     end else begin
       pending <= pending_d;
@@ -133,7 +149,9 @@ module ppc_fetch #(
       // Only pending requests use pc_plus4, so it can trail a redirect by a
       // cycle and never depends on the redirect target.
       if (!pending) pc_plus4 <= pc + 32'd4;
-      else if (consume && !replay) pc_plus4 <= pc_plus4 + 32'd4;
+      else if (consume && !replay) pc_plus4 <= next_addr + 32'd4;
+      if (!pending) pc_plus8 <= pc + 32'd8;
+      else if (consume && !replay) pc_plus8 <= next_addr + 32'd8;
       if (redirect_i) redirect_target <= redirect_target_i;
       if (redirect_i || (buf_valid && packet_ready_i)) buf_valid <= 1'b0;
       if (to_buf) buf_valid <= 1'b1;

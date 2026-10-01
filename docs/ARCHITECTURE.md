@@ -41,7 +41,7 @@ instruction request/response
         |
   ppc_fetch (one outstanding request, next offered on the consume edge; redirect/drain PC)
         |
-  ppc_fifo (six-entry IQ)
+  ppc_iq (six-entry shifting IQ; DQ0/DQ1 fixed bottom registers)
         |
   ppc_decode --> architectural GPRs + latest-writer rename lookup
         |                           |
@@ -67,7 +67,8 @@ One instruction dispatches per cycle. Dispatch allocates an unfinished completio
 |---|---|---|
 | `ppc_pkg` | Packet layouts and fixed queue/tag sizes | Host bit slicing uses `[31:0]`; PowerPC manual bit numbers must be translated explicitly in future work. |
 | `ppc_fetch` | Next PC and outstanding response state | Advance sequentially after accepted normal responses; offer the next request on the consume edge; buffer an unreserved word that finds the IQ full (refetch a fault response); preserve old offers and drain/discard old responses before installing the latest accepted redirect target. |
-| `ppc_fifo` | Circular storage and occupancy | Ordered, no fall-through; accepted redirect clears with priority over push/pop; simultaneous normal push/pop preserves count; a full queue advertises capacity the cycle after a pop. The IQ has depth 6 and holds registers, not block RAM; CQ owns its separate depth-5 ring. |
+| `ppc_fifo` | Circular storage and occupancy | Ordered, no fall-through; accepted redirect clears with priority over push/pop; simultaneous normal push/pop preserves count; a full queue advertises capacity the cycle after a pop. CQ owns its separate depth-5 ring. |
+| `ppc_iq` | Instruction queue | Shifting queue: each entry loads itself, the entry one or two above, or one of two push lanes; DQ0/DQ1 are entries 0 and 1, so dispatch reads registers. Push 0-2 (two need two free entries), pop 0-2 (one at `DISPATCH_WIDTH=1`); same capacity and push/pop timing as `ppc_fifo`, clear wins. Each entry carries the uop, branch class and pair predecode (`iq_pair_t`). |
 | `ppc_decode` | Supported opcode classification | Reject unknown opcodes and unsupported OE/Rc forms; rA=0 literal-zero behavior only for add immediate forms. |
 | `ppc_dispatch` | One IU reservation entry (`rs_entry_t`: `iu_ctrl_t` controls plus two operands) | Controls are captured whole and issue unchanged in `issue_packet_t`; source wake requires rename slot and completion identity; a registered select bypasses the accepted IU result into issue, keeping wake compares off the issue path; ready issue remains stable under backpressure unless an accepted identity-matched recovery cancels it. |
 | `ppc_flags` | Committed CR/XER and exact-tag owner control | Record-logical ownership and CR0 commitment connected; ADD/ADDC/ADDE/ADDME/ADDZE update CA/OV/SO; [ADDME/ADDZE](ADD_UNARY.md) now implement captured-carry decrement/increment. |

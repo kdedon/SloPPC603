@@ -872,6 +872,68 @@ package ppc_pkg;
   localparam int EAR_E = 31;
   localparam logic [31:0] SPRG_RESET = 32'h0000_0000;
   // ---- end SPR write masks and reset values -------------------------------
+  // Pair predecode stored with each IQ entry; dispatch of a second
+  // instruction reads only these bits and registered resource counts.
+  typedef enum logic [2:0] {
+    UNIT_IU, UNIT_LSU, UNIT_FPU, UNIT_BPU, UNIT_SPECIAL
+  } unit_class_e;
+  typedef struct packed {
+    unit_class_e unit;
+    // addi, addis, add, addo, cmpi, cmp, cmpli or cmpl: SRU-capable on PID7v.
+    logic sru;
+    // Dispatches alone from DQ0: special lane, illegal or fetch fault.
+    logic serial;
+    // {CR, XER, LR, CTR} read and written by a pairable instruction.
+    logic [3:0] reads;
+    logic [3:0] writes;
+    logic [1:0] gpr_dsts;
+    // May retire from CQ[1]: integer, branch or load.
+    logic cq1_ok;
+    // rA, rB, rS equal a GPR the preceding instruction writes.
+    logic [2:0] dep_prev;
+  } iq_pair_t;
+  // Everything but dep_prev, which needs the preceding instruction.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic iq_pair_t pair_predecode(uop_t u, logic [31:0] insn, logic fault);
+    iq_pair_t p;
+    logic branch, fp_arith, fp_mem, store, plain_mem;
+    branch = (u.special_op == SPECIAL_B) || (u.special_op == SPECIAL_BC) ||
+             (u.special_op == SPECIAL_BCLR) || (u.special_op == SPECIAL_BCCTR);
+    fp_arith = (u.special_op == SPECIAL_FPU) &&
+               ((insn[31:26] == 6'd59) || (insn[31:26] == 6'd63));
+    fp_mem = (u.special_op == SPECIAL_FPU) && !fp_arith;
+    plain_mem = ((u.special_op == SPECIAL_LOAD) || (u.special_op == SPECIAL_STORE)) &&
+                (u.mem_seq == SEQ_NONE) && !u.mem_reserve && !u.mem_conditional &&
+                !u.mem_external && !u.mem_skip && !u.cache_probe && !u.block_zero;
+    store = (u.special_op == SPECIAL_STORE) ||
+            (fp_mem && ((insn[31:26] == 6'd31) ? insn[8] : insn[28]));
+    p = '0;
+    if (u.illegal || fault) p.unit = UNIT_SPECIAL;
+    else if (branch) p.unit = UNIT_BPU;
+    else if (u.special_op == SPECIAL_NONE) p.unit = UNIT_IU;
+    else if (fp_arith) p.unit = UNIT_FPU;
+    else if (plain_mem || fp_mem) p.unit = UNIT_LSU;
+    else p.unit = UNIT_SPECIAL;
+    p.serial = p.unit == UNIT_SPECIAL;
+    p.sru = (p.unit == UNIT_IU) &&
+      ((insn[31:26] == 6'd14) || (insn[31:26] == 6'd15) ||
+       (insn[31:26] == 6'd11) || (insn[31:26] == 6'd10) ||
+       ((insn[31:26] == 6'd31) && !insn[0] &&
+        ((insn[9:1] == 9'd266) || (insn[10:1] == 10'd0) || (insn[10:1] == 10'd32))));
+    p.reads[3] = branch && (u.special_op != SPECIAL_B) && !u.branch_bo[4];
+    p.reads[2] = u.read_ca || u.read_so;
+    p.reads[1] = u.special_op == SPECIAL_BCLR;
+    p.reads[0] = (branch && (u.special_op != SPECIAL_B) && !u.branch_bo[2]) ||
+                 (u.special_op == SPECIAL_BCCTR);
+    p.writes[3] = u.write_cr_field || u.write_cr_bit || u.write_cr_fields;
+    p.writes[2] = u.write_ca || u.write_ov_so || u.write_xer;
+    p.writes[1] = branch && u.branch_lk;
+    p.writes[0] = branch && (u.special_op != SPECIAL_B) && !u.branch_bo[2];
+    p.gpr_dsts = 2'(u.gpr_write) + 2'(u.mem_update);
+    p.cq1_ok = !p.serial && !store && (p.unit != UNIT_FPU);
+    return p;
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
 endpackage
 /* verilator lint_on UNUSEDPARAM */
 `default_nettype wire
