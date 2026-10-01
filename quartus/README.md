@@ -5,7 +5,8 @@ For the current cached 60x system, use the separate `integrated/` project and
 `translated/` project fits the translated cached 60x top with the MVP profile;
 see [its baseline](../docs/TRANSLATED_SYNTHESIS_BASELINE.md). The `chip/`
 project fits the `ppc603e` package top with every pin virtual
-([CHIP_PACKAGE.md](../docs/CHIP_PACKAGE.md)). This directory's
+([CHIP_PACKAGE.md](../docs/CHIP_PACKAGE.md)); `chip/build.sh --fpu` adds the
+FPU for that run only, restoring the project file afterwards. This directory's
 original project and historical evidence remain the bootstrap measurement.
 
 This project targets `5CSEBA6U23I7` at 50 MHz and synthesizes the current core
