@@ -4,7 +4,7 @@ Design document, 2026-09-30. Slices 0 and 1 are implemented
 ([status](#slice-status)). It maps the 603e's
 two-per-cycle dispatch and completion (TASK_PLAN P11) onto the current core and
 splits the work into slices with acceptance tests. Code is cited at
-[`9f6a5ad`](https://github.com/kdedon/SloPPC603/tree/9f6a5adf622de8223dad5ffd4affe66dba40352d)
+[`23bbf9d`](https://github.com/kdedon/SloPPC603/tree/23bbf9d33d59269450f094a78d9c974bf3f18dcc)
 (batch 7). Manual pages are physical PDF pages of the 603e UM; rule IDs refer to
 `sim/spec/timing.json` ([TIMING_SPEC.md](references/TIMING_SPEC.md)).
 
@@ -39,19 +39,19 @@ structure, what it is today and what dual dispatch needs.
 
 | Structure | Today | Needed |
 |---|---|---|
-| Fetch | One untagged request, one 32-bit word ([`ppc_fetch.sv:4-7`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_fetch.sv#L4-L7), [`ppc_icache.sv:22-25`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_icache.sv#L22-L25)) | Two words per cycle from an aligned doubleword |
-| Fetch-to-decode | One registered word, decoded at IQ push ([`ppc_core.sv:369-403`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_core.sv#L369-L403)) | Two registered words, two decoders |
-| IQ | `ppc_fifo`, depth 6, one push, one pop, head pointer ([`ppc_core.sv:438-444`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_core.sv#L438-L444)) | Push 0–2, pop 0–2, fixed DQ0/DQ1 slots |
-| Dispatch decision | One wide `iq_ready` term ([`ppc_core.sv:972-985`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_core.sv#L972-L985)) | DQ0 and DQ1 terms; DQ1 from predecoded pair bits |
-| GPR file | 3 read, 1 write, one MLAB copy per read port ([`ppc_regfile_gpr.sv:4-20`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_regfile_gpr.sv#L4-L20)); an update load writes its base one edge later ([`ppc_core.sv:671-704`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_core.sv#L671-L704)) | 6 read (rA, rB, rS per slot), 2 write |
-| Rename | 5 slots, 2 lookups, 1 allocation, 1 release, 1 wake ([`ppc_rename.sv:6-28`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_rename.sv#L6-L28)) | 4–6 lookups, 2 allocations, 2 releases, 2 wakes |
-| Reservation | One IU entry ([`ppc_dispatch.sv:1-27`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_dispatch.sv#L1-L27)); the special lane reads committed GPRs after a drain ([`ppc_core.sv:474-475`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_core.sv#L474-L475)) | One entry per unit: IU, LSU (P3), SRU add/compare |
-| Result buses | IU and special lane share one CQ finish port; overlapped work waits a cycle on collision ([`ppc_core.sv:900-908`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_core.sv#L900-L908)) | One finish/wake port per unit |
-| CQ | Depth 5, one allocation, one finish, one retire ([`ppc_completion.sv:186-198`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_completion.sv#L186-L198)) | 2 allocations, 2–3 finish ports, 2 retires |
-| CR/XER | One exact-tag flag owner ([`ppc_flags.sv:1-25`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_flags.sv#L1-L25)) | Unchanged: it is the manual's single CR rename. Pair check only |
-| Branch unit | Resolves at the IQ head from committed CR/LR/CTR (the P2 rule), allocates a CQ entry and passes the IU as an add of zero ([`ppc_core.sv:560-669`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_core.sv#L560-L669)) | Must stop taking the IU slot; see [Branches](#branches) |
-| FPU | Arithmetic issues on lane 0; lane 1 and `commit1` exist in `ppc_fpu` but are tied off ([`ppc_fpu.sv:9-24`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/fpu/ppc_fpu.sv#L9-L24), [`ppc_special.sv:2152-2162`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_special.sv#L2152-L2162)) | Connect both lanes; see [FPU](#fpu) |
-| Retire port | `retire_valid_o/retire_ready_i/retire_o`, one packet ([`ppc_core.sv:165-167`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_core.sv#L165-L167)) | Add a younger packet `retire1_*` |
+| Fetch | One untagged request, one 32-bit word ([`ppc_fetch.sv:4-7`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_fetch.sv#L4-L7), [`ppc_icache.sv:22-25`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_icache.sv#L22-L25)) | Two words per cycle from an aligned doubleword |
+| Fetch-to-decode | One registered word, decoded at IQ push ([`ppc_core.sv:369-403`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_core.sv#L369-L403)) | Two registered words, two decoders |
+| IQ | `ppc_fifo`, depth 6, one push, one pop, head pointer ([`ppc_core.sv:438-444`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_core.sv#L438-L444)) | Push 0–2, pop 0–2, fixed DQ0/DQ1 slots |
+| Dispatch decision | One wide `iq_ready` term ([`ppc_core.sv:972-985`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_core.sv#L972-L985)) | DQ0 and DQ1 terms; DQ1 from predecoded pair bits |
+| GPR file | 3 read, 1 write, one MLAB copy per read port ([`ppc_regfile_gpr.sv:4-20`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_regfile_gpr.sv#L4-L20)); an update load writes its base one edge later ([`ppc_core.sv:671-704`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_core.sv#L671-L704)) | 6 read (rA, rB, rS per slot), 2 write |
+| Rename | 5 slots, 2 lookups, 1 allocation, 1 release, 1 wake ([`ppc_rename.sv:6-28`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_rename.sv#L6-L28)) | 4–6 lookups, 2 allocations, 2 releases, 2 wakes |
+| Reservation | One IU entry ([`ppc_dispatch.sv:1-27`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_dispatch.sv#L1-L27)); the special lane reads committed GPRs after a drain ([`ppc_core.sv:474-475`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_core.sv#L474-L475)) | One entry per unit: IU, LSU (P3), SRU add/compare |
+| Result buses | IU and special lane share one CQ finish port; overlapped work waits a cycle on collision ([`ppc_core.sv:900-908`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_core.sv#L900-L908)) | One finish/wake port per unit |
+| CQ | Depth 5, one allocation, one finish, one retire ([`ppc_completion.sv:186-198`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_completion.sv#L186-L198)) | 2 allocations, 2–3 finish ports, 2 retires |
+| CR/XER | One exact-tag flag owner ([`ppc_flags.sv:1-25`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_flags.sv#L1-L25)) | Unchanged: it is the manual's single CR rename. Pair check only |
+| Branch unit | Resolves at the IQ head from committed CR/LR/CTR (the P2 rule), allocates a CQ entry and passes the IU as an add of zero ([`ppc_core.sv:560-669`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_core.sv#L560-L669)) | Must stop taking the IU slot; see [Branches](#branches) |
+| FPU | Arithmetic issues on lane 0; lane 1 and `commit1` exist in `ppc_fpu` but are tied off ([`ppc_fpu.sv:9-24`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/fpu/ppc_fpu.sv#L9-L24), [`ppc_special.sv:2152-2162`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_special.sv#L2152-L2162)) | Connect both lanes; see [FPU](#fpu) |
+| Retire port | `retire_valid_o/retire_ready_i/retire_o`, one packet ([`ppc_core.sv:165-167`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_core.sv#L165-L167)) | Add a younger packet `retire1_*` |
 
 Unit mapping: the core has no SRU. The IU runs integer ALU, compare, multiply,
 divide and branch pass-through; the serialized special lane runs SPR, CR logic,
@@ -128,7 +128,7 @@ and is recorded, not widened.
 ### Reservation stations, results and forwarding
 
 - IU, SRU and LSU each keep one reservation entry, following
-  [`ppc_dispatch`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_dispatch.sv#L1-L27):
+  [`ppc_dispatch`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_dispatch.sv#L1-L27):
   captured operands keep snooping every wake bus, and a back-to-back bypass uses a
   select marked at capture. Each station adds one snoop per extra result bus.
 - Each unit gets its own CQ finish port and rename wake; the shared result mux
@@ -176,9 +176,9 @@ integer operation cannot pair with a branch. Steps, in order:
    override.
 
 The irrevocable-head rules stay: a pivot cut may not kill an offered finished
-head ([`ppc_completion.sv:137-141`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_completion.sv#L137-L141)),
+head ([`ppc_completion.sv:137-141`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_completion.sv#L137-L141)),
 and a store is performed only from the head
-([`ppc_core.sv:939-944`](https://github.com/kdedon/SloPPC603/blob/9f6a5adf622de8223dad5ffd4affe66dba40352d/rtl/ppc_core.sv#L939-L944)).
+([`ppc_core.sv:939-944`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_core.sv#L939-L944)).
 With `retire1` offered, CQ[1] becomes irrevocable too, so the pivot rule must
 cover both offered entries. Stores stay CQ[0]-only, so the store rule is
 unchanged.

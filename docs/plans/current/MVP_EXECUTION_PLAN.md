@@ -905,7 +905,7 @@ MVP 95.73% → 97.20%. See the signoff section in
 
 Outside MVP scope: bus clock ratios, 602 caches and multiply timing (V10), the
 `ppc602` pin top and `chip602` project (V11), FPU and area trims. Its batch
-gate passed on `e7f6a06`, including a timing-clean MiSTer build; the batches
+gate passed on `e882ea1`, including a timing-clean MiSTer build; the batches
 4+5 gate below also ran on a tree containing it. MVP 97.20%
 (unchanged).
 
@@ -919,7 +919,7 @@ test-fpu-reference test-fpu-testfloat lint-fpu-production lint-fpu-stream
 lint-fpu-dual`, `quartus/<top>/build.sh --docker` and
 `quartus/report-target-paths.sh <top> --docker`, `quartus/fpu-production/synthesize.sh
 --docker fullfit` and `full602fit`, `mister/build.sh --clean` and `--suite selftest`,
-commit `020cc8d`, 2026-09-30.
+commit `24535f5`, 2026-09-30.
 
 All pass, fresh on this commit. `ci` line coverage 73.9% (1934/2616);
 `xrand-sweep` 60 runs. At 66 MHz, 0 failing endpoints: translated (11,600
@@ -934,7 +934,7 @@ Outside MVP scope: pipelined FP issue to Table 6-5, SoC and MiSTer FPU option,
 Whetstone, FP self-test, CI preparation.
 
 Recorded: the batches 4+5 targets (MiSTer default build only) plus `make -C sim
-test-selftest-fpu demo-whetstone-hf`, commit `9eb20d9`, 2026-09-30.
+test-selftest-fpu demo-whetstone-hf`, commit `04b5bad`, 2026-09-30.
 
 Pass: `ci` 73.5% (1945/2646); `xrand-sweep` 60 runs; FPU suite; at 66 MHz, 0
 failing endpoints on translated (11,668 ALMs), integrated (5,862), timer-bat

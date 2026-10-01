@@ -62,7 +62,7 @@ and throughput. The coherent baseline passes both personalities’ numerical, ex
 public-shell, paired dispatch/retirement and strict lint gates in
 [verification](../../../sim/fpu/PRODUCTION.md), including full-queue admission
 and 602 SPR timing. Frequency closure and the documented silicon-semantics
-gaps remain open. On `9eb20d9`
+gaps remain open. On `04b5bad`
 the 603e FPU fits at 51.55 MHz and the 602 at 35.69 MHz
 (`quartus/fpu-production/synthesize.sh --docker fullfit`, `full602fit`); both
 miss 66 MHz and the 602 misses 50. Timing work keeps the Table 6-5 cycle counts exact; any change to

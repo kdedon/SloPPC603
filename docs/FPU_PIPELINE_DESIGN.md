@@ -220,11 +220,11 @@ decode class. Queue space is "not full, or the head retires"; FPR credits are
 "below the limit, or a retiring entry frees one". The lane decode, retirement
 and abort terms enter last.
 
-Fitted at `2ae952b` (both builds), the shell is off the 603e worst path. Its
+Fitted at `2ee1475` (both builds), the shell is off the 603e worst path. Its
 worst register path is a pending entry's started flag into another entry's
 value word through the launch and store-fill selects (−3.03 ns at 20 ns);
 the add-stage exponent (−3.17 ns) and the divider's operand capture
-(−2.52 ns) are the arithmetic limits. Fitted at `201b936`, the 602 build
+(−2.52 ns) are the arithmetic limits. Fitted at `b14b066`, the 602 build
 reaches 50.14 MHz (+0.056 ns) and the 603e 50.45 MHz (+0.177 ns)
 ([record](../quartus/fpu-production/README.md)). A finishing reply's 602
 numeric trap selects between two forward picks, one without the finishing

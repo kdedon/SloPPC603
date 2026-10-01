@@ -38,7 +38,7 @@ The flow runs `quartus_map` followed by post-map TimeQuest reports. It does not 
 ### 602 forward pick after the finishing trap, fitted 602 and 603e
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker full602fit`,
-`./quartus/fpu-production/synthesize.sh --docker fullfit`, commit `201b936`,
+`./quartus/fpu-production/synthesize.sh --docker fullfit`, commit `b14b066`,
 2026-09-30. Exit zero each; one physical pin (`clk_i`), 20 ns clock,
 zero-delay virtual I/O.
 
@@ -55,7 +55,7 @@ The forward pickers now run twice, with and without the finishing slot, and
 the finishing reply's 602 trap selects between the results. The trap no
 longer passes through the eligible set and the oldest-slot pickers; its
 path to `fwd1_payload_q` went from −0.178 ns to +1.16 ns. The issue-word
-path (−0.118 ns at `cc540bd`) is off the worst list. 602 worst path: a
+path (−0.118 ns at `867b8e5`) is off the worst list. 602 worst path: a
 pending entry's started flag into another entry's value word through the
 launch and store-fill selects (+0.056 ns). 603e worst path: the add-stage
 count through the rounder into the arithmetic operand register (+0.177 ns);
@@ -70,10 +70,10 @@ under 0.2 ns margin; 66 MHz is not met. Cycle counts are unchanged
 ### 602 conversion and flush-gate paths, fitted 602
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker full602fit`,
-commits `9eb20d9` (before) and `cc540bd` (after), 2026-09-30. Exit zero each;
+commits `04b5bad` (before) and `867b8e5` (after), 2026-09-30. Exit zero each;
 one physical pin (`clk_i`), 20 ns clock, zero-delay virtual I/O.
 
-| Measure | `9eb20d9` | `cc540bd` |
+| Measure | `04b5bad` | `867b8e5` |
 |---|---:|---:|
 | Post-fit Fmax | 35.69 MHz | 49.56 MHz |
 | Worst setup slack at 20 ns | −8.017 ns | −0.178 ns |
@@ -82,8 +82,8 @@ one physical pin (`clk_i`), 20 ns clock, zero-delay virtual I/O.
 | Registers | 4,313 | 4,403 |
 | DSP blocks | 1 | 1 |
 
-Intermediate fits: 48.40 MHz at `da8da8f` (operand encoding, stfd check
-after fill, plan zero tests, aligner sticky), 48.74 MHz at `fa0473c`
+Intermediate fits: 48.40 MHz at `d82fc79` (operand encoding, stfd check
+after fill, plan zero tests, aligner sticky), 48.74 MHz at `d993225`
 (finishing forward candidate). Removed paths: rounder through
 `narrow_single` into the stfd trap check and launch (−8.0 ns); reply through
 `narrow_single` and `widen_single` into the divider operands (−4.2 ns); lfd
@@ -100,9 +100,9 @@ unchanged (`test-fpu-timing-602`, `test-fpu-602`).
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker compactfit` and
 `./quartus/fpu-production/synthesize.sh --docker compact602fit`, commit
-`25e5137`, 2026-09-30. Exit zero each; one physical pin (`clk_i`), 20 ns
+`87efdf0`, 2026-09-30. Exit zero each; one physical pin (`clk_i`), 20 ns
 clock, zero-delay virtual I/O, `ppc_fpu_compact` behind the boundary
-registers. FULL columns are the `2ae952b` fits below.
+registers. FULL columns are the `2ee1475` fits below.
 
 | Instance | 603e FULL | 603e COMPACT | 602 FULL | 602 COMPACT |
 |---|---:|---:|---:|---:|
@@ -131,8 +131,8 @@ unit, not closure inside the core.
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit` and
 `./quartus/fpu-production/synthesize.sh --docker full602fit`, commit
-`2ae952b`, 2026-09-30. Exit zero each; one physical pin (`clk_i`), 20 ns
-clock, zero-delay virtual I/O. "Before" is `4318d67` from the next section.
+`2ee1475`, 2026-09-30. Exit zero each; one physical pin (`clk_i`), 20 ns
+clock, zero-delay virtual I/O. "Before" is `964faa8` from the next section.
 
 | Instance | 603e before | 603e after | 602 before | 602 after |
 |---|---:|---:|---:|---:|
@@ -172,8 +172,8 @@ path is pending state into the divider operands (−8.49 ns). Neither 50 nor
 
 Recorded: `./quartus/fpu-production/synthesize.sh --docker fullfit` and
 `./quartus/fpu-production/synthesize.sh --docker full602fit`, commits
-`4df8136` (before: datapath split into instances, behavior unchanged) and
-`4318d67` (after), 2026-09-30. Exit zero each; one physical pin (`clk_i`),
+`78473e8` (before: datapath split into instances, behavior unchanged) and
+`964faa8` (after), 2026-09-30. Exit zero each; one physical pin (`clk_i`),
 20 ns clock, zero-delay virtual I/O. ALMs include ALMs holding virtual pins.
 
 | Instance | 603e before | 603e after | 602 before | 602 after |

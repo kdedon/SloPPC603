@@ -4,7 +4,7 @@ Evidence for [FPU core integration](FPU_CORE_INTEGRATION.md).
 
 ## 602 personality
 
-Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-chip-fpu variant-special-lint-602 variant-icache-602 variant-watchdog-602 variant-exception-602-4 variant-decode-sweep-4 test-chip602-pins test-core-full-decode test-decode-sweep test-core-lsu-extensions test-core-alignment test-core-alignment-dependencies test-core-lsu-update test-core-dcache test-chip-pins` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commits `45d768c`–`6258cc3` (RTL final at `6eb5cf2`; later commits change only benches and docs), 2026-09-30.
+Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-chip-fpu variant-special-lint-602 variant-icache-602 variant-watchdog-602 variant-exception-602-4 variant-decode-sweep-4 test-chip602-pins test-core-full-decode test-decode-sweep test-core-lsu-extensions test-core-alignment test-core-alignment-dependencies test-core-lsu-update test-core-dcache test-chip-pins` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commits `9240cbf`–`aade0b5` (RTL final at `87d9786`; later commits change only benches and docs), 2026-09-30.
 
 All passed. `test-fpu-all`: 51 PASS lines.
 
@@ -39,7 +39,7 @@ decode). `variant-special-lint-602` and `variant-watchdog-602` failed on
 the base commit (their benches lacked the lane's FP ports); both benches
 now declare them.
 
-Recorded: `flock /tmp/ppc603e-quartus.lock quartus/chip602/analyze.sh --fpu`, commit `6eb5cf2`, 2026-09-30.
+Recorded: `flock /tmp/ppc603e-quartus.lock quartus/chip602/analyze.sh --fpu`, commit `87d9786`, 2026-09-30.
 Quartus 17.0.2 analysis and elaboration of `ppc602_measure` with
 `ENABLE_FPU=1` (FULL): successful, 0 errors, 36 warnings (unused-signal and
 index-width notices). No synthesis or fit.
@@ -51,15 +51,15 @@ image, which has no 602 SoC to run on.
 
 ## Overlapped FP accesses and 64-bit data path
 
-Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-chip-fpu`, commit `be93c21`, 2026-09-30.
-Commit `7e6ecfe` differs in RTL only by a comment.
+Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-chip-fpu`, commit `bf6d0c2`, 2026-09-30.
+Commit `a6d29b6` differs in RTL only by a comment.
 
 All passed.
 
 | Bench | Result |
 | --- | --- |
 | `test-core-fpu` (`DMEM_BITS=64`), `+STALL=1` | 2598 checks, 1503 words; 6945 retirements, 2502 FP; 855 released loads; 32412 cycles |
-| `test-core-fpu`, `+STALL=0` | 2667 checks, 27 latency and 41 spacing probes; 30011 cycles (36085 on `9cac3a6`) |
+| `test-core-fpu`, `+STALL=0` | 2667 checks, 27 latency and 41 spacing probes; 30011 cycles (36085 on `4b71784`) |
 | `test-core-fpu-split` (`DMEM_BITS=32`), `+STALL=0` | 1574 checks, same probes with split-doubleword values; 32087 cycles |
 | `test-chip-fpu` | self-check passes; 1 eight-byte single-beat read and 1 write (`+MIN_DWORDS=1`); 88268 cycles |
 
@@ -78,23 +78,23 @@ on lines the cache never holds; the target counts one TSIZ 000, TBST-negated
 read and write. Cached FP accesses go through the data cache as eight-byte
 requests.
 
-Recorded: `make -C sim -j2 -k lint check-spec test-core test-core-recovery test-core-lsu-update test-core-lsu-extensions test-core-alignment test-core-alignment-dependencies test-core-page-data-exception test-core-tlb-miss test-core-dcache test-core-dcache-negative test-core-machine-check-trace test-core-bat-machine-check test-chip-dcache-coherence test-core-bus60x-update test-core-control-memory test-dcache test-completion test-biu-dcache-snoop test-core-full-decode test-chip-pins`, commit `be93c21`, 2026-09-30.
+Recorded: `make -C sim -j2 -k lint check-spec test-core test-core-recovery test-core-lsu-update test-core-lsu-extensions test-core-alignment test-core-alignment-dependencies test-core-page-data-exception test-core-tlb-miss test-core-dcache test-core-dcache-negative test-core-machine-check-trace test-core-bat-machine-check test-chip-dcache-coherence test-core-bus60x-update test-core-control-memory test-dcache test-completion test-biu-dcache-snoop test-core-full-decode test-chip-pins`, commit `bf6d0c2`, 2026-09-30.
 All pass (exit 0), including the data-cache mutations (rejected). These cover
 the FPU-less builds, whose logic the change leaves as it was.
 
-Recorded: `make -C sim -j2 test-selftest-fpu demo-whetstone-hf`, commit `7e6ecfe`, 2026-09-30.
+Recorded: `make -C sim -j2 test-selftest-fpu demo-whetstone-hf`, commit `a6d29b6`, 2026-09-30.
 Both pass. Whetstone hard-float: 492,105 cycles, 20.321 MWIPS at 50 MHz
-(0.4064/MHz); on `9eb20d9` the same image took 702,049 cycles, 14.244 MWIPS
-(the 64-bit path and `fmr` fix alone, `c340749`: 16.394). The self-test
+(0.4064/MHz); on `04b5bad` the same image took 702,049 cycles, 14.244 MWIPS
+(the 64-bit path and `fmr` fix alone, `f531149`: 16.394). The self-test
 retires 19,088,576 instructions with no failed case.
 
-Recorded: `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit `7e6ecfe`, 2026-09-30.
+Recorded: `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit `a6d29b6`, 2026-09-30.
 36 PASS lines, including 910 shell checks and the 603e and 602 timing checks
 (71 and 52 responses). The standalone benches do not time retirement of moves;
 the core bench above does.
 
 A Quartus 17 analysis and elaboration of the `ppc603e` pin top with
-`ENABLE_FPU=1` (chip file list plus `rtl/fpu_files.f`) passed on `be93c21`
+`ENABLE_FPU=1` (chip file list plus `rtl/fpu_files.f`) passed on `bf6d0c2`
 with 0 errors; the warnings are unused-signal notices. No fit was run.
 
 Not established: fitted area and timing; Table 6-6 latency and interval (see
@@ -103,7 +103,7 @@ eight-byte scalar transfers without the data cache.
 
 ## Pipelined FP issue
 
-Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-chip-fpu variant-special-lint-602 test-crstate-execution` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit `9cac3a6`, 2026-09-30.
+Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-chip-fpu variant-special-lint-602 test-crstate-execution` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit `4b71784`, 2026-09-30.
 
 All passed; `test-fpu-all` reports 36 PASS lines, including 910 shell checks,
 the 603e and 602 timing checks (71 and 52 responses) and 3000 enabled-exception
@@ -146,7 +146,7 @@ pin top, and DTLB load and store misses on `lfd` and `stfd` under data
 translation, with a pipelined `fadd` between them: the 0x1100 and 0x1200
 handlers log SRR0 and DMISS, load the TLB entry and retry.
 
-Unchanged behavior with `ENABLE_FPU=0` was checked on commit `3d25ef5` plus
+Unchanged behavior with `ENABLE_FPU=0` was checked on commit `9618ea5` plus
 the uncommitted chip TLB miss test, with `make -C sim -j2 check-spec
 test-completion test-recovery-state test-flags test-completion-flags
 test-completion-cr-fields test-completion-cr-bits test-crstate-execution
@@ -156,10 +156,10 @@ variant-full-decode-0 variant-full-decode-1 variant-full-decode-2
 variant-full-decode-4 test-core-alignment test-core-data-fault
 test-core-control-memory test-core-lsu-update test-core-cache-control
 variant-icache-602`: all passed. `variant-special-lint-602` failed on a bench
-port list and passed after the fix, on `9cac3a6`.
+port list and passed after the fix, on `4b71784`.
 
 A Quartus 17 analysis and elaboration of `quartus/chip` (FPU off) passed on
-`9cac3a6` with 0 errors. No fit was run.
+`4b71784` with 0 errors. No fit was run.
 
 Not established: fitted area and timing with pipelined issue; the FPU-on
 Quartus analysis; page-changed and machine-check faults on FP accesses;
@@ -170,7 +170,7 @@ stores still use; their latency figures for arithmetic rows are superseded.
 
 ## Serialized integration
 
-Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-chip-fpu`, commit `a6f9b73`, 2026-09-30.
+Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-chip-fpu`, commit `fe35249`, 2026-09-30.
 
 All passed. Lint now also covers `ppc_core` with `ENABLE_FPU=1` and the
 `ppc603e` pin top with `ENABLE_FPU=1`.
@@ -221,11 +221,11 @@ ARTRY and DRTRY. It establishes that FP loads and stores through the data
 cache and 60x bus produce the same results and exceptions; a program with one
 corrupted expectation fails through the mailbox.
 
-A second seed also passed on commit `8b46d53`:
+A second seed also passed on commit `1b21d14`:
 `make -C sim test-core-fpu FPU_CORE_SEED=0x51ed FPU_CORE_RANDOM=500` checked
 3240 words with 126 exceptions and 5659 FP retirements.
 
-Unchanged behavior with `ENABLE_FPU=0` was checked on commit `135267a`, the
+Unchanged behavior with `ENABLE_FPU=0` was checked on commit `80d9db9`, the
 integration commit, with `make -C sim -j2 test-core test-crstate-execution
 test-exception-state test-decode-sweep test-core-full-decode
 variant-full-decode-0 variant-full-decode-1 variant-full-decode-2
@@ -235,7 +235,7 @@ test-core-lsu-update test-core-cache-control variant-icache-602`: all passed,
 including FP unavailable in `tb_core_full_decode` (8669 checks, 70 events).
 
 The standalone FPU sources are unchanged; `make -C sim -j2 test-fpu-shell`
-passed on commit `1a24ec9` (910 checks). `test-fpu-all` was not run for this
+passed on commit `ef993c5` (910 checks). `test-fpu-all` was not run for this
 record; the batch gate runs it.
 
 Not established: overlap or Table 6-5 throughput (the lane is serialized by

@@ -183,12 +183,12 @@ builds once. It belongs in the batch gate next to `ci`.
 
 ### Checks
 
-Recorded: `make -C sim mister-smoke`, commit 4d52bc5, 2026-09-29. Fails as
+Recorded: `make -C sim mister-smoke`, commit 19606f4, 2026-09-29. Fails as
 reported (`exit=e0000700 cycles=959714 retired=114470`).
 
-Recorded: `make -C sim test-soc-target-reset`, commit 4d52bc5 plus the fix
+Recorded: `make -C sim test-soc-target-reset`, commit 19606f4 plus the fix
 in this entry, 2026-09-29. PASS, 13 checks; with the target reverted to
-4d52bc5 it fails 3 of 13.
+19606f4 it fails 3 of 13.
 
 Not yet recorded: `mister-smoke` seed 1 with the fix, and a complete
 `xrand-sweep`. The first sweep run passed its soc-target-reset, core

@@ -633,7 +633,7 @@ The 602 still fails elaboration of the `ppc603e` top; its SPR presence,
 SRR1[KEY] and PLL table are checked at unit level (`tb_variant_config`,
 `tb_exception_tlb_miss`).
 
-Recorded: `make -C sim lint check-spec test-chip-603 test-chip-603-fpu test-reference-603 variant-lint-3 variant-lint-0 variant-reject-4 variant-divider-3 variant-full-decode-3 variant-full-decode-0 variant-config-3 variant-tlb-miss-3 variant-decode-sweep-3 test-chip-pins test-chip-dcache-coherence test-biu-dcache-snoop test-core-dcache test-core-data-fault test-core-page-data-exception test-core-bat-cached-bus60x test-core-bat-cached-bus60x-cacheops test-core-bat-cached-bus60x-coherence test-core-bat-machine-check test-page-memory-router test-micro-tlb-router test-bat-memory-router test-bat-data-fault test-bat-runtime-router test-segment-runtime-router test-page-data-exception-router test-page-instruction-exception-router test-page-miss-result-router test-tlb-runtime-fill-router test-tlb-runtime-invalidate-router`, commit 98432b5, 2026-09-30.
+Recorded: `make -C sim lint check-spec test-chip-603 test-chip-603-fpu test-reference-603 variant-lint-3 variant-lint-0 variant-reject-4 variant-divider-3 variant-full-decode-3 variant-full-decode-0 variant-config-3 variant-tlb-miss-3 variant-decode-sweep-3 test-chip-pins test-chip-dcache-coherence test-biu-dcache-snoop test-core-dcache test-core-data-fault test-core-page-data-exception test-core-bat-cached-bus60x test-core-bat-cached-bus60x-cacheops test-core-bat-cached-bus60x-coherence test-core-bat-machine-check test-page-memory-router test-micro-tlb-router test-bat-memory-router test-bat-data-fault test-bat-runtime-router test-segment-runtime-router test-page-data-exception-router test-page-instruction-exception-router test-page-miss-result-router test-tlb-runtime-fill-router test-tlb-runtime-invalidate-router`, commit 1ae541d, 2026-09-30.
 Pass (V5), focused benches only (`regression`, `variant-matrix` as a whole,
 firmware and fits not run). `tb_chip_603` (603 pin top, `DS_PID` 10, a
 controller model on XATS): 89 checks, 19 direct-store operations, 11
@@ -661,12 +661,12 @@ direct-store streaming of lmw/stmw/strings as one access, 603 compiled
 firmware, a 603 fit or timing, or a real controller's reply arbitration
 (the bench withholds BG while it replies).
 
-Recorded: `quartus_map ppc603e_chip --analysis_and_elaboration` of `quartus/chip` with `set_parameter -name CPU_VARIANT 3` (pinned container, under the Quartus lock), commit 156f705, 2026-09-30.
+Recorded: `quartus_map ppc603e_chip --analysis_and_elaboration` of `quartus/chip` with `set_parameter -name CPU_VARIANT 3` (pinned container, under the Quartus lock), commit 8be8cc7, 2026-09-30.
 Analysis and elaboration succeed: 0 errors, 41 warnings; the direct-store
 master elaborates under `ppc_biu`. No synthesis, fit or timing was run, so
 nothing is claimed about area or timing of the 603 build.
 
-Recorded: `make -C sim -j2 lint check-spec test-chip-pins test-chip602-pins variant-watchdog-602 variant-special-lint-602 variant-icache-602 variant-matrix`, commit 2a0a987 plus the chip602 project (cc2c29c) and documentation, 2026-09-30.
+Recorded: `make -C sim -j2 lint check-spec test-chip-pins test-chip602-pins variant-watchdog-602 variant-special-lint-602 variant-icache-602 variant-matrix`, commit 44c598d plus the chip602 project (5d0fa84) and documentation, 2026-09-30.
 Pass (V11), focused benches only (`regression`, firmware not run).
 `tb_chip602_pins`: 64 checks, 5504 cycles. Boot from the hard reset vector
 through the pins in 64- and 32-bit data modes, with and without waits and a
@@ -680,7 +680,7 @@ machine checks); the watchdog asserts RESETO with 0x1500 masked, HRESET
 releases RESETO. `test-chip-pins` (603e top, shared `pin_status_t`): 1352
 checks. Not shown: 2:1 and 3:1 bus ratios, compiled firmware on the 602 top.
 
-Recorded: `flock /tmp/ppc603e-quartus.lock ./quartus/chip602/build.sh --docker`, commit 3466a9f, 2026-09-30.
+Recorded: `flock /tmp/ppc603e-quartus.lock ./quartus/chip602/build.sh --docker`, commit e49cdcd, 2026-09-30.
 Fit passes: 10,356 ALMs (25%), 12,904 registers, 28 RAM blocks (69,952
 bits), 4 DSP blocks, 172 virtual pins and no physical I/O. Timing at the
 20 ns gate is met: worst setup slack 2.512 ns (slow 1100 mV 100 °C;
@@ -691,13 +691,13 @@ not reach 66 MHz without moving that product off the issue edge. A seed and
 effort sweep was not run.
 
 Recorded: `flock /tmp/ppc603e-quartus.lock ./quartus/chip602/build.sh --docker`,
-retimed at 15.152 ns with `quartus/target_paths.tcl`, commits 995d20b (before)
-and 84e0bd4 (after), 2026-09-30. Quartus 17.0.2, seed 1.
+retimed at 15.152 ns with `quartus/target_paths.tcl`, commits 5076186 (before)
+and 770e057 (after), 2026-09-30. Quartus 17.0.2, seed 1.
 
 | `chip602` fit | ALMs | Registers | DSP | Fmax slow 100 C / -40 C | Setup (4 corners) | Hold, worst | 66 MHz |
 |---|---|---|---|---|---|---|---|
-| 995d20b | 10,247 | 12,446 | 4 | 57.77 / 57.31 MHz | +2.691 / +2.552 / +6.965 / +7.414 | +0.113 | 176 endpoints, -2.296 ns |
-| 84e0bd4 | 10,225 | 12,503 | 2 | 65.71 / 66.59 MHz | +4.057 / +4.160 / +7.027 / +7.491 | +0.095 | 1 endpoint, -0.067 ns |
+| 5076186 | 10,247 | 12,446 | 4 | 57.77 / 57.31 MHz | +2.691 / +2.552 / +6.965 / +7.414 | +0.113 | 176 endpoints, -2.296 ns |
+| 770e057 | 10,225 | 12,503 | 2 | 65.71 / 66.59 MHz | +4.057 / +4.160 / +7.027 / +7.491 | +0.095 | 1 endpoint, -0.067 ns |
 
 Four changes, each exposed by the previous fit: the 602 multiply's first
 product moved off the issue edge ([MULTIPLY_TIMING.md](MULTIPLY_TIMING.md));
@@ -709,7 +709,7 @@ accumulator has +1.946 ns, `mfrom_q` +2.874 ns and the IU operand register
 completion queue (`state_q` to `packets_q`, slow 100 C), a path the 603e tops
 share; it is not fixed here. 16 RAM blocks in both.
 
-Recorded: `make -C sim -j2 lint check-spec variant-lint-0 variant-lint-1 variant-lint-2 variant-reject-3 variant-reject-4 variant-divider-0 variant-divider-4 variant-full-decode-0 variant-full-decode-1 variant-full-decode-2 variant-full-decode-4 variant-multiply-timing-0 variant-multiply-timing-4 variant-icache-602 variant-special-lint-602 test-multiply-timing test-core-multiply-timing test-multiply-execution test-multiply-high-execution test-core-multiply test-core-multiply-high test-core-bat-cached-bus60x test-core-cache-control test-core-bat-cached-bus60x-cacheops`, commit a886653, 2026-09-29.
+Recorded: `make -C sim -j2 lint check-spec variant-lint-0 variant-lint-1 variant-lint-2 variant-reject-3 variant-reject-4 variant-divider-0 variant-divider-4 variant-full-decode-0 variant-full-decode-1 variant-full-decode-2 variant-full-decode-4 variant-multiply-timing-0 variant-multiply-timing-4 variant-icache-602 variant-special-lint-602 test-multiply-timing test-core-multiply-timing test-multiply-execution test-multiply-high-execution test-core-multiply test-core-multiply-high test-core-bat-cached-bus60x test-core-cache-control test-core-bat-cached-bus60x-cacheops`, commit 16bb5a3, 2026-09-29.
 Pass (V10), focused benches only (`regression`, firmware and fits not run).
 `tb_core_602` (602 core on the cached 60x wrapper with
 `RESET_CACHE_ENABLE=0`): 1203 checks, 44 retirements; the I-cache is
@@ -728,9 +728,9 @@ cached-wrapper benches pass at PID7v. This does not establish 602 timing
 closure (the issue-edge product needs a fit), the 602 FPU, bus or pins, or
 compiled 602 firmware.
 
-Recorded: `make -C sim test-tlb-geometry-16 test-micro-tlb-router test-bat-runtime-service test-bat-runtime-router test-bat-data-fault test-tlb-service test-tlb-independent test-tlb-runtime-fill-router test-tlb-runtime-invalidate-router test-tlb-runtime-invalidate-service test-tlb-prepared-refill test-bat-memory-router test-page-data-exception-router test-page-instruction-exception-router test-page-memory-router test-page-miss-result-router test-segment-runtime-router test-fetch-recovery test-crstate-execution test-core-fetch-fault test-core-bat test-core-page-data-exception test-core-page-instruction-exception test-core-page-miss-result test-core-page-translation test-core-tlb-miss test-core-tlb-load test-core-tlbie test-exception-tlb-miss test-core-full-decode variant-matrix`, commit d00854f, 2026-09-29.
+Recorded: `make -C sim test-tlb-geometry-16 test-micro-tlb-router test-bat-runtime-service test-bat-runtime-router test-bat-data-fault test-tlb-service test-tlb-independent test-tlb-runtime-fill-router test-tlb-runtime-invalidate-router test-tlb-runtime-invalidate-service test-tlb-prepared-refill test-bat-memory-router test-page-data-exception-router test-page-instruction-exception-router test-page-memory-router test-page-miss-result-router test-segment-runtime-router test-fetch-recovery test-crstate-execution test-core-fetch-fault test-core-bat test-core-page-data-exception test-core-page-instruction-exception test-core-page-miss-result test-core-page-translation test-core-tlb-miss test-core-tlb-load test-core-tlbie test-exception-tlb-miss test-core-full-decode variant-matrix`, commit 29141ba, 2026-09-29.
 Pass (V9), focused benches only (lint, `check-spec`, `test-bat*` and
-`variant-mmu-602-*` passed at 130a829; `regression` not rerun):
+`variant-mmu-602-*` passed at 4e38c73; `regression` not rerun):
 `tb_micro_tlb_router` at 602, 16 sets, seed 3: 3584 checks, 964 operations,
 3547 micro-TLB and slow-path records identical, 431 fetches carrying an esa
 code, with random HID0[PO], MSR[AP] and TLB NE/SE/WE words; the same bench

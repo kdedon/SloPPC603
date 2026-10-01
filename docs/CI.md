@@ -74,7 +74,7 @@ the `commit`, `date` and `target` values are illustrative:
 
 ```json
 {
-  "schema": 1, "name": "chip", "commit": "6ff1d89…", "dirty": false,
+  "schema": 1, "name": "chip", "commit": "93f121b…", "dirty": false,
   "date": "2026-09-30T12:25:40Z", "revision": "ppc603e_chip",
   "top": "ppc603e_measure", "device": "5CSEBA6U23I7",
   "quartus": "17.0.2 Build 602 07/19/2017 SJ Lite Edition",

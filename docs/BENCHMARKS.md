@@ -224,7 +224,7 @@ tests alone is 68,956,117 cycles at CPI 4.397 (nbench) and 60,017,060 cycles at 
 4.324 (Embench). That base had no SoC performance counters.
 
 Recorded: `make -C sim demo-nbench demo-embench demo-mister-nbench demo-mister-embench`,
-commit 1a2beba, 2026-09-29. All pass. With the performance counters, `perf_report`
+commit cbc3fc4, 2026-09-29. All pass. With the performance counters, `perf_report`
 prints the per-cause breakdown of the test window: 70,430,257 cycles, 15,908,512
 retired, CPI 4.427 (nbench); 61,549,013 cycles, 14,117,316 retired, CPI 4.360
 (Embench). From reset to exit: nbench 76,890,055 cycles, CPI 4.444; Embench
@@ -259,7 +259,7 @@ on hardware. The smoke indices are not comparable with published figures.
 ### Whetstone
 
 Recorded: `make -C sim demo-whetstone demo-whetstone-hf demo-mister-whetstone
-demo-mister-whetstone-hf`, commit a7158bd, 2026-09-30. All pass.
+demo-mister-whetstone-hf`, commit 8ab5f1c, 2026-09-30. All pass.
 
 | Image | SoC | Whetstone cycles (LOOP 2) | Retired | CPI | MWIPS at 50 MHz | MWIPS/MHz |
 |---|---|---:|---:|---:|---:|---:|
@@ -280,10 +280,10 @@ and gives their rates in simulation. The rates rest on the simulated memory syst
 not run. The soft-float rate measures soft-fp and musl on the integer core; the
 hard-float rate is set by the serialized FPU lane (CPI 7) and is not a 603e figure.
 
-Recorded: `make -C sim demo-whetstone-hf`, commit `7e6ecfe`, 2026-09-30. Passes;
+Recorded: `make -C sim demo-whetstone-hf`, commit `a6d29b6`, 2026-09-30. Passes;
 module values match. With FP loads and stores overlapped and doublewords moved in one
 access ([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md)), `whetstone-hf` takes
-492,105 cycles: 20.321 MWIPS at 50 MHz (0.4064/MHz), from 14.244 on `9eb20d9`.
+492,105 cycles: 20.321 MWIPS at 50 MHz (0.4064/MHz), from 14.244 on `04b5bad`.
 
 ## MiSTer cores
 
