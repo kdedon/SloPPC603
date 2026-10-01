@@ -177,8 +177,9 @@ arrives during a write beat or a read beat. On the unfixed target it fails
 ### Guard
 
 `make -C sim -j2 xrand-sweep` reruns the SoC target, core full-decode,
-chip pins, demo hello and MiSTer hello (DDR3 and native) benches with X
-seeds 1-8 plus all-zero and all-one initial state (60 runs); each model
+chip pins, demo hello, MiSTer hello (DDR3 and native) and MiSTer FPU
+Whetstone benches with X seeds 1-8 plus all-zero and all-one initial state
+(70 runs); each model
 builds once. It belongs in the batch gate next to `ci`.
 
 ### Checks

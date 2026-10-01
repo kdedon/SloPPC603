@@ -10,8 +10,8 @@
 // byte of the screen file (header, palette, pixels). Native video: it
 // captures one frame from the video output, checks the DE and sync
 // structure, compares every pixel with the framebuffer stores seen on the bus
-// through the palette, and checks the DDRAM port stays idle. Either way the
-// picture goes to a PPM.
+// through the palette, and checks the DDRAM port stays idle. Either way a
+// one-colour screen fails, and the picture goes to a PPM.
 // Bench processes model the environment with blocking updates.
 /* verilator lint_off BLKSEQ */
 module tb_mister #(
@@ -23,7 +23,8 @@ module tb_mister #(
   parameter logic [31:0] FB_BASE = 32'hf020_0000,
   // DDRAM busy pattern seed.
   parameter logic [15:0] BUSY_SEED = 16'hace1,
-  parameter bit ENABLE_FPU = 1'b0
+  parameter bit ENABLE_FPU = 1'b0,
+  parameter int RAM_BYTES = 131072
 );
   localparam int SECTORS = 3 + (FB_W * FB_H + 511) / 512;
   localparam logic [28:0] FB_WORD = 29'h0600_0000;  // 0x30000000 / 8
@@ -47,7 +48,7 @@ module tb_mister #(
   logic [31:0] exit_code;
 
   ppc603e_mister #(.FB_EXTERNAL(FB_EXTERNAL), .FB_WIDTH(FB_W), .FB_HEIGHT(FB_H), .FB_BASE(FB_BASE),
-    .ENABLE_FPU(ENABLE_FPU)) dut (
+    .ENABLE_FPU(ENABLE_FPU), .RAM_BYTES(RAM_BYTES)) dut (
     .clk_i(clk), .rst_i(rst), .mode_i(mode), .input_i('0),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
     .pal_we_o(pal_we), .pal_addr_o(pal_addr), .pal_data_o(pal_data),
@@ -271,6 +272,13 @@ module tb_mister #(
         if (frame[i] != palette[shadow[i]])
           $fatal(1, "pixel (%0d, %0d) is %06x, expected %06x", i % FB_W, i / FB_W,
             frame[i], palette[shadow[i]]);
+    end
+    // A screen of one colour means nothing was drawn.
+    begin
+      int drawn = 0;
+      for (int i = 1; i < FB_W * FB_H; i++)
+        if (shadow[i] != shadow[0]) drawn++;
+      if (drawn == 0) $fatal(1, "blank screen");
     end
     if (ppm != "") begin
       fd = $fopen(ppm, "wb");
