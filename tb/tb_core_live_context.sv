@@ -126,7 +126,7 @@ module tb_core_live_context #(
     logic [49:0] unused_page_ports;
   logic [32:0] unused_icbi_core;
   logic unused_checkstop1;
-  ppc_core_bat #(.RESET_PC(32'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_LIVE_CONTEXT),
+  ppc_core_bat #(.RESET_PC(32'b0), .RETIRE_PAIRS(1'b0),.ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_LIVE_CONTEXT),
       .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT)) dut (
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),

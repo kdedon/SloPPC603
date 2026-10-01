@@ -42,6 +42,9 @@ module ppc_core_bat_bus60x #(
   parameter bit ENABLE_FULL_DECODE = 1'b0,
   parameter bit ENABLE_FPU = 1'b0,
   parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
+  // CQ[1] retires beside the head without appearing on retire_o; a bench
+  // that checks every retirement there sets 0.
+  parameter bit RETIRE_PAIRS = (DISPATCH_WIDTH == 2),
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter logic [3:0] PLL_CFG = 4'b0000
 ) (
@@ -221,7 +224,7 @@ module ppc_core_bat_bus60x #(
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
-    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH),
+    .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH), .RETIRE_PAIRS(RETIRE_PAIRS),
     .PLL_CFG(PLL_CFG)
   ) translated_core (
     /* verilator lint_off PINCONNECTEMPTY */

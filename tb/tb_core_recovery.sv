@@ -153,6 +153,26 @@ module tb_core_recovery;
     end
   end
 
+  // Lane 1 is DQ1 dispatch and the SRU; it stays idle at dispatch width 1.
+  logic lane_dispatch [2];
+  assign lane_dispatch[0] = dut.dispatch;
+  assign lane_dispatch[1] = dut.dispatch1;
+  retire_packet_t lane_alloc [2];
+  assign lane_alloc[0] = dut.allocation;
+  assign lane_alloc[1] = dut.allocation1;
+  completion_tag_t lane_alloc_tag [2];
+  assign lane_alloc_tag[0] = dut.alloc_producer;
+  assign lane_alloc_tag[1] = dut.alloc1_producer;
+  logic lane_finish [2];
+  assign lane_finish[0] = dut.completion.finish_accept;
+  assign lane_finish[1] = dut.completion.finish1_accept;
+  completion_tag_t lane_finish_tag [2];
+  assign lane_finish_tag[0] = dut.result.producer;
+  assign lane_finish_tag[1] = dut.sru_result.producer;
+  logic [31:0] lane_finish_value [2];
+  assign lane_finish_value[0] = dut.result.value;
+  assign lane_finish_value[1] = dut.sru_result.value;
+
   always @(posedge clk) begin
     if (!rst_n) begin
       model.delete();
@@ -193,42 +213,44 @@ module tb_core_recovery;
         if (removed.packet.gpr_write) architectural_r1 = removed.packet.value;
         retired_count++;
       end
-      if (dut.completion.finish_accept) begin
-        fin = -1;
-        for (int i = 0; i < model.size(); i++)
-          if (model[i].id == dut.result.producer) fin = i;
-        check(fin >= 0, "finish belongs to surviving stream");
-        if (fin >= 0) begin
-          check(!model[fin].done && model[fin].packet.value == dut.result.value, "finish value and single finish");
-          item = model[fin]; item.done = 1; model[fin] = item;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_finish[lane]) begin
+          fin = -1;
+          for (int i = 0; i < model.size(); i++)
+            if (model[i].id == lane_finish_tag[lane]) fin = i;
+          check(fin >= 0, "finish belongs to surviving stream");
+          if (fin >= 0) begin
+            check(!model[fin].done && model[fin].packet.value == lane_finish_value[lane], "finish value and single finish");
+            item = model[fin]; item.done = 1; model[fin] = item;
+          end
         end
-      end
-      if (dut.dispatch) begin
-        check(dut.allocation.pc == next_dispatch_pc, "dispatch follows latest accepted target stream");
-        check(dut.allocation.insn == instruction(next_dispatch_pc), "dispatch word matches independent memory program");
-        next_dispatch_pc = next_dispatch_pc + 4;
-        speculative_r1 = architectural_r1;
-        for (int i = 0; i < model.size(); i++)
-          if (model[i].packet.gpr_write) speculative_r1 = model[i].packet.value;
-        item = '0;
-        item.id = dut.alloc_producer;
-        item.packet.pc = dut.allocation.pc;
-        item.packet.insn = dut.allocation.insn;
-        item.packet.tag = dut.allocation.tag;
-        if (dut.allocation.insn == 0) begin
-          item.packet.illegal = 1;
-          item.done = 1;
-        end else begin
-          check(dut.allocation.insn[31:16] == {6'd14,5'd1,5'd1}, "fixture encodes addi r1,r1");
-          item.packet.gpr_write = 1;
-          item.packet.rename_owned = 1;
-          item.packet.gpr = 1;
-          // An integer op may retire from CQ[1].
-          item.packet.cq1_ok = 1;
-          item.packet.value = speculative_r1 + {{16{dut.allocation.insn[15]}},dut.allocation.insn[15:0]};
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_dispatch[lane]) begin
+          check(lane_alloc[lane].pc == next_dispatch_pc, "dispatch follows latest accepted target stream");
+          check(lane_alloc[lane].insn == instruction(next_dispatch_pc), "dispatch word matches independent memory program");
+          next_dispatch_pc = next_dispatch_pc + 4;
+          speculative_r1 = architectural_r1;
+          for (int i = 0; i < model.size(); i++)
+            if (model[i].packet.gpr_write) speculative_r1 = model[i].packet.value;
+          item = '0;
+          item.id = lane_alloc_tag[lane];
+          item.packet.pc = lane_alloc[lane].pc;
+          item.packet.insn = lane_alloc[lane].insn;
+          item.packet.tag = lane_alloc[lane].tag;
+          if (lane_alloc[lane].insn == 0) begin
+            item.packet.illegal = 1;
+            item.done = 1;
+          end else begin
+            check(lane_alloc[lane].insn[31:16] == {6'd14,5'd1,5'd1}, "fixture encodes addi r1,r1");
+            item.packet.gpr_write = 1;
+            item.packet.rename_owned = 1;
+            item.packet.gpr = 1;
+            // An integer op may retire from CQ[1].
+            item.packet.cq1_ok = 1;
+            item.packet.value = speculative_r1 + {{16{lane_alloc[lane].insn[15]}},lane_alloc[lane].insn[15:0]};
+          end
+          model.push_back(item);
         end
-        model.push_back(item);
-      end
     end
   end
   assert property (@(posedge clk) disable iff (!rst_n)

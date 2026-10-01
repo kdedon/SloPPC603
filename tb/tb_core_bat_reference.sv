@@ -48,7 +48,7 @@ module tb_core_bat_reference;
   logic [49:0] unused_page_ports;
   logic [32:0] unused_icbi_core;
   logic unused_checkstop;
-  ppc_core_bat #(.RESET_PC(32'b0)) dut (
+  ppc_core_bat #(.RESET_PC(32'b0), .RETIRE_PAIRS(1'b0)) dut (
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

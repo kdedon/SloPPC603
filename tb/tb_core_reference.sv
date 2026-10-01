@@ -139,12 +139,15 @@ module tb_core_reference #(
       end
       if (tv && tr) begin
         // A pair retires on one edge: the older line is the state after the
-        // edge without the younger instruction's writes.
+        // edge without the younger instruction's writes. The packets are
+        // sampled before the edge updates them.
         logic pair;
+        retire_packet_t younger;
         logic [31:0] pre_gpr, pre_cr, pre_xer, pre_lr, pre_ctr;
         assert (!retired.illegal && !$isunknown(retired))
           else $fatal(1, "unsupported/unknown retirement in reference program");
         pair = tv1;
+        younger = retired1;
         pre_gpr = dut.regfile.gpr[retired1.gpr];
         pre_cr = dut.cr;
         pre_xer = dut.xer;
@@ -154,19 +157,19 @@ module tb_core_reference #(
         $fwrite(trace_file, "%08x %08x ", retired.pc, retired.insn);
         #1;
         for (int r = 0; r < 32; r++)
-          $fwrite(trace_file, "%08x ", (pair && retired1.gpr_write && (r == int'(retired1.gpr))) ?
+          $fwrite(trace_file, "%08x ", (pair && younger.gpr_write && (r == int'(younger.gpr))) ?
                   pre_gpr : dut.regfile.gpr[r]);
         if (pair)
           $fwrite(trace_file, "%08x %08x %08x %08x\n",
-                  retired1.needs_flags ? pre_cr : dut.cr, retired1.needs_flags ? pre_xer : dut.xer,
-                  retired1.branch ? pre_lr : dut.lr, retired1.branch ? pre_ctr : dut.ctr);
+                  younger.needs_flags ? pre_cr : dut.cr, younger.needs_flags ? pre_xer : dut.xer,
+                  younger.branch ? pre_lr : dut.lr, younger.branch ? pre_ctr : dut.ctr);
         else
           $fwrite(trace_file, "%08x %08x %08x %08x\n", dut.cr, dut.xer, dut.lr, dut.ctr);
         commits++;
         if (pair && (commits != expected_commits)) begin
-          assert (!retired1.illegal && !$isunknown(retired1))
+          assert (!younger.illegal && !$isunknown(younger))
             else $fatal(1, "unsupported/unknown CQ[1] retirement in reference program");
-          $fwrite(trace_file, "%08x %08x ", retired1.pc, retired1.insn);
+          $fwrite(trace_file, "%08x %08x ", younger.pc, younger.insn);
           for (int r = 0; r < 32; r++) $fwrite(trace_file, "%08x ", dut.regfile.gpr[r]);
           $fwrite(trace_file, "%08x %08x %08x %08x\n", dut.cr, dut.xer, dut.lr, dut.ctr);
           commits++;

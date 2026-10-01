@@ -553,6 +553,29 @@ module tb_core_rotate;
   end
 
   // Observe D/E/F/C identities without sharing decode or ALU equations.
+  // Lane 1 is DQ1 dispatch and the SRU; it stays idle at dispatch width 1.
+  logic lane_dispatch [2];
+  assign lane_dispatch[0] = dut.dispatch;
+  assign lane_dispatch[1] = dut.dispatch1;
+  retire_packet_t lane_alloc [2];
+  assign lane_alloc[0] = dut.allocation;
+  assign lane_alloc[1] = dut.allocation1;
+  completion_tag_t lane_alloc_tag [2];
+  assign lane_alloc_tag[0] = dut.alloc_producer;
+  assign lane_alloc_tag[1] = dut.alloc1_producer;
+  logic lane_issue [2];
+  assign lane_issue[0] = dut.issue_valid && dut.issue_ready;
+  assign lane_issue[1] = dut.sru_issue_valid && dut.sru_issue_ready;
+  completion_tag_t lane_issue_tag [2];
+  assign lane_issue_tag[0] = dut.issue.ctrl.producer;
+  assign lane_issue_tag[1] = dut.sru_issue.ctrl.producer;
+  logic lane_finish [2];
+  assign lane_finish[0] = dut.completion.finish_accept;
+  assign lane_finish[1] = dut.completion.finish1_accept;
+  completion_tag_t lane_finish_tag [2];
+  assign lane_finish_tag[0] = dut.result.producer;
+  assign lane_finish_tag[1] = dut.sru_result.producer;
+
   always @(posedge clk) begin
     if (!rst_n) begin
       for (int reg_index = 0; reg_index < 32; reg_index++) model_gpr[reg_index] = 0;
@@ -616,28 +639,30 @@ module tb_core_rotate;
         end
       end
 
-      if (dut.dispatch && phase == PHASE_ADMISSION) begin
-        if (dut.allocation.pc == 32'd12) begin
-          admission_first_seen = 1;
-          admission_first_tag = dut.alloc_producer;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_dispatch[lane] && phase == PHASE_ADMISSION) begin
+          if (lane_alloc[lane].pc == 32'd12) begin
+            admission_first_seen = 1;
+            admission_first_tag = lane_alloc_tag[lane];
+          end
+          if (lane_alloc[lane].pc == 32'd16) begin
+            require(dut.flags_busy && admission_first_seen,
+                    "flag-free RAW did not dispatch while record owner was busy");
+            admission_free_seen = 1;
+            admission_free_tag = lane_alloc_tag[lane];
+          end
+          if (lane_alloc[lane].pc == 32'd20) begin
+            admission_second_seen = 1;
+            admission_second_dispatch_edge = edge_count;
+            require(admission_first_commit_edge >= 0 &&
+                    edge_count > admission_first_commit_edge,
+                    "second record acquired on or before owner release edge");
+          end
         end
-        if (dut.allocation.pc == 32'd16) begin
-          require(dut.flags_busy && admission_first_seen,
-                  "flag-free RAW did not dispatch while record owner was busy");
-          admission_free_seen = 1;
-          admission_free_tag = dut.alloc_producer;
-        end
-        if (dut.allocation.pc == 32'd20) begin
-          admission_second_seen = 1;
-          admission_second_dispatch_edge = edge_count;
-          require(admission_first_commit_edge >= 0 &&
-                  edge_count > admission_first_commit_edge,
-                  "second record acquired on or before owner release edge");
-        end
-      end
-      if (dut.completion.finish_accept && phase == PHASE_ADMISSION &&
-          admission_free_seen && dut.result.producer == admission_free_tag)
-        admission_free_finish_edge = edge_count;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_finish[lane] && phase == PHASE_ADMISSION &&
+            admission_free_seen && lane_finish_tag[lane] == admission_free_tag)
+          admission_free_finish_edge = edge_count;
 
       if (retire_valid && retire_ready) begin
         require(stream.size() > 0 && stream[0].done,
@@ -657,73 +682,76 @@ module tb_core_rotate;
         require(!$isunknown(stream_removed), "committed stream entry contains unknown fields");
       end
 
-      if (dut.issue_valid && dut.issue_ready) begin
-        issue_index = -1;
-        for (int i = 0; i < stream.size(); i++)
-          if (stream[i].tag == dut.issue.ctrl.producer) issue_index = i;
-        require(issue_index >= 0 && !stream[issue_index].issued,
-                "issue did not match one live unissued stream entry");
-        if (issue_index >= 0) begin
-          require(edge_count > int'(stream[issue_index].dispatch_edge),
-                  "instruction issued on its dispatch edge");
-          stream_item = stream[issue_index];
-          stream_item.issued = 1'b1;
-          stream_item.issue_edge = 32'(edge_count);
-          stream[issue_index] = stream_item;
-        end
-      end
-
-      if (dut.completion.finish_accept) begin
-        finish_index = -1;
-        for (int i = 0; i < stream.size(); i++)
-          if (stream[i].tag == dut.result.producer) finish_index = i;
-        require(finish_index >= 0 && !stream[finish_index].done,
-                "finish did not match one live unfinished stream entry");
-        if (finish_index >= 0) begin
-          require(stream[finish_index].issued &&
-                  edge_count == int'(stream[finish_index].issue_edge) + 1,
-                  "registered IU finish was not exactly one edge after issue");
-          stream_item = stream[finish_index];
-          stream_item.done = 1'b1;
-          stream_item.finish_edge = 32'(edge_count);
-          stream[finish_index] = stream_item;
-        end
-      end
-
-      if (dut.dispatch) begin
-        require(!redirect_accepted, "dispatch occurred on an accepted recovery edge");
-        require(dut.allocation.pc == next_dispatch_pc &&
-                dut.allocation.insn == program_mem[next_dispatch_pc >> 2],
-                "dispatch did not follow predicted PC/instruction stream");
-        require(dut.allocation.illegal ==
-                !expected_legal(program_mem[next_dispatch_pc >> 2]),
-                "dispatch legality disagrees with independent rotate set");
-        require(dut.allocation.needs_flags ==
-                expected_needs_flags(program_mem[next_dispatch_pc >> 2]),
-                "dispatch flag-owner demand mismatch");
-        if (expected_needs_flags(program_mem[next_dispatch_pc >> 2])) begin
-          require(!owner_expected_valid,
-                  "second rotate flag owner dispatched while one was live");
-          if (last_owner_commit_edge >= 0) begin
-            require(edge_count > last_owner_commit_edge,
-                    "rotate owner reacquired on release edge");
-            if (edge_count == last_owner_commit_edge + 1) owner_release_exact++;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_issue[lane]) begin
+          issue_index = -1;
+          for (int i = 0; i < stream.size(); i++)
+            if (stream[i].tag == lane_issue_tag[lane]) issue_index = i;
+          require(issue_index >= 0 && !stream[issue_index].issued,
+                  "issue did not match one live unissued stream entry");
+          if (issue_index >= 0) begin
+            require(edge_count > int'(stream[issue_index].dispatch_edge),
+                    "instruction issued on its dispatch edge");
+            stream_item = stream[issue_index];
+            stream_item.issued = 1'b1;
+            stream_item.issue_edge = 32'(edge_count);
+            stream[issue_index] = stream_item;
           end
-          owner_expected_valid = 1;
-          owner_expected = dut.alloc_producer;
         end
-        stream_item = '0;
-        stream_item.tag = dut.alloc_producer;
-        stream_item.pc = dut.allocation.pc;
-        stream_item.insn = dut.allocation.insn;
-        stream_item.done = !expected_legal(program_mem[next_dispatch_pc >> 2]);
-        stream_item.issued = 1'b0;
-        stream_item.dispatch_edge = 32'(edge_count);
-        stream_item.issue_edge = '0;
-        stream_item.finish_edge = '0;
-        stream.push_back(stream_item);
-        next_dispatch_pc += 4;
-      end
+
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_finish[lane]) begin
+          finish_index = -1;
+          for (int i = 0; i < stream.size(); i++)
+            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
+          require(finish_index >= 0 && !stream[finish_index].done,
+                  "finish did not match one live unfinished stream entry");
+          if (finish_index >= 0) begin
+            require(stream[finish_index].issued &&
+                    edge_count == int'(stream[finish_index].issue_edge) + 1,
+                    "registered IU finish was not exactly one edge after issue");
+            stream_item = stream[finish_index];
+            stream_item.done = 1'b1;
+            stream_item.finish_edge = 32'(edge_count);
+            stream[finish_index] = stream_item;
+          end
+        end
+
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_dispatch[lane]) begin
+          require(!redirect_accepted, "dispatch occurred on an accepted recovery edge");
+          require(lane_alloc[lane].pc == next_dispatch_pc &&
+                  lane_alloc[lane].insn == program_mem[next_dispatch_pc >> 2],
+                  "dispatch did not follow predicted PC/instruction stream");
+          require(lane_alloc[lane].illegal ==
+                  !expected_legal(program_mem[next_dispatch_pc >> 2]),
+                  "dispatch legality disagrees with independent rotate set");
+          require(lane_alloc[lane].needs_flags ==
+                  expected_needs_flags(program_mem[next_dispatch_pc >> 2]),
+                  "dispatch flag-owner demand mismatch");
+          if (expected_needs_flags(program_mem[next_dispatch_pc >> 2])) begin
+            require(!owner_expected_valid,
+                    "second rotate flag owner dispatched while one was live");
+            if (last_owner_commit_edge >= 0) begin
+              require(edge_count > last_owner_commit_edge,
+                      "rotate owner reacquired on release edge");
+              if (edge_count == last_owner_commit_edge + 1) owner_release_exact++;
+            end
+            owner_expected_valid = 1;
+            owner_expected = lane_alloc_tag[lane];
+          end
+          stream_item = '0;
+          stream_item.tag = lane_alloc_tag[lane];
+          stream_item.pc = lane_alloc[lane].pc;
+          stream_item.insn = lane_alloc[lane].insn;
+          stream_item.done = !expected_legal(program_mem[next_dispatch_pc >> 2]);
+          stream_item.issued = 1'b0;
+          stream_item.dispatch_edge = 32'(edge_count);
+          stream_item.issue_edge = '0;
+          stream_item.finish_edge = '0;
+          stream.push_back(stream_item);
+          next_dispatch_pc += 4;
+        end
     end
   end
 

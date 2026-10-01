@@ -39,6 +39,9 @@ module ppc_core_bat #(
   parameter bit ENABLE_FPU = 1'b0,
   // Instructions dispatched and retired per cycle (ppc_core).
   parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
+  // CQ[1] retires beside the head without appearing on retire_o; a bench
+  // that checks every retirement there sets 0.
+  parameter bit RETIRE_PAIRS = (DISPATCH_WIDTH == 2),
   // 64 carries an aligned FP doubleword as one physical access.
   parameter int DMEM_BITS = 32,
   // A data cache sits behind the router: a speculative access from the
@@ -353,11 +356,10 @@ module ppc_core_bat #(
     .dmem_req_attr_o(dmem_req_attr), .icache_ctl_valid_o, .icache_ctl_ready_i,
     .icache_ctl_enable_o, .icache_ctl_invalidate_o,
     .retire_valid_o, .retire_ready_i, .retire_o,
-    // CQ[1] retires beside the head at width 2; only the head is exported.
     /* verilator lint_off PINCONNECTEMPTY */
     .retire1_valid_o(), .retire1_o(),
     /* verilator lint_on PINCONNECTEMPTY */
-    .retire1_ready_i(DISPATCH_WIDTH == 2),
+    .retire1_ready_i(RETIRE_PAIRS),
     .halted_o(core_halted), .checkstop_o, .redirect_valid_i, .redirect_all_i,
     .redirect_keep_pivot_i, .redirect_pivot_i, .redirect_target_i,
     .redirect_accepted_o, .perf_o

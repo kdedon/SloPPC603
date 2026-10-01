@@ -533,6 +533,29 @@ module tb_core_add_unary;
     end
   end
 
+  // Lane 1 is DQ1 dispatch and the SRU; it stays idle at dispatch width 1.
+  logic lane_dispatch [2];
+  assign lane_dispatch[0] = dut.dispatch;
+  assign lane_dispatch[1] = dut.dispatch1;
+  retire_packet_t lane_alloc [2];
+  assign lane_alloc[0] = dut.allocation;
+  assign lane_alloc[1] = dut.allocation1;
+  completion_tag_t lane_alloc_tag [2];
+  assign lane_alloc_tag[0] = dut.alloc_producer;
+  assign lane_alloc_tag[1] = dut.alloc1_producer;
+  logic lane_issue [2];
+  assign lane_issue[0] = dut.issue_valid && dut.issue_ready;
+  assign lane_issue[1] = dut.sru_issue_valid && dut.sru_issue_ready;
+  completion_tag_t lane_issue_tag [2];
+  assign lane_issue_tag[0] = dut.issue.ctrl.producer;
+  assign lane_issue_tag[1] = dut.sru_issue.ctrl.producer;
+  logic lane_finish [2];
+  assign lane_finish[0] = dut.completion.finish_accept;
+  assign lane_finish[1] = dut.completion.finish1_accept;
+  completion_tag_t lane_finish_tag [2];
+  assign lane_finish_tag[0] = dut.result.producer;
+  assign lane_finish_tag[1] = dut.sru_result.producer;
+
   always @(posedge clk) begin
     int issue_index, finish_index;
     logic word_legal, word_needs_flags;
@@ -584,75 +607,78 @@ module tb_core_add_unary;
         total_retirements++;
       end
 
-      if (dut.issue_valid && dut.issue_ready) begin
-        issue_index = -1;
-        for (int i = 0; i < stream.size(); i++)
-          if (stream[i].tag == dut.issue.ctrl.producer) issue_index = i;
-        require(issue_index >= 0 && !stream[issue_index].issued,
-                "ADD issue did not match a live unissued stream entry");
-        if (issue_index >= 0) begin
-          require(edge_count > int'(stream[issue_index].dispatch_edge),
-                  "ADD issued on dispatch edge");
-          item = stream[issue_index];
-          item.issued = 1;
-          item.issue_edge = 32'(edge_count);
-          stream[issue_index] = item;
-        end
-      end
-
-      if (dut.completion.finish_accept) begin
-        finish_index = -1;
-        for (int i = 0; i < stream.size(); i++)
-          if (stream[i].tag == dut.result.producer) finish_index = i;
-        require(finish_index >= 0 && !stream[finish_index].done &&
-                stream[finish_index].issued,
-                "ADD finish did not match a live issued stream entry");
-        if (finish_index >= 0) begin
-          require(edge_count == int'(stream[finish_index].issue_edge) + 1,
-                  "ADD registered IU finish was not issue+1");
-          item = stream[finish_index];
-          item.done = 1;
-          item.finish_edge = 32'(edge_count);
-          stream[finish_index] = item;
-        end
-      end
-
-      if (dut.dispatch) begin
-        require(dut.allocation.pc == next_dispatch_pc &&
-                dut.allocation.insn == program_mem[next_dispatch_pc >> 2],
-                "ADD dispatch left predicted sequential program stream");
-        word_legal = expected_legal(program_mem[next_dispatch_pc >> 2]);
-        word_needs_flags = expected_needs_flags(program_mem[next_dispatch_pc >> 2]);
-        require(dut.allocation.illegal == !word_legal,
-                "ADD dispatch legality differs from independent supported set");
-        require(dut.allocation.needs_flags == (word_legal && word_needs_flags),
-                "ADD dispatch ownership demand mismatch");
-        if (word_legal && word_needs_flags) begin
-          require(!owner_expected_valid,
-                  "second ADD flag owner dispatched while prior owner was live");
-          if (last_owner_commit_edge >= 0) begin
-            require(edge_count > last_owner_commit_edge,
-                    "ADD owner reacquired on its release edge");
-            if (edge_count == last_owner_commit_edge + 1) owner_release_exact++;
-            if (last_owner_commit_was_addc &&
-                is_legal_unary(program_mem[next_dispatch_pc >> 2][31:26],
-                               program_mem[next_dispatch_pc >> 2][9:1],
-                               program_mem[next_dispatch_pc >> 2][15:11]) &&
-                edge_count == last_owner_commit_edge + 1)
-              unary_after_seed_exact++;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_issue[lane]) begin
+          issue_index = -1;
+          for (int i = 0; i < stream.size(); i++)
+            if (stream[i].tag == lane_issue_tag[lane]) issue_index = i;
+          require(issue_index >= 0 && !stream[issue_index].issued,
+                  "ADD issue did not match a live unissued stream entry");
+          if (issue_index >= 0) begin
+            require(edge_count > int'(stream[issue_index].dispatch_edge),
+                    "ADD issued on dispatch edge");
+            item = stream[issue_index];
+            item.issued = 1;
+            item.issue_edge = 32'(edge_count);
+            stream[issue_index] = item;
           end
-          owner_expected_valid = 1;
-          owner_expected = dut.alloc_producer;
         end
-        item = '0;
-        item.tag = dut.alloc_producer;
-        item.pc = dut.allocation.pc;
-        item.insn = dut.allocation.insn;
-        item.done = !word_legal;
-        item.dispatch_edge = 32'(edge_count);
-        stream.push_back(item);
-        next_dispatch_pc += 4;
-      end
+
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_finish[lane]) begin
+          finish_index = -1;
+          for (int i = 0; i < stream.size(); i++)
+            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
+          require(finish_index >= 0 && !stream[finish_index].done &&
+                  stream[finish_index].issued,
+                  "ADD finish did not match a live issued stream entry");
+          if (finish_index >= 0) begin
+            require(edge_count == int'(stream[finish_index].issue_edge) + 1,
+                    "ADD registered IU finish was not issue+1");
+            item = stream[finish_index];
+            item.done = 1;
+            item.finish_edge = 32'(edge_count);
+            stream[finish_index] = item;
+          end
+        end
+
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_dispatch[lane]) begin
+          require(lane_alloc[lane].pc == next_dispatch_pc &&
+                  lane_alloc[lane].insn == program_mem[next_dispatch_pc >> 2],
+                  "ADD dispatch left predicted sequential program stream");
+          word_legal = expected_legal(program_mem[next_dispatch_pc >> 2]);
+          word_needs_flags = expected_needs_flags(program_mem[next_dispatch_pc >> 2]);
+          require(lane_alloc[lane].illegal == !word_legal,
+                  "ADD dispatch legality differs from independent supported set");
+          require(lane_alloc[lane].needs_flags == (word_legal && word_needs_flags),
+                  "ADD dispatch ownership demand mismatch");
+          if (word_legal && word_needs_flags) begin
+            require(!owner_expected_valid,
+                    "second ADD flag owner dispatched while prior owner was live");
+            if (last_owner_commit_edge >= 0) begin
+              require(edge_count > last_owner_commit_edge,
+                      "ADD owner reacquired on its release edge");
+              if (edge_count == last_owner_commit_edge + 1) owner_release_exact++;
+              if (last_owner_commit_was_addc &&
+                  is_legal_unary(program_mem[next_dispatch_pc >> 2][31:26],
+                                 program_mem[next_dispatch_pc >> 2][9:1],
+                                 program_mem[next_dispatch_pc >> 2][15:11]) &&
+                  edge_count == last_owner_commit_edge + 1)
+                unary_after_seed_exact++;
+            end
+            owner_expected_valid = 1;
+            owner_expected = lane_alloc_tag[lane];
+          end
+          item = '0;
+          item.tag = lane_alloc_tag[lane];
+          item.pc = lane_alloc[lane].pc;
+          item.insn = lane_alloc[lane].insn;
+          item.done = !word_legal;
+          item.dispatch_edge = 32'(edge_count);
+          stream.push_back(item);
+          next_dispatch_pc += 4;
+        end
     end
   end
 
