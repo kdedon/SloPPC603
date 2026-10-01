@@ -339,6 +339,7 @@ module ppc_core #(
   localparam bit DUAL_GPR_WRITE = DUAL;
   // SRU add/compare lane, fed from DQ1 beside an IU operation in DQ0.
   localparam bit HAS_SRU = DUAL && cpu_has_sru_add_compare(CPU_VARIANT);
+  localparam bit SRU_TO_IU = HAS_SRU && !ENABLE_LSU_PIPE;
   logic sru_rs_ready, sru_result_valid, sru_result_ready, wake1_valid;
   wake_packet_t wake1;
   logic sru_cancel, sru_idle, d1_sru, d1_station_ready;
@@ -1044,8 +1045,10 @@ module ppc_core #(
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
     .iu_done_i(iu_result_valid && iu_result_ready),
     .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value),
-    .lsu_done_i(lsu_result_valid), .lsu_producer_i(lsu_result.producer),
-    .lsu_value_i(lsu_result.value),
+    // Without the pipelined unit, this port takes SRU results instead.
+    .lsu_done_i(SRU_TO_IU ? sru_result_valid : lsu_result_valid),
+    .lsu_producer_i(SRU_TO_IU ? sru_result.producer : lsu_result.producer),
+    .lsu_value_i(SRU_TO_IU ? sru_result.value : lsu_result.value),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
   // synthesis translate_off
@@ -1085,7 +1088,9 @@ module ppc_core #(
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .iu_done_i(sru_result_valid && sru_result_ready),
         .iu_producer_i(sru_result.producer), .iu_value_i(sru_result.value),
-        .lsu_done_i(1'b0), .lsu_producer_i('0), .lsu_value_i(32'b0),
+        // IU results reach the SRU in the cycle they finish.
+        .lsu_done_i(iu_result_valid && iu_result_ready),
+        .lsu_producer_i(iu_result.producer), .lsu_value_i(iu_result.value),
         .issue_valid_o(sru_issue_valid), .issue_ready_i(sru_issue_ready), .issue_o(sru_issue)
       );
       ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE), .MUL_602_TIMING(1'b0)) sru (
@@ -1654,6 +1659,11 @@ module ppc_core #(
     end
   // synthesis translate_on
 
+  // The entry after DQ0 next cycle: DQ1, or the lane-0 push when DQ1 is empty.
+  assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && iq_push0));
+  assign {iq_peek_head, iq_peek_uop, iq_peek_folded, iq_peek_branch} = iq_valid1 ?
+      {dq1_head, dq1_uop, dq1_folded, dq1_branch} :
+      {queued, push_uop, fold_predict, push_branch};
   // Performance events: the cause of each cycle without a dispatch. The
   // cause and all its inputs only feed the registered event.
   logic [1:0] perf_refetch_q;  // 1: branch redirect, 2: other redirect
@@ -1766,11 +1776,6 @@ module ppc_core #(
         else $error("dispatched fetch page miss without its captured context");
   end
   // DQ1 follows DQ0 in program order, and its dep_prev bits match DQ0.
-  // The entry after DQ0 next cycle: DQ1, or the lane-0 push when DQ1 is empty.
-  assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && iq_push0));
-  assign {iq_peek_head, iq_peek_uop, iq_peek_folded, iq_peek_branch} = iq_valid1 ?
-      {dq1_head, dq1_uop, dq1_folded, dq1_branch} :
-      {queued, push_uop, fold_predict, push_branch};
   always @(posedge clk_i) begin
     iq_pair_t dq1_expected;
     dq1_expected = pair_predecode(dq1_uop, dq1_head.insn, dq1_head.fault != FETCH_OK);

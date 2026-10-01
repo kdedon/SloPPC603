@@ -216,8 +216,9 @@ module ppc_completion #(
         (head_q < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
         done_q[head_q] && redirect_candidate_kill[head_q])
       redirect_accepted_o = 1'b0;
-    // So is an offered CQ[1].
-    if (ENABLE_PIVOT_RECOVERY && retire1_valid_o && redirect_candidate_kill[head1_q])
+    // So is an offered CQ[1] that may retire.
+    if (ENABLE_PIVOT_RECOVERY && retire1_valid_o && retire1_ready_i &&
+        redirect_candidate_kill[head1_q])
       redirect_accepted_o = 1'b0;
 
     redirect_kill_o = redirect_accepted_o ? redirect_candidate_kill : '0;

@@ -233,8 +233,10 @@ module tb_completion_pair;
       position(h);
       alloc_pair(int_op(32'h600, 5'd1), int_op(32'h604, 5'd2), 1'b1, t0, t1);
       alloc_pair(int_op(32'h608, 5'd3), int_op(32'h60c, 5'd4), 1'b0, t2, t3);
-      dv = 1; pivot = t0; dk = 1; #1;
+      dv = 1; pivot = t0; dk = 1; tr1 = 1; #1;
       check(tv1 && !accepted, "cut killing an offered CQ[1] refused");
+      tr1 = 0; #1;
+      check(tv1 && accepted, "cut killing a CQ[1] that cannot retire accepted");
       idle();
       dv = 1; pivot = t1; dk = 1; tr = 1; tr1 = 1; #1;
       check(accepted && kills[t2.index] && kills[t3.index] && !kills[t1.index],

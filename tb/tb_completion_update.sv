@@ -7,7 +7,11 @@ module tb_completion_update;
   logic clk = 0, rst_n = 0;
   always #5 clk = ~clk;
   logic av = 0, ar, rv = 0, rr, fv, wv, tv, tr = 0;
-  retire_packet_t allocation = '0, retired;
+  retire_packet_t allocation = '0;
+  // The pair-retirement fields are not checked here.
+  /* verilator lint_off UNUSEDSIGNAL */
+  retire_packet_t retired;
+  /* verilator lint_on UNUSEDSIGNAL */
   result_packet_t result = '0;
   completion_tag_t at, rt;
   wake_packet_t wake;

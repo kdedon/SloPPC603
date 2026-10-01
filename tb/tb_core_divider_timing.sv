@@ -207,8 +207,11 @@ module tb_core_divider_timing #(
         divide_finish_edge = cycles;
       end
 
-      if (dut.issue_valid && dut.issue_ready && dut.issue.ctrl.op == ALU_ADD &&
-          dut.issue.a == 32'd20 && dut.issue.b == 32'd1) begin
+      // At dispatch width 2 the dependent addi goes to the SRU beside divwu.
+      if ((dut.issue_valid && dut.issue_ready && dut.issue.ctrl.op == ALU_ADD &&
+           dut.issue.a == 32'd20 && dut.issue.b == 32'd1) ||
+          (dut.sru_issue_valid && dut.sru_issue_ready && dut.sru_issue.ctrl.op == ALU_ADD &&
+           dut.sru_issue.a == 32'd20 && dut.sru_issue.b == 32'd1)) begin
         require(dependent_issue_edge < 0, "dependent instruction issued twice");
         dependent_issue_edge = cycles;
         require(divide_finish_edge == cycles,

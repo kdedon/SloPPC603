@@ -229,10 +229,18 @@ module tb_lsu_update_edges;
     require(tv && retired.update_write && retired.update_value == 32'h1004,
             "rejected cut disturbed finished update packet");
     commit_packet();
-    // One write port: rA follows rD by one edge and dispatch waits for it.
-    require(dut.regfile.gpr[3] == 32'hcafe_babe &&
-            dut.regfile.gpr[5] == 32'h1000 && dut.update_pending_q &&
-            !dut.iq_ready, "load destination write or dispatch hold missing");
+    if (dut.DUAL_GPR_WRITE) begin
+      // Two write ports: rD and rA are written on the same edge; dispatch
+      // still waits one cycle.
+      require(dut.regfile.gpr[3] == 32'hcafe_babe && dut.regfile.gpr[5] == 32'h1004 &&
+              dut.update_pending_q && !dut.iq_ready,
+              "load destination and base writes or dispatch hold missing");
+    end else begin
+      // One write port: rA follows rD by one edge and dispatch waits for it.
+      require(dut.regfile.gpr[3] == 32'hcafe_babe &&
+              dut.regfile.gpr[5] == 32'h1000 && dut.update_pending_q &&
+              !dut.iq_ready, "load destination write or dispatch hold missing");
+    end
     tick();
     require(dut.regfile.gpr[3] == 32'hcafe_babe &&
             dut.regfile.gpr[5] == 32'h1004 && !dut.update_pending_q,
