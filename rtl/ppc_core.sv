@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
+`ifndef PPC_LSU_PIPE
+`define PPC_LSU_PIPE 1'b0
+`endif
 // Single-issue core with abstract fetch, data and CSR transports.
 module ppc_core #(
   // Part the build models; see cpu_cfg().
@@ -56,6 +59,11 @@ module ppc_core #(
   parameter bit ENABLE_FPU = 1'b0,
   // 64 moves an aligned FP doubleword in one data access; see ppc_special.
   parameter int DMEM_BITS = 32,
+  // Plain integer loads and stores run in a pipelined unit: one access per
+  // cycle and a two-cycle load-use latency against single-cycle memory. 0
+  // keeps the serialized lane. Benches may set the default with
+  // +define+PPC_LSU_PIPE.
+  parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -229,6 +237,39 @@ module ppc_core #(
   logic [31:0] gpr_mapped;
   logic dispatch_mem_plain, mem_sources_committed, mem_sources_committed_q;
   logic special_drained, overlap_dispatch_ok;
+  // Pipelined load/store unit.
+  logic lsu_route, lsu_ready, lsu_empty, lsu_result_valid, lsu_store_irrevocable;
+  logic lsu_req_valid, lsu_req_write, lsu_req_spec, lsu_rsp_ready, lsu_rsp_owner;
+  logic [2:0] lsu_req_bytes;
+  logic [31:0] lsu_req_addr;
+  logic [DMEM_BITS-1:0] lsu_req_wdata;
+  logic [DMEM_BITS/8-1:0] lsu_req_wstrb;
+  result_packet_t lsu_result;
+  logic lsu_adopt_valid, lsu_adopt_response;
+  uop_t lsu_adopt_uop;
+  completion_tag_t lsu_adopt_producer;
+  logic [31:0] lsu_adopt_pc, lsu_adopt_insn, lsu_adopt_ea, lsu_adopt_data;
+  // Special-lane view of the data port.
+  logic sp_req_valid, sp_req_write, sp_req_probe, sp_rsp_ready;
+  logic [31:0] sp_req_addr;
+  logic [DMEM_BITS-1:0] sp_req_wdata;
+  logic [DMEM_BITS/8-1:0] sp_req_wstrb;
+  dmem_attr_t sp_req_attr;
+  logic sp_dispatch_valid;
+  uop_t sp_uop;
+  completion_tag_t sp_producer;
+  logic [31:0] sp_pc, sp_insn, sp_a, sp_b, sp_c;
+  page_miss_t sp_page_miss;
+  // IQ entry behind the head, for the next access's source check, which
+  // reads only its source fields.
+  logic iq_peek_valid;
+  /* verilator lint_off UNUSEDSIGNAL */
+  fetch_packet_t iq_peek_head;
+  uop_t iq_peek_uop;
+  logic iq_peek_folded;
+  logic [3:0] iq_peek_branch;
+  /* verilator lint_on UNUSEDSIGNAL */
+  logic next_sources_committed;
   logic [CQ_INDEX_WIDTH-1:0] cq_head;
   logic cq_retire_valid;
   logic special_cancel, special_store_irrevocable, special_branch_redirect;
@@ -261,7 +302,7 @@ module ppc_core #(
       msr[MSR_EE] && !fetch_machine_check_head)) &&
     !fault_pending && !halted_o;
   assign interrupt_admit = interrupt_qualified && !seq_active && cq_empty && normal_idle &&
-    !special_busy && special_ready && !recovery_accepted;
+    lsu_empty && !special_busy && special_ready && !recovery_accepted;
   assign interrupt_resume_pc = resume_override_valid_q ?
     resume_override_target_q : committed_next_pc_q;
   logic [31:0] special_branch_target, special_exception_target, lr, ctr;
@@ -913,6 +954,8 @@ module ppc_core #(
     .wake_valid_i(wake_valid), .wake_i(wake),
     .iu_done_i(iu_result_valid && iu_result_ready),
     .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value),
+    .lsu_done_i(lsu_result_valid), .lsu_producer_i(lsu_result.producer),
+    .lsu_value_i(lsu_result.value),
     .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
   );
   // synthesis translate_off
@@ -926,7 +969,7 @@ module ppc_core #(
   // Only IU results produce operands a held RS entry waits for, so every wait
   // takes the back-to-back bypass.
   always @(posedge clk_i) begin
-    if (rst_ni && station.occupied && !rs_cancel)
+    if (rst_ni && station.occupied && !rs_cancel && !ENABLE_LSU_PIPE)
       assert ((station.entry.a.ready || station.bypass_a) &&
               (station.entry.b.ready || station.bypass_b))
         else $error("RS operand waits on a producer outside the IU");
@@ -963,15 +1006,16 @@ module ppc_core #(
     .ENABLE_FPU(ENABLE_FPU), .DMEM_BITS(DMEM_BITS), .FPU_IMPL(FPU_IMPL),
     .CPU_VARIANT(CPU_VARIANT), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) special (
-    .clk_i, .rst_ni, .dispatch_valid_i(dispatch && special_uop),
-    .dispatch_ready_o(special_ready), .uop_i(dispatch_uop),
-    .dispatch_overlap_i(dispatch_mem_plain || dispatch_fp_mem_plain),
-    .producer_i(alloc_producer), .pc_i(iq_head.pc), .insn_i(iq_head.insn),
+    .clk_i, .rst_ni, .dispatch_valid_i(sp_dispatch_valid),
+    .dispatch_ready_o(special_ready), .uop_i(sp_uop),
+    .dispatch_overlap_i(lsu_adopt_valid || dispatch_mem_plain || dispatch_fp_mem_plain),
+    .dispatch_adopt_i(lsu_adopt_valid && lsu_adopt_response),
+    .producer_i(sp_producer), .pc_i(sp_pc), .insn_i(sp_insn),
     .branch_retire_i(commit && retire_o.branch),
     .branch_retire_lk_i(retire_o.branch_lk), .branch_retire_ctr_i(retire_o.branch_ctr),
     .branch_retire_pc_i(retire_o.pc),
-    .dispatch_page_miss_i(head_page_miss),
-    .a_i(special_a), .b_i(special_b), .c_i(arch_c),
+    .dispatch_page_miss_i(sp_page_miss),
+    .a_i(sp_a), .b_i(sp_b), .c_i(sp_c),
     .cr_i(cr), .xer_flags_i(xer[XER_SO_BIT:XER_CA_BIT]),
     .xer_byte_count_i(xer[XER_BYTE_COUNT_WIDTH-1:0]),
     .cancel_i(special_cancel),
@@ -1010,7 +1054,8 @@ module ppc_core #(
     .watchdog_interrupt_o(watchdog_interrupt), .watchdog_reset_o(watchdog_reset),
     .watchdog_reseto_o(watchdog_reseto),
     .interrupt_taken_o, .interrupt_pc_o,
-    .frontend_quiescent_i(frontend_quiescent), .memory_quiescent_i,
+    .frontend_quiescent_i(frontend_quiescent),
+    .memory_quiescent_i(memory_quiescent_i && lsu_empty),
     .frontend_fence_o(frontend_fence), .context_valid_o, .context_ready_i,
     .redirect_accepted_i(recovery_accepted),
     .store_authorize_i(retire_ready_i), .queue_empty_i(cq_empty),
@@ -1030,13 +1075,15 @@ module ppc_core #(
     .result_select_o(special_result_select),
     .producer_o(special_producer), .store_irrevocable_o(special_store_irrevocable),
     .lr_o(lr), .ctr_o(ctr), .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1),
-    .dmem_req_valid_o, .dmem_req_ready_i,
-    .dmem_req_write_o, .dmem_req_addr_o, .dmem_req_wdata_o,
-    .dmem_req_wstrb_o, .dmem_req_probe_o, .dmem_rsp_valid_i, .dmem_rsp_ready_o,
+    .dmem_req_valid_o(sp_req_valid), .dmem_req_ready_i,
+    .dmem_req_write_o(sp_req_write), .dmem_req_addr_o(sp_req_addr),
+    .dmem_req_wdata_o(sp_req_wdata), .dmem_req_wstrb_o(sp_req_wstrb),
+    .dmem_req_probe_o(sp_req_probe), .dmem_rsp_valid_i(dmem_rsp_valid_i && !lsu_rsp_owner),
+    .dmem_rsp_ready_o(sp_rsp_ready),
     .dmem_rsp_rdata_i, .dmem_rsp_error_i, .dmem_rsp_fault_i,
     .dmem_rsp_page_miss_i,
     .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o,
-    .dmem_req_attr_o, .icache_ctl_valid_o, .icache_ctl_ready_i,
+    .dmem_req_attr_o(sp_req_attr), .icache_ctl_valid_o, .icache_ctl_ready_i,
     .icache_ctl_enable_o, .icache_ctl_invalidate_o, .power_stop_o(power_stop),
     .fp_issue_valid_i(dispatch && (fp_uop || fp_mem_issue)), .fp_issue_ready_o(fp_issue_ready),
     .fp_issue_tag_i(alloc_producer), .fp_issue_insn_i(iq_head.insn),
@@ -1052,15 +1099,20 @@ module ppc_core #(
   assign context_dr_o = msr[MSR_DR];
   assign context_pr_o = msr[MSR_PR];
 
-  assign result_valid = special_result_valid || iu_result_valid;
+  // An adopted access can reach the lane with IU work in flight; that
+  // result waits while the lane owns the port.
+  assign result_valid = lsu_result_valid || special_result_valid ||
+                        (iu_result_valid && !special_result_select);
   // A special op dispatches only into an idle IU and blocks dispatch until
   // it finishes, so the two result sources are never valid together and the
   // registered busy state can steer the payload.
   // Integer work overlapping a plain load or store waits one cycle when both
   // finish together.
-  assign result = special_result_select ? special_result : iu_result;
-  assign special_result_ready = result_ready && special_result_valid;
-  assign iu_result_ready = result_ready && !special_result_select;
+  // A pipelined access result goes first; the lane never has one then.
+  assign result = lsu_result_valid ? lsu_result :
+                  special_result_select ? special_result : iu_result;
+  assign special_result_ready = result_ready && special_result_valid && !lsu_result_valid;
+  assign iu_result_ready = result_ready && !special_result_select && !lsu_result_valid;
   // Classify held identities without depending on cancel-masked valid signals.
   always_comb begin
     rs_cancel = 1'b0;
@@ -1093,7 +1145,7 @@ module ppc_core #(
   // UM 1.1.4.3: no store is performed ahead of an older, uncompleted
   // instruction.
   always @(posedge clk_i)
-    if (rst_ni && dmem_req_valid_o && dmem_req_write_o)
+    if (rst_ni && sp_req_valid && sp_req_write)
       assert (!cq_empty && (cq_head == special_producer.index))
         else $error("store offered behind an older uncompleted instruction");
   // synthesis translate_on
@@ -1134,7 +1186,8 @@ module ppc_core #(
      (normal_uop && alloc_ready && rs_ready && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
-     (special_uop && special_drained && special_ready && flags_ready &&
+     (special_uop && special_drained &&
+      (lsu_route ? (lsu_ready && !special_busy) : special_ready) && flags_ready &&
       (!dispatch_fp_mem_plain || fp_issue_ready) &&
       (!dispatch_pre.gpr_write || dispatch_align || alloc_ready)));
   // A plain load or store (no update, reservation, string, multiple, cache
@@ -1170,19 +1223,35 @@ module ppc_core #(
      ((uop.special_op != SPECIAL_STORE) || !gpr_mapped[uop.src_c]));
   // The check is registered: the head is unchanged while nothing dispatches
   // or recovers, and only dispatch adds a mapping.
+  // On a dispatch the check moves to the entry behind the head, with the
+  // dispatching instruction's destination counted as mapped.
+  always_comb begin
+    logic [31:0] mapped;
+    mapped = gpr_mapped;
+    if (dispatch_uop.gpr_write) mapped[dispatch_uop.dst] = 1'b1;
+    next_sources_committed = ENABLE_LSU_PIPE && iq_peek_valid && iq_pop &&
+      !dispatch_uop.mem_update && (iq_peek_head.fault == FETCH_OK) &&
+      (iq_peek_uop.special_op != SPECIAL_FPU) &&
+      (iq_peek_uop.zero_a || !mapped[iq_peek_uop.src_a]) &&
+      (iq_peek_uop.use_imm || !mapped[iq_peek_uop.src_b]) &&
+      ((iq_peek_uop.special_op != SPECIAL_STORE) || !mapped[iq_peek_uop.src_c]);
+  end
   always_ff @(posedge clk_i) begin
     if (!rst_ni) mem_sources_committed_q <= 1'b0;
+    else if (dispatch) mem_sources_committed_q <= next_sources_committed && !recovery_accepted;
     else mem_sources_committed_q <= mem_sources_committed && iq_valid &&
-                                    !dispatch && !recovery_accepted;
+                                    !recovery_accepted;
   end
   // An FP exception replays through a full recovery, which must not find
   // the special lane busy, so plain accesses wait for FP work to retire.
   // A store writes only at the completion-queue head, so it may dispatch
   // behind FP work that can still fault; recovery then cancels it.
   assign fp_mem_store = (iq_head.insn[31:26] == 6'd31) ? iq_head.insn[8] : iq_head.insn[28];
-  assign special_drained = (cq_empty && normal_idle) ||
-    ((dispatch_mem_plain || dispatch_fp_mem_plain) && mem_sources_committed_q &&
-     (!fp_unsafe_pending || (dispatch_fp_mem_plain && fp_mem_store)));
+  assign special_drained = lsu_route ?
+    (mem_sources_committed_q && !fp_unsafe_pending) :
+    (lsu_empty && ((cq_empty && normal_idle) ||
+     ((dispatch_mem_plain || dispatch_fp_mem_plain) && mem_sources_committed_q &&
+      (!fp_unsafe_pending || (dispatch_fp_mem_plain && fp_mem_store)))));
   // An overlapped FP access issues into the FPU as it dispatches.
   assign fp_mem_issue = special_uop && dispatch_fp_mem_plain &&
     (dispatch_pre.special_op == SPECIAL_FPU);
@@ -1190,6 +1259,102 @@ module ppc_core #(
     !(special_mem_dst_valid &&
       ((uop.src_a == special_mem_dst) || (uop.src_b == special_mem_dst)));
   assign dispatch = iq_valid && iq_ready;
+
+  // Plain integer accesses go to the pipelined unit, including those whose
+  // alignment exception was detected at dispatch; the lane adopts those.
+  assign lsu_route = ENABLE_LSU_PIPE && dispatch_mem_plain;
+  generate
+    if (ENABLE_LSU_PIPE) begin : g_lsu
+      ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS)) lsu (
+        .clk_i, .rst_ni,
+        .dispatch_valid_i(dispatch && special_uop && lsu_route),
+        .dispatch_ready_o(lsu_ready), .uop_i(dispatch_uop),
+        .producer_i(alloc_producer), .pc_i(iq_head.pc), .insn_i(iq_head.insn),
+        .ea_i(dispatch_ea), .data_i(arch_c),
+        .recovery_i(recovery_accepted), .kill_i(recovery_kill),
+        .kill_generation_i(recovery_kill_generation),
+        .store_authorize_i(retire_ready_i), .queue_head_i(cq_head),
+        .lane_idle_i(!special_busy),
+        .req_valid_o(lsu_req_valid), .req_ready_i(dmem_req_ready_i),
+        .req_write_o(lsu_req_write), .req_addr_o(lsu_req_addr),
+        .req_wdata_o(lsu_req_wdata), .req_wstrb_o(lsu_req_wstrb),
+        .req_spec_o(lsu_req_spec), .req_bytes_o(lsu_req_bytes),
+        .rsp_valid_i(dmem_rsp_valid_i), .rsp_ready_o(lsu_rsp_ready),
+        .rsp_rdata_i(dmem_rsp_rdata_i[31:0]), .rsp_error_i(dmem_rsp_error_i),
+        .rsp_fault_i(dmem_rsp_fault_i), .rsp_owner_o(lsu_rsp_owner),
+        .lane_rsp_ready_i(sp_rsp_ready),
+        .result_valid_o(lsu_result_valid), .result_o(lsu_result),
+        .adopt_valid_o(lsu_adopt_valid), .adopt_ready_i(special_ready),
+        .adopt_response_o(lsu_adopt_response), .adopt_uop_o(lsu_adopt_uop),
+        .adopt_producer_o(lsu_adopt_producer), .adopt_pc_o(lsu_adopt_pc),
+        .adopt_insn_o(lsu_adopt_insn), .adopt_ea_o(lsu_adopt_ea),
+        .adopt_data_o(lsu_adopt_data),
+        .empty_o(lsu_empty), .store_irrevocable_o(lsu_store_irrevocable)
+      );
+    end else begin : g_no_lsu
+      assign lsu_ready = 1'b0;
+      assign lsu_req_valid = 1'b0;
+      assign lsu_req_write = 1'b0;
+      assign lsu_req_addr = '0;
+      assign lsu_req_wdata = '0;
+      assign lsu_req_wstrb = '0;
+      assign lsu_req_spec = 1'b0;
+      assign lsu_req_bytes = '0;
+      assign lsu_rsp_ready = 1'b0;
+      assign lsu_rsp_owner = 1'b0;
+      assign lsu_result_valid = 1'b0;
+      assign lsu_result = '0;
+      assign lsu_adopt_valid = 1'b0;
+      assign lsu_adopt_response = 1'b0;
+      assign lsu_adopt_uop = '0;
+      assign lsu_adopt_producer = '0;
+      assign lsu_adopt_pc = '0;
+      assign lsu_adopt_insn = '0;
+      assign lsu_adopt_ea = '0;
+      assign lsu_adopt_data = '0;
+      assign lsu_empty = 1'b1;
+      assign lsu_store_irrevocable = 1'b0;
+    end
+  endgenerate
+  // The lane takes an adopted access in place of a dispatch; a lane dispatch
+  // waits for the unit to empty, so the two never coincide.
+  assign sp_dispatch_valid = lsu_adopt_valid || (dispatch && special_uop && !lsu_route);
+  assign sp_uop = lsu_adopt_valid ? lsu_adopt_uop : dispatch_uop;
+  assign sp_producer = lsu_adopt_valid ? lsu_adopt_producer : alloc_producer;
+  assign sp_pc = lsu_adopt_valid ? lsu_adopt_pc : iq_head.pc;
+  assign sp_insn = lsu_adopt_valid ? lsu_adopt_insn : iq_head.insn;
+  assign sp_a = lsu_adopt_valid ? lsu_adopt_ea : special_a;
+  assign sp_b = lsu_adopt_valid ? 32'b0 : special_b;
+  assign sp_c = lsu_adopt_valid ? lsu_adopt_data : arch_c;
+  assign sp_page_miss = lsu_adopt_valid ? '0 : head_page_miss;
+  // The unit offers only while the lane is idle and the lane only while
+  // busy, so the request port needs no arbitration.
+  always_comb begin
+    dmem_req_valid_o = sp_req_valid || lsu_req_valid;
+    dmem_req_write_o = lsu_req_valid ? lsu_req_write : sp_req_write;
+    dmem_req_addr_o = lsu_req_valid ? lsu_req_addr : sp_req_addr;
+    dmem_req_wdata_o = lsu_req_valid ? lsu_req_wdata : sp_req_wdata;
+    dmem_req_wstrb_o = lsu_req_valid ? lsu_req_wstrb : sp_req_wstrb;
+    dmem_req_probe_o = !lsu_req_valid && sp_req_probe;
+    dmem_req_attr_o = sp_req_attr;
+    if (lsu_req_valid) begin
+      dmem_req_attr_o = '0;
+      dmem_req_attr_o.kind = DMEM_NORMAL;
+      dmem_req_attr_o.spec = lsu_req_spec;
+      dmem_req_attr_o.bytes = lsu_req_bytes;
+      dmem_req_attr_o.last = 1'b1;
+    end
+    dmem_rsp_ready_o = lsu_rsp_owner ? lsu_rsp_ready : sp_rsp_ready;
+  end
+  // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni) begin
+      assert (!(sp_req_valid && lsu_req_valid))
+        else $error("lane and pipelined unit offered together");
+      assert (!(lsu_adopt_valid && dispatch && special_uop && !lsu_route))
+        else $error("adoption collided with a lane dispatch");
+    end
+  // synthesis translate_on
 
   // Performance events: the cause of each cycle without a dispatch. The
   // cause and all its inputs only feed the registered event.
@@ -1216,6 +1381,7 @@ module ppc_core #(
     else if (bu_redirect_q) perf_slot = PERF_BRANCH_REFETCH;
     else if (special_busy)
       perf_slot = perf_special_mem_q ? PERF_LSU_BUSY : PERF_SPECIAL_BUSY;
+    else if (special_uop && lsu_route && !lsu_ready) perf_slot = PERF_LSU_BUSY;
     else if (bu_branch && !bu_ready) perf_slot = PERF_DRAIN_BRANCH;
     else if (special_uop && !special_drained)
       perf_slot = perf_head_branch ? PERF_DRAIN_BRANCH :
@@ -1309,6 +1475,11 @@ module ppc_core #(
   logic [3:0] dq1_branch;
   iq_pair_t dq1_pair;
   assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair} = iq_dq1;
+  // The entry after DQ0 next cycle: DQ1, or the lane-0 push when DQ1 is empty.
+  assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && iq_push0));
+  assign {iq_peek_head, iq_peek_uop, iq_peek_folded, iq_peek_branch} = iq_valid1 ?
+      {dq1_head, dq1_uop, dq1_folded, dq1_branch} :
+      {queued, push_uop, fold_predict, push_branch};
   always @(posedge clk_i) begin
     iq_pair_t dq1_expected;
     dq1_expected = pair_predecode(dq1_uop, dq1_head.insn, dq1_head.fault != FETCH_OK);
@@ -1434,7 +1605,8 @@ module ppc_core #(
         special_branch_target : cq_retire.pc;
     end else begin
       selected_redirect_valid = ENABLE_TEST_REDIRECT && redirect_valid_i && !halted_o &&
-        !special_store_irrevocable && !special_exception_irrevocable &&
+        !special_store_irrevocable && !lsu_store_irrevocable &&
+        !special_exception_irrevocable &&
         (redirect_target_i[1:0] == 2'b00);
       // A disabled test port must not reach recovery logic.
       selected_redirect_all = !ENABLE_TEST_REDIRECT || redirect_all_i;

@@ -27,6 +27,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_miss_derive.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_watchdog.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_special.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_lsu_sequence.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_lsu_pipe.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_core.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/ppc_bus60x_arbiter.sv

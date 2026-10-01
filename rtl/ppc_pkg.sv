@@ -177,6 +177,9 @@ package ppc_pkg;
     // 1; ds_tag is packet 0 bits 2-27, the key bit and SR bits 3-27.
     logic ds;
     logic [25:0] ds_tag;
+    // A pipelined access with an older access still unresolved: accepted
+    // only where a speculative access is harmless (UM 3.5.5.2).
+    logic spec;
   } dmem_attr_t;
   typedef enum logic [2:0] {
     CACHE_OP_NONE, CACHE_OP_DCBF, CACHE_OP_DCBST, CACHE_OP_DCBI,

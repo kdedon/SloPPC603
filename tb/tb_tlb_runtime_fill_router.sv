@@ -128,6 +128,7 @@ module tb_tlb_runtime_fill_router #(parameter bit ENABLE_FILL = 1'b1,
     page_miss_o, tlb_inv_ack_valid_o};
   logic [68:0] unused_imem_page_miss, unused_dmem_page_miss;
   logic [1:0] unused_imem_rsp_esa_1;
+  logic data_spec_ok_i = 1'b0;
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1), .ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1), .ENABLE_TLB_INVALIDATE(1'b1),

@@ -36,6 +36,9 @@ module ppc_core_bat #(
   parameter bit ENABLE_FPU = 1'b0,
   // 64 carries an aligned FP doubleword as one physical access.
   parameter int DMEM_BITS = 32,
+  // A data cache sits behind the router: a speculative access from the
+  // pipelined load/store unit may be accepted for a cacheable page.
+  parameter bit ENABLE_DATA_SPECULATION = 1'b0,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -475,6 +478,8 @@ module ppc_core_bat #(
     .imem_rsp_page_miss_o(imem_rsp_page_miss),
     .dmem_req_valid_i(dmem_req_valid && !sync_req),
     .dmem_req_ready_o(router_dmem_req_ready),
+    .data_spec_ok_i(ENABLE_DATA_SPECULATION && pin_status_o.dcache_enable &&
+                    !pin_status_o.dcache_lock),
     .dmem_req_write_i(dmem_req_write), .dmem_req_attr_i(dmem_req_attr),
     .dmem_req_addr_i(dmem_req_addr),
     .dmem_req_wdata_i(dmem_req_wdata), .dmem_req_wstrb_i(dmem_req_wstrb),

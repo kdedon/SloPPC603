@@ -194,8 +194,10 @@ module tb_core_data_fault_cancel;
     if(mode==3) begin
       // The typed response is accepted, then the external cut wins while the
       // special lane holds the unpublished memory result.
+      // A faulting response may wait one cycle for the lane to take it.
       rv=1;
-      #1;check(rr,"typed response did not find waiting load");
+      #1;if(!rr) tick();
+      check(rr,"typed response did not find waiting load");
       tick();rv=0;
       check(!tv,"typed result retired before cancellation window");
     end

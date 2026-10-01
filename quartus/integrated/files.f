@@ -17,6 +17,7 @@
 ../../rtl/ppc_watchdog.sv
 ../../rtl/ppc_special.sv
 ../../rtl/ppc_lsu_sequence.sv
+../../rtl/ppc_lsu_pipe.sv
 ../../rtl/ppc_core.sv
 ../../rtl/ppc_bus60x.sv
 ../../rtl/ppc_bus60x_arbiter.sv

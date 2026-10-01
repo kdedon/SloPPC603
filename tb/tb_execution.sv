@@ -77,7 +77,8 @@ module tb_execution;
     .entry_i(dp_entry),
     .wake_valid_i(dp_wake_valid), .wake_i(dp_wake),
     .iu_done_i(iu_result_valid && iu_result_ready),
-    .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value),
+    .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value), .lsu_done_i(1'b0), .lsu_producer_i('0),
+    .lsu_value_i(32'b0),
     .issue_valid_o(dp_issue_valid), .issue_ready_i(dp_issue_ready),
     .issue_o(dp_issue)
   );
@@ -100,7 +101,8 @@ module tb_execution;
     .dispatch_valid_i(ln_valid), .dispatch_ready_o(ln_ready),
     .entry_i(ln_entry), .wake_valid_i(1'b0), .wake_i('0),
     .iu_done_i(ln_result_valid && ln_result_ready),
-    .iu_producer_i(ln_result.producer), .iu_value_i(ln_result.value),
+    .iu_producer_i(ln_result.producer), .iu_value_i(ln_result.value), .lsu_done_i(1'b0), .lsu_producer_i('0),
+    .lsu_value_i(32'b0),
     .issue_valid_o(ln_issue_valid), .issue_ready_i(ln_issue_ready),
     .issue_o(ln_issue)
   );

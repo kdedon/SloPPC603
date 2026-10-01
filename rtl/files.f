@@ -17,4 +17,5 @@
 ../rtl/ppc_watchdog.sv
 ../rtl/ppc_special.sv
 ../rtl/ppc_lsu_sequence.sv
+../rtl/ppc_lsu_pipe.sv
 ../rtl/ppc_core.sv

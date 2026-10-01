@@ -165,10 +165,11 @@ module ppc_core_bat_bus60x #(
   logic [2:0] unused_icache_ctl;
   ppc_pkg::dmem_attr_t dmem_req_attr;
   logic [5:0] bus_req_attr;
-  // No direct-store here: the core leaves ENABLE_DIRECT_STORE off.
+  // No direct-store here, and speculation was resolved by translation.
   logic unused_attr;
   assign unused_attr = ^{dmem_req_attr.fp, dmem_req_attr.bytes,
-    dmem_req_attr.last, dmem_req_attr.ds, dmem_req_attr.ds_tag};
+    dmem_req_attr.last, dmem_req_attr.ds, dmem_req_attr.ds_tag,
+    dmem_req_attr.spec};
   logic imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_rsp_insn;
   logic imem_rsp_error;

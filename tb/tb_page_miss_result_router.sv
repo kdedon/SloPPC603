@@ -108,6 +108,7 @@ module tb_page_miss_result_router #(parameter bit ENABLE_PAGE_MISS_RESULTS=1'b1)
   logic [4:0] unused_tlb_inv_router;
   logic [4:0] unused_tlb_fill_router;
   logic [1:0] unused_imem_rsp_esa_1;
+  logic data_spec_ok_i = 1'b0;
   ppc_bat_memory_router #(.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1), .ENABLE_SEGMENT_REGISTERS(1'b1),
     .ENABLE_PAGE_TRANSLATION(1'b1),

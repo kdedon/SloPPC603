@@ -103,7 +103,8 @@ Table 6-6's 2-cycle latency and 1-cycle interval are not met by any access:
 the lane holds one access at a time (offer, translate, cache, result), as it
 does for integer loads. FP accesses add the FPU's issue-to-request cycle and,
 for stores, the commit at the CQ head before the write. The two-stage LSU
-(P3) is the remaining step.
+(P3) is the remaining step; integer accesses have it behind a parameter
+([LSU_PIPELINE.md](LSU_PIPELINE.md)).
 
 ## Lane sequence (loads and stores)
 

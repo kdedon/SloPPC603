@@ -199,6 +199,9 @@ module ppc_biu #(
   logic ds_select, arb_dmem_req_ready, arb_dmem_rsp_valid, arb_dmem_rsp_error;
   logic [31:0] arb_dmem_rsp_rdata;
 
+  // Speculation was resolved before the request reached the bus.
+  logic unused_attr_spec;
+  assign unused_attr_spec = dmem_req_attr_i.spec;
   ppc_bus60x_arbiter #(.RETURN_IFETCH_ERROR(RETURN_IFETCH_ERROR)) scalar_router (
     .clk_i, .rst_ni,
     .imem_req_valid_i, .imem_req_ready_o, .imem_req_addr_i,

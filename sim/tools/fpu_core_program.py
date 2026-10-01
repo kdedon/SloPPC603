@@ -74,7 +74,19 @@ LATENCY.update({'lfd': 6, 'lfs': 6, 'stfd': 7, 'stfs': 7, 'stfiwx': 7,
 # arithmetic that produces its data.
 MEMORY_SPACING = {'lfd-issue': 15, 'lfd-retire': 15, 'lfs-issue': 15, 'lfs-retire': 15,
                   'stfd-issue': 18, 'stfd-retire': 18, 'stfs-issue': 18,
-                  'stfs-retire': 18, 'fadd-stfd': 6}
+                  'stfs-retire': 18, 'fadd-stfd': 6, 'stw-retire': 12}
+
+
+# With the pipelined load/store unit and a memory that takes one access per
+# cycle, integer loads meet Table 6-6: 2-cycle latency (one more than add),
+# one per cycle.
+LSU_PIPE = False
+
+
+def use_lsu_pipe():
+    global LSU_PIPE
+    LSU_PIPE = True
+    LATENCY.update({'lwz': 4, 'stw': 4})
 
 
 def use_split_doublewords():
@@ -744,6 +756,24 @@ def fp_memory_streams(p, forms):
     pcs = [p.emit(with_dst(forms['fadd'], 4)),
            p.emit((forms['stfd'] & ~(31 << 21)) | (4 << 21))]
     p.spacings.append(('R', pcs[0], pcs[1], MEMORY_SPACING['fadd-stfd']))
+    if LSU_PIPE:
+        integer_memory_streams(p)
+
+
+def integer_memory_streams(p):
+    """Table 6-6 integer rows: four independent loads issue and retire one
+    per cycle; a dependent add retires the cycle after its load (2-cycle
+    load-use); stores offer at the completion-queue head."""
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(32, 10 + k, 22, 4 * k)) for k in range(4)]
+    p.spacings.append(('I', pcs[0], pcs[-1], 3))
+    p.spacings.append(('R', pcs[0], pcs[-1], 3))
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(32, 10, 22, 0)), p.emit(x_form(31, 11, 10, 10, 266))]
+    p.spacings.append(('R', pcs[0], pcs[1], 1))
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(36, 10 + k, 22, 16 + 4 * k)) for k in range(4)]
+    p.spacings.append(('R', pcs[0], pcs[-1], MEMORY_SPACING['stw-retire']))
 
 
 def build(seed, count):
@@ -821,11 +851,15 @@ def main():
     parser.add_argument('--seed', type=lambda s: int(s, 0), default=0x603e)
     parser.add_argument('--random', type=int, default=200)
     parser.add_argument('--dmem-bits', type=int, choices=(32, 64), default=64)
+    parser.add_argument('--lsu-pipe', action='store_true',
+                        help='pipelined LSU and one-access-per-cycle memory')
     args = parser.parse_args()
     if args.chip_image:
         use_chip_layout()
     if args.dmem_bits == 32:
         use_split_doublewords()
+    if args.lsu_pipe:
+        use_lsu_pipe()
     p = build(args.seed, args.random)
     print(f'fpu_core_program: {len(p.words)} words, {len(p.expects)} expected, '
           f'{len(p.log)} exceptions, {len(p.probes)} probes')

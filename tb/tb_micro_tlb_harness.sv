@@ -128,6 +128,7 @@ module tb_micro_tlb_harness #(
   ppc_pkg::mmu_602_t mmu_602_i;
   logic [4:0] tlb_fill_req_ext_i;
   ppc_pkg::esa_enable_t imem_rsp_esa;
+  logic data_spec_ok_i = 1'b0;
   ppc_bat_memory_router #(
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_RUNTIME_BAT(1'b1),
     .ENABLE_SEGMENT_REGISTERS(1'b1), .ENABLE_PAGE_TRANSLATION(1'b1),

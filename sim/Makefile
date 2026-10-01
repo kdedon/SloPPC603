@@ -1945,6 +1945,16 @@ test-core-fpu:
 	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=0 $(SIM_ARGS)
 
+# The same program with the pipelined LSU over a memory taking one access per
+# cycle; adds the Table 6-6 integer load/store rows.
+.PHONY: test-core-lsu-timing
+test-core-lsu-timing:
+	mkdir -p $(BUILD_DIR)/core-lsu-timing
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GPIPE_MEM=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe
+	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=0 $(SIM_ARGS)
+
 # The same program over a 32-bit data path: doublewords split into two words.
 FPU_CORE_SPLIT_IMAGE := $(BUILD_DIR)/core-fpu-split/program.txt
 test-core-fpu-split:
