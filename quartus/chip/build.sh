@@ -5,15 +5,28 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "${script_dir}/../.." && pwd)"
-mode="${1:-local}"
+# --dual builds the core at DISPATCH_WIDTH 2.
+mode=local
+dual=0
+for arg in "$@"; do
+  case "${arg}" in
+    local|--docker) mode="${arg}" ;;
+    --dual) dual=1 ;;
+    *) echo "usage: $0 [--docker] [--dual]" >&2; exit 2 ;;
+  esac
+done
 . "${script_dir}/../../ci/pins.env"
 image="${QUARTUS_IMAGE:-${QUARTUS_IMAGE_PIN}}"
-case "${mode}" in local|--docker) ;; *) echo "usage: $0 [--docker]" >&2; exit 2 ;; esac
 python3 "${script_dir}/../qsf_sources.py" "${script_dir}"
 python3 "${script_dir}/../check_virtual_ports.py" "${script_dir}/ppc603e_measure.sv" "${script_dir}/ppc603e_chip.qsf"
 evidence_dir="${script_dir}/evidence/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "${evidence_dir}"
-trap 'printf "%s\n" "$?" > "${evidence_dir}/script-exit-status.txt"' EXIT
+qsf="${script_dir}/ppc603e_chip.qsf"
+if [[ "${dual}" == 1 ]]; then
+  cp "${qsf}" "${qsf}.keep"
+  echo 'set_global_assignment -name VERILOG_MACRO "PPC_DISPATCH_WIDTH=2"' >> "${qsf}"
+fi
+trap 'status=$?; if [[ -f "${qsf}.keep" ]]; then mv "${qsf}.keep" "${qsf}"; fi; printf "%s\n" "${status}" > "${evidence_dir}/script-exit-status.txt"' EXIT
 manifest() {
   (
     cd "${script_dir}"
