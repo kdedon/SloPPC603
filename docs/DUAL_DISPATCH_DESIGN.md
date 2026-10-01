@@ -1,6 +1,6 @@
 # Dual dispatch and dual completion design
 
-Design document, 2026-09-30. Slices 0 and 1 are implemented
+Design document, 2026-09-30. Slices 0 and 1 are implemented, slice 2 in part
 ([status](#slice-status)). It maps the 603e's
 two-per-cycle dispatch and completion (TASK_PLAN P11) onto the current core and
 splits the work into slices with acceptance tests. Code is cited at
@@ -308,7 +308,8 @@ coordinator runs `ci`, `xrand-sweep` and the fits.
 |---|---|---|
 | 0 | Done | `ppc_core` `+DISPATCH_TRACE=<path>` monitor (simulation only); `sim/tools/check_dispatch_trace.py`; expected schedule `sim/spec/schedules/stage.txt`; mutation tests `sim/tools/test_dispatch_trace.py` |
 | 1 | Done; chip top meets 66 MHz, translated fit left to the coordinator | `rtl/ppc_iq.sv`; `FETCH_WIDTH` in `ppc_fetch`, `ppc_core`, `ppc_icache`; `iq_pair_t`/`pair_predecode` in `ppc_pkg`; bench `tb/tb_core_fetch2.sv` |
-| 2–7 | Not started | |
+| 2 | Ports and unit benches done; width-1 trace equivalence not yet run | `ppc_regfile_gpr` (`DUAL_WRITE`), `ppc_rename`, `ppc_completion` (`ENABLE_PAIR_RETIRE`), `retire1_*` on `ppc_core`; benches `tb/tb_regfile_gpr_ports.sv`, `tb/tb_rename_pair.sv`, `tb/tb_completion_pair.sv` |
+| 3–7 | Not started | |
 
 Slice 0. The monitor writes one line per cycle with a dispatch or an accepted
 retirement: `<cycle> D<n> R<n> <dispatch pcs> | <retire pcs>`, cycle 0 being
@@ -372,6 +373,53 @@ ns, hold +0.152 / +0.164 / +0.116 / +0.091 ns) and 66 MHz: no endpoint fails at
 15.152 ns. 10,830 ALMs, 12,032 registers, 36 M10K. The 50 MHz worst setup path
 was not identified, so no Fmax is derived. The translated and integrated fits
 that the slice 1 acceptance names were not run here.
+
+Slice 2. The GPR file has six read ports and, with `DUAL_WRITE`, two write
+ports over a live-value table: one bank of six MLAB copies per write port and
+32 select flops; port 1 wins a same-register write and reads in the write
+cycle return the old value. Rename has DQ1 lookups, two allocations (lowest
+and second-lowest free slot, both from the `valid` flops; lane 1 allocates
+only beside lane 0 and wins a same-register map write) and two releases. The
+CQ allocates at `tail` and `tail+1` and, with `ENABLE_PAIR_RETIRE`, offers
+CQ[1] on `retire1_*` when it is finished, `cq1_ok`, free of faults, and the
+pair writes at most two GPRs, one flag packet, one FPR and one LR/CTR;
+`head+1` and `tail+1` are flops, and an offered CQ[1] is irrevocable.
+`retire_packet_t` gains `cq1_ok` and `fpr_write`, set at allocation. The core
+wires CQ[1] to GPR port 1 and the second rename release; flags, LR/CTR,
+`committed_next_pc_q` and the FPU commit for CQ[1] are slice 5.
+
+Deviations at width 1. The live-value-table select is one LUT level between
+the GPR read and the dispatch EA adder; with it the chip top missed 66 MHz by
+1.069 ns (614 endpoints, all from the IQ). `DUAL_WRITE` is therefore
+`DISPATCH_WIDTH == 2`, and width 1 keeps one write port and the deferred
+update-base write. Width 2 needs the EA added from captured operands (P3)
+before the table goes back on that path. The one-cycle dispatch hold after an
+update load stays at both widths, so removing it is a separate, measured CPI
+change.
+
+Recorded: `make -C sim lint check-spec test-regfile-gpr-ports test-regfile-tgpr test-rename-pair test-completion`, commits a95efb1 and af5d282, 2026-10-01.
+All pass. `test-regfile-gpr-ports` checks all six read ports against a model,
+with and without TGPR: 242,880 read checks; each register written from each
+port and read through every port; 64 write-write pairs across edges in both
+port orders; about 10,000 cycles each of port 0 alone, port 1 alone and both;
+33,263 / 25,399 same-cycle reads of a register being written on port 0 / 1.
+A mutation (port 1 not setting the table) fails it. `test-rename-pair`:
+2,181,383 checks over 50,000 random cycles, 12,043 dual allocations (4,172
+same-register), 10,864 dual releases, 1,351 recovery rebuilds, plus directed
+WAW and release-order cases. `test-completion` adds `tb_completion_pair`: 575
+checks from every head slot, 40 pair and 55 single retirements, each CQ[1]
+rule and limit, lane-1 readiness at one free slot, and pivot recovery with
+CQ[1] offered (refused when it would kill CQ[1]; survivors exclude both
+retiring entries). This establishes the port logic; no core bench drives a
+second lane yet.
+
+Recorded: Quartus 17 `quartus_map --analysis_and_elaboration`, `./quartus/chip/build.sh --docker` and `./quartus/report-target-paths.sh chip --docker`, commit af5d282, 2026-10-01.
+The chip top (`ppc603e_measure`, width 1, batch 8 merged with P3 off)
+elaborates with no errors and fits: 50 MHz met at every corner (setup +4.955 /
++4.895 / +7.675 / +7.973 ns, hold +0.196 / +0.197 / +0.133 / +0.117 ns); at
+15.152 ns no endpoint fails. 11,540 ALMs, 13,249 registers, 36 M10K, 50 MLAB
+LABs (24,576 MLAB bits), 2 DSP. The failed 66 MHz fit above was commit b26aa1f
+(table at width 1): 12,822 ALMs. No translated or integrated fit was run.
 
 ## Risks
 
