@@ -6,7 +6,8 @@
 /* verilator lint_off ASCRANGE */
 module ppc603e_measure #(
   // Part the build models; see cpu_cfg().
-  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E
+  parameter ppc_pkg::cpu_variant_e CPU_VARIANT = ppc_pkg::CPU_PID7V_603E,
+  parameter bit ENABLE_FPU = 1'b0
 ) (
   input logic sysclk,
   input logic [0:3] pll_cfg_i,
@@ -228,7 +229,7 @@ module ppc603e_measure #(
   logic [0:2] test_i_ibq;
   always_ff @(posedge sysclk) test_i_ibq <= test_i;
 
-  ppc603e #(.CPU_VARIANT(CPU_VARIANT)) dut (
+  ppc603e #(.CPU_VARIANT(CPU_VARIANT), .ENABLE_FPU(ENABLE_FPU)) dut (
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(), .bus_ce_o(),
     /* verilator lint_on PINCONNECTEMPTY */
