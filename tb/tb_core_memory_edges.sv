@@ -16,6 +16,7 @@ module tb_core_memory_edges;
   logic [31:0] da, wd, rd;
   logic [3:0] st;
   logic tv, tr, halted;
+  logic taken;
   retire_packet_t retired;
   logic cut, cut_accepted;
   logic [31:0] target, first_word;
@@ -181,7 +182,8 @@ module tb_core_memory_edges;
     dr=1;
     tick();dr=0;
     require(requests==1,"request not accepted exactly once");
-    rv=1; re=error;
+    // Ready may depend on the response payload; let it settle.
+    rv=1; re=error; #1;
     while(!rr) tick();
     tick();rv=0;re=0;
   endtask
@@ -227,8 +229,10 @@ module tb_core_memory_edges;
       wait_request();dr=1;tick();dr=0;
       require(requests==1 && rr,"accepted load did not await response");
       cut=1;rv=(coincident!=0);re=1;
-      #1;require(cut_accepted,"accepted-load cut rejected");tick();cut=0;
-      if(coincident==0) begin rv=1;while(!rr) tick();tick();end
+      #1;require(cut_accepted,"accepted-load cut rejected");
+      taken=rv && rr;tick();cut=0;
+      // A coincident reply not taken on the cut edge stays offered.
+      if(!taken) begin rv=1;#1;while(!rr) tick();tick();end
       rv=0;re=0;tr=1;await_halt();
       require(requests==1 && dut.regfile.gpr[3]==0,"cancelled accepted response produced an effect");
     end
@@ -237,12 +241,14 @@ module tb_core_memory_edges;
     reset_core(32'h9000_1000);
     expected_count=3;expect_packet(0,0,0,0,0,0);expect_packet(1,4,0,1,8,8);expect_packet(2,8,1,0,0,0);
     repeat(20) begin tick();require(!dv,"store offered before retirement authorization");end
-    tr=1;wait_request();tr=0;
+    // The offer may follow retirement authorization combinationally; hold
+    // the authorization through one edge so the offer is registered.
+    tr=1;wait_request();tick();tr=0;
     require(dw && da==32'h1000 && st==4'hf,"store request fixture");
     cut=1;#1;require(!cut_accepted,"offered store was cancellable");repeat(3) tick();
     dr=1;tick();dr=0;require(requests==1 && !cut_accepted,"accepted store was cancellable");
     repeat(3) begin tick();require(!cut_accepted,"waiting store was cancellable");end
-    rv=1;re=0;while(!rr) tick();tick();rv=0;
+    rv=1;re=0;#1;while(!rr) tick();tick();rv=0;
     while(!tv) tick();
     require(!cut_accepted,"finished store was cancellable");repeat(3) tick();
     tr=1;#1;require(!cut_accepted,"store commit cut should reject");tick();cut=0;

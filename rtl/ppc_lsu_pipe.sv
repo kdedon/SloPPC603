@@ -75,7 +75,8 @@ module ppc_lsu_pipe #(
 
   entry_t p1_q [2], p2_q [2];
   logic [1:0] p1_count_q, p2_count_q;
-  logic r_valid_q, rsp_to_lane_q, offered_q;
+  logic r_valid_q, rsp_to_lane_q, offered_q, store_done_q;
+  logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] store_done_index_q;
   result_packet_t r_q;
 
   function automatic logic killed_now(input completion_tag_t producer);
@@ -163,10 +164,12 @@ module ppc_lsu_pipe #(
 
   // --------------------------------------------------------------- Adopt
   // The oldest entry is handed over only while R is empty, so the result
-  // port never sees both.
-  assign p2_adopt = rsp_mine && !p2_head.killed && !rsp_ok && !r_valid_q && lane_idle_i;
+  // port never sees both, and never on the edge recovery removes it.
+  assign p2_adopt = rsp_mine && !p2_head.killed && !killed_now(p2_head.producer) &&
+                    !rsp_ok && !r_valid_q && lane_idle_i;
   assign p1_adopt = !p2_valid && !r_valid_q && p1_valid && !p1_head.fast &&
-                    !p1_head.killed && lane_idle_i && !rsp_to_lane_q;
+                    !p1_head.killed && !killed_now(p1_head.producer) &&
+                    lane_idle_i && !rsp_to_lane_q;
   assign adopt_valid_o = p2_adopt || p1_adopt;
   assign adopt_fire = adopt_valid_o && adopt_ready_i;
   assign adopt_response_o = p2_adopt;
@@ -254,14 +257,18 @@ module ppc_lsu_pipe #(
       r_valid_q <= 1'b0;
       rsp_to_lane_q <= 1'b0;
       offered_q <= 1'b0;
+      store_done_q <= 1'b0;
     end else begin
       r_valid_q <= p2_retire && !p2_head.killed && !killed_now(p2_head.producer);
       offered_q <= offer && !req_ready_i;
+      if (p2_retire && p2_head.store && !p2_head.killed) store_done_q <= 1'b1;
+      else if (queue_head_i != store_done_index_q) store_done_q <= 1'b0;
       if (adopt_fire && p2_adopt) rsp_to_lane_q <= 1'b1;
       else if (rsp_valid_i && lane_rsp_ready_i && rsp_to_lane_q) rsp_to_lane_q <= 1'b0;
     end
   end
   always_ff @(posedge clk_i) begin
+    if (p2_retire && p2_head.store) store_done_index_q <= p2_head.producer.index;
     if (p2_retire) begin
       r_q <= '0;
       r_q.producer <= p2_head.producer;
@@ -271,9 +278,12 @@ module ppc_lsu_pipe #(
   end
 
   assign empty_o = !p1_valid && !p2_valid && !r_valid_q && !rsp_to_lane_q;
+  // A store is irrevocable from its offer to its retirement. It offers only
+  // at the completion-queue head, so it has retired once the head moves.
   assign store_irrevocable_o = (offer && p1_head.store) ||
     (p2_valid && p2_head.store && !p2_head.killed) ||
-    (p2_count_q == 2'd2 && p2_q[1].store && !p2_q[1].killed);
+    (p2_count_q == 2'd2 && p2_q[1].store && !p2_q[1].killed) ||
+    (store_done_q && (queue_head_i == store_done_index_q));
 
   // synthesis translate_off
   assert property (@(posedge clk_i) disable iff (!rst_ni)

@@ -248,7 +248,10 @@ module tb_core_data_fault #(
                   insn==32'h7cc4296e || insn==32'h84640004 ||
                   insn==32'h7c64282e) begin
             if(model_pc==20) begin
-              check(!dpending && requests==1,"older store retired after response");older_stores++;
+              // The younger access may already be requested, but only after
+              // the store's response.
+              check((!dpending && requests==1) || requests==2,
+                    "older store retired after response");older_stores++;
             end
             if(model_pc==24 && phase==2) begin
               writes=1;value=32'ha1b2c3d4;

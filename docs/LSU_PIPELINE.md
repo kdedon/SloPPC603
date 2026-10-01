@@ -22,7 +22,8 @@ dispatch -> P1 offer -> P2 await response -> R result -> CQ -> retire
 - P1 (two entries) offers the oldest access. A load offers at once; a store
   offers only at the completion-queue head with retirement authorized, the
   rule of UM 1.1.4.3 the lane already follows. An offer stands until
-  accepted.
+  accepted. From its offer until it retires a store cannot be cancelled by
+  an external redirect, as in the lane.
 - P2 (two entries) holds accepted accesses and takes their responses in order.
   A good response is aligned, sign-extended or byte-reversed into R.
 - R finishes the completion entry. It has priority on the CQ result port; an
@@ -48,7 +49,9 @@ access, through its normal dispatch port:
   its wait state, consumes it, so the fault is classified by the existing
   logic and no access is repeated. Such a response always ends in an
   exception or halt, so the entries behind it are dropped; accepted ones
-  are drained.
+  are drained. The lane takes the response one cycle after it arrives.
+  An entry that recovery removes on that edge is not adopted; its
+  response is drained.
 
 The lane offers only while busy and the unit only while the lane is idle, so
 the data port needs no arbiter. Any other lane dispatch, interrupt admission
@@ -66,7 +69,12 @@ drives from `ENABLE_DATA_SPECULATION` (set by the cached top) and HID0[DCE]
 without HID0[DLOCK]; the uncached tops never accept one. A speculative request may be withdrawn
 before acceptance when the older access faults or recovery removes it; every
 other request stands until accepted, as the lane's do, and a removed entry's
-response is drained.
+response is drained. The micro-TLB never holds a direct-store (T=1) segment,
+so a speculative access to one waits until it is not speculative, then
+takes the direct-store path like a lane access.
+
+A load may be requested once every older access has its response, before
+an older store retires: the store has been performed and cannot fault.
 
 ## Measured timing
 
