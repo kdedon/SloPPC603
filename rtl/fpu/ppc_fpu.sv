@@ -269,7 +269,12 @@ module ppc_fpu #(
   logic dec_exec, dec_mem, dec_write, dec1_exec, dec1_mem, dec1_write;
   logic pair_ok, ready_if_mem, ready_if_exec;
   logic retire_credit, retire_credit2, space_ok, space1_ok;
-  logic fpr_ok, fpr1_ok;
+  logic fpr1_ok;
+  // Issue readiness from state alone, without a retirement and with the
+  // head retiring; kept apart so retirement selects them last.
+  logic issue_ready_idle /* synthesis keep */;
+  logic issue_ready_retire /* synthesis keep */;
+  logic issue_ready_base /* synthesis keep */;
   logic div_busy;
   logic barrier_present;
   logic source_waiting;
@@ -922,18 +927,24 @@ module ppc_fpu #(
     space1_ok = pending_count_q < 3'(PENDING_DEPTH-1) ||
         (pending_count_q == 3'(PENDING_DEPTH-1) && retire_fire) ||
         retire1_fire;
-    fpr_ok = !dec_write || fpr_count_q != 3'd4 || retire_credit;
     case ({1'b0, dec_write} + {1'b0, dec1_write})
       2'd0: fpr1_ok = 1'b1;
       2'd1: fpr1_ok = fpr_count_q < 3'd4 || retire_credit;
       default: fpr1_ok = fpr_count_q < 3'd3 ||
           (fpr_count_q == 3'd3 && retire_credit) || retire_credit2;
     endcase
-    issue_ready_o = rst_ni && !kill_all_i && !abort_valid_i &&
+    issue_ready_base = rst_ni && !kill_all_i && !abort_valid_i &&
         !barrier_present && !duplicate_tag &&
         (dec_mem ? ready_if_mem : dec_exec ? ready_if_exec : !exec_found) &&
-        (!is_barrier(decoded.kind, decoded.op) || pending_count_q == 3'd0) &&
-        space_ok && fpr_ok;
+        (!is_barrier(decoded.kind, decoded.op) || pending_count_q == 3'd0);
+    issue_ready_retire = issue_ready_base &&
+        (!dec_write || fpr_count_q != 3'd4 || pv[0].dest_fpr);
+    issue_ready_idle = issue_ready_base &&
+        pending_count_q != 3'(PENDING_DEPTH) &&
+        (!dec_write || fpr_count_q != 3'd4);
+    issue_ready_o = issue_ready_idle || (retire_fire && issue_ready_retire) ||
+        (retire_fire && retire1_fire && issue_ready_base &&
+         (!dec_write || fpr_count_q != 3'd4 || pv[1].dest_fpr));
   end
 
   always_comb begin
@@ -964,7 +975,7 @@ module ppc_fpu #(
       work_decoded = exec_entry.decoded;
       work_ea = exec_entry.ea;
       work_valid = 1'b1;
-    end else if (issue_valid_i) begin
+    end else begin
       work_issue.tag = issue_i.tag;
       work_issue.insn = issue_i.insn;
       work_issue.msr_fp = issue_i.msr_fp;
@@ -973,7 +984,7 @@ module ppc_fpu #(
       work_issue.msr_pr = issue_i.msr_pr;
       work_decoded = decoded;
       work_ea = issue_ea;
-      work_valid = 1'b1;
+      work_valid = issue_valid_i;
       work_dispatch = 1'b1;
     end
     work_admitted = !work_dispatch || dispatch_fire;
@@ -1074,13 +1085,13 @@ module ppc_fpu #(
       work1_ea = second_entry.ea;
       work1_valid = 1'b1;
       work1_old = 1'b1;
-    end else if (exec_found && issue_valid_i) begin
+    end else if (exec_found) begin
       work1_issue.tag = issue_i.tag;
       work1_issue.insn = issue_i.insn;
       work1_issue.msr_fp = issue_i.msr_fp;
       work1_decoded = decoded;
       work1_ea = issue_ea;
-      work1_valid = 1'b1;
+      work1_valid = issue_valid_i;
     end else if (!exec_found && issue1_valid_i) begin
       work1_issue.tag = issue1_i.tag;
       work1_issue.insn = issue1_i.insn;
@@ -1851,15 +1862,10 @@ module ppc_fpu #(
     logic [15:6] insn0;
     logic [15:6] insn1;
     logic context1;
-    insn0 = '0;
-    if (exec_found) insn0 = exec_entry.issue.insn[15:6];
-    else if (issue_valid_i) insn0 = issue_i.insn[15:6];
-    insn1 = '0;
-    context1 = 1'b1;
-    if (second_exec_found) insn1 = second_entry.issue.insn[15:6];
-    else if (exec_found && issue_valid_i) insn1 = issue_i.insn[15:6];
-    else if (!exec_found && issue1_valid_i) insn1 = issue1_i.insn[15:6];
-    else context1 = 1'b0;
+    insn0 = exec_found ? exec_entry.issue.insn[15:6] : issue_i.insn[15:6];
+    insn1 = second_exec_found ? second_entry.issue.insn[15:6] :
+        exec_found ? issue_i.insn[15:6] : issue1_i.insn[15:6];
+    context1 = second_exec_found || (exec_found ? issue_valid_i : issue1_valid_i);
     fpr_raddr[0] = exec_found ? exec_entry.src_a : lane_index[0][0];
     fpr_raddr[1] = insn0[15:11];
     fpr_raddr[2] = insn0[10:6];
