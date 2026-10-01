@@ -2046,9 +2046,11 @@ module ppc_special #(
   end
   assign late_exception_event = data_exception_event || fpu_exception_q;
   assign fpu_issue_valid = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_ISSUE);
-  // The issue packet follows the state alone; a pipelined issue never
-  // overlaps this state.
-  assign fpu_issue_sel = state_q == S_FPU_ISSUE;
+  // The issue packet follows the state alone, from its own register; a
+  // pipelined issue never overlaps this state.
+  always_ff @(posedge clk_i)
+    if (!rst_ni) fpu_issue_sel <= 1'b0;
+    else fpu_issue_sel <= state_d == S_FPU_ISSUE;
   assign fpu_mem_req_ready = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_WAIT);
   assign fpu_mem_req_fire = fpu_mem_req_valid && fpu_mem_req_ready;
   // Older overlapped loads may still hold results ahead of this one.
