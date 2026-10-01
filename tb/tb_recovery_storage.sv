@@ -21,8 +21,11 @@ module tb_recovery_storage;
   ppc_fifo #(.WIDTH(8),.DEPTH(IQ_DEPTH)) fifo (
     .clk_i(clk),.rst_ni(rst_n),.clear_i(clear),.push_valid_i(push),
     .push_ready_o(push_ready),.push_data_i(data_in),.pop_valid_o(pop_valid),
-    .pop_ready_i(pop),.pop_data_o(data_out));
+    .pop_ready_i(pop),.pop_data_o(data_out),.peek_valid_o(peek_valid),
+    .peek_data_o(peek_data));
   /* verilator lint_off UNUSEDSIGNAL */
+  logic peek_valid;
+  logic [7:0] peek_data;
   logic [31:0] rename_mapped;  // Mapped-register mask; not checked here.
   /* verilator lint_on UNUSEDSIGNAL */
   ppc_rename rename_unit (

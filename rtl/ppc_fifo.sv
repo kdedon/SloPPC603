@@ -13,7 +13,10 @@ module ppc_fifo #(
   input logic [WIDTH-1:0] push_data_i,
   output logic pop_valid_o,
   input logic pop_ready_i,
-  output logic [WIDTH-1:0] pop_data_o
+  output logic [WIDTH-1:0] pop_data_o,
+  // The entry that becomes the head after a pop this cycle.
+  output logic peek_valid_o,
+  output logic [WIDTH-1:0] peek_data_o
 );
   localparam int PTR_WIDTH = $clog2(DEPTH);
   localparam int COUNT_WIDTH = $clog2(DEPTH + 1);
@@ -31,6 +34,9 @@ module ppc_fifo #(
   logic [PTR_WIDTH-1:0] rd_next;
   // Meaningful only with pop_valid_o.
   assign pop_data_o = head_q;
+  assign peek_valid_o = !clear_i && ((count > COUNT_WIDTH'(1)) ||
+                                     ((count == COUNT_WIDTH'(1)) && push_valid_i));
+  assign peek_data_o = (count > COUNT_WIDTH'(1)) ? entries[rd_next] : push_data_i;
   assign push = push_valid_i && push_ready_o;
   assign pop = pop_valid_o && pop_ready_i;
   assign rd_next = (rd_ptr == PTR_WIDTH'(DEPTH-1)) ? '0 : rd_ptr + 1'b1;

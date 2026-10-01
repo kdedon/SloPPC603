@@ -162,6 +162,9 @@ package ppc_pkg;
     dmem_kind_t kind;
     // eciwx/ecowx resource ID, EAR[28:31]: TBST || TSIZ[0:2].
     logic [3:0] rid;
+    // A pipelined access with an older access still unresolved: accepted
+    // only where a speculative access is harmless (UM 3.5.5.2).
+    logic spec;
   } dmem_attr_t;
   typedef enum logic [2:0] {
     CACHE_OP_NONE, CACHE_OP_DCBF, CACHE_OP_DCBST, CACHE_OP_DCBI,

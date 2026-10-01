@@ -17,7 +17,10 @@ module tb_core_fpu #(
   // 0 FULL, 1 COMPACT (ppc_fpu_pkg::fpu_impl_e).
   parameter int FPU_IMPL = 0,
   // cpu_variant_e encoding: 0 PID7v-603e, 4 the 602.
-  parameter int CPU_VARIANT = 0
+  parameter int CPU_VARIANT = 0,
+  // Nonzero: the data memory takes a request in the cycle it returns the
+  // previous response, one access per cycle.
+  parameter int PIPE_MEM = 0
 );
   import ppc_pkg::*;
   logic clk = 1'b0, rst_n = 1'b0;
@@ -154,7 +157,7 @@ module tb_core_fpu #(
   assign ir = rst_n && !ipending;
   assign sv = ipending;
   assign iw = read_word(iaddress);
-  assign dr = rst_n && !dpending && !done;
+  assign dr = rst_n && (!dpending || ((PIPE_MEM != 0) && rr)) && !done;
   assign rv = dpending;
   always_comb begin
     wd64 = '0;

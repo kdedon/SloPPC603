@@ -6,7 +6,9 @@
 // A pending operand whose producer will occupy the IU is marked at capture.
 // When that IU result is accepted the operand takes the result directly, so a
 // dependent op still issues back to back and no wake compare sits on the
-// issue or operand path. Any other wake is captured and issues one cycle later.
+// issue or operand path. A load result from the pipelined load/store unit is
+// taken the same way in the cycle it finishes. Any other wake is captured
+// and issues one cycle later.
 // Sources arrive already resolved against a same-cycle wake.
 module ppc_dispatch (
   input logic clk_i, rst_ni,
@@ -21,6 +23,10 @@ module ppc_dispatch (
   input logic iu_done_i,
   input ppc_pkg::completion_tag_t iu_producer_i,
   input logic [31:0] iu_value_i,
+  // Pipelined load/store result finishing this cycle.
+  input logic lsu_done_i,
+  input ppc_pkg::completion_tag_t lsu_producer_i,
+  input logic [31:0] lsu_value_i,
   output logic issue_valid_o,
   input logic issue_ready_i,
   output ppc_pkg::issue_packet_t issue_o
@@ -28,7 +34,7 @@ module ppc_dispatch (
   import ppc_pkg::*;
   logic occupied;
   rs_entry_t entry;
-  logic bypass_a, bypass_b;
+  logic bypass_a, bypass_b, lsu_a, lsu_b;
   logic ready_a, ready_b, issue_fire;
   function automatic operand_t resolve(input operand_t pending);
     operand_t operand;
@@ -58,13 +64,15 @@ module ppc_dispatch (
     if (issue_fire) return producer == entry.ctrl.producer;
     return !issue_ready_i && (producer == iu_producer_i);
   endfunction
-  assign ready_a = entry.a.ready || (bypass_a && iu_done_i);
-  assign ready_b = entry.b.ready || (bypass_b && iu_done_i);
+  assign lsu_a = lsu_done_i && !entry.a.ready && (entry.a.producer == lsu_producer_i);
+  assign lsu_b = lsu_done_i && !entry.b.ready && (entry.b.producer == lsu_producer_i);
+  assign ready_a = entry.a.ready || (bypass_a && iu_done_i) || lsu_a;
+  assign ready_b = entry.b.ready || (bypass_b && iu_done_i) || lsu_b;
   assign issue_valid_o = !cancel_i && occupied && ready_a && ready_b;
   assign issue_fire = issue_valid_o && issue_ready_i;
   assign issue_o.ctrl = entry.ctrl;
-  assign issue_o.a = bypass_a ? iu_value_i : entry.a.value;
-  assign issue_o.b = bypass_b ? iu_value_i : entry.b.value;
+  assign issue_o.a = bypass_a ? iu_value_i : lsu_a ? lsu_value_i : entry.a.value;
+  assign issue_o.b = bypass_b ? iu_value_i : lsu_b ? lsu_value_i : entry.b.value;
   assign dispatch_ready_o = !cancel_i && (!occupied || issue_fire);
   // The payload is unreset; occupied gates every use of it.
   always_ff @(posedge clk_i) begin

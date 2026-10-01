@@ -173,13 +173,17 @@ module ppc_biu #(
   logic grp_d_oe, grp_ta_n, grp_drtry_n, grp_tea_n;
   logic grp_busy, dcache_busy, dcache_protocol_error;
 
+  // Speculation was resolved before the request reached the bus.
+  logic unused_attr_spec;
+  assign unused_attr_spec = dmem_req_attr_i.spec;
   ppc_bus60x_arbiter #(.RETURN_IFETCH_ERROR(RETURN_IFETCH_ERROR)) scalar_router (
     .clk_i, .rst_ni,
     .imem_req_valid_i, .imem_req_ready_o, .imem_req_addr_i,
     .imem_rsp_valid_o, .imem_rsp_ready_i, .imem_rsp_insn_o, .imem_rsp_error_o,
     .dmem_req_valid_i, .dmem_req_ready_o,
     .dmem_req_write_i, .dmem_req_addr_i,
-    .dmem_req_wdata_i, .dmem_req_wstrb_i, .dmem_req_attr_i,
+    .dmem_req_wdata_i, .dmem_req_wstrb_i,
+    .dmem_req_attr_i({dmem_req_attr_i.kind, dmem_req_attr_i.rid}),
     .dmem_rsp_valid_o, .dmem_rsp_ready_i, .dmem_rsp_rdata_o, .dmem_rsp_error_o,
     .bus_req_valid_o(scalar_req_valid),
     .bus_req_ready_i(scalar_req_ready),

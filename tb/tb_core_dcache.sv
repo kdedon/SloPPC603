@@ -361,7 +361,9 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
   logic lsu_write;
   logic [31:0] lsu_addr, lsu_wdata;
   logic [3:0] lsu_wstrb;
-  dmem_attr_t lsu_attr;
+  /* verilator lint_off UNUSEDSIGNAL */
+  dmem_attr_t lsu_attr;  // the speculation bit is not checked here
+  /* verilator lint_on UNUSEDSIGNAL */
   int flushed[$];
   int syncs=0;
   int noopti_accepts=-1;
