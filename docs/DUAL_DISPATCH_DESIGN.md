@@ -308,7 +308,7 @@ coordinator runs `ci`, `xrand-sweep` and the fits.
 |---|---|---|
 | 0 | Done | `ppc_core` `+DISPATCH_TRACE=<path>` monitor (simulation only); `sim/tools/check_dispatch_trace.py`; expected schedule `sim/spec/schedules/stage.txt`; mutation tests `sim/tools/test_dispatch_trace.py` |
 | 1 | Done; chip top meets 66 MHz, translated fit left to the coordinator | `rtl/ppc_iq.sv`; `FETCH_WIDTH` in `ppc_fetch`, `ppc_core`, `ppc_icache`; `iq_pair_t`/`pair_predecode` in `ppc_pkg`; bench `tb/tb_core_fetch2.sv` |
-| 2 | Ports and unit benches done; width-1 trace equivalence not yet run | `ppc_regfile_gpr` (`DUAL_WRITE`), `ppc_rename`, `ppc_completion` (`ENABLE_PAIR_RETIRE`), `retire1_*` on `ppc_core`; benches `tb/tb_regfile_gpr_ports.sv`, `tb/tb_rename_pair.sv`, `tb/tb_completion_pair.sv` |
+| 2 | Ports and unit benches done; width-1 traces identical, but 95 core benches fail at 0a9fe26 (see below) | `ppc_regfile_gpr` (`DUAL_WRITE`), `ppc_rename`, `ppc_completion` (`ENABLE_PAIR_RETIRE`), `retire1_*` on `ppc_core`; benches `tb/tb_regfile_gpr_ports.sv`, `tb/tb_rename_pair.sv`, `tb/tb_completion_pair.sv` |
 | 3–7 | Not started | |
 
 Slice 0. The monitor writes one line per cycle with a dispatch or an accepted
@@ -420,6 +420,46 @@ elaborates with no errors and fits: 50 MHz met at every corner (setup +4.955 /
 15.152 ns no endpoint fails. 11,540 ALMs, 13,249 registers, 36 M10K, 50 MLAB
 LABs (24,576 MLAB bits), 2 DSP. The failed 66 MHz fit above was commit b26aa1f
 (table at width 1): 12,822 ALMs. No translated or integrated fit was run.
+
+Recorded: dispatch-trace equivalence, commits cdb8b82 (base) and 0a9fe26 plus uncommitted bench edits in the exported tree, 2026-09-30.
+Both commits were exported with `git archive`. The 151 `test-*` targets whose
+recipe runs, with `$(SIM_ARGS)`, a testbench instantiating `ppc_core*`,
+`ppc603e`, `ppc602` or including `chip_harness.svh` (same list on both; none
+absent from the base) ran with
+`make -C sim -k -j2 <targets> 'SIM_ARGS=+DISPATCH_TRACE=<dir>/$@.txt'`.
+SoC, MiSTer and cache-geometry targets are not in the list.
+
+At 0a9fe26 unchanged, 95 of the 151 produce no trace:
+
+- 93 do not elaborate. 44 benches (and the reference benches) read
+  `regfile.gpr[]` hierarchically; the GPR array is now
+  `g_bank[*].g_copy[*].copy`.
+- `test-stage`: `tb_stage_timing` fails lint, `retired[1:0]` unused, because
+  `retire_packet_t` gained `cq1_ok` and `fpr_write`.
+- `test-core-recovery` fails "retirement packet/value matches surviving
+  stream" at cycle 38: its model builds packets field by field and leaves
+  `cq1_ok` 0, which the core now sets for `addi`.
+
+To measure, the exported 0a9fe26 tree got three simulation-only edits: a
+`gpr[32]` view of bank 0 copy 0 in `ppc_regfile_gpr` (bank 0 takes every write
+at width 1), a lint waiver on `retired` in `tb_stage_timing`, and
+`cq1_ok`/`fpr_write` copied from `dut.allocation` in the `tb_core_recovery`
+model. With them all 151 trace pairs are byte-identical: 139,388 dispatches and
+137,838 retirements, and `test-core-recovery` passes with the base's counts
+(1,120 checks, 45 retired). `test-stage` exits nonzero on both trees only
+because the override replaces its own `+DISPATCH_TRACE`, so its schedule check
+finds no events file; its trace is in the comparison.
+
+Recorded: `make -C sim test-reference test-reference-memory test-reference-bat test-reference-cached test-reference-managed test-reference-lsu test-reference-stress test-reference-pid6 test-reference-603 REFERENCE_DIR=<dingusppc>`, commit 0a9fe26, 2026-09-30.
+Fails as committed: all nine benches read `regfile.gpr`. On the exported tree
+with the edits above, all pass against DingusPPC 5b292af4d7b3: 8,500 snapshots
+for each of `test-reference`, `-pid6` and `-603`; 9,881 retirements each on
+memory, BAT, cached and managed; LSU 530 snapshots; stress 3 seeds, 3,419
+snapshots.
+
+This establishes width-1 cycle equivalence of the slice 2 RTL for those
+benches. It does not make 0a9fe26 pass: the benches need a GPR read view
+(or updated hierarchy) and the two bench fixes before slice 2 is accepted.
 
 ## Risks
 
