@@ -280,6 +280,30 @@ Dhrystone reports CPI 3.898 and CoreMark 3.035 in their measured regions; Whetst
 20.900 MWIPS at 50 MHz, 0.4180 MWIPS/MHz, CPI 3.803. This shows the width-2 core runs the
 board images at the MiSTer top in simulation; it says nothing about a fit.
 
+### Pipelined load/store unit cores
+
+`--lsu-pipe` adds `VERILOG_MACRO "PPC_LSU_PIPE=1"`, which sets `ENABLE_LSU_PIPE`
+([LSU_PIPELINE.md](LSU_PIPELINE.md)); the file name gains `_lsupipe` after any
+FPU and `_dual` part, for example `ppc603e_whetstone_fpu_dual_lsupipe.rbf`. It
+combines with `--dual` ([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md#with-the-pipelined-loadstore-unit)).
+No `--lsu-pipe` core has been built; the chip top with the unit meets 50 MHz
+at width 1. `make -C sim VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+BUILD_DIR=build/pipe mister-smoke mister-smoke-fpu` simulates the MiSTer top
+with the unit (add `DISPATCH_WIDTH=2` and another `BUILD_DIR` for both).
+
+Recorded: `make -C sim -k -j2 mister-smoke mister-smoke-fpu` with the four
+option sets of the batch 9 record in
+[DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md#with-the-pipelined-loadstore-unit),
+commit 6d64392, 2026-10-01. All eight runs pass.
+
+| Cycles from reset to exit | W1 off | W2 off | W1 on | W2 on |
+|---|---:|---:|---:|---:|
+| `mister-smoke` (mode 03) | 30,886,320 | 30,303,619 | 29,246,801 | 28,732,276 |
+| `mister-smoke-fpu` (mode 04) | 5,620,399 | 5,518,298 | 5,416,879 | 5,321,297 |
+
+Each run stores 154,192 (mode 03) or 56,112 (mode 04) framebuffer words and
+saves 153 sectors. Simulation only; no fit.
+
 ### Licensing
 
 The framework (`sys/`) is GPL-2.0 and is not in this repository. The core's own files

@@ -162,8 +162,7 @@ the lane.
 ## Default
 
 The unit stays off by default. It passes the benches listed under
-[Verification](#verification) (apart from two `test-core-fpu` probes that
-expect the lane's latency) and gains 12-14% on the demo benchmarks, and
+[Verification](#verification) and gains 12-14% on the demo benchmarks, and
 the chip with it meets 50 MHz, but it lowers the chip's Fmax from 68.3 to
 61.0 MHz, below the 66 MHz target. A 50 MHz build (the demo SoC and the
 MiSTer core) can set it now; making it the default waits for item 1 below.
@@ -283,6 +282,11 @@ bench expects the lane's 5 (2 of 2,668 checks, as before);
 checks and `test-core-dcache-negative` rejects all nine mutations;
 `test-chip-dcache-coherence` passes three rounds; `test-chip-603` passes
 (89 checks, 4,943 cycles) and `test-chip-603-fpu` (91 checks).
+
+`test-core-fpu` now generates its program with `--lsu-pipe` when
+`VERILATOR` selects the unit (`tools/verilate-lsu-pipe` or
+`+define+PPC_LSU_PIPE=1`), so those two probes expect 4; it passes with the
+unit on at both widths ([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md#with-the-pipelined-loadstore-unit)).
 
 Recorded: `make -C sim -k REFERENCE_DIR=../../../../../dingusppc test-reference test-reference-memory test-reference-lsu test-reference-stress test-reference-cached test-reference-managed test-reference-cache-disabled test-reference-bat test-reference-firmware test-reference-pid6 test-reference-603`
 (DingusPPC at `/home/kevin/git/ppc/dingusppc`), commit 49d95f3 with

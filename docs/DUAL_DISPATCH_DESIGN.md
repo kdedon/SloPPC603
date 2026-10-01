@@ -218,6 +218,14 @@ Dual dispatch treats the LSU as a unit. P3 should deliver, or leave room for:
 
 If P3 lands first with a single shared finish port, slice 3 below splits it.
 
+P3 is the pipelined load/store unit (`ENABLE_LSU_PIPE`,
+[LSU_PIPELINE.md](LSU_PIPELINE.md)). At width 2 with the unit, a plain
+access in DQ0 enters the unit and pairs with an IU or FP operation in DQ1,
+as a lane access does. A plain access in DQ1 does not pair: the unit takes
+only DQ0. The main station's second bypass port then carries the unit's
+results instead of the SRU's; SRU results still wake on the second bus. See
+[With the pipelined load/store unit](#with-the-pipelined-loadstore-unit).
+
 ### FPU
 
 The FPU already has lane 1 (`issue1_*`, one FP arithmetic plus one FP memory
@@ -564,6 +572,76 @@ identified. At 15.152 ns 4,700 endpoints fail, worst −1.651 ns; every
 failing group starts at the IQ entries (`special` capture registers, the IQ
 itself, GPR bank 1, rename map, CQ packets, station), the DQ1 pair decision
 fanning into dispatch.
+
+### With the pipelined load/store unit
+
+Width 2 and `ENABLE_LSU_PIPE` together (`make -C sim DISPATCH_WIDTH=2
+VERILATOR=$PWD/sim/tools/verilate-lsu-pipe BUILD_DIR=build-w2-pipe`;
+`mister/build.sh --dual --lsu-pipe`). Fixes made for the combination:
+
+- A plain access in DQ0 entering the unit pairs with DQ1 (it did not after
+  the merge; `tb_core_dual` expected the lwz + dependent add pair).
+- Under test redirects (`ENABLE_TEST_REDIRECT`, benches only), the
+  completion queue refused a committed exception's redirect when the head
+  behind the faulting instruction was finished, although the core was
+  holding that head and had not offered it. `ppc_completion` takes the hold
+  (`retire_hold_i`). `tb_core_alignment_dependencies` variant 6 failed the
+  "committed exception redirect was not accepted" assertion.
+- Benches: the compiled-firmware BAT benches set `RETIRE_PAIRS` to 0, as the
+  other benches that log every retirement do; `test-reference-firmware`
+  builds with the selected Verilator wrapper; `tb_core_fpu` records DQ1
+  dispatches and, at width 2, takes its single-dispatch spacings as upper
+  bounds; `test-core-fpu` expects the unit's lwz/stw latency when the
+  wrapper selects it; `tb_core_dual` expects no add + lwz pair with the
+  unit; the full-decode firmware bench counts a retried eciwx/ecowx tenure
+  once (60x ARTRY repeats the tenure).
+
+Recorded: `make -C sim -k -j2 REFERENCE_DIR=<dingusppc> lint check-spec test-core-dual test-core-lsu-timing test-core-dcache test-core-dcache-lsu-pipe test-dcache-fast test-core-data-fault test-core-data-fault-disabled test-core-data-fault-cancel test-core-memory-edges test-core-alignment test-core-alignment-disabled test-core-alignment-dependencies test-core-recovery test-core-fpu test-chip-fpu test-chip-603 test-chip-pins test-reference test-reference-memory test-reference-lsu test-reference-stress test-reference-cached test-reference-managed test-reference-cache-disabled test-reference-bat test-reference-firmware test-reference-pid6 test-reference-603 test-selftest test-selftest-fpu mister-smoke mister-smoke-fpu demo-dhrystone demo-coremark demo-whetstone-hf` in four configurations (no options; `DISPATCH_WIDTH=2`; `BUILD_DIR=build/pipe VERILATOR=$PWD/tools/verilate-lsu-pipe`; both), commit 6d64392, 2026-10-01. DingusPPC 5b292af4d7b3.
+All 37 goals pass in each configuration. `test-core-lsu-timing` sets the
+unit itself, so it runs with the unit in all four.
+
+| Check | W1 off | W2 off | W1 on | W2 on |
+|---|---|---|---|---|
+| `test-core-dual` width-2 run: cycles, dispatch pairs, retire pairs | 109, 8, 7 | 109, 8, 7 | 107, 7, 7 | 107, 7, 7 |
+| `test-core-fpu` (STALL=0): checks, probes, spacings | 2,668, 27, 41 | 2,668, 27, 41 | 2,668, 27, 41 | 2,668, 27, 41 |
+| `test-core-alignment-dependencies` checks | 753 | 753 | 764 | 764 |
+| `test-reference`, `-pid6`, `-603` | 8,500 snapshots each | same | same | same |
+| cached, managed, disabled, BAT references | 9,881 retirements each | same | same | same |
+| `test-reference-firmware` | 6 images | 6 images | 6 images | 6 images |
+| `test-selftest`, `test-selftest-fpu` | 1,047/1,047, 1,218/1,218 | same | same | same |
+
+`test-core-dual` is the same bench in every column; its width-2 run sees the
+unit only in the "on" columns. The table establishes that the combination
+passes these benches and references; it does not cover `rtl-all`, `ci` or
+`xrand-sweep`.
+
+Recorded: `make -C sim -k -j2 DISPATCH_WIDTH=2 BUILD_DIR=build-w2-pipe VERILATOR=$PWD/tools/verilate-lsu-pipe REFERENCE_DIR=<dingusppc> test`, commit 747d5f2, 2026-10-01.
+All 256 targets pass with width 2 and the unit on (make exit 0). The
+full-decode bench fix came after it and touches no bench in `test`.
+
+Recorded: Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip`
+with `VERILOG_MACRO "PPC_DISPATCH_WIDTH=2"` and `"PPC_LSU_PIPE=1"` added to a
+copy of `quartus/chip/ppc603e_chip.qsf`, under the Quartus lock, commit
+747d5f2, 2026-10-01. 0 errors, 46 warnings (unused-object and
+one-processor notes); `ppc_lsu_pipe` elaborates under `ppc_core`. No fit was
+run.
+
+Demo SoC (`ppc603e_demo_soc`, on-chip RAM over the 60x bus) from the same
+runs as the first record. Figures are the benchmarks' own reports; MWIPS
+assumes 50 MHz.
+
+| Benchmark | W1 off | W2 off | W1 on | W2 on |
+|---|---:|---:|---:|---:|
+| Dhrystone 2.1, DMIPS/MHz | 0.235 | 0.248 | 0.267 | 0.285 |
+| CoreMark/MHz | 1.042 | 1.092 | 1.214 | 1.252 |
+| Whetstone hard-float, MWIPS at 50 MHz | 20.321 | 20.898 | 22.815 | 23.485 |
+| Dhrystone run, cycles (CPI) | 6,488,985 (4.034) | 6,194,149 (3.850) | 5,805,902 (3.609) | 5,513,449 (3.427) |
+| CoreMark run, cycles (CPI) | 11,341,339 (3.243) | 10,875,541 (3.110) | 9,913,119 (2.835) | 9,646,835 (2.759) |
+| Whetstone run, cycles (CPI) | 5,285,692 (3.616) | 5,183,921 (3.547) | 5,082,211 (3.477) | 4,986,510 (3.411) |
+
+Run CPI is the whole image, start-up and screen output included. Against
+width 1 without the unit, width 2 gains 2.8-5.5%, the unit 12-17% and both
+16-21%; the unit gains about as much at either width.
 
 ## Risks
 
