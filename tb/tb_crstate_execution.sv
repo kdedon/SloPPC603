@@ -70,6 +70,8 @@ module tb_crstate_execution;
     .fp_issue_valid_i(1'b0), .fp_issue_ready_o(), .fp_issue_tag_i('0), .fp_issue_insn_i('0),
     .fp_result_valid_o(), .fp_result_o(), .fp_commit_valid_i(1'b0), .fp_commit_tag_i('0),
     .fp_kill_i(1'b0),
+    .fp_issue_a_i('0), .fp_issue_b_i('0), .fp_load_overlap_o(), .fp_load_release_o(),
+    .fp_store_cancellable_o(), .fp_fpscr_o(),
     .tlb_fill_req_ext_o(), .mmu_602_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(unused_cache_special[0]), .icbi_req_valid_o(unused_cache_special[1]),
