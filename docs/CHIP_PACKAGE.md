@@ -60,11 +60,13 @@ Status: **I** implemented, **T** tied with the stated behavior,
 | CI | out | 1 | I | Caching inhibited. |
 | WT | out | 1 | I | Write-through. |
 | GBL | bidir | 1 | I | Out: global. In: snoop qualifier. |
-| CSE[0:1] | out | 2 | I | Cache set entry. |
+| CSE[0:1] | out | 2 | I | Cache set entry. On the 603 only CSE0 carries the way; CSE1 stays 0. |
+| XATS | bidir | 1 | I | 603 only (`xats_n_i`, `xats_n_o`, `xats_oe_o`, at the CSE1 location): out, asserted with packet 0 of a direct-store operation and driven with ABB; in, a direct-store reply. Released and ignored on the 603e ([CPU_VARIANTS.md](CPU_VARIANTS.md#603-direct-store)). |
 | AACK | in | 1 | I | Address acknowledge. |
 | ARTRY | bidir | 1 | I | In: retry. Out: snoop retry from TS+2 through AACK+1, then the shared release. |
 
 XATS is not a 603e pin: the 603e reuses its position for CSE1 (UM §1.1.2.1.1).
+The 603 build (`CPU_VARIANT` `CPU_603`) has it (UM C.1.1).
 
 ### Data arbitration, transfer and termination
 

@@ -136,7 +136,8 @@ module tb_micro_tlb_harness #(
     .ENABLE_PAGE_INSTRUCTION_EXCEPTIONS(1'b1),
     .ENABLE_PAGE_MISS_RESULTS(1'b1), .ENABLE_MICRO_TLB(ENABLE_MICRO_TLB),
     .TLB_SETS(TLB_SETS), .HAS_602(HAS_602)
-  ) dut (.imem_rsp_esa_o(imem_rsp_esa), .*);
+  ) dut (.imem_rsp_esa_o(imem_rsp_esa), .dmem_req_attr_i('0), .pdmem_req_ds_o(),
+    .pdmem_req_ds_tag_o(), .pdmem_rsp_ds_error_i(1'b0), .*);
 
   localparam int TIMEOUT = 400;
 

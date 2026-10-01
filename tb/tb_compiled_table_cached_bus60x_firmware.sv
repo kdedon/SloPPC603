@@ -149,7 +149,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
     .aack_n_i(aack_n),.artry_n_i(1'b1),.dbg_n_i(dbg_n),
     .dbb_n_i(dbb_oe?dbb_n:1'b1),.dbb_n_o(dbb_n),
     .dbb_oe_o(dbb_oe),.d_i(d_i),.d_o(d_o),.d_oe_o(d_oe),
-    .ta_n_i(ta_n),.drtry_n_i(1'b1),.tea_n_i(1'b1)
+    .ta_n_i(ta_n),.drtry_n_i(1'b1),.tea_n_i(1'b1), .xats_n_i(1'b1), .xats_n_o()
   );
 
   function automatic string check_detail();

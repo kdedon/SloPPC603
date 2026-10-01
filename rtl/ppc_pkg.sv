@@ -23,15 +23,20 @@ package ppc_pkg;
   } operand_t;
   // Synchronous data faults. DATA_MACHINE_CHECK is a bus TEA returned for
   // machine-check entry; other transport errors remain separate.
-  typedef enum logic [2:0] {
-    DATA_OK = 3'd0,
-    DATA_DSI_PROTECTION = 3'd1,
-    DATA_PAGE_MISS = 3'd2,
-    DATA_PAGE_CHANGED = 3'd3,
-    DATA_DSI_DIRECT_STORE = 3'd4,
-    DATA_MACHINE_CHECK = 3'd5,
+  typedef enum logic [3:0] {
+    DATA_OK = 4'd0,
+    DATA_DSI_PROTECTION = 4'd1,
+    DATA_PAGE_MISS = 4'd2,
+    DATA_PAGE_CHANGED = 4'd3,
+    DATA_DSI_DIRECT_STORE = 4'd4,
+    DATA_MACHINE_CHECK = 4'd5,
     // eciwx/ecowx with EAR[E] = 0.
-    DATA_DSI_EXTERNAL = 3'd6
+    DATA_DSI_EXTERNAL = 4'd6,
+    // 603 direct-store segment (UM C.2.1): an FP load or store takes the
+    // alignment exception; a reply with its error bit set completes the
+    // access, load data included, then takes DSI with DSISR[0].
+    DATA_ALIGNMENT_DIRECT_STORE = 4'd8,
+    DATA_DSI_DIRECT_STORE_ERROR = 4'd9
   } data_fault_t;
   // Response-bound context for a diagnostic page miss or changed-bit store.
   // The router captures these fields with the accepted translation request.
@@ -162,6 +167,16 @@ package ppc_pkg;
     dmem_kind_t kind;
     // eciwx/ecowx resource ID, EAR[28:31]: TBST || TSIZ[0:2].
     logic [3:0] rid;
+    // Floating-point load or store.
+    logic fp;
+    // Bytes of the whole access (1-4) and whether this request carries its
+    // last byte; a split access sends two requests.
+    logic [2:0] bytes;
+    logic last;
+    // Set by translation: a 603 direct-store access. The address is packet
+    // 1; ds_tag is packet 0 bits 2-27, the key bit and SR bits 3-27.
+    logic ds;
+    logic [25:0] ds_tag;
   } dmem_attr_t;
   typedef enum logic [2:0] {
     CACHE_OP_NONE, CACHE_OP_DCBF, CACHE_OP_DCBST, CACHE_OP_DCBI,
@@ -652,6 +667,11 @@ package ppc_pkg;
     c = cpu_cfg(v);
     return c.has_602_ext;
   endfunction
+  function automatic bit cpu_has_direct_store(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return c.has_direct_store;
+  endfunction
   function automatic bit cpu_mul_602_timing(cpu_variant_e v);
     cpu_cfg_t c;
     c = cpu_cfg(v);
@@ -717,7 +737,8 @@ package ppc_pkg;
   localparam logic [7*1024-1:0] MFROM_TABLE = mfrom_table();
   // Variants whose differences from the PID7v are all implemented.
   function automatic bit cpu_variant_supported(cpu_variant_e v);
-    return (v == CPU_PID7V_603E) || (v == CPU_PID6_603E) || (v == CPU_EC603E);
+    return (v == CPU_PID7V_603E) || (v == CPU_PID6_603E) || (v == CPU_EC603E) ||
+           (v == CPU_603);
   endfunction
   // Variants the core builds: the 602 core lacks only its FPU personality;
   // its bus and pins belong to a separate top.

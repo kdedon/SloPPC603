@@ -119,7 +119,8 @@ module tb_core_bat;
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
-    .interrupt_pc_o(unused_interrupt[31:0]), .checkstop_o(unused_checkstop), .*);
+    .interrupt_pc_o(unused_interrupt[31:0]), .checkstop_o(unused_checkstop),
+    .pdmem_rsp_ds_error_i(1'b0), .*);
 
   task automatic check(input logic condition, input string message);
     checks++;

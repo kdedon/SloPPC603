@@ -179,7 +179,7 @@ module tb_core_live_context #(
       .pimem_rsp_valid_i(sv),.pimem_rsp_ready_o(sr),.pimem_rsp_insn_i(iw),.pimem_rsp_error_i(1'b0),
       .pdmem_req_valid_o(dv),.pdmem_req_ready_i(dr),.pdmem_req_write_o(dw),
       .pdmem_req_addr_o(da),.pdmem_req_wdata_o(wd),.pdmem_req_wstrb_o(st),.pdmem_req_wimg_o(dwimg),
-      .pdmem_rsp_valid_i(rv),.pdmem_rsp_ready_o(rr),.pdmem_rsp_rdata_i(32'h55),.pdmem_rsp_error_i(1'b0),
+      .pdmem_rsp_valid_i(rv),.pdmem_rsp_ready_o(rr),.pdmem_rsp_rdata_i(32'h55),.pdmem_rsp_error_i(1'b0), .pdmem_rsp_ds_error_i(1'b0),
       .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
       /* verilator lint_off PINCONNECTEMPTY */
       .pin_event_i('0), .pin_status_o(),

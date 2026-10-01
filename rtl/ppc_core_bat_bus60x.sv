@@ -165,6 +165,10 @@ module ppc_core_bat_bus60x #(
   logic [2:0] unused_icache_ctl;
   ppc_pkg::dmem_attr_t dmem_req_attr;
   logic [5:0] bus_req_attr;
+  // No direct-store here: the core leaves ENABLE_DIRECT_STORE off.
+  logic unused_attr;
+  assign unused_attr = ^{dmem_req_attr.fp, dmem_req_attr.bytes,
+    dmem_req_attr.last, dmem_req_attr.ds, dmem_req_attr.ds_tag};
   logic imem_rsp_valid, imem_rsp_ready;
   logic [31:0] imem_rsp_insn;
   logic imem_rsp_error;
@@ -299,7 +303,7 @@ module ppc_core_bat_bus60x #(
     .pdmem_rsp_valid_i(dmem_rsp_valid),
     .pdmem_rsp_ready_o(dmem_rsp_ready),
     .pdmem_rsp_rdata_i(dmem_rsp_rdata),
-    .pdmem_rsp_error_i(dmem_rsp_error),
+    .pdmem_rsp_error_i(dmem_rsp_error), .pdmem_rsp_ds_error_i(1'b0),
     // No instruction cache: icbi completes at once.
     .icbi_req_valid_o(unused_icbi[0]), .icbi_req_ready_i(1'b1),
     .icbi_req_ea_o(unused_icbi[32:1]),
@@ -345,7 +349,7 @@ module ppc_core_bat_bus60x #(
     .dmem_req_addr_i(dmem_req_addr),
     .dmem_req_wdata_i(dmem_req_wdata),
     .dmem_req_wstrb_i(dmem_req_wstrb),
-    .dmem_req_attr_i(dmem_req_attr),
+    .dmem_req_attr_i({dmem_req_attr.kind, dmem_req_attr.rid}),
     .dmem_rsp_valid_o(dmem_rsp_valid),
     .dmem_rsp_ready_i(dmem_rsp_ready),
     .dmem_rsp_rdata_o(dmem_rsp_rdata),

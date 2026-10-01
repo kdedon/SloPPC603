@@ -1800,6 +1800,16 @@ test-chip-fpu:
 
 .PHONY: test-chip-pins test-chip-power lint-chip
 test: test-chip-pins test-chip-power
+# 603 at its pins: PVR, CSE, direct-store segments on XATS (UM Appendix C).
+test-chip-603:
+	mkdir -p $(BUILD_DIR)/chip-603
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_603 +define+CHIP_VARIANT=3 +define+CHIP_DS_PID=10 --Mdir $(BUILD_DIR)/chip-603 -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_603.sv
+	./$(BUILD_DIR)/chip-603/Vtb_chip_603 $(SIM_ARGS)
+# The same with the FPU: FP loads and stores to T=1 take alignment.
+test-chip-603-fpu:
+	mkdir -p $(BUILD_DIR)/chip-603-fpu
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_chip_603 +define+CHIP_VARIANT=3 +define+CHIP_DS_PID=5 +define+CHIP_ENABLE_FPU=1 --Mdir $(BUILD_DIR)/chip-603-fpu -I../tb $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_603.sv
+	./$(BUILD_DIR)/chip-603-fpu/Vtb_chip_603 $(SIM_ARGS)
 test-chip-pins:
 	mkdir -p $(BUILD_DIR)/chip-pins
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_pins --Mdir $(BUILD_DIR)/chip-pins -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_pins.sv
@@ -1961,14 +1971,14 @@ test-core-full-decode:
 	./$(BUILD_DIR)/core-full-decode/Vtb_core_full_decode $(SIM_ARGS)
 
 # CPU variants (cpu_variant_e encoding): chip lint, divide latency,
-# PVR/HID0/HID1 read-back and SRR1[KEY] on each implemented variant; CPU_603
-# and CPU_602 must fail elaboration. cpu_cfg() flags, PLL_CFG codes and SPR
+# PVR/HID0/HID1 read-back and SRR1[KEY] on each implemented variant; the
+# 603e pin top must refuse CPU_602. cpu_cfg() flags, PLL_CFG codes and SPR
 # decode are checked on every variant. The PID6 reference run compares
 # against DingusPPC MPC603E.
-VARIANT_IDS := 0 1 2
-VARIANT_REJECTED := 3 4
+VARIANT_IDS := 0 1 2 3
+VARIANT_REJECTED := 4
 # Variants the core builds; the 603e pin top still rejects the 602.
-VARIANT_CORE_IDS := 0 1 2 4
+VARIANT_CORE_IDS := 0 1 2 3 4
 VARIANT_ALL := 0 1 2 3 4
 # Strap codes a build must refuse, as VARIANT-PLL-message: PID7v has no 1:1
 # ratio; a PID6 2:1 code is legal but not 1:1; 0111 is no PID6 code.
@@ -1982,7 +1992,7 @@ variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-re
                 $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6 \
                 $(addprefix variant-decode-sweep-,$(filter-out 0,$(VARIANT_ALL))) $(addprefix variant-exception-602-,$(VARIANT_ALL)) \
                 $(addprefix variant-mmu-602-,$(VARIANT_ALL)) \
-                variant-special-lint-602 variant-watchdog-602
+                variant-special-lint-602 variant-watchdog-602 test-chip-603
 	@echo "PASS: variant-matrix (chip variants $(VARIANT_IDS), core variants $(VARIANT_CORE_IDS) built and checked; chip $(VARIANT_REJECTED) rejected)"
 # 602 decode, SPR and ESA/MSR checks below the rejected core: the decode
 # sweep and exception state at each variant, and the SRU lane linted with
@@ -2081,7 +2091,7 @@ test-dcache-mutations:
 # with a second bus master, seeded bus timing and a coherent image, plus
 # injected defects the bench must reject (BIU mutations, and the cache
 # answering a modified snoop hit without a push).
-BIU_DCACHE_RTL := ../rtl/ppc_pkg.sv ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv ../rtl/ppc_bus60x_line_read.sv ../rtl/ppc_bus60x_master_select.sv ../rtl/ppc_bus60x_two_master.sv ../rtl/ppc_bus60x_cache_master.sv ../rtl/ppc_bus60x_snoop.sv ../rtl/ppc_biu.sv $(DCACHE_RTL)
+BIU_DCACHE_RTL := ../rtl/ppc_pkg.sv ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv ../rtl/ppc_bus60x_line_read.sv ../rtl/ppc_bus60x_master_select.sv ../rtl/ppc_bus60x_two_master.sv ../rtl/ppc_bus60x_cache_master.sv ../rtl/ppc_bus60x_snoop.sv ../rtl/ppc_bus60x_direct_store.sv ../rtl/ppc_biu.sv $(DCACHE_RTL)
 BIU_DCACHE_SEEDS := 2 3 4 5
 BIU_DCACHE_MUTATIONS := BIU_MUTATION=1 BIU_MUTATION=2 BIU_MUTATION=3 BIU_MUTATION=4 DC_MUTATION=2
 .PHONY: test-biu-dcache-snoop test-biu-dcache-snoop-mutations lint-biu-dcache

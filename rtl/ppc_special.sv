@@ -331,7 +331,7 @@ module ppc_special #(
   // 602 SPRs; ESASRR lives with the MSR.
   logic [31:0] tcr_q, ibr_q, sebr_q, ser_q, sp_q, lt_q, esasrr;
   logic rfi_state_unsupported, dsi_event;
-  logic block_zero_event;
+  logic block_zero_event, ds_align_event;
   logic fence_q, dispatch_context, mtmsr_unsupported, interrupt_q;
   logic decrementer_selected_q, trace_selected_q, watchdog_selected_q;
   logic watchdog_reset_select, watchdog_taken, watchdog_reset_taken;
@@ -429,6 +429,12 @@ module ppc_special #(
     (ENABLE_FULL_DECODE && uop_q.mem_external) ? DMEM_EXTERNAL :
     (ENABLE_RESERVATION && (uop_q.mem_reserve || uop_q.mem_conditional)) ?
       DMEM_ATOMIC : DMEM_NORMAL;
+  // Access shape for a direct-store segment; translation sets ds.
+  assign dmem_req_attr_o.fp = fpu_access;
+  assign dmem_req_attr_o.bytes = mem_nbytes;
+  assign dmem_req_attr_o.last = beat_q || !mem_crossing;
+  assign dmem_req_attr_o.ds = 1'b0;
+  assign dmem_req_attr_o.ds_tag = '0;
   assign dmem_req_attr_o.rid =
     !ENABLE_DATA_CACHE ? ear_q[3:0] :
     cache_sync ? {1'b0, CACHE_OP_SYNC} :
@@ -958,7 +964,7 @@ module ppc_special #(
   assign fetch_miss_eligible = ENABLE_TLB_MISS_EXCEPTIONS && fetch_miss_eligible_q;
   // The committed miss changes MSR before its held redirect is consumed,
   // so use the captured result kind.
-  assign data_exception_event = dsi_event || block_zero_event ||
+  assign data_exception_event = dsi_event || block_zero_event || ds_align_event ||
     data_machine_check ||
     (ENABLE_TLB_MISS_EXCEPTIONS && data_page_miss_opcode &&
      !memory_result_q.fault);
@@ -986,7 +992,11 @@ module ppc_special #(
                       (uop_q.special_op == SPECIAL_STORE)) &&
                      ((memory_result_q.data_fault == DATA_DSI_PROTECTION) ||
                       (memory_result_q.data_fault == DATA_DSI_DIRECT_STORE) ||
+                      (memory_result_q.data_fault == DATA_DSI_DIRECT_STORE_ERROR) ||
                       (memory_result_q.data_fault == DATA_DSI_EXTERNAL));
+  assign ds_align_event = ((uop_q.special_op == SPECIAL_LOAD) ||
+                           (uop_q.special_op == SPECIAL_STORE)) &&
+    (memory_result_q.data_fault == DATA_ALIGNMENT_DIRECT_STORE);
   // Data is never cached here, so a translated dcbz takes the 603e
   // caching-inhibited alignment exception.
   // With a data cache, only when the cache refuses (W=1, I=1 or a locked
@@ -1042,7 +1052,7 @@ module ppc_special #(
             exception_event_kind =
               (uop_q.special_op == SPECIAL_STORE) ?
                 EVENT_TLB_D_STORE : EVENT_TLB_D_LOAD;
-          end else if (block_zero_event) begin
+          end else if (block_zero_event || ds_align_event) begin
             exception_event_valid = 1'b1;
             exception_event_kind = EVENT_ALIGNMENT;
           end else begin
@@ -1689,16 +1699,20 @@ module ppc_special #(
           hash2_q <= derived_hash2;
         end
         if (exception_event_valid &&
-            ((uop_q.special_op == SPECIAL_ALIGNMENT) || block_zero_event)) begin
+            ((uop_q.special_op == SPECIAL_ALIGNMENT) || block_zero_event ||
+             ds_align_event)) begin
           dar_q <= alignment_dar;
           dsisr_q <= {15'b0, uop_q.alignment_dsisr};
         end
         if (exception_event_valid && dsi_event) begin
           dar_q <= access_ea;
           // UM Table 4-11: protection bit 4, direct-store bit 5, store bit 6,
-          // eciwx/ecowx with EAR[E] = 0 bit 11.
+          // eciwx/ecowx with EAR[E] = 0 bit 11; direct-store error bit 0
+          // (PEM Table 6-9).
           dsisr_q <= ((memory_result_q.data_fault == DATA_DSI_DIRECT_STORE) ?
                       32'h0400_0000 :
+                      (memory_result_q.data_fault == DATA_DSI_DIRECT_STORE_ERROR) ?
+                      32'h8000_0000 :
                       (memory_result_q.data_fault == DATA_DSI_EXTERNAL) ?
                       32'h0010_0000 : 32'h0800_0000) |
             ((uop_q.special_op == SPECIAL_STORE) ?
@@ -1747,7 +1761,8 @@ module ppc_special #(
     mem_response_fence = 1'b0;
     if (!dmem_rsp_error_i) begin
       case (dmem_rsp_fault_i)
-        DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE:
+        DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE,
+        DATA_ALIGNMENT_DIRECT_STORE, DATA_DSI_DIRECT_STORE_ERROR:
           mem_response_fence = ENABLE_SUPERVISOR_EXCEPTIONS &&
             ENABLE_LIVE_CONTEXT;
         DATA_PAGE_MISS, DATA_PAGE_CHANGED: mem_response_fence = miss_eligible;
@@ -1793,7 +1808,8 @@ module ppc_special #(
         else begin
           case (dmem_rsp_fault_i)
             DATA_OK: ;
-            DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE: begin
+            DATA_DSI_PROTECTION, DATA_DSI_DIRECT_STORE,
+            DATA_ALIGNMENT_DIRECT_STORE, DATA_DSI_DIRECT_STORE_ERROR: begin
               if (ENABLE_SUPERVISOR_EXCEPTIONS)
                 memory_result_q.data_fault <= dmem_rsp_fault_i;
               else memory_result_q.fault <= 1'b1;

@@ -260,6 +260,10 @@ module ppc603e_measure #(
     .gbl_n_i(gbl_n_i_ibq),
     .gbl_n_o(gbl_n_o_od),
     .cse_o(cse_o_od),
+    // XATS exists on the 603 only; this build is the 603e.
+    /* verilator lint_off PINCONNECTEMPTY */
+    .xats_n_i(1'b1), .xats_n_o(), .xats_oe_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
     .addr_oe_o(addr_oe_o_od),
     .aack_n_i(aack_n_i_ibq),
     .artry_n_i(artry_n_i_ibq),

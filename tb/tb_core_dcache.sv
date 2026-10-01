@@ -125,7 +125,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     .artry_n_i(artry_n),.dbg_n_i(dbg_n),.dbb_n_i(1'b1),
     .dbb_n_o(dbb_n),.dbb_oe_o(dbb_oe),
     .d_i(data_in),.d_o(data_out),.d_oe_o(data_oe),
-    .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n)
+    .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n), .xats_n_i(1'b1), .xats_n_o()
   );
   /* verilator lint_on PINCONNECTEMPTY */
   bus60x_coherent_bfm #(.BASE_ADDR(0),.MEM_BYTES(MEM_BYTES),.SEED(SEED)) biu(.bus_ce_i(1'b1),

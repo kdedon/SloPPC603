@@ -132,6 +132,50 @@ V9, behind `HAS_602` on `ppc_bat_translate`, `ppc_bat_service`,
   installation (HID0 writes, mtmsr, rfi, exceptions, esa, dsa), which also
   flushes the micro-TLBs. Micro-TLB entries keep their TLB set and esa code.
 
+### 603 direct-store
+
+V5, behind `cpu_has_direct_store()` (`ENABLE_DIRECT_STORE` on `ppc_core_bat`,
+`HAS_DIRECT_STORE` on the router, `ENABLE_DIRECT_STORE` on `ppc_biu`), per
+UM Appendix C (C.1.1-C.1.2, C.2.1):
+
+- **Translation** (`ppc_bat_memory_router`): a data access with
+  translation on, no BAT hit and SR[T] = 1 is not a DSI. lwarx, stwcx.,
+  eciwx and ecowx take DSI with DSISR[5] (and [6] for a store); an FP load
+  or store takes the alignment exception (`DATA_ALIGNMENT_DIRECT_STORE`,
+  DAR the EA, DSISR from the instruction); dcbt, dcbtst, dcbf, dcbi, dcbst,
+  dcbz and icbi complete as no-ops. Any other access leaves as a physical
+  request with `dmem_attr_t.ds` set: address SR[28:31] || EA[4:31] (packet
+  1), WIMG 0101, `ds_tag` = Ks (Kp in problem state) || SR[3:27]. No page
+  table, TLB, R/C or page protection is consulted, and the micro-TLB keeps
+  no entry. A fetch from a T=1 segment stays ISI SRR1[3].
+- **Ordering**: the data cache slot sends a ds request to the scalar port
+  after a cache sync, as for eciwx/ecowx; the LSU has one data obligation,
+  so ds accesses reach the bus in program order.
+- **Bus** (`ppc_bus60x_direct_store`, a fourth master in `ppc_biu`): an
+  access is one LSU request, or two when it crosses a word. A load first
+  runs an address-only load request whose packet-1 XATC is the access's
+  byte count; each request is then one load or store operation, immediate
+  when another request follows and last otherwise, with one beat on
+  DH[0:31] (bytes on their word lanes; DL unused) and packet-1 XATC the
+  beat's byte count. Each operation is BR/BG, packet 0 in the XATS cycle
+  (A = 00 || key || SR[3:27] || PID, XATC the Table C-1 opcode), packet 1
+  until AACK, ARTRY in the following cycle repeats the operation. TS is
+  driven negated during the tenure; XATS is driven whenever the address
+  bus is. After the last operation the master waits for a reply: XATS
+  asserted by another master with A28-A31 = PID and TT0-3 the load or store
+  reply opcode. Other replies are ignored. XATC is TT[0:3] || TBST ||
+  TSIZ[0:2] at the pin levels; TT4 is driven 0.
+- **Reply error** (C.1.2.3): A2 set completes the instruction, load data
+  and update included, then takes DSI with DSISR[0] (and [6] for a store),
+  DAR the EA and SRR0 the instruction (`DATA_DSI_DIRECT_STORE_ERROR`).
+- **TEA** (C.1.2.4): the remaining operations of the access still run, the
+  reply is not awaited, and the last response returns the error: a machine
+  check.
+- **Pins** (`ppc603e`): `xats_n_i`, `xats_n_o`, `xats_oe_o`, the 603 pin at
+  the 603e CSE1 location. CSE is one pin at the CSE0 location carrying the
+  way of the 2-way caches; `cse_o[1]` stays 0 on the 603. `DS_PID` is the
+  sender tag (there is no 603 PID SPR).
+
 ### 1.4 Exceptions and MSR
 
 | | PID7v-603e | PID6-603e | 603 | 602 |
@@ -404,7 +448,7 @@ take `parameter int VARIANT` and cast it to `cpu_variant_e`.
 | TLB geometry | `ppc_tlb_service.sv`, `ppc_tlb_ram.sv`, miss-derive/HASH | 16 sets, index `ea[15:12]` for 602 |
 | SRR1[KEY] | `ppc_exception_state.sv` | forced 0 when `!has_srr1_key` |
 | Store 2:2 | LSU issue in `ppc_core.sv` | extra busy cycle when `store_two_cycle` |
-| Direct-store (603) | `ppc_completion.sv`, BIU | see open questions; until decided, a 603 build `$fatal`s unless a named `ALLOW_603_NO_DIRECT_STORE` parameter accepts DSI on T=1 |
+| Direct-store (603) | `ppc_bat_memory_router.sv`, `ppc_core_bat.sv`, `ppc_dcache_slot.sv`, `ppc_biu.sv`, `ppc_bus60x_direct_store.sv`, `ppc_special.sv`, `ppc603e.sv` | [603 direct-store](#603-direct-store) |
 | Misaligned LE | LSU, alignment path | gated by `misaligned_le_hw` when LE lands |
 | Strings (602) | `ppc_decode.sv`, `ppc_lsu_sequence.sv` | decode to emulation trap |
 | eciwx/ecowx (602) | `ppc_decode.sv` | program exception |
@@ -484,6 +528,29 @@ choice and a test of that choice, not a fidelity claim:
   instruction cache disabled", while §4.5.1.2 (PDF 202) and Table 4-10 name
   no cache change; soft reset leaves the I-cache enabled and valid.
 - 603 IABR vector: App. C heading 0x01400 versus body reference to 0x1300.
+- 603 direct-store access unit: App. C streams up to 128 bytes of one
+  instruction as one access (one load request, one reply). The LSU cracks
+  lmw, stmw and the string forms into one request per register, so each
+  register is its own access; a single access crossing a word is one access
+  with an immediate and a last operation.
+- 603 direct-store beats split at word boundaries: only DH[0:31] carries
+  data, so each beat holds the bytes of one word on their word lanes. C.1.2.4
+  says an access of up to 4 bytes inside one double word has no immediate
+  operation; a word-crossing one here has one.
+- 603 direct-store with MSR[DR] = 0: C.2.1.1 calls DR "a don't care" and
+  C.2.1.4 lists lwarx etc. "or when MSR[DR] = 0"; with no segment lookup in
+  real mode (PEM 7.3) these read as 601 text. Real-mode accesses are memory
+  accesses.
+- 603 PID register: C.1.2.2.1 names a processor ID register whose bits
+  28-31 give the sender tag; Appendix C defines no SPR for it. The tag is
+  the build parameter `DS_PID`.
+- 603 XATC at the pins: XATC = TT[0:3] || TBST || TSIZ[0:2] is taken at the
+  pin levels (TBST low for a 0 bit); TT4 is driven 0.
+- 603 reply-error SRR0: C.1.2.3 completes the instruction before the DSI;
+  PEM Table 6-9 sets SRR0 to the instruction. Both hold: results are
+  written and SRR0 is the instruction.
+- 603 reply address parity (C.1.2.3) is not checked: APE covers TS tenures
+  only.
 - PID7v "cache control instructions require HID0[ABE]" (UM PDF 44): read as
   "broadcast requires ABE", not as an execution gate.
 - 602 SP SPR number (Table 2-6 prints 102; resolved as 1021 in the FPU_602
@@ -555,15 +622,16 @@ choice and a test of that choice, not a fidelity claim:
 | V11 | Done: `ppc602` pin top ([CHIP_PACKAGE_602.md](CHIP_PACKAGE_602.md)): every 602 pin, the multiplexed 64-bit bus through `ppc602_bus` in front of the unchanged 60x master (two-transaction queue, RWITM for cacheable reads, only kill broadcast, T32 32-bit data mode, PFADDR and TC 01 on a castout whose fill is queued, snoop retry of queued writes), RESETO from the watchdog (`pin_status_t.watchdog_reseto`), SMI, MCP, checkstop and resets as on the 603e top; `quartus/chip602` with every pin virtual and contract C9. The core runs at SYSCLK in PLL bypass (602UM Table 7-8 test mode); 2:1 and 3:1 wait for the BIU bus clock enable. Open: the FPU personality (V12) |
 | V14 | Done: doze, nap and sleep from MSR[POW] with one HID0 mode bit ([POWER_MANAGEMENT.md](POWER_MANAGEMENT.md)): fetch held until an exception clears POW; QREQ once idle, QACK stops snooping and, in sleep, the time base and decrementer; QREQ/QACK on both pin tops; two mode bits reject |
 | V12 | Done: the 602 FPU in the core behind `ENABLE_FPU`, FULL or COMPACT, on `ppc_core` and the `ppc602` top ([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md#602-personality)): the FPU decides the emulation trap, owns SP/LT, takes loads at any byte offset, and a newly set sticky bit stalls completion one cycle |
-| V5, V13 | Not started |
+| V5 | Done: the 603 core and pin top ([603 direct-store](#603-direct-store)): direct-store segments on XATS with their refusals and no-ops, reply-error DSI, TEA machine check, PID sender tag, one CSE pin, XATS pins; caches 128 × 2 and PVR `0x00030101` from `cpu_cfg()`. Stores take at least two cycles each in the serialized LSU, so 2:2 holds; a pipelined LSU must honor `cfg.store_two_cycle`. Open: lmw/stmw and string forms run one access per register (see best-effort items); the 603 reference run (`test-reference` with DingusPPC `MPC603`) and 603 firmware are not set up |
+| V13 | Not started |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
 behave the same. DingusPPC distinguishes PID6 from PID7v only by PVR, and
 the reference corpus does not read PVR, so the PID6 reference run shows
 consistency of the integer path at PID6, not any PID6-specific behavior.
-The 603 still fails elaboration of the core, and the 602 that of the
-`ppc603e` top; their SPR presence, SRR1[KEY] and PLL tables are checked at
-unit level (`tb_variant_config`, `tb_exception_tlb_miss`).
+The 602 still fails elaboration of the `ppc603e` top; its SPR presence,
+SRR1[KEY] and PLL table are checked at unit level (`tb_variant_config`,
+`tb_exception_tlb_miss`).
 
 Recorded: `make -C sim -j2 lint check-spec test-chip-pins test-chip602-pins variant-watchdog-602 variant-special-lint-602 variant-icache-602 variant-matrix`, commit 2a0a987 plus the chip602 project (cc2c29c) and documentation, 2026-09-30.
 Pass (V11), focused benches only (`regression`, firmware not run).

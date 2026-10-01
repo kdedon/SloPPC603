@@ -26,7 +26,9 @@ module ppc603e #(
   parameter int DCACHE_WAYS = 0,
   // Attach the FPU; without it FP instructions take FP unavailable.
   parameter bit ENABLE_FPU = 1'b0,
-  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL
+  parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
+  // 603 direct-store sender tag, packet 0 A28-A31 (UM C.1.2.2.1).
+  parameter logic [3:0] DS_PID = 4'h0
 ) (
   // Clocks. sysclk is the processor clock, not the bus clock: SYSCLK
   // rises at the end of each cycle with bus_ce_o high.
@@ -64,6 +66,11 @@ module ppc603e #(
   output logic        gbl_n_o,
   output logic [0:1]  cse_o,
   output logic        addr_oe_o,
+  // 603 XATS, at the CSE1 location (UM C.1.1): three-state with ABB. Off
+  // the 603 it is released and its input ignored.
+  input  logic        xats_n_i,
+  output logic        xats_n_o,
+  output logic        xats_oe_o,
 
   // Address termination.
   input  logic        aack_n_i,
@@ -127,7 +134,7 @@ module ppc603e #(
 );
   import ppc_pkg::*;
 
-  // The core rejects the 603; the 602 needs its own multiplexed-bus top.
+  // The 602 needs its own multiplexed-bus top.
   localparam bit CHECK_PLL = cpu_variant_supported(CPU_VARIANT);
   // synthesis translate_off
   if (CPU_VARIANT == CPU_602) begin : g_reject_602
@@ -257,6 +264,8 @@ module ppc603e #(
   logic core_artry_n, core_artry_oe;
   logic [2:0] core_tsiz;
   logic [1:0] core_tc, core_cse;
+  logic core_xats_n;
+  localparam bit HAS_XATS = cpu_has_direct_store(CPU_VARIANT);
   logic core_dbb_n, core_dbb_oe, core_d_oe;
   logic [63:0] core_d_o;
 
@@ -286,7 +295,7 @@ module ppc603e #(
     .ENABLE_DEBUG_EXCEPTIONS(1'b1), .ENABLE_FULL_DECODE(1'b1),
     .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL),
     .ENABLE_DCACHE(ENABLE_DCACHE),
-    .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG)
+    .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG), .DS_PID(DS_PID)
   ) cpu (
     .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(bus_ce),
     .external_irq_i(!int_n), .interrupt_taken_o(), .interrupt_pc_o(),
@@ -337,7 +346,9 @@ module ppc603e #(
     .ts_n_o(core_ts_n), .ts_oe_o(core_ts_oe),
     .a_o(core_a), .tt_o(core_tt), .tbst_n_o(core_tbst_n), .tsiz_o(core_tsiz),
     .tc_o(core_tc), .ci_n_o(core_ci_n), .wt_n_o(core_wt_n), .gbl_n_o(core_gbl_n),
-    .cse_o(core_cse), .addr_oe_o(core_addr_oe), .aack_n_i, .artry_n_i,
+    .cse_o(core_cse), .addr_oe_o(core_addr_oe),
+    .xats_n_o(core_xats_n), .xats_n_i(!HAS_XATS || xats_n_i),
+    .aack_n_i, .artry_n_i,
     // Quiesced for nap or sleep: no snooping.
     .snoop_ts_n_i(ts_n_i || pin_status.quiesced), .snoop_a_i(a_i), .snoop_tt_i(tt_i),
     .snoop_gbl_n_i(gbl_n_i), .artry_n_o(core_artry_n),
@@ -370,7 +381,11 @@ module ppc603e #(
   assign ci_n_o = core_ci_n;
   assign wt_n_o = core_wt_n;
   assign gbl_n_o = core_gbl_n;
-  assign cse_o = core_cse;
+  // The 603 has one CSE pin, at CSE0; it gives the way of a two-way cache
+  // (UM C.1.3).
+  assign cse_o = HAS_XATS ? {core_cse[0], 1'b0} : core_cse;
+  assign xats_n_o = core_xats_n;
+  assign xats_oe_o = HAS_XATS && core_abb_oe && !release_outputs;
   assign addr_oe_o = core_addr_oe && !release_outputs;
   assign dbb_n_o = core_dbb_n;
   assign dbb_oe_o = core_dbb_oe && !release_outputs;
