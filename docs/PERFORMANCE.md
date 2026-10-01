@@ -197,7 +197,9 @@ Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-
 The fit completes but misses 66 MHz: 22 endpoints fail at 15.152 ns, worst slack -0.666 ns, all on
 the IQ head-pointer loop (branch decode at the IQ head ahead of the dispatch decision).
 Commit 42c2571 moves that decode to IQ push (four predecoded bits per entry); its refit
-is still to be run, so no timing claim is made for this round.
+is still to be run, so no timing claim is made for this round. The head-pointer FIFO
+itself is now a shifting queue with fixed DQ0/DQ1 registers
+([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md#slice-status)).
 
 What remains: a taken branch that cannot fold (`bclr`, `bcctr`, a mispredicted `bc`)
 still costs about 4 cycles of refetch, and a folded one leaves a gap when the IQ runs dry.

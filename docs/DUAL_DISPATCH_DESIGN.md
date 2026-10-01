@@ -1,6 +1,7 @@
 # Dual dispatch and dual completion design
 
-Design document, 2026-09-30. No RTL implements it yet. It maps the 603e's
+Design document, 2026-09-30. Slices 0 and 1 are implemented
+([status](#slice-status)). It maps the 603e's
 two-per-cycle dispatch and completion (TASK_PLAN P11) onto the current core and
 splits the work into slices with acceptance tests. Code is cited at
 [`9f6a5ad`](https://github.com/kdedon/SloPPC603/tree/9f6a5adf622de8223dad5ffd4affe66dba40352d)
@@ -269,6 +270,12 @@ integrated tops before any timing claim.
   DQ1 and `retire1` logic is not generated and traces match today's core
   exactly. Elaboration rejects 2 until slice 6 lands (TASK_PLAN P11: enable 2
   only when implemented).
+- `FETCH_WIDTH` (1 or 2) on `ppc_core`, `ppc_fetch` and `ppc_icache`, default 1.
+  At 2 a response may carry the next word: `imem_rsp_insn_i` and
+  `fetch_rsp_insn_o` widen to `{pair, word at addr + 4, word at addr}`. The
+  I-cache sets `pair` on a RAM hit at an even word; refill-forwarded words stay
+  single. The wrappers still build width 1; wiring them (and the translation
+  router) is slice 6 work.
 - `cpu_cfg_t.max_dispatch_width` per variant. The 603 and 603e allow 2. The
   602 FPU retires one per edge ([FPU_INTERFACE.md](FPU_INTERFACE.md)); its core
   width is unsourced, so it stays 1 until a 602 source says otherwise.
@@ -294,6 +301,77 @@ coordinator runs `ci`, `xrand-sweep` and the fits.
 | 5 | Dual completion | `add`+`add` retire together; store at CQ[1] waits; `lwzu`+`add` retire singly (GPR limit); two CR writers never pair; `lfd`+`lfd` retire singly (FPR limit); integer + FP load uses `commit`, FP arith + FP load uses `commit1`; interrupt between and after pairs saves the right SRR0 |
 | 6 | Enable width 2 as default for 603/603e; FPU lane 1 connected | Width 1 vs width 2 architectural traces identical over the full reference corpus and `rtl-all`; `xrand-sweep`; Figures 6-3/6-4/6-5 integer rows replay (`TIM-FIG63..65`) with deviations listed; CPI recorded; fits on translated, integrated and chip tops |
 | 7 | Measured options: branch in DQ1 behind a known-correct fold; no CQ entry for branches without LR/CTR update | CPI gain against the added path; interrupt-at-branch resume tests |
+
+## Slice status
+
+| # | State | Where |
+|---|---|---|
+| 0 | Done | `ppc_core` `+DISPATCH_TRACE=<path>` monitor (simulation only); `sim/tools/check_dispatch_trace.py`; expected schedule `sim/spec/schedules/stage.txt`; mutation tests `sim/tools/test_dispatch_trace.py` |
+| 1 | Done; chip top meets 66 MHz, translated fit left to the coordinator | `rtl/ppc_iq.sv`; `FETCH_WIDTH` in `ppc_fetch`, `ppc_core`, `ppc_icache`; `iq_pair_t`/`pair_predecode` in `ppc_pkg`; bench `tb/tb_core_fetch2.sv` |
+| 2–7 | Not started | |
+
+Slice 0. The monitor writes one line per cycle with a dispatch or an accepted
+retirement: `<cycle> D<n> R<n> <dispatch pcs> | <retire pcs>`, cycle 0 being
+the first edge out of reset. The checker compares a trace with an expected
+schedule exactly, and with `--stage` also against the stage bench's own edge
+trace. Any `make -C sim` target accepts `SIM_ARGS=+DISPATCH_TRACE=<path>`.
+
+Recorded: `make -C sim test-stage check-spec`, commit 5f96aba, 2026-09-30.
+`test-stage` passes its schedule (14 dispatches, 14 retirements, last event
+cycle 76) and the cross-check against the stage edge trace. In `check-spec`,
+`test_dispatch_trace` shifts each event by one cycle, drops or adds a PC and
+breaks a count; every mutation fails. This establishes the monitor and checker
+on the single-issue core; the schedule is recorded from the core, not derived
+from Table 6-x timing.
+
+Slice 1. The IQ is a six-entry shifting queue (`ppc_iq`): DQ0 and DQ1 are
+entries 0 and 1, and each entry loads itself, the entry one or two above, or a
+push lane. With `FETCH_WIDTH=2` two FD registers and two decoders push both
+words of an aligned pair when the IQ will hold them behind the FD words, else
+the second word is dropped and fetched again. A folding first word drops the
+second; a folding second word is pushed with the first. Each entry carries
+`iq_pair_t` (unit class, SRU form, serial, CR/XER/LR/CTR reads and writes, GPR
+destinations, `cq1_ok`, per-source `dep_prev` against the preceding pushed
+word, reset by a clear or fold). At `DISPATCH_WIDTH=1` DQ1 and the pair bits
+have no reader and synthesis removes them; simulation assertions check DQ1
+follows DQ0 and that its pair bits match its uop and DQ0.
+
+Recorded: dispatch-trace equivalence, commits 5f96aba (base) and 2b22f0b, 2026-09-30.
+Every `test-*` target whose recipe runs a core testbench binary with
+`$(SIM_ARGS)` (146 targets: core, stage, recovery, control-memory, bus60x,
+cached/managed, BAT/MMU, TLB, interrupts, timers, FPU core benches, chip pins,
+power, ratios, coherence, 602, full decode, PID6 divider) ran on both
+commits with `make -C sim -k -j2 <targets> 'SIM_ARGS=+DISPATCH_TRACE=<dir>/$@.txt'`.
+All 146 trace pairs are byte-identical: 149,637 dispatches and 147,841
+retirements on the same cycles with the same PCs. The 2b22f0b traces were taken
+on its tree before `generate`/`endgenerate` keywords were added around three
+generate blocks, which does not change elaboration. This establishes cycle
+equivalence at width 1 for those benches; compiled-firmware `rtl-all` was not
+traced.
+
+Recorded: `make -C sim lint check-spec test-stage test-core-fetch2 test-icache test-icache-bus60x test-icache-managed test-fetch-recovery test-decode-sweep test-reference test-reference-memory test-reference-bat test-reference-cached test-reference-managed test-reference-cache-disabled test-reference-lsu test-reference-stress test-reference-pid6`, commit 2b22f0b, 2026-09-30.
+All pass. `test-core-fetch2` runs one program at both widths: 43 retirements,
+identical retire streams; width 1 takes 156 cycles, width 2 146. At width 2 it
+requires and sees pair pushes (8), a pair split by one free entry (2),
+unaligned single-word responses (18), a lane-0 fold dropping lane 1 (7), a
+lane-1 fold (1), a mispredict clearing an IQ holding more than one entry (1),
+DQ1 occupancy (68 cycles) and `dep_prev` on both the lane-to-lane (5) and
+last-pushed (14) paths. `test-icache` adds a `FETCH_WIDTH=2` build: 4,506 pair
+responses, each second word checked against the line image. Reference
+comparisons: DingusPPC 5b292af4d7b3, 8,500 snapshots (`test-reference`), 9,881
+retirements on the memory/BAT/cached/managed/disabled runs.
+
+Recorded: Quartus 17 `quartus_map --analysis_and_elaboration`, commit 2b22f0b, 2026-09-30.
+The chip top (`ppc603e_measure`, width 1) and `ppc_core` with `FETCH_WIDTH=2`
+both elaborate with 0 errors. No new warnings beyond unused-object notes for
+the width-2 signals at width 1.
+
+Recorded: `./quartus/chip/build.sh --docker` and `./quartus/report-target-paths.sh chip --docker`, commit 2b22f0b plus uncommitted documentation edits, 2026-10-01.
+Width 1. Meets 50 MHz at every corner (setup +3.988 / +4.173 / +6.439 / +7.039
+ns, hold +0.152 / +0.164 / +0.116 / +0.091 ns) and 66 MHz: no endpoint fails at
+15.152 ns. 10,830 ALMs, 12,032 registers, 36 M10K. The 50 MHz worst setup path
+was not identified, so no Fmax is derived. The translated and integrated fits
+that the slice 1 acceptance names were not run here.
 
 ## Risks
 
