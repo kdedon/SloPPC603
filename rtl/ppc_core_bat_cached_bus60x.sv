@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
+`ifndef PPC_LSU_PIPE
+`define PPC_LSU_PIPE 1'b0
+`endif
 // Opt-in translated physical I-cache plus scalar 60x data/bypass composition.
 // Only authorized physical instruction requests with WIMG=0000 may enter the
 // line cache. Other WIMG values bypass it through the cache-inhibited scalar
@@ -55,6 +58,9 @@ module ppc_core_bat_cached_bus60x #(
   // Bench only: HID0[DCE] set at reset for images that never set it.
   parameter bit RESET_DCACHE_ENABLE = 1'b0,
   parameter int DCACHE_MUTATION = 0,
+  // Pipelined load/store unit; with the data cache, load hits flow one per
+  // cycle (docs/LSU_PIPELINE.md).
+  parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
   // 603 direct-store sender tag (UM C.1.2.2.1). The 603 PID register has
   // no SPR, so the tag is fixed per build.
   parameter logic [3:0] DS_PID = 4'h0
@@ -265,6 +271,7 @@ module ppc_core_bat_cached_bus60x #(
   logic biu_dmem_rsp_ds_error;
   ppc_core_bat #(
     .RESET_PC(RESET_PC),
+    .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
     .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_DIRECT_STORE(HAS_DIRECT_STORE),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
@@ -558,6 +565,7 @@ module ppc_core_bat_cached_bus60x #(
 
   ppc_dcache_slot #(
     .ENABLE_DCACHE(ENABLE_DCACHE), .DCACHE_MUTATION(DCACHE_MUTATION),
+    .FAST_LOAD_HIT(ENABLE_LSU_PIPE),
     .DCACHE_SETS(DC_SETS), .DCACHE_WAYS(DC_WAYS), .LSU_BITS(DMEM_BITS)
   ) dcache_slot (
     .clk_i, .rst_ni,

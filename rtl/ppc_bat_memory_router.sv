@@ -30,7 +30,11 @@ module ppc_bat_memory_router #(
   parameter bit HAS_602 = 1'b0,
   parameter bit HAS_DIRECT_STORE = 1'b0,
   // Data path width: 64 adds FP doubleword accesses (eight strobes).
-  parameter int DMEM_BITS = 32
+  parameter int DMEM_BITS = 32,
+  // A plain data access that hits the micro-TLB goes to the physical port
+  // in the cycle it is accepted, also while up to one earlier access awaits
+  // its response. The physical port must answer in request order.
+  parameter bit ENABLE_DATA_PIPELINE = 1'b0
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -171,6 +175,9 @@ module ppc_bat_memory_router #(
   // Direct-store request: packet 0 bits 2-27 ({key, SR[3:27]}).
   output logic        pdmem_req_ds_o,
   output logic [25:0] pdmem_req_ds_tag_o,
+  // The request is the one being accepted on dmem_req; its attributes are
+  // dmem_req_attr_i.
+  output logic        pdmem_req_now_o,
   input  logic        pdmem_rsp_valid_i,
   output logic        pdmem_rsp_ready_o,
   input  logic [DMEM_BITS-1:0] pdmem_rsp_rdata_i,
@@ -298,6 +305,9 @@ module ppc_bat_memory_router #(
   assign unused_attr = ^{dmem_req_attr_i.rid, dmem_req_attr_i.bytes,
     dmem_req_attr_i.last, dmem_req_attr_i.ds, dmem_req_attr_i.ds_tag};
   logic last_grant_data_q, owner_instruction_q, owner_write_q;
+  // Pipelined data lane: a second response is owed behind the first, and
+  // the incoming request goes straight to the physical port.
+  logic d_second_q, d_pipe_try, d_pipe_accept;
   logic [31:0] request_ea_q;
   logic [31:0] page_sr_q;
   page_miss_t page_miss_result_q;
@@ -726,9 +736,19 @@ module ppc_bat_memory_router #(
                     dmem_rsp_ready;
   assign imem_req_ready = lane_accept_ok &&
     (i_state_q == LANE_IDLE || i_finish);
-  assign dmem_req_ready = lane_accept_ok &&
-    (d_state_q == LANE_IDLE || d_finish) &&
-    (!dmem_req_attr_i.spec || (d_hit && !d_hit_wimg[2] && data_spec_ok_i));
+  // A pipelined request may follow an outstanding one unless that one is
+  // a direct-store access, whose reply is decoded by d_ds_q.
+  assign d_pipe_try = ENABLE_DATA_PIPELINE && dmem_req_valid && d_hit &&
+    dmem_req_attr_i.kind == DMEM_NORMAL && lane_accept_ok &&
+    (!dmem_req_attr_i.spec || (!d_hit_wimg[2] && data_spec_ok_i)) &&
+    (d_state_q == LANE_IDLE ||
+     (d_state_q == LANE_RESPONSE &&
+      ((!d_second_q && !d_ds_q) || d_finish)));
+  assign d_pipe_accept = d_pipe_try && pdmem_req_ready_i;
+  assign dmem_req_ready = d_pipe_try ? pdmem_req_ready_i :
+    (lane_accept_ok &&
+     (d_state_q == LANE_IDLE || (d_finish && !d_second_q)) &&
+     (!dmem_req_attr_i.spec || (d_hit && !d_hit_wimg[2] && data_spec_ok_i)));
   assign i_accept = imem_req_valid && imem_req_ready;
   assign d_accept = dmem_req_valid && dmem_req_ready;
   assign i_hit = ENABLE_MICRO_TLB && i_hit_raw;
@@ -984,7 +1004,8 @@ module ppc_bat_memory_router #(
     pimem_req_valid_o = rst_ni && i_state_q == LANE_OFFER;
     pimem_req_addr_o = i_pa_q;
     pimem_req_wimg_o = i_wimg_q;
-    pdmem_req_valid_o = rst_ni && d_state_q == LANE_OFFER;
+    pdmem_req_valid_o = rst_ni && (d_state_q == LANE_OFFER || d_pipe_try);
+    pdmem_req_now_o = d_pipe_try;
     pdmem_req_write_o = d_write_q;
     pdmem_req_addr_o = d_pa_q;
     pdmem_req_wdata_o = d_wdata_q;
@@ -992,6 +1013,14 @@ module ppc_bat_memory_router #(
     pdmem_req_wimg_o = d_wimg_q;
     pdmem_req_ds_o = d_ds_q;
     pdmem_req_ds_tag_o = d_ds_tag_q;
+    if (d_pipe_try) begin
+      pdmem_req_write_o = dmem_req_write;
+      pdmem_req_addr_o = {d_hit_rpn, dmem_req_addr[11:0]};
+      pdmem_req_wdata_o = dmem_req_wdata;
+      pdmem_req_wstrb_o = dmem_req_wstrb;
+      pdmem_req_wimg_o = d_hit_wimg;
+      pdmem_req_ds_o = 1'b0;
+    end
 
     imem_rsp_valid = 1'b0;
     imem_rsp_insn = pimem_rsp_insn_i;
@@ -1072,6 +1101,7 @@ module ppc_bat_memory_router #(
       d_fp_q <= 1'b0;
       d_ds_q <= 1'b0;
       d_ds_tag_q <= '0;
+      d_second_q <= 1'b0;
       ds_noop_q <= 1'b0;
       owner_q <= OWN_NONE;
       tlb_fill_ea_q <= 32'b0;
@@ -1211,7 +1241,10 @@ module ppc_bat_memory_router #(
       endcase
 
       unique case (d_state_q)
-        LANE_IDLE: if (d_accept) d_state_q <= d_accept_state;
+        LANE_IDLE: begin
+          if (d_pipe_accept) d_state_q <= LANE_RESPONSE;
+          else if (d_accept) d_state_q <= d_accept_state;
+        end
         LANE_WAIT: if (choose_data) d_state_q <= LANE_SLOW;
         LANE_SLOW: begin
           if ((route_allow && !owner_instruction_q) || ds_route)
@@ -1221,8 +1254,12 @@ module ppc_bat_memory_router #(
         end
         LANE_OFFER: if (pdmem_req_ready_i) d_state_q <= LANE_RESPONSE;
         LANE_RESPONSE: begin
-          if (d_accept) d_state_q <= d_accept_state;
-          else if (d_finish) d_state_q <= LANE_IDLE;
+          if (d_pipe_accept) d_second_q <= d_second_q || !d_finish;
+          else if (d_accept) d_state_q <= d_accept_state;
+          else if (d_finish) begin
+            if (d_second_q) d_second_q <= 1'b0;
+            else d_state_q <= LANE_IDLE;
+          end
         end
         default: begin
           ifetch_fatal_q <= 1'b1;
@@ -1534,6 +1571,8 @@ module ppc_bat_memory_router #(
     state_q == ROUTE_IDLE |-> i_state_q != LANE_SLOW && d_state_q != LANE_SLOW);
   assert property (@(posedge clk_i) disable iff (!rst_ni)
     owner_q != OWN_NONE |-> lanes_idle && !imem_req_ready_o && !dmem_req_ready_o);
+  assert property (@(posedge clk_i) disable iff (!rst_ni)
+    d_second_q |-> d_state_q == LANE_RESPONSE && !d_ds_q);
   // synthesis translate_on
 
   // Service echo and attribute fields left unused here.
