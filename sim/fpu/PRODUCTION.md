@@ -13,9 +13,9 @@ Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference test-fpu-testfloat
 lint-fpu-production lint-fpu-timing lint-fpu-stream lint-fpu-dual
 lint-fpu-estimates-602 lint-fpu-compact` (under the sim lock), plus
 `test-core-fpu`, `test-core-fpu-compact` and `test-selftest-fpu-compact`,
-commit `25e5137`, 2026-09-30. Pass.
+commit `87efdf0`, 2026-09-30. Pass.
 
-FULL results match the `2ae952b` round: TestFloat 2,092,736/1,043,512 vectors
+FULL results match the `2ee1475` round: TestFloat 2,092,736/1,043,512 vectors
 with 0 mismatches, raw arithmetic 209,811/182,083 and cluster 40,115/22,131
 finish predictions, estimates 11,958/17,628, shell 910, 602 173, enabled
 3000 cases per personality, hazards 640/648; timing, stream and dual pass.
@@ -39,8 +39,8 @@ counts are in [COMPACT FPU](../../docs/FPU_COMPACT.md).
 
 Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference test-fpu-testfloat
 lint-fpu-production lint-fpu-timing lint-fpu-stream lint-fpu-dual`, commit
-`d00e8ec`, 2026-09-30. Pass. The sorted `PASS` and per-operation vector lines
-are identical to the same targets run at `9a9025f` (FPU RTL of `2ae952b`),
+`6b52ffa`, 2026-09-30. Pass. The sorted `PASS` and per-operation vector lines
+are identical to the same targets run at `578f6db` (FPU RTL of `2ee1475`),
 including TestFloat with 0 mismatches, the raw, cluster and estimate finish
 predictions, the host oracle, shell 910, 602 173, exact timing 71/52
 responses, streams 32/32/32, dual 32/24, enabled exceptions and
@@ -60,7 +60,7 @@ that at most one entry waits per resource; it did not fire.
 
 Recorded: `make -C sim -j2 test-fpu-all test-fpu-testfloat lint-fpu-production
 lint-fpu-timing lint-fpu-stream lint-fpu-dual lint-fpu-estimates-602`, commit
-`2ae952b`, 2026-09-30. Pass. Every `PASS` line matches the `4318d67` round:
+`2ee1475`, 2026-09-30. Pass. Every `PASS` line matches the `964faa8` round:
 TestFloat 2,092,736 (603e) and 1,043,512 (602) vectors with 0 mismatches;
 raw arithmetic 209,811/182,083, cluster 40,115/22,131 finish predictions;
 estimates 11,958/17,628; host oracle 1,408,506 comparisons, 0 mismatches;
@@ -83,16 +83,16 @@ sticky moves to bit 48.
 The inspection port is now valid only while no second operand-read
 candidate is present; every bench reads it in such cycles. During
 development each step also ran a scratch lockstep comparison of the new and
-`995d20b` shells under the same random traffic (loads, stores, aborts, kills,
+`5076186` shells under the same random traffic (loads, stores, aborts, kills,
 dual issue, `fsel`); it is not a committed bench and is not evidence here.
 
 ## Area round: instanced datapath, MLAB FPRs, shared units
 
 Recorded: `make -C sim -j2 test-fpu-all test-fpu-reference lint-fpu-production
-lint-fpu-stream lint-fpu-dual test-fpu-testfloat`, commits `4df8136`,
-`b153b97`, `5620792`, `1a4b753`, `bbe2401` and `4318d67` (one run per commit),
+lint-fpu-stream lint-fpu-dual test-fpu-testfloat`, commits `78473e8`,
+`bac6339`, `1d257fa`, `0795a4f`, `7cbf337` and `964faa8` (one run per commit),
 2026-09-29 to 2026-09-30. Pass. Every run printed the same `PASS` lines as
-the `8feaa06` + `fpu-testfloat` baseline: TestFloat 2,092,736 (603e) and
+the `5e86d4b` + `fpu-testfloat` baseline: TestFloat 2,092,736 (603e) and
 1,043,512 (602) vectors with 0 mismatches; raw arithmetic 209,811/182,083,
 cluster 40,115/22,131 finish predictions; estimates 11,958/17,628; shell 910;
 enabled exceptions 3000 cases per personality; operand-binding hazards 648/640;
@@ -101,17 +101,17 @@ flush/reset 4 and cancel-offset 76 per build; all lint targets clean.
 The exact-cycle timing, stream and dual benches pass unchanged, so every
 Table 6-5 latency and initiation interval holds with divides and conversions
 routed through the shared aligner and rounder. What changed per commit:
-the datapath split into instances (`4df8136`); FPRs in MLAB with a live-value
-table (`b153b97`); one alignment plan, one aligner, divider through the
-pipeline rounder (`5620792`); `fctiw` through the aligner (`1a4b753`);
-602 single-width narrowing (`bbe2401`); Quartus 17 generate syntax
-(`4318d67`). The 602 narrowing relies on 602 operands being
+the datapath split into instances (`78473e8`); FPRs in MLAB with a live-value
+table (`bac6339`); one alignment plan, one aligner, divider through the
+pipeline rounder (`1d257fa`); `fctiw` through the aligner (`0795a4f`);
+602 single-width narrowing (`7cbf337`); Quartus 17 generate syntax
+(`964faa8`). The 602 narrowing relies on 602 operands being
 binary32-representable; the 602 TestFloat, raw, cluster and enabled suites
 exercise that contract but do not feed a non-single operand to the 602.
 
 ## Berkeley TestFloat cross-check
 
-Recorded: `make -C sim test-fpu-testfloat`, commit `f11d41b`, 2026-09-29.
+Recorded: `make -C sim test-fpu-testfloat`, commit `a57c149`, 2026-09-29.
 Pass, from a clean fetch. Sources: SoftFloat
 `ucb-bar/berkeley-softfloat-3` commit
 `a0c6494cdc11865811dec815d5c0049fba9d82a8` (archive SHA-256

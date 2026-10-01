@@ -131,7 +131,7 @@ endian, the 603 (V5), misaligned LE (V13). Evidence:
 [variants](CPU_VARIANTS.md), [power](POWER_MANAGEMENT_VERIFICATION.md).
 
 Final FPGA closure 30% → 45%: the four 603e tops and `chip602` meet 66 MHz
-on `9eb20d9`; the FPU does not, and no FPU-on chip or MiSTer fit is recorded.
+on `04b5bad`; the FPU does not, and no FPU-on chip or MiSTer fit is recorded.
 Total 50.03% → 60.53%.
 
 Rows not revisited here predate later milestones (data cache and coherence,

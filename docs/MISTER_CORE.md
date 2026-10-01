@@ -247,7 +247,7 @@ It has not been built for the board.
 mister/build.sh --clean --fpu --suite whetstone   # mister/output_files/ppc603e_whetstone_fpu.rbf
 ```
 
-No FPU core has been fitted yet: at commit 6ff1d89 Quartus 17.0 stops in analysis on
+No FPU core has been fitted yet: at commit 93f121b Quartus 17.0 stops in analysis on
 two constructs of the FPU integration, in every build that compiles the core (with or
 without `--fpu`): the conditional generate block `if (ENABLE_FPU) begin : g_fpu` in
 `rtl/ppc_special.sv`, written without `generate`/`endgenerate` unlike the file's other
@@ -336,7 +336,7 @@ images (`demo-hello`, `demo-dhrystone`, framebuffer at `0xf0000000`) pass with t
 firmware sources.
 
 Recorded: `make -C sim lint check-spec lint-mister mister-smoke`, `make -C sim mister-smoke
-MISTER_FB=0`, commit 1a2beba (merged onto the performance counters), 2026-09-29. Lint,
+MISTER_FB=0`, commit cbc3fc4 (merged onto the performance counters), 2026-09-29. Lint,
 check-spec and the native build pass (42,687,368 cycles, 11,496,899 retired). The DDR3
 build fails with X seed 1: an illegal-instruction exception on a legal word during hello
 ([BUGS.md](BUGS.md#bug-02-illegal-instruction-exception-on-a-legal-mr-in-the-mister-ddr3-build));

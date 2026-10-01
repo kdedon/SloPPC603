@@ -119,13 +119,13 @@ not attempted.
   used), so it was reverted.
 
 Recorded: `./quartus/chip/build.sh --docker` and
-`./quartus/report-target-paths.sh chip --docker`, commits 8feaa06 (before) and
-723ab2f (after), 2026-09-30. Quartus 17.0.2 Lite; both exited 0.
+`./quartus/report-target-paths.sh chip --docker`, commits 5e86d4b (before) and
+af02a68 (after), 2026-09-30. Quartus 17.0.2 Lite; both exited 0.
 
 | `chip` fit | ALMs | Registers | M10K | Fmax, slow 100 C | Worst setup / hold | 66 MHz (15.152 ns) |
 |---|---|---|---|---|---|---|
-| Before, 8feaa06 | 10,766 | 12,717 | 52 | 65.48 MHz | +4.387 / +0.053 ns | fails: 10 endpoints, −0.121 ns |
-| After, 723ab2f | 10,597 | 12,182 | 36 | 65.84 MHz | +3.872 / +0.112 ns | fails: 7 endpoints, −0.141 ns |
+| Before, 5e86d4b | 10,766 | 12,717 | 52 | 65.48 MHz | +4.387 / +0.053 ns | fails: 10 endpoints, −0.121 ns |
+| After, af02a68 | 10,597 | 12,182 | 36 | 65.84 MHz | +3.872 / +0.112 ns | fails: 7 endpoints, −0.141 ns |
 
 | Entity | ALMs before → after | Registers before → after | M10K |
 |---|---|---|---|
@@ -136,13 +136,13 @@ Recorded: `./quartus/chip/build.sh --docker` and
 
 The 66 MHz failures before and after are the same D-cache path
 (`snp_valid_q` → `rsp_data_q`, plus one LRU MLAB endpoint after); neither
-trim touches it, and an intermediate fit (a61b163: this SR change plus the
+trim touches it, and an intermediate fit (ad99632: this SR change plus the
 SPRG change, 32 M10K) met 66 MHz at 67.08 MHz, so the margin there is placement noise. The 20 ns SDC is met
 in both fits. The before fit is larger than the survey's 03c594a fit
 (10,415 ALMs) because of RTL merged since.
 
 Recorded: `make -C sim lint check-spec` and the focused benches below, commits
-8feaa06 and 723ab2f, 2026-09-30. All pass on both.
+5e86d4b and af02a68, 2026-09-30. All pass on both.
 
 - Run with `SIM_ARGS=+verilator+rand+reset+0` on both commits, every summary
   line matches (checks and cycle counts): `test-segment-registers`,
@@ -167,7 +167,7 @@ Recorded: `make -C sim lint check-spec` and the focused benches below, commits
   entries were not run (they need the cross-compiler).
 
 Seeded random initialization (the default `SIM_ARGS`) assigns random values in
-design order, so a changed design draws different start values: at 728c075
+design order, so a changed design draws different start values: at 693bcac
 (before the SPRG revert) `test-chip-dcache-coherence` cycle counts under the
 default seed moved by under 0.5%, and all runs passed.
 The benches do not exercise the synthesis `altsyncram` branch of

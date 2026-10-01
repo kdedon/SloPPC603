@@ -4,7 +4,7 @@ Records for [SELFTEST.md](SELFTEST.md).
 
 ## 603e image on the demo SoC
 
-Recorded: `make -C sim test-selftest`, commit 786c2cb, 2026-09-30.
+Recorded: `make -C sim test-selftest`, commit 9dce465, 2026-09-30.
 
 Pass. The image prints `selftest 603e PVR 00070101: 1047 cases, 1047 pass, 0
 fail` and exits 0; the bench reports 56,189,226 cycles and 15,117,283 retirements,
@@ -48,7 +48,7 @@ No processor bug was found. One reading was settled from the manual before the
 case ran: a misaligned `lmw`/`stmw` puts EA + 4 in DAR (UM 4.5.6, the note after
 Table 4-14) where Table 4-13 says EA; the model follows the note and the RTL agrees.
 
-Recorded: `make -C sim test-selftest`, commit 32df478, 2026-09-30.
+Recorded: `make -C sim test-selftest`, commit 6afc6ea, 2026-09-30.
 
 Pass after the FP cases were added: `selftest 603e PVR 00070101 no FPU: 1047 cases,
 1047 pass, 0 fail`, 62,632,886 cycles, 16,386,305 retirements, 14 pages. The 171 cases
@@ -57,7 +57,7 @@ before.
 
 ## 603e image on the demo SoC with the FPU
 
-Recorded: `make -C sim test-selftest-fpu`, commit bbfa9c6, 2026-09-30.
+Recorded: `make -C sim test-selftest-fpu`, commit 31f7d4f, 2026-09-30.
 
 Pass, on the first run. The same `selftest.hex` on the SoC built with `ENABLE_FPU`
 prints `selftest 603e PVR 00070101 FPU: 1218 cases, 1218 pass, 0 fail` and exits 0;

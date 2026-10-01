@@ -4,7 +4,7 @@ Acceptance evidence for [POWER_MANAGEMENT.md](POWER_MANAGEMENT.md).
 
 ## Pin bench
 
-Recorded: `make -C sim test-chip-power`, commit 166ddbc, 2026-09-30.
+Recorded: `make -C sim test-chip-power`, commit b0c6a15, 2026-09-30.
 Pass: `PASS chip power: checks=101 cycles=36644`.
 
 `tb_chip_power` drives the `ppc603e` pins only (chip harness, second 60x
@@ -28,22 +28,22 @@ record SRR0 and the time base.
 
 The harness also checks that QREQ changes only on SYSCLK edges.
 
-Negative controls (each applied alone to the RTL of 58eb640, run with the
+Negative controls (each applied alone to the RTL of cf4c652, run with the
 same target, reverted): fetch not held fails "doze: nothing
 after the POW mtmsr runs"; timers running in sleep fail "DEC stops in
 sleep"; snoop not gated fails "nap after QACK does not snoop"; QACK ignored
 fails "snooping continues until QACK".
 
-Recorded: `make -C sim -j2 lint check-spec test-chip-pins test-chip602-pins test-crstate-execution variant-watchdog-602 variant-special-lint-602 test-core-timer-events test-core-bat-cached-bus60x-timer test-core-bat-cached-bus60x-irq test-core-bat-machine-check`, commit 58eb640, 2026-09-30;
+Recorded: `make -C sim -j2 lint check-spec test-chip-pins test-chip602-pins test-crstate-execution variant-watchdog-602 variant-special-lint-602 test-core-timer-events test-core-bat-cached-bus60x-timer test-core-bat-cached-bus60x-irq test-core-bat-machine-check`, commit cf4c652, 2026-09-30;
 lint, `check-spec`, `test-chip-pins`, `test-crstate-execution`,
 `variant-special-lint-602`, `variant-watchdog-602` and
-`test-core-timer-events` again at 166ddbc.
+`test-core-timer-events` again at b0c6a15.
 Pass; `test-chip-pins` 1352 checks and `tb_chip602_pins` 64 checks, 5504
 cycles, as before.
 
 ## 602 top
 
-Recorded: `make -C sim test-chip602-pins`, commit 166ddbc, 2026-09-30.
+Recorded: `make -C sim test-chip602-pins`, commit b0c6a15, 2026-09-30.
 Pass: `PASS: tb_chip602_pins 72 checks, 6979 cycles` (64 before). The nap
 case: QREQ asserts before the next instruction, the processor is not
 quiescent while QACK is negated, QACK quiesces within four clocks, DEC
