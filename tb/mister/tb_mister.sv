@@ -92,7 +92,8 @@ module tb_mister #(
   always @(posedge clk) begin
     if (!rst) begin
       cycles++;
-      if (dut.soc.cpu.retire_valid) retired++;
+      if (dut.soc.cpu.retire_valid)
+        retired += 1 + longint'(dut.soc.cpu.cpu.translated_core.core.commit1);
       if (checkstop) $fatal(1, "checkstop cycle=%0d", cycles);
       if (cycles > max_cycles) $fatal(1, "watchdog cycle=%0d pc=%08x", cycles, dut.soc.cpu.retire.pc);
     end

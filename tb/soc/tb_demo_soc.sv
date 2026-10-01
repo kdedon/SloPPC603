@@ -44,7 +44,8 @@ module tb_demo_soc #(
         if (retired >= trace_from)
           $display("retire %0d cycle %0d pc %08x insn %08x", retired, cycles,
                    soc.cpu.retire.pc, soc.cpu.retire.insn);
-        retired++;
+        // At dispatch width 2 CQ[1] may retire beside the exported head.
+        retired += 1 + longint'(soc.cpu.cpu.translated_core.core.commit1);
       end
       if (checkstop) $fatal(1, "checkstop cycle=%0d pc=%08x", cycles, soc.cpu.retire.pc);
       if (cycles > max_cycles)
@@ -56,12 +57,14 @@ module tb_demo_soc #(
 
   // The counter block's RETIRED against the retire strobe, which reaches
   // the counters through the core's and the SoC's event registers.
-  logic [1:0] retire_delay = '0;
+  logic [1:0] retire_delay = '0, retire1_delay = '0;
   longint unsigned perf_retired = 0;
   always @(posedge clk) begin
     retire_delay <= {retire_delay[0], soc.cpu.retire_valid};
+    retire1_delay <= {retire1_delay[0], soc.cpu.cpu.translated_core.core.commit1};
     if (soc.perf.we_i && soc.perf.word_i == 5'd0 && soc.perf.wdata_i[1]) perf_retired = 0;
-    else if (soc.perf.run_q && retire_delay[1]) perf_retired++;
+    else if (soc.perf.run_q && retire_delay[1])
+      perf_retired += 1 + longint'(retire1_delay[1]);
   end
 
   // Scan-out capture: waits for vertical blank, then takes the next

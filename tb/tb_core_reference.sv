@@ -16,7 +16,9 @@ module tb_core_reference #(
   always #5 clk = ~clk;
   logic iv, ir, sv, sr, tv, tr, halted, redirect_accepted;
   logic [31:0] ia, iw;
-  retire_packet_t retired;
+  retire_packet_t retired, retired1;
+  logic tv1;
+  int pairs = 0;
   logic dv, dw, rr;
   logic [31:0] da, wd;
   logic [3:0] st;
@@ -106,7 +108,7 @@ module tb_core_reference #(
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
     .external_irq_i(1'b0), .interrupt_taken_o(unused_interrupt[32]),
-    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv), .retire_ready_i(tr), .retire_o(retired), /* verilator lint_off PINCONNECTEMPTY */ .retire1_valid_o(), .retire1_o(), /* verilator lint_on PINCONNECTEMPTY */ .retire1_ready_i(1'b0), .checkstop_o(unused_checkstop), .halted_o(halted),
+    .interrupt_pc_o(unused_interrupt[31:0]), .retire_valid_o(tv), .retire_ready_i(tr), .retire_o(retired), .retire1_valid_o(tv1), .retire1_o(retired1), .retire1_ready_i(tr), .checkstop_o(unused_checkstop), .halted_o(halted),
     .redirect_valid_i(1'b0), .redirect_all_i(1'b0), .redirect_keep_pivot_i(1'b0),
     .redirect_pivot_i('0), .redirect_target_i(32'b0), .redirect_accepted_o(redirect_accepted)
   );
@@ -136,19 +138,46 @@ module tb_core_reference #(
         delay_count <= cycle_count % 3;
       end
       if (tv && tr) begin
+        // A pair retires on one edge: the older line is the state after the
+        // edge without the younger instruction's writes.
+        logic pair;
+        logic [31:0] pre_gpr, pre_cr, pre_xer, pre_lr, pre_ctr;
         assert (!retired.illegal && !$isunknown(retired))
           else $fatal(1, "unsupported/unknown retirement in reference program");
+        pair = tv1;
+        pre_gpr = dut.regfile.gpr[retired1.gpr];
+        pre_cr = dut.cr;
+        pre_xer = dut.xer;
+        pre_lr = dut.lr;
+        pre_ctr = dut.ctr;
+        if (pair && retired.gpr_write && (retired.gpr == retired1.gpr)) pre_gpr = retired.value;
         $fwrite(trace_file, "%08x %08x ", retired.pc, retired.insn);
         #1;
-        for (int r = 0; r < 32; r++) $fwrite(trace_file, "%08x ", dut.regfile.gpr[r]);
-        $fwrite(trace_file, "%08x %08x %08x %08x\n", dut.cr, dut.xer, dut.lr, dut.ctr);
+        for (int r = 0; r < 32; r++)
+          $fwrite(trace_file, "%08x ", (pair && retired1.gpr_write && (r == int'(retired1.gpr))) ?
+                  pre_gpr : dut.regfile.gpr[r]);
+        if (pair)
+          $fwrite(trace_file, "%08x %08x %08x %08x\n",
+                  retired1.needs_flags ? pre_cr : dut.cr, retired1.needs_flags ? pre_xer : dut.xer,
+                  retired1.branch ? pre_lr : dut.lr, retired1.branch ? pre_ctr : dut.ctr);
+        else
+          $fwrite(trace_file, "%08x %08x %08x %08x\n", dut.cr, dut.xer, dut.lr, dut.ctr);
         commits++;
+        if (pair && (commits != expected_commits)) begin
+          assert (!retired1.illegal && !$isunknown(retired1))
+            else $fatal(1, "unsupported/unknown CQ[1] retirement in reference program");
+          $fwrite(trace_file, "%08x %08x ", retired1.pc, retired1.insn);
+          for (int r = 0; r < 32; r++) $fwrite(trace_file, "%08x ", dut.regfile.gpr[r]);
+          $fwrite(trace_file, "%08x %08x %08x %08x\n", dut.cr, dut.xer, dut.lr, dut.ctr);
+          commits++;
+          pairs++;
+        end
         if (commits == expected_commits) begin
           assert (request_stalls > 0 && retire_stalls > 0)
             else $fatal(1, "missing reference backpressure coverage");
           $fclose(trace_file);
-          $display("PASS reference RTL trace: %0d retirements, request stalls=%0d retirement stalls=%0d",
-                   commits, request_stalls, retire_stalls);
+          $display("PASS reference RTL trace: %0d retirements, request stalls=%0d retirement stalls=%0d, pairs=%0d",
+                   commits, request_stalls, retire_stalls, pairs);
           $finish;
         end
       end
