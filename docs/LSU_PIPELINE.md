@@ -1,11 +1,15 @@
 # Pipelined load/store unit
 
-`ppc_core` parameter `ENABLE_LSU_PIPE` (default 0, or `+define+PPC_LSU_PIPE`)
-runs plain integer loads and stores in `ppc_lsu_pipe` instead of the
-serialized special lane. Plain means no update, reservation, string, multiple,
-cache operation or external access, outside trace mode. With 0 the core is
-unchanged. No top enables it yet: the router and data cache behind it still
-take one access at a time (see [Remaining work](#remaining-work)).
+Parameter `ENABLE_LSU_PIPE` runs plain integer loads and stores in
+`ppc_lsu_pipe` instead of the serialized special lane. Plain means no
+update, reservation, string, multiple, cache operation or external access,
+outside trace mode. `ppc_core`, `ppc_core_bat`, `ppc_core_bat_cached_bus60x`,
+`ppc603e`, `ppc603e_demo_soc` and `ppc603e_mister` carry it, each defaulting
+to the `PPC_LSU_PIPE` macro (0 when undefined), so a build enables it with
+the parameter or with `+define+PPC_LSU_PIPE=1` (Quartus:
+`VERILOG_MACRO "PPC_LSU_PIPE=1"`). With 0 every top is unchanged. With a data
+cache, the router and the cache also take one load hit per cycle
+([Cached path](#cached-path)).
 
 ## Stages
 
@@ -76,6 +80,36 @@ takes the direct-store path like a lane access.
 A load may be requested once every older access has its response, before
 an older store retires: the store has been performed and cannot fault.
 
+## Cached path
+
+With the unit and a data cache, `ppc_core_bat` sets the router's
+`ENABLE_DATA_PIPELINE` and the cache's `FAST_LOAD_HIT`.
+
+- Router: a plain request (`DMEM_NORMAL`) that hits the data micro-TLB goes
+  to the physical port in the cycle the router accepts it, with the
+  micro-TLB's page and WIMG, and is accepted only when the port takes it.
+  It may follow one access that still awaits its response unless that one
+  is a direct-store access, whose reply `d_ds_q` decodes; at most two are
+  outstanding, answered in order. A miss, or any other class, takes the
+  translation sequence as before, accepted only with no response owed.
+  `pdmem_req_now_o` marks a passed-through request, so `ppc_core_bat` sends
+  its incoming attributes rather than the held ones. The speculation rule
+  is unchanged: a speculative request needs a micro-TLB hit with I=0 and
+  `data_spec_ok_i`.
+- Data cache: a cacheable load hit answers from its first `S_LOOKUP` cycle,
+  from the data RAM output selected by the tag compare. When the answer is
+  taken, the cache accepts the next request in that cycle and looks it up
+  in the next, so hits flow one per cycle. An answer not taken is
+  registered and held, as before. The fast path reads HID0[DCE] as it was
+  in the request's accept cycle; HID0 changes only through the serialized
+  lane, which runs while the unit is idle. Misses, stores, cache
+  operations and inhibited or write-through accesses take the cache's plan
+  as before; the next request waits for their response.
+
+`ppc_dcache_slot` formats each answer from the request it accepted last,
+which is the one answered: a new request is accepted only in the cycle the
+previous answer is taken.
+
 ## Measured timing
 
 Against the bench memory that takes one access per cycle and responds the
@@ -93,19 +127,44 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
 - Four `stw`: 12 cycles first to last retirement, 4 each: each offers only
   at the queue head.
 
+Through the router and data cache of the cached top (`test-core-dcache`
+and `test-core-dcache-lsu-pipe`; DR=1 and IR=1 over BATs, the line and the
+loop cached), second pass of a loop of four independent `lwz`, a fifth
+`lwz` and an `add` that uses it:
+
+| | Unit off | Unit on |
+| --- | ---: | ---: |
+| `lwz` retirements after the first | +5 +10 +15 | +1 +4 +5 |
+| dependent `add` after its `lwz` | 2 | 1 |
+| load hits answered in consecutive cycles (whole program) | 0 | 7 |
+
+With the unit on the load path matches ideal memory: offer, answer in the
+cache's lookup cycle, result, so a dependent instruction retires the cycle
+after its load. The spacing of the four loads is set by fetch, which in this
+top supplies about one instruction every two cycles.
+
+Demo SoC (`ppc603e_demo_soc`, 50 MHz model, on-chip RAM over the 60x bus),
+the same images with the unit off and on:
+
+| Benchmark | Unit off | Unit on | Change |
+| --- | ---: | ---: | ---: |
+| Dhrystone 2.1, cycles per run | 2421.8 | 2126.8 | -12.2% |
+| Dhrystones/s at 50 MHz | 20645 | 23508 | +13.9% |
+| CoreMark, cycles per iteration | 959225 | 823314 | -14.2% |
+| Whetstone hard-float, MWIPS at 50 MHz | 20.321 | 22.815 | +12.3% |
+
+The core's own counters attribute the gain to `lsu_busy` (Dhrystone 2.03 M
+to 1.03 M cycles, CoreMark 2.97 M to 0.62 M); FP loads and stores still use
+the lane.
+
 ## Remaining work
 
-1. Router: accept a request while the previous one awaits its response,
-   passing a micro-TLB hit to the cache in the same cycle.
-2. Data cache: accept a load hit in `S_LOOKUP` and answer it from the lookup
-   cycle, so hits flow one per cycle; then enable the unit on the cached and
-   pin tops and check 66 MHz on the hit path.
-3. Stores at one per cycle: finish a store when translated and checked, and
+1. Stores at one per cycle: finish a store when translated and checked, and
    write it from a committed store queue after retirement, with load
    forwarding or an address check against the queue.
-4. FP loads and stores through the unit, with the FPU's memory port taking
+2. FP loads and stores through the unit, with the FPU's memory port taking
    one access per cycle.
-5. Loads whose base register has an uncommitted producer (operands from
+3. Loads whose base register has an uncommitted producer (operands from
    rename instead of the committed registers).
 
 ## Verification
