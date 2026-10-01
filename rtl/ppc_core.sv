@@ -1188,7 +1188,9 @@ module ppc_core #(
     .memory_quiescent_i(memory_quiescent_i && lsu_empty),
     .frontend_fence_o(frontend_fence), .context_valid_o, .context_ready_i,
     .redirect_accepted_i(recovery_accepted),
-    .store_authorize_i(retire_ready_i), .queue_empty_i(cq_empty),
+    .store_authorize_i(retire_ready_i),
+    // A DQ1 access is never the oldest: DQ0 allocates beside it.
+    .queue_empty_i(cq_empty && !lane_dq1),
     .queue_head_i(cq_head), .commit_i(commit),
     .commit_tag_i(retire_producer), .result_valid_o(special_result_valid),
     .result_ready_i(special_result_ready), .result_o(special_result),
@@ -1537,6 +1539,10 @@ module ppc_core #(
   assign retire1_gate = DUAL && !cq_retire.illegal && !cq_retire.alignment_exception &&
     (cq_retire.data_fault == DATA_OK) && (cq_retire.fetch_fault == FETCH_OK) &&
     !cq_retire.seq_partial &&
+    // The two write ports never target one register.
+    !(cq_retire1.gpr_write &&
+      ((cq_retire.gpr_write && (cq_retire.gpr == cq_retire1.gpr)) ||
+       (cq_retire.update_write && (cq_retire.update_gpr == cq_retire1.gpr)))) &&
     !(special_busy && ((special_producer == retire_producer) ||
                        (special_producer == retire1_producer)));
   assign branch_retire1 = commit1 && retire1_o.branch;
