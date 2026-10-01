@@ -2270,15 +2270,21 @@ $(addprefix demo-mister-,$(BENCH_NAMES)): demo-mister-%: demo-soc-model
 # runs the MiSTer image; MISTER_MODE is the MODE register byte (bits 1:0 program:
 # 0 hello, 1 Dhrystone, 2 CoreMark, 3 all; bit 2 full length, off by default).
 # MISTER_FB=0 selects the native-video build instead of the DDR3 framebuffer.
-MISTER_RTL := $(DEMO_RTL) ../mister/rtl/ppc603e_mister.sv
 MISTER_MODE ?= 03
 MISTER_FB ?= 1
+# MISTER_FPU=1 and MISTER_BENCH=1 match mister/build.sh --fpu and --suite: the
+# FPU, and 256 KiB of program RAM.
+MISTER_FPU ?= 0
+MISTER_BENCH ?= 0
+MISTER_RTL := $(if $(filter 1,$(MISTER_FPU)),$(DEMO_FPU_RTL),$(DEMO_RTL)) ../mister/rtl/ppc603e_mister.sv
 # MISTER_FB_BASE (hex) moves the framebuffer; MISTER_BUSY_SEED (hex) changes the
-# DDRAM busy pattern. Either gives the model its own directory.
+# DDRAM busy pattern. Each option gives the model its own directory.
 MISTER_GFLAGS := $(if $(MISTER_FB_BASE),-GFB_BASE="32'h$(MISTER_FB_BASE)") \
-                 $(if $(MISTER_BUSY_SEED),-GBUSY_SEED="16'h$(MISTER_BUSY_SEED)")
-MISTER_OUT := $(BUILD_DIR)/mister/fb$(MISTER_FB)$(if $(MISTER_FB_BASE),-$(MISTER_FB_BASE))$(if $(MISTER_BUSY_SEED),-s$(MISTER_BUSY_SEED))
-.PHONY: lint-mister mister-model mister-firmware mister-smoke
+                 $(if $(MISTER_BUSY_SEED),-GBUSY_SEED="16'h$(MISTER_BUSY_SEED)") \
+                 $(if $(filter 1,$(MISTER_FPU)),"-GENABLE_FPU=1'b1") \
+                 $(if $(filter 1,$(MISTER_BENCH)),-GRAM_BYTES=262144)
+MISTER_OUT := $(BUILD_DIR)/mister/fb$(MISTER_FB)$(if $(MISTER_FB_BASE),-$(MISTER_FB_BASE))$(if $(MISTER_BUSY_SEED),-s$(MISTER_BUSY_SEED))$(if $(filter 1,$(MISTER_FPU)),-fpu)$(if $(filter 1,$(MISTER_BENCH)),-bench)
+.PHONY: lint-mister mister-model mister-firmware mister-smoke mister-smoke-fpu
 lint: lint-mister
 lint-mister:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_mister $(MISTER_RTL)
@@ -2296,13 +2302,22 @@ mister-smoke: mister-model mister-firmware
 	timeout 3600 ./$(MISTER_OUT)/model/Vtb_mister $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=$(MISTER_MODE) +PPM=$(MISTER_OUT)/mister-$(MISTER_MODE).ppm +SAVE=$(MISTER_OUT)/screen-$(MISTER_MODE).pfb
 	python3 tools/ppm_to_png.py $(MISTER_OUT)/mister-$(MISTER_MODE).ppm $(MISTER_OUT)/mister-$(MISTER_MODE).png
 	if [ "$(MISTER_FB)" = 1 ]; then python3 ../mister/fb2png.py $(MISTER_OUT)/screen-$(MISTER_MODE).pfb $(MISTER_OUT)/screen-$(MISTER_MODE).png; fi
+# The --fpu --suite whetstone core: hard-float Whetstone at simulation size,
+# MODE as the suite core drives it (no menu).
+mister-smoke-fpu:
+	$(MAKE) mister-model MISTER_FPU=1 MISTER_BENCH=1
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) mister-whetstone-hf
+	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu-bench/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-whetstone-hf-smoke.hex +MODE=04 +PPM=$(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.ppm +SAVE=$(BUILD_DIR)/mister/fb1-fpu-bench/screen.pfb
+	python3 ../mister/fb2png.py $(BUILD_DIR)/mister/fb1-fpu-bench/screen.pfb $(BUILD_DIR)/mister/fb1-fpu-bench/screen.png
 # Uninitialized-state sweep: core, chip, demo SoC and MiSTer benches rerun
 # with several random initial values (XRAND builds) plus all-zero and all-one
 # state, so a register or memory that is used or written before reset
 # fails on some seed. Each model builds once; runs are separate targets, so
 # `make -j2 xrand-sweep` runs two at a time. Logs go to $(BUILD_DIR)/xrand.
 XRAND_SWEEP_SEEDS ?= 1 2 3 4 5 6 7 8 zero ones
-XRAND_SWEEP_BENCHES := soc-target-reset core-full-decode chip-pins demo-hello mister-fb1 mister-fb0
+XRAND_SWEEP_BENCHES := soc-target-reset core-full-decode chip-pins demo-hello mister-fb1 mister-fb0 \
+                       mister-fpu
 xrand_args = $(if $(filter zero,$1),+verilator+rand+reset+0,$(if $(filter ones,$1),+verilator+rand+reset+1,+verilator+seed+$1 +verilator+rand+reset+2))
 XRAND_CMD_soc-target-reset := ./$(BUILD_DIR)/soc-target-reset/Vtb_soc_target_reset
 XRAND_CMD_core-full-decode := ./$(BUILD_DIR)/core-full-decode/Vtb_core_full_decode
@@ -2310,12 +2325,16 @@ XRAND_CMD_chip-pins := ./$(BUILD_DIR)/chip-pins/Vtb_chip_pins
 XRAND_CMD_demo-hello := ./$(BUILD_DIR)/demo/model/Vtb_demo_soc +IMAGE=$(DEMO_FW_DIR)/hello.hex +NAME=hello
 XRAND_CMD_mister-fb1 := ./$(BUILD_DIR)/mister/fb1/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=00
 XRAND_CMD_mister-fb0 := ./$(BUILD_DIR)/mister/fb0/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=00
+XRAND_CMD_mister-fpu := ./$(BUILD_DIR)/mister/fb1-fpu-bench/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister-whetstone-hf-smoke.hex +MODE=04
 XRAND_SWEEP_RUNS := $(foreach b,$(XRAND_SWEEP_BENCHES),$(foreach s,$(XRAND_SWEEP_SEEDS),xrand-run-$b-$s))
 .PHONY: xrand-sweep xrand-models $(XRAND_SWEEP_RUNS)
 xrand-models:
 	$(MAKE) XRAND=1 test-soc-target-reset test-core-full-decode test-chip-pins demo-soc-model demo-firmware mister-firmware
 	$(MAKE) XRAND=1 mister-model MISTER_FB=1
 	$(MAKE) XRAND=1 mister-model MISTER_FB=0
+	$(MAKE) XRAND=1 mister-model MISTER_FPU=1 MISTER_BENCH=1
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) mister-whetstone-hf
 	mkdir -p $(BUILD_DIR)/xrand
 xrand_seed = $(lastword $(subst -, ,$1))
 xrand_bench = $(patsubst xrand-run-%-$(call xrand_seed,$1),%,$1)

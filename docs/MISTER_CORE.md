@@ -247,6 +247,9 @@ It has not been built for the board.
 mister/build.sh --clean --fpu --suite whetstone   # mister/output_files/ppc603e_whetstone_fpu.rbf
 ```
 
+`make -C sim mister-smoke-fpu` simulates this core
+([FPU core in simulation](#fpu-core-in-simulation)).
+
 No FPU core has been fitted yet: at commit 93f121b Quartus 17.0 stops in analysis on
 two constructs of the FPU integration, in every build that compiles the core (with or
 without `--fpu`): the conditional generate block `if (ENABLE_FPU) begin : g_fpu` in
@@ -346,6 +349,40 @@ the same image passed on a model build with other initial values (42,172,533 cyc
 It does not cover `hps_io`, the OSD, the PLL, the framework scaler, the 1920 × 1080
 geometry in simulation (its checksum comes from `toolchain/demo/mandel_sum.c` on the
 host), the full-length runs, or DDR3 read-back by the scaler.
+
+### FPU core in simulation
+
+`MISTER_FPU=1` and `MISTER_BENCH=1` build `tb_mister` as `--fpu` and `--suite` do: the
+same file lists as `files.qip` (`rtl/fpu_files.f` added), `ENABLE_FPU` with the full
+FPU, and 256 KiB of program RAM. `make -C sim mister-smoke-fpu` runs the
+`--fpu --suite whetstone` core this way on `mister-whetstone-hf-smoke.hex`, the board
+image's layout (`mister-bench.ld`) at simulation length, with `MODE=04` as the suite core
+drives it, through the checks above. Every DDR3 bench also fails on a screen of one
+colour. `xrand-sweep` runs the same image on that model (`mister-fpu`).
+
+Before this the MiSTer top had not been simulated with the FPU. A black screen reported
+from the board `--fpu --suite whetstone` build was a screenshot taken with the MiSTer
+hotkey, which cannot capture this core
+([Screenshots and screen saves](#screenshots-and-screen-saves)); the simulation found
+no defect.
+
+Recorded: `make -C sim mister-smoke-fpu`, `make -C sim mister-smoke MISTER_FPU=1`,
+`make -C sim lint check-spec mister-smoke demo-whetstone-hf`, commit 537ee1f plus the
+uncommitted change that adds them, 2026-09-30. All pass.
+
+| Measure | `mister-smoke-fpu` | `mister-smoke MISTER_FPU=1` |
+|---|---:|---:|
+| Image, mode | `mister-whetstone-hf-smoke.hex`, 04 | `mister.hex`, 03 |
+| Cycles from reset to exit | 5,620,399 | 30,886,209 |
+| Instructions retired | 1,528,573 | 11,507,326 |
+| Framebuffer stores (= DDRAM writes) | 56,112 | 154,192 |
+| Screen file | 153 sectors, every byte checked | 153 sectors, every byte checked |
+
+Whetstone reports 20.324 MWIPS at 50 MHz, 0.4065 MWIPS/MHz, 10 of 10 modules matching
+the host reference (loop count 2). This shows the FPU core and the hard-float image run
+at the MiSTer top with the board's file list, macros and RAM size. It does not run the
+full-length image (`WHET_SECS` 10), the 1920 × 1080 geometry, or the board's `mister.mif`
+initialisation, which the build summary checks.
 
 ### Build
 
