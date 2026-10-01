@@ -904,8 +904,9 @@ MVP 95.73% → 97.20%. See the signoff section in
 ## Batch 3 — accepted (2026-09-30)
 
 Outside MVP scope: bus clock ratios, 602 caches and multiply timing (V10), the
-`ppc602` pin top and `chip602` project (V11), FPU and area trims. No gate of its
-own; the batches 4+5 gate below ran on a tree containing it. MVP 97.20%
+`ppc602` pin top and `chip602` project (V11), FPU and area trims. Its batch
+gate passed on `e7f6a06`, including a timing-clean MiSTer build; the batches
+4+5 gate below also ran on a tree containing it. MVP 97.20%
 (unchanged).
 
 ## Batches 4+5 — accepted (2026-09-30)
