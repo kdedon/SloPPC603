@@ -174,7 +174,7 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh [--clean] [--native] [--fpu|--fpu-compact] [--dual] [--suite nbench|embench|selftest|whetstone]
+mister/build.sh [--clean] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone]
 ```
 
 `--native` builds the 320 × 240 native-video variant; the default is the 1920 × 1080 DDR3

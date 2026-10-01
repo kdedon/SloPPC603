@@ -461,6 +461,7 @@ test: test-core-dual
 # One program at dispatch widths 1 and 2: the pair rules at width 2 and the
 # same retirement stream at both.
 test-core-dual:
+	mkdir -p $(BUILD_DIR)
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_dual -GDISPATCH_WIDTH=1 --Mdir $(BUILD_DIR)/core-dual-w1 $(RTL) ../tb/tb_core_dual.sv
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_core_dual -GDISPATCH_WIDTH=2 --Mdir $(BUILD_DIR)/core-dual-w2 $(RTL) ../tb/tb_core_dual.sv
 	./$(BUILD_DIR)/core-dual-w1/Vtb_core_dual $(SIM_ARGS) +RETIRE_LOG=$(BUILD_DIR)/core-dual-w1/retire.txt
@@ -1969,7 +1970,7 @@ release-archive:
 # Compiled firmware on DingusPPC and the RTL: retirement lockstep and final RAM.
 .PHONY: test-reference-firmware
 test-reference-firmware: reference-checkout ci-firmware
-	python3 cosim/run_firmware_reference.py --build-dir $(BUILD_DIR)/reference-firmware --reference $(REFERENCE_DIR)
+	python3 cosim/run_firmware_reference.py --build-dir $(BUILD_DIR)/reference-firmware --reference $(REFERENCE_DIR) --verilator $(VERILATOR_TOOL)
 
 # Long DingusPPC comparison, outside regression: every reference profile
 # plus 64 stress seeds at the generator's 512-block maximum.
@@ -1989,10 +1990,12 @@ reference-acceptance: reference-runner-flat
 FPU_CORE_IMAGE := $(BUILD_DIR)/core-fpu/program.txt
 FPU_CORE_SEED ?= 0x603e
 FPU_CORE_RANDOM ?= 200
+# Latency probes follow the load/store path the Verilator command selects.
+FPU_CORE_LSU := $(if $(or $(findstring lsu-pipe,$(VERILATOR)),$(findstring PPC_LSU_PIPE=1,$(VERILATOR))),--lsu-pipe)
 test-core-fpu:
 	mkdir -p $(BUILD_DIR)/core-fpu
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
-	python3 tools/fpu_core_program.py --image $(FPU_CORE_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM)
+	python3 tools/fpu_core_program.py --image $(FPU_CORE_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) $(FPU_CORE_LSU)
 	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu/Vtb_core_fpu +IMAGE=$(FPU_CORE_IMAGE) +STALL=0 $(SIM_ARGS)
 
@@ -2002,7 +2005,7 @@ test-core-fpu:
 test-core-lsu-timing:
 	mkdir -p $(BUILD_DIR)/core-lsu-timing
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GPIPE_MEM=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
-	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe
+	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=0 $(SIM_ARGS)
 

@@ -34,7 +34,7 @@ module tb_compiled_live_firmware;
   logic [49:0] unused_page_ports;
   logic [32:0] unused_icbi_core;
   logic unused_checkstop;
-  ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1)) dut(
+  ppc_core_bat #(.RETIRE_PAIRS(1'b0), .ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1)) dut(
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

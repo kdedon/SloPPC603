@@ -38,7 +38,7 @@ module tb_compiled_table_fault_firmware;
   logic [49:0] unused_page_ports;
   logic [32:0] unused_icbi_core;
   logic unused_checkstop;
-  ppc_core_bat #(.ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
+  ppc_core_bat #(.RETIRE_PAIRS(1'b0), .ENABLE_TEST_REDIRECT(1'b0), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_TGPR(1'b1),.ENABLE_SDR1(1'b1),.ENABLE_RUNTIME_BAT(1'b1),
                  .ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1),
                  .ENABLE_TLB_LOAD(1'b1),.ENABLE_TLB_INVALIDATE(1'b1),.ENABLE_PAGE_MISS_RESULTS(1'b1),

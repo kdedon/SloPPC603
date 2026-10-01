@@ -212,6 +212,8 @@ module tb_core_fpu #(
       // First dispatch: a replayed instruction dispatches again.
       if (dut.dispatch && (dispatch_at.exists(dut.iq_head.pc) == 0))
         dispatch_at[dut.iq_head.pc] = cycles;
+      if (dut.dispatch1 && (dispatch_at.exists(dut.dq1_head.pc) == 0))
+        dispatch_at[dut.dq1_head.pc] = cycles;
       if (tv && tr) retire_at[retired.pc] = cycles;
       if (tv && tr) begin
         retires++;
@@ -297,7 +299,11 @@ module tb_core_fpu #(
         $display("SPACING %s pc=%08x..%08x cycles=%0d expected=%0d",
                  spacings[i].dispatch ? "dispatch" : "retire", spacings[i].first,
                  spacings[i].last, b - a, spacings[i].cycles);
-        check(seen && (FPU_IMPL != 0 || b - a == int'(spacings[i].cycles)),
+        // Dispatch spacings are single-dispatch schedules; a pair dispatch
+        // (UM 6.6.1.2) only shortens them.
+        check(seen && (FPU_IMPL != 0 || b - a == int'(spacings[i].cycles) ||
+                       (dut.DUAL && spacings[i].dispatch &&
+                        (b - a < int'(spacings[i].cycles)))),
               $sformatf("spacing pc=%08x..%08x got %0d expected %0d", spacings[i].first,
                         spacings[i].last, b - a, spacings[i].cycles));
         spacing_checks++;

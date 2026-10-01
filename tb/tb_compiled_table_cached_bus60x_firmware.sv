@@ -53,7 +53,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
   logic [31:0] fault_count_addr,fault_records_addr;
 
   logic unused_checkstop;
-  ppc_core_bat_cached_bus60x #(
+  ppc_core_bat_cached_bus60x #(.RETIRE_PAIRS(1'b0), 
     .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_TGPR(1'b1),.ENABLE_SDR1(1'b1),.ENABLE_RUNTIME_BAT(1'b1),

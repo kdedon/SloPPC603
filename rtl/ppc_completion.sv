@@ -45,6 +45,8 @@ module ppc_completion #(
   output ppc_pkg::wake_packet_t wake1_o,
   output logic retire_valid_o,
   input logic retire_ready_i,
+  // The core withholds the head's offer (retire_valid_o) while set.
+  input logic retire_hold_i,
   output ppc_pkg::retire_packet_t retire_o,
   output ppc_pkg::completion_tag_t retire_tag_o,
   // CQ[1] retires only with the head, when retire_ready_i also holds.
@@ -213,11 +215,11 @@ module ppc_completion #(
     redirect_accepted_o = redirect_valid_i && redirect_found;
     // An offered finished head is irrevocable even when ready on this edge.
     if (ENABLE_PIVOT_RECOVERY && (count_q != '0) &&
-        (head_q < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
+        (head_q < CQ_INDEX_WIDTH'(CQ_DEPTH)) && !retire_hold_i &&
         done_q[head_q] && redirect_candidate_kill[head_q])
       redirect_accepted_o = 1'b0;
     // So is an offered CQ[1] that may retire.
-    if (ENABLE_PIVOT_RECOVERY && retire1_valid_o && retire1_ready_i &&
+    if (ENABLE_PIVOT_RECOVERY && retire1_valid_o && retire1_ready_i && !retire_hold_i &&
         redirect_candidate_kill[head1_q])
       redirect_accepted_o = 1'b0;
 

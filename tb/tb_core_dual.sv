@@ -281,7 +281,9 @@ module tb_core_dual #(
       expect_pair(32'h24, 1'b1, "add + dependent addi");
       expect_pair(32'h34, 1'b0, "add + mullw (same unit)");
       expect_pair(32'h44, 1'b1, "lwz + dependent add");
-      expect_pair(32'h4c, 1'b1, "add + lwz");
+      // A DQ1 access takes the serialized lane, which the pipelined unit
+      // replaces.
+      expect_pair(32'h4c, !dut.ENABLE_LSU_PIPE, "add + lwz");
       expect_pair(32'h58, 1'b0, "or + stw of its result");
       expect_pair(32'h64, 1'b0, "cmpw + cmpw (one CR rename)");
       expect_pair(32'h10, 1'b0, "sync alone");

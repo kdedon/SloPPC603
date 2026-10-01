@@ -29,7 +29,7 @@ module tb_completion_ring;
     .finish_accept_o(finish),.wake_valid_o(wv),.wake_o(unused_wake),
     .result1_valid_i(1'b0), .result1_i('0),
     /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
-    .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(unused_retiring),.retire_tag_o(ttag),
+    .retire_valid_o(tv),.retire_ready_i(tr), .retire_hold_i(1'b0),.retire_o(unused_retiring),.retire_tag_o(ttag),
     .redirect_valid_i(dv),.redirect_all_i(da),.redirect_keep_pivot_i(dk),
     .redirect_pivot_i(pivot),.redirect_accepted_o(accepted),.redirect_kill_o(kills),
     .redirect_kill_generation_o(gens),.recovery_survivor_count_o(scount),

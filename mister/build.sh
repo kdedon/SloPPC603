@@ -15,14 +15,16 @@
 # Whetstone then runs its hard-float build. --fpu-compact adds the COMPACT
 # FPU instead: the same results in less area, with longer latencies. --dual
 # builds the processor with dual dispatch and retirement (DISPATCH_WIDTH 2).
+# --lsu-pipe builds it with the pipelined load/store unit (ENABLE_LSU_PIPE).
 set -euo pipefail
 clean=0
 native=0
 fpu=0
 fpu_compact=0
 dual=0
+lsu_pipe=0
 suite=""
-usage() { echo "usage: $0 [--clean] [--native] [--fpu|--fpu-compact] [--dual] [--suite nbench|embench|selftest|whetstone]" >&2; exit 2; }
+usage() { echo "usage: $0 [--clean] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone]" >&2; exit 2; }
 while (($#)); do
   case "$1" in
     --clean) clean=1 ;;
@@ -30,6 +32,7 @@ while (($#)); do
     --fpu) fpu=1 ;;
     --fpu-compact) fpu=1; fpu_compact=1 ;;
     --dual) dual=1 ;;
+    --lsu-pipe) lsu_pipe=1 ;;
     --suite)
       shift
       case "${1:-}" in nbench | embench | selftest | whetstone) suite="$1" ;; *) usage ;; esac
@@ -94,6 +97,9 @@ fi
 if [[ "${dual}" == 1 ]]; then
   echo 'set_global_assignment -name VERILOG_MACRO "MISTER_DUAL=1"' >> "${here}/ppc603e.qsf"
 fi
+if [[ "${lsu_pipe}" == 1 ]]; then
+  echo 'set_global_assignment -name VERILOG_MACRO "PPC_LSU_PIPE=1"' >> "${here}/ppc603e.qsf"
+fi
 status=0
 # One Quartus build at a time on a shared machine.
 flock /tmp/ppc603e-quartus.lock docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
@@ -132,11 +138,12 @@ if [[ -f "${out}/ppc603e.rbf" ]]; then
   fpu_part="$([[ "${fpu}" == 1 ]] && echo _fpu || true)"
   if [[ "${fpu_compact}" == 1 ]]; then fpu_part=_fpu_compact; fi
   if [[ "${dual}" == 1 ]]; then fpu_part="${fpu_part}_dual"; fi
+  if [[ "${lsu_pipe}" == 1 ]]; then fpu_part="${fpu_part}_lsupipe"; fi
   if [[ -n "${suite}${fpu_part}" ]]; then
     rbf="${out}/ppc603e${suite:+_${suite}}${fpu_part}.rbf"
     mv "${out}/ppc603e.rbf" "${rbf}"
   fi
-  what="${short}, ${suite:-hello/Dhrystone/CoreMark}$([[ "${fpu}" == 1 ]] && echo ", FPU" || true)$([[ "${dual}" == 1 ]] && echo ", dual dispatch" || true), $([[ "${native}" == 1 ]] && echo "native video" || echo "1920x1080 DDR3 framebuffer")"
+  what="${short}, ${suite:-hello/Dhrystone/CoreMark}$([[ "${fpu}" == 1 ]] && echo ", FPU" || true)$([[ "${dual}" == 1 ]] && echo ", dual dispatch" || true)$([[ "${lsu_pipe}" == 1 ]] && echo ", pipelined LSU" || true), $([[ "${native}" == 1 ]] && echo "native video" || echo "1920x1080 DDR3 framebuffer")"
   echo "rbf: ${rbf} (${what})"
   summary_rbf="${rbf}"
   # A timing-clean build is published under the MiSTer name convention,

@@ -77,7 +77,7 @@ module tb_compiled_mmu_stress_firmware;
   string summary;
 
   logic checkstop;
-  ppc_core_bat_cached_bus60x #(
+  ppc_core_bat_cached_bus60x #(.RETIRE_PAIRS(1'b0), 
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_EXTERNAL_INTERRUPTS(1'b1),.ENABLE_TIMERS(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_SEGMENT_REGISTERS(1'b1),

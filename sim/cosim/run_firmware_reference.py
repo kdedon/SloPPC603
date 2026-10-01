@@ -149,7 +149,7 @@ def main():
         command([runner, image, f'{mailbox:08x}', out/'ref.trace', out/'ref.mem', args.steps, *presets],
                 out/'reference.log')
         command([sys.executable, PROJECT/'toolchain/run-rtl-smoke.py', '--profile', profile, '--elf', elf,
-                 '--build-dir', out/'rtl',
+                 '--build-dir', out/'rtl', '--verilator', args.verilator,
                  f'--plusarg=+TRACE={out}/rtl.trace', f'--plusarg=+MEMDUMP={out}/rtl.mem'], out/'rtl.log')
         rtl, reference = rtl_records(out/'rtl.trace'), reference_records(out/'ref.trace')
         rtl_bytes, ref_bytes = read_bytes(out/'rtl.mem'), read_bytes(out/'ref.mem')

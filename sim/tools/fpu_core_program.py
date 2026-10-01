@@ -77,16 +77,19 @@ MEMORY_SPACING = {'lfd-issue': 15, 'lfd-retire': 15, 'lfs-issue': 15, 'lfs-retir
                   'stfs-retire': 18, 'fadd-stfd': 6, 'stw-retire': 12}
 
 
-# With the pipelined load/store unit and a memory that takes one access per
-# cycle, integer loads meet Table 6-6: 2-cycle latency (one more than add),
-# one per cycle.
-LSU_PIPE = False
+# The pipelined load/store unit takes a cycle less than the lane. With it and
+# a memory that takes one access per cycle, integer loads meet Table 6-6:
+# 2-cycle latency (one more than add), one per cycle.
+PIPE_MEM = False
 
 
 def use_lsu_pipe():
-    global LSU_PIPE
-    LSU_PIPE = True
     LATENCY.update({'lwz': 4, 'stw': 4})
+
+
+def use_pipe_mem():
+    global PIPE_MEM
+    PIPE_MEM = True
 
 
 def use_split_doublewords():
@@ -756,7 +759,7 @@ def fp_memory_streams(p, forms):
     pcs = [p.emit(with_dst(forms['fadd'], 4)),
            p.emit((forms['stfd'] & ~(31 << 21)) | (4 << 21))]
     p.spacings.append(('R', pcs[0], pcs[1], MEMORY_SPACING['fadd-stfd']))
-    if LSU_PIPE:
+    if PIPE_MEM:
         integer_memory_streams(p)
 
 
@@ -851,8 +854,9 @@ def main():
     parser.add_argument('--seed', type=lambda s: int(s, 0), default=0x603e)
     parser.add_argument('--random', type=int, default=200)
     parser.add_argument('--dmem-bits', type=int, choices=(32, 64), default=64)
-    parser.add_argument('--lsu-pipe', action='store_true',
-                        help='pipelined LSU and one-access-per-cycle memory')
+    parser.add_argument('--lsu-pipe', action='store_true', help='pipelined LSU')
+    parser.add_argument('--pipe-mem', action='store_true',
+                        help='one-access-per-cycle memory, with integer access streams')
     args = parser.parse_args()
     if args.chip_image:
         use_chip_layout()
@@ -860,6 +864,8 @@ def main():
         use_split_doublewords()
     if args.lsu_pipe:
         use_lsu_pipe()
+    if args.pipe_mem:
+        use_pipe_mem()
     p = build(args.seed, args.random)
     print(f'fpu_core_program: {len(p.words)} words, {len(p.expects)} expected, '
           f'{len(p.log)} exceptions, {len(p.probes)} probes')

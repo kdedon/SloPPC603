@@ -1417,7 +1417,7 @@ module ppc_core #(
   assign c0_iu = normal_uop && !bu_branch;
   assign c0_branch = bu_branch && iq_folded &&
     ((iq_head.insn[31:26] == 6'd18) || (iq_head.insn[25] && iq_head.insn[23]));
-  assign c0_lane = special_uop && dispatch_mem_plain && !lsu_route;
+  assign c0_lane = special_uop && dispatch_mem_plain;
   assign c0_fp = fp_uop;
   assign c0_fp_mem = special_uop && dispatch_fp_mem_plain;
   assign d1_valid = DUAL && iq_valid1 && !trace_mode && !seq_active && !dq1_uop.privileged;
@@ -1880,6 +1880,7 @@ module ppc_core #(
     .wake1_valid_o(wake1_valid), .wake1_o(wake1),
     .retire_valid_o(cq_retire_valid),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block),
+    .retire_hold_i(special_retire_hold || halted_o),
     .retire_o(cq_retire), .retire_tag_o(retire_producer),
     .retire1_valid_o(cq_retire1_valid), .retire1_ready_i(retire1_ready_i && retire1_gate),
     .retire1_o(cq_retire1), .retire1_tag_o(retire1_producer),
