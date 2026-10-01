@@ -1983,13 +1983,13 @@ VARIANT_ALL := 0 1 2 3 4
 # Strap codes a build must refuse, as VARIANT-PLL-message: PID7v has no 1:1
 # ratio; a PID6 2:1 code is legal but not 1:1; 0111 is no PID6 code.
 VARIANT_PLL_REJECTS := 0-0 0-12 1-7
-.PHONY: variant-matrix test-reference-pid6
+.PHONY: variant-matrix test-reference-pid6 test-reference-603
 regression: variant-matrix
 variant-matrix: $(addprefix variant-lint-,$(VARIANT_IDS)) $(addprefix variant-reject-,$(VARIANT_REJECTED)) \
                 $(addprefix variant-divider-,$(VARIANT_CORE_IDS)) $(addprefix variant-full-decode-,$(VARIANT_CORE_IDS)) \
                 variant-multiply-timing-0 variant-multiply-timing-4 variant-icache-602 \
                 $(addprefix variant-config-,$(VARIANT_ALL)) $(addprefix variant-tlb-miss-,$(VARIANT_ALL)) \
-                $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6 \
+                $(addprefix variant-pll-reject-,$(VARIANT_PLL_REJECTS)) variant-pll-accept test-reference-pid6 test-reference-603 \
                 $(addprefix variant-decode-sweep-,$(filter-out 0,$(VARIANT_ALL))) $(addprefix variant-exception-602-,$(VARIANT_ALL)) \
                 $(addprefix variant-mmu-602-,$(VARIANT_ALL)) \
                 variant-special-lint-602 variant-watchdog-602 test-chip-603
@@ -2043,6 +2043,8 @@ variant-pll-accept:
 	@echo "PASS: PLL_CFG accepted: $(VARIANT_PLL_ACCEPTS)"
 test-reference-pid6: reference-checkout
 	python3 cosim/run_reference.py --build-dir $(BUILD_DIR)/reference-pid6 --model MPC603E $(REFERENCE_ARGS)
+test-reference-603: reference-checkout
+	python3 cosim/run_reference.py --build-dir $(BUILD_DIR)/reference-603 --model MPC603 $(REFERENCE_ARGS)
 variant-lint-%:
 	$(VERILATOR) --lint-only -Wall --top-module tb_variant_lint -GVARIANT=$* $(CHIP_RTL) ../tb/tb_variant_lint.sv
 variant-reject-%:

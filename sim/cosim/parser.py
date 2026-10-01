@@ -28,6 +28,7 @@ KNOWN_FIELDS = {
 MODEL_METADATA = {
     "MPC603EV": {"pid": "PID7v", "pvr": "0x00070101"},
     "MPC603E": {"pid": "PID6", "pvr": "0x00060101"},
+    "MPC603": {"pid": "603", "pvr": "0x00030101"},
 }
 ROUNDING_MODES = {"RTN", "RTZ", "RPI", "RNI", "VEN"}
 HEX32 = re.compile(r"^0x[0-9A-Fa-f]{1,8}$")
@@ -116,7 +117,7 @@ def _file_inventory(root: Path, filename: str, kind: str) -> dict:
 
 def build_manifest(reference_root: Path, model: str = "MPC603EV") -> dict:
     if model not in MODEL_METADATA:
-        raise ValueError(f"unsupported reference model {model!r}; choose MPC603EV or MPC603E")
+        raise ValueError(f"unsupported reference model {model!r}; choose MPC603EV, MPC603E or MPC603")
     return {
         "schema": "dingusppc-csv-inventory-v1",
         "reference_model": {"name": model, **MODEL_METADATA[model]},

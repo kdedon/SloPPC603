@@ -96,7 +96,8 @@ module tb_chip_603 #(parameter int PLL = -1);
     handler(32'h600);
     handler(32'hc00);
     at = MAIN;
-    // I-cache on, BAT0 over the image for both sides and both states.
+    // Caches on; BAT0 over the image, caching inhibited for data, for both
+    // sides and both states; DBAT1 a cacheable alias at 0x2000_0000.
     emit_const(3, 32'h8000);
     emit(mtspr(1008, 3));
     emit(ISYNC);
@@ -106,6 +107,9 @@ module tb_chip_603 #(parameter int PLL = -1);
     emit(mtspr(537, 3));
     emit_const(3, 32'hfff0_0002);
     emit(mtspr(529, 3));
+    emit(mtspr(539, 3));
+    emit_const(3, 32'h2000_0003);
+    emit(mtspr(538, 3));
     emit_const(3, SR1);
     emit(32'h7c01_01a4 | (32'd3 << 21));          // mtsr 1, r3
     emit_const(6, 32'h1000_0000);
@@ -168,6 +172,14 @@ module tb_chip_603 #(parameter int PLL = -1);
     emit(asm_lis(3, 'h1000));
     emit(mtspr(9, 3));
     emit(BCTR);
+    // Two data lines of one set fill both ways; CSE gives the way. The data
+    // cache is enabled last: the handlers' real-mode logs are cacheable.
+    emit_const(3, 32'hc000);
+    emit(mtspr(1008, 3));
+    emit(ISYNC);
+    emit(asm_lis(10, 'h2000));
+    emit(asm_lwz(3, 'h4000, 10));
+    emit(asm_lwz(3, 'h5000, 10));
     emit(asm_li(3, 1));
     emit(asm_stw(3, DONE, 31));
     emit(asm_ba(at, 1'b0));
