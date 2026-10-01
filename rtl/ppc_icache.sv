@@ -11,7 +11,9 @@
 module ppc_icache #(
   // 603e: 128 sets x 4 ways; 603: 128 x 2; 602: 64 x 2.
   parameter int SET_COUNT = 128,
-  parameter int WAY_COUNT = 4
+  parameter int WAY_COUNT = 4,
+  // 2: a hit at an even word also returns the next word.
+  parameter int FETCH_WIDTH = 1
 ) (
   input  logic         clk_i,
   input  logic         rst_ni,
@@ -21,7 +23,8 @@ module ppc_icache #(
   input  logic [31:0]  fetch_addr_i,
   output logic         fetch_rsp_valid_o,
   input  logic         fetch_rsp_ready_i,
-  output logic [31:0]  fetch_rsp_insn_o,
+  // FETCH_WIDTH 2: {next word valid, word at addr + 4, word at addr}.
+  output logic [33*FETCH_WIDTH-2:0] fetch_rsp_insn_o,
   output logic         fetch_rsp_error_o,
 
   input  logic         kill_i,
@@ -124,7 +127,7 @@ module ppc_icache #(
   logic [WAY_COUNT-1:0] lookup_valid, lookup_hit_way;
   logic lookup_hit;
   logic [WAY_BITS-1:0] lookup_way, victim_way;
-  logic [31:0] ram_insn;
+  logic [31:0] ram_insn, ram_insn1;
 
   function automatic logic [31:0] select_word(
     input logic [255:0] line,
@@ -219,8 +222,12 @@ module ppc_icache #(
       if (lookup_hit_way[w]) lookup_way = lookup_way | WAY_BITS'(w);
 
     ram_insn = '0;
+    ram_insn1 = '0;
     for (int w = 0; w < WAY_COUNT; w++)
-      if (rsp_way_q[w]) ram_insn = ram_insn | select_half_word(data_rdata[w], rsp_word_q);
+      if (rsp_way_q[w]) begin
+        ram_insn = ram_insn | select_half_word(data_rdata[w], rsp_word_q);
+        ram_insn1 = ram_insn1 | select_half_word(data_rdata[w], {rsp_word_q[1], 1'b1});
+      end
 
     // Fill the lowest invalid way first, else the strict-LRU way.
     victim_way = '0;
@@ -238,7 +245,6 @@ module ppc_icache #(
                     (!rsp_valid_q || fetch_rsp_ready_i) &&
                     !kill_i && !invalidate_i;
     fetch_rsp_valid_o = rst_ni && rsp_valid_q && !kill_i && !invalidate_i;
-    fetch_rsp_insn_o = rsp_insn_q | ram_insn;
     fetch_rsp_error_o = rsp_error_q;
 
     line_req_valid_o = rst_ni && state_q == IC_REFILL_REQUEST &&
@@ -256,6 +262,16 @@ module ppc_icache #(
     miss_o = rst_ni && miss_q;
     protocol_error_o = rst_ni && protocol_error_q;
   end
+
+  generate
+  if (FETCH_WIDTH == 2) begin : g_pair
+    assign fetch_rsp_insn_o = {(|rsp_way_q) && !rsp_word_q[0], ram_insn1, rsp_insn_q | ram_insn};
+  end else begin : g_single
+    assign fetch_rsp_insn_o = rsp_insn_q | ram_insn;
+    logic unused_ram_insn1;
+    assign unused_ram_insn1 = ^ram_insn1;
+  end
+  endgenerate
 
   // The second half of an accepted line waits one cycle for the write port.
   always_ff @(posedge clk_i) begin
