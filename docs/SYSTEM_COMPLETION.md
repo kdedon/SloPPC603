@@ -1,6 +1,6 @@
 # System completion scorecard
 
-Updated: 2026-09-28. Scope: single-issue, big-endian integer CPU with supervisor
+Updated: 2026-09-30. Scope: single-issue, big-endian integer CPU with supervisor
 mode, a snooping MEI data cache, a pin-accurate chip boundary, resumable exceptions, external/decrementer interrupts, CPU-managed BAT
 and page translation, and an integrated cache/60x path. FPGA acceptance also
 requires reviewed constraints and passing setup/hold. Board bring-up is excluded.
@@ -19,7 +19,7 @@ acceptance evidence are still required. The aggregate is `sum(weight × completi
 / 100`, rounded to a whole percent. Keep weights fixed between rounds unless the
 user changes scope. Treat small score changes as bookkeeping, not velocity.
 
-**MVP estimate: about 97% complete (weighted 97.2%); MVP release check passed 2026-09-29.** The
+**MVP estimate: about 97% complete (weighted 97.2%); MVP release check passed 2026-09-29; the 2026-09-30 batch gates pass on later RTL.** The
 remaining work is concentrated in platform exceptions (machine check, trace,
 debug) and timing closure. These are
 hard acceptance blockers regardless of the weighted score. Final FPGA acceptance
@@ -42,7 +42,7 @@ is currently unmet.
 | Instruction cache and maintenance | 4% | 97% | 16-KiB four-way physical cache, block-RAM data array, translated WIMG=0 fills/hits, scalar bypass, remap and explicit stale-code invalidate/restart, denied warm-line suppression and partial-fill TEA/reset; CPU `icbi` drains held/retried fills then clears the set; `dcbst`/`sync`/`icbi`/`isync` code patching under EXT/DEC, mode and BAT changes, retries and external maintenance | Conservative WIMG policy; HID0 ICE/ICFI drive cache maintenance (every ICE change invalidates, more than required); no automatic code coherence (not architected). External maintenance is not a CPU/store barrier. |
 | Toolchain and reproducible builds | 3% | 100% | Pinned compiler, BE ELF loader, twenty-two compiled workloads plus scalar-bus and cached-bus runs of the same search/fault ELFs (TLBIE, TLB-load and page-miss profiles each have three modes; MMU stress has nine), parallel-safe regression and source-hashed fit archives | Small bare-metal memory/ABI profile; no arbitrary OS/binary compatibility claim. |
 | Integration and verification | 6% | 99% | Collected line coverage with a waiver-gated control-arm review, one `make -C sim ci` gate and a 64-seed reference-acceptance run; independent directed/reference tests, seeded cached-top cache-maintenance stress with a scripted ARTRY/DRTRY/hold 60x target, 259 Python checks, CPU-owned translation over scalar 60x, runtime BAT suites and firmware negatives; seeded nine-mode MMU/event/reset stress on the MVP-profile translated cached top | No formal verification or toggle coverage; images with bench-injected events or 603e software TLB reload are not comparable with DingusPPC. |
-| FPGA fit, timing and release | 7% | 100% | Release check on the MVP release commit: translated (66.89 MHz), cached physical (69.65), timer/BAT (70.43) and chip (67.29) tops meet 50 MHz and 66 MHz setup and hold at every corner with no SDC critical warning ([release](RELEASE.md)) | Board bring-up excluded; new RTL changes require fresh fits. |
+| FPGA fit, timing and release | 7% | 100% | Release check on the MVP release commit: translated (66.89 MHz), cached physical (69.65), timer/BAT (70.43) and chip (67.29) tops meet 50 MHz and 66 MHz setup and hold at every corner with no SDC critical warning ([release](RELEASE.md)); refit on `9eb20d9` (2026-09-30): 0 failing endpoints at 66 MHz on all four | Board bring-up excluded; new RTL changes require fresh fits. |
 | Data cache, writeback and coherence | 10% | 100% | 16-KiB four-way write-back MEI cache integrated end to end ([integration](DATA_CACHE_INTEGRATION.md)): LSU → cache → BIU cache master and 60x snooper; on in `ppc603e` and the translated top with HID0[DCE]=0 at reset; coherence against a DMA master verified at the pins (reads, RWITM, write-with-kill/flush, kill, flush, clean, ARTRY and push); core bench 191,813 checks and chip firmware with the cache on | None in MVP scope: page-table WIMG, guarded-load ordering, pipelined foreign address tenures and snooped address parity are verified; DBWO is ignored as the manual permits for this configuration. |
 | Chip package and pin interface | 4% | 98% | Top `ppc603e` whose ports are the 603e pins ([package](CHIP_PACKAGE.md)): MCP, SRESET, SMI, checkstop, straps, TBEN, RSRV, TLBISYNC, parity and snooping (TS/A/TT/GBL in, ARTRY out); chip images boot with ICE and DCE enabled in software and pass mmu-stress, lsu, machine-check and full-decode with the cache on; pin-level coherence bench with a DMA master; fit meets 66 MHz | Inbound data parity is not checked (DPE never asserted); JTAG/COP excluded. Power modes: [POWER_MANAGEMENT.md](POWER_MANAGEMENT.md). |
 
@@ -62,8 +62,8 @@ completion denominator.
 
 ## Full-603e estimate and systems outside this MVP
 
-**Approximately 50% of full-603e project scope (weighted 50.03%; judgment range
-40–50%)** follows the [2026-09-23 weighting audit](FULL_CPU_COMPLETION_AUDIT.md).
+**Approximately 61% of full-603e project scope (weighted 60.53%)** follows the
+[full CPU weighting audit](FULL_CPU_COMPLETION_AUDIT.md) (2026-09-30 update).
 Original category weights are preserved; broad execution, branch/LSU and memory
 categories now explicitly allocate weight to unimplemented systems. This corrects
 historical dual-issue over-credit while recognizing later supervisor/MMU work.
@@ -80,8 +80,8 @@ means no credit is silently assigned for them.
 | Dual dispatch/retirement and superscalar scheduling | 0% | Scalar tagged machinery is a foundation, not working dual issue. |
 | Branch prediction and folding | 0% | Serialized branches execute without either feature. |
 | Data cache, writeback and coherence | 0% | Data accesses use uncached transport; no MEI/snoop/castout system. |
-| Floating point, FPR and FPSCR | 0% | Integer/soft-float software restriction; no canonical FPU. Donor evaluation and phased plan: [FPU reuse assessment](FPU_REUSE_ASSESSMENT.md). |
-| Little endian, additional variants and power modes | 0% | Toolchain artifacts/source preparation do not establish executable hardware. |
+| Floating point, FPR and FPSCR | 60% | FPU in the core behind `ENABLE_FPU` (default off), arithmetic pipelined to Table 6-5 ([integration](FPU_CORE_INTEGRATION.md)). Open: FP loads/stores at Table 6-6, the 602 FPU in the core, 66 MHz (51.55 MHz fitted). |
+| Little endian, additional variants and power modes | 45% | 602 core and `ppc602` top, bus clock ratios, doze/nap/sleep ([variants](CPU_VARIANTS.md), [power](POWER_MANAGEMENT.md)). Open: little endian, the 603 (V5), misaligned LE (V13), 602 FPU (V12). |
 | Full 603e cycle/throughput fidelity | Not separately scored | Unit latency checks exist; complete machine fidelity is unimplemented. |
 | Board integration | Excluded | No pinout, clocks/CDC, external-memory controller or board demonstration acceptance. |
 
@@ -192,6 +192,9 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Data cache LSU round, 2026-09-28 | 89.25% → 91.25% | Data cache 35% → 55%. Core load/store side connected behind `ENABLE_DCACHE` (default off). Fresh on the merge: `make -C sim ci` (542 PASS lines). See [integration](DATA_CACHE_INTEGRATION.md). |
 | Data cache integration round, 2026-09-28 | 91.25% → 95.73% | Data cache 90%, load/store 97%, 60x 95%, chip package 97%, FPGA 99%. BIU cache master, 60x snooping, cache on in the chip and translated tops. Fresh on the merge: `make -C sim ci` (553 PASS lines, 37 firmware profiles, coverage 75.8%) and translated/chip fits; cached-physical and timer/BAT fits inherited from the branch (their files unchanged). See [integration](DATA_CACHE_INTEGRATION.md). |
 | MVP signoff round, 2026-09-29 | 95.73% → 97.20% | Page WIMG, guarded loads, pipelined snoops, snooped address parity; `make -C sim release-check` passes on the release commit (ci, reference-acceptance, four fits with STA and 66 MHz paths). Data cache 100%, chip 98%, FPGA 100%, toolchain 100%, integration 99%. |
+| Batch 3, 2026-09-30 | 97.20% (unchanged) | Outside MVP scope: bus clock ratios (`bus_ce`, `PLL_CFG`), 602 caches and multiply timing (V10), `ppc602` pin top and `chip602` project (V11), FPU and area trims. No batch gate of its own; covered by the batches 4+5 gate on `020cc8d`. See [602 package](CHIP_PACKAGE_602.md), [variants](CPU_VARIANTS.md). |
+| Batches 4+5, 2026-09-30 | 97.20% (unchanged) | Outside MVP scope: 66 MHz round for the 602 (multiply first product after issue, `mfrom` table, registered D-cache lookup), FPU shell area and retiming, FPU in the core behind `ENABLE_FPU` (default off), power modes V14 (`test-chip-power` 101 checks), opcode self-test (1047/1047). Fresh on `020cc8d`: `make -C sim ci` (coverage 73.9%, 1934/2616), `xrand-sweep` (60 runs), FPU suite, translated/integrated/timer-bat/chip fits with 0 failing endpoints at 66 MHz, chip602 68.68 MHz slow 100 C, FPU `fullfit` 51.55 MHz and `full602fit` 35.69 MHz, MiSTer default and self-test builds timing-clean. See [FPU integration](FPU_CORE_INTEGRATION.md), [power](POWER_MANAGEMENT_VERIFICATION.md). |
+| Batch 6, 2026-09-30 | 97.20% (unchanged) | Outside MVP scope: FP arithmetic issues at dispatch, pipelined to Table 6-5; SoC and MiSTer FPU option; Whetstone (`demo-whetstone-hf` 14.244 MWIPS at 50 MHz); FP self-test (`test-selftest-fpu` 1218/1218); CI preparation. Fresh on `9eb20d9`: `ci` (73.5%, 1945/2646), `xrand-sweep` (60 runs), FPU suite, five fits with 0 failing endpoints at 66 MHz, `fullfit` 51.55 MHz, `full602fit` 35.69 MHz, MiSTer default build timing-clean. Pending: MiSTer self-test, `--fpu --suite whetstone` and `--fpu --suite selftest` builds. See [FPU verification](FPU_CORE_INTEGRATION_VERIFICATION.md). |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.

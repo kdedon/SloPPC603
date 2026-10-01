@@ -1,13 +1,13 @@
 # Full CPU weighting audit
 
-Date: 2026-09-23. Scope: the original CPU-only 603e project through P30 in
+Date: 2026-09-23; updated 2026-09-30. Scope: the original CPU-only 603e project through P30 in
 [TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
-**Revised estimate: about 50% complete (weighted 50.03%; judgment range 40–55%).**
+**Revised estimate: about 61% complete (weighted 60.53%).**
 This replaces the provisional 40–45% headline. It is completed project scope,
 including documentation and tooling, not measured RTL coverage or a fraction of
-remaining effort. The range is not a statistical confidence interval.
+remaining effort.
 
 This is a bounded document/evidence audit of the current
 [SYSTEM_COMPLETION.md](SYSTEM_COMPLETION.md), original task scope and historical
@@ -37,11 +37,11 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Instruction cache and architectural maintenance | 4% | 90% | 3.60% |
 | Data cache and writeback | 5% | 0% | 0.00% |
 | Coherence and reservations | 3% | 10% | 0.30% |
-| Floating point | 12% | 0% | 0.00% |
-| Endian, variants and platform behavior | 6% | 0% | 0.00% |
+| Floating point | 12% | 60% | 7.20% |
+| Endian, variants and platform behavior | 6% | 45% | 2.70% |
 | Full timing, reference and integration verification | 10% | 50% | 5.00% |
-| Final FPGA closure and release | 4% | 30% | 1.20% |
-| **Total** | **100%** | | **50.03%** |
+| Final FPGA closure and release | 4% | 45% | 1.80% |
+| **Total** | **100%** | | **60.53%** |
 
 ## Reasons for the revised credit
 
@@ -116,3 +116,23 @@ Full decode, gate-3 timing contract and MVP signoff fits: scalar integer 85% →
 88%, supervisor 80% → 85%, final FPGA closure 10% → 30% (MVP tops at 50 MHz;
 full-603e timing and release remain). Total 48.59% → 50.03%.
 
+## 2026-09-30 update
+
+Floating point 0% → 60%: the FPU is in the core behind `ENABLE_FPU`, FP
+arithmetic issues at dispatch pipelined to Table 6-5 with precise exceptions
+while FP work is in flight, and the SoC runs Whetstone and the FP self-test
+(1218/1218). Open: FP loads and stores at Table 6-6, the 602 FPU in the core
+(V12), 66 MHz (603e FPU 51.55 MHz, 602 35.69 MHz fitted), MiSTer FPU builds.
+Evidence: [FPU integration](FPU_CORE_INTEGRATION_VERIFICATION.md).
+
+Endian, variants and platform 0% → 45%: the 602 core and `ppc602` pin top
+(V0–V11), bus clock ratios and power modes V14 on both tops. Open: little
+endian, the 603 (V5), misaligned LE (V13). Evidence:
+[variants](CPU_VARIANTS.md), [power](POWER_MANAGEMENT_VERIFICATION.md).
+
+Final FPGA closure 30% → 45%: the four 603e tops and `chip602` meet 66 MHz
+on `9eb20d9`; the FPU does not, and no FPU-on chip or MiSTer fit is recorded.
+Total 50.03% → 60.53%.
+
+Rows not revisited here predate later milestones (data cache and coherence,
+branch folding, the MVP release check) and need a fresh audit.
