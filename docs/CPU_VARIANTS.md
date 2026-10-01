@@ -661,6 +661,11 @@ direct-store streaming of lmw/stmw/strings as one access, 603 compiled
 firmware, a 603 fit or timing, or a real controller's reply arbitration
 (the bench withholds BG while it replies).
 
+Recorded: `quartus_map ppc603e_chip --analysis_and_elaboration` of `quartus/chip` with `set_parameter -name CPU_VARIANT 3` (pinned container, under the Quartus lock), commit 156f705, 2026-09-30.
+Analysis and elaboration succeed: 0 errors, 41 warnings; the direct-store
+master elaborates under `ppc_biu`. No synthesis, fit or timing was run, so
+nothing is claimed about area or timing of the 603 build.
+
 Recorded: `make -C sim -j2 lint check-spec test-chip-pins test-chip602-pins variant-watchdog-602 variant-special-lint-602 variant-icache-602 variant-matrix`, commit 2a0a987 plus the chip602 project (cc2c29c) and documentation, 2026-09-30.
 Pass (V11), focused benches only (`regression`, firmware not run).
 `tb_chip602_pins`: 64 checks, 5504 cycles. Boot from the hard reset vector
