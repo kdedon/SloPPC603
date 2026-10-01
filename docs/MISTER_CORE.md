@@ -174,7 +174,7 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh [--clean] [--native] [--fpu|--fpu-compact] [--suite nbench|embench|selftest|whetstone]
+mister/build.sh [--clean] [--native] [--fpu|--fpu-compact] [--dual] [--suite nbench|embench|selftest|whetstone]
 ```
 
 `--native` builds the 320 × 240 native-video variant; the default is the 1920 × 1080 DDR3
@@ -256,6 +256,29 @@ without `--fpu`): the conditional generate block `if (ENABLE_FPU) begin : g_fpu`
 `rtl/ppc_special.sv`, written without `generate`/`endgenerate` unlike the file's other
 generate blocks (Error 10170, "expecting endmodule"), and the member select on a function call,
 `cpu_cfg(CPU_VARIANT).fpu`, in `rtl/ppc_core.sv` (Error 10170, "expecting ')'").
+
+### Dual-dispatch cores
+
+`--dual` defines `MISTER_DUAL`, which builds the processor at dispatch width 2
+([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md)); the file name gains `_dual`
+after any FPU part, for example `ppc603e_whetstone_fpu_dual.rbf`. No `--dual` core has
+been built: the chip top at width 2 misses 66 MHz and, by 6 ps, 50 MHz hold
+([slice 6](DUAL_DISPATCH_DESIGN.md#slice-status)). `make -C sim DISPATCH_WIDTH=2
+mister-smoke mister-smoke-fpu` simulates the MiSTer top at width 2.
+
+Recorded: `make -C sim -k -j2 DISPATCH_WIDTH=2 mister-smoke` and `make -C sim -k -j2
+DISPATCH_WIDTH=2 mister-smoke-fpu`, commit 9a96699, 2026-10-01. Both pass.
+
+| Measure | `mister-smoke` | `mister-smoke-fpu` |
+|---|---:|---:|
+| Image, mode | `mister.hex`, 03 | `mister-whetstone-hf-smoke.hex`, 04 |
+| Cycles from reset to exit | 30,303,619 | 5,518,298 |
+| Instructions retired | 11,506,886 | 1,528,652 |
+| Framebuffer stores (= DDRAM writes) | 154,192 | 56,112 |
+
+Dhrystone reports CPI 3.898 and CoreMark 3.035 in their measured regions; Whetstone
+20.900 MWIPS at 50 MHz, 0.4180 MWIPS/MHz, CPI 3.803. This shows the width-2 core runs the
+board images at the MiSTer top in simulation; it says nothing about a fit.
 
 ### Licensing
 

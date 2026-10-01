@@ -266,10 +266,12 @@ integrated tops before any timing claim.
 
 ## Parameters
 
-- `DISPATCH_WIDTH` (1 or 2) on `ppc_core` and its wrappers, default 1. At 1 the
-  DQ1 and `retire1` logic is not generated and traces match today's core
-  exactly. Elaboration rejects 2 until slice 6 lands (TASK_PLAN P11: enable 2
-  only when implemented).
+- `DISPATCH_WIDTH` (1 or 2) on `ppc_core` and its wrappers, default 1, or
+  the `PPC_DISPATCH_WIDTH` macro. At 1 the DQ1 and `retire1` logic is not
+  generated and traces match the single-issue core exactly.
+- `RETIRE_PAIRS` on `ppc_core_bat` and its bus wrappers, default
+  `DISPATCH_WIDTH == 2`: CQ[1] retires beside the head but only the head
+  appears on `retire_o`. Benches that check every retirement there set 0.
 - `FETCH_WIDTH` (1 or 2) on `ppc_core`, `ppc_fetch` and `ppc_icache`, default 1.
   At 2 a response may carry the next word: `imem_rsp_insn_i` and
   `fetch_rsp_insn_o` widen to `{pair, word at addr + 4, word at addr}`. The
@@ -309,7 +311,11 @@ coordinator runs `ci`, `xrand-sweep` and the fits.
 | 0 | Done | `ppc_core` `+DISPATCH_TRACE=<path>` monitor (simulation only); `sim/tools/check_dispatch_trace.py`; expected schedule `sim/spec/schedules/stage.txt`; mutation tests `sim/tools/test_dispatch_trace.py` |
 | 1 | Done; chip top meets 66 MHz, translated fit left to the coordinator | `rtl/ppc_iq.sv`; `FETCH_WIDTH` in `ppc_fetch`, `ppc_core`, `ppc_icache`; `iq_pair_t`/`pair_predecode` in `ppc_pkg`; bench `tb/tb_core_fetch2.sv` |
 | 2 | Ports and unit benches done; width-1 traces identical, but 95 core benches fail at 0a9fe26 (see below) | `ppc_regfile_gpr` (`DUAL_WRITE`), `ppc_rename`, `ppc_completion` (`ENABLE_PAIR_RETIRE`), `retire1_*` on `ppc_core`; benches `tb/tb_regfile_gpr_ports.sv`, `tb/tb_rename_pair.sv`, `tb/tb_completion_pair.sv` |
-| 3–7 | Not started | |
+| 3 | Implemented at width 2: finished-at-allocation branches, PID7v SRU add/compare lane on the CQ's second finish port and wake bus | `ppc_core` (`HAS_SRU`, `g_sru`), `ppc_completion` (`result1_*`, `wake1_*`) |
+| 4 | Implemented behind `DISPATCH_WIDTH=2`; pair-rule cycle benches beyond `tb_core_dual` not written | `ppc_core` (`dispatch1`, `pair_units`); bench `tb/tb_core_dual.sv` |
+| 5 | Implemented; only `tb_core_reference` and the SoC/MiSTer benches observe CQ[1] | `ppc_core` (`commit1`); `RETIRE_PAIRS` on the BAT wrappers |
+| 6 | Partial: width 2 selectable (`make -C sim DISPATCH_WIDTH=2`, `--dual` builds), default still 1; the chip top misses 66 MHz, and 50 MHz hold by 6 ps (see below); two-word fetch through the wrappers not wired | |
+| 7 | Not started | |
 
 Slice 0. The monitor writes one line per cycle with a dispatch or an accepted
 retirement: `<cycle> D<n> R<n> <dispatch pcs> | <retire pcs>`, cycle 0 being
@@ -495,6 +501,69 @@ Recorded: Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip`, comm
 The chip top elaborates with 0 errors and 48 warnings; none is new in
 `ppc_regfile_gpr`, since synthesis does not see the view. No fit was run;
 the view adds no synthesized logic.
+
+Slices 3–6. At width 2 DQ1 dispatches beside DQ0 to a different unit (IU,
+the PID7v SRU add/compare lane, the load/store lane or the FPU); a folded
+unconditional branch allocates finished and pairs. CQ[1] retires beside a
+clean head under the pair limits above, never beside a head writing its
+destination register. `make -C sim DISPATCH_WIDTH=2 <targets>` builds every
+bench whose width is not set at 2, into `sim/build-w2`;
+`quartus/chip/build.sh --dual` and `mister/build.sh --dual` build width 2.
+
+Bench fixes at width 2. Benches that model the instruction stream (ADD,
+ADDE, unary ADD, rotate, record-logical, recovery) also follow DQ1 dispatch,
+SRU issue and the CQ's second finish port. `tb_core_reference` samples the
+CQ[1] packet before the retire edge; before this it logged the next
+entry's PC for the younger line. `ppc_core_bat` exported only the head while
+CQ[1] retired, so benches that check every retirement on `retire_o`
+(live context, page translation, cached 60x, cache operations, BAT
+reference) missed the younger one; they now set `RETIRE_PAIRS` to 0.
+`tb_stage_timing` instantiates the core at width 1, the pipeline its
+recorded schedule describes. None of these failures was an RTL defect.
+
+Recorded: `make -C sim -k -j2 DISPATCH_WIDTH=2 test REFERENCE_DIR=<dingusppc>`, commit 6d68f78 (merge of `batch8`) plus uncommitted bench edits, 2026-10-01; failures rerun at commit 9a96699.
+254 targets. On the first run 245 passed and 9 failed: `test-reference`
+(the CQ[1] logging above), `test-crstate-execution` (`dispatch_adopt_i`
+unconnected, at any width), and `test-core-bat-live-context`,
+`test-core-page-translation`, `test-tlb-geometry-16`,
+`test-core-bat-cached-bus60x`, `-ratios`, `-cacheops` and
+`test-reference-bat` (hidden CQ[1] retirements). The stream-model benches
+were edited while the run was in progress and passed in it. At 9a96699 these
+16 targets pass: `test-reference` 8,500 snapshots against DingusPPC
+5b292af4d7b3 with 461 pair retirements; BAT reference 9,881 retirements;
+the stream-model benches with the width-1 counts, seeing 2 to 10 pair
+dispatches each. Strict `lint` passes at both widths.
+
+Recorded: `make -C sim -k -j2 DISPATCH_WIDTH=2 test-selftest-fpu demo-whetstone-hf demo-dhrystone demo-coremark` and, at width 1, `make -C sim -k -j2 demo-whetstone-hf demo-dhrystone demo-coremark`, commit 9a96699, 2026-10-01.
+All pass; the FPU self-test passes 1,218 of 1,218 cases at width 2. CPI is
+the benchmark's measured region (`perf cpi`).
+
+| Benchmark | Width 1 | Width 2 |
+|---|---:|---:|
+| Dhrystone CPI, DMIPS/MHz | 4.104, 0.235 | 3.880, 0.248 |
+| CoreMark CPI, CoreMark/MHz | 3.174, 1.042 | 3.028, 1.092 |
+| Whetstone (FPU) CPI, MWIPS at 50 MHz | 3.911, 20.321 | 3.803, 20.898 |
+
+Recorded: dispatch-trace equivalence at width 1, commits 290a73b (`batch8`, base) and 9a96699, 2026-10-01.
+Both exported with `git archive` under `sim/build/`; the 153 `test-*`
+targets selected as for slice 2 (the head adds only `test-core-dual`,
+which the base lacks) ran with
+`make -C sim -k -j2 <targets> 'SIM_ARGS=+DISPATCH_TRACE=<dir>/$@.txt'`.
+All 153 trace pairs are byte-identical: 157,338 dispatches and 155,334
+retirements. `test-stage` exits nonzero on both trees only because the
+override replaces its own trace path. This establishes width-1 cycle
+equivalence with `batch8` for those benches, not for `rtl-all`.
+
+Recorded: `./quartus/chip/build.sh --docker --dual` and `./quartus/report-target-paths.sh chip --docker`, commit 9a96699, 2026-10-01.
+Width 2, chip top `ppc603e_measure`. 15,887 ALMs, 15,996 registers, 42
+M10K, 50 MLAB LABs, 4 DSP (width 1 at af5d282: 11,540 ALMs). At 50 MHz setup
+is met at every corner (+3.397 / +3.197 / +7.521 / +7.835 ns) but hold fails
+at the slow 100 °C corner by 6 ps on one endpoint (−0.006 ns; −40 °C
++0.018, fast +0.069 / +0.047 ns), so 50 MHz is not met; the endpoint was not
+identified. At 15.152 ns 4,700 endpoints fail, worst −1.651 ns; every
+failing group starts at the IQ entries (`special` capture registers, the IQ
+itself, GPR bank 1, rename map, CQ packets, station), the DQ1 pair decision
+fanning into dispatch.
 
 ## Risks
 
