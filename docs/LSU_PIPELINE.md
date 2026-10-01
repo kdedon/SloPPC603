@@ -4,9 +4,8 @@
 runs plain integer loads and stores in `ppc_lsu_pipe` instead of the
 serialized special lane. Plain means no update, reservation, string, multiple,
 cache operation or external access, outside trace mode. With 0 the core is
-unchanged. No top enables it yet: the router and data cache below still take
-one access at a time and the router does not yet honor the speculation bit
-(see [Remaining work](#remaining-work)).
+unchanged. No top enables it yet: the router and data cache behind it still
+take one access at a time (see [Remaining work](#remaining-work)).
 
 ## Stages
 
@@ -61,7 +60,10 @@ A load may offer while an older one still awaits its response. Such a request
 carries `dmem_attr_t.spec`. Per UM 3.5.5.2 it may be performed only where an
 access that is later abandoned is harmless: a cacheable (I=0) location with
 the data cache enabled. A receiver must hold a speculative request it cannot
-perform that way until `spec` drops. A speculative request may be withdrawn
+perform that way until `spec` drops. The router accepts one only on a
+micro-TLB hit with I=0 while `data_spec_ok_i` is set, which `ppc_core_bat`
+drives from `ENABLE_DATA_SPECULATION` (set by the cached top) and HID0[DCE]
+without HID0[DLOCK]; the uncached tops never accept one. A speculative request may be withdrawn
 before acceptance when the older access faults or recovery removes it; every
 other request stands until accepted, as the lane's do, and a removed entry's
 response is drained.
@@ -85,10 +87,8 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
 
 ## Remaining work
 
-1. Router: honor `spec` (accept only a micro-TLB hit with I=0 while the
-   data cache is enabled and unlocked; tie off the uncached tops), and accept
-   a request while the previous one awaits its response, passing a micro-TLB
-   hit to the cache in the same cycle.
+1. Router: accept a request while the previous one awaits its response,
+   passing a micro-TLB hit to the cache in the same cycle.
 2. Data cache: accept a load hit in `S_LOOKUP` and answer it from the lookup
    cycle, so hits flow one per cycle; then enable the unit on the cached and
    pin tops and check 66 MHz on the hit path.
@@ -102,4 +102,39 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
 
 ## Verification
 
-See the records below.
+Recorded: `make -C sim test-core-lsu-timing`, commit 397aa7d, 2026-09-30.
+Passes: 2,672 checks, 27 latency probes and 45 spacing checks with
+retirement stalls off, and the same program with random retirement stalls.
+The program is the FP core program (`test-core-fpu`) plus the integer rows
+above, on `tb_core_fpu` with `PIPE_MEM=1`. It establishes the cycle counts
+in the table against ideal memory; it does not cover the router, the data
+cache or the 60x bus.
+
+Recorded: `make -C sim lint check-spec test-core-fpu test-core-fpu-602 test-core-fpu-compact test-chip-fpu test-bat-memory-router test-page-memory-router test-micro-tlb-router test-bat-data-fault test-tlb-runtime-fill-router test-page-data-exception-router test-core-lsu-extensions test-core-alignment test-core-data-fault test-core-memory-edges test-core-bat-machine-check`, commit 397aa7d, 2026-09-30.
+All pass with the unit off (the default): the existing cycle counts are
+unchanged (`test-core-fpu` still measures `lwz` 5, `stw` 5).
+
+Recorded: the targets below built with
+`VERILATOR="$PWD/tools/verilate +define+PPC_LSU_PIPE=1"`, commit 397aa7d
+(the earlier ones on ecdb69d with that commit's RTL changes uncommitted),
+2026-09-30. Unit on in every core:
+
+- Pass: `test-core`, `test-core-recovery` (pivot redirects),
+  `test-core-lsu-extensions`, `test-core-lsu-update`, `test-core-alignment`,
+  `test-core-alignment-disabled`, `test-core-alignment-dependencies`,
+  `test-core-page-data-exception`, `test-core-tlb-miss`, `test-core-dcache`,
+  `test-core-dcache-negative`, `test-core-machine-check-trace`,
+  `test-core-bus60x-update`, `test-core-control-memory`, `test-core-compare`,
+  `test-core-interrupt`, `test-core-bat-cached-bus60x`,
+  `test-core-cache-control`, `test-chip-dcache-coherence`.
+- `test-core-fpu`: every result check passes; the two integer latency
+  probes fail as expected (4 measured, 5 expected by that bench).
+- Fail, not yet analyzed: `test-core-data-fault` and
+  `test-core-data-fault-disabled` ("older store retired after response"),
+  `test-core-data-fault-cancel` (expects the port to accept a faulting
+  response in the cycle it arrives; the unit takes it one cycle later
+  through the lane) and `test-core-memory-edges` (no halt after an error
+  response). These benches drive the port cycle by cycle; whether they
+  show a defect or a bench assumption is open.
+- `test-core-bat-machine-check` was not run: the build was killed for
+  memory.
