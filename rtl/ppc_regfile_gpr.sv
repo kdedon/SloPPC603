@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
-// Two write ports and six asynchronous read ports (rA, rB, rS for each
-// dispatch slot). Each write port owns a bank with one copy per read port, so
-// every copy maps to MLAB; a live-value table of flops records which bank
-// holds each register. Port 1 wins a same-register write. Reads in the cycle
-// of a write return the old value. After reset write port 0 zeroes all 32
-// entries in 32 edges; ready_o is low meanwhile. The zeroing is a test
-// convenience: the 603e leaves GPRs undefined at reset.
+// Six asynchronous read ports (rA, rB, rS for each dispatch slot) and one or
+// two write ports. With DUAL_WRITE each write port owns a bank with one copy
+// per read port, so every copy maps to MLAB, and a live-value table of flops
+// records which bank holds each register; port 1 wins a same-register write.
+// The table's select adds a LUT level after the RAM read. Without DUAL_WRITE
+// port 1 must stay idle. Reads in the cycle of a write return the old value.
+// After reset write port 0 zeroes all 32 entries in 32 edges; ready_o is low
+// meanwhile. The zeroing is a test convenience: the 603e leaves GPRs
+// undefined at reset.
 module ppc_regfile_gpr #(
-  parameter bit ENABLE_TGPR = 1'b0
+  parameter bit ENABLE_TGPR = 1'b0,
+  parameter bit DUAL_WRITE = 1'b1
 ) (
   input logic clk_i, rst_ni,
   input logic tgpr_i,
@@ -26,14 +29,14 @@ module ppc_regfile_gpr #(
   output logic ready_o
 );
   localparam int READS = 6;
+  localparam int BANKS = DUAL_WRITE ? 2 : 1;
   logic clearing_q;
   logic [4:0] clear_index_q;
   logic [1:0] write_tgpr, array_write;
   logic [4:0] array_reg [2];
   logic [31:0] array_value [2];
-  logic [31:0] lvt_q;
   logic [4:0] read_reg [READS];
-  logic [31:0] bank_value [2][READS];
+  logic [31:0] bank_value [BANKS][READS];
   logic [31:0] array_read [READS];
   logic [31:0] read_value [READS];
   genvar bank, port;
@@ -44,7 +47,7 @@ module ppc_regfile_gpr #(
   assign array_write[0] = clearing_q || (write_i && !write_tgpr[0]);
   assign array_reg[0] = clearing_q ? clear_index_q : write_reg_i;
   assign array_value[0] = clearing_q ? 32'b0 : write_value_i;
-  assign array_write[1] = !clearing_q && write1_i && !write_tgpr[1];
+  assign array_write[1] = DUAL_WRITE && !clearing_q && write1_i && !write_tgpr[1];
   assign array_reg[1] = write1_reg_i;
   assign array_value[1] = write1_value_i;
 
@@ -65,17 +68,8 @@ module ppc_regfile_gpr #(
     end
   end
 
-  always_ff @(posedge clk_i) begin
-    if (!rst_ni) begin
-      lvt_q <= '0;
-    end else begin
-      if (array_write[0]) lvt_q[array_reg[0]] <= 1'b0;
-      if (array_write[1]) lvt_q[array_reg[1]] <= 1'b1;
-    end
-  end
-
   generate
-    for (bank = 0; bank < 2; bank = bank + 1) begin : g_bank
+    for (bank = 0; bank < BANKS; bank = bank + 1) begin : g_bank
       for (port = 0; port < READS; port = port + 1) begin : g_copy
         (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] copy [32];
         always_ff @(posedge clk_i)
@@ -83,9 +77,26 @@ module ppc_regfile_gpr #(
         assign bank_value[bank][port] = copy[read_reg[port]];
       end
     end
-    for (port = 0; port < READS; port = port + 1) begin : g_read
-      assign array_read[port] = lvt_q[read_reg[port]] ? bank_value[1][port] :
-                                                         bank_value[0][port];
+    if (DUAL_WRITE) begin : g_lvt
+      logic [31:0] lvt_q;
+      always_ff @(posedge clk_i) begin
+        if (!rst_ni) begin
+          lvt_q <= '0;
+        end else begin
+          if (array_write[0]) lvt_q[array_reg[0]] <= 1'b0;
+          if (array_write[1]) lvt_q[array_reg[1]] <= 1'b1;
+        end
+      end
+      for (port = 0; port < READS; port = port + 1) begin : g_read
+        assign array_read[port] = lvt_q[read_reg[port]] ? bank_value[BANKS-1][port] :
+                                                           bank_value[0][port];
+      end
+    end else begin : g_single
+      for (port = 0; port < READS; port = port + 1) begin : g_read
+        assign array_read[port] = bank_value[0][port];
+      end
+      logic _unused_write1;
+      assign _unused_write1 = ^{array_write[1], array_reg[1], array_value[1]};
     end
   endgenerate
 
@@ -96,6 +107,8 @@ module ppc_regfile_gpr #(
     if (rst_ni && write_i && write1_i)
       assert (write_reg_i != write1_reg_i)
         else $error("both GPR write ports target r%0d", write_reg_i);
+    if (rst_ni && !DUAL_WRITE)
+      assert (!write1_i) else $error("GPR write port 1 used without DUAL_WRITE");
   end
   // synthesis translate_on
 
@@ -110,7 +123,8 @@ module ppc_regfile_gpr #(
         for (int i = 0; i < 4; i++) tgpr[i] <= '0;
       end else begin
         if (write_i && write_tgpr[0]) tgpr[write_reg_i[1:0]] <= write_value_i;
-        if (write1_i && write_tgpr[1]) tgpr[write1_reg_i[1:0]] <= write1_value_i;
+        if (DUAL_WRITE && write1_i && write_tgpr[1])
+          tgpr[write1_reg_i[1:0]] <= write1_value_i;
       end
     end
   end else begin : tgpr_disabled

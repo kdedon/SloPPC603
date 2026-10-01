@@ -28,7 +28,7 @@ module tb_regfile_tgpr #(
   assign write1_value_i = '0;
   assign _unused_lane1 = ^{read_a1_o, read_b1_o, read_c1_o};
 
-  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR)) dut (.*);
+  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR), .DUAL_WRITE(1'b0)) dut (.*);
 
   task automatic check_ports(
     input logic [4:0] a, input logic [31:0] av,

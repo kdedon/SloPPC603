@@ -328,9 +328,11 @@ module ppc_core #(
   logic fetch_valid, fetch_ready, iq_valid, iq_ready;
   logic alloc_ready, cq_ready, cq_empty, cq_finish_accept;
   logic dispatch, commit, gpr_commit, update_commit, fault_pending;
-  logic update_pending_q, gpr_ready, gpr_port1_write;
-  logic [4:0] gpr_port1_reg;
-  logic [31:0] gpr_port1_value;
+  // The second GPR write port's select adds a LUT level to every read.
+  localparam bit DUAL_GPR_WRITE = DISPATCH_WIDTH == 2;
+  logic update_pending_q, gpr_ready, gpr_port_write, gpr_port1_write;
+  logic [4:0] gpr_port_reg, gpr_port1_reg, update_reg_q;
+  logic [31:0] gpr_port_value, gpr_port1_value, update_value_q;
   logic normal_uop, special_uop, normal_idle;
   logic dispatch_needs_flags;
   logic recovery_accepted, rs_cancel, iu_cancel, fault_killed;
@@ -878,15 +880,40 @@ module ppc_core #(
   assign frontend_clear = recovery_accepted || bu_redirect_q;
   assign frontend_target = recovery_accepted ? selected_redirect_target :
                            bu_redirect_q ? bu_target_q : fold_target_q;
-  // Port 0 takes the head's destination; port 1 its update base, else the
-  // CQ[1] destination (pair retirement allows two GPR writes in all).
-  // Dispatch still waits one cycle after an update load writes both.
-  assign gpr_port1_write = update_commit || gpr_commit1;
-  assign gpr_port1_reg = update_commit ? retire_o.update_gpr : retire1_o.gpr;
-  assign gpr_port1_value = update_commit ? retire_o.update_value : retire1_o.value;
+  // Port 0 takes the head's destination. With two write ports, port 1 takes
+  // its update base, else the CQ[1] destination (a pair writes at most two
+  // GPRs). With one, the update base follows its destination by one edge.
+  // Either way dispatch waits one cycle after an update load writes both.
+  always_comb begin
+    gpr_port_write = gpr_commit;
+    gpr_port_reg = retire_o.gpr;
+    gpr_port_value = retire_o.value;
+    gpr_port1_write = gpr_commit1;
+    gpr_port1_reg = retire1_o.gpr;
+    gpr_port1_value = retire1_o.value;
+    if (DUAL_GPR_WRITE) begin
+      if (update_commit) begin
+        gpr_port1_write = 1'b1;
+        gpr_port1_reg = retire_o.update_gpr;
+        gpr_port1_value = retire_o.update_value;
+      end
+    end else if (!gpr_commit && update_commit) begin
+      gpr_port_write = 1'b1;
+      gpr_port_reg = retire_o.update_gpr;
+      gpr_port_value = retire_o.update_value;
+    end else if (!gpr_commit && update_pending_q) begin
+      gpr_port_write = 1'b1;
+      gpr_port_reg = update_reg_q;
+      gpr_port_value = update_value_q;
+    end
+  end
   always_ff @(posedge clk_i) begin
     if (!rst_ni) update_pending_q <= 1'b0;
     else update_pending_q <= gpr_commit && update_commit;
+    if (gpr_commit && update_commit) begin
+      update_reg_q <= retire_o.update_gpr;
+      update_value_q <= retire_o.update_value;
+    end
   end
   // synthesis translate_off
   always @(posedge clk_i) begin
@@ -900,14 +927,14 @@ module ppc_core #(
       assert (!gpr_commit1) else $error("CQ[1] GPR write beside an update base");
   end
   // synthesis translate_on
-  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR)) regfile (
+  ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR), .DUAL_WRITE(DUAL_GPR_WRITE)) regfile (
     .clk_i, .rst_ni, .tgpr_i(msr[MSR_TGPR]), .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .read_c_i(uop.src_c), .read_a_o(arch_a), .read_b_o(arch_b),
     .read_c_o(arch_c),
     // Second dispatch slot's sources.
     .read_a1_i(5'd0), .read_b1_i(5'd0), .read_c1_i(5'd0),
     .read_a1_o(arch_a1), .read_b1_o(arch_b1), .read_c1_o(arch_c1),
-    .write_i(gpr_commit), .write_reg_i(retire_o.gpr), .write_value_i(retire_o.value),
+    .write_i(gpr_port_write), .write_reg_i(gpr_port_reg), .write_value_i(gpr_port_value),
     .write1_i(gpr_port1_write), .write1_reg_i(gpr_port1_reg),
     .write1_value_i(gpr_port1_value),
     .ready_o(gpr_ready)
