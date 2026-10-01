@@ -137,12 +137,48 @@ Recorded: the targets below built with
   `test-core-cache-control`, `test-chip-dcache-coherence`.
 - `test-core-fpu`: every result check passes; the two integer latency
   probes fail as expected (4 measured, 5 expected by that bench).
-- Fail, not yet analyzed: `test-core-data-fault` and
-  `test-core-data-fault-disabled` ("older store retired after response"),
-  `test-core-data-fault-cancel` (expects the port to accept a faulting
-  response in the cycle it arrives; the unit takes it one cycle later
-  through the lane) and `test-core-memory-edges` (no halt after an error
-  response). These benches drive the port cycle by cycle; whether they
-  show a defect or a bench assumption is open.
-- `test-core-bat-machine-check` was not run: the build was killed for
-  memory.
+- Failed on that commit, resolved below: `test-core-data-fault`,
+  `test-core-data-fault-disabled`, `test-core-data-fault-cancel`,
+  `test-core-memory-edges`. `test-core-bat-machine-check` was not run.
+
+Recorded: `make -C sim lint check-spec` and `make -C sim test-core-lsu-timing test-core-fpu test-core-fpu-602 test-core-fpu-compact test-chip-fpu test-bat-memory-router test-page-memory-router test-micro-tlb-router test-bat-data-fault test-tlb-runtime-fill-router test-page-data-exception-router test-core-lsu-extensions test-core-alignment test-core-data-fault test-core-data-fault-disabled test-core-data-fault-cancel test-core-memory-edges test-core-bat-machine-check test-chip-603 test-chip-pins test-core-page-data-exception test-bat-runtime-router test-segment-runtime-router test-page-instruction-exception-router test-page-miss-result-router test-tlb-runtime-invalidate-router`, commit 14bcfd3 (after merging the 603 direct-store work), 2026-09-30.
+All pass with the unit off. The unit-off cycle counts are unchanged:
+`test-core-fpu` measures `lwz` 5 and `stw` 5. Quartus
+`quartus_map ppc603e_chip --analysis_and_elaboration` (`quartus/chip`, pinned
+container) passes with 0 errors, so the merged sources elaborate. This
+says nothing about fit or timing.
+
+Recorded: the targets below with
+`VERILATOR="$PWD/tools/verilate +define+PPC_LSU_PIPE=1"` (unit on in every
+core), commit 14bcfd3, 2026-09-30. All pass: `test-core`,
+`test-core-recovery`, `test-core-lsu-extensions`, `test-core-lsu-update`,
+`test-core-alignment`, `test-core-alignment-disabled`,
+`test-core-alignment-dependencies`, `test-core-page-data-exception`,
+`test-core-tlb-miss`, `test-core-dcache`, `test-core-dcache-negative`,
+`test-core-machine-check-trace`, `test-core-bus60x-update`,
+`test-core-control-memory`, `test-core-compare`, `test-core-interrupt`,
+`test-core-bat-cached-bus60x`, `test-core-cache-control`,
+`test-chip-dcache-coherence`, `test-core-lsu-timing`,
+`test-core-data-fault` (4,368 checks), `test-core-data-fault-disabled`
+(1,703), `test-core-data-fault-cancel` (421), `test-core-memory-edges`
+(722) and `test-core-bat-machine-check` (all six variants; the cached
+fill variant retires 155 instructions and sees 8 routine bursts against
+156 and 7 with the unit off; the bench reports these counts but does not
+check them, and the cause was not traced).
+
+What the four fault-path benches showed:
+
+- Two RTL defects, fixed. A store stayed cancellable by an external
+  redirect from its response until it retired; it is now irrevocable
+  from its offer to its retirement, as in the lane. An access that
+  recovery removed on the edge its fault response arrived could still be
+  handed to the lane, which would then take the fault for a cancelled
+  instruction; it is now drained instead.
+- Four bench assumptions, corrected. A younger load may be requested
+  after an older store's response and before that store retires: the
+  store has been performed and cannot fault. A faulting response may wait
+  a cycle for the lane. The memory-edges bench read the response ready
+  in the same step it raised the response, before ready settled, and
+  then withdrew the response without a handshake. It also took a store
+  offer seen between clock edges, which follows retirement authorization
+  combinationally, as committed.
