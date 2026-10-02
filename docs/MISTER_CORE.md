@@ -273,7 +273,6 @@ Whetstone switches to its hard-float image, `mister-whetstone-hf.hex`. The file 
 self-test core with `--fpu` runs its floating-point cases as well
 ([SELFTEST.md](SELFTEST.md#floating-point)). `--fpu-compact` does the same with the
 [COMPACT FPU](FPU_COMPACT.md) (`MISTER_FPU_COMPACT`); the name gains `_fpu_compact`.
-It has not been built for the board.
 
 ```sh
 mister/build.sh --clean --fpu                     # mister/output_files/ppc603e_fpu.rbf
@@ -283,12 +282,9 @@ mister/build.sh --clean --fpu --suite whetstone   # mister/output_files/ppc603e_
 `make -C sim mister-smoke-fpu-all` and `mister-smoke-fpu` simulate these cores
 ([FPU core in simulation](#fpu-core-in-simulation)).
 
-No FPU core has been fitted yet: at commit 93f121b Quartus 17.0 stops in analysis on
-two constructs of the FPU integration, in every build that compiles the core (with or
-without `--fpu`): the conditional generate block `if (ENABLE_FPU) begin : g_fpu` in
-`rtl/ppc_special.sv`, written without `generate`/`endgenerate` unlike the file's other
-generate blocks (Error 10170, "expecting endmodule"), and the member select on a function call,
-`cpu_cfg(CPU_VARIANT).fpu`, in `rtl/ppc_core.sv` (Error 10170, "expecting ')'").
+Board fits on commit 9e738ce (the tree merged to main as 71d048c): with `--dual --lsu-pipe`,
+the COMPACT FPU (`--fpu-compact`) meets 50 MHz at 28,789 ALMs (69%), worst setup slack
++0.905 ns; the FULL FPU (`--fpu`) does not, at 40,664 ALMs (97%) and −2.606 ns.
 
 ### Dual-dispatch cores
 
