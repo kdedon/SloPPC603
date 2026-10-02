@@ -944,3 +944,74 @@ timing-clean; `test-selftest-fpu` 1218/1218; `demo-whetstone-hf` 14.244 MWIPS
 at 50 MHz. Failed: MiSTer `--fpu --suite selftest`, hold slack −0.044 ns on
 the core clock at the slow corners (setup +0.394 ns); the same RTL with the
 Whetstone image passed. MVP 97.20% (unchanged).
+
+## Batch 7 — accepted (2026-10-01)
+
+Outside MVP scope: FP doublewords as one 64-bit access and FP loads and stores
+overlapped with younger work, COMPACT FPU (`FPU_IMPL`), the 602 FPU in the
+core (V12), FPU forward-pick timing, 603 direct-store on XATS (V5), the
+dual-dispatch design.
+
+Recorded: the batches 4+5 targets plus
+`quartus/fpu-production/synthesize.sh --docker compactfit` and
+`compact602fit`, and `mister/build.sh --clean --fpu --suite whetstone`,
+`--fpu --suite selftest` and `--fpu-compact --suite selftest`, commit
+`537ee1f`, 2026-09-30 to 2026-10-01; `ci` failures fixed by `262f408`
+(`tb_crstate_execution` ports) and `0aa02ef` (compiled-firmware waivers),
+confirmed by rerunning the failed targets.
+
+Pass: `xrand-sweep` 60 runs; FPU suite; `ci` with the two fixes; at 66 MHz, 0
+failing endpoints on translated, integrated, timer-bat and chip; FPU
+`fullfit` 50.58, `full602fit` 51.28, `compactfit` 57.85 and `compact602fit`
+59.51 MHz (all meet 50 MHz, none 66); MiSTer default, `--suite selftest` and
+`--fpu-compact --suite selftest` builds timing-clean. Failed: chip602 at 66
+MHz, −0.166 ns (36 endpoints); MiSTer `--fpu --suite whetstone` and `--fpu
+--suite selftest`, setup −1.89 ns, fixed by the batch 8 FPU issue-path work.
+MVP 97.20% (unchanged).
+
+## Batch 8 — accepted (2026-10-01)
+
+Outside MVP scope: dual-dispatch slices 0–2 (dispatch/retire trace and
+schedule checker, shifting IQ, two-word fetch, two-lane GPR file, rename and
+CQ), the pipelined load/store unit (P3, `ENABLE_LSU_PIPE`, off by default),
+FPU issue-path timing, `quartus/chip/build.sh --fpu` and `--dual`, the MiSTer
+`--fpu` core with Whetstone and FP Mandelbrot.
+
+No gate of its own: the branch records in
+[DUAL_DISPATCH_DESIGN.md](../../DUAL_DISPATCH_DESIGN.md),
+[LSU_PIPELINE.md](../../LSU_PIPELINE.md) and
+[FPU_CORE_INTEGRATION_VERIFICATION.md](../../FPU_CORE_INTEGRATION_VERIFICATION.md)
+are inherited, among them the package top with the FULL FPU meeting 50 MHz
+(+0.704 ns at `3b10c94`). The batch 9 gate ran on a tree containing it. MVP
+97.20% (unchanged).
+
+## Batch 9 — accepted (2026-10-01)
+
+Outside MVP scope: dual dispatch and retirement behind `DISPATCH_WIDTH=2`
+(slices 3–6; default 1), one-cycle cached load hits with the pipelined
+load/store unit, MiSTer `--dual` and `--lsu-pipe`.
+
+Recorded: `make -C sim ci`, `make -C sim xrand-sweep`, the FPU suite, `make -C
+toolchain rtl-all`, `quartus/<top>/build.sh --docker` and
+`quartus/report-target-paths.sh <top> --docker` (width 1, unit off),
+`quartus/fpu-production/synthesize.sh --docker fullfit`, `full602fit`,
+`compactfit` and `compact602fit`, commit `71d048c`, 2026-10-01.
+
+Pass: `ci` line coverage 73.1% (2045/2798), after the 602 lane bench fix
+`71d048c`; `xrand-sweep` 70 runs, including the MiSTer FPU bench; FPU suite;
+`rtl-all`. Every top meets 50 MHz (setup slack above +4.2 ns). At 66 MHz:
+integrated 0 failing (6,810 ALMs), timer-bat 0 failing (6,813); failed:
+translated −0.213 ns (10 endpoints, 12,614 ALMs), chip −0.577 ns (54, 11,596),
+chip602 −0.202 ns (2, 11,077). FPU 50.09 (FULL 603e), 50.60 (FULL 602), 57.85
+and 59.51 MHz (COMPACT).
+
+Inherited: width 2 with the unit and the FPU on `9e738ce` pass the feature
+benches, references and self-tests (1218/1218, 1047/1047); Dhrystone 0.284
+DMIPS/MHz, CoreMark 1.248/MHz, Whetstone 23.36–23.49 MWIPS at 50 MHz.
+
+MiSTer: `mister/build.sh --clean --fpu-compact --dual --lsu-pipe` timing-clean
+(`PPC603e_fpu_compact_dual_lsupipe_20261001_1919.rbf`, 28,789 ALMs, 69%,
+setup +0.905 ns, hold +0.076 ns); `--fpu --dual --lsu-pipe` (FULL FPU) failed,
+40,664 of 41,910 ALMs (97%), setup −2.606 ns. Earlier A/B builds on `37f9df8`:
+`PPC603e_20261001_0443.rbf` (width 1, +3.21 ns) and
+`PPC603e_dual_20261001_0352.rbf` (width 2, +1.26 ns). MVP 97.20% (unchanged).

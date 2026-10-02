@@ -1,10 +1,10 @@
 # Full CPU weighting audit
 
-Date: 2026-09-23; updated 2026-09-30. Scope: the original CPU-only 603e project through P30 in
+Date: 2026-09-23; updated 2026-10-01. Scope: the original CPU-only 603e project through P30 in
 [TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
-**Revised estimate: about 61% complete (weighted 60.53%).**
+**Revised estimate: about 75% complete (weighted 75.48%).**
 This replaces the provisional 40–45% headline. It is completed project scope,
 including documentation and tooling, not measured RTL coverage or a fraction of
 remaining effort.
@@ -27,21 +27,21 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Source contracts and ISA planning | 8% | 68% | 5.44% |
 | Reproducible tools and scaffold | 4% | 90% | 3.60% |
 | Scalar tagged execution, recovery and integer units | 8% | 88% | 7.04% |
-| Dual dispatch/retirement and superscalar scheduling | 4% | 0% | 0.00% |
+| Dual dispatch/retirement and superscalar scheduling | 4% | 60% | 2.40% |
 | Functional branches | 3% | 90% | 2.70% |
-| Branch prediction and folding | 2% | 0% | 0.00% |
-| Load/store architecture | 5% | 75% | 3.75% |
+| Branch prediction and folding | 2% | 50% | 1.00% |
+| Load/store architecture | 5% | 85% | 4.25% |
 | Supervisor, system instructions and interrupts | 8% | 85% | 6.80% |
 | MMU | 8% | 80% | 6.40% |
-| 60x transport and protocol | 6% | 70% | 4.20% |
-| Instruction cache and architectural maintenance | 4% | 90% | 3.60% |
-| Data cache and writeback | 5% | 0% | 0.00% |
-| Coherence and reservations | 3% | 10% | 0.30% |
-| Floating point | 12% | 60% | 7.20% |
-| Endian, variants and platform behavior | 6% | 45% | 2.70% |
-| Full timing, reference and integration verification | 10% | 50% | 5.00% |
+| 60x transport and protocol | 6% | 85% | 5.10% |
+| Instruction cache and architectural maintenance | 4% | 95% | 3.80% |
+| Data cache and writeback | 5% | 90% | 4.50% |
+| Coherence and reservations | 3% | 85% | 2.55% |
+| Floating point | 12% | 75% | 9.00% |
+| Endian, variants and platform behavior | 6% | 60% | 3.60% |
+| Full timing, reference and integration verification | 10% | 55% | 5.50% |
 | Final FPGA closure and release | 4% | 45% | 1.80% |
-| **Total** | **100%** | | **60.53%** |
+| **Total** | **100%** | | **75.48%** |
 
 ## Reasons for the revised credit
 
@@ -87,13 +87,13 @@ historically measured effort. Keep them fixed for subsequent updates.
 
 ## Reconciliation and next updates
 
-Historical round-40 total: **39.40%**. Current audited total: **50.03%** (+10.63
+Historical round-40 total: **39.40%**. The 2026-09-23 audited total: **50.03%** (+10.63
 points), combining real later capability with a downward correction to the old
 execution estimate. The difference is not a clean development-velocity measure.
-The MVP remains **80.81%** under its separate, unchanged scope and weighting.
+The MVP was then **80.81%** under its separate, unchanged scope and weighting.
 
 The unimplemented dual-issue, prediction, data-cache, coherence, floating-point
-and mode/platform rows collectively carry **32% of full project weight**.
+and mode/platform rows then carried **32% of full project weight**.
 Even finishing the restricted MVP will not finish those systems. Broader
 conformance and final timing add further remaining work within nonzero rows.
 
@@ -135,4 +135,65 @@ on `04b5bad`; the FPU does not, and no FPU-on chip or MiSTer fit is recorded.
 Total 50.03% → 60.53%.
 
 Rows not revisited here predate later milestones (data cache and coherence,
-branch folding, the MVP release check) and need a fresh audit.
+branch folding, the MVP release check); the 2026-10-01 update re-audits them.
+
+## 2026-10-01 update
+
+Batches 7–9 (2026-10-01). Weights unchanged. Milestones:
+
+- Dual dispatch 0% → 60%: dispatch and retirement of two instructions behind
+  `DISPATCH_WIDTH=2` (slices 0–6 of the [design](DUAL_DISPATCH_DESIGN.md)):
+  shifting IQ, two-lane GPR file, rename and CQ, the PID7v SRU lane, pair
+  rules and CQ[1] retirement; width-1 traces identical over 153 benches;
+  `make -C sim DISPATCH_WIDTH=2 test` passes with the LSU unit. Open: default
+  width 2, 66 MHz at width 2 (IQ pair decision), two-word fetch through the
+  wrappers, slice 7 (branch in DQ1, branches without a CQ entry).
+- Load/store 75% → 85%: the pipelined unit (P3, `ENABLE_LSU_PIPE`, off by
+  default) with one-cycle cached load hits ([LSU](LSU_PIPELINE.md)). Open:
+  66 MHz and default-on, stores at one per cycle, FP accesses through the
+  unit, base operands from rename.
+- Floating point 60% → 75%: FP doublewords as one 64-bit access, overlapped
+  with younger work; the 602 FPU in the core (V12); COMPACT FPU; the package
+  top with the FULL FPU meets 50 MHz; a COMPACT FPU MiSTer core at width 2
+  with the unit is timing-clean. Open: Table 6-6 load/store timing, 66 MHz
+  (FULL 50.09 MHz fitted), the FULL FPU in that MiSTer core (97% ALMs,
+  −2.606 ns). Evidence: [FPU verification](FPU_CORE_INTEGRATION_VERIFICATION.md),
+  [COMPACT](FPU_COMPACT.md).
+- Endian, variants and platform 45% → 60%: the 603 with XATS direct-store
+  (V5) and the 602 FPU (V12) ([variants](CPU_VARIANTS.md)). Open: little
+  endian, misaligned LE (V13).
+- Verification 50% → 55%: the dispatch/retire trace and schedule checker
+  (P12 start), width-1 trace equivalence, the four-configuration matrix
+  (width 1/2, unit off/on) over the references and benchmarks, `xrand-sweep`
+  at 70 runs.
+- Final FPGA closure stays 45%: the FPU now fits the package top at 50 MHz
+  and a MiSTer FPU core closes, but at 66 MHz translated (−0.213 ns), chip
+  (−0.577 ns) and chip602 (−0.202 ns) now fail on `71d048c`; every top meets
+  50 MHz.
+
+Subtotal 60.53% → 66.63%.
+
+Re-audit of rows that predated later milestones:
+
+- Data cache 0% → 90%: the 16-KiB four-way write-back MEI cache is
+  integrated in every top since 2026-09-28 with castouts, DLOCK, DCFI and
+  the cache operations ([integration](DATA_CACHE_INTEGRATION.md)); the MVP
+  scores it 100% of its scope. Open: one-cycle hits only with the unit.
+- Coherence and reservations 10% → 85%: snooping at the pins against a
+  second master (read, RWITM, write-with-kill/flush, kill, flush, clean),
+  ARTRY windows, push priority, snooped address parity and reservation loss
+  on a snoop are verified. Open: BR negation after another snooper's ARTRY,
+  push pipelining, multiprocessor tests.
+- Branch prediction and folding 0% → 50%: static prediction (y bit,
+  backward taken) and fetch-time folding of `b` and predicted-taken `bc`
+  exist since 2026-09-29 ([control](CONTROL_MEMORY.md)). Open: `bclr`/`bcctr`
+  folding and branch removal without a CQ entry.
+- 60x transport 70% → 85%: since the 70% credit the BIU gained the cache
+  master, snoop responses and push, address parity, bus clock ratios,
+  eight-byte single beats and the 602 multiplexed bus. Open: inbound data
+  parity, BR negation after a foreign ARTRY.
+- Instruction cache 90% → 95%: HID0 ICE and ICFI now act on the cache and
+  603/602 geometries build. Open: ILOCK has no effect.
+
+Total 60.53% → 75.48%. The correction (+8.85 points) is credit missed by
+earlier updates, not new hardware.

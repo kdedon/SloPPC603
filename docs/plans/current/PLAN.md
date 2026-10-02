@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-09-30. This is the active planning entry point. The target for
+Updated: 2026-10-01. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -62,10 +62,10 @@ and throughput. The coherent baseline passes both personalities’ numerical, ex
 public-shell, paired dispatch/retirement and strict lint gates in
 [verification](../../../sim/fpu/PRODUCTION.md), including full-queue admission
 and 602 SPR timing. Frequency closure and the documented silicon-semantics
-gaps remain open. On `04b5bad`
-the 603e FPU fits at 51.55 MHz and the 602 at 35.69 MHz
-(`quartus/fpu-production/synthesize.sh --docker fullfit`, `full602fit`); both
-miss 66 MHz and the 602 misses 50. Timing work keeps the Table 6-5 cycle counts exact; any change to
+gaps remain open. On `71d048c`
+the FULL FPU fits at 50.09 MHz (603e) and 50.60 MHz (602), COMPACT at 57.85
+and 59.51 MHz (`quartus/fpu-production/synthesize.sh --docker fullfit`,
+`full602fit`, `compactfit`, `compact602fit`); all miss 66 MHz. Timing work keeps the Table 6-5 cycle counts exact; any change to
 them goes behind a named parameter such as `FPU_IMPL`. See the
 [FPU assessment](../../FPU_REUSE_ASSESSMENT.md) for the remaining semantic and
 implementation gaps. The FPU is in the core behind `ENABLE_FPU`, which
@@ -76,26 +76,36 @@ Do not infer full CPU completion from the restricted MVP score.
 
 Done (batches 5–6, 2026-09-30): FPU in the core behind `ENABLE_FPU`, with FP
 arithmetic pipelined to Table 6-5 ([integration](../../FPU_CORE_INTEGRATION.md));
-FPU retiming (603e 51.55 MHz post-fit, exact cycle counts); 603e power modes
-(V14); the opcode self-test app ([SELFTEST.md](../../SELFTEST.md)); Whetstone,
-soft- and hard-float ([BENCHMARKS.md](../../BENCHMARKS.md#whetstone)); the SoC
-and MiSTer FPU option (`mister/build.sh --fpu`, awaiting its first fit); CI
-preparation ([CI.md](../../CI.md); workflows drafted, not enabled).
+603e power modes (V14); the opcode self-test ([SELFTEST.md](../../SELFTEST.md));
+Whetstone ([BENCHMARKS.md](../../BENCHMARKS.md#whetstone)); the SoC and MiSTer
+FPU option; CI preparation ([CI.md](../../CI.md)).
+
+Done (batches 7–9, 2026-10-01): FP loads and stores as single 64-bit accesses,
+overlapped with younger work; the 602 FPU in the core (V12) and its timing to
+50 MHz; COMPACT FPU ([FPU_COMPACT.md](../../FPU_COMPACT.md)); the 603 with XATS
+(V5); the pipelined LSU with one-cycle cached hits (P3, `ENABLE_LSU_PIPE`,
+`--lsu-pipe`, off by default; [LSU](../../LSU_PIPELINE.md)); dual dispatch
+behind `DISPATCH_WIDTH=2` (slices 0–6, `--dual`, default 1;
+[design](../../DUAL_DISPATCH_DESIGN.md)); FPU issue-path timing (package top
+with the FPU at 50 MHz); MiSTer `--fpu-compact --dual --lsu-pipe` core
+timing-clean.
 
 Queued, in order:
 
-1. FP loads and stores at Table 6-6: pipelined, with single 64-bit accesses
-   through the LSU, D-cache, BIU and 60x (today they serialize and split
-   doublewords into two words). Check the FPU's `fmr`/`fsel`/FPSCR finish
-   cycle against Table 6-5 (it finishes one cycle early).
-2. 602 FPU timing toward 50 MHz (35.69 MHz post-fit), then the 602 FPU in the
-   core (V12).
-3. COMPACT FPU (`FPU_IMPL`) for both personalities.
-4. 603 with XATS (V5); two-stage LSU (P3); dual dispatch
-   ([design](../../DUAL_DISPATCH_DESIGN.md)).
-5. FPU at 66 MHz: retiming alone is estimated 2–3 ns short per stage; the
-   choice between an FPU at 50 MHz and a parameter-gated extra stage is open.
-6. Enable CI and measure one MiSTer build on a hosted runner.
+1. 66 MHz at width 1 again: translated (−0.213 ns), chip (−0.577 ns) and
+   chip602 (−0.202 ns) regressed on `71d048c`.
+2. Width 2 at 66 MHz: the IQ pair decision feeding dispatch is the critical
+   group; decide whether to register it (a dispatch-cycle cost) or restructure
+   the IQ.
+3. LSU unit at 66 MHz ([remaining work](../../LSU_PIPELINE.md#remaining-work)
+   item 1), then on by default.
+4. FULL FPU in the MiSTer core: with `--dual --lsu-pipe` it uses 97% of ALMs
+   and misses setup by 2.606 ns; reduce area or keep COMPACT for that core.
+5. Optimization: `bclr`/`bcctr` folding; branch pairing and branches without
+   a CQ entry (dual-dispatch slice 7); a single-precision Mandelbrot.
+6. FPU at 66 MHz: the choice between 50 MHz and a parameter-gated extra
+   stage is open; FP loads and stores through the LSU unit for Table 6-6.
+7. Enable CI and measure one MiSTer build on a hosted runner.
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or
