@@ -171,6 +171,7 @@ module tb_special_lint #(
   logic retire_hold_o;
   logic result_select_o;
   /* verilator lint_on UNUSEDSIGNAL */
+  logic dispatch_adopt_i = 1'b0;  // the pipelined load/store unit is absent here
   ppc_special #(
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1), .ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_EXTERNAL_INTERRUPTS(1'b1), .ENABLE_TIMERS(1'b1),
