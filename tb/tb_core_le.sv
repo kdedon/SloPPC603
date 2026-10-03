@@ -13,7 +13,9 @@ module tb_core_le #(
   parameter int CPU_VARIANT = 0,
   parameter int FETCH_WIDTH = 1,
   parameter int DISPATCH_WIDTH = 1,
-  parameter int LSU_PIPE = 0
+  parameter int LSU_PIPE = 0,
+  // 0 FULL, 1 COMPACT (ppc_fpu_pkg::fpu_impl_e).
+  parameter int FPU_IMPL = 0
 );
   import ppc_pkg::*;
   logic clk = 1'b0, rst_n = 1'b0;
@@ -72,6 +74,7 @@ module tb_core_le #(
     .ENABLE_RESERVATION(1'b1), .ENABLE_MISALIGNED_ACCESS(1'b1),
     .ENABLE_CACHE_INSTRUCTIONS(1'b1),
     .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1), .DMEM_BITS(DMEM_BITS),
+    .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL)),
     .ENABLE_LSU_PIPE(LSU_PIPE != 0), .FETCH_WIDTH(FETCH_WIDTH),
     .DISPATCH_WIDTH(DISPATCH_WIDTH), .CPU_VARIANT(cpu_variant_e'(CPU_VARIANT))
   ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
@@ -245,8 +248,8 @@ module tb_core_le #(
                       read_word(expects[i].addr), expects[i].value, expects[i].mask));
     check(le_fetches > 0, "no little-endian fetch");
     if (failures != 0) $fatal(1, "tb_core_le: %0d of %0d checks failed", failures, checks);
-    $display("PASS tb_core_le: variant=%0d dmem=%0d fetch=%0d width=%0d lsu_pipe=%0d checks=%0d words=%0d retires=%0d le_fetches=%0d cycles=%0d stall=%0d",
-             CPU_VARIANT, DMEM_BITS, FETCH_WIDTH, DISPATCH_WIDTH, LSU_PIPE, checks,
+    $display("PASS tb_core_le: variant=%0d dmem=%0d fetch=%0d width=%0d lsu_pipe=%0d fpu_impl=%0d checks=%0d words=%0d retires=%0d le_fetches=%0d cycles=%0d stall=%0d",
+             CPU_VARIANT, DMEM_BITS, FETCH_WIDTH, DISPATCH_WIDTH, LSU_PIPE, FPU_IMPL, checks,
              expects.size(), retires, le_fetches, cycles, stall);
     $finish;
   end
