@@ -474,6 +474,7 @@ module ppc603e #(
                          dbwo_n_i, tck_i, tms_i, tdi_i, trst_n_i, test_i,
                          pin_status.smi_taken, pin_status.tea_taken,
                          pin_status.dcache_enable, pin_status.dcache_lock,
+                         pin_status.icache_lock,
                          pin_status.dcache_flash_invalidate, pin_status.noop_touch,
                          pin_status.broadcast_enable, pin_status.watchdog_reseto, retire_valid, retire, halted};
 endmodule

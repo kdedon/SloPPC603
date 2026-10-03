@@ -6,7 +6,9 @@
 // INT, masked by MSR[EE]), RSRV, TLBISYNC, snoop address parity (APE in
 // the second cycle after TS, machine check, checkstop, HID0[EBA]=0) and read
 // data parity (DPE in the second cycle after TA, machine check, checkstop,
-// HID0[EBD]=0, cancelled by DRTRY). Each case hard-resets the chip
+// HID0[EBD]=0, cancelled by DRTRY), BR and BG after another snooper's
+// ARTRY, and HID0[ILOCK] (hits served, misses read single-beat with CI and
+// not allocated). Each case hard-resets the chip
 // into a small program; handlers record markers in RAM through the bus.
 /* verilator lint_off BLKSEQ */
 module tb_chip_pins #(parameter int PLL = -1);
@@ -38,6 +40,12 @@ module tb_chip_pins #(parameter int PLL = -1);
   int bad_dp_cycles [$], dpe_cycles [$];
   // Withholds BG after a wrong-DP beat, so a checkstop cuts no tenure.
   bit block_after_bad_dp = 1'b0;
+  // Instruction tenures from the first fetch at or above ilock_from: single
+  // beats, bursts, without CI, to ilock_line's line, at ilock_top.
+  logic [31:0] ilock_from = '1, ilock_line = '0, ilock_top = '0;
+  int ilock_single = 0, ilock_burst = 0, ilock_no_ci = 0, ilock_in_line = 0;
+  int ilock_at_top = 0;
+  bit ilock_watch = 1'b0;
 
   // The falling clock edge in a cycle that ends at a SYSCLK edge. Waits
   // count SYSCLK cycles.
@@ -55,6 +63,14 @@ module tb_chip_pins #(parameter int PLL = -1);
     if (ts_oe && !ts_n && tc[0:1] == 2'b10) begin
       if (fetches == 0) first_fetch = a;
       fetches++;
+      if (32'(a) >= ilock_from) ilock_watch = 1'b1;
+      if (ilock_watch) begin
+        if (tbst_n) ilock_single++;
+        else ilock_burst++;
+        if (ci_n) ilock_no_ci++;
+        if ((32'(a) >> 5) == (ilock_line >> 5)) ilock_in_line++;
+        if (32'(a) == ilock_top) ilock_at_top++;
+      end
     end
     if (!bus_ts_n && memory.om_drive) om_ts_cycles.push_back(cycles);
     if (!ape_n) ape_cycles.push_back(cycles);
@@ -424,6 +440,67 @@ module tb_chip_pins #(parameter int PLL = -1);
     running(3, "loop after the retries");
   endtask
 
+  // Real-mode fetches are guarded, so IBAT0 maps the ROM 1:1 with WIMG=0000
+  // and rfi sets MSR[IR]. The instruction cache fills a line holding a
+  // loop and a tail loop, then HID0 is written (ILOCK set when lock) and
+  // code in another region runs three times before branching to the tail
+  // loop.
+  localparam int ILOCK_A = 'h28, ILOCK_B = 'h2c;
+  task automatic case_ilock(input bit lock);
+    logic [31:0] line_l, setlock, b;
+    line_l = MAIN + 32'h80;
+    setlock = MAIN + 32'hc0;
+    b = MAIN + 32'h200;
+    load_handlers();
+    at = MAIN;
+    emit_const(3, BASE | 32'h3); emit(asm_spr(1'b1, 3, 528));
+    emit_const(3, BASE | 32'h2); emit(asm_spr(1'b1, 3, 529)); emit(ASM_ISYNC);
+    emit_const(3, 32'h0000_8800); emit(asm_spr(1'b1, 3, 1008));
+    emit_const(3, 32'h0000_8000); emit(asm_spr(1'b1, 3, 1008)); emit(ASM_ISYNC);
+    emit(asm_li(6, 0)); emit(asm_li(8, 0));
+    emit_const(3, line_l); emit(asm_spr(1'b1, 3, 26));
+    emit_const(3, MSR_IP | 32'h20); emit(asm_spr(1'b1, 3, 27));
+    emit(RFI);
+    check(at <= line_l, "program layout");
+    at = line_l;
+    emit(asm_addi(6, 6, 1)); emit(asm_cmpwi(6, 4)); emit(asm_bc(12, 0, -8));
+    emit(asm_ba(setlock, 1'b0));
+    emit(asm_addi(8, 8, 1)); emit(asm_stw(8, ILOCK_A, 31)); emit(asm_bc(20, 0, -8));
+    emit(32'h6000_0000);
+    at = setlock;
+    emit_const(3, lock ? 32'h0000_a000 : 32'h0000_8000);
+    emit(ASM_ISYNC); emit(asm_spr(1'b1, 3, 1008)); emit(ASM_ISYNC);
+    emit(asm_li(7, 0)); emit(asm_ba(b, 1'b0));
+    at = b;
+    emit(asm_addi(7, 7, 1)); emit(asm_stw(7, ILOCK_B, 31)); emit(asm_cmpwi(7, 3));
+    emit(asm_bc(12, 0, -12)); emit(asm_ba(line_l + 32'h10, 1'b0));
+    check(at < DATA, "program layout");
+    ilock_from = b;
+    ilock_line = line_l;
+    ilock_top = b;
+    ilock_watch = 1'b0;
+    {ilock_single, ilock_burst, ilock_no_ci, ilock_in_line, ilock_at_top} = '0;
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    wait_word(ILOCK_B, 3, 20000, "region B ran three times");
+    wait_word(ILOCK_A, 6, 20000, "tail loop runs");
+    if (lock) begin
+      check(ilock_burst == 0 && ilock_no_ci == 0,
+            $sformatf("ILOCK: misses are single-beat with CI (%0d single, %0d burst, %0d without CI)",
+                      ilock_single, ilock_burst, ilock_no_ci));
+      check(ilock_at_top >= 3, $sformatf("ILOCK: no allocation, region B fetched %0d times",
+                                         ilock_at_top));
+      check(ilock_in_line == 0, $sformatf("ILOCK: the locked line hits (%0d fetches)",
+                                          ilock_in_line));
+    end else begin
+      check(ilock_burst != 0 && ilock_at_top == 1,
+            $sformatf("ILOCK=0: region B is filled (%0d bursts, %0d fetches at its top)",
+                      ilock_burst, ilock_at_top));
+    end
+    ilock_from = '1;
+    ilock_watch = 1'b0;
+  endtask
+
   task automatic case_ckstp_in;
     loop_program(32'h0, MSR_IP);
     hard_reset();
@@ -585,6 +662,8 @@ module tb_chip_pins #(parameter int PLL = -1);
     case_dpe_drtry();
     case_dpe_checkstop();
     case_foreign_artry();
+    case_ilock(1'b0);
+    case_ilock(1'b1);
     $display("PASS chip pins: checks=%0d cycles=%0d", checks, cycles);
     $finish;
   end

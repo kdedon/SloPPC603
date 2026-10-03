@@ -284,7 +284,7 @@ module ppc_core_cached_bus60x_managed #(
     .fetch_rsp_insn_o(cache_fetch_rsp_insn),
     .fetch_rsp_error_o(cache_fetch_rsp_error),
     .maintenance_valid_i, .maintenance_ready_o,
-    .maintenance_invalidate_i, .maintenance_cache_enable_i,
+    .maintenance_invalidate_i, .maintenance_cache_enable_i, .lock_i(1'b0),
     .maintenance_done_valid_o, .maintenance_done_ready_i,
     .cache_enabled_o, .maintenance_busy_o,
     .icbi_valid_i(1'b0), .icbi_ready_o(unused_icbi_ready), .icbi_addr_i(32'b0),

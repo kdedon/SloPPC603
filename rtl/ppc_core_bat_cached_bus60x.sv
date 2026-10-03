@@ -445,6 +445,7 @@ module ppc_core_bat_cached_bus60x #(
     .maintenance_ready_o(managed_maintenance_ready),
     .maintenance_invalidate_i(managed_invalidate),
     .maintenance_cache_enable_i(managed_cache_enable),
+    .lock_i(core_pin_status.icache_lock),
     .maintenance_done_valid_o(managed_done_valid),
     .maintenance_done_ready_i(managed_done_ready),
     .cache_enabled_o, .maintenance_busy_o,

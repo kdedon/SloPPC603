@@ -1448,6 +1448,7 @@ module ppc_special #(
     pin_status_o.watchdog_reseto = watchdog_reseto_o;
     pin_status_o.dcache_enable = hid0_q[HID0_DCE];
     pin_status_o.dcache_lock = hid0_q[HID0_DLOCK];
+    pin_status_o.icache_lock = hid0_q[HID0_ILOCK];
     pin_status_o.dcache_flash_invalidate = hid0_q[HID0_DCFI];
     pin_status_o.noop_touch = hid0_q[HID0_NOOPTI];
     pin_status_o.broadcast_enable = CPU_CFG.has_abe_ifem && hid0_q[HID0_ABE];

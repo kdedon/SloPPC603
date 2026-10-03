@@ -111,10 +111,15 @@ cache invalidates on every mode change, a superset of the manual (the 603e
 keeps tags while disabled). An external command wins a same-cycle tie; the
 external port still works, and HID0[ICE] does not track modes it sets.
 
-Stored without effect: EMCP, EBA, EBD, SBCLK, EICE, ECLK, PAR, DOZE, NAP,
-SLEEP, DPM, RISEG, NHR, DCE, DLOCK, DCFI (no data cache), ILOCK (cache locking
-is not implemented), IFEM, FBIOB, ABE, NOOPTI (dcbt/dcbtst are already
-no-ops). Reserved bits read as zero.
+ILOCK locks the instruction cache (UM 3.1.3.3): a hit is served; a miss
+allocates nothing and is read as one single-beat transfer with CI asserted,
+as with the cache disabled. Set it after `isync`, as the manual requires;
+fetches in flight are not drained. EBD enables inbound data parity checking
+on the package top ([CHIP_PACKAGE.md](CHIP_PACKAGE.md)).
+
+Stored without effect: EMCP, EBA, SBCLK, EICE, ECLK, PAR, DOZE, NAP,
+SLEEP, DPM, RISEG, NHR, DCE, DLOCK, DCFI (no data cache), IFEM, FBIOB, ABE,
+NOOPTI (dcbt/dcbtst are already no-ops). Reserved bits read as zero.
 
 ## External control
 

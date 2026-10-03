@@ -44,7 +44,7 @@ module tb_icache_managed #(
     .maintenance_valid_i(maintenance_valid),
     .maintenance_ready_o(maintenance_ready),
     .maintenance_invalidate_i(maintenance_invalidate),
-    .maintenance_cache_enable_i(maintenance_enable),
+    .maintenance_cache_enable_i(maintenance_enable), .lock_i(1'b0),
     .maintenance_done_valid_o(maintenance_done_valid),
     .maintenance_done_ready_i(maintenance_done_ready),
     .cache_enabled_o(cache_enabled), .maintenance_busy_o(maintenance_busy),

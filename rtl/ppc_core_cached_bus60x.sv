@@ -84,6 +84,9 @@ module ppc_core_cached_bus60x #(
   logic [31:0] dmem_rsp_rdata;
 
   logic cache_fetch_rsp_valid, cache_fetch_rsp_ready, cache_fetch_rsp_error;
+  // Never set: the cache is not locked here.
+  logic cache_fetch_rsp_bypass, unused_cache_fetch_rsp_bypass;
+  assign unused_cache_fetch_rsp_bypass = cache_fetch_rsp_bypass;
   logic [31:0] cache_fetch_rsp_insn;
   logic cache_line_req_valid, cache_line_req_ready, cache_line_instruction;
   logic [31:0] cache_line_addr;
@@ -256,6 +259,7 @@ module ppc_core_cached_bus60x #(
     .fetch_rsp_ready_i(cache_fetch_rsp_ready),
     .fetch_rsp_insn_o(cache_fetch_rsp_insn),
     .fetch_rsp_error_o(cache_fetch_rsp_error),
+    .lock_i(1'b0), .fetch_rsp_bypass_o(cache_fetch_rsp_bypass),
     .kill_i(1'b0), .invalidate_i(1'b0),
     .invalidate_done_o(unused_icache_invalidate_done),
     .invalidate_set_i(1'b0), .invalidate_set_addr_i(32'b0),
