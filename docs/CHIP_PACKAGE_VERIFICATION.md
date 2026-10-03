@@ -10,7 +10,13 @@ Contract: [CHIP_PACKAGE.md](CHIP_PACKAGE.md).
 
 `make -C sim test-chip-pins` (`tb/tb_chip_pins.sv`) drives and observes only
 the `ppc603e` pins. Each case hard-resets the chip into a small program; its
-handlers store markers to RAM over the bus. PASS: checks=1352, cycles=74139.
+handlers store markers to RAM over the bus.
+
+Recorded: `make -C sim test-chip-pins`, commit f5757b7, 2026-10-03. PASS:
+checks=1616, cycles=111535 (default build; 1617 checks at the other PLL
+ratios of `test-chip-ratios`). Also passes with `DISPATCH_WIDTH=2` and the
+pipelined LSU unit. The parity, foreign-ARTRY and ILOCK rows below are new
+in this record.
 
 | Case | Establishes |
 |---|---|
@@ -28,6 +34,12 @@ handlers store markers to RAM over the bus. PASS: checks=1352, cycles=74139.
 | APE | HID0[EBA]=1, MSR[ME]=1: a second-master global read with correct AP, and one with wrong AP but GBL negated, leave APE negated; with wrong AP and GBL, APE asserts for exactly one cycle, the second after TS, and the chip enters 0x200 with SRR1[15] the only high bit set; `rfi` resumes |
 | APE disabled | HID0[EBA]=0: wrong AP asserts no APE, no machine check, no checkstop |
 | APE with ME=0 | Checkstop, outputs released, no 0x200 entry; HRESET reboots |
+| DPE | HID0[EBD]=1, MSR[ME]=1: reads with correct DP leave DPE negated; one instruction-read beat with wrong DP7 asserts DPE for exactly one cycle, the second after its TA, and the chip enters 0x200 with SRR1[14] the only high bit set; `rfi` resumes |
+| DPE disabled | HID0[EBD]=0: wrong DP asserts no DPE, no machine check, no checkstop |
+| DPE with DRTRY | Every read beat is cancelled by DRTRY and redriven with correct DP: the wrong DP on the cancelled beat asserts no DPE and takes no machine check |
+| DPE with ME=0 | Checkstop, outputs released, no 0x200 entry; HRESET reboots |
+| ILOCK | IBAT0 maps the ROM with WIMG=0000 and rfi sets MSR[IR]. With HID0[ILOCK]=0 the code region run after the HID0 write is burst-filled and fetched once at its top; with ILOCK=1 its three passes fetch it each time as single beats with CI and no burst, and the loop in a line filled before the write runs with no fetch of that line. With the lock not wired to the cache the ILOCK=1 case fails |
+| Foreign ARTRY | Another snooper retries 24 second-master reads with ARTRY in the cycle after AACK while the processor fetches with caches off; the arbiter grants the processor in the following cycle. BR, asserted in the ARTRY cycle in some of them, is negated in every following cycle and no TS follows that grant; the loop then runs. With the BR/BG block removed, BR stays asserted in 12 of 24 and the bench fails |
 
 The bench's hard reset withholds BG until any owed data tenure ends (the
 target cannot abandon one) and releases BG only while HRESET is held.

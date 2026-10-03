@@ -121,8 +121,26 @@ module bus60x_coherent_bfm #(
   bit ignore_artry = 1'b0;
   // Commands queued while set drive wrong AP[1] in their TS cycle.
   bit om_bad_parity = 1'b0;
+  // Read beats of these doublewords carry wrong DP7 (once each); the bench
+  // XORs dp_flip into DP.
+  logic [31:0] bad_dp_once [$];
+  logic [7:0] dp_flip = 8'h00;
+  // Second-master tenures to retry as another snooper would, with ARTRY in
+  // the cycle after AACK and no push owed by the processor.
+  int om_foreign_retries = 0;
+  // Grants the processor in the cycle after such an ARTRY.
+  bit grant_after_foreign_retry = 1'b0;
+  // Foreign qualified ARTRYs; of those, BR asserted in the ARTRY cycle, BR
+  // asserted in the cycle after it, and a processor TS following that
+  // cycle's grant.
+  int gap_samples = 0, gap_br_before = 0, gap_br = 0, gap_ts = 0;
   // Percent chances of the two address-pipelining cases above.
   int om_pipeline_pct = 0, cpu_pipeline_pct = 0;
+  // Percent chance that a push owed for a second-master tenure retried
+  // while a processor data tenure is pending is granted its address tenure
+  // ahead of that data tenure; its data tenure follows in address order.
+  int push_pipeline_pct = 0;
+  int n_push_pipelined = 0;
   logic owed = 1'b0, in_data = 1'b0;
   /* verilator lint_on UNUSEDSIGNAL */
   int unsigned rng = SEED;
@@ -305,6 +323,7 @@ module bus60x_coherent_bfm #(
   endtask
 
   task automatic read_beat(input int index);
+    logic [28:0] beat;
     delay();
     while (hold_i) bus_rise();
     if (tea_hit(beat_address(index))) begin
@@ -313,9 +332,19 @@ module bus60x_coherent_bfm #(
     end
     bus_fall();
     d_o = doubleword(beat_address(index));
+    dp_flip = 8'h00;
+    beat = 29'(beat_address(index) >> 3);
+    for (int i = 0; i < bad_dp_once.size(); i++)
+      if (bad_dp_once[i][31:3] == beat) begin
+        bad_dp_once.delete(i);
+        dp_flip = 8'h01;
+        break;
+      end
     ta_n_o = 1'b0;
     bus_rise();
+    if (d_oe_i) $fatal(1, "%m: processor drives data in a read tenure");
     bus_fall();
+    dp_flip = 8'h00;
     if (drtry_i) begin
       drtries++;
       drtry_n_o = 1'b0;
@@ -346,6 +375,7 @@ module bus60x_coherent_bfm #(
     ta_n_o = 1'b0;
     bus_rise();
     if (!d_oe_i) $fatal(1, "%m: write TA without driven data");
+    if (!(dbb_oe_i && !dbb_n_i)) $fatal(1, "%m: write TA without DBB");
     for (int k = 0; k < size; k++)
       put_byte((burst ? base : addr) + 32'(k), d_i[63-8*(offset + k) -: 8]);
     bus_fall();
@@ -445,14 +475,35 @@ module bus60x_coherent_bfm #(
 
   // The ARTRY window (AACK+1), then the retry bookkeeping.
   task automatic om_close(input om_t c, inout logic retried, input bit first);
+    bit foreign;
+    foreign = om_foreign_retries > 0;
     bus_fall();
     aack_n_o = 1'b1;
+    if (foreign) begin
+      target_artry_n = 1'b0;
+      om_foreign_retries--;
+    end
     bus_rise();
     if (artry_oe_i && !artry_n_i) begin
       retried = 1'b1;
       om_artry_cycles++;
     end
+    if (foreign) begin
+      gap_samples++;
+      if (!br_n_i) gap_br_before++;
+    end
     bus_fall();
+    if (foreign) begin
+      target_artry_n = 1'b1;
+      if (grant_after_foreign_retry && !retried) bg_n_o = 1'b0;
+      bus_rise();
+      if (!br_n_i) gap_br++;
+      bus_fall();
+      bg_n_o = 1'b1;
+      bus_rise();
+      if (ts_oe_i && !ts_n_i) gap_ts++;
+      bus_fall();
+    end
     om_window--;
     if (om_window == 0) om_drive = 1'b0;
     if (retried && ignore_artry) begin
@@ -465,6 +516,11 @@ module bus60x_coherent_bfm #(
       if (first) om_first_retried[c.ticket] = 1'b1;
       push_due = 1'b1;
       push_line = c.addr[31:5];
+    end
+    if (foreign && !retried) begin
+      om_retried++;
+      if (first) om_first_retried[c.ticket] = 1'b1;
+      retried = 1'b1;
     end
   endtask
 
@@ -541,6 +597,35 @@ module bus60x_coherent_bfm #(
     end
   endtask
 
+  // The processor's push address tenure ahead of its pending data tenure;
+  // returns whether it was taken and not retried, with the push's tenure in
+  // the saved fields.
+  typedef struct {logic [31:0] addr; logic [4:0] tt; logic burst, write, external;
+                  logic [2:0] tsiz;} pend_t;
+  task automatic pipelined_push(output bit done, output pend_t push);
+    pend_t pend;
+    logic [31:5] line;
+    logic taken, retried;
+    int spin;
+    done = 1'b0;
+    pend = '{addr, tt, burst, write, external, tsiz};
+    line = push_line;
+    spin = 0;
+    while (br_n_i && spin < 8) begin bus_rise(); spin++; end
+    if (!br_n_i) begin
+      cpu_address_tenure(taken, retried);
+      if (taken && !(tt == TT_WRITE_KILL && burst && addr[31:5] == line))
+        $fatal(1, "%m: tenure TT=%b A=%h ahead of a pending data tenure is not the push of %h",
+               tt, addr, {line, 5'b0});
+      push = '{addr, tt, burst, write, external, tsiz};
+      done = taken && !retried;
+      if (done) n_push_pipelined++;
+    end
+    {addr, tt, burst, write, external, tsiz} =
+      {pend.addr, pend.tt, pend.burst, pend.write, pend.external, pend.tsiz};
+    owed = 1'b1;
+  endtask
+
   always @(posedge clk_i) if (ce_q) cycle++;
 
   // The processor asserts ARTRY only in a second-master snoop window.
@@ -569,12 +654,23 @@ module bus60x_coherent_bfm #(
         if (!retried && (tt[1] || external)) begin
           // Second-master address tenures ahead of this data tenure; their
           // data follows it.
+          bit pushed;
+          pend_t push;
+          pushed = 1'b0;
           if (om_q.size() != 0 && (rnd() % 100) < cpu_pipeline_pct) begin
             om_overlapped++;
             om_addresses();
-            if (push_due) om_overlap_retried++;
+            if (push_due) begin
+              om_overlap_retried++;
+              if ((rnd() % 100) < push_pipeline_pct) pipelined_push(pushed, push);
+            end
           end
           cpu_data_tenure();
+          if (pushed) begin
+            {addr, tt, burst, write, external, tsiz} =
+              {push.addr, push.tt, push.burst, push.write, push.external, push.tsiz};
+            cpu_data_tenure();
+          end
           om_drain();
         end
         owed = 1'b0;

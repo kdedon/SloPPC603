@@ -474,7 +474,8 @@ package ppc_pkg;
     EVENT_DSA             = 5'd23,
     EVENT_WATCHDOG        = 5'd24,
     // Floating-point enabled program exception (SRR1 bit 11).
-    EVENT_PROGRAM_FP      = 5'd25
+    EVENT_PROGRAM_FP      = 5'd25,
+    EVENT_MACHINE_CHECK_DPE = 5'd26
   } exception_event_t;
 
   // Chip-pin events into the core, already synchronized. soft_reset and mcp
@@ -490,6 +491,8 @@ package ppc_pkg;
     logic tea;
     // Latched snoop address parity error; held until ape_taken.
     logic ape;
+    // Latched read data parity error; held until dpe_taken.
+    logic dpe;
     logic qack;              // QACK level
   } pin_event_t;
   // Core state the chip pins need.
@@ -504,11 +507,14 @@ package ppc_pkg;
     // HID0 data-cache controls, as levels.
     logic dcache_enable;     // DCE
     logic dcache_lock;       // DLOCK
+    logic icache_lock;       // ILOCK
     logic dcache_flash_invalidate; // DCFI
     logic noop_touch;        // NOOPTI
     logic broadcast_enable;  // ABE
     logic address_parity_enable; // EBA
     logic ape_taken;
+    logic data_parity_enable; // EBD
+    logic dpe_taken;
     logic watchdog_reseto;   // 602 RESETO request
     logic qreq;              // QREQ level
     logic quiesced;          // QACK seen: snooping stops
@@ -535,6 +541,8 @@ package ppc_pkg;
   } dcache_bus_out_t;
   typedef struct packed {
     logic         req_ready;
+    // The accepted request's address tenure is past its ARTRY window.
+    logic         req_acked;
     logic         rd_valid;
     logic [63:0]  rd_data;
     logic         rd_error;
@@ -823,18 +831,20 @@ package ppc_pkg;
   // DSISR and SPRG0-3 are fully architected; no mask needed.
   localparam logic [31:0] DSISR_RESET = 32'h0000_0000;
   // HID0 (UM Table 2-2): every named bit of the variant is stored
-  // (cpu_cfg().hid0_wmask); reserved bits read as zero. ICE and ICFI act
-  // (instruction cache), and EMCP on the chip top; the rest have no
-  // implemented feature to control. Hard reset clears HID0 and HID1.
+  // (cpu_cfg().hid0_wmask); reserved bits read as zero. ICE, ICFI and
+  // ILOCK act on the instruction cache; EMCP, EBA and EBD on the chip top.
+  // Hard reset clears HID0 and HID1.
   localparam int HID0_ICE = 15;
   localparam int HID0_ICFI = 11;
   localparam int HID0_DCE = 14;
   localparam int HID0_DLOCK = 12;
+  localparam int HID0_ILOCK = 13;
   localparam int HID0_DCFI = 10;
   localparam int HID0_ABE = 3;
   localparam int HID0_NOOPTI = 0;
   localparam int HID0_EMCP = 31;
   localparam int HID0_EBA = 29;
+  localparam int HID0_EBD = 28;
   // Power-saving mode selects (UM 9.2); DPM is stored without effect.
   localparam int HID0_DOZE = 23;
   localparam int HID0_NAP = 22;

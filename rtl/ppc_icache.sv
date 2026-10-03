@@ -26,6 +26,10 @@ module ppc_icache #(
   // FETCH_WIDTH 2: {next word valid, word at addr + 4, word at addr}.
   output logic [33*FETCH_WIDTH-2:0] fetch_rsp_insn_o,
   output logic         fetch_rsp_error_o,
+  // HID0[ILOCK]: a miss allocates nothing and responds with
+  // fetch_rsp_bypass_o, no instruction, for the caller to read uncached.
+  input  logic         lock_i,
+  output logic         fetch_rsp_bypass_o,
 
   input  logic         kill_i,
   input  logic         invalidate_i,
@@ -101,7 +105,7 @@ module ppc_icache #(
   lru_ranks_t lru_rdata, lru_wdata;
   logic [SET_BITS-1:0] lru_raddr;
 
-  logic rsp_valid_q, rsp_error_q;
+  logic rsp_valid_q, rsp_error_q, rsp_bypass_q;
   // A RAM response selects rsp_way_q with rsp_insn_q zero; any other
   // response has rsp_way_q zero. The output is one AND-OR.
   logic [31:0] rsp_insn_q;
@@ -246,6 +250,7 @@ module ppc_icache #(
                     !kill_i && !invalidate_i;
     fetch_rsp_valid_o = rst_ni && rsp_valid_q && !kill_i && !invalidate_i;
     fetch_rsp_error_o = rsp_error_q;
+    fetch_rsp_bypass_o = rsp_bypass_q;
 
     line_req_valid_o = rst_ni && state_q == IC_REFILL_REQUEST &&
                        !kill_i && !invalidate_i;
@@ -284,6 +289,7 @@ module ppc_icache #(
       state_q <= IC_IDLE;
       rsp_valid_q <= 1'b0;
       rsp_error_q <= 1'b0;
+      rsp_bypass_q <= 1'b0;
       rsp_insn_q <= 32'b0;
       rsp_way_q <= '0;
       rsp_word_q <= '0;
@@ -338,6 +344,7 @@ module ppc_icache #(
         unique case (state_q)
           IC_IDLE: begin
             if (accept) begin
+              rsp_bypass_q <= 1'b0;
               if (fetch_addr_i[1:0] != 2'b00) begin
                 rsp_way_q <= '0;
                 rsp_insn_q <= 32'b0;
@@ -355,6 +362,13 @@ module ppc_icache #(
                 upd_seed_q <= 1'b0;
                 upd_set_q <= lookup_set;
                 upd_way_q <= lookup_way;
+              end else if (lock_i) begin
+                rsp_way_q <= '0;
+                rsp_insn_q <= 32'b0;
+                rsp_error_q <= 1'b0;
+                rsp_bypass_q <= 1'b1;
+                rsp_valid_q <= 1'b1;
+                miss_q <= 1'b1;
               end else begin
                 miss_addr_q <= fetch_addr_i[31:3];
                 miss_set_q <= lookup_set;

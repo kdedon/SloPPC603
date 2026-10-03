@@ -22,6 +22,8 @@ module ppc_icache_managed #(
   output logic         maintenance_ready_o,
   input  logic         maintenance_invalidate_i,
   input  logic         maintenance_cache_enable_i,
+  // HID0[ILOCK]: hits are served, misses read uncached (UM 3.1.3.3).
+  input  logic         lock_i,
   output logic         maintenance_done_valid_o,
   input  logic         maintenance_done_ready_i,
   output logic         cache_enabled_o,
@@ -74,7 +76,10 @@ module ppc_icache_managed #(
   logic protocol_error_q;
 
   logic cache_fetch_valid, cache_fetch_ready;
-  logic cache_rsp_valid, cache_rsp_ready, cache_rsp_error;
+  logic cache_rsp_valid, cache_rsp_ready, cache_rsp_error, cache_rsp_bypass;
+  // A locked miss: its uncached read is to be requested, or is outstanding.
+  logic locked_req_q, locked_wait_q, use_bypass;
+  logic [31:0] fetch_addr_q;
   logic [31:0] cache_rsp_insn;
   logic cache_invalidate, cache_invalidate_done;
   logic cache_busy, cache_protocol_error;
@@ -88,7 +93,8 @@ module ppc_icache_managed #(
     .fetch_valid_i(cache_fetch_valid), .fetch_ready_o(cache_fetch_ready),
     .fetch_addr_i(fetch_addr_i), .fetch_rsp_valid_o(cache_rsp_valid),
     .fetch_rsp_ready_i(cache_rsp_ready), .fetch_rsp_insn_o(cache_rsp_insn),
-    .fetch_rsp_error_o(cache_rsp_error), .kill_i(1'b0),
+    .fetch_rsp_error_o(cache_rsp_error), .lock_i,
+    .fetch_rsp_bypass_o(cache_rsp_bypass), .kill_i(1'b0),
     .invalidate_i(cache_invalidate),
     .invalidate_done_o(cache_invalidate_done),
     .invalidate_set_i(icbi_ready_o), .invalidate_set_addr_i(icbi_addr_i),
@@ -113,9 +119,10 @@ module ppc_icache_managed #(
     !command_priority && !icbi_start;
   assign cache_fetch_valid = fetch_accept_enable && cache_enabled_q &&
                              fetch_valid_i;
-  assign bypass_req_valid_o = fetch_accept_enable && !cache_enabled_q &&
-                              fetch_valid_i;
-  assign bypass_req_addr_o = fetch_addr_i;
+  assign bypass_req_valid_o = (fetch_accept_enable && !cache_enabled_q &&
+                               fetch_valid_i) || locked_req_q;
+  assign bypass_req_addr_o = locked_req_q ? fetch_addr_q : fetch_addr_i;
+  assign use_bypass = !cache_enabled_q || locked_wait_q;
   assign fetch_ready_o = fetch_accept_enable &&
     (cache_enabled_q ? cache_fetch_ready : bypass_req_ready_i);
 
@@ -126,11 +133,12 @@ module ppc_icache_managed #(
     cache_rsp_ready = 1'b0;
     bypass_rsp_ready_o = 1'b0;
     if (rst_ni && fetch_outstanding_q) begin
-      if (cache_enabled_q) begin
-        fetch_rsp_valid_o = cache_rsp_valid;
+      if (!use_bypass) begin
+        // A locked miss is consumed here and read uncached.
+        fetch_rsp_valid_o = cache_rsp_valid && !cache_rsp_bypass;
         fetch_rsp_insn_o = cache_rsp_insn;
         fetch_rsp_error_o = cache_rsp_error;
-        cache_rsp_ready = fetch_rsp_ready_i;
+        cache_rsp_ready = fetch_rsp_ready_i || cache_rsp_bypass;
       end else begin
         fetch_rsp_valid_o = bypass_rsp_valid_i;
         fetch_rsp_insn_o = bypass_rsp_insn_i;
@@ -160,13 +168,25 @@ module ppc_icache_managed #(
       icbi_q <= 1'b0;
       fetch_outstanding_q <= 1'b0;
       protocol_error_q <= 1'b0;
+      locked_req_q <= 1'b0;
+      locked_wait_q <= 1'b0;
+      fetch_addr_q <= 32'b0;
     end else begin
       if (complete_fetch ||
-          (fetch_outstanding_q && !cache_enabled_q &&
-           bypass_ifetch_error_i))
+          (fetch_outstanding_q && use_bypass && bypass_ifetch_error_i)) begin
         fetch_outstanding_q <= 1'b0;
-      if (accept_fetch)
+        locked_wait_q <= 1'b0;
+      end
+      if (accept_fetch) begin
         fetch_outstanding_q <= 1'b1;
+        fetch_addr_q <= fetch_addr_i;
+      end
+      if (fetch_outstanding_q && !use_bypass && cache_rsp_valid && cache_rsp_bypass)
+        locked_req_q <= 1'b1;
+      if (locked_req_q && bypass_req_ready_i) begin
+        locked_req_q <= 1'b0;
+        locked_wait_q <= 1'b1;
+      end
 
       if ((cache_rsp_valid || bypass_rsp_valid_i) &&
           !fetch_outstanding_q)

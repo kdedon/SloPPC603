@@ -56,6 +56,13 @@ logic buc_ta_n = 1'b1, buc_tea_n = 1'b1, buc_xats_n = 1'b1, buc_drive = 1'b0;
 logic [31:0] buc_a = '0, buc_dh = '0;
 logic [4:0] buc_tt = '0;
 logic xats_n, xats_oe;
+// Odd parity of the inbound data, wrong where the memory flips it.
+logic [63:0] in_d;
+logic [0:7] in_dp;
+assign in_d = {buc_ta_n ? target_data[63:32] : buc_dh, target_data[31:0]};
+always_comb
+  for (int i = 0; i < 8; i++)
+    in_dp[i] = ~^in_d[63-8*i -: 8] ^ memory.dp_flip[7-i];
 ppc603e #(.CPU_VARIANT(ppc_pkg::cpu_variant_e'(`CHIP_VARIANT)), .PLL_CFG(CHIP_PLL_CFG),
   .ENABLE_FPU(1'(`CHIP_ENABLE_FPU)), .DS_PID(4'(`CHIP_DS_PID))) dut (
   /* verilator lint_off PINCONNECTEMPTY */
@@ -71,8 +78,8 @@ ppc603e #(.CPU_VARIANT(ppc_pkg::cpu_variant_e'(`CHIP_VARIANT)), .PLL_CFG(CHIP_PL
   .xats_n_i(xats_oe ? xats_n : buc_xats_n), .xats_n_o(xats_n), .xats_oe_o(xats_oe),
   .aack_n_i(aack_n && buc_aack_n), .artry_n_i(artry_n && buc_artry_n), .artry_n_o(artry_out_n), .artry_oe_o(artry_oe),
   .dbg_n_i(dbg_n && buc_dbg_n), .dbwo_n_i(1'b1), .dbb_n_i(1'b1), .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe),
-  .dh_i(buc_ta_n ? target_data[63:32] : buc_dh), .dl_i(target_data[31:0]), .dh_o(dh_out), .dl_o(dl_out),
-  .dp_i('1), .dp_o(dp), .data_oe_o(data_oe), .dpe_n_o(dpe_n), .dbdis_n_i(dbdis_n),
+  .dh_i(in_d[63:32]), .dl_i(in_d[31:0]), .dh_o(dh_out), .dl_o(dl_out),
+  .dp_i(in_dp), .dp_o(dp), .data_oe_o(data_oe), .dpe_n_o(dpe_n), .dbdis_n_i(dbdis_n),
   .ta_n_i(ta_n && buc_ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n && buc_tea_n),
   .int_n_i(int_n), .smi_n_i(smi_n), .mcp_n_i(mcp_n), .ckstp_in_n_i(ckstp_in_n),
   .ckstp_out_n_o(ckstp_out_n), .hreset_n_i(hreset_n), .sreset_n_i(sreset_n),

@@ -55,6 +55,8 @@ module ppc_dcache #(
   output logic         bus_req_gbl_o,
   output logic [1:0]   bus_req_cse_o,
   output logic [255:0] bus_req_data_o,
+  // The accepted request's address tenure is past its ARTRY window.
+  input  logic         bus_req_acked_i,
   input  logic         bus_rd_valid_i,
   input  logic [63:0]  bus_rd_data_i,
   input  logic         bus_rd_error_i,
@@ -321,7 +323,7 @@ module ppc_dcache #(
   end
 
   // ---------------------------------------------------------------- snoop
-  logic push_busy, fsm_owns, can_push;
+  logic push_busy, fsm_owns, fsm_claims, can_push;
   logic [LINE_BITS-1:0] snp_line;
   snoop_class_e snp_class;
   logic snp_cancel_type, snp_conflict, snp_dirty;
@@ -332,6 +334,16 @@ module ppc_dcache #(
   assign fsm_owns = MUTATION != 6 && state_q != S_IDLE &&
                     state_q != S_LOOKUP && state_q != S_SYNC_WAIT;
   assign can_push = !push_busy && state_q != S_COB_READ;
+  // A bus request claims its line only once its address tenure is accepted
+  // (UM 3.6.9); until then a snoop of the line is a miss, so two caches
+  // missing on one line do not retry each other forever. A stwcx. that
+  // passed its reservation check claims the line throughout, so no other
+  // master writes it first; only one cache can hold that reservation.
+  assign fsm_claims = fsm_owns && (req_op_q == DC_STWCX ||
+    (state_q != S_ADDR_REQ && state_q != S_FILL_REQ && state_q != S_SREAD_REQ &&
+     state_q != S_SWRITE_REQ && state_q != S_COB_READ && state_q != S_COB_REQ &&
+     (bus_req_acked_i || (state_q != S_ADDR_WAIT && state_q != S_FILL_WAIT &&
+                          state_q != S_SREAD_WAIT))));
   assign snp_line = snp_addr_q[31:5];
   assign snp_dirty = MUTATION != 2 && hdirty;
 
@@ -346,7 +358,7 @@ module ppc_dcache #(
                       (snp_class == SN_FLUSH);
     snp_conflict = (cob_valid_q && cob_line_q == snp_line) ||
                    (push_busy && push_line_q == snp_line) ||
-                   (fsm_owns && req_line == snp_line);
+                   (fsm_claims && req_line == snp_line);
 
     s_artry = 1'b0;
     s_push = 1'b0;
@@ -372,8 +384,12 @@ module ppc_dcache #(
         end
       end
     end
+    // A lwarx whose read has not claimed its line reads after this snoop,
+    // so the snoop does not cancel the reservation it sets.
     s_resv_cancel = MUTATION != 4 && snp_valid_q && snp_cancel_type &&
-                    !s_artry && resv_valid_q && resv_line_q == snp_line;
+                    !s_artry && resv_valid_q && resv_line_q == snp_line &&
+                    !(fsm_owns && !fsm_claims && req_op_q == DC_LWARX &&
+                      req_line == snp_line);
   end
 
   // --------------------------------------------------------------- lookup

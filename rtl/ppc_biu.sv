@@ -4,9 +4,11 @@
 // Bus interface unit: the 60x masters behind one pin set. The scalar master
 // carries uncached instruction reads and every data access; the line master
 // carries cache-line reads. With ENABLE_DCACHE a third master serves the
-// data cache's request and push ports, and the snoop front end answers other
-// masters' global tenures. With ENABLE_DIRECT_STORE a fourth master runs
-// direct-store requests on XATS. One address tenure is outstanding at a time.
+// data cache's requests, a push engine its snoop pushes, and the snoop front
+// end answers other masters' global tenures. With ENABLE_DIRECT_STORE another
+// master runs direct-store requests on XATS. One address tenure is
+// outstanding at a time, except that a push's may follow one whose data
+// tenure is still owed.
 module ppc_biu #(
   // A TEA on an instruction read returns an error response.
   parameter bit RETURN_IFETCH_ERROR = 1'b0,
@@ -63,6 +65,7 @@ module ppc_biu #(
   // Data cache BIU ports (docs/DATA_CACHE.md).
   input  logic         dc_req_valid_i,
   output logic         dc_req_ready_o,
+  output logic         dc_req_acked_o,
   input  logic [2:0]   dc_req_kind_i,
   input  logic [4:0]   dc_req_tt_i,
   input  logic [31:0]  dc_req_addr_i,
@@ -472,6 +475,22 @@ module ppc_biu #(
 
   assign grp_busy = selector_busy || scalar_busy || line_busy || ds_busy;
 
+  // UM 7.2.5.2.2, 8.3.3: in the cycle after a qualified ARTRY (ARTRY in the
+  // cycle after AACK), whoever's tenure it retried, only a snooper owing a
+  // push may request: otherwise BR is negated and BG ignored.
+  logic aack_q, artry_block_q, artry_block, push_owed, bg_n;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      aack_q <= 1'b0;
+      artry_block_q <= 1'b0;
+    end else if (bus_ce_i) begin
+      aack_q <= !aack_n_i;
+      artry_block_q <= aack_q && !artry_n_i;
+    end
+  end
+  assign artry_block = artry_block_q && !push_owed;
+  assign bg_n = bg_n_i || artry_block;
+
   generate
   if (ENABLE_DCACHE) begin : g_dcache
     logic cm_br_n, cm_bg_n, cm_abb_in_n;
@@ -489,8 +508,31 @@ module ppc_biu #(
     logic cm_busy, cm_protocol_error, push_hold, push_accept, push_wait;
     logic push_due;
     logic outer_br_n, outer_busy, outer_protocol_error, snoop_protocol_error;
-    logic outer_ts_oe;
+    logic outer_ts_oe, outer_abb_n, outer_abb_oe, outer_ts_n, outer_addr_oe;
+    logic [31:0] outer_a;
+    logic [4:0] outer_tt;
+    logic outer_tbst_n, outer_ci_n, outer_wt_n, outer_gbl_n;
+    logic [2:0] outer_tsiz;
+    logic [1:0] outer_tc, outer_cse;
+    logic outer_dbb_n, outer_dbb_oe, outer_d_oe;
+    logic [63:0] outer_d_o;
+    logic outer_bg_n, outer_aack_n, outer_artry_n, outer_dbg_n;
+    logic outer_ta_n, outer_drtry_n, outer_tea_n;
+    // Push engine: the snoop push's own 60x master.
+    logic pe_br_n, pe_bg_n, pe_abb_n, pe_abb_oe, pe_ts_n, pe_ts_oe;
+    logic [31:0] pe_a;
+    logic [4:0] pe_tt;
+    logic pe_tbst_n, pe_ci_n, pe_wt_n, pe_gbl_n, pe_addr_oe;
+    logic [2:0] pe_tsiz;
+    logic [1:0] pe_tc, pe_cse;
+    logic pe_dbg_n, pe_dbb_n, pe_dbb_oe, pe_d_oe, pe_ta_n, pe_tea_n;
+    logic [63:0] pe_d_o;
+    logic pe_busy, pe_protocol_error;
+    logic outer_addr_active, outer_owed_q, outer_data_tt_q, outer_aack_q;
+    logic outer_dbb_q;
 
+    // Each cache-master instance leaves the other's port set open.
+    /* verilator lint_off PINCONNECTEMPTY */
     ppc_bus60x_cache_master #(.MUTATION(MUTATION)) cache_bus (
       .clk_i, .rst_ni, .bus_ce_i,
       .req_valid_i(dc_req_valid_i), .req_ready_o(dc_req_ready_o),
@@ -501,11 +543,11 @@ module ppc_biu #(
       .rd_valid_o(dc_rd_valid_o), .rd_data_o(dc_rd_data_o),
       .rd_error_o(dc_rd_error_o),
       .wr_done_o(dc_wr_done_o), .wr_error_o(dc_wr_error_o),
-      .push_valid_i(dc_push_valid_i), .push_ready_o(dc_push_ready_o),
-      .push_addr_i(dc_push_addr_i), .push_data_i(dc_push_data_i),
-      .push_done_o(dc_push_done_o), .push_error_o(dc_push_error_o),
-      .push_hold_i(push_hold), .push_accept_o(push_accept),
-      .push_wait_o(push_wait),
+      // Pushes run on the push engine; this master only waits for them.
+      .push_valid_i(1'b0), .push_ready_o(), .push_addr_i(32'b0),
+      .push_data_i(256'b0), .push_done_o(), .push_error_o(),
+      .push_hold_i(push_hold || pe_busy), .push_accept_o(), .push_wait_o(),
+      .req_acked_o(dc_req_acked_o),
       .busy_o(cm_busy), .protocol_error_o(cm_protocol_error),
       .br_n_o(cm_br_n), .bg_n_i(cm_bg_n), .abb_n_i(cm_abb_in_n),
       .abb_n_o(cm_abb_n), .abb_oe_o(cm_abb_oe), .ts_n_o(cm_ts_n),
@@ -518,8 +560,7 @@ module ppc_biu #(
       .drtry_n_i(cm_drtry_n), .tea_n_i(cm_tea_n)
     );
 
-    // While a push is due the group's request is hidden, so the cache master
-    // wins the next tenure.
+    // While a push is due the group's request is hidden.
     ppc_bus60x_two_master outer_mux (
       .clk_i, .rst_ni, .bus_ce_i,
       .scalar_busy_i(grp_busy), .scalar_br_n_i(grp_br_n || push_due),
@@ -553,17 +594,111 @@ module ppc_biu #(
       .line_ta_n_o(cm_ta_n), .line_drtry_n_o(cm_drtry_n),
       .line_tea_n_o(cm_tea_n),
       .busy_o(outer_busy), .protocol_error_o(outer_protocol_error),
-      .br_n_o(outer_br_n), .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o,
-      .ts_oe_o(outer_ts_oe), .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o,
-      .wt_n_o, .gbl_n_o, .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i,
-      .dbb_n_i, .dbb_n_o, .dbb_oe_o, .d_o, .d_oe_o, .ta_n_i, .drtry_n_i,
-      .tea_n_i
+      .br_n_o(outer_br_n), .bg_n_i(outer_bg_n), .abb_n_i,
+      .abb_n_o(outer_abb_n), .abb_oe_o(outer_abb_oe), .ts_n_o(outer_ts_n),
+      .ts_oe_o(outer_ts_oe), .a_o(outer_a), .tt_o(outer_tt),
+      .tbst_n_o(outer_tbst_n), .tsiz_o(outer_tsiz), .tc_o(outer_tc),
+      .ci_n_o(outer_ci_n), .wt_n_o(outer_wt_n), .gbl_n_o(outer_gbl_n),
+      .cse_o(outer_cse), .addr_oe_o(outer_addr_oe),
+      .aack_n_i(outer_aack_n), .artry_n_i(outer_artry_n),
+      .dbg_n_i(outer_dbg_n), .dbb_n_i,
+      .dbb_n_o(outer_dbb_n), .dbb_oe_o(outer_dbb_oe), .d_o(outer_d_o),
+      .d_oe_o(outer_d_oe), .ta_n_i(outer_ta_n), .drtry_n_i(outer_drtry_n),
+      .tea_n_i(outer_tea_n)
     );
+
+    // UM 3.6.9: a snoop push may run its address tenure while an older
+    // tenure of this processor still owes its data tenure; the data tenures
+    // then follow address order.
+    ppc_bus60x_cache_master push_bus (
+      .clk_i, .rst_ni, .bus_ce_i,
+      .req_valid_i(1'b0), .req_ready_o(), .req_kind_i(3'b0), .req_tt_i(5'b0),
+      .req_addr_i(32'b0), .req_be_i(8'b0), .req_wimg_i(4'b0),
+      .req_gbl_i(1'b0), .req_cse_i(2'b0), .req_data_i(256'b0),
+      .rd_valid_o(), .rd_data_o(), .rd_error_o(), .wr_done_o(), .wr_error_o(),
+      .push_valid_i(dc_push_valid_i), .push_ready_o(dc_push_ready_o),
+      .push_addr_i(dc_push_addr_i), .push_data_i(dc_push_data_i),
+      .push_done_o(dc_push_done_o), .push_error_o(dc_push_error_o),
+      .push_hold_i(1'b0), .push_accept_o(push_accept),
+      .push_wait_o(push_wait), .req_acked_o(),
+      .busy_o(pe_busy), .protocol_error_o(pe_protocol_error),
+      .br_n_o(pe_br_n), .bg_n_i(pe_bg_n), .abb_n_i,
+      .abb_n_o(pe_abb_n), .abb_oe_o(pe_abb_oe), .ts_n_o(pe_ts_n),
+      .ts_oe_o(pe_ts_oe), .a_o(pe_a), .tt_o(pe_tt), .tbst_n_o(pe_tbst_n),
+      .tsiz_o(pe_tsiz), .tc_o(pe_tc), .ci_n_o(pe_ci_n), .wt_n_o(pe_wt_n),
+      .gbl_n_o(pe_gbl_n), .cse_o(pe_cse), .addr_oe_o(pe_addr_oe),
+      .aack_n_i, .artry_n_i, .dbg_n_i(pe_dbg_n), .dbb_n_i,
+      .dbb_n_o(pe_dbb_n), .dbb_oe_o(pe_dbb_oe),
+      .d_i(d_i), .d_o(pe_d_o), .d_oe_o(pe_d_oe), .ta_n_i(pe_ta_n),
+      .drtry_n_i, .tea_n_i(pe_tea_n)
+    );
+    /* verilator lint_on PINCONNECTEMPTY */
+
+    // An outer tenure owes its data tenure from the cycle after AACK, when
+    // no ARTRY retried it, until it releases DBB. TT[1] marks a data
+    // transfer; eciwx and ecowx (TT 1x100) carry data without it.
+    assign outer_addr_active = outer_abb_oe || outer_ts_oe || outer_addr_oe;
+    always_ff @(posedge clk_i) begin
+      if (!rst_ni) begin
+        outer_owed_q <= 1'b0;
+        outer_data_tt_q <= 1'b0;
+        outer_aack_q <= 1'b0;
+        outer_dbb_q <= 1'b0;
+      end else if (bus_ce_i) begin
+        if (outer_ts_oe && !outer_ts_n)
+          outer_data_tt_q <= outer_tt[1] || (outer_tt[4] && outer_tt[2:0] == 3'b100);
+        outer_aack_q <= !outer_aack_n && outer_abb_oe;
+        outer_dbb_q <= outer_dbb_oe;
+        if (outer_aack_q && outer_artry_n && outer_data_tt_q)
+          outer_owed_q <= 1'b1;
+        else if (outer_dbb_q && !outer_dbb_oe)
+          outer_owed_q <= 1'b0;
+      end
+    end
+
+    // The outer masters take no grant while a push is due or running, so the
+    // push is this processor's next tenure (UM 8.3.3). The push takes the
+    // address bus once the outer address tenure is over, and the data bus
+    // once no outer data tenure is owed.
+    assign outer_bg_n = bg_n || pe_busy || push_due;
+    assign pe_bg_n = bg_n_i || outer_addr_active;
+    assign pe_dbg_n = dbg_n_i || outer_owed_q || outer_dbb_oe;
+    assign outer_aack_n = aack_n_i || pe_abb_oe;
+    assign outer_artry_n = artry_n_i || pe_abb_oe;
+    assign outer_dbg_n = dbg_n_i || pe_dbb_oe;
+    assign outer_ta_n = ta_n_i || pe_dbb_oe;
+    assign outer_drtry_n = drtry_n_i || pe_dbb_oe;
+    assign outer_tea_n = tea_n_i || pe_dbb_oe;
+    assign pe_ta_n = ta_n_i || !pe_dbb_oe;
+    assign pe_tea_n = tea_n_i || !pe_dbb_oe;
+
+    always_comb begin
+      if (pe_abb_oe) begin
+        abb_n_o = pe_abb_n; ts_n_o = pe_ts_n; a_o = pe_a; tt_o = pe_tt;
+        tbst_n_o = pe_tbst_n; tsiz_o = pe_tsiz; tc_o = pe_tc;
+        ci_n_o = pe_ci_n; wt_n_o = pe_wt_n; gbl_n_o = pe_gbl_n;
+        cse_o = pe_cse;
+      end else begin
+        abb_n_o = outer_abb_n; ts_n_o = outer_ts_n; a_o = outer_a;
+        tt_o = outer_tt; tbst_n_o = outer_tbst_n; tsiz_o = outer_tsiz;
+        tc_o = outer_tc; ci_n_o = outer_ci_n; wt_n_o = outer_wt_n;
+        gbl_n_o = outer_gbl_n; cse_o = outer_cse;
+      end
+      abb_oe_o = pe_abb_oe || outer_abb_oe;
+      addr_oe_o = pe_addr_oe || outer_addr_oe;
+      if (pe_dbb_oe) begin
+        dbb_n_o = pe_dbb_n; d_o = pe_d_o;
+      end else begin
+        dbb_n_o = outer_dbb_n; d_o = outer_d_o;
+      end
+      dbb_oe_o = pe_dbb_oe || outer_dbb_oe;
+      d_oe_o = pe_d_oe || outer_d_oe;
+    end
 
     ppc_bus60x_snoop #(.MUTATION(MUTATION)) snoop (
       .clk_i, .rst_ni, .bus_ce_i,
       .ts_n_i, .a_i, .tt_i, .gbl_n_i,
-      .own_ts_oe_i(outer_ts_oe), .aack_n_i,
+      .own_ts_oe_i(ts_oe_o), .aack_n_i,
       .snoop_valid_o(dc_snoop_valid_o), .snoop_addr_o(dc_snoop_addr_o),
       .snoop_tt_o(dc_snoop_tt_o),
       .snoop_rsp_valid_i(dc_snoop_rsp_valid_i),
@@ -576,14 +711,17 @@ module ppc_biu #(
     // A due push keeps BR asserted until its tenure starts; UM §8.3.1 allows
     // BR without a following tenure.
     assign push_due = push_hold || push_wait;
-    assign br_n_o = outer_br_n && !push_due;
-    assign ts_oe_o = outer_ts_oe;
-    assign dcache_busy = outer_busy || cm_busy || push_hold;
+    assign push_owed = push_due;
+    assign br_n_o = pe_br_n &&
+      ((outer_br_n || artry_block || pe_busy) && !push_due);
+    assign ts_oe_o = outer_ts_oe || pe_ts_oe;
+    assign dcache_busy = outer_busy || cm_busy || push_hold || pe_busy;
     assign dcache_protocol_error = outer_protocol_error || cm_protocol_error ||
-      snoop_protocol_error;
+      snoop_protocol_error || pe_protocol_error;
   end else begin : g_no_dcache
-    assign br_n_o = grp_br_n;
-    assign grp_bg_n = bg_n_i;
+    assign push_owed = 1'b0;
+    assign br_n_o = grp_br_n || artry_block;
+    assign grp_bg_n = bg_n;
     assign grp_abb_in_n = abb_n_i;
     assign abb_n_o = grp_abb_n;
     assign abb_oe_o = grp_abb_oe;
@@ -613,6 +751,7 @@ module ppc_biu #(
 
     // No data cache: nothing is snooped and ARTRY is never driven.
     assign dc_req_ready_o = 1'b0;
+    assign dc_req_acked_o = 1'b0;
     assign dc_rd_valid_o = 1'b0;
     assign dc_rd_data_o = 64'b0;
     assign dc_rd_error_o = 1'b0;

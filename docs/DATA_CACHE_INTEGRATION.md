@@ -178,7 +178,8 @@ Source of truth: UM §7.2.4-7.2.5, §8.3 (PDF 280-330) and
 
 | Block | Role |
 |---|---|
-| `ppc_bus60x_cache_master` | third 60x master: cache requests and pushes |
+| `ppc_bus60x_cache_master` | third 60x master: cache requests |
+| `ppc_bus60x_cache_master` (push engine) | fourth 60x master, a second instance with only its push port used: snoop pushes |
 | `ppc_bus60x_snoop` | TS qualification, ARTRY drive and release, push hold |
 | `ppc_bus60x_two_master` (outer) | shares the pins between the instruction/scalar group and the cache master |
 
@@ -226,21 +227,35 @@ negated from the falling edge for one cycle, then high impedance.
 
 Push priority: a push-flagged response keeps BR asserted from TS+3 (at the
 latest AACK+2, §7.2.5.2.1) until the push has started its address tenure. The
-instruction/scalar group's request is hidden meanwhile and the cache master
-starts the push before any queued or retried request. BR without a tenure while
-the push data is read is allowed (§8.3.1). The arbiter must grant this
-processor while its BR is asserted, as §8.3.2 expects after ARTRY.
+instruction/scalar group's request is hidden meanwhile, the cache master
+starts nothing, and the outer masters receive no BG from the response until
+the push's data tenure ends, so the push is this processor's next tenure
+(§8.3.3) even when another master was already waiting for a grant. BR without a tenure while the push data is read is
+allowed (§8.3.1). The arbiter must grant this processor while its BR is
+asserted, as §8.3.2 expects after ARTRY.
+
+Push pipelining (§3.6.9, §8.2): the push runs on its own master, so its
+address tenure may start while an older tenure of this processor still owes
+its data tenure (the push waits only for an outer address tenure, through its
+ARTRY window). An outer tenure owes data from the cycle after AACK, if ARTRY
+did not retry it, until it releases DBB; the push's DBG is withheld until then,
+so data tenures follow address order. AACK and ARTRY reach the outer masters
+only outside the push's address tenure, and TA, DRTRY, TEA and DBG only
+outside its data tenure. DBWO is ignored: the system must keep it negated
+(see [DBWO](CHIP_PACKAGE.md#dbwo)).
 
 Address parity: `ppc603e` checks AP on a snooped TS with GBL when HID0[EBA]
 is set and asserts APE in the second cycle after TS; the error takes a machine
 check (SRR1 bit 15) or checkstops with MSR[ME]=0 (UM §8.3.2.1, §7.2.3.3). The
 manual specifies no ARTRY for a parity error, so the snoop proceeds.
 
-Not implemented: negating BR for a cycle after another snooper's ARTRY
-(§7.2.5.2.2) and pipelining the push ahead of a request whose address tenure
-is already accepted (the push waits for that data tenure). DBWO enveloping is
-optional and never applies here; see the DBWO section of
-[CHIP_PACKAGE.md](CHIP_PACKAGE.md#dbwo).
+Qualified ARTRY: in the cycle after an ARTRY sampled in the cycle after
+AACK, whichever master's tenure it retried, the BIU negates BR and ignores BG
+unless it owes a push for that or an earlier snoop (§7.2.5.2.2, §8.3.3,
+Figure 8-7). This holds in every build, with or without the data cache.
+
+Not implemented: DBWO, so the push data never runs ahead of an older read's
+(see the DBWO section of [CHIP_PACKAGE.md](CHIP_PACKAGE.md#dbwo)).
 
 ### Pin wiring
 
@@ -254,7 +269,8 @@ the snoop response's hit flag is unused.
 ### Ordering
 
 - Cached data: the cache master serves one request at a time in acceptance
-  order, pushes first; the cache itself orders loads after older stores.
+  order; a held push goes before any request not yet started or retried; the
+  cache itself orders loads after older stores.
 - eciwx/ecowx: the slot runs a cache sync (all posted writes complete) before
   the scalar tenure and accepts nothing until it ends. The transfer does not
   look up the cache; software keeps the word out of it (dcbf).
@@ -263,7 +279,7 @@ the snoop response's hit flag is unused.
   software (dcbst, sync, icbi, isync), as on the 603e; sync completes only
   after the cache's writes have finished on the bus.
 - A snoop push keeps BR asserted and hides the group's request until the push
-  starts its address tenure.
+  starts its address tenure; its data tenure follows any older one owed.
 
 ### Verification
 
@@ -320,7 +336,10 @@ and a second bus master. The second master can pipeline address tenures
 (`om_pipeline_pct`: a second TS in the cycle after the first's AACK when no
 ARTRY was seen by AACK, UM §7.2.1.2) and run address tenures while a processor
 data tenure is pending (`cpu_pipeline_pct`); data tenures follow address
-order. The processor's TS, A,
+order. When such a tenure is retried for a push, the model may grant the push
+its address tenure ahead of the pending data tenure (`push_pipeline_pct`); it
+then fails on any other tenure there, on processor data in a read tenure, and
+on a write TA without DBB. The processor's TS, A,
 TT and GBL are shared with the second master; its ARTRY retries the second
 master, which then grants the processor its push and reissues the command.
 The model fails on processor ARTRY outside a second-master snoop window.
@@ -379,6 +398,37 @@ Recorded: `make -C sim -j2 ci`, commit 1f2b66c, 2026-09-29.
   writes; lsu 2334589 cycles; machine-check 10740 cycles, 4 TEA; full-decode
   24111 cycles.
 - `test-biu-dcache-snoop` seeds 1-5 and `test-chip-pins` unchanged.
+
+### Two processors
+
+Recorded: `make -C sim test-chip-mp test-chip-dcache-coherence
+test-chip-dcache-coherence-negative test-biu-dcache-snoop-mutations
+test-dcache test-dcache-fast test-dcache-mutations`, commit f5757b7,
+2026-10-03; all pass, also with `DISPATCH_WIDTH=2 BUILD_DIR=build-w2-pipe
+VERILATOR="tools/verilate +define+PPC_LSU_PIPE=1"`. `test-chip-mp` seeds 1-3:
+236k-244k cycles, 7970-8227 tenures per processor, 222-283 ARTRYs by each
+processor on the other's tenures, each followed by its push, 318-476 RWITMs
+each, 778-826 target retries. `test-chip-dcache-coherence` seeds 1-3: 25-28
+pushes per seed granted their address tenure ahead of a pending processor
+data tenure; with the previous BIU none are and the bench fails coverage.
+It does not establish DBWO ordering (DBWO is ignored) or more than two
+processors.
+
+`make -C sim test-chip-mp` (`tb/tb_chip_mp.sv`, `tb/bfm/bus60x_mp_bfm.sv`): two
+`ppc603e` instances share TS, A, TT, GBL, AACK and ARTRY, each snooping the other,
+with one arbiter and memory (one tenure at a time, AACK at TS+2 or later, random
+target retries and waits). Both run one hand-assembled program with both caches on
+in real mode: IDs from an atomic increment, then eight rounds of writing their halves
+of 64 interleaved words (every line written by both), reading the other's half and
+atomically incrementing a shared counter; processor 0 then checks every value and
+flushes the lines. The model checks that a processor's ARTRY falls only in the other's
+snoop window, that after a qualified ARTRY the retried master and any processor that
+did not assert it negate BR in the next cycle, and that a processor still requesting
+then is granted first and runs the push of the retried line. Passing needs memory to
+hold the expected words, counter and IDs, and each processor to have retried the other
+and pushed. Writing it found three faults, now fixed: another tenure could take the
+grant meant for the push; two caches missing on one line retried each other forever;
+and a snoop before a `lwarx`'s read cancelled the reservation that read set.
 
 Established: the cache, BIU cache master and snooper together at the core and
 pin tops; coherent results against a second master's reads, RWITMs,

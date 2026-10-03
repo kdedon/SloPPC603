@@ -193,6 +193,7 @@ module ppc603e #(
   logic core_checkstop, mcp_edge, mcp_pending_q, sreset_edge, sreset_pending_q;
   logic mcp_n_q, sreset_n_q, start_pending_q;
   logic ape_check_q, ape_error_q, ape_out_q, ape_pending_q, ape_event;
+  logic dpe_check_q, dpe_out_q, dpe_pending_q, dpe_event;
   logic [1:0] tb_phase_q;
   pin_status_t pin_status;
   pin_event_t pin_event;
@@ -207,6 +208,7 @@ module ppc603e #(
   assign mcp_edge = mcp_n_q && !mcp_n;
   // An address parity error counts once per bus cycle.
   assign ape_event = ape_error_q && bus_ce;
+  assign dpe_event = dpe_out_q && bus_ce;
   assign sreset_edge = sreset_n_q && !sreset_n;
   always_ff @(posedge sysclk) begin
     mcp_n_q <= mcp_n;
@@ -216,15 +218,20 @@ module ppc603e #(
       mcp_pending_q <= 1'b0;
       sreset_pending_q <= 1'b0;
       ape_pending_q <= 1'b0;
+      dpe_pending_q <= 1'b0;
     end else begin
       if (!ckstp_in_n || strap_reject_q || core_checkstop ||
           (mcp_edge && pin_status.mcp_enable && !pin_status.machine_check_enable) ||
-          (ape_event && !pin_status.machine_check_enable))
+          ((ape_event || dpe_event) && !pin_status.machine_check_enable))
         checkstop_q <= 1'b1;
       if (ape_event && pin_status.machine_check_enable)
         ape_pending_q <= 1'b1;
       else if (pin_status.ape_taken)
         ape_pending_q <= 1'b0;
+      if (dpe_event && pin_status.machine_check_enable)
+        dpe_pending_q <= 1'b1;
+      else if (pin_status.dpe_taken)
+        dpe_pending_q <= 1'b0;
       // HID0[EMCP]=0 ignores MCP.
       if (mcp_edge && pin_status.mcp_enable && pin_status.machine_check_enable)
         mcp_pending_q <= 1'b1;
@@ -245,6 +252,7 @@ module ppc603e #(
   // The core composition raises its own asynchronous TEA.
   assign pin_event.tea = 1'b0;
   assign pin_event.ape = ape_pending_q;
+  assign pin_event.dpe = dpe_pending_q;
   // QACK counts only once QREQ is on the pin.
   assign pin_event.qack = !qack_n && !qreq_n;
 
@@ -422,12 +430,27 @@ module ppc603e #(
     end
   end
 
-  // ARTRY answers snoops only with ENABLE_DCACHE. No inbound data parity
-  // checking: DPE never asserts.
+  // UM 7.2.7.2.2, 7.2.7.3: with HID0[EBD], every byte lane of each TA beat
+  // of this processor's read data tenure is checked against DP. An error
+  // asserts DPE in the second cycle after TA unless DRTRY cancels the beat,
+  // and takes a machine check (SRR1 bit 14), or checkstops with MSR[ME]=0.
+  always_ff @(posedge sysclk) begin
+    if (!hreset_n || (bus_ce && !core_rst_n)) begin
+      dpe_check_q <= 1'b0;
+      dpe_out_q <= 1'b0;
+    end else if (bus_ce) begin
+      dpe_check_q <= !ta_n_i && core_dbb_oe && !core_dbb_n && !core_d_oe &&
+                     pin_status.data_parity_enable &&
+                     (dp_i != data_parity({dh_i, dl_i}));
+      dpe_out_q <= dpe_check_q && drtry_n_i;
+    end
+  end
+
+  // ARTRY answers snoops only with ENABLE_DCACHE.
   assign artry_n_o = core_artry_n;
   assign artry_oe_o = core_artry_oe && !release_outputs;
   assign ape_n_o = !ape_out_q;
-  assign dpe_n_o = 1'b1;
+  assign dpe_n_o = !dpe_out_q;
   assign ckstp_out_n_o = !checkstop_q;
   // RSRV follows the reservation from SYSCLK edges.
   logic rsrv_n, rsrv_n_q;
@@ -444,13 +467,14 @@ module ppc603e #(
   assign tdo_o = 1'b0;
   assign tdo_oe_o = 1'b0;
 
-  // Inbound data parity, TBST, DBWO (one tenure outstanding), JTAG and LSSD
-  // inputs have no function here.
+  // TBST, DBWO (one tenure outstanding), JTAG and LSSD inputs have no
+  // function here.
   logic unused_pins;
-  assign unused_pins = ^{tbst_n_i, dp_i,
+  assign unused_pins = ^{tbst_n_i,
                          dbwo_n_i, tck_i, tms_i, tdi_i, trst_n_i, test_i,
                          pin_status.smi_taken, pin_status.tea_taken,
                          pin_status.dcache_enable, pin_status.dcache_lock,
+                         pin_status.icache_lock,
                          pin_status.dcache_flash_invalidate, pin_status.noop_touch,
                          pin_status.broadcast_enable, pin_status.watchdog_reseto, retire_valid, retire, halted};
 endmodule

@@ -43,7 +43,7 @@ module tb_biu_dcache_snoop;
   logic busy, resv_valid, hit, miss, async_error, dc_protocol_error;
 
   // Cache <-> BIU.
-  logic bus_req_valid, bus_req_ready;
+  logic bus_req_valid, bus_req_ready, bus_req_acked;
   logic [2:0] bus_req_kind;
   logic [4:0] bus_req_tt;
   logic [31:0] bus_req_addr;
@@ -109,6 +109,7 @@ module tb_biu_dcache_snoop;
     .bus_req_addr_o(bus_req_addr), .bus_req_be_o(bus_req_be),
     .bus_req_wimg_o(bus_req_wimg), .bus_req_gbl_o(bus_req_gbl),
     .bus_req_cse_o(bus_req_cse), .bus_req_data_o(bus_req_data),
+    .bus_req_acked_i(bus_req_acked),
     .bus_rd_valid_i(bus_rd_valid), .bus_rd_data_i(bus_rd_data),
     .bus_rd_error_i(bus_rd_error),
     .bus_wr_done_i(bus_wr_done), .bus_wr_error_i(bus_wr_error),
@@ -138,6 +139,7 @@ module tb_biu_dcache_snoop;
     .line_rsp_valid_o(), .line_rsp_ready_i(1'b1), .line_rsp_line_o(),
     .line_rsp_error_o(),
     .dc_req_valid_i(bus_req_valid), .dc_req_ready_o(bus_req_ready),
+    .dc_req_acked_o(bus_req_acked),
     .dc_req_kind_i(bus_req_kind), .dc_req_tt_i(bus_req_tt),
     .dc_req_addr_i(bus_req_addr), .dc_req_be_i(bus_req_be),
     .dc_req_wimg_i(bus_req_wimg), .dc_req_gbl_i(bus_req_gbl),

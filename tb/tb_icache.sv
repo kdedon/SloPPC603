@@ -15,10 +15,13 @@ module tb_icache #(
   logic clk = 1'b0;
   logic rst_n = 1'b0;
   always #5 clk = ~clk;
+  // Unlocked, no response asks for an uncached read.
+  always @(posedge clk)
+    if (fetch_rsp_valid && fetch_rsp_bypass) $fatal(1, "bypass response from an unlocked cache");
 
   logic fetch_valid, fetch_ready;
   logic [31:0] fetch_addr;
-  logic fetch_rsp_valid, fetch_rsp_ready, fetch_rsp_error;
+  logic fetch_rsp_valid, fetch_rsp_ready, fetch_rsp_error, fetch_rsp_bypass;
   logic [31:0] fetch_rsp_insn;
   logic [33*FETCH_WIDTH-2:0] fetch_rsp_all;
   assign fetch_rsp_insn = fetch_rsp_all[31:0];
@@ -45,7 +48,7 @@ module tb_icache #(
     .fetch_addr_i(fetch_addr), .fetch_rsp_valid_o(fetch_rsp_valid),
     .fetch_rsp_ready_i(fetch_rsp_ready),
     .fetch_rsp_insn_o(fetch_rsp_all),
-    .fetch_rsp_error_o(fetch_rsp_error),
+    .fetch_rsp_error_o(fetch_rsp_error), .lock_i(1'b0), .fetch_rsp_bypass_o(fetch_rsp_bypass),
     .kill_i(kill), .invalidate_i(invalidate),
     .invalidate_done_o(invalidate_done),
     .invalidate_set_i(1'b0), .invalidate_set_addr_i(32'b0),

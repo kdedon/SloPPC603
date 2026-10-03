@@ -70,6 +70,8 @@ module tb_dcache;
     .bus_req_addr_o(bus_req_addr), .bus_req_be_o(bus_req_be),
     .bus_req_wimg_o(bus_req_wimg), .bus_req_gbl_o(bus_req_gbl),
     .bus_req_cse_o(bus_req_cse), .bus_req_data_o(bus_req_data),
+    // Every accepted request is on the bus.
+    .bus_req_acked_i(1'b1),
     .bus_rd_valid_i(bus_rd_valid), .bus_rd_data_i(bus_rd_data),
     .bus_rd_error_i(bus_rd_error), .bus_wr_done_i(bus_wr_done),
     .bus_wr_error_i(bus_wr_error),
@@ -345,7 +347,8 @@ module tb_dcache;
                        hid0_dce && !hid0_dlock;
         check(rsp_error == err_expected, "store error flag");
         if (cur_op == DC_STWCX) begin
-          if (!err_expected) check(rsp_stwcx_ok == ok, "stwcx. outcome follows the reservation");
+          if (!err_expected)
+            check(rsp_stwcx_ok == ok, $sformatf("stwcx. outcome follows the reservation at %h", cur_addr));
           m_resv = 0;
         end
         if (ok && !err_region(cur_addr)) image[k] = merge(img_rd(k), cur_wdata, cur_be);
@@ -441,6 +444,9 @@ module tb_dcache;
     snoop_valid <= 1'b1;
     snoop_tt <= tt;
     snoop_addr <= a;
+    // Acceptance stands for this cache's address tenure, which a snooped
+    // tenure precedes on the bus.
+    bus_req_ready <= 1'b0;
     sn_tt.push_back(tt); sn_addr.push_back(a); sn_data.push_back(data);
     sn_be.push_back(be); sn_cycle.push_back(cycles); sn_directed.push_back(directed);
     n_snoops++;
@@ -508,7 +514,8 @@ module tb_dcache;
       if (hid0_dcfi && !busy) image_from_mem_all();
 
       // BIU drive for the next cycle.
-      bus_req_ready <= !hold_req && rnd_b(100) < 32'(req_ready_pct);
+      bus_req_ready <= !hold_req && rnd_b(100) < 32'(req_ready_pct) &&
+                       sn_tt.size() == 0;
       push_req_ready <= rnd_b(100) < 60;
       if (beat_i < beat_n && !hold_beats) begin
         if (beat_gap > 0) beat_gap--;

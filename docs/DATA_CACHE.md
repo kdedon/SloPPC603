@@ -122,12 +122,21 @@ comes exactly two cycles later. Snoops may arrive every cycle.
 ARTRY without any state change when the snooped line:
 
 - is in the castout buffer or push buffer (both kept coherent, §3.6.8);
-- is the line of the operation in progress past its tag lookup, including a fill in
-  flight (§3.6.8, §3.6.9);
+- is the line of the operation in progress past its tag lookup and, for an operation
+  that needs the bus, past its accepted address tenure (`bus_req_acked_i`), including a
+  fill in flight (§3.6.8, §3.6.9). Before its address tenure is accepted the operation
+  owns nothing on the bus, so the snoop is answered as a miss; two caches missing on
+  one line therefore do not retry each other forever. A `stwcx.` that passed its
+  reservation check claims its line from the lookup on, so no other master writes the
+  line first; only one cache can hold that reservation;
 - hits M while the push buffer is busy or a castout is reading the data array.
 
 With DCE=0 the cache takes no snoop action (§3.2.3.2), but the castout, push and
 in-progress conflicts still retry.
+
+A kill or flush-class snoop of the reserved line cancels the reservation, except while
+a `lwarx` that set it has not yet claimed its line: that `lwarx` reads after the
+snoop.
 
 After a push-flagged response the push line appears on the push port five
 cycles later. The retried master must not win the next address tenure before the push
@@ -145,6 +154,8 @@ and is a write, kill or RWITM to the line cancels it. RWITM is included so anoth
 All requests use one in-order port. The BIU must perform them in acceptance order
 (the fill after the castout it follows). `bus_req_valid_o` and the payload hold until
 `bus_req_ready_i`; the BIU captures the payload (including line data) at acceptance.
+`bus_req_acked_i` is high once the last accepted request's address tenure has passed
+its ARTRY window, and low from the next acceptance or a retry.
 
 | Signal | Meaning |
 |---|---|
@@ -187,7 +198,7 @@ a read beat with no read outstanding, or a completion with nothing outstanding.
 | I=1 access that hits | §3.6.4.1 "boundedly undefined" vs Table 3-8 rows | Table 3-8: push if M, invalidate, then single-beat |
 | Reservation cancel on RWITM | Table 7-2 lists writes and kill only | also RWITM (spurious loss is legal) |
 
-Not modelled: the 32-bit bus mode, enveloped pushes with DBWO (a BIU feature),
+Not modelled: the 32-bit bus mode, DBWO (a BIU feature),
 direct-store segments (DSI before the cache), and the ABE broadcasts' snoop by this
 cache (they are not snooped, §3.2.3.4).
 

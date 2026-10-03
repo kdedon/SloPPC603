@@ -286,6 +286,7 @@ module tb_chip_dcache_coherence #(parameter int unsigned SEED = 32'h0c0d_e7e1,
     foreach (bg_last[i]) bg_last[i] = 0;
     memory.om_pipeline_pct = 50;
     memory.cpu_pipeline_pct = 30;
+    memory.push_pipeline_pct = 50;
     if (!$value$plusargs("SEED=%d", rng)) rng = SEED;
     snoop_hide = MUTATION == 1;
     memory.ignore_artry = MUTATION == 2;
@@ -307,14 +308,16 @@ module tb_chip_dcache_coherence #(parameter int unsigned SEED = 32'h0c0d_e7e1,
     end while (v == 0);
     if (v != 1) $fatal(1, "program failure %08x (step e00a A, e00b B, e00d D; low half the word)", v);
     if (memory.om_retried == 0 || memory.n_push == 0 || memory.retries == 0 || e_checks == 0 ||
-        memory.om_pipelined_retried == 0 || memory.om_overlap_retried == 0)
-      $fatal(1, "coverage: snoop retries=%0d pushes=%0d retries=%0d e_checks=%0d pipelined=%0d overlapped=%0d",
+        memory.om_pipelined_retried == 0 || memory.om_overlap_retried == 0 ||
+        memory.n_push_pipelined == 0)
+      $fatal(1, "coverage: snoop retries=%0d pushes=%0d retries=%0d e_checks=%0d pipelined=%0d overlapped=%0d pipelined pushes=%0d",
              memory.om_retried, memory.n_push, memory.retries, e_checks,
-             memory.om_pipelined, memory.om_overlapped);
-    $display("PASS chip data cache coherence: rounds=%0d cycles=%0d dma_tenures=%0d retried_commands=%0d snoop_retries=%0d artry_cycles=%0d pushes=%0d polls=%0d dma_word_checks=%0d e_checks=%0d background_e_checks=%0d pipelined_ts=%0d (retried %0d) over_pending_data=%0d (retried %0d) cpu_tenures=%0d cpu_retries=%0d drtries=%0d read_bursts=%0d write_bursts=%0d single_reads=%0d single_writes=%0d addr_only=%0d",
+             memory.om_pipelined, memory.om_overlapped, memory.n_push_pipelined);
+    $display("PASS chip data cache coherence: rounds=%0d cycles=%0d dma_tenures=%0d retried_commands=%0d snoop_retries=%0d artry_cycles=%0d pushes=%0d polls=%0d dma_word_checks=%0d e_checks=%0d background_e_checks=%0d pipelined_ts=%0d (retried %0d) over_pending_data=%0d (retried %0d, pushes ahead of the data %0d) cpu_tenures=%0d cpu_retries=%0d drtries=%0d read_bursts=%0d write_bursts=%0d single_reads=%0d single_writes=%0d addr_only=%0d",
       rounds_done, cycles, memory.om_tenures, first_retries, memory.om_retried, memory.om_artry_cycles,
       memory.n_push, polls, word_checks, e_checks, bg_checks, memory.om_pipelined,
-      memory.om_pipelined_retried, memory.om_overlapped, memory.om_overlap_retried, memory.tenures, memory.retries,
+      memory.om_pipelined_retried, memory.om_overlapped, memory.om_overlap_retried,
+      memory.n_push_pipelined, memory.tenures, memory.retries,
       memory.drtries, memory.n_read_burst, memory.n_write_burst, memory.n_read_single,
       memory.n_write_single, memory.n_addr_only);
     $finish;

@@ -9,6 +9,8 @@ module tb_icache_bus60x #(
 );
   logic clk=0, rst_n=0;
   always #5 clk=~clk;
+  // Unlocked, no response asks for an uncached read.
+  always @(posedge clk) if (fsv && fsb) $fatal(1, "bypass response from an unlocked cache");
   logic qv, qr, qi, rv, rr, error, busy, protocol_error;
   logic [31:0] line_addr;
   logic [1:0] critical;
@@ -26,13 +28,13 @@ module tb_icache_bus60x #(
   logic [1:0] wanted_critical;
   logic wanted_instruction;
 
-  logic fv,fr,fsv,fsr,fse,kill,invalidate,invalidate_done;
+  logic fv,fr,fsv,fsr,fse,fsb,kill,invalidate,invalidate_done;
   logic [31:0] fa,insn;
   logic cache_busy,hit,miss,cache_error;
   ppc_icache #(.SET_COUNT(SETS), .WAY_COUNT(WAYS)) cache (
     .clk_i(clk),.rst_ni(rst_n),.fetch_valid_i(fv),.fetch_ready_o(fr),.fetch_addr_i(fa),
     .fetch_rsp_valid_o(fsv),.fetch_rsp_ready_i(fsr),.fetch_rsp_insn_o(insn),
-    .fetch_rsp_error_o(fse),.kill_i(kill),.invalidate_i(invalidate),
+    .fetch_rsp_error_o(fse), .lock_i(1'b0), .fetch_rsp_bypass_o(fsb),.kill_i(kill),.invalidate_i(invalidate),
     .invalidate_done_o(invalidate_done),.invalidate_set_i(1'b0),.invalidate_set_addr_i(32'b0),.line_req_valid_o(qv),.line_req_ready_i(qr),
     .line_req_line_addr_o(line_addr),.line_req_critical_dw_o(critical),.line_req_instruction_o(qi),
     .line_rsp_valid_i(rv),.line_rsp_ready_o(rr),.line_rsp_line_i(line_data),

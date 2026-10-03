@@ -3,8 +3,12 @@
 // Directed checks of the ppc603e system pins, driven and observed only at the
 // pins: HRESET, SRESET, MCP (taken, ignored with HID0[EMCP]=0, checkstop with
 // MSR[ME]=0), CKSTP_IN/CKSTP_OUT, start-up straps, TBEN, SMI (priority over
-// INT, masked by MSR[EE]), RSRV, TLBISYNC and snoop address parity (APE in
-// the second cycle after TS, machine check, checkstop, HID0[EBA]=0). Each case hard-resets the chip
+// INT, masked by MSR[EE]), RSRV, TLBISYNC, snoop address parity (APE in
+// the second cycle after TS, machine check, checkstop, HID0[EBA]=0) and read
+// data parity (DPE in the second cycle after TA, machine check, checkstop,
+// HID0[EBD]=0, cancelled by DRTRY), BR and BG after another snooper's
+// ARTRY, and HID0[ILOCK] (hits served, misses read single-beat with CI and
+// not allocated). Each case hard-resets the chip
 // into a small program; handlers record markers in RAM through the bus.
 /* verilator lint_off BLKSEQ */
 module tb_chip_pins #(parameter int PLL = -1);
@@ -32,6 +36,16 @@ module tb_chip_pins #(parameter int PLL = -1);
   string mark_order = "";
   // Second-master TS cycles and APE cycles.
   int om_ts_cycles [$], ape_cycles [$];
+  // TA cycles of beats with wrong DP, and DPE cycles.
+  int bad_dp_cycles [$], dpe_cycles [$];
+  // Withholds BG after a wrong-DP beat, so a checkstop cuts no tenure.
+  bit block_after_bad_dp = 1'b0;
+  // Instruction tenures from the first fetch at or above ilock_from: single
+  // beats, bursts, without CI, to ilock_line's line, at ilock_top.
+  logic [31:0] ilock_from = '1, ilock_line = '0, ilock_top = '0;
+  int ilock_single = 0, ilock_burst = 0, ilock_no_ci = 0, ilock_in_line = 0;
+  int ilock_at_top = 0;
+  bit ilock_watch = 1'b0;
 
   // The falling clock edge in a cycle that ends at a SYSCLK edge. Waits
   // count SYSCLK cycles.
@@ -49,9 +63,22 @@ module tb_chip_pins #(parameter int PLL = -1);
     if (ts_oe && !ts_n && tc[0:1] == 2'b10) begin
       if (fetches == 0) first_fetch = a;
       fetches++;
+      if (32'(a) >= ilock_from) ilock_watch = 1'b1;
+      if (ilock_watch) begin
+        if (tbst_n) ilock_single++;
+        else ilock_burst++;
+        if (ci_n) ilock_no_ci++;
+        if ((32'(a) >> 5) == (ilock_line >> 5)) ilock_in_line++;
+        if (32'(a) == ilock_top) ilock_at_top++;
+      end
     end
     if (!bus_ts_n && memory.om_drive) om_ts_cycles.push_back(cycles);
     if (!ape_n) ape_cycles.push_back(cycles);
+    if (!ta_n && memory.dp_flip != 0) begin
+      bad_dp_cycles.push_back(cycles);
+      if (block_after_bad_dp) bus_block = 1'b1;
+    end
+    if (!dpe_n) dpe_cycles.push_back(cycles);
     if (wr_fire) begin
       if (wr_addr == DATA + TB_VALUE) tb_values.push_back(wr_addr[2] ? dl_out : dh_out);
       if (wr_addr == DATA + SMI_MARK) mark_order = {mark_order, "S"};
@@ -314,6 +341,166 @@ module tb_chip_pins #(parameter int PLL = -1);
     wait_word(RESETS, 1, 6000, "HRESET leaves checkstop");
   endtask
 
+  // One read beat of the loop's first instruction doubleword with wrong DP7.
+  task automatic bad_read_beat;
+    bad_dp_cycles.delete();
+    dpe_cycles.delete();
+    memory.bad_dp_once.push_back(MAIN + 32'h18);
+    wait (bad_dp_cycles.size() != 0);
+    repeat (6) bus_fall();
+  endtask
+  localparam logic [31:0] HID0_EBD = 32'h1000_0000;
+  task automatic case_dpe;
+    loop_program(HID0_EBD, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    dpe_cycles.delete();
+    running(3, "loop with good parity");
+    check(dpe_cycles.size() == 0 && mem_word(DATA + MC_MARK) == 0,
+          $sformatf("correct DP: no DPE (%0d DPE cycles, mark %0h)", dpe_cycles.size(),
+                    mem_word(DATA + MC_MARK)));
+    bad_read_beat();
+    check(dpe_cycles.size() == 1 && dpe_cycles[0] == bad_dp_cycles[0] + 2,
+          $sformatf("DPE once, two cycles after TA (TA %0d, DPE %0d cycles, first %0d)",
+                    bad_dp_cycles[0], dpe_cycles.size(),
+                    dpe_cycles.size() != 0 ? dpe_cycles[0] : -1));
+    wait_word(MC_MARK, 'h200, 6000, "DPE enters 0x200");
+    check((mem_word(DATA + MC_SRR1) & 32'hffff_0000) == 32'h0002_0000,
+          $sformatf("DPE SRR1=%08x has only bit 14", mem_word(DATA + MC_SRR1)));
+    check(ckstp_out_n, "no checkstop");
+    running(3, "rfi resumes");
+  endtask
+  task automatic case_dpe_disabled;
+    loop_program(32'h0, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    bad_read_beat();
+    repeat (3000) bus_fall();
+    check(dpe_cycles.size() == 0 && mem_word(DATA + MC_MARK) == 0 && ckstp_out_n,
+          "HID0[EBD]=0 ignores data parity");
+    running(3, "still running");
+  endtask
+  task automatic case_dpe_drtry;
+    loop_program(HID0_EBD, MSR_IP | MSR_ME);
+    bfm_drtry = 1'b1;
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop with DRTRY");
+    bad_read_beat();
+    repeat (3000) bus_fall();
+    check(dpe_cycles.size() == 0 && mem_word(DATA + MC_MARK) == 0 && ckstp_out_n,
+          "DRTRY cancels the beat's parity error");
+    running(3, "still running");
+    wait_bus_idle();
+    bfm_drtry = 1'b0;
+  endtask
+  task automatic case_dpe_checkstop;
+    loop_program(HID0_EBD, MSR_IP);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    block_after_bad_dp = 1'b1;
+    bad_read_beat();
+    block_after_bad_dp = 1'b0;
+    check(dpe_cycles.size() == 1, "DPE asserted");
+    expect_checkstop("DPE with MSR[ME]=0");
+    check(mem_word(DATA + MC_MARK) == 0, "no machine check vector");
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "HRESET leaves checkstop");
+  endtask
+
+  // Another snooper retries second-master reads (ARTRY in the cycle after
+  // AACK) while the processor requests the bus for its fetches; the arbiter
+  // grants it in the following cycle.
+  task automatic case_foreign_artry;
+    loop_program(32'h0, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    memory.gap_samples = 0;
+    memory.gap_br_before = 0;
+    memory.gap_br = 0;
+    memory.gap_ts = 0;
+    memory.grant_after_foreign_retry = 1'b1;
+    memory.om_foreign_retries = 24;
+    for (int i = 0; i < 24; i++)
+      memory.om_post(5'b01010, DATA + 32'h40 + 32'(8 * i), 1'b1, 1'b0, '0, 1 + i % 3);
+    wait (memory.gap_samples == 24);
+    memory.grant_after_foreign_retry = 1'b0;
+    repeat (200) bus_fall();
+    check(memory.gap_br_before > 0,
+          $sformatf("BR asserted in %0d of %0d foreign ARTRY cycles", memory.gap_br_before,
+                    memory.gap_samples));
+    check(memory.gap_br == 0, $sformatf("BR negated after every foreign ARTRY (%0d asserted)",
+                                        memory.gap_br));
+    check(memory.gap_ts == 0, $sformatf("BG ignored after a foreign ARTRY (%0d TS)",
+                                        memory.gap_ts));
+    check(mem_word(DATA + MC_MARK) == 0 && ckstp_out_n, "no machine check");
+    running(3, "loop after the retries");
+  endtask
+
+  // Real-mode fetches are guarded, so IBAT0 maps the ROM 1:1 with WIMG=0000
+  // and rfi sets MSR[IR]. The instruction cache fills a line holding a
+  // loop and a tail loop, then HID0 is written (ILOCK set when lock) and
+  // code in another region runs three times before branching to the tail
+  // loop.
+  localparam int ILOCK_A = 'h28, ILOCK_B = 'h2c;
+  task automatic case_ilock(input bit lock);
+    logic [31:0] line_l, setlock, b;
+    line_l = MAIN + 32'h80;
+    setlock = MAIN + 32'hc0;
+    b = MAIN + 32'h200;
+    load_handlers();
+    at = MAIN;
+    emit_const(3, BASE | 32'h3); emit(asm_spr(1'b1, 3, 528));
+    emit_const(3, BASE | 32'h2); emit(asm_spr(1'b1, 3, 529)); emit(ASM_ISYNC);
+    emit_const(3, 32'h0000_8800); emit(asm_spr(1'b1, 3, 1008));
+    emit_const(3, 32'h0000_8000); emit(asm_spr(1'b1, 3, 1008)); emit(ASM_ISYNC);
+    emit(asm_li(6, 0)); emit(asm_li(8, 0));
+    emit_const(3, line_l); emit(asm_spr(1'b1, 3, 26));
+    emit_const(3, MSR_IP | 32'h20); emit(asm_spr(1'b1, 3, 27));
+    emit(RFI);
+    check(at <= line_l, "program layout");
+    at = line_l;
+    emit(asm_addi(6, 6, 1)); emit(asm_cmpwi(6, 4)); emit(asm_bc(12, 0, -8));
+    emit(asm_ba(setlock, 1'b0));
+    emit(asm_addi(8, 8, 1)); emit(asm_stw(8, ILOCK_A, 31)); emit(asm_bc(20, 0, -8));
+    emit(32'h6000_0000);
+    at = setlock;
+    emit_const(3, lock ? 32'h0000_a000 : 32'h0000_8000);
+    emit(ASM_ISYNC); emit(asm_spr(1'b1, 3, 1008)); emit(ASM_ISYNC);
+    emit(asm_li(7, 0)); emit(asm_ba(b, 1'b0));
+    at = b;
+    emit(asm_addi(7, 7, 1)); emit(asm_stw(7, ILOCK_B, 31)); emit(asm_cmpwi(7, 3));
+    emit(asm_bc(12, 0, -12)); emit(asm_ba(line_l + 32'h10, 1'b0));
+    check(at < DATA, "program layout");
+    ilock_from = b;
+    ilock_line = line_l;
+    ilock_top = b;
+    ilock_watch = 1'b0;
+    {ilock_single, ilock_burst, ilock_no_ci, ilock_in_line, ilock_at_top} = '0;
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    wait_word(ILOCK_B, 3, 20000, "region B ran three times");
+    wait_word(ILOCK_A, 6, 20000, "tail loop runs");
+    if (lock) begin
+      check(ilock_burst == 0 && ilock_no_ci == 0,
+            $sformatf("ILOCK: misses are single-beat with CI (%0d single, %0d burst, %0d without CI)",
+                      ilock_single, ilock_burst, ilock_no_ci));
+      check(ilock_at_top >= 3, $sformatf("ILOCK: no allocation, region B fetched %0d times",
+                                         ilock_at_top));
+      check(ilock_in_line == 0, $sformatf("ILOCK: the locked line hits (%0d fetches)",
+                                          ilock_in_line));
+    end else begin
+      check(ilock_burst != 0 && ilock_at_top == 1,
+            $sformatf("ILOCK=0: region B is filled (%0d bursts, %0d fetches at its top)",
+                      ilock_burst, ilock_at_top));
+    end
+    ilock_from = '1;
+    ilock_watch = 1'b0;
+  endtask
+
   task automatic case_ckstp_in;
     loop_program(32'h0, MSR_IP);
     hard_reset();
@@ -470,6 +657,13 @@ module tb_chip_pins #(parameter int PLL = -1);
     case_ape();
     case_ape_disabled();
     case_ape_checkstop();
+    case_dpe();
+    case_dpe_disabled();
+    case_dpe_drtry();
+    case_dpe_checkstop();
+    case_foreign_artry();
+    case_ilock(1'b0);
+    case_ilock(1'b1);
     $display("PASS chip pins: checks=%0d cycles=%0d", checks, cycles);
     $finish;
   end
