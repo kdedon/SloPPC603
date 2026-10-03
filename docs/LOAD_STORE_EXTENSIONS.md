@@ -75,8 +75,8 @@ micro-ops.
 The check runs at dispatch from committed operands, so a trapped access has
 no effect. The DR = 1 rule ignores BAT matches: UM §4.5.6.1.1 gives BAT regions
 no special handling in page translation mode. With DR = 0, an access splits
-across pages. Little-endian mode is not supported (RFI and MTMSR reject LE), so
-the little-endian alignment rules do not arise.
+across pages. Little-endian mode adds its own rules
+([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md#alignment)).
 
 DSISR follows Table 4-13. DAR is the EA, except lmw/stmw save EA + 4, as the
 603e-specific note in UM §4.5.6.2 states; Table 4-13's generic "EA" wording
@@ -107,6 +107,6 @@ the first word accessed in the offending page (Table 4-11).
 ## Not covered
 
 - tw/twi, the PVR/HID0/HID1/IABR/EAR SPR moves and eciwx/ecowx.
-- Little-endian mode.
+- Little-endian mode: see [LITTLE_ENDIAN.md](LITTLE_ENDIAN.md).
 - Multiple/string timing: each micro-op is a full serialized dispatch-to-retire
   round trip, not the 603e LSU cycle count.

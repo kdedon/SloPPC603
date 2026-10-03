@@ -50,7 +50,7 @@ unreachable and a simulation assertion fires if one is ever taken.
 
 | Case | Behavior | Reason |
 | --- | --- | --- |
-| `mtmsr` or `rfi` setting MSR[LE] or MSR[ILE] | Diagnostic halt | The MVP is big-endian only; little-endian byte steering is not implemented |
+| `mtmsr` or `rfi` setting MSR[LE] or MSR[ILE] in a profile without full decode and live context | Diagnostic halt | Little-endian mode exists only in the full profile every chip top uses ([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md)) |
 
 A machine check with MSR[ME]=0 enters the architectural checkstop state
 (`checkstop_o`), not a diagnostic.
