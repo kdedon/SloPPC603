@@ -472,6 +472,22 @@ module ppc_biu #(
 
   assign grp_busy = selector_busy || scalar_busy || line_busy || ds_busy;
 
+  // UM 7.2.5.2.2, 8.3.3: in the cycle after a qualified ARTRY (ARTRY in the
+  // cycle after AACK), whoever's tenure it retried, only a snooper owing a
+  // push may request: otherwise BR is negated and BG ignored.
+  logic aack_q, artry_block_q, artry_block, push_owed, bg_n;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      aack_q <= 1'b0;
+      artry_block_q <= 1'b0;
+    end else if (bus_ce_i) begin
+      aack_q <= !aack_n_i;
+      artry_block_q <= aack_q && !artry_n_i;
+    end
+  end
+  assign artry_block = artry_block_q && !push_owed;
+  assign bg_n = bg_n_i || artry_block;
+
   generate
   if (ENABLE_DCACHE) begin : g_dcache
     logic cm_br_n, cm_bg_n, cm_abb_in_n;
@@ -553,7 +569,7 @@ module ppc_biu #(
       .line_ta_n_o(cm_ta_n), .line_drtry_n_o(cm_drtry_n),
       .line_tea_n_o(cm_tea_n),
       .busy_o(outer_busy), .protocol_error_o(outer_protocol_error),
-      .br_n_o(outer_br_n), .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o,
+      .br_n_o(outer_br_n), .bg_n_i(bg_n), .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o,
       .ts_oe_o(outer_ts_oe), .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o,
       .wt_n_o, .gbl_n_o, .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i,
       .dbb_n_i, .dbb_n_o, .dbb_oe_o, .d_o, .d_oe_o, .ta_n_i, .drtry_n_i,
@@ -576,14 +592,16 @@ module ppc_biu #(
     // A due push keeps BR asserted until its tenure starts; UM §8.3.1 allows
     // BR without a following tenure.
     assign push_due = push_hold || push_wait;
-    assign br_n_o = outer_br_n && !push_due;
+    assign push_owed = push_due;
+    assign br_n_o = (outer_br_n || artry_block) && !push_due;
     assign ts_oe_o = outer_ts_oe;
     assign dcache_busy = outer_busy || cm_busy || push_hold;
     assign dcache_protocol_error = outer_protocol_error || cm_protocol_error ||
       snoop_protocol_error;
   end else begin : g_no_dcache
-    assign br_n_o = grp_br_n;
-    assign grp_bg_n = bg_n_i;
+    assign push_owed = 1'b0;
+    assign br_n_o = grp_br_n || artry_block;
+    assign grp_bg_n = bg_n;
     assign grp_abb_in_n = abb_n_i;
     assign abb_n_o = grp_abb_n;
     assign abb_oe_o = grp_abb_oe;

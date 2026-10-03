@@ -236,8 +236,12 @@ is set and asserts APE in the second cycle after TS; the error takes a machine
 check (SRR1 bit 15) or checkstops with MSR[ME]=0 (UM §8.3.2.1, §7.2.3.3). The
 manual specifies no ARTRY for a parity error, so the snoop proceeds.
 
-Not implemented: negating BR for a cycle after another snooper's ARTRY
-(§7.2.5.2.2) and pipelining the push ahead of a request whose address tenure
+Qualified ARTRY: in the cycle after an ARTRY sampled in the cycle after
+AACK, whichever master's tenure it retried, the BIU negates BR and ignores BG
+unless it owes a push for that or an earlier snoop (§7.2.5.2.2, §8.3.3,
+Figure 8-7). This holds in every build, with or without the data cache.
+
+Not implemented: pipelining the push ahead of a request whose address tenure
 is already accepted (the push waits for that data tenure). DBWO enveloping is
 optional and never applies here; see the DBWO section of
 [CHIP_PACKAGE.md](CHIP_PACKAGE.md#dbwo).

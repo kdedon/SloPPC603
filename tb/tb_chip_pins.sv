@@ -394,6 +394,36 @@ module tb_chip_pins #(parameter int PLL = -1);
     wait_word(RESETS, 1, 6000, "HRESET leaves checkstop");
   endtask
 
+  // Another snooper retries second-master reads (ARTRY in the cycle after
+  // AACK) while the processor requests the bus for its fetches; the arbiter
+  // grants it in the following cycle.
+  task automatic case_foreign_artry;
+    loop_program(32'h0, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    memory.gap_samples = 0;
+    memory.gap_br_before = 0;
+    memory.gap_br = 0;
+    memory.gap_ts = 0;
+    memory.grant_after_foreign_retry = 1'b1;
+    memory.om_foreign_retries = 24;
+    for (int i = 0; i < 24; i++)
+      memory.om_post(5'b01010, DATA + 32'h40 + 32'(8 * i), 1'b1, 1'b0, '0, 1 + i % 3);
+    wait (memory.gap_samples == 24);
+    memory.grant_after_foreign_retry = 1'b0;
+    repeat (200) bus_fall();
+    check(memory.gap_br_before > 0,
+          $sformatf("BR asserted in %0d of %0d foreign ARTRY cycles", memory.gap_br_before,
+                    memory.gap_samples));
+    check(memory.gap_br == 0, $sformatf("BR negated after every foreign ARTRY (%0d asserted)",
+                                        memory.gap_br));
+    check(memory.gap_ts == 0, $sformatf("BG ignored after a foreign ARTRY (%0d TS)",
+                                        memory.gap_ts));
+    check(mem_word(DATA + MC_MARK) == 0 && ckstp_out_n, "no machine check");
+    running(3, "loop after the retries");
+  endtask
+
   task automatic case_ckstp_in;
     loop_program(32'h0, MSR_IP);
     hard_reset();
@@ -554,6 +584,7 @@ module tb_chip_pins #(parameter int PLL = -1);
     case_dpe_disabled();
     case_dpe_drtry();
     case_dpe_checkstop();
+    case_foreign_artry();
     $display("PASS chip pins: checks=%0d cycles=%0d", checks, cycles);
     $finish;
   end

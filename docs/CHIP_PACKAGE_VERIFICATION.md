@@ -32,6 +32,7 @@ handlers store markers to RAM over the bus. PASS: checks=1352, cycles=74139.
 | DPE disabled | HID0[EBD]=0: wrong DP asserts no DPE, no machine check, no checkstop |
 | DPE with DRTRY | Every read beat is cancelled by DRTRY and redriven with correct DP: the wrong DP on the cancelled beat asserts no DPE and takes no machine check |
 | DPE with ME=0 | Checkstop, outputs released, no 0x200 entry; HRESET reboots |
+| Foreign ARTRY | Another snooper retries 24 second-master reads with ARTRY in the cycle after AACK while the processor fetches with caches off; the arbiter grants the processor in the following cycle. BR, asserted in the ARTRY cycle in some of them, is negated in every following cycle and no TS follows that grant; the loop then runs. With the BR/BG block removed, BR stays asserted in 12 of 24 and the bench fails |
 
 The bench's hard reset withholds BG until any owed data tenure ends (the
 target cannot abandon one) and releases BG only while HRESET is held.

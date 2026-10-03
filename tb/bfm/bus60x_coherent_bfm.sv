@@ -125,6 +125,15 @@ module bus60x_coherent_bfm #(
   // XORs dp_flip into DP.
   logic [31:0] bad_dp_once [$];
   logic [7:0] dp_flip = 8'h00;
+  // Second-master tenures to retry as another snooper would, with ARTRY in
+  // the cycle after AACK and no push owed by the processor.
+  int om_foreign_retries = 0;
+  // Grants the processor in the cycle after such an ARTRY.
+  bit grant_after_foreign_retry = 1'b0;
+  // Foreign qualified ARTRYs; of those, BR asserted in the ARTRY cycle, BR
+  // asserted in the cycle after it, and a processor TS following that
+  // cycle's grant.
+  int gap_samples = 0, gap_br_before = 0, gap_br = 0, gap_ts = 0;
   // Percent chances of the two address-pipelining cases above.
   int om_pipeline_pct = 0, cpu_pipeline_pct = 0;
   logic owed = 1'b0, in_data = 1'b0;
@@ -459,14 +468,35 @@ module bus60x_coherent_bfm #(
 
   // The ARTRY window (AACK+1), then the retry bookkeeping.
   task automatic om_close(input om_t c, inout logic retried, input bit first);
+    bit foreign;
+    foreign = om_foreign_retries > 0;
     bus_fall();
     aack_n_o = 1'b1;
+    if (foreign) begin
+      target_artry_n = 1'b0;
+      om_foreign_retries--;
+    end
     bus_rise();
     if (artry_oe_i && !artry_n_i) begin
       retried = 1'b1;
       om_artry_cycles++;
     end
+    if (foreign) begin
+      gap_samples++;
+      if (!br_n_i) gap_br_before++;
+    end
     bus_fall();
+    if (foreign) begin
+      target_artry_n = 1'b1;
+      if (grant_after_foreign_retry && !retried) bg_n_o = 1'b0;
+      bus_rise();
+      if (!br_n_i) gap_br++;
+      bus_fall();
+      bg_n_o = 1'b1;
+      bus_rise();
+      if (ts_oe_i && !ts_n_i) gap_ts++;
+      bus_fall();
+    end
     om_window--;
     if (om_window == 0) om_drive = 1'b0;
     if (retried && ignore_artry) begin
@@ -479,6 +509,11 @@ module bus60x_coherent_bfm #(
       if (first) om_first_retried[c.ticket] = 1'b1;
       push_due = 1'b1;
       push_line = c.addr[31:5];
+    end
+    if (foreign && !retried) begin
+      om_retried++;
+      if (first) om_first_retried[c.ticket] = 1'b1;
+      retried = 1'b1;
     end
   endtask
 
