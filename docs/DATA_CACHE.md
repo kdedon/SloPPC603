@@ -187,7 +187,7 @@ a read beat with no read outstanding, or a completion with nothing outstanding.
 | I=1 access that hits | §3.6.4.1 "boundedly undefined" vs Table 3-8 rows | Table 3-8: push if M, invalidate, then single-beat |
 | Reservation cancel on RWITM | Table 7-2 lists writes and kill only | also RWITM (spurious loss is legal) |
 
-Not modelled: the 32-bit bus mode, enveloped pushes with DBWO (a BIU feature),
+Not modelled: the 32-bit bus mode, DBWO (a BIU feature),
 direct-store segments (DSI before the cache), and the ABE broadcasts' snoop by this
 cache (they are not snooped, §3.2.3.4).
 

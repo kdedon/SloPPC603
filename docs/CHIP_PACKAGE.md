@@ -152,17 +152,17 @@ ahead of an older read whose address tenure is already acknowledged
 (UM §8.10). It is optional: "most system implementations will not need this
 capability; for these applications, DBWO should remain negated" (§8.10, PDF
 page 8-44). The 603e also ignores it when no write address tenure is pending
-(§7.2.6.2). This BIU acknowledges at most one address tenure before its data
-tenure completes, so a write address tenure never follows an unfinished read
-and DBWO never has a write to select; ignoring it is the manual's behavior in
-that state.
+(§7.2.6.2). A snoop push's address tenure may follow an older read whose data
+tenure is still owed (UM §3.6.9); its data tenure then follows the read's.
+This processor ignores DBWO, so a system must keep it negated, as the manual
+recommends for systems that do not need the reordering.
 
-System requirement that follows: a push waits for the processor's pending
-data tenure. The system must complete that data tenure while the snooped
-master is being retried; it may not make the read's data depend on the retried
-master's transaction. The coherent model checks this ordering (second-master
-address tenures issued while a processor data tenure is pending, pushes after
-it). `ppc603e` has 69 port declarations, 292 bits.
+System requirement that follows: the push's data waits for the processor's
+pending data tenure. The system must complete that data tenure while the
+snooped master is being retried; it may not make the read's data depend on
+the retried master's transaction. The coherent model checks this ordering
+(second-master address tenures issued while a processor data tenure is
+pending, push address tenures ahead of it, push data after it). `ppc603e` has 69 port declarations, 292 bits.
 
 ## Exceptions from pins
 
