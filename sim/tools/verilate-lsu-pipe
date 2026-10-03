@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # tools/verilate with the pipelined load/store unit on in every top, for
 # VERILATOR and VERILATOR_TOOL.

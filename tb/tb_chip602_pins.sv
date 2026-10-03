@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // The ppc602 package top driven and observed only at its pins. A program
 // boots from the hard reset vector through the multiplexed bus in 64- and

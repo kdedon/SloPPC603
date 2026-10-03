@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Demo system firmware. Run from toolchain/ with -f demo/Makefile, normally in
 # the pinned container (build-in-container.sh -f demo/Makefile all). Benchmark

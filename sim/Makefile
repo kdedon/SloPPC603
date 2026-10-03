@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 VERILATOR ?= $(CURDIR)/tools/verilate
 # The cosim drivers take one executable path; they add the X flags from --xrand-seed.
@@ -433,6 +433,7 @@ test-stage:
 	python3 tools/check_stage_timing.py $(BUILD_DIR)/stage/trace.jsonl
 	python3 tools/check_dispatch_trace.py $(BUILD_DIR)/stage/events.txt spec/schedules/stage.txt --stage $(BUILD_DIR)/stage/trace.jsonl
 check-spec:
+	python3 tools/check_licence.py
 	python3 spec/check_timing.py
 	python3 spec/check_bus.py
 	python3 tools/bus_address.py validate

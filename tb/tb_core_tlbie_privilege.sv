@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Problem-state tlbie and tlbsync enter Program Priv; default-off forms retain
 // the legacy illegal diagnostic halt. Neither may reach the TLB transport.

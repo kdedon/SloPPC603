@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Implements docs/INTERFACE_TIMING_CONTRACT.md for the translated measurement top.
 # Board pin timing is not modelled: every port is a virtual pin.

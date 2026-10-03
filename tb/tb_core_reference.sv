@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Architectural trace export for the independently compiled DingusPPC runner.
 // No instruction semantics or expected architectural values live in this bench.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Runs one workflow step and, on failure, posts an error annotation, which the
 # public run page shows without login: the first 20 lines that look like errors

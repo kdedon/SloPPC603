@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* MiSTer image sections, after a RAM region. The data section's load image
  * follows its run address, and start-up copies it, so a reset restores the

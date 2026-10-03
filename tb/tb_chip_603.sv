@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // The 603 at its pins (UM Appendix C): PVR, the one CSE pin, and direct-store
 // segments. A controller model answers XATS operations and replies; the

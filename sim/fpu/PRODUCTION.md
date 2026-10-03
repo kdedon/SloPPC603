@@ -279,7 +279,7 @@ At the `cb871b4` checkpoint, the production arithmetic oracle was
 `ppc_reference.py` (SHA-256
 `defbd974681295392a673cec2c0020877f4a26c6cb2e1c42209c588a71627956`),
 layered over the exact-integer IEEE model in `reference.py`. Both are original
-project code under [`LICENSE`](LICENSE) (MIT). The model uses integer
+project code under [`LICENSE`](LICENSE) (GPL-2.0-or-later; MIT when recorded). The model uses integer
 significands and rational division, not host floating point or RTL tables.
 Architectural rules are frozen in [`docs/FPU_CONTRACT.md`](../../docs/FPU_CONTRACT.md),
 which cites the PEM and MPC603e manuals by section and physical PDF page.

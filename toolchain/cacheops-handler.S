@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Cache-operation firmware handlers. Each saves r11/r12 in SPRG0/1. DSI and
  * alignment record DAR, DSISR and SRR0, then resume after the instruction;

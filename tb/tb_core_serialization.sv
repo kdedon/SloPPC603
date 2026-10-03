@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-core ordering and refetch checks for the opt-in serialization forms.
 /* verilator lint_off BLKSEQ */

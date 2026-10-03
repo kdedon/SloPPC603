@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // The compiled MMU stress image on the translated cached 60x top with the
 // MVP profile. MODE seeds the external IRQ schedule, decrementer ticks, 60x

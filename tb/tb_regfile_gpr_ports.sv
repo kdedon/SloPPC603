@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Six read and two write ports of the GPR file against a model: every
 // register through every port from each write port, both ports in one cycle,

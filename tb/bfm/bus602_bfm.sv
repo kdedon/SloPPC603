@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // 602 bus system model: arbiter parked on the CPU, memory target on the
 // multiplexed bus (602UM ch. 8) and a second master that snoops the CPU.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Live BAT + EXT + TB/DEC measurement. Every wrapper port remains observable.
 // No cache/60x composition, fixed memory responder or folded trace.

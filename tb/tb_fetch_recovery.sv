@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Focused recovery checks for the one-outstanding, untagged fetch transport.
 // Reset requires the external memory model to cancel any pre-reset obligation.

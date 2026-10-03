@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // The unchanged table-search/table-fault ELF runs through the translated
 // instruction-cache wrapper. RAM behavior uses only public 60x pin tenures.

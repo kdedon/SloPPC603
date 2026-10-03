@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Runs every release gate in order, logs each to sim/build/release-check/ and
 # prints a PASS/FAIL summary. Later gates still run after a failure.

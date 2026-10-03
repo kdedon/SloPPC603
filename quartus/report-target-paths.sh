@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # List failing setup endpoints of an existing fit at another clock period
 # (default 15.152 ns, 66 MHz); the project SDC stays the gate of record.

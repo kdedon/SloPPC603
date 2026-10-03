@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* CoreMark port and driver for the demo system. CoreMark's own validation
  * decides pass or fail: it prints the performance-run banner for the seeds

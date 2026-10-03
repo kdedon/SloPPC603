@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Full-decode firmware handlers. Each saves its scratch GPRs in SPRG0-3,
  * records SRR0/SRR1 (and DSISR/DAR for DSI) and resumes after the

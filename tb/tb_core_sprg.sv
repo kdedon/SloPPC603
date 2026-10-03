@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-core SPRG0-SPRG3 commit, cancellation, privilege, and reset checks.
 /* verilator lint_off BLKSEQ */

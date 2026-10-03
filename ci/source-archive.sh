@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Writes the corresponding source of a benchmark image: this repository at HEAD
 # plus the fetched benchmark and runtime sources it was built from.

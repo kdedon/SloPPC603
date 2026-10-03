@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Re-time a completed fit against another clock period; never fits.
 # Usage: quartus_sta -t target_paths.tcl <revision> <period_ns> <out_file>

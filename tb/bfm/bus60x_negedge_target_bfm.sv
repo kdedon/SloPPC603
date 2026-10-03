@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Negedge-driven 60x target, one tenure at a time. AACK is asserted the
 // negedge after TS for one cycle; DBG follows AACK. Each TA is driven on a

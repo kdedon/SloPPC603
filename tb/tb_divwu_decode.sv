@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Exhaustive DIVWU register/OE/Rc decode checks for XO459 only.
 module tb_divwu_decode;

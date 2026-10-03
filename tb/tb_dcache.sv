@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Standalone data cache bench: directed MEI checks, then seeded random LSU
 // operations, snoops and HID0 phases against a coherent memory image.

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # The base and snapshot pins come from ci/pins.env via build-container.sh.
 ARG BASE_IMAGE

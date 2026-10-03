@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Compiled firmware on the abstract core. Fault injection is synthetic:
 // no MMU translation producer or physical bus error is being simulated here.

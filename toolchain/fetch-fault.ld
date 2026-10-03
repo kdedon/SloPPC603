@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Fetch-fault firmware variant of link.ld, with the high ISI vector and isolated probes installed. */
 ENTRY(_start)

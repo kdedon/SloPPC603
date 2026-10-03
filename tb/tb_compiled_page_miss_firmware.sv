@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // CPU-installed mappings followed by response-bound load, instruction and store miss diagnostics.
 // Physical byte RAM uses independent delayed/backpressured instruction/data ports.

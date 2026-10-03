@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Self-test case runner. st_enter(in, out, code) loads the whole register
  * state from in, enters code with rfi under in's MSR, and returns when the

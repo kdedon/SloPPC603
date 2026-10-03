@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Original-handler trace export through cached CPU and independent physical RAM.
 // Bus data is selected solely from pins; core taps only count handshakes/state.

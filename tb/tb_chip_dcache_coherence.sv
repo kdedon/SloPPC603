@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Data-cache coherence at the ppc603e pins. A hand-assembled program boots
 // from the reset vector, enables both caches and runs in real mode (data

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Free-running 60x target handshake with phase-varied delays, one tenure at
 // a time. BG follows BR except when phase%3==0; AACK comes 1-3 cycles after

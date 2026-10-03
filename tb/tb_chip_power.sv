@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Directed checks of the power-saving modes at the ppc603e pins: doze, nap
 // and sleep entry by MSR[POW], wake by DEC, INT, SMI, MCP, SRESET and

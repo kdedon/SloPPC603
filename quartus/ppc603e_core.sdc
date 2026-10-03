@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 create_clock -name core_clk -period 20.000 [get_ports {clk_i}]
 derive_clock_uncertainty

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Exhaust unary X-form register routing, reserved fields and flag permissions.
 module tb_unarylogical_decode;

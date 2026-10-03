@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-wrapper instruction TEA behavior: no fabricated instruction response,
 // sticky transport stop, and reset recovery through a valid fetch/retirement.

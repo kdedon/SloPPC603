@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Current integrated subset measurement: all runtime controls and outputs remain ports.
 // No behavioral responder, constant memory inputs, or folded retirement digest.

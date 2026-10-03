@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Helpers shared by the nbench and Embench ports (bench.c). */
 #ifndef DEMO_BENCH_H

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Two-word fetch into the shifting IQ: aligned pairs, unaligned single
 // words, a pair split by one free IQ entry, folds in either lane and IQ

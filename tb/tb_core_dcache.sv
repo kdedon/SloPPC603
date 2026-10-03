@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // The translated cached top with the data cache, its BIU and snooper on a
 // 60x memory with a second bus master. A hand-assembled program runs with DR=1 over four DBATs (cacheable

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Runs Dhrystone 2.1 (fetched upstream source) and checks it. Every
  * "should be" line it prints is compared with the value printed just

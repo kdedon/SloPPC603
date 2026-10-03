@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Counter values are computed from public ticks and accepted retirement writes.
 // Only the named read-execute pulse anchors the architectural snapshot edge.

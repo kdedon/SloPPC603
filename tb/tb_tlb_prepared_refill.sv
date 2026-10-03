@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Public-pin oracle for kind-5 prepared refill in every invalidate/refill
 // feature combination. Expected mappings are fixed literals, not DUT arrays.

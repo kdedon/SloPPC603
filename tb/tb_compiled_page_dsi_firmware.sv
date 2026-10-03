@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Compiled page PP DSI repair/retry firmware through CPU-seeded TLB translation and committed MSR context.
 // Physical byte RAM uses independent delayed/backpressured instruction/data ports.

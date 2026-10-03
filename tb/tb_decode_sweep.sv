@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Decode-space sweep of the translated MVP profile with ENABLE_FULL_DECODE:
 // every primary opcode with varied payloads, every opcode-19/31/59/63

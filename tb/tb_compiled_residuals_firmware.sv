@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Compiled residuals firmware on the translated cached 60x top with the MVP
 // feature set. The firmware checks its own handler records; the bench checks

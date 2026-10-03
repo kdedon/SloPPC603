@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Instruction encoders for hand-assembled bench programs. Register and field
 // arguments are architectural numbers; immediates are truncated to 16 bits.

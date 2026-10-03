@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Same-clock virtual ports; not board timing.
 create_clock -name fpu_clk -period 20.000 [get_ports {clk_i}]

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Accepted translated I-cache refill, DEC-to-EXT promotion, and two RFIs.
 /* verilator lint_off BLKSEQ */

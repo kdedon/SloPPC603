@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Machine check from real 60x TEA on the translated tops: data load and
 // store TEA, a fetch TEA on a cached line fill (partial fill: the demand word

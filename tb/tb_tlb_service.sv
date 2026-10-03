@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 module tb_tlb_service #(parameter int TLB_SETS = 32);
   localparam int SET_W = $clog2(TLB_SETS);

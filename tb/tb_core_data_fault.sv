@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Public-port oracle for a synchronous data-protection response. Expected
 // state uses MPC603e UM Table 4-11 (DSI) and the established low-MSR save.

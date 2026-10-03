@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Focused actual-core cache, shared-pin, redirect-drain, and fetch-error test.
 /* verilator lint_off BLKSEQ */

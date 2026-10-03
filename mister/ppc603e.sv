@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // MiSTer emu top for the PowerPC 603e demonstration system (docs/MISTER_CORE.md).
 // With MISTER_FB (default) the framebuffer is 1920 x 1080 in DDR3, shown

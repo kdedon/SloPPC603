@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Runs Verilator, then deletes the precompiled headers left in the model
 # directory. Each is about 70 MB and only speeds up the build that made it.

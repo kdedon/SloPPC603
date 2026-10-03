@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Independent ppc_special checks for captured MCRF and MCRXR source state.
 // Destination fields are varied exhaustively to catch accidental use as selectors;

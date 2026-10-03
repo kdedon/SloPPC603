@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* C library functions the fetched benchmarks need beyond the demo runtime:
  * strings, character classes, rand, exit, and read-only in-memory files. */

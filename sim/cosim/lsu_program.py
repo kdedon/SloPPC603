@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 """Load/store-extension streams: split scalars, byte-reverse, multiples,
 strings and the reservation pair, all inside the 256-byte flat RAM."""

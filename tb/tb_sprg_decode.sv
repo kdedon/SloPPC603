@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Exact opt-in SPRG0-SPRG3 decode and default-profile rejection checks.
 /* verilator lint_off BLKSEQ */

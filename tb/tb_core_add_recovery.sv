@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // XER-writing recovery uses actual instructions to seed sticky SO/OV/CA.
 // No architectural or speculative RTL state is forced.

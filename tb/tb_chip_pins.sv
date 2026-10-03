@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Directed checks of the ppc603e system pins, driven and observed only at the
 // pins: HRESET, SRESET, MCP (taken, ignored with HID0[EMCP]=0, checkstop with

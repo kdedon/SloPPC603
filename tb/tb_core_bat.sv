@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-core BAT translation, redirect drain, relocated memory, and bypass.
 /* verilator lint_off BLKSEQ */

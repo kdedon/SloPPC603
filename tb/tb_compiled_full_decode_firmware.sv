@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Compiled full-decode firmware on the translated cached 60x top with the MVP
 // feature set and ENABLE_FULL_DECODE. The firmware checks its own handlers;

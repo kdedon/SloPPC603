@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Completion queue pair ports: two allocations per cycle, CQ[1] retirement
 // rules and limits, and recovery with an offered CQ[1], from every head slot.

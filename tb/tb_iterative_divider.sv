@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Independent arithmetic and 16-step scheduling checks for ppc_divider.
 /* verilator lint_off BLKSEQ */

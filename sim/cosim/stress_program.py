@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 """Versioned seeded mixed PowerPC programs; no architectural state interpreter."""
 from collections import Counter

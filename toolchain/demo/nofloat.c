@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* The toolchain's libgcc builds its float helpers for the hard-float ABI,
  * which this soft-float, FPU-less target cannot call. Dhrystone references
