@@ -26,7 +26,8 @@ history is in [CHANGELOG.md](../CHANGELOG.md).
 
 - Floating point (FPR, FPSCR, FP instructions); `MSR[FP]` writes are rejected.
 - Dual dispatch, branch prediction and folding.
-- Little-endian mode (`MSR[LE]`/`ILE`).
+- Little-endian mode (`MSR[LE]`/`ILE`) is implemented after this release:
+  [LITTLE_ENDIAN.md](LITTLE_ENDIAN.md).
 - JTAG/COP and soft stop. Power management (doze, nap, sleep) is implemented
   after this release: [POWER_MANAGEMENT.md](POWER_MANAGEMENT.md).
 - Board bring-up: physical pins, IOE registers, PLL ratios, CDC and

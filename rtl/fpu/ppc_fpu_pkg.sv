@@ -86,7 +86,15 @@ package ppc_fpu_pkg;
     logic msr_fe0;
     logic msr_fe1;
     logic msr_pr;
+    // MSR[LE] on a part that traps misaligned little-endian accesses.
+    logic le_align;
   } ppc_fpu_issue_t;
+
+  // A little-endian access must be naturally aligned (UM 4.5.6).
+  function automatic logic le_misaligned(input logic le_align, input logic [2:0] ea,
+                                         input logic mem_double);
+    return le_align && ((ea[1:0] != 2'b00) || (mem_double && ea[2]));
+  endfunction
 
   typedef enum logic [2:0] {
     FPU_NO_EXCEPTION = 3'd0,

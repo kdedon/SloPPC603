@@ -335,6 +335,10 @@ module ppc_core #(
   // Dual dispatch and retirement. The 602's dispatch width is unsourced, so
   // it stays single.
   localparam bit DUAL = (DISPATCH_WIDTH == 2) && !cpu_has_602_ext(CPU_VARIANT);
+  // Little-endian mode (MSR[LE], MSR[ILE]) in the full supervisor machine.
+  localparam bit ENABLE_LE = ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT &&
+                             ENABLE_FULL_DECODE;
+  localparam bit MISALIGNED_LE_HW = cpu_misaligned_le_hw(CPU_VARIANT);
   // The second GPR write port's select adds a LUT level to every read.
   localparam bit DUAL_GPR_WRITE = DUAL;
   // SRU add/compare lane, fed from DQ1 beside an IU operation in DQ0.
@@ -391,7 +395,7 @@ module ppc_core #(
   logic retire1_gate, branch_retire1;
   logic [31:0] dispatch_ea;
   logic [1:0] dispatch_ea_low;
-  logic dispatch_misaligned, dispatch_page_cross;
+  logic dispatch_misaligned, dispatch_page_cross, dispatch_le_natural;
   // Committed flag state supplies SO to record logical operations.
   logic [31:0] cr, xer, msr, srr0, srr1;
   logic flags_ready, flags_busy;
@@ -467,12 +471,37 @@ module ppc_core #(
     assign imem_rsp_insn1 = 32'b0;
   end
   endgenerate
+  // Little-endian fetch munges the address (PEM 3.1.4.4: EA XOR 0b100). A
+  // held request keeps the mode it was offered with; a response carries the
+  // mode of its accepted request. No pair is returned: fetch pairs only at
+  // pc[2] = 0, whose munged request is not doubleword-aligned.
+  logic msr_le, fetch_le, fetch_le_q, fetch_held_q, rsp_le_q;
+  logic [31:0] fetch_req_addr;
+  page_miss_t fetch_miss;
+  assign msr_le = ENABLE_LE && msr[MSR_LE];
+  assign fetch_le = fetch_held_q ? fetch_le_q : msr_le;
+  assign imem_req_addr_o = fetch_req_addr ^ {29'b0, fetch_le, 2'b0};
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      fetch_held_q <= 1'b0;
+      fetch_le_q <= 1'b0;
+      rsp_le_q <= 1'b0;
+    end else begin
+      fetch_held_q <= imem_req_valid_o && !imem_req_ready_i;
+      fetch_le_q <= fetch_le;
+      if (imem_req_valid_o && imem_req_ready_i) rsp_le_q <= fetch_le;
+    end
+  end
+  always_comb begin
+    fetch_miss = imem_rsp_page_miss_i;
+    fetch_miss.ea[2] = imem_rsp_page_miss_i.ea[2] ^ rsp_le_q;
+  end
   ppc_fetch #(.RESET_PC(RESET_PC), .FETCH_WIDTH(FETCH_WIDTH)) fetch (
     .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence || power_stop),
     .quiescent_o(frontend_quiescent),
     .redirect_i(frontend_clear || fold_q), .redirect_target_i(frontend_target),
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
-    .req_addr_o(imem_req_addr_o), .rsp_valid_i(imem_rsp_valid_i),
+    .req_addr_o(fetch_req_addr), .rsp_valid_i(imem_rsp_valid_i),
     .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i[31:0]),
     .rsp_fault_i(imem_rsp_fault_i), .rsp_esa_i(imem_rsp_esa_i),
     .rsp_pair_i(imem_rsp_pair), .rsp_insn1_i(imem_rsp_insn1),
@@ -511,7 +540,7 @@ module ppc_core #(
   always_ff @(posedge clk_i) begin
     if (fetch_valid && fetch_ready) begin
       fd_packet_q <= fetched;
-      fd_miss_q <= imem_rsp_page_miss_i;
+      fd_miss_q <= fetch_miss;
       fd1_insn_q <= fetched_insn1;
     end
   end
@@ -721,8 +750,14 @@ module ppc_core #(
   assign dispatch_page_cross = (uop.mem_size == MEM_WORD) ?
     (dispatch_ea[11:2] == 10'h3ff) && (dispatch_ea_low != 0) :
     (dispatch_ea[11:0] == 12'hfff);
-  // Strings never trap on alignment in big-endian mode.
+  // Strings never trap on alignment in big-endian mode. In little-endian
+  // mode every multiple and string traps (UM 4.5.6), and so does a
+  // misaligned scalar unless the part handles it in hardware.
+  assign dispatch_le_natural = ((uop.mem_size == MEM_WORD) && (dispatch_ea_low != 0)) ||
+                               ((uop.mem_size == MEM_HALF) && dispatch_ea_low[0]);
   assign dispatch_misaligned =
+    (msr_le && (uop.mem_seq != SEQ_NONE)) ? 1'b1 :
+    (msr_le && !MISALIGNED_LE_HW && dispatch_le_natural) ? 1'b1 :
     (uop.mem_skip || (uop.mem_seq == SEQ_STRING_IMM) ||
      (uop.mem_seq == SEQ_STRING_INDEXED)) ? 1'b0 :
     ((uop.mem_seq == SEQ_MULTIPLE) || uop.mem_reserve ||
@@ -1129,7 +1164,7 @@ module ppc_core #(
     .ENABLE_UNALIGNED_DATAPATH(ENABLE_MISALIGNED_ACCESS || ENABLE_MULTIPLE_STRING),
     .ENABLE_MACHINE_CHECK(ENABLE_MACHINE_CHECK),
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
-    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
+    .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE), .ENABLE_LITTLE_ENDIAN(ENABLE_LE),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
     .ENABLE_FPU(ENABLE_FPU), .DMEM_BITS(DMEM_BITS), .FPU_IMPL(FPU_IMPL),
     .CPU_VARIANT(CPU_VARIANT), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
@@ -1456,6 +1491,7 @@ module ppc_core #(
      ((dq1_uop.mem_size == MEM_WORD) ?
       ((d1_ea[11:2] == 10'h3ff) && (d1_ea[1:0] != 2'b00)) : (d1_ea[11:0] == 12'hfff)));
   assign d1_mem_ready = !special_busy && lsu_empty && !fp_unsafe_pending && !d1_misaligned &&
+    !msr_le &&
     (dq1_uop.zero_a || (!gpr_mapped[dq1_uop.src_a] && !dq1_pair.dep_prev[0])) &&
     (dq1_uop.use_imm || (!gpr_mapped[dq1_uop.src_b] && !dq1_pair.dep_prev[1])) &&
     ((dq1_uop.special_op != SPECIAL_STORE) ||
@@ -1576,7 +1612,7 @@ module ppc_core #(
         .dispatch_valid_i(dispatch && special_uop && lsu_route),
         .dispatch_ready_o(lsu_ready), .uop_i(dispatch_uop),
         .producer_i(alloc_producer), .pc_i(iq_head.pc), .insn_i(iq_head.insn),
-        .ea_i(dispatch_ea), .data_i(arch_c),
+        .ea_i(dispatch_ea), .data_i(arch_c), .le_i(msr_le),
         .recovery_i(recovery_accepted), .kill_i(recovery_kill),
         .kill_generation_i(recovery_kill_generation),
         .store_authorize_i(retire_ready_i), .queue_head_i(cq_head),

@@ -190,9 +190,9 @@ UM Appendix C (C.1.1-C.1.2, C.2.1):
 | Extra MSR bits | — | — | — | AP (bit 8), SA (bit 9) |
 | Source | UM §1.3 vector table PDF 72 / 1-32; PDF 44, 70, 162 / 1-4, 1-30, 4-4 | UM PDF 70, 162 | UM §C.2.5 PDF 433 / C-21 | 602UM §2.1.1.1 PDF 83–84 / 2-7–2-8; §2.1.2.4.3 Table 2-15 PDF 98–99 / 2-22–2-23; §4.5.16–18 PDF 218–221 / 4-36–4-39; PDF 67, 186 |
 
-Main: little-endian mode is excluded ([RELEASE.md](RELEASE.md)); `MSR[LE]`
-is only copied from ILE on entry. The misaligned-LE split therefore has no
-consumer yet. On the 602, `ppc_exception_state` stores MSR[AP, SA] (V7) and
+Little-endian mode ([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md), V13): the PID7v
+splits a misaligned little-endian scalar in hardware (`cfg.misaligned_le_hw`);
+PID6, the 603 and the 602 take the alignment exception. On the 602, `ppc_exception_state` stores MSR[AP, SA] (V7) and
 takes the vector prefix from IBR when MSR[IP] is clear, except for system
 reset, machine check and IABR, which keep `0x0000` (V8, Table 2-15). The
 0x1600 emulation trap and the 0x1500 watchdog use that prefix and save
@@ -623,7 +623,7 @@ choice and a test of that choice, not a fidelity claim:
 | V14 | Done: doze, nap and sleep from MSR[POW] with one HID0 mode bit ([POWER_MANAGEMENT.md](POWER_MANAGEMENT.md)): fetch held until an exception clears POW; QREQ once idle, QACK stops snooping and, in sleep, the time base and decrementer; QREQ/QACK on both pin tops; two mode bits reject |
 | V12 | Done: the 602 FPU in the core behind `ENABLE_FPU`, FULL or COMPACT, on `ppc_core` and the `ppc602` top ([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md#602-personality)): the FPU decides the emulation trap, owns SP/LT, takes loads at any byte offset, and a newly set sticky bit stalls completion one cycle |
 | V5 | Done: the 603 core and pin top ([603 direct-store](#603-direct-store)): direct-store segments on XATS with their refusals and no-ops, reply-error DSI, TEA machine check, PID sender tag, one CSE pin, XATS pins; caches 128 × 2 and PVR `0x00030101` from `cpu_cfg()`. Stores take at least two cycles each in the serialized LSU, so 2:2 holds; a pipelined LSU must honor `cfg.store_two_cycle`. A typed data fault on a flag-owning instruction (stwcx.) now keeps its flag token to retirement (`ppc_completion`); before, it tripped the flag-owner assertion. `test-reference-603` runs the reference corpus at the 603 against DingusPPC `MPC603`. Open: lmw/stmw and string forms run one access per register (see best-effort items); compiled 603 firmware; a 603 fit |
-| V13 | Not started |
+| V13 | Done: little-endian mode ([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md)): `mtmsr`/`rfi` write LE and ILE, exception entry copies ILE to LE, fetch at EA XOR 4, munged data accesses through the lane, the pipelined LSU, the FPU and the caches; misaligned scalars split on PID7v and take alignment elsewhere; multiples and strings take alignment. Open: PID6/603 misaligned eciwx/ecowx in hardware (`cfg.misaligned_ecxwx_hw`) |
 
 EC603e differs from PID7v only in `cfg.fpu`; with no FPU on main both builds
 behave the same. DingusPPC distinguishes PID6 from PID7v only by PVR, and

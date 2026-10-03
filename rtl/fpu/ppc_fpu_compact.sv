@@ -75,6 +75,7 @@ module ppc_fpu_compact #(
     logic msr_fe0;
     logic msr_fe1;
     logic msr_pr;
+    logic le_align;
   } held_t;
 
   // The held instruction. Tags, indices and addresses come from the issue
@@ -283,7 +284,9 @@ module ppc_fpu_compact #(
           exec_result.gpr_value = dec_q.spr_sp ? sp_q : lt_q;
         end
         DK_MEMORY: begin
-          if (ea_q[1:0] != 2'b00 && (!CPU_602 || dec_q.mem_store)) begin
+          if ((ea_q[1:0] != 2'b00 && (!CPU_602 || dec_q.mem_store)) ||
+              le_misaligned(issue_q.le_align, ea_q[2:0],
+                            !dec_q.mem_single && !dec_q.mem_integer)) begin
             exec_result.exception = FPU_ALIGNMENT;
             exec_result.gpr_update = 1'b0;
           end else if (store_trap(dec_q, src_a[30:0])) begin
@@ -496,6 +499,7 @@ module ppc_fpu_compact #(
         issue_q.msr_fe0 <= issue_i.msr_fe0;
         issue_q.msr_fe1 <= issue_i.msr_fe1;
         issue_q.msr_pr <= issue_i.msr_pr;
+        issue_q.le_align <= issue_i.le_align;
         dec_q <= issue_decode.decoded;
         ea_q <= issue_decode.ea;
         arith_done_q <= 1'b0;

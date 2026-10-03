@@ -25,6 +25,8 @@ module ppc_special #(
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter bit ENABLE_DEBUG_EXCEPTIONS = 1'b0,
   parameter bit ENABLE_FULL_DECODE = 1'b0,
+  // MSR[LE] and MSR[ILE] are writable; accesses follow MSR[LE].
+  parameter bit ENABLE_LITTLE_ENDIAN = 1'b0,
   // MCP, SRESET and SMI boundaries; TLBISYNC holds tlbsync.
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   // Attach the FPU: FP loads and stores run through this lane; other FP
@@ -227,6 +229,10 @@ module ppc_special #(
   import ppc_pkg::*;
   localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
   localparam bit HAS_602 = cpu_has_602_ext(CPU_VARIANT);
+  // A misaligned little-endian FP access takes the alignment exception.
+  logic le_align;
+  assign le_align = ENABLE_LITTLE_ENDIAN && !cpu_misaligned_le_hw(CPU_VARIANT) &&
+                    msr_o[MSR_LE];
   localparam bit HAS_ICE = cpu_has_hid0_ice(CPU_VARIANT);
   localparam logic [31:0] MSR_MASK = msr_implemented(HAS_602);
 
@@ -301,6 +307,12 @@ module ppc_special #(
   logic [3:0] mem_mask;
   logic mem_crossing, beat_q, beat_continue, mem_skip;
   logic [31:0] beat0_data_q, access_ea, alignment_dar;
+  // Little-endian accesses run big-endian at a munged address: beat 0 holds
+  // the most significant byte, the last beat the byte at EA XOR 7.
+  logic le_access;
+  logic [3:0] access_bytes;
+  logic [31:0] first_ea;
+  logic [1:0] mem_offset;
   // A 602 FP load at any byte offset: up to three words, beat 2 the third.
   localparam bit FPU_UNALIGNED = ENABLE_FPU && HAS_602;
   logic beat2_q, fpu_unaligned;
@@ -609,13 +621,15 @@ module ppc_special #(
   // Machine check adds ME, RI and POW. Debug exceptions add SE and BE.
   localparam logic [31:0] MACHINE_CHECK_MSR_MASK = 32'h0004_1002;
   localparam logic [31:0] DEBUG_MSR_MASK = 32'h0000_0600;
+  localparam logic [31:0] MSR_LE_MASK = 32'h0001_0001;  // ILE, LE
   localparam logic [31:0] LIVE_UNSUPPORTED_MASK =
     (ENABLE_EXTERNAL_INTERRUPTS ? 32'h0007_3f03 : 32'h0007_bf03) &
     ~(ENABLE_TGPR ? 32'h0002_0000 : 32'b0) &
     ~(ENABLE_MACHINE_CHECK ? MACHINE_CHECK_MSR_MASK : 32'b0) &
     ~(ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0) &
     // FP is accepted and reads as zero; FE0/FE1 are stored without effect.
-    ~(ENABLE_FULL_DECODE ? 32'h0000_2900 : 32'b0);
+    ~(ENABLE_FULL_DECODE ? 32'h0000_2900 : 32'b0) &
+    ~(ENABLE_LITTLE_ENDIAN ? MSR_LE_MASK : 32'b0);
   // Without an FPU, FP is accepted and reads as zero.
   localparam logic [31:0] LIVE_SUPPORTED_MASK =
     (ENABLE_EXTERNAL_INTERRUPTS ? 32'h0000_c070 : 32'h0000_4070) |
@@ -624,6 +638,7 @@ module ppc_special #(
     (ENABLE_DEBUG_EXCEPTIONS ? DEBUG_MSR_MASK : 32'b0) |
     (ENABLE_FULL_DECODE ? 32'h0000_0900 : 32'b0) |
     (ENABLE_FPU ? 32'h0000_2000 : 32'b0) |
+    (ENABLE_LITTLE_ENDIAN ? MSR_LE_MASK : 32'b0) |
     (HAS_602 ? MSR_602_MASK : 32'b0);
 
   // TGPR combines with any other mode: every exception entry clears it.
@@ -836,8 +851,15 @@ module ppc_special #(
       3'd3: mem_mask = 4'b1110;
       default: mem_mask = 4'b1111;
     endcase
+    le_access = ENABLE_LITTLE_ENDIAN && msr_o[MSR_LE] &&
+                (fpu_access || ((uop_q.cache_op == CACHE_OP_NONE) && !uop_q.block_zero));
+    access_bytes = (fpu_access && fpu_double_q) ? 4'd8 : {1'b0, mem_nbytes};
+    // PEM 3.1.4: aligned, this is EA XOR (8 - size); misaligned, the bytes
+    // land as if accessed one at a time.
+    first_ea = le_access ? ((ea_q + {28'b0, access_bytes - 4'd1}) ^ 32'd7) : ea_q;
+    mem_offset = first_ea[1:0];
     mem_crossing = ENABLE_UNALIGNED_DATAPATH &&
-                   (({1'b0, ea_q[1:0]} + mem_nbytes) > 3'd4);
+                   (({1'b0, mem_offset} + mem_nbytes) > 3'd4);
     misaligned = !ENABLE_UNALIGNED_DATAPATH &&
                  (((uop_q.mem_size == MEM_WORD) && (ea_q[1:0] != 0)) ||
                   ((uop_q.mem_size == MEM_HALF) && ea_q[0]));
@@ -846,17 +868,19 @@ module ppc_special #(
     conditional_probe = ENABLE_RESERVATION && !ENABLE_DATA_CACHE &&
                         uop_q.mem_conditional && !reserve_q;
     mem_skip = uop_q.mem_skip;
-    access_ea = beat_q ? {ea_q[31:2] + (beat2_q ? 30'd2 : 30'd1), 2'b0} : ea_q;
+    access_ea = !beat_q ? first_ea :
+                le_access ? {ea_q[31:3], !ea_q[2], 2'b0} :
+                {ea_q[31:2] + (beat2_q ? 30'd2 : 30'd1), 2'b0};
     // UM 4.5.6.2: lmw/stmw alignment saves EA + 4 in DAR.
     alignment_dar = ea_q + ((uop_q.mem_seq == SEQ_MULTIPLE) ? 32'd4 : 32'd0);
 
     // Bytes move left-justified through a two-word window at the EA offset.
     store_source = uop_q.mem_reverse ? swap_bytes(c_q, mem_nbytes) : c_q;
     store_left = uop_q.mem_left ? c_q : (store_source << {3'd4 - mem_nbytes, 3'b0});
-    store_window = {store_left, 32'b0} >> {ea_q[1:0], 3'b0};
-    strobe_window = {mem_mask, 4'b0} >> ea_q[1:0];
+    store_window = {store_left, 32'b0} >> {mem_offset, 3'b0};
+    strobe_window = {mem_mask, 4'b0} >> mem_offset;
     load_window = beat_q ? {beat0_data_q, rsp_word} : {rsp_word, 32'b0};
-    load_left = 32'((load_window << {ea_q[1:0], 3'b0}) >> 32) &
+    load_left = 32'((load_window << {mem_offset, 3'b0}) >> 32) &
                 {{8{mem_mask[3]}}, {8{mem_mask[2]}}, {8{mem_mask[1]}}, {8{mem_mask[0]}}};
     load_right = load_left >> {3'd4 - mem_nbytes, 3'b0};
     if (uop_q.mem_left) load_value = load_left;
@@ -1710,7 +1734,9 @@ module ppc_special #(
           dsisr_q <= {15'b0, uop_q.alignment_dsisr};
         end
         if (exception_event_valid && dsi_event) begin
-          dar_q <= access_ea;
+          // Little-endian: the EA the instruction computed, not the munged
+          // address (DMISS holds that).
+          dar_q <= le_access ? ea_q : access_ea;
           // UM Table 4-11: protection bit 4, direct-store bit 5, store bit 6,
           // eciwx/ecowx with EAR[E] = 0 bit 11; direct-store error bit 0
           // (PEM Table 6-9).
@@ -2087,6 +2113,7 @@ module ppc_special #(
     fpu_issue.msr_fe0 = msr_o[11];
     fpu_issue.msr_fe1 = msr_o[8];
     fpu_issue.msr_pr = msr_o[MSR_PR];
+    fpu_issue.le_align = le_align;
     fp_issue = '0;
     fp_issue.tag = fp_issue_tag_i;
     fp_issue.insn = fp_issue_insn_i;
@@ -2096,6 +2123,7 @@ module ppc_special #(
     fp_issue.msr_fe0 = msr_o[11];
     fp_issue.msr_fe1 = msr_o[8];
     fp_issue.msr_pr = msr_o[MSR_PR];
+    fp_issue.le_align = le_align;
     fpu_mem_rsp = '0;
     fpu_mem_rsp.tag = producer_q;
     fpu_mem_rsp.data = fpu_data_q;
