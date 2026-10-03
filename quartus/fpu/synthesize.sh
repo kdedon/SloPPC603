@@ -13,7 +13,7 @@ run() {
     "/opt/intelFPGA_lite/quartus/bin/$@"
 }
 
-docker image inspect --format 'id={{.Id}} repo_digests={{join .RepoDigests ","}}' "${image}"
+docker image inspect --format 'id={{.Id}} repo_digests={{json .RepoDigests}}' "${image}"
 docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo_dir}:/work" --workdir /work "${image}" /opt/intelFPGA_lite/quartus/bin/quartus_sh --version
 for tech in 0 1; do
   variant="${script_dir}/output_files/TECH${tech}"

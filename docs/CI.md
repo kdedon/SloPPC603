@@ -39,7 +39,7 @@ Other pins stay beside the code that uses them: DingusPPC `LAST_VERIFIED` in
 To move a container pin:
 
 1. `docker pull <image>:<tag>` and read the digest with
-   `docker image inspect --format '{{join .RepoDigests ","}}' <image>:<tag>`.
+   `docker image inspect --format '{{json .RepoDigests}}' <image>:<tag>`.
 2. Replace the value in `ci/pins.env`. For the Debian base, also move
    `TOOLCHAIN_DEBIAN_SNAPSHOT` and the package versions in `toolchain/Dockerfile`.
 3. Rebuild (`toolchain/build-container.sh`, or a Quartus fit) and record the

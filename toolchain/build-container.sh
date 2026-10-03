@@ -18,7 +18,7 @@ docker run --rm \
   --workdir /work/toolchain \
   --env SOURCE_DATE_EPOCH=0 \
   "${image}" make clean all check repro
-docker image inspect --format 'id={{.Id}} repo_digests={{join .RepoDigests ","}}' "${image}" \
+docker image inspect --format 'id={{.Id}} repo_digests={{json .RepoDigests}}' "${image}" \
   > "${evidence_dir}/container-image.txt"
 cp "${repo_dir}/toolchain/build/tool-versions.txt" \
    "${repo_dir}/toolchain/build/artifacts.sha256" \

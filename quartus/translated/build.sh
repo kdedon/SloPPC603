@@ -30,7 +30,7 @@ if [[ "${mode}" == local ]]; then
   quartus_sh --version > "${evidence_dir}/tool-versions.txt"
   compile=(quartus_sh --flow compile ppc603e_translated -c ppc603e_translated)
 else
-  docker image inspect --format 'id={{.Id}} repo_digests={{join .RepoDigests ","}}' "${image}" > "${evidence_dir}/image.txt"
+  docker image inspect --format 'id={{.Id}} repo_digests={{json .RepoDigests}}' "${image}" > "${evidence_dir}/image.txt"
   docker run --rm --network none "${image}" /opt/intelFPGA_lite/quartus/bin/quartus_sh --version > "${evidence_dir}/tool-versions.txt"
   compile=(docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo_dir}:/work" --workdir /work/quartus/translated "${image}" /opt/intelFPGA_lite/quartus/bin/quartus_sh --flow compile ppc603e_translated -c ppc603e_translated)
 fi

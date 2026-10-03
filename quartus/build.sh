@@ -27,7 +27,7 @@ case "${mode}" in
     )
     ;;
   --docker)
-    docker image inspect --format 'id={{.Id}} repo_digests={{join .RepoDigests ","}}' "${image}" \
+    docker image inspect --format 'id={{.Id}} repo_digests={{json .RepoDigests}}' "${image}" \
       > "${script_dir}/evidence/image.txt"
     docker run --rm \
       --user "$(id -u):$(id -g)" \
