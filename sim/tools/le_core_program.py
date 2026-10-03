@@ -15,6 +15,12 @@ A misaligned little-endian access takes the alignment exception unless the
 part handles it in hardware (UM 1.3: PID7v-603e); multiples and strings
 always do (UM 2.3.4.3.6-7). Handlers log SRR0, SRR1, DAR, DSISR and the
 vector, then resume after the faulting instruction.
+
+--chip-image writes a self-checking byte image for tb_chip_firmware: the
+program runs from the hard reset vector with both caches enabled, compares
+every expected word against a table itself and reports through the mailbox.
+It omits the DSI section and the MSR[ILE] section, which need a protected
+region and low exception vectors.
 """
 import argparse
 from pathlib import Path
@@ -22,6 +28,16 @@ from pathlib import Path
 RESET_PC = 0x4000
 LE_ENTRY, BE_ENTRY = 0x20000, 0x21000
 DATA, STORE, FPDATA, RES, LOG, DONE = 0x40000, 0x44000, 0x48000, 0x50000, 0x60000, 0x70000
+CHIP = False
+CHIP_BASE, CHIP_IMAGE_BYTES, TABLE = 0xfff00000, 0x10000, 0xfff07000
+
+
+def use_chip_layout():
+    global CHIP, RESET_PC, LE_ENTRY, BE_ENTRY, DATA, STORE, FPDATA, RES, LOG, DONE
+    CHIP = True
+    RESET_PC, LE_ENTRY, BE_ENTRY = 0xfff02000, 0xfff06000, 0xfff06800
+    DATA, STORE, FPDATA = 0xfff0c000, 0xfff0c400, 0xfff0e000
+    RES, LOG, DONE = 0xfff10000, 0xfff20000, 0xfff3ff00
 PROT_LO, PROT_HI = 0x7F000, 0x7F0FC
 MSR_LE, MSR_ILE, MSR_IP, MSR_FP = 0x1, 0x10000, 0x40, 0x2000
 SENTINEL = 0xdeadbeef
@@ -165,7 +181,7 @@ class Program:
 
 
 def handlers(p, base, le):
-    for vector in VECTORS:
+    for vector in VECTORS if not CHIP else VECTORS[:4]:
         p.pc, p.le = base | vector, le
         for spr, off in ((SRR0, 0), (SRR1, 4), (DAR, 8), (DSISR, 12)):
             p.emit(mfspr(26, spr))
@@ -406,12 +422,21 @@ def build(variant):
     p = Program(variant)
     fp = variant in ('pid7v', 'pid6', '603')
     handlers(p, 0xfff00000, False)
-    handlers(p, 0x00000000, True)
+    if CHIP:
+        p.put32(0xfff00100, (18 << 26) | ((RESET_PC - 0xfff00100) & 0x3fffffc))
+    else:
+        handlers(p, 0x00000000, True)
     p.fill(DATA, 0x80, 0x11)
     for k in range(0x80):
         p.checked.discard(DATA + k)
     p.pc, p.le = RESET_PC, False
     p.li32(29, LOG)
+    if CHIP:
+        p.emit(mfspr(7, 1008))
+        p.emit(d_form(24, 7, 7, 0xc000))                  # ori r7, r7, ICE | DCE
+        p.emit(SYNC)
+        p.emit(mtspr(1008, 7))
+        p.emit(ISYNC)
     base = MSR_IP | (MSR_FP if fp else 0)
     # mtmsr into little-endian mode.
     p.mtmsr(base | MSR_LE)
@@ -423,10 +448,23 @@ def build(variant):
     if fp:
         floating(p)
     branches(p)
-    protection(p)
+    if not CHIP:
+        protection(p)
     at = p.emit(SC)
     p.event(0xc00, at + 4)
-    # Little-endian handlers (MSR[IP] clear, MSR[ILE] set) from both modes.
+    if not CHIP:
+        ile(p, base)
+    rfi_round_trip(p, base)
+    if CHIP:
+        self_check(p)
+    else:
+        p.li32(5, DONE)
+        p.emit(d_form(36, 0, 5, 0))
+    return p
+
+
+def ile(p, base):
+    """Little-endian handlers (MSR[IP] clear, MSR[ILE] set) from both modes."""
     p.mtmsr((base & ~MSR_IP) | MSR_LE | MSR_ILE)
     at = p.emit(SC)
     p.event(0xc00, at + 4)
@@ -440,7 +478,9 @@ def build(variant):
     p.li32(5, DATA + 0x10)
     p.emit(d_form(32, 10, 5, 0))
     p.store_result(10, p.read(DATA + 0x10, 4, False))
-    # rfi into little-endian mode and back.
+
+
+def rfi_round_trip(p, base):
     p.mtmsr(base)
     assert p.pc < LE_ENTRY
     le_entry = LE_ENTRY
@@ -463,9 +503,55 @@ def build(variant):
     p.li32(5, DATA + 0x18)
     p.emit(d_form(32, 10, 5, 0))
     p.store_result(10, p.read(DATA + 0x18, 4, False))
-    p.li32(5, DONE)
-    p.emit(d_form(36, 0, 5, 0))
-    return p
+
+
+def expected_words(p):
+    for w in sorted({a & ~3 for a in p.checked}):
+        value = mask = 0
+        for i in range(4):
+            value = (value << 8) | p.cur.get(w + i, 0)
+            mask = (mask << 8) | (0xff if (w + i) in p.checked else 0)
+        yield w, value & mask, mask
+
+
+def self_check(p):
+    """Compare every expected word from a table; the mailbox gets 1, or 2
+    on a mismatch (r3 then points past the failing entry)."""
+    table = list(expected_words(p))
+    p.li32(3, TABLE)
+    p.li32(4, len(table))
+    p.li32(30, DONE)
+    p.emit(mtspr(CTR, 4))
+    loop = p.emit(d_form(32, 6, 3, 0))                 # lwz r6, 0(r3)
+    p.emit(d_form(32, 7, 3, 4))
+    p.emit(d_form(32, 8, 3, 8))
+    p.emit(d_form(14, 3, 3, 12))
+    p.emit(d_form(32, 5, 6, 0))
+    p.emit(x_form(31, 5, 5, 8, 28))                   # and r5, r5, r8
+    p.emit(x_form(31, 0, 5, 7, 0))                    # cmpw r5, r7
+    p.emit((16 << 26) | (4 << 21) | (2 << 16) | 16)   # bne +16
+    p.emit((16 << 26) | (BDNZ_BO << 21) | ((loop - p.pc) & 0xfffc))
+    p.emit(d_form(14, 5, 0, 1))
+    p.emit((18 << 26) | 8)                            # b +8
+    p.emit(d_form(14, 5, 0, 2))
+    p.emit(d_form(36, 5, 30, 0))
+    p.emit(x_form(31, 0, 0, 30, 86))                  # dcbf 0, r30
+    p.emit(SYNC)
+    p.emit(18 << 26)                                  # b .
+    for k, (w, value, mask) in enumerate(table):
+        for i, v in enumerate((w, value, mask)):
+            p.put32(TABLE + 12 * k + 4 * i, v)
+    assert TABLE + 12 * len(table) <= DATA, 'table overlaps data'
+
+
+def write_chip_image(p, path):
+    image = bytearray(CHIP_IMAGE_BYTES)
+    for addr, byte in p.init.items():
+        offset = addr - CHIP_BASE
+        assert 0 <= offset < CHIP_IMAGE_BYTES, hex(addr)
+        image[offset] = byte
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(''.join(f'{b:02x}\n' for b in image))
 
 
 def write_image(p, path):
@@ -476,12 +562,7 @@ def write_image(p, path):
         for i in range(4):
             value = (value << 8) | p.init.get(w + i, 0)
         lines.append(f'M {w:08x} {value:08x}')
-    for w in sorted({a & ~3 for a in p.checked}):
-        value = mask = 0
-        for i in range(4):
-            value = (value << 8) | p.cur.get(w + i, 0)
-            mask = (mask << 8) | (0xff if (w + i) in p.checked else 0)
-        lines.append(f'E {w:08x} {value:08x} {mask:08x}')
+    lines += [f'E {w:08x} {v:08x} {m:08x}' for w, v, m in expected_words(p)]
     lines += [f'D {DONE:08x}', f'P {PROT_LO:08x} {PROT_HI:08x}']
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text('\n'.join(lines) + '\n')
@@ -489,11 +570,17 @@ def write_image(p, path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument('--image', required=True)
+    ap.add_argument('--image')
+    ap.add_argument('--chip-image')
     ap.add_argument('--variant', choices=sorted(VARIANTS), default='pid7v')
     args = ap.parse_args()
+    if args.chip_image:
+        use_chip_layout()
     p = build(args.variant)
-    write_image(p, args.image)
+    if args.chip_image:
+        write_chip_image(p, args.chip_image)
+    else:
+        write_image(p, args.image)
     print(f'le_core_program: variant={args.variant} events={p.events} '
           f'checked_bytes={len(p.checked)}')
 

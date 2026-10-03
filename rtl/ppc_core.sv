@@ -473,8 +473,8 @@ module ppc_core #(
   endgenerate
   // Little-endian fetch munges the address (PEM 3.1.4.4: EA XOR 0b100). A
   // held request keeps the mode it was offered with; a response carries the
-  // mode of its accepted request. Pairs are not taken: the munged
-  // doubleword holds the two words in reverse order.
+  // mode of its accepted request. No pair is returned: fetch pairs only at
+  // pc[2] = 0, whose munged request is not doubleword-aligned.
   logic msr_le, fetch_le, fetch_le_q, fetch_held_q, rsp_le_q;
   logic [31:0] fetch_req_addr;
   page_miss_t fetch_miss;
@@ -504,7 +504,7 @@ module ppc_core #(
     .req_addr_o(fetch_req_addr), .rsp_valid_i(imem_rsp_valid_i),
     .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i[31:0]),
     .rsp_fault_i(imem_rsp_fault_i), .rsp_esa_i(imem_rsp_esa_i),
-    .rsp_pair_i(imem_rsp_pair && !rsp_le_q), .rsp_insn1_i(imem_rsp_insn1),
+    .rsp_pair_i(imem_rsp_pair), .rsp_insn1_i(imem_rsp_insn1),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready),
     .packet_ready2_i(fetch_ready2), .packet_o(fetched),
     .packet_pair_o(fetch_pair), .packet_insn1_o(fetched_insn1)

@@ -2018,6 +2018,15 @@ $(addprefix test-core-le-,$(LE_CORE_RUNS)): test-core-le-%:
 	./$(BUILD_DIR)/core-le-$*/Vtb_core_le +IMAGE=$(BUILD_DIR)/core-le-$*/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-le-$*/Vtb_core_le +IMAGE=$(BUILD_DIR)/core-le-$*/program.txt +STALL=0 $(SIM_ARGS)
 
+# The little-endian program, self-checking, on the package top with both
+# caches enabled.
+.PHONY: test-chip-le
+test-chip-le:
+	mkdir -p $(BUILD_DIR)/chip-le
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+CHIP_ENABLE_FPU=1 --top-module tb_chip_firmware --Mdir $(BUILD_DIR)/chip-le -I../tb $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_firmware.sv
+	python3 tools/le_core_program.py --chip-image $(BUILD_DIR)/chip-le/program.hex
+	./$(BUILD_DIR)/chip-le/Vtb_chip_firmware +IMAGE=$(BUILD_DIR)/chip-le/program.hex +TOHOST=fff3ff00 $(SIM_ARGS)
+
 # The same program with the pipelined LSU over a memory taking one access per
 # cycle; adds the Table 6-6 integer load/store rows.
 .PHONY: test-core-lsu-timing
