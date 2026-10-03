@@ -30,7 +30,8 @@ Builds with it add `rtl/fpu_files.f` after `rtl/chip_files.f`.
 
 ### 60x target
 
-- BG answers BR; AACK is asserted two cycles after TS; DBG is asserted with AACK.
+- BG answers BR; AACK is asserted two cycles after TS; DBG is asserted with AACK, or
+  later while the external memory bridge fetches the data ([External memory](#external-memory)).
 - Data beats run with TA on consecutive cycles: four for a burst (critical doubleword
   first, wrapping in the line), one for a single-beat transfer. TSIZ and A[29:31]
   select the byte lanes of a single-beat write.
@@ -267,3 +268,14 @@ the `fb_*` ports (doubleword index, byte lanes, data) and palette writes through
 more stores. Framebuffer reads end with TEA: the firmware only writes the framebuffer.
 The scan-out keeps its timing and shows palette entry 0. The MiSTer core uses this
 mode; see [MISTER_CORE.md](MISTER_CORE.md).
+
+## External memory
+
+With `XMEM_BYTES` nonzero (a power of two) and `xmem_map_i` high, the first
+`XMEM_BYTES` from `RAM_BASE` are external memory on the `xmem_*` port instead of the
+program RAM; `xmem_map_i` changes only under reset. `soc_xmem_bridge` serves the range: a
+read tenure's DBG waits until the line (four doublewords) or the single doubleword is in
+its buffer, a write tenure is buffered and stored afterwards one doubleword per request
+while the next grant is held. The MiSTer core maps a loaded program image this way
+([MISTER_CORE.md](MISTER_CORE.md#loading-programs)). The default, 0, leaves the system
+as above.

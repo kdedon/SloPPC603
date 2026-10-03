@@ -126,14 +126,16 @@ comes from another commit or a modified tree. A `mister-embench` summary adds
 the GPL-3.0 source offer, which points at the `embench-source.tar.gz` asset
 written by `ci/source-archive.sh`; a `mister-nbench` summary adds a
 no-redistribution warning ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)).
+`--images <file>...` lists the published program images with their SHA-256 and applies
+the same two notices to an Embench or nbench image.
 
 ## Workflows
 
 | Workflow | Trigger | Does |
 | --- | --- | --- |
 | `quick.yml` | push, pull request | Verilator 5.020 from Ubuntu 24.04; `lint`, `check-spec`, five focused benches |
-| `mister-unstable.yml` | push to `main` | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`); replaces the `unstable` prerelease with the `.rbf`, its summary and notes |
-| `release.yml` | tag `v*` | five measurement fits with 66 MHz re-timing, two FPU fits, MiSTer builds (`default`, `selftest`, or `vars.MISTER_SUITES`), then a release with notes |
+| `mister-unstable.yml` | push to `main` | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`); replaces the `unstable` prerelease with the `.rbf`, its summary, the self-test and Whetstone program images and notes |
+| `release.yml` | tag `v*` | five measurement fits with 66 MHz re-timing, two FPU fits, MiSTer builds (the test core, or `vars.MISTER_SUITES`) with the self-test and Whetstone program images (plus `vars.MISTER_IMAGES`), then a release with notes |
 
 Runner limits (GitHub-hosted `ubuntu-24.04`, public repository):
 
@@ -152,7 +154,10 @@ Repository settings the workflows need:
 
 1. Settings → Actions: allow Actions and give `GITHUB_TOKEN` write access to
    contents (the release jobs use `gh release`).
-2. Optional: set the repository variable `MISTER_SUITES` (JSON list) to add
-   `embench` or `nbench`; review the licence notes above first.
+2. Optional: set the repository variable `MISTER_SUITES` (JSON list; `test` is the
+   test core, `default` the core without options, any other entry a `--suite` core),
+   or `MISTER_IMAGES` (space-separated image names, e.g. `embench`), to publish more;
+   review the licence notes above first. An Embench core or image adds
+   `embench-source.tar.gz`. nbench images are never published by default.
 3. Run `mister-unstable` once by hand (`workflow_dispatch`) and check the disk
    and time headroom in its log before relying on it.

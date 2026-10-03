@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Kevin Dedon
 # Tagged release: the measurement fits with 66 MHz re-timing, the production
-# FPU fits and the MiSTer bitstreams, published with generated release notes.
+# FPU fits, the MiSTer bitstreams and program images, published with
+# generated release notes.
 # The simulation gates (make -C sim release-check --skip-quartus) run on the
 # maintainer's machine before tagging; this workflow does not repeat them.
 name: release
@@ -71,9 +72,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Embench images are GPL-3.0: add "embench" through this variable only
-        # after reviewing docs/CI.md.
-        suite: ${{ fromJSON(vars.MISTER_SUITES || '["default", "selftest"]') }}
+        # "test" is the test core, "default" the core without options, any
+        # other entry a --suite core. Embench is GPL-3.0: add "embench" here,
+        # or to MISTER_IMAGES, only after reviewing docs/CI.md.
+        suite: ${{ fromJSON(vars.MISTER_SUITES || '["test"]') }}
     steps:
       - uses: actions/checkout@v4
       - run: ci/free-disk.sh
@@ -84,9 +86,21 @@ jobs:
           docker pull "${QUARTUS_IMAGE_PIN}"
       - run: ci/step.sh toolchain/build-container.sh
       - name: Build the core
-        run: ci/step.sh mister/build.sh --clean ${{ matrix.suite != 'default' && format('--suite {0}', matrix.suite) || '' }}
+        run: |
+          case "${{ matrix.suite }}" in
+            test) flags="--fpu-compact --dual --lsu-pipe" ;;
+            default) flags="" ;;
+            *) flags="--suite ${{ matrix.suite }}" ;;
+          esac
+          ci/step.sh mister/build.sh --clean ${flags}
+      - name: Program images
+        if: matrix.suite == 'test'
+        run: |
+          for name in selftest whetstone whetstone-hf ${{ vars.MISTER_IMAGES || '' }}; do
+            cp "build/mister/images/ppc603e-${name}.bin" build/mister/
+          done
       - name: Corresponding source of a GPL-3.0 image
-        if: matrix.suite == 'embench'
+        if: matrix.suite == 'embench' || (matrix.suite == 'test' && contains(vars.MISTER_IMAGES || '', 'embench'))
         run: ci/source-archive.sh build/mister/embench-source.tar.gz
       - uses: actions/upload-artifact@v4
         with:
@@ -94,6 +108,7 @@ jobs:
           path: |
             build/mister/*.rbf
             build/mister/*.json
+            build/mister/*.bin
             build/mister/*.tar.gz
 
   publish:
@@ -110,10 +125,10 @@ jobs:
         run: |
           previous="$(git describe --tags --abbrev=0 --exclude unstable "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
           python3 ci/release_notes.py --tag "${GITHUB_REF_NAME}" ${previous:+--since "${previous}"} \
-            $(find artifacts -name '*.json' | sort) > notes.md
+            $(find artifacts -name '*.json' | sort) --images $(find artifacts -name '*.bin' | sort) > notes.md
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --notes-file notes.md \
-            $(find artifacts -type f \( -name '*.rbf' -o -name '*.json' -o -name '*.tar.gz' \) | sort)
+            $(find artifacts -type f \( -name '*.rbf' -o -name '*.json' -o -name '*.bin' -o -name '*.tar.gz' \) | sort)

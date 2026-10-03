@@ -388,6 +388,30 @@ $(OUT)/selftest-602.elf: $(ST_OBJ) $(ST)/602/selftest.o $(ST)/602/cases.o $(ST)/
 $(OUT)/mister-selftest.hex: $(OUT)/selftest.hex
 	cp $< $@
 
+# ---- loadable MiSTer images (docs/MISTER_CORE.md#loading-programs) ----------
+# The suite images as memory images of the RAM from 0xfff00000, for the
+# core's Load program entry: the 256 bytes below the reset vector are zero.
+# mister-images writes the full sizes to MISTER_IMAGES_DIR (the repository's
+# build/ by default); mister-images-smoke the simulation sizes to $(OUT)/images.
+MISTER_IMAGES_DIR ?= ../build/mister/images
+MISTER_IMAGE_NAMES := selftest embench nbench whetstone whetstone-hf
+.PHONY: mister-images mister-images-smoke
+mister-images: $(addprefix $(MISTER_IMAGES_DIR)/ppc603e-,$(addsuffix .bin,$(MISTER_IMAGE_NAMES)))
+mister-images-smoke: $(OUT)/images/ppc603e-selftest-smoke.bin \
+	$(addprefix $(OUT)/images/ppc603e-,$(addsuffix -smoke.bin,$(filter-out selftest,$(MISTER_IMAGE_NAMES))))
+define memory-image
+	mkdir -p $(@D)
+	$(OBJCOPY) -O binary $< $@.body
+	head -c 256 /dev/zero | cat - $@.body > $@
+	rm -f $@.body
+endef
+$(MISTER_IMAGES_DIR)/ppc603e-selftest.bin $(OUT)/images/ppc603e-selftest-smoke.bin: $(OUT)/selftest.elf
+	$(memory-image)
+$(MISTER_IMAGES_DIR)/ppc603e-%.bin: $(OUT)/mister-%.elf
+	$(memory-image)
+$(OUT)/images/ppc603e-%.bin: $(OUT)/mister-%.elf
+	$(memory-image)
+
 # The processor has no FPU: reject any floating-point instruction.
 $(OUT)/%.elf:
 	$(CC) $(LDFLAGS) -Wl,-Map,$(OUT)/$*.map $(filter %.o,$^) \

@@ -2,8 +2,9 @@
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // 60x arbiter and target for a single bus master, one tenure at a time.
-// BG answers BR; AACK comes two cycles after TS; DBG follows AACK, and the
-// beats run with TA on consecutive cycles (four for a burst, one otherwise).
+// BG answers BR; AACK comes two cycles after TS; DBG follows AACK, or comes
+// later while the claiming slave holds dwait_i, and the beats run with TA on
+// consecutive cycles (four for a burst, one otherwise).
 // ARTRY and DRTRY are never asserted. A tenure whose address no slave claims
 // ends its data tenure with TEA.
 //
@@ -36,8 +37,13 @@ module soc_bus60x_target (
   // Address claim: the slave decoder answers for addr_o combinationally.
   output logic [31:0] claim_addr_o,
   input  logic        claim_i,
-  // The claimed tenure writes; valid with claim_addr_o.
+  // The claimed tenure writes or bursts; valid with claim_addr_o.
   output logic        claim_write_o,
+  output logic        claim_burst_o,
+  // AACK cycle of a data tenure: claim_i is sampled. A claiming slave that
+  // holds dwait_i from this cycle delays DBG until it drops.
+  output logic        claim_valid_o,
+  input  logic        dwait_i,
   // Beat port. be_o bit 7 is byte lane 0 (d[63:56]).
   output logic        req_o,
   output logic        we_o,
@@ -48,8 +54,8 @@ module soc_bus60x_target (
   // Counters for the bench.
   output logic [31:0] tenures_o
 );
-  typedef enum logic [2:0] {
-    S_IDLE, S_GRANT, S_AACK, S_AACK_END, S_DGRANT, S_READ, S_WRITE, S_END
+  typedef enum logic [3:0] {
+    S_IDLE, S_GRANT, S_AACK, S_AACK_END, S_DWAIT, S_DGRANT, S_READ, S_WRITE, S_END
   } state_e;
   state_e state_q;
 
@@ -67,6 +73,8 @@ module soc_bus60x_target (
   assign last_beat = !burst_q || beat_q == 2'd3;
   assign claim_addr_o = addr_q;
   assign claim_write_o = write_q;
+  assign claim_burst_o = burst_q;
+  assign claim_valid_o = state_q == S_AACK;
 
   // Bursts start at the critical doubleword and wrap within the line.
   assign beat_addr = burst_q ? {addr_q[31:5], addr_q[4:3] + beat_q}
@@ -134,10 +142,18 @@ module soc_bus60x_target (
         end
         S_AACK: begin
           aack_n_o <= 1'b0;
-          dbg_n_o <= 1'b0;
           claimed_q <= claim_i;
-          state_q <= S_DGRANT;
+          if (claim_i && dwait_i) state_q <= S_DWAIT;
+          else begin
+            dbg_n_o <= 1'b0;
+            state_q <= S_DGRANT;
+          end
         end
+        S_DWAIT:
+          if (!dwait_i) begin
+            dbg_n_o <= 1'b0;
+            state_q <= S_DGRANT;
+          end
         S_DGRANT:
           if (dbb_oe_i && !dbb_n_i) begin
             dbg_n_o <= 1'b1;

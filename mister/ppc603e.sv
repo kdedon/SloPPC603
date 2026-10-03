@@ -8,7 +8,8 @@
 // native video at 15.6 kHz and 59.6 Hz. MISTER_BENCH builds a benchmark
 // suite image with 256 KiB of program RAM and no program menu. Without it,
 // MISTER_FPU adds Whetstone and the floating-point Mandelbrot set to the
-// program menu.
+// program menu. Load program downloads a memory image into DDR3 and runs it
+// in place of the built-in program until the Program option changes.
 module emu
 (
 	`include "sys/emu_ports.vh"
@@ -79,8 +80,9 @@ localparam int RAM_BYTES = 131072;
 `include "build_id.v"
 localparam CONF_STR = {
 	"PPC603e;;",
-`ifndef MISTER_BENCH
 	"-;",
+	"F1,BIN,Load program;",
+`ifndef MISTER_BENCH
 `ifdef MISTER_FPU
 	"O[7:5],Program,Hello,Dhrystone,CoreMark,Whetstone,FP Mandelbrot,Run all;",
 `else
@@ -116,6 +118,11 @@ wire        sd_wr, sd_ack;
 wire [13:0] sd_buff_addr;
 wire  [7:0] sd_buff_din;
 
+wire        ioctl_download, ioctl_wr, ioctl_wait;
+wire [15:0] ioctl_index;
+wire [26:0] ioctl_addr;
+wire  [7:0] ioctl_dout;
+
 hps_io #(.CONF_STR(CONF_STR)) hps_io
 (
 	.clk_sys(clk_sys),
@@ -140,7 +147,13 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.sd_buff_addr(sd_buff_addr),
 	.sd_buff_dout(),
 	.sd_buff_din('{sd_buff_din}),
-	.sd_buff_wr()
+	.sd_buff_wr(),
+	.ioctl_download(ioctl_download),
+	.ioctl_index(ioctl_index),
+	.ioctl_wr(ioctl_wr),
+	.ioctl_addr(ioctl_addr),
+	.ioctl_dout(ioctl_dout),
+	.ioctl_wait(ioctl_wait)
 );
 
 wire clk_sys;
@@ -160,17 +173,25 @@ wire [2:0] program_sel = {1'b0, status[2:1]};
 `endif
 
 // Restart on the framework reset, the OSD, the user button, a program or
-// length change, or PLL lock loss; held for 16 clocks.
+// length change, a program download, or PLL lock loss; held for 16 clocks.
+// A finished download selects the loaded image; a program change, the
+// built-in program.
+wire       load = ioctl_download && ioctl_index[5:0] == 6'd1;
 reg  [2:0] reset_sync = '1;
 reg  [3:0] program_q = 0;
 reg  [4:0] reset_count = '1;
-wire       reset_req = reset_sync[2] | status[0] | buttons[1] | ~pll_locked |
+reg        load_q = 0;
+reg        image = 0;
+wire       reset_req = reset_sync[2] | status[0] | buttons[1] | ~pll_locked | load |
                        (program_q != {program_sel, status[3]});
 wire       core_reset = |reset_count;
 
 always @(posedge clk_sys) begin
 	reset_sync <= {reset_sync[1:0], RESET};
 	program_q <= {program_sel, status[3]};
+	load_q <= load;
+	if (load_q && !load) image <= 1;
+	else if (program_q[3:1] != program_sel) image <= 0;
 	if (reset_req) reset_count <= '1;
 	else if (core_reset) reset_count <= reset_count - 1'd1;
 end
@@ -231,6 +252,8 @@ ppc603e_mister #(
 	.save_i(save_start), .save_busy_o(save_busy), .save_done_o(save_done),
 	.sd_lba_o(sd_lba), .sd_wr_o(sd_wr), .sd_ack_i(sd_ack),
 	.sd_buff_addr_i(sd_buff_addr[8:0]), .sd_buff_din_o(sd_buff_din),
+	.image_i(image), .ioctl_download_i(load), .ioctl_wr_i(ioctl_wr), .ioctl_addr_i(ioctl_addr),
+	.ioctl_dout_i(ioctl_dout), .ioctl_wait_o(ioctl_wait),
 	.console_valid_o(), .console_data_o(),
 	.exit_valid_o(exit_valid), .exit_code_o(exit_code), .checkstop_o(checkstop)
 );

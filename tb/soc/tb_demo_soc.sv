@@ -20,7 +20,7 @@ module tb_demo_soc #(
   logic [7:0] r, g, b, console_data;
   logic [31:0] exit_code;
 
-  // The external framebuffer ports are unused with the on-chip framebuffer.
+  // The external framebuffer and memory ports are unused here.
   /* verilator lint_off PINCONNECTEMPTY */
   ppc603e_demo_soc #(.CE_DIV(2), .ENABLE_FPU(ENABLE_FPU),
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL))) soc (
@@ -30,7 +30,10 @@ module tb_demo_soc #(
     .console_valid_o(console_valid), .console_data_o(console_data),
     .exit_valid_o(exit_valid), .exit_code_o(exit_code),
     .fb_we_o(), .fb_addr_o(), .fb_be_o(), .fb_data_o(), .fb_hold_i(1'b0),
-    .pal_we_o(), .pal_addr_o(), .pal_data_o(), .checkstop_o(checkstop)
+    .pal_we_o(), .pal_addr_o(), .pal_data_o(),
+    .xmem_map_i(1'b0), .xmem_req_o(), .xmem_we_o(), .xmem_burst_o(), .xmem_addr_o(), .xmem_be_o(),
+    .xmem_wdata_o(), .xmem_ack_i(1'b0), .xmem_rdata_i('0), .xmem_rvalid_i(1'b0),
+    .checkstop_o(checkstop)
   );
   /* verilator lint_on PINCONNECTEMPTY */
 

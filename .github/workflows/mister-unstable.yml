@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Kevin Dedon
 # Rolling MiSTer build of main, published as the "unstable" prerelease: the
-# test core (COMPACT FPU, dual dispatch, pipelined load/store unit). The
+# test core (COMPACT FPU, dual dispatch, pipelined load/store unit) and the
+# redistributable program images. The
 # release and its tag are replaced on every run; a build with negative slack
 # fails and publishes nothing.
 name: mister-unstable
@@ -34,11 +35,13 @@ jobs:
         run: ci/step.sh toolchain/build-container.sh
       - name: Build the core
         run: ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe
+      - name: Program images
+        run: cp build/mister/images/ppc603e-{selftest,whetstone,whetstone-hf}.bin build/mister/
       - name: Release notes
         run: |
           previous="$(git describe --tags --abbrev=0 --exclude unstable 2>/dev/null || true)"
           python3 ci/release_notes.py --unstable --title "Unstable build" ${previous:+--since "${previous}"} \
-            build/mister/*.json > notes.md
+            build/mister/*.json --images build/mister/*.bin > notes.md
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -46,4 +49,4 @@ jobs:
           gh release delete unstable --yes --cleanup-tag || true
           gh release create unstable --prerelease --target "${GITHUB_SHA}" \
             --title "Unstable build ${GITHUB_SHA::10}" --notes-file notes.md \
-            build/mister/*.rbf build/mister/*.json
+            build/mister/*.rbf build/mister/*.json build/mister/*.bin

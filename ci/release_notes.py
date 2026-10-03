@@ -3,6 +3,7 @@
 # Copyright (c) 2026 Kevin Dedon
 """Write markdown release notes from build summaries, the pins and git metadata."""
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -42,6 +43,7 @@ def main():
     parser.add_argument("--since", default="", help="list commits since this ref")
     parser.add_argument("--repo-url", default="")
     parser.add_argument("--unstable", action="store_true")
+    parser.add_argument("--images", nargs="*", type=Path, default=[], help="published program images")
     args = parser.parse_args()
 
     summaries = [json.loads(path.read_text()) for path in args.summaries]
@@ -51,7 +53,8 @@ def main():
     embench = pin("toolchain/demo/fetch-benchmarks.sh", r"embench/embench-iot/([0-9a-f]{40})")
     pins = dict(line.split("=", 1) for line in (REPO / "ci/pins.env").read_text().splitlines()
                 if "=" in line and not line.startswith("#"))
-    names = [s["name"] for s in summaries]
+    images = sorted(args.images, key=lambda path: path.name)
+    names = [s["name"] for s in summaries] + [path.name for path in images]
 
     out = [f"# {args.title or args.tag or 'Unstable build'}", ""]
     if args.unstable:
@@ -66,6 +69,14 @@ def main():
         out += ["## Fit and timing", "", "Slack in ns, worst over clocks and corners; each build's own SDC is the gate.",
                 "", table(summaries), "", "<details><summary>Slack per clock and corner</summary>", "",
                 detail(summaries), "", "</details>", ""]
+
+    if images:
+        out += ["## Program images", "",
+                "Copy to `games/PPC603e/` on the SD card and open one with the core's OSD entry "
+                f"`Load program` ([MiSTer core]({url}/blob/{commit}/docs/MISTER_CORE.md#loading-programs)).",
+                "", "| File | SHA-256 |", "| --- | --- |"]
+        out += [f"| `{path.name}` | `{hashlib.sha256(path.read_bytes()).hexdigest()}` |" for path in images]
+        out += [""]
 
     out += ["## Pins", "",
             "| Input | Pin |", "| --- | --- |",
@@ -82,17 +93,17 @@ def main():
             f"[`{commit[:12]}`]({url}/tree/{commit}) and the framework at "
             f"[`{framework[:12]}`](https://github.com/MiSTer-devel/Template_MiSTer/tree/{framework}).", ""]
     if any("embench" in name for name in names):
-        out += ["**GPL-3.0 build:** the Embench bitstream's program RAM holds Embench-IoT object code "
-                "(GPL-3.0-or-later), so that image is GPL-3.0. Source offer: its corresponding source, offered from "
-                "the same place as the image under GPL-3.0 section 6(d), is "
+        out += ["**GPL-3.0 build:** the Embench bitstream's program RAM, or the Embench program image, holds "
+                "Embench-IoT object code (GPL-3.0-or-later), so that file is GPL-3.0. Source offer: its "
+                "corresponding source, offered from the same place as the image under GPL-3.0 section 6(d), is "
                 f"this repository at [`{commit[:12]}`]({url}/tree/{commit}), Embench-IoT at "
                 f"[`{embench[:12]}`](https://github.com/embench/embench-iot/tree/{embench}), and the pinned "
                 "compiler and runtime sources listed in `docs/BENCHMARKS.md`; the attached "
                 "`embench-source.tar.gz` holds all of them. Check that the combination with the GPL-2.0 "
                 "framework is acceptable before redistributing the image.", ""]
     if any("nbench" in name for name in names):
-        out += ["**nbench build:** BYTE's nbench code carries no stated licence. The nbench bitstream is for "
-                "measurement; do not redistribute it without checking the terms.", ""]
+        out += ["**nbench build:** BYTE's nbench code carries no stated licence. The nbench bitstream or image "
+                "is for measurement; do not redistribute it without checking the terms.", ""]
 
     if args.since:
         log = git("log", "--no-merges", "--format=- %s (`%h`)", f"{args.since}..{commit}")

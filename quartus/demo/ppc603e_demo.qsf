@@ -64,6 +64,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_ram_sp_be.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_ram_dp_be.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_perf_counters.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_video.sv
+set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/soc_xmem_bridge.sv
 set_global_assignment -name SYSTEMVERILOG_FILE ../../rtl/soc/ppc603e_demo_soc.sv
 set_instance_assignment -name VIRTUAL_PIN ON -to rst_ni
 set_instance_assignment -name VIRTUAL_PIN ON -to int_n_i
@@ -81,3 +82,13 @@ set_instance_assignment -name VIRTUAL_PIN ON -to console_data_o[*]
 set_instance_assignment -name VIRTUAL_PIN ON -to exit_valid_o
 set_instance_assignment -name VIRTUAL_PIN ON -to exit_code_o[*]
 set_instance_assignment -name VIRTUAL_PIN ON -to checkstop_o
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_map_i
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_req_o
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_we_o
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_burst_o
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_addr_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_be_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_wdata_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_ack_i
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_rdata_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to xmem_rvalid_i

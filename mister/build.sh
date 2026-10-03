@@ -17,6 +17,9 @@
 # COMPACT FPU instead: the same results in less area, with longer latencies. --dual
 # builds the processor with dual dispatch and retirement (DISPATCH_WIDTH 2).
 # --lsu-pipe builds it with the pipelined load/store unit (ENABLE_LSU_PIPE).
+# Every core loads program images from the OSD (Load program); the build
+# also writes the images to build/mister/images. --analyze runs Quartus
+# analysis and elaboration only.
 set -euo pipefail
 clean=0
 native=0
@@ -24,11 +27,13 @@ fpu=0
 fpu_compact=0
 dual=0
 lsu_pipe=0
+analyze=0
 suite=""
-usage() { echo "usage: $0 [--clean] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone]" >&2; exit 2; }
+usage() { echo "usage: $0 [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone]" >&2; exit 2; }
 while (($#)); do
   case "$1" in
     --clean) clean=1 ;;
+    --analyze) analyze=1 ;;
     --native) native=1 ;;
     --fpu) fpu=1 ;;
     --fpu-compact) fpu=1; fpu_compact=1 ;;
@@ -63,7 +68,8 @@ fi
 
 "${here}/fetch-framework.sh"
 "${repo}/toolchain/demo/fetch-benchmarks.sh"
-"${repo}/toolchain/build-in-container.sh" -f demo/Makefile "${firmware}" "GIT_SHORT=${short}"
+"${repo}/toolchain/build-in-container.sh" -f demo/Makefile "${firmware}" mister-images "GIT_SHORT=${short}"
+echo "images: $(cd "${repo}" && ls build/mister/images/*.bin | tr '\n' ' ')"
 mkdir -p "${here}/firmware"
 cp "${repo}/toolchain/build/demo/${firmware}.hex" "${here}/firmware/mister.hex"
 # Depth is RAM_BYTES / 8 of ppc603e_mister.
@@ -102,12 +108,24 @@ if [[ "${lsu_pipe}" == 1 ]]; then
   echo 'set_global_assignment -name VERILOG_MACRO "PPC_LSU_PIPE=1"' >> "${here}/ppc603e.qsf"
 fi
 status=0
+if [[ "${analyze}" == 1 ]]; then
+  # The flow's pre-flow script writes this file; analysis alone does not run it.
+  printf '`define BUILD_DATE "%s"' "$(date +%y%m%d)" > "${here}/build_id.v"
+  flow=(quartus_map ppc603e -c ppc603e --analysis_and_elaboration)
+else
+  flow=(quartus_sh --flow compile ppc603e -c ppc603e)
+fi
 # One Quartus build at a time on a shared machine.
 flock /tmp/ppc603e-quartus.lock docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
   --workdir /work/mister "${image}" \
-  /opt/intelFPGA_lite/quartus/bin/quartus_sh --flow compile ppc603e -c ppc603e \
+  "/opt/intelFPGA_lite/quartus/bin/${flow[0]}" "${flow[@]:1}" \
   > "${here}/output_files.log" 2>&1 || status=$?
 mv "${here}/ppc603e.qsf.keep" "${here}/ppc603e.qsf"
+if [[ "${analyze}" == 1 ]]; then
+  grep -E "^(Error|Critical Warning)|Info: Quartus.*Analysis & Synthesis was successful" "${here}/output_files.log" || true
+  echo "quartus exit status ${status}"
+  exit "${status}"
+fi
 
 out="${here}/output_files"
 # A RAM whose init file was not read would boot from zeros.

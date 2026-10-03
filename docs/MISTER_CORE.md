@@ -1,19 +1,23 @@
 # MiSTer core
 
 The [demonstration system](DEMO_SOC.md) packaged as a MiSTer (DE10-Nano) core, for
-running the benchmarks on hardware. The firmware is baked into block RAM when the core
-is built; there is no loading from the HPS. The OSD selects the program.
+running the benchmarks on hardware. The built-in firmware is baked into block RAM when
+the core is built, and the OSD selects its program. The opcode self-test, Embench,
+nbench and Whetstone load from the SD card into DDR3 and run from there
+([Loading programs](#loading-programs)), so one core runs every program.
 
 Sources: [`mister/`](../mister) (emu top, core body, PLL, Quartus project, build
 scripts), [`toolchain/demo/mister.c`](../toolchain/demo/mister.c) (program selector and
-summary), [`tb/mister/tb_mister.sv`](../tb/mister/tb_mister.sv) (Verilator bench).
+summary), [`rtl/soc/soc_xmem_bridge.sv`](../rtl/soc/soc_xmem_bridge.sv) (DDR3 program
+memory on the 60x bus), [`tb/mister/`](../tb/mister) (Verilator benches).
 
 ## Structure
 
 | Block | File | Role |
 |---|---|---|
 | `emu` | `mister/ppc603e.sv` | Framework top: `hps_io`, OSD, PLL, reset, video and framebuffer wiring |
-| `ppc603e_mister` | `mister/rtl/ppc603e_mister.sv` | Demo SoC; with `FB_EXTERNAL`, also the posted-write FIFO and DDRAM writer |
+| `ppc603e_mister` | `mister/rtl/ppc603e_mister.sv` | Demo SoC; the DDRAM port shared by the image loader, the program bridge and, with `FB_EXTERNAL`, the framebuffer FIFO and screen save |
+| `soc_xmem_bridge` | `rtl/soc/soc_xmem_bridge.sv` | In the demo SoC: a loaded image's memory, as a 60x slave with a line buffer |
 | `pll` | `mister/rtl/pll.v` | 50 MHz core clock from the 50 MHz board clock |
 
 - One clock, `clk_sys` at 50 MHz, drives the processor, the SoC, `DDRAM_CLK`, `CLK_VIDEO`
@@ -21,7 +25,8 @@ summary), [`tb/mister/tb_mister.sv`](../tb/mister/tb_mister.sv) (Verilator bench
 - Program RAM: 128 KiB of block RAM at `0xfff00000`, preloaded with the firmware image
   (`mister.hex` in simulation, `mister.mif` in synthesis, where `soc_ram_sp_be` instantiates
   `altsyncram` with byte enables because the inferred RAM loses its contents). The
-  benchmarks run entirely from on-chip memory, so their numbers carry no DDR3 latency.
+  built-in programs run entirely from on-chip memory, so their numbers carry no DDR3
+  latency. A loaded image replaces this range with DDR3.
 - Framebuffer: 8-bit indexed with a 256-entry RGB palette, stride equal to the width.
   The firmware reads its address and geometry from the SoC registers (`FB_ADDR`,
   `FB_STRIDE`, `FB_SIZE`) and lays the screen out to fit. Two builds:
@@ -91,10 +96,12 @@ file to PNG (`mister/fb2png.py screen.pfb screen.png`) and makes the empty 2 MiB
 | Program (`--fpu` core) | 7:5 | Hello, Dhrystone, CoreMark, Whetstone, FP Mandelbrot, Run all |
 | Length | 3 | Full (default), Smoke test |
 | Screen file | S0 | Mounts the `.pfb` file a save writes (DDR3 build) |
+| Load program | F1, `.BIN` | Downloads a program image and runs it ([Loading programs](#loading-programs)) |
 | Save screen | 4 | Writes the framebuffer and palette to the mounted file (DDR3 build) |
 | Restart | 0 | Resets the processor and runs the selection again |
 
-Changing Program or Length also restarts. The core reports to the OSD info line when a
+Changing Program or Length also restarts; changing Program also leaves a loaded image
+for the built-in one. The core reports to the OSD info line when a
 program ends: `Finished: PASS`, `Finished: FAIL (see screen)`, or `Checkstop`. The
 numbers are drawn on the screen only; the framework has no way to show core text in
 the OSD. A save reports `Screen saved`, or `Screen file: mount a writable file of 2 MiB`
@@ -149,6 +156,48 @@ BSS (66 KiB of code and data), against 50 KiB for `mister.hex`, so the `--fpu` c
 default RAM. The FPU-less core does not get a soft-float Mandelbrot: it would need
 the soft-fp library and would take several minutes at 1920 × 1080.
 
+### Loading programs
+
+`Load program` opens the file browser in `games/PPC603e/` on the SD card. The file is a
+memory image of the program RAM range: byte n runs at `0xfff00000 + n`, so the reset
+vector, `0xfff00100`, is byte 256. The images `mister/build.sh` writes to
+`build/mister/images/` are the `--suite` cores' firmware in this form: the same ELF files
+(`mister-bench.ld`, 256 KiB, or `selftest.ld`), copied with `objcopy -O binary` after
+256 zero bytes. `toolchain/build-in-container.sh -f demo/Makefile mister-images` builds
+them alone.
+
+| File | Program | Notes |
+|---|---|---|
+| `ppc603e-selftest.bin` | Opcode self-test, 603e ([SELFTEST.md](SELFTEST.md)) | Runs the floating-point cases on an FPU core |
+| `ppc603e-embench.bin` | Embench-IoT, full repeats ([BENCHMARKS.md](BENCHMARKS.md)) | GPL-3.0 ([Licensing](#licensing)) |
+| `ppc603e-nbench.bin` | nbench, full sizes | Do not redistribute ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)) |
+| `ppc603e-whetstone.bin` | Whetstone, soft-float | Any core |
+| `ppc603e-whetstone-hf.bin` | Whetstone, hard-float | FPU cores; elsewhere exits `0xe0000800` (`FAIL`) |
+
+The download is the framework's ROM load (`ioctl`, 8-bit, index 1). The core holds the
+processor in reset throughout and writes each byte to DDR3 at `0x34000000 + n` with one
+DDRAM write of one byte lane; `ioctl_wait` holds the HPS while a byte waits for the
+port. Bytes past 1 MiB are dropped. When the download ends the core restarts with the
+image mapped: the processor's `0xfff00000`–`0xffffffff` (1 MiB) is DDR3 from
+`0x34000000`, and the on-chip program RAM is out of the map. `Restart` and `Length` rerun
+the image; changing `Program` returns to the built-in programs, and loading again
+replaces the image. Results show as in the suite cores: the program's screen and the OSD
+`Finished` line.
+
+The demo SoC's `soc_xmem_bridge` serves the window as a 60x slave. A read tenure holds
+off its data grant until the bridge has the 32-byte line (one four-beat DDRAM burst), or
+the single doubleword, in a buffer; the beats then run at full rate. A write tenure runs
+into the buffer and is stored one doubleword per DDRAM write after it ends, while the
+60x grant is held. The DDRAM port takes one read at a time and serves the screen save's
+reads, the bridge's reads, the loader, the bridge's writes and the framebuffer FIFO in
+that order.
+
+Start-up maps the range through BAT0 as cacheable (`crt0.S`), so cache hits run as on
+chip; instruction fetches before the BATs are set, misses and castouts pay the DDR3
+latency (about 100 ns or more, shared with Linux on the HPS). Benchmark results from a
+loaded image are therefore lower than from the on-chip `--suite` cores and may vary
+between runs; compare like with like. `--suite` builds remain for on-chip numbers.
+
 ## Results summary
 
 Text uses the 8 × 8 font scaled to the screen: three times at 1920 × 1080 (24-pixel
@@ -202,8 +251,14 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh [--clean] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone]
+mister/build.sh [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone]
+mister/build.sh --clean --fpu-compact --dual --lsu-pipe   # the test core
 ```
+
+The test core is the one to load programs into: COMPACT FPU, dual dispatch and the
+pipelined load/store unit. Every build has `Load program`.
+`--analyze` stops after Quartus analysis and elaboration, a quick check of RTL
+changes against Quartus 17.
 
 `--native` builds the 320 × 240 native-video variant; the default is the 1920 × 1080 DDR3
 framebuffer. `--suite` builds a core for one benchmark suite instead of hello, Dhrystone
@@ -216,7 +271,8 @@ processor with its FPU (see [FPU cores](#fpu-cores)). Needs Docker, network acce
    `sys/` only, into `mister/sys/`, checked against a SHA-256 digest of the tree;
 2. fetches the benchmark sources and builds `mister.hex` in the cross-compiler container,
    copying it to `mister/firmware/` and converting it to `mister.mif` (16384 64-bit words)
-   with `mister/hex2mif.py`;
+   with `mister/hex2mif.py`; it also builds the loadable images into
+   `build/mister/images/`;
 3. generates `mister/files.qip` from `rtl/chip_files.f` and `rtl/soc/files.f`;
 4. compiles in the Quartus image (under `flock /tmp/ppc603e-quartus.lock`) and prints
    resources, the program RAM's row of the fitter RAM summary (which names its init
@@ -230,7 +286,9 @@ writes under `mister/` are ignored by git.
 ### Benchmark suite cores
 
 nbench and Embench-IoT ([BENCHMARKS.md](BENCHMARKS.md)) do not fit beside the other
-programs in 128 KiB, so each gets its own core:
+programs in 128 KiB. They load into any core from DDR3
+([Loading programs](#loading-programs)); for numbers without DDR3 latency, each also
+builds as its own core running from on-chip RAM:
 
 ```sh
 mister/build.sh --clean --suite nbench    # mister/output_files/ppc603e_nbench.rbf
@@ -338,7 +396,9 @@ saves 153 sectors. Simulation only; no fit.
 The framework (`sys/`) is GPL-2.0 and is not in this repository. The core's own files
 are MIT, which is GPL-compatible; a built `.rbf` contains both, so a distributed `.rbf`
 is covered by GPL-2.0 and must come with its sources (this repository at the commit in
-the summary, and the framework commit above).
+the summary, and the framework commit above). The program images carry no framework
+code; the Embench image is GPL-3.0 and the nbench image is not for redistribution
+([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)).
 
 ## Running on the MiSTer
 
@@ -373,6 +433,20 @@ the summary, and the framework commit above).
 
 Garbage on the screen before the first program draws is the previous contents of that
 DDR3 region; the firmware clears it.
+
+To run the self-test, Embench, nbench or Whetstone on the same core:
+
+1. Copy the images to `games/PPC603e/` on the card, e.g.
+   `ssh root@<mister-ip> mkdir -p /media/fat/games/PPC603e` and
+   `scp build/mister/images/*.bin root@<mister-ip>:/media/fat/games/PPC603e/`. Release
+   pages carry `ppc603e-selftest.bin`, `ppc603e-whetstone.bin` and
+   `ppc603e-whetstone-hf.bin`; build the others with `mister/build.sh` or
+   `toolchain/build-in-container.sh -f demo/Makefile mister-images`.
+2. In the OSD, `Load program` → pick the file. The core loads it, restarts and runs it;
+   the OSD shows `Finished: PASS` or `FAIL` at the end.
+   The self-test pages with the arrows, A/Enter and B/Esc.
+3. `Restart` reruns the image. Choose an entry under `Program` to return to the
+   built-in programs.
 
 ## Verification
 
@@ -504,6 +578,36 @@ FPU result (an FP load's, matching the stale head tag of an empty FP queue) agai
 integer `cmpwi` retiring at the same time. The hardware commits only at the FP head, so
 the assertion now checks only the FP head's retirement. This does not cover the
 full-length runs, the 1920 × 1080 geometry, or the `--fpu-compact` core with this image.
+
+### Program loading in simulation
+
+`make -C sim test-mister-load` builds `tb_mister_load` with the test core's options
+(COMPACT FPU, width 2, pipelined LSU) at 320 × 240. For each image in
+`MISTER_LOAD_IMAGES` (default `selftest whetstone-hf`, the `mister-images-smoke` sizes)
+it downloads the file through the ioctl port into a DDR3 model with pseudo-random
+`BUSY`, a 24-cycle read latency and gaps between beats, checks every byte in DDR3, then
+runs the image from DDR3 with the on-chip RAM zeroed to a zero exit. After the first
+image the core restarts without it and runs the on-chip `mister-fpu.hex` (hello), which
+must read no DDR3. The bench checks the Avalon handshake and burst sizes, that commands
+stay inside the image and framebuffer regions, that the host never strobes under
+`ioctl_wait`, and that the screen is not blank.
+
+Recorded: `make -C sim test-mister-load`, commit 2fc1bb4, 2026-10-03. Passes.
+
+| Run | Cycles from reset to exit | DDRAM reads (beats) | Image writes | Framebuffer writes |
+|---|---:|---:|---:|---:|
+| `ppc603e-selftest-smoke.bin` (148,872 bytes) | 70,828,553 | 178,594 (195,262) | 1,056 | 592,896 |
+| `mister-fpu.hex` hello, on chip | 23,995,552 | 0 | 0 | |
+| `ppc603e-whetstone-hf-smoke.bin` (40,312 bytes) | 5,332,649 | 2,767 (10,897) | 4,316 | 56,112 |
+
+The self-test passes 1218 of 1218 cases, floating point included; Whetstone's ten
+modules match, at 14.659 MWIPS at 50 MHz against 20.3 from on-chip RAM
+([BENCHMARKS.md](BENCHMARKS.md#whetstone)), which is the DDR3 cost under this model's
+latency. `mister-smoke` (DDR3 framebuffer, mode 03, 30,886,209 cycles) and
+`mister-smoke MISTER_FB=0 MISTER_MODE=00` pass on the same commit, and
+`mister/build.sh --analyze --fpu-compact --dual --lsu-pipe` (Quartus 17 analysis and
+elaboration) has no errors. This does not cover the framework's `hps_io`, the HPS's
+real DDR3 latency, a fit, or hardware.
 
 ### Build
 
