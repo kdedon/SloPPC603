@@ -46,6 +46,7 @@ module tb_mister #(
   logic [7:0] ddram_be, pal_addr, console_data;
   logic [23:0] pal_data;
   logic [31:0] exit_code;
+  logic ioctl_wait;
 
   ppc603e_mister #(.FB_EXTERNAL(FB_EXTERNAL), .FB_WIDTH(FB_W), .FB_HEIGHT(FB_H), .FB_BASE(FB_BASE),
     .ENABLE_FPU(ENABLE_FPU), .RAM_BYTES(RAM_BYTES)) dut (
@@ -58,6 +59,8 @@ module tb_mister #(
     .save_i(save), .save_busy_o(save_busy), .save_done_o(save_done),
     .sd_lba_o(sd_lba), .sd_wr_o(sd_wr), .sd_ack_i(sd_ack),
     .sd_buff_addr_i(sd_buff_addr), .sd_buff_din_o(sd_buff_din),
+    .image_i(1'b0), .ioctl_download_i(1'b0), .ioctl_wr_i(1'b0), .ioctl_addr_i('0),
+    .ioctl_dout_i('0), .ioctl_wait_o(ioctl_wait),
     .console_valid_o(console_valid), .console_data_o(console_data),
     .exit_valid_o(exit_valid), .exit_code_o(exit_code), .checkstop_o(checkstop)
   );
@@ -111,6 +114,7 @@ module tb_mister #(
     end
     if (!FB_EXTERNAL && (ddram_we || ddram_rd)) $fatal(1, "DDRAM command with the on-chip framebuffer");
     if (ddram_we && ddram_rd) $fatal(1, "DDRAM read and write together");
+    if (ioctl_wait) $fatal(1, "loader busy without a download");
     // Framebuffer stores enter in bus order; record address, lanes and data.
     if (dut.fb_we) begin
       expect_q.push_back({34'(dut.fb_addr), dut.fb_be, 8'h00, 8'h00, 6'h00});

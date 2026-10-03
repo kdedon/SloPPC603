@@ -163,10 +163,16 @@ make -C sim test-selftest                      # 603e image on the demo SoC benc
 make -C sim test-selftest-fpu                  # the same image on the SoC with ENABLE_FPU
 ./toolchain/build-in-container.sh -f demo/Makefile selftest   # both images
 mister/build.sh --clean --suite selftest       # MiSTer core, PPC603e_selftest_*.rbf
+./toolchain/build-in-container.sh -f demo/Makefile mister-images   # build/mister/images/ppc603e-selftest.bin
 ```
 
-The MiSTer core builds with `MISTER_BENCH` (256 KiB of program RAM, no program menu);
-the image is `mister-selftest.hex`, the 603e image.
+On the MiSTer, any core runs it: copy `ppc603e-selftest.bin` to `games/PPC603e/` and pick
+it with the OSD's `Load program`; it runs from DDR3
+([MISTER_CORE.md](MISTER_CORE.md#loading-programs)). On the test core
+(`--fpu-compact --dual --lsu-pipe`) it includes the floating-point cases.
+`make -C sim test-mister-load` simulates that load and run. The `--suite selftest` core
+runs the same image from on-chip RAM: it builds with `MISTER_BENCH` (256 KiB of program
+RAM, no program menu) around `mister-selftest.hex`, the 603e image.
 
 ## Not covered
 

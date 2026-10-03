@@ -17,6 +17,7 @@ module tb_soc_target_reset;
   logic [31:0] claim_addr, tenures;
   logic [31:3] addr;
   logic [63:0] wdata;
+  logic claim_burst, claim_valid;
 
   soc_bus60x_target dut (
     .clk_i(clk), .rst_ni(rst_n),
@@ -25,13 +26,14 @@ module tb_soc_target_reset;
     .d_i('1),
     .bg_n_o(bg_n), .aack_n_o(aack_n), .dbg_n_o(dbg_n), .ta_n_o(ta_n), .tea_n_o(tea_n),
     .d_o, .dp_o(dp), .claim_addr_o(claim_addr), .claim_i(1'b1),
-    .claim_write_o(claim_write), .req_o(req), .we_o(we), .addr_o(addr), .be_o(be),
+    .claim_write_o(claim_write), .claim_burst_o(claim_burst), .claim_valid_o(claim_valid), .dwait_i(1'b0),
+    .req_o(req), .we_o(we), .addr_o(addr), .be_o(be),
     .wdata_o(wdata), .rdata_i('0), .tenures_o(tenures)
   );
 
   logic unused;
   assign unused = ^{aack_n, ta_n, tea_n, claim_write, d_o, dp, be, claim_addr,
-                    tenures, addr, wdata};
+                    tenures, addr, wdata, claim_burst, claim_valid};
 
   int errors = 0, checks = 0;
 

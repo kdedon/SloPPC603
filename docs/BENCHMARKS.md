@@ -72,15 +72,9 @@ nbench deviates from the reference sizes in two places:
 Every other array is at the reference size, so the integer and memory indices are
 comparable, up to the single-run and run-length differences below.
 
-The default MiSTer core has 128 KiB of program RAM, which neither suite fits; each
-suite has its own 256 KiB core instead (see [MiSTer cores](#mister-cores)).
-
-Larger data would need a data region outside the block RAM. The option considered: DDR3
-through the HPS `DDRAM` port behind the 60x target, as a second slave with an Avalon
-read/write bridge (the MiSTer core already writes the framebuffer there). That is a
-read path with 100+ ns latency, a cache-line fill state machine on the 60x target and
-arbitration with the framebuffer writer: large, and not needed for either suite at the
-sizes above. It is not implemented.
+The default MiSTer core has 128 KiB of program RAM, which neither suite fits. Both load
+from the SD card into DDR3 instead, or build as their own 256 KiB cores (see
+[MiSTer cores](#mister-cores)).
 
 ## nbench
 
@@ -286,6 +280,14 @@ access ([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md)), `whetstone-hf` take
 492,105 cycles: 20.321 MWIPS at 50 MHz (0.4064/MHz), from 14.244 on `04b5bad`.
 
 ## MiSTer cores
+
+Every MiSTer core loads the suite images from the OSD (`Load program`) and runs them from
+DDR3 ([MISTER_CORE.md](MISTER_CORE.md#loading-programs)): `ppc603e-embench.bin`,
+`ppc603e-nbench.bin`, `ppc603e-whetstone.bin` and, on an FPU core,
+`ppc603e-whetstone-hf.bin`, all in `build/mister/images/` after `mister/build.sh`. They
+are the images below, unchanged. Running from DDR3, cache misses and castouts take the
+DDR3 latency, so the scores are lower than from on-chip RAM and vary with the HPS's
+memory traffic; do not compare them with the on-chip suite cores' figures.
 
 The default MiSTer image (`mister.hex`, `toolchain/demo/mister.c`) holds hello, Dhrystone
 and CoreMark behind a selector in 128 KiB; `embench` alone is about 187 KiB. Each suite

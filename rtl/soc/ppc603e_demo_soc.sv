@@ -13,6 +13,9 @@
 // pixel enable every CE_DIV clocks. With FB_EXTERNAL the framebuffer is not
 // on chip: its writes and the palette writes leave through the fb_* and pal_*
 // ports, its reads end with TEA, and the scan-out is a blank 320 x 240.
+// With XMEM_BYTES nonzero and xmem_map_i high, the first XMEM_BYTES from
+// RAM_BASE are external memory on the xmem_* port (soc_xmem_bridge) instead
+// of the RAM; xmem_map_i changes only under reset.
 module ppc603e_demo_soc #(
   parameter logic [31:0] RAM_BASE = 32'hfff0_0000,
   parameter int RAM_BYTES = 262144,
@@ -24,6 +27,8 @@ module ppc603e_demo_soc #(
   parameter int FB_WIDTH = 320,
   parameter int FB_HEIGHT = 240,
   parameter logic [31:0] FB_BASE = 32'hf000_0000,
+  // External memory window, a power of two of at least 32 bytes, or 0.
+  parameter int XMEM_BYTES = 0,
   // Processor clock in MHz, reported in the MODE register.
   parameter int SYS_MHZ = 50,
   // Floating-point unit in the processor, reported in MODE bit 8.
@@ -68,6 +73,17 @@ module ppc603e_demo_soc #(
   output logic       pal_we_o,
   output logic [7:0] pal_addr_o,
   output logic [23:0] pal_data_o,
+  // External memory (soc_xmem_bridge): doubleword offsets in the window.
+  input  logic       xmem_map_i,
+  output logic       xmem_req_o,
+  output logic       xmem_we_o,
+  output logic       xmem_burst_o,
+  output logic [28:0] xmem_addr_o,
+  output logic [7:0] xmem_be_o,
+  output logic [63:0] xmem_wdata_o,
+  input  logic       xmem_ack_i,
+  input  logic [63:0] xmem_rdata_i,
+  input  logic       xmem_rvalid_i,
   // Processor checkstop.
   output logic       checkstop_o
 );
@@ -139,30 +155,33 @@ module ppc603e_demo_soc #(
 
   // ---- 60x target -------------------------------------------------------------
   logic [31:0] claim_addr, tenures;
-  logic claim, claim_hit, claim_write, req, we;
+  logic claim, claim_hit, claim_write, claim_burst, claim_valid, req, we;
+  logic xmem_dwait, xmem_hold;
   logic [31:3] beat_addr;
   logic [7:0] be;
   logic [63:0] wdata, rdata;
 
   soc_bus60x_target target (
     .clk_i, .rst_ni,
-    .br_n_i(br_n), .hold_i(FB_EXTERNAL && fb_hold_i), .ts_n_i(ts_n), .ts_oe_i(ts_oe), .a_i(addr), .tt_i(tt),
+    .br_n_i(br_n), .hold_i((FB_EXTERNAL && fb_hold_i) || xmem_hold), .ts_n_i(ts_n), .ts_oe_i(ts_oe), .a_i(addr), .tt_i(tt),
     .tsiz_i(tsiz), .tbst_n_i(tbst_n), .dbb_n_i(dbb_n), .dbb_oe_i(dbb_oe),
     .d_i({dh_o, dl_o}),
     .bg_n_o(bg_n), .aack_n_o(aack_n), .dbg_n_o(dbg_n), .ta_n_o(ta_n), .tea_n_o(tea_n),
     .d_o(d_to_cpu), .dp_o(dp_to_cpu),
     .claim_addr_o(claim_addr), .claim_i(claim), .claim_write_o(claim_write),
+    .claim_burst_o(claim_burst), .claim_valid_o(claim_valid), .dwait_i(xmem_dwait),
     .req_o(req), .we_o(we), .addr_o(beat_addr), .be_o(be), .wdata_o(wdata),
     .rdata_i(rdata), .tenures_o(tenures)
   );
 
   // ---- decode -----------------------------------------------------------------
-  typedef enum logic [1:0] {SEL_RAM, SEL_FB, SEL_IO} sel_e;
+  typedef enum logic [1:0] {SEL_RAM, SEL_FB, SEL_IO, SEL_XMEM} sel_e;
   sel_e claim_sel, sel, sel_q;
   logic [31:0] beat_byte;
 
-  function automatic logic [1:0] decode(input logic [31:0] a, output logic hit);
+  function automatic logic [1:0] decode(input logic [31:0] a, input logic map, output logic hit);
     hit = 1'b1;
+    if (XMEM_BYTES != 0 && map && a - RAM_BASE < 32'(XMEM_BYTES)) return SEL_XMEM;
     if (a - RAM_BASE < 32'(RAM_BYTES)) return SEL_RAM;
     if (a - FB_BASE < 32'(FB_WORDS * 8)) return SEL_FB;
     if (a - IO_BASE < 32'h1000) return SEL_IO;
@@ -172,17 +191,17 @@ module ppc603e_demo_soc #(
 
   logic unused_hit;
   always_comb begin
-    claim_sel = sel_e'(decode(claim_addr, claim_hit));
+    claim_sel = sel_e'(decode(claim_addr, xmem_map_i, claim_hit));
     // The external framebuffer is write-only.
     claim = claim_hit && !(FB_EXTERNAL && claim_sel == SEL_FB && !claim_write);
     beat_byte = {beat_addr, 3'b000};
-    sel = sel_e'(decode(beat_byte, unused_hit));
+    sel = sel_e'(decode(beat_byte, xmem_map_i, unused_hit));
   end
 
   always_ff @(posedge clk_i) if (req) sel_q <= sel;
 
   // ---- RAM and framebuffer ----------------------------------------------------
-  logic [63:0] ram_rdata, fb_rdata, io_rdata_q, fb_video_data;
+  logic [63:0] ram_rdata, fb_rdata, io_rdata_q, fb_video_data, xmem_rdata;
   logic [31:0] ram_offset, fb_offset;
   logic fb_video_en;
   logic [VIDEO_AW-1:0] fb_video_addr;
@@ -208,6 +227,37 @@ module ppc603e_demo_soc #(
       .b_en_i(fb_video_en), .b_addr_i(fb_video_addr), .b_rdata_o(fb_video_data)
     );
   end
+  if (XMEM_BYTES != 0) begin : g_xmem
+    localparam int XMEM_AW = $clog2(XMEM_BYTES / 8);
+    logic [31:0] claim_offset;
+    logic [XMEM_AW-1:0] offset;
+    logic unused_offset;
+    assign claim_offset = claim_addr - RAM_BASE;
+    assign unused_offset = ^{claim_offset[31:XMEM_AW+3], claim_offset[2:0]};
+    soc_xmem_bridge #(.AW(XMEM_AW)) xmem (
+      .clk_i, .rst_ni,
+      .start_i(claim_valid && claim && claim_sel == SEL_XMEM), .write_i(claim_write),
+      .burst_i(claim_burst), .addr_i(claim_offset[3 +: XMEM_AW]),
+      .dwait_o(xmem_dwait), .hold_o(xmem_hold),
+      .req_i(req && sel == SEL_XMEM), .we_i(we), .beat_i(beat_byte[4:3]), .be_i(be),
+      .wdata_i(wdata), .rdata_o(xmem_rdata),
+      .xmem_req_o, .xmem_we_o, .xmem_burst_o, .xmem_addr_o(offset), .xmem_be_o, .xmem_wdata_o,
+      .xmem_ack_i, .xmem_rdata_i, .xmem_rvalid_i
+    );
+    assign xmem_addr_o = 29'(offset);
+  end else begin : g_no_xmem
+    logic unused_xmem;
+    assign xmem_dwait = 1'b0;
+    assign xmem_hold = 1'b0;
+    assign xmem_rdata = '0;
+    assign xmem_req_o = 1'b0;
+    assign xmem_we_o = 1'b0;
+    assign xmem_burst_o = 1'b0;
+    assign xmem_addr_o = '0;
+    assign xmem_be_o = '0;
+    assign xmem_wdata_o = '0;
+    assign unused_xmem = ^{claim_valid, claim_burst, xmem_ack_i, xmem_rdata_i, xmem_rvalid_i};
+  end
   endgenerate
   assign fb_we_o = FB_EXTERNAL && req && we && sel == SEL_FB;
   assign fb_addr_o = 24'(fb_offset[31:3]);
@@ -218,6 +268,7 @@ module ppc603e_demo_soc #(
     unique case (sel_q)
       SEL_FB: rdata = fb_rdata;
       SEL_IO: rdata = io_rdata_q;
+      SEL_XMEM: rdata = xmem_rdata;
       default: rdata = ram_rdata;
     endcase
 

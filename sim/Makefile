@@ -2339,6 +2339,29 @@ mister-smoke-fpu-all:
 	$(DEMO_FW_MAKE) mister-fpu GIT_SHORT=$$(git rev-parse --short HEAD)
 	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-fpu.hex +MODE=$(MISTER_FPU_MODE) +PPM=$(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).ppm +SAVE=$(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).pfb
 	python3 ../mister/fb2png.py $(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).pfb $(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).png
+# Program images from DDR3 on the test core's configuration (COMPACT FPU, dual
+# dispatch, pipelined LSU): each image of MISTER_LOAD_IMAGES, at simulation
+# size, goes through the ioctl loader into a DDR3 model and runs from there;
+# after the first, the core restarts without it into the on-chip FPU menu
+# image (hello).
+MISTER_LOAD_OUT := $(BUILD_DIR)/mister/load
+MISTER_LOAD_IMAGES ?= selftest whetstone-hf
+MISTER_LOAD_GFLAGS := "-GENABLE_FPU=1'b1" -GFPU_IMPL=1 -GDISPATCH_WIDTH=2 "-GENABLE_LSU_PIPE=1'b1"
+MISTER_LOAD_RTL := $(DEMO_FPU_RTL) ../mister/rtl/ppc603e_mister.sv ../tb/mister/tb_mister_load.sv
+.PHONY: mister-load-model test-mister-load
+lint-mister: lint-mister-load
+lint-mister-load:
+	$(VERILATOR) --lint-only --timing -Wall --top-module tb_mister_load $(MISTER_LOAD_GFLAGS) $(MISTER_LOAD_RTL)
+mister-load-model:
+	mkdir -p $(MISTER_LOAD_OUT)
+	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_mister_load $(MISTER_LOAD_GFLAGS) --Mdir $(MISTER_LOAD_OUT)/model $(MISTER_LOAD_RTL)
+test-mister-load: mister-load-model
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) mister-images-smoke mister-fpu GIT_SHORT=$$(git rev-parse --short HEAD)
+	menu=+MENU=$(DEMO_FW_DIR)/mister-fpu.hex; for i in $(MISTER_LOAD_IMAGES); do \
+	  timeout 3600 ./$(MISTER_LOAD_OUT)/model/Vtb_mister_load $(SIM_ARGS) +MAX_CYCLES=1000000000 \
+	    +IMAGE=$(DEMO_FW_DIR)/images/ppc603e-$$i-smoke.bin $$menu +PPM=$(MISTER_LOAD_OUT)/$$i.ppm || exit 1; \
+	  python3 tools/ppm_to_png.py $(MISTER_LOAD_OUT)/$$i.ppm $(MISTER_LOAD_OUT)/$$i.png; menu=; done
 # Uninitialized-state sweep: core, chip, demo SoC and MiSTer benches rerun
 # with several random initial values (XRAND builds) plus all-zero and all-one
 # state, so a register or memory that is used or written before reset
