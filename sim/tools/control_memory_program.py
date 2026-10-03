@@ -449,6 +449,66 @@ def make_branch_recovery():
     e('illegal')
     return p
 
+def make_branch_fold():
+    # bclr and bcctr fold only when no older instruction writes their LR or
+    # CTR target: returns after long and empty bodies, mtlr/mtctr right
+    # before the branch or a few words earlier, a bdnz before bcctr, linking
+    # forms, conditional forms mispredicted both ways, a decrementing bclr,
+    # a return to a folded b and a nested epilogue. Each case runs at four
+    # code offsets so the branch and its target take both fetch lanes.
+    p=Program();e=p.emit
+    e('addi',1,0,BASE);e('addi',20,0,0);e('addi',21,0,0);e('addi',4,0,1)
+    def nops(n):
+        for _ in range(n):e('ori',0,0,0)
+    for pad in range(4):
+        t=lambda name:f'{name}{pad}'
+        nops(pad)
+        # Return after a body long enough for the bl to retire, and at once.
+        e('b',t('long'),0,1);e('addi',20,20,1);e('b',t('a1'),0,0)
+        p.label(t('long'));nops(4);e('stw',21,1,16*pad);e('lwz',26,1,16*pad);e('addi',21,21,1);e('bclr',20,0,0)
+        p.label(t('a1'));e('b',t('leaf'),0,1);e('addi',20,20,2);e('b',t('a2'),0,0)
+        p.label(t('leaf'));e('bclr',20,0,0)
+        # mtlr and mtctr right before the branch, and four words earlier.
+        p.label(t('a2'));e('addi',3,0,t('c1'));e('mtlr',3);e('bclr',20,0,0);e('illegal')
+        p.label(t('c1'));e('addi',3,0,t('c2'));e('mtlr',3);nops(4);e('bclr',20,0,0);e('illegal')
+        p.label(t('c2'));e('addi',3,0,t('c3'));e('mtctr',3);e('bcctr',20,0,0);e('illegal')
+        p.label(t('c3'));e('addi',3,0,t('c4'));e('mtctr',3);nops(4);e('bcctr',20,0,0);e('illegal')
+        # bdnz leaves CTR at the bcctr target.
+        p.label(t('c4'));e('addi',3,0,t('c5'));e('addi',3,3,1);e('mtctr',3)
+        e('bc',16,0,t('c4b'),0,0);p.label(t('c4b'));e('bcctr',20,0,0);e('illegal')
+        # Predicted taken (y set) and not taken; predicted not taken and taken.
+        p.label(t('c5'));e('addi',3,0,t('bad'));e('mtlr',3);e('mtctr',3);nops(3)
+        e('cmpi',0,4,0);e('bclr',13,2,0);e('addi',20,20,4)
+        e('bcctr',13,2,0);e('addi',20,20,8)
+        e('addi',3,0,t('c6'));e('mtlr',3);nops(3);e('cmpi',0,4,1);e('bclr',12,2,0)
+        p.label(t('bad'));e('illegal')
+        p.label(t('c6'));e('addi',3,0,t('c7'));e('mtctr',3);nops(3);e('cmpi',0,4,1);e('bcctr',12,2,0)
+        e('illegal')
+        # bclrl and bcctrl read the old target and link; the callee returns.
+        p.label(t('c7'));e('addi',3,0,t('f1'));e('mtlr',3);nops(3);e('bclr',20,0,1)
+        e('addi',20,20,16);e('addi',3,0,t('f2'));e('mtctr',3);nops(3);e('bcctr',20,0,1)
+        e('addi',20,20,32);e('b',t('c8'),0,0)
+        p.label(t('f1'));e('bclr',20,0,0)
+        p.label(t('f2'));nops(5);e('bclr',20,0,0)
+        # Decrementing bclr predicted taken: taken twice, then falls through.
+        p.label(t('c8'));e('addi',5,0,3);e('mtctr',5)
+        e('addi',3,0,t('d1'));e('mtlr',3);nops(3)
+        p.label(t('d1'));e('addi',21,21,1);e('stw',21,1,16*pad+4);e('lwz',26,1,16*pad+4);e('bclr',17,0,0)
+        # A return to a folded b.
+        e('addi',3,0,t('rb'));e('mtlr',3);nops(3);e('bclr',20,0,0);e('illegal')
+        p.label(t('rb'));e('b',t('c9'),0,0);e('illegal')
+        # Nested call: the epilogue's mtlr feeds blr at once.
+        p.label(t('c9'));e('b',t('outer'),0,1);e('addi',20,20,64);e('b',t('next'),0,0)
+        p.label(t('outer'));e('mflr',24);e('b',t('inner'),0,1);e('mtlr',24);e('bclr',20,0,0)
+        p.label(t('inner'));nops(pad);e('addi',21,21,1);e('bclr',20,0,0)
+        p.label(t('next'))
+    # A leaf called in a loop: the return folds once the bl retires.
+    e('addi',5,0,8);e('mtctr',5)
+    p.label('loop');e('b','body',0,1);e('add',22,22,21);e('bc',16,0,'loop',0,0)
+    e('stw',20,1,0);e('stw',21,1,4);e('stw',22,1,8);e('illegal')
+    p.label('body');e('addi',21,21,3);e('stw',21,1,64);e('lwz',25,1,64);e('bclr',20,0,0)
+    return p
+
 def make_shifts():
     p=make_program()
     # Prefix real SO=0 record shifts; relocation uses symbolic labels.
@@ -876,9 +936,9 @@ def make_lsu_update():
     for _ in range(8):e('lwzu',6,4,4);e('add',7,6,4)
     e('illegal');return p
 
-def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=False, subcarry=False, subextend=False, subunary=False, subimmediate=False, addimmediate=False, andimmediate=False, unarylogical=False, crtransfer=False, crlogical=False, crstate=False, multiply=False, multiply_high=False, divide_unsigned=False, divide_signed=False, lsu_update=False, compare=False, branch_recovery=False):
+def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=False, subcarry=False, subextend=False, subunary=False, subimmediate=False, addimmediate=False, andimmediate=False, unarylogical=False, crtransfer=False, crlogical=False, crstate=False, multiply=False, multiply_high=False, divide_unsigned=False, divide_signed=False, lsu_update=False, compare=False, branch_recovery=False, branch_fold=False):
     output.mkdir(parents=True,exist_ok=True)
-    p=make_branch_recovery() if branch_recovery else make_compare() if compare else make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_control_program()
+    p=make_branch_fold() if branch_fold else make_branch_recovery() if branch_recovery else make_compare() if compare else make_lsu_update() if lsu_update else make_divide_signed() if divide_signed else make_divide_unsigned() if divide_unsigned else make_multiply_high() if multiply_high else make_multiply() if multiply else make_crstate() if crstate else make_crlogical() if crlogical else make_crtransfer() if crtransfer else make_unarylogical() if unarylogical else make_andimmediate() if andimmediate else make_addimmediate() if addimmediate else make_subimmediate() if subimmediate else make_subunary() if subunary else make_subextend() if subextend else make_subcarry() if subcarry else make_subtract() if subtract else make_insert() if insert else make_arithmetic_shifts() if arithmetic_shifts else make_shifts() if shifts else make_control_program()
     assert p.encode(0,'mflr',(3,))==0x7c6802a6
     assert p.encode(0,'mtctr',(3,))==0x7c6903a6
     assert p.encode(0,'bclr',(20,0,0))==0x4e800020
@@ -936,9 +996,10 @@ if __name__=='__main__':
     ap.add_argument('--lsu-update',action='store_true')
     ap.add_argument('--compare',action='store_true')
     ap.add_argument('--branch-recovery',action='store_true')
+    ap.add_argument('--branch-fold',action='store_true')
     # Both fixtures fit signed D-form immediates; 0x6000 separates unified
     # bus data RAM from the instruction image below 0x4000.
     ap.add_argument('--memory-base',type=lambda x:int(x,0),choices=(0x1000,0x6000),default=BASE)
     args=ap.parse_args()
     BASE=args.memory_base
-    write(args.output,args.shifts,args.arithmetic_shifts,args.insert,args.subtract,args.subcarry,args.subextend,args.subunary,args.subimmediate,args.addimmediate,args.andimmediate,args.unarylogical,args.crtransfer,args.crlogical,args.crstate,args.multiply,args.multiply_high,args.divide_unsigned,args.divide_signed,args.lsu_update,args.compare,args.branch_recovery)
+    write(args.output,args.shifts,args.arithmetic_shifts,args.insert,args.subtract,args.subcarry,args.subextend,args.subunary,args.subimmediate,args.addimmediate,args.andimmediate,args.unarylogical,args.crtransfer,args.crlogical,args.crstate,args.multiply,args.multiply_high,args.divide_unsigned,args.divide_signed,args.lsu_update,args.compare,args.branch_recovery,args.branch_fold)
