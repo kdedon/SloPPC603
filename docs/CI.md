@@ -15,7 +15,7 @@ Release gates and the configuration of record are in [RELEASE.md](RELEASE.md).
 | `ci/release_notes.py` | Writes release notes from summaries, pins and git metadata |
 | `ci/source-archive.sh` | Corresponding source of a benchmark image (repository plus fetched sources) |
 | `ci/free-disk.sh` | Frees runner disk for the Quartus image |
-| `ci/step.sh` | Runs a workflow step; on failure posts its last 40 output lines as an annotation, readable without login |
+| `ci/step.sh` | Runs a workflow step; on failure posts the end of its output as an annotation, readable without login |
 | `.github/workflows/` | Workflows: `quick`, `mister-unstable`, `release` |
 
 ## Pins
