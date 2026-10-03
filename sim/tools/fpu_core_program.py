@@ -83,8 +83,23 @@ MEMORY_SPACING = {'lfd-issue': 15, 'lfd-retire': 15, 'lfs-issue': 15, 'lfs-retir
 PIPE_MEM = False
 
 
-def use_lsu_pipe():
-    LATENCY.update({'lwz': 4, 'stw': 4})
+def use_lsu_pipe(split, pipe_mem):
+    """FP accesses run in the unit: two execute cycles (Table 6-6), then
+    retirement the cycle after, as for FP arithmetic (Figure 6-3). Without
+    pipe_mem the bench memory takes an access every other cycle, which
+    bounds the spacing; a store offers only at the completion-queue head.
+    A 32-bit data path moves a doubleword as two word beats."""
+    LATENCY.update({'lwz': 4, 'stw': 4, 'lfd': 3, 'lfs': 3, 'stfd': 3, 'stfs': 3,
+                    'stfiwx': 3})
+    load = 3 if pipe_mem else 6
+    MEMORY_SPACING.update({'lfd-issue': 3 if pipe_mem else 4, 'lfd-retire': load,
+                           'lfs-issue': 3 if pipe_mem else 4, 'lfs-retire': load,
+                           'stfd-issue': 5, 'stfd-retire': 9, 'stfs-issue': 5,
+                           'stfs-retire': 9, 'fadd-stfd': 3})
+    if split:
+        LATENCY.update({'lfd': 5, 'stfd': 5})
+        MEMORY_SPACING.update({'lfd-issue': 12, 'lfd-retire': 12, 'stfd-issue': 14,
+                               'stfd-retire': 15, 'fadd-stfd': 5})
 
 
 def use_pipe_mem():
@@ -863,7 +878,7 @@ def main():
     if args.dmem_bits == 32:
         use_split_doublewords()
     if args.lsu_pipe:
-        use_lsu_pipe()
+        use_lsu_pipe(args.dmem_bits == 32, args.pipe_mem)
     if args.pipe_mem:
         use_pipe_mem()
     p = build(args.seed, args.random)

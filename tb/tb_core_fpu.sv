@@ -204,8 +204,10 @@ module tb_core_fpu #(
         end
         if (dw && (da == done_addr)) done <= 1'b1;
       end
-      if (dut.special_fp_load_release) fp_released++;
-      if (dut.fp_replay && dut.special_busy) fp_store_cancels++;
+      // With the pipelined load/store unit, FP loads answer there and a
+      // replay removes the unit's younger accesses.
+      if (dut.special_fp_load_release || (dut.fp_rsp_valid && !dut.fp_rsp_fault)) fp_released++;
+      if (dut.fp_replay && (dut.special_busy || !dut.lsu_empty)) fp_store_cancels++;
       if (dut.fp_head && dut.fp_sticky_hold) sticky_stalls++;
       if (dut.dispatch && (probe_cycles.exists(dut.iq_head.pc) != 0))
         dispatch_cycle[dut.iq_head.pc] = cycles;

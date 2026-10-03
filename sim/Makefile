@@ -2051,7 +2051,7 @@ FPU_CORE_SPLIT_IMAGE := $(BUILD_DIR)/core-fpu-split/program.txt
 test-core-fpu-split:
 	mkdir -p $(BUILD_DIR)/core-fpu-split
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_core_fpu -GDMEM_BITS=32 --Mdir $(BUILD_DIR)/core-fpu-split $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
-	python3 tools/fpu_core_program.py --image $(FPU_CORE_SPLIT_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --dmem-bits 32
+	python3 tools/fpu_core_program.py --image $(FPU_CORE_SPLIT_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --dmem-bits 32 $(FPU_CORE_LSU)
 	./$(BUILD_DIR)/core-fpu-split/Vtb_core_fpu +IMAGE=$(FPU_CORE_SPLIT_IMAGE) +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu-split/Vtb_core_fpu +IMAGE=$(FPU_CORE_SPLIT_IMAGE) +STALL=0 $(SIM_ARGS)
 

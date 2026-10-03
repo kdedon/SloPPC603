@@ -129,6 +129,9 @@ module ppc_decode #(
           uop_o.illegal = 1'b0;
           uop_o.special_op = SPECIAL_FPU;
           uop_o.mem_update = ENABLE_FPU && insn_i[26];
+          uop_o.zero_a = insn_i[20:16] == 5'b0;
+          uop_o.use_imm = 1'b1;
+          uop_o.imm = {{16{insn_i[15]}}, insn_i[15:0]};
         end
       end
       6'd59, 6'd63: begin
@@ -487,6 +490,7 @@ module ppc_decode #(
               if (ENABLE_FULL_DECODE && fp_indexed(insn_i[10:1])) begin
                 uop_o.illegal = 1'b0;
                 uop_o.special_op = SPECIAL_FPU;
+                uop_o.zero_a = insn_i[20:16] == 5'b0;
                 // lfsux, lfdux, stfsux, stfdux.
                 uop_o.mem_update = ENABLE_FPU && insn_i[6] && (insn_i[10:1] != 10'd983);
               end

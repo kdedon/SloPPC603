@@ -227,7 +227,10 @@ module ppc_core #(
   // fault, only commit.
   logic dispatch_fp_mem_plain, fp_unsafe_pending;
   logic special_fp_load_overlap, special_fp_load_release, special_fp_store_cancellable;
-  logic fp_mem_store, fp_mem_issue;
+  logic fp_mem_store, fp_mem_issue, fp_mem_pipe, fp_mem_double, fp_mem_pipe_ready;
+  logic fp_launch_valid, fp_store_valid, fp_rsp_valid, fp_rsp_fault, lsu_req_fp;
+  completion_tag_t fp_launch_tag, fp_store_tag, fp_rsp_tag;
+  logic [63:0] fp_store_data, fp_rsp_data;
   ppc_fpu_pkg::ppc_fpu_result_t fp_result;
   logic [31:0] fp_fpscr;
   logic fp_sticky_hold, fp_sticky_waited_q;
@@ -1166,7 +1169,8 @@ module ppc_core #(
     .ENABLE_DEBUG_EXCEPTIONS(ENABLE_DEBUG_EXCEPTIONS),
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE), .ENABLE_LITTLE_ENDIAN(ENABLE_LE),
     .ENABLE_PIN_INTERRUPTS(ENABLE_PIN_INTERRUPTS),
-    .ENABLE_FPU(ENABLE_FPU), .DMEM_BITS(DMEM_BITS), .FPU_IMPL(FPU_IMPL),
+    .ENABLE_FPU(ENABLE_FPU), .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
+    .DMEM_BITS(DMEM_BITS), .FPU_IMPL(FPU_IMPL),
     .CPU_VARIANT(CPU_VARIANT), .HID0_RESET(HID0_RESET), .PLL_CFG(PLL_CFG)
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(sp_dispatch_valid),
@@ -1262,7 +1266,13 @@ module ppc_core #(
     .fp_load_release_o(special_fp_load_release),
     .fp_store_cancellable_o(special_fp_store_cancellable),
     .fp_commit_valid_i(fp_commit), .fp_commit_tag_i(retire_producer),
-    .fp_kill_i(fp_kill_q), .fp_fpscr_o(fp_fpscr)
+    .fp_kill_i(fp_kill_q),
+    .fp_launch_valid_o(fp_launch_valid), .fp_launch_tag_o(fp_launch_tag),
+    .fp_store_valid_o(fp_store_valid), .fp_store_tag_o(fp_store_tag),
+    .fp_store_data_o(fp_store_data),
+    .fp_rsp_valid_i(fp_rsp_valid), .fp_rsp_tag_i(fp_rsp_tag),
+    .fp_rsp_data_i(fp_rsp_data), .fp_rsp_fault_i(fp_rsp_fault),
+    .fp_fpscr_o(fp_fpscr)
   );
   assign context_ir_o = msr[MSR_IR];
   assign context_dr_o = msr[MSR_DR];
@@ -1344,9 +1354,20 @@ module ppc_core #(
   // FP arithmetic, move and FPSCR forms (primary 59/63) read no GPR. After
   // an FP exception the replayed instruction takes the serialized lane,
   // which raises it precisely; so does trace mode.
-  assign fp_uop = ENABLE_FPU && !trace_mode && !fp_replay_q && !bu_branch &&
+  // With the pipelined load/store unit a plain FP access dispatches the
+  // same way, and the unit performs its access.
+  assign fp_uop = (ENABLE_FPU && !trace_mode && !fp_replay_q && !bu_branch &&
     !dispatch_pre.illegal && (dispatch_pre.special_op == SPECIAL_FPU) &&
-    ((iq_head.insn[31:26] == 6'd59) || (iq_head.insn[31:26] == 6'd63));
+    ((iq_head.insn[31:26] == 6'd59) || (iq_head.insn[31:26] == 6'd63))) || fp_mem_pipe;
+  assign fp_mem_pipe = ENABLE_LSU_PIPE && dispatch_fp_mem_plain && !bu_branch &&
+    !dispatch_pre.illegal && (dispatch_pre.special_op == SPECIAL_FPU);
+  // Its sources are committed, and a load waits for older FP work that can
+  // still raise an exception, as an integer access does.
+  assign fp_mem_pipe_ready = lsu_ready && !special_busy && mem_sources_committed_q &&
+    (fp_mem_store || !fp_unsafe_pending);
+  // lfd, stfd and their indexed forms.
+  assign fp_mem_double = (iq_head.insn[31:26] == 6'd31) ?
+    (iq_head.insn[7] && !iq_head.insn[9]) : iq_head.insn[27];
   assign normal_idle = rs_ready && !issue_valid && issue_ready &&
                        !iu_result_valid && sru_idle;
   // Trace mode runs one instruction at a time so its trace boundary is
@@ -1360,7 +1381,7 @@ module ppc_core #(
      (fp_uop && special_mem_overlap && !special_fp_load_overlap) ||
      special_ready) &&
     (dispatch_pre.illegal ||
-     (fp_uop && fp_issue_ready && flags_ready) ||
+     (fp_uop && fp_issue_ready && flags_ready && (!fp_mem_pipe || fp_mem_pipe_ready)) ||
      (normal_uop && alloc_ready && (rs_ready || bu_finished) && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
@@ -1409,10 +1430,12 @@ module ppc_core #(
     if (dispatch_uop.gpr_write) mapped[dispatch_uop.dst] = 1'b1;
     next_sources_committed = ENABLE_LSU_PIPE && iq_peek_valid && iq_pop &&
       !dispatch_uop.mem_update && (iq_peek_head.fault == FETCH_OK) &&
-      (iq_peek_uop.special_op != SPECIAL_FPU) &&
-      (iq_peek_uop.zero_a || !mapped[iq_peek_uop.src_a]) &&
-      (iq_peek_uop.use_imm || !mapped[iq_peek_uop.src_b]) &&
-      ((iq_peek_uop.special_op != SPECIAL_STORE) || !mapped[iq_peek_uop.src_c]);
+      ((iq_peek_uop.special_op == SPECIAL_FPU) ?
+       (((iq_peek_head.insn[20:16] == 5'd0) || !mapped[iq_peek_head.insn[20:16]]) &&
+        ((iq_peek_head.insn[31:26] != 6'd31) || !mapped[iq_peek_head.insn[15:11]])) :
+       ((iq_peek_uop.zero_a || !mapped[iq_peek_uop.src_a]) &&
+        (iq_peek_uop.use_imm || !mapped[iq_peek_uop.src_b]) &&
+        ((iq_peek_uop.special_op != SPECIAL_STORE) || !mapped[iq_peek_uop.src_c])));
   end
   always_ff @(posedge clk_i) begin
     if (!rst_ni) mem_sources_committed_q <= 1'b0;
@@ -1609,10 +1632,14 @@ module ppc_core #(
     if (ENABLE_LSU_PIPE) begin : g_lsu
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS)) lsu (
         .clk_i, .rst_ni,
-        .dispatch_valid_i(dispatch && special_uop && lsu_route),
+        .dispatch_valid_i(dispatch && ((special_uop && lsu_route) || fp_mem_pipe)),
         .dispatch_ready_o(lsu_ready), .uop_i(dispatch_uop),
         .producer_i(alloc_producer), .pc_i(iq_head.pc), .insn_i(iq_head.insn),
-        .ea_i(dispatch_ea), .data_i(arch_c), .le_i(msr_le),
+        .ea_i(dispatch_ea), .data_i(arch_c),
+        .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
+        .fp_launch_valid_i(fp_launch_valid), .fp_launch_tag_i(fp_launch_tag),
+        .fp_store_valid_i(fp_store_valid), .fp_store_tag_i(fp_store_tag),
+        .fp_store_data_i(fp_store_data), .le_i(msr_le),
         .recovery_i(recovery_accepted), .kill_i(recovery_kill),
         .kill_generation_i(recovery_kill_generation),
         .store_authorize_i(retire_ready_i), .queue_head_i(cq_head),
@@ -1620,12 +1647,14 @@ module ppc_core #(
         .req_valid_o(lsu_req_valid), .req_ready_i(dmem_req_ready_i),
         .req_write_o(lsu_req_write), .req_addr_o(lsu_req_addr),
         .req_wdata_o(lsu_req_wdata), .req_wstrb_o(lsu_req_wstrb),
-        .req_spec_o(lsu_req_spec), .req_bytes_o(lsu_req_bytes),
+        .req_spec_o(lsu_req_spec), .req_bytes_o(lsu_req_bytes), .req_fp_o(lsu_req_fp),
         .rsp_valid_i(dmem_rsp_valid_i), .rsp_ready_o(lsu_rsp_ready),
-        .rsp_rdata_i(dmem_rsp_rdata_i[31:0]), .rsp_error_i(dmem_rsp_error_i),
+        .rsp_rdata_i(dmem_rsp_rdata_i), .rsp_error_i(dmem_rsp_error_i),
         .rsp_fault_i(dmem_rsp_fault_i), .rsp_owner_o(lsu_rsp_owner),
         .lane_rsp_ready_i(sp_rsp_ready),
         .result_valid_o(lsu_result_valid), .result_o(lsu_result),
+        .fp_rsp_valid_o(fp_rsp_valid), .fp_rsp_tag_o(fp_rsp_tag),
+        .fp_rsp_data_o(fp_rsp_data), .fp_rsp_fault_o(fp_rsp_fault),
         .adopt_valid_o(lsu_adopt_valid), .adopt_ready_i(special_ready),
         .adopt_response_o(lsu_adopt_response), .adopt_uop_o(lsu_adopt_uop),
         .adopt_producer_o(lsu_adopt_producer), .adopt_pc_o(lsu_adopt_pc),
@@ -1642,6 +1671,14 @@ module ppc_core #(
       assign lsu_req_wstrb = '0;
       assign lsu_req_spec = 1'b0;
       assign lsu_req_bytes = '0;
+      assign lsu_req_fp = 1'b0;
+      assign fp_rsp_valid = 1'b0;
+      assign fp_rsp_tag = '0;
+      assign fp_rsp_data = '0;
+      assign fp_rsp_fault = 1'b0;
+      logic _unused_fp_unit;
+      assign _unused_fp_unit = ^{fp_launch_valid, fp_launch_tag, fp_store_valid, fp_store_tag,
+                                 fp_store_data, fp_mem_double, fp_mem_pipe_ready};
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;
@@ -1687,6 +1724,7 @@ module ppc_core #(
       dmem_req_attr_o.kind = DMEM_NORMAL;
       dmem_req_attr_o.spec = lsu_req_spec;
       dmem_req_attr_o.bytes = lsu_req_bytes;
+      dmem_req_attr_o.fp = lsu_req_fp;
       dmem_req_attr_o.last = 1'b1;
     end
     dmem_rsp_ready_o = lsu_rsp_owner ? lsu_rsp_ready : sp_rsp_ready;
@@ -1896,7 +1934,7 @@ module ppc_core #(
     // FP loads retire only from CQ[0]: the FP tag queue commits its head.
     allocation.cq1_ok = iq_pair.cq1_ok &&
       (!DUAL || (dispatch_pre.special_op != SPECIAL_FPU));
-    allocation.fpr_write = fp_uop && ((iq_pair.unit == UNIT_FPU) || iq_pair.cq1_ok);
+    allocation.fpr_write = fp_uop && ((iq_pair.unit == UNIT_FPU) || iq_pair.cq1_ok || fp_mem_pipe);
   end
   ppc_completion #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
@@ -2078,7 +2116,8 @@ module ppc_core #(
         if (dispatch && fp_uop) begin
           fp_tags_q[fp_slot] <= alloc_producer;
           fp_cr_q[fp_slot] <= dispatch_uop.write_cr_field;
-          fp_safe_q[fp_slot] <= 1'b0;
+          // The unit orders an FP access's fault against younger accesses.
+          fp_safe_q[fp_slot] <= fp_mem_pipe;
         end else if (dispatch1 && d1_fp) begin
           fp_tags_q[fp_slot] <= alloc1_producer;
           fp_cr_q[fp_slot] <= dq1_uop.write_cr_field;
