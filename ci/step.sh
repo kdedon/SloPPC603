@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Kevin Dedon
-# Runs one workflow step and, on failure, repeats the end of its output (the
-# last 3500 characters, under GitHub's annotation limit) as an error
-# annotation, which the public run page shows without login.
+# Runs one workflow step and, on failure, posts an error annotation, which the
+# public run page shows without login: the first 20 lines that look like errors
+# (parallel make interleaves them far from the end), then the end of the output,
+# within GitHub's annotation size limit.
 set -uo pipefail
 log="$(mktemp)"
 "$@" 2>&1 | tee "${log}"
 rc=${PIPESTATUS[0]}
 if ((rc != 0)); then
-  python3 -c 'import sys; t=open(sys.argv[2], errors="replace").read()[-3500:]; print("::error title=" + sys.argv[1] + " failed::" + t.replace("%", "%25").replace("\r", "").replace("\n", "%0A"))' "$1" "${log}"
+  python3 - "$1" "${log}" <<'PY'
+import re, sys
+text = open(sys.argv[2], errors="replace").read()
+errors = [l for l in text.splitlines() if re.search(r"FAIL|[Ee]rror[: ]|\*\*\*|%Error|Assertion", l)][:20]
+body = "errors:\n" + "\n".join(l[:300] for l in errors) + "\n--- end of output:\n"
+body += text[-max(500, 3500 - len(body)):]
+print("::error title=" + sys.argv[1] + " failed::" + body.replace("%", "%25").replace("\r", "").replace("\n", "%0A"))
+PY
 fi
 rm -f "${log}"
 exit "${rc}"
