@@ -401,6 +401,19 @@ Recorded: `make -C sim -j2 ci`, commit 1f2b66c, 2026-09-29.
 
 ### Two processors
 
+Recorded: `make -C sim test-chip-mp test-chip-dcache-coherence
+test-chip-dcache-coherence-negative test-biu-dcache-snoop-mutations
+test-dcache test-dcache-fast test-dcache-mutations`, commit f5757b7,
+2026-10-03; all pass, also with `DISPATCH_WIDTH=2 BUILD_DIR=build-w2-pipe
+VERILATOR="tools/verilate +define+PPC_LSU_PIPE=1"`. `test-chip-mp` seeds 1-3:
+236k-244k cycles, 7970-8227 tenures per processor, 222-283 ARTRYs by each
+processor on the other's tenures, each followed by its push, 318-476 RWITMs
+each, 778-826 target retries. `test-chip-dcache-coherence` seeds 1-3: 25-28
+pushes per seed granted their address tenure ahead of a pending processor
+data tenure; with the previous BIU none are and the bench fails coverage.
+It does not establish DBWO ordering (DBWO is ignored) or more than two
+processors.
+
 `make -C sim test-chip-mp` (`tb/tb_chip_mp.sv`, `tb/bfm/bus60x_mp_bfm.sv`): two
 `ppc603e` instances share TS, A, TT, GBL, AACK and ARTRY, each snooping the other,
 with one arbiter and memory (one tenure at a time, AACK at TS+2 or later, random

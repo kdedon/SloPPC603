@@ -10,7 +10,13 @@ Contract: [CHIP_PACKAGE.md](CHIP_PACKAGE.md).
 
 `make -C sim test-chip-pins` (`tb/tb_chip_pins.sv`) drives and observes only
 the `ppc603e` pins. Each case hard-resets the chip into a small program; its
-handlers store markers to RAM over the bus. PASS: checks=1352, cycles=74139.
+handlers store markers to RAM over the bus.
+
+Recorded: `make -C sim test-chip-pins`, commit f5757b7, 2026-10-03. PASS:
+checks=1616, cycles=111535 (default build; 1617 checks at the other PLL
+ratios of `test-chip-ratios`). Also passes with `DISPATCH_WIDTH=2` and the
+pipelined LSU unit. The parity, foreign-ARTRY and ILOCK rows below are new
+in this record.
 
 | Case | Establishes |
 |---|---|
