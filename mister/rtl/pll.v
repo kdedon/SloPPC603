@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Core clock: 50 MHz from the 50 MHz board clock. The framework constraints
 // find the output clock at *|pll|pll_inst|altera_pll_i|*.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Runs a firmware image on the demo system and echoes its console. When the
 // firmware writes the exit register, one scanned-out frame is captured to a

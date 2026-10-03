@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Direct IU reservation timing for PID7v (20 cycles) and PID6 (37 cycles).
 /* verilator lint_off BLKSEQ */

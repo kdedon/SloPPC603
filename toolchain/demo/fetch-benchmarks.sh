@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Fetches the benchmark sources at pinned upstream commits into
 # toolchain/build/demo/src and checks each file's SHA-256. Nothing fetched

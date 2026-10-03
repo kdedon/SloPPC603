@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* 5x7 glyphs in 8x8 cells for ASCII 0x20-0x7e; bit 7 is the left pixel. */
 #include "soc.h"

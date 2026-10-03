@@ -4,7 +4,7 @@ Two benchmark suites run on the demonstration system ([DEMO_SOC.md](DEMO_SOC.md)
 alongside Dhrystone and CoreMark: nbench (BYTEmark) and Embench-IoT; so does Whetstone,
 built for both the FPU-less processor and `ENABLE_FPU`. Their sources are
 fetched at pinned revisions and never committed; the harness, C library subset and build
-glue in `toolchain/demo/` are this project's (MIT).
+glue in `toolchain/demo/` are this project's (GPL-2.0-or-later).
 
 ## Sources and licences
 

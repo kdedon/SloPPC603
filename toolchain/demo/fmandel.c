@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* The Mandelbrot set of hello.c in double precision, built hard-float: the
  * same view, iteration limit, block passes and drawing, so its cycle count

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // ppc_core with ENABLE_FPU runs a generated program (sim/tools/fpu_core_program.py)
 // from one word-addressed memory. The program logs its exceptions to memory;

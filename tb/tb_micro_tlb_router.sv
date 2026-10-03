@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Micro-TLB equivalence and invalidation bench. Two fully featured routers,
 // one with the micro-TLB and one without, run the same operation list with

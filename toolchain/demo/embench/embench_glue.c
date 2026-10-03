@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Runs the Embench-IoT benchmarks (fetched upstream sources) in sequence:
  * initialise, warm once, time benchmark() on the cycle counter, then check

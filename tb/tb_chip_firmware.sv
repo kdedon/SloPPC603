@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Compiled firmware on the ppc603e package top, driven and observed only at
 // its pins. The 64 KiB image loads at 0xfff00000, the base of 256 KiB of

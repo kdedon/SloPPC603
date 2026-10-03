@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Residuals firmware handlers. Each appends {vector, SRR0, SRR1, MSR} to
  * trap_log. Ordinary handlers run with TGPR clear and save r4-r6 and CR in

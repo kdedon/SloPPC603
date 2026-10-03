@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 """Check reviewed P05 IU edge relations, not full 603e cycle conformance."""
 import argparse

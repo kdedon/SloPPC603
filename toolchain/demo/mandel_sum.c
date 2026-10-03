@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Host tool: prints the checksum hello.c expects for a w x h Mandelbrot
  * view, or with "double" the one fmandel.c expects. Usage:

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Literal architectural/collision anchors, independent of implementation helpers.
 /* verilator lint_off BLKSEQ */

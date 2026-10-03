@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Exact MULLI and MULLW decode checks for the bounded low-word multiply slice.
 module tb_multiply_decode;

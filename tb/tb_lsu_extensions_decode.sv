@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Decode of the load/store extension forms: uop fields per form, rejection
 // with the feature parameters off, reserved-bit mutations and the lmw

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* The subset of the C library the fetched benchmarks and libm use, from
  * libc.c and the demo runtime. */

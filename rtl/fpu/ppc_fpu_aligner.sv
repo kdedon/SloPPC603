@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Right shift with sticky jam of the smaller-exponent add operand, y.

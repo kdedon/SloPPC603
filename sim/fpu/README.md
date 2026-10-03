@@ -4,7 +4,7 @@
 written for this repository. Finite values are integers scaled by powers of
 two; division uses an exact quotient and remainder, and fused arithmetic adds
 the full product before rounding. Its version is 1 and its license is
-[MIT](LICENSE). Pin the repository commit when citing a result.
+[GPL-2.0-or-later](LICENSE). Pin the repository commit when citing a result.
 
 `vectors.py` generates directed raw encodings and seeded random encodings for
 add, subtract, multiply, compare, integer conversion and precision conversion.

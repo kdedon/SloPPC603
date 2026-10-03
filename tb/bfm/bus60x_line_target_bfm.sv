@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Task-driven responder for the bounded four-beat line-read test.
 module bus60x_line_target_bfm (

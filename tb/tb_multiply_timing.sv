@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Direct IU checks for the operand-dependent multiply datapath: exact
 // latency per rB class (603e Table 6-4, or 602 Table 6-2 with VARIANT=4),

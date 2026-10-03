@@ -163,7 +163,7 @@ Each record opens with one line:
   connections to a module absent from the project; package-qualified or `'0`
   enum values on ports (use a typed localparam); untyped assignment patterns.
 - Cite external code as GitHub permalinks at fixed commits; never reference local paths.
-- New source files start with `SPDX-License-Identifier: MIT` and `Copyright (c) 2026 Kevin Dedon`
+- New source files start with `SPDX-License-Identifier: GPL-2.0-or-later` and `Copyright (c) 2026 Kevin Dedon`
   in the file's comment syntax (after any shebang). Do not copy third-party code into the tree.
 - Follow `concise-writing` for comments and commit messages.
 - Run long builds and tests as one command that exits, then grep its log for results;

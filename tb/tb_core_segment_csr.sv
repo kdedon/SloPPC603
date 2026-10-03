@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Independent core/segment-CSR model: instruction operands and committed bank.
 /* verilator lint_off BLKSEQ */

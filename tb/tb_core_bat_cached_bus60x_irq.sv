@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Accepted translated I-cache refill, external IRQ fence, and RFI resume.
 /* verilator lint_off BLKSEQ */

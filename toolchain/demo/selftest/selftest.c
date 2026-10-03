@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Opcode self-test (docs/SELFTEST.md). Runs every generated case, prints a
  * summary and each failure on the console, and draws the results as pages

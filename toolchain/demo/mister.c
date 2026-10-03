@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* MiSTer image: runs the program selected in the MODE register (hello,
  * Dhrystone, CoreMark or all three) at full or smoke-test length, then draws

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // VARIANT is the cpu_variant_e encoding; the 603 has no SRR1[KEY].
 module tb_exception_tlb_miss #(

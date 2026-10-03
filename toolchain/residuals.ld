@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Residuals firmware: link.ld with DSI, alignment, program, decrementer,
  * system-call, trace, data TLB miss and IABR vectors; text above 0x2000. */

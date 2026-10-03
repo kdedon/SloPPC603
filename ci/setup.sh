@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Fetches every external input of the builds at its pin, checking each one:
 #   dingusppc  DingusPPC at LAST_VERIFIED, beside the repository (commit id)

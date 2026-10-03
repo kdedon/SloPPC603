@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // 602 package top. Every port is a signal pin of 602HW Table 10 under its

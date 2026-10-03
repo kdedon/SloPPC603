@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Seeded stress of the translated cached 60x top. Each iteration patches two
 // routines (store/dcbst/sync/icbi/isync), remaps an IBAT alias between them,

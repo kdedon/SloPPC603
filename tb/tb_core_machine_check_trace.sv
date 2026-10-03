@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Core-level machine check, trace and IABR: each cause, its saved state and
 // recovery, and priority against EXT, DEC, ISI, DSI and TLB misses. Programs

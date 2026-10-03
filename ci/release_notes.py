@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 """Write markdown release notes from build summaries, the pins and git metadata."""
 import argparse
@@ -88,7 +88,7 @@ def main():
             f"(https://github.com/MiSTer-devel/Template_MiSTer/tree/{framework}/sys) |", ""]
 
     out += ["## Licences", "",
-            f"The core is MIT. A MiSTer `.rbf` also contains the MiSTer framework (GPL-2.0), so a distributed "
+            f"The core is GPL-2.0-or-later. A MiSTer `.rbf` also contains the MiSTer framework (GPL-2.0), so a distributed "
             f"`.rbf` is covered by GPL-2.0. Its corresponding source is this repository at "
             f"[`{commit[:12]}`]({url}/tree/{commit}) and the framework at "
             f"[`{framework[:12]}`](https://github.com/MiSTer-devel/Template_MiSTer/tree/{framework}).", ""]

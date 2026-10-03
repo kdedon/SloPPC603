@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Console output and read-only in-memory files (libc.c). nbench's output
  * goes through nb_printf, which keeps only its check lines. */

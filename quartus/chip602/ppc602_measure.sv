@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // ppc602 with every pin a virtual port. Each synchronous pin passes one
 // boundary register (*_ibq, *_obq) standing in for the system's flop;

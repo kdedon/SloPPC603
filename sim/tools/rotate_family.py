@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 """Python reference model for reviewed word-rotate forms; rotate_vectors.py feeds it to tb_rotate_execution."""
 

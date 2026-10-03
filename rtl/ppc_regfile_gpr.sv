@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Six asynchronous read ports (rA, rB, rS for each dispatch slot) and one or

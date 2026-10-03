@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // ppc603e on a 60x memory with a second bus master, connected pin to pin.
 // Included in a bench body after `clk` is declared. The bench drives the

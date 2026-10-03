@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Coupled completion/flag-state checks. Procedural test drivers intentionally
 // use blocking assignments around clock edges.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Data cache BIU and snooping bench: the standalone data cache behind the BIU
 // on a 60x bus shared with a second master. The bench models the arbiter

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Runs nbench 2.2.3 (BYTEmark, fetched upstream source) on the demo system,
  * in place of its own driver and system layer: memory from a LIFO arena,

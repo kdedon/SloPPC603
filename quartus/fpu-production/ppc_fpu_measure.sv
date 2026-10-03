@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // FPU fit measurement. Every port passes through one boundary register
 // standing in for the integrator's flop (port P: P_ibq or P_obq).

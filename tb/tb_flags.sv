@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Standalone committed CR/XER and exact single-owner checks.
 /* verilator lint_off BLKSEQ */

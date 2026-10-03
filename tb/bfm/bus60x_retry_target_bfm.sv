@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Resettable 60x target, one tenure at a time, with phase-varied delays and
 // bench-steered retries. Delays follow the delay target: BG follows BR except

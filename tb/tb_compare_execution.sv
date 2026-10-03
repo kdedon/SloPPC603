@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Compare on the IU adder: signed/unsigned boundaries, SO copy, stalled result.
 /* verilator lint_off BLKSEQ */

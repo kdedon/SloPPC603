@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Fixed-literal CPU decode oracle for SDR1 SPR25 transfers.
 /* verilator lint_off BLKSEQ */

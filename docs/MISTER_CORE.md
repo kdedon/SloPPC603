@@ -394,7 +394,7 @@ saves 153 sectors. Simulation only; no fit.
 ### Licensing
 
 The framework (`sys/`) is GPL-2.0 and is not in this repository. The core's own files
-are MIT, which is GPL-compatible; a built `.rbf` contains both, so a distributed `.rbf`
+are GPL-2.0-or-later; a built `.rbf` contains both, so a distributed `.rbf`
 is covered by GPL-2.0 and must come with its sources (this repository at the commit in
 the summary, and the framework commit above). The program images carry no framework
 code; the Embench image is GPL-3.0 and the nbench image is not for redistribution

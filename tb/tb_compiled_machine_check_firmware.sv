@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Compiled machine-check, trace and IABR firmware on the translated cached
 // 60x top. The pin target ends every tenure in the TEA window with TEA and

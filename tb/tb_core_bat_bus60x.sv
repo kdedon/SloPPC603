@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // CPU-programmed BAT identity/alias mapping through scalar 60x pins.
 /* verilator lint_off BLKSEQ */

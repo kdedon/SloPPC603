@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Implements docs/INTERFACE_TIMING_CONTRACT.md (C8 for pins) for the ppc603e
 # package top.

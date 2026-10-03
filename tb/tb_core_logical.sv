@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Full-core validation of the eight non-record register-logical forms.
 // Encoding anchors and the per-bit result oracle are independent of RTL decode/IU logic.

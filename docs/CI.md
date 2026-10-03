@@ -1,4 +1,4 @@
-<!-- SPDX-License-Identifier: MIT -->
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
 <!-- Copyright (c) 2026 Kevin Dedon -->
 # CI and release tooling
 
@@ -15,7 +15,7 @@ Release gates and the configuration of record are in [RELEASE.md](RELEASE.md).
 | `ci/release_notes.py` | Writes release notes from summaries, pins and git metadata |
 | `ci/source-archive.sh` | Corresponding source of a benchmark image (repository plus fetched sources) |
 | `ci/free-disk.sh` | Frees runner disk for the Quartus image |
-| `ci/step.sh` | Runs a workflow step; on failure posts the end of its output as an annotation, readable without login |
+| `ci/step.sh` | Runs a workflow step; on failure posts its error lines and the end of its output as an annotation, readable without login |
 | `.github/workflows/` | Workflows: `quick`, `mister-unstable`, `release` |
 
 ## Pins
@@ -134,15 +134,16 @@ the same two notices to an Embench or nbench image.
 | Workflow | Trigger | Does |
 | --- | --- | --- |
 | `quick.yml` | push, pull request | Verilator 5.020 from Ubuntu 24.04; `lint`, `check-spec`, five focused benches |
-| `mister-unstable.yml` | push to `main` | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`); replaces the `unstable` prerelease with the `.rbf`, its summary, the self-test and Whetstone program images and notes |
+| `mister-unstable.yml` | push to `main`, except docs-only pushes | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`); replaces the `unstable` prerelease with the `.rbf`, its summary, the self-test and Whetstone program images and notes |
 | `release.yml` | tag `v*` | five measurement fits with 66 MHz re-timing, two FPU fits, MiSTer builds (the test core, or `vars.MISTER_SUITES`) with the self-test and Whetstone program images (plus `vars.MISTER_IMAGES`), then a release with notes |
 
 Runner limits (GitHub-hosted `ubuntu-24.04`, public repository):
 
 - About 14 GB free disk. The Quartus image is 11.2 GB unpacked, so every Quartus
   job first runs `ci/free-disk.sh`, which removes preinstalled SDKs.
-- 6 h per job; the workflows cap jobs at 5 h. Fit times on a 4-vCPU runner are
-  unmeasured. Each job pulls the image again, which takes minutes and counts
+- 6 h per job; the workflows cap jobs at 5 h. The first green `mister-unstable` run
+  (commit `28e5531`, 2026-10-03) took 33 min end to end; the other fits are
+  unmeasured on a runner. Each job pulls the image again, which takes minutes and counts
   against Docker Hub's pull limits.
 - 10 GB of Actions cache per repository: too small to cache the Quartus image.
 

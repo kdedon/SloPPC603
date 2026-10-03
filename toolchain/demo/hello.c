@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Colour bars, a fixed-point Mandelbrot set and console text, laid out for
  * the framebuffer geometry the registers report. The set is drawn in passes

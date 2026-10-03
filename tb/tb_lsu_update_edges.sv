@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-core update-form atomicity, memory backpressure, faults and recovery.
 /* verilator lint_off BLKSEQ */

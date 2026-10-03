@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Machine check, trace and IABR handlers plus the traced sequences. Handlers
  * save r10-r12 and CR in SPRG0-3. A machine check in bad_routine's line

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // 60x system around a snooping processor: arbiter, memory target and a
 // second bus master. The second master may pipeline its address tenures: a

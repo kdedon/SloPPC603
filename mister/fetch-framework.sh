@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Fetches the MiSTer framework (sys/ of Template_MiSTer, GPL-2.0) at a pinned
 # commit into mister/sys and checks the tree against a known digest: the

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-core ENABLE_FULL_DECODE: illegal opcodes and invalid forms, tw/twi
 // for every TO condition, FP unavailable (MSR[FP] never sets), PVR, HID0

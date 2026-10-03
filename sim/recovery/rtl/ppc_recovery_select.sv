@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Standalone P06 preparation. Inputs must describe a valid contiguous CQ ring.
 // Decisions use pre-edge state; the caller applies any surviving retirement later.

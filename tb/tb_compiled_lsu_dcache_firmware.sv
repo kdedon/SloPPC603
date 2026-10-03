@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // The compiled load/store-extension firmware with the data cache in the
 // translated cached top, on from reset, on one randomized 60x memory with

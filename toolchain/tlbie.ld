@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* TLB invalidation firmware variant of link.ld, with the high vector installed. */
 ENTRY(_start)

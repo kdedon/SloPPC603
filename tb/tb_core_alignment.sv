@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Independent exception-flow oracle; observes only ports and retired instructions.
 // DSISR anchors follow UM Table 4-13 (printed 4-27), PowerPC bit numbering.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Reset-window timing observes interrupt_admit only; expected architectural
 // state comes from retired instructions, public events and context handshakes.

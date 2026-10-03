@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Accepted physical refill drain, maintenance, redirect, and line TEA.
 /* verilator lint_off BLKSEQ */

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-core cache control: icbi holds until its invalidation completes and
 // cannot be withdrawn by a cut; probes carry the probe marker and translate

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Dual dispatch and dual retirement, cycle by cycle: which neighbours pair
 // in DQ0/DQ1 and in CQ[0]/CQ[1] (UM 6.6.1.2, 6.6.1.3). Each group follows a

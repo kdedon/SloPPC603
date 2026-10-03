@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual CPU, BAT, committed SR and prefilled DTLB integration. The expected
 // physical effects and GPR results are computed independently of the router.

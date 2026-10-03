@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
 // Shares one 60x pin set between the scalar and line-read masters. Only the

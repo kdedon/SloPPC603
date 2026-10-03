@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Double-precision functions from the fetched musl sources (libm), with
  * soft-float arithmetic from the fetched libgcc soft-fp sources. */

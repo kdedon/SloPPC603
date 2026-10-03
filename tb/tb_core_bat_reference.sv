@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Architectural trace export for the independently compiled DingusPPC runner.
 // Physical memory bases are literal independent checks; no instruction oracle lives here.

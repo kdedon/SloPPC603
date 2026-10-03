@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // 602 core on the cached 60x wrapper: the 4 KiB two-way instruction cache
 // fills and hits from reset with HID0 clear, HID0 bit 16 neither stores nor

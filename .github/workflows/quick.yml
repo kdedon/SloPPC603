@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Quick checks on every push and pull request: strict lint, spec checks and a
 # short set of focused benches. No reference comparison, firmware or Quartus.

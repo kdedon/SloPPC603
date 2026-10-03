@@ -1,5 +1,5 @@
 #!/bin/sh
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Builds the fetched Embench-IoT benchmarks into one relocatable object.
 # Each benchmark's files link into one object whose entry points are renamed

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Map production FPU variants and run post-map STA. A *fit variant also fits
 # the shell with clk_i on a real pin and times the fitted netlist. The compact

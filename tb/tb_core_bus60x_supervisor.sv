@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Execute the optional supervisor/barrier profile through real scalar bus pins.
 // Disabled mode checks that the same SC still produces the default diagnostic.

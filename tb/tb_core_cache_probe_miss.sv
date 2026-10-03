@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-core data TLB misses on cache-block probes: dcbf/dcbst enter the
 // load-miss vector, dcbi and a C=0 dcbz the store-miss vector, each with the

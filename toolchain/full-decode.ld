@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Full-decode firmware: link.ld with DSI, program, FP-unavailable and system-call vectors. */
 ENTRY(_start)

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-core supervisor exception entry, handler execution, return and
 // recovery-edge checks for the opt-in profile.

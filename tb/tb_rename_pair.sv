@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Rename against a model with two allocations, two releases, a wake, four
 // lookups and recovery rebuilds per cycle: slot choice, same-register WAW,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Quartus analysis and elaboration of ppc602_measure, optionally with the
 # FPU (FULL or COMPACT), in the pinned container. No synthesis or fit. The

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: MIT
+/* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Mandelbrot arithmetic shared by the firmware and the host tool that
  * computes its checksums (mandel_sum.c): fixed point in Q4.12 for hello.c,

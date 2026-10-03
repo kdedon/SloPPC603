@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Writes <out>/ppc603e-<version>.tar.gz from committed sources only, plus a
 # manifest of the commit, pinned images and local tool versions.

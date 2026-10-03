@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Compiled DSI repair/retry firmware through real BAT translation and committed MSR context.
 // Physical byte RAM uses independent delayed/backpressured instruction/data ports.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Actual-core binding of Chapter 6 divide execute cycles to accepted events.
 /* verilator lint_off BLKSEQ */

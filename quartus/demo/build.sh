@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Compiles the demonstration system in the reviewed Quartus image and prints
 # resource use and slow-corner Fmax. --clean deletes the outputs afterwards.

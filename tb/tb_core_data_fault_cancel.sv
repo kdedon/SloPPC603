@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Cancellation of a synchronous DSI response at a real outstanding load.
 // Only public request, response, redirect and retirement ports form the oracle.
