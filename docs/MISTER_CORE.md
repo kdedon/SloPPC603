@@ -579,6 +579,36 @@ integer `cmpwi` retiring at the same time. The hardware commits only at the FP h
 the assertion now checks only the FP head's retirement. This does not cover the
 full-length runs, the 1920 × 1080 geometry, or the `--fpu-compact` core with this image.
 
+### Program loading in simulation
+
+`make -C sim test-mister-load` builds `tb_mister_load` with the test core's options
+(COMPACT FPU, width 2, pipelined LSU) at 320 × 240. For each image in
+`MISTER_LOAD_IMAGES` (default `selftest whetstone-hf`, the `mister-images-smoke` sizes)
+it downloads the file through the ioctl port into a DDR3 model with pseudo-random
+`BUSY`, a 24-cycle read latency and gaps between beats, checks every byte in DDR3, then
+runs the image from DDR3 with the on-chip RAM zeroed to a zero exit. After the first
+image the core restarts without it and runs the on-chip `mister-fpu.hex` (hello), which
+must read no DDR3. The bench checks the Avalon handshake and burst sizes, that commands
+stay inside the image and framebuffer regions, that the host never strobes under
+`ioctl_wait`, and that the screen is not blank.
+
+Recorded: `make -C sim test-mister-load`, commit 2fc1bb4, 2026-10-03. Passes.
+
+| Run | Cycles from reset to exit | DDRAM reads (beats) | Image writes | Framebuffer writes |
+|---|---:|---:|---:|---:|
+| `ppc603e-selftest-smoke.bin` (148,872 bytes) | 70,828,553 | 178,594 (195,262) | 1,056 | 592,896 |
+| `mister-fpu.hex` hello, on chip | 23,995,552 | 0 | 0 | |
+| `ppc603e-whetstone-hf-smoke.bin` (40,312 bytes) | 5,332,649 | 2,767 (10,897) | 4,316 | 56,112 |
+
+The self-test passes 1218 of 1218 cases, floating point included; Whetstone's ten
+modules match, at 14.659 MWIPS at 50 MHz against 20.3 from on-chip RAM
+([BENCHMARKS.md](BENCHMARKS.md#whetstone)), which is the DDR3 cost under this model's
+latency. `mister-smoke` (DDR3 framebuffer, mode 03, 30,886,209 cycles) and
+`mister-smoke MISTER_FB=0 MISTER_MODE=00` pass on the same commit, and
+`mister/build.sh --analyze --fpu-compact --dual --lsu-pipe` (Quartus 17 analysis and
+elaboration) has no errors. This does not cover the framework's `hps_io`, the HPS's
+real DDR3 latency, a fit, or hardware.
+
 ### Build
 
 Recorded: `mister/build.sh --clean`, commit 64e7929, 2026-09-29. Default build (1920 × 1080
