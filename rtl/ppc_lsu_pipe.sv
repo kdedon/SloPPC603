@@ -23,6 +23,8 @@ module ppc_lsu_pipe #(
   input  ppc_pkg::uop_t uop_i,
   input  ppc_pkg::completion_tag_t producer_i,
   input  logic [31:0] pc_i, insn_i, ea_i, data_i,
+  // Little-endian mode: the access address is munged (PEM 3.1.4.1).
+  input  logic le_i,
   input  logic recovery_i,
   input  logic [ppc_pkg::CQ_DEPTH-1:0] kill_i,
   input  logic [ppc_pkg::CQ_GENERATION_WIDTH-1:0] kill_generation_i [ppc_pkg::CQ_DEPTH],
@@ -70,6 +72,8 @@ module ppc_lsu_pipe #(
     logic store;
     completion_tag_t producer;
     logic [31:0] ea, data, pc, insn;
+    // XORed into the EA's low bits to form the access address.
+    logic [2:0] munge;
     uop_t uop;
   } entry_t;
 
@@ -131,12 +135,13 @@ module ppc_lsu_pipe #(
     req_wdata_o = '0;
     req_wstrb_o = '0;
     req_wdata_o[31:0] = (store_source << {3'd4 - p1_nbytes, 3'b0}) >>
-                        {p1_head.ea[1:0], 3'b0};
-    req_wstrb_o[3:0] = lane_mask(p1_head.uop.mem_size) >> p1_head.ea[1:0];
+                        {p1_head.ea[1:0] ^ p1_head.munge[1:0], 3'b0};
+    req_wstrb_o[3:0] = lane_mask(p1_head.uop.mem_size) >>
+                       (p1_head.ea[1:0] ^ p1_head.munge[1:0]);
   end
   assign req_valid_o = offer;
   assign req_write_o = p1_head.store;
-  assign req_addr_o = {p1_head.ea[31:2], 2'b00};
+  assign req_addr_o = {p1_head.ea[31:3], p1_head.ea[2] ^ p1_head.munge[2], 2'b00};
   assign req_bytes_o = p1_nbytes;
   assign req_spec_o = (p2_valid && !p2_q[0].killed) ||
                       ((p2_count_q == 2'd2) && !p2_q[1].killed);
@@ -155,7 +160,7 @@ module ppc_lsu_pipe #(
   assign rsp_word = rsp_rdata_i;
   assign p2_nbytes = nbytes(p2_head.uop.mem_size);
   always_comb begin
-    load_left = (rsp_word << {p2_head.ea[1:0], 3'b0}) &
+    load_left = (rsp_word << {p2_head.ea[1:0] ^ p2_head.munge[1:0], 3'b0}) &
       {{8{1'b1}}, {8{p2_nbytes != 3'd1}}, {16{p2_nbytes == 3'd4}}};
     load_right = load_left >> {3'd4 - p2_nbytes, 3'b0};
     if (p2_head.uop.mem_reverse) load_value = swap_bytes(load_right, p2_nbytes);
@@ -203,6 +208,7 @@ module ppc_lsu_pipe #(
                      (ea_i[1:0] == 2'b00));
     incoming.producer = producer_i;
     incoming.ea = ea_i;
+    incoming.munge = le_i ? {1'b1, in_bytes != 3'd4, in_bytes == 3'd1} : 3'b0;
     incoming.data = data_i;
     incoming.pc = pc_i;
     incoming.insn = insn_i;

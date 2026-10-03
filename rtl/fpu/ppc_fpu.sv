@@ -124,11 +124,13 @@ module ppc_fpu #(
     logic msr_fe0;
     logic msr_fe1;
     logic msr_pr;
+    logic le_align;
   } work_t;
   typedef struct packed {
     completion_tag_t tag;
     logic [31:0] insn;
     logic msr_fp;
+    logic le_align;
   } work1_t;
 
   typedef struct packed {
@@ -976,6 +978,7 @@ module ppc_fpu #(
       work_issue.msr_fe0 = exec_entry.issue.msr_fe0;
       work_issue.msr_fe1 = exec_entry.issue.msr_fe1;
       work_issue.msr_pr = exec_entry.issue.msr_pr;
+      work_issue.le_align = exec_entry.issue.le_align;
       work_decoded = exec_entry.decoded;
       work_ea = exec_entry.ea;
       work_valid = 1'b1;
@@ -986,6 +989,7 @@ module ppc_fpu #(
       work_issue.msr_fe0 = issue_i.msr_fe0;
       work_issue.msr_fe1 = issue_i.msr_fe1;
       work_issue.msr_pr = issue_i.msr_pr;
+      work_issue.le_align = issue_i.le_align;
       work_decoded = decoded;
       work_ea = issue_ea;
       work_valid = issue_valid_i;
@@ -1085,6 +1089,7 @@ module ppc_fpu #(
       work1_issue.tag = second_entry.issue.tag;
       work1_issue.insn = second_entry.issue.insn;
       work1_issue.msr_fp = second_entry.issue.msr_fp;
+      work1_issue.le_align = second_entry.issue.le_align;
       work1_decoded = second_entry.decoded;
       work1_ea = second_entry.ea;
       work1_valid = 1'b1;
@@ -1093,6 +1098,7 @@ module ppc_fpu #(
       work1_issue.tag = issue_i.tag;
       work1_issue.insn = issue_i.insn;
       work1_issue.msr_fp = issue_i.msr_fp;
+      work1_issue.le_align = issue_i.le_align;
       work1_decoded = decoded;
       work1_ea = issue_ea;
       work1_valid = issue_valid_i;
@@ -1100,6 +1106,7 @@ module ppc_fpu #(
       work1_issue.tag = issue1_i.tag;
       work1_issue.insn = issue1_i.insn;
       work1_issue.msr_fp = issue1_i.msr_fp;
+      work1_issue.le_align = issue1_i.le_align;
       work1_decoded = decoded1;
       work1_ea = issue1_ea;
       work1_valid = 1'b1;
@@ -1408,8 +1415,10 @@ module ppc_fpu #(
           exec_result.gpr_update = 1'b0;
         end
         DK_MEMORY: begin
-          if (work_ea[1:0] != 2'b00 &&
-              (!CPU_602 || work_decoded.mem_store)) begin
+          if ((work_ea[1:0] != 2'b00 &&
+               (!CPU_602 || work_decoded.mem_store)) ||
+              le_misaligned(work_issue.le_align, work_ea[2:0],
+                            !work_decoded.mem_single && !work_decoded.mem_integer)) begin
             exec_result.exception = FPU_ALIGNMENT;
             exec_result.gpr_update = 1'b0;
           end else if (CPU_602 && work_decoded.mem_store &&
@@ -1453,8 +1462,10 @@ module ppc_fpu #(
       case (work1_decoded.kind)
         DK_MOVE, DK_FSEL: ;  // Resolved from captured operands next stage.
         DK_MEMORY: begin
-          if (work1_ea[1:0] != 2'b00 &&
-              (!CPU_602 || work1_decoded.mem_store)) begin
+          if ((work1_ea[1:0] != 2'b00 &&
+               (!CPU_602 || work1_decoded.mem_store)) ||
+              le_misaligned(work1_issue.le_align, work1_ea[2:0],
+                            !work1_decoded.mem_single && !work1_decoded.mem_integer)) begin
             work1_result.exception = FPU_ALIGNMENT;
             work1_result.gpr_update = 1'b0;
           end else if (CPU_602 && work1_decoded.mem_store &&
