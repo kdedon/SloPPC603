@@ -75,6 +75,7 @@ module ppc_dcache_slot #(
   output logic         bus_req_gbl_o,
   output logic [1:0]   bus_req_cse_o,
   output logic [255:0] bus_req_data_o,
+  input  logic         bus_req_acked_i,
   input  logic         bus_rd_valid_i,
   input  logic [63:0]  bus_rd_data_i,
   input  logic         bus_rd_error_i,
@@ -155,7 +156,7 @@ module ppc_dcache_slot #(
     logic unused_slot;
     assign unused_slot = ^{clk_i, rst_ni, lsu_req_wimg_i, hid0_dce_i, lsu_wdata[63:32], lsu_wstrb[7:4],
                            hid0_dlock_i, hid0_dcfi_i, hid0_noopti_i, hid0_abe_i,
-                           bus_req_ready_i, bus_rd_valid_i, bus_rd_data_i,
+                           bus_req_ready_i, bus_req_acked_i, bus_rd_valid_i, bus_rd_data_i,
                            bus_rd_error_i, bus_wr_done_i, bus_wr_error_i,
                            push_req_ready_i, push_done_i, push_error_i,
                            snoop_valid_i, snoop_addr_i, snoop_tt_i};
@@ -299,7 +300,7 @@ module ppc_dcache_slot #(
       .hid0_dce_i, .hid0_dlock_i, .hid0_dcfi_i, .hid0_noopti_i, .hid0_abe_i,
       .bus_req_valid_o, .bus_req_ready_i, .bus_req_kind_o, .bus_req_tt_o,
       .bus_req_addr_o, .bus_req_be_o, .bus_req_wimg_o, .bus_req_gbl_o,
-      .bus_req_cse_o, .bus_req_data_o, .bus_rd_valid_i, .bus_rd_data_i,
+      .bus_req_cse_o, .bus_req_data_o, .bus_req_acked_i, .bus_rd_valid_i, .bus_rd_data_i,
       .bus_rd_error_i, .bus_wr_done_i, .bus_wr_error_i,
       .push_req_valid_o, .push_req_ready_i, .push_req_addr_o, .push_req_data_o,
       .push_done_i, .push_error_i,

@@ -65,6 +65,7 @@ module ppc_biu #(
   // Data cache BIU ports (docs/DATA_CACHE.md).
   input  logic         dc_req_valid_i,
   output logic         dc_req_ready_o,
+  output logic         dc_req_acked_o,
   input  logic [2:0]   dc_req_kind_i,
   input  logic [4:0]   dc_req_tt_i,
   input  logic [31:0]  dc_req_addr_i,
@@ -546,6 +547,7 @@ module ppc_biu #(
       .push_valid_i(1'b0), .push_ready_o(), .push_addr_i(32'b0),
       .push_data_i(256'b0), .push_done_o(), .push_error_o(),
       .push_hold_i(push_hold || pe_busy), .push_accept_o(), .push_wait_o(),
+      .req_acked_o(dc_req_acked_o),
       .busy_o(cm_busy), .protocol_error_o(cm_protocol_error),
       .br_n_o(cm_br_n), .bg_n_i(cm_bg_n), .abb_n_i(cm_abb_in_n),
       .abb_n_o(cm_abb_n), .abb_oe_o(cm_abb_oe), .ts_n_o(cm_ts_n),
@@ -618,7 +620,7 @@ module ppc_biu #(
       .push_addr_i(dc_push_addr_i), .push_data_i(dc_push_data_i),
       .push_done_o(dc_push_done_o), .push_error_o(dc_push_error_o),
       .push_hold_i(1'b0), .push_accept_o(push_accept),
-      .push_wait_o(push_wait),
+      .push_wait_o(push_wait), .req_acked_o(),
       .busy_o(pe_busy), .protocol_error_o(pe_protocol_error),
       .br_n_o(pe_br_n), .bg_n_i(pe_bg_n), .abb_n_i,
       .abb_n_o(pe_abb_n), .abb_oe_o(pe_abb_oe), .ts_n_o(pe_ts_n),
@@ -654,10 +656,11 @@ module ppc_biu #(
       end
     end
 
-    // The outer masters start nothing while a push is held or running. The
-    // push takes the address bus once the outer address tenure is over, and
-    // the data bus once no outer data tenure is owed.
-    assign outer_bg_n = bg_n || pe_busy;
+    // The outer masters take no grant while a push is due or running, so the
+    // push is this processor's next tenure (UM 8.3.3). The push takes the
+    // address bus once the outer address tenure is over, and the data bus
+    // once no outer data tenure is owed.
+    assign outer_bg_n = bg_n || pe_busy || push_due;
     assign pe_bg_n = bg_n_i || outer_addr_active;
     assign pe_dbg_n = dbg_n_i || outer_owed_q || outer_dbb_oe;
     assign outer_aack_n = aack_n_i || pe_abb_oe;
@@ -748,6 +751,7 @@ module ppc_biu #(
 
     // No data cache: nothing is snooped and ARTRY is never driven.
     assign dc_req_ready_o = 1'b0;
+    assign dc_req_acked_o = 1'b0;
     assign dc_rd_valid_o = 1'b0;
     assign dc_rd_data_o = 64'b0;
     assign dc_rd_error_o = 1'b0;

@@ -540,6 +540,8 @@ package ppc_pkg;
   } dcache_bus_out_t;
   typedef struct packed {
     logic         req_ready;
+    // The accepted request's address tenure is past its ARTRY window.
+    logic         req_acked;
     logic         rd_valid;
     logic [63:0]  rd_data;
     logic         rd_error;

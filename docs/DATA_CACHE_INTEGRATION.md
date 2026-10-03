@@ -228,8 +228,9 @@ negated from the falling edge for one cycle, then high impedance.
 Push priority: a push-flagged response keeps BR asserted from TS+3 (at the
 latest AACK+2, §7.2.5.2.1) until the push has started its address tenure. The
 instruction/scalar group's request is hidden meanwhile, the cache master
-starts nothing, and the outer masters receive no BG from the push's acceptance
-until its data tenure ends. BR without a tenure while the push data is read is
+starts nothing, and the outer masters receive no BG from the response until
+the push's data tenure ends, so the push is this processor's next tenure
+(§8.3.3) even when another master was already waiting for a grant. BR without a tenure while the push data is read is
 allowed (§8.3.1). The arbiter must grant this processor while its BR is
 asserted, as §8.3.2 expects after ARTRY.
 
@@ -397,6 +398,24 @@ Recorded: `make -C sim -j2 ci`, commit 1f2b66c, 2026-09-29.
   writes; lsu 2334589 cycles; machine-check 10740 cycles, 4 TEA; full-decode
   24111 cycles.
 - `test-biu-dcache-snoop` seeds 1-5 and `test-chip-pins` unchanged.
+
+### Two processors
+
+`make -C sim test-chip-mp` (`tb/tb_chip_mp.sv`, `tb/bfm/bus60x_mp_bfm.sv`): two
+`ppc603e` instances share TS, A, TT, GBL, AACK and ARTRY, each snooping the other,
+with one arbiter and memory (one tenure at a time, AACK at TS+2 or later, random
+target retries and waits). Both run one hand-assembled program with both caches on
+in real mode: IDs from an atomic increment, then eight rounds of writing their halves
+of 64 interleaved words (every line written by both), reading the other's half and
+atomically incrementing a shared counter; processor 0 then checks every value and
+flushes the lines. The model checks that a processor's ARTRY falls only in the other's
+snoop window, that after a qualified ARTRY the retried master and any processor that
+did not assert it negate BR in the next cycle, and that a processor still requesting
+then is granted first and runs the push of the retried line. Passing needs memory to
+hold the expected words, counter and IDs, and each processor to have retried the other
+and pushed. Writing it found three faults, now fixed: another tenure could take the
+grant meant for the push; two caches missing on one line retried each other forever;
+and a snoop before a `lwarx`'s read cancelled the reservation that read set.
 
 Established: the cache, BIU cache master and snooper together at the core and
 pin tops; coherent results against a second master's reads, RWITMs,

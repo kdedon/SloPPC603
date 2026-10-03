@@ -33,6 +33,7 @@ module ppc_dcache_measure (
   output logic bus_req_gbl_o,
   output logic [1:0] bus_req_cse_o,
   output logic [255:0] bus_req_data_o,
+  input  logic bus_req_acked_i,
   input  logic bus_rd_valid_i,
   input  logic [63:0] bus_rd_data_i,
   input  logic bus_rd_error_i,
@@ -133,6 +134,8 @@ module ppc_dcache_measure (
   assign bus_req_data_o = bus_req_data_o_obq;
   logic bus_rd_valid_i_ibq;
   always_ff @(posedge clk_i) bus_rd_valid_i_ibq <= bus_rd_valid_i;
+  logic bus_req_acked_i_ibq;
+  always_ff @(posedge clk_i) bus_req_acked_i_ibq <= bus_req_acked_i;
   logic [63:0] bus_rd_data_i_ibq;
   always_ff @(posedge clk_i) bus_rd_data_i_ibq <= bus_rd_data_i;
   logic bus_rd_error_i_ibq;
@@ -223,6 +226,7 @@ module ppc_dcache_measure (
     .bus_req_gbl_o(bus_req_gbl_o_od),
     .bus_req_cse_o(bus_req_cse_o_od),
     .bus_req_data_o(bus_req_data_o_od),
+    .bus_req_acked_i(bus_req_acked_i_ibq),
     .bus_rd_valid_i(bus_rd_valid_i_ibq),
     .bus_rd_data_i(bus_rd_data_i_ibq),
     .bus_rd_error_i(bus_rd_error_i_ibq),

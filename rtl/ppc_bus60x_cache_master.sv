@@ -42,6 +42,8 @@ module ppc_bus60x_cache_master #(
   output logic         push_accept_o,
   // An accepted push has not yet started its address tenure.
   output logic         push_wait_o,
+  // The last accepted request's address tenure passed its ARTRY window.
+  output logic         req_acked_o,
 
   output logic         busy_o,
   output logic         protocol_error_o,
@@ -179,7 +181,7 @@ module ppc_bus60x_cache_master #(
   logic addr_release_half_q, data_release_half_q;
   logic final_release_started_q, release_oe_cycle_q;
   logic rd_valid_q, rd_error_q, wr_done_q, wr_error_q;
-  logic push_done_q, push_error_q, protocol_error_q;
+  logic push_done_q, push_error_q, protocol_error_q, req_acked_q;
   logic [63:0] rd_data_q, fin_q;
 
   logic cur_read, cur_write, cur_addr_only, cur_single;
@@ -215,6 +217,7 @@ module ppc_bus60x_cache_master #(
     push_ready_o = rst_ni && bus_ce_i && !pu_valid_q;
     push_accept_o = push_valid_i && push_ready_o;
     push_wait_o = pu_valid_q && (state_q == S_IDLE || !act_push_q);
+    req_acked_o = req_acked_q;
     // Pulses registered on a SYSCLK edge show for one cycle.
     rd_valid_o = rd_valid_q && bus_ce_i;
     rd_data_o = rd_data_q;
@@ -385,6 +388,7 @@ module ppc_bus60x_cache_master #(
       push_done_q <= 1'b0;
       push_error_q <= 1'b0;
       protocol_error_q <= 1'b0;
+      req_acked_q <= 1'b0;
     end else if (bus_ce_i) begin
       rd_valid_q <= 1'b0;
       rd_error_q <= 1'b0;
@@ -404,6 +408,7 @@ module ppc_bus60x_cache_master #(
         rq_data_q <= req_data_i;
         rq_plan_q <= in_plan;
         rq_part_q <= 1'b0;
+        req_acked_q <= 1'b0;
       end
       if (push_accept_o) begin
         pu_valid_q <= 1'b1;
@@ -459,6 +464,7 @@ module ppc_bus60x_cache_master #(
 
         S_ADDR_RETRY_SAMPLE: begin
           addr_release_pending_q <= 1'b0;
+          if (!act_push_q) req_acked_q <= artry_n_i;
           if (!artry_n_i)
             state_q <= S_RETRY_GAP;
           else if (cur_addr_only)
