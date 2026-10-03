@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // Little-endian mode on ppc_core with the full supervisor machine and the
 // FPU: runs a generated program (sim/tools/le_core_program.py) from one

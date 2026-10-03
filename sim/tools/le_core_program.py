@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 """Program image for tb_core_le: little-endian mode on ppc_core.
 
