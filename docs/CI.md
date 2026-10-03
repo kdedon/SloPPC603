@@ -132,7 +132,7 @@ no-redistribution warning ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)).
 | Workflow | Trigger | Does |
 | --- | --- | --- |
 | `quick.yml` | push, pull request | Verilator 5.020 from Ubuntu 24.04; `lint`, `check-spec`, five focused benches |
-| `mister-unstable.yml` | push to `main` | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`); replaces the `unstable` prerelease with the `.rbf`, its summary and notes |
+| `mister-unstable.yml` | push to `main`, except docs-only pushes | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`); replaces the `unstable` prerelease with the `.rbf`, its summary and notes |
 | `release.yml` | tag `v*` | five measurement fits with 66 MHz re-timing, two FPU fits, MiSTer builds (`default`, `selftest`, or `vars.MISTER_SUITES`), then a release with notes |
 
 Runner limits (GitHub-hosted `ubuntu-24.04`, public repository):

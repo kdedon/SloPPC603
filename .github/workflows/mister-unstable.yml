@@ -8,6 +8,7 @@ name: mister-unstable
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
   workflow_dispatch:
 permissions:
   contents: write
