@@ -25,15 +25,15 @@ jobs:
       - name: Free disk for the Quartus image
         run: ci/free-disk.sh
       - name: Fetch pinned inputs
-        run: ci/setup.sh benchmarks framework
+        run: ci/step.sh ci/setup.sh benchmarks framework
       - name: Pull the Quartus image
         run: |
           . ci/pins.env
           docker pull "${QUARTUS_IMAGE_PIN}"
       - name: Build the cross-compiler image
-        run: toolchain/build-container.sh
+        run: ci/step.sh toolchain/build-container.sh
       - name: Build the core
-        run: mister/build.sh --clean --fpu-compact --dual --lsu-pipe
+        run: ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe
       - name: Release notes
         run: |
           previous="$(git describe --tags --abbrev=0 --exclude unstable 2>/dev/null || true)"

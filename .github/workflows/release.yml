@@ -77,14 +77,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ci/free-disk.sh
-      - run: ci/setup.sh benchmarks framework
+      - run: ci/step.sh ci/setup.sh benchmarks framework
       - name: Pull the Quartus image
         run: |
           . ci/pins.env
           docker pull "${QUARTUS_IMAGE_PIN}"
-      - run: toolchain/build-container.sh
+      - run: ci/step.sh toolchain/build-container.sh
       - name: Build the core
-        run: mister/build.sh --clean ${{ matrix.suite != 'default' && format('--suite {0}', matrix.suite) || '' }}
+        run: ci/step.sh mister/build.sh --clean ${{ matrix.suite != 'default' && format('--suite {0}', matrix.suite) || '' }}
       - name: Corresponding source of a GPL-3.0 image
         if: matrix.suite == 'embench'
         run: ci/source-archive.sh build/mister/embench-source.tar.gz

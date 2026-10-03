@@ -24,8 +24,8 @@ jobs:
           sudo apt-get install --yes --no-install-recommends verilator make g++ python3
           verilator --version | grep -q '^Verilator 5.020 '
       - name: Lint
-        run: make -C sim lint -j2
+        run: ci/step.sh make -C sim lint -j2
       - name: Spec checks
-        run: make -C sim check-spec
+        run: ci/step.sh make -C sim check-spec
       - name: Focused benches
-        run: make -C sim -j2 test-core test-core-recovery test-core-tlb-miss test-core-dcache test-chip-pins
+        run: ci/step.sh make -C sim -j2 test-core test-core-recovery test-core-tlb-miss test-core-dcache test-chip-pins
