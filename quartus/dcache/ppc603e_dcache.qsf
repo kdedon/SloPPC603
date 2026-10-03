@@ -43,6 +43,7 @@ set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_wimg_o[*]
 set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_gbl_o
 set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_cse_o[*]
 set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_data_o[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_acked_i
 set_instance_assignment -name VIRTUAL_PIN ON -to bus_rd_valid_i
 set_instance_assignment -name VIRTUAL_PIN ON -to bus_rd_data_i[*]
 set_instance_assignment -name VIRTUAL_PIN ON -to bus_rd_error_i
