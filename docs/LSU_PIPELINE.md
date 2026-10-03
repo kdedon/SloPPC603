@@ -219,6 +219,9 @@ The unit stays off by default. It passes the benches listed under
 the chip with it meets 50 MHz, but it lowers the chip's Fmax from 68.3 to
 61.0 MHz, below the 66 MHz target. A 50 MHz build (the demo SoC and the
 MiSTer core) can set it now; making it the default waits for item 1 below.
+FP accesses in the unit have no fit yet: the FPU's launch in its issue
+cycle and its store data now reach the unit's P1 and request paths, so
+the chip needs a fresh fit and timing report before the default changes.
 
 ## Remaining work
 
