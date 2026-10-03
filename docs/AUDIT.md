@@ -139,7 +139,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 |---|---|---|---|---|---|---|
 | AUD-66 | M | K | `docs/SYSTEM_COMPLETION.md:144-157` | Round table stops at 74%; later rounds exist only as prose duplicated in the MVP plan. | One row per round to the current one. | fixed (uncommitted) |
 | AUD-67 | L | K | `docs/plans/current/MVP_EXECUTION_PLAN.md:403-424` | Waves lack status markers; Wave 5 reads as future work. | Status line per wave. | fixed (uncommitted) |
-| AUD-68 | M | K | `.agents/skills/` (untracked) | Real copy of `skills/`; will drift. | Symlink to `../skills` or remove. | open |
+| AUD-68 | M | K | `.agents/skills/` (untracked) | Real copy of `skills/`; will drift. | Symlink to `../skills` or remove. | fixed 2026-10-03: replaced by a symlink to `../skills` (local, untracked) |
 | AUD-69 | L | C | `skills/hdl-coding-guidelines/references/source/02-source-map.md:117`, `17-era-faithful-microarchitecture.md:347`, `32-arithmetic-patterns-and-operator-cost.md:232`, `skills/mister-framework/references/source/30-sdram.md:289` | URLs not pinned to a full commit. | Pin 40-character SHAs. | fixed (uncommitted) |
 | AUD-70 | L | S | `docs/SYSTEM_COMPLETION.md:602,621`, `docs/plans/current/MVP_EXECUTION_PLAN.md:711,722`, `docs/FPU_REUSE_ASSESSMENT.md:3` | Agent names ("Sol", "GPT-6 Sol") in records. | Delete. | fixed (uncommitted) |
 | AUD-71 | L | S | `docs/SYSTEM_COMPLETION.md:404-405,548-549`, `docs/plans/current/MVP_EXECUTION_PLAN.md:681-728` | Missing spaces ("MVP80.81%"). | Restore. | fixed (uncommitted) |

@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-10-01. This is the active planning entry point. The target for
+Updated: 2026-10-03. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -90,22 +90,35 @@ behind `DISPATCH_WIDTH=2` (slices 0–6, `--dual`, default 1;
 with the FPU at 50 MHz); MiSTer `--fpu-compact --dual --lsu-pipe` core
 timing-clean.
 
+Priority since 2026-10-03: completion of the 603e before speed. 50 MHz stays
+the gate; 66 MHz work follows the completion items.
+
+Done (2026-10-03): CI enabled (`.github/workflows/`, [CI.md](../../CI.md)).
+
 Queued, in order:
 
-1. 66 MHz at width 1 again: translated (−0.213 ns), chip (−0.577 ns) and
-   chip602 (−0.202 ns) regressed on `71d048c`.
-2. Width 2 at 66 MHz: the IQ pair decision feeding dispatch is the critical
-   group; decide whether to register it (a dispatch-cycle cost) or restructure
-   the IQ.
-3. LSU unit at 66 MHz ([remaining work](../../LSU_PIPELINE.md#remaining-work)
-   item 1), then on by default.
-4. FULL FPU in the MiSTer core: with `--dual --lsu-pipe` it uses 97% of ALMs
-   and misses setup by 2.606 ns; reduce area or keep COMPACT for that core.
-5. Optimization: `bclr`/`bcctr` folding; branch pairing and branches without
-   a CQ entry (dual-dispatch slice 7); a single-precision Mandelbrot.
-6. FPU at 66 MHz: the choice between 50 MHz and a parameter-gated extra
-   stage is open; FP loads and stores through the LSU unit for Table 6-6.
-7. Enable CI and measure one MiSTer build on a hosted runner.
+1. Loadable program images on MiSTer: the core loads selftest, Embench,
+   nbench and Whetstone images from the OSD into DDR3 and runs them; the
+   built-in menu still works with nothing loaded. One test core holds every
+   program.
+2. Little-endian mode (`MSR[LE]`, `MSR[ILE]`) and the misaligned-LE split
+   (V13).
+3. Bus and cache gaps: inbound data parity, BR negation after another
+   snooper's ARTRY, push pipelining, multiprocessor snoop tests, HID0 ILOCK.
+4. Dual dispatch slice 7 (branch in DQ1, branches without a CQ entry) and
+   `bclr`/`bcctr` folding.
+5. LSU unit completion: stores at one per cycle, base operands from rename,
+   FP loads and stores through the unit at Table 6-6 timing.
+6. Defaults: width 2 and the LSU unit on, two-word fetch through the wrappers.
+7. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
+   FULL FPU in the MiSTer core (97% ALMs, −2.606 ns: reduce area or keep
+   COMPACT).
+8. Verification: full-machine reference comparison and the remaining P12
+   schedule checks; source-contract reconciliation.
+9. Speed, after completion: 66 MHz at width 1 (translated −0.213 ns, chip
+   −0.577 ns, chip602 −0.202 ns on `71d048c`), width 2 at 66 MHz (IQ pair
+   decision), the LSU unit at 66 MHz, the FPU at 66 MHz, a single-precision
+   Mandelbrot.
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or
