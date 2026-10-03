@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Kevin Dedon
-# Rolling MiSTer build of main, published as the "unstable" prerelease. The
+# Rolling MiSTer build of main, published as the "unstable" prerelease: the
+# test core (COMPACT FPU, dual dispatch, pipelined load/store unit). The
 # release and its tag are replaced on every run; a build with negative slack
 # fails and publishes nothing.
 name: mister-unstable
@@ -32,7 +33,7 @@ jobs:
       - name: Build the cross-compiler image
         run: toolchain/build-container.sh
       - name: Build the core
-        run: mister/build.sh --clean
+        run: mister/build.sh --clean --fpu-compact --dual --lsu-pipe
       - name: Release notes
         run: |
           previous="$(git describe --tags --abbrev=0 --exclude unstable 2>/dev/null || true)"

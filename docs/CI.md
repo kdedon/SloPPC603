@@ -2,8 +2,8 @@
 <!-- Copyright (c) 2026 Kevin Dedon -->
 # CI and release tooling
 
-Everything a clean GitHub runner needs is here, but no workflow is active: the
-drafts live in `ci/github-workflows/` until they are moved to `.github/workflows/`.
+Everything a clean GitHub runner needs is here; the workflows are in
+`.github/workflows/`.
 Release gates and the configuration of record are in [RELEASE.md](RELEASE.md).
 
 | File | Purpose |
@@ -15,7 +15,7 @@ Release gates and the configuration of record are in [RELEASE.md](RELEASE.md).
 | `ci/release_notes.py` | Writes release notes from summaries, pins and git metadata |
 | `ci/source-archive.sh` | Corresponding source of a benchmark image (repository plus fetched sources) |
 | `ci/free-disk.sh` | Frees runner disk for the Quartus image |
-| `ci/github-workflows/` | Draft workflows: `quick`, `mister-unstable`, `release` |
+| `.github/workflows/` | Workflows: `quick`, `mister-unstable`, `release` |
 
 ## Pins
 
@@ -126,33 +126,32 @@ the GPL-3.0 source offer, which points at the `embench-source.tar.gz` asset
 written by `ci/source-archive.sh`; a `mister-nbench` summary adds a
 no-redistribution warning ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)).
 
-## Draft workflows
+## Workflows
 
 | Workflow | Trigger | Does |
 | --- | --- | --- |
 | `quick.yml` | push, pull request | Verilator 5.020 from Ubuntu 24.04; `lint`, `check-spec`, five focused benches |
-| `mister-unstable.yml` | push to `main` | MiSTer build; replaces the `unstable` prerelease with the `.rbf`, its summary and notes |
+| `mister-unstable.yml` | push to `main` | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`); replaces the `unstable` prerelease with the `.rbf`, its summary and notes |
 | `release.yml` | tag `v*` | five measurement fits with 66 MHz re-timing, two FPU fits, MiSTer builds (`default`, `selftest`, or `vars.MISTER_SUITES`), then a release with notes |
 
 Runner limits (GitHub-hosted `ubuntu-24.04`, public repository):
 
 - About 14 GB free disk. The Quartus image is 11.2 GB unpacked, so every Quartus
   job first runs `ci/free-disk.sh`, which removes preinstalled SDKs.
-- 6 h per job; the drafts cap jobs at 5 h. Fit times on a 4-vCPU runner are
+- 6 h per job; the workflows cap jobs at 5 h. Fit times on a 4-vCPU runner are
   unmeasured. Each job pulls the image again, which takes minutes and counts
   against Docker Hub's pull limits.
 - 10 GB of Actions cache per repository: too small to cache the Quartus image.
 
 The simulation gates (`make -C sim ci`, `reference-acceptance`, `xrand-sweep`)
-are not in the drafts: they need DingusPPC, take hours, and stay the
+are not in the workflows: they need DingusPPC, take hours, and stay the
 maintainer's pre-tag gate via `make -C sim release-check`.
 
-To turn CI on:
+Repository settings the workflows need:
 
-1. `git mv ci/github-workflows/*.yml .github/workflows/`.
-2. Settings → Actions: allow Actions and give `GITHUB_TOKEN` write access to
+1. Settings → Actions: allow Actions and give `GITHUB_TOKEN` write access to
    contents (the release jobs use `gh release`).
-3. Optional: set the repository variable `MISTER_SUITES` (JSON list) to add
+2. Optional: set the repository variable `MISTER_SUITES` (JSON list) to add
    `embench` or `nbench`; review the licence notes above first.
-4. Run `mister-unstable` once by hand (`workflow_dispatch`) and check the disk
+3. Run `mister-unstable` once by hand (`workflow_dispatch`) and check the disk
    and time headroom in its log before relying on it.
