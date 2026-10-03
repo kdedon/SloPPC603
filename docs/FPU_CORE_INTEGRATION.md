@@ -99,12 +99,14 @@ consecutive cycles. Memory rows include the bench's one-cycle memory with
 and 24. Spacing for memory rows is between the dispatches, and equally the
 retirements, of the first and last of four independent accesses.
 
-Table 6-6's 2-cycle latency and 1-cycle interval are not met by any access:
-the lane holds one access at a time (offer, translate, cache, result), as it
-does for integer loads. FP accesses add the FPU's issue-to-request cycle and,
-for stores, the commit at the CQ head before the write. The two-stage LSU
-(P3) is the remaining step; integer accesses have it behind a parameter
-([LSU_PIPELINE.md](LSU_PIPELINE.md)).
+Through the lane, Table 6-6's 2-cycle latency and 1-cycle interval are not
+met by any access: the lane holds one access at a time (offer, translate,
+cache, result). FP accesses add the FPU's issue-to-request cycle and, for
+stores, the commit at the CQ head before the write. With `ENABLE_LSU_PIPE`
+plain FP accesses run in the pipelined unit instead: `lfs`, `lfd` and the
+stores retire at dispatch + 3 (two execute cycles, as FP rows count), and
+loads stream one per cycle
+([LSU_PIPELINE.md](LSU_PIPELINE.md#fp-accesses)).
 
 ## Lane sequence (loads and stores)
 

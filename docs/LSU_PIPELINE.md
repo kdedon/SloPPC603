@@ -1,9 +1,10 @@
 # Pipelined load/store unit
 
-Parameter `ENABLE_LSU_PIPE` runs plain integer loads and stores in
+Parameter `ENABLE_LSU_PIPE` runs plain integer and FP loads and stores in
 `ppc_lsu_pipe` instead of the serialized special lane. Plain means no
 update, reservation, string, multiple, cache operation or external access,
-outside trace mode. `ppc_core`, `ppc_core_bat`, `ppc_core_bat_cached_bus60x`,
+outside trace mode; for FP it also excludes the 602 SP/LT moves and a
+replayed instruction ([FP accesses](#fp-accesses)). `ppc_core`, `ppc_core_bat`, `ppc_core_bat_cached_bus60x`,
 `ppc603e`, `ppc603e_demo_soc` and `ppc603e_mister` carry it, each defaulting
 to the `PPC_LSU_PIPE` macro (0 when undefined), so a build enables it with
 the parameter or with `+define+PPC_LSU_PIPE=1` (Quartus:
@@ -38,6 +39,42 @@ does for IU results, so a dependent instruction issues two cycles after its
 load issues (UM Table 6-6, load latency 2). Integer work dispatches behind
 loads as before; readers of a load's destination wait in the reservation
 station.
+
+## FP accesses
+
+A plain FP access (`lfs`, `lfd`, `stfs`, `stfd`, `stfiwx` and their
+indexed forms) dispatches as FP work does: it issues into the FPU, takes
+its place in the FP tag queue and retires when the FPU's result for it is
+at the head. It also enters the unit, with the EA from the dispatch adder.
+Its base registers must be committed, and a load waits for older FP work
+that can still raise an exception, as an integer access does.
+
+- The FPU launches the access as it issues (`MEM_AT_ISSUE`); the unit only
+  records the launch. A load offers once launched; a store offers at the
+  completion-queue head once the FPU presents the store's data, which it
+  does for its oldest instruction.
+- The unit's R stage returns the response to the FPU instead of the
+  completion queue: a word for `lfs`, both words for `lfd`. The FPU
+  formats it, and the instruction retires the cycle after, as FP
+  arithmetic does (Figure 6-3). A store's response finishes it the same
+  way; the FPU's commit at retirement then writes nothing.
+- A doubleword moves in one access on a 64-bit port when doubleword
+  aligned, otherwise as two word beats, high word first; the second beat's
+  EA advances as it reaches the head. The beats do not make each other
+  speculative.
+- Little-endian mode munges a word access to EA XOR 4 and leaves a
+  doubleword's address alone ([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md)).
+- Only word-aligned accesses are performed, and in little-endian mode only
+  doubleword-aligned doublewords. Any other access, and any response with
+  a fault, answers the FPU with a fault and removes everything behind it.
+  The FPU's exception replays the instruction alone in the serialized
+  lane, which raises the alignment exception, DSI or machine check, or
+  performs the 602's unaligned load. A faulting access is therefore
+  repeated once by the lane; a misaligned one the FPU rejects itself is
+  never offered and is removed by the replay.
+
+Decode marks the D-form FP accesses with their displacement and a zero
+rA, so the dispatch adder forms their EA as for integer accesses.
 
 ## Adoption by the serialized lane
 
@@ -156,8 +193,24 @@ the same images with the unit off and on:
 | Whetstone hard-float, MWIPS at 50 MHz | 20.321 | 22.815 | +12.3% |
 
 The core's own counters attribute the gain to `lsu_busy` (Dhrystone 2.03 M
-to 1.03 M cycles, CoreMark 2.97 M to 0.62 M); FP loads and stores still use
-the lane.
+to 1.03 M cycles, CoreMark 2.97 M to 0.62 M). These figures predate FP
+accesses in the unit.
+
+FP accesses, dispatch-to-retirement (`test-core-fpu` with the unit on and
+`test-core-lsu-timing`; FP rows retire one cycle after their last execute
+cycle, integer rows two):
+
+| Access | Lane | Unit | Unit, 32-bit port |
+| --- | ---: | ---: | ---: |
+| `lfs`, `lfd` | 6 | 3 | 3, `lfd` 5 |
+| `stfs`, `stfiwx`, `stfd` | 7 | 3 | 3, `stfd` 5 |
+| four `lfd` or `lfs`, first to last, memory taking one access per cycle | — | 3 | — |
+| the same, memory taking one access every other cycle | 15 | 6 | `lfd` 12 |
+| four `stfd`, first to last retirement | 18 | 9 | 15 |
+| `stfd` after the `fadd` producing its data | 6 | 3 | 5 |
+
+Loads meet Table 6-6 (2:1). Stores offer only at the completion-queue
+head, three cycles apart.
 
 ## Default
 
@@ -177,11 +230,24 @@ MiSTer core) can set it now; making it the default waits for item 1 below.
    `memory_result_q`.
 2. Stores at one per cycle: finish a store when translated and checked, and
    write it from a committed store queue after retirement, with load
-   forwarding or an address check against the queue.
-3. FP loads and stores through the unit, with the FPU's memory port taking
-   one access per cycle.
-4. Loads whose base register has an uncommitted producer (operands from
-   rename instead of the committed registers).
+   forwarding or an address check against the queue. The 603e checks the
+   store in the LSU's MMU stage and writes the cache after completion;
+   here translation happens with the access at the router, so the unit
+   needs either the micro-TLB's check on the request path before the
+   write or a probe request, which would halve the port's store bandwidth.
+   Offering a store before it is the head, once every older instruction
+   has finished without an exception, gives two cycles per store without
+   a queue.
+3. Loads whose base register has an uncommitted producer (operands from
+   rename instead of the committed registers). The 603e reads them from the
+   rename buffers or the result buses into the LSU's reservation station;
+   here the EA adder sits at dispatch and reads the committed registers, so
+   this needs the adder moved into the unit behind an operand-wait stage
+   that snoops results. Store data (rS) needs a third rename read port.
+4. Loads behind older FP work that may still raise an exception wait for it
+   to retire, as integer loads do; marking them speculative instead would
+   let them proceed to cacheable memory.
+5. Update forms (integer and FP) still take the lane.
 
 ## Verification
 
