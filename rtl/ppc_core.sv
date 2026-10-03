@@ -588,13 +588,17 @@ module ppc_core #(
   // Not in trace mode, whose branches take the serialized path; changing MSR
   // refetches, so no folded entry is queued when trace mode starts.
   /* verilator lint_off UNUSEDSIGNAL */
-  function automatic logic folds(fetch_packet_t p, logic trace, logic branch,
-                                 logic lr_ok, logic ctr_ok);
-    logic predict;
+  // Decoded from the word alone, keeping the IQ push enable shallow.
+  function automatic logic folds(fetch_packet_t p, logic trace, logic lr_ok, logic ctr_ok);
+    logic predict, bo_ok, xl_ok;
     predict = (p.insn[25] && p.insn[23]) || (p.insn[15] ^ p.insn[21]);
+    bo_ok = (p.insn[25:21] <= 5'd20) && (p.insn[24:22] != 3'b011) &&
+            (p.insn[24:22] != 3'b111);
+    xl_ok = (p.insn[15:11] == 5'd0) && bo_ok &&
+            ((p.insn[10:1] == 10'd16) || ((p.insn[10:1] == 10'd528) && p.insn[23]));
     return !trace && (p.fault == FETCH_OK) &&
       ((p.insn[31:26] == 6'd18) || ((p.insn[31:26] == 6'd16) && predict) ||
-       ((p.insn[31:26] == 6'd19) && branch && predict && (p.insn[10] ? ctr_ok : lr_ok)));
+       ((p.insn[31:26] == 6'd19) && xl_ok && predict && (p.insn[10] ? ctr_ok : lr_ok)));
   endfunction
   // {writes LR, writes CTR}
   function automatic logic [1:0] lr_ctr_writes(uop_t u);
@@ -615,7 +619,7 @@ module ppc_core #(
   assign lr_free = (lr_iq_q == '0) && !lr_pending_q;
   assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
   assign fd_push = fd_valid_q && !fold_q;
-  assign fold_predict = folds(queued, trace_mode, push_branch[3], lr_free, ctr_free);
+  assign fold_predict = folds(queued, trace_mode, lr_free, ctr_free);
   // Lane 1: the second FD word.
   fetch_packet_t queued1;
   logic [31:0] fold_pc;
@@ -661,7 +665,7 @@ module ppc_core #(
   end
   endgenerate
   assign fold_predict1 = (FETCH_WIDTH == 2) &&
-    folds(queued1, trace_mode, push_branch1[3], lr_free && !push_writes[1],
+    folds(queued1, trace_mode, lr_free && !push_writes[1],
           ctr_free && !push_writes[0]);
   // A folding first word drops the second.
   assign iq_push0 = fd_push && fd_push_ok;
