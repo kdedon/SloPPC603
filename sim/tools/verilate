@@ -12,7 +12,11 @@ fi
 mdir=obj_dir
 prev=
 for arg in "$@"; do
-  case "$prev" in -Mdir|--Mdir) mdir=$arg ;; esac
+  case "$prev" in
+    # Verilator creates only the last directory of --Mdir; on a fresh tree
+    # parallel builds would otherwise race for the parent.
+    -Mdir|--Mdir) mdir=$arg; mkdir -p "$mdir" ;;
+  esac
   prev=$arg
 done
 # PPC_VERILATOR_FLAGS adds build-wide defines (see DISPATCH_WIDTH in the
