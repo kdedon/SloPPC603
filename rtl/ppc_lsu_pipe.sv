@@ -177,12 +177,15 @@ module ppc_lsu_pipe #(
     req_wstrb_o[3:0] = lane_mask(p1_head.uop.mem_size) >>
                        (p1_head.ea[1:0] ^ p1_head.munge[1:0]);
     // The first beat of a doubleword carries its high word.
+    // A load ignores the FPU's store data, which follows its oldest store.
     if (p1_head.fp) begin
-      req_wdata_o[31:0] = (p1_head.split && !p1_head.second) ? fp_store_data_i[63:32] :
-                                                               fp_store_data_i[31:0];
+      req_wdata_o = '0;
+      if (p1_head.store)
+        req_wdata_o[31:0] = (p1_head.split && !p1_head.second) ? fp_store_data_i[63:32] :
+                                                                 fp_store_data_i[31:0];
       req_wstrb_o[3:0] = 4'hf;
       if (p1_head.wide) begin
-        req_wdata_o = fp_store_data_i[DMEM_BITS-1:0];
+        if (p1_head.store) req_wdata_o = fp_store_data_i[DMEM_BITS-1:0];
         req_wstrb_o = '1;
       end
     end
