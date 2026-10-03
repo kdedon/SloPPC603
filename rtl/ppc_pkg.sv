@@ -474,7 +474,8 @@ package ppc_pkg;
     EVENT_DSA             = 5'd23,
     EVENT_WATCHDOG        = 5'd24,
     // Floating-point enabled program exception (SRR1 bit 11).
-    EVENT_PROGRAM_FP      = 5'd25
+    EVENT_PROGRAM_FP      = 5'd25,
+    EVENT_MACHINE_CHECK_DPE = 5'd26
   } exception_event_t;
 
   // Chip-pin events into the core, already synchronized. soft_reset and mcp
@@ -490,6 +491,8 @@ package ppc_pkg;
     logic tea;
     // Latched snoop address parity error; held until ape_taken.
     logic ape;
+    // Latched read data parity error; held until dpe_taken.
+    logic dpe;
     logic qack;              // QACK level
   } pin_event_t;
   // Core state the chip pins need.
@@ -509,6 +512,8 @@ package ppc_pkg;
     logic broadcast_enable;  // ABE
     logic address_parity_enable; // EBA
     logic ape_taken;
+    logic data_parity_enable; // EBD
+    logic dpe_taken;
     logic watchdog_reseto;   // 602 RESETO request
     logic qreq;              // QREQ level
     logic quiesced;          // QACK seen: snooping stops
@@ -830,6 +835,7 @@ package ppc_pkg;
   localparam int HID0_NOOPTI = 0;
   localparam int HID0_EMCP = 31;
   localparam int HID0_EBA = 29;
+  localparam int HID0_EBD = 28;
   // Power-saving mode selects (UM 9.2); DPM is stored without effect.
   localparam int HID0_DOZE = 23;
   localparam int HID0_NAP = 22;

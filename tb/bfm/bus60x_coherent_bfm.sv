@@ -121,6 +121,10 @@ module bus60x_coherent_bfm #(
   bit ignore_artry = 1'b0;
   // Commands queued while set drive wrong AP[1] in their TS cycle.
   bit om_bad_parity = 1'b0;
+  // Read beats of these doublewords carry wrong DP7 (once each); the bench
+  // XORs dp_flip into DP.
+  logic [31:0] bad_dp_once [$];
+  logic [7:0] dp_flip = 8'h00;
   // Percent chances of the two address-pipelining cases above.
   int om_pipeline_pct = 0, cpu_pipeline_pct = 0;
   logic owed = 1'b0, in_data = 1'b0;
@@ -305,6 +309,7 @@ module bus60x_coherent_bfm #(
   endtask
 
   task automatic read_beat(input int index);
+    logic [28:0] beat;
     delay();
     while (hold_i) bus_rise();
     if (tea_hit(beat_address(index))) begin
@@ -313,9 +318,18 @@ module bus60x_coherent_bfm #(
     end
     bus_fall();
     d_o = doubleword(beat_address(index));
+    dp_flip = 8'h00;
+    beat = 29'(beat_address(index) >> 3);
+    for (int i = 0; i < bad_dp_once.size(); i++)
+      if (bad_dp_once[i][31:3] == beat) begin
+        bad_dp_once.delete(i);
+        dp_flip = 8'h01;
+        break;
+      end
     ta_n_o = 1'b0;
     bus_rise();
     bus_fall();
+    dp_flip = 8'h00;
     if (drtry_i) begin
       drtries++;
       drtry_n_o = 1'b0;

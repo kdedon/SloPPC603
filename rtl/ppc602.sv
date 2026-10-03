@@ -147,6 +147,7 @@ module ppc602 #(
   assign pin_event.tea = tea_pending_q;
   // No address parity.
   assign pin_event.ape = 1'b0;
+  assign pin_event.dpe = 1'b0;
   assign pin_event.qack = !qack_n && pin_status.qreq;
 
   // The time base counts once per four bus clocks (602UM 2.1.2.4).

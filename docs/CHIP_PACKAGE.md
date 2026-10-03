@@ -76,8 +76,8 @@ The 603 build (`CPU_VARIANT` `CPU_603`) has it (UM C.1.1).
 | DBWO | in | 1 | T | Ignored; see [DBWO](#dbwo). |
 | DBB | bidir | 1 | I | Out: data tenure ownership with half-cycle negation. In: another master's tenure. |
 | DH[0:31], DL[0:31] | bidir | 64 | I | 64-bit data bus. |
-| DP[0:7] | bidir | 8 | I out, T in | Out: odd parity per data byte. In: not checked. |
-| DPE | out, OD | 1 | T | Never asserted: inbound data parity is not checked (HID0[EBD] has no effect). |
+| DP[0:7] | bidir | 8 | I | Out: odd parity per data byte. In: with HID0[EBD]=1, checked on every byte lane of each TA beat of this processor's read data tenures (UM §7.2.7.2.2). |
+| DPE | out, OD | 1 | I | Asserted in the second cycle after a TA whose DP is wrong, unless DRTRY cancels that beat (UM §7.2.7.3); the error takes a machine check with SRR1[14], or checkstops with MSR[ME]=0. |
 | DBDIS | in | 1 | I | Releases DH, DL and DP in the cycle after assertion; the tenure and DBB continue. |
 | TA | in | 1 | I | Transfer acknowledge. |
 | DRTRY | in | 1 | I | Read beat cancel (normal mode). |
@@ -139,10 +139,10 @@ implemented; HID0[EICE] is stored and inert.
 ### Counts
 
 54 signal groups, as in the BUS_SPEC inventory (a bus counts once, DH and DL
-separately, TEST[0:2] as one): 40 implemented, 2 of them with a tied half
-(TBST and DP inputs); TS, A, TT, GBL and ARTRY are whole with
-`ENABLE_DCACHE=1`, the chip's value (each has a tied half at 0); AP and APE
-are whole in every build; 3 tied (DBWO, DPE, CLK_OUT); 6 excluded
+separately, TEST[0:2] as one): 41 implemented, 1 of them with a tied half
+(the TBST input); TS, A, TT, GBL and ARTRY are whole with
+`ENABLE_DCACHE=1`, the chip's value (each has a tied half at 0); AP, APE,
+DP and DPE are whole in every build; 2 tied (DBWO, CLK_OUT); 6 excluded
 (TRST, TCK, TMS, TDI, TDO, TEST); 5 power.
 
 ### DBWO
@@ -173,7 +173,9 @@ than interrupting a hung access; a TEA still ends a hung tenure. Priority
 (Table 4-2): MCP, SRESET, then a pending trace, SMI, INT, DEC. MCP and
 SRESET do not wait for MSR[EE]; SRESET is taken in any state. A machine
 check clears MSR[ME] on entry, as the TEA machine check does. A snoop address
-parity error (APE) shares the MCP boundary after MCP and an asynchronous TEA.
+parity error (APE) and then a read data parity error (DPE) share the MCP
+boundary after MCP and an asynchronous TEA. Data entering a register or the
+cache with a parity error is kept (UM §4.5.2).
 
 The core parameter `ENABLE_PIN_INTERRUPTS` enables these boundaries and the
 TLBISYNC hold; the chip top sets it. Its `pin_event_i` carries the latched

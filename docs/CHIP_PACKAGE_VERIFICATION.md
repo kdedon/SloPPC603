@@ -28,6 +28,10 @@ handlers store markers to RAM over the bus. PASS: checks=1352, cycles=74139.
 | APE | HID0[EBA]=1, MSR[ME]=1: a second-master global read with correct AP, and one with wrong AP but GBL negated, leave APE negated; with wrong AP and GBL, APE asserts for exactly one cycle, the second after TS, and the chip enters 0x200 with SRR1[15] the only high bit set; `rfi` resumes |
 | APE disabled | HID0[EBA]=0: wrong AP asserts no APE, no machine check, no checkstop |
 | APE with ME=0 | Checkstop, outputs released, no 0x200 entry; HRESET reboots |
+| DPE | HID0[EBD]=1, MSR[ME]=1: reads with correct DP leave DPE negated; one instruction-read beat with wrong DP7 asserts DPE for exactly one cycle, the second after its TA, and the chip enters 0x200 with SRR1[14] the only high bit set; `rfi` resumes |
+| DPE disabled | HID0[EBD]=0: wrong DP asserts no DPE, no machine check, no checkstop |
+| DPE with DRTRY | Every read beat is cancelled by DRTRY and redriven with correct DP: the wrong DP on the cancelled beat asserts no DPE and takes no machine check |
+| DPE with ME=0 | Checkstop, outputs released, no 0x200 entry; HRESET reboots |
 
 The bench's hard reset withholds BG until any owed data tenure ends (the
 target cannot abandon one) and releases BG only while HRESET is held.

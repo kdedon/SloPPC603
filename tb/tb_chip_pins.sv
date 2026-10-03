@@ -3,8 +3,10 @@
 // Directed checks of the ppc603e system pins, driven and observed only at the
 // pins: HRESET, SRESET, MCP (taken, ignored with HID0[EMCP]=0, checkstop with
 // MSR[ME]=0), CKSTP_IN/CKSTP_OUT, start-up straps, TBEN, SMI (priority over
-// INT, masked by MSR[EE]), RSRV, TLBISYNC and snoop address parity (APE in
-// the second cycle after TS, machine check, checkstop, HID0[EBA]=0). Each case hard-resets the chip
+// INT, masked by MSR[EE]), RSRV, TLBISYNC, snoop address parity (APE in
+// the second cycle after TS, machine check, checkstop, HID0[EBA]=0) and read
+// data parity (DPE in the second cycle after TA, machine check, checkstop,
+// HID0[EBD]=0, cancelled by DRTRY). Each case hard-resets the chip
 // into a small program; handlers record markers in RAM through the bus.
 /* verilator lint_off BLKSEQ */
 module tb_chip_pins #(parameter int PLL = -1);
@@ -32,6 +34,10 @@ module tb_chip_pins #(parameter int PLL = -1);
   string mark_order = "";
   // Second-master TS cycles and APE cycles.
   int om_ts_cycles [$], ape_cycles [$];
+  // TA cycles of beats with wrong DP, and DPE cycles.
+  int bad_dp_cycles [$], dpe_cycles [$];
+  // Withholds BG after a wrong-DP beat, so a checkstop cuts no tenure.
+  bit block_after_bad_dp = 1'b0;
 
   // The falling clock edge in a cycle that ends at a SYSCLK edge. Waits
   // count SYSCLK cycles.
@@ -52,6 +58,11 @@ module tb_chip_pins #(parameter int PLL = -1);
     end
     if (!bus_ts_n && memory.om_drive) om_ts_cycles.push_back(cycles);
     if (!ape_n) ape_cycles.push_back(cycles);
+    if (!ta_n && memory.dp_flip != 0) begin
+      bad_dp_cycles.push_back(cycles);
+      if (block_after_bad_dp) bus_block = 1'b1;
+    end
+    if (!dpe_n) dpe_cycles.push_back(cycles);
     if (wr_fire) begin
       if (wr_addr == DATA + TB_VALUE) tb_values.push_back(wr_addr[2] ? dl_out : dh_out);
       if (wr_addr == DATA + SMI_MARK) mark_order = {mark_order, "S"};
@@ -314,6 +325,75 @@ module tb_chip_pins #(parameter int PLL = -1);
     wait_word(RESETS, 1, 6000, "HRESET leaves checkstop");
   endtask
 
+  // One read beat of the loop's first instruction doubleword with wrong DP7.
+  task automatic bad_read_beat;
+    bad_dp_cycles.delete();
+    dpe_cycles.delete();
+    memory.bad_dp_once.push_back(MAIN + 32'h18);
+    wait (bad_dp_cycles.size() != 0);
+    repeat (6) bus_fall();
+  endtask
+  localparam logic [31:0] HID0_EBD = 32'h1000_0000;
+  task automatic case_dpe;
+    loop_program(HID0_EBD, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    dpe_cycles.delete();
+    running(3, "loop with good parity");
+    check(dpe_cycles.size() == 0 && mem_word(DATA + MC_MARK) == 0,
+          $sformatf("correct DP: no DPE (%0d DPE cycles, mark %0h)", dpe_cycles.size(),
+                    mem_word(DATA + MC_MARK)));
+    bad_read_beat();
+    check(dpe_cycles.size() == 1 && dpe_cycles[0] == bad_dp_cycles[0] + 2,
+          $sformatf("DPE once, two cycles after TA (TA %0d, DPE %0d cycles, first %0d)",
+                    bad_dp_cycles[0], dpe_cycles.size(),
+                    dpe_cycles.size() != 0 ? dpe_cycles[0] : -1));
+    wait_word(MC_MARK, 'h200, 6000, "DPE enters 0x200");
+    check((mem_word(DATA + MC_SRR1) & 32'hffff_0000) == 32'h0002_0000,
+          $sformatf("DPE SRR1=%08x has only bit 14", mem_word(DATA + MC_SRR1)));
+    check(ckstp_out_n, "no checkstop");
+    running(3, "rfi resumes");
+  endtask
+  task automatic case_dpe_disabled;
+    loop_program(32'h0, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    bad_read_beat();
+    repeat (3000) bus_fall();
+    check(dpe_cycles.size() == 0 && mem_word(DATA + MC_MARK) == 0 && ckstp_out_n,
+          "HID0[EBD]=0 ignores data parity");
+    running(3, "still running");
+  endtask
+  task automatic case_dpe_drtry;
+    loop_program(HID0_EBD, MSR_IP | MSR_ME);
+    bfm_drtry = 1'b1;
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop with DRTRY");
+    bad_read_beat();
+    repeat (3000) bus_fall();
+    check(dpe_cycles.size() == 0 && mem_word(DATA + MC_MARK) == 0 && ckstp_out_n,
+          "DRTRY cancels the beat's parity error");
+    running(3, "still running");
+    wait_bus_idle();
+    bfm_drtry = 1'b0;
+  endtask
+  task automatic case_dpe_checkstop;
+    loop_program(HID0_EBD, MSR_IP);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    block_after_bad_dp = 1'b1;
+    bad_read_beat();
+    block_after_bad_dp = 1'b0;
+    check(dpe_cycles.size() == 1, "DPE asserted");
+    expect_checkstop("DPE with MSR[ME]=0");
+    check(mem_word(DATA + MC_MARK) == 0, "no machine check vector");
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "HRESET leaves checkstop");
+  endtask
+
   task automatic case_ckstp_in;
     loop_program(32'h0, MSR_IP);
     hard_reset();
@@ -470,6 +550,10 @@ module tb_chip_pins #(parameter int PLL = -1);
     case_ape();
     case_ape_disabled();
     case_ape_checkstop();
+    case_dpe();
+    case_dpe_disabled();
+    case_dpe_drtry();
+    case_dpe_checkstop();
     $display("PASS chip pins: checks=%0d cycles=%0d", checks, cycles);
     $finish;
   end
