@@ -30,6 +30,9 @@ from production_vectors import widen  # noqa: E402
 RESET_PC = 0x1000
 DATA, RES, LOG, DONE = 0x40000, 0x50000, 0x60000, 0x70000
 PROT_LO, PROT_HI = 0x7F000, 0x7FFFC
+TEA_LO, TEA_HI = 0x7E000, 0x7E00C
+MACHINE_CHECK = False
+MSR_ME, SRR1_TEA = 0x1000, 0x00040000
 CHIP = False
 CHIP_BASE, CHIP_IMAGE_BYTES = 0xfff00000, 0x10000
 
@@ -268,7 +271,7 @@ def clear_fe_if_next():
 
 
 def handlers(p):
-    for vector in VECTORS:
+    for vector in VECTORS + ((0x200,) if MACHINE_CHECK else ()):
         pc = 0xfff00000 | vector
         seq = []
         for spr, off in ((26, 0), (27, 4), (19, 8), (18, 12)):
@@ -558,6 +561,8 @@ def directed(p):
     # word faults; an update form leaves its base.
     if not CHIP:
         dsi(p)
+    if MACHINE_CHECK:
+        tea(p)
     fp_enabled(p)
     fp_enable_deferred(p)
 
@@ -570,8 +575,30 @@ def dsi(p):
     p.event(0x300, at, p.msr, PROT_LO + 8, 0x0a000000)
     at = p.emit(d_form(51, 24, 31, -4 & 0xffff))
     p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
+    at = p.emit(d_form(55, 24, 31, 8))                # stfdu
+    p.event(0x300, at, p.msr, PROT_LO + 8, 0x0a000000)
+    at = p.emit(d_form(53, 24, 31, 4))                # stfsu
+    p.event(0x300, at, p.msr, PROT_LO + 4, 0x0a000000)
     p.store_fpr(24, ONE)
     p.store_gpr(31, PROT_LO)
+
+
+def tea(p):
+    """A bus error on an FP update form is a machine check at the access;
+    the base and the target keep their values."""
+    p.mtmsr(p.msr | MSR_ME)
+    p.load_fpr(24, ONE)
+    p.load_fpr(25, TWO)
+    p.li32(28, TEA_LO + 8)
+    for insn in (d_form(51, 25, 28, -8 & 0xffff),   # lfdu
+                 d_form(49, 25, 28, -4 & 0xffff),   # lfsu
+                 d_form(55, 24, 28, -8 & 0xffff),   # stfdu
+                 d_form(53, 24, 28, -4 & 0xffff)):  # stfsu
+        at = p.emit(insn)
+        p.event(0x200, at, p.msr | SRR1_TEA)
+    p.store_gpr(28, TEA_LO + 8)
+    p.store_fpr(25, TWO)
+    p.mtmsr(p.msr & ~MSR_ME)
 
 
 def fp_enabled(p):
@@ -1019,6 +1046,8 @@ def main():
                         help='one-access-per-cycle memory, with integer access streams')
     parser.add_argument('--dual-write', action='store_true',
                         help='two GPR write ports (dispatch width 2)')
+    parser.add_argument('--machine-check', action='store_true',
+                        help='bus errors on FP update forms (bench MACHINE_CHECK=1)')
     parser.add_argument('--base-snoop', action='store_true',
                         help='loads form the EA from a snooped base (Table 6-6 load latency)')
     args = parser.parse_args()
@@ -1032,6 +1061,9 @@ def main():
         use_pipe_mem()
     if args.dual_write:
         use_dual_write()
+    if args.machine_check:
+        global MACHINE_CHECK
+        MACHINE_CHECK = True
     if args.base_snoop:
         global BASE_SNOOP
         BASE_SNOOP = True
@@ -1042,6 +1074,8 @@ def main():
         write_chip_image(p, args.chip_image)
         return
     lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0']
+    if MACHINE_CHECK:
+        lines.append(f'T {TEA_LO:08x} {TEA_HI:08x} 0')
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]
     lines += [f'L {pc:08x} {cycles:x} 0' for pc, cycles in p.probes.items()]

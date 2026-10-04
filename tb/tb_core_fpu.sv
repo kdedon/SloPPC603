@@ -8,6 +8,7 @@
 // Image lines: M addr data (memory), E addr value mask (expected word),
 // L pc cycles (latency probe), R pc0 pc1 cycles (retirement spacing),
 // I pc0 pc1 cycles (dispatch spacing), P lo hi (DSI-protected words),
+// T lo hi (words that answer with TEA),
 // D addr (a store there ends the run), S count (602 sticky-bit completion
 // stalls). DMEM_BITS=64 answers a doubleword request (upper strobes set)
 // with both words in one response.
@@ -20,7 +21,8 @@ module tb_core_fpu #(
   parameter int CPU_VARIANT = 0,
   // Nonzero: the data memory takes a request in the cycle it returns the
   // previous response, one access per cycle.
-  parameter int PIPE_MEM = 0
+  parameter int PIPE_MEM = 0,
+  parameter bit MACHINE_CHECK = 1'b0
 );
   import ppc_pkg::*;
   logic clk = 1'b0, rst_n = 1'b0;
@@ -64,7 +66,8 @@ module tb_core_fpu #(
   int dispatch_at [logic [31:0]];
   int retire_at [logic [31:0]];
   int spacing_checks = 0;
-  logic [31:0] prot_lo = 32'hffff_ffff, prot_hi = 32'b0, done_addr = 32'hffff_fffc;
+  logic [31:0] prot_lo = 32'hffff_ffff, prot_hi = 32'b0, tea_lo = 32'hffff_ffff, tea_hi = 32'b0;
+  logic [31:0] done_addr = 32'hffff_fffc;
   int cycles = 0, checks = 0, failures = 0, retires = 0, probes = 0, fp_retires = 0;
   int stall = 1, seed = 1, max_cycles = 400000;
   // Overlapped FP accesses: released loads, replays that cancelled a store.
@@ -87,6 +90,7 @@ module tb_core_fpu #(
     .RESET_PC(32'h0000_1000), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1), .DMEM_BITS(DMEM_BITS),
+    .ENABLE_MACHINE_CHECK(MACHINE_CHECK),
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL)),
     .CPU_VARIANT(cpu_variant_e'(CPU_VARIANT))
   ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
@@ -153,8 +157,14 @@ module tb_core_fpu #(
   function automatic logic [31:0] read_word(input logic [31:0] addr);
     return (mem.exists(addr) != 0) ? mem[addr] : 32'b0;
   endfunction
-  function automatic bit protected_word(input logic [31:0] addr);
+  function automatic bit dsi_word(input logic [31:0] addr);
     return (addr >= prot_lo) && (addr <= prot_hi);
+  endfunction
+  function automatic bit tea_word(input logic [31:0] addr);
+    return (addr >= tea_lo) && (addr <= tea_hi);
+  endfunction
+  function automatic bit protected_word(input logic [31:0] addr);
+    return dsi_word(addr) || tea_word(addr);
   endfunction
 
   assign ir = rst_n && !ipending;
@@ -173,7 +183,9 @@ module tb_core_fpu #(
   assign rdata = rdata64[DMEM_BITS-1:0];
   // Stores outside the protected words cannot fault.
   assign check_ok = !protected_word(check_addr) && !protected_word(check_addr + 32'd4);
-  assign dfault = (protected_word(daddress) || (dword_q && protected_word(daddress + 32'd4))) ?
+  assign dfault = (tea_word(daddress) || (dword_q && tea_word(daddress + 32'd4))) ?
+                  DATA_MACHINE_CHECK :
+                  (dsi_word(daddress) || (dword_q && dsi_word(daddress + 32'd4))) ?
                   DATA_DSI_PROTECTION : DATA_OK;
 
   always @(posedge clk) begin
@@ -272,6 +284,7 @@ module tb_core_fpu #(
           spacings.push_back(sp);
         end
         "P": begin prot_lo = x; prot_hi = y; end
+        "T": begin tea_lo = x; tea_hi = y; end
         "D": done_addr = x;
         "S": sticky_expect = int'(x);
         default: $fatal(1, "tb_core_fpu: bad image tag %s", tag);

@@ -2092,6 +2092,15 @@ test-core-lsu-timing:
 	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem $(if $(filter 2,$(DISPATCH_WIDTH)),--dual-write)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=0 $(SIM_ARGS)
+# Bus errors on FP update forms through the unit: machine checks at the access
+# with base and target unchanged. Without retirement-stall-free probes: the
+# store queue is off with machine check on this core.
+.PHONY: test-core-fpu-machine-check
+test-core-fpu-machine-check:
+	mkdir -p $(BUILD_DIR)/core-fpu-mc
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 "-GMACHINE_CHECK=1'b1" --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-mc $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-fpu-mc/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --machine-check
+	./$(BUILD_DIR)/core-fpu-mc/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-mc/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 # The same with LSU_BASE_SNOOP: a load's base produced by a load or add
 # costs Table 6-6's latency, and a misaligned snooped EA traps.
 .PHONY: test-core-lsu-timing-snoop
