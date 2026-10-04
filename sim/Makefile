@@ -2118,6 +2118,22 @@ test-core-fpu-602 test-core-fpu-602-compact: test-core-fpu-602%:
 	./$(BUILD_DIR)/core-fpu-602$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-602$*/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu-602$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-602$*/program.txt +STALL=0 $(SIM_ARGS)
 
+# TEA on every FP access form as a machine check, both personalities and
+# both FPU implementations. Machine check removes the store queue, so
+# timing is not checked. Each run: CPU_VARIANT, FPU_IMPL, program.
+MC_FPU_RUNS := 603 603-compact 602 602-compact
+MC_FPU_603 := 0 0 fpu_core_program.py
+MC_FPU_603-compact := 0 1 fpu_core_program.py
+MC_FPU_602 := 4 0 fpu_core_602_program.py
+MC_FPU_602-compact := 4 1 fpu_core_602_program.py
+.PHONY: test-core-fpu-machine-check $(addprefix test-core-fpu-machine-check-,$(MC_FPU_RUNS))
+test-core-fpu-machine-check: $(addprefix test-core-fpu-machine-check-,$(MC_FPU_RUNS))
+$(addprefix test-core-fpu-machine-check-,$(MC_FPU_RUNS)): test-core-fpu-machine-check-%:
+	mkdir -p $(BUILD_DIR)/core-fpu-mc-$*
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 -GCPU_VARIANT=$(word 1,$(MC_FPU_$*)) -GFPU_IMPL=$(word 2,$(MC_FPU_$*)) -GMACHINE_CHECK=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-mc-$* $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/$(word 3,$(MC_FPU_$*)) --image $(BUILD_DIR)/core-fpu-mc-$*/program.txt --random $(FPU_CORE_RANDOM) --machine-check
+	./$(BUILD_DIR)/core-fpu-mc-$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-mc-$*/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+
 # The 602 program with the pipelined LSU over a memory taking one access per
 # cycle: the FP rows of 602 UM Table 6-6.
 .PHONY: test-core-lsu-timing-602

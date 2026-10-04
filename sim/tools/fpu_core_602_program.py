@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'fpu'))
 from fpu_core_program import (  # noqa: E402
     CHANGED_HI, CHANGED_LO, DATA, DONE, EXCEPTION_BITS, FE0, FE1, LOG, MSR_FP,
     PROT_HI, PROT_LO, SRR1_FP, SRR1_ILLEGAL, SYNC, TEA_HI, TEA_LO, Program, a_form,
-    access_faults, clear_fe_if_fp, d_form, dsisr_d, dsisr_x, f32, f64,
+    access_faults, clear_fe_if_fp, use_machine_check, d_form, dsisr_d, dsisr_x, f32, f64,
     fp_enable_deferred, fp_enable_rfi, x_form)
 from enabled_vectors import case_602, fpscr_after  # noqa: E402
 from ppc_reference import arithmetic  # noqa: E402
@@ -557,7 +557,10 @@ def main():
                         help='FP accesses run in the pipelined load/store unit')
     parser.add_argument('--pipe-mem', action='store_true',
                         help='the bench memory takes one access per cycle')
+    parser.add_argument('--machine-check', action='store_true',
+                        help='TEA on FP accesses (tb_core_fpu MACHINE_CHECK=1)')
     args = parser.parse_args()
+    use_machine_check(args.machine_check)
     timing = ('table' if args.pipe_mem else 'unit') if args.lsu_pipe else 'lane'
     p = build(args.seed, args.random, timing)
     print(f'fpu_core_602_program: {len(p.words)} words, {len(p.expects)} expected, '

@@ -21,7 +21,9 @@ module tb_core_fpu #(
   parameter int CPU_VARIANT = 0,
   // Nonzero: the data memory takes a request in the cycle it returns the
   // previous response, one access per cycle.
-  parameter int PIPE_MEM = 0
+  parameter int PIPE_MEM = 0,
+  // Nonzero: TEA is a machine check. The core then keeps no store queue.
+  parameter int MACHINE_CHECK = 0
 );
   import ppc_pkg::*;
   logic clk = 1'b0, rst_n = 1'b0;
@@ -92,7 +94,7 @@ module tb_core_fpu #(
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1), .DMEM_BITS(DMEM_BITS),
     .ENABLE_TGPR(1'b1), .ENABLE_SDR1(1'b1), .ENABLE_PAGE_MISS_RESULTS(1'b1),
-    .ENABLE_TLB_LOAD(1'b1), .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_MACHINE_CHECK(1'b1),
+    .ENABLE_TLB_LOAD(1'b1), .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_MACHINE_CHECK(MACHINE_CHECK != 0),
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL)),
     .CPU_VARIANT(cpu_variant_e'(CPU_VARIANT))
   ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),

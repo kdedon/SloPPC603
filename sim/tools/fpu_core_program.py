@@ -35,6 +35,8 @@ PROT_LO, PROT_HI = 0x7F000, 0x7FFFC
 CHANGED_LO, CHANGED_HI = 0x7E000, 0x7EFFC
 TEA_LO, TEA_HI = 0x7D000, 0x7DFFC
 CHIP = False
+# TEA rows need the core's machine check (tb_core_fpu MACHINE_CHECK=1).
+MACHINE_CHECK = False
 CHIP_BASE, CHIP_IMAGE_BYTES = 0xfff00000, 0x10000
 
 
@@ -112,6 +114,11 @@ def use_lsu_pipe(split, pipe_mem):
         LATENCY.update({'lfd': 5, 'stfd': 5})
         MEMORY_SPACING.update({'lfd-issue': 12, 'lfd-retire': 12, 'stfd-issue': 14,
                                'stfd-retire': 15, 'fadd-stfd': 5})
+
+
+def use_machine_check(on):
+    global MACHINE_CHECK
+    MACHINE_CHECK = on
 
 
 def use_pipe_mem():
@@ -601,9 +608,9 @@ def access_faults(p, single):
     None retires: SRR0 is the access, a load leaves frD and an update form
     its base, and no store is written. DSI sets DAR and DSISR (UM 4.5.3);
     a store to a C=0 page (MSR[DR] set) takes the store TLB miss with SRR1
-    from Table 4-4;
-    TEA is a machine check with SRR1[13] (Table 4-10). single: 602 FPRs, a
-    binary32 in f20 and an integer word in f21."""
+    from Table 4-4; with MACHINE_CHECK, TEA is a machine check with
+    SRR1[13] (Table 4-10). single: 602 FPRs, a binary32 in f20 and an
+    integer word in f21."""
     if single:
         p.lfs(20, f32(1.25))
         p.emit(x_form(63, 21, 0, 0, 583))                          # mffs f21
@@ -618,7 +625,10 @@ def access_faults(p, single):
     sentinel = 0xc3c3c3c3
     for addr in range(CHANGED_LO, CHANGED_LO + 0x400, 4):
         p.words[addr] = sentinel
-    for kind, lo in (('dsi', PROT_LO), ('changed', CHANGED_LO), ('tea', TEA_LO)):
+    kinds = [('dsi', PROT_LO), ('changed', CHANGED_LO)]
+    if MACHINE_CHECK:
+        kinds.append(('tea', TEA_LO))
+    for kind, lo in kinds:
         if kind == 'tea':
             p.mtmsr(p.msr | MSR_ME)
         elif kind == 'changed':
@@ -1143,7 +1153,10 @@ def main():
                         help='one-access-per-cycle memory, with integer access streams')
     parser.add_argument('--dual-write', action='store_true',
                         help='two GPR write ports (dispatch width 2)')
+    parser.add_argument('--machine-check', action='store_true',
+                        help='TEA on FP accesses (tb_core_fpu MACHINE_CHECK=1)')
     args = parser.parse_args()
+    use_machine_check(args.machine_check)
     if args.chip_image:
         use_chip_layout()
     if args.dmem_bits == 32:
