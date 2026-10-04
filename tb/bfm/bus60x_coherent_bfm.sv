@@ -124,7 +124,7 @@ module bus60x_coherent_bfm #(
   // Read beats of these doublewords carry wrong DP7 (once each); the bench
   // XORs dp_flip into DP.
   logic [31:0] bad_dp_once [$];
-  logic [7:0] dp_flip = 8'h00;
+  logic [7:0] dp_flip;
   // Second-master tenures to retry as another snooper would, with ARTRY in
   // the cycle after AACK and no push owed by the processor.
   int om_foreign_retries = 0;
@@ -146,7 +146,7 @@ module bus60x_coherent_bfm #(
   // the processor must ignore it and keep address order.
   int dbwo_push_pct = 0, dbwo_pct = 0;
   int n_dbwo_push = 0, n_dbwo_ignored = 0;
-  logic dbwo_n = 1'b1;
+  logic dbwo_n;
   bit dbwo_next = 1'b0;
   logic owed = 1'b0, in_data = 1'b0;
   /* verilator lint_on UNUSEDSIGNAL */
@@ -182,6 +182,15 @@ module bus60x_coherent_bfm #(
                      ~^bus_a_o[15:8], ~^bus_a_o[7:0]};
 
   initial begin
+    foreach (tt_count[i]) tt_count[i] = 0;
+    for (int i = 0; i < MEM_BYTES; i++) mem[i] = 8'b0;
+  end
+
+  // The serving process is the only writer of pins and tenure state: with a
+  // second writer Verilator updates logic fed by a pin only on the edges of
+  // the consumer's other inputs.
+  task automatic init_state;
+    dp_flip = 8'h00; dbwo_n = 1'b1;
     bg_n_o = 1'b1; aack_n_o = 1'b1; target_artry_n = 1'b1; dbg_n_o = 1'b1;
     d_o = 64'b0; ta_n_o = 1'b1; drtry_n_o = 1'b1; tea_n_o = 1'b1;
     om_drive = 1'b0; om_ts_n = 1'b1; om_gbl_n = 1'b1; om_a = '0; om_tt = '0;
@@ -189,9 +198,7 @@ module bus60x_coherent_bfm #(
     addr = '0; tt = '0; burst = 1'b0; write = 1'b0; external = 1'b0;
     tea_ended = 1'b0; tsiz = '0;
     last = '{K_ADDR_ONLY, 5'b0, 32'b0, 1'b0, 1'b0, 1'b0, 1'b0};
-    foreach (tt_count[i]) tt_count[i] = 0;
-    for (int i = 0; i < MEM_BYTES; i++) mem[i] = 8'b0;
-  end
+  endtask
 
   function automatic int unsigned rnd();
     rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
@@ -655,6 +662,7 @@ module bus60x_coherent_bfm #(
   initial begin : serve
     logic retried, taken;
     bit last_cpu;
+    init_state();
     last_cpu = 1'b0;
     forever begin
       bus_rise();

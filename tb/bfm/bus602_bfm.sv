@@ -52,20 +52,13 @@ module bus602_bfm #(
   int retries = 0, teas = 0, beats = 0;
   bit busy = 1'b0;
   // Second master.
-  logic om_ts_n = 1'b1, om_bb_n = 1'b1, om_d_oe = 1'b0;
-  logic [0:63] om_d = '0;
+  logic om_ts_n, om_bb_n, om_d_oe;
+  logic [0:63] om_d;
   logic [63:0] om_line [4];
   bit om_artry = 1'b0;
 
-  logic tgt_d_oe = 1'b0, tgt_artry_n = 1'b1;
-  logic [0:63] tgt_d = '0;
-  initial begin
-    bg_n = 1'b0;
-    aack_n = 1'b1;
-    t32_n = 1'b1;
-    ta_n = 1'b1;
-    tea_n = 1'b1;
-  end
+  logic tgt_d_oe, tgt_artry_n;
+  logic [0:63] tgt_d;
 
   assign bus_ts_n = cpu_ts_oe ? cpu_ts_n : om_ts_n;
   assign bus_bb_n = (cpu_bb_oe ? cpu_bb_n : 1'b1) & om_bb_n;
@@ -195,32 +188,42 @@ module bus602_bfm #(
   bit om_req = 1'b0;
   logic [31:0] om_addr = '0;
   int om_idle = 0;
-  always @(negedge clk) begin
-    bg_n = bus_block || om_req;
-    om_idle = (om_req && !cpu_ts_oe && !cpu_d_oe && !cpu_bb_oe && bus_artry_n &&
-               bus_ts_n) ? om_idle + 1 : 0;
-    if (!busy && om_idle > 2) begin
-      logic [0:63] w;
-      w = '0;
-      w[0:31] = {om_addr[31:5], 5'b0};
-      w[53] = 1'b0;          // TBST
-      w[54:58] = 5'b01110;   // RWITM
-      w[59] = 1'b0;          // GBL
-      w[60:61] = 2'b11;
-      om_d = w;
-      om_d_oe = 1'b1;
-      om_ts_n = 1'b0;
-      om_artry = 1'b0;
-      busy = 1'b1;
-      serve(w, 1'b1);
-      busy = 1'b0;
-      om_idle = 0;
-      om_req = 1'b0;
-    end else if (!busy && !bus_ts_n && cpu_ts_oe) begin
-      busy = 1'b1;
-      serve(bus_d, 1'b0);
-      if (!bus_ts_n && cpu_ts_oe) $fatal(1, "bus602_bfm: TS still asserted after the tenure");
-      busy = 1'b0;
+  // This process is the only writer of the pins: with a second writer
+  // Verilator updates logic fed by a pin only on the edges of the consumer's
+  // other inputs.
+  initial begin
+    aack_n = 1'b1; t32_n = 1'b1; ta_n = 1'b1; tea_n = 1'b1;
+    om_ts_n = 1'b1; om_bb_n = 1'b1; om_d_oe = 1'b0; om_d = '0;
+    tgt_d_oe = 1'b0; tgt_artry_n = 1'b1; tgt_d = '0;
+    bg_n = 1'b0;
+    forever begin
+      @(negedge clk);
+      bg_n = bus_block || om_req;
+      om_idle = (om_req && !cpu_ts_oe && !cpu_d_oe && !cpu_bb_oe && bus_artry_n &&
+                 bus_ts_n) ? om_idle + 1 : 0;
+      if (!busy && om_idle > 2) begin
+        logic [0:63] w;
+        w = '0;
+        w[0:31] = {om_addr[31:5], 5'b0};
+        w[53] = 1'b0;          // TBST
+        w[54:58] = 5'b01110;   // RWITM
+        w[59] = 1'b0;          // GBL
+        w[60:61] = 2'b11;
+        om_d = w;
+        om_d_oe = 1'b1;
+        om_ts_n = 1'b0;
+        om_artry = 1'b0;
+        busy = 1'b1;
+        serve(w, 1'b1);
+        busy = 1'b0;
+        om_idle = 0;
+        om_req = 1'b0;
+      end else if (!busy && !bus_ts_n && cpu_ts_oe) begin
+        busy = 1'b1;
+        serve(bus_d, 1'b0);
+        if (!bus_ts_n && cpu_ts_oe) $fatal(1, "bus602_bfm: TS still asserted after the tenure");
+        busy = 1'b0;
+      end
     end
   end
 
