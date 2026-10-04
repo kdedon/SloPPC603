@@ -70,6 +70,25 @@ module tb_demo_soc #(
   int unsigned profile [string];
   logic profiling = 1'b0;
   initial profiling = $test$plusargs("PROFILE");
+  // Instruction word per CQ slot, to name the flag owner.
+  logic [31:0] slot_insn [8];
+  function automatic string insn_class(logic [31:0] w);
+    // verilator lint_off UNUSEDSIGNAL
+    logic [31:0] unused;
+    // verilator lint_on UNUSEDSIGNAL
+    unused = w;
+    if (w[31:26] == 6'd31 || w[31:26] == 6'd19)
+      return $sformatf("%0d/%0d%s", w[31:26], w[10:1], w[0] ? "." : "");
+    return $sformatf("%0d", w[31:26]);
+  endfunction
+  always @(posedge clk) begin
+    if (soc.cpu.cpu.translated_core.core.dispatch)
+      slot_insn[soc.cpu.cpu.translated_core.core.alloc_producer.index] =
+        soc.cpu.cpu.translated_core.core.iq_head.insn;
+    if (soc.cpu.cpu.translated_core.core.dispatch1)
+      slot_insn[soc.cpu.cpu.translated_core.core.alloc1_producer.index] =
+        soc.cpu.cpu.translated_core.core.dq1_head.insn;
+  end
   always @(posedge clk) begin
     // Counted while the SoC's counters run; cleared with them.
     if (soc.perf.we_i && (soc.perf.word_i == 5'd0) && soc.perf.wdata_i[1]) profile.delete();
@@ -83,6 +102,12 @@ module tb_demo_soc #(
                                  soc.cpu.cpu.translated_core.core.dispatch_uop.special_op.name());
       endcase
       if (key != "") profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+      if (soc.cpu.cpu.translated_core.core.perf_slot == ppc_pkg::PERF_FLAGS_WAIT) begin
+        key = $sformatf("flags head %s owner %s",
+          insn_class(soc.cpu.cpu.translated_core.core.iq_head.insn),
+          insn_class(slot_insn[soc.cpu.cpu.translated_core.core.flags_owner.index]));
+        profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+      end
       if (soc.cpu.cpu.translated_core.core.dispatch &&
           soc.cpu.cpu.translated_core.core.iq_valid1 &&
           !soc.cpu.cpu.translated_core.core.dispatch1) begin
@@ -99,6 +124,11 @@ module tb_demo_soc #(
         else if (soc.cpu.cpu.translated_core.core.d1_iu &&
                  !soc.cpu.cpu.translated_core.core.d1_iu_ready) key = "iu";
         else key = "other";
+        if (key == "units" && soc.cpu.cpu.translated_core.core.dq1_branch[3])
+          key = $sformatf("units %s%s%s%s", insn_class(soc.cpu.cpu.translated_core.core.dq1_head.insn),
+            soc.cpu.cpu.translated_core.core.dq1_folded ? " folded" : "",
+            soc.cpu.cpu.translated_core.core.dispatch_needs_flags ? " dq0-flags" : "",
+            soc.cpu.cpu.translated_core.core.flags_busy ? " busy" : "");
         key = $sformatf("alone %s+%s %s", u0, u1, key);
         profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
       end

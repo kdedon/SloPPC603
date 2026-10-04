@@ -197,7 +197,17 @@ module tb_core_dual #(
       32'ha8: return add(28, 27, 4);
       32'hac: return or_(29, 4, 7);
       32'hb0: return lwz(25, 24, 0);
-      32'hb4: return b(int'(END_PC) - 32'hb4);
+      // J: CTR moves are completion-serialized (UM 6.3.3.2): mtctr and the
+      // addi behind it dispatch while the multiply runs; the mtctr executes
+      // once it is oldest, and the add reading mfctr's result waits for it
+      // to retire.
+      32'hb4: return SYNC;
+      32'hb8: return mullw(26, 4, 7);
+      32'hbc: return {6'd31, 5'd7, 5'd9, 5'd0, 10'd467, 1'b0};   // mtctr r7
+      32'hc0: return addi(0, 0, 5);
+      32'hc4: return {6'd31, 5'd2, 5'd9, 5'd0, 10'd339, 1'b0};   // mfctr r2
+      32'hc8: return add(30, 2, 4);
+      32'hcc: return b(int'(END_PC) - 32'hcc);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
@@ -295,9 +305,16 @@ module tb_core_dual #(
     expected[19] = 27; expected[20] = 1; expected[21] = 1; expected[22] = 1;
     expected[23] = 6; expected[24] = 32'h408; expected[25] = 11; expected[27] = 27;
     expected[28] = 30; expected[29] = 11;
+    expected[2] = 9; expected[26] = 27; expected[30] = 12;
     for (int i = 1; i < 32; i++)
       if (regs[i] != expected[i]) $fatal(1, "r%0d = %0x, expected %0x", i, regs[i], expected[i]);
     if (dmem[2] != 32'd11) $fatal(1, "stored word %0x", dmem[2]);
+    if (!(dcycle[32'hbc] < rcycle[32'hb8]) || !(dcycle[32'hc0] < rcycle[32'hbc]))
+      $fatal(1, "mtctr or younger work waited for older work to retire");
+    if (!(dcycle[32'hc8] > rcycle[32'hc4]))
+      $fatal(1, "mfctr result read before it retired");
+    $display("  %-34s mtctr@%0d addi@%0d mullw retired@%0d", "completion-serialized mtctr",
+             dcycle[32'hbc], dcycle[32'hc0], rcycle[32'hb8]);
     if (DISPATCH_WIDTH == 2) begin
       $display("dispatch:");
       expect_pair(32'h14, 1'b1, "add + add (IU + SRU)");
