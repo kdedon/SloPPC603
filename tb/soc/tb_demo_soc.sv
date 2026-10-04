@@ -37,16 +37,23 @@ module tb_demo_soc #(
   );
   /* verilator lint_on PINCONNECTEMPTY */
 
-  // +TRACE=<n>: print each retirement (PC, instruction) from retirement n on.
+  // +TRACE=<n>: print each retirement (PC, instruction) from retirement n on,
+  // until retirement +TRACE_TO=<m>. A CQ[1] retirement follows on its own line.
   longint unsigned cycles = 0, retired = 0, max_cycles = 64'd400_000_000, trace_from = '1;
+  longint unsigned trace_to = '1;
   logic running = 1'b0;
   always @(posedge clk) begin
     if (running) begin
       cycles++;
       if (soc.cpu.retire_valid) begin
-        if (retired >= trace_from)
+        if (retired >= trace_from && retired < trace_to) begin
           $display("retire %0d cycle %0d pc %08x insn %08x", retired, cycles,
                    soc.cpu.retire.pc, soc.cpu.retire.insn);
+          if (soc.cpu.cpu.translated_core.core.commit1)
+            $display("retire %0d cycle %0d pc %08x insn %08x", retired + 1, cycles,
+                     soc.cpu.cpu.translated_core.core.retire1_o.pc,
+                     soc.cpu.cpu.translated_core.core.retire1_o.insn);
+        end
         // At dispatch width 2 CQ[1] may retire beside the exported head.
         retired += 1 + longint'(soc.cpu.cpu.translated_core.core.commit1);
       end
@@ -116,6 +123,7 @@ module tb_demo_soc #(
     if (!$value$plusargs("NAME=%s", name)) name = "demo";
     void'($value$plusargs("MAX_CYCLES=%d", max_cycles));
     void'($value$plusargs("TRACE=%d", trace_from));
+    void'($value$plusargs("TRACE_TO=%d", trace_to));
     $readmemh(image, soc.ram.mem);
     repeat (8) @(posedge clk);
     rst_n = 1'b1;
