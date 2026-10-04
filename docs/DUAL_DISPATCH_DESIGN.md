@@ -876,6 +876,10 @@ Rules the manual states as station waits rather than dispatch conditions
   taken and the SRU's is free (UM 6.3, 6.4.5). DQ1 then takes no integer
   operation.
 
+Recorded: `make -C sim lint check-spec`; `make -C sim -k -j2 <bench>` and, from `sim/`, the same with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, for `test-core test-core-dual test-core-recovery test-core-machine-check-trace test-core-branch-fold test-core-control-memory test-flags test-completion-flags test-completion test-core-add-flags test-core-crstate test-crstate-execution test-core-compare test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-update test-core-fpu test-core-le test-stage test-core-divider-timing test-core-divider-timing-pid6 test-lsu-update-edges test-core-logical test-core-record-logical test-core-record-edges test-core-memory-edges test-crstate-edges test-crlogical-edges test-crtransfer-edges test-core-crlogical test-core-crtransfer test-completion-cr-bits test-completion-cr-fields test-core-add-recovery test-core-rotate test-core-shifts test-core-interrupt test-core-adde test-core-add-unary`; `make -C sim test-dispatch-rules DEMO_FW_DIR=<main checkout>/toolchain/build/demo` in both configurations; commit 103325b (these station waits merged with completion in the writeback cycle), 2026-10-04.
+All pass except `test-lsu-update-edges` at width 2 with the unit: a bus error on `lwzu` hangs the core (no retirement, no halt), as it does on f5305d4 with the same bench; earlier the bench stopped at its update-hold check in that configuration.
+Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip`, under the Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, commit 8f66fa3 (same RTL): 0 errors, 50 warnings.
+
 ## Dispatch and completion rule check
 
 Recorded: `make -C sim test-dispatch-rules` at width 1, width 1 with the LSU unit, `DISPATCH_WIDTH=2` and width 2 with the unit (`VERILATOR=tools/verilate-lsu-pipe`), commits 333c376 and bf69248, 2026-10-04.

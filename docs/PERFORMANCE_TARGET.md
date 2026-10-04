@@ -507,8 +507,15 @@ passes its checks. Dhrystone is `perf-diff`'s timed loop (18 iterations).
 | CR writer waits for the token in its station (cause 3) | ca7afdf | 849.0 | 751.5 | 2.087 | 2.292 |
 | Load waits for its base in the unit (cause 4) | c610eb4 | 849.0 | 751.5 | 2.096 | 2.298 |
 | DQ0 add/compare to the SRU (cause 8) | 6cef417 | 849.0 | 744.0 | 2.096 | 2.301 |
+| Causes 1, 3, 4, 8 together | 103325b | 814.0 | 714.5 | 2.187 | 2.406 |
 
 The build fix changes none of the figures.
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commit 103325b, 2026-10-04 (last row; `perf-diff` exits 0, CoreMark CRCs match).
+Together the four save 37.0 cycles at width 1 and 57.0 at width 2 against
+f5305d4; completion in the writeback cycle alone saved 16.0 and 38.5, and
+the station waits alone 2.0 and 27.5, so at width 2 the gains overlap by
+9.0 cycles.
 
 - Cause 3: one younger CR writer bound for the IU or SRU station dispatches
   while the token is held and becomes its owner on the edge the owner

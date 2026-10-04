@@ -228,6 +228,8 @@ adder's; the request address still comes from a register. The load offers
 in the same cycle it would have after waiting at dispatch, but younger work
 dispatches behind it.
 
+Recorded: `make -C sim test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-update test-core-memory-edges test-core-fpu test-core-le test-lsu-update-edges test-core-dual test-dispatch-rules`, at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe` (`DEMO_FW_DIR=<main checkout>/toolchain/build/demo` for the last), commit 103325b, 2026-10-04. All pass except `test-lsu-update-edges` with the unit, which also fails on f5305d4 ([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md#station-waits)).
+
 Parameter `LSU_BASE_SNOOP` (macro `PPC_LSU_BASE_SNOOP`, default 0) forms a
 D-form load's EA in P1, as the 603e's LSU does from operands its station
 snooped (UM 6.3.3.1):
