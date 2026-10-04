@@ -134,13 +134,8 @@ with `+PAIR_PROBE +WRITE_TEA +SHARED_BUSY`:
   qualification (`ppc_bus60x_cache_master.sv`, `S_DATA_REQUEST`) now fails
   seed 1: "processor 1 DBB without a qualified DBG". The RTL asserts DBB in
   the bus cycle after a qualified DBG, as UM §8.4.1 requires. The extra cycle
-  seen before is in the simulation: Verilator 5.020 evaluates the BIU's DBG
-  gating (`outer_dbg_n`, `pe_dbg_n`) only in the rising-edge step, after the
-  flops that read it, so a DBG asserted by the model at a falling edge
-  reaches the cache master one edge late. Traced at seed 1: DBG asserted at
-  t=5210, `outer_dbg_n` still negated at the 5215 edge with all its inputs
-  asserting it. The held DRTRY catches the mutation with or without that
-  delay.
+  seen in this round was a bench scheduling fault, since fixed; see
+  [Bench pin scheduling](#bench-pin-scheduling).
 - `+WRITE_TEA` ends 30% of probe-line write tenures with TEA in place of a
   beat's TA. Each takes one machine check; the program repeats a lost store.
 - `+SHARED_BUSY` wires both processors' ABB and DBB to both. Cycle counts
@@ -174,6 +169,69 @@ Width 2 runs the pipelined LSU. TEA counts include write TEAs.
 Not established: DBWO between processors (tied negated); TEA on instruction
 fetches; more than two processors; a machine check cancelling stores queued
 past completion (stores still run behind a held TEA).
+
+### Bench pin scheduling
+
+Recorded: `make -C sim test-chip-mp test-chip-dcache-coherence
+test-chip-dcache-coherence-negative test-chip-pins test-chip-ecxwx
+test-core-bat-cached-bus60x test-core-bat-cached-bus60x-drain
+test-core-bat-cached-bus60x-coherence test-core-bat-cached-bus60x-irq
+test-core-bat-cached-bus60x-timer test-core-bat-cached-bus60x-stress
+test-core-bat-machine-check test-biu-dcache-snoop`, commit d14e301, and
+`test-chip602-pins test-chip-603`, commit 99754b5, 2026-10-04, Verilator
+5.020. PASS.
+
+In the two-processor bench a DBG (and an early BG) asserted by the model at a
+falling edge reached the cache master one edge late. The RTL gating is a plain
+`assign`; the fault was in the model. Verilator 5.020 gives a variable written
+by a process with timing controls the clock edges that process awaits
+directly; waits inside called tasks are not counted. The model's processes
+wait only through `bus_rise`/`bus_fall`, so their pins had no edges, which is
+safe while the process is the only writer (logic fed by the pin then runs on
+every edge). The pins also had a static `initial` writer, so Verilator
+scheduled the BIU's `outer_dbg_n`, `outer_bg_n`, `grp_dbg_n` and `grp_bg_n`
+only after the rising edge's flops, from the other inputs' edges. A standalone
+module with a pin written from a task-waiting process plus a separate
+initializer reproduces it; dropping either condition removes it.
+
+Fix: each pin is written only by the process that drives it, initialized at its
+top (rule in [CODING_CONVENTIONS.md](CODING_CONVENTIONS.md)). Comparing the
+generated scheduling before and after, only those four BIU nets move from the
+rising-edge step to the combinational step. Measured at seed 1 with a pin
+trace: before, 395 of 978 qualified DBGs (DBG asserted, DBB, ARTRY and DRTRY
+negated) got DBB two edges later; after, all 568 got it at the next edge,
+including those qualifying as DRTRY negates after an early DBG.
+
+The model now fails a processor that does not assert DBB the cycle after a
+qualified DBG, unless it is still awaiting a DRTRY replacement beat of its own
+tenure. Restoring the static initializer of `dbg_n_o` fails seed 1 at cycle
+60: "processor 0 ignored a qualified DBG". Removing DRTRY from the cache
+master's DBG qualification still fails seed 1: "processor 0 DBB without a
+qualified DBG" (cycle 3278).
+
+| Seed | Options | Cycles | Early DBG (held DRTRY) | TEA (P0/P1) | Write TEA |
+|---|---|---|---|---|---|
+| 1 | — | 25,826 | 14 (6) | 19/12 | 0 |
+| 2 | — | 28,107 | 19 (13) | 9/6 | 0 |
+| 3 | — | 28,839 | 14 (13) | 9/9 | 0 |
+| 4 | — | 25,369 | 20 (14) | 6/11 | 0 |
+| 5 | — | 26,657 | 12 (8) | 6/8 | 0 |
+| 1 | pair | 26,114 | 13 (7) | 17/11 | 0 |
+| 3 | pair | 27,347 | 11 (8) | 9/11 | 0 |
+| 5 | pair | 28,338 | 9 (8) | 18/11 | 0 |
+| 2 | pair, write TEA, shared | 27,858 | 14 (10) | 18/20 | 3 |
+| 4 | pair, write TEA, shared | 25,350 | 15 (12) | 7/10 | 4 |
+
+Audit of the other models and benches for the same pattern (a DUT input with a
+timed writer and a second writer): `bus60x_coherent_bfm`,
+`bus60x_scripted_target_bfm` and `bus602_bfm` had it and now follow the rule;
+their benches' generated scheduling is unchanged by the fix, so none had a late
+path. `chip_harness.svh` pins with declaration initializers (`int_n`,
+`hreset_n`, `mcp_n` and the other asynchronous inputs) feed only the pin
+synchronizer flops; `buc_*`, `bus_block` and `snoop_hide` reach the DUT through
+logic evaluated on every edge; `tb_bus60x_line_read` writes its target's pins
+from the bench as well, but the DUT reads them only in flop updates. No other
+one-edge-late path was found.
 
 ## Full gate
 
