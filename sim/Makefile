@@ -2312,6 +2312,12 @@ test-soc-target-reset:
 demo-soc-model:
 	mkdir -p $(BUILD_DIR)/demo
 	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_demo_soc --Mdir $(BUILD_DIR)/demo/model $(DEMO_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
+# Per-instruction Dhrystone cycles of the core against the 603e model, with
+# stall causes (docs/PERFORMANCE_TARGET.md). PERF_DIFF_ARGS passes --core rules.
+.PHONY: perf-diff
+perf-diff: demo-soc-model
+	./$(BUILD_DIR)/demo/model/Vtb_demo_soc +IMAGE=$(DEMO_FW_DIR)/dhrystone.hex +TRACE=1000000 +TRACE_TO=1012000 +DISPATCH_TRACE=$(BUILD_DIR)/demo/dispatch.txt +STALL_TRACE=$(BUILD_DIR)/demo/stall.txt > $(BUILD_DIR)/demo/retire.log
+	python3 tools/perf_diff.py $(BUILD_DIR)/demo/retire.log $(BUILD_DIR)/demo/dispatch.txt $(BUILD_DIR)/demo/stall.txt --mark fff03808 --dump $(DEMO_FW_DIR)/dhrystone.dump $(PERF_DIFF_ARGS)
 # The demo SoC with ENABLE_FPU.
 .PHONY: demo-soc-fpu-model
 demo-soc-fpu-model:

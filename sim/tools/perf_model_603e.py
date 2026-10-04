@@ -280,6 +280,10 @@ CORE_RULES = {
     "dq0-iu": "an add or compare uses the SRU only from DQ1 beside an IU instruction in DQ0",
     "lsu-base": "a load or store dispatches only once its address operands are written",
     "late-retire": "an instruction completes two cycles after it finishes, not one",
+    "miss-late": "the correct path after a misprediction dispatches four cycles after "
+                 "resolution, not two",
+    "cr-rename": "603e reading of UM 6.3.3.1 (one CR rename): a CR writer finishes only "
+                 "after the previous CR writer completes",
     "cq-same": "a CQ entry freed by completion takes a dispatch in the same cycle "
                "(the model's default is the next cycle)",
 }
@@ -378,6 +382,8 @@ def schedule(stream, fetch_any=False, core=frozenset()):
                     redirect = x + 1 if taken else 0
                 else:
                     redirect = resolve + 1         # F6-5: resolve 5E, target 6F
+                    if "miss-late" in core:
+                        redirect += 2
                 r["mispredict"] = pred != taken
             else:
                 redirect = x + 1 if taken else 0   # F6-3: br 3E, target 4F
@@ -418,6 +424,8 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         if ins.ctr_r:
             ready = max(ready, ctr_ready)
         best = None
+        if "cr-rename" in core and ins.crd:
+            ready = max(ready, cr_free - ins.lat + 1)
         for u in avail:
             s = max(d + 1, ready, unit_free[u])
             if ins.serial and prev:

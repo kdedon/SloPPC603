@@ -214,6 +214,36 @@ def main():
                   f"{a['model_d'] / iters:7.1f} {(a['core_d'] - a['model_d']) / iters:6.1f} "
                   f"{(a['core_r'] - a['model_r']) / iters:6.1f}  {causes}")
 
+    # Dispatch to retirement by class, and taken-branch redirects: branch
+    # dispatch (model: BPU execute) to the next instruction's dispatch.
+    lat_c, lat_m = defaultdict(Counter), defaultdict(Counter)
+    red_c, red_m = defaultdict(Counter), defaultdict(Counter)
+    for i in range(lo, hi):
+        s = sched[i]
+        ins = s["ins"]
+        if ins.unit != "BPU":
+            k = ins.kind
+            lat_c[k][ret[jr + i][0] - disp[jd + i][0]] += 1
+            lat_m[k][s["C"] - s["D"]] += 1
+        elif stream[i][2] != stream[i][0] + 4:
+            k = ins.kind + (" mispredicted" if s.get("mispredict") else "")
+            red_c[k][disp[jd + i + 1][0] - disp[jd + i][0]] += 1
+            red_m[k][model_front(i + 1) - s["X"]] += 1
+
+    def dist(c):
+        n = sum(c.values())
+        return f"min {min(c)} mean {sum(k * v for k, v in c.items()) / n:5.2f}"
+    print("\ndispatch to retirement (core) and completion (model), cycles")
+    for k in sorted(lat_c):
+        print(f"  {k:8} n/iter {sum(lat_c[k].values()) / iters:6.1f}  core {dist(lat_c[k])}"
+              f"  603e {dist(lat_m[k])}")
+    print("\ntaken branch to next dispatch, cycles (excess = per iteration)")
+    for k in sorted(red_c):
+        n = sum(red_c[k].values())
+        exc = (sum(a * b for a, b in red_c[k].items()) - sum(a * b for a, b in red_m[k].items()))
+        print(f"  {k:18} n/iter {n / iters:5.1f}  core {dist(red_c[k])}  603e {dist(red_m[k])}"
+              f"  excess {exc / iters:5.1f}")
+
     table("by function", lambda pc: func_of(syms, pc), 30)
     lead = sorted(leaders)
 
