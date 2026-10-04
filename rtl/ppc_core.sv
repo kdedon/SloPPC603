@@ -342,6 +342,7 @@ module ppc_core #(
   localparam bit ENABLE_LE = ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT &&
                              ENABLE_FULL_DECODE;
   localparam bit MISALIGNED_LE_HW = cpu_misaligned_le_hw(CPU_VARIANT);
+  localparam bit MISALIGNED_ECXWX_HW = cpu_misaligned_ecxwx_hw(CPU_VARIANT);
   // The second GPR write port's select adds a LUT level to every read.
   localparam bit DUAL_GPR_WRITE = DUAL;
   // SRU add/compare lane, fed from DQ1 beside an IU operation in DQ0.
@@ -810,7 +811,8 @@ module ppc_core #(
     (uop.mem_skip || (uop.mem_seq == SEQ_STRING_IMM) ||
      (uop.mem_seq == SEQ_STRING_INDEXED)) ? 1'b0 :
     ((uop.mem_seq == SEQ_MULTIPLE) || uop.mem_reserve ||
-     uop.mem_conditional || uop.mem_external || !ENABLE_MISALIGNED_ACCESS) ?
+     uop.mem_conditional || (uop.mem_external && !MISALIGNED_ECXWX_HW) ||
+     !ENABLE_MISALIGNED_ACCESS) ?
       (((uop.mem_size == MEM_WORD) && (dispatch_ea_low != 0)) ||
        ((uop.mem_size == MEM_HALF) && dispatch_ea_low[0])) :
     (uop.mem_size != MEM_BYTE) && msr[MSR_DR] && dispatch_page_cross;

@@ -1858,6 +1858,14 @@ test-chip-icache-real:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_icache_real "-GICE=1'b0" --Mdir $(BUILD_DIR)/chip-icache-real/off -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_icache_real.sv
 	./$(BUILD_DIR)/chip-icache-real/off/Vtb_chip_icache_real $(SIM_ARGS)
 
+.PHONY: test-chip-ecxwx
+test: test-chip-ecxwx
+# Misaligned eciwx/ecowx: split on PID6 and the 603, alignment on the PID7v; data cache off and on.
+test-chip-ecxwx:
+	for v in 0 1 3; do for d in 0 1; do mkdir -p $(BUILD_DIR)/chip-ecxwx/v$$v-d$$d && \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_ecxwx +define+CHIP_VARIANT=$$v "-GDCE=1'b$$d" --Mdir $(BUILD_DIR)/chip-ecxwx/v$$v-d$$d -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_ecxwx.sv && \
+	  ./$(BUILD_DIR)/chip-ecxwx/v$$v-d$$d/Vtb_chip_ecxwx $(SIM_ARGS) || exit 1; done; done
+
 .PHONY: test-chip-dcache-coherence test-chip-dcache-coherence-negative
 test: test-chip-dcache-coherence test-chip-dcache-coherence-negative
 CHIP_COHERENCE_TB := -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_dcache_coherence.sv

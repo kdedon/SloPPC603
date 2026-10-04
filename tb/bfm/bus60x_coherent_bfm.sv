@@ -154,6 +154,8 @@ module bus60x_coherent_bfm #(
   logic [4:0] tt;
   logic burst, write, external, tea_ended;
   logic [2:0] tsiz;
+  // Bytes owed by the second tenure of a split external word, per direction.
+  logic [2:0] ext_rem [2] = '{3'd0, 3'd0};
   logic target_artry_n;
   logic om_drive, om_ts_n, om_gbl_n, om_ap_flip;
   int om_window;
@@ -263,7 +265,12 @@ module bus60x_coherent_bfm #(
     external = (tt_i == TT_EXTERNAL_WRITE) || (tt_i == TT_EXTERNAL_READ);
     burst = !tbst_n_i && !external;
     write = external ? (tt_i == TT_EXTERNAL_WRITE) : (tt_i[1] && !tt_i[3]);
-    tsiz = external ? 3'b100 : tsiz_i;
+    // A misaligned external-control word is two tenures: 4 - A[30:31]
+    // bytes at the EA, then the rest at the next word (UM 8.3.2.5.1).
+    if (!external) tsiz = tsiz_i;
+    else if (a_i[1:0] != 2'b00) tsiz = 3'd4 - {1'b0, a_i[1:0]};
+    else if (ext_rem[write] != 3'd0) tsiz = ext_rem[write];
+    else tsiz = 3'b100;
     // last describes the most recent data-side tenure.
     if (tc_i != 2'd2) begin
       last.tt = tt_i;
@@ -394,6 +401,8 @@ module bus60x_coherent_bfm #(
     for (int index = 0; index < (burst ? 4 : 1) && !tea_ended; index++)
       if (write) write_beat(index);
       else read_beat(index);
+    if (external && !tea_ended)
+      ext_rem[write] = (addr[1:0] != 2'b00) ? {1'b0, addr[1:0]} : 3'd0;
     if (!tea_ended) begin
       if (write) writes++;
       else begin

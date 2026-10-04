@@ -699,6 +699,11 @@ package ppc_pkg;
     c = cpu_cfg(v);
     return c.misaligned_le_hw;
   endfunction
+  function automatic bit cpu_misaligned_ecxwx_hw(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return c.misaligned_ecxwx_hw;
+  endfunction
   function automatic bit cpu_mul_602_timing(cpu_variant_e v);
     cpu_cfg_t c;
     c = cpu_cfg(v);
