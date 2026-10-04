@@ -256,10 +256,12 @@ With the unit and a data cache, `ppc_core_bat` sets the router's
   from the data RAM output selected by the tag compare. When the answer is
   taken, the cache accepts the next request in that cycle and looks it up
   in the next, so hits flow one per cycle. A copy-back store hit writes the
-  data RAM and answers in that cycle too. It takes the next request only
-  in its first lookup cycle, when the data RAM reads that request's double
-  word, and only if that is not the double word being written; a store
-  held in lookup by a snoop or a push of its line does not. An answer not taken is
+  data RAM and answers in that cycle too. It takes a next store in any
+  lookup cycle, since a store reads no data (UM 1.1.5.2, one byte-wise
+  read-modify-write per cycle). It takes another request only in its first
+  lookup cycle, when the data RAM reads that request's double word; a load
+  of the double word being written gets the written bytes from a one-cycle
+  forward, and other requests to it wait. An answer not taken is
   registered and held, as before. The fast path reads HID0[DCE] as it was
   in the request's accept cycle; HID0 changes only through the serialized
   lane, which runs while the unit is idle. Misses, other stores, cache
@@ -657,3 +659,8 @@ Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` 
 0 errors, 51 warnings. No fit or timing: the store write's select now
 waits for the P1 load's overlap compare, and the data micro-TLB has eight
 entries.
+
+### Stores behind stores (2026-10-04)
+
+Recorded: `make -C sim lint check-spec`; `make -C sim -k -j2 test-micro-tlb-router test-bat-memory-router test-page-memory-router test-core-tlb-miss test-core-page-data-exception test-core-page-translation test-core-bat test-core-lsu-timing test-core-dcache-lsu-pipe test-dcache test-dcache-fast test-chip-dcache-coherence test-core-le test-core-fpu` at width 1 (unit off) and with `DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, commit 4438640, 2026-10-04.
+RESULTS_PENDING

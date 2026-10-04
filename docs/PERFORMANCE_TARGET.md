@@ -622,6 +622,53 @@ The store write's select now also depends on the P1 load's overlap compare
 eight entries instead of four. Both are on paths the 66 MHz fit flags; the
 chip needs a fresh fit.
 
+## Stores behind stores
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex +PROFILE`, commits 29c64f9 (before), b58bd0c (micro-TLB only) and 20f17d3 (after), 2026-10-04.
+Unit and store queue on, prebuilt firmware. Every run passes its checks.
+
+What the manual says:
+
+- The 603e translates each access in the LSU's first stage (UM 6.4.4), so a
+  store to a page a load just used needs no second translation. A data
+  micro-TLB entry filled by a load now records whether a store would pass
+  (BAT PP, page PP and key, TLB C bit); see
+  [MICRO_TLB.md](MICRO_TLB.md#entries).
+- Loads and stores have one-cycle throughput (UM 6.4.4) and "a complete
+  read-modify-write operation to the cache can occur in each cycle", on a
+  byte basis (UM 1.1.5.2). Nothing restricts a store, or a load, to the
+  double word written the cycle before.
+
+The cache answered a store hit in its lookup cycle but accepted the next
+request only for another double word, since the data RAM's early read could
+not see the store's write. A store reads no data and now follows at once; a
+load of that double word takes the written bytes from a one-cycle forward
+merged per way and byte into the hit data.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before | 787.0 | 656.0 | 2.230 | 2.506 |
+| Micro-TLB store permission only | | 656.0 | | 2.506 |
+| Stores behind stores, no forward | | 657.0 | | |
+| Forward, stores still held | | 655.0 | | 2.517 |
+| After | 786.0 | 655.0 | 2.240 | 2.518 |
+
+The data micro-TLB already hit nearly always (one store miss over the
+Dhrystone profile region), so its change moves nothing here. Per Dhrystone
+run, about five stores now follow a store to the same double word and one
+load follows one; strcpy's byte stores are the main source. Accepting the
+stores alone costs a cycle in strcpy: the store takes a cycle in which a
+held load would otherwise have been offered. The forward recovers it.
+
+The forward adds a byte merge to the load hit data, which is on the
+load-use path the 66 MHz fit flags; the chip needs a fresh fit.
+
+The largest LSU-area gap left in the width 2 profile is `DRAIN_MEMORY LOAD`
+(20 cycles/run, strcmp's `lbz r10,0(r4)` behind `mr r4,r8`): a load waiting
+at dispatch for its base. `LSU_BASE_SNOOP` removes it but is off until a fit
+meets the clock target (LSU_PIPELINE.md, Base snooping). `CQ_FULL STORE`
+(6) and `LSU_BUSY STORE` (3) in memcpy follow.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
