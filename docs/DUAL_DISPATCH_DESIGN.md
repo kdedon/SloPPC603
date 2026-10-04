@@ -909,6 +909,13 @@ Each cause against UM 6.6.1.3 (counts and verdicts in
   finishing in the special lane at the head, an update load in CQ[1], one
   GPR written by both, two branches.
 
+Recorded: `make -C sim lint check-spec test-core test-core-dual test-core-recovery test-core-machine-check-trace test-core-branch-fold test-core-lsu-timing test-core-lsu-update test-core-fpu test-completion-flags test-completion` at width 1, the benches again from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, and `test-dispatch-rules DEMO_FW_DIR=<main checkout>/toolchain/build/demo` in both configurations, commit 9906d74, 2026-10-04.
+All pass. Dispatch rules at width 2 with the unit, every rule including
+`TIM-CQ-CQ1` and `TIM-WB-LIMITS`: Dhrystone 407,503 pairs retired of 1,605,731
+retirements, CoreMark 815,628 of 3,496,987, Whetstone 878,210 of 4,577,906.
+Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` with
+`PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`: 0 errors.
+
 ## Risks
 
 - **Throughput depends on P3 first.** Today's CPI is about 4 on Dhrystone and
