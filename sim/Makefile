@@ -2309,6 +2309,12 @@ test: test-soc-target-reset
 test-soc-target-reset:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_soc_target_reset --Mdir $(BUILD_DIR)/soc-target-reset ../rtl/soc/soc_bus60x_target.sv ../tb/soc/tb_soc_target_reset.sv
 	./$(BUILD_DIR)/soc-target-reset/Vtb_soc_target_reset $(SIM_ARGS)
+# The build's Verilator flags evaluate a NOT under an AND tree correctly at -O3.
+.PHONY: test-verilator-bitop
+test: test-verilator-bitop
+test-verilator-bitop:
+	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_verilator_bitop --Mdir $(BUILD_DIR)/verilator-bitop ../tb/tb_verilator_bitop.sv
+	./$(BUILD_DIR)/verilator-bitop/Vtb_verilator_bitop $(SIM_ARGS)
 demo-soc-model:
 	mkdir -p $(BUILD_DIR)/demo
 	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_demo_soc --Mdir $(BUILD_DIR)/demo/model $(DEMO_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
@@ -2483,13 +2489,14 @@ test-mister-load: mister-load-model
 # fails on some seed. Each model builds once; runs are separate targets, so
 # `make -j2 xrand-sweep` runs two at a time. Logs go to $(BUILD_DIR)/xrand.
 XRAND_SWEEP_SEEDS ?= 1 2 3 4 5 6 7 8 zero ones
-XRAND_SWEEP_BENCHES := soc-target-reset core-full-decode chip-pins demo-hello mister-fb1 mister-fb0 \
-                       mister-fpu
+XRAND_SWEEP_BENCHES := soc-target-reset core-full-decode chip-pins demo-hello demo-dhrystone \
+                       mister-fb1 mister-fb0 mister-fpu
 xrand_args = $(if $(filter zero,$1),+verilator+rand+reset+0,$(if $(filter ones,$1),+verilator+rand+reset+1,+verilator+seed+$1 +verilator+rand+reset+2))
 XRAND_CMD_soc-target-reset := ./$(BUILD_DIR)/soc-target-reset/Vtb_soc_target_reset
 XRAND_CMD_core-full-decode := ./$(BUILD_DIR)/core-full-decode/Vtb_core_full_decode
 XRAND_CMD_chip-pins := ./$(BUILD_DIR)/chip-pins/Vtb_chip_pins
 XRAND_CMD_demo-hello := ./$(BUILD_DIR)/demo/model/Vtb_demo_soc +IMAGE=$(DEMO_FW_DIR)/hello.hex +NAME=hello
+XRAND_CMD_demo-dhrystone := ./$(BUILD_DIR)/demo/model/Vtb_demo_soc +IMAGE=$(DEMO_FW_DIR)/dhrystone.hex +NAME=dhrystone
 XRAND_CMD_mister-fb1 := ./$(BUILD_DIR)/mister/fb1/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=00
 XRAND_CMD_mister-fb0 := ./$(BUILD_DIR)/mister/fb0/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=00
 XRAND_CMD_mister-fpu := ./$(BUILD_DIR)/mister/fb1-fpu-bench/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister-whetstone-hf-smoke.hex +MODE=04
@@ -2510,7 +2517,11 @@ $(XRAND_SWEEP_RUNS): xrand-models
 	    > $(BUILD_DIR)/xrand/$(patsubst xrand-run-%,%,$@).log 2>&1; then \
 	  echo "PASS $@"; \
 	else echo "FAIL $@"; grep -a -m3 'FAIL\|%Fatal\|%Error' $(BUILD_DIR)/xrand/$(patsubst xrand-run-%,%,$@).log; exit 1; fi
+# Timing does not depend on initial state either: one Dhrystone cycle count.
 xrand-sweep: $(XRAND_SWEEP_RUNS)
+	@n=$$(grep -ah 'cycles/run' $(BUILD_DIR)/xrand/demo-dhrystone-*.log | sort -u | wc -l); \
+	if [ "$$n" != 1 ]; then echo "FAIL: Dhrystone timing differs between initial states"; \
+	  grep -a 'cycles/run' $(BUILD_DIR)/xrand/demo-dhrystone-*.log; exit 1; fi
 	@echo "PASS: xrand sweep, $(words $(XRAND_SWEEP_RUNS)) runs ($(XRAND_SWEEP_BENCHES)) x ($(XRAND_SWEEP_SEEDS))"
 # Cache geometry as a bench parameter: the 603 (128 sets x 2 ways) and 602
 # (64 x 2) geometries on the standalone and integrated cache benches, which
