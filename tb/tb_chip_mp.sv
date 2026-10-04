@@ -10,8 +10,9 @@
 // a shared counter, then stores the round to its word of a shared probe
 // line, flushes it, loads the line and flushes it again. The memory model
 // ends probe-line reads with TEA at random; the machine check handler counts
-// them and returns to the access, which runs again. Each records its failed
-// stwcx. and machine check counts and increments DONE. Processor 0 waits for
+// them and returns to the access, which runs again, or past a queued store
+// whose write the TEA ended, which the program then repeats. Each records
+// its failed stwcx. and machine check counts and increments DONE. Processor 0 waits for
 // DONE=2, checks the counter, every word and the probe line, writes the
 // result, then loads each shared line, so the other cache pushes it if
 // modified, and flushes it with dcbf. Passes when memory holds the expected
@@ -156,7 +157,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
   // r20 SHARED, r21 SLOTS, r22 COUNT, r24 DONE, r25 machine checks, r27 ID,
   // r28 probe line, r29 own probe word, r30 round, r31 ITER, r12 failure code.
   task automatic build();
-    logic [31:0] round, skip, next, wait_done, park;
+    logic [31:0] round, skip, next, wait_done, park, probe;
     pc = BASE + 32'h100;
     emit(asm_ba(MAIN, 1'b0));
     pc = MC_VECTOR;
@@ -202,8 +203,13 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
     end
     loop_end();
     // Probe line: store the round, flush, load, flush.
-    emit(asm_addi(18, 30, 1)); emit(asm_stw(18, 0, 29)); emit(asm_dcbf(0, 28)); emit(SYNC);
-    emit(asm_lwz(16, 0, 28)); emit(asm_dcbf(0, 28));
+    // A TEA on a retired store's RWITM loses the store, so it repeats until
+    // the own word reads back.
+    emit(asm_addi(18, 30, 1));
+    probe = pc;
+    emit(asm_stw(18, 0, 29)); emit(asm_dcbf(0, 28)); emit(SYNC);
+    emit(asm_lwz(16, 0, 29)); emit(asm_dcbf(0, 28));
+    emit(cmpw(16, 18)); br(4, 2, probe);
     atomic_inc(22);
     emit(asm_addi(30, 30, 1)); emit(cmpw(30, 31)); br(12, 0, round);
     // FAILS[ID] = r26, then DONE += 1.
