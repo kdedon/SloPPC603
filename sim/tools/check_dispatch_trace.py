@@ -75,7 +75,8 @@ def classify(word, sru):
     plus branches, which this core keeps in the CQ); writes: (GPR, CR, FPR,
     LR, CTR) updates for TIM-WB-LIMITS; isync and multiple for the trace.
     """
-    op, xo, rc = word >> 26, (word >> 1) & 1023, word & 1
+    op, xo = word >> 26, (word >> 1) & 1023
+    rc = word & 1 if op in (20, 21, 23, 31, 59, 63) else 0  # D-form bit 31 is immediate
     c = dict(units={IU}, dser=False, cser=False, cq1=True, writes=[1, rc, 0, 0, 0],
              isync=False, multiple=False)
     sru_unit = lambda: c.update(units={SRU}, cser=True, cq1=False, writes=[0, 0, 0, 0, 0])
@@ -104,6 +105,10 @@ def classify(word, sru):
         c.update(units={LSU}, cq1=False, writes=[op & 1, 0, 0, 0, 0])
     elif op in (59, 63):
         c.update(units={FPU}, cq1=False, writes=[0, rc, 1, 0, 0])
+        if op == 63 and xo in (0, 32, 64):
+            c['writes'][1:3] = [1, 0]  # fcmpu, fcmpo, mcrfs
+        elif op == 63 and xo in (38, 70, 134, 711):
+            c['writes'][2] = 0  # FPSCR moves
         if op == 63 and xo in (38, 64, 70, 134, 583, 711):
             c['cser'] = True
     elif op in (14, 15, 11, 10):

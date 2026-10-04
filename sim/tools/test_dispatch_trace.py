@@ -3,7 +3,7 @@
 import unittest
 from pathlib import Path
 
-from check_dispatch_trace import check_rules, compare, parse, stage_events
+from check_dispatch_trace import check_rules, classify, compare, parse, stage_events
 
 SCHEDULE = Path(__file__).resolve().parents[1] / 'spec/schedules/stage.txt'
 
@@ -81,6 +81,28 @@ class DispatchRulesTest(unittest.TestCase):
         self.check(text)
         with self.assertRaises(ValueError):
             self.check(text, sru=False)
+
+    def test_writeback_classes(self):
+        cases = {
+            0x613e0001: [1, 0, 0, 0, 0],  # ori r30,r9,1: bit 31 is immediate
+            0x1d290001: [1, 0, 0, 0, 0],  # mulli
+            0x352b03ff: [1, 1, 0, 0, 0],  # addic.
+            0x7c632215: [1, 1, 0, 0, 0],  # add.
+            0x55290001: [1, 1, 0, 0, 0],  # rlwinm.
+            0xfc011000: [0, 1, 0, 0, 0],  # fcmpu
+            0xfc000048: [0, 0, 1, 0, 0],  # fmr
+            0xfc00008c: [0, 0, 0, 0, 0],  # mtfsb0
+        }
+        for word, writes in cases.items():
+            with self.subTest(f'{word:08x}'):
+                self.assertEqual(classify(word, True)['writes'], writes)
+
+    def test_writeback_limits(self):
+        words = {0x200: 0x613e0001, 0x204: 0x352b03ff, 0x208: 0x7c632215}
+        pair = '1 D1 R0 {0:08x} |\n2 D1 R0 {1:08x} |\n3 D0 R2 | {0:08x} {1:08x}'
+        check_rules(pair.format(0x200, 0x204).splitlines(), 2, words, True)
+        with self.assertRaisesRegex(ValueError, 'TIM-WB-LIMITS'):
+            check_rules(pair.format(0x204, 0x208).splitlines(), 2, words, True)
 
 
 if __name__ == '__main__':
