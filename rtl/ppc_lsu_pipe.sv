@@ -121,7 +121,7 @@ module ppc_lsu_pipe #(
   // offer, or withdraws one last made speculatively (the older access whose
   // fault removed it has left P2 by then); any other offer finishes its
   // handshake and its response is dropped.
-  assign offer = p1_valid && p1_head.fast &&
+  assign offer = rst_ni && p1_valid && p1_head.fast &&
     (p1_head.killed ? (offered_q && !offered_spec_q) :
      (offered_q || (lane_idle_i && !rsp_to_lane_q && (p2_count_q != 2'd2) &&
                     (!p1_head.store || p1_at_head))));
