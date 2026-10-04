@@ -197,7 +197,7 @@ in its reservation station. Here:
   and takes the value from either result bus; the head uses a value
   written in its own cycle at once. Adoption by the lane waits for the data.
 - At most two GPR writes retire per cycle: CQ[1] does not retire a GPR
-  write beside an update form. With two write ports the base is written
+  write beside an update form, and an update form retires only from CQ[0]. With two write ports the base is written
   beside the destination; with one it follows a cycle later and dispatch
   and retirement wait for it.
 

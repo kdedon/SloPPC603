@@ -147,6 +147,29 @@ Per Dhrystone run at width 2, `drain_branch` falls from 187 cycles to 0,
 memory: `drain_memory` (501 per run) and `lsu_busy` (502) now dominate, which
 gaps 1 and 2 address. Branches still take a CQ entry (gap 8 is open).
 
+## Both rounds together
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=build-d<1|2> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex`, commit 062da5e, 2026-10-04.
+The LSU round ([Today](#today)) and the fetch and branch round on one
+tree; unit and store queue on, prebuilt firmware (2000 runs, 10
+iterations). All four runs pass their checks (Dhrystone values, CoreMark
+CRC 0xfcaf).
+
+| | LSU round, w1 | w2 | Fetch/branch round, w1 | w2 | Both, w1 | w2 |
+|---|---:|---:|---:|---:|---:|---:|
+| Dhrystone cycles per run | 1454.3 | 1454.3 | 1826.8 | 1768.8 | 998.8 | 992.3 |
+| DMIPS/MHz | 0.391 | 0.391 | | | 0.569 | 0.573 |
+| Dhrystone CPI (timed loop) | 2.464 | 2.464 | | | 1.692 | 1.681 |
+| CoreMark/MHz | 1.312 | 1.313 | 1.380 | 1.449 | 1.748 | 1.786 |
+
+The gains compound: with memory no longer draining the machine, fetch and
+branch time is what is left, and the second round removes much of it. The
+603e model is still 1.96 times faster on Dhrystone. Width 2 barely helps:
+per Dhrystone run it dispatches in 0.87 CPI against 1.02 at width 1, but
+`fetch_empty` and `branch_refetch` grow from 0.39 to 0.62, while station
+and flag waits fall from 0.13 to 0.04. The DQ1 access still needs committed
+sources, unlike DQ0's.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
