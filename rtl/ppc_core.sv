@@ -256,6 +256,11 @@ module ppc_core #(
   logic [31:0] fp_fpscr;
   logic fp_sticky_hold, fp_sticky_waited_q;
   retire_packet_t cq_retire, cq_retire1;
+  logic cq_retire_settled, retire_gate;
+  // Pairing checks read a few fields.
+  /* verilator lint_off UNUSEDSIGNAL */
+  retire_packet_t cq_head_packet, cq_head1_packet;
+  /* verilator lint_on UNUSEDSIGNAL */
   operand_t src_a, src_b, src_c, operand_a, operand_b;
   logic mem_base_ready, unit_update, update_alloc, update_alloc_store;
   rs_entry_t rs_entry;
@@ -1456,7 +1461,10 @@ module ppc_core #(
     .store_authorize_i(retire_ready_i && !bs_hold),
     // A DQ1 access is never the oldest: DQ0 allocates beside it.
     .queue_empty_i(cq_empty && !lane_dq1),
-    .queue_head_i(cq_head), .commit_i(commit),
+    // The lane's results never retire in their finish cycle; this keeps
+    // its commit-time outputs off the finish path.
+    .queue_head_i(cq_head),
+    .commit_i(cq_retire_settled && retire_gate && retire_ready_i),
     .commit_tag_i(retire_producer), .result_valid_o(special_result_valid),
     .result_ready_i(special_result_ready), .result_o(special_result),
     .branch_commit_redirect_o(special_branch_redirect),
@@ -2013,16 +2021,16 @@ module ppc_core #(
   end
   // CQ[1] retires beside a head that completes without an exception and that
   // the lane is not finishing; the lane acts only on its own instruction.
-  assign retire1_gate = DUAL && !cq_retire.illegal && !cq_retire.alignment_exception &&
-    (cq_retire.data_fault == DATA_OK) && (cq_retire.fetch_fault == FETCH_OK) &&
-    !cq_retire.seq_partial &&
+  assign retire1_gate = DUAL && !cq_head_packet.illegal && !cq_head_packet.alignment_exception &&
+    (cq_head_packet.data_fault == DATA_OK) && (cq_head_packet.fetch_fault == FETCH_OK) &&
+    !cq_head_packet.seq_partial &&
     // At most two GPR writes per cycle (UM 6.6.1.3); an update base is
     // written and its rename slot released only from the head.
-    !(cq_retire.update_write && cq_retire1.gpr_write) && !cq_retire1.update_write &&
+    !(cq_head_packet.update_write && cq_head1_packet.gpr_write) && !cq_head1_packet.update_write &&
     // The two write ports never target one register.
-    !(cq_retire1.gpr_write &&
-      ((cq_retire.gpr_write && (cq_retire.gpr == cq_retire1.gpr)) ||
-       (cq_retire.update_write && (cq_retire.update_gpr == cq_retire1.gpr)))) &&
+    !(cq_head1_packet.gpr_write &&
+      ((cq_head_packet.gpr_write && (cq_head_packet.gpr == cq_head1_packet.gpr)) ||
+       (cq_head_packet.update_write && (cq_head_packet.update_gpr == cq_head1_packet.gpr)))) &&
     !(special_busy && ((special_producer == retire_producer) ||
                        (special_producer == retire1_producer))) &&
     !bs_head && !(bs_busy && !bs_hit && (retire1_producer == bs_tag_q));
@@ -2435,11 +2443,14 @@ module ppc_core #(
     .alloc1_valid_i(dispatch1), .alloc1_ready_o(cq1_ready), .alloc1_i(allocation1),
     .alloc1_finished_i(d1_fp || d1_branch), .alloc1_tag_o(alloc1_producer),
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
+    // UM 6.6.1: an IU or LSU result completes in its writeback cycle.
+    .result_retire_i(lsu_result_valid || !special_result_select),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
     .result1_valid_i(sru_result_valid), .result1_i(sru_result),
     .wake1_valid_o(wake1_valid), .wake1_o(wake1),
-    .retire_valid_o(cq_retire_valid),
+    .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
+    .head_o(cq_head_packet), .head1_o(cq_head1_packet),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block &&
                     !update_pending_q && !bs_hold),
     .retire_hold_i(special_retire_hold || halted_o || bs_hold),
@@ -2474,8 +2485,9 @@ module ppc_core #(
   // A diagnostic halt retires nothing further: a younger op dispatched
   // under an outstanding access may already have finished.
   // With one write port an update base takes the port the cycle after.
-  assign retire_valid_o = cq_retire_valid && !special_retire_hold && !halted_o &&
-                          !fp_head_block && !update_pending_q && !bs_hold;
+  assign retire_gate = !special_retire_hold && !halted_o && !fp_head_block &&
+                       !update_pending_q && !bs_hold;
+  assign retire_valid_o = cq_retire_valid && retire_gate;
   assign commit = retire_valid_o && retire_ready_i;
   assign retire1_valid_o = retire_valid_o && cq_retire1_valid && retire1_gate;
   assign retire1_o = cq_retire1;
@@ -2559,7 +2571,8 @@ module ppc_core #(
       if ((i < int'(fp_count_q)) && !fp_safe_q[i]) fp_unsafe_pending = 1'b1;
     end
   end
-  assign fp_head = ENABLE_FPU && fp_pending && cq_retire_valid &&
+  // FP entries allocate finished.
+  assign fp_head = ENABLE_FPU && fp_pending && cq_retire_settled &&
     (retire_producer == fp_tags_q[0]);
   assign fp_head_match = fp_result_valid && (fp_result.tag == fp_tags_q[0]);
   assign fp_head_ok = fp_head_match &&

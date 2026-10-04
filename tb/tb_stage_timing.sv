@@ -203,7 +203,8 @@ module tb_stage_timing;
                retired.cq1_ok && !retired.fpr_write)
           else $fatal(1, "legal IU retirement metadata");
         ident = int'(dut.retire_producer);
-        assert(finish_edges[ident] >= 0 && edge_number >= finish_edges[ident] + 1)
+        // UM Figure 6-3: an IU result completes in its writeback cycle.
+        assert(finish_edges[ident] >= 0 && edge_number >= finish_edges[ident])
           else $fatal(1, "finish-to-retirement edge violation");
         $fwrite(trace_fd, ",\"retire\":{\"id\":%0d,\"pc\":%0d,\"insn\":%0d,\"gpr\":%0d,\"value\":%0d}",
           ident, retired.pc, retired.insn, retired.gpr, retired.value);

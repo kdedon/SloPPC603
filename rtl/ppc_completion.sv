@@ -4,6 +4,8 @@
 // Allocate in program order, finish by identity, retire a finished head, and
 // recover to an accepted pre-edge queue prefix. Lane 1 allocates the entry
 // after lane 0's in the same cycle; retire1 offers CQ[1] beside the head.
+// An entry whose fault-free result arrives this cycle retires with it, in
+// its writeback cycle.
 module ppc_completion #(
   parameter bit ENABLE_TLB_MISS_EXCEPTIONS = 1'b0,
   // Clear: retire1 is never offered.
@@ -35,6 +37,8 @@ module ppc_completion #(
   input logic result_valid_i,
   output logic result_ready_o,
   input ppc_pkg::result_packet_t result_i,
+  // The result may retire in the cycle it arrives.
+  input logic result_retire_i,
   output logic finish_accept_o,
   output logic wake_valid_o,
   output ppc_pkg::wake_packet_t wake_o,
@@ -47,6 +51,12 @@ module ppc_completion #(
   output logic wake1_valid_o,
   output ppc_pkg::wake_packet_t wake1_o,
   output logic retire_valid_o,
+  // The head finished on an earlier cycle.
+  output logic retire_settled_o,
+  // Stored head and CQ[1] packets, for checks that must not wait for a
+  // finishing result. A clean finish changes only value and delta fields.
+  output ppc_pkg::retire_packet_t head_o,
+  output ppc_pkg::retire_packet_t head1_o,
   input logic retire_ready_i,
   // The core withholds the head's offer (retire_valid_o) while set.
   input logic retire_hold_i,
@@ -81,6 +91,7 @@ module ppc_completion #(
   logic [COUNT_WIDTH-1:0] count_q;
   retire_packet_t allocation, allocation1;
   logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept, finish1_accept;
+  logic result_fault, result_clean, head_now0, head_now1, head1_now0, head1_now1, retire1_settled;
   logic redirect_found;
   logic [CQ_DEPTH-1:0] redirect_candidate_kill;
   logic [COUNT_WIDTH-1:0] redirect_candidate_survivors;
@@ -92,6 +103,39 @@ module ppc_completion #(
             {4{field_mask[3]}}, {4{field_mask[2]}},
             {4{field_mask[1]}}, {4{field_mask[0]}}};
   endfunction
+
+  // An entry after a fault-free finish on the first port. These read only a
+  // result's value and flag fields.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic retire_packet_t finished(input retire_packet_t p,
+                                              input result_packet_t r);
+    retire_packet_t n;
+    n = p;
+    n.value = r.value;
+    n.update_value = p.update_write ? r.update_value : 32'b0;
+    if (p.write_cr_fields)
+      n.cr_delta = r.value & expand_cr_mask(p.cr_mask);
+    else if (p.write_cr_bit)
+      n.cr_delta = r.value[0] ? (32'h8000_0000 >> p.cr_bit) : 32'b0;
+    else
+      n.cr_delta = p.write_cr_field ? ({r.cr0, 28'b0} >> (p.cr_field * 4)) : 32'b0;
+    n.xer_delta = p.write_xer ? (r.value & 32'he000_007f) :
+      {p.write_ov_so && r.so, p.write_ov_so && r.ov, p.write_ca && r.ca, 29'b0};
+    return n;
+  endfunction
+
+  // The same on the second port.
+  function automatic retire_packet_t finished1(input retire_packet_t p,
+                                               input result_packet_t r);
+    retire_packet_t n;
+    n = p;
+    n.value = r.value;
+    n.update_value = '0;
+    n.cr_delta = p.write_cr_field ? ({r.cr0, 28'b0} >> (p.cr_field * 4)) : 32'b0;
+    n.xer_delta = {p.write_ov_so && r.so, p.write_ov_so && r.ov, p.write_ca && r.ca, 29'b0};
+    return n;
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
 
   function automatic logic [CQ_INDEX_WIDTH-1:0] next_index(
     input logic [CQ_INDEX_WIDTH-1:0] index
@@ -229,7 +273,7 @@ module ppc_completion #(
         done_q[head_q] && redirect_candidate_kill[head_q])
       redirect_accepted_o = 1'b0;
     // So is an offered CQ[1] that may retire.
-    if (ENABLE_PIVOT_RECOVERY && retire1_valid_o && retire1_ready_i && !retire_hold_i &&
+    if (ENABLE_PIVOT_RECOVERY && retire1_settled && retire1_ready_i && !retire_hold_i &&
         redirect_candidate_kill[head1_q])
       redirect_accepted_o = 1'b0;
 
@@ -260,25 +304,6 @@ module ppc_completion #(
     alloc_tag_o.generation = generations_q[tail_q] + CQ_GENERATION_WIDTH'(1);
     alloc1_tag_o.index = tail1_q;
     alloc1_tag_o.generation = generations_q[tail1_q] + CQ_GENERATION_WIDTH'(1);
-
-    retire_valid_o = rst_ni && (count_q != '0) && active_q[head_q] && done_q[head_q];
-    retire_o = '0;
-    retire_tag_o = '0;
-    if (retire_valid_o) begin
-      retire_o = packets_q[head_q];
-      retire_tag_o.index = head_q;
-      retire_tag_o.generation = generations_q[head_q];
-    end
-    retire1_valid_o = ENABLE_PAIR_RETIRE && retire_valid_o &&
-                      (count_q > COUNT_WIDTH'(1)) && active_q[head1_q] &&
-                      done_q[head1_q] && pair_ok(packets_q[head_q], packets_q[head1_q]);
-    retire1_o = '0;
-    retire1_tag_o = '0;
-    if (retire1_valid_o) begin
-      retire1_o = packets_q[head1_q];
-      retire1_tag_o.index = head1_q;
-      retire1_tag_o.generation = generations_q[head1_q];
-    end
 
     finish_accept = 1'b0;
     wake_valid_o = 1'b0;
@@ -316,6 +341,58 @@ module ppc_completion #(
     wake1_o.producer = result1_i.producer;
     wake1_o.tag = packets_q[result1_i.producer.index].tag;
     wake1_o.value = result1_i.value;
+  end
+  // A faulting result changes the entry's fault fields; it retires a cycle
+  // later from the stored packet.
+  assign result_fault = result_i.fault || (result_i.data_fault == DATA_DSI_PROTECTION) ||
+    (result_i.data_fault == DATA_DSI_EXTERNAL) ||
+    (result_i.data_fault == DATA_DSI_DIRECT_STORE) ||
+    (result_i.data_fault == DATA_ALIGNMENT_DIRECT_STORE) ||
+    (result_i.data_fault == DATA_MACHINE_CHECK) ||
+    (ENABLE_TLB_MISS_EXCEPTIONS &&
+     ((result_i.data_fault == DATA_PAGE_MISS) ||
+      (result_i.data_fault == DATA_PAGE_CHANGED)));
+  assign result_clean = finish_accept && result_retire_i && !result_fault;
+  assign retire_settled_o = rst_ni && (count_q != '0) && active_q[head_q] && done_q[head_q];
+  assign head_o = packets_q[head_q];
+  assign head1_o = packets_q[head1_q];
+  // A clean finish changes no field pair_ok reads.
+  assign retire1_settled = ENABLE_PAIR_RETIRE && rst_ni && (count_q > COUNT_WIDTH'(1)) &&
+    active_q[head_q] && done_q[head_q] && active_q[head1_q] &&
+    done_q[head1_q] && pair_ok(packets_q[head_q], packets_q[head1_q]);
+  always_comb begin
+    // Finishing this cycle (finish_accept implies active and not done).
+    head_now0 = result_clean && (result_i.producer.index == head_q);
+    head_now1 = finish1_accept && (result1_i.producer.index == head_q);
+    head1_now0 = result_clean && (result_i.producer.index == head1_q);
+    head1_now1 = finish1_accept && (result1_i.producer.index == head1_q);
+    retire_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
+                                          (head_now0 || head_now1));
+    retire_o = '0;
+    if (retire_valid_o)
+      retire_o = head_now0 ? finished(packets_q[head_q], result_i) :
+                 head_now1 ? finished1(packets_q[head_q], result1_i) : packets_q[head_q];
+    // The tag comes from registered state so that holds keyed on it stay off
+    // the finish path; it matters only with retire_valid_o.
+    retire_tag_o = '0;
+    if ((count_q != '0) && active_q[head_q]) begin
+      retire_tag_o.index = head_q;
+      retire_tag_o.generation = generations_q[head_q];
+    end
+    retire1_valid_o = ENABLE_PAIR_RETIRE && retire_valid_o &&
+                      (count_q > COUNT_WIDTH'(1)) && active_q[head1_q] &&
+                      (done_q[head1_q] || head1_now0 || head1_now1) &&
+                      pair_ok(packets_q[head_q], packets_q[head1_q]);
+    retire1_o = '0;
+    if (retire1_valid_o)
+      retire1_o = head1_now0 ? finished(packets_q[head1_q], result_i) :
+                  head1_now1 ? finished1(packets_q[head1_q], result1_i) :
+                  packets_q[head1_q];
+    retire1_tag_o = '0;
+    if ((count_q > COUNT_WIDTH'(1)) && active_q[head1_q]) begin
+      retire1_tag_o.index = head1_q;
+      retire1_tag_o.generation = generations_q[head1_q];
+    end
   end
   // synthesis translate_off
   always @(posedge clk_i)
@@ -421,14 +498,7 @@ module ppc_completion #(
         packets_q[result_i.producer.index].update_value <=
           packets_q[result_i.producer.index].update_write ?
             result_i.update_value : 32'b0;
-        if (result_i.fault || (result_i.data_fault == DATA_DSI_PROTECTION) ||
-            (result_i.data_fault == DATA_DSI_EXTERNAL) ||
-            (result_i.data_fault == DATA_DSI_DIRECT_STORE) ||
-            (result_i.data_fault == DATA_ALIGNMENT_DIRECT_STORE) ||
-            (result_i.data_fault == DATA_MACHINE_CHECK) ||
-            (ENABLE_TLB_MISS_EXCEPTIONS &&
-             ((result_i.data_fault == DATA_PAGE_MISS) ||
-              (result_i.data_fault == DATA_PAGE_CHANGED)))) begin
+        if (result_fault) begin
           packets_q[result_i.producer.index].value <= '0;
           packets_q[result_i.producer.index].update_value <= '0;
           packets_q[result_i.producer.index].illegal <= result_i.fault;
@@ -465,44 +535,14 @@ module ppc_completion #(
           packets_q[result_i.producer.index].cr_delta <= '0;
           packets_q[result_i.producer.index].xer_delta <= '0;
         end else begin
-          if (packets_q[result_i.producer.index].write_cr_fields)
-            packets_q[result_i.producer.index].cr_delta <=
-              result_i.value &
-              expand_cr_mask(packets_q[result_i.producer.index].cr_mask);
-          else if (packets_q[result_i.producer.index].write_cr_bit)
-            packets_q[result_i.producer.index].cr_delta <=
-              result_i.value[0] ?
-                (32'h8000_0000 >> packets_q[result_i.producer.index].cr_bit) :
-                32'b0;
-          else
-            packets_q[result_i.producer.index].cr_delta <=
-              packets_q[result_i.producer.index].write_cr_field ?
-                ({result_i.cr0, 28'b0} >>
-                 (packets_q[result_i.producer.index].cr_field * 4)) : 32'b0;
-          packets_q[result_i.producer.index].xer_delta <=
-            packets_q[result_i.producer.index].write_xer ?
-            (result_i.value & 32'he000_007f) : {
-            packets_q[result_i.producer.index].write_ov_so ? result_i.so : 1'b0,
-            packets_q[result_i.producer.index].write_ov_so ? result_i.ov : 1'b0,
-            packets_q[result_i.producer.index].write_ca ? result_i.ca : 1'b0,
-            29'b0
-          };
+          packets_q[result_i.producer.index] <=
+            finished(packets_q[result_i.producer.index], result_i);
         end
         done_q[result_i.producer.index] <= 1'b1;
       end
       if (finish1_accept) begin
-        packets_q[result1_i.producer.index].value <= result1_i.value;
-        packets_q[result1_i.producer.index].update_value <= '0;
-        packets_q[result1_i.producer.index].cr_delta <=
-          packets_q[result1_i.producer.index].write_cr_field ?
-            ({result1_i.cr0, 28'b0} >> (packets_q[result1_i.producer.index].cr_field * 4)) :
-            32'b0;
-        packets_q[result1_i.producer.index].xer_delta <= {
-          packets_q[result1_i.producer.index].write_ov_so ? result1_i.so : 1'b0,
-          packets_q[result1_i.producer.index].write_ov_so ? result1_i.ov : 1'b0,
-          packets_q[result1_i.producer.index].write_ca ? result1_i.ca : 1'b0,
-          29'b0
-        };
+        packets_q[result1_i.producer.index] <=
+          finished1(packets_q[result1_i.producer.index], result1_i);
         done_q[result1_i.producer.index] <= 1'b1;
       end
     end
