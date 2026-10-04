@@ -66,6 +66,6 @@ See the [current plan](docs/plans/current/PLAN.md) for priorities, completion st
 GPL-2.0-or-later: you can redistribute and modify this project under the terms of the GNU
 General Public License as published by the Free Software Foundation, version 2 of the
 License or (at your option) any later version; see [LICENSE](LICENSE). Copyright (c) 2026
-Kevin Dedon. Every source file carries an SPDX identifier. `sim/cosim/reference_runner.cpp` is GPL-3.0-or-later
-because it builds against DingusPPC, which is fetched separately and not
+Kevin Dedon. Every source file carries an SPDX identifier. `sim/cosim/reference_runner.cpp` and
+`sim/cosim/firmware_runner.cpp` are GPL-3.0-or-later because they build against DingusPPC, which is fetched separately and not
 included here.

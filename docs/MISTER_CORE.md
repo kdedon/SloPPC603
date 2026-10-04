@@ -343,14 +343,18 @@ mister/build.sh --clean --fpu --suite whetstone   # mister/output_files/ppc603e_
 Board fits on commit 9e738ce (the tree merged to main as 71d048c): with `--dual --lsu-pipe`,
 the COMPACT FPU (`--fpu-compact`) meets 50 MHz at 28,789 ALMs (69%), worst setup slack
 +0.905 ns; the FULL FPU (`--fpu`) does not, at 40,664 ALMs (97%) and −2.606 ns.
+On 2f049c5 (2026-10-03), `--clean --fpu-compact --dual --lsu-pipe` is
+timing-clean at 29,387 ALMs (70%):
+`PPC603e_fpu_compact_dual_lsupipe_20261003_2036.rbf`, SHA-256 prefix
+`849eee26d067a98a`.
 
 ### Dual-dispatch cores
 
 `--dual` defines `MISTER_DUAL`, which builds the processor at dispatch width 2
 ([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md)); the file name gains `_dual`
-after any FPU part, for example `ppc603e_whetstone_fpu_dual.rbf`. No `--dual` core has
-been built: the chip top at width 2 misses 66 MHz and, by 6 ps, 50 MHz hold
-([slice 6](DUAL_DISPATCH_DESIGN.md#slice-status)). `make -C sim DISPATCH_WIDTH=2
+after any FPU part, for example `ppc603e_whetstone_fpu_dual.rbf`. `--dual` cores are
+built and timing-clean at 50 MHz (see the `--lsu-pipe` paragraph below); the chip top at
+width 2 still misses 66 MHz ([slice 6](DUAL_DISPATCH_DESIGN.md#slice-status)). `make -C sim DISPATCH_WIDTH=2
 mister-smoke mister-smoke-fpu` simulates the MiSTer top at width 2.
 
 Recorded: `make -C sim -k -j2 DISPATCH_WIDTH=2 mister-smoke` and `make -C sim -k -j2
@@ -373,8 +377,8 @@ board images at the MiSTer top in simulation; it says nothing about a fit.
 ([LSU_PIPELINE.md](LSU_PIPELINE.md)); the file name gains `_lsupipe` after any
 FPU and `_dual` part, for example `ppc603e_whetstone_fpu_dual_lsupipe.rbf`. It
 combines with `--dual` ([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md#with-the-pipelined-loadstore-unit)).
-No `--lsu-pipe` core has been built; the chip top with the unit meets 50 MHz
-at width 1. `make -C sim VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+`--fpu-compact --dual --lsu-pipe` builds are timing-clean at 50 MHz (latest:
+`2f049c5`, 29,387 ALMs); it is the test core CI publishes. `make -C sim VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
 BUILD_DIR=build/pipe mister-smoke mister-smoke-fpu` simulates the MiSTer top
 with the unit (add `DISPATCH_WIDTH=2` and another `BUILD_DIR` for both).
 

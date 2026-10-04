@@ -1015,3 +1015,68 @@ setup +0.905 ns, hold +0.076 ns); `--fpu --dual --lsu-pipe` (FULL FPU) failed,
 40,664 of 41,910 ALMs (97%), setup −2.606 ns. Earlier A/B builds on `37f9df8`:
 `PPC603e_20261001_0443.rbf` (width 1, +3.21 ns) and
 `PPC603e_dual_20261001_0352.rbf` (width 2, +1.26 ns). MVP 97.20% (unchanged).
+
+## Batch 10 — accepted (2026-10-03)
+
+MiSTer loadable program images (OSD "Load program" into DDR3 at 0x34000000,
+mapped at 0xfff00000–0xffffffff), little-endian mode with misaligned LE split
+(V13), inbound data parity, BR negation after a foreign ARTRY, push
+pipelining, two-CPU bench `test-chip-mp` (three coherence faults fixed), HID0
+ILOCK, CI workflows and the GPL-2.0-or-later relicense (`b84c492`).
+
+Recorded: `make -C sim -j2 -k ci`, `make -C sim xrand-sweep`, the FPU suite
+(`test-fpu-all test-fpu-reference test-fpu-testfloat lint-fpu-production
+lint-fpu-stream lint-fpu-dual lint-fpu-compact`), `make -C toolchain rtl-all`,
+`quartus/<top>/build.sh --docker` and `quartus/report-target-paths.sh <top>
+--docker`, `quartus/fpu-production/synthesize.sh --docker fullfit`,
+`full602fit`, `compactfit` and `compact602fit`, commit `2f049c5`, 2026-10-03.
+
+Pass: `ci` 21 runs, line coverage 73.3% (2078/2836), 14 waived arms;
+`xrand-sweep` 70 runs (soc-target-reset, core-full-decode, chip-pins,
+demo-hello, mister-fb1, mister-fb0, mister-fpu × seeds 1–8, zero, ones); FPU
+suite; `rtl-all`; `test-mister-load` (selftest 1218/1218 from DDR3,
+whetstone-hf 10/10). Every top meets 50 MHz. At 66 MHz: integrated 0 failing
+(6,818 ALMs), timer-bat 0 failing (6,816); failed: translated −0.082 ns (4
+endpoints, 12,829 ALMs), chip −0.465 ns (2, 11,790), chip602 −0.539 ns (4,
+11,345). FPU 51.57 (FULL 603e), 50.58 (FULL 602), 53.43 and 60.07 MHz
+(COMPACT); all fail 66 MHz.
+
+MiSTer: `mister/build.sh --clean --fpu-compact --dual --lsu-pipe` timing-clean
+(`PPC603e_fpu_compact_dual_lsupipe_20261003_2036.rbf`, 29,387 ALMs, 70%,
+sha256 prefix `849eee26d067a98a`). Open: DBWO, two-CPU bench without address
+pipelining/DRTRY/TEA, real-mode fetch caching (UM §5.2), no DingusPPC LE
+comparison, misaligned `eciwx`/`ecowx` hardware split. MVP 97.20% → 97.43%;
+full 603e 75.48% → 78.36%.
+
+## Batch 11 — accepted (2026-10-04)
+
+Dual-dispatch slice 7: a folded branch in DQ1 pairs with DQ0 IU, lane, FPU
+or FP-access work at width 2; `bclr`/`bcctr` fold when predicted taken and
+no older LR/CTR writer is pending. Branches without a CQ entry are not
+built. FP loads and stores (`lfs`, `lfd`, `stfs`, `stfd`, `stfiwx`,
+non-update) go through the LSU unit; loads meet Table 6-6 2:1. The
+`test-core-fpu-split` failure was a bench bug. Branch `batch11` at
+`6cb15bb`, merged as `4a74b1a`. Also on main: `fec2aad` makes
+`firmware_runner.cpp` GPL-3.0-or-later (it links DingusPPC).
+
+Recorded: `make -C sim -j2 -k ci`, `make -C sim xrand-sweep`, the FPU suite
+(`test-fpu-all test-fpu-reference test-fpu-testfloat lint-fpu-production
+lint-fpu-stream lint-fpu-dual lint-fpu-compact`), `make -C toolchain rtl-all`,
+`quartus/<top>/build.sh --docker` and `quartus/report-target-paths.sh <top>
+--docker`, `quartus/fpu-production/synthesize.sh --docker fullfit`,
+`full602fit`, `compactfit` and `compact602fit`, `mister/build.sh --clean
+--fpu-compact --dual --lsu-pipe`, commit `6cb15bb`, 2026-10-03/04.
+
+Pass: `ci` 21 runs, line coverage 73.4% (2092/2852), 14 waived arms (rerun
+alone after a first attempt hit an out-of-memory kill); `xrand-sweep` 70
+runs; FPU suite; `rtl-all`. Every top meets 50 MHz. At 66 MHz: integrated 0
+failing (6,889 ALMs), timer-bat 0 failing (6,875); failed: translated
+−0.446 ns (188 endpoints, 12,861 ALMs; regressed from −0.082 by the LR/CTR
+fold-target mux), chip −0.448 ns (111, 11,860), chip602 −0.063 ns (28,
+11,397). FPU 51.57, 50.58, 53.43 and 60.07 MHz, unchanged; all fail 66 MHz.
+
+Failed: MiSTer `--fpu-compact --dual --lsu-pipe` (29,715 ALMs, 71%). CPU
+clock setup slack +0.959 ns (slow −40 °C) and +1.007 ns (slow 100 °C), but
+`pll_hdmi` failed setup at −0.353 and −0.074 ns, so `build.sh` rejected it.
+This is framework-domain placement at SEED 2, not CPU logic; no rbf
+published. MVP 97.43% (unchanged); full 603e 78.36% → 79.41%.
