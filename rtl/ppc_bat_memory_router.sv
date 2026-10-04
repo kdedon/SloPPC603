@@ -35,6 +35,9 @@ module ppc_bat_memory_router #(
   // in the cycle it is accepted, also while up to one earlier access awaits
   // its response. The physical port must answer in request order.
   parameter bit ENABLE_DATA_PIPELINE = 1'b0,
+  // An instruction request that hits the micro-TLB is offered to the
+  // physical port in the cycle it is accepted.
+  parameter bit ENABLE_FETCH_PIPELINE = 1'b0,
   // 2: instruction responses carry {pair, word at addr + 4, word at addr}.
   parameter int FETCH_WIDTH = 1
 ) (
@@ -314,7 +317,7 @@ module ppc_bat_memory_router #(
   logic last_grant_data_q, owner_instruction_q, owner_write_q;
   // Pipelined data lane: a second response is owed behind the first, and
   // the incoming request goes straight to the physical port.
-  logic d_second_q, d_pipe_try, d_pipe_accept;
+  logic d_second_q, d_pipe_try, d_pipe_accept, i_pipe_try;
   logic [31:0] request_ea_q;
   logic [31:0] page_sr_q;
   page_miss_t page_miss_result_q;
@@ -758,6 +761,7 @@ module ppc_bat_memory_router #(
      (d_state_q == LANE_IDLE || (d_finish && !d_second_q)) &&
      (!dmem_req_attr_i.spec || (d_hit && !d_hit_wimg[2] && data_spec_ok_i)));
   assign i_accept = imem_req_valid && imem_req_ready;
+  assign i_pipe_try = ENABLE_FETCH_PIPELINE && i_accept && i_hit;
   assign d_accept = dmem_req_valid && dmem_req_ready;
   assign i_hit = ENABLE_MICRO_TLB && i_hit_raw;
   assign d_hit = ENABLE_MICRO_TLB && d_hit_raw;
@@ -780,7 +784,8 @@ module ppc_bat_memory_router #(
         choose_data = want_data;
       end
     end
-    i_accept_state = i_hit ? LANE_OFFER :
+    i_accept_state = i_hit ?
+      ((i_pipe_try && pimem_req_ready_i) ? LANE_RESPONSE : LANE_OFFER) :
       (choose_instruction ? LANE_SLOW : LANE_WAIT);
     d_accept_state = d_hit ? LANE_OFFER :
       (choose_data ? LANE_SLOW : LANE_WAIT);
@@ -1011,9 +1016,13 @@ module ppc_bat_memory_router #(
   assign bat_write_rsp_invalid_entry_o = bat_rsp_invalid_entry;
 
   always_comb begin
-    pimem_req_valid_o = rst_ni && i_state_q == LANE_OFFER;
+    pimem_req_valid_o = rst_ni && (i_state_q == LANE_OFFER || i_pipe_try);
     pimem_req_addr_o = i_pa_q;
     pimem_req_wimg_o = i_wimg_q;
+    if (i_pipe_try) begin
+      pimem_req_addr_o = {i_hit_rpn, imem_req_addr[11:0]};
+      pimem_req_wimg_o = i_hit_wimg;
+    end
     pdmem_req_valid_o = rst_ni && (d_state_q == LANE_OFFER || d_pipe_try);
     pdmem_req_now_o = d_pipe_try;
     pdmem_req_write_o = d_write_q;

@@ -259,7 +259,7 @@ module ppc_core_bat_cached_bus60x #(
   logic scalar_router_ifetch_error, biu_busy, biu_protocol_error;
   logic transport_ifetch_error;
 
-  logic physical_fetch_busy_q, route_managed_q;
+  logic physical_fetch_busy_q, route_managed_q, fetch_free;
   logic managed_fetch_valid, direct_fetch_valid, fetch_gate;
   logic managed_maintenance_valid, managed_maintenance_ready;
   logic icbi_req_valid, icbi_req_ready;
@@ -483,16 +483,20 @@ module ppc_core_bat_cached_bus60x #(
   assign fetch_gate = rst_ni && !maintenance_valid_i && !icbi_req_valid &&
     !icache_ctl_valid &&
     !maintenance_busy_o && !transport_ifetch_error;
+  // With two-word fetch a cache fetch may follow on the edge that completes
+  // the previous cache fetch, so hits stream one per cycle.
+  assign fetch_free = !physical_fetch_busy_q ||
+    (FETCH_WIDTH == 2 && route_managed_q && imem_rsp_valid && imem_rsp_ready);
   assign managed_fetch_valid = imem_req_valid && eligible_managed &&
-    !physical_fetch_busy_q && fetch_gate;
+    fetch_free && fetch_gate;
   assign direct_fetch_valid = imem_req_valid && !eligible_managed &&
     !physical_fetch_busy_q && fetch_gate;
   assign scalar_imem_req_valid = bypass_req_valid || direct_fetch_valid;
   assign scalar_imem_req_addr = direct_fetch_valid ? imem_req_addr : bypass_req_addr;
   assign bypass_req_ready = scalar_imem_req_ready && !direct_fetch_valid;
-  assign imem_req_ready = !physical_fetch_busy_q && fetch_gate &&
-    (eligible_managed ? managed_fetch_ready :
-      (scalar_imem_req_ready && !bypass_req_valid));
+  assign imem_req_ready = fetch_gate &&
+    (eligible_managed ? fetch_free && managed_fetch_ready :
+      (!physical_fetch_busy_q && scalar_imem_req_ready && !bypass_req_valid));
 
   assign bypass_rsp_valid = scalar_imem_rsp_valid &&
     physical_fetch_busy_q && route_managed_q;
@@ -540,12 +544,12 @@ module ppc_core_bat_cached_bus60x #(
       physical_fetch_busy_q <= 1'b0;
       route_managed_q <= 1'b0;
     end else begin
+      if (imem_rsp_valid && imem_rsp_ready)
+        physical_fetch_busy_q <= 1'b0;
       if (imem_req_valid && imem_req_ready) begin
         physical_fetch_busy_q <= 1'b1;
         route_managed_q <= eligible_managed;
       end
-      if (imem_rsp_valid && imem_rsp_ready)
-        physical_fetch_busy_q <= 1'b0;
     end
   end
 
