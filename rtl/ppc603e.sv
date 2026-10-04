@@ -371,7 +371,7 @@ module ppc603e #(
     .snoop_ts_n_i(ts_n_i || pin_status.quiesced), .snoop_a_i(a_i), .snoop_tt_i(tt_i),
     .snoop_gbl_n_i(gbl_n_i), .artry_n_o(core_artry_n),
     .artry_oe_o(core_artry_oe),
-    .dbg_n_i, .dbb_n_i, .dbb_n_o(core_dbb_n), .dbb_oe_o(core_dbb_oe),
+    .dbg_n_i, .dbwo_n_i, .dbb_n_i, .dbb_n_o(core_dbb_n), .dbb_oe_o(core_dbb_oe),
     .d_i({dh_i, dl_i}), .d_o(core_d_o), .d_oe_o(core_d_oe),
     .ta_n_i, .drtry_n_i, .tea_n_i
   );
@@ -467,11 +467,10 @@ module ppc603e #(
   assign tdo_o = 1'b0;
   assign tdo_oe_o = 1'b0;
 
-  // TBST, DBWO (one tenure outstanding), JTAG and LSSD inputs have no
-  // function here.
+  // TBST, JTAG and LSSD inputs have no function here.
   logic unused_pins;
   assign unused_pins = ^{tbst_n_i,
-                         dbwo_n_i, tck_i, tms_i, tdi_i, trst_n_i, test_i,
+                         tck_i, tms_i, tdi_i, trst_n_i, test_i,
                          pin_status.smi_taken, pin_status.tea_taken,
                          pin_status.dcache_enable, pin_status.dcache_lock,
                          pin_status.icache_lock,

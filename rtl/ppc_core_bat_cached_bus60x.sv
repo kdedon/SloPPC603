@@ -205,6 +205,7 @@ module ppc_core_bat_cached_bus60x #(
   output logic        artry_n_o,
   output logic        artry_oe_o,
   input  logic        dbg_n_i,
+  input  logic        dbwo_n_i,
   input  logic        dbb_n_i,
   output logic        dbb_n_o,
   output logic        dbb_oe_o,
@@ -678,7 +679,7 @@ module ppc_core_bat_cached_bus60x #(
     .gbl_n_i(snoop_gbl_n_i), .artry_n_o, .artry_oe_o,
     .br_n_o, .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o, .ts_oe_o,
     .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o, .wt_n_o, .gbl_n_o,
-    .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbb_n_i,
+    .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbwo_n_i, .dbb_n_i,
     .dbb_n_o, .dbb_oe_o, .d_i, .d_o, .d_oe_o, .ta_n_i, .drtry_n_i, .tea_n_i
   );
 

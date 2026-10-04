@@ -141,6 +141,13 @@ module bus60x_coherent_bfm #(
   // ahead of that data tenure; its data tenure follows in address order.
   int push_pipeline_pct = 0;
   int n_push_pipelined = 0;
+  // Percent chances of DBWO on a processor data grant: with a pipelined
+  // push owed behind a read the push's data runs first (UM 8.10); otherwise
+  // the processor must ignore it and keep address order.
+  int dbwo_push_pct = 0, dbwo_pct = 0;
+  int n_dbwo_push = 0, n_dbwo_ignored = 0;
+  logic dbwo_n = 1'b1;
+  bit dbwo_next = 1'b0;
   logic owed = 1'b0, in_data = 1'b0;
   /* verilator lint_on UNUSEDSIGNAL */
   int unsigned rng = SEED;
@@ -393,11 +400,14 @@ module bus60x_coherent_bfm #(
     delay();
     bus_fall();
     dbg_n_o = 1'b0;
+    dbwo_n = !dbwo_next;
+    dbwo_next = 1'b0;
     do bus_rise(); while (!(dbb_oe_i && !dbb_n_i));
     in_data = 1'b1;
     tea_ended = 1'b0;
     bus_fall();
     dbg_n_o = 1'b1;
+    dbwo_n = 1'b1;
     for (int index = 0; index < (burst ? 4 : 1) && !tea_ended; index++)
       if (write) write_beat(index);
       else read_beat(index);
@@ -674,11 +684,28 @@ module bus60x_coherent_bfm #(
               if ((rnd() % 100) < push_pipeline_pct) pipelined_push(pushed, push);
             end
           end
-          cpu_data_tenure();
-          if (pushed) begin
+          if (pushed && !write && (rnd() % 100) < dbwo_push_pct) begin
+            pend_t pend;
+            pend = '{addr, tt, burst, write, external, tsiz};
             {addr, tt, burst, write, external, tsiz} =
               {push.addr, push.tt, push.burst, push.write, push.external, push.tsiz};
+            dbwo_next = 1'b1;
             cpu_data_tenure();
+            n_dbwo_push++;
+            {addr, tt, burst, write, external, tsiz} =
+              {pend.addr, pend.tt, pend.burst, pend.write, pend.external, pend.tsiz};
+            cpu_data_tenure();
+          end else begin
+            if (!(pushed && !write) && (rnd() % 100) < dbwo_pct) begin
+              dbwo_next = 1'b1;
+              n_dbwo_ignored++;
+            end
+            cpu_data_tenure();
+            if (pushed) begin
+              {addr, tt, burst, write, external, tsiz} =
+                {push.addr, push.tt, push.burst, push.write, push.external, push.tsiz};
+              cpu_data_tenure();
+            end
           end
           om_drain();
         end

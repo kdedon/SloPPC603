@@ -92,7 +92,7 @@ module tb_core_bat_machine_check #(
     .a_o(bus_a), .tt_o(tt), .tbst_n_o(tbst_n), .tsiz_o(tsiz), \
     .tc_o(tc), .ci_n_o(), .wt_n_o(), .gbl_n_o(), \
     .cse_o(), .addr_oe_o(), .aack_n_i(aack_n), \
-    .artry_n_i(artry_n), .dbg_n_i(dbg_n), .dbb_n_i(1'b1), \
+    .artry_n_i(artry_n), .dbwo_n_i(1'b1), .dbg_n_i(dbg_n), .dbb_n_i(1'b1), \
     .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe), \
     .d_i(data_in), .d_o(data_out), .d_oe_o(data_oe), \
     .ta_n_i(ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n)

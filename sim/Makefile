@@ -1873,6 +1873,9 @@ test-chip-dcache-coherence:
 	mkdir -p $(BUILD_DIR)/chip-dcache-coherence
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence --Mdir $(BUILD_DIR)/chip-dcache-coherence $(CHIP_COHERENCE_TB)
 	for s in 1 2 3; do ./$(BUILD_DIR)/chip-dcache-coherence/Vtb_chip_dcache_coherence +SEED=$$s $(SIM_ARGS) || exit 1; done
+	mkdir -p $(BUILD_DIR)/chip-dcache-coherence-noice
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence "-GICE=1'b0" --Mdir $(BUILD_DIR)/chip-dcache-coherence-noice $(CHIP_COHERENCE_TB)
+	for s in 1 2 3; do ./$(BUILD_DIR)/chip-dcache-coherence-noice/Vtb_chip_dcache_coherence +SEED=$$s $(SIM_ARGS) || exit 1; done
 test-chip-dcache-coherence-negative:
 	mkdir -p $(BUILD_DIR)/chip-dcache-coherence-negative
 	for m in 1 2; do \
