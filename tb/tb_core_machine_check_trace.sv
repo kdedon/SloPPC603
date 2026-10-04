@@ -138,11 +138,15 @@ module tb_core_machine_check_trace;
   always @(posedge clk)
     if (rst_n && dut.dispatch && dut.iq_folded && (dut.iq_head.insn[31:26] == 6'd19))
       folded_indirect++;
-  // Branches dispatched before their CR, and mispredicted ones.
-  int spec_branches = 0, spec_misses = 0;
+  // Branches dispatched before their CR, mispredicted ones, and those
+  // recovered at resolution rather than after the branch retired.
+  int spec_branches = 0, spec_misses = 0, spec_early = 0;
   always @(posedge clk) begin
     if (rst_n && dut.dispatch && dut.bu_branch && dut.bu_spec) spec_branches++;
-    if (rst_n && dut.bs_redirect_q) spec_misses++;
+    if (rst_n && dut.recovery_accepted && (dut.bs_redirect_q || dut.bs_recover)) begin
+      spec_misses++;
+      if (dut.bs_recover) spec_early++;
+    end
   end
 
   function automatic int unsigned rnd();
@@ -874,11 +878,12 @@ module tb_core_machine_check_trace;
     // interrupt at the branch's boundary saves the real target. Then the
     // same branch predicted right takes the DSI and IABR.
     for (int pass = 0; pass < 2; pass++) begin
-      int spec_before, miss_before;
+      int spec_before, miss_before, early_before;
       bit right;
       right = pass[0];
       spec_before = spec_branches;
       miss_before = spec_misses;
+      early_before = spec_early;
       start_scenario();
       load32(3, 32'h0000_9042);
       emit(asm_mtmsr(3));                     // 0x0c
@@ -909,12 +914,15 @@ module tb_core_machine_check_trace;
       run_scenario(20000);
       check(spec_branches > spec_before, "bne dispatched before its compare finished");
       check((spec_misses - miss_before) == (right ? 0 : 1), "speculative bne outcome");
+      check((spec_early - early_before) == ((right || !dut.BS_EARLY) ? 0 : 1),
+            "mispredicted bne recovers at resolution");
       check(mem_word(DATA + 12) == 1, "branch target ran once");
       check(mem_word(DATA + 8) == (right ? 1 : 0), "wrong path left no store");
     end
 
-    $display("PASS core machine check, trace and IABR: scenarios=%0d checks=%0d retires=%0d cycles=%0d folded-indirect=%0d speculative=%0d mispredicted=%0d",
-             scenarios, checks, retires, cycles, folded_indirect, spec_branches, spec_misses);
+    $display("PASS core machine check, trace and IABR: scenarios=%0d checks=%0d retires=%0d cycles=%0d folded-indirect=%0d speculative=%0d mispredicted=%0d early=%0d",
+             scenarios, checks, retires, cycles, folded_indirect, spec_branches, spec_misses,
+             spec_early);
     $finish;
   end
 endmodule

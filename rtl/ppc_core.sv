@@ -80,7 +80,11 @@ module ppc_core #(
   parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
   // Dispatch past one branch whose CR is not ready, down the predicted path
   // (UM 6.4.1.2). 0: the branch waits for its CR at dispatch.
-  parameter bit ENABLE_BRANCH_SPEC = 1'b1
+  parameter bit ENABLE_BRANCH_SPEC = 1'b1,
+  // A mispredicted speculative branch removes the younger work and
+  // redirects fetch on the edge after it resolves (UM 6.4.1.2). 0: the
+  // whole machine recovers after the branch retires. Not with the FPU.
+  parameter bit ENABLE_BRANCH_EARLY_RECOVERY = 1'b1
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -1029,10 +1033,15 @@ module ppc_core #(
   // anything younger completes until it resolves, from the CR its owner
   // finishes with or commits. One level: a second CR branch waits. Accesses
   // dispatched behind it are offered as speculative, so only cacheable ones
-  // are performed. On a misprediction the branch retires with its real next
-  // PC and the edge after recovers the whole machine to that PC.
+  // are performed. On a misprediction the edge after resolution removes
+  // everything younger than the branch and redirects fetch; the branch
+  // retires later with its real next PC (bs_fix_q). Without early recovery
+  // the branch retires first and the edge after recovers the whole machine.
+  localparam bit BS_EARLY = ENABLE_BRANCH_SPEC && ENABLE_BRANCH_EARLY_RECOVERY &&
+                            !ENABLE_FPU;
   completion_tag_t bs_tag_q, bs_owner_q;
   logic bs_owner_done_q, bs_pred_q, bs_ctr_ok_q, bs_bo3_q, bs_redirect_q;
+  logic bs_recover, bs_fix_q, bs_fix_head;
   logic [4:0] bs_bi_q;
   logic [31:0] bs_alt_q, bs_cr;
   logic bs_cr_ready, bs_resolve, bs_taken, bs_head, bs_owner_commit;
@@ -1041,8 +1050,10 @@ module ppc_core #(
   assign bs_cr = bs_owner_done_q ? cr : bu_cr_q;
   assign bs_taken = bs_ctr_ok_q && (bs_cr[5'd31 - bs_bi_q] == bs_bo3_q);
   assign bs_resolve = bs_valid_q && bs_cr_ready;
-  assign bs_busy = bs_valid_q || bs_miss_q;
+  assign bs_busy = bs_valid_q || bs_miss_q || bs_fix_q;
   assign bs_head = bs_miss_q && (retire_producer == bs_tag_q);
+  assign bs_recover = BS_EARLY && bs_miss_q;
+  assign bs_fix_head = bs_fix_q && (retire_producer == bs_tag_q);
   assign bs_hold = (bs_valid_q && (retire_producer == bs_tag_q)) || bs_redirect_q;
   assign bs_owner_commit = (commit && (retire_producer == bs_owner_q)) ||
                            (commit1 && (retire1_producer == bs_owner_q));
@@ -1057,7 +1068,7 @@ module ppc_core #(
         bs_miss_q <= bs_taken != bs_pred_q;
       end
       if (bs_owner_commit) bs_owner_done_q <= 1'b1;
-      bs_redirect_q <= commit && bs_head;
+      bs_redirect_q <= !BS_EARLY && commit && bs_head;
       if (dispatch && bu_branch && bu_spec) begin
         bs_valid_q <= 1'b1;
         bs_tag_q <= alloc_producer;
@@ -1081,6 +1092,13 @@ module ppc_core #(
     endcase
   end
   assign bu_next_pc = bu_taken ? bu_target : iq_head.pc + 32'd4;
+  // The branch may retire on the recovery edge itself.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) bs_fix_q <= 1'b0;
+    else if (recovery_accepted)
+      bs_fix_q <= bs_recover && !(commit && (retire_producer == bs_tag_q));
+    else if (commit && bs_fix_head) bs_fix_q <= 1'b0;
+  end
   // A folded branch already fetched its target, which only b and bc fold.
   assign bu_redirect = bu_taken != iq_folded;
   // A writer is pending until the youngest one retires or the CQ empties.
@@ -1468,7 +1486,7 @@ module ppc_core #(
         if (sru_result.producer.index == CQ_INDEX_WIDTH'(slot) &&
             sru_result.producer.generation == recovery_kill_generation[slot])
           sru_cancel = 1'b1;
-        if (special_producer.index == CQ_INDEX_WIDTH'(slot) &&
+        if (special_busy && special_producer.index == CQ_INDEX_WIDTH'(slot) &&
             special_producer.generation == recovery_kill_generation[slot])
           special_kill = 1'b1;
         if (fault_producer.index == CQ_INDEX_WIDTH'(slot) &&
@@ -1987,7 +2005,7 @@ module ppc_core #(
       perf_o <= '0;
     end else begin
       if (recovery_accepted)
-        perf_refetch_q <= (special_branch_redirect || bs_redirect_q) ? 2'd1 : 2'd2;
+        perf_refetch_q <= (special_branch_redirect || bs_redirect_q || bs_recover) ? 2'd1 : 2'd2;
       else if (bu_redirect_q || fold_q) perf_refetch_q <= 2'd1;
       else if (iq_valid) perf_refetch_q <= '0;
       if (dispatch && special_uop) perf_special_mem_q <= perf_head_mem;
@@ -1996,7 +2014,8 @@ module ppc_core #(
       perf_o.iq_full <= fd_valid_q && !fd_push_ok;
       perf_o.branch <= dispatch && perf_head_branch;
       perf_o.memory <= dispatch && special_uop && perf_head_mem;
-      perf_o.branch_redirect <= (recovery_accepted && (special_branch_redirect || bs_redirect_q)) ||
+      perf_o.branch_redirect <= (recovery_accepted &&
+                                 (special_branch_redirect || bs_redirect_q || bs_recover)) ||
                                 (bu_redirect_q && !recovery_accepted);
       perf_o.slot <= perf_slot;
     end
@@ -2150,7 +2169,8 @@ module ppc_core #(
   ppc_completion #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
     .ENABLE_PAIR_RETIRE(DUAL),
-    .ENABLE_PIVOT_RECOVERY(ENABLE_TEST_REDIRECT)
+    .ENABLE_PIVOT_RECOVERY(ENABLE_TEST_REDIRECT),
+    .ENABLE_BRANCH_PIVOT(BS_EARLY)
   ) completion (
     .clk_i, .rst_ni, .alloc_valid_i(dispatch), .alloc_ready_o(cq_ready),
     .empty_o(cq_empty), .head_index_o(cq_head),
@@ -2217,6 +2237,12 @@ module ppc_core #(
       selected_redirect_target = bs_redirect_q ? bs_alt_q :
         special_exception_redirect ? special_exception_target :
         special_branch_redirect ? special_branch_target : cq_retire.pc;
+    end else if (bs_recover) begin
+      selected_redirect_valid = 1'b1;
+      selected_redirect_all = 1'b0;
+      selected_redirect_keep = 1'b1;
+      selected_redirect_pivot = bs_tag_q;
+      selected_redirect_target = bs_alt_q;
     end else begin
       selected_redirect_valid = ENABLE_TEST_REDIRECT && redirect_valid_i && !halted_o &&
         !special_store_irrevocable && !lsu_store_irrevocable &&
@@ -2229,7 +2255,7 @@ module ppc_core #(
       selected_redirect_target = redirect_target_i;
     end
   end
-  assign redirect_accepted_o = recovery_accepted && !bs_redirect_q &&
+  assign redirect_accepted_o = recovery_accepted && !bs_redirect_q && !bs_recover &&
     !special_branch_redirect && !special_exception_redirect && !fp_replay;
   // A redirect survives older retained retirement until a target-stream uop
   // has entered the CQ. From then on CQ nonempty excludes interrupt admission
@@ -2299,7 +2325,7 @@ module ppc_core #(
   assign fp_commit = commit && fp_head;
   always_comb begin
     retire_o = cq_retire;
-    if (bs_head) retire_o.value = bs_alt_q;
+    if (bs_head || bs_fix_head) retire_o.value = bs_alt_q;
     retire_o.needs_flags = cq_retire.needs_flags && !fp_head;
     if (fp_head)
       retire_o.cr_delta = cq_retire.write_cr_field ?

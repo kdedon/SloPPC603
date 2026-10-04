@@ -10,7 +10,10 @@ module ppc_completion #(
   parameter bit ENABLE_PAIR_RETIRE = 1'b0,
   // Clear: every recovery removes the whole queue (the serialized lane's
   // redirects), so no survivor walk is built.
-  parameter bit ENABLE_PIVOT_RECOVERY = 1'b1
+  parameter bit ENABLE_PIVOT_RECOVERY = 1'b1,
+  // A recovery that keeps its pivot may also come from a mispredicted
+  // branch, which never removes the head.
+  parameter bit ENABLE_BRANCH_PIVOT = 1'b0
 ) (
   input logic clk_i,
   input logic rst_ni,
@@ -68,6 +71,7 @@ module ppc_completion #(
 );
   import ppc_pkg::*;
   localparam int COUNT_WIDTH = $clog2(CQ_DEPTH + 1);
+  localparam bit PIVOT = ENABLE_PIVOT_RECOVERY || ENABLE_BRANCH_PIVOT;
 
   retire_packet_t packets_q [CQ_DEPTH];
   logic [CQ_GENERATION_WIDTH-1:0] generations_q [CQ_DEPTH];
@@ -167,9 +171,15 @@ module ppc_completion #(
         assert (!retire1_valid_o) else $error("retire1 offered without pair retirement");
       assert (head1_q == next_index(head_q)) else $error("CQ head1 out of step");
       assert (tail1_q == next_index(tail_q)) else $error("CQ tail1 out of step");
-      if (!ENABLE_PIVOT_RECOVERY && redirect_valid_i)
+      if (!PIVOT && redirect_valid_i)
         assert (redirect_all_i && !retire_fire)
           else $error("recovery without pivot support must remove the whole queue");
+      if (!ENABLE_PIVOT_RECOVERY && redirect_valid_i)
+        assert (redirect_all_i ? !retire_fire : redirect_keep_pivot_i)
+          else $error("a branch recovery must keep its pivot");
+      if (!ENABLE_PIVOT_RECOVERY && redirect_accepted_o && !redirect_all_i)
+        assert (!redirect_candidate_kill[head_q])
+          else $error("a branch recovery removed the head");
       assert (int'(head_q) < CQ_DEPTH) else $error("CQ head out of range");
       assert (int'(tail_q) < CQ_DEPTH) else $error("CQ tail out of range");
       assert (int'(count_q) <= CQ_DEPTH) else $error("CQ count out of range");
@@ -190,7 +200,7 @@ module ppc_completion #(
     // no age meaning after ring wrap and reuse.
     for (int age = 0; age < CQ_DEPTH; age++) begin
       slot = ring_offset(head_q, COUNT_WIDTH'(age));
-      if (ENABLE_PIVOT_RECOVERY && (age < int'(count_q)) && active_q[slot] &&
+      if (PIVOT && (age < int'(count_q)) && active_q[slot] &&
           (redirect_pivot_i.index == slot) &&
           (redirect_pivot_i.generation == generations_q[slot]) &&
           !redirect_all_i) begin
@@ -204,7 +214,7 @@ module ppc_completion #(
         redirect_candidate_kill[slot] = 1'b1;
     end
 
-    if (!ENABLE_PIVOT_RECOVERY) begin
+    if (!PIVOT) begin
       redirect_found = 1'b1;
       retained = '0;
       redirect_candidate_kill = active_q;
@@ -328,7 +338,7 @@ module ppc_completion #(
     end
     output_age = 0;
     slot = '0;
-    if (ENABLE_PIVOT_RECOVERY && redirect_accepted_o) begin
+    if (PIVOT && redirect_accepted_o) begin
       recovery_survivor_count_o = redirect_candidate_survivors -
                                   COUNT_WIDTH'(retire_fire) -
                                   COUNT_WIDTH'(retire1_fire);
