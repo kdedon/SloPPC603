@@ -18,6 +18,10 @@ module ppc_rename (
   input logic [4:0] read_a1_i, read_b1_i,
   input logic [31:0] arch_a1_i, arch_b1_i,
   output ppc_pkg::operand_t read_a1_o, read_b1_o,
+  // Store data of a lane-1 access.
+  input logic [4:0] read_c1_i,
+  input logic [31:0] arch_c1_i,
+  output ppc_pkg::operand_t read_c1_o,
   // Registers with an uncommitted producer.
   output logic [31:0] mapped_o,
   output logic alloc_ready_o,
@@ -114,6 +118,7 @@ module ppc_rename (
   assign read_c_o = read_operand(read_c_i, arch_c_i);
   assign read_a1_o = read_operand(read_a1_i, arch_a1_i);
   assign read_b1_o = read_operand(read_b1_i, arch_b1_i);
+  assign read_c1_o = read_operand(read_c1_i, arch_c1_i);
 
   // Lowest and second-lowest free slots; both come from the valid flops.
   always_comb begin

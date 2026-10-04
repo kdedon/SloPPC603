@@ -392,7 +392,7 @@ module ppc_core #(
   // Second dispatch slot (DQ1); idle at DISPATCH_WIDTH 1.
   logic [31:0] arch_a1, arch_b1, arch_c1;
   completion_tag_t alloc1_producer;
-  operand_t src_a1, src_b1;
+  operand_t src_a1, src_b1, src_c1;
   logic alloc1_ready, cq1_ready;
   rename_tag_t alloc1_tag;
   logic dispatch1, rename0_dq1, d1_gpr;
@@ -1192,6 +1192,7 @@ module ppc_core #(
     .read_a1_i(dq1_uop.src_a), .read_b1_i(dq1_uop.src_b),
     .arch_a1_i(arch_a1), .arch_b1_i(arch_b1),
     .read_a1_o(src_a1), .read_b1_o(src_b1),
+    .read_c1_i(dq1_uop.src_c), .arch_c1_i(arch_c1), .read_c1_o(src_c1),
     .mapped_o(gpr_mapped),
     .alloc_ready_o(alloc_ready), .alloc_tag_o(alloc_tag),
     .read_c_i(uop.src_c), .arch_c_i(arch_c), .read_c_o(src_c),
@@ -1708,17 +1709,21 @@ module ppc_core #(
        (!dq1_uop.use_imm && (dq1_uop.src_b == special_mem_dst))));
   assign d1_fp_ready = fp_issue_ready &&
     (!special_busy || (special_mem_overlap && !special_fp_load_overlap));
-  // A DQ1 access reads committed registers through the second read ports;
-  // it pairs only when aligned, so it never raises an alignment exception.
-  assign d1_a = dq1_uop.zero_a ? 32'b0 : arch_a1;
-  assign d1_b = dq1_uop.use_imm ? dq1_uop.imm : arch_b1;
+  // A DQ1 access reads its sources through rename, as DQ0's does (the lane
+  // takes committed ones); it pairs only when aligned, so it never raises
+  // an alignment exception.
+  assign d1_a = dq1_uop.zero_a ? 32'b0 : ENABLE_LSU_PIPE ? src_a1.value : arch_a1;
+  assign d1_b = dq1_uop.use_imm ? dq1_uop.imm : ENABLE_LSU_PIPE ? src_b1.value : arch_b1;
   assign d1_ea = d1_a[11:0] + d1_b[11:0];
   assign d1_ea_full = d1_a + d1_b;
-  // DQ1 enters the unit only with committed sources.
+  // Store data DQ0 writes follows from DQ0's new rename slot.
   always_comb begin
-    d1_data = '0;
-    d1_data.ready = 1'b1;
-    d1_data.value = arch_c1;
+    d1_data = src_c1;
+    if (dq1_pair.dep_prev[2]) begin
+      d1_data = '0;
+      d1_data.tag = alloc_tag;
+      d1_data.producer = alloc_producer;
+    end
   end
   assign d1_misaligned = !ENABLE_MISALIGNED_ACCESS ?
     (((dq1_uop.mem_size == MEM_WORD) && (d1_ea[1:0] != 2'b00)) ||
@@ -1734,10 +1739,8 @@ module ppc_core #(
      (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
   assign d1_lsu_ready = lsu_ready && !special_busy && !fp_unsafe_pending &&
     !d1_misaligned && !msr_le &&
-    (dq1_uop.zero_a || (!gpr_mapped[dq1_uop.src_a] && !dq1_pair.dep_prev[0])) &&
-    (dq1_uop.use_imm || (!gpr_mapped[dq1_uop.src_b] && !dq1_pair.dep_prev[1])) &&
-    ((dq1_uop.special_op != SPECIAL_STORE) ||
-     (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
+    (dq1_uop.zero_a || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
+    (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1]));
   assign lsu_d1 = dispatch1 && d1_lsu;
   // DQ1 enters the unit only beside a DQ0 that does not, so the input mux
   // need not wait for dispatch1, which depends on the unit's ready.
@@ -1844,10 +1847,14 @@ module ppc_core #(
       assert (32'(d1_iu) + 32'(d1_mem) + 32'(d1_lsu) + 32'(d1_fp) + 32'(d1_branch) == 32'd1)
         else $error("DQ1 unit class is not unique");
       assert (!(d1_lsu && lsu_c0)) else $error("both dispatch slots entered the unit");
-      if (d1_mem || d1_lsu)
+      if (d1_mem)
         assert ((dq1_uop.zero_a || (src_a1.ready && (src_a1.value == arch_a1))) &&
                 (dq1_uop.use_imm || (src_b1.ready && (src_b1.value == arch_b1))))
           else $error("DQ1 access saw an uncommitted GPR source");
+      if (d1_lsu)
+        assert ((dq1_uop.zero_a || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
+                (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1])))
+          else $error("DQ1 access dispatched without its base");
     end
     if (rst_ni && commit1)
       assert (retire1_gate && commit && !retire1_o.illegal &&
