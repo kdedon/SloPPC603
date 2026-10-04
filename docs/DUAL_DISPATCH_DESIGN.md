@@ -813,6 +813,13 @@ Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and
 
 ## Dispatch and completion rule check
 
+Recorded: `make -C sim test-dispatch-rules` at width 1, width 1 with the LSU unit, `DISPATCH_WIDTH=2` and width 2 with the unit (`VERILATOR=tools/verilate-lsu-pipe`), commits 333c376 and bf69248, 2026-10-04.
+Dhrystone, CoreMark and Whetstone pass every rule in all four configurations. The
+first width-2 run failed TIM-WB-LIMITS on Whetstone; the cause was the checker reading
+bit 31 of D-form words as Rc (an `ori` with an odd immediate counted as a CR writer).
+bf69248 reads Rc only for opcodes 20, 21, 23, 31, 59 and 63 and counts `fcmpu`,
+`fcmpo` and `mcrfs` as CR writers; the RTL never paired two flag writers.
+
 `check_dispatch_trace.py --rules` checks a `+DISPATCH_TRACE` stream of any
 length against the manual rules above, taking each PC's instruction word from
 the program image. `make -C sim test-dispatch-rules` streams Dhrystone,

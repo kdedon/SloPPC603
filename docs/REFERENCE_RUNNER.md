@@ -155,6 +155,32 @@ The real v2 CLI passes **13 injected-failure checks**: separate updated-base and
 
 The unchanged v1 execution was rerun separately after integration: **8,500 snapshots, 140 forms, 12 mismatch checks and 43 rejection gates pass**. The combined local Python suite passes **17 tests**, retaining the original seven parser tests and adding strict v1/v2 separation, header/shape failures, every RAM word/byte-lane comparator sensitivity, and independent memory-encoding anchors.
 
+## Whole-machine lockstep
+
+Recorded: `make -C sim test-reference-machine test-reference-machine-mmu REFERENCE_DIR=<dingusppc> DEMO_FW_DIR=<main checkout>/toolchain/build/demo` at width 1, `DISPATCH_WIDTH=2`, with the LSU unit (`VERILATOR=$PWD/tools/verilate-lsu-pipe`) and both, then `run_firmware_reference.py`, commit 0832390, 2026-10-04.
+
+Method, injected values, corrections and tolerances: [REFERENCE_MACHINE.md](REFERENCE_MACHINE.md).
+Every configuration passes, including five negative controls over the first 200,000
+records. Instructions compared at width 1 (records are retirement edges; at width 2
+two instructions can share one):
+
+| Program | Instructions | Notes |
+|---|---:|---|
+| hello | 9,886,679 | 400,731 stores |
+| dhrystone | 1,608,400 | |
+| coremark | 3,496,800 | |
+| whetstone | 4,578,810 | soft float |
+| selftest | 16,386,237 | 1,041 exceptions, 4 TLB misses, 2 direct-store |
+| chip-mmu-stress | 61,993 | 122 TLB misses, 456 interrupts, 12 direct-store |
+
+At width 2 the same programs pass with 15–21% fewer records (paired retirement); with
+the unit on the instruction counts differ by a few hundred from width 1 because timing
+reads and interrupt points move. The firmware lane (`run_firmware_reference.py`)
+passes after the shared-adapter refactor.
+
+Not established: final RAM (dirty lines never reach the bus model), FPU images, and
+cache or TLB state beyond its architectural effect.
+
 ## Provenance and remaining P13 scope
 
 See [REFERENCE_AUDIT.md](REFERENCE_AUDIT.md) for the prior source audit and parser details. The original handler file carries the DingusPPC Development Team copyright and GPL version 3-or-later notice (`ppcopcodes.cpp:1–20`); the project also provides `LICENSE` and `CREDITS.md`. The adapter is explicitly GPL-3.0-or-later. No original source is copied into canonical RTL or modified; the reference remains separately built and separately executed. Redistribution of the linked reference executable must carry the corresponding source and applicable notices/license obligations; the copied license alone is not a source-distribution package.
