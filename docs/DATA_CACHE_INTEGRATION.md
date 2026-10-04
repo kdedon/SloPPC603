@@ -414,8 +414,9 @@ processors.
 
 `make -C sim test-chip-mp` (`tb/tb_chip_mp.sv`, `tb/bfm/bus60x_mp_bfm.sv`): two
 `ppc603e` instances share TS, A, TT, GBL, AACK and ARTRY, each snooping the other,
-with one arbiter and memory (one tenure at a time, AACK at TS+2 or later, random
-target retries and waits). Both run one hand-assembled program with both caches on
+with one arbiter and memory (AACK at TS+2 or later, random target retries and
+waits; address pipelining, DRTRY and TEA since 2026-10-04, see
+[CHIP_PACKAGE_VERIFICATION.md](CHIP_PACKAGE_VERIFICATION.md)). Both run one hand-assembled program with both caches on
 in real mode: IDs from an atomic increment, then eight rounds of writing their halves
 of 64 interleaved words (every line written by both), reading the other's half and
 atomically incrementing a shared counter; processor 0 then checks every value and
