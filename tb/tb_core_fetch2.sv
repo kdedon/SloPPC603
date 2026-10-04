@@ -152,9 +152,11 @@ module tb_core_fetch2 #(
   endfunction
   int cycle = 0;
   int aligned_requests = 0;
-  // Every third aligned request answers with one word, as a miss would.
+  // Every third aligned request answers with one word, as a miss would,
+  // except at 0x30 so the b at 0x34 arrives in the second lane.
   logic pair_answer;
-  assign pair_answer = (FETCH_WIDTH == 2) && !pending_addr[2] && (aligned_requests % 3 != 0);
+  assign pair_answer = (FETCH_WIDTH == 2) && !pending_addr[2] &&
+                       ((aligned_requests % 3 != 0) || (pending_addr == 32'h30));
   assign req_ready = !pending && (cycle % 11 != 5);
   assign rsp_valid = pending;
   if (FETCH_WIDTH == 2) begin : g_pair
