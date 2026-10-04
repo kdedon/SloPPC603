@@ -32,6 +32,8 @@ module ppc_special #(
   // Attach the FPU: FP loads and stores run through this lane; other FP
   // instructions arrive on the pipelined FP port.
   parameter bit ENABLE_FPU = 1'b0,
+  // Plain FP accesses run in the pipelined load/store unit instead.
+  parameter bit ENABLE_LSU_PIPE = 1'b0,
   // 64 carries an aligned FP doubleword as one access: all eight strobes,
   // the word at EA in the upper half. Narrower accesses use the low half.
   parameter int DMEM_BITS = 32,
@@ -223,6 +225,17 @@ module ppc_special #(
   input logic fp_commit_valid_i,
   input ppc_pkg::completion_tag_t fp_commit_tag_i,
   input logic fp_kill_i,
+  // Plain FP accesses in the pipelined load/store unit: FPU launches and
+  // the oldest store's data go there, and its responses come back.
+  output logic fp_launch_valid_o,
+  output ppc_pkg::completion_tag_t fp_launch_tag_o,
+  output logic fp_store_valid_o,
+  output ppc_pkg::completion_tag_t fp_store_tag_o,
+  output logic [63:0] fp_store_data_o,
+  input logic fp_rsp_valid_i,
+  input ppc_pkg::completion_tag_t fp_rsp_tag_i,
+  input logic [63:0] fp_rsp_data_i,
+  input logic fp_rsp_fault_i,
   // Committed FPSCR.
   output logic [31:0] fp_fpscr_o
 );
@@ -425,7 +438,8 @@ module ppc_special #(
   logic fpu_mem_rsp_valid, fpu_mem_rsp_ready, fpu_store_valid, fpu_store_ready;
   logic fpu_exception, fpu_access;
   ppc_fpu_pkg::ppc_fpu_issue_t fpu_issue, fp_issue;
-  ppc_fpu_pkg::ppc_fpu_mem_rsp_t fpu_mem_rsp;
+  ppc_fpu_pkg::ppc_fpu_mem_rsp_t fpu_mem_rsp, fpu_port_rsp;
+  logic fpu_unit_owned, fpu_port_req_ready, fpu_port_rsp_valid, fpu_port_store_ready;
   // The lane reads the proposals it applies; the FPU applies the rest.
   /* verilator lint_off UNUSEDSIGNAL */
   ppc_fpu_pkg::ppc_fpu_result_t fpu_result;
@@ -2103,6 +2117,27 @@ module ppc_special #(
     fpu_state(state_q);
   assign fpu_mem_rsp_valid = ENABLE_FPU && rst_ni && !cancel_i && (state_q == S_FPU_MEM_RSP);
   assign fpu_store_ready = state_q == S_FPU_STORE;
+  // While the lane holds no FP instruction, FPU launches belong to the
+  // pipelined unit, which has written a store before it retires.
+  assign fpu_unit_owned = ENABLE_LSU_PIPE && ENABLE_FPU && rst_ni &&
+                          !(fpu_q && (state_q != S_IDLE));
+  assign fpu_port_req_ready = fpu_mem_req_ready || fpu_unit_owned;
+  assign fp_launch_valid_o = fpu_unit_owned && fpu_mem_req_valid;
+  assign fp_launch_tag_o = fpu_mem_req.tag;
+  assign fp_store_valid_o = ENABLE_LSU_PIPE && fpu_store.write;
+  assign fp_store_tag_o = fpu_store.tag;
+  assign fp_store_data_o = fpu_store.data;
+  assign fpu_port_rsp_valid = fpu_mem_rsp_valid || (ENABLE_LSU_PIPE && fp_rsp_valid_i);
+  assign fpu_port_store_ready = fpu_store_ready || (ENABLE_LSU_PIPE && fp_commit_valid_i);
+  always_comb begin
+    fpu_port_rsp = fpu_mem_rsp;
+    if (!fpu_mem_rsp_valid) begin
+      fpu_port_rsp = '0;
+      fpu_port_rsp.tag = fp_rsp_tag_i;
+      fpu_port_rsp.data = fp_rsp_data_i;
+      fpu_port_rsp.fault = fp_rsp_fault_i;
+    end
+  end
   // A store commits at the queue head with retirement authorized; any other
   // FP instruction commits as it retires.
   assign fpu_commit_valid = ENABLE_FPU && rst_ni && !cancel_i && fpu_issued_q &&
@@ -2202,11 +2237,12 @@ module ppc_special #(
         .commit_ready_o(fpu_commit_ready),
         .commit1_valid_i(1'b0), .commit1_tag_i('0), .commit1_ready_o(),
         .abort_valid_i(fpu_abort_valid), .abort_tag_i(producer_q), .kill_all_i(fp_kill_i),
-        .mem_req_valid_o(fpu_mem_req_valid), .mem_req_ready_i(fpu_mem_req_ready),
+        .mem_req_valid_o(fpu_mem_req_valid), .mem_req_ready_i(fpu_port_req_ready),
         .mem_req_o(fpu_mem_req),
-        .mem_rsp_valid_i(fpu_mem_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
-        .mem_rsp_i(fpu_mem_rsp),
-        .store_valid_o(fpu_store_valid), .store_ready_i(fpu_store_ready), .store_o(fpu_store),
+        .mem_rsp_valid_i(fpu_port_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
+        .mem_rsp_i(fpu_port_rsp),
+        .store_valid_o(fpu_store_valid), .store_ready_i(fpu_port_store_ready),
+        .store_o(fpu_store),
         .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(fp_fpscr_o),
         .inspect_sp_o(), .inspect_lt_o(),
         .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
@@ -2214,8 +2250,9 @@ module ppc_special #(
       );
     end else begin : g_full
       // The lane takes a memory request only in S_FPU_WAIT, which never
-      // coincides with the instruction's issue.
-      ppc_fpu #(.CPU_602(HAS_602), .MEM_AT_ISSUE(1'b0)) fpu (
+      // coincides with the instruction's issue; the pipelined unit takes
+      // one in its issue cycle.
+      ppc_fpu #(.CPU_602(HAS_602), .MEM_AT_ISSUE(ENABLE_LSU_PIPE)) fpu (
         .clk_i(clk_i), .rst_ni(rst_ni),
         .issue_valid_i(fpu_issue_valid || fp_issue_valid_i), .issue_ready_o(fpu_issue_ready),
         .issue_i(fpu_issue_sel ? fpu_issue : fp_issue),
@@ -2227,11 +2264,12 @@ module ppc_special #(
         .commit_ready_o(fpu_commit_ready),
         .commit1_valid_i(1'b0), .commit1_tag_i('0), .commit1_ready_o(),
         .abort_valid_i(fpu_abort_valid), .abort_tag_i(producer_q), .kill_all_i(fp_kill_i),
-        .mem_req_valid_o(fpu_mem_req_valid), .mem_req_ready_i(fpu_mem_req_ready),
+        .mem_req_valid_o(fpu_mem_req_valid), .mem_req_ready_i(fpu_port_req_ready),
         .mem_req_o(fpu_mem_req),
-        .mem_rsp_valid_i(fpu_mem_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
-        .mem_rsp_i(fpu_mem_rsp),
-        .store_valid_o(fpu_store_valid), .store_ready_i(fpu_store_ready), .store_o(fpu_store),
+        .mem_rsp_valid_i(fpu_port_rsp_valid), .mem_rsp_ready_o(fpu_mem_rsp_ready),
+        .mem_rsp_i(fpu_port_rsp),
+        .store_valid_o(fpu_store_valid), .store_ready_i(fpu_port_store_ready),
+        .store_o(fpu_store),
         .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(fp_fpscr_o),
         .inspect_sp_o(), .inspect_lt_o(),
         .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
@@ -2261,13 +2299,19 @@ module ppc_special #(
                 !fpu_commit_valid && !fpu_abort_valid)
           else $error("FP kill overlapped the lane's FP instruction");
       if (rst_ni && fpu_store_valid)
-        assert (state_q == S_FPU_STORE) else $error("FPU store outside the queue head");
+        assert ((state_q == S_FPU_STORE) || (ENABLE_LSU_PIPE && fp_commit_valid_i))
+          else $error("FPU store outside the queue head");
+      if (rst_ni && ENABLE_LSU_PIPE && fp_rsp_valid_i && !fp_kill_i)
+        assert (fpu_mem_rsp_ready && !fpu_mem_rsp_valid)
+          else $error("FPU refused a pipelined access response");
     end
     // synthesis translate_on
   end else begin : g_no_fpu
     logic _unused_fp_port;
     assign _unused_fp_port = ^{fp_issue_valid_i, fp_issue_tag_i, fp_issue_insn_i,
-                               fp_commit_valid_i, fp_commit_tag_i, fp_kill_i, fp_issue};
+                               fp_commit_valid_i, fp_commit_tag_i, fp_kill_i, fp_issue,
+                               fpu_port_req_ready, fpu_port_rsp_valid, fpu_port_rsp,
+                               fpu_port_store_ready};
     assign fpu_issue_ready = 1'b0;
     assign fpu_result_valid = 1'b0;
     assign fpu_result = '0;

@@ -597,6 +597,18 @@ test-core-branch-recovery: build-control-memory
 	python3 tools/control_memory_program.py --branch-recovery --output $(BUILD_DIR)/branch-recovery
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-recovery
 
+# Folded bclr and bcctr: LR/CTR hazards, mispredictions both ways, linking
+# forms; again with two-word fetch and dispatch, where folded branches pair
+# from DQ1.
+.PHONY: test-core-branch-fold
+test: test-core-branch-fold
+test-core-branch-fold: build-control-memory
+	python3 tools/control_memory_program.py --branch-fold --output $(BUILD_DIR)/branch-fold
+	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-fold
+	mkdir -p $(BUILD_DIR)/control-memory-w2
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_DISPATCH_WIDTH=2 -GFETCH_WIDTH=2 --top-module tb_core_control_memory --Mdir $(BUILD_DIR)/control-memory-w2 $(RTL) ../tb/tb_core_control_memory.sv
+	./$(BUILD_DIR)/control-memory-w2/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-fold
+
 .PHONY: test-core-compare test-compare-execution
 test-core-compare: build-control-memory
 	python3 tools/control_memory_program.py --compare --output $(BUILD_DIR)/compare
@@ -2051,7 +2063,7 @@ FPU_CORE_SPLIT_IMAGE := $(BUILD_DIR)/core-fpu-split/program.txt
 test-core-fpu-split:
 	mkdir -p $(BUILD_DIR)/core-fpu-split
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_core_fpu -GDMEM_BITS=32 --Mdir $(BUILD_DIR)/core-fpu-split $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
-	python3 tools/fpu_core_program.py --image $(FPU_CORE_SPLIT_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --dmem-bits 32
+	python3 tools/fpu_core_program.py --image $(FPU_CORE_SPLIT_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --dmem-bits 32 $(FPU_CORE_LSU)
 	./$(BUILD_DIR)/core-fpu-split/Vtb_core_fpu +IMAGE=$(FPU_CORE_SPLIT_IMAGE) +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu-split/Vtb_core_fpu +IMAGE=$(FPU_CORE_SPLIT_IMAGE) +STALL=0 $(SIM_ARGS)
 

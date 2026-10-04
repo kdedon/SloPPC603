@@ -133,6 +133,11 @@ module tb_core_machine_check_trace;
   // Retirements per PC: all micro-ops, and final ones (seq_partial clear).
   int pc_retires [logic [31:0]];
   int pc_finals [logic [31:0]];
+  // bclr and bcctr dispatched after folding at fetch.
+  int folded_indirect = 0;
+  always @(posedge clk)
+    if (rst_n && dut.dispatch && dut.iq_folded && (dut.iq_head.insn[31:26] == 6'd19))
+      folded_indirect++;
 
   function automatic int unsigned rnd();
     rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
@@ -778,8 +783,88 @@ module tb_core_machine_check_trace;
     check(retires_at(32'h100, 1'b0) == 5 && retires_at(32'h104, 1'b0) == 2,
           "untraced cracked micro-ops");
 
-    $display("PASS core machine check, trace and IABR: scenarios=%0d checks=%0d retires=%0d cycles=%0d",
-             scenarios, checks, retires, cycles);
+    // 16. Folded bclr and bcctr: IABR on a folded return's target and on a
+    // bcctr, which folds when refetched; a DSI on the bcctr's target.
+    begin
+      int folds_before;
+      folds_before = folded_indirect;
+      start_scenario();
+      load32(3, 32'h0000_1042);
+      emit(asm_mtmsr(3));                     // 0x0c
+      emit(asm_li(3, 'h22));
+      emit(asm_spr(1'b1, 3, 1010));
+      emit(ASM_ISYNC);
+      emit(b_rel(32'h44, 1'b1));              // 0x1c -> 0x60
+      emit(asm_addi(5, 5, 1));                // 0x20 breakpoint, return target
+      emit(asm_li(3, 'hc0));
+      emit(asm_spr(1'b1, 3, 9));
+      emit(asm_li(3, 'ha2));
+      emit(asm_spr(1'b1, 3, 1010));
+      emit(ASM_ISYNC);
+      emit(b_rel(32'h68, 1'b0));              // 0x38 -> 0xa0
+      org(32'h60);
+      for (int k = 0; k < 8; k++) emit(ASM_NOP);
+      emit(ASM_BLR);                          // 0x80
+      org(32'ha0);
+      emit(32'h4e80_0420);                    // 0xa0 bctr, breakpoint
+      org(32'hc0);
+      emit(asm_lwz(6, int'(DATA), 0));        // 0xc0 DSI
+      finish_program();
+      dfault[DATA] = DATA_DSI_PROTECTION;
+      expect_entry(32'h1300, 32'h20, 32'h0000_1042, 32'h0000_1040);
+      expect_entry(32'h1300, 32'ha0, 32'h0000_1042, 32'h0000_1040);
+      expect_entry(32'h300, 32'hc0, DC, 32'h0000_1040);
+      run_scenario(20000);
+      check(folded_indirect - folds_before == 2, $sformatf("folded bclr/bcctr %0d, expected 2",
+            folded_indirect - folds_before));
+    end
+
+    // 17. Single step over bl, blr and bctr: each traces once, none folds.
+    begin
+      int folds_before;
+      folds_before = folded_indirect;
+      start_scenario();
+      load32(3, 32'h0000_1442);
+      emit(asm_mtmsr(3));                     // 0x0c, not traced
+      emit(b_rel(32'h30, 1'b1));              // 0x10 -> 0x40
+      emit(asm_li(3, 'h60));                  // 0x14
+      emit(asm_spr(1'b1, 3, 9));              // 0x18
+      emit(32'h4e80_0420);                    // 0x1c bctr -> 0x60
+      org(32'h40);
+      emit(ASM_BLR);                          // 0x40
+      org(32'h60);
+      load32(3, 32'h0000_1042);               // 0x60
+      emit(asm_mtmsr(3));                     // 0x68
+      finish_program();
+      expect_entry(32'hd00, 32'h40, DC, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h14, DC, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h18, DC, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h1c, DC, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h60, DC, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h64, DC, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h68, DC, 32'h0000_1040);
+      expect_entry(32'hd00, 32'h6c, 32'h0000_1042, 32'h0000_1040);
+      run_scenario(20000);
+      check(folded_indirect == folds_before, "a branch folded in trace mode");
+    end
+
+    // 18. External interrupt at the boundary after a folded return: SRR0 is
+    // the return target.
+    start_scenario();
+    load32(3, 32'h0000_9042);
+    emit(asm_mtmsr(3));                       // 0x0c
+    emit(b_rel(32'h30, 1'b1));                // 0x10 -> 0x40
+    emit(ASM_ISYNC);                          // 0x14 return target
+    finish_program();
+    org(32'h40);
+    for (int k = 0; k < 8; k++) emit(ASM_NOP);
+    emit(ASM_BLR);                            // 0x60
+    irq_on_retire_pc = 32'h60;
+    expect_entry(32'h500, 32'h14, 32'h0000_9042, 32'h0000_1040);
+    run_scenario(20000);
+
+    $display("PASS core machine check, trace and IABR: scenarios=%0d checks=%0d retires=%0d cycles=%0d folded-indirect=%0d",
+             scenarios, checks, retires, cycles, folded_indirect);
     $finish;
   end
 endmodule
