@@ -635,9 +635,18 @@ module ppc_core #(
   logic [1:0] push_writes, push1_writes, pop_writes, pop1_writes;
   logic lr_free, ctr_free;
   assign lr_free = (lr_iq_q == '0) && !lr_pending_q;
+  // Shadow LR (UM 6.4.1.1): a linking branch's LR value, PC + 4, is known
+  // when it is queued. lr_front_q is the LR left by the youngest queued or
+  // dispatched writer when that is a linking branch (lr_front_ok_q);
+  // lr_disp_q the same for the youngest dispatched writer, which a bclr
+  // reads at dispatch while that writer is uncommitted.
+  logic lr_front_ok_q, lr_disp_ok_q, lr_ok;
+  logic [31:2] lr_front_q, lr_disp_q, lr_fold;
+  assign lr_ok = lr_free || lr_front_ok_q;
+  assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
   assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
   assign fd_push = fd_valid_q && !fold_q;
-  assign fold_predict = folds(queued, trace_mode, lr_free, ctr_free);
+  assign fold_predict = folds(queued, trace_mode, lr_ok, ctr_free);
   // Lane 1: the second FD word.
   fetch_packet_t queued1;
   logic [31:0] fold_pc;
@@ -683,7 +692,7 @@ module ppc_core #(
   end
   endgenerate
   assign fold_predict1 = (FETCH_WIDTH == 2) &&
-    folds(queued1, trace_mode, lr_free && !push_writes[1],
+    folds(queued1, trace_mode, lr_ok && !push_writes[1],
           ctr_free && !push_writes[0]);
   // A folding first word drops the second.
   assign iq_push0 = fd_push && fd_push_ok;
@@ -691,7 +700,7 @@ module ppc_core #(
   assign fold_pc = fold_predict ? queued.pc : queued1.pc;
   assign fold_insn = fold_predict ? queued.insn : queued1.insn;
   assign fold_target = (fold_insn[31:26] == 6'd19) ?
-    {(fold_insn[10] ? ctr[31:2] : lr[31:2]), 2'b00} :
+    {(fold_insn[10] ? ctr[31:2] : lr_fold[31:2]), 2'b00} :
     (fold_insn[1] ? 32'b0 : fold_pc) +
     ((fold_insn[31:26] == 6'd18) ?
       {{6{fold_insn[25]}}, fold_insn[25:2], 2'b00} :
@@ -762,6 +771,30 @@ module ppc_core #(
   assign push1_writes = lr_ctr_writes(push_uop1);
   assign pop_writes = lr_ctr_writes(iq_uop);
   assign pop1_writes = lr_ctr_writes(dq1_uop);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted) begin
+      lr_front_ok_q <= 1'b0;
+      lr_disp_ok_q <= 1'b0;
+    end else begin
+      if (frontend_clear) begin
+        lr_front_ok_q <= lr_disp_ok_q;
+        lr_front_q <= lr_disp_q;
+      end else if (iq_push1 && push1_writes[1]) begin
+        lr_front_ok_q <= push_uop1.special_op != SPECIAL_MTSPR;
+        lr_front_q <= queued1.pc[31:2] + 30'd1;
+      end else if (iq_push0 && push_writes[1]) begin
+        lr_front_ok_q <= push_uop.special_op != SPECIAL_MTSPR;
+        lr_front_q <= queued.pc[31:2] + 30'd1;
+      end
+      if (dispatch1 && pop1_writes[1]) begin
+        lr_disp_ok_q <= dq1_uop.special_op != SPECIAL_MTSPR;
+        lr_disp_q <= dq1_head.pc[31:2] + 30'd1;
+      end else if (dispatch && pop_writes[1]) begin
+        lr_disp_ok_q <= iq_uop.special_op != SPECIAL_MTSPR;
+        lr_disp_q <= iq_head.pc[31:2] + 30'd1;
+      end
+    end
+  end
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear) begin
       lr_iq_q <= '0;
@@ -936,7 +969,7 @@ module ppc_core #(
   assign bu_spec = ENABLE_BRANCH_SPEC && bu_reads_cr && flags_busy && !bu_cr_valid_q;
   assign bu_ready = !(bu_reads_cr && flags_busy && !bu_cr_valid_q && !ENABLE_BRANCH_SPEC) &&
     !(bu_reads_cr && (fp_cr_pending || bs_busy)) &&
-    !(bu_reads_lr && lr_pending_q) && !(bu_reads_ctr && ctr_pending_q);
+    !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(bu_reads_ctr && ctr_pending_q);
   // BO[0..3] are branch_bo[4..1]; the decrement leaves zero when CTR is 1.
   assign bu_ctr_ok = uop.branch_bo[2] || ((ctr != 32'd1) ^ uop.branch_bo[1]);
   assign bu_cond_ok = uop.branch_bo[4] || (bu_cr[31-uop.branch_bi] == uop.branch_bo[3]);
@@ -1035,7 +1068,7 @@ module ppc_core #(
   end
   always_comb begin
     case (uop.special_op)
-      SPECIAL_BCLR: bu_target = {lr[31:2], 2'b00};
+      SPECIAL_BCLR: bu_target = {(lr_pending_q ? lr_disp_q : lr[31:2]), 2'b00};
       SPECIAL_BCCTR: bu_target = {ctr[31:2], 2'b00};
       default: bu_target = uop.branch_aa ? uop.branch_disp :
                                            iq_head.pc + uop.branch_disp;
@@ -1605,6 +1638,7 @@ module ppc_core #(
     !dq1_uop.mem_update && (dq1_uop.cache_op == CACHE_OP_NONE);
   assign d1_fp = d1_valid && ENABLE_FPU && !fp_replay_q && (dq1_pair.unit == UNIT_FPU);
   assign d1_branch = d1_valid && dq1_branch[3] && dq1_folded &&
+    !(dq1_branch[1] && (lr_pending_q || pop_writes[1])) &&
     ((dq1_head.insn[31:26] == 6'd18) || (dq1_head.insn[25] && dq1_head.insn[23]));
   always_comb begin
     case (dq1_uop.special_op)
@@ -1993,7 +2027,7 @@ module ppc_core #(
       assert (d1_branch) else $error("folded DQ1 branch left the branch unit");
     // A folded bclr or bcctr found its target register final at fetch.
     if (rst_ni && iq_valid && iq_folded && !trace_mode)
-      assert (!(bu_reads_lr && lr_pending_q) && !(iq_branch[1] == 1'b0 &&
+      assert (!(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(iq_branch[1] == 1'b0 &&
               iq_head.insn[31:26] == 6'd19 && ctr_pending_q))
         else $error("folded branch target register still pending");
     if (rst_ni && dispatch && bu_branch && iq_folded && bu_taken && iq_valid1)
