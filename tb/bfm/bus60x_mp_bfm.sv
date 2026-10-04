@@ -105,7 +105,7 @@ module bus60x_mp_bfm #(
   // those cancelled by ARTRY. DRTRY-cancelled beats, those held with TA
   // negated, and DBGs asserted during a DRTRY.
   int pipelined = 0, self_pipelined = 0, early_bg = 0, early_bg_retried = 0;
-  int drtries = 0, drtry_holds = 0, early_dbg = 0;
+  int drtries = 0, drtry_holds = 0, early_dbg = 0, early_dbg_holds = 0;
   /* verilator lint_on UNUSEDSIGNAL */
   // Percent chances: target retry, extra waits, pipelined grant per cycle,
   // early BG, DRTRY per read beat, early DBG, TEA per window read.
@@ -323,12 +323,23 @@ module bus60x_mp_bfm #(
     // At the fall before the final beat's confirmation edge (or after TEA).
     // An early DBG for the next tenure while DRTRY replaces the final beat
     // once more must wait for DRTRY to negate.
+    // DRTRY is held 0-2 cycles with TA negated before the replacement; a
+    // held cycle offers the next master an asserted DBG with DRTRY asserted.
     if (!t.write && !ended && dq.size() > 0 && chance(early_dbg_pct)) begin
+      int hold;
       drtry_n_o = 1'b0;
-      ta_n_o[t.m] = 1'b0;
       dbg_n_o[dq[0].m] = 1'b0;
       early_dbg++;
       drtries++;
+      hold = int'(rnd() % 3);
+      if (hold > 0) begin
+        early_dbg_holds++;
+        repeat (hold) begin
+          bus_rise();
+          bus_fall();
+        end
+      end
+      ta_n_o[t.m] = 1'b0;
       bus_rise();
       bus_fall();
       ta_n_o[t.m] = 1'b1;

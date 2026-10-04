@@ -322,18 +322,18 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
                memory.teas[0], memory.teas[1]);
     end
     if (memory.pipelined == 0 || memory.early_bg == 0 || memory.drtries == 0 ||
-        memory.early_dbg == 0 || memory.drtry_holds == 0 ||
+        memory.early_dbg_holds == 0 || memory.drtry_holds == 0 ||
         memory.teas[0] + memory.teas[1] == 0)
-      $fatal(1, "coverage: pipelined=%0d early_bg=%0d drtry=%0d holds=%0d early_dbg=%0d teas=%0d/%0d",
+      $fatal(1, "coverage: pipelined=%0d early_bg=%0d drtry=%0d holds=%0d early_dbg=%0d/%0d teas=%0d/%0d",
              memory.pipelined, memory.early_bg, memory.drtries, memory.drtry_holds,
-             memory.early_dbg, memory.teas[0], memory.teas[1]);
+             memory.early_dbg, memory.early_dbg_holds, memory.teas[0], memory.teas[1]);
     for (int c = 0; c < 2; c++)
       if (memory.artry_by[c] == 0 || memory.pushes[c] == 0 ||
           memory.tt_count[c][5'b01110] == 0 || memory.tt_count[c][5'b01010] == 0)
         $fatal(1, "coverage: processor %0d artry=%0d pushes=%0d rwitm=%0d reads=%0d", c,
                memory.artry_by[c], memory.pushes[c], memory.tt_count[c][5'b01110],
                memory.tt_count[c][5'b01010]);
-    $display("PASS chip MP: seed=%0d iter=%0d cycles=%0d tenures=%0d/%0d data=%0d/%0d artry_by=%0d/%0d pushes=%0d/%0d rwitm=%0d/%0d reads=%0d/%0d kills=%0d/%0d flushes=%0d/%0d write_kill=%0d/%0d target_retries=%0d stwcx_failures=%0d/%0d pipelined=%0d self_pipelined=%0d early_bg=%0d/%0d drtry=%0d holds=%0d early_dbg=%0d teas=%0d/%0d owed_retries=%0d/%0d",
+    $display("PASS chip MP: seed=%0d iter=%0d cycles=%0d tenures=%0d/%0d data=%0d/%0d artry_by=%0d/%0d pushes=%0d/%0d rwitm=%0d/%0d reads=%0d/%0d kills=%0d/%0d flushes=%0d/%0d write_kill=%0d/%0d target_retries=%0d stwcx_failures=%0d/%0d pipelined=%0d self_pipelined=%0d early_bg=%0d/%0d drtry=%0d holds=%0d early_dbg=%0d/%0d teas=%0d/%0d owed_retries=%0d/%0d",
              seed, ITER, cycles, memory.tenures[0], memory.tenures[1],
              memory.data_tenures[0], memory.data_tenures[1],
              memory.artry_by[0], memory.artry_by[1], memory.pushes[0], memory.pushes[1],
@@ -344,7 +344,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
              memory.tt_count[0][5'b00110], memory.tt_count[1][5'b00110],
              memory.target_retries, mem_word(SHARED + FAILS), mem_word(SHARED + FAILS + 4),
              memory.pipelined, memory.self_pipelined, memory.early_bg,
-             memory.early_bg_retried, memory.drtries, memory.drtry_holds, memory.early_dbg,
+             memory.early_bg_retried, memory.drtries, memory.drtry_holds, memory.early_dbg, memory.early_dbg_holds,
              memory.teas[0], memory.teas[1], memory.owed_retries[0], memory.owed_retries[1]);
     $finish;
   end
