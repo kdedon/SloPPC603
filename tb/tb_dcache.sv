@@ -980,6 +980,59 @@ module tb_dcache;
       rsp_ready = 1'b0;
       wait_quiet();
       directed_tests++;
+
+      // Back to back behind fast store hits: a store and a load of the
+      // double word just written are accepted the next cycle, and the load
+      // sees both stores; another way's line at the same index is unaffected.
+      begin
+        logic [31:0] qa [6];
+        logic [3:0] qop [6];
+        logic [7:0] qbe [6];
+        logic [63:0] qd [6], got [$];
+        int accepted_at [6];
+        int cyc;
+        a = mk(0, 4, 11, 2);
+        b = mk(0, 5, 11, 2);
+        st(a, 64'h1111_1111_1111_1111);
+        st(b, 64'h2222_2222_2222_2222);
+        wait_quiet();
+        qa = '{a, a, a, b, a, b};
+        qop = '{DC_STORE, DC_STORE, DC_LOAD, DC_STORE, DC_LOAD, DC_LOAD};
+        qbe = '{8'h0f, 8'hf0, 8'hff, 8'h3c, 8'hff, 8'hff};
+        qd = '{64'ha0a1_a2a3_a4a5_a6a7, 64'hb0b1_b2b3_b4b5_b6b7, '0,
+               64'hc0c1_c2c3_c4c5_c6c7, '0, '0};
+        rsp_ready = 1'b1;
+        cyc = 0;
+        fork
+          begin
+            for (int i = 0; i < 6; i++) begin
+              @(negedge clk);
+              req_valid = 1'b1; req_op = qop[i]; req_addr = qa[i];
+              req_be = qbe[i]; req_wdata = qd[i]; req_wimg = wimg_of(4'd0);
+              while (!req_ready) @(negedge clk);
+              accepted_at[i] = cyc;
+            end
+            @(negedge clk);
+            req_valid = 1'b0;
+          end
+          begin
+            while (got.size() < 3) begin
+              @(posedge clk);
+              cyc++;
+              if (rsp_valid && rsp_ready && dut.req_op_q == DC_LOAD) got.push_back(rsp_data);
+            end
+          end
+        join
+        @(negedge clk);
+        rsp_ready = 1'b0;
+        check(got[0] == 64'hb0b1_b2b3_a4a5_a6a7, "load sees both back-to-back stores");
+        check(got[1] == got[0], "repeat load of the stored double word");
+        check(got[2] == 64'h2222_c2c3_c4c5_2222, "other way at the same index keeps its data");
+        check(accepted_at[1] == accepted_at[0] + 1 && accepted_at[2] == accepted_at[1] + 1,
+              "store and same double-word load accepted behind a fast store");
+        wait_quiet();
+        directed_tests++;
+      end
     end
   endtask
 
