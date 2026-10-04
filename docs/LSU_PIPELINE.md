@@ -24,11 +24,13 @@ dispatch -> P1 offer -> P2 await response -> R result -> CQ -> retire
   dispatches only when its source GPRs have no uncommitted producer; the
   check now moves to the IQ entry behind the head on a dispatch, so
   back-to-back accesses do not lose a cycle to it.
-- P1 (two entries) offers the oldest access. A load offers at once; a store
-  offers only at the completion-queue head with retirement authorized, the
-  rule of UM 1.1.4.3 the lane already follows. An offer stands until
-  accepted. From its offer until it retires a store cannot be cancelled by
-  an external redirect, as in the lane.
+- P1 (two entries) offers the oldest access. A load offers at once. A store
+  whose translation the router confirms enters the store queue without an
+  offer ([Store queue](#store-queue)); any other store offers only at the
+  completion-queue head with retirement authorized, the rule of UM 1.1.4.3
+  the lane already follows. An offer stands until accepted. From its offer
+  until it retires such a store cannot be cancelled by an external
+  redirect, as in the lane.
 - P2 (two entries) holds accepted accesses and takes their responses in order.
   A good response is aligned, sign-extended or byte-reversed into R.
 - R finishes the completion entry. It has priority on the CQ result port; an
@@ -119,6 +121,59 @@ takes the direct-store path like a lane access.
 A load may be requested once every older access has its response, before
 an older store retires: the store has been performed and cannot fault.
 
+## Store queue
+
+UM 1.1.4.3 and 6.4.4: the LSU translates a store in its first stage, holds
+it in the store queue until completion, and executes stores at one per
+cycle with two-cycle latency (Table 6-6, 2:1). Loads may be performed ahead
+of stores (UM 3.2, weakly ordered) except to caching-inhibited pages; the
+603e combines no stores (UM 3.5.1). Here translation happens at the router,
+so the router answers a check beside the request port instead:
+
+- In P1, a store with its data asks the router whether a store to its page
+  would translate without a fault: a second lookup of the data micro-TLB,
+  which holds only translations a store was allowed through. On a hit the
+  store leaves P1 without an offer, enters the queue and passes Q to R,
+  which finishes it in the cycle a load would finish. On a miss it waits
+  and offers at the completion-queue head as before, after every older
+  queued store is written; the router's translation then raises any DSI.
+- The queue (four entries) holds stores in program order. A store becomes
+  committed when it retires; committed stores are written in order through
+  the request port, ahead of any later offer (a standing non-speculative
+  offer finishes first). Recovery or a faulting older access removes a
+  store not yet retired.
+- A load waits while a queued store shares its doubleword, compared on the
+  page offset only (aliases of a physical page also match); stores do not
+  forward. Otherwise it may pass queued stores, offered as speculative, so
+  a receiver performs it only on a cacheable micro-TLB hit with the data
+  cache enabled (UM 3.5.2, 3.5.5.2); elsewhere it waits until the queue is
+  empty. A store does not queue behind a load that passed queued stores and
+  still awaits its response, so a load that faults after passing is always
+  younger than every queued store: its response is consumed, everything
+  behind it removed, and once the queue drains the lane performs the load
+  again and takes its exception.
+- Every serialized-lane operation (sync, eieio, lwarx, stwcx., cache
+  operations, dcbz, mtmsr, mtsr, tlbie, tlbld, rfi, exceptions), interrupt
+  admission and the lane's memory quiescence wait for the unit to empty, so
+  the queue drains first (UM 4.1: the completed store queue is emptied
+  before an asynchronous exception) and no translation change reaches a
+  queued store. Snoops see the cache as stores are written, as on the 603e.
+- An error on a committed store's write is an asynchronous machine check
+  (UM 4.5.2, Table 4-10): TEA is raised through the pin-event path, SRR0 is
+  the next instruction to complete, SRR1[13] is set, and the rest of the
+  queue is cancelled. Without machine check the core halts. The queue is
+  used only where that path exists (`ENABLE_MACHINE_CHECK` off, or pin
+  interrupts, data cache and external interrupts on); elsewhere stores offer
+  at the head as before. A store whose fault the lane classifies (old path)
+  stays precise.
+- Little-endian munging and byte reversal are applied before the queue,
+  which keeps the formatted address, data and strobes. An FP store queues
+  once the FPU presents its data and finishes the FPU entry through R; a
+  doubleword moved in two beats does not queue.
+- Without a translating router (`ppc_core` alone, the untranslated bus
+  tops) a top drives `dmem_store_check_ok_i` low and stores never queue;
+  the FP core bench drives it from its protected-word map.
+
 ## Cached path
 
 With the unit and a data cache, `ppc_core_bat` sets the router's
@@ -163,8 +218,11 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
   first to last).
 - `lwz` then a dependent `add`: the `add` retires the cycle after the load,
   as an independent one would (2-cycle load-use).
-- Four `stw`: 12 cycles first to last retirement, 4 each: each offers only
-  at the queue head.
+- Four `stw`: retired one per cycle (3 cycles first to last; 12 before the
+  store queue), Table 6-6 2:1.
+- `stw` then `lwz` of another doubleword: the load passes the queued store
+  and retires the cycle after it. `lwz` of the stored doubleword waits for
+  the write and retires 5 cycles after the store.
 
 Through the router and data cache of the cached top (`test-core-dcache`
 and `test-core-dcache-lsu-pipe`; DR=1 and IR=1 over BATs, the line and the
@@ -209,8 +267,9 @@ cycle, integer rows two):
 | four `stfd`, first to last retirement | 18 | 9 | 15 |
 | `stfd` after the `fadd` producing its data | 6 | 3 | 5 |
 
-Loads meet Table 6-6 (2:1). Stores offer only at the completion-queue
-head, three cycles apart.
+Loads meet Table 6-6 (2:1). FP stores queue but stay three cycles apart:
+the FPU presents store data only for its oldest instruction, which retires
+the cycle after the unit finishes it.
 
 ## Default
 
@@ -231,16 +290,12 @@ the chip needs a fresh fit and timing report before the default changes.
    `ppc_dcache_slot`), so the unit's P1 shift no longer follows the hit;
    and keep the one-cycle answer away from the serialized lane's
    `memory_result_q`.
-2. Stores at one per cycle: finish a store when translated and checked, and
-   write it from a committed store queue after retirement, with load
-   forwarding or an address check against the queue. The 603e checks the
-   store in the LSU's MMU stage and writes the cache after completion;
-   here translation happens with the access at the router, so the unit
-   needs either the micro-TLB's check on the request path before the
-   write or a probe request, which would halve the port's store bandwidth.
-   Offering a store before it is the head, once every older instruction
-   has finished without an exception, gives two cycles per store without
-   a queue.
+2. FP stores at one per cycle: the FPU presents store data only for its
+   oldest instruction, so FP stores queue three cycles apart; presenting
+   the data of younger FP stores would meet Table 6-6. A doubleword stored
+   in two word beats (32-bit port) does not queue. The store queue also
+   needs a fit: the micro-TLB check feeds P1's pop and the queue's write
+   shares the request mux.
 3. Loads whose base register has an uncommitted producer (operands from
    rename instead of the committed registers). The 603e reads them from the
    rename buffers or the result buses into the LSU's reservation station;
