@@ -83,6 +83,7 @@ MEMORY_SPACING = {'lfd-issue': 15, 'lfd-retire': 15, 'lfs-issue': 15, 'lfs-retir
 PIPE_MEM = False
 # Two GPR write ports (dispatch width 2): an update load retires in one cycle.
 DUAL_WRITE = False
+BASE_SNOOP = False
 
 
 def use_lsu_pipe(split, pipe_mem):
@@ -860,20 +861,31 @@ def update_and_rename_streams(p):
     p.store_gpr(11, data & 0xff)
     p.store_gpr(12, data & 0xff)
     p.store_gpr(24, slot + 11)
-    # Load whose base is the previous load's result. Table 6-6 gives 2; the
-    # EA is formed at dispatch, a cycle ahead of the access, so a base
-    # written that cycle costs one more.
+    # Load whose base is the previous load's result: Table 6-6 gives 2.
+    # Without base snooping the EA is formed at dispatch, a cycle ahead of
+    # the access, so a base written that cycle costs one more.
+    base_gap = 2 if BASE_SNOOP else 3
     p.emit(d_form(36, 23, 23, 4))        # stw r23 (slot+16) at slot+20
     p.expect(slot + 20, slot + 16)
     p.emit(SYNC)
     pcs = [p.emit(d_form(32, 25, 23, 4)), p.emit(d_form(32, 26, 25, 0))]
-    p.spacings.append(('R', pcs[0], pcs[1], 3))
+    p.spacings.append(('R', pcs[0], pcs[1], base_gap))
     p.store_gpr(26, data)
     # Load whose base an add produced: the same.
     p.emit(SYNC)
     pcs = [p.emit(d_form(14, 25, 23, 0)), p.emit(d_form(32, 26, 25, 0))]
-    p.spacings.append(('R', pcs[0], pcs[1], 3))
+    p.spacings.append(('R', pcs[0], pcs[1], base_gap))
     p.store_gpr(26, data)
+    if BASE_SNOOP:
+        # A misaligned EA formed from a snooped base takes the alignment
+        # exception without writing rD.
+        p.li32(19, 0x1357)
+        p.emit(SYNC)
+        p.emit(d_form(32, 25, 23, 4))
+        insn = d_form(32, 19, 25, 2)
+        at = p.emit(insn)
+        p.event(0x600, at, p.msr, slot + 18, dsisr_d(insn))
+        p.store_gpr(19, 0x1357)
     # Store whose data is the previous load's result.
     p.emit(SYNC)
     pcs = [p.emit(d_form(32, 26, 23, -4)), p.emit(d_form(36, 26, 23, 12))]
@@ -961,6 +973,8 @@ def main():
                         help='one-access-per-cycle memory, with integer access streams')
     parser.add_argument('--dual-write', action='store_true',
                         help='two GPR write ports (dispatch width 2)')
+    parser.add_argument('--base-snoop', action='store_true',
+                        help='loads form the EA from a snooped base (Table 6-6 load latency)')
     args = parser.parse_args()
     if args.chip_image:
         use_chip_layout()
@@ -972,6 +986,9 @@ def main():
         use_pipe_mem()
     if args.dual_write:
         use_dual_write()
+    if args.base_snoop:
+        global BASE_SNOOP
+        BASE_SNOOP = True
     p = build(args.seed, args.random)
     print(f'fpu_core_program: {len(p.words)} words, {len(p.expects)} expected, '
           f'{len(p.log)} exceptions, {len(p.probes)} probes')

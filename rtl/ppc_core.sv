@@ -4,6 +4,9 @@
 `ifndef PPC_LSU_PIPE
 `define PPC_LSU_PIPE 1'b0
 `endif
+`ifndef PPC_LSU_BASE_SNOOP
+`define PPC_LSU_BASE_SNOOP 1'b0
+`endif
 `ifndef PPC_DISPATCH_WIDTH
 `define PPC_DISPATCH_WIDTH 1
 `endif
@@ -67,6 +70,12 @@ module ppc_core #(
   // keeps the serialized lane. Benches may set the default with
   // +define+PPC_LSU_PIPE.
   parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
+  // A D-form load in the unit dispatches before its base is produced and
+  // forms its EA from the result bus as it offers, so a base written by a
+  // load or add costs no extra cycle (UM Table 6-6). Puts a result bus,
+  // adder and request address in one cycle; benches may set the default
+  // with +define+PPC_LSU_BASE_SNOOP.
+  parameter bit LSU_BASE_SNOOP = `PPC_LSU_BASE_SNOOP,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -222,7 +231,8 @@ module ppc_core #(
   logic iq_miss_valid_q, iq_push_miss, iq_pop_miss;
   logic [IQ_COUNT_WIDTH-1:0] iq_miss_count_q, iq_miss_count_left;
   uop_t uop, iq_uop, dispatch_uop, dispatch_base, dispatch_pre, push_uop;
-  logic dispatch_align;
+  logic dispatch_align, base_snoop;
+  operand_t lsu_base;
   logic iq_pop, seq_last, seq_active;
   retire_packet_t allocation;
   completion_tag_t alloc_producer, retire_producer;
@@ -917,7 +927,7 @@ module ppc_core #(
       dispatch_pre.special_op =
         ((uop.special_op == SPECIAL_FPU_EMULATE) && msr[MSR_FP]) ?
         SPECIAL_EMULATION_TRAP : SPECIAL_FP_UNAVAILABLE;
-    end else if (ENABLE_SUPERVISOR_EXCEPTIONS && !uop.illegal &&
+    end else if (ENABLE_SUPERVISOR_EXCEPTIONS && !uop.illegal && !base_snoop &&
                  ((uop.special_op == SPECIAL_LOAD) ||
                   (uop.special_op == SPECIAL_STORE)) && dispatch_misaligned) begin
       dispatch_align = 1'b1;
@@ -1602,6 +1612,17 @@ module ppc_core #(
   // The unit takes its base registers from rename, including a value written
   // this cycle (UM 6.3.3.1); store data may follow later.
   assign mem_base_ready = (uop.zero_a || src_a.ready) && (uop.use_imm || src_b.ready);
+  // A D-form load the unit may start without its base; the unit then
+  // decides its alignment.
+  assign base_snoop = LSU_BASE_SNOOP && ENABLE_LSU_PIPE && ENABLE_SUPERVISOR_EXCEPTIONS &&
+    dispatch_mem_plain &&
+    (uop.special_op == SPECIAL_LOAD) && !uop.mem_update && uop.use_imm && !uop.zero_a &&
+    !msr_le;
+  always_comb begin
+    lsu_base = '0;
+    lsu_base.ready = 1'b1;
+    if (base_snoop) lsu_base = src_a;
+  end
   // An update form in the unit writes its base through a second rename slot.
   assign unit_update = (lsu_route || fp_mem_pipe) && uop.mem_update;
   assign update_alloc = dispatch && (lsu_route || fp_mem_pipe) && dispatch_uop.mem_update;
@@ -1636,7 +1657,7 @@ module ppc_core #(
   // behind FP work that can still fault; recovery then cancels it.
   assign fp_mem_store = (iq_head.insn[31:26] == 6'd31) ? iq_head.insn[8] : iq_head.insn[28];
   assign special_drained = lsu_route ?
-    (mem_base_ready && !fp_unsafe_pending) :
+    ((mem_base_ready || base_snoop) && !fp_unsafe_pending) :
     (lsu_empty && ((cq_empty && normal_idle) ||
      ((dispatch_mem_plain || dispatch_fp_mem_plain) && mem_sources_committed_q &&
       (!fp_unsafe_pending || (dispatch_fp_mem_plain && fp_mem_store)))));
@@ -1869,7 +1890,9 @@ module ppc_core #(
   assign lsu_route = ENABLE_LSU_PIPE && dispatch_mem_plain;
   generate
     if (ENABLE_LSU_PIPE) begin : g_lsu
-      ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE)) lsu (
+      ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE),
+                     .BASE_SNOOP(LSU_BASE_SNOOP),
+                     .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS)) lsu (
         .clk_i, .rst_ni,
         .dispatch_valid_i((dispatch && lsu_c0) || lsu_d1),
         .dispatch_ready_o(lsu_ready), .uop_i(lsu_c0 ? dispatch_uop : d1_lane_uop),
@@ -1877,6 +1900,8 @@ module ppc_core #(
         .pc_i(lsu_c0 ? iq_head.pc : dq1_head.pc),
         .insn_i(lsu_c0 ? iq_head.insn : dq1_head.insn),
         .ea_i(lsu_c0 ? dispatch_ea : d1_ea_full), .data_i(lsu_c0 ? src_c : d1_data),
+        .base_snoop_i(lsu_c0 && base_snoop), .base_i(lsu_base), .offset_i(uop.imm),
+        .dr_i(msr[MSR_DR]),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
         .fp_launch_valid_i(fp_launch_valid), .fp_launch_tag_i(fp_launch_tag),
@@ -1924,7 +1949,8 @@ module ppc_core #(
       assign fp_rsp_fault = 1'b0;
       logic _unused_fp_unit;
       assign _unused_fp_unit = ^{fp_launch_valid, fp_launch_tag, fp_store_valid, fp_store_tag,
-                                 fp_store_data, fp_mem_double, fp_mem_pipe_ready, src_c};
+                                 fp_store_data, fp_mem_double, fp_mem_pipe_ready, src_c,
+                                 lsu_base};
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;
@@ -2077,10 +2103,11 @@ module ppc_core #(
     if (rst_ni && dispatch && !uop.illegal && iq_head.fault == FETCH_OK &&
         ((uop.special_op == SPECIAL_LOAD) || (uop.special_op == SPECIAL_STORE))) begin
       assert (((cq_empty && !commit) ||
-               (dispatch_mem_plain && (lsu_route ? mem_base_ready : mem_sources_committed))) &&
+               (dispatch_mem_plain &&
+                (lsu_route ? (mem_base_ready || base_snoop) : mem_sources_committed))) &&
               !recovery_accepted)
         else $error("memory dispatch violated committed-EA serialization");
-      assert (forwarded_ea_low == dispatch_ea_low)
+      assert (base_snoop || (forwarded_ea_low == dispatch_ea_low))
         else $error("committed and forwarded memory EA low bits disagree");
     end
     if (rst_ni && iq_valid)
@@ -2089,7 +2116,8 @@ module ppc_core #(
       assert ((cq_empty && !commit && src_a.ready && src_b.ready &&
                src_a.value == arch_a && src_b.value == arch_b) ||
               ((dispatch_mem_plain || dispatch_fp_mem_plain) &&
-               ((lsu_route || fp_mem_pipe) ? mem_base_ready : mem_sources_committed)))
+               ((lsu_route || fp_mem_pipe) ? (mem_base_ready || base_snoop) :
+                                            mem_sources_committed)))
         else $error("special dispatch saw an uncommitted GPR source");
     if (rst_ni && iq_valid && !seq_active)
       assert (iq_branch[3] == ((iq_head.fault == FETCH_OK) && !uop.illegal &&
@@ -2428,7 +2456,19 @@ module ppc_core #(
     end
   end
   // synthesis translate_on
-  assign gpr_commit = commit && retire_o.gpr_write && !retire_o.illegal;
+  // A load whose alignment the unit decided keeps its destination in the
+  // completion queue; its exception suppresses the write.
+  logic late_align_q;
+  completion_tag_t late_align_tag_q;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || !LSU_BASE_SNOOP || recovery_accepted) late_align_q <= 1'b0;
+    else if (lsu_adopt_valid && special_ready &&
+             (lsu_adopt_uop.special_op == SPECIAL_ALIGNMENT)) late_align_q <= 1'b1;
+    else if (commit && (retire_producer == late_align_tag_q)) late_align_q <= 1'b0;
+    if (lsu_adopt_valid && special_ready) late_align_tag_q <= lsu_adopt_producer;
+  end
+  assign gpr_commit = commit && retire_o.gpr_write && !retire_o.illegal &&
+                      !(late_align_q && (retire_producer == late_align_tag_q));
   assign update_commit = commit && retire_o.update_write && !retire_o.illegal;
   assign gpr_commit1 = commit1 && retire1_o.gpr_write && !retire1_o.illegal;
   always_ff @(posedge clk_i) begin

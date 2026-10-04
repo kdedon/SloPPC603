@@ -28,9 +28,16 @@
 // performed out of order (UM 3.2). An error on a retired store's write is
 // reported for an asynchronous machine check (UM 4.5.2) and cancels the
 // rest of the queue.
+//
+// With BASE_SNOOP, a load whose base is not yet produced dispatches with its
+// displacement and takes the base from the result buses: the head offers
+// in the cycle the base is written, forming its EA then (UM Table 6-6, load
+// latency 2), and decides alignment there instead of at dispatch.
 module ppc_lsu_pipe #(
   parameter int DMEM_BITS = 32,
   parameter bit STORE_QUEUE = 1'b0,
+  parameter bit BASE_SNOOP = 1'b0,
+  parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
   parameter int SQ_DEPTH = 4
 ) (
   input  logic clk_i, rst_ni,
@@ -42,6 +49,12 @@ module ppc_lsu_pipe #(
   // Store data from rename; one not yet produced is taken from the result
   // buses when written.
   input  ppc_pkg::operand_t data_i,
+  // A load's base from rename and its displacement; ea_i is meaningless
+  // while the base is not ready.
+  input  logic base_snoop_i,
+  input  ppc_pkg::operand_t base_i,
+  input  logic [31:0] offset_i,
+  input  logic dr_i,
   input  logic wake_valid_i, wake1_valid_i,
   input  ppc_pkg::wake_packet_t wake_i, wake1_i,
   // FP access: store and doubleword forms.
@@ -128,6 +141,11 @@ module ppc_lsu_pipe #(
     logic write, passed;
     // Dispatched behind an unresolved branch.
     logic bspec;
+    // The EA waits for base_producer's result: base plus offset.
+    logic base_wait;
+    rename_tag_t base_tag;
+    completion_tag_t base_producer;
+    logic [31:0] offset;
     completion_tag_t producer;
     logic [31:0] ea, data, pc, insn;
     // XORed into the EA's low bits to form the access address.
@@ -162,6 +180,18 @@ module ppc_lsu_pipe #(
       MEM_HALF: return 4'b1100;
       default: return 4'b1111;
     endcase
+  endfunction
+  // Naturally aligned integer access, and the alignment exception of one
+  // whose EA was formed in P1 (big-endian; UM 4.5.6.1.1).
+  function automatic logic int_fast(input mem_size_t size, input logic [1:0] ea);
+    return (size == MEM_BYTE) || ((size == MEM_HALF) && !ea[0]) || (ea == 2'b00);
+  endfunction
+  function automatic logic int_trap(input mem_size_t size, input logic [11:0] ea,
+                                    input logic dr);
+    if (!ENABLE_MISALIGNED_ACCESS) return !int_fast(size, ea[1:0]);
+    return (size != MEM_BYTE) && dr &&
+           ((size == MEM_WORD) ? ((ea[11:2] == 10'h3ff) && (ea[1:0] != 2'b00)) :
+                                 (ea == 12'hfff));
   endfunction
   function automatic logic [31:0] swap_bytes(input logic [31:0] value,
                                              input logic [2:0] count);
@@ -222,7 +252,22 @@ module ppc_lsu_pipe #(
   assign p1_ready = !p1_head.fp ? head_data_ready :
     (p1_head.store ? (fp_store_valid_i && (fp_store_tag_i == p1_head.producer)) :
                      p1_head.launched);
-  assign p1_addr = {p1_head.ea[31:3], p1_head.ea[2] ^ p1_head.munge[2], 2'b00};
+  // A waiting head's EA from the base written this cycle; both sums are
+  // formed while the tags compare.
+  logic head_base0, head_base1, head_base_ready, head_fast;
+  logic [31:0] head_ea, base_sum0, base_sum1;
+  assign head_base0 = BASE_SNOOP && wake_valid_i && (wake_i.tag == p1_head.base_tag) &&
+                      (wake_i.producer == p1_head.base_producer);
+  assign head_base1 = BASE_SNOOP && wake1_valid_i && (wake1_i.tag == p1_head.base_tag) &&
+                      (wake1_i.producer == p1_head.base_producer);
+  assign base_sum0 = wake_i.value + p1_head.offset;
+  assign base_sum1 = wake1_i.value + p1_head.offset;
+  assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1;
+  assign head_ea = !p1_head.base_wait ? p1_head.ea : head_base0 ? base_sum0 : base_sum1;
+  assign head_fast = !p1_head.base_wait ? p1_head.fast :
+    (int_fast(p1_head.uop.mem_size, head_ea[1:0]) &&
+     !int_trap(p1_head.uop.mem_size, head_ea[11:0], dr_i));
+  assign p1_addr = {head_ea[31:3], head_ea[2] ^ p1_head.munge[2], 2'b00};
   // Live queued stores, and whether one shares the head's doubleword. Only
   // the page offset is compared, so aliases of a physical page also match.
   always_comb begin
@@ -258,7 +303,7 @@ module ppc_lsu_pipe #(
   // fault removed it has left P2 by then); any other offer finishes its
   // handshake and its response is dropped. A store that does not queue
   // offers at the completion-queue head once older stores are written.
-  assign offer = rst_ni && p1_valid && p1_head.fast && !sq_offer &&
+  assign offer = rst_ni && p1_valid && head_fast && head_base_ready && !sq_offer &&
     (p1_head.killed ? (offered_q && !offered_spec_q) :
      (offered_q || (lane_idle_i && !rsp_to_lane_q && !redo_valid_q &&
                     (p2_count_q != 2'd2) && p1_ready &&
@@ -278,9 +323,9 @@ module ppc_lsu_pipe #(
     p1_wdata = '0;
     p1_wstrb = '0;
     p1_wdata[31:0] = (store_source << {3'd4 - p1_nbytes, 3'b0}) >>
-                     {p1_head.ea[1:0] ^ p1_head.munge[1:0], 3'b0};
+                     {head_ea[1:0] ^ p1_head.munge[1:0], 3'b0};
     p1_wstrb[3:0] = lane_mask(p1_head.uop.mem_size) >>
-                    (p1_head.ea[1:0] ^ p1_head.munge[1:0]);
+                    (head_ea[1:0] ^ p1_head.munge[1:0]);
     // The first beat of a doubleword carries its high word.
     // A load ignores the FPU's store data, which follows its oldest store.
     if (p1_head.fp) begin
@@ -362,7 +407,8 @@ module ppc_lsu_pipe #(
                       !p2_valid && !q_valid_q && !r_valid_q && !sq_valid &&
                       lane_idle_i && !rsp_to_lane_q;
   assign p1_adopt = !p2_valid && !q_valid_q && !r_valid_q && !sq_valid && !redo_valid_q &&
-                    p1_valid && !p1_head.fast && !p1_head.fp && !p1_head.bspec &&
+                    p1_valid && !p1_head.fast && !p1_head.base_wait && !p1_head.fp &&
+                    !p1_head.bspec &&
                     head_data_ready &&
                     !p1_head.killed && !killed_now(p1_head.producer) &&
                     lane_idle_i && !rsp_to_lane_q;
@@ -370,6 +416,9 @@ module ppc_lsu_pipe #(
   assign adopt_fire = adopt_valid_o && adopt_ready_i;
   assign adopt_response_o = p2_adopt;
   entry_t adopted;
+  // The base's value comes from the result buses.
+  logic _unused_base;
+  assign _unused_base = ^base_i.value;
   logic _unused_entries;
   assign _unused_entries = ^{q_q, adopted};
   always_comb begin
@@ -428,9 +477,19 @@ module ppc_lsu_pipe #(
     incoming.data_ready = fp_i || (uop_i.special_op != SPECIAL_STORE) || data_i.ready;
     incoming.data_tag = data_i.tag;
     incoming.data_producer = data_i.producer;
+    incoming.base_wait = BASE_SNOOP && base_snoop_i && !base_i.ready;
+    incoming.base_tag = base_i.tag;
+    incoming.base_producer = base_i.producer;
+    incoming.offset = offset_i;
     incoming.pc = pc_i;
     incoming.insn = insn_i;
     incoming.uop = uop_i;
+    if (incoming.base_wait) incoming.fast = 1'b0;
+    else if (BASE_SNOOP && base_snoop_i && int_trap(uop_i.mem_size, ea_i[11:0], dr_i)) begin
+      incoming.fast = 1'b0;
+      incoming.uop.special_op = SPECIAL_ALIGNMENT;
+      incoming.uop.gpr_write = 1'b0;
+    end
   end
 
   always_ff @(posedge clk_i) begin
@@ -442,6 +501,9 @@ module ppc_lsu_pipe #(
     p2_pop = p2_retire || (adopt_fire && p2_adopt);
     p2_push = p1_fire || sq_fire;
     pushed = p1_head;
+    pushed.ea = head_ea;
+    pushed.fast = head_fast;
+    pushed.base_wait = 1'b0;
     pushed.data = head_data;
     pushed.data_ready = 1'b1;
     pushed.passed = sq_live;
@@ -502,6 +564,27 @@ module ppc_lsu_pipe #(
           (wake1_i.producer == p1_next[i].data_producer)) begin
         p1_next[i].data = wake1_i.value;
         p1_next[i].data_ready = 1'b1;
+      end
+      // A base written this cycle forms the EA; an alignment exception goes
+      // to the lane with the access.
+      if (BASE_SNOOP && p1_next[i].base_wait) begin
+        logic hit0, hit1;
+        logic [31:0] ea;
+        hit0 = wake_valid_i && (wake_i.tag == p1_next[i].base_tag) &&
+               (wake_i.producer == p1_next[i].base_producer);
+        hit1 = wake1_valid_i && (wake1_i.tag == p1_next[i].base_tag) &&
+               (wake1_i.producer == p1_next[i].base_producer);
+        ea = (hit0 ? wake_i.value : wake1_i.value) + p1_next[i].offset;
+        if (hit0 || hit1) begin
+          p1_next[i].base_wait = 1'b0;
+          p1_next[i].ea = ea;
+          p1_next[i].fast = int_fast(p1_next[i].uop.mem_size, ea[1:0]) &&
+                            !int_trap(p1_next[i].uop.mem_size, ea[11:0], dr_i);
+          if (int_trap(p1_next[i].uop.mem_size, ea[11:0], dr_i)) begin
+            p1_next[i].uop.special_op = SPECIAL_ALIGNMENT;
+            p1_next[i].uop.gpr_write = 1'b0;
+          end
+        end
       end
     end
     p1_q <= p1_next;

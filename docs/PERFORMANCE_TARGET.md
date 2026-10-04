@@ -170,6 +170,56 @@ per Dhrystone run it dispatches in 0.87 CPI against 1.02 at width 1, but
 and flag waits fall from 0.13 to 0.04. The DQ1 access still needs committed
 sources, unlike DQ0's.
 
+## DQ1 rename operands and base snooping
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model` (base snooping: a `VERILATOR` wrapper adding `+define+PPC_LSU_PIPE=1 +define+PPC_LSU_BASE_SNOOP=1`), then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex`, commits b48ef0c (before), be4c1f0 (DQ1 rename operands) and the base snooping commit, 2026-10-04.
+Unit and store queue on, prebuilt firmware as above. Every run passes its
+checks (Dhrystone 23 values, CoreMark CRC 0xfcaf).
+
+| | Before, w1 | w2 | DQ1 rename, w1 | w2 | + base snoop, w1 | w2 |
+|---|---:|---:|---:|---:|---:|---:|
+| Dhrystone cycles per run | 998.8 | 992.3 | 998.8 | 992.8 | 998.8 | 991.8 |
+| DMIPS/MHz | 0.569 | 0.573 | 0.569 | 0.573 | 0.569 | 0.573 |
+| CoreMark/MHz | 1.748 | 1.786 | 1.748 | 1.786 | 1.749 | 1.786 |
+
+Both changes meet their Table 6-6 rows in the benches
+([LSU_PIPELINE.md](LSU_PIPELINE.md#base-snooping)) but move neither
+benchmark. DQ1 now pairs 5 more accesses per Dhrystone run, and base
+snooping cuts `drain_memory` from 24 to 2 cycles per run; the cycles move
+to `branch_refetch` and `fetch_empty`, which stay at 0.63 CPI. Width 1 is
+unchanged.
+
+What is left outside fetch, from `Vtb_demo_soc +PROFILE` (stall cycles by
+cause and head instruction, and why DQ1 stayed behind DQ0, over the counted
+region; width 2, base snooping):
+
+| Dhrystone, per run | Cycles | |
+|---|---:|---|
+| `mflr`/`mtlr` waiting for the machine to drain | 20.5 | UM 6.3.3.2: SRU ops are completion-serialized; they wait in the unit, not at dispatch, so younger work dispatches behind them |
+| CQ full | 19.6 | five entries, as the 603e |
+| IU station full | 19.5 | one station per unit, as the 603e |
+| unattributed (`other`), flag token | 10.0, 7.0 | |
+
+| Dhrystone, slots per run where DQ1 stayed | Slots | |
+|---|---:|---|
+| IU + unfolded `bc` in DQ1 | 50.5 | only a folded `b` or branch-always pairs in DQ1 |
+| access + IU, one CQ entry free | 39.0 | as the 603e |
+| update form in DQ0 | 33.5 | update forms dispatch alone |
+| branch + IU, station busy | 19.0 | |
+
+CoreMark, the counted region (5.6 M cycles): the flag token holds dispatch
+for 431,000 cycles (7.7%), the CQ is full for 147,000 and `mtspr` drains for
+65,000; DQ1 stays behind an IU op for 320,000 slots with an unfolded `bc`
+and 255,000 with a second integer op that is not SRU-capable.
+
+The largest gap inside dispatch that the manual permits closing is the
+completion serialization of `mflr`/`mtlr`/`mtctr`: dispatch them to a unit
+that executes them once older work retires, instead of draining before
+dispatch (about 20 cycles per Dhrystone run, 2%). It belongs to the
+serialized lane, not the load/store unit, and is not done here. Whether
+the flag token (one owner, released the edge after retirement) is slower
+than the 603e's single CR rename is not yet checked against UM 6.3.1.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
@@ -215,9 +265,9 @@ they are not additive. None needs timing faster than the manual's.
 | 4 | A `bc` waits for its uncommitted CR producer (`drain_branch` 187 per run) | T6-4 `^`: compare CR to the BPU at end of execute; UM 6.4.1.2: predict and dispatch down the predicted path, one level, no completion past it | Done: dispatch past one unresolved `bc`; a miss recovers when the branch retires, later than the 603e's R+1 | 150–190 (got 23 at width 2, 124 at width 1) |
 | 5 | Dual dispatch rarely pairs (7.6% of instructions at width 2); dispatch alone is 0.92 CPI against a 0.86 CPI target | UM 6.6.1.2/6.6.1.3: DQ1 to a different unit, CQ1 integer or load; UM 6.4.5: SRU adder | Partly done: IU + LSU-unit access and unresolved `bc` + DQ1 pair (25 cycles). IU + SRU, LSU + IU and CQ1 rules existed | 80–150 (after 1–4) |
 | 6 | Closed. Residual cost of plain accesses with old sources (5.0 cycles per load) | UM 6.4.4: one access per cycle | Found: a store hit held the data cache for four cycles. It now writes and answers in its lookup cycle. The rest of the charge is fetch and branch time | 5 measured |
-| 7 | Closed for integer consumers (55 dependents, gap 0). A load or add producing the next access's base costs 3 cycles against T6-6's 2 | T6-6 `2:1` | The EA is formed at dispatch, a cycle ahead of the access. Forming it in P1 from operands snooped there would meet T6-6 but puts the result bus, adder and micro-TLB in one cycle ([LSU_PIPELINE.md](LSU_PIPELINE.md#remaining-work)) | Not measurable while fetch-bound |
+| 7 | Closed for integer consumers (55 dependents, gap 0). A load or add producing the next access's base costs 3 cycles against T6-6's 2 | T6-6 `2:1` | Done behind `LSU_BASE_SNOOP` (default off): a D-form load forms its EA in P1 from the result bus, 2 cycles; the path waits for a fit ([LSU_PIPELINE.md](LSU_PIPELINE.md#base-snooping)) | 1 measured while fetch-bound |
 | 8 | Branches take dispatch and completion slots (118 per run) | UM 6.4.1.1, 6.3.1: folded branches bypass the dispatch queue | Open. Retire folded branches from the BPU; LR/CTR updates through the BPU's own writeback; every retire-trace consumer must then expect missing branches | 40–100 |
-| 9 | Integer waits not explained above (flags token, station full, `other` 50 per run) | UM 6.3.3 | Break the per-cause counters down further first | 50–100 |
+| 9 | Integer waits not explained above (flags token, station full, `other` 50 per run) | UM 6.3.3, 6.3.3.2 | Broken down with `+PROFILE` ([above](#dq1-rename-operands-and-base-snooping)): `mflr`/`mtlr` drains 20, CQ full 20, station full 20, flags 7 | 20 (SRU completion serialization) |
 | 10 | `bclr` not folded (26 per run, 11 taken) | UM 6.6.1.1: `bclr` resolves when LR is available (shadow LR from `bl`); same timing as `b` | Done: folds and resolves from the shadow LR of an uncommitted linking branch | 30–50 (got 8–10) |
 
 CoreMark points the same way with a different weight: loads (175,000 cycles of

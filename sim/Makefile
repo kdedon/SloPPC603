@@ -2057,6 +2057,15 @@ test-core-lsu-timing:
 	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem $(if $(filter 2,$(DISPATCH_WIDTH)),--dual-write)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=0 $(SIM_ARGS)
+# The same with LSU_BASE_SNOOP: a load's base produced by a load or add
+# costs Table 6-6's latency, and a misaligned snooped EA traps.
+.PHONY: test-core-lsu-timing-snoop
+test-core-lsu-timing-snoop:
+	mkdir -p $(BUILD_DIR)/core-lsu-timing-snoop
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 +define+PPC_LSU_BASE_SNOOP=1 -GPIPE_MEM=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing-snoop $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing-snoop/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem --base-snoop $(if $(filter 2,$(DISPATCH_WIDTH)),--dual-write)
+	./$(BUILD_DIR)/core-lsu-timing-snoop/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing-snoop/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/core-lsu-timing-snoop/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing-snoop/program.txt +STALL=0 $(SIM_ARGS)
 
 # The same program over a 32-bit data path: doublewords split into two words.
 FPU_CORE_SPLIT_IMAGE := $(BUILD_DIR)/core-fpu-split/program.txt

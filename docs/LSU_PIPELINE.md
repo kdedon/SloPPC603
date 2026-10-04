@@ -21,8 +21,10 @@ dispatch -> P1 offer -> P2 await response -> R result -> CQ -> retire
 
 - Dispatch captures the uop, completion tag, PC, EA (the dispatch adder) and
   store data. Base registers come from rename, including a value written
-  that cycle; an access waits at dispatch only until they are ready. Store
-  data not yet produced follows from the result buses
+  that cycle; an access waits at dispatch only until they are ready, unless
+  `LSU_BASE_SNOOP` lets a D-form load take its base in P1
+  ([Base snooping](#base-snooping)). Store data not yet produced follows
+  from the result buses
   ([Update forms and rename operands](#update-forms-and-rename-operands)).
 - P1 (two entries) offers the oldest access. A load offers at once. A store
   whose translation the router confirms enters the store queue without an
@@ -192,7 +194,11 @@ in its reservation station. Here:
 - The dispatch adder reads the base registers through rename (a third read
   port serves store data), so an access dispatches as soon as its base is
   ready, including in the cycle its producer's result is written, instead of
-  waiting for the producer to retire.
+  waiting for the producer to retire. An access in DQ1 does the same
+  through the second slot's ports (rA, rB and a sixth rename read port for
+  rS: three per slot, UM 6.3.3.1); store data that DQ0 writes follows from
+  DQ0's new rename slot. It still pairs only when aligned and never as an
+  update form, and never beside a DQ0 access in the unit.
 - A store dispatches without its data. P1 holds the producer's rename tag
   and takes the value from either result bus; the head uses a value
   written in its own cycle at once. Adoption by the lane waits for the data.
@@ -200,6 +206,30 @@ in its reservation station. Here:
   write beside an update form, and an update form retires only from CQ[0]. With two write ports the base is written
   beside the destination; with one it follows a cycle later and dispatch
   and retirement wait for it.
+
+## Base snooping
+
+Parameter `LSU_BASE_SNOOP` (macro `PPC_LSU_BASE_SNOOP`, default 0) forms a
+D-form load's EA in P1, as the 603e's LSU does from operands its station
+snooped (UM 6.3.3.1):
+
+- A plain, non-update D-form integer load in DQ0 dispatches without waiting
+  for its base; P1 keeps the base's rename tag and the displacement.
+- P1 compares both result buses against the tag and adds each bus to the
+  displacement while comparing. The head offers in the cycle its base is
+  written, with that sum as the address; an entry that does not offer then
+  keeps the sum.
+- Alignment is decided on that EA in the unit for every such load, ready
+  base or not: a fault rewrites the entry to an alignment uop the lane
+  adopts at the head, and its destination write is suppressed at
+  retirement (the completion entry still names it).
+
+A load or add producing the next load's base then costs Table 6-6's load
+latency 2 instead of 3. The cost is one cycle holding the result bus, the
+32-bit adder and the request address, which feeds the router's micro-TLB
+and the cache index: hence off by default until a fit shows it meets the
+clock target. Stores, indexed and update forms, DQ1 accesses and
+little-endian mode keep the dispatch adder.
 
 ## Cached path
 
@@ -259,7 +289,8 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
 - `lwz` then `stw` of its result: the store retires 2 cycles after the
   load.
 - `lwz` or `addi` then `lwz` using the result as its base: 3 cycles apart,
-  one more than Table 6-6 ([Remaining work](#remaining-work) item 3).
+  one more than Table 6-6; 2 with `LSU_BASE_SNOOP`
+  ([Base snooping](#base-snooping)).
 
 Through the router and data cache of the cached top (`test-core-dcache`
 and `test-core-dcache-lsu-pipe`; DR=1 and IR=1 over BATs, the line and the
@@ -334,14 +365,12 @@ the chip needs a fresh fit and timing report before the default changes.
    needs a fit: the micro-TLB check feeds P1's pop and the queue's write
    shares the request mux.
 3. A base written by a load or add in the access's dispatch cycle costs
-   one cycle more than Table 6-6's load latency 2: the EA is formed at
-   dispatch, a cycle ahead of the access. The 603e forms it in the LSU's
-   first stage from operands its reservation station snooped. Doing so here
-   means an operand-wait P1 entry whose EA adder takes the result bus and
-   feeds the request address and micro-TLB in the same cycle; it also
-   needs the update base's rename value and the alignment decision, now
-   made at dispatch, moved into the unit. An access whose base is not ready
-   also holds dispatch rather than waiting in a station.
+   one cycle more than Table 6-6's load latency 2 unless `LSU_BASE_SNOOP`
+   is set ([Base snooping](#base-snooping)). Making it the default needs a
+   fit; if the result bus to micro-TLB path fails, compare the base's page
+   bits directly and add only the page offset in that cycle, falling back a
+   cycle when the sum carries out of the page. Stores, indexed and update
+   forms and DQ1 accesses still form the EA at dispatch.
 4. Loads behind older FP work that may still raise an exception wait for it
    to retire, as integer loads do; marking them speculative instead would
    let them proceed to cacheable memory.
@@ -538,3 +567,27 @@ Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` 
 No fit or timing. The base operand now passes from the result bus through
 rename into the dispatch adder, and a store hit's tag compare drives the data
 RAM write enable, so the chip needs a fresh fit before any timing claim.
+
+### DQ1 rename operands and base snooping (2026-10-04)
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-core-lsu-timing test-core-lsu-update test-core-dcache-lsu-pipe test-core-le test-core-fpu test-core-dual test-core-recovery test-core-machine-check-trace`, the same with a wrapper adding `+define+PPC_LSU_BASE_SNOOP=1` plus `test-core-lsu-timing-snoop`, `test-core-branch-fold` (both wrappers, default width), and unit off `test-core test-core-dual`, on the base snooping commit, 2026-10-04.
+All pass, except two expected differences with snooping on:
+`test-core-lsu-timing` expects the two base rows 3 cycles apart and gets 2,
+and `test-core-fpu` checks lane latencies when the wrapper's name lacks
+`lsu-pipe` (renamed, it passes at both widths). `test-core-lsu-timing-snoop`:
+2,717 checks, 27 probes and 54 spacing checks at each width, including the
+load- and add-produced base rows at 2 cycles and an alignment exception on a
+misaligned EA formed from a snooped base, with rD unchanged.
+`test-core-dual` (unit on) pairs `or` with a `stw` of its result and a DQ1
+`lwz` whose base is still in rename (1 such pair); unit off, neither pairs.
+These establish results and cycle counts against the bench memories; they
+do not cover the chip or the 60x bus.
+
+Recorded: `make -C sim lint check-spec`, and the lint top with `+define+PPC_LSU_BASE_SNOOP=1` at widths 1 and 2, on the base snooping commit, 2026-10-04.
+All pass.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2`, `PPC_LSU_PIPE=1` and `PPC_LSU_BASE_SNOOP=1`, pinned container, base snooping commit, 2026-10-04.
+0 errors, 49 warnings. No fit or timing: the DQ1 base now passes from the
+result bus through rename into the DQ1 adder and misalignment check that
+gate `dispatch1`, and with snooping the result bus feeds the request address.
+
