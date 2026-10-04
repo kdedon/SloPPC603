@@ -670,8 +670,8 @@ files this round does not change (`test-core-tlb-miss` builds neither the
 router nor the cache). `tb_dcache` adds a back-to-back case: two stores to
 halves of one double word, a load of it, a store to the other way at the
 same index, and two loads, accepted on consecutive cycles where the rule
-allows; with the forward disabled the load returns the first store's bytes
-over stale data and the bench fails. `test-micro-tlb-router` still checks
+allows; with the forward disabled the load misses the second store's bytes
+and the bench fails. `test-micro-tlb-router` still checks
 that a C=0 store never hits a load-filled entry. These establish data and
 ordering, not timing.
 
