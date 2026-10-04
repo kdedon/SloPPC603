@@ -48,6 +48,9 @@ ASSUMPTIONS = {
            "it completes (UM 6.3.3.2, 1.1.4.4).",
     "A12": "mfspr/mtspr (not BATs), mfcr, mtcrf, mcrf and CR logicals are "
            "completion-serialized SRU work (UM 6.3.3.2 first bullet; T6-2/T6-3 cycles).",
+    "A13": "The single CR rename (UM 6.3.3.1) is not a dispatch condition (UM 6.6.1.2 "
+           "lists only GPR and FPR renames) and is not modelled; holding a CR writer's "
+           "finish until the previous one completes (--core cr-rename) adds 1 cycle.",
 }
 
 GPR_LIMIT = 5   # UM 6.3.3.1: five GPR renames

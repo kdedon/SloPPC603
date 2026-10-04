@@ -61,6 +61,9 @@ Assumptions (`perf_model_603e.py --assumptions` prints them):
 - A9: a station accepts the next instruction when the previous starts executing.
 - A10: SRU adder present. Without it: 512 cycles.
 - A11, A12: SRU serialization as above.
+- A13: the single CR rename (UM 6.3.3.1) is not modelled; UM 6.6.1.2 does
+  not list it as a dispatch condition. Holding a CR writer's finish until the
+  previous writer completes adds 1 cycle.
 
 Sensitivity of the primary figure: 500–523 cycles across A2, A10 and the divide.
 A6 and A7 make the model optimistic (fewer cycles), so the target is, if anything,
@@ -384,6 +387,112 @@ the queue's allocation ready, which adds a retire-to-dispatch path) measured 755
 width 1 and 2.201 CoreMark/MHz at width 2. The manual's DQ0 and DQ1 rules
 say only that a completion buffer must be free, not whether one freed in
 the same cycle counts.
+
+## Where the cycles go (model vs RTL)
+
+Recorded: `make -C sim DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff [PERF_DIFF_ARGS="--core <rule> ..."]`, commit 33bbb6a plus the `+STALL_TRACE` testbench change and `sim/tools/perf_diff.py` (this commit), 2026-10-04.
+Unit and store queue on, base snooping off, prebuilt firmware, 18 iterations
+of the timed loop: core 771.5 cycles per run, model 506.0, difference 265.5.
+
+`perf_diff.py` runs the retired stream through the model and lines it up with
+the core's `+DISPATCH_TRACE` and `+STALL_TRACE`. Each instruction is charged
+the cycles since the previous instruction dispatched (model: dispatch, or BPU
+execute for a folded branch), so the charges add up to the run. Each core
+cycle carries its cause: the DQ0 stall slot, or, for the dispatch cycle
+itself, why the instruction was not in DQ1 beside its predecessor. It prints
+the difference per PC, basic block and function, the excess by cause,
+dispatch to retirement per class and taken-branch redirect costs.
+`--core <rule>` adds a restriction of this core to the model
+(`perf_model_603e.py --core` takes the same), pricing each restriction in the
+model's terms.
+
+By function (cycles per run):
+
+| Function | Instructions | Core | 603e | Difference |
+|---|---:|---:|---:|---:|
+| `strcmp` | 161 | 191.0 | 126.0 | 65.0 |
+| `dhry_main` loop (Proc_2..5 inlined) | 66 | 115.5 | 73.0 | 42.5 |
+| `strcpy` | 157 | 160.5 | 124.0 | 36.5 |
+| `Proc_1` | 50 | 81.5 | 46.0 | 35.5 |
+| `memcpy` | 77 | 92.0 | 59.0 | 33.0 |
+| `Func_2` | 19 | 49.0 | 28.0 | 21.0 |
+| `Proc_8` | 25 | 37.0 | 20.0 | 17.0 |
+| `Proc_7`, `Proc_6`, `Func_1` | 35 | 45.0 | 30.0 | 15.0 |
+| **Total** | **590** | **771.5** | **506.0** | **265.5** |
+
+Dispatch to retirement (core) against dispatch to completion (model):
+
+| Class | Per run | Core min / mean | 603e min / mean |
+|---|---:|---:|---:|
+| add, addi | 101 | 3 / 4.10 | 2 / 2.75 |
+| compare | 86 | 3 / 3.99 | 2 / 3.66 |
+| other integer | 87 | 3 / 3.76 | 2 / 3.07 |
+| load | 115 | 4 / 4.33 | 3 / 3.34 |
+| store | 75 | 4 / 4.77 | 3 / 3.73 |
+
+Every class retires one cycle later than the 603e completes. F6-3 draws an
+`add` as `1D 2E 3W 4A`: writeback the cycle after execute, deallocation the
+cycle after that. Forwarding is unaffected (a load's integer consumer has no
+gap); retirement is, and with it every entry's CQ occupancy, the CR token and
+retirement-gated work.
+
+### Ranked causes
+
+Each rule is priced twice: added alone to the 603e model, and removed from
+the model with all six rules (689.0 cycles). Leave-one-out estimates the gain
+of fixing that one thing in the core. Figures overlap and do not add.
+
+| Rank | Cause | `--core` rule | Alone | Leave-one-out | 603e rule | Verdict |
+|---:|---|---|---:|---:|---|---|
+| 1 | Retirement one cycle after the 603e's completion (above) | `late-retire` | +57 | 74 | F6-3, F6-5: `W` the cycle after the last `E` | Core slower; fixable |
+| 2 | Branches take a dispatch slot, a CQ entry and a completion slot (118 per run) and execute at dispatch, not the cycle after fetch | `branch-slot` | +63 | 38 | UM 6.3.1, 6.4.1.1; T6-1 "may be folded for an effective cycle time of 0"; F6-3 `br 2F 3E` | Core slower; fixable (gap 8) |
+| 3 | A CR writer dispatches only after the previous CR writer retires (flag token) | `cr-token` | +22 | 22 | UM 6.3.3.1: one CR rename; UM 6.6.1.2 does not make it a dispatch condition | Core slower; let the writer wait in its station (A13 prices the 603e's limit at 1) |
+| 4 | A load or store dispatches only once its base is written (`drain_memory` 20.5 per run: `strcmp`'s `lbz` after `mr`) | `lsu-base` | +2 | 20 | UM 6.3.3, 6.3.3.1: the LSU station waits for the rename tag | Core slower; fixable |
+| 5 | Misprediction: the correct path dispatches 4 cycles after the recovery (162 of 162); branch dispatch to correct-path dispatch 7.2 cycles, model 4.3 | `miss-late` | +18 | 18 | F6-5: `bc` resolves 5E, target 6F, dispatch 7D | Core slower; fixable |
+| 6 | An add or compare in DQ0 goes only to the IU: `cmpwi` behind `divw` holds the IU station 19 cycles per run | `dq0-iu` | +4 | 7 | UM 6.3: the SRU adder "allows the dispatch and execution of multiple integer add and compare instructions on each cycle"; UM 6.4.5 | Core slower; fixable |
+| | Residual: core 771.5 against 689.0 | | | 82.5 | | |
+
+The residual by stall cause (all six rules): taken `b`/`bl` and `bclr`
+redirects beyond two cycles (`branch_refetch` 27; `bclr` 3.1 cycles from
+dispatch to target against 2), store traffic (`lsu_busy` 10.5, CQ full on a
+store 10.5, other store 4: committed stores take the request port after
+retirement, which A6 does not charge the 603e), SPR moves (`mtspr` drain 3,
+`mfspr` CQ wait 2.5, lane pairing 4) and pairing rules. By function:
+`Proc_1` 21.5, `dhry_main` 16.5, `Proc_8` 12, `Func_2` 10, `memcpy` 7,
+`strcmp` 6.
+
+### Model corrections
+
+None changes the target. The single CR rename is now A13 (+1 cycle with
+`--core cr-rename`). A6 stays the main optimistic assumption; the store
+residual bounds it at about 25 cycles.
+
+### CQ entry reuse
+
+The manual does not say whether an entry freed by completion takes a dispatch
+in the same cycle: UM 6.6.1.2 requires only that the completion buffer "is not
+full". The figures draw deallocation (`A`) one cycle after writeback (`W`).
+The model frees an entry for dispatch in the cycle after completion, the `A`
+cycle: an `add` dispatched in cycle D frees its entry for D+3. The core
+retires an `add` at D+3 at the earliest, so its retire cycle is the 603e's
+`A` cycle. Letting dispatch use an entry in the core's retire cycle (the
+reverted change, 755.9 cycles) gives the model's spacing, not a faster one.
+The better fix is rank 1: retire at finish + 1, after which next-cycle reuse
+matches. Reuse in the `W` cycle (`--core cq-same` on the 603e model, 498
+cycles) is faster than the figures and not adopted. On the six-rule model
+`cq-same` is worth 25 cycles; the core measured 16.
+
+### Next steps
+
+1. Retire at finish + 1 (74). Until then, same-cycle CQ reuse is
+   manual-consistent (16 measured).
+2. Fold branches out of dispatch and the CQ (38).
+3. Check the CR token at execute, not dispatch (22).
+4. An LSU station that waits for the base, or base snooping from the IU (20).
+5. Misprediction recovery at F6-5 timing (18).
+6. Taken `b`/`bl`/`bclr` redirect at fetch (about 15 of the residual).
+7. Store writes off the load port (up to 25 of the residual, part A6).
+8. DQ0 add/compare to the SRU when the IU station is taken (7).
 
 ## Gaps
 
