@@ -1893,7 +1893,7 @@ test: test-chip-mp
 test-chip-mp:
 	mkdir -p $(BUILD_DIR)/chip-mp
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_mp --Mdir $(BUILD_DIR)/chip-mp -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_mp_bfm.sv ../tb/tb_chip_mp.sv
-	for s in 1 2 3; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s $(SIM_ARGS) || exit 1; done
+	for s in 1 2 3 4 5; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s $(SIM_ARGS) || exit 1; done
 
 .PHONY: test-chip-fpu
 FPU_CHIP_IMAGE := $(BUILD_DIR)/chip-fpu/program.hex
