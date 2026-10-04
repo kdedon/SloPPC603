@@ -49,9 +49,42 @@ The `test-core-fpu-split` failure (`FAIL: latency pc=00006848 got 4 expected 5`,
 without the little-endian commits. FP accesses through the LSU unit are an open item
 ([LSU](LSU_PIPELINE.md#remaining-work)); this configuration is not in the gate.
 
+## DingusPPC comparison
+
+Recorded: `make -C sim test-reference-le check-spec`, commit `6cdb1dc`, 2026-10-04.
+
+`test-reference-le` runs the `test-core-le` program (PID7v, width 1) on DingusPPC built
+with `SUPPORTS_PPC_LITTLE_ENDIAN_MODE=1` and on `tb_core_le`, then compares PC and GPR
+changes at every retirement and every memory word at the end. DingusPPC is exported at
+`LAST_VERIFIED` (`5b292af4d7b3`) into `sim/build/reference-le/dingusppc` and compiled
+there; the sibling checkout is only read. Result:
+
+`PASS reference little-endian: DingusPPC 5b292af4d7b3 LE build, retirements=1760
+exceptions=14 memory_words=2718; bench_dsi=2 le_misaligned=101 alignment=9 le_fp_split=2 srr1=3`
+
+Four negative controls (a changed GPR value, PC, missing retirement, memory word) must
+each fail the comparison.
+
+The adapter (`sim/cosim/le_runner.cpp`) models the bench's protected words as a DSI
+(`bench_dsi`) and corrects these DingusPPC limitations; each count is how often the
+correction fired. Each was added after the comparison failed on its first instance,
+except the multiple and string rule, added with the `lwarx` rule and not run without.
+
+| Count | DingusPPC behaviour | Manual |
+|---|---|---|
+| `le_misaligned` | A misaligned little-endian halfword or word munges the EA once with the size XOR and moves contiguous bytes there (first: `lhz` at EA `0x40017` read `0x3c61`, the RTL and the PEM model `0x8c61`) | PEM 3.1.4.2: byte i at `(EA + i) XOR 7`; UM printed 1-4: PID7v splits misaligned accesses in hardware |
+| `le_fp_split` | `lfd`/`stfd` at EA = 4 mod 8 in little-endian mode move the wrong bytes | as above |
+| `alignment` | No alignment exception for misaligned `lwarx`, an FP access not word aligned, or multiples and strings in little-endian mode; DSISR[27–31] clear for `lmw`, `lswi`, `lswx` | UM §4.5.6, Table 4-13; UM §2.3.4.3.6–7 |
+| `srr1` | System call sets SRR1 bit 14 (FP unavailable: bit 11) | UM §4.5.10, §4.5.8: bits 0–15 cleared |
+
+The RTL needed no change. The comparison establishes agreement with DingusPPC for this
+one program on PID7v; it does not cover PID6, the 603 or the 602, dual dispatch, the
+chip top, or FPR values other than through stores.
+
 ## Not established
 
-- No DingusPPC comparison: its runners build with `SUPPORTS_PPC_LITTLE_ENDIAN_MODE=0`.
+- DingusPPC compares only the PID7v program (`test-reference-le`); it models no other
+  variant's alignment rules.
 - The chip bench covers data and fetch munging; the DSI and `MSR[ILE]` paths are covered
   only by `test-core-le`.
 - Misaligned `eciwx`/`ecowx` stay alignment exceptions on every variant;
