@@ -922,6 +922,10 @@ test-completion-update:
 test-lsu-update-edges:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_lsu_update_edges --Mdir $(BUILD_DIR)/lsu-update-edges $(RTL) ../tb/tb_lsu_update_edges.sv
 	./$(BUILD_DIR)/lsu-update-edges/Vtb_lsu_update_edges $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_LSU_PIPE=1 --top-module tb_lsu_update_edges --Mdir $(BUILD_DIR)/lsu-update-edges-pipe $(RTL) ../tb/tb_lsu_update_edges.sv
+	./$(BUILD_DIR)/lsu-update-edges-pipe/Vtb_lsu_update_edges $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_LSU_PIPE=1 +define+PPC_DISPATCH_WIDTH=2 --top-module tb_lsu_update_edges --Mdir $(BUILD_DIR)/lsu-update-edges-pipe-w2 $(RTL) ../tb/tb_lsu_update_edges.sv
+	./$(BUILD_DIR)/lsu-update-edges-pipe-w2/Vtb_lsu_update_edges $(SIM_ARGS)
 test-bus60x:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_bus60x --Mdir $(BUILD_DIR)/bus60x $(BUS_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_bus60x.sv
 	./$(BUILD_DIR)/bus60x/Vtb_bus60x $(SIM_ARGS)

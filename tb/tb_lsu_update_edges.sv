@@ -197,6 +197,7 @@ module tb_lsu_update_edges;
     dr = 0;
     require(dmem_requests == 1, "request accepted exactly once");
     rv = 1; re = error; rd = data;
+    #1; // ready may depend on the response
     while (!rr) tick();
     tick();
     rv = 0; re = 0;
