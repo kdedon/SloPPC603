@@ -98,7 +98,7 @@ DQ0 keeps today's term. DQ1 dispatches when:
 
 ```
 dispatch1 = dispatch0 && pair_ok && res2_ok
-pair_ok   = distinct units && neither serialized && !(both need flags)
+pair_ok   = distinct units && neither serialized && !(both write CR)
             && DQ1 has no fetch fault, illegal or alignment class   (predecoded)
 res2_ok   = cq_free_ge2 && gpr_rename_free >= need0+need1 && ...  (registered counts)
 ```
@@ -106,9 +106,10 @@ res2_ok   = cq_free_ge2 && gpr_rename_free >= need0+need1 && ...  (registered co
 `cq_free_ge2` and the rename free counts are registered with next-state
 lookahead from allocation and release counts, so DQ1 adds one AND to the DQ0
 cone. Faulting or illegal instructions, special-lane operations and trace mode
-dispatch alone from DQ0. The current special lane drains before dispatch, which
-is stricter than the manual's completion serialization; that deviation stays
-and is recorded, not widened.
+dispatch alone from DQ0. The special lane drains before dispatch, which is
+stricter than the manual's completion serialization, except for LR and CTR
+moves ([slice 9](#slice-9)). Only CR writers share the flag token; XER-only
+writers pair.
 
 ### Operands, GPR file and rename
 

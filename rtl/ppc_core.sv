@@ -1083,10 +1083,8 @@ module ppc_core #(
       if (dispatch1 && d1_bc && !d1_bc_now) begin
         bs_valid_q <= 1'b1;
         bs_tag_q <= alloc1_producer;
-        bs_owner_q <= flags_tok0 ? alloc_producer : flags_owner;
-        bs_owner_done_q <= !flags_tok0 &&
-                           ((commit && (retire_producer == flags_owner)) ||
-                            (commit1 && (retire1_producer == flags_owner)));
+        bs_owner_q <= alloc_producer;
+        bs_owner_done_q <= 1'b0;
         bs_pred_q <= dq1_folded;
         bs_ctr_ok_q <= 1'b1;
         bs_bo3_q <= dq1_uop.branch_bo[3];
@@ -1796,7 +1794,8 @@ module ppc_core #(
   // different units (IU, LSU, FPU) and DQ1's unit, rename slot, CQ entry and
   // flag token remain after DQ0. A branch takes no unit; it pairs, in either
   // slot, only when it cannot redirect at dispatch: a b or branch-always
-  // folded at fetch, whose LR or CTR target no older instruction writes.
+  // folded at fetch, whose LR or CTR target no older instruction writes, or
+  // in DQ1 a bc that is predicted or agrees with the fetch path.
   // Serialized instructions, faults and trace mode dispatch alone from DQ0.
   // Two IU operations never pair: the SRU add/compare lane is not built.
   // A plain access in DQ1 takes the lane only with its sources committed;
@@ -1827,7 +1826,9 @@ module ppc_core #(
      ((dq1_head.insn[31:26] == 6'd18) || (dq1_head.insn[25] && dq1_head.insn[23]))));
   // A bc on a CR bit alone (no CTR, no LK) is handled by the BPU beside
   // DQ0 (UM 6.4.1.2, F6-5): resolved from a final CR when that matches the
-  // fetch path, else predicted when its CR producer is uncommitted or is DQ0.
+  // fetch path, else predicted when DQ0 writes its CR. An older unfinished
+  // CR writer may finish by the next cycle and resolve it in DQ0; a miss
+  // costs more here than on the 603e, so it is not predicted early.
   // Branch-always forms take the folded path above.
   assign d1_bc = (dq1_uop.special_op == SPECIAL_BC) && dq1_branch[2] && !dq1_branch[0] &&
     !dq1_uop.branch_lk && !c0_fp && !c0_fp_mem;
@@ -1835,8 +1836,7 @@ module ppc_core #(
     (!flags_busy || bu_cr_valid_q);
   assign d1_bc_taken = bu_cr[5'd31 - dq1_uop.branch_bi] == dq1_uop.branch_bo[3];
   assign d1_bc_now = d1_cr_final && (d1_bc_taken == dq1_folded);
-  assign d1_bc_spec = ENABLE_BRANCH_SPEC && !fp_cr_pending && !bs_busy &&
-    (flags_tok0 ? c0_iu : (flags_busy && !bu_cr_valid_q));
+  assign d1_bc_spec = ENABLE_BRANCH_SPEC && !fp_cr_pending && !bs_busy && flags_tok0 && c0_iu;
   assign d1_bc_target = dq1_uop.branch_aa ? dq1_uop.branch_disp :
                                             dq1_head.pc + dq1_uop.branch_disp;
   always_comb begin
