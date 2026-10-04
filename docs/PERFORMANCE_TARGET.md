@@ -170,6 +170,21 @@ per Dhrystone run it dispatches in 0.87 CPI against 1.02 at width 1, but
 and flag waits fall from 0.13 to 0.04. The DQ1 access still needs committed
 sources, unlike DQ0's.
 
+### With FP stores at one per cycle
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=build-d<1|2> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex`, commit ac9db33, 2026-10-04.
+The tree above with the FPU store-data lookup merged; same prebuilt
+firmware, all four runs pass their checks.
+
+| | w1 | w2 |
+|---|---:|---:|
+| Dhrystone cycles per run | 998.8 | 992.3 |
+| DMIPS/MHz | 0.569 | 0.573 |
+| CoreMark/MHz | 1.748 | 1.786 |
+
+Unchanged, as expected: both programs are integer-only, and the merge
+touches only FP store data and the FP-enabled exception.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
