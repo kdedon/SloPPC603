@@ -138,6 +138,42 @@ Per Dhrystone run at width 2, `drain_branch` falls from 187 cycles to 0,
 memory: `drain_memory` (501 per run) and `lsu_busy` (502) now dominate, which
 gaps 1 and 2 address. Branches still take a CQ entry (gap 8 is open).
 
+## Fetch and branch round 2
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=build-perf-w<1|2> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex`, commits 311a5be, a20c314 and b28e2ad, 2026-10-04.
+LSU unit and store queue on; prebuilt firmware (2000 runs, 10 iterations).
+All runs pass their checks. Step 1 ran on 311a5be itself; steps 2 and 3 ran
+on scratch copies of the tree at those commits with a simulation-only
+pairing counter added. Step 3 changes only dual dispatch, so width 1 was not
+rerun.
+
+| Step | Commit | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---|---:|---:|---:|---:|
+| Before | 9dae6d9 | 1826.8 | 1768.8 | 1.380 | 1.449 |
+| A cache hit fetched every cycle (gap 3) | 311a5be | 1776.8 | 1716.3 | 1.451 | 1.545 |
+| Misprediction recovered at resolution (gap 4) | a20c314 | 1766.8 | 1704.3 | 1.461 | 1.562 |
+| A DQ0 branch that does not redirect pairs (gap 5) | b28e2ad | 1766.8 | 1699.3 | 1.461 | 1.563 |
+
+At width 2 Dhrystone takes 3.9% fewer cycles than before the round (CPI
+2.997 → 2.880) and CoreMark/MHz rises 7.9%. Dispatch alone falls from 0.803
+to 0.794 CPI on Dhrystone.
+
+Unpaired cycles at width 2 (Dhrystone, 2000 runs, from the counter) where
+DQ0 dispatched and DQ1 held an instruction:
+
+| DQ0 | DQ1 | Cycles | Why |
+|---|---|---:|---|
+| Integer | Conditional `bc` | 198,554 | DQ1 dispatches only folded `b` or branch-always |
+| Serialized (update forms, SPR moves) | Any | 187,925 | Dispatches alone (gap 1) |
+| Integer | Non-SRU integer | 90,317 | Same unit |
+| Integer | Update form | 67,280 | Serialized (gap 1) |
+| LSU-unit access | Access | 59,328 | Same unit |
+| Integer | SRU form or access, pair allowed | 68,501 | CQ[1] full (75,523 of all blocked), DQ1 access sources uncommitted (30,603, gap 2) |
+
+A `bc` dispatched speculatively from DQ1 beside the compare that sets its CR
+(UM 6.6.1.2 allows it) was tried and dropped: Dhrystone 1704.3 cycles/run
+(no gain), CoreMark/MHz 1.551 instead of 1.563.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
@@ -168,9 +204,9 @@ they are not additive. None needs timing faster than the manual's.
 |---:|---|---|---|---:|
 | 1 | Update forms take the serialized lane (5–8 cycles each, 83 per run) | T6-6: `lbzu`/`stbu`/`stwu`/`lwzu` are `2:1` like plain forms; the update uses a second GPR rename (UM 6.6) | Run update forms in the LSU unit: EA to rA through a second rename write, the access as a plain one | 300–400 |
 | 2 | A load or store whose base or data has an uncommitted producer drains the machine (`drain_memory` 367 per run) | UM 6.3.3, 6.3.3.1: the instruction waits in the LSU station for the rename tag, executes the cycle the result is written; stores wait for data in the store queue (UM 1.1.4.3) | Read ready rename values at dispatch and snoop the result buses in the LSU station; capture store data into the queue when produced | 250–350 |
-| 3 | Taken-branch refetch and empty IQ (`branch_refetch` + `fetch_empty` 258 per run) | UM 6.3.2.2: one-cycle hit, two instructions per fetch; IQ of six topped off every cycle; F6-3: target two cycles after the branch, hidden by the IQ | Done for pairs: the tops fetch two words (126 cycles at width 2). Open: the translation router and wrapper hold one fetch in flight, so fetch does not yet request every cycle | 120–200 |
-| 4 | A `bc` waits for its uncommitted CR producer (`drain_branch` 187 per run) | T6-4 `^`: compare CR to the BPU at end of execute; UM 6.4.1.2: predict and dispatch down the predicted path, one level, no completion past it | Done: dispatch past one unresolved `bc`; a miss recovers when the branch retires, later than the 603e's R+1 | 150–190 (got 23 at width 2, 124 at width 1) |
-| 5 | Dual dispatch rarely pairs (7.6% of instructions at width 2); dispatch alone is 0.92 CPI against a 0.86 CPI target | UM 6.6.1.2/6.6.1.3: DQ1 to a different unit, CQ1 integer or load; UM 6.4.5: SRU adder | Partly done: IU + LSU-unit access and unresolved `bc` + DQ1 pair (25 cycles). IU + SRU, LSU + IU and CQ1 rules existed | 80–150 (after 1–4) |
+| 3 | Taken-branch refetch and empty IQ (`branch_refetch` + `fetch_empty` 258 per run) | UM 6.3.2.2: one-cycle hit, two instructions per fetch; IQ of six topped off every cycle; F6-3: target two cycles after the branch, hidden by the IQ | Done: the tops fetch two words (126 cycles at width 2), and a micro-TLB and cache hit is requested every cycle (52 more) | 120–200 (got 178) |
+| 4 | A `bc` waits for its uncommitted CR producer (`drain_branch` 187 per run) | T6-4 `^`: compare CR to the BPU at end of execute; UM 6.4.1.2: predict and dispatch down the predicted path, one level, no completion past it | Done: dispatch past one unresolved `bc`; a miss removes the younger work and redirects fetch on the edge after resolution | 150–190 (got 35 at width 2, 134 at width 1) |
+| 5 | Dual dispatch rarely pairs (7.6% of instructions at width 2); dispatch alone is 0.92 CPI against a 0.86 CPI target | UM 6.6.1.2/6.6.1.3: DQ1 to a different unit, CQ1 integer or load; UM 6.4.5: SRU adder | Partly done: IU + LSU-unit access, unresolved `bc` + DQ1 (25 cycles), a DQ0 branch that does not redirect + DQ1 (5). IU + SRU, LSU + IU and CQ1 rules existed. Open: an SRU-form DQ0 beside a non-SRU integer DQ1 (the SRU takes DQ0); the rest waits on gaps 1 and 2 | 80–150 (after 1–4) |
 | 6 | Residual cost of plain accesses with old sources (5.0 cycles per load) | UM 6.4.4: one access per cycle | Investigate: CQ-head store ordering, cache taking a request every other cycle ([LSU_PIPELINE.md](LSU_PIPELINE.md#remaining-work) item 1) | 60–100 |
 | 7 | Load-use beyond the unit's 2 cycles (4.6 cycles per dependent) | T6-6 `2:1` | Mostly follows from 1 and 2; then check the wake path for update forms | 50 (residual) |
 | 8 | Branches take dispatch and completion slots (118 per run) | UM 6.4.1.1, 6.3.1: folded branches bypass the dispatch queue | Open. Retire folded branches from the BPU; LR/CTR updates through the BPU's own writeback; every retire-trace consumer must then expect missing branches | 40–100 |

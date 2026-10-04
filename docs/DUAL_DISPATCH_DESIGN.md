@@ -772,6 +772,39 @@ Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` under the
 Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and
 `PPC_LSU_PIPE=1`, commit 98e94dd: 0 errors, 48 warnings.
 
+Second round ([PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#fetch-and-branch-round-2)):
+
+- Fetch every cycle: with two-word fetch the router offers a micro-TLB hit
+  to the physical port in the cycle it accepts it, and the cached wrapper
+  accepts a cache fetch on the edge that completes the previous one, so
+  hits stream one request, two words, per cycle (UM 6.3.2.2). Misses, ICE
+  off, ILOCK, faults and uncached fetches keep the registered path.
+- Misprediction recovery at resolution: the edge after a speculative `bc`
+  resolves wrong, its younger work is removed and fetch redirects; the
+  branch retires later ([CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit)).
+- A DQ0 branch pairs whenever it does not redirect at dispatch, not only
+  when folded.
+
+New logic on the fetch-redirect path: the micro-TLB hit, its RPN and the
+cache's tag compare now follow the fetch request in one cycle, so the
+redirect term in the fetch offer (`frontend_clear`) reaches the I-cache's
+accept and response registers through the router's `i_pipe_try` and the
+wrapper's `managed_fetch_valid`; before, it ended at the router's lane
+registers. The misprediction recovery is selected from registered state
+(`bs_miss_q`, `bs_tag_q`, `bs_alt_q`). `bu_redirect` now feeds
+`dispatch1`. No fit was run.
+
+Recorded: `make -C sim test-icache-managed test-chip-pins test-chip-603 test-core-dual`, at width 1 and at width 2 with the LSU unit, commits 311a5be and b28e2ad, 2026-10-04.
+All pass. `test-chip-pins` checks that a cache hit is fetched on consecutive
+cycles (117 such fetches at width 1, 105 at width 2; 1,618 checks).
+`tb_core_dual` adds group I (a `bc` beside the compare that sets its CR does
+not pair) and group J (a `bc` resolved at dispatch pairs with the `addi`
+behind it): 47 retirements, 13 dispatch pairs, 10 retire pairs, 135 cycles at
+width 2. `test-chip-le`, `test-chip-mp` and `test-chip-dcache-coherence` passed
+at width 1 on a tree between 311a5be and a20c314; at width 2 with the unit `test-chip-le` does not
+build (Verilator UNOPTFLAT through `fp_mem_pipe_ready`, also in
+`lint-mister-load` at 56e7a26) and the other two were killed for memory.
+
 ## Risks
 
 - **Throughput depends on P3 first.** Today's CPI is about 4 on Dhrystone and
