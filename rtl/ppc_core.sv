@@ -391,6 +391,8 @@ module ppc_core #(
   // Unit classes: c0_* for DQ0, d1_* for DQ1.
   logic c0_iu, c0_branch, c0_lane, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
   logic bu_finished, lane_dq1, fp_dq1, d1_needs_flags, d1_mem_ready, d1_misaligned;
+  logic d1_branch;
+  logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [11:0] d1_ea;
   rs_entry_t rs_entry1;
@@ -580,22 +582,47 @@ module ppc_core #(
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
   assign queued = iabr_check(fd_packet_q, iabr);
-  // Branch folding: a b, or a bc predicted taken (backward unless the y bit
-  // says otherwise, or branch always), redirects fetch on the edge after it
-  // enters the IQ, and the words behind it in the fetch registers are
-  // dropped. Dispatch resolves the branch and corrects a wrong prediction.
+  // Branch folding: a b, or a bc, bclr or bcctr predicted taken (backward
+  // unless the y bit says otherwise, or branch always), redirects fetch on
+  // the edge after it enters the IQ, and the words behind it in the fetch
+  // registers are dropped. Dispatch resolves the branch and corrects a wrong
+  // prediction. A bclr or bcctr folds only when no older instruction still
+  // writes its target register, so the committed LR or CTR is the target.
   // Not in trace mode, whose branches take the serialized path; changing MSR
   // refetches, so no folded entry is queued when trace mode starts.
   /* verilator lint_off UNUSEDSIGNAL */
-  function automatic logic folds(fetch_packet_t p, logic trace);
+  // Decoded from the word alone, keeping the IQ push enable shallow.
+  function automatic logic folds(fetch_packet_t p, logic trace, logic lr_ok, logic ctr_ok);
+    logic predict, bo_ok, xl_ok;
+    predict = (p.insn[25] && p.insn[23]) || (p.insn[15] ^ p.insn[21]);
+    bo_ok = (p.insn[25:21] <= 5'd20) && (p.insn[24:22] != 3'b011) &&
+            (p.insn[24:22] != 3'b111);
+    xl_ok = (p.insn[15:11] == 5'd0) && bo_ok &&
+            ((p.insn[10:1] == 10'd16) || ((p.insn[10:1] == 10'd528) && p.insn[23]));
     return !trace && (p.fault == FETCH_OK) &&
-      ((p.insn[31:26] == 6'd18) ||
-       ((p.insn[31:26] == 6'd16) &&
-        ((p.insn[25] && p.insn[23]) || (p.insn[15] ^ p.insn[21]))));
+      ((p.insn[31:26] == 6'd18) || ((p.insn[31:26] == 6'd16) && predict) ||
+       ((p.insn[31:26] == 6'd19) && xl_ok && predict && (p.insn[10] ? ctr_ok : lr_ok)));
+  endfunction
+  // {writes LR, writes CTR}
+  function automatic logic [1:0] lr_ctr_writes(uop_t u);
+    logic branch, mtspr;
+    branch = (u.special_op == SPECIAL_BC) || (u.special_op == SPECIAL_BCLR) ||
+             (u.special_op == SPECIAL_BCCTR);
+    mtspr = u.special_op == SPECIAL_MTSPR;
+    return {((branch || (u.special_op == SPECIAL_B)) && u.branch_lk) ||
+              (mtspr && (u.spr == 10'd8)),
+            (branch && !u.branch_bo[2]) || (mtspr && (u.spr == 10'd9))};
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
+  // LR and CTR writers in the IQ. Dispatched ones are tracked by
+  // lr_pending_q and ctr_pending_q until they retire.
+  logic [2:0] lr_iq_q, ctr_iq_q;
+  logic [1:0] push_writes, push1_writes, pop_writes, pop1_writes;
+  logic lr_free, ctr_free;
+  assign lr_free = (lr_iq_q == '0) && !lr_pending_q;
+  assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
   assign fd_push = fd_valid_q && !fold_q;
-  assign fold_predict = folds(queued, trace_mode);
+  assign fold_predict = folds(queued, trace_mode, lr_free, ctr_free);
   // Lane 1: the second FD word.
   fetch_packet_t queued1;
   logic [31:0] fold_pc;
@@ -640,13 +667,17 @@ module ppc_core #(
     assign queued1 = '0;
   end
   endgenerate
-  assign fold_predict1 = (FETCH_WIDTH == 2) && folds(queued1, trace_mode);
+  assign fold_predict1 = (FETCH_WIDTH == 2) &&
+    folds(queued1, trace_mode, lr_free && !push_writes[1],
+          ctr_free && !push_writes[0]);
   // A folding first word drops the second.
   assign iq_push0 = fd_push && fd_push_ok;
   assign iq_push1 = iq_push0 && fd1_valid_q && !fold_predict;
   assign fold_pc = fold_predict ? queued.pc : queued1.pc;
   assign fold_insn = fold_predict ? queued.insn : queued1.insn;
-  assign fold_target = (fold_insn[1] ? 32'b0 : fold_pc) +
+  assign fold_target = (fold_insn[31:26] == 6'd19) ?
+    {(fold_insn[10] ? ctr[31:2] : lr[31:2]), 2'b00} :
+    (fold_insn[1] ? 32'b0 : fold_pc) +
     ((fold_insn[31:26] == 6'd18) ?
       {{6{fold_insn[25]}}, fold_insn[25:2], 2'b00} :
       {{16{fold_insn[15]}}, fold_insn[15:2], 2'b00});
@@ -712,6 +743,21 @@ module ppc_core #(
     .count_o(iq_count)
   );
   assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair} = iq_dq1;
+  assign push_writes = lr_ctr_writes(push_uop);
+  assign push1_writes = lr_ctr_writes(push_uop1);
+  assign pop_writes = lr_ctr_writes(iq_uop);
+  assign pop1_writes = lr_ctr_writes(dq1_uop);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || frontend_clear) begin
+      lr_iq_q <= '0;
+      ctr_iq_q <= '0;
+    end else begin
+      lr_iq_q <= lr_iq_q + 3'(iq_push0 && push_writes[1]) + 3'(iq_push1 && push1_writes[1]) -
+                 3'(dispatch && iq_pop && pop_writes[1]) - 3'(dispatch1 && pop1_writes[1]);
+      ctr_iq_q <= ctr_iq_q + 3'(iq_push0 && push_writes[0]) + 3'(iq_push1 && push1_writes[0]) -
+                  3'(dispatch && iq_pop && pop_writes[0]) - 3'(dispatch1 && pop1_writes[0]);
+    end
+  end
   ppc_lsu_sequence #(.ENABLE_MULTIPLE_STRING(ENABLE_MULTIPLE_STRING)) lsu_sequence (
     .clk_i, .rst_ni, .clear_i(recovery_accepted),
     .uop_i((iq_head.fault == FETCH_OK) ? iq_uop : '0),
@@ -949,13 +995,17 @@ module ppc_core #(
       if (cq_empty || (commit && (retire_producer == ctr_writer_q)) ||
           (commit1 && (retire1_producer == ctr_writer_q)))
         ctr_pending_q <= 1'b0;
-      if (dispatch && bu_branch && uop.branch_lk) begin
+      if (dispatch && pop_writes[1]) begin
         lr_pending_q <= 1'b1;
         lr_writer_q <= alloc_producer;
       end
-      if (dispatch && bu_branch && bu_writes_ctr) begin
+      if (dispatch && pop_writes[0]) begin
         ctr_pending_q <= 1'b1;
         ctr_writer_q <= alloc_producer;
+      end
+      if (dispatch1 && pop1_writes[1]) begin
+        lr_pending_q <= 1'b1;
+        lr_writer_q <= alloc1_producer;
       end
       bu_redirect_q <= dispatch && bu_branch && bu_redirect && !recovery_accepted;
       bu_target_q <= bu_next_pc;
@@ -1464,8 +1514,9 @@ module ppc_core #(
 
   // Dual dispatch (UM 6.6.1.2). DQ1 dispatches beside DQ0 when the two go to
   // different units (IU, LSU, FPU) and DQ1's unit, rename slot, CQ entry and
-  // flag token remain after DQ0. A branch takes no unit; it pairs only when
-  // it cannot redirect at dispatch: a b or branch-always folded at fetch.
+  // flag token remain after DQ0. A branch takes no unit; it pairs, in either
+  // slot, only when it cannot redirect at dispatch: a b or branch-always
+  // folded at fetch, whose LR or CTR target no older instruction writes.
   // Serialized instructions, faults and trace mode dispatch alone from DQ0.
   // Two IU operations never pair: the SRU add/compare lane is not built.
   // A plain access in DQ1 takes the lane only with its sources committed;
@@ -1484,13 +1535,24 @@ module ppc_core #(
     ((dq1_uop.special_op == SPECIAL_LOAD) || (dq1_uop.special_op == SPECIAL_STORE)) &&
     !dq1_uop.mem_update && (dq1_uop.cache_op == CACHE_OP_NONE);
   assign d1_fp = d1_valid && ENABLE_FPU && !fp_replay_q && (dq1_pair.unit == UNIT_FPU);
-  assign d1_needs_flags = !d1_fp &&
+  assign d1_branch = d1_valid && dq1_branch[3] && dq1_folded &&
+    ((dq1_head.insn[31:26] == 6'd18) || (dq1_head.insn[25] && dq1_head.insn[23]));
+  always_comb begin
+    case (dq1_uop.special_op)
+      SPECIAL_BCLR: d1_next_pc = {lr[31:2], 2'b00};
+      SPECIAL_BCCTR: d1_next_pc = {ctr[31:2], 2'b00};
+      default: d1_next_pc = dq1_uop.branch_aa ? dq1_uop.branch_disp :
+                                                dq1_head.pc + dq1_uop.branch_disp;
+    endcase
+  end
+  assign d1_needs_flags = !d1_fp && !d1_branch &&
     (dq1_uop.needs_flags || dq1_uop.read_ca || dq1_uop.read_so || dq1_uop.write_xer ||
      dq1_uop.write_ca || dq1_uop.write_ov_so || dq1_uop.write_cr_field ||
      dq1_uop.write_cr_fields || dq1_uop.write_cr_bit);
-  assign d1_gpr = !d1_fp && dq1_uop.gpr_write;
+  assign d1_gpr = !d1_fp && !d1_branch && dq1_uop.gpr_write;
   assign d1_sru = HAS_SRU && d1_iu && dq1_pair.sru;
-  assign pair_units = (c0_iu && (d1_sru || d1_mem || d1_fp)) ||
+  assign pair_units = ((c0_iu || c0_lane || c0_fp || c0_fp_mem) && d1_branch) ||
+    (c0_iu && (d1_sru || d1_mem || d1_fp)) ||
     (c0_branch && (d1_iu || d1_mem || d1_fp)) || (c0_lane && (d1_iu || d1_fp)) ||
     ((c0_fp || c0_fp_mem) && d1_iu);
   // As for DQ0, no station operand waits on an older lane access.
@@ -1591,6 +1653,9 @@ module ppc_core #(
     allocation1.write_cr_bit = dq1_uop.write_cr_bit;
     allocation1.cr_bit = dq1_uop.cr_bit;
     allocation1.cq1_ok = dq1_pair.cq1_ok && !d1_fp;
+    allocation1.branch = d1_branch;
+    allocation1.value = d1_next_pc;
+    allocation1.branch_lk = d1_branch && dq1_uop.branch_lk;
     allocation1.fpr_write = d1_fp;
   end
   // CQ[1] retires beside a head that completes without an exception and that
@@ -1610,7 +1675,7 @@ module ppc_core #(
     if (rst_ni && dispatch1) begin
       assert (DUAL && iq_pop && iq_valid1 && !recovery_accepted)
         else $error("DQ1 dispatched without DQ0");
-      assert (32'(d1_iu) + 32'(d1_mem) + 32'(d1_fp) == 32'd1)
+      assert (32'(d1_iu) + 32'(d1_mem) + 32'(d1_fp) + 32'(d1_branch) == 32'd1)
         else $error("DQ1 unit class is not unique");
       if (d1_mem)
         assert ((dq1_uop.zero_a || (src_a1.ready && (src_a1.value == arch_a1))) &&
@@ -1846,6 +1911,15 @@ module ppc_core #(
         else $error("predecoded branch class disagrees with the queued uop");
     if (rst_ni && dispatch && iq_folded)
       assert (bu_branch) else $error("folded branch left the branch unit");
+    if (rst_ni && dispatch1 && dq1_folded)
+      assert (d1_branch) else $error("folded DQ1 branch left the branch unit");
+    // A folded bclr or bcctr found its target register final at fetch.
+    if (rst_ni && iq_valid && iq_folded && !trace_mode)
+      assert (!(bu_reads_lr && lr_pending_q) && !(iq_branch[1] == 1'b0 &&
+              iq_head.insn[31:26] == 6'd19 && ctr_pending_q))
+        else $error("folded branch target register still pending");
+    if (rst_ni && dispatch && bu_branch && iq_folded && bu_taken && iq_valid1)
+      assert (dq1_head.pc == bu_target) else $error("folded branch fetched a stale target");
     // Work younger than a faulting plain access is removed by its redirect.
     if (rst_ni && (special_exception_redirect || special_branch_redirect))
       assert ((cq_empty && normal_idle) || special_exception_redirect)
@@ -1946,7 +2020,7 @@ module ppc_core #(
     .alloc_i(allocation), .alloc_tag_o(alloc_producer),
     .alloc_finished_i(fp_uop || bu_finished),
     .alloc1_valid_i(dispatch1), .alloc1_ready_o(cq1_ready), .alloc1_i(allocation1),
-    .alloc1_finished_i(d1_fp), .alloc1_tag_o(alloc1_producer),
+    .alloc1_finished_i(d1_fp || d1_branch), .alloc1_tag_o(alloc1_producer),
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),

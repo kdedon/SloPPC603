@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Kevin Dedon
 // End-to-end symbolic-program oracle: all architectural state and byte memory.
 /* verilator lint_off BLKSEQ */
-module tb_core_control_memory;
+module tb_core_control_memory #(
+  parameter int FETCH_WIDTH = 1
+);
   logic [41:0] unused_segment_csr;
   logic [47:0] unused_bat_csr;
   import ppc_pkg::*;
@@ -23,6 +25,11 @@ module tb_core_control_memory;
   string program_dir;
   logic ipending = 0, dpending = 0;
   logic [31:0] iword = 0, dword = 0;
+  // The second word and pair flag reach the core only with two-word fetch.
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] iword1 = 0;
+  logic ipair = 1'b0;
+  /* verilator lint_on UNUSEDSIGNAL */
   int idelay = 0, ddelay = 0;
   int edge_count = 0, checks = 0, retirements = 0;
   int read_requests = 0, write_requests = 0, request_stalls = 0;
@@ -35,7 +42,8 @@ module tb_core_control_memory;
   logic unused_checkstop;
   logic [5:0] unused_mmu_602;
   logic [4:0] unused_tlb_fill_ext;
-  ppc_core #(.RESET_PC(32'b0)) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
+  logic [33*FETCH_WIDTH-2:0] iw_bus;
+  ppc_core #(.RESET_PC(32'b0), .FETCH_WIDTH(FETCH_WIDTH)) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
     .tlb_fill_req_ext_o(unused_tlb_fill_ext),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
@@ -93,7 +101,7 @@ module tb_core_control_memory;
     .segment_csr_idle_i(1'b1),
     .clk_i(clk), .rst_ni(rst_n),
     .imem_req_valid_o(iv), .imem_req_ready_i(ir), .imem_req_addr_o(ia),
-    .imem_rsp_valid_i(sv), .imem_rsp_ready_o(sr), .imem_rsp_insn_i(iw), .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(ppc_pkg::FETCH_OK),
+    .imem_rsp_valid_i(sv), .imem_rsp_ready_o(sr), .imem_rsp_insn_i(iw_bus), .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(ppc_pkg::FETCH_OK),
     .context_ready_i(1'b1), .memory_quiescent_i(1'b1),
     .context_valid_o(unused_context[3]), .context_ir_o(unused_context[2]),
     .context_dr_o(unused_context[1]), .context_pr_o(unused_context[0]),
@@ -114,6 +122,12 @@ module tb_core_control_memory;
   assign ir = rst_n && !ipending && edge_count%3 != 1;
   assign sv = rst_n && ipending && idelay == 0;
   assign iw = iword;
+  // With two-word fetch, aligned requests answer with both words.
+  if (FETCH_WIDTH == 2) begin : g_pair
+    assign iw_bus = {ipair, iword1, iw};
+  end else begin : g_single
+    assign iw_bus = iw;
+  end
   assign dr = rst_n && !dpending && edge_count%4 == 0;
   assign rv = rst_n && dpending && ddelay == 0;
   assign rd = dword;
@@ -155,6 +169,8 @@ module tb_core_control_memory;
         require(!ipending && ia[1:0] == 0 && ia < 16384, "bad instruction request");
         ipending <= 1;
         iword <= imem[ia[13:2]];
+        iword1 <= imem[{ia[13:3], 1'b1}];
+        ipair <= !ia[2];
         idelay <= edge_count%3;
       end
       if (dv && !dr) request_stalls++;

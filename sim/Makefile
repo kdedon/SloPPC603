@@ -597,6 +597,18 @@ test-core-branch-recovery: build-control-memory
 	python3 tools/control_memory_program.py --branch-recovery --output $(BUILD_DIR)/branch-recovery
 	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-recovery
 
+# Folded bclr and bcctr: LR/CTR hazards, mispredictions both ways, linking
+# forms; again with two-word fetch and dispatch, where folded branches pair
+# from DQ1.
+.PHONY: test-core-branch-fold
+test: test-core-branch-fold
+test-core-branch-fold: build-control-memory
+	python3 tools/control_memory_program.py --branch-fold --output $(BUILD_DIR)/branch-fold
+	./$(BUILD_DIR)/control-memory/obj/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-fold
+	mkdir -p $(BUILD_DIR)/control-memory-w2
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_DISPATCH_WIDTH=2 -GFETCH_WIDTH=2 --top-module tb_core_control_memory --Mdir $(BUILD_DIR)/control-memory-w2 $(RTL) ../tb/tb_core_control_memory.sv
+	./$(BUILD_DIR)/control-memory-w2/Vtb_core_control_memory $(SIM_ARGS) +PROGRAM_DIR=$(BUILD_DIR)/branch-fold
+
 .PHONY: test-core-compare test-compare-execution
 test-core-compare: build-control-memory
 	python3 tools/control_memory_program.py --compare --output $(BUILD_DIR)/compare

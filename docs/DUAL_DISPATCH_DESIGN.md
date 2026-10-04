@@ -173,7 +173,7 @@ integer operation cannot pair with a branch. Steps, in order:
 4. Later, and measured: branches without LR/CTR updates take no CQ entry, as
    the manual's folding does. An interrupt then resumes at the branch, which is
    idempotent. This needs care with `committed_next_pc_q` and the resume
-   override.
+   override. Not built; see [slice 7](#slice-7).
 
 The irrevocable-head rules stay: a pivot cut may not kill an offered finished
 head ([`ppc_completion.sv:137-141`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_completion.sv#L137-L141)),
@@ -323,7 +323,7 @@ coordinator runs `ci`, `xrand-sweep` and the fits.
 | 4 | Implemented behind `DISPATCH_WIDTH=2`; pair-rule cycle benches beyond `tb_core_dual` not written | `ppc_core` (`dispatch1`, `pair_units`); bench `tb/tb_core_dual.sv` |
 | 5 | Implemented; only `tb_core_reference` and the SoC/MiSTer benches observe CQ[1] | `ppc_core` (`commit1`); `RETIRE_PAIRS` on the BAT wrappers |
 | 6 | Partial: width 2 selectable (`make -C sim DISPATCH_WIDTH=2`, `--dual` builds), default still 1; the chip top misses 66 MHz, and 50 MHz hold by 6 ps (see below); two-word fetch through the wrappers not wired | |
-| 7 | Not started | |
+| 7 | Branch in DQ1 and `bclr`/`bcctr` folding done; branches still take a CQ entry | `ppc_core` (`d1_branch`, `lr_iq_q`/`ctr_iq_q`, `folds`); benches `test-core-branch-fold`, `tb_core_machine_check_trace` scenarios 16-18, `tb_core_dual` |
 
 Slice 0. The monitor writes one line per cycle with a dispatch or an accepted
 retirement: `<cycle> D<n> R<n> <dispatch pcs> | <retire pcs>`, cycle 0 being
@@ -643,6 +643,83 @@ Run CPI is the whole image, start-up and screen output included. Against
 width 1 without the unit, width 2 gains 2.8-5.5%, the unit 12-17% and both
 16-21%; the unit gains about as much at either width.
 
+### Slice 7
+
+Folding (603e UM §6.4.1.1, PDF 260-261). A `bclr` or `bcctr` predicted taken
+(branch-always BO, or the y bit set) now folds at IQ push like `b` and `bc`,
+to the committed LR or CTR, when no older instruction writes that register.
+The manual stops the fold for the same producers: `mtspr` LR/CTR, a counting
+`bc`, a linking branch. Writers are counted while queued (`lr_iq_q`,
+`ctr_iq_q`: push adds, dispatch subtracts, an IQ clear zeroes) and tracked
+from dispatch to retirement by `lr_pending_q`/`ctr_pending_q`, which now
+include `mtlr`/`mtctr`. A lane-1 branch also checks the lane-0 word. The
+legality test for the XL form uses the word's bits, so the push enable does
+not wait for the decoder. Simulation assertions check that a folded branch
+never sees its target register pending and that the next queued word is at
+the resolved target.
+
+Branch in DQ1. A branch-always `b`, `bc`, `bclr` or `bcctr` that folded
+(`d1_branch`) dispatches from DQ1 beside an IU, lane, FPU or FP-access
+instruction in DQ0. It cannot redirect, reads no CR, and its LR/CTR target
+was final at fetch, so DQ0 cannot change what it resolved. It allocates a
+finished CQ[1] entry with its next PC, and LK sets `lr_pending_q` with the
+DQ1 tag. A conditional or unfolded branch still waits for DQ0.
+
+No CQ entry: not built. Dispatching a branch without allocating would free a
+CQ entry and a retire slot but keep the dispatch slot; the real gain needs
+the branch removed from the IQ at fetch. Either way every retirement-trace
+consumer (reference runner, program interpreters, firmware checkers, the
+width-1/width-2 packet comparisons) would lose branch retirements, so it
+belongs with the fetch-side BPU (P09).
+
+Recorded: `make -C sim lint check-spec test-core-branch-fold
+test-core-machine-check-trace test-core-dual test-core-dcache-lsu-pipe`,
+commit 9df93a3, 2026-10-03.
+All pass. `test-core-branch-fold` runs a 521-word, 566-retirement program
+(`control_memory_program.py --branch-fold`) at four code offsets: returns
+after long and empty bodies, `mtlr`/`mtctr` right before the branch and four
+words earlier, a `bdnz` before `bcctr`, `bclrl`/`bcctrl`, conditional
+`bclr`/`bcctr` mispredicted both ways, a decrementing `bclr`, a return to a
+folded `b` and a nested epilogue. The model checks every retirement's path,
+GPRs, CR, XER, LR, CTR and memory digest, at width 1 with one-word fetch
+(43,856 checks, 2,282 cycles; 2,366 on `batch10`) and at width 2 with
+two-word fetch (43,735 checks, 1,954 cycles; 2,078 on `batch10`). Folding
+regardless of a pending writer fails it (path mismatch at retirement 17).
+`test-core-machine-check-trace` (four seeds, 1,815 checks) adds IABR on a
+folded return's target and on a `bctr` that folds when refetched, a DSI on
+the `bctr` target, single step over `bl`/`blr`/`bctr` (one trace each, no
+fold) and an external interrupt after a folded return (SRR0 = return
+target); three folds are counted. `tb_core_dual` shows `cmpw` + folded `b`
+pairing from DQ1. Not established: cycle timing against Table 6-1, and a
+fold count in compiled code.
+
+Recorded: `make -C sim -j2 -k test`, `make -C sim -j2 -k DISPATCH_WIDTH=2
+test` and, from `sim/`, `make -j2 -k DISPATCH_WIDTH=2
+VERILATOR=$PWD/tools/verilate-lsu-pipe BUILD_DIR=build-w2-lsu test`, commit
+9645f3a, 2026-10-03.
+Width 1 and width 2 exit 0 (544 PASS lines each). With the LSU unit only
+`test-core-event-reset` failed: the unit's request offer was not held low in
+reset, so it depended on X initialization; 9df93a3 gates it with reset and
+the bench then passes (`batch10` passes it too).
+
+Recorded: `make demo-soc-model` and `Vtb_demo_soc` on the `toolchain/build/demo`
+images (`DISPATCH_WIDTH=2` for width 2), commit 9df93a3 against `batch10`
+(2f049c5), 2026-10-03. Firmware was not rebuilt.
+
+| Run cycles (CPI) | `batch10` | slice 7 |
+|---|---:|---:|
+| Dhrystone, width 1 | 6,488,985 (4.034) | 6,426,502 (3.996) |
+| Dhrystone, width 2 | 6,194,149 (3.850) | 6,143,555 (3.819) |
+| CoreMark, width 1 | 11,341,339 (3.243) | 11,295,321 (3.230) |
+| CoreMark, width 2 | 10,875,541 (3.110) | 10,823,644 (3.095) |
+
+Dhrystone gains 1.0% at width 1 and 0.8% at width 2, CoreMark 0.4% and
+0.5%. The added path is a 30-bit LR/CTR mux into the fold target register
+and the DQ1 next-PC adder; no fit was run. Quartus 17
+`quartus_map --analysis_and_elaboration ppc603e_chip`, under the Quartus
+lock on a copy of `quartus/chip`, commit 9645f3a: 0 errors at width 1 (51
+warnings) and with `PPC_DISPATCH_WIDTH=2`, `PPC_LSU_PIPE=1` (47 warnings).
+
 ## Risks
 
 - **Throughput depends on P3 first.** Today's CPI is about 4 on Dhrystone and
@@ -652,9 +729,10 @@ width 1 without the unit, width 2 gains 2.8-5.5%, the unit 12-17% and both
 - **The special lane is stricter than the manual.** It drains before dispatch;
   SPR, CR-logic and string timing will still differ from Table 6-4 after dual
   dispatch. Record it as a deviation, do not widen it.
-- **Branch model.** The P2 rule resolves at dispatch and allocates a CQ entry;
-  the 603e BPU folds at fetch and takes no dispatch slot. Cycle-exact branch rows
-  need slice 7 or a fetch-side BPU (P09); until then branch timing is a listed
+- **Branch model.** Branches resolve at dispatch and allocate a CQ entry; the
+  603e BPU folds at fetch and takes no dispatch slot. Slice 7 removes the slot
+  cost only for a folded branch in DQ1; cycle-exact branch rows need the
+  branch removed at fetch (P09). Until then branch timing is a listed
   deviation.
 - **LVT correctness.** Two write ports to one register in one cycle cannot occur
   (retire pairs have distinct destinations or are ordered); an assertion checks

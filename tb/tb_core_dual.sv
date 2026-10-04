@@ -172,7 +172,7 @@ module tb_core_dual #(
       32'h54: return SYNC;
       32'h58: return or_(16, 4, 7);
       32'h5c: return stw(16, 1, 8);
-      // F: two CR writers never pair; a folded b pairs with its target.
+      // F: two CR writers never pair; a folded b in DQ1 pairs with the cmpw.
       32'h60: return SYNC;
       32'h64: return cmpw(1, 4, 5);
       32'h68: return cmpw(2, 5, 4);
@@ -288,10 +288,7 @@ module tb_core_dual #(
       expect_pair(32'h64, 1'b0, "cmpw + cmpw (one CR rename)");
       expect_pair(32'h10, 1'b0, "sync alone");
       expect_pair(32'h78, 1'b0, "sync alone");
-      if ((dcycle[32'h74] != dcycle[32'h6c]) || (dslot[32'h74] != 1))
-        $fatal(1, "folded b did not pair with its target");
-      $display("  %-34s %08x@%0d %08x@%0d", "folded b + target", 32'h6c, dcycle[32'h6c],
-               32'h74, dcycle[32'h74]);
+      expect_pair(32'h68, 1'b1, "cmpw + folded b in DQ1");
       $display("retirement:");
       expect_retire_pair(32'h14, 1'b1, "add + add");
       expect_retire_pair(32'h24, 1'b0, "add + dependent addi");
