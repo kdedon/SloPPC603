@@ -714,3 +714,27 @@ Recorded: `make -C sim lint check-spec`, commit a882db3, 2026-10-04. All pass.
 
 Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit a882db3 (no RTL change), 2026-10-04.
 0 errors, 50 warnings.
+
+### IU results on the second finish port, lane drain (2026-10-04)
+
+Recorded: `make -C sim lint check-spec`; `make -C sim -k test-core test-core-dual test-core-recovery test-core-machine-check-trace test-core-branch-fold test-core-control-memory test-flags test-core-add-flags test-core-rotate test-core-record-logical test-core-lsu-timing test-core-lsu-update test-lsu-update-edges test-core-dcache-lsu-pipe test-dcache test-dcache-fast test-core-bat-machine-check test-core-fpu test-core-fpu-machine-check test-core-le test-chip-dcache-coherence test-chip-mp test-stage test-core-tlb-miss test-core-page-data-exception` at width 1 (unit off except where the bench sets it) and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`; `test-dispatch-rules` with `DEMO_FW_DIR=<main checkout>/toolchain/build/demo` at both; commits fab7650 and 87dd293 (the last two benches), 2026-10-04.
+All pass except `test-chip-mp` at width 1, seed 4: a checkstop. It fails
+the same way on c736a1b, whose parents 310b01f and a91c265 both pass, and
+is not from these changes (width 1 has no SRU; the unit is off).
+
+- With an IU result on the SRU's port, `test-core-lsu-timing` at width 2
+  hung: the unit found a load's alignment exception once its base arrived,
+  the lane adopted it with a younger store waiting behind it in P1, and the
+  lane's drain waited for the unit to empty while the store waited for the
+  lane. The drain now waits for memory traffic only.
+- `test-core-tlb-miss` and `test-core-page-data-exception` failed to build
+  (`UNOPTFLAT`): their retirement hold read `retire_valid_o`, which a head
+  finishing that cycle now drives, closing a loop through commit-time
+  recovery. They read the settled head instead. With the unit, the TLB-miss
+  bench's external cut may meet a faulting response the unit holds for the
+  lane, and its pre-offer store cut (phase 18) is skipped: a unit store
+  offers in its first cycle at the head.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit fab7650, 2026-10-04.
+0 errors, 51 warnings. No fit or timing: the IU result now also drives the
+second finish port's mux.
