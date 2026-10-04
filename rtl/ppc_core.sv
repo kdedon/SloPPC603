@@ -1795,7 +1795,7 @@ module ppc_core #(
        (cq_retire.update_write && (cq_retire.update_gpr == cq_retire1.gpr)))) &&
     !(special_busy && ((special_producer == retire_producer) ||
                        (special_producer == retire1_producer))) &&
-    !bs_head && !(bs_valid_q && (retire1_producer == bs_tag_q));
+    !bs_head && !(bs_busy && (retire1_producer == bs_tag_q));
   assign branch_retire1 = commit1 && retire1_o.branch;
   // synthesis translate_off
   always @(posedge clk_i) begin

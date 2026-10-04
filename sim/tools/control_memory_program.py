@@ -506,6 +506,8 @@ def make_branch_fold():
     # prediction, right and wrong, forward and backward, with and without
     # y and LK. Younger stores, loads, a compare with a second CR branch, a
     # CTR branch and a mtctr follow it; none may take effect on a wrong path.
+    # An add between the compare and the branch lets the branch retire
+    # beside it.
     e('addi',6,0,100);e('addi',7,0,7)
     for pad in range(4):
         t=lambda name:f's{name}{pad}'
@@ -514,6 +516,7 @@ def make_branch_fold():
         e('addi',6,0,100+pad)
         for k,(bo,eq) in enumerate([(12,1),(12,0),(4,1),(4,0),(13,0),(5,1)]):
             e('divw',8,6,7,0,0);e('cmpi',0,8,q if eq else q+1)
+            if k%2:e('addi',23,23,1)
             e('bc',bo,2,t(f'tk{k}'),0,1 if k==3 else 0)
             e('stw',6,1,128+16*pad+4*(k%4));e('lwz',27,1,128+16*pad);e('addi',20,20,1<<k)
             e('cmpi',1,27,0);e('bc',12,6,t(f'x{k}'),0,0)
