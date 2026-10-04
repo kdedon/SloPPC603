@@ -101,8 +101,12 @@ access, through its normal dispatch port:
   response is drained.
 
 The lane offers only while busy and the unit only while the lane is idle, so
-the data port needs no arbiter. Any other lane dispatch, interrupt admission
-and the lane's memory quiescence wait for the unit to empty.
+the data port needs no arbiter. Any other lane dispatch and interrupt
+admission wait for the unit to empty. The lane's memory quiescence waits
+only for traffic: an offer, a response owed, or a retired store not yet
+written. Younger entries waiting for the lane, and stores not yet retired,
+do not hold it; an alignment exception found once a load's base arrives
+reaches the lane with younger accesses behind it.
 
 ## Speculation
 

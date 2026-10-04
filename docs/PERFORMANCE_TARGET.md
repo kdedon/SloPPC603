@@ -547,7 +547,7 @@ later than when it dispatches after the load (`CQ_FULL` 28 to 60.5,
 (`+define+PPC_LSU_BASE_WAIT=1'b0`): 667.5 and 2.557 at width 2. The SRU
 route off costs 10.5 (696.0).
 
-Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits a696e15 (merge of 2ac64dd, 29c64f9 and c83a389; width 2) and 5f2d056 (both widths), 2026-10-04 (last two rows; `perf-diff` exits 0, CoreMark CRCs match).
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits a696e15 (merge of 2ac64dd, 29c64f9 and c83a389; width 2), 5f2d056 and fab7650 (both widths, same figures), 2026-10-04 (last two rows; `perf-diff` exits 0, CoreMark CRCs match).
 With cause 7 merged, Dhrystone is 663.0 at width 2 and `strcmp` still
 takes 9 cycles an iteration. The `cmpw` was not late to issue: the IU
 station takes the load's result in the cycle it finishes, Table 6-6's load
