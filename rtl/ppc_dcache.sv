@@ -612,13 +612,15 @@ module ppc_dcache #(
   assign req_accept = req_valid_i && req_ready_o;
   // Fast copy-back store hit: the data RAM is written and the store answered
   // in its lookup cycle (UM Table 6-6, one store per cycle). The next request
-  // is accepted then unless it reads the double word being written.
+  // is accepted then if the data RAM is reading its double word, which is so
+  // only in the store's first lookup cycle, and that is not the double word
+  // being written.
   logic lk_fast_st, lk_fast_st_done, lk_fast_st_next;
   assign lk_fast_st = FAST_LOAD_HIT && state_q == S_LOOKUP && req_op_q == DC_STORE &&
                       cacheable && !req_w && hit && !snp_valid_q && push_st_q != PU_READ &&
                       !(push_busy && push_line_q == req_line);
   assign lk_fast_st_done = lk_fast_st && rsp_ready_i;
-  assign lk_fast_st_next = lk_fast_st_done &&
+  assign lk_fast_st_next = lk_fast_st_done && early_data_q &&
     ({req_addr_i[5 +: SET_BITS], req_addr_i[4:3]} != {req_set, req_dw});
 
   // ---------------------------------------------------- write queue count

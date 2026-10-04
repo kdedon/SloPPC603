@@ -46,6 +46,7 @@ module tb_dcache;
   logic [63:0] bus_rd_data = 64'd0;
   logic bus_wr_done = 1'b0, bus_wr_error = 1'b0;
   logic push_req_valid, push_req_ready = 1'b0;
+  bit hold_push = 0;
   logic [31:0] push_req_addr;
   logic [255:0] push_req_data;
   logic push_done = 1'b0, push_error = 1'b0;
@@ -516,7 +517,7 @@ module tb_dcache;
       // BIU drive for the next cycle.
       bus_req_ready <= !hold_req && rnd_b(100) < 32'(req_ready_pct) &&
                        sn_tt.size() == 0;
-      push_req_ready <= rnd_b(100) < 60;
+      push_req_ready <= !hold_push && rnd_b(100) < 60;
       if (beat_i < beat_n && !hold_beats) begin
         if (beat_gap > 0) beat_gap--;
         else begin
@@ -949,6 +950,37 @@ module tb_dcache;
     pulse_dcfi();
     hid0_dce = 1'b1;
     directed_tests++;
+
+    // D-fast: a copy-back store hit that waits in lookup behind a push of
+    // its line answers when the push is taken; a load of another double
+    // word, presented meanwhile, must read its own double word.
+    if (FAST_LOAD_HIT) begin
+      a = mk(0, 2, 9, 1);
+      st(a, 64'h0a0b_0c0d_0e0f_1011);
+      acc(DC_LOAD, a + 32'h8);
+      wait_quiet();
+      hold_push = 1;
+      snoop_now(TT_READ, a, '0);
+      check(dsn_push, "read snoop on M pushes");
+      @(negedge clk);
+      req_valid = 1'b1; req_op = DC_STORE; req_addr = a; req_be = 8'hff;
+      req_wdata = 64'h2122_2324_2526_2728; req_wimg = wimg_of(4'd0);
+      rsp_ready = 1'b1;
+      while (!req_ready) @(negedge clk);
+      @(negedge clk);
+      req_op = DC_LOAD; req_addr = a + 32'h8; req_wdata = '0;
+      settle(4);
+      check(!rsp_valid, "store hit waits for the push of its line");
+      hold_push = 0;
+      while (!req_ready) @(negedge clk);
+      @(negedge clk);
+      req_valid = 1'b0;
+      while (!rsp_valid) @(negedge clk);
+      @(negedge clk);
+      rsp_ready = 1'b0;
+      wait_quiet();
+      directed_tests++;
+    end
   endtask
 
   // Random operations over a small pool so sets conflict and lines evict.
