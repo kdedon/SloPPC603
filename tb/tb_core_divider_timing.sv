@@ -202,8 +202,6 @@ module tb_core_divider_timing #(
         require(dut.iu_result.producer == divide_producer &&
                 dut.iu_result.value == 32'd20 && dut.iu_result.cr0 == 4'h4,
                 "accepted divide result packet mismatch");
-        require(!(retire_valid && retire_ready && retired.pc == 32'h08),
-                "divide retired on its finish edge");
         divide_finish_edge = cycles;
       end
 
@@ -231,8 +229,10 @@ module tb_core_divider_timing #(
                     retired.value == 20 && retired.write_cr_field &&
                     retired.cr_delta == 32'h4000_0000,
                     "divide retirement/result/CR0 mismatch");
-            require(divide_finish_edge >= 0 && cycles > divide_finish_edge,
-                    "divide committed before or with finish");
+            // UM Figure 6-3: completion in the writeback cycle, at the
+            // earliest the finish edge.
+            require(divide_finish_edge >= 0 && cycles >= divide_finish_edge,
+                    "divide committed before finish");
             divide_retire_edge = cycles;
           end
           3: require(retired.pc == 12 && retired.gpr_write &&
@@ -259,7 +259,7 @@ module tb_core_divider_timing #(
     @(negedge clk);
     require(commits == 5, "program did not retire exact instruction stream");
     require(divide_issue_edge >= 0 && divide_finish_edge >= 0 &&
-            divide_retire_edge > divide_finish_edge,
+            divide_retire_edge >= divide_finish_edge,
             "missing issue/finish/retirement event chain");
     require(dependent_issue_edge == divide_finish_edge,
             "dependent did not use same-edge accepted wake/turnover");
