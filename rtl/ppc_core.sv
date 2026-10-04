@@ -2362,8 +2362,12 @@ module ppc_core #(
     if (!rst_ni) event_cycle <= 0;
     else begin
       event_cycle <= event_cycle + 1;
-      spec_younger <= (dispatch && bu_branch && bu_spec && !recovery_accepted) ?
-                      int'(dispatch1) : younger;
+      // A DQ1 branch has nothing younger in its dispatch cycle.
+      if (dispatch && bu_branch && bu_spec && !recovery_accepted)
+        spec_younger <= int'(dispatch1);
+      else if (dispatch1 && d1_bc && !d1_bc_now && !recovery_accepted)
+        spec_younger <= 0;
+      else spec_younger <= younger;
       if ((event_fd != 0) && (dispatch || retire_fire || mispredict))
         $fwrite(event_fd, "%0d D%0d R%0d%s%s |%s%s%s\n", event_cycle,
                 int'(dispatch) + int'(dispatch1), int'(retire_fire) + int'(commit1),
