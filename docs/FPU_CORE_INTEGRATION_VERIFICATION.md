@@ -179,6 +179,7 @@ Not established: interaction with a pending external interrupt.
 ### rfi
 
 Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-chip-fpu test-exception-state test-crstate-execution variant-exception-602-4`, and `make -C sim -j2 DISPATCH_WIDTH=2 BUILD_DIR=build-w2-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate test-core-fpu`, commit 8c037ca, 2026-10-04: pass.
+Recorded: `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit 4dda6f3, 2026-10-04: pass, 61 PASS lines.
 
 `fp_enable_rfi` in both FP core programs runs five `rfi`s from FE = 00 to
 the next instruction, an `addi`: with FEX set and SRR1 FE = 11, 01 or 10 the
