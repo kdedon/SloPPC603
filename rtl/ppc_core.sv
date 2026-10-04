@@ -1068,7 +1068,7 @@ module ppc_core #(
   logic bs_recover, bs_fix_q, bs_fix_head;
   logic [4:0] bs_bi_q;
   logic [31:0] bs_alt_q, bs_cr;
-  logic bs_cr_ready, bs_resolve, bs_taken, bs_head, bs_owner_commit;
+  logic bs_cr_ready, bs_resolve, bs_taken, bs_head, bs_owner_commit, bs_hit;
   assign bs_cr_ready = bs_owner_done_q ||
     (flags_busy && bu_cr_valid_q && (flags_owner == bs_owner_q));
   assign bs_cr = bs_owner_done_q ? cr : bu_cr_q;
@@ -1078,7 +1078,9 @@ module ppc_core #(
   assign bs_head = bs_miss_q && (retire_producer == bs_tag_q);
   assign bs_recover = BS_EARLY && bs_miss_q;
   assign bs_fix_head = bs_fix_q && (retire_producer == bs_tag_q);
-  assign bs_hold = (bs_valid_q && (retire_producer == bs_tag_q)) || bs_redirect_q;
+  // A branch resolving as predicted retires on that cycle (UM 6.6.1.3).
+  assign bs_hit = bs_resolve && (bs_taken == bs_pred_q) && !bs_miss_q && !bs_fix_q;
+  assign bs_hold = (bs_valid_q && !bs_hit && (retire_producer == bs_tag_q)) || bs_redirect_q;
   assign bs_owner_commit = (commit && (retire_producer == bs_owner_q)) ||
                            (commit1 && (retire1_producer == bs_owner_q));
   always_ff @(posedge clk_i) begin
@@ -2023,7 +2025,7 @@ module ppc_core #(
        (cq_retire.update_write && (cq_retire.update_gpr == cq_retire1.gpr)))) &&
     !(special_busy && ((special_producer == retire_producer) ||
                        (special_producer == retire1_producer))) &&
-    !bs_head && !(bs_busy && (retire1_producer == bs_tag_q));
+    !bs_head && !(bs_busy && !bs_hit && (retire1_producer == bs_tag_q));
   assign branch_retire1 = commit1 && retire1_o.branch;
   // synthesis translate_off
   always @(posedge clk_i) begin

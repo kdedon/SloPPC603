@@ -94,6 +94,52 @@ module tb_demo_soc #(
       slot_insn[soc.cpu.cpu.translated_core.core.alloc1_producer.index] =
         soc.cpu.cpu.translated_core.core.dq1_head.insn;
   end
+  wire [2:0] cq_h1 = soc.cpu.cpu.translated_core.core.completion.head1_q;
+  // Which retire1 gate term held CQ[1].
+  // verilator lint_off UNUSEDSIGNAL
+  function automatic string retire1_hold_cause();
+    ppc_pkg::retire_packet_t h, y;
+    h = soc.cpu.cpu.translated_core.core.cq_retire;
+    y = soc.cpu.cpu.translated_core.core.cq_retire1;
+    if (h.illegal || h.alignment_exception || (h.data_fault != ppc_pkg::DATA_OK) ||
+        (h.fetch_fault != ppc_pkg::FETCH_OK)) return "head exception";
+    if (h.seq_partial) return "head seq_partial";
+    if (y.gpr_write && h.gpr_write && (h.gpr == y.gpr)) return "same GPR";
+    if (soc.cpu.cpu.translated_core.core.special_busy &&
+        (soc.cpu.cpu.translated_core.core.special_producer ==
+         soc.cpu.cpu.translated_core.core.retire_producer))
+      return $sformatf("lane head %s", insn_class(slot_insn[soc.cpu.cpu.translated_core.core.retire_producer.index]));
+    if (soc.cpu.cpu.translated_core.core.special_busy &&
+        (soc.cpu.cpu.translated_core.core.special_producer ==
+         soc.cpu.cpu.translated_core.core.retire1_producer))
+      return $sformatf("lane CQ1 %s", insn_class(slot_insn[soc.cpu.cpu.translated_core.core.retire1_producer.index]));
+    if (soc.cpu.cpu.translated_core.core.bs_head) return "bs_head";
+    if (soc.cpu.cpu.translated_core.core.bs_busy &&
+        (soc.cpu.cpu.translated_core.core.retire1_producer ==
+         soc.cpu.cpu.translated_core.core.bs_tag_q))
+      return $sformatf("bs CQ1 %s", soc.cpu.cpu.translated_core.core.bs_miss_q ? "miss" :
+        soc.cpu.cpu.translated_core.core.bs_fix_q ? "fix" :
+        !soc.cpu.cpu.translated_core.core.bs_resolve ? "unresolved" :
+        (soc.cpu.cpu.translated_core.core.bs_taken == soc.cpu.cpu.translated_core.core.bs_pred_q) ?
+        "resolving hit" : "resolving miss");
+    return "unknown";
+  endfunction
+  // Which pair rule kept a finished CQ[1] from being offered.
+  function automatic string retire1_offer_cause();
+    ppc_pkg::retire_packet_t h, y;
+    h = soc.cpu.cpu.translated_core.core.cq_retire;
+    y = soc.cpu.cpu.translated_core.core.completion.packets_q[cq_h1];
+    if (!y.cq1_ok) return $sformatf("not cq1_ok %s", insn_class(slot_insn[cq_h1]));
+    if (y.illegal || y.alignment_exception || (y.data_fault != ppc_pkg::DATA_OK) ||
+        (y.fetch_fault != ppc_pkg::FETCH_OK)) return "CQ1 exception";
+    if (3'(h.gpr_write) + 3'(h.update_write) + 3'(y.gpr_write) + 3'(y.update_write) > 3'd2)
+      return "GPR count";
+    if (h.needs_flags && y.needs_flags) return "both flags";
+    if (h.fpr_write && y.fpr_write) return "both FPR";
+    if (h.branch && y.branch) return "both branch";
+    return "unknown";
+  endfunction
+  // verilator lint_on UNUSEDSIGNAL
   always @(posedge clk) begin
     // Counted while the SoC's counters run; cleared with them.
     if (soc.perf.we_i && (soc.perf.word_i == 5'd0) && soc.perf.wdata_i[1]) profile.delete();
@@ -107,6 +153,18 @@ module tb_demo_soc #(
                                  soc.cpu.cpu.translated_core.core.dispatch_uop.special_op.name());
       endcase
       if (key != "") profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+      // What the queue head did while dispatch waited for a CQ entry.
+      if (soc.cpu.cpu.translated_core.core.perf_slot == ppc_pkg::PERF_CQ_FULL) begin
+        if (!soc.cpu.cpu.translated_core.core.cq_retire_valid)
+          key = $sformatf("cq full: head busy %s",
+            insn_class(slot_insn[soc.cpu.cpu.translated_core.core.cq_head]));
+        else if (!soc.cpu.cpu.translated_core.core.commit) key = "cq full: head held";
+        else if (soc.cpu.cpu.translated_core.core.commit1) key = "cq full: retired 2";
+        else if (!soc.cpu.cpu.translated_core.core.completion.done_q[cq_h1])
+          key = $sformatf("cq full: retired 1, CQ1 busy %s", insn_class(slot_insn[cq_h1]));
+        else key = "cq full: retired 1, CQ1 refused";
+        profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+      end
       if (soc.cpu.cpu.translated_core.core.perf_slot == ppc_pkg::PERF_FLAGS_WAIT) begin
         key = $sformatf("flags head %s owner %s",
           insn_class(soc.cpu.cpu.translated_core.core.iq_head.insn),
@@ -145,8 +203,17 @@ module tb_demo_soc #(
           key = soc.cpu.cpu.translated_core.core.cq_retire1.gpr_write ?
                 "update head, CQ1 GPR" : "update head";
         else if (soc.cpu.cpu.translated_core.core.cq_retire1.update_write) key = "update CQ1";
-        else key = "other";
+        else key = retire1_hold_cause();
         key = $sformatf("retire1 held: %s", key);
+        profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+      end
+      // CQ[1] finished beside a retiring head but not offered by the queue.
+      if (soc.cpu.cpu.translated_core.core.commit &&
+          !soc.cpu.cpu.translated_core.core.cq_retire1_valid &&
+          (soc.cpu.cpu.translated_core.core.completion.count_q > 1) &&
+          soc.cpu.cpu.translated_core.core.completion.active_q[cq_h1] &&
+          soc.cpu.cpu.translated_core.core.completion.done_q[cq_h1]) begin
+        key = $sformatf("retire1 not offered: %s", retire1_offer_cause());
         profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
       end
     end
