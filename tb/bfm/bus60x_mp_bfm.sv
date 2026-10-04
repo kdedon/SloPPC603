@@ -135,9 +135,7 @@ module bus60x_mp_bfm #(
                          (artry_n_i[1] || !artry_oe_i[1]);
 
   initial begin
-    bg_n_o = 2'b11; dbg_n_o = 2'b11; ta_n_o = 2'b11; aack_n_o = 1'b1;
-    drtry_n_o = 1'b1; tea_n_o = 1'b1;
-    d_o = 64'b0; target_artry_n = 1'b1; window = 1'b0; window_master = 0;
+    window = 1'b0; window_master = 0;
     data_busy = 1'b0; cur_tea = 1'b0; data_master = -1;
     cur = '{0, 32'b0, 5'b0, 1'b0, 1'b0, 1'b0, 3'b0};
     for (int m = 0; m < 2; m++) begin
@@ -208,6 +206,11 @@ module bus60x_mp_bfm #(
         $fatal(1, "%m: processor %0d TS without a qualified BG (cycle %0d)", s, cycle);
       if (dbb_now[s] && !dbb_q[s] && !(!dbg_q[s] && drtry_q && dbb_q[1-s] == 1'b0))
         $fatal(1, "%m: processor %0d DBB without a qualified DBG (cycle %0d)", s, cycle);
+      // DBG goes only to the master owed the next data tenure, which takes
+      // the bus the cycle after the grant qualifies (UM 8.4.1), unless it
+      // still awaits a DRTRY replacement beat of its current tenure.
+      if (!dbg_q[s] && artry_q && drtry_q && dbb_q == 2'b00 && !dbb_now[s] && owner_q != s)
+        $fatal(1, "%m: processor %0d ignored a qualified DBG (cycle %0d)", s, cycle);
       if (d_oe_i[s] && !dbb_now[s] && data_master != s && owner_q != s)
         $fatal(1, "%m: processor %0d drives data without the data bus (cycle %0d)", s, cycle);
     end
@@ -369,7 +372,12 @@ module bus60x_mp_bfm #(
     data_master = -1;
   endtask
 
+  // Each pin is written only by the process that drives it. A second
+  // writer, even an initializer, makes Verilator update logic fed by the pin
+  // only on the edges of the consumer's other inputs, not when the pin moves.
   initial begin : data_bus
+    dbg_n_o = 2'b11; ta_n_o = 2'b11; drtry_n_o = 1'b1; tea_n_o = 1'b1;
+    d_o = 64'b0;
     forever begin
       bus_rise();
       if (dq.size() == 0) continue;
@@ -388,6 +396,7 @@ module bus60x_mp_bfm #(
     logic [4:0] tt;
     logic burst, write, gbl, retried, snooper_artry, taken;
     logic [2:0] tsiz;
+    bg_n_o = 2'b11; aack_n_o = 1'b1; target_artry_n = 1'b1;
     last = 1;
     prio = -1;
     granted = -1;
