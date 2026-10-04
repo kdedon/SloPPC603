@@ -4,8 +4,9 @@
 """Compare a core dispatch/retire event trace with an expected schedule.
 
 Trace lines come from ppc_core's +DISPATCH_TRACE monitor:
-    <cycle> D<n> R<n> <dispatch pcs...> | <retire pcs...>
-An expected schedule uses the same format; '#' starts a comment.
+    <cycle> D<n> R<n> <dispatch pcs...> | <retire pcs...> [!<n>]
+'!<n>' marks a branch misprediction recovery that removed the n youngest
+dispatched instructions; the schedule comparison ignores it. An expected schedule uses the same format; '#' starts a comment.
 
 --rules checks a trace of any length, streamed, against the 603e dispatch and
 completion rules (sim/spec/timing.json), with instruction words from a RAM
@@ -29,9 +30,12 @@ def parse(text):
         if not line:
             continue
         head, _, retired = line.partition('|')
+        retired, recovery, _ = retired.partition('!')
         fields = head.split()
         require(len(fields) >= 3 and fields[1][0] == 'D' and fields[2][0] == 'R',
                 f'line {number}: malformed event')
+        if recovery and fields[1:3] == ['D0', 'R0']:
+            continue
         cycle, dispatched = int(fields[0]), [int(x, 16) for x in fields[3:]]
         retired = [int(x, 16) for x in retired.split()]
         require(len(dispatched) == int(fields[1][1:]) and len(retired) == int(fields[2][1:]),
@@ -73,17 +77,19 @@ def classify(word, sru):
     units: the units it may issue to; dser/cser: dispatch-/completion-
     serialized (TIM-SER-*); cq1: may complete from CQ[1] (TIM-CQ-CQ1/ORDER,
     plus branches, which this core keeps in the CQ); writes: (GPR, CR, FPR,
-    LR, CTR) updates for TIM-WB-LIMITS; isync and multiple for the trace.
+    LR, CTR) updates for TIM-WB-LIMITS; isync and multiple for the trace;
+    cond: a conditional branch, after which a misprediction flushes younger work.
     """
     op, xo = word >> 26, (word >> 1) & 1023
     rc = word & 1 if op in (20, 21, 23, 31, 59, 63) else 0  # D-form bit 31 is immediate
     c = dict(units={IU}, dser=False, cser=False, cq1=True, writes=[1, rc, 0, 0, 0],
-             isync=False, multiple=False)
+             isync=False, multiple=False, cond=False)
     sru_unit = lambda: c.update(units={SRU}, cser=True, cq1=False, writes=[0, 0, 0, 0, 0])
     if op in (16, 18) or (op == 19 and xo in (16, 528)):
         lk = word & 1
         ctr = op == 19 and xo == 16 and not (word >> 23) & 1 or op == 16 and not (word >> 23) & 1
-        c.update(units={BPU}, writes=[0, 0, 0, lk, int(bool(ctr))])
+        c.update(units={BPU}, writes=[0, 0, 0, lk, int(bool(ctr))],
+                 cond=op != 18 and (word >> 21) & 0x14 != 0x14)
     elif op == 19:
         sru_unit()
         c['writes'][1] = int(xo != 150 and xo != 50)
@@ -166,14 +172,15 @@ class Rules:
 
     def __init__(self, width, words, sru, flush):
         self.width, self.words, self.sru, self.flush = width, words, sru, flush
-        self.inflight = []      # [pc, dispatch cycle, sequence number] in dispatch order
+        self.inflight = []      # [pc, dispatch cycle, sequence number, flushed] in dispatch order
         self.seq = 0
         self.block = None       # dispatch-serialized instruction not yet retired: [seq, cycle]
         self.last_dser = None   # (seq, dispatch cycle) of the latest dispatch-serialized dispatch
         self.isync_retired = None
         self.last_retired_pc = None
+        self.cond_retired = False  # the latest retirement was a conditional branch
         self.stats = dict(cycles=0, dispatches=0, retirements=0, pairs_dispatched=0, pairs_retired=0,
-                          flushed=0, dser=0, cser=0, isync=0, unknown=0, sru_pairs=0)
+                          flushed=0, mispredicts=0, dser=0, cser=0, isync=0, unknown=0, sru_pairs=0)
 
     def cls(self, pc):
         word = self.words.get(pc)
@@ -181,7 +188,7 @@ class Rules:
             self.stats['unknown'] += 1
         return None if word is None else classify(word, self.sru)
 
-    def event(self, cycle, dispatched, retired):
+    def event(self, cycle, dispatched, retired, mispredict=0):
         st = self.stats
         st['cycles'] = cycle
         require(len(dispatched) <= self.width and len(retired) <= self.width,
@@ -193,11 +200,21 @@ class Rules:
             classes.append(c)
             if c and c['multiple'] and pc == self.last_retired_pc and not self.inflight_has(pc):
                 continue  # further micro-op of the same multiple/string instruction
-            index = next((i for i, e in enumerate(self.inflight) if e[0] == pc), None)
+            # Work dispatched down a mispredicted path never retires
+            # (UM 6.4.1.2); it is what a recovery removed behind the
+            # conditional branch that retired last.
+            wrong_path = 0
+            if self.cond_retired:
+                while wrong_path < len(self.inflight) and self.inflight[wrong_path][3]:
+                    wrong_path += 1
+            index = next((i for i, e in enumerate(self.inflight) if i >= wrong_path and e[0] == pc), None)
             require(index is not None, f'cycle {cycle}: retired {pc:08x} was not dispatched (in order)')
-            require(self.flush or index == 0,
-                    f'cycle {cycle}: {pc:08x} retired ahead of {self.inflight[0][0]:08x} (TIM-CQ-ORDER)')
+            require(self.flush or index == wrong_path,
+                    f'cycle {cycle}: {pc:08x} retired ahead of {self.inflight[wrong_path][0]:08x} '
+                    '(TIM-CQ-ORDER)')
+            require(not self.inflight[index][3], f'cycle {cycle}: {pc:08x} retired after its recovery removed it')
             st['flushed'] += index
+            st['mispredicts'] += int(wrong_path > 0)
             seq, dcycle = self.inflight[index][2], self.inflight[index][1]
             del self.inflight[:index + 1]
             require(dcycle < cycle, f'cycle {cycle}: {pc:08x} retired in its dispatch cycle')
@@ -216,6 +233,7 @@ class Rules:
                 self.isync_retired = cycle
                 st['isync'] += 1
             self.last_retired_pc = pc
+            self.cond_retired = bool(c and c['cond'])
         if len(retired) == 2:
             st['pairs_retired'] += 1
             if all(classes):
@@ -245,7 +263,7 @@ class Rules:
                     st['sru_pairs'] += 1
         for pc, c in zip(dispatched, classes):
             self.seq += 1
-            self.inflight.append([pc, cycle, self.seq])
+            self.inflight.append([pc, cycle, self.seq, False])
             st['dispatches'] += 1
             if c and c['dser']:
                 st['dser'] += 1
@@ -253,6 +271,10 @@ class Rules:
                 self.last_dser = (self.seq, cycle)
             if c and c['cser']:
                 st['cser'] += 1
+        require(mispredict <= len(self.inflight),
+                f'cycle {cycle}: recovery removes {mispredict} of {len(self.inflight)} in flight')
+        for entry in self.inflight[len(self.inflight) - mispredict:]:
+            entry[3] = True
 
     def inflight_has(self, pc):
         return any(e[0] == pc for e in self.inflight)
@@ -260,13 +282,15 @@ class Rules:
 
 def parse_line(raw):
     head, _, retired = raw.partition('|')
+    retired, _, removed = retired.partition('!')
+    mispredict = int(removed) if removed else 0
     fields = head.split()
     require(len(fields) >= 3 and fields[1][0] == 'D' and fields[2][0] == 'R', f'malformed event {raw!r}')
     dispatched = [int(x, 16) for x in fields[3:]]
     retired = [int(x, 16) for x in retired.split()]
     require(len(dispatched) == int(fields[1][1:]) and len(retired) == int(fields[2][1:]),
             f'count does not match pcs in {raw!r}')
-    return int(fields[0]), dispatched, retired
+    return int(fields[0]), dispatched, retired, mispredict
 
 
 def read_image(path, base):
@@ -290,10 +314,10 @@ def check_rules(lines, width, words, sru, flush=False):
     for raw in lines:
         raw = raw.split('#', 1)[0].strip()
         if raw:
-            cycle, dispatched, retired = parse_line(raw)
+            cycle, dispatched, retired, mispredict = parse_line(raw)
             require(cycle > previous, f'cycle {cycle} out of order')
             previous = cycle
-            rules.event(cycle, dispatched, retired)
+            rules.event(cycle, dispatched, retired, mispredict)
     return rules.stats
 
 

@@ -104,6 +104,33 @@ class DispatchRulesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'TIM-WB-LIMITS'):
             check_rules(pair.format(0x204, 0x208).splitlines(), 2, words, True)
 
+    def test_mispredicted_path_removed(self):
+        # 0x300 beq 0x308 predicted not taken; 0x304 and 0x308 dispatch down
+        # the wrong path, then the correct 0x308 dispatches again.
+        words = {0x300: 0x41820008, 0x304: 0x38e00010, 0x308: 0x69290058, 0x30c: 0x38630001}
+        early = ('1 D1 R0 00000300 |\n2 D1 R0 00000304 |\n3 D1 R0 00000308 |\n4 D0 R0 | !2\n'
+                 '6 D1 R0 00000308 |\n7 D1 R1 0000030c | 00000300\n8 D0 R1 | 00000308\n'
+                 '9 D0 R1 | 0000030c')
+        late = early.replace('4 D0 R0 | !2\n6 D1 R0 00000308 |\n7 D1 R1 0000030c | 00000300',
+                             '4 D0 R1 | 00000300\n5 D0 R0 | !2\n6 D1 R0 00000308 |\n7 D1 R0 0000030c |')
+        for label, text in (('early', early), ('late', late)):
+            with self.subTest(label):
+                st = check_rules(text.split('\n'), 1, words, False)
+                self.assertEqual((st['retirements'], st['flushed'], st['mispredicts']), (3, 2, 1))
+        cases = {
+            'no recovery': early.replace('4 D0 R0 | !2\n', ''),
+            'removed work retires': early.replace('!2', '!1'),
+            'too many removed': early.replace('!2', '!4'),
+            'not after a conditional branch': early.replace('00000300', '00000000').replace(
+                '1 D1 R0 00000000', '1 D1 R0 0000030c'),
+        }
+        for label, text in cases.items():
+            with self.subTest(label), self.assertRaises(ValueError):
+                check_rules(text.split('\n'), 1, words, False)
+
+    def test_schedule_ignores_recovery_marker(self):
+        self.assertEqual(parse('4 D0 R1 | 00000300 !2\n5 D0 R0 | !1'), {4: ([], [0x300])})
+
 
 if __name__ == '__main__':
     unittest.main()

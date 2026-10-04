@@ -2148,9 +2148,12 @@ module ppc_core #(
   end
   // Dispatch/retire event trace, enabled by +DISPATCH_TRACE=<path>. One line
   // per cycle with an event: "<cycle> D<count> R<count> <dispatch pcs> |
-  // <retire pcs>", cycle 0 being the first edge out of reset.
+  // <retire pcs>[ !<n>]", cycle 0 being the first edge out of reset. "!<n>"
+  // marks a branch misprediction recovery that removes the n youngest
+  // dispatched instructions, those dispatched after the branch.
   int event_fd = 0;
   int event_cycle = 0;
+  int spec_younger = 0;
   initial begin
     string event_path;
     if ($value$plusargs("DISPATCH_TRACE=%s", event_path)) begin
@@ -2159,18 +2162,24 @@ module ppc_core #(
     end
   end
   always @(posedge clk_i) begin
-    logic retire_fire;
+    logic retire_fire, mispredict;
+    int younger;
     retire_fire = retire_valid_o && retire_ready_i;
+    mispredict = recovery_accepted && (bs_recover || bs_redirect_q);
+    younger = spec_younger + int'(dispatch) + int'(dispatch1);
     if (!rst_ni) event_cycle <= 0;
     else begin
       event_cycle <= event_cycle + 1;
-      if ((event_fd != 0) && (dispatch || retire_fire))
-        $fwrite(event_fd, "%0d D%0d R%0d%s%s |%s%s\n", event_cycle,
+      spec_younger <= (dispatch && bu_branch && bu_spec && !recovery_accepted) ?
+                      int'(dispatch1) : younger;
+      if ((event_fd != 0) && (dispatch || retire_fire || mispredict))
+        $fwrite(event_fd, "%0d D%0d R%0d%s%s |%s%s%s\n", event_cycle,
                 int'(dispatch) + int'(dispatch1), int'(retire_fire) + int'(commit1),
                 dispatch ? $sformatf(" %08x", iq_head.pc) : "",
                 dispatch1 ? $sformatf(" %08x", dq1_head.pc) : "",
                 retire_fire ? $sformatf(" %08x", retire_o.pc) : "",
-                commit1 ? $sformatf(" %08x", retire1_o.pc) : "");
+                commit1 ? $sformatf(" %08x", retire1_o.pc) : "",
+                mispredict ? $sformatf(" !%0d", younger) : "");
     end
   end
   final if (event_fd != 0) $fclose(event_fd);
