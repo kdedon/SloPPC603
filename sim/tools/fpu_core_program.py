@@ -790,6 +790,8 @@ def latency(p):
     dependent groups and dispatch spacing of mixed streams. Each group
     follows a sync, which drains the machine while the six-entry IQ fills,
     so fetch never limits a group."""
+    # Doubleword-aligned result slots: a misaligned stfd splits.
+    p.res_next = (p.res_next + 7) & ~7
     p.clear_fpscr()
     one = p.load_fpr(1, ONE)
     p.load_fpr(2, TWO)
