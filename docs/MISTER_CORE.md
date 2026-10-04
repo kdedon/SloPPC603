@@ -251,7 +251,7 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone]
+mister/build.sh [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N]
 mister/build.sh --clean --fpu-compact --dual --lsu-pipe   # the test core
 ```
 
@@ -262,7 +262,7 @@ changes against Quartus 17.
 
 `--native` builds the 320 × 240 native-video variant; the default is the 1920 × 1080 DDR3
 framebuffer. `--suite` builds a core for one benchmark suite instead of hello, Dhrystone
-and CoreMark (see [Benchmark suite cores](#benchmark-suite-cores)). `--fpu` builds the
+and CoreMark (see [Benchmark suite cores](#benchmark-suite-cores)). `--seed N` sets the fitter seed (default 2). `--fpu` builds the
 processor with its FPU (see [FPU cores](#fpu-cores)). Needs Docker, network access for the framework and benchmark sources, and about
 12 GB for the pinned Quartus 17.0.2 image. The script:
 
