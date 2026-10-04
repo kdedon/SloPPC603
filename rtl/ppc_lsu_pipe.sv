@@ -121,6 +121,9 @@ module ppc_lsu_pipe #(
   output ppc_pkg::completion_tag_t adopt_producer_o,
   output logic [31:0] adopt_pc_o, adopt_insn_o, adopt_ea_o, adopt_data_o,
   output logic empty_o,
+  // No access is performing or owed to memory. Entries left waiting for the
+  // lane, and stores not yet retired, are younger than the lane's operation.
+  output logic quiet_o,
   output logic store_irrevocable_o,
   // A retired store's write failed.
   output logic store_error_o
@@ -719,6 +722,14 @@ module ppc_lsu_pipe #(
 
   assign empty_o = !p1_valid && !p2_valid && !r_valid_q && !r_fp_valid_q && !rsp_to_lane_q &&
                    !sq_valid && !q_valid_q && !redo_valid_q;
+  logic sq_committed;
+  always_comb begin
+    sq_committed = 1'b0;
+    for (int i = 0; i < SQ_DEPTH; i++)
+      if ((SQ_W'(i) < sq_count_q) && sq_q[i].committed) sq_committed = 1'b1;
+  end
+  assign quiet_o = !(p1_valid && offered_q) && !p2_valid && !r_valid_q && !r_fp_valid_q &&
+                   !rsp_to_lane_q && !sq_committed && !q_valid_q && !redo_valid_q;
   // A store that does not queue is irrevocable from its offer to its
   // retirement. It offers only at the completion-queue head, so it has
   // retired once the head moves. Any store at the head counts, so this

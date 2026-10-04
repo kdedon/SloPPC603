@@ -284,7 +284,7 @@ module ppc_core #(
   logic dispatch_mem_plain, mem_sources_committed, mem_sources_committed_q;
   logic special_drained, overlap_dispatch_ok;
   // Pipelined load/store unit.
-  logic lsu_route, lsu_ready, lsu_empty, lsu_result_valid, lsu_store_irrevocable;
+  logic lsu_route, lsu_ready, lsu_empty, lsu_quiet, lsu_result_valid, lsu_store_irrevocable;
   logic lsu_req_valid, lsu_req_write, lsu_req_spec, lsu_rsp_ready, lsu_rsp_owner;
   logic [2:0] lsu_req_bytes;
   logic [31:0] lsu_req_addr;
@@ -1537,7 +1537,8 @@ module ppc_core #(
     .watchdog_reseto_o(watchdog_reseto),
     .interrupt_taken_o, .interrupt_pc_o,
     .frontend_quiescent_i(frontend_quiescent),
-    .memory_quiescent_i(memory_quiescent_i && lsu_empty),
+    // An access the lane adopted may leave younger ones waiting in the unit.
+    .memory_quiescent_i(memory_quiescent_i && lsu_quiet),
     .frontend_fence_o(frontend_fence), .context_valid_o, .context_ready_i,
     .redirect_accepted_i(recovery_accepted),
     .store_authorize_i(retire_ready_i && !bs_hold),
@@ -2219,7 +2220,7 @@ module ppc_core #(
         .adopt_producer_o(lsu_adopt_producer), .adopt_pc_o(lsu_adopt_pc),
         .adopt_insn_o(lsu_adopt_insn), .adopt_ea_o(lsu_adopt_ea),
         .adopt_data_o(lsu_adopt_data),
-        .empty_o(lsu_empty), .store_irrevocable_o(lsu_store_irrevocable),
+        .empty_o(lsu_empty), .quiet_o(lsu_quiet), .store_irrevocable_o(lsu_store_irrevocable),
         .store_error_o(lsu_store_error)
       );
     end else begin : g_no_lsu
@@ -2254,6 +2255,7 @@ module ppc_core #(
       assign lsu_adopt_ea = '0;
       assign lsu_adopt_data = '0;
       assign lsu_empty = 1'b1;
+      assign lsu_quiet = 1'b1;
       assign lsu_store_irrevocable = 1'b0;
       assign lsu_store_error = 1'b0;
       assign dmem_store_check_addr_o = '0;
