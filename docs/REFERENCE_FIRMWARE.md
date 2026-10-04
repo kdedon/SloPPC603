@@ -58,6 +58,9 @@ Each mismatch was triaged against the manuals. In every case the RTL follows
 the manual and DingusPPC omits or differs from the documented 603e behavior.
 The runner corrects the reference so the rest of the image stays comparable.
 Corrections go through the reference's own exception entry where one exists.
+The corrections live in `sim/cosim/reference_adapter.h`, shared with the
+whole-machine lane, whose further corrections
+([REFERENCE_MACHINE.md](REFERENCE_MACHINE.md#adapter-corrections)) apply here too.
 None required an RTL change.
 
 | First seen | Reference behavior | Manual | Correction |
