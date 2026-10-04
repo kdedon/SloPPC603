@@ -17,6 +17,15 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
   logic cv,ci,cd,cp,dec_taken,irq_taken;
   logic [31:0] dec_pc,irq_pc;
   logic red,red_keep,red_accept;
+  // With the LSU unit a faulting response waits a cycle for the lane, and a
+  // cut accepted then removes the access; the unit drains its response.
+  // A unit store offers in its first cycle at the head, so the lane's
+  // pre-offer cut (phase 18) has no counterpart there.
+`ifdef PPC_LSU_PIPE
+  localparam bit LSU_UNIT=1'b1;
+`else
+  localparam bit LSU_UNIT=1'b0;
+`endif
   logic [31:0] red_target;
   completion_tag_t pivot;
   logic ipending,dpending,done,cut_seen,fault_seen;
@@ -272,7 +281,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
           !dut.special_store_irrevocable,
           "way-one store canceled after irreversible offer");
         cut_seen<=1;
-        check((phase==6&&sv&&sr)||(phase==7&&drv&&drr)||
+        check((phase==6&&sv&&sr)||(phase==7&&drv&&(drr||LSU_UNIT))||
               (phase==9&&ipending&&!sv)||(phase==10&&dpending&&!drv)||
               (phase==18&&!dv&&!dpending&&!dut.special_store_irrevocable),
               "cancel did not coincide with typed response acceptance");
@@ -429,7 +438,7 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
       // Phases 5 and 8 injected responses the router never forms (a
       // mismatched capsule, a changed-page fault on a load); the core now
       // asserts both unreachable.
-      for(int p=0;p<20;p++)if(p!=5&&p!=8)run_phase(p);
+      for(int p=0;p<20;p++)if(p!=5&&p!=8&&!(LSU_UNIT&&p==18))run_phase(p);
     end else begin
       run_phase(0);run_phase(1);run_phase(15);
     end
