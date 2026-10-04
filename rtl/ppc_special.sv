@@ -1488,8 +1488,10 @@ module ppc_special #(
     pin_status_o.machine_check_enable = msr_o[MSR_ME];
     pin_status_o.mcp_taken = interrupt_accept && pin_mcp_select &&
                              pin_event_i.mcp;
-    pin_status_o.tea_taken = interrupt_accept && pin_mcp_select &&
-                             !pin_event_i.mcp && pin_tea;
+    // A machine check taken at an instruction also answers a pending TEA.
+    pin_status_o.tea_taken = (interrupt_accept && pin_mcp_select &&
+                              !pin_event_i.mcp && pin_tea) ||
+                             (hold_commit && machine_check_event && msr_o[MSR_ME]);
     pin_status_o.ape_taken = interrupt_accept && pin_mcp_select &&
                              !pin_event_i.mcp && !pin_tea && pin_event_i.ape;
     pin_status_o.dpe_taken = interrupt_accept && pin_mcp_select &&

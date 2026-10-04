@@ -44,6 +44,8 @@ module ppc_dcache #(
   input  logic         hid0_dcfi_i,
   input  logic         hid0_noopti_i,
   input  logic         hid0_abe_i,
+  // A bus error awaits its machine check; loads must not start a tenure.
+  input  logic         tea_pending_i,
 
   output logic         bus_req_valid_o,
   input  logic         bus_req_ready_i,
@@ -409,6 +411,9 @@ module ppc_dcache #(
   always_ff @(posedge clk_i) dce_q <= hid0_dce_i;
   assign cacheable = (FAST_LOAD_HIT ? dce_q : hid0_dce_i) && !req_i;
   assign resv_match = resv_valid_q && resv_line_q == req_line;
+  logic tea_blocks_load;
+  assign tea_blocks_load = (tea_pending_i || async_error_q) &&
+                           (req_op_q == DC_LOAD || req_op_q == DC_LWARX);
 
   always_comb begin
     lk_plan = '0;
@@ -594,6 +599,21 @@ module ppc_dcache #(
       lk_cob_line = {tag_rdata[victim], req_set};
     end
     lk_plan[P_COB] = lk_cob;
+    // UM 4.5.2: the machine check is taken before the next instruction
+    // completes, so a load behind a failed tenure answers with the error.
+    if (tea_blocks_load) begin
+      lk_plan = '0;
+      lk_st_we = 1'b0;
+      lk_lru_we = 1'b0;
+      lk_cob = 1'b0;
+      lk_alloc = 1'b0;
+      lk_read = 1'b0;
+      lk_resv_set = 1'b0;
+      lk_hit_evt = 1'b0;
+      lk_miss_evt = 1'b0;
+      lk_rsp = 1'b1;
+      lk_err = 1'b1;
+    end
 
     lk_stall = snp_valid_q || push_st_q == PU_READ ||
                (lk_cob && cob_valid_q) ||
@@ -606,7 +626,7 @@ module ppc_dcache #(
   logic lk_fast, lk_fast_done, req_accept;
   // lk_go and lk_read for a cacheable load hit, which never casts out.
   assign lk_fast = FAST_LOAD_HIT && state_q == S_LOOKUP && req_op_q == DC_LOAD &&
-                   dce_q && !req_i && hit && early_data_q && !snp_valid_q &&
+                   dce_q && !req_i && hit && early_data_q && !snp_valid_q && !tea_blocks_load &&
                    push_st_q != PU_READ && !(push_busy && push_line_q == req_line);
   assign lk_fast_done = lk_fast && rsp_ready_i;
   assign req_accept = req_valid_i && req_ready_o;

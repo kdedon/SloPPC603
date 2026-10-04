@@ -45,6 +45,7 @@ module ppc_dcache_slot #(
   input  logic        hid0_dcfi_i,
   input  logic        hid0_noopti_i,
   input  logic        hid0_abe_i,
+  input  logic        tea_pending_i,
   // Bus error on a posted write or a late fill beat (machine check).
   output logic        async_error_o,
   output logic        protocol_error_o,
@@ -155,7 +156,7 @@ module ppc_dcache_slot #(
     // WIMG and the cache ports have no function without a cache.
     logic unused_slot;
     assign unused_slot = ^{clk_i, rst_ni, lsu_req_wimg_i, hid0_dce_i, lsu_wdata[63:32], lsu_wstrb[7:4],
-                           hid0_dlock_i, hid0_dcfi_i, hid0_noopti_i, hid0_abe_i,
+                           hid0_dlock_i, hid0_dcfi_i, hid0_noopti_i, hid0_abe_i, tea_pending_i,
                            bus_req_ready_i, bus_req_acked_i, bus_rd_valid_i, bus_rd_data_i,
                            bus_rd_error_i, bus_wr_done_i, bus_wr_error_i,
                            push_req_ready_i, push_done_i, push_error_i,
@@ -297,7 +298,7 @@ module ppc_dcache_slot #(
       .rsp_valid_o(dc_rsp_valid), .rsp_ready_i(dc_rsp_ready),
       .rsp_data_o(dc_rsp_data), .rsp_error_o(dc_rsp_error),
       .rsp_align_o(dc_rsp_align), .rsp_stwcx_ok_o(dc_rsp_stwcx_ok),
-      .hid0_dce_i, .hid0_dlock_i, .hid0_dcfi_i, .hid0_noopti_i, .hid0_abe_i,
+      .hid0_dce_i, .hid0_dlock_i, .hid0_dcfi_i, .hid0_noopti_i, .hid0_abe_i, .tea_pending_i,
       .bus_req_valid_o, .bus_req_ready_i, .bus_req_kind_o, .bus_req_tt_o,
       .bus_req_addr_o, .bus_req_be_o, .bus_req_wimg_o, .bus_req_gbl_o,
       .bus_req_cse_o, .bus_req_data_o, .bus_req_acked_i, .bus_rd_valid_i, .bus_rd_data_i,

@@ -55,6 +55,8 @@ module tb_dcache;
   logic [4:0] snoop_tt = 5'd0;
   logic snoop_rsp_valid, snoop_rsp_artry, snoop_rsp_hit, snoop_rsp_push;
   logic busy, resv_valid, hit_evt, miss_evt, async_error, protocol_error;
+  // The core holds a bus error until its machine check is taken.
+  logic tea_pending = 1'b0;
 
   ppc_dcache #(.MUTATION(MUTATION), .SET_COUNT(SETS), .WAY_COUNT(WAYS),
     .FAST_LOAD_HIT(FAST_LOAD_HIT)) dut (
@@ -65,7 +67,7 @@ module tb_dcache;
     .rsp_data_o(rsp_data), .rsp_error_o(rsp_error), .rsp_align_o(rsp_align),
     .rsp_stwcx_ok_o(rsp_stwcx_ok),
     .hid0_dce_i(hid0_dce), .hid0_dlock_i(hid0_dlock), .hid0_dcfi_i(hid0_dcfi),
-    .hid0_noopti_i(hid0_noopti), .hid0_abe_i(hid0_abe),
+    .hid0_noopti_i(hid0_noopti), .hid0_abe_i(hid0_abe), .tea_pending_i(tea_pending),
     .bus_req_valid_o(bus_req_valid), .bus_req_ready_i(bus_req_ready),
     .bus_req_kind_o(bus_req_kind), .bus_req_tt_o(bus_req_tt),
     .bus_req_addr_o(bus_req_addr), .bus_req_be_o(bus_req_be),
@@ -204,6 +206,13 @@ module tb_dcache;
   int pdone_delay [$]; bit pdone_err [$];
   int push_expect = 0, push_seen = 0, push_done_n = 0;
   int async_expect = 0, async_seen = 0;
+  // Held TEA model: cycles until the machine check; tea_hold keeps it held.
+  // Per load: the cache saw the TEA on every or on any edge after accept,
+  // and the load started a read tenure.
+  int tea_wait = 0;
+  bit tea_hold = 0;
+  bit cur_blk_all = 0, cur_blk_any = 0, cur_read = 0;
+  int n_tea_blocked = 0;
   // Snoops in flight, oldest first.
   logic [4:0] sn_tt [$]; logic [31:0] sn_addr [$]; logic [255:0] sn_data [$];
   logic [7:0] sn_be [$]; longint sn_cycle [$]; bit sn_directed [$];
@@ -242,6 +251,7 @@ module tb_dcache;
     case (bus_req_kind)
       BUS_READ_BURST: begin
         n_fill++;
+        cur_read = 1;
         check(bus_req_tt == TT_RWITM || bus_req_tt == TT_RWITM_ATOM, "fill TT");
         check(bus_req_addr[31:5] == cur_addr[31:5], "fill line is the request line");
         check(bus_req_addr[4:3] == cur_addr[4:3], "fill starts at the critical double word");
@@ -265,6 +275,7 @@ module tb_dcache;
       end
       BUS_READ_SINGLE: begin
         n_single++;
+        cur_read = 1;
         check(bus_req_tt == (cur_op == DC_LWARX ? TT_READ_ATOM : TT_READ), "single read TT");
         check(bus_req_addr[31:3] == cur_addr[31:3] && bus_req_be == cur_be, "single read address");
         check(bus_req_wimg[WIMG_I], "single read is caching-inhibited");
@@ -334,12 +345,23 @@ module tb_dcache;
     err_expected = 0;
     case (cur_op)
       DC_LOAD, DC_LWARX: begin
-        err_expected = err_region(cur_addr) && cur_err_beat == 0;
+        bit blocked;
+        // UM 4.5.2: the machine check for a TEA is taken immediately, so a
+        // load behind a held TEA answers with the error and starts no tenure.
+        // A TEA that arrives during the lookup may land on either side.
+        blocked = !cur_read && (cur_blk_all || (cur_blk_any && rsp_error));
+        err_expected = blocked || (cur_read && err_region(cur_addr) && cur_err_beat == 0);
         check(rsp_error == err_expected, "load error flag");
-        if (!err_expected)
-          check(rsp_data == img_rd(k), $sformatf("load data %h expected %h at %h",
-                rsp_data, img_rd(k), cur_addr));
-        if (cur_op == DC_LWARX) begin m_resv = 1; m_resv_line = cur_addr[31:5]; end
+        if (blocked) begin
+          n_tea_blocked++;
+          // The load takes the machine check, which clears the held TEA.
+          if (!tea_hold) tea_wait = 0;
+        end else begin
+          if (!err_expected)
+            check(rsp_data == img_rd(k), $sformatf("load data %h expected %h at %h",
+                  rsp_data, img_rd(k), cur_addr));
+          if (cur_op == DC_LWARX) begin m_resv = 1; m_resv_line = cur_addr[31:5]; end
+        end
       end
       DC_STORE, DC_STWCX: begin
         bit ok;
@@ -468,6 +490,9 @@ module tb_dcache;
     if (rst_n) begin
       check(!protocol_error, "no protocol error");
       if (async_error) async_seen++;
+      // The cache sees the held TEA and its own error of the previous edge.
+      if (tea_pending || async_error) cur_blk_any = 1;
+      else cur_blk_all = 0;
 
       // Snoop responses come three edges after issue, in order.
       if (snoop_rsp_valid) begin
@@ -511,6 +536,15 @@ module tb_dcache;
       if (req_valid && req_ready) begin
         cur_op = req_op; cur_addr = req_addr; cur_be = req_be;
         cur_wdata = req_wdata; cur_wimg = req_wimg; cur_err_beat = -1;
+        cur_blk_all = 1; cur_blk_any = 0; cur_read = 0;
+      end
+      // Core latch: set by the cache's error, cleared by the machine check.
+      if (async_error) begin
+        tea_pending <= 1'b1;
+        tea_wait = int'(rnd_b(40)) + 1;
+      end else if (tea_pending && !tea_hold) begin
+        if (tea_wait > 0) tea_wait--;
+        if (tea_wait == 0) tea_pending <= 1'b0;
       end
       if (hid0_dcfi && !busy) image_from_mem_all();
 
@@ -951,6 +985,31 @@ module tb_dcache;
     hid0_dce = 1'b1;
     directed_tests++;
 
+    // D17: a held TEA answers loads with the error and starts no tenure
+    // (UM 4.5.2); stores proceed, and loads complete once it is taken.
+    acc(DC_LOAD, mk(1, 0, 18, 0));
+    check(!r_error, "hit line loaded");
+    tea_hold = 1;
+    st(mk(7, 0, 0, 0), 64'h4444);
+    wait_quiet();
+    settle(2);
+    check(tea_pending, "posted write error held");
+    mark_trace();
+    acc(DC_LOAD, mk(1, 0, 18, 0));
+    check(r_error, "held TEA fails a load hit");
+    acc(DC_LOAD, mk(1, 0, 19, 0));
+    check(r_error, "held TEA fails a load miss");
+    acc(DC_LWARX, mk(1, 0, 18, 0));
+    check(r_error && !resv_valid, "held TEA fails lwarx without a reservation");
+    st(mk(1, 0, 18, 0), 64'h5555);
+    check(!r_error, "stores proceed behind a held TEA");
+    expect_trace("loads behind a held TEA", 0, RB, 0, RB, 0);
+    tea_hold = 0;
+    while (tea_pending) @(negedge clk);
+    acc(DC_LOAD, mk(1, 0, 18, 0));
+    check(!r_error && r_data == 64'h5555, "load completes after the machine check");
+    directed_tests++;
+
     // D-fast: a copy-back store hit that waits in lookup behind a push of
     // its line answers when the push is taken; a load of another double
     // word, presented meanwhile, must read its own double word.
@@ -1105,8 +1164,8 @@ module tb_dcache;
              SETS, WAYS, seed, n_ops, phase_ops, checks, cycles);
     $display("  fills=%0d castouts=%0d singles=%0d addr_only=%0d snoops=%0d artry=%0d pushes=%0d",
              n_fill, n_castout, n_single, n_addr_only, n_snoops, n_artry, n_push);
-    $display("  snoops_during_fill=%0d snoops_during_castout=%0d max_retries=%0d async_errors=%0d",
-             n_snoop_during_fill, n_snoop_during_cob, n_retry_max, async_seen);
+    $display("  snoops_during_fill=%0d snoops_during_castout=%0d max_retries=%0d async_errors=%0d tea_blocked=%0d",
+             n_snoop_during_fill, n_snoop_during_cob, n_retry_max, async_seen, n_tea_blocked);
     $finish;
   end
 endmodule

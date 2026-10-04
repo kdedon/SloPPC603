@@ -99,17 +99,139 @@ probe words at the last round.
 | 4 | 32,174 | 574 | 365 (142) | 184 (114) | 17 | 12/14 | 71/81 |
 | 5 | 29,650 | 411 | 250 (106) | 154 (101) | 7 | 9/4 | 38/42 |
 
-No RTL fault was found. Negative control: removing the claimed-line term
-from the data cache's snoop conflict fails seed 1 with "did not retry ...
-while owing its line's data". Removing DRTRY from the cache master's DBG
-qualification does not fail the bench. In this bench a processor asserts DBB
-two bus cycles after its DBG is first asserted, both normally and after an
-early DBG, so the early DBG never meets a processor ready to take it in the
-DRTRY cycle. The cause of that extra cycle was not found.
+No RTL fault was found in that round. Negative control: removing the
+claimed-line term from the data cache's snoop conflict fails seed 1 with "did
+not retry ... while owing its line's data". The DRTRY control is in the next
+section.
 
-Not established: DBWO between processors (tied negated); TEA on writes or
-instruction fetches; more than two processors; ABB and DBB as shared
-inputs (tied negated; the model serializes ownership).
+### Paired probe loads, write TEA, shared ABB and DBB
+
+Recorded: `make -C sim lint check-spec test-chip-mp`, and `test-chip-mp` with
+`DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, commit b4316c1, 2026-10-04.
+PASS. Seeds 6-20 (width 1) and 6-25 (width 2) of `+PAIR_PROBE`, and 1-12 of
+`+PAIR_PROBE +WRITE_TEA` at width 1, also pass, run by hand.
+`test-chip-dcache-coherence test-chip-pins test-chip-ecxwx
+test-core-bat-machine-check test-core-dcache test-core-dcache-lsu-pipe` pass
+at both widths, commit 3d83f49 (RTL as in b4316c1), 2026-10-04.
+
+`test-chip-mp` now also runs seeds 1, 3, 5 with `+PAIR_PROBE` and seeds 2, 4
+with `+PAIR_PROBE +WRITE_TEA +SHARED_BUSY`:
+
+- `+PAIR_PROBE` loads the probe line twice back to back (`lwz r16,0(r28);
+  lwz r16,0(r29)`). Before the fix it checkstopped at width 1 on 12 of seeds
+  1-20 (1, 3, 5-9, 12, 15, 17, 18, 20): the first load took its fill's critical beat, a
+  later beat ended with TEA (held as an asynchronous machine check), the
+  second load then ran a new fill of the same line, its TEA took a machine
+  check first, and the held one met MSR[ME]=0. UM §4.5.2 takes the machine
+  check before the next instruction completes (SRR0 per Table 4-10), so no
+  second tenure should start: a load behind a held TEA now answers with the
+  error and its machine check clears the held one. Seeds 1-20 then pass at
+  width 1 and seeds 1-25 at width 2 with the pipelined LSU, each with one
+  machine check per TEA.
+- The early DBG during the final beat's DRTRY now holds DRTRY 0-2 cycles
+  before the replacement beat. Removing DRTRY from the cache master's DBG
+  qualification (`ppc_bus60x_cache_master.sv`, `S_DATA_REQUEST`) now fails
+  seed 1: "processor 1 DBB without a qualified DBG". The RTL asserts DBB in
+  the bus cycle after a qualified DBG, as UM §8.4.1 requires. The extra cycle
+  seen in this round was a bench scheduling fault, since fixed; see
+  [Bench pin scheduling](#bench-pin-scheduling).
+- `+WRITE_TEA` ends 30% of probe-line write tenures with TEA in place of a
+  beat's TA. Each takes one machine check; the program repeats a lost store.
+- `+SHARED_BUSY` wires both processors' ABB and DBB to both. Cycle counts
+  equal the tied runs: the model never grants into an asserted ABB or DBB.
+
+Width 2 runs the pipelined LSU. TEA counts include write TEAs.
+
+| Width | Seed | Options | Cycles | Early DBG (held DRTRY) | TEA (P0/P1) | Write TEA |
+|---|---|---|---|---|---|---|
+| 1 | 1 | — | 26,790 | 7 (5) | 19/8 | 0 |
+| 1 | 2 | — | 29,003 | 11 (6) | 11/11 | 0 |
+| 1 | 3 | — | 27,126 | 12 (10) | 9/7 | 0 |
+| 1 | 4 | — | 27,034 | 21 (14) | 9/11 | 0 |
+| 1 | 5 | — | 28,236 | 18 (14) | 6/7 | 0 |
+| 1 | 1 | pair | 26,641 | 8 (5) | 13/5 | 0 |
+| 1 | 3 | pair | 26,599 | 15 (10) | 19/6 | 0 |
+| 1 | 5 | pair | 29,117 | 16 (12) | 14/14 | 0 |
+| 1 | 2 | pair, write TEA, shared | 30,529 | 16 (11) | 7/17 | 5 |
+| 1 | 4 | pair, write TEA, shared | 26,884 | 17 (12) | 10/12 | 6 |
+| 2 | 1 | — | 22,320 | 13 (9) | 6/7 | 0 |
+| 2 | 2 | — | 24,502 | 25 (13) | 11/15 | 0 |
+| 2 | 3 | — | 23,813 | 23 (16) | 17/8 | 0 |
+| 2 | 4 | — | 23,118 | 24 (15) | 9/9 | 0 |
+| 2 | 5 | — | 23,244 | 18 (15) | 11/17 | 0 |
+| 2 | 1 | pair | 22,139 | 15 (10) | 9/11 | 0 |
+| 2 | 3 | pair | 25,145 | 19 (13) | 18/8 | 0 |
+| 2 | 5 | pair | 23,522 | 21 (15) | 8/23 | 0 |
+| 2 | 2 | pair, write TEA, shared | 23,858 | 19 (14) | 14/15 | 9 |
+| 2 | 4 | pair, write TEA, shared | 23,664 | 17 (13) | 12/21 | 6 |
+
+Not established: DBWO between processors (tied negated); TEA on instruction
+fetches; more than two processors; a machine check cancelling stores queued
+past completion (stores still run behind a held TEA).
+
+### Bench pin scheduling
+
+Recorded: `make -C sim test-chip-mp test-chip-dcache-coherence
+test-chip-dcache-coherence-negative test-chip-pins test-chip-ecxwx
+test-core-bat-cached-bus60x test-core-bat-cached-bus60x-drain
+test-core-bat-cached-bus60x-coherence test-core-bat-cached-bus60x-irq
+test-core-bat-cached-bus60x-timer test-core-bat-cached-bus60x-stress
+test-core-bat-machine-check test-biu-dcache-snoop`, commit d14e301, and
+`test-chip602-pins test-chip-603`, commit 99754b5, 2026-10-04, Verilator
+5.020. PASS.
+
+In the two-processor bench a DBG (and an early BG) asserted by the model at a
+falling edge reached the cache master one edge late. The RTL gating is a plain
+`assign`; the fault was in the model. Verilator 5.020 gives a variable written
+by a process with timing controls the clock edges that process awaits
+directly; waits inside called tasks are not counted. The model's processes
+wait only through `bus_rise`/`bus_fall`, so their pins had no edges, which is
+safe while the process is the only writer (logic fed by the pin then runs on
+every edge). The pins also had a static `initial` writer, so Verilator
+scheduled the BIU's `outer_dbg_n`, `outer_bg_n`, `grp_dbg_n` and `grp_bg_n`
+only after the rising edge's flops, from the other inputs' edges. A standalone
+module with a pin written from a task-waiting process plus a separate
+initializer reproduces it; dropping either condition removes it.
+
+Fix: each pin is written only by the process that drives it, initialized at its
+top (rule in [CODING_CONVENTIONS.md](CODING_CONVENTIONS.md)). Comparing the
+generated scheduling before and after, only those four BIU nets move from the
+rising-edge step to the combinational step. Measured at seed 1 with a pin
+trace: before, 395 of 978 qualified DBGs (DBG asserted, DBB, ARTRY and DRTRY
+negated) got DBB two edges later; after, all 568 got it at the next edge,
+including those qualifying as DRTRY negates after an early DBG.
+
+The model now fails a processor that does not assert DBB the cycle after a
+qualified DBG, unless it is still awaiting a DRTRY replacement beat of its own
+tenure. Restoring the static initializer of `dbg_n_o` fails seed 1 at cycle
+60: "processor 0 ignored a qualified DBG". Removing DRTRY from the cache
+master's DBG qualification still fails seed 1: "processor 0 DBB without a
+qualified DBG" (cycle 3278).
+
+| Seed | Options | Cycles | Early DBG (held DRTRY) | TEA (P0/P1) | Write TEA |
+|---|---|---|---|---|---|
+| 1 | — | 25,826 | 14 (6) | 19/12 | 0 |
+| 2 | — | 28,107 | 19 (13) | 9/6 | 0 |
+| 3 | — | 28,839 | 14 (13) | 9/9 | 0 |
+| 4 | — | 25,369 | 20 (14) | 6/11 | 0 |
+| 5 | — | 26,657 | 12 (8) | 6/8 | 0 |
+| 1 | pair | 26,114 | 13 (7) | 17/11 | 0 |
+| 3 | pair | 27,347 | 11 (8) | 9/11 | 0 |
+| 5 | pair | 28,338 | 9 (8) | 18/11 | 0 |
+| 2 | pair, write TEA, shared | 27,858 | 14 (10) | 18/20 | 3 |
+| 4 | pair, write TEA, shared | 25,350 | 15 (12) | 7/10 | 4 |
+
+Audit of the other models and benches for the same pattern (a DUT input with a
+timed writer and a second writer): `bus60x_coherent_bfm`,
+`bus60x_scripted_target_bfm` and `bus602_bfm` had it and now follow the rule;
+their benches' generated scheduling is unchanged by the fix, so none had a late
+path. `chip_harness.svh` pins with declaration initializers (`int_n`,
+`hreset_n`, `mcp_n` and the other asynchronous inputs) feed only the pin
+synchronizer flops; `buc_*`, `bus_block` and `snoop_hide` reach the DUT through
+logic evaluated on every edge; `tb_bus60x_line_read` writes its target's pins
+from the bench as well, but the DUT reads them only in flop updates. No other
+one-edge-late path was found.
 
 ## Full gate
 
