@@ -192,7 +192,7 @@ module tb_stage_timing;
         $fwrite(trace_fd, ",\"finish\":{\"id\":%0d,\"value\":%0d}", ident, dut.result.value);
       end
       if (retire_valid) begin
-        assert(!retired.alignment_exception && retired.fetch_fault == FETCH_OK && retired.data_fault == DATA_OK && !retired.update_write && retired.update_gpr == 0 && retired.update_value == 0 &&
+        assert(!retired.alignment_exception && retired.fetch_fault == FETCH_OK && retired.data_fault == DATA_OK && !retired.update_write && !retired.update_owned && retired.update_tag == 0 && retired.update_gpr == 0 && retired.update_value == 0 &&
                !retired.needs_flags && !retired.write_ca && !retired.write_xer && !retired.write_ov_so &&
                !retired.write_cr_bit && retired.cr_bit == 0 &&
                !retired.write_cr_fields && retired.cr_mask == 0 &&
