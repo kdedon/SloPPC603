@@ -35,7 +35,11 @@ jobs:
       - name: Build the cross-compiler image
         run: ci/step.sh toolchain/build-container.sh
       - name: Build the core
-        run: ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe
+        run: |
+          for seed in 2 3 4 5; do
+            ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe --seed "${seed}" && exit 0
+          done
+          exit 1
       - name: Program images
         run: cp build/mister/images/ppc603e-{selftest,whetstone,whetstone-hf}.bin build/mister/
       - name: Release notes

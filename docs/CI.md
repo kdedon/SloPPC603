@@ -134,7 +134,7 @@ the same two notices to an Embench or nbench image.
 | Workflow | Trigger | Does |
 | --- | --- | --- |
 | `quick.yml` | push, pull request | Verilator 5.020 from Ubuntu 24.04; `lint`, `check-spec`, five focused benches |
-| `mister-unstable.yml` | push to `main`, except docs-only pushes | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`); replaces the `unstable` prerelease with the `.rbf`, its summary, the self-test and Whetstone program images and notes |
+| `mister-unstable.yml` | push to `main`, except docs-only pushes | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`, fitter seeds 2–5 until timing passes); replaces the `unstable` prerelease with the `.rbf`, its summary, the self-test and Whetstone program images and notes |
 | `release.yml` | tag `v*` | five measurement fits with 66 MHz re-timing, two FPU fits, MiSTer builds (the test core, or `vars.MISTER_SUITES`) with the self-test and Whetstone program images (plus `vars.MISTER_IMAGES`), then a release with notes |
 
 Runner limits (GitHub-hosted `ubuntu-24.04`, public repository):

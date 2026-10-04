@@ -92,7 +92,10 @@ jobs:
             default) flags="" ;;
             *) flags="--suite ${{ matrix.suite }}" ;;
           esac
-          ci/step.sh mister/build.sh --clean ${flags}
+          for seed in 2 3 4 5; do
+            ci/step.sh mister/build.sh --clean ${flags} --seed "${seed}" && exit 0
+          done
+          exit 1
       - name: Program images
         if: matrix.suite == 'test'
         run: |
