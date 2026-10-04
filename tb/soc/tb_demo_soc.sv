@@ -60,7 +60,11 @@ module tb_demo_soc #(
                      soc.cpu.cpu.translated_core.core.retire1_o.insn);
         end
         // At dispatch width 2 CQ[1] may retire beside the exported head.
-        retired += 1 + longint'(soc.cpu.cpu.translated_core.core.commit1);
+        // Branches removed at dispatch count as retired instructions.
+        retired += 1 + longint'(soc.cpu.cpu.translated_core.core.commit1) +
+                   longint'(soc.cpu.retire.removed_branches) +
+                   (soc.cpu.cpu.translated_core.core.commit1 ?
+                    longint'(soc.cpu.cpu.translated_core.core.retire1_o.removed_branches) : 0);
       end
       if (checkstop) $fatal(1, "checkstop cycle=%0d pc=%08x", cycles, soc.cpu.retire.pc);
       if (cycles > max_cycles)
