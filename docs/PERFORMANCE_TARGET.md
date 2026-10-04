@@ -172,7 +172,7 @@ sources, unlike DQ0's.
 
 ## DQ1 rename operands and base snooping
 
-Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model` (base snooping: a `VERILATOR` wrapper adding `+define+PPC_LSU_PIPE=1 +define+PPC_LSU_BASE_SNOOP=1`), then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex`, commits b48ef0c (before), be4c1f0 (DQ1 rename operands) and the base snooping commit, 2026-10-04.
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model` (base snooping: a `VERILATOR` wrapper adding `+define+PPC_LSU_PIPE=1 +define+PPC_LSU_BASE_SNOOP=1`), then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex`, commits b48ef0c (before), be4c1f0 (DQ1 rename operands) and 6546dc5 (base snooping), 2026-10-04.
 Unit and store queue on, prebuilt firmware as above. Every run passes its
 checks (Dhrystone 23 values, CoreMark CRC 0xfcaf).
 

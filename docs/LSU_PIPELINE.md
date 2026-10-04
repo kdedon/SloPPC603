@@ -570,7 +570,7 @@ RAM write enable, so the chip needs a fresh fit before any timing claim.
 
 ### DQ1 rename operands and base snooping (2026-10-04)
 
-Recorded: `make -C sim DISPATCH_WIDTH=<1|2> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-core-lsu-timing test-core-lsu-update test-core-dcache-lsu-pipe test-core-le test-core-fpu test-core-dual test-core-recovery test-core-machine-check-trace`, the same with a wrapper adding `+define+PPC_LSU_BASE_SNOOP=1` plus `test-core-lsu-timing-snoop`, `test-core-branch-fold` (both wrappers, default width), and unit off `test-core test-core-dual`, on the base snooping commit, 2026-10-04.
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-core-lsu-timing test-core-lsu-update test-core-dcache-lsu-pipe test-core-le test-core-fpu test-core-dual test-core-recovery test-core-machine-check-trace`, the same with a wrapper adding `+define+PPC_LSU_BASE_SNOOP=1` plus `test-core-lsu-timing-snoop`, `test-core-branch-fold` (both wrappers, default width), and unit off `test-core test-core-dual`, on commit 6546dc5, 2026-10-04.
 All pass, except two expected differences with snooping on:
 `test-core-lsu-timing` expects the two base rows 3 cycles apart and gets 2,
 and `test-core-fpu` checks lane latencies when the wrapper's name lacks
@@ -583,10 +583,10 @@ misaligned EA formed from a snooped base, with rD unchanged.
 These establish results and cycle counts against the bench memories; they
 do not cover the chip or the 60x bus.
 
-Recorded: `make -C sim lint check-spec`, and the lint top with `+define+PPC_LSU_BASE_SNOOP=1` at widths 1 and 2, on the base snooping commit, 2026-10-04.
+Recorded: `make -C sim lint check-spec`, and the lint top with `+define+PPC_LSU_BASE_SNOOP=1` at widths 1 and 2, on commit 6546dc5, 2026-10-04.
 All pass.
 
-Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2`, `PPC_LSU_PIPE=1` and `PPC_LSU_BASE_SNOOP=1`, pinned container, base snooping commit, 2026-10-04.
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2`, `PPC_LSU_PIPE=1` and `PPC_LSU_BASE_SNOOP=1`, pinned container, commit 6546dc5, 2026-10-04.
 0 errors, 49 warnings. No fit or timing: the DQ1 base now passes from the
 result bus through rename into the DQ1 adder and misalignment check that
 gate `dispatch1`, and with snooping the result bus feeds the request address.
