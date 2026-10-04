@@ -21,9 +21,13 @@ for arg in "$@"; do
 done
 # PPC_VERILATOR_FLAGS adds build-wide defines (see DISPATCH_WIDTH in the
 # Makefile).
+# Verilator 5.020's bit-op-tree pass drops a NOT under an AND tree on some
+# field layouts of wide packed structs (fixed in 5.022), so
+# a result can change when unrelated bits are added. It goes last: -O3
+# re-enables it.
 case "${1:-}" in
   --version) "${VERILATOR_BIN:-verilator}" "$@" ;;
-  *) "${VERILATOR_BIN:-verilator}" ${PPC_VERILATOR_FLAGS:-} "$@" ;;
+  *) "${VERILATOR_BIN:-verilator}" ${PPC_VERILATOR_FLAGS:-} "$@" -fno-const-bit-op-tree ;;
 esac
 status=$?
 if [ -d "$mdir" ]; then
