@@ -228,7 +228,7 @@ adder's; the request address still comes from a register. The load offers
 in the same cycle it would have after waiting at dispatch, but younger work
 dispatches behind it.
 
-Recorded: `make -C sim test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-update test-core-memory-edges test-core-fpu test-core-le test-lsu-update-edges test-core-dual test-dispatch-rules`, at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe` (`DEMO_FW_DIR=<main checkout>/toolchain/build/demo` for the last), commit 103325b, 2026-10-04. All pass except `test-lsu-update-edges` with the unit, which also fails on f5305d4 ([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md#station-waits)).
+Recorded: `make -C sim test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-update test-core-memory-edges test-core-fpu test-core-le test-lsu-update-edges test-core-dual test-dispatch-rules`, at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe` (`DEMO_FW_DIR=<main checkout>/toolchain/build/demo` for the last), commit 103325b, 2026-10-04. All pass except `test-lsu-update-edges` with the unit, a bench fault ([Faulting update forms](#faulting-update-forms-2026-10-04)).
 
 Parameter `LSU_BASE_SNOOP` (macro `PPC_LSU_BASE_SNOOP`, default 0) forms a
 D-form load's EA in P1, as the 603e's LSU does from operands its station
@@ -654,3 +654,37 @@ Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` 
 result bus through rename into the DQ1 adder and misalignment check that
 gate `dispatch1`, and with snooping the result bus feeds the request address.
 
+
+### Faulting update forms (2026-10-04)
+
+The `test-lsu-update-edges` hang with the unit was a bench fault. On a
+faulting response the unit holds `dmem_rsp_ready_o` low until the lane
+adopts the access (one cycle, [Adoption](#adoption-by-the-serialized-lane)).
+The bench sampled ready before it settled, saw the value of the previous
+cycle, dropped the response unaccepted and left the lane waiting for it.
+The RTL needed no change. The bench now settles ready first, and the target
+also builds the bench with the unit at widths 1 and 2.
+
+Bus errors (TEA, UM 4.5.2) and DSI (UM 4.5.3) on update forms through the
+unit take the exception at the access with rA unchanged, as PEM requires
+of a faulting update form:
+
+- `test-core-bat-machine-check`: `lwzu`, `stwu` and `stbu` take a machine
+  check with SRR0 at the access in all three translated configurations;
+  the base, the load target and memory are unchanged.
+- `test-core-fpu-machine-check` (new, unit on): `lfdu`, `lfsu`, `stfdu`
+  and `stfsu` take a machine check at the access; base and FP target
+  unchanged. `test-core-fpu` adds DSI on `stfdu` and `stfsu`.
+- `test-core-data-fault-cancel`: with the unit the redirect path may
+  retire before a removed access's response drains; the bench allows it.
+
+Recorded: `make -C sim test-lsu-update-edges test-core-lsu-update test-core-lsu-timing test-core-dcache-lsu-pipe test-core-bat-machine-check test-core-data-fault test-core-data-fault-cancel test-core-recovery test-core-fpu test-core-fpu-machine-check`, unit off at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`; `test-lsu-update-edges` and `test-core-data-fault-cancel` also with the unit at width 1; commit a882db3, 2026-10-04.
+All pass. `test-lsu-update-edges`: 93 checks per build. `test-core-bat-machine-check`
+at width 2 with the unit: 5,077 checks and 12 TEA tenures with line fills,
+10,666 checks and 7 tenures without. `test-core-fpu-machine-check`: 2,641
+checks, 4 machine checks, at both widths.
+
+Recorded: `make -C sim lint check-spec`, commit a882db3, 2026-10-04. All pass.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit a882db3 (no RTL change), 2026-10-04.
+0 errors, 50 warnings.
