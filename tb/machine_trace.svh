@@ -1,0 +1,81 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+// Copyright (c) 2026 Kevin Dedon
+// Full retirement trace for whole-machine reference comparison, included in a
+// bench module body after `define MT_CORE <ppc_core instance path>,
+// `define MT_BAT <ppc_core_bat instance path> and `define MT_CLK <clock>.
+// +RETIRE_TRACE=<file> writes one line per retirement edge:
+//   <pc> <insn> <count> <fault> [name=value ...] [st=addr,strobe,data ...]
+// count is 2 when CQ[1] retires beside the head. Registers appear when they
+// differ from the previous line; st lists physical stores accepted since the
+// previous line (strobe bit 3 is the byte at addr).
+int mt_fd = 0;
+logic [31:0] mt_prev [48];
+logic mt_first = 1'b1;
+string mt_stores = "";
+
+function automatic logic [31:0] mt_value(input int i);
+  if (i < 32)
+    return (`MT_CORE.update_pending_q && i == int'(`MT_CORE.update_reg_q)) ?
+           `MT_CORE.update_value_q : `MT_CORE.regfile.gpr[i];
+  case (i)
+    32: return `MT_CORE.cr;
+    33: return `MT_CORE.xer;
+    34: return `MT_CORE.lr;
+    35: return `MT_CORE.ctr;
+    36: return `MT_CORE.msr;
+    37: return `MT_CORE.srr0;
+    38: return `MT_CORE.srr1;
+    39: return `MT_CORE.special.dar_q;
+    40: return `MT_CORE.special.dsisr_q;
+    41: return `MT_CORE.special.sprg_q[0];
+    42: return `MT_CORE.special.sprg_q[1];
+    43: return `MT_CORE.special.sprg_q[2];
+    44: return `MT_CORE.special.sprg_q[3];
+    default: return '0;
+  endcase
+endfunction
+
+function automatic string mt_name(input int i);
+  string names [13] = '{"cr", "xer", "lr", "ctr", "msr", "srr0", "srr1", "dar",
+                        "dsisr", "sprg0", "sprg1", "sprg2", "sprg3"};
+  return i < 32 ? $sformatf("r%0d", i) : names[i - 32];
+endfunction
+
+initial begin
+  string path;
+  if ($value$plusargs("RETIRE_TRACE=%s", path)) begin
+    mt_fd = $fopen(path, "w");
+    if (mt_fd == 0) $fatal(1, "cannot open RETIRE_TRACE %s", path);
+  end
+end
+
+// A store retires after its request is accepted, so a store seen on a
+// retirement edge belongs to a later line.
+always @(posedge `MT_CLK) begin
+  automatic string store = "";
+  if (mt_fd != 0 && `MT_BAT.pdmem_req_valid_o && `MT_BAT.pdmem_req_ready_i &&
+      `MT_BAT.pdmem_req_write_o && (|`MT_BAT.pdmem_req_wstrb_o))
+    store = $sformatf(" st=%08x,%0x,%08x", `MT_BAT.pdmem_req_addr_o,
+                      `MT_BAT.pdmem_req_wstrb_o, `MT_BAT.pdmem_req_wdata_o[31:0]);
+  if (mt_fd != 0 && `MT_CORE.rst_ni && `MT_CORE.retire_valid_o && `MT_CORE.retire_ready_i &&
+      !`MT_CORE.retire_o.seq_partial) begin
+    automatic int count = 1 + int'(`MT_CORE.commit1);
+    automatic logic fault = `MT_CORE.retire_o.illegal || `MT_CORE.retire_o.alignment_exception ||
+                            (`MT_CORE.retire_o.data_fault != ppc_pkg::DATA_OK) ||
+                            (`MT_CORE.retire_o.fetch_fault != ppc_pkg::FETCH_OK);
+    automatic string line = $sformatf("%08x %08x %0d %0d",
+                                      `MT_CORE.retire_o.pc, `MT_CORE.retire_o.insn, count, fault);
+    automatic string stores = mt_stores;
+    mt_stores = store;
+    #1;
+    for (int i = 0; i < 45; i++) begin
+      automatic logic [31:0] v = mt_value(i);
+      if (mt_first || v != mt_prev[i]) line = {line, $sformatf(" %s=%08x", mt_name(i), v)};
+      mt_prev[i] = v;
+    end
+    mt_first = 1'b0;
+    $fwrite(mt_fd, "%s%s\n", line, stores);
+  end else mt_stores = {mt_stores, store};
+end
+
+final if (mt_fd != 0) $fclose(mt_fd);
