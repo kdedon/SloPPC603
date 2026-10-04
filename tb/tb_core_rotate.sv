@@ -729,7 +729,9 @@ module tb_core_rotate;
           require(lane_alloc[lane].needs_flags ==
                   expected_needs_flags(program_mem[next_dispatch_pc >> 2]),
                   "dispatch flag-owner demand mismatch");
-          if (expected_needs_flags(program_mem[next_dispatch_pc >> 2])) begin
+          // Only Rc forms own the CR token; addc alone writes XER.
+          if (expected_needs_flags(program_mem[next_dispatch_pc >> 2]) &&
+              program_mem[next_dispatch_pc >> 2][0]) begin
             require(!owner_expected_valid,
                     "second rotate flag owner dispatched while one was live");
             if (last_owner_commit_edge >= 0) begin

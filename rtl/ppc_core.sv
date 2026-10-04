@@ -391,7 +391,9 @@ module ppc_core #(
   uop_t sru_uop_q;
   completion_tag_t sru_producer_q;
   logic [31:0] sru_pc_q, sru_insn_q, sru_a_q;
-  logic dispatch_needs_flags;
+  logic dispatch_needs_flags, flags_tok0, flags_tok1, xer_ready0, xer_ready1;
+  logic ca_pending_q, so_pending_q;
+  completion_tag_t ca_writer_q, so_writer_q;
   logic recovery_accepted, rs_cancel, iu_cancel, fault_killed;
   logic selected_redirect_valid, selected_redirect_all, selected_redirect_keep;
   completion_tag_t selected_redirect_pivot;
@@ -1018,12 +1020,12 @@ module ppc_core #(
       bu_cr_valid_q <= 1'b0;
       bu_cr_q <= '0;
     end else begin
-      if (dispatch && dispatch_needs_flags) begin
+      if (dispatch && flags_tok0) begin
         owner_simple_q <= normal_uop && !dispatch_uop.write_cr_fields &&
                           !dispatch_uop.write_cr_bit;
         owner_crf_valid_q <= dispatch_uop.write_cr_field;
         owner_crf_q <= dispatch_uop.cr_field;
-      end else if (dispatch1 && d1_needs_flags) begin
+      end else if (dispatch1 && flags_tok1) begin
         owner_simple_q <= d1_iu && !dq1_uop.write_cr_fields && !dq1_uop.write_cr_bit;
         owner_crf_valid_q <= dq1_uop.write_cr_field;
         owner_crf_q <= dq1_uop.cr_field;
@@ -1542,6 +1544,49 @@ module ppc_core #(
      dispatch_uop.read_so || dispatch_uop.write_xer || dispatch_uop.write_ca ||
      dispatch_uop.write_ov_so || dispatch_uop.write_cr_field ||
      dispatch_uop.write_cr_fields || dispatch_uop.write_cr_bit);
+  // The token stands for the single CR rename (UM 6.3.3.1). XER is not
+  // renamed: an operation that only writes CA, OV or SO takes no token, and
+  // a reader of CA or SO waits until the youngest older writer retires.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic xer_only(uop_t u);
+    return !u.write_cr_field && !u.write_cr_fields && !u.write_cr_bit && !u.write_xer &&
+           (u.write_ca || u.write_ov_so);
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign flags_tok0 = dispatch_needs_flags && !xer_only(dispatch_uop);
+  assign xer_ready0 = !(dispatch_uop.read_ca && ca_pending_q) &&
+                      !(dispatch_uop.read_so && so_pending_q);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      ca_pending_q <= 1'b0;
+      so_pending_q <= 1'b0;
+      ca_writer_q <= '0;
+      so_writer_q <= '0;
+    end else begin
+      if (cq_empty || (commit && (retire_producer == ca_writer_q)) ||
+          (commit1 && (retire1_producer == ca_writer_q)))
+        ca_pending_q <= 1'b0;
+      if (cq_empty || (commit && (retire_producer == so_writer_q)) ||
+          (commit1 && (retire1_producer == so_writer_q)))
+        so_pending_q <= 1'b0;
+      if (dispatch1 && d1_needs_flags && (dq1_uop.write_ca || dq1_uop.write_xer)) begin
+        ca_pending_q <= 1'b1;
+        ca_writer_q <= alloc1_producer;
+      end else if (dispatch && dispatch_needs_flags &&
+                   (dispatch_uop.write_ca || dispatch_uop.write_xer)) begin
+        ca_pending_q <= 1'b1;
+        ca_writer_q <= alloc_producer;
+      end
+      if (dispatch1 && d1_needs_flags && (dq1_uop.write_ov_so || dq1_uop.write_xer)) begin
+        so_pending_q <= 1'b1;
+        so_writer_q <= alloc1_producer;
+      end else if (dispatch && dispatch_needs_flags &&
+                   (dispatch_uop.write_ov_so || dispatch_uop.write_xer)) begin
+        so_pending_q <= 1'b1;
+        so_writer_q <= alloc_producer;
+      end
+    end
+  end
   assign normal_uop = bu_branch || (!dispatch_pre.illegal &&
                       (dispatch_pre.special_op == SPECIAL_NONE));
   assign special_uop = !bu_branch && !dispatch_pre.illegal && !fp_uop &&
@@ -1778,6 +1823,13 @@ module ppc_core #(
     (dq1_uop.needs_flags || dq1_uop.read_ca || dq1_uop.read_so || dq1_uop.write_xer ||
      dq1_uop.write_ca || dq1_uop.write_ov_so || dq1_uop.write_cr_field ||
      dq1_uop.write_cr_fields || dq1_uop.write_cr_bit);
+  assign flags_tok1 = d1_needs_flags && !xer_only(dq1_uop);
+  // DQ1 reads CA or SO from the committed XER.
+  assign xer_ready1 =
+    !(dq1_uop.read_ca && (ca_pending_q ||
+      (dispatch_needs_flags && (dispatch_uop.write_ca || dispatch_uop.write_xer)))) &&
+    !(dq1_uop.read_so && (so_pending_q ||
+      (dispatch_needs_flags && (dispatch_uop.write_ov_so || dispatch_uop.write_xer))));
   assign d1_gpr = !d1_fp && !d1_branch && dq1_uop.gpr_write;
   assign d1_sru = HAS_SRU && d1_iu && dq1_pair.sru;
   assign pair_units = ((c0_iu || c0_lane || c0_fp || c0_fp_mem) && d1_branch) ||
@@ -1832,7 +1884,7 @@ module ppc_core #(
   assign lsu_c0 = (special_uop && lsu_route) || fp_mem_pipe;
   assign dispatch1 = dispatch && seq_last && pair_units && cq1_ready && !unit_update && !sru_wait1 &&
     (!d1_lsu || d1_lsu_ready) &&
-    (!d1_needs_flags || (!dispatch_needs_flags && !flags_busy)) &&
+    (!flags_tok1 || (!flags_tok0 && !flags_busy)) && (!d1_needs_flags || xer_ready1) &&
     (!d1_gpr || (dispatch_uop.gpr_write ? alloc1_ready : alloc_ready)) &&
     (!d1_iu || d1_iu_ready) && (!d1_mem || d1_mem_ready) && (!d1_fp || d1_fp_ready);
   // DQ1 takes rename port 0 when DQ0 writes no GPR.
@@ -1840,8 +1892,8 @@ module ppc_core #(
   assign lane_dq1 = d1_mem && !special_uop;
   assign fp_dq1 = d1_fp && !c0_fp && !c0_fp_mem;
   assign flags_ready = DUAL ?
-    (rst_ni && !recovery_accepted && (!dispatch_needs_flags || !flags_busy)) :
-    flags_alloc_ready;
+    (rst_ni && !recovery_accepted && (!flags_tok0 || !flags_busy) && xer_ready0) :
+    (flags_alloc_ready && xer_ready0);
   always_comb begin
     d1_lane_uop = dq1_uop;
     d1_lane_uop.esa = dq1_head.esa;
@@ -2341,8 +2393,8 @@ module ppc_core #(
   assign flags_commit1 = commit1 && retire1_o.needs_flags;
   ppc_flags flags (
     .clk_i, .rst_ni, .alloc_valid_i(dispatch),
-    .alloc_needs_flags_i(dispatch_needs_flags || (dispatch1 && d1_needs_flags)),
-    .alloc_tag_i(dispatch_needs_flags ? alloc_producer : alloc1_producer),
+    .alloc_needs_flags_i(flags_tok0 || (dispatch1 && flags_tok1)),
+    .alloc_tag_i(flags_tok0 ? alloc_producer : alloc1_producer),
     .alloc_ready_o(flags_alloc_ready),
     .commit_i(commit), .commit_packet_i(flags_commit1 ? retire1_o : retire_o),
     .commit_tag_i(flags_commit1 ? retire1_producer : retire_producer),

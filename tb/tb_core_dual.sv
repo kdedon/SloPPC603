@@ -207,7 +207,13 @@ module tb_core_dual #(
       32'hc0: return addi(0, 0, 5);
       32'hc4: return {6'd31, 5'd2, 5'd9, 5'd0, 10'd339, 1'b0};   // mfctr r2
       32'hc8: return add(30, 2, 4);
-      32'hcc: return b(int'(END_PC) - 32'hcc);
+      // K: XER is not renamed and subfc writes no CR, so the cmpw behind it
+      // dispatches before it retires; adde reads CA and waits for it.
+      32'hcc: return SYNC;
+      32'hd0: return {6'd31, 5'd21, 5'd4, 5'd5, 1'b0, 9'd8, 1'b0};     // subfc r21,r4,r5
+      32'hd4: return cmpw(4, 4, 5);
+      32'hd8: return {6'd31, 5'd22, 5'd4, 5'd5, 1'b0, 9'd138, 1'b0};   // adde r22,r4,r5
+      32'hdc: return b(int'(END_PC) - 32'hdc);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
@@ -306,6 +312,7 @@ module tb_core_dual #(
     expected[23] = 6; expected[24] = 32'h408; expected[25] = 11; expected[27] = 27;
     expected[28] = 30; expected[29] = 11;
     expected[2] = 9; expected[26] = 27; expected[30] = 12;
+    expected[21] = 1; expected[22] = 8;
     for (int i = 1; i < 32; i++)
       if (regs[i] != expected[i]) $fatal(1, "r%0d = %0x, expected %0x", i, regs[i], expected[i]);
     if (dmem[2] != 32'd11) $fatal(1, "stored word %0x", dmem[2]);
@@ -315,6 +322,10 @@ module tb_core_dual #(
       $fatal(1, "mfctr result read before it retired");
     $display("  %-34s mtctr@%0d addi@%0d mullw retired@%0d", "completion-serialized mtctr",
              dcycle[32'hbc], dcycle[32'hc0], rcycle[32'hb8]);
+    if (!(dcycle[32'hd4] < rcycle[32'hd0]))
+      $fatal(1, "cmpw waited for a CA-only writer to retire");
+    if (!(dcycle[32'hd8] > rcycle[32'hd0]))
+      $fatal(1, "adde read CA before its writer retired");
     if (DISPATCH_WIDTH == 2) begin
       $display("dispatch:");
       expect_pair(32'h14, 1'b1, "add + add (IU + SRU)");

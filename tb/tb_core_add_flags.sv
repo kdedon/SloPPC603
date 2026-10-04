@@ -231,6 +231,11 @@ module tb_core_add_flags;
       return (insn[9:1] == 9'd10) || insn[10] || insn[0];
     return 1'b0;
   endfunction
+  // The flag token is the CR rename: only Rc forms own it; addc and OE
+  // forms without Rc write XER alone.
+  function automatic logic expected_owns_token(input logic [31:0] insn);
+    return expected_needs_flags(insn) && insn[0];
+  endfunction
 
   function automatic logic [31:0] xor_truth(
     input logic [31:0] left, input logic [31:0] right
@@ -528,7 +533,7 @@ module tb_core_add_flags;
 
       if (retire_valid && retire_ready) begin
         oracle_commit(retired, dut.retire_producer);
-        if (expected_needs_flags(stream[0].insn)) begin
+        if (expected_owns_token(stream[0].insn)) begin
           require(owner_expected_valid && owner_expected == dut.retire_producer,
                   "retiring ADD flag owner differs from allocation identity");
           owner_expected_valid = 0;
@@ -587,7 +592,7 @@ module tb_core_add_flags;
                   "ADD dispatch legality differs from independent supported set");
           require(lane_alloc[lane].needs_flags == (word_legal && word_needs_flags),
                   "ADD dispatch ownership demand mismatch");
-          if (word_legal && word_needs_flags) begin
+          if (word_legal && expected_owns_token(program_mem[next_dispatch_pc >> 2])) begin
             require(!owner_expected_valid,
                     "second ADD flag owner dispatched while prior owner was live");
             if (last_owner_commit_edge >= 0) begin
