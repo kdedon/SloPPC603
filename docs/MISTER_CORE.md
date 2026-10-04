@@ -352,9 +352,9 @@ timing-clean at 29,387 ALMs (70%):
 
 `--dual` defines `MISTER_DUAL`, which builds the processor at dispatch width 2
 ([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md)); the file name gains `_dual`
-after any FPU part, for example `ppc603e_whetstone_fpu_dual.rbf`. No `--dual` core has
-been built: the chip top at width 2 misses 66 MHz and, by 6 ps, 50 MHz hold
-([slice 6](DUAL_DISPATCH_DESIGN.md#slice-status)). `make -C sim DISPATCH_WIDTH=2
+after any FPU part, for example `ppc603e_whetstone_fpu_dual.rbf`. `--dual` cores are
+built and timing-clean at 50 MHz (see the `--lsu-pipe` paragraph below); the chip top at
+width 2 still misses 66 MHz ([slice 6](DUAL_DISPATCH_DESIGN.md#slice-status)). `make -C sim DISPATCH_WIDTH=2
 mister-smoke mister-smoke-fpu` simulates the MiSTer top at width 2.
 
 Recorded: `make -C sim -k -j2 DISPATCH_WIDTH=2 mister-smoke` and `make -C sim -k -j2
