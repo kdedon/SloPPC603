@@ -423,9 +423,10 @@ module ppc_core #(
   logic c0_iu, c0_branch, c0_lane, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
   logic bu_finished, lane_dq1, fp_dq1, d1_needs_flags, d1_mem_ready, d1_misaligned;
   logic d1_branch;
-  // Branches removed since the youngest CQ allocation.
-  logic bu_remove, d1_remove;
-  logic [1:0] removed_q;
+  // Branches removed since the youngest CQ allocation (removed_q), and
+  // b removed as it would enter the IQ, counted on the next entry pushed.
+  logic bu_remove, d1_remove, push_remove0, push_remove1, iq_in0, iq_in1;
+  logic [1:0] removed_q, fetch_removed_q, iq_rb, dq1_rb, iq_rb_first;
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [11:0] d1_ea;
@@ -779,20 +780,41 @@ module ppc_core #(
   /* verilator lint_off UNUSEDSIGNAL */
   iq_pair_t iq_pair;
   logic iq_valid1;
-  logic [$bits(fetch_packet_t) + $bits(uop_t) + 5 + $bits(iq_pair_t) - 1:0] iq_dq1;
+  logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) - 1:0] iq_dq1;
   /* verilator lint_on UNUSEDSIGNAL */
-  ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 5 + $bits(iq_pair_t)),
+  ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t)),
            .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(frontend_clear),
-    .push_valid_i({iq_push1, iq_push0}), .push_ready_o(iq_push_ready),
+    .push_valid_i({iq_in1, iq_in0}), .push_ready_o(iq_push_ready),
     .push2_ready_o(iq_push2_ready),
-    .push0_data_i({queued, push_uop, fold_predict, push_branch, push_pair}),
-    .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1}),
+    .push0_data_i({queued, push_uop, fold_predict, push_branch, push_pair, fetch_removed_q}),
+    .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1, 2'd0}),
     .pop_i({dispatch1, iq_pop}), .valid_o({iq_valid1, iq_valid}),
-    .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair}), .dq1_o(iq_dq1),
+    .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb}), .dq1_o(iq_dq1),
     .count_o(iq_count)
   );
-  assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair} = iq_dq1;
+  assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair, dq1_rb} = iq_dq1;
+  // UM 6.3.1: an unconditional b without LK is resolved and retired by the
+  // BPU as it is fetched; it folds (fetch redirects to its target) and never
+  // enters the IQ. Lane 1 is pushed only beside lane 0, which then precedes it.
+  /* verilator lint_off UNUSEDSIGNAL */  // the fault, opcode and LK fields
+  function automatic logic plain_b(fetch_packet_t p);
+    return (p.fault == FETCH_OK) && (p.insn[31:26] == 6'd18) && !p.insn[0];
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign push_remove0 = BRANCH_REMOVAL && !trace_mode && plain_b(queued) &&
+    (fetch_removed_q != 2'd3);
+  assign push_remove1 = BRANCH_REMOVAL && !trace_mode && plain_b(queued1);
+  assign iq_in0 = iq_push0 && !push_remove0;
+  assign iq_in1 = iq_push1 && !push_remove1;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || frontend_clear) fetch_removed_q <= '0;
+    else if (iq_push0)
+      fetch_removed_q <= push_remove0 ? fetch_removed_q + 2'd1 :
+                         (iq_push1 && push_remove1) ? 2'd1 : 2'd0;
+  end
+  // Later micro-ops of a cracked instruction carry no count.
+  assign iq_rb_first = seq_active ? 2'd0 : iq_rb;
   assign push_writes = lr_ctr_writes(push_uop);
   assign push1_writes = lr_ctr_writes(push_uop1);
   assign pop_writes = lr_ctr_writes(iq_uop);
@@ -998,7 +1020,7 @@ module ppc_core #(
   assign bu_spec = ENABLE_BRANCH_SPEC && bu_reads_cr && flags_busy && !bu_cr_valid_q;
   // The count saturates; a further branch then takes an entry.
   assign bu_remove = BRANCH_REMOVAL && bu_branch && !bu_spec && !uop.branch_lk &&
-    !bu_writes_ctr && (removed_q != 2'd3);
+    !bu_writes_ctr && ({1'b0, removed_q} + {1'b0, iq_rb_first} <= 3'd2);
   assign bu_ready = !(bu_reads_cr && flags_busy && !bu_cr_valid_q && !ENABLE_BRANCH_SPEC) &&
     !(bu_reads_cr && (fp_cr_pending || bs_busy)) &&
     !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(bu_reads_ctr && ctr_pending_q);
@@ -1777,7 +1799,7 @@ module ppc_core #(
   // DQ1 enters the unit only beside a DQ0 that does not, so the input mux
   // need not wait for dispatch1, which depends on the unit's ready.
   assign lsu_c0 = (special_uop && lsu_route) || fp_mem_pipe;
-  assign d1_remove = BRANCH_REMOVAL && d1_branch && !dq1_uop.branch_lk;
+  assign d1_remove = BRANCH_REMOVAL && d1_branch && !dq1_uop.branch_lk && (dq1_rb != 2'd3);
   assign dispatch1 = dispatch && seq_last && pair_units && (cq1_ready || d1_remove) &&
     !unit_update &&
     (!d1_lsu || d1_lsu_ready) &&
@@ -1856,7 +1878,8 @@ module ppc_core #(
     allocation1.value = d1_next_pc;
     allocation1.branch_lk = d1_branch && dq1_uop.branch_lk;
     allocation1.fpr_write = d1_fp;
-    allocation1.removed_branches = bu_remove ? removed_q + 2'd1 : 2'd0;
+    allocation1.removed_branches = {1'b0, dq1_rb} +
+      (bu_remove ? {1'b0, removed_q} + {1'b0, iq_rb_first} + 3'd1 : 3'd0);
   end
   // CQ[1] retires beside a head that completes without an exception and that
   // the lane is not finishing; the lane acts only on its own instruction.
@@ -2022,7 +2045,7 @@ module ppc_core #(
   // synthesis translate_on
 
   // The entry after DQ0 next cycle: DQ1, or the lane-0 push when DQ1 is empty.
-  assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && iq_push0));
+  assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && iq_in0));
   assign {iq_peek_head, iq_peek_uop, iq_peek_folded, iq_peek_branch} = iq_valid1 ?
       {dq1_head, dq1_uop, dq1_folded, dq1_branch} :
       {queued, push_uop, fold_predict, push_branch};
@@ -2243,14 +2266,14 @@ module ppc_core #(
     allocation.cq1_ok = iq_pair.cq1_ok &&
       (!DUAL || (dispatch_pre.special_op != SPECIAL_FPU));
     allocation.fpr_write = fp_uop && ((iq_pair.unit == UNIT_FPU) || iq_pair.cq1_ok || fp_mem_pipe);
-    allocation.removed_branches = removed_q;
+    allocation.removed_branches = {1'b0, removed_q} + {1'b0, iq_rb_first};
   end
   // A recovery removes every branch counted: they are younger than any
   // surviving entry.
   always_ff @(posedge clk_i) begin
     if (!rst_ni || recovery_accepted) removed_q <= '0;
-    else if (dispatch1) removed_q <= d1_remove ? 2'd1 : 2'd0;
-    else if (dispatch) removed_q <= bu_remove ? removed_q + 2'd1 : 2'd0;
+    else if (dispatch1) removed_q <= d1_remove ? dq1_rb + 2'd1 : 2'd0;
+    else if (dispatch) removed_q <= bu_remove ? removed_q + iq_rb_first + 2'd1 : 2'd0;
   end
   ppc_completion #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
