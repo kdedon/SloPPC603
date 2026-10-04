@@ -410,6 +410,12 @@ module ppc_core #(
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [11:0] d1_ea;
+  logic d1_lsu, d1_lsu_ready;
+  // Read only by the load/store unit, which ENABLE_LSU_PIPE 0 omits.
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] d1_ea_full;
+  logic lsu_d1;
+  /* verilator lint_on UNUSEDSIGNAL */
   rs_entry_t rs_entry1;
   retire_packet_t allocation1;
   logic retire1_gate, branch_retire1;
@@ -1626,17 +1632,24 @@ module ppc_core #(
   logic pair_units, d1_iu_ready, d1_fp_ready;
   assign bu_finished = DUAL && bu_branch;
   assign c0_iu = normal_uop && !bu_branch;
-  assign c0_branch = bu_branch && iq_folded &&
-    ((iq_head.insn[31:26] == 6'd18) || (iq_head.insn[25] && iq_head.insn[23]));
+  assign c0_branch = bu_branch && (bu_spec || (iq_folded &&
+    ((iq_head.insn[31:26] == 6'd18) || (iq_head.insn[25] && iq_head.insn[23]))));
   assign c0_lane = special_uop && dispatch_mem_plain;
   assign c0_fp = fp_uop;
   assign c0_fp_mem = special_uop && dispatch_fp_mem_plain;
   assign d1_valid = DUAL && iq_valid1 && !trace_mode && !seq_active && !dq1_uop.privileged;
   assign d1_iu = d1_valid && (dq1_pair.unit == UNIT_IU);
-  assign d1_mem = d1_valid && !ENABLE_LSU_PIPE && !bs_busy && (dq1_pair.unit == UNIT_LSU) &&
+  assign d1_mem = d1_valid && !ENABLE_LSU_PIPE && !bs_busy && !(bu_branch && bu_spec) &&
+    (dq1_pair.unit == UNIT_LSU) &&
     ((dq1_uop.special_op == SPECIAL_LOAD) || (dq1_uop.special_op == SPECIAL_STORE)) &&
     !dq1_uop.mem_update && (dq1_uop.cache_op == CACHE_OP_NONE);
   assign d1_fp = d1_valid && ENABLE_FPU && !fp_replay_q && (dq1_pair.unit == UNIT_FPU);
+  assign d1_lsu = d1_valid && ENABLE_LSU_PIPE && (dq1_pair.unit == UNIT_LSU) &&
+    ((dq1_uop.special_op == SPECIAL_LOAD) || (dq1_uop.special_op == SPECIAL_STORE)) &&
+    (dq1_uop.mem_seq == SEQ_NONE) && !dq1_uop.mem_update &&
+    !dq1_uop.mem_reserve && !dq1_uop.mem_conditional && !dq1_uop.mem_external &&
+    !dq1_uop.mem_skip && !dq1_uop.cache_probe && !dq1_uop.block_zero &&
+    (dq1_uop.cache_op == CACHE_OP_NONE);
   assign d1_branch = d1_valid && dq1_branch[3] && dq1_folded &&
     !(dq1_branch[1] && (lr_pending_q || pop_writes[1])) &&
     ((dq1_head.insn[31:26] == 6'd18) || (dq1_head.insn[25] && dq1_head.insn[23]));
@@ -1655,6 +1668,7 @@ module ppc_core #(
   assign d1_gpr = !d1_fp && !d1_branch && dq1_uop.gpr_write;
   assign d1_sru = HAS_SRU && d1_iu && dq1_pair.sru;
   assign pair_units = ((c0_iu || c0_lane || c0_fp || c0_fp_mem) && d1_branch) ||
+    ((c0_iu || c0_branch) && d1_lsu) ||
     (c0_iu && (d1_sru || d1_mem || d1_fp)) ||
     (c0_branch && (d1_iu || d1_mem || d1_fp)) || (c0_lane && (d1_iu || d1_fp)) ||
     ((c0_fp || c0_fp_mem) && d1_iu);
@@ -1672,6 +1686,7 @@ module ppc_core #(
   assign d1_a = dq1_uop.zero_a ? 32'b0 : arch_a1;
   assign d1_b = dq1_uop.use_imm ? dq1_uop.imm : arch_b1;
   assign d1_ea = d1_a[11:0] + d1_b[11:0];
+  assign d1_ea_full = d1_a + d1_b;
   assign d1_misaligned = !ENABLE_MISALIGNED_ACCESS ?
     (((dq1_uop.mem_size == MEM_WORD) && (d1_ea[1:0] != 2'b00)) ||
      ((dq1_uop.mem_size == MEM_HALF) && d1_ea[0])) :
@@ -1684,7 +1699,15 @@ module ppc_core #(
     (dq1_uop.use_imm || (!gpr_mapped[dq1_uop.src_b] && !dq1_pair.dep_prev[1])) &&
     ((dq1_uop.special_op != SPECIAL_STORE) ||
      (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
+  assign d1_lsu_ready = lsu_ready && !special_busy && !fp_unsafe_pending &&
+    !d1_misaligned && !msr_le &&
+    (dq1_uop.zero_a || (!gpr_mapped[dq1_uop.src_a] && !dq1_pair.dep_prev[0])) &&
+    (dq1_uop.use_imm || (!gpr_mapped[dq1_uop.src_b] && !dq1_pair.dep_prev[1])) &&
+    ((dq1_uop.special_op != SPECIAL_STORE) ||
+     (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
+  assign lsu_d1 = dispatch1 && d1_lsu;
   assign dispatch1 = dispatch && seq_last && pair_units && cq1_ready &&
+    (!d1_lsu || d1_lsu_ready) &&
     (!d1_needs_flags || (!dispatch_needs_flags && !flags_busy)) &&
     (!d1_gpr || (dispatch_uop.gpr_write ? alloc1_ready : alloc_ready)) &&
     (!d1_iu || d1_iu_ready) && (!d1_mem || d1_mem_ready) && (!d1_fp || d1_fp_ready);
@@ -1779,9 +1802,9 @@ module ppc_core #(
     if (rst_ni && dispatch1) begin
       assert (DUAL && iq_pop && iq_valid1 && !recovery_accepted)
         else $error("DQ1 dispatched without DQ0");
-      assert (32'(d1_iu) + 32'(d1_mem) + 32'(d1_fp) + 32'(d1_branch) == 32'd1)
+      assert (32'(d1_iu) + 32'(d1_mem) + 32'(d1_lsu) + 32'(d1_fp) + 32'(d1_branch) == 32'd1)
         else $error("DQ1 unit class is not unique");
-      if (d1_mem)
+      if (d1_mem || d1_lsu)
         assert ((dq1_uop.zero_a || (src_a1.ready && (src_a1.value == arch_a1))) &&
                 (dq1_uop.use_imm || (src_b1.ready && (src_b1.value == arch_b1))))
           else $error("DQ1 access saw an uncommitted GPR source");
@@ -1801,10 +1824,12 @@ module ppc_core #(
     if (ENABLE_LSU_PIPE) begin : g_lsu
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE)) lsu (
         .clk_i, .rst_ni,
-        .dispatch_valid_i(dispatch && ((special_uop && lsu_route) || fp_mem_pipe)),
-        .dispatch_ready_o(lsu_ready), .uop_i(dispatch_uop),
-        .producer_i(alloc_producer), .pc_i(iq_head.pc), .insn_i(iq_head.insn),
-        .ea_i(dispatch_ea), .data_i(arch_c),
+        .dispatch_valid_i((dispatch && ((special_uop && lsu_route) || fp_mem_pipe)) || lsu_d1),
+        .dispatch_ready_o(lsu_ready), .uop_i(lsu_d1 ? d1_lane_uop : dispatch_uop),
+        .producer_i(lsu_d1 ? alloc1_producer : alloc_producer),
+        .pc_i(lsu_d1 ? dq1_head.pc : iq_head.pc),
+        .insn_i(lsu_d1 ? dq1_head.insn : iq_head.insn),
+        .ea_i(lsu_d1 ? d1_ea_full : dispatch_ea), .data_i(lsu_d1 ? arch_c1 : arch_c),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
         .fp_launch_valid_i(fp_launch_valid), .fp_launch_tag_i(fp_launch_tag),
         .fp_store_valid_i(fp_store_valid), .fp_store_tag_i(fp_store_tag),
@@ -1813,7 +1838,7 @@ module ppc_core #(
         .kill_generation_i(recovery_kill_generation),
         .store_authorize_i(retire_ready_i && !bs_hold), .queue_head_i(cq_head),
         .commit_i(commit), .commit_tag_i(retire_producer),
-        .branch_spec_i(bs_valid_q), .branch_resolved_i(bs_resolve && (bs_taken == bs_pred_q)),
+        .branch_spec_i(bs_valid_q || (bu_branch && bu_spec)), .branch_resolved_i(bs_resolve && (bs_taken == bs_pred_q)),
         .chk_addr_o(dmem_store_check_addr_o), .chk_ok_i(dmem_store_check_ok_i),
         .lane_idle_i(!special_busy),
         .req_valid_o(lsu_req_valid), .req_ready_i(dmem_req_ready_i),
