@@ -488,19 +488,42 @@ module tb_core_record_logical;
       admission_second_dispatch_edge = -1;
     end else begin
       int retained, found, issue_index, finish_index;
+      logic settled, early;
       logic expected_redirect;
 
-      // Public retirement eligibility and identity come from the independent
-      // pre-edge stream, before a same-edge finish can mark an entry ready.
-      require(retire_valid == (stream.size() > 0 && stream[0].done),
+      // A head finished before this edge, or finishing on it, may retire.
+      settled = stream.size() > 0 && stream[0].done;
+      early = 1'b0;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_finish[lane]) begin
+          finish_index = -1;
+          for (int i = 0; i < stream.size(); i++)
+            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
+          require(finish_index >= 0 && !stream[finish_index].done,
+                  "finish did not match one live unfinished stream entry");
+          if (finish_index >= 0) begin
+            require(stream[finish_index].issued &&
+                    edge_count == int'(stream[finish_index].issue_edge) + 1,
+                    "registered IU finish was not exactly one edge after issue");
+            stream_item = stream[finish_index];
+            stream_item.done = 1'b1;
+            stream_item.finish_edge = 32'(edge_count);
+            stream[finish_index] = stream_item;
+            // UM Figure 6-3: an IU result completes in its writeback cycle.
+            if (finish_index == 0 && (lane == 1 || dut.completion.result_retire_i))
+              early = 1'b1;
+          end
+        end
+
+      require(retire_valid == (settled || early),
               "retirement eligibility disagrees with stream oracle");
       if (retire_valid) begin
         require(retired.pc == stream[0].pc && retired.insn == stream[0].insn &&
                 dut.retire_producer == stream[0].tag,
                 "retirement head PC/word/identity mismatch");
         if (stream[0].insn != 0)
-          require(edge_count > int'(stream[0].finish_edge),
-                  "finish bypassed to retirement on the same edge");
+          require(edge_count >= int'(stream[0].finish_edge),
+                  "retirement preceded its finish");
       end
 
       // Classify recovery from the independent queue and requested pivot.
@@ -512,7 +535,7 @@ module tb_core_record_logical;
       if (redirect_all) retained = 0;
       else if (found >= 0) retained = found + (redirect_keep ? 1 : 0);
       else expected_redirect = 0;
-      if (stream.size() > 0 && stream[0].done && retained == 0)
+      if (settled && retained == 0)
         expected_redirect = 0;
       require(redirect_accepted == expected_redirect,
               "redirect acceptance disagrees with independent stream prefix");
@@ -581,24 +604,6 @@ module tb_core_record_logical;
             stream_item.issued = 1'b1;
             stream_item.issue_edge = 32'(edge_count);
             stream[issue_index] = stream_item;
-          end
-        end
-
-      for (int lane = 0; lane < 2; lane++)
-        if (lane_finish[lane]) begin
-          finish_index = -1;
-          for (int i = 0; i < stream.size(); i++)
-            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
-          require(finish_index >= 0 && !stream[finish_index].done,
-                  "finish did not match one live unfinished stream entry");
-          if (finish_index >= 0) begin
-            require(stream[finish_index].issued &&
-                    edge_count == int'(stream[finish_index].issue_edge) + 1,
-                    "registered IU finish was not exactly one edge after issue");
-            stream_item = stream[finish_index];
-            stream_item.done = 1'b1;
-            stream_item.finish_edge = 32'(edge_count);
-            stream[finish_index] = stream_item;
           end
         end
 

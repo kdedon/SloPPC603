@@ -436,8 +436,8 @@ module tb_core_logical;
           if (!retired.illegal) begin
             require(found >= 0 && timing_finish_edge[found] >= 0,
                     "logical retirement lacked accepted finish");
-            require(edge_count > timing_finish_edge[found],
-                    "logical finish bypassed to retirement on the same edge");
+            require(edge_count >= timing_finish_edge[found],
+                    "logical retirement preceded its finish");
             timing_valid[found] = 1'b0;
             logical_retires++;
           end

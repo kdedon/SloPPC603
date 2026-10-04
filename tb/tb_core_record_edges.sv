@@ -247,7 +247,7 @@ module tb_core_record_edges;
             "orc. encoding anchor");
 
     // Keep an unfinished owner while its IU result is offered. Recovery and
-    // finish share the edge; the newly finished packet cannot retire yet.
+    // finish share the edge; the newly finished packet is offered at once.
     reset_core();
     wait_for_iu_owner(owner);
     redirect_valid = 1'b1;
@@ -257,9 +257,9 @@ module tb_core_record_edges;
     #1;
     require(redirect_accepted && dut.completion.finish_accept,
             "surviving owner finish was not accepted with redirect");
-    require(!retire_valid && dut.recovery_count == 1 &&
-            dut.recovery_tags[0] == owner,
-            "new finish bypassed retirement or lost survivor identity");
+    require(retire_valid && dut.retire_producer == owner &&
+            dut.recovery_count == 1 && dut.recovery_tags[0] == owner,
+            "new finish was not offered or lost survivor identity");
     tick();
     redirect_valid = 1'b0;
     redirect_keep = 1'b0;
