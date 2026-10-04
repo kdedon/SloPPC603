@@ -189,7 +189,18 @@ module tb_core_dual #(
       32'h90: return cmpw(3, 19, 4);
       32'h94: return {6'd16, 5'd12, 5'd12, 14'd2, 2'b00};  // blt cr3, +8
       32'h98: return add(23, 4, 4);
-      32'h9c: return b(int'(END_PC) - 32'h9c);
+      32'h9c: return b(4);
+      // I: a bc on the CR of the cmpw beside it does not pair: an
+      // unresolved bc dispatches only from DQ0.
+      32'ha0: return SYNC;
+      32'ha4: return cmpw(4, 4, 5);
+      32'ha8: return {6'd16, 5'd4, 5'd16, 14'd2, 2'b00};  // bge cr4, +8
+      32'hac: return addi(24, 0, 1);
+      // J: a bc resolved at dispatch that does not redirect pairs.
+      32'hb0: return SYNC;
+      32'hb4: return {6'd16, 5'd4, 5'd16, 14'd2, 2'b00};  // bge cr4, +8
+      32'hb8: return addi(25, 0, 1);
+      32'hbc: return b(int'(END_PC) - 32'hbc);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
@@ -280,7 +291,7 @@ module tb_core_dual #(
     expected[11] = 27; expected[12] = 32'h100; expected[13] = 32'h103; expected[14] = 12;
     expected[15] = 32'h101; expected[16] = 11; expected[17] = 18; expected[18] = 5;
     expected[19] = 27; expected[20] = 1; expected[21] = 1; expected[22] = 1;
-    expected[23] = 6;
+    expected[23] = 6; expected[24] = 1; expected[25] = 1;
     for (int i = 1; i < 32; i++)
       if (regs[i] != expected[i]) $fatal(1, "r%0d = %0x, expected %0x", i, regs[i], expected[i]);
     if (dmem[2] != 32'd11) $fatal(1, "stored word %0x", dmem[2]);
@@ -297,6 +308,8 @@ module tb_core_dual #(
       expect_pair(32'h78, 1'b0, "sync alone");
       expect_pair(32'h68, 1'b1, "cmpw + folded b in DQ1");
       expect_pair(32'h94, 1'b1, "unresolved bc + add");
+      expect_pair(32'ha4, 1'b0, "cmpw + bc on its CR in DQ1");
+      expect_pair(32'hb4, 1'b1, "resolved bc + addi");
       $display("retirement:");
       expect_retire_pair(32'h14, 1'b1, "add + add");
       expect_retire_pair(32'h24, 1'b0, "add + dependent addi");
