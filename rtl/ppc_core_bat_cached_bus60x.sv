@@ -475,7 +475,12 @@ module ppc_core_bat_cached_bus60x #(
   // The physical BAT/page router offers one instruction request at a time.
   // Capture whether it entered managed cache or direct scalar bypass; a later
   // WIMG/context change cannot switch ownership of its held response.
-  assign eligible_managed = imem_req_wimg == 4'b0000;
+  // Only I decides: W and M do not affect the instruction cache, and G
+  // (real-mode WIMG 0001) still allows the required block to be cached
+  // (UM 3.5.4, 5.2).
+  assign eligible_managed = !imem_req_wimg[2];
+  logic unused_imem_wmg;
+  assign unused_imem_wmg = ^{imem_req_wimg[3], imem_req_wimg[1:0]};
   // A pending external command or CPU icbi holds new fetches.
   assign fetch_gate = rst_ni && !maintenance_valid_i && !icbi_req_valid &&
     !icache_ctl_valid &&

@@ -1847,6 +1847,17 @@ test-core-bat-machine-check:
 # The ppc603e package top: directed system-pin checks at the pins, and lint
 # of the top and its Quartus measurement wrapper.
 CHIP_RTL := $(shell cat ../rtl/chip_files.f)
+.PHONY: test-chip-icache-real
+test: test-chip-icache-real
+# Real-mode code is cached with ICE (603e, PID6, 603) and fetched single-beat without.
+test-chip-icache-real:
+	for v in 0 1 3; do mkdir -p $(BUILD_DIR)/chip-icache-real/v$$v && \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_icache_real +define+CHIP_VARIANT=$$v --Mdir $(BUILD_DIR)/chip-icache-real/v$$v -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_icache_real.sv && \
+	  ./$(BUILD_DIR)/chip-icache-real/v$$v/Vtb_chip_icache_real $(SIM_ARGS) || exit 1; done
+	mkdir -p $(BUILD_DIR)/chip-icache-real/off
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_icache_real "-GICE=1'b0" --Mdir $(BUILD_DIR)/chip-icache-real/off -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_icache_real.sv
+	./$(BUILD_DIR)/chip-icache-real/off/Vtb_chip_icache_real $(SIM_ARGS)
+
 .PHONY: test-chip-dcache-coherence test-chip-dcache-coherence-negative
 test: test-chip-dcache-coherence test-chip-dcache-coherence-negative
 CHIP_COHERENCE_TB := -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_dcache_coherence.sv
