@@ -229,7 +229,9 @@ module tb_core_fetch2 #(
       assert (!halted && !(retire_valid && retired.illegal)) else $fatal(1, "unexpected fault");
       if (retire_valid && retire_ready) begin
         retirements++;
-        if (log_fd != 0)
+        // Whether a branch without LR or CTR writes is removed depends on
+        // timing, so the log leaves all of them out.
+        if (log_fd != 0 && !(retired.branch && !retired.branch_lk && !retired.branch_ctr))
           $fwrite(log_fd, "%08x %0d %0d %08x\n", retired.pc, retired.gpr_write, retired.gpr,
                   retired.value);
         if (retired.gpr_write) regs[retired.gpr] = retired.value;

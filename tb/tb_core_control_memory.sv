@@ -142,7 +142,16 @@ module tb_core_control_memory #(
     assert(condition) else $fatal(1, "%s edge=%0d retired=%0d pc=%08x insn=%08x",
                                  message, edge_count, retirements, retired.pc, retired.insn);
   endtask
-  `include "removed_branch.svh"
+  // b, bc, bclr or bcctr without LK or a CTR decrement: the core may remove
+  // it at dispatch (UM 6.3.1); the next packet counts it.
+  /* verilator lint_off UNUSEDSIGNAL */  // only the opcode, BO[2] and LK fields
+  function automatic logic removable_branch(input logic [31:0] insn);
+    logic branch;
+    branch = (insn[31:26] == 6'd18) || (insn[31:26] == 6'd16) ||
+             ((insn[31:26] == 6'd19) && ((insn[10:1] == 10'd16) || (insn[10:1] == 10'd528)));
+    return branch && !insn[0] && ((insn[31:26] == 6'd18) || insn[23]);
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   task automatic read_expected(output logic [31:0] value);
     int status;
     status = $fscanf(expected_fd, "%h", value);
