@@ -32,7 +32,7 @@ from ppc_reference import arithmetic  # noqa: E402
 from production_vectors_602 import expected_602, widen_raw  # noqa: E402
 from reference import calculate  # noqa: E402
 
-MSR_PR = 0x4000
+MSR_PR, MSR_SE = 0x4000, 0x400
 SRR1_PRIV = 0x00040000
 VECTORS = (0x200, 0x300, 0x600, 0x700, 0x800, 0x1200, 0x1600)
 SPR_SP, SPR_LT = 1021, 1022
@@ -471,6 +471,25 @@ def memory_timing(p, timing):
                     p.expect(at, values[k])
 
 
+def trace_sticky(p):
+    """In trace mode FP arithmetic runs alone in the serialized lane; the
+    first fadds newly sets XX and completes a cycle late there too. The
+    trace handler returns to SRR0."""
+    one, tiny = f32(1.0), f32(2.0 ** -30)
+    p.words[0xfff00d00] = x_form(19, 0, 0, 0, 50)                 # rfi
+    p.lfs(1, one)
+    p.lfs(3, tiny)
+    p.clear_fpscr()
+    p.mtmsr(p.msr | MSR_SE)
+    sum7 = p.arith(a_form(59, 7, 1, 3, 0, 21), 'add', 7, one, tiny)
+    sum8 = p.arith(a_form(59, 8, 1, 3, 0, 21), 'add', 8, one, tiny)
+    p.mtmsr(p.msr & ~MSR_SE)
+    p.store_sp(7, sum7)
+    p.store_sp(8, sum8)
+    p.check_fpscr()
+    p.clear_fpscr()
+
+
 def random_cases(p, rng, count):
     base_msr = p.msr
     for _ in range(count):
@@ -532,6 +551,7 @@ def build(seed, count, timing='lane'):
     fp_enable_rfi(p, fex)
     random_cases(p, rng, count)
     sticky_timing(p)
+    trace_sticky(p)
     memory_timing(p, MEMORY_TIMING[timing])
     p.check_tags()
     p.emit(d_form(36, 0, 30, 0))          # stw r0 to DONE ends the run

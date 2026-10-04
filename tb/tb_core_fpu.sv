@@ -93,7 +93,7 @@ module tb_core_fpu #(
     .RESET_PC(32'h0000_1000), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1), .DMEM_BITS(DMEM_BITS),
-    .ENABLE_TGPR(1'b1), .ENABLE_SDR1(1'b1), .ENABLE_PAGE_MISS_RESULTS(1'b1),
+    .ENABLE_DEBUG_EXCEPTIONS(1'b1), .ENABLE_EXTERNAL_INTERRUPTS(1'b1), .ENABLE_TGPR(1'b1), .ENABLE_SDR1(1'b1), .ENABLE_PAGE_MISS_RESULTS(1'b1),
     .ENABLE_TLB_LOAD(1'b1), .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_MACHINE_CHECK(MACHINE_CHECK != 0),
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL)),
     .CPU_VARIANT(cpu_variant_e'(CPU_VARIANT))
@@ -246,6 +246,8 @@ module tb_core_fpu #(
       if (dut.special_fp_load_release || (dut.fp_rsp_valid && !dut.fp_rsp_fault)) fp_released++;
       if (dut.fp_replay && (dut.special_busy || !dut.lsu_empty)) fp_store_cancels++;
       if (dut.fp_head && dut.fp_sticky_hold) sticky_stalls++;
+      if (dut.special.fpu_sticky_hold && dut.special.fpu_result_valid &&
+          (dut.special.fpu_result.tag == dut.special.producer_q)) sticky_stalls++;
       if (dut.dispatch && (probe_cycles.exists(dut.iq_head.pc) != 0))
         dispatch_cycle[dut.iq_head.pc] = cycles;
       // First dispatch: a replayed instruction dispatches again.
