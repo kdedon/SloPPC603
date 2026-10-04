@@ -177,9 +177,9 @@ arrives during a write beat or a read beat. On the unfixed target it fails
 ### Guard
 
 `make -C sim -j2 xrand-sweep` reruns the SoC target, core full-decode,
-chip pins, demo hello, MiSTer hello (DDR3 and native) and MiSTer FPU
-Whetstone benches with X seeds 1-8 plus all-zero and all-one initial state
-(70 runs); each model
+chip pins, demo hello and Dhrystone, MiSTer hello (DDR3 and native) and
+MiSTer FPU Whetstone benches with X seeds 1-8 plus all-zero and all-one
+initial state (80 runs); each model
 builds once. It belongs in the batch gate next to `ci`.
 
 ### Checks
@@ -196,3 +196,43 @@ Not yet recorded: `mister-smoke` seed 1 with the fix, and a complete
 full-decode and chip-pins runs (30 of 60) and stopped on `demo-hello` seed 2
 at `DE is not the complement of the blanks`, a bench check sampling video
 outputs before reset; the bench now checks only out of reset.
+
+## BUG-03: Dhrystone cycles change when unused bits are added to the retire packet
+
+Status: fixed. A Verilator 5.020 code-generation fault; the RTL was
+correct.
+
+### Report
+
+On batch12 (f531cf2), width 2 with the LSU unit, Dhrystone measured 775.8
+cycles/run. Adding three unused bits at the end of `retire_packet_t` gave
+781.8, with every X seed.
+
+### Cause
+
+Not initial state: seeds 1-8, all-zero and all-one gave the same count on
+each build. Retirement traces of the two builds first differ at the
+`b` closing the start-up BSS loop: one build retires the `b` and the
+following `cmplw` together, the other refuses the pair. The completion
+queue's `pair_ok` returned 0 while each of its terms evaluated to 1.
+
+At `-O3` Verilator's bit-op-tree pass rewrites
+`y[4] && !(o[3] && y[3]) && !(o[7] && y[7])` as if it were
+`y[4] && !o[3] && !y[3] && !o[7] && !y[7]` when the bits share a word at
+some offsets. The added bits moved `cq1_ok`, `fpr_write` and `branch` to
+such offsets; the older `b` then blocked the pair. Verilator 5.022 fixes
+this class of fault. `-fno-const-bit-op-tree` avoids it, but only after
+`-O3` on the command line, which re-enables the pass.
+
+### Fix
+
+`sim/tools/verilate`, which every build uses, appends
+`-fno-const-bit-op-tree` after all other flags. `sim/tools/isa_check_rtl.py`
+now builds through it too.
+
+### Guard
+
+`test-verilator-bitop` (`tb/tb_verilator_bitop.sv`, in `test`) checks the
+expression over all 65,536 operand pairs; built with plain `verilator -O3`
+it fails at the first wrong pair. `xrand-sweep` now also runs Dhrystone on
+the demo model for every seed and requires one cycles/run value.
