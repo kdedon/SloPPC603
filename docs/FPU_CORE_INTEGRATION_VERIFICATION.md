@@ -377,3 +377,5 @@ and `test-core-page-data-exception` pass in both. Quartus 17.0.2
 Not established: TEA on an FP store already retired from the store queue
 (asynchronous machine check); C=0 and TEA through the real router and 60x
 bus; fitted timing.
+
+Recorded: `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit dd4cf1f, 2026-10-04: pass, 61 PASS lines.
