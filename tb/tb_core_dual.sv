@@ -190,9 +190,10 @@ module tb_core_dual #(
       32'h94: return {6'd16, 5'd12, 5'd12, 14'd2, 2'b00};  // blt cr3, +8
       32'h98: return add(23, 4, 4);
       // I: an access in DQ1 takes its base from rename while the addi that
-      // writes it waits behind the multiply to retire.
+      // writes it waits behind the divide to retire. The add holds the IU
+      // station until the divide finishes, so fetch fills DQ1 meanwhile.
       32'h9c: return SYNC;
-      32'ha0: return mullw(27, 4, 7);
+      32'ha0: return {6'd31, 5'd27, 5'd7, 5'd4, 1'b0, 9'd459, 1'b0};  // divwu r27,r7,r4
       32'ha4: return addi(24, 1, 8);
       32'ha8: return add(28, 27, 4);
       32'hac: return or_(29, 4, 7);
@@ -329,8 +330,8 @@ module tb_core_dual #(
     expected[11] = 27; expected[12] = 32'h100; expected[13] = 32'h103; expected[14] = 12;
     expected[15] = 32'h101; expected[16] = 11; expected[17] = 18; expected[18] = 5;
     expected[19] = 27; expected[20] = 1; expected[21] = 1; expected[22] = 1;
-    expected[23] = 6; expected[24] = 32'h408; expected[25] = 11; expected[27] = 27;
-    expected[28] = 30; expected[29] = 11;
+    expected[23] = 6; expected[24] = 32'h408; expected[25] = 11; expected[27] = 3;
+    expected[28] = 6; expected[29] = 11;
     expected[2] = 9; expected[26] = 27; expected[30] = 12;
     expected[21] = 1; expected[22] = 8;
     if (regs[0] != 32'd3) $fatal(1, "r0 = %0x, expected 3", regs[0]);
@@ -361,7 +362,7 @@ module tb_core_dual #(
       expect_pair(32'h78, 1'b0, "sync alone");
       expect_pair(32'h68, 1'b1, "cmpw + folded b in DQ1");
       expect_pair(32'h94, 1'b1, "unresolved bc + add");
-      expect_pair(32'ha0, 1'b1, "mullw + addi");
+      expect_pair(32'ha0, 1'b1, "divwu + addi");
       expect_pair(32'hac, LSU_PIPE, "or + lwz, base in rename");
       expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
       expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");

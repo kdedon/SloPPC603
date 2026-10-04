@@ -1042,16 +1042,18 @@ module ppc_core #(
         owner_crf_valid_q <= dq1_uop.write_cr_field;
         owner_crf_q <= dq1_uop.cr_field;
       end
-      if (bu_cr_capture) begin
+      // An owner may retire as it finishes; the capture is then not needed.
+      if (recovery_accepted ||
+          (commit && (retire_producer == flags_owner)) ||
+          (commit1 && (retire1_producer == flags_owner)))
+        bu_cr_valid_q <= 1'b0;
+      else if (bu_cr_capture) begin
         bu_cr_valid_q <= 1'b1;
         bu_cr_q <= owner_crf_valid_q ?
           ((cr & ~(32'hf000_0000 >> (owner_crf_q * 4))) |
            ({sru_cr_capture ? sru_result.cr0 : iu_result.cr0, 28'b0} >>
             (owner_crf_q * 4))) : cr;
-      end else if (recovery_accepted ||
-                   (commit && (retire_producer == flags_owner)) ||
-                   (commit1 && (retire1_producer == flags_owner)))
-        bu_cr_valid_q <= 1'b0;
+      end
     end
   end
   assign bu_taken = bu_spec ? iq_folded :

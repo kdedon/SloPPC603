@@ -17,14 +17,13 @@ def fixture(stall=False):
     pa, pb = packet(1, 0, a, 1, 7), packet(257, 4, b, 2, 8)
     rows = [dict(dispatch=dict(id=1, pc=0, insn=a)),
             dict(issue=dict(id=1, a=0, b=7), dispatch=dict(id=257, pc=4, insn=b)),
-            dict(finish=dict(id=1, value=7), issue=dict(id=257, a=7, b=1)),
-            dict(retire=pa, finish=dict(id=257, value=8))]
+            dict(retire=pa, finish=dict(id=1, value=7), issue=dict(id=257, a=7, b=1))]
     if stall:
-        rows += [dict(retire=pa), dict(retire=pa), dict(retire=pb)]
-        counts, readiness = [0, 1, 2, 2, 2, 2, 1], [1, 1, 1, 0, 0, 1, 1]
+        rows += [dict(retire=pa, finish=dict(id=257, value=8)), dict(retire=pa), dict(retire=pb)]
+        counts, readiness = [0, 1, 2, 2, 2, 1], [1, 1, 0, 0, 1, 1]
     else:
-        rows += [dict(retire=pb)]
-        counts, readiness = [0, 1, 2, 2, 1], [1] * 5
+        rows += [dict(retire=pb, finish=dict(id=257, value=8))]
+        counts, readiness = [0, 1, 2, 1], [1] * 4
     for edge, row in enumerate(rows):
         row.update(edge=edge, cq_count=counts[edge], rename_count=counts[edge], retire_ready=readiness[edge])
     return rows
@@ -71,19 +70,21 @@ class StageTimingTests(unittest.TestCase):
         # Remove child and extend single producer's execution without a stall.
         del trace[1]['dispatch']
         del trace[2]['issue']
+        del trace[2]['retire']
         trace[3] = dict(edge=3, cq_count=1, rename_count=1, retire_ready=1,
                         finish=trace[2].pop('finish'))
         trace[2].update(cq_count=1, rename_count=1)
         self.reject(trace, 'issue-to-finish distance')
 
-    def test_finish_to_retire_bypass_rejected(self):
+    def test_retire_before_finish_rejected(self):
         trace = fixture()
-        trace[2]['retire'] = trace[3].pop('retire')
-        self.reject(trace, 'retirement before registered finish')
+        trace[1]['retire'] = trace[2].pop('retire')
+        self.reject(trace, 'retirement before finish')
 
     def test_raw_issue_without_finish_rejected(self):
         trace = fixture()
         del trace[2]['finish']
+        del trace[2]['retire']
         self.reject(trace, 'RAW issued before finish')
 
     def test_wrong_issue_operand_rejected(self):
@@ -98,7 +99,7 @@ class StageTimingTests(unittest.TestCase):
 
     def test_younger_retirement_rejected(self):
         trace = fixture()
-        trace[3]['retire'] = copy.deepcopy(trace[4]['retire'])
+        trace[2]['retire'] = copy.deepcopy(trace[3]['retire'])
         self.reject(trace, 'retirement not oldest')
 
     def test_stalled_payload_change_rejected(self):
@@ -138,7 +139,7 @@ class StageTimingTests(unittest.TestCase):
                 row['issue'] = dict(id=edge, a=0, b=edge - 1)
             if 2 <= edge <= 6:
                 row['finish'] = dict(id=edge - 1, value=edge - 2)
-            if edge >= 3:
+            if edge >= 2:
                 row['retire'] = packets[0]
             trace.append(row)
         self.reject(trace, 'full same-edge reclaim')
