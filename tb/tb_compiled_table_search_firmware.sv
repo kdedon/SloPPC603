@@ -255,7 +255,9 @@ module tb_compiled_table_search_firmware;
       if(iv&&ir)begin
         check(ia>=BASE&&ia<=BASE+32'h2fffc&&ia[1:0]==0,
           "instruction RAM range");
-        check(iwimg==(cir?4'b0000:4'b0001),"instruction attributes");
+        check(iwimg==(!cir?4'b0001:
+          (ia>=32'hfff06000&&ia<32'hfff07000)?4'b0000:4'b0100),
+          "instruction attributes");
         if(cir&&ia>=32'hfff06000&&ia<32'hfff06010)probe_fetches++;
         ipending<=1;fetch_pc<=ia;idelay<=1+cycles%4;
       end

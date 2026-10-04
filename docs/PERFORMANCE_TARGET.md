@@ -688,6 +688,25 @@ The store write's select now also depends on the P1 load's overlap compare
 eight entries instead of four. Both are on paths the 66 MHz fit flags; the
 chip needs a fresh fit.
 
+## Measurement reproducibility
+
+A cycle count depends only on the RTL and the image: not on the X seed, the
+initial-state mode, or bits that no logic reads. A count that moves with an
+unrelated change is first a simulator-correctness question. Verilator 5.020
+at `-O3` miscompiled `pair_ok` for one retire-packet layout, which made
+Dhrystone 781.8 cycles/run instead of 775.8 ([BUG-03](BUGS.md)); builds now
+disable that optimization.
+
+Recorded: `make -C sim DISPATCH_WIDTH=2 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex` with `+verilator+seed+<1..8> +verilator+rand+reset+2`, `+verilator+rand+reset+0` and `+verilator+rand+reset+1`, commit f7d561f, 2026-10-04.
+
+All ten initial states give Dhrystone 775.8 cycles/run (1,551,710 cycles)
+and CoreMark 4,681,079 ticks for 10 iterations; all pass. The same build
+with three unused bits added to `retire_packet_t` gives the same two counts
+(before the fix: 781.8 and, on f531cf2 itself, 775.8 for all ten states).
+The counts match the batch 12 table, so the default layout was not
+affected on these programs. `xrand-sweep` now checks the Dhrystone count
+across its seeds.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
