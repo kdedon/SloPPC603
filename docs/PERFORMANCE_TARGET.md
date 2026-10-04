@@ -88,46 +88,66 @@ cross-checks the model's order of magnitude but is not the target.
 
 ## Today
 
-Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=build-lsu-w<1|2> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=toolchain/build/demo/<dhrystone|coremark>.hex`, commit 5d0d244, 2026-10-04.
-LSU unit and store queue on. Both pass (Dhrystone checks match, CoreMark CRCs
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=build-lsu-w<1|2> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=toolchain/build/demo/<dhrystone|coremark>.hex`, commits 5d0d244 (before) and 60b0659 (after), 2026-10-04.
+LSU unit and store queue on. All pass (Dhrystone checks match, CoreMark CRCs
 match). Firmware built by the demo Makefile defaults (2000 runs, 10 iterations).
+"Before" is the core this document was written against; "after" adds update
+forms and rename-sourced operands in the unit and the one-cycle store hit
+([gaps 1, 2, 6, 7](#gaps)).
 
-| | Width 1 | Width 2 | 603e model | Core / 603e (width 2) |
-|---|---:|---:|---:|---:|
-| Dhrystone cycles per run | 2067.9 | 1950.4 | 506 | 3.85 |
-| Dhrystones/s per MHz | 483.6 | 512.7 | 1976 | |
-| DMIPS/MHz | 0.275 | 0.292 | 1.125 | |
-| Dhrystone CPI | 3.504 | 3.305 | 0.858 | |
-| CoreMark/MHz | 1.236 | 1.259 | about 3.6 | 2.86 |
-| CoreMark CPI | 2.676 | 2.628 | 0.918 | |
+| | Width 1 before | Width 2 before | Width 1 after | Width 2 after | 603e model | Core / 603e (width 2, after) |
+|---|---:|---:|---:|---:|---:|---:|
+| Dhrystone cycles per run | 2067.9 | 1950.4 | 1454.3 | 1454.3 | 506 | 2.87 |
+| Dhrystones/s per MHz | 483.6 | 512.7 | 687.6 | 687.6 | 1976 | |
+| DMIPS/MHz | 0.275 | 0.292 | 0.391 | 0.391 | 1.125 | |
+| Dhrystone CPI | 3.504 | 3.305 | 2.464 | 2.464 | 0.858 | |
+| CoreMark/MHz | 1.236 | 1.259 | 1.312 | 1.313 | about 3.6 | 2.74 |
+| CoreMark CPI | 2.676 | 2.628 | 2.520 | 2.520 | 0.918 | |
+
+After the change both widths run Dhrystone in the same cycles: fetch, one
+instruction per cycle in this build, now sets the pace (`fetch_empty` 0.85
+CPI, `drain_memory` and `lsu_busy` under 0.001), so the second dispatch slot
+rarely finds a partner.
 
 The CPI breakdown by stall cause is in
 [PERFORMANCE.md](PERFORMANCE.md#cpi-with-the-lsu-unit-and-store-queue).
 
 Recorded: `Vtb_demo_soc +IMAGE=toolchain/build/demo/dhrystone.hex +TRACE=1000000 +TRACE_TO=1012000` on both models, then `python3 sim/tools/perf_model_603e.py <log> --mark fff03808 --dump toolchain/build/demo/dhrystone.dump`, commit 5d0d244 plus the `+TRACE_TO` testbench change, 2026-10-04.
 18 whole iterations of the timed loop. The core's cycles per iteration in the
-trace (2067.5 and 1950.0) match the firmware's cycles per run. CoreMark used
+trace (2067.5 and 1950.0) match the firmware's cycles per run. The same on
+the width-2 model at commit 60b0659: 1454.0 cycles per iteration. CoreMark used
 `+TRACE_TO=1320000` and no `--mark` (one window of 319,000 instructions, CPI
 2.672 / 2.626 against the run's 2.676 / 2.628).
 
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
-spacing, summed per iteration (Dhrystone, width 2, cycles per run):
+spacing, summed per iteration (Dhrystone, width 2, cycles per run), before
+and after closing gaps 1, 2, 6 and 7:
 
-| Retiring instruction | Per run | Core | 603e | Gap |
-|---|---:|---:|---:|---:|
-| Update-form load/store (`lbzu`, `stbu`, `stwu`) | 83 | 574 | 115 | 459 |
-| Integer instruction using the previous load | 55 | 255 | 55 | 200 |
-| Plain load, base written ≤6 instructions back | 35 | 190 | 54 | 136 |
-| Compare | 60 | 161 | 28 | 133 |
-| Other integer | 149 | 229 | 107 | 122 |
-| Plain store, a source written ≤6 instructions back | 34 | 157 | 51 | 106 |
-| Plain load, base older | 30 | 152 | 48 | 104 |
-| First instruction after a taken branch | 18 | 108 | 37 | 71 |
-| Branches (folded on the 603e) | 118 | 107 | 0 | 107 |
-| Plain store, sources older | 8 | 19 | 11 | 8 |
-| **Total** | **590** | **1950** | **506** | **1444** |
+| Retiring instruction | Per run | Core before | Core after | 603e | Gap before | Gap after |
+|---|---:|---:|---:|---:|---:|---:|
+| Update-form load/store (`lbzu`, `stbu`, `stwu`) | 83 | 574 | 410 | 115 | 459 | 294 |
+| Integer instruction using the previous load | 55 | 255 | 55 | 55 | 200 | 0 |
+| Plain load, base written ≤6 instructions back | 35 | 190 | 126 | 54 | 136 | 72 |
+| Compare | 60 | 161 | 88 | 28 | 133 | 60 |
+| Other integer | 149 | 228 | 298 | 107 | 122 | 192 |
+| Plain store, a source written ≤6 instructions back | 34 | 156 | 90 | 51 | 106 | 40 |
+| Plain load, base older | 30 | 152 | 139 | 48 | 104 | 91 |
+| First instruction after a taken branch | 18 | 108 | 130 | 37 | 71 | 93 |
+| Branches (folded on the 603e) | 118 | 107 | 99 | 0 | 107 | 99 |
+| Plain store, sources older | 8 | 18 | 18 | 11 | 8 | 7 |
+| **Total** | **590** | **1950** | **1454** | **506** | **1444** | **948** |
+
+Recorded: the traces above (commits 5d0d244 and 60b0659), classified by
+retiring instruction in that order of precedence: branch, update form, plain
+load, plain store, first after a taken branch, integer reading the previous
+load's destination, compare, other. 2026-10-04.
+
+After the change no instruction waits for memory to drain. What the update
+forms and loads are still charged is fetch and branch time: `strcpy` and
+`strcmp` are byte loops whose loop-top `lbzu` follows a taken `bc` that waited
+for its compare, then a refetch, one instruction per cycle (gaps 3 and 4).
 
 A row is charged where the stall shows up, not where it starts: a branch that
 waits for a compare shows up on the compare or the instruction after it.
@@ -138,13 +158,13 @@ they are not additive. None needs timing faster than the manual's.
 
 | Rank | Gap | 603e rule | Change | Est. gain |
 |---:|---|---|---|---:|
-| 1 | Update forms take the serialized lane (5–8 cycles each, 83 per run) | T6-6: `lbzu`/`stbu`/`stwu`/`lwzu` are `2:1` like plain forms; the update uses a second GPR rename (UM 6.6) | Run update forms in the LSU unit: EA to rA through a second rename write, the access as a plain one | 300–400 |
-| 2 | A load or store whose base or data has an uncommitted producer drains the machine (`drain_memory` 367 per run) | UM 6.3.3, 6.3.3.1: the instruction waits in the LSU station for the rename tag, executes the cycle the result is written; stores wait for data in the store queue (UM 1.1.4.3) | Read ready rename values at dispatch and snoop the result buses in the LSU station; capture store data into the queue when produced | 250–350 |
+| 1 | Closed. Update forms took the serialized lane (5–8 cycles each, 83 per run) | T6-6: `lbzu`/`stbu`/`stwu`/`lwzu` are `2:1` like plain forms; the update uses a second GPR rename (UM 6.6) | Done: update forms run in the unit, the base in a second rename slot written with the EA ([LSU_PIPELINE.md](LSU_PIPELINE.md#update-forms-and-rename-operands)) | 491 measured with 2 |
+| 2 | Closed. A load or store whose base or data had an uncommitted producer drained the machine (`drain_memory` 367 per run) | UM 6.3.3, 6.3.3.1: the instruction waits in the LSU station for the rename tag, executes the cycle the result is written; stores wait for data in the store queue (UM 1.1.4.3) | Done: the base comes from rename, including a value written that cycle; store data waits in P1 for the result bus. `drain_memory` is 0 per run at width 2 (19 at width 1: an update load's base takes the single write port a cycle later) | (with 1) |
 | 3 | Taken-branch refetch and empty IQ (`branch_refetch` + `fetch_empty` 258 per run) | UM 6.3.2.2: one-cycle hit, two instructions per fetch; IQ of six topped off every cycle; F6-3: target two cycles after the branch, hidden by the IQ | The chip builds the core with `FETCH_WIDTH=1`: enable two-wide fetch, request every cycle, keep the IQ full | 120–200 |
 | 4 | A `bc` waits for its uncommitted CR producer (`drain_branch` 187 per run) | T6-4 `^`: compare CR to the BPU at end of execute; UM 6.4.1.2: predict and dispatch down the predicted path, one level, no completion past it | Take CR from a finished compare; dispatch past one unresolved `bc`, block completion behind it, flush younger CQ entries on a miss | 150–190 |
 | 5 | Dual dispatch rarely pairs (7.6% of instructions at width 2); dispatch alone is 0.92 CPI against a 0.86 CPI target | UM 6.6.1.2/6.6.1.3: DQ1 to a different unit, CQ1 integer or load; UM 6.4.5: SRU adder | Pair IU + LSU, IU + SRU-add, LSU + IU; second completion for integer/load | 80–150 (after 1–4) |
-| 6 | Residual cost of plain accesses with old sources (5.0 cycles per load) | UM 6.4.4: one access per cycle | Investigate: CQ-head store ordering, cache taking a request every other cycle ([LSU_PIPELINE.md](LSU_PIPELINE.md#remaining-work) item 1) | 60–100 |
-| 7 | Load-use beyond the unit's 2 cycles (4.6 cycles per dependent) | T6-6 `2:1` | Mostly follows from 1 and 2; then check the wake path for update forms | 50 (residual) |
+| 6 | Closed. Residual cost of plain accesses with old sources (5.0 cycles per load) | UM 6.4.4: one access per cycle | Found: a store hit held the data cache for four cycles. It now writes and answers in its lookup cycle. The rest of the charge is fetch and branch time | 5 measured |
+| 7 | Closed for integer consumers (55 dependents, gap 0). A load or add producing the next access's base costs 3 cycles against T6-6's 2 | T6-6 `2:1` | The EA is formed at dispatch, a cycle ahead of the access. Forming it in P1 from operands snooped there would meet T6-6 but puts the result bus, adder and micro-TLB in one cycle ([LSU_PIPELINE.md](LSU_PIPELINE.md#remaining-work)) | Not measurable while fetch-bound |
 | 8 | Branches take dispatch and completion slots (118 per run) | UM 6.4.1.1, 6.3.1: folded branches bypass the dispatch queue | Retire folded branches from the BPU; LR/CTR updates through the BPU's own writeback | 40–100 |
 | 9 | Integer waits not explained above (flags token, station full, `other` 50 per run) | UM 6.3.3 | Break the per-cause counters down further first | 50–100 |
 | 10 | `bclr` not folded (26 per run, 11 taken) | UM 6.6.1.1: `bclr` resolves when LR is available (shadow LR from `bl`); same timing as `b` | Fold `bclr` at fetch from a committed or shadow LR | 30–50 |

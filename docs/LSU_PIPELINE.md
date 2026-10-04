@@ -2,7 +2,7 @@
 
 Parameter `ENABLE_LSU_PIPE` runs plain integer and FP loads and stores in
 `ppc_lsu_pipe` instead of the serialized special lane. Plain means no
-update, reservation, string, multiple, cache operation or external access,
+reservation, string, multiple, cache operation or external access,
 outside trace mode; for FP it also excludes the 602 SP/LT moves and a
 replayed instruction ([FP accesses](#fp-accesses)). `ppc_core`, `ppc_core_bat`, `ppc_core_bat_cached_bus60x`,
 `ppc603e`, `ppc603e_demo_soc` and `ppc603e_mister` carry it, each defaulting
@@ -20,10 +20,10 @@ dispatch -> P1 offer -> P2 await response -> R result -> CQ -> retire
 ```
 
 - Dispatch captures the uop, completion tag, PC, EA (the dispatch adder) and
-  store data from the committed registers. As before, a plain access
-  dispatches only when its source GPRs have no uncommitted producer; the
-  check now moves to the IQ entry behind the head on a dispatch, so
-  back-to-back accesses do not lose a cycle to it.
+  store data. Base registers come from rename, including a value written
+  that cycle; an access waits at dispatch only until they are ready. Store
+  data not yet produced follows from the result buses
+  ([Update forms and rename operands](#update-forms-and-rename-operands)).
 - P1 (two entries) offers the oldest access. A load offers at once. A store
   whose translation the router confirms enters the store queue without an
   offer ([Store queue](#store-queue)); any other store offers only at the
@@ -174,6 +174,33 @@ so the router answers a check beside the request port instead:
   tops) a top drives `dmem_store_check_ok_i` low and stores never queue;
   the FP core bench drives it from its protected-word map.
 
+## Update forms and rename operands
+
+UM 6.6: an update form takes two GPR rename registers; UM 6.3.3.1: an LSU
+instruction takes its operands from the rename registers or the result buses
+in its reservation station. Here:
+
+- Integer and FP update forms (valid forms only; the others are illegal at
+  decode) run in the unit. At dispatch the base register gets its own rename
+  slot, written ready with the EA from the dispatch adder, so younger
+  readers have it at once. The completion entry records the slot
+  (`update_owned`, `update_tag`); retirement writes the base to the GPR file
+  and releases the slot, and recovery rebuilds it for survivors. A fault
+  clears the architectural update as before; the younger readers of the
+  slot are removed with the exception. An update form dispatches alone, as
+  its second slot uses the second rename port.
+- The dispatch adder reads the base registers through rename (a third read
+  port serves store data), so an access dispatches as soon as its base is
+  ready, including in the cycle its producer's result is written, instead of
+  waiting for the producer to retire.
+- A store dispatches without its data. P1 holds the producer's rename tag
+  and takes the value from either result bus; the head uses a value
+  written in its own cycle at once. Adoption by the lane waits for the data.
+- At most two GPR writes retire per cycle: CQ[1] does not retire a GPR
+  write beside an update form. With two write ports the base is written
+  beside the destination; with one it follows a cycle later and dispatch
+  and retirement wait for it.
+
 ## Cached path
 
 With the unit and a data cache, `ppc_core_bat` sets the router's
@@ -193,10 +220,12 @@ With the unit and a data cache, `ppc_core_bat` sets the router's
 - Data cache: a cacheable load hit answers from its first `S_LOOKUP` cycle,
   from the data RAM output selected by the tag compare. When the answer is
   taken, the cache accepts the next request in that cycle and looks it up
-  in the next, so hits flow one per cycle. An answer not taken is
+  in the next, so hits flow one per cycle. A copy-back store hit writes the
+  data RAM and answers in that cycle too, and takes the next request unless
+  it reads the double word being written. An answer not taken is
   registered and held, as before. The fast path reads HID0[DCE] as it was
   in the request's accept cycle; HID0 changes only through the serialized
-  lane, which runs while the unit is idle. Misses, stores, cache
+  lane, which runs while the unit is idle. Misses, other stores, cache
   operations and inhibited or write-through accesses take the cache's plan
   as before; the next request waits for their response.
 
@@ -223,6 +252,14 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
 - `stw` then `lwz` of another doubleword: the load passes the queued store
   and retires the cycle after it. `lwz` of the stored doubleword waits for
   the write and retires 5 cycles after the store.
+- Four `stwu` through one base: dispatched and retired one per cycle (3
+  cycles first to last), Table 6-6 2:1.
+- Two `lbzu` through one base (four rename slots): dispatched one per
+  cycle, retired one cycle apart with two GPR write ports, two with one.
+- `lwz` then `stw` of its result: the store retires 2 cycles after the
+  load.
+- `lwz` or `addi` then `lwz` using the result as its base: 3 cycles apart,
+  one more than Table 6-6 ([Remaining work](#remaining-work) item 3).
 
 Through the router and data cache of the cached top (`test-core-dcache`
 and `test-core-dcache-lsu-pipe`; DR=1 and IR=1 over BATs, the line and the
@@ -296,16 +333,21 @@ the chip needs a fresh fit and timing report before the default changes.
    in two word beats (32-bit port) does not queue. The store queue also
    needs a fit: the micro-TLB check feeds P1's pop and the queue's write
    shares the request mux.
-3. Loads whose base register has an uncommitted producer (operands from
-   rename instead of the committed registers). The 603e reads them from the
-   rename buffers or the result buses into the LSU's reservation station;
-   here the EA adder sits at dispatch and reads the committed registers, so
-   this needs the adder moved into the unit behind an operand-wait stage
-   that snoops results. Store data (rS) needs a third rename read port.
+3. A base written by a load or add in the access's dispatch cycle costs
+   one cycle more than Table 6-6's load latency 2: the EA is formed at
+   dispatch, a cycle ahead of the access. The 603e forms it in the LSU's
+   first stage from operands its reservation station snooped. Doing so here
+   means an operand-wait P1 entry whose EA adder takes the result bus and
+   feeds the request address and micro-TLB in the same cycle; it also
+   needs the update base's rename value and the alignment decision, now
+   made at dispatch, moved into the unit. An access whose base is not ready
+   also holds dispatch rather than waiting in a station.
 4. Loads behind older FP work that may still raise an exception wait for it
    to retire, as integer loads do; marking them speculative instead would
    let them proceed to cacheable memory.
-5. Update forms (integer and FP) still take the lane.
+5. With one GPR write port (width 1) an update load's base is written the
+   cycle after its destination, holding dispatch and retirement for that
+   cycle. The 603e completes two GPR writes per cycle (UM 6.6.1.3).
 
 ## Verification
 
@@ -468,3 +510,25 @@ alignment, coherence and chip benches (`test-core-lsu-extensions` through `test-
 This establishes FP loads and stores through the unit with the FULL and COMPACT FPUs on
 the 603e and 602 personalities, at both widths, with no regression in the core, cache,
 fault and chip sets. It does not establish timing: no fit includes the FP launch path.
+
+### Update forms and rename operands (2026-10-04)
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=build-foc-w<1|2> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-core-lsu-timing test-core-lsu-update test-core-dcache-lsu-pipe test-core-le test-core-fpu`, commit 60b0659, 2026-10-04.
+All pass at both widths. `test-core-lsu-timing`: 2,711 checks, 27 latency
+probes and 54 spacing checks, including the update, rename-base and
+store-data rows under [Measured timing](#measured-timing); the program at
+width 2 expects the update-load pair one cycle apart, at width 1 two.
+`test-core-lsu-update` (unit on, width 1): 105,939 checks. `test-core-fpu`
+exercises every FP load and store form, update forms included, through the
+unit. `test-core-le` runs its 14 variants, unit on and off. These establish
+the cycle counts and results against the bench memory and, for
+`test-core-dcache-lsu-pipe`, the cached top; they do not cover the chip or
+the 60x bus.
+
+Recorded: `make -C sim lint check-spec` on commit 60b0659, `make -C sim test-execution test-recovery-state test-recovery-storage test-rename-pair` on the RTL of c72ab03, and `make -C sim test-dcache test-dcache-fast test-dcache-mutations` on the RTL of 30d1503, 2026-10-04.
+All pass: strict lint, the rename unit benches with the new ports tied off,
+and the data cache bench with the fast store hit (three seeds each, all seven
+mutations detected).
+
+Dhrystone and CoreMark before and after are in
+[PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#today).
