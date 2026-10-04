@@ -91,4 +91,9 @@ always @(posedge `MT_CLK) begin
   end else mt_stores = {mt_stores, store};
 end
 
-final if (mt_fd != 0) $fclose(mt_fd);
+// Stores accepted after the last retirement (the store queue drains after
+// completion) go on a final record with pc ffffffff and count 0.
+final if (mt_fd != 0) begin
+  if (mt_stores != "") $fwrite(mt_fd, "ffffffff 00000000 0 0%s\n", mt_stores);
+  $fclose(mt_fd);
+end

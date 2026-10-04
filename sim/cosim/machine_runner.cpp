@@ -347,6 +347,8 @@ int main(int argc, char** argv) {
             unsigned count = 0, fault = 0, removed0 = 0, removed1 = 0;
             in >> pc_text >> insn_text >> count >> fault;
             uint32_t pc = hex(pc_text), insn = hex(insn_text);
+            // The trace's last record may carry only stores the queue drained.
+            if (pc == 0xffffffffU && count == 0) pc = ppc_state.pc;
             std::vector<std::array<uint32_t, 3>> rtl_stores;
             while (in >> token) {
                 size_t eq = token.find('=');
