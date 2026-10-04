@@ -416,7 +416,7 @@ module ppc_core #(
   /* verilator lint_off UNUSEDSIGNAL */
   logic [31:0] d1_ea_full;
   operand_t d1_data;
-  logic lsu_d1;
+  logic lsu_d1, lsu_c0;
   /* verilator lint_on UNUSEDSIGNAL */
   rs_entry_t rs_entry1;
   retire_packet_t allocation1;
@@ -1170,6 +1170,8 @@ module ppc_core #(
         else $error("update retirement writes alias");
     if (rst_ni && update_commit)
       assert (!gpr_commit1) else $error("CQ[1] GPR write beside an update base");
+    if (rst_ni && commit1)
+      assert (!retire1_o.update_write) else $error("update form retired from CQ[1]");
   end
   // synthesis translate_on
   ppc_regfile_gpr #(.ENABLE_TGPR(ENABLE_TGPR), .DUAL_WRITE(DUAL_GPR_WRITE)) regfile (
@@ -1737,6 +1739,9 @@ module ppc_core #(
     ((dq1_uop.special_op != SPECIAL_STORE) ||
      (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
   assign lsu_d1 = dispatch1 && d1_lsu;
+  // DQ1 enters the unit only beside a DQ0 that does not, so the input mux
+  // need not wait for dispatch1, which depends on the unit's ready.
+  assign lsu_c0 = (special_uop && lsu_route) || fp_mem_pipe;
   assign dispatch1 = dispatch && seq_last && pair_units && cq1_ready && !unit_update &&
     (!d1_lsu || d1_lsu_ready) &&
     (!d1_needs_flags || (!dispatch_needs_flags && !flags_busy)) &&
@@ -1820,8 +1825,9 @@ module ppc_core #(
   assign retire1_gate = DUAL && !cq_retire.illegal && !cq_retire.alignment_exception &&
     (cq_retire.data_fault == DATA_OK) && (cq_retire.fetch_fault == FETCH_OK) &&
     !cq_retire.seq_partial &&
-    // At most two GPR writes per cycle (UM 6.6.1.3).
-    !(cq_retire.update_write && cq_retire1.gpr_write) &&
+    // At most two GPR writes per cycle (UM 6.6.1.3); an update base is
+    // written and its rename slot released only from the head.
+    !(cq_retire.update_write && cq_retire1.gpr_write) && !cq_retire1.update_write &&
     // The two write ports never target one register.
     !(cq_retire1.gpr_write &&
       ((cq_retire.gpr_write && (cq_retire.gpr == cq_retire1.gpr)) ||
@@ -1837,6 +1843,7 @@ module ppc_core #(
         else $error("DQ1 dispatched without DQ0");
       assert (32'(d1_iu) + 32'(d1_mem) + 32'(d1_lsu) + 32'(d1_fp) + 32'(d1_branch) == 32'd1)
         else $error("DQ1 unit class is not unique");
+      assert (!(d1_lsu && lsu_c0)) else $error("both dispatch slots entered the unit");
       if (d1_mem || d1_lsu)
         assert ((dq1_uop.zero_a || (src_a1.ready && (src_a1.value == arch_a1))) &&
                 (dq1_uop.use_imm || (src_b1.ready && (src_b1.value == arch_b1))))
@@ -1857,12 +1864,12 @@ module ppc_core #(
     if (ENABLE_LSU_PIPE) begin : g_lsu
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE)) lsu (
         .clk_i, .rst_ni,
-        .dispatch_valid_i((dispatch && ((special_uop && lsu_route) || fp_mem_pipe)) || lsu_d1),
-        .dispatch_ready_o(lsu_ready), .uop_i(lsu_d1 ? d1_lane_uop : dispatch_uop),
-        .producer_i(lsu_d1 ? alloc1_producer : alloc_producer),
-        .pc_i(lsu_d1 ? dq1_head.pc : iq_head.pc),
-        .insn_i(lsu_d1 ? dq1_head.insn : iq_head.insn),
-        .ea_i(lsu_d1 ? d1_ea_full : dispatch_ea), .data_i(lsu_d1 ? d1_data : src_c),
+        .dispatch_valid_i((dispatch && lsu_c0) || lsu_d1),
+        .dispatch_ready_o(lsu_ready), .uop_i(lsu_c0 ? dispatch_uop : d1_lane_uop),
+        .producer_i(lsu_c0 ? alloc_producer : alloc1_producer),
+        .pc_i(lsu_c0 ? iq_head.pc : dq1_head.pc),
+        .insn_i(lsu_c0 ? iq_head.insn : dq1_head.insn),
+        .ea_i(lsu_c0 ? dispatch_ea : d1_ea_full), .data_i(lsu_c0 ? src_c : d1_data),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
         .fp_launch_valid_i(fp_launch_valid), .fp_launch_tag_i(fp_launch_tag),
