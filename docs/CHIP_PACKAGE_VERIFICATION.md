@@ -99,17 +99,78 @@ probe words at the last round.
 | 4 | 32,174 | 574 | 365 (142) | 184 (114) | 17 | 12/14 | 71/81 |
 | 5 | 29,650 | 411 | 250 (106) | 154 (101) | 7 | 9/4 | 38/42 |
 
-No RTL fault was found. Negative control: removing the claimed-line term
-from the data cache's snoop conflict fails seed 1 with "did not retry ...
-while owing its line's data". Removing DRTRY from the cache master's DBG
-qualification does not fail the bench. In this bench a processor asserts DBB
-two bus cycles after its DBG is first asserted, both normally and after an
-early DBG, so the early DBG never meets a processor ready to take it in the
-DRTRY cycle. The cause of that extra cycle was not found.
+No RTL fault was found in that round. Negative control: removing the
+claimed-line term from the data cache's snoop conflict fails seed 1 with "did
+not retry ... while owing its line's data". The DRTRY control is in the next
+section.
 
-Not established: DBWO between processors (tied negated); TEA on writes or
-instruction fetches; more than two processors; ABB and DBB as shared
-inputs (tied negated; the model serializes ownership).
+### Paired probe loads, write TEA, shared ABB and DBB
+
+Recorded: `make -C sim lint check-spec test-chip-mp`, and `test-chip-mp` with
+`DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, commit b4316c1, 2026-10-04.
+PASS. Seeds 6-20 (width 1) and 6-25 (width 2) of `+PAIR_PROBE`, and 1-12 of
+`+PAIR_PROBE +WRITE_TEA` at width 1, also pass, run by hand.
+
+`test-chip-mp` now also runs seeds 1, 3, 5 with `+PAIR_PROBE` and seeds 2, 4
+with `+PAIR_PROBE +WRITE_TEA +SHARED_BUSY`:
+
+- `+PAIR_PROBE` loads the probe line twice back to back (`lwz r16,0(r28);
+  lwz r16,0(r29)`). Before the fix it checkstopped at width 1 on 12 of seeds
+  1-20 (1, 3, 5-9, 12, 15, 17, 18, 20): the first load took its fill's critical beat, a
+  later beat ended with TEA (held as an asynchronous machine check), the
+  second load then ran a new fill of the same line, its TEA took a machine
+  check first, and the held one met MSR[ME]=0. UM §4.5.2 takes the machine
+  check before the next instruction completes (SRR0 per Table 4-10), so no
+  second tenure should start: a load behind a held TEA now answers with the
+  error and its machine check clears the held one. Seeds 1-20 then pass at
+  width 1 and seeds 1-25 at width 2 with the pipelined LSU, each with one
+  machine check per TEA.
+- The early DBG during the final beat's DRTRY now holds DRTRY 0-2 cycles
+  before the replacement beat. Removing DRTRY from the cache master's DBG
+  qualification (`ppc_bus60x_cache_master.sv`, `S_DATA_REQUEST`) now fails
+  seed 1: "processor 1 DBB without a qualified DBG". The RTL asserts DBB in
+  the bus cycle after a qualified DBG, as UM §8.4.1 requires. The extra cycle
+  seen before is in the simulation: Verilator 5.020 evaluates the BIU's DBG
+  gating (`outer_dbg_n`, `pe_dbg_n`) only in the rising-edge step, after the
+  flops that read it, so a DBG asserted by the model at a falling edge
+  reaches the cache master one edge late. Traced at seed 1: DBG asserted at
+  t=5210, `outer_dbg_n` still negated at the 5215 edge with all its inputs
+  asserting it. The held DRTRY catches the mutation with or without that
+  delay.
+- `+WRITE_TEA` ends 30% of probe-line write tenures with TEA in place of a
+  beat's TA. Each takes one machine check; the program repeats a lost store.
+- `+SHARED_BUSY` wires both processors' ABB and DBB to both. Cycle counts
+  equal the tied runs: the model never grants into an asserted ABB or DBB.
+
+Width 2 runs the pipelined LSU. TEA counts include write TEAs.
+
+| Width | Seed | Options | Cycles | Early DBG (held DRTRY) | TEA (P0/P1) | Write TEA |
+|---|---|---|---|---|---|---|
+| 1 | 1 | — | 26,790 | 7 (5) | 19/8 | 0 |
+| 1 | 2 | — | 29,003 | 11 (6) | 11/11 | 0 |
+| 1 | 3 | — | 27,126 | 12 (10) | 9/7 | 0 |
+| 1 | 4 | — | 27,034 | 21 (14) | 9/11 | 0 |
+| 1 | 5 | — | 28,236 | 18 (14) | 6/7 | 0 |
+| 1 | 1 | pair | 26,641 | 8 (5) | 13/5 | 0 |
+| 1 | 3 | pair | 26,599 | 15 (10) | 19/6 | 0 |
+| 1 | 5 | pair | 29,117 | 16 (12) | 14/14 | 0 |
+| 1 | 2 | pair, write TEA, shared | 30,529 | 16 (11) | 7/17 | 5 |
+| 1 | 4 | pair, write TEA, shared | 26,884 | 17 (12) | 10/12 | 6 |
+| 2 | 1 | — | 22,320 | 13 (9) | 6/7 | 0 |
+| 2 | 2 | — | 24,502 | 25 (13) | 11/15 | 0 |
+| 2 | 3 | — | 23,813 | 23 (16) | 17/8 | 0 |
+| 2 | 4 | — | 23,118 | 24 (15) | 9/9 | 0 |
+| 2 | 5 | — | 23,244 | 18 (15) | 11/17 | 0 |
+| 2 | 1 | pair | 22,139 | 15 (10) | 9/11 | 0 |
+| 2 | 3 | pair | 25,145 | 19 (13) | 18/8 | 0 |
+| 2 | 5 | pair | 23,522 | 21 (15) | 8/23 | 0 |
+| 2 | 2 | pair, write TEA, shared | 23,858 | 19 (14) | 14/15 | 9 |
+| 2 | 4 | pair, write TEA, shared | 23,664 | 17 (13) | 12/21 | 6 |
+
+Not established: DBWO between processors (tied negated); TEA on instruction
+fetches; more than two processors; a machine check cancelling stores queued
+past completion (stores still run behind a held TEA).
 
 ## Full gate
 
