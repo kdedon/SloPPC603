@@ -773,6 +773,50 @@ Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` under the
 Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and
 `PPC_LSU_PIPE=1`, commit 98e94dd: 0 errors, 48 warnings.
 
+### Slice 9
+
+Dispatch rules the 603e manual allows and the core had made stricter
+([PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#serialization-flag-token-and-dq1-branches)):
+
+- LR and CTR moves are completion-serialized (UM 6.3.3.2): they wait in a
+  one-entry holding slot, outside the lane, until they reach the CQ head;
+  younger work dispatches behind them; readers of their result wait at
+  dispatch until the lane finishes. While a move waits the lane takes no
+  younger access, and the LSU unit hands over only accesses older than it.
+- The flag token is the single CR rename (UM 6.3.3.1). An instruction
+  writing only CA, OV or SO takes none; CA and SO readers wait until the
+  youngest older writer retires. Two flag writers still never retire
+  together.
+- A `bc` on a CR bit alone pairs in DQ1: resolved when its CR is final and
+  matches the fetch path, predicted when DQ0 writes its CR.
+
+Recorded: `make -C sim test-core-dual test-core-control-memory test-core-machine-check-trace test-crstate-execution test-core-crstate test-core-branch-recovery test-core-branch-fold test-core-serialization test-core-sprg test-core-lsu-timing test-flags test-completion-flags test-core-add-flags test-core-adde test-core-rotate test-core-compare test-reference test-reference-lsu test-reference-stress`, and from `sim/` the same with `DISPATCH_WIDTH=2 BUILD_DIR=build-w2-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, commit c1f9cce, 2026-10-04.
+All pass. `tb_core_dual` (65 retirements, widths 1 and 2 retire identical
+packets) adds three groups: J, an `mtctr` and the `addi` behind it
+dispatch before an older `mullw` retires and the `add` reading `mfctr`'s
+result dispatches after it retires; K, a `cmpw` behind `subfc` dispatches
+before `subfc` retires and `adde` after; L, `cmpw` + `bc` in DQ1 pairs
+predicted right and wrong (the wrong path's `addi` never retires), and
+`addi` + `bc` pairs resolved. The width-2 checks of L ran on the commit
+after c1f9cce, which adds the mispredicted case. With the unit,
+`test-core-control-memory` takes 3,414 cycles at width 2 (3,708 before),
+`test-reference` 8,500 snapshots.
+
+Recorded: `make -C sim -k test-core-add-recovery test-core-adde-recovery test-addme-recovery test-addze-recovery test-slw-recovery test-srw-recovery test-sraw-recovery test-srawi-recovery test-insert-recovery test-subf-recovery test-neg-recovery test-subfc-recovery test-subfe-recovery test-subfe-zero-recovery test-subfme-recovery test-subfze-recovery test-subfic-recovery test-subfic-negative-recovery test-addic-recovery test-addic-record-recovery test-andi-recovery test-andis-recovery test-cntlzw-recovery test-extsb-recovery test-extsh-recovery test-multiply-recovery test-multiply-overflow-recovery test-mulhw-recovery test-mulhwu-recovery test-divwu-recovery test-divwu-zero-recovery test-divw-recovery test-divw-zero-recovery test-divw-overflow-recovery test-core-logical test-core-record-logical test-core-add-unary test-core-shifts test-core-arithmetic-shifts test-core-subtract test-core-subcarry test-core-subextend test-core-subunary test-core-subimmediate test-core-addimmediate test-core-unarylogical test-core-crtransfer test-core-crlogical test-core-xer`, commit 2df5715, 2026-10-04.
+All pass at width 1. Five benches modelled one flag owner for every flag
+instruction and now model the CR token: `tb_core_add_flags`, `tb_core_adde`,
+`tb_core_add_unary`, `tb_core_rotate`, `tb_core_add_recovery`. In the last,
+`subfic` and non-record `addic` no longer wait behind the seed's token, so
+they finish before the barrier stalls and only the finished-kill and
+commit-redirect modes (2 of 5) reach them; `addic.` still runs all five.
+
+Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` under the
+Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and
+`PPC_LSU_PIPE=1`, commit c1f9cce: 0 errors, 49 warnings. No fit was run.
+New logic on the dispatch path: the holding-slot destination compare
+(5 bits, three sources per slot), two pending XER tags compared at
+retirement, and the DQ1 `bc` condition from the merged CR.
+
 ## Risks
 
 - **Throughput depends on P3 first.** Today's CPI is about 4 on Dhrystone and

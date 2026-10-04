@@ -139,7 +139,7 @@ module tb_core_dual #(
     return {6'd18, 24'(disp >>> 2), 2'b00};
   endfunction
   localparam logic [31:0] SYNC = {6'd31, 15'd0, 10'd598, 1'b0};
-  localparam logic [31:0] END_PC = 32'h100;
+  localparam logic [31:0] END_PC = 32'h140;
   // Each group begins with a sync.
   function automatic logic [31:0] instruction(input logic [31:0] address);
     case (address)
@@ -222,7 +222,11 @@ module tb_core_dual #(
       32'hec: return SYNC;
       32'hf0: return addi(0, 0, 2);
       32'hf4: return {6'd16, 5'd4, 5'd20, 14'd2, 2'b00};  // bge cr5, +8 (not taken)
-      32'hf8: return b(int'(END_PC) - 32'hf8);
+      32'hf8: return SYNC;
+      32'hfc: return cmpw(6, 5, 4);
+      32'h100: return {6'd16, 5'd12, 5'd25, 14'd2, 2'b00};  // bgt cr6, +8 (taken, predicted not)
+      32'h104: return addi(31, 0, 7);                      // skipped
+      32'h108: return b(int'(END_PC) - 32'h108);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
@@ -353,6 +357,7 @@ module tb_core_dual #(
       expect_pair(32'hac, LSU_PIPE, "or + lwz, base in rename");
       expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
       expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
+      expect_pair(32'hfc, 1'b1, "cmpw + mispredicted bc in DQ1");
       $display("retirement:");
       expect_retire_pair(32'h14, 1'b1, "add + add");
       expect_retire_pair(32'h24, 1'b0, "add + dependent addi");
