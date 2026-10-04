@@ -329,6 +329,62 @@ at width 2 and 2.1% at width 1.
   when DQ0 would have resolved the branch, and a miss here recovers at
   retirement, later than F6-5.
 
+## Batch 13 start and CQ[1] retirement
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex +PROFILE`, commits c77ae69 plus the profiler change of 9906d74 (before) and 9906d74 (after), 2026-10-04.
+Unit and store queue on, base snooping off, prebuilt firmware (2000 runs,
+10 iterations). Every run passes its checks.
+
+Profile at c77ae69, Dhrystone at width 2, cycles per run (entries of at
+least 1.5):
+
+| Cause | Cycles/run |
+|---|---:|
+| CQ full, `SPECIAL_NONE` at DQ0 | 50.6 |
+| CQ full, `SPECIAL_STORE` | 16.5 |
+| CQ full, `SPECIAL_LOAD` / `SPECIAL_MFSPR` | 3.0 / 2.5 |
+| RS full | 32.5 |
+| Flags wait | 28.0 |
+| Drain for memory (load / store) | 20.5 / 2.0 |
+| LSU busy (load / store / other) | 9.0 / 7.0 / 2.0 |
+| Drain for `mtspr` | 3.0 |
+| Special lane busy (store / other) | 3.0 / 2.0 |
+| Other, store at DQ0 | 3.0 |
+| Drain for branch | 2.0 |
+| CQ[1] finished but held beside a retiring head (was "other") | 90.5 |
+
+The profiler now names the held cases and the finished CQ[1] entries the
+queue did not offer (UM 6.6.1.3 verdict in the last column):
+
+| CQ[1] not retired | Dhrystone/run | CoreMark/iteration | Manual |
+|---|---:|---:|---|
+| Speculative `bc` in CQ[1], resolving as predicted this cycle | 79.0 | 33,524 | Allowed: it no longer follows an unresolved prediction. Relaxed. |
+| Speculative `bc` in CQ[1], mispredicted (resolving, or resolved and not yet recovered) | 8.0 | 4,483 | Its next PC is not yet corrected; the younger work is flushed. Kept. |
+| Head is a mispredicted `bc` awaiting recovery | 2.0 | 884 | CQ[1] follows a mispredicted branch. Kept. |
+| Head is an SPR move finishing in the special lane (`mfspr`, `mtspr`) | 1.5 | 1,434 | Allowed (CQ[0] completes). Kept: the lane's commit-time redirect and exception outputs are not known early enough; small. |
+| Store in CQ[1] (`stw`, `stwx`) | 7.0 | 395 | Forbidden: integer or load only. Kept. |
+| Pair would write three GPRs | 0 | 692 | Forbidden. Kept. |
+| Update load in CQ[1] beside a head that writes no GPR | 0 | 36 | Allowed (two GPR writes). Kept: the update base is written from the head only. |
+| Two branches | 0 | 297 | Branches keep a CQ entry here; one LR/CTR write per cycle. Kept. |
+| Same GPR in both | 0 | 0.2 | Allowed. Kept: the write ports never target one register. |
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Batch 13 start (c77ae69) | 851.4 | 771.8 | 2.037 | 2.193 |
+| Predicted `bc` retires as it resolves (9906d74) | 851.4 | 771.8 | 2.037 | 2.194 |
+
+The 79 held cycles per run were not on the critical path: the branch now
+retires a cycle earlier (whole program: 212 fewer cycles at width 2), but the CQ-full stall is unchanged (50.6 per run).
+While dispatch waits for a CQ entry the head is busy 15.6 cycles per run
+(store 7.5, load 6.1), one instruction retires 16.5 (CQ[1] unfinished 13.0)
+and two retire 41.5: the queue drains at the full rate but an entry freed by
+retirement reaches dispatch only the next cycle. Letting dispatch use the
+entries retiring in the same cycle (9906d74 plus an uncommitted change to
+the queue's allocation ready, which adds a retire-to-dispatch path) measured 755.9 cycles per Dhrystone run at width 2 (-2.1%), 840.9 at
+width 1 and 2.201 CoreMark/MHz at width 2. The manual's DQ0 and DQ1 rules
+say only that a completion buffer must be free, not whether one freed in
+the same cycle counts.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion

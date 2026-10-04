@@ -889,6 +889,26 @@ crafted trace. Not checked: rename and CQ occupancy, unit busy times, operand
 readiness and exception-free CQ[1] retirement, which the trace does not show,
 and the per-row latencies and chapter 6 worked schedules.
 
+## CQ[1] retirement audit
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex +PROFILE`, commits c77ae69 (before) and 9906d74 (after), 2026-10-04.
+`+PROFILE` names why a finished CQ[1] does not retire beside a retiring
+head: `retire1 held: <gate term>` and `retire1 not offered: <pair rule>`.
+Each cause against UM 6.6.1.3 (counts and verdicts in
+[PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#batch-13-start-and-cq1-retirement)):
+
+- Speculative `bc` in CQ[1] resolving as predicted: 79 of the 90.5 held
+  cycles per Dhrystone run. It follows no unresolved prediction, so it now
+  retires that cycle, from CQ[0] or CQ[1] (`bs_hit`). Neutral on cycles: the
+  CQ-full stall comes from entries freed by retirement reaching dispatch a
+  cycle later.
+- Kept, as the manual requires: a mispredicted `bc` or anything behind one,
+  stores, pairs over two GPR writes.
+- Kept, stricter than the manual, each at most 1.5 held cycles per
+  Dhrystone run and 0.3% of CoreMark cycles: an SPR move
+  finishing in the special lane at the head, an update load in CQ[1], one
+  GPR written by both, two branches.
+
 ## Risks
 
 - **Throughput depends on P3 first.** Today's CPI is about 4 on Dhrystone and
