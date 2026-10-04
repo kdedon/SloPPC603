@@ -22,6 +22,7 @@ difference, the same for retirement spacing, and the excess by cause.
 """
 
 import argparse
+import csv
 import re
 import sys
 from collections import Counter, defaultdict
@@ -105,6 +106,8 @@ def main():
     ap.add_argument("--mul", type=int, default=3)
     ap.add_argument("--fetch", choices=("aligned", "any"), default="aligned")
     ap.add_argument("--no-sru-add", dest="sru_add", action="store_false")
+    ap.add_argument("--core", action="append", default=[], choices=sorted(pm.CORE_RULES),
+                    help="apply a restriction of this core to the model (repeatable)")
     ap.add_argument("--top", type=int, default=40, help="rows of the per-PC table")
     ap.add_argument("--csv", help="write per-PC rows here")
     args = ap.parse_args()
@@ -113,7 +116,7 @@ def main():
 
     recs = pm.read_trace(args.retire_log)
     stream = [(pc, w, recs[i + 1][1]) for i, (_, pc, w) in enumerate(recs[:-1])]
-    sched = pm.schedule(stream, args.fetch == "any")
+    sched = pm.schedule(stream, args.fetch == "any", frozenset(args.core))
     disp, ret = read_events(args.dispatch_trace)
     stall, alone = read_stalls(args.stall_trace)
     pcs = [pc for pc, _, _ in stream]
@@ -221,14 +224,15 @@ def main():
     table("by basic block", block_of, 30)
     table("by PC", lambda pc: f"{pc:08x} {text.get(pc, '')}", args.top)
     if args.csv:
-        with open(args.csv, "w") as fh:
-            fh.write("pc,function,insn,count,core_d,model_d,core_r,model_r,excess_causes\n")
+        with open(args.csv, "w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["pc", "function", "insn", "count", "core_d", "model_d",
+                        "core_r", "model_r", "excess_causes"])
             for pc, r in sorted(rows.items()):
-                causes = ";".join(f"{c}={n / iters:.2f}" for c, n in r["excess"].most_common())
-                fh.write(f"{pc:08x},{func_of(syms, pc)},{text.get(pc, '')},{r['n'] / iters:.2f},"
-                         f"{r['core_d'] / iters:.2f},{r['model_d'] / iters:.2f},"
-                         f"{r['core_r'] / iters:.2f},{r['model_r'] / iters:.2f},{causes}\n")
-
+                w.writerow([f"{pc:08x}", func_of(syms, pc), text.get(pc, ""),
+                            *(f"{r[f] / iters:.2f}" for f in ("n", "core_d", "model_d",
+                                                            "core_r", "model_r")),
+                            ";".join(f"{c}={n / iters:.2f}" for c, n in r["excess"].most_common())])
 
 if __name__ == "__main__":
     main()

@@ -271,8 +271,24 @@ def predict_taken(ins):
     return backward != bool(y)
 
 
-def schedule(stream, fetch_any=False):
-    """Schedule (pc, word, next_pc) records. Returns per-instruction dicts."""
+# Restrictions of this core that the 603e does not have, or rule variants,
+# each switched on by name to price it against the model (perf_diff.py).
+CORE_RULES = {
+    "branch-slot": "a branch takes a dispatch slot, the BPU one per cycle, a CQ "
+                   "entry and a completion slot; it executes when it dispatches",
+    "cr-token": "a CR writer dispatches the cycle after the previous CR writer completes",
+    "dq0-iu": "an add or compare uses the SRU only from DQ1 beside an IU instruction in DQ0",
+    "lsu-base": "a load or store dispatches only once its address operands are written",
+    "late-retire": "an instruction completes two cycles after it finishes, not one",
+    "cq-same": "a CQ entry freed by completion takes a dispatch in the same cycle "
+               "(the model's default is the next cycle)",
+}
+
+
+def schedule(stream, fetch_any=False, core=frozenset()):
+    """Schedule (pc, word, next_pc) records. Returns per-instruction dicts.
+
+    core names CORE_RULES to apply."""
     out = []
     last = {"nb": None}                       # last non-branch record
     gpr_prod, cr_prod = {}, {}
@@ -285,6 +301,31 @@ def schedule(stream, fetch_any=False):
     fetch_hist = []                           # (F, pc) of every instruction, in order
     nb_hist = []                              # non-branch records, in order
     ser_until = 0                             # dispatch-serialized retire + 1
+    cr_free = 0                               # cr-token: next CR writer dispatch
+    cq_late = 0 if "cq-same" in core else 1   # entry busy through its completion cycle
+
+    def dispatch_cycle(ins, d, units):
+        """First cycle >= d with a slot, a free unit, a CQ entry and renames."""
+        prev = nb_hist[-1] if nb_hist else None
+        while True:
+            pair = prev is not None and prev["D"] == d
+            if pair and (len([q for q in nb_hist[-2:] if q["D"] == d]) >= 2
+                         or prev["ins"].dserial or ins.dserial):
+                d += 1
+                continue
+            us = units
+            if "dq0-iu" in core and ins.unit == "ADD":
+                us = ["SRU"] if pair and prev["unit"] == "IU" else ["IU"]
+            avail = [u for u in us if unit_start[u] <= d and not (pair and prev["unit"] == u)]
+            if not avail:
+                d += 1
+                continue
+            busy = sum(1 for q in nb_hist[-CQ_LIMIT - 2:] if q["C"] + cq_late > d)
+            ren = sum(len(q["ins"].dst) for q in nb_hist[-GPR_LIMIT - 2:] if q["C"] >= d)
+            if busy + 1 > CQ_LIMIT or ren + len(ins.dst) > GPR_LIMIT:
+                d += 1
+                continue
+            return d, avail
     for pc, word, npc in stream:
         ins = Insn(pc, word, ARGS.mul)
         r = {"pc": pc, "ins": ins}
@@ -310,6 +351,11 @@ def schedule(stream, fetch_any=False):
         if ins.unit == "BPU":
             # UM 6.4.1: BPU decode/execute the cycle after fetch (F6-3: br 2F 3E).
             x = max(f + 1, last_x + 1)
+            if "branch-slot" in core:
+                prev = nb_hist[-1] if nb_hist else None
+                d, _ = dispatch_cycle(ins, max(f + 1, prev["D"] if prev else 0, ser_until),
+                                      ["BPU"])
+                x = max(x, d)
             need = x
             if ins.lr_r:
                 need = max(need, lr_ready)         # UM 6.4.1.1: wait for mtspr(LR)
@@ -340,6 +386,14 @@ def schedule(stream, fetch_any=False):
             if ins.ctr_w:
                 ctr_ready = resolve + 1
             r["C"] = out[-1]["C"] if out else 0
+            if "branch-slot" in core:
+                prev = nb_hist[-1] if nb_hist else None
+                c = max(resolve, prev["C"] if prev else 0)
+                while prev and prev["C"] == c and \
+                        len([q for q in nb_hist[-2:] if q["C"] == c]) >= 2:
+                    c += 1
+                r.update(D=d, S=x, E=x, C=c, unit="BPU")
+                nb_hist.append(r)
             out.append(r)
             continue
         redirect = 0
@@ -348,24 +402,14 @@ def schedule(stream, fetch_any=False):
         d = max(f + 1, prev["D"] if prev else 0, ser_until)
         if ins.dserial and prev:
             d = max(d, max(q["C"] for q in nb_hist[-CQ_LIMIT:]) + 1)
+        if "cr-token" in core and ins.crd:
+            d = max(d, cr_free)
+        if "lsu-base" in core and ins.unit == "LSU":
+            base = ins.src - ({(ins.word >> 21) & 31} if ins.store else set())
+            d = max([d] + [gpr_prod.get(g, 0) for g in base])
         units = ["IU", "SRU"] if ins.unit == "ADD" and ARGS.sru_add else \
             ["IU"] if ins.unit == "ADD" else [ins.unit]
-        while True:
-            pair = prev is not None and prev["D"] == d
-            if pair and (len([q for q in nb_hist[-2:] if q["D"] == d]) >= 2
-                         or prev["ins"].dserial or ins.dserial):
-                d += 1
-                continue
-            avail = [u for u in units if unit_start[u] <= d and not (pair and prev["unit"] == u)]
-            if not avail:
-                d += 1
-                continue
-            busy = sum(1 for q in nb_hist[-CQ_LIMIT - 2:] if q["C"] >= d)
-            ren = sum(len(q["ins"].dst) for q in nb_hist[-GPR_LIMIT - 2:] if q["C"] >= d)
-            if busy + 1 > CQ_LIMIT or ren + len(ins.dst) > GPR_LIMIT:
-                d += 1
-                continue
-            break
+        d, avail = dispatch_cycle(ins, d, units)
         # Execute: operands from rename/forwarding (UM 6.3.3.1).
         ready = max([gpr_prod.get(g, 0) for g in ins.src], default=0)
         ready = max(ready, max([cr_prod.get(c, 0) for c in ins.crs], default=0))
@@ -385,7 +429,8 @@ def schedule(stream, fetch_any=False):
         unit_start[u] = s
         unit_free[u] = s + 1 if u in ("LSU", "FPU") else fin + 1   # T6-6 2:1; UM 6.4.2
         # Completion: UM 6.3.3, 6.6.1.3.
-        c = max(fin + 1, prev["C"] if prev else 0, pending_pred)          # A7
+        late = 2 if "late-retire" in core else 1
+        c = max(fin + late, prev["C"] if prev else 0, pending_pred)       # A7
         while True:
             if prev and prev["C"] == c:
                 two = len([q for q in nb_hist[-2:] if q["C"] == c]) >= 2
@@ -408,6 +453,8 @@ def schedule(stream, fetch_any=False):
             ctr_ready = fin + 1
         if ins.dserial:
             ser_until = c + 1
+        if ins.crd:
+            cr_free = c + 1
         nb_hist.append(r)
         out.append(r)
     return out
@@ -452,6 +499,8 @@ def main():
     ap.add_argument("--no-sru-add", dest="sru_add", action="store_false",
                     help="add/cmp only in the IU (A10 off; the 603 without the SRU adder)")
     ap.add_argument("--top", type=int, default=25, help="rows of the per-PC gap table")
+    ap.add_argument("--core", action="append", default=[], choices=sorted(CORE_RULES),
+                    help="apply a restriction of this core (repeatable)")
     ap.add_argument("--assumptions", action="store_true")
     ARGS = ap.parse_args()
     if ARGS.assumptions:
@@ -463,7 +512,7 @@ def main():
     if len(recs) < 3:
         sys.exit("trace has no retirements")
     stream = [(pc, w, recs[i + 1][1]) for i, (_, pc, w) in enumerate(recs[:-1])]
-    sched = schedule(stream, ARGS.fetch == "any")
+    sched = schedule(stream, ARGS.fetch == "any", frozenset(ARGS.core))
     if ARGS.mark is None:
         marks = [0, min(1000, len(stream) // 4), len(stream) - 1]
     else:
