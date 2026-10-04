@@ -362,7 +362,9 @@ module tb_core_dual #(
       expect_pair(32'h24, 1'b1, "add + dependent addi");
       expect_pair(32'h34, 1'b0, "add + mullw (same unit)");
       expect_pair(32'h44, 1'b1, "lwz + dependent add");
-      expect_pair(32'h4c, 1'b1, "add + lwz");
+      // Without the unit the lwz waits for the lane, and the add, the IU
+      // station holding the dependent add, goes ahead to the SRU.
+      expect_pair(32'h4c, LSU_PIPE || !dut.HAS_SRU, "add + lwz");
       // The unit takes store data from rename; the lane needs it committed.
       expect_pair(32'h58, LSU_PIPE, "or + stw of its result");
       expect_pair(32'h64, 1'b1, "cmpw + cmpw (second waits for CR)");

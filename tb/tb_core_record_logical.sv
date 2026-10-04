@@ -82,6 +82,8 @@ module tb_core_record_logical;
   int admission_first_commit_edge = -1;
   int admission_free_finish_edge = -1;
   int admission_second_dispatch_edge = -1;
+  int admission_second_issue_edge = -1;
+  completion_tag_t admission_second_tag;
 
   logic [70:0] unused_dmem;
   logic [3:0] unused_context;
@@ -486,6 +488,7 @@ module tb_core_record_logical;
       admission_first_commit_edge = -1;
       admission_free_finish_edge = -1;
       admission_second_dispatch_edge = -1;
+      admission_second_issue_edge = -1;
     end else begin
       int retained, found, issue_index, finish_index;
       logic settled, early;
@@ -565,12 +568,21 @@ module tb_core_record_logical;
             admission_free_tag = lane_alloc_tag[lane];
           end
           if (lane_alloc[lane].pc == 32'd20) begin
+            // UM 6.3.3.1: it may wait in its station for the CR rename.
             admission_second_seen = 1;
             admission_second_dispatch_edge = edge_count;
-            require(admission_first_commit_edge >= 0 &&
-                    edge_count > admission_first_commit_edge,
-                    "second record acquired on or before owner release edge");
+            admission_second_tag = lane_alloc_tag[lane];
+            require(admission_first_commit_edge >= 0 || dut.flags_busy,
+                    "second record dispatched with no owner or release");
           end
+        end
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_issue[lane] && phase == PHASE_ADMISSION && admission_second_seen &&
+            lane_issue_tag[lane] == admission_second_tag) begin
+          admission_second_issue_edge = edge_count;
+          require(admission_first_commit_edge >= 0 &&
+                  edge_count > admission_first_commit_edge,
+                  "second record issued on or before owner release edge");
         end
       for (int lane = 0; lane < 2; lane++)
         if (lane_finish[lane] && phase == PHASE_ADMISSION &&
@@ -709,7 +721,7 @@ module tb_core_record_logical;
     while (phase_retirements < 3) tick();
     retire_enable = 0;
     while (admission_free_finish_edge < 0) tick();
-    require(!admission_second_seen && dut.flags_busy,
+    require(admission_second_issue_edge < 0 && dut.flags_busy,
             "second record was not blocked behind live owner");
     retire_enable = 1;
     await_halt();
@@ -717,8 +729,9 @@ module tb_core_record_logical;
             admission_free_finish_edge < admission_first_commit_edge,
             "dependent flag-free consumer did not finish before owner commit");
     require(admission_second_seen &&
-            admission_second_dispatch_edge == admission_first_commit_edge + 1,
-            "second owner was not admitted exactly one edge after commitment");
+            admission_second_dispatch_edge <= admission_first_commit_edge + 1 &&
+            admission_second_issue_edge == admission_first_commit_edge + 1,
+            "second owner did not issue exactly one edge after commitment");
 
     // Kill an owner while its record operation is held in the RS.
     clear_program();

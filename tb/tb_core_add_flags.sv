@@ -505,7 +505,7 @@ module tb_core_add_flags;
 
   always @(posedge clk) begin
     int issue_index, finish_index;
-    logic word_legal, word_needs_flags;
+    logic word_legal, word_needs_flags, settled, early;
     if (!rst_n) begin
       stream.delete();
       next_dispatch_pc = 0;
@@ -519,7 +519,31 @@ module tb_core_add_flags;
       last_owner_commit_edge = -1;
     end else begin
       require(!redirect_accepted, "disabled ADD recovery unexpectedly accepted");
-      require(retire_valid == (stream.size() > 0 && stream[0].done),
+      // A head finished before this edge, or finishing on it, may retire.
+      settled = stream.size() > 0 && stream[0].done;
+      early = 0;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_finish[lane]) begin
+          finish_index = -1;
+          for (int i = 0; i < stream.size(); i++)
+            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
+          require(finish_index >= 0 && !stream[finish_index].done &&
+                  stream[finish_index].issued,
+                  "ADD finish did not match a live issued stream entry");
+          if (finish_index >= 0) begin
+            require(edge_count == int'(stream[finish_index].issue_edge) + 1,
+                    "ADD registered IU finish was not issue+1");
+            item = stream[finish_index];
+            item.done = 1;
+            item.finish_edge = 32'(edge_count);
+            stream[finish_index] = item;
+            // UM Figure 6-3: an IU result completes in its writeback cycle.
+            if (finish_index == 0 && (lane == 1 || dut.completion.result_retire_i))
+              early = 1;
+          end
+        end
+
+      require(retire_valid == (settled || early),
               "ADD retirement eligibility disagrees with stream oracle");
       if (retire_valid) begin
         if (!(retired.pc == stream[0].pc && retired.insn == stream[0].insn &&
@@ -532,8 +556,8 @@ module tb_core_add_flags;
                 dut.retire_producer == stream[0].tag,
                 "ADD retirement PC/word/tag differs from stream head");
         if (expected_legal(stream[0].insn))
-          require(edge_count > int'(stream[0].finish_edge),
-                  "ADD finish bypassed to same-edge retirement");
+          require(edge_count >= int'(stream[0].finish_edge),
+                  "ADD retirement preceded its finish");
       end
 
       if (retire_valid && retire_ready) begin
@@ -570,24 +594,6 @@ module tb_core_add_flags;
             item.issued = 1;
             item.issue_edge = 32'(edge_count);
             stream[issue_index] = item;
-          end
-        end
-
-      for (int lane = 0; lane < 2; lane++)
-        if (lane_finish[lane]) begin
-          finish_index = -1;
-          for (int i = 0; i < stream.size(); i++)
-            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
-          require(finish_index >= 0 && !stream[finish_index].done &&
-                  stream[finish_index].issued,
-                  "ADD finish did not match a live issued stream entry");
-          if (finish_index >= 0) begin
-            require(edge_count == int'(stream[finish_index].issue_edge) + 1,
-                    "ADD registered IU finish was not issue+1");
-            item = stream[finish_index];
-            item.done = 1;
-            item.finish_edge = 32'(edge_count);
-            stream[finish_index] = item;
           end
         end
 
