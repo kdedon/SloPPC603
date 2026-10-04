@@ -828,8 +828,8 @@ and `+DISPATCH_TRACE` marks a dispatch-removed branch with `*`.
 
 Recorded: `make -C sim BRANCH_REMOVAL=1 test-core test-core-dual test-core-branch-fold test-core-control-memory test-core-branch-recovery test-core-machine-check-trace test-core-recovery test-core-fetch2 test-stage test-chip-pins`, at width 1 and at width 2 with the LSU unit (`DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe` from `sim/`), commit 3bb0024, 2026-10-04.
 All pass. `test-core-branch-fold` (922 retirements) removes 86 branches at
-width 1 (4,110 cycles) and 80 with two-word fetch at width 2 (3,554 cycles,
-3,598 without removal); the control/memory bench checks that each removed
+width 1 (4,110 cycles) and 80 with two-word fetch at width 2 (3,554 cycles;
+3,598 at a20c314 without removal); the control/memory bench checks that each removed
 branch is a `b`, `bc`, `bclr` or `bcctr` without LK or CTR decrement and
 skips its expected row. `tb_core_dual` and `tb_core_fetch2` leave every such
 branch out of the width-comparison log, since which ones are removed depends
