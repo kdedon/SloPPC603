@@ -610,6 +610,16 @@ module ppc_dcache #(
                    push_st_q != PU_READ && !(push_busy && push_line_q == req_line);
   assign lk_fast_done = lk_fast && rsp_ready_i;
   assign req_accept = req_valid_i && req_ready_o;
+  // Fast copy-back store hit: the data RAM is written and the store answered
+  // in its lookup cycle (UM Table 6-6, one store per cycle). The next request
+  // is accepted then unless it reads the double word being written.
+  logic lk_fast_st, lk_fast_st_done, lk_fast_st_next;
+  assign lk_fast_st = FAST_LOAD_HIT && state_q == S_LOOKUP && req_op_q == DC_STORE &&
+                      cacheable && !req_w && hit && !snp_valid_q && push_st_q != PU_READ &&
+                      !(push_busy && push_line_q == req_line);
+  assign lk_fast_st_done = lk_fast_st && rsp_ready_i;
+  assign lk_fast_st_next = lk_fast_st_done &&
+    ({req_addr_i[5 +: SET_BITS], req_addr_i[4:3]} != {req_set, req_dw});
 
   // ---------------------------------------------------- write queue count
   logic wq_full, wq_push, wq_push_cob, wq_pop;
@@ -664,6 +674,10 @@ module ppc_dcache #(
       data_waddr = {req_set, step_idx_q};
     end else if (state_q == S_STORE_WRITE) begin
       data_way_we[way_q] = 1'b1;
+      data_be = req_be_q;
+      data_wdata = req_wdata_q;
+    end else if (lk_fast_st) begin
+      data_way_we = hitw;
       data_be = req_be_q;
       data_wdata = req_wdata_q;
     end
@@ -747,8 +761,8 @@ module ppc_dcache #(
     push_req_data_o = push_data_q;
 
     req_ready_o = rst_ni && !hid0_dcfi_i &&
-                  ((state_q == S_IDLE && !rsp_valid_q) || lk_fast_done);
-    rsp_valid_o = rsp_valid_q || lk_fast;
+                  ((state_q == S_IDLE && !rsp_valid_q) || lk_fast_done || lk_fast_st_next);
+    rsp_valid_o = rsp_valid_q || lk_fast || lk_fast_st;
     rsp_data_o = lk_fast ? hit_data : rsp_data_q;
     rsp_error_o = rsp_error_q;
     rsp_align_o = rsp_align_q;
@@ -980,7 +994,7 @@ module ppc_dcache #(
               rsp_align_q <= lk_align;
               rsp_ok_q <= lk_ok;
               state_q <= S_IDLE;
-            end else if (lk_fast_done) begin
+            end else if (lk_fast_done || lk_fast_st_done) begin
               state_q <= req_accept ? S_LOOKUP : S_IDLE;
               rsp_sent_q <= 1'b0;
             end else if (lk_read && early_data_q) begin
