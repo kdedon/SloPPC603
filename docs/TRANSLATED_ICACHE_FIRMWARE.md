@@ -1,9 +1,9 @@
 # Compiled firmware through the translated instruction cache
 
-Recorded: `make -C toolchain rtl-table-search-cached rtl-table-fault-cached`, commit pre-repository snapshot, imported in 3e727b6, 2026-09-23.
+Recorded: `make -C toolchain rtl-table-search-cached rtl-table-fault-cached`, commit f531cf2 plus uncommitted changes (the IBAT0 I=1 firmware change), 2026-10-04.
 
-The `table-search` and `table-fault` ELF files are unchanged from the accepted
-scalar 60x tests. `tb_compiled_table_cached_bus60x_firmware.sv` runs each one
+The `table-search` and `table-fault` ELF files are the ones the flat and
+scalar 60x tests run. `tb_compiled_table_cached_bus60x_firmware.sv` runs each one
 through `ppc_core_bat_cached_bus60x` and a single physical 192 KiB RAM at
 `0xfff00000..0xfff2ffff`. The RAM model reads and writes only from the public
 60x address, control, and data pins. Hierarchical signals serve as read-only
@@ -26,18 +26,23 @@ way-one C=0 retry, and final physical data words. The `table-fault` profile
 checks all 21 cases: full search order, 11 allowed fills, 10 ordinary ISI/DSI
 vectors, DAR/DSISR/SRR1 records, unchanged normal CR and all 32 normal GPRs at
 vector entry, and no PTE write, TLB fill, or denied physical target access on
-failure. Both profiles require actual line bursts, scalar instruction bypasses,
-and cache hits. Real-mode instruction WIMG is nonzero and bypasses; allowed
-translated WIMG=0 instruction fetches may fill the physical cache.
+failure. Vector entry is observed at the retirement of the vector's first
+instruction, since vector fetches may hit the cache. Both profiles require
+actual line bursts, scalar instruction bypasses, and cache hits.
 
-Focused strict `-Wall --assert` runs after the fetch-credit fix passed:
+Only WIMG I selects the bypass path (UM 5.2). Real-mode fetches (WIMG=0001:
+startup, miss handlers, vectors) and the search profile's WIMG=0 probe page
+fill the cache. Both firmwares map their translated code through IBAT0 with
+I=1, so it takes the scalar cache-inhibited path.
 
-| Unchanged ELF | Retirements | Page misses | Line bursts / beats | Scalar instruction bypasses | Cache hits | Checks |
-|---|---:|---:|---:|---:|---:|---:|
-| `table-search` | 5,152 | 4 | 41 / 164 | 3,328 | 2,554 | 573,675 |
-| `table-fault` | 73,464 | 21 | 85 / 340 | 7,015 | 74,250 | 5,251,837 |
+Focused strict `-Wall --assert` runs:
 
-Two negative images were made by changing one linked handler instruction while
+| ELF | Retirements | Page misses | Line bursts / beats | Scalar instruction bypasses | Cache hits | Cycles | Checks |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `table-search` | 5,154 | 4 | 46 / 184 | 2,579 | 3,587 | 66,658 | 443,463 |
+| `table-fault` | 73,466 | 21 | 49 / 196 | 74,706 | 7,752 | 1,495,469 | 9,941,772 |
+
+An earlier run on the unmodified ELFs made two negative images by changing one linked handler instruction while
 keeping every other ELF byte and the same pin responder. Replacing the search
 handler's R/C write caused rejection at the TLB fill's completed-bus-write
 check. Replacing the guarded ISI cause constant with the PP cause caused

@@ -478,31 +478,6 @@ module tb_compiled_table_cached_bus60x_firmware #(
               "guarded I page reached physical target");
             if(m==5)check(a<32'hfff0e000||a>=32'hfff0f000,
               "protected I page reached physical target");
-            if(a==32'hfff00300||a==32'hfff00400)begin
-              check(m>0&&m<32&&fault_denied(m)&&
-                fault_miss_n[m]==1&&fault_vector_n[m]==0,
-                "ordinary vector provenance/count");
-              check(a==(fault_is_i(m)?32'hfff00400:32'hfff00300),
-                "ordinary vector kind");
-              check(dut.translated_core.core.msr==32'h40&&
-                dut.translated_core.core.srr0==fault_event_pc[m]&&
-                dut.translated_core.core.srr1==fault_srr1(m),
-                "ordinary vector MSR/SRR0/SRR1");
-              if(!fault_is_i(m))
-                check(dut.translated_core.core.special.dar_q==fault_ea(m)&&
-                  dut.translated_core.core.special.dsisr_q==fault_dsisr(m),
-                  "ordinary DSI DAR/DSISR");
-              check(dut.translated_core.core.cr==fault_event_cr[m],
-                "normal CR changed before ordinary vector");
-              for(int k=0;k<32;k++)
-                check(dut.translated_core.core.regfile.gpr[k]==fault_event_gpr[m][k],
-                  $sformatf("normal GPR%0d changed before ordinary vector",k));
-              check(fault_write_n[m]==0&&fault_fill_n[m]==0&&
-                fault_target_n[m]==0,"failed search changed PTE/TLB/target");
-              if(m>=4)check(word_at(fault_low_addr(m))==fault_low_before(m),
-                "failed search changed R/C");
-              fault_vector_n[m]++;fault_vectors++;
-            end
           end else if(dut.translated_core.core.msr[17]&&
                     a>=HTAB&&a<HTAB+32'h10000)begin
             check(m>0&&m<32&&fault_miss_n[m]==1,
@@ -650,6 +625,34 @@ module tb_compiled_table_cached_bus60x_firmware #(
           if(retired.insn==32'h4c000064&&retired.pc>=BASE+32'h2000)
             search_rfi++;
         end else begin
+          // Real-mode vectors are cacheable: observe entry at the first vector
+          // instruction's retirement.
+          if(retired.pc==32'hfff00300||retired.pc==32'hfff00400)begin
+            m=int'(active_marker);
+            check(m>0&&m<32&&fault_denied(m)&&
+              fault_miss_n[m]==1&&fault_vector_n[m]==0,
+              "ordinary vector provenance/count");
+            check(retired.pc==(fault_is_i(m)?32'hfff00400:32'hfff00300),
+              "ordinary vector kind");
+            check(dut.translated_core.core.msr==32'h40&&
+              dut.translated_core.core.srr0==fault_event_pc[m]&&
+              dut.translated_core.core.srr1==fault_srr1(m),
+              "ordinary vector MSR/SRR0/SRR1");
+            if(!fault_is_i(m))
+              check(dut.translated_core.core.special.dar_q==fault_ea(m)&&
+                dut.translated_core.core.special.dsisr_q==fault_dsisr(m),
+                "ordinary DSI DAR/DSISR");
+            check(dut.translated_core.core.cr==fault_event_cr[m],
+              "normal CR changed before ordinary vector");
+            for(int k=0;k<32;k++)
+              check(dut.translated_core.core.regfile.gpr[k]==fault_event_gpr[m][k],
+                $sformatf("normal GPR%0d changed before ordinary vector",k));
+            check(fault_write_n[m]==0&&fault_fill_n[m]==0&&
+              fault_target_n[m]==0,"failed search changed PTE/TLB/target");
+            if(m>=4)check(word_at(fault_low_addr(m))==fault_low_before(m),
+              "failed search changed R/C");
+            fault_vector_n[m]++;fault_vectors++;
+          end
           if(retired.fetch_fault==FETCH_PAGE_MISS||
              retired.data_fault==DATA_PAGE_MISS)begin
             m=int'(active_marker);

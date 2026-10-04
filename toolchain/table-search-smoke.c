@@ -102,7 +102,8 @@ int main(void) {
   seed_ptegs();
   __asm__ volatile("sync" ::: "memory");
   WSPR(25, 0xfff10000u); /* SDR1: aligned 64-KiB HTAB, mask zero. */
-  WSPR(529, 0xfff00002u); WSPR(528, 0xfff00002u);
+  /* IBAT0 I=1: translated code takes the uncached fetch path. */
+  WSPR(529, 0xfff00022u); WSPR(528, 0xfff00002u);
   WSPR(537, 0xfff00002u); WSPR(536, 0xfff00002u);
   WSR(1, 0x00001234u); WSR(2, 0x00005678u);
 
