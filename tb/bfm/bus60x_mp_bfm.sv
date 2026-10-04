@@ -16,7 +16,8 @@
 // cancelled by DRTRY in the next cycle, held for 0-2 cycles with TA negated,
 // then replaced by the right data with TA. With early_dbg_pct the next data
 // tenure's DBG is asserted during the final beat's DRTRY. Reads of the
-// tea_base window end with TEA on a random beat with tea_pct.
+// tea_base window end with TEA on a random beat with tea_pct, writes with
+// tea_write_pct.
 //
 // Arbitration: a processor that asserted ARTRY and still asserts BR in the
 // cycle after the qualified ARTRY is granted next, and its tenure must be
@@ -106,11 +107,12 @@ module bus60x_mp_bfm #(
   // negated, and DBGs asserted during a DRTRY.
   int pipelined = 0, self_pipelined = 0, early_bg = 0, early_bg_retried = 0;
   int drtries = 0, drtry_holds = 0, early_dbg = 0, early_dbg_holds = 0;
+  int write_teas = 0;
   /* verilator lint_on UNUSEDSIGNAL */
   // Percent chances: target retry, extra waits, pipelined grant per cycle,
   // early BG, DRTRY per read beat, early DBG, TEA per window read.
   int retry_pct = 5, wait_pct = 25, pipe_pct = 50, early_bg_pct = 50;
-  int drtry_pct = 10, early_dbg_pct = 50, tea_pct = 40;
+  int drtry_pct = 10, early_dbg_pct = 50, tea_pct = 40, tea_write_pct = 0;
   int max_owed = 2;
   logic [31:0] tea_base = 32'b0, tea_bytes = 32'b0;
   int unsigned rng = SEED;
@@ -292,12 +294,25 @@ module bus60x_mp_bfm #(
     beat_end();
   endtask
 
+  // TEA in place of a write beat's TA; earlier beats stay written.
+  task automatic write_tea(input dt_t t);
+    beat_start();
+    tea_n_o = 1'b0;
+    teas[t.m]++;
+    write_teas++;
+    cur_tea = 1'b1;
+    bus_rise();
+    bus_fall();
+    tea_n_o = 1'b1;
+    at_fall = 1'b1;
+  endtask
+
   task automatic data_tenure(input dt_t t);
     int beats, tea_beat;
     bit ended;
     beats = t.burst ? 4 : 1;
     ended = 1'b0;
-    tea_beat = (!t.write && t.addr - tea_base < tea_bytes && chance(tea_pct))
+    tea_beat = (t.addr - tea_base < tea_bytes && chance(t.write ? tea_write_pct : tea_pct))
                ? int'(rnd() % 4) % beats : -1;
     if (dbg_n_o[t.m]) begin
       waits();
@@ -314,8 +329,11 @@ module bus60x_mp_bfm #(
       logic [31:0] base;
       base = t.burst ? {t.addr[31:5], 5'b0} + 32'(((int'(t.addr[4:3]) + k) % 4) * 8)
                      : {t.addr[31:3], 3'b000};
-      if (t.write) write_beat(t, base);
-      else begin
+      if (t.write) begin
+        if (k == tea_beat) write_tea(t);
+        else write_beat(t, base);
+        ended = k == tea_beat;
+      end else begin
         read_beat(t, base, k == tea_beat);
         ended = k == tea_beat;
       end
