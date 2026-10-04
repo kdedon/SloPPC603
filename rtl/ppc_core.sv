@@ -1640,8 +1640,8 @@ module ppc_core #(
 
   // Dual dispatch (UM 6.6.1.2). DQ1 dispatches beside DQ0 when the two go to
   // different units (IU, LSU, FPU) and DQ1's unit, rename slot, CQ entry and
-  // flag token remain after DQ0. A branch takes no unit; it pairs, in either
-  // slot, only when it cannot redirect at dispatch: a b or branch-always
+  // flag token remain after DQ0. A branch takes no unit. In DQ0 it pairs
+  // when it does not redirect at dispatch; in DQ1 only a b or branch-always
   // folded at fetch, whose LR or CTR target no older instruction writes.
   // Serialized instructions, faults and trace mode dispatch alone from DQ0.
   // Two IU operations never pair: the SRU add/compare lane is not built.
@@ -1650,8 +1650,7 @@ module ppc_core #(
   logic pair_units, d1_iu_ready, d1_fp_ready;
   assign bu_finished = DUAL && bu_branch;
   assign c0_iu = normal_uop && !bu_branch;
-  assign c0_branch = bu_branch && (bu_spec || (iq_folded &&
-    ((iq_head.insn[31:26] == 6'd18) || (iq_head.insn[25] && iq_head.insn[23]))));
+  assign c0_branch = bu_branch && !bu_redirect;
   assign c0_lane = special_uop && dispatch_mem_plain;
   assign c0_fp = fp_uop;
   assign c0_fp_mem = special_uop && dispatch_fp_mem_plain;
