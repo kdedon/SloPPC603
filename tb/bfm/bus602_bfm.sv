@@ -188,8 +188,8 @@ module bus602_bfm #(
   bit om_req = 1'b0;
   logic [31:0] om_addr = '0;
   int om_idle = 0;
-  // This process is the only writer of the pins: with a second writer
-  // Verilator updates logic fed by a pin only on the edges of the consumer's
+  // This process is the only writer of the pins: with a second writer, the
+  // simulator updates logic fed by a pin only on the edges of the consumer's
   // other inputs.
   initial begin
     aack_n = 1'b1; t32_n = 1'b1; ta_n = 1'b1; tea_n = 1'b1;
