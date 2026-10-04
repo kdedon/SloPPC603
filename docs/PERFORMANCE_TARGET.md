@@ -510,6 +510,7 @@ passes its checks. Dhrystone is `perf-diff`'s timed loop (18 iterations).
 | Load waits for its base in the unit (cause 4) | c610eb4 | 849.0 | 751.5 | 2.096 | 2.298 |
 | DQ0 add/compare to the SRU (cause 8) | 6cef417 | 849.0 | 744.0 | 2.096 | 2.301 |
 | Causes 1, 3, 4, 8 together | 103325b | 814.0 | 714.5 | 2.187 | 2.406 |
+| Causes 1, 3–6, 8 together | c736a1b | 783.0 | 685.5 | 2.290 | 2.603 |
 
 The build fix changes none of the figures.
 
@@ -531,6 +532,17 @@ the station waits alone 2.0 and 27.5, so at width 2 the gains overlap by
   retirement and branch causes.
 - Cause 8: `RS_FULL` (33.5 per run) is gone; 7.5 cycles saved, the
   leave-one-out estimate.
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commit c736a1b (merge of 310b01f and a91c265), 2026-10-04 (last row; `perf-diff` exits 0, CoreMark CRCs match).
+With the redirect timing of causes 5 and 6 (678.0 at width 2 alone) the
+station waits cost Dhrystone 7.5 cycles at width 2 and gain CoreMark 0.097.
+The loss is `strcmp`'s loop, 9 cycles an iteration against 8: its `lbz`
+now dispatches beside the `mr` that writes its base and waits in the unit,
+the `cmpw` on the loaded byte waits in the IU station and finishes a cycle
+later than when it dispatches after the load (`CQ_FULL` 28 to 60.5,
+`DRAIN_BRANCH` 20). With the base wait off
+(`+define+PPC_LSU_BASE_WAIT=1'b0`): 667.5 and 2.557 at width 2. The SRU
+route off costs 10.5 (696.0).
 
 ## Completion in the writeback cycle
 
