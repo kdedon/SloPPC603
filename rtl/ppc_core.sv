@@ -355,7 +355,7 @@ module ppc_core #(
   logic [31:0] special_branch_target, special_exception_target, lr, ctr;
   // Branch unit (see the branch-unit block below).
   logic bu_branch, bu_ready, bu_taken, bu_reads_cr, bu_reads_lr, bu_reads_ctr;
-  logic bu_spec, bs_valid_q, bs_miss_q, bs_busy, bs_hold;
+  logic bu_spec, bs_valid_q, bs_miss_q, bs_busy, bs_hold, bu_redirect_d;
   logic bu_writes_ctr, bu_ctr_ok, bu_cond_ok, bu_redirect_q;
   logic lr_pending_q, ctr_pending_q, frontend_clear;
   logic [31:0] bu_target, bu_next_pc, bu_target_q, frontend_target;
@@ -371,7 +371,9 @@ module ppc_core #(
   // Branch class predecoded at IQ push, to keep decode off the dispatch path.
   logic [3:0] push_branch, iq_branch;
   logic [31:0] fold_target, fold_target_q;
-  logic [31:0] bu_cr_q, bu_cr;
+  logic early_q, early_bs_q, early_ok, early_fold, early_bs;
+  logic [31:0] early_target_q;
+  logic [31:0] bu_cr_q, bu_cr, bu_cr_d;
   completion_tag_t special_producer;
   logic fetch_valid, fetch_ready, iq_valid, iq_ready;
   logic alloc_ready, cq_ready, cq_empty, cq_finish_accept;
@@ -569,6 +571,7 @@ module ppc_core #(
     .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence || power_stop),
     .quiescent_o(frontend_quiescent),
     .redirect_i(frontend_clear || fold_q), .redirect_target_i(frontend_target),
+    .early_i(early_q), .early_ok_i(early_ok), .early_target_i(early_target_q),
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
     .req_addr_o(fetch_req_addr), .rsp_valid_i(imem_rsp_valid_i),
     .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i[31:0]),
@@ -686,7 +689,8 @@ module ppc_core #(
   assign lr_free = (lr_iq_q == '0) && !lr_pending_q;
   // Shadow LR (UM 6.4.1.1): a linking branch's LR value, PC + 4, is known
   // when it is queued. lr_front_q is the LR left by the youngest queued or
-  // dispatched writer when that is a linking branch (lr_front_ok_q);
+  // dispatched writer when that is a linking branch or an mtlr whose value
+  // is known (lr_front_ok_q);
   // lr_disp_q the same for the youngest dispatched writer, which a bclr
   // reads at dispatch while that writer is uncommitted.
   logic lr_front_ok_q, lr_disp_ok_q, lr_ok;
@@ -820,6 +824,14 @@ module ppc_core #(
   assign push1_writes = lr_ctr_writes(push_uop1);
   assign pop_writes = lr_ctr_writes(iq_uop);
   assign pop1_writes = lr_ctr_writes(dq1_uop);
+  // An mtlr's value is its source at dispatch. Like the 603e's SRU result,
+  // it reaches the branch unit two cycles after dispatch (UM 6.4.1.1): a
+  // bclr then resolves from it, or folds if no other LR writer is queued.
+  logic lr_mt_q;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted) lr_mt_q <= 1'b0;
+    else lr_mt_q <= dispatch && sru_move && pop_writes[1] && !(dispatch1 && pop1_writes[1]);
+  end
   always_ff @(posedge clk_i) begin
     if (!rst_ni || recovery_accepted) begin
       lr_front_ok_q <= 1'b0;
@@ -834,6 +846,9 @@ module ppc_core #(
       end else if (iq_push0 && push_writes[1]) begin
         lr_front_ok_q <= push_uop.special_op != SPECIAL_MTSPR;
         lr_front_q <= queued.pc[31:2] + 30'd1;
+      end else if (lr_mt_q && (lr_iq_q == '0)) begin
+        lr_front_ok_q <= 1'b1;
+        lr_front_q <= sru_a_q[31:2];
       end
       if (dispatch1 && pop1_writes[1]) begin
         lr_disp_ok_q <= dq1_uop.special_op != SPECIAL_MTSPR;
@@ -841,6 +856,9 @@ module ppc_core #(
       end else if (dispatch && pop_writes[1]) begin
         lr_disp_ok_q <= iq_uop.special_op != SPECIAL_MTSPR;
         lr_disp_q <= iq_head.pc[31:2] + 30'd1;
+      end else if (lr_mt_q) begin
+        lr_disp_ok_q <= 1'b1;
+        lr_disp_q <= sru_a_q[31:2];
       end
     end
   end
@@ -1039,6 +1057,9 @@ module ppc_core #(
   assign bu_cr_capture = sru_cr_capture || (!fp_cr_pending && iu_result_valid &&
     iu_result_ready && !iu_cancel && !recovery_accepted && !iu_result.fault && flags_busy &&
     owner_simple_q && (iu_result.producer == flags_owner));
+  assign bu_cr_d = owner_crf_valid_q ?
+    ((cr & ~(32'hf000_0000 >> (owner_crf_q * 4))) |
+     ({sru_cr_capture ? sru_result.cr0 : iu_result.cr0, 28'b0} >> (owner_crf_q * 4))) : cr;
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       owner_simple_q <= 1'b0;
@@ -1068,10 +1089,7 @@ module ppc_core #(
         bu_cr_valid_q <= 1'b0;
       else if (bu_cr_capture) begin
         bu_cr_valid_q <= 1'b1;
-        bu_cr_q <= owner_crf_valid_q ?
-          ((cr & ~(32'hf000_0000 >> (owner_crf_q * 4))) |
-           ({sru_cr_capture ? sru_result.cr0 : iu_result.cr0, 28'b0} >>
-            (owner_crf_q * 4))) : cr;
+        bu_cr_q <= bu_cr_d;
       end
     end
   end
@@ -1091,7 +1109,7 @@ module ppc_core #(
                             !ENABLE_FPU;
   completion_tag_t bs_tag_q, bs_owner_q;
   logic bs_owner_done_q, bs_pred_q, bs_ctr_ok_q, bs_bo3_q, bs_redirect_q;
-  logic bs_recover, bs_fix_q, bs_fix_head;
+  logic bs_recover, bs_fix_q, bs_fix_head, bs_early_miss;
   logic [4:0] bs_bi_q;
   logic [31:0] bs_alt_q, bs_cr;
   logic bs_cr_ready, bs_resolve, bs_taken, bs_head, bs_owner_commit, bs_hit;
@@ -1106,6 +1124,13 @@ module ppc_core #(
   assign bs_fix_head = bs_fix_q && (retire_producer == bs_tag_q);
   // A branch resolving as predicted retires on that cycle (UM 6.6.1.3).
   assign bs_hit = bs_resolve && (bs_taken == bs_pred_q) && !bs_miss_q && !bs_fix_q;
+  // A misprediction is known as the owner's CR result arrives (UM Figure
+  // 6-5: the branch resolves the cycle after the compare executes). A
+  // correct prediction still resolves from the captured CR, which keeps the
+  // result off the retirement path.
+  assign bs_early_miss = BS_EARLY && bs_valid_q && !bs_cr_ready && bu_cr_capture &&
+    (flags_owner == bs_owner_q) &&
+    ((bs_ctr_ok_q && (bu_cr_d[5'd31 - bs_bi_q] == bs_bo3_q)) != bs_pred_q);
   assign bs_hold = (bs_valid_q && !bs_hit && (retire_producer == bs_tag_q)) || bs_redirect_q;
   assign bs_owner_commit = (commit && (retire_producer == bs_owner_q)) ||
                            (commit1 && (retire1_producer == bs_owner_q));
@@ -1118,6 +1143,9 @@ module ppc_core #(
       if (bs_resolve) begin
         bs_valid_q <= 1'b0;
         bs_miss_q <= bs_taken != bs_pred_q;
+      end else if (bs_early_miss) begin
+        bs_valid_q <= 1'b0;
+        bs_miss_q <= 1'b1;
       end
       if (bs_owner_commit) bs_owner_done_q <= 1'b1;
       bs_redirect_q <= !BS_EARLY && commit && bs_head;
@@ -1165,6 +1193,7 @@ module ppc_core #(
   end
   // A folded branch already fetched its target, which only b and bc fold.
   assign bu_redirect = bu_taken != iq_folded;
+  assign bu_redirect_d = dispatch && bu_branch && bu_redirect && !recovery_accepted;
   // A writer is pending until the youngest one retires or the CQ empties.
   completion_tag_t lr_writer_q, ctr_writer_q;
   always_ff @(posedge clk_i) begin
@@ -1194,13 +1223,33 @@ module ppc_core #(
         lr_pending_q <= 1'b1;
         lr_writer_q <= alloc1_producer;
       end
-      bu_redirect_q <= dispatch && bu_branch && bu_redirect && !recovery_accepted;
+      bu_redirect_q <= bu_redirect_d;
       bu_target_q <= bu_next_pc;
     end
   end
   assign frontend_clear = recovery_accepted || bu_redirect_q;
   assign frontend_target = recovery_accepted ? selected_redirect_target :
                            bu_redirect_q ? bu_target_q : fold_target_q;
+  // Fold, unfolded-branch and misprediction redirects come from registers,
+  // so fetch learns them a cycle early and requests the target on the
+  // redirect edge. A misprediction recovery is announced from its D input.
+  assign early_fold = ((iq_push0 && fold_predict) || (iq_push1 && fold_predict1)) &&
+                      !frontend_clear;
+  assign early_bs = BS_EARLY && !recovery_accepted &&
+                    (bs_resolve ? (bs_taken != bs_pred_q) : (bs_miss_q || bs_early_miss));
+  assign early_ok = early_bs_q ?
+    (recovery_accepted && !special_exception_redirect && !special_branch_redirect &&
+     !fp_replay && !bs_redirect_q) : !recovery_accepted;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      early_q <= 1'b0;
+      early_bs_q <= 1'b0;
+    end else begin
+      early_q <= early_bs || bu_redirect_d || early_fold;
+      early_bs_q <= early_bs;
+    end
+    early_target_q <= early_bs ? bs_alt_q : bu_redirect_d ? bu_next_pc : fold_target;
+  end
   // Port 0 takes the head's destination. With two write ports, port 1 takes
   // its update base, else the CQ[1] destination (a pair writes at most two
   // GPRs). With one, the update base follows its destination by one edge.
