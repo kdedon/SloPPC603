@@ -532,3 +532,9 @@ mutations detected).
 
 Dhrystone and CoreMark before and after are in
 [PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#today).
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO "PPC_LSU_PIPE=1"`, pinned container, commit 60b0659, 2026-10-04.
+0 errors, 54 warnings: the sources elaborate in Quartus 17 with the unit on.
+No fit or timing. The base operand now passes from the result bus through
+rename into the dispatch adder, and a store hit's tag compare drives the data
+RAM write enable, so the chip needs a fresh fit before any timing claim.
