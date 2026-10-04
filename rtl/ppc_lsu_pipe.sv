@@ -593,6 +593,25 @@ module ppc_lsu_pipe #(
   always @(posedge clk_i)
     if (rst_ni && req_valid_o && req_write_o)
       assert (!req_spec_o) else $error("store offered behind an unresolved access");
+  // +LSU_STATS reports store-queue use at the end of simulation.
+  int stat_queued = 0, stat_written = 0, stat_passed = 0, stat_overlap = 0, stat_errors = 0,
+      stat_redo = 0, stat_cancelled = 0;
+  always @(posedge clk_i)
+    if (rst_ni) begin
+      if (p1_queue) stat_queued <= stat_queued + 1;
+      if (sq_fire) stat_written <= stat_written + 1;
+      if (p1_fire && sq_live) stat_passed <= stat_passed + 1;
+      if (p1_valid && !p1_head.store && !p1_head.killed && sq_overlap && !offered_q)
+        stat_overlap <= stat_overlap + 1;
+      if (store_error_o) stat_errors <= stat_errors + 1;
+      if (redo_set) stat_redo <= stat_redo + 1;
+      if (sq_drop && !sq_head.committed) stat_cancelled <= stat_cancelled + 1;
+    end
+  final
+    if ($test$plusargs("LSU_STATS"))
+      $display("LSU_STATS %m: queued_stores=%0d written=%0d passing_loads=%0d overlap_wait_cycles=%0d write_errors=%0d redone_loads=%0d cancelled=%0d",
+               stat_queued, stat_written, stat_passed, stat_overlap, stat_errors, stat_redo,
+               stat_cancelled);
   // Translation was confirmed before a queued store finished.
   always @(posedge clk_i)
     if (rst_ni && p2_retire && p2_head.write && !rsp_error_i)

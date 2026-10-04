@@ -291,6 +291,15 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     emit(asm_stw(7,32'h40,2));
     expect_exc(32'h200,p+4,32'hffff_ffff,32'hffff_ffff,32'h0004_0000,p+4*25);
     for (int k=0;k<24;k++) emit(NOP);
+    // I2: TEA on the line fill of a store miss. The pipelined unit writes
+    // a store after it retires, so the error is an asynchronous machine
+    // check (UM 4.5.2); the serialized lane takes it at the store.
+    li32(10,32'h9000); emit(asm_stw(7,32'h400,10)); emit(32'h7c00_04ac);
+    p=pc;
+    emit(asm_stw(26,32'h500,10));
+    if (PIPE) expect_exc(32'h200,p+4,32'hffff_ffff,32'hffff_ffff,32'h0004_0000,p+4*25);
+    else expect_exc(32'h200,p,32'hffff_ffff,32'hffff_ffff,32'h0004_0000);
+    for (int k=0;k<24;k++) emit(NOP);
     // J: HID0 controls.
     li32(5,ICE|DCE|NOOPTI); emit(asm_spr(1,5,HID0));
     li32(10,32'h8600); noopti_touch_pc=pc; emit(asm_dcbt(0,10));
@@ -591,6 +600,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     biu.cpu_pipeline_pct=50;
     biu.tea_once.push_back(32'h8500);
     biu.tea_once.push_back(32'h2_0040);
+    biu.tea_once.push_back(32'h9500);
     repeat(4)@(negedge clk);rst_n=1;
     @(negedge clk);start_valid=1;
     do @(posedge clk);while(!start_ready);
@@ -611,7 +621,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     check(expected.size()==0,$sformatf("%0d exceptions not taken",expected.size()));
     check(noopti_accepts==-2,"NOOPTI touch not observed");
     check(biu.n_read_burst>0&&biu.n_read_single>0&&biu.n_write_burst>0&&
-          biu.n_write_single>0&&biu.n_addr_only>=3&&biu.n_errors==2&&biu.n_push>0&&snoop_artry>0&&syncs>=3&&
+          biu.n_write_single>0&&biu.n_addr_only>=3&&biu.n_errors==3&&biu.n_push>0&&snoop_artry>0&&syncs>=3&&
           biu.tt_count[TT_RWITM]>0&&biu.tt_count[TT_WRITE_KILL]>0,
           $sformatf("coverage rb=%0d rs=%0d wb=%0d ws=%0d ao=%0d err=%0d",biu.n_read_burst,
                     biu.n_read_single,biu.n_write_burst,biu.n_write_single,biu.n_addr_only,biu.n_errors));

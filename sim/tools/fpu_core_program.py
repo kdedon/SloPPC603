@@ -806,7 +806,22 @@ def integer_memory_streams(p):
     p.emit(SYNC)
     pcs = [p.emit(d_form(36, 10, 21, 8)), p.emit(d_form(32, 12, 21, 8))]
     p.spacings.append(('R', pcs[0], pcs[1], 5))
+    # A load that passed a queued store and faults is performed again by
+    # the serialized lane once the store is written: DSI at the load.
+    p.li32(31, PROT_LO)
+    p.emit(SYNC)
+    p.emit(d_form(36, 10, 21, 4))
+    at = p.emit(d_form(32, 11, 31, 0))
+    p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
+    # A store queued behind a load that faults is removed with it; the
+    # handler resumes at the store.
+    p.emit(SYNC)
+    at = p.emit(d_form(32, 11, 31, 0))
+    p.emit(d_form(36, 10, 21, 12))
+    p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
     p.expect(slot, 0x13579BDF)
+    p.expect(slot + 4, 0x13579BDF)
+    p.expect(slot + 12, 0x13579BDF)
     p.expect(slot + 8, 0x13579BDF)
     p.store_gpr(12, 0x13579BDF)
 
