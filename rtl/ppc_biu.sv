@@ -144,6 +144,9 @@ module ppc_biu #(
   logic [5:0] scalar_req_attr;
   logic scalar_router_rsp_ready, scalar_router_busy;
   logic scalar_req_ready, scalar_rsp_valid, scalar_rsp_error, scalar_busy;
+  // While the data cache waits for the pins the group starts no new
+  // transaction, so back-to-back fetches cannot keep it off the bus.
+  logic grp_yield, scalar_bus_ready, line_bus_ready;
   logic [31:0] scalar_rsp_rdata;
   logic scalar_protocol_error;
   logic scalar_br_n, scalar_bg_n, scalar_abb_in_n;
@@ -234,9 +237,11 @@ module ppc_biu #(
     .busy_o(scalar_router_busy)
   );
 
+  assign scalar_req_ready = scalar_bus_ready && !grp_yield;
+  assign line_req_ready_o = line_bus_ready && !grp_yield;
   ppc_bus60x scalar_bus (
     .clk_i, .rst_ni, .bus_ce_i,
-    .req_valid_i(scalar_req_valid), .req_ready_o(scalar_req_ready),
+    .req_valid_i(scalar_req_valid && !grp_yield), .req_ready_o(scalar_bus_ready),
     .req_instruction_i(scalar_req_instruction),
     .req_write_i(scalar_req_write), .req_addr_i(scalar_req_addr),
     .req_wdata_i(scalar_req_wdata), .req_wstrb_i(scalar_req_wstrb),
@@ -261,8 +266,8 @@ module ppc_biu #(
 
   ppc_bus60x_line_read line_bus (
     .clk_i, .rst_ni, .bus_ce_i,
-    .req_valid_i(line_req_valid_i),
-    .req_ready_o(line_req_ready_o),
+    .req_valid_i(line_req_valid_i && !grp_yield),
+    .req_ready_o(line_bus_ready),
     .req_line_addr_i(line_req_line_addr_i),
     .req_critical_dw_i(line_req_critical_dw_i),
     .req_instruction_i(line_req_instruction_i),
@@ -733,6 +738,7 @@ module ppc_biu #(
     // A due push keeps BR asserted until its tenure starts; UM §8.3.1 allows
     // BR without a following tenure.
     assign push_due = push_hold || push_wait;
+    assign grp_yield = !cm_br_n;
     assign push_owed = push_due;
     assign br_n_o = pe_br_n &&
       ((outer_br_n || artry_block || pe_busy) && !push_due);
@@ -745,6 +751,7 @@ module ppc_biu #(
     logic unused_dbwo;
     assign unused_dbwo = dbwo_n_i;
     assign push_owed = 1'b0;
+    assign grp_yield = 1'b0;
     assign br_n_o = grp_br_n || artry_block;
     assign grp_bg_n = bg_n;
     assign grp_abb_in_n = abb_n_i;
