@@ -487,12 +487,41 @@ cycles) is faster than the figures and not adopted. On the six-rule model
 1. Retire at finish + 1 (74). Until then, same-cycle CQ reuse is
    manual-consistent (16 measured).
 2. Fold branches out of dispatch and the CQ (38).
-3. Check the CR token at execute, not dispatch (22).
+3. Check the CR token at execute, not dispatch (22). Done: 20 measured.
 4. An LSU station that waits for the base, or base snooping from the IU (20).
+   Done for D-form loads in DQ0; no gain until 1 and 2 land.
 5. Misprediction recovery at F6-5 timing (18).
 6. Taken `b`/`bl`/`bclr` redirect at fetch (about 15 of the residual).
 7. Store writes off the load port (up to 25 of the residual, part A6).
-8. DQ0 add/compare to the SRU when the IU station is taken (7).
+8. DQ0 add/compare to the SRU when the IU station is taken (7). Done: 7.5 measured.
+
+## Station waits for CR, base and the SRU
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex`, on f5305d4 (before), ca7afdf, c610eb4 and 6cef417, each with the `-fno-const-bit-op-tree` build fix of f7d561f, 2026-10-04.
+Unit and store queue on, base snooping off, prebuilt firmware. Every run
+passes its checks. Dhrystone is `perf-diff`'s timed loop (18 iterations).
+
+| Step | Commit | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---|---:|---:|---:|---:|
+| Before | f5305d4 | 851.0 | 771.5 | 2.037 | 2.193 |
+| CR writer waits for the token in its station (cause 3) | ca7afdf | 849.0 | 751.5 | 2.087 | 2.292 |
+| Load waits for its base in the unit (cause 4) | c610eb4 | 849.0 | 751.5 | 2.096 | 2.298 |
+| DQ0 add/compare to the SRU (cause 8) | 6cef417 | 849.0 | 744.0 | 2.096 | 2.301 |
+
+The build fix changes none of the figures.
+
+- Cause 3: one younger CR writer bound for the IU or SRU station dispatches
+  while the token is held and becomes its owner on the edge the owner
+  retires; its station holds it until then. At width 2 the `FLAGS_WAIT`
+  excess (27.0 per run) is gone, and 20 of it is saved. At width 1 the
+  waiter holds the only integer station, so the stall moves to `RS_FULL`.
+- Cause 4: `DRAIN_MEMORY LOAD` (20.5 per run) is gone, but the run is no
+  shorter: the load still offers when its base is written, and the work
+  behind it fills the CQ instead (`own slot: DQ1 IU+IU cq` 3 to 22). As
+  `--core lsu-base` alone predicted (+2), the gain waits on the
+  retirement and branch causes.
+- Cause 8: `RS_FULL` (33.5 per run) is gone; 7.5 cycles saved, the
+  leave-one-out estimate.
 
 ## Gaps
 

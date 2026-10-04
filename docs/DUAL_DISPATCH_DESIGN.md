@@ -98,7 +98,7 @@ DQ0 keeps today's term. DQ1 dispatches when:
 
 ```
 dispatch1 = dispatch0 && pair_ok && res2_ok
-pair_ok   = distinct units && neither serialized && !(both write CR)
+pair_ok   = distinct units && neither serialized
             && DQ1 has no fetch fault, illegal or alignment class   (predecoded)
 res2_ok   = cq_free_ge2 && gpr_rename_free >= need0+need1 && ...  (registered counts)
 ```
@@ -109,7 +109,8 @@ cone. Faulting or illegal instructions, special-lane operations and trace mode
 dispatch alone from DQ0. The special lane drains before dispatch, which is
 stricter than the manual's completion serialization, except for LR and CTR
 moves ([slice 9](#slice-9)). Only CR writers share the flag token; XER-only
-writers pair.
+writers pair. A second CR writer bound for a station dispatches and waits
+there for the token ([Station waits](#station-waits)).
 
 ### Operands, GPR file and rename
 
@@ -135,7 +136,9 @@ writers pair.
 - Each unit gets its own CQ finish port and rename wake; the shared result mux
   and its one-cycle collision stall go away.
 - The SRU lane executes the eight add/compare forms on PID7v; other variants
-  route them to the IU. `cpu_cfg_t` gets `has_sru_add_compare`.
+  route them to the IU. `cpu_cfg_t` gets `has_sru_add_compare`. They reach
+  it from DQ1 beside an IU operation, or from DQ0 while the IU station is
+  taken.
 
 ### Completion queue
 
@@ -855,6 +858,23 @@ Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and
 New logic on the dispatch path: the holding-slot destination compare
 (5 bits, three sources per slot), two pending XER tags compared at
 retirement, and the DQ1 `bc` condition from the merged CR.
+
+### Station waits
+
+Rules the manual states as station waits rather than dispatch conditions
+([PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#station-waits-for-cr-base-and-the-sru)):
+
+- The flag token stays the single CR rename (UM 6.3.3.1), but UM 6.6.1.2
+  does not make it a dispatch condition. One younger CR writer that writes
+  at most one CR field and goes to the IU or SRU station dispatches while
+  the token is held, from DQ0 or DQ1 (two `cmpw` pair). `ppc_flags` keeps
+  it as the waiter and hands it the token on the edge the owner retires,
+  at once if it dispatched in that cycle. Its station holds it until then;
+  a `bc` behind it is predicted against it. A third writer waits at
+  dispatch; other CR writers still need the token free.
+- A DQ0 add or compare goes to the SRU station when the IU station is
+  taken and the SRU's is free (UM 6.3, 6.4.5). DQ1 then takes no integer
+  operation.
 
 ## Dispatch and completion rule check
 
