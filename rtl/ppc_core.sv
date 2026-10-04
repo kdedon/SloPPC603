@@ -764,13 +764,19 @@ module ppc_core #(
     push_pair1 = pair_predecode(push_uop1, queued1.insn, queued1.fault != FETCH_OK);
     push_pair1.dep_prev = depends(push_uop1, lane0_writes, push_uop.dst, push_uop.src_a);
   end
+  // A removed b leaves the last pushed entry in place.
+  logic fold_removed_q;
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || frontend_clear || fold_q) last_writes_q <= '0;
-    else if (iq_push1) begin
+    if (!rst_ni) fold_removed_q <= 1'b0;
+    else fold_removed_q <= (iq_push0 && push_remove0) || (iq_push1 && push_remove1);
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || frontend_clear || (fold_q && !fold_removed_q)) last_writes_q <= '0;
+    else if (iq_in1) begin
       last_writes_q <= {push_uop1.mem_update, push_uop1.gpr_write};
       last_dst_q <= push_uop1.dst;
       last_base_q <= push_uop1.src_a;
-    end else if (iq_push0) begin
+    end else if (iq_in0) begin
       last_writes_q <= lane0_writes;
       last_dst_q <= push_uop.dst;
       last_base_q <= push_uop.src_a;
@@ -2179,7 +2185,7 @@ module ppc_core #(
     dq1_expected.dep_prev = depends(dq1_uop, {iq_uop.mem_update, iq_uop.gpr_write},
                                     iq_uop.dst, iq_uop.src_a);
     if (rst_ni && iq_valid && iq_valid1) begin
-      assert (iq_folded || (dq1_head.pc == iq_head.pc + 32'd4))
+      assert (iq_folded || (dq1_rb != 2'd0) || (dq1_head.pc == iq_head.pc + 32'd4))
         else $error("DQ1 is not the instruction after DQ0");
       assert ((dq1_branch == branch_class(dq1_uop, dq1_head.fault)) &&
               (!dq1_folded || dq1_branch[3]))

@@ -306,7 +306,9 @@ module tb_core_dual #(
       expect_pair(32'h64, 1'b0, "cmpw + cmpw (one CR rename)");
       expect_pair(32'h10, 1'b0, "sync alone");
       expect_pair(32'h78, 1'b0, "sync alone");
-      expect_pair(32'h68, 1'b1, "cmpw + folded b in DQ1");
+      // A removed b never reaches DQ1.
+      if (!dut.BRANCH_REMOVAL) expect_pair(32'h68, 1'b1, "cmpw + folded b in DQ1");
+      else if (dcycle.exists(32'h6c) != 0) $fatal(1, "a plain b was dispatched");
       expect_pair(32'h94, 1'b1, "unresolved bc + add");
       expect_pair(32'ha4, 1'b0, "cmpw + bc on its CR in DQ1");
       expect_pair(32'hb4, 1'b1, "resolved bc + addi");
