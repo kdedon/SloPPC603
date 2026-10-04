@@ -177,6 +177,16 @@ module tb_demo_soc #(
         profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
         key = "";
       end
+      // Requests behind a fast store hit: accepted or held, by double word.
+      if (soc.cpu.cpu.dcache_slot.g_cache.dcache.lk_fast_st_done &&
+          soc.cpu.cpu.dcache_slot.g_cache.dcache.req_valid_i) begin
+        key = $sformatf("dcache after fast store: %s %s %s",
+          soc.cpu.cpu.dcache_slot.g_cache.dcache.req_op_i == ppc_dcache_pkg::DC_STORE ? "store" : "other",
+          soc.cpu.cpu.dcache_slot.g_cache.dcache.lk_fast_st_dw ? "same dw" : "other dw",
+          soc.cpu.cpu.dcache_slot.g_cache.dcache.lk_fast_st_next ? "accepted" : "held");
+        profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+        key = "";
+      end
       case (soc.cpu.cpu.translated_core.core.perf_slot)
         ppc_pkg::PERF_DISPATCH: key = "";
         ppc_pkg::PERF_FETCH_EMPTY, ppc_pkg::PERF_BRANCH_REFETCH, ppc_pkg::PERF_ICACHE_MISS: key = "";
