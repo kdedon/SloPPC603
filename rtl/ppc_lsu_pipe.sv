@@ -40,6 +40,9 @@ module ppc_lsu_pipe #(
   parameter bit BASE_SNOOP = 1'b0,
   parameter bit BASE_WAIT = 1'b0,
   parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
+  // 602: a doubleword FP access spends a cycle in P1 before its offer or
+  // queueing, for 3:2 timing (602 UM Table 6-6).
+  parameter bit FP_DOUBLE_HOLD = 1'b0,
   parameter int SQ_DEPTH = 4
 ) (
   input  logic clk_i, rst_ni,
@@ -134,7 +137,7 @@ module ppc_lsu_pipe #(
     logic killed;
     logic fast;
     logic store;
-    logic fp, launched, wide;
+    logic fp, launched, wide, hold;
     // A word beat of a doubleword; the second beat's EA advances as it
     // reaches the head.
     logic split, second, advance;
@@ -256,7 +259,7 @@ module ppc_lsu_pipe #(
                      head_wake ? wake_i.value : wake1_i.value;
   assign fp_store_tag_o = p1_head.producer;
   assign p1_ready = !p1_head.fp ? head_data_ready :
-                    (p1_head.store ? fp_store_valid_i : p1_head.launched);
+                    !p1_head.hold && (p1_head.store ? fp_store_valid_i : p1_head.launched);
   // A waiting head's EA from the base written this cycle; both sums are
   // formed while the tags compare.
   localparam bit BASE_ANY = BASE_SNOOP || BASE_WAIT;
@@ -481,6 +484,7 @@ module ppc_lsu_pipe #(
                      ((in_bytes == 3'd1) || ((in_bytes == 3'd2) && !ea_i[0]) ||
                       (ea_i[1:0] == 2'b00)));
     incoming.wide = in_wide;
+    incoming.hold = FP_DOUBLE_HOLD && in_wide;
     incoming.split = in_split;
     incoming.producer = producer_i;
     incoming.bspec = branch_spec_i;
@@ -539,6 +543,8 @@ module ppc_lsu_pipe #(
         p1_next[0].advance = 1'b0;
       end
       p1_n = p1_n - 2'd1;
+    end else if (p1_count_q != 2'd0) begin
+      p1_next[0].hold = 1'b0;
     end
     p2_next = p2_q;
     p2_n = p2_count_q;

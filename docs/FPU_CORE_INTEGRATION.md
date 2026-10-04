@@ -191,6 +191,14 @@ is entered as for any exception. Both personalities. The lane decides at the
 `mtmsr` dispatches with older work retired, and raises the exception instead
 of installing the context.
 
+An `rfi` from MSR[FE0] = MSR[FE1] = 0 whose SRR1 sets FE0 or FE1 does the
+same (`EVENT_RFI_FP_ENABLE`): SRR0 is the `rfi` target, the instruction that
+would have executed next, and SRR1 holds the MSR the `rfi` restored with
+bits 11 and 15 set. An `rfi` in problem state stays a privileged-instruction
+exception. Every exception entry clears FE0/FE1, so a handler that returns
+with FE set in SRR1 while FEX is still set takes the exception again; the
+handlers must clear FEX, or FE in SRR1, before `rfi`.
+
 ## Limits
 
 - The lane holds one access at a time; FP loads and stores do not meet Table
@@ -201,14 +209,12 @@ of installing the context.
 - Without the data cache (`ppc_core_bat_bus60x`, or `ENABLE_DCACHE=0`) a
   doubleword access is two 32-bit bus transactions; another bus master can
   observe or change memory between them.
-- Not tested: page-changed faults and machine checks on FP accesses. DTLB
-  load and store misses on `lfd`/`stfd` are tested on the pin top only.
+- DTLB load and store misses on `lfd`/`stfd` are tested on the pin top
+  only. DSI, the C=0 store miss and TEA are tested on every FP access form
+  with the core bench's memory; TEA on a store the store queue already
+  retired (asynchronous machine check) is not tested for FP stores.
 - FPSCR instructions let the next FP instruction issue only after they
   retire.
-- An `rfi` that sets FE0/FE1 while FPSCR[FEX]=1 does not raise the deferred
-  FP enabled exception (PEM Table 6-14 includes it). The core benches' FP
-  handlers return with FE set and FEX still set, so the rule changes their
-  expected exception sequences; it needs those tests reworked first.
 
 ## 602 personality
 
@@ -236,16 +242,19 @@ COMPACT); the execution model above is unchanged.
   exception sticky bit (OX, UX, ZX, XX or a VX cause) that the committed
   FPSCR lacks retires one cycle late: the completion serialization of 602
   UM 4.5.7.1 and 6.8.7, which allow one or two cycles and give no rule for
-  two. Later results setting the same bit do not stall.
+  two. Later results setting the same bit do not stall. FP arithmetic in
+  the serialized lane (trace mode) stalls the same way.
 
 602 limits:
 
-- FP arithmetic in the serialized lane (trace mode) does not take the
-  sticky-bit stall.
-- `mtspr` to SP or LT drains the queue; 602 UM 6.7.2 dispatch-serializes
-  only the `mfspr` forms.
-- The 602 memory timing of Table 6-6 (`lfd`/`stfd` 3:2) is not modeled; FP
-  accesses follow the lane described above. COMPACT's latencies are its
-  own ([FPU_COMPACT.md](FPU_COMPACT.md)).
+- `mtspr` to SP or LT drains the queue and blocks dispatch until it
+  retires. 602 UM 6.7.1 completion-serializes it, which the drain meets,
+  but 6.7.2 does not dispatch-serialize it. Every FP instruction reads the
+  SP/LT tags and must wait for it anyway; only younger integer work could
+  overlap, and the lane overlaps memory accesses only. Slower, never faster.
+- Table 6-6's FP rows (`lfs`, `stfs`, `stfiwx` 2:1; `lfd`, `stfd` 3:2) are
+  met with the pipelined unit over a one-access-per-cycle memory
+  ([LSU_PIPELINE.md](LSU_PIPELINE.md#fp-accesses)); the lane is slower.
+  COMPACT's latencies are its own ([FPU_COMPACT.md](FPU_COMPACT.md)).
 - Without the data cache a doubleword or an unaligned load is several bus
   transactions; another master can change memory between them.

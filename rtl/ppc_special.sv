@@ -434,6 +434,7 @@ module ppc_special #(
   logic [31:0] insn_q;
   logic [63:0] fpu_data_q;
   logic fpu_issue_valid, fpu_issue_sel, fpu_issue_ready, fpu_result_valid, fpu_result_take;
+  logic fpu_sticky_hold, fpu_sticky_waited_q;
   logic fpu_commit_valid, fpu_commit_ready, fpu_abort_valid;
   logic fpu_mem_req_valid, fpu_mem_req_ready, fpu_mem_req_fire;
   logic fpu_mem_rsp_valid, fpu_mem_rsp_ready, fpu_store_valid, fpu_store_ready;
@@ -635,7 +636,7 @@ module ppc_special #(
     assign unused_watchdog = ^{watchdog_taken, watchdog_reset_taken};
   end endgenerate
   logic [31:0] context_target_q, mtmsr_value;
-  logic mtmsr_fp_enable;
+  logic mtmsr_fp_enable, rfi_fp_enable;
   // Machine check adds ME, RI and POW. Debug exceptions add SE and BE.
   localparam logic [31:0] MACHINE_CHECK_MSR_MASK = 32'h0004_1002;
   localparam logic [31:0] DEBUG_MSR_MASK = 32'h0000_0600;
@@ -685,6 +686,8 @@ module ppc_special #(
   // the committed FPSCR is final.
   assign mtmsr_fp_enable = ENABLE_FPU && fp_fpscr_o[30] &&
     ((msr_o & 32'h0000_0900) == '0) && ((mtmsr_value & 32'h0000_0900) != '0);
+  assign rfi_fp_enable = ENABLE_FPU && fp_fpscr_o[30] && !msr_o[MSR_PR] &&
+    ((msr_o & 32'h0000_0900) == '0) && ((srr1_o & 32'h0000_0900) != '0);
 
   // Restored MSR bits rfi cannot honor without live context.
   localparam logic [31:0] RFI_UNSUPPORTED_ACTIVE_MASK = 32'h0000_bf33;
@@ -1117,7 +1120,7 @@ module ppc_special #(
         end
         SPECIAL_RFI: begin
           exception_event_valid = !rfi_state_unsupported;
-          exception_event_kind = EVENT_RFI;
+          exception_event_kind = rfi_fp_enable ? EVENT_RFI_FP_ENABLE : EVENT_RFI;
         end
         SPECIAL_MTMSR: begin
           exception_event_valid = ENABLE_LIVE_CONTEXT && !mtmsr_unsupported &&
@@ -2121,9 +2124,19 @@ module ppc_special #(
   // Older overlapped loads may still hold results ahead of this one.
   // A result that the accepted memory response completes is taken at once.
   assign fpu_result_take = ENABLE_FPU && rst_ni && !cancel_i &&
-    (((state_q == S_FPU_WAIT) && !fpu_mem_req_valid) ||
+    (((state_q == S_FPU_WAIT) && !fpu_mem_req_valid && !fpu_sticky_hold) ||
      ((state_q == S_FPU_MEM_RSP) && fpu_mem_rsp_ready)) &&
     fpu_result_valid && (fpu_result.tag == producer_q);
+  // 602 UM 4.5.7.1: with MSR[FE0/FE1] clear, a result that newly sets an
+  // exception sticky bit completes one cycle late.
+  localparam logic [31:0] FPSCR_STICKY = 32'h1ff8_0700;
+  assign fpu_sticky_hold = ENABLE_FPU && HAS_602 && !fpu_sticky_waited_q &&
+    (state_q == S_FPU_WAIT) && !fpu_exception && !msr_o[11] && !msr_o[8] &&
+    fpu_result.fpscr_write && |(fpu_result.fpscr_value & ~fp_fpscr_o & FPSCR_STICKY);
+  always_ff @(posedge clk_i)
+    if (!rst_ni || (state_q != S_FPU_WAIT)) fpu_sticky_waited_q <= 1'b0;
+    else if (fpu_sticky_hold && fpu_result_valid && (fpu_result.tag == producer_q))
+      fpu_sticky_waited_q <= 1'b1;
   assign fp_load_overlap_o = ENABLE_FPU && overlap_q && fpu_q && fp_load_q &&
     (state_q != S_IDLE);
   assign fp_load_release_o = ENABLE_FPU && fpu_q && fp_load_q && (state_q == S_MEM_RESULT) &&

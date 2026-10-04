@@ -68,6 +68,10 @@ that can still raise an exception, as an integer access does.
   aligned, otherwise as two word beats, high word first; the second beat's
   EA advances as it reaches the head. The beats do not make each other
   speculative.
+- On the 602 a doubleword moved in one access spends one cycle in P1
+  before its offer (or its entry to the store queue), so `lfd` and `stfd`
+  take 3:2 and the singles 2:1 (602 UM Table 6-6). A word-beat doubleword
+  is already slower.
 - Little-endian mode munges a word access to EA XOR 4 and leaves a
   doubleword's address alone ([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md)).
 - Only word-aligned accesses are performed, and in little-endian mode only
@@ -738,3 +742,13 @@ is not from these changes (width 1 has no SRU; the unit is off).
 Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit fab7650, 2026-10-04.
 0 errors, 51 warnings. No fit or timing: the IU result now also drives the
 second finish port's mux.
+
+### 602 FP doublewords at 3:2 (2026-10-04)
+
+Recorded: `make -C sim BUILD_DIR=build-a test-core-lsu-timing-602 test-core-lsu-timing test-core-fpu-602`, and with `DISPATCH_WIDTH=2 VERILATOR=tools/verilate-lsu-pipe VERILATOR_TOOL=tools/verilate-lsu-pipe`, commit f4e5b73, 2026-10-04: pass.
+
+`test-core-lsu-timing-602` probes 602 UM Table 6-6's FP rows over a memory
+taking one access per cycle: `lfs`, `stfs`, `stfiwx` retire 3 cycles after
+dispatch and four in 3 cycles; `lfd`, `stfd` 4 and four in 6. The 603e rows
+(`test-core-lsu-timing`) are unchanged. Quartus analysis of the chip and
+602 chip tops with the unit and the FPU: 0 errors. No fit.

@@ -83,6 +83,7 @@ module ppc_exception_state #(
   logic result_valid_q, result_supported_q;
   logic [31:0] result_target_q;
   logic slot_available, event_fire, state_load_fire;
+  logic [31:0] rfi_new_msr;
 
   assign msr_o = msr_q;
   assign srr0_o = srr0_q;
@@ -98,6 +99,7 @@ module ppc_exception_state #(
   assign event_ready_o = rst_ni && slot_available;
   assign state_load_ready_o = rst_ni && slot_available && !event_valid_i;
   assign event_fire = event_valid_i && event_ready_o;
+  assign rfi_new_msr = rfi_msr(msr_q, srr1_q, MSR_MASK) & MSR_STORED_MASK;
   assign state_load_fire = state_load_valid_i && state_load_ready_o;
 
   function automatic logic [31:0] exception_srr1(
@@ -374,7 +376,7 @@ module ppc_exception_state #(
                 result_supported_q <= 1'b1;
                 result_target_q <= exception_vector(msr_q[MSR_IP], 13'h0700);
               end else begin
-                msr_q <= rfi_msr(msr_q, srr1_q, MSR_MASK) & MSR_STORED_MASK;
+                msr_q <= rfi_new_msr;
                 result_supported_q <= 1'b1;
                 result_target_q <= {srr0_q[31:2], 2'b00};
               end
@@ -388,6 +390,18 @@ module ppc_exception_state #(
                 msr_q <= exception_msr(state_load_msr_i);
                 result_supported_q <= 1'b1;
                 result_target_q <= exception_vector(state_load_msr_i[MSR_IP], 13'h0700);
+              end
+            end
+            // PEM Table 6-14: the rfi's new MSR, interrupted before its
+            // target.
+            EVENT_RFI_FP_ENABLE: begin
+              if (ENABLE_FPU) begin
+                srr0_q <= {srr0_q[31:2], 2'b00};
+                srr1_q <= exception_srr1(rfi_new_msr,
+                                         SRR1_PROGRAM_FP | SRR1_PROGRAM_NEXT);
+                msr_q <= exception_msr(rfi_new_msr);
+                result_supported_q <= 1'b1;
+                result_target_q <= exception_vector(rfi_new_msr[MSR_IP], 13'h0700);
               end
             end
             EVENT_WATCHDOG: begin

@@ -30,10 +30,13 @@ from production_vectors import widen  # noqa: E402
 RESET_PC = 0x1000
 DATA, RES, LOG, DONE = 0x40000, 0x50000, 0x60000, 0x70000
 PROT_LO, PROT_HI = 0x7F000, 0x7FFFC
-TEA_LO, TEA_HI = 0x7E000, 0x7E00C
-MACHINE_CHECK = False
-MSR_ME, SRR1_TEA = 0x1000, 0x00040000
+# Stores here take the changed-bit miss (C=0 page); any access here ends in
+# TEA (machine check).
+CHANGED_LO, CHANGED_HI = 0x7E000, 0x7EFFC
+TEA_LO, TEA_HI = 0x7D000, 0x7DFFC
 CHIP = False
+# TEA rows need the core's machine check (tb_core_fpu MACHINE_CHECK=1).
+MACHINE_CHECK = False
 CHIP_BASE, CHIP_IMAGE_BYTES = 0xfff00000, 0x10000
 
 
@@ -48,7 +51,9 @@ SRR1_ILLEGAL, SRR1_FP = 0x00080000, 0x00100000
 # SRR1 bit 15: SRR0 holds the instruction after the one that excepted.
 SRR1_NEXT = 0x00010000
 NOP = 24 << 26
-VECTORS = (0x300, 0x600, 0x700, 0x800)
+VECTORS = (0x200, 0x300, 0x600, 0x700, 0x800, 0x1200)
+MSR_ME, MSR_DR = 0x1000, 0x10
+SRR1_TEA = 0x00040000
 ONE, TWO, HALF = 0x3ff0000000000000, 0x4000000000000000, 0x3fe0000000000000
 QNAN, SNAN = 0x7ff8000000001234, 0x7ff0000000000042
 PINF, NINF, NZERO = 0x7ff0000000000000, 0xfff0000000000000, 1 << 63
@@ -116,6 +121,11 @@ def use_lsu_pipe(split, pipe_mem):
         LATENCY.update({'lfd': 5, 'stfd': 5})
         MEMORY_SPACING.update({'lfd-issue': 12, 'lfd-retire': 12, 'stfd-issue': 14,
                                'stfd-retire': 15, 'fadd-stfd': 5})
+
+
+def use_machine_check(on):
+    global MACHINE_CHECK
+    MACHINE_CHECK = on
 
 
 def use_pipe_mem():
@@ -221,6 +231,10 @@ class Program:
 
     def event(self, vector, srr0, srr1, dar=None, dsisr=None):
         self.log.append((vector, srr0, srr1, dar, dsisr))
+        # The program handler returns with FE0/FE1 clear after an FP
+        # enabled exception.
+        if vector == 0x700 and srr1 is not None and srr1 & SRR1_FP:
+            self.msr &= ~(FE0 | FE1)
 
     # r21 points at the next result slot; stores go through it.
     def store_fpr(self, fr, value, mask64=(1 << 64) - 1):
@@ -259,13 +273,14 @@ class Program:
         self.fpscr = 0
 
 
-def clear_fe_if_next():
-    """Program handler step: when SRR1 bit 15 is set, clear FE0/FE1 in
-    SRR1 so that the return does not re-enable FE while FPSCR[FEX] stays
-    set. Uses SPRG3 to save r29."""
+def clear_fe_if_fp():
+    """Program handler step: after an FP enabled exception (SRR1 bit 11),
+    clear FE0/FE1 in SRR1. FPSCR[FEX] stays set, so returning with FE set
+    would take the exception again (PEM Table 6-14). Uses SPRG3 to save
+    r29."""
     return [x_form(31, 29, 275 & 31, 275 >> 5, 467),                  # mtsprg3 r29
             x_form(31, 29, 27, 0, 339),                                # mfsrr1 r29
-            (21 << 26) | (29 << 21) | (26 << 16) | (16 << 11) | (31 << 6) | (31 << 1),
+            (21 << 26) | (29 << 21) | (26 << 16) | (12 << 11) | (31 << 6) | (31 << 1),
             d_form(7, 26, 26, FE0 | FE1),                              # mulli
             x_form(31, 29, 29, 26, 60),                                # andc
             x_form(31, 29, 27, 0, 467),                                # mtsrr1 r29
@@ -273,14 +288,14 @@ def clear_fe_if_next():
 
 
 def handlers(p):
-    for vector in VECTORS + ((0x200,) if MACHINE_CHECK else ()):
+    for vector in VECTORS:
         pc = 0xfff00000 | vector
         seq = []
         for spr, off in ((26, 0), (27, 4), (19, 8), (18, 12)):
             seq += [x_form(31, 26, spr & 31, spr >> 5, 339), d_form(36, 26, 29, off)]
         seq += [d_form(14, 26, 0, vector), d_form(36, 26, 29, 16), d_form(14, 29, 29, 20)]
         if vector == 0x700:
-            seq += clear_fe_if_next()
+            seq += clear_fe_if_fp()
         if vector == 0x800:
             # Lazy FP enable: set MSR[FP] in SRR1 and retry.
             seq += [x_form(31, 26, 27, 0, 339), d_form(24, 26, 26, MSR_FP),
@@ -563,10 +578,10 @@ def directed(p):
     # word faults; an update form leaves its base.
     if not CHIP:
         dsi(p)
-    if MACHINE_CHECK:
-        tea(p)
+        access_faults(p, False)
     fp_enabled(p)
     fp_enable_deferred(p)
+    fp_enable_rfi(p)
 
 
 def dsi(p):
@@ -585,22 +600,92 @@ def dsi(p):
     p.store_gpr(31, PROT_LO)
 
 
-def tea(p):
-    """A bus error on an FP update form is a machine check at the access;
-    the base and the target keep their values."""
-    p.mtmsr(p.msr | MSR_ME)
-    p.load_fpr(24, ONE)
-    p.load_fpr(25, TWO)
-    p.li32(28, TEA_LO + 8)
-    for insn in (d_form(51, 25, 28, -8 & 0xffff),   # lfdu
-                 d_form(49, 25, 28, -4 & 0xffff),   # lfsu
-                 d_form(55, 24, 28, -8 & 0xffff),   # stfdu
-                 d_form(53, 24, 28, -4 & 0xffff)):  # stfsu
-        at = p.emit(insn)
-        p.event(0x200, at, p.msr | SRR1_TEA)
-    p.store_gpr(28, TEA_LO + 8)
-    p.store_fpr(25, TWO)
-    p.mtmsr(p.msr & ~MSR_ME)
+# Every FP load and store form: primary opcode or (31, XO), store, update.
+FP_ACCESS_FORMS = (
+    ('lfs', 48, False, False), ('lfsu', 49, False, True),
+    ('lfd', 50, False, False), ('lfdu', 51, False, True),
+    ('stfs', 52, True, False), ('stfsu', 53, True, True),
+    ('stfd', 54, True, False), ('stfdu', 55, True, True),
+    ('lfsx', 535, False, False), ('lfsux', 567, False, True),
+    ('lfdx', 599, False, False), ('lfdux', 631, False, True),
+    ('stfsx', 663, True, False), ('stfsux', 695, True, True),
+    ('stfdx', 727, True, False), ('stfdux', 759, True, True),
+    ('stfiwx', 983, True, False),
+)
+
+
+def access_faults(p, single):
+    """DSI, changed-bit store miss and TEA on every FP load and store form.
+    None retires: SRR0 is the access, a load leaves frD and an update form
+    its base, and no store is written. DSI sets DAR and DSISR (UM 4.5.3);
+    a store to a C=0 page (MSR[DR] set) takes the store TLB miss with SRR1
+    from Table 4-4; with MACHINE_CHECK, TEA is a machine check with
+    SRR1[13] (Table 4-10). single: 602 FPRs, a binary32 in f20 and an
+    integer word in f21."""
+    if single:
+        p.lfs(20, f32(1.25))
+        p.emit(x_form(63, 21, 0, 0, 583))                          # mffs f21
+        p.write_fpr(21, False, True)
+    else:
+        p.load_fpr(20, ONE)
+    p.li32(17, 8)
+    cr = 0x5a000000 | (p.cr & 0x00ffffff)
+    p.li32(8, cr)
+    p.emit((31 << 26) | (8 << 21) | (0xff << 12) | (144 << 1))    # mtcrf 0xff
+    p.cr = cr
+    sentinel = 0xc3c3c3c3
+    for addr in range(CHANGED_LO, CHANGED_LO + 0x400, 4):
+        p.words[addr] = sentinel
+    kinds = [('dsi', PROT_LO), ('changed', CHANGED_LO)]
+    if MACHINE_CHECK:
+        kinds.append(('tea', TEA_LO))
+    for kind, lo in kinds:
+        if kind == 'tea':
+            p.mtmsr(p.msr | MSR_ME)
+        elif kind == 'changed':
+            p.mtmsr(p.msr | MSR_DR)
+        for i, (name, op, store, update) in enumerate(FP_ACCESS_FORMS):
+            if kind == 'changed' and not store:
+                continue
+            base = lo + 0x20 * i
+            frs = 21 if name == 'stfiwx' else 20
+            p.li32(16, base)
+            if op < 64:
+                insn = d_form(op, frs, 16, 8)
+            else:
+                insn = x_form(31, frs, 16, 17, op)
+            ea = base + 8
+            at = p.emit(insn)
+            if kind == 'dsi':
+                p.event(0x300, at, p.msr, ea, 0x08000000 | (0x02000000 if store else 0))
+            elif kind == 'changed':
+                srr1 = (cr & 0xf0000000) | 0x00030000 | (p.msr & 0x0700ffff)
+                p.event(0x1200, at, srr1)
+            else:
+                p.event(0x200, at, (p.msr & 0xffff) | SRR1_TEA)
+            if update:
+                p.store_gpr(16, base)
+        if kind == 'tea':
+            p.mtmsr(p.msr & ~MSR_ME)
+        elif kind == 'changed':
+            p.mtmsr(p.msr & ~MSR_DR)
+    if single:
+        p.store_sp(20, f32(1.25))
+    else:
+        p.store_fpr(20, ONE)
+    for addr in range(CHANGED_LO, CHANGED_LO + 0x400, 4):
+        p.expect(addr, sentinel)
+    # Loads from a C=0 page are performed.
+    value = f64(1.5)
+    p.words[CHANGED_LO + 0x400] = value >> 32
+    p.words[CHANGED_LO + 0x404] = value & 0xffffffff
+    p.li32(16, CHANGED_LO + 0x400)
+    p.emit(d_form(50, 22, 16, 0))                                  # lfd f22
+    if single:
+        p.write_fpr(22, True, False)
+        p.store_sp(22, f32(1.5))
+    else:
+        p.store_fpr(22, value)
 
 
 def fp_enabled(p):
@@ -638,6 +723,45 @@ def fp_enable_deferred(p, update=None):
     p.clear_fpscr()
 
 
+def fp_enable_rfi(p, update=None):
+    """PEM Table 6-14 for rfi: with FPSCR[FEX] set, an rfi that sets FE0/FE1
+    from 00 takes the FP enabled program exception before its target:
+    SRR0 = the target, SRR1 bits 11 and 15 with the restored MSR. The handler
+    resumes past the target's addi. An rfi that leaves FE clear, or one with
+    FEX clear, returns normally and the addi runs."""
+    p.li32(10, 0)
+    for fe, fex in ((FE0 | FE1, True), (FE1, True), (FE0, True),
+                    (0, True), (FE0 | FE1, False)):
+        p.clear_fpscr()
+        if fex:
+            p.emit(x_form(63, 24, 0, 0, 38))      # mtfsb1 24 (VE)
+            p.emit(x_form(63, 21, 0, 0, 38))      # mtfsb1 21 (VXSOFT): FEX
+            if update is None:
+                p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 10) | (1 << 31))
+            else:
+                update(p)
+        restored = p.msr | fe
+        p.li32(9, restored)
+        p.emit(x_form(31, 9, 27, 0, 467))         # mtsrr1 r9
+        target = p.pc + 4 * 4
+        p.li32(9, target)
+        p.emit(x_form(31, 9, 26, 0, 467))         # mtsrr0 r9
+        p.emit(x_form(19, 0, 0, 0, 50))           # rfi
+        assert p.emit(d_form(14, 10, 10, 1)) == target
+        if fe and fex:
+            p.event(0x700, target, restored | SRR1_FP | SRR1_NEXT)
+        else:
+            p.store_gpr(10, 1)
+            p.li32(10, 0)
+            p.msr = restored
+            p.emit(x_form(31, 8, 0, 0, 83))       # mfmsr r8
+            p.store_gpr(8, restored)
+            p.mtmsr(restored & ~(FE0 | FE1))
+        p.check_fpscr()
+    p.store_gpr(10, 0)
+    p.clear_fpscr()
+
+
 def in_flight(p):
     """Exceptions and cancellation with pipelined FP work in flight. Each
     younger instruction accumulates, so one that retired before the
@@ -660,11 +784,15 @@ def in_flight(p):
     younger = p.emit(a_form(63, 6, 6, 1, 0, 21))  # fadd f6, f6, f1
     p.spacings.append(('I', at, younger, 2))
     p.event(0x700, at, p.msr | SRR1_FP)
-    # FEX stays set, so the fadd, run once after the handler, takes its own
-    # FP enabled exception with its result and FPRF +normal committed.
-    p.event(0x700, younger, p.msr | SRR1_FP)
+    # The handler returns with FE clear, so the fadd runs once and commits
+    # its result and FPRF +normal.
+    p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 23) | (1 << 31) | (1 << 14))
+    p.check_fpscr()
     # An overlapped store behind the faulting fsub is cancelled by its
     # replay and stores once after the handler returns.
+    p.clear_fpscr()
+    p.mtmsr(p.msr | FE0 | FE1)
+    p.emit(x_form(63, 24, 0, 0, 38))            # mtfsb1 24 (VE)
     slot = p.result_slot(2)
     p.li32(23, slot)
     p.emit(SYNC)
@@ -673,8 +801,7 @@ def in_flight(p):
     p.event(0x700, at, p.msr | SRR1_FP)
     p.expect(slot, ONE >> 32)
     p.expect(slot + 4, ONE & 0xffffffff)
-    p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 23) | (1 << 31) | (1 << 14))
-    p.mtmsr(p.msr & ~(FE0 | FE1))
+    p.fpscr = recompute((1 << 7) | (1 << 23) | (1 << 31))
     p.check_fpscr()
     p.clear_fpscr()
     p.store_fpr(4, HALF)
@@ -776,6 +903,8 @@ def latency(p):
     dependent groups and dispatch spacing of mixed streams. Each group
     follows a sync, which drains the machine while the six-entry IQ fills,
     so fetch never limits a group."""
+    # Doubleword-aligned result slots: a misaligned stfd splits.
+    p.res_next = (p.res_next + 7) & ~7
     p.clear_fpscr()
     one = p.load_fpr(1, ONE)
     p.load_fpr(2, TWO)
@@ -1055,10 +1184,11 @@ def main():
     parser.add_argument('--dual-write', action='store_true',
                         help='two GPR write ports (dispatch width 2)')
     parser.add_argument('--machine-check', action='store_true',
-                        help='bus errors on FP update forms (bench MACHINE_CHECK=1)')
+                        help='TEA on FP accesses (tb_core_fpu MACHINE_CHECK=1)')
     parser.add_argument('--base-snoop', action='store_true',
                         help='loads form the EA from a snooped base (Table 6-6 load latency)')
     args = parser.parse_args()
+    use_machine_check(args.machine_check)
     if args.chip_image:
         use_chip_layout()
     if args.dmem_bits == 32:
@@ -1069,9 +1199,6 @@ def main():
         use_pipe_mem()
     if args.dual_write:
         use_dual_write()
-    if args.machine_check:
-        global MACHINE_CHECK
-        MACHINE_CHECK = True
     if args.base_snoop:
         global BASE_SNOOP
         BASE_SNOOP = True
@@ -1081,9 +1208,8 @@ def main():
     if args.chip_image:
         write_chip_image(p, args.chip_image)
         return
-    lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0']
-    if MACHINE_CHECK:
-        lines.append(f'T {TEA_LO:08x} {TEA_HI:08x} 0')
+    lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0',
+             f'C {CHANGED_LO:08x} {CHANGED_HI:08x} 0', f'T {TEA_LO:08x} {TEA_HI:08x} 0']
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]
     lines += [f'L {pc:08x} {cycles:x} 0' for pc, cycles in p.probes.items()]

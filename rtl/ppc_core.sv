@@ -381,6 +381,7 @@ module ppc_core #(
   // Dual dispatch and retirement. The 602's dispatch width is unsourced, so
   // it stays single.
   localparam bit DUAL = (DISPATCH_WIDTH == 2) && !cpu_has_602_ext(CPU_VARIANT);
+  localparam bit FP_DOUBLE_HOLD = cpu_has_602_ext(CPU_VARIANT);
   // Little-endian mode (MSR[LE], MSR[ILE]) in the full supervisor machine.
   localparam bit ENABLE_LE = ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT &&
                              ENABLE_FULL_DECODE;
@@ -2181,7 +2182,8 @@ module ppc_core #(
     if (ENABLE_LSU_PIPE) begin : g_lsu
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE),
                      .BASE_SNOOP(LSU_BASE_SNOOP), .BASE_WAIT(LSU_BASE_WAIT),
-                     .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS)) lsu (
+                     .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
+                     .FP_DOUBLE_HOLD(FP_DOUBLE_HOLD)) lsu (
         .clk_i, .rst_ni,
         .dispatch_valid_i((dispatch && lsu_c0) || lsu_d1),
         .dispatch_ready_o(lsu_ready), .uop_i(lsu_c0 ? dispatch_uop : d1_lane_uop),
