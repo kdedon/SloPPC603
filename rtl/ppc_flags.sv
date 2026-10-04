@@ -4,6 +4,8 @@
 // Committed CR/XER state and one exact-tag speculative flag owner. An
 // operation that writes only CA, OV or SO need not own the token.
 // All architectural updates share the core retirement handshake.
+// One younger CR writer may wait in a station for the token; it becomes the
+// owner on the edge its predecessor retires.
 module ppc_flags (
   input logic clk_i,
   input logic rst_ni,
@@ -11,6 +13,11 @@ module ppc_flags (
   input logic alloc_needs_flags_i,
   input ppc_pkg::completion_tag_t alloc_tag_i,
   output logic alloc_ready_o,
+  input logic wait_alloc_i,
+  input ppc_pkg::completion_tag_t wait_tag_i,
+  output logic waiter_o,
+  output ppc_pkg::completion_tag_t waiter_tag_o,
+  output logic handoff_o,
   input logic commit_i,
   input ppc_pkg::retire_packet_t commit_packet_i,
   input ppc_pkg::completion_tag_t commit_tag_i,
@@ -31,7 +38,8 @@ module ppc_flags (
   logic flags_busy_q;
   completion_tag_t flags_owner_q;
   logic alloc_fire, owner_commit, commit_writes_flags;
-  logic owner_survives;
+  logic owner_survives, waiter_survives, waiter_q;
+  completion_tag_t waiter_tag_q;
   logic [$clog2(CQ_DEPTH+1)-1:0] owner_survivor_matches;
   logic [$clog2(CQ_DEPTH+1)-1:0] flag_survivors;
   logic [31:0] cr_mask, fields_cr_mask, xer_mask;
@@ -53,6 +61,12 @@ module ppc_flags (
   assign xer_o = xer_q;
   assign flags_busy_o = flags_busy_q;
   assign flags_owner_o = flags_owner_q;
+  assign waiter_o = waiter_q;
+  assign waiter_tag_o = waiter_tag_q;
+  // A waiter dispatched in the owner's retirement cycle takes over at once.
+  assign handoff_o = recovery_i ?
+    (flags_busy_q && !owner_survives && waiter_q && waiter_survives) :
+    (owner_commit && (waiter_q || wait_alloc_i));
   // Pre-edge ownership decides admission. An exact owner retirement does not
   // make the token reusable until the following edge.
   assign alloc_ready_o = rst_ni && !recovery_i &&
@@ -95,10 +109,14 @@ module ppc_flags (
 
   always_comb begin
     owner_survives = 1'b0;
+    waiter_survives = 1'b0;
     owner_survivor_matches = '0;
     flag_survivors = '0;
     for (int age = 0; age < CQ_DEPTH; age++) begin
-      if ((age < int'(recovery_survivor_count_i)) &&
+      if ((age < int'(recovery_survivor_count_i)) && waiter_q &&
+          (recovery_survivor_tag_i[age] == waiter_tag_q))
+        waiter_survives = 1'b1;
+      else if ((age < int'(recovery_survivor_count_i)) &&
           recovery_survivor_packet_i[age].needs_flags &&
           (owns_token(recovery_survivor_packet_i[age]) ||
            (flags_busy_q && (recovery_survivor_tag_i[age] == flags_owner_q)))) begin
@@ -118,6 +136,8 @@ module ppc_flags (
       xer_q <= '0;
       flags_busy_q <= 1'b0;
       flags_owner_q <= '0;
+      waiter_q <= 1'b0;
+      waiter_tag_q <= '0;
     end else begin
       // synthesis translate_off
       if (commit_i) begin
@@ -148,7 +168,7 @@ module ppc_flags (
 
       if (recovery_i) begin
         // synthesis translate_off
-        assert (!alloc_fire)
+        assert (!alloc_fire && !wait_alloc_i)
           else $error("flag owner allocated on accepted recovery");
         assert (owner_survivor_matches <= 1)
           else $error("flag owner appears more than once in recovery survivors");
@@ -168,17 +188,31 @@ module ppc_flags (
         end
         // synthesis translate_on
         if (flags_busy_q && !owner_survives) begin
-          flags_busy_q <= 1'b0;
-          flags_owner_q <= '0;
+          flags_busy_q <= handoff_o;
+          flags_owner_q <= handoff_o ? waiter_tag_q : '0;
         end
+        if (!waiter_survives || handoff_o) waiter_q <= 1'b0;
       end else begin
+        // synthesis translate_off
+        assert (!wait_alloc_i || !waiter_q)
+          else $error("second CR writer waits for the flag token");
+        assert (!waiter_q || flags_busy_q)
+          else $error("CR writer waits with no flag owner");
+        assert (!wait_alloc_i || flags_busy_q || alloc_fire)
+          else $error("CR writer waits with the token free");
+        // synthesis translate_on
         if (owner_commit) begin
-          flags_busy_q <= 1'b0;
-          flags_owner_q <= '0;
+          flags_busy_q <= handoff_o;
+          flags_owner_q <= waiter_q ? waiter_tag_q : (wait_alloc_i ? wait_tag_i : '0);
+          waiter_q <= 1'b0;
         end
         if (alloc_fire) begin
           flags_busy_q <= 1'b1;
           flags_owner_q <= alloc_tag_i;
+        end
+        if (wait_alloc_i && !owner_commit) begin
+          waiter_q <= 1'b1;
+          waiter_tag_q <= wait_tag_i;
         end
       end
     end

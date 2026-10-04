@@ -7,6 +7,9 @@
 `ifndef PPC_LSU_BASE_SNOOP
 `define PPC_LSU_BASE_SNOOP 1'b0
 `endif
+`ifndef PPC_LSU_BASE_WAIT
+`define PPC_LSU_BASE_WAIT 1'b1
+`endif
 `ifndef PPC_DISPATCH_WIDTH
 `define PPC_DISPATCH_WIDTH 1
 `endif
@@ -76,6 +79,10 @@ module ppc_core #(
   // adder and request address in one cycle; benches may set the default
   // with +define+PPC_LSU_BASE_SNOOP.
   parameter bit LSU_BASE_SNOOP = `PPC_LSU_BASE_SNOOP,
+  // A D-form load in the unit whose base is not yet produced dispatches and
+  // waits for it in the unit, which forms the EA as the base is written and
+  // offers on the next cycle.
+  parameter bit LSU_BASE_WAIT = `PPC_LSU_BASE_WAIT,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -354,6 +361,12 @@ module ppc_core #(
   logic [31:0] bu_target, bu_next_pc, bu_target_q, frontend_target;
   logic owner_simple_q, owner_crf_valid_q, bu_cr_valid_q, bu_cr_capture;
   logic [2:0] owner_crf_q;
+  // A CR writer dispatched while the token is held waits in its station
+  // (UM 6.3.3.1 one CR rename; not a dispatch condition, UM 6.6.1.2).
+  logic flags_waiter, flags_handoff, cr_wait0, cr_wait1, cr_wait_ok0, cr_wait_ok1;
+  logic waiter_sru_q, waiter_crf_valid_q, wait_crf_valid;
+  logic [2:0] waiter_crf_q, wait_crf;
+  completion_tag_t flags_waiter_tag;
   logic fd_push, fold_predict, fold_q, iq_folded, bu_redirect;
   // Branch class predecoded at IQ push, to keep decode off the dispatch path.
   logic [3:0] push_branch, iq_branch;
@@ -432,7 +445,7 @@ module ppc_core #(
   uop_t dq1_uop, d1_lane_uop;
   iq_pair_t dq1_pair;
   // Unit classes: c0_* for DQ0, d1_* for DQ1.
-  logic c0_iu, c0_branch, c0_lane, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
+  logic c0_sru, c0_iu, c0_branch, c0_lane, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
   logic bu_finished, lane_dq1, fp_dq1, d1_needs_flags, d1_mem_ready, d1_misaligned;
   logic d1_branch, d1_bc, d1_cr_final, d1_bc_taken, d1_bc_now, d1_bc_spec;
   logic [31:0] d1_bc_target;
@@ -454,11 +467,11 @@ module ppc_core #(
   logic dispatch_misaligned, dispatch_page_cross, dispatch_le_natural;
   // Committed flag state supplies SO to record logical operations.
   logic [31:0] cr, xer, msr, srr0, srr1;
-  logic flags_ready, flags_busy;
+  logic flags_ready, flags_busy, flags_alloc_ready;
   completion_tag_t flags_owner;
   logic _unused_flags_state;
   logic _unused_control_state;
-  assign _unused_flags_state = ^{cr, xer[30:0], flags_busy, flags_owner};
+  assign _unused_flags_state = ^{cr, xer[30:0], flags_busy, flags_owner, flags_alloc_ready};
   assign _unused_control_state = ^{lr, ctr, msr[31:15], msr[13:11], msr[8:0], iabr[0],
                                    srr0, srr1, watchdog_reseto};
 
@@ -1005,8 +1018,10 @@ module ppc_core #(
   assign bu_reads_lr = iq_branch[1];
   assign bu_reads_ctr = iq_branch[0];
   assign bu_writes_ctr = (uop.special_op != SPECIAL_B) && !uop.branch_bo[2];
-  assign bu_spec = ENABLE_BRANCH_SPEC && bu_reads_cr && flags_busy && !bu_cr_valid_q;
-  assign bu_ready = !(bu_reads_cr && flags_busy && !bu_cr_valid_q && !ENABLE_BRANCH_SPEC) &&
+  assign bu_spec = ENABLE_BRANCH_SPEC && bu_reads_cr && flags_busy &&
+    (!bu_cr_valid_q || flags_waiter);
+  assign bu_ready = !(bu_reads_cr && flags_busy && (!bu_cr_valid_q || flags_waiter) &&
+                      !ENABLE_BRANCH_SPEC) &&
     !(bu_reads_cr && (fp_cr_pending || bs_busy)) &&
     !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(bu_reads_ctr && ctr_pending_q);
   // BO[0..3] are branch_bo[4..1]; the decrement leaves zero when CTR is 1.
@@ -1032,12 +1047,16 @@ module ppc_core #(
       bu_cr_valid_q <= 1'b0;
       bu_cr_q <= '0;
     end else begin
-      if (dispatch && flags_tok0) begin
+      if (flags_handoff) begin
+        owner_simple_q <= 1'b1;
+        owner_crf_valid_q <= flags_waiter ? waiter_crf_valid_q : wait_crf_valid;
+        owner_crf_q <= flags_waiter ? waiter_crf_q : wait_crf;
+      end else if (dispatch && flags_tok0 && !cr_wait0) begin
         owner_simple_q <= normal_uop && !dispatch_uop.write_cr_fields &&
                           !dispatch_uop.write_cr_bit;
         owner_crf_valid_q <= dispatch_uop.write_cr_field;
         owner_crf_q <= dispatch_uop.cr_field;
-      end else if (dispatch1 && flags_tok1) begin
+      end else if (dispatch1 && flags_tok1 && !cr_wait1) begin
         owner_simple_q <= d1_iu && !dq1_uop.write_cr_fields && !dq1_uop.write_cr_bit;
         owner_crf_valid_q <= dq1_uop.write_cr_field;
         owner_crf_q <= dq1_uop.cr_field;
@@ -1116,9 +1135,10 @@ module ppc_core #(
       if (dispatch && bu_branch && bu_spec) begin
         bs_valid_q <= 1'b1;
         bs_tag_q <= alloc_producer;
-        bs_owner_q <= flags_owner;
-        bs_owner_done_q <= (commit && (retire_producer == flags_owner)) ||
-                           (commit1 && (retire1_producer == flags_owner));
+        bs_owner_q <= flags_waiter ? flags_waiter_tag : flags_owner;
+        bs_owner_done_q <= !flags_waiter &&
+                           ((commit && (retire_producer == flags_owner)) ||
+                            (commit1 && (retire1_producer == flags_owner)));
         bs_pred_q <= iq_folded;
         bs_ctr_ok_q <= bu_ctr_ok;
         bs_bo3_q <= uop.branch_bo[3];
@@ -1307,9 +1327,13 @@ module ppc_core #(
     a: operand_a,
     b: operand_b
   };
+  // The station holding the CR waiter issues once it owns the token.
+  logic iu_cr_hold, sru_cr_hold, rs_issue_valid;
+  assign iu_cr_hold = flags_waiter && !waiter_sru_q;
+  assign sru_cr_hold = flags_waiter && waiter_sru_q;
   ppc_dispatch station (
     .clk_i, .rst_ni, .cancel_i(rs_cancel),
-    .dispatch_valid_i((dispatch && normal_uop && !bu_finished) ||
+    .dispatch_valid_i((dispatch && normal_uop && !bu_finished && !c0_sru) ||
                       (dispatch1 && d1_iu && !c0_iu)),
     .dispatch_ready_o(rs_ready), .entry_i(d1_iu && !c0_iu ? rs_entry1 : rs_entry),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
@@ -1319,8 +1343,9 @@ module ppc_core #(
     .lsu_done_i(SRU_TO_IU ? sru_result_valid : lsu_result_valid),
     .lsu_producer_i(SRU_TO_IU ? sru_result.producer : lsu_result.producer),
     .lsu_value_i(SRU_TO_IU ? sru_result.value : lsu_result.value),
-    .issue_valid_o(issue_valid), .issue_ready_i(issue_ready), .issue_o(issue)
+    .issue_valid_o(rs_issue_valid), .issue_ready_i(issue_ready && !iu_cr_hold), .issue_o(issue)
   );
+  assign issue_valid = rs_issue_valid && !iu_cr_hold;
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni)
@@ -1342,7 +1367,8 @@ module ppc_core #(
     .DIV_LATENCY(DIV_LATENCY_EFFECTIVE),
     .MUL_602_TIMING(cpu_mul_602_timing(CPU_VARIANT))
   ) iu (
-    .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid), .issue_ready_o(issue_ready),
+    .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid),
+    .issue_ready_o(issue_ready),
     .issue_i(issue), .result_valid_o(iu_result_valid),
     .result_ready_i(iu_result_ready), .result_o(iu_result)
   );
@@ -1351,18 +1377,21 @@ module ppc_core #(
   // CQ's second port and wake on the second bus.
   generate
     if (HAS_SRU) begin : g_sru
+      logic sru_rs_issue_valid;
       ppc_dispatch sru_station (
         .clk_i, .rst_ni, .cancel_i(sru_rs_cancel),
-        .dispatch_valid_i(dispatch1 && d1_iu && c0_iu),
-        .dispatch_ready_o(sru_rs_ready), .entry_i(rs_entry1),
+        .dispatch_valid_i((dispatch && c0_sru) || (dispatch1 && d1_iu && c0_iu)),
+        .dispatch_ready_o(sru_rs_ready), .entry_i(c0_sru ? rs_entry : rs_entry1),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .iu_done_i(sru_result_valid && sru_result_ready),
         .iu_producer_i(sru_result.producer), .iu_value_i(sru_result.value),
         // IU results reach the SRU in the cycle they finish.
         .lsu_done_i(iu_result_valid && iu_result_ready),
         .lsu_producer_i(iu_result.producer), .lsu_value_i(iu_result.value),
-        .issue_valid_o(sru_issue_valid), .issue_ready_i(sru_issue_ready), .issue_o(sru_issue)
+        .issue_valid_o(sru_rs_issue_valid), .issue_ready_i(sru_issue_ready && !sru_cr_hold),
+        .issue_o(sru_issue)
       );
+      assign sru_issue_valid = sru_rs_issue_valid && !sru_cr_hold;
       ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE), .MUL_602_TIMING(1'b0)) sru (
         .clk_i, .rst_ni, .cancel_i(sru_cancel), .issue_valid_i(sru_issue_valid),
         .issue_ready_o(sru_issue_ready), .issue_i(sru_issue),
@@ -1372,6 +1401,8 @@ module ppc_core #(
       assign sru_idle = sru_rs_ready && !sru_issue_valid && sru_issue_ready &&
                         !sru_result_valid;
     end else begin : g_no_sru
+      logic _unused_sru_hold;
+      assign _unused_sru_hold = sru_cr_hold;
       assign sru_rs_ready = 1'b0;
       assign sru_issue_valid = 1'b0;
       assign sru_issue_ready = 1'b0;
@@ -1669,7 +1700,7 @@ module ppc_core #(
     (dispatch_pre.illegal ||
      (fp_uop && fp_issue_ready && flags_ready && (!fp_mem_pipe || fp_mem_pipe_ready) &&
       (!unit_update || alloc_ready)) ||
-     (normal_uop && alloc_ready && (rs_ready || bu_finished) && flags_ready &&
+     (normal_uop && alloc_ready && (rs_ready || bu_finished || c0_sru) && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
      (special_uop && special_drained &&
@@ -1714,8 +1745,8 @@ module ppc_core #(
   assign mem_base_ready = (uop.zero_a || src_a.ready) && (uop.use_imm || src_b.ready);
   // A D-form load the unit may start without its base; the unit then
   // decides its alignment.
-  assign base_snoop = LSU_BASE_SNOOP && ENABLE_LSU_PIPE && ENABLE_SUPERVISOR_EXCEPTIONS &&
-    dispatch_mem_plain &&
+  assign base_snoop = (LSU_BASE_SNOOP || (LSU_BASE_WAIT && !src_a.ready)) &&
+    ENABLE_LSU_PIPE && ENABLE_SUPERVISOR_EXCEPTIONS && dispatch_mem_plain &&
     (uop.special_op == SPECIAL_LOAD) && !uop.mem_update && uop.use_imm && !uop.zero_a &&
     !msr_le;
   always_comb begin
@@ -1838,6 +1869,9 @@ module ppc_core #(
   logic pair_units, d1_iu_ready, d1_fp_ready;
   assign bu_finished = DUAL && bu_branch;
   assign c0_iu = normal_uop && !bu_branch;
+  // An add or compare goes to the SRU while the IU station is taken
+  // (UM 6.3, 6.4.5).
+  assign c0_sru = HAS_SRU && c0_iu && iq_pair.sru && !rs_ready && sru_rs_ready;
   assign c0_branch = bu_branch && !bu_redirect;
   assign c0_lane = special_uop && dispatch_mem_plain;
   assign c0_fp = fp_uop;
@@ -1867,7 +1901,7 @@ module ppc_core #(
   assign d1_bc = (dq1_uop.special_op == SPECIAL_BC) && dq1_branch[2] && !dq1_branch[0] &&
     !dq1_uop.branch_lk && !c0_fp && !c0_fp_mem;
   assign d1_cr_final = !flags_tok0 && !fp_cr_pending && !bs_busy &&
-    (!flags_busy || bu_cr_valid_q);
+    (!flags_busy || (bu_cr_valid_q && !flags_waiter));
   assign d1_bc_taken = bu_cr[5'd31 - dq1_uop.branch_bi] == dq1_uop.branch_bo[3];
   assign d1_bc_now = d1_cr_final && (d1_bc_taken == dq1_folded);
   assign d1_bc_spec = ENABLE_BRANCH_SPEC && !fp_cr_pending && !bs_busy && flags_tok0 && c0_iu;
@@ -1903,7 +1937,7 @@ module ppc_core #(
     ((c0_fp || c0_fp_mem) && d1_iu);
   // As for DQ0, no station operand waits on an older lane access.
   // Beside an IU operation in DQ0, a DQ1 integer operation goes to the SRU.
-  assign d1_station_ready = c0_iu ? sru_rs_ready : rs_ready;
+  assign d1_station_ready = !c0_sru && (c0_iu ? sru_rs_ready : rs_ready);
   assign d1_iu_ready = d1_station_ready && (!special_busy || special_mem_overlap || sru_in_lane) &&
     !(special_mem_dst_valid &&
       ((!dq1_uop.zero_a && (dq1_uop.src_a == special_mem_dst)) ||
@@ -1949,16 +1983,30 @@ module ppc_core #(
   assign dispatch1 = dispatch && seq_last && pair_units && cq1_ready && !unit_update && !sru_wait1 &&
     !update_wait1 &&
     (!d1_lsu || d1_lsu_ready) &&
-    (!flags_tok1 || (!flags_tok0 && !flags_busy)) && (!d1_needs_flags || xer_ready1) &&
+    (!flags_tok1 || (!flags_waiter && (!cr_wait1 || (cr_wait_ok1 && !cr_wait0)))) &&
+    (!d1_needs_flags || xer_ready1) &&
     (!d1_gpr || (dispatch_uop.gpr_write ? alloc1_ready : alloc_ready)) &&
     (!d1_iu || d1_iu_ready) && (!d1_mem || d1_mem_ready) && (!d1_fp || d1_fp_ready);
   // DQ1 takes rename port 0 when DQ0 writes no GPR.
   assign rename0_dq1 = dispatch1 && d1_gpr && !dispatch_uop.gpr_write;
   assign lane_dq1 = d1_mem && !special_uop;
   assign fp_dq1 = d1_fp && !c0_fp && !c0_fp_mem;
-  assign flags_ready = DUAL ?
-    (rst_ni && !recovery_accepted && (!flags_tok0 || !flags_busy) && xer_ready0) :
-    (flags_alloc_ready && xer_ready0);
+  assign flags_ready = rst_ni && !recovery_accepted && xer_ready0 &&
+    (!flags_tok0 || (!flags_waiter && (!flags_busy || cr_wait_ok0)));
+  // A waiter goes to the IU or SRU station and writes at most one CR field.
+  assign cr_wait_ok0 = c0_iu && !dispatch_uop.write_cr_fields && !dispatch_uop.write_cr_bit;
+  assign cr_wait_ok1 = d1_iu && !dq1_uop.write_cr_fields && !dq1_uop.write_cr_bit;
+  assign cr_wait0 = flags_tok0 && flags_busy;
+  assign cr_wait1 = flags_tok1 && (flags_tok0 || flags_busy);
+  assign wait_crf_valid = cr_wait0 ? dispatch_uop.write_cr_field : dq1_uop.write_cr_field;
+  assign wait_crf = cr_wait0 ? dispatch_uop.cr_field : dq1_uop.cr_field;
+  always_ff @(posedge clk_i) begin
+    if (dispatch && (cr_wait0 || (dispatch1 && cr_wait1))) begin
+      waiter_sru_q <= cr_wait0 ? c0_sru : c0_iu;
+      waiter_crf_valid_q <= wait_crf_valid;
+      waiter_crf_q <= wait_crf;
+    end
+  end
   always_comb begin
     d1_lane_uop = dq1_uop;
     d1_lane_uop.esa = dq1_head.esa;
@@ -2072,7 +2120,7 @@ module ppc_core #(
   generate
     if (ENABLE_LSU_PIPE) begin : g_lsu
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE),
-                     .BASE_SNOOP(LSU_BASE_SNOOP),
+                     .BASE_SNOOP(LSU_BASE_SNOOP), .BASE_WAIT(LSU_BASE_WAIT),
                      .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS)) lsu (
         .clk_i, .rst_ni,
         .dispatch_valid_i((dispatch && lsu_c0) || lsu_d1),
@@ -2243,7 +2291,7 @@ module ppc_core #(
       perf_slot = perf_head_branch ? PERF_DRAIN_BRANCH :
                   perf_head_mem ? PERF_DRAIN_MEMORY : PERF_DRAIN_OTHER;
     else if (!cq_ready || !alloc_ready) perf_slot = PERF_CQ_FULL;
-    else if (normal_uop && !rs_ready) perf_slot = PERF_RS_FULL;
+    else if (normal_uop && !rs_ready && !c0_sru) perf_slot = PERF_RS_FULL;
     else if (!flags_ready) perf_slot = PERF_FLAGS_WAIT;
   end
   always_ff @(posedge clk_i) begin
@@ -2473,13 +2521,16 @@ module ppc_core #(
     .recovery_survivor_packet_o(recovery_packets), .recovery_survivor_tag_o(recovery_tags)
   );
   // At most one of a pair takes the flag token or retires with flags.
-  logic flags_alloc_ready, flags_commit1;
+  logic flags_commit1;
   assign flags_commit1 = commit1 && retire1_o.needs_flags;
   ppc_flags flags (
     .clk_i, .rst_ni, .alloc_valid_i(dispatch),
-    .alloc_needs_flags_i(flags_tok0 || (dispatch1 && flags_tok1)),
+    .alloc_needs_flags_i((flags_tok0 && !cr_wait0) || (dispatch1 && flags_tok1 && !cr_wait1)),
     .alloc_tag_i(flags_tok0 ? alloc_producer : alloc1_producer),
     .alloc_ready_o(flags_alloc_ready),
+    .wait_alloc_i(dispatch && (cr_wait0 || (dispatch1 && cr_wait1))),
+    .wait_tag_i(cr_wait0 ? alloc_producer : alloc1_producer),
+    .waiter_o(flags_waiter), .waiter_tag_o(flags_waiter_tag), .handoff_o(flags_handoff),
     .commit_i(commit), .commit_packet_i(flags_commit1 ? retire1_o : retire_o),
     .commit_tag_i(flags_commit1 ? retire1_producer : retire_producer),
     .commit_unowned_i(fp_head),
@@ -2680,7 +2731,8 @@ module ppc_core #(
   logic late_align_q;
   completion_tag_t late_align_tag_q;
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || !LSU_BASE_SNOOP || recovery_accepted) late_align_q <= 1'b0;
+    if (!rst_ni || !(LSU_BASE_SNOOP || LSU_BASE_WAIT) || recovery_accepted)
+      late_align_q <= 1'b0;
     else if (adopt_go && special_ready &&
              (lsu_adopt_uop.special_op == SPECIAL_ALIGNMENT)) late_align_q <= 1'b1;
     else if (commit && (retire_producer == late_align_tag_q)) late_align_q <= 1'b0;

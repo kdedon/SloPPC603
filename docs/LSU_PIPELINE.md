@@ -21,8 +21,8 @@ dispatch -> P1 offer -> P2 await response -> R result -> CQ -> retire
 
 - Dispatch captures the uop, completion tag, PC, EA (the dispatch adder) and
   store data. Base registers come from rename, including a value written
-  that cycle; an access waits at dispatch only until they are ready, unless
-  `LSU_BASE_SNOOP` lets a D-form load take its base in P1
+  that cycle; an access waits at dispatch only until they are ready, except
+  a D-form load, which waits for its base in P1
   ([Base snooping](#base-snooping)). Store data not yet produced follows
   from the result buses
   ([Update forms and rename operands](#update-forms-and-rename-operands)).
@@ -210,6 +210,23 @@ in its reservation station. Here:
   and retirement wait for it.
 
 ## Base snooping
+
+Parameter `LSU_BASE_WAIT` (macro `PPC_LSU_BASE_WAIT`, default 1) makes P1 the
+LSU's reservation station for a D-form load's base (UM 6.3.3, 6.3.3.1):
+
+- A plain, non-update D-form integer load in DQ0 whose base is not yet
+  produced dispatches; P1 keeps the base's rename tag and the displacement.
+  A load whose base is ready keeps the dispatch adder and its alignment
+  check.
+- When a result bus writes the base, P1 registers base plus displacement as
+  the EA and decides alignment from it (an exception goes to the lane at the
+  head, its destination write suppressed at retirement). The access offers
+  on the next cycle.
+
+The path is result bus, adder, alignment check, register, like the dispatch
+adder's; the request address still comes from a register. The load offers
+in the same cycle it would have after waiting at dispatch, but younger work
+dispatches behind it.
 
 Parameter `LSU_BASE_SNOOP` (macro `PPC_LSU_BASE_SNOOP`, default 0) forms a
 D-form load's EA in P1, as the 603e's LSU does from operands its station

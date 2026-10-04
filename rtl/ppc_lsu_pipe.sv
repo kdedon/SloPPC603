@@ -29,14 +29,16 @@
 // reported for an asynchronous machine check (UM 4.5.2) and cancels the
 // rest of the queue.
 //
-// With BASE_SNOOP, a load whose base is not yet produced dispatches with its
-// displacement and takes the base from the result buses: the head offers
-// in the cycle the base is written, forming its EA then (UM Table 6-6, load
-// latency 2), and decides alignment there instead of at dispatch.
+// With BASE_WAIT, a load whose base is not yet produced dispatches with its
+// displacement and waits in P1 for the base (UM 6.3.3.1): the EA is formed
+// and its alignment decided as the base is written, and the access offers
+// on the next cycle. BASE_SNOOP also offers the head in the cycle the base
+// is written, forming its EA then (UM Table 6-6, load latency 2).
 module ppc_lsu_pipe #(
   parameter int DMEM_BITS = 32,
   parameter bit STORE_QUEUE = 1'b0,
   parameter bit BASE_SNOOP = 1'b0,
+  parameter bit BASE_WAIT = 1'b0,
   parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
   parameter int SQ_DEPTH = 4
 ) (
@@ -254,6 +256,7 @@ module ppc_lsu_pipe #(
                     (p1_head.store ? fp_store_valid_i : p1_head.launched);
   // A waiting head's EA from the base written this cycle; both sums are
   // formed while the tags compare.
+  localparam bit BASE_ANY = BASE_SNOOP || BASE_WAIT;
   logic head_base0, head_base1, head_base_ready, head_fast;
   logic [31:0] head_ea, base_sum0, base_sum1;
   assign head_base0 = BASE_SNOOP && wake_valid_i && (wake_i.tag == p1_head.base_tag) &&
@@ -477,7 +480,7 @@ module ppc_lsu_pipe #(
     incoming.data_ready = fp_i || (uop_i.special_op != SPECIAL_STORE) || data_i.ready;
     incoming.data_tag = data_i.tag;
     incoming.data_producer = data_i.producer;
-    incoming.base_wait = BASE_SNOOP && base_snoop_i && !base_i.ready;
+    incoming.base_wait = BASE_ANY && base_snoop_i && !base_i.ready;
     incoming.base_tag = base_i.tag;
     incoming.base_producer = base_i.producer;
     incoming.offset = offset_i;
@@ -485,7 +488,7 @@ module ppc_lsu_pipe #(
     incoming.insn = insn_i;
     incoming.uop = uop_i;
     if (incoming.base_wait) incoming.fast = 1'b0;
-    else if (BASE_SNOOP && base_snoop_i && int_trap(uop_i.mem_size, ea_i[11:0], dr_i)) begin
+    else if (BASE_ANY && base_snoop_i && int_trap(uop_i.mem_size, ea_i[11:0], dr_i)) begin
       incoming.fast = 1'b0;
       incoming.uop.special_op = SPECIAL_ALIGNMENT;
       incoming.uop.gpr_write = 1'b0;
@@ -567,7 +570,7 @@ module ppc_lsu_pipe #(
       end
       // A base written this cycle forms the EA; an alignment exception goes
       // to the lane with the access.
-      if (BASE_SNOOP && p1_next[i].base_wait) begin
+      if (BASE_ANY && p1_next[i].base_wait) begin
         logic hit0, hit1;
         logic [31:0] ea;
         hit0 = wake_valid_i && (wake_i.tag == p1_next[i].base_tag) &&
