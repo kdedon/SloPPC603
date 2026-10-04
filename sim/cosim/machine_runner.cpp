@@ -12,6 +12,7 @@
 #include <utils/profiler.h>
 #include "reference_adapter.h"
 #include <array>
+#include <csignal>
 #include <cstring>
 #include <deque>
 #include <fstream>
@@ -56,12 +57,22 @@ struct InjectedIo : MMIODevice {
 
 // State fields in trace order: r0-r31 then these.
 static const char* const NAMES[] = {"cr", "xer", "lr", "ctr", "msr", "srr0", "srr1",
-                                    "dar", "dsisr", "sprg0", "sprg1", "sprg2", "sprg3"};
-static constexpr int FIELDS = 45;
+                                    "dar", "dsisr", "sprg0", "sprg1", "sprg2", "sprg3",
+                                    "t0", "t1", "t2", "t3"};
+static constexpr int FIELDS = 49;
+
+// The reference has no TGPRs: while MSR[TGPR] is set its r0-r3 stand for
+// them and the architectural r0-r3 wait in saved; otherwise tgpr holds them.
+static uint32_t saved[4], tgpr[4];
+static bool tgpr_on() { return ppc_state.msr & MSR::TGPR; }
 
 static std::array<uint32_t, FIELDS> reference_state() {
     std::array<uint32_t, FIELDS> s{};
     std::memcpy(s.data(), ppc_state.gpr, 32 * 4);
+    for (int i = 0; i < 4; ++i) {
+        s[45 + i] = tgpr_on() ? ppc_state.gpr[i] : tgpr[i];
+        if (tgpr_on()) s[i] = saved[i];
+    }
     s[32] = ppc_state.cr;
     s[33] = ppc_state.spr[SPR::XER];
     s[34] = ppc_state.spr[SPR::LR];
@@ -120,6 +131,51 @@ static bool store_class(uint32_t insn) {
         return true;
     default: return false;
     }
+}
+
+// UM 7.6.3: IMISS, ICMP, DMISS, DCMP, HASH1, HASH2 and RPA hold miss state the
+// reference never forms; their reads take the RTL value.
+static bool miss_spr_read(uint32_t insn) {
+    unsigned spr = ((insn >> 16) & 31) | (((insn >> 11) & 31) << 5);
+    return (insn >> 26) == 31 && ((insn >> 1) & 1023) == 339 && spr >= 976 && spr <= 982;
+}
+
+static bool cache_op(uint32_t insn) {
+    unsigned xo = (insn >> 1) & 1023;
+    return (insn >> 26) == 31 && (xo == 1014 || xo == 86 || xo == 54 || xo == 470 || xo == 982 ||
+                                  xo == 278 || xo == 246);
+}
+
+// Effective address of an integer load, store or cache operation.
+static bool access_ea(uint32_t insn, uint32_t& ea) {
+    unsigned op = insn >> 26, ra = (insn >> 16) & 31, rb = (insn >> 11) & 31;
+    unsigned xo = (insn >> 1) & 1023, rd;
+    int reverse;
+    uint32_t base = ra ? ppc_state.gpr[ra] : 0;
+    if (op >= 32 && op <= 47) { ea = base + uint32_t(int32_t(int16_t(insn))); return true; }
+    if (op != 31) return false;
+    if (xo == 597 || xo == 725) { ea = base; return true; }
+    if (load_target(insn, rd, reverse) || store_class(insn) || cache_op(insn) || xo == 533 ||
+        xo == 310 || xo == 438) {
+        ea = base + ppc_state.gpr[rb];
+        return true;
+    }
+    return false;
+}
+
+static void set_msr(uint32_t value) {
+    uint32_t old = ppc_state.msr;
+    ppc_state.msr = value;
+    ppc_msr_did_change(old, value, false);
+    exec_flags = 0;
+}
+
+// The reference aborts on what it does not model; name the RTL records first.
+static std::deque<std::string>* abort_context;
+static void on_abort(int) {
+    if (abort_context)
+        for (auto& r : *abort_context) std::cerr << "  rtl: " << r.substr(0, 200) << '\n';
+    std::signal(SIGABRT, SIG_DFL);
 }
 
 struct Region { uint32_t base, bytes; uint8_t* host; };
@@ -210,9 +266,12 @@ int main(int argc, char** argv) {
         if (!trace) throw std::runtime_error("cannot open trace");
         std::array<uint32_t, FIELDS> rtl{};
         std::deque<std::string> recent;
+        abort_context = &recent;
+        std::signal(SIGABRT, on_abort);
         uint64_t records = 0, instructions = 0, exceptions = 0, async = 0, stores = 0,
                  store_bytes = 0, timing = 0;
-        bool done = false;
+        bool done = false, miss_vector = false, direct_vector = false;
+        uint64_t misses = 0, direct = 0;
         std::string line;
         std::ofstream kept;
         if (!keep.empty()) kept.open(keep);
@@ -254,19 +313,91 @@ int main(int argc, char** argv) {
             if (ppc_state.pc != pc && (vector == 0x500 || vector == 0x900)) {
                 int_pin = false;
                 dec_exception_pending = false;
+                uint32_t resume = ppc_state.pc;
                 ppc_exception_handler(vector == 0x500 ? Except_Type::EXC_EXT_INT : Except_Type::EXC_DECR, 0);
+                // Taken between instructions, so SRR0 is the next one to run.
+                ppc_state.spr[SPR::SRR0] = resume;
+                ppc_state.pc = ppc_next_instruction_address;
+                exec_flags = 0;
                 ++async;
             }
+            // A software TLB reload vector: the reference translates by table
+            // search, so the RTL's miss entry was applied and only its PC is taken.
+            if (miss_vector && (vector == 0x1000 || vector == 0x1100 || vector == 0x1200))
+                ppc_state.pc = pc;
+            if (direct_vector && (vector == 0x300 || vector == 0x400)) ppc_state.pc = pc;
+            miss_vector = direct_vector = false;
             if (ppc_state.pc != pc)
                 fail("pc: rtl " + h8(pc) + " reference " + h8(ppc_state.pc));
+            // Register value as the RTL holds it, mapping r0-r3 to t0-t3 in TGPR mode.
+            auto rtl_reg = [&](unsigned d) { return tgpr_on() && d < 4 ? rtl[45 + d] : rtl[d]; };
             uint64_t before = exceptions_processed;
+            bool tlb_miss = fault && (rtl[36] & MSR::TGPR) && !tgpr_on();
+            if (tlb_miss) {
+                // Miss entry: the instruction does not execute; state comes from the RTL.
+                std::memcpy(saved, ppc_state.gpr, sizeof(saved));
+                std::memcpy(ppc_state.gpr, tgpr, sizeof(tgpr));
+                ppc_state.spr[SPR::SRR0] = rtl[37];
+                ppc_state.spr[SPR::SRR1] = rtl[38];
+                set_msr(rtl[36]);
+                ppc_state.cr = rtl[32];
+                miss_vector = true;
+                ++misses;
+                count = 0;
+            }
+            // UM 7.4.x: the 603e does not implement direct-store segments; an
+            // access to a T=1 segment takes DSI with DSISR[5] set and DAR = EA.
+            // The reference aborts on them, so the RTL's entry is checked and taken.
+            // PEM 7.4.1: fetching from a direct-store segment takes ISI with SRR1[3].
+            if (count == 1 && !tlb_miss && (ppc_state.msr & MSR::IR) &&
+                (ppc_state.sr[pc >> 28] & 0x80000000U)) {
+                if (!fault || !(rtl[38] & 0x10000000U) || rtl[37] != pc)
+                    fail("fetch from direct-store segment without the ISI the manual gives");
+                ppc_state.spr[SPR::SRR0] = rtl[37];
+                ppc_state.spr[SPR::SRR1] = rtl[38];
+                set_msr(rtl[36]);
+                direct_vector = true;
+                tlb_miss = true;
+                ++direct;
+                count = 0;
+            }
+            uint32_t ea = 0;
+            if (count == 1 && !tlb_miss && (ppc_state.msr & MSR::DR) && access_ea(insn, ea) &&
+                (ppc_state.sr[ea >> 28] & 0x80000000U)) {
+                if (!fault && cache_op(insn)) {
+                    // PEM 5.1.5: cache operations to direct-store segments are no-ops.
+                    ppc_state.pc += 4;
+                    ++instructions;
+                    ++direct;
+                    count = 0;
+                    goto compare;
+                }
+                if (!fault || !(rtl[40] & 0x04000000U) || rtl[39] != ea)
+                    fail("direct-store access " + h8(ea) + " without the DSI the manual gives");
+                ppc_state.spr[SPR::SRR0] = rtl[37];
+                ppc_state.spr[SPR::SRR1] = rtl[38];
+                ppc_state.spr[SPR::DAR] = rtl[39];
+                ppc_state.spr[SPR::DSISR] = rtl[40];
+                set_msr(rtl[36]);
+                direct_vector = true;
+                tlb_miss = true;
+                ++direct;
+                count = 0;
+            }
+            if (count == 1 && miss_spr_read(insn)) {
+                ppc_state.gpr[(insn >> 21) & 31] = rtl_reg((insn >> 21) & 31);
+                ppc_state.pc += 4;
+                ++timing;
+                ++instructions;
+                count = 0;
+            }
             for (unsigned k = 0; k < count; ++k) {
                 uint32_t step_insn = k == 0 ? insn : 0;
                 unsigned rd = 0;
                 int reverse = 0;
                 io.have_pending = false;
                 if (k == 0 && load_target(step_insn, rd, reverse)) {
-                    uint32_t v = rtl[rd];
+                    uint32_t v = rtl_reg(rd);
                     if (reverse == 4) v = __builtin_bswap32(v);
                     if (reverse == 2) v = __builtin_bswap16(uint16_t(v));
                     io.pending = v;
@@ -278,26 +409,44 @@ int main(int argc, char** argv) {
                     uint32_t next = 0;
                     if (uint8_t* p = ram_byte(ppc_state.pc))
                         next = uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
-                    if (load_target(next, rd, reverse)) { io.pending = rtl[rd]; io.have_pending = true; }
+                    if (load_target(next, rd, reverse)) { io.pending = rtl_reg(rd); io.have_pending = true; }
                     step_insn = next;
                 }
                 int_pin = false;
                 dec_exception_pending = false;
                 uint64_t step_exceptions = exceptions_processed;
+                bool was_tgpr = tgpr_on();
+                uint32_t msr_before = ppc_state.msr, srr1_before = ppc_state.spr[SPR::SRR1];
                 patch_table();
                 ppc_exec_single();
                 adapter_after_step(step_exceptions);
                 if (timing_read(step_insn) && exceptions_processed == step_exceptions) {
                     unsigned d = (step_insn >> 21) & 31;
-                    ppc_state.gpr[d] = rtl[d];
+                    ppc_state.gpr[d] = rtl_reg(d);
                     ++timing;
+                }
+                // PEM rfi: only MSR[16-23,25-27,30-31] come from SRR1, and the
+                // 603e clears MSR[TGPR]. The reference copies every SRR1 bit
+                // it implements, including reserved bit 0, and keeps TGPR.
+                if (step_insn == 0x4c000064U && exceptions_processed == step_exceptions) {
+                    uint32_t want = ((msr_before & ~0x0000ff73U) | (srr1_before & 0x0000ff73U)) &
+                                    ~uint32_t(MSR::TGPR);
+                    if (ppc_state.msr != want) set_msr(want);
+                }
+                if (was_tgpr && !tgpr_on()) {
+                    std::memcpy(tgpr, ppc_state.gpr, sizeof(tgpr));
+                    std::memcpy(ppc_state.gpr, saved, sizeof(saved));
+                } else if (!was_tgpr && tgpr_on()) {
+                    std::memcpy(saved, ppc_state.gpr, sizeof(saved));
+                    std::memcpy(ppc_state.gpr, tgpr, sizeof(tgpr));
                 }
                 ++instructions;
             }
+        compare:
             io.have_pending = false;
             bool took = exceptions_processed != before;
             exceptions += took;
-            if (fault && !took) fail("rtl faulted, reference took no exception");
+            if (fault && !took && !tlb_miss) fail("rtl faulted, reference took no exception");
             auto ref = reference_state();
             std::string diff;
             for (int i = 0; i < FIELDS; ++i)
@@ -341,7 +490,7 @@ int main(int argc, char** argv) {
         uint64_t trailing = 0;
         while (std::getline(trace, line)) ++trailing;
         std::cout << "PASS machine: records=" << records << " instructions=" << instructions
-                  << " exceptions=" << exceptions << " interrupts=" << async << " stores=" << stores
+                  << " exceptions=" << exceptions << " tlb_misses=" << misses << " direct_store=" << direct << " interrupts=" << async << " stores=" << stores
                   << " store_bytes=" << store_bytes << " io_reads=" << io.reads
                   << " timing_reads=" << timing << " trailing=" << trailing << '\n';
         return 0;

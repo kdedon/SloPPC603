@@ -3,6 +3,7 @@
 # Copyright (c) 2026 Kevin Dedon
 """Run whole programs on a machine top and DingusPPC in lockstep (REFERENCE_MACHINE.md)."""
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -44,7 +45,10 @@ def lockstep(name, runner, image, runner_args, rtl_cmd, out, keep=None):
             extra = [f'keep={keep}'] if keep else []
             ref = subprocess.Popen([str(runner), str(image), str(fifo), *runner_args, *extra],
                                    stdout=ref_log, stderr=subprocess.STDOUT)
-            rtl = subprocess.Popen([*map(str, rtl_cmd), f'+RETIRE_TRACE={fifo}'],
+            trace_arg = f'+RETIRE_TRACE={fifo}'
+            if str(rtl_cmd[0]) == sys.executable:
+                trace_arg = f'--plusarg={trace_arg}'
+            rtl = subprocess.Popen([*map(str, rtl_cmd), trace_arg],
                                    stdout=rtl_log, stderr=subprocess.STDOUT)
             ref_code = ref.wait()
             if ref_code:
@@ -80,12 +84,27 @@ def negative_controls(runner, image, runner_args, prefix):
           flush=True)
 
 
+def chip_stress(runner, args, out):
+    spec = importlib.util.spec_from_file_location('run_rtl_smoke', PROJECT/'toolchain/run-rtl-smoke.py')
+    smoke = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(smoke)
+    memory, mailbox = smoke.load_elf(args.chip_elf, {}, {})
+    out.mkdir(parents=True, exist_ok=True)
+    image = out/'image.hex'
+    image.write_text(''.join(bytes(memory[i:i+8]).hex() + '\n' for i in range(0, len(memory), 8)))
+    rtl = [sys.executable, PROJECT/'toolchain/run-rtl-smoke.py', '--profile', 'chip-mmu-stress',
+           '--elf', args.chip_elf.resolve(), '--build-dir', out/'rtl', '--verilator', args.verilator]
+    lockstep('chip-mmu-stress', runner, image, ('ram=fff00000:00040000', f'exit={mailbox:08x}'), rtl, out)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=PROJECT/'sim/build/reference-machine')
     parser.add_argument('--reference', type=Path, default=ROOT/'dingusppc')
-    parser.add_argument('--model', type=Path, required=True, help='demo SoC Verilator binary')
-    parser.add_argument('--image-dir', type=Path, required=True, help='demo firmware .hex directory')
+    parser.add_argument('--model', type=Path, help='demo SoC Verilator binary')
+    parser.add_argument('--image-dir', type=Path, help='demo firmware .hex directory')
+    parser.add_argument('--chip-elf', type=Path, help='chip-mmu-stress ELF: run it on the package top')
+    parser.add_argument('--verilator', default='verilator')
     parser.add_argument('--programs', nargs='+', default=DEMO_PROGRAMS)
     parser.add_argument('--max-cycles', type=int, default=400_000_000)
     args = parser.parse_args()
@@ -93,6 +112,10 @@ def main():
     build.mkdir(parents=True, exist_ok=True)
     ref = args.reference.resolve()
     verify(ref)
+    if args.chip_elf:
+        runner = build_runner(build, ref)
+        chip_stress(runner, args, build/'chip-mmu-stress')
+        return
     images = {n: args.image_dir.resolve()/f'{n}.hex' for n in args.programs}
     missing = [str(p) for p in images.values() if not p.exists()]
     if missing:

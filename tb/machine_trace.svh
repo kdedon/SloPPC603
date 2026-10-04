@@ -6,10 +6,10 @@
 // +RETIRE_TRACE=<file> writes one line per retirement edge:
 //   <pc> <insn> <count> <fault> [name=value ...] [st=addr,strobe,data ...]
 // count is 2 when CQ[1] retires beside the head. Registers appear when they
-// differ from the previous line; st lists physical stores accepted since the
+// differ from the previous line (r0-r31 exclude the TGPRs, t0-t3); st lists physical stores accepted since the
 // previous line (strobe bit 3 is the byte at addr).
 int mt_fd = 0;
-logic [31:0] mt_prev [48];
+logic [31:0] mt_prev [49];
 logic mt_first = 1'b1;
 string mt_stores = "";
 
@@ -31,13 +31,14 @@ function automatic logic [31:0] mt_value(input int i);
     42: return `MT_CORE.special.sprg_q[1];
     43: return `MT_CORE.special.sprg_q[2];
     44: return `MT_CORE.special.sprg_q[3];
+    45, 46, 47, 48: return `MT_CORE.regfile.tgpr_enabled.tgpr[i - 45];
     default: return '0;
   endcase
 endfunction
 
 function automatic string mt_name(input int i);
-  string names [13] = '{"cr", "xer", "lr", "ctr", "msr", "srr0", "srr1", "dar",
-                        "dsisr", "sprg0", "sprg1", "sprg2", "sprg3"};
+  string names [17] = '{"cr", "xer", "lr", "ctr", "msr", "srr0", "srr1", "dar",
+                        "dsisr", "sprg0", "sprg1", "sprg2", "sprg3", "t0", "t1", "t2", "t3"};
   return i < 32 ? $sformatf("r%0d", i) : names[i - 32];
 endfunction
 
@@ -68,7 +69,7 @@ always @(posedge `MT_CLK) begin
     automatic string stores = mt_stores;
     mt_stores = store;
     #1;
-    for (int i = 0; i < 45; i++) begin
+    for (int i = 0; i < 49; i++) begin
       automatic logic [31:0] v = mt_value(i);
       if (mt_first || v != mt_prev[i]) line = {line, $sformatf(" %s=%08x", mt_name(i), v)};
       mt_prev[i] = v;

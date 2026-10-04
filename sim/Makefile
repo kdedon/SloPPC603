@@ -2308,6 +2308,11 @@ MACHINE_PROGRAMS ?= hello dhrystone coremark whetstone selftest
 .PHONY: test-reference-machine
 test-reference-machine: reference-checkout demo-soc-model
 	python3 cosim/run_machine_reference.py --build-dir $(BUILD_DIR)/reference-machine --reference $(REFERENCE_DIR) --model $(BUILD_DIR)/demo/model/Vtb_demo_soc --image-dir $(DEMO_FW_DIR) --programs $(MACHINE_PROGRAMS)
+# The MMU stress image on the package top: TLB reloads, interrupts, direct-store.
+MACHINE_MMU_ELF ?= ../toolchain/build/chip-mmu-stress/smoke.elf
+.PHONY: test-reference-machine-mmu
+test-reference-machine-mmu: reference-checkout
+	python3 cosim/run_machine_reference.py --build-dir $(BUILD_DIR)/reference-machine-mmu --reference $(REFERENCE_DIR) --chip-elf $(MACHINE_MMU_ELF) --verilator $(VERILATOR_TOOL)
 
 .PHONY: test-selftest
 test-selftest: demo-soc-model
