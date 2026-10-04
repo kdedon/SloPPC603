@@ -211,6 +211,10 @@ class Program:
 
     def event(self, vector, srr0, srr1, dar=None, dsisr=None):
         self.log.append((vector, srr0, srr1, dar, dsisr))
+        # The program handler returns with FE0/FE1 clear after an FP
+        # enabled exception.
+        if vector == 0x700 and srr1 is not None and srr1 & SRR1_FP:
+            self.msr &= ~(FE0 | FE1)
 
     # r21 points at the next result slot; stores go through it.
     def store_fpr(self, fr, value, mask64=(1 << 64) - 1):
@@ -249,13 +253,14 @@ class Program:
         self.fpscr = 0
 
 
-def clear_fe_if_next():
-    """Program handler step: when SRR1 bit 15 is set, clear FE0/FE1 in
-    SRR1 so that the return does not re-enable FE while FPSCR[FEX] stays
-    set. Uses SPRG3 to save r29."""
+def clear_fe_if_fp():
+    """Program handler step: after an FP enabled exception (SRR1 bit 11),
+    clear FE0/FE1 in SRR1. FPSCR[FEX] stays set, so returning with FE set
+    would take the exception again (PEM Table 6-14). Uses SPRG3 to save
+    r29."""
     return [x_form(31, 29, 275 & 31, 275 >> 5, 467),                  # mtsprg3 r29
             x_form(31, 29, 27, 0, 339),                                # mfsrr1 r29
-            (21 << 26) | (29 << 21) | (26 << 16) | (16 << 11) | (31 << 6) | (31 << 1),
+            (21 << 26) | (29 << 21) | (26 << 16) | (12 << 11) | (31 << 6) | (31 << 1),
             d_form(7, 26, 26, FE0 | FE1),                              # mulli
             x_form(31, 29, 29, 26, 60),                                # andc
             x_form(31, 29, 27, 0, 467),                                # mtsrr1 r29
@@ -270,7 +275,7 @@ def handlers(p):
             seq += [x_form(31, 26, spr & 31, spr >> 5, 339), d_form(36, 26, 29, off)]
         seq += [d_form(14, 26, 0, vector), d_form(36, 26, 29, 16), d_form(14, 29, 29, 20)]
         if vector == 0x700:
-            seq += clear_fe_if_next()
+            seq += clear_fe_if_fp()
         if vector == 0x800:
             # Lazy FP enable: set MSR[FP] in SRR1 and retry.
             seq += [x_form(31, 26, 27, 0, 339), d_form(24, 26, 26, MSR_FP),
@@ -555,6 +560,7 @@ def directed(p):
         dsi(p)
     fp_enabled(p)
     fp_enable_deferred(p)
+    fp_enable_rfi(p)
 
 
 def dsi(p):
@@ -604,6 +610,45 @@ def fp_enable_deferred(p, update=None):
     p.clear_fpscr()
 
 
+def fp_enable_rfi(p, update=None):
+    """PEM Table 6-14 for rfi: with FPSCR[FEX] set, an rfi that sets FE0/FE1
+    from 00 takes the FP enabled program exception before its target:
+    SRR0 = the target, SRR1 bits 11 and 15 with the restored MSR. The handler
+    resumes past the target's addi. An rfi that leaves FE clear, or one with
+    FEX clear, returns normally and the addi runs."""
+    p.li32(10, 0)
+    for fe, fex in ((FE0 | FE1, True), (FE1, True), (FE0, True),
+                    (0, True), (FE0 | FE1, False)):
+        p.clear_fpscr()
+        if fex:
+            p.emit(x_form(63, 24, 0, 0, 38))      # mtfsb1 24 (VE)
+            p.emit(x_form(63, 21, 0, 0, 38))      # mtfsb1 21 (VXSOFT): FEX
+            if update is None:
+                p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 10) | (1 << 31))
+            else:
+                update(p)
+        restored = p.msr | fe
+        p.li32(9, restored)
+        p.emit(x_form(31, 9, 27, 0, 467))         # mtsrr1 r9
+        target = p.pc + 4 * 4
+        p.li32(9, target)
+        p.emit(x_form(31, 9, 26, 0, 467))         # mtsrr0 r9
+        p.emit(x_form(19, 0, 0, 0, 50))           # rfi
+        assert p.emit(d_form(14, 10, 10, 1)) == target
+        if fe and fex:
+            p.event(0x700, target, restored | SRR1_FP | SRR1_NEXT)
+        else:
+            p.store_gpr(10, 1)
+            p.li32(10, 0)
+            p.msr = restored
+            p.emit(x_form(31, 8, 0, 0, 83))       # mfmsr r8
+            p.store_gpr(8, restored)
+            p.mtmsr(restored & ~(FE0 | FE1))
+        p.check_fpscr()
+    p.store_gpr(10, 0)
+    p.clear_fpscr()
+
+
 def in_flight(p):
     """Exceptions and cancellation with pipelined FP work in flight. Each
     younger instruction accumulates, so one that retired before the
@@ -626,11 +671,15 @@ def in_flight(p):
     younger = p.emit(a_form(63, 6, 6, 1, 0, 21))  # fadd f6, f6, f1
     p.spacings.append(('I', at, younger, 2))
     p.event(0x700, at, p.msr | SRR1_FP)
-    # FEX stays set, so the fadd, run once after the handler, takes its own
-    # FP enabled exception with its result and FPRF +normal committed.
-    p.event(0x700, younger, p.msr | SRR1_FP)
+    # The handler returns with FE clear, so the fadd runs once and commits
+    # its result and FPRF +normal.
+    p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 23) | (1 << 31) | (1 << 14))
+    p.check_fpscr()
     # An overlapped store behind the faulting fsub is cancelled by its
     # replay and stores once after the handler returns.
+    p.clear_fpscr()
+    p.mtmsr(p.msr | FE0 | FE1)
+    p.emit(x_form(63, 24, 0, 0, 38))            # mtfsb1 24 (VE)
     slot = p.result_slot(2)
     p.li32(23, slot)
     p.emit(SYNC)
@@ -639,8 +688,7 @@ def in_flight(p):
     p.event(0x700, at, p.msr | SRR1_FP)
     p.expect(slot, ONE >> 32)
     p.expect(slot + 4, ONE & 0xffffffff)
-    p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 23) | (1 << 31) | (1 << 14))
-    p.mtmsr(p.msr & ~(FE0 | FE1))
+    p.fpscr = recompute((1 << 7) | (1 << 23) | (1 << 31))
     p.check_fpscr()
     p.clear_fpscr()
     p.store_fpr(4, HALF)

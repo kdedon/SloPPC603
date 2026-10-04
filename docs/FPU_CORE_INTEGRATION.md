@@ -191,6 +191,14 @@ is entered as for any exception. Both personalities. The lane decides at the
 `mtmsr` dispatches with older work retired, and raises the exception instead
 of installing the context.
 
+An `rfi` from MSR[FE0] = MSR[FE1] = 0 whose SRR1 sets FE0 or FE1 does the
+same (`EVENT_RFI_FP_ENABLE`): SRR0 is the `rfi` target, the instruction that
+would have executed next, and SRR1 holds the MSR the `rfi` restored with
+bits 11 and 15 set. An `rfi` in problem state stays a privileged-instruction
+exception. Every exception entry clears FE0/FE1, so a handler that returns
+with FE set in SRR1 while FEX is still set takes the exception again; the
+handlers must clear FEX, or FE in SRR1, before `rfi`.
+
 ## Limits
 
 - The lane holds one access at a time; FP loads and stores do not meet Table
@@ -205,10 +213,6 @@ of installing the context.
   load and store misses on `lfd`/`stfd` are tested on the pin top only.
 - FPSCR instructions let the next FP instruction issue only after they
   retire.
-- An `rfi` that sets FE0/FE1 while FPSCR[FEX]=1 does not raise the deferred
-  FP enabled exception (PEM Table 6-14 includes it). The core benches' FP
-  handlers return with FE set and FEX still set, so the rule changes their
-  expected exception sequences; it needs those tests reworked first.
 
 ## 602 personality
 

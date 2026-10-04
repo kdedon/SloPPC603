@@ -481,7 +481,10 @@ package ppc_pkg;
     EVENT_MACHINE_CHECK_DPE = 5'd26,
     // mtmsr set FE0/FE1 from 00 while FPSCR[FEX] is set; SRR0 is the next
     // instruction.
-    EVENT_PROGRAM_FP_ENABLE = 5'd27
+    EVENT_PROGRAM_FP_ENABLE = 5'd27,
+    // rfi set FE0/FE1 from 00 while FPSCR[FEX] is set; SRR0 is the rfi
+    // target.
+    EVENT_RFI_FP_ENABLE   = 5'd28
   } exception_event_t;
 
   // Chip-pin events into the core, already synchronized. soft_reset and mcp

@@ -24,8 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'fpu'))
 from fpu_core_program import (  # noqa: E402
     DATA, DONE, EXCEPTION_BITS, FE0, FE1, LOG, MSR_FP, PROT_HI, PROT_LO,
-    SRR1_FP, SRR1_ILLEGAL, SYNC, Program, a_form, clear_fe_if_next, d_form, dsisr_d,
-    dsisr_x, f32, f64, fp_enable_deferred, x_form)
+    SRR1_FP, SRR1_ILLEGAL, SYNC, Program, a_form, clear_fe_if_fp, d_form, dsisr_d,
+    dsisr_x, f32, f64, fp_enable_deferred, fp_enable_rfi, x_form)
 from enabled_vectors import case_602, fpscr_after  # noqa: E402
 from ppc_reference import arithmetic  # noqa: E402
 from production_vectors_602 import expected_602, widen_raw  # noqa: E402
@@ -138,7 +138,7 @@ def handlers(p):
             seq += [x_form(31, 26, spr & 31, spr >> 5, 339), d_form(36, 26, 29, off)]
         seq += [d_form(14, 26, 0, vector), d_form(36, 26, 29, 16), d_form(14, 29, 29, 20)]
         if vector == 0x700:
-            seq += clear_fe_if_next()
+            seq += clear_fe_if_fp()
         if vector == 0x800:
             # Lazy FP enable: set MSR[FP] in SRR1 and retry.
             seq += [x_form(31, 26, 27, 0, 339), d_form(24, 26, 26, MSR_FP),
@@ -378,8 +378,8 @@ def fp_enabled(p):
     p.emit(x_form(63, 24, 0, 0, 38))                               # mtfsb1 VE
     p.fpscr_update(p.fpscr | 1 << 7)
     at = p.emit(x_form(63, 21, 0, 0, 38))                          # mtfsb1 VXSOFT
-    p.event(0x700, at, p.msr | SRR1_FP)
     p.fpscr_update(p.fpscr | (1 << 10) | (1 << 29) | (1 << 30) | (1 << 31))
+    p.event(0x700, at, p.msr | SRR1_FP)
     p.mtmsr(p.msr & ~(FE0 | FE1))
     p.check_fpscr()
     p.clear_fpscr()
@@ -457,8 +457,11 @@ def build(seed, count):
     unaligned(p)
     in_flight(p)
     fp_enabled(p)
-    fp_enable_deferred(p, lambda q: q.fpscr_update(
-        q.fpscr | (1 << 7) | (1 << 10) | (1 << 29) | (1 << 30) | (1 << 31)))
+    def fex(q):
+        q.fpscr_update(q.fpscr | (1 << 7) | (1 << 10) | (1 << 29) | (1 << 30) | (1 << 31))
+
+    fp_enable_deferred(p, fex)
+    fp_enable_rfi(p, fex)
     random_cases(p, rng, count)
     sticky_timing(p)
     p.check_tags()
