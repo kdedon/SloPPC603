@@ -139,7 +139,7 @@ module tb_core_dual #(
     return {6'd18, 24'(disp >>> 2), 2'b00};
   endfunction
   localparam logic [31:0] SYNC = {6'd31, 15'd0, 10'd598, 1'b0};
-  localparam logic [31:0] END_PC = 32'h100;
+  localparam logic [31:0] END_PC = 32'h140;
   // Each group begins with a sync.
   function automatic logic [31:0] instruction(input logic [31:0] address);
     case (address)
@@ -189,18 +189,48 @@ module tb_core_dual #(
       32'h90: return cmpw(3, 19, 4);
       32'h94: return {6'd16, 5'd12, 5'd12, 14'd2, 2'b00};  // blt cr3, +8
       32'h98: return add(23, 4, 4);
-      32'h9c: return b(4);
-      // I: a bc on the CR of the cmpw beside it does not pair: an
-      // unresolved bc dispatches only from DQ0.
-      32'ha0: return SYNC;
-      32'ha4: return cmpw(4, 4, 5);
-      32'ha8: return {6'd16, 5'd4, 5'd16, 14'd2, 2'b00};  // bge cr4, +8
-      32'hac: return addi(24, 0, 1);
-      // J: a bc resolved at dispatch that does not redirect pairs.
-      32'hb0: return SYNC;
-      32'hb4: return {6'd16, 5'd4, 5'd16, 14'd2, 2'b00};  // bge cr4, +8
-      32'hb8: return addi(25, 0, 1);
-      32'hbc: return b(int'(END_PC) - 32'hbc);
+      // I: an access in DQ1 takes its base from rename while the addi that
+      // writes it waits behind the multiply to retire.
+      32'h9c: return SYNC;
+      32'ha0: return mullw(27, 4, 7);
+      32'ha4: return addi(24, 1, 8);
+      32'ha8: return add(28, 27, 4);
+      32'hac: return or_(29, 4, 7);
+      32'hb0: return lwz(25, 24, 0);
+      // J: CTR moves are completion-serialized (UM 6.3.3.2): mtctr and the
+      // addi behind it dispatch while the multiply runs; the mtctr executes
+      // once it is oldest, and the add reading mfctr's result waits for it
+      // to retire.
+      32'hb4: return SYNC;
+      32'hb8: return mullw(26, 4, 7);
+      32'hbc: return {6'd31, 5'd7, 5'd9, 5'd0, 10'd467, 1'b0};   // mtctr r7
+      32'hc0: return addi(0, 0, 5);
+      32'hc4: return {6'd31, 5'd2, 5'd9, 5'd0, 10'd339, 1'b0};   // mfctr r2
+      32'hc8: return add(30, 2, 4);
+      // K: XER is not renamed and subfc writes no CR, so the cmpw behind it
+      // dispatches before it retires; adde reads CA and waits for it.
+      32'hcc: return SYNC;
+      32'hd0: return {6'd31, 5'd21, 5'd4, 5'd5, 1'b0, 9'd8, 1'b0};     // subfc r21,r4,r5
+      32'hd4: return cmpw(4, 4, 5);
+      32'hd8: return {6'd31, 5'd22, 5'd4, 5'd5, 1'b0, 9'd138, 1'b0};   // adde r22,r4,r5
+      // L: a bc in DQ1 beside the cmpw it reads is predicted (UM 6.4.1.2);
+      // one whose CR is final and agrees with the fetch path resolves.
+      32'hdc: return SYNC;
+      32'he0: return cmpw(5, 4, 5);
+      32'he4: return {6'd16, 5'd4, 5'd20, 14'd2, 2'b00};  // bge cr5, +8 (not taken)
+      32'he8: return addi(0, 0, 1);
+      32'hec: return SYNC;
+      32'hf0: return addi(0, 0, 2);
+      32'hf4: return {6'd16, 5'd4, 5'd20, 14'd2, 2'b00};  // bge cr5, +8 (not taken)
+      32'hf8: return SYNC;
+      32'hfc: return cmpw(6, 5, 4);
+      32'h100: return {6'd16, 5'd12, 5'd25, 14'd2, 2'b00};  // bgt cr6, +8 (taken, predicted not)
+      32'h104: return addi(31, 0, 7);                      // skipped
+      // M: a bc in DQ0 resolved at dispatch that does not redirect pairs.
+      32'h108: return SYNC;
+      32'h10c: return {6'd16, 5'd4, 5'd16, 14'd2, 2'b00};  // bge cr4, +8
+      32'h110: return addi(0, 0, 3);
+      32'h114: return b(int'(END_PC) - 32'h114);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
@@ -244,7 +274,12 @@ module tb_core_dual #(
   int log_fd = 0;
   string log_path;
   logic [31:0] regs [32];
-  int retirements = 0, pairs = 0, retire_pairs = 0;
+  int retirements = 0, pairs = 0, retire_pairs = 0, renamed_base_pairs = 0;
+`ifdef PPC_LSU_PIPE
+  localparam logic LSU_PIPE = `PPC_LSU_PIPE != 0;
+`else
+  localparam logic LSU_PIPE = 1'b0;
+`endif
   // Per PC: dispatch and retire cycle and slot (0: DQ0/CQ[0], 1: DQ1/CQ[1]).
   int dcycle [int];
   int dslot [int];
@@ -291,10 +326,24 @@ module tb_core_dual #(
     expected[11] = 27; expected[12] = 32'h100; expected[13] = 32'h103; expected[14] = 12;
     expected[15] = 32'h101; expected[16] = 11; expected[17] = 18; expected[18] = 5;
     expected[19] = 27; expected[20] = 1; expected[21] = 1; expected[22] = 1;
-    expected[23] = 6; expected[24] = 1; expected[25] = 1;
+    expected[23] = 6; expected[24] = 32'h408; expected[25] = 11; expected[27] = 27;
+    expected[28] = 30; expected[29] = 11;
+    expected[2] = 9; expected[26] = 27; expected[30] = 12;
+    expected[21] = 1; expected[22] = 8;
+    if (regs[0] != 32'd3) $fatal(1, "r0 = %0x, expected 3", regs[0]);
     for (int i = 1; i < 32; i++)
       if (regs[i] != expected[i]) $fatal(1, "r%0d = %0x, expected %0x", i, regs[i], expected[i]);
     if (dmem[2] != 32'd11) $fatal(1, "stored word %0x", dmem[2]);
+    if (!(dcycle[32'hbc] < rcycle[32'hb8]) || !(dcycle[32'hc0] < rcycle[32'hbc]))
+      $fatal(1, "mtctr or younger work waited for older work to retire");
+    if (!(dcycle[32'hc8] > rcycle[32'hc4]))
+      $fatal(1, "mfctr result read before it retired");
+    $display("  %-34s mtctr@%0d addi@%0d mullw retired@%0d", "completion-serialized mtctr",
+             dcycle[32'hbc], dcycle[32'hc0], rcycle[32'hb8]);
+    if (!(dcycle[32'hd4] < rcycle[32'hd0]))
+      $fatal(1, "cmpw waited for a CA-only writer to retire");
+    if (!(dcycle[32'hd8] > rcycle[32'hd0]))
+      $fatal(1, "adde read CA before its writer retired");
     if (DISPATCH_WIDTH == 2) begin
       $display("dispatch:");
       expect_pair(32'h14, 1'b1, "add + add (IU + SRU)");
@@ -302,14 +351,19 @@ module tb_core_dual #(
       expect_pair(32'h34, 1'b0, "add + mullw (same unit)");
       expect_pair(32'h44, 1'b1, "lwz + dependent add");
       expect_pair(32'h4c, 1'b1, "add + lwz");
-      expect_pair(32'h58, 1'b0, "or + stw of its result");
+      // The unit takes store data from rename; the lane needs it committed.
+      expect_pair(32'h58, LSU_PIPE, "or + stw of its result");
       expect_pair(32'h64, 1'b0, "cmpw + cmpw (one CR rename)");
       expect_pair(32'h10, 1'b0, "sync alone");
       expect_pair(32'h78, 1'b0, "sync alone");
       expect_pair(32'h68, 1'b1, "cmpw + folded b in DQ1");
       expect_pair(32'h94, 1'b1, "unresolved bc + add");
-      expect_pair(32'ha4, 1'b0, "cmpw + bc on its CR in DQ1");
-      expect_pair(32'hb4, 1'b1, "resolved bc + addi");
+      expect_pair(32'ha0, 1'b1, "mullw + addi");
+      expect_pair(32'hac, LSU_PIPE, "or + lwz, base in rename");
+      expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
+      expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
+      expect_pair(32'hfc, 1'b1, "cmpw + mispredicted bc in DQ1");
+      expect_pair(32'h10c, 1'b1, "resolved bc + addi");
       $display("retirement:");
       expect_retire_pair(32'h14, 1'b1, "add + add");
       expect_retire_pair(32'h24, 1'b0, "add + dependent addi");
@@ -317,10 +371,11 @@ module tb_core_dual #(
       expect_retire_pair(32'h58, 1'b0, "or + stw (store not at CQ[1])");
       if (rslot[32'h5c] != 0) $fatal(1, "store retired from CQ[1]");
       expect_retire_pair(32'h10, 1'b0, "sync + add");
+      if (LSU_PIPE && (renamed_base_pairs == 0)) $fatal(1, "no DQ1 access with a renamed base");
     end else if ((pairs != 0) || (retire_pairs != 0)) $fatal(1, "width 1 paired");
     if (log_fd != 0) $fclose(log_fd);
-    $display("PASS: DISPATCH_WIDTH=%0d, %0d retirements in %0d cycles, %0d dispatch pairs, %0d retire pairs",
-             DISPATCH_WIDTH, retirements, cycle, pairs, retire_pairs);
+    $display("PASS: DISPATCH_WIDTH=%0d, %0d retirements in %0d cycles, %0d dispatch pairs, %0d retire pairs, %0d DQ1 accesses with a renamed base",
+             DISPATCH_WIDTH, retirements, cycle, pairs, retire_pairs, renamed_base_pairs);
     $finish;
   endtask
   task automatic take(input retire_packet_t p, input int slot);
@@ -343,6 +398,8 @@ module tb_core_dual #(
       end
       if (dut.dispatch1) begin
         pairs++;
+        if (dut.d1_lsu && !dut.dq1_uop.zero_a && dut.gpr_mapped[dut.dq1_uop.src_a])
+          renamed_base_pairs++;
         if ((dcycle.exists(int'(dut.dq1_head.pc)) == 0)) begin
           dcycle[int'(dut.dq1_head.pc)] = cycle;
           dslot[int'(dut.dq1_head.pc)] = 1;

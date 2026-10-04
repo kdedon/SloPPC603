@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 `default_nettype none
-// Committed CR/XER state and one exact-tag speculative flag owner.
+// Committed CR/XER state and one exact-tag speculative flag owner. An
+// operation that writes only CA, OV or SO need not own the token.
 // All architectural updates share the core retirement handshake.
 module ppc_flags (
   input logic clk_i,
@@ -35,6 +36,18 @@ module ppc_flags (
   logic [$clog2(CQ_DEPTH+1)-1:0] flag_survivors;
   logic [31:0] cr_mask, fields_cr_mask, xer_mask;
   logic _unused_commit_packet_fields;
+
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic owns_token(ppc_pkg::retire_packet_t p);
+    return p.needs_flags &&
+      !(!p.write_cr_field && !p.write_cr_fields && !p.write_cr_bit && !p.write_xer &&
+        (p.write_ca || p.write_ov_so));
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  // synthesis translate_off
+  logic commit_owned;
+  assign commit_owned = owns_token(commit_packet_i);
+  // synthesis translate_on
 
   assign cr_o = cr_q;
   assign xer_o = xer_q;
@@ -86,7 +99,9 @@ module ppc_flags (
     flag_survivors = '0;
     for (int age = 0; age < CQ_DEPTH; age++) begin
       if ((age < int'(recovery_survivor_count_i)) &&
-          recovery_survivor_packet_i[age].needs_flags) begin
+          recovery_survivor_packet_i[age].needs_flags &&
+          (owns_token(recovery_survivor_packet_i[age]) ||
+           (flags_busy_q && (recovery_survivor_tag_i[age] == flags_owner_q)))) begin
         flag_survivors = flag_survivors + 1'b1;
         if (flags_busy_q &&
             (recovery_survivor_tag_i[age] == flags_owner_q)) begin
@@ -109,7 +124,7 @@ module ppc_flags (
         assert (!$isunknown(commit_packet_i))
           else $error("accepted retirement packet contains unknown fields");
       end
-      if (commit_i && commit_packet_i.needs_flags) begin
+      if (commit_i && commit_owned) begin
         assert (owner_commit && !commit_packet_i.illegal)
           else $error("flag-owning retirement does not match registered owner");
       end
@@ -122,7 +137,7 @@ module ppc_flags (
       // violation, never a stall.
       if (commit_i && commit_writes_flags) begin
         // synthesis translate_off
-        assert (owner_commit || commit_unowned_i)
+        assert (owner_commit || commit_unowned_i || !commit_owned)
           else $error("flag-writing retirement does not match flag owner");
         assert (!commit_packet_i.illegal)
           else $error("diagnostic retirement carries flag write permission");

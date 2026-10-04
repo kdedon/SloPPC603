@@ -70,6 +70,89 @@ module tb_demo_soc #(
     if (rst_n && console_valid) $write("%c", console_data);
   end
 
+  // +PROFILE: cycles per stall slot and head operation, and why DQ1 did
+  // not dispatch beside DQ0, over the counted region.
+  int unsigned profile [string];
+  logic profiling = 1'b0;
+  initial profiling = $test$plusargs("PROFILE");
+  // Instruction word per CQ slot, to name the flag owner.
+  logic [31:0] slot_insn [8];
+  function automatic string insn_class(logic [31:0] w);
+    // verilator lint_off UNUSEDSIGNAL
+    logic [31:0] unused;
+    // verilator lint_on UNUSEDSIGNAL
+    unused = w;
+    if (w[31:26] == 6'd31 || w[31:26] == 6'd19)
+      return $sformatf("%0d/%0d%s", w[31:26], w[10:1], w[0] ? "." : "");
+    return $sformatf("%0d", w[31:26]);
+  endfunction
+  always @(posedge clk) begin
+    if (soc.cpu.cpu.translated_core.core.dispatch)
+      slot_insn[soc.cpu.cpu.translated_core.core.alloc_producer.index] =
+        soc.cpu.cpu.translated_core.core.iq_head.insn;
+    if (soc.cpu.cpu.translated_core.core.dispatch1)
+      slot_insn[soc.cpu.cpu.translated_core.core.alloc1_producer.index] =
+        soc.cpu.cpu.translated_core.core.dq1_head.insn;
+  end
+  always @(posedge clk) begin
+    // Counted while the SoC's counters run; cleared with them.
+    if (soc.perf.we_i && (soc.perf.word_i == 5'd0) && soc.perf.wdata_i[1]) profile.delete();
+    if (running && profiling && soc.perf.run_q) begin
+      string key, u0, u1;
+      key = "";
+      case (soc.cpu.cpu.translated_core.core.perf_slot)
+        ppc_pkg::PERF_DISPATCH: key = "";
+        ppc_pkg::PERF_FETCH_EMPTY, ppc_pkg::PERF_BRANCH_REFETCH, ppc_pkg::PERF_ICACHE_MISS: key = "";
+        default: key = $sformatf("stall %s %s", soc.cpu.cpu.translated_core.core.perf_slot.name(),
+                                 soc.cpu.cpu.translated_core.core.dispatch_uop.special_op.name());
+      endcase
+      if (key != "") profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+      if (soc.cpu.cpu.translated_core.core.perf_slot == ppc_pkg::PERF_FLAGS_WAIT) begin
+        key = $sformatf("flags head %s owner %s",
+          insn_class(soc.cpu.cpu.translated_core.core.iq_head.insn),
+          insn_class(slot_insn[soc.cpu.cpu.translated_core.core.flags_owner.index]));
+        profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+      end
+      if (soc.cpu.cpu.translated_core.core.dispatch &&
+          soc.cpu.cpu.translated_core.core.iq_valid1 &&
+          !soc.cpu.cpu.translated_core.core.dispatch1) begin
+        u0 = soc.cpu.cpu.translated_core.core.iq_pair.unit.name();
+        u1 = soc.cpu.cpu.translated_core.core.dq1_pair.unit.name();
+        if (!soc.cpu.cpu.translated_core.core.d1_valid) key = "d1_invalid";
+        else if (!soc.cpu.cpu.translated_core.core.pair_units) key = "units";
+        else if (!soc.cpu.cpu.translated_core.core.seq_last) key = "seq";
+        else if (!soc.cpu.cpu.translated_core.core.cq1_ready) key = "cq";
+        else if (soc.cpu.cpu.translated_core.core.unit_update) key = "update";
+        else if (soc.cpu.cpu.translated_core.core.d1_lsu &&
+                 !soc.cpu.cpu.translated_core.core.d1_lsu_ready) key = "lsu";
+        else if (soc.cpu.cpu.translated_core.core.d1_needs_flags) key = "flags";
+        else if (soc.cpu.cpu.translated_core.core.d1_iu &&
+                 !soc.cpu.cpu.translated_core.core.d1_iu_ready) key = "iu";
+        else key = "other";
+        if (key == "units" && soc.cpu.cpu.translated_core.core.dq1_branch[3])
+          key = $sformatf("units %s%s%s%s", insn_class(soc.cpu.cpu.translated_core.core.dq1_head.insn),
+            soc.cpu.cpu.translated_core.core.dq1_folded ? " folded" : "",
+            soc.cpu.cpu.translated_core.core.dispatch_needs_flags ? " dq0-flags" : "",
+            soc.cpu.cpu.translated_core.core.flags_busy ? " busy" : "");
+        key = $sformatf("alone %s+%s %s", u0, u1, key);
+        profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+      end
+      // CQ[1] finished but held beside a retiring head.
+      if (soc.cpu.cpu.translated_core.core.commit &&
+          soc.cpu.cpu.translated_core.core.cq_retire1_valid &&
+          !soc.cpu.cpu.translated_core.core.retire1_gate) begin
+        if (soc.cpu.cpu.translated_core.core.cq_retire.update_write)
+          key = soc.cpu.cpu.translated_core.core.cq_retire1.gpr_write ?
+                "update head, CQ1 GPR" : "update head";
+        else if (soc.cpu.cpu.translated_core.core.cq_retire1.update_write) key = "update CQ1";
+        else key = "other";
+        key = $sformatf("retire1 held: %s", key);
+        profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+      end
+    end
+  end
+  final if (profiling) foreach (profile[k]) $display("profile %-52s %0d", k, profile[k]);
+
   // The counter block's RETIRED against the retire strobe, which reaches
   // the counters through the core's and the SoC's event registers.
   logic [1:0] retire_delay = '0, retire1_delay = '0;
