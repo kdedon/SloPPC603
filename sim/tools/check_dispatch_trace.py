@@ -268,7 +268,7 @@ class Rules:
                 # without a completion entry.
                 require(c is None or (c['units'] == {BPU} and not any(c['writes'][3:])),
                         f'cycle {cycle}: {pc:08x} removed at dispatch but is not a branch that '
-                        'writes no LR or CTR (TIM-BR-REMOVE)')
+                        'writes no LR or CTR (TIM-BPU-FOLD)')
                 st['dispatches'] += 1
                 st['removed'] += 1
                 continue

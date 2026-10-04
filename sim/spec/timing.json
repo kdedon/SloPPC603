@@ -10169,8 +10169,14 @@
     {
       "id": "TIM-BPU-FOLD",
       "category": "branch",
-      "statement": "BPU removes foldable branch from stream; taken folded branch requests new target immediately; effective cost can be zero, contingent on target supply and dependencies.",
+      "statement": "BPU removes foldable branch from stream; taken folded branch requests new target immediately; effective cost can be zero, contingent on target supply and dependencies. A branch that needs no SPR write back is retired by the BPU.",
       "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 253,
+          "printed_page": "6-7",
+          "section": "6.3.1"
+        },
         {
           "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
           "pdf_page": 260,
@@ -10194,7 +10200,7 @@
         "PID6-603e or PID7v-603e unless specifically overridden"
       ],
       "issue_ids": [],
-      "checker_status": "not_implemented"
+      "checker_status": "partially_trace_checked"
     },
     {
       "id": "TIM-BPU-ONE-PREDICTION",
