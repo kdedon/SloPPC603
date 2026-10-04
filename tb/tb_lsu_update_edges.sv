@@ -136,6 +136,12 @@ module tb_lsu_update_edges;
     end
   end
 
+  // The IQ head reads the update base, r5.
+  function automatic logic reads_r5();
+    return dut.iq_valid &&
+      ((!dut.uop.zero_a && dut.uop.src_a == 5'd5) || (!dut.uop.use_imm && dut.uop.src_b == 5'd5) ||
+       ((dut.uop.special_op == SPECIAL_STORE) && dut.uop.src_c == 5'd5));
+  endfunction
   task automatic require(input logic condition, input string message);
     checks++;
     assert (condition) else
@@ -230,16 +236,17 @@ module tb_lsu_update_edges;
             "rejected cut disturbed finished update packet");
     commit_packet();
     if (dut.DUAL_GPR_WRITE) begin
-      // Two write ports: rD and rA are written on the same edge; dispatch
-      // still waits one cycle.
+      // Two write ports: rD and rA are written on the same edge; a reader
+      // of rA still waits one cycle.
       require(dut.regfile.gpr[3] == 32'hcafe_babe && dut.regfile.gpr[5] == 32'h1004 &&
-              dut.update_pending_q && !dut.iq_ready,
+              dut.update_pending_q && !(dut.iq_ready && reads_r5()),
               "load destination and base writes or dispatch hold missing");
     end else begin
-      // One write port: rA follows rD by one edge and dispatch waits for it.
+      // One write port: rA follows rD by one edge and a reader of rA waits
+      // for it.
       require(dut.regfile.gpr[3] == 32'hcafe_babe &&
               dut.regfile.gpr[5] == 32'h1000 && dut.update_pending_q &&
-              !dut.iq_ready, "load destination write or dispatch hold missing");
+              !(dut.iq_ready && reads_r5()), "load destination write or dispatch hold missing");
     end
     tick();
     require(dut.regfile.gpr[3] == 32'hcafe_babe &&
