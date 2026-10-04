@@ -585,8 +585,9 @@ int main(int argc, char** argv) {
                     } else fail("store outside modeled memory " + h8(a));
                 }
             }
-            if (io_used != io.writes.size()) fail("reference I/O store absent from the RTL");
-            io.writes.clear();
+            // The reference's I/O writes wait while an RTL store is owed.
+            io.writes.erase(io.writes.begin(), io.writes.begin() + io_used);
+            if (!io.writes.empty() && !stores_owed) fail("reference I/O store absent from the RTL");
             if (exit_mailbox) {
                 uint8_t* p = ram_byte(exit_addr);
                 if (p && (p[0] | p[1] | p[2] | p[3])) done = true;
