@@ -22,12 +22,16 @@ module tb_flags;
   logic [31:0] cr, xer;
   logic flags_busy;
   completion_tag_t flags_owner;
+  logic wait_alloc, waiter, handoff;
+  completion_tag_t wait_tag, waiter_tag;
   int checks = 0;
 
   ppc_flags dut (
     .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(alloc_valid), .alloc_needs_flags_i(alloc_needs),
     .alloc_tag_i(alloc_tag), .alloc_ready_o(alloc_ready),
+    .wait_alloc_i(wait_alloc), .wait_tag_i(wait_tag), .waiter_o(waiter),
+    .waiter_tag_o(waiter_tag), .handoff_o(handoff),
     .commit_i(commit), .commit_packet_i(commit_packet), .commit_tag_i(commit_tag), .commit_unowned_i(1'b0),
     .recovery_i(recovery), .recovery_survivor_count_i(recovery_count),
     .recovery_survivor_packet_i(recovery_packets),
@@ -59,6 +63,8 @@ module tb_flags;
     commit_tag = '0;
     recovery = 1'b0;
     recovery_count = '0;
+    wait_alloc = 1'b0;
+    wait_tag = '0;
     for (int i = 0; i < CQ_DEPTH; i++) begin
       recovery_packets[i] = '0;
       recovery_tags[i] = '0;
@@ -77,6 +83,35 @@ module tb_flags;
     alloc_valid = 1'b0;
     alloc_needs = 1'b0;
     require(flags_busy && flags_owner == owner, "flag owner was not captured");
+  endtask
+
+  task automatic add_waiter(input completion_tag_t w);
+    @(negedge clk);
+    wait_alloc = 1'b1;
+    wait_tag = w;
+    @(posedge clk);
+    #1;
+    wait_alloc = 1'b0;
+    require(waiter && waiter_tag == w, "CR waiter was not captured");
+  endtask
+
+  // Retire the owner; the token passes to next_owner when one waits.
+  task automatic retire_cr(input completion_tag_t owner, input logic pass,
+                           input completion_tag_t next_owner);
+    @(negedge clk);
+    commit_packet = '0;
+    commit_packet.needs_flags = 1'b1;
+    commit_packet.write_cr_field = 1'b1;
+    commit_packet.cr_delta = cr;
+    commit_tag = owner;
+    commit = 1'b1;
+    #1;
+    require(handoff == pass, "flag handoff on owner retirement wrong");
+    @(posedge clk);
+    #1;
+    commit = 1'b0;
+    require(!waiter && (pass ? (flags_busy && flags_owner == next_owner) : !flags_busy),
+            "flag token did not pass to the waiter");
   endtask
 
   task automatic commit_owner(
@@ -250,6 +285,72 @@ module tb_flags;
     require(!flags_busy && cr == 32'h5abc_def0 && xer == 32'h6123_4567,
             "killed owner changed committed flags or remained busy");
 
+    // A waiter takes the token on the edge its owner retires, also when it
+    // arrives in that cycle, and never two waiters.
+    acquire(owner0);
+    add_waiter(owner1);
+    require(flags_busy && flags_owner == owner0,
+            "waiter disturbed the owner");
+    retire_cr(owner0, 1'b1, owner1);
+    @(negedge clk);
+    wait_alloc = 1'b1;
+    wait_tag = owner2;
+    commit_packet = '0;
+    commit_packet.needs_flags = 1'b1;
+    commit_packet.write_cr_field = 1'b1;
+    commit_packet.cr_delta = cr;
+    commit_tag = owner1;
+    commit = 1'b1;
+    #1;
+    require(handoff, "same-cycle waiter was not handed the token");
+    @(posedge clk);
+    #1;
+    commit = 1'b0;
+    wait_alloc = 1'b0;
+    require(!waiter && flags_busy && flags_owner == owner2, "same-cycle handoff wrong");
+    retire_cr(owner2, 1'b0, owner2);
+
+    // Recovery keeps an owner and drops a killed waiter.
+    acquire(owner3);
+    add_waiter(owner4);
+    @(negedge clk);
+    recovery = 1'b1;
+    recovery_count = COUNT_WIDTH'(1);
+    recovery_packets[0] = '0;
+    recovery_packets[0].needs_flags = 1'b1;
+    recovery_tags[0] = owner3;
+    #1;
+    require(!handoff, "recovery handed a killed waiter the token");
+    @(posedge clk);
+    #1;
+    recovery = 1'b0;
+    require(!waiter && flags_busy && flags_owner == owner3, "killed waiter remained");
+    // The waiter survives a recovery in its owner's retirement cycle.
+    add_waiter(owner4);
+    @(negedge clk);
+    recovery = 1'b1;
+    recovery_count = COUNT_WIDTH'(1);
+    recovery_packets[0] = '0;
+    recovery_packets[0].needs_flags = 1'b1;
+    recovery_tags[0] = owner4;
+    commit_packet = '0;
+    commit_packet.needs_flags = 1'b1;
+    commit_packet.write_cr_field = 1'b1;
+    commit_packet.cr_delta = cr;
+    commit_tag = owner3;
+    commit = 1'b1;
+    #1;
+    require(handoff, "surviving waiter was not handed the token");
+    @(posedge clk);
+    #1;
+    recovery = 1'b0;
+    commit = 1'b0;
+    recovery_count = '0;
+    recovery_packets[0] = '0;
+    recovery_tags[0] = '0;
+    require(!waiter && flags_busy && flags_owner == owner4, "surviving waiter lost the token");
+    retire_cr(owner4, 1'b0, owner4);
+
     // Global reset clears both committed registers and ownership.
     acquire(tag(1, 170));
     @(negedge clk);
@@ -261,7 +362,7 @@ module tb_flags;
     require(cr == 0 && xer == 0 && !flags_busy && flags_owner == '0,
             "reset did not clear flag state and ownership");
 
-    $display("PASS flags: masks, read-only/exact owner, release edge, recovery/reset (%0d checks)", checks);
+    $display("PASS flags: masks, read-only/exact owner, release edge, recovery/reset, CR waiter handoff (%0d checks)", checks);
     $finish;
   end
 

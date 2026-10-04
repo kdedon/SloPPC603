@@ -67,12 +67,18 @@ module tb_completion_flags;
     .recovery_survivor_tag_o(survivor_tags)
   );
 
+  logic flags_waiter, flags_handoff;
+  completion_tag_t flags_waiter_tag;
+  logic _unused_waiter;
+  assign _unused_waiter = ^{flags_waiter, flags_handoff, flags_waiter_tag};
   ppc_flags flags (
     .clk_i(clk), .rst_ni(rst_n),
     // The flag token is acquired only with an accepted CQ allocation.
     .alloc_valid_i(alloc_valid && alloc_ready),
     .alloc_needs_flags_i(flags_alloc_needs),
     .alloc_tag_i(alloc_tag), .alloc_ready_o(flags_alloc_ready),
+    .wait_alloc_i(1'b0), .wait_tag_i('0), .waiter_o(flags_waiter),
+    .waiter_tag_o(flags_waiter_tag), .handoff_o(flags_handoff),
     .commit_i(retire_valid && retire_ready),
     .commit_packet_i(retired), .commit_tag_i(retired_tag), .commit_unowned_i(1'b0),
     .recovery_i(redirect_accepted),

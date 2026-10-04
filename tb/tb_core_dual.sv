@@ -172,7 +172,8 @@ module tb_core_dual #(
       32'h54: return SYNC;
       32'h58: return or_(16, 4, 7);
       32'h5c: return stw(16, 1, 8);
-      // F: two CR writers never pair; a folded b in DQ1 pairs with the cmpw.
+      // F: two CR writers pair, the second waiting in its station for the
+      // CR rename (UM 6.3.3.1); the folded b follows.
       32'h60: return SYNC;
       32'h64: return cmpw(1, 4, 5);
       32'h68: return cmpw(2, 5, 4);
@@ -356,10 +357,10 @@ module tb_core_dual #(
       expect_pair(32'h4c, 1'b1, "add + lwz");
       // The unit takes store data from rename; the lane needs it committed.
       expect_pair(32'h58, LSU_PIPE, "or + stw of its result");
-      expect_pair(32'h64, 1'b0, "cmpw + cmpw (one CR rename)");
+      expect_pair(32'h64, 1'b1, "cmpw + cmpw (second waits for CR)");
       expect_pair(32'h10, 1'b0, "sync alone");
       expect_pair(32'h78, 1'b0, "sync alone");
-      expect_pair(32'h68, 1'b1, "cmpw + folded b in DQ1");
+      expect_pair(32'h68, 1'b0, "cmpw in DQ1, then folded b");
       expect_pair(32'h94, 1'b1, "unresolved bc + add");
       expect_pair(32'ha0, 1'b1, "mullw + addi");
       expect_pair(32'hac, LSU_PIPE, "or + lwz, base in rename");
