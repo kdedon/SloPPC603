@@ -624,8 +624,11 @@ module ppc_lsu_pipe #(
                    !sq_valid && !q_valid_q && !redo_valid_q;
   // A store that does not queue is irrevocable from its offer to its
   // retirement. It offers only at the completion-queue head, so it has
-  // retired once the head moves.
-  assign store_irrevocable_o = (offer && p1_head.store) ||
+  // retired once the head moves. Any store at the head counts, so this
+  // does not depend on the result buses, which depend on recovery.
+  assign store_irrevocable_o =
+    (p1_valid && p1_head.store && p1_head.fast &&
+     (offered_q || (!p1_head.killed && p1_at_head))) ||
     (p2_valid && p2_head.store && !p2_head.killed) ||
     (p2_count_q == 2'd2 && p2_q[1].store && !p2_q[1].killed) ||
     (store_done_q && (queue_head_i == store_done_index_q));

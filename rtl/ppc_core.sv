@@ -2172,7 +2172,7 @@ module ppc_core #(
     allocation.update_owned = update_alloc;
     // An FP access finishes through the FPU, so its base value is known here.
     allocation.update_value = dispatch_ea;
-    allocation.update_tag = update_alloc_store ? alloc_tag : alloc1_tag;
+    allocation.update_tag = !update_alloc ? '0 : update_alloc_store ? alloc_tag : alloc1_tag;
     allocation.needs_flags = dispatch_needs_flags;
     allocation.write_xer = dispatch_uop.write_xer;
     allocation.write_ca = dispatch_uop.write_ca;
