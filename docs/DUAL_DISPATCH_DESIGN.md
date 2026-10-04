@@ -804,6 +804,8 @@ width 2. `test-chip-le`, `test-chip-mp` and `test-chip-dcache-coherence` passed
 at width 1 on a tree between 311a5be and a20c314; at width 2 with the unit `test-chip-le` does not
 build (Verilator UNOPTFLAT through `fp_mem_pipe_ready`, also in
 `lint-mister-load` at 56e7a26) and the other two were killed for memory.
+On the batch-12 integration (29d1376) the loop no longer exists: `lint-mister-load`
+passes and `test-chip-le` builds and passes at width 2 with the unit.
 
 Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` under the
 Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and

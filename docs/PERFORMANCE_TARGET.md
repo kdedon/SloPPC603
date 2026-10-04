@@ -221,6 +221,22 @@ A `bc` dispatched speculatively from DQ1 beside the compare that sets its CR
 (UM 6.6.1.2 allows it) was tried and dropped: Dhrystone 1704.3 cycles/run
 (no gain), CoreMark/MHz 1.551 instead of 1.563.
 
+## Batch 12 integration
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=build-d<1|2> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex`, commit 29d1376, 2026-10-04.
+
+Both rounds, FP stores at one per cycle, fetch and branch round 2, real-mode
+instruction caching and the bus fixes together. All runs pass their checks
+(Dhrystone 23 values, CoreMark CRCs).
+
+| | Width 1 | Width 2 |
+|---|---:|---:|
+| Dhrystone cycles/run | 863.8 | 775.8 |
+| DMIPS/MHz | 0.658 | 0.733 |
+| CoreMark/MHz | 1.991 | 2.136 |
+
+Width 2 is 1.53× the target's 506 cycles/run (was 1.96× at 992.3).
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
