@@ -81,6 +81,8 @@ MEMORY_SPACING = {'lfd-issue': 15, 'lfd-retire': 15, 'lfs-issue': 15, 'lfs-retir
 # a memory that takes one access per cycle, integer loads meet Table 6-6:
 # 2-cycle latency (one more than add), one per cycle.
 PIPE_MEM = False
+# Two GPR write ports (dispatch width 2): an update load retires in one cycle.
+DUAL_WRITE = False
 
 
 def use_lsu_pipe(split, pipe_mem):
@@ -106,6 +108,11 @@ def use_lsu_pipe(split, pipe_mem):
 def use_pipe_mem():
     global PIPE_MEM
     PIPE_MEM = True
+
+
+def use_dual_write():
+    global DUAL_WRITE
+    DUAL_WRITE = True
 
 
 def use_split_doublewords():
@@ -824,6 +831,54 @@ def integer_memory_streams(p):
     p.expect(slot + 12, 0x13579BDF)
     p.expect(slot + 8, 0x13579BDF)
     p.store_gpr(12, 0x13579BDF)
+    update_and_rename_streams(p)
+
+
+def update_and_rename_streams(p):
+    """Table 6-6 rows with sources still in rename. Update forms are 2:1
+    like plain ones, their base taking a second rename slot (UM 6.6); a
+    base produced by a load or add, and store data produced by a load, are
+    taken from rename or the result bus (UM 6.3.3.1), without draining."""
+    data = 0x2468ACE0
+    slot = p.result_slot(8)
+    p.li32(10, data)
+    # Four stwu through one base: one per cycle.
+    p.li32(23, slot)
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(37, 10, 23, 4)) for _ in range(4)]
+    p.spacings.append(('I', pcs[0], pcs[-1], 3))
+    p.spacings.append(('R', pcs[0], pcs[-1], 3))
+    for k in range(4):
+        p.expect(slot + 4 + 4 * k, data)
+    # Two lbzu through one base (four renames): one per cycle. With one GPR
+    # write port the second retires a cycle later.
+    p.li32(24, slot + 3)
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(35, 11 + k, 24, 4)) for k in range(2)]
+    p.spacings.append(('I', pcs[0], pcs[1], 1))
+    p.spacings.append(('R', pcs[0], pcs[1], 1 if DUAL_WRITE else 2))
+    p.store_gpr(11, data & 0xff)
+    p.store_gpr(12, data & 0xff)
+    p.store_gpr(24, slot + 11)
+    # Load whose base is the previous load's result. Table 6-6 gives 2; the
+    # EA is formed at dispatch, a cycle ahead of the access, so a base
+    # written that cycle costs one more.
+    p.emit(d_form(36, 23, 23, 4))        # stw r23 (slot+16) at slot+20
+    p.expect(slot + 20, slot + 16)
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(32, 25, 23, 4)), p.emit(d_form(32, 26, 25, 0))]
+    p.spacings.append(('R', pcs[0], pcs[1], 3))
+    p.store_gpr(26, data)
+    # Load whose base an add produced: the same.
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(14, 25, 23, 0)), p.emit(d_form(32, 26, 25, 0))]
+    p.spacings.append(('R', pcs[0], pcs[1], 3))
+    p.store_gpr(26, data)
+    # Store whose data is the previous load's result.
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(32, 26, 23, -4)), p.emit(d_form(36, 26, 23, 12))]
+    p.spacings.append(('R', pcs[0], pcs[1], 2))
+    p.expect(slot + 28, data)
 
 
 def build(seed, count):
@@ -904,6 +959,8 @@ def main():
     parser.add_argument('--lsu-pipe', action='store_true', help='pipelined LSU')
     parser.add_argument('--pipe-mem', action='store_true',
                         help='one-access-per-cycle memory, with integer access streams')
+    parser.add_argument('--dual-write', action='store_true',
+                        help='two GPR write ports (dispatch width 2)')
     args = parser.parse_args()
     if args.chip_image:
         use_chip_layout()
@@ -913,6 +970,8 @@ def main():
         use_lsu_pipe(args.dmem_bits == 32, args.pipe_mem)
     if args.pipe_mem:
         use_pipe_mem()
+    if args.dual_write:
+        use_dual_write()
     p = build(args.seed, args.random)
     print(f'fpu_core_program: {len(p.words)} words, {len(p.expects)} expected, '
           f'{len(p.log)} exceptions, {len(p.probes)} probes')

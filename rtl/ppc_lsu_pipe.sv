@@ -204,7 +204,17 @@ module ppc_lsu_pipe #(
   assign p1_at_head = store_authorize_i && (queue_head_i == p1_head.producer.index);
   // An FP access offers once the FPU has launched it, a store once the
   // FPU presents its data.
-  assign p1_ready = !p1_head.fp ? p1_head.data_ready :
+  // Store data written this cycle is used at once.
+  logic head_wake, head_wake1, head_data_ready;
+  logic [31:0] head_data;
+  assign head_wake = wake_valid_i && (wake_i.tag == p1_head.data_tag) &&
+                     (wake_i.producer == p1_head.data_producer);
+  assign head_wake1 = wake1_valid_i && (wake1_i.tag == p1_head.data_tag) &&
+                      (wake1_i.producer == p1_head.data_producer);
+  assign head_data_ready = p1_head.data_ready || head_wake || head_wake1;
+  assign head_data = p1_head.data_ready ? p1_head.data :
+                     head_wake ? wake_i.value : wake1_i.value;
+  assign p1_ready = !p1_head.fp ? head_data_ready :
     (p1_head.store ? (fp_store_valid_i && (fp_store_tag_i == p1_head.producer)) :
                      p1_head.launched);
   assign p1_addr = {p1_head.ea[31:3], p1_head.ea[2] ^ p1_head.munge[2], 2'b00};
@@ -258,8 +268,7 @@ module ppc_lsu_pipe #(
                    !killed_now(p1_head.producer);
   assign p1_nbytes = p1_head.fp ? 3'd4 : nbytes(p1_head.uop.mem_size);
   always_comb begin
-    store_source = p1_head.uop.mem_reverse ? swap_bytes(p1_head.data, p1_nbytes) :
-                                             p1_head.data;
+    store_source = p1_head.uop.mem_reverse ? swap_bytes(head_data, p1_nbytes) : head_data;
     // Bytes move left-justified to the EA offset within the word.
     p1_wdata = '0;
     p1_wstrb = '0;
@@ -346,7 +355,7 @@ module ppc_lsu_pipe #(
                       !p2_valid && !q_valid_q && !r_valid_q && !sq_valid &&
                       lane_idle_i && !rsp_to_lane_q;
   assign p1_adopt = !p2_valid && !q_valid_q && !r_valid_q && !sq_valid && !redo_valid_q &&
-                    p1_valid && !p1_head.fast && !p1_head.fp && p1_head.data_ready &&
+                    p1_valid && !p1_head.fast && !p1_head.fp && head_data_ready &&
                     !p1_head.killed && !killed_now(p1_head.producer) &&
                     lane_idle_i && !rsp_to_lane_q;
   assign adopt_valid_o = p2_adopt || redo_adopt || p1_adopt;
@@ -362,7 +371,7 @@ module ppc_lsu_pipe #(
     adopt_pc_o = adopted.pc;
     adopt_insn_o = adopted.insn;
     adopt_ea_o = adopted.ea;
-    adopt_data_o = adopted.data;
+    adopt_data_o = (!p2_adopt && !redo_adopt) ? head_data : adopted.data;
   end
 
   // ------------------------------------------------------------- Result
@@ -424,6 +433,8 @@ module ppc_lsu_pipe #(
     p2_pop = p2_retire || (adopt_fire && p2_adopt);
     p2_push = p1_fire || sq_fire;
     pushed = p1_head;
+    pushed.data = head_data;
+    pushed.data_ready = 1'b1;
     pushed.passed = sq_live;
     if (sq_fire) begin
       pushed = '0;

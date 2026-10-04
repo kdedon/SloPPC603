@@ -123,7 +123,7 @@ module ppc_completion #(
     n.value = a.branch ? a.value : '0;
     n.update_write = a.update_write && !a.illegal;
     n.update_gpr = n.update_write ? a.update_gpr : 5'b0;
-    n.update_value = '0;
+    n.update_value = a.update_owned ? a.update_value : '0;
     n.needs_flags = !a.illegal &&
       (a.needs_flags || a.write_xer || a.write_ca ||
        a.write_ov_so || a.write_cr_field || a.write_cr_fields ||

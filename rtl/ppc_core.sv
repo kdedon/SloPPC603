@@ -1031,7 +1031,8 @@ module ppc_core #(
   // Port 0 takes the head's destination. With two write ports, port 1 takes
   // its update base, else the CQ[1] destination (a pair writes at most two
   // GPRs). With one, the update base follows its destination by one edge.
-  // Either way dispatch waits one cycle after an update load writes both.
+  // With one port, dispatch and retirement then wait a cycle; with two they
+  // wait only without the unit, whose update bases are renamed.
   always_comb begin
     gpr_port_write = gpr_commit;
     gpr_port_reg = retire_o.gpr;
@@ -1057,7 +1058,8 @@ module ppc_core #(
   end
   always_ff @(posedge clk_i) begin
     if (!rst_ni) update_pending_q <= 1'b0;
-    else update_pending_q <= gpr_commit && update_commit;
+    else update_pending_q <= gpr_commit && update_commit &&
+                             !(DUAL_GPR_WRITE && ENABLE_LSU_PIPE);
     if (gpr_commit && update_commit) begin
       update_reg_q <= retire_o.update_gpr;
       update_value_q <= retire_o.update_value;
@@ -1455,7 +1457,8 @@ module ppc_core #(
      (fp_uop && special_mem_overlap && !special_fp_load_overlap) ||
      special_ready) &&
     (dispatch_pre.illegal ||
-     (fp_uop && fp_issue_ready && flags_ready && (!fp_mem_pipe || fp_mem_pipe_ready)) ||
+     (fp_uop && fp_issue_ready && flags_ready && (!fp_mem_pipe || fp_mem_pipe_ready) &&
+      (!unit_update || alloc_ready)) ||
      (normal_uop && alloc_ready && (rs_ready || bu_finished) && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
@@ -1464,8 +1467,8 @@ module ppc_core #(
       (!dispatch_fp_mem_plain || fp_issue_ready) &&
       (!dispatch_pre.gpr_write || dispatch_align || alloc_ready) &&
       (!unit_update || (dispatch_pre.gpr_write ? alloc1_ready : alloc_ready))));
-  // A plain load or store (no update, reservation, string, multiple, cache
-  // op or external access) needs no drain when every source register it
+  // A plain load or store (no reservation, string, multiple, cache op or
+  // external access; an update form only with the unit) needs no drain when every source register it
   // reads is committed: older work cannot fault or redirect, and it takes a
   // fault only at completion. Younger integer work may dispatch behind it
   // unless it reads the access's destination.
@@ -1480,13 +1483,13 @@ module ppc_core #(
     !uop.mem_external && !uop.mem_skip &&
     !uop.cache_probe && !uop.block_zero &&
     (uop.cache_op == CACHE_OP_NONE);
-  // An FP load or store other than an update form goes the same way: it
+  // An FP load or store goes the same way (update forms only to the unit): it
   // reads only rA (unless zero) and, indexed, rB. Older FP work must be
   // released loads, so the access is in the execution path. The 602 SP/LT
   // moves (XO below 512) stay serialized.
   assign dispatch_fp_mem_plain = ENABLE_FPU && !trace_mode && !fp_replay_q &&
     msr[MSR_FP] && !uop.illegal && (iq_head.fault == FETCH_OK) &&
-    (uop.special_op == SPECIAL_FPU) && !uop.mem_update &&
+    (uop.special_op == SPECIAL_FPU) && (ENABLE_LSU_PIPE || !uop.mem_update) &&
     (iq_head.insn[31:26] != 6'd59) && (iq_head.insn[31:26] != 6'd63) &&
     ((iq_head.insn[31:26] != 6'd31) || iq_head.insn[10]);
   assign mem_sources_committed = (uop.special_op == SPECIAL_FPU) ?
@@ -1499,8 +1502,8 @@ module ppc_core #(
   // this cycle (UM 6.3.3.1); store data may follow later.
   assign mem_base_ready = (uop.zero_a || src_a.ready) && (uop.use_imm || src_b.ready);
   // An update form in the unit writes its base through a second rename slot.
-  assign unit_update = lsu_route && uop.mem_update;
-  assign update_alloc = dispatch && lsu_route && dispatch_uop.mem_update;
+  assign unit_update = (lsu_route || fp_mem_pipe) && uop.mem_update;
+  assign update_alloc = dispatch && (lsu_route || fp_mem_pipe) && dispatch_uop.mem_update;
   assign update_alloc_store = update_alloc && !dispatch_uop.gpr_write;
   // The check is registered: the head is unchanged while nothing dispatches
   // or recovers, and only dispatch adds a mapping.
@@ -2034,6 +2037,8 @@ module ppc_core #(
     allocation.update_write = dispatch_uop.mem_update;
     allocation.update_gpr = dispatch_uop.src_a;
     allocation.update_owned = update_alloc;
+    // An FP access finishes through the FPU, so its base value is known here.
+    allocation.update_value = dispatch_ea;
     allocation.update_tag = update_alloc_store ? alloc_tag : alloc1_tag;
     allocation.needs_flags = dispatch_needs_flags;
     allocation.write_xer = dispatch_uop.write_xer;
