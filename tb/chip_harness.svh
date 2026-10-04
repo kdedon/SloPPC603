@@ -77,7 +77,7 @@ ppc603e #(.CPU_VARIANT(ppc_pkg::cpu_variant_e'(`CHIP_VARIANT)), .PLL_CFG(CHIP_PL
   .cse_o(cse), .addr_oe_o(addr_oe),
   .xats_n_i(xats_oe ? xats_n : buc_xats_n), .xats_n_o(xats_n), .xats_oe_o(xats_oe),
   .aack_n_i(aack_n && buc_aack_n), .artry_n_i(artry_n && buc_artry_n), .artry_n_o(artry_out_n), .artry_oe_o(artry_oe),
-  .dbg_n_i(dbg_n && buc_dbg_n), .dbwo_n_i(1'b1), .dbb_n_i(1'b1), .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe),
+  .dbg_n_i(dbg_n && buc_dbg_n), .dbwo_n_i(memory.dbwo_n), .dbb_n_i(1'b1), .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe),
   .dh_i(in_d[63:32]), .dl_i(in_d[31:0]), .dh_o(dh_out), .dl_o(dl_out),
   .dp_i(in_dp), .dp_o(dp), .data_oe_o(data_oe), .dpe_n_o(dpe_n), .dbdis_n_i(dbdis_n),
   .ta_n_i(ta_n && buc_ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n && buc_tea_n),

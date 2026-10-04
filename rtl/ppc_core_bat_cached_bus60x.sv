@@ -207,6 +207,7 @@ module ppc_core_bat_cached_bus60x #(
   output logic        artry_n_o,
   output logic        artry_oe_o,
   input  logic        dbg_n_i,
+  input  logic        dbwo_n_i,
   input  logic        dbb_n_i,
   output logic        dbb_n_o,
   output logic        dbb_oe_o,
@@ -478,7 +479,12 @@ module ppc_core_bat_cached_bus60x #(
   // The physical BAT/page router offers one instruction request at a time.
   // Capture whether it entered managed cache or direct scalar bypass; a later
   // WIMG/context change cannot switch ownership of its held response.
-  assign eligible_managed = imem_req_wimg == 4'b0000;
+  // Only I decides: W and M do not affect the instruction cache, and G
+  // (real-mode WIMG 0001) still allows the required block to be cached
+  // (UM 3.5.4, 5.2).
+  assign eligible_managed = !imem_req_wimg[2];
+  logic unused_imem_wmg;
+  assign unused_imem_wmg = ^{imem_req_wimg[3], imem_req_wimg[1:0]};
   // A pending external command or CPU icbi holds new fetches.
   assign fetch_gate = rst_ni && !maintenance_valid_i && !icbi_req_valid &&
     !icache_ctl_valid &&
@@ -680,7 +686,7 @@ module ppc_core_bat_cached_bus60x #(
     .gbl_n_i(snoop_gbl_n_i), .artry_n_o, .artry_oe_o,
     .br_n_o, .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o, .ts_oe_o,
     .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o, .wt_n_o, .gbl_n_o,
-    .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbb_n_i,
+    .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbwo_n_i, .dbb_n_i,
     .dbb_n_o, .dbb_oe_o, .d_i, .d_o, .d_oe_o, .ta_n_i, .drtry_n_i, .tea_n_i
   );
 

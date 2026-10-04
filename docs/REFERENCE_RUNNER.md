@@ -9,6 +9,14 @@ Seeded mixed-program stress lane: [REFERENCE_STRESS.md](REFERENCE_STRESS.md).
 Compiled firmware images are compared separately; see
 [REFERENCE_FIRMWARE.md](REFERENCE_FIRMWARE.md).
 
+These runners build DingusPPC with `SUPPORTS_PPC_LITTLE_ENDIAN_MODE=0`.
+`make -C sim test-reference-le` exports DingusPPC at `LAST_VERIFIED` into its build
+directory and builds it there with little-endian support, then compares the
+little-endian program retirement by retirement; see
+[LITTLE_ENDIAN_VERIFICATION.md](LITTLE_ENDIAN_VERIFICATION.md#dingusppc-comparison)
+(Recorded: `make -C sim test-reference-le`, commit `6cdb1dc`, 2026-10-04: PASS,
+1,760 retirements, 2,718 memory words).
+
 ## Reproduce
 
 From the repository root:

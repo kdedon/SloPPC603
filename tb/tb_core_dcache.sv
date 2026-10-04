@@ -123,7 +123,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     .cse_o(cse),.addr_oe_o(addr_oe),.aack_n_i(aack_n),
     .snoop_ts_n_i(snoop_ts_n),.snoop_a_i(snoop_a),.snoop_tt_i(snoop_tt),.snoop_gbl_n_i(snoop_gbl_n),
     .artry_n_o(cpu_artry_n),.artry_oe_o(cpu_artry_oe),
-    .artry_n_i(artry_n),.dbg_n_i(dbg_n),.dbb_n_i(1'b1),
+    .artry_n_i(artry_n),.dbwo_n_i(1'b1), .dbg_n_i(dbg_n),.dbb_n_i(1'b1),
     .dbb_n_o(dbb_n),.dbb_oe_o(dbb_oe),
     .d_i(data_in),.d_o(data_out),.d_oe_o(data_oe),
     .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n), .xats_n_i(1'b1), .xats_n_o()

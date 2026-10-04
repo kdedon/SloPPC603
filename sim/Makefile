@@ -1847,6 +1847,25 @@ test-core-bat-machine-check:
 # The ppc603e package top: directed system-pin checks at the pins, and lint
 # of the top and its Quartus measurement wrapper.
 CHIP_RTL := $(shell cat ../rtl/chip_files.f)
+.PHONY: test-chip-icache-real
+test: test-chip-icache-real
+# Real-mode code is cached with ICE (603e, PID6, 603) and fetched single-beat without.
+test-chip-icache-real:
+	for v in 0 1 3; do mkdir -p $(BUILD_DIR)/chip-icache-real/v$$v && \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_icache_real +define+CHIP_VARIANT=$$v --Mdir $(BUILD_DIR)/chip-icache-real/v$$v -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_icache_real.sv && \
+	  ./$(BUILD_DIR)/chip-icache-real/v$$v/Vtb_chip_icache_real $(SIM_ARGS) || exit 1; done
+	mkdir -p $(BUILD_DIR)/chip-icache-real/off
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_icache_real "-GICE=1'b0" --Mdir $(BUILD_DIR)/chip-icache-real/off -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_icache_real.sv
+	./$(BUILD_DIR)/chip-icache-real/off/Vtb_chip_icache_real $(SIM_ARGS)
+
+.PHONY: test-chip-ecxwx
+test: test-chip-ecxwx
+# Misaligned eciwx/ecowx: split on PID6 and the 603, alignment on the PID7v; data cache off and on.
+test-chip-ecxwx:
+	for v in 0 1 3; do for d in 0 1; do mkdir -p $(BUILD_DIR)/chip-ecxwx/v$$v-d$$d && \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_ecxwx +define+CHIP_VARIANT=$$v "-GDCE=1'b$$d" --Mdir $(BUILD_DIR)/chip-ecxwx/v$$v-d$$d -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_ecxwx.sv && \
+	  ./$(BUILD_DIR)/chip-ecxwx/v$$v-d$$d/Vtb_chip_ecxwx $(SIM_ARGS) || exit 1; done; done
+
 .PHONY: test-chip-dcache-coherence test-chip-dcache-coherence-negative
 test: test-chip-dcache-coherence test-chip-dcache-coherence-negative
 CHIP_COHERENCE_TB := -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_dcache_coherence.sv
@@ -1854,6 +1873,9 @@ test-chip-dcache-coherence:
 	mkdir -p $(BUILD_DIR)/chip-dcache-coherence
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence --Mdir $(BUILD_DIR)/chip-dcache-coherence $(CHIP_COHERENCE_TB)
 	for s in 1 2 3; do ./$(BUILD_DIR)/chip-dcache-coherence/Vtb_chip_dcache_coherence +SEED=$$s $(SIM_ARGS) || exit 1; done
+	mkdir -p $(BUILD_DIR)/chip-dcache-coherence-noice
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence "-GICE=1'b0" --Mdir $(BUILD_DIR)/chip-dcache-coherence-noice $(CHIP_COHERENCE_TB)
+	for s in 1 2 3; do ./$(BUILD_DIR)/chip-dcache-coherence-noice/Vtb_chip_dcache_coherence +SEED=$$s $(SIM_ARGS) || exit 1; done
 test-chip-dcache-coherence-negative:
 	mkdir -p $(BUILD_DIR)/chip-dcache-coherence-negative
 	for m in 1 2; do \
@@ -1871,7 +1893,7 @@ test: test-chip-mp
 test-chip-mp:
 	mkdir -p $(BUILD_DIR)/chip-mp
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_mp --Mdir $(BUILD_DIR)/chip-mp -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_mp_bfm.sv ../tb/tb_chip_mp.sv
-	for s in 1 2 3; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s $(SIM_ARGS) || exit 1; done
+	for s in 1 2 3 4 5; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s $(SIM_ARGS) || exit 1; done
 
 .PHONY: test-chip-fpu
 FPU_CHIP_IMAGE := $(BUILD_DIR)/chip-fpu/program.hex
@@ -2047,6 +2069,15 @@ test-chip-le:
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+CHIP_ENABLE_FPU=1 --top-module tb_chip_firmware --Mdir $(BUILD_DIR)/chip-le -I../tb $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_firmware.sv
 	python3 tools/le_core_program.py --chip-image $(BUILD_DIR)/chip-le/program.hex
 	./$(BUILD_DIR)/chip-le/Vtb_chip_firmware +IMAGE=$(BUILD_DIR)/chip-le/program.hex +TOHOST=fff3ff00 $(SIM_ARGS)
+
+# The little-endian program on DingusPPC built with little-endian support,
+# compared retirement by retirement and word by word with tb_core_le.
+.PHONY: test-reference-le
+test: test-reference-le
+test-reference-le: reference-checkout
+	mkdir -p $(BUILD_DIR)/reference-le
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_core_le -GCPU_VARIANT=0 -GDMEM_BITS=64 -GFETCH_WIDTH=1 -GDISPATCH_WIDTH=1 --Mdir $(BUILD_DIR)/reference-le/rtl $(FPU_CORE_RTL) ../tb/tb_core_le.sv
+	python3 cosim/run_le_reference.py --build-dir $(BUILD_DIR)/reference-le --rtl $(BUILD_DIR)/reference-le/rtl/Vtb_core_le --reference $(REFERENCE_DIR)
 
 # The same program with the pipelined LSU over a memory taking one access per
 # cycle; adds the Table 6-6 integer load/store rows.

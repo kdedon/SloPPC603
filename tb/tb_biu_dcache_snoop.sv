@@ -161,7 +161,7 @@ module tb_biu_dcache_snoop;
     .gbl_n_o(gbl_n_o), .cse_o(cse), .addr_oe_o(addr_oe),
     .ts_n_i(ts_wire), .a_i(a_wire), .tt_i(tt_wire), .gbl_n_i(gbl_wire),
     .aack_n_i(aack_n), .artry_n_i(artry_wire), .artry_n_o(artry_n_o),
-    .artry_oe_o(artry_oe), .dbg_n_i(cpu_dbg_n), .dbb_n_i(dbb_wire),
+    .artry_oe_o(artry_oe), .dbwo_n_i(1'b1), .dbg_n_i(cpu_dbg_n), .dbb_n_i(dbb_wire),
     .dbb_n_o(dbb_n_o), .dbb_oe_o(dbb_oe), .d_i(d_i), .d_o(d_o), .d_oe_o(d_oe),
     .ta_n_i(ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n)
   );

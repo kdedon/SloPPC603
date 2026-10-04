@@ -60,6 +60,57 @@ for the other wrappers are unchanged.
 | `rtl-chip-machine-check` | 12,009 | 75 | 680 | 54 | 37 | 4 | 0 |
 | `rtl-chip-mmu-stress` | 1,557,409 | 6,136 | 98,360 | 7,831 | 5,026 | 0 | 864 |
 
+## Two processors: pipelining, DRTRY and TEA
+
+Recorded: `make -C sim test-chip-mp check-spec`, commit 4eec163, 2026-10-04.
+PASS, seeds 1-5 (seeds 6-20 also pass, run by hand on the same build).
+
+`tb/tb_chip_mp.sv` puts two `ppc603e` instances on one bus through
+`tb/bfm/bus60x_mp_bfm.sv` (program and older checks:
+[DATA_CACHE_INTEGRATION.md](DATA_CACHE_INTEGRATION.md)). The model now runs
+the address and data buses as separate processes:
+
+- Address pipelining between the processors (UM 8.1): the next address
+  tenure is granted while up to two data tenures are owed. Data tenures run
+  in address order. Half the time the next master's BG is asserted in the
+  cycle after AACK, so a qualified ARTRY there must keep it off the bus.
+- DRTRY and TEA are shared by both processors; TA is per processor. A read
+  beat carries wrong data and is cancelled by DRTRY, held 0-2 cycles with TA
+  negated, then replaced (UM 8.4.4.1). Some final beats are cancelled again
+  while the next tenure's DBG is already asserted.
+- Each processor stores to, flushes and reloads a shared probe line every
+  round. 40% of fills of that line end with TEA on a random beat. A machine
+  check handler counts each one and returns to the access, which then runs
+  again (UM 4.5.2, Table 3-6).
+
+Checks: TS only after a qualified BG; DBB only after a qualified DBG (DBG
+asserted, DRTRY negated, the data bus free); data driven only by the data-bus
+owner, and only on writes. A global snooped tenure must be retried while it
+hits a line whose data the other processor still owes (UM 3.6.8, 3.6.9).
+Clean and flush are excluded because the 603e takes no action on them
+(Table 3-6). The run must also give one machine check per TEA and leave the
+probe words at the last round.
+
+| Seed | Cycles | Pipelined tenures | Early BG (cancelled) | DRTRY (held) | Early DBG | TEA (P0/P1) | Owed-line retries |
+|---|---|---|---|---|---|---|---|
+| 1 | 28,877 | 352 | 236 (97) | 132 (88) | 6 | 9/5 | 34/25 |
+| 2 | 33,449 | 613 | 343 (144) | 202 (145) | 9 | 9/15 | 81/93 |
+| 3 | 30,096 | 464 | 280 (119) | 145 (93) | 10 | 6/14 | 58/49 |
+| 4 | 32,174 | 574 | 365 (142) | 184 (114) | 17 | 12/14 | 71/81 |
+| 5 | 29,650 | 411 | 250 (106) | 154 (101) | 7 | 9/4 | 38/42 |
+
+No RTL fault was found. Negative control: removing the claimed-line term
+from the data cache's snoop conflict fails seed 1 with "did not retry ...
+while owing its line's data". Removing DRTRY from the cache master's DBG
+qualification does not fail the bench. In this bench a processor asserts DBB
+two bus cycles after its DBG is first asserted, both normally and after an
+early DBG, so the early DBG never meets a processor ready to take it in the
+DRTRY cycle. The cause of that extra cycle was not found.
+
+Not established: DBWO between processors (tied negated); TEA on writes or
+instruction fetches; more than two processors; ABB and DBB as shared
+inputs (tied negated; the model serializes ownership).
+
 ## Full gate
 
 `make -C sim -j2 ci`: 555 PASS lines, 231 + 28 + 15 Python tests, container

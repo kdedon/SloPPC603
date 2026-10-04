@@ -646,7 +646,7 @@ module ppc_translated_measure #(
     .addr_oe_o(addr_oe_o_od),
     .aack_n_i(aack_n_i_ibq),
     .artry_n_i(artry_n_i_ibq),
-    .dbg_n_i(dbg_n_i_ibq),
+    .dbg_n_i(dbg_n_i_ibq), .dbwo_n_i(1'b1),
     .dbb_n_i(dbb_n_i_ibq),
     .dbb_n_o(dbb_n_o_od),
     .dbb_oe_o(dbb_oe_o_od),

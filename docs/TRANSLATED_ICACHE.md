@@ -10,16 +10,21 @@ line-fill addresses are the **translated physical address**, never the EA.
 The 32-byte physical line geometry cannot cross a 4-KiB page or the supported
 BAT block boundary, so the accepted lookup's attributes govern its fill.
 
-The line cache is deliberately eligible only when the accepted physical
-instruction WIMG is exactly `0000` and external cache enable is on. Every
-nonzero WIMG takes the scalar instruction bypass, including the router's
-real-mode instruction WIMG `0001` and any inhibit/write-through/coherence
-metadata. If external cache enable is off, even WIMG `0000` uses the managed
-cache's scalar bypass. All data requests use the scalar cache-inhibited master.
-Line fills retain the existing burst master's fixed cacheable pin attributes;
-scalar instruction and data tenures retain the scalar master's fixed
-cache-inhibited attributes. This policy is intentionally narrower than full
-603e WIMG/coherence behavior.
+The line cache is eligible when the accepted physical instruction access has
+I = 0 and the cache is enabled; I = 1 takes the scalar instruction bypass.
+W and M do not affect the instruction cache, and real-mode fetches (WIMG
+`0001` on the 603e and 603, HID0[WIMG] on the 602) are cacheable and guarded
+(UM §5.2). G = 1 limits prefetching to the block of an instruction certain to
+be needed (UM §3.5.4), so the line fill of a required instruction is allowed;
+translated G = 1 takes ISI before any access. If the cache is off, every
+fetch uses the managed cache's scalar bypass (UM §3.1.3.2). Line fills keep
+the burst master's fixed cacheable pin attributes; scalar instruction and
+data tenures keep the scalar master's fixed cache-inhibited attributes.
+
+Not covered: the fetcher runs ahead sequentially and past unresolved
+branches regardless of G, so in real mode it may fetch, and now fill, a block
+that the program does not reach. The scalar path did the same before real
+mode was cached.
 
 A physical fetch chooses its managed-cache or direct-scalar route at the
 request handshake. That choice remains latched until the matching held

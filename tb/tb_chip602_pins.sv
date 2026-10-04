@@ -271,6 +271,51 @@ module tb_chip602_pins;
     $display("castout t32=%0d: PFADDR %06x", t32, memory.log_pf[k]);
   endtask
 
+  // ---- Real-mode instruction caching -------------------------------------------
+  // HID0[WIMG] gives real-mode fetch attributes; the always-on I-cache takes
+  // the loop's two lines once unless I is set (602UM Table 2-7).
+  task automatic icache_real_case(input logic [3:0] wimg);
+    logic [31:0] loop;
+    int bursts, singles;
+    loop = BASE + 32'h3000;
+    load_handlers();
+    // bctr keeps the loop from being fetched before the isync.
+    emit_const(9, loop);
+    emit(asm_spr(1'b1, 9, 9));
+    mtspr(1008, {28'h0, wimg});
+    emit(32'h4c00_012c);
+    emit(asm_li(5, 0));
+    emit(asm_li(6, 8));
+    emit(32'h4e80_0420);
+    at = loop;
+    emit(asm_addi(5, 5, 3));
+    for (int i = 0; i < 12; i++) emit(asm_addi(7 + i % 4, 7 + i % 4, 1));
+    emit(asm_addi(6, 6, -1));
+    emit(asm_cmpwi(6, 0));
+    emit(asm_bc(4, 2, int'(loop - at)));
+    emit(asm_stw(5, LOOPS, 31));
+    done_mark(32'h1c0d, 1'b0);
+    halt();
+    hard_reset();
+    wait_word(DATA + DONE, 32'h1c0d, 40000, "real-mode loop done");
+    check(mem_word(DATA + LOOPS) == 24, "real-mode loop result");
+    bursts = 0;
+    singles = 0;
+    foreach (memory.log_addr[i])
+      if (memory.log_tc[i] == 2'b10 && memory.log_addr[i] >= loop &&
+          memory.log_addr[i] < loop + 32'h40) begin
+        if (memory.log_burst[i]) bursts++;
+        else singles++;
+      end
+    if ($test$plusargs("LOG"))
+      foreach (memory.log_addr[i])
+        $display("  %08x tt=%05b tc=%02b burst=%0d", memory.log_addr[i], memory.log_tt[i],
+                 memory.log_tc[i], memory.log_burst[i]);
+    if (wimg[2]) check(bursts == 0 && singles >= 16 * 8, "I=1 real-mode fetches single-beat");
+    else check(bursts == 2 && singles == 0, "real-mode loop lines filled once");
+    $display("icache real WIMG=%04b: loop bursts %0d, singles %0d", wimg, bursts, singles);
+  endtask
+
   // ---- Snoop retry and push ----------------------------------------------------
   task automatic snoop_case;
     logic [31:0] s;
@@ -439,6 +484,8 @@ module tb_chip602_pins;
     boot_case(1'b1, 2, 10);
     castout_case(1'b0);
     castout_case(1'b1);
+    icache_real_case(4'b0001);
+    icache_real_case(4'b0100);
     snoop_case();
     int_sreset_case();
     tea_case();

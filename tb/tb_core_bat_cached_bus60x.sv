@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
 // CPU-programmed translation before instruction cache and scalar bypass.
+// The real-mode bootstrap (WIMG 0001) is cached too (UM 5.2).
 /* verilator lint_off BLKSEQ */
 // BUS_RATIO2 runs the 60x side at that processor:bus ratio, doubled.
 module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
@@ -27,7 +28,7 @@ module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
   logic maintenance_done_valid,maintenance_busy;
   int line_bursts=0,cache_hits=0,cache_misses=0;
   int scalar_instruction=0,scalar_data=0;
-  int alias_lines=0,bypass_scalar=0,bootstrap_scalar=0;
+  int alias_lines=0,bypass_scalar=0,bootstrap_scalar=0,bootstrap_lines=0;
 
 
   function automatic logic [31:0] imm(input int op,input int rt,input int ra,input int value);
@@ -50,7 +51,7 @@ module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
       16:return imm(15,4,0,'h1000);
       20:return imm(24,4,4,2);
       24:return spr(1,4,530);             // IBAT1 EA10000000 -> PA0
-      28:return imm(14,5,0,'h12);         // WIMG 2, PP 2
+      28:return imm(14,5,0,'h22);         // WIMG 4 (I), PP 2
       32:return spr(1,5,533);             // IBAT2 bypass L
       36:return imm(15,4,0,'h2000);
       40:return imm(24,4,4,2);
@@ -169,7 +170,7 @@ module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
     .a_o(bus_a),.tt_o(tt),.tbst_n_o(tbst_n),.tsiz_o(tsiz),
     .tc_o(tc),.ci_n_o(ci_n),.wt_n_o(wt_n),.gbl_n_o(gbl_n),
     .cse_o(cse),.addr_oe_o(addr_oe),.aack_n_i(aack_n),
-    .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),.artry_n_i(artry_n),.dbg_n_i(dbg_n),.dbb_n_i(1'b1),
+    .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),.artry_n_i(artry_n),.dbwo_n_i(1'b1), .dbg_n_i(dbg_n),.dbb_n_i(1'b1),
     .dbb_n_o(dbb_n),.dbb_oe_o(dbb_oe),
     .d_i(data_in),.d_o(data_out),.d_oe_o(data_oe),
     .ta_n_i(ta_n),.drtry_n_i(drtry_n),.tea_n_i(tea_n), .xats_n_i(1'b1), .xats_n_o()
@@ -209,7 +210,7 @@ module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
              (bus_a&32'hffffffe0)==32'h120)alias_lines++;
           check((bus_a&32'hffffffe0)!=32'h200,
             "WIMG-I page incorrectly filled into line cache");
-          check(cir,"line fill occurred before instruction translation");
+          if(!cir)bootstrap_lines++;
         end else if(tc==2)begin
           check(tt==5'b01010&&tsiz==4&&!ci_n&&bus_a<8192,
             "scalar instruction bypass shape");
@@ -307,10 +308,10 @@ module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
     check(retires==41&&line_bursts>=3&&alias_lines>=2&&
           cache_hits>0&&cache_misses>0&&cache_busy_cycles>0&&
           scalar_instruction>0&&
-          bootstrap_scalar>0&&bypass_scalar>=4&&
+          bootstrap_scalar==0&&bootstrap_lines>0&&bypass_scalar>=4&&
           scalar_data==2&&word_reads==1&&word_writes==1&&
           data_reads==1&&data_writes==1&&retire_stalls>0,
-          "translated fill/hit, WIMG bypass, or data coverage");
+          "translated fill/hit, real-mode fill, WIMG bypass, or data coverage");
     check({target.mem['h1000],target.mem['h1001],
            target.mem['h1002],target.mem['h1003]}==32'h11223344&&
           {target.mem['h1004],target.mem['h1005],
