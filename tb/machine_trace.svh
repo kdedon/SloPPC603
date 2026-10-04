@@ -6,8 +6,9 @@
 // +RETIRE_TRACE=<file> writes one line per retirement edge:
 //   <pc> <insn> <count> <fault> [name=value ...] [st=addr,strobe,data ...]
 // count is 2 when CQ[1] retires beside the head. Registers appear when they
-// differ from the previous line (r0-r31 exclude the TGPRs, t0-t3); st lists physical stores accepted since the
-// previous line (strobe bit 3 is the byte at addr).
+// differ from the previous line; r0-r31 exclude the TGPRs, t0-t3. st lists
+// physical stores accepted since the previous line, strobe bit 3 being the
+// byte at addr; cache operations such as dcbz are not listed.
 int mt_fd = 0;
 logic [31:0] mt_prev [49];
 logic mt_first = 1'b1;
@@ -55,7 +56,8 @@ end
 always @(posedge `MT_CLK) begin
   automatic string store = "";
   if (mt_fd != 0 && `MT_BAT.pdmem_req_valid_o && `MT_BAT.pdmem_req_ready_i &&
-      `MT_BAT.pdmem_req_write_o && (|`MT_BAT.pdmem_req_wstrb_o))
+      `MT_BAT.pdmem_req_write_o && (|`MT_BAT.pdmem_req_wstrb_o) &&
+      `MT_BAT.pdmem_req_attr_o.kind != ppc_pkg::DMEM_CACHE)
     store = $sformatf(" st=%08x,%0x,%08x", `MT_BAT.pdmem_req_addr_o,
                       `MT_BAT.pdmem_req_wstrb_o, `MT_BAT.pdmem_req_wdata_o[31:0]);
   if (mt_fd != 0 && `MT_CORE.rst_ni && `MT_CORE.retire_valid_o && `MT_CORE.retire_ready_i &&

@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -163,6 +164,33 @@ static bool access_ea(uint32_t insn, uint32_t& ea) {
     return false;
 }
 
+// PEM divw/divwu: rD and CR0[LT,GT,EQ] are undefined for a zero divisor or
+// 0x80000000 / -1.
+static bool divide_undefined(uint32_t insn) {
+    unsigned xo = (insn >> 1) & 511;
+    if ((insn >> 26) != 31 || (xo != 491 && xo != 459)) return false;
+    uint32_t a = ppc_state.gpr[(insn >> 16) & 31], b = ppc_state.gpr[(insn >> 11) & 31];
+    return b == 0 || (xo == 491 && a == 0x80000000U && b == 0xffffffffU);
+}
+
+// UM 2.1.1: the PVR revision field is implementation data.
+static bool pvr_read(uint32_t insn) {
+    unsigned spr = ((insn >> 16) & 31) | (((insn >> 11) & 31) << 5);
+    return (insn >> 26) == 31 && ((insn >> 1) & 1023) == 339 && spr == 287;
+}
+
+// PEM Table 6-12: alignment DSISR[27-31] holds rA only for update forms and
+// load multiple/string; otherwise it is undefined.
+static bool alignment_names_ra(uint32_t insn) {
+    unsigned op = insn >> 26, xo = (insn >> 1) & 1023;
+    if (op == 46 || op == 33 || op == 35 || op == 37 || op == 39 || op == 41 || op == 43 ||
+        op == 45 || op == 49 || op == 51 || op == 53 || op == 55)
+        return true;
+    return op == 31 && (xo == 597 || xo == 533 || xo == 55 || xo == 119 || xo == 183 || xo == 247 ||
+                        xo == 311 || xo == 375 || xo == 439 || xo == 567 || xo == 631 ||
+                        xo == 695 || xo == 759);
+}
+
 static void set_msr(uint32_t value) {
     uint32_t old = ppc_state.msr;
     ppc_state.msr = value;
@@ -271,7 +299,8 @@ int main(int argc, char** argv) {
         uint64_t records = 0, instructions = 0, exceptions = 0, async = 0, stores = 0,
                  store_bytes = 0, timing = 0;
         bool done = false, miss_vector = false, direct_vector = false;
-        uint64_t misses = 0, direct = 0;
+        uint64_t misses = 0, direct = 0, failed_conditional = 0, undefined = 0, discarded_loads = 0;
+        std::set<uint32_t> discarded;
         std::string line;
         std::ofstream kept;
         if (!keep.empty()) kept.open(keep);
@@ -418,12 +447,51 @@ int main(int argc, char** argv) {
                 bool was_tgpr = tgpr_on();
                 uint32_t msr_before = ppc_state.msr, srr1_before = ppc_state.spr[SPR::SRR1];
                 patch_table();
+                bool undefined_divide = divide_undefined(step_insn);
+                uint32_t step_ea = 0;
+                bool has_ea = access_ea(step_insn, step_ea);
                 ppc_exec_single();
                 adapter_after_step(step_exceptions);
+                unsigned d = (step_insn >> 21) & 31;
                 if (timing_read(step_insn) && exceptions_processed == step_exceptions) {
-                    unsigned d = (step_insn >> 21) & 31;
                     ppc_state.gpr[d] = rtl_reg(d);
                     ++timing;
+                }
+                // Fields the manuals leave undefined take the RTL's value.
+                if (undefined_divide && exceptions_processed == step_exceptions) {
+                    ppc_state.gpr[d] = rtl_reg(d);
+                    if (step_insn & 1) ppc_state.cr = (ppc_state.cr & ~0xe0000000U) | (rtl[32] & 0xe0000000U);
+                    ++undefined;
+                }
+                // PEM dcbi discards a modified block, so what later loads see
+                // depends on the cache. Loads from such blocks take the RTL
+                // value, which is written into the reference's memory.
+                if (has_ea && exceptions_processed == step_exceptions) {
+                    unsigned xo = (step_insn >> 1) & 1023;
+                    if ((step_insn >> 26) == 31 && xo == 470) discarded.insert(step_ea & ~31U);
+                    unsigned ld = 0;
+                    int reverse = 0;
+                    unsigned size = scalar_size(step_insn);
+                    uint32_t op = step_insn >> 26;
+                    if (op == 34 || op == 35 || (op == 31 && (xo == 87 || xo == 119))) size = 1;
+                    if (load_target(step_insn, ld, reverse) && size && !reverse &&
+                        discarded.count(step_ea & ~31U) && ppc_state.gpr[ld] != rtl_reg(ld)) {
+                        ppc_state.gpr[ld] = rtl_reg(ld);
+                        for (unsigned b = 0; b < size; ++b)
+                            if (uint8_t* p = ram_byte(step_ea + b))
+                                *p = uint8_t(rtl_reg(ld) >> (8 * (size - 1 - b)));
+                        ++discarded_loads;
+                    }
+                }
+                if (pvr_read(step_insn) && exceptions_processed == step_exceptions) {
+                    if ((ppc_state.gpr[d] ^ rtl_reg(d)) >> 16) fail("PVR version differs");
+                    ppc_state.gpr[d] = rtl_reg(d);
+                    ++undefined;
+                }
+                if (exceptions_processed != step_exceptions && (ppc_state.pc & 0xfffffU) == 0x600 &&
+                    !alignment_names_ra(step_insn)) {
+                    ppc_state.spr[SPR::DSISR] = (ppc_state.spr[SPR::DSISR] & ~31U) | (rtl[40] & 31U);
+                    ++undefined;
                 }
                 // PEM rfi: only MSR[16-23,25-27,30-31] come from SRR1, and the
                 // 603e clears MSR[TGPR]. The reference copies every SRR1 bit
@@ -456,6 +524,12 @@ int main(int argc, char** argv) {
             if (!rtl_stores.empty() && !store_class(insn))
                 fail("store effects from a non-store " + h8(insn));
             // Every RTL store byte must match the reference's memory or its I/O writes.
+            // stwcx. offers its write before the reservation decides it; a failed
+            // one (CR0[EQ] clear) wrote nothing.
+            if ((insn >> 26) == 31 && ((insn >> 1) & 1023) == 150 && !(rtl[32] & 0x20000000U)) {
+                failed_conditional += !rtl_stores.empty();
+                rtl_stores.clear();
+            }
             size_t io_used = 0;
             for (auto& st : rtl_stores) {
                 ++stores;
@@ -491,8 +565,8 @@ int main(int argc, char** argv) {
         while (std::getline(trace, line)) ++trailing;
         std::cout << "PASS machine: records=" << records << " instructions=" << instructions
                   << " exceptions=" << exceptions << " tlb_misses=" << misses << " direct_store=" << direct << " interrupts=" << async << " stores=" << stores
-                  << " store_bytes=" << store_bytes << " io_reads=" << io.reads
-                  << " timing_reads=" << timing << " trailing=" << trailing << '\n';
+                  << " store_bytes=" << store_bytes << " failed_stwcx=" << failed_conditional << " io_reads=" << io.reads
+                  << " timing_reads=" << timing << " undefined_fields=" << undefined << " dcbi_loads=" << discarded_loads << " trailing=" << trailing << '\n';
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "machine reference error: " << e.what() << '\n';
