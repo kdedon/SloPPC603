@@ -170,10 +170,13 @@ integer operation cannot pair with a branch. Steps, in order:
    decision (`bu_redirect`) is a CR compare and must not gate `dispatch1`. `b`
    and correctly folded branches never redirect at dispatch, so DQ1 still
    pairs behind them when the prediction is known right from registered state.
-4. Later, and measured: branches without LR/CTR updates take no CQ entry, as
-   the manual's folding does. An interrupt then resumes at the branch, which is
-   idempotent. This needs care with `committed_next_pc_q` and the resume
-   override. Not built; see [slice 7](#slice-7).
+4. Built behind `ENABLE_BRANCH_REMOVAL`: a branch without LR/CTR updates,
+   resolved at dispatch, takes no CQ entry (UM 6.3.1). An interrupt then
+   resumes at the branch, which is idempotent; the resume override survives
+   it. When DQ0 is removed, DQ1 allocates at the CQ tail
+   (`alloc1_at_tail_i`). See
+   [CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit) for the removed set
+   and [branch removal](#branch-removal) for the record.
 
 The irrevocable-head rules stay: a pivot cut may not kill an offered finished
 head ([`ppc_completion.sv:137-141`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_completion.sv#L137-L141)),
