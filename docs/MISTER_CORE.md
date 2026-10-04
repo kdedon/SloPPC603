@@ -377,8 +377,8 @@ board images at the MiSTer top in simulation; it says nothing about a fit.
 ([LSU_PIPELINE.md](LSU_PIPELINE.md)); the file name gains `_lsupipe` after any
 FPU and `_dual` part, for example `ppc603e_whetstone_fpu_dual_lsupipe.rbf`. It
 combines with `--dual` ([DUAL_DISPATCH_DESIGN.md](DUAL_DISPATCH_DESIGN.md#with-the-pipelined-loadstore-unit)).
-No `--lsu-pipe` core has been built; the chip top with the unit meets 50 MHz
-at width 1. `make -C sim VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+`--fpu-compact --dual --lsu-pipe` builds are timing-clean at 50 MHz (latest:
+`2f049c5`, 29,387 ALMs); it is the test core CI publishes. `make -C sim VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
 BUILD_DIR=build/pipe mister-smoke mister-smoke-fpu` simulates the MiSTer top
 with the unit (add `DISPATCH_WIDTH=2` and another `BUILD_DIR` for both).
 
