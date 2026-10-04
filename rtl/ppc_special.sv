@@ -226,11 +226,12 @@ module ppc_special #(
   input ppc_pkg::completion_tag_t fp_commit_tag_i,
   input logic fp_kill_i,
   // Plain FP accesses in the pipelined load/store unit: FPU launches and
-  // the oldest store's data go there, and its responses come back.
+  // the data of the store with fp_store_tag_i go there, and its responses
+  // come back.
   output logic fp_launch_valid_o,
   output ppc_pkg::completion_tag_t fp_launch_tag_o,
   output logic fp_store_valid_o,
-  output ppc_pkg::completion_tag_t fp_store_tag_o,
+  input ppc_pkg::completion_tag_t fp_store_tag_i,
   output logic [63:0] fp_store_data_o,
   input logic fp_rsp_valid_i,
   input ppc_pkg::completion_tag_t fp_rsp_tag_i,
@@ -444,6 +445,8 @@ module ppc_special #(
   /* verilator lint_off UNUSEDSIGNAL */
   ppc_fpu_pkg::ppc_fpu_result_t fpu_result;
   ppc_fpu_pkg::ppc_fpu_mem_t fpu_mem_req, fpu_store;
+  logic fpu_peek_valid;
+  logic [63:0] fpu_peek_data;
   /* verilator lint_on UNUSEDSIGNAL */
   // eciwx/ecowx with EAR[E] = 0 take a DSI without a bus transfer.
   assign external_denied = ENABLE_FULL_DECODE && uop_q.mem_external &&
@@ -2124,9 +2127,8 @@ module ppc_special #(
   assign fpu_port_req_ready = fpu_mem_req_ready || fpu_unit_owned;
   assign fp_launch_valid_o = fpu_unit_owned && fpu_mem_req_valid;
   assign fp_launch_tag_o = fpu_mem_req.tag;
-  assign fp_store_valid_o = ENABLE_LSU_PIPE && fpu_store.write;
-  assign fp_store_tag_o = fpu_store.tag;
-  assign fp_store_data_o = fpu_store.data;
+  assign fp_store_valid_o = ENABLE_LSU_PIPE && fpu_peek_valid;
+  assign fp_store_data_o = fpu_peek_data;
   assign fpu_port_rsp_valid = fpu_mem_rsp_valid || (ENABLE_LSU_PIPE && fp_rsp_valid_i);
   assign fpu_port_store_ready = fpu_store_ready || (ENABLE_LSU_PIPE && fp_commit_valid_i);
   always_comb begin
@@ -2243,6 +2245,8 @@ module ppc_special #(
         .mem_rsp_i(fpu_port_rsp),
         .store_valid_o(fpu_store_valid), .store_ready_i(fpu_port_store_ready),
         .store_o(fpu_store),
+        .store_peek_tag_i(fp_store_tag_i), .store_peek_valid_o(fpu_peek_valid),
+        .store_peek_data_o(fpu_peek_data),
         .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(fp_fpscr_o),
         .inspect_sp_o(), .inspect_lt_o(),
         .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
@@ -2270,6 +2274,8 @@ module ppc_special #(
         .mem_rsp_i(fpu_port_rsp),
         .store_valid_o(fpu_store_valid), .store_ready_i(fpu_port_store_ready),
         .store_o(fpu_store),
+        .store_peek_tag_i(fp_store_tag_i), .store_peek_valid_o(fpu_peek_valid),
+        .store_peek_data_o(fpu_peek_data),
         .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(fp_fpscr_o),
         .inspect_sp_o(), .inspect_lt_o(),
         .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
@@ -2311,7 +2317,7 @@ module ppc_special #(
     assign _unused_fp_port = ^{fp_issue_valid_i, fp_issue_tag_i, fp_issue_insn_i,
                                fp_commit_valid_i, fp_commit_tag_i, fp_kill_i, fp_issue,
                                fpu_port_req_ready, fpu_port_rsp_valid, fpu_port_rsp,
-                               fpu_port_store_ready};
+                               fpu_port_store_ready, fp_store_tag_i};
     assign fpu_issue_ready = 1'b0;
     assign fpu_result_valid = 1'b0;
     assign fpu_result = '0;
@@ -2321,6 +2327,8 @@ module ppc_special #(
     assign fpu_mem_rsp_ready = 1'b0;
     assign fpu_store_valid = 1'b0;
     assign fpu_store = '0;
+    assign fpu_peek_valid = 1'b0;
+    assign fpu_peek_data = '0;
     assign fp_fpscr_o = '0;
     logic _unused_fpu;
     assign _unused_fpu = ^{fpu_issue, fpu_mem_rsp, fpu_store_ready, fpu_abort_valid,

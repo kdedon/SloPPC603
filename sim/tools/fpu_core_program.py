@@ -87,16 +87,16 @@ def use_lsu_pipe(split, pipe_mem):
     """FP accesses run in the unit: two execute cycles (Table 6-6), then
     retirement the cycle after, as for FP arithmetic (Figure 6-3). Without
     pipe_mem the bench memory takes an access every other cycle, which
-    bounds the spacing. Integer stores retire one per cycle (2:1); an FP
-    store's data follows the FPU's oldest instruction. A 32-bit data path
+    bounds the spacing. Integer and FP stores retire one per cycle (2:1):
+    the FPU presents the data of any launched store. A 32-bit data path
     moves a doubleword as two word beats."""
     LATENCY.update({'lwz': 4, 'stw': 4, 'lfd': 3, 'lfs': 3, 'stfd': 3, 'stfs': 3,
                     'stfiwx': 3})
     load = 3 if pipe_mem else 6
     MEMORY_SPACING.update({'lfd-issue': 3 if pipe_mem else 4, 'lfd-retire': load,
                            'lfs-issue': 3 if pipe_mem else 4, 'lfs-retire': load,
-                           'stfd-issue': 5, 'stfd-retire': 9, 'stfs-issue': 5,
-                           'stfs-retire': 9, 'fadd-stfd': 3, 'stw-retire': 3})
+                           'stfd-issue': 3, 'stfd-retire': 3, 'stfs-issue': 3,
+                           'stfs-retire': 3, 'fadd-stfd': 2, 'stw-retire': 3})
     if split:
         LATENCY.update({'lfd': 5, 'stfd': 5})
         MEMORY_SPACING.update({'lfd-issue': 12, 'lfd-retire': 12, 'stfd-issue': 14,

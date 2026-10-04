@@ -53,8 +53,10 @@ that can still raise an exception, as an integer access does.
 
 - The FPU launches the access as it issues (`MEM_AT_ISSUE`); the unit only
   records the launch. A load offers once launched; a store offers at the
-  completion-queue head once the FPU presents the store's data, which it
-  does for its oldest instruction.
+  completion-queue head once the FPU presents the store's data. The unit
+  names its P1 store's tag and the FPU answers with the data of that store
+  at any position in its queue, once the store has launched, so FP stores
+  queue one per cycle.
 - The unit's R stage returns the response to the FPU instead of the
   completion queue: a word for `lfs`, both words for `lfd`. The FPU
   formats it, and the instruction retires the cycle after, as FP
@@ -264,12 +266,14 @@ cycle, integer rows two):
 | `stfs`, `stfiwx`, `stfd` | 7 | 3 | 3, `stfd` 5 |
 | four `lfd` or `lfs`, first to last, memory taking one access per cycle | — | 3 | — |
 | the same, memory taking one access every other cycle | 15 | 6 | `lfd` 12 |
-| four `stfd`, first to last retirement | 18 | 9 | 15 |
-| `stfd` after the `fadd` producing its data | 6 | 3 | 5 |
+| four `stfd` or `stfs`, first to last, dispatch and retirement | 18 | 3 | `stfd` 14 and 15 |
+| `stfd` after the `fadd` producing its data, retirement spacing | 6 | 2 | 5 |
 
-Loads meet Table 6-6 (2:1). FP stores queue but stay three cycles apart:
-the FPU presents store data only for its oldest instruction, which retires
-the cycle after the unit finishes it.
+Loads and stores meet Table 6-6 (2:1). The unit looks up FP store data by
+tag, so a younger store queues while older FP work is still pending; it is
+written only after it retires, so an exception in older work still removes
+it. A doubleword in two beats does not queue and stays at the
+completion-queue head.
 
 ## Default
 
@@ -290,12 +294,10 @@ the chip needs a fresh fit and timing report before the default changes.
    `ppc_dcache_slot`), so the unit's P1 shift no longer follows the hit;
    and keep the one-cycle answer away from the serialized lane's
    `memory_result_q`.
-2. FP stores at one per cycle: the FPU presents store data only for its
-   oldest instruction, so FP stores queue three cycles apart; presenting
-   the data of younger FP stores would meet Table 6-6. A doubleword stored
-   in two word beats (32-bit port) does not queue. The store queue also
-   needs a fit: the micro-TLB check feeds P1's pop and the queue's write
-   shares the request mux.
+2. A doubleword stored in two word beats (32-bit port) does not queue. The
+   store queue needs a fit: the micro-TLB check feeds P1's pop and the
+   queue's write shares the request mux, and the FPU's store-data lookup
+   (P1 tag to pending entry to formatter) now feeds the queue's write.
 3. Loads whose base register has an uncommitted producer (operands from
    rename instead of the committed registers). The 603e reads them from the
    rename buffers or the result buses into the LSU's reservation station;
@@ -468,3 +470,31 @@ alignment, coherence and chip benches (`test-core-lsu-extensions` through `test-
 This establishes FP loads and stores through the unit with the FULL and COMPACT FPUs on
 the 603e and 602 personalities, at both widths, with no regression in the core, cache,
 fault and chip sets. It does not establish timing: no fit includes the FP launch path.
+
+### FP stores at one per cycle (2026-10-04)
+
+Recorded: `make -C sim lint test-crstate-execution variant-watchdog-602
+variant-special-lint-602 test-fpu-shell test-fpu-602 test-fpu-stream-603
+test-fpu-stream-602 test-fpu-dual-603 test-fpu-dual-602 test-fpu-compact-shell
+test-fpu-compact-602 test-fpu-enabled-603 test-fpu-enabled-602
+test-fpu-compact-enabled-603 test-fpu-compact-enabled-602 test-core-fpu
+test-core-fpu-split test-core-fpu-compact test-core-fpu-602
+test-core-fpu-602-compact test-core-lsu-timing`, and with the unit
+(`BUILD_DIR=build-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe`)
+`test-core-fpu test-core-fpu-compact test-core-fpu-602
+test-core-fpu-602-compact`, commit ea7f8c1, 2026-10-04: pass
+(`test-core-fpu-split` with the unit at ca3977a, before the punt fix).
+
+- The unit asks the FPU for its P1 store's data by tag; the FPU answers
+  for any launched store in its queue. `test-core-lsu-timing`: four `stfd`
+  or four `stfs` dispatch and retire one per cycle (3 cycles first to last,
+  9 before), and a `stfd` retires 2 cycles after the `fadd` producing its
+  data (3 before); 2693 checks, 47 spacings. The FPU benches check that the
+  looked-up data equals the store port's at every publication.
+- `test-core-fpu-602` with the unit hung at commit 5d0d244: a 602 unaligned
+  `lfs` that the unit punts answered the FPU in the cycle Q handed its queued
+  store to R, and the store's answer was lost. A punt now waits for Q. The
+  bench now passes (1115 checks).
+
+This does not establish timing: the tag lookup adds the FPU's pending-entry
+select and store formatter to the queue's write path, which needs a fit.
