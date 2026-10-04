@@ -530,6 +530,28 @@ def make_branch_fold():
         e('addi',5,0,2);e('mtctr',5);e('divw',8,6,7,0,0);e('cmpi',0,8,0)
         e('bc',0,2,t('ct'),0,0);e('addi',20,20,512)
         p.label(t('ct'));e('mfctr',26);e('addi',22,22,1)
+    # A second compare behind one waiting on a divide waits for the CR in
+    # its station; one behind the divide alone may finish in the SRU. A bc
+    # on either field resolves from that compare's result, right and wrong.
+    for pad in range(4):
+        t=lambda name:f'w{name}{pad}'
+        nops(pad)
+        q=(100+pad)//7
+        e('addi',6,0,100+pad)
+        for k,(two,bi,bo,eq) in enumerate([(1,6,12,1),(1,6,13,0),(1,2,4,1),(1,2,12,0),
+                                          (0,6,12,1),(0,6,13,0),(0,6,4,0)]):
+            e('divw',8,6,7,0,0)
+            if two:e('cmpi',0,8,q)
+            e('cmpi',1,7,7 if eq else 8)
+            e('bc',bo,bi,t(f'tk{k}'),0,0)
+            e('stw',23,1,224+4*pad);e('addi',23,23,1<<k)
+            p.label(t(f'tk{k}'));e('addi',21,21,k+1);e('stw',21,1,240+4*pad)
+        # An mtlr whose source an add behind the waiting compare produces.
+        e('addi',3,0,t('m1'));e('divw',8,6,7,0,0);e('cmpi',0,8,q)
+        e('addi',3,3,0);e('mtlr',3);e('bclr',20,0,0);e('illegal')
+        p.label(t('m1'));e('divw',8,6,7,0,0);e('cmpi',0,8,q);e('addi',3,0,t('m2'))
+        e('mtlr',3);e('bclr',12,2,0);e('illegal')
+        p.label(t('m2'));e('addi',21,21,64)
     # A leaf called in a loop: the return folds once the bl retires.
     e('addi',5,0,8);e('mtctr',5)
     p.label('loop');e('b','body',0,1);e('add',22,22,21);e('bc',16,0,'loop',0,0)
