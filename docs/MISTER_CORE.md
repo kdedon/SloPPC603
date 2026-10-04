@@ -343,6 +343,10 @@ mister/build.sh --clean --fpu --suite whetstone   # mister/output_files/ppc603e_
 Board fits on commit 9e738ce (the tree merged to main as 71d048c): with `--dual --lsu-pipe`,
 the COMPACT FPU (`--fpu-compact`) meets 50 MHz at 28,789 ALMs (69%), worst setup slack
 +0.905 ns; the FULL FPU (`--fpu`) does not, at 40,664 ALMs (97%) and −2.606 ns.
+On 2f049c5 (2026-10-03), `--clean --fpu-compact --dual --lsu-pipe` is
+timing-clean at 29,387 ALMs (70%):
+`PPC603e_fpu_compact_dual_lsupipe_20261003_2036.rbf`, SHA-256 prefix
+`849eee26d067a98a`.
 
 ### Dual-dispatch cores
 

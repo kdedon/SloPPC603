@@ -62,9 +62,9 @@ and throughput. The coherent baseline passes both personalities’ numerical, ex
 public-shell, paired dispatch/retirement and strict lint gates in
 [verification](../../../sim/fpu/PRODUCTION.md), including full-queue admission
 and 602 SPR timing. Frequency closure and the documented silicon-semantics
-gaps remain open. On `71d048c`
-the FULL FPU fits at 50.09 MHz (603e) and 50.60 MHz (602), COMPACT at 57.85
-and 59.51 MHz (`quartus/fpu-production/synthesize.sh --docker fullfit`,
+gaps remain open. On `2f049c5`
+the FULL FPU fits at 51.57 MHz (603e) and 50.58 MHz (602), COMPACT at 53.43
+and 60.07 MHz (`quartus/fpu-production/synthesize.sh --docker fullfit`,
 `full602fit`, `compactfit`, `compact602fit`); all miss 66 MHz. Timing work keeps the Table 6-5 cycle counts exact; any change to
 them goes behind a named parameter such as `FPU_IMPL`. See the
 [FPU assessment](../../FPU_REUSE_ASSESSMENT.md) for the remaining semantic and
@@ -93,30 +93,37 @@ timing-clean.
 Priority since 2026-10-03: completion of the 603e before speed. 50 MHz stays
 the gate; 66 MHz work follows the completion items.
 
-Done (2026-10-03): CI enabled (`.github/workflows/`, [CI.md](../../CI.md)).
+Done (batch 10, 2026-10-03): loadable program images on MiSTer (OSD "Load
+program", [MISTER_CORE.md](../../MISTER_CORE.md#loading-programs)); little-endian
+mode with the misaligned-LE split (V13; [LE](../../LITTLE_ENDIAN.md)); inbound
+data parity, BR negation after a foreign ARTRY, push pipelining, the two-CPU
+bench `test-chip-mp` and HID0 ILOCK
+([chip verification](../../CHIP_PACKAGE_VERIFICATION.md)); CI enabled
+([CI.md](../../CI.md)); relicense to GPL-2.0-or-later.
+
+Under gate (batch 11): dual dispatch slice 7 with `bclr`/`bcctr` folding; FP
+loads and stores through the LSU unit.
 
 Queued, in order:
 
-1. Loadable program images on MiSTer: the core loads selftest, Embench,
-   nbench and Whetstone images from the OSD into DDR3 and runs them; the
-   built-in menu still works with nothing loaded. One test core holds every
-   program.
-2. Little-endian mode (`MSR[LE]`, `MSR[ILE]`) and the misaligned-LE split
-   (V13).
-3. Bus and cache gaps: inbound data parity, BR negation after another
-   snooper's ARTRY, push pipelining, multiprocessor snoop tests, HID0 ILOCK.
-4. Dual dispatch slice 7 (branch in DQ1, branches without a CQ entry) and
-   `bclr`/`bcctr` folding.
-5. LSU unit completion: stores at one per cycle, base operands from rename,
-   FP loads and stores through the unit at Table 6-6 timing.
-6. Defaults: width 2 and the LSU unit on, two-word fetch through the wrappers.
-7. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
+1. Dual dispatch slice 7 (branch in DQ1, branches without a CQ entry) and
+   `bclr`/`bcctr` folding (batch 11).
+2. LSU unit completion: stores at one per cycle, base operands from rename,
+   FP loads and stores through the unit at Table 6-6 timing (FP through the
+   unit in batch 11).
+3. Real-mode instruction fetches: they get WIMG=0001 and are never I-cached;
+   check against UM §5.2 and fix if the manual caches them.
+4. Bus and endian follow-ups: DBWO; the two-CPU bench with address
+   pipelining, DRTRY and TEA; misaligned `eciwx`/`ecowx` split in hardware;
+   a DingusPPC little-endian comparison.
+5. Defaults: width 2 and the LSU unit on, two-word fetch through the wrappers.
+6. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
    FULL FPU in the MiSTer core (97% ALMs, −2.606 ns: reduce area or keep
    COMPACT).
-8. Verification: full-machine reference comparison and the remaining P12
+7. Verification: full-machine reference comparison and the remaining P12
    schedule checks; source-contract reconciliation.
-9. Speed, after completion: 66 MHz at width 1 (translated −0.213 ns, chip
-   −0.577 ns, chip602 −0.202 ns on `71d048c`), width 2 at 66 MHz (IQ pair
+8. Speed, after completion: 66 MHz at width 1 (translated −0.082 ns, chip
+   −0.465 ns, chip602 −0.539 ns on `2f049c5`), width 2 at 66 MHz (IQ pair
    decision), the LSU unit at 66 MHz, the FPU at 66 MHz, a single-precision
    Mandelbrot.
 

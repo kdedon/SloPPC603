@@ -1,10 +1,10 @@
 # Full CPU weighting audit
 
-Date: 2026-09-23; updated 2026-10-01. Scope: the original CPU-only 603e project through P30 in
+Date: 2026-09-23; updated 2026-10-03. Scope: the original CPU-only 603e project through P30 in
 [TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
-**Revised estimate: about 75% complete (weighted 75.48%).**
+**Revised estimate: about 78% complete (weighted 78.36%).**
 This replaces the provisional 40–45% headline. It is completed project scope,
 including documentation and tooling, not measured RTL coverage or a fraction of
 remaining effort.
@@ -33,15 +33,15 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Load/store architecture | 5% | 85% | 4.25% |
 | Supervisor, system instructions and interrupts | 8% | 85% | 6.80% |
 | MMU | 8% | 80% | 6.40% |
-| 60x transport and protocol | 6% | 85% | 5.10% |
-| Instruction cache and architectural maintenance | 4% | 95% | 3.80% |
+| 60x transport and protocol | 6% | 95% | 5.70% |
+| Instruction cache and architectural maintenance | 4% | 97% | 3.88% |
 | Data cache and writeback | 5% | 90% | 4.50% |
-| Coherence and reservations | 3% | 85% | 2.55% |
+| Coherence and reservations | 3% | 95% | 2.85% |
 | Floating point | 12% | 75% | 9.00% |
-| Endian, variants and platform behavior | 6% | 60% | 3.60% |
-| Full timing, reference and integration verification | 10% | 55% | 5.50% |
-| Final FPGA closure and release | 4% | 45% | 1.80% |
-| **Total** | **100%** | | **75.48%** |
+| Endian, variants and platform behavior | 6% | 80% | 4.80% |
+| Full timing, reference and integration verification | 10% | 60% | 6.00% |
+| Final FPGA closure and release | 4% | 50% | 2.00% |
+| **Total** | **100%** | | **78.36%** |
 
 ## Reasons for the revised credit
 
@@ -197,3 +197,47 @@ Re-audit of rows that predated later milestones:
 
 Total 60.53% → 75.48%. The correction (+8.85 points) is credit missed by
 earlier updates, not new hardware.
+
+## 2026-10-03 update
+
+Batch 10, merged at `2f049c5`. Weights unchanged. Milestones:
+
+- Endian, variants and platform 60% → 80%: MSR[LE] and ILE, with
+  misaligned little-endian accesses split in hardware (V13)
+  ([little endian](LITTLE_ENDIAN.md),
+  [verification](LITTLE_ENDIAN_VERIFICATION.md)). Open: no DingusPPC LE
+  comparison, misaligned `eciwx`/`ecowx` hardware split, LE timing.
+- 60x transport 85% → 95%: inbound data parity (DPE, machine check under
+  HID0[EBD]), BR negation after a foreign ARTRY, push pipelining with a
+  second cache-master instance ([chip verification](CHIP_PACKAGE_VERIFICATION.md)).
+  Open: DBWO (ignored, as UM §8.10 permits).
+- Coherence and reservations 85% → 95%: the two-CPU bench `test-chip-mp`
+  found and fixed three coherence faults
+  ([integration](DATA_CACHE_INTEGRATION.md)). Open: that bench has no
+  address pipelining, DRTRY or TEA.
+- Instruction cache 95% → 97%: HID0 ILOCK locks the cache. Open: real-mode
+  fetches get WIMG=0001 and are never cached; to check against UM §5.2.
+- Verification 55% → 60%: the MP and LE benches, and CI on every push and
+  pull request.
+- Final FPGA closure 45% → 50%: CI publishes the MiSTer core as the
+  `unstable` prerelease, and the core loads selftest, Embench, nbench and
+  Whetstone images from the OSD (`test-mister-load`). 66 MHz remains open on
+  three tops.
+
+Fits on `2f049c5` (`quartus/<top>/build.sh --docker`,
+`quartus/report-target-paths.sh <top> --docker`); every top meets 50 MHz:
+
+| Top | 66 MHz | ALMs |
+| --- | --- | ---: |
+| Translated | 4 failing, −0.082 ns | 12,829 |
+| Integrated | meets | 6,818 |
+| Timer/BAT | meets | 6,816 |
+| Chip | 2 failing, −0.465 ns | 11,790 |
+| Chip602 | 4 failing, −0.539 ns | 11,345 |
+
+FPU fits (`quartus/fpu-production/synthesize.sh --docker <v>`): fullfit
+51.57 MHz, full602fit 50.58, compactfit 53.43, compact602fit 60.07; all pass
+50 MHz and fail 66. MiSTer `--fpu-compact --dual --lsu-pipe` is timing-clean
+at 29,387 ALMs (70%).
+
+Total 75.48% → 78.36%.
