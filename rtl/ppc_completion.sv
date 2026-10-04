@@ -438,7 +438,8 @@ module ppc_completion #(
              result_i.fault) ? packets_q[result_i.producer.index].page_miss : '0;
           packets_q[result_i.producer.index].gpr_write <= 1'b0;
           packets_q[result_i.producer.index].update_write <= 1'b0;
-          packets_q[result_i.producer.index].update_gpr <= '0;
+          if (!packets_q[result_i.producer.index].update_owned)
+            packets_q[result_i.producer.index].update_gpr <= '0;
           // A typed fault still returns the flag token it owns (stwcx.).
           packets_q[result_i.producer.index].needs_flags <=
             !result_i.fault && packets_q[result_i.producer.index].needs_flags;

@@ -28,6 +28,12 @@ module tb_rename_pair;
   completion_tag_t surv_tag [CQ_DEPTH];
 
   ppc_rename dut (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .read_c_i(5'd0), .arch_c_i(32'd0), .read_c_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .alloc_value_valid_i(1'b0), .alloc_value_i(32'd0),
+    .alloc1_value_valid_i(1'b0), .alloc1_value_i(32'd0),
+    .release2_i(1'b0), .release2_reg_i(5'd0), .release2_tag_i('0), .release2_producer_i('0),
     .clk_i(clk), .rst_ni(rst_n),
     .read_a_i(rd0), .read_b_i(rd1), .arch_a_i(arch0), .arch_b_i(arch1),
     .read_a_o(got[0]), .read_b_o(got[1]),

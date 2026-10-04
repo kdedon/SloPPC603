@@ -358,6 +358,9 @@ package ppc_pkg;
     logic update_write;
     logic [4:0] update_gpr;
     logic [31:0] update_value;
+    // update_gpr has its own rename slot, released at retirement.
+    logic update_owned;
+    rename_tag_t update_tag;
     logic needs_flags;
     logic write_xer;
     logic write_ca;

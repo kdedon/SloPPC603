@@ -38,7 +38,12 @@ module ppc_lsu_pipe #(
   output logic dispatch_ready_o,
   input  ppc_pkg::uop_t uop_i,
   input  ppc_pkg::completion_tag_t producer_i,
-  input  logic [31:0] pc_i, insn_i, ea_i, data_i,
+  input  logic [31:0] pc_i, insn_i, ea_i,
+  // Store data from rename; one not yet produced is taken from the result
+  // buses when written.
+  input  ppc_pkg::operand_t data_i,
+  input  logic wake_valid_i, wake1_valid_i,
+  input  ppc_pkg::wake_packet_t wake_i, wake1_i,
   // FP access: store and doubleword forms.
   input  logic fp_i, fp_store_i, fp_double_i,
   // The FPU has launched the memory form with this tag.
@@ -112,6 +117,10 @@ module ppc_lsu_pipe #(
     // A word beat of a doubleword; the second beat's EA advances as it
     // reaches the head.
     logic split, second, advance;
+    // Store data is present; otherwise it comes from data_tag's producer.
+    logic data_ready;
+    rename_tag_t data_tag;
+    completion_tag_t data_producer;
     // A retired store's write, and a load offered past queued stores.
     logic write, passed;
     completion_tag_t producer;
@@ -195,7 +204,7 @@ module ppc_lsu_pipe #(
   assign p1_at_head = store_authorize_i && (queue_head_i == p1_head.producer.index);
   // An FP access offers once the FPU has launched it, a store once the
   // FPU presents its data.
-  assign p1_ready = !p1_head.fp ||
+  assign p1_ready = !p1_head.fp ? p1_head.data_ready :
     (p1_head.store ? (fp_store_valid_i && (fp_store_tag_i == p1_head.producer)) :
                      p1_head.launched);
   assign p1_addr = {p1_head.ea[31:3], p1_head.ea[2] ^ p1_head.munge[2], 2'b00};
@@ -337,7 +346,7 @@ module ppc_lsu_pipe #(
                       !p2_valid && !q_valid_q && !r_valid_q && !sq_valid &&
                       lane_idle_i && !rsp_to_lane_q;
   assign p1_adopt = !p2_valid && !q_valid_q && !r_valid_q && !sq_valid && !redo_valid_q &&
-                    p1_valid && !p1_head.fast && !p1_head.fp &&
+                    p1_valid && !p1_head.fast && !p1_head.fp && p1_head.data_ready &&
                     !p1_head.killed && !killed_now(p1_head.producer) &&
                     lane_idle_i && !rsp_to_lane_q;
   assign adopt_valid_o = p2_adopt || redo_adopt || p1_adopt;
@@ -397,7 +406,10 @@ module ppc_lsu_pipe #(
     incoming.munge = !le_i ? 3'b0 :
                      fp_i ? {!fp_double_i, 2'b0} :
                      {1'b1, in_bytes != 3'd4, in_bytes == 3'd1};
-    incoming.data = data_i;
+    incoming.data = data_i.value;
+    incoming.data_ready = fp_i || (uop_i.special_op != SPECIAL_STORE) || data_i.ready;
+    incoming.data_tag = data_i.tag;
+    incoming.data_producer = data_i.producer;
     incoming.pc = pc_i;
     incoming.insn = insn_i;
     incoming.uop = uop_i;
@@ -459,6 +471,16 @@ module ppc_lsu_pipe #(
         p2_next[i].killed = 1'b1;
       if (fp_launch_valid_i && (p1_next[i].producer == fp_launch_tag_i))
         p1_next[i].launched = 1'b1;
+      if (!p1_next[i].data_ready && wake_valid_i && (wake_i.tag == p1_next[i].data_tag) &&
+          (wake_i.producer == p1_next[i].data_producer)) begin
+        p1_next[i].data = wake_i.value;
+        p1_next[i].data_ready = 1'b1;
+      end
+      if (!p1_next[i].data_ready && wake1_valid_i && (wake1_i.tag == p1_next[i].data_tag) &&
+          (wake1_i.producer == p1_next[i].data_producer)) begin
+        p1_next[i].data = wake1_i.value;
+        p1_next[i].data_ready = 1'b1;
+      end
     end
     p1_q <= p1_next;
     p2_q <= p2_next;
@@ -612,6 +634,19 @@ module ppc_lsu_pipe #(
       $display("LSU_STATS %m: queued_stores=%0d written=%0d passing_loads=%0d overlap_wait_cycles=%0d write_errors=%0d redone_loads=%0d cancelled=%0d",
                stat_queued, stat_written, stat_passed, stat_overlap, stat_errors, stat_redo,
                stat_cancelled);
+  longint dbg_cycle = 0, dbg_from = -1, dbg_to = -1;
+  initial begin
+    void'($value$plusargs("LSU_TRACE_FROM=%d", dbg_from));
+    void'($value$plusargs("LSU_TRACE_TO=%d", dbg_to));
+  end
+  always @(posedge clk_i) begin
+    dbg_cycle <= dbg_cycle + 1;
+    if (dbg_cycle >= dbg_from && dbg_cycle <= dbg_to)
+      $display("LSU %0d disp=%b/%b p1=%0d[%08x st=%b dr=%b] p2=%0d sq=%0d q=%b r=%b offer=%b spec=%b rdy=%b fire=%b sqo=%b chk=%b/%b rsp=%b lane_idle=%b",
+               dbg_cycle, dispatch_valid_i, dispatch_ready_o, p1_count_q, p1_head.pc, p1_head.store,
+               p1_head.data_ready, p2_count_q, sq_count_q, q_valid_q, r_valid_q, offer, req_spec_o,
+               req_ready_i, p1_fire, sq_offer, p1_check, chk_ok_i, rsp_valid_i, lane_idle_i);
+  end
   // Translation was confirmed before a queued store finished.
   always @(posedge clk_i)
     if (rst_ni && p2_retire && p2_head.write && !rsp_error_i)

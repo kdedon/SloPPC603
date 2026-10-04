@@ -239,7 +239,8 @@ module ppc_core #(
   logic [31:0] fp_fpscr;
   logic fp_sticky_hold, fp_sticky_waited_q;
   retire_packet_t cq_retire, cq_retire1;
-  operand_t src_a, src_b, operand_a, operand_b;
+  operand_t src_a, src_b, src_c, operand_a, operand_b;
+  logic mem_base_ready, unit_update, update_alloc, update_alloc_store;
   rs_entry_t rs_entry;
   issue_packet_t issue;
   result_packet_t result, iu_result, special_result;
@@ -800,8 +801,10 @@ module ppc_core #(
     (iq_head.fault == FETCH_PAGE_MISS)) ? iq_miss_q : '0;
   // Special uops dispatch only with an empty CQ and idle IU, so committed
   // registers supply their operands without the rename/wake path.
-  assign special_a = uop.zero_a ? 32'b0 : arch_a;
-  assign special_b = uop.use_imm ? uop.imm : arch_b;
+  // A pipelined access may dispatch with its base registers in rename; any
+  // other special uop finds them committed.
+  assign special_a = uop.zero_a ? 32'b0 : src_a.value;
+  assign special_b = uop.use_imm ? uop.imm : src_b.value;
   assign dispatch_ea = special_a + special_b;
   assign dispatch_ea_low = dispatch_ea[1:0];
   // lmw/stmw/lwarx/stwcx. always need a word-aligned EA. With hardware
@@ -1092,17 +1095,27 @@ module ppc_core #(
     .read_a1_o(src_a1), .read_b1_o(src_b1),
     .mapped_o(gpr_mapped),
     .alloc_ready_o(alloc_ready), .alloc_tag_o(alloc_tag),
-    .alloc_i((dispatch && dispatch_uop.gpr_write) || rename0_dq1),
-    .alloc_reg_i(rename0_dq1 ? dq1_uop.dst : dispatch_uop.dst),
+    .read_c_i(uop.src_c), .arch_c_i(arch_c), .read_c_o(src_c),
+    // An update form's base takes the next free slot, written ready with the
+    // EA (UM 6.6: the update uses a second rename).
+    .alloc_i((dispatch && dispatch_uop.gpr_write) || rename0_dq1 || update_alloc_store),
+    .alloc_reg_i(rename0_dq1 ? dq1_uop.dst :
+                 update_alloc_store ? dispatch_uop.src_a : dispatch_uop.dst),
     .alloc_producer_i(rename0_dq1 ? alloc1_producer : alloc_producer),
+    .alloc_value_valid_i(update_alloc_store), .alloc_value_i(dispatch_ea),
     .alloc1_ready_o(alloc1_ready), .alloc1_tag_o(alloc1_tag),
-    .alloc1_i(dispatch1 && d1_gpr && dispatch_uop.gpr_write),
-    .alloc1_reg_i(dq1_uop.dst), .alloc1_producer_i(alloc1_producer),
+    .alloc1_i((dispatch1 && d1_gpr && dispatch_uop.gpr_write) ||
+              (update_alloc && !update_alloc_store)),
+    .alloc1_reg_i(dispatch1 ? dq1_uop.dst : dispatch_uop.src_a),
+    .alloc1_producer_i(dispatch1 ? alloc1_producer : alloc_producer),
+    .alloc1_value_valid_i(update_alloc && !update_alloc_store), .alloc1_value_i(dispatch_ea),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
     .release_i(commit && retire_o.rename_owned), .release_reg_i(retire_o.gpr), .release_tag_i(retire_o.tag),
     .release_producer_i(retire_producer),
     .release1_i(commit1 && retire1_o.rename_owned), .release1_reg_i(retire1_o.gpr),
     .release1_tag_i(retire1_o.tag), .release1_producer_i(retire1_producer),
+    .release2_i(commit && retire_o.update_owned), .release2_reg_i(retire_o.update_gpr),
+    .release2_tag_i(retire_o.update_tag), .release2_producer_i(retire_producer),
     .recovery_i(recovery_accepted), .recovery_survivor_count_i(recovery_count),
     .recovery_survivor_packet_i(recovery_packets), .recovery_survivor_tag_i(recovery_tags)
   );
@@ -1424,7 +1437,7 @@ module ppc_core #(
     !dispatch_pre.illegal && (dispatch_pre.special_op == SPECIAL_FPU);
   // Its sources are committed, and a load waits for older FP work that can
   // still raise an exception, as an integer access does.
-  assign fp_mem_pipe_ready = lsu_ready && !special_busy && mem_sources_committed_q &&
+  assign fp_mem_pipe_ready = lsu_ready && !special_busy && mem_base_ready &&
     (fp_mem_store || !fp_unsafe_pending);
   // lfd, stfd and their indexed forms.
   assign fp_mem_double = (iq_head.insn[31:26] == 6'd31) ?
@@ -1449,7 +1462,8 @@ module ppc_core #(
      (special_uop && special_drained &&
       (lsu_route ? (lsu_ready && !special_busy) : special_ready) && flags_ready &&
       (!dispatch_fp_mem_plain || fp_issue_ready) &&
-      (!dispatch_pre.gpr_write || dispatch_align || alloc_ready)));
+      (!dispatch_pre.gpr_write || dispatch_align || alloc_ready) &&
+      (!unit_update || (dispatch_pre.gpr_write ? alloc1_ready : alloc_ready))));
   // A plain load or store (no update, reservation, string, multiple, cache
   // op or external access) needs no drain when every source register it
   // reads is committed: older work cannot fault or redirect, and it takes a
@@ -1461,7 +1475,7 @@ module ppc_core #(
   assign dispatch_mem_plain = !trace_mode && !uop.illegal &&
     (iq_head.fault == FETCH_OK) &&
     ((uop.special_op == SPECIAL_LOAD) || (uop.special_op == SPECIAL_STORE)) &&
-    (uop.mem_seq == SEQ_NONE) && !uop.mem_update &&
+    (uop.mem_seq == SEQ_NONE) && (ENABLE_LSU_PIPE || !uop.mem_update) &&
     !uop.mem_reserve && !uop.mem_conditional &&
     !uop.mem_external && !uop.mem_skip &&
     !uop.cache_probe && !uop.block_zero &&
@@ -1481,6 +1495,13 @@ module ppc_core #(
     ((uop.zero_a || !gpr_mapped[uop.src_a]) &&
      (uop.use_imm || !gpr_mapped[uop.src_b]) &&
      ((uop.special_op != SPECIAL_STORE) || !gpr_mapped[uop.src_c]));
+  // The unit takes its base registers from rename, including a value written
+  // this cycle (UM 6.3.3.1); store data may follow later.
+  assign mem_base_ready = (uop.zero_a || src_a.ready) && (uop.use_imm || src_b.ready);
+  // An update form in the unit writes its base through a second rename slot.
+  assign unit_update = lsu_route && uop.mem_update;
+  assign update_alloc = dispatch && lsu_route && dispatch_uop.mem_update;
+  assign update_alloc_store = update_alloc && !dispatch_uop.gpr_write;
   // The check is registered: the head is unchanged while nothing dispatches
   // or recovers, and only dispatch adds a mapping.
   // On a dispatch the check moves to the entry behind the head, with the
@@ -1511,7 +1532,7 @@ module ppc_core #(
   // behind FP work that can still fault; recovery then cancels it.
   assign fp_mem_store = (iq_head.insn[31:26] == 6'd31) ? iq_head.insn[8] : iq_head.insn[28];
   assign special_drained = lsu_route ?
-    (mem_sources_committed_q && !fp_unsafe_pending) :
+    (mem_base_ready && !fp_unsafe_pending) :
     (lsu_empty && ((cq_empty && normal_idle) ||
      ((dispatch_mem_plain || dispatch_fp_mem_plain) && mem_sources_committed_q &&
       (!fp_unsafe_pending || (dispatch_fp_mem_plain && fp_mem_store)))));
@@ -1592,7 +1613,7 @@ module ppc_core #(
     (dq1_uop.use_imm || (!gpr_mapped[dq1_uop.src_b] && !dq1_pair.dep_prev[1])) &&
     ((dq1_uop.special_op != SPECIAL_STORE) ||
      (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
-  assign dispatch1 = dispatch && seq_last && pair_units && cq1_ready &&
+  assign dispatch1 = dispatch && seq_last && pair_units && cq1_ready && !unit_update &&
     (!d1_needs_flags || (!dispatch_needs_flags && !flags_busy)) &&
     (!d1_gpr || (dispatch_uop.gpr_write ? alloc1_ready : alloc_ready)) &&
     (!d1_iu || d1_iu_ready) && (!d1_mem || d1_mem_ready) && (!d1_fp || d1_fp_ready);
@@ -1674,6 +1695,8 @@ module ppc_core #(
   assign retire1_gate = DUAL && !cq_retire.illegal && !cq_retire.alignment_exception &&
     (cq_retire.data_fault == DATA_OK) && (cq_retire.fetch_fault == FETCH_OK) &&
     !cq_retire.seq_partial &&
+    // At most two GPR writes per cycle (UM 6.6.1.3).
+    !(cq_retire.update_write && cq_retire1.gpr_write) &&
     // The two write ports never target one register.
     !(cq_retire1.gpr_write &&
       ((cq_retire.gpr_write && (cq_retire.gpr == cq_retire1.gpr)) ||
@@ -1711,7 +1734,8 @@ module ppc_core #(
         .dispatch_valid_i(dispatch && ((special_uop && lsu_route) || fp_mem_pipe)),
         .dispatch_ready_o(lsu_ready), .uop_i(dispatch_uop),
         .producer_i(alloc_producer), .pc_i(iq_head.pc), .insn_i(iq_head.insn),
-        .ea_i(dispatch_ea), .data_i(arch_c),
+        .ea_i(dispatch_ea), .data_i(src_c),
+        .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
         .fp_launch_valid_i(fp_launch_valid), .fp_launch_tag_i(fp_launch_tag),
         .fp_store_valid_i(fp_store_valid), .fp_store_tag_i(fp_store_tag),
@@ -1757,7 +1781,7 @@ module ppc_core #(
       assign fp_rsp_fault = 1'b0;
       logic _unused_fp_unit;
       assign _unused_fp_unit = ^{fp_launch_valid, fp_launch_tag, fp_store_valid, fp_store_tag,
-                                 fp_store_data, fp_mem_double, fp_mem_pipe_ready};
+                                 fp_store_data, fp_mem_double, fp_mem_pipe_ready, src_c};
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;
@@ -1910,7 +1934,8 @@ module ppc_core #(
     if (rst_ni && dispatch && !uop.illegal && iq_head.fault == FETCH_OK &&
         ((uop.special_op == SPECIAL_LOAD) || (uop.special_op == SPECIAL_STORE))) begin
       assert (((cq_empty && !commit) ||
-               (dispatch_mem_plain && mem_sources_committed)) && !recovery_accepted)
+               (dispatch_mem_plain && (lsu_route ? mem_base_ready : mem_sources_committed))) &&
+              !recovery_accepted)
         else $error("memory dispatch violated committed-EA serialization");
       assert (forwarded_ea_low == dispatch_ea_low)
         else $error("committed and forwarded memory EA low bits disagree");
@@ -1920,7 +1945,8 @@ module ppc_core #(
     if (rst_ni && dispatch && special_uop)
       assert ((cq_empty && !commit && src_a.ready && src_b.ready &&
                src_a.value == arch_a && src_b.value == arch_b) ||
-              ((dispatch_mem_plain || dispatch_fp_mem_plain) && mem_sources_committed))
+              ((dispatch_mem_plain || dispatch_fp_mem_plain) &&
+               ((lsu_route || fp_mem_pipe) ? mem_base_ready : mem_sources_committed)))
         else $error("special dispatch saw an uncommitted GPR source");
     if (rst_ni && iq_valid && !seq_active)
       assert (iq_branch[3] == ((iq_head.fault == FETCH_OK) && !uop.illegal &&
@@ -2007,6 +2033,8 @@ module ppc_core #(
     allocation.tag = alloc_tag;
     allocation.update_write = dispatch_uop.mem_update;
     allocation.update_gpr = dispatch_uop.src_a;
+    allocation.update_owned = update_alloc;
+    allocation.update_tag = update_alloc_store ? alloc_tag : alloc1_tag;
     allocation.needs_flags = dispatch_needs_flags;
     allocation.write_xer = dispatch_uop.write_xer;
     allocation.write_ca = dispatch_uop.write_ca;
@@ -2045,7 +2073,8 @@ module ppc_core #(
     .result1_valid_i(sru_result_valid), .result1_i(sru_result),
     .wake1_valid_o(wake1_valid), .wake1_o(wake1),
     .retire_valid_o(cq_retire_valid),
-    .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block),
+    .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block &&
+                    !update_pending_q),
     .retire_hold_i(special_retire_hold || halted_o),
     .retire_o(cq_retire), .retire_tag_o(retire_producer),
     .retire1_valid_o(cq_retire1_valid), .retire1_ready_i(retire1_ready_i && retire1_gate),
@@ -2077,8 +2106,9 @@ module ppc_core #(
   );
   // A diagnostic halt retires nothing further: a younger op dispatched
   // under an outstanding access may already have finished.
+  // With one write port an update base takes the port the cycle after.
   assign retire_valid_o = cq_retire_valid && !special_retire_hold && !halted_o &&
-                          !fp_head_block;
+                          !fp_head_block && !update_pending_q;
   assign commit = retire_valid_o && retire_ready_i;
   assign retire1_valid_o = retire_valid_o && cq_retire1_valid && retire1_gate;
   assign retire1_o = cq_retire1;

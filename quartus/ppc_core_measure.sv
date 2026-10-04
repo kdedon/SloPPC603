@@ -164,6 +164,7 @@ module ppc_core_measure #(
                        {23'b0, retire.cr_mask, retire.write_cr_fields} ^
                        {26'b0, retire.cr_bit, retire.write_cr_bit} ^
                        {27'b0, retire.needs_flags, retire.write_xer, retire.write_ca, retire.write_ov_so, retire.write_cr_field} ^
+                       {28'b0, retire.update_owned, retire.update_tag} ^
                        {15'b0, retire.illegal, retire.gpr_write,
                         retire.update_write, retire.update_gpr,
                         retire.gpr, retire.tag, halted};
