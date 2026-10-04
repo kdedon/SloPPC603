@@ -180,6 +180,16 @@ parity error (APE) and then a read data parity error (DPE) share the MCP
 boundary after MCP and an asynchronous TEA. Data entering a register or the
 cache with a parity error is kept (UM §4.5.2).
 
+An asynchronous TEA (a fill ended after its first beat answered the load, or
+a posted write) is held until taken. The UM takes the machine check before
+the next instruction completes (§4.5.2, Table 4-10), so a data-cache load
+that arrives meanwhile starts no tenure: it answers with the bus error and
+takes the machine check itself, with SRR0 at that load, which also clears
+the held TEA. Each failed tenure thus gives one machine check; before this,
+a second load to the TEA'd line ran its own fill, took a machine check for
+that TEA, and the held one then checkstopped with MSR[ME]=0. Stores are not
+held back.
+
 The core parameter `ENABLE_PIN_INTERRUPTS` enables these boundaries and the
 TLBISYNC hold; the chip top sets it. Its `pin_event_i` carries the latched
 MCP and SRESET edges and the SMI and TLBISYNC levels; `pin_status_o` returns
