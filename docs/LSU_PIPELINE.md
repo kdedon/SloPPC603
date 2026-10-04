@@ -223,8 +223,10 @@ With the unit and a data cache, `ppc_core_bat` sets the router's
   from the data RAM output selected by the tag compare. When the answer is
   taken, the cache accepts the next request in that cycle and looks it up
   in the next, so hits flow one per cycle. A copy-back store hit writes the
-  data RAM and answers in that cycle too, and takes the next request unless
-  it reads the double word being written. An answer not taken is
+  data RAM and answers in that cycle too. It takes the next request only
+  in its first lookup cycle, when the data RAM reads that request's double
+  word, and only if that is not the double word being written; a store
+  held in lookup by a snoop or a push of its line does not. An answer not taken is
   registered and held, as before. The fast path reads HID0[DCE] as it was
   in the request's accept cycle; HID0 changes only through the serialized
   lane, which runs while the unit is idle. Misses, other stores, cache
@@ -531,6 +533,18 @@ Recorded: `make -C sim lint check-spec` on commit 60b0659, `make -C sim test-exe
 All pass: strict lint, the rename unit benches with the new ports tied off,
 and the data cache bench with the fast store hit (three seeds each, all seven
 mutations detected).
+
+Recorded: `make -C sim lint test-dcache test-dcache-fast`, `make -C sim test-chip-dcache-coherence test-chip-mp`, the same at `DISPATCH_WIDTH=2`, and `make -C sim DISPATCH_WIDTH=<1|2> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-chip-dcache-coherence test-core-dcache-lsu-pipe` plus `test-chip-mp` at width 2, commit 04be37c, 2026-10-04.
+All pass. A copy-back store hit held in lookup behind a push of its line
+took the next request when it answered, while the data RAM read the
+store's double word, so a following load returned that double word
+(`test-chip-dcache-coherence` at width 2 with the unit). The store now
+takes the next request only in its first lookup cycle; `tb_dcache` with
+fast hits has a directed case that fails without the fix. Coherence runs
+six (three seeds, I-cache on and off) in each of the four configurations;
+`test-chip-mp` five seeds at width 1, width 2, and width 2 with the unit.
+Quartus `quartus_map --analysis_and_elaboration` of a copy of `quartus/chip`
+with `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`: 0 errors, 49 warnings. No fit.
 
 Dhrystone and CoreMark before and after are in
 [PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#today).
