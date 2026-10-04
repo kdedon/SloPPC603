@@ -51,6 +51,10 @@ module tb_core_add_flags;
   logic owner_expected_valid = 0;
   completion_tag_t owner_expected;
   int last_owner_commit_edge = -1;
+  // A younger CR writer waits in its station for the token.
+  logic waiter_expected_valid = 0;
+  completion_tag_t waiter_expected;
+  int owner_handoffs = 0;
   logic saw_ca_only = 0;
   logic saw_ov_only = 0;
   logic saw_both = 0;
@@ -511,6 +515,7 @@ module tb_core_add_flags;
       phase_retirements = 0;
       owner_expected_valid = 0;
       owner_expected = '0;
+      waiter_expected_valid = 0;
       last_owner_commit_edge = -1;
     end else begin
       require(!redirect_accepted, "disabled ADD recovery unexpectedly accepted");
@@ -536,7 +541,10 @@ module tb_core_add_flags;
         if (expected_owns_token(stream[0].insn)) begin
           require(owner_expected_valid && owner_expected == dut.retire_producer,
                   "retiring ADD flag owner differs from allocation identity");
-          owner_expected_valid = 0;
+          owner_expected_valid = waiter_expected_valid;
+          owner_expected = waiter_expected;
+          if (waiter_expected_valid) owner_handoffs++;
+          waiter_expected_valid = 0;
           last_owner_commit_edge = edge_count;
         end
         removed = stream[0];
@@ -553,6 +561,8 @@ module tb_core_add_flags;
             if (stream[i].tag == lane_issue_tag[lane]) issue_index = i;
           require(issue_index >= 0 && !stream[issue_index].issued,
                   "ADD issue did not match a live unissued stream entry");
+          require(!(waiter_expected_valid && lane_issue_tag[lane] == waiter_expected),
+                  "CR writer issued before it owned the flag token");
           if (issue_index >= 0) begin
             require(edge_count > int'(stream[issue_index].dispatch_edge),
                     "ADD issued on dispatch edge");
@@ -593,15 +603,18 @@ module tb_core_add_flags;
           require(lane_alloc[lane].needs_flags == (word_legal && word_needs_flags),
                   "ADD dispatch ownership demand mismatch");
           if (word_legal && expected_owns_token(program_mem[next_dispatch_pc >> 2])) begin
-            require(!owner_expected_valid,
-                    "second ADD flag owner dispatched while prior owner was live");
-            if (last_owner_commit_edge >= 0) begin
-              require(edge_count > last_owner_commit_edge,
-                      "ADD owner reacquired on its release edge");
+            require(!waiter_expected_valid,
+                    "third ADD flag writer dispatched while two were live");
+            if (owner_expected_valid) begin
+              waiter_expected_valid = 1;
+              waiter_expected = lane_alloc_tag[lane];
+            end else begin
+              // Dispatched on its predecessor's retirement edge, it took over.
+              if (edge_count == last_owner_commit_edge) owner_handoffs++;
               if (edge_count == last_owner_commit_edge + 1) owner_release_exact++;
+              owner_expected_valid = 1;
+              owner_expected = lane_alloc_tag[lane];
             end
-            owner_expected_valid = 1;
-            owner_expected = lane_alloc_tag[lane];
           end else if (word_legal && owner_expected_valid) begin
             flagfree_while_busy++;
           end
@@ -626,6 +639,8 @@ module tb_core_add_flags;
       if (owner_expected_valid)
         require(dut.flags_owner == owner_expected,
                 "ADD one-owner exact identity differs from stream model");
+      require(dut.flags_waiter == waiter_expected_valid,
+              "CR waiter state differs from stream model");
       for (int reg_index = 0; reg_index < 32; reg_index++)
         if (dut.regfile.ready_o) require(dut.regfile.gpr[reg_index] == model_gpr[reg_index],
                 "full GPR state differs from ADD retirement oracle");
@@ -708,7 +723,7 @@ module tb_core_add_flags;
             "ADD corpus missed sticky/preservation/final-SO checks");
     require(r0_writes >= 2 && r0_reads >= 2,
             "ADD corpus missed explicit r0 RAW/WAW coverage");
-    require(owner_release_exact > 0,
+    require(owner_release_exact > 0 || owner_handoffs > 0,
             "ADD corpus did not observe owner admission on commit+1");
     require(flagfree_while_busy > 0,
             "ADD corpus did not dispatch a flag-free ADD while owner was busy");
@@ -725,8 +740,8 @@ module tb_core_add_flags;
             !dut.flags_busy,
             "reserved-rB addme did not retire as one clean diagnostic");
 
-    $display("PASS core ADD flags: checks=%0d retire=%0d adds=%0d forms=8 owner+1=%0d boundaries/sticky/CR0/logicalSO",
-             checks, total_retirements, add_commits, owner_release_exact);
+    $display("PASS core ADD flags: checks=%0d retire=%0d adds=%0d forms=8 owner+1=%0d handoffs=%0d boundaries/sticky/CR0/logicalSO",
+             checks, total_retirements, add_commits, owner_release_exact, owner_handoffs);
     $finish;
   end
 

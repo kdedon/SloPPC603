@@ -7,6 +7,9 @@
 `ifndef PPC_LSU_BASE_SNOOP
 `define PPC_LSU_BASE_SNOOP 1'b0
 `endif
+`ifndef PPC_LSU_BASE_WAIT
+`define PPC_LSU_BASE_WAIT 1'b1
+`endif
 `ifndef PPC_DISPATCH_WIDTH
 `define PPC_DISPATCH_WIDTH 1
 `endif
@@ -76,6 +79,10 @@ module ppc_core #(
   // adder and request address in one cycle; benches may set the default
   // with +define+PPC_LSU_BASE_SNOOP.
   parameter bit LSU_BASE_SNOOP = `PPC_LSU_BASE_SNOOP,
+  // A D-form load in the unit whose base is not yet produced dispatches and
+  // waits for it in the unit, which forms the EA as the base is written and
+  // offers on the next cycle.
+  parameter bit LSU_BASE_WAIT = `PPC_LSU_BASE_WAIT,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   // Only ICE is meaningful; it must match the wrapper's cache reset mode.
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -1314,7 +1321,7 @@ module ppc_core #(
     b: operand_b
   };
   // The station holding the CR waiter issues once it owns the token.
-  logic iu_cr_hold, sru_cr_hold;
+  logic iu_cr_hold, sru_cr_hold, rs_issue_valid;
   assign iu_cr_hold = flags_waiter && !waiter_sru_q;
   assign sru_cr_hold = flags_waiter && waiter_sru_q;
   ppc_dispatch station (
@@ -1329,8 +1336,9 @@ module ppc_core #(
     .lsu_done_i(SRU_TO_IU ? sru_result_valid : lsu_result_valid),
     .lsu_producer_i(SRU_TO_IU ? sru_result.producer : lsu_result.producer),
     .lsu_value_i(SRU_TO_IU ? sru_result.value : lsu_result.value),
-    .issue_valid_o(issue_valid), .issue_ready_i(issue_ready && !iu_cr_hold), .issue_o(issue)
+    .issue_valid_o(rs_issue_valid), .issue_ready_i(issue_ready && !iu_cr_hold), .issue_o(issue)
   );
+  assign issue_valid = rs_issue_valid && !iu_cr_hold;
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni)
@@ -1352,7 +1360,7 @@ module ppc_core #(
     .DIV_LATENCY(DIV_LATENCY_EFFECTIVE),
     .MUL_602_TIMING(cpu_mul_602_timing(CPU_VARIANT))
   ) iu (
-    .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid && !iu_cr_hold),
+    .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid),
     .issue_ready_o(issue_ready),
     .issue_i(issue), .result_valid_o(iu_result_valid),
     .result_ready_i(iu_result_ready), .result_o(iu_result)
@@ -1362,6 +1370,7 @@ module ppc_core #(
   // CQ's second port and wake on the second bus.
   generate
     if (HAS_SRU) begin : g_sru
+      logic sru_rs_issue_valid;
       ppc_dispatch sru_station (
         .clk_i, .rst_ni, .cancel_i(sru_rs_cancel),
         .dispatch_valid_i(dispatch1 && d1_iu && c0_iu),
@@ -1372,11 +1381,12 @@ module ppc_core #(
         // IU results reach the SRU in the cycle they finish.
         .lsu_done_i(iu_result_valid && iu_result_ready),
         .lsu_producer_i(iu_result.producer), .lsu_value_i(iu_result.value),
-        .issue_valid_o(sru_issue_valid), .issue_ready_i(sru_issue_ready && !sru_cr_hold),
+        .issue_valid_o(sru_rs_issue_valid), .issue_ready_i(sru_issue_ready && !sru_cr_hold),
         .issue_o(sru_issue)
       );
+      assign sru_issue_valid = sru_rs_issue_valid && !sru_cr_hold;
       ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE), .MUL_602_TIMING(1'b0)) sru (
-        .clk_i, .rst_ni, .cancel_i(sru_cancel), .issue_valid_i(sru_issue_valid && !sru_cr_hold),
+        .clk_i, .rst_ni, .cancel_i(sru_cancel), .issue_valid_i(sru_issue_valid),
         .issue_ready_o(sru_issue_ready), .issue_i(sru_issue),
         .result_valid_o(sru_result_valid), .result_ready_i(sru_result_ready),
         .result_o(sru_result)
@@ -1725,8 +1735,8 @@ module ppc_core #(
   assign mem_base_ready = (uop.zero_a || src_a.ready) && (uop.use_imm || src_b.ready);
   // A D-form load the unit may start without its base; the unit then
   // decides its alignment.
-  assign base_snoop = LSU_BASE_SNOOP && ENABLE_LSU_PIPE && ENABLE_SUPERVISOR_EXCEPTIONS &&
-    dispatch_mem_plain &&
+  assign base_snoop = (LSU_BASE_SNOOP || (LSU_BASE_WAIT && !src_a.ready)) &&
+    ENABLE_LSU_PIPE && ENABLE_SUPERVISOR_EXCEPTIONS && dispatch_mem_plain &&
     (uop.special_op == SPECIAL_LOAD) && !uop.mem_update && uop.use_imm && !uop.zero_a &&
     !msr_le;
   always_comb begin
@@ -2093,7 +2103,7 @@ module ppc_core #(
   generate
     if (ENABLE_LSU_PIPE) begin : g_lsu
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE),
-                     .BASE_SNOOP(LSU_BASE_SNOOP),
+                     .BASE_SNOOP(LSU_BASE_SNOOP), .BASE_WAIT(LSU_BASE_WAIT),
                      .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS)) lsu (
         .clk_i, .rst_ni,
         .dispatch_valid_i((dispatch && lsu_c0) || lsu_d1),
@@ -2699,7 +2709,8 @@ module ppc_core #(
   logic late_align_q;
   completion_tag_t late_align_tag_q;
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || !LSU_BASE_SNOOP || recovery_accepted) late_align_q <= 1'b0;
+    if (!rst_ni || !(LSU_BASE_SNOOP || LSU_BASE_WAIT) || recovery_accepted)
+      late_align_q <= 1'b0;
     else if (adopt_go && special_ready &&
              (lsu_adopt_uop.special_op == SPECIAL_ALIGNMENT)) late_align_q <= 1'b1;
     else if (commit && (retire_producer == late_align_tag_q)) late_align_q <= 1'b0;
