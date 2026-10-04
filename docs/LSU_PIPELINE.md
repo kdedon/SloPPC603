@@ -394,3 +394,22 @@ now follows the cache's acceptance and so its tag compare through the
 router; the IQ entries from themselves (-0.953 ns, 2,049 endpoints); and
 the lane's `memory_result_q` from the cache tag RAM (-0.780 ns), the
 one-cycle answer reaching the serialized lane's result formatting.
+
+### FP accesses through the unit (2026-10-03)
+
+Recorded: `make -C sim -k -j2 REFERENCE_DIR=<dingusppc> test <fpu> <extra>` in four
+configurations, commit fc11594 (bench port fix in 3f8b059), 2026-10-03, where `<fpu>` is
+`test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602
+test-core-fpu-602-compact test-core-lsu-timing` and `<extra>` is the LSU, cache, fault,
+alignment, coherence and chip benches (`test-core-lsu-extensions` through `test-chip-le`).
+
+| Configuration | Extra make arguments | Result |
+|---|---|---|
+| Width 1, unit off | — | 537 PASS lines; `test-crstate-execution` failed lint (missing `ppc_special` FP ports in the bench), fixed in 3f8b059 and rerun with `tb_special_watchdog` and the 602 lint: pass |
+| Width 2, unit off | `DISPATCH_WIDTH=2 BUILD_DIR=build-w2` | pass, 537 PASS lines |
+| Width 1, unit on | `BUILD_DIR=build-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe` | pass, 537 PASS lines |
+| Width 2, unit on | `DISPATCH_WIDTH=2 BUILD_DIR=build-w2-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe` | pass, 537 PASS lines, including `test-core-fpu-split` |
+
+This establishes FP loads and stores through the unit with the FULL and COMPACT FPUs on
+the 603e and 602 personalities, at both widths, with no regression in the core, cache,
+fault and chip sets. It does not establish timing: no fit includes the FP launch path.
