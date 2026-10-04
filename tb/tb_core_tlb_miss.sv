@@ -43,7 +43,11 @@ module tb_core_tlb_miss #(parameter bit FEATURE=1'b1);
   assign sv=rst_n&&ipending&&idelay==0;
   assign dr=rst_n&&!dpending;
   assign drv=rst_n&&dpending&&ddelay==0;
-  assign tr=!(FEATURE&&(phase<5||phase==11||phase==14||phase==15||phase==16||phase==17||phase==19)&&tv&&retired.pc==fault_pc()&&
+  // The hold reads the settled head, not retire_o: a ready that follows a
+  // valid formed in the finish cycle closes a loop through commit-time
+  // recovery.
+  assign tr=!(FEATURE&&(phase<5||phase==11||phase==14||phase==15||phase==16||phase==17||phase==19)&&
+              dut.cq_retire_settled&&dut.cq_head_packet.pc==fault_pc()&&
               hold_count<8) &&
             !(phase==18&&dut.special_busy&&
               dut.special.uop_q.special_op==SPECIAL_STORE&&

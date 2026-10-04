@@ -85,8 +85,11 @@ module tb_core_page_data_exception #(parameter bit ENABLE_MICRO_TLB = 1'b1);
   assign pdmem_rsp_valid_i=1'b0;
   assign pdmem_rsp_rdata_i=32'b0;
   assign pdmem_rsp_error_i=1'b0;
-  assign retire_ready_i=!(phase<2&&retire_valid_o&&
-    retire_o.pc==32'd32&&held_retire<6);
+  // The hold reads the settled head, not retire_o: a ready that follows a
+  // valid formed in the finish cycle closes a loop through commit-time
+  // recovery.
+  assign retire_ready_i=!(phase<2&&dut.core.cq_retire_settled&&
+    dut.core.cq_head_packet.pc==32'd32&&held_retire<6);
   assign redirect_all_i=1'b1;
   assign redirect_keep_pivot_i=1'b0;
   assign redirect_pivot_i='0;
