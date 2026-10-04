@@ -489,8 +489,10 @@ cycles) is faster than the figures and not adopted. On the six-rule model
 2. Fold branches out of dispatch and the CQ (38).
 3. Check the CR token at execute, not dispatch (22).
 4. An LSU station that waits for the base, or base snooping from the IU (20).
-5. Misprediction recovery at F6-5 timing (18).
-6. Taken `b`/`bl`/`bclr` redirect at fetch (about 15 of the residual).
+5. Misprediction recovery at F6-5 timing (18): partly done, below
+   (two of three cycles).
+6. Taken `b`/`bl`/`bclr` redirect at fetch (about 15 of the residual):
+   done, below.
 7. Store writes off the load port (up to 25 of the residual, part A6).
 8. DQ0 add/compare to the SRU when the IU station is taken (7).
 
@@ -522,6 +524,54 @@ At width 1 the gain first measured 34 cycles worse: with one GPR write port
 an update form's base takes the port the cycle after it retires, and that
 cycle blocked all dispatch. It now blocks only an instruction that reads the
 base (`strcpy` and `strcmp`, 30 and 19 cycles).
+
+## Redirect timing
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex +PROFILE`, commits e4897b8 (before; CoreMark and width 1 from the record above) and 2380118 (after), 2026-10-04.
+Unit and store queue on, prebuilt firmware. Every run passes its checks.
+
+Three changes:
+
+- Fetch offers the target request on the redirect edge itself, not the
+  edge after, when the redirect comes from a register: a fold (`fold_q`),
+  an unfolded taken branch (`bu_redirect_q`) or a misprediction
+  (`bs_miss_q`). The core announces it a cycle early from those registers'
+  D inputs (`early_q`, `early_target_q`); a redirect that does not arrive
+  as announced takes the old path.
+- A misprediction is detected in the cycle the CR owner's result arrives,
+  the 603e's resolve cycle (F6-5: compare 4E, `bc` 5E), instead of the
+  cycle after its capture. Recovery and the target request follow on the
+  next edge, F6-5's `6F`. A correct prediction still resolves from the
+  captured CR.
+- An `mtlr` feeds the shadow LR with its source, two cycles after it
+  dispatches, when the 603e's SRU result reaches the BPU (UM 6.4.1.1; the
+  model's `lr_ready`). A `bclr` behind it resolves at dispatch or folds
+  instead of waiting for the `mtlr` to retire.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before | 835.0 | 733.0 | 2.133 | 2.354 |
+| After | 806.0 | 678.0 | 2.231 | 2.506 |
+
+Width 2, branch dispatch to next dispatch (core min / mean, 603e model in
+brackets): mispredicted `bc` 6 / 7.17 to 5 / 5.50 (3 / 4.33), `bclr`
+3.15 to 2.55 (2.60), taken `b` 2.69 to 2.08 (2.54). `BRANCH_REFETCH`
+stalls fall from 39.5 to 18.0 cycles per run. At width 1 a mispredicted
+`bc` takes 4 / 4.83.
+
+The target word still dispatches two cycles after the figures: the request
+is now in the figure's fetch cycle, but the cache returns it the next cycle
+and the fetch-to-decode register adds another before the IQ. Every
+redirect pays these two cycles; removing them means fetching both paths or
+decoding the cache output, which the 66 MHz top does not allow. Means of
+`b` and `bclr` below the model's come from targets fetched while older
+work drains; no single redirect reaches its target sooner than the figures.
+
+On the redirect path: the fetch address gains one 2:1 mux, selected by
+`early_q && !request_held` (registers) between `early_target_q` (a
+register) and the old address; the late `recovery_accepted` reaches only
+the request valid, which it already did. The misprediction compare (the
+owner's CR nibble against `bs_bi_q`) ends in registers.
 
 ## Gaps
 
