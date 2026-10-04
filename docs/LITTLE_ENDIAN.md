@@ -66,6 +66,10 @@ before writing DAR (Figure 5-18).
 | Halfword or word scalar, FP word, not naturally aligned | as big-endian (split in hardware; DR = 1 page crossing takes alignment) | alignment exception |
 | FP doubleword at EA ≡ 4 mod 8 | split in hardware | alignment exception |
 | FP access not word-aligned, `lwarx`/`stwcx.`/`eciwx`/`ecowx` not word-aligned | alignment exception | alignment exception |
+
+PID6 and the 603 split a misaligned big-endian `eciwx`/`ecowx` in hardware
+(see [CPU_VARIANTS.md](CPU_VARIANTS.md)); in little-endian mode it takes the
+alignment exception there too, as any misaligned single-register access.
 | `lmw`, `stmw`, `lswi`, `lswx`, `stswi`, `stswx` (any EA, `lswx` with count 0 included) | alignment exception | alignment exception; the 602 traps strings to 0x1600 first |
 
 The PID7v split keeps the byte order of single-byte accesses (PEM 3.1.4.2):
@@ -82,9 +86,6 @@ multiple alignment exception).
 
 ## Not covered
 
-- Misaligned `eciwx`/`ecowx` on PID6 and the 603 still take alignment
-  (`cfg.misaligned_ecxwx_hw` has no consumer): splitting an external-control
-  transfer needs BIU work.
 - Dual dispatch does not pair a DQ1 access with the serialized lane in
   little-endian mode; such accesses dispatch from DQ0. The pipelined unit
   still overlaps accesses.

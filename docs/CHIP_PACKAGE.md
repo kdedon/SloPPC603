@@ -73,7 +73,7 @@ The 603 build (`CPU_VARIANT` `CPU_603`) has it (UM C.1.1).
 | Signal | Dir | Width | Status | Behavior |
 |---|---|---:|---|---|
 | DBG | in | 1 | I | Qualified data grant. |
-| DBWO | in | 1 | T | Ignored; see [DBWO](#dbwo). |
+| DBWO | in | 1 | I | With a qualified DBG, runs an owed push's data ahead of an owed read's; see [DBWO](#dbwo). |
 | DBB | bidir | 1 | I | Out: data tenure ownership with half-cycle negation. In: another master's tenure. |
 | DH[0:31], DL[0:31] | bidir | 64 | I | 64-bit data bus. |
 | DP[0:7] | bidir | 8 | I | Out: odd parity per data byte. In: with HID0[EBD]=1, checked on every byte lane of each TA beat of this processor's read data tenures (UM §7.2.7.2.2). |
@@ -139,30 +139,33 @@ implemented; HID0[EICE] is stored and inert.
 ### Counts
 
 54 signal groups, as in the BUS_SPEC inventory (a bus counts once, DH and DL
-separately, TEST[0:2] as one): 41 implemented, 1 of them with a tied half
+separately, TEST[0:2] as one): 42 implemented, 1 of them with a tied half
 (the TBST input); TS, A, TT, GBL and ARTRY are whole with
 `ENABLE_DCACHE=1`, the chip's value (each has a tied half at 0); AP, APE,
-DP and DPE are whole in every build; 2 tied (DBWO, CLK_OUT); 6 excluded
+DP and DPE are whole in every build; 1 tied (CLK_OUT); 6 excluded
 (TRST, TCK, TMS, TDI, TDO, TEST); 5 power.
 
 ### DBWO
 
 DBWO lets the system run a queued write data tenure (typically a snoop push)
 ahead of an older read whose address tenure is already acknowledged
-(UM §8.10). It is optional: "most system implementations will not need this
-capability; for these applications, DBWO should remain negated" (§8.10, PDF
-page 8-44). The 603e also ignores it when no write address tenure is pending
-(§7.2.6.2). A snoop push's address tenure may follow an older read whose data
-tenure is still owed (UM §3.6.9); its data tenure then follows the read's.
-This processor ignores DBWO, so a system must keep it negated, as the manual
-recommends for systems that do not need the reordering.
+(UM §8.10). Only the snoop push's address tenure can follow one of this
+processor's that still owes its data (UM §3.6.9); other tenures wait for the
+previous one. So a qualified DBG with DBWO asserted, while the push owes its
+data (its AACK passed without ARTRY) and an older read owes its data, gives
+the data bus to the push; the read takes the next DBG. Otherwise DBWO is
+ignored: with no push owed the pending tenure runs, and an older write still
+runs first, since DBWO does not reorder writes (UM §7.2.6.2, §8.10). A system
+that does not need the reordering keeps DBWO negated, as the manual
+recommends.
 
-System requirement that follows: the push's data waits for the processor's
-pending data tenure. The system must complete that data tenure while the
-snooped master is being retried; it may not make the read's data depend on
-the retried master's transaction. The coherent model checks this ordering
-(second-master address tenures issued while a processor data tenure is
-pending, push address tenures ahead of it, push data after it). `ppc603e` has 69 port declarations, 292 bits.
+System requirement with DBWO negated: the push's data waits for the
+processor's pending data tenure. The system must complete that data tenure
+while the snooped master is being retried; it may not make the read's data
+depend on the retried master's transaction. The coherent model checks this
+ordering (second-master address tenures issued while a processor data tenure
+is pending, push address tenures ahead of it, push data after it, or ahead
+of a read under DBWO). `ppc603e` has 69 port declarations, 292 bits.
 
 ## Exceptions from pins
 
