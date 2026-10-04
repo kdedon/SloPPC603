@@ -103,7 +103,7 @@ module tb_biu_dcache_snoop;
     .rsp_error_o(rsp_error), .rsp_align_o(rsp_align),
     .rsp_stwcx_ok_o(rsp_stwcx_ok),
     .hid0_dce_i(1'b1), .hid0_dlock_i(1'b0), .hid0_dcfi_i(1'b0),
-    .hid0_noopti_i(1'b0), .hid0_abe_i(1'b1),
+    .hid0_noopti_i(1'b0), .hid0_abe_i(1'b1), .tea_pending_i(1'b0),
     .bus_req_valid_o(bus_req_valid), .bus_req_ready_i(bus_req_ready),
     .bus_req_kind_o(bus_req_kind), .bus_req_tt_o(bus_req_tt),
     .bus_req_addr_o(bus_req_addr), .bus_req_be_o(bus_req_be),

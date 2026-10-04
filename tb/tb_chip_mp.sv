@@ -20,6 +20,8 @@
 // check count equals its TEAs, and each processor has retried the other's
 // tenures with ARTRY and pushed the line. The memory model pipelines address
 // tenures, cancels read beats with DRTRY and checks the bus rules.
+// +PAIR_PROBE loads the probe line twice in a row, so a TEA on a fill whose
+// first beat already answered the first load meets the second load.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off ASCRANGE */
 module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
@@ -156,6 +158,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
 
   // r20 SHARED, r21 SLOTS, r22 COUNT, r24 DONE, r25 machine checks, r27 ID,
   // r28 probe line, r29 own probe word, r30 round, r31 ITER, r12 failure code.
+  bit pair_probe;
   task automatic build();
     logic [31:0] round, skip, next, wait_done, park, probe;
     pc = BASE + 32'h100;
@@ -208,7 +211,11 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
     emit(asm_addi(18, 30, 1));
     probe = pc;
     emit(asm_stw(18, 0, 29)); emit(asm_dcbf(0, 28)); emit(SYNC);
-    emit(asm_lwz(16, 0, 29)); emit(asm_dcbf(0, 28));
+    if (pair_probe) begin
+      emit(asm_lwz(16, 0, 28)); emit(asm_lwz(16, 0, 29));
+    end else
+      emit(asm_lwz(16, 0, 29));
+    emit(asm_dcbf(0, 28));
     emit(cmpw(16, 18)); br(4, 2, probe);
     atomic_inc(22);
     emit(asm_addi(30, 30, 1)); emit(cmpw(30, 31)); br(12, 0, round);
@@ -253,6 +260,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
     if (pc >= SHARED) $fatal(1, "program layout");
   endtask
 
+
   // ---- checks ------------------------------------------------------------------
   int cycles = 0;
   always @(posedge clk) begin
@@ -279,6 +287,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
     int unsigned seed;
     if (!$value$plusargs("SEED=%d", seed)) seed = SEED;
     memory.rng = seed;
+    pair_probe = $test$plusargs("PAIR_PROBE");
     memory.tea_base = SHARED + PROBE;
     memory.tea_bytes = 32;
     // After the memory model clears its RAM.

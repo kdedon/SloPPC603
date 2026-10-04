@@ -607,7 +607,7 @@ module ppc_core_bat_cached_bus60x #(
     .hid0_dlock_i(core_pin_status.dcache_lock),
     .hid0_dcfi_i(core_pin_status.dcache_flash_invalidate),
     .hid0_noopti_i(core_pin_status.noop_touch),
-    .hid0_abe_i(core_pin_status.broadcast_enable),
+    .hid0_abe_i(core_pin_status.broadcast_enable), .tea_pending_i(tea_pending_q),
     .async_error_o(dcache_async_error), .protocol_error_o(dcache_protocol_error),
     .busy_o(dcache_busy_o), .resv_valid_o(dcache_resv),
     .bus_req_valid_o(dc_out.req_valid),
