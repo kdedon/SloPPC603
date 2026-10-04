@@ -23,9 +23,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'fpu'))
 from fpu_core_program import (  # noqa: E402
-    DATA, DONE, EXCEPTION_BITS, FE0, FE1, LOG, MSR_FP, PROT_HI, PROT_LO,
-    SRR1_FP, SRR1_ILLEGAL, SYNC, Program, a_form, clear_fe_if_fp, d_form, dsisr_d,
-    dsisr_x, f32, f64, fp_enable_deferred, fp_enable_rfi, x_form)
+    CHANGED_HI, CHANGED_LO, DATA, DONE, EXCEPTION_BITS, FE0, FE1, LOG, MSR_FP,
+    PROT_HI, PROT_LO, SRR1_FP, SRR1_ILLEGAL, SYNC, TEA_HI, TEA_LO, Program, a_form,
+    access_faults, clear_fe_if_fp, d_form, dsisr_d, dsisr_x, f32, f64,
+    fp_enable_deferred, fp_enable_rfi, x_form)
 from enabled_vectors import case_602, fpscr_after  # noqa: E402
 from ppc_reference import arithmetic  # noqa: E402
 from production_vectors_602 import expected_602, widen_raw  # noqa: E402
@@ -33,7 +34,7 @@ from reference import calculate  # noqa: E402
 
 MSR_PR = 0x4000
 SRR1_PRIV = 0x00040000
-VECTORS = (0x300, 0x600, 0x700, 0x800, 0x1600)
+VECTORS = (0x200, 0x300, 0x600, 0x700, 0x800, 0x1200, 0x1600)
 SPR_SP, SPR_LT = 1021, 1022
 STICKY = sum(1 << b for b in EXCEPTION_BITS)
 # lfd trap value: 1/3 is not a binary32.
@@ -521,6 +522,7 @@ def build(seed, count, timing='lane'):
     tag_traps(p)
     arithmetic_602(p)
     unaligned(p)
+    access_faults(p, True)
     in_flight(p)
     fp_enabled(p)
     def fex(q):
@@ -561,6 +563,7 @@ def main():
     print(f'fpu_core_602_program: {len(p.words)} words, {len(p.expects)} expected, '
           f'{len(p.log)} exceptions, {p.sticky} sticky stalls')
     lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0',
+             f'C {CHANGED_LO:08x} {CHANGED_HI:08x} 0', f'T {TEA_LO:08x} {TEA_HI:08x} 0',
              f'S {p.sticky:x} 0 0']
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]

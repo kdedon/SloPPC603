@@ -30,6 +30,10 @@ from production_vectors import widen  # noqa: E402
 RESET_PC = 0x1000
 DATA, RES, LOG, DONE = 0x40000, 0x50000, 0x60000, 0x70000
 PROT_LO, PROT_HI = 0x7F000, 0x7FFFC
+# Stores here take the changed-bit miss (C=0 page); any access here ends in
+# TEA (machine check).
+CHANGED_LO, CHANGED_HI = 0x7E000, 0x7EFFC
+TEA_LO, TEA_HI = 0x7D000, 0x7DFFC
 CHIP = False
 CHIP_BASE, CHIP_IMAGE_BYTES = 0xfff00000, 0x10000
 
@@ -45,7 +49,9 @@ SRR1_ILLEGAL, SRR1_FP = 0x00080000, 0x00100000
 # SRR1 bit 15: SRR0 holds the instruction after the one that excepted.
 SRR1_NEXT = 0x00010000
 NOP = 24 << 26
-VECTORS = (0x300, 0x600, 0x700, 0x800)
+VECTORS = (0x200, 0x300, 0x600, 0x700, 0x800, 0x1200)
+MSR_ME, MSR_DR = 0x1000, 0x10
+SRR1_TEA = 0x00040000
 ONE, TWO, HALF = 0x3ff0000000000000, 0x4000000000000000, 0x3fe0000000000000
 QNAN, SNAN = 0x7ff8000000001234, 0x7ff0000000000042
 PINF, NINF, NZERO = 0x7ff0000000000000, 0xfff0000000000000, 1 << 63
@@ -558,6 +564,7 @@ def directed(p):
     # word faults; an update form leaves its base.
     if not CHIP:
         dsi(p)
+        access_faults(p, False)
     fp_enabled(p)
     fp_enable_deferred(p)
     fp_enable_rfi(p)
@@ -573,6 +580,91 @@ def dsi(p):
     p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
     p.store_fpr(24, ONE)
     p.store_gpr(31, PROT_LO)
+
+
+# Every FP load and store form: primary opcode or (31, XO), store, update.
+FP_ACCESS_FORMS = (
+    ('lfs', 48, False, False), ('lfsu', 49, False, True),
+    ('lfd', 50, False, False), ('lfdu', 51, False, True),
+    ('stfs', 52, True, False), ('stfsu', 53, True, True),
+    ('stfd', 54, True, False), ('stfdu', 55, True, True),
+    ('lfsx', 535, False, False), ('lfsux', 567, False, True),
+    ('lfdx', 599, False, False), ('lfdux', 631, False, True),
+    ('stfsx', 663, True, False), ('stfsux', 695, True, True),
+    ('stfdx', 727, True, False), ('stfdux', 759, True, True),
+    ('stfiwx', 983, True, False),
+)
+
+
+def access_faults(p, single):
+    """DSI, changed-bit store miss and TEA on every FP load and store form.
+    None retires: SRR0 is the access, a load leaves frD and an update form
+    its base, and no store is written. DSI sets DAR and DSISR (UM 4.5.3);
+    a store to a C=0 page (MSR[DR] set) takes the store TLB miss with SRR1
+    from Table 4-4;
+    TEA is a machine check with SRR1[13] (Table 4-10). single: 602 FPRs, a
+    binary32 in f20 and an integer word in f21."""
+    if single:
+        p.lfs(20, f32(1.25))
+        p.emit(x_form(63, 21, 0, 0, 583))                          # mffs f21
+        p.write_fpr(21, False, True)
+    else:
+        p.load_fpr(20, ONE)
+    p.li32(17, 8)
+    cr = 0x5a000000 | (p.cr & 0x00ffffff)
+    p.li32(8, cr)
+    p.emit((31 << 26) | (8 << 21) | (0xff << 12) | (144 << 1))    # mtcrf 0xff
+    p.cr = cr
+    sentinel = 0xc3c3c3c3
+    for addr in range(CHANGED_LO, CHANGED_LO + 0x400, 4):
+        p.words[addr] = sentinel
+    for kind, lo in (('dsi', PROT_LO), ('changed', CHANGED_LO), ('tea', TEA_LO)):
+        if kind == 'tea':
+            p.mtmsr(p.msr | MSR_ME)
+        elif kind == 'changed':
+            p.mtmsr(p.msr | MSR_DR)
+        for i, (name, op, store, update) in enumerate(FP_ACCESS_FORMS):
+            if kind == 'changed' and not store:
+                continue
+            base = lo + 0x20 * i
+            frs = 21 if name == 'stfiwx' else 20
+            p.li32(16, base)
+            if op < 64:
+                insn = d_form(op, frs, 16, 8)
+            else:
+                insn = x_form(31, frs, 16, 17, op)
+            ea = base + 8
+            at = p.emit(insn)
+            if kind == 'dsi':
+                p.event(0x300, at, p.msr, ea, 0x08000000 | (0x02000000 if store else 0))
+            elif kind == 'changed':
+                srr1 = (cr & 0xf0000000) | 0x00030000 | (p.msr & 0x0700ffff)
+                p.event(0x1200, at, srr1)
+            else:
+                p.event(0x200, at, (p.msr & 0xffff) | SRR1_TEA)
+            if update:
+                p.store_gpr(16, base)
+        if kind == 'tea':
+            p.mtmsr(p.msr & ~MSR_ME)
+        elif kind == 'changed':
+            p.mtmsr(p.msr & ~MSR_DR)
+    if single:
+        p.store_sp(20, f32(1.25))
+    else:
+        p.store_fpr(20, ONE)
+    for addr in range(CHANGED_LO, CHANGED_LO + 0x400, 4):
+        p.expect(addr, sentinel)
+    # Loads from a C=0 page are performed.
+    value = f64(1.5)
+    p.words[CHANGED_LO + 0x400] = value >> 32
+    p.words[CHANGED_LO + 0x404] = value & 0xffffffff
+    p.li32(16, CHANGED_LO + 0x400)
+    p.emit(d_form(50, 22, 16, 0))                                  # lfd f22
+    if single:
+        p.write_fpr(22, True, False)
+        p.store_sp(22, f32(1.5))
+    else:
+        p.store_fpr(22, value)
 
 
 def fp_enabled(p):
@@ -1068,7 +1160,8 @@ def main():
     if args.chip_image:
         write_chip_image(p, args.chip_image)
         return
-    lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0']
+    lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0',
+             f'C {CHANGED_LO:08x} {CHANGED_HI:08x} 0', f'T {TEA_LO:08x} {TEA_HI:08x} 0']
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]
     lines += [f'L {pc:08x} {cycles:x} 0' for pc, cycles in p.probes.items()]

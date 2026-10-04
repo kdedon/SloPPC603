@@ -8,6 +8,7 @@
 // Image lines: M addr data (memory), E addr value mask (expected word),
 // L pc cycles (latency probe), R pc0 pc1 cycles (retirement spacing),
 // I pc0 pc1 cycles (dispatch spacing), P lo hi (DSI-protected words),
+// C lo hi (C=0 page words: stores take the changed-bit miss), T lo hi (TEA),
 // D addr (a store there ends the run), S count (602 sticky-bit completion
 // stalls). DMEM_BITS=64 answers a doubleword request (upper strobes set)
 // with both words in one response.
@@ -65,6 +66,9 @@ module tb_core_fpu #(
   int retire_at [logic [31:0]];
   int spacing_checks = 0;
   logic [31:0] prot_lo = 32'hffff_ffff, prot_hi = 32'b0, done_addr = 32'hffff_fffc;
+  logic [31:0] changed_lo = 32'hffff_ffff, changed_hi = 32'b0;
+  logic [31:0] tea_lo = 32'hffff_ffff, tea_hi = 32'b0;
+  page_miss_t dcapsule;
   int cycles = 0, checks = 0, failures = 0, retires = 0, probes = 0, fp_retires = 0;
   int stall = 1, seed = 1, max_cycles = 400000;
   // Overlapped FP accesses: released loads, replays that cancelled a store.
@@ -87,6 +91,8 @@ module tb_core_fpu #(
     .RESET_PC(32'h0000_1000), .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
     .ENABLE_LIVE_CONTEXT(1'b1), .ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_FULL_DECODE(1'b1), .ENABLE_FPU(1'b1), .DMEM_BITS(DMEM_BITS),
+    .ENABLE_TGPR(1'b1), .ENABLE_SDR1(1'b1), .ENABLE_PAGE_MISS_RESULTS(1'b1),
+    .ENABLE_TLB_LOAD(1'b1), .ENABLE_TLB_MISS_EXCEPTIONS(1'b1), .ENABLE_MACHINE_CHECK(1'b1),
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL)),
     .CPU_VARIANT(cpu_variant_e'(CPU_VARIANT))
   ) dut (.imem_rsp_esa_i(ppc_pkg::ESA_DENIED), .mmu_602_o(unused_mmu_602),
@@ -138,7 +144,7 @@ module tb_core_fpu #(
     .dmem_req_valid_o(dv), .dmem_req_ready_i(dr), .dmem_req_write_o(dw),
     .dmem_req_addr_o(da), .dmem_req_wdata_o(wd), .dmem_req_wstrb_o(st),
     .dmem_rsp_valid_i(rv), .dmem_rsp_ready_o(rr), .dmem_rsp_rdata_i(rdata),
-    .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(dfault),
+    .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i(dcapsule), .dmem_rsp_fault_i(dfault),
     .dmem_store_check_addr_o(check_addr), .dmem_store_check_ok_i(check_ok),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .pin_event_i('0), .pin_status_o(pin_status),
@@ -156,6 +162,16 @@ module tb_core_fpu #(
   function automatic bit protected_word(input logic [31:0] addr);
     return (addr >= prot_lo) && (addr <= prot_hi);
   endfunction
+  function automatic bit changed_word(input logic [31:0] addr);
+    return (addr >= changed_lo) && (addr <= changed_hi);
+  endfunction
+  function automatic bit tea_word(input logic [31:0] addr);
+    return (addr >= tea_lo) && (addr <= tea_hi);
+  endfunction
+  // Words a store may write.
+  function automatic bit writable(input logic [31:0] addr);
+    return !protected_word(addr) && !changed_word(addr) && !tea_word(addr);
+  endfunction
 
   assign ir = rst_n && !ipending;
   assign sv = ipending;
@@ -171,10 +187,24 @@ module tb_core_fpu #(
       {read_word(daddress), read_word(daddress + 32'd4)} : {32'b0, read_word(daddress)};
   end
   assign rdata = rdata64[DMEM_BITS-1:0];
-  // Stores outside the protected words cannot fault.
-  assign check_ok = !protected_word(check_addr) && !protected_word(check_addr + 32'd4);
-  assign dfault = (protected_word(daddress) || (dword_q && protected_word(daddress + 32'd4))) ?
-                  DATA_DSI_PROTECTION : DATA_OK;
+  // Stores outside the faulting words cannot fault.
+  assign check_ok = writable(check_addr) && writable(check_addr + 32'd4);
+  always_comb begin
+    dfault = DATA_OK;
+    dcapsule = '0;
+    if (protected_word(daddress) || (dword_q && protected_word(daddress + 32'd4)))
+      dfault = DATA_DSI_PROTECTION;
+    else if (dwrite_q && (changed_word(daddress) || (dword_q && changed_word(daddress + 32'd4))))
+      begin
+        dfault = DATA_PAGE_CHANGED;
+        dcapsule.ea = daddress;
+        dcapsule.write = 1'b1;
+        dcapsule.dr = 1'b1;
+        dcapsule.way = 1'b1;
+      end
+    else if (tea_word(daddress) || (dword_q && tea_word(daddress + 32'd4)))
+      dfault = DATA_MACHINE_CHECK;
+  end
 
   always @(posedge clk) begin
     cycles++;
@@ -196,11 +226,11 @@ module tb_core_fpu #(
         if (st8[7:4] != 4'b0) begin
           check(da[2:0] == 3'b0 && st8 == 8'hff,
                 $sformatf("doubleword request addr=%08x strobes=%02x", da, st8));
-          if (dw && !protected_word(da) && !protected_word(da + 32'd4)) begin
+          if (dw && writable(da) && writable(da + 32'd4)) begin
             mem[da] = wd64[63:32];
             mem[da + 32'd4] = wd64[31:0];
           end
-        end else if (dw && !protected_word(da)) begin
+        end else if (dw && writable(da)) begin
           logic [31:0] old;
           old = read_word(da);
           for (int b = 0; b < 4; b++)
@@ -272,6 +302,8 @@ module tb_core_fpu #(
           spacings.push_back(sp);
         end
         "P": begin prot_lo = x; prot_hi = y; end
+        "C": begin changed_lo = x; changed_hi = y; end
+        "T": begin tea_lo = x; tea_hi = y; end
         "D": done_addr = x;
         "S": sticky_expect = int'(x);
         default: $fatal(1, "tb_core_fpu: bad image tag %s", tag);
