@@ -80,6 +80,8 @@ LATENCY.update({'lfd': 6, 'lfs': 6, 'stfd': 7, 'stfs': 7, 'stfiwx': 7,
 MEMORY_SPACING = {'lfd-issue': 15, 'lfd-retire': 15, 'lfs-issue': 15, 'lfs-retire': 15,
                   'stfd-issue': 18, 'stfd-retire': 18, 'stfs-issue': 18,
                   'stfs-retire': 18, 'fadd-stfd': 6, 'stw-retire': 12}
+# Four stores then four loads to other doublewords: last store to last load.
+LOADS_BEHIND_STORES = 4
 
 
 # The pipelined load/store unit takes a cycle less than the lane. With it and
@@ -859,6 +861,12 @@ def integer_memory_streams(p):
     p.emit(SYNC)
     pcs = [p.emit(d_form(36, 10, 21, 8)), p.emit(d_form(32, 12, 21, 8))]
     p.spacings.append(('R', pcs[0], pcs[1], 4))
+    # Loads behind retired stores take the cache first, one access per
+    # cycle: they retire one per cycle right after the stores.
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(36, 10, 21, 4 * k)) for k in range(4)]
+    pcs += [p.emit(d_form(32, 11, 22, 4 * k)) for k in range(4)]
+    p.spacings.append(('R', pcs[3], pcs[-1], LOADS_BEHIND_STORES))
     # A load that passed a queued store and faults is performed again by
     # the serialized lane once the store is written: DSI at the load.
     p.li32(31, PROT_LO)
