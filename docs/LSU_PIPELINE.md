@@ -663,4 +663,19 @@ entries.
 ### Stores behind stores (2026-10-04)
 
 Recorded: `make -C sim lint check-spec`; `make -C sim -k -j2 test-micro-tlb-router test-bat-memory-router test-page-memory-router test-core-tlb-miss test-core-page-data-exception test-core-page-translation test-core-bat test-core-lsu-timing test-core-dcache-lsu-pipe test-dcache test-dcache-fast test-chip-dcache-coherence test-core-le test-core-fpu` at width 1 (unit off) and with `DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, commit 4438640, 2026-10-04.
-RESULTS_PENDING
+Lint, check-spec and every bench pass at both settings except
+`test-core-tlb-miss` and `test-core-page-data-exception`, which stop at
+Verilator `UNOPTFLAT` warnings in `ppc_core`, `ppc_special` and the bench,
+files this round does not change (`test-core-tlb-miss` builds neither the
+router nor the cache). `tb_dcache` adds a back-to-back case: two stores to
+halves of one double word, a load of it, a store to the other way at the
+same index, and two loads, accepted on consecutive cycles where the rule
+allows; with the forward disabled the load returns the first store's bytes
+over stale data and the bench fails. `test-micro-tlb-router` still checks
+that a C=0 store never hits a load-filled entry. These establish data and
+ordering, not timing.
+
+Recorded: `make -C sim DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-reference-machine-mmu REFERENCE_DIR=<dingusppc> MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`, commits 4438640 and 29c64f9, 2026-10-04.
+Fails identically on both: record 17, "store effects from a non-store"
+(a retired-store write reported on the following `addi`). The comparison
+does not yet accept stores written after retirement at this setting.
