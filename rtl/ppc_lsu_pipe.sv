@@ -58,6 +58,9 @@ module ppc_lsu_pipe #(
   // The completion-queue head retires this cycle.
   input  logic commit_i,
   input  ppc_pkg::completion_tag_t commit_tag_i,
+  // Dispatch is behind an unresolved branch; it resolved as predicted.
+  input  logic branch_spec_i,
+  input  logic branch_resolved_i,
   // The store at chk_addr_o can be performed without a DSI.
   output logic [31:0] chk_addr_o,
   input  logic chk_ok_i,
@@ -114,6 +117,8 @@ module ppc_lsu_pipe #(
     logic split, second, advance;
     // A retired store's write, and a load offered past queued stores.
     logic write, passed;
+    // Dispatched behind an unresolved branch.
+    logic bspec;
     completion_tag_t producer;
     logic [31:0] ea, data, pc, insn;
     // XORed into the EA's low bits to form the access address.
@@ -280,7 +285,7 @@ module ppc_lsu_pipe #(
   assign req_bytes_o = sq_offer ? sq_head.bytes : p1_nbytes;
   assign req_fp_o = sq_offer ? sq_head.fp : p1_head.fp;
   // The two beats of one doubleword do not make each other speculative.
-  assign req_spec_o = !sq_offer && (sq_live ||
+  assign req_spec_o = !sq_offer && (sq_live || p1_head.bspec ||
     (p2_valid && !p2_q[0].killed && !p2_q[0].write &&
      (p2_q[0].producer != p1_head.producer)) ||
     ((p2_count_q == 2'd2) && !p2_q[1].killed && !p2_q[1].write &&
@@ -332,12 +337,14 @@ module ppc_lsu_pipe #(
   // The oldest entry is handed over only while R is empty, so the result
   // port never sees both, and never on the edge recovery removes it.
   assign p2_adopt = rsp_mine && !p2_head.fp && !p2_head.write && !p2_head.passed &&
+                    !p2_head.bspec &&
                     p2_live && !rsp_ok && !r_valid_q && lane_idle_i;
-  assign redo_adopt = redo_valid_q && !redo_q.killed && !killed_now(redo_q.producer) &&
+  assign redo_adopt = redo_valid_q && !redo_q.killed && !redo_q.bspec &&
+                      !killed_now(redo_q.producer) &&
                       !p2_valid && !q_valid_q && !r_valid_q && !sq_valid &&
                       lane_idle_i && !rsp_to_lane_q;
   assign p1_adopt = !p2_valid && !q_valid_q && !r_valid_q && !sq_valid && !redo_valid_q &&
-                    p1_valid && !p1_head.fast && !p1_head.fp &&
+                    p1_valid && !p1_head.fast && !p1_head.fp && !p1_head.bspec &&
                     !p1_head.killed && !killed_now(p1_head.producer) &&
                     lane_idle_i && !rsp_to_lane_q;
   assign adopt_valid_o = p2_adopt || redo_adopt || p1_adopt;
@@ -393,6 +400,7 @@ module ppc_lsu_pipe #(
     incoming.wide = in_wide;
     incoming.split = in_split;
     incoming.producer = producer_i;
+    incoming.bspec = branch_spec_i;
     incoming.ea = ea_i;
     incoming.munge = !le_i ? 3'b0 :
                      fp_i ? {!fp_double_i, 2'b0} :
@@ -455,8 +463,10 @@ module ppc_lsu_pipe #(
     // write is never removed.
     for (int i = 0; i < 2; i++) begin
       if (doom || killed_now(p1_next[i].producer)) p1_next[i].killed = 1'b1;
+      if (branch_resolved_i) p1_next[i].bspec = 1'b0;
       if (!p2_next[i].write && (doom || killed_now(p2_next[i].producer)))
         p2_next[i].killed = 1'b1;
+      if (branch_resolved_i) p2_next[i].bspec = 1'b0;
       if (fp_launch_valid_i && (p1_next[i].producer == fp_launch_tag_i))
         p1_next[i].launched = 1'b1;
     end
@@ -507,7 +517,11 @@ module ppc_lsu_pipe #(
     if (redo_set) begin
       redo_q <= p2_head;
       redo_q.fast <= 1'b0;
-    end else if (killed_now(redo_q.producer)) redo_q.killed <= 1'b1;
+      redo_q.bspec <= p2_head.bspec && !branch_resolved_i;
+    end else begin
+      if (killed_now(redo_q.producer)) redo_q.killed <= 1'b1;
+      if (branch_resolved_i) redo_q.bspec <= 1'b0;
+    end
     if (!rst_ni || !STORE_QUEUE) begin
       sq_count_q <= '0;
       q_valid_q <= 1'b0;
