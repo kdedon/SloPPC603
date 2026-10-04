@@ -482,8 +482,8 @@ test-core-fpu-split test-core-fpu-compact test-core-fpu-602
 test-core-fpu-602-compact test-core-lsu-timing`, and with the unit
 (`BUILD_DIR=build-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe`)
 `test-core-fpu test-core-fpu-compact test-core-fpu-602
-test-core-fpu-602-compact`, commit ea7f8c1, 2026-10-04: pass
-(`test-core-fpu-split` with the unit at ca3977a, before the punt fix).
+test-core-fpu-602-compact`, commit 78a6e0a, 2026-10-04: pass
+(`test-core-fpu-split` with the unit ran before the punt fix was added).
 
 - The unit asks the FPU for its P1 store's data by tag; the FPU answers
   for any launched store in its queue. `test-core-lsu-timing`: four `stfd`
