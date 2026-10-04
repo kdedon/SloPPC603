@@ -512,6 +512,8 @@ passes its checks. Dhrystone is `perf-diff`'s timed loop (18 iterations).
 | DQ0 add/compare to the SRU (cause 8) | 6cef417 | 849.0 | 744.0 | 2.096 | 2.301 |
 | Causes 1, 3, 4, 8 together | 103325b | 814.0 | 714.5 | 2.187 | 2.406 |
 | Causes 1, 3–6, 8 together | c736a1b | 783.0 | 685.5 | 2.290 | 2.603 |
+| Causes 1, 3–8 together | a696e15 | 767.0 | 663.0 | 2.290 | 2.602 |
+| IU result on the second finish port | 5f2d056 | 767.0 | 640.0 | 2.290 | 2.662 |
 
 The build fix changes none of the figures.
 
@@ -544,6 +546,22 @@ later than when it dispatches after the load (`CQ_FULL` 28 to 60.5,
 `DRAIN_BRANCH` 20). With the base wait off
 (`+define+PPC_LSU_BASE_WAIT=1'b0`): 667.5 and 2.557 at width 2. The SRU
 route off costs 10.5 (696.0).
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits a696e15 (merge of 2ac64dd, 29c64f9 and c83a389; width 2) and 5f2d056 (both widths), 2026-10-04 (last two rows; `perf-diff` exits 0, CoreMark CRCs match).
+With cause 7 merged, Dhrystone is 663.0 at width 2 and `strcmp` still
+takes 9 cycles an iteration. The `cmpw` was not late to issue: the IU
+station takes the load's result in the cycle it finishes, Table 6-6's load
+latency 2. Its result then met the next iteration's `lbzu` result on the
+completion queue's one IU and LSU finish port, and waited a cycle.
+
+The 603e's units write their results on their own buses (UM 6.3.3). An IU
+result that meets a load result now finishes on the second port, the SRU's,
+when the SRU leaves it free. That port records value, CR0 and XER bits,
+which is all an IU result carries; IU results never fault. `strcmp` takes
+8 cycles an iteration. The SRU exists only at width 2, so width 1 is
+unchanged. With the base wait off (`+define+PPC_LSU_BASE_WAIT=1'b0`) the
+same build measures 640.0 and 2.662 (6 CoreMark cycles more): the base
+wait no longer costs anything, and stays on.
 
 ## Completion in the writeback cycle
 
