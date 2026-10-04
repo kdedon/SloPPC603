@@ -36,7 +36,6 @@ module ppc_flags (
   logic [$clog2(CQ_DEPTH+1)-1:0] flag_survivors;
   logic [31:0] cr_mask, fields_cr_mask, xer_mask;
   logic _unused_commit_packet_fields;
-  logic commit_owned;
 
   /* verilator lint_off UNUSEDSIGNAL */
   function automatic logic owns_token(ppc_pkg::retire_packet_t p);
@@ -45,7 +44,10 @@ module ppc_flags (
         (p.write_ca || p.write_ov_so));
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
+  // synthesis translate_off
+  logic commit_owned;
   assign commit_owned = owns_token(commit_packet_i);
+  // synthesis translate_on
 
   assign cr_o = cr_q;
   assign xer_o = xer_q;
