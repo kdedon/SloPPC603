@@ -67,6 +67,9 @@ module tb_core_rotate;
   int unsupported_rejections = 0;
   logic owner_expected_valid = 0;
   completion_tag_t owner_expected;
+  // One younger record operation may wait in its station for the token.
+  logic waiter_expected_valid = 0;
+  completion_tag_t waiter_expected;
   int last_owner_commit_edge = -1;
   int owner_release_exact = 0;
 
@@ -596,6 +599,7 @@ module tb_core_rotate;
       admission_second_issue_edge = -1;
       owner_expected_valid = 0;
       owner_expected = '0;
+      waiter_expected_valid = 0;
       last_owner_commit_edge = -1;
     end else begin
       int retained, found, issue_index, finish_index;
@@ -655,6 +659,8 @@ module tb_core_rotate;
           stream_removed = stream[stream.size() - 1];
           stream.delete(stream.size() - 1);
           require(!$isunknown(stream_removed), "removed stream entry contains unknown fields");
+          if (waiter_expected_valid && stream_removed.tag == waiter_expected)
+            waiter_expected_valid = 0;
           if (owner_expected_valid && stream_removed.tag == owner_expected)
             owner_expected_valid = 0;
           if (is_record_word(stream_removed.insn[31:26], stream_removed.insn[0])) begin
@@ -703,7 +709,11 @@ module tb_core_rotate;
                 "commit lacked a ready independent stream head");
         oracle_commit(retired, dut.retire_producer);
         if (owner_expected_valid && dut.retire_producer == owner_expected) begin
-          owner_expected_valid = 0;
+          // A waiting record operation takes the token on this edge.
+          if (waiter_expected_valid) owner_release_exact++;
+          owner_expected_valid = waiter_expected_valid;
+          owner_expected = waiter_expected;
+          waiter_expected_valid = 0;
           last_owner_commit_edge = edge_count;
         end
         if (phase == PHASE_ADMISSION && admission_first_seen &&
@@ -723,6 +733,8 @@ module tb_core_rotate;
             if (stream[i].tag == lane_issue_tag[lane]) issue_index = i;
           require(issue_index >= 0 && !stream[issue_index].issued,
                   "issue did not match one live unissued stream entry");
+          require(!(waiter_expected_valid && lane_issue_tag[lane] == waiter_expected),
+                  "record operation issued before it owned the flag token");
           if (issue_index >= 0) begin
             require(edge_count > int'(stream[issue_index].dispatch_edge),
                     "instruction issued on its dispatch edge");
@@ -748,15 +760,19 @@ module tb_core_rotate;
           // Only Rc forms own the CR token; addc alone writes XER.
           if (expected_needs_flags(program_mem[next_dispatch_pc >> 2]) &&
               program_mem[next_dispatch_pc >> 2][0]) begin
-            require(!owner_expected_valid,
-                    "second rotate flag owner dispatched while one was live");
-            if (last_owner_commit_edge >= 0) begin
-              require(edge_count > last_owner_commit_edge,
-                      "rotate owner reacquired on release edge");
-              if (edge_count == last_owner_commit_edge + 1) owner_release_exact++;
+            require(!waiter_expected_valid,
+                    "third rotate flag writer dispatched while two were live");
+            if (owner_expected_valid) begin
+              waiter_expected_valid = 1;
+              waiter_expected = lane_alloc_tag[lane];
+            end else begin
+              // Dispatched on its predecessor's retirement edge, it took over.
+              if (edge_count == last_owner_commit_edge ||
+                  edge_count == last_owner_commit_edge + 1)
+                owner_release_exact++;
+              owner_expected_valid = 1;
+              owner_expected = lane_alloc_tag[lane];
             end
-            owner_expected_valid = 1;
-            owner_expected = lane_alloc_tag[lane];
           end
           stream_item = '0;
           stream_item.tag = lane_alloc_tag[lane];
@@ -783,6 +799,8 @@ module tb_core_rotate;
       if (owner_expected_valid)
         require(dut.flags_owner == owner_expected,
                 "rotate owner identity disagrees with independent stream model");
+      require(dut.flags_waiter == waiter_expected_valid,
+              "rotate CR waiter state disagrees with independent stream model");
       for (int reg_index = 0; reg_index < 32; reg_index++)
         if (dut.regfile.ready_o) require(dut.regfile.gpr[reg_index] == model_gpr[reg_index],
                 "architectural GPR disagrees with retirement oracle");
@@ -899,7 +917,7 @@ module tb_core_rotate;
     require(model_xer[31] && model_xer[30] && !model_xer[29],
             "rotate corpus did not preserve seeded full XER state");
     require(owner_release_exact > 0,
-            "rotate record owner was not admitted on commit+1");
+            "rotate record owner was not admitted on its release edge or commit+1");
     require(request_stalls > 0, "rotate corpus missed request stalls");
     require(credit_stalls > 0, "rotate corpus missed full-IQ fetch-credit stalls");
     require(retirement_stalls > 0, "rotate corpus missed retirement stalls");

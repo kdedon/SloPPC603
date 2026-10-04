@@ -297,6 +297,8 @@ module tb_core_dual #(
   int dslot [int];
   int rcycle [int];
   int rslot [int];
+  // Per PC: DQ1 held nothing when it dispatched from DQ0.
+  logic dq1_empty [int];
   initial begin
     if ($value$plusargs("RETIRE_LOG=%s", log_path)) begin
       log_fd = $fopen(log_path, "w");
@@ -371,7 +373,8 @@ module tb_core_dual #(
       expect_pair(32'h10, 1'b0, "sync alone");
       expect_pair(32'h78, 1'b0, "sync alone");
       expect_pair(32'h68, 1'b0, "cmpw in DQ1, then folded b");
-      expect_pair(32'h94, 1'b1, "unresolved bc + add");
+      // Pairing needs the add fetched into DQ1 by then.
+      expect_pair(32'h94, !dq1_empty[32'h94], "unresolved bc + add");
       expect_pair(32'ha0, 1'b1, "divwu + addi");
       expect_pair(32'hac, LSU_PIPE, "or + lwz, base in rename");
       expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
@@ -413,6 +416,7 @@ module tb_core_dual #(
       if (dut.dispatch && (dcycle.exists(int'(dut.iq_head.pc)) == 0)) begin
         dcycle[int'(dut.iq_head.pc)] = cycle;
         dslot[int'(dut.iq_head.pc)] = 0;
+        dq1_empty[int'(dut.iq_head.pc)] = !dut.iq_valid1;
       end
       if (dut.dispatch1) begin
         pairs++;

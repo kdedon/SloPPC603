@@ -236,10 +236,11 @@ module tb_lsu_update_edges;
             "rejected cut disturbed finished update packet");
     commit_packet();
     if (dut.DUAL_GPR_WRITE) begin
-      // Two write ports: rD and rA are written on the same edge; a reader
-      // of rA still waits one cycle.
+      // Two write ports: rD and rA are written on the same edge. Without
+      // the unit a reader of rA still waits one cycle.
       require(dut.regfile.gpr[3] == 32'hcafe_babe && dut.regfile.gpr[5] == 32'h1004 &&
-              dut.update_pending_q && !(dut.iq_ready && reads_r5()),
+              (dut.update_pending_q == !dut.ENABLE_LSU_PIPE) &&
+              !(dut.update_pending_q && dut.iq_ready && reads_r5()),
               "load destination and base writes or dispatch hold missing");
     end else begin
       // One write port: rA follows rD by one edge and a reader of rA waits
