@@ -180,6 +180,17 @@ only a word-aligned doubleword that crosses a doubleword boundary splits, and
 only one crossing a page can fault on its second word, a case the integer
 split stores share.
 
+## Enabling FE0/FE1 with FEX set
+
+With FPSCR[FEX] = 1 and MSR[FE0] = MSR[FE1] = 0, an `mtmsr` that sets FE0 or
+FE1 takes the FP enabled program exception (`0x700`) before the next
+instruction (PEM Table 6-14; UM 4.5.7 defers to the architecture): SRR0 is
+`mtmsr` + 4, SRR1 holds the new MSR with bits 11 and 15 set, and the new MSR
+is entered as for any exception. Both personalities. The lane decides at the
+`mtmsr`'s retirement from the committed FPSCR, which is final because
+`mtmsr` dispatches with older work retired, and raises the exception instead
+of installing the context.
+
 ## Limits
 
 - The lane holds one access at a time; FP loads and stores do not meet Table
@@ -190,12 +201,14 @@ split stores share.
 - Without the data cache (`ppc_core_bat_bus60x`, or `ENABLE_DCACHE=0`) a
   doubleword access is two 32-bit bus transactions; another bus master can
   observe or change memory between them.
-- An `mtmsr` or `rfi` that sets FE0/FE1 while FPSCR[FEX]=1 does not raise the
-  deferred FP enabled exception.
 - Not tested: page-changed faults and machine checks on FP accesses. DTLB
   load and store misses on `lfd`/`stfd` are tested on the pin top only.
 - FPSCR instructions let the next FP instruction issue only after they
   retire.
+- An `rfi` that sets FE0/FE1 while FPSCR[FEX]=1 does not raise the deferred
+  FP enabled exception (PEM Table 6-14 includes it). The core benches' FP
+  handlers return with FE set and FEX still set, so the rule changes their
+  expected exception sequences; it needs those tests reworked first.
 
 ## 602 personality
 

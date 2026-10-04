@@ -635,6 +635,7 @@ module ppc_special #(
     assign unused_watchdog = ^{watchdog_taken, watchdog_reset_taken};
   end endgenerate
   logic [31:0] context_target_q, mtmsr_value;
+  logic mtmsr_fp_enable;
   // Machine check adds ME, RI and POW. Debug exceptions add SE and BE.
   localparam logic [31:0] MACHINE_CHECK_MSR_MASK = 32'h0004_1002;
   localparam logic [31:0] DEBUG_MSR_MASK = 32'h0000_0600;
@@ -680,6 +681,10 @@ module ppc_special #(
   assign mtmsr_unsupported = !live_mode_supported(a_q) ||
     power_mode_unsupported(a_q[MSR_POW], hid0_q);
   assign mtmsr_value = (msr_o & ~MSR_MASK) | (a_q & LIVE_SUPPORTED_MASK);
+  // FPSCR[FEX] is bit 1. mtmsr is dispatched with older work retired, so
+  // the committed FPSCR is final.
+  assign mtmsr_fp_enable = ENABLE_FPU && fp_fpscr_o[30] &&
+    ((msr_o & 32'h0000_0900) == '0) && ((mtmsr_value & 32'h0000_0900) != '0);
 
   // Restored MSR bits rfi cannot honor without live context.
   localparam logic [31:0] RFI_UNSUPPORTED_ACTIVE_MASK = 32'h0000_bf33;
@@ -1114,6 +1119,11 @@ module ppc_special #(
           exception_event_valid = !rfi_state_unsupported;
           exception_event_kind = EVENT_RFI;
         end
+        SPECIAL_MTMSR: begin
+          exception_event_valid = ENABLE_LIVE_CONTEXT && !mtmsr_unsupported &&
+                                  mtmsr_fp_enable;
+          exception_event_kind = EVENT_PROGRAM_FP_ENABLE;
+        end
         SPECIAL_PROGRAM_ILLEGAL: begin
           exception_event_valid = 1'b1;
           exception_event_kind = EVENT_PROGRAM_ILLEGAL;
@@ -1163,7 +1173,7 @@ module ppc_special #(
       ((uop_q.spr == 10'd26) || (uop_q.spr == 10'd27) ||
        (HAS_602 && (uop_q.spr == SPR_ESASRR)))) ||
      (ENABLE_LIVE_CONTEXT && (uop_q.special_op == SPECIAL_MTMSR) &&
-      !mtmsr_unsupported));
+      !mtmsr_unsupported && !mtmsr_fp_enable));
   assign exception_state_load_enable = (uop_q.special_op == SPECIAL_MTMSR) ?
     4'b0001 : (uop_q.spr == 10'd26) ? 4'b0010 :
     (uop_q.spr == 10'd27) ? 4'b0100 : 4'b1000;
