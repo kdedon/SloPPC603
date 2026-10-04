@@ -66,6 +66,10 @@ that can still raise an exception, as an integer access does.
   aligned, otherwise as two word beats, high word first; the second beat's
   EA advances as it reaches the head. The beats do not make each other
   speculative.
+- On the 602 a doubleword moved in one access spends one cycle in P1
+  before its offer (or its entry to the store queue), so `lfd` and `stfd`
+  take 3:2 and the singles 2:1 (602 UM Table 6-6). A word-beat doubleword
+  is already slower.
 - Little-endian mode munges a word access to EA XOR 4 and leaves a
   doubleword's address alone ([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md)).
 - Only word-aligned accesses are performed, and in little-endian mode only
