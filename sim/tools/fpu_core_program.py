@@ -87,15 +87,16 @@ def use_lsu_pipe(split, pipe_mem):
     """FP accesses run in the unit: two execute cycles (Table 6-6), then
     retirement the cycle after, as for FP arithmetic (Figure 6-3). Without
     pipe_mem the bench memory takes an access every other cycle, which
-    bounds the spacing; a store offers only at the completion-queue head.
-    A 32-bit data path moves a doubleword as two word beats."""
+    bounds the spacing. Integer stores retire one per cycle (2:1); an FP
+    store's data follows the FPU's oldest instruction. A 32-bit data path
+    moves a doubleword as two word beats."""
     LATENCY.update({'lwz': 4, 'stw': 4, 'lfd': 3, 'lfs': 3, 'stfd': 3, 'stfs': 3,
                     'stfiwx': 3})
     load = 3 if pipe_mem else 6
     MEMORY_SPACING.update({'lfd-issue': 3 if pipe_mem else 4, 'lfd-retire': load,
                            'lfs-issue': 3 if pipe_mem else 4, 'lfs-retire': load,
                            'stfd-issue': 5, 'stfd-retire': 9, 'stfs-issue': 5,
-                           'stfs-retire': 9, 'fadd-stfd': 3})
+                           'stfs-retire': 9, 'fadd-stfd': 3, 'stw-retire': 3})
     if split:
         LATENCY.update({'lfd': 5, 'stfd': 5})
         MEMORY_SPACING.update({'lfd-issue': 12, 'lfd-retire': 12, 'stfd-issue': 14,
@@ -781,7 +782,9 @@ def fp_memory_streams(p, forms):
 def integer_memory_streams(p):
     """Table 6-6 integer rows: four independent loads issue and retire one
     per cycle; a dependent add retires the cycle after its load (2-cycle
-    load-use); stores offer at the completion-queue head."""
+    load-use); stores retire one per cycle and are written after
+    retirement. A load passes a queued store to another doubleword; one to
+    the same doubleword waits for its write, since stores do not forward."""
     p.emit(SYNC)
     pcs = [p.emit(d_form(32, 10 + k, 22, 4 * k)) for k in range(4)]
     p.spacings.append(('I', pcs[0], pcs[-1], 3))
@@ -792,6 +795,20 @@ def integer_memory_streams(p):
     p.emit(SYNC)
     pcs = [p.emit(d_form(36, 10 + k, 22, 16 + 4 * k)) for k in range(4)]
     p.spacings.append(('R', pcs[0], pcs[-1], MEMORY_SPACING['stw-retire']))
+    if MEMORY_SPACING['stw-retire'] != 3:
+        return
+    slot = p.result_slot(4)
+    p.li32(21, slot)
+    p.li32(10, 0x13579BDF)
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(36, 10, 21, 0)), p.emit(d_form(32, 11, 22, 0))]
+    p.spacings.append(('R', pcs[0], pcs[1], 1))
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(36, 10, 21, 8)), p.emit(d_form(32, 12, 21, 8))]
+    p.spacings.append(('R', pcs[0], pcs[1], 5))
+    p.expect(slot, 0x13579BDF)
+    p.expect(slot + 8, 0x13579BDF)
+    p.store_gpr(12, 0x13579BDF)
 
 
 def build(seed, count):

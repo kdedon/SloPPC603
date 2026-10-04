@@ -26,6 +26,7 @@ module ppc_core_measure #(
   logic [3:0] unused_context;
   logic [32:0] unused_interrupt;
   logic [70:0] unused_dmem;
+  logic [31:0] unused_check_addr;
   logic [32:0] unused_decrementer;
   logic [47:0] unused_bat_csr;
   logic [36:0] unused_tlb_inv;
@@ -108,6 +109,7 @@ module ppc_core_measure #(
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(unused_dmem[70]),
     .dmem_rsp_rdata_i(32'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), .dmem_rsp_error_i(1'b0),
+    .dmem_store_check_addr_o(unused_check_addr), .dmem_store_check_ok_i(1'b0),
     .imem_req_valid_o(req_valid),
     .imem_req_ready_i(!rsp_valid),
     .imem_req_addr_o(req_addr),

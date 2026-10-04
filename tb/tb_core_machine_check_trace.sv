@@ -106,7 +106,7 @@ module tb_core_machine_check_trace;
     .dmem_req_addr_o(da), .dmem_req_wdata_o(wd), .dmem_req_wstrb_o(ws),
     .dmem_req_probe_o(unused_cache[0]),
     .dmem_rsp_valid_i(drv), .dmem_rsp_ready_o(drr), .dmem_rsp_rdata_i(rdata),
-    .dmem_rsp_error_i(1'b0), .dmem_rsp_fault_i(d_fault),
+    .dmem_rsp_error_i(1'b0), .dmem_rsp_fault_i(d_fault), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .dmem_rsp_page_miss_i(d_capsule),
     .icbi_req_valid_o(unused_cache[1]), .icbi_req_ready_i(1'b1),
     .icbi_req_ea_o(unused_cache[33:2]),

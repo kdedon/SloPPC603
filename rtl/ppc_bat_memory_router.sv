@@ -178,6 +178,10 @@ module ppc_bat_memory_router #(
   // The request is the one being accepted on dmem_req; its attributes are
   // dmem_req_attr_i.
   output logic        pdmem_req_now_o,
+  // A store to this page hits the data micro-TLB with write permission, so
+  // it will translate without a fault while the translation state holds.
+  input  logic [19:0] store_check_page_i,
+  output logic        store_check_ok_o,
   input  logic        pdmem_rsp_valid_i,
   output logic        pdmem_rsp_ready_o,
   input  logic [DMEM_BITS-1:0] pdmem_rsp_rdata_i,
@@ -294,6 +298,7 @@ module ppc_bat_memory_router #(
   // The snapshot address: protection-only mode reads SR0 (602UM 5.6.1).
   logic [31:0] segment_ea;
   logic [1:0] unused_d_hit_esa;
+  logic d_check_hit, unused_i_check;
   fetch_fault_t fetch_fault_q;
   data_fault_t data_fault_q;
   // Direct-store state of the data lane: its class, the translated request,
@@ -753,6 +758,7 @@ module ppc_bat_memory_router #(
   assign d_accept = dmem_req_valid && dmem_req_ready;
   assign i_hit = ENABLE_MICRO_TLB && i_hit_raw;
   assign d_hit = ENABLE_MICRO_TLB && d_hit_raw;
+  assign store_check_ok_o = ENABLE_MICRO_TLB && running_q && d_check_hit;
 
   // The translation sequence takes a waiting lane or a missing request on
   // its accepting edge, alternating when both compete.
@@ -817,7 +823,7 @@ module ppc_bat_memory_router #(
     .set_flush_index_i(request_set),
     .lookup_page_i(imem_req_addr[31:12]), .lookup_write_i(1'b0),
     .hit_o(i_hit_raw), .hit_rpn_o(i_hit_rpn), .hit_wimg_o(i_hit_wimg),
-    .hit_esa_o(i_hit_esa),
+    .hit_esa_o(i_hit_esa), .check_page_i(20'b0), .check_hit_o(unused_i_check),
     .fill_i(ENABLE_MICRO_TLB && route_allow && owner_instruction_q),
     .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
     .fill_wimg_i(route_wimg), .fill_esa_i(route_esa),
@@ -833,6 +839,7 @@ module ppc_bat_memory_router #(
     .lookup_page_i(dmem_req_addr[31:12]), .lookup_write_i(dmem_req_write),
     .hit_o(d_hit_raw), .hit_rpn_o(d_hit_rpn), .hit_wimg_o(d_hit_wimg),
     .hit_esa_o(unused_d_hit_esa),
+    .check_page_i(store_check_page_i), .check_hit_o(d_check_hit),
     .fill_i(ENABLE_MICRO_TLB && route_allow && !owner_instruction_q),
     .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
     .fill_wimg_i(route_wimg), .fill_esa_i(ESA_DENIED),

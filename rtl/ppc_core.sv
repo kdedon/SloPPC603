@@ -171,6 +171,10 @@ module ppc_core #(
   input logic dmem_rsp_error_i,
   input ppc_pkg::data_fault_t dmem_rsp_fault_i,
   input ppc_pkg::page_miss_t dmem_rsp_page_miss_i,
+  // A store to this word address can be performed without a DSI, so the
+  // pipelined unit may finish it before writing it.
+  output logic [31:0] dmem_store_check_addr_o,
+  input logic dmem_store_check_ok_i,
   // icbi: ready completes invalidation of the four ways at EA's set.
   output logic icbi_req_valid_o,
   input logic icbi_req_ready_i,
@@ -347,6 +351,13 @@ module ppc_core #(
   // SRU add/compare lane, fed from DQ1 beside an IU operation in DQ0.
   localparam bit HAS_SRU = DUAL && cpu_has_sru_add_compare(CPU_VARIANT);
   localparam bit SRU_TO_IU = HAS_SRU && !ENABLE_LSU_PIPE;
+  // Retired stores wait in the unit's store queue when an error on their
+  // write can be taken as an asynchronous machine check, or halts the core
+  // without machine check.
+  localparam bit STORE_QUEUE = ENABLE_LSU_PIPE &&
+    (!ENABLE_MACHINE_CHECK ||
+     (ENABLE_PIN_INTERRUPTS && ENABLE_DATA_CACHE && ENABLE_EXTERNAL_INTERRUPTS));
+  logic lsu_store_error, store_tea_q;
   logic sru_rs_ready, sru_result_valid, sru_result_ready, wake1_valid;
   wake_packet_t wake1;
   logic sru_cancel, sru_idle, d1_sru, d1_station_ready;
@@ -1695,7 +1706,7 @@ module ppc_core #(
   assign lsu_route = ENABLE_LSU_PIPE && dispatch_mem_plain;
   generate
     if (ENABLE_LSU_PIPE) begin : g_lsu
-      ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS)) lsu (
+      ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE)) lsu (
         .clk_i, .rst_ni,
         .dispatch_valid_i(dispatch && ((special_uop && lsu_route) || fp_mem_pipe)),
         .dispatch_ready_o(lsu_ready), .uop_i(dispatch_uop),
@@ -1708,6 +1719,8 @@ module ppc_core #(
         .recovery_i(recovery_accepted), .kill_i(recovery_kill),
         .kill_generation_i(recovery_kill_generation),
         .store_authorize_i(retire_ready_i), .queue_head_i(cq_head),
+        .commit_i(commit), .commit_tag_i(retire_producer),
+        .chk_addr_o(dmem_store_check_addr_o), .chk_ok_i(dmem_store_check_ok_i),
         .lane_idle_i(!special_busy),
         .req_valid_o(lsu_req_valid), .req_ready_i(dmem_req_ready_i),
         .req_write_o(lsu_req_write), .req_addr_o(lsu_req_addr),
@@ -1725,7 +1738,8 @@ module ppc_core #(
         .adopt_producer_o(lsu_adopt_producer), .adopt_pc_o(lsu_adopt_pc),
         .adopt_insn_o(lsu_adopt_insn), .adopt_ea_o(lsu_adopt_ea),
         .adopt_data_o(lsu_adopt_data),
-        .empty_o(lsu_empty), .store_irrevocable_o(lsu_store_irrevocable)
+        .empty_o(lsu_empty), .store_irrevocable_o(lsu_store_irrevocable),
+        .store_error_o(lsu_store_error)
       );
     end else begin : g_no_lsu
       assign lsu_ready = 1'b0;
@@ -1758,6 +1772,10 @@ module ppc_core #(
       assign lsu_adopt_data = '0;
       assign lsu_empty = 1'b1;
       assign lsu_store_irrevocable = 1'b0;
+      assign lsu_store_error = 1'b0;
+      assign dmem_store_check_addr_o = '0;
+      logic _unused_store_check;
+      assign _unused_store_check = dmem_store_check_ok_i;
     end
   endgenerate
   // The lane takes an adopted access in place of a dispatch; a lane dispatch
@@ -2243,10 +2261,18 @@ module ppc_core #(
       fault_producer <= '0;
       external_irq_q <= 1'b0;
       pin_event_q <= '0;
+      store_tea_q <= 1'b0;
     end else begin
       // Registered so the pin never reaches dispatch combinationally.
       external_irq_q <= ENABLE_EXTERNAL_INTERRUPTS && external_irq_i;
       pin_event_q <= ENABLE_PIN_INTERRUPTS ? pin_event_i : '0;
+      // A retired store's failed write raises TEA until the machine check
+      // is taken.
+      store_tea_q <= ENABLE_MACHINE_CHECK &&
+        (lsu_store_error || (store_tea_q && !pin_status_o.tea_taken));
+      if (ENABLE_MACHINE_CHECK &&
+          (lsu_store_error || (store_tea_q && !pin_status_o.tea_taken)))
+        pin_event_q.tea <= 1'b1;
       if (fault_killed) fault_pending <= 1'b0;
       if (dispatch && dispatch_uop.illegal) begin
         fault_pending <= 1'b1;
@@ -2256,7 +2282,8 @@ module ppc_core #(
         fault_pending <= 1'b1;
         fault_producer <= result.producer;
       end
-      if ((commit && retire_o.illegal) || special_exception_halt || checkstop_o)
+      if ((commit && retire_o.illegal) || special_exception_halt || checkstop_o ||
+          (lsu_store_error && !ENABLE_MACHINE_CHECK))
         halted_o <= 1'b1;
 
       // synthesis translate_off

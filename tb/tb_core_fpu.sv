@@ -35,6 +35,8 @@ module tb_core_fpu #(
   logic [7:0] st8;
   logic dword_q = 1'b0;
   data_fault_t dfault;
+  logic [31:0] check_addr;
+  logic check_ok;
   logic tv, tr, halted;
   /* verilator lint_off UNUSEDSIGNAL */
   logic [63:0] rdata64;  // upper half unused on a 32-bit path
@@ -137,6 +139,7 @@ module tb_core_fpu #(
     .dmem_req_addr_o(da), .dmem_req_wdata_o(wd), .dmem_req_wstrb_o(st),
     .dmem_rsp_valid_i(rv), .dmem_rsp_ready_o(rr), .dmem_rsp_rdata_i(rdata),
     .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(dfault),
+    .dmem_store_check_addr_o(check_addr), .dmem_store_check_ok_i(check_ok),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .pin_event_i('0), .pin_status_o(pin_status),
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
@@ -168,6 +171,8 @@ module tb_core_fpu #(
       {read_word(daddress), read_word(daddress + 32'd4)} : {32'b0, read_word(daddress)};
   end
   assign rdata = rdata64[DMEM_BITS-1:0];
+  // Stores outside the protected words cannot fault.
+  assign check_ok = !protected_word(check_addr) && !protected_word(check_addr + 32'd4);
   assign dfault = (protected_word(daddress) || (dword_q && protected_word(daddress + 32'd4))) ?
                   DATA_DSI_PROTECTION : DATA_OK;
 

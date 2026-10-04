@@ -102,7 +102,7 @@ module tb_core_data_fault #(
     .dmem_req_valid_o(dv),.dmem_req_ready_i(dr),.dmem_req_write_o(dw),
     .dmem_req_addr_o(da),.dmem_req_wdata_o(wd),.dmem_req_wstrb_o(st),
     .dmem_rsp_valid_i(rv),.dmem_rsp_ready_o(rr),.dmem_rsp_rdata_i(rd),
-    .dmem_rsp_error_i(response_error),.dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(response_fault),
+    .dmem_rsp_error_i(response_error),.dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(response_fault), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .timer_tick_i(1'b0),.timebase_enable_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),

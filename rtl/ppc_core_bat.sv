@@ -192,6 +192,10 @@ module ppc_core_bat #(
   logic dmem_rsp_valid, dmem_rsp_ready, dmem_rsp_error;
   logic [DMEM_BITS-1:0] dmem_rsp_rdata;
   logic dmem_req_probe, probe_q, probe_rsp_q;
+  logic [31:0] store_check_addr;
+  logic [11:0] unused_store_check_offset;
+  logic store_check_ok;
+  assign unused_store_check_offset = store_check_addr[11:0];
   logic sync_req, sync_offer_q, sync_wait_q, router_quiescent;
   logic router_dmem_req_ready, router_dmem_rsp_valid, router_dmem_rsp_error;
   logic [DMEM_BITS-1:0] router_dmem_rsp_rdata;
@@ -357,6 +361,7 @@ module ppc_core_bat #(
     .dmem_req_probe_o(dmem_req_probe),
     .dmem_rsp_valid_i(dmem_rsp_valid), .dmem_rsp_ready_o(dmem_rsp_ready),
     .dmem_rsp_fault_i(dmem_rsp_fault),
+    .dmem_store_check_addr_o(store_check_addr), .dmem_store_check_ok_i(store_check_ok),
     .dmem_rsp_page_miss_i(dmem_rsp_page_miss),
     .dmem_rsp_rdata_i(dmem_rsp_rdata), .dmem_rsp_error_i(dmem_rsp_error),
     .icbi_req_valid_o, .icbi_req_ready_i, .icbi_req_ea_o,
@@ -488,6 +493,7 @@ module ppc_core_bat #(
     .pdmem_req_ds_o(router_pdmem_req_ds),
     .pdmem_req_ds_tag_o(router_pdmem_req_ds_tag),
     .pdmem_req_now_o(router_pdmem_req_now),
+    .store_check_page_i(store_check_addr[31:12]), .store_check_ok_o(store_check_ok),
     .pdmem_rsp_valid_i(router_pdmem_rsp_valid),
     .pdmem_rsp_ready_o(router_pdmem_rsp_ready),
     .pdmem_rsp_rdata_i(probe_q ? '0 : pdmem_rsp_rdata_i),
