@@ -26,6 +26,8 @@ module ppc_bat_memory_router #(
   // instruction lane or reporting an untyped data error.
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter int MICRO_TLB_ENTRIES = 4,
+  // Stack, globals and string pages in one loop exceed four entries.
+  parameter int DATA_MICRO_TLB_ENTRIES = 8,
   parameter int TLB_SETS = 32,
   parameter bit HAS_602 = 1'b0,
   parameter bit HAS_DIRECT_STORE = 1'b0,
@@ -839,7 +841,7 @@ module ppc_bat_memory_router #(
     .fill_from_tlb_i(route_from_tlb)
   );
 
-  ppc_micro_tlb #(.ENTRIES(MICRO_TLB_ENTRIES), .TLB_SETS(TLB_SETS)) d_utlb (
+  ppc_micro_tlb #(.ENTRIES(DATA_MICRO_TLB_ENTRIES), .TLB_SETS(TLB_SETS)) d_utlb (
     .clk_i, .rst_ni,
     .flush_i(utlb_flush),
     .set_flush_i(route_set_touch && !owner_instruction_q),
