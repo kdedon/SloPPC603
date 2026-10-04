@@ -679,3 +679,7 @@ Recorded: `make -C sim DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe V
 Fails identically on both: record 17, "store effects from a non-store"
 (a retired-store write reported on the following `addi`). The comparison
 does not yet accept stores written after retirement at this setting.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit fa58482, 2026-10-04.
+0 errors, 51 warnings. No fit or timing: the load hit data gains a byte
+merge with the forwarded store.
