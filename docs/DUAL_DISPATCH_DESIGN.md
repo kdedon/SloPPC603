@@ -836,7 +836,7 @@ of its requirements).
 | `TIM-SER-DISPATCH` | Nothing dispatches while a dispatch-serialized instruction is in flight |
 | `TIM-SER-REFETCH` | Nothing dispatches in the cycle `isync` retires |
 | `TIM-SER-COMPLETE` | A completion-serialized instruction never completes from CQ[1] |
-| `TIM-CQ-ORDER`, `TIM-CQ-CQ1` | Retirement in dispatch order, never in the dispatch cycle; CQ[1] holds only integer, load or branch (branches keep a CQ entry in this core, slice 7) |
+| `TIM-CQ-ORDER`, `TIM-CQ-CQ1` | Retirement in dispatch order, never in the dispatch cycle; only the work a misprediction recovery removed behind a conditional branch (`!<n>` in the trace, UM 6.4.1.2) is skipped; CQ[1] holds only integer, load or branch (branches keep a CQ entry in this core, slice 7) |
 | `TIM-WB-LIMITS` | A retired pair writes at most two GPRs and one each of CR, FPR, LR, CTR |
 
 Unit tests in `test_dispatch_trace.py` (`check-spec`) make each rule fail on a
