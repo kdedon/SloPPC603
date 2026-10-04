@@ -230,7 +230,7 @@ def run() -> Result:
         probe_cpp.write_text(_cpp(entries, spec["spr_read_opcode_equivalence"]))
         build = subprocess.run(
             [
-                "verilator", "--cc", "--exe", "--build", "-Wall", "-Wno-DECLFILENAME",
+                str(ROOT / "sim/tools/verilate"), "--cc", "--exe", "--build", "-Wall", "-Wno-DECLFILENAME",
                 "-Wno-UNUSEDSIGNAL", "-Wno-UNUSEDPARAM",
                 "--top-module", "isa_decode_probe", "--Mdir", str(obj_dir),
                 str(ROOT / "rtl/ppc_pkg.sv"), str(ROOT / "rtl/ppc_decode.sv"),
