@@ -376,6 +376,12 @@ module tb_core_machine_check_trace;
       if (irq_on_mc_head_pc != DC && dut.fetch_machine_check_head &&
           dut.iq_head.pc == irq_on_mc_head_pc)
         irq_request = 1'b1;
+      // A branch removed at dispatch retires there; the interrupt resumes at
+      // it, so it is requested once.
+      if (dut.dispatch && dut.bu_remove && dut.iq_head.pc == irq_on_retire_pc) begin
+        irq_request = 1'b1;
+        irq_on_retire_pc = DC;
+      end
       if (tv && tr) begin
         retires++;
         check(expect_halt || !retired.illegal, "illegal retirement");
@@ -859,7 +865,8 @@ module tb_core_machine_check_trace;
     end
 
     // 18. External interrupt at the boundary after a folded return: SRR0 is
-    // the return target.
+    // the return target. A return removed at dispatch has no boundary of its
+    // own: the interrupt resumes at it.
     start_scenario();
     load32(3, 32'h0000_9042);
     emit(asm_mtmsr(3));                       // 0x0c
@@ -870,7 +877,7 @@ module tb_core_machine_check_trace;
     for (int k = 0; k < 8; k++) emit(ASM_NOP);
     emit(ASM_BLR);                            // 0x60
     irq_on_retire_pc = 32'h60;
-    expect_entry(32'h500, 32'h14, 32'h0000_9042, 32'h0000_1040);
+    expect_entry(32'h500, dut.BRANCH_REMOVAL ? 32'h60 : 32'h14, 32'h0000_9042, 32'h0000_1040);
     run_scenario(20000);
 
     // 19. A bne whose compare waits on a divide is mispredicted: the
