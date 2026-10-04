@@ -181,7 +181,15 @@ module tb_core_dual #(
       // G: the sync dispatches alone with an empty CQ.
       32'h78: return SYNC;
       32'h7c: return addi(18, 0, 5);
-      32'h80: return b(int'(END_PC) - 32'h80);
+      32'h80: return b(8);
+      // H: a bc whose compare waits on a multiply dispatches on its
+      // prediction and pairs with the add behind it.
+      32'h88: return SYNC;
+      32'h8c: return mullw(19, 4, 7);
+      32'h90: return cmpw(3, 19, 4);
+      32'h94: return {6'd16, 5'd12, 5'd12, 14'd2, 2'b00};  // blt cr3, +8
+      32'h98: return add(23, 4, 4);
+      32'h9c: return b(int'(END_PC) - 32'h9c);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
@@ -271,7 +279,8 @@ module tb_core_dual #(
     expected[6] = 13; expected[7] = 9; expected[8] = 7; expected[9] = 8; expected[10] = 7;
     expected[11] = 27; expected[12] = 32'h100; expected[13] = 32'h103; expected[14] = 12;
     expected[15] = 32'h101; expected[16] = 11; expected[17] = 18; expected[18] = 5;
-    expected[20] = 1; expected[21] = 1; expected[22] = 1;
+    expected[19] = 27; expected[20] = 1; expected[21] = 1; expected[22] = 1;
+    expected[23] = 6;
     for (int i = 1; i < 32; i++)
       if (regs[i] != expected[i]) $fatal(1, "r%0d = %0x, expected %0x", i, regs[i], expected[i]);
     if (dmem[2] != 32'd11) $fatal(1, "stored word %0x", dmem[2]);
@@ -281,14 +290,13 @@ module tb_core_dual #(
       expect_pair(32'h24, 1'b1, "add + dependent addi");
       expect_pair(32'h34, 1'b0, "add + mullw (same unit)");
       expect_pair(32'h44, 1'b1, "lwz + dependent add");
-      // A DQ1 access takes the serialized lane, which the pipelined unit
-      // replaces.
-      expect_pair(32'h4c, !dut.ENABLE_LSU_PIPE, "add + lwz");
+      expect_pair(32'h4c, 1'b1, "add + lwz");
       expect_pair(32'h58, 1'b0, "or + stw of its result");
       expect_pair(32'h64, 1'b0, "cmpw + cmpw (one CR rename)");
       expect_pair(32'h10, 1'b0, "sync alone");
       expect_pair(32'h78, 1'b0, "sync alone");
       expect_pair(32'h68, 1'b1, "cmpw + folded b in DQ1");
+      expect_pair(32'h94, 1'b1, "unresolved bc + add");
       $display("retirement:");
       expect_retire_pair(32'h14, 1'b1, "add + add");
       expect_retire_pair(32'h24, 1'b0, "add + dependent addi");

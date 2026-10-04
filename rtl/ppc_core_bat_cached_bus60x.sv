@@ -68,6 +68,8 @@ module ppc_core_bat_cached_bus60x #(
   // Pipelined load/store unit; with the data cache, load hits flow one per
   // cycle (docs/LSU_PIPELINE.md).
   parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
+  // Instruction words per fetch: 2 returns an aligned pair on a cache hit.
+  parameter int FETCH_WIDTH = 1,
   // 603 direct-store sender tag (UM C.1.2.2.1). The 603 PID register has
   // no SPR, so the tag is fixed per build.
   parameter logic [3:0] DS_PID = 4'h0
@@ -227,7 +229,7 @@ module ppc_core_bat_cached_bus60x #(
   logic imem_rsp_error;
   logic [31:0] imem_req_addr;
   logic imem_rsp_valid, imem_rsp_ready;
-  logic [31:0] imem_rsp_insn;
+  logic [33*FETCH_WIDTH-2:0] imem_rsp_insn;
   // FP doublewords reach the data cache as one access.
   localparam int DMEM_BITS = (ENABLE_FPU && ENABLE_DCACHE) ? 64 : 32;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
@@ -238,7 +240,7 @@ module ppc_core_bat_cached_bus60x #(
   logic [DMEM_BITS-1:0] dmem_rsp_rdata;
 
   logic cache_fetch_rsp_valid, cache_fetch_rsp_ready, cache_fetch_rsp_error;
-  logic [31:0] cache_fetch_rsp_insn;
+  logic [33*FETCH_WIDTH-2:0] cache_fetch_rsp_insn;
   logic cache_line_req_valid, cache_line_req_ready, cache_line_instruction;
   logic [31:0] cache_line_addr;
   logic [1:0] cache_line_critical;
@@ -279,6 +281,7 @@ module ppc_core_bat_cached_bus60x #(
   ppc_core_bat #(
     .RESET_PC(RESET_PC),
     .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
+    .FETCH_WIDTH(FETCH_WIDTH),
     .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_DIRECT_STORE(HAS_DIRECT_STORE),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
@@ -432,7 +435,7 @@ module ppc_core_bat_cached_bus60x #(
   ppc_icache_managed #(
     .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE ||
                         !ppc_pkg::cpu_has_hid0_ice(CPU_VARIANT)),
-    .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS)
+    .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS), .FETCH_WIDTH(FETCH_WIDTH)
   ) managed_cache (
     .clk_i, .rst_ni,
     .fetch_valid_i(managed_fetch_valid),
@@ -500,7 +503,7 @@ module ppc_core_bat_cached_bus60x #(
   assign imem_rsp_valid = physical_fetch_busy_q &&
     (route_managed_q ? cache_fetch_rsp_valid : scalar_imem_rsp_valid);
   assign imem_rsp_insn = route_managed_q ? cache_fetch_rsp_insn :
-    scalar_imem_rsp_insn;
+    (33*FETCH_WIDTH-1)'(scalar_imem_rsp_insn);
   assign imem_rsp_error = physical_fetch_busy_q &&
     (route_managed_q ? cache_fetch_rsp_error : scalar_imem_rsp_error);
   assign cache_fetch_rsp_ready = physical_fetch_busy_q && route_managed_q &&

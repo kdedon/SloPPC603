@@ -77,7 +77,10 @@ module ppc_core #(
   parameter int FETCH_WIDTH = 1,
   // Instructions dispatched and retired per cycle, 1 or 2. Benches may set
   // the default with +define+PPC_DISPATCH_WIDTH=2. The 602 stays at 1.
-  parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH
+  parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
+  // Dispatch past one branch whose CR is not ready, down the predicted path
+  // (UM 6.4.1.2). 0: the branch waits for its CR at dispatch.
+  parameter bit ENABLE_BRANCH_SPEC = 1'b1
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -326,6 +329,7 @@ module ppc_core #(
   logic [31:0] special_branch_target, special_exception_target, lr, ctr;
   // Branch unit (see the branch-unit block below).
   logic bu_branch, bu_ready, bu_taken, bu_reads_cr, bu_reads_lr, bu_reads_ctr;
+  logic bu_spec, bs_valid_q, bs_miss_q, bs_busy, bs_hold;
   logic bu_writes_ctr, bu_ctr_ok, bu_cond_ok, bu_redirect_q;
   logic lr_pending_q, ctr_pending_q, frontend_clear;
   logic [31:0] bu_target, bu_next_pc, bu_target_q, frontend_target;
@@ -407,6 +411,13 @@ module ppc_core #(
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [11:0] d1_ea;
+  logic d1_lsu, d1_lsu_ready;
+  // Read only by the load/store unit, which ENABLE_LSU_PIPE 0 omits.
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] d1_ea_full;
+  operand_t d1_data;
+  logic lsu_d1;
+  /* verilator lint_on UNUSEDSIGNAL */
   rs_entry_t rs_entry1;
   retire_packet_t allocation1;
   logic retire1_gate, branch_retire1;
@@ -632,9 +643,18 @@ module ppc_core #(
   logic [1:0] push_writes, push1_writes, pop_writes, pop1_writes;
   logic lr_free, ctr_free;
   assign lr_free = (lr_iq_q == '0) && !lr_pending_q;
+  // Shadow LR (UM 6.4.1.1): a linking branch's LR value, PC + 4, is known
+  // when it is queued. lr_front_q is the LR left by the youngest queued or
+  // dispatched writer when that is a linking branch (lr_front_ok_q);
+  // lr_disp_q the same for the youngest dispatched writer, which a bclr
+  // reads at dispatch while that writer is uncommitted.
+  logic lr_front_ok_q, lr_disp_ok_q, lr_ok;
+  logic [31:2] lr_front_q, lr_disp_q, lr_fold;
+  assign lr_ok = lr_free || lr_front_ok_q;
+  assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
   assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
   assign fd_push = fd_valid_q && !fold_q;
-  assign fold_predict = folds(queued, trace_mode, lr_free, ctr_free);
+  assign fold_predict = folds(queued, trace_mode, lr_ok, ctr_free);
   // Lane 1: the second FD word.
   fetch_packet_t queued1;
   logic [31:0] fold_pc;
@@ -680,7 +700,7 @@ module ppc_core #(
   end
   endgenerate
   assign fold_predict1 = (FETCH_WIDTH == 2) &&
-    folds(queued1, trace_mode, lr_free && !push_writes[1],
+    folds(queued1, trace_mode, lr_ok && !push_writes[1],
           ctr_free && !push_writes[0]);
   // A folding first word drops the second.
   assign iq_push0 = fd_push && fd_push_ok;
@@ -688,7 +708,7 @@ module ppc_core #(
   assign fold_pc = fold_predict ? queued.pc : queued1.pc;
   assign fold_insn = fold_predict ? queued.insn : queued1.insn;
   assign fold_target = (fold_insn[31:26] == 6'd19) ?
-    {(fold_insn[10] ? ctr[31:2] : lr[31:2]), 2'b00} :
+    {(fold_insn[10] ? ctr[31:2] : lr_fold[31:2]), 2'b00} :
     (fold_insn[1] ? 32'b0 : fold_pc) +
     ((fold_insn[31:26] == 6'd18) ?
       {{6{fold_insn[25]}}, fold_insn[25:2], 2'b00} :
@@ -759,6 +779,30 @@ module ppc_core #(
   assign push1_writes = lr_ctr_writes(push_uop1);
   assign pop_writes = lr_ctr_writes(iq_uop);
   assign pop1_writes = lr_ctr_writes(dq1_uop);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted) begin
+      lr_front_ok_q <= 1'b0;
+      lr_disp_ok_q <= 1'b0;
+    end else begin
+      if (frontend_clear) begin
+        lr_front_ok_q <= lr_disp_ok_q;
+        lr_front_q <= lr_disp_q;
+      end else if (iq_push1 && push1_writes[1]) begin
+        lr_front_ok_q <= push_uop1.special_op != SPECIAL_MTSPR;
+        lr_front_q <= queued1.pc[31:2] + 30'd1;
+      end else if (iq_push0 && push_writes[1]) begin
+        lr_front_ok_q <= push_uop.special_op != SPECIAL_MTSPR;
+        lr_front_q <= queued.pc[31:2] + 30'd1;
+      end
+      if (dispatch1 && pop1_writes[1]) begin
+        lr_disp_ok_q <= dq1_uop.special_op != SPECIAL_MTSPR;
+        lr_disp_q <= dq1_head.pc[31:2] + 30'd1;
+      end else if (dispatch && pop_writes[1]) begin
+        lr_disp_ok_q <= iq_uop.special_op != SPECIAL_MTSPR;
+        lr_disp_q <= iq_head.pc[31:2] + 30'd1;
+      end
+    end
+  end
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear) begin
       lr_iq_q <= '0;
@@ -932,9 +976,10 @@ module ppc_core #(
   assign bu_reads_lr = iq_branch[1];
   assign bu_reads_ctr = iq_branch[0];
   assign bu_writes_ctr = (uop.special_op != SPECIAL_B) && !uop.branch_bo[2];
-  assign bu_ready = !(bu_reads_cr && flags_busy && !bu_cr_valid_q) &&
-    !(bu_reads_cr && fp_cr_pending) &&
-    !(bu_reads_lr && lr_pending_q) && !(bu_reads_ctr && ctr_pending_q);
+  assign bu_spec = ENABLE_BRANCH_SPEC && bu_reads_cr && flags_busy && !bu_cr_valid_q;
+  assign bu_ready = !(bu_reads_cr && flags_busy && !bu_cr_valid_q && !ENABLE_BRANCH_SPEC) &&
+    !(bu_reads_cr && (fp_cr_pending || bs_busy)) &&
+    !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(bu_reads_ctr && ctr_pending_q);
   // BO[0..3] are branch_bo[4..1]; the decrement leaves zero when CTR is 1.
   assign bu_ctr_ok = uop.branch_bo[2] || ((ctr != 32'd1) ^ uop.branch_bo[1]);
   assign bu_cond_ok = uop.branch_bo[4] || (bu_cr[31-uop.branch_bi] == uop.branch_bo[3]);
@@ -980,10 +1025,60 @@ module ppc_core #(
         bu_cr_valid_q <= 1'b0;
     end
   end
-  assign bu_taken = (uop.special_op == SPECIAL_B) || (bu_ctr_ok && bu_cond_ok);
+  assign bu_taken = bu_spec ? iq_folded :
+    ((uop.special_op == SPECIAL_B) || (bu_ctr_ok && bu_cond_ok));
+  // Speculative branch (UM 6.4.1.2): a branch whose CR producer has not
+  // finished dispatches with its prediction, the fetch path already
+  // following it. Younger work dispatches behind it, but neither it nor
+  // anything younger completes until it resolves, from the CR its owner
+  // finishes with or commits. One level: a second CR branch waits. Accesses
+  // dispatched behind it are offered as speculative, so only cacheable ones
+  // are performed. On a misprediction the branch retires with its real next
+  // PC and the edge after recovers the whole machine to that PC.
+  completion_tag_t bs_tag_q, bs_owner_q;
+  logic bs_owner_done_q, bs_pred_q, bs_ctr_ok_q, bs_bo3_q, bs_redirect_q;
+  logic [4:0] bs_bi_q;
+  logic [31:0] bs_alt_q, bs_cr;
+  logic bs_cr_ready, bs_resolve, bs_taken, bs_head, bs_owner_commit;
+  assign bs_cr_ready = bs_owner_done_q ||
+    (flags_busy && bu_cr_valid_q && (flags_owner == bs_owner_q));
+  assign bs_cr = bs_owner_done_q ? cr : bu_cr_q;
+  assign bs_taken = bs_ctr_ok_q && (bs_cr[5'd31 - bs_bi_q] == bs_bo3_q);
+  assign bs_resolve = bs_valid_q && bs_cr_ready;
+  assign bs_busy = bs_valid_q || bs_miss_q;
+  assign bs_head = bs_miss_q && (retire_producer == bs_tag_q);
+  assign bs_hold = (bs_valid_q && (retire_producer == bs_tag_q)) || bs_redirect_q;
+  assign bs_owner_commit = (commit && (retire_producer == bs_owner_q)) ||
+                           (commit1 && (retire1_producer == bs_owner_q));
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted) begin
+      bs_valid_q <= 1'b0;
+      bs_miss_q <= 1'b0;
+      bs_redirect_q <= 1'b0;
+    end else begin
+      if (bs_resolve) begin
+        bs_valid_q <= 1'b0;
+        bs_miss_q <= bs_taken != bs_pred_q;
+      end
+      if (bs_owner_commit) bs_owner_done_q <= 1'b1;
+      bs_redirect_q <= commit && bs_head;
+      if (dispatch && bu_branch && bu_spec) begin
+        bs_valid_q <= 1'b1;
+        bs_tag_q <= alloc_producer;
+        bs_owner_q <= flags_owner;
+        bs_owner_done_q <= (commit && (retire_producer == flags_owner)) ||
+                           (commit1 && (retire1_producer == flags_owner));
+        bs_pred_q <= iq_folded;
+        bs_ctr_ok_q <= bu_ctr_ok;
+        bs_bo3_q <= uop.branch_bo[3];
+        bs_bi_q <= uop.branch_bi;
+        bs_alt_q <= iq_folded ? iq_head.pc + 32'd4 : bu_target;
+      end
+    end
+  end
   always_comb begin
     case (uop.special_op)
-      SPECIAL_BCLR: bu_target = {lr[31:2], 2'b00};
+      SPECIAL_BCLR: bu_target = {(lr_pending_q ? lr_disp_q : lr[31:2]), 2'b00};
       SPECIAL_BCCTR: bu_target = {ctr[31:2], 2'b00};
       default: bu_target = uop.branch_aa ? uop.branch_disp :
                                            iq_head.pc + uop.branch_disp;
@@ -1303,7 +1398,7 @@ module ppc_core #(
     .memory_quiescent_i(memory_quiescent_i && lsu_empty),
     .frontend_fence_o(frontend_fence), .context_valid_o, .context_ready_i,
     .redirect_accepted_i(recovery_accepted),
-    .store_authorize_i(retire_ready_i),
+    .store_authorize_i(retire_ready_i && !bs_hold),
     // A DQ1 access is never the oldest: DQ0 allocates beside it.
     .queue_empty_i(cq_empty && !lane_dq1),
     .queue_head_i(cq_head), .commit_i(commit),
@@ -1397,13 +1492,15 @@ module ppc_core #(
       end
     end
   end
-  // Without the test redirect every recovery is the special unit's own
-  // redirect, issued with the CQ empty, or an FP replay, which may remove
-  // only an overlapped FP store that has not committed.
-  assign special_cancel = (ENABLE_TEST_REDIRECT || ENABLE_FPU) && special_kill;
+  // Without the test redirect or branch speculation every recovery is the
+  // special unit's own redirect, issued with the CQ empty, or an FP replay,
+  // which may remove only an overlapped FP store that has not committed.
+  // A mispredicted branch may remove an access the lane adopted.
+  assign special_cancel = (ENABLE_TEST_REDIRECT || ENABLE_FPU || ENABLE_BRANCH_SPEC) &&
+                          special_kill;
   // synthesis translate_off
   always @(posedge clk_i)
-    if (rst_ni && !ENABLE_TEST_REDIRECT)
+    if (rst_ni && !ENABLE_TEST_REDIRECT && !bs_redirect_q)
       assert (!special_kill || special_fp_store_cancellable)
         else $error("special-unit redirect killed the special lane");
   // UM 1.1.4.3: no store is performed ahead of an older, uncompleted
@@ -1450,7 +1547,8 @@ module ppc_core #(
   // precise.
   assign trace_mode = ENABLE_DEBUG_EXCEPTIONS && (msr[MSR_SE] || msr[MSR_BE]);
   // Interrupts wait for the last micro-op of a cracked instruction.
-  assign iq_ready = !fault_pending && !bu_redirect_q &&
+  assign iq_ready = !fault_pending && !bu_redirect_q && !bs_miss_q &&
+    !(bs_valid_q && special_uop && !lsu_route) &&
     (!interrupt_qualified || seq_active) &&
     !update_pending_q && gpr_ready && cq_ready &&
     (!special_busy || overlap_dispatch_ok ||
@@ -1559,18 +1657,26 @@ module ppc_core #(
   logic pair_units, d1_iu_ready, d1_fp_ready;
   assign bu_finished = DUAL && bu_branch;
   assign c0_iu = normal_uop && !bu_branch;
-  assign c0_branch = bu_branch && iq_folded &&
-    ((iq_head.insn[31:26] == 6'd18) || (iq_head.insn[25] && iq_head.insn[23]));
+  assign c0_branch = bu_branch && (bu_spec || (iq_folded &&
+    ((iq_head.insn[31:26] == 6'd18) || (iq_head.insn[25] && iq_head.insn[23]))));
   assign c0_lane = special_uop && dispatch_mem_plain;
   assign c0_fp = fp_uop;
   assign c0_fp_mem = special_uop && dispatch_fp_mem_plain;
   assign d1_valid = DUAL && iq_valid1 && !trace_mode && !seq_active && !dq1_uop.privileged;
   assign d1_iu = d1_valid && (dq1_pair.unit == UNIT_IU);
-  assign d1_mem = d1_valid && !ENABLE_LSU_PIPE && (dq1_pair.unit == UNIT_LSU) &&
+  assign d1_mem = d1_valid && !ENABLE_LSU_PIPE && !bs_busy && !(bu_branch && bu_spec) &&
+    (dq1_pair.unit == UNIT_LSU) &&
     ((dq1_uop.special_op == SPECIAL_LOAD) || (dq1_uop.special_op == SPECIAL_STORE)) &&
     !dq1_uop.mem_update && (dq1_uop.cache_op == CACHE_OP_NONE);
   assign d1_fp = d1_valid && ENABLE_FPU && !fp_replay_q && (dq1_pair.unit == UNIT_FPU);
+  assign d1_lsu = d1_valid && ENABLE_LSU_PIPE && (dq1_pair.unit == UNIT_LSU) &&
+    ((dq1_uop.special_op == SPECIAL_LOAD) || (dq1_uop.special_op == SPECIAL_STORE)) &&
+    (dq1_uop.mem_seq == SEQ_NONE) && !dq1_uop.mem_update &&
+    !dq1_uop.mem_reserve && !dq1_uop.mem_conditional && !dq1_uop.mem_external &&
+    !dq1_uop.mem_skip && !dq1_uop.cache_probe && !dq1_uop.block_zero &&
+    (dq1_uop.cache_op == CACHE_OP_NONE);
   assign d1_branch = d1_valid && dq1_branch[3] && dq1_folded &&
+    !(dq1_branch[1] && (lr_pending_q || pop_writes[1])) &&
     ((dq1_head.insn[31:26] == 6'd18) || (dq1_head.insn[25] && dq1_head.insn[23]));
   always_comb begin
     case (dq1_uop.special_op)
@@ -1587,6 +1693,7 @@ module ppc_core #(
   assign d1_gpr = !d1_fp && !d1_branch && dq1_uop.gpr_write;
   assign d1_sru = HAS_SRU && d1_iu && dq1_pair.sru;
   assign pair_units = ((c0_iu || c0_lane || c0_fp || c0_fp_mem) && d1_branch) ||
+    ((c0_iu || c0_branch) && d1_lsu) ||
     (c0_iu && (d1_sru || d1_mem || d1_fp)) ||
     (c0_branch && (d1_iu || d1_mem || d1_fp)) || (c0_lane && (d1_iu || d1_fp)) ||
     ((c0_fp || c0_fp_mem) && d1_iu);
@@ -1604,6 +1711,13 @@ module ppc_core #(
   assign d1_a = dq1_uop.zero_a ? 32'b0 : arch_a1;
   assign d1_b = dq1_uop.use_imm ? dq1_uop.imm : arch_b1;
   assign d1_ea = d1_a[11:0] + d1_b[11:0];
+  assign d1_ea_full = d1_a + d1_b;
+  // DQ1 enters the unit only with committed sources.
+  always_comb begin
+    d1_data = '0;
+    d1_data.ready = 1'b1;
+    d1_data.value = arch_c1;
+  end
   assign d1_misaligned = !ENABLE_MISALIGNED_ACCESS ?
     (((dq1_uop.mem_size == MEM_WORD) && (d1_ea[1:0] != 2'b00)) ||
      ((dq1_uop.mem_size == MEM_HALF) && d1_ea[0])) :
@@ -1616,7 +1730,15 @@ module ppc_core #(
     (dq1_uop.use_imm || (!gpr_mapped[dq1_uop.src_b] && !dq1_pair.dep_prev[1])) &&
     ((dq1_uop.special_op != SPECIAL_STORE) ||
      (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
+  assign d1_lsu_ready = lsu_ready && !special_busy && !fp_unsafe_pending &&
+    !d1_misaligned && !msr_le &&
+    (dq1_uop.zero_a || (!gpr_mapped[dq1_uop.src_a] && !dq1_pair.dep_prev[0])) &&
+    (dq1_uop.use_imm || (!gpr_mapped[dq1_uop.src_b] && !dq1_pair.dep_prev[1])) &&
+    ((dq1_uop.special_op != SPECIAL_STORE) ||
+     (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
+  assign lsu_d1 = dispatch1 && d1_lsu;
   assign dispatch1 = dispatch && seq_last && pair_units && cq1_ready && !unit_update &&
+    (!d1_lsu || d1_lsu_ready) &&
     (!d1_needs_flags || (!dispatch_needs_flags && !flags_busy)) &&
     (!d1_gpr || (dispatch_uop.gpr_write ? alloc1_ready : alloc_ready)) &&
     (!d1_iu || d1_iu_ready) && (!d1_mem || d1_mem_ready) && (!d1_fp || d1_fp_ready);
@@ -1705,16 +1827,17 @@ module ppc_core #(
       ((cq_retire.gpr_write && (cq_retire.gpr == cq_retire1.gpr)) ||
        (cq_retire.update_write && (cq_retire.update_gpr == cq_retire1.gpr)))) &&
     !(special_busy && ((special_producer == retire_producer) ||
-                       (special_producer == retire1_producer)));
+                       (special_producer == retire1_producer))) &&
+    !bs_head && !(bs_busy && (retire1_producer == bs_tag_q));
   assign branch_retire1 = commit1 && retire1_o.branch;
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni && dispatch1) begin
       assert (DUAL && iq_pop && iq_valid1 && !recovery_accepted)
         else $error("DQ1 dispatched without DQ0");
-      assert (32'(d1_iu) + 32'(d1_mem) + 32'(d1_fp) + 32'(d1_branch) == 32'd1)
+      assert (32'(d1_iu) + 32'(d1_mem) + 32'(d1_lsu) + 32'(d1_fp) + 32'(d1_branch) == 32'd1)
         else $error("DQ1 unit class is not unique");
-      if (d1_mem)
+      if (d1_mem || d1_lsu)
         assert ((dq1_uop.zero_a || (src_a1.ready && (src_a1.value == arch_a1))) &&
                 (dq1_uop.use_imm || (src_b1.ready && (src_b1.value == arch_b1))))
           else $error("DQ1 access saw an uncommitted GPR source");
@@ -1734,10 +1857,12 @@ module ppc_core #(
     if (ENABLE_LSU_PIPE) begin : g_lsu
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE)) lsu (
         .clk_i, .rst_ni,
-        .dispatch_valid_i(dispatch && ((special_uop && lsu_route) || fp_mem_pipe)),
-        .dispatch_ready_o(lsu_ready), .uop_i(dispatch_uop),
-        .producer_i(alloc_producer), .pc_i(iq_head.pc), .insn_i(iq_head.insn),
-        .ea_i(dispatch_ea), .data_i(src_c),
+        .dispatch_valid_i((dispatch && ((special_uop && lsu_route) || fp_mem_pipe)) || lsu_d1),
+        .dispatch_ready_o(lsu_ready), .uop_i(lsu_d1 ? d1_lane_uop : dispatch_uop),
+        .producer_i(lsu_d1 ? alloc1_producer : alloc_producer),
+        .pc_i(lsu_d1 ? dq1_head.pc : iq_head.pc),
+        .insn_i(lsu_d1 ? dq1_head.insn : iq_head.insn),
+        .ea_i(lsu_d1 ? d1_ea_full : dispatch_ea), .data_i(lsu_d1 ? d1_data : src_c),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
         .fp_launch_valid_i(fp_launch_valid), .fp_launch_tag_i(fp_launch_tag),
@@ -1745,8 +1870,9 @@ module ppc_core #(
         .fp_store_data_i(fp_store_data), .le_i(msr_le),
         .recovery_i(recovery_accepted), .kill_i(recovery_kill),
         .kill_generation_i(recovery_kill_generation),
-        .store_authorize_i(retire_ready_i), .queue_head_i(cq_head),
+        .store_authorize_i(retire_ready_i && !bs_hold), .queue_head_i(cq_head),
         .commit_i(commit), .commit_tag_i(retire_producer),
+        .branch_spec_i(bs_valid_q || (bu_branch && bu_spec)), .branch_resolved_i(bs_resolve && (bs_taken == bs_pred_q)),
         .chk_addr_o(dmem_store_check_addr_o), .chk_ok_i(dmem_store_check_ok_i),
         .lane_idle_i(!special_busy),
         .req_valid_o(lsu_req_valid), .req_ready_i(dmem_req_ready_i),
@@ -1895,7 +2021,7 @@ module ppc_core #(
       perf_o <= '0;
     end else begin
       if (recovery_accepted)
-        perf_refetch_q <= special_branch_redirect ? 2'd1 : 2'd2;
+        perf_refetch_q <= (special_branch_redirect || bs_redirect_q) ? 2'd1 : 2'd2;
       else if (bu_redirect_q || fold_q) perf_refetch_q <= 2'd1;
       else if (iq_valid) perf_refetch_q <= '0;
       if (dispatch && special_uop) perf_special_mem_q <= perf_head_mem;
@@ -1904,7 +2030,7 @@ module ppc_core #(
       perf_o.iq_full <= fd_valid_q && !fd_push_ok;
       perf_o.branch <= dispatch && perf_head_branch;
       perf_o.memory <= dispatch && special_uop && perf_head_mem;
-      perf_o.branch_redirect <= (recovery_accepted && special_branch_redirect) ||
+      perf_o.branch_redirect <= (recovery_accepted && (special_branch_redirect || bs_redirect_q)) ||
                                 (bu_redirect_q && !recovery_accepted);
       perf_o.slot <= perf_slot;
     end
@@ -1962,7 +2088,7 @@ module ppc_core #(
       assert (d1_branch) else $error("folded DQ1 branch left the branch unit");
     // A folded bclr or bcctr found its target register final at fetch.
     if (rst_ni && iq_valid && iq_folded && !trace_mode)
-      assert (!(bu_reads_lr && lr_pending_q) && !(iq_branch[1] == 1'b0 &&
+      assert (!(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(iq_branch[1] == 1'b0 &&
               iq_head.insn[31:26] == 6'd19 && ctr_pending_q))
         else $error("folded branch target register still pending");
     if (rst_ni && dispatch && bu_branch && iq_folded && bu_taken && iq_valid1)
@@ -2079,8 +2205,8 @@ module ppc_core #(
     .wake1_valid_o(wake1_valid), .wake1_o(wake1),
     .retire_valid_o(cq_retire_valid),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block &&
-                    !update_pending_q),
-    .retire_hold_i(special_retire_hold || halted_o),
+                    !update_pending_q && !bs_hold),
+    .retire_hold_i(special_retire_hold || halted_o || bs_hold),
     .retire_o(cq_retire), .retire_tag_o(retire_producer),
     .retire1_valid_o(cq_retire1_valid), .retire1_ready_i(retire1_ready_i && retire1_gate),
     .retire1_o(cq_retire1), .retire1_tag_o(retire1_producer),
@@ -2113,7 +2239,7 @@ module ppc_core #(
   // under an outstanding access may already have finished.
   // With one write port an update base takes the port the cycle after.
   assign retire_valid_o = cq_retire_valid && !special_retire_hold && !halted_o &&
-                          !fp_head_block && !update_pending_q;
+                          !fp_head_block && !update_pending_q && !bs_hold;
   assign commit = retire_valid_o && retire_ready_i;
   assign retire1_valid_o = retire_valid_o && cq_retire1_valid && retire1_gate;
   assign retire1_o = cq_retire1;
@@ -2123,14 +2249,15 @@ module ppc_core #(
   // is empty; they win over an external test redirect. Stores and committed
   // exceptions suppress external cuts while their external effect is pending.
   always_comb begin
-    if (special_exception_redirect || special_branch_redirect || fp_replay) begin
+    if (special_exception_redirect || special_branch_redirect || fp_replay ||
+        bs_redirect_q) begin
       selected_redirect_valid = 1'b1;
       selected_redirect_all = 1'b1;
       selected_redirect_keep = 1'b0;
       selected_redirect_pivot = '0;
-      selected_redirect_target = special_exception_redirect ?
-        special_exception_target : special_branch_redirect ?
-        special_branch_target : cq_retire.pc;
+      selected_redirect_target = bs_redirect_q ? bs_alt_q :
+        special_exception_redirect ? special_exception_target :
+        special_branch_redirect ? special_branch_target : cq_retire.pc;
     end else begin
       selected_redirect_valid = ENABLE_TEST_REDIRECT && redirect_valid_i && !halted_o &&
         !special_store_irrevocable && !lsu_store_irrevocable &&
@@ -2143,7 +2270,7 @@ module ppc_core #(
       selected_redirect_target = redirect_target_i;
     end
   end
-  assign redirect_accepted_o = recovery_accepted &&
+  assign redirect_accepted_o = recovery_accepted && !bs_redirect_q &&
     !special_branch_redirect && !special_exception_redirect && !fp_replay;
   // A redirect survives older retained retirement until a target-stream uop
   // has entered the CQ. From then on CQ nonempty excludes interrupt admission
@@ -2208,11 +2335,12 @@ module ppc_core #(
   end
   // Registered: the FPU result depends on the recovery the replay starts.
   // The blocked head cannot change before that recovery.
-  assign fp_replay = fp_replay_req_q && fp_head && !halted_o &&
+  assign fp_replay = fp_replay_req_q && fp_head && !halted_o && !bs_redirect_q &&
     (!special_busy || special_fp_store_cancellable);
   assign fp_commit = commit && fp_head;
   always_comb begin
     retire_o = cq_retire;
+    if (bs_head) retire_o.value = bs_alt_q;
     retire_o.needs_flags = cq_retire.needs_flags && !fp_head;
     if (fp_head)
       retire_o.cr_delta = cq_retire.write_cr_field ?

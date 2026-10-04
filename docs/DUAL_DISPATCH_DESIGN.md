@@ -284,8 +284,10 @@ integrated tops before any timing claim.
   At 2 a response may carry the next word: `imem_rsp_insn_i` and
   `fetch_rsp_insn_o` widen to `{pair, word at addr + 4, word at addr}`. The
   I-cache sets `pair` on a RAM hit at an even word; refill-forwarded words stay
-  single. The wrappers still build width 1; wiring them (and the translation
-  router) is slice 6 work.
+  single. `ppc_core_bat`, the router, `ppc_icache_managed` and
+  `ppc_core_bat_cached_bus60x` pass `FETCH_WIDTH` through (default 1); `ppc603e`
+  sets 2, so the chip, SoC and MiSTer tops fetch pairs. An uncached or
+  faulting response carries no pair.
 - `cpu_cfg_t.max_dispatch_width` per variant. The 603 and 603e allow 2. The
   602 FPU retires one per edge ([FPU_INTERFACE.md](FPU_INTERFACE.md)); its core
   width is unsourced, so it stays 1 until a 602 source says otherwise.
@@ -322,8 +324,9 @@ coordinator runs `ci`, `xrand-sweep` and the fits.
 | 3 | Implemented at width 2: finished-at-allocation branches, PID7v SRU add/compare lane on the CQ's second finish port and wake bus | `ppc_core` (`HAS_SRU`, `g_sru`), `ppc_completion` (`result1_*`, `wake1_*`) |
 | 4 | Implemented behind `DISPATCH_WIDTH=2`; pair-rule cycle benches beyond `tb_core_dual` not written | `ppc_core` (`dispatch1`, `pair_units`); bench `tb/tb_core_dual.sv` |
 | 5 | Implemented; only `tb_core_reference` and the SoC/MiSTer benches observe CQ[1] | `ppc_core` (`commit1`); `RETIRE_PAIRS` on the BAT wrappers |
-| 6 | Partial: width 2 selectable (`make -C sim DISPATCH_WIDTH=2`, `--dual` builds), default still 1; the chip top misses 66 MHz, and 50 MHz hold by 6 ps (see below); two-word fetch through the wrappers not wired | |
+| 6 | Partial: width 2 selectable (`make -C sim DISPATCH_WIDTH=2`, `--dual` builds), default still 1; the chip top misses 66 MHz, and 50 MHz hold by 6 ps (see below); two-word fetch through the wrappers wired ([slice 8](#slice-8)) | `FETCH_WIDTH` on the BAT wrappers, `ppc603e` |
 | 7 | Branch in DQ1 and `bclr`/`bcctr` folding done; branches still take a CQ entry | `ppc_core` (`d1_branch`, `lr_iq_q`/`ctr_iq_q`, `folds`); benches `test-core-branch-fold`, `tb_core_machine_check_trace` scenarios 16-18, `tb_core_dual` |
+| 8 | Speculative `bc`, shadow LR, unresolved `bc` + DQ1 pair, DQ1 access into the LSU unit; branches still take a CQ entry | `ppc_core` (`bs_*`, `lr_front_q`/`lr_disp_q`, `d1_lsu`), `ppc_lsu_pipe` (`bspec`); scenarios 19-20, `tb_core_dual` group H |
 
 Slice 0. The monitor writes one line per cycle with a dispatch or an accepted
 retirement: `<cycle> D<n> R<n> <dispatch pcs> | <retire pcs>`, cycle 0 being
@@ -720,6 +723,55 @@ and the DQ1 next-PC adder; no fit was run. Quartus 17
 lock on a copy of `quartus/chip`, commit 9645f3a: 0 errors at width 1 (51
 warnings) and with `PPC_DISPATCH_WIDTH=2`, `PPC_LSU_PIPE=1` (47 warnings).
 
+### Slice 8
+
+Fetch and branch work toward the 603e's timing
+([PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#fetch-and-branch-round)):
+
+- Two-word fetch through the wrappers: `ppc603e` builds the core with
+  `FETCH_WIDTH=2`; the IQ stays six entries (UM 6.3.2.2).
+- Speculative `bc` (UM 6.4.1.2): a branch whose CR owner has not finished
+  dispatches on its prediction; nothing completes past it until it resolves,
+  and a miss retires the branch with its real next PC and recovers the
+  machine on the next edge. One level. Details in
+  [CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit).
+- Shadow LR: a `bclr` behind an uncommitted linking branch folds and
+  resolves from that branch's PC + 4.
+- Pairing: an unresolved `bc` in DQ0 pairs with DQ1 (it cannot redirect at
+  dispatch), and a plain load or store in DQ1 with committed sources enters
+  the LSU unit beside an IU operation or such a branch.
+
+New logic on the fetch side is the shadow-LR mux into the fold target
+(`lr_free ? LR : lr_front_q`, 30 bits) and one OR term in the fold enable;
+the rest sits on dispatch (`bu_spec`, the DQ1 EA adder and LSU input mux)
+and retirement (`bs_hold`). No fit was run.
+
+Recorded: `make -C sim lint test-chip-pins test-chip-ratios test-chip-603 test-chip-le test-chip-mp test-chip-power test-chip-dcache-coherence test-icache-managed test-chip602-pins`, commit 800c8f4, 2026-10-04.
+All pass with the chip top fetching pairs (pins at five PLL ratios, three MP
+seeds, coherence, LE firmware, the 603 and 602 tops). Not established:
+timing.
+
+Recorded: `make -C sim test-core-control-memory test-core-branch-fold test-core-branch-recovery test-core-dual test-core-machine-check-trace test-core-compare check-spec`, and from `sim/` the same benches with `DISPATCH_WIDTH=2 BUILD_DIR=build-w2-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, commit 9dae6d9, 2026-10-04.
+All pass. `test-core-branch-fold` now runs 922 retirements: at four code
+offsets, a `bc` whose compare waits on `divw` (taken and not, predicted right
+and wrong, y set, LK, an add between compare and branch so it can retire
+from CQ[1]), with a store, load, second compare and CR branch, `mtctr` behind
+it; a `bne` loop on a loaded counter; and a CTR-and-condition `bc`. Width 1:
+71,592 checks, 4,222 cycles; two-word fetch at width 2: 71,350 checks, 3,878
+cycles; with the unit 4,074 and 3,708. `test-core-machine-check-trace`
+scenarios 19-20 (four seeds, 1,911 checks): a mispredicted `bne` whose wrong
+path holds an IABR match and a DSI takes neither, and an external interrupt
+at its boundary saves the real target; predicted right, both are taken. Two
+speculative dispatches and one miss are counted. `tb_core_dual` group H pairs
+the unresolved `bc` with the add behind it; `add` + `lwz` now pairs with the
+unit. Not established: misprediction cost against F6-5, which the core
+exceeds (the 603e redirects at R+1; the core waits for the branch to
+retire).
+
+Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` under the
+Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and
+`PPC_LSU_PIPE=1`, commit 98e94dd: 0 errors, 48 warnings.
+
 ## Risks
 
 - **Throughput depends on P3 first.** Today's CPI is about 4 on Dhrystone and
@@ -734,6 +786,9 @@ warnings) and with `PPC_DISPATCH_WIDTH=2`, `PPC_LSU_PIPE=1` (47 warnings).
   cost only for a folded branch in DQ1; cycle-exact branch rows need the
   branch removed at fetch (P09). Until then branch timing is a listed
   deviation.
+- **Speculative recovery is late.** A mispredicted speculative `bc` recovers
+  when it retires, not at resolution; never faster than the 603e, but
+  slower when older work is long.
 - **LVT correctness.** Two write ports to one register in one cycle cannot occur
   (retire pairs have distinct destinations or are ordered); an assertion checks
   it and a directed bench covers the same-index read-after-write.

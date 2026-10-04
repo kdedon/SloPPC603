@@ -138,6 +138,12 @@ module tb_core_machine_check_trace;
   always @(posedge clk)
     if (rst_n && dut.dispatch && dut.iq_folded && (dut.iq_head.insn[31:26] == 6'd19))
       folded_indirect++;
+  // Branches dispatched before their CR, and mispredicted ones.
+  int spec_branches = 0, spec_misses = 0;
+  always @(posedge clk) begin
+    if (rst_n && dut.dispatch && dut.bu_branch && dut.bu_spec) spec_branches++;
+    if (rst_n && dut.bs_redirect_q) spec_misses++;
+  end
 
   function automatic int unsigned rnd();
     rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
@@ -863,8 +869,52 @@ module tb_core_machine_check_trace;
     expect_entry(32'h500, 32'h14, 32'h0000_9042, 32'h0000_1040);
     run_scenario(20000);
 
-    $display("PASS core machine check, trace and IABR: scenarios=%0d checks=%0d retires=%0d cycles=%0d folded-indirect=%0d",
-             scenarios, checks, retires, cycles, folded_indirect);
+    // 19. A bne whose compare waits on a divide is mispredicted: the
+    // wrong path's IABR match and DSI are never taken, and an external
+    // interrupt at the branch's boundary saves the real target. Then the
+    // same branch predicted right takes the DSI and IABR.
+    for (int pass = 0; pass < 2; pass++) begin
+      int spec_before, miss_before;
+      bit right;
+      right = pass[0];
+      spec_before = spec_branches;
+      miss_before = spec_misses;
+      start_scenario();
+      load32(3, 32'h0000_9042);
+      emit(asm_mtmsr(3));                     // 0x0c
+      emit(asm_li(3, 'h36));
+      emit(asm_spr(1'b1, 3, 1010));           // IABR 0x34
+      emit(ASM_ISYNC);
+      emit(asm_li(9, 35));                    // 0x1c
+      emit(asm_li(10, 7));
+      emit({6'd31, 5'd7, 5'd9, 5'd10, 1'b0, 9'd491, 1'b0});  // 0x24 divw r7 = 5
+      emit(asm_cmpwi(7, right ? 5 : 4));      // 0x28
+      emit(asm_bc(4, 2, 'h1c));               // 0x2c bne -> 0x48
+      emit(asm_lwz(6, int'(DATA + 64), 0));   // 0x30 DSI
+      emit(asm_addi(5, 5, 1));                // 0x34 breakpoint
+      emit(asm_stw(5, int'(DATA + 8), 0));
+      emit(b_rel(32'hc, 1'b0));               // 0x3c -> 0x48
+      org(32'h48);
+      emit(asm_addi(8, 8, 1));
+      emit(asm_stw(8, int'(DATA + 12), 0));
+      finish_program();
+      dfault[DATA + 64] = DATA_DSI_PROTECTION;
+      if (right) begin
+        expect_entry(32'h300, 32'h30, DC, 32'h0000_1040);
+        expect_entry(32'h1300, 32'h34, 32'h0000_9042, 32'h0000_1040);
+      end else begin
+        irq_on_retire_pc = 32'h2c;
+        expect_entry(32'h500, 32'h48, 32'h0000_9042, 32'h0000_1040);
+      end
+      run_scenario(20000);
+      check(spec_branches > spec_before, "bne dispatched before its compare finished");
+      check((spec_misses - miss_before) == (right ? 0 : 1), "speculative bne outcome");
+      check(mem_word(DATA + 12) == 1, "branch target ran once");
+      check(mem_word(DATA + 8) == (right ? 1 : 0), "wrong path left no store");
+    end
+
+    $display("PASS core machine check, trace and IABR: scenarios=%0d checks=%0d retires=%0d cycles=%0d folded-indirect=%0d speculative=%0d mispredicted=%0d",
+             scenarios, checks, retires, cycles, folded_indirect, spec_branches, spec_misses);
     $finish;
   end
 endmodule
