@@ -213,7 +213,16 @@ module tb_core_dual #(
       32'hd0: return {6'd31, 5'd21, 5'd4, 5'd5, 1'b0, 9'd8, 1'b0};     // subfc r21,r4,r5
       32'hd4: return cmpw(4, 4, 5);
       32'hd8: return {6'd31, 5'd22, 5'd4, 5'd5, 1'b0, 9'd138, 1'b0};   // adde r22,r4,r5
-      32'hdc: return b(int'(END_PC) - 32'hdc);
+      // L: a bc in DQ1 beside the cmpw it reads is predicted (UM 6.4.1.2);
+      // one whose CR is final and agrees with the fetch path resolves.
+      32'hdc: return SYNC;
+      32'he0: return cmpw(5, 4, 5);
+      32'he4: return {6'd16, 5'd4, 5'd20, 14'd2, 2'b00};  // bge cr5, +8 (not taken)
+      32'he8: return addi(0, 0, 1);
+      32'hec: return SYNC;
+      32'hf0: return addi(0, 0, 2);
+      32'hf4: return {6'd16, 5'd4, 5'd20, 14'd2, 2'b00};  // bge cr5, +8 (not taken)
+      32'hf8: return b(int'(END_PC) - 32'hf8);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
@@ -342,6 +351,8 @@ module tb_core_dual #(
       expect_pair(32'h94, 1'b1, "unresolved bc + add");
       expect_pair(32'ha0, 1'b1, "mullw + addi");
       expect_pair(32'hac, LSU_PIPE, "or + lwz, base in rename");
+      expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
+      expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
       $display("retirement:");
       expect_retire_pair(32'h14, 1'b1, "add + add");
       expect_retire_pair(32'h24, 1'b0, "add + dependent addi");
