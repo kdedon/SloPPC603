@@ -28,6 +28,7 @@ module tb_fetch_recovery;
   ppc_fetch #(.RESET_PC(RESET_PC)) dut (
     .clk_i(clk), .rst_ni(rst_n), .stop_i(stop),
     .redirect_i(redirect), .redirect_target_i(redirect_target),
+    .early_i(1'b0), .early_ok_i(1'b0), .early_target_i(32'b0),
     .req_valid_o(req_valid), .req_ready_i(req_ready), .req_addr_o(req_addr),
     .rsp_valid_i(rsp_valid), .rsp_ready_o(rsp_ready), .rsp_insn_i(rsp_insn), .rsp_fault_i(rsp_fault),
     .rsp_esa_i(rsp_esa), .rsp_pair_i(1'b0), .rsp_insn1_i(32'b0), .packet_ready2_i(packet_ready),
