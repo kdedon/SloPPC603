@@ -301,6 +301,17 @@ int main(int argc, char** argv) {
         bool done = false, miss_vector = false, direct_vector = false;
         uint64_t misses = 0, direct = 0, failed_conditional = 0, undefined = 0, discarded_loads = 0;
         uint64_t removed = 0;
+        std::set<uint32_t> discarded;
+        std::string line;
+        std::ofstream kept;
+        if (!keep.empty()) kept.open(keep);
+        uint64_t read = 0;
+        auto fail = [&](const std::string& why) {
+            std::ostringstream text;
+            text << "record " << records << ": " << why << "\n  recent RTL records:";
+            for (auto& r : recent) text << "\n    " << r.substr(0, 200);
+            throw std::runtime_error(text.str());
+        };
         // Branches the RTL removed at dispatch (UM 6.3.1): no LR or CTR
         // write, so they retire without a record and the reference steps them.
         auto step_removed = [&](unsigned n) {
@@ -321,17 +332,6 @@ int main(int argc, char** argv) {
                 ++removed;
                 ++instructions;
             }
-        };
-        std::set<uint32_t> discarded;
-        std::string line;
-        std::ofstream kept;
-        if (!keep.empty()) kept.open(keep);
-        uint64_t read = 0;
-        auto fail = [&](const std::string& why) {
-            std::ostringstream text;
-            text << "record " << records << ": " << why << "\n  recent RTL records:";
-            for (auto& r : recent) text << "\n    " << r.substr(0, 200);
-            throw std::runtime_error(text.str());
         };
         while (!done && std::getline(trace, line)) {
             if (records >= max_records) { done = true; break; }

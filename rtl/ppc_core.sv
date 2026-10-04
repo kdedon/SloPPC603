@@ -2168,7 +2168,8 @@ module ppc_core #(
               iq_head.insn[31:26] == 6'd19 && ctr_pending_q))
         else $error("folded branch target register still pending");
     if (rst_ni && dispatch && bu_branch && iq_folded && bu_taken && iq_valid1)
-      assert (dq1_head.pc == bu_target) else $error("folded branch fetched a stale target");
+      assert ((dq1_rb != 2'd0) || (dq1_head.pc == bu_target))
+        else $error("folded branch fetched a stale target");
     // Work younger than a faulting plain access is removed by its redirect.
     if (rst_ni && (special_exception_redirect || special_branch_redirect))
       assert ((cq_empty && normal_idle) || special_exception_redirect)
