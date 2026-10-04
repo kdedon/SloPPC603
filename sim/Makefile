@@ -2070,6 +2070,15 @@ test-chip-le:
 	python3 tools/le_core_program.py --chip-image $(BUILD_DIR)/chip-le/program.hex
 	./$(BUILD_DIR)/chip-le/Vtb_chip_firmware +IMAGE=$(BUILD_DIR)/chip-le/program.hex +TOHOST=fff3ff00 $(SIM_ARGS)
 
+# The little-endian program on DingusPPC built with little-endian support,
+# compared retirement by retirement and word by word with tb_core_le.
+.PHONY: test-reference-le
+test: test-reference-le
+test-reference-le: reference-checkout
+	mkdir -p $(BUILD_DIR)/reference-le
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_core_le -GCPU_VARIANT=0 -GDMEM_BITS=64 -GFETCH_WIDTH=1 -GDISPATCH_WIDTH=1 --Mdir $(BUILD_DIR)/reference-le/rtl $(FPU_CORE_RTL) ../tb/tb_core_le.sv
+	python3 cosim/run_le_reference.py --build-dir $(BUILD_DIR)/reference-le --rtl $(BUILD_DIR)/reference-le/rtl/Vtb_core_le --reference $(REFERENCE_DIR)
+
 # The same program with the pipelined LSU over a memory taking one access per
 # cycle; adds the Table 6-6 integer load/store rows.
 .PHONY: test-core-lsu-timing
