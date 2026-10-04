@@ -227,10 +227,13 @@ module tb_core_dual #(
       32'h100: return {6'd16, 5'd12, 5'd25, 14'd2, 2'b00};  // bgt cr6, +8 (taken, predicted not)
       32'h104: return addi(31, 0, 7);                      // skipped
       // M: a bc in DQ0 resolved at dispatch that does not redirect pairs.
-      32'h108: return SYNC;
-      32'h10c: return {6'd16, 5'd4, 5'd16, 14'd2, 2'b00};  // bge cr4, +8
-      32'h110: return addi(0, 0, 3);
-      32'h114: return b(int'(END_PC) - 32'h114);
+      // The sync waits on the multiply while fetch refills the queue after
+      // L's recovery.
+      32'h108: return mullw(26, 4, 7);
+      32'h10c: return SYNC;
+      32'h110: return {6'd16, 5'd4, 5'd16, 14'd2, 2'b00};  // bge cr4, +8
+      32'h114: return addi(0, 0, 3);
+      32'h118: return b(int'(END_PC) - 32'h118);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
@@ -363,7 +366,7 @@ module tb_core_dual #(
       expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
       expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
       expect_pair(32'hfc, 1'b1, "cmpw + mispredicted bc in DQ1");
-      expect_pair(32'h10c, 1'b1, "resolved bc + addi");
+      expect_pair(32'h110, 1'b1, "resolved bc + addi");
       $display("retirement:");
       expect_retire_pair(32'h14, 1'b1, "add + add");
       expect_retire_pair(32'h24, 1'b0, "add + dependent addi");
