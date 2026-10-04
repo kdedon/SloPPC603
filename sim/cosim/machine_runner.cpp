@@ -301,9 +301,9 @@ int main(int argc, char** argv) {
         bool done = false, miss_vector = false, direct_vector = false;
         uint64_t misses = 0, direct = 0, failed_conditional = 0, undefined = 0, discarded_loads = 0;
         uint64_t removed = 0, late_stores = 0;
-        // A store retired without its write: the store queue performs it
-        // after younger instructions have retired (UM 1.1.4.3).
-        bool store_owed = false;
+        // Store records not yet matched by a record with writes: the store
+        // queue performs a store after younger instructions retire (UM 1.1.4.3).
+        uint64_t stores_owed = 0;
         std::set<uint32_t> discarded;
         std::string line;
         std::ofstream kept;
@@ -552,13 +552,12 @@ int main(int argc, char** argv) {
                 if (ref[i] != rtl[i])
                     diff += " " + field_name(i) + " rtl=" + h8(rtl[i]) + " ref=" + h8(ref[i]);
             if (!diff.empty()) fail("state after " + h8(pc) + " " + h8(insn) + ":" + diff);
+            stores_owed += store_class(insn);
             if (!rtl_stores.empty()) {
-                if (!store_class(insn)) {
-                    if (!store_owed) fail("store effects from a non-store " + h8(insn));
-                    ++late_stores;
-                }
-                store_owed = false;
-            } else if (store_class(insn)) store_owed = true;
+                if (!stores_owed) fail("store effects with no store retired " + h8(insn));
+                late_stores += !store_class(insn);
+                --stores_owed;
+            }
             // Every RTL store byte must match the reference's memory or its I/O writes.
             // stwcx. offers its write before the reservation decides it; a failed
             // one (CR0[EQ] clear) wrote nothing.

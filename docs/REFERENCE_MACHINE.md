@@ -79,7 +79,7 @@ counted in the summary:
 | PVR revision (`undefined_fields`) | UM 2.1.1 | Version (upper half) compared; revision taken |
 | Loads from a block after `dcbi` (`dcbi_loads`) | PEM `dcbi`: a modified block is discarded, so memory depends on the cache | The RTL's loaded value is taken and written into the reference's memory |
 | Failed `stwcx.` (`failed_stwcx`) | The core offers the write before the reservation decides it; CR0[EQ] clear means nothing was written | Its store offer is not compared |
-| A store's write after younger records (`late_stores`) | UM 1.1.4.3: the store queue performs a completed store later | A write on a non-store record is accepted when a store record since the last write had none; its bytes are compared against the reference's memory then |
+| A store's write after younger records (`late_stores`) | UM 1.1.4.3: the store queue performs a completed store later | A record with writes needs a retired store not yet matched by an earlier record with writes; its bytes are compared against the reference's memory then |
 | Branches removed at dispatch (`removed_branches`) | UM 6.3.1: a branch with no SPR write back retires in the BPU | `rb=<n0>,<n1>` on the next record; the reference steps that many branches (each checked to be a branch without LK or CTR decrement) before the head and before CQ[1] |
 
 ## Not established
