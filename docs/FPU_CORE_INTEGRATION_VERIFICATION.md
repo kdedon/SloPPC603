@@ -174,8 +174,29 @@ is set, so it returns without re-enabling FE. Quartus 17.0.2
 `quartus_map --analysis_and_elaboration` of the chip top with ENABLE_FPU and
 `PPC_LSU_PIPE=1`: 0 errors.
 
-Not established: the same rule for `rfi` (not implemented, see the
-integration limits); interaction with a pending external interrupt.
+Not established: interaction with a pending external interrupt.
+
+### rfi
+
+Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-chip-fpu test-exception-state test-crstate-execution variant-exception-602-4`, and `make -C sim -j2 DISPATCH_WIDTH=2 BUILD_DIR=build-w2-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate test-core-fpu`, commit 8c037ca, 2026-10-04: pass.
+
+`fp_enable_rfi` in both FP core programs runs five `rfi`s from FE = 00 to
+the next instruction, an `addi`: with FEX set and SRR1 FE = 11, 01 or 10 the
+log holds a program exception at the target with SRR1 = restored MSR | bits
+11 and 15, the `addi` does not run and the FPSCR is unchanged; with FEX set
+and SRR1 FE = 00, or FEX clear and FE = 11, the `addi` runs and `mfmsr`
+reads the restored MSR. The 0x700 handler now clears FE in SRR1 after every
+FP enabled exception (SRR1 bit 11); `in_flight` re-enables FE with FEX clear
+for its second fault, and the `fadd` behind the first fault runs once
+without trapping. Counts: `test-core-fpu` 2636/2705 checks (stall on/off),
+width 2 with the unit 2640/2709, `test-core-fpu-602` 1142/1145. With the
+rule disabled in the lane, `test-core-fpu` fails 7 checks. Quartus 17.0.2
+`quartus_map --analysis_and_elaboration` of the chip top with ENABLE_FPU:
+0 errors.
+
+Not established: `rfi` to problem state with FEX set (the programs have no
+`sc` return path on the 603e); a pending external interrupt at the same
+boundary.
 
 ## Pipelined FP issue
 
