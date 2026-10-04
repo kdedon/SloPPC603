@@ -392,7 +392,7 @@ module ppc_core #(
   issue_packet_t sru_issue;
   /* verilator lint_on UNUSEDSIGNAL */
   result_packet_t sru_result;
-  logic update_pending_q, gpr_ready, gpr_port_write, gpr_port1_write;
+  logic update_pending_q, update_wait0, update_wait1, gpr_ready, gpr_port_write, gpr_port1_write;
   logic [4:0] gpr_port_reg, gpr_port1_reg, update_reg_q;
   logic [31:0] gpr_port_value, gpr_port1_value, update_value_q;
   logic normal_uop, special_uop, normal_idle;
@@ -1221,8 +1221,8 @@ module ppc_core #(
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni && update_pending_q)
-      assert (!gpr_commit && !update_commit && !dispatch)
-        else $error("update hold shared its cycle");
+      assert (!gpr_commit && !update_commit && !(dispatch && reads_reg(uop, update_reg_q)))
+        else $error("update hold beside a commit or a reader");
     if (rst_ni && gpr_commit && update_commit)
       assert (retire_o.gpr != retire_o.update_gpr)
         else $error("update retirement writes alias");
@@ -1661,7 +1661,7 @@ module ppc_core #(
   assign iq_ready = !fault_pending && !bu_redirect_q && !bs_miss_q &&
     !(bs_valid_q && special_uop && !lsu_route && !sru_move) &&
     (!interrupt_qualified || seq_active) &&
-    !update_pending_q && gpr_ready && cq_ready && !sru_wait0 &&
+    !update_wait0 && gpr_ready && cq_ready && !sru_wait0 &&
     (!special_busy || overlap_dispatch_ok ||
      (sru_move && (special_mem_overlap || sru_in_lane)) || (lsu_route && sru_in_lane) ||
      (fp_uop && special_mem_overlap && !special_fp_load_overlap) ||
@@ -1793,6 +1793,9 @@ module ppc_core #(
   /* verilator lint_on UNUSEDSIGNAL */
   assign sru_wait0 = sru_dst_busy && reads_reg(uop, sru_uop_q.dst);
   assign sru_wait1 = sru_dst_busy && reads_reg(dq1_uop, sru_uop_q.dst);
+  // A held update base is not yet in the register file.
+  assign update_wait0 = update_pending_q && reads_reg(uop, update_reg_q);
+  assign update_wait1 = update_pending_q && reads_reg(dq1_uop, update_reg_q);
   assign sru_issue_go = sru_hold_q && !cq_empty && (cq_head == sru_producer_q.index) &&
     !special_busy && !special_cancel && !recovery_accepted;
   // An access the unit hands over may be older than the held move.
@@ -1944,6 +1947,7 @@ module ppc_core #(
   // need not wait for dispatch1, which depends on the unit's ready.
   assign lsu_c0 = (special_uop && lsu_route) || fp_mem_pipe;
   assign dispatch1 = dispatch && seq_last && pair_units && cq1_ready && !unit_update && !sru_wait1 &&
+    !update_wait1 &&
     (!d1_lsu || d1_lsu_ready) &&
     (!flags_tok1 || (!flags_tok0 && !flags_busy)) && (!d1_needs_flags || xer_ready1) &&
     (!d1_gpr || (dispatch_uop.gpr_write ? alloc1_ready : alloc_ready)) &&
