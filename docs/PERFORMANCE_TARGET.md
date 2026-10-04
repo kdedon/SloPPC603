@@ -484,8 +484,8 @@ cycles) is faster than the figures and not adopted. On the six-rule model
 
 ### Next steps
 
-1. Retire at finish + 1 (74). Until then, same-cycle CQ reuse is
-   manual-consistent (16 measured).
+1. Retire at finish + 1 (74): done for IU, SRU and unit results, below
+   (38.5 measured at width 2).
 2. Fold branches out of dispatch and the CQ (38).
 3. Check the CR token at execute, not dispatch (22).
 4. An LSU station that waits for the base, or base snooping from the IU (20).
@@ -493,6 +493,35 @@ cycles) is faster than the figures and not adopted. On the six-rule model
 6. Taken `b`/`bl`/`bclr` redirect at fetch (about 15 of the residual).
 7. Store writes off the load port (up to 25 of the residual, part A6).
 8. DQ0 add/compare to the SRU when the IU station is taken (7).
+
+## Completion in the writeback cycle
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex +PROFILE`, commits f5305d4 with the `-fno-const-bit-op-tree` build of 55adec6 (before) and b73b3d6 (after), 2026-10-04.
+Unit and store queue on, prebuilt firmware. Every run passes its checks.
+
+A fault-free result from the IU, the SRU or the load/store unit now retires
+in the cycle it reaches the completion queue: `add 1D 2E 3W`, a load or
+store `1D 2E 3E 4W` (F6-3, F6-5, UM 6.3.3). The entry frees for dispatch the
+next cycle, the `A` cycle; same-cycle reuse stays off. Faulting results,
+special-lane results and FP entries retire as before, a cycle after their
+result or with the FPU's.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before | 851.0 | 771.5 | 2.037 | 2.193 |
+| After | 835.0 | 733.0 | 2.133 | 2.354 |
+
+Dispatch to retirement at width 2 (minimum / mean, 603e model in brackets):
+add 2 / 3.20 (2 / 2.75), compare 2 / 2.99 (2 / 3.66), other integer 2 / 3.06
+(2 / 3.07), load 3 / 3.48 (3 / 3.34), store 3 / 4.11 (3 / 3.73). No class
+retires before its manual cycle in isolation; means below the model's
+reflect a different schedule. The model priced the rule at 74 cycles with
+the other five rules removed; alone it measured 38.5 at width 2.
+
+At width 1 the gain first measured 34 cycles worse: with one GPR write port
+an update form's base takes the port the cycle after it retires, and that
+cycle blocked all dispatch. It now blocks only an instruction that reads the
+base (`strcpy` and `strcmp`, 30 and 19 cycles).
 
 ## Gaps
 

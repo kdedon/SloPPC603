@@ -916,6 +916,37 @@ retirements, CoreMark 815,628 of 3,496,987, Whetstone 878,210 of 4,577,906.
 Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` with
 `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`: 0 errors.
 
+## Completion in the writeback cycle
+
+Recorded: `make -C sim lint check-spec`; `make -C sim DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe <bench>` and the same at width 1 without the unit, for `test-core test-core-dual test-core-recovery test-core-machine-check-trace test-core-branch-fold test-core-control-memory test-core-lsu-timing test-core-lsu-update test-core-fpu test-completion test-completion-flags test-stage test-core-interrupt`; `make -C sim test-dispatch-rules DEMO_FW_DIR=<main checkout>/toolchain/build/demo` at width 1 and at width 2 with the unit, commit b73b3d6, 2026-10-04.
+All pass. `test-reference-machine` at width 2 with the unit fails at `hello`
+record 67 (a queued store's write lands on the next retirement line), on
+f5305d4 as well; the trace does not place post-retirement store-queue writes.
+
+A fault-free result on either finish port retires with the head (or CQ[1])
+in its arrival cycle, its value and flag deltas merged into the retire
+packet (UM 6.3.3; F6-3, F6-5). The queue frees the entry the next cycle.
+Special-lane results are excluded: the lane's commit-time redirect and
+exception outputs take their commit from registered state
+(`retire_settled_o`), as do FP heads, which allocate finished.
+
+New combinational path: unit result valid and producer → finish acceptance
+(generation compare, recovery kill) → head match → `retire_valid_o` →
+`commit` fan-out (GPR write enable, rename release, flags, store queue,
+LR/CTR), plus result value → retire packet → GPR write data and CR delta.
+Kept registered: the retire tag (`retire_tag_o` keys holds such as `bs_hold`
+on head occupancy), the CQ[1] pairing checks (`head_o`, `head1_o`) and the
+irrevocable-head test of recovery acceptance. Quartus analysis and
+elaboration of the chip top at width 2 with the unit passes; no fit yet.
+
+Bench changes: latency probes and spacings drop by one cycle (add 3→2;
+unit `lwz`/`stw` 4→3; a load behind a store to its doubleword 5→4); the
+stage contract's `finish_to_retire_min` is 0. Where faster draining left
+fetch behind a group's sync, the group waits longer (`tb_core_dual` group I
+on a divide, the `stwu` group behind two syncs). The recovery and interrupt
+benches read stored head state where retirement eligibility or ready would
+otherwise form a loop through the finish path.
+
 ## Risks
 
 - **Throughput depends on P3 first.** Today's CPI is about 4 on Dhrystone and
