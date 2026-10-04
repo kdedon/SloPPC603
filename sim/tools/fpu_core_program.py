@@ -916,16 +916,15 @@ def update_and_rename_streams(p):
     pcs = [p.emit(d_form(14, 25, 23, 0)), p.emit(d_form(32, 26, 25, 0))]
     p.spacings.append(('R', pcs[0], pcs[1], base_gap))
     p.store_gpr(26, data)
-    if BASE_SNOOP:
-        # A misaligned EA formed from a snooped base takes the alignment
-        # exception without writing rD.
-        p.li32(19, 0x1357)
-        p.emit(SYNC)
-        p.emit(d_form(32, 25, 23, 4))
-        insn = d_form(32, 19, 25, 2)
-        at = p.emit(insn)
-        p.event(0x600, at, p.msr, slot + 18, dsisr_d(insn))
-        p.store_gpr(19, 0x1357)
+    # A misaligned EA formed from a base the load waited for takes the
+    # alignment exception without writing rD.
+    p.li32(19, 0x1357)
+    p.emit(SYNC)
+    p.emit(d_form(32, 25, 23, 4))
+    insn = d_form(32, 19, 25, 2)
+    at = p.emit(insn)
+    p.event(0x600, at, p.msr, slot + 18, dsisr_d(insn))
+    p.store_gpr(19, 0x1357)
     # Store whose data is the previous load's result.
     p.emit(SYNC)
     pcs = [p.emit(d_form(32, 26, 23, -4)), p.emit(d_form(36, 26, 23, 12))]

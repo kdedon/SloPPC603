@@ -234,7 +234,14 @@ module tb_core_dual #(
       32'h10c: return SYNC;
       32'h110: return {6'd16, 5'd4, 5'd16, 14'd2, 2'b00};  // bge cr4, +8
       32'h114: return addi(0, 0, 3);
-      32'h118: return b(int'(END_PC) - 32'h118);
+      // N: with the IU station holding the or that waits on the divide,
+      // the second addi goes from DQ0 to the SRU (UM 6.3, 6.4.5).
+      32'h118: return SYNC;
+      32'h11c: return {6'd31, 5'd27, 5'd7, 5'd4, 1'b0, 9'd491, 1'b0};  // divw r27,r7,r4
+      32'h120: return or_(27, 27, 27);
+      32'h124: return addi(31, 0, 0);
+      32'h128: return addi(0, 0, 3);
+      32'h12c: return b(int'(END_PC) - 32'h12c);
       END_PC: return b(0);
       default: return addi(31, 0, 99);
     endcase
@@ -333,7 +340,7 @@ module tb_core_dual #(
     expected[23] = 6; expected[24] = 32'h408; expected[25] = 11; expected[27] = 27;
     expected[28] = 30; expected[29] = 11;
     expected[2] = 9; expected[26] = 27; expected[30] = 12;
-    expected[21] = 1; expected[22] = 8;
+    expected[21] = 1; expected[22] = 8; expected[27] = 3;
     if (regs[0] != 32'd3) $fatal(1, "r0 = %0x, expected 3", regs[0]);
     for (int i = 1; i < 32; i++)
       if (regs[i] != expected[i]) $fatal(1, "r%0d = %0x, expected %0x", i, regs[i], expected[i]);
@@ -368,6 +375,10 @@ module tb_core_dual #(
       expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
       expect_pair(32'hfc, 1'b1, "cmpw + mispredicted bc in DQ1");
       expect_pair(32'h110, 1'b1, "resolved bc + addi");
+      if (dut.HAS_SRU && !(dcycle[32'h128] <= dcycle[32'h120] + 2))
+        $fatal(1, "DQ0 addi waited for the IU station");
+      $display("  %-34s or@%0d addi@%0d divw retired@%0d", "DQ0 addi to the SRU",
+               dcycle[32'h120], dcycle[32'h128], rcycle[32'h11c]);
       $display("retirement:");
       expect_retire_pair(32'h14, 1'b1, "add + add");
       expect_retire_pair(32'h24, 1'b0, "add + dependent addi");
