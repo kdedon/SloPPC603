@@ -22,13 +22,15 @@ module tb_fetch_recovery;
   esa_enable_t rsp_esa = ESA_DENIED;
   logic packet_valid, packet_ready;
   fetch_packet_t packet;
+  logic early = 1'b0, early_ok = 1'b0;
+  logic [31:0] early_target = '0;
   logic unused_quiescent;
   int checks = 0;
 
   ppc_fetch #(.RESET_PC(RESET_PC)) dut (
     .clk_i(clk), .rst_ni(rst_n), .stop_i(stop),
     .redirect_i(redirect), .redirect_target_i(redirect_target),
-    .early_i(1'b0), .early_ok_i(1'b0), .early_target_i(32'b0),
+    .early_i(early), .early_ok_i(early_ok), .early_target_i(early_target),
     .req_valid_o(req_valid), .req_ready_i(req_ready), .req_addr_o(req_addr),
     .rsp_valid_i(rsp_valid), .rsp_ready_o(rsp_ready), .rsp_insn_i(rsp_insn), .rsp_fault_i(rsp_fault),
     .rsp_esa_i(rsp_esa), .rsp_pair_i(1'b0), .rsp_insn1_i(32'b0), .packet_ready2_i(packet_ready),
@@ -639,7 +641,81 @@ module tb_fetch_recovery;
     req_ready = 1'b0;
     require(dut.pending, "redirect target not accepted");
 
-    $display("PASS fetch recovery: held/first/accepted/coincident/repeated/stop/reset/streaming (%0d checks)", checks);
+    // An announced redirect requests its target on the redirect edge, from
+    // idle and on a consume edge; the stream then continues at target + 4.
+    reset_fetch(1'b1);
+    @(negedge clk);
+    stop = 1'b0;
+    early = 1'b1;
+    early_ok = 1'b1;
+    early_target = 32'h0000_8000;
+    redirect = 1'b1;
+    redirect_target = 32'h0000_8000;
+    packet_ready = 1'b0;
+    req_ready = 1'b1;
+    #1;
+    require(req_valid && req_addr == 32'h0000_8000,
+            "announced redirect did not request its target on the redirect edge");
+    @(posedge clk); #1;
+    {early, early_ok, redirect, req_ready} = '0;
+    packet_ready = 1'b1;
+    require(dut.pending && !dut.redirect_pending, "early target request not pending");
+    return_packet(32'h0000_8000, 32'h6000_0001);
+    accept_request(32'h0000_8004);
+    @(negedge clk);
+    rsp_valid = 1'b1;
+    rsp_insn = 32'h6000_0002;
+    early = 1'b1;
+    early_ok = 1'b1;
+    early_target = 32'h0000_9000;
+    redirect = 1'b1;
+    redirect_target = 32'h0000_9000;
+    packet_ready = 1'b0;
+    #1;
+    require(rsp_ready && req_valid && req_addr == 32'h0000_9000,
+            "announced consume-edge redirect did not request its target");
+    @(posedge clk); #1;
+    {early, early_ok, redirect, rsp_valid} = '0;
+    packet_ready = 1'b1;
+    require(!dut.pending && dut.request_held && req_valid && req_addr == 32'h0000_9000,
+            "unaccepted early target request not held");
+    accept_request(32'h0000_9000);
+    return_packet(32'h0000_9000, 32'h6000_0003);
+    // With the old response outstanding the target follows it, as without
+    // the announcement.
+    accept_request(32'h0000_9004);
+    @(negedge clk);
+    early = 1'b1;
+    early_ok = 1'b1;
+    early_target = 32'h0000_a000;
+    redirect = 1'b1;
+    redirect_target = 32'h0000_a000;
+    packet_ready = 1'b0;
+    #1;
+    require(!req_valid, "announced redirect offered over an outstanding request");
+    @(posedge clk); #1;
+    {early, early_ok, redirect} = '0;
+    packet_ready = 1'b1;
+    require(dut.redirect_pending, "outstanding request not discarded");
+    @(negedge clk);
+    rsp_valid = 1'b1;
+    #1;
+    require(!packet_valid && !req_valid, "old response published or new offer early");
+    @(posedge clk); #1;
+    rsp_valid = 1'b0;
+    accept_request(32'h0000_a000);
+    return_packet(32'h0000_a000, 32'h6000_0004);
+    // An announcement that does not arrive delays the next offer a cycle.
+    reset_fetch(1'b0);
+    early = 1'b1;
+    early_target = 32'h0000_b000;
+    #1;
+    require(!req_valid, "offer made under an announcement that did not arrive");
+    @(posedge clk); #1;
+    early = 1'b0;
+    accept_request(RESET_PC);
+
+    $display("PASS fetch recovery: held/first/accepted/coincident/repeated/stop/reset/streaming/early (%0d checks)", checks);
     $finish;
   end
 
