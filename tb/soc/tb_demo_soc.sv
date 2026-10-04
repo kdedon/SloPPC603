@@ -139,12 +139,35 @@ module tb_demo_soc #(
     if (h.branch && y.branch) return "both branch";
     return "unknown";
   endfunction
+  // Why DQ1 did not dispatch beside DQ0.
+  function automatic string alone_cause();
+    string key, u0, u1;
+    u0 = soc.cpu.cpu.translated_core.core.iq_pair.unit.name();
+    u1 = soc.cpu.cpu.translated_core.core.dq1_pair.unit.name();
+    if (!soc.cpu.cpu.translated_core.core.d1_valid) key = "d1_invalid";
+    else if (!soc.cpu.cpu.translated_core.core.pair_units) key = "units";
+    else if (!soc.cpu.cpu.translated_core.core.seq_last) key = "seq";
+    else if (!soc.cpu.cpu.translated_core.core.cq1_ready) key = "cq";
+    else if (soc.cpu.cpu.translated_core.core.unit_update) key = "update";
+    else if (soc.cpu.cpu.translated_core.core.d1_lsu &&
+             !soc.cpu.cpu.translated_core.core.d1_lsu_ready) key = "lsu";
+    else if (soc.cpu.cpu.translated_core.core.d1_needs_flags) key = "flags";
+    else if (soc.cpu.cpu.translated_core.core.d1_iu &&
+             !soc.cpu.cpu.translated_core.core.d1_iu_ready) key = "iu";
+    else key = "other";
+    if (key == "units" && soc.cpu.cpu.translated_core.core.dq1_branch[3])
+      key = $sformatf("units %s%s%s%s", insn_class(soc.cpu.cpu.translated_core.core.dq1_head.insn),
+        soc.cpu.cpu.translated_core.core.dq1_folded ? " folded" : "",
+        soc.cpu.cpu.translated_core.core.dispatch_needs_flags ? " dq0-flags" : "",
+        soc.cpu.cpu.translated_core.core.flags_busy ? " busy" : "");
+    return $sformatf("%s+%s %s", u0, u1, key);
+  endfunction
   // verilator lint_on UNUSEDSIGNAL
   always @(posedge clk) begin
     // Counted while the SoC's counters run; cleared with them.
     if (soc.perf.we_i && (soc.perf.word_i == 5'd0) && soc.perf.wdata_i[1]) profile.delete();
     if (running && profiling && soc.perf.run_q) begin
-      string key, u0, u1;
+      string key;
       key = "";
       case (soc.cpu.cpu.translated_core.core.perf_slot)
         ppc_pkg::PERF_DISPATCH: key = "";
@@ -174,25 +197,7 @@ module tb_demo_soc #(
       if (soc.cpu.cpu.translated_core.core.dispatch &&
           soc.cpu.cpu.translated_core.core.iq_valid1 &&
           !soc.cpu.cpu.translated_core.core.dispatch1) begin
-        u0 = soc.cpu.cpu.translated_core.core.iq_pair.unit.name();
-        u1 = soc.cpu.cpu.translated_core.core.dq1_pair.unit.name();
-        if (!soc.cpu.cpu.translated_core.core.d1_valid) key = "d1_invalid";
-        else if (!soc.cpu.cpu.translated_core.core.pair_units) key = "units";
-        else if (!soc.cpu.cpu.translated_core.core.seq_last) key = "seq";
-        else if (!soc.cpu.cpu.translated_core.core.cq1_ready) key = "cq";
-        else if (soc.cpu.cpu.translated_core.core.unit_update) key = "update";
-        else if (soc.cpu.cpu.translated_core.core.d1_lsu &&
-                 !soc.cpu.cpu.translated_core.core.d1_lsu_ready) key = "lsu";
-        else if (soc.cpu.cpu.translated_core.core.d1_needs_flags) key = "flags";
-        else if (soc.cpu.cpu.translated_core.core.d1_iu &&
-                 !soc.cpu.cpu.translated_core.core.d1_iu_ready) key = "iu";
-        else key = "other";
-        if (key == "units" && soc.cpu.cpu.translated_core.core.dq1_branch[3])
-          key = $sformatf("units %s%s%s%s", insn_class(soc.cpu.cpu.translated_core.core.dq1_head.insn),
-            soc.cpu.cpu.translated_core.core.dq1_folded ? " folded" : "",
-            soc.cpu.cpu.translated_core.core.dispatch_needs_flags ? " dq0-flags" : "",
-            soc.cpu.cpu.translated_core.core.flags_busy ? " busy" : "");
-        key = $sformatf("alone %s+%s %s", u0, u1, key);
+        key = $sformatf("alone %s", alone_cause());
         profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
       end
       // CQ[1] finished but held beside a retiring head.
@@ -219,6 +224,33 @@ module tb_demo_soc #(
     end
   end
   final if (profiling) foreach (profile[k]) $display("profile %-52s %0d", k, profile[k]);
+
+  // +STALL_TRACE=<path>: over the +TRACE window, one line per cycle in which
+  // DQ0 did not dispatch ("<cycle> stall <slot> <special op>"), or dispatched
+  // without DQ1 beside it ("<cycle> alone <cause>"). Cycles count as in
+  // +DISPATCH_TRACE.
+  int stall_fd = 0;
+  initial begin
+    string stall_path;
+    if ($value$plusargs("STALL_TRACE=%s", stall_path)) begin
+      stall_fd = $fopen(stall_path, "w");
+      if (stall_fd == 0) $fatal(1, "cannot open %s", stall_path);
+    end
+  end
+  always @(posedge clk) begin
+    if ((stall_fd != 0) && running && (retired >= trace_from) && (retired < trace_to)) begin
+      if (soc.cpu.cpu.translated_core.core.perf_slot != ppc_pkg::PERF_DISPATCH)
+        $fwrite(stall_fd, "%0d stall %s %s\n", soc.cpu.cpu.translated_core.core.event_cycle,
+                soc.cpu.cpu.translated_core.core.perf_slot.name(),
+                soc.cpu.cpu.translated_core.core.dispatch_uop.special_op.name());
+      else if (soc.cpu.cpu.translated_core.core.dispatch &&
+               soc.cpu.cpu.translated_core.core.iq_valid1 &&
+               !soc.cpu.cpu.translated_core.core.dispatch1)
+        $fwrite(stall_fd, "%0d alone %s\n", soc.cpu.cpu.translated_core.core.event_cycle,
+                alone_cause());
+    end
+  end
+  final if (stall_fd != 0) $fclose(stall_fd);
 
   // The counter block's RETIRED against the retire strobe, which reaches
   // the counters through the core's and the SoC's event registers.
