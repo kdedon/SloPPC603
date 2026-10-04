@@ -111,6 +111,9 @@ Recorded: `make -C sim lint check-spec test-chip-mp`, and `test-chip-mp` with
 VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, commit b4316c1, 2026-10-04.
 PASS. Seeds 6-20 (width 1) and 6-25 (width 2) of `+PAIR_PROBE`, and 1-12 of
 `+PAIR_PROBE +WRITE_TEA` at width 1, also pass, run by hand.
+`test-chip-dcache-coherence test-chip-pins test-chip-ecxwx
+test-core-bat-machine-check test-core-dcache test-core-dcache-lsu-pipe` pass
+at both widths, commit 3d83f49 (RTL as in b4316c1), 2026-10-04.
 
 `test-chip-mp` now also runs seeds 1, 3, 5 with `+PAIR_PROBE` and seeds 2, 4
 with `+PAIR_PROBE +WRITE_TEA +SHARED_BUSY`:
