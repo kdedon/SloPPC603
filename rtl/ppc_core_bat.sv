@@ -53,6 +53,8 @@ module ppc_core_bat #(
   // Pipelined load/store unit (see ppc_core). With a data cache, a micro-TLB
   // hit also reaches the cache in the cycle the router accepts it.
   parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
+  // Instruction words per fetch response (see ppc_core).
+  parameter int FETCH_WIDTH = 1,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   parameter bit ENABLE_PIN_INTERRUPTS = 1'b0,
   parameter logic [31:0] HID0_RESET = 32'h0000_0000,
@@ -130,7 +132,7 @@ module ppc_core_bat #(
   output logic [3:0] pimem_req_wimg_o,
   input  logic pimem_rsp_valid_i,
   output logic pimem_rsp_ready_o,
-  input  logic [31:0] pimem_rsp_insn_i,
+  input  logic [33*FETCH_WIDTH-2:0] pimem_rsp_insn_i,
   input  logic pimem_rsp_error_i,
   output logic pdmem_req_valid_o,
   input  logic pdmem_req_ready_i,
@@ -184,7 +186,8 @@ module ppc_core_bat #(
   ppc_pkg::page_miss_t imem_rsp_page_miss, dmem_rsp_page_miss;
   logic core_rst_n, core_halted, ifetch_fatal;
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
-  logic [31:0] imem_req_addr, imem_rsp_insn;
+  logic [31:0] imem_req_addr;
+  logic [33*FETCH_WIDTH-2:0] imem_rsp_insn;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
   logic [31:0] dmem_req_addr;
   logic [DMEM_BITS-1:0] dmem_req_wdata;
@@ -269,6 +272,7 @@ module ppc_core_bat #(
   ppc_core #(
     .RESET_PC(RESET_PC),
     .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
+    .FETCH_WIDTH(FETCH_WIDTH),
     .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
     .ENABLE_LIVE_CONTEXT(ENABLE_LIVE_CONTEXT),
@@ -393,6 +397,7 @@ module ppc_core_bat #(
     .HAS_DIRECT_STORE(ENABLE_DIRECT_STORE),
     .DMEM_BITS(DMEM_BITS),
     .ENABLE_DATA_PIPELINE(ENABLE_LSU_PIPE && ENABLE_DATA_CACHE),
+    .FETCH_WIDTH(FETCH_WIDTH),
     .ENABLE_DATA_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS && ENABLE_LIVE_CONTEXT)) router (
     .tlb_fill_req_valid_i(tlb_fill_req_valid),
     .tlb_fill_req_bank_i(tlb_fill_req_bank),

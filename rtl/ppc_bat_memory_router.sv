@@ -34,7 +34,9 @@ module ppc_bat_memory_router #(
   // A plain data access that hits the micro-TLB goes to the physical port
   // in the cycle it is accepted, also while up to one earlier access awaits
   // its response. The physical port must answer in request order.
-  parameter bit ENABLE_DATA_PIPELINE = 1'b0
+  parameter bit ENABLE_DATA_PIPELINE = 1'b0,
+  // 2: instruction responses carry {pair, word at addr + 4, word at addr}.
+  parameter int FETCH_WIDTH = 1
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -162,7 +164,7 @@ module ppc_bat_memory_router #(
   output logic [3:0]  pimem_req_wimg_o,
   input  logic        pimem_rsp_valid_i,
   output logic        pimem_rsp_ready_o,
-  input  logic [31:0] pimem_rsp_insn_i,
+  input  logic [33*FETCH_WIDTH-2:0] pimem_rsp_insn_i,
   input  logic        pimem_rsp_error_i,
 
   output logic        pdmem_req_valid_o,
@@ -194,7 +196,7 @@ module ppc_bat_memory_router #(
   input  logic [31:0] imem_req_addr_i,
   output logic        imem_rsp_valid_o,
   input  logic        imem_rsp_ready_i,
-  output logic [31:0] imem_rsp_insn_o,
+  output logic [33*FETCH_WIDTH-2:0] imem_rsp_insn_o,
   output ppc_pkg::fetch_fault_t imem_rsp_fault_o,
   output ppc_pkg::page_miss_t imem_rsp_page_miss_o,
   // 602 esa permission of the fetched word's page or block.
@@ -318,7 +320,8 @@ module ppc_bat_memory_router #(
   page_miss_t page_miss_result_q;
 
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
-  logic [31:0] imem_req_addr, imem_rsp_insn;
+  logic [31:0] imem_req_addr;
+  logic [33*FETCH_WIDTH-2:0] imem_rsp_insn;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
   logic [31:0] dmem_req_addr;
   logic [DMEM_BITS-1:0] dmem_req_wdata;
@@ -1044,13 +1047,13 @@ module ppc_bat_memory_router #(
         pimem_rsp_ready_o = imem_rsp_ready;
         imem_rsp_esa_o = HAS_602 ? i_esa_q : ESA_DENIED;
         if (ENABLE_MACHINE_CHECK && pimem_rsp_error_i) begin
-          imem_rsp_insn = 32'b0;
+          imem_rsp_insn = '0;
           imem_rsp_fault_o = FETCH_MACHINE_CHECK;
         end
       end
     end else if (rst_ni && state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
       imem_rsp_valid = 1'b1;
-      imem_rsp_insn = 32'b0;
+      imem_rsp_insn = '0;
       imem_rsp_fault_o = fetch_fault_q;
     end
 

@@ -37,6 +37,8 @@ module ppc603e #(
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
   // Pipelined load/store unit (docs/LSU_PIPELINE.md).
   parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
+  // Instruction words per fetch; the 603e fetches two (UM 6.3.2.2).
+  parameter int FETCH_WIDTH = 2,
   // 603 direct-store sender tag, packet 0 A28-A31 (UM C.1.2.2.1).
   parameter logic [3:0] DS_PID = 4'h0
 ) (
@@ -313,6 +315,7 @@ module ppc603e #(
     .ENABLE_DEBUG_EXCEPTIONS(1'b1), .ENABLE_FULL_DECODE(1'b1),
     .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH),
     .ENABLE_DCACHE(ENABLE_DCACHE), .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
+    .FETCH_WIDTH(FETCH_WIDTH),
     .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG), .DS_PID(DS_PID)
   ) cpu (
     .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(bus_ce),
