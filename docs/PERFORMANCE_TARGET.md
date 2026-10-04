@@ -494,7 +494,8 @@ cycles) is faster than the figures and not adopted. On the six-rule model
    (two of three cycles).
 6. Taken `b`/`bl`/`bclr` redirect at fetch (about 15 of the residual):
    done, below.
-7. Store writes off the load port (up to 25 of the residual, part A6).
+7. Store writes off the load port (up to 25 of the residual, part A6):
+   done, below (22 measured at width 2, with the data micro-TLB).
 8. DQ0 add/compare to the SRU when the IU station is taken (7). Done: 7.5 measured.
 
 ## Station waits for CR, base and the SRU
@@ -620,6 +621,54 @@ On the redirect path: the fetch address gains one 2:1 mux, selected by
 register) and the old address; the late `recovery_accepted` reaches only
 the request valid, which it already did. The misprediction compare (the
 owner's CR nibble against `bs_bi_q`) ends in registers.
+
+## Store traffic
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex +PROFILE`, commits a91c265 (before) and 97b28fc (after), 2026-10-04.
+Unit and store queue on, prebuilt firmware. Every run passes its checks.
+
+What the manual says about committed stores and loads at the data cache:
+
+- One access per cycle. The data cache tags are single-ported, and a load
+  or store deferred by a snoop executes "on the clock cycle following the
+  snoop" (UM 1.1.5.2, Chapter 3 introduction); each cycle allows one read
+  or one byte-wise read-modify-write (UM 1.1.5.2). A load and a store
+  write never share a cycle.
+- Stores wait in the store queue until completion and are then written
+  (UM 1.1.4.3, Figure 6-2). Accesses are weakly ordered: loads may be
+  performed ahead of stores (UM 1.1.4.3, 3.5.5.2; the BIU's "load ahead of
+  store", UM 3.9). Loads and stores are 2:1 (UM 6.4.4, Table 6-6).
+- No section orders a ready load against a completed store.
+
+So the core keeps one access per cycle and lets a load ready for its first
+offer go before a retired store while the queue has room. A full queue, a
+standing store write, or a load the port refuses gives the store the
+cycle.
+
+The profile also showed the data micro-TLB missing every iteration:
+Dhrystone touches the stack and four or more global pages. A store whose
+page misses takes the slow path at the completion-queue head, and a load
+waits for the translation sequence. The 603e translates every access in the
+LSU's first stage (UM 6.4.4), so these misses have no 603e counterpart. The
+data side now has eight entries (`DATA_MICRO_TLB_ENTRIES`); the instruction
+side keeps four.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before | 806.0 | 678.0 | 2.231 | 2.506 |
+| Loads first only | | 667.5 | | |
+| Eight data entries only | | 667.0 | | |
+| After | 787.0 | 656.0 | 2.230 | 2.506 |
+
+Width 2, dispatch to retirement (core mean, 603e model in brackets): load
+3.67 to 3.42 (3.34), store 4.05 to 3.79 (3.73). Per run, `CQ_FULL STORE`
+falls from 13 to 6 cycles and `LSU_BUSY` from 13 to 4. CoreMark keeps its
+data in few pages and rarely has a load behind a store write.
+
+The store write's select now also depends on the P1 load's overlap compare
+(registered EA against four queue entries), and the data micro-TLB compares
+eight entries instead of four. Both are on paths the 66 MHz fit flags; the
+chip needs a fresh fit.
 
 ## Gaps
 

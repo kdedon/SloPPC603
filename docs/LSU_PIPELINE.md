@@ -143,8 +143,11 @@ so the router answers a check beside the request port instead:
   queued store is written; the router's translation then raises any DSI.
 - The queue (four entries) holds stores in program order. A store becomes
   committed when it retires; committed stores are written in order through
-  the request port, ahead of any later offer (a standing non-speculative
-  offer finishes first). Recovery or a faulting older access removes a
+  the request port, one access per cycle as on the 603e's single-ported
+  cache (UM 1.1.5.2). A load ready for its first offer goes first while the
+  queue has room; otherwise a committed store goes ahead of any later offer
+  (a standing non-speculative offer finishes first, and a standing store
+  write keeps the port). Recovery or a faulting older access removes a
   store not yet retired.
 - A load waits while a queued store shares its doubleword, compared on the
   page offset only (aliases of a physical page also match); stores do not
@@ -305,6 +308,9 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
 - `stw` then `lwz` of another doubleword: the load passes the queued store
   and retires the cycle after it. `lwz` of the stored doubleword waits for
   the write and retires 5 cycles after the store.
+- Four `stw` then four `lwz` of other doublewords: the loads take the
+  cache before the retired stores' writes and retire one per cycle, the
+  last 4 cycles after the last store (7 with stores first).
 - Four `stwu` through one base: dispatched and retired one per cycle (3
   cycles first to last), Table 6-6 2:1.
 - Two `lbzu` through one base (four rename slots): dispatched one per
@@ -654,3 +660,19 @@ Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` 
 result bus through rename into the DQ1 adder and misalignment check that
 gate `dispatch1`, and with snooping the result bus feeds the request address.
 
+
+### Loads before retired stores (2026-10-04)
+
+Recorded: `make -C sim lint check-spec`; `make -C sim -k test-core-lsu-timing test-core-lsu-update test-core-dcache-lsu-pipe test-core-dcache test-dcache test-dcache-fast test-core-le test-core-fpu test-chip-dcache-coherence test-chip-mp test-core-dual test-core-recovery` at width 1 (unit off except where the bench sets it) and with `DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`; `make -C sim DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo test-dispatch-rules`; commit 97b28fc plus the bench probe (uncommitted then, committed with this record), 2026-10-04.
+All pass. `test-core-lsu-timing` at both widths: 2,720 checks, 27 probes,
+55 spacings, including the new four-stores-then-four-loads row at 4 cycles;
+with the load-first rule disabled the same row measures 7 and fails. The
+width 1 batch first failed only because the new probe overwrote a register
+an older row still checked; the probe now loads into one register. These
+establish ordering and data against the bench memories and the cached
+tops; they do not establish timing.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit 97b28fc, 2026-10-04.
+0 errors, 51 warnings. No fit or timing: the store write's select now
+waits for the P1 load's overlap compare, and the data micro-TLB has eight
+entries.

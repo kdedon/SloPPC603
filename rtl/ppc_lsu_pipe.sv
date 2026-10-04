@@ -284,11 +284,20 @@ module ppc_lsu_pipe #(
   end
   assign p2_passed = (p2_valid && p2_q[0].passed && !p2_q[0].killed) ||
                      ((p2_count_q == 2'd2) && p2_q[1].passed && !p2_q[1].killed);
-  // A retired store is written ahead of any later offer, except one that
-  // already stands non-speculatively.
+  // A load ready to make its first offer takes the cache before a retired
+  // store while the queue has room; a load the port refuses then waits for
+  // the queue. A store write that stands keeps the port. Its EA and fault
+  // check here come from P1 registers.
+  logic load_first, sq_offered_q;
+  assign load_first = p1_valid && !p1_head.store && !p1_head.killed && !offered_q &&
+    !sq_offered_q &&
+    !p1_head.base_wait && p1_head.fast && p1_ready && !sq_overlap && !redo_valid_q &&
+    (sq_count_q != SQ_W'(SQ_DEPTH));
+  // A retired store is otherwise written ahead of any later offer, except one
+  // that already stands non-speculatively.
   assign sq_offer = STORE_QUEUE && rst_ni && sq_valid && sq_head.committed &&
     !sq_head.killed && lane_idle_i && !rsp_to_lane_q && (p2_count_q != 2'd2) &&
-    !(offered_q && !offered_spec_q);
+    !(offered_q && !offered_spec_q) && !load_first;
   assign sq_fire = sq_offer && req_ready_i;
   assign sq_drop = sq_valid && sq_head.killed;
   // A store may queue while older accesses await their responses, but not
@@ -661,6 +670,7 @@ module ppc_lsu_pipe #(
       rsp_to_lane_q <= 1'b0;
       offered_q <= 1'b0;
       offered_spec_q <= 1'b0;
+      sq_offered_q <= 1'b0;
       store_done_q <= 1'b0;
     end else begin
       r_valid_q <= (p2_result && !p2_head.fp) || (q_go && !q_q.fp);
@@ -670,6 +680,7 @@ module ppc_lsu_pipe #(
         (q_go && q_q.fp && (!q_q.split || q_q.second));
       offered_q <= offer && !req_ready_i;
       offered_spec_q <= offer && !req_ready_i && req_spec_o;
+      sq_offered_q <= sq_offer && !req_ready_i;
       if (p2_retire && p2_head.store && !p2_head.killed && rsp_ok) store_done_q <= 1'b1;
       else if (queue_head_i != store_done_index_q) store_done_q <= 1'b0;
       if (adopt_fire && p2_adopt) rsp_to_lane_q <= 1'b1;
