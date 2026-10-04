@@ -2106,7 +2106,7 @@ test-core-lsu-timing:
 .PHONY: test-core-fpu-machine-check-lsu
 test-core-fpu-machine-check-lsu:
 	mkdir -p $(BUILD_DIR)/core-fpu-mc
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 "-GMACHINE_CHECK=1'b1" --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-mc $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GMACHINE_CHECK=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-mc $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
 	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-fpu-mc/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --machine-check
 	./$(BUILD_DIR)/core-fpu-mc/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-mc/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 # The same with LSU_BASE_SNOOP: a load's base produced by a load or add
