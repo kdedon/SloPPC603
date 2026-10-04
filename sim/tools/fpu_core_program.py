@@ -42,6 +42,9 @@ def use_chip_layout():
     RES, LOG, DONE = 0xfff10000, 0xfff20000, 0xfff3ff00
 MSR_FP, MSR_IP, FE0, FE1 = 0x2000, 0x40, 0x800, 0x100
 SRR1_ILLEGAL, SRR1_FP = 0x00080000, 0x00100000
+# SRR1 bit 15: SRR0 holds the instruction after the one that excepted.
+SRR1_NEXT = 0x00010000
+NOP = 24 << 26
 VECTORS = (0x300, 0x600, 0x700, 0x800)
 ONE, TWO, HALF = 0x3ff0000000000000, 0x4000000000000000, 0x3fe0000000000000
 QNAN, SNAN = 0x7ff8000000001234, 0x7ff0000000000042
@@ -89,16 +92,16 @@ def use_lsu_pipe(split, pipe_mem):
     """FP accesses run in the unit: two execute cycles (Table 6-6), then
     retirement the cycle after, as for FP arithmetic (Figure 6-3). Without
     pipe_mem the bench memory takes an access every other cycle, which
-    bounds the spacing. Integer stores retire one per cycle (2:1); an FP
-    store's data follows the FPU's oldest instruction. A 32-bit data path
+    bounds the spacing. Integer and FP stores retire one per cycle (2:1):
+    the FPU presents the data of any launched store. A 32-bit data path
     moves a doubleword as two word beats."""
     LATENCY.update({'lwz': 4, 'stw': 4, 'lfd': 3, 'lfs': 3, 'stfd': 3, 'stfs': 3,
                     'stfiwx': 3})
     load = 3 if pipe_mem else 6
     MEMORY_SPACING.update({'lfd-issue': 3 if pipe_mem else 4, 'lfd-retire': load,
                            'lfs-issue': 3 if pipe_mem else 4, 'lfs-retire': load,
-                           'stfd-issue': 5, 'stfd-retire': 9, 'stfs-issue': 5,
-                           'stfs-retire': 9, 'fadd-stfd': 3, 'stw-retire': 3})
+                           'stfd-issue': 3, 'stfd-retire': 3, 'stfs-issue': 3,
+                           'stfs-retire': 3, 'fadd-stfd': 2, 'stw-retire': 3})
     if split:
         LATENCY.update({'lfd': 5, 'stfd': 5})
         MEMORY_SPACING.update({'lfd-issue': 12, 'lfd-retire': 12, 'stfd-issue': 14,
@@ -246,6 +249,19 @@ class Program:
         self.fpscr = 0
 
 
+def clear_fe_if_next():
+    """Program handler step: when SRR1 bit 15 is set, clear FE0/FE1 in
+    SRR1 so that the return does not re-enable FE while FPSCR[FEX] stays
+    set. Uses SPRG3 to save r29."""
+    return [x_form(31, 29, 275 & 31, 275 >> 5, 467),                  # mtsprg3 r29
+            x_form(31, 29, 27, 0, 339),                                # mfsrr1 r29
+            (21 << 26) | (29 << 21) | (26 << 16) | (16 << 11) | (31 << 6) | (31 << 1),
+            d_form(7, 26, 26, FE0 | FE1),                              # mulli
+            x_form(31, 29, 29, 26, 60),                                # andc
+            x_form(31, 29, 27, 0, 467),                                # mtsrr1 r29
+            x_form(31, 29, 275 & 31, 275 >> 5, 339)]                   # mfsprg3 r29
+
+
 def handlers(p):
     for vector in VECTORS:
         pc = 0xfff00000 | vector
@@ -253,6 +269,8 @@ def handlers(p):
         for spr, off in ((26, 0), (27, 4), (19, 8), (18, 12)):
             seq += [x_form(31, 26, spr & 31, spr >> 5, 339), d_form(36, 26, 29, off)]
         seq += [d_form(14, 26, 0, vector), d_form(36, 26, 29, 16), d_form(14, 29, 29, 20)]
+        if vector == 0x700:
+            seq += clear_fe_if_next()
         if vector == 0x800:
             # Lazy FP enable: set MSR[FP] in SRR1 and retry.
             seq += [x_form(31, 26, 27, 0, 339), d_form(24, 26, 26, MSR_FP),
@@ -536,6 +554,7 @@ def directed(p):
     if not CHIP:
         dsi(p)
     fp_enabled(p)
+    fp_enable_deferred(p)
 
 
 def dsi(p):
@@ -560,6 +579,27 @@ def fp_enabled(p):
     p.event(0x700, at, p.msr | SRR1_FP)
     p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 10) | (1 << 31))
     p.mtmsr(p.msr & ~(FE0 | FE1))
+    p.check_fpscr()
+    p.clear_fpscr()
+
+
+def fp_enable_deferred(p, update=None):
+    """PEM Table 6-14: with FPSCR[FEX] set, an mtmsr that sets FE0/FE1
+    from 00 takes the FP enabled program exception at the next instruction:
+    SRR0 = that instruction, SRR1 bits 11 and 15 with the new MSR. The
+    handler resumes at SRR0 + 4, past a nop, with FE cleared."""
+    p.clear_fpscr()
+    p.emit(x_form(63, 24, 0, 0, 38))      # mtfsb1 24 (VE)
+    p.emit(x_form(63, 21, 0, 0, 38))      # mtfsb1 21 (VXSOFT): FEX, no exception
+    if update is None:
+        p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 10) | (1 << 31))
+    else:
+        update(p)
+    enabled = p.msr | FE0 | FE1
+    p.li32(9, enabled)
+    at = p.emit(x_form(31, 9, 0, 0, 146))  # mtmsr r9
+    p.emit(NOP)
+    p.event(0x700, at + 4, enabled | SRR1_FP | SRR1_NEXT)
     p.check_fpscr()
     p.clear_fpscr()
 

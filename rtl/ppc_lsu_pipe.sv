@@ -49,9 +49,9 @@ module ppc_lsu_pipe #(
   // The FPU has launched the memory form with this tag.
   input  logic fp_launch_valid_i,
   input  ppc_pkg::completion_tag_t fp_launch_tag_i,
-  // Store data of the FPU's oldest store.
+  // Store data of the FPU store fp_store_tag_o.
   input  logic fp_store_valid_i,
-  input  ppc_pkg::completion_tag_t fp_store_tag_i,
+  output ppc_pkg::completion_tag_t fp_store_tag_o,
   input  logic [63:0] fp_store_data_i,
   // Little-endian mode: the access address is munged (PEM 3.1.4.1).
   input  logic le_i,
@@ -219,9 +219,9 @@ module ppc_lsu_pipe #(
   assign head_data_ready = p1_head.data_ready || head_wake || head_wake1;
   assign head_data = p1_head.data_ready ? p1_head.data :
                      head_wake ? wake_i.value : wake1_i.value;
+  assign fp_store_tag_o = p1_head.producer;
   assign p1_ready = !p1_head.fp ? head_data_ready :
-    (p1_head.store ? (fp_store_valid_i && (fp_store_tag_i == p1_head.producer)) :
-                     p1_head.launched);
+                    (p1_head.store ? fp_store_valid_i : p1_head.launched);
   assign p1_addr = {p1_head.ea[31:3], p1_head.ea[2] ^ p1_head.munge[2], 2'b00};
   // Live queued stores, and whether one shares the head's doubleword. Only
   // the page offset is compared, so aliases of a physical page also match.
@@ -269,8 +269,8 @@ module ppc_lsu_pipe #(
   // An FP access this unit cannot perform answers the FPU with a fault once
   // it is the oldest access.
   assign p1_punt = p1_valid && p1_head.fp && !p1_head.fast && !p1_head.killed &&
-                   p1_head.launched && !p2_valid && !rsp_to_lane_q && !redo_valid_q &&
-                   !killed_now(p1_head.producer);
+                   p1_head.launched && !p2_valid && !q_valid_q && !rsp_to_lane_q &&
+                   !redo_valid_q && !killed_now(p1_head.producer);
   assign p1_nbytes = p1_head.fp ? 3'd4 : nbytes(p1_head.uop.mem_size);
   always_comb begin
     store_source = p1_head.uop.mem_reverse ? swap_bytes(head_data, p1_nbytes) : head_data;
@@ -282,7 +282,7 @@ module ppc_lsu_pipe #(
     p1_wstrb[3:0] = lane_mask(p1_head.uop.mem_size) >>
                     (p1_head.ea[1:0] ^ p1_head.munge[1:0]);
     // The first beat of a doubleword carries its high word.
-    // A load ignores the FPU's store data, which follows its oldest store.
+    // A load ignores the FPU's store data.
     if (p1_head.fp) begin
       p1_wdata = '0;
       if (p1_head.store)

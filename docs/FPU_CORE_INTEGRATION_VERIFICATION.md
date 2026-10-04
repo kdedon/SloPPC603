@@ -161,6 +161,22 @@ Not established: fitted area and timing; Table 6-6 latency and interval (see
 the contract's limits); FP update forms in the overlapped path (serialized);
 eight-byte scalar transfers without the data cache.
 
+## Enabling FE with FEX set
+
+Recorded: `make -C sim lint test-exception-state test-exception-tlb-miss variant-exception-602-4 test-crstate-execution variant-special-lint-602 test-core-fpu test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-core-fpu-split test-chip-fpu`, and with the unit (`BUILD_DIR=build-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe`) `test-core-lsu-timing test-core-fpu test-core-fpu-602 test-core-fpu-compact test-core-fpu-602-compact`, commit 3ac2fe2, 2026-10-04: pass.
+
+The FP core programs set FEX with FE0 = FE1 = 0 (`mtfsb1` VE, then VXSOFT),
+then `mtmsr` FE0|FE1: the log holds a program exception at `mtmsr` + 4 with
+SRR1 = new MSR | bits 11 and 15, and the FPSCR is unchanged by it. FULL and
+COMPACT, 603e and 602, unit off and on (`test-core-fpu` 2676 checks,
+`test-core-fpu-602` 1120). The 0x700 handler clears FE in SRR1 when bit 15
+is set, so it returns without re-enabling FE. Quartus 17.0.2
+`quartus_map --analysis_and_elaboration` of the chip top with ENABLE_FPU and
+`PPC_LSU_PIPE=1`: 0 errors.
+
+Not established: the same rule for `rfi` (not implemented, see the
+integration limits); interaction with a pending external interrupt.
+
 ## Pipelined FP issue
 
 Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-chip-fpu variant-special-lint-602 test-crstate-execution` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit `4b71784`, 2026-09-30.

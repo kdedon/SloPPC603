@@ -1441,7 +1441,7 @@ module ppc_core #(
     .fp_commit_valid_i(fp_commit), .fp_commit_tag_i(retire_producer),
     .fp_kill_i(fp_kill_q),
     .fp_launch_valid_o(fp_launch_valid), .fp_launch_tag_o(fp_launch_tag),
-    .fp_store_valid_o(fp_store_valid), .fp_store_tag_o(fp_store_tag),
+    .fp_store_valid_o(fp_store_valid), .fp_store_tag_i(fp_store_tag),
     .fp_store_data_o(fp_store_data),
     .fp_rsp_valid_i(fp_rsp_valid), .fp_rsp_tag_i(fp_rsp_tag),
     .fp_rsp_data_i(fp_rsp_data), .fp_rsp_fault_i(fp_rsp_fault),
@@ -1873,7 +1873,7 @@ module ppc_core #(
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
         .fp_launch_valid_i(fp_launch_valid), .fp_launch_tag_i(fp_launch_tag),
-        .fp_store_valid_i(fp_store_valid), .fp_store_tag_i(fp_store_tag),
+        .fp_store_valid_i(fp_store_valid), .fp_store_tag_o(fp_store_tag),
         .fp_store_data_i(fp_store_data), .le_i(msr_le),
         .recovery_i(recovery_accepted), .kill_i(recovery_kill),
         .kill_generation_i(recovery_kill_generation),
@@ -1916,7 +1916,8 @@ module ppc_core #(
       assign fp_rsp_data = '0;
       assign fp_rsp_fault = 1'b0;
       logic _unused_fp_unit;
-      assign _unused_fp_unit = ^{fp_launch_valid, fp_launch_tag, fp_store_valid, fp_store_tag,
+      assign fp_store_tag = '0;
+      assign _unused_fp_unit = ^{fp_launch_valid, fp_launch_tag, fp_store_valid,
                                  fp_store_data, fp_mem_double, fp_mem_pipe_ready, src_c};
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;

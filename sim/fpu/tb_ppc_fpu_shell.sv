@@ -28,6 +28,14 @@ module tb_ppc_fpu_shell;
     ppc_fpu_mem_rsp_t mem_rsp_i;
     logic store_valid_o, store_ready_i;
     ppc_fpu_mem_t store_o;
+    completion_tag_t store_peek_tag_i;
+    logic store_peek_valid_o;
+    logic [63:0] store_peek_data_o;
+    // A publishing store, looked up by tag, matches the store port.
+    assign store_peek_tag_i = store_o.tag;
+    always @(posedge clk_i)
+        if (store_valid_o && (!store_peek_valid_o || store_peek_data_o != store_o.data))
+            $fatal(1, "store peek %h disagrees with store port %h", store_peek_data_o, store_o.data);
     logic [4:0] inspect_fpr_index_i;
     logic [63:0] inspect_fpr_o;
     logic [31:0] inspect_fpscr_o;

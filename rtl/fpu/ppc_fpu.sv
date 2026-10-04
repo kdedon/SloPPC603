@@ -38,6 +38,11 @@ module ppc_fpu #(
     output logic store_valid_o,
     input logic store_ready_i,
     output ppc_fpu_pkg::ppc_fpu_mem_t store_o,
+    // Data of the launched store with this tag, at any queue position, for
+    // a store queue that takes stores ahead of their retirement.
+    input ppc_pkg::completion_tag_t store_peek_tag_i,
+    output logic store_peek_valid_o,
+    output logic [63:0] store_peek_data_o,
     input logic [4:0] inspect_fpr_index_i,
     output logic [63:0] inspect_fpr_o,
     output logic [31:0] inspect_fpscr_o,
@@ -891,6 +896,26 @@ module ppc_fpu #(
           pv[0].decoded.mem_single,
           pv[0].store_fill ? reply_raw : pv[0].value);
     end
+  end
+
+  // One formatter after the entry select.
+  logic [63:0] peek_raw;
+  logic peek_integer, peek_single;
+  always_comb begin
+    store_peek_valid_o = 1'b0;
+    peek_raw = '0;
+    peek_integer = 1'b0;
+    peek_single = 1'b0;
+    for (integer i = 0; i < PENDING_DEPTH; i++)
+      if (pending_q[i].valid && pending_q[i].mem_write &&
+          pending_q[i].issue.tag == store_peek_tag_i) begin
+        store_peek_valid_o = 1'b1;
+        peek_raw = pending_q[i].store_fill ? reply_raw : pending_q[i].value;
+        peek_integer = pending_q[i].decoded.mem_integer;
+        peek_single = pending_q[i].decoded.mem_single;
+      end
+    store_peek_data_o = store_data(CPU_602, peek_integer, peek_single,
+        peek_raw);
   end
 
   // Commit and issue handshakes are separate processes: results never depend
