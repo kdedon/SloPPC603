@@ -586,3 +586,13 @@ test-core-fpu-602-compact`, commit 78a6e0a, 2026-10-04: pass
 
 This does not establish timing: the tag lookup adds the FPU's pending-entry
 select and store formatter to the queue's write path, which needs a fit.
+
+### 602 FP doublewords at 3:2 (2026-10-04)
+
+Recorded: `make -C sim BUILD_DIR=build-a test-core-lsu-timing-602 test-core-lsu-timing test-core-fpu-602`, and with `DISPATCH_WIDTH=2 VERILATOR=tools/verilate-lsu-pipe VERILATOR_TOOL=tools/verilate-lsu-pipe`, commit f4e5b73, 2026-10-04: pass.
+
+`test-core-lsu-timing-602` probes 602 UM Table 6-6's FP rows over a memory
+taking one access per cycle: `lfs`, `stfs`, `stfiwx` retire 3 cycles after
+dispatch and four in 3 cycles; `lfd`, `stfd` 4 and four in 6. The 603e rows
+(`test-core-lsu-timing`) are unchanged. Quartus analysis of the chip and
+602 chip tops with the unit and the FPU: 0 errors. No fit.

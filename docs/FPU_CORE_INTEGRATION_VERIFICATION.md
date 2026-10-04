@@ -341,3 +341,39 @@ design); TLB miss, page-changed and machine-check faults on FP accesses;
 recovery cancelling an FP instruction; compiled FP firmware (no PowerPC
 cross-compiler or toolchain container on the build machine); fitted area and
 timing with the FPU in the core.
+
+## FP access faults, 602 FP access timing (2026-10-04)
+
+Recorded: `make -C sim -k BUILD_DIR=build-a lint check-spec test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-core-fpu-machine-check test-chip-fpu test-chip-603-fpu test-core-page-data-exception test-core-lsu-timing test-core-lsu-timing-602`, and the same targets (no lint, check-spec) with `DISPATCH_WIDTH=2 VERILATOR=tools/verilate-lsu-pipe VERILATOR_TOOL=tools/verilate-lsu-pipe`, commit f4e5b73, 2026-10-04: pass.
+
+- Faults: both FP core programs run all seventeen FP load and store forms
+  against a DSI range, and the stores against a C=0 range (MSR[DR] set):
+  DSI with DAR = EA and DSISR bit 4 (and 6 for stores); the C=0 store takes
+  `0x1200` with SRR1 = CR0, WAY and store bits over the saved MSR (UM Table
+  4-4). `test-core-fpu-machine-check` adds TEA on every form as a machine
+  check (`0x200`, SRR1 bit 13, UM Table 4-10) for the 603e and 602, FULL and
+  COMPACT, unit off and on. Each logs SRR0 = the access; frD and an update
+  form's base keep their values; nothing is written. No RTL change was
+  needed. Machine check removes the store queue, so that target checks
+  results, not timing.
+- 602 timing: `test-core-lsu-timing-602` (unit, one access per cycle)
+  measures `lfs`, `stfs`, `stfiwx` at dispatch to retirement 3 and four in
+  3 cycles (2:1), `lfd`, `stfd` at 4 and four in 6 (3:2), 602 UM Table 6-6.
+  Before the P1 hold the doubleword rows were 3 and 3, faster than the table.
+  The lane: 6 or 7 cycles and 15 or 18 for four.
+- 602 trace mode: two `fadds` under MSR[SE] run in the lane; the first,
+  newly setting XX, stalls a cycle (`sticky_stalls` 22, one more than
+  without trace).
+
+Counts (width 1, unit off): `test-core-fpu` 3054/3123 checks (stall
+on/off), `test-core-fpu-602` 1588/1601, machine check 3155 (603e) and 1689
+(602). Width 2 with the unit: `test-core-fpu` 3070/3139,
+`test-core-lsu-timing-602` 1601/1614. `test-chip-fpu`, `test-chip-603-fpu`
+and `test-core-page-data-exception` pass in both. Quartus 17.0.2
+`quartus_map --analysis_and_elaboration` of copies of `quartus/chip` and
+`quartus/chip602` with ENABLE_FPU and `PPC_LSU_PIPE=1`, pinned container:
+0 errors, 53 warnings each. No fit.
+
+Not established: TEA on an FP store already retired from the store queue
+(asynchronous machine check); C=0 and TEA through the real router and 60x
+bus; fitted timing.
