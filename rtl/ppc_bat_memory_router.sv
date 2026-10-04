@@ -288,7 +288,8 @@ module ppc_bat_memory_router #(
   logic [19:0] i_hit_rpn, d_hit_rpn;
   logic [3:0] i_hit_wimg, d_hit_wimg;
   lane_state_t i_accept_state, d_accept_state;
-  logic route_allow, route_from_tlb, route_set_touch;
+  logic route_allow, route_from_tlb, route_set_touch, route_write_ok;
+  logic page_key;
   logic [31:0] route_pa;
   logic [3:0] route_wimg;
   logic utlb_flush;
@@ -804,6 +805,15 @@ module ppc_bat_memory_router #(
     (state_q == ROUTE_TRANSLATE_RESPONSE && bat_rsp_valid && bat_rsp_allow) ||
     (state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid && page_reply_allow);
   assign route_from_tlb = state_q == ROUTE_PAGE_RESPONSE;
+  // An allowed data access also records whether a store to its page would
+  // pass: BAT PP=10 or real mode (PEM Table 7-12); page PP and key allow
+  // writes and C is set (PEM Table 7-21, UM 5.4.1.2), else the store takes
+  // the serial path that reports the C=0 or protection outcome.
+  assign page_key = request_pr_q ? page_sr_q[29] : page_sr_q[30];
+  assign route_write_ok = owner_write_q || (route_from_tlb ?
+    (!request_po_q && tlb_rsp_c && tlb_rsp_pp != 2'b11 &&
+     !(page_key && tlb_rsp_pp != 2'b10)) :
+    (bat_rsp_bypass || (bat_rsp_hit && bat_rsp_pp == 2'b10)));
   assign route_pa = route_from_tlb ? tlb_rsp_pa : bat_rsp_pa;
   // Protection-only pages take HID0[WIMG] (602UM 5.6).
   assign route_wimg = !route_from_tlb ? bat_rsp_wimg :
@@ -853,7 +863,7 @@ module ppc_bat_memory_router #(
     .fill_i(ENABLE_MICRO_TLB && route_allow && !owner_instruction_q),
     .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
     .fill_wimg_i(route_wimg), .fill_esa_i(ESA_DENIED),
-    .fill_set_i(request_set), .fill_write_ok_i(owner_write_q),
+    .fill_set_i(request_set), .fill_write_ok_i(route_write_ok),
     .fill_from_tlb_i(route_from_tlb)
   );
 
@@ -1599,6 +1609,6 @@ module ppc_bat_memory_router #(
   // Service echo and attribute fields left unused here.
   logic _unused_response;
   assign _unused_response = ^{bat_rsp_kind, bat_rsp_ea, bat_rsp_spr,
-    bat_rsp_match, bat_rsp_hit_index, bat_rsp_pp, tlb_rsp_pp};
+    bat_rsp_match, bat_rsp_hit_index};
 endmodule
 `default_nettype wire

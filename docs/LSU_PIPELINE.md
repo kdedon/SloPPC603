@@ -283,10 +283,12 @@ With the unit and a data cache, `ppc_core_bat` sets the router's
   from the data RAM output selected by the tag compare. When the answer is
   taken, the cache accepts the next request in that cycle and looks it up
   in the next, so hits flow one per cycle. A copy-back store hit writes the
-  data RAM and answers in that cycle too. It takes the next request only
-  in its first lookup cycle, when the data RAM reads that request's double
-  word, and only if that is not the double word being written; a store
-  held in lookup by a snoop or a push of its line does not. An answer not taken is
+  data RAM and answers in that cycle too. It takes a next store in any
+  lookup cycle, since a store reads no data (UM 1.1.5.2, one byte-wise
+  read-modify-write per cycle). It takes another request only in its first
+  lookup cycle, when the data RAM reads that request's double word; a load
+  of the double word being written gets the written bytes from a one-cycle
+  forward, and other requests to it wait. An answer not taken is
   registered and held, as before. The fast path reads HID0[DCE] as it was
   in the request's accept cycle; HID0 changes only through the serialized
   lane, which runs while the unit is idle. Misses, other stores, cache
@@ -752,3 +754,27 @@ taking one access per cycle: `lfs`, `stfs`, `stfiwx` retire 3 cycles after
 dispatch and four in 3 cycles; `lfd`, `stfd` 4 and four in 6. The 603e rows
 (`test-core-lsu-timing`) are unchanged. Quartus analysis of the chip and
 602 chip tops with the unit and the FPU: 0 errors. No fit.
+
+### Stores behind stores (2026-10-04)
+
+Recorded: `make -C sim lint check-spec`; `make -C sim -k -j2 test-micro-tlb-router test-bat-memory-router test-page-memory-router test-core-tlb-miss test-core-page-data-exception test-core-page-translation test-core-bat test-core-lsu-timing test-core-dcache-lsu-pipe test-dcache test-dcache-fast test-chip-dcache-coherence test-core-le test-core-fpu` at width 1 (unit off) and with `DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, commit 4438640, 2026-10-04.
+Lint, check-spec and every bench pass at both settings except
+`test-core-tlb-miss` and `test-core-page-data-exception`, which stop at
+Verilator `UNOPTFLAT` warnings in `ppc_core`, `ppc_special` and the bench,
+files this round does not change (`test-core-tlb-miss` builds neither the
+router nor the cache). `tb_dcache` adds a back-to-back case: two stores to
+halves of one double word, a load of it, a store to the other way at the
+same index, and two loads, accepted on consecutive cycles where the rule
+allows; with the forward disabled the load misses the second store's bytes
+and the bench fails. `test-micro-tlb-router` still checks
+that a C=0 store never hits a load-filled entry. These establish data and
+ordering, not timing.
+
+Recorded: `make -C sim DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-reference-machine-mmu REFERENCE_DIR=<dingusppc> MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`, commits 4438640 and 29c64f9, 2026-10-04.
+Fails identically on both: record 17, "store effects from a non-store"
+(a retired-store write reported on the following `addi`). The comparison
+does not yet accept stores written after retirement at this setting.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit fa58482, 2026-10-04.
+0 errors, 51 warnings. No fit or timing: the load hit data gains a byte
+merge with the forwarded store.
