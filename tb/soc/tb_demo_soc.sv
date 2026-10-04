@@ -169,6 +169,14 @@ module tb_demo_soc #(
     if (running && profiling && soc.perf.run_q) begin
       string key;
       key = "";
+      // Data micro-TLB result per accepted data request.
+      if (soc.cpu.cpu.translated_core.router.d_accept) begin
+        key = $sformatf("data utlb %s %s",
+          soc.cpu.cpu.translated_core.router.dmem_req_write ? "store" : "load",
+          soc.cpu.cpu.translated_core.router.d_hit ? "hit" : "miss");
+        profile[key] = (profile.exists(key) != 0) ? profile[key] + 1 : 1;
+        key = "";
+      end
       case (soc.cpu.cpu.translated_core.core.perf_slot)
         ppc_pkg::PERF_DISPATCH: key = "";
         ppc_pkg::PERF_FETCH_EMPTY, ppc_pkg::PERF_BRANCH_REFETCH, ppc_pkg::PERF_ICACHE_MISS: key = "";
