@@ -66,7 +66,7 @@ def lockstep(name, runner, image, runner_args, rtl_cmd, out, keep=None):
 
 
 def negative_controls(runner, image, runner_args, prefix):
-    """A flipped register, SPR or store byte, or a dropped retirement must each fail."""
+    """A flipped register, SPR, store byte or late store byte, or a dropped retirement must each fail."""
     records = sum(1 for _ in prefix.open())
     clean = subprocess.run([str(runner), str(image), str(prefix), *runner_args, f'records={records}'],
                            capture_output=True, text=True)
@@ -74,7 +74,11 @@ def negative_controls(runner, image, runner_args, prefix):
         raise RuntimeError(f'negative control baseline failed\n{clean.stderr[-3000:]}')
     cases = {'gpr': ('mutate=1000:r1', 'state after'), 'msr': ('mutate=1500:msr', 'state after'),
              'cr': ('mutate=2000:cr', 'state after'), 'store': ('mutate=5000:st', 'store byte'),
+             'late store': ('mutate=5000:stlate', 'store byte'),
              'drop': ('drop=3000', 'pc:')}
+    # Without a store queue no write follows a younger store.
+    if ' deferred_bytes=0 ' in clean.stdout:
+        del cases['late store']
     for label, (option, expect) in cases.items():
         run = subprocess.run([str(runner), str(image), str(prefix), *runner_args, f'records={records}',
                               option], capture_output=True, text=True)

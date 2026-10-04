@@ -134,6 +134,31 @@ static bool store_class(uint32_t insn) {
     }
 }
 
+// Bytes a completed store writes to memory; dcbz is a cache operation and a
+// failed stwcx. writes nothing.
+static unsigned store_size(uint32_t insn) {
+    unsigned op = insn >> 26, xo = (insn >> 1) & 1023, nb = (insn >> 11) & 31;
+    switch (op) {
+    case 36: case 37: case 52: case 53: return 4;
+    case 38: case 39: return 1;
+    case 44: case 45: return 2;
+    case 47: return 4 * (32 - ((insn >> 21) & 31));
+    case 54: case 55: return 8;
+    case 31: break;
+    default: return 0;
+    }
+    switch (xo) {
+    case 151: case 183: case 662: case 663: case 695: case 983: return 4;
+    case 150: return (ppc_state.cr & 0x20000000U) ? 4 : 0;
+    case 215: case 247: return 1;
+    case 407: case 439: case 918: return 2;
+    case 727: case 759: return 8;
+    case 725: return nb ? nb : 32;
+    case 661: return ppc_state.spr[SPR::XER] & 127;
+    default: return 0;
+    }
+}
+
 // UM 7.6.3: IMISS, ICMP, DMISS, DCMP, HASH1, HASH2 and RPA hold miss state the
 // reference never forms; their reads take the RTL value.
 static bool miss_spr_read(uint32_t insn) {
@@ -212,6 +237,7 @@ int main(int argc, char** argv) {
     try {
         // image.hex trace [ram=base:bytes] [io=base:bytes] [exit=addr] [spr=n:value]
         //   [records=n] [keep=path] [mutate=record:field] [mutate=record:st]
+        //   [mutate=record:stlate]
         //   [drop=record]
         // image.hex holds 64-bit words loaded at the first RAM. records=n stops
         // after n records without needing the exit store; keep copies the first
@@ -300,10 +326,15 @@ int main(int argc, char** argv) {
                  store_bytes = 0, timing = 0;
         bool done = false, miss_vector = false, direct_vector = false;
         uint64_t misses = 0, direct = 0, failed_conditional = 0, undefined = 0, discarded_loads = 0;
-        uint64_t removed = 0, late_stores = 0;
-        // Store records not yet matched by a record with writes: the store
+        uint64_t removed = 0, late_stores = 0, deferred_bytes = 0;
+        // Bytes of retired stores the RTL trace has not yet written: the store
         // queue performs a store after younger instructions retire (UM 1.1.4.3).
-        uint64_t stores_owed = 0;
+        uint64_t bytes_owed = 0;
+        // RAM bytes written while younger retired stores are owed, by address,
+        // holding the RTL's newest value. A younger store may already have
+        // written the same byte in the reference, so these are compared once
+        // no byte is owed.
+        std::map<uint32_t, uint8_t> late_bytes;
         std::set<uint32_t> discarded;
         std::string line;
         std::ofstream kept;
@@ -363,7 +394,8 @@ int main(int argc, char** argv) {
                                           hex(value.substr(c2 + 1))});
                 } else rtl[field_index(name)] = hex(value);
             }
-            if (auto m = mutations.find(records); m != mutations.end()) {
+            auto m = mutations.find(records);
+            if (m != mutations.end() && m->second != "stlate") {
                 if (m->second != "st") rtl[field_index(m->second)] ^= 1;
                 else if (!rtl_stores.empty()) rtl_stores[0][2] ^= 0x01010101U;
                 else mutations[records + 1] = "st";
@@ -485,6 +517,7 @@ int main(int argc, char** argv) {
                 bool has_ea = access_ea(step_insn, step_ea);
                 ppc_exec_single();
                 adapter_after_step(step_exceptions);
+                if (k == 0 && exceptions_processed == step_exceptions) bytes_owed += store_size(step_insn);
                 unsigned d = (step_insn >> 21) & 31;
                 if (timing_read(step_insn) && exceptions_processed == step_exceptions) {
                     ppc_state.gpr[d] = rtl_reg(d);
@@ -554,19 +587,27 @@ int main(int argc, char** argv) {
                 if (ref[i] != rtl[i])
                     diff += " " + field_name(i) + " rtl=" + h8(rtl[i]) + " ref=" + h8(ref[i]);
             if (!diff.empty()) fail("state after " + h8(pc) + " " + h8(insn) + ":" + diff);
-            stores_owed += store_class(insn);
-            if (!rtl_stores.empty()) {
-                if (!stores_owed) fail("store effects with no store retired " + h8(insn));
-                late_stores += !store_class(insn);
-                --stores_owed;
-            }
-            // Every RTL store byte must match the reference's memory or its I/O writes.
             // stwcx. offers its write before the reservation decides it; a failed
             // one (CR0[EQ] clear) wrote nothing.
             if ((insn >> 26) == 31 && ((insn >> 1) & 1023) == 150 && !(rtl[32] & 0x20000000U)) {
                 failed_conditional += !rtl_stores.empty();
                 rtl_stores.clear();
             }
+            bool late = false;
+            if (!rtl_stores.empty()) {
+                uint64_t n = 0;
+                for (auto& st : rtl_stores) n += __builtin_popcount(st[1]);
+                if (n > bytes_owed) fail("store effects with no store retired " + h8(insn));
+                late_stores += !store_class(insn);
+                bytes_owed -= n;
+                late = bytes_owed != 0;
+            }
+            // stlate corrupts the first store written while a younger one is owed.
+            if (m != mutations.end() && m->second == "stlate") {
+                if (late) rtl_stores[0][2] ^= 0x01010101U;
+                else mutations[records + 1] = "stlate";
+            }
+            // Every RTL store byte must match the reference's memory or its I/O writes.
             size_t io_used = 0;
             for (auto& st : rtl_stores) {
                 ++stores;
@@ -576,7 +617,10 @@ int main(int argc, char** argv) {
                     uint8_t want = uint8_t(st[2] >> (24 - 8 * lane));
                     ++store_bytes;
                     if (uint8_t* p = ram_byte(a)) {
-                        if (*p != want)
+                        if (late || late_bytes.count(a)) {
+                            late_bytes[a] = want;
+                            ++deferred_bytes;
+                        } else if (*p != want)
                             fail("store byte " + h8(a) + " rtl=" + std::to_string(want) + " ref=" + std::to_string(*p));
                     } else if (io_bytes && a - io_base < io_bytes) {
                         if (io_used >= io.writes.size() || io.writes[io_used].first != a ||
@@ -589,13 +633,21 @@ int main(int argc, char** argv) {
             }
             // The reference's I/O writes wait while an RTL store is owed.
             io.writes.erase(io.writes.begin(), io.writes.begin() + io_used);
-            if (!io.writes.empty() && !stores_owed) fail("reference I/O store absent from the RTL");
+            if (!io.writes.empty() && !bytes_owed) fail("reference I/O store absent from the RTL");
             if (exit_mailbox) {
                 uint8_t* p = ram_byte(exit_addr);
                 if (p && (p[0] | p[1] | p[2] | p[3])) done = true;
             }
+            if (!bytes_owed) {
+                for (auto [a, want] : late_bytes)
+                    if (*ram_byte(a) != want)
+                        fail("store byte " + h8(a) + " rtl=" + std::to_string(want) + " ref=" + std::to_string(*ram_byte(a)));
+                late_bytes.clear();
+            }
             ++records;
         }
+        if (exit_io && done && bytes_owed)
+            throw std::runtime_error(std::to_string(bytes_owed) + " store bytes owed at the exit store");
         if (records == max_records) done = true;
         if (!done) throw std::runtime_error("trace ended after " + std::to_string(records) +
                                             " records without the exit store");
@@ -605,7 +657,7 @@ int main(int argc, char** argv) {
                   << " exceptions=" << exceptions << " tlb_misses=" << misses << " direct_store=" << direct << " interrupts=" << async << " stores=" << stores
                   << " store_bytes=" << store_bytes << " failed_stwcx=" << failed_conditional << " io_reads=" << io.reads
                   << " timing_reads=" << timing << " removed_branches=" << removed
-                  << " late_stores=" << late_stores
+                  << " late_stores=" << late_stores << " deferred_bytes=" << deferred_bytes
                   << " undefined_fields=" << undefined << " dcbi_loads=" << discarded_loads << " trailing=" << trailing << '\n';
         return 0;
     } catch (const std::exception& e) {

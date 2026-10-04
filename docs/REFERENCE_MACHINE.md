@@ -35,9 +35,10 @@ then requires:
 - a faulted RTL retirement to be an exception in the reference.
 
 It ends at the exit store (the SoC `EXIT` register, or the firmware mailbox)
-and reports what it compared. Five mutations of the first 200,000 records of
-the first program (a GPR, MSR and CR bit, a store byte, a dropped record) must
-each fail.
+and reports what it compared. Six mutations of the first 200,000 records of
+the first program (a GPR, MSR and CR bit, a store byte, a byte of a store
+written while a younger one is owed when the prefix has one, a dropped
+record) must each fail.
 
 ## What the runner supplies
 
@@ -79,7 +80,7 @@ counted in the summary:
 | PVR revision (`undefined_fields`) | UM 2.1.1 | Version (upper half) compared; revision taken |
 | Loads from a block after `dcbi` (`dcbi_loads`) | PEM `dcbi`: a modified block is discarded, so memory depends on the cache | The RTL's loaded value is taken and written into the reference's memory |
 | Failed `stwcx.` (`failed_stwcx`) | The core offers the write before the reservation decides it; CR0[EQ] clear means nothing was written | Its store offer is not compared |
-| A store's write after younger records (`late_stores`) | UM 1.1.4.3: the store queue performs a completed store later | A record with writes needs a retired store not yet matched by an earlier record with writes; its bytes are compared against the reference's memory then, and the reference's I/O writes wait for it |
+| A store's write after younger records (`late_stores`) | UM 1.1.4.3: the store queue performs a completed store later | Each completed store owes the bytes it writes (none for `dcbz` or a failed `stwcx.`); a record's write bytes must not exceed those owed. They are compared against the reference's memory then, or, while younger retired stores still owe bytes (the reference has already performed them, possibly to the same bytes), once none is owed, using the RTL's newest value per byte (`deferred_bytes`). At the exit store nothing may be owed. The reference's I/O writes wait for owed bytes |
 | Branches removed at dispatch (`removed_branches`) | UM 6.3.1: a branch with no SPR write back retires in the BPU | `rb=<n0>,<n1>` on the next record; the reference steps that many branches (each checked to be a branch without LK or CTR decrement) before the head and before CQ[1] |
 
 ## Not established
