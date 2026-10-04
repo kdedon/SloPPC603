@@ -322,7 +322,7 @@ coordinator runs `ci`, `xrand-sweep` and the fits.
 | 1 | Done; chip top meets 66 MHz, translated fit left to the coordinator | `rtl/ppc_iq.sv`; `FETCH_WIDTH` in `ppc_fetch`, `ppc_core`, `ppc_icache`; `iq_pair_t`/`pair_predecode` in `ppc_pkg`; bench `tb/tb_core_fetch2.sv` |
 | 2 | Ports and unit benches done; width-1 traces identical, but 95 core benches fail at 0a9fe26 (see below) | `ppc_regfile_gpr` (`DUAL_WRITE`), `ppc_rename`, `ppc_completion` (`ENABLE_PAIR_RETIRE`), `retire1_*` on `ppc_core`; benches `tb/tb_regfile_gpr_ports.sv`, `tb/tb_rename_pair.sv`, `tb/tb_completion_pair.sv` |
 | 3 | Implemented at width 2: finished-at-allocation branches, PID7v SRU add/compare lane on the CQ's second finish port and wake bus | `ppc_core` (`HAS_SRU`, `g_sru`), `ppc_completion` (`result1_*`, `wake1_*`) |
-| 4 | Implemented behind `DISPATCH_WIDTH=2`; pair-rule cycle benches beyond `tb_core_dual` not written | `ppc_core` (`dispatch1`, `pair_units`); bench `tb/tb_core_dual.sv` |
+| 4 | Implemented behind `DISPATCH_WIDTH=2`; pair rules checked on compiled programs by `test-dispatch-rules` ([below](#dispatch-and-completion-rule-check)); directed pair-rule cycle benches beyond `tb_core_dual` not written | `ppc_core` (`dispatch1`, `pair_units`); bench `tb/tb_core_dual.sv` |
 | 5 | Implemented; only `tb_core_reference` and the SoC/MiSTer benches observe CQ[1] | `ppc_core` (`commit1`); `RETIRE_PAIRS` on the BAT wrappers |
 | 6 | Partial: width 2 selectable (`make -C sim DISPATCH_WIDTH=2`, `--dual` builds), default still 1; the chip top misses 66 MHz, and 50 MHz hold by 6 ps (see below); two-word fetch through the wrappers wired ([slice 8](#slice-8)) | `FETCH_WIDTH` on the BAT wrappers, `ppc603e` |
 | 7 | Branch in DQ1 and `bclr`/`bcctr` folding done; branches still take a CQ entry | `ppc_core` (`d1_branch`, `lr_iq_q`/`ctr_iq_q`, `folds`); benches `test-core-branch-fold`, `tb_core_machine_check_trace` scenarios 16-18, `tb_core_dual` |
@@ -808,6 +808,32 @@ build (Verilator UNOPTFLAT through `fp_mem_pipe_ready`, also in
 Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` under the
 Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and
 `PPC_LSU_PIPE=1`, commit b28e2ad: 0 errors, 48 warnings.
+
+## Dispatch and completion rule check
+
+`check_dispatch_trace.py --rules` checks a `+DISPATCH_TRACE` stream of any
+length against the manual rules above, taking each PC's instruction word from
+the program image. `make -C sim test-dispatch-rules` streams Dhrystone,
+CoreMark and Whetstone (soft float) on the demo SoC through it, at the build's
+width and LSU setting. Each rule is marked in `sim/spec/timing.json`
+(`trace_checked`, or `partially_trace_checked` when the trace shows only some
+of its requirements).
+
+| Rule | Checked |
+|---|---|
+| `TIM-DISP-WIDTH` | At most `width` dispatches and retirements per cycle |
+| `TIM-DISP-DQ1` | A pair has no dispatch-serialized instruction and needs two distinct units, where add/compare may take the SRU (`--sru`, width 2) and a branch the BPU |
+| `TIM-DISP-DQ0` | A dispatch-serialized instruction dispatches only when every older instruction has retired, at the latest in that cycle |
+| `TIM-SER-DISPATCH` | Nothing dispatches while a dispatch-serialized instruction is in flight |
+| `TIM-SER-REFETCH` | Nothing dispatches in the cycle `isync` retires |
+| `TIM-SER-COMPLETE` | A completion-serialized instruction never completes from CQ[1] |
+| `TIM-CQ-ORDER`, `TIM-CQ-CQ1` | Retirement in dispatch order, never in the dispatch cycle; CQ[1] holds only integer, load or branch (branches keep a CQ entry in this core, slice 7) |
+| `TIM-WB-LIMITS` | A retired pair writes at most two GPRs and one each of CR, FPR, LR, CTR |
+
+Unit tests in `test_dispatch_trace.py` (`check-spec`) make each rule fail on a
+crafted trace. Not checked: rename and CQ occupancy, unit busy times, operand
+readiness and exception-free CQ[1] retirement, which the trace does not show,
+and the per-row latencies and chapter 6 worked schedules.
 
 ## Risks
 

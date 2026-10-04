@@ -41,7 +41,7 @@ def load_smoke_module():
 
 
 def build_runner(build, ref):
-    inputs = {str(p): digest(p) for p in (HERE/'firmware_runner.cpp', *(ref/s for s in SOURCES),
+    inputs = {str(p): digest(p) for p in (HERE/'firmware_runner.cpp', HERE/'reference_adapter.h', *(ref/s for s in SOURCES),
                                           *sorted(ref.rglob('*.h')))}
     runner, record = build/'firmware_runner', build/'firmware-runner.json'
     if runner.exists() and record.exists() and json.loads(record.read_text()) == inputs:

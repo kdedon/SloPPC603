@@ -4,7 +4,7 @@
 // firmware writes the exit register, one scanned-out frame is captured to a
 // PPM file and a summary line is printed.
 // Plusargs: +IMAGE=<hex> (64-bit words for RAM), +PPM=<path>, +NAME=<label>,
-// +MAX_CYCLES=<n>, +TRACE=<n>. Passes when the exit code is 0 with no checkstop.
+// +MAX_CYCLES=<n>, +TRACE=<n>, +RETIRE_TRACE=<file>. Passes when the exit code is 0 with no checkstop.
 /* verilator lint_off BLKSEQ */
 module tb_demo_soc #(
   parameter bit ENABLE_FPU = 1'b0,
@@ -36,6 +36,11 @@ module tb_demo_soc #(
     .checkstop_o(checkstop)
   );
   /* verilator lint_on PINCONNECTEMPTY */
+
+`define MT_CORE soc.cpu.cpu.translated_core.core
+`define MT_BAT soc.cpu.cpu.translated_core
+`define MT_CLK clk
+  `include "machine_trace.svh"
 
   // +TRACE=<n>: print each retirement (PC, instruction) from retirement n on,
   // until retirement +TRACE_TO=<m>. A CQ[1] retirement follows on its own line.

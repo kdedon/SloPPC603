@@ -2292,7 +2292,7 @@ DEMO_NAMES := hello dhrystone coremark
 lint: lint-demo-soc
 lint-demo-soc:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_demo_soc $(DEMO_RTL)
-	$(VERILATOR) --lint-only --timing -Wall --top-module tb_demo_soc $(DEMO_RTL) ../tb/soc/tb_demo_soc.sv
+	$(VERILATOR) --lint-only --timing -Wall --top-module tb_demo_soc $(DEMO_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_demo_soc "-GENABLE_FPU=1'b1" $(DEMO_FPU_RTL)
 # The demo SoC's 60x target requests no memory beat under reset.
 .PHONY: test-soc-target-reset
@@ -2302,17 +2302,17 @@ test-soc-target-reset:
 	./$(BUILD_DIR)/soc-target-reset/Vtb_soc_target_reset $(SIM_ARGS)
 demo-soc-model:
 	mkdir -p $(BUILD_DIR)/demo
-	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_demo_soc --Mdir $(BUILD_DIR)/demo/model $(DEMO_RTL) ../tb/soc/tb_demo_soc.sv
+	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_demo_soc --Mdir $(BUILD_DIR)/demo/model $(DEMO_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
 # The demo SoC with ENABLE_FPU.
 .PHONY: demo-soc-fpu-model
 demo-soc-fpu-model:
 	mkdir -p $(BUILD_DIR)/demo
-	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" --Mdir $(BUILD_DIR)/demo/model-fpu $(DEMO_FPU_RTL) ../tb/soc/tb_demo_soc.sv
+	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" --Mdir $(BUILD_DIR)/demo/model-fpu $(DEMO_FPU_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
 # The same SoC with FPU_IMPL=COMPACT.
 .PHONY: demo-soc-fpu-compact-model
 demo-soc-fpu-compact-model:
 	mkdir -p $(BUILD_DIR)/demo
-	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" -GFPU_IMPL=1 --Mdir $(BUILD_DIR)/demo/model-fpu-compact $(DEMO_FPU_RTL) ../tb/soc/tb_demo_soc.sv
+	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" -GFPU_IMPL=1 --Mdir $(BUILD_DIR)/demo/model-fpu-compact $(DEMO_FPU_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
 demo-firmware:
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) all
@@ -2332,6 +2332,26 @@ $(addprefix demo-,$(BENCH_NAMES)): demo-%: demo-soc-model demo-bench-firmware
 	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/$*.ppm $(BUILD_DIR)/demo/$*.png
 # Opcode self-test (docs/SELFTEST.md): the 603e image on the demo SoC, which
 # exits with the number of failed cases.
+# Whole programs on the demo SoC (caches and BAT translation on) against
+# DingusPPC, every retirement's state and stores (docs/REFERENCE_MACHINE.md).
+# Needs the demo and bench images in DEMO_FW_DIR. MACHINE_PROGRAMS narrows it.
+MACHINE_PROGRAMS ?= hello dhrystone coremark whetstone selftest
+.PHONY: test-reference-machine
+test-reference-machine: reference-checkout demo-soc-model
+	python3 cosim/run_machine_reference.py --build-dir $(BUILD_DIR)/reference-machine --reference $(REFERENCE_DIR) --model $(BUILD_DIR)/demo/model/Vtb_demo_soc --image-dir $(DEMO_FW_DIR) --programs $(MACHINE_PROGRAMS)
+# Demo programs' dispatch/retire traces against the 603e dispatch, serialization,
+# completion and writeback rules (docs/DUAL_DISPATCH_DESIGN.md). The width and
+# LSU unit follow the build (DISPATCH_WIDTH, VERILATOR=tools/verilate-lsu-pipe).
+DISPATCH_RULES_PROGRAMS ?= dhrystone coremark whetstone
+.PHONY: test-dispatch-rules
+test-dispatch-rules: demo-soc-model
+	python3 tools/run_dispatch_rules.py --model $(BUILD_DIR)/demo/model/Vtb_demo_soc --image-dir $(DEMO_FW_DIR) --programs $(DISPATCH_RULES_PROGRAMS) --log-dir $(BUILD_DIR)/dispatch-rules $(if $(filter 2,$(DISPATCH_WIDTH)),--width 2 --sru --min-pairs 1000,--width 1)
+# The MMU stress image on the package top: TLB reloads, interrupts, direct-store.
+MACHINE_MMU_ELF ?= ../toolchain/build/chip-mmu-stress/smoke.elf
+.PHONY: test-reference-machine-mmu
+test-reference-machine-mmu: reference-checkout
+	python3 cosim/run_machine_reference.py --build-dir $(BUILD_DIR)/reference-machine-mmu --reference $(REFERENCE_DIR) --chip-elf $(MACHINE_MMU_ELF) --verilator $(VERILATOR_TOOL)
+
 .PHONY: test-selftest
 test-selftest: demo-soc-model
 	$(DEMO_FW_MAKE) selftest
