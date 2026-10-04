@@ -23,6 +23,7 @@ module ppc_dcache_measure (
   input  logic hid0_dcfi_i,
   input  logic hid0_noopti_i,
   input  logic hid0_abe_i,
+  input  logic tea_pending_i,
   output logic bus_req_valid_o,
   input  logic bus_req_ready_i,
   output logic [2:0] bus_req_kind_o,
@@ -103,6 +104,8 @@ module ppc_dcache_measure (
   always_ff @(posedge clk_i) hid0_noopti_i_ibq <= hid0_noopti_i;
   logic hid0_abe_i_ibq;
   always_ff @(posedge clk_i) hid0_abe_i_ibq <= hid0_abe_i;
+  logic tea_pending_i_ibq;
+  always_ff @(posedge clk_i) tea_pending_i_ibq <= tea_pending_i;
   logic bus_req_valid_o_od, bus_req_valid_o_obq;
   always_ff @(posedge clk_i) bus_req_valid_o_obq <= bus_req_valid_o_od;
   assign bus_req_valid_o = bus_req_valid_o_obq;
@@ -215,7 +218,7 @@ module ppc_dcache_measure (
     .hid0_dlock_i(hid0_dlock_i_ibq),
     .hid0_dcfi_i(hid0_dcfi_i_ibq),
     .hid0_noopti_i(hid0_noopti_i_ibq),
-    .hid0_abe_i(hid0_abe_i_ibq),
+    .hid0_abe_i(hid0_abe_i_ibq), .tea_pending_i(tea_pending_i_ibq),
     .bus_req_valid_o(bus_req_valid_o_od),
     .bus_req_ready_i(bus_req_ready_i_ibq),
     .bus_req_kind_o(bus_req_kind_o_od),
