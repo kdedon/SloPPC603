@@ -6,7 +6,8 @@
 Trace lines come from ppc_core's +DISPATCH_TRACE monitor:
     <cycle> D<n> R<n> <dispatch pcs...> | <retire pcs...> [!<n>]
 '!<n>' marks a branch misprediction recovery that removed the n youngest
-dispatched instructions; the schedule comparison ignores it. An expected schedule uses the same format; '#' starts a comment.
+dispatched instructions; the schedule comparison ignores it. A dispatch pc
+ending in '*' is a branch removed at dispatch, which never retires. An expected schedule uses the same format; '#' starts a comment.
 
 --rules checks a trace of any length, streamed, against the 603e dispatch and
 completion rules (sim/spec/timing.json), with instruction words from a RAM
@@ -36,7 +37,7 @@ def parse(text):
                 f'line {number}: malformed event')
         if recovery and fields[1:3] == ['D0', 'R0']:
             continue
-        cycle, dispatched = int(fields[0]), [int(x, 16) for x in fields[3:]]
+        cycle, dispatched = int(fields[0]), [int(x.rstrip('*'), 16) for x in fields[3:]]
         retired = [int(x, 16) for x in retired.split()]
         require(len(dispatched) == int(fields[1][1:]) and len(retired) == int(fields[2][1:]),
                 f'line {number}: count does not match pcs')
@@ -180,7 +181,7 @@ class Rules:
         self.last_retired_pc = None
         self.cond_retired = False  # the latest retirement was a conditional branch
         self.stats = dict(cycles=0, dispatches=0, retirements=0, pairs_dispatched=0, pairs_retired=0,
-                          flushed=0, mispredicts=0, dser=0, cser=0, isync=0, unknown=0, sru_pairs=0)
+                          flushed=0, mispredicts=0, removed=0, dser=0, cser=0, isync=0, unknown=0, sru_pairs=0)
 
     def cls(self, pc):
         word = self.words.get(pc)
@@ -188,7 +189,7 @@ class Rules:
             self.stats['unknown'] += 1
         return None if word is None else classify(word, self.sru)
 
-    def event(self, cycle, dispatched, retired, mispredict=0):
+    def event(self, cycle, dispatched, retired, mispredict=0, removed=()):
         st = self.stats
         st['cycles'] = cycle
         require(len(dispatched) <= self.width and len(retired) <= self.width,
@@ -261,7 +262,16 @@ class Rules:
                         b['units'] == {IU} and a['units'] == {IU, SRU} or \
                         a['units'] == b['units'] == {IU, SRU}:
                     st['sru_pairs'] += 1
-        for pc, c in zip(dispatched, classes):
+        for slot, (pc, c) in enumerate(zip(dispatched, classes)):
+            if slot < len(removed) and removed[slot]:
+                # UM 6.3.1: only a branch with no LR or CTR write retires
+                # without a completion entry.
+                require(c is None or (c['units'] == {BPU} and not any(c['writes'][3:])),
+                        f'cycle {cycle}: {pc:08x} removed at dispatch but is not a branch that '
+                        'writes no LR or CTR (TIM-BPU-FOLD)')
+                st['dispatches'] += 1
+                st['removed'] += 1
+                continue
             self.seq += 1
             self.inflight.append([pc, cycle, self.seq, False])
             st['dispatches'] += 1
@@ -286,11 +296,12 @@ def parse_line(raw):
     mispredict = int(removed) if removed else 0
     fields = head.split()
     require(len(fields) >= 3 and fields[1][0] == 'D' and fields[2][0] == 'R', f'malformed event {raw!r}')
-    dispatched = [int(x, 16) for x in fields[3:]]
+    dispatched = [int(x.rstrip('*'), 16) for x in fields[3:]]
+    removed = [x.endswith('*') for x in fields[3:]]
     retired = [int(x, 16) for x in retired.split()]
     require(len(dispatched) == int(fields[1][1:]) and len(retired) == int(fields[2][1:]),
             f'count does not match pcs in {raw!r}')
-    return int(fields[0]), dispatched, retired, mispredict
+    return int(fields[0]), dispatched, retired, mispredict, removed
 
 
 def read_image(path, base):
@@ -314,10 +325,10 @@ def check_rules(lines, width, words, sru, flush=False):
     for raw in lines:
         raw = raw.split('#', 1)[0].strip()
         if raw:
-            cycle, dispatched, retired, mispredict = parse_line(raw)
+            cycle, dispatched, retired, mispredict, removed = parse_line(raw)
             require(cycle > previous, f'cycle {cycle} out of order')
             previous = cycle
-            rules.event(cycle, dispatched, retired, mispredict)
+            rules.event(cycle, dispatched, retired, mispredict, removed)
     return rules.stats
 
 

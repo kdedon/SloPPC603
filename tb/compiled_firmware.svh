@@ -51,16 +51,18 @@ task automatic load_image;
   if (!$value$plusargs("MEMDUMP=%s", memdump_path)) memdump_path = "";
 endtask
 
-// pc insn more faulted gpr-write gpr value update-write gpr value
+// pc insn more faulted gpr-write gpr value update-write gpr value removed
+// (branches removed at dispatch just before this one)
 task automatic trace_retire;
   if (trace_fd != 0)
-    $fwrite(trace_fd, "%08x %08x %0d %0d %0d %0d %08x %0d %0d %08x\n",
+    $fwrite(trace_fd, "%08x %08x %0d %0d %0d %0d %08x %0d %0d %08x %0d\n",
             retired.pc, retired.insn, retired.seq_partial,
             retired.illegal || retired.alignment_exception ||
               (retired.data_fault != ppc_pkg::DATA_OK) ||
               (retired.fetch_fault != ppc_pkg::FETCH_OK),
             retired.gpr_write, retired.gpr, retired.value,
-            retired.update_write, retired.update_gpr, retired.update_value);
+            retired.update_write, retired.update_gpr, retired.update_value,
+            retired.removed_branches);
 endtask
 
 // Call after a store has updated mem.

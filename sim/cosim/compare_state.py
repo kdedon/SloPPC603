@@ -25,7 +25,26 @@ def read_trace(path):
     return rows
 
 
+def removable_branch(insn):
+    """b, bc, bclr or bcctr without LK or a CTR decrement (UM 6.3.1)."""
+    op, xo = insn >> 26, (insn >> 1) & 1023
+    branch = op in (16, 18) or (op == 19 and xo in (16, 528))
+    return branch and not insn & 1 and (op == 18 or bool(insn >> 23 & 1))
+
+
 def compare(expected, actual, *, fields=FIELDS):
+    """Rows match in order. The RTL may remove a branch at dispatch, which
+    then has no row: an expected removable branch the actual row does not
+    match is skipped. Returns the number skipped."""
+    removed, j = 0, 0
+    kept = []
+    for e in expected:
+        if j < len(actual) and actual[j][0] != e[0] and removable_branch(e[1]):
+            removed += 1
+            continue
+        kept.append(e)
+        j += 1
+    expected = kept
     for index,(e,a) in enumerate(zip(expected,actual)):
         if len(e) != len(fields) or len(a) != len(fields):
             raise Mismatch(f'row {index}: invalid field count')
@@ -38,6 +57,7 @@ def compare(expected, actual, *, fields=FIELDS):
         kind = 'missing' if len(expected) > len(actual) else 'extra'
         raise Mismatch(f'row {index} pc={row[0]:08x}: {kind} retirement; '
                        f'row count expected={len(expected)} actual={len(actual)}')
+    return removed
 
 
 def main():
@@ -47,10 +67,11 @@ def main():
     args=parser.parse_args()
     try:
         expected=read_trace(args.expected)
-        compare(expected,read_trace(args.actual))
+        removed=compare(expected,read_trace(args.actual))
     except (OSError,ValueError) as error:
         parser.exit(1,f'MISMATCH: {error}\n')
-    print(f'PASS: {len(expected)} architectural snapshots, {len(FIELDS)} fields each')
+    print(f'PASS: {len(expected)} architectural snapshots, {len(FIELDS)} fields each, '
+          f'{removed} removed branches')
 
 
 if __name__ == '__main__':

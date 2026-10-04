@@ -13,6 +13,9 @@
 `ifndef PPC_DISPATCH_WIDTH
 `define PPC_DISPATCH_WIDTH 1
 `endif
+`ifndef PPC_BRANCH_REMOVAL
+`define PPC_BRANCH_REMOVAL 1'b0
+`endif
 // Single-issue core with abstract fetch, data and CSR transports.
 module ppc_core #(
   // Part the build models; see cpu_cfg().
@@ -100,7 +103,12 @@ module ppc_core #(
   // A mispredicted speculative branch removes the younger work and
   // redirects fetch on the edge after it resolves (UM 6.4.1.2). 0: the
   // whole machine recovers after the branch retires. Not with the FPU.
-  parameter bit ENABLE_BRANCH_EARLY_RECOVERY = 1'b1
+  parameter bit ENABLE_BRANCH_EARLY_RECOVERY = 1'b1,
+  // A branch that writes neither LR nor CTR retires in the branch unit as
+  // it dispatches and takes no CQ entry (UM 6.3.1, 6.4.1.1). Not in trace
+  // mode, and not one dispatched on a prediction. Benches may set the
+  // default with +define+PPC_BRANCH_REMOVAL=1'b1.
+  parameter bit ENABLE_BRANCH_REMOVAL = `PPC_BRANCH_REMOVAL
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -391,6 +399,8 @@ module ppc_core #(
   localparam bit DUAL_GPR_WRITE = DUAL;
   // SRU add/compare lane, fed from DQ1 beside an IU operation in DQ0.
   localparam bit HAS_SRU = DUAL && cpu_has_sru_add_compare(CPU_VARIANT);
+  // The 603e manual's branch removal; the 602 keeps every branch in the CQ.
+  localparam bit BRANCH_REMOVAL = ENABLE_BRANCH_REMOVAL && !cpu_has_602_ext(CPU_VARIANT);
   localparam bit SRU_TO_IU = HAS_SRU && !ENABLE_LSU_PIPE;
   // Retired stores wait in the unit's store queue when an error on their
   // write can be taken as an asynchronous machine check, or halts the core
@@ -452,6 +462,10 @@ module ppc_core #(
   logic bu_finished, lane_dq1, fp_dq1, d1_needs_flags, d1_mem_ready, d1_misaligned;
   logic d1_branch, d1_bc, d1_cr_final, d1_bc_taken, d1_bc_now, d1_bc_spec;
   logic [31:0] d1_bc_target;
+  // Branches removed since the youngest CQ allocation (removed_q), and
+  // b removed as it would enter the IQ, counted on the next entry pushed.
+  logic bu_remove, d1_remove, push_remove0, push_remove1, iq_in0, iq_in1;
+  logic [1:0] removed_q, fetch_removed_q, iq_rb, dq1_rb, iq_rb_first;
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [11:0] d1_ea;
@@ -791,13 +805,19 @@ module ppc_core #(
     push_pair1 = pair_predecode(push_uop1, queued1.insn, queued1.fault != FETCH_OK);
     push_pair1.dep_prev = depends(push_uop1, lane0_writes, push_uop.dst, push_uop.src_a);
   end
+  // A removed b leaves the last pushed entry in place.
+  logic fold_removed_q;
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || frontend_clear || fold_q) last_writes_q <= '0;
-    else if (iq_push1) begin
+    if (!rst_ni) fold_removed_q <= 1'b0;
+    else fold_removed_q <= (iq_push0 && push_remove0) || (iq_push1 && push_remove1);
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || frontend_clear || (fold_q && !fold_removed_q)) last_writes_q <= '0;
+    else if (iq_in1) begin
       last_writes_q <= {push_uop1.mem_update, push_uop1.gpr_write};
       last_dst_q <= push_uop1.dst;
       last_base_q <= push_uop1.src_a;
-    end else if (iq_push0) begin
+    end else if (iq_in0) begin
       last_writes_q <= lane0_writes;
       last_dst_q <= push_uop.dst;
       last_base_q <= push_uop.src_a;
@@ -807,20 +827,41 @@ module ppc_core #(
   /* verilator lint_off UNUSEDSIGNAL */
   iq_pair_t iq_pair;
   logic iq_valid1;
-  logic [$bits(fetch_packet_t) + $bits(uop_t) + 5 + $bits(iq_pair_t) - 1:0] iq_dq1;
+  logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) - 1:0] iq_dq1;
   /* verilator lint_on UNUSEDSIGNAL */
-  ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 5 + $bits(iq_pair_t)),
+  ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t)),
            .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(frontend_clear),
-    .push_valid_i({iq_push1, iq_push0}), .push_ready_o(iq_push_ready),
+    .push_valid_i({iq_in1, iq_in0}), .push_ready_o(iq_push_ready),
     .push2_ready_o(iq_push2_ready),
-    .push0_data_i({queued, push_uop, fold_predict, push_branch, push_pair}),
-    .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1}),
+    .push0_data_i({queued, push_uop, fold_predict, push_branch, push_pair, fetch_removed_q}),
+    .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1, 2'd0}),
     .pop_i({dispatch1, iq_pop}), .valid_o({iq_valid1, iq_valid}),
-    .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair}), .dq1_o(iq_dq1),
+    .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb}), .dq1_o(iq_dq1),
     .count_o(iq_count)
   );
-  assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair} = iq_dq1;
+  assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair, dq1_rb} = iq_dq1;
+  // UM 6.3.1: an unconditional b without LK is resolved and retired by the
+  // BPU as it is fetched; it folds (fetch redirects to its target) and never
+  // enters the IQ. Lane 1 is pushed only beside lane 0, which then precedes it.
+  /* verilator lint_off UNUSEDSIGNAL */  // the fault, opcode and LK fields
+  function automatic logic plain_b(fetch_packet_t p);
+    return (p.fault == FETCH_OK) && (p.insn[31:26] == 6'd18) && !p.insn[0];
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign push_remove0 = BRANCH_REMOVAL && !trace_mode && plain_b(queued) &&
+    (fetch_removed_q != 2'd3);
+  assign push_remove1 = BRANCH_REMOVAL && !trace_mode && plain_b(queued1);
+  assign iq_in0 = iq_push0 && !push_remove0;
+  assign iq_in1 = iq_push1 && !push_remove1;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || frontend_clear) fetch_removed_q <= '0;
+    else if (iq_push0)
+      fetch_removed_q <= push_remove0 ? fetch_removed_q + 2'd1 :
+                         (iq_push1 && push_remove1) ? 2'd1 : 2'd0;
+  end
+  // Later micro-ops of a cracked instruction carry no count.
+  assign iq_rb_first = seq_active ? 2'd0 : iq_rb;
   assign push_writes = lr_ctr_writes(push_uop);
   assign push1_writes = lr_ctr_writes(push_uop1);
   assign pop_writes = lr_ctr_writes(iq_uop);
@@ -1039,6 +1080,9 @@ module ppc_core #(
   assign bu_writes_ctr = (uop.special_op != SPECIAL_B) && !uop.branch_bo[2];
   assign bu_spec = ENABLE_BRANCH_SPEC && bu_reads_cr && flags_busy &&
     (!bu_cr_valid_q || flags_waiter);
+  // The count saturates; a further branch then takes an entry.
+  assign bu_remove = BRANCH_REMOVAL && bu_branch && !bu_spec && !uop.branch_lk &&
+    !bu_writes_ctr && ({1'b0, removed_q} + {1'b0, iq_rb_first} <= 3'd2);
   assign bu_ready = !(bu_reads_cr && flags_busy && (!bu_cr_valid_q || flags_waiter) &&
                       !ENABLE_BRANCH_SPEC) &&
     !(bu_reads_cr && (fp_cr_pending || bs_busy)) &&
@@ -1383,7 +1427,7 @@ module ppc_core #(
   assign sru_cr_hold = flags_waiter && waiter_sru_q;
   ppc_dispatch station (
     .clk_i, .rst_ni, .cancel_i(rs_cancel),
-    .dispatch_valid_i((dispatch && normal_uop && !bu_finished && !c0_sru) ||
+    .dispatch_valid_i((dispatch && normal_uop && !bu_finished && !c0_sru && !bu_remove) ||
                       (dispatch1 && d1_iu && !c0_iu)),
     .dispatch_ready_o(rs_ready), .entry_i(d1_iu && !c0_iu ? rs_entry1 : rs_entry),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
@@ -1753,7 +1797,7 @@ module ppc_core #(
   assign iq_ready = !fault_pending && !bu_redirect_q && !bs_miss_q &&
     !(bs_valid_q && special_uop && !lsu_route && !sru_move) &&
     (!interrupt_qualified || seq_active) &&
-    !update_wait0 && gpr_ready && cq_ready && !sru_wait0 &&
+    !update_wait0 && gpr_ready && (cq_ready || (bu_remove && !recovery_accepted)) && !sru_wait0 &&
     (!special_busy || overlap_dispatch_ok ||
      (sru_move && (special_mem_overlap || sru_in_lane)) || (lsu_route && sru_in_lane) ||
      (fp_uop && special_mem_overlap && !special_fp_load_overlap) ||
@@ -1761,7 +1805,7 @@ module ppc_core #(
     (dispatch_pre.illegal ||
      (fp_uop && fp_issue_ready && flags_ready && (!fp_mem_pipe || fp_mem_pipe_ready) &&
       (!unit_update || alloc_ready)) ||
-     (normal_uop && alloc_ready && (rs_ready || bu_finished || c0_sru) && flags_ready &&
+     (normal_uop && alloc_ready && (rs_ready || bu_finished || c0_sru || bu_remove) && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
      (special_uop && special_drained &&
@@ -2041,8 +2085,11 @@ module ppc_core #(
   // DQ1 enters the unit only beside a DQ0 that does not, so the input mux
   // need not wait for dispatch1, which depends on the unit's ready.
   assign lsu_c0 = (special_uop && lsu_route) || fp_mem_pipe;
-  assign dispatch1 = dispatch && seq_last && pair_units && cq1_ready && !unit_update && !sru_wait1 &&
-    !update_wait1 &&
+  // A predicted bc keeps its entry for recovery.
+  assign d1_remove = BRANCH_REMOVAL && d1_branch && !dq1_uop.branch_lk &&
+    !(d1_bc && !d1_bc_now) && (dq1_rb != 2'd3);
+  assign dispatch1 = dispatch && seq_last && pair_units && (cq1_ready || d1_remove) &&
+    !unit_update && !sru_wait1 && !update_wait1 &&
     (!d1_lsu || d1_lsu_ready) &&
     (!flags_tok1 || (!flags_waiter && (!cr_wait1 || (cr_wait_ok1 && !cr_wait0)))) &&
     (!d1_needs_flags || xer_ready1) &&
@@ -2133,6 +2180,8 @@ module ppc_core #(
     allocation1.value = d1_next_pc;
     allocation1.branch_lk = d1_branch && dq1_uop.branch_lk;
     allocation1.fpr_write = d1_fp;
+    allocation1.removed_branches = {1'b0, dq1_rb} +
+      (bu_remove ? {1'b0, removed_q} + {1'b0, iq_rb_first} + 3'd1 : 3'd0);
   end
   // CQ[1] retires beside a head that completes without an exception and that
   // the lane is not finishing; the lane acts only on its own instruction.
@@ -2319,7 +2368,7 @@ module ppc_core #(
   // synthesis translate_on
 
   // The entry after DQ0 next cycle: DQ1, or the lane-0 push when DQ1 is empty.
-  assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && iq_push0));
+  assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && iq_in0));
   assign {iq_peek_head, iq_peek_uop, iq_peek_folded, iq_peek_branch} = iq_valid1 ?
       {dq1_head, dq1_uop, dq1_folded, dq1_branch} :
       {queued, push_uop, fold_predict, push_branch};
@@ -2439,7 +2488,8 @@ module ppc_core #(
               iq_head.insn[31:26] == 6'd19 && ctr_pending_q))
         else $error("folded branch target register still pending");
     if (rst_ni && dispatch && bu_branch && iq_folded && bu_taken && iq_valid1)
-      assert (dq1_head.pc == bu_target) else $error("folded branch fetched a stale target");
+      assert ((dq1_rb != 2'd0) || (dq1_head.pc == bu_target))
+        else $error("folded branch fetched a stale target");
     // Work younger than a faulting plain access is removed by its redirect.
     if (rst_ni && (special_exception_redirect || special_branch_redirect))
       assert ((cq_empty && normal_idle) || special_exception_redirect)
@@ -2456,7 +2506,7 @@ module ppc_core #(
     dq1_expected.dep_prev = depends(dq1_uop, {iq_uop.mem_update, iq_uop.gpr_write},
                                     iq_uop.dst, iq_uop.src_a);
     if (rst_ni && iq_valid && iq_valid1) begin
-      assert (iq_folded || (dq1_head.pc == iq_head.pc + 32'd4))
+      assert (iq_folded || (dq1_rb != 2'd0) || (dq1_head.pc == iq_head.pc + 32'd4))
         else $error("DQ1 is not the instruction after DQ0");
       assert ((dq1_branch == branch_class(dq1_uop, dq1_head.fault)) &&
               (!dq1_folded || dq1_branch[3]))
@@ -2469,7 +2519,8 @@ module ppc_core #(
   // per cycle with an event: "<cycle> D<count> R<count> <dispatch pcs> |
   // <retire pcs>[ !<n>]", cycle 0 being the first edge out of reset. "!<n>"
   // marks a branch misprediction recovery that removes the n youngest
-  // dispatched instructions, those dispatched after the branch.
+  // dispatched instructions, those dispatched after the branch. A dispatch
+  // pc ending in "*" is a branch removed at dispatch; it never retires.
   int event_fd = 0;
   int event_cycle = 0;
   int spec_younger = 0;
@@ -2485,21 +2536,21 @@ module ppc_core #(
     int younger;
     retire_fire = retire_valid_o && retire_ready_i;
     mispredict = recovery_accepted && (bs_recover || bs_redirect_q);
-    younger = spec_younger + int'(dispatch) + int'(dispatch1);
+    younger = spec_younger + int'(dispatch && !bu_remove) + int'(dispatch1 && !d1_remove);
     if (!rst_ni) event_cycle <= 0;
     else begin
       event_cycle <= event_cycle + 1;
       // A DQ1 branch has nothing younger in its dispatch cycle.
       if (dispatch && bu_branch && bu_spec && !recovery_accepted)
-        spec_younger <= int'(dispatch1);
+        spec_younger <= int'(dispatch1 && !d1_remove);
       else if (dispatch1 && d1_bc && !d1_bc_now && !recovery_accepted)
         spec_younger <= 0;
       else spec_younger <= younger;
       if ((event_fd != 0) && (dispatch || retire_fire || mispredict))
         $fwrite(event_fd, "%0d D%0d R%0d%s%s |%s%s%s\n", event_cycle,
                 int'(dispatch) + int'(dispatch1), int'(retire_fire) + int'(commit1),
-                dispatch ? $sformatf(" %08x", iq_head.pc) : "",
-                dispatch1 ? $sformatf(" %08x", dq1_head.pc) : "",
+                dispatch ? $sformatf(" %08x%s", iq_head.pc, bu_remove ? "*" : "") : "",
+                dispatch1 ? $sformatf(" %08x%s", dq1_head.pc, d1_remove ? "*" : "") : "",
                 retire_fire ? $sformatf(" %08x", retire_o.pc) : "",
                 commit1 ? $sformatf(" %08x", retire1_o.pc) : "",
                 mispredict ? $sformatf(" !%0d", younger) : "");
@@ -2546,6 +2597,14 @@ module ppc_core #(
     allocation.cq1_ok = iq_pair.cq1_ok &&
       (!DUAL || (dispatch_pre.special_op != SPECIAL_FPU));
     allocation.fpr_write = fp_uop && ((iq_pair.unit == UNIT_FPU) || iq_pair.cq1_ok || fp_mem_pipe);
+    allocation.removed_branches = {1'b0, removed_q} + {1'b0, iq_rb_first};
+  end
+  // A recovery removes every branch counted: they are younger than any
+  // surviving entry.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted) removed_q <= '0;
+    else if (dispatch1) removed_q <= d1_remove ? dq1_rb + 2'd1 : 2'd0;
+    else if (dispatch) removed_q <= bu_remove ? removed_q + iq_rb_first + 2'd1 : 2'd0;
   end
   ppc_completion #(
     .ENABLE_TLB_MISS_EXCEPTIONS(ENABLE_TLB_MISS_EXCEPTIONS),
@@ -2553,11 +2612,12 @@ module ppc_core #(
     .ENABLE_PIVOT_RECOVERY(ENABLE_TEST_REDIRECT),
     .ENABLE_BRANCH_PIVOT(BS_EARLY)
   ) completion (
-    .clk_i, .rst_ni, .alloc_valid_i(dispatch), .alloc_ready_o(cq_ready),
+    .clk_i, .rst_ni, .alloc_valid_i(dispatch && !bu_remove), .alloc_ready_o(cq_ready),
     .empty_o(cq_empty), .head_index_o(cq_head),
     .alloc_i(allocation), .alloc_tag_o(alloc_producer),
     .alloc_finished_i(fp_uop || bu_finished),
-    .alloc1_valid_i(dispatch1), .alloc1_ready_o(cq1_ready), .alloc1_i(allocation1),
+    .alloc1_valid_i(dispatch1 && !d1_remove), .alloc1_at_tail_i(bu_remove),
+    .alloc1_ready_o(cq1_ready), .alloc1_i(allocation1),
     .alloc1_finished_i(d1_fp || d1_branch), .alloc1_tag_o(alloc1_producer),
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     // UM 6.6.1: an IU or LSU result completes in its writeback cycle.
@@ -2659,7 +2719,8 @@ module ppc_core #(
         committed_next_pc_q <= retire1_o.branch ? retire1_o.value : retire1_o.pc + 32'd4;
       else if (commit && !retire_o.seq_partial)
         committed_next_pc_q <= retire_o.branch ? retire_o.value : retire_o.pc + 32'd4;
-      if (dispatch) resume_override_valid_q <= 1'b0;
+      // A removed branch leaves the override: an interrupt resumes at it.
+      if ((dispatch && !bu_remove) || dispatch1) resume_override_valid_q <= 1'b0;
       if (recovery_accepted) begin
         resume_override_valid_q <= 1'b1;
         resume_override_target_q <= selected_redirect_target;

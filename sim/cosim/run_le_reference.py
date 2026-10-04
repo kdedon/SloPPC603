@@ -16,7 +16,7 @@ import sys
 
 from reference_checkout import LAST_VERIFIED, verify
 from run_reference import PROJECT, ROOT, command, digest
-from run_firmware_reference import SOURCES, reference_records, rtl_records
+from run_firmware_reference import SOURCES, reference_records, rtl_records, skip_removed
 
 HERE = Path(__file__).resolve().parent
 RESET_PC = 0x4000
@@ -58,6 +58,7 @@ def read_words(path):
 
 
 def compare(rtl, ref, rtl_mem, ref_mem):
+    ref = skip_removed(rtl, ref)
     fmt = lambda d: ' '.join(f'r{r}={v:08x}' for r, v in sorted(d.items()))
     for index, (a, b) in enumerate(zip(rtl, ref)):
         if a[0] != b[0] or a[3] != b[2]:
@@ -78,7 +79,7 @@ def negative_controls(rtl, ref, rtl_mem, ref_mem):
     reg = next(iter(rtl[written][3]))
     value = dict(rtl[written][3]); value[reg] ^= 1
     changed_mem = dict(rtl_mem); addr = sorted(changed_mem)[len(changed_mem)//2]; changed_mem[addr] ^= 0x80
-    for label, trace, mem in (('gpr value', rtl[:written] + [rtl[written][:3] + (value,)] + rtl[written+1:], rtl_mem),
+    for label, trace, mem in (('gpr value', rtl[:written] + [rtl[written][:3] + (value,) + rtl[written][4:]] + rtl[written+1:], rtl_mem),
                               ('pc', [(rtl[0][0] ^ 4,) + rtl[0][1:]] + rtl[1:], rtl_mem),
                               ('missing step', rtl[:-1], rtl_mem), ('memory word', rtl, changed_mem)):
         try:

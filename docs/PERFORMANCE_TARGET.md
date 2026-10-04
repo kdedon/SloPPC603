@@ -754,6 +754,30 @@ at dispatch for its base. `LSU_BASE_SNOOP` removes it but is off until a fit
 meets the clock target (LSU_PIPELINE.md, Base snooping). `CQ_FULL STORE`
 (6) and `LSU_BUSY STORE` (3) in memcpy follow.
 
+## Branch removal (gap 8)
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BRANCH_REMOVAL=<0|1> BUILD_DIR=build-d VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex`, commit 3bb0024, 2026-10-04.
+LSU unit and store queue on; prebuilt firmware (2000 runs, 10 iterations).
+All eight runs pass their checks (Dhrystone 23 values, CoreMark CRC 0xfcaf).
+`BRANCH_REMOVAL=1` removes a plain `b` before the IQ and other branches
+without LR or CTR writes at dispatch
+([CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit)).
+
+| | Width 1, off | Width 1, on | Width 2, off | Width 2, on |
+|---|---:|---:|---:|---:|
+| Dhrystone cycles/run | 863.8 | 861.3 | 781.8 | 778.8 |
+| CoreMark/MHz | 1.991 | 1.995 | 2.107 | 2.109 |
+
+The gain is small: 3 cycles per run at width 2 against the 99 the branch row
+of [Gaps](#gaps) charges. Branches folded at dispatch still take a dispatch
+slot (only a plain `b` is removed before the IQ), and at width 2 a branch in
+DQ0 already pairs, so the slot is rarely the limit; what removal saves is
+mostly CQ entries (`cq_full` 0.098 CPI after, 0.102 before).
+
+The "off" column is not batch 12 (775.8 at width 2): these builds predate
+the [BUG-03](BUGS.md) fix ([measurement reproducibility](#measurement-reproducibility)),
+which moved Dhrystone 6 cycles per run with no logic change.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
@@ -800,7 +824,7 @@ they are not additive. None needs timing faster than the manual's.
 | 5 | Dual dispatch rarely pairs (7.6% of instructions at width 2); dispatch alone is 0.92 CPI against a 0.86 CPI target | UM 6.6.1.2/6.6.1.3: DQ1 to a different unit, CQ1 integer or load; UM 6.4.5: SRU adder | Partly done: IU + LSU-unit access, unresolved `bc` + DQ1 (25 cycles), a DQ0 branch that does not redirect + DQ1 (5). IU + SRU, LSU + IU and CQ1 rules existed. Open: an SRU-form DQ0 beside a non-SRU integer DQ1 (the SRU takes DQ0); the rest waits on gaps 1 and 2 | 80–150 (after 1–4) |
 | 6 | Closed. Residual cost of plain accesses with old sources (5.0 cycles per load) | UM 6.4.4: one access per cycle | Found: a store hit held the data cache for four cycles. It now writes and answers in its lookup cycle. The rest of the charge is fetch and branch time | 5 measured |
 | 7 | Closed for integer consumers (55 dependents, gap 0). A load or add producing the next access's base costs 3 cycles against T6-6's 2 | T6-6 `2:1` | Done behind `LSU_BASE_SNOOP` (default off): a D-form load forms its EA in P1 from the result bus, 2 cycles; the path waits for a fit ([LSU_PIPELINE.md](LSU_PIPELINE.md#base-snooping)) | 1 measured while fetch-bound |
-| 8 | Branches take dispatch and completion slots (118 per run) | UM 6.4.1.1, 6.3.1: folded branches bypass the dispatch queue | Open. Retire folded branches from the BPU; LR/CTR updates through the BPU's own writeback; every retire-trace consumer must then expect missing branches | 40–100 |
+| 8 | Branches take dispatch and completion slots (118 per run) | UM 6.4.1.1, 6.3.1: folded branches bypass the dispatch queue; a branch with no SPR write back is retired by the BPU | Partly done behind `ENABLE_BRANCH_REMOVAL`: a plain `b` never enters the IQ; other branches without LR/CTR writes take no CQ entry but still a dispatch slot ([branch removal](#branch-removal-gap-8)). Linking and counting branches keep their entry | 40–100 (got 3 at width 2) |
 | 9 | Integer waits not explained above (flags token, station full, `other` 50 per run) | UM 6.3.3, 6.3.3.2 | Broken down with `+PROFILE` ([above](#dq1-rename-operands-and-base-snooping)): `mflr`/`mtlr` drains 20, CQ full 20, station full 20, flags 7. Moves no longer drain; XER-only writers take no flag token ([round](#serialization-flag-token-and-dq1-branches)) | 20 (SRU completion serialization): got 11.5 |
 | 10 | `bclr` not folded (26 per run, 11 taken) | UM 6.6.1.1: `bclr` resolves when LR is available (shadow LR from `bl`); same timing as `b` | Done: folds and resolves from the shadow LR of an uncommitted linking branch | 30–50 (got 8–10) |
 

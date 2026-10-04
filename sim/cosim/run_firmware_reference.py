@@ -55,14 +55,18 @@ def build_runner(build, ref):
 
 
 def rtl_records(path):
-    """Merge micro-ops per instruction; report GPRs whose value changed."""
+    """Merge micro-ops per instruction; report GPRs whose value changed.
+
+    The fifth field counts branches removed at dispatch just before the
+    instruction; they have no record of their own."""
     gpr, rows, pending = [0]*32, [], None
     for line in path.read_text().split('\n'):
         if not line:
             continue
-        pc, insn, more, fault, gw, g, gv, uw, ug, uv = line.split()
+        pc, insn, more, fault, gw, g, gv, uw, ug, uv, removed = line.split()
         if pending is None:
-            pending = [int(pc, 16), int(insn, 16), int(fault), {}]
+            pending = [int(pc, 16), int(insn, 16), int(fault), {}, 0]
+        pending[4] += int(removed)
         for write, reg, value in ((gw, g, gv), (uw, ug, uv)):
             if write == '1' and gpr[int(reg)] != int(value, 16):
                 gpr[int(reg)] = int(value, 16)
@@ -87,7 +91,21 @@ def read_bytes(path):
     return [int(x, 16) for x in path.read_text().split() if not x.startswith('//')]
 
 
+def skip_removed(rtl, ref):
+    """Drop the reference steps of branches the RTL removed at dispatch;
+    such a branch takes no exception and writes no GPR."""
+    kept, steps = [], iter(ref)
+    for a in rtl:
+        for _ in range(a[4]):
+            b = next(steps, None)
+            if b is None or b[1] or b[2]:
+                raise RuntimeError(f'removed branch before {a[0]:08x} does not match reference step {b}')
+        kept.append(next(steps, None))
+    return [b for b in kept if b is not None] + list(steps)
+
+
 def compare(name, rtl, ref, rtl_bytes, ref_bytes):
+    ref = skip_removed(rtl, ref)
     for index, (a, b) in enumerate(zip(rtl, ref)):
         if a[0] != b[0] or a[3] != b[2]:
             fmt = lambda d: ' '.join(f'r{r}={v:08x}' for r, v in sorted(d.items()))
@@ -106,7 +124,7 @@ def negative_controls(name, rtl, ref, rtl_bytes, ref_bytes):
     written = max(i for i, row in enumerate(rtl) if row[3])
     reg = next(iter(rtl[written][3]))
     value = dict(rtl[written][3]); value[reg] ^= 1
-    changed_value = rtl[:written] + [rtl[written][:3] + (value,)] + rtl[written+1:]
+    changed_value = rtl[:written] + [rtl[written][:3] + (value,) + rtl[written][4:]] + rtl[written+1:]
     changed_pc = [(rtl[0][0] ^ 4,) + rtl[0][1:]] + rtl[1:]
     changed_ram = list(rtl_bytes); changed_ram[len(changed_ram)//2] ^= 0x80
     for label, trace, ram in (('gpr value', changed_value, rtl_bytes), ('pc', changed_pc, rtl_bytes),

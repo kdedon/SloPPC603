@@ -142,6 +142,16 @@ module tb_core_control_memory #(
     assert(condition) else $fatal(1, "%s edge=%0d retired=%0d pc=%08x insn=%08x",
                                  message, edge_count, retirements, retired.pc, retired.insn);
   endtask
+  // b, bc, bclr or bcctr without LK or a CTR decrement: the core may remove
+  // it at dispatch (UM 6.3.1); the next packet counts it.
+  /* verilator lint_off UNUSEDSIGNAL */  // only the opcode, BO[2] and LK fields
+  function automatic logic removable_branch(input logic [31:0] insn);
+    logic branch;
+    branch = (insn[31:26] == 6'd18) || (insn[31:26] == 6'd16) ||
+             ((insn[31:26] == 6'd19) && ((insn[10:1] == 10'd16) || (insn[10:1] == 10'd528)));
+    return branch && !insn[0] && ((insn[31:26] == 6'd18) || insn[23]);
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   task automatic read_expected(output logic [31:0] value);
     int status;
     status = $fscanf(expected_fd, "%h", value);
@@ -159,7 +169,7 @@ module tb_core_control_memory #(
   always @(negedge clk) edge_count++;
   // Speculative branches, mispredicted ones, and those recovered at
   // resolution rather than after the branch retired.
-  int spec_branches = 0, spec_misses = 0, spec_early = 0;
+  int spec_branches = 0, spec_misses = 0, spec_early = 0, removed_branches = 0;
   always @(posedge clk) begin
     if (rst_n && dut.dispatch && dut.bu_branch && dut.bu_spec) spec_branches++;
     if (rst_n && dut.recovery_accepted && (dut.bs_redirect_q || dut.bs_recover)) begin
@@ -205,6 +215,14 @@ module tb_core_control_memory #(
       end
       if (tv && tr) begin
         logic [31:0] pc, insn, values[32], cr, xer, lr, ctr, hash;
+        // Branches removed at dispatch have expected rows but no packet.
+        for (int k = 0; k < int'(retired.removed_branches); k++) begin
+          read_expected(pc); read_expected(insn);
+          for (int regno = 0; regno < 37; regno++) read_expected(hash);
+          require(removable_branch(insn), $sformatf("removed %08x %08x is not a removable branch", pc, insn));
+          retirements++;
+          removed_branches++;
+        end
         read_expected(pc); read_expected(insn);
         for (int regno = 0; regno < 32; regno++) read_expected(values[regno]);
         read_expected(cr); read_expected(xer); read_expected(lr); read_expected(ctr); read_expected(hash);
@@ -222,9 +240,9 @@ module tb_core_control_memory #(
           require(halted && retirements == expected_retirements, "terminal state/count mismatch");
           require(read_requests >= 20 && write_requests >= 20 && request_stalls > 0 && retire_stalls > 0,
                   "missing memory/retirement backpressure coverage");
-          $display("PASS control/memory program: checks=%0d retire=%0d reads=%0d writes=%0d request-stalls=%0d retire-stalls=%0d cycles=%0d speculative=%0d mispredicted=%0d early=%0d",
+          $display("PASS control/memory program: checks=%0d retire=%0d reads=%0d writes=%0d request-stalls=%0d retire-stalls=%0d cycles=%0d speculative=%0d mispredicted=%0d early=%0d removed=%0d",
                    checks, retirements, read_requests, write_requests, request_stalls, retire_stalls,
-                   edge_count, spec_branches, spec_misses, spec_early);
+                   edge_count, spec_branches, spec_misses, spec_early, removed_branches);
           $fclose(expected_fd);
           $finish;
         end

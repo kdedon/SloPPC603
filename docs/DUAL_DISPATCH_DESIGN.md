@@ -174,10 +174,13 @@ integer operation cannot pair with a branch. Steps, in order:
    decision (`bu_redirect`) is a CR compare and must not gate `dispatch1`. `b`
    and correctly folded branches never redirect at dispatch, so DQ1 still
    pairs behind them when the prediction is known right from registered state.
-4. Later, and measured: branches without LR/CTR updates take no CQ entry, as
-   the manual's folding does. An interrupt then resumes at the branch, which is
-   idempotent. This needs care with `committed_next_pc_q` and the resume
-   override. Not built; see [slice 7](#slice-7).
+4. Built behind `ENABLE_BRANCH_REMOVAL`: a branch without LR/CTR updates,
+   resolved at dispatch, takes no CQ entry (UM 6.3.1). An interrupt then
+   resumes at the branch, which is idempotent; the resume override survives
+   it. When DQ0 is removed, DQ1 allocates at the CQ tail
+   (`alloc1_at_tail_i`). See
+   [CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit) for the removed set
+   and [branch removal](#branch-removal) for the record.
 
 The irrevocable-head rules stay: a pivot cut may not kill an offered finished
 head ([`ppc_completion.sv:137-141`](https://github.com/kdedon/SloPPC603/blob/23bbf9d33d59269450f094a78d9c974bf3f18dcc/rtl/ppc_completion.sv#L137-L141)),
@@ -880,6 +883,52 @@ Recorded: `make -C sim lint check-spec`; `make -C sim -k -j2 <bench>` and, from 
 All pass except `test-lsu-update-edges` at width 2 with the unit, a bench fault ([LSU_PIPELINE.md](LSU_PIPELINE.md#faulting-update-forms-2026-10-04)).
 Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip`, under the Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, commit 8f66fa3 (same RTL): 0 errors, 50 warnings.
 
+### Branch removal
+
+`ENABLE_BRANCH_REMOVAL` (default 0; `BRANCH_REMOVAL=1` sets it for a sim
+build) retires a branch that needs no SPR write back in the BPU (UM 6.3.1).
+A plain `b` never enters the IQ; `bc`, `bclr`, `bcctr` and branch-always
+forms without LK or a CTR decrement, resolved at dispatch, take no CQ entry,
+IU slot or station. The removed set and its exclusions are in
+[CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit). Each packet's
+`removed_branches` counts the branches removed just before it; the machine
+trace prints it as `rb=<head>,<CQ[1]>`, the firmware traces as a last field,
+and `+DISPATCH_TRACE` marks a dispatch-removed branch with `*`.
+
+Recorded: `make -C sim BRANCH_REMOVAL=1 test-core test-core-dual test-core-branch-fold test-core-control-memory test-core-branch-recovery test-core-machine-check-trace test-core-recovery test-core-fetch2 test-stage test-chip-pins`, at width 1 and at width 2 with the LSU unit (`DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe` from `sim/`), commit 3bb0024, 2026-10-04.
+All pass. `test-core-branch-fold` (922 retirements) removes 86 branches at
+width 1 (4,110 cycles) and 80 with two-word fetch at width 2 (3,554 cycles;
+3,598 at a20c314 without removal); the control/memory bench checks that each removed
+branch is a `b`, `bc`, `bclr` or `bcctr` without LK or CTR decrement and
+skips its expected row. `tb_core_dual` and `tb_core_fetch2` leave every such
+branch out of the width-comparison log, since which ones are removed depends
+on timing; at width 2 the plain `b` at 0x6c is never dispatched.
+`test-core-machine-check-trace` scenario 18 now expects the interrupt
+requested at a removed `blr` to save the `blr`'s own address (four seeds,
+1,903 checks each). Two faults were found and fixed on the way: the
+dependency bits of the entry after a removed `b` compared against nothing
+(the fold cleared them), and two assertions assumed DQ1 or a folded target
+follows DQ0 directly.
+
+Recorded: `make -C sim BRANCH_REMOVAL=1 test-dispatch-rules test-reference-machine REFERENCE_DIR=../../dingusppc DEMO_FW_DIR=<main checkout>/toolchain/build/demo`, at width 1 and at width 2 with the LSU unit, commits 9e13b56 (rules at both widths, reference machine at width 1) and 2fbb2a4 (reference machine at width 2), 2026-10-04.
+All pass. Dhrystone, CoreMark and Whetstone pass every dispatch rule,
+including `TIM-BPU-FOLD`; at width 2 Dhrystone dispatches 1,646,861 and
+removes 49,503 branches at dispatch (52,728 at width 1). The whole-machine
+comparison passes all five programs and the negative controls at both widths;
+the reference steps 62,418 removed branches in Dhrystone at width 1, which
+includes plain `b` removed before the IQ. At width 2 with the unit the
+comparison first failed: a store's write from the store queue reached the
+trace after younger records (and after the last one), which removal makes
+common. The runner now carries an owed store across records and the trace
+ends with a record of the stores drained after the last retirement
+([REFERENCE_MACHINE.md](REFERENCE_MACHINE.md#tolerances)); Dhrystone has
+148,364 such late writes at width 2.
+
+Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` under the
+Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2`,
+`PPC_LSU_PIPE=1` and `PPC_BRANCH_REMOVAL=1'b1`, commit 9e53e78: 0 errors,
+49 warnings. No fit was run.
+
 ## Dispatch and completion rule check
 
 Recorded: `make -C sim test-dispatch-rules` at width 1, width 1 with the LSU unit, `DISPATCH_WIDTH=2` and width 2 with the unit (`VERILATOR=tools/verilate-lsu-pipe`), commits 333c376 and bf69248, 2026-10-04.
@@ -905,8 +954,9 @@ of its requirements).
 | `TIM-SER-DISPATCH` | Nothing dispatches while a dispatch-serialized instruction is in flight |
 | `TIM-SER-REFETCH` | Nothing dispatches in the cycle `isync` retires |
 | `TIM-SER-COMPLETE` | A completion-serialized instruction never completes from CQ[1] |
-| `TIM-CQ-ORDER`, `TIM-CQ-CQ1` | Retirement in dispatch order, never in the dispatch cycle; only the work a misprediction recovery removed behind a conditional branch (`!<n>` in the trace, UM 6.4.1.2) is skipped; CQ[1] holds only integer, load or branch (branches keep a CQ entry in this core, slice 7) |
+| `TIM-CQ-ORDER`, `TIM-CQ-CQ1` | Retirement in dispatch order, never in the dispatch cycle; only the work a misprediction recovery removed behind a conditional branch (`!<n>` in the trace, UM 6.4.1.2) is skipped; CQ[1] holds only integer, load or branch (branches keep a CQ entry unless removed) |
 | `TIM-WB-LIMITS` | A retired pair writes at most two GPRs and one each of CR, FPR, LR, CTR |
+| `TIM-BPU-FOLD` | A branch removed at dispatch (`*`) is a branch without LR or CTR write, and never retires |
 
 Unit tests in `test_dispatch_trace.py` (`check-spec`) make each rule fail on a
 crafted trace. Not checked: rename and CQ occupancy, unit busy times, operand

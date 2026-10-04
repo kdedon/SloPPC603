@@ -373,6 +373,8 @@ module tb_core_dual #(
       expect_pair(32'h10, 1'b0, "sync alone");
       expect_pair(32'h78, 1'b0, "sync alone");
       expect_pair(32'h68, 1'b0, "cmpw in DQ1, then folded b");
+      // A removed b is never dispatched.
+      if (dut.BRANCH_REMOVAL && dcycle.exists(32'h6c) != 0) $fatal(1, "a plain b was dispatched");
       // Pairing needs the add fetched into DQ1 by then.
       expect_pair(32'h94, !dq1_empty[32'h94], "unresolved bc + add");
       expect_pair(32'ha0, 1'b1, "divwu + addi");
@@ -405,7 +407,9 @@ module tb_core_dual #(
       rcycle[int'(p.pc)] = cycle;
       rslot[int'(p.pc)] = slot;
     end
-    if (log_fd != 0)
+    // Whether a branch without LR or CTR writes is removed depends on
+    // timing, so the log leaves all of them out.
+    if (log_fd != 0 && !(p.branch && !p.branch_lk && !p.branch_ctr))
       $fwrite(log_fd, "%08x %0d %0d %08x\n", p.pc, p.gpr_write, p.gpr, p.value);
     if (p.gpr_write) regs[p.gpr] = p.value;
   endtask

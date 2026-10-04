@@ -17,6 +17,10 @@ ifdef DISPATCH_WIDTH
 export PPC_VERILATOR_FLAGS := +define+PPC_DISPATCH_WIDTH=$(DISPATCH_WIDTH)
 BUILD_DIR ?= build-w$(DISPATCH_WIDTH)
 endif
+# BRANCH_REMOVAL=0 or 1 sets ppc_core's ENABLE_BRANCH_REMOVAL default.
+ifdef BRANCH_REMOVAL
+export PPC_VERILATOR_FLAGS := $(PPC_VERILATOR_FLAGS) +define+PPC_BRANCH_REMOVAL=$(BRANCH_REMOVAL)
+endif
 BUILD_DIR ?= build
 RTL := $(shell cat ../rtl/files.f)
 BUS_RTL := $(shell cat ../rtl/bus_files.f)

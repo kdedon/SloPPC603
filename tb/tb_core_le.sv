@@ -144,14 +144,15 @@ module tb_core_le #(
   function automatic logic [31:0] read_word(input logic [31:0] addr);
     return (mem.exists(addr) != 0) ? mem[addr] : 32'b0;
   endfunction
-  // pc insn more faulted gpr-write gpr value update-write gpr value
+  // pc insn more faulted gpr-write gpr value update-write gpr value removed
   /* verilator lint_off UNUSEDSIGNAL */  // the trace records a subset of fields
   task automatic trace_retire(input retire_packet_t r);
     if (rtrace_fd == 0) return;
-    $fwrite(rtrace_fd, "%08x %08x %0d %0d %0d %0d %08x %0d %0d %08x\n", r.pc, r.insn,
+    $fwrite(rtrace_fd, "%08x %08x %0d %0d %0d %0d %08x %0d %0d %08x %0d\n", r.pc, r.insn,
             r.seq_partial, r.illegal || r.alignment_exception || (r.data_fault != DATA_OK) ||
               (r.fetch_fault != FETCH_OK),
-            r.gpr_write, r.gpr, r.value, r.update_write, r.update_gpr, r.update_value);
+            r.gpr_write, r.gpr, r.value, r.update_write, r.update_gpr, r.update_value,
+            r.removed_branches);
     // Stores retire after their bus write: the first retirement after the
     // final store is that store.
     if (done) begin
