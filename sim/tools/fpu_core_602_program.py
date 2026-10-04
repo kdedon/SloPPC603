@@ -404,6 +404,72 @@ def sticky_timing(p):
     p.clear_fpscr()
 
 
+# 602 UM Table 6-6, latency:throughput: lfs, stfs and stfiwx 2:1, lfd and
+# stfd 3:2. Probes count dispatch to retirement, one more than the latency
+# (Figure 6-3), and the retirement spacing of the first and last of four
+# independent accesses. Through the pipelined unit over a memory taking one
+# access per cycle the table is met; otherwise the memory or the serialized
+# lane is slower.
+MEMORY_TIMING = {
+    'lane': {'lfs': (6, 15), 'lfd': (6, 15), 'stfs': (7, 18), 'stfd': (7, 18),
+             'stfiwx': (7, 18)},
+    'unit': {'lfs': (3, 6), 'lfd': (4, 6), 'stfs': (3, 3), 'stfd': (4, 6),
+             'stfiwx': (3, 3)},
+    'table': {'lfs': (3, 3), 'lfd': (4, 6), 'stfs': (3, 3), 'stfd': (4, 6),
+              'stfiwx': (3, 3)},
+}
+
+
+def memory_timing(p, timing):
+    """Isolated latency and the spacing of four independent accesses for
+    each FP load and store row of Table 6-6."""
+    p.res_next = (p.res_next + 7) & ~7
+    doubles = [f64(1.0 + k) for k in range(4)]
+    singles = [f32(0.5 + k) for k in range(4)]
+    dbase = p.data(*doubles)
+    sbase = p.data((singles[0] << 32) | singles[1], (singles[2] << 32) | singles[3])
+    words = []
+    for k in range(4):
+        p.lfs(12 + k, singles[k])
+        words.append(p.arith(x_form(63, 12 + k, 0, 12 + k, 15), 'fctiwz', 12 + k,
+                             0, singles[k]))
+    p.li32(20, dbase)
+    p.li32(19, sbase)
+    for k in range(4):
+        p.li32(24 + k, 4 * k)
+    rows = (
+        ('lfd', lambda k: d_form(50, 4 + k, 20, 8 * k), doubles, 0),
+        ('stfd', lambda k: d_form(54, 4 + k, 21, 8 * k), doubles, 8),
+        ('lfs', lambda k: d_form(48, 4 + k, 19, 4 * k), singles, 0),
+        ('stfs', lambda k: d_form(52, 4 + k, 21, 4 * k), singles, 4),
+        ('stfiwx', lambda k: x_form(31, 12 + k, 21, 24 + k, 983), words, 4),
+    )
+    for name, form, values, size in rows:
+        lat, spacing = timing[name]
+        slots = [p.result_slot(size // 4), p.result_slot(size)] if size else []
+        if size:
+            p.li32(21, slots[0])
+        p.emit(SYNC)
+        p.probes[p.emit(form(0))] = lat
+        if size:
+            p.li32(21, slots[1])
+        p.emit(SYNC)
+        pcs = [p.emit(form(k)) for k in range(4)]
+        p.spacings.append(('R', pcs[0], pcs[-1], spacing))
+        if not size:
+            for k in range(4):
+                p.write_fpr(4 + k, True, False)
+            continue
+        for addr, ks in ((slots[0], (0,)), (slots[1], range(4))):
+            for k in ks:
+                at = addr + size * k
+                if size == 8:
+                    p.expect(at, values[k] >> 32)
+                    p.expect(at + 4, values[k])
+                else:
+                    p.expect(at, values[k])
+
+
 def random_cases(p, rng, count):
     base_msr = p.msr
     for _ in range(count):
@@ -443,7 +509,7 @@ def random_cases(p, rng, count):
         p.check_cr()
 
 
-def build(seed, count):
+def build(seed, count, timing='lane'):
     rng = random.Random(seed)
     p = Program602()
     handlers(p)
@@ -464,6 +530,7 @@ def build(seed, count):
     fp_enable_rfi(p, fex)
     random_cases(p, rng, count)
     sticky_timing(p)
+    memory_timing(p, MEMORY_TIMING[timing])
     p.check_tags()
     p.emit(d_form(36, 0, 30, 0))          # stw r0 to DONE ends the run
     p.emit(18 << 26)                      # b .
@@ -484,14 +551,20 @@ def main():
     parser.add_argument('--image', required=True)
     parser.add_argument('--seed', type=lambda s: int(s, 0), default=0x602)
     parser.add_argument('--random', type=int, default=150)
+    parser.add_argument('--lsu-pipe', action='store_true',
+                        help='FP accesses run in the pipelined load/store unit')
+    parser.add_argument('--pipe-mem', action='store_true',
+                        help='the bench memory takes one access per cycle')
     args = parser.parse_args()
-    p = build(args.seed, args.random)
+    timing = ('table' if args.pipe_mem else 'unit') if args.lsu_pipe else 'lane'
+    p = build(args.seed, args.random, timing)
     print(f'fpu_core_602_program: {len(p.words)} words, {len(p.expects)} expected, '
           f'{len(p.log)} exceptions, {p.sticky} sticky stalls')
     lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0',
              f'S {p.sticky:x} 0 0']
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]
+    lines += [f'L {pc:08x} {cycles:x} 0' for pc, cycles in p.probes.items()]
     lines += [f'{kind} {a:08x} {b:08x} {cycles:x}' for kind, a, b, cycles in p.spacings]
     Path(args.image).parent.mkdir(parents=True, exist_ok=True)
     Path(args.image).write_text('\n'.join(lines) + '\n')

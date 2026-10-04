@@ -2114,9 +2114,19 @@ FPU_CORE_602_SEED ?= 0x602
 test-core-fpu-602 test-core-fpu-602-compact: test-core-fpu-602%:
 	mkdir -p $(BUILD_DIR)/core-fpu-602$*
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 -GCPU_VARIANT=4 $(if $*,-GFPU_IMPL=1) --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-602$* $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
-	python3 tools/fpu_core_602_program.py --image $(BUILD_DIR)/core-fpu-602$*/program.txt --seed $(FPU_CORE_602_SEED) --random $(FPU_CORE_RANDOM)
+	python3 tools/fpu_core_602_program.py --image $(BUILD_DIR)/core-fpu-602$*/program.txt --seed $(FPU_CORE_602_SEED) --random $(FPU_CORE_RANDOM) $(FPU_CORE_LSU)
 	./$(BUILD_DIR)/core-fpu-602$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-602$*/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu-602$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-602$*/program.txt +STALL=0 $(SIM_ARGS)
+
+# The 602 program with the pipelined LSU over a memory taking one access per
+# cycle: the FP rows of 602 UM Table 6-6.
+.PHONY: test-core-lsu-timing-602
+test-core-lsu-timing-602:
+	mkdir -p $(BUILD_DIR)/core-lsu-timing-602
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GPIPE_MEM=1 -GCPU_VARIANT=4 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing-602 $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_602_program.py --image $(BUILD_DIR)/core-lsu-timing-602/program.txt --seed $(FPU_CORE_602_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem
+	./$(BUILD_DIR)/core-lsu-timing-602/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing-602/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/core-lsu-timing-602/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing-602/program.txt +STALL=0 $(SIM_ARGS)
 
 .PHONY: test-decode-sweep test-core-full-decode
 test: test-decode-sweep test-core-full-decode
