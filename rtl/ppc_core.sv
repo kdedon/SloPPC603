@@ -1607,7 +1607,17 @@ module ppc_core #(
   assign result = lsu_result_valid ? lsu_result :
                   special_result_select ? special_result : iu_result;
   assign special_result_ready = result_ready && special_result_valid && !lsu_result_valid;
-  assign iu_result_ready = result_ready && !special_result_select && !lsu_result_valid;
+  // An IU result that meets a load's on the first port takes the second
+  // when the SRU leaves it free: each unit has its own result bus (UM
+  // 6.3.3), so a load's consumer finishes on its own timing. IU results
+  // never fault and write only what the second port records.
+  logic iu_port1;
+  result_packet_t result1;
+  assign iu_port1 = HAS_SRU && ENABLE_LSU_PIPE && iu_result_valid && lsu_result_valid &&
+                    !special_result_select && !sru_result_valid;
+  assign result1 = sru_result_valid ? sru_result : iu_result;
+  assign iu_result_ready = (result_ready && !special_result_select && !lsu_result_valid) ||
+                           iu_port1;
   assign sru_result_ready = 1'b1;
   // Classify held identities without depending on cancel-masked valid signals.
   always_comb begin
@@ -2550,7 +2560,7 @@ module ppc_core #(
     .result_retire_i(lsu_result_valid || !special_result_select),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
-    .result1_valid_i(sru_result_valid), .result1_i(sru_result),
+    .result1_valid_i(sru_result_valid || iu_port1), .result1_i(result1),
     .wake1_valid_o(wake1_valid), .wake1_o(wake1),
     .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
     .head_o(cq_head_packet), .head1_o(cq_head1_packet),

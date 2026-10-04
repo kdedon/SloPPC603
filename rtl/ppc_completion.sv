@@ -400,6 +400,13 @@ module ppc_completion #(
       assert (!result1_i.fault && (result1_i.data_fault == DATA_OK) &&
               !(result_valid_i && (result_i.producer == result1_i.producer)))
         else $error("second finish port took a fault or a shared producer");
+  always @(posedge clk_i)
+    if (rst_ni && finish1_accept)
+      assert (!packets_q[result1_i.producer.index].write_cr_fields &&
+              !packets_q[result1_i.producer.index].write_cr_bit &&
+              !packets_q[result1_i.producer.index].write_xer &&
+              !packets_q[result1_i.producer.index].update_write)
+        else $error("second finish port took a result it does not record");
   // synthesis translate_on
 
   // Rename reconstruction consumes post-commit survivors in oldest-first
