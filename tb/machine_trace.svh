@@ -5,7 +5,9 @@
 // `define MT_BAT <ppc_core_bat instance path> and `define MT_CLK <clock>.
 // +RETIRE_TRACE=<file> writes one line per retirement edge:
 //   <pc> <insn> <count> <fault> [name=value ...] [st=addr,strobe,data ...]
-// count is 2 when CQ[1] retires beside the head. Registers appear when they
+// count is 2 when CQ[1] retires beside the head. rb=<n0>,<n1>, when either is
+// nonzero, counts branches removed at dispatch (no record of their own) just
+// before the head and just before CQ[1]. Registers appear when they
 // differ from the previous line; r0-r31 exclude the TGPRs, t0-t3. st lists
 // physical stores accepted since the previous line, strobe bit 3 being the
 // byte at addr; cache operations such as dcbz are not listed.
@@ -13,6 +15,7 @@ int mt_fd = 0;
 logic [31:0] mt_prev [49];
 logic mt_first = 1'b1;
 string mt_stores = "";
+int mt_removed = 0;
 
 function automatic logic [31:0] mt_value(input int i);
   if (i < 32)
@@ -61,6 +64,9 @@ always @(posedge `MT_CLK) begin
     store = $sformatf(" st=%08x,%0x,%08x", `MT_BAT.pdmem_req_addr_o,
                       `MT_BAT.pdmem_req_wstrb_o, `MT_BAT.pdmem_req_wdata_o[31:0]);
   if (mt_fd != 0 && `MT_CORE.rst_ni && `MT_CORE.retire_valid_o && `MT_CORE.retire_ready_i &&
+      `MT_CORE.retire_o.seq_partial)
+    mt_removed += int'(`MT_CORE.retire_o.removed_branches);
+  if (mt_fd != 0 && `MT_CORE.rst_ni && `MT_CORE.retire_valid_o && `MT_CORE.retire_ready_i &&
       !`MT_CORE.retire_o.seq_partial) begin
     automatic int count = 1 + int'(`MT_CORE.commit1);
     automatic logic fault = `MT_CORE.retire_o.illegal || `MT_CORE.retire_o.alignment_exception ||
@@ -69,6 +75,10 @@ always @(posedge `MT_CLK) begin
     automatic string line = $sformatf("%08x %08x %0d %0d",
                                       `MT_CORE.retire_o.pc, `MT_CORE.retire_o.insn, count, fault);
     automatic string stores = mt_stores;
+    automatic int rb0 = mt_removed + int'(`MT_CORE.retire_o.removed_branches);
+    automatic int rb1 = `MT_CORE.commit1 ? int'(`MT_CORE.retire1_o.removed_branches) : 0;
+    if (rb0 != 0 || rb1 != 0) line = {line, $sformatf(" rb=%0d,%0d", rb0, rb1)};
+    mt_removed = 0;
     mt_stores = store;
     #1;
     for (int i = 0; i < 49; i++) begin

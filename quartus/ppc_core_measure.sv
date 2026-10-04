@@ -156,7 +156,7 @@ module ppc_core_measure #(
                        retire.page_miss.ea ^ retire.page_miss.sr ^
                        {27'b0, retire.page_miss.pr, retire.page_miss.ir,
                         retire.page_miss.dr, retire.page_miss.write, retire.page_miss.way} ^
-                       {30'b0, retire.rename_owned, retire.seq_partial} ^
+                       {28'b0, retire.removed_branches, retire.rename_owned, retire.seq_partial} ^
                        {27'b0, retire.cq1_ok, retire.fpr_write, retire.branch, retire.branch_lk,
                         retire.branch_ctr} ^
                        retire.update_value ^

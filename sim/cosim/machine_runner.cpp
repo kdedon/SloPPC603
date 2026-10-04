@@ -300,6 +300,28 @@ int main(int argc, char** argv) {
                  store_bytes = 0, timing = 0;
         bool done = false, miss_vector = false, direct_vector = false;
         uint64_t misses = 0, direct = 0, failed_conditional = 0, undefined = 0, discarded_loads = 0;
+        uint64_t removed = 0;
+        // Branches the RTL removed at dispatch (UM 6.3.1): no LR or CTR
+        // write, so they retire without a record and the reference steps them.
+        auto step_removed = [&](unsigned n) {
+            for (unsigned i = 0; i < n; ++i) {
+                uint32_t w = 0;
+                if (uint8_t* p = ram_byte(ppc_state.pc))
+                    w = uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
+                uint32_t op = w >> 26, xo = (w >> 1) & 1023;
+                bool branch = op == 18 || op == 16 || (op == 19 && (xo == 16 || xo == 528));
+                bool ctr = op != 18 && !((w >> 23) & 1);
+                if (!branch || (w & 1) || ctr)
+                    fail("removed instruction at " + h8(ppc_state.pc) + " " + h8(w) +
+                         " is not a branch without LR or CTR writes");
+                uint64_t step_exceptions = exceptions_processed;
+                ppc_exec_single();
+                if (exceptions_processed != step_exceptions)
+                    fail("removed branch at " + h8(w) + " took an exception");
+                ++removed;
+                ++instructions;
+            }
+        };
         std::set<uint32_t> discarded;
         std::string line;
         std::ofstream kept;
@@ -319,14 +341,18 @@ int main(int argc, char** argv) {
             if (recent.size() > 6) recent.pop_front();
             std::istringstream in(line);
             std::string pc_text, insn_text, token;
-            unsigned count = 0, fault = 0;
+            unsigned count = 0, fault = 0, removed0 = 0, removed1 = 0;
             in >> pc_text >> insn_text >> count >> fault;
             uint32_t pc = hex(pc_text), insn = hex(insn_text);
             std::vector<std::array<uint32_t, 3>> rtl_stores;
             while (in >> token) {
                 size_t eq = token.find('=');
                 std::string name = token.substr(0, eq), value = token.substr(eq + 1);
-                if (name == "st") {
+                if (name == "rb") {
+                    size_t c = value.find(',');
+                    removed0 = unsigned(std::stoul(value.substr(0, c)));
+                    removed1 = unsigned(std::stoul(value.substr(c + 1)));
+                } else if (name == "st") {
                     size_t c1 = value.find(','), c2 = value.find(',', c1 + 1);
                     rtl_stores.push_back({hex(value.substr(0, c1)), hex(value.substr(c1 + 1, c2 - c1 - 1)),
                                           hex(value.substr(c2 + 1))});
@@ -337,6 +363,7 @@ int main(int argc, char** argv) {
                 else if (!rtl_stores.empty()) rtl_stores[0][2] ^= 0x01010101U;
                 else mutations[records + 1] = "st";
             }
+            step_removed(removed0);
             // An interrupt is taken between retirements; enter it where the RTL did.
             uint32_t vector = pc & 0x000fffffU;
             if (ppc_state.pc != pc && (vector == 0x500 || vector == 0x900)) {
@@ -435,6 +462,7 @@ int main(int argc, char** argv) {
                 if (k > 0) {
                     // CQ[1] carries an integer, branch or load; an I/O load there
                     // also retires with its value in rtl.
+                    step_removed(removed1);
                     uint32_t next = 0;
                     if (uint8_t* p = ram_byte(ppc_state.pc))
                         next = uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
@@ -566,7 +594,8 @@ int main(int argc, char** argv) {
         std::cout << "PASS machine: records=" << records << " instructions=" << instructions
                   << " exceptions=" << exceptions << " tlb_misses=" << misses << " direct_store=" << direct << " interrupts=" << async << " stores=" << stores
                   << " store_bytes=" << store_bytes << " failed_stwcx=" << failed_conditional << " io_reads=" << io.reads
-                  << " timing_reads=" << timing << " undefined_fields=" << undefined << " dcbi_loads=" << discarded_loads << " trailing=" << trailing << '\n';
+                  << " timing_reads=" << timing << " removed_branches=" << removed
+                  << " undefined_fields=" << undefined << " dcbi_loads=" << discarded_loads << " trailing=" << trailing << '\n';
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "machine reference error: " << e.what() << '\n';

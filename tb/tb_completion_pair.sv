@@ -24,7 +24,7 @@ module tb_completion_pair;
   ppc_completion #(.ENABLE_PAIR_RETIRE(1'b1)) dut (
     .clk_i(clk), .rst_ni(rst_n), .alloc_valid_i(av), .alloc_ready_o(ar),
     .empty_o(empty), .head_index_o(head), .alloc_i(a0), .alloc_finished_i(fin0),
-    .alloc_tag_o(tag0), .alloc1_valid_i(av1), .alloc1_ready_o(ar1), .alloc1_i(a1),
+    .alloc_tag_o(tag0), .alloc1_valid_i(av1), .alloc1_at_tail_i(1'b0), .alloc1_ready_o(ar1), .alloc1_i(a1),
     .alloc1_finished_i(fin1), .alloc1_tag_o(tag1),
     .result_valid_i(rv), .result_ready_o(rr), .result_i(result),
     .finish_accept_o(finish), .wake_valid_o(wv), .wake_o(wake),
@@ -43,7 +43,7 @@ module tb_completion_pair;
   ppc_completion dut_off (
     .clk_i(clk), .rst_ni(rst_n), .alloc_valid_i(av), .alloc_ready_o(),
     .empty_o(), .head_index_o(), .alloc_i(a0), .alloc_finished_i(fin0),
-    .alloc_tag_o(), .alloc1_valid_i(av1), .alloc1_ready_o(off_ar1), .alloc1_i(a1),
+    .alloc_tag_o(), .alloc1_valid_i(av1), .alloc1_at_tail_i(1'b0), .alloc1_ready_o(off_ar1), .alloc1_i(a1),
     .alloc1_finished_i(fin1), .alloc1_tag_o(),
     .result_valid_i(rv), .result_ready_o(), .result_i(result),
     .finish_accept_o(), .wake_valid_o(), .wake_o(),

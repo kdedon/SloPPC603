@@ -128,6 +128,20 @@ class DispatchRulesTest(unittest.TestCase):
             with self.subTest(label), self.assertRaises(ValueError):
                 check_rules(text.split('\n'), 1, words, False)
 
+    def test_removed_branch(self):
+        # 0x400 add, 0x404 b 0x40c (removed), 0x40c add; 0x408 bl, 0x410 bdnz.
+        words = {0x400: 0x38630001, 0x404: 0x48000008, 0x40c: 0x38840001,
+                 0x408: 0x48000009, 0x410: 0x4200fff0}
+        text = '1 D2 R0 00000400 00000404* |\n2 D1 R1 0000040c | 00000400\n3 D0 R1 | 0000040c'
+        st = check_rules(text.split('\n'), 2, words, False)
+        self.assertEqual((st['dispatches'], st['removed'], st['retirements']), (3, 1, 2))
+        self.assertEqual(parse(text)[1], ([0x400, 0x404], []))
+        for label, pc in (('linking', '00000408'), ('counting', '00000410'), ('not a branch', '0000040c')):
+            with self.subTest(label), self.assertRaises(ValueError):
+                check_rules(text.replace('00000404*', pc + '*').split('\n'), 2, words, False)
+        with self.subTest('removed branch retires'), self.assertRaises(ValueError):
+            check_rules(text.replace('R1 | 0000040c', 'R1 | 00000404').split('\n'), 2, words, False)
+
     def test_schedule_ignores_recovery_marker(self):
         self.assertEqual(parse('4 D0 R1 | 00000300 !2\n5 D0 R0 | !1'), {4: ([], [0x300])})
 

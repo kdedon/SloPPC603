@@ -384,6 +384,9 @@ package ppc_pkg;
     logic cq1_ok;
     // Writes an FPR (FP arithmetic or FP load).
     logic fpr_write;
+    // Branches removed at dispatch just before this instruction in program
+    // order. They wrote no LR or CTR and took no CQ entry (UM 6.3.1).
+    logic [1:0] removed_branches;
   } retire_packet_t;
   // Performance events, registered one cycle after the cycle they describe.
   // slot says what the single dispatch slot did that cycle, so the slot

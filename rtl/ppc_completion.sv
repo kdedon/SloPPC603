@@ -26,8 +26,10 @@ module ppc_completion #(
   // The entry allocates finished; its unit gates retirement instead.
   input logic alloc_finished_i,
   output ppc_pkg::completion_tag_t alloc_tag_o,
-  // Lane 1 allocates only beside lane 0.
+  // Lane 1 allocates beside lane 0, or alone at the tail when
+  // alloc1_at_tail_i is set (lane 0 then allocates nothing).
   input logic alloc1_valid_i,
+  input logic alloc1_at_tail_i,
   output logic alloc1_ready_o,
   input ppc_pkg::retire_packet_t alloc1_i,
   input logic alloc1_finished_i,
@@ -165,8 +167,10 @@ module ppc_completion #(
   // synthesis translate_off
   always @(posedge clk_i) begin
     if (rst_ni) begin
-      if (alloc1_valid_i)
+      if (alloc1_valid_i && !alloc1_at_tail_i)
         assert (alloc_valid_i) else $error("CQ lane 1 allocation without lane 0");
+      if (alloc1_at_tail_i)
+        assert (!alloc_valid_i) else $error("CQ lane 0 allocation with lane 1 at the tail");
       if (!ENABLE_PAIR_RETIRE)
         assert (!retire1_valid_o) else $error("retire1 offered without pair retirement");
       assert (head1_q == next_index(head_q)) else $error("CQ head1 out of step");
@@ -241,13 +245,13 @@ module ppc_completion #(
   assign alloc_ready_o = !redirect_accepted_o &&
                          (count_q < COUNT_WIDTH'(CQ_DEPTH));
   assign alloc1_ready_o = !redirect_accepted_o &&
-                          (count_q < COUNT_WIDTH'(CQ_DEPTH - 1));
+    (count_q < COUNT_WIDTH'(alloc1_at_tail_i ? CQ_DEPTH : CQ_DEPTH - 1));
   assign empty_o = (count_q == 0);
   assign head_index_o = head_q;
   // Even a stale or killed response drains so that it cannot block a producer.
   assign result_ready_o = 1'b1;
   assign alloc_fire = alloc_valid_i && alloc_ready_o;
-  assign alloc1_fire = alloc_fire && alloc1_valid_i && alloc1_ready_o;
+  assign alloc1_fire = (alloc_fire || alloc1_at_tail_i) && alloc1_valid_i && alloc1_ready_o;
   assign retire_fire = retire_valid_o && retire_ready_i;
   assign retire1_fire = retire_fire && retire1_valid_o && retire1_ready_i;
   assign finish_accept_o = finish_accept;
@@ -258,8 +262,8 @@ module ppc_completion #(
 
     alloc_tag_o.index = tail_q;
     alloc_tag_o.generation = generations_q[tail_q] + CQ_GENERATION_WIDTH'(1);
-    alloc1_tag_o.index = tail1_q;
-    alloc1_tag_o.generation = generations_q[tail1_q] + CQ_GENERATION_WIDTH'(1);
+    alloc1_tag_o.index = alloc1_at_tail_i ? tail_q : tail1_q;
+    alloc1_tag_o.generation = generations_q[alloc1_tag_o.index] + CQ_GENERATION_WIDTH'(1);
 
     retire_valid_o = rst_ni && (count_q != '0) && active_q[head_q] && done_q[head_q];
     retire_o = '0;
@@ -405,13 +409,15 @@ module ppc_completion #(
           done_q[tail_q] <= alloc_i.illegal || alloc_finished_i;
         end
         if (alloc1_fire) begin
-          packets_q[tail1_q] <= allocation1;
-          generations_q[tail1_q] <= alloc1_tag_o.generation;
-          active_q[tail1_q] <= 1'b1;
-          done_q[tail1_q] <= alloc1_i.illegal || alloc1_finished_i;
+          packets_q[alloc1_tag_o.index] <= allocation1;
+          generations_q[alloc1_tag_o.index] <= alloc1_tag_o.generation;
+          active_q[alloc1_tag_o.index] <= 1'b1;
+          done_q[alloc1_tag_o.index] <= alloc1_i.illegal || alloc1_finished_i;
+        end
+        if (alloc1_fire && !alloc1_at_tail_i) begin
           tail_q <= next_index(tail1_q);
           tail1_q <= next_index(next_index(tail1_q));
-        end else if (alloc_fire) begin
+        end else if (alloc_fire || alloc1_fire) begin
           tail_q <= tail1_q;
           tail1_q <= next_index(tail1_q);
         end
