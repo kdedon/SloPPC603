@@ -841,6 +841,25 @@ dependency bits of the entry after a removed `b` compared against nothing
 (the fold cleared them), and two assertions assumed DQ1 or a folded target
 follows DQ0 directly.
 
+Recorded: `make -C sim BRANCH_REMOVAL=1 test-dispatch-rules test-reference-machine REFERENCE_DIR=../../dingusppc DEMO_FW_DIR=<main checkout>/toolchain/build/demo`, at width 1 and at width 2 with the LSU unit, commits 9e13b56 (rules at both widths, reference machine at width 1) and 2fbb2a4 (reference machine at width 2), 2026-10-04.
+All pass. Dhrystone, CoreMark and Whetstone pass every dispatch rule,
+including `TIM-BPU-FOLD`; at width 2 Dhrystone dispatches 1,646,861 and
+removes 49,503 branches at dispatch (52,728 at width 1). The whole-machine
+comparison passes all five programs and the negative controls at both widths;
+the reference steps 62,418 removed branches in Dhrystone at width 1, which
+includes plain `b` removed before the IQ. At width 2 with the unit the
+comparison first failed: a store's write from the store queue reached the
+trace after younger records (and after the last one), which removal makes
+common. The runner now carries an owed store across records and the trace
+ends with a record of the stores drained after the last retirement
+([REFERENCE_MACHINE.md](REFERENCE_MACHINE.md#tolerances)); Dhrystone has
+148,364 such late writes at width 2.
+
+Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` under the
+Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2`,
+`PPC_LSU_PIPE=1` and `PPC_BRANCH_REMOVAL=1'b1`, commit 9e53e78: 0 errors,
+49 warnings. No fit was run.
+
 ## Dispatch and completion rule check
 
 Recorded: `make -C sim test-dispatch-rules` at width 1, width 1 with the LSU unit, `DISPATCH_WIDTH=2` and width 2 with the unit (`VERILATOR=tools/verilate-lsu-pipe`), commits 333c376 and bf69248, 2026-10-04.
