@@ -19,7 +19,7 @@
 # --lsu-pipe builds it with the pipelined load/store unit (ENABLE_LSU_PIPE).
 # Every core loads program images from the OSD (Load program); the build
 # also writes the images to build/mister/images. --analyze runs Quartus
-# analysis and elaboration only.
+# analysis and elaboration only. --seed N sets the fitter seed.
 set -euo pipefail
 clean=0
 native=0
@@ -29,7 +29,8 @@ dual=0
 lsu_pipe=0
 analyze=0
 suite=""
-usage() { echo "usage: $0 [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone]" >&2; exit 2; }
+seed=""
+usage() { echo "usage: $0 [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N]" >&2; exit 2; }
 while (($#)); do
   case "$1" in
     --clean) clean=1 ;;
@@ -39,6 +40,11 @@ while (($#)); do
     --fpu-compact) fpu=1; fpu_compact=1 ;;
     --dual) dual=1 ;;
     --lsu-pipe) lsu_pipe=1 ;;
+    --seed)
+      shift
+      [[ "${1:-}" =~ ^[0-9]+$ ]] || usage
+      seed="$1"
+      ;;
     --suite)
       shift
       case "${1:-}" in nbench | embench | selftest | whetstone) suite="$1" ;; *) usage ;; esac
@@ -106,6 +112,9 @@ if [[ "${dual}" == 1 ]]; then
 fi
 if [[ "${lsu_pipe}" == 1 ]]; then
   echo 'set_global_assignment -name VERILOG_MACRO "PPC_LSU_PIPE=1"' >> "${here}/ppc603e.qsf"
+fi
+if [[ -n "${seed}" ]]; then
+  sed -i "s/^set_global_assignment -name SEED .*/set_global_assignment -name SEED ${seed}/" "${here}/ppc603e.qsf"
 fi
 status=0
 if [[ "${analyze}" == 1 ]]; then
