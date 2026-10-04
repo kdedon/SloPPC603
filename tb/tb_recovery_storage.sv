@@ -31,6 +31,7 @@ module tb_recovery_storage;
   ppc_rename rename_unit (
     /* verilator lint_off PINCONNECTEMPTY */
     .read_c_i(5'd0), .arch_c_i(32'd0), .read_c_o(),
+    .read_c1_i(5'd0), .arch_c1_i(32'd0), .read_c1_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .alloc_value_valid_i(1'b0), .alloc_value_i(32'd0),
     .alloc1_value_valid_i(1'b0), .alloc1_value_i(32'd0),
@@ -39,7 +40,6 @@ module tb_recovery_storage;
     .read_a1_o(), .read_b1_o(), .alloc1_ready_o(), .alloc1_tag_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .read_a1_i(5'd0), .read_b1_i(5'd0), .arch_a1_i(32'd0), .arch_b1_i(32'd0),
-    .read_c1_i(5'd0), .arch_c1_i(32'd0), .read_c1_o(),
     .alloc1_i(1'b0), .alloc1_reg_i(5'd0), .alloc1_producer_i('0),
     .release1_i(1'b0), .release1_reg_i(5'd0), .release1_tag_i('0), .release1_producer_i('0),
     .mapped_o(rename_mapped),
