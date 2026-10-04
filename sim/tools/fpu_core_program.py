@@ -67,9 +67,11 @@ LATENCY = {name: lat + 1 for name, (lat, _) in TABLE_6_5.items()}
 # FP loads and stores issue into the FPU as they dispatch and access memory
 # through the load/store lane, one cycle of bench memory per access. A
 # 32-bit data path splits a doubleword into two word accesses; a 64-bit one
-# moves it in one. Integer references: add, lwz and stw.
+# moves it in one. Integer references: add, lwz and stw. An add completes
+# in its writeback cycle (Figure 6-3: 1D 2E 3W); lane accesses retire the
+# cycle after their result.
 LATENCY.update({'lfd': 6, 'lfs': 6, 'stfd': 7, 'stfs': 7, 'stfiwx': 7,
-                'add': 3, 'lwz': 5, 'stw': 5})
+                'add': 2, 'lwz': 5, 'stw': 5})
 
 
 # Dispatch ('issue') and retirement spacing of the first and last of four
@@ -96,7 +98,9 @@ def use_lsu_pipe(split, pipe_mem):
     bounds the spacing. Integer and FP stores retire one per cycle (2:1):
     the FPU presents the data of any launched store. A 32-bit data path
     moves a doubleword as two word beats."""
-    LATENCY.update({'lwz': 4, 'stw': 4, 'lfd': 3, 'lfs': 3, 'stfd': 3, 'stfs': 3,
+    # Figure 6-5: an integer access completes the cycle after its second
+    # execute cycle.
+    LATENCY.update({'lwz': 3, 'stw': 3, 'lfd': 3, 'lfs': 3, 'stfd': 3, 'stfs': 3,
                     'stfiwx': 3})
     load = 3 if pipe_mem else 6
     MEMORY_SPACING.update({'lfd-issue': 3 if pipe_mem else 4, 'lfd-retire': load,
@@ -851,9 +855,10 @@ def integer_memory_streams(p):
     p.emit(SYNC)
     pcs = [p.emit(d_form(36, 10, 21, 0)), p.emit(d_form(32, 11, 22, 0))]
     p.spacings.append(('R', pcs[0], pcs[1], 1))
+    # The load waits for the store's write, which follows its retirement.
     p.emit(SYNC)
     pcs = [p.emit(d_form(36, 10, 21, 8)), p.emit(d_form(32, 12, 21, 8))]
-    p.spacings.append(('R', pcs[0], pcs[1], 5))
+    p.spacings.append(('R', pcs[0], pcs[1], 4))
     # A load that passed a queued store and faults is performed again by
     # the serialized lane once the store is written: DSI at the load.
     p.li32(31, PROT_LO)
@@ -883,8 +888,10 @@ def update_and_rename_streams(p):
     data = 0x2468ACE0
     slot = p.result_slot(8)
     p.li32(10, data)
-    # Four stwu through one base: one per cycle.
+    # Four stwu through one base: one per cycle. A second sync gives fetch
+    # time to fill the IQ.
     p.li32(23, slot)
+    p.emit(SYNC)
     p.emit(SYNC)
     pcs = [p.emit(d_form(37, 10, 23, 4)) for _ in range(4)]
     p.spacings.append(('I', pcs[0], pcs[-1], 3))

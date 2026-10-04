@@ -162,7 +162,10 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
   assign fetch_fault=(phase==7&&fetch_pc==32'h28)?FETCH_ISI_PROTECTION:FETCH_OK;
   assign dr=rst_n&&!dpending&&cycles%4!=0;
   assign rv=rst_n&&dpending&&ddelay==0;
-  assign tr=rst_n&&cycles%5!=0&&!(tv&&(context_word(retired.insn)||retired.fetch_fault!=FETCH_OK)&&held_retire<8);
+  // Held heads are lane or fetch-fault entries, finished before they are
+  // offered; reading the stored head keeps ready off the finish path.
+  assign tr=rst_n&&cycles%5!=0&&!(dut.cq_retire_settled&&(context_word(dut.cq_head_packet.insn)||
+    dut.cq_head_packet.fetch_fault!=FETCH_OK)&&held_retire<8);
   assign cr=ctx_wait>=12;
   assign red=((phase==8||phase==9)&&pivot_seen&&!cut_done)||(irq_count>0&&cv&&!cr);
   task automatic check(input logic yes,input string msg);
