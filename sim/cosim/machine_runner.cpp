@@ -300,7 +300,10 @@ int main(int argc, char** argv) {
                  store_bytes = 0, timing = 0;
         bool done = false, miss_vector = false, direct_vector = false;
         uint64_t misses = 0, direct = 0, failed_conditional = 0, undefined = 0, discarded_loads = 0;
-        uint64_t removed = 0;
+        uint64_t removed = 0, late_stores = 0;
+        // A store retired without its write: the store queue performs it
+        // after younger instructions have retired (UM 1.1.4.3).
+        bool store_owed = false;
         std::set<uint32_t> discarded;
         std::string line;
         std::ofstream kept;
@@ -549,8 +552,13 @@ int main(int argc, char** argv) {
                 if (ref[i] != rtl[i])
                     diff += " " + field_name(i) + " rtl=" + h8(rtl[i]) + " ref=" + h8(ref[i]);
             if (!diff.empty()) fail("state after " + h8(pc) + " " + h8(insn) + ":" + diff);
-            if (!rtl_stores.empty() && !store_class(insn))
-                fail("store effects from a non-store " + h8(insn));
+            if (!rtl_stores.empty()) {
+                if (!store_class(insn)) {
+                    if (!store_owed) fail("store effects from a non-store " + h8(insn));
+                    ++late_stores;
+                }
+                store_owed = false;
+            } else if (store_class(insn)) store_owed = true;
             // Every RTL store byte must match the reference's memory or its I/O writes.
             // stwcx. offers its write before the reservation decides it; a failed
             // one (CR0[EQ] clear) wrote nothing.
@@ -595,6 +603,7 @@ int main(int argc, char** argv) {
                   << " exceptions=" << exceptions << " tlb_misses=" << misses << " direct_store=" << direct << " interrupts=" << async << " stores=" << stores
                   << " store_bytes=" << store_bytes << " failed_stwcx=" << failed_conditional << " io_reads=" << io.reads
                   << " timing_reads=" << timing << " removed_branches=" << removed
+                  << " late_stores=" << late_stores
                   << " undefined_fields=" << undefined << " dcbi_loads=" << discarded_loads << " trailing=" << trailing << '\n';
         return 0;
     } catch (const std::exception& e) {
