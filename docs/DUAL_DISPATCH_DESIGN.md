@@ -814,6 +814,33 @@ Quartus 17 `quartus_map --analysis_and_elaboration ppc603e_chip` under the
 Quartus lock on a copy of `quartus/chip` with `PPC_DISPATCH_WIDTH=2` and
 `PPC_LSU_PIPE=1`, commit b28e2ad: 0 errors, 48 warnings.
 
+### Branch removal
+
+`ENABLE_BRANCH_REMOVAL` (default 0; `BRANCH_REMOVAL=1` sets it for a sim
+build) retires a branch that needs no SPR write back in the BPU (UM 6.3.1).
+A plain `b` never enters the IQ; `bc`, `bclr`, `bcctr` and branch-always
+forms without LK or a CTR decrement, resolved at dispatch, take no CQ entry,
+IU slot or station. The removed set and its exclusions are in
+[CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit). Each packet's
+`removed_branches` counts the branches removed just before it; the machine
+trace prints it as `rb=<head>,<CQ[1]>`, the firmware traces as a last field,
+and `+DISPATCH_TRACE` marks a dispatch-removed branch with `*`.
+
+Recorded: `make -C sim BRANCH_REMOVAL=1 test-core test-core-dual test-core-branch-fold test-core-control-memory test-core-branch-recovery test-core-machine-check-trace test-core-recovery test-core-fetch2 test-stage test-chip-pins`, at width 1 and at width 2 with the LSU unit (`DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe` from `sim/`), commit 3bb0024, 2026-10-04.
+All pass. `test-core-branch-fold` (922 retirements) removes 86 branches at
+width 1 (4,110 cycles) and 80 with two-word fetch at width 2 (3,554 cycles,
+3,598 without removal); the control/memory bench checks that each removed
+branch is a `b`, `bc`, `bclr` or `bcctr` without LK or CTR decrement and
+skips its expected row. `tb_core_dual` and `tb_core_fetch2` leave every such
+branch out of the width-comparison log, since which ones are removed depends
+on timing; at width 2 the plain `b` at 0x6c is never dispatched.
+`test-core-machine-check-trace` scenario 18 now expects the interrupt
+requested at a removed `blr` to save the `blr`'s own address (four seeds,
+1,903 checks each). Two faults were found and fixed on the way: the
+dependency bits of the entry after a removed `b` compared against nothing
+(the fold cleared them), and two assertions assumed DQ1 or a folded target
+follows DQ0 directly.
+
 ## Dispatch and completion rule check
 
 Recorded: `make -C sim test-dispatch-rules` at width 1, width 1 with the LSU unit, `DISPATCH_WIDTH=2` and width 2 with the unit (`VERILATOR=tools/verilate-lsu-pipe`), commits 333c376 and bf69248, 2026-10-04.
@@ -839,8 +866,9 @@ of its requirements).
 | `TIM-SER-DISPATCH` | Nothing dispatches while a dispatch-serialized instruction is in flight |
 | `TIM-SER-REFETCH` | Nothing dispatches in the cycle `isync` retires |
 | `TIM-SER-COMPLETE` | A completion-serialized instruction never completes from CQ[1] |
-| `TIM-CQ-ORDER`, `TIM-CQ-CQ1` | Retirement in dispatch order, never in the dispatch cycle; only the work a misprediction recovery removed behind a conditional branch (`!<n>` in the trace, UM 6.4.1.2) is skipped; CQ[1] holds only integer, load or branch (branches keep a CQ entry in this core, slice 7) |
+| `TIM-CQ-ORDER`, `TIM-CQ-CQ1` | Retirement in dispatch order, never in the dispatch cycle; only the work a misprediction recovery removed behind a conditional branch (`!<n>` in the trace, UM 6.4.1.2) is skipped; CQ[1] holds only integer, load or branch (branches keep a CQ entry unless removed) |
 | `TIM-WB-LIMITS` | A retired pair writes at most two GPRs and one each of CR, FPR, LR, CTR |
+| `TIM-BPU-FOLD` | A branch removed at dispatch (`*`) is a branch without LR or CTR write, and never retires |
 
 Unit tests in `test_dispatch_trace.py` (`check-spec`) make each rule fail on a
 crafted trace. Not checked: rename and CQ occupancy, unit busy times, operand
