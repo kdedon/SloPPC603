@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-10-03. This is the active planning entry point. The target for
+Updated: 2026-10-04. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -62,7 +62,7 @@ and throughput. The coherent baseline passes both personalities’ numerical, ex
 public-shell, paired dispatch/retirement and strict lint gates in
 [verification](../../../sim/fpu/PRODUCTION.md), including full-queue admission
 and 602 SPR timing. Frequency closure and the documented silicon-semantics
-gaps remain open. On `2f049c5`
+gaps remain open. On `6cb15bb`
 the FULL FPU fits at 51.57 MHz (603e) and 50.58 MHz (602), COMPACT at 53.43
 and 60.07 MHz (`quartus/fpu-production/synthesize.sh --docker fullfit`,
 `full602fit`, `compactfit`, `compact602fit`); all miss 66 MHz. Timing work keeps the Table 6-5 cycle counts exact; any change to
@@ -101,16 +101,21 @@ bench `test-chip-mp` and HID0 ILOCK
 ([chip verification](../../CHIP_PACKAGE_VERIFICATION.md)); CI enabled
 ([CI.md](../../CI.md)); relicense to GPL-2.0-or-later.
 
-Under gate (batch 11): dual dispatch slice 7 with `bclr`/`bcctr` folding; FP
-loads and stores through the LSU unit.
+Done (batch 11, 2026-10-04): dual dispatch slice 7, a folded branch in DQ1
+beside DQ0 work, with `bclr`/`bcctr` folding
+([design](../../DUAL_DISPATCH_DESIGN.md#slice-7)); FP loads and stores
+through the LSU unit, loads at Table 6-6 2:1
+([LSU](../../LSU_PIPELINE.md#fp-accesses)). Branches without a CQ entry are
+deferred.
+
+In progress on branches: a performance contract and rounds toward the
+Dhrystone 1:1 target.
 
 Queued, in order:
 
-1. Dual dispatch slice 7 (branch in DQ1, branches without a CQ entry) and
-   `bclr`/`bcctr` folding (batch 11).
+1. Branches without a CQ entry (removal at fetch, P09).
 2. LSU unit completion: stores at one per cycle, base operands from rename,
-   FP loads and stores through the unit at Table 6-6 timing (FP through the
-   unit in batch 11).
+   FP update forms through the unit.
 3. Real-mode instruction fetches: they get WIMG=0001 and are never I-cached;
    check against UM §5.2 and fix if the manual caches them.
 4. Bus and endian follow-ups: DBWO; the two-CPU bench with address
@@ -122,10 +127,12 @@ Queued, in order:
    COMPACT).
 7. Verification: full-machine reference comparison and the remaining P12
    schedule checks; source-contract reconciliation.
-8. Speed, after completion: 66 MHz at width 1 (translated −0.082 ns, chip
-   −0.465 ns, chip602 −0.539 ns on `2f049c5`), width 2 at 66 MHz (IQ pair
+8. Speed, after completion: 66 MHz at width 1 (translated −0.446 ns, chip
+   −0.448 ns, chip602 −0.063 ns on `6cb15bb`), width 2 at 66 MHz (IQ pair
    decision), the LSU unit at 66 MHz, the FPU at 66 MHz, a single-precision
    Mandelbrot.
+9. MiSTer test core: HDMI-domain timing at SEED 2 (`pll_hdmi` −0.353 ns on
+   `6cb15bb`); add seed choice to `mister/build.sh`.
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or

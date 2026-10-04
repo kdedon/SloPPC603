@@ -1047,3 +1047,36 @@ sha256 prefix `849eee26d067a98a`). Open: DBWO, two-CPU bench without address
 pipelining/DRTRY/TEA, real-mode fetch caching (UM §5.2), no DingusPPC LE
 comparison, misaligned `eciwx`/`ecowx` hardware split. MVP 97.20% → 97.43%;
 full 603e 75.48% → 78.36%.
+
+## Batch 11 — accepted (2026-10-04)
+
+Dual-dispatch slice 7: a folded branch in DQ1 pairs with DQ0 IU, lane, FPU
+or FP-access work at width 2; `bclr`/`bcctr` fold when predicted taken and
+no older LR/CTR writer is pending. Branches without a CQ entry are not
+built. FP loads and stores (`lfs`, `lfd`, `stfs`, `stfd`, `stfiwx`,
+non-update) go through the LSU unit; loads meet Table 6-6 2:1. The
+`test-core-fpu-split` failure was a bench bug. Branch `batch11` at
+`6cb15bb`, merged as `4a74b1a`. Also on main: `fec2aad` makes
+`firmware_runner.cpp` GPL-3.0-or-later (it links DingusPPC).
+
+Recorded: `make -C sim -j2 -k ci`, `make -C sim xrand-sweep`, the FPU suite
+(`test-fpu-all test-fpu-reference test-fpu-testfloat lint-fpu-production
+lint-fpu-stream lint-fpu-dual lint-fpu-compact`), `make -C toolchain rtl-all`,
+`quartus/<top>/build.sh --docker` and `quartus/report-target-paths.sh <top>
+--docker`, `quartus/fpu-production/synthesize.sh --docker fullfit`,
+`full602fit`, `compactfit` and `compact602fit`, `mister/build.sh --clean
+--fpu-compact --dual --lsu-pipe`, commit `6cb15bb`, 2026-10-03/04.
+
+Pass: `ci` 21 runs, line coverage 73.4% (2092/2852), 14 waived arms (rerun
+alone after a first attempt hit an out-of-memory kill); `xrand-sweep` 70
+runs; FPU suite; `rtl-all`. Every top meets 50 MHz. At 66 MHz: integrated 0
+failing (6,889 ALMs), timer-bat 0 failing (6,875); failed: translated
+−0.446 ns (188 endpoints, 12,861 ALMs; regressed from −0.082 by the LR/CTR
+fold-target mux), chip −0.448 ns (111, 11,860), chip602 −0.063 ns (28,
+11,397). FPU 51.57, 50.58, 53.43 and 60.07 MHz, unchanged; all fail 66 MHz.
+
+Failed: MiSTer `--fpu-compact --dual --lsu-pipe` (29,715 ALMs, 71%). CPU
+clock setup slack +0.959 ns (slow −40 °C) and +1.007 ns (slow 100 °C), but
+`pll_hdmi` failed setup at −0.353 and −0.074 ns, so `build.sh` rejected it.
+This is framework-domain placement at SEED 2, not CPU logic; no rbf
+published. MVP 97.43% (unchanged); full 603e 78.36% → 79.41%.

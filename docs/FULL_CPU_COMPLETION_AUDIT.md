@@ -1,10 +1,10 @@
 # Full CPU weighting audit
 
-Date: 2026-09-23; updated 2026-10-03. Scope: the original CPU-only 603e project through P30 in
+Date: 2026-09-23; updated 2026-10-04. Scope: the original CPU-only 603e project through P30 in
 [TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
-**Revised estimate: about 78% complete (weighted 78.36%).**
+**Revised estimate: about 79% complete (weighted 79.41%).**
 This replaces the provisional 40–45% headline. It is completed project scope,
 including documentation and tooling, not measured RTL coverage or a fraction of
 remaining effort.
@@ -27,10 +27,10 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Source contracts and ISA planning | 8% | 68% | 5.44% |
 | Reproducible tools and scaffold | 4% | 90% | 3.60% |
 | Scalar tagged execution, recovery and integer units | 8% | 88% | 7.04% |
-| Dual dispatch/retirement and superscalar scheduling | 4% | 60% | 2.40% |
+| Dual dispatch/retirement and superscalar scheduling | 4% | 70% | 2.80% |
 | Functional branches | 3% | 90% | 2.70% |
-| Branch prediction and folding | 2% | 50% | 1.00% |
-| Load/store architecture | 5% | 85% | 4.25% |
+| Branch prediction and folding | 2% | 70% | 1.40% |
+| Load/store architecture | 5% | 90% | 4.50% |
 | Supervisor, system instructions and interrupts | 8% | 85% | 6.80% |
 | MMU | 8% | 80% | 6.40% |
 | 60x transport and protocol | 6% | 95% | 5.70% |
@@ -41,7 +41,7 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Endian, variants and platform behavior | 6% | 80% | 4.80% |
 | Full timing, reference and integration verification | 10% | 60% | 6.00% |
 | Final FPGA closure and release | 4% | 50% | 2.00% |
-| **Total** | **100%** | | **78.36%** |
+| **Total** | **100%** | | **79.41%** |
 
 ## Reasons for the revised credit
 
@@ -241,3 +241,42 @@ FPU fits (`quartus/fpu-production/synthesize.sh --docker <v>`): fullfit
 at 29,387 ALMs (70%).
 
 Total 75.48% → 78.36%.
+
+## 2026-10-04 update
+
+Batch 11, branch `batch11` at `6cb15bb`, merged as `4a74b1a`. Weights
+unchanged. Milestones:
+
+- Dual dispatch 60% → 70%: slice 7 ([design](DUAL_DISPATCH_DESIGN.md#slice-7)):
+  a folded branch in DQ1 dispatches beside IU, lane, FPU or FP-access work in
+  DQ0 at width 2. Open: branches without a CQ entry (needs removal at
+  fetch), default width 2, 66 MHz at width 2.
+- Branch prediction and folding 50% → 70%: `bclr` and `bcctr` fold when
+  predicted taken and no older LR/CTR writer is pending (UM §6.4.1.1;
+  [control](CONTROL_MEMORY.md)). Open: branch removal at fetch without a CQ
+  entry.
+- Load/store 85% → 90%: plain `lfs`, `lfd`, `stfs`, `stfd` and `stfiwx`
+  go through the pipelined unit; loads meet Table 6-6 2:1
+  ([LSU](LSU_PIPELINE.md#fp-accesses)). Open: update forms, stores at one
+  per cycle, base operands from rename, 66 MHz and default-on.
+- Final FPGA closure stays 50%: translated regressed at 66 MHz (−0.082 →
+  −0.446 ns, the LR/CTR fold-target mux), and the MiSTer
+  `--fpu-compact --dual --lsu-pipe` build failed on the framework HDMI
+  clock (`pll_hdmi` setup −0.353 ns at SEED 2, CPU clock +0.959 ns), so no
+  core was published for batch 11.
+
+Fits on `6cb15bb` (`quartus/<top>/build.sh --docker`,
+`quartus/report-target-paths.sh <top> --docker`); every top meets 50 MHz:
+
+| Top | 66 MHz | ALMs |
+| --- | --- | ---: |
+| Translated | 188 failing, −0.446 ns | 12,861 |
+| Integrated | meets | 6,889 |
+| Timer/BAT | meets | 6,875 |
+| Chip | 111 failing, −0.448 ns | 11,860 |
+| Chip602 | 28 failing, −0.063 ns | 11,397 |
+
+FPU fits unchanged: fullfit 51.57 MHz, full602fit 50.58, compactfit 53.43,
+compact602fit 60.07; all pass 50 MHz and fail 66.
+
+Total 78.36% → 79.41%.
