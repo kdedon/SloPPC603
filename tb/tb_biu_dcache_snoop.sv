@@ -60,6 +60,7 @@ module tb_biu_dcache_snoop;
   logic snoop_valid, snoop_rsp_valid, snoop_rsp_artry, snoop_rsp_hit, snoop_rsp_push;
   logic [31:0] snoop_addr;
   logic [4:0] snoop_tt;
+  logic snoop_burst;
 
   // Processor pins.
   logic br_n, abb_n_o, abb_oe, ts_n_o, ts_oe, tbst_n, ci_n, wt_n, gbl_n_o;
@@ -79,11 +80,13 @@ module tb_biu_dcache_snoop;
   logic om_addr_oe = 1'b0, om_dbb_n = 1'b1;
   logic [31:0] om_a = 32'd0;
   logic [4:0] om_tt = 5'd0;
+  logic om_tbst_n = 1'b1;
 
   // Shared pins: wired low-active drivers.
   logic ts_wire, abb_wire, artry_wire, dbb_wire, gbl_wire;
   logic [31:0] a_wire;
   logic [4:0] tt_wire;
+  logic tbst_wire;
   logic cpu_artry_low;
   assign ts_wire = (ts_oe ? ts_n_o : 1'b1) & om_ts_n;
   assign abb_wire = (abb_oe ? abb_n_o : 1'b1) & om_abb_n;
@@ -92,6 +95,7 @@ module tb_biu_dcache_snoop;
   assign dbb_wire = (dbb_oe ? dbb_n_o : 1'b1) & om_dbb_n;
   assign a_wire = addr_oe ? a_o : (om_addr_oe ? om_a : 32'd0);
   assign tt_wire = addr_oe ? tt_o : (om_addr_oe ? om_tt : 5'd0);
+  assign tbst_wire = addr_oe ? tbst_n : (om_addr_oe ? om_tbst_n : 1'b1);
   assign gbl_wire = addr_oe ? gbl_n_o : (om_addr_oe ? om_gbl_n : 1'b1);
 
   ppc_dcache #(.MUTATION(DC_MUTATION), .SET_COUNT(SETS), .WAY_COUNT(WAYS)) dcache (
@@ -117,7 +121,7 @@ module tb_biu_dcache_snoop;
     .push_req_addr_o(push_addr), .push_req_data_o(push_data),
     .push_done_i(push_done), .push_error_i(push_error),
     .snoop_valid_i(snoop_valid), .snoop_addr_i(snoop_addr),
-    .snoop_tt_i(snoop_tt),
+    .snoop_tt_i(snoop_tt), .snoop_burst_i(snoop_burst),
     .snoop_rsp_valid_o(snoop_rsp_valid), .snoop_rsp_artry_o(snoop_rsp_artry),
     .snoop_rsp_hit_o(snoop_rsp_hit), .snoop_rsp_push_o(snoop_rsp_push),
     .busy_o(busy), .resv_valid_o(resv_valid), .hit_o(hit), .miss_o(miss),
@@ -151,7 +155,7 @@ module tb_biu_dcache_snoop;
     .dc_push_addr_i(push_addr), .dc_push_data_i(push_data),
     .dc_push_done_o(push_done), .dc_push_error_o(push_error),
     .dc_snoop_valid_o(snoop_valid), .dc_snoop_addr_o(snoop_addr),
-    .dc_snoop_tt_o(snoop_tt),
+    .dc_snoop_tt_o(snoop_tt), .dc_snoop_burst_o(snoop_burst),
     .dc_snoop_rsp_valid_i(snoop_rsp_valid), .dc_snoop_rsp_artry_i(snoop_rsp_artry),
     .dc_snoop_rsp_push_i(snoop_rsp_push),
     .busy_o(biu_busy), .protocol_error_o(biu_protocol_error),
@@ -159,7 +163,7 @@ module tb_biu_dcache_snoop;
     .abb_oe_o(abb_oe), .ts_n_o(ts_n_o), .ts_oe_o(ts_oe), .a_o(a_o), .tt_o(tt_o),
     .tbst_n_o(tbst_n), .tsiz_o(tsiz), .tc_o(tc), .ci_n_o(ci_n), .wt_n_o(wt_n),
     .gbl_n_o(gbl_n_o), .cse_o(cse), .addr_oe_o(addr_oe),
-    .ts_n_i(ts_wire), .a_i(a_wire), .tt_i(tt_wire), .gbl_n_i(gbl_wire),
+    .ts_n_i(ts_wire), .a_i(a_wire), .tt_i(tt_wire), .tbst_n_i(tbst_wire), .gbl_n_i(gbl_wire),
     .aack_n_i(aack_n), .artry_n_i(artry_wire), .artry_n_o(artry_n_o),
     .artry_oe_o(artry_oe), .dbwo_n_i(1'b1), .dbg_n_i(cpu_dbg_n), .dbb_n_i(dbb_wire),
     .dbb_n_o(dbb_n_o), .dbb_oe_o(dbb_oe), .d_i(d_i), .d_o(d_o), .d_oe_o(d_oe),
@@ -795,6 +799,7 @@ module tb_biu_dcache_snoop;
           om_addr_oe <= 1'b1;
           om_a <= (om_cur.kind == OM_WFLUSH) ? om_cur.addr : {om_cur.addr[31:5], 5'b0};
           om_tt <= om_tt_of(om_cur.kind);
+          om_tbst_n <= !(om_cur.kind inside {OM_READ, OM_READ_NG, OM_RWITM, OM_WKILL});
           om_gbl_n <= om_cur.kind == OM_READ_NG || om_cur.castout;
           om_state = 2;
         end
@@ -923,14 +928,23 @@ module tb_biu_dcache_snoop;
     rst_n = 1'b1;
     repeat (2) @(posedge clk);
 
-    // Snoop read hits M with AACK at TS+1: ARTRY at TS+2, push, then E.
+    // Burst read snoop hits M with AACK at TS+1: ARTRY at TS+2, push, then I
+    // (UM Table 3-6).
     lsu(DC_STORE, shared_line(0, 0), 4'b0010, 8'hff, 64'h1111_2222_3333_4444);
     om(OM_READ, shared_line(0, 0), 1);
     check(pushes == 1 && push_order_checks == 1, "read snoop on M did not push");
     quiesce();
     cpu_tenures_mark = cpu_tenures;
     lsu(DC_LOAD, shared_line(0, 0), 4'b0010);
-    check(cpu_tenures == cpu_tenures_mark, "line not kept (E) after a clean snoop");
+    check(cpu_tenures > cpu_tenures_mark, "line kept after a burst read snoop on M");
+    // Burst read snoop hits E: no retry, I.
+    quiesce();
+    om(OM_READ, shared_line(0, 0), 1);
+    check(pushes == 1, "burst read snoop on E pushed");
+    quiesce();
+    cpu_tenures_mark = cpu_tenures;
+    lsu(DC_LOAD, shared_line(0, 0), 4'b0010);
+    check(cpu_tenures > cpu_tenures_mark, "line kept after a burst read snoop on E");
 
     // RWITM hits M with slow AACK: ARTRY held through AACK+1, push, then I.
     lsu(DC_STORE, shared_line(1, 0), 4'b0010, 8'h0f, 64'h5555_6666_7777_8888);

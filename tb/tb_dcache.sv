@@ -53,6 +53,9 @@ module tb_dcache;
   logic snoop_valid = 1'b0;
   logic [31:0] snoop_addr = 32'd0;
   logic [4:0] snoop_tt = 5'd0;
+  logic snoop_burst = 1'b0;
+  // Directed snoops are bursts while set.
+  bit dsn_burst = 0;
   logic snoop_rsp_valid, snoop_rsp_artry, snoop_rsp_hit, snoop_rsp_push;
   logic busy, resv_valid, hit_evt, miss_evt, async_error, protocol_error;
   // The core holds a bus error until its machine check is taken.
@@ -82,7 +85,7 @@ module tb_dcache;
     .push_req_addr_o(push_req_addr), .push_req_data_o(push_req_data),
     .push_done_i(push_done), .push_error_i(push_error),
     .snoop_valid_i(snoop_valid), .snoop_addr_i(snoop_addr),
-    .snoop_tt_i(snoop_tt), .snoop_rsp_valid_o(snoop_rsp_valid),
+    .snoop_tt_i(snoop_tt), .snoop_burst_i(snoop_burst), .snoop_rsp_valid_o(snoop_rsp_valid),
     .snoop_rsp_artry_o(snoop_rsp_artry), .snoop_rsp_hit_o(snoop_rsp_hit),
     .snoop_rsp_push_o(snoop_rsp_push),
     .busy_o(busy), .resv_valid_o(resv_valid), .hit_o(hit_evt),
@@ -466,6 +469,7 @@ module tb_dcache;
                              input bit directed);
     snoop_valid <= 1'b1;
     snoop_tt <= tt;
+    snoop_burst <= directed && dsn_burst;
     snoop_addr <= a;
     // Acceptance stands for this cache's address tenure, which a snooped
     // tenure precedes on the bus.
@@ -750,6 +754,26 @@ module tb_dcache;
     mark_trace();
     acc(DC_LOAD, a);
     expect_trace("load after flush misses", 1, RB, TT_RWITM, RB, 0);
+    directed_tests++;
+
+    // D2b: a burst read snoop flushes (UM Table 3-6): M pushes then I; E to I.
+    st(a, 64'h2122_2324_2526_2728);
+    dsn_burst = 1;
+    snoop(TT_READ, a, '0);
+    check(dsn_artry && dsn_push && dsn_hit, "burst read snoop on M retries and pushes");
+    wait_quiet();
+    snoop(TT_READ_ATOM, a, '0);
+    check(!dsn_artry && !dsn_hit, "burst read snoop on M left the line invalid");
+    dsn_burst = 0;
+    acc(DC_LOAD, a);
+    wait_quiet();
+    dsn_burst = 1;
+    snoop(TT_READ, a, '0);
+    check(!dsn_artry && !dsn_push && dsn_hit, "burst read snoop on E is silent");
+    dsn_burst = 0;
+    mark_trace();
+    acc(DC_LOAD, a);
+    expect_trace("load after burst read snoop on E misses", 1, RB, TT_RWITM, RB, 0);
     directed_tests++;
 
     // D3: kill snoops invalidate without a push, even when modified.

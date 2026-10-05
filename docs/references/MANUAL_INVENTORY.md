@@ -53,9 +53,8 @@ this record. Opcode coverage is summarised by the generated
 Missing and partial rows, ranked by how visible they are to software or to a
 60x system. Each has an [AUDIT.md](../AUDIT.md) row.
 
-1. **Burst-read snoop treated as clean** (AUD-77). UM Table 3-6, PDF 146:
-   another master's burst read must flush an E or M line. Breaks MEI
-   exclusivity with any second caching master.
+1. ~~**Burst-read snoop treated as clean** (AUD-77)~~. Fixed: TBST selects
+   the flush class.
 2. **32-bit data bus and reduced-pinout modes** (AUD-80). UM §8.6.1, §8.6.3,
    PDF 346-349. Their straps checkstop; boards wired that way cannot boot.
 3. **HID0[IFEM] has no effect** (AUD-81). UM Table 2-2, PDF 86. Fetches never
@@ -234,7 +233,7 @@ PEM was read only where the UM defers to it.
 | G: no speculative/out-of-order access to guarded memory | UM §3.5.4-3.5.5.3, PDF 138-141 | tested | test-core-lsu-timing (spec loads), MMU benches; guarded fetch → ISI |
 | Combined accesses / store gathering not implemented | UM §3.5.1-2, PDF 137 | tested | none expected; matches |
 | MEI states, RWITM for every fill | UM §3.6-3.6.1, PDF 141 | tested | DATA_CACHE.md:189; test-dcache, test-chip-dcache-coherence |
-| Snooped global reads treated as writes (burst read hit E → I, M → push, I) | UM §3.6 PDF 141; Tbl 3-6 PDF 146 | partial | AUD-77 open: all reads snooped as clean |
+| Snooped global reads treated as writes (burst read hit E → I, M → push, I) | UM §3.6 PDF 141; Tbl 3-6 PDF 146 | tested | AUD-77 fixed: `test-dcache` D2b, `test-biu-dcache-snoop` |
 | CI reads (TT X1010) keep line, M → push then E | UM §3.6, PDF 141 | tested | DATA_CACHE.md:117; test-biu-dcache-snoop |
 | Single-ported tags, snoop priority, retry on tag write | UM §3.6.3, PDF 143 | tested | test-core-lsu-timing-snoop, test-biu-dcache-snoop |
 | Snoop hit on line in castout buffer → ARTRY, raise castout | UM §3.6.3 PDF 143; §3.6.8 PDF 147 | tested | DATA_CACHE.md:22; test-biu-dcache-snoop |
@@ -243,7 +242,7 @@ PEM was read only where the UM defers to it.
 | Cache instructions not broadcast (except dcbz, ABE) | UM §3.6.4, PDF 144 | tested | DATA_CACHE.md:104; test-dcache |
 | Load/store coherency actions Tbl 3-4/3-5 | UM §3.6.5, PDF 145 | tested | DATA_CACHE.md:82-99; test-dcache (model-checked) |
 | Atomic refs: lwarx read-atomic/RWITM-atomic, stwcx. -atomic TTs | UM §3.6.6, PDF 145 | tested | tb_dcache.sv:279; test-dcache |
-| Cache reaction to snooped TT (Tbl 3-6) | UM §3.6.7, PDF 145-146 | partial | DATA_CACHE.md:115-120; burst-read row per AUD-77; kill-on-M discards (manual conflict, DATA_CACHE.md:191) |
+| Cache reaction to snooped TT (Tbl 3-6) | UM §3.6.7, PDF 145-146 | partial | DATA_CACHE.md:115-120; burst-read row fixed (AUD-77); kill-on-M discards (manual conflict, DATA_CACHE.md:191) |
 | ARTRY causes: last-TA collision, post-first-TA, dcbz/dcbf/dcbst tag update | UM §3.6.8, PDF 147 | tested | DATA_CACHE.md:122-130; test-biu-dcache-snoop |
 | Enveloped high-priority push / DBWO | UM §3.6.9, PDF 147-148 | tested | CHIP_PACKAGE.md:76,148; test-chip-dcache-coherence, test-core-bat-cached-bus60x-coherence |
 | dcbst/sync/icbi/isync self-modifying-code sequence | UM §3.7, PDF 148 | tested | CACHE_CONTROL.md:63-76; test-core-bat-cached-bus60x-cacheops, test-chip-603 |
@@ -430,11 +429,11 @@ PEM was read only where the UM defers to it.
 | AP[0:3] input, checked on a snooped GBL TS | UM §7.2.3.2.2, PDF 284 | tested | `test-chip-pins` case_ape |
 | APE output (TS+2, HID0[EBA], MC/checkstop) | UM §7.2.3.3, PDF 284-285 | tested | `test-chip-pins` (APE two cycles after TS, SRR1[15], checkstop, EBA=0) |
 | TT[0:4] output (Table 7-1 encodings) | UM §7.2.4.1.1, PDF 285-286 | tested | BFM checks TT legality (`docs/DATA_CACHE_INTEGRATION.md:306`). `test-chip-dcache-coherence` |
-| TT[0:4] input, snoop action (Table 7-2) | UM §7.2.4.1.2, PDF 287 | partial | AUD-77 open: snooped burst reads are treated as clean class, not flush (`rtl/ppc_bus60x_snoop.sv:56`) |
+| TT[0:4] input, snoop action (Table 7-2) | UM §7.2.4.1.2, PDF 287 | tested | Burst Read/Read-atomic flush (AUD-77 fixed) |
 | PID7v HID0[ABE] address-only overlay (Table 7-3) | UM §7.2.4.1, PDF 288 | tested | `rtl/ppc_dcache.sv:554-574`, `rtl/ppc_special.sv:1514`. `test-dcache` ABE directed and random |
 | TSIZ[0:2] (no 5-7 byte sizes) | UM §7.2.4.2, Table 7-5, PDF 288 | tested | BFM decodes TSIZ (`tb/bfm/bus60x_coherent_bfm.sv:386`). `docs/references/BUS_ENCODINGS.md` |
 | TBST output | UM §7.2.4.3.1, PDF 289 | tested | `tb_chip_icache_real`, `tb_chip_603` burst checks |
-| TBST input (snoop) | UM §7.2.4.3.2, PDF 289 | partial | Tied/ignored (CHIP_PACKAGE.md:58). AUD-77 needs it for the snoop class |
+| TBST input (snoop) | UM §7.2.4.3.2, PDF 289 | tested | Selects the snoop class of a Read (AUD-77) |
 | TC[0:1] (Table 7-6) | UM §7.2.4.4, PDF 290 | partial | Fetch TC=10 checked (`tb_chip_icache_real.sv:70`). AUD-78 open: touch-load fills drive TC=00, not 01 |
 | CI output | UM §7.2.4.5, PDF 290 | tested | `test-chip-pins` ILOCK case (misses read with CI) |
 | WT output | UM §7.2.4.6, PDF 290 | tested | BFM logs it (`bus60x_coherent_bfm.sv:293`). Write-through in `test-dcache`. Pin value only lightly checked |
@@ -507,7 +506,7 @@ PEM was read only where the UM defers to it.
 | Data transfer beats; write data released after the final TA | UM §8.4.3, PDF 332-333 | tested | Chip harness/BFM driver checks |
 | Normal termination; DRTRY one cycle after TA | UM §8.4.4.1, PDF 334-337 | tested | `test-chip-mp`, `test-core-bat-cached-bus60x-stress` |
 | TEA termination (truncates the burst, DBB release, MC/checkstop) | UM §8.4.4.2, PDF 337 | tested | `test-chip-mp` (TEA on random fill beat, write TEA), `test-core-bat-bus60x-errors`. TEA on instruction fetch is not established at the chip (CHIP_PACKAGE_VERIFICATION:169). `test-core-bus60x-ifetch-error` is core level |
-| MEI protocol, WIM handling, snoop responses | UM §8.4.5, PDF 338-340 | partial | `test-dcache`, `test-chip-dcache-coherence`. AUD-77: a snooped burst read (Read/Read-atomic with TBST) does not flush E/M |
+| MEI protocol, WIM handling, snoop responses | UM §8.4.5, PDF 338-340 | partial | `test-dcache`, `test-chip-dcache-coherence`; burst-read snoops flush (AUD-77 fixed) |
 | Timing examples (Figs 8-6..8-23) | UM §8.5, PDF 340-346 | partial | BUS_SPEC: 12 figures have bounded cycle tables, 4 are inventory only, none is a full per-pin waveform |
 | No-DRTRY mode (DRTRY asserted at HRESET) | UM §8.6.2, PDF 348 | partial | Accepted. The master stays in normal mode, so loads lose the one-cycle-early forward (CHIP_PACKAGE.md §Start-up straps) |
 | Reduced-pinout mode (QACK negated at HRESET) | UM §8.6.3, PDF 348-349 | missing | The strap checkstops (`test-chip-pins` case_straps) |

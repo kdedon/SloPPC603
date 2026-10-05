@@ -21,6 +21,7 @@ module ppc_bus60x_snoop #(
   input  logic        ts_n_i,
   input  logic [31:0] a_i,
   input  logic [4:0]  tt_i,
+  input  logic        tbst_n_i,
   input  logic        gbl_n_i,
   // This processor drives TS: its own tenure is not snooped.
   input  logic        own_ts_oe_i,
@@ -29,6 +30,7 @@ module ppc_bus60x_snoop #(
   output logic        snoop_valid_o,
   output logic [31:0] snoop_addr_o,
   output logic [4:0]  snoop_tt_o,
+  output logic        snoop_burst_o,
   input  logic        snoop_rsp_valid_i,
   input  logic        snoop_rsp_artry_i,
   input  logic        snoop_rsp_push_i,
@@ -54,6 +56,7 @@ module ppc_bus60x_snoop #(
                          (!gbl_n_i || MUTATION == 4);
   assign snoop_addr_o = a_i;
   assign snoop_tt_o = tt_i;
+  assign snoop_burst_o = !tbst_n_i;
 
   assign rsp_artry = (snoop_rsp_valid_i && snoop_rsp_artry_i) || held_artry_q;
   assign rsp_push = (snoop_rsp_valid_i && snoop_rsp_push_i) || held_push_q;

@@ -91,6 +91,7 @@ module ppc_dcache_slot #(
   input  logic         snoop_valid_i,
   input  logic [31:0]  snoop_addr_i,
   input  logic [4:0]   snoop_tt_i,
+  input  logic         snoop_burst_i,
   output logic         snoop_rsp_valid_o,
   output logic         snoop_rsp_artry_o,
   output logic         snoop_rsp_hit_o,
@@ -160,7 +161,7 @@ module ppc_dcache_slot #(
                            bus_req_ready_i, bus_req_acked_i, bus_rd_valid_i, bus_rd_data_i,
                            bus_rd_error_i, bus_wr_done_i, bus_wr_error_i,
                            push_req_ready_i, push_done_i, push_error_i,
-                           snoop_valid_i, snoop_addr_i, snoop_tt_i};
+                           snoop_valid_i, snoop_addr_i, snoop_tt_i, snoop_burst_i};
   end else begin : g_cache
     ext_state_e ext_q;
     logic lsu_external;
@@ -305,7 +306,7 @@ module ppc_dcache_slot #(
       .bus_rd_error_i, .bus_wr_done_i, .bus_wr_error_i,
       .push_req_valid_o, .push_req_ready_i, .push_req_addr_o, .push_req_data_o,
       .push_done_i, .push_error_i,
-      .snoop_valid_i, .snoop_addr_i, .snoop_tt_i,
+      .snoop_valid_i, .snoop_addr_i, .snoop_tt_i, .snoop_burst_i,
       .snoop_rsp_valid_o, .snoop_rsp_artry_o, .snoop_rsp_hit_o,
       .snoop_rsp_push_o,
       .busy_o(dc_busy), .resv_valid_o, .hit_o(dc_hit), .miss_o(dc_miss),

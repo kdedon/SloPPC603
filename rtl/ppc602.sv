@@ -252,6 +252,7 @@ module ppc602 #(
     .cse_o(), .addr_oe_o(), .aack_n_i(c_aack_n), .artry_n_i(1'b1),
     // Quiesced for nap or sleep: no snooping.
     .snoop_ts_n_i(c_snoop_ts_n || pin_status.quiesced), .snoop_a_i(c_snoop_a), .snoop_tt_i(c_snoop_tt),
+    .snoop_tbst_n_i(1'b1),
     .snoop_gbl_n_i(c_snoop_gbl_n), .artry_n_o(c_artry_n),
     .artry_oe_o(c_artry_oe),
     .dbwo_n_i(1'b1), .dbg_n_i(c_dbg_n), .dbb_n_i(1'b1), .dbb_n_o(c_dbb_n), .dbb_oe_o(c_dbb_oe),

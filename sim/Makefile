@@ -2282,7 +2282,7 @@ variant-full-decode-%:
 
 # Standalone data cache: directed MEI checks plus seeded random traffic, and
 # injected defects the bench must reject.
-DCACHE_MUTATIONS := 1 2 3 4 5 6 7
+DCACHE_MUTATIONS := 1 2 3 4 5 6 7 8
 DCACHE_SEEDS := 2 3
 .PHONY: test-dcache test-dcache-mutations
 test: test-dcache test-dcache-mutations
@@ -2315,7 +2315,7 @@ test-dcache-mutations:
 # answering a modified snoop hit without a push).
 BIU_DCACHE_RTL := ../rtl/ppc_pkg.sv ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv ../rtl/ppc_bus60x_line_read.sv ../rtl/ppc_bus60x_master_select.sv ../rtl/ppc_bus60x_two_master.sv ../rtl/ppc_bus60x_cache_master.sv ../rtl/ppc_bus60x_snoop.sv ../rtl/ppc_bus60x_direct_store.sv ../rtl/ppc_biu.sv $(DCACHE_RTL)
 BIU_DCACHE_SEEDS := 2 3 4 5
-BIU_DCACHE_MUTATIONS := BIU_MUTATION=1 BIU_MUTATION=2 BIU_MUTATION=3 BIU_MUTATION=4 DC_MUTATION=2
+BIU_DCACHE_MUTATIONS := BIU_MUTATION=1 BIU_MUTATION=2 BIU_MUTATION=3 BIU_MUTATION=4 DC_MUTATION=2 DC_MUTATION=8
 .PHONY: test-biu-dcache-snoop test-biu-dcache-snoop-mutations lint-biu-dcache
 test: test-biu-dcache-snoop test-biu-dcache-snoop-mutations
 lint: lint-biu-dcache

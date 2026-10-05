@@ -60,6 +60,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
   logic aack_n, bus_ts_n, bus_gbl_n, bus_artry_n, drtry_n, tea_n;
   logic [31:0] bus_a;
   logic [4:0] bus_tt;
+  logic bus_tbst_n;
   logic [63:0] din;
   logic [0:7] din_dp;
   always_comb
@@ -83,7 +84,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
       .br_n_o(br_n[c]), .bg_n_i(bg_n[c]), .abb_n_i(bus_abb_n), .abb_n_o(abb_n[c]),
       .abb_oe_o(abb_oe[c]), .ts_n_i(bus_ts_n), .ts_n_o(ts_n[c]), .ts_oe_o(ts_oe[c]),
       .a_i(bus_a), .a_o(a[c]), .ap_i(addr_parity(bus_a)), .ap_o(ap), .ape_n_o(ape_n[c]),
-      .tt_i(bus_tt), .tt_o(tt[c]), .tsiz_o(tsiz[c]), .tbst_n_i(1'b1),
+      .tt_i(bus_tt), .tt_o(tt[c]), .tsiz_o(tsiz[c]), .tbst_n_i(bus_tbst_n),
       .tbst_n_o(tbst_n[c]), .tc_o(tc), .ci_n_o(ci_n), .wt_n_o(wt_n),
       .gbl_n_i(bus_gbl_n), .gbl_n_o(gbl_n[c]), .cse_o(cse), .addr_oe_o(addr_oe[c]),
       .xats_n_i(1'b1), .xats_n_o(xats_n), .xats_oe_o(xats_oe),
@@ -105,6 +106,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
                           qreq_n, clk_out, clk_out_oe, tdo, tdo_oe, dp[c]};
   end
 
+  assign bus_tbst_n = !(|(addr_oe & ~tbst_n));
   assign bus_abb_n = !(shared_busy && |(abb_oe & ~abb_n));
   assign bus_dbb_n = !(shared_busy && |(dbb_oe & ~dbb_n));
 

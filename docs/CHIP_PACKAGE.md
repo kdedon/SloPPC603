@@ -55,7 +55,7 @@ Status: **I** implemented, **T** tied with the stated behavior,
 | APE | out, OD | 1 | I | With HID0[EBA]=1, asserted for one cycle in the second cycle after a snooped TS whose AP is wrong (UM §7.2.3.3); the error takes a machine check with SRR1[15], or checkstops with MSR[ME]=0. |
 | TT[0:4] | bidir | 5 | I | Out: transfer type. In: snoop type. |
 | TSIZ[0:2] | out | 3 | I | Transfer size. |
-| TBST | bidir | 1 | I out, T in | Out: burst. In: snoop attribute, ignored. |
+| TBST | bidir | 1 | I out, T in | Out: burst. In: a snooped burst Read flushes the line (UM Table 3-6). |
 | TC[0:1] | out | 2 | I | Transfer code. |
 | CI | out | 1 | I | Caching inhibited. |
 | WT | out | 1 | I | Write-through. |
@@ -139,8 +139,7 @@ implemented; HID0[EICE] is stored and inert.
 ### Counts
 
 54 signal groups, as in the BUS_SPEC inventory (a bus counts once, DH and DL
-separately, TEST[0:2] as one): 42 implemented, 1 of them with a tied half
-(the TBST input); TS, A, TT, GBL and ARTRY are whole with
+separately, TEST[0:2] as one): 42 implemented; TS, A, TT, GBL and ARTRY are whole with
 `ENABLE_DCACHE=1`, the chip's value (each has a tied half at 0); AP, APE,
 DP and DPE are whole in every build; 1 tied (CLK_OUT); 6 excluded
 (TRST, TCK, TMS, TDI, TDO, TEST); 5 power.

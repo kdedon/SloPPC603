@@ -89,6 +89,7 @@ module ppc_biu #(
   output logic         dc_snoop_valid_o,
   output logic [31:0]  dc_snoop_addr_o,
   output logic [4:0]   dc_snoop_tt_o,
+  output logic         dc_snoop_burst_o,
   input  logic         dc_snoop_rsp_valid_i,
   input  logic         dc_snoop_rsp_artry_i,
   input  logic         dc_snoop_rsp_push_i,
@@ -121,6 +122,7 @@ module ppc_biu #(
   input  logic        ts_n_i,
   input  logic [31:0] a_i,
   input  logic [4:0]  tt_i,
+  input  logic        tbst_n_i,
   input  logic        gbl_n_i,
   input  logic        aack_n_i,
   input  logic        artry_n_i,
@@ -724,10 +726,10 @@ module ppc_biu #(
 
     ppc_bus60x_snoop #(.MUTATION(MUTATION)) snoop (
       .clk_i, .rst_ni, .bus_ce_i,
-      .ts_n_i, .a_i, .tt_i, .gbl_n_i,
+      .ts_n_i, .a_i, .tt_i, .tbst_n_i, .gbl_n_i,
       .own_ts_oe_i(ts_oe_o), .aack_n_i,
       .snoop_valid_o(dc_snoop_valid_o), .snoop_addr_o(dc_snoop_addr_o),
-      .snoop_tt_o(dc_snoop_tt_o),
+      .snoop_tt_o(dc_snoop_tt_o), .snoop_burst_o(dc_snoop_burst_o),
       .snoop_rsp_valid_i(dc_snoop_rsp_valid_i),
       .snoop_rsp_artry_i(dc_snoop_rsp_artry_i),
       .snoop_rsp_push_i(dc_snoop_rsp_push_i),
@@ -795,6 +797,7 @@ module ppc_biu #(
     assign dc_snoop_valid_o = 1'b0;
     assign dc_snoop_addr_o = 32'b0;
     assign dc_snoop_tt_o = 5'b0;
+    assign dc_snoop_burst_o = 1'b0;
     assign artry_n_o = 1'b1;
     assign artry_oe_o = 1'b0;
     assign dcache_busy = 1'b0;
@@ -804,7 +807,7 @@ module ppc_biu #(
       dc_req_addr_i, dc_req_be_i, dc_req_wimg_i, dc_req_gbl_i, dc_req_cse_i,
       dc_req_data_i, dc_push_valid_i, dc_push_addr_i, dc_push_data_i,
       dc_snoop_rsp_valid_i, dc_snoop_rsp_artry_i, dc_snoop_rsp_push_i,
-      ts_n_i, a_i, tt_i, gbl_n_i};
+      ts_n_i, a_i, tt_i, tbst_n_i, gbl_n_i};
   end
   endgenerate
 

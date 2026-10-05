@@ -566,6 +566,7 @@ package ppc_pkg;
     logic         snoop_valid;
     logic [31:0]  snoop_addr;
     logic [4:0]   snoop_tt;
+    logic         snoop_burst;
   } dcache_bus_in_t;
   // ---- end MSR and exception events ---------------------------------------
 

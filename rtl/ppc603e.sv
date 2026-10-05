@@ -372,6 +372,7 @@ module ppc603e #(
     .aack_n_i, .artry_n_i,
     // Quiesced for nap or sleep: no snooping.
     .snoop_ts_n_i(ts_n_i || pin_status.quiesced), .snoop_a_i(a_i), .snoop_tt_i(tt_i),
+    .snoop_tbst_n_i(tbst_n_i),
     .snoop_gbl_n_i(gbl_n_i), .artry_n_o(core_artry_n),
     .artry_oe_o(core_artry_oe),
     .dbg_n_i, .dbwo_n_i, .dbb_n_i, .dbb_n_o(core_dbb_n), .dbb_oe_o(core_dbb_oe),
@@ -470,9 +471,9 @@ module ppc603e #(
   assign tdo_o = 1'b0;
   assign tdo_oe_o = 1'b0;
 
-  // TBST, JTAG and LSSD inputs have no function here.
+  // JTAG and LSSD inputs have no function here.
   logic unused_pins;
-  assign unused_pins = ^{tbst_n_i,
+  assign unused_pins = ^{
                          tck_i, tms_i, tdi_i, trst_n_i, test_i,
                          pin_status.smi_taken, pin_status.tea_taken,
                          pin_status.dcache_enable, pin_status.dcache_lock,

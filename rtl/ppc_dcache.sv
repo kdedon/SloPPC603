@@ -75,6 +75,8 @@ module ppc_dcache #(
   input  logic         snoop_valid_i,
   input  logic [31:0]  snoop_addr_i,
   input  logic [4:0]   snoop_tt_i,
+  // TBST asserted: a burst transfer.
+  input  logic         snoop_burst_i,
   output logic         snoop_rsp_valid_o,
   output logic         snoop_rsp_artry_o,
   output logic         snoop_rsp_hit_o,
@@ -185,6 +187,7 @@ module ppc_dcache #(
   logic        snp_valid_q;
   logic [31:0] snp_addr_q;
   logic [4:0]  snp_tt_q;
+  logic        snp_burst_q;
   logic        snp_rsp_valid_q, snp_rsp_artry_q, snp_rsp_hit_q, snp_rsp_push_q;
 
   logic        resv_valid_q;
@@ -358,14 +361,17 @@ module ppc_dcache #(
   assign snp_dirty = MUTATION != 2 && hdirty;
 
   always_comb begin
+    // A burst read is snooped as a write: it flushes the line (UM Table 3-6).
     unique case (snp_tt_q)
-      TT_READ, TT_READ_ATOM, TT_READ_NO_CACHE: snp_class = SN_CLEAN;
+      TT_READ, TT_READ_ATOM:
+        snp_class = snp_burst_q && MUTATION != 8 ? SN_FLUSH : SN_CLEAN;
+      TT_READ_NO_CACHE: snp_class = SN_CLEAN;
       TT_RWITM, TT_RWITM_ATOM, TT_WRITE_FLUSH, TT_WRITE_FLUSH_ATOM: snp_class = SN_FLUSH;
       TT_WRITE_KILL, TT_KILL: snp_class = SN_KILL;
       default: snp_class = SN_NONE;
     endcase
     snp_cancel_type = snp_class == SN_KILL ||
-                      (snp_class == SN_FLUSH);
+                      (snp_class == SN_FLUSH && snp_tt_q[3:0] != TT_READ[3:0]);
     snp_conflict = (cob_valid_q && cob_line_q == snp_line) ||
                    (push_busy && push_line_q == snp_line) ||
                    (fsm_claims && req_line == snp_line);
@@ -920,6 +926,7 @@ module ppc_dcache #(
     if (snoop_valid_i) begin
       snp_addr_q <= snoop_addr_i;
       snp_tt_q <= snoop_tt_i;
+      snp_burst_q <= snoop_burst_i;
     end
     if (rst_ni && snoop_valid_i) begin
       rd_set_q <= snoop_addr_i[5 +: SET_BITS];
