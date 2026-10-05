@@ -75,6 +75,7 @@ fi
 "${here}/fetch-framework.sh"
 "${repo}/toolchain/demo/fetch-benchmarks.sh"
 "${repo}/toolchain/demo/fetch-doom.sh"
+"${repo}/toolchain/demo/fetch-quake.sh"
 "${repo}/toolchain/build-in-container.sh" -f demo/Makefile "${firmware}" mister-images "GIT_SHORT=${short}"
 echo "images: $(cd "${repo}" && ls build/mister/images/*.bin | tr '\n' ' ')"
 mkdir -p "${here}/firmware"
