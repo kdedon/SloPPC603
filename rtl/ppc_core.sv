@@ -1813,7 +1813,9 @@ module ppc_core #(
       (lsu_route ? (lsu_ready && lane_mem_idle) :
        sru_move ? !sru_hold_q : (special_ready && !sru_hold_q)) && flags_ready &&
       (!dispatch_fp_mem_plain || fp_issue_ready) &&
-      (!dispatch_pre.gpr_write || dispatch_align || alloc_ready) &&
+      // An alignment fault allocates nothing but still waits for a slot,
+      // which keeps the EA adder out of dispatch readiness.
+      (!dispatch_pre.gpr_write || alloc_ready) &&
       (!unit_update || (dispatch_pre.gpr_write ? alloc1_ready : alloc_ready))));
   // A plain load or store (no reservation, string, multiple, cache op or
   // external access; an update form only with the unit) needs no drain when every source register it

@@ -429,12 +429,14 @@ module ppc_completion #(
     completion_tag_t by_age_tag [CQ_DEPTH + 2];
     logic [CQ_INDEX_WIDTH-1:0] slot;
 
-    // Survivors by age depend only on the head; the retiring entries, known
-    // late, only shift them, so retirement is the last select.
+    // Survivors by age depend only on the head and the redirect; the
+    // retiring entries, known late, only shift them, so retirement is the
+    // last select.
+    slot = '0;
     for (int age = 0; age < CQ_DEPTH + 2; age++) begin
       by_age_packet[age] = '0;
       by_age_tag[age] = '0;
-      if (age < CQ_DEPTH) begin
+      if (age < int'(redirect_candidate_survivors)) begin
         slot = ring_offset(head_q, COUNT_WIDTH'(age));
         by_age_packet[age] = packets_q[slot];
         by_age_tag[age].index = slot;
@@ -451,12 +453,10 @@ module ppc_completion #(
                                   COUNT_WIDTH'(retire_fire) -
                                   COUNT_WIDTH'(retire1_fire);
       for (int i = 0; i < CQ_DEPTH; i++) begin
-        if (i < int'(recovery_survivor_count_o)) begin
-          recovery_survivor_packet_o[i] = retire1_fire ? by_age_packet[i + 2] :
-            retire_fire ? by_age_packet[i + 1] : by_age_packet[i];
-          recovery_survivor_tag_o[i] = retire1_fire ? by_age_tag[i + 2] :
-            retire_fire ? by_age_tag[i + 1] : by_age_tag[i];
-        end
+        recovery_survivor_packet_o[i] = retire1_fire ? by_age_packet[i + 2] :
+          retire_fire ? by_age_packet[i + 1] : by_age_packet[i];
+        recovery_survivor_tag_o[i] = retire1_fire ? by_age_tag[i + 2] :
+          retire_fire ? by_age_tag[i + 1] : by_age_tag[i];
       end
     end
   end
