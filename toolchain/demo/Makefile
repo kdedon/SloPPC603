@@ -423,3 +423,5 @@ $(OUT)/%.elf:
 $(OUT)/%.hex: $(OUT)/%.elf demo/bin2hex64.py
 	$(OBJCOPY) -O binary $< $(OUT)/$*.bin
 	$(PYTHON) demo/bin2hex64.py $(OUT)/$*.bin 0x100 $@
+
+include demo/doom/doom.mk
