@@ -49,7 +49,27 @@ def embench_source(url, commit, embench):
         "  (toolchain/demo/fetch-benchmarks.sh, then",
         "  toolchain/build-in-container.sh -f demo/Makefile mister-images)",
         f"- Pinned compiler and runtime sources: {url}/blob/{commit}/docs/BENCHMARKS.md",
-        "- All of the above fetched: ppc603e-embench-source.tar.gz, published next to the image.",
+        "- All of the above fetched: ppc603e-source.tar.gz, published next to the image.",
+        ""])
+
+
+def doom_source(url, commit, doomgeneric, wad_sha):
+    """GPL-2.0 source pointer for the Doom images, as plain text."""
+    return "\n".join([
+        "ppc603e-doom.bin, ppc603e-doom-le.bin: corresponding source",
+        "",
+        "The Doom images hold doomgeneric object code (GPL-2.0), so they are GPL-2.0. Their",
+        "complete corresponding source is published with them (GPL-2.0 section 3(a)):",
+        "",
+        f"- doomgeneric: https://github.com/ozkl/doomgeneric/tree/{doomgeneric}",
+        f"- Platform layer, C library and build scripts: {url}/tree/{commit}",
+        "  (toolchain/demo/fetch-benchmarks.sh, toolchain/demo/fetch-doom.sh, then",
+        "  toolchain/build-in-container.sh -f demo/Makefile mister-images)",
+        "- All of the above fetched: ppc603e-source.tar.gz, published next to the images.",
+        "",
+        "DOOM1.WAD is not part of the images or of the source archive. It is id Software's",
+        "shareware Doom v1.9 IWAD, published unmodified as its own file under the shareware",
+        f"terms (free redistribution of the unmodified file, not for sale); SHA-256 {wad_sha}.",
         ""])
 
 
@@ -63,6 +83,7 @@ def main():
     parser.add_argument("--unstable", action="store_true")
     parser.add_argument("--images", nargs="*", type=Path, default=[], help="published program images")
     parser.add_argument("--embench-source", type=Path, help="also write the Embench image's source pointer here")
+    parser.add_argument("--doom-source", type=Path, help="also write the Doom images' source pointer here")
     args = parser.parse_args()
 
     summaries = [json.loads(path.read_text()) for path in args.summaries]
@@ -70,12 +91,16 @@ def main():
     url = repo_url(args.repo_url)
     framework = pin("mister/fetch-framework.sh", r"^commit=([0-9a-f]{40})")
     embench = pin("toolchain/demo/fetch-benchmarks.sh", r"embench/embench-iot/([0-9a-f]{40})")
+    doomgeneric = pin("toolchain/demo/fetch-doom.sh", r"ozkl/doomgeneric/tree/([0-9a-f]{40})")
+    wad_sha = pin("toolchain/demo/fetch-doom.sh", r"^  ([0-9a-f]{64})$")
     pins = dict(line.split("=", 1) for line in (REPO / "ci/pins.env").read_text().splitlines()
                 if "=" in line and not line.startswith("#"))
     images = sorted(args.images, key=lambda path: path.name)
     names = [s["name"] for s in summaries] + [path.name for path in images]
     if args.embench_source:
         args.embench_source.write_text(embench_source(url, commit, embench))
+    if args.doom_source:
+        args.doom_source.write_text(doom_source(url, commit, doomgeneric, wad_sha))
 
     out = [f"# {args.title or args.tag or 'Unstable build'}", ""]
     if args.unstable:
@@ -120,9 +145,20 @@ def main():
                 f"this repository at [`{commit[:12]}`]({url}/tree/{commit}), Embench-IoT at "
                 f"[`{embench[:12]}`](https://github.com/embench/embench-iot/tree/{embench}), and the pinned "
                 "compiler and runtime sources listed in `docs/BENCHMARKS.md`; the attached "
-                "`ppc603e-embench-source.tar.gz` holds all of them and `ppc603e-embench.SOURCE.txt` "
+                "`ppc603e-source.tar.gz` holds all of them and `ppc603e-embench.SOURCE.txt` "
                 "lists them. Check that the combination with the GPL-2.0 "
                 "framework is acceptable before redistributing an Embench bitstream.", ""]
+    if any("doom" in name for name in names):
+        out += ["**Doom:** `ppc603e-doom.bin` (big-endian) and `ppc603e-doom-le.bin` (little-endian) hold "
+                "doomgeneric object code (GPL-2.0), so they are GPL-2.0; their corresponding source is this "
+                f"repository at [`{commit[:12]}`]({url}/tree/{commit}), doomgeneric at "
+                f"[`{doomgeneric[:12]}`](https://github.com/ozkl/doomgeneric/tree/{doomgeneric}) and the "
+                "soft-float sources listed in `docs/BENCHMARKS.md`, all in the attached "
+                "`ppc603e-source.tar.gz` and listed in `ppc603e-doom.SOURCE.txt`. `DOOM1.WAD` is id Software's "
+                "shareware Doom v1.9 IWAD, distributed unmodified as its own file under the shareware terms "
+                f"(free redistribution of the unmodified file, not for sale); SHA-256 `{wad_sha}`. Load it with "
+                "`Load WAD` for the big-endian image or `Load WAD (little-endian)` for the little-endian one, "
+                "then load the program.", ""]
     if any("nbench" in name for name in names):
         out += ["**nbench build:** BYTE's nbench code carries no stated licence. The nbench bitstream or image "
                 "is for measurement; do not redistribute it without checking the terms.", ""]
