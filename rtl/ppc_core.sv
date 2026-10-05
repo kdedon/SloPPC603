@@ -593,7 +593,7 @@ module ppc_core #(
     .rsp_fault_i(imem_rsp_fault_i), .rsp_esa_i(imem_rsp_esa_i),
     .rsp_pair_i(imem_rsp_pair), .rsp_insn1_i(imem_rsp_insn1),
     .packet_valid_o(fetch_valid), .packet_ready_i(fetch_ready),
-    .packet_ready2_i(fetch_ready2), .packet_o(fetched),
+    .packet_ready2_i(fetch_ready2), .packet_room2_i(fetch_room2), .packet_o(fetched),
     .packet_pair_o(fetch_pair), .packet_insn1_o(fetched_insn1)
   );
   // Fetch-to-decode registers: the fetched words, PC, fault and page-miss
@@ -601,7 +601,7 @@ module ppc_core #(
   // second word is always FETCH_OK at pc + 4 with the first word's ESA.
   fetch_packet_t fd_packet_q;
   page_miss_t fd_miss_q;
-  logic fd_valid_q, fd1_valid_q, fd_push_ok, fetch_ready2;
+  logic fd_valid_q, fd1_valid_q, fd_push_ok, fetch_ready2, fetch_room2;
   // Read only by the second decoder.
   /* verilator lint_off UNUSEDSIGNAL */
   logic [31:0] fd1_insn_q;
@@ -612,9 +612,10 @@ module ppc_core #(
   assign fd_push_ok = fd1_valid_q ? iq_push2_ready : iq_push_ready;
   assign fetch_ready = !frontend_clear && !fold_q && (!fd_valid_q || fd_push_ok);
   // Two words are taken only if the IQ holds them behind the FD words.
-  assign fetch_ready2 = (FETCH_WIDTH == 2) && fetch_ready &&
+  assign fetch_room2 = (FETCH_WIDTH == 2) &&
     ({1'b0, iq_count} + (IQ_COUNT_WIDTH + 1)'(fd_valid_q) + (IQ_COUNT_WIDTH + 1)'(fd1_valid_q) <=
      (IQ_COUNT_WIDTH + 1)'(IQ_DEPTH - 2));
+  assign fetch_ready2 = fetch_room2 && fetch_ready;
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear || fold_q) begin
       fd_valid_q <= 1'b0;

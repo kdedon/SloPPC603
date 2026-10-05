@@ -43,6 +43,9 @@ module ppc_fetch #(
   input logic [31:0] rsp_insn1_i,
   output logic packet_valid_o,
   input logic packet_ready_i, packet_ready2_i,
+  // packet_ready2_i without the redirect term; it only sizes the next
+  // address, which a redirect edge does not use.
+  input logic packet_room2_i,
   output ppc_pkg::fetch_packet_t packet_o,
   // packet_o is followed by the word at pc + 4.
   output logic packet_pair_o,
@@ -58,7 +61,7 @@ module ppc_fetch #(
   logic buf_valid;
   logic [31:0] buf_pc, buf_insn;
   ppc_pkg::esa_enable_t buf_esa;
-  logic consume, live, to_buf, replay, offer, accept, pair, early_sel, fast;
+  logic consume, live, to_buf, replay, offer, accept, pair, pair_next, early_sel, fast;
   logic pending_d, request_held_d, redirect_pending_d;
   logic [31:0] pc_d;
 
@@ -81,7 +84,12 @@ module ppc_fetch #(
   assign req_valid_o = rst_ni && (request_held || (offer && !early_i) || fast);
   assign pair = (FETCH_WIDTH == 2) && live && !redirect_i && packet_ready2_i &&
                 rsp_pair_i && (rsp_fault_i == FETCH_OK) && !pc[2];
-  assign next_addr = pair ? pc_plus8 : pc_plus4;
+  // Equals pair whenever redirect_i is low. On a redirect edge only a held
+  // request (never pending) or the early target is offered, and pc_plus4/8
+  // are reloaded before a pending request uses them again.
+  assign pair_next = (FETCH_WIDTH == 2) && consume && !stop_i && !redirect_pending &&
+                     packet_room2_i && rsp_pair_i && (rsp_fault_i == FETCH_OK) && !pc[2];
+  assign next_addr = pair_next ? pc_plus8 : pc_plus4;
   assign req_addr_o = early_sel ? early_target_i : pending ? next_addr : pc;
   assign accept = req_valid_o && req_ready_i;
   assign quiescent_o = !pending && !request_held && !req_valid_o;

@@ -33,7 +33,7 @@ module tb_fetch_recovery;
     .early_i(early), .early_ok_i(early_ok), .early_target_i(early_target),
     .req_valid_o(req_valid), .req_ready_i(req_ready), .req_addr_o(req_addr),
     .rsp_valid_i(rsp_valid), .rsp_ready_o(rsp_ready), .rsp_insn_i(rsp_insn), .rsp_fault_i(rsp_fault),
-    .rsp_esa_i(rsp_esa), .rsp_pair_i(1'b0), .rsp_insn1_i(32'b0), .packet_ready2_i(packet_ready),
+    .rsp_esa_i(rsp_esa), .rsp_pair_i(1'b0), .rsp_insn1_i(32'b0), .packet_ready2_i(packet_ready), .packet_room2_i(packet_ready),
     /* verilator lint_off PINCONNECTEMPTY */
     .packet_pair_o(), .packet_insn1_o(),
     /* verilator lint_on PINCONNECTEMPTY */

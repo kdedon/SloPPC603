@@ -160,6 +160,17 @@ module ppc_completion #(
     return CQ_INDEX_WIDTH'(sum);
   endfunction
 
+  // Distance from head to slot, both reachable indexes.
+  function automatic logic [COUNT_WIDTH-1:0] ring_age(
+    input logic [CQ_INDEX_WIDTH-1:0] slot,
+    input logic [CQ_INDEX_WIDTH-1:0] head
+  );
+    logic [CQ_INDEX_WIDTH:0] diff;
+    diff = (CQ_INDEX_WIDTH+1)'(slot) - (CQ_INDEX_WIDTH+1)'(head);
+    if (slot < head) diff = diff + (CQ_INDEX_WIDTH+1)'(CQ_DEPTH);
+    return COUNT_WIDTH'(diff);
+  endfunction
+
   // Allocation-time fault metadata stays verbatim, including diagnostic
   // packets: result completion only updates values and execution flags.
   function automatic retire_packet_t normalize(input retire_packet_t a);
@@ -236,31 +247,29 @@ module ppc_completion #(
   // synthesis translate_on
 
   always_comb begin
-    logic [COUNT_WIDTH-1:0] retained;
-    logic [CQ_INDEX_WIDTH-1:0] slot;
+    logic [COUNT_WIDTH-1:0] retained, pivot_age;
+    logic pivot_hit, kill_head, kill_head1;
 
-    redirect_found = redirect_all_i;
-    retained = redirect_all_i ? '0 : count_q;
-    slot = '0;
+    // Queue age is distance from head; numeric slot or generation order has
+    // no age meaning after ring wrap and reuse. Each slot's age is computed
+    // directly so that no selection waits on a walk from the head.
+    pivot_age = ring_age(redirect_pivot_i.index, head_q);
+    pivot_hit = PIVOT && !redirect_all_i &&
+      (redirect_pivot_i.index < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
+      (pivot_age < count_q) && active_q[redirect_pivot_i.index] &&
+      (redirect_pivot_i.generation == generations_q[redirect_pivot_i.index]);
+    redirect_found = redirect_all_i || pivot_hit;
+    retained = redirect_all_i ? '0 :
+               pivot_hit ? pivot_age + COUNT_WIDTH'(redirect_keep_pivot_i) : count_q;
     redirect_candidate_kill = '0;
-
-    // Queue age is traversal from head; numeric slot or generation order has
-    // no age meaning after ring wrap and reuse.
-    for (int age = 0; age < CQ_DEPTH; age++) begin
-      slot = ring_offset(head_q, COUNT_WIDTH'(age));
-      if (PIVOT && (age < int'(count_q)) && active_q[slot] &&
-          (redirect_pivot_i.index == slot) &&
-          (redirect_pivot_i.generation == generations_q[slot]) &&
-          !redirect_all_i) begin
-        redirect_found = 1'b1;
-        retained = COUNT_WIDTH'(age) + COUNT_WIDTH'(redirect_keep_pivot_i);
-      end
+    for (int s = 0; s < CQ_DEPTH; s++) begin
+      if ((ring_age(CQ_INDEX_WIDTH'(s), head_q) < count_q) &&
+          (ring_age(CQ_INDEX_WIDTH'(s), head_q) >= retained))
+        redirect_candidate_kill[s] = 1'b1;
     end
-    for (int age = 0; age < CQ_DEPTH; age++) begin
-      slot = ring_offset(head_q, COUNT_WIDTH'(age));
-      if ((age < int'(count_q)) && (age >= int'(retained)))
-        redirect_candidate_kill[slot] = 1'b1;
-    end
+    // The head has age 0 and the next entry age 1.
+    kill_head = (count_q != '0) && (retained == '0);
+    kill_head1 = (count_q > COUNT_WIDTH'(1)) && (retained <= COUNT_WIDTH'(1));
 
     if (!PIVOT) begin
       redirect_found = 1'b1;
@@ -274,11 +283,11 @@ module ppc_completion #(
     // An offered finished head is irrevocable even when ready on this edge.
     if (ENABLE_PIVOT_RECOVERY && (count_q != '0) &&
         (head_q < CQ_INDEX_WIDTH'(CQ_DEPTH)) && !retire_hold_i &&
-        done_q[head_q] && redirect_candidate_kill[head_q])
+        done_q[head_q] && kill_head)
       redirect_accepted_o = 1'b0;
     // So is an offered CQ[1] that may retire.
     if (ENABLE_PIVOT_RECOVERY && retire1_settled && retire1_ready_i && !retire_hold_i &&
-        redirect_candidate_kill[head1_q])
+        kill_head1)
       redirect_accepted_o = 1'b0;
 
     redirect_kill_o = redirect_accepted_o ? redirect_candidate_kill : '0;

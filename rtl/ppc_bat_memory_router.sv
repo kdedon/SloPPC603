@@ -1029,11 +1029,14 @@ module ppc_bat_memory_router #(
 
   always_comb begin
     pimem_req_valid_o = rst_ni && (i_state_q == LANE_OFFER || i_pipe_try);
-    pimem_req_addr_o = i_pa_q;
-    pimem_req_wimg_o = i_wimg_q;
-    if (i_pipe_try) begin
-      pimem_req_addr_o = {i_hit_rpn, imem_req_addr[11:0]};
-      pimem_req_wimg_o = i_hit_wimg;
+    // Only an offer uses the stored address; outside one the request is a
+    // pipelined hit or invalid, so the registered state picks the address
+    // and the cache index does not wait for the micro-TLB.
+    pimem_req_addr_o = {i_hit_rpn, imem_req_addr[11:0]};
+    pimem_req_wimg_o = i_hit_wimg;
+    if (!ENABLE_FETCH_PIPELINE || i_state_q == LANE_OFFER) begin
+      pimem_req_addr_o = i_pa_q;
+      pimem_req_wimg_o = i_wimg_q;
     end
     pdmem_req_valid_o = rst_ni && (d_state_q == LANE_OFFER || d_pipe_try);
     pdmem_req_now_o = d_pipe_try;
