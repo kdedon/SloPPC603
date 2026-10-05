@@ -175,6 +175,17 @@ module tb_chip602_pins;
     check(mem_word(a) == value, $sformatf("%s: %08x = %08x", what, a, mem_word(a)));
   endtask
 
+  task automatic wait_word_change(input logic [31:0] a, input logic [31:0] value, input int limit,
+                                  input string what);
+    int n;
+    n = 0;
+    while (mem_word(a) == value && n < limit) begin
+      @(negedge clk);
+      n++;
+    end
+    check(mem_word(a) != value, what);
+  endtask
+
   // ---- Boot and stores --------------------------------------------------------
   task automatic boot_case(input bit t32, input int waits, input int retry_pct);
     load_handlers();
@@ -353,7 +364,7 @@ module tb_chip602_pins;
 
   // ---- INT, SRESET, TEA ---------------------------------------------------------
   task automatic int_sreset_case;
-    logic [31:0] top;
+    logic [31:0] top, loops;
     load_handlers();
     mtmsr(MSR_EE | MSR_ME | MSR_IP);
     top = at;
@@ -366,12 +377,18 @@ module tb_chip602_pins;
     int_n = 1'b0;
     wait_word(DATA + EXT_MARK, 32'h500, 5000, "external interrupt");
     int_n = 1'b1;
+    // INT is a level: the handler's rfi can return before INT negates and
+    // take it again. SRESET is not delayed by a handler (UM §4.1, PDF 164 /
+    // 4-6), so wait for a loop pass to keep SRR0 in the loop.
+    repeat (20) @(negedge clk);
+    loops = mem_word(DATA + LOOPS);
+    wait_word_change(DATA + LOOPS, loops, 2000, "loop resumes after the external interrupt");
     sreset_n = 1'b0;
     repeat (4) @(negedge clk);
     sreset_n = 1'b1;
     wait_word(DATA + RESETS, 2, 5000, "soft reset");
     check(mem_word(DATA + RESET_SRR0) >= MAIN && mem_word(DATA + RESET_SRR0) < MAIN + 'h40,
-          "soft reset SRR0 in the loop");
+          $sformatf("soft reset SRR0 in the loop: %08x", mem_word(DATA + RESET_SRR0)));
   endtask
 
   task automatic tea_case;
