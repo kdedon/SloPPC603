@@ -34,9 +34,9 @@ SECTIONS
     *(.bss .bss.* .sbss .sbss.* COMMON)
     . = ALIGN(8);
     __bss_end = .;
-  } > DATA
+  } > DATA AT> DATA
 
-  .noinit (NOLOAD) : ALIGN(8) { *(.noinit) } > DATA
+  .noinit (NOLOAD) : ALIGN(8) { *(.noinit) } > DATA AT> DATA
 
   __heap_start = ALIGN(16);
   __stack_top = ORIGIN(DATA) + LENGTH(DATA);

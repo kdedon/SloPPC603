@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* Hooks between the Quake port (qport.c) and its platform. */
-#ifndef QPORT_H
-#define QPORT_H
+#ifndef QUAKE_QPORT_H
+#define QUAKE_QPORT_H
 #include <stdint.h>
 
 #define QPORT_W 320

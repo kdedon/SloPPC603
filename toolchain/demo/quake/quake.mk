@@ -23,7 +23,8 @@ QUAKE_ENGINE := cd_null chase cl_demo cl_input cl_main cl_parse cl_tent cmd comm
 QUAKE_ASM := d_scanPPC r_surfPPC d_polysetPPC d_edgePPC r_edgePPC r_drawPPC r_aliasPPC r_aclipPPC \
 	d_skyPPC d_surfPPC mathlibPPC r_miscPPC r_bspPPC r_lightPPC fconstPPC
 QUAKE_LIBM := sin cos __sin __cos __rem_pio2 __rem_pio2_large pow pow_data exp_data sqrt sqrt_data \
-	floor ceil atan atan2 scalbn __math_oflow __math_uflow __math_xflow __math_invalid __math_divzero
+	floor ceil floorf ceilf sqrtf tan __tan atan atan2 scalbn __math_oflow __math_uflow __math_xflow \
+	__math_invalid __math_invalidf __math_divzero
 
 quake_endian = $(if $(filter le,$(1)),little,big)
 quake_float = $(if $(filter sf,$(1)),soft,hard)
@@ -35,7 +36,8 @@ QUAKE_INC = -nostdinc -isystem $(GCC_INC) -Idemo/quake/include -Idemo/doom/inclu
 QUAKE_CFLAGS = -O2 -g0 $(call QUAKE_ARCH,$(1)) -fsigned-char -fno-strict-aliasing -fno-stack-protector \
 	-fno-pic -fno-pie -fno-ident -ffunction-sections -fdata-sections -ffile-prefix-map=$(CURDIR)=. \
 	$(QUAKE_INC) -DPLAT_WAD_NAME='"pak0.pak"' -DPLAT_WAD_MAX=0x02800000u
-QUAKE_LIBM_CFLAGS = $(call QUAKE_CFLAGS,$(1)) -std=c99 -w -fno-tree-loop-distribute-patterns \
+QUAKE_LIBM_CFLAGS = -O2 -g0 $(call QUAKE_ARCH,$(1)) -fno-pic -fno-ident -ffunction-sections -ffreestanding -std=c99 -w \
+	-fno-tree-loop-distribute-patterns -nostdinc -isystem $(GCC_INC) -Idemo/libc -Idemo/include \
 	-include features.h -Idemo/libc -I$(SRC)/libm/src/internal -I$(SRC)/libm/src/math
 QUAKE_SOFTFP = $(call QUAKE_CFLAGS,$(1)) -w -I$(SRC)/softfp/libgcc/config/rs6000 \
 	-I$(SRC)/softfp/libgcc/soft-fp -I$(SRC)/softfp/include
@@ -95,6 +97,8 @@ $(QM)/$(1)/softfp.a: $(addprefix $(QM)/$(1)/softfp/,$(addsuffix .o,$(SOFTFP_SRC)
 	$$(AR) rcs $$@ $$^
 $(QM)/$(1)/libc.o: demo/doom/libc.c $(QUAKE_HDRS) | $(QM)/$(1)/eng
 	$$(CC) $$(call QUAKE_CFLAGS,$(1)) $(QUAKE_OWN) -c $$< -o $$@
+$(QM)/$(1)/qlibc.o: demo/quake/qlibc.c $(QUAKE_HDRS) | $(QM)/$(1)/eng
+	$$(CC) $$(call QUAKE_CFLAGS,$(1)) $(QUAKE_OWN) -c $$< -o $$@
 $(QM)/$(1)/dimath.o: demo/doom/dimath.c | $(QM)/$(1)/eng
 	$$(CC) $$(call QUAKE_CFLAGS,$(1)) $(QUAKE_OWN) -c $$< -o $$@
 $(QM)/$(1)/font.o: demo/font.c demo/soc.h | $(QM)/$(1)/eng
@@ -116,9 +120,9 @@ $(QM)/stub-$(1).bin: $(QM)/stub-$(1).o
 	$$(OBJCOPY) -O binary -j .text $$< $$@
 QUAKE_OBJ_$(1) := $(QM)/$(1)/start.o $(QM)/$(1)/setjmp.o \
 	$(addprefix $(QM)/$(1)/eng/,$(addsuffix .o,$(QUAKE_ENGINE))) $(QM)/$(1)/platform.o \
-	$(QM)/$(1)/libc.o $(QM)/$(1)/dimath.o $(QM)/$(1)/font.o \
+	$(QM)/$(1)/libc.o $(QM)/$(1)/qlibc.o $(QM)/$(1)/dimath.o $(QM)/$(1)/font.o \
 	$(if $(filter be,$(1)),$(addprefix $(QM)/be/asm/,$(addsuffix .o,$(QUAKE_ASM)))) \
-	$(QM)/$(1)/libm.a $(if $(filter sf,$(1)),$(QM)/$(1)/softfp.a)
+	$(QM)/$(1)/libm.a $(QM)/$(1)/softfp.a
 $(QM)/quake-$(1).elf: $$(QUAKE_OBJ_$(1)) $(QM)/$(1)/qport.o demo/doom/doom.ld
 	$$(call QUAKE_LINK,$(1))
 $(QM)/quake-$(1)-smoke.elf: $$(QUAKE_OBJ_$(1)) $(QM)/$(1)/qport-smoke.o demo/doom/doom.ld

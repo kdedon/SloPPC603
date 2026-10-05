@@ -54,6 +54,12 @@ python3 "$root/demo/lha.py" "$aq/Quake_src.lha" "$aq" Quake/macrosPPC.i Quake/qu
 musl="$host/kraj/musl/0784374d561435f7c787a555aeab8ede699ed298"
 fetch libm "$musl" src/math/atan2.c a5f94b09b10b4e72bb15d94ae403c9dfd27d7ad881ecd729000004429acfca63
 fetch libm "$musl" src/math/ceil.c f616b50efc61eb35f946308b222f5f83ca707b4efaf7ea175969a5b62d2d6637
+fetch libm "$musl" src/math/floorf.c 55a62f12a4bcd151ca3a82e9ec98b1744c15017f1b6cdea56b33220ffdb166f3
+fetch libm "$musl" src/math/ceilf.c 691d3a8e183ebe5f09a68120766877872e10f9267fe6e2bba0341b93d2863cc8
+fetch libm "$musl" src/math/sqrtf.c bd7c19c2c4efdbd1259f04a919c88f7119d9402cdd41584c7b0f854acb203b42
+fetch libm "$musl" src/math/tan.c 422d411bac962a1077ae394d14e54313012a6faa3476c20b2a66d3fb3f7a923f
+fetch libm "$musl" src/math/__tan.c e18b65b69fced8dbb2d3ed1a3dc6daea0e9f857f2762f274380bd89a6f89d2c4
+fetch libm "$musl" src/math/__math_invalidf.c d2af8360271109d77dfab3c538eb158e34633454707dea4efa9f2f1e7e2bd0c7
 
 qg="$host/erysdren/quakegeneric/13052102577c629650cf07a46151a4b6e1b19c3c"
 fetch quakegeneric "$qg" LICENSE 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643
