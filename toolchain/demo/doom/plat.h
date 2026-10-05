@@ -6,10 +6,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The IWAD, loaded by the core's Load WAD at a fixed address. */
+/* The data file, loaded by the core's Load data at a fixed address. A port
+ * may name another file and size. */
+#ifndef PLAT_WAD_NAME
 #define PLAT_WAD_NAME "doom1.wad"
-#define PLAT_WAD_ADDR 0x01800000u
 #define PLAT_WAD_MAX 0x00800000u
+#endif
+#define PLAT_WAD_ADDR 0x01800000u
 
 extern const uint8_t *plat_wad;
 extern size_t plat_wad_size;

@@ -433,3 +433,4 @@ $(OUT)/%.hex: $(OUT)/%.elf demo/bin2hex64.py
 	$(PYTHON) demo/bin2hex64.py $(OUT)/$*.bin 0x100 $@
 
 include demo/doom/doom.mk
+include demo/quake/quake.mk

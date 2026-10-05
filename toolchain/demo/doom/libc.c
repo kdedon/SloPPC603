@@ -471,19 +471,20 @@ int fprintf(FILE *f, const char *fmt, ...)
   return r;
 }
 
-/* Integers and strings only, as the engine's configuration parser uses. */
-int sscanf(const char *s, const char *fmt, ...)
+/* Integers and strings only, as the engines' parsers use; *used is the
+ * number of characters consumed. */
+static int scan(const char *s, const char *fmt, va_list ap, size_t *used)
 {
-  va_list ap;
+  const char *s0 = s;
   int n = 0;
-  va_start(ap, fmt);
   for (; *fmt; fmt++) {
     if (isspace(*fmt)) {
       while (isspace(*s)) s++;
       continue;
     }
     if (*fmt != '%') {
-      if (*s++ != *fmt) break;
+      if (*s != *fmt) break;
+      s++;
       continue;
     }
     fmt++;
@@ -504,6 +505,16 @@ int sscanf(const char *s, const char *fmt, ...)
     }
     n++;
   }
+  *used = (size_t)(s - s0);
+  return n;
+}
+
+int sscanf(const char *s, const char *fmt, ...)
+{
+  va_list ap;
+  size_t used;
+  va_start(ap, fmt);
+  int n = scan(s, fmt, ap, &used);
   va_end(ap);
   return n;
 }
@@ -608,7 +619,22 @@ int puts(const char *s)
   return 0;
 }
 
-int fscanf(FILE *f, const char *fmt, ...) { (void)f; (void)fmt; return EOF; }
+/* Over the next 63 bytes of a data file. */
+int fscanf(FILE *f, const char *fmt, ...)
+{
+  char buf[64];
+  va_list ap;
+  size_t used, len = 0;
+  if (f->console || f->pos >= f->size) return EOF;
+  for (; len < sizeof buf - 1 && f->pos + (long)len < f->size; len++)
+    buf[len] = (char)f->data[f->pos + (long)len];
+  buf[len] = 0;
+  va_start(ap, fmt);
+  int n = scan(buf, fmt, ap, &used);
+  va_end(ap);
+  f->pos += (long)used;
+  return n;
+}
 int remove(const char *path) { (void)path; return -1; }
 int rename(const char *from, const char *to) { (void)from; (void)to; return -1; }
 int mkdir(const char *path, mode_t mode) { (void)path; (void)mode; return -1; }

@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
-/* Reset stub of the Doom images, always big-endian, at 0xfff00100. It maps
- * the image window (BAT0), the device window (DBAT1) and the 32 MiB data
+/* Reset stub of the Doom and Quake images, always big-endian, at 0xfff00100. It maps
+ * the image window (BAT0), the device window (DBAT1) and the 64 MiB data
  * window at 0 (BAT2), enables the caches, and enters the program at
  * 0xfff01500 through rfi with translation on; with STUB_LE it sets MSR[ILE]
- * first and enters in little-endian mode. r3 = 0 marks a fresh start. */
+ * first and enters in little-endian mode; with STUB_FP it sets MSR[FP]. r3 = 0
+ * marks a fresh start. */
 #define SPR_HID0 1008
 
     .text
@@ -36,8 +37,8 @@ _stub:
     ori 6,6,0x002a
     mtspr 539,6
     mtspr 538,5
-    /* BAT2: 0x00000000, 32 MiB, cacheable, read/write. */
-    li 5,0x03fe
+    /* BAT2: 0x00000000, 64 MiB, cacheable, read/write. */
+    li 5,0x07fe
     li 6,0x0002
     mtspr 533,6
     mtspr 532,5
@@ -67,6 +68,9 @@ _stub:
     ori 5,5,0x0031
 #else
     ori 5,5,0x0030
+#endif
+#ifdef STUB_FP
+    ori 5,5,0x2000
 #endif
     mtsrr1 5
     lis 4,0xfff0

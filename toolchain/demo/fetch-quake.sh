@@ -50,6 +50,11 @@ asm="d_scanPPC r_surfPPC d_polysetPPC d_edgePPC r_edgePPC r_drawPPC r_aliasPPC r
 python3 "$root/demo/lha.py" "$aq/Quake_src.lha" "$aq" Quake/macrosPPC.i Quake/quakeasmheaders.gen \
   Quake/genasmheaders.c $(for f in $asm; do echo "Quake/$f.s"; done)
 
+# musl libm functions Quake needs beyond fetch-benchmarks.sh's, same commit.
+musl="$host/kraj/musl/0784374d561435f7c787a555aeab8ede699ed298"
+fetch libm "$musl" src/math/atan2.c a5f94b09b10b4e72bb15d94ae403c9dfd27d7ad881ecd729000004429acfca63
+fetch libm "$musl" src/math/ceil.c f616b50efc61eb35f946308b222f5f83ca707b4efaf7ea175969a5b62d2d6637
+
 qg="$host/erysdren/quakegeneric/13052102577c629650cf07a46151a4b6e1b19c3c"
 fetch quakegeneric "$qg" LICENSE 8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643
 fetch quakegeneric "$qg" README.md 16d2c6e172798133c6508cea64e73c1b5acd031655bdc60d013797a32dfc6935
