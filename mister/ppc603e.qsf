@@ -38,7 +38,3 @@ set_global_assignment -name VERILOG_MACRO "MISTER_DOWNSCALE_NN=1"
 source sys/sys.tcl
 source sys/sys_analog.tcl
 source files.qip
-set_global_assignment -name VERILOG_MACRO "MISTER_FPU=1"
-set_global_assignment -name VERILOG_MACRO "MISTER_FPU_COMPACT=1"
-set_global_assignment -name VERILOG_MACRO "MISTER_DUAL=1"
-set_global_assignment -name VERILOG_MACRO "PPC_LSU_PIPE=1"
