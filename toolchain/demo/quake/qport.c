@@ -17,7 +17,7 @@
 #include "qport.h"
 
 /* demo1 of the v1.06 shareware pak0.pak, one demo message per frame. */
-#define DEMO1_FRAMES 970u
+#define DEMO1_FRAMES 969u
 #define SMOKE_STEP (1.0 / 20.0)
 
 viddef_t vid;
@@ -84,6 +84,7 @@ void QG_GetJoyAxes(float *axes) { memset(axes, 0, QUAKEGENERIC_JOY_MAX_AXES * si
 /* ---- system ----------------------------------------------------------------- */
 #define MAX_HANDLES 10
 static FILE *handles[MAX_HANDLES];
+qboolean isDedicated;
 
 int Sys_FileOpenRead(char *path, int *hndl)
 {
@@ -230,7 +231,8 @@ void qport_run(void)
 #endif
     } else if (was_timedemo) {
       was_timedemo = 0;
-      pass_done((uint32_t)(host_framecount - cls.td_startframe - 2), realtime - td_start);
+      /* As the engine counts them in its timedemo line. */
+      pass_done((uint32_t)(host_framecount - cls.td_startframe - 1), realtime - td_start);
       Cbuf_AddText("timedemo demo1\n");
     }
   }
