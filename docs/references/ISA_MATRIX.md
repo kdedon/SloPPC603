@@ -404,7 +404,7 @@ ANDI./ANDIS. add primary28/29 D-forms, with unsigned low/high-half immediates, r
 
 The six word-rotate entries are user-level, non-serializing M-form operations. RLWINM, RLWNM and RLWIMI implement both Rc forms. MB/ME use PowerPC MSB-first bit numbering and wrap when MB is greater than ME. `rlwimi` preserves the old rA bits outside the mask; `rlwnm` takes its shift count from the numeric low five bits of rB. XER is unchanged, while Rc=1 updates CR0 using the result and current XER.SO.
 
-Primary Table A-6 on PDF 379 prints conflicting opcodes 22/20/21 for `rlwimi`/`rlwinm`/`rlwnm`. The executable metadata uses 20/21/23 because primary Tables A-1 and A-43 agree on those values; 601UM and DingusPPC provide tagged secondary corroboration. The Table A-6 discrepancy remains an open editorial/errata item.
+Primary Table A-6 on PDF 379 prints conflicting opcodes 22/20/21 for `rlwimi`/`rlwinm`/`rlwnm`. The executable metadata uses 20/21/23 because primary Tables A-1 and A-43 agree on those values; 601UM and DingusPPC provide tagged secondary corroboration. PEM opcode-order Tables A-1/A-2 (PDF 688, 692) agree with 20/21/23 and its functional Table A-3 (PDF 701) repeats the 22/20/21 misprint, so Table A-6 is a closed editorial error.
 
 The eight word-shift entries are user-level, non-serializing X-form operations with no reserved operand fields. SLW/SRW/SRAW/SRAWI implement both Rc forms. Register forms use the numeric low six bits rB[26:31]: logical shifts return zero and arithmetic shifts return all sign bits for counts 32 through 63. `sraw` and `srawi` replace XER.CA with one only for a negative source that discards at least one one-bit; `slw` and `srw` leave CA unchanged. All four preserve OV/SO, and Rc=1 records the result with current SO.
 
@@ -487,8 +487,7 @@ The validator requires schema version 1, exact A-3..A-30 and A-31..A-45 coverage
 ## Open P03 work
 
 - Transcribe complete masks, fields, side effects, privilege and serialization for the 130 Appendix A source-inventory rows that remain pending after reconciling 96 reviewed source rows.
-- Resolve the primary-manual Table A-6 rotate-opcode conflict against Tables A-1/A-43 through errata or a matching architecture manual; executable metadata conservatively follows the two agreeing primary tables.
 - Reconcile Appendix A shaded unsupported rows with Appendix B and architecture-level optional/64-bit markers per concrete form.
-- Complete 603/PID6/PID7v/EC603e legality and obtain the missing 602 user manual before enabling 602.
+- Complete 603/PID6/PID7v/EC603e/602 legality per concrete form; the 602 user manual is now available (FPU_602_CONTRACT.md).
 - Resolve SPR-specific legality and instructions whose architectural mnemonic expands through OE/Rc/AA/LK outside the reviewed ADD, register-logical, integer-unary, CR-transfer, CR-logical, CR-state, word-rotate, word-shift, and 32-bit compare families.
-- Bind remaining source forms to timing rows after Table 6-5 and timing-family reconciliation are complete.
+- Bind Appendix A inventory rows outside the 335 decode entries to timing rows; all 190 Table 6-1..6-6 rows already bind to decode entries.

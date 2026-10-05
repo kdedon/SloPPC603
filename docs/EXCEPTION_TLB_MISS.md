@@ -20,6 +20,10 @@ SRR1 = {CR0[3:0], 1'b0, old_MSR[26:22], 2'b0,
         KEY, I/D, WAY, STORE, old_MSR[15:0]}
 ```
 
+Table 4-16 (PDF 192, printed 4-34) contradicts Table 4-4: it clears bits 4-12
+and gives bit 15 as 0 = store. Tables 4-4 and 5-4 (PDF 212, printed 5-16) agree
+on the layout above and decide.
+
 I/D is one for kind 9 and zero for kinds 10/11. STORE is one only for kind
 11. WAY is supplied by its caller (the TLB LRU way or matched way); this
 unit does not implement TLB replacement policy. The old MSR fields in this
