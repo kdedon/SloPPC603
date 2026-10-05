@@ -116,22 +116,20 @@ Queued, in order:
 1. Branches without a CQ entry (removal at fetch, P09).
 2. LSU unit completion: stores at one per cycle, base operands from rename,
    FP update forms through the unit.
-3. Real-mode instruction fetches: they get WIMG=0001 and are never I-cached;
-   check against UM §5.2 and fix if the manual caches them.
-4. Bus and endian follow-ups: DBWO; the two-CPU bench with address
+3. Bus and endian follow-ups: DBWO; the two-CPU bench with address
    pipelining, DRTRY and TEA; misaligned `eciwx`/`ecowx` split in hardware;
    a DingusPPC little-endian comparison.
-5. Defaults: width 2 and the LSU unit on, two-word fetch through the wrappers.
-6. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
+4. Defaults: width 2 and the LSU unit on, two-word fetch through the wrappers.
+5. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
    FULL FPU in the MiSTer core (97% ALMs, −2.606 ns: reduce area or keep
    COMPACT).
-7. Verification: full-machine reference comparison and the remaining P12
+6. Verification: full-machine reference comparison and the remaining P12
    schedule checks; source-contract reconciliation.
-8. Speed, after completion: 66 MHz at width 1 (translated −0.446 ns, chip
+7. Speed, after completion: 66 MHz at width 1 (translated −0.446 ns, chip
    −0.448 ns, chip602 −0.063 ns on `6cb15bb`), width 2 at 66 MHz (IQ pair
    decision), the LSU unit at 66 MHz, the FPU at 66 MHz, a single-precision
    Mandelbrot.
-9. MiSTer test core: HDMI-domain timing at SEED 2 (`pll_hdmi` −0.353 ns on
+8. MiSTer test core: HDMI-domain timing at SEED 2 (`pll_hdmi` −0.353 ns on
    `6cb15bb`); add seed choice to `mister/build.sh`.
 
 After each accepted implementation round, update the scorecard's affected rows
