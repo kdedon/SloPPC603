@@ -1080,3 +1080,62 @@ clock setup slack +0.959 ns (slow −40 °C) and +1.007 ns (slow 100 °C), but
 `pll_hdmi` failed setup at −0.353 and −0.074 ns, so `build.sh` rejected it.
 This is framework-domain placement at SEED 2, not CPU logic; no rbf
 published. MVP 97.43% (unchanged); full 603e 78.36% → 79.41%.
+
+## Batch 13 — accepted (2026-10-05)
+
+Includes the batch 12 performance line: retire in the writeback cycle, a CR
+flag-token waiter, the LSU base wait, early redirect and mispredict, load
+priority, an 8-entry data micro-TLB, the SRU route and a second IU finish
+port. Also the LSU store queue
+([LSU](../../LSU_PIPELINE.md#store-queue)), branch removal behind
+`ENABLE_BRANCH_REMOVAL` (off), FP loads through the LSU, a bus fix, the
+machine-runner store-owed fix, three timing commits and the 602/rename
+timing fix `497429b`, bench fixes, the Embench release with screen save
+removed, the [source reconciliation](../../references/SOURCE_RECONCILIATION.md),
+the [manual inventory](../../references/MANUAL_INVENTORY.md) (AUD-75 to
+AUD-86) and the cached real-mode fetch record (UM §5.2). Branch
+`batch13-final` at `cc16ceb`.
+
+Recorded: `make -C sim xrand-sweep`, the FPU suite (`test-fpu-all
+test-fpu-reference test-fpu-testfloat lint-fpu-production lint-fpu-stream
+lint-fpu-dual lint-fpu-compact`), `quartus/fpu-production/synthesize.sh
+--docker fullfit`, `full602fit`, `compactfit` and `compact602fit`,
+`quartus/<top>/build.sh --docker` (integrated, timer-bat) and
+`quartus/report-target-paths.sh <top> --docker` (all five), commit
+`0ff3a45`, 2026-10-04.
+
+Pass: `xrand-sweep`; FPU suite; FPU fits unchanged (51.57, 50.58, 53.43,
+60.07 MHz). Integrated meets 50 MHz at +1.535 / +0.076 ns (9,421 ALMs),
+timer-bat at +1.169 / +0.118 ns (9,493). Failed 66 MHz: translated −4.610 ns,
+integrated −3.313, timer-bat −3.679, chip −4.606, chip602 −5.452; regressed
+from −0.45 ns on `6cb15bb` by the batch 12–13 speed work.
+
+Recorded: `make -C sim ci`; `make -C sim test-dispatch-rules
+test-reference-machine test-reference-machine-mmu` at width 1 and with
+`DISPATCH_WIDTH=2 VERILATOR=sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=sim/tools/verilate-lsu-pipe`;
+`./quartus/translated/build.sh --docker`; commit `152f36d`, 2026-10-05.
+
+Pass: `ci` except rtl-smoke and rtl-alignment, a bench bug fixed in
+`941082a`; 11 PASS at each width (hello, dhrystone, coremark, whetstone,
+selftest, chip-mmu-stress and the negative controls); translated meets
+50 MHz at +0.476 / +0.117 ns.
+
+Recorded: `./quartus/chip/build.sh --docker`, `./quartus/chip602/build.sh
+--docker`, commit `497429b`, 2026-10-05. Pass: chip +0.950 / +0.119 ns
+(15,385 ALMs), chip602 +0.245 / +0.118 ns (13,677).
+
+Recorded: `make -C sim lint check-spec`, `make -C toolchain rtl-all`,
+`make -C sim test-chip602-pins test-chip-icache-real` at width 1 and width
+2 with the LSU unit, commit `cc16ceb`, 2026-10-05. Pass: lint, check-spec,
+38 `rtl-all` profiles, both benches at both widths.
+
+Recorded: `make -C sim perf-diff` (width 2 + LSU unit), batch 13 merge,
+2026-10-05. Dhrystone 639.0 cycles/run, 0.89 DMIPS/MHz (603e model 506);
+CoreMark 2.675/MHz. Width 1 + LSU unit: 766 cycles/run, CoreMark 2.300.
+
+Failed: MiSTer `mister/build.sh --fpu-compact --dual --lsu-pipe --seed
+2..5` does not route at 87% ALMs. Branch `batch13-mister-fit` routes but
+misses `clk_sys` by −4.2 ns; the CI `mister-unstable` job fails until this
+closes. Inherited from batch 11: everything not listed above. MVP 97.43%
+(unchanged); full 603e 79.41% → 81.20%.

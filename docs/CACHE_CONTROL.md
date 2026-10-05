@@ -18,13 +18,15 @@ Sources: MPC603e UM (MPC603EUM/AD 11/97) section 3.7, PDF 148-151 / printed
 | Form | XO | Privilege | Translation and protection | Effect here |
 | --- | ---: | --- | --- | --- |
 | `icbi` | 982 | user | none (UM 3.7.8) | Invalidates all four ways of the I-cache set indexed by EA bits 20-26 |
-| `dcbf` | 86 | user | as a load | No data cache: no transfer |
-| `dcbst` | 54 | user | as a load | No data cache: no transfer |
-| `dcbi` | 470 | supervisor | as a store | No data cache: no transfer |
-| `dcbz` | 1014 | user | as a store | Alignment exception after a clean translation |
+| `dcbf` | 86 | user | as a load | Without a data cache: no transfer |
+| `dcbst` | 54 | user | as a load | Without a data cache: no transfer |
+| `dcbi` | 470 | supervisor | as a store | Without a data cache: no transfer |
+| `dcbz` | 1014 | user | as a store | Without a data cache: alignment exception after a clean translation |
 | `dcbt`, `dcbtst` | 278, 246 | user | none | No-op; never faults (UM 3.7.2) |
 
-EA is `(rA|0) + rB` for every form.
+EA is `(rA|0) + rB` for every form. With `ENABLE_DCACHE=1` the data-cache
+forms act on the cache as [DATA_CACHE.md](DATA_CACHE.md) specifies; this
+document covers translation, privilege and `icbi`.
 
 **Probes.** `dcbf`, `dcbst`, `dcbi` and `dcbz` run in the serialized memory
 lane as byte loads or stores that carry `dmem_req_probe_o`. The BAT/page
@@ -38,14 +40,14 @@ exception before any translation.
 
 **dcbz.** UM Table 5-4 and section 4.5.6 give the alignment exception for
 `dcbz` to a write-through or caching-inhibited page; PEM chapter 8 allows
-either zeroing memory or the alignment handler for that case. This MVP never
-caches data (every data tenure is cache-inhibited on the bus), so every
-translated `dcbz` takes the alignment exception. Translation comes first:
+either zeroing memory or the alignment handler for that case. Without a data
+cache every data tenure is cache-inhibited on the bus, so every translated
+`dcbz` takes the alignment exception. Translation comes first:
 a denied or missing translation takes DSI or the TLB miss instead. DAR is the
 EA; DSISR follows Table 4-13 (bits 15-21 from the X-form XO, bits 27-31 = rA,
 bits 22-26 zero because RT is reserved). The handler zeroes the block, as the
 compiled firmware does. Silicon with its data cache disabled would still
-allocate the block (UM 3.2.3.2); that path does not exist here.
+allocate the block (UM 3.2.3.2); with `ENABLE_DCACHE=1` it does.
 
 **icbi.** The serialized lane holds `icbi_req_valid_o` with the EA until
 `icbi_req_ready_i`, which means the set is invalid. Only then does `icbi`
@@ -92,9 +94,9 @@ that share the managed cache's drain sequence:
 
 ## Limits
 
-No data cache, so `dcbf`/`dcbst`/`dcbi` have no data effect and `dcbz` never
-zeroes in hardware. No address-only broadcasts (`HID0[ABE]`, kill block) and
-no snooping. HID0 is not decoded. The cache-operation timing of UM Table 6-6
+Without a data cache, `dcbf`/`dcbst`/`dcbi` have no data effect, `dcbz` never
+zeroes in hardware, and there are no address-only broadcasts or snooping.
+`ENABLE_DCACHE=1` adds all of these ([data cache](DATA_CACHE.md)). The cache-operation timing of UM Table 6-6
 is not modeled; the forms are serialized conservatively.
 
 Verification: [CACHE_CONTROL_VERIFICATION.md](CACHE_CONTROL_VERIFICATION.md).
