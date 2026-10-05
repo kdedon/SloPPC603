@@ -425,28 +425,37 @@ module ppc_completion #(
   // Rename reconstruction consumes post-commit survivors in oldest-first
   // order. Same-edge finish value/readiness travels independently on wake_o.
   always_comb begin
-    integer output_age;
+    retire_packet_t by_age_packet [CQ_DEPTH + 2];
+    completion_tag_t by_age_tag [CQ_DEPTH + 2];
     logic [CQ_INDEX_WIDTH-1:0] slot;
 
+    // Survivors by age depend only on the head; the retiring entries, known
+    // late, only shift them, so retirement is the last select.
+    for (int age = 0; age < CQ_DEPTH + 2; age++) begin
+      by_age_packet[age] = '0;
+      by_age_tag[age] = '0;
+      if (age < CQ_DEPTH) begin
+        slot = ring_offset(head_q, COUNT_WIDTH'(age));
+        by_age_packet[age] = packets_q[slot];
+        by_age_tag[age].index = slot;
+        by_age_tag[age].generation = generations_q[slot];
+      end
+    end
     recovery_survivor_count_o = '0;
     for (int i = 0; i < CQ_DEPTH; i++) begin
       recovery_survivor_packet_o[i] = '0;
       recovery_survivor_tag_o[i] = '0;
     end
-    output_age = 0;
-    slot = '0;
     if (PIVOT && redirect_accepted_o) begin
       recovery_survivor_count_o = redirect_candidate_survivors -
                                   COUNT_WIDTH'(retire_fire) -
                                   COUNT_WIDTH'(retire1_fire);
-      for (int age = 0; age < CQ_DEPTH; age++) begin
-        slot = ring_offset(head_q, COUNT_WIDTH'(age));
-        if ((age < int'(redirect_candidate_survivors)) &&
-            (!retire_fire || (age != 0)) && (!retire1_fire || (age != 1))) begin
-          recovery_survivor_packet_o[output_age] = packets_q[slot];
-          recovery_survivor_tag_o[output_age].index = slot;
-          recovery_survivor_tag_o[output_age].generation = generations_q[slot];
-          output_age++;
+      for (int i = 0; i < CQ_DEPTH; i++) begin
+        if (i < int'(recovery_survivor_count_o)) begin
+          recovery_survivor_packet_o[i] = retire1_fire ? by_age_packet[i + 2] :
+            retire_fire ? by_age_packet[i + 1] : by_age_packet[i];
+          recovery_survivor_tag_o[i] = retire1_fire ? by_age_tag[i + 2] :
+            retire_fire ? by_age_tag[i + 1] : by_age_tag[i];
         end
       end
     end
