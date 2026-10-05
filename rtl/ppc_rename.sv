@@ -11,9 +11,17 @@ module ppc_rename (
   input logic [4:0] read_a_i, read_b_i,
   input logic [31:0] arch_a_i, arch_b_i,
   output ppc_pkg::operand_t read_a_o, read_b_o,
+  // Store data of a lane-0 access.
+  input logic [4:0] read_c_i,
+  input logic [31:0] arch_c_i,
+  output ppc_pkg::operand_t read_c_o,
   input logic [4:0] read_a1_i, read_b1_i,
   input logic [31:0] arch_a1_i, arch_b1_i,
   output ppc_pkg::operand_t read_a1_o, read_b1_o,
+  // Store data of a lane-1 access.
+  input logic [4:0] read_c1_i,
+  input logic [31:0] arch_c1_i,
+  output ppc_pkg::operand_t read_c1_o,
   // Registers with an uncommitted producer.
   output logic [31:0] mapped_o,
   output logic alloc_ready_o,
@@ -21,11 +29,16 @@ module ppc_rename (
   input logic alloc_i,
   input logic [4:0] alloc_reg_i,
   input ppc_pkg::completion_tag_t alloc_producer_i,
+  // The slot is written ready with this value (an update form's EA).
+  input logic alloc_value_valid_i,
+  input logic [31:0] alloc_value_i,
   output logic alloc1_ready_o,
   output ppc_pkg::rename_tag_t alloc1_tag_o,
   input logic alloc1_i,
   input logic [4:0] alloc1_reg_i,
   input ppc_pkg::completion_tag_t alloc1_producer_i,
+  input logic alloc1_value_valid_i,
+  input logic [31:0] alloc1_value_i,
   input logic wake_valid_i,
   input ppc_pkg::wake_packet_t wake_i,
   input logic wake1_valid_i,
@@ -38,6 +51,11 @@ module ppc_rename (
   input logic [4:0] release1_reg_i,
   input ppc_pkg::rename_tag_t release1_tag_i,
   input ppc_pkg::completion_tag_t release1_producer_i,
+  // An update form's base register.
+  input logic release2_i,
+  input logic [4:0] release2_reg_i,
+  input ppc_pkg::rename_tag_t release2_tag_i,
+  input ppc_pkg::completion_tag_t release2_producer_i,
   input logic recovery_i,
   input logic [$clog2(ppc_pkg::CQ_DEPTH+1)-1:0] recovery_survivor_count_i,
   input ppc_pkg::retire_packet_t recovery_survivor_packet_i [ppc_pkg::CQ_DEPTH],
@@ -49,7 +67,8 @@ module ppc_rename (
   completion_tag_t owners [GPR_RENAME_DEPTH];
   logic [31:0] map_valid;
   rename_tag_t map_tag [32];
-  logic wake_match, wake1_match, release_match, release1_match, alloc_fire, alloc1_fire;
+  logic wake_match, wake1_match, release_match, release1_match, release2_match;
+  logic alloc_fire, alloc1_fire;
 
   assign wake_match = wake_valid_i && int'(wake_i.tag) < GPR_RENAME_DEPTH &&
                       valid[wake_i.tag] && owners[wake_i.tag] == wake_i.producer;
@@ -61,6 +80,9 @@ module ppc_rename (
   assign release1_match = release1_i && int'(release1_tag_i) < GPR_RENAME_DEPTH &&
                           valid[release1_tag_i] &&
                           owners[release1_tag_i] == release1_producer_i;
+  assign release2_match = release2_i && int'(release2_tag_i) < GPR_RENAME_DEPTH &&
+                          valid[release2_tag_i] &&
+                          owners[release2_tag_i] == release2_producer_i;
   assign alloc_fire = alloc_i && alloc_ready_o;
   assign alloc1_fire = alloc1_i && alloc1_ready_o;
 
@@ -74,13 +96,17 @@ module ppc_rename (
       operand.tag = map_tag[reg_index];
       operand.producer = owners[operand.tag];
       operand.ready = ready[operand.tag];
-      // Pending payload is not consumed; preserve its public zero value.
+      // Pending payload is not consumed.
       operand.value = ready[operand.tag] ? values[operand.tag] : 32'b0;
-      if (wake_match && wake_i.tag == operand.tag &&
-          wake_i.producer == operand.producer) begin
-        operand.ready = 1'b1;
+      // The value forwards on identity alone, keeping recovery's kill out of
+      // the dispatch operand cone. It is consumed only with ready, which still
+      // requires a valid wake; a killed wake also kills the reader.
+      if (!ready[operand.tag] && wake_i.tag == operand.tag &&
+          wake_i.producer == operand.producer)
         operand.value = wake_i.value;
-      end
+      if (wake_match && wake_i.tag == operand.tag &&
+          wake_i.producer == operand.producer)
+        operand.ready = 1'b1;
       if (wake1_match && wake1_i.tag == operand.tag &&
           wake1_i.producer == operand.producer) begin
         operand.ready = 1'b1;
@@ -93,8 +119,10 @@ module ppc_rename (
   assign mapped_o = map_valid;
   assign read_a_o = read_operand(read_a_i, arch_a_i);
   assign read_b_o = read_operand(read_b_i, arch_b_i);
+  assign read_c_o = read_operand(read_c_i, arch_c_i);
   assign read_a1_o = read_operand(read_a1_i, arch_a1_i);
   assign read_b1_o = read_operand(read_b1_i, arch_b1_i);
+  assign read_c1_o = read_operand(read_c1_i, arch_c1_i);
 
   // Lowest and second-lowest free slots; both come from the valid flops.
   always_comb begin
@@ -124,6 +152,8 @@ module ppc_rename (
   always_ff @(posedge clk_i) begin
     if (wake_match) values[wake_i.tag] <= wake_i.value;
     if (wake1_match) values[wake1_i.tag] <= wake1_i.value;
+    if (alloc_fire && alloc_value_valid_i) values[alloc_tag_o] <= alloc_value_i;
+    if (alloc1_fire && alloc1_value_valid_i) values[alloc1_tag_o] <= alloc1_value_i;
   end
 
   // Only allocation changes a slot's owner; recovery leaves it intact.
@@ -223,6 +253,18 @@ module ppc_rename (
               recovery_survivor_packet_i[age].tag;
           end
         end
+        // An update base is written ready at allocation.
+        if ((age < int'(recovery_survivor_count_i)) &&
+            recovery_survivor_packet_i[age].update_owned &&
+            valid[recovery_survivor_packet_i[age].update_tag] &&
+            owners[recovery_survivor_packet_i[age].update_tag] ==
+              recovery_survivor_tag_i[age]) begin
+          valid[recovery_survivor_packet_i[age].update_tag] <= 1'b1;
+          ready[recovery_survivor_packet_i[age].update_tag] <= 1'b1;
+          map_valid[recovery_survivor_packet_i[age].update_gpr] <= 1'b1;
+          map_tag[recovery_survivor_packet_i[age].update_gpr] <=
+            recovery_survivor_packet_i[age].update_tag;
+        end
       end
     end else begin
       if (wake_match) begin
@@ -243,16 +285,22 @@ module ppc_rename (
         if (map_valid[release1_reg_i] && map_tag[release1_reg_i] == release1_tag_i)
           map_valid[release1_reg_i] <= 1'b0;
       end
+      if (release2_match) begin
+        valid[release2_tag_i] <= 1'b0;
+        ready[release2_tag_i] <= 1'b0;
+        if (map_valid[release2_reg_i] && map_tag[release2_reg_i] == release2_tag_i)
+          map_valid[release2_reg_i] <= 1'b0;
+      end
       // Reads see the old mapping; younger allocation wins map clearing.
       if (alloc_fire) begin
         valid[alloc_tag_o] <= 1'b1;
-        ready[alloc_tag_o] <= 1'b0;
+        ready[alloc_tag_o] <= alloc_value_valid_i;
         map_valid[alloc_reg_i] <= 1'b1;
         map_tag[alloc_reg_i] <= alloc_tag_o;
       end
       if (alloc1_fire) begin
         valid[alloc1_tag_o] <= 1'b1;
-        ready[alloc1_tag_o] <= 1'b0;
+        ready[alloc1_tag_o] <= alloc1_value_valid_i;
         map_valid[alloc1_reg_i] <= 1'b1;
         map_tag[alloc1_reg_i] <= alloc1_tag_o;
       end

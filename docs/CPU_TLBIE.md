@@ -21,5 +21,5 @@ completed `tlbsync` while the TLBISYNC input is asserted. This core has no
 TLBISYNC input and treats it as negated, as for a single processor that never
 broadcasts invalidations, so `tlbsync` retires through the serialized
 special lane as a no-op. It offers no TLB or bus transaction; the 603e
-generates no address-only `tlbsync` tenure (UM Table 7-1, PDF 285 / 7-9).
+generates no address-only `tlbsync` tenure (UM Table 7-1, continued, PDF 286 / 7-10).
 

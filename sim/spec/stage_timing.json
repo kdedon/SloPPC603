@@ -7,7 +7,7 @@
   "implementation_edges": {
     "dispatch_to_issue_min": 1,
     "issue_to_finish_exact": 1,
-    "finish_to_retire_min": 1,
+    "finish_to_retire_min": 0,
     "release_equals_retire": true,
     "full_same_edge_reclaim": false
   },

@@ -103,7 +103,7 @@ module tb_biu_dcache_snoop;
     .rsp_error_o(rsp_error), .rsp_align_o(rsp_align),
     .rsp_stwcx_ok_o(rsp_stwcx_ok),
     .hid0_dce_i(1'b1), .hid0_dlock_i(1'b0), .hid0_dcfi_i(1'b0),
-    .hid0_noopti_i(1'b0), .hid0_abe_i(1'b1),
+    .hid0_noopti_i(1'b0), .hid0_abe_i(1'b1), .tea_pending_i(1'b0),
     .bus_req_valid_o(bus_req_valid), .bus_req_ready_i(bus_req_ready),
     .bus_req_kind_o(bus_req_kind), .bus_req_tt_o(bus_req_tt),
     .bus_req_addr_o(bus_req_addr), .bus_req_be_o(bus_req_be),
@@ -161,7 +161,7 @@ module tb_biu_dcache_snoop;
     .gbl_n_o(gbl_n_o), .cse_o(cse), .addr_oe_o(addr_oe),
     .ts_n_i(ts_wire), .a_i(a_wire), .tt_i(tt_wire), .gbl_n_i(gbl_wire),
     .aack_n_i(aack_n), .artry_n_i(artry_wire), .artry_n_o(artry_n_o),
-    .artry_oe_o(artry_oe), .dbg_n_i(cpu_dbg_n), .dbb_n_i(dbb_wire),
+    .artry_oe_o(artry_oe), .dbwo_n_i(1'b1), .dbg_n_i(cpu_dbg_n), .dbb_n_i(dbb_wire),
     .dbb_n_o(dbb_n_o), .dbb_oe_o(dbb_oe), .d_i(d_i), .d_o(d_o), .d_oe_o(d_oe),
     .ta_n_i(ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n)
   );

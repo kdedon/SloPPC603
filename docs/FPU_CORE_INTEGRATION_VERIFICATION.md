@@ -161,6 +161,44 @@ Not established: fitted area and timing; Table 6-6 latency and interval (see
 the contract's limits); FP update forms in the overlapped path (serialized);
 eight-byte scalar transfers without the data cache.
 
+## Enabling FE with FEX set
+
+Recorded: `make -C sim lint test-exception-state test-exception-tlb-miss variant-exception-602-4 test-crstate-execution variant-special-lint-602 test-core-fpu test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-core-fpu-split test-chip-fpu`, and with the unit (`BUILD_DIR=build-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe`) `test-core-lsu-timing test-core-fpu test-core-fpu-602 test-core-fpu-compact test-core-fpu-602-compact`, commit 3ac2fe2, 2026-10-04: pass.
+
+The FP core programs set FEX with FE0 = FE1 = 0 (`mtfsb1` VE, then VXSOFT),
+then `mtmsr` FE0|FE1: the log holds a program exception at `mtmsr` + 4 with
+SRR1 = new MSR | bits 11 and 15, and the FPSCR is unchanged by it. FULL and
+COMPACT, 603e and 602, unit off and on (`test-core-fpu` 2676 checks,
+`test-core-fpu-602` 1120). The 0x700 handler clears FE in SRR1 when bit 15
+is set, so it returns without re-enabling FE. Quartus 17.0.2
+`quartus_map --analysis_and_elaboration` of the chip top with ENABLE_FPU and
+`PPC_LSU_PIPE=1`: 0 errors.
+
+Not established: interaction with a pending external interrupt.
+
+### rfi
+
+Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-chip-fpu test-exception-state test-crstate-execution variant-exception-602-4`, and `make -C sim -j2 DISPATCH_WIDTH=2 BUILD_DIR=build-w2-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate test-core-fpu`, commit 8c037ca, 2026-10-04: pass.
+Recorded: `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit 4dda6f3, 2026-10-04: pass, 61 PASS lines.
+
+`fp_enable_rfi` in both FP core programs runs five `rfi`s from FE = 00 to
+the next instruction, an `addi`: with FEX set and SRR1 FE = 11, 01 or 10 the
+log holds a program exception at the target with SRR1 = restored MSR | bits
+11 and 15, the `addi` does not run and the FPSCR is unchanged; with FEX set
+and SRR1 FE = 00, or FEX clear and FE = 11, the `addi` runs and `mfmsr`
+reads the restored MSR. The 0x700 handler now clears FE in SRR1 after every
+FP enabled exception (SRR1 bit 11); `in_flight` re-enables FE with FEX clear
+for its second fault, and the `fadd` behind the first fault runs once
+without trapping. Counts: `test-core-fpu` 2636/2705 checks (stall on/off),
+width 2 with the unit 2640/2709, `test-core-fpu-602` 1142/1145. With the
+rule disabled in the lane, `test-core-fpu` fails 7 checks. Quartus 17.0.2
+`quartus_map --analysis_and_elaboration` of the chip top with ENABLE_FPU:
+0 errors.
+
+Not established: `rfi` to problem state with FEX set (the programs have no
+`sc` return path on the 603e); a pending external interrupt at the same
+boundary.
+
 ## Pipelined FP issue
 
 Recorded: `make -C sim -j2 lint check-spec test-core-fpu test-chip-fpu variant-special-lint-602 test-crstate-execution` and `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit `4b71784`, 2026-09-30.
@@ -303,3 +341,41 @@ design); TLB miss, page-changed and machine-check faults on FP accesses;
 recovery cancelling an FP instruction; compiled FP firmware (no PowerPC
 cross-compiler or toolchain container on the build machine); fitted area and
 timing with the FPU in the core.
+
+## FP access faults, 602 FP access timing (2026-10-04)
+
+Recorded: `make -C sim -k BUILD_DIR=build-a lint check-spec test-core-fpu test-core-fpu-split test-core-fpu-compact test-core-fpu-602 test-core-fpu-602-compact test-core-fpu-machine-check test-chip-fpu test-chip-603-fpu test-core-page-data-exception test-core-lsu-timing test-core-lsu-timing-602`, and the same targets (no lint, check-spec) with `DISPATCH_WIDTH=2 VERILATOR=tools/verilate-lsu-pipe VERILATOR_TOOL=tools/verilate-lsu-pipe`, commit f4e5b73, 2026-10-04: pass.
+
+- Faults: both FP core programs run all seventeen FP load and store forms
+  against a DSI range, and the stores against a C=0 range (MSR[DR] set):
+  DSI with DAR = EA and DSISR bit 4 (and 6 for stores); the C=0 store takes
+  `0x1200` with SRR1 = CR0, WAY and store bits over the saved MSR (UM Table
+  4-4). `test-core-fpu-machine-check` adds TEA on every form as a machine
+  check (`0x200`, SRR1 bit 13, UM Table 4-10) for the 603e and 602, FULL and
+  COMPACT, unit off and on. Each logs SRR0 = the access; frD and an update
+  form's base keep their values; nothing is written. No RTL change was
+  needed. Machine check removes the store queue, so that target checks
+  results, not timing.
+- 602 timing: `test-core-lsu-timing-602` (unit, one access per cycle)
+  measures `lfs`, `stfs`, `stfiwx` at dispatch to retirement 3 and four in
+  3 cycles (2:1), `lfd`, `stfd` at 4 and four in 6 (3:2), 602 UM Table 6-6.
+  Before the P1 hold the doubleword rows were 3 and 3, faster than the table.
+  The lane: 6 or 7 cycles and 15 or 18 for four.
+- 602 trace mode: two `fadds` under MSR[SE] run in the lane; the first,
+  newly setting XX, stalls a cycle (`sticky_stalls` 22, one more than
+  without trace).
+
+Counts (width 1, unit off): `test-core-fpu` 3054/3123 checks (stall
+on/off), `test-core-fpu-602` 1588/1601, machine check 3155 (603e) and 1689
+(602). Width 2 with the unit: `test-core-fpu` 3070/3139,
+`test-core-lsu-timing-602` 1601/1614. `test-chip-fpu`, `test-chip-603-fpu`
+and `test-core-page-data-exception` pass in both. Quartus 17.0.2
+`quartus_map --analysis_and_elaboration` of copies of `quartus/chip` and
+`quartus/chip602` with ENABLE_FPU and `PPC_LSU_PIPE=1`, pinned container:
+0 errors, 53 warnings each. No fit.
+
+Not established: TEA on an FP store already retired from the store queue
+(asynchronous machine check); C=0 and TEA through the real router and 60x
+bus; fitted timing.
+
+Recorded: `flock /tmp/ppc603e-sim.lock make -C sim -j2 test-fpu-all`, commit dd4cf1f, 2026-10-04: pass, 61 PASS lines.

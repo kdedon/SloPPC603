@@ -33,6 +33,7 @@ set_instance_assignment -name VIRTUAL_PIN ON -to hid0_dlock_i
 set_instance_assignment -name VIRTUAL_PIN ON -to hid0_dcfi_i
 set_instance_assignment -name VIRTUAL_PIN ON -to hid0_noopti_i
 set_instance_assignment -name VIRTUAL_PIN ON -to hid0_abe_i
+set_instance_assignment -name VIRTUAL_PIN ON -to tea_pending_i
 set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_valid_o
 set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_ready_i
 set_instance_assignment -name VIRTUAL_PIN ON -to bus_req_kind_o[*]

@@ -5,6 +5,50 @@ described in [DEMO_SOC.md](DEMO_SOC.md#registers): every cycle is attributed to 
 outcome of the single dispatch slot, so the slot counts sum to the cycle count and
 each divided by the retired instructions gives that cause's share of the CPI.
 
+The target, 1:1 with a 603e, and the ranked gaps are in
+[PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md). The sections after this one are
+the history of how the CPI got here.
+
+## CPI with the LSU unit and store queue
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=build-lsu-w<1|2> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe demo-soc-model`, then `Vtb_demo_soc +IMAGE=toolchain/build/demo/<dhrystone|coremark>.hex`, commit 5d0d244, 2026-10-04.
+Both pass at both widths (Dhrystone checks match, CoreMark CRCs match). Firmware
+from the demo Makefile defaults: 2000 runs, 10 iterations. At width 2 the slot
+counts still sum to the cycles; "Dispatch" counts cycles with at least one dispatch.
+
+| Cause | Dhrystone w1 | w2 | CoreMark w1 | w2 |
+|---|---:|---:|---:|---:|
+| Dispatch | 1.000 | 0.923 | 1.000 | 0.865 |
+| Fetch empty | 0.233 | 0.229 | 0.318 | 0.373 |
+| I-cache miss | 0.000 | 0.000 | 0.000 | 0.000 |
+| Branch refetch | 0.183 | 0.206 | 0.270 | 0.288 |
+| Branch wait (LR/CTR/CR) | 0.316 | 0.316 | 0.284 | 0.337 |
+| Drain for load/store | 0.769 | 0.621 | 0.433 | 0.414 |
+| Drain for other special | 0.015 | 0.015 | 0.021 | 0.021 |
+| Special lane busy (non-memory) | 0.016 | 0.016 | 0.015 | 0.015 |
+| Load/store busy | 0.848 | 0.849 | 0.200 | 0.200 |
+| D-cache miss | 0.000 | 0.000 | 0.000 | 0.000 |
+| CQ/rename full | 0.000 | 0.004 | 0.000 | 0.001 |
+| Reservation station full | 0.034 | 0.035 | 0.044 | 0.017 |
+| Flags token wait | 0.000 | 0.000 | 0.049 | 0.053 |
+| Other | 0.084 | 0.084 | 0.036 | 0.036 |
+| **CPI** | **3.504** | **3.305** | **2.676** | **2.628** |
+| Cycles per run / iteration | 2067.9 | 1950.4 | 808,829 | 794,241 |
+
+| Event per instruction | Dhrystone | CoreMark |
+|---|---:|---:|
+| Retired per run / iteration | 590.1 | 302,193 |
+| Branches | 0.199 (w2 0.193) | 0.225 (w2 0.221) |
+| Branch redirects | 0.020 | 0.037 |
+| Loads and stores | 0.322 | 0.228 |
+
+Since the branch-unit round (Dhrystone 4.096, CoreMark 3.177 at width 1) the LSU
+unit and store queue have taken Dhrystone to 3.504 and CoreMark to 2.676. What
+remains on Dhrystone is load/store work: update forms still take the serialized
+lane (load/store busy), and any access with an uncommitted source still drains
+(drain for load/store); together 1.6 CPI. Width 2 gains 6% on Dhrystone and 2% on
+CoreMark: only 7.6% and 13% of instructions dispatch as the second of a pair.
+
 ## First CPI breakdown
 
 Recorded: `make -C sim demo-dhrystone demo-coremark DEMO_FW_MAKE="../toolchain/build-in-container.sh -f demo/Makefile BUILD_DIR=build/perf SRC=build/demo/src DHRY_RUNS=500 CM_ITERATIONS=2" DEMO_FW_DIR=../toolchain/build/perf/demo`, commit 13c8c9f, 2026-09-29.
@@ -248,6 +292,9 @@ This is also the first passing fit of the branch unit with the branch class
 predecoded at IQ push.
 
 ## Optimizations, ranked
+
+This ranking is from the first breakdown; the current one is in
+[PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#gaps).
 
 Estimated CPI gain is the removed share of the counted causes, for Dhrystone /
 CoreMark, taken one at a time; gains do not add exactly because removing one stall

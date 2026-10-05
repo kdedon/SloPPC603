@@ -97,7 +97,7 @@ module tb_lsu_update_edges;
     .dmem_req_valid_o(dv), .dmem_req_ready_i(dr), .dmem_req_write_o(dw),
     .dmem_req_addr_o(da), .dmem_req_wdata_o(wd), .dmem_req_wstrb_o(st),
     .dmem_rsp_valid_i(rv), .dmem_rsp_ready_o(rr),
-    .dmem_rsp_rdata_i(rd), .dmem_rsp_error_i(re), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(rd), .dmem_rsp_error_i(re), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),
@@ -136,6 +136,12 @@ module tb_lsu_update_edges;
     end
   end
 
+  // The IQ head reads the update base, r5.
+  function automatic logic reads_r5();
+    return dut.iq_valid &&
+      ((!dut.uop.zero_a && dut.uop.src_a == 5'd5) || (!dut.uop.use_imm && dut.uop.src_b == 5'd5) ||
+       ((dut.uop.special_op == SPECIAL_STORE) && dut.uop.src_c == 5'd5));
+  endfunction
   task automatic require(input logic condition, input string message);
     checks++;
     assert (condition) else
@@ -191,6 +197,7 @@ module tb_lsu_update_edges;
     dr = 0;
     require(dmem_requests == 1, "request accepted exactly once");
     rv = 1; re = error; rd = data;
+    #1; // ready may depend on the response
     while (!rr) tick();
     tick();
     rv = 0; re = 0;
@@ -230,16 +237,18 @@ module tb_lsu_update_edges;
             "rejected cut disturbed finished update packet");
     commit_packet();
     if (dut.DUAL_GPR_WRITE) begin
-      // Two write ports: rD and rA are written on the same edge; dispatch
-      // still waits one cycle.
+      // Two write ports: rD and rA are written on the same edge. Without
+      // the unit a reader of rA still waits one cycle.
       require(dut.regfile.gpr[3] == 32'hcafe_babe && dut.regfile.gpr[5] == 32'h1004 &&
-              dut.update_pending_q && !dut.iq_ready,
+              (dut.update_pending_q == !dut.ENABLE_LSU_PIPE) &&
+              !(dut.update_pending_q && dut.iq_ready && reads_r5()),
               "load destination and base writes or dispatch hold missing");
     end else begin
-      // One write port: rA follows rD by one edge and dispatch waits for it.
+      // One write port: rA follows rD by one edge and a reader of rA waits
+      // for it.
       require(dut.regfile.gpr[3] == 32'hcafe_babe &&
               dut.regfile.gpr[5] == 32'h1000 && dut.update_pending_q &&
-              !dut.iq_ready, "load destination write or dispatch hold missing");
+              !(dut.iq_ready && reads_r5()), "load destination write or dispatch hold missing");
     end
     tick();
     require(dut.regfile.gpr[3] == 32'hcafe_babe &&

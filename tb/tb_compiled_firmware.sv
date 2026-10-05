@@ -129,8 +129,10 @@ module tb_compiled_firmware;
         mailbox_retire();
         retirements++;
       end
-      if (mailbox_retired && bfm.idle && !bus_busy &&
-          !abb_oe && !dbb_oe) begin
+      // The 60x transport drains; the final b . may hit in the I-cache on
+      // every cycle, so cache hit activity is not waited for.
+      if (mailbox_retired && bfm.idle && !dut.selector_busy &&
+          !dut.scalar_busy && !dut.line_busy && !abb_oe && !dbb_oe) begin
         $display("PASS compiled BE firmware: tohost_addr=%08x value=1 retirements=%0d bursts=%0d reads=%0d writes=%0d cycles=%0d",
                  tohost_addr, retirements, line_bursts, scalar_reads, scalar_writes, cycles);
         $finish;

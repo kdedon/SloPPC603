@@ -123,19 +123,21 @@ python3 ci/release_notes.py --tag v1.0 --since v0.9 <summary.json>... > notes.md
 The notes name the commit, carry the fit and timing table, list the pins with
 the MiSTer framework revision and its GPL-2.0 source, and warn when a summary
 comes from another commit or a modified tree. A `mister-embench` summary adds
-the GPL-3.0 source offer, which points at the `embench-source.tar.gz` asset
+the GPL-3.0 source offer, which points at the `ppc603e-embench-source.tar.gz` asset
 written by `ci/source-archive.sh`; a `mister-nbench` summary adds a
 no-redistribution warning ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)).
 `--images <file>...` lists the published program images with their SHA-256 and applies
-the same two notices to an Embench or nbench image.
+the same two notices to an Embench or nbench image. `--embench-source <file>` also
+writes `ppc603e-embench.SOURCE.txt`: the Embench image's source pointer (the pinned
+Embench-IoT commit and this repository at the release commit, as permalinks).
 
 ## Workflows
 
 | Workflow | Trigger | Does |
 | --- | --- | --- |
 | `quick.yml` | push, pull request | Verilator 5.020 from Ubuntu 24.04; `lint`, `check-spec`, five focused benches |
-| `mister-unstable.yml` | push to `main`, except docs-only pushes | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`, fitter seeds 2–5 until timing passes); replaces the `unstable` prerelease with the `.rbf`, its summary, the self-test and Whetstone program images and notes |
-| `release.yml` | tag `v*` | five measurement fits with 66 MHz re-timing, two FPU fits, MiSTer builds (the test core, or `vars.MISTER_SUITES`) with the self-test and Whetstone program images (plus `vars.MISTER_IMAGES`), then a release with notes |
+| `mister-unstable.yml` | push to `main`, except docs-only pushes | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`, fitter seeds 2–5 until timing passes); replaces the `unstable` prerelease with the `.rbf`, its summary, the self-test, Embench and Whetstone program images, the Embench source pointer and archive, and notes |
+| `release.yml` | tag `v*` | five measurement fits with 66 MHz re-timing, two FPU fits, MiSTer builds (the test core, or `vars.MISTER_SUITES`) with the self-test, Embench and Whetstone program images (plus `vars.MISTER_IMAGES`), then a release with notes, the Embench source pointer and archive |
 
 Runner limits (GitHub-hosted `ubuntu-24.04`, public repository):
 
@@ -158,7 +160,6 @@ Repository settings the workflows need:
 2. Optional: set the repository variable `MISTER_SUITES` (JSON list; `test` is the
    test core, `default` the core without options, any other entry a `--suite` core),
    or `MISTER_IMAGES` (space-separated image names, e.g. `embench`), to publish more;
-   review the licence notes above first. An Embench core or image adds
-   `embench-source.tar.gz`. nbench images are never published by default.
+   review the licence notes above first. nbench images are never published by default.
 3. Run `mister-unstable` once by hand (`workflow_dispatch`) and check the disk
    and time headroom in its log before relying on it.

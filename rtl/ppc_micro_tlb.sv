@@ -23,6 +23,9 @@ module ppc_micro_tlb #(
   output logic [19:0] hit_rpn_o,
   output logic [3:0] hit_wimg_o,
   output ppc_pkg::esa_enable_t hit_esa_o,
+  // Second lookup: a store to this page would hit.
+  input  logic [19:0] check_page_i,
+  output logic check_hit_o,
   input  logic fill_i,
   input  logic [19:0] fill_page_i,
   input  logic [19:0] fill_rpn_i,
@@ -58,6 +61,11 @@ module ppc_micro_tlb #(
       hit_esa = hit_esa | ({2{match[i]}} & esa_q[i]);
     end
     hit_o = |permitted;
+  end
+  always_comb begin
+    check_hit_o = 1'b0;
+    for (int i = 0; i < ENTRIES; i++)
+      if (valid_q[i] && write_ok_q[i] && page_q[i] == check_page_i) check_hit_o = 1'b1;
   end
   assign hit_esa_o = ppc_pkg::esa_enable_t'(hit_esa);
 

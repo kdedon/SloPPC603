@@ -30,7 +30,13 @@ from production_vectors import widen  # noqa: E402
 RESET_PC = 0x1000
 DATA, RES, LOG, DONE = 0x40000, 0x50000, 0x60000, 0x70000
 PROT_LO, PROT_HI = 0x7F000, 0x7FFFC
+# Stores here take the changed-bit miss (C=0 page); any access here ends in
+# TEA (machine check).
+CHANGED_LO, CHANGED_HI = 0x7E000, 0x7EFFC
+TEA_LO, TEA_HI = 0x7D000, 0x7DFFC
 CHIP = False
+# TEA rows need the core's machine check (tb_core_fpu MACHINE_CHECK=1).
+MACHINE_CHECK = False
 CHIP_BASE, CHIP_IMAGE_BYTES = 0xfff00000, 0x10000
 
 
@@ -42,7 +48,12 @@ def use_chip_layout():
     RES, LOG, DONE = 0xfff10000, 0xfff20000, 0xfff3ff00
 MSR_FP, MSR_IP, FE0, FE1 = 0x2000, 0x40, 0x800, 0x100
 SRR1_ILLEGAL, SRR1_FP = 0x00080000, 0x00100000
-VECTORS = (0x300, 0x600, 0x700, 0x800)
+# SRR1 bit 15: SRR0 holds the instruction after the one that excepted.
+SRR1_NEXT = 0x00010000
+NOP = 24 << 26
+VECTORS = (0x200, 0x300, 0x600, 0x700, 0x800, 0x1200)
+MSR_ME, MSR_DR = 0x1000, 0x10
+SRR1_TEA = 0x00040000
 ONE, TWO, HALF = 0x3ff0000000000000, 0x4000000000000000, 0x3fe0000000000000
 QNAN, SNAN = 0x7ff8000000001234, 0x7ff0000000000042
 PINF, NINF, NZERO = 0x7ff0000000000000, 0xfff0000000000000, 1 << 63
@@ -64,9 +75,11 @@ LATENCY = {name: lat + 1 for name, (lat, _) in TABLE_6_5.items()}
 # FP loads and stores issue into the FPU as they dispatch and access memory
 # through the load/store lane, one cycle of bench memory per access. A
 # 32-bit data path splits a doubleword into two word accesses; a 64-bit one
-# moves it in one. Integer references: add, lwz and stw.
+# moves it in one. Integer references: add, lwz and stw. An add completes
+# in its writeback cycle (Figure 6-3: 1D 2E 3W); lane accesses retire the
+# cycle after their result.
 LATENCY.update({'lfd': 6, 'lfs': 6, 'stfd': 7, 'stfs': 7, 'stfiwx': 7,
-                'add': 3, 'lwz': 5, 'stw': 5})
+                'add': 2, 'lwz': 5, 'stw': 5})
 
 
 # Dispatch ('issue') and retirement spacing of the first and last of four
@@ -75,36 +88,54 @@ LATENCY.update({'lfd': 6, 'lfs': 6, 'stfd': 7, 'stfs': 7, 'stfiwx': 7,
 MEMORY_SPACING = {'lfd-issue': 15, 'lfd-retire': 15, 'lfs-issue': 15, 'lfs-retire': 15,
                   'stfd-issue': 18, 'stfd-retire': 18, 'stfs-issue': 18,
                   'stfs-retire': 18, 'fadd-stfd': 6, 'stw-retire': 12}
+# Four stores then four loads to other doublewords: last store to last load.
+LOADS_BEHIND_STORES = 4
 
 
 # The pipelined load/store unit takes a cycle less than the lane. With it and
 # a memory that takes one access per cycle, integer loads meet Table 6-6:
 # 2-cycle latency (one more than add), one per cycle.
 PIPE_MEM = False
+# Two GPR write ports (dispatch width 2): an update load retires in one cycle.
+DUAL_WRITE = False
+BASE_SNOOP = False
 
 
 def use_lsu_pipe(split, pipe_mem):
     """FP accesses run in the unit: two execute cycles (Table 6-6), then
     retirement the cycle after, as for FP arithmetic (Figure 6-3). Without
     pipe_mem the bench memory takes an access every other cycle, which
-    bounds the spacing; a store offers only at the completion-queue head.
-    A 32-bit data path moves a doubleword as two word beats."""
-    LATENCY.update({'lwz': 4, 'stw': 4, 'lfd': 3, 'lfs': 3, 'stfd': 3, 'stfs': 3,
+    bounds the spacing. Integer and FP stores retire one per cycle (2:1):
+    the FPU presents the data of any launched store. A 32-bit data path
+    moves a doubleword as two word beats."""
+    # Figure 6-5: an integer access completes the cycle after its second
+    # execute cycle.
+    LATENCY.update({'lwz': 3, 'stw': 3, 'lfd': 3, 'lfs': 3, 'stfd': 3, 'stfs': 3,
                     'stfiwx': 3})
     load = 3 if pipe_mem else 6
     MEMORY_SPACING.update({'lfd-issue': 3 if pipe_mem else 4, 'lfd-retire': load,
                            'lfs-issue': 3 if pipe_mem else 4, 'lfs-retire': load,
-                           'stfd-issue': 5, 'stfd-retire': 9, 'stfs-issue': 5,
-                           'stfs-retire': 9, 'fadd-stfd': 3})
+                           'stfd-issue': 3, 'stfd-retire': 3, 'stfs-issue': 3,
+                           'stfs-retire': 3, 'fadd-stfd': 2, 'stw-retire': 3})
     if split:
         LATENCY.update({'lfd': 5, 'stfd': 5})
         MEMORY_SPACING.update({'lfd-issue': 12, 'lfd-retire': 12, 'stfd-issue': 14,
                                'stfd-retire': 15, 'fadd-stfd': 5})
 
 
+def use_machine_check(on):
+    global MACHINE_CHECK
+    MACHINE_CHECK = on
+
+
 def use_pipe_mem():
     global PIPE_MEM
     PIPE_MEM = True
+
+
+def use_dual_write():
+    global DUAL_WRITE
+    DUAL_WRITE = True
 
 
 def use_split_doublewords():
@@ -200,6 +231,10 @@ class Program:
 
     def event(self, vector, srr0, srr1, dar=None, dsisr=None):
         self.log.append((vector, srr0, srr1, dar, dsisr))
+        # The program handler returns with FE0/FE1 clear after an FP
+        # enabled exception.
+        if vector == 0x700 and srr1 is not None and srr1 & SRR1_FP:
+            self.msr &= ~(FE0 | FE1)
 
     # r21 points at the next result slot; stores go through it.
     def store_fpr(self, fr, value, mask64=(1 << 64) - 1):
@@ -238,6 +273,20 @@ class Program:
         self.fpscr = 0
 
 
+def clear_fe_if_fp():
+    """Program handler step: after an FP enabled exception (SRR1 bit 11),
+    clear FE0/FE1 in SRR1. FPSCR[FEX] stays set, so returning with FE set
+    would take the exception again (PEM Table 6-14). Uses SPRG3 to save
+    r29."""
+    return [x_form(31, 29, 275 & 31, 275 >> 5, 467),                  # mtsprg3 r29
+            x_form(31, 29, 27, 0, 339),                                # mfsrr1 r29
+            (21 << 26) | (29 << 21) | (26 << 16) | (12 << 11) | (31 << 6) | (31 << 1),
+            d_form(7, 26, 26, FE0 | FE1),                              # mulli
+            x_form(31, 29, 29, 26, 60),                                # andc
+            x_form(31, 29, 27, 0, 467),                                # mtsrr1 r29
+            x_form(31, 29, 275 & 31, 275 >> 5, 339)]                   # mfsprg3 r29
+
+
 def handlers(p):
     for vector in VECTORS:
         pc = 0xfff00000 | vector
@@ -245,6 +294,8 @@ def handlers(p):
         for spr, off in ((26, 0), (27, 4), (19, 8), (18, 12)):
             seq += [x_form(31, 26, spr & 31, spr >> 5, 339), d_form(36, 26, 29, off)]
         seq += [d_form(14, 26, 0, vector), d_form(36, 26, 29, 16), d_form(14, 29, 29, 20)]
+        if vector == 0x700:
+            seq += clear_fe_if_fp()
         if vector == 0x800:
             # Lazy FP enable: set MSR[FP] in SRR1 and retry.
             seq += [x_form(31, 26, 27, 0, 339), d_form(24, 26, 26, MSR_FP),
@@ -527,7 +578,10 @@ def directed(p):
     # word faults; an update form leaves its base.
     if not CHIP:
         dsi(p)
+        access_faults(p, False)
     fp_enabled(p)
+    fp_enable_deferred(p)
+    fp_enable_rfi(p)
 
 
 def dsi(p):
@@ -538,8 +592,100 @@ def dsi(p):
     p.event(0x300, at, p.msr, PROT_LO + 8, 0x0a000000)
     at = p.emit(d_form(51, 24, 31, -4 & 0xffff))
     p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
+    at = p.emit(d_form(55, 24, 31, 8))                # stfdu
+    p.event(0x300, at, p.msr, PROT_LO + 8, 0x0a000000)
+    at = p.emit(d_form(53, 24, 31, 4))                # stfsu
+    p.event(0x300, at, p.msr, PROT_LO + 4, 0x0a000000)
     p.store_fpr(24, ONE)
     p.store_gpr(31, PROT_LO)
+
+
+# Every FP load and store form: primary opcode or (31, XO), store, update.
+FP_ACCESS_FORMS = (
+    ('lfs', 48, False, False), ('lfsu', 49, False, True),
+    ('lfd', 50, False, False), ('lfdu', 51, False, True),
+    ('stfs', 52, True, False), ('stfsu', 53, True, True),
+    ('stfd', 54, True, False), ('stfdu', 55, True, True),
+    ('lfsx', 535, False, False), ('lfsux', 567, False, True),
+    ('lfdx', 599, False, False), ('lfdux', 631, False, True),
+    ('stfsx', 663, True, False), ('stfsux', 695, True, True),
+    ('stfdx', 727, True, False), ('stfdux', 759, True, True),
+    ('stfiwx', 983, True, False),
+)
+
+
+def access_faults(p, single):
+    """DSI, changed-bit store miss and TEA on every FP load and store form.
+    None retires: SRR0 is the access, a load leaves frD and an update form
+    its base, and no store is written. DSI sets DAR and DSISR (UM 4.5.3);
+    a store to a C=0 page (MSR[DR] set) takes the store TLB miss with SRR1
+    from Table 4-4; with MACHINE_CHECK, TEA is a machine check with
+    SRR1[13] (Table 4-10). single: 602 FPRs, a binary32 in f20 and an
+    integer word in f21."""
+    if single:
+        p.lfs(20, f32(1.25))
+        p.emit(x_form(63, 21, 0, 0, 583))                          # mffs f21
+        p.write_fpr(21, False, True)
+    else:
+        p.load_fpr(20, ONE)
+    p.li32(17, 8)
+    cr = 0x5a000000 | (p.cr & 0x00ffffff)
+    p.li32(8, cr)
+    p.emit((31 << 26) | (8 << 21) | (0xff << 12) | (144 << 1))    # mtcrf 0xff
+    p.cr = cr
+    sentinel = 0xc3c3c3c3
+    for addr in range(CHANGED_LO, CHANGED_LO + 0x400, 4):
+        p.words[addr] = sentinel
+    kinds = [('dsi', PROT_LO), ('changed', CHANGED_LO)]
+    if MACHINE_CHECK:
+        kinds.append(('tea', TEA_LO))
+    for kind, lo in kinds:
+        if kind == 'tea':
+            p.mtmsr(p.msr | MSR_ME)
+        elif kind == 'changed':
+            p.mtmsr(p.msr | MSR_DR)
+        for i, (name, op, store, update) in enumerate(FP_ACCESS_FORMS):
+            if kind == 'changed' and not store:
+                continue
+            base = lo + 0x20 * i
+            frs = 21 if name == 'stfiwx' else 20
+            p.li32(16, base)
+            if op < 64:
+                insn = d_form(op, frs, 16, 8)
+            else:
+                insn = x_form(31, frs, 16, 17, op)
+            ea = base + 8
+            at = p.emit(insn)
+            if kind == 'dsi':
+                p.event(0x300, at, p.msr, ea, 0x08000000 | (0x02000000 if store else 0))
+            elif kind == 'changed':
+                srr1 = (cr & 0xf0000000) | 0x00030000 | (p.msr & 0x0700ffff)
+                p.event(0x1200, at, srr1)
+            else:
+                p.event(0x200, at, (p.msr & 0xffff) | SRR1_TEA)
+            if update:
+                p.store_gpr(16, base)
+        if kind == 'tea':
+            p.mtmsr(p.msr & ~MSR_ME)
+        elif kind == 'changed':
+            p.mtmsr(p.msr & ~MSR_DR)
+    if single:
+        p.store_sp(20, f32(1.25))
+    else:
+        p.store_fpr(20, ONE)
+    for addr in range(CHANGED_LO, CHANGED_LO + 0x400, 4):
+        p.expect(addr, sentinel)
+    # Loads from a C=0 page are performed.
+    value = f64(1.5)
+    p.words[CHANGED_LO + 0x400] = value >> 32
+    p.words[CHANGED_LO + 0x404] = value & 0xffffffff
+    p.li32(16, CHANGED_LO + 0x400)
+    p.emit(d_form(50, 22, 16, 0))                                  # lfd f22
+    if single:
+        p.write_fpr(22, True, False)
+        p.store_sp(22, f32(1.5))
+    else:
+        p.store_fpr(22, value)
 
 
 def fp_enabled(p):
@@ -553,6 +699,66 @@ def fp_enabled(p):
     p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 10) | (1 << 31))
     p.mtmsr(p.msr & ~(FE0 | FE1))
     p.check_fpscr()
+    p.clear_fpscr()
+
+
+def fp_enable_deferred(p, update=None):
+    """PEM Table 6-14: with FPSCR[FEX] set, an mtmsr that sets FE0/FE1
+    from 00 takes the FP enabled program exception at the next instruction:
+    SRR0 = that instruction, SRR1 bits 11 and 15 with the new MSR. The
+    handler resumes at SRR0 + 4, past a nop, with FE cleared."""
+    p.clear_fpscr()
+    p.emit(x_form(63, 24, 0, 0, 38))      # mtfsb1 24 (VE)
+    p.emit(x_form(63, 21, 0, 0, 38))      # mtfsb1 21 (VXSOFT): FEX, no exception
+    if update is None:
+        p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 10) | (1 << 31))
+    else:
+        update(p)
+    enabled = p.msr | FE0 | FE1
+    p.li32(9, enabled)
+    at = p.emit(x_form(31, 9, 0, 0, 146))  # mtmsr r9
+    p.emit(NOP)
+    p.event(0x700, at + 4, enabled | SRR1_FP | SRR1_NEXT)
+    p.check_fpscr()
+    p.clear_fpscr()
+
+
+def fp_enable_rfi(p, update=None):
+    """PEM Table 6-14 for rfi: with FPSCR[FEX] set, an rfi that sets FE0/FE1
+    from 00 takes the FP enabled program exception before its target:
+    SRR0 = the target, SRR1 bits 11 and 15 with the restored MSR. The handler
+    resumes past the target's addi. An rfi that leaves FE clear, or one with
+    FEX clear, returns normally and the addi runs."""
+    p.li32(10, 0)
+    for fe, fex in ((FE0 | FE1, True), (FE1, True), (FE0, True),
+                    (0, True), (FE0 | FE1, False)):
+        p.clear_fpscr()
+        if fex:
+            p.emit(x_form(63, 24, 0, 0, 38))      # mtfsb1 24 (VE)
+            p.emit(x_form(63, 21, 0, 0, 38))      # mtfsb1 21 (VXSOFT): FEX
+            if update is None:
+                p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 10) | (1 << 31))
+            else:
+                update(p)
+        restored = p.msr | fe
+        p.li32(9, restored)
+        p.emit(x_form(31, 9, 27, 0, 467))         # mtsrr1 r9
+        target = p.pc + 4 * 4
+        p.li32(9, target)
+        p.emit(x_form(31, 9, 26, 0, 467))         # mtsrr0 r9
+        p.emit(x_form(19, 0, 0, 0, 50))           # rfi
+        assert p.emit(d_form(14, 10, 10, 1)) == target
+        if fe and fex:
+            p.event(0x700, target, restored | SRR1_FP | SRR1_NEXT)
+        else:
+            p.store_gpr(10, 1)
+            p.li32(10, 0)
+            p.msr = restored
+            p.emit(x_form(31, 8, 0, 0, 83))       # mfmsr r8
+            p.store_gpr(8, restored)
+            p.mtmsr(restored & ~(FE0 | FE1))
+        p.check_fpscr()
+    p.store_gpr(10, 0)
     p.clear_fpscr()
 
 
@@ -578,11 +784,15 @@ def in_flight(p):
     younger = p.emit(a_form(63, 6, 6, 1, 0, 21))  # fadd f6, f6, f1
     p.spacings.append(('I', at, younger, 2))
     p.event(0x700, at, p.msr | SRR1_FP)
-    # FEX stays set, so the fadd, run once after the handler, takes its own
-    # FP enabled exception with its result and FPRF +normal committed.
-    p.event(0x700, younger, p.msr | SRR1_FP)
+    # The handler returns with FE clear, so the fadd runs once and commits
+    # its result and FPRF +normal.
+    p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 23) | (1 << 31) | (1 << 14))
+    p.check_fpscr()
     # An overlapped store behind the faulting fsub is cancelled by its
     # replay and stores once after the handler returns.
+    p.clear_fpscr()
+    p.mtmsr(p.msr | FE0 | FE1)
+    p.emit(x_form(63, 24, 0, 0, 38))            # mtfsb1 24 (VE)
     slot = p.result_slot(2)
     p.li32(23, slot)
     p.emit(SYNC)
@@ -591,8 +801,7 @@ def in_flight(p):
     p.event(0x700, at, p.msr | SRR1_FP)
     p.expect(slot, ONE >> 32)
     p.expect(slot + 4, ONE & 0xffffffff)
-    p.fpscr = recompute(p.fpscr | (1 << 7) | (1 << 23) | (1 << 31) | (1 << 14))
-    p.mtmsr(p.msr & ~(FE0 | FE1))
+    p.fpscr = recompute((1 << 7) | (1 << 23) | (1 << 31))
     p.check_fpscr()
     p.clear_fpscr()
     p.store_fpr(4, HALF)
@@ -694,6 +903,8 @@ def latency(p):
     dependent groups and dispatch spacing of mixed streams. Each group
     follows a sync, which drains the machine while the six-entry IQ fills,
     so fetch never limits a group."""
+    # Doubleword-aligned result slots: a misaligned stfd splits.
+    p.res_next = (p.res_next + 7) & ~7
     p.clear_fpscr()
     one = p.load_fpr(1, ONE)
     p.load_fpr(2, TWO)
@@ -781,7 +992,9 @@ def fp_memory_streams(p, forms):
 def integer_memory_streams(p):
     """Table 6-6 integer rows: four independent loads issue and retire one
     per cycle; a dependent add retires the cycle after its load (2-cycle
-    load-use); stores offer at the completion-queue head."""
+    load-use); stores retire one per cycle and are written after
+    retirement. A load passes a queued store to another doubleword; one to
+    the same doubleword waits for its write, since stores do not forward."""
     p.emit(SYNC)
     pcs = [p.emit(d_form(32, 10 + k, 22, 4 * k)) for k in range(4)]
     p.spacings.append(('I', pcs[0], pcs[-1], 3))
@@ -792,6 +1005,102 @@ def integer_memory_streams(p):
     p.emit(SYNC)
     pcs = [p.emit(d_form(36, 10 + k, 22, 16 + 4 * k)) for k in range(4)]
     p.spacings.append(('R', pcs[0], pcs[-1], MEMORY_SPACING['stw-retire']))
+    if MEMORY_SPACING['stw-retire'] != 3:
+        return
+    slot = p.result_slot(4)
+    p.li32(21, slot)
+    p.li32(10, 0x13579BDF)
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(36, 10, 21, 0)), p.emit(d_form(32, 11, 22, 0))]
+    p.spacings.append(('R', pcs[0], pcs[1], 1))
+    # The load waits for the store's write, which follows its retirement.
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(36, 10, 21, 8)), p.emit(d_form(32, 12, 21, 8))]
+    p.spacings.append(('R', pcs[0], pcs[1], 4))
+    # Loads behind retired stores take the cache first, one access per
+    # cycle: they retire one per cycle right after the stores.
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(36, 10, 21, 4 * k)) for k in range(4)]
+    pcs += [p.emit(d_form(32, 11, 22, 4 * k)) for k in range(4)]
+    p.spacings.append(('R', pcs[3], pcs[-1], LOADS_BEHIND_STORES))
+    # A load that passed a queued store and faults is performed again by
+    # the serialized lane once the store is written: DSI at the load.
+    p.li32(31, PROT_LO)
+    p.emit(SYNC)
+    p.emit(d_form(36, 10, 21, 4))
+    at = p.emit(d_form(32, 11, 31, 0))
+    p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
+    # A store queued behind a load that faults is removed with it; the
+    # handler resumes at the store.
+    p.emit(SYNC)
+    at = p.emit(d_form(32, 11, 31, 0))
+    p.emit(d_form(36, 10, 21, 12))
+    p.event(0x300, at, p.msr, PROT_LO, 0x08000000)
+    p.expect(slot, 0x13579BDF)
+    p.expect(slot + 4, 0x13579BDF)
+    p.expect(slot + 12, 0x13579BDF)
+    p.expect(slot + 8, 0x13579BDF)
+    p.store_gpr(12, 0x13579BDF)
+    update_and_rename_streams(p)
+
+
+def update_and_rename_streams(p):
+    """Table 6-6 rows with sources still in rename. Update forms are 2:1
+    like plain ones, their base taking a second rename slot (UM 6.6); a
+    base produced by a load or add, and store data produced by a load, are
+    taken from rename or the result bus (UM 6.3.3.1), without draining."""
+    data = 0x2468ACE0
+    slot = p.result_slot(8)
+    p.li32(10, data)
+    # Four stwu through one base: one per cycle. A second sync gives fetch
+    # time to fill the IQ.
+    p.li32(23, slot)
+    p.emit(SYNC)
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(37, 10, 23, 4)) for _ in range(4)]
+    p.spacings.append(('I', pcs[0], pcs[-1], 3))
+    p.spacings.append(('R', pcs[0], pcs[-1], 3))
+    for k in range(4):
+        p.expect(slot + 4 + 4 * k, data)
+    # Two lbzu through one base (four renames): one per cycle. With one GPR
+    # write port the second retires a cycle later.
+    p.li32(24, slot + 3)
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(35, 11 + k, 24, 4)) for k in range(2)]
+    p.spacings.append(('I', pcs[0], pcs[1], 1))
+    p.spacings.append(('R', pcs[0], pcs[1], 1 if DUAL_WRITE else 2))
+    p.store_gpr(11, data & 0xff)
+    p.store_gpr(12, data & 0xff)
+    p.store_gpr(24, slot + 11)
+    # Load whose base is the previous load's result: Table 6-6 gives 2.
+    # Without base snooping the EA is formed at dispatch, a cycle ahead of
+    # the access, so a base written that cycle costs one more.
+    base_gap = 2 if BASE_SNOOP else 3
+    p.emit(d_form(36, 23, 23, 4))        # stw r23 (slot+16) at slot+20
+    p.expect(slot + 20, slot + 16)
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(32, 25, 23, 4)), p.emit(d_form(32, 26, 25, 0))]
+    p.spacings.append(('R', pcs[0], pcs[1], base_gap))
+    p.store_gpr(26, data)
+    # Load whose base an add produced: the same.
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(14, 25, 23, 0)), p.emit(d_form(32, 26, 25, 0))]
+    p.spacings.append(('R', pcs[0], pcs[1], base_gap))
+    p.store_gpr(26, data)
+    # A misaligned EA formed from a base the load waited for takes the
+    # alignment exception without writing rD.
+    p.li32(19, 0x1357)
+    p.emit(SYNC)
+    p.emit(d_form(32, 25, 23, 4))
+    insn = d_form(32, 19, 25, 2)
+    at = p.emit(insn)
+    p.event(0x600, at, p.msr, slot + 18, dsisr_d(insn))
+    p.store_gpr(19, 0x1357)
+    # Store whose data is the previous load's result.
+    p.emit(SYNC)
+    pcs = [p.emit(d_form(32, 26, 23, -4)), p.emit(d_form(36, 26, 23, 12))]
+    p.spacings.append(('R', pcs[0], pcs[1], 2))
+    p.expect(slot + 28, data)
 
 
 def build(seed, count):
@@ -872,7 +1181,14 @@ def main():
     parser.add_argument('--lsu-pipe', action='store_true', help='pipelined LSU')
     parser.add_argument('--pipe-mem', action='store_true',
                         help='one-access-per-cycle memory, with integer access streams')
+    parser.add_argument('--dual-write', action='store_true',
+                        help='two GPR write ports (dispatch width 2)')
+    parser.add_argument('--machine-check', action='store_true',
+                        help='TEA on FP accesses (tb_core_fpu MACHINE_CHECK=1)')
+    parser.add_argument('--base-snoop', action='store_true',
+                        help='loads form the EA from a snooped base (Table 6-6 load latency)')
     args = parser.parse_args()
+    use_machine_check(args.machine_check)
     if args.chip_image:
         use_chip_layout()
     if args.dmem_bits == 32:
@@ -881,13 +1197,19 @@ def main():
         use_lsu_pipe(args.dmem_bits == 32, args.pipe_mem)
     if args.pipe_mem:
         use_pipe_mem()
+    if args.dual_write:
+        use_dual_write()
+    if args.base_snoop:
+        global BASE_SNOOP
+        BASE_SNOOP = True
     p = build(args.seed, args.random)
     print(f'fpu_core_program: {len(p.words)} words, {len(p.expects)} expected, '
           f'{len(p.log)} exceptions, {len(p.probes)} probes')
     if args.chip_image:
         write_chip_image(p, args.chip_image)
         return
-    lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0']
+    lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0',
+             f'C {CHANGED_LO:08x} {CHANGED_HI:08x} 0', f'T {TEA_LO:08x} {TEA_HI:08x} 0']
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]
     lines += [f'L {pc:08x} {cycles:x} 0' for pc, cycles in p.probes.items()]

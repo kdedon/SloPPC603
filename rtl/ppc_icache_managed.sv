@@ -5,7 +5,8 @@
 module ppc_icache_managed #(
   parameter logic RESET_CACHE_ENABLE = 1'b1,
   parameter int SET_COUNT = 128,
-  parameter int WAY_COUNT = 4
+  parameter int WAY_COUNT = 4,
+  parameter int FETCH_WIDTH = 1
 ) (
   input  logic         clk_i,
   input  logic         rst_ni,
@@ -15,7 +16,8 @@ module ppc_icache_managed #(
   input  logic [31:0]  fetch_addr_i,
   output logic         fetch_rsp_valid_o,
   input  logic         fetch_rsp_ready_i,
-  output logic [31:0]  fetch_rsp_insn_o,
+  // FETCH_WIDTH 2: {next word valid, word at addr + 4, word at addr}.
+  output logic [33*FETCH_WIDTH-2:0] fetch_rsp_insn_o,
   output logic         fetch_rsp_error_o,
 
   input  logic         maintenance_valid_i,
@@ -80,7 +82,7 @@ module ppc_icache_managed #(
   // A locked miss: its uncached read is to be requested, or is outstanding.
   logic locked_req_q, locked_wait_q, use_bypass;
   logic [31:0] fetch_addr_q;
-  logic [31:0] cache_rsp_insn;
+  logic [33*FETCH_WIDTH-2:0] cache_rsp_insn;
   logic cache_invalidate, cache_invalidate_done;
   logic cache_busy, cache_protocol_error;
   logic cache_hit, cache_miss;
@@ -88,7 +90,8 @@ module ppc_icache_managed #(
   logic command_priority, icbi_start;
   logic fetch_accept_enable;
 
-  ppc_icache #(.SET_COUNT(SET_COUNT), .WAY_COUNT(WAY_COUNT)) cache (
+  ppc_icache #(.SET_COUNT(SET_COUNT), .WAY_COUNT(WAY_COUNT),
+               .FETCH_WIDTH(FETCH_WIDTH)) cache (
     .clk_i, .rst_ni,
     .fetch_valid_i(cache_fetch_valid), .fetch_ready_o(cache_fetch_ready),
     .fetch_addr_i(fetch_addr_i), .fetch_rsp_valid_o(cache_rsp_valid),
@@ -128,7 +131,7 @@ module ppc_icache_managed #(
 
   always_comb begin
     fetch_rsp_valid_o = 1'b0;
-    fetch_rsp_insn_o = 32'b0;
+    fetch_rsp_insn_o = '0;
     fetch_rsp_error_o = 1'b0;
     cache_rsp_ready = 1'b0;
     bypass_rsp_ready_o = 1'b0;
@@ -141,7 +144,7 @@ module ppc_icache_managed #(
         cache_rsp_ready = fetch_rsp_ready_i || cache_rsp_bypass;
       end else begin
         fetch_rsp_valid_o = bypass_rsp_valid_i;
-        fetch_rsp_insn_o = bypass_rsp_insn_i;
+        fetch_rsp_insn_o = (33*FETCH_WIDTH-1)'(bypass_rsp_insn_i);
         fetch_rsp_error_o = bypass_rsp_error_i;
         bypass_rsp_ready_o = fetch_rsp_ready_i;
       end

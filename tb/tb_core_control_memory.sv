@@ -15,6 +15,9 @@ module tb_core_control_memory #(
   logic iv, ir, sv, sr;
   logic [31:0] ia, iw;
   logic dv, dr, dw, rv, rr, re;
+  /* verilator lint_off UNUSEDSIGNAL */
+  ppc_pkg::dmem_attr_t dattr;  // only spec is checked
+  /* verilator lint_on UNUSEDSIGNAL */
   logic [31:0] da, wd, rd;
   logic [3:0] st;
   logic tv, tr, halted;
@@ -50,7 +53,7 @@ module tb_core_control_memory #(
     /* verilator lint_on PINCONNECTEMPTY */
     .icache_ctl_ready_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
-    .dmem_req_attr_o(), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
+    .dmem_req_attr_o(dattr), .icache_ctl_valid_o(), .icache_ctl_enable_o(), .icache_ctl_invalidate_o(),
     /* verilator lint_on PINCONNECTEMPTY */
     .dmem_req_probe_o(unused_cache_core[0]), .icbi_req_valid_o(unused_cache_core[1]),
     .icbi_req_ready_i(1'b1), .icbi_req_ea_o(unused_cache_core[33:2]),
@@ -108,7 +111,7 @@ module tb_core_control_memory #(
     .dmem_req_valid_o(dv), .dmem_req_ready_i(dr), .dmem_req_write_o(dw),
     .dmem_req_addr_o(da), .dmem_req_wdata_o(wd), .dmem_req_wstrb_o(st),
     .dmem_rsp_valid_i(rv), .dmem_rsp_ready_o(rr), .dmem_rsp_rdata_i(rd),
-    .dmem_rsp_error_i(re), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_error_i(re), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),
@@ -139,6 +142,16 @@ module tb_core_control_memory #(
     assert(condition) else $fatal(1, "%s edge=%0d retired=%0d pc=%08x insn=%08x",
                                  message, edge_count, retirements, retired.pc, retired.insn);
   endtask
+  // b, bc, bclr or bcctr without LK or a CTR decrement: the core may remove
+  // it at dispatch (UM 6.3.1); the next packet counts it.
+  /* verilator lint_off UNUSEDSIGNAL */  // only the opcode, BO[2] and LK fields
+  function automatic logic removable_branch(input logic [31:0] insn);
+    logic branch;
+    branch = (insn[31:26] == 6'd18) || (insn[31:26] == 6'd16) ||
+             ((insn[31:26] == 6'd19) && ((insn[10:1] == 10'd16) || (insn[10:1] == 10'd528)));
+    return branch && !insn[0] && ((insn[31:26] == 6'd18) || insn[23]);
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   task automatic read_expected(output logic [31:0] value);
     int status;
     status = $fscanf(expected_fd, "%h", value);
@@ -154,6 +167,16 @@ module tb_core_control_memory #(
 
   // Change backpressure schedules off the sampling edge.
   always @(negedge clk) edge_count++;
+  // Speculative branches, mispredicted ones, and those recovered at
+  // resolution rather than after the branch retired.
+  int spec_branches = 0, spec_misses = 0, spec_early = 0, removed_branches = 0;
+  always @(posedge clk) begin
+    if (rst_n && dut.dispatch && dut.bu_branch && dut.bu_spec) spec_branches++;
+    if (rst_n && dut.recovery_accepted && (dut.bs_redirect_q || dut.bs_recover)) begin
+      spec_misses++;
+      if (dut.bs_recover) spec_early++;
+    end
+  end
   always @(posedge clk) begin
     if (!rst_n) begin
       ipending <= 0;
@@ -192,6 +215,14 @@ module tb_core_control_memory #(
       end
       if (tv && tr) begin
         logic [31:0] pc, insn, values[32], cr, xer, lr, ctr, hash;
+        // Branches removed at dispatch have expected rows but no packet.
+        for (int k = 0; k < int'(retired.removed_branches); k++) begin
+          read_expected(pc); read_expected(insn);
+          for (int regno = 0; regno < 37; regno++) read_expected(hash);
+          require(removable_branch(insn), $sformatf("removed %08x %08x is not a removable branch", pc, insn));
+          retirements++;
+          removed_branches++;
+        end
         read_expected(pc); read_expected(insn);
         for (int regno = 0; regno < 32; regno++) read_expected(values[regno]);
         read_expected(cr); read_expected(xer); read_expected(lr); read_expected(ctr); read_expected(hash);
@@ -209,9 +240,9 @@ module tb_core_control_memory #(
           require(halted && retirements == expected_retirements, "terminal state/count mismatch");
           require(read_requests >= 20 && write_requests >= 20 && request_stalls > 0 && retire_stalls > 0,
                   "missing memory/retirement backpressure coverage");
-          $display("PASS control/memory program: checks=%0d retire=%0d reads=%0d writes=%0d request-stalls=%0d retire-stalls=%0d cycles=%0d",
+          $display("PASS control/memory program: checks=%0d retire=%0d reads=%0d writes=%0d request-stalls=%0d retire-stalls=%0d cycles=%0d speculative=%0d mispredicted=%0d early=%0d removed=%0d",
                    checks, retirements, read_requests, write_requests, request_stalls, retire_stalls,
-                   edge_count);
+                   edge_count, spec_branches, spec_misses, spec_early, removed_branches);
           $fclose(expected_fd);
           $finish;
         end
@@ -219,7 +250,7 @@ module tb_core_control_memory #(
     end
   end
   assert property (@(posedge clk) disable iff(!rst_n)
-    dv && !dr |=> dv && $stable({dw,da,wd,st}));
+    dv && !dr && !dattr.spec |=> dv && $stable({dw,da,wd,st}));
   assert property (@(posedge clk) disable iff(!rst_n)
     tv && !tr |=> tv && $stable(retired));
   assert property (@(posedge clk) disable iff(!rst_n)

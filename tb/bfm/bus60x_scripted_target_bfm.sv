@@ -72,7 +72,12 @@ module bus60x_scripted_target_bfm #(
   /* verilator lint_on UNUSEDSIGNAL */
   logic tea_ended;
 
-  initial begin
+  initial for (int index = 0; index < MEM_BYTES; index++) mem[index] = 8'b0;
+
+  // The serving process is the only writer of pins and tenure state: with a
+  // second writer Verilator updates logic fed by a pin only on the edges of
+  // the consumer's other inputs.
+  task automatic init_state;
     bg_n_o = 1'b1;
     aack_n_o = 1'b1;
     artry_n_o = 1'b1;
@@ -92,8 +97,7 @@ module bus60x_scripted_target_bfm #(
     instruction = 1'b0;
     tsiz = 3'b0;
     beat = 0;
-    for (int index = 0; index < MEM_BYTES; index++) mem[index] = 8'b0;
-  end
+  endtask
 
   task automatic delay;
     int count;
@@ -237,6 +241,7 @@ module bus60x_scripted_target_bfm #(
 
   initial begin : serve
     logic retried;
+    init_state();
     forever begin
       address_tenure(retried);
       if (!retried) data_tenure();

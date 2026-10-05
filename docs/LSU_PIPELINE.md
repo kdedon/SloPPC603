@@ -2,7 +2,7 @@
 
 Parameter `ENABLE_LSU_PIPE` runs plain integer and FP loads and stores in
 `ppc_lsu_pipe` instead of the serialized special lane. Plain means no
-update, reservation, string, multiple, cache operation or external access,
+reservation, string, multiple, cache operation or external access,
 outside trace mode; for FP it also excludes the 602 SP/LT moves and a
 replayed instruction ([FP accesses](#fp-accesses)). `ppc_core`, `ppc_core_bat`, `ppc_core_bat_cached_bus60x`,
 `ppc603e`, `ppc603e_demo_soc` and `ppc603e_mister` carry it, each defaulting
@@ -20,15 +20,19 @@ dispatch -> P1 offer -> P2 await response -> R result -> CQ -> retire
 ```
 
 - Dispatch captures the uop, completion tag, PC, EA (the dispatch adder) and
-  store data from the committed registers. As before, a plain access
-  dispatches only when its source GPRs have no uncommitted producer; the
-  check now moves to the IQ entry behind the head on a dispatch, so
-  back-to-back accesses do not lose a cycle to it.
-- P1 (two entries) offers the oldest access. A load offers at once; a store
-  offers only at the completion-queue head with retirement authorized, the
-  rule of UM 1.1.4.3 the lane already follows. An offer stands until
-  accepted. From its offer until it retires a store cannot be cancelled by
-  an external redirect, as in the lane.
+  store data. Base registers come from rename, including a value written
+  that cycle; an access waits at dispatch only until they are ready, except
+  a D-form load, which waits for its base in P1
+  ([Base snooping](#base-snooping)). Store data not yet produced follows
+  from the result buses
+  ([Update forms and rename operands](#update-forms-and-rename-operands)).
+- P1 (two entries) offers the oldest access. A load offers at once. A store
+  whose translation the router confirms enters the store queue without an
+  offer ([Store queue](#store-queue)); any other store offers only at the
+  completion-queue head with retirement authorized, the rule of UM 1.1.4.3
+  the lane already follows. An offer stands until accepted. From its offer
+  until it retires such a store cannot be cancelled by an external
+  redirect, as in the lane.
 - P2 (two entries) holds accepted accesses and takes their responses in order.
   A good response is aligned, sign-extended or byte-reversed into R.
 - R finishes the completion entry. It has priority on the CQ result port; an
@@ -51,8 +55,10 @@ that can still raise an exception, as an integer access does.
 
 - The FPU launches the access as it issues (`MEM_AT_ISSUE`); the unit only
   records the launch. A load offers once launched; a store offers at the
-  completion-queue head once the FPU presents the store's data, which it
-  does for its oldest instruction.
+  completion-queue head once the FPU presents the store's data. The unit
+  names its P1 store's tag and the FPU answers with the data of that store
+  at any position in its queue, once the store has launched, so FP stores
+  queue one per cycle.
 - The unit's R stage returns the response to the FPU instead of the
   completion queue: a word for `lfs`, both words for `lfd`. The FPU
   formats it, and the instruction retires the cycle after, as FP
@@ -62,6 +68,10 @@ that can still raise an exception, as an integer access does.
   aligned, otherwise as two word beats, high word first; the second beat's
   EA advances as it reaches the head. The beats do not make each other
   speculative.
+- On the 602 a doubleword moved in one access spends one cycle in P1
+  before its offer (or its entry to the store queue), so `lfd` and `stfd`
+  take 3:2 and the singles 2:1 (602 UM Table 6-6). A word-beat doubleword
+  is already slower.
 - Little-endian mode munges a word access to EA XOR 4 and leaves a
   doubleword's address alone ([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md)).
 - Only word-aligned accesses are performed, and in little-endian mode only
@@ -95,8 +105,12 @@ access, through its normal dispatch port:
   response is drained.
 
 The lane offers only while busy and the unit only while the lane is idle, so
-the data port needs no arbiter. Any other lane dispatch, interrupt admission
-and the lane's memory quiescence wait for the unit to empty.
+the data port needs no arbiter. Any other lane dispatch and interrupt
+admission wait for the unit to empty. The lane's memory quiescence waits
+only for traffic: an offer, a response owed, or a retired store not yet
+written. Younger entries waiting for the lane, and stores not yet retired,
+do not hold it; an alignment exception found once a load's base arrives
+reaches the lane with younger accesses behind it.
 
 ## Speculation
 
@@ -119,6 +133,136 @@ takes the direct-store path like a lane access.
 A load may be requested once every older access has its response, before
 an older store retires: the store has been performed and cannot fault.
 
+## Store queue
+
+UM 1.1.4.3 and 6.4.4: the LSU translates a store in its first stage, holds
+it in the store queue until completion, and executes stores at one per
+cycle with two-cycle latency (Table 6-6, 2:1). Loads may be performed ahead
+of stores (UM 3.2, weakly ordered) except to caching-inhibited pages; the
+603e combines no stores (UM 3.5.1). Here translation happens at the router,
+so the router answers a check beside the request port instead:
+
+- In P1, a store with its data asks the router whether a store to its page
+  would translate without a fault: a second lookup of the data micro-TLB,
+  which holds only translations a store was allowed through. On a hit the
+  store leaves P1 without an offer, enters the queue and passes Q to R,
+  which finishes it in the cycle a load would finish. On a miss it waits
+  and offers at the completion-queue head as before, after every older
+  queued store is written; the router's translation then raises any DSI.
+- The queue (four entries) holds stores in program order. A store becomes
+  committed when it retires; committed stores are written in order through
+  the request port, one access per cycle as on the 603e's single-ported
+  cache (UM 1.1.5.2). A load ready for its first offer goes first while the
+  queue has room; otherwise a committed store goes ahead of any later offer
+  (a standing non-speculative offer finishes first, and a standing store
+  write keeps the port). Recovery or a faulting older access removes a
+  store not yet retired.
+- A load waits while a queued store shares its doubleword, compared on the
+  page offset only (aliases of a physical page also match); stores do not
+  forward. Otherwise it may pass queued stores, offered as speculative, so
+  a receiver performs it only on a cacheable micro-TLB hit with the data
+  cache enabled (UM 3.5.2, 3.5.5.2); elsewhere it waits until the queue is
+  empty. A store does not queue behind a load that passed queued stores and
+  still awaits its response, so a load that faults after passing is always
+  younger than every queued store: its response is consumed, everything
+  behind it removed, and once the queue drains the lane performs the load
+  again and takes its exception.
+- Every serialized-lane operation (sync, eieio, lwarx, stwcx., cache
+  operations, dcbz, mtmsr, mtsr, tlbie, tlbld, rfi, exceptions), interrupt
+  admission and the lane's memory quiescence wait for the unit to empty, so
+  the queue drains first (UM 4.1: the completed store queue is emptied
+  before an asynchronous exception) and no translation change reaches a
+  queued store. Snoops see the cache as stores are written, as on the 603e.
+- An error on a committed store's write is an asynchronous machine check
+  (UM 4.5.2, Table 4-10): TEA is raised through the pin-event path, SRR0 is
+  the next instruction to complete, SRR1[13] is set, and the rest of the
+  queue is cancelled. Without machine check the core halts. The queue is
+  used only where that path exists (`ENABLE_MACHINE_CHECK` off, or pin
+  interrupts, data cache and external interrupts on); elsewhere stores offer
+  at the head as before. A store whose fault the lane classifies (old path)
+  stays precise.
+- Little-endian munging and byte reversal are applied before the queue,
+  which keeps the formatted address, data and strobes. An FP store queues
+  once the FPU presents its data and finishes the FPU entry through R; a
+  doubleword moved in two beats does not queue.
+- Without a translating router (`ppc_core` alone, the untranslated bus
+  tops) a top drives `dmem_store_check_ok_i` low and stores never queue;
+  the FP core bench drives it from its protected-word map.
+
+## Update forms and rename operands
+
+UM 6.6: an update form takes two GPR rename registers; UM 6.3.3.1: an LSU
+instruction takes its operands from the rename registers or the result buses
+in its reservation station. Here:
+
+- Integer and FP update forms (valid forms only; the others are illegal at
+  decode) run in the unit. At dispatch the base register gets its own rename
+  slot, written ready with the EA from the dispatch adder, so younger
+  readers have it at once. The completion entry records the slot
+  (`update_owned`, `update_tag`); retirement writes the base to the GPR file
+  and releases the slot, and recovery rebuilds it for survivors. A fault
+  clears the architectural update as before; the younger readers of the
+  slot are removed with the exception. An update form dispatches alone, as
+  its second slot uses the second rename port.
+- The dispatch adder reads the base registers through rename (a third read
+  port serves store data), so an access dispatches as soon as its base is
+  ready, including in the cycle its producer's result is written, instead of
+  waiting for the producer to retire. An access in DQ1 does the same
+  through the second slot's ports (rA, rB and a sixth rename read port for
+  rS: three per slot, UM 6.3.3.1); store data that DQ0 writes follows from
+  DQ0's new rename slot. It still pairs only when aligned and never as an
+  update form, and never beside a DQ0 access in the unit.
+- A store dispatches without its data. P1 holds the producer's rename tag
+  and takes the value from either result bus; the head uses a value
+  written in its own cycle at once. Adoption by the lane waits for the data.
+- At most two GPR writes retire per cycle: CQ[1] does not retire a GPR
+  write beside an update form, and an update form retires only from CQ[0]. With two write ports the base is written
+  beside the destination; with one it follows a cycle later and dispatch
+  and retirement wait for it.
+
+## Base snooping
+
+Parameter `LSU_BASE_WAIT` (macro `PPC_LSU_BASE_WAIT`, default 1) makes P1 the
+LSU's reservation station for a D-form load's base (UM 6.3.3, 6.3.3.1):
+
+- A plain, non-update D-form integer load in DQ0 whose base is not yet
+  produced dispatches; P1 keeps the base's rename tag and the displacement.
+  A load whose base is ready keeps the dispatch adder and its alignment
+  check.
+- When a result bus writes the base, P1 registers base plus displacement as
+  the EA and decides alignment from it (an exception goes to the lane at the
+  head, its destination write suppressed at retirement). The access offers
+  on the next cycle.
+
+The path is result bus, adder, alignment check, register, like the dispatch
+adder's; the request address still comes from a register. The load offers
+in the same cycle it would have after waiting at dispatch, but younger work
+dispatches behind it.
+
+Recorded: `make -C sim test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-update test-core-memory-edges test-core-fpu test-core-le test-lsu-update-edges test-core-dual test-dispatch-rules`, at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe` (`DEMO_FW_DIR=<main checkout>/toolchain/build/demo` for the last), commit 103325b, 2026-10-04. All pass except `test-lsu-update-edges` with the unit, a bench fault ([Faulting update forms](#faulting-update-forms-2026-10-04)).
+
+Parameter `LSU_BASE_SNOOP` (macro `PPC_LSU_BASE_SNOOP`, default 0) forms a
+D-form load's EA in P1, as the 603e's LSU does from operands its station
+snooped (UM 6.3.3.1):
+
+- A plain, non-update D-form integer load in DQ0 dispatches without waiting
+  for its base; P1 keeps the base's rename tag and the displacement.
+- P1 compares both result buses against the tag and adds each bus to the
+  displacement while comparing. The head offers in the cycle its base is
+  written, with that sum as the address; an entry that does not offer then
+  keeps the sum.
+- Alignment is decided on that EA in the unit for every such load, ready
+  base or not: a fault rewrites the entry to an alignment uop the lane
+  adopts at the head, and its destination write is suppressed at
+  retirement (the completion entry still names it).
+
+A load or add producing the next load's base then costs Table 6-6's load
+latency 2 instead of 3. The cost is one cycle holding the result bus, the
+32-bit adder and the request address, which feeds the router's micro-TLB
+and the cache index: hence off by default until a fit shows it meets the
+clock target. Stores, indexed and update forms, DQ1 accesses and
+little-endian mode keep the dispatch adder.
+
 ## Cached path
 
 With the unit and a data cache, `ppc_core_bat` sets the router's
@@ -138,10 +282,16 @@ With the unit and a data cache, `ppc_core_bat` sets the router's
 - Data cache: a cacheable load hit answers from its first `S_LOOKUP` cycle,
   from the data RAM output selected by the tag compare. When the answer is
   taken, the cache accepts the next request in that cycle and looks it up
-  in the next, so hits flow one per cycle. An answer not taken is
+  in the next, so hits flow one per cycle. A copy-back store hit writes the
+  data RAM and answers in that cycle too. It takes a next store in any
+  lookup cycle, since a store reads no data (UM 1.1.5.2, one byte-wise
+  read-modify-write per cycle). It takes another request only in its first
+  lookup cycle, when the data RAM reads that request's double word; a load
+  of the double word being written gets the written bytes from a one-cycle
+  forward, and other requests to it wait. An answer not taken is
   registered and held, as before. The fast path reads HID0[DCE] as it was
   in the request's accept cycle; HID0 changes only through the serialized
-  lane, which runs while the unit is idle. Misses, stores, cache
+  lane, which runs while the unit is idle. Misses, other stores, cache
   operations and inhibited or write-through accesses take the cache's plan
   as before; the next request waits for their response.
 
@@ -163,8 +313,23 @@ next (`test-core-lsu-timing`), dispatch-to-retirement, isolated:
   first to last).
 - `lwz` then a dependent `add`: the `add` retires the cycle after the load,
   as an independent one would (2-cycle load-use).
-- Four `stw`: 12 cycles first to last retirement, 4 each: each offers only
-  at the queue head.
+- Four `stw`: retired one per cycle (3 cycles first to last; 12 before the
+  store queue), Table 6-6 2:1.
+- `stw` then `lwz` of another doubleword: the load passes the queued store
+  and retires the cycle after it. `lwz` of the stored doubleword waits for
+  the write and retires 5 cycles after the store.
+- Four `stw` then four `lwz` of other doublewords: the loads take the
+  cache before the retired stores' writes and retire one per cycle, the
+  last 4 cycles after the last store (7 with stores first).
+- Four `stwu` through one base: dispatched and retired one per cycle (3
+  cycles first to last), Table 6-6 2:1.
+- Two `lbzu` through one base (four rename slots): dispatched one per
+  cycle, retired one cycle apart with two GPR write ports, two with one.
+- `lwz` then `stw` of its result: the store retires 2 cycles after the
+  load.
+- `lwz` or `addi` then `lwz` using the result as its base: 3 cycles apart,
+  one more than Table 6-6; 2 with `LSU_BASE_SNOOP`
+  ([Base snooping](#base-snooping)).
 
 Through the router and data cache of the cached top (`test-core-dcache`
 and `test-core-dcache-lsu-pipe`; DR=1 and IR=1 over BATs, the line and the
@@ -206,11 +371,14 @@ cycle, integer rows two):
 | `stfs`, `stfiwx`, `stfd` | 7 | 3 | 3, `stfd` 5 |
 | four `lfd` or `lfs`, first to last, memory taking one access per cycle | — | 3 | — |
 | the same, memory taking one access every other cycle | 15 | 6 | `lfd` 12 |
-| four `stfd`, first to last retirement | 18 | 9 | 15 |
-| `stfd` after the `fadd` producing its data | 6 | 3 | 5 |
+| four `stfd` or `stfs`, first to last, dispatch and retirement | 18 | 3 | `stfd` 14 and 15 |
+| `stfd` after the `fadd` producing its data, retirement spacing | 6 | 2 | 5 |
 
-Loads meet Table 6-6 (2:1). Stores offer only at the completion-queue
-head, three cycles apart.
+Loads and stores meet Table 6-6 (2:1). The unit looks up FP store data by
+tag, so a younger store queues while older FP work is still pending; it is
+written only after it retires, so an exception in older work still removes
+it. A doubleword in two beats does not queue and stays at the
+completion-queue head.
 
 ## Default
 
@@ -231,26 +399,23 @@ the chip needs a fresh fit and timing report before the default changes.
    `ppc_dcache_slot`), so the unit's P1 shift no longer follows the hit;
    and keep the one-cycle answer away from the serialized lane's
    `memory_result_q`.
-2. Stores at one per cycle: finish a store when translated and checked, and
-   write it from a committed store queue after retirement, with load
-   forwarding or an address check against the queue. The 603e checks the
-   store in the LSU's MMU stage and writes the cache after completion;
-   here translation happens with the access at the router, so the unit
-   needs either the micro-TLB's check on the request path before the
-   write or a probe request, which would halve the port's store bandwidth.
-   Offering a store before it is the head, once every older instruction
-   has finished without an exception, gives two cycles per store without
-   a queue.
-3. Loads whose base register has an uncommitted producer (operands from
-   rename instead of the committed registers). The 603e reads them from the
-   rename buffers or the result buses into the LSU's reservation station;
-   here the EA adder sits at dispatch and reads the committed registers, so
-   this needs the adder moved into the unit behind an operand-wait stage
-   that snoops results. Store data (rS) needs a third rename read port.
+2. A doubleword stored in two word beats (32-bit port) does not queue. The
+   store queue needs a fit: the micro-TLB check feeds P1's pop and the
+   queue's write shares the request mux, and the FPU's store-data lookup
+   (P1 tag to pending entry to formatter) now feeds the queue's write.
+3. A base written by a load or add in the access's dispatch cycle costs
+   one cycle more than Table 6-6's load latency 2 unless `LSU_BASE_SNOOP`
+   is set ([Base snooping](#base-snooping)). Making it the default needs a
+   fit; if the result bus to micro-TLB path fails, compare the base's page
+   bits directly and add only the page offset in that cycle, falling back a
+   cycle when the sum carries out of the page. Stores, indexed and update
+   forms and DQ1 accesses still form the EA at dispatch.
 4. Loads behind older FP work that may still raise an exception wait for it
    to retire, as integer loads do; marking them speculative instead would
    let them proceed to cacheable memory.
-5. Update forms (integer and FP) still take the lane.
+5. With one GPR write port (width 1) an update load's base is written the
+   cycle after its destination, holding dispatch and retirement for that
+   cycle. The 603e completes two GPR writes per cycle (UM 6.6.1.3).
 
 ## Verification
 
@@ -413,3 +578,203 @@ alignment, coherence and chip benches (`test-core-lsu-extensions` through `test-
 This establishes FP loads and stores through the unit with the FULL and COMPACT FPUs on
 the 603e and 602 personalities, at both widths, with no regression in the core, cache,
 fault and chip sets. It does not establish timing: no fit includes the FP launch path.
+
+### Update forms and rename operands (2026-10-04)
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=build-foc-w<1|2> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-core-lsu-timing test-core-lsu-update test-core-dcache-lsu-pipe test-core-le test-core-fpu`, commit 60b0659, 2026-10-04.
+All pass at both widths. `test-core-lsu-timing`: 2,711 checks, 27 latency
+probes and 54 spacing checks, including the update, rename-base and
+store-data rows under [Measured timing](#measured-timing); the program at
+width 2 expects the update-load pair one cycle apart, at width 1 two.
+`test-core-lsu-update` (unit on, width 1): 105,939 checks. `test-core-fpu`
+exercises every FP load and store form, update forms included, through the
+unit. `test-core-le` runs its 14 variants, unit on and off. These establish
+the cycle counts and results against the bench memory and, for
+`test-core-dcache-lsu-pipe`, the cached top; they do not cover the chip or
+the 60x bus.
+
+Recorded: `make -C sim lint check-spec` on commit 60b0659, `make -C sim test-execution test-recovery-state test-recovery-storage test-rename-pair` on the RTL of c72ab03, and `make -C sim test-dcache test-dcache-fast test-dcache-mutations` on the RTL of 30d1503, 2026-10-04.
+All pass: strict lint, the rename unit benches with the new ports tied off,
+and the data cache bench with the fast store hit (three seeds each, all seven
+mutations detected).
+
+Recorded: `make -C sim lint test-dcache test-dcache-fast`, `make -C sim test-chip-dcache-coherence test-chip-mp`, the same at `DISPATCH_WIDTH=2`, and `make -C sim DISPATCH_WIDTH=<1|2> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-chip-dcache-coherence test-core-dcache-lsu-pipe` plus `test-chip-mp` at width 2, commit 04be37c, 2026-10-04.
+All pass. A copy-back store hit held in lookup behind a push of its line
+took the next request when it answered, while the data RAM read the
+store's double word, so a following load returned that double word
+(`test-chip-dcache-coherence` at width 2 with the unit). The store now
+takes the next request only in its first lookup cycle; `tb_dcache` with
+fast hits has a directed case that fails without the fix. Coherence runs
+six (three seeds, I-cache on and off) in each of the four configurations;
+`test-chip-mp` five seeds at width 1, width 2, and width 2 with the unit.
+Quartus `quartus_map --analysis_and_elaboration` of a copy of `quartus/chip`
+with `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`: 0 errors, 49 warnings. No fit.
+
+Dhrystone and CoreMark before and after are in
+[PERFORMANCE_TARGET.md](PERFORMANCE_TARGET.md#today).
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO "PPC_LSU_PIPE=1"`, pinned container, commit 60b0659, 2026-10-04.
+0 errors, 54 warnings: the sources elaborate in Quartus 17 with the unit on.
+No fit or timing. The base operand now passes from the result bus through
+rename into the dispatch adder, and a store hit's tag compare drives the data
+RAM write enable, so the chip needs a fresh fit before any timing claim.
+
+### FP stores at one per cycle (2026-10-04)
+
+Recorded: `make -C sim lint test-crstate-execution variant-watchdog-602
+variant-special-lint-602 test-fpu-shell test-fpu-602 test-fpu-stream-603
+test-fpu-stream-602 test-fpu-dual-603 test-fpu-dual-602 test-fpu-compact-shell
+test-fpu-compact-602 test-fpu-enabled-603 test-fpu-enabled-602
+test-fpu-compact-enabled-603 test-fpu-compact-enabled-602 test-core-fpu
+test-core-fpu-split test-core-fpu-compact test-core-fpu-602
+test-core-fpu-602-compact test-core-lsu-timing`, and with the unit
+(`BUILD_DIR=build-lsu VERILATOR=$PWD/tools/verilate-lsu-pipe`)
+`test-core-fpu test-core-fpu-compact test-core-fpu-602
+test-core-fpu-602-compact`, commit 78a6e0a, 2026-10-04: pass
+(`test-core-fpu-split` with the unit ran before the punt fix was added).
+
+- The unit asks the FPU for its P1 store's data by tag; the FPU answers
+  for any launched store in its queue. `test-core-lsu-timing`: four `stfd`
+  or four `stfs` dispatch and retire one per cycle (3 cycles first to last,
+  9 before), and a `stfd` retires 2 cycles after the `fadd` producing its
+  data (3 before); 2693 checks, 47 spacings. The FPU benches check that the
+  looked-up data equals the store port's at every publication.
+- `test-core-fpu-602` with the unit hung at commit 5d0d244: a 602 unaligned
+  `lfs` that the unit punts answered the FPU in the cycle Q handed its queued
+  store to R, and the store's answer was lost. A punt now waits for Q. The
+  bench now passes (1115 checks).
+
+This does not establish timing: the tag lookup adds the FPU's pending-entry
+select and store formatter to the queue's write path, which needs a fit.
+
+### DQ1 rename operands and base snooping (2026-10-04)
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-core-lsu-timing test-core-lsu-update test-core-dcache-lsu-pipe test-core-le test-core-fpu test-core-dual test-core-recovery test-core-machine-check-trace`, the same with a wrapper adding `+define+PPC_LSU_BASE_SNOOP=1` plus `test-core-lsu-timing-snoop`, `test-core-branch-fold` (both wrappers, default width), and unit off `test-core test-core-dual`, on commit 6546dc5, 2026-10-04.
+All pass, except two expected differences with snooping on:
+`test-core-lsu-timing` expects the two base rows 3 cycles apart and gets 2,
+and `test-core-fpu` checks lane latencies when the wrapper's name lacks
+`lsu-pipe` (renamed, it passes at both widths). `test-core-lsu-timing-snoop`:
+2,717 checks, 27 probes and 54 spacing checks at each width, including the
+load- and add-produced base rows at 2 cycles and an alignment exception on a
+misaligned EA formed from a snooped base, with rD unchanged.
+`test-core-dual` (unit on) pairs `or` with a `stw` of its result and a DQ1
+`lwz` whose base is still in rename (1 such pair); unit off, neither pairs.
+These establish results and cycle counts against the bench memories; they
+do not cover the chip or the 60x bus.
+
+Recorded: `make -C sim lint check-spec`, and the lint top with `+define+PPC_LSU_BASE_SNOOP=1` at widths 1 and 2, on commit 6546dc5, 2026-10-04.
+All pass.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2`, `PPC_LSU_PIPE=1` and `PPC_LSU_BASE_SNOOP=1`, pinned container, commit 6546dc5, 2026-10-04.
+0 errors, 49 warnings. No fit or timing: the DQ1 base now passes from the
+result bus through rename into the DQ1 adder and misalignment check that
+gate `dispatch1`, and with snooping the result bus feeds the request address.
+
+
+### Loads before retired stores (2026-10-04)
+
+Recorded: `make -C sim lint check-spec`; `make -C sim -k test-core-lsu-timing test-core-lsu-update test-core-dcache-lsu-pipe test-core-dcache test-dcache test-dcache-fast test-core-le test-core-fpu test-chip-dcache-coherence test-chip-mp test-core-dual test-core-recovery` at width 1 (unit off except where the bench sets it) and with `DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`; `make -C sim DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo test-dispatch-rules`; commit 97b28fc plus the bench probe (uncommitted then, committed with this record), 2026-10-04.
+All pass. `test-core-lsu-timing` at both widths: 2,720 checks, 27 probes,
+55 spacings, including the new four-stores-then-four-loads row at 4 cycles;
+with the load-first rule disabled the same row measures 7 and fails. The
+width 1 batch first failed only because the new probe overwrote a register
+an older row still checked; the probe now loads into one register. These
+establish ordering and data against the bench memories and the cached
+tops; they do not establish timing.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit 97b28fc, 2026-10-04.
+0 errors, 51 warnings. No fit or timing: the store write's select now
+waits for the P1 load's overlap compare, and the data micro-TLB has eight
+entries.
+
+### Faulting update forms (2026-10-04)
+
+The `test-lsu-update-edges` hang with the unit was a bench fault. On a
+faulting response the unit holds `dmem_rsp_ready_o` low until the lane
+adopts the access (one cycle, [Adoption](#adoption-by-the-serialized-lane)).
+The bench sampled ready before it settled, saw the value of the previous
+cycle, dropped the response unaccepted and left the lane waiting for it.
+The RTL needed no change. The bench now settles ready first, and the target
+also builds the bench with the unit at widths 1 and 2.
+
+Bus errors (TEA, UM 4.5.2) and DSI (UM 4.5.3) on update forms through the
+unit take the exception at the access with rA unchanged, as PEM requires
+of a faulting update form:
+
+- `test-core-bat-machine-check`: `lwzu`, `stwu` and `stbu` take a machine
+  check with SRR0 at the access in all three translated configurations;
+  the base, the load target and memory are unchanged.
+- `test-core-fpu-machine-check` (new, unit on): `lfdu`, `lfsu`, `stfdu`
+  and `stfsu` take a machine check at the access; base and FP target
+  unchanged. `test-core-fpu` adds DSI on `stfdu` and `stfsu`.
+- `test-core-data-fault-cancel`: with the unit the redirect path may
+  retire before a removed access's response drains; the bench allows it.
+
+Recorded: `make -C sim test-lsu-update-edges test-core-lsu-update test-core-lsu-timing test-core-dcache-lsu-pipe test-core-bat-machine-check test-core-data-fault test-core-data-fault-cancel test-core-recovery test-core-fpu test-core-fpu-machine-check`, unit off at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`; `test-lsu-update-edges` and `test-core-data-fault-cancel` also with the unit at width 1; commit a882db3, 2026-10-04.
+All pass. `test-lsu-update-edges`: 93 checks per build. `test-core-bat-machine-check`
+at width 2 with the unit: 5,077 checks and 12 TEA tenures with line fills,
+10,666 checks and 7 tenures without. `test-core-fpu-machine-check`: 2,641
+checks, 4 machine checks, at both widths.
+
+Recorded: `make -C sim lint check-spec`, commit a882db3, 2026-10-04. All pass.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit a882db3 (no RTL change), 2026-10-04.
+0 errors, 50 warnings.
+
+### IU results on the second finish port, lane drain (2026-10-04)
+
+Recorded: `make -C sim lint check-spec`; `make -C sim -k test-core test-core-dual test-core-recovery test-core-machine-check-trace test-core-branch-fold test-core-control-memory test-flags test-core-add-flags test-core-rotate test-core-record-logical test-core-lsu-timing test-core-lsu-update test-lsu-update-edges test-core-dcache-lsu-pipe test-dcache test-dcache-fast test-core-bat-machine-check test-core-fpu test-core-fpu-machine-check test-core-le test-chip-dcache-coherence test-chip-mp test-stage test-core-tlb-miss test-core-page-data-exception` at width 1 (unit off except where the bench sets it) and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`; `test-dispatch-rules` with `DEMO_FW_DIR=<main checkout>/toolchain/build/demo` at both; commits fab7650 and 87dd293 (the last two benches), 2026-10-04.
+All pass except `test-chip-mp` at width 1, seed 4: a checkstop. It fails
+the same way on c736a1b, whose parents 310b01f and a91c265 both pass, and
+is not from these changes (width 1 has no SRU; the unit is off).
+
+- With an IU result on the SRU's port, `test-core-lsu-timing` at width 2
+  hung: the unit found a load's alignment exception once its base arrived,
+  the lane adopted it with a younger store waiting behind it in P1, and the
+  lane's drain waited for the unit to empty while the store waited for the
+  lane. The drain now waits for memory traffic only.
+- `test-core-tlb-miss` and `test-core-page-data-exception` failed to build
+  (`UNOPTFLAT`): their retirement hold read `retire_valid_o`, which a head
+  finishing that cycle now drives, closing a loop through commit-time
+  recovery. They read the settled head instead. With the unit, the TLB-miss
+  bench's external cut may meet a faulting response the unit holds for the
+  lane, and its pre-offer store cut (phase 18) is skipped: a unit store
+  offers in its first cycle at the head.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit fab7650, 2026-10-04.
+0 errors, 51 warnings. No fit or timing: the IU result now also drives the
+second finish port's mux.
+
+### 602 FP doublewords at 3:2 (2026-10-04)
+
+Recorded: `make -C sim BUILD_DIR=build-a test-core-lsu-timing-602 test-core-lsu-timing test-core-fpu-602`, and with `DISPATCH_WIDTH=2 VERILATOR=tools/verilate-lsu-pipe VERILATOR_TOOL=tools/verilate-lsu-pipe`, commit f4e5b73, 2026-10-04: pass.
+
+`test-core-lsu-timing-602` probes 602 UM Table 6-6's FP rows over a memory
+taking one access per cycle: `lfs`, `stfs`, `stfiwx` retire 3 cycles after
+dispatch and four in 3 cycles; `lfd`, `stfd` 4 and four in 6. The 603e rows
+(`test-core-lsu-timing`) are unchanged. Quartus analysis of the chip and
+602 chip tops with the unit and the FPU: 0 errors. No fit.
+
+### Stores behind stores (2026-10-04)
+
+Recorded: `make -C sim lint check-spec`; `make -C sim -k -j2 test-micro-tlb-router test-bat-memory-router test-page-memory-router test-core-tlb-miss test-core-page-data-exception test-core-page-translation test-core-bat test-core-lsu-timing test-core-dcache-lsu-pipe test-dcache test-dcache-fast test-chip-dcache-coherence test-core-le test-core-fpu` at width 1 (unit off) and with `DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`, commit 4438640, 2026-10-04.
+Lint, check-spec and every bench pass at both settings except
+`test-core-tlb-miss` and `test-core-page-data-exception`, which stop at
+Verilator `UNOPTFLAT` warnings in `ppc_core`, `ppc_special` and the bench,
+files this round does not change (`test-core-tlb-miss` builds neither the
+router nor the cache). `tb_dcache` adds a back-to-back case: two stores to
+halves of one double word, a load of it, a store to the other way at the
+same index, and two loads, accepted on consecutive cycles where the rule
+allows; with the forward disabled the load misses the second store's bytes
+and the bench fails. `test-micro-tlb-router` still checks
+that a C=0 store never hits a load-filled entry. These establish data and
+ordering, not timing.
+
+Recorded: `make -C sim DISPATCH_WIDTH=2 VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe test-reference-machine-mmu REFERENCE_DIR=<dingusppc> MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`, commits 4438640 and 29c64f9, 2026-10-04.
+Fails identically on both: record 17, "store effects from a non-store"
+(a retired-store write reported on the following `addi`). The comparison
+does not yet accept stores written after retirement at this setting.
+
+Recorded: `quartus_map ppc603e_chip -c ppc603e_chip --analysis_and_elaboration` on a copy of `quartus/chip` with `VERILOG_MACRO` `PPC_DISPATCH_WIDTH=2` and `PPC_LSU_PIPE=1`, pinned container, commit fa58482, 2026-10-04.
+0 errors, 51 warnings. No fit or timing: the load hit data gains a byte
+merge with the forwarded store.

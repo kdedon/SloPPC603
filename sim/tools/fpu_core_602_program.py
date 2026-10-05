@@ -23,17 +23,18 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'fpu'))
 from fpu_core_program import (  # noqa: E402
-    DATA, DONE, EXCEPTION_BITS, FE0, FE1, LOG, MSR_FP, PROT_HI, PROT_LO,
-    SRR1_FP, SRR1_ILLEGAL, SYNC, Program, a_form, d_form, dsisr_d, dsisr_x,
-    f32, f64, x_form)
+    CHANGED_HI, CHANGED_LO, DATA, DONE, EXCEPTION_BITS, FE0, FE1, LOG, MSR_FP,
+    PROT_HI, PROT_LO, SRR1_FP, SRR1_ILLEGAL, SYNC, TEA_HI, TEA_LO, Program, a_form,
+    access_faults, clear_fe_if_fp, use_machine_check, d_form, dsisr_d, dsisr_x, f32, f64,
+    fp_enable_deferred, fp_enable_rfi, x_form)
 from enabled_vectors import case_602, fpscr_after  # noqa: E402
 from ppc_reference import arithmetic  # noqa: E402
 from production_vectors_602 import expected_602, widen_raw  # noqa: E402
 from reference import calculate  # noqa: E402
 
-MSR_PR = 0x4000
+MSR_PR, MSR_SE = 0x4000, 0x400
 SRR1_PRIV = 0x00040000
-VECTORS = (0x300, 0x600, 0x700, 0x800, 0x1600)
+VECTORS = (0x200, 0x300, 0x600, 0x700, 0x800, 0x1200, 0x1600)
 SPR_SP, SPR_LT = 1021, 1022
 STICKY = sum(1 << b for b in EXCEPTION_BITS)
 # lfd trap value: 1/3 is not a binary32.
@@ -137,6 +138,8 @@ def handlers(p):
         for spr, off in ((26, 0), (27, 4), (19, 8), (18, 12)):
             seq += [x_form(31, 26, spr & 31, spr >> 5, 339), d_form(36, 26, 29, off)]
         seq += [d_form(14, 26, 0, vector), d_form(36, 26, 29, 16), d_form(14, 29, 29, 20)]
+        if vector == 0x700:
+            seq += clear_fe_if_fp()
         if vector == 0x800:
             # Lazy FP enable: set MSR[FP] in SRR1 and retry.
             seq += [x_form(31, 26, 27, 0, 339), d_form(24, 26, 26, MSR_FP),
@@ -376,8 +379,8 @@ def fp_enabled(p):
     p.emit(x_form(63, 24, 0, 0, 38))                               # mtfsb1 VE
     p.fpscr_update(p.fpscr | 1 << 7)
     at = p.emit(x_form(63, 21, 0, 0, 38))                          # mtfsb1 VXSOFT
-    p.event(0x700, at, p.msr | SRR1_FP)
     p.fpscr_update(p.fpscr | (1 << 10) | (1 << 29) | (1 << 30) | (1 << 31))
+    p.event(0x700, at, p.msr | SRR1_FP)
     p.mtmsr(p.msr & ~(FE0 | FE1))
     p.check_fpscr()
     p.clear_fpscr()
@@ -398,6 +401,91 @@ def sticky_timing(p):
         last = p.pc
         p.arith(a_form(59, 7, 1, 3, 0, 21), 'add', 7, one, tiny)
         p.spacings.append(('R', first, last, spacing))
+    p.check_fpscr()
+    p.clear_fpscr()
+
+
+# 602 UM Table 6-6, latency:throughput: lfs, stfs and stfiwx 2:1, lfd and
+# stfd 3:2. Probes count dispatch to retirement, one more than the latency
+# (Figure 6-3), and the retirement spacing of the first and last of four
+# independent accesses. Through the pipelined unit over a memory taking one
+# access per cycle the table is met; otherwise the memory or the serialized
+# lane is slower.
+MEMORY_TIMING = {
+    'lane': {'lfs': (6, 15), 'lfd': (6, 15), 'stfs': (7, 18), 'stfd': (7, 18),
+             'stfiwx': (7, 18)},
+    'unit': {'lfs': (3, 6), 'lfd': (4, 6), 'stfs': (3, 3), 'stfd': (4, 6),
+             'stfiwx': (3, 3)},
+    'table': {'lfs': (3, 3), 'lfd': (4, 6), 'stfs': (3, 3), 'stfd': (4, 6),
+              'stfiwx': (3, 3)},
+}
+
+
+def memory_timing(p, timing):
+    """Isolated latency and the spacing of four independent accesses for
+    each FP load and store row of Table 6-6."""
+    p.res_next = (p.res_next + 7) & ~7
+    doubles = [f64(1.0 + k) for k in range(4)]
+    singles = [f32(0.5 + k) for k in range(4)]
+    dbase = p.data(*doubles)
+    sbase = p.data((singles[0] << 32) | singles[1], (singles[2] << 32) | singles[3])
+    words = []
+    for k in range(4):
+        p.lfs(12 + k, singles[k])
+        words.append(p.arith(x_form(63, 12 + k, 0, 12 + k, 15), 'fctiwz', 12 + k,
+                             0, singles[k]))
+    p.li32(20, dbase)
+    p.li32(19, sbase)
+    for k in range(4):
+        p.li32(24 + k, 4 * k)
+    rows = (
+        ('lfd', lambda k: d_form(50, 4 + k, 20, 8 * k), doubles, 0),
+        ('stfd', lambda k: d_form(54, 4 + k, 21, 8 * k), doubles, 8),
+        ('lfs', lambda k: d_form(48, 4 + k, 19, 4 * k), singles, 0),
+        ('stfs', lambda k: d_form(52, 4 + k, 21, 4 * k), singles, 4),
+        ('stfiwx', lambda k: x_form(31, 12 + k, 21, 24 + k, 983), words, 4),
+    )
+    for name, form, values, size in rows:
+        lat, spacing = timing[name]
+        slots = [p.result_slot(size // 4), p.result_slot(size)] if size else []
+        if size:
+            p.li32(21, slots[0])
+        p.emit(SYNC)
+        p.probes[p.emit(form(0))] = lat
+        if size:
+            p.li32(21, slots[1])
+        p.emit(SYNC)
+        pcs = [p.emit(form(k)) for k in range(4)]
+        p.spacings.append(('R', pcs[0], pcs[-1], spacing))
+        if not size:
+            for k in range(4):
+                p.write_fpr(4 + k, True, False)
+            continue
+        for addr, ks in ((slots[0], (0,)), (slots[1], range(4))):
+            for k in ks:
+                at = addr + size * k
+                if size == 8:
+                    p.expect(at, values[k] >> 32)
+                    p.expect(at + 4, values[k])
+                else:
+                    p.expect(at, values[k])
+
+
+def trace_sticky(p):
+    """In trace mode FP arithmetic runs alone in the serialized lane; the
+    first fadds newly sets XX and completes a cycle late there too. The
+    trace handler returns to SRR0."""
+    one, tiny = f32(1.0), f32(2.0 ** -30)
+    p.words[0xfff00d00] = x_form(19, 0, 0, 0, 50)                 # rfi
+    p.lfs(1, one)
+    p.lfs(3, tiny)
+    p.clear_fpscr()
+    p.mtmsr(p.msr | MSR_SE)
+    sum7 = p.arith(a_form(59, 7, 1, 3, 0, 21), 'add', 7, one, tiny)
+    sum8 = p.arith(a_form(59, 8, 1, 3, 0, 21), 'add', 8, one, tiny)
+    p.mtmsr(p.msr & ~MSR_SE)
+    p.store_sp(7, sum7)
+    p.store_sp(8, sum8)
     p.check_fpscr()
     p.clear_fpscr()
 
@@ -441,7 +529,7 @@ def random_cases(p, rng, count):
         p.check_cr()
 
 
-def build(seed, count):
+def build(seed, count, timing='lane'):
     rng = random.Random(seed)
     p = Program602()
     handlers(p)
@@ -453,10 +541,18 @@ def build(seed, count):
     tag_traps(p)
     arithmetic_602(p)
     unaligned(p)
+    access_faults(p, True)
     in_flight(p)
     fp_enabled(p)
+    def fex(q):
+        q.fpscr_update(q.fpscr | (1 << 7) | (1 << 10) | (1 << 29) | (1 << 30) | (1 << 31))
+
+    fp_enable_deferred(p, fex)
+    fp_enable_rfi(p, fex)
     random_cases(p, rng, count)
     sticky_timing(p)
+    trace_sticky(p)
+    memory_timing(p, MEMORY_TIMING[timing])
     p.check_tags()
     p.emit(d_form(36, 0, 30, 0))          # stw r0 to DONE ends the run
     p.emit(18 << 26)                      # b .
@@ -477,14 +573,24 @@ def main():
     parser.add_argument('--image', required=True)
     parser.add_argument('--seed', type=lambda s: int(s, 0), default=0x602)
     parser.add_argument('--random', type=int, default=150)
+    parser.add_argument('--lsu-pipe', action='store_true',
+                        help='FP accesses run in the pipelined load/store unit')
+    parser.add_argument('--pipe-mem', action='store_true',
+                        help='the bench memory takes one access per cycle')
+    parser.add_argument('--machine-check', action='store_true',
+                        help='TEA on FP accesses (tb_core_fpu MACHINE_CHECK=1)')
     args = parser.parse_args()
-    p = build(args.seed, args.random)
+    use_machine_check(args.machine_check)
+    timing = ('table' if args.pipe_mem else 'unit') if args.lsu_pipe else 'lane'
+    p = build(args.seed, args.random, timing)
     print(f'fpu_core_602_program: {len(p.words)} words, {len(p.expects)} expected, '
           f'{len(p.log)} exceptions, {p.sticky} sticky stalls')
     lines = [f'P {PROT_LO:08x} {PROT_HI:08x} 0', f'D {DONE:08x} 0 0',
+             f'C {CHANGED_LO:08x} {CHANGED_HI:08x} 0', f'T {TEA_LO:08x} {TEA_HI:08x} 0',
              f'S {p.sticky:x} 0 0']
     lines += [f'M {a:08x} {v:08x} 0' for a, v in sorted(p.words.items())]
     lines += [f'E {a:08x} {v:08x} {m:08x}' for a, v, m in p.expects]
+    lines += [f'L {pc:08x} {cycles:x} 0' for pc, cycles in p.probes.items()]
     lines += [f'{kind} {a:08x} {b:08x} {cycles:x}' for kind, a, b, cycles in p.spacings]
     Path(args.image).parent.mkdir(parents=True, exist_ok=True)
     Path(args.image).write_text('\n'.join(lines) + '\n')

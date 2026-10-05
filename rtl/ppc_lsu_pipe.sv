@@ -19,23 +19,57 @@
 // FPU instead of R. A doubleword the port cannot move at once is two word
 // beats. A faulting or unperformable FP access answers the FPU with a fault,
 // which replays the instruction in the serialized lane.
+//
+// With STORE_QUEUE, a store whose translation the router confirms will not
+// fault finishes without accessing memory (P1 -> Q -> R) and waits in the
+// store queue; once retired it is written in order, ahead of any later
+// offer. A load passes queued stores only when its doubleword differs from
+// each one's, and then offers as speculative, so only a cacheable access is
+// performed out of order (UM 3.2). An error on a retired store's write is
+// reported for an asynchronous machine check (UM 4.5.2) and cancels the
+// rest of the queue.
+//
+// With BASE_WAIT, a load whose base is not yet produced dispatches with its
+// displacement and waits in P1 for the base (UM 6.3.3.1): the EA is formed
+// and its alignment decided as the base is written, and the access offers
+// on the next cycle. BASE_SNOOP also offers the head in the cycle the base
+// is written, forming its EA then (UM Table 6-6, load latency 2).
 module ppc_lsu_pipe #(
-  parameter int DMEM_BITS = 32
+  parameter int DMEM_BITS = 32,
+  parameter bit STORE_QUEUE = 1'b0,
+  parameter bit BASE_SNOOP = 1'b0,
+  parameter bit BASE_WAIT = 1'b0,
+  parameter bit ENABLE_MISALIGNED_ACCESS = 1'b0,
+  // 602: a doubleword FP access spends a cycle in P1 before its offer or
+  // queueing, for 3:2 timing (602 UM Table 6-6).
+  parameter bit FP_DOUBLE_HOLD = 1'b0,
+  parameter int SQ_DEPTH = 4
 ) (
   input  logic clk_i, rst_ni,
   input  logic dispatch_valid_i,
   output logic dispatch_ready_o,
   input  ppc_pkg::uop_t uop_i,
   input  ppc_pkg::completion_tag_t producer_i,
-  input  logic [31:0] pc_i, insn_i, ea_i, data_i,
+  input  logic [31:0] pc_i, insn_i, ea_i,
+  // Store data from rename; one not yet produced is taken from the result
+  // buses when written.
+  input  ppc_pkg::operand_t data_i,
+  // A load's base from rename and its displacement; ea_i is meaningless
+  // while the base is not ready.
+  input  logic base_snoop_i,
+  input  ppc_pkg::operand_t base_i,
+  input  logic [31:0] offset_i,
+  input  logic dr_i,
+  input  logic wake_valid_i, wake1_valid_i,
+  input  ppc_pkg::wake_packet_t wake_i, wake1_i,
   // FP access: store and doubleword forms.
   input  logic fp_i, fp_store_i, fp_double_i,
   // The FPU has launched the memory form with this tag.
   input  logic fp_launch_valid_i,
   input  ppc_pkg::completion_tag_t fp_launch_tag_i,
-  // Store data of the FPU's oldest store.
+  // Store data of the FPU store fp_store_tag_o.
   input  logic fp_store_valid_i,
-  input  ppc_pkg::completion_tag_t fp_store_tag_i,
+  output ppc_pkg::completion_tag_t fp_store_tag_o,
   input  logic [63:0] fp_store_data_i,
   // Little-endian mode: the access address is munged (PEM 3.1.4.1).
   input  logic le_i,
@@ -44,6 +78,15 @@ module ppc_lsu_pipe #(
   input  logic [ppc_pkg::CQ_GENERATION_WIDTH-1:0] kill_generation_i [ppc_pkg::CQ_DEPTH],
   input  logic store_authorize_i,
   input  logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] queue_head_i,
+  // The completion-queue head retires this cycle.
+  input  logic commit_i,
+  input  ppc_pkg::completion_tag_t commit_tag_i,
+  // Dispatch is behind an unresolved branch; it resolved as predicted.
+  input  logic branch_spec_i,
+  input  logic branch_resolved_i,
+  // The store at chk_addr_o can be performed without a DSI.
+  output logic [31:0] chk_addr_o,
+  input  logic chk_ok_i,
   // The serialized lane is idle, so this unit owns the request port.
   input  logic lane_idle_i,
   output logic req_valid_o,
@@ -81,7 +124,12 @@ module ppc_lsu_pipe #(
   output ppc_pkg::completion_tag_t adopt_producer_o,
   output logic [31:0] adopt_pc_o, adopt_insn_o, adopt_ea_o, adopt_data_o,
   output logic empty_o,
-  output logic store_irrevocable_o
+  // No access is performing or owed to memory. Entries left waiting for the
+  // lane, and stores not yet retired, are younger than the lane's operation.
+  output logic quiet_o,
+  output logic store_irrevocable_o,
+  // A retired store's write failed.
+  output logic store_error_o
 );
   import ppc_pkg::*;
 
@@ -89,10 +137,23 @@ module ppc_lsu_pipe #(
     logic killed;
     logic fast;
     logic store;
-    logic fp, launched, wide;
+    logic fp, launched, wide, hold;
     // A word beat of a doubleword; the second beat's EA advances as it
     // reaches the head.
     logic split, second, advance;
+    // Store data is present; otherwise it comes from data_tag's producer.
+    logic data_ready;
+    rename_tag_t data_tag;
+    completion_tag_t data_producer;
+    // A retired store's write, and a load offered past queued stores.
+    logic write, passed;
+    // Dispatched behind an unresolved branch.
+    logic bspec;
+    // The EA waits for base_producer's result: base plus offset.
+    logic base_wait;
+    rename_tag_t base_tag;
+    completion_tag_t base_producer;
+    logic [31:0] offset;
     completion_tag_t producer;
     logic [31:0] ea, data, pc, insn;
     // XORed into the EA's low bits to form the access address.
@@ -128,6 +189,18 @@ module ppc_lsu_pipe #(
       default: return 4'b1111;
     endcase
   endfunction
+  // Naturally aligned integer access, and the alignment exception of one
+  // whose EA was formed in P1 (big-endian; UM 4.5.6.1.1).
+  function automatic logic int_fast(input mem_size_t size, input logic [1:0] ea);
+    return (size == MEM_BYTE) || ((size == MEM_HALF) && !ea[0]) || (ea == 2'b00);
+  endfunction
+  function automatic logic int_trap(input mem_size_t size, input logic [11:0] ea,
+                                    input logic dr);
+    if (!ENABLE_MISALIGNED_ACCESS) return !int_fast(size, ea[1:0]);
+    return (size != MEM_BYTE) && dr &&
+           ((size == MEM_WORD) ? ((ea[11:2] == 10'h3ff) && (ea[1:0] != 2'b00)) :
+                                 (ea == 12'hfff));
+  endfunction
   function automatic logic [31:0] swap_bytes(input logic [31:0] value,
                                              input logic [2:0] count);
     return (count == 3'd2) ? {16'b0, value[7:0], value[15:8]} :
@@ -135,73 +208,173 @@ module ppc_lsu_pipe #(
   endfunction
 
 
+  // ------------------------------------------------------------- Store queue
+  typedef struct packed {
+    logic committed, killed;
+    completion_tag_t producer;
+    logic [31:0] addr;
+    logic [DMEM_BITS-1:0] wdata;
+    logic [DMEM_BITS/8-1:0] wstrb;
+    logic [2:0] bytes;
+    logic fp;
+  } sq_entry_t;
+  localparam int SQ_W = $clog2(SQ_DEPTH + 1);
+  sq_entry_t sq_q [SQ_DEPTH], sq_head;
+  logic [SQ_W-1:0] sq_count_q;
+  logic sq_valid, sq_live, sq_overlap, sq_offer, sq_fire, sq_drop;
+  // Q: a queued store on its way to R.
+  entry_t q_q;
+  logic q_valid_q, q_go, q_pop;
+  // A load that faulted after passing queued stores, for the lane once the
+  // queue has drained.
+  entry_t redo_q;
+  logic redo_valid_q;
+
   // ------------------------------------------------------------------ P1
   entry_t p1_head, p2_head;
   logic p1_valid, p2_valid, p1_at_head, p1_ready, offer, p1_fire, p1_drop, p1_punt;
+  logic p1_check, p1_queue, p2_passed;
   logic [2:0] p1_nbytes;
-  logic [31:0] store_source;
+  logic [31:0] store_source, p1_addr;
+  logic [DMEM_BITS-1:0] p1_wdata;
+  logic [DMEM_BITS/8-1:0] p1_wstrb;
   assign p1_head = p1_q[0];
   assign p2_head = p2_q[0];
   assign p1_valid = p1_count_q != 2'd0;
   assign p2_valid = p2_count_q != 2'd0;
+  assign sq_head = sq_q[0];
+  assign sq_valid = sq_count_q != '0;
   assign p1_at_head = store_authorize_i && (queue_head_i == p1_head.producer.index);
   // An FP access offers once the FPU has launched it, a store once the
   // FPU presents its data.
-  assign p1_ready = !p1_head.fp ||
-    (p1_head.store ? (fp_store_valid_i && (fp_store_tag_i == p1_head.producer)) :
-                     p1_head.launched);
+  // Store data written this cycle is used at once.
+  logic head_wake, head_wake1, head_data_ready;
+  logic [31:0] head_data;
+  assign head_wake = wake_valid_i && (wake_i.tag == p1_head.data_tag) &&
+                     (wake_i.producer == p1_head.data_producer);
+  assign head_wake1 = wake1_valid_i && (wake1_i.tag == p1_head.data_tag) &&
+                      (wake1_i.producer == p1_head.data_producer);
+  assign head_data_ready = p1_head.data_ready || head_wake || head_wake1;
+  assign head_data = p1_head.data_ready ? p1_head.data :
+                     head_wake ? wake_i.value : wake1_i.value;
+  assign fp_store_tag_o = p1_head.producer;
+  assign p1_ready = !p1_head.fp ? head_data_ready :
+                    !p1_head.hold && (p1_head.store ? fp_store_valid_i : p1_head.launched);
+  // A waiting head's EA from the base written this cycle; both sums are
+  // formed while the tags compare.
+  localparam bit BASE_ANY = BASE_SNOOP || BASE_WAIT;
+  logic head_base0, head_base1, head_base_ready, head_fast;
+  logic [31:0] head_ea, base_sum0, base_sum1;
+  assign head_base0 = BASE_SNOOP && wake_valid_i && (wake_i.tag == p1_head.base_tag) &&
+                      (wake_i.producer == p1_head.base_producer);
+  assign head_base1 = BASE_SNOOP && wake1_valid_i && (wake1_i.tag == p1_head.base_tag) &&
+                      (wake1_i.producer == p1_head.base_producer);
+  assign base_sum0 = wake_i.value + p1_head.offset;
+  assign base_sum1 = wake1_i.value + p1_head.offset;
+  assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1;
+  assign head_ea = !p1_head.base_wait ? p1_head.ea : head_base0 ? base_sum0 : base_sum1;
+  assign head_fast = !p1_head.base_wait ? p1_head.fast :
+    (int_fast(p1_head.uop.mem_size, head_ea[1:0]) &&
+     !int_trap(p1_head.uop.mem_size, head_ea[11:0], dr_i));
+  assign p1_addr = {head_ea[31:3], head_ea[2] ^ p1_head.munge[2], 2'b00};
+  // Live queued stores, and whether one shares the head's doubleword. Only
+  // the page offset is compared, so aliases of a physical page also match.
+  always_comb begin
+    sq_live = 1'b0;
+    sq_overlap = 1'b0;
+    for (int i = 0; i < SQ_DEPTH; i++)
+      if ((SQ_W'(i) < sq_count_q) && !sq_q[i].killed) begin
+        sq_live = 1'b1;
+        if (sq_q[i].addr[11:3] == p1_addr[11:3]) sq_overlap = 1'b1;
+      end
+  end
+  assign p2_passed = (p2_valid && p2_q[0].passed && !p2_q[0].killed) ||
+                     ((p2_count_q == 2'd2) && p2_q[1].passed && !p2_q[1].killed);
+  // A load ready to make its first offer takes the cache before a retired
+  // store while the queue has room; a load the port refuses then waits for
+  // the queue. A store write that stands keeps the port. Its EA and fault
+  // check here come from P1 registers.
+  logic load_first, sq_offered_q;
+  assign load_first = p1_valid && !p1_head.store && !p1_head.killed && !offered_q &&
+    !sq_offered_q &&
+    !p1_head.base_wait && p1_head.fast && p1_ready && !sq_overlap && !redo_valid_q &&
+    (sq_count_q != SQ_W'(SQ_DEPTH));
+  // A retired store is otherwise written ahead of any later offer, except one
+  // that already stands non-speculatively.
+  assign sq_offer = STORE_QUEUE && rst_ni && sq_valid && sq_head.committed &&
+    !sq_head.killed && lane_idle_i && !rsp_to_lane_q && (p2_count_q != 2'd2) &&
+    !(offered_q && !offered_spec_q) && !load_first;
+  assign sq_fire = sq_offer && req_ready_i;
+  assign sq_drop = sq_valid && sq_head.killed;
+  // A store may queue while older accesses await their responses, but not
+  // behind a load that passed queued stores, so every queued store stays
+  // older than such a load if it faults.
+  // A doubleword in two beats does not queue.
+  assign p1_check = STORE_QUEUE && p1_valid && p1_head.store && p1_head.fast && !p1_head.split &&
+    !p1_head.killed && !offered_q && p1_ready && lane_idle_i && !rsp_to_lane_q &&
+    !redo_valid_q && (!q_valid_q || q_pop) && (sq_count_q != SQ_W'(SQ_DEPTH)) &&
+    !p2_passed && !killed_now(p1_head.producer);
+  assign chk_addr_o = p1_addr;
+  assign p1_queue = p1_check && chk_ok_i;
   // An offer stands until accepted. A removed entry leaves without an
   // offer, or withdraws one last made speculatively (the older access whose
   // fault removed it has left P2 by then); any other offer finishes its
-  // handshake and its response is dropped.
-  assign offer = rst_ni && p1_valid && p1_head.fast &&
+  // handshake and its response is dropped. A store that does not queue
+  // offers at the completion-queue head once older stores are written.
+  assign offer = rst_ni && p1_valid && head_fast && head_base_ready && !sq_offer &&
     (p1_head.killed ? (offered_q && !offered_spec_q) :
-     (offered_q || (lane_idle_i && !rsp_to_lane_q && (p2_count_q != 2'd2) && p1_ready &&
-                    (!p1_head.store || p1_at_head))));
+     (offered_q || (lane_idle_i && !rsp_to_lane_q && !redo_valid_q &&
+                    (p2_count_q != 2'd2) && p1_ready &&
+                    (p1_head.store ? (p1_at_head && !sq_valid && !p1_queue) :
+                                     !sq_overlap))));
   assign p1_fire = offer && req_ready_i;
   assign p1_drop = p1_valid && p1_head.killed && !offer;
   // An FP access this unit cannot perform answers the FPU with a fault once
   // it is the oldest access.
   assign p1_punt = p1_valid && p1_head.fp && !p1_head.fast && !p1_head.killed &&
-                   p1_head.launched && !p2_valid && !rsp_to_lane_q &&
-                   !killed_now(p1_head.producer);
+                   p1_head.launched && !p2_valid && !q_valid_q && !rsp_to_lane_q &&
+                   !redo_valid_q && !killed_now(p1_head.producer);
   assign p1_nbytes = p1_head.fp ? 3'd4 : nbytes(p1_head.uop.mem_size);
   always_comb begin
-    store_source = p1_head.uop.mem_reverse ? swap_bytes(p1_head.data, p1_nbytes) :
-                                             p1_head.data;
+    store_source = p1_head.uop.mem_reverse ? swap_bytes(head_data, p1_nbytes) : head_data;
     // Bytes move left-justified to the EA offset within the word.
-    req_wdata_o = '0;
-    req_wstrb_o = '0;
-    req_wdata_o[31:0] = (store_source << {3'd4 - p1_nbytes, 3'b0}) >>
-                        {p1_head.ea[1:0] ^ p1_head.munge[1:0], 3'b0};
-    req_wstrb_o[3:0] = lane_mask(p1_head.uop.mem_size) >>
-                       (p1_head.ea[1:0] ^ p1_head.munge[1:0]);
+    p1_wdata = '0;
+    p1_wstrb = '0;
+    p1_wdata[31:0] = (store_source << {3'd4 - p1_nbytes, 3'b0}) >>
+                     {head_ea[1:0] ^ p1_head.munge[1:0], 3'b0};
+    p1_wstrb[3:0] = lane_mask(p1_head.uop.mem_size) >>
+                    (head_ea[1:0] ^ p1_head.munge[1:0]);
     // The first beat of a doubleword carries its high word.
-    // A load ignores the FPU's store data, which follows its oldest store.
+    // A load ignores the FPU's store data.
     if (p1_head.fp) begin
-      req_wdata_o = '0;
+      p1_wdata = '0;
       if (p1_head.store)
-        req_wdata_o[31:0] = (p1_head.split && !p1_head.second) ? fp_store_data_i[63:32] :
-                                                                 fp_store_data_i[31:0];
-      req_wstrb_o[3:0] = 4'hf;
+        p1_wdata[31:0] = (p1_head.split && !p1_head.second) ? fp_store_data_i[63:32] :
+                                                              fp_store_data_i[31:0];
+      p1_wstrb[3:0] = 4'hf;
       if (p1_head.wide) begin
-        if (p1_head.store) req_wdata_o = fp_store_data_i[DMEM_BITS-1:0];
-        req_wstrb_o = '1;
+        if (p1_head.store) p1_wdata = fp_store_data_i[DMEM_BITS-1:0];
+        p1_wstrb = '1;
       end
     end
   end
-  assign req_valid_o = offer;
-  assign req_write_o = p1_head.store;
-  assign req_addr_o = {p1_head.ea[31:3], p1_head.ea[2] ^ p1_head.munge[2], 2'b00};
-  assign req_bytes_o = p1_nbytes;
-  assign req_fp_o = p1_head.fp;
+  assign req_valid_o = offer || sq_offer;
+  assign req_write_o = sq_offer || p1_head.store;
+  assign req_addr_o = sq_offer ? sq_head.addr : p1_addr;
+  assign req_wdata_o = sq_offer ? sq_head.wdata : p1_wdata;
+  assign req_wstrb_o = sq_offer ? sq_head.wstrb : p1_wstrb;
+  assign req_bytes_o = sq_offer ? sq_head.bytes : p1_nbytes;
+  assign req_fp_o = sq_offer ? sq_head.fp : p1_head.fp;
   // The two beats of one doubleword do not make each other speculative.
-  assign req_spec_o =
-    (p2_valid && !p2_q[0].killed && (p2_q[0].producer != p1_head.producer)) ||
-    ((p2_count_q == 2'd2) && !p2_q[1].killed && (p2_q[1].producer != p1_head.producer));
+  assign req_spec_o = !sq_offer && (sq_live || p1_head.bspec ||
+    (p2_valid && !p2_q[0].killed && !p2_q[0].write &&
+     (p2_q[0].producer != p1_head.producer)) ||
+    ((p2_count_q == 2'd2) && !p2_q[1].killed && !p2_q[1].write &&
+     (p2_q[1].producer != p1_head.producer)));
 
   // ------------------------------------------------------------------ P2
-  logic rsp_mine, rsp_ok, p2_retire, p2_adopt, p1_adopt, adopt_fire, fp_fault;
+  logic rsp_mine, rsp_ok, p2_retire, p2_adopt, p1_adopt, redo_adopt, adopt_fire, fp_fault;
+  logic p2_live, p2_result, redo_set, sq_doom;
   logic [31:0] rsp_word, load_left, load_right, load_value;
   logic [63:0] rsp_dword;
   logic [2:0] p2_nbytes;
@@ -210,10 +383,15 @@ module ppc_lsu_pipe #(
   assign rsp_ok = !rsp_error_i && (rsp_fault_i == DATA_OK);
   // A killed access's response is dropped; a good one moves to R, which
   // the result port empties every cycle. An FP response always moves to R.
-  assign rsp_ready_o = rsp_owner_o && (p2_head.killed || rsp_ok || p2_head.fp);
+  // A retired store's response and a passing load's fault are consumed here.
+  assign rsp_ready_o = rsp_owner_o &&
+    (p2_head.killed || rsp_ok || p2_head.fp || p2_head.write || p2_head.passed);
   assign p2_retire = rsp_mine && rsp_ready_o;
-  assign fp_fault = p2_retire && p2_head.fp && !rsp_ok && !p2_head.killed &&
-                    !killed_now(p2_head.producer);
+  assign p2_live = !p2_head.killed && !killed_now(p2_head.producer);
+  assign p2_result = p2_retire && !p2_head.write && p2_live && (rsp_ok || p2_head.fp);
+  assign fp_fault = p2_retire && p2_head.fp && !rsp_ok && p2_live;
+  assign redo_set = p2_retire && !p2_head.fp && p2_head.passed && !rsp_ok && p2_live;
+  assign store_error_o = p2_retire && p2_head.write && !rsp_ok;
   assign rsp_word = rsp_rdata_i[31:0];
   always_comb begin
     rsp_dword = '0;
@@ -231,23 +409,45 @@ module ppc_lsu_pipe #(
     else load_value = load_right;
   end
 
+  // ------------------------------------------------------------------- Q
+  // R takes Q's store when no response needs it.
+  assign q_go = q_valid_q && !q_q.killed && !killed_now(q_q.producer) && !p2_result;
+  assign q_pop = q_go || (q_valid_q && (q_q.killed || killed_now(q_q.producer)));
+
   // --------------------------------------------------------------- Adopt
   // The oldest entry is handed over only while R is empty, so the result
   // port never sees both, and never on the edge recovery removes it.
-  assign p2_adopt = rsp_mine && !p2_head.fp && !p2_head.killed &&
-                    !killed_now(p2_head.producer) && !rsp_ok && !r_valid_q && lane_idle_i;
-  assign p1_adopt = !p2_valid && !r_valid_q && p1_valid && !p1_head.fast && !p1_head.fp &&
+  assign p2_adopt = rsp_mine && !p2_head.fp && !p2_head.write && !p2_head.passed &&
+                    !p2_head.bspec &&
+                    p2_live && !rsp_ok && !r_valid_q && lane_idle_i;
+  assign redo_adopt = redo_valid_q && !redo_q.killed && !redo_q.bspec &&
+                      !killed_now(redo_q.producer) &&
+                      !p2_valid && !q_valid_q && !r_valid_q && !sq_valid &&
+                      lane_idle_i && !rsp_to_lane_q;
+  assign p1_adopt = !p2_valid && !q_valid_q && !r_valid_q && !sq_valid && !redo_valid_q &&
+                    p1_valid && !p1_head.fast && !p1_head.base_wait && !p1_head.fp &&
+                    !p1_head.bspec &&
+                    head_data_ready &&
                     !p1_head.killed && !killed_now(p1_head.producer) &&
                     lane_idle_i && !rsp_to_lane_q;
-  assign adopt_valid_o = p2_adopt || p1_adopt;
+  assign adopt_valid_o = p2_adopt || redo_adopt || p1_adopt;
   assign adopt_fire = adopt_valid_o && adopt_ready_i;
   assign adopt_response_o = p2_adopt;
-  assign adopt_uop_o = p2_adopt ? p2_head.uop : p1_head.uop;
-  assign adopt_producer_o = p2_adopt ? p2_head.producer : p1_head.producer;
-  assign adopt_pc_o = p2_adopt ? p2_head.pc : p1_head.pc;
-  assign adopt_insn_o = p2_adopt ? p2_head.insn : p1_head.insn;
-  assign adopt_ea_o = p2_adopt ? p2_head.ea : p1_head.ea;
-  assign adopt_data_o = p2_adopt ? p2_head.data : p1_head.data;
+  entry_t adopted;
+  // The base's value comes from the result buses.
+  logic _unused_base;
+  assign _unused_base = ^base_i.value;
+  logic _unused_entries;
+  assign _unused_entries = ^{q_q, adopted};
+  always_comb begin
+    adopted = p2_adopt ? p2_head : redo_adopt ? redo_q : p1_head;
+    adopt_uop_o = adopted.uop;
+    adopt_producer_o = adopted.producer;
+    adopt_pc_o = adopted.pc;
+    adopt_insn_o = adopted.insn;
+    adopt_ea_o = adopted.ea;
+    adopt_data_o = (!p2_adopt && !redo_adopt) ? head_data : adopted.data;
+  end
 
   // ------------------------------------------------------------- Result
   assign result_valid_o = r_valid_q && !killed_now(r_q.producer);
@@ -267,8 +467,10 @@ module ppc_lsu_pipe #(
   assign dispatch_ready_o = in_split ? (p1_count_q == 2'd0) : (p1_count_q != 2'd2);
   assign dispatch_fire = dispatch_valid_i && dispatch_ready_o;
   // A faulting access, or one this unit cannot perform, removes everything
-  // behind it.
-  assign doom = (adopt_fire && p2_adopt) || fp_fault || p1_punt;
+  // behind it. Queued stores are younger than a faulting access that did
+  // not pass them, and older than one that did.
+  assign doom = (adopt_fire && p2_adopt) || fp_fault || p1_punt || redo_set;
+  assign sq_doom = (adopt_fire && p2_adopt) || (fp_fault && !p2_head.passed);
   assign in_bytes = nbytes(uop_i.mem_size);
   always_comb begin
     incoming = '0;
@@ -282,25 +484,54 @@ module ppc_lsu_pipe #(
                      ((in_bytes == 3'd1) || ((in_bytes == 3'd2) && !ea_i[0]) ||
                       (ea_i[1:0] == 2'b00)));
     incoming.wide = in_wide;
+    incoming.hold = FP_DOUBLE_HOLD && in_wide;
     incoming.split = in_split;
     incoming.producer = producer_i;
+    incoming.bspec = branch_spec_i;
     incoming.ea = ea_i;
     incoming.munge = !le_i ? 3'b0 :
                      fp_i ? {!fp_double_i, 2'b0} :
                      {1'b1, in_bytes != 3'd4, in_bytes == 3'd1};
-    incoming.data = data_i;
+    incoming.data = data_i.value;
+    incoming.data_ready = fp_i || (uop_i.special_op != SPECIAL_STORE) || data_i.ready;
+    incoming.data_tag = data_i.tag;
+    incoming.data_producer = data_i.producer;
+    incoming.base_wait = BASE_ANY && base_snoop_i && !base_i.ready;
+    incoming.base_tag = base_i.tag;
+    incoming.base_producer = base_i.producer;
+    incoming.offset = offset_i;
     incoming.pc = pc_i;
     incoming.insn = insn_i;
     incoming.uop = uop_i;
+    if (incoming.base_wait) incoming.fast = 1'b0;
+    else if (BASE_ANY && base_snoop_i && int_trap(uop_i.mem_size, ea_i[11:0], dr_i)) begin
+      incoming.fast = 1'b0;
+      incoming.uop.special_op = SPECIAL_ALIGNMENT;
+      incoming.uop.gpr_write = 1'b0;
+    end
   end
 
   always_ff @(posedge clk_i) begin
-    entry_t p1_next [2], p2_next [2];
+    entry_t p1_next [2], p2_next [2], pushed;
     logic [1:0] p1_n, p2_n;
     logic p1_pop, p2_pop, p2_push;
-    p1_pop = p1_fire || p1_drop || p1_punt || (adopt_fire && !p2_adopt);
+    p1_pop = p1_fire || p1_queue || p1_drop || p1_punt ||
+             (adopt_fire && !p2_adopt && !redo_adopt);
     p2_pop = p2_retire || (adopt_fire && p2_adopt);
-    p2_push = p1_fire;
+    p2_push = p1_fire || sq_fire;
+    pushed = p1_head;
+    pushed.ea = head_ea;
+    pushed.fast = head_fast;
+    pushed.base_wait = 1'b0;
+    pushed.data = head_data;
+    pushed.data_ready = 1'b1;
+    pushed.passed = sq_live;
+    if (sq_fire) begin
+      pushed = '0;
+      pushed.write = 1'b1;
+      pushed.fast = 1'b1;
+      pushed.producer = sq_head.producer;
+    end
     // Shift out the popped heads. A second beat reaching the head moves to
     // the next word.
     p1_next = p1_q;
@@ -312,6 +543,8 @@ module ppc_lsu_pipe #(
         p1_next[0].advance = 1'b0;
       end
       p1_n = p1_n - 2'd1;
+    end else if (p1_count_q != 2'd0) begin
+      p1_next[0].hold = 1'b0;
     end
     p2_next = p2_q;
     p2_n = p2_count_q;
@@ -320,7 +553,7 @@ module ppc_lsu_pipe #(
       p2_n = p2_n - 2'd1;
     end
     if (p2_push) begin
-      p2_next[p2_n[0]] = p1_head;
+      p2_next[p2_n[0]] = pushed;
       p2_n = p2_n + 2'd1;
     end
     if (dispatch_fire) begin
@@ -333,12 +566,47 @@ module ppc_lsu_pipe #(
         p1_n = 2'd2;
       end
     end
-    // Removal by recovery or behind a faulting access.
+    // Removal by recovery or behind a faulting access. A retired store's
+    // write is never removed.
     for (int i = 0; i < 2; i++) begin
       if (doom || killed_now(p1_next[i].producer)) p1_next[i].killed = 1'b1;
-      if (doom || killed_now(p2_next[i].producer)) p2_next[i].killed = 1'b1;
+      if (branch_resolved_i) p1_next[i].bspec = 1'b0;
+      if (!p2_next[i].write && (doom || killed_now(p2_next[i].producer)))
+        p2_next[i].killed = 1'b1;
+      if (branch_resolved_i) p2_next[i].bspec = 1'b0;
       if (fp_launch_valid_i && (p1_next[i].producer == fp_launch_tag_i))
         p1_next[i].launched = 1'b1;
+      if (!p1_next[i].data_ready && wake_valid_i && (wake_i.tag == p1_next[i].data_tag) &&
+          (wake_i.producer == p1_next[i].data_producer)) begin
+        p1_next[i].data = wake_i.value;
+        p1_next[i].data_ready = 1'b1;
+      end
+      if (!p1_next[i].data_ready && wake1_valid_i && (wake1_i.tag == p1_next[i].data_tag) &&
+          (wake1_i.producer == p1_next[i].data_producer)) begin
+        p1_next[i].data = wake1_i.value;
+        p1_next[i].data_ready = 1'b1;
+      end
+      // A base written this cycle forms the EA; an alignment exception goes
+      // to the lane with the access.
+      if (BASE_ANY && p1_next[i].base_wait) begin
+        logic hit0, hit1;
+        logic [31:0] ea;
+        hit0 = wake_valid_i && (wake_i.tag == p1_next[i].base_tag) &&
+               (wake_i.producer == p1_next[i].base_producer);
+        hit1 = wake1_valid_i && (wake1_i.tag == p1_next[i].base_tag) &&
+               (wake1_i.producer == p1_next[i].base_producer);
+        ea = (hit0 ? wake_i.value : wake1_i.value) + p1_next[i].offset;
+        if (hit0 || hit1) begin
+          p1_next[i].base_wait = 1'b0;
+          p1_next[i].ea = ea;
+          p1_next[i].fast = int_fast(p1_next[i].uop.mem_size, ea[1:0]) &&
+                            !int_trap(p1_next[i].uop.mem_size, ea[11:0], dr_i);
+          if (int_trap(p1_next[i].uop.mem_size, ea[11:0], dr_i)) begin
+            p1_next[i].uop.special_op = SPECIAL_ALIGNMENT;
+            p1_next[i].uop.gpr_write = 1'b0;
+          end
+        end
+      end
     end
     p1_q <= p1_next;
     p2_q <= p2_next;
@@ -351,6 +619,59 @@ module ppc_lsu_pipe #(
     end
   end
 
+  // Store queue, Q and the redo slot.
+  always_ff @(posedge clk_i) begin
+    sq_entry_t sq_next [SQ_DEPTH], added;
+    logic [SQ_W-1:0] sq_n;
+    sq_next = sq_q;
+    sq_n = sq_count_q;
+    if (sq_fire || sq_drop) begin
+      for (int i = 0; i < SQ_DEPTH - 1; i++) sq_next[i] = sq_q[i + 1];
+      sq_n = sq_n - 1'b1;
+    end
+    if (p1_queue) begin
+      added = '0;
+      added.producer = p1_head.producer;
+      added.addr = p1_addr;
+      added.wdata = p1_wdata;
+      added.wstrb = p1_wstrb;
+      added.bytes = p1_nbytes;
+      added.fp = p1_head.fp;
+      sq_next[sq_n[$clog2(SQ_DEPTH)-1:0]] = added;
+      sq_n = sq_n + 1'b1;
+    end
+    // A store becomes committed as it retires; an error on a write cancels
+    // every retired store still queued.
+    for (int i = 0; i < SQ_DEPTH; i++) begin
+      if (!sq_next[i].committed && (sq_doom || killed_now(sq_next[i].producer)))
+        sq_next[i].killed = 1'b1;
+      if (!sq_next[i].killed && commit_i && (sq_next[i].producer == commit_tag_i))
+        sq_next[i].committed = 1'b1;
+      if (sq_next[i].committed && store_error_o) sq_next[i].killed = 1'b1;
+    end
+    sq_q <= sq_next;
+    if (p1_queue) q_q <= p1_head;
+    else if (sq_doom || killed_now(q_q.producer)) q_q.killed <= 1'b1;
+    if (redo_set) begin
+      redo_q <= p2_head;
+      redo_q.fast <= 1'b0;
+      redo_q.bspec <= p2_head.bspec && !branch_resolved_i;
+    end else begin
+      if (killed_now(redo_q.producer)) redo_q.killed <= 1'b1;
+      if (branch_resolved_i) redo_q.bspec <= 1'b0;
+    end
+    if (!rst_ni || !STORE_QUEUE) begin
+      sq_count_q <= '0;
+      q_valid_q <= 1'b0;
+      redo_valid_q <= 1'b0;
+    end else begin
+      sq_count_q <= sq_n;
+      q_valid_q <= p1_queue || (q_valid_q && !q_pop);
+      redo_valid_q <= redo_set || (redo_valid_q && !(redo_q.killed || killed_now(redo_q.producer)) &&
+                                   !(adopt_fire && redo_adopt));
+    end
+  end
+
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       r_valid_q <= 1'b0;
@@ -358,16 +679,17 @@ module ppc_lsu_pipe #(
       rsp_to_lane_q <= 1'b0;
       offered_q <= 1'b0;
       offered_spec_q <= 1'b0;
+      sq_offered_q <= 1'b0;
       store_done_q <= 1'b0;
     end else begin
-      r_valid_q <= p2_retire && !p2_head.fp && !p2_head.killed &&
-                   !killed_now(p2_head.producer);
+      r_valid_q <= (p2_result && !p2_head.fp) || (q_go && !q_q.fp);
       // A doubleword answers after its second beat, or at a fault.
       r_fp_valid_q <= p1_punt || fp_fault ||
-        (p2_retire && p2_head.fp && !p2_head.killed && !killed_now(p2_head.producer) &&
-         (!p2_head.split || p2_head.second));
+        (p2_result && p2_head.fp && (!p2_head.split || p2_head.second)) ||
+        (q_go && q_q.fp && (!q_q.split || q_q.second));
       offered_q <= offer && !req_ready_i;
       offered_spec_q <= offer && !req_ready_i && req_spec_o;
+      sq_offered_q <= sq_offer && !req_ready_i;
       if (p2_retire && p2_head.store && !p2_head.killed && rsp_ok) store_done_q <= 1'b1;
       else if (queue_head_i != store_done_index_q) store_done_q <= 1'b0;
       if (adopt_fire && p2_adopt) rsp_to_lane_q <= 1'b1;
@@ -382,23 +704,45 @@ module ppc_lsu_pipe #(
       r_q.value <= load_value;
       r_q.update_value <= p2_head.ea;
     end
+    if (q_go && !p2_result) begin
+      r_q <= '0;
+      r_q.producer <= q_q.producer;
+      r_q.update_value <= q_q.ea;
+    end
     if (p2_retire && p2_head.split && !p2_head.second) beat0_q <= rsp_word;
     if (p1_punt) begin
       r_fp_tag_q <= p1_head.producer;
       r_fp_fault_q <= 1'b1;
       r_fp_data_q <= '0;
-    end else if (p2_retire) begin
+    end else if (p2_result || fp_fault) begin
       r_fp_tag_q <= p2_head.producer;
       r_fp_fault_q <= !rsp_ok;
       r_fp_data_q <= p2_head.wide ? rsp_dword :
                      p2_head.split ? {beat0_q, rsp_word} : {32'b0, rsp_word};
+    end else if (q_go) begin
+      r_fp_tag_q <= q_q.producer;
+      r_fp_fault_q <= 1'b0;
+      r_fp_data_q <= '0;
     end
   end
 
-  assign empty_o = !p1_valid && !p2_valid && !r_valid_q && !r_fp_valid_q && !rsp_to_lane_q;
-  // A store is irrevocable from its offer to its retirement. It offers only
-  // at the completion-queue head, so it has retired once the head moves.
-  assign store_irrevocable_o = (offer && p1_head.store) ||
+  assign empty_o = !p1_valid && !p2_valid && !r_valid_q && !r_fp_valid_q && !rsp_to_lane_q &&
+                   !sq_valid && !q_valid_q && !redo_valid_q;
+  logic sq_committed;
+  always_comb begin
+    sq_committed = 1'b0;
+    for (int i = 0; i < SQ_DEPTH; i++)
+      if ((SQ_W'(i) < sq_count_q) && sq_q[i].committed) sq_committed = 1'b1;
+  end
+  assign quiet_o = !(p1_valid && offered_q) && !p2_valid && !r_valid_q && !r_fp_valid_q &&
+                   !rsp_to_lane_q && !sq_committed && !q_valid_q && !redo_valid_q;
+  // A store that does not queue is irrevocable from its offer to its
+  // retirement. It offers only at the completion-queue head, so it has
+  // retired once the head moves. Any store at the head counts, so this
+  // does not depend on the result buses, which depend on recovery.
+  assign store_irrevocable_o =
+    (p1_valid && p1_head.store && p1_head.fast &&
+     (offered_q || (!p1_head.killed && p1_at_head))) ||
     (p2_valid && p2_head.store && !p2_head.killed) ||
     (p2_count_q == 2'd2 && p2_q[1].store && !p2_q[1].killed) ||
     (store_done_q && (queue_head_i == store_done_index_q));
@@ -414,6 +758,47 @@ module ppc_lsu_pipe #(
   always @(posedge clk_i)
     if (rst_ni && req_valid_o && req_write_o)
       assert (!req_spec_o) else $error("store offered behind an unresolved access");
+  // +LSU_STATS reports store-queue use at the end of simulation.
+  int stat_queued = 0, stat_written = 0, stat_passed = 0, stat_overlap = 0, stat_errors = 0,
+      stat_redo = 0, stat_cancelled = 0;
+  always @(posedge clk_i)
+    if (rst_ni) begin
+      if (p1_queue) stat_queued <= stat_queued + 1;
+      if (sq_fire) stat_written <= stat_written + 1;
+      if (p1_fire && sq_live) stat_passed <= stat_passed + 1;
+      if (p1_valid && !p1_head.store && !p1_head.killed && sq_overlap && !offered_q)
+        stat_overlap <= stat_overlap + 1;
+      if (store_error_o) stat_errors <= stat_errors + 1;
+      if (redo_set) stat_redo <= stat_redo + 1;
+      if (sq_drop && !sq_head.committed) stat_cancelled <= stat_cancelled + 1;
+    end
+  final
+    if ($test$plusargs("LSU_STATS"))
+      $display("LSU_STATS %m: queued_stores=%0d written=%0d passing_loads=%0d overlap_wait_cycles=%0d write_errors=%0d redone_loads=%0d cancelled=%0d",
+               stat_queued, stat_written, stat_passed, stat_overlap, stat_errors, stat_redo,
+               stat_cancelled);
+  longint dbg_cycle = 0, dbg_from = -1, dbg_to = -1;
+  initial begin
+    void'($value$plusargs("LSU_TRACE_FROM=%d", dbg_from));
+    void'($value$plusargs("LSU_TRACE_TO=%d", dbg_to));
+  end
+  always @(posedge clk_i) begin
+    dbg_cycle <= dbg_cycle + 1;
+    if (dbg_cycle >= dbg_from && dbg_cycle <= dbg_to)
+      $display("LSU %0d disp=%b/%b p1=%0d[%08x st=%b dr=%b] p2=%0d sq=%0d q=%b r=%b offer=%b spec=%b rdy=%b fire=%b sqo=%b chk=%b/%b rsp=%b lane_idle=%b",
+               dbg_cycle, dispatch_valid_i, dispatch_ready_o, p1_count_q, p1_head.pc, p1_head.store,
+               p1_head.data_ready, p2_count_q, sq_count_q, q_valid_q, r_valid_q, offer, req_spec_o,
+               req_ready_i, p1_fire, sq_offer, p1_check, chk_ok_i, rsp_valid_i, lane_idle_i);
+  end
+  // Translation was confirmed before a queued store finished.
+  always @(posedge clk_i)
+    if (rst_ni && p2_retire && p2_head.write && !rsp_error_i)
+      assert (rsp_fault_i == DATA_OK || rsp_fault_i == DATA_MACHINE_CHECK)
+        else $error("retired store's write took a DSI");
+  always @(posedge clk_i)
+    if (rst_ni && sq_offer)
+      assert (!(p1_valid && p1_head.store && offered_q && !p1_head.killed))
+        else $error("store queue write behind a standing store offer");
   // synthesis translate_on
 endmodule
 `default_nettype wire

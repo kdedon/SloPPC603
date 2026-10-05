@@ -54,11 +54,15 @@ outcome. A hit therefore repeats that allowed result, and every fault, guarded
 or miss result, and every sticky diagnostic, still comes from the serial
 sequence. A BAT block is cached page by page.
 
-A data entry filled by a load does not permit stores. A store to that page
-misses, takes the serial sequence and, if allowed, upgrades the entry. On the
-603e a permitted store implies a permitted load (PEM Table 7-21 for pages,
-Table 7-12 for BATs), so a store-filled entry serves both. A store to a C=0
-page is refused by the serial sequence and never cached as store-permitted.
+A data entry records whether a store to its page would be allowed, whatever
+access filled it: a store fill, real mode, a BAT with PP=10 (PEM Table 7-12),
+or a page whose PP and key permit writes (PEM Table 7-21) and whose TLB entry
+has C set. A store to a page that fails any of these misses and takes the
+serial sequence, which reports the protection DSI or the C=0 store miss
+(UM 5.4.1.2) exactly as before; a store-permitted entry is never made from a
+C=0 TLB entry. 602 protection-only pages record store permission only from a
+store. On the 603e a permitted store implies a permitted load, so every
+store-permitted entry serves both.
 
 ## Invalidation
 
@@ -111,6 +115,16 @@ throughput with a zero-wait memory, from `make -C sim test-micro-tlb-router`:
 time and needed an idle cycle after each response. A miss that finds the
 sequence busy with the other side waits for it; the bench's latency histogram
 shows those cases.
+
+## Store permission on load fills
+
+Recorded: `make -C sim DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/<dhrystone|coremark>.hex +PROFILE`, commit b58bd0c, 2026-10-04.
+Dhrystone 656.0 cycles/run before and after; CoreMark/MHz 2.506 before and
+after. The profile's data micro-TLB counts over the measured Dhrystone
+region: 238,022 load hits, 150,023 store hits, one store miss; CoreMark has
+no misses. With eight data entries the benchmarks rarely refill, so the
+change removes misses a 603e would not take (it translates every access in
+the LSU's first stage, UM 6.4.4) without moving these figures.
 
 ## Verification
 

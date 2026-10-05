@@ -35,6 +35,24 @@ def repo_url(explicit):
     return re.sub(r"\.git$", "", url)
 
 
+def embench_source(url, commit, embench):
+    """GPL-3.0 section 6 source pointer for the Embench image, as plain text."""
+    return "\n".join([
+        "ppc603e-embench.bin: corresponding source",
+        "",
+        "ppc603e-embench.bin holds Embench-IoT object code (GPL-3.0-or-later), so the image is",
+        "GPL-3.0. Its corresponding source, offered under GPL-3.0 section 6(d) from the same",
+        "place as the image:",
+        "",
+        f"- Embench-IoT: https://github.com/embench/embench-iot/tree/{embench}",
+        f"- Build scripts, glue and runtime: {url}/tree/{commit}",
+        "  (toolchain/demo/fetch-benchmarks.sh, then",
+        "  toolchain/build-in-container.sh -f demo/Makefile mister-images)",
+        f"- Pinned compiler and runtime sources: {url}/blob/{commit}/docs/BENCHMARKS.md",
+        "- All of the above fetched: ppc603e-embench-source.tar.gz, published next to the image.",
+        ""])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("summaries", nargs="*", type=Path)
@@ -44,6 +62,7 @@ def main():
     parser.add_argument("--repo-url", default="")
     parser.add_argument("--unstable", action="store_true")
     parser.add_argument("--images", nargs="*", type=Path, default=[], help="published program images")
+    parser.add_argument("--embench-source", type=Path, help="also write the Embench image's source pointer here")
     args = parser.parse_args()
 
     summaries = [json.loads(path.read_text()) for path in args.summaries]
@@ -55,6 +74,8 @@ def main():
                 if "=" in line and not line.startswith("#"))
     images = sorted(args.images, key=lambda path: path.name)
     names = [s["name"] for s in summaries] + [path.name for path in images]
+    if args.embench_source:
+        args.embench_source.write_text(embench_source(url, commit, embench))
 
     out = [f"# {args.title or args.tag or 'Unstable build'}", ""]
     if args.unstable:
@@ -99,8 +120,9 @@ def main():
                 f"this repository at [`{commit[:12]}`]({url}/tree/{commit}), Embench-IoT at "
                 f"[`{embench[:12]}`](https://github.com/embench/embench-iot/tree/{embench}), and the pinned "
                 "compiler and runtime sources listed in `docs/BENCHMARKS.md`; the attached "
-                "`embench-source.tar.gz` holds all of them. Check that the combination with the GPL-2.0 "
-                "framework is acceptable before redistributing the image.", ""]
+                "`ppc603e-embench-source.tar.gz` holds all of them and `ppc603e-embench.SOURCE.txt` "
+                "lists them. Check that the combination with the GPL-2.0 "
+                "framework is acceptable before redistributing an Embench bitstream.", ""]
     if any("nbench" in name for name in names):
         out += ["**nbench build:** BYTE's nbench code carries no stated licence. The nbench bitstream or image "
                 "is for measurement; do not redistribute it without checking the terms.", ""]

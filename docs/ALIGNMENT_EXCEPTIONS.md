@@ -68,8 +68,8 @@ operands in `uop_t.alignment_dsisr[16:0]`.
 Enabled MFSpr/MTSpr instructions expose supervisor-only DSISR (SPR18) and DAR
 (SPR19). Reads return the full register; writes replace all 32 bits only at
 accepted retirement. Problem-state access becomes the existing privileged
-program event before allocation. Reset clears these two registers as a local
-deterministic policy; no architectural power-on-content claim is made. Ordinary
+program event before allocation. Hard reset clears these two registers (UM Table 4-8,
+PDF 177, printed 4-19). Ordinary
 instructions and SC/program/RFI events preserve them. An accepted alignment
 event replaces both atomically with its own metadata.
 

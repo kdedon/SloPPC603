@@ -94,7 +94,7 @@ module tb_core_event_reset;
     .imem_rsp_valid_i(sv),.imem_rsp_ready_o(sr),.imem_rsp_insn_i(iw),.imem_rsp_page_miss_i('0), .imem_rsp_fault_i(FETCH_OK),
     .dmem_req_valid_o(dv),.dmem_req_ready_i(dr),.dmem_req_write_o(dw),.dmem_req_addr_o(da),
     .dmem_req_wdata_o(wd),.dmem_req_wstrb_o(st),.dmem_rsp_valid_i(rv),.dmem_rsp_ready_o(rr),
-    .dmem_rsp_rdata_i(32'b0),.dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(32'b0),.dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .retire_valid_o(tv),.retire_ready_i(tr),.retire_o(retired), /* verilator lint_off PINCONNECTEMPTY */ .retire1_valid_o(), .retire1_o(), /* verilator lint_on PINCONNECTEMPTY */ .retire1_ready_i(1'b0),.checkstop_o(unused_checkstop), .halted_o(halted),
     .context_valid_o(cv),.context_ready_i(cr),.context_ir_o(ci),.context_dr_o(cd),.context_pr_o(cp),
     .memory_quiescent_i(mq),.redirect_valid_i(1'b0),.redirect_all_i(1'b1),

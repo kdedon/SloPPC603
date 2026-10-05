@@ -94,7 +94,7 @@ module tb_stage_timing;
     .dmem_req_write_o(unused_dmem[1]), .dmem_req_addr_o(unused_dmem[33:2]),
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(unused_dmem[70]),
-    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .imem_req_valid_o(req_valid),
     .imem_req_ready_i(req_ready), .imem_req_addr_o(req_addr),
     .imem_rsp_valid_i(rsp_valid), .imem_rsp_ready_o(rsp_ready),
@@ -192,18 +192,20 @@ module tb_stage_timing;
         $fwrite(trace_fd, ",\"finish\":{\"id\":%0d,\"value\":%0d}", ident, dut.result.value);
       end
       if (retire_valid) begin
-        assert(!retired.alignment_exception && retired.fetch_fault == FETCH_OK && retired.data_fault == DATA_OK && !retired.update_write && retired.update_gpr == 0 && retired.update_value == 0 &&
+        assert(!retired.alignment_exception && retired.fetch_fault == FETCH_OK && retired.data_fault == DATA_OK && !retired.update_write && !retired.update_owned && retired.update_tag == 0 && retired.update_gpr == 0 && retired.update_value == 0 &&
                !retired.needs_flags && !retired.write_ca && !retired.write_xer && !retired.write_ov_so &&
                !retired.write_cr_bit && retired.cr_bit == 0 &&
                !retired.write_cr_fields && retired.cr_mask == 0 &&
                !retired.write_cr_field && retired.cr_field == 0 && retired.cr_delta == 0 && retired.xer_delta == 0 &&
-               !retired.seq_partial && !retired.branch && !retired.branch_lk && !retired.branch_ctr)
+               !retired.seq_partial && !retired.branch && !retired.branch_lk && !retired.branch_ctr &&
+               retired.removed_branches == 0)
           else $fatal(1, "flag-free stage probe observed flag effects");
         assert(retired.gpr_write && retired.rename_owned && int'(retired.tag) < GPR_RENAME_DEPTH &&
                retired.cq1_ok && !retired.fpr_write)
           else $fatal(1, "legal IU retirement metadata");
         ident = int'(dut.retire_producer);
-        assert(finish_edges[ident] >= 0 && edge_number >= finish_edges[ident] + 1)
+        // UM Figure 6-3: an IU result completes in its writeback cycle.
+        assert(finish_edges[ident] >= 0 && edge_number >= finish_edges[ident])
           else $fatal(1, "finish-to-retirement edge violation");
         $fwrite(trace_fd, ",\"retire\":{\"id\":%0d,\"pc\":%0d,\"insn\":%0d,\"gpr\":%0d,\"value\":%0d}",
           ident, retired.pc, retired.insn, retired.gpr, retired.value);

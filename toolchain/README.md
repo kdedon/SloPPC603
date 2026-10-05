@@ -413,9 +413,10 @@ See [compiled bus evidence](../docs/TRANSLATED_BUS60X_FIRMWARE.md) and
 
 `make rtl-table-search-cached` and `make rtl-table-fault-cached` execute the
 same search/fault ELFs through `ppc_core_bat_cached_bus60x`. Translation and
-permission checks precede physical cache lookup. WIMG=0000 instruction reads
-use line fills and cache hits; other instruction attributes and all data use
-scalar bypass. The target RAM responds only through public 60x pins.
+permission checks precede physical cache lookup. Instruction reads with I=0,
+including real mode, use line fills and cache hits; I=1 instruction reads and
+all data use scalar bypass. Both firmwares map translated code through IBAT0
+with I=1, so both paths run. The target RAM responds only through public 60x pins.
 See [cache contract](../docs/TRANSLATED_ICACHE.md) and
 [compiled verification](../docs/TRANSLATED_ICACHE_FIRMWARE.md).
 

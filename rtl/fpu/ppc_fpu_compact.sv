@@ -42,6 +42,9 @@ module ppc_fpu_compact #(
     output logic store_valid_o,
     input logic store_ready_i,
     output ppc_fpu_pkg::ppc_fpu_mem_t store_o,
+    input ppc_pkg::completion_tag_t store_peek_tag_i,
+    output logic store_peek_valid_o,
+    output logic [63:0] store_peek_data_o,
     input logic [4:0] inspect_fpr_index_i,
     output logic [63:0] inspect_fpr_o,
     output logic [31:0] inspect_fpscr_o,
@@ -458,6 +461,9 @@ module ppc_fpu_compact #(
           value_q);
     end
   end
+
+  assign store_peek_valid_o = store_o.write && store_o.tag == store_peek_tag_i;
+  assign store_peek_data_o = store_o.data;
 
   // Commit and issue handshakes are separate processes: results never
   // depend on them.

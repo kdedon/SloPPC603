@@ -226,11 +226,12 @@ module ppc_special #(
   input ppc_pkg::completion_tag_t fp_commit_tag_i,
   input logic fp_kill_i,
   // Plain FP accesses in the pipelined load/store unit: FPU launches and
-  // the oldest store's data go there, and its responses come back.
+  // the data of the store with fp_store_tag_i go there, and its responses
+  // come back.
   output logic fp_launch_valid_o,
   output ppc_pkg::completion_tag_t fp_launch_tag_o,
   output logic fp_store_valid_o,
-  output ppc_pkg::completion_tag_t fp_store_tag_o,
+  input ppc_pkg::completion_tag_t fp_store_tag_i,
   output logic [63:0] fp_store_data_o,
   input logic fp_rsp_valid_i,
   input ppc_pkg::completion_tag_t fp_rsp_tag_i,
@@ -377,6 +378,7 @@ module ppc_special #(
   logic tlb_fill_invalidate_q;
   logic dispatch_bat, dispatch_segment, dispatch_tlbie, dispatch_tlb_fill;
   logic [31:0] tlb_fill_cmp;
+  logic tlb_fill_dside;
   logic tlb_fill_seed_invalid;
   tlb_fill_payload_t tlb_fill_payload_q;
   logic mmu_operation, mmu_req_write, mmu_req_ready, mmu_rsp_valid;
@@ -433,6 +435,7 @@ module ppc_special #(
   logic [31:0] insn_q;
   logic [63:0] fpu_data_q;
   logic fpu_issue_valid, fpu_issue_sel, fpu_issue_ready, fpu_result_valid, fpu_result_take;
+  logic fpu_sticky_hold, fpu_sticky_waited_q;
   logic fpu_commit_valid, fpu_commit_ready, fpu_abort_valid;
   logic fpu_mem_req_valid, fpu_mem_req_ready, fpu_mem_req_fire;
   logic fpu_mem_rsp_valid, fpu_mem_rsp_ready, fpu_store_valid, fpu_store_ready;
@@ -444,6 +447,8 @@ module ppc_special #(
   /* verilator lint_off UNUSEDSIGNAL */
   ppc_fpu_pkg::ppc_fpu_result_t fpu_result;
   ppc_fpu_pkg::ppc_fpu_mem_t fpu_mem_req, fpu_store;
+  logic fpu_peek_valid;
+  logic [63:0] fpu_peek_data;
   /* verilator lint_on UNUSEDSIGNAL */
   // eciwx/ecowx with EAR[E] = 0 take a DSI without a bus transfer.
   assign external_denied = ENABLE_FULL_DECODE && uop_q.mem_external &&
@@ -469,7 +474,10 @@ module ppc_special #(
     !ENABLE_DATA_CACHE ? ear_q[3:0] :
     cache_sync ? {1'b0, CACHE_OP_SYNC} :
     (uop_q.cache_op != CACHE_OP_NONE) ? {1'b0, uop_q.cache_op} : ear_q[3:0];
-  assign tlb_fill_cmp = (uop_i.special_op == SPECIAL_TLBLD) ? dcmp_q : icmp_q;
+  // The payload is consumed only for tlbld/tlbli, so the bank comes from the
+  // XO field (978 vs 1010) rather than the dispatch-adjusted special_op.
+  assign tlb_fill_dside = !insn_i[6];
+  assign tlb_fill_cmp = tlb_fill_dside ? dcmp_q : icmp_q;
   // UM 2.1.2.3: the entry takes V and VSID from the compare word and the
   // page index from rB; H, API and the RPA R and reserved bits are unused.
   // V=0 leaves the selected entry invalid: the load becomes a tlbie of its
@@ -632,6 +640,7 @@ module ppc_special #(
     assign unused_watchdog = ^{watchdog_taken, watchdog_reset_taken};
   end endgenerate
   logic [31:0] context_target_q, mtmsr_value;
+  logic mtmsr_fp_enable, rfi_fp_enable;
   // Machine check adds ME, RI and POW. Debug exceptions add SE and BE.
   localparam logic [31:0] MACHINE_CHECK_MSR_MASK = 32'h0004_1002;
   localparam logic [31:0] DEBUG_MSR_MASK = 32'h0000_0600;
@@ -677,6 +686,12 @@ module ppc_special #(
   assign mtmsr_unsupported = !live_mode_supported(a_q) ||
     power_mode_unsupported(a_q[MSR_POW], hid0_q);
   assign mtmsr_value = (msr_o & ~MSR_MASK) | (a_q & LIVE_SUPPORTED_MASK);
+  // FPSCR[FEX] is bit 1. mtmsr is dispatched with older work retired, so
+  // the committed FPSCR is final.
+  assign mtmsr_fp_enable = ENABLE_FPU && fp_fpscr_o[30] &&
+    ((msr_o & 32'h0000_0900) == '0) && ((mtmsr_value & 32'h0000_0900) != '0);
+  assign rfi_fp_enable = ENABLE_FPU && fp_fpscr_o[30] && !msr_o[MSR_PR] &&
+    ((msr_o & 32'h0000_0900) == '0) && ((srr1_o & 32'h0000_0900) != '0);
 
   // Restored MSR bits rfi cannot honor without live context.
   localparam logic [31:0] RFI_UNSUPPORTED_ACTIVE_MASK = 32'h0000_bf33;
@@ -1109,7 +1124,12 @@ module ppc_special #(
         end
         SPECIAL_RFI: begin
           exception_event_valid = !rfi_state_unsupported;
-          exception_event_kind = EVENT_RFI;
+          exception_event_kind = rfi_fp_enable ? EVENT_RFI_FP_ENABLE : EVENT_RFI;
+        end
+        SPECIAL_MTMSR: begin
+          exception_event_valid = ENABLE_LIVE_CONTEXT && !mtmsr_unsupported &&
+                                  mtmsr_fp_enable;
+          exception_event_kind = EVENT_PROGRAM_FP_ENABLE;
         end
         SPECIAL_PROGRAM_ILLEGAL: begin
           exception_event_valid = 1'b1;
@@ -1160,7 +1180,7 @@ module ppc_special #(
       ((uop_q.spr == 10'd26) || (uop_q.spr == 10'd27) ||
        (HAS_602 && (uop_q.spr == SPR_ESASRR)))) ||
      (ENABLE_LIVE_CONTEXT && (uop_q.special_op == SPECIAL_MTMSR) &&
-      !mtmsr_unsupported));
+      !mtmsr_unsupported && !mtmsr_fp_enable));
   assign exception_state_load_enable = (uop_q.special_op == SPECIAL_MTMSR) ?
     4'b0001 : (uop_q.spr == 10'd26) ? 4'b0010 :
     (uop_q.spr == 10'd27) ? 4'b0100 : 4'b1000;
@@ -1475,8 +1495,10 @@ module ppc_special #(
     pin_status_o.machine_check_enable = msr_o[MSR_ME];
     pin_status_o.mcp_taken = interrupt_accept && pin_mcp_select &&
                              pin_event_i.mcp;
-    pin_status_o.tea_taken = interrupt_accept && pin_mcp_select &&
-                             !pin_event_i.mcp && pin_tea;
+    // A machine check taken at an instruction also answers a pending TEA.
+    pin_status_o.tea_taken = (interrupt_accept && pin_mcp_select &&
+                              !pin_event_i.mcp && pin_tea) ||
+                             (hold_commit && machine_check_event && msr_o[MSR_ME]);
     pin_status_o.ape_taken = interrupt_accept && pin_mcp_select &&
                              !pin_event_i.mcp && !pin_tea && pin_event_i.ape;
     pin_status_o.dpe_taken = interrupt_accept && pin_mcp_select &&
@@ -1929,7 +1951,7 @@ module ppc_special #(
                bat_recovery_retained_i)
         mmu_resume_target_q <= bat_recovery_target_i;
       if (dispatch_fire) begin
-        tlb_fill_payload_q <= '{bank: (uop_i.special_op == SPECIAL_TLBLD),
+        tlb_fill_payload_q <= '{bank: tlb_fill_dside,
           ea: b_i, vsid: tlb_fill_cmp[30:7], way: srr1_o[17],
           rpn: rpa_q[31:12], c: rpa_q[7], wimg: rpa_q[6:3],
           pp: rpa_q[1:0],
@@ -2106,9 +2128,19 @@ module ppc_special #(
   // Older overlapped loads may still hold results ahead of this one.
   // A result that the accepted memory response completes is taken at once.
   assign fpu_result_take = ENABLE_FPU && rst_ni && !cancel_i &&
-    (((state_q == S_FPU_WAIT) && !fpu_mem_req_valid) ||
+    (((state_q == S_FPU_WAIT) && !fpu_mem_req_valid && !fpu_sticky_hold) ||
      ((state_q == S_FPU_MEM_RSP) && fpu_mem_rsp_ready)) &&
     fpu_result_valid && (fpu_result.tag == producer_q);
+  // 602 UM 4.5.7.1: with MSR[FE0/FE1] clear, a result that newly sets an
+  // exception sticky bit completes one cycle late.
+  localparam logic [31:0] FPSCR_STICKY = 32'h1ff8_0700;
+  assign fpu_sticky_hold = ENABLE_FPU && HAS_602 && !fpu_sticky_waited_q &&
+    (state_q == S_FPU_WAIT) && !fpu_exception && !msr_o[11] && !msr_o[8] &&
+    fpu_result.fpscr_write && |(fpu_result.fpscr_value & ~fp_fpscr_o & FPSCR_STICKY);
+  always_ff @(posedge clk_i)
+    if (!rst_ni || (state_q != S_FPU_WAIT)) fpu_sticky_waited_q <= 1'b0;
+    else if (fpu_sticky_hold && fpu_result_valid && (fpu_result.tag == producer_q))
+      fpu_sticky_waited_q <= 1'b1;
   assign fp_load_overlap_o = ENABLE_FPU && overlap_q && fpu_q && fp_load_q &&
     (state_q != S_IDLE);
   assign fp_load_release_o = ENABLE_FPU && fpu_q && fp_load_q && (state_q == S_MEM_RESULT) &&
@@ -2124,9 +2156,8 @@ module ppc_special #(
   assign fpu_port_req_ready = fpu_mem_req_ready || fpu_unit_owned;
   assign fp_launch_valid_o = fpu_unit_owned && fpu_mem_req_valid;
   assign fp_launch_tag_o = fpu_mem_req.tag;
-  assign fp_store_valid_o = ENABLE_LSU_PIPE && fpu_store.write;
-  assign fp_store_tag_o = fpu_store.tag;
-  assign fp_store_data_o = fpu_store.data;
+  assign fp_store_valid_o = ENABLE_LSU_PIPE && fpu_peek_valid;
+  assign fp_store_data_o = fpu_peek_data;
   assign fpu_port_rsp_valid = fpu_mem_rsp_valid || (ENABLE_LSU_PIPE && fp_rsp_valid_i);
   assign fpu_port_store_ready = fpu_store_ready || (ENABLE_LSU_PIPE && fp_commit_valid_i);
   always_comb begin
@@ -2243,6 +2274,8 @@ module ppc_special #(
         .mem_rsp_i(fpu_port_rsp),
         .store_valid_o(fpu_store_valid), .store_ready_i(fpu_port_store_ready),
         .store_o(fpu_store),
+        .store_peek_tag_i(fp_store_tag_i), .store_peek_valid_o(fpu_peek_valid),
+        .store_peek_data_o(fpu_peek_data),
         .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(fp_fpscr_o),
         .inspect_sp_o(), .inspect_lt_o(),
         .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
@@ -2270,6 +2303,8 @@ module ppc_special #(
         .mem_rsp_i(fpu_port_rsp),
         .store_valid_o(fpu_store_valid), .store_ready_i(fpu_port_store_ready),
         .store_o(fpu_store),
+        .store_peek_tag_i(fp_store_tag_i), .store_peek_valid_o(fpu_peek_valid),
+        .store_peek_data_o(fpu_peek_data),
         .inspect_fpr_index_i(5'd0), .inspect_fpr_o(), .inspect_fpscr_o(fp_fpscr_o),
         .inspect_sp_o(), .inspect_lt_o(),
         .forward_valid_o(), .forward_o(), .forward1_valid_o(), .forward1_o(),
@@ -2311,7 +2346,7 @@ module ppc_special #(
     assign _unused_fp_port = ^{fp_issue_valid_i, fp_issue_tag_i, fp_issue_insn_i,
                                fp_commit_valid_i, fp_commit_tag_i, fp_kill_i, fp_issue,
                                fpu_port_req_ready, fpu_port_rsp_valid, fpu_port_rsp,
-                               fpu_port_store_ready};
+                               fpu_port_store_ready, fp_store_tag_i};
     assign fpu_issue_ready = 1'b0;
     assign fpu_result_valid = 1'b0;
     assign fpu_result = '0;
@@ -2321,6 +2356,8 @@ module ppc_special #(
     assign fpu_mem_rsp_ready = 1'b0;
     assign fpu_store_valid = 1'b0;
     assign fpu_store = '0;
+    assign fpu_peek_valid = 1'b0;
+    assign fpu_peek_data = '0;
     assign fp_fpscr_o = '0;
     logic _unused_fpu;
     assign _unused_fpu = ^{fpu_issue, fpu_mem_rsp, fpu_store_ready, fpu_abort_valid,

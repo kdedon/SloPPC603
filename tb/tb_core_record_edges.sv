@@ -104,7 +104,7 @@ module tb_core_record_edges;
     .dmem_req_write_o(unused_dmem[1]), .dmem_req_addr_o(unused_dmem[33:2]),
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(unused_dmem[70]),
-    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .imem_req_valid_o(req_valid), .imem_req_ready_i(req_ready),
     .imem_req_addr_o(req_addr), .imem_rsp_valid_i(rsp_valid),
     .imem_rsp_ready_o(rsp_ready), .imem_rsp_insn_i(rsp_insn), .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(ppc_pkg::FETCH_OK),
@@ -247,7 +247,7 @@ module tb_core_record_edges;
             "orc. encoding anchor");
 
     // Keep an unfinished owner while its IU result is offered. Recovery and
-    // finish share the edge; the newly finished packet cannot retire yet.
+    // finish share the edge; the newly finished packet is offered at once.
     reset_core();
     wait_for_iu_owner(owner);
     redirect_valid = 1'b1;
@@ -257,9 +257,9 @@ module tb_core_record_edges;
     #1;
     require(redirect_accepted && dut.completion.finish_accept,
             "surviving owner finish was not accepted with redirect");
-    require(!retire_valid && dut.recovery_count == 1 &&
-            dut.recovery_tags[0] == owner,
-            "new finish bypassed retirement or lost survivor identity");
+    require(retire_valid && dut.retire_producer == owner &&
+            dut.recovery_count == 1 && dut.recovery_tags[0] == owner,
+            "new finish was not offered or lost survivor identity");
     tick();
     redirect_valid = 1'b0;
     redirect_keep = 1'b0;

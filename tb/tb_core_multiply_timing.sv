@@ -108,7 +108,7 @@ module tb_core_multiply_timing;
     .dmem_req_write_o(unused_dmem[1]), .dmem_req_addr_o(unused_dmem[33:2]),
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(unused_dmem[70]),
-    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),
@@ -197,8 +197,6 @@ module tb_core_multiply_timing;
                 "MULLI accepted finish was not E+3");
         require(dut.iu_result.value == 32'h2006 && dut.iu_result.cr0 == 0,
                 "MULLI result packet mismatch");
-        require(!(retire_valid && retire_ready && retired.pc == 4),
-                "MULLI retired on its finish edge");
         mulli_finish_edge = cycles;
       end
       if (dut.iu_result_valid && dut.iu_result_ready &&
@@ -208,8 +206,6 @@ module tb_core_multiply_timing;
                 "MULLW accepted finish was not E+2");
         require(dut.iu_result.value == 32'h400e && dut.iu_result.cr0 == 4'h4,
                 "MULLW result/CR0 packet mismatch");
-        require(!(retire_valid && retire_ready && retired.pc == 12),
-                "MULLW retired on its finish edge");
         mullw_finish_edge = cycles;
       end
 
@@ -226,14 +222,18 @@ module tb_core_multiply_timing;
         case (commits)
           0: require(retired.pc == 0 && retired.gpr == 1 && retired.value == 2,
                      "setup retirement mismatch");
-          1: require(retired.pc == 4 && retired.gpr == 2 && retired.value == 32'h2006,
-                     "MULLI retirement mismatch");
+          // UM Figure 6-3: completion in the writeback cycle, at the
+          // earliest the finish edge.
+          1: require(retired.pc == 4 && retired.gpr == 2 && retired.value == 32'h2006 &&
+                     mulli_finish_edge >= 0 && cycles >= mulli_finish_edge,
+                     "MULLI retirement mismatch or before finish");
           2: require(retired.pc == 8 && retired.gpr == 3 && retired.value == 32'h2007,
                      "first dependent retirement mismatch");
           3: require(retired.pc == 12 && retired.gpr == 4 &&
                      retired.value == 32'h400e && retired.write_cr_field &&
-                     retired.cr_delta == 32'h4000_0000,
-                     "MULLW retirement mismatch");
+                     retired.cr_delta == 32'h4000_0000 &&
+                     mullw_finish_edge >= 0 && cycles >= mullw_finish_edge,
+                     "MULLW retirement mismatch or before finish");
           4: require(retired.pc == 16 && retired.gpr == 5 && retired.value == 32'h400f,
                      "second dependent retirement mismatch");
           5: require(retired.pc == 20 && retired.illegal && !retired.gpr_write,

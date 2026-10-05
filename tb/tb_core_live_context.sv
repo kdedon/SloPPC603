@@ -14,7 +14,8 @@ module tb_core_live_context #(
   logic [32:0] unused_interrupt;
   logic clk=0,rst_n=0;
   always #5 clk=~clk;
-  logic iv,ir,sv,sr,dv,dr,dw,rv,rr,tv,tr,halted;
+  logic iv,ir,sv,sr,dv,dr,dw,rv,rr,tv,tr,halted,head_settled;
+  logic [31:0] head_insn;
   logic [31:0] ia,iw,da,wd;
   logic [3:0] st;
   retire_packet_t retired;
@@ -38,6 +39,8 @@ module tb_core_live_context #(
   logic pivot_seen=0,cut_sent=0;
   logic [31:0] installed_msr=32'h40;
   generate if (!USE_BAT) begin : abstract_core
+    assign head_settled=dut.cq_retire_settled;
+    assign head_insn=dut.cq_head_packet.insn;
     logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
@@ -106,7 +109,7 @@ module tb_core_live_context #(
       .imem_rsp_valid_i(sv),.imem_rsp_ready_o(sr),.imem_rsp_insn_i(iw),.imem_rsp_page_miss_i('0), .imem_rsp_fault_i(FETCH_OK),
       .dmem_req_valid_o(dv),.dmem_req_ready_i(dr),.dmem_req_write_o(dw),
       .dmem_req_addr_o(da),.dmem_req_wdata_o(wd),.dmem_req_wstrb_o(st),
-      .dmem_rsp_valid_i(rv),.dmem_rsp_ready_o(rr),.dmem_rsp_rdata_i(32'h55),.dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+      .dmem_rsp_valid_i(rv),.dmem_rsp_ready_o(rr),.dmem_rsp_rdata_i(32'h55),.dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
       .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
       /* verilator lint_off PINCONNECTEMPTY */
       .pin_event_i('0), .pin_status_o(),
@@ -123,6 +126,8 @@ module tb_core_live_context #(
     assign br=0;assign bsv=0;assign bstatus=0;assign startr=0;assign running=rst_n;
     assign iwimg=0;assign dwimg=0;assign fault_status=0;
   end else begin : bat_core
+    assign head_settled=tv;
+    assign head_insn=retired.insn;
     logic [49:0] unused_page_ports;
   logic [32:0] unused_icbi_core;
   logic unused_checkstop1;
@@ -258,13 +263,16 @@ module tb_core_live_context #(
   assign iw=captured_word;
   assign dr=rst_n && running && !dpending && cycles%4!=0;
   assign rv=rst_n && dpending && ddelay==0;
-  assign tr=rst_n && cycles%5!=0 && !(tv && is_context(retired.insn) && held_retire<8);
+  // The hold reads the settled head, not retire_o: a ready that follows a
+  // valid formed in the finish cycle closes a loop through commit-time
+  // recovery.
+  assign tr=rst_n && cycles%5!=0 && !(head_settled && is_context(head_insn) && held_retire<8);
   assign unused_memory_quiescent=!dpending && !((phase==4 || phase==5) && !cut_sent);
   assign cr=context_wait>=15;
   // A retained fence continues; killing the exact identity cancels its proposal.
   assign red=(!USE_BAT && ENABLE_LIVE_CONTEXT) &&
     (((phase==4 || phase==5) && pivot_seen && !cut_sent) ||
-     (tv && is_context(retired.insn) && !tr) || (cv && !cr));
+     (head_settled && is_context(head_insn) && !tr) || (cv && !cr));
   assign red_all=!(phase==4 || phase==5) || cut_sent;
   assign red_keep=phase==5 && !cut_sent;
   assign red_target=32'h200;

@@ -20,15 +20,18 @@ program must observe. Checked on every event:
 - bus request kind, TT, GBL, CI, address and critical double word per operation;
 - sync responds only after every write completed; error responses and machine-check
   pulses match the injected TEA beats;
+- the bench holds each machine-check pulse until a random delay or a load takes it,
+  as the core does; a load behind a held TEA answers with the error and starts no
+  read (UM §4.5.2);
 - at the end every pool line is flushed and memory must equal the image.
 
-Directed tests (16): fill/E→M/dcbst/dcbf sequence; snoop clean and flush on M
+Directed tests (17): fill/E→M/dcbst/dcbf sequence; snoop clean and flush on M
 (ARTRY, push, E or I); kill snoops discarding M; write-through; I=1 accesses that hit
 E and M; dcbz miss (kill broadcast), local, alignment on W and I, hit; reservation
 kept or cancelled by snooped writes, reads and RWITM; strict LRU victim; DLOCK;
 flash invalidate losing modified data; snoops colliding with a fill and with the
 castout buffer; fill error; sync ordering; touch loads and no-op cases; ABE
-broadcasts; DCE=0.
+broadcasts; DCE=0; loads behind a held TEA.
 
 Random phase: loads and stores of all sizes, lwarx/stwcx., every cache operation,
 over 6 WIMG regions plus two error regions, 24 lines per region folded onto 4 sets

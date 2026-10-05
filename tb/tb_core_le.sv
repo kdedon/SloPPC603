@@ -5,6 +5,8 @@
 // word-addressed physical memory and compares the expected physical words.
 // Image lines: M addr data (memory), E addr value mask (expected word),
 // P lo hi (DSI-protected words), D addr (a store there ends the run).
+// +RTRACE=<file> records each retirement up to the store at D; +MEMDUMP=<file>
+// writes every memory word afterwards, for a reference-model comparison.
 // FETCH_WIDTH=2 answers a doubleword-aligned fetch with both words.
 /* verilator lint_off BLKSEQ */
 module tb_core_le #(
@@ -55,6 +57,7 @@ module tb_core_le #(
   int cycles = 0, checks = 0, failures = 0, retires = 0, pairs = 0, le_fetches = 0;
   int stall = 1, seed = 1, max_cycles = 400000;
   bit done = 1'b0, trace = 1'b0;
+  int rtrace_fd = 0;
   logic ipending = 1'b0, dpending = 1'b0, dwrite_q = 1'b0;
   logic [31:0] iaddress = 32'b0, daddress = 32'b0;
 
@@ -126,7 +129,7 @@ module tb_core_le #(
     .dmem_req_valid_o(dv), .dmem_req_ready_i(dr), .dmem_req_write_o(dw),
     .dmem_req_addr_o(da), .dmem_req_wdata_o(wd), .dmem_req_wstrb_o(st),
     .dmem_rsp_valid_i(rv), .dmem_rsp_ready_o(rr), .dmem_rsp_rdata_i(rdata),
-    .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(dfault),
+    .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(dfault), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     .pin_event_i('0), .pin_status_o(pin_status),
     .decrementer_taken_o(unused_decrementer[32]), .decrementer_pc_o(unused_decrementer[31:0]),
@@ -141,6 +144,23 @@ module tb_core_le #(
   function automatic logic [31:0] read_word(input logic [31:0] addr);
     return (mem.exists(addr) != 0) ? mem[addr] : 32'b0;
   endfunction
+  // pc insn more faulted gpr-write gpr value update-write gpr value removed
+  /* verilator lint_off UNUSEDSIGNAL */  // the trace records a subset of fields
+  task automatic trace_retire(input retire_packet_t r);
+    if (rtrace_fd == 0) return;
+    $fwrite(rtrace_fd, "%08x %08x %0d %0d %0d %0d %08x %0d %0d %08x %0d\n", r.pc, r.insn,
+            r.seq_partial, r.illegal || r.alignment_exception || (r.data_fault != DATA_OK) ||
+              (r.fetch_fault != FETCH_OK),
+            r.gpr_write, r.gpr, r.value, r.update_write, r.update_gpr, r.update_value,
+            r.removed_branches);
+    // Stores retire after their bus write: the first retirement after the
+    // final store is that store.
+    if (done) begin
+      $fclose(rtrace_fd);
+      rtrace_fd = 0;
+    end
+  endtask
+  /* verilator lint_on UNUSEDSIGNAL */
   function automatic bit protected_word(input logic [31:0] addr);
     return (addr >= prot_lo) && (addr <= prot_hi);
   endfunction
@@ -205,8 +225,8 @@ module tb_core_le #(
         end
         if (dw && (da == done_addr)) done <= 1'b1;
       end
-      if (tv && tr) retires++;
-      if (tv1 && tr) retires++;
+      if (tv && tr) begin retires++; trace_retire(retired); end
+      if (tv1 && tr) begin retires++; trace_retire(retired1); end
     end else tr <= 1'b0;
   end
 
@@ -220,6 +240,10 @@ module tb_core_le #(
     trace = $test$plusargs("TRACE") != 0;
     void'($value$plusargs("MAX_CYCLES=%d", max_cycles));
     void'($urandom(seed));
+    if ($value$plusargs("RTRACE=%s", line)) begin
+      rtrace_fd = $fopen(line, "w");
+      if (rtrace_fd == 0) $fatal(1, "tb_core_le: cannot open %s", line);
+    end
     fd = $fopen(image, "r");
     if (fd == 0) $fatal(1, "tb_core_le: cannot open %s", image);
     while ($fgets(line, fd) != 0) begin
@@ -247,6 +271,13 @@ module tb_core_le #(
             $sformatf("word %08x got %08x expected %08x mask %08x", expects[i].addr,
                       read_word(expects[i].addr), expects[i].value, expects[i].mask));
     check(le_fetches > 0, "no little-endian fetch");
+    check(rtrace_fd == 0, "trace still open after the final store");
+    if ($value$plusargs("MEMDUMP=%s", line)) begin
+      fd = $fopen(line, "w");
+      if (fd == 0) $fatal(1, "tb_core_le: cannot open %s", line);
+      foreach (mem[a]) $fwrite(fd, "%08x %08x\n", a, mem[a]);
+      $fclose(fd);
+    end
     if (failures != 0) $fatal(1, "tb_core_le: %0d of %0d checks failed", failures, checks);
     $display("PASS tb_core_le: variant=%0d dmem=%0d fetch=%0d width=%0d lsu_pipe=%0d fpu_impl=%0d checks=%0d words=%0d retires=%0d le_fetches=%0d cycles=%0d stall=%0d",
              CPU_VARIANT, DMEM_BITS, FETCH_WIDTH, DISPATCH_WIDTH, LSU_PIPE, FPU_IMPL, checks,

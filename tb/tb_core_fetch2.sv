@@ -94,7 +94,7 @@ module tb_core_fetch2 #(
     .dmem_req_write_o(unused_dmem[1]), .dmem_req_addr_o(unused_dmem[33:2]),
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(unused_dmem[70]),
-    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .imem_req_valid_o(req_valid),
     .imem_req_ready_i(req_ready), .imem_req_addr_o(req_addr),
     .imem_rsp_valid_i(rsp_valid), .imem_rsp_ready_o(rsp_ready),
@@ -152,9 +152,11 @@ module tb_core_fetch2 #(
   endfunction
   int cycle = 0;
   int aligned_requests = 0;
-  // Every third aligned request answers with one word, as a miss would.
+  // Every third aligned request answers with one word, as a miss would,
+  // except at 0x30 so the b at 0x34 arrives in the second lane.
   logic pair_answer;
-  assign pair_answer = (FETCH_WIDTH == 2) && !pending_addr[2] && (aligned_requests % 3 != 0);
+  assign pair_answer = (FETCH_WIDTH == 2) && !pending_addr[2] &&
+                       ((aligned_requests % 3 != 0) || (pending_addr == 32'h30));
   assign req_ready = !pending && (cycle % 11 != 5);
   assign rsp_valid = pending;
   if (FETCH_WIDTH == 2) begin : g_pair
@@ -227,7 +229,9 @@ module tb_core_fetch2 #(
       assert (!halted && !(retire_valid && retired.illegal)) else $fatal(1, "unexpected fault");
       if (retire_valid && retire_ready) begin
         retirements++;
-        if (log_fd != 0)
+        // Whether a branch without LR or CTR writes is removed depends on
+        // timing, so the log leaves all of them out.
+        if (log_fd != 0 && !(retired.branch && !retired.branch_lk && !retired.branch_ctr))
           $fwrite(log_fd, "%08x %0d %0d %08x\n", retired.pc, retired.gpr_write, retired.gpr,
                   retired.value);
         if (retired.gpr_write) regs[retired.gpr] = retired.value;

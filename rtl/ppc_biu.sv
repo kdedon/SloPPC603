@@ -8,7 +8,8 @@
 // end answers other masters' global tenures. With ENABLE_DIRECT_STORE another
 // master runs direct-store requests on XATS. One address tenure is
 // outstanding at a time, except that a push's may follow one whose data
-// tenure is still owed.
+// tenure is still owed. DBWO with a data grant runs that push's data ahead
+// of an owed read's (UM 8.10).
 module ppc_biu #(
   // A TEA on an instruction read returns an error response.
   parameter bit RETURN_IFETCH_ERROR = 1'b0,
@@ -126,6 +127,7 @@ module ppc_biu #(
   output logic        artry_n_o,
   output logic        artry_oe_o,
   input  logic        dbg_n_i,
+  input  logic        dbwo_n_i,
   input  logic        dbb_n_i,
   output logic        dbb_n_o,
   output logic        dbb_oe_o,
@@ -142,6 +144,9 @@ module ppc_biu #(
   logic [5:0] scalar_req_attr;
   logic scalar_router_rsp_ready, scalar_router_busy;
   logic scalar_req_ready, scalar_rsp_valid, scalar_rsp_error, scalar_busy;
+  // While the data cache waits for the pins the group starts no new
+  // transaction, so back-to-back fetches cannot keep it off the bus.
+  logic grp_yield, scalar_bus_ready, line_bus_ready;
   logic [31:0] scalar_rsp_rdata;
   logic scalar_protocol_error;
   logic scalar_br_n, scalar_bg_n, scalar_abb_in_n;
@@ -232,9 +237,11 @@ module ppc_biu #(
     .busy_o(scalar_router_busy)
   );
 
+  assign scalar_req_ready = scalar_bus_ready && !grp_yield;
+  assign line_req_ready_o = line_bus_ready && !grp_yield;
   ppc_bus60x scalar_bus (
     .clk_i, .rst_ni, .bus_ce_i,
-    .req_valid_i(scalar_req_valid), .req_ready_o(scalar_req_ready),
+    .req_valid_i(scalar_req_valid && !grp_yield), .req_ready_o(scalar_bus_ready),
     .req_instruction_i(scalar_req_instruction),
     .req_write_i(scalar_req_write), .req_addr_i(scalar_req_addr),
     .req_wdata_i(scalar_req_wdata), .req_wstrb_i(scalar_req_wstrb),
@@ -259,8 +266,8 @@ module ppc_biu #(
 
   ppc_bus60x_line_read line_bus (
     .clk_i, .rst_ni, .bus_ce_i,
-    .req_valid_i(line_req_valid_i),
-    .req_ready_o(line_req_ready_o),
+    .req_valid_i(line_req_valid_i && !grp_yield),
+    .req_ready_o(line_bus_ready),
     .req_line_addr_i(line_req_line_addr_i),
     .req_critical_dw_i(line_req_critical_dw_i),
     .req_instruction_i(line_req_instruction_i),
@@ -529,7 +536,7 @@ module ppc_biu #(
     logic [63:0] pe_d_o;
     logic pe_busy, pe_protocol_error;
     logic outer_addr_active, outer_owed_q, outer_data_tt_q, outer_aack_q;
-    logic outer_dbb_q;
+    logic outer_dbb_q, outer_read_q, pe_aack_q, pe_owed_q, dbwo_push;
 
     // Each cache-master instance leaves the other's port set open.
     /* verilator lint_off PINCONNECTEMPTY */
@@ -644,9 +651,12 @@ module ppc_biu #(
         outer_data_tt_q <= 1'b0;
         outer_aack_q <= 1'b0;
         outer_dbb_q <= 1'b0;
+        outer_read_q <= 1'b0;
       end else if (bus_ce_i) begin
-        if (outer_ts_oe && !outer_ts_n)
+        if (outer_ts_oe && !outer_ts_n) begin
           outer_data_tt_q <= outer_tt[1] || (outer_tt[4] && outer_tt[2:0] == 3'b100);
+          outer_read_q <= outer_tt[3];
+        end
         outer_aack_q <= !outer_aack_n && outer_abb_oe;
         outer_dbb_q <= outer_dbb_oe;
         if (outer_aack_q && outer_artry_n && outer_data_tt_q)
@@ -656,16 +666,33 @@ module ppc_biu #(
       end
     end
 
+    // The push owes its data from its unretried AACK (when its master
+    // starts waiting for DBG) until its data tenure starts.
+    always_ff @(posedge clk_i) begin
+      if (!rst_ni) begin
+        pe_aack_q <= 1'b0;
+        pe_owed_q <= 1'b0;
+      end else if (bus_ce_i) begin
+        pe_aack_q <= !aack_n_i && pe_abb_oe;
+        if (pe_aack_q && artry_n_i) pe_owed_q <= 1'b1;
+        else if (pe_dbb_oe) pe_owed_q <= 1'b0;
+      end
+    end
+    // DBWO on a data grant sends the owed push data ahead of an owed read's;
+    // it does not reorder writes, and with no push owed it is ignored
+    // (UM 7.2.6.2, 8.10).
+    assign dbwo_push = !dbwo_n_i && pe_owed_q && outer_owed_q && outer_read_q;
+
     // The outer masters take no grant while a push is due or running, so the
     // push is this processor's next tenure (UM 8.3.3). The push takes the
     // address bus once the outer address tenure is over, and the data bus
-    // once no outer data tenure is owed.
+    // once no outer data tenure is owed, or ahead of a read under DBWO.
     assign outer_bg_n = bg_n || pe_busy || push_due;
     assign pe_bg_n = bg_n_i || outer_addr_active;
-    assign pe_dbg_n = dbg_n_i || outer_owed_q || outer_dbb_oe;
+    assign pe_dbg_n = dbg_n_i || outer_dbb_oe || (outer_owed_q && !dbwo_push);
     assign outer_aack_n = aack_n_i || pe_abb_oe;
     assign outer_artry_n = artry_n_i || pe_abb_oe;
-    assign outer_dbg_n = dbg_n_i || pe_dbb_oe;
+    assign outer_dbg_n = dbg_n_i || pe_dbb_oe || dbwo_push;
     assign outer_ta_n = ta_n_i || pe_dbb_oe;
     assign outer_drtry_n = drtry_n_i || pe_dbb_oe;
     assign outer_tea_n = tea_n_i || pe_dbb_oe;
@@ -711,6 +738,7 @@ module ppc_biu #(
     // A due push keeps BR asserted until its tenure starts; UM §8.3.1 allows
     // BR without a following tenure.
     assign push_due = push_hold || push_wait;
+    assign grp_yield = !cm_br_n;
     assign push_owed = push_due;
     assign br_n_o = pe_br_n &&
       ((outer_br_n || artry_block || pe_busy) && !push_due);
@@ -719,7 +747,11 @@ module ppc_biu #(
     assign dcache_protocol_error = outer_protocol_error || cm_protocol_error ||
       snoop_protocol_error || pe_protocol_error;
   end else begin : g_no_dcache
+    // No push can be owed, so DBWO has nothing to reorder.
+    logic unused_dbwo;
+    assign unused_dbwo = dbwo_n_i;
     assign push_owed = 1'b0;
+    assign grp_yield = 1'b0;
     assign br_n_o = grp_br_n || artry_block;
     assign grp_bg_n = bg_n;
     assign grp_abb_in_n = abb_n_i;

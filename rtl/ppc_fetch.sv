@@ -16,6 +16,11 @@
 // With FETCH_WIDTH 2 a response may also carry the next word (rsp_pair_i,
 // doubleword-aligned requests only). Both words pass on when the queue has
 // two free slots; otherwise the second is dropped and fetched again.
+//
+// early_i announces, a cycle ahead, a redirect to early_target_i whose
+// source and target are registered. When it arrives (early_ok_i) and no old
+// request is held, the target request is offered on the redirect edge itself
+// instead of the next one.
 module ppc_fetch #(
   parameter logic [31:0] RESET_PC = 32'hfff0_0100,
   parameter int FETCH_WIDTH = 1
@@ -23,6 +28,8 @@ module ppc_fetch #(
   input logic clk_i, rst_ni, stop_i,
   input logic redirect_i,
   input logic [31:0] redirect_target_i,
+  input logic early_i, early_ok_i,
+  input logic [31:0] early_target_i,
   output logic quiescent_o,
   output logic req_valid_o,
   input logic req_ready_i,
@@ -36,6 +43,9 @@ module ppc_fetch #(
   input logic [31:0] rsp_insn1_i,
   output logic packet_valid_o,
   input logic packet_ready_i, packet_ready2_i,
+  // packet_ready2_i without the redirect term; it only sizes the next
+  // address, which a redirect edge does not use.
+  input logic packet_room2_i,
   output ppc_pkg::fetch_packet_t packet_o,
   // packet_o is followed by the word at pc + 4.
   output logic packet_pair_o,
@@ -51,7 +61,7 @@ module ppc_fetch #(
   logic buf_valid;
   logic [31:0] buf_pc, buf_insn;
   ppc_pkg::esa_enable_t buf_esa;
-  logic consume, live, to_buf, replay, offer, accept, pair;
+  logic consume, live, to_buf, replay, offer, accept, pair, pair_next, early_sel, fast;
   logic pending_d, request_held_d, redirect_pending_d;
   logic [31:0] pc_d;
 
@@ -66,12 +76,21 @@ module ppc_fetch #(
                   rsp_fault_i != FETCH_OK;
   assign offer = !stop_i && packet_ready_i && !buf_valid &&
                  (!pending || (consume && !redirect_pending));
-  // A held offer remains stable even if the slot indication changes.
-  assign req_valid_o = rst_ni && (request_held || offer);
+  assign early_sel = early_i && !request_held;
+  assign fast = early_sel && early_ok_i && redirect_i && !stop_i &&
+                (!pending || consume);
+  // A held offer remains stable even if the slot indication changes. An
+  // announced redirect that does not arrive costs one offer cycle.
+  assign req_valid_o = rst_ni && (request_held || (offer && !early_i) || fast);
   assign pair = (FETCH_WIDTH == 2) && live && !redirect_i && packet_ready2_i &&
                 rsp_pair_i && (rsp_fault_i == FETCH_OK) && !pc[2];
-  assign next_addr = pair ? pc_plus8 : pc_plus4;
-  assign req_addr_o = pending ? next_addr : pc;
+  // Equals pair whenever redirect_i is low. On a redirect edge only a held
+  // request (never pending) or the early target is offered, and pc_plus4/8
+  // are reloaded before a pending request uses them again.
+  assign pair_next = (FETCH_WIDTH == 2) && consume && !stop_i && !redirect_pending &&
+                     packet_room2_i && rsp_pair_i && (rsp_fault_i == FETCH_OK) && !pc[2];
+  assign next_addr = pair_next ? pc_plus8 : pc_plus4;
+  assign req_addr_o = early_sel ? early_target_i : pending ? next_addr : pc;
   assign accept = req_valid_o && req_ready_i;
   assign quiescent_o = !pending && !request_held && !req_valid_o;
   // On the redirect edge itself the cleared downstream queue refuses the
@@ -98,7 +117,13 @@ module ppc_fetch #(
     request_held_d = request_held;
     redirect_pending_d = redirect_pending;
     pc_d = pc;
-    if (redirect_i) begin
+    if (fast) begin
+      // A coincident old response is discarded.
+      request_held_d = !req_ready_i;
+      pending_d = req_ready_i;
+      redirect_pending_d = 1'b0;
+      pc_d = early_target_i;
+    end else if (redirect_i) begin
       if (req_valid_o) begin
         // Preserve an old request held, first offered, or offered on a
         // consume edge. Its address cannot be withdrawn.
@@ -148,9 +173,11 @@ module ppc_fetch #(
       pc <= pc_d;
       // Only pending requests use pc_plus4, so it can trail a redirect by a
       // cycle and never depends on the redirect target.
-      if (!pending) pc_plus4 <= pc + 32'd4;
+      if (fast) pc_plus4 <= early_target_i + 32'd4;
+      else if (!pending) pc_plus4 <= pc + 32'd4;
       else if (consume && !replay) pc_plus4 <= next_addr + 32'd4;
-      if (!pending) pc_plus8 <= pc + 32'd8;
+      if (fast) pc_plus8 <= early_target_i + 32'd8;
+      else if (!pending) pc_plus8 <= pc + 32'd8;
       else if (consume && !replay) pc_plus8 <= next_addr + 32'd8;
       if (redirect_i) redirect_target <= redirect_target_i;
       if (redirect_i || (buf_valid && packet_ready_i)) buf_valid <= 1'b0;
@@ -187,6 +214,8 @@ module ppc_fetch #(
         else $error("held fetch offer coexists with a pending request");
       assert (!(redirect_i && packet_valid_o && packet_ready_i))
         else $error("downstream accepted an old-path packet on a redirect edge");
+      assert (!(fast && (redirect_target_i != early_target_i)))
+        else $error("early fetch redirect target differs from the redirect");
     end
   end
   // synthesis translate_on

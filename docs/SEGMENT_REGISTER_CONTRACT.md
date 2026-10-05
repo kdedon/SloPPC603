@@ -10,7 +10,7 @@ The primary files are the workspace-root `1997_MPC603EUM_MPC603e_EC603e_Users_Ma
 | --- | --- |
 | Sixteen 32-bit SRs; data/main and instruction/shadow arrays both updated by a segment write | 603e UM §1.3.1.9, PDF 59 / printed 1-19 |
 | All four forms operate independently of MSR.IR/DR | 603e UM §2.3.6.3.2/Table 2-41, PDF 123 / 2-45 |
-| SRs are supervisor-only MMU registers | 603e UM Table 5-6, PDF 214 / 5-18; privilege exception rule §2.3.2.4.2, PDF 98 / 2-20 |
+| SRs are supervisor-only MMU registers | 603e UM Table 5-6, PDF 214 / 5-18; privilege exception rule §2.3.2.4.3, PDF 98 / 2-20 |
 | Exact four instruction layouts | 603e UM Table A-28, PDF 386 / A-26 |
 | `mfsr` operation and privilege | PEM PDF 570 / 8-158 |
 | `mfsrin` operation and privilege | PEM PDF 572 / 8-160 |

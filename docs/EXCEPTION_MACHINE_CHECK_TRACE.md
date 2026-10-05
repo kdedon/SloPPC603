@@ -49,8 +49,9 @@ Entry:
   machine check outranks a pending EXT/DEC at the same boundary.
 - SRR1: manual bits 0-15 clear except bit 13 (TEA, `0x0004_0000`); bits 16-31
   from MSR (RI included, so software sees recoverability). MSR per Table
-  4-10 plus ME cleared: the table note requires software to set ME again
-  before another TEA, which is only meaningful if entry clears it. RFI
+  4-10 plus ME cleared, as UM Table 4-7 (PDF 175, printed 4-17) states.
+  Table 4-3 (PDF 169) copies SRR1 bits 0 and 5-9 from the MSR where Table 4-10
+  clears them; those MSR bits are reserved zero, so both agree in effect. RFI
   restores ME from SRR1.
 - Machine check is taken with MSR[TGPR]=1 (a TEA in a TLB-miss handler);
   entry clears TGPR, and SRR1[RI]=0 marks it unrecoverable. Trace, IABR and
@@ -63,8 +64,11 @@ without a vector, fences the front end and holds the special lane in
 `halted_o` follows; only reset leaves the state. It is distinct from the
 diagnostic halt (`halted_o` without `checkstop_o`).
 
-Not implemented: MCP, DPE, APE (no such inputs), CKSTP_IN, HID0[EMCP], and
-the completed store queue (stores are performed before commit).
+MCP with HID0[EMCP], CKSTP_IN, APE and DPE are on the package top
+([chip package](CHIP_PACKAGE.md)). With the LSU unit, a write error on a
+committed store cancels the rest of the store queue
+([LSU](LSU_PIPELINE.md#store-queue)); without it, stores are performed
+before commit.
 
 ## Cracked instructions
 
@@ -86,9 +90,9 @@ has `seq_partial` clear.
 |---|---|
 | ME, RI | Stored; MTMSR, MFMSR, SRR1 save and RFI restore. |
 | SE, BE | Stored, as above; trace behavior below. They combine with TGPR=1. |
-| POW | Stored and read back; cleared on exception entry, not in SRR1. HID0 is not implemented and reads zero, so no DOZE/NAP/SLEEP mode is selected and POW has no effect (UM §9: POW enables only the HID0-selected mode). |
-| LE, ILE | Rejected: MTMSR or RFI setting either faults (diagnostic halt). The MVP is big-endian only. |
-| FP, FE0, FE1 | Rejected as before (no FPU). |
+| POW | Stored and read back; cleared on exception entry, not in SRR1. Enters the HID0-selected DOZE, NAP or SLEEP mode ([power management](POWER_MANAGEMENT.md)). |
+| LE, ILE | With `ENABLE_LE` ([little-endian mode](LITTLE_ENDIAN.md)); otherwise MTMSR or RFI setting either faults (diagnostic halt). |
+| FP, FE0, FE1 | With `ENABLE_FPU` ([FPU integration](FPU_CORE_INTEGRATION.md)); otherwise rejected. |
 
 ## Trace
 

@@ -36,9 +36,10 @@ this document does not restate it.
 | PVR revision | from `0x0100`; PID7v bits need level `0x0200` | from `0x0100` | not given | from `0x0100` |
 | Source | UM §1.3.1.1 PDF 58 / 1-18; §2.1.1 PDF 84 / 2-6 | same | UM §C.2 PDF 428 / C-16 | 602UM §2.1.1.3 PDF 85 / 2-9 |
 
-Main: `PVR_VALUE = 32'h0007_0200` in `ppc_core.sv`, `ppc_special.sv` and the
-wrappers. The reference runner uses `0x00070101` (DingusPPC `MPC603EV`), so
-PVR reads differ from the reference today.
+Main: `cpu_cfg().pvr` in `ppc_pkg.sv`: PID7v `0x00070101`, PID6 `0x00060101`,
+603 `0x00030101`, 602 `0x00050101`, matching the reference runner. UM §1.3.1.2
+(PDF 58, printed 1-18) designates PID7v by PVR level 0x0200, so the PID7v
+revision half is open as AUD-76.
 
 ### 1.2 Caches
 
@@ -199,9 +200,15 @@ reset, machine check and IABR, which keep `0x0000` (V8, Table 2-15). The
 SRR0 = the instruction (trap) or the next instruction (watchdog) and SRR1 =
 MSR bits 16–31 (Tables 4-22, 4-23). `ppc_watchdog` owns TCR and raises the
 watchdog from the time base (see [602 watchdog](#602-watchdog)). A misaligned
-eciwx/ecowx takes the alignment exception on every variant, PID6 included:
-splitting an external-control transfer needs LSU and BIU work, deferred to
-V13 with the misaligned-LE split (`cfg.misaligned_ecxwx_hw` has no consumer).
+eciwx/ecowx takes the alignment exception on the PID7v
+(`cfg.misaligned_ecxwx_hw` = 0). PID6 and the 603 split it in big-endian
+mode like any misaligned word (UM §8.3.2.5.1, Table 8-5): the first
+external-control tenure at the EA with 4 − EA[30:31] bytes, the second at the
+next word with the rest, both with the RID on TBST/TSIZ. With MSR[DR] = 1 a
+split that crosses a 4-KiB page takes alignment, as for other words. In
+little-endian mode a misaligned eciwx/ecowx takes alignment on every part
+(PID6 rule for single-register accesses, UM §4.5.6). A core built without
+the unaligned datapath traps it everywhere.
 
 ### 1.5 Special-purpose registers
 
@@ -263,7 +270,7 @@ PID6, and the ABE broadcast pin status is tied off there (V2).
 | esa, dsa, mfrom | — | — | — | **602 only** (XO 596, 628, 265) |
 | FP | DP hardware; fsqrt/fsqrts/tlbia illegal | = | = | SP hardware, DP → 0x1600; see FPU_602 contract |
 | Cache ops, T=1 segment | DSI | = | lwarx/stwcx./eciwx/ecowx DSI; dcb*/icbi no-ops | n/a |
-| Dispatch | 2 per cycle, SRU executes add/cmp | = | no add/cmp in SRU | **1 per cycle**, 4-entry IQ, no SRU |
+| Dispatch | 2 per cycle, SRU executes add/cmp | 2 per cycle, no add/cmp in SRU (UM §1.1 PDF 45 lists it as PID7v-only; §1.1.2.2.3 PDF 48 conflicts) | no add/cmp in SRU | **1 per cycle**, 4-entry IQ, no SRU |
 | Source | UM App. B PDF 407–410 | = | UM §C.2.1.4–5 PDF 430–431; §C.2.3 PDF 432 | 602UM §1.2.3 PDF 61 / 1-25; §2.3.4.3.6 PDF 126–127 / 2-50–2-51; §2.3.7 PDF 141–144 / 2-65–2-68; App. A PDF 416–428; PDF 212, 316 |
 
 Main: [ISA_MATRIX.md](references/ISA_MATRIX.md) carries a `Variants` column

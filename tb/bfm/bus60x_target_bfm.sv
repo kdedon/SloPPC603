@@ -86,7 +86,8 @@ module bus60x_target_bfm #(
   );
     integer cycle;
     begin
-      wait_for_address_request(64);
+      // Cached code can leave the bus idle for a while.
+      wait_for_address_request(2048);
       wait_cycles(bg_wait);
       bus_fall();
       bg_n_o = 1'b0;

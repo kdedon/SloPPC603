@@ -358,6 +358,9 @@ package ppc_pkg;
     logic update_write;
     logic [4:0] update_gpr;
     logic [31:0] update_value;
+    // update_gpr has its own rename slot, released at retirement.
+    logic update_owned;
+    rename_tag_t update_tag;
     logic needs_flags;
     logic write_xer;
     logic write_ca;
@@ -381,6 +384,9 @@ package ppc_pkg;
     logic cq1_ok;
     // Writes an FPR (FP arithmetic or FP load).
     logic fpr_write;
+    // Branches removed at dispatch just before this instruction in program
+    // order. They wrote no LR or CTR and took no CQ entry (UM 6.3.1).
+    logic [2:0] removed_branches;
   } retire_packet_t;
   // Performance events, registered one cycle after the cycle they describe.
   // slot says what the single dispatch slot did that cycle, so the slot
@@ -475,7 +481,13 @@ package ppc_pkg;
     EVENT_WATCHDOG        = 5'd24,
     // Floating-point enabled program exception (SRR1 bit 11).
     EVENT_PROGRAM_FP      = 5'd25,
-    EVENT_MACHINE_CHECK_DPE = 5'd26
+    EVENT_MACHINE_CHECK_DPE = 5'd26,
+    // mtmsr set FE0/FE1 from 00 while FPSCR[FEX] is set; SRR0 is the next
+    // instruction.
+    EVENT_PROGRAM_FP_ENABLE = 5'd27,
+    // rfi set FE0/FE1 from 00 while FPSCR[FEX] is set; SRR0 is the rfi
+    // target.
+    EVENT_RFI_FP_ENABLE   = 5'd28
   } exception_event_t;
 
   // Chip-pin events into the core, already synchronized. soft_reset and mcp
@@ -698,6 +710,11 @@ package ppc_pkg;
     cpu_cfg_t c;
     c = cpu_cfg(v);
     return c.misaligned_le_hw;
+  endfunction
+  function automatic bit cpu_misaligned_ecxwx_hw(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return c.misaligned_ecxwx_hw;
   endfunction
   function automatic bit cpu_mul_602_timing(cpu_variant_e v);
     cpu_cfg_t c;

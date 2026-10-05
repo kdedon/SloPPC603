@@ -40,3 +40,9 @@ manifest records it as `xrand_seed`. `XRAND=0` keeps the zero-initialized build.
 `reference-acceptance`) runs compiled firmware images on the whole DingusPPC
 CPU/MMU/exception core through `firmware_runner.cpp` and compares them with the
 RTL benches; see [REFERENCE_FIRMWARE.md](../../docs/REFERENCE_FIRMWARE.md).
+
+`run_machine_reference.py` (`make -C sim test-reference-machine` and
+`test-reference-machine-mmu`) steps `machine_runner.cpp` in lockstep with the
+demo SoC or package top through whole programs; see
+[REFERENCE_MACHINE.md](../../docs/REFERENCE_MACHINE.md). Both runners share the
+603e corrections in `reference_adapter.h`.

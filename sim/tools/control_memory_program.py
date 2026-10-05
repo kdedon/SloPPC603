@@ -502,6 +502,56 @@ def make_branch_fold():
         p.label(t('outer'));e('mflr',24);e('b',t('inner'),0,1);e('mtlr',24);e('bclr',20,0,0)
         p.label(t('inner'));nops(pad);e('addi',21,21,1);e('bclr',20,0,0)
         p.label(t('next'))
+    # A bc whose compare waits on a divide or a load dispatches on its
+    # prediction, right and wrong, forward and backward, with and without
+    # y and LK. Younger stores, loads, a compare with a second CR branch, a
+    # CTR branch and a mtctr follow it; none may take effect on a wrong path.
+    # An add between the compare and the branch lets the branch retire
+    # beside it.
+    e('addi',6,0,100);e('addi',7,0,7)
+    for pad in range(4):
+        t=lambda name:f's{name}{pad}'
+        nops(pad)
+        q=(100+pad)//7
+        e('addi',6,0,100+pad)
+        for k,(bo,eq) in enumerate([(12,1),(12,0),(4,1),(4,0),(13,0),(5,1)]):
+            e('divw',8,6,7,0,0);e('cmpi',0,8,q if eq else q+1)
+            if k%2:e('addi',23,23,1)
+            e('bc',bo,2,t(f'tk{k}'),0,1 if k==3 else 0)
+            e('stw',6,1,128+16*pad+4*(k%4));e('lwz',27,1,128+16*pad);e('addi',20,20,1<<k)
+            e('cmpi',1,27,0);e('bc',12,6,t(f'x{k}'),0,0)
+            p.label(t(f'x{k}'));e('addi',5,0,k+2);e('mtctr',5)
+            p.label(t(f'tk{k}'));e('addi',21,21,k+1);e('mflr',25)
+        # bne loop on a loaded counter: taken twice, then mispredicted.
+        e('addi',9,0,3);e('stw',9,1,192+4*pad)
+        p.label(t('lp'));e('lwz',9,1,192+4*pad);e('addi',9,9,-1);e('stw',9,1,192+4*pad)
+        e('cmpi',0,9,0);e('bc',4,2,t('lp'),0,0);e('stw',20,1,208+4*pad)
+        # Decrement and condition: CTR 2 -> 1, EQ false, so taken.
+        e('addi',5,0,2);e('mtctr',5);e('divw',8,6,7,0,0);e('cmpi',0,8,0)
+        e('bc',0,2,t('ct'),0,0);e('addi',20,20,512)
+        p.label(t('ct'));e('mfctr',26);e('addi',22,22,1)
+    # A second compare behind one waiting on a divide waits for the CR in
+    # its station; one behind the divide alone may finish in the SRU. A bc
+    # on either field resolves from that compare's result, right and wrong.
+    for pad in range(4):
+        t=lambda name:f'w{name}{pad}'
+        nops(pad)
+        q=(100+pad)//7
+        e('addi',6,0,100+pad)
+        for k,(two,bi,bo,eq) in enumerate([(1,6,12,1),(1,6,13,0),(1,2,4,1),(1,2,12,0),
+                                          (0,6,12,1),(0,6,13,0),(0,6,4,0)]):
+            e('divw',8,6,7,0,0)
+            if two:e('cmpi',0,8,q)
+            e('cmpi',1,7,7 if eq else 8)
+            e('bc',bo,bi,t(f'tk{k}'),0,0)
+            e('stw',23,1,224+4*pad);e('addi',23,23,1<<k)
+            p.label(t(f'tk{k}'));e('addi',21,21,k+1);e('stw',21,1,240+4*pad)
+        # An mtlr whose source an add behind the waiting compare produces.
+        e('addi',3,0,t('m1'));e('divw',8,6,7,0,0);e('cmpi',0,8,q)
+        e('addi',3,3,0);e('mtlr',3);e('bclr',20,0,0);e('illegal')
+        p.label(t('m1'));e('divw',8,6,7,0,0);e('cmpi',0,8,q);e('addi',3,0,t('m2'))
+        e('mtlr',3);e('bclr',12,2,0);e('illegal')
+        p.label(t('m2'));e('addi',21,21,64)
     # A leaf called in a loop: the return folds once the bl retires.
     e('addi',5,0,8);e('mtctr',5)
     p.label('loop');e('b','body',0,1);e('add',22,22,21);e('bc',16,0,'loop',0,0)

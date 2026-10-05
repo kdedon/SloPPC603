@@ -6,7 +6,8 @@
 // Options: +IRQ_ACK=<addr> asserts INT until that word changes, seen through
 // global reads by the second master (the data cache may hold the store);
 // +TEA_BASE/+TEA_END end tenures in that window with TEA; +MIN_DWORDS=<n>
-// requires n eight-byte single-beat reads and writes. Passes when the
+// requires n eight-byte single-beat reads and writes; +RETIRE_TRACE=<file>
+// writes the machine trace. Passes when the
 // firmware writes 1 to +TOHOST with no checkstop.
 /* verilator lint_off BLKSEQ */
 module tb_chip_firmware #(parameter int PLL = -1);
@@ -15,6 +16,10 @@ module tb_chip_firmware #(parameter int PLL = -1);
   logic clk = 1'b0;
   always #5 clk = ~clk;
   `include "chip_harness.svh"
+`define MT_CORE dut.cpu.translated_core.core
+`define MT_BAT dut.cpu.translated_core
+`define MT_CLK clk
+  `include "machine_trace.svh"
 
   string image_path;
   logic [7:0] image [0:IMAGE_BYTES-1];

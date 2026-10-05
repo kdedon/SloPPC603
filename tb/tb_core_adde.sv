@@ -150,7 +150,7 @@ module tb_core_adde;
     .dmem_req_write_o(unused_dmem[1]), .dmem_req_addr_o(unused_dmem[33:2]),
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(unused_dmem[70]),
-    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .imem_req_valid_o(req_valid), .imem_req_ready_i(req_ready),
     .imem_req_addr_o(req_addr), .imem_rsp_valid_i(rsp_valid),
     .imem_rsp_ready_o(rsp_ready), .imem_rsp_insn_i(rsp_insn), .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(ppc_pkg::FETCH_OK),
@@ -249,6 +249,14 @@ module tb_core_adde;
     if (is_add_encoding(insn[31:26], insn[9:1]))
       return (insn[9:1] == 9'd10) || insn[10] || insn[0];
     return 1'b0;
+  endfunction
+  // The flag token is the CR rename: Rc forms own it. Other flag words
+  // write XER alone; CA and SO readers wait for older writers to retire.
+  function automatic logic expected_owns_token(input logic [31:0] w);
+    return expected_needs_flags(w) && w[0];
+  endfunction
+  function automatic logic expected_reads_xer(input logic [31:0] w);
+    return expected_needs_flags(w) && (w[0] || w[10] || is_adde_encoding(w[31:26], w[9:1]));
   endfunction
 
   function automatic logic [31:0] xor_truth(
@@ -534,6 +542,7 @@ module tb_core_adde;
 
   always @(posedge clk) begin
     int issue_index, finish_index;
+    logic settled, early;
     logic word_legal, word_needs_flags;
     if (!rst_n) begin
       stream.delete();
@@ -548,7 +557,30 @@ module tb_core_adde;
       last_owner_commit_was_addc = 0;
     end else begin
       require(!redirect_accepted, "disabled ADD recovery unexpectedly accepted");
-      require(retire_valid == (stream.size() > 0 && stream[0].done),
+      // A head finished before this edge, or finishing on it, may retire.
+      settled = stream.size() > 0 && stream[0].done;
+      early = 1'b0;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_finish[lane]) begin
+          finish_index = -1;
+          for (int i = 0; i < stream.size(); i++)
+            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
+          require(finish_index >= 0 && !stream[finish_index].done &&
+                  stream[finish_index].issued,
+                  "ADD finish did not match a live issued stream entry");
+          if (finish_index >= 0) begin
+            require(edge_count == int'(stream[finish_index].issue_edge) + 1,
+                    "ADD registered IU finish was not issue+1");
+            item = stream[finish_index];
+            item.done = 1;
+            item.finish_edge = 32'(edge_count);
+            stream[finish_index] = item;
+            // UM Figure 6-3: an IU result completes in its writeback cycle.
+            if (finish_index == 0 && (lane == 1 || dut.completion.result_retire_i))
+              early = 1'b1;
+          end
+        end
+      require(retire_valid == (settled || early),
               "ADD retirement eligibility disagrees with stream oracle");
       if (retire_valid) begin
         if (!(retired.pc == stream[0].pc && retired.insn == stream[0].insn &&
@@ -561,16 +593,18 @@ module tb_core_adde;
                 dut.retire_producer == stream[0].tag,
                 "ADD retirement PC/word/tag differs from stream head");
         if (expected_legal(stream[0].insn))
-          require(edge_count > int'(stream[0].finish_edge),
-                  "ADD finish bypassed to same-edge retirement");
+          require(edge_count >= int'(stream[0].finish_edge),
+                  "retirement preceded its finish");
       end
 
       if (retire_valid && retire_ready) begin
         oracle_commit(retired, dut.retire_producer);
         if (expected_needs_flags(stream[0].insn)) begin
-          require(owner_expected_valid && owner_expected == dut.retire_producer,
-                  "retiring ADD flag owner differs from allocation identity");
-          owner_expected_valid = 0;
+          if (expected_owns_token(stream[0].insn)) begin
+            require(owner_expected_valid && owner_expected == dut.retire_producer,
+                    "retiring ADD flag owner differs from allocation identity");
+            owner_expected_valid = 0;
+          end
           last_owner_commit_edge = edge_count;
           last_owner_commit_was_addc =
             is_add_encoding(stream[0].insn[31:26], stream[0].insn[9:1]) &&
@@ -601,24 +635,6 @@ module tb_core_adde;
         end
 
       for (int lane = 0; lane < 2; lane++)
-        if (lane_finish[lane]) begin
-          finish_index = -1;
-          for (int i = 0; i < stream.size(); i++)
-            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
-          require(finish_index >= 0 && !stream[finish_index].done &&
-                  stream[finish_index].issued,
-                  "ADD finish did not match a live issued stream entry");
-          if (finish_index >= 0) begin
-            require(edge_count == int'(stream[finish_index].issue_edge) + 1,
-                    "ADD registered IU finish was not issue+1");
-            item = stream[finish_index];
-            item.done = 1;
-            item.finish_edge = 32'(edge_count);
-            stream[finish_index] = item;
-          end
-        end
-
-      for (int lane = 0; lane < 2; lane++)
         if (lane_dispatch[lane]) begin
           require(lane_alloc[lane].pc == next_dispatch_pc &&
                   lane_alloc[lane].insn == program_mem[next_dispatch_pc >> 2],
@@ -629,9 +645,10 @@ module tb_core_adde;
                   "ADD dispatch legality differs from independent supported set");
           require(lane_alloc[lane].needs_flags == (word_legal && word_needs_flags),
                   "ADD dispatch ownership demand mismatch");
-          if (word_legal && word_needs_flags) begin
+          if (word_legal && expected_owns_token(program_mem[next_dispatch_pc >> 2]))
             require(!owner_expected_valid,
                     "second ADD flag owner dispatched while prior owner was live");
+          if (word_legal && expected_reads_xer(program_mem[next_dispatch_pc >> 2])) begin
             if (last_owner_commit_edge >= 0) begin
               require(edge_count > last_owner_commit_edge,
                       "ADD owner reacquired on its release edge");
@@ -642,6 +659,8 @@ module tb_core_adde;
                   edge_count == last_owner_commit_edge + 1)
                 adde_after_seed_exact++;
             end
+          end
+          if (word_legal && expected_owns_token(program_mem[next_dispatch_pc >> 2])) begin
             owner_expected_valid = 1;
             owner_expected = lane_alloc_tag[lane];
           end

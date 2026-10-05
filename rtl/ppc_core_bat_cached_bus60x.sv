@@ -68,6 +68,8 @@ module ppc_core_bat_cached_bus60x #(
   // Pipelined load/store unit; with the data cache, load hits flow one per
   // cycle (docs/LSU_PIPELINE.md).
   parameter bit ENABLE_LSU_PIPE = `PPC_LSU_PIPE,
+  // Instruction words per fetch: 2 returns an aligned pair on a cache hit.
+  parameter int FETCH_WIDTH = 1,
   // 603 direct-store sender tag (UM C.1.2.2.1). The 603 PID register has
   // no SPR, so the tag is fixed per build.
   parameter logic [3:0] DS_PID = 4'h0
@@ -205,6 +207,7 @@ module ppc_core_bat_cached_bus60x #(
   output logic        artry_n_o,
   output logic        artry_oe_o,
   input  logic        dbg_n_i,
+  input  logic        dbwo_n_i,
   input  logic        dbb_n_i,
   output logic        dbb_n_o,
   output logic        dbb_oe_o,
@@ -227,7 +230,7 @@ module ppc_core_bat_cached_bus60x #(
   logic imem_rsp_error;
   logic [31:0] imem_req_addr;
   logic imem_rsp_valid, imem_rsp_ready;
-  logic [31:0] imem_rsp_insn;
+  logic [33*FETCH_WIDTH-2:0] imem_rsp_insn;
   // FP doublewords reach the data cache as one access.
   localparam int DMEM_BITS = (ENABLE_FPU && ENABLE_DCACHE) ? 64 : 32;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
@@ -238,7 +241,7 @@ module ppc_core_bat_cached_bus60x #(
   logic [DMEM_BITS-1:0] dmem_rsp_rdata;
 
   logic cache_fetch_rsp_valid, cache_fetch_rsp_ready, cache_fetch_rsp_error;
-  logic [31:0] cache_fetch_rsp_insn;
+  logic [33*FETCH_WIDTH-2:0] cache_fetch_rsp_insn;
   logic cache_line_req_valid, cache_line_req_ready, cache_line_instruction;
   logic [31:0] cache_line_addr;
   logic [1:0] cache_line_critical;
@@ -257,7 +260,7 @@ module ppc_core_bat_cached_bus60x #(
   logic scalar_router_ifetch_error, biu_busy, biu_protocol_error;
   logic transport_ifetch_error;
 
-  logic physical_fetch_busy_q, route_managed_q;
+  logic physical_fetch_busy_q, route_managed_q, fetch_free;
   logic managed_fetch_valid, direct_fetch_valid, fetch_gate;
   logic managed_maintenance_valid, managed_maintenance_ready;
   logic icbi_req_valid, icbi_req_ready;
@@ -279,6 +282,7 @@ module ppc_core_bat_cached_bus60x #(
   ppc_core_bat #(
     .RESET_PC(RESET_PC),
     .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE),
+    .FETCH_WIDTH(FETCH_WIDTH),
     .CPU_VARIANT(CPU_VARIANT),
     .ENABLE_DIRECT_STORE(HAS_DIRECT_STORE),
     .ENABLE_SUPERVISOR_EXCEPTIONS(ENABLE_SUPERVISOR_EXCEPTIONS),
@@ -432,7 +436,7 @@ module ppc_core_bat_cached_bus60x #(
   ppc_icache_managed #(
     .RESET_CACHE_ENABLE(RESET_CACHE_ENABLE ||
                         !ppc_pkg::cpu_has_hid0_ice(CPU_VARIANT)),
-    .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS)
+    .SET_COUNT(IC_SETS), .WAY_COUNT(IC_WAYS), .FETCH_WIDTH(FETCH_WIDTH)
   ) managed_cache (
     .clk_i, .rst_ni,
     .fetch_valid_i(managed_fetch_valid),
@@ -475,21 +479,30 @@ module ppc_core_bat_cached_bus60x #(
   // The physical BAT/page router offers one instruction request at a time.
   // Capture whether it entered managed cache or direct scalar bypass; a later
   // WIMG/context change cannot switch ownership of its held response.
-  assign eligible_managed = imem_req_wimg == 4'b0000;
+  // Only I decides: W and M do not affect the instruction cache, and G
+  // (real-mode WIMG 0001) still allows the required block to be cached
+  // (UM 3.5.4, 5.2).
+  assign eligible_managed = !imem_req_wimg[2];
+  logic unused_imem_wmg;
+  assign unused_imem_wmg = ^{imem_req_wimg[3], imem_req_wimg[1:0]};
   // A pending external command or CPU icbi holds new fetches.
   assign fetch_gate = rst_ni && !maintenance_valid_i && !icbi_req_valid &&
     !icache_ctl_valid &&
     !maintenance_busy_o && !transport_ifetch_error;
+  // With two-word fetch a cache fetch may follow on the edge that completes
+  // the previous cache fetch, so hits stream one per cycle.
+  assign fetch_free = !physical_fetch_busy_q ||
+    (FETCH_WIDTH == 2 && route_managed_q && imem_rsp_valid && imem_rsp_ready);
   assign managed_fetch_valid = imem_req_valid && eligible_managed &&
-    !physical_fetch_busy_q && fetch_gate;
+    fetch_free && fetch_gate;
   assign direct_fetch_valid = imem_req_valid && !eligible_managed &&
     !physical_fetch_busy_q && fetch_gate;
   assign scalar_imem_req_valid = bypass_req_valid || direct_fetch_valid;
   assign scalar_imem_req_addr = direct_fetch_valid ? imem_req_addr : bypass_req_addr;
   assign bypass_req_ready = scalar_imem_req_ready && !direct_fetch_valid;
-  assign imem_req_ready = !physical_fetch_busy_q && fetch_gate &&
-    (eligible_managed ? managed_fetch_ready :
-      (scalar_imem_req_ready && !bypass_req_valid));
+  assign imem_req_ready = fetch_gate &&
+    (eligible_managed ? fetch_free && managed_fetch_ready :
+      (!physical_fetch_busy_q && scalar_imem_req_ready && !bypass_req_valid));
 
   assign bypass_rsp_valid = scalar_imem_rsp_valid &&
     physical_fetch_busy_q && route_managed_q;
@@ -500,7 +513,7 @@ module ppc_core_bat_cached_bus60x #(
   assign imem_rsp_valid = physical_fetch_busy_q &&
     (route_managed_q ? cache_fetch_rsp_valid : scalar_imem_rsp_valid);
   assign imem_rsp_insn = route_managed_q ? cache_fetch_rsp_insn :
-    scalar_imem_rsp_insn;
+    (33*FETCH_WIDTH-1)'(scalar_imem_rsp_insn);
   assign imem_rsp_error = physical_fetch_busy_q &&
     (route_managed_q ? cache_fetch_rsp_error : scalar_imem_rsp_error);
   assign cache_fetch_rsp_ready = physical_fetch_busy_q && route_managed_q &&
@@ -537,12 +550,12 @@ module ppc_core_bat_cached_bus60x #(
       physical_fetch_busy_q <= 1'b0;
       route_managed_q <= 1'b0;
     end else begin
+      if (imem_rsp_valid && imem_rsp_ready)
+        physical_fetch_busy_q <= 1'b0;
       if (imem_req_valid && imem_req_ready) begin
         physical_fetch_busy_q <= 1'b1;
         route_managed_q <= eligible_managed;
       end
-      if (imem_rsp_valid && imem_rsp_ready)
-        physical_fetch_busy_q <= 1'b0;
     end
   end
 
@@ -594,7 +607,7 @@ module ppc_core_bat_cached_bus60x #(
     .hid0_dlock_i(core_pin_status.dcache_lock),
     .hid0_dcfi_i(core_pin_status.dcache_flash_invalidate),
     .hid0_noopti_i(core_pin_status.noop_touch),
-    .hid0_abe_i(core_pin_status.broadcast_enable),
+    .hid0_abe_i(core_pin_status.broadcast_enable), .tea_pending_i(tea_pending_q),
     .async_error_o(dcache_async_error), .protocol_error_o(dcache_protocol_error),
     .busy_o(dcache_busy_o), .resv_valid_o(dcache_resv),
     .bus_req_valid_o(dc_out.req_valid),
@@ -673,7 +686,7 @@ module ppc_core_bat_cached_bus60x #(
     .gbl_n_i(snoop_gbl_n_i), .artry_n_o, .artry_oe_o,
     .br_n_o, .bg_n_i, .abb_n_i, .abb_n_o, .abb_oe_o, .ts_n_o, .ts_oe_o,
     .a_o, .tt_o, .tbst_n_o, .tsiz_o, .tc_o, .ci_n_o, .wt_n_o, .gbl_n_o,
-    .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbb_n_i,
+    .cse_o, .addr_oe_o, .aack_n_i, .artry_n_i, .dbg_n_i, .dbwo_n_i, .dbb_n_i,
     .dbb_n_o, .dbb_oe_o, .d_i, .d_o, .d_oe_o, .ta_n_i, .drtry_n_i, .tea_n_i
   );
 

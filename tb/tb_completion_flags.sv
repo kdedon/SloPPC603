@@ -47,15 +47,15 @@ module tb_completion_flags;
     /* verilator lint_off PINCONNECTEMPTY */
     .alloc1_ready_o(), .alloc1_tag_o(), .retire1_valid_o(), .retire1_o(), .retire1_tag_o(),
     /* verilator lint_on PINCONNECTEMPTY */
-    .alloc1_valid_i(1'b0), .alloc1_i('0), .alloc1_finished_i(1'b0), .retire1_ready_i(1'b0),
+    .alloc1_valid_i(1'b0), .alloc1_at_tail_i(1'b0), .alloc1_i('0), .alloc1_finished_i(1'b0), .retire1_ready_i(1'b0),
     .finish_accept_o(unused_cq_finish), .empty_o(cq_empty), .head_index_o(unused_cq_head), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(alloc_valid), .alloc_ready_o(alloc_ready),
     .alloc_i(allocation), .alloc_finished_i(1'b0), .alloc_tag_o(alloc_tag),
-    .result_valid_i(result_valid), .result_ready_o(result_ready),
+    .result_retire_i(1'b0), .result_valid_i(result_valid), .result_ready_o(result_ready),
     .result_i(result_packet), .wake_valid_o(wake_valid), .wake_o(wake),
     .result1_valid_i(1'b0), .result1_i('0),
     /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
-    .retire_valid_o(retire_valid), .retire_ready_i(retire_ready), .retire_hold_i(1'b0),
+    .retire_valid_o(retire_valid), /* verilator lint_off PINCONNECTEMPTY */ .retire_settled_o(), .head_o(), .head1_o() /* verilator lint_on PINCONNECTEMPTY */, .retire_ready_i(retire_ready), .retire_hold_i(1'b0),
     .retire_o(retired), .retire_tag_o(retired_tag),
     .redirect_valid_i(redirect_valid), .redirect_all_i(redirect_all),
     .redirect_keep_pivot_i(redirect_keep),
@@ -67,12 +67,18 @@ module tb_completion_flags;
     .recovery_survivor_tag_o(survivor_tags)
   );
 
+  logic flags_waiter, flags_handoff;
+  completion_tag_t flags_waiter_tag;
+  logic _unused_waiter;
+  assign _unused_waiter = ^{flags_waiter, flags_handoff, flags_waiter_tag};
   ppc_flags flags (
     .clk_i(clk), .rst_ni(rst_n),
     // The flag token is acquired only with an accepted CQ allocation.
     .alloc_valid_i(alloc_valid && alloc_ready),
     .alloc_needs_flags_i(flags_alloc_needs),
     .alloc_tag_i(alloc_tag), .alloc_ready_o(flags_alloc_ready),
+    .wait_alloc_i(1'b0), .wait_tag_i('0), .waiter_o(flags_waiter),
+    .waiter_tag_o(flags_waiter_tag), .handoff_o(flags_handoff),
     .commit_i(retire_valid && retire_ready),
     .commit_packet_i(retired), .commit_tag_i(retired_tag), .commit_unowned_i(1'b0),
     .recovery_i(redirect_accepted),

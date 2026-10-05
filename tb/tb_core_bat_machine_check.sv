@@ -103,7 +103,7 @@ module tb_core_bat_machine_check #(
       .ENABLE_RUNTIME_BAT(1'b1),
       .ENABLE_MACHINE_CHECK(1'b1), .ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut (.bus_ce_i(1'b1),
       .perf_o(),
-      `MC_COMMON_PORTS, .xats_n_i(1'b1), .xats_n_o(),
+      `MC_COMMON_PORTS, .dbwo_n_i(1'b1), .xats_n_i(1'b1), .xats_n_o(),
       .snoop_ts_n_i(1'b1),.snoop_a_i(32'b0),.snoop_tt_i(5'b0),.snoop_gbl_n_i(1'b1),.artry_n_o(),.artry_oe_o(),
       .pin_event_i('0), .pin_status_o(),
       .icache_hit_o(), .icache_miss_o(), .icache_busy_o(),
@@ -219,14 +219,20 @@ module tb_core_bat_machine_check #(
     emit(asm_lwz(5, 0, 4));                         // 0x2020 data TEA
     emit(ASM_SYNC);
     emit(asm_stw(5, 0, 4));                         // 0x2028 store TEA
+    // Update forms: the base keeps its value.
+    emit(asm_li(9, int'(BAD_DATA - 4)));
+    emit(asm_d(33, 5, 9, 4));                       // 0x2030 lwzu TEA
+    emit(asm_d(37, 5, 9, 4));                       // 0x2034 stwu TEA
+    emit(asm_d(39, 5, 9, 4));                       // 0x2038 stbu TEA
+    emit(asm_stw(9, int'(RESULT + 16), 0));
     emit(asm_stw(5, int'(RESULT), 0));              // r5 unchanged: 0x55
-    emit(asm_ba(ROUTINE, 1'b1));                    // 0x2030 fetch TEA
+    emit(asm_ba(ROUTINE, 1'b1));                    // 0x2044 fetch TEA
     emit(asm_stw(7, int'(RESULT + 4), 0));
     emit(asm_stw(7, int'(CLEAR), 0));
     // Instruction fetch may run ahead of the store; order the refetch.
     emit(ASM_SYNC);
     emit(ASM_ISYNC);
-    emit(asm_ba(ROUTINE, 1'b1));                    // 0x2044 clean refetch
+    emit(asm_ba(ROUTINE, 1'b1));                    // 0x2058 clean refetch
     emit(asm_stw(7, int'(RESULT + 8), 0));
     // Single step three instructions, then IABR at 0x2400.
     emit(asm_li(3, 'h1432));                        // ME SE IR DR RI
@@ -279,7 +285,8 @@ module tb_core_bat_machine_check #(
         check(!retired.illegal, "illegal retirement");
         if (retired.pc == 32'h200) mc_entries++;
         if (retired.data_fault == DATA_MACHINE_CHECK)
-          check(!retired.gpr_write, "machine-checked load wrote its target");
+          check(!retired.gpr_write && !retired.update_write,
+                "machine-checked access wrote a GPR");
       end
       // The program clears the fetch TEA window after the first fetch check.
       if (!ta_n && dbb_oe && tt == 5'b00010 && bus_a == CLEAR) begin
@@ -320,6 +327,9 @@ module tb_core_bat_machine_check #(
     check(!halted && !checkstop && !target.in_data, "no halt, bus idle");
     expect_entry(32'h200, 32'h2020, 32'h0004_1032, 32'h0000_0000);
     expect_entry(32'h200, 32'h2028, 32'h0004_1032, 32'h0000_0000);
+    expect_entry(32'h200, 32'h2030, 32'h0004_1032, 32'h0000_0000);
+    expect_entry(32'h200, 32'h2034, 32'h0004_1032, 32'h0000_0000);
+    expect_entry(32'h200, 32'h2038, 32'h0004_1032, 32'h0000_0000);
     expect_entry(32'h200, FILL ? ROUTINE : BAD_FETCH, 32'h0004_1032, 32'h0000_0000);
     expect_entry(32'hd00, 32'h2304, 32'h0000_1432, 32'h0000_1000);
     expect_entry(32'hd00, 32'h2308, 32'h0000_1432, 32'h0000_1000);
@@ -336,6 +346,7 @@ module tb_core_bat_machine_check #(
     check(word_at(LOG + 32'(16 * expected.size())) == 0, "extra log entry");
     check(word_at(RESULT) == 32'h55, "machine-checked load left its target");
     check(word_at(BAD_DATA) == 32'h0, "machine-checked store left memory");
+    check(word_at(RESULT + 16) == BAD_DATA - 4, "machine-checked update form changed its base");
     check(word_at(RESULT + 4) == (FILL ? 32'd0 : 32'd4), "routine progress before the fault");
     check(word_at(RESULT + 8) == 32'd5 && word_at(RESULT + 12) == 32'd2, "recovered execution");
     // The failed fill installed nothing: the call after CLEAR fills the line

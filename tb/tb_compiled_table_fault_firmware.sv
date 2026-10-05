@@ -216,7 +216,7 @@ module tb_compiled_table_fault_firmware;
       if(iv&&ir)begin
         check(ia>=BASE&&ia<=BASE+32'h2fffc&&ia[1:0]==0,
           "denied instruction page issued physical fetch");
-        check(iwimg==(cir?4'b0000:4'b0001),"instruction WIMG");
+        check(iwimg==(cir?4'b0100:4'b0001),"instruction WIMG");
         if(active_marker==1)
           check(ia<32'hfff06000,
             "absent instruction page reached a translated physical target");

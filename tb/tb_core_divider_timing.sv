@@ -113,7 +113,7 @@ module tb_core_divider_timing #(
     .dmem_req_write_o(unused_dmem[1]), .dmem_req_addr_o(unused_dmem[33:2]),
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(unused_dmem[70]),
-    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .timer_tick_i(1'b0), .timebase_enable_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),
@@ -202,8 +202,6 @@ module tb_core_divider_timing #(
         require(dut.iu_result.producer == divide_producer &&
                 dut.iu_result.value == 32'd20 && dut.iu_result.cr0 == 4'h4,
                 "accepted divide result packet mismatch");
-        require(!(retire_valid && retire_ready && retired.pc == 32'h08),
-                "divide retired on its finish edge");
         divide_finish_edge = cycles;
       end
 
@@ -231,8 +229,10 @@ module tb_core_divider_timing #(
                     retired.value == 20 && retired.write_cr_field &&
                     retired.cr_delta == 32'h4000_0000,
                     "divide retirement/result/CR0 mismatch");
-            require(divide_finish_edge >= 0 && cycles > divide_finish_edge,
-                    "divide committed before or with finish");
+            // UM Figure 6-3: completion in the writeback cycle, at the
+            // earliest the finish edge.
+            require(divide_finish_edge >= 0 && cycles >= divide_finish_edge,
+                    "divide committed before finish");
             divide_retire_edge = cycles;
           end
           3: require(retired.pc == 12 && retired.gpr_write &&
@@ -259,7 +259,7 @@ module tb_core_divider_timing #(
     @(negedge clk);
     require(commits == 5, "program did not retire exact instruction stream");
     require(divide_issue_edge >= 0 && divide_finish_edge >= 0 &&
-            divide_retire_edge > divide_finish_edge,
+            divide_retire_edge >= divide_finish_edge,
             "missing issue/finish/retirement event chain");
     require(dependent_issue_edge == divide_finish_edge,
             "dependent did not use same-edge accepted wake/turnover");

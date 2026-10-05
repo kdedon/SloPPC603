@@ -66,7 +66,7 @@ handshake in this boundary already assumes registered partners.
 
 ## C5 Half-cycle ABB/DBB release
 
-UM §8.5 requires `ABB` and `DBB` to negate for one half clock before release.
+UM §7.2.1.3.1 and §7.2.6.3.1 (PDF 281, 294 / 7-5, 7-18) require `ABB` and `DBB` to negate for one half clock before release.
 Each bus master drives its `abb_n_o`/`dbb_n_o` from a falling-edge register
 (`addr_release_half_q`, `data_release_half_q`); `abb_oe_o`/`dbb_oe_o` fall at
 the following rising edge.

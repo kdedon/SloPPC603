@@ -16,6 +16,9 @@ module tb_core_bat_reference;
   logic dreq_ready, drsp_valid;
   logic [31:0] drsp_data;
   logic [7:0] ram[256];
+  // RAM with the store in flight to it and any retired stores still in the
+  // LSU unit's store queue applied: the architectural image at retirement.
+  logic [7:0] committed_ram[256], flight_ram[256];
   logic memory_pending = 0;
   int memory_delay = 0, memory_requests = 0, memory_writes = 0, memory_stalls = 0;
   int expected_memory_requests, expected_memory_writes;
@@ -206,7 +209,8 @@ module tb_core_bat_reference;
                     dut.core.update_value_q : dut.core.regfile.gpr[r]);
         $fwrite(trace_file, "%08x %08x %08x %08x ", dut.core.cr, dut.core.xer, dut.core.lr, dut.core.ctr);
         for (int byte_offset=0; byte_offset<256; byte_offset+=4)
-          $fwrite(trace_file, "%08x ", {ram[byte_offset],ram[byte_offset+1],ram[byte_offset+2],ram[byte_offset+3]});
+          $fwrite(trace_file, "%08x ", {committed_ram[byte_offset],committed_ram[byte_offset+1],
+                                        committed_ram[byte_offset+2],committed_ram[byte_offset+3]});
         $fwrite(trace_file, "\n");
         commits++;
         if (commits == expected_commits) begin
@@ -221,6 +225,27 @@ module tb_core_bat_reference;
         end
       end
     end
+  end
+  if (`PPC_LSU_PIPE) begin : g_store_queue
+    always_comb begin
+      committed_ram = flight_ram;
+      for (int i = 0; i < dut.core.g_lsu.lsu.SQ_DEPTH; i++)
+        if ((i < int'(dut.core.g_lsu.lsu.sq_count_q)) && dut.core.g_lsu.lsu.sq_q[i].committed &&
+            !dut.core.g_lsu.lsu.sq_q[i].killed)
+          for (int lane = 0; lane < 4; lane++)
+            if (dut.core.g_lsu.lsu.sq_q[i].wstrb[3-lane])
+              committed_ram[dut.core.g_lsu.lsu.sq_q[i].addr[7:0] + 8'(lane)] =
+                dut.core.g_lsu.lsu.sq_q[i].wdata[31-8*lane -: 8];
+    end
+  end else begin : g_no_store_queue
+    always_comb committed_ram = flight_ram;
+  end
+  always_comb begin
+    flight_ram = ram;
+    if (observed_d_owner && observed_d_write)
+      for (int lane = 0; lane < 4; lane++)
+        if (observed_d_strobes[3-lane])
+          flight_ram[observed_d_ea[7:0] + 8'(lane)] = observed_d_data[31-8*lane -: 8];
   end
   // Every architectural register must change only at an accepted retirement.
   // RAM may change earlier at a reserved store request, per the core contract.

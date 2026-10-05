@@ -18,6 +18,15 @@ module tb_chip_pins #(parameter int PLL = -1);
   always #5 clk = ~clk;
   `include "chip_harness.svh"
   `include "ppc_asm.svh"
+  int fetch_streamed = 0;
+  logic fetch_piped_q = 1'b0;
+  always @(posedge clk) begin
+    fetch_piped_q <= dut.cpu.translated_core.router.i_pipe_try &&
+                     dut.cpu.translated_core.router.pimem_req_ready_i;
+    if (fetch_piped_q && dut.cpu.translated_core.router.i_pipe_try &&
+        dut.cpu.translated_core.router.pimem_req_ready_i)
+      fetch_streamed++;
+  end
 
   localparam logic [31:0] MAIN = BASE + 32'h2000;
   localparam logic [31:0] DATA = BASE + 32'h8000;
@@ -664,7 +673,11 @@ module tb_chip_pins #(parameter int PLL = -1);
     case_foreign_artry();
     case_ilock(1'b0);
     case_ilock(1'b1);
-    $display("PASS chip pins: checks=%0d cycles=%0d", checks, cycles);
+    // Cache hits stream: a fetch the router offers in the cycle it accepts
+    // it, accepted on consecutive cycles.
+    check(fetch_streamed > 0, "instruction fetch requests every cycle on hits");
+    $display("PASS chip pins: checks=%0d cycles=%0d streamed-fetches=%0d", checks, cycles,
+             fetch_streamed);
     $finish;
   end
 endmodule

@@ -25,7 +25,7 @@ The processor source is *MPC603e & EC603e RISC Microprocessors User's Manual* (1
 
 The architectural source is *PowerPC Microprocessor Family: The Programming Environments, Rev. 1*, local file `../MPCFPE.pdf`, SHA-256 `0600de0a3cb81636b9d511aa6b185e2fccc02f895ce4630411725634ef8e7eee`.
 
-- Section 2.3.8 and Figure 2-26, PDF 95 / printed 2-33, define SPRG0–SPRG3 as complete 32-bit registers on a 32-bit implementation and describe their operating-system storage role.
+- Section 2.3.8 (PDF 95 / printed 2-33) and Figure 2-26 (PDF 96 / printed 2-34) define SPRG0–SPRG3 as complete 32-bit registers on a 32-bit implementation and describe their operating-system storage role.
 - Table 8-10, PDF 568 / printed 8-156, assigns SPR272–275 to supervisor `mfspr` access.
 - Table 8-15, PDF 585 / printed 8-173, assigns the same selectors to supervisor `mtspr` access.
 

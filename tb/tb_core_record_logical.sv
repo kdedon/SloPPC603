@@ -82,6 +82,8 @@ module tb_core_record_logical;
   int admission_first_commit_edge = -1;
   int admission_free_finish_edge = -1;
   int admission_second_dispatch_edge = -1;
+  int admission_second_issue_edge = -1;
+  completion_tag_t admission_second_tag;
 
   logic [70:0] unused_dmem;
   logic [3:0] unused_context;
@@ -153,7 +155,7 @@ module tb_core_record_logical;
     .dmem_req_write_o(unused_dmem[1]), .dmem_req_addr_o(unused_dmem[33:2]),
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(unused_dmem[70]),
-    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .imem_req_valid_o(req_valid), .imem_req_ready_i(req_ready),
     .imem_req_addr_o(req_addr), .imem_rsp_valid_i(rsp_valid),
     .imem_rsp_ready_o(rsp_ready), .imem_rsp_insn_i(rsp_insn), .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(ppc_pkg::FETCH_OK),
@@ -486,21 +488,45 @@ module tb_core_record_logical;
       admission_first_commit_edge = -1;
       admission_free_finish_edge = -1;
       admission_second_dispatch_edge = -1;
+      admission_second_issue_edge = -1;
     end else begin
       int retained, found, issue_index, finish_index;
+      logic settled, early;
       logic expected_redirect;
 
-      // Public retirement eligibility and identity come from the independent
-      // pre-edge stream, before a same-edge finish can mark an entry ready.
-      require(retire_valid == (stream.size() > 0 && stream[0].done),
+      // A head finished before this edge, or finishing on it, may retire.
+      settled = stream.size() > 0 && stream[0].done;
+      early = 1'b0;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_finish[lane]) begin
+          finish_index = -1;
+          for (int i = 0; i < stream.size(); i++)
+            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
+          require(finish_index >= 0 && !stream[finish_index].done,
+                  "finish did not match one live unfinished stream entry");
+          if (finish_index >= 0) begin
+            require(stream[finish_index].issued &&
+                    edge_count == int'(stream[finish_index].issue_edge) + 1,
+                    "registered IU finish was not exactly one edge after issue");
+            stream_item = stream[finish_index];
+            stream_item.done = 1'b1;
+            stream_item.finish_edge = 32'(edge_count);
+            stream[finish_index] = stream_item;
+            // UM Figure 6-3: an IU result completes in its writeback cycle.
+            if (finish_index == 0 && (lane == 1 || dut.completion.result_retire_i))
+              early = 1'b1;
+          end
+        end
+
+      require(retire_valid == (settled || early),
               "retirement eligibility disagrees with stream oracle");
       if (retire_valid) begin
         require(retired.pc == stream[0].pc && retired.insn == stream[0].insn &&
                 dut.retire_producer == stream[0].tag,
                 "retirement head PC/word/identity mismatch");
         if (stream[0].insn != 0)
-          require(edge_count > int'(stream[0].finish_edge),
-                  "finish bypassed to retirement on the same edge");
+          require(edge_count >= int'(stream[0].finish_edge),
+                  "retirement preceded its finish");
       end
 
       // Classify recovery from the independent queue and requested pivot.
@@ -512,7 +538,7 @@ module tb_core_record_logical;
       if (redirect_all) retained = 0;
       else if (found >= 0) retained = found + (redirect_keep ? 1 : 0);
       else expected_redirect = 0;
-      if (stream.size() > 0 && stream[0].done && retained == 0)
+      if (settled && retained == 0)
         expected_redirect = 0;
       require(redirect_accepted == expected_redirect,
               "redirect acceptance disagrees with independent stream prefix");
@@ -542,12 +568,21 @@ module tb_core_record_logical;
             admission_free_tag = lane_alloc_tag[lane];
           end
           if (lane_alloc[lane].pc == 32'd20) begin
+            // UM 6.3.3.1: it may wait in its station for the CR rename.
             admission_second_seen = 1;
             admission_second_dispatch_edge = edge_count;
-            require(admission_first_commit_edge >= 0 &&
-                    edge_count > admission_first_commit_edge,
-                    "second record acquired on or before owner release edge");
+            admission_second_tag = lane_alloc_tag[lane];
+            require(admission_first_commit_edge >= 0 || dut.flags_busy,
+                    "second record dispatched with no owner or release");
           end
+        end
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_issue[lane] && phase == PHASE_ADMISSION && admission_second_seen &&
+            lane_issue_tag[lane] == admission_second_tag) begin
+          admission_second_issue_edge = edge_count;
+          require(admission_first_commit_edge >= 0 &&
+                  edge_count > admission_first_commit_edge,
+                  "second record issued on or before owner release edge");
         end
       for (int lane = 0; lane < 2; lane++)
         if (lane_finish[lane] && phase == PHASE_ADMISSION &&
@@ -581,24 +616,6 @@ module tb_core_record_logical;
             stream_item.issued = 1'b1;
             stream_item.issue_edge = 32'(edge_count);
             stream[issue_index] = stream_item;
-          end
-        end
-
-      for (int lane = 0; lane < 2; lane++)
-        if (lane_finish[lane]) begin
-          finish_index = -1;
-          for (int i = 0; i < stream.size(); i++)
-            if (stream[i].tag == lane_finish_tag[lane]) finish_index = i;
-          require(finish_index >= 0 && !stream[finish_index].done,
-                  "finish did not match one live unfinished stream entry");
-          if (finish_index >= 0) begin
-            require(stream[finish_index].issued &&
-                    edge_count == int'(stream[finish_index].issue_edge) + 1,
-                    "registered IU finish was not exactly one edge after issue");
-            stream_item = stream[finish_index];
-            stream_item.done = 1'b1;
-            stream_item.finish_edge = 32'(edge_count);
-            stream[finish_index] = stream_item;
           end
         end
 
@@ -704,7 +721,7 @@ module tb_core_record_logical;
     while (phase_retirements < 3) tick();
     retire_enable = 0;
     while (admission_free_finish_edge < 0) tick();
-    require(!admission_second_seen && dut.flags_busy,
+    require(admission_second_issue_edge < 0 && dut.flags_busy,
             "second record was not blocked behind live owner");
     retire_enable = 1;
     await_halt();
@@ -712,8 +729,9 @@ module tb_core_record_logical;
             admission_free_finish_edge < admission_first_commit_edge,
             "dependent flag-free consumer did not finish before owner commit");
     require(admission_second_seen &&
-            admission_second_dispatch_edge == admission_first_commit_edge + 1,
-            "second owner was not admitted exactly one edge after commitment");
+            admission_second_dispatch_edge <= admission_first_commit_edge + 1 &&
+            admission_second_issue_edge == admission_first_commit_edge + 1,
+            "second owner did not issue exactly one edge after commitment");
 
     // Kill an owner while its record operation is held in the RS.
     clear_program();

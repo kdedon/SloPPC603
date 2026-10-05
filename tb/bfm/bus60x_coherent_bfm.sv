@@ -124,7 +124,7 @@ module bus60x_coherent_bfm #(
   // Read beats of these doublewords carry wrong DP7 (once each); the bench
   // XORs dp_flip into DP.
   logic [31:0] bad_dp_once [$];
-  logic [7:0] dp_flip = 8'h00;
+  logic [7:0] dp_flip;
   // Second-master tenures to retry as another snooper would, with ARTRY in
   // the cycle after AACK and no push owed by the processor.
   int om_foreign_retries = 0;
@@ -141,6 +141,13 @@ module bus60x_coherent_bfm #(
   // ahead of that data tenure; its data tenure follows in address order.
   int push_pipeline_pct = 0;
   int n_push_pipelined = 0;
+  // Percent chances of DBWO on a processor data grant: with a pipelined
+  // push owed behind a read the push's data runs first (UM 8.10); otherwise
+  // the processor must ignore it and keep address order.
+  int dbwo_push_pct = 0, dbwo_pct = 0;
+  int n_dbwo_push = 0, n_dbwo_ignored = 0;
+  logic dbwo_n;
+  bit dbwo_next = 1'b0;
   logic owed = 1'b0, in_data = 1'b0;
   /* verilator lint_on UNUSEDSIGNAL */
   int unsigned rng = SEED;
@@ -154,6 +161,8 @@ module bus60x_coherent_bfm #(
   logic [4:0] tt;
   logic burst, write, external, tea_ended;
   logic [2:0] tsiz;
+  // Bytes owed by the second tenure of a split external word, per direction.
+  logic [2:0] ext_rem [2] = '{3'd0, 3'd0};
   logic target_artry_n;
   logic om_drive, om_ts_n, om_gbl_n, om_ap_flip;
   int om_window;
@@ -173,6 +182,15 @@ module bus60x_coherent_bfm #(
                      ~^bus_a_o[15:8], ~^bus_a_o[7:0]};
 
   initial begin
+    foreach (tt_count[i]) tt_count[i] = 0;
+    for (int i = 0; i < MEM_BYTES; i++) mem[i] = 8'b0;
+  end
+
+  // The serving process is the only writer of pins and tenure state: with a
+  // second writer Verilator updates logic fed by a pin only on the edges of
+  // the consumer's other inputs.
+  task automatic init_state;
+    dp_flip = 8'h00; dbwo_n = 1'b1;
     bg_n_o = 1'b1; aack_n_o = 1'b1; target_artry_n = 1'b1; dbg_n_o = 1'b1;
     d_o = 64'b0; ta_n_o = 1'b1; drtry_n_o = 1'b1; tea_n_o = 1'b1;
     om_drive = 1'b0; om_ts_n = 1'b1; om_gbl_n = 1'b1; om_a = '0; om_tt = '0;
@@ -180,9 +198,7 @@ module bus60x_coherent_bfm #(
     addr = '0; tt = '0; burst = 1'b0; write = 1'b0; external = 1'b0;
     tea_ended = 1'b0; tsiz = '0;
     last = '{K_ADDR_ONLY, 5'b0, 32'b0, 1'b0, 1'b0, 1'b0, 1'b0};
-    foreach (tt_count[i]) tt_count[i] = 0;
-    for (int i = 0; i < MEM_BYTES; i++) mem[i] = 8'b0;
-  end
+  endtask
 
   function automatic int unsigned rnd();
     rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
@@ -263,7 +279,12 @@ module bus60x_coherent_bfm #(
     external = (tt_i == TT_EXTERNAL_WRITE) || (tt_i == TT_EXTERNAL_READ);
     burst = !tbst_n_i && !external;
     write = external ? (tt_i == TT_EXTERNAL_WRITE) : (tt_i[1] && !tt_i[3]);
-    tsiz = external ? 3'b100 : tsiz_i;
+    // A misaligned external-control word is two tenures: 4 - A[30:31]
+    // bytes at the EA, then the rest at the next word (UM 8.3.2.5.1).
+    if (!external) tsiz = tsiz_i;
+    else if (a_i[1:0] != 2'b00) tsiz = 3'd4 - {1'b0, a_i[1:0]};
+    else if (ext_rem[write] != 3'd0) tsiz = ext_rem[write];
+    else tsiz = 3'b100;
     // last describes the most recent data-side tenure.
     if (tc_i != 2'd2) begin
       last.tt = tt_i;
@@ -386,14 +407,19 @@ module bus60x_coherent_bfm #(
     delay();
     bus_fall();
     dbg_n_o = 1'b0;
+    dbwo_n = !dbwo_next;
+    dbwo_next = 1'b0;
     do bus_rise(); while (!(dbb_oe_i && !dbb_n_i));
     in_data = 1'b1;
     tea_ended = 1'b0;
     bus_fall();
     dbg_n_o = 1'b1;
+    dbwo_n = 1'b1;
     for (int index = 0; index < (burst ? 4 : 1) && !tea_ended; index++)
       if (write) write_beat(index);
       else read_beat(index);
+    if (external && !tea_ended)
+      ext_rem[write] = (addr[1:0] != 2'b00) ? {1'b0, addr[1:0]} : 3'd0;
     if (!tea_ended) begin
       if (write) writes++;
       else begin
@@ -636,6 +662,7 @@ module bus60x_coherent_bfm #(
   initial begin : serve
     logic retried, taken;
     bit last_cpu;
+    init_state();
     last_cpu = 1'b0;
     forever begin
       bus_rise();
@@ -665,11 +692,28 @@ module bus60x_coherent_bfm #(
               if ((rnd() % 100) < push_pipeline_pct) pipelined_push(pushed, push);
             end
           end
-          cpu_data_tenure();
-          if (pushed) begin
+          if (pushed && !write && (rnd() % 100) < dbwo_push_pct) begin
+            pend_t pend;
+            pend = '{addr, tt, burst, write, external, tsiz};
             {addr, tt, burst, write, external, tsiz} =
               {push.addr, push.tt, push.burst, push.write, push.external, push.tsiz};
+            dbwo_next = 1'b1;
             cpu_data_tenure();
+            n_dbwo_push++;
+            {addr, tt, burst, write, external, tsiz} =
+              {pend.addr, pend.tt, pend.burst, pend.write, pend.external, pend.tsiz};
+            cpu_data_tenure();
+          end else begin
+            if (!(pushed && !write) && (rnd() % 100) < dbwo_pct) begin
+              dbwo_next = 1'b1;
+              n_dbwo_ignored++;
+            end
+            cpu_data_tenure();
+            if (pushed) begin
+              {addr, tt, burst, write, external, tsiz} =
+                {push.addr, push.tt, push.burst, push.write, push.external, push.tsiz};
+              cpu_data_tenure();
+            end
           end
           om_drain();
         end

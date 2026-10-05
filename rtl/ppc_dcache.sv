@@ -44,6 +44,8 @@ module ppc_dcache #(
   input  logic         hid0_dcfi_i,
   input  logic         hid0_noopti_i,
   input  logic         hid0_abe_i,
+  // A bus error awaits its machine check; loads must not start a tenure.
+  input  logic         tea_pending_i,
 
   output logic         bus_req_valid_o,
   input  logic         bus_req_ready_i,
@@ -296,12 +298,20 @@ module ppc_dcache #(
     .raddr_i(rd_set), .rdata_o(lru_rdata)
   );
 
-  // A load hit's data, selected by the one-hot hit vector.
-  logic [63:0] hit_data;
+  // A load hit's data, selected by the one-hot hit vector, with the bytes a
+  // fast store wrote to that way on the reading edge.
+  logic [63:0] hit_data, fwd_mask;
+  logic fwd_q;
+  logic [WAY_COUNT-1:0] fwd_way_q;
+  logic [7:0] fwd_be_q;
+  logic [63:0] fwd_wdata_q;
   always_comb begin
+    for (int b = 0; b < 8; b++) fwd_mask[8*b +: 8] = {8{fwd_q && fwd_be_q[b]}};
     hit_data = '0;
     for (int w = 0; w < WAY_COUNT; w++)
-      hit_data = hit_data | (data_rdata[w] & {64{hitw[w]}});
+      hit_data = hit_data | ({64{hitw[w]}} &
+        (fwd_way_q[w] ? (data_rdata[w] & ~fwd_mask) | (fwd_wdata_q & fwd_mask) :
+                        data_rdata[w]));
   end
 
   always_comb begin
@@ -409,6 +419,9 @@ module ppc_dcache #(
   always_ff @(posedge clk_i) dce_q <= hid0_dce_i;
   assign cacheable = (FAST_LOAD_HIT ? dce_q : hid0_dce_i) && !req_i;
   assign resv_match = resv_valid_q && resv_line_q == req_line;
+  logic tea_blocks_load;
+  assign tea_blocks_load = (tea_pending_i || async_error_q) &&
+                           (req_op_q == DC_LOAD || req_op_q == DC_LWARX);
 
   always_comb begin
     lk_plan = '0;
@@ -594,6 +607,21 @@ module ppc_dcache #(
       lk_cob_line = {tag_rdata[victim], req_set};
     end
     lk_plan[P_COB] = lk_cob;
+    // UM 4.5.2: the machine check is taken before the next instruction
+    // completes, so a load behind a failed tenure answers with the error.
+    if (tea_blocks_load) begin
+      lk_plan = '0;
+      lk_st_we = 1'b0;
+      lk_lru_we = 1'b0;
+      lk_cob = 1'b0;
+      lk_alloc = 1'b0;
+      lk_read = 1'b0;
+      lk_resv_set = 1'b0;
+      lk_hit_evt = 1'b0;
+      lk_miss_evt = 1'b0;
+      lk_rsp = 1'b1;
+      lk_err = 1'b1;
+    end
 
     lk_stall = snp_valid_q || push_st_q == PU_READ ||
                (lk_cob && cob_valid_q) ||
@@ -606,10 +634,26 @@ module ppc_dcache #(
   logic lk_fast, lk_fast_done, req_accept;
   // lk_go and lk_read for a cacheable load hit, which never casts out.
   assign lk_fast = FAST_LOAD_HIT && state_q == S_LOOKUP && req_op_q == DC_LOAD &&
-                   dce_q && !req_i && hit && early_data_q && !snp_valid_q &&
+                   dce_q && !req_i && hit && early_data_q && !snp_valid_q && !tea_blocks_load &&
                    push_st_q != PU_READ && !(push_busy && push_line_q == req_line);
   assign lk_fast_done = lk_fast && rsp_ready_i;
   assign req_accept = req_valid_i && req_ready_o;
+  // Fast copy-back store hit: the data RAM is written and the store answered
+  // in its lookup cycle (UM Table 6-6, one store per cycle; UM 1.1.5.2, one
+  // byte-wise read-modify-write per cycle). The next request is accepted then
+  // as follows. A store reads no data, and the tag and state reads see this
+  // write. Others need the data RAM reading their double word, which is so
+  // only in the store's first lookup cycle; a load of the double word being
+  // written takes the written bytes from fwd_* in place of the RAM's old data.
+  logic lk_fast_st, lk_fast_st_done, lk_fast_st_next, lk_fast_st_dw;
+  assign lk_fast_st = FAST_LOAD_HIT && state_q == S_LOOKUP && req_op_q == DC_STORE &&
+                      cacheable && !req_w && hit && !snp_valid_q && push_st_q != PU_READ &&
+                      !(push_busy && push_line_q == req_line);
+  assign lk_fast_st_done = lk_fast_st && rsp_ready_i;
+  assign lk_fast_st_dw =
+    {req_addr_i[5 +: SET_BITS], req_addr_i[4:3]} == {req_set, req_dw};
+  assign lk_fast_st_next = lk_fast_st_done && (req_op_i == DC_STORE ||
+    (early_data_q && (!lk_fast_st_dw || req_op_i == DC_LOAD)));
 
   // ---------------------------------------------------- write queue count
   logic wq_full, wq_push, wq_push_cob, wq_pop;
@@ -664,6 +708,10 @@ module ppc_dcache #(
       data_waddr = {req_set, step_idx_q};
     end else if (state_q == S_STORE_WRITE) begin
       data_way_we[way_q] = 1'b1;
+      data_be = req_be_q;
+      data_wdata = req_wdata_q;
+    end else if (lk_fast_st) begin
+      data_way_we = hitw;
       data_be = req_be_q;
       data_wdata = req_wdata_q;
     end
@@ -747,8 +795,8 @@ module ppc_dcache #(
     push_req_data_o = push_data_q;
 
     req_ready_o = rst_ni && !hid0_dcfi_i &&
-                  ((state_q == S_IDLE && !rsp_valid_q) || lk_fast_done);
-    rsp_valid_o = rsp_valid_q || lk_fast;
+                  ((state_q == S_IDLE && !rsp_valid_q) || lk_fast_done || lk_fast_st_next);
+    rsp_valid_o = rsp_valid_q || lk_fast || lk_fast_st;
     rsp_data_o = lk_fast ? hit_data : rsp_data_q;
     rsp_error_o = rsp_error_q;
     rsp_align_o = rsp_align_q;
@@ -822,10 +870,25 @@ module ppc_dcache #(
   end
 
   // The data RAM output in the first S_LOOKUP cycle is the request's double
-  // word unless a snoop push owned the read port on the accepting edge.
+  // word unless a snoop push owned the read port on the accepting edge, or a
+  // fast store past its first lookup cycle was reading its own.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) early_data_q <= 1'b0;
-    else early_data_q <= req_accept && push_st_q != PU_READ;
+    else early_data_q <= req_accept && push_st_q != PU_READ &&
+                         !(lk_fast_st && !early_data_q);
+  end
+  // The fast store's bytes and way, for a request accepted behind it whose
+  // early read missed that write.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) fwd_q <= 1'b0;
+    else fwd_q <= req_accept && lk_fast_st && early_data_q && lk_fast_st_dw;
+  end
+  always_ff @(posedge clk_i) begin
+    if (lk_fast_st) begin
+      fwd_way_q <= hitw;
+      fwd_be_q <= req_be_q;
+      fwd_wdata_q <= req_wdata_q;
+    end
   end
   always_ff @(posedge clk_i) begin
     if (req_accept) begin
@@ -980,7 +1043,7 @@ module ppc_dcache #(
               rsp_align_q <= lk_align;
               rsp_ok_q <= lk_ok;
               state_q <= S_IDLE;
-            end else if (lk_fast_done) begin
+            end else if (lk_fast_done || lk_fast_st_done) begin
               state_q <= req_accept ? S_LOOKUP : S_IDLE;
               rsp_sent_q <= 1'b0;
             end else if (lk_read && early_data_q) begin

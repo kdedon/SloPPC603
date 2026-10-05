@@ -21,7 +21,7 @@ single clock; a mode is a stall, never a gated clock
 - Entry: once the mtmsr that sets POW commits, or the HID0 write that sets a
   mode bit while POW=1, fetch stops. Nothing after that instruction runs.
   The recommended `sync; mtmsr[POW=1]; isync` sequence works unchanged.
-- Wake: taking any exception clears MSR[POW] (UM Table 4-8); fetch resumes
+- Wake: taking any exception clears MSR[POW] (UM Table 4-7); fetch resumes
   at the vector the same way it does for any exception. SRR0 is the
   instruction after the one that entered the mode. A wake source is taken
   only under its usual enables: INT, SMI and DEC need MSR[EE]=1; MCP needs
@@ -56,7 +56,7 @@ rises.
 
 - POW=1 with more than one mode bit: the mtmsr, or the HID0 write that would
   create the combination while POW=1, completes as a diagnostic halt and
-  changes nothing (602UM §9.2: "one and only one").
+  changes nothing (602UM §9.2: "one (and only one)").
 - POW=1 with a mode bit in a build that cannot take asynchronous exceptions
   (no interrupt boundary, machine check or full decode): same rejection.
 

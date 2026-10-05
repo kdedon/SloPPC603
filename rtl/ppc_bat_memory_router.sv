@@ -26,6 +26,8 @@ module ppc_bat_memory_router #(
   // instruction lane or reporting an untyped data error.
   parameter bit ENABLE_MACHINE_CHECK = 1'b0,
   parameter int MICRO_TLB_ENTRIES = 4,
+  // Stack, globals and string pages in one loop exceed four entries.
+  parameter int DATA_MICRO_TLB_ENTRIES = 8,
   parameter int TLB_SETS = 32,
   parameter bit HAS_602 = 1'b0,
   parameter bit HAS_DIRECT_STORE = 1'b0,
@@ -34,7 +36,12 @@ module ppc_bat_memory_router #(
   // A plain data access that hits the micro-TLB goes to the physical port
   // in the cycle it is accepted, also while up to one earlier access awaits
   // its response. The physical port must answer in request order.
-  parameter bit ENABLE_DATA_PIPELINE = 1'b0
+  parameter bit ENABLE_DATA_PIPELINE = 1'b0,
+  // An instruction request that hits the micro-TLB is offered to the
+  // physical port in the cycle it is accepted.
+  parameter bit ENABLE_FETCH_PIPELINE = 1'b0,
+  // 2: instruction responses carry {pair, word at addr + 4, word at addr}.
+  parameter int FETCH_WIDTH = 1
 ) (
   input  logic clk_i,
   input  logic rst_ni,
@@ -162,7 +169,7 @@ module ppc_bat_memory_router #(
   output logic [3:0]  pimem_req_wimg_o,
   input  logic        pimem_rsp_valid_i,
   output logic        pimem_rsp_ready_o,
-  input  logic [31:0] pimem_rsp_insn_i,
+  input  logic [33*FETCH_WIDTH-2:0] pimem_rsp_insn_i,
   input  logic        pimem_rsp_error_i,
 
   output logic        pdmem_req_valid_o,
@@ -178,6 +185,10 @@ module ppc_bat_memory_router #(
   // The request is the one being accepted on dmem_req; its attributes are
   // dmem_req_attr_i.
   output logic        pdmem_req_now_o,
+  // A store to this page hits the data micro-TLB with write permission, so
+  // it will translate without a fault while the translation state holds.
+  input  logic [19:0] store_check_page_i,
+  output logic        store_check_ok_o,
   input  logic        pdmem_rsp_valid_i,
   output logic        pdmem_rsp_ready_o,
   input  logic [DMEM_BITS-1:0] pdmem_rsp_rdata_i,
@@ -190,7 +201,7 @@ module ppc_bat_memory_router #(
   input  logic [31:0] imem_req_addr_i,
   output logic        imem_rsp_valid_o,
   input  logic        imem_rsp_ready_i,
-  output logic [31:0] imem_rsp_insn_o,
+  output logic [33*FETCH_WIDTH-2:0] imem_rsp_insn_o,
   output ppc_pkg::fetch_fault_t imem_rsp_fault_o,
   output ppc_pkg::page_miss_t imem_rsp_page_miss_o,
   // 602 esa permission of the fetched word's page or block.
@@ -277,7 +288,8 @@ module ppc_bat_memory_router #(
   logic [19:0] i_hit_rpn, d_hit_rpn;
   logic [3:0] i_hit_wimg, d_hit_wimg;
   lane_state_t i_accept_state, d_accept_state;
-  logic route_allow, route_from_tlb, route_set_touch;
+  logic route_allow, route_from_tlb, route_set_touch, route_write_ok;
+  logic page_key;
   logic [31:0] route_pa;
   logic [3:0] route_wimg;
   logic utlb_flush;
@@ -294,6 +306,7 @@ module ppc_bat_memory_router #(
   // The snapshot address: protection-only mode reads SR0 (602UM 5.6.1).
   logic [31:0] segment_ea;
   logic [1:0] unused_d_hit_esa;
+  logic d_check_hit, unused_i_check;
   fetch_fault_t fetch_fault_q;
   data_fault_t data_fault_q;
   // Direct-store state of the data lane: its class, the translated request,
@@ -307,13 +320,14 @@ module ppc_bat_memory_router #(
   logic last_grant_data_q, owner_instruction_q, owner_write_q;
   // Pipelined data lane: a second response is owed behind the first, and
   // the incoming request goes straight to the physical port.
-  logic d_second_q, d_pipe_try, d_pipe_accept;
+  logic d_second_q, d_pipe_try, d_pipe_accept, i_pipe_try;
   logic [31:0] request_ea_q;
   logic [31:0] page_sr_q;
   page_miss_t page_miss_result_q;
 
   logic imem_req_valid, imem_req_ready, imem_rsp_valid, imem_rsp_ready;
-  logic [31:0] imem_req_addr, imem_rsp_insn;
+  logic [31:0] imem_req_addr;
+  logic [33*FETCH_WIDTH-2:0] imem_rsp_insn;
   logic dmem_req_valid, dmem_req_ready, dmem_req_write;
   logic [31:0] dmem_req_addr;
   logic [DMEM_BITS-1:0] dmem_req_wdata;
@@ -750,9 +764,11 @@ module ppc_bat_memory_router #(
      (d_state_q == LANE_IDLE || (d_finish && !d_second_q)) &&
      (!dmem_req_attr_i.spec || (d_hit && !d_hit_wimg[2] && data_spec_ok_i)));
   assign i_accept = imem_req_valid && imem_req_ready;
+  assign i_pipe_try = ENABLE_FETCH_PIPELINE && i_accept && i_hit;
   assign d_accept = dmem_req_valid && dmem_req_ready;
   assign i_hit = ENABLE_MICRO_TLB && i_hit_raw;
   assign d_hit = ENABLE_MICRO_TLB && d_hit_raw;
+  assign store_check_ok_o = ENABLE_MICRO_TLB && running_q && d_check_hit;
 
   // The translation sequence takes a waiting lane or a missing request on
   // its accepting edge, alternating when both compete.
@@ -771,7 +787,8 @@ module ppc_bat_memory_router #(
         choose_data = want_data;
       end
     end
-    i_accept_state = i_hit ? LANE_OFFER :
+    i_accept_state = i_hit ?
+      ((i_pipe_try && pimem_req_ready_i) ? LANE_RESPONSE : LANE_OFFER) :
       (choose_instruction ? LANE_SLOW : LANE_WAIT);
     d_accept_state = d_hit ? LANE_OFFER :
       (choose_data ? LANE_SLOW : LANE_WAIT);
@@ -788,6 +805,15 @@ module ppc_bat_memory_router #(
     (state_q == ROUTE_TRANSLATE_RESPONSE && bat_rsp_valid && bat_rsp_allow) ||
     (state_q == ROUTE_PAGE_RESPONSE && tlb_rsp_valid && page_reply_allow);
   assign route_from_tlb = state_q == ROUTE_PAGE_RESPONSE;
+  // An allowed data access also records whether a store to its page would
+  // pass: BAT PP=10 or real mode (PEM Table 7-12); page PP and key allow
+  // writes and C is set (PEM Table 7-21, UM 5.4.1.2), else the store takes
+  // the serial path that reports the C=0 or protection outcome.
+  assign page_key = request_pr_q ? page_sr_q[29] : page_sr_q[30];
+  assign route_write_ok = owner_write_q || (route_from_tlb ?
+    (!request_po_q && tlb_rsp_c && tlb_rsp_pp != 2'b11 &&
+     !(page_key && tlb_rsp_pp != 2'b10)) :
+    (bat_rsp_bypass || (bat_rsp_hit && bat_rsp_pp == 2'b10)));
   assign route_pa = route_from_tlb ? tlb_rsp_pa : bat_rsp_pa;
   // Protection-only pages take HID0[WIMG] (602UM 5.6).
   assign route_wimg = !route_from_tlb ? bat_rsp_wimg :
@@ -817,7 +843,7 @@ module ppc_bat_memory_router #(
     .set_flush_index_i(request_set),
     .lookup_page_i(imem_req_addr[31:12]), .lookup_write_i(1'b0),
     .hit_o(i_hit_raw), .hit_rpn_o(i_hit_rpn), .hit_wimg_o(i_hit_wimg),
-    .hit_esa_o(i_hit_esa),
+    .hit_esa_o(i_hit_esa), .check_page_i(20'b0), .check_hit_o(unused_i_check),
     .fill_i(ENABLE_MICRO_TLB && route_allow && owner_instruction_q),
     .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
     .fill_wimg_i(route_wimg), .fill_esa_i(route_esa),
@@ -825,7 +851,7 @@ module ppc_bat_memory_router #(
     .fill_from_tlb_i(route_from_tlb)
   );
 
-  ppc_micro_tlb #(.ENTRIES(MICRO_TLB_ENTRIES), .TLB_SETS(TLB_SETS)) d_utlb (
+  ppc_micro_tlb #(.ENTRIES(DATA_MICRO_TLB_ENTRIES), .TLB_SETS(TLB_SETS)) d_utlb (
     .clk_i, .rst_ni,
     .flush_i(utlb_flush),
     .set_flush_i(route_set_touch && !owner_instruction_q),
@@ -833,10 +859,11 @@ module ppc_bat_memory_router #(
     .lookup_page_i(dmem_req_addr[31:12]), .lookup_write_i(dmem_req_write),
     .hit_o(d_hit_raw), .hit_rpn_o(d_hit_rpn), .hit_wimg_o(d_hit_wimg),
     .hit_esa_o(unused_d_hit_esa),
+    .check_page_i(store_check_page_i), .check_hit_o(d_check_hit),
     .fill_i(ENABLE_MICRO_TLB && route_allow && !owner_instruction_q),
     .fill_page_i(request_ea_q[31:12]), .fill_rpn_i(route_pa[31:12]),
     .fill_wimg_i(route_wimg), .fill_esa_i(ESA_DENIED),
-    .fill_set_i(request_set), .fill_write_ok_i(owner_write_q),
+    .fill_set_i(request_set), .fill_write_ok_i(route_write_ok),
     .fill_from_tlb_i(route_from_tlb)
   );
 
@@ -1001,9 +1028,16 @@ module ppc_bat_memory_router #(
   assign bat_write_rsp_invalid_entry_o = bat_rsp_invalid_entry;
 
   always_comb begin
-    pimem_req_valid_o = rst_ni && i_state_q == LANE_OFFER;
-    pimem_req_addr_o = i_pa_q;
-    pimem_req_wimg_o = i_wimg_q;
+    pimem_req_valid_o = rst_ni && (i_state_q == LANE_OFFER || i_pipe_try);
+    // Only an offer uses the stored address; outside one the request is a
+    // pipelined hit or invalid, so the registered state picks the address
+    // and the cache index does not wait for the micro-TLB.
+    pimem_req_addr_o = {i_hit_rpn, imem_req_addr[11:0]};
+    pimem_req_wimg_o = i_hit_wimg;
+    if (!ENABLE_FETCH_PIPELINE || i_state_q == LANE_OFFER) begin
+      pimem_req_addr_o = i_pa_q;
+      pimem_req_wimg_o = i_wimg_q;
+    end
     pdmem_req_valid_o = rst_ni && (d_state_q == LANE_OFFER || d_pipe_try);
     pdmem_req_now_o = d_pipe_try;
     pdmem_req_write_o = d_write_q;
@@ -1037,13 +1071,13 @@ module ppc_bat_memory_router #(
         pimem_rsp_ready_o = imem_rsp_ready;
         imem_rsp_esa_o = HAS_602 ? i_esa_q : ESA_DENIED;
         if (ENABLE_MACHINE_CHECK && pimem_rsp_error_i) begin
-          imem_rsp_insn = 32'b0;
+          imem_rsp_insn = '0;
           imem_rsp_fault_o = FETCH_MACHINE_CHECK;
         end
       end
     end else if (rst_ni && state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
       imem_rsp_valid = 1'b1;
-      imem_rsp_insn = 32'b0;
+      imem_rsp_insn = '0;
       imem_rsp_fault_o = fetch_fault_q;
     end
 
@@ -1578,6 +1612,6 @@ module ppc_bat_memory_router #(
   // Service echo and attribute fields left unused here.
   logic _unused_response;
   assign _unused_response = ^{bat_rsp_kind, bat_rsp_ea, bat_rsp_spr,
-    bat_rsp_match, bat_rsp_hit_index, bat_rsp_pp, tlb_rsp_pp};
+    bat_rsp_match, bat_rsp_hit_index};
 endmodule
 `default_nettype wire

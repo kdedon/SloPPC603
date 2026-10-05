@@ -34,7 +34,7 @@ def validate_contract(contract):
     # Reviewed constants are intentionally independent of the input manifest.
     require(contract['implementation_edges'] == {
         'dispatch_to_issue_min': 1, 'issue_to_finish_exact': 1,
-        'finish_to_retire_min': 1, 'release_equals_retire': True,
+        'finish_to_retire_min': 0, 'release_equals_retire': True,
         'full_same_edge_reclaim': False}, 'reviewed edge constants changed')
     timing = json.loads((ROOT / 'sim/spec/timing.json').read_text())
     rows = {x['id']: x for x in timing['rows']}
@@ -52,8 +52,8 @@ def validate_contract(contract):
 def check_trace(edges, require_coverage=True):
     """All fields are pre-NBA samples; events on an edge are simultaneous.
 
-    Finish is processed first only to permit same-edge RAW forwarding. Retirement
-    separately requires a strictly older finish, preventing accidental bypass.
+    Finish is processed first: it permits same-edge RAW forwarding, and an IU
+    result retires on its finish edge (UM 6.3.3, Figure 6-3: add W follows E).
     """
     live, history, latest, order = {}, {}, {}, []
     registers = [0] * 32
@@ -67,19 +67,6 @@ def check_trace(edges, require_coverage=True):
         last_edge = edge
         require(row['cq_count'] == len(order) == row['rename_count'], f'edge {edge}: resource occupancy/release')
         stats['full_edges'] += len(order) == 5
-        packet = row.get('retire')
-        if stalled is not None:
-            require(packet == stalled, f'edge {edge}: stalled retirement changed')
-        if packet:
-            require(order and packet['id'] == order[0], f'edge {edge}: retirement not oldest')
-            r = live[packet['id']]
-            require('finish' in r and edge >= r['finish'] + 1, f'edge {edge}: retirement before registered finish')
-            require(packet == r['packet'], f'edge {edge}: retirement payload')
-        elif order and 'finish' in live[order[0]]:
-            require(False, f'edge {edge}: finished head withheld retirement valid')
-        stalled = packet if packet and not row['retire_ready'] else None
-        stats['retire_stall_edges'] += stalled is not None
-
         finish = row.get('finish')
         if finish:
             ident = finish['id']
@@ -89,6 +76,19 @@ def check_trace(edges, require_coverage=True):
             require(finish['value'] == r['value'], f'edge {edge}: result value')
             r['finish'] = edge
             stats['finish'] += 1
+        packet = row.get('retire')
+        if stalled is not None:
+            require(packet == stalled, f'edge {edge}: stalled retirement changed')
+        if packet:
+            require(order and packet['id'] == order[0], f'edge {edge}: retirement not oldest')
+            r = live[packet['id']]
+            require('finish' in r and edge >= r['finish'], f'edge {edge}: retirement before finish')
+            require(packet == r['packet'], f'edge {edge}: retirement payload')
+        elif order and 'finish' in live[order[0]]:
+            require(False, f'edge {edge}: finished head withheld retirement valid')
+        stalled = packet if packet and not row['retire_ready'] else None
+        stats['retire_stall_edges'] += stalled is not None
+
         issue = row.get('issue')
         if issue:
             ident = issue['id']
@@ -125,7 +125,7 @@ def check_trace(edges, require_coverage=True):
             stats['dispatch'] += 1
         if packet and row['retire_ready']:
             r = live.pop(order.pop(0))
-            stats['earliest_retire'] += edge == r['finish'] + 1
+            stats['earliest_retire'] += edge == r['finish']
             stats['retire'] += 1
     require(not live and stats['dispatch'] > 0, 'trace ended without draining work')
     if require_coverage:

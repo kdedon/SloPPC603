@@ -33,6 +33,7 @@ module tb_core_recovery;
   entry_t model[$];
   entry_t item, removed;
   integer retained, found, fin;
+  logic settled, early;
   logic expected_accept;
   logic [31:0] speculative_r1;
 
@@ -105,7 +106,7 @@ module tb_core_recovery;
     .dmem_req_write_o(unused_dmem[1]), .dmem_req_addr_o(unused_dmem[33:2]),
     .dmem_req_wdata_o(unused_dmem[65:34]), .dmem_req_wstrb_o(unused_dmem[69:66]),
     .dmem_rsp_valid_i(1'b0), .dmem_rsp_ready_o(unused_dmem[70]),
-    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK),
+    .dmem_rsp_rdata_i(32'b0), .dmem_rsp_error_i(1'b0), .dmem_rsp_page_miss_i('0), .dmem_rsp_fault_i(ppc_pkg::DATA_OK), /* verilator lint_off PINCONNECTEMPTY */ .dmem_store_check_addr_o(), /* verilator lint_on PINCONNECTEMPTY */ .dmem_store_check_ok_i(1'b0),
     .imem_req_valid_o(req_valid),
     .imem_req_ready_i(req_ready), .imem_req_addr_o(req_addr),
     .imem_rsp_valid_i(rsp_valid), .imem_rsp_ready_o(rsp_ready), .imem_rsp_insn_i(rsp_insn), .imem_rsp_page_miss_i('0), .imem_rsp_fault_i(ppc_pkg::FETCH_OK),
@@ -179,8 +180,23 @@ module tb_core_recovery;
       architectural_r1 = 0;
       next_dispatch_pc = 0;
     end else begin
-      // Public retirement eligibility uses the pre-edge model, before finish.
-      check(retire_valid == (model.size() != 0 && model[0].done), "retirement eligibility");
+      // A head finished before this edge, or finishing on it, may retire.
+      settled = model.size() != 0 && model[0].done;
+      early = 0;
+      for (int lane = 0; lane < 2; lane++)
+        if (lane_finish[lane]) begin
+          fin = -1;
+          for (int i = 0; i < model.size(); i++)
+            if (model[i].id == lane_finish_tag[lane]) fin = i;
+          check(fin >= 0, "finish belongs to surviving stream");
+          if (fin >= 0) begin
+            check(!model[fin].done && model[fin].packet.value == lane_finish_value[lane], "finish value and single finish");
+            item = model[fin]; item.done = 1; model[fin] = item;
+            // UM Figure 6-3: an IU result completes in its writeback cycle.
+            if (fin == 0 && (lane == 1 || dut.completion.result_retire_i)) early = 1;
+          end
+        end
+      check(retire_valid == (settled || early), "retirement eligibility");
       if (retire_valid) check(retired == model[0].packet, "retirement packet/value matches surviving stream");
       retained = model.size();
       found = -1;
@@ -190,7 +206,7 @@ module tb_core_recovery;
       if (redirect_all) retained = 0;
       else if (found >= 0) retained = found + (redirect_keep ? 1 : 0);
       else expected_accept = 0;
-      if (model.size() != 0 && model[0].done && retained == 0) expected_accept = 0;
+      if (settled && retained == 0) expected_accept = 0;
       check(redirect_accepted == expected_accept, "redirect acceptance matches independent list prefix");
       if (redirect_valid && !expected_accept) rejected_count++;
       if (expected_accept) begin
@@ -213,17 +229,6 @@ module tb_core_recovery;
         if (removed.packet.gpr_write) architectural_r1 = removed.packet.value;
         retired_count++;
       end
-      for (int lane = 0; lane < 2; lane++)
-        if (lane_finish[lane]) begin
-          fin = -1;
-          for (int i = 0; i < model.size(); i++)
-            if (model[i].id == lane_finish_tag[lane]) fin = i;
-          check(fin >= 0, "finish belongs to surviving stream");
-          if (fin >= 0) begin
-            check(!model[fin].done && model[fin].packet.value == lane_finish_value[lane], "finish value and single finish");
-            item = model[fin]; item.done = 1; model[fin] = item;
-          end
-        end
       for (int lane = 0; lane < 2; lane++)
         if (lane_dispatch[lane]) begin
           check(lane_alloc[lane].pc == next_dispatch_pc, "dispatch follows latest accepted target stream");

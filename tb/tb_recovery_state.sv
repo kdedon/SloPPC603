@@ -51,15 +51,15 @@ module tb_recovery_state;
     /* verilator lint_off PINCONNECTEMPTY */
     .alloc1_ready_o(), .alloc1_tag_o(), .retire1_valid_o(), .retire1_o(), .retire1_tag_o(),
     /* verilator lint_on PINCONNECTEMPTY */
-    .alloc1_valid_i(1'b0), .alloc1_i('0), .alloc1_finished_i(1'b0), .retire1_ready_i(1'b0),
+    .alloc1_valid_i(1'b0), .alloc1_at_tail_i(1'b0), .alloc1_i('0), .alloc1_finished_i(1'b0), .retire1_ready_i(1'b0),
     .finish_accept_o(unused_cq_finish), .empty_o(unused_cq_empty), .head_index_o(unused_cq_head), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(cq_alloc_valid), .alloc_ready_o(cq_alloc_ready),
     .alloc_i(cq_alloc_packet), .alloc_finished_i(1'b0), .alloc_tag_o(cq_alloc_tag),
-    .result_valid_i(result_valid), .result_ready_o(result_ready),
+    .result_retire_i(1'b0), .result_valid_i(result_valid), .result_ready_o(result_ready),
     .result_i(result_packet), .wake_valid_o(wake_valid), .wake_o(wake),
     .result1_valid_i(1'b0), .result1_i('0),
     /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
-    .retire_valid_o(retire_valid), .retire_ready_i(retire_ready), .retire_hold_i(1'b0),
+    .retire_valid_o(retire_valid), /* verilator lint_off PINCONNECTEMPTY */ .retire_settled_o(), .head_o(), .head1_o() /* verilator lint_on PINCONNECTEMPTY */, .retire_ready_i(retire_ready), .retire_hold_i(1'b0),
     .retire_o(retire_packet), .retire_tag_o(retire_tag),
     .redirect_valid_i(redirect_valid), .redirect_all_i(redirect_all),
     .redirect_keep_pivot_i(redirect_keep), .redirect_pivot_i(redirect_pivot),
@@ -77,6 +77,13 @@ module tb_recovery_state;
   /* verilator lint_on UNUSEDSIGNAL */
 
   ppc_rename rename_state (
+    /* verilator lint_off PINCONNECTEMPTY */
+    .read_c_i(5'd0), .arch_c_i(32'd0), .read_c_o(),
+    .read_c1_i(5'd0), .arch_c1_i(32'd0), .read_c1_o(),
+    /* verilator lint_on PINCONNECTEMPTY */
+    .alloc_value_valid_i(1'b0), .alloc_value_i(32'd0),
+    .alloc1_value_valid_i(1'b0), .alloc1_value_i(32'd0),
+    .release2_i(1'b0), .release2_reg_i(5'd0), .release2_tag_i('0), .release2_producer_i('0),
     /* verilator lint_off PINCONNECTEMPTY */
     .read_a1_o(), .read_b1_o(), .alloc1_ready_o(), .alloc1_tag_o(),
     /* verilator lint_on PINCONNECTEMPTY */

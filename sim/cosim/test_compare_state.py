@@ -32,6 +32,19 @@ class StateComparisonTests(unittest.TestCase):
         with self.assertRaisesRegex(Mismatch, 'row 1 pc=00000004: missing retirement'):
             compare(expected,expected[:1])
 
+    def test_removed_branch_row(self):
+        def row(pc, insn, r1):
+            return (pc, insn, 0, r1) + (0,)*34
+        # 0x100 addi, 0x104 b 0x10c (removed), 0x10c addi; 0x104 as bl stays.
+        expected=[row(0x100,0x38210001,1), row(0x104,0x48000008,1), row(0x10c,0x38210001,2)]
+        self.assertEqual(compare(expected,[expected[0],expected[2]]),1)
+        self.assertEqual(compare(expected,expected),0)
+        linking=[expected[0], row(0x104,0x48000009,1), expected[2]]
+        with self.assertRaisesRegex(Mismatch,'pc:'):
+            compare(linking,[linking[0],linking[2]])
+        with self.assertRaisesRegex(Mismatch,'gpr1:'):
+            compare(expected,[expected[0],row(0x10c,0x38210001,3)])
+
     def test_strict_text(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'trace'

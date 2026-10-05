@@ -239,10 +239,11 @@ address tenure may start while an older tenure of this processor still owes
 its data tenure (the push waits only for an outer address tenure, through its
 ARTRY window). An outer tenure owes data from the cycle after AACK, if ARTRY
 did not retry it, until it releases DBB; the push's DBG is withheld until then,
-so data tenures follow address order. AACK and ARTRY reach the outer masters
-only outside the push's address tenure, and TA, DRTRY, TEA and DBG only
-outside its data tenure. DBWO is ignored: the system must keep it negated
-(see [DBWO](CHIP_PACKAGE.md#dbwo)).
+so data tenures follow address order, unless DBWO comes with the DBG while
+the owed outer tenure is a read: then the push takes that grant and the read
+the next (UM §8.10, see [DBWO](CHIP_PACKAGE.md#dbwo)). AACK and ARTRY reach
+the outer masters only outside the push's address tenure, and TA, DRTRY, TEA
+and DBG only outside its data tenure.
 
 Address parity: `ppc603e` checks AP on a snooped TS with GBL when HID0[EBA]
 is set and asserts APE in the second cycle after TS; the error takes a machine
@@ -253,9 +254,6 @@ Qualified ARTRY: in the cycle after an ARTRY sampled in the cycle after
 AACK, whichever master's tenure it retried, the BIU negates BR and ignores BG
 unless it owes a push for that or an earlier snoop (§7.2.5.2.2, §8.3.3,
 Figure 8-7). This holds in every build, with or without the data cache.
-
-Not implemented: DBWO, so the push data never runs ahead of an older read's
-(see the DBWO section of [CHIP_PACKAGE.md](CHIP_PACKAGE.md#dbwo)).
 
 ### Pin wiring
 
@@ -416,8 +414,9 @@ processors.
 
 `make -C sim test-chip-mp` (`tb/tb_chip_mp.sv`, `tb/bfm/bus60x_mp_bfm.sv`): two
 `ppc603e` instances share TS, A, TT, GBL, AACK and ARTRY, each snooping the other,
-with one arbiter and memory (one tenure at a time, AACK at TS+2 or later, random
-target retries and waits). Both run one hand-assembled program with both caches on
+with one arbiter and memory (AACK at TS+2 or later, random target retries and
+waits; address pipelining, DRTRY and TEA since 2026-10-04, see
+[CHIP_PACKAGE_VERIFICATION.md](CHIP_PACKAGE_VERIFICATION.md)). Both run one hand-assembled program with both caches on
 in real mode: IDs from an atomic increment, then eight rounds of writing their halves
 of 64 interleaved words (every line written by both), reading the other's half and
 atomically incrementing a shared counter; processor 0 then checks every value and

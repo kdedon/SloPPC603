@@ -46,6 +46,7 @@ module tb_dcache;
   logic [63:0] bus_rd_data = 64'd0;
   logic bus_wr_done = 1'b0, bus_wr_error = 1'b0;
   logic push_req_valid, push_req_ready = 1'b0;
+  bit hold_push = 0;
   logic [31:0] push_req_addr;
   logic [255:0] push_req_data;
   logic push_done = 1'b0, push_error = 1'b0;
@@ -54,6 +55,8 @@ module tb_dcache;
   logic [4:0] snoop_tt = 5'd0;
   logic snoop_rsp_valid, snoop_rsp_artry, snoop_rsp_hit, snoop_rsp_push;
   logic busy, resv_valid, hit_evt, miss_evt, async_error, protocol_error;
+  // The core holds a bus error until its machine check is taken.
+  logic tea_pending = 1'b0;
 
   ppc_dcache #(.MUTATION(MUTATION), .SET_COUNT(SETS), .WAY_COUNT(WAYS),
     .FAST_LOAD_HIT(FAST_LOAD_HIT)) dut (
@@ -64,7 +67,7 @@ module tb_dcache;
     .rsp_data_o(rsp_data), .rsp_error_o(rsp_error), .rsp_align_o(rsp_align),
     .rsp_stwcx_ok_o(rsp_stwcx_ok),
     .hid0_dce_i(hid0_dce), .hid0_dlock_i(hid0_dlock), .hid0_dcfi_i(hid0_dcfi),
-    .hid0_noopti_i(hid0_noopti), .hid0_abe_i(hid0_abe),
+    .hid0_noopti_i(hid0_noopti), .hid0_abe_i(hid0_abe), .tea_pending_i(tea_pending),
     .bus_req_valid_o(bus_req_valid), .bus_req_ready_i(bus_req_ready),
     .bus_req_kind_o(bus_req_kind), .bus_req_tt_o(bus_req_tt),
     .bus_req_addr_o(bus_req_addr), .bus_req_be_o(bus_req_be),
@@ -203,6 +206,13 @@ module tb_dcache;
   int pdone_delay [$]; bit pdone_err [$];
   int push_expect = 0, push_seen = 0, push_done_n = 0;
   int async_expect = 0, async_seen = 0;
+  // Held TEA model: cycles until the machine check; tea_hold keeps it held.
+  // Per load: the cache saw the TEA on every or on any edge after accept,
+  // and the load started a read tenure.
+  int tea_wait = 0;
+  bit tea_hold = 0;
+  bit cur_blk_all = 0, cur_blk_any = 0, cur_read = 0;
+  int n_tea_blocked = 0;
   // Snoops in flight, oldest first.
   logic [4:0] sn_tt [$]; logic [31:0] sn_addr [$]; logic [255:0] sn_data [$];
   logic [7:0] sn_be [$]; longint sn_cycle [$]; bit sn_directed [$];
@@ -241,6 +251,7 @@ module tb_dcache;
     case (bus_req_kind)
       BUS_READ_BURST: begin
         n_fill++;
+        cur_read = 1;
         check(bus_req_tt == TT_RWITM || bus_req_tt == TT_RWITM_ATOM, "fill TT");
         check(bus_req_addr[31:5] == cur_addr[31:5], "fill line is the request line");
         check(bus_req_addr[4:3] == cur_addr[4:3], "fill starts at the critical double word");
@@ -264,6 +275,7 @@ module tb_dcache;
       end
       BUS_READ_SINGLE: begin
         n_single++;
+        cur_read = 1;
         check(bus_req_tt == (cur_op == DC_LWARX ? TT_READ_ATOM : TT_READ), "single read TT");
         check(bus_req_addr[31:3] == cur_addr[31:3] && bus_req_be == cur_be, "single read address");
         check(bus_req_wimg[WIMG_I], "single read is caching-inhibited");
@@ -333,12 +345,23 @@ module tb_dcache;
     err_expected = 0;
     case (cur_op)
       DC_LOAD, DC_LWARX: begin
-        err_expected = err_region(cur_addr) && cur_err_beat == 0;
+        bit blocked;
+        // UM 4.5.2: the machine check for a TEA is taken immediately, so a
+        // load behind a held TEA answers with the error and starts no tenure.
+        // A TEA that arrives during the lookup may land on either side.
+        blocked = !cur_read && (cur_blk_all || (cur_blk_any && rsp_error));
+        err_expected = blocked || (cur_read && err_region(cur_addr) && cur_err_beat == 0);
         check(rsp_error == err_expected, "load error flag");
-        if (!err_expected)
-          check(rsp_data == img_rd(k), $sformatf("load data %h expected %h at %h",
-                rsp_data, img_rd(k), cur_addr));
-        if (cur_op == DC_LWARX) begin m_resv = 1; m_resv_line = cur_addr[31:5]; end
+        if (blocked) begin
+          n_tea_blocked++;
+          // The load takes the machine check, which clears the held TEA.
+          if (!tea_hold) tea_wait = 0;
+        end else begin
+          if (!err_expected)
+            check(rsp_data == img_rd(k), $sformatf("load data %h expected %h at %h",
+                  rsp_data, img_rd(k), cur_addr));
+          if (cur_op == DC_LWARX) begin m_resv = 1; m_resv_line = cur_addr[31:5]; end
+        end
       end
       DC_STORE, DC_STWCX: begin
         bit ok;
@@ -467,6 +490,9 @@ module tb_dcache;
     if (rst_n) begin
       check(!protocol_error, "no protocol error");
       if (async_error) async_seen++;
+      // The cache sees the held TEA and its own error of the previous edge.
+      if (tea_pending || async_error) cur_blk_any = 1;
+      else cur_blk_all = 0;
 
       // Snoop responses come three edges after issue, in order.
       if (snoop_rsp_valid) begin
@@ -510,13 +536,22 @@ module tb_dcache;
       if (req_valid && req_ready) begin
         cur_op = req_op; cur_addr = req_addr; cur_be = req_be;
         cur_wdata = req_wdata; cur_wimg = req_wimg; cur_err_beat = -1;
+        cur_blk_all = 1; cur_blk_any = 0; cur_read = 0;
+      end
+      // Core latch: set by the cache's error, cleared by the machine check.
+      if (async_error) begin
+        tea_pending <= 1'b1;
+        tea_wait = int'(rnd_b(40)) + 1;
+      end else if (tea_pending && !tea_hold) begin
+        if (tea_wait > 0) tea_wait--;
+        if (tea_wait == 0) tea_pending <= 1'b0;
       end
       if (hid0_dcfi && !busy) image_from_mem_all();
 
       // BIU drive for the next cycle.
       bus_req_ready <= !hold_req && rnd_b(100) < 32'(req_ready_pct) &&
                        sn_tt.size() == 0;
-      push_req_ready <= rnd_b(100) < 60;
+      push_req_ready <= !hold_push && rnd_b(100) < 60;
       if (beat_i < beat_n && !hold_beats) begin
         if (beat_gap > 0) beat_gap--;
         else begin
@@ -949,6 +984,115 @@ module tb_dcache;
     pulse_dcfi();
     hid0_dce = 1'b1;
     directed_tests++;
+
+    // D17: a held TEA answers loads with the error and starts no tenure
+    // (UM 4.5.2); stores proceed, and loads complete once it is taken.
+    acc(DC_LOAD, mk(1, 0, 18, 0));
+    check(!r_error, "hit line loaded");
+    tea_hold = 1;
+    st(mk(7, 0, 0, 0), 64'h4444);
+    wait_quiet();
+    settle(2);
+    check(tea_pending, "posted write error held");
+    mark_trace();
+    acc(DC_LOAD, mk(1, 0, 18, 0));
+    check(r_error, "held TEA fails a load hit");
+    acc(DC_LOAD, mk(1, 0, 19, 0));
+    check(r_error, "held TEA fails a load miss");
+    acc(DC_LWARX, mk(1, 0, 18, 0));
+    check(r_error && !resv_valid, "held TEA fails lwarx without a reservation");
+    st(mk(1, 0, 18, 0), 64'h5555);
+    check(!r_error, "stores proceed behind a held TEA");
+    expect_trace("loads behind a held TEA", 0, RB, 0, RB, 0);
+    tea_hold = 0;
+    while (tea_pending) @(negedge clk);
+    acc(DC_LOAD, mk(1, 0, 18, 0));
+    check(!r_error && r_data == 64'h5555, "load completes after the machine check");
+    directed_tests++;
+
+    // D-fast: a copy-back store hit that waits in lookup behind a push of
+    // its line answers when the push is taken; a load of another double
+    // word, presented meanwhile, must read its own double word.
+    if (FAST_LOAD_HIT) begin
+      a = mk(0, 2, 9, 1);
+      st(a, 64'h0a0b_0c0d_0e0f_1011);
+      acc(DC_LOAD, a + 32'h8);
+      wait_quiet();
+      hold_push = 1;
+      snoop_now(TT_READ, a, '0);
+      check(dsn_push, "read snoop on M pushes");
+      @(negedge clk);
+      req_valid = 1'b1; req_op = DC_STORE; req_addr = a; req_be = 8'hff;
+      req_wdata = 64'h2122_2324_2526_2728; req_wimg = wimg_of(4'd0);
+      rsp_ready = 1'b1;
+      while (!req_ready) @(negedge clk);
+      @(negedge clk);
+      req_op = DC_LOAD; req_addr = a + 32'h8; req_wdata = '0;
+      settle(4);
+      check(!rsp_valid, "store hit waits for the push of its line");
+      hold_push = 0;
+      while (!req_ready) @(negedge clk);
+      @(negedge clk);
+      req_valid = 1'b0;
+      while (!rsp_valid) @(negedge clk);
+      @(negedge clk);
+      rsp_ready = 1'b0;
+      wait_quiet();
+      directed_tests++;
+
+      // Back to back behind fast store hits: a store and a load of the
+      // double word just written are accepted the next cycle, and the load
+      // sees both stores; another way's line at the same index is unaffected.
+      begin
+        logic [31:0] qa [6];
+        logic [3:0] qop [6];
+        logic [7:0] qbe [6];
+        logic [63:0] qd [6], got [$];
+        int accepted_at [6];
+        int cyc;
+        a = mk(0, 4, 11, 2);
+        b = mk(0, 5, 11, 2);
+        st(a, 64'h1111_1111_1111_1111);
+        st(b, 64'h2222_2222_2222_2222);
+        wait_quiet();
+        qa = '{a, a, a, b, a, b};
+        qop = '{DC_STORE, DC_STORE, DC_LOAD, DC_STORE, DC_LOAD, DC_LOAD};
+        qbe = '{8'h0f, 8'hf0, 8'hff, 8'h3c, 8'hff, 8'hff};
+        qd = '{64'ha0a1_a2a3_a4a5_a6a7, 64'hb0b1_b2b3_b4b5_b6b7, '0,
+               64'hc0c1_c2c3_c4c5_c6c7, '0, '0};
+        rsp_ready = 1'b1;
+        cyc = 0;
+        fork
+          begin
+            for (int i = 0; i < 6; i++) begin
+              @(negedge clk);
+              req_valid = 1'b1; req_op = qop[i]; req_addr = qa[i];
+              req_be = qbe[i]; req_wdata = qd[i]; req_wimg = wimg_of(4'd0);
+              while (!req_ready) @(negedge clk);
+              accepted_at[i] = cyc;
+            end
+            @(negedge clk);
+            req_valid = 1'b0;
+          end
+          begin
+            while (got.size() < 3) begin
+              @(posedge clk);
+              cyc++;
+              if (rsp_valid && rsp_ready && dut.req_op_q == DC_LOAD) got.push_back(rsp_data);
+            end
+          end
+        join
+        @(negedge clk);
+        rsp_ready = 1'b0;
+        check(got[0] == 64'hb0b1_b2b3_a4a5_a6a7, "load sees both back-to-back stores");
+        check(got[1] == got[0], "repeat load of the stored double word");
+        check(got[2] == 64'h2222_c2c3_c4c5_2222, "other way at the same index keeps its data");
+        check(accepted_at[1] == accepted_at[0] + 1 && accepted_at[2] == accepted_at[1] + 1,
+              "store and same double-word load accepted behind a fast store");
+        wait_quiet();
+        directed_tests++;
+      end
+    end
   endtask
 
   // Random operations over a small pool so sets conflict and lines evict.
@@ -1073,8 +1217,8 @@ module tb_dcache;
              SETS, WAYS, seed, n_ops, phase_ops, checks, cycles);
     $display("  fills=%0d castouts=%0d singles=%0d addr_only=%0d snoops=%0d artry=%0d pushes=%0d",
              n_fill, n_castout, n_single, n_addr_only, n_snoops, n_artry, n_push);
-    $display("  snoops_during_fill=%0d snoops_during_castout=%0d max_retries=%0d async_errors=%0d",
-             n_snoop_during_fill, n_snoop_during_cob, n_retry_max, async_seen);
+    $display("  snoops_during_fill=%0d snoops_during_castout=%0d max_retries=%0d async_errors=%0d tea_blocked=%0d",
+             n_snoop_during_fill, n_snoop_during_cob, n_retry_max, async_seen, n_tea_blocked);
     $finish;
   end
 endmodule

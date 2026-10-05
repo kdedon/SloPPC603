@@ -17,6 +17,10 @@ ifdef DISPATCH_WIDTH
 export PPC_VERILATOR_FLAGS := +define+PPC_DISPATCH_WIDTH=$(DISPATCH_WIDTH)
 BUILD_DIR ?= build-w$(DISPATCH_WIDTH)
 endif
+# BRANCH_REMOVAL=0 or 1 sets ppc_core's ENABLE_BRANCH_REMOVAL default.
+ifdef BRANCH_REMOVAL
+export PPC_VERILATOR_FLAGS := $(PPC_VERILATOR_FLAGS) +define+PPC_BRANCH_REMOVAL=$(BRANCH_REMOVAL)
+endif
 BUILD_DIR ?= build
 RTL := $(shell cat ../rtl/files.f)
 BUS_RTL := $(shell cat ../rtl/bus_files.f)
@@ -922,6 +926,12 @@ test-completion-update:
 test-lsu-update-edges:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_lsu_update_edges --Mdir $(BUILD_DIR)/lsu-update-edges $(RTL) ../tb/tb_lsu_update_edges.sv
 	./$(BUILD_DIR)/lsu-update-edges/Vtb_lsu_update_edges $(SIM_ARGS)
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_LSU_PIPE=1 --top-module tb_lsu_update_edges --Mdir $(BUILD_DIR)/lsu-update-edges-pipe $(RTL) ../tb/tb_lsu_update_edges.sv
+	./$(BUILD_DIR)/lsu-update-edges-pipe/Vtb_lsu_update_edges $(SIM_ARGS)
+ifndef DISPATCH_WIDTH
+	$(VERILATOR) --binary --timing --assert -Wall +define+PPC_LSU_PIPE=1 +define+PPC_DISPATCH_WIDTH=2 --top-module tb_lsu_update_edges --Mdir $(BUILD_DIR)/lsu-update-edges-pipe-w2 $(RTL) ../tb/tb_lsu_update_edges.sv
+	./$(BUILD_DIR)/lsu-update-edges-pipe-w2/Vtb_lsu_update_edges $(SIM_ARGS)
+endif
 test-bus60x:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_bus60x --Mdir $(BUILD_DIR)/bus60x $(BUS_RTL) ../tb/bfm/bus60x_target_bfm.sv ../tb/tb_bus60x.sv
 	./$(BUILD_DIR)/bus60x/Vtb_bus60x $(SIM_ARGS)
@@ -1847,6 +1857,25 @@ test-core-bat-machine-check:
 # The ppc603e package top: directed system-pin checks at the pins, and lint
 # of the top and its Quartus measurement wrapper.
 CHIP_RTL := $(shell cat ../rtl/chip_files.f)
+.PHONY: test-chip-icache-real
+test: test-chip-icache-real
+# Real-mode code is cached with ICE (603e, PID6, 603) and fetched single-beat without.
+test-chip-icache-real:
+	for v in 0 1 3; do mkdir -p $(BUILD_DIR)/chip-icache-real/v$$v && \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_icache_real +define+CHIP_VARIANT=$$v --Mdir $(BUILD_DIR)/chip-icache-real/v$$v -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_icache_real.sv && \
+	  ./$(BUILD_DIR)/chip-icache-real/v$$v/Vtb_chip_icache_real $(SIM_ARGS) || exit 1; done
+	mkdir -p $(BUILD_DIR)/chip-icache-real/off
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_icache_real "-GICE=1'b0" --Mdir $(BUILD_DIR)/chip-icache-real/off -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_icache_real.sv
+	./$(BUILD_DIR)/chip-icache-real/off/Vtb_chip_icache_real $(SIM_ARGS)
+
+.PHONY: test-chip-ecxwx
+test: test-chip-ecxwx
+# Misaligned eciwx/ecowx: split on PID6 and the 603, alignment on the PID7v; data cache off and on.
+test-chip-ecxwx:
+	for v in 0 1 3; do for d in 0 1; do mkdir -p $(BUILD_DIR)/chip-ecxwx/v$$v-d$$d && \
+	  $(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_ecxwx +define+CHIP_VARIANT=$$v "-GDCE=1'b$$d" --Mdir $(BUILD_DIR)/chip-ecxwx/v$$v-d$$d -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_ecxwx.sv && \
+	  ./$(BUILD_DIR)/chip-ecxwx/v$$v-d$$d/Vtb_chip_ecxwx $(SIM_ARGS) || exit 1; done; done
+
 .PHONY: test-chip-dcache-coherence test-chip-dcache-coherence-negative
 test: test-chip-dcache-coherence test-chip-dcache-coherence-negative
 CHIP_COHERENCE_TB := -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_dcache_coherence.sv
@@ -1854,6 +1883,9 @@ test-chip-dcache-coherence:
 	mkdir -p $(BUILD_DIR)/chip-dcache-coherence
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence --Mdir $(BUILD_DIR)/chip-dcache-coherence $(CHIP_COHERENCE_TB)
 	for s in 1 2 3; do ./$(BUILD_DIR)/chip-dcache-coherence/Vtb_chip_dcache_coherence +SEED=$$s $(SIM_ARGS) || exit 1; done
+	mkdir -p $(BUILD_DIR)/chip-dcache-coherence-noice
+	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_dcache_coherence "-GICE=1'b0" --Mdir $(BUILD_DIR)/chip-dcache-coherence-noice $(CHIP_COHERENCE_TB)
+	for s in 1 2 3; do ./$(BUILD_DIR)/chip-dcache-coherence-noice/Vtb_chip_dcache_coherence +SEED=$$s $(SIM_ARGS) || exit 1; done
 test-chip-dcache-coherence-negative:
 	mkdir -p $(BUILD_DIR)/chip-dcache-coherence-negative
 	for m in 1 2; do \
@@ -1871,7 +1903,9 @@ test: test-chip-mp
 test-chip-mp:
 	mkdir -p $(BUILD_DIR)/chip-mp
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_mp --Mdir $(BUILD_DIR)/chip-mp -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_mp_bfm.sv ../tb/tb_chip_mp.sv
-	for s in 1 2 3; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s $(SIM_ARGS) || exit 1; done
+	for s in 1 2 3 4 5; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s $(SIM_ARGS) || exit 1; done
+	for s in 1 3 5; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s +PAIR_PROBE $(SIM_ARGS) || exit 1; done
+	for s in 2 4; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s +PAIR_PROBE +WRITE_TEA +SHARED_BUSY $(SIM_ARGS) || exit 1; done
 
 .PHONY: test-chip-fpu
 FPU_CHIP_IMAGE := $(BUILD_DIR)/chip-fpu/program.hex
@@ -2048,15 +2082,42 @@ test-chip-le:
 	python3 tools/le_core_program.py --chip-image $(BUILD_DIR)/chip-le/program.hex
 	./$(BUILD_DIR)/chip-le/Vtb_chip_firmware +IMAGE=$(BUILD_DIR)/chip-le/program.hex +TOHOST=fff3ff00 $(SIM_ARGS)
 
+# The little-endian program on DingusPPC built with little-endian support,
+# compared retirement by retirement and word by word with tb_core_le.
+.PHONY: test-reference-le
+test: test-reference-le
+test-reference-le: reference-checkout
+	mkdir -p $(BUILD_DIR)/reference-le
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 --top-module tb_core_le -GCPU_VARIANT=0 -GDMEM_BITS=64 -GFETCH_WIDTH=1 -GDISPATCH_WIDTH=1 --Mdir $(BUILD_DIR)/reference-le/rtl $(FPU_CORE_RTL) ../tb/tb_core_le.sv
+	python3 cosim/run_le_reference.py --build-dir $(BUILD_DIR)/reference-le --rtl $(BUILD_DIR)/reference-le/rtl/Vtb_core_le --reference $(REFERENCE_DIR)
+
 # The same program with the pipelined LSU over a memory taking one access per
 # cycle; adds the Table 6-6 integer load/store rows.
 .PHONY: test-core-lsu-timing
 test-core-lsu-timing:
 	mkdir -p $(BUILD_DIR)/core-lsu-timing
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GPIPE_MEM=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
-	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem
+	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem $(if $(filter 2,$(DISPATCH_WIDTH)),--dual-write)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=0 $(SIM_ARGS)
+# Bus errors on FP update forms through the unit: machine checks at the access
+# with base and target unchanged. Without retirement-stall-free probes: the
+# store queue is off with machine check on this core.
+.PHONY: test-core-fpu-machine-check-lsu
+test-core-fpu-machine-check-lsu:
+	mkdir -p $(BUILD_DIR)/core-fpu-mc
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GMACHINE_CHECK=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-mc $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-fpu-mc/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --machine-check
+	./$(BUILD_DIR)/core-fpu-mc/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-mc/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+# The same with LSU_BASE_SNOOP: a load's base produced by a load or add
+# costs Table 6-6's latency, and a misaligned snooped EA traps.
+.PHONY: test-core-lsu-timing-snoop
+test-core-lsu-timing-snoop:
+	mkdir -p $(BUILD_DIR)/core-lsu-timing-snoop
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 +define+PPC_LSU_BASE_SNOOP=1 -GPIPE_MEM=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing-snoop $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing-snoop/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem --base-snoop $(if $(filter 2,$(DISPATCH_WIDTH)),--dual-write)
+	./$(BUILD_DIR)/core-lsu-timing-snoop/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing-snoop/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/core-lsu-timing-snoop/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing-snoop/program.txt +STALL=0 $(SIM_ARGS)
 
 # The same program over a 32-bit data path: doublewords split into two words.
 FPU_CORE_SPLIT_IMAGE := $(BUILD_DIR)/core-fpu-split/program.txt
@@ -2083,9 +2144,35 @@ FPU_CORE_602_SEED ?= 0x602
 test-core-fpu-602 test-core-fpu-602-compact: test-core-fpu-602%:
 	mkdir -p $(BUILD_DIR)/core-fpu-602$*
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 -GCPU_VARIANT=4 $(if $*,-GFPU_IMPL=1) --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-602$* $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
-	python3 tools/fpu_core_602_program.py --image $(BUILD_DIR)/core-fpu-602$*/program.txt --seed $(FPU_CORE_602_SEED) --random $(FPU_CORE_RANDOM)
+	python3 tools/fpu_core_602_program.py --image $(BUILD_DIR)/core-fpu-602$*/program.txt --seed $(FPU_CORE_602_SEED) --random $(FPU_CORE_RANDOM) $(FPU_CORE_LSU)
 	./$(BUILD_DIR)/core-fpu-602$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-602$*/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-fpu-602$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-602$*/program.txt +STALL=0 $(SIM_ARGS)
+
+# TEA on every FP access form as a machine check, both personalities and
+# both FPU implementations. Machine check removes the store queue, so
+# timing is not checked. Each run: CPU_VARIANT, FPU_IMPL, program.
+MC_FPU_RUNS := 603 603-compact 602 602-compact
+MC_FPU_603 := 0 0 fpu_core_program.py
+MC_FPU_603-compact := 0 1 fpu_core_program.py
+MC_FPU_602 := 4 0 fpu_core_602_program.py
+MC_FPU_602-compact := 4 1 fpu_core_602_program.py
+.PHONY: test-core-fpu-machine-check $(addprefix test-core-fpu-machine-check-,$(MC_FPU_RUNS))
+test-core-fpu-machine-check: $(addprefix test-core-fpu-machine-check-,$(MC_FPU_RUNS)) test-core-fpu-machine-check-lsu
+$(addprefix test-core-fpu-machine-check-,$(MC_FPU_RUNS)): test-core-fpu-machine-check-%:
+	mkdir -p $(BUILD_DIR)/core-fpu-mc-$*
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 -GCPU_VARIANT=$(word 1,$(MC_FPU_$*)) -GFPU_IMPL=$(word 2,$(MC_FPU_$*)) -GMACHINE_CHECK=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-mc-$* $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/$(word 3,$(MC_FPU_$*)) --image $(BUILD_DIR)/core-fpu-mc-$*/program.txt --random $(FPU_CORE_RANDOM) --machine-check
+	./$(BUILD_DIR)/core-fpu-mc-$*/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-mc-$*/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+
+# The 602 program with the pipelined LSU over a memory taking one access per
+# cycle: the FP rows of 602 UM Table 6-6.
+.PHONY: test-core-lsu-timing-602
+test-core-lsu-timing-602:
+	mkdir -p $(BUILD_DIR)/core-lsu-timing-602
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GPIPE_MEM=1 -GCPU_VARIANT=4 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing-602 $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	python3 tools/fpu_core_602_program.py --image $(BUILD_DIR)/core-lsu-timing-602/program.txt --seed $(FPU_CORE_602_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem
+	./$(BUILD_DIR)/core-lsu-timing-602/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing-602/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/core-lsu-timing-602/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing-602/program.txt +STALL=0 $(SIM_ARGS)
 
 .PHONY: test-decode-sweep test-core-full-decode
 test: test-decode-sweep test-core-full-decode
@@ -2261,7 +2348,7 @@ DEMO_NAMES := hello dhrystone coremark
 lint: lint-demo-soc
 lint-demo-soc:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_demo_soc $(DEMO_RTL)
-	$(VERILATOR) --lint-only --timing -Wall --top-module tb_demo_soc $(DEMO_RTL) ../tb/soc/tb_demo_soc.sv
+	$(VERILATOR) --lint-only --timing -Wall --top-module tb_demo_soc $(DEMO_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_demo_soc "-GENABLE_FPU=1'b1" $(DEMO_FPU_RTL)
 # The demo SoC's 60x target requests no memory beat under reset.
 .PHONY: test-soc-target-reset
@@ -2269,19 +2356,31 @@ test: test-soc-target-reset
 test-soc-target-reset:
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_soc_target_reset --Mdir $(BUILD_DIR)/soc-target-reset ../rtl/soc/soc_bus60x_target.sv ../tb/soc/tb_soc_target_reset.sv
 	./$(BUILD_DIR)/soc-target-reset/Vtb_soc_target_reset $(SIM_ARGS)
+# The build's Verilator flags evaluate a NOT under an AND tree correctly at -O3.
+.PHONY: test-verilator-bitop
+test: test-verilator-bitop
+test-verilator-bitop:
+	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_verilator_bitop --Mdir $(BUILD_DIR)/verilator-bitop ../tb/tb_verilator_bitop.sv
+	./$(BUILD_DIR)/verilator-bitop/Vtb_verilator_bitop $(SIM_ARGS)
 demo-soc-model:
 	mkdir -p $(BUILD_DIR)/demo
-	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_demo_soc --Mdir $(BUILD_DIR)/demo/model $(DEMO_RTL) ../tb/soc/tb_demo_soc.sv
+	$(VERILATOR) --binary --timing --assert -Wall -O3 --top-module tb_demo_soc --Mdir $(BUILD_DIR)/demo/model $(DEMO_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
+# Per-instruction Dhrystone cycles of the core against the 603e model, with
+# stall causes (docs/PERFORMANCE_TARGET.md). PERF_DIFF_ARGS passes --core rules.
+.PHONY: perf-diff
+perf-diff: demo-soc-model
+	./$(BUILD_DIR)/demo/model/Vtb_demo_soc +IMAGE=$(DEMO_FW_DIR)/dhrystone.hex +TRACE=1000000 +TRACE_TO=1012000 +DISPATCH_TRACE=$(BUILD_DIR)/demo/dispatch.txt +STALL_TRACE=$(BUILD_DIR)/demo/stall.txt > $(BUILD_DIR)/demo/retire.log
+	python3 tools/perf_diff.py $(BUILD_DIR)/demo/retire.log $(BUILD_DIR)/demo/dispatch.txt $(BUILD_DIR)/demo/stall.txt --mark fff03808 --dump $(DEMO_FW_DIR)/dhrystone.dump $(PERF_DIFF_ARGS)
 # The demo SoC with ENABLE_FPU.
 .PHONY: demo-soc-fpu-model
 demo-soc-fpu-model:
 	mkdir -p $(BUILD_DIR)/demo
-	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" --Mdir $(BUILD_DIR)/demo/model-fpu $(DEMO_FPU_RTL) ../tb/soc/tb_demo_soc.sv
+	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" --Mdir $(BUILD_DIR)/demo/model-fpu $(DEMO_FPU_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
 # The same SoC with FPU_IMPL=COMPACT.
 .PHONY: demo-soc-fpu-compact-model
 demo-soc-fpu-compact-model:
 	mkdir -p $(BUILD_DIR)/demo
-	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" -GFPU_IMPL=1 --Mdir $(BUILD_DIR)/demo/model-fpu-compact $(DEMO_FPU_RTL) ../tb/soc/tb_demo_soc.sv
+	$(VERILATOR) --binary --timing --assert -Wall -O3 -j 2 --top-module tb_demo_soc "-GENABLE_FPU=1'b1" -GFPU_IMPL=1 --Mdir $(BUILD_DIR)/demo/model-fpu-compact $(DEMO_FPU_RTL) -I../tb ../tb/soc/tb_demo_soc.sv
 demo-firmware:
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) all
@@ -2301,6 +2400,26 @@ $(addprefix demo-,$(BENCH_NAMES)): demo-%: demo-soc-model demo-bench-firmware
 	python3 tools/ppm_to_png.py $(BUILD_DIR)/demo/$*.ppm $(BUILD_DIR)/demo/$*.png
 # Opcode self-test (docs/SELFTEST.md): the 603e image on the demo SoC, which
 # exits with the number of failed cases.
+# Whole programs on the demo SoC (caches and BAT translation on) against
+# DingusPPC, every retirement's state and stores (docs/REFERENCE_MACHINE.md).
+# Needs the demo and bench images in DEMO_FW_DIR. MACHINE_PROGRAMS narrows it.
+MACHINE_PROGRAMS ?= hello dhrystone coremark whetstone selftest
+.PHONY: test-reference-machine
+test-reference-machine: reference-checkout demo-soc-model
+	python3 cosim/run_machine_reference.py --build-dir $(BUILD_DIR)/reference-machine --reference $(REFERENCE_DIR) --model $(BUILD_DIR)/demo/model/Vtb_demo_soc --image-dir $(DEMO_FW_DIR) --programs $(MACHINE_PROGRAMS)
+# Demo programs' dispatch/retire traces against the 603e dispatch, serialization,
+# completion and writeback rules (docs/DUAL_DISPATCH_DESIGN.md). The width and
+# LSU unit follow the build (DISPATCH_WIDTH, VERILATOR=tools/verilate-lsu-pipe).
+DISPATCH_RULES_PROGRAMS ?= dhrystone coremark whetstone
+.PHONY: test-dispatch-rules
+test-dispatch-rules: demo-soc-model
+	python3 tools/run_dispatch_rules.py --model $(BUILD_DIR)/demo/model/Vtb_demo_soc --image-dir $(DEMO_FW_DIR) --programs $(DISPATCH_RULES_PROGRAMS) --log-dir $(BUILD_DIR)/dispatch-rules $(if $(filter 2,$(DISPATCH_WIDTH)),--width 2 --sru --min-pairs 1000,--width 1)
+# The MMU stress image on the package top: TLB reloads, interrupts, direct-store.
+MACHINE_MMU_ELF ?= ../toolchain/build/chip-mmu-stress/smoke.elf
+.PHONY: test-reference-machine-mmu
+test-reference-machine-mmu: reference-checkout
+	python3 cosim/run_machine_reference.py --build-dir $(BUILD_DIR)/reference-machine-mmu --reference $(REFERENCE_DIR) --chip-elf $(MACHINE_MMU_ELF) --verilator $(VERILATOR_TOOL)
+
 .PHONY: test-selftest
 test-selftest: demo-soc-model
 	$(DEMO_FW_MAKE) selftest
@@ -2366,17 +2485,16 @@ mister-firmware:
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) mister GIT_SHORT=$$(git rev-parse --short HEAD)
 mister-smoke: mister-model mister-firmware
-	timeout 3600 ./$(MISTER_OUT)/model/Vtb_mister $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=$(MISTER_MODE) +PPM=$(MISTER_OUT)/mister-$(MISTER_MODE).ppm +SAVE=$(MISTER_OUT)/screen-$(MISTER_MODE).pfb
+	timeout 3600 ./$(MISTER_OUT)/model/Vtb_mister $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=$(MISTER_MODE) +PPM=$(MISTER_OUT)/mister-$(MISTER_MODE).ppm
 	python3 tools/ppm_to_png.py $(MISTER_OUT)/mister-$(MISTER_MODE).ppm $(MISTER_OUT)/mister-$(MISTER_MODE).png
-	if [ "$(MISTER_FB)" = 1 ]; then python3 ../mister/fb2png.py $(MISTER_OUT)/screen-$(MISTER_MODE).pfb $(MISTER_OUT)/screen-$(MISTER_MODE).png; fi
 # The --fpu --suite whetstone core: hard-float Whetstone at simulation size,
 # MODE as the suite core drives it (no menu).
 mister-smoke-fpu:
 	$(MAKE) mister-model MISTER_FPU=1 MISTER_BENCH=1
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) mister-whetstone-hf
-	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu-bench/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-whetstone-hf-smoke.hex +MODE=04 +PPM=$(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.ppm +SAVE=$(BUILD_DIR)/mister/fb1-fpu-bench/screen.pfb
-	python3 ../mister/fb2png.py $(BUILD_DIR)/mister/fb1-fpu-bench/screen.pfb $(BUILD_DIR)/mister/fb1-fpu-bench/screen.png
+	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu-bench/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-whetstone-hf-smoke.hex +MODE=04 +PPM=$(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.ppm
+	python3 tools/ppm_to_png.py $(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.ppm $(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.png
 # The --fpu core: the FPU image (the MiSTer programs plus Whetstone and the
 # double-precision Mandelbrot set). MISTER_FPU_MODE is the MODE byte, with
 # program bit 2 in bit 3: 09 is Run all at smoke-test length.
@@ -2386,8 +2504,8 @@ mister-smoke-fpu-all:
 	$(MAKE) mister-model MISTER_FPU=1
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) mister-fpu GIT_SHORT=$$(git rev-parse --short HEAD)
-	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-fpu.hex +MODE=$(MISTER_FPU_MODE) +PPM=$(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).ppm +SAVE=$(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).pfb
-	python3 ../mister/fb2png.py $(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).pfb $(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).png
+	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-fpu.hex +MODE=$(MISTER_FPU_MODE) +PPM=$(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).ppm
+	python3 tools/ppm_to_png.py $(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).ppm $(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).png
 # Program images from DDR3 on the test core's configuration (COMPACT FPU, dual
 # dispatch, pipelined LSU): each image of MISTER_LOAD_IMAGES, at simulation
 # size, goes through the ioctl loader into a DDR3 model and runs from there;
@@ -2417,13 +2535,14 @@ test-mister-load: mister-load-model
 # fails on some seed. Each model builds once; runs are separate targets, so
 # `make -j2 xrand-sweep` runs two at a time. Logs go to $(BUILD_DIR)/xrand.
 XRAND_SWEEP_SEEDS ?= 1 2 3 4 5 6 7 8 zero ones
-XRAND_SWEEP_BENCHES := soc-target-reset core-full-decode chip-pins demo-hello mister-fb1 mister-fb0 \
-                       mister-fpu
+XRAND_SWEEP_BENCHES := soc-target-reset core-full-decode chip-pins demo-hello demo-dhrystone \
+                       mister-fb1 mister-fb0 mister-fpu
 xrand_args = $(if $(filter zero,$1),+verilator+rand+reset+0,$(if $(filter ones,$1),+verilator+rand+reset+1,+verilator+seed+$1 +verilator+rand+reset+2))
 XRAND_CMD_soc-target-reset := ./$(BUILD_DIR)/soc-target-reset/Vtb_soc_target_reset
 XRAND_CMD_core-full-decode := ./$(BUILD_DIR)/core-full-decode/Vtb_core_full_decode
 XRAND_CMD_chip-pins := ./$(BUILD_DIR)/chip-pins/Vtb_chip_pins
 XRAND_CMD_demo-hello := ./$(BUILD_DIR)/demo/model/Vtb_demo_soc +IMAGE=$(DEMO_FW_DIR)/hello.hex +NAME=hello
+XRAND_CMD_demo-dhrystone := ./$(BUILD_DIR)/demo/model/Vtb_demo_soc +IMAGE=$(DEMO_FW_DIR)/dhrystone.hex +NAME=dhrystone
 XRAND_CMD_mister-fb1 := ./$(BUILD_DIR)/mister/fb1/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=00
 XRAND_CMD_mister-fb0 := ./$(BUILD_DIR)/mister/fb0/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=00
 XRAND_CMD_mister-fpu := ./$(BUILD_DIR)/mister/fb1-fpu-bench/model/Vtb_mister +IMAGE=$(DEMO_FW_DIR)/mister-whetstone-hf-smoke.hex +MODE=04
@@ -2444,7 +2563,11 @@ $(XRAND_SWEEP_RUNS): xrand-models
 	    > $(BUILD_DIR)/xrand/$(patsubst xrand-run-%,%,$@).log 2>&1; then \
 	  echo "PASS $@"; \
 	else echo "FAIL $@"; grep -a -m3 'FAIL\|%Fatal\|%Error' $(BUILD_DIR)/xrand/$(patsubst xrand-run-%,%,$@).log; exit 1; fi
+# Timing does not depend on initial state either: one Dhrystone cycle count.
 xrand-sweep: $(XRAND_SWEEP_RUNS)
+	@n=$$(grep -ah 'cycles/run' $(BUILD_DIR)/xrand/demo-dhrystone-*.log | sort -u | wc -l); \
+	if [ "$$n" != 1 ]; then echo "FAIL: Dhrystone timing differs between initial states"; \
+	  grep -a 'cycles/run' $(BUILD_DIR)/xrand/demo-dhrystone-*.log; exit 1; fi
 	@echo "PASS: xrand sweep, $(words $(XRAND_SWEEP_RUNS)) runs ($(XRAND_SWEEP_BENCHES)) x ($(XRAND_SWEEP_SEEDS))"
 # Cache geometry as a bench parameter: the 603 (128 sets x 2 ways) and 602
 # (64 x 2) geometries on the standalone and integrated cache benches, which
