@@ -20,7 +20,7 @@ The processor implements one additional level of address pipelining: up to two a
 
 Shared bidirectional pins are three-stated between tenures. Processor address and attributes remain driven through `AACK` and become high impedance one bus clock later. Processor write data remains driven through the final/only `TA` and becomes high impedance on the following bus clock. `ABB` and `DBB` use half-clock negation before release. On a read, `DRTRY` can extend data-bus mastership exclusion after the prior master has negated `DBB`; it does not require `DBB` to stay asserted. `ARTRY` uses its special shared-response release sequence: high impedance for one-half processor clock, driven negated for one bus clock, then high impedance unless precharge is disabled. UM Chapter 7 signal timing and §8.5, PDF 280–298 and 340 / printed 7-4–7-22 and 8-32.
 
-`ARTRY` retries the whole transaction. It can assert early during address tenure and must remain asserted through the cycle after `AACK`; assertion in that following cycle is the qualified retry. If the associated data tenure already began, it is aborted. In normal DRTRY mode, the generic/64-bit late-cancel boundary is the cycle after the first/only `TA`. In 32-bit mode it is after the first `TA` for word or smaller transfers, but after the second `TA` for double-word or burst transfers. UM §§7.2.5.2, 8.3.3, and 8.6.1, PDF 290–291, 328–330, and 346 / printed 7-14–7-15, 8-20–8-22, and 8-38.
+`ARTRY` retries the whole transaction. It can assert early during address tenure and must remain asserted through the cycle after `AACK`; assertion in that following cycle is the qualified retry. If the associated data tenure already began, it is aborted. In normal DRTRY mode, the generic/64-bit late-cancel boundary is the cycle after the first/only `TA`. In 32-bit mode it is after the first `TA` for word or smaller transfers, but after the second `TA` for double-word or burst transfers. UM §§7.2.5.2, 8.3.3, and 8.6.1, PDF 292–293, 328–330, and 346 / printed 7-16–7-15, 8-20–8-22, and 8-38.
 
 `TA` acknowledges one beat. On reads in normal DRTRY mode, that beat remains provisional until `DRTRY` is sampled negated on the following clock. `DRTRY` asserted in that following cycle invalidates the beat and may extend exclusion for several cycles. Before `DRTRY` is finally negated, valid data must have appeared with `TA` on the previous clock. Writes ignore `DRTRY`, although an asserted `DRTRY` can still prevent another master's qualified data grant. UM §§7.2.8.1–7.2.8.2 and 8.4.4, PDF 297–298 and 333–337 / printed 7-21–7-22 and 8-25–8-29.
 
@@ -91,7 +91,7 @@ Sources: UM §§7.2.1–7.2.8, PDF 280–299 / printed 7-4–7-23; operational q
 | `TRST` | 1 | in, weak pull-up | low | Asynchronous TAP reset; may coincide with `HRESET`. |
 | `TEST[0:2]` | 3 | bidirectional test | unresolved | LSSD controls shown in Figure 7-1; operation and required tie states are outside this manual. |
 
-Sources: UM §§7.2.9–7.2.12, PDF 299–307 / printed 7-23–7-31; JTAG Table 8-10, PDF 350 / printed 8-42.
+Sources: UM §§7.2.9–7.2.12, PDF 299–307 / printed 7-23–7-31; JTAG Table 8-10, PDF 351 / printed 8-43.
 
 ### Power
 

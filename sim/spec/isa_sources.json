@@ -291,7 +291,7 @@
         "rlwinm": 20,
         "rlwnm": 21
       },
-      "resolution": "Use 20/21/23 from mutually agreeing Tables A-1 and A-43. Preserve A-6 as an unresolved editorial conflict; secondary 601UM and DingusPPC also agree with 20/21/23."
+      "resolution": "Use 20/21/23 from mutually agreeing Tables A-1 and A-43. PEM Tables A-1 and A-2 (PDF 688, 692) also give 20/21/23; PEM functional Table A-3 (PDF 701) repeats the same 22/20/21 misprint, so A-6 is an editorial error carried from the architecture manual."
     },
     "secondary_semantics": [
       {

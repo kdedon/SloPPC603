@@ -8,10 +8,10 @@ bit pattern stays an illegal-instruction diagnostic. The translated top
 `ppc_core_bat_bus60x` forward the parameter; the physical-only wrappers do
 not enable it.
 
-Sources: MPC603e UM (MPC603EUM/AD 11/97) section 3.7, PDF 147-151 / printed
-3-21-3-25; Table 5-4, PDF 212 / 5-16; section 4.5.6 and Table 4-13, PDF
-184-185 / 4-26-4-27; Table 4-11, PDF 181-182 / 4-23-4-24; Table 6-6, PDF 273 /
-6-27. PEM (MPCFPE/AD Rev. 1) chapter 8 entries for the same mnemonics.
+Sources: MPC603e UM (MPC603EUM/AD 11/97) section 3.7, PDF 148-151 / printed
+3-22-3-25; Table 5-4, PDF 212 / 5-16; section 4.5.6 and Table 4-13, PDF
+184-185 / 4-26-4-27; Table 4-11, PDF 181-182 / 4-23-4-24; Table 6-6, PDF 274-275 /
+6-28-6-29. PEM (MPCFPE/AD Rev. 1) chapter 8 entries for the same mnemonics.
 
 ## Behavior
 
@@ -60,7 +60,7 @@ line when it installs. The scalar translated top has no I-cache and completes
 
 ## Synchronizing modified code
 
-UM section 3.7 (PDF 147-148) gives the sequence `dcbst`, `sync`, `icbi`,
+UM section 3.7 (PDF 148) gives the sequence `dcbst`, `sync`, `icbi`,
 `isync`. Here:
 
 1. A store completes its data tenure before it retires (one outstanding data

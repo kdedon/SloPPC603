@@ -48,7 +48,11 @@ set to be replaced (set per LRU)", and §5.5.2.1 lets software override it.
 Each bank keeps one LRU bit per set; a lookup hit or a refill of one way
 points it at the other, and reset clears it to way 0. A C=0 store hit instead
 copies its matched DTLB way into SRR1.WAY, allowing a software `tlbld` refill
-to replace that same resident entry.
+to replace that same resident entry. The matched-way report, reset to way 0
+and LRU behaviour are implementation choices; the manual defines only WAY as
+the LRU way and leaves TLBs unknown after reset (Table 4-8). Store polarity
+(SRR1 manual bit 15 = 1 for store) follows Table 4-4 and the §5.5.2.2 handler
+(PDF 238-245), against Tables 4-16 and 5-10, which say 1 = load.
 
 The exception-state unit atomically saves CR0 into SRR1[31:28], the miss-time
 segment key into SRR1[19] (`PR ? Kp : Ks`), instruction/data type into
@@ -63,7 +67,7 @@ access; `rfi` clears TGPR and restores the normal register view.
 New DMISS, IMISS, HASH1 and HASH2 selectors are read-only through supervisor
 `mfspr` (including the project's 603e `mftb` XO alias). `mtspr` for them is
 illegal. HASH1 and HASH2 are read-only in every manual passage. For DMISS and
-IMISS the 603e UM conflicts: §2.1 (PDF 61) and the detailed MMU section
+IMISS the 603e UM conflicts: §1.3.1.10.2 (PDF 61 / 1-21) and the detailed MMU section
 §5.5.2.1.1 (PDF 232 / 5-36) call them read-only, while §2.1.2.2 (PDF 87 / 2-9)
 calls them software read/write. No `mtspr` encoding table or manual handler
 writes them, so the core follows the two read-only passages. The detailed 603e manual §5.5.2.1 says these table-search registers
