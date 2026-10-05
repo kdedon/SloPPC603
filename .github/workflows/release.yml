@@ -73,8 +73,7 @@ jobs:
       fail-fast: false
       matrix:
         # "test" is the test core, "default" the core without options, any
-        # other entry a --suite core. Embench is GPL-3.0: add "embench" here,
-        # or to MISTER_IMAGES, only after reviewing docs/CI.md.
+        # other entry a --suite core.
         suite: ${{ fromJSON(vars.MISTER_SUITES || '["test"]') }}
     steps:
       - uses: actions/checkout@v4
@@ -96,12 +95,9 @@ jobs:
       - name: Program images
         if: matrix.suite == 'test'
         run: |
-          for name in selftest whetstone whetstone-hf ${{ vars.MISTER_IMAGES || '' }}; do
+          for name in selftest embench whetstone whetstone-hf ${{ vars.MISTER_IMAGES || '' }}; do
             cp "build/mister/images/ppc603e-${name}.bin" build/mister/
           done
-      - name: Corresponding source of a GPL-3.0 image
-        if: matrix.suite == 'embench' || (matrix.suite == 'test' && contains(vars.MISTER_IMAGES || '', 'embench'))
-        run: ci/source-archive.sh build/mister/embench-source.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: mister-${{ matrix.suite }}
@@ -109,7 +105,6 @@ jobs:
             build/mister/*.rbf
             build/mister/*.json
             build/mister/*.bin
-            build/mister/*.tar.gz
 
   publish:
     needs: [fit, fpu, mister]
@@ -121,14 +116,18 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      # The Embench image and core are GPL-3.0: publish their corresponding source.
+      - name: Embench source
+        run: ci/source-archive.sh artifacts/ppc603e-embench-source.tar.gz
       - name: Release notes
         run: |
           previous="$(git describe --tags --abbrev=0 --exclude unstable "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
           python3 ci/release_notes.py --tag "${GITHUB_REF_NAME}" ${previous:+--since "${previous}"} \
-            $(find artifacts -name '*.json' | sort) --images $(find artifacts -name '*.bin' | sort) > notes.md
+            $(find artifacts -name '*.json' | sort) --images $(find artifacts -name '*.bin' | sort) \
+            --embench-source artifacts/ppc603e-embench.SOURCE.txt > notes.md
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --notes-file notes.md \
-            $(find artifacts -type f \( -name '*.rbf' -o -name '*.json' -o -name '*.bin' -o -name '*.tar.gz' \) | sort)
+            $(find artifacts -type f \( -name '*.rbf' -o -name '*.json' -o -name '*.bin' -o -name '*.tar.gz' -o -name '*.txt' \) | sort)
