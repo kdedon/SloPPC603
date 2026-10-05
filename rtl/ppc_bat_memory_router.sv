@@ -320,7 +320,7 @@ module ppc_bat_memory_router #(
   logic last_grant_data_q, owner_instruction_q, owner_write_q;
   // Pipelined data lane: a second response is owed behind the first, and
   // the incoming request goes straight to the physical port.
-  logic d_second_q, d_pipe_try, d_pipe_accept, i_pipe_try;
+  logic d_second_q, d_pipe_try, d_pipe_now, d_pipe_accept, i_pipe_try;
   logic [31:0] request_ea_q;
   logic [31:0] page_sr_q;
   page_miss_t page_miss_result_q;
@@ -759,6 +759,8 @@ module ppc_bat_memory_router #(
      (d_state_q == LANE_RESPONSE &&
       ((!d_second_q && !d_ds_q) || d_finish)));
   assign d_pipe_accept = d_pipe_try && pdmem_req_ready_i;
+  // Outside an offer the request is a pipelined hit or invalid.
+  assign d_pipe_now = ENABLE_DATA_PIPELINE && d_state_q != LANE_OFFER;
   assign dmem_req_ready = d_pipe_try ? pdmem_req_ready_i :
     (lane_accept_ok &&
      (d_state_q == LANE_IDLE || (d_finish && !d_second_q)) &&
@@ -1039,7 +1041,9 @@ module ppc_bat_memory_router #(
       pimem_req_wimg_o = i_wimg_q;
     end
     pdmem_req_valid_o = rst_ni && (d_state_q == LANE_OFFER || d_pipe_try);
-    pdmem_req_now_o = d_pipe_try;
+    // As for fetch, the lane state picks the fields so that the cache's
+    // ready does not wait for the micro-TLB.
+    pdmem_req_now_o = d_pipe_now;
     pdmem_req_write_o = d_write_q;
     pdmem_req_addr_o = d_pa_q;
     pdmem_req_wdata_o = d_wdata_q;
@@ -1047,14 +1051,14 @@ module ppc_bat_memory_router #(
     pdmem_req_wimg_o = d_wimg_q;
     pdmem_req_ds_o = d_ds_q;
     pdmem_req_ds_tag_o = d_ds_tag_q;
-    if (d_pipe_try) begin
+    if (d_pipe_now) begin
       pdmem_req_write_o = dmem_req_write;
       pdmem_req_addr_o = {d_hit_rpn, dmem_req_addr[11:0]};
       pdmem_req_wdata_o = dmem_req_wdata;
       pdmem_req_wstrb_o = dmem_req_wstrb;
       pdmem_req_wimg_o = d_hit_wimg;
-      pdmem_req_ds_o = 1'b0;
     end
+    if (d_pipe_try) pdmem_req_ds_o = 1'b0;
 
     imem_rsp_valid = 1'b0;
     imem_rsp_insn = pimem_rsp_insn_i;
