@@ -80,7 +80,7 @@ $(QM)/be/asm/macrosPPC.i: $(AQ)/macrosPPC.i demo/quake/asmconv.py
 	@mkdir -p $(@D)
 	$(PYTHON) demo/quake/asmconv.py $< $@
 $(QM)/be/asm/%.o: $(QM)/be/asm/%.s $(QM)/be/asm/macrosPPC.i $(QM)/be/quakedefPPC.i
-	$(CC) $(call QUAKE_ARCH,be) -mregnames -I$(QM)/be/asm -I$(QM)/be -c -x assembler $< -o $@
+	$(CC) $(call QUAKE_ARCH,be) -Wa,-I$(QM)/be/asm -Wa,-I$(QM)/be -c -x assembler $< -o $@
 
 define quake-variant
 $(QM)/$(1)/libm/%.o: $(SRC)/libm/src/math/%.c | $(QM)/$(1)/eng

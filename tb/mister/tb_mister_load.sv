@@ -47,6 +47,7 @@ module tb_mister_load #(
   logic [23:0] pal_data;
   logic [31:0] exit_code;
   logic download = 1'b0, ioctl_wr = 1'b0, ioctl_wait, wad = 1'b0, wad_munge = 1'b0;
+  bit wad_preload;
   logic [26:0] ioctl_addr = '0;
   logic [7:0] ioctl_dout = '0;
 
@@ -196,6 +197,7 @@ module tb_mister_load #(
     if (!$value$plusargs("PPM=%s", ppm)) ppm = "";
     if (!$value$plusargs("WAD=%s", wad_file)) wad_file = "";
     wad_munge = $test$plusargs("WAD_LE");
+    wad_preload = $test$plusargs("WAD_PRELOAD") != 0;
     void'($value$plusargs("MODE=%h", mode));
     void'($value$plusargs("MAX_CYCLES=%d", max_cycles));
     void'($value$plusargs("READ_LAT=%d", read_lat));
@@ -215,19 +217,32 @@ module tb_mister_load #(
       $fclose(fd);
       if (wad_bytes.size() == 0 || wad_bytes.size() > DATA_BYTES - WAD_OFFSET)
         $fatal(1, "data file of %0d bytes", wad_bytes.size());
-      wad = 1'b1;
-      download_image(wad_bytes);
-      while (ddram_we) @(negedge clk);
-      wad = 1'b0;
-      if (writes != longint'(wad_bytes.size()))
-        $fatal(1, "%0d data bytes, %0d DDRAM writes", wad_bytes.size(), writes);
-      for (int i = 0; i < wad_bytes.size(); i++) begin
-        int j;
-        j = wad_munge ? i ^ 7 : i;
-        if (ddr_byte(WAD_WORD + 29'(j / 8), j % 8) != wad_bytes[i]) $fatal(1, "data byte %0d", i);
+      // +WAD_PRELOAD writes the file into the model directly, for files too
+      // large to download in a short run.
+      if (wad_preload) begin
+        for (int i = 0; i < wad_bytes.size(); i++) begin
+          int j;
+          logic [28:0] w;
+          j = wad_munge ? i ^ 7 : i;
+          w = WAD_WORD + 29'(j / 8);
+          if (ddr.exists(w) == 0) ddr[w] = '0;
+          ddr[w][8*(j % 8) +: 8] = wad_bytes[i];
+        end
+      end else begin
+        wad = 1'b1;
+        download_image(wad_bytes);
+        while (ddram_we) @(negedge clk);
+        wad = 1'b0;
+        if (writes != longint'(wad_bytes.size()))
+          $fatal(1, "%0d data bytes, %0d DDRAM writes", wad_bytes.size(), writes);
+        for (int i = 0; i < wad_bytes.size(); i++) begin
+          int j;
+          j = wad_munge ? i ^ 7 : i;
+          if (ddr_byte(WAD_WORD + 29'(j / 8), j % 8) != wad_bytes[i]) $fatal(1, "data byte %0d", i);
+        end
       end
-      $display("loaded %0d data bytes from %s%s", wad_bytes.size(), wad_file,
-        wad_munge ? " (munged)" : "");
+      $display("%s %0d data bytes from %s%s", wad_preload ? "preloaded" : "loaded", wad_bytes.size(),
+        wad_file, wad_munge ? " (munged)" : "");
       writes = 0;
       image_writes = 0;
     end
