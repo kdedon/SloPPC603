@@ -1,4 +1,4 @@
-# Benchmarks: nbench, Embench-IoT and Whetstone
+# Benchmarks: nbench, Embench-IoT, Whetstone and Doom
 
 Two benchmark suites run on the demonstration system ([DEMO_SOC.md](DEMO_SOC.md))
 alongside Dhrystone and CoreMark: nbench (BYTEmark) and Embench-IoT; so does Whetstone,
@@ -18,6 +18,8 @@ its SHA-256 and caches it under `toolchain/build/demo/src` (git-ignored).
 | soft-fp | <https://github.com/gcc-mirror/gcc/tree/2ee5e4300186a92ad73f1a1a64cb918dc76c8d67/libgcc/soft-fp> (GCC 12.2.0, the pinned compiler's version) | GPL-3.0 with the GCC Runtime Library Exception |
 | libm | <https://github.com/kraj/musl/tree/0784374d561435f7c787a555aeab8ede699ed298/src/math> (musl 1.2.5) | MIT |
 | Whetstone 1.2 | <https://www.netlib.org/benchmark/whetstone.c> (Rich Painter's C conversion of the double-precision Whetstone, 22 March 1998), fetched from the archived copy <https://web.archive.org/web/20241229210241id_/https://www.netlib.org/benchmark/whetstone.c>: netlib keeps no revisions, so the snapshot and its SHA-256 are the pin | Painter Engineering notice: permission "to use, duplicate, and publish this text and program as long as it includes this entire comment block and limited rights reference" |
+| doomgeneric | <https://github.com/ozkl/doomgeneric/tree/dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284> (Chocolate Doom based), fetched by `toolchain/demo/fetch-doom.sh` | GPL-2.0 |
+| `DOOM1.WAD` 1.9 | <https://github.com/Akbar30Bill/DOOM_wads/blob/9b384dc68add3eb2f5eb7754654cafeeaea5103b/doom1.wad>, SHA-256 `1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771` (MD5 `f0cefca49926d00903cf57551d901abe`, the published v1.9 shareware hash) | id Software shareware terms: redistribute unmodified, not for sale |
 
 Consequences for built images:
 
@@ -25,7 +27,16 @@ Consequences for built images:
   image is GPL-3.0.** Distributing it means offering the corresponding source: the
   pinned upstream files plus this repository's glue. Releases publish the MiSTer image
   `ppc603e-embench.bin` with `ppc603e-embench.SOURCE.txt` (links to both at fixed
-  commits) and `ppc603e-embench-source.tar.gz` (both, fetched).
+  commits) and `ppc603e-source.tar.gz` (both, fetched).
+- **The Doom images contain doomgeneric (GPL-2.0), so they are GPL-2.0.** Releases
+  publish `ppc603e-doom.bin` and `ppc603e-doom-le.bin` with `ppc603e-doom.SOURCE.txt`
+  (the doomgeneric commit and this repository at the release commit) and the same
+  `ppc603e-source.tar.gz`, which holds the fetched doomgeneric files.
+- **`DOOM1.WAD` is id Software's shareware Doom v1.9 IWAD.** The shareware terms allow
+  redistribution of the unmodified file, not for sale. The build fetches it and checks
+  its SHA-256; releases publish it byte for byte as its own file. No image or archive
+  embeds it, and nothing alters it: the core munges it for little-endian programs while
+  loading, in DDR3, never in the file.
 - An nbench image contains BYTE's code under no stated licence. Use it for measurement;
   do not redistribute built images without checking the terms yourself.
 - soft-fp's runtime exception and musl's MIT licence place no condition on the images
@@ -188,6 +199,71 @@ The photo line: `WHETSTONE 50MHz soft-float|FPU <MWIPS> MWIPS <per MHz>/MHz PASS
 FPU executes one floating-point instruction at a time
 ([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md#execution-model-serialized)), so the
 hard-float figure is not a 603e's.
+
+## Doom
+
+`-timedemo demo3` of the shareware `DOOM1.WAD` (v1.9) on
+[doomgeneric](https://github.com/ozkl/doomgeneric/tree/dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284),
+as loadable MiSTer images in both byte orders: `ppc603e-doom.bin` (big-endian) and
+`ppc603e-doom-le.bin` (little-endian, `-mlittle-endian`). Sources:
+[`toolchain/demo/doom/`](../toolchain/demo/doom). Build them with
+`toolchain/demo/fetch-benchmarks.sh`, `toolchain/demo/fetch-doom.sh` and
+`toolchain/build-in-container.sh -f demo/Makefile doom` (or `mister-images`, which also
+copies `DOOM1.WAD` to `build/mister/images/`).
+
+- **Engine.** doomgeneric's sources unchanged, built `-O2 -fsigned-char` with
+  `CMAP256` at 320 × 200: the engine's own 8-bit indexed frame and the `PLAYPAL`
+  palette, which match the framebuffer's format. No sound, no input.
+- **Platform** (`platform.c`). Each frame goes to the framebuffer at the largest
+  integer scale up to 3 that leaves room for the result lines (3 at 1920 × 1080, 1 at
+  320 × 240); the copy is part of the frame time, as the VGA copy is on a PC. The
+  palette goes to the palette registers when it changes. Time comes from the time base
+  (a quarter of the clock in `MODE`), so `I_GetTime` runs at 35 Hz.
+- **C library** (`libc.c`, `include/`): our own, freestanding: strings, a first-fit
+  heap over the data region, the printf family, and read-only `FILE`s. `fopen` of
+  `doom1.wad` returns a view of the WAD in memory at `0x01800000`; its size comes from
+  the WAD's directory. 64-bit division is `dimath.c`, soft float the fetched GCC
+  soft-fp (the toolchain has no little-endian libgcc).
+- **Loop.** The engine ends a timedemo with `I_Error("timed %i gametics in %i
+  realtics ...")`. `exit` takes the two numbers from that message, keeps them in a
+  section start-up does not clear, and restarts the program, which copies its data
+  and clears its BSS again and so runs the next pass from a fresh state. The screen
+  shows the last eight passes as gametics, realtics and FPS = gametics × 35 / realtics
+  to one decimal; the console (`CONSOLE` register) gets one line per pass,
+  `doom: pass N gametics G realtics R fps F`.
+- **Byte order.** The engine's `SHORT`/`LONG` macros follow `__BYTE_ORDER__`: the
+  big-endian build swaps WAD fields, the little-endian build reads them as they are.
+  The little-endian build reads the same file, munged by the core while loading.
+- **Memory.** Code, constants and the data load image sit in the 1 MiB image window
+  at `0xfff00000` (about 420 KiB); data, BSS, a 23 MiB heap and the stack are in the
+  32 MiB data region at 0, below the WAD at `0x01800000`
+  ([MISTER_CORE.md](MISTER_CORE.md#data-region-and-wad-loading)).
+
+### Image layout
+
+`doom/stub.S`, always big-endian, sits at `0xfff00100`. It sets the BATs (BAT0 the
+image window, DBAT1 the device window, BAT2 32 MiB of the data region, all but DBAT1
+cacheable), enables both caches and enters the program at `0xfff01500` through `rfi`
+with `MSR[IR,DR]`; the little-endian stub first sets `MSR[ILE]` with `mtmsr` and
+then `MSR[LE]` through `SRR1`, as [LITTLE_ENDIAN.md](LITTLE_ENDIAN.md#mode-changes)
+describes. The program (`doom/start.S` vectors from `0x200`, entry, C) is built in its
+own byte order. `doom/mkimage.py` writes the image: zeros, the program from `0x200`,
+and for `--le` every doubleword byte-reversed (file byte n holds program byte
+n XOR 7, the layout munged little-endian accesses expect), then the stub's
+unmunged bytes at `0x100`. Device registers are words at A XOR 4 and screen bytes
+at A XOR 7 in the little-endian build.
+
+### Smoke run
+
+`make -C sim test-mister-doom` builds the smoke images (`ppc603e-doom-smoke.bin`,
+`ppc603e-doom-le-smoke.bin`), which stop after gametic `DOOM_SMOKE_TICS` (6) and print
+a CRC-32 of the 320 × 200 frame and the 768-byte palette, and the cycles per gametic
+from gametic 3. `tb_mister_load` downloads `DOOM1.WAD` through the ioctl port (munged
+for the little-endian run), checks every byte, then loads and runs the image. The
+bench compares both CRCs with a host build of the same engine, arguments and WAD
+(`toolchain/demo/doom/host.c`).
+
+Not yet recorded.
 
 ## Running
 

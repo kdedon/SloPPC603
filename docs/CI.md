@@ -123,13 +123,16 @@ python3 ci/release_notes.py --tag v1.0 --since v0.9 <summary.json>... > notes.md
 The notes name the commit, carry the fit and timing table, list the pins with
 the MiSTer framework revision and its GPL-2.0 source, and warn when a summary
 comes from another commit or a modified tree. A `mister-embench` summary adds
-the GPL-3.0 source offer, which points at the `ppc603e-embench-source.tar.gz` asset
-written by `ci/source-archive.sh`; a `mister-nbench` summary adds a
+the GPL-3.0 source offer, which points at the `ppc603e-source.tar.gz` asset
+written by `ci/source-archive.sh` (Embench and Doom sources, without the WAD); a `mister-nbench` summary adds a
 no-redistribution warning ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)).
 `--images <file>...` lists the published program images with their SHA-256 and applies
 the same two notices to an Embench or nbench image. `--embench-source <file>` also
 writes `ppc603e-embench.SOURCE.txt`: the Embench image's source pointer (the pinned
 Embench-IoT commit and this repository at the release commit, as permalinks).
+`--doom-source <file>` writes `ppc603e-doom.SOURCE.txt` the same way for the Doom
+images (the pinned doomgeneric commit) with the `DOOM1.WAD` hash; a Doom image in
+`--images` adds the GPL-2.0 and shareware notices.
 
 ## Workflows
 

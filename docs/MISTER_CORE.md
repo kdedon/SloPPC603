@@ -66,6 +66,8 @@ instead. The native-video build does not have this problem. Earlier builds had a
 | Program (`--fpu` core) | 7:5 | Hello, Dhrystone, CoreMark, Whetstone, FP Mandelbrot, Run all |
 | Length | 3 | Full (default), Smoke test |
 | Load program | F1, `.BIN` | Downloads a program image and runs it ([Loading programs](#loading-programs)) |
+| Load WAD | F2, `.WAD` | Downloads a data file into the data region ([Data region and WAD loading](#data-region-and-wad-loading)) |
+| Load WAD (little-endian) | F3, `.WAD` | The same, byte-munged for little-endian programs |
 | Restart | 0 | Resets the processor and runs the selection again |
 
 Changing Program or Length also restarts; changing Program also leaves a loaded image
@@ -140,6 +142,8 @@ them alone.
 | `ppc603e-nbench.bin` | nbench, full sizes | Do not redistribute; not released ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)) |
 | `ppc603e-whetstone.bin` | Whetstone, soft-float | Any core |
 | `ppc603e-whetstone-hf.bin` | Whetstone, hard-float | FPU cores; elsewhere exits `0xe0000800` (`FAIL`) |
+| `ppc603e-doom.bin` | Doom `-timedemo demo3`, looping, big-endian ([BENCHMARKS.md](BENCHMARKS.md#doom)) | GPL-2.0; needs `DOOM1.WAD` from `Load WAD` |
+| `ppc603e-doom-le.bin` | The same, little-endian | GPL-2.0; needs `DOOM1.WAD` from `Load WAD (little-endian)` |
 
 The download is the framework's ROM load (`ioctl`, 8-bit, index 1). The core holds the
 processor in reset throughout and writes each byte to DDR3 at `0x34000000 + n` with one
@@ -164,6 +168,26 @@ chip; instruction fetches before the BATs are set, misses and castouts pay the D
 latency (about 100 ns or more, shared with Linux on the HPS). Benchmark results from a
 loaded image are therefore lower than from the on-chip `--suite` cores and may vary
 between runs; compare like with like. `--suite` builds remain for on-chip numbers.
+
+### Data region and WAD loading
+
+While a loaded image runs, processor addresses `0x00000000`–`0x01ffffff` (32 MiB) are
+DDR3 from `0x36000000`, through the same bridge and DDRAM port as the image
+(`DATA_BYTES`, `DATA_DDR_BASE` and `DATA_BASE` in `ppc603e_mister`; `XDATA_*` in the
+demo SoC). The region is not mapped for the built-in programs, and nothing clears it.
+A program maps it with a BAT; the Doom images map it cacheable.
+
+`Load WAD` (index 2) and `Load WAD (little-endian)` (index 3) download a file into the
+region from offset 24 MiB (`WAD_OFFSET`): file byte n goes to processor address
+`0x01800000 + n`, or with index 3 to `0x01800000 + (n XOR 7)`, the layout in which a
+program in little-endian mode reads the file's bytes in order
+([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md#data-accesses)). Bytes past 8 MiB are dropped.
+The download, one byte per DDRAM write as for programs, holds the processor in reset;
+afterwards the core restarts what it was running, so the WAD and the program load in
+either order. For Doom: `Load WAD` with `DOOM1.WAD` then `Load program` with
+`ppc603e-doom.bin`, or `Load WAD (little-endian)` then `ppc603e-doom-le.bin`. A Doom
+image that finds no `IWAD` at `0x01800000`, or the wrong byte order, says so on the
+screen and stops.
 
 ## Results summary
 
@@ -372,7 +396,17 @@ code. The Embench image is GPL-3.0: releases publish it with
 `ppc603e-embench.SOURCE.txt`, which names its corresponding source (the pinned
 [Embench-IoT commit](https://github.com/embench/embench-iot/tree/0466a18e4f6b47e19598d7c6ba72916d54b68f65)
 and this repository's build scripts at the release commit), and
-`ppc603e-embench-source.tar.gz`, which holds both. The nbench image is not for
+`ppc603e-source.tar.gz`, which holds both. The Doom images contain
+doomgeneric (GPL-2.0) and are published with `ppc603e-doom.SOURCE.txt` (the pinned
+[doomgeneric commit](https://github.com/ozkl/doomgeneric/tree/dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284)
+and this repository at the release commit) and the same source archive, now
+`ppc603e-source.tar.gz` for Embench and Doom together. `DOOM1.WAD` is id Software's
+shareware v1.9 IWAD (SHA-256
+`1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771`), whose terms
+allow redistributing the unmodified file, not for sale. The build fetches it at a pinned
+URL and checks the hash (`toolchain/demo/fetch-doom.sh`); releases publish it
+unmodified as its own file, and no image or archive contains it. The core's
+little-endian load munges it only in DDR3. The nbench image is not for
 redistribution and is never published
 ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)).
 
