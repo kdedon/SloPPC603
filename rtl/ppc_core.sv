@@ -311,7 +311,7 @@ module ppc_core #(
   logic [DMEM_BITS/8-1:0] sp_req_wstrb;
   dmem_attr_t sp_req_attr;
   logic sp_dispatch_valid;
-  uop_t sp_uop;
+  uop_t sp_uop, sp_dispatch_uop;
   completion_tag_t sp_producer;
   logic [31:0] sp_pc, sp_insn, sp_a, sp_b, sp_c;
   page_miss_t sp_page_miss;
@@ -1054,18 +1054,23 @@ module ppc_core #(
     end
   end
   // A branch resolved at dispatch; the IU passes its next PC through.
-  always_comb begin
-    dispatch_uop = dispatch_base;
-    if (bu_branch) begin
-      dispatch_uop.special_op = SPECIAL_NONE;
-      dispatch_uop.op = ALU_ADD;
-      dispatch_uop.invert_a = 1'b0;
-      dispatch_uop.carry_in = CARRY_ZERO;
-      dispatch_uop.zero_a = 1'b1;
-      dispatch_uop.use_imm = 1'b1;
-      dispatch_uop.gpr_write = 1'b0;
+  function automatic uop_t branch_resolved(input uop_t u, input logic branch);
+    uop_t r;
+    r = u;
+    if (branch) begin
+      r.special_op = SPECIAL_NONE;
+      r.op = ALU_ADD;
+      r.invert_a = 1'b0;
+      r.carry_in = CARRY_ZERO;
+      r.zero_a = 1'b1;
+      r.use_imm = 1'b1;
+      r.gpr_write = 1'b0;
     end
-  end
+    return r;
+  endfunction
+  assign dispatch_uop = branch_resolved(dispatch_base, bu_branch);
+  // The special unit takes the alignment fault as a separate input.
+  assign sp_dispatch_uop = branch_resolved(dispatch_pre, bu_branch);
   // Branch unit. Outside trace mode a branch resolves at dispatch from the
   // committed CR, LR and CTR, waiting while an uncommitted older instruction
   // writes one it reads; LR and CTR change when it retires. A taken branch
@@ -1550,6 +1555,7 @@ module ppc_core #(
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(sp_dispatch_valid),
     .dispatch_ready_o(special_ready), .uop_i(sp_uop),
+    .dispatch_align_i(dispatch_align && !sru_issue_go && !adopt_go && !lane_dq1),
     .dispatch_overlap_i(!sru_issue_go &&
                         (adopt_go || dispatch_mem_plain || dispatch_fp_mem_plain ||
                          (lane_dq1 && !special_busy))),
@@ -2348,7 +2354,7 @@ module ppc_core #(
                              (dispatch && special_uop && !lsu_route && !sru_move) ||
                              (dispatch1 && d1_mem);
   assign sp_uop = sru_issue_go ? sru_uop_q : adopt_go ? lsu_adopt_uop :
-                  lane_dq1 ? d1_lane_uop : dispatch_uop;
+                  lane_dq1 ? d1_lane_uop : sp_dispatch_uop;
   assign sp_producer = sru_issue_go ? sru_producer_q : adopt_go ? lsu_adopt_producer :
                        lane_dq1 ? alloc1_producer : alloc_producer;
   assign sp_pc = sru_issue_go ? sru_pc_q : adopt_go ? lsu_adopt_pc :

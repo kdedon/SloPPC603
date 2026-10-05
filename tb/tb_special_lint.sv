@@ -35,6 +35,8 @@ module tb_special_lint #(
   wire dispatch_overlap_i = '0;
   ppc_pkg::uop_t uop_i;
   assign uop_i = '0;
+  logic dispatch_align_i;
+  assign dispatch_align_i = 1'b0;
   ppc_pkg::completion_tag_t producer_i;
   assign producer_i = '0;
   wire [31:0] pc_i = '0;

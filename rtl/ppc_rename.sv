@@ -100,11 +100,12 @@ module ppc_rename (
       operand.ready = ready[operand.tag];
       // Pending payload is not consumed.
       operand.value = ready[operand.tag] ? values[operand.tag] : 32'b0;
-      // The value forwards on identity alone, keeping recovery's kill out of
-      // the dispatch operand cone. It is consumed only with ready, which still
-      // requires a valid wake; a killed wake also kills the reader.
-      if (!ready[operand.tag] && wake_i.tag == operand.tag &&
-          wake_i.producer == operand.producer)
+      // The value forwards on the producer alone, keeping recovery's kill
+      // and the wake's tag lookup out of the dispatch operand cone. It is
+      // consumed only with ready, which needs a valid wake of this tag on
+      // the same bus or a second-port wake, which takes precedence; a killed
+      // wake also kills the reader.
+      if (!ready[operand.tag] && wake_i.producer == operand.producer)
         operand.value = wake_i.value;
       if (wake_match && wake_i.tag == operand.tag &&
           wake_i.producer == operand.producer)

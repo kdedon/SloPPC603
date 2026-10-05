@@ -141,7 +141,7 @@ module tb_crstate_execution;
     .context_ready_i(1'b1), .redirect_accepted_i(1'b1),
     .frontend_fence_o(context_outputs[0]), .context_valid_o(context_outputs[1]),
     .dispatch_valid_i(dispatch_valid), .dispatch_ready_o(dispatch_ready),
-    .uop_i(uop), .producer_i(producer), .pc_i(pc), .insn_i(32'b0),
+    .uop_i(uop), .dispatch_align_i(1'b0), .producer_i(producer), .pc_i(pc), .insn_i(32'b0),
     .a_i(a), .b_i(b), .c_i(c), .cr_i(cr), .xer_flags_i(xer_flags), .xer_byte_count_i(7'b0),
     .cancel_i(cancel), .store_authorize_i(store_authorize),
     .commit_i(commit), .commit_tag_i(commit_tag),
