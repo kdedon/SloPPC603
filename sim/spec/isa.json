@@ -25929,11 +25929,10 @@
   ],
   "open_gaps": [
     "Transcribe complete masks, fields, side effects, privilege and serialization for the 130 Appendix A source-inventory rows that remain pending after reconciling 96 reviewed source rows.",
-    "Resolve the primary-manual Table A-6 rotate-opcode conflict against Tables A-1/A-43 through errata or a matching architecture manual; executable metadata conservatively follows the two agreeing primary tables.",
     "Reconcile Appendix A shaded unsupported rows with Appendix B and architecture-level optional/64-bit markers per concrete form.",
-    "Complete 603/PID6/PID7v/EC603e legality and obtain the missing 602 user manual before enabling 602.",
+    "Complete 603/PID6/PID7v/EC603e/602 legality per concrete form; the 602 user manual is now available (FPU_602_CONTRACT.md).",
     "Resolve SPR-specific legality and instructions whose architectural mnemonic expands through OE/Rc/AA/LK outside the reviewed ADD, register-logical, integer-unary, CR-transfer, CR-logical, CR-state, word-rotate, word-shift, and 32-bit compare families.",
-    "Bind remaining source forms to timing rows after Table 6-5 and timing-family reconciliation are complete."
+    "Bind Appendix A inventory rows outside the 335 decode entries to timing rows; all 190 Table 6-1..6-6 rows already bind to decode entries."
   ],
   "control_memory_contract": {
     "status": "accepted_bounded_serialized_subset",
