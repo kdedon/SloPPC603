@@ -607,6 +607,13 @@ latency. `mister-smoke` (DDR3 framebuffer, mode 03, 30,886,209 cycles) and
 elaboration) has no errors. This does not cover the framework's `hps_io`, the HPS's
 real DDR3 latency, a fit, or hardware.
 
+With the data window and the WAD loads (`DATA_BYTES` 32 MiB in the bench): Recorded:
+`make -C sim test-mister-load mister-smoke`, commit a392931, 2026-10-05. Passes:
+`ppc603e-selftest-smoke.bin` exits 0 after 43,473,790 cycles, the on-chip menu after
+13,660,224 with no DDR3 reads, `ppc603e-whetstone-hf-smoke.bin` after 4,064,389;
+`mister-smoke` passes at 22,647,072 cycles. `+WAD` and `+WAD_LE` download a data file
+first; [BENCHMARKS.md](BENCHMARKS.md#smoke-run) records the Doom runs that use them.
+
 ### Build
 
 Recorded: `mister/build.sh --clean`, commit 64e7929, 2026-09-29. Default build (1920 × 1080

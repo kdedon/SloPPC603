@@ -263,7 +263,22 @@ for the little-endian run), checks every byte, then loads and runs the image. Th
 bench compares both CRCs with a host build of the same engine, arguments and WAD
 (`toolchain/demo/doom/host.c`).
 
-Not yet recorded.
+Recorded: `make -C sim test-mister-doom`, commit `703baec`, 2026-10-05. Passes.
+
+| Image | Frame CRC at gametic 6 | Cycles per gametic (3–6) | Cycles from reset to exit | DDRAM reads (beats) |
+|---|---|---:|---:|---:|
+| `ppc603e-doom-smoke.bin` (big-endian, 421,944 bytes) | `da456448` | 2,245,072 | 103,943,984 | 617,933 (2,471,567) |
+| `ppc603e-doom-le-smoke.bin` (little-endian, 424,456 bytes) | `da456448` | 2,358,978 | 108,468,603 | 624,313 (2,497,087) |
+| Host build (x86-64) | `da456448` | | | |
+
+Both downloads of `DOOM1.WAD` (4,196,020 bytes, the second munged) checked byte for
+byte. This establishes that both byte orders load the WAD, initialise the engine, start
+demo3 and render the same frame and palette as the host build; at the bench's DDR3
+model (24-cycle read latency, random `BUSY`) a gametic with its frame takes about
+2.2–2.4 M cycles, about 21–22 FPS at 50 MHz, from gametics 3–6 only (the hangar's
+opening view). The host build plays the full demo3 in 2134 gametics; a pass of
+another length shows `DESYNC`. Not covered: a full timedemo pass (about 5 G cycles),
+the loop and result screen, the HPS's real DDR3 latency, a fit, or hardware.
 
 ## Running
 
