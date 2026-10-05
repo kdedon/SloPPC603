@@ -36,9 +36,10 @@ this document does not restate it.
 | PVR revision | from `0x0100`; PID7v bits need level `0x0200` | from `0x0100` | not given | from `0x0100` |
 | Source | UM §1.3.1.1 PDF 58 / 1-18; §2.1.1 PDF 84 / 2-6 | same | UM §C.2 PDF 428 / C-16 | 602UM §2.1.1.3 PDF 85 / 2-9 |
 
-Main: `PVR_VALUE = 32'h0007_0200` in `ppc_core.sv`, `ppc_special.sv` and the
-wrappers. The reference runner uses `0x00070101` (DingusPPC `MPC603EV`), so
-PVR reads differ from the reference today.
+Main: `cpu_cfg().pvr` in `ppc_pkg.sv`: PID7v `0x00070101`, PID6 `0x00060101`,
+603 `0x00030101`, 602 `0x00050101`, matching the reference runner. UM §1.3.1.2
+(PDF 58, printed 1-18) designates PID7v by PVR level 0x0200, so the PID7v
+revision half is open as AUD-76.
 
 ### 1.2 Caches
 
@@ -269,7 +270,7 @@ PID6, and the ABE broadcast pin status is tied off there (V2).
 | esa, dsa, mfrom | — | — | — | **602 only** (XO 596, 628, 265) |
 | FP | DP hardware; fsqrt/fsqrts/tlbia illegal | = | = | SP hardware, DP → 0x1600; see FPU_602 contract |
 | Cache ops, T=1 segment | DSI | = | lwarx/stwcx./eciwx/ecowx DSI; dcb*/icbi no-ops | n/a |
-| Dispatch | 2 per cycle, SRU executes add/cmp | = | no add/cmp in SRU | **1 per cycle**, 4-entry IQ, no SRU |
+| Dispatch | 2 per cycle, SRU executes add/cmp | 2 per cycle, no add/cmp in SRU (UM §1.1 PDF 45 lists it as PID7v-only; §1.1.2.2.3 PDF 48 conflicts) | no add/cmp in SRU | **1 per cycle**, 4-entry IQ, no SRU |
 | Source | UM App. B PDF 407–410 | = | UM §C.2.1.4–5 PDF 430–431; §C.2.3 PDF 432 | 602UM §1.2.3 PDF 61 / 1-25; §2.3.4.3.6 PDF 126–127 / 2-50–2-51; §2.3.7 PDF 141–144 / 2-65–2-68; App. A PDF 416–428; PDF 212, 316 |
 
 Main: [ISA_MATRIX.md](references/ISA_MATRIX.md) carries a `Variants` column

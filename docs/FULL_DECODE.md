@@ -14,7 +14,7 @@ instructions behave as on an FPU-equipped 603e with MSR[FP] = 0.
 MPC603e UM (see [references/SOURCES.md](references/SOURCES.md)): §2.3.1
 (printed 2-16–2-18) instruction classes and boundedly undefined; §2.1.1–2.1.2
 and Tables 2-2/2-3 (printed 2-5–2-9) PVR, EAR, HID0, HID1; §1.3.1 PVR values;
-§2.3.5.4 external control; §3.1.3 (printed 3-3) ICE/ICFI; §4.5.3 and Table
+§2.3.5.4 external control; §3.1.3 (printed 3-4) ICE/ICFI; §4.5.3 and Table
 4-11 DSI (DSISR bit 11); §4.5.7–4.5.8 (printed 4-29–4-31) program and FP
 unavailable; Table 7-1 (printed 7-8–7-9) transfer types; §7.2.4.2–7.2.4.3
 TSIZ/TBST for external control; Appendix B Table B-1. PEM §6.4.7–6.4.8
