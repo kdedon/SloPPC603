@@ -2339,16 +2339,19 @@ module ppc_core #(
                 lane_dq1 ? arch_c1 : arch_c;
   assign sp_page_miss = (sru_issue_go || adopt_go || lane_dq1) ? '0 : head_page_miss;
   // The unit offers only while the lane is idle and the lane only while
-  // busy, so the request port needs no arbitration.
+  // busy, so the request port needs no arbitration, and the payload follows
+  // the idle state rather than the late offer.
+  logic lsu_req_sel;
+  assign lsu_req_sel = ENABLE_LSU_PIPE && lane_mem_idle;
   always_comb begin
     dmem_req_valid_o = sp_req_valid || lsu_req_valid;
-    dmem_req_write_o = lsu_req_valid ? lsu_req_write : sp_req_write;
-    dmem_req_addr_o = lsu_req_valid ? lsu_req_addr : sp_req_addr;
-    dmem_req_wdata_o = lsu_req_valid ? lsu_req_wdata : sp_req_wdata;
-    dmem_req_wstrb_o = lsu_req_valid ? lsu_req_wstrb : sp_req_wstrb;
+    dmem_req_write_o = lsu_req_sel ? lsu_req_write : sp_req_write;
+    dmem_req_addr_o = lsu_req_sel ? lsu_req_addr : sp_req_addr;
+    dmem_req_wdata_o = lsu_req_sel ? lsu_req_wdata : sp_req_wdata;
+    dmem_req_wstrb_o = lsu_req_sel ? lsu_req_wstrb : sp_req_wstrb;
     dmem_req_probe_o = !lsu_req_valid && sp_req_probe;
     dmem_req_attr_o = sp_req_attr;
-    if (lsu_req_valid) begin
+    if (lsu_req_sel) begin
       dmem_req_attr_o = '0;
       dmem_req_attr_o.kind = DMEM_NORMAL;
       dmem_req_attr_o.spec = lsu_req_spec;
@@ -2363,6 +2366,10 @@ module ppc_core #(
     if (rst_ni) begin
       assert (!(sp_req_valid && lsu_req_valid))
         else $error("lane and pipelined unit offered together");
+      assert (!(sp_req_valid && lsu_req_sel))
+        else $error("lane offered while idle");
+      assert (!(lsu_req_valid && !lsu_req_sel))
+        else $error("pipelined unit offered beside a busy lane");
       assert (!(adopt_go && dispatch && special_uop && !lsu_route && !sru_move))
         else $error("adoption collided with a lane dispatch");
       assert (!(sru_issue_go && (adopt_go || (dispatch1 && d1_mem) ||
