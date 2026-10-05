@@ -50,7 +50,47 @@ this record. Opcode coverage is summarised by the generated
 
 ## Likely missed
 
-LIKELY_PLACEHOLDER
+Missing and partial rows, ranked by how visible they are to software or to a
+60x system. Each has an [AUDIT.md](../AUDIT.md) row.
+
+1. **Burst-read snoop treated as clean** (AUD-77). UM Table 3-6, PDF 146:
+   another master's burst read must flush an E or M line. Breaks MEI
+   exclusivity with any second caching master.
+2. **32-bit data bus and reduced-pinout modes** (AUD-80). UM §8.6.1, §8.6.3,
+   PDF 346-349. Their straps checkstop; boards wired that way cannot boot.
+3. **HID0[IFEM] has no effect** (AUD-81). UM Table 2-2, PDF 86. Fetches never
+   assert GBL, so an external L2 or snooper never sees coherent fetches.
+4. **SMI refused while MSR[TGPR]=1** (AUD-75). UM §4.5.16, PDF 195. A TLB-miss
+   handler interrupted by SMI reports unsupported instead of vectoring.
+5. **IBAT G=1 raises ISI** (AUD-79). UM §3.5, PDF 136. Boot code that copies a
+   DBAT value into an IBAT faults; a manual conflict to decide.
+6. **SRESET leaves the I-cache enabled** (AUD-83). UM §4.5.1.2, PDF 178.
+   Visible to a soft-reset handler that reads HID0 or relies on uncached fetch.
+7. **602 injected snoops** (AUD-82). 602UM §8.4.2, PDF 378. A 602 system that
+   injects snoops during a burst read gets a push the protocol forbids.
+8. **PVR revision below PID7v level** (AUD-76). UM §1.3.1.2, PDF 58. Software
+   that keys features or errata on PVR picks the wrong model.
+9. **Touch-load TC and castout order** (AUD-78). UM Table 7-6, PDF 290;
+   §8.1.1, PDF 312. Visible to L2 controllers and bus monitors only.
+10. **Exception priority untested beyond pairs** (AUD-84). UM Table 4-2, PDF
+    165-166. Simultaneous fault and asynchronous events may vector wrongly.
+11. **DBDIS and 603e CSE unchecked** (AUD-85); **603 checkstop sources**
+    (AUD-86).
+
+Lower: core:bus ratios other than 1:1 (D07 in [SOURCES.md](SOURCES.md); 602
+2:1 and 3:1 per [CHIP_PACKAGE_602.md](../CHIP_PACKAGE_602.md)); COP, pipeline
+tracking (HID0[EICE]) and CLK_OUT; the no-DRTRY early data forward; one-level
+address pipelining of the processor's own tenures; the chapter 6 cycle rules
+(dual dispatch, SRU pairing, IQ/CQ/rename occupancy, LSU 2:1) that are opt-in
+or uncontracted; the touch-load buffer and I-cache critical double-word
+forwarding. These affect performance or debug, not architected results.
+
+Not swept line by line: UM PDF 154-158 (MEI tables), 160-168 and 172-175
+(exception classes and priority prose), 197-217 and 227-246 (MMU detail),
+247-256 and 263-268 (timing prose), 280-284 and 289-303 (per-signal timing),
+340-346 (bus figures) and 352-354 (§8.10 DBWO examples). Those rows rest on
+section headings and the repo's own transcriptions; chapter 1 likewise. The
+PEM was read only where the UM defers to it.
 
 ## Chapter 1: Overview (UM PDF 41-78)
 

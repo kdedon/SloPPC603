@@ -119,6 +119,20 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-78 | L | C | `rtl/ppc_bus60x_cache_master.sv:243`, `rtl/ppc_dcache.sv` | Touch-load fills drive TC=00, and a dirty victim is cast out before its fill. UM Table 7-6 (PDF 290, printed 7-14) and Table 8-8 (PDF 328) give TC=01 for touch loads; §8.1.1 (PDF 312, printed 8-4) and §3.6.3 (PDF 143) read the fill first, castout after. Not software-visible. | Drive TC=01 for dcbt/dcbtst; reorder or document the castout choice. | open |
 | AUD-79 | L | C | `rtl/ppc_bat_translate.sv:146-147` | IBAT hits with IBATL[G]=1 raise a guarded ISI (UM Table 5-3, PDF 211). UM §3.5 (PDF 136, printed 3-10) says IBATs have no G bit and IBAT accesses are not guarded; PEM Figures 7-11/12 (PDF 322) mark IBAT W/G reserved. Manual conflict, not a clear error. | Choose and record one reading; test it. | open |
 
+### Manual inventory
+
+Gaps from [MANUAL_INVENTORY.md](references/MANUAL_INVENTORY.md), 2026-10-05: features the manuals define that the design lacks or leaves untested.
+
+| ID | Sev | Cat | Where | Problem | Fix | Status |
+|---|---|---|---|---|---|---|
+| AUD-80 | M | C | `rtl/ppc603e.sv:190-204` | 32-bit data bus mode (TLBISYNC strap; DH only, 1/2/8 beats, Tables 8-3, 8-5–8-7) and reduced-pinout mode (QACK strap) checkstop at HRESET instead of running. UM §8.6.1, §8.6.3 (PDF 346-349); §1.1.6 (PDF 54). A board wired for either mode cannot use the core. | Implement 32-bit beats in the BIU and line paths, then reduced pinout on top; or record the exclusion in CHIP_PACKAGE.md. | open |
+| AUD-81 | M | C | `rtl/ppc_bus60x_line_read.sv:172`, `rtl/ppc_pkg.sv:600` | PID7v HID0[IFEM] is stored but read by nothing; instruction fetches always drive GBL negated. UM Table 2-2 (PDF 86), PDF 44: IFEM reflects the M bit onto the bus for fetches. | Drive fetch GBL from M when IFEM=1; add a pin bench case. | open |
+| AUD-82 | M | C | `rtl/ppc602_bus.sv:167` | 602 injected snoops are not modelled: a target may assert TS with TA negated between burst-read beats, and the 602 must answer ARTRY on a hit without a push, or invalidate on kill. An injected TS is handled as an ordinary snoop. 602UM §8.4.2 (PDF 378), §8.5.4.7 (PDF 406). | Snoop window from the third cycle after BB to the last beat; hit gives ARTRY only; bench case on `test-chip602-pins`. | open |
+| AUD-83 | L | C | `rtl/ppc_special.sv:1720` | SRESET leaves the I-cache enabled. UM §4.5.1.2 (PDF 178): unlike hard reset, soft reset disables the instruction cache. Table 4-9 names no HID0 change, so the mechanism is unstated. | Clear HID0[ICE] on soft reset, or record the reading; add a `test-chip-pins` SRESET check. | open |
+| AUD-84 | L | C | `tb/` | UM Table 4-2 (PDF 165-166) priority is checked only pairwise (trace over EXT/DEC, IABR over trace, SMI over INT). No bench raises a synchronous fault together with MCP, SRESET, SMI or DEC in one cycle. | Directed simultaneous-event cases per Table 4-2 row. | open |
+| AUD-85 | L | C | `rtl/ppc603e.sv:407,415`, `tb/chip_harness.svh:13,106` | DBDIS and the 603e's two-bit CSE are driven but unchecked: every bench ties DBDIS high, and CSE is checked only on the 603. UM §7.2.7.4 (PDF 297), §7.2.4.8 (PDF 291). | Add both to `test-chip-pins`. | open |
+| AUD-86 | L | C | `rtl/ppc_bus60x_direct_store.sv:44`, `rtl/ppc603e.sv:225-228` | 603 checkstop sources are incomplete: an extended transfer protocol error never reaches CKSTP_OUT (UM §4.5.2.2, PDF 180), and a fetch TEA's refetch TEA with the machine check pending does not checkstop (UM §C.2.4, PDF 433). | Route the direct-store protocol error to checkstop; model or document the double-TEA rule. | open |
+
 ### Whole RTL
 
 | ID | Sev | Cat | Where | Problem | Fix | Status |
