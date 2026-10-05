@@ -64,7 +64,7 @@ TBEN-gates-TB-only profile.
 
 | ID | Where | Manual | Expected |
 |---|---|---|---|
-| AUD-75 | `rtl/ppc_exception_state.sv:349` | UM §4.5.16, Tables 4-7, 4-19 (PDF 176, 195) | SMI taken whenever EE=1, clearing TGPR |
+| AUD-75 | `rtl/ppc_exception_state.sv:349` | UM §4.5.16, Tables 4-7, 4-19 (PDF 176, 195) | SMI taken whenever EE=1, clearing TGPR. Fixed |
 | AUD-76 | `rtl/ppc_pkg.sv:610` | UM §1.3.1.2 (PDF 58) | PID7v PVR revision ≥ 0x0200 |
 | AUD-77 | `rtl/ppc_dcache.sv:361` | UM Tables 3-6, 7-2 (PDF 146, 287) | Burst read snoops flush (E → I, M → push, I). Fixed |
 | AUD-78 | `rtl/ppc_bus60x_cache_master.sv:243`, `rtl/ppc_dcache.sv` | UM Tables 7-6, 8-8; §8.1.1 (PDF 290, 328, 312) | TC=01 on touch loads; fill before castout |

@@ -327,6 +327,12 @@ module tb_exception_state #(
     require(result_supported && result_target==32'h500 &&
             srr0==32'h2340 && srr1==32'h8000 && msr==0,"TGPR-mode IRQ entry");
     consume_result();
+    // UM 4.5.16, Table 4-19: SMI is taken whenever EE=1, TGPR included.
+    load_state(3'b111,32'h00028000,0,0);
+    accept_event(EVENT_SMI,32'h2340);
+    require(result_supported && result_target==32'h1400 &&
+            srr0==32'h2340 && srr1==32'h8000 && msr==0,"TGPR-mode SMI entry");
+    consume_result();
 
     // DEC differs from external IRQ: full-function MSR fields are saved.
     for(int prefix=0;prefix<2;prefix++)begin

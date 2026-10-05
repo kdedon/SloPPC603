@@ -59,8 +59,7 @@ Missing and partial rows, ranked by how visible they are to software or to a
    PDF 346-349. Their straps checkstop; boards wired that way cannot boot.
 3. **HID0[IFEM] partial** (AUD-81). UM Table 2-2, PDF 86. Line fills now
    assert GBL for M=1 fetches; caching-inhibited single-beat fetches do not.
-4. **SMI refused while MSR[TGPR]=1** (AUD-75). UM §4.5.16, PDF 195. A TLB-miss
-   handler interrupted by SMI reports unsupported instead of vectoring.
+4. ~~**SMI refused while MSR[TGPR]=1** (AUD-75)~~. Fixed.
 5. **IBAT G=1 raises ISI** (AUD-79). UM §3.5, PDF 136. Boot code that copies a
    DBAT value into an IBAT faults; a manual conflict to decide.
 6. **SRESET leaves the I-cache enabled** (AUD-83). UM §4.5.1.2, PDF 178.
@@ -332,7 +331,7 @@ PEM was read only where the UM defers to it.
 | IABR: IABR[0-29] compare, [30] enable, [31] ignored, trap before execute | UM §4.5.15, PDF 193-194 | tested | ppc_core.sv:655; test-core-machine-check-trace |
 | IABR outranks trace on same instruction | UM §4.5.11, PDF 190 | tested | EXCEPTION_MACHINE_CHECK_TRACE.md IABR section |
 | SMI 0x1400, EE gated, priority over INT | UM §4.5.16, PDF 194-196 | tested | ppc_exception_state.sv:348; test-chip-pins |
-| SMI deferred while MSR[TGPR]=1 | UM §4.5.16, PDF 195 | partial | `rtl/ppc_exception_state.sv:350` gates on !TGPR, against the manual; AUD-75 |
+| SMI deferred while MSR[TGPR]=1 | UM §4.5.16, PDF 195 | tested | AUD-75 fixed: SMI taken with TGPR=1; `test-exception-state` |
 | Emulation trap 0x1600 | UM §4.5.7.2, PDF 188 | out of scope | 603e decodes these; 0x1600 only for 602 (ppc_exception_state.sv:424, CPU_VARIANTS.md) |
 
 ## Chapter 5: Memory management (UM PDF 197-246)
@@ -454,7 +453,7 @@ PEM was read only where the UM defers to it.
 | DRTRY input (normal mode) | UM §7.2.8.2, PDF 298 | tested | `test-chip-mp` (cancel, hold 0-2, replace), `test-core-bat-cached-bus60x-stress` |
 | TEA input (priority over TA/DRTRY, MC or checkstop) | UM §7.2.8.3, PDF 299 | tested | `test-chip-mp` (+WRITE_TEA), `test-core-bat-bus60x-errors`, `rtl-chip-machine-check` |
 | INT input (level, MSR[EE]) | UM §7.2.9.1, PDF 299 | tested | `test-chip-pins` (`tb_chip_pins.sv:590`), `test-core-interrupt` |
-| SMI input (0x1400, above INT) | UM §7.2.9.2, PDF 300 | partial | `test-chip-pins` SMI cases. AUD-75 open: SMI with TGPR=1 reports unsupported |
+| SMI input (0x1400, above INT) | UM §7.2.9.2, PDF 300 | tested | `test-chip-pins` SMI cases; TGPR=1 entry in `test-exception-state` (AUD-75) |
 | MCP input (edge, HID0[EMCP], MC/checkstop) | UM §7.2.9.3, PDF 300 | tested | `test-chip-pins` (taken, ignored with EMCP=0, checkstop) |
 | CKSTP_IN input | UM §7.2.9.4, PDF 300 | tested | `test-chip-pins` "checkstop holds after CKSTP_IN negates" |
 | CKSTP_OUT output | UM §7.2.9.5, PDF 301 | tested | `test-chip-pins` expect_checkstop |
@@ -510,7 +509,7 @@ PEM was read only where the UM defers to it.
 | Timing examples (Figs 8-6..8-23) | UM §8.5, PDF 340-346 | partial | BUS_SPEC: 12 figures have bounded cycle tables, 4 are inventory only, none is a full per-pin waveform |
 | No-DRTRY mode (DRTRY asserted at HRESET) | UM §8.6.2, PDF 348 | partial | Accepted. The master stays in normal mode, so loads lose the one-cycle-early forward (CHIP_PACKAGE.md §Start-up straps) |
 | Reduced-pinout mode (QACK negated at HRESET) | UM §8.6.3, PDF 348-349 | missing | The strap checkstops (`test-chip-pins` case_straps) |
-| External interrupts INT/SMI/MCP | UM §8.7.1, PDF 349 | tested | `test-chip-pins`. SMI caveat AUD-75 |
+| External interrupts INT/SMI/MCP | UM §8.7.1, PDF 349 | tested | `test-chip-pins`, `test-exception-state` |
 | Checkstop (CKSTP_IN, MCP/TEA with ME=0, parity) | UM §8.7.2, PDF 349 | tested | `test-chip-pins`. Clocks are not gated; the core is held in reset (CHIP_PACKAGE.md §Checkstop) |
 | HRESET/SRESET to the 0x100 vector, MSR[IP] | UM §8.7.3, PDF 349 | tested | `test-chip-pins` |
 | Quiesce QREQ/QACK; snooping stops in quiescence | UM §8.7.4, PDF 350 | tested | `test-chip-power` (doze/nap/sleep) |

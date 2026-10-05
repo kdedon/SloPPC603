@@ -345,8 +345,8 @@ module ppc_exception_state #(
               result_target_q <= fixed_vector(msr_q[MSR_IP], 13'h0100);
             end
             EVENT_SMI: begin
-              // UM Table 4-19: as external, at 0x1400.
-              if (msr_q[MSR_EE] && !msr_q[MSR_TGPR]) begin
+              // UM 4.5.16, Table 4-19: as external, at 0x1400, TGPR or not.
+              if (msr_q[MSR_EE]) begin
                 srr0_q <= event_pc_i;
                 srr1_q <= msr_q & 32'h0000_ffff;
                 msr_q <= exception_msr(msr_q);
