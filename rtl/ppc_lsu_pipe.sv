@@ -111,6 +111,8 @@ module ppc_lsu_pipe #(
   output logic rsp_owner_o,
   input  logic lane_rsp_ready_i,
   output logic result_valid_o,
+  // result_valid_o without the recovery kill.
+  output logic result_offer_o,
   output ppc_pkg::result_packet_t result_o,
   output logic fp_rsp_valid_o,
   output ppc_pkg::completion_tag_t fp_rsp_tag_o,
@@ -456,6 +458,7 @@ module ppc_lsu_pipe #(
   end
 
   // ------------------------------------------------------------- Result
+  assign result_offer_o = r_valid_q;
   assign result_valid_o = r_valid_q && !killed_now(r_q.producer);
   assign result_o = r_q;
   assign fp_rsp_valid_o = r_fp_valid_q && !killed_now(r_fp_tag_q);

@@ -293,6 +293,7 @@ module ppc_core #(
   logic special_drained, overlap_dispatch_ok;
   // Pipelined load/store unit.
   logic lsu_route, lsu_ready, lsu_empty, lsu_quiet, lsu_result_valid, lsu_store_irrevocable;
+  logic lsu_result_offer;
   logic lsu_req_valid, lsu_req_write, lsu_req_spec, lsu_rsp_ready, lsu_rsp_owner;
   logic [2:0] lsu_req_bytes;
   logic [31:0] lsu_req_addr;
@@ -1659,30 +1660,32 @@ module ppc_core #(
 
   // An adopted access can reach the lane with IU work in flight; that
   // result waits while the lane owns the port.
-  assign result_valid = lsu_result_valid || special_result_valid ||
-                        (iu_result_valid && !special_result_select);
+  // The port selects on the LSU's offer, keeping the recovery kill out of
+  // the result's identity and value; a killed offer holds the port.
+  assign result_valid = lsu_result_valid ||
+    (!lsu_result_offer && (special_result_valid || (iu_result_valid && !special_result_select)));
   // A special op dispatches only into an idle IU and blocks dispatch until
   // it finishes, so the two result sources are never valid together and the
   // registered busy state can steer the payload.
   // Integer work overlapping a plain load or store waits one cycle when both
   // finish together.
   // A pipelined access result goes first; the lane never has one then.
-  assign result = lsu_result_valid ? lsu_result :
+  assign result = lsu_result_offer ? lsu_result :
                   special_result_select ? special_result : iu_result;
-  assign special_result_ready = result_ready && special_result_valid && !lsu_result_valid;
+  assign special_result_ready = result_ready && special_result_valid && !lsu_result_offer;
   // An IU result that meets a load's on the first port takes the second
   // when the SRU leaves it free: each unit has its own result bus (UM
   // 6.3.3), so a load's consumer finishes on its own timing. IU results
   // never fault and write only what the second port records.
   logic iu_port1;
   result_packet_t result1;
-  assign iu_port1 = HAS_SRU && ENABLE_LSU_PIPE && iu_result_valid && lsu_result_valid &&
+  assign iu_port1 = HAS_SRU && ENABLE_LSU_PIPE && iu_result_valid && lsu_result_offer &&
                     !special_result_select && !sru_result_offer;
   // The port selects on offers so a recovery's cancel stays out of the
   // second result's identity and value.
   assign result1 = sru_result_offer ? sru_result : iu_result;
   assign result1_offer = sru_result_offer || iu_result_offer;
-  assign iu_result_ready = (result_ready && !special_result_select && !lsu_result_valid) ||
+  assign iu_result_ready = (result_ready && !special_result_select && !lsu_result_offer) ||
                            iu_port1;
   assign sru_result_ready = 1'b1;
   // Classify held identities without depending on cancel-masked valid signals.
@@ -2283,7 +2286,8 @@ module ppc_core #(
         .rsp_rdata_i(dmem_rsp_rdata_i), .rsp_error_i(dmem_rsp_error_i),
         .rsp_fault_i(dmem_rsp_fault_i), .rsp_owner_o(lsu_rsp_owner),
         .lane_rsp_ready_i(sp_rsp_ready),
-        .result_valid_o(lsu_result_valid), .result_o(lsu_result),
+        .result_valid_o(lsu_result_valid), .result_offer_o(lsu_result_offer),
+        .result_o(lsu_result),
         .fp_rsp_valid_o(fp_rsp_valid), .fp_rsp_tag_o(fp_rsp_tag),
         .fp_rsp_data_o(fp_rsp_data), .fp_rsp_fault_o(fp_rsp_fault),
         .adopt_valid_o(lsu_adopt_valid), .adopt_ready_i(special_ready && !sru_issue_go &&
@@ -2317,6 +2321,7 @@ module ppc_core #(
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;
+      assign lsu_result_offer = 1'b0;
       assign lsu_result = '0;
       assign lsu_adopt_valid = 1'b0;
       assign lsu_adopt_response = 1'b0;
@@ -2649,7 +2654,7 @@ module ppc_core #(
     .alloc1_finished_i(d1_fp || d1_branch), .alloc1_tag_o(alloc1_producer),
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     // UM 6.6.1: an IU or LSU result completes in its writeback cycle.
-    .result_retire_i(lsu_result_valid || !special_result_select),
+    .result_retire_i(lsu_result_offer || !special_result_select),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
     .result1_valid_i(sru_result_valid || iu_port1), .result1_i(result1),
