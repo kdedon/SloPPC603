@@ -51,6 +51,8 @@ extern const uint8_t font8x8[95][8];
 #define TEXT_BG 0
 #define PASSES_SHOWN 8
 #define RESULT_MAGIC 0x444f4f4du
+/* demo3's length; a pass of another length has lost sync. */
+#define DEMO3_GAMETICS 2134u
 
 extern char __heap_start[], __heap_end[];
 
@@ -167,9 +169,10 @@ static void show_results(void)
   for (uint32_t p = first; p < results.passes; p++) {
     uint32_t i = p % PASSES_SHOWN, g = results.gametics[i], r = results.realtics[i];
     uint32_t fps10 = r ? (g * 350u + r / 2) / r : 0;
-    snprintf(line, sizeof line, "%3lu: %5lu gametics %6lu realtics %4lu.%lu fps",
+    snprintf(line, sizeof line, "%3lu: %5lu gametics %6lu realtics %4lu.%lu fps%s",
              (unsigned long)p + 1, (unsigned long)g, (unsigned long)r,
-             (unsigned long)fps10 / 10, (unsigned long)fps10 % 10);
+             (unsigned long)fps10 / 10, (unsigned long)fps10 % 10,
+             g == DEMO3_GAMETICS ? "" : " DESYNC");
     text(0, 1 + p - first, line);
   }
 }
@@ -258,8 +261,9 @@ void exit(int code)
     results.gametics[i] = g;
     results.realtics[i] = r;
     results.passes++;
-    printf("doom: pass %lu gametics %lu realtics %lu fps %lu.%lu\n", (unsigned long)results.passes,
-           (unsigned long)g, (unsigned long)r, (unsigned long)fps10 / 10, (unsigned long)fps10 % 10);
+    printf("doom: pass %lu gametics %lu realtics %lu fps %lu.%lu%s\n", (unsigned long)results.passes,
+           (unsigned long)g, (unsigned long)r, (unsigned long)fps10 / 10, (unsigned long)fps10 % 10,
+           g == DEMO3_GAMETICS ? "" : " desync");
     plat_restart();
   }
   printf("doom: exit %d\n", code);

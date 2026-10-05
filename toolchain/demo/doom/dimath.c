@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Copyright (c) 2026 Kevin Dedon */
 /* 64-bit division for the compiler's calls; the toolchain has no
- * little-endian libgcc. Shift-subtract, one quotient bit per step. */
+ * little-endian libgcc. Shift-subtract, one quotient bit per dividend bit. */
 #include <stdint.h>
 
 uint64_t __udivmoddi4(uint64_t n, uint64_t d, uint64_t *rem);
@@ -18,7 +18,12 @@ uint64_t __udivmoddi4(uint64_t n, uint64_t d, uint64_t *rem)
     if (rem) *rem = a % b;
     return a / b;
   }
-  for (int i = 63; i >= 0; i--) {
+  if (n < d) {
+    if (rem) *rem = n;
+    return 0;
+  }
+  /* Start at the dividend's top bit: FixedDiv quotients fit in 32 bits. */
+  for (int i = 63 - __builtin_clzll(n); i >= 0; i--) {
     r = r << 1 | (n >> i & 1);
     if (r >= d) {
       r -= d;
