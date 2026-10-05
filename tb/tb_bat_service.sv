@@ -274,14 +274,14 @@ module tb_bat_service;
     translated(1, 32'h90031234, 1, 9'h140, 32'h30031234, 0, 2, 1, 0);
     translated(0, 32'h80001234, 0, 9'h140, 32'h10001234, 0, 2, 1, 0);
 
-    // Privilege-validity miss, read-only store fault, specific guarded I fault.
+    // Privilege-validity miss, read-only store fault; IBAT G is ignored.
     put(536, 32'h90000006);
     translated(1, 32'h90001234, 1, 9'h020, 0, 0, 0, 0, 0);
     put(537, 32'h30000001);
     translated(2, 32'h90001234, 0, 9'h050, 0, 0, 1, 1, 0);
     translated(1, 32'h90001234, 0, 9'h140, 32'h30001234, 0, 1, 1, 0);
     put(529, 32'h1000000a);
-    translated(0, 32'h80001234, 0, 9'h048, 0, 1, 2, 1, 0);
+    translated(0, 32'h80001234, 0, 9'h140, 32'h10001234, 0, 2, 1, 0);
     send(0, 32'hdeadbeef, 0, 0, 0, 0, 1);
     check(rsp_status == 9'h180 && rsp_pa == 32'hdeadbeef && rsp_wimg == 1,
           "IR-only disable real instruction attributes"); consume();

@@ -140,12 +140,11 @@ module ppc_bat_translate #(
           bat_miss_o = !bat_hit_o;
           if (bat_hit_o) begin
             pp_o = hit_lower[1:0];
-            wimg_o = hit_lower[6:3];
+            // IBATs have no G bit; their accesses are unguarded (UM 3.5).
+            wimg_o = {hit_lower[6:4], hit_lower[3] && !instruction_i};
             protection_fault_o = pp_o == 2'b00 || (write_i && pp_o != 2'b10);
-            // Specific 603e Table 5-3 overrides generic PEM IBAT G reservation.
-            // 602 IBAT NE takes the same ISI cause (602UM Figure 5-27).
-            guarded_fault_o = instruction_i &&
-              (wimg_o[0] || (HAS_602 && hit_lower[10]));
+            // 602 IBAT NE takes the guarded ISI cause (602UM Figure 5-27).
+            guarded_fault_o = HAS_602 && instruction_i && hit_lower[10];
             allow_o = !protection_fault_o && !guarded_fault_o;
             se_o = HAS_602 && instruction_i && allow_o && hit_lower[9];
             if (allow_o)

@@ -79,12 +79,13 @@ responses to undefined programming:
 - No software-write transaction is modeled. Inactive garbage is ignored rather
   than asserting that a preceding reserved-bit register write was legal.
 
-The generic PEM describes IBAT W/G writes as boundedly undefined, while the
-603e-specific Table 5-3 explicitly defines guarded BAT instruction-fetch faults.
-The 603e UM also conflicts with itself: §3.5 (PDF 136 / 3-10) says IBATs have
-no G bit and IBAT accesses are not guarded (AUD-79).
-This implementation follows that specific G behavior on translated instruction
-hits. Active IBAT W=1 is rejected as an unsupported input profile; a later
+IBAT G decision (AUD-79). UM Table 5-3 (PDF 211) lists an ISI for a fetch
+from guarded memory, which IBAT G could supply. UM §3.5 (PDF 136 / 3-10) says
+the IBAT pairs have no G bit and every IBAT access is unguarded, and PEM
+Figures 7-11/7-12 (PDF 322) mark IBAT W and G reserved. The §3.5 text is the
+more specific statement about IBATs, so IBATL[G] is ignored: an IBAT hit never
+raises a guarded ISI. Table 5-3's guarded-fetch ISI still applies to pages
+with PTE G=1. Active IBAT W=1 is rejected as an unsupported input profile; a later
 source decision may broaden it. M/I are passed as metadata; the instruction
 cache uses only I ([TRANSLATED_ICACHE.md](TRANSLATED_ICACHE.md)). All 16 DBAT WIMG
 bit patterns are transported as attributes; this module does not implement or

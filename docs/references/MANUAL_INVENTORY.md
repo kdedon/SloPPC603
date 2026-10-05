@@ -60,8 +60,7 @@ Missing and partial rows, ranked by how visible they are to software or to a
 3. **HID0[IFEM] partial** (AUD-81). UM Table 2-2, PDF 86. Line fills now
    assert GBL for M=1 fetches; caching-inhibited single-beat fetches do not.
 4. ~~**SMI refused while MSR[TGPR]=1** (AUD-75)~~. Fixed.
-5. **IBAT G=1 raises ISI** (AUD-79). UM §3.5, PDF 136. Boot code that copies a
-   DBAT value into an IBAT faults; a manual conflict to decide.
+5. ~~**IBAT G=1 raises ISI** (AUD-79)~~. Decided for §3.5: IBAT G ignored.
 6. **SRESET leaves the I-cache enabled** (AUD-83). UM §4.5.1.2, PDF 178.
    Visible to a soft-reset handler that reads HID0 or relies on uncached fetch.
 7. **602 injected snoops** (AUD-82). 602UM §8.4.2, PDF 378. A 602 system that
@@ -224,7 +223,7 @@ PEM was read only where the UM defers to it.
 | Single-beat for W, I, DCE=0, misaligned | UM §3.4.1, PDF 134 | tested | DATA_CACHE.md:83,90; test-dcache |
 | Burst: TBST, DW-aligned critical address; other bursts line order | UM §3.4.2, PDF 134-135 | tested | DATA_CACHE.md:164; test-bus60x-line-read, test-dcache |
 | Direct-store segment (T=1) → DSI on 603e | UM §3.4.3, PDF 135 | tested | CPU_VARIANTS.md:92; `ppc_bat_memory_router.sv:33` (XATS only on 603); test-core-page-data-exception |
-| WIMG from BAT/PTE; IBAT has no G | UM §3.5, PDF 136 | partial | AUD-79 open: IBAT G=1 raises guarded ISI |
+| WIMG from BAT/PTE; IBAT has no G | UM §3.5, PDF 136 | tested | IBAT G ignored per §3.5 (AUD-79); `test-bat`, `test-bat-service` |
 | W: store-through, no combining; W store hit M pushes, stays M | UM §3.5.1 PDF 137; §3.6.4.1 PDF 144 | tested | DATA_CACHE.md:86-90,191; test-dcache |
 | I: caching-inhibited, strict order; I=1 hit pushes and invalidates | UM §3.5.2, PDF 137 | tested | DATA_CACHE.md:198; test-dcache |
 | M: GBL on bus; M ignored for instruction fetch | UM §3.5.3, PDF 138 | tested | Fetch GBL negated unless HID0[IFEM]; test-chip-mp, `test-chip-pins` `case_ifem` |

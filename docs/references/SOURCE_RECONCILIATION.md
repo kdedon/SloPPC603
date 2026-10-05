@@ -68,7 +68,7 @@ TBEN-gates-TB-only profile.
 | AUD-76 | `rtl/ppc_pkg.sv:610` | UM §1.3.1.2 (PDF 58) | PID7v PVR revision ≥ 0x0200 |
 | AUD-77 | `rtl/ppc_dcache.sv:361` | UM Tables 3-6, 7-2 (PDF 146, 287) | Burst read snoops flush (E → I, M → push, I). Fixed |
 | AUD-78 | `rtl/ppc_bus60x_cache_master.sv:243`, `rtl/ppc_dcache.sv` | UM Tables 7-6, 8-8; §8.1.1 (PDF 290, 328, 312) | TC=01 on touch loads; fill before castout |
-| AUD-79 | `rtl/ppc_bat_translate.sv:146` | UM §3.5 vs Table 5-3 (PDF 136, 211) | Decide whether IBAT G is honoured |
+| AUD-79 | `rtl/ppc_bat_translate.sv:146` | UM §3.5 vs Table 5-3 (PDF 136, 211) | Decide whether IBAT G is honoured. Decided: ignored (§3.5) |
 
 ## Not checked
 

@@ -97,12 +97,13 @@ module tb_bat_translate;
           e.index = 2'(chosen);
           e.protection = 2'(batl[chosen] % 4);
           e.attributes = 4'((batl[chosen] / 8) % 16);
+          // IBATs have no G bit (UM 3.5).
+          if (instruction) e.attributes[0] = 1'b0;
           case (e.protection)
             2'd0: denied = 1'b1;
             2'd1, 2'd3: denied = write_access;
             2'd2: denied = 1'b0;
           endcase
-          guarded = instruction && e.attributes[0];
           e.status[4] = denied;
           e.status[3] = guarded;
           e.status[8] = !denied && !guarded;
@@ -179,8 +180,8 @@ module tb_bat_translate;
     instruction = 1;
     write_access = 0;
     batl[2] = 32'h1000000a;
-    verify("603e IBAT guarded fault");
-    check(hit && guarded_fault && !protection, "specific G denial");
+    verify("IBAT G is ignored");
+    check(hit && allow_access && !guarded_fault && wimg == 4'h0, "IBAT G not guarded");
     ir = 0;
     verify("real instruction bypass ignores guarded protection");
     check(bypass && allow_access && pa == ea && wimg == 1, "literal real I mode");
