@@ -3,8 +3,8 @@
 # Rolling MiSTer build of main, published as the "unstable" prerelease: the
 # test core (COMPACT FPU, dual dispatch, pipelined load/store unit) and the
 # redistributable program images; the Embench image (GPL-3.0) goes with its
-# corresponding source. The release and its tag are replaced on every run; a build with negative slack
-# fails and publishes nothing.
+# corresponding source. The release and its tag are replaced on every run. Fitter seeds 2-5 build in
+# parallel; the lowest seed that meets timing is published. If none does, the run fails and publishes nothing.
 name: mister-unstable
 on:
   push:
@@ -20,10 +20,12 @@ jobs:
   mister:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - name: Free disk for the Quartus image
         run: ci/free-disk.sh
       - name: Fetch pinned inputs
@@ -34,16 +36,46 @@ jobs:
           docker pull "${QUARTUS_IMAGE_PIN}"
       - name: Build the cross-compiler image
         run: ci/step.sh toolchain/build-container.sh
-      - name: Build the core
+      # A seed that misses timing is an expected outcome, not a job failure: the
+      # publish job fails only if no seed passes.
+      - name: Build the core (seed ${{ matrix.seed }})
         run: |
-          for seed in 2 3 4 5; do
-            ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe --seed "${seed}" && exit 0
-          done
-          exit 1
-      - name: Program images
+          if ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe --seed "${{ matrix.seed }}"; then
+            touch build/mister/PASS
+          fi
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('build/mister/PASS') != ''
+        with:
+          name: mister-seed-${{ matrix.seed }}
+          path: |
+            build/mister/*.rbf
+            build/mister/*.json
+            build/mister/images/*.bin
+          retention-days: 3
+  publish:
+    needs: mister
+    if: always() && needs.mister.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mister-seed-*
+          path: seeds
+      - name: Pick the lowest passing seed
         run: |
-          cp build/mister/images/ppc603e-{selftest,embench,whetstone,whetstone-hf}.bin build/mister/
-          ci/source-archive.sh build/mister/ppc603e-embench-source.tar.gz
+          pick="$(ls -d seeds/mister-seed-* 2>/dev/null | sort -t- -k3 -n | head -1)"
+          [ -n "${pick}" ] || { echo "::error::no fitter seed met timing"; exit 1; }
+          echo "publishing ${pick}"
+          mkdir -p build/mister
+          cp "${pick}"/*.rbf "${pick}"/*.json build/mister/
+          cp "${pick}"/images/ppc603e-{selftest,embench,whetstone,whetstone-hf}.bin build/mister/
+      - name: Fetch pinned inputs
+        run: ci/step.sh ci/setup.sh benchmarks
+      - name: Source archive
+        run: ci/source-archive.sh build/mister/ppc603e-embench-source.tar.gz
       - name: Release notes
         run: |
           previous="$(git describe --tags --abbrev=0 --exclude unstable 2>/dev/null || true)"
