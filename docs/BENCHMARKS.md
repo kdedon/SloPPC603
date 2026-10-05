@@ -353,12 +353,53 @@ is committed; three scripts of ours adapt it at build time:
 The routines use the SVR4 ABI of the macros: they save r14–r31 and f14–f31 they use
 and address globals absolutely, never through r2 or r13 (the images build
 `-msdata=none`). `D_DrawSpans16`, `D_DrawSpans8`, `Turbulent8` and `D_DrawSkyScans8`
-take 1/z from `frsqrte(z²)` followed by two Newton–Raphson steps; the 603e's estimate,
-and ours, is good to 1/32 (5 bits), so two steps give about 20 bits, past the 16.16
-texture coordinates. The little-endian image uses the C renderer: the assembly moves
-values between FPRs and GPRs through memory assuming big-endian word order (`stfd` then
-`lwz` at +4, and the `0x43300000` conversion pair), which little-endian munging would
-break.
+take 1/z from `frsqrte(z²)` followed by two Newton–Raphson steps. The 603e specifies
+the estimate to 1/32 (5 bits); ours is a 16-entry table per exponent parity. Two steps
+give about 20 bits, past the 16.16 texture coordinates; the smoke run below shows the
+result. The little-endian image uses the C renderer: the assembly moves values between
+FPRs and GPRs through memory assuming big-endian word order (`stfd` then `lwz` at +4,
+and the `0x43300000` conversion pair), which little-endian munging would break.
+Patching those offsets needs an audit of every such sequence and is not done.
+
+### Quake smoke run
+
+`make -C sim test-mister-quake` (needs `HOSTCC32`, a compiler for i386 programs) builds
+the smoke images, which run `timedemo demo1` with the clock advanced 1/20 s per frame,
+so every build renders the same frames, and stop at timedemo frame
+`QUAKE_SMOKE_FRAMES` (8). Each prints a CRC-32 of the frame and palette, the cycles per
+frame from frame 3, and the frame as hex lines. `tb_mister_load` preloads `pak0.pak`
+into its DDR3 model (`+WAD_PRELOAD`, munged with `+WAD_LE`) instead of downloading
+18.7 MB through the ioctl port; Doom's bench covers the download path.
+`sim/tools/quake_frame_diff.py` compares each frame with the host build's
+(`toolchain/demo/quake/host.mk`: the same engine and port, i386 with SSE arithmetic).
+
+Recorded: `tb_mister_load` runs equal to `make -C sim test-mister-quake` (same images,
+plusargs and comparison; the host build in a Debian trixie container with
+`gcc-multilib`), images built at commit `84fe00a`, 2026-10-05. All four exit 0.
+
+| Image | Frame 8 CRC | Pixels differing from host | Cycles per frame (3–8) | Cycles from reset to exit | DDRAM reads (beats) |
+|---|---|---:|---:|---:|---:|
+| `ppc603e-quake-smoke.bin` (hard float, BE, assembly; 399,304 bytes) | `f1d64b5c` | 475 (0.74%) | 6,514,255 | 208,906,456 | 1,537,573 (6,150,127) |
+| `ppc603e-quake-bec-smoke.bin` (hard float, BE, C; 401,096 bytes) | `1458a682` | 0 | 7,333,000 | 210,456,616 | 1,500,510 (6,001,875) |
+| `ppc603e-quake-le-smoke.bin` (hard float, LE, C; 402,472 bytes) | `1458a682` | 0 | 7,510,772 | 217,060,812 | 1,505,958 (6,023,667) |
+| `ppc603e-quake-sf-smoke.bin` (soft float, BE, C; 441,648 bytes) | `1458a682` | 0 | 21,283,032 | 348,534,190 | 1,564,926 (6,259,539) |
+| Host build (i386, SSE) | `1458a682` | | | | |
+
+The three C builds render exactly the host's frame: fused multiply-adds in the
+hard-float builds and musl's maths change no pixel here. The assembly build differs in
+475 pixels, all in the world (rows 80–129) and the weapon model (rows 130–159): texel
+choices at the 16-pixel perspective steps of `D_DrawSpans16` (the C renderer steps every
+8) and in the polygon-model drawers; palette index differences are large where a
+neighbouring texel is chosen (mean 53), the RGB difference small (mean 5.2 of 255,
+largest 55). Frame 8 still shows the console over the view (the console retracts over the
+first frames of the demo); per frame the assembly saves 11% against C, hard float in C
+runs 2.9 times as fast as soft float, and little-endian C costs 2.4% more than
+big-endian. Startup to the first timedemo frame is about 190 M cycles (3.8 s at 50 MHz).
+Not covered: a full pass (969 frames, about 7 G cycles), the result screen and loop,
+the download of `pak0.pak` through the core, the HPS's DDR3 latency, a fit, or
+hardware.
+
+## Running
 
 ## Running
 
