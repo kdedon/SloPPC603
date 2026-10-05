@@ -39,7 +39,10 @@ module tb_core_tlbie;
   assign iw=fetched;
   assign dr=1'b1;
   assign drv=1'b0;
-  assign tr=!(tv && retired.pc==32'd4 && hold_count<8 && mode==0);
+  // The hold reads the settled head, not retire_o: a ready that follows a
+  // valid formed in the finish cycle closes a loop through commit-time
+  // recovery.
+  assign tr=!(dut.cq_retire_settled && dut.cq_head_packet.pc==32'd4 && hold_count<8 && mode==0);
 
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;

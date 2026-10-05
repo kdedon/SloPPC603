@@ -37,8 +37,11 @@ module tb_core_sdr1 #(parameter bit FEATURE=1'b1);
   assign iw=fetched;
   assign dr=1'b1;
   assign drv=1'b0;
-  assign tr=!(FEATURE&&((mode==0&&tv&&retired.pc==8&&hold_count<8)||
-    (mode==8&&tv&&retired.pc==4&&!release_write)));
+  // The hold reads the settled head, not retire_o: a ready that follows a
+  // valid formed in the finish cycle closes a loop through commit-time
+  // recovery.
+  assign tr=!(FEATURE&&((mode==0&&dut.cq_retire_settled&&dut.cq_head_packet.pc==8&&hold_count<8)||
+    (mode==8&&dut.cq_retire_settled&&dut.cq_head_packet.pc==4&&!release_write)));
 
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;

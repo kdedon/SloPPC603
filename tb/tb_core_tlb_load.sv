@@ -53,7 +53,10 @@ module tb_core_tlb_load #(parameter bit FEATURE=1'b1);
   assign iw=fetched;
   assign dr=1'b1;
   assign drv=1'b0;
-  assign tr=!(FEATURE&&mode==0&&tv&&retired.pc==44&&hold_count<8);
+  // The hold reads the settled head, not retire_o: a ready that follows a
+  // valid formed in the finish cycle closes a loop through commit-time
+  // recovery.
+  assign tr=!(FEATURE&&mode==0&&dut.cq_retire_settled&&dut.cq_head_packet.pc==44&&hold_count<8);
 
   logic [33:0] unused_cache_core;
   logic unused_checkstop;

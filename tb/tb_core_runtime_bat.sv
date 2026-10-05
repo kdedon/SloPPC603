@@ -35,7 +35,10 @@ module tb_core_runtime_bat;
   assign iw=fetched;
   assign dr=1'b1;
   assign drv=1'b0;
-  assign tr=!(tv && retired.pc==32'd4 && retire_hold<8);
+  // The hold reads the settled head, not retire_o: a ready that follows a
+  // valid formed in the finish cycle closes a loop through commit-time
+  // recovery.
+  assign tr=!(dut.cq_retire_settled && dut.cq_head_packet.pc==32'd4 && retire_hold<8);
   logic [36:0] unused_tlb_inv_core;
   logic [89:0] unused_tlb_fill;
   logic [33:0] unused_cache_core;
