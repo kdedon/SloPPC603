@@ -236,13 +236,13 @@ copies `DOOM1.WAD` to `build/mister/images/`).
   The little-endian build reads the same file, munged by the core while loading.
 - **Memory.** Code, constants and the data load image sit in the 1 MiB image window
   at `0xfff00000` (about 420 KiB); data, BSS, a 23 MiB heap and the stack are in the
-  32 MiB data region at 0, below the WAD at `0x01800000`
-  ([MISTER_CORE.md](MISTER_CORE.md#data-region-and-wad-loading)).
+  64 MiB data region at 0, below the WAD at `0x01800000`
+  ([MISTER_CORE.md](MISTER_CORE.md#data-region-and-data-loading)).
 
 ### Image layout
 
 `doom/stub.S`, always big-endian, sits at `0xfff00100`. It sets the BATs (BAT0 the
-image window, DBAT1 the device window, BAT2 32 MiB of the data region, all but DBAT1
+image window, DBAT1 the device window, BAT2 the 64 MiB data region, all but DBAT1
 cacheable), enables both caches and enters the program at `0xfff01500` through `rfi`
 with `MSR[IR,DR]`; the little-endian stub first sets `MSR[ILE]` with `mtmsr` and
 then `MSR[LE]` through `SRR1`, as [LITTLE_ENDIAN.md](LITTLE_ENDIAN.md#mode-changes)

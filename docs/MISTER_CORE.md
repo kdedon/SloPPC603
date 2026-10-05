@@ -66,8 +66,8 @@ instead. The native-video build does not have this problem. Earlier builds had a
 | Program (`--fpu` core) | 7:5 | Hello, Dhrystone, CoreMark, Whetstone, FP Mandelbrot, Run all |
 | Length | 3 | Full (default), Smoke test |
 | Load program | F1, `.BIN` | Downloads a program image and runs it ([Loading programs](#loading-programs)) |
-| Load WAD | F2, `.WAD` | Downloads a data file into the data region ([Data region and WAD loading](#data-region-and-wad-loading)) |
-| Load WAD (little-endian) | F3, `.WAD` | The same, byte-munged for little-endian programs |
+| Load data | F2, `.WAD`, `.PAK` | Downloads a data file into the data region ([Data region and data loading](#data-region-and-data-loading)) |
+| Load data (little-endian) | F3, `.WAD`, `.PAK` | The same, byte-munged for little-endian programs |
 | Restart | 0 | Resets the processor and runs the selection again |
 
 Changing Program or Length also restarts; changing Program also leaves a loaded image
@@ -142,8 +142,11 @@ them alone.
 | `ppc603e-nbench.bin` | nbench, full sizes | Do not redistribute; not released ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)) |
 | `ppc603e-whetstone.bin` | Whetstone, soft-float | Any core |
 | `ppc603e-whetstone-hf.bin` | Whetstone, hard-float | FPU cores; elsewhere exits `0xe0000800` (`FAIL`) |
-| `ppc603e-doom.bin` | Doom `-timedemo demo3`, looping, big-endian ([BENCHMARKS.md](BENCHMARKS.md#doom)) | GPL-2.0; needs `DOOM1.WAD` from `Load WAD` |
-| `ppc603e-doom-le.bin` | The same, little-endian | GPL-2.0; needs `DOOM1.WAD` from `Load WAD (little-endian)` |
+| `ppc603e-doom.bin` | Doom `-timedemo demo3`, looping, big-endian ([BENCHMARKS.md](BENCHMARKS.md#doom)) | GPL-2.0; needs `DOOM1.WAD` from `Load data` |
+| `ppc603e-doom-le.bin` | The same, little-endian | GPL-2.0; needs `DOOM1.WAD` from `Load data (little-endian)` |
+| `ppc603e-quake.bin` | Quake `timedemo demo1`, looping, hard float, big-endian, PowerPC assembly renderer ([BENCHMARKS.md](BENCHMARKS.md#quake)) | GPL-2.0; FPU cores; needs `pak0.pak` from `Load data` |
+| `ppc603e-quake-le.bin` | The same in C, little-endian | GPL-2.0; FPU cores; needs `pak0.pak` from `Load data (little-endian)` |
+| `ppc603e-quake-sf.bin` | The same in C, soft float, big-endian | GPL-2.0; any core; needs `pak0.pak` from `Load data` |
 
 The download is the framework's ROM load (`ioctl`, 8-bit, index 1). The core holds the
 processor in reset throughout and writes each byte to DDR3 at `0x34000000 + n` with one
@@ -169,23 +172,27 @@ latency (about 100 ns or more, shared with Linux on the HPS). Benchmark results 
 loaded image are therefore lower than from the on-chip `--suite` cores and may vary
 between runs; compare like with like. `--suite` builds remain for on-chip numbers.
 
-### Data region and WAD loading
+### Data region and data loading
 
-While a loaded image runs, processor addresses `0x00000000`–`0x01ffffff` (32 MiB) are
-DDR3 from `0x36000000`, through the same bridge and DDRAM port as the image
+While a loaded image runs, processor addresses `0x00000000`–`0x03ffffff` (64 MiB) are
+DDR3 `0x36000000`–`0x39ffffff`, clear of the scaler (`0x20000000`), the framebuffer
+(`0x30000000`) and the image (`0x34000000`, 1 MiB), through the same bridge and DDRAM port as the image
 (`DATA_BYTES`, `DATA_DDR_BASE` and `DATA_BASE` in `ppc603e_mister`; `XDATA_*` in the
 demo SoC). The region is not mapped for the built-in programs, and nothing clears it.
 A program maps it with a BAT; the Doom images map it cacheable.
 
-`Load WAD` (index 2) and `Load WAD (little-endian)` (index 3) download a file into the
+`Load data` (index 2) and `Load data (little-endian)` (index 3) download a file into the
 region from offset 24 MiB (`WAD_OFFSET`): file byte n goes to processor address
 `0x01800000 + n`, or with index 3 to `0x01800000 + (n XOR 7)`, the layout in which a
 program in little-endian mode reads the file's bytes in order
-([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md#data-accesses)). Bytes past 8 MiB are dropped.
+([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md#data-accesses)). Bytes past 40 MiB are dropped.
 The download, one byte per DDRAM write as for programs, holds the processor in reset;
 afterwards the core restarts what it was running, so the WAD and the program load in
-either order. For Doom: `Load WAD` with `DOOM1.WAD` then `Load program` with
-`ppc603e-doom.bin`, or `Load WAD (little-endian)` then `ppc603e-doom-le.bin`. A Doom
+either order. For Doom: `Load data` with `DOOM1.WAD` then `Load program` with
+`ppc603e-doom.bin`, or `Load data (little-endian)` then `ppc603e-doom-le.bin`. For
+Quake: `Load data` with `pak0.pak` then `ppc603e-quake.bin` or `ppc603e-quake-sf.bin`,
+or `Load data (little-endian)` then `ppc603e-quake-le.bin`; a Quake image that finds
+no `PACK` at `0x01800000` says so and stops. A Doom
 image that finds no `IWAD` at `0x01800000`, or the wrong byte order, says so on the
 screen and stops.
 
@@ -400,7 +407,13 @@ and this repository's build scripts at the release commit), and
 doomgeneric (GPL-2.0) and are published with `ppc603e-doom.SOURCE.txt` (the pinned
 [doomgeneric commit](https://github.com/ozkl/doomgeneric/tree/dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284)
 and this repository at the release commit) and the same source archive, now
-`ppc603e-source.tar.gz` for Embench and Doom together. `DOOM1.WAD` is id Software's
+`ppc603e-source.tar.gz` for Embench, Doom and Quake together. The Quake images contain
+quakegeneric (GPL-2.0), and `ppc603e-quake.bin` also assembly from Frank Wille's Amiga
+Quake 1.09 v2.30 source (GPL-2.0); they are published with `ppc603e-quake.SOURCE.txt`
+and the same archive, which also holds the Amiga source archive. `pak0.pak` is id
+Software's Quake v1.06 shareware data file (SHA-256
+`35a9c55e5e5a284a159ad2a62e0e8def23d829561fe2f54eb402dbc0a9a946af`), handled as
+`DOOM1.WAD` is (`toolchain/demo/fetch-quake.sh`). `DOOM1.WAD` is id Software's
 shareware v1.9 IWAD (SHA-256
 `1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771`), whose terms
 allow redistributing the unmodified file, not for sale. The build fetches it at a pinned
