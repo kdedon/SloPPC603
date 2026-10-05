@@ -26,7 +26,7 @@ module tb_mister_load #(
   localparam int IMAGE_BYTES = 1048576;
   localparam logic [28:0] FB_WORD = 29'h0600_0000;     // 0x30000000 / 8
   localparam logic [28:0] IMAGE_WORD = 29'h0680_0000;  // 0x34000000 / 8
-  localparam int DATA_BYTES = 32 * 1024 * 1024, WAD_OFFSET = 24 * 1024 * 1024;
+  localparam int DATA_BYTES = 64 * 1024 * 1024, WAD_OFFSET = 24 * 1024 * 1024;
   localparam logic [28:0] DATA_WORD = 29'h06c0_0000;   // 0x36000000 / 8
   localparam logic [28:0] WAD_WORD = DATA_WORD + 29'(WAD_OFFSET / 8);
   localparam int FB_WORDS = (FB_W * FB_H + 7) / 8;

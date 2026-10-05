@@ -287,14 +287,14 @@ int plat_main(int restarted)
 
   const uint8_t *wad = (const uint8_t *)PLAT_WAD_ADDR;
   if (memcmp(wad, "IWAD", 4)) {
-    printf("doom: no IWAD at %08x (Load WAD%s)\n", PLAT_WAD_ADDR,
+    printf("doom: no IWAD at %08x (Load data%s)\n", PLAT_WAD_ADDR,
 #ifdef __LITTLE_ENDIAN__
            " (little-endian)"
 #else
            ""
 #endif
     );
-    text(0, 2, "No IWAD loaded: use Load WAD, then reload the program");
+    text(0, 2, "No IWAD loaded: use Load data, then reload the program");
     halt(0xd0000001u);
   }
   /* The directory ends the file: offset 8, 16 bytes per lump from offset 4. */

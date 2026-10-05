@@ -77,8 +77,8 @@ localparam CONF_STR = {
 	"PPC603e;;",
 	"-;",
 	"F1,BIN,Load program;",
-	"F2,WAD,Load WAD;",
-	"F3,WAD,Load WAD (little-endian);",
+	"F2,WADPAK,Load data;",
+	"F3,WADPAK,Load data (little-endian);",
 `ifndef MISTER_BENCH
 `ifdef MISTER_FPU
 	"O[7:5],Program,Hello,Dhrystone,CoreMark,Whetstone,FP Mandelbrot,Run all;",
@@ -204,7 +204,7 @@ wire [23:0] pal_data;
 ppc603e_mister #(
 	.RAM_INIT("firmware/mister.mif"), .RAM_BYTES(RAM_BYTES), .FB_EXTERNAL(FB_EXTERNAL),
 	.FB_WIDTH(SCREEN_W), .FB_HEIGHT(SCREEN_H), .ENABLE_FPU(ENABLE_FPU),
-	.DATA_BYTES(32 * 1024 * 1024), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH)
+	.DATA_BYTES(64 * 1024 * 1024), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH)
 ) core
 (
 	.clk_i(clk_sys),
