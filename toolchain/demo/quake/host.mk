@@ -3,12 +3,13 @@
 # Host build of the Quake smoke run (quake/hostmain.c), the reference the
 # processor's smoke frames are compared with. quakegeneric needs a 32-bit
 # target; SSE arithmetic keeps single and double rounding as on PowerPC.
-# Run from toolchain/: make -f demo/quake/host.mk [QUAKE_SMOKE_FRAMES=n]; 0
+# Run from toolchain/: make -f demo/quake/host.mk [QUAKE_SMOKE_FRAMES=n]; it
+# writes build/demo/quake/host/<n>/. 0
 # plays one whole timedemo pass with the real clock.
 QUAKE_SMOKE_FRAMES ?= 8
 HOSTCC32 ?= gcc -m32
 QG := build/demo/src/quakegeneric/source
-QH := build/demo/quake/host$(if $(filter 0,$(QUAKE_SMOKE_FRAMES)),-full)
+QH := build/demo/quake/host/$(QUAKE_SMOKE_FRAMES)
 include demo/quake/engine.mk
 
 $(QH)/quake-host: $(addprefix $(QG)/,$(addsuffix .c,$(QUAKE_ENGINE))) demo/quake/qport.c \

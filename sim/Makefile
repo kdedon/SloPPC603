@@ -2589,7 +2589,7 @@ test-mister-quake: mister-load-model quake-host
 	    +WAD=$(QUAKE_PAK) +WAD_PRELOAD $$flag +IMAGE=$(DEMO_FW_DIR)/quake/$$img.bin \
 	    +PPM=$(QUAKE_OUT)/$$v.ppm > $(QUAKE_OUT)/$$v.log 2>&1 || { tail -20 $(QUAKE_OUT)/$$v.log; exit 1; }; \
 	  grep -E '^quake: (timedemo|[0-9]+ cycles)|^image: exit' $(QUAKE_OUT)/$$v.log | sed "s/^/$$v: /"; done
-	python3 tools/quake_frame_diff.py ../toolchain/build/demo/quake/host/quake-frame.bin \
+	python3 tools/quake_frame_diff.py ../toolchain/build/demo/quake/host/$(QUAKE_SMOKE_FRAMES)/quake-frame.bin \
 	  $(addprefix $(QUAKE_OUT)/,$(addsuffix .log,$(QUAKE_VARIANTS)))
 	if [ -f $(QUAKE_OUT)/bec.log ] && [ -f $(QUAKE_OUT)/le.log ]; then \
 	  a=$$(grep '^quake: timedemo' $(QUAKE_OUT)/bec.log); b=$$(grep '^quake: timedemo' $(QUAKE_OUT)/le.log); \
