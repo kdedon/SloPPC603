@@ -2485,17 +2485,16 @@ mister-firmware:
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) mister GIT_SHORT=$$(git rev-parse --short HEAD)
 mister-smoke: mister-model mister-firmware
-	timeout 3600 ./$(MISTER_OUT)/model/Vtb_mister $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=$(MISTER_MODE) +PPM=$(MISTER_OUT)/mister-$(MISTER_MODE).ppm +SAVE=$(MISTER_OUT)/screen-$(MISTER_MODE).pfb
+	timeout 3600 ./$(MISTER_OUT)/model/Vtb_mister $(SIM_ARGS) +IMAGE=$(DEMO_FW_DIR)/mister.hex +MODE=$(MISTER_MODE) +PPM=$(MISTER_OUT)/mister-$(MISTER_MODE).ppm
 	python3 tools/ppm_to_png.py $(MISTER_OUT)/mister-$(MISTER_MODE).ppm $(MISTER_OUT)/mister-$(MISTER_MODE).png
-	if [ "$(MISTER_FB)" = 1 ]; then python3 ../mister/fb2png.py $(MISTER_OUT)/screen-$(MISTER_MODE).pfb $(MISTER_OUT)/screen-$(MISTER_MODE).png; fi
 # The --fpu --suite whetstone core: hard-float Whetstone at simulation size,
 # MODE as the suite core drives it (no menu).
 mister-smoke-fpu:
 	$(MAKE) mister-model MISTER_FPU=1 MISTER_BENCH=1
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) mister-whetstone-hf
-	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu-bench/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-whetstone-hf-smoke.hex +MODE=04 +PPM=$(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.ppm +SAVE=$(BUILD_DIR)/mister/fb1-fpu-bench/screen.pfb
-	python3 ../mister/fb2png.py $(BUILD_DIR)/mister/fb1-fpu-bench/screen.pfb $(BUILD_DIR)/mister/fb1-fpu-bench/screen.png
+	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu-bench/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-whetstone-hf-smoke.hex +MODE=04 +PPM=$(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.ppm
+	python3 tools/ppm_to_png.py $(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.ppm $(BUILD_DIR)/mister/fb1-fpu-bench/whetstone-hf.png
 # The --fpu core: the FPU image (the MiSTer programs plus Whetstone and the
 # double-precision Mandelbrot set). MISTER_FPU_MODE is the MODE byte, with
 # program bit 2 in bit 3: 09 is Run all at smoke-test length.
@@ -2505,8 +2504,8 @@ mister-smoke-fpu-all:
 	$(MAKE) mister-model MISTER_FPU=1
 	../toolchain/demo/fetch-benchmarks.sh
 	$(DEMO_FW_MAKE) mister-fpu GIT_SHORT=$$(git rev-parse --short HEAD)
-	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-fpu.hex +MODE=$(MISTER_FPU_MODE) +PPM=$(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).ppm +SAVE=$(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).pfb
-	python3 ../mister/fb2png.py $(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).pfb $(BUILD_DIR)/mister/fb1-fpu/screen-$(MISTER_FPU_MODE).png
+	timeout 3600 ./$(BUILD_DIR)/mister/fb1-fpu/model/Vtb_mister $(SIM_ARGS) +MAX_CYCLES=1000000000 +IMAGE=$(DEMO_FW_DIR)/mister-fpu.hex +MODE=$(MISTER_FPU_MODE) +PPM=$(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).ppm
+	python3 tools/ppm_to_png.py $(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).ppm $(BUILD_DIR)/mister/fb1-fpu/mister-fpu-$(MISTER_FPU_MODE).png
 # Program images from DDR3 on the test core's configuration (COMPACT FPU, dual
 # dispatch, pipelined LSU): each image of MISTER_LOAD_IMAGES, at simulation
 # size, goes through the ioctl loader into a DDR3 model and runs from there;

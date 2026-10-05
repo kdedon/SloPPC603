@@ -3,8 +3,7 @@
 // MiSTer emu top for the PowerPC 603e demonstration system (docs/MISTER_CORE.md).
 // With MISTER_FB (default) the framebuffer is 1920 x 1080 in DDR3, shown
 // through the framework scaler (MISTER_FB_PALETTE), and the native video
-// output carries a blank 320 x 240; the OSD can save the screen to a mounted
-// file. Without it the framebuffer is 320 x 240 in block RAM and leaves as
+// output carries a blank 320 x 240. Without it the framebuffer is 320 x 240 in block RAM and leaves as
 // native video at 15.6 kHz and 59.6 Hz. MISTER_BENCH builds a benchmark
 // suite image with 256 KiB of program RAM and no program menu. Without it,
 // MISTER_FPU adds Whetstone and the floating-point Mandelbrot set to the
@@ -41,14 +40,11 @@ assign BUTTONS = 0;
 `ifdef MISTER_FB
 localparam bit FB_EXTERNAL = 1'b1;
 localparam int SCREEN_W = 1920, SCREEN_H = 1080;
-// Header and palette sectors, then the pixels (ppc603e_mister).
-localparam int SAVE_BYTES = 1536 + (SCREEN_W * SCREEN_H + 511) / 512 * 512;
 assign VIDEO_ARX = 13'd16;
 assign VIDEO_ARY = 13'd9;
 `else
 localparam bit FB_EXTERNAL = 1'b0;
 localparam int SCREEN_W = 320, SCREEN_H = 240;
-localparam int SAVE_BYTES = 0;
 assign VIDEO_ARX = 13'd4;
 assign VIDEO_ARY = 13'd3;
 `endif
@@ -75,8 +71,7 @@ localparam int RAM_BYTES = 262144;
 localparam int RAM_BYTES = 131072;
 `endif
 
-// Status bits: 0 restart, 2:1 program (7:5 with the FPU), 3 length,
-// 4 save screen.
+// Status bits: 0 restart, 2:1 program (7:5 with the FPU), 3 length.
 `include "build_id.v"
 localparam CONF_STR = {
 	"PPC603e;;",
@@ -91,15 +86,9 @@ localparam CONF_STR = {
 	"O[3],Length,Full,Smoke test;",
 `endif
 	"-;",
-`ifdef MISTER_FB
-	"S0,PFB,Screen file;",
-	"T[4],Save screen;",
-	"-;",
-`endif
 	"R[0],Restart;",
 	"J1,A,B;",
-	"I,Running,Finished: PASS,Finished: FAIL (see screen),Checkstop,Screen saved,",
-	"Screen file: mount a writable file of 2 MiB;",
+	"I,Running,Finished: PASS,Finished: FAIL (see screen),Checkstop;",
 	"v,1;",
 	"V,v",`BUILD_DATE
 };
@@ -110,13 +99,6 @@ wire  [10:0] ps2_key;
 wire [127:0] status;
 reg          info_req = 0;
 reg    [7:0] info = 0;
-
-wire        img_mounted, img_readonly;
-wire [63:0] img_size;
-wire [31:0] sd_lba;
-wire        sd_wr, sd_ack;
-wire [13:0] sd_buff_addr;
-wire  [7:0] sd_buff_din;
 
 wire        ioctl_download, ioctl_wr, ioctl_wait;
 wire [15:0] ioctl_index;
@@ -136,18 +118,6 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.status_menumask(16'd0),
 	.info_req(info_req),
 	.info(info),
-	.img_mounted(img_mounted),
-	.img_readonly(img_readonly),
-	.img_size(img_size),
-	.sd_lba('{sd_lba}),
-	.sd_blk_cnt('{6'd0}),
-	.sd_rd(1'b0),
-	.sd_wr(sd_wr),
-	.sd_ack(sd_ack),
-	.sd_buff_addr(sd_buff_addr),
-	.sd_buff_dout(),
-	.sd_buff_din('{sd_buff_din}),
-	.sd_buff_wr(),
 	.ioctl_download(ioctl_download),
 	.ioctl_index(ioctl_index),
 	.ioctl_wr(ioctl_wr),
@@ -227,13 +197,6 @@ wire        pal_we;
 wire  [7:0] pal_addr;
 wire [23:0] pal_data;
 
-// A save needs a writable image that holds the whole screen file.
-reg  save_file_ok = 0;
-wire save_start = status[4] & save_file_ok;
-wire save_busy, save_done;
-always @(posedge clk_sys)
-	if (img_mounted) save_file_ok <= FB_EXTERNAL && !img_readonly && img_size >= 64'(SAVE_BYTES);
-
 ppc603e_mister #(
 	.RAM_INIT("firmware/mister.mif"), .RAM_BYTES(RAM_BYTES), .FB_EXTERNAL(FB_EXTERNAL),
 	.FB_WIDTH(SCREEN_W), .FB_HEIGHT(SCREEN_H), .ENABLE_FPU(ENABLE_FPU),
@@ -249,9 +212,6 @@ ppc603e_mister #(
 	.ddram_busy_i(DDRAM_BUSY), .ddram_addr_o(DDRAM_ADDR), .ddram_burstcnt_o(DDRAM_BURSTCNT),
 	.ddram_din_o(DDRAM_DIN), .ddram_be_o(DDRAM_BE), .ddram_we_o(DDRAM_WE),
 	.ddram_rd_o(DDRAM_RD), .ddram_dout_i(DDRAM_DOUT), .ddram_dout_ready_i(DDRAM_DOUT_READY),
-	.save_i(save_start), .save_busy_o(save_busy), .save_done_o(save_done),
-	.sd_lba_o(sd_lba), .sd_wr_o(sd_wr), .sd_ack_i(sd_ack),
-	.sd_buff_addr_i(sd_buff_addr[8:0]), .sd_buff_din_o(sd_buff_din),
 	.image_i(image), .ioctl_download_i(load), .ioctl_wr_i(ioctl_wr), .ioctl_addr_i(ioctl_addr),
 	.ioctl_dout_i(ioctl_dout), .ioctl_wait_o(ioctl_wait),
 	.console_valid_o(), .console_data_o(),
@@ -285,8 +245,7 @@ assign FB_PAL_DOUT = pal_data;
 `endif
 `endif
 
-// OSD info line (1-based index into the I list) on each state change, a
-// finished save, or a save request without a usable file.
+// OSD info line (1-based index into the I list) on each state change.
 reg [1:0] state = 0, state_q = 0;
 always @(posedge clk_sys) begin
 	if (core_reset) state <= 0;
@@ -297,12 +256,6 @@ always @(posedge clk_sys) begin
 	if (state != state_q) begin
 		info_req <= 1;
 		info <= {6'd0, state} + 8'd1;
-	end else if (save_done) begin
-		info_req <= 1;
-		info <= 8'd5;
-	end else if (FB_EXTERNAL && status[4] && !save_file_ok) begin
-		info_req <= 1;
-		info <= 8'd6;
 	end
 end
 

@@ -11,10 +11,9 @@
 // the framebuffer is in HPS DDR3, where the framework scaler reads it
 // (MISTER_FB): framebuffer stores queue in a posted-write FIFO and drain to
 // the DDRAM port one doubleword per write command, and the bus grant is held
-// off while the FIFO is nearly full. A save request copies the framebuffer
-// and palette, as a screen file, to the sectors of a mounted SD image.
-// Without FB_EXTERNAL the framebuffer is on chip and the SoC scans it out as
-// native video. Program RAM stays on chip, preloaded from RAM_INIT.
+// off while the FIFO is nearly full. Without FB_EXTERNAL the framebuffer is
+// on chip and the SoC scans it out as native video. Program RAM stays on
+// chip, preloaded from RAM_INIT.
 //
 // A program image downloaded through the ioctl port goes to DDR3 at
 // IMAGE_DDR_BASE, one byte per write command. With image_i high the
@@ -22,14 +21,8 @@
 // that DDR3 region instead (soc_xmem_bridge), so the reset vector is the
 // image's. The image is a memory image of the RAM range, file byte n at
 // RAM_BASE + n. One DDRAM command register serves, in priority order, the
-// screen save's reads, the bridge's reads, the loader, the bridge's writes
-// and the framebuffer FIFO, with one read in flight at a time.
-//
-// Screen file, in 512-byte sectors: sector 0 is the header (bytes 0-3
-// "PFB1"; 4-5 width, 6-7 height, 8-9 stride, little-endian; 10 bits per
-// pixel, 8; the rest zero), sectors 1-2 the palette (256 entries of R, G, B,
-// 0), then the pixels, one palette index per byte, rows top to bottom, the
-// last sector padded.
+// bridge's reads, the loader, the bridge's writes and the framebuffer FIFO,
+// with one read in flight at a time.
 module ppc603e_mister #(
   parameter RAM_INIT = "",
   parameter int RAM_BYTES = 131072,
@@ -39,7 +32,7 @@ module ppc603e_mister #(
   parameter int FB_HEIGHT = 1080,
   // Processor address of the framebuffer.
   parameter logic [31:0] FB_BASE = 32'hf020_0000,
-  // Byte address of the framebuffer in DDR3, 512-byte aligned.
+  // Byte address of the framebuffer in DDR3, doubleword aligned.
   parameter logic [31:0] FB_DDR_BASE = 32'h3000_0000,
   // Program image window from the RAM base, and its DDR3 byte address.
   parameter int IMAGE_BYTES = 1048576,
@@ -78,17 +71,6 @@ module ppc603e_mister #(
   output logic        ddram_rd_o,
   input  logic [63:0] ddram_dout_i,
   input  logic        ddram_dout_ready_i,
-  // Screen save (FB_EXTERNAL): save_i starts one while a writable image of
-  // at least SAVE_BYTES is mounted; save_done_o pulses at the end. The SD
-  // signals follow the framework's block interface, one sector per request.
-  input  logic        save_i,
-  output logic        save_busy_o,
-  output logic        save_done_o,
-  output logic [31:0] sd_lba_o,
-  output logic        sd_wr_o,
-  input  logic        sd_ack_i,
-  input  logic [8:0]  sd_buff_addr_i,
-  output logic [7:0]  sd_buff_din_o,
   // Program image download (8-bit ioctl, filtered to the image's file
   // index); the host holds rst_i through it. image_i changes under rst_i.
   input  logic        image_i,
@@ -108,9 +90,6 @@ module ppc603e_mister #(
   localparam int FIFO_AW = $clog2(FIFO_DEPTH);
   // A granted tenure writes at most four beats.
   localparam int FIFO_HOLD = FIFO_DEPTH - 4;
-  localparam int HEADER_SECTORS = 3;
-  localparam int PIXEL_SECTORS = (FB_WIDTH * FB_HEIGHT + 511) / 512;
-  localparam int SECTORS = HEADER_SECTORS + PIXEL_SECTORS;
   localparam logic [28:0] IMAGE_WORD = IMAGE_DDR_BASE[31:3];
 
   // DDR3 is little-endian by byte address: bus byte 0 is lane 0.
@@ -154,17 +133,15 @@ module ppc603e_mister #(
   // ---- DDRAM port -------------------------------------------------------------
   // A command stays on the port until BUSY is low, reset included: dropping
   // it under waitrequest would break the handshake.
-  typedef enum logic [2:0] {P_NONE, P_SAVE, P_XRD, P_LOAD, P_XWR, P_FB} pick_e;
+  typedef enum logic [2:0] {P_NONE, P_XRD, P_LOAD, P_XWR, P_FB} pick_e;
   pick_e pick;
   logic we_q = 1'b0, rd_q = 1'b0;
   logic [28:0] addr_q;
   logic [63:0] din_q;
   logic [7:0] be_q, burst_q;
-  // Beats still due of the read in flight, and whether it is the bridge's.
-  logic [6:0] rd_left_q = '0;
-  logic rd_xmem_q = 1'b0;
-  logic port_free, reading, save_req, fb_valid, save_beat, xmem_valid;
-  logic [28:0] save_addr;
+  // Beats still due of the read in flight.
+  logic [2:0] rd_left_q = '0;
+  logic port_free, reading, fb_valid, xmem_valid;
   logic [23:0] fb_head_addr;
   logic [7:0] fb_head_be;
   logic [63:0] fb_head_data;
@@ -180,8 +157,7 @@ module ppc603e_mister #(
 
   always_comb begin
     pick = P_NONE;
-    if (save_req && !reading) pick = P_SAVE;
-    else if (xmem_valid && !xmem_we && !reading) pick = P_XRD;
+    if (xmem_valid && !xmem_we && !reading) pick = P_XRD;
     else if (load_req) pick = P_LOAD;
     else if (xmem_valid && xmem_we) pick = P_XWR;
     else if (fb_valid) pick = P_FB;
@@ -190,14 +166,9 @@ module ppc603e_mister #(
   always_ff @(posedge clk_i)
     if (port_free) begin
       we_q <= pick == P_LOAD || pick == P_XWR || pick == P_FB;
-      rd_q <= pick == P_SAVE || pick == P_XRD;
+      rd_q <= pick == P_XRD;
       burst_q <= 8'd1;
       unique case (pick)
-        P_SAVE: begin
-          addr_q <= save_addr;
-          be_q <= '1;
-          burst_q <= 8'd64;
-        end
         P_XRD: begin
           addr_q <= IMAGE_WORD + xmem_addr;
           be_q <= '1;
@@ -223,15 +194,11 @@ module ppc603e_mister #(
     end
 
   always_ff @(posedge clk_i)
-    if (port_free && (pick == P_SAVE || pick == P_XRD)) begin
-      rd_left_q <= pick == P_SAVE ? 7'd64 : xmem_burst ? 7'd4 : 7'd1;
-      rd_xmem_q <= pick == P_XRD;
-    end else if (reading && ddram_dout_ready_i)
-      rd_left_q <= rd_left_q - 7'd1;
+    if (port_free && pick == P_XRD) rd_left_q <= xmem_burst ? 3'd4 : 3'd1;
+    else if (reading && ddram_dout_ready_i) rd_left_q <= rd_left_q - 3'd1;
 
   assign xmem_ack = port_free && (pick == P_XRD || pick == P_XWR);
-  assign xmem_rvalid = reading && rd_xmem_q && ddram_dout_ready_i;
-  assign save_beat = reading && !rd_xmem_q && ddram_dout_ready_i;
+  assign xmem_rvalid = reading && ddram_dout_ready_i;
 
   assign ddram_we_o = we_q;
   assign ddram_rd_o = rd_q;
@@ -291,111 +258,8 @@ module ppc603e_mister #(
     end
     assign fb_hold = count_q >= (FIFO_AW + 1)'(FIFO_HOLD);
 
-    // ---- screen save --------------------------------------------------------------
-    typedef enum logic [2:0] {SV_IDLE, SV_READ, SV_FILL, SV_WRITE, SV_ACK} save_e;
-    save_e state_q;
-    logic [31:0] sector_q;
-    logic [5:0] beat_q;
-    logic ack_q;
-
-    (* ramstyle = "M10K, no_rw_check" *) logic [63:0] sector_buf [64];
-    (* ramstyle = "M10K, no_rw_check" *) logic [23:0] palette [256];
-    logic [63:0] buf_q;
-    logic [23:0] pal_q;
-    logic [8:0] byte_q;
-    logic [1:0] kind_q;  // 0 header, 1 palette, 2 pixels
-    logic [7:0] header;
-
-    assign save_req = state_q == SV_READ;
-    assign save_addr = FB_DDR_BASE[31:3] + 29'((sector_q - 32'(HEADER_SECTORS)) * 32'd64);
-
-    always_ff @(posedge clk_i) begin
-      if (rst_i) begin
-        state_q <= SV_IDLE;
-        sector_q <= '0;
-        beat_q <= '0;
-        ack_q <= 1'b0;
-        save_done_o <= 1'b0;
-      end else begin
-        save_done_o <= 1'b0;
-        ack_q <= sd_ack_i;
-        unique case (state_q)
-          SV_IDLE:
-            if (save_i) begin
-              sector_q <= '0;
-              state_q <= SV_WRITE;
-            end
-          SV_READ: if (port_free && pick == P_SAVE) state_q <= SV_FILL;
-          SV_FILL:
-            if (save_beat) begin
-              beat_q <= beat_q + 1'b1;
-              if (beat_q == 6'd63) state_q <= SV_WRITE;
-            end
-          // Hold the request until the host acknowledges it.
-          SV_WRITE: if (sd_ack_i && !ack_q) state_q <= SV_ACK;
-          SV_ACK:
-            if (!sd_ack_i) begin
-              sector_q <= sector_q + 1'b1;
-              if (sector_q == 32'(SECTORS - 1)) begin
-                state_q <= SV_IDLE;
-                save_done_o <= 1'b1;
-              end else
-                state_q <= sector_q + 1'b1 < 32'(HEADER_SECTORS) ? SV_WRITE : SV_READ;
-            end
-          default: state_q <= SV_IDLE;
-        endcase
-      end
-    end
-    assign save_busy_o = state_q != SV_IDLE;
-    assign sd_wr_o = state_q == SV_WRITE;
-    assign sd_lba_o = sector_q;
-
-    always_ff @(posedge clk_i)
-      if (state_q == SV_FILL && save_beat) sector_buf[beat_q] <= ddram_dout_i;
-    always_ff @(posedge clk_i)
-      if (pal_we_o) palette[pal_addr_o] <= pal_data_o;
-
-    // Sector bytes for the host: RAM reads, then the byte select.
-    always_ff @(posedge clk_i) begin
-      buf_q <= sector_buf[sd_buff_addr_i[8:3]];
-      pal_q <= palette[{sector_q[1], sd_buff_addr_i[8:2]}];
-      byte_q <= sd_buff_addr_i;
-      kind_q <= sector_q == 32'd0 ? 2'd0 : sector_q < 32'(HEADER_SECTORS) ? 2'd1 : 2'd2;
-    end
-
-    always_comb begin
-      header = 8'h00;
-      unique case (byte_q)
-        9'd0: header = "P";
-        9'd1: header = "F";
-        9'd2: header = "B";
-        9'd3: header = "1";
-        9'd4: header = 8'(FB_WIDTH);
-        9'd5: header = 8'(FB_WIDTH >> 8);
-        9'd6: header = 8'(FB_HEIGHT);
-        9'd7: header = 8'(FB_HEIGHT >> 8);
-        9'd8: header = 8'(FB_WIDTH);
-        9'd9: header = 8'(FB_WIDTH >> 8);
-        9'd10: header = 8'd8;
-        default: ;
-      endcase
-    end
-
-    always_ff @(posedge clk_i)
-      unique case (kind_q)
-        2'd0: sd_buff_din_o <= header;
-        2'd1:
-          unique case (byte_q[1:0])
-            2'd0: sd_buff_din_o <= pal_q[23:16];
-            2'd1: sd_buff_din_o <= pal_q[15:8];
-            2'd2: sd_buff_din_o <= pal_q[7:0];
-            default: sd_buff_din_o <= 8'h00;
-          endcase
-        default: sd_buff_din_o <= buf_q[8*byte_q[2:0] +: 8];
-      endcase
-
-    logic unused_save;
-    assign unused_save = ^{FB_DDR_BASE[8:0]};
+    logic unused_fb;
+    assign unused_fb = ^{FB_DDR_BASE[2:0]};
   end else begin : g_no_fb
     logic unused_fb;
     assign fb_hold = 1'b0;
@@ -403,15 +267,7 @@ module ppc603e_mister #(
     assign fb_head_addr = '0;
     assign fb_head_be = '0;
     assign fb_head_data = '0;
-    assign save_req = 1'b0;
-    assign save_addr = '0;
-    assign save_busy_o = 1'b0;
-    assign save_done_o = 1'b0;
-    assign sd_lba_o = '0;
-    assign sd_wr_o = 1'b0;
-    assign sd_buff_din_o = '0;
-    assign unused_fb = ^{fb_we, fb_addr, fb_be, fb_data, save_beat, save_i, sd_ack_i,
-                         sd_buff_addr_i, FB_DDR_BASE};
+    assign unused_fb = ^{fb_we, fb_addr, fb_be, fb_data, FB_DDR_BASE};
   end
   endgenerate
 

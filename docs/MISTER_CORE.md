@@ -16,7 +16,7 @@ memory on the 60x bus), [`tb/mister/`](../tb/mister) (Verilator benches).
 | Block | File | Role |
 |---|---|---|
 | `emu` | `mister/ppc603e.sv` | Framework top: `hps_io`, OSD, PLL, reset, video and framebuffer wiring |
-| `ppc603e_mister` | `mister/rtl/ppc603e_mister.sv` | Demo SoC; the DDRAM port shared by the image loader, the program bridge and, with `FB_EXTERNAL`, the framebuffer FIFO and screen save |
+| `ppc603e_mister` | `mister/rtl/ppc603e_mister.sv` | Demo SoC; the DDRAM port shared by the image loader, the program bridge and, with `FB_EXTERNAL`, the framebuffer FIFO |
 | `soc_xmem_bridge` | `rtl/soc/soc_xmem_bridge.sv` | In the demo SoC: a loaded image's memory, as a 60x slave with a line buffer |
 | `pll` | `mister/rtl/pll.v` | 50 MHz core clock from the 50 MHz board clock |
 
@@ -37,56 +37,26 @@ memory on the 60x bus), [`tb/mister/`](../tb/mister) (Verilator benches).
     4 MiB from `0xf0000000`); reads of it end with TEA. Framebuffer stores enter a
     16-entry FIFO and drain one doubleword per DDRAM write; the 60x grant is held off
     while fewer than four entries are free. The palette writes go straight to the scaler
-    palette and to a copy in the core for screen saves. The native video output carries
+    palette. The native video output carries
     a blank 320 × 240 (6.25 MHz pixel enable, 400 × 262, 59.6 Hz).
   - Native video (`mister/build.sh --native`): 320 × 240 with the framebuffer and palette
     in block RAM in the demo SoC, as in the standalone simulation, scanned out on
     `VGA_R/G/B`, `VGA_HS/VS`, `VGA_DE` and `CE_PIXEL` at 400 × 262 with a 6.25 MHz pixel
     enable (15.6 kHz, 59.6 Hz, console 240p timing), `VIDEO_ARX/ARY` 4:3, `FB_EN` absent.
-    No screen save.
 - `MISTER_DISABLE_ALSA` is set: the core has no audio.
 
-### Screenshots and screen saves
+### Screenshots
 
 The MiSTer screenshot (Win+PrtScr or Alt+ScrLk) cannot capture a `MISTER_FB` picture.
 It copies the scaler's own buffer at DDR3 `0x20000000`
 ([scaler.h](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/scaler.h#L31-L32),
-[`mister_scaler_init`](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/scaler.cpp#L38-L80),
-called from [`do_screenshot`](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/scaler.cpp#L539-L556)).
-The scaler fills that buffer from the core's native video; in framebuffer mode it only
+[`do_screenshot`](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/scaler.cpp#L539-L556)),
+which the scaler fills from the core's native video; in framebuffer mode it only
 switches its output reads to `FB_BASE`
 ([ascal.vhd](https://github.com/MiSTer-devel/Template_MiSTer/blob/3ea1134cf05d62c2b1db30362277a823d739ced2/sys/ascal.vhd#L1705-L1721)),
-so the screenshot shows the blank native video: an all-black image. The native-video
-build does not have this problem.
-
-Instead, the OSD item `Save screen` writes the framebuffer and palette to a file on the
-SD card. The core cannot create files or use the `hps_io` upload path for this: Main_MiSTer
-runs core-requested uploads only for C64/C128
-([user_io.cpp](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/user_io.cpp#L3972-L3976))
-and arcade NVRAM
-([menu.cpp](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/menu.cpp#L2263-L2268)).
-It writes through the generic block interface instead: `Screen file` mounts an existing
-file on SD slot 0, and a user-mounted image never grows
-([user_io.cpp](https://github.com/MiSTer-devel/Main_MiSTer/blob/5a3a08662c25bd792043f8a8fb48e4be12099beb/user_io.cpp#L3521-L3535)),
-so the file must already hold 2,075,136 bytes; a 2 MiB file does.
-
-Screen file (`.pfb`), in 512-byte sectors:
-
-| Bytes | Contents |
-|---|---|
-| 0–3 | `PFB1` |
-| 4–5, 6–7, 8–9 | Width, height, stride; little-endian |
-| 10 | Bits per pixel, 8 |
-| 11–511 | Zero |
-| 512–1535 | Palette: 256 entries of R, G, B, 0 |
-| 1536– | Pixels, one palette index per byte, rows top to bottom; the last sector padded |
-
-The save reads each 512-byte sector of pixels from DDR3 with a 64-beat `DDRAM_RD` burst
-(the framebuffer writer waits while the read command is issued), then hands it to the
-HPS; the file takes 4,053 sectors. The processor keeps running, so a save during
-drawing captures a mix of frames. [`mister/fb2png.py`](../mister/fb2png.py) converts a
-file to PNG (`mister/fb2png.py screen.pfb screen.png`) and makes the empty 2 MiB file
-(`mister/fb2png.py --blank screen.pfb`).
+so the screenshot is the blank native video: an all-black image. Photograph the screen
+instead. The native-video build does not have this problem. Earlier builds had an OSD
+`Save screen`, which the older screen-file records below check; it is removed.
 
 ### OSD
 
@@ -95,17 +65,14 @@ file to PNG (`mister/fb2png.py screen.pfb screen.png`) and makes the empty 2 MiB
 | Program | 2:1 | Hello, Dhrystone, CoreMark, Run all |
 | Program (`--fpu` core) | 7:5 | Hello, Dhrystone, CoreMark, Whetstone, FP Mandelbrot, Run all |
 | Length | 3 | Full (default), Smoke test |
-| Screen file | S0 | Mounts the `.pfb` file a save writes (DDR3 build) |
 | Load program | F1, `.BIN` | Downloads a program image and runs it ([Loading programs](#loading-programs)) |
-| Save screen | 4 | Writes the framebuffer and palette to the mounted file (DDR3 build) |
 | Restart | 0 | Resets the processor and runs the selection again |
 
 Changing Program or Length also restarts; changing Program also leaves a loaded image
 for the built-in one. The core reports to the OSD info line when a
 program ends: `Finished: PASS`, `Finished: FAIL (see screen)`, or `Checkstop`. The
 numbers are drawn on the screen only; the framework has no way to show core text in
-the OSD. A save reports `Screen saved`, or `Screen file: mount a writable file of 2 MiB`
-when no suitable file is mounted. `LED_USER` is on while a program runs.
+the OSD. `LED_USER` is on while a program runs.
 
 The firmware reads the selection from the SoC `MODE` register: bits 1:0 program, bit 2
 full length, bits 31:16 the clock in MHz. The `--fpu` core numbers its six programs 0–5
@@ -169,8 +136,8 @@ them alone.
 | File | Program | Notes |
 |---|---|---|
 | `ppc603e-selftest.bin` | Opcode self-test, 603e ([SELFTEST.md](SELFTEST.md)) | Runs the floating-point cases on an FPU core |
-| `ppc603e-embench.bin` | Embench-IoT, full repeats ([BENCHMARKS.md](BENCHMARKS.md)) | GPL-3.0 ([Licensing](#licensing)) |
-| `ppc603e-nbench.bin` | nbench, full sizes | Do not redistribute ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)) |
+| `ppc603e-embench.bin` | Embench-IoT, full repeats ([BENCHMARKS.md](BENCHMARKS.md)) | GPL-3.0; released with its source ([Licensing](#licensing)) |
+| `ppc603e-nbench.bin` | nbench, full sizes | Do not redistribute; not released ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)) |
 | `ppc603e-whetstone.bin` | Whetstone, soft-float | Any core |
 | `ppc603e-whetstone-hf.bin` | Whetstone, hard-float | FPU cores; elsewhere exits `0xe0000800` (`FAIL`) |
 
@@ -188,8 +155,8 @@ The demo SoC's `soc_xmem_bridge` serves the window as a 60x slave. A read tenure
 off its data grant until the bridge has the 32-byte line (one four-beat DDRAM burst), or
 the single doubleword, in a buffer; the beats then run at full rate. A write tenure runs
 into the buffer and is stored one doubleword per DDRAM write after it ends, while the
-60x grant is held. The DDRAM port takes one read at a time and serves the screen save's
-reads, the bridge's reads, the loader, the bridge's writes and the framebuffer FIFO in
+60x grant is held. The DDRAM port takes one read at a time and serves the bridge's
+reads, the loader, the bridge's writes and the framebuffer FIFO in
 that order.
 
 Start-up maps the range through BAT0 as cacheable (`crt0.S`), so cache hits run as on
@@ -306,7 +273,7 @@ has run on hardware yet; estimated from the simulation rates, nbench takes about
 minute at 50 MHz (each test runs at least `NB_SECS`, 2 s) and Embench about a minute and
 a half. The performance counters are 32 bits, so a suite-wide `perf_report` over more
 than 2^32 cycles (86 s at 50 MHz) wraps and its CPI lines are wrong; the per-test cycle
-counts are 64 bits. The screen save works as in the default core.
+counts are 64 bits.
 
 `make -C sim demo-mister-nbench demo-mister-embench` runs the simulation-size images
 with the same layout on the demo SoC bench.
@@ -401,7 +368,12 @@ The framework (`sys/`) is GPL-2.0 and is not in this repository. The core's own 
 are GPL-2.0-or-later; a built `.rbf` contains both, so a distributed `.rbf`
 is covered by GPL-2.0 and must come with its sources (this repository at the commit in
 the summary, and the framework commit above). The program images carry no framework
-code; the Embench image is GPL-3.0 and the nbench image is not for redistribution
+code. The Embench image is GPL-3.0: releases publish it with
+`ppc603e-embench.SOURCE.txt`, which names its corresponding source (the pinned
+[Embench-IoT commit](https://github.com/embench/embench-iot/tree/0466a18e4f6b47e19598d7c6ba72916d54b68f65)
+and this repository's build scripts at the release commit), and
+`ppc603e-embench-source.tar.gz`, which holds both. The nbench image is not for
+redistribution and is never published
 ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)).
 
 ## Running on the MiSTer
@@ -421,16 +393,8 @@ code; the Embench image is GPL-3.0 and the nbench image is not for redistributio
    ends on the Mandelbrot set with every program's results below it.
 4. Wait for `Finished: PASS` in the OSD info line (it appears on its own), then report
    the bottom eight lines. Include the first line: it names the processor version, clock
-   and commit. To save the screen as a file:
-   1. once, make an empty 2 MiB file on the card, e.g. on the MiSTer
-      `dd if=/dev/zero of=/media/fat/games/PPC603e/screen.pfb bs=1M count=2`
-      (or `mister/fb2png.py --blank screen.pfb` on a PC and copy it to
-      `games/PPC603e/`);
-   2. in the OSD, `Screen file` → pick `screen.pfb`;
-   3. `Save screen`; the info line shows `Screen saved` after a few seconds;
-   4. copy the file off the card and run `mister/fb2png.py screen.pfb screen.png`.
-   Each save overwrites the file. The MiSTer screenshot key gives a black image with
-   this core (see [Screenshots and screen saves](#screenshots-and-screen-saves)).
+   and commit. The MiSTer screenshot key gives a black image with this core
+   ([Screenshots](#screenshots)).
 5. `Restart` in the OSD repeats a run. To check variation, restart two or three times.
    The Dhrystone and CoreMark timed loops make no framebuffer stores, so their cycle
    counts should repeat exactly; the Mandelbrot count can vary slightly with DDR3 load.
@@ -443,8 +407,8 @@ To run the self-test, Embench, nbench or Whetstone on the same core:
 1. Copy the images to `games/PPC603e/` on the card, e.g.
    `ssh root@<mister-ip> mkdir -p /media/fat/games/PPC603e` and
    `scp build/mister/images/*.bin root@<mister-ip>:/media/fat/games/PPC603e/`. Release
-   pages carry `ppc603e-selftest.bin`, `ppc603e-whetstone.bin` and
-   `ppc603e-whetstone-hf.bin`; build the others with `mister/build.sh` or
+   pages carry `ppc603e-selftest.bin`, `ppc603e-embench.bin`, `ppc603e-whetstone.bin` and
+   `ppc603e-whetstone-hf.bin`; build nbench with `mister/build.sh` or
    `toolchain/build-in-container.sh -f demo/Makefile mister-images`.
 2. In the OSD, `Load program` → pick the file. The core loads it, restarts and runs it;
    the OSD shows `Finished: PASS` or `FAIL` at the end.
@@ -460,18 +424,14 @@ To run the self-test, Embench, nbench or Whetstone on the same core:
 `MISTER_MODE=03` (all three programs, smoke-test length) at a 320 × 240 framebuffer, the
 bench's geometry parameters; the firmware takes the geometry from the registers, so the
 same image runs at 1920 × 1080 on hardware. The default (`MISTER_FB=1`) is the DDR3 build.
-Its DDRAM model asserts `BUSY` on a pseudo-random quarter of cycles and returns read
-beats with random gaps. The bench fails on a checkstop, a watchdog, a non-zero exit code,
-a DDRAM command changing under `BUSY`, a read and a write together, a DDRAM write that
+Its DDRAM model asserts `BUSY` on a pseudo-random quarter of cycles. The bench fails on
+a checkstop, a watchdog, a non-zero exit code, a DDRAM command changing under `BUSY`, any
+DDRAM read (no image is loaded), a DDRAM write burst other than one, a DDRAM write that
 differs from the framebuffer store queued for it (address, byte lanes, data, order), a
 write outside the framebuffer, any store left undelivered at exit, a DDR3 framebuffer
 that differs from the stores seen on the bus, or an SoC retirement count that differs
-from the processor's by more than its two-cycle lag plus the sampling skew. It then saves the screen
-through a model of the framework's SD block interface (sector requests in order,
-bytes read four clocks after each address) and checks every byte of the file: header,
-palette against the palette writes, pixels against DDR3. It writes the picture to
-`sim/build/mister/fb1/mister-03.png`, the file to `screen-03.pfb` and its
-`mister/fb2png.py` conversion to `screen-03.png`. `MISTER_FB=0` runs the native build:
+from the processor's by more than its two-cycle lag plus the sampling skew. It writes the
+DDR3 framebuffer through the palette to `sim/build/mister/fb1/mister-03.png`. `MISTER_FB=0` runs the native build:
 it captures one frame from the video outputs, checks the DE and sync structure, compares
 every pixel with the bus stores through the palette, and fails on any DDRAM command.
 
@@ -517,7 +477,7 @@ colour. `xrand-sweep` runs the same image on that model (`mister-fpu`).
 Before this the MiSTer top had not been simulated with the FPU. A black screen reported
 from the board `--fpu --suite whetstone` build was a screenshot taken with the MiSTer
 hotkey, which cannot capture this core
-([Screenshots and screen saves](#screenshots-and-screen-saves)); the simulation found
+([Screenshots](#screenshots)); the simulation found
 no defect.
 
 Recorded: `make -C sim mister-smoke-fpu`, `make -C sim mister-smoke MISTER_FPU=1`,
@@ -541,7 +501,7 @@ initialisation, which the build summary checks.
 `make -C sim mister-smoke-fpu-all` simulates the `--fpu` core: `MISTER_FPU=1` without
 `MISTER_BENCH` (128 KiB of program RAM), `mister-fpu.hex`, `MODE=09` (Run all, smoke-test
 length; `MISTER_FPU_MODE` picks another program), through the checks above. Its picture
-and screen file go to `sim/build/mister/fb1-fpu/`.
+goes to `sim/build/mister/fb1-fpu/`.
 
 Recorded: `make -C sim mister-smoke-fpu-all mister-smoke demo-whetstone-hf mister-smoke-fpu
 lint check-spec`, and `mister-fpu.hex` on the same model at `MODE` 03 (Whetstone) and 08
