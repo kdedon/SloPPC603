@@ -1487,7 +1487,8 @@ module ppc_core #(
         .issue_o(sru_issue)
       );
       assign sru_issue_valid = sru_rs_issue_valid && !sru_cr_hold;
-      ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE), .MUL_602_TIMING(1'b0)) sru (
+      ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE), .MUL_602_TIMING(1'b0),
+               .ADD_COMPARE_ONLY(1'b1)) sru (
         .clk_i, .rst_ni, .cancel_i(sru_cancel), .issue_valid_i(sru_issue_valid),
         .issue_ready_o(sru_issue_ready), .issue_i(sru_issue),
         .result_valid_o(sru_result_valid), .result_ready_i(sru_result_ready),
