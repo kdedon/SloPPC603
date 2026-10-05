@@ -59,6 +59,7 @@ set_instance_assignment -name VIRTUAL_PIN ON -to push_error_i
 set_instance_assignment -name VIRTUAL_PIN ON -to snoop_valid_i
 set_instance_assignment -name VIRTUAL_PIN ON -to snoop_addr_i[*]
 set_instance_assignment -name VIRTUAL_PIN ON -to snoop_tt_i[*]
+set_instance_assignment -name VIRTUAL_PIN ON -to snoop_burst_i
 set_instance_assignment -name VIRTUAL_PIN ON -to snoop_rsp_valid_o
 set_instance_assignment -name VIRTUAL_PIN ON -to snoop_rsp_artry_o
 set_instance_assignment -name VIRTUAL_PIN ON -to snoop_rsp_hit_o

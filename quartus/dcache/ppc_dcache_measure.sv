@@ -49,6 +49,7 @@ module ppc_dcache_measure (
   input  logic snoop_valid_i,
   input  logic [31:0] snoop_addr_i,
   input  logic [4:0] snoop_tt_i,
+  input  logic       snoop_burst_i,
   output logic snoop_rsp_valid_o,
   output logic snoop_rsp_artry_o,
   output logic snoop_rsp_hit_o,
@@ -168,6 +169,8 @@ module ppc_dcache_measure (
   always_ff @(posedge clk_i) snoop_addr_i_ibq <= snoop_addr_i;
   logic [4:0] snoop_tt_i_ibq;
   always_ff @(posedge clk_i) snoop_tt_i_ibq <= snoop_tt_i;
+  logic snoop_burst_i_ibq;
+  always_ff @(posedge clk_i) snoop_burst_i_ibq <= snoop_burst_i;
   logic snoop_rsp_valid_o_od, snoop_rsp_valid_o_obq;
   always_ff @(posedge clk_i) snoop_rsp_valid_o_obq <= snoop_rsp_valid_o_od;
   assign snoop_rsp_valid_o = snoop_rsp_valid_o_obq;
@@ -243,7 +246,7 @@ module ppc_dcache_measure (
     .push_error_i(push_error_i_ibq),
     .snoop_valid_i(snoop_valid_i_ibq),
     .snoop_addr_i(snoop_addr_i_ibq),
-    .snoop_tt_i(snoop_tt_i_ibq),
+    .snoop_tt_i(snoop_tt_i_ibq), .snoop_burst_i(snoop_burst_i_ibq),
     .snoop_rsp_valid_o(snoop_rsp_valid_o_od),
     .snoop_rsp_artry_o(snoop_rsp_artry_o_od),
     .snoop_rsp_hit_o(snoop_rsp_hit_o_od),

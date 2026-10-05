@@ -125,6 +125,7 @@ module ppc_translated_measure #(
   input logic snoop_ts_n_i,
   input logic [31:0] snoop_a_i,
   input logic [4:0] snoop_tt_i,
+  input logic snoop_tbst_n_i,
   input logic snoop_gbl_n_i,
   output logic artry_n_o,
   output logic artry_oe_o,
@@ -456,6 +457,8 @@ module ppc_translated_measure #(
   always_ff @(posedge clk_i) snoop_a_i_ibq <= snoop_a_i;
   logic [4:0] snoop_tt_i_ibq;
   always_ff @(posedge clk_i) snoop_tt_i_ibq <= snoop_tt_i;
+  logic snoop_tbst_n_i_ibq;
+  always_ff @(posedge clk_i) snoop_tbst_n_i_ibq <= snoop_tbst_n_i;
   logic snoop_gbl_n_i_ibq;
   always_ff @(posedge clk_i) snoop_gbl_n_i_ibq <= snoop_gbl_n_i;
   logic artry_n_o_od, artry_n_o_obq;
@@ -532,7 +535,8 @@ module ppc_translated_measure #(
     /* verilator lint_off PINCONNECTEMPTY */
     .pin_event_i('0), .pin_status_o(),
     .snoop_ts_n_i(snoop_ts_n_i_ibq), .snoop_a_i(snoop_a_i_ibq),
-    .snoop_tt_i(snoop_tt_i_ibq), .snoop_gbl_n_i(snoop_gbl_n_i_ibq),
+    .snoop_tt_i(snoop_tt_i_ibq), .snoop_tbst_n_i(snoop_tbst_n_i_ibq),
+    .snoop_gbl_n_i(snoop_gbl_n_i_ibq),
     .artry_n_o(artry_n_o_od), .artry_oe_o(artry_oe_o_od),
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken_o_od),
