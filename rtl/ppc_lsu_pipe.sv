@@ -298,9 +298,12 @@ module ppc_lsu_pipe #(
   // the queue. A store write that stands keeps the port. Its EA and fault
   // check here come from P1 registers.
   logic load_first, sq_offered_q;
+  // A load's data is ready from entry, so it waits on no wake bus.
+  logic load_ready;
+  assign load_ready = !p1_head.fp || (!p1_head.hold && p1_head.launched);
   assign load_first = p1_valid && !p1_head.store && !p1_head.killed && !offered_q &&
     !sq_offered_q &&
-    !p1_head.base_wait && p1_head.fast && p1_ready && !sq_overlap && !redo_valid_q &&
+    !p1_head.base_wait && p1_head.fast && load_ready && !sq_overlap && !redo_valid_q &&
     (sq_count_q != SQ_W'(SQ_DEPTH));
   // A retired store is otherwise written ahead of any later offer, except one
   // that already stands non-speculatively.
@@ -774,6 +777,9 @@ module ppc_lsu_pipe #(
     req_valid_o && !req_ready_i && !req_spec_o |=>
       req_valid_o && $stable({req_write_o, req_addr_o, req_wdata_o, req_wstrb_o}))
     else $error("stalled pipelined request changed");
+  always @(posedge clk_i)
+    if (rst_ni && p1_valid && !p1_head.store)
+      assert (load_ready == p1_ready) else $error("load waits on a wake bus");
   always @(posedge clk_i)
     if (rst_ni && p2_valid)
       assert (p2_head.fast) else $error("unperformable access in flight");
