@@ -81,6 +81,8 @@ responses to undefined programming:
 
 The generic PEM describes IBAT W/G writes as boundedly undefined, while the
 603e-specific Table 5-3 explicitly defines guarded BAT instruction-fetch faults.
+The 603e UM also conflicts with itself: §3.5 (PDF 136 / 3-10) says IBATs have
+no G bit and IBAT accesses are not guarded (AUD-79).
 This implementation follows that specific G behavior on translated instruction
 hits. Active IBAT W=1 is rejected as an unsupported input profile; a later
 source decision may broaden it. M/I are passed as metadata. There is no claim

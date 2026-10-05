@@ -114,7 +114,7 @@ comes exactly two cycles later. Snoops may arrive every cycle.
 
 | Class | TT | Hit M | Hit E |
 |---|---|---|---|
-| clean | read, read-atomic, read-with-no-intent-to-cache | ARTRY, push, → E | none |
+| clean | single-beat read or read-atomic, read-with-no-intent-to-cache | ARTRY, push, → E | none |
 | flush | RWITM, RWITM-atomic, write-with-flush, write-with-flush-atomic | ARTRY, push, → I | → I |
 | kill | write-with-kill, kill block | → I, no ARTRY, data discarded | → I |
 | none | clean/flush block, sync, eieio, TLB invalidate, others | none | none |
@@ -196,6 +196,10 @@ a read beat with no read outstanding, or a completion with nothing outstanding.
 | dcbz E/M hit broadcast | Table 3-7 "kill" vs Table 3-8 "none" | none: the line is already exclusive |
 | dcbz miss in a locked cache | not stated | alignment exception, as a caching-inhibited page |
 | I=1 access that hits | §3.6.4.1 "boundedly undefined" vs Table 3-8 rows | Table 3-8: push if M, invalidate, then single-beat |
+| Burst read snoop | Table 3-6 (PDF 146 / 3-20) and Table 7-2 (PDF 287): burst read and read-atomic snoop as flush | RTL treats every read as clean (AUD-77) |
+| Castout order | §8.1.1 (PDF 312 / 8-4) and §3.6.3 (PDF 143 / 3-17): fill first, castout after unless a snoop raises it | castout first (AUD-78) |
+| Touch-load TC | Table 7-6 (PDF 290 / 7-14), Table 8-8 (PDF 328): TC=01 for touch loads | TC=00 for every fill (AUD-78) |
+| dcbi broadcast | §3.7.1 (PDF 149) gives the ABE kill with no M condition | gated by M=1 |
 | Reservation cancel on RWITM | Table 7-2 lists writes and kill only | also RWITM (spurious loss is legal) |
 
 Not modelled: the 32-bit bus mode, DBWO (a BIU feature),
