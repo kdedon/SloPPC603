@@ -96,13 +96,17 @@ module ppc_rename (
       operand.tag = map_tag[reg_index];
       operand.producer = owners[operand.tag];
       operand.ready = ready[operand.tag];
-      // Pending payload is not consumed; preserve its public zero value.
+      // Pending payload is not consumed.
       operand.value = ready[operand.tag] ? values[operand.tag] : 32'b0;
-      if (wake_match && wake_i.tag == operand.tag &&
-          wake_i.producer == operand.producer) begin
-        operand.ready = 1'b1;
+      // The value forwards on identity alone, keeping recovery's kill out of
+      // the dispatch operand cone. It is consumed only with ready, which still
+      // requires a valid wake; a killed wake also kills the reader.
+      if (!ready[operand.tag] && wake_i.tag == operand.tag &&
+          wake_i.producer == operand.producer)
         operand.value = wake_i.value;
-      end
+      if (wake_match && wake_i.tag == operand.tag &&
+          wake_i.producer == operand.producer)
+        operand.ready = 1'b1;
       if (wake1_match && wake1_i.tag == operand.tag &&
           wake1_i.producer == operand.producer) begin
         operand.ready = 1'b1;
