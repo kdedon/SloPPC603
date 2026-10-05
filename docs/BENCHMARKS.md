@@ -1,4 +1,4 @@
-# Benchmarks: nbench, Embench-IoT, Whetstone and Doom
+# Benchmarks: nbench, Embench-IoT, Whetstone, Doom and Quake
 
 Two benchmark suites run on the demonstration system ([DEMO_SOC.md](DEMO_SOC.md))
 alongside Dhrystone and CoreMark: nbench (BYTEmark) and Embench-IoT; so does Whetstone,
@@ -20,6 +20,9 @@ its SHA-256 and caches it under `toolchain/build/demo/src` (git-ignored).
 | Whetstone 1.2 | <https://www.netlib.org/benchmark/whetstone.c> (Rich Painter's C conversion of the double-precision Whetstone, 22 March 1998), fetched from the archived copy <https://web.archive.org/web/20241229210241id_/https://www.netlib.org/benchmark/whetstone.c>: netlib keeps no revisions, so the snapshot and its SHA-256 are the pin | Painter Engineering notice: permission "to use, duplicate, and publish this text and program as long as it includes this entire comment block and limited rights reference" |
 | doomgeneric | <https://github.com/ozkl/doomgeneric/tree/dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284> (Chocolate Doom based), fetched by `toolchain/demo/fetch-doom.sh` | GPL-2.0 |
 | `DOOM1.WAD` 1.9 | <https://github.com/Akbar30Bill/DOOM_wads/blob/9b384dc68add3eb2f5eb7754654cafeeaea5103b/doom1.wad>, SHA-256 `1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771` (MD5 `f0cefca49926d00903cf57551d901abe`, the published v1.9 shareware hash) | id Software shareware terms: redistribute unmodified, not for sale |
+| quakegeneric | <https://github.com/erysdren/quakegeneric/tree/13052102577c629650cf07a46151a4b6e1b19c3c> (WinQuake based), fetched by `toolchain/demo/fetch-quake.sh` | GPL-2.0 |
+| Amiga Quake 1.09 v2.30 source | <http://server.owl.de/~frank/quake1/2.30/Quake_src.lha>, SHA-256 `f61211db6e16b277771a79e6e2d2f41b100301293c9aa5e0b99c355f42c50d30`; licence statement from `QuakeMOS.readme` in <http://server.owl.de/~frank/quake1/2.30/QuakeMOS.lha> (SHA-256 `ef7a1be41c67b05a52354912002e7520c1821d2c4db0ffde29988560ff7975d8`) | GPL-2.0 ("Quake is published under the GNU Public License", with `COPYING`) |
+| `pak0.pak` 1.06 | <https://github.com/pweil-/origin-quake/blob/45f9279d81577cdf6a018277b200683ec75dac98/id1/pak0.pak>, SHA-256 `35a9c55e5e5a284a159ad2a62e0e8def23d829561fe2f54eb402dbc0a9a946af` (the Quake v1.06 shareware `id1/pak0.pak`) | id Software shareware terms: redistribute unmodified, not for sale |
 
 Consequences for built images:
 
@@ -37,6 +40,12 @@ Consequences for built images:
   its SHA-256; releases publish it byte for byte as its own file. No image or archive
   embeds it, and nothing alters it: the core munges it for little-endian programs while
   loading, in DDR3, never in the file.
+- **The Quake images contain quakegeneric (GPL-2.0), and `ppc603e-quake.bin` the
+  Amiga port's assembly (GPL-2.0), so they are GPL-2.0.** Releases publish them with
+  `ppc603e-quake.SOURCE.txt` and the same `ppc603e-source.tar.gz`, which holds the
+  fetched quakegeneric files and the Amiga archives. `pak0.pak` is handled as
+  `DOOM1.WAD` is: fetched, hash-checked, published unmodified as its own file, never
+  embedded. The build's `lha.py` is ours; no LHA or vasm tool is used.
 - An nbench image contains BYTE's code under no stated licence. Use it for measurement;
   do not redistribute built images without checking the terms yourself.
 - soft-fp's runtime exception and musl's MIT licence place no condition on the images
@@ -279,6 +288,77 @@ model (24-cycle read latency, random `BUSY`) a gametic with its frame takes abou
 opening view). The host build plays the full demo3 in 2134 gametics; a pass of
 another length shows `DESYNC`. Not covered: a full timedemo pass (about 5 G cycles),
 the loop and result screen, the HPS's real DDR3 latency, a fit, or hardware.
+
+## Quake
+
+`timedemo demo1` of the shareware `pak0.pak` (Quake v1.06) on
+[quakegeneric](https://github.com/erysdren/quakegeneric/tree/13052102577c629650cf07a46151a4b6e1b19c3c)
+(WinQuake's software renderer), looping, as loadable MiSTer images. Sources:
+[`toolchain/demo/quake/`](../toolchain/demo/quake). Build them with
+`toolchain/demo/fetch-benchmarks.sh`, `toolchain/demo/fetch-quake.sh` and
+`toolchain/build-in-container.sh -f demo/Makefile quake` (or `mister-images`, which also
+copies `pak0.pak` to `build/mister/images/`).
+
+| Image | Float | Byte order | Renderer | Cores |
+|---|---|---|---|---|
+| `ppc603e-quake.bin` | hard | big | PowerPC assembly | FPU |
+| `ppc603e-quake-le.bin` | hard | little | C | FPU |
+| `ppc603e-quake-sf.bin` | soft | big | C | any; shows the FPU's gain |
+
+- **Engine.** quakegeneric's sources, built `-O2 -fsigned-char`. The port's own video
+  layer (`qport.c`) replaces `vid_null.c`, which fixes 320 × 240, with the classic
+  320 × 200; its system layer replaces `sys_null.c`. No sound, no input, no network.
+  The engine's 8 MiB heap, a 600 KiB surface cache, and `d_subdiv16 1`.
+- **Platform** (`platform.c`): the framebuffer copy, scale and palette as for Doom; time
+  from the time base. pak0.pak is read in place at `0x01800000`.
+- **C library**: the Doom port's (`doom/libc.c`), whose `fopen` serves `pak0.pak` from
+  memory and whose `fscanf` reads the demo's track number, plus `setjmp.S` (no
+  `lmw`/`stmw`, which little-endian mode rejects), `qlibc.c`, and musl's `sin`, `cos`,
+  `tan`, `atan`, `atan2`, `pow`, `sqrt`, `sqrtf`, `floor`, `ceil` (pinned with the other
+  libm sources). There is no `fsqrt`: `sqrt` is musl's integer routine; the assembly's
+  vector code uses `frsqrte` with Newton steps.
+- **Loop.** The engine prints `969 frames ... seconds ... fps` at the end of a pass
+  and stops the demo. The port records the frame count and the engine's elapsed time,
+  shows the last eight passes as frames, seconds and FPS (`DESYNC` when a pass has
+  other than 969 frames, the count of demo1 on the host build), prints
+  `quake: pass N frames F ms T fps X` on the console, and starts the next pass with
+  `timedemo demo1`.
+- **Memory.** About 400 KiB of code and constants in the image window; data, BSS and
+  a 23 MiB heap in the 64 MiB data region below pak0.pak at `0x01800000`, which takes
+  18.7 MB of the 40 MiB above it.
+
+### PowerPC assembly
+
+`ppc603e-quake.bin` takes the rendering routines from Frank Wille's Amiga Quake 1.09
+v2.30 source (`Quake_src.lha`, GPL-2.0 per the release's `QuakeMOS.readme`: "Quake is
+published under the GNU Public License"), fetched at a pinned SHA-256 and unpacked by
+our `lha.py`: `d_scanPPC`, `r_surfPPC`, `d_polysetPPC`, `d_edgePPC`, `r_edgePPC`,
+`r_drawPPC`, `r_aliasPPC`, `r_aclipPPC`, `d_skyPPC`, `d_surfPPC`, `mathlibPPC`,
+`r_miscPPC`, `r_bspPPC`, `r_lightPPC`, and their constants `fconstPPC`. Nothing of it
+is committed; three scripts of ours adapt it at build time:
+
+- `asmconv.py` turns the vasm syntax into GNU as: positional macro parameters (`\1`)
+  become named ones, `$` becomes `.`, `.rodata` a section, local labels (`.loop`,
+  scoped between global labels) get a suffix per scope, and the register names become
+  symbols so that `.rept 32-r24` evaluates.
+- `asmoffsets.py` writes `quakedefPPC.i`, which the archive lacks, from the original
+  generator's command file `quakeasmheaders.gen`: the cross-compiler measures each
+  `offsetof` and `sizeof` in quakegeneric's own headers (and the structures
+  `d_polyse.c` defines) and prints them into its assembly output.
+- `asmpatch.py` copies the engine with the C definitions of the 56 functions the
+  assembly provides removed (as the original's `#if !defined(PPCASM)`), `static`
+  dropped from the variables it reads (`miplevel`, `ziscale`, `makeleftedge`,
+  `makerightedge`), and the span drawer chosen by `d_subdiv16`.
+
+The routines use the SVR4 ABI of the macros: they save r14–r31 and f14–f31 they use
+and address globals absolutely, never through r2 or r13 (the images build
+`-msdata=none`). `D_DrawSpans16`, `D_DrawSpans8`, `Turbulent8` and `D_DrawSkyScans8`
+take 1/z from `frsqrte(z²)` followed by two Newton–Raphson steps; the 603e's estimate,
+and ours, is good to 1/32 (5 bits), so two steps give about 20 bits, past the 16.16
+texture coordinates. The little-endian image uses the C renderer: the assembly moves
+values between FPRs and GPRs through memory assuming big-endian word order (`stfd` then
+`lwz` at +4, and the `0x43300000` conversion pair), which little-endian munging would
+break.
 
 ## Running
 
