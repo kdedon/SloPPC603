@@ -11,6 +11,8 @@
 // latency and gaps between beats; the bench checks the Avalon handshake,
 // burst sizes, that commands stay inside the image and framebuffer regions,
 // that the loader honours ioctl_wait, and that the screen is not blank.
+// With +WAD, that file is downloaded first as a data file (+WAD_LE: munged)
+// and checked in the data region.
 /* verilator lint_off BLKSEQ */
 module tb_mister_load #(
   parameter int FB_W = 320,
@@ -24,6 +26,9 @@ module tb_mister_load #(
   localparam int IMAGE_BYTES = 1048576;
   localparam logic [28:0] FB_WORD = 29'h0600_0000;     // 0x30000000 / 8
   localparam logic [28:0] IMAGE_WORD = 29'h0680_0000;  // 0x34000000 / 8
+  localparam int DATA_BYTES = 32 * 1024 * 1024, WAD_OFFSET = 24 * 1024 * 1024;
+  localparam logic [28:0] DATA_WORD = 29'h06c0_0000;   // 0x36000000 / 8
+  localparam logic [28:0] WAD_WORD = DATA_WORD + 29'(WAD_OFFSET / 8);
   localparam int FB_WORDS = (FB_W * FB_H + 7) / 8;
 
   logic clk = 1'b0, rst = 1'b1, image = 1'b0;
@@ -41,20 +46,21 @@ module tb_mister_load #(
   logic [7:0] ddram_be, pal_addr, console_data;
   logic [23:0] pal_data;
   logic [31:0] exit_code;
-  logic download = 1'b0, ioctl_wr = 1'b0, ioctl_wait;
+  logic download = 1'b0, ioctl_wr = 1'b0, ioctl_wait, wad = 1'b0, wad_munge = 1'b0;
   logic [26:0] ioctl_addr = '0;
   logic [7:0] ioctl_dout = '0;
 
   ppc603e_mister #(.FB_WIDTH(FB_W), .FB_HEIGHT(FB_H), .ENABLE_FPU(ENABLE_FPU),
     .FPU_IMPL(ppc_fpu_pkg::fpu_impl_e'(FPU_IMPL)), .DISPATCH_WIDTH(DISPATCH_WIDTH),
-    .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE), .IMAGE_BYTES(IMAGE_BYTES)) dut (
+    .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE), .IMAGE_BYTES(IMAGE_BYTES),
+    .DATA_BYTES(DATA_BYTES), .WAD_OFFSET(WAD_OFFSET)) dut (
     .clk_i(clk), .rst_i(rst), .mode_i(mode), .input_i('0),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
     .pal_we_o(pal_we), .pal_addr_o(pal_addr), .pal_data_o(pal_data),
     .ddram_busy_i(ddram_busy), .ddram_addr_o(ddram_addr), .ddram_burstcnt_o(ddram_burstcnt),
     .ddram_din_o(ddram_din), .ddram_be_o(ddram_be), .ddram_we_o(ddram_we),
     .ddram_rd_o(ddram_rd), .ddram_dout_i(ddram_dout), .ddram_dout_ready_i(ddram_dout_ready),
-    .image_i(image), .ioctl_download_i(download), .ioctl_wr_i(ioctl_wr), .ioctl_addr_i(ioctl_addr),
+    .image_i(image), .wad_i(wad), .wad_munge_i(wad_munge), .ioctl_download_i(download), .ioctl_wr_i(ioctl_wr), .ioctl_addr_i(ioctl_addr),
     .ioctl_dout_i(ioctl_dout), .ioctl_wait_o(ioctl_wait),
     .console_valid_o(console_valid), .console_data_o(console_data),
     .exit_valid_o(exit_valid), .exit_code_o(exit_code), .checkstop_o(checkstop)
@@ -80,6 +86,9 @@ module tb_mister_load #(
 
   function automatic bit in_image(logic [28:0] w);
     return w >= IMAGE_WORD && w < IMAGE_WORD + 29'(IMAGE_BYTES / 8);
+  endfunction
+  function automatic bit in_data(logic [28:0] w);
+    return w >= DATA_WORD && w < DATA_WORD + 29'(DATA_BYTES / 8);
   endfunction
   function automatic bit in_fb(logic [28:0] w);
     return w >= FB_WORD && w < FB_WORD + 29'(FB_WORDS);
@@ -123,7 +132,7 @@ module tb_mister_load #(
     if (ddram_rd && !ddram_busy) begin
       if (!(ddram_burstcnt == 8'd1 || ddram_burstcnt == 8'd4 || ddram_burstcnt == 8'd64))
         $fatal(1, "DDRAM read burst %0d", ddram_burstcnt);
-      if (!in_image(ddram_addr) && !in_fb(ddram_addr)) $fatal(1, "DDRAM read at %07x", ddram_addr);
+      if (!in_image(ddram_addr) && !in_data(ddram_addr) && !in_fb(ddram_addr)) $fatal(1, "DDRAM read at %07x", ddram_addr);
       if (beat_q.size() != 0) $fatal(1, "second read in flight");
       reads++;
       for (int i = 0; i < int'(ddram_burstcnt); i++) begin
@@ -134,7 +143,7 @@ module tb_mister_load #(
     if (ddram_we && !ddram_busy) begin
       logic [63:0] w;
       if (ddram_burstcnt != 8'd1) $fatal(1, "DDRAM write burst %0d", ddram_burstcnt);
-      if (in_image(ddram_addr)) image_writes++;
+      if (in_image(ddram_addr) || in_data(ddram_addr)) image_writes++;
       else if (in_fb(ddram_addr)) fb_writes++;
       else $fatal(1, "DDRAM write at %07x", ddram_addr);
       writes++;
@@ -179,12 +188,14 @@ module tb_mister_load #(
   endtask
 
   initial begin
-    string image_file, menu_file, ppm;
-    logic [7:0] bytes [$];
+    string image_file, menu_file, ppm, wad_file;
+    logic [7:0] bytes [$], wad_bytes [$];
     int fd, c, nonzero;
     if (!$value$plusargs("IMAGE=%s", image_file)) $fatal(1, "+IMAGE required");
     if (!$value$plusargs("MENU=%s", menu_file)) menu_file = "";
     if (!$value$plusargs("PPM=%s", ppm)) ppm = "";
+    if (!$value$plusargs("WAD=%s", wad_file)) wad_file = "";
+    wad_munge = $test$plusargs("WAD_LE");
     void'($value$plusargs("MODE=%h", mode));
     void'($value$plusargs("MAX_CYCLES=%d", max_cycles));
     void'($value$plusargs("READ_LAT=%d", read_lat));
@@ -197,6 +208,29 @@ module tb_mister_load #(
 
     // Reset holds through the download, as the core's top does.
     repeat (8) @(posedge clk);
+    if (wad_file != "") begin
+      fd = $fopen(wad_file, "rb");
+      if (fd == 0) $fatal(1, "cannot open %s", wad_file);
+      while ((c = $fgetc(fd)) != -1) wad_bytes.push_back(8'(c));
+      $fclose(fd);
+      if (wad_bytes.size() == 0 || wad_bytes.size() > DATA_BYTES - WAD_OFFSET)
+        $fatal(1, "data file of %0d bytes", wad_bytes.size());
+      wad = 1'b1;
+      download_image(wad_bytes);
+      while (ddram_we) @(negedge clk);
+      wad = 1'b0;
+      if (writes != longint'(wad_bytes.size()))
+        $fatal(1, "%0d data bytes, %0d DDRAM writes", wad_bytes.size(), writes);
+      for (int i = 0; i < wad_bytes.size(); i++) begin
+        int j;
+        j = wad_munge ? i ^ 7 : i;
+        if (ddr_byte(WAD_WORD + 29'(j / 8), j % 8) != wad_bytes[i]) $fatal(1, "data byte %0d", i);
+      end
+      $display("loaded %0d data bytes from %s%s", wad_bytes.size(), wad_file,
+        wad_munge ? " (munged)" : "");
+      writes = 0;
+      image_writes = 0;
+    end
     download_image(bytes);
     // The last byte may still wait under BUSY.
     while (ddram_we) @(negedge clk);
