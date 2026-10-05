@@ -51,7 +51,7 @@ module tb_recovery_state;
     /* verilator lint_off PINCONNECTEMPTY */
     .alloc1_ready_o(), .alloc1_tag_o(), .retire1_valid_o(), .retire1_o(), .retire1_tag_o(),
     /* verilator lint_on PINCONNECTEMPTY */
-    .alloc1_valid_i(1'b0), .alloc1_i('0), .alloc1_finished_i(1'b0), .retire1_ready_i(1'b0),
+    .alloc1_valid_i(1'b0), .alloc1_at_tail_i(1'b0), .alloc1_i('0), .alloc1_finished_i(1'b0), .retire1_ready_i(1'b0),
     .finish_accept_o(unused_cq_finish), .empty_o(unused_cq_empty), .head_index_o(unused_cq_head), .clk_i(clk), .rst_ni(rst_n),
     .alloc_valid_i(cq_alloc_valid), .alloc_ready_o(cq_alloc_ready),
     .alloc_i(cq_alloc_packet), .alloc_finished_i(1'b0), .alloc_tag_o(cq_alloc_tag),
