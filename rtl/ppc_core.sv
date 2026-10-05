@@ -2777,9 +2777,16 @@ module ppc_core #(
   assign fp_replay = fp_replay_req_q && fp_head && !halted_o && !bs_redirect_q &&
     (!special_busy || special_fp_store_cancellable);
   assign fp_commit = commit && fp_head;
+  logic late_align_q;
+  completion_tag_t late_align_tag_q;
   always_comb begin
     retire_o = cq_retire;
     if (bs_head || bs_fix_head) retire_o.value = bs_alt_q;
+    // A load whose alignment the unit decided retires as the exception.
+    if (late_align_q && (retire_producer == late_align_tag_q)) begin
+      retire_o.alignment_exception = 1'b1;
+      retire_o.gpr_write = 1'b0;
+    end
     retire_o.needs_flags = cq_retire.needs_flags && !fp_head;
     if (fp_head)
       retire_o.cr_delta = cq_retire.write_cr_field ?
@@ -2855,8 +2862,6 @@ module ppc_core #(
   // synthesis translate_on
   // A load whose alignment the unit decided keeps its destination in the
   // completion queue; its exception suppresses the write.
-  logic late_align_q;
-  completion_tag_t late_align_tag_q;
   always_ff @(posedge clk_i) begin
     if (!rst_ni || !(LSU_BASE_SNOOP || LSU_BASE_WAIT) || recovery_accepted)
       late_align_q <= 1'b0;
@@ -2865,8 +2870,7 @@ module ppc_core #(
     else if (commit && (retire_producer == late_align_tag_q)) late_align_q <= 1'b0;
     if (adopt_go && special_ready) late_align_tag_q <= lsu_adopt_producer;
   end
-  assign gpr_commit = commit && retire_o.gpr_write && !retire_o.illegal &&
-                      !(late_align_q && (retire_producer == late_align_tag_q));
+  assign gpr_commit = commit && retire_o.gpr_write && !retire_o.illegal;
   assign update_commit = commit && retire_o.update_write && !retire_o.illegal;
   assign gpr_commit1 = commit1 && retire1_o.gpr_write && !retire1_o.illegal;
   always_ff @(posedge clk_i) begin
