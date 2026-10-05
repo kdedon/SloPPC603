@@ -1130,8 +1130,8 @@ Recorded: `make -C sim lint check-spec`, `make -C toolchain rtl-all`,
 2 with the LSU unit, commit `cc16ceb`, 2026-10-05. Pass: lint, check-spec,
 38 `rtl-all` profiles, both benches at both widths.
 
-Recorded: `make -C sim perf-diff` (width 2 + LSU unit), batch 13 merge,
-2026-10-05. Dhrystone 639.0 cycles/run, 0.89 DMIPS/MHz (603e model 506);
+Recorded: `make -C sim perf-diff` (width 2 + LSU unit), commit 7b78e30,
+2026-10-04; unchanged on 1bdff48 and 497429b. Dhrystone 639.0 cycles/run, 0.89 DMIPS/MHz (603e model 506);
 CoreMark 2.675/MHz. Width 1 + LSU unit: 766 cycles/run, CoreMark 2.300.
 
 Failed: MiSTer `mister/build.sh --fpu-compact --dual --lsu-pipe --seed
