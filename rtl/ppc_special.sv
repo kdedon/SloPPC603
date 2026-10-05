@@ -378,6 +378,7 @@ module ppc_special #(
   logic tlb_fill_invalidate_q;
   logic dispatch_bat, dispatch_segment, dispatch_tlbie, dispatch_tlb_fill;
   logic [31:0] tlb_fill_cmp;
+  logic tlb_fill_dside;
   logic tlb_fill_seed_invalid;
   tlb_fill_payload_t tlb_fill_payload_q;
   logic mmu_operation, mmu_req_write, mmu_req_ready, mmu_rsp_valid;
@@ -473,7 +474,10 @@ module ppc_special #(
     !ENABLE_DATA_CACHE ? ear_q[3:0] :
     cache_sync ? {1'b0, CACHE_OP_SYNC} :
     (uop_q.cache_op != CACHE_OP_NONE) ? {1'b0, uop_q.cache_op} : ear_q[3:0];
-  assign tlb_fill_cmp = (uop_i.special_op == SPECIAL_TLBLD) ? dcmp_q : icmp_q;
+  // The payload is consumed only for tlbld/tlbli, so the bank comes from the
+  // XO field (978 vs 1010) rather than the dispatch-adjusted special_op.
+  assign tlb_fill_dside = !insn_i[6];
+  assign tlb_fill_cmp = tlb_fill_dside ? dcmp_q : icmp_q;
   // UM 2.1.2.3: the entry takes V and VSID from the compare word and the
   // page index from rB; H, API and the RPA R and reserved bits are unused.
   // V=0 leaves the selected entry invalid: the load becomes a tlbie of its
@@ -1947,7 +1951,7 @@ module ppc_special #(
                bat_recovery_retained_i)
         mmu_resume_target_q <= bat_recovery_target_i;
       if (dispatch_fire) begin
-        tlb_fill_payload_q <= '{bank: (uop_i.special_op == SPECIAL_TLBLD),
+        tlb_fill_payload_q <= '{bank: tlb_fill_dside,
           ea: b_i, vsid: tlb_fill_cmp[30:7], way: srr1_o[17],
           rpn: rpa_q[31:12], c: rpa_q[7], wimg: rpa_q[6:3],
           pp: rpa_q[1:0],
