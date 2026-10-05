@@ -3,7 +3,7 @@
 /* Host build of the Quake smoke run: the same engine and port as the
  * processor's smoke image. Run it in a directory holding id1/pak0.pak; it
  * prints the same checksum and writes the last frame and palette to
- * quake-frame.bin. */
+ * quake-frame.bin; with QUAKE_SMOKE_FRAMES 0 it plays two timed passes. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -24,11 +24,13 @@ void plat_frame(const uint8_t *pix, const uint8_t *pal, int pal_changed)
   (void)pix, (void)pal, (void)pal_changed;
 }
 
+/* Two passes check that the loop restarts the demo. */
 void plat_pass(uint32_t frames, uint32_t ms, uint32_t fps10, int ok)
 {
-  printf("quake: pass %u frames %u ms %u.%u fps%s\n", frames, ms, fps10 / 10, fps10 % 10,
+  static int passes;
+  printf("quake: pass %d frames %u ms %u fps %u.%u%s\n", ++passes, frames, ms, fps10 / 10, fps10 % 10,
          ok ? "" : " desync");
-  exit(ok ? 0 : 1);
+  if (!ok || passes == 2) exit(ok ? 0 : 1);
 }
 
 void plat_dump(const uint8_t *pix, const uint8_t *pal)
@@ -41,4 +43,8 @@ void plat_dump(const uint8_t *pix, const uint8_t *pal)
 
 void plat_stop(const char *error) { exit(error ? 1 : 0); }
 
-int main(void) { qport_run(); }
+int main(void)
+{
+  setvbuf(stdout, NULL, _IOLBF, 0);
+  qport_run();
+}

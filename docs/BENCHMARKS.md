@@ -403,7 +403,12 @@ the C image renders the host's frame exactly (CRC `7d911abf`) at 6,325,374
 (407,833,680). The assembly saves 9.2% per frame there: about 8.7 frames per second at
 50 MHz against 7.9 in C.
 
-Not covered: a full pass (969 frames, about 6 G cycles), the result screen and loop,
+The host build with `QUAKE_SMOKE_FRAMES=0` (`make -f demo/quake/host.mk`, real clock)
+plays two passes through the port's loop, 969 frames each, its count matching the
+engine's own `969 frames ... fps` line both times.
+
+Not covered on the processor: a full pass (969 frames, about 6 G cycles), the result
+screen and loop,
 the download of `pak0.pak` through the core, the HPS's DDR3 latency, a fit, or
 hardware.
 
