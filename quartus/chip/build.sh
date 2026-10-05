@@ -48,6 +48,8 @@ fi
 if [[ "${lsu_pipe}" == 1 ]]; then
   # The MiSTer configuration is for iteration; more threads shorten it.
   sed -i 's/^set_global_assignment -name NUM_PARALLEL_PROCESSORS .*/set_global_assignment -name NUM_PARALLEL_PROCESSORS 8/' "${qsf}"
+  # Its densest region does not route at standard routability.
+  echo 'set_global_assignment -name FITTER_AGGRESSIVE_ROUTABILITY_OPTIMIZATION ALWAYS' >> "${qsf}"
 fi
 if [[ "${dual}" == 1 ]]; then
   echo 'set_global_assignment -name VERILOG_MACRO "PPC_DISPATCH_WIDTH=2"' >> "${qsf}"
