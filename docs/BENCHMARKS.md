@@ -23,7 +23,9 @@ Consequences for built images:
 
 - **An Embench image (`embench.hex`, `embench-full.hex`) contains GPL-3.0 code, so the
   image is GPL-3.0.** Distributing it means offering the corresponding source: the
-  pinned upstream files plus this repository's glue.
+  pinned upstream files plus this repository's glue. Releases publish the MiSTer image
+  `ppc603e-embench.bin` with `ppc603e-embench.SOURCE.txt` (links to both at fixed
+  commits) and `ppc603e-embench-source.tar.gz` (both, fetched).
 - An nbench image contains BYTE's code under no stated licence. Use it for measurement;
   do not redistribute built images without checking the terms yourself.
 - soft-fp's runtime exception and musl's MIT licence place no condition on the images

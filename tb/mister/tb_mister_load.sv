@@ -31,10 +31,9 @@ module tb_mister_load #(
 
   logic [7:0] mode = 8'h00;
   logic ddram_busy, ddram_we, ddram_rd, pal_we, exit_valid, checkstop, console_valid;
-  logic ddram_dout_ready = 1'b0, save_busy, save_done, sd_wr;
+  logic ddram_dout_ready = 1'b0;
   logic [63:0] ddram_dout = '0;
-  logic [7:0] ddram_burstcnt, sd_buff_din;
-  logic [31:0] sd_lba;
+  logic [7:0] ddram_burstcnt;
   logic ce_pix, hs, vs, de;
   logic [7:0] r, g, b;
   logic [28:0] ddram_addr;
@@ -55,9 +54,6 @@ module tb_mister_load #(
     .ddram_busy_i(ddram_busy), .ddram_addr_o(ddram_addr), .ddram_burstcnt_o(ddram_burstcnt),
     .ddram_din_o(ddram_din), .ddram_be_o(ddram_be), .ddram_we_o(ddram_we),
     .ddram_rd_o(ddram_rd), .ddram_dout_i(ddram_dout), .ddram_dout_ready_i(ddram_dout_ready),
-    .save_i(1'b0), .save_busy_o(save_busy), .save_done_o(save_done),
-    .sd_lba_o(sd_lba), .sd_wr_o(sd_wr), .sd_ack_i(1'b0),
-    .sd_buff_addr_i('0), .sd_buff_din_o(sd_buff_din),
     .image_i(image), .ioctl_download_i(download), .ioctl_wr_i(ioctl_wr), .ioctl_addr_i(ioctl_addr),
     .ioctl_dout_i(ioctl_dout), .ioctl_wait_o(ioctl_wait),
     .console_valid_o(console_valid), .console_data_o(console_data),
@@ -246,6 +242,6 @@ module tb_mister_load #(
   end
 
   logic unused;
-  assign unused = ^{save_busy, save_done, sd_wr, sd_buff_din, sd_lba, ce_pix, hs, vs, de, r, g, b};
+  assign unused = ^{ce_pix, hs, vs, de, r, g, b};
 endmodule
 `default_nettype wire
