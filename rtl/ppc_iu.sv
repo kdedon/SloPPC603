@@ -20,6 +20,8 @@ module ppc_iu #(
   output logic issue_ready_o,
   input ppc_pkg::issue_packet_t issue_i,
   output logic result_valid_o,
+  // result_valid_o without the cancel.
+  output logic result_offer_o,
   input logic result_ready_i,
   output ppc_pkg::result_packet_t result_o
 );
@@ -98,7 +100,8 @@ module ppc_iu #(
   // Cancel frees the slot for a same-edge replacement.
   assign issue_ready_o = rst_ni &&
     (!occupied || cancel_i || (result_valid_o && result_ready_i));
-  assign result_valid_o = rst_ni && occupied && held_complete && !cancel_i;
+  assign result_offer_o = rst_ni && occupied && held_complete;
+  assign result_valid_o = result_offer_o && !cancel_i;
   assign result_o.producer = held.ctrl.producer;
   assign result_o.fault = 1'b0;
   assign result_o.data_fault = DATA_OK;

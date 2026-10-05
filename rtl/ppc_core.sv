@@ -283,7 +283,7 @@ module ppc_core #(
   result_packet_t result, iu_result, special_result;
   wake_packet_t wake;
   logic rs_ready, issue_valid, issue_ready, result_valid, result_ready, wake_valid;
-  logic iu_result_valid, iu_result_ready;
+  logic iu_result_valid, iu_result_ready, iu_result_offer, sru_result_offer;
   logic special_result_valid, special_result_ready, special_ready, special_busy;
   logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
   logic special_result_select;
@@ -409,7 +409,7 @@ module ppc_core #(
     (!ENABLE_MACHINE_CHECK ||
      (ENABLE_PIN_INTERRUPTS && ENABLE_DATA_CACHE && ENABLE_EXTERNAL_INTERRUPTS));
   logic lsu_store_error, store_tea_q;
-  logic sru_rs_ready, sru_result_valid, sru_result_ready, wake1_valid;
+  logic sru_rs_ready, sru_result_valid, sru_result_ready, wake1_valid, result1_offer;
   wake_packet_t wake1;
   logic sru_cancel, sru_idle, d1_sru, d1_station_ready;
   // Read only inside the SRU, which width 1 omits.
@@ -468,7 +468,7 @@ module ppc_core #(
   logic [1:0] removed_q, fetch_removed_q, iq_rb, dq1_rb, iq_rb_first;
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
-  logic [11:0] d1_ea;
+  logic [1:0] d1_ea;
   logic d1_lsu, d1_lsu_ready;
   // Read only by the load/store unit, which ENABLE_LSU_PIPE 0 omits.
   /* verilator lint_off UNUSEDSIGNAL */
@@ -949,16 +949,28 @@ module ppc_core #(
   // registers supply their operands without the rename/wake path.
   // A pipelined access may dispatch with its base registers in rename; any
   // other special uop finds them committed.
+  // a + b == k without the carry chain, so the alignment checks need not
+  // wait for the EA adder.
+  function automatic logic sum12_is(input logic [11:0] a, input logic [11:0] b,
+                                    input logic [11:0] k);
+    return (a ^ b ^ k) == {(a[10:0] & b[10:0]) | ((a[10:0] | b[10:0]) & ~k[10:0]), 1'b0};
+  endfunction
+  // An EA in the last bytes of a page: the last byte, or for a word any of
+  // the last three.
+  function automatic logic page_end(input logic [11:0] a, input logic [11:0] b,
+                                    input logic word);
+    return sum12_is(a, b, 12'hfff) ||
+           (word && (sum12_is(a, b, 12'hffe) || sum12_is(a, b, 12'hffd)));
+  endfunction
   assign special_a = uop.zero_a ? 32'b0 : src_a.value;
   assign special_b = uop.use_imm ? uop.imm : src_b.value;
   assign dispatch_ea = special_a + special_b;
-  assign dispatch_ea_low = dispatch_ea[1:0];
+  assign dispatch_ea_low = special_a[1:0] + special_b[1:0];
   // lmw/stmw/lwarx/stwcx. always need a word-aligned EA. With hardware
   // splitting, other scalars trap only when crossing a 4-KB page under data
   // translation (UM 4.5.6.1.1); BAT regions get no special handling.
-  assign dispatch_page_cross = (uop.mem_size == MEM_WORD) ?
-    (dispatch_ea[11:2] == 10'h3ff) && (dispatch_ea_low != 0) :
-    (dispatch_ea[11:0] == 12'hfff);
+  assign dispatch_page_cross = page_end(special_a[11:0], special_b[11:0],
+                                        uop.mem_size == MEM_WORD);
   // Strings never trap on alignment in big-endian mode. In little-endian
   // mode every multiple and string traps (UM 4.5.6), and so does a
   // misaligned scalar unless the part handles it in hardware.
@@ -1383,6 +1395,7 @@ module ppc_core #(
     .alloc1_producer_i(dispatch1 ? alloc1_producer : alloc_producer),
     .alloc1_value_valid_i(update_alloc && !update_alloc_store), .alloc1_value_i(dispatch_ea),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
+    .wake1_offer_i(result1_offer),
     .release_i(commit && retire_o.rename_owned), .release_reg_i(retire_o.gpr), .release_tag_i(retire_o.tag),
     .release_producer_i(retire_producer),
     .release1_i(commit1 && retire1_o.rename_owned), .release1_reg_i(retire1_o.gpr),
@@ -1464,7 +1477,7 @@ module ppc_core #(
   ) iu (
     .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid),
     .issue_ready_o(issue_ready),
-    .issue_i(issue), .result_valid_o(iu_result_valid),
+    .issue_i(issue), .result_valid_o(iu_result_valid), .result_offer_o(iu_result_offer),
     .result_ready_i(iu_result_ready), .result_o(iu_result)
   );
   // The SRU is a second station and integer unit that only ever receives
@@ -1491,7 +1504,8 @@ module ppc_core #(
                .ADD_COMPARE_ONLY(1'b1)) sru (
         .clk_i, .rst_ni, .cancel_i(sru_cancel), .issue_valid_i(sru_issue_valid),
         .issue_ready_o(sru_issue_ready), .issue_i(sru_issue),
-        .result_valid_o(sru_result_valid), .result_ready_i(sru_result_ready),
+        .result_valid_o(sru_result_valid), .result_offer_o(sru_result_offer),
+        .result_ready_i(sru_result_ready),
         .result_o(sru_result)
       );
       assign sru_idle = sru_rs_ready && !sru_issue_valid && sru_issue_ready &&
@@ -1504,6 +1518,7 @@ module ppc_core #(
       assign sru_issue_ready = 1'b0;
       assign sru_issue = '0;
       assign sru_result_valid = 1'b0;
+      assign sru_result_offer = 1'b0;
       assign sru_result = '0;
       assign sru_idle = 1'b1;
     end
@@ -1662,8 +1677,11 @@ module ppc_core #(
   logic iu_port1;
   result_packet_t result1;
   assign iu_port1 = HAS_SRU && ENABLE_LSU_PIPE && iu_result_valid && lsu_result_valid &&
-                    !special_result_select && !sru_result_valid;
-  assign result1 = sru_result_valid ? sru_result : iu_result;
+                    !special_result_select && !sru_result_offer;
+  // The port selects on offers so a recovery's cancel stays out of the
+  // second result's identity and value.
+  assign result1 = sru_result_offer ? sru_result : iu_result;
+  assign result1_offer = sru_result_offer || iu_result_offer;
   assign iu_result_ready = (result_ready && !special_result_select && !lsu_result_valid) ||
                            iu_port1;
   assign sru_result_ready = 1'b1;
@@ -2058,7 +2076,7 @@ module ppc_core #(
   // an alignment exception.
   assign d1_a = dq1_uop.zero_a ? 32'b0 : ENABLE_LSU_PIPE ? src_a1.value : arch_a1;
   assign d1_b = dq1_uop.use_imm ? dq1_uop.imm : ENABLE_LSU_PIPE ? src_b1.value : arch_b1;
-  assign d1_ea = d1_a[11:0] + d1_b[11:0];
+  assign d1_ea = d1_a[1:0] + d1_b[1:0];
   assign d1_ea_full = d1_a + d1_b;
   // Store data DQ0 writes follows from DQ0's new rename slot.
   always_comb begin
@@ -2073,8 +2091,7 @@ module ppc_core #(
     (((dq1_uop.mem_size == MEM_WORD) && (d1_ea[1:0] != 2'b00)) ||
      ((dq1_uop.mem_size == MEM_HALF) && d1_ea[0])) :
     ((dq1_uop.mem_size != MEM_BYTE) && msr[MSR_DR] &&
-     ((dq1_uop.mem_size == MEM_WORD) ?
-      ((d1_ea[11:2] == 10'h3ff) && (d1_ea[1:0] != 2'b00)) : (d1_ea[11:0] == 12'hfff)));
+     page_end(d1_a[11:0], d1_b[11:0], dq1_uop.mem_size == MEM_WORD));
   assign d1_mem_ready = !special_busy && !sru_hold_q && lsu_empty && !fp_unsafe_pending && !d1_misaligned &&
     !msr_le &&
     (dq1_uop.zero_a || (!gpr_mapped[dq1_uop.src_a] && !dq1_pair.dep_prev[0])) &&

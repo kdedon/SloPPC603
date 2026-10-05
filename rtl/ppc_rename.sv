@@ -43,6 +43,8 @@ module ppc_rename (
   input ppc_pkg::wake_packet_t wake_i,
   input logic wake1_valid_i,
   input ppc_pkg::wake_packet_t wake1_i,
+  // The second port holds a result for wake1_i's producer, accepted or not.
+  input logic wake1_offer_i,
   input logic release_i,
   input logic [4:0] release_reg_i,
   input ppc_pkg::rename_tag_t release_tag_i,
@@ -107,11 +109,12 @@ module ppc_rename (
       if (wake_match && wake_i.tag == operand.tag &&
           wake_i.producer == operand.producer)
         operand.ready = 1'b1;
-      if (wake1_match && wake1_i.tag == operand.tag &&
-          wake1_i.producer == operand.producer) begin
-        operand.ready = 1'b1;
+      if (!ready[operand.tag] && wake1_offer_i && wake1_i.tag == operand.tag &&
+          wake1_i.producer == operand.producer)
         operand.value = wake1_i.value;
-      end
+      if (wake1_match && wake1_i.tag == operand.tag &&
+          wake1_i.producer == operand.producer)
+        operand.ready = 1'b1;
     end
     return operand;
   endfunction

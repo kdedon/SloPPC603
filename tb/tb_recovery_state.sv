@@ -99,7 +99,7 @@ module tb_recovery_state;
     .alloc_ready_o(rename_alloc_ready), .alloc_tag_o(rename_alloc_tag),
     .alloc_i(rename_alloc), .alloc_reg_i(rename_alloc_reg),
     .alloc_producer_i(rename_alloc_producer),
-    .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0),
+    .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0), .wake1_offer_i(1'b0),
     .release_i(release_fire), .release_reg_i(retire_packet.gpr),
     .release_tag_i(retire_packet.tag), .release_producer_i(retire_tag),
     .recovery_i(redirect_accepted),
