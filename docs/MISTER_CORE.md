@@ -627,6 +627,15 @@ With the data window and the WAD loads (`DATA_BYTES` 32 MiB in the bench): Recor
 `mister-smoke` passes at 22,647,072 cycles. `+WAD` and `+WAD_LE` download a data file
 first; [BENCHMARKS.md](BENCHMARKS.md#smoke-run) records the Doom runs that use them.
 
+With the 64 MiB window: Recorded: `make -C sim lint check-spec test-mister-load
+mister-smoke test-mister-doom`, commits `b55cdff` and `a1c8206` (no RTL, bench or Doom
+change between them), 2026-10-05. All pass: selftest
+43,473,790 cycles and whetstone-hf 4,064,389 as before, `mister-smoke` 22,647,087;
+both Doom smoke images (rebuilt with the 64 MiB BAT) still match the host's frame CRC
+`da456448`, at 2,247,144 and 2,359,785 cycles per gametic.
+`mister/build.sh --analyze --fpu-compact --dual --lsu-pipe` (Quartus analysis and
+elaboration) exits 0 at `b55cdff`. No fit.
+
 ### Build
 
 Recorded: `mister/build.sh --clean`, commit 64e7929, 2026-09-29. Default build (1920 × 1080

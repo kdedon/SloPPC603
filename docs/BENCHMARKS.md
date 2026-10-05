@@ -394,7 +394,7 @@ neighbouring texel is chosen (mean 53), the RGB difference small (mean 5.2 of 25
 largest 55). Frame 8 still shows the console over the view (the console retracts over the
 first frames of the demo); per frame the assembly saves 11% against C, hard float in C
 runs 2.9 times as fast as soft float, and little-endian C costs 2.4% more than
-big-endian. Startup to the first timedemo frame is about 190 M cycles (3.8 s at 50 MHz).
+big-endian. Start-up to the first timedemo frame takes about 150 M cycles (3 s at 50 MHz).
 Not covered: a full pass (969 frames, about 7 G cycles), the result screen and loop,
 the download of `pak0.pak` through the core, the HPS's DDR3 latency, a fit, or
 hardware.
