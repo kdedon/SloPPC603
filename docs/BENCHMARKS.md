@@ -395,7 +395,15 @@ largest 55). Frame 8 still shows the console over the view (the console retracts
 first frames of the demo); per frame the assembly saves 11% against C, hard float in C
 runs 2.9 times as fast as soft float, and little-endian C costs 2.4% more than
 big-endian. Start-up to the first timedemo frame takes about 150 M cycles (3 s at 50 MHz).
-Not covered: a full pass (969 frames, about 7 G cycles), the result screen and loop,
+With `QUAKE_SMOKE_FRAMES=40` (images rebuilt so at commit `a1c8206`; frame 40 shows the
+level without the console): the hard-float big-endian assembly image renders frame 40
+with CRC `2a5656ec`, 4,019 pixels (6.3%) from the host's (palette index mean 46, RGB mean
+5.1, largest 52), at 5,745,077 cycles per frame over frames 3–40 (388,906,268 to exit);
+the C image renders the host's frame exactly (CRC `7d911abf`) at 6,325,374
+(407,833,680). The assembly saves 9.2% per frame there: about 8.7 frames per second at
+50 MHz against 7.9 in C.
+
+Not covered: a full pass (969 frames, about 6 G cycles), the result screen and loop,
 the download of `pak0.pak` through the core, the HPS's DDR3 latency, a fit, or
 hardware.
 
