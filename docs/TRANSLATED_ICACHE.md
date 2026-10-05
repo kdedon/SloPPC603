@@ -21,6 +21,21 @@ fetch uses the managed cache's scalar bypass (UM §3.1.3.2). Line fills keep
 the burst master's fixed cacheable pin attributes; scalar instruction and
 data tenures keep the scalar master's fixed cache-inhibited attributes.
 
+UM §5.2 (PDF 216, printed 5-20): "for instruction accesses, the default
+memory access mode bits (WIMG) are 0b0001. That is, instruction accesses are
+considered cacheable (I = 0), and the memory is guarded. Again, instruction
+cache accesses are considered cacheable even if the instruction cache is
+disabled in the HID0 register". The UM's 603 supplement does not differ.
+
+Recorded: `test-chip-icache-real`, `test-chip602-pins`, commit 152f36d, 2026-10-05.
+At width 1, and at `DISPATCH_WIDTH=2` with `sim/tools/verilate-lsu-pipe`,
+`test-chip-icache-real` passes for the PID7v and PID6 603e and the 603: with HID0[ICE]
+each real-mode loop line is one cacheable burst and no loop fetch is single
+beat; with ICE clear all 256 loop fetches are single beats. In
+`test-chip602-pins` the real-mode loop with HID0[WIMG]=0001 fills two lines
+with no single beats, and WIMG=0100 makes 128 single-beat fetches. This pins
+the attribute choice; it does not test prefetch past unresolved branches.
+
 Not covered: the fetcher runs ahead sequentially and past unresolved
 branches regardless of G, so in real mode it may fetch, and now fill, a block
 that the program does not reach. The scalar path did the same before real

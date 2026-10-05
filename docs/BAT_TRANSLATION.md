@@ -83,8 +83,8 @@ The generic PEM describes IBAT W/G writes as boundedly undefined, while the
 603e-specific Table 5-3 explicitly defines guarded BAT instruction-fetch faults.
 This implementation follows that specific G behavior on translated instruction
 hits. Active IBAT W=1 is rejected as an unsupported input profile; a later
-source decision may broaden it. M/I are passed as metadata. There is no claim
-that the current instruction cache consumes those attributes. All 16 DBAT WIMG
+source decision may broaden it. M/I are passed as metadata; the instruction
+cache uses only I ([TRANSLATED_ICACHE.md](TRANSLATED_ICACHE.md)). All 16 DBAT WIMG
 bit patterns are transported as attributes; this module does not implement or
 certify their downstream cache/bus ordering behavior. Real-mode instruction G=1
 does not cause a guarded fault because that check applies only with IR enabled.
