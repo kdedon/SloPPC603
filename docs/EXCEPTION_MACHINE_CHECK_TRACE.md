@@ -49,8 +49,9 @@ Entry:
   machine check outranks a pending EXT/DEC at the same boundary.
 - SRR1: manual bits 0-15 clear except bit 13 (TEA, `0x0004_0000`); bits 16-31
   from MSR (RI included, so software sees recoverability). MSR per Table
-  4-10 plus ME cleared: the table note requires software to set ME again
-  before another TEA, which is only meaningful if entry clears it. RFI
+  4-10 plus ME cleared, as UM Table 4-7 (PDF 175, printed 4-17) states.
+  Table 4-3 (PDF 169) copies SRR1 bits 0 and 5-9 from the MSR where Table 4-10
+  clears them; those MSR bits are reserved zero, so both agree in effect. RFI
   restores ME from SRR1.
 - Machine check is taken with MSR[TGPR]=1 (a TEA in a TLB-miss handler);
   entry clears TGPR, and SRR1[RI]=0 marks it unrecoverable. Trace, IABR and

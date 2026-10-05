@@ -4,7 +4,7 @@
 `ENABLE_SUPERVISOR_EXCEPTIONS=1`. Defaults remain disabled. This slice adds the
 external interrupt alone. The additional `ENABLE_TIMERS` option supplies TB/DEC
 ([TIMERS.md](TIMERS.md)); system management interrupts, reset exception delivery
-and recoverable machine checks remain unsupported.
+and recoverable machine checks need `ENABLE_PIN_INTERRUPTS`.
 The live BAT wrapper and translated scalar/cached 60x wrappers expose the
 option. The older physical-only cache wrappers retain their narrower profiles.
 See [translated cached interrupt verification](TRANSLATED_ICACHE_INTERRUPTS.md)
@@ -93,7 +93,7 @@ fetch position. No handler PC is derived from the outstanding fetch address.
 
 Local *MPC603e & EC603e User's Manual* §4.5.5, printed 4-25–4-26,
 Table 4-12, specifies vector, saved state and draining previously initiated work;
-§4.1.1, printed 4-7–4-8, lists exception classes and priorities. The manual's
+§4.1 Table 4-1, printed 4-3, lists exception classes; §4.1.1 Table 4-2, printed 4-7–4-8, lists priorities. The manual's
 next-instruction halt wording is more specific than this local boundary policy.
 §7.2.9.1, printed 7-23–7-24, describes level-sensitive INT and holding it until
 entry. *PowerPC Programming Environments*, printed 8-169 (MTMSR), specifies

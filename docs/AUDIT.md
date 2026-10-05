@@ -113,6 +113,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-54 | L | E | `rtl/ppc_special.sv:392-394,461,503`, `rtl/ppc_completion.sv:118-169`, `rtl/ppc_core.sv:131-133,445`, `rtl/ppc_fifo.sv`, `rtl/ppc_fetch.sv`, `rtl/ppc_dispatch.sv` | `rst_ni` in combinational outputs (recorded −0.084 ns hold path); raw IRQ pin gates dispatch. | Drop reset terms where state is reset; register the IRQ. | fixed (listed reset terms removed; external_irq_i registered, one added cycle) |
 | AUD-55 | L | K | `rtl/ppc_special.sv:147` | Live micro-op named `unused_uop_q`. | Rename `uop_q`. | fixed |
 | AUD-56 | L | S | `rtl/ppc_special.sv:724,738`, `rtl/ppc_exception_state.sv:24-26,289`, `rtl/ppc_core.sv:3,195` | Dead ports and parameters (`rfi_pending_exception_i`, `result_is_exception_o`, `DISPATCH_WIDTH`). | Remove. | fixed |
+| AUD-75 | M | C | `rtl/ppc_exception_state.sv:349` | SMI requires `!MSR[TGPR]`; the pin selector (`ppc_special.sv:1484`) does not, so SMI with EE=1, TGPR=1 commits then reports unsupported. UM §4.5.16 and Tables 4-7/4-19 (PDF 176, 195; printed 4-18, 4-37) take SMI whenever EE=1 and clear TGPR. | Drop the TGPR term, as `EVENT_EXTERNAL` does; add a bench case. | open |
 
 ### Whole RTL
 
