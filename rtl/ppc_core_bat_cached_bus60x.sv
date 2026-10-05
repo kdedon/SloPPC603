@@ -264,6 +264,7 @@ module ppc_core_bat_cached_bus60x #(
   logic physical_fetch_busy_q, route_managed_q, fetch_free;
   // M of the fetch in flight, which any line fill serves.
   logic fetch_m_q;
+  logic sreset_ice_off_q;
   logic managed_fetch_valid, direct_fetch_valid, fetch_gate;
   logic managed_maintenance_valid, managed_maintenance_ready;
   logic icbi_req_valid, icbi_req_ready;
@@ -485,7 +486,9 @@ module ppc_core_bat_cached_bus60x #(
   // Only I decides: W and M do not affect the instruction cache, and G
   // (real-mode WIMG 0001) still allows the required block to be cached
   // (UM 3.5.4, 5.2).
-  assign eligible_managed = !imem_req_wimg[2];
+  // After a soft reset clears HID0[ICE] the cache still holds its old enable
+  // until software changes ICE, so fetches bypass it until then.
+  assign eligible_managed = !imem_req_wimg[2] && !sreset_ice_off_q;
   logic unused_imem_wg;
   assign unused_imem_wg = ^{imem_req_wimg[3], imem_req_wimg[0]};
   // A pending external command or CPU icbi holds new fetches.
@@ -553,7 +556,10 @@ module ppc_core_bat_cached_bus60x #(
       physical_fetch_busy_q <= 1'b0;
       route_managed_q <= 1'b0;
       fetch_m_q <= 1'b0;
+      sreset_ice_off_q <= 1'b0;
     end else begin
+      if (core_pin_status.soft_reset_taken) sreset_ice_off_q <= 1'b1;
+      else if (icache_ctl_ready) sreset_ice_off_q <= 1'b0;
       if (imem_rsp_valid && imem_rsp_ready)
         physical_fetch_busy_q <= 1'b0;
       if (imem_req_valid && imem_req_ready) begin

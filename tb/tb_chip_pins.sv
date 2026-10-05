@@ -33,7 +33,7 @@ module tb_chip_pins #(parameter int PLL = -1);
   // DATA offsets.
   localparam int RESETS = 'h00, RESET_SRR0 = 'h04, MC_MARK = 'h10, MC_SRR1 = 'h14;
   localparam int EXT_MARK = 'h18, SMI_MARK = 'h20, SMI_SRR1 = 'h24, LOOPS = 'h30;
-  localparam int TB_VALUE = 'h34, STEP = 'h38, SYNC_MARK = 'h3c;
+  localparam int TB_VALUE = 'h34, STEP = 'h38, SYNC_MARK = 'h3c, RESET_HID0 = 'h40;
   localparam logic [31:0] RFI = 32'h4c00_0064;
   localparam logic [31:0] TLBSYNC = 32'h7c00_046c;
   localparam logic [31:0] SYNC = 32'h7c00_04ac;
@@ -118,6 +118,8 @@ module tb_chip_pins #(parameter int PLL = -1);
     emit_const(31, DATA);
     emit(mfspr(4, 26));
     emit(asm_stw(4, RESET_SRR0, 31));
+    emit(mfspr(4, 1008));
+    emit(asm_stw(4, RESET_HID0, 31));
     emit(asm_lwz(3, RESETS, 31));
     emit(asm_addi(3, 3, 1));
     emit(asm_stw(3, RESETS, 31));
@@ -255,6 +257,27 @@ module tb_chip_pins #(parameter int PLL = -1);
     check(pc >= MAIN && pc < MAIN + 32'h40, $sformatf("SRESET SRR0=%08x in the program", pc));
     check(ckstp_out_n, "no checkstop");
     running(3, "program runs after SRESET");
+  endtask
+
+  // Soft reset clears HID0[ICE] (UM 4.5.1.2): the handler reads ICE=0 and
+  // its cached line is fetched again single-beat.
+  task automatic case_sreset_icache;
+    loop_program(32'h0000_8000, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    check(mem_word(DATA + RESET_HID0) == 32'h0, "HID0 after hard reset");
+    ilock_from = BASE + 32'h100;
+    ilock_watch = 1'b0;
+    {ilock_single, ilock_burst, ilock_no_ci, ilock_in_line, ilock_at_top, ilock_gbl} = '0;
+    pulse(sreset_n, 3);
+    wait_word(RESETS, 2, 6000, "SRESET enters 0x100");
+    check(mem_word(DATA + RESET_HID0) == 32'h0,
+          $sformatf("SRESET clears HID0[ICE] (HID0=%08x)", mem_word(DATA + RESET_HID0)));
+    check(ilock_single != 0, "SRESET handler fetched single-beat with the cache disabled");
+    running(3, "program runs after SRESET");
+    ilock_from = '1;
+    ilock_watch = 1'b0;
   endtask
 
   task automatic case_mcp;
@@ -688,6 +711,7 @@ module tb_chip_pins #(parameter int PLL = -1);
     repeat (4) bus_fall();
     case_hreset();
     case_sreset();
+    case_sreset_icache();
     case_mcp();
     case_mcp_ignored();
     case_mcp_checkstop();

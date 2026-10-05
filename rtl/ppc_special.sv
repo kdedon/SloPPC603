@@ -1728,6 +1728,8 @@ module ppc_special #(
       timer_read_value_q <= '0;
     end else begin
       if (timer_read_execute && step_run) timer_read_value_q <= exec_value;
+      // Soft reset disables the instruction cache (UM 4.5.1.2).
+      if (HAS_ICE && pin_status_o.soft_reset_taken) hid0_q[HID0_ICE] <= 1'b0;
       if (hold_commit) begin
         if ((uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd8))
           lr_q <= a_q;

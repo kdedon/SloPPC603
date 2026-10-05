@@ -61,8 +61,7 @@ Missing and partial rows, ranked by how visible they are to software or to a
    assert GBL for M=1 fetches; caching-inhibited single-beat fetches do not.
 4. ~~**SMI refused while MSR[TGPR]=1** (AUD-75)~~. Fixed.
 5. ~~**IBAT G=1 raises ISI** (AUD-79)~~. Decided for §3.5: IBAT G ignored.
-6. **SRESET leaves the I-cache enabled** (AUD-83). UM §4.5.1.2, PDF 178.
-   Visible to a soft-reset handler that reads HID0 or relies on uncached fetch.
+6. ~~**SRESET leaves the I-cache enabled** (AUD-83)~~. Fixed: SRESET clears HID0[ICE].
 7. **602 injected snoops** (AUD-82). 602UM §8.4.2, PDF 378. A 602 system that
    injects snoops during a burst read gets a push the protocol forbids.
 8. **PVR revision below PID7v level** (AUD-76). UM §1.3.1.2, PDF 58. Software
@@ -288,7 +287,7 @@ PEM was read only where the UM defers to it.
 | Hard reset register values (Table 4-8: SPRs, DEC=FFFFFFFF, miss regs 0, cache invalid) | UM Table 4-8, PDF 177 | tested | EVENT_RESET_CONTRACT.md:42; test-core-event-reset |
 | Hard reset: external checkstops enabled | UM §4.5.1.1, PDF 178 | tested | ckstp_in in ppc603e.sv; test-chip-pins |
 | Soft reset (SRESET) 0x100 per IP, recoverable, SRR1[30] | UM §4.5.1.2 Table 4-9, PDF 178 | tested | ppc_exception_state.sv:339; test-chip-pins |
-| Soft reset disables I-cache / completed store queue drain | UM §4.5.1.2, PDF 178 | missing | no SRESET I-cache disable found; stores perform before commit (no CSQ) |
+| Soft reset disables I-cache / completed store queue drain | UM §4.5.1.2, PDF 178 | partial | SRESET clears HID0[ICE] (AUD-83, `test-chip-pins`); stores perform before commit (no CSQ) |
 | SRESET min 2 bus clocks | UM §4.5.1.2, PDF 178 | n/a | pin timing; edge-detected in ppc603e.sv |
 | Machine check on TEA | UM §4.5.2, PDF 179 | tested | test-core-bat-machine-check, test-core-bus60x-ifetch-error |
 | Machine check on MCP, gated by HID0[EMCP] | UM §4.5.2, PDF 179 | tested | ppc603e.sv:57; test-chip-pins |
@@ -457,7 +456,7 @@ PEM was read only where the UM defers to it.
 | CKSTP_IN input | UM §7.2.9.4, PDF 300 | tested | `test-chip-pins` "checkstop holds after CKSTP_IN negates" |
 | CKSTP_OUT output | UM §7.2.9.5, PDF 301 | tested | `test-chip-pins` expect_checkstop |
 | HRESET (outputs released, 0xFFF00100, straps sampled) | UM §7.2.9.6.1, PDF 301 | tested | `test-chip-pins` "HRESET releases outputs within five clocks", reset vector |
-| SRESET (edge latched, 0x100) | UM §7.2.9.6.2, PDF 302 | partial | `test-chip-pins` SRESET case. The soft-reset I-cache disable (UM §4.5.1.2) is not modelled (CHIP_PACKAGE.md §Exceptions from pins) |
+| SRESET (edge latched, 0x100) | UM §7.2.9.6.2, PDF 302 | tested | `test-chip-pins` SRESET cases, including the HID0[ICE] clear (AUD-83) |
 | QREQ output | UM §7.2.9.7.1, PDF 302 | tested | `test-chip-power` (nap/sleep assert QREQ, doze does not) |
 | QACK input (and full-pinout strap) | UM §7.2.9.7.2, PDF 302 | tested | `test-chip-power` (snooping stops after QACK) |
 | RSRV output | UM §7.2.9.7.3, PDF 303 | tested | `test-chip-pins` (lwarx asserts, stwcx. negates). `test-chip-power` (a kill clears it in doze) |

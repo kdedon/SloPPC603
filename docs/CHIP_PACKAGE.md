@@ -93,7 +93,7 @@ The 603 build (`CPU_VARIANT` `CPU_603`) has it (UM C.1.1).
 | CKSTP_IN | in | 1 | I | Checkstop; holds until HRESET even if negated. |
 | CKSTP_OUT | out, OD | 1 | I | Asserted in every checkstop (CKSTP_IN, MCP or TEA with ME=0, rejected strap); negated by HRESET. |
 | HRESET | in | 1 | I | Hard reset: outputs release within five clocks; release boots at 0xFFF0_0100 with the Table 4-8 state. Samples the straps. |
-| SRESET | in | 1 | I | Falling edge latches a soft reset, taken after SRESET negates: system reset 0x100 (MSR[IP] prefix), SRR0 = next instruction, SRR1 = MSR[16–31] (Table 4-9). |
+| SRESET | in | 1 | I | Falling edge latches a soft reset, taken after SRESET negates: system reset 0x100 (MSR[IP] prefix), SRR0 = next instruction, SRR1 = MSR[16–31] (Table 4-9); HID0[ICE] cleared (§4.5.1.2). |
 
 CHECKSTOP (UM §8.7.2) names the internal checkstop state, not a pin;
 CKSTP_OUT reports it.
