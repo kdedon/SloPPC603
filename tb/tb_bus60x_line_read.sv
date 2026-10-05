@@ -47,7 +47,7 @@ module tb_bus60x_line_read;
     .clk_i(clk), .rst_ni(rst_n),
     .req_valid_i(req_valid), .req_ready_o(req_ready),
     .req_line_addr_i(req_line_addr), .req_critical_dw_i(req_critical_dw),
-    .req_instruction_i(req_instruction),
+    .req_instruction_i(req_instruction), .req_gbl_i(1'b0),
     .rsp_valid_o(rsp_valid), .rsp_ready_i(rsp_ready),
     .rsp_line_o(rsp_line), .rsp_error_o(rsp_error),
     .busy_o(busy), .protocol_error_o(protocol_error),

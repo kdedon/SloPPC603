@@ -139,7 +139,7 @@ module tb_biu_dcache_snoop;
     .dmem_rsp_rdata_o(), .dmem_rsp_error_o(),
     .dmem_rsp_ds_error_o(), .xats_n_o(), .xats_n_i(1'b1),
     .line_req_valid_i(1'b0), .line_req_ready_o(), .line_req_line_addr_i(32'd0),
-    .line_req_critical_dw_i(2'd0), .line_req_instruction_i(1'b0),
+    .line_req_critical_dw_i(2'd0), .line_req_instruction_i(1'b0), .line_req_gbl_i(1'b0),
     .line_rsp_valid_o(), .line_rsp_ready_i(1'b1), .line_rsp_line_o(),
     .line_rsp_error_o(),
     .dc_req_valid_i(bus_req_valid), .dc_req_ready_o(bus_req_ready),

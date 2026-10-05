@@ -57,8 +57,8 @@ Missing and partial rows, ranked by how visible they are to software or to a
    the flush class.
 2. **32-bit data bus and reduced-pinout modes** (AUD-80). UM §8.6.1, §8.6.3,
    PDF 346-349. Their straps checkstop; boards wired that way cannot boot.
-3. **HID0[IFEM] has no effect** (AUD-81). UM Table 2-2, PDF 86. Fetches never
-   assert GBL, so an external L2 or snooper never sees coherent fetches.
+3. **HID0[IFEM] partial** (AUD-81). UM Table 2-2, PDF 86. Line fills now
+   assert GBL for M=1 fetches; caching-inhibited single-beat fetches do not.
 4. **SMI refused while MSR[TGPR]=1** (AUD-75). UM §4.5.16, PDF 195. A TLB-miss
    handler interrupted by SMI reports unsupported instead of vectoring.
 5. **IBAT G=1 raises ISI** (AUD-79). UM §3.5, PDF 136. Boot code that copies a
@@ -148,7 +148,7 @@ PEM was read only where the UM defers to it.
 | HID0[DLOCK] | UM Tbl 2-2 PDF 86; §3.2.3.3 PDF 132 | tested | DATA_CACHE.md:83,90; test-dcache, test-biu-dcache-snoop |
 | HID0[ICFI] flash invalidate | UM Tbl 2-2 PDF 86; §3.1.3.1 PDF 130 | tested | test-chip-dcache-coherence, test-core-full-decode |
 | HID0[DCFI] flash invalidate | UM Tbl 2-2 PDF 86; §3.2.3.1 PDF 132 | tested | DATA_CACHE.md:70; test-dcache, test-chip-dcache-coherence |
-| HID0[IFEM] instruction fetch M/GBL (PID7v) | UM Tbl 2-2, PDF 86 | partial | stored when `has_abe_ifem`; no RTL reads it; `ppc_bus60x_line_read.sv:172` drives GBL negated always |
+| HID0[IFEM] instruction fetch M/GBL (PID7v) | UM Tbl 2-2, PDF 86 | partial | Burst fetches drive GBL from M when set (`test-chip-pins` `case_ifem`); CI single-beat fetches do not (AUD-81) |
 | HID0[FBIOB] force branch indirect on bus | UM Tbl 2-2, PDF 86 | partial | stored only (`ppc_pkg.sv:600`); no fetch behaviour |
 | HID0[ABE] address broadcast for dcbf/dcbi/dcbst (PID7v) | UM Tbl 2-2 PDF 86; §3.2.3.4 PDF 133 | tested | `ppc_special.sv:1514`; DATA_CACHE.md:104; test-dcache, test-core-full-decode; dcbi gated by M (deviation, DATA_CACHE.md:202) |
 | HID0[NOOPTI] touch no-op | UM Tbl 2-2 PDF 86; §3.2.4 PDF 133 | tested | DATA_CACHE.md:98; test-dcache, test-core-dcache |
@@ -228,7 +228,7 @@ PEM was read only where the UM defers to it.
 | WIMG from BAT/PTE; IBAT has no G | UM §3.5, PDF 136 | partial | AUD-79 open: IBAT G=1 raises guarded ISI |
 | W: store-through, no combining; W store hit M pushes, stays M | UM §3.5.1 PDF 137; §3.6.4.1 PDF 144 | tested | DATA_CACHE.md:86-90,191; test-dcache |
 | I: caching-inhibited, strict order; I=1 hit pushes and invalidates | UM §3.5.2, PDF 137 | tested | DATA_CACHE.md:198; test-dcache |
-| M: GBL on bus; M ignored for instruction fetch | UM §3.5.3, PDF 138 | tested | `ppc_bus60x_line_read.sv:172` GBL negated; test-chip-mp (IFEM caveat in Ch 2) |
+| M: GBL on bus; M ignored for instruction fetch | UM §3.5.3, PDF 138 | tested | Fetch GBL negated unless HID0[IFEM]; test-chip-mp, `test-chip-pins` `case_ifem` |
 | GBL asserted for all data accesses in real mode | UM §3.6.3, PDF 143 | tested | real-mode D WIMG 0011 (`ppc_bat_translate.sv:126`); test-chip-mp |
 | G: no speculative/out-of-order access to guarded memory | UM §3.5.4-3.5.5.3, PDF 138-141 | tested | test-core-lsu-timing (spec loads), MMU benches; guarded fetch → ISI |
 | Combined accesses / store gathering not implemented | UM §3.5.1-2, PDF 137 | tested | none expected; matches |

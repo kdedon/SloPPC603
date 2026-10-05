@@ -25,7 +25,7 @@ module tb_line_read_independent;
   ppc_bus60x_line_read dut (.bus_ce_i(1'b1),
     .clk_i(clk),.rst_ni(rst_n),
     .req_valid_i(qv),.req_ready_o(qr),.req_line_addr_i(line_addr),
-    .req_critical_dw_i(critical),.req_instruction_i(qi),
+    .req_critical_dw_i(critical),.req_instruction_i(qi), .req_gbl_i(1'b0),
     .rsp_valid_o(rv),.rsp_ready_i(rr),.rsp_line_o(line_data),.rsp_error_o(error),
     .busy_o(busy),.protocol_error_o(protocol_error),
     .br_n_o(br_n),.bg_n_i(bg_n),.abb_n_i(abb_oe ? abb_n : 1'b1),

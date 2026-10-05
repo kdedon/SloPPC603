@@ -319,7 +319,7 @@ module ppc_core_cached_bus60x #(
     .req_ready_o(cache_line_req_ready),
     .req_line_addr_i(cache_line_addr),
     .req_critical_dw_i(cache_line_critical),
-    .req_instruction_i(cache_line_instruction),
+    .req_instruction_i(cache_line_instruction), .req_gbl_i(1'b0),
     .rsp_valid_o(cache_line_rsp_valid),
     .rsp_ready_i(cache_line_rsp_ready),
     .rsp_line_o(cache_line_rsp_data),

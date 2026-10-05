@@ -479,7 +479,8 @@ module ppc603e #(
                          pin_status.dcache_enable, pin_status.dcache_lock,
                          pin_status.icache_lock,
                          pin_status.dcache_flash_invalidate, pin_status.noop_touch,
-                         pin_status.broadcast_enable, pin_status.watchdog_reseto, retire_valid, retire, halted};
+                         pin_status.broadcast_enable, pin_status.ifetch_m_enable, pin_status.watchdog_reseto,
+                         retire_valid, retire, halted};
 endmodule
 /* verilator lint_on ASCRANGE */
 `default_nettype wire

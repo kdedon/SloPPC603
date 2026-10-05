@@ -523,6 +523,7 @@ package ppc_pkg;
     logic dcache_flash_invalidate; // DCFI
     logic noop_touch;        // NOOPTI
     logic broadcast_enable;  // ABE
+    logic ifetch_m_enable;   // IFEM
     logic address_parity_enable; // EBA
     logic ape_taken;
     logic data_parity_enable; // EBD
@@ -859,6 +860,7 @@ package ppc_pkg;
   localparam int HID0_ILOCK = 13;
   localparam int HID0_DCFI = 10;
   localparam int HID0_ABE = 3;
+  localparam int HID0_IFEM = 7;
   localparam int HID0_NOOPTI = 0;
   localparam int HID0_EMCP = 31;
   localparam int HID0_EBA = 29;

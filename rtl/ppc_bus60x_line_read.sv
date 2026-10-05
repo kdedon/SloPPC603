@@ -14,6 +14,8 @@ module ppc_bus60x_line_read (
   input  logic [31:0]  req_line_addr_i,
   input  logic [1:0]   req_critical_dw_i,
   input  logic         req_instruction_i,
+  // Assert GBL for this tenure.
+  input  logic         req_gbl_i,
   output logic         rsp_valid_o,
   input  logic         rsp_ready_i,
   output logic [255:0] rsp_line_o,
@@ -78,6 +80,7 @@ module ppc_bus60x_line_read (
   logic [31:0] start_addr_q;
   logic [1:0] critical_dw_q;
   logic instruction_q;
+  logic gbl_q;
   logic [1:0] beat_count_q;
   logic [63:0] provisional_q;
   // Assembles confirmed beats and holds the response; zero on error.
@@ -169,7 +172,7 @@ module ppc_bus60x_line_read (
     tc_o = instruction_q ? TC_INSTRUCTION : TC_DATA;
     ci_n_o = 1'b1;
     wt_n_o = 1'b1;
-    gbl_n_o = 1'b1;
+    gbl_n_o = !gbl_q;
     cse_o = 2'b00;
 
     dbb_oe_o = rst_ni &&
@@ -207,6 +210,7 @@ module ppc_bus60x_line_read (
       start_addr_q <= 32'b0;
       critical_dw_q <= 2'b0;
       instruction_q <= 1'b0;
+      gbl_q <= 1'b0;
       beat_count_q <= 2'b0;
       rsp_valid_q <= 1'b0;
       rsp_error_q <= 1'b0;
@@ -235,6 +239,7 @@ module ppc_bus60x_line_read (
                               {27'b0, req_critical_dw_i, 3'b000};
               critical_dw_q <= req_critical_dw_i;
               instruction_q <= req_instruction_i;
+              gbl_q <= req_gbl_i;
               beat_count_q <= 2'b0;
               rsp_error_q <= 1'b0;
               state_q <= LINE_ADDR_REQUEST;

@@ -262,6 +262,8 @@ module ppc_core_bat_cached_bus60x #(
   logic transport_ifetch_error;
 
   logic physical_fetch_busy_q, route_managed_q, fetch_free;
+  // M of the fetch in flight, which any line fill serves.
+  logic fetch_m_q;
   logic managed_fetch_valid, direct_fetch_valid, fetch_gate;
   logic managed_maintenance_valid, managed_maintenance_ready;
   logic icbi_req_valid, icbi_req_ready;
@@ -484,8 +486,8 @@ module ppc_core_bat_cached_bus60x #(
   // (real-mode WIMG 0001) still allows the required block to be cached
   // (UM 3.5.4, 5.2).
   assign eligible_managed = !imem_req_wimg[2];
-  logic unused_imem_wmg;
-  assign unused_imem_wmg = ^{imem_req_wimg[3], imem_req_wimg[1:0]};
+  logic unused_imem_wg;
+  assign unused_imem_wg = ^{imem_req_wimg[3], imem_req_wimg[0]};
   // A pending external command or CPU icbi holds new fetches.
   assign fetch_gate = rst_ni && !maintenance_valid_i && !icbi_req_valid &&
     !icache_ctl_valid &&
@@ -550,12 +552,14 @@ module ppc_core_bat_cached_bus60x #(
     if (!rst_ni) begin
       physical_fetch_busy_q <= 1'b0;
       route_managed_q <= 1'b0;
+      fetch_m_q <= 1'b0;
     end else begin
       if (imem_rsp_valid && imem_rsp_ready)
         physical_fetch_busy_q <= 1'b0;
       if (imem_req_valid && imem_req_ready) begin
         physical_fetch_busy_q <= 1'b1;
         route_managed_q <= eligible_managed;
+        fetch_m_q <= imem_req_wimg[1];
       end
     end
   end
@@ -661,6 +665,8 @@ module ppc_core_bat_cached_bus60x #(
     .line_req_line_addr_i(cache_line_addr),
     .line_req_critical_dw_i(cache_line_critical),
     .line_req_instruction_i(cache_line_instruction),
+    .line_req_gbl_i(cache_line_instruction && fetch_m_q &&
+                    core_pin_status.ifetch_m_enable),
     .line_rsp_valid_o(cache_line_rsp_valid),
     .line_rsp_ready_i(cache_line_rsp_ready),
     .line_rsp_line_o(cache_line_rsp_data),

@@ -53,7 +53,7 @@ module tb_chip_pins #(parameter int PLL = -1);
   // beats, bursts, without CI, to ilock_line's line, at ilock_top.
   logic [31:0] ilock_from = '1, ilock_line = '0, ilock_top = '0;
   int ilock_single = 0, ilock_burst = 0, ilock_no_ci = 0, ilock_in_line = 0;
-  int ilock_at_top = 0;
+  int ilock_at_top = 0, ilock_gbl = 0;
   bit ilock_watch = 1'b0;
 
   // The falling clock edge in a cycle that ends at a SYSCLK edge. Waits
@@ -77,6 +77,7 @@ module tb_chip_pins #(parameter int PLL = -1);
         if (tbst_n) ilock_single++;
         else ilock_burst++;
         if (ci_n) ilock_no_ci++;
+        if (!gbl_n) ilock_gbl++;
         if ((32'(a) >> 5) == (ilock_line >> 5)) ilock_in_line++;
         if (32'(a) == ilock_top) ilock_at_top++;
       end
@@ -650,6 +651,39 @@ module tb_chip_pins #(parameter int PLL = -1);
     wait_word(SYNC_MARK, 1, 6000, "tlbsync completes after TLBISYNC negates");
   endtask
 
+  // HID0[IFEM] drives GBL on fetches from M=1 pages (UM Table 2-2): IBAT0
+  // maps the ROM with WIMG=0010 and code at MAIN+0x200 is filled.
+  task automatic case_ifem(input bit ifem);
+    logic [31:0] b;
+    b = MAIN + 32'h200;
+    load_handlers();
+    at = MAIN;
+    emit_const(3, BASE | 32'h3); emit(asm_spr(1'b1, 3, 528));
+    emit_const(3, BASE | 32'h12); emit(asm_spr(1'b1, 3, 529)); emit(ASM_ISYNC);
+    emit_const(3, 32'h0000_8800); emit(asm_spr(1'b1, 3, 1008));
+    emit_const(3, ifem ? 32'h0000_8080 : 32'h0000_8000); emit(asm_spr(1'b1, 3, 1008));
+    emit(ASM_ISYNC);
+    emit(asm_li(7, 0));
+    emit_const(3, b); emit(asm_spr(1'b1, 3, 26));
+    emit_const(3, MSR_IP | 32'h20); emit(asm_spr(1'b1, 3, 27));
+    emit(RFI);
+    check(at <= b, "program layout");
+    at = b;
+    emit(asm_addi(7, 7, 1)); emit(asm_stw(7, ILOCK_B, 31)); emit(asm_cmpwi(7, 3));
+    emit(asm_bc(12, 0, -12)); emit(asm_ba(b + 32'h10, 1'b0));
+    ilock_from = b;
+    ilock_watch = 1'b0;
+    {ilock_single, ilock_burst, ilock_no_ci, ilock_in_line, ilock_at_top, ilock_gbl} = '0;
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    wait_word(ILOCK_B, 3, 20000, "IFEM loop runs");
+    check(ilock_burst != 0 && ilock_gbl == (ifem ? ilock_burst + ilock_single : 0),
+          $sformatf("IFEM=%0d: %0d of %0d fetch tenures assert GBL", ifem, ilock_gbl,
+                    ilock_burst + ilock_single));
+    ilock_from = '1;
+    ilock_watch = 1'b0;
+  endtask
+
   initial begin
     repeat (4) bus_fall();
     case_hreset();
@@ -673,6 +707,8 @@ module tb_chip_pins #(parameter int PLL = -1);
     case_foreign_artry();
     case_ilock(1'b0);
     case_ilock(1'b1);
+    case_ifem(1'b0);
+    case_ifem(1'b1);
     // Cache hits stream: a fetch the router offers in the cycle it accepts
     // it, accepted on consecutive cycles.
     check(fetch_streamed > 0, "instruction fetch requests every cycle on hits");

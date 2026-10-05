@@ -1512,6 +1512,7 @@ module ppc_special #(
     pin_status_o.dcache_flash_invalidate = hid0_q[HID0_DCFI];
     pin_status_o.noop_touch = hid0_q[HID0_NOOPTI];
     pin_status_o.broadcast_enable = CPU_CFG.has_abe_ifem && hid0_q[HID0_ABE];
+    pin_status_o.ifetch_m_enable = CPU_CFG.has_abe_ifem && hid0_q[HID0_IFEM];
     pin_status_o.soft_reset_taken = interrupt_accept && pin_soft_reset_select &&
       !watchdog_reset_select;
     pin_status_o.smi_taken = interrupt_accept && pin_smi_select;
