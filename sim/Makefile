@@ -2529,6 +2529,39 @@ test-mister-load: mister-load-model
 	  timeout 3600 ./$(MISTER_LOAD_OUT)/model/Vtb_mister_load $(SIM_ARGS) +MAX_CYCLES=1000000000 \
 	    +IMAGE=$(DEMO_FW_DIR)/images/ppc603e-$$i-smoke.bin $$menu +PPM=$(MISTER_LOAD_OUT)/$$i.ppm || exit 1; \
 	  python3 tools/ppm_to_png.py $(MISTER_LOAD_OUT)/$$i.ppm $(MISTER_LOAD_OUT)/$$i.png; menu=; done
+# Doom smoke (docs/BENCHMARKS.md#doom): the big- and little-endian smoke
+# images run in tb_mister_load with DOOM1.WAD downloaded first (munged for
+# little-endian) to gametic DOOM_SMOKE_TICS. Both frame checksums must equal
+# a host build's of the same engine, arguments and WAD.
+DOOM_OUT := $(BUILD_DIR)/mister/doom
+HOSTCC ?= gcc
+DOOM_SMOKE_TICS ?= 6
+DOOM_DG := ../toolchain/build/demo/src/doomgeneric/doomgeneric
+DOOM_WAD := ../toolchain/build/demo/wad/DOOM1.WAD
+include ../toolchain/demo/doom/engine.mk
+.PHONY: doom-host test-mister-doom
+doom-host:
+	../toolchain/demo/fetch-doom.sh
+	mkdir -p $(DOOM_OUT)
+	$(HOSTCC) -O1 -w -fsigned-char -fno-strict-aliasing -DCMAP256 -DDOOMGENERIC_RESX=320 \
+	  -DDOOMGENERIC_RESY=200 -I$(DOOM_DG) $(addprefix $(DOOM_DG)/,$(addsuffix .c,$(DOOM_ENGINE))) \
+	  ../toolchain/demo/doom/host.c -o $(DOOM_OUT)/doom-host
+	ln -sf $(abspath $(DOOM_WAD)) $(DOOM_OUT)/doom1.wad
+	cd $(DOOM_OUT) && ./doom-host $(DOOM_SMOKE_TICS) | grep '^doom: gametic' > host.txt
+test-mister-doom: mister-load-model doom-host
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) doom DOOM_SMOKE_TICS=$(DOOM_SMOKE_TICS)
+	for e in be le; do \
+	  img=ppc603e-doom-smoke; flag=; [ $$e = le ] && img=ppc603e-doom-le-smoke && flag=+WAD_LE; \
+	  timeout 14400 ./$(MISTER_LOAD_OUT)/model/Vtb_mister_load $(SIM_ARGS) +MAX_CYCLES=4000000000 \
+	    +WAD=$(DOOM_WAD) $$flag +IMAGE=$(DEMO_FW_DIR)/doom/$$img.bin +PPM=$(DOOM_OUT)/$$e.ppm \
+	    > $(DOOM_OUT)/$$e.log 2>&1 || { tail -20 $(DOOM_OUT)/$$e.log; exit 1; }; \
+	  grep '^doom: gametic' $(DOOM_OUT)/$$e.log > $(DOOM_OUT)/$$e.txt; \
+	  cmp $(DOOM_OUT)/host.txt $(DOOM_OUT)/$$e.txt || { cat $(DOOM_OUT)/host.txt $(DOOM_OUT)/$$e.txt; exit 1; }; \
+	  grep -E '^doom: [0-9]+ cycles|^image: exit|^PASS' $(DOOM_OUT)/$$e.log | sed "s/^/$$e: /"; \
+	  python3 tools/ppm_to_png.py $(DOOM_OUT)/$$e.ppm $(DOOM_OUT)/$$e.png; done
+	cat $(DOOM_OUT)/host.txt
+
 # Uninitialized-state sweep: core, chip, demo SoC and MiSTer benches rerun
 # with several random initial values (XRAND builds) plus all-zero and all-one
 # state, so a register or memory that is used or written before reset
