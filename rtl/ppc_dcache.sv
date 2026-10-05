@@ -642,9 +642,10 @@ module ppc_dcache #(
   // in its lookup cycle (UM Table 6-6, one store per cycle; UM 1.1.5.2, one
   // byte-wise read-modify-write per cycle). The next request is accepted then
   // as follows. A store reads no data, and the tag and state reads see this
-  // write. Others need the data RAM reading their double word, which is so
+  // write. A load needs the data RAM reading its double word, which is so
   // only in the store's first lookup cycle; a load of the double word being
   // written takes the written bytes from fwd_* in place of the RAM's old data.
+  // Other operations wait, so the accept does not depend on the address.
   logic lk_fast_st, lk_fast_st_done, lk_fast_st_next, lk_fast_st_dw;
   assign lk_fast_st = FAST_LOAD_HIT && state_q == S_LOOKUP && req_op_q == DC_STORE &&
                       cacheable && !req_w && hit && !snp_valid_q && push_st_q != PU_READ &&
@@ -653,7 +654,7 @@ module ppc_dcache #(
   assign lk_fast_st_dw =
     {req_addr_i[5 +: SET_BITS], req_addr_i[4:3]} == {req_set, req_dw};
   assign lk_fast_st_next = lk_fast_st_done && (req_op_i == DC_STORE ||
-    (early_data_q && (!lk_fast_st_dw || req_op_i == DC_LOAD)));
+    (early_data_q && req_op_i == DC_LOAD));
 
   // ---------------------------------------------------- write queue count
   logic wq_full, wq_push, wq_push_cob, wq_pop;

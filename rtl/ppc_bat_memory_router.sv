@@ -1057,8 +1057,8 @@ module ppc_bat_memory_router #(
       pdmem_req_wdata_o = dmem_req_wdata;
       pdmem_req_wstrb_o = dmem_req_wstrb;
       pdmem_req_wimg_o = d_hit_wimg;
+      pdmem_req_ds_o = 1'b0;
     end
-    if (d_pipe_try) pdmem_req_ds_o = 1'b0;
 
     imem_rsp_valid = 1'b0;
     imem_rsp_insn = pimem_rsp_insn_i;
