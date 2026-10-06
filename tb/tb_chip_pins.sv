@@ -567,20 +567,120 @@ module tb_chip_pins #(parameter int PLL = -1);
 
   task automatic case_straps;
     loop_program(32'h0, MSR_IP);
-    qack_n = 1'b1;
-    hard_reset();
-    expect_checkstop("reduced-pinout strap");
-    qack_n = 1'b0;
-    tlbisync_n = 1'b0;
-    hard_reset();
-    expect_checkstop("32-bit data bus strap");
-    tlbisync_n = 1'b1;
     pll_cfg = (CHIP_PLL_CFG == 4'b0100) ? 4'b0101 : 4'b0100;
     hard_reset();
     expect_checkstop("PLL_CFG strap");
     pll_cfg = CHIP_PLL_CFG;
     hard_reset();
     wait_word(RESETS, 1, 6000, "supported straps boot");
+  endtask
+
+  // UM 8.6.1, 8.6.3: TLBISYNC asserted at HRESET negation selects the
+  // 32-bit data bus; QACK negated selects reduced pinout, which implies it.
+  // Single beats use the lanes of A[30:31] and DL carries junk; caching on,
+  // line fills, two castouts and a snoop push run eight beats. With drtry
+  // every read beat is cancelled once and replaced.
+  localparam logic [31:0] SRC = BASE + 32'h9000, LINES = BASE + 32'ha000;
+  localparam int RES = 'h80, FLAG = 'h50;
+  task automatic case_dbw32(input bit reduced, input bit drtry);
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic [255:0] line;  // only the pushed word is checked
+    /* verilator lint_on UNUSEDSIGNAL */
+    bit retried;
+    int beats, bursts_w, bursts_r, pushes, drtries;
+    load_handlers();
+    put_word(SRC, 32'h1122_3344);
+    put_word(SRC + 4, 32'h5566_7788);
+    for (int k = 0; k < 5; k++) put_word(LINES + 32'(k) * 32'h1000 + 8, 32'h100 * k);
+    at = MAIN;
+    prologue(32'h0, MSR_IP | MSR_ME);
+    emit_const(6, SRC);
+    emit(asm_lwz(7, 0, 6));
+    emit(asm_stw(7, RES, 31));
+    emit(asm_lwz(7, 4, 6));
+    emit(asm_stw(7, RES + 4, 31));
+    emit(asm_lbz(7, 5, 6));
+    emit(asm_stw(7, RES + 8, 31));
+    emit(asm_d(40, 7, 6, 6));            // lhz
+    emit(asm_stw(7, RES + 'hc, 31));
+    emit(asm_lwz(7, 2, 6));              // crosses a word
+    emit(asm_stw(7, RES + 'h10, 31));
+    emit_const(8, 32'hcafe_f00d);
+    emit(asm_stb(8, RES + 'h15, 31));
+    emit(asm_d(44, 8, 31, RES + 'h1a));  // sth
+    emit(asm_stw(8, RES + 'h1e, 31));    // crosses a word
+    // Caches on: five dirty lines in one set cast out line 0, whose reload
+    // casts out line 1.
+    emit_const(3, 32'h0000_c000);
+    emit(asm_spr(1'b1, 3, 1008));
+    emit(ASM_ISYNC);
+    for (int k = 0; k < 5; k++) begin
+      emit_const(6, LINES + 32'(k) * 32'h1000);
+      emit(asm_lwz(7, 8, 6));
+      emit(asm_addi(7, 7, k + 1));
+      emit(asm_stw(7, 8, 6));
+    end
+    emit_const(6, LINES);
+    emit(asm_lwz(7, 8, 6));
+    emit(asm_stw(7, RES + 'h28, 31));
+    emit(asm_li(7, 1));
+    emit(asm_stw(7, FLAG, 31));
+    emit_const(9, DATA + RES + 'h20);
+    emit(asm_dcbf(0, 9));
+    emit_const(9, DATA + FLAG);
+    emit(asm_dcbf(0, 9));
+    emit(ASM_SYNC);
+    emit(ASM_SELF);
+    check(at < SRC, "program layout");
+    beats = memory.n_paired32;
+    bursts_w = memory.n_write_burst;
+    bursts_r = memory.bursts;
+    pushes = memory.n_push;
+    drtries = memory.drtries;
+    bfm_drtry = drtry;
+    if (reduced) qack_n = 1'b1;
+    else tlbisync_n = 1'b0;
+    wait_bus_idle();
+    memory.dbw32 = 1'b1;
+    hard_reset();
+    tlbisync_n = 1'b1;
+    wait_word(RESETS, 1, 6000, "32-bit bus boot");
+    wait_word(FLAG, 1, 40000, "32-bit bus program");
+    check(mem_word(DATA + RES) == 32'h1122_3344 && mem_word(DATA + RES + 4) == 32'h5566_7788,
+          $sformatf("32-bit words: %08x %08x", mem_word(DATA + RES), mem_word(DATA + RES + 4)));
+    check(mem_word(DATA + RES + 8) == 32'h66 && mem_word(DATA + RES + 'hc) == 32'h7788,
+          $sformatf("32-bit byte, half: %08x %08x", mem_word(DATA + RES + 8),
+                    mem_word(DATA + RES + 'hc)));
+    check(mem_word(DATA + RES + 'h10) == 32'h3344_5566,
+          $sformatf("32-bit split load: %08x", mem_word(DATA + RES + 'h10)));
+    check(mem_word(DATA + RES + 'h14) == 32'h000d_0000 && mem_word(DATA + RES + 'h18) == 32'h0000_f00d &&
+          mem_word(DATA + RES + 'h1c) == 32'h0000_cafe && mem_word(DATA + RES + 'h20) == 32'hf00d_0000,
+          $sformatf("32-bit stores: %08x %08x %08x %08x", mem_word(DATA + RES + 'h14),
+                    mem_word(DATA + RES + 'h18), mem_word(DATA + RES + 'h1c), mem_word(DATA + RES + 'h20)));
+    check(mem_word(LINES + 8) == 32'h1 && mem_word(LINES + 32'h1008) == 32'h102 &&
+          mem_word(DATA + RES + 'h28) == 32'h1,
+          $sformatf("32-bit castouts and refill: %08x %08x %08x", mem_word(LINES + 8),
+                    mem_word(LINES + 32'h1008), mem_word(DATA + RES + 'h28)));
+    memory.om_run(5'b01010, LINES + 32'h3000, 1'b1, 1'b1, '0, 2, line, retried);
+    check(retried && memory.n_push > pushes && line[191:160] == 32'h304 &&
+          mem_word(LINES + 32'h3008) == 32'h304,
+          $sformatf("32-bit snoop push: retried=%0d pushes=%0d word=%08x mem=%08x", retried,
+                    memory.n_push - pushes, line[191:160], mem_word(LINES + 32'h3008)));
+    check(memory.n_write_burst - bursts_w >= 3 && memory.bursts - bursts_r >= 6 &&
+          memory.n_paired32 - beats >= 8 * 9,
+          $sformatf("32-bit bursts: writes=%0d reads=%0d paired beats=%0d",
+                    memory.n_write_burst - bursts_w, memory.bursts - bursts_r,
+                    memory.n_paired32 - beats));
+    if (reduced)
+      check(!rsrv_n && ape_n && dpe_n, "reduced pinout: RSRV low, APE and DPE released");
+    $display("chip pins: 32-bit bus, reduced=%0d drtry=%0d: paired beats=%0d write bursts=%0d read bursts=%0d drtries=%0d",
+             reduced, drtry, memory.n_paired32 - beats, memory.n_write_burst - bursts_w,
+             memory.bursts - bursts_r, memory.drtries - drtries);
+    wait_bus_idle();
+    memory.dbw32 = 1'b0;
+    bfm_drtry = 1'b0;
+    qack_n = 1'b0;
+    bus_block = 1'b0;
   endtask
 
   task automatic case_tben;
@@ -988,6 +1088,9 @@ module tb_chip_pins #(parameter int PLL = -1);
     case_mcp_checkstop();
     case_ckstp_in();
     case_straps();
+    case_dbw32(1'b0, 1'b0);
+    case_dbw32(1'b0, 1'b1);
+    case_dbw32(1'b1, 1'b0);
     case_tben();
     case_smi();
     case_rsrv();

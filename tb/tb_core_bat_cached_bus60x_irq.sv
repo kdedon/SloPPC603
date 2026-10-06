@@ -51,7 +51,7 @@ module tb_core_bat_cached_bus60x_irq;
   logic unused_checkstop;
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
-    .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1)) dut(.bus_ce_i(1'b1),
+    .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1)) dut(.dbw32_i(1'b0), .bus_ce_i(1'b1),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(taken),.interrupt_pc_o(irq_pc),

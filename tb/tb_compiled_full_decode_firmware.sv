@@ -59,7 +59,7 @@ module tb_compiled_full_decode_firmware #(parameter bit FULL_DECODE = 1'b1);
     .ENABLE_TLB_LOAD(1'b1),.ENABLE_BYTE_REVERSE(1'b1),.ENABLE_MULTIPLE_STRING(1'b1),
     .ENABLE_RESERVATION(1'b1),.ENABLE_MISALIGNED_ACCESS(1'b1),
     .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_DEBUG_EXCEPTIONS(1'b1),
-    .ENABLE_FULL_DECODE(FULL_DECODE)) dut(.bus_ce_i(1'b1),
+    .ENABLE_FULL_DECODE(FULL_DECODE)) dut(.dbw32_i(1'b0), .bus_ce_i(1'b1),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),

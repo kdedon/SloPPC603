@@ -67,7 +67,7 @@ module tb_compiled_lsu_dcache_firmware;
     .ENABLE_BYTE_REVERSE(LSU_EXTENSIONS),.ENABLE_MULTIPLE_STRING(LSU_EXTENSIONS),
     .ENABLE_RESERVATION(LSU_EXTENSIONS),.ENABLE_MISALIGNED_ACCESS(LSU_EXTENSIONS),
     .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_PIN_INTERRUPTS(1'b1),
-    .ENABLE_DCACHE(1'b1),.RESET_DCACHE_ENABLE(1'b1)) dut(.bus_ce_i(1'b1),
+    .ENABLE_DCACHE(1'b1),.RESET_DCACHE_ENABLE(1'b1)) dut(.bus_ce_i(1'b1), .dbw32_i(1'b0),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(irq),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),

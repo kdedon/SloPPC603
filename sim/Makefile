@@ -2316,7 +2316,7 @@ test-dcache-mutations:
 # with a second bus master, seeded bus timing and a coherent image, plus
 # injected defects the bench must reject (BIU mutations, and the cache
 # answering a modified snoop hit without a push).
-BIU_DCACHE_RTL := ../rtl/ppc_pkg.sv ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv ../rtl/ppc_bus60x_line_read.sv ../rtl/ppc_bus60x_master_select.sv ../rtl/ppc_bus60x_two_master.sv ../rtl/ppc_bus60x_cache_master.sv ../rtl/ppc_bus60x_snoop.sv ../rtl/ppc_bus60x_direct_store.sv ../rtl/ppc_biu.sv $(DCACHE_RTL)
+BIU_DCACHE_RTL := ../rtl/ppc_pkg.sv ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv ../rtl/ppc_bus60x_line_read.sv ../rtl/ppc_bus60x_master_select.sv ../rtl/ppc_bus60x_two_master.sv ../rtl/ppc_bus60x_cache_master.sv ../rtl/ppc_bus60x_snoop.sv ../rtl/ppc_bus60x_direct_store.sv ../rtl/ppc_bus60x_dbw32.sv ../rtl/ppc_biu.sv $(DCACHE_RTL)
 BIU_DCACHE_SEEDS := 2 3 4 5
 BIU_DCACHE_MUTATIONS := BIU_MUTATION=1 BIU_MUTATION=2 BIU_MUTATION=3 BIU_MUTATION=4 DC_MUTATION=2 DC_MUTATION=8
 .PHONY: test-biu-dcache-snoop test-biu-dcache-snoop-mutations lint-biu-dcache

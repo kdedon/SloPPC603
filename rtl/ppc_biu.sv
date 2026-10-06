@@ -25,6 +25,8 @@ module ppc_biu #(
   // High in the cycle that ends at a SYSCLK edge; the 60x side advances
   // only then.
   input  logic        bus_ce_i,
+  // 32-bit data bus mode (UM 8.6.1).
+  input  logic        dbw32_i,
 
   // Uncached instruction reads.
   input  logic        imem_req_valid_i,
@@ -165,6 +167,8 @@ module ppc_biu #(
   logic scalar_aack_n, scalar_artry_n, scalar_dbg_n, scalar_dbb_in_n;
   logic scalar_dbb_n, scalar_dbb_oe;
   logic [63:0] scalar_d_o;
+  logic [63:0] scalar_m_d_i, scalar_m_d_o;
+  logic scalar_m_ta_n, scalar_m_drtry_n;
   logic scalar_d_oe, scalar_ta_n, scalar_drtry_n, scalar_tea_n;
 
   logic line_busy, line_protocol_error;
@@ -179,6 +183,8 @@ module ppc_biu #(
   logic line_aack_n, line_artry_n, line_dbg_n, line_dbb_in_n;
   logic line_dbb_n, line_dbb_oe;
   logic [63:0] line_d_o;
+  logic [63:0] line_m_d_i, line_m_d_o;
+  logic line_m_ta_n, line_m_drtry_n;
   logic line_d_oe, line_ta_n, line_drtry_n, line_tea_n;
   logic selector_busy, selector_protocol_error;
   // Pin side of the instruction and scalar group.
@@ -264,9 +270,18 @@ module ppc_biu #(
     .addr_oe_o(scalar_addr_oe), .aack_n_i(scalar_aack_n),
     .artry_n_i(scalar_artry_n), .dbg_n_i(scalar_dbg_n),
     .dbb_n_i(scalar_dbb_in_n), .dbb_n_o(scalar_dbb_n),
-    .dbb_oe_o(scalar_dbb_oe), .d_i(d_i), .d_o(scalar_d_o),
-    .d_oe_o(scalar_d_oe), .ta_n_i(scalar_ta_n),
-    .drtry_n_i(scalar_drtry_n), .tea_n_i(scalar_tea_n)
+    .dbb_oe_o(scalar_dbb_oe), .d_i(scalar_m_d_i), .d_o(scalar_m_d_o),
+    .d_oe_o(scalar_d_oe), .ta_n_i(scalar_m_ta_n),
+    .drtry_n_i(scalar_m_drtry_n), .tea_n_i(scalar_tea_n)
+  );
+
+  ppc_bus60x_dbw32 scalar_dbw32 (
+    .clk_i, .rst_ni, .bus_ce_i, .dbw32_i,
+    .m_ts_i(scalar_ts_oe && !scalar_ts_n), .m_a29_i(scalar_a[2]),
+    .m_tbst_n_i(scalar_tbst_n), .m_tsiz_i(scalar_tsiz), .m_dbb_oe_i(scalar_dbb_oe),
+    .d_i, .ta_n_i(scalar_ta_n), .drtry_n_i(scalar_drtry_n), .tea_n_i(scalar_tea_n),
+    .m_d_o(scalar_m_d_i), .m_ta_n_o(scalar_m_ta_n), .m_drtry_n_o(scalar_m_drtry_n),
+    .m_d_i(scalar_m_d_o), .d_o(scalar_d_o)
   );
 
   ppc_bus60x_line_read line_bus (
@@ -292,9 +307,18 @@ module ppc_biu #(
     .addr_oe_o(line_addr_oe), .aack_n_i(line_aack_n),
     .artry_n_i(line_artry_n), .dbg_n_i(line_dbg_n),
     .dbb_n_i(line_dbb_in_n), .dbb_n_o(line_dbb_n),
-    .dbb_oe_o(line_dbb_oe), .d_i(d_i), .d_o(line_d_o),
-    .d_oe_o(line_d_oe), .ta_n_i(line_ta_n),
-    .drtry_n_i(line_drtry_n), .tea_n_i(line_tea_n)
+    .dbb_oe_o(line_dbb_oe), .d_i(line_m_d_i), .d_o(line_m_d_o),
+    .d_oe_o(line_d_oe), .ta_n_i(line_m_ta_n),
+    .drtry_n_i(line_m_drtry_n), .tea_n_i(line_tea_n)
+  );
+
+  ppc_bus60x_dbw32 line_dbw32 (
+    .clk_i, .rst_ni, .bus_ce_i, .dbw32_i,
+    .m_ts_i(line_ts_oe && !line_ts_n), .m_a29_i(line_a[2]),
+    .m_tbst_n_i(line_tbst_n), .m_tsiz_i(line_tsiz), .m_dbb_oe_i(line_dbb_oe),
+    .d_i, .ta_n_i(line_ta_n), .drtry_n_i(line_drtry_n), .tea_n_i(line_tea_n),
+    .m_d_o(line_m_d_i), .m_ta_n_o(line_m_ta_n), .m_drtry_n_o(line_m_drtry_n),
+    .m_d_i(line_m_d_o), .d_o(line_d_o)
   );
 
   ppc_bus60x_two_master pin_mux (
@@ -517,6 +541,8 @@ module ppc_biu #(
     logic cm_aack_n, cm_artry_n, cm_dbg_n, cm_dbb_in_n;
     logic cm_dbb_n, cm_dbb_oe;
     logic [63:0] cm_d_o;
+    logic [63:0] cm_m_d_i, cm_m_d_o;
+    logic cm_m_ta_n, cm_m_drtry_n;
     logic cm_d_oe, cm_ta_n, cm_drtry_n, cm_tea_n;
     logic cm_busy, cm_protocol_error, push_hold, push_accept, push_wait;
     logic push_due;
@@ -540,6 +566,8 @@ module ppc_biu #(
     logic [1:0] pe_tc, pe_cse;
     logic pe_dbg_n, pe_dbb_n, pe_dbb_oe, pe_d_oe, pe_ta_n, pe_tea_n;
     logic [63:0] pe_d_o;
+    logic [63:0] pe_m_d_i, pe_m_d_o;
+    logic pe_m_ta_n, pe_m_drtry_n;
     logic pe_busy, pe_protocol_error;
     logic outer_addr_active, outer_owed_q, outer_data_tt_q, outer_aack_q;
     logic outer_dbb_q, outer_read_q, pe_aack_q, pe_owed_q, dbwo_push;
@@ -569,8 +597,17 @@ module ppc_biu #(
       .gbl_n_o(cm_gbl_n), .cse_o(cm_cse), .addr_oe_o(cm_addr_oe),
       .aack_n_i(cm_aack_n), .artry_n_i(cm_artry_n), .dbg_n_i(cm_dbg_n),
       .dbb_n_i(cm_dbb_in_n), .dbb_n_o(cm_dbb_n), .dbb_oe_o(cm_dbb_oe),
-      .d_i(d_i), .d_o(cm_d_o), .d_oe_o(cm_d_oe), .ta_n_i(cm_ta_n),
-      .drtry_n_i(cm_drtry_n), .tea_n_i(cm_tea_n)
+      .d_i(cm_m_d_i), .d_o(cm_m_d_o), .d_oe_o(cm_d_oe), .ta_n_i(cm_m_ta_n),
+      .drtry_n_i(cm_m_drtry_n), .tea_n_i(cm_tea_n)
+    );
+
+    ppc_bus60x_dbw32 cm_dbw32 (
+      .clk_i, .rst_ni, .bus_ce_i, .dbw32_i,
+      .m_ts_i(cm_ts_oe && !cm_ts_n), .m_a29_i(cm_a[2]),
+      .m_tbst_n_i(cm_tbst_n), .m_tsiz_i(cm_tsiz), .m_dbb_oe_i(cm_dbb_oe),
+      .d_i, .ta_n_i(cm_ta_n), .drtry_n_i(cm_drtry_n), .tea_n_i(cm_tea_n),
+      .m_d_o(cm_m_d_i), .m_ta_n_o(cm_m_ta_n), .m_drtry_n_o(cm_m_drtry_n),
+      .m_d_i(cm_m_d_o), .d_o(cm_d_o)
     );
 
     // While a push is due the group's request is hidden.
@@ -642,8 +679,17 @@ module ppc_biu #(
       .gbl_n_o(pe_gbl_n), .cse_o(pe_cse), .addr_oe_o(pe_addr_oe),
       .aack_n_i, .artry_n_i, .dbg_n_i(pe_dbg_n), .dbb_n_i,
       .dbb_n_o(pe_dbb_n), .dbb_oe_o(pe_dbb_oe),
-      .d_i(d_i), .d_o(pe_d_o), .d_oe_o(pe_d_oe), .ta_n_i(pe_ta_n),
-      .drtry_n_i, .tea_n_i(pe_tea_n)
+      .d_i(pe_m_d_i), .d_o(pe_m_d_o), .d_oe_o(pe_d_oe), .ta_n_i(pe_m_ta_n),
+      .drtry_n_i(pe_m_drtry_n), .tea_n_i(pe_tea_n)
+    );
+
+    ppc_bus60x_dbw32 pe_dbw32 (
+      .clk_i, .rst_ni, .bus_ce_i, .dbw32_i,
+      .m_ts_i(pe_ts_oe && !pe_ts_n), .m_a29_i(pe_a[2]),
+      .m_tbst_n_i(pe_tbst_n), .m_tsiz_i(pe_tsiz), .m_dbb_oe_i(pe_dbb_oe),
+      .d_i, .ta_n_i(pe_ta_n), .drtry_n_i(drtry_n_i), .tea_n_i(pe_tea_n),
+      .m_d_o(pe_m_d_i), .m_ta_n_o(pe_m_ta_n), .m_drtry_n_o(pe_m_drtry_n),
+      .m_d_i(pe_m_d_o), .d_o(pe_d_o)
     );
     /* verilator lint_on PINCONNECTEMPTY */
 

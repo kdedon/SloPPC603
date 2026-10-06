@@ -521,7 +521,7 @@ module ppc_translated_measure #(
     .ENABLE_PIN_INTERRUPTS(1'b1),
     .ENABLE_DCACHE(1'b1),
     .ENABLE_TEST_REDIRECT(1'b0)
-  ) dut (.bus_ce_i(1'b1),
+  ) dut (.dbw32_i(1'b0), .bus_ce_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */

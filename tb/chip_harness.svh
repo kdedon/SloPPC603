@@ -121,16 +121,21 @@ end
 assign wr_fire = bus_ce && wr_pending_q && !ta_n && dbb_oe && data_oe;
 assign wr_addr = wr_addr_q;
 
-// Odd parity on every driven address and data byte.
+// Odd parity on every driven address and data byte. The 32-bit bus drives
+// DL and DP[4:7] low; reduced pinout also AP and DP[0:3].
 logic [63:0] dout;
 assign dout = {dh_out, dl_out};
 always @(posedge clk) begin
   if (addr_oe)
     for (int i = 0; i < 4; i++)
-      if (^{a[8*i +: 8], ap[i]} !== 1'b1) $fatal(1, "address parity byte %0d", i);
+      if (dut.reduced_q ? ap[i] !== 1'b0 : ^{a[8*i +: 8], ap[i]} !== 1'b1)
+        $fatal(1, "address parity byte %0d", i);
   if (data_oe)
     for (int i = 0; i < 8; i++)
-      if (^{dout[63-8*i -: 8], dp[i]} !== 1'b1) $fatal(1, "data parity byte %0d", i);
+      if (dut.reduced_q || (dut.dbw32 && i >= 4)
+            ? dp[i] !== 1'b0 || (i >= 4 && dout[63-8*i -: 8] !== 8'b0)
+            : ^{dout[63-8*i -: 8], dp[i]} !== 1'b1)
+        $fatal(1, "data parity byte %0d", i);
 end
 
 // Outputs change only in the first cycle after a SYSCLK edge (the

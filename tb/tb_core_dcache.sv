@@ -67,7 +67,7 @@ module tb_core_dcache #(parameter int MUTATION = 0, parameter int unsigned SEED 
     .ENABLE_MULTIPLE_STRING(1'b1),.ENABLE_RESERVATION(1'b1),
     .ENABLE_MISALIGNED_ACCESS(1'b1),.ENABLE_MACHINE_CHECK(1'b1),
     .ENABLE_PIN_INTERRUPTS(1'b1),.ENABLE_FULL_DECODE(1'b1),.ENABLE_DCACHE(1'b1),
-    .DCACHE_MUTATION(MUTATION)) dut(.bus_ce_i(1'b1),
+    .DCACHE_MUTATION(MUTATION)) dut(.dbw32_i(1'b0), .bus_ce_i(1'b1),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(irq_taken),.interrupt_pc_o(irq_pc),

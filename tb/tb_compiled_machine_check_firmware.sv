@@ -39,7 +39,7 @@ module tb_compiled_machine_check_firmware;
   ppc_core_bat_cached_bus60x #(.RETIRE_PAIRS(1'b0), .RESET_PC(32'hfff00100),.ENABLE_TEST_REDIRECT(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
     .ENABLE_RUNTIME_BAT(1'b1),.ENABLE_EXTERNAL_INTERRUPTS(1'b1),
-    .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut(.bus_ce_i(1'b1),
+    .ENABLE_MACHINE_CHECK(1'b1),.ENABLE_DEBUG_EXCEPTIONS(1'b1)) dut(.dbw32_i(1'b0), .bus_ce_i(1'b1),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(),.interrupt_pc_o(),

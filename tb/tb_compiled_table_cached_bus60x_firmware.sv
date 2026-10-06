@@ -60,7 +60,7 @@ module tb_compiled_table_cached_bus60x_firmware #(
     .ENABLE_SEGMENT_REGISTERS(1'b1),.ENABLE_PAGE_TRANSLATION(1'b1),
     .ENABLE_TLB_LOAD(1'b1),.ENABLE_TLB_INVALIDATE(FAULT_PROFILE!=0),
     .ENABLE_PAGE_MISS_RESULTS(1'b1),.ENABLE_TLB_MISS_EXCEPTIONS(1'b1)
-  ) dut(.bus_ce_i(1'b1),
+  ) dut(.dbw32_i(1'b0), .bus_ce_i(1'b1),
     /* verilator lint_off PINCONNECTEMPTY */
     .perf_o(),
     /* verilator lint_on PINCONNECTEMPTY */
