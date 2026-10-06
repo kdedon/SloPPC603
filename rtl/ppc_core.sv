@@ -923,7 +923,7 @@ module ppc_core #(
       if (fetch_stop) begin
         fetch_hold_q <= 1'b1;
         stop_left_q <= iq_count - iq_pops + IQ_COUNT_WIDTH'(1) +
-                       IQ_COUNT_WIDTH'(iq_in1 && wait1);
+                       IQ_COUNT_WIDTH'(iq_in0 && iq_in1 && wait1);
       end else if (fetch_hold_q) begin
         if (iq_pops >= stop_left_q) fetch_hold_q <= 1'b0;
         stop_left_q <= stop_left_q - iq_pops;
@@ -934,19 +934,21 @@ module ppc_core #(
                                                           logic [IQ_COUNT_WIDTH-1:0] pops);
     return (left > pops) ? left - pops : '0;
   endfunction
-  logic [IQ_COUNT_WIDTH-1:0] crw_after, pos0;
+  logic [IQ_COUNT_WIDTH-1:0] crw_after, pos0, pos1;
   assign crw_after = left_after(crw_left_q, iq_pops);
   assign pos0 = iq_count - iq_pops + IQ_COUNT_WIDTH'(1);
+  // The second word takes the first lane when the first is removed.
+  assign pos1 = pos0 + IQ_COUNT_WIDTH'(iq_in0);
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear) begin
       crw_left_q <= '0;
       crb_left_q <= '0;
       crbw_left_q <= '0;
     end else begin
-      crw_left_q <= (iq_in1 && crw1) ? pos0 + IQ_COUNT_WIDTH'(1) :
+      crw_left_q <= (iq_in1 && crw1) ? pos1 :
                     (iq_in0 && crw0) ? pos0 : crw_after;
       if (iq_in1 && crb1 && ((iq_in0 && crw0) || cr_dep)) begin
-        crb_left_q <= pos0 + IQ_COUNT_WIDTH'(1);
+        crb_left_q <= pos1;
         crbw_left_q <= (iq_in0 && crw0) ? pos0 : crw_after;
       end else if (iq_in0 && crb0 && cr_dep) begin
         crb_left_q <= pos0;
@@ -959,7 +961,7 @@ module ppc_core #(
   end
   // Pair predecode. dep_prev compares against the preceding pushed word:
   // the other lane, or the last entry pushed since a clear or fold.
-  iq_pair_t push_pair, push_pair1;
+  iq_pair_t push_pair, push_pair1, push_pair1s;
   logic [1:0] last_writes_q, lane0_writes;
   logic [4:0] last_dst_q, last_base_q;
   /* verilator lint_off UNUSEDSIGNAL */
@@ -978,6 +980,8 @@ module ppc_core #(
     push_pair.dep_prev = depends(push_uop, last_writes_q, last_dst_q, last_base_q);
     push_pair1 = pair_predecode(push_uop1, queued1.insn, queued1.fault != FETCH_OK);
     push_pair1.dep_prev = depends(push_uop1, lane0_writes, push_uop.dst, push_uop.src_a);
+    push_pair1s = push_pair1;
+    push_pair1s.dep_prev = depends(push_uop1, last_writes_q, last_dst_q, last_base_q);
   end
   // A removed b leaves the last pushed entry in place.
   logic fold_removed_q;
@@ -1003,12 +1007,17 @@ module ppc_core #(
   logic iq_valid1;
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) - 1:0] iq_dq1;
   /* verilator lint_on UNUSEDSIGNAL */
+  // A removed first word passes its lane to the second.
+  logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) - 1:0] iq_lane0;
+  assign iq_lane0 = iq_in0 ?
+    {queued, push_uop, fold_predict, push_branch, push_pair, fetch_removed_q} :
+    {queued1, push_uop1, fold_predict1, push_branch1, push_pair1s, fetch_removed_q + 2'd1};
   ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t)),
            .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(fe_clear), .flush_i(bs_now),
-    .push_valid_i({iq_in1, iq_in0}), .push_ready_o(iq_push_ready),
+    .push_valid_i({iq_in0 && iq_in1, iq_in0 || iq_in1}), .push_ready_o(iq_push_ready),
     .push2_ready_o(iq_push2_ready),
-    .push0_data_i({queued, push_uop, fold_predict, push_branch, push_pair, fetch_removed_q}),
+    .push0_data_i(iq_lane0),
     .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1, 2'd0}),
     .pop_i({dispatch1, iq_pop}), .valid_o({iq_valid1, iq_valid}),
     .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb}), .dq1_o(iq_dq1),
@@ -1039,10 +1048,11 @@ module ppc_core #(
   logic [1:0] res0, res1;
   assign res0 = resolved(queued, lr_ok, cr_final, cr_now);
   assign res1 = resolved(queued1, lr_ok && !push_writes[1], cr_final && !crw0, cr_now);
-  // A taken one folds. One not taken is removed from the first lane only
-  // without a second word, which would have to move to that lane.
+  // A taken one folds. Beside one not taken, the second word moves to the
+  // first lane and counts both removals.
   assign push_remove0 = BRANCH_REMOVAL && !trace_mode && (fetch_removed_q != 2'd3) &&
-    (plain_b(queued) || (res0[1] && (res0[0] ? fold_predict : !fd1_valid)));
+    (plain_b(queued) ||
+     (res0[1] && (res0[0] ? fold_predict : (!fd1_valid || !fetch_removed_q[1]))));
   assign push_remove1 = BRANCH_REMOVAL && !trace_mode && !wait0 &&
     (plain_b(queued1) || (res1[1] && (!res1[0] || fold_predict1)));
   assign iq_in0 = iq_push0 && !push_remove0;
@@ -1050,7 +1060,8 @@ module ppc_core #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear) fetch_removed_q <= '0;
     else if (iq_push0)
-      fetch_removed_q <= push_remove0 ? fetch_removed_q + 2'd1 :
+      fetch_removed_q <= (push_remove0 && iq_push1 && push_remove1) ? fetch_removed_q + 2'd2 :
+                         push_remove0 ? (iq_in1 ? 2'd0 : fetch_removed_q + 2'd1) :
                          (iq_push1 && push_remove1) ? 2'd1 : 2'd0;
   end
   // Later micro-ops of a cracked instruction carry no count.
@@ -2699,10 +2710,10 @@ module ppc_core #(
   // synthesis translate_on
 
   // The entry after DQ0 next cycle: DQ1, or the lane-0 push when DQ1 is empty.
-  assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && iq_in0));
+  assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && (iq_in0 || iq_in1)));
   assign {iq_peek_head, iq_peek_uop, iq_peek_folded, iq_peek_branch} = iq_valid1 ?
       {dq1_head, dq1_uop, dq1_folded, dq1_branch} :
-      {queued, push_uop, fold_predict, push_branch};
+      iq_lane0[$bits(iq_lane0) - 1 -: $bits(fetch_packet_t) + $bits(uop_t) + 5];
   // Performance events: the cause of each cycle without a dispatch. The
   // cause and all its inputs only feed the registered event.
   logic [1:0] perf_refetch_q;  // 1: branch redirect, 2: other redirect
