@@ -25,6 +25,10 @@ endif
 ifdef FETCH_DECODE_REG
 export PPC_VERILATOR_FLAGS := $(PPC_VERILATOR_FLAGS) +define+PPC_FETCH_DECODE_REG=$(FETCH_DECODE_REG)
 endif
+# MISPREDICT_FETCH_NOW=0 or 1 sets ppc_core's MISPREDICT_FETCH_NOW default.
+ifdef MISPREDICT_FETCH_NOW
+export PPC_VERILATOR_FLAGS := $(PPC_VERILATOR_FLAGS) +define+PPC_MISPREDICT_FETCH_NOW=$(MISPREDICT_FETCH_NOW)
+endif
 BUILD_DIR ?= build
 RTL := $(shell cat ../rtl/files.f)
 BUS_RTL := $(shell cat ../rtl/bus_files.f)
