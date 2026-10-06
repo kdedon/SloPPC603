@@ -305,6 +305,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
     memory.tea_bytes = 32;
     if ($test$plusargs("WRITE_TEA")) memory.tea_write_pct = 30;
     if ($test$plusargs("DBWO")) memory.dbwo_pct = 50;
+    if ($test$plusargs("WRITE_DRTRY")) memory.write_drtry_pct = 20;
     // After the memory model clears its RAM.
     @(negedge clk);
     build();
@@ -340,7 +341,8 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
         memory.early_dbg_holds == 0 || memory.drtry_holds == 0 ||
         memory.teas[0] + memory.teas[1] == 0 ||
         (memory.tea_write_pct != 0 && memory.write_teas == 0) ||
-        (memory.dbwo_pct != 0 && (memory.dbwo_runs == 0 || memory.dbwo_ignored == 0)))
+        (memory.dbwo_pct != 0 && (memory.dbwo_runs == 0 || memory.dbwo_ignored == 0)) ||
+        (memory.write_drtry_pct != 0 && memory.write_drtries == 0))
       $fatal(1, "coverage: pipelined=%0d early_bg=%0d drtry=%0d holds=%0d early_dbg=%0d/%0d teas=%0d/%0d dbwo=%0d/%0d",
              memory.pipelined, memory.early_bg, memory.drtries, memory.drtry_holds,
              memory.early_dbg, memory.early_dbg_holds, memory.teas[0], memory.teas[1],
@@ -351,7 +353,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
         $fatal(1, "coverage: processor %0d artry=%0d pushes=%0d rwitm=%0d reads=%0d", c,
                memory.artry_by[c], memory.pushes[c], memory.tt_count[c][5'b01110],
                memory.tt_count[c][5'b01010]);
-    $display("PASS chip MP: seed=%0d iter=%0d cycles=%0d tenures=%0d/%0d data=%0d/%0d artry_by=%0d/%0d pushes=%0d/%0d rwitm=%0d/%0d reads=%0d/%0d kills=%0d/%0d flushes=%0d/%0d write_kill=%0d/%0d target_retries=%0d stwcx_failures=%0d/%0d pipelined=%0d self_pipelined=%0d early_bg=%0d/%0d drtry=%0d holds=%0d early_dbg=%0d/%0d teas=%0d/%0d write_teas=%0d owed_retries=%0d/%0d dbwo=%0d ignored=%0d",
+    $display("PASS chip MP: seed=%0d iter=%0d cycles=%0d tenures=%0d/%0d data=%0d/%0d artry_by=%0d/%0d pushes=%0d/%0d rwitm=%0d/%0d reads=%0d/%0d kills=%0d/%0d flushes=%0d/%0d write_kill=%0d/%0d target_retries=%0d stwcx_failures=%0d/%0d pipelined=%0d self_pipelined=%0d early_bg=%0d/%0d drtry=%0d holds=%0d early_dbg=%0d/%0d teas=%0d/%0d write_teas=%0d owed_retries=%0d/%0d dbwo=%0d ignored=%0d write_drtry=%0d",
              seed, ITER, cycles, memory.tenures[0], memory.tenures[1],
              memory.data_tenures[0], memory.data_tenures[1],
              memory.artry_by[0], memory.artry_by[1], memory.pushes[0], memory.pushes[1],
@@ -364,7 +366,7 @@ module tb_chip_mp #(parameter int unsigned SEED = 32'h0b1c_0de5,
              memory.pipelined, memory.self_pipelined, memory.early_bg,
              memory.early_bg_retried, memory.drtries, memory.drtry_holds, memory.early_dbg, memory.early_dbg_holds,
              memory.teas[0], memory.teas[1], memory.write_teas, memory.owed_retries[0], memory.owed_retries[1],
-             memory.dbwo_runs, memory.dbwo_ignored);
+             memory.dbwo_runs, memory.dbwo_ignored, memory.write_drtries);
     $finish;
   end
 endmodule

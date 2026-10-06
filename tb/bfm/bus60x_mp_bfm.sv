@@ -17,7 +17,9 @@
 // then replaced by the right data with TA. With early_dbg_pct the next data
 // tenure's DBG is asserted during the final beat's DRTRY. Reads of the
 // tea_base window end with TEA on a random beat with tea_pct, writes with
-// tea_write_pct.
+// tea_write_pct. With write_drtry_pct DRTRY is asserted in the cycle after a
+// write beat's TA; a write ignores it (UM 7.2.7.2), so the processor must
+// neither repeat the beat nor hold the data bus longer.
 //
 // DBWO (UM 7.2.6.2, 8.10), with dbwo_pct nonzero: when the next data tenure
 // is a read and the same processor owes a later write, DBWO mostly goes with
@@ -116,7 +118,7 @@ module bus60x_mp_bfm #(
   // negated, and DBGs asserted during a DRTRY.
   int pipelined = 0, self_pipelined = 0, early_bg = 0, early_bg_retried = 0;
   int drtries = 0, drtry_holds = 0, early_dbg = 0, early_dbg_holds = 0;
-  int write_teas = 0;
+  int write_teas = 0, write_drtries = 0;
   // Writes run ahead of an older read under DBWO, and DBWOs to be ignored.
   int dbwo_runs = 0, dbwo_ignored = 0;
   /* verilator lint_on UNUSEDSIGNAL */
@@ -124,7 +126,7 @@ module bus60x_mp_bfm #(
   // early BG, DRTRY per read beat, early DBG, TEA per window read.
   int retry_pct = 5, wait_pct = 25, pipe_pct = 50, early_bg_pct = 50;
   int drtry_pct = 10, early_dbg_pct = 50, tea_pct = 40, tea_write_pct = 0;
-  int max_owed = 2, dbwo_pct = 0;
+  int max_owed = 2, dbwo_pct = 0, write_drtry_pct = 0;
   logic [31:0] tea_base = 32'b0, tea_bytes = 32'b0;
   int unsigned rng = SEED;
   logic target_artry_n;
@@ -306,6 +308,13 @@ module bus60x_mp_bfm #(
         mem[int'((t.burst ? base : t.addr) + 32'(b) - BASE_ADDR)] =
           d_i[t.m][63-8*(offset + b) -: 8];
     beat_end();
+    if (chance(write_drtry_pct)) begin
+      drtry_n_o = 1'b0;
+      write_drtries++;
+      bus_rise();
+      bus_fall();
+      drtry_n_o = 1'b1;
+    end
   endtask
 
   // TEA in place of a write beat's TA; earlier beats stay written.

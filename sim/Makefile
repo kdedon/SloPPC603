@@ -1907,6 +1907,7 @@ test-chip-mp:
 	for s in 1 3 5; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s +PAIR_PROBE $(SIM_ARGS) || exit 1; done
 	for s in 2 4; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s +PAIR_PROBE +WRITE_TEA +SHARED_BUSY $(SIM_ARGS) || exit 1; done
 	for s in 6 7 8 9 10; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s +DBWO $(SIM_ARGS) || exit 1; done
+	for s in 11 12 13; do ./$(BUILD_DIR)/chip-mp/Vtb_chip_mp +SEED=$$s +DBWO +WRITE_DRTRY +PAIR_PROBE +WRITE_TEA +SHARED_BUSY $(SIM_ARGS) || exit 1; done
 
 .PHONY: test-chip-fpu
 FPU_CHIP_IMAGE := $(BUILD_DIR)/chip-fpu/program.hex
