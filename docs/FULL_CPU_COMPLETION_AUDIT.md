@@ -31,17 +31,17 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Functional branches | 3% | 90% | 2.70% |
 | Branch prediction and folding | 2% | 70% | 1.40% |
 | Load/store architecture | 5% | 93% | 4.65% |
-| Supervisor, system instructions and interrupts | 8% | 85% | 6.80% |
-| MMU | 8% | 80% | 6.40% |
+| Supervisor, system instructions and interrupts | 8% | 87% | 6.96% |
+| MMU | 8% | 81% | 6.48% |
 | 60x transport and protocol | 6% | 95% | 5.70% |
 | Instruction cache and architectural maintenance | 4% | 97% | 3.88% |
 | Data cache and writeback | 5% | 90% | 4.50% |
-| Coherence and reservations | 3% | 95% | 2.85% |
+| Coherence and reservations | 3% | 98% | 2.94% |
 | Floating point | 12% | 75% | 9.00% |
 | Endian, variants and platform behavior | 6% | 80% | 4.80% |
 | Full timing, reference and integration verification | 10% | 66% | 6.60% |
 | Final FPGA closure and release | 4% | 50% | 2.00% |
-| **Total** | **100%** | | **81.20%** |
+| **Total** | **100%** | | **81.53%** |
 
 ## Reasons for the revised credit
 
@@ -318,3 +318,12 @@ Others on `0ff3a45`. FPU fits unchanged: fullfit 51.57 MHz, full602fit
 50.58, compactfit 53.43, compact602fit 60.07.
 
 Total 79.41% → 81.20%.
+
+## 2026-10-06 update (batch 14)
+
+Manual-mismatch fixes from the [manual inventory](references/MANUAL_INVENTORY.md):
+a snooped burst Read or Read-atomic flushes E and M lines (AUD-77, UM Table 3-6);
+HID0[IFEM] drives GBL on cached instruction fetches (AUD-81, partial); soft reset
+clears HID0[ICE] (AUD-83, UM §4.5.1.2); SMI is taken with MSR[TGPR]=1 (AUD-75,
+UM §4.5.16); IBATs have no G bit (AUD-79, UM §3.5). Coherence and reservations
+95% → 98%, supervisor 85% → 87%, MMU 80% → 81%. Total 81.20% → 81.53%.

@@ -1139,3 +1139,29 @@ Failed: MiSTer `mister/build.sh --fpu-compact --dual --lsu-pipe --seed
 misses `clk_sys` by −4.2 ns; the CI `mister-unstable` job fails until this
 closes. Inherited from batch 11: everything not listed above. MVP 97.43%
 (unchanged); full 603e 79.41% → 81.20%.
+
+## Batch 14 — accepted (2026-10-06)
+
+AUD-75, AUD-77, AUD-79, AUD-81 (cached fetches) and AUD-83 fixed, each with a
+regression that fails on the old RTL ([audit](../../AUDIT.md)).
+
+Recorded: preflight (`lint check-spec`, `make -C toolchain rtl-smoke rtl-alignment`,
+focused benches at width 1 and width 2 + LSU unit, `test-reference-machine`
+Dhrystone, `perf-diff`), commit 46e054e, 2026-10-05: all pass; Dhrystone 639.0
+cycles/run.
+
+Recorded: `make -C sim ci`, commit 46e054e, 2026-10-05: pass except four benches
+that still expected an IBAT G fault (`test-bat-memory-router-live`,
+`test-core-bat-live-context`, `test-bat-independent`,
+`test-bat-service-independent`); updated in a06514b and c9a6657 and passing there.
+
+Recorded: `test-dispatch-rules test-reference-machine test-reference-machine-mmu`
+at width 1 and width 2 + LSU unit, commit 46e054e, 2026-10-05: pass.
+
+Recorded: `./quartus/chip/build.sh --docker`, `./quartus/translated/build.sh --docker`,
+commit c9a6657, 2026-10-06: chip setup +0.355 / hold +0.117 ns; translated setup
++0.894 / hold +0.122 ns (50 MHz, worst corners).
+
+MVP 97.43% (unchanged); full 603e 81.20% → 81.53%. Inherited: xrand, FPU suite and
+FPU fits from batch 13 (no FPU change).
+
