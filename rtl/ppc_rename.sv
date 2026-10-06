@@ -88,6 +88,16 @@ module ppc_rename (
   assign alloc_fire = alloc_i && alloc_ready_o;
   assign alloc1_fire = alloc1_i && alloc1_ready_o;
 
+  // Readiness per architectural register, so a late register index only
+  // selects. A wake matching the slot also matches its owner.
+  logic [31:0] reg_ready;
+  always_comb begin
+    for (int r = 0; r < 32; r++)
+      reg_ready[r] = !map_valid[r] || ready[map_tag[r]] ||
+                     (wake_match && wake_i.tag == map_tag[r]) ||
+                     (wake1_match && wake1_i.tag == map_tag[r]);
+  end
+
   function automatic operand_t read_operand(input logic [4:0] reg_index,
                                              input logic [31:0] arch_value);
     operand_t operand;
@@ -97,7 +107,6 @@ module ppc_rename (
     if (map_valid[reg_index]) begin
       operand.tag = map_tag[reg_index];
       operand.producer = owners[operand.tag];
-      operand.ready = ready[operand.tag];
       // Pending payload is not consumed.
       operand.value = ready[operand.tag] ? values[operand.tag] : 32'b0;
       // The value forwards on the producer alone, keeping recovery's kill
@@ -107,16 +116,11 @@ module ppc_rename (
       // wake also kills the reader.
       if (!ready[operand.tag] && wake_i.producer == operand.producer)
         operand.value = wake_i.value;
-      if (wake_match && wake_i.tag == operand.tag &&
-          wake_i.producer == operand.producer)
-        operand.ready = 1'b1;
       if (!ready[operand.tag] && wake1_offer_i && wake1_i.tag == operand.tag &&
           wake1_i.producer == operand.producer)
         operand.value = wake1_i.value;
-      if (wake1_match && wake1_i.tag == operand.tag &&
-          wake1_i.producer == operand.producer)
-        operand.ready = 1'b1;
     end
+    operand.ready = reg_ready[reg_index];
     return operand;
   endfunction
 
