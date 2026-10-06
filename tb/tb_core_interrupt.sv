@@ -204,6 +204,9 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       if(cv)ctx_wait<=ctx_wait+1;else ctx_wait<=0;
       if(tv&&!tr&&(context_word(retired.insn)||retired.fetch_fault!=FETCH_OK))held_retire<=held_retire+1;
       if((phase==6||phase==7)&&tv&&retired.pc==32'h28)irq<=1;
+      // A removed b never retires: the IRQ is raised as fetch removes it.
+      if(phase==2&&irq_count==0&&((dut.iq_push0&&dut.push_remove0&&dut.queued.pc==32'h28)||
+                    (dut.iq_push1&&dut.push_remove1&&dut.queued1.pc==32'h28)))irq<=1;
       if((phase==8||phase==9)&&dut.dispatch&&dut.iq_head.pc==32'h28)begin
         pivot<=dut.alloc_producer;pivot_seen<=1;irq<=1;
       end
@@ -215,7 +218,8 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
         check(ENABLE_EXTERNAL_INTERRUPTS&&model_msr[15]&&!tv&&!ipending&&!dpending,"IRQ was not a drained precise boundary");
         check(irq_pc==model_pc,"IRQ saved next PC differs from independent committed stream");
         if(phase==1||phase==5)check(irq_pc=='h24,"EE enable executed a following instruction before IRQ");
-        if(phase==2)check(irq_pc=='h100,"branch target lost as IRQ resume PC");
+        // An IRQ at a removed b resumes at the b.
+        if(phase==2)check(irq_pc==(dut.BRANCH_REMOVAL?'h28:'h100),"branch target lost as IRQ resume PC");
         if(phase==3||phase==4||phase==6||phase==7)check(irq_pc=='h2c,"load/store/exception return resume PC");
         if(phase==8||phase==9)check(cut_done&&irq_pc=='h200,"survivor retirement overwrote redirect resume override");
         if(phase==6||phase==7)check(sync_events==1,"initiated synchronous exception lost priority");
@@ -226,6 +230,10 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       end
       if(tv&&tr&&!done)begin
         check(!taken,"IRQ must not synthesize or share an instruction retirement");
+        for(int k=0;k<int'(retired.removed_branches);k++)begin
+          check(word_at(model_pc)==32'h480000d8||word_at(model_pc)==32'h4bffff28,"removed branch identity");
+          model_pc=(word_at(model_pc)==32'h480000d8)?32'h100:32'h2c;
+        end
         check(retired.pc==model_pc&&retired.insn==word_at(model_pc),"ordered architectural retirement identity");
         check(!retired.alignment_exception&&!retired.update_write&&!retired.write_cr_field&&!retired.write_ca&&
               !retired.write_ov_so&&!retired.write_cr_fields&&!retired.write_cr_bit,"unexpected register/flag permission");

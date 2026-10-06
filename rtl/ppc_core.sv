@@ -354,6 +354,7 @@ module ppc_core #(
   logic trace_mode, trace_armed_q, trace_pending_q, fetch_machine_check_head;
   fetch_packet_t queued;
   logic frontend_fence, frontend_quiescent, power_stop;
+  logic bu_spec, bs_valid_q, bs_miss_q, bs_busy, bs_hold, bu_redirect_d;
   logic interrupt_qualified, interrupt_admit, resume_override_valid_q;
   logic decrementer_pending, external_irq_q;
   logic watchdog_interrupt, watchdog_reset, watchdog_reseto;
@@ -375,14 +376,14 @@ module ppc_core #(
       watchdog_interrupt) &&
       msr[MSR_EE] && !fetch_machine_check_head)) &&
     !fault_pending && !halted_o;
+  // A removed predicted branch may be unresolved with the CQ empty.
   assign interrupt_admit = interrupt_qualified && !seq_active && cq_empty && normal_idle &&
-    lsu_empty && !special_busy && special_ready && !recovery_accepted;
+    lsu_empty && !special_busy && special_ready && !recovery_accepted && !bs_busy;
   assign interrupt_resume_pc = resume_override_valid_q ?
     resume_override_target_q : committed_next_pc_q;
   logic [31:0] special_branch_target, special_exception_target, lr, ctr;
   // Branch unit (see the branch-unit block below).
   logic bu_branch, bu_ready, bu_taken, bu_reads_cr, bu_reads_lr, bu_reads_ctr;
-  logic bu_spec, bs_valid_q, bs_miss_q, bs_busy, bs_hold, bu_redirect_d;
   logic bu_writes_ctr, bu_ctr_ok, bu_cond_ok, bu_redirect_q;
   logic lr_pending_q, ctr_pending_q, lk_pending_q, frontend_clear;
   logic [31:0] bu_target, bu_next_pc, bu_target_q, frontend_target;
@@ -1266,7 +1267,7 @@ module ppc_core #(
   assign bu_spec = ENABLE_BRANCH_SPEC && bu_reads_cr && bu_ctr_ok && flags_busy &&
     (!bu_cr_valid_q || flags_waiter);
   // The count saturates; a further branch then takes an entry.
-  assign bu_remove = BRANCH_REMOVAL && bu_branch && !bu_spec && !uop.branch_lk &&
+  assign bu_remove = BRANCH_REMOVAL && bu_branch && (!bu_spec || BS_ANCHOR) && !uop.branch_lk &&
     !bu_writes_ctr && ({1'b0, removed_q} + {1'b0, iq_rb_first} <= 3'd2);
   // A failing CTR test resolves the branch without its CR (UM 6.4.1.1).
   assign bu_ready = !(bu_reads_cr && bu_ctr_ok && flags_busy &&
@@ -1342,6 +1343,14 @@ module ppc_core #(
   // the branch retires first and the edge after recovers the whole machine.
   localparam bit BS_EARLY = ENABLE_BRANCH_SPEC && ENABLE_BRANCH_EARLY_RECOVERY &&
                             !ENABLE_FPU;
+  // A predicted branch takes no CQ entry (UM 6.3.1, 6.4.1.1): it is
+  // anchored on the youngest entry before it (DQ0 for a DQ1 branch).
+  // Nothing younger than the anchor completes until it resolves; a miss
+  // keeps the anchor, or removes everything once the anchor has retired.
+  localparam bit BS_ANCHOR = BRANCH_REMOVAL && BS_EARLY;
+  logic bs_anch_q, bs_anch_done_q, bs_young_hold, bs_store_hold, last_valid_q;
+  logic [1:0] bs_rb_q;
+  completion_tag_t last_tag_q;
   completion_tag_t bs_tag_q, bs_owner_q;
   logic bs_owner_done_q, bs_pred_q, bs_ctr_ok_q, bs_bo3_q, bs_redirect_q;
   logic bs_recover, bs_fix_q, bs_fix_head, bs_early_miss;
@@ -1363,9 +1372,9 @@ module ppc_core #(
     (bs_valid_q && !bs_resolve && !(bu_cr_capture && (flags_owner == bs_owner_q))) ||
     ((crb_left_q != '0) &&
      ((crbw_left_q != '0) || (cr_inflight && !(bu_cr_capture && !flags_waiter))));
-  assign bs_head = bs_miss_q && (retire_producer == bs_tag_q);
+  assign bs_head = bs_miss_q && !bs_anch_q && (retire_producer == bs_tag_q);
   assign bs_recover = BS_EARLY && bs_miss_q;
-  assign bs_fix_head = bs_fix_q && (retire_producer == bs_tag_q);
+  assign bs_fix_head = bs_fix_q && !bs_anch_q && (retire_producer == bs_tag_q);
   // A branch resolving as predicted retires on that cycle (UM 6.6.1.3).
   assign bs_hit = bs_resolve && (bs_taken == bs_pred_q) && !bs_miss_q && !bs_fix_q;
   // A misprediction is known as the owner's CR result arrives (UM Figure
@@ -1375,7 +1384,12 @@ module ppc_core #(
   assign bs_early_miss = BS_EARLY && bs_valid_q && !bs_cr_ready && bu_cr_capture &&
     (flags_owner == bs_owner_q) &&
     ((bs_ctr_ok_q && (bu_cr_d[5'd31 - bs_bi_q] == bs_bo3_q)) != bs_pred_q);
-  assign bs_hold = (bs_valid_q && !bs_hit && (retire_producer == bs_tag_q)) || bs_redirect_q;
+  assign bs_young_hold = bs_anch_q && ((bs_valid_q && !bs_hit) || bs_miss_q);
+  assign bs_hold = (bs_valid_q && !bs_anch_q && !bs_hit && (retire_producer == bs_tag_q)) ||
+    (bs_young_hold && bs_anch_done_q) || bs_redirect_q;
+  // A store behind an anchored branch waits out the cycle it resolves in,
+  // when the unit still marks it speculative.
+  assign bs_store_hold = bs_hold || (bs_anch_q && bs_valid_q && bs_anch_done_q);
   assign bs_owner_commit = (commit && (retire_producer == bs_owner_q)) ||
                            (commit1 && (retire1_producer == bs_owner_q));
   always_ff @(posedge clk_i) begin
@@ -1383,6 +1397,8 @@ module ppc_core #(
       bs_valid_q <= 1'b0;
       bs_miss_q <= 1'b0;
       bs_redirect_q <= 1'b0;
+      bs_anch_q <= 1'b0;
+      bs_anch_done_q <= 1'b0;
     end else begin
       if (bs_resolve) begin
         bs_valid_q <= 1'b0;
@@ -1392,12 +1408,18 @@ module ppc_core #(
         bs_miss_q <= 1'b1;
       end
       if (bs_owner_commit) bs_owner_done_q <= 1'b1;
+      if ((commit && (retire_producer == bs_tag_q)) ||
+          (commit1 && (retire1_producer == bs_tag_q)))
+        bs_anch_done_q <= 1'b1;
       bs_redirect_q <= !BS_EARLY && commit && bs_head;
       if (dispatch1 && d1_bc && !d1_bc_now) begin
         bs_valid_q <= 1'b1;
-        bs_tag_q <= alloc1_producer;
+        bs_anch_q <= d1_remove;
+        bs_rb_q <= dq1_rb + 2'd1;
+        bs_tag_q <= d1_remove ? alloc_producer : alloc1_producer;
         bs_owner_q <= alloc_producer;
         bs_owner_done_q <= 1'b0;
+        bs_anch_done_q <= 1'b0;
         bs_pred_q <= dq1_folded;
         bs_ctr_ok_q <= 1'b1;
         bs_bo3_q <= dq1_uop.branch_bo[3];
@@ -1406,7 +1428,12 @@ module ppc_core #(
       end
       if (dispatch && bu_branch && bu_spec) begin
         bs_valid_q <= 1'b1;
-        bs_tag_q <= alloc_producer;
+        bs_anch_q <= bu_remove;
+        bs_rb_q <= removed_q + iq_rb_first + 2'd1;
+        bs_tag_q <= bu_remove ? last_tag_q : alloc_producer;
+        bs_anch_done_q <= !last_valid_q ||
+                          (commit && (retire_producer == last_tag_q)) ||
+                          (commit1 && (retire1_producer == last_tag_q));
         bs_owner_q <= flags_waiter ? flags_waiter_tag : flags_owner;
         bs_owner_done_q <= !flags_waiter &&
                            ((commit && (retire_producer == flags_owner)) ||
@@ -1418,6 +1445,25 @@ module ppc_core #(
         bs_alt_q <= bu_pred ? iq_head.pc + 32'd4 : bu_target;
       end
     end
+  end
+  // The youngest CQ entry, a removed predicted branch's anchor.
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) begin
+      last_valid_q <= 1'b0;
+      last_tag_q <= '0;
+    end else if (recovery_accepted) begin
+      last_valid_q <= recovery_count != '0;
+      for (int i = 1; i <= CQ_DEPTH; i++)
+        if (int'(recovery_count) == i) last_tag_q <= recovery_tags[i - 1];
+    end else if (dispatch1 && !d1_remove) begin
+      last_valid_q <= 1'b1;
+      last_tag_q <= alloc1_producer;
+    end else if (dispatch && !bu_remove) begin
+      last_valid_q <= 1'b1;
+      last_tag_q <= alloc_producer;
+    end else if ((commit && (retire_producer == last_tag_q)) ||
+                 (commit1 && (retire1_producer == last_tag_q)))
+      last_valid_q <= 1'b0;
   end
   always_comb begin
     case (uop.special_op)
@@ -1432,7 +1478,7 @@ module ppc_core #(
   always_ff @(posedge clk_i) begin
     if (!rst_ni) bs_fix_q <= 1'b0;
     else if (recovery_accepted)
-      bs_fix_q <= bs_recover && !(commit && (retire_producer == bs_tag_q));
+      bs_fix_q <= bs_recover && !bs_anch_q && !(commit && (retire_producer == bs_tag_q));
     else if (commit && bs_fix_head) bs_fix_q <= 1'b0;
   end
   // A folded branch already fetched its target, which only b and bc fold.
@@ -1818,7 +1864,7 @@ module ppc_core #(
     .memory_quiescent_i(memory_quiescent_i && lsu_quiet),
     .frontend_fence_o(frontend_fence), .context_valid_o, .context_ready_i,
     .redirect_accepted_i(recovery_accepted),
-    .store_authorize_i(retire_ready_i && !bs_hold),
+    .store_authorize_i(retire_ready_i && !bs_store_hold),
     // A DQ1 access is never the oldest: DQ0 allocates beside it.
     .queue_empty_i(cq_empty && !lane_dq1),
     // The lane's results never retire in their finish cycle; this keeps
@@ -2238,21 +2284,28 @@ module ppc_core #(
      !(dq1_uop.branch_lk && (dq1_uop.special_op != SPECIAL_B) &&
        (lk_pending_q || (pop_writes[1] && (iq_uop.special_op != SPECIAL_MTSPR)))) &&
      ((dq1_head.insn[31:26] == 6'd18) || (dq1_head.insn[25] && dq1_head.insn[23]))));
-  // A bc on a CR bit alone (no CTR, no LK) is handled by the BPU beside
-  // DQ0 (UM 6.4.1.2, F6-5): resolved from a final CR when that matches the
-  // fetch path, else predicted when DQ0 writes its CR. An older unfinished
-  // CR writer may finish by the next cycle and resolve it in DQ0; a miss
-  // costs more here than on the 603e, so it is not predicted early.
-  // Branch-always forms take the folded path above.
-  assign d1_bc = (dq1_uop.special_op == SPECIAL_BC) && dq1_branch[2] && !dq1_branch[0] &&
-    !dq1_uop.branch_lk && !c0_fp && !c0_fp_mem;
+  // A bc, or a bclr whose LR is committed, on a CR bit alone (no CTR, no
+  // LK) is handled by the BPU beside DQ0 (UM 6.4.1.2, F6-5): resolved from
+  // a final CR when that matches the fetch path, else predicted when DQ0
+  // writes its CR. An older unfinished CR writer may finish by the next
+  // cycle and resolve it in DQ0; a miss costs more here than on the 603e,
+  // so it is not predicted early. Branch-always forms take the folded path
+  // above.
+  logic d1_bclr;
+  assign d1_bclr = (dq1_uop.special_op == SPECIAL_BCLR) && !lr_pending_q && !pop_writes[1];
+  assign d1_bc = ((dq1_uop.special_op == SPECIAL_BC) || d1_bclr) && dq1_branch[2] &&
+    !dq1_branch[0] && !dq1_uop.branch_lk && !c0_fp && !c0_fp_mem;
   assign d1_cr_final = !flags_tok0 && !fp_cr_pending && !bs_busy &&
     (!flags_busy || (bu_cr_valid_q && !flags_waiter));
   assign d1_bc_taken = bu_cr[5'd31 - dq1_uop.branch_bi] == dq1_uop.branch_bo[3];
   assign d1_bc_now = d1_cr_final && (d1_bc_taken == dq1_folded);
-  assign d1_bc_spec = ENABLE_BRANCH_SPEC && !fp_cr_pending && !bs_busy && flags_tok0 && c0_iu &&
+  // One level of prediction (UM 6.4.1.2, Figure 6-5): DQ1 may be predicted
+  // in the cycle the older prediction resolves correctly.
+  assign d1_bc_spec = ENABLE_BRANCH_SPEC && !fp_cr_pending && (!bs_busy || bs_hit) &&
+    flags_tok0 && c0_iu &&
     (folds(dq1_head, 1'b0, 1'b1, 1'b1, 1'b0, 32'd0, 1'b0) == dq1_folded);
-  assign d1_bc_target = dq1_uop.branch_aa ? dq1_uop.branch_disp :
+  assign d1_bc_target = d1_bclr ? {lr[31:2], 2'b00} :
+                        dq1_uop.branch_aa ? dq1_uop.branch_disp :
                                             dq1_head.pc + dq1_uop.branch_disp;
   always_comb begin
     case (dq1_uop.special_op)
@@ -2326,9 +2379,9 @@ module ppc_core #(
   // DQ1 enters the unit only beside a DQ0 that does not, so the input mux
   // need not wait for dispatch1, which depends on the unit's ready.
   assign lsu_c0 = (special_uop && lsu_route) || fp_mem_pipe;
-  // A predicted bc keeps its entry for recovery.
+  // A predicted bc keeps its entry for recovery unless anchored on DQ0.
   assign d1_remove = BRANCH_REMOVAL && d1_branch && !dq1_uop.branch_lk &&
-    !(d1_bc && !d1_bc_now) && (dq1_rb != 2'd3);
+    (!(d1_bc && !d1_bc_now) || BS_ANCHOR) && (dq1_rb != 2'd3);
   assign dispatch1 = dispatch && seq_last && pair_units && (cq1_ready || d1_remove) &&
     !unit_update && !sru_wait1 && !update_wait1 &&
     (!d1_lsu || d1_lsu_ready) &&
@@ -2438,7 +2491,8 @@ module ppc_core #(
        (cq_head_packet.update_write && (cq_head_packet.update_gpr == cq_head1_packet.gpr)))) &&
     !(special_busy && ((special_producer == retire_producer) ||
                        (special_producer == retire1_producer))) &&
-    !bs_head && !(bs_busy && !bs_hit && (retire1_producer == bs_tag_q)) &&
+    !bs_head && !(bs_busy && !bs_anch_q && !bs_hit && (retire1_producer == bs_tag_q)) &&
+    !(bs_young_hold && (bs_anch_done_q || (retire_producer == bs_tag_q))) &&
     // A completion-serialized FP result completes alone.
     !(fp_head && fp_sticky_waited_q);
   assign branch_retire1 = commit1 && retire1_o.branch;
@@ -2492,7 +2546,7 @@ module ppc_core #(
         .fp_store_data_i(fp_store_data), .le_i(msr_le),
         .recovery_i(recovery_accepted), .kill_i(recovery_kill),
         .kill_generation_i(recovery_kill_generation),
-        .store_authorize_i(retire_ready_i && !bs_hold), .queue_head_i(cq_head),
+        .store_authorize_i(retire_ready_i && !bs_store_hold), .queue_head_i(cq_head),
         .commit_i(commit), .commit_tag_i(retire_producer),
         .branch_spec_i(bs_valid_q || (bu_branch && bu_spec)), .branch_resolved_i(bs_resolve && (bs_taken == bs_pred_q)),
         .chk_addr_o(dmem_store_check_addr_o), .chk_ok_i(dmem_store_check_ok_i),
@@ -2771,11 +2825,14 @@ module ppc_core #(
   // per cycle with an event: "<cycle> D<count> R<count> <dispatch pcs> |
   // <retire pcs>[ !<n>]", cycle 0 being the first edge out of reset. "!<n>"
   // marks a branch misprediction recovery that removes the n youngest
-  // dispatched instructions, those dispatched after the branch. A dispatch
-  // pc ending in "*" is a branch removed at dispatch; it never retires.
+  // dispatched instructions, those dispatched after the branch; "!<n>*<m>"
+  // when the branch was itself removed, m counting every dispatch after it.
+  // A dispatch pc ending in "*" is a branch removed at dispatch; it never
+  // retires.
   int event_fd = 0;
   int event_cycle = 0;
   int spec_younger = 0;
+  int spec_after = 0;
   initial begin
     string event_path;
     if ($value$plusargs("DISPATCH_TRACE=%s", event_path)) begin
@@ -2785,19 +2842,25 @@ module ppc_core #(
   end
   always @(posedge clk_i) begin
     logic retire_fire, mispredict;
-    int younger;
+    int younger, after;
     retire_fire = retire_valid_o && retire_ready_i;
     mispredict = recovery_accepted && (bs_recover || bs_redirect_q);
     younger = spec_younger + int'(dispatch && !bu_remove) + int'(dispatch1 && !d1_remove);
+    after = spec_after + int'(dispatch) + int'(dispatch1);
     if (!rst_ni) event_cycle <= 0;
     else begin
       event_cycle <= event_cycle + 1;
       // A DQ1 branch has nothing younger in its dispatch cycle.
-      if (dispatch && bu_branch && bu_spec && !recovery_accepted)
+      if (dispatch && bu_branch && bu_spec && !recovery_accepted) begin
         spec_younger <= int'(dispatch1 && !d1_remove);
-      else if (dispatch1 && d1_bc && !d1_bc_now && !recovery_accepted)
+        spec_after <= int'(dispatch1);
+      end else if (dispatch1 && d1_bc && !d1_bc_now && !recovery_accepted) begin
         spec_younger <= 0;
-      else spec_younger <= younger;
+        spec_after <= 0;
+      end else begin
+        spec_younger <= younger;
+        spec_after <= after;
+      end
       if ((event_fd != 0) && (dispatch || retire_fire || mispredict))
         $fwrite(event_fd, "%0d D%0d R%0d%s%s |%s%s%s\n", event_cycle,
                 int'(dispatch) + int'(dispatch1), int'(retire_fire) + int'(commit1),
@@ -2805,7 +2868,8 @@ module ppc_core #(
                 dispatch1 ? $sformatf(" %08x%s", dq1_head.pc, d1_remove ? "*" : "") : "",
                 retire_fire ? $sformatf(" %08x", retire_o.pc) : "",
                 commit1 ? $sformatf(" %08x", retire1_o.pc) : "",
-                mispredict ? $sformatf(" !%0d", younger) : "");
+                !mispredict ? "" : bs_anch_q ? $sformatf(" !%0d*%0d", younger, after) :
+                $sformatf(" !%0d", younger));
     end
   end
   final if (event_fd != 0) $fclose(event_fd);
@@ -2854,7 +2918,9 @@ module ppc_core #(
   // A recovery removes every branch counted: they are younger than any
   // surviving entry.
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || recovery_accepted) removed_q <= '0;
+    if (!rst_ni) removed_q <= '0;
+    // A missed anchored branch, and the removed ones before it, still count.
+    else if (recovery_accepted) removed_q <= (bs_recover && bs_anch_q) ? bs_rb_q : 2'd0;
     else if (dispatch1) removed_q <= d1_remove ? dq1_rb + 2'd1 : 2'd0;
     else if (dispatch) removed_q <= bu_remove ? removed_q + iq_rb_first + 2'd1 : 2'd0;
   end
@@ -2940,7 +3006,7 @@ module ppc_core #(
         special_branch_redirect ? special_branch_target : cq_retire.pc;
     end else if (bs_recover) begin
       selected_redirect_valid = 1'b1;
-      selected_redirect_all = 1'b0;
+      selected_redirect_all = bs_anch_q && bs_anch_done_q;
       selected_redirect_keep = 1'b1;
       selected_redirect_pivot = bs_tag_q;
       selected_redirect_target = bs_alt_q;

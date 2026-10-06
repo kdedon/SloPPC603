@@ -313,6 +313,11 @@ module tb_core_dual #(
     int younger;
     logic got;
     younger = older + 4;
+    // An undispatched instruction reads as cycle -1.
+    if (dcycle.exists(younger) == 0) begin
+      dcycle[younger] = -1;
+      dslot[younger] = -1;
+    end
     got = (dcycle[younger] == dcycle[older]) && (dslot[younger] == 1);
     if (got != paired)
       $fatal(1, "%s: %08x at cycle %0d, %08x at cycle %0d slot %0d", what, older,
@@ -374,7 +379,8 @@ module tb_core_dual #(
       expect_pair(32'h78, 1'b0, "sync alone");
       expect_pair(32'h68, 1'b0, "cmpw in DQ1, then folded b");
       // A removed b is never dispatched.
-      if (dut.BRANCH_REMOVAL && dcycle.exists(32'h6c) != 0) $fatal(1, "a plain b was dispatched");
+      if (dut.BRANCH_REMOVAL && (dcycle.exists(32'h6c) != 0) && (dcycle[32'h6c] != -1))
+        $fatal(1, "a plain b was dispatched");
       // Pairing needs the add fetched into DQ1 by then.
       expect_pair(32'h94, !dq1_empty[32'h94], "unresolved bc + add");
       expect_pair(32'ha0, 1'b1, "divwu + addi");
