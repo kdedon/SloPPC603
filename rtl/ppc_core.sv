@@ -354,7 +354,7 @@ module ppc_core #(
   logic trace_mode, trace_armed_q, trace_pending_q, fetch_machine_check_head;
   fetch_packet_t queued;
   logic frontend_fence, frontend_quiescent, power_stop;
-  logic bu_spec, bs_valid_q, bs_miss_q, bs_busy, bs_hold, bu_redirect_d;
+  logic bu_spec, bs_hit, bs_valid_q, bs_miss_q, bs_busy, bs_hold, bu_redirect_d;
   logic interrupt_qualified, interrupt_admit, resume_override_valid_q;
   logic decrementer_pending, external_irq_q;
   logic watchdog_interrupt, watchdog_reset, watchdog_reseto;
@@ -1348,9 +1348,10 @@ module ppc_core #(
   assign bu_remove = BRANCH_REMOVAL && bu_branch && (!bu_spec || BS_ANCHOR) && !uop.branch_lk &&
     !bu_writes_ctr && ({1'b0, removed_q} + {1'b0, iq_rb_first} <= 3'd2);
   // A failing CTR test resolves the branch without its CR (UM 6.4.1.1).
+  // A prediction resolving as predicted lets the next one start (UM 6.4.1.2).
   assign bu_ready = !(bu_reads_cr && bu_ctr_ok && flags_busy &&
                       (!bu_cr_valid_q || flags_waiter) && !ENABLE_BRANCH_SPEC) &&
-    !(bu_reads_cr && bu_ctr_ok && (fp_cr_pending || bs_busy)) &&
+    !(bu_reads_cr && bu_ctr_ok && (fp_cr_pending || (bs_busy && !bs_hit))) &&
     !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(bu_reads_ctr && ctr_pending_q) &&
     !(uop.branch_lk && (uop.special_op != SPECIAL_B) && lk_pending_q);
   // BO[0..3] are branch_bo[4..1]; the decrement leaves zero when CTR is 1.
@@ -1434,7 +1435,7 @@ module ppc_core #(
   logic bs_recover, bs_fix_q, bs_fix_head, bs_early_miss;
   logic [4:0] bs_bi_q;
   logic [31:0] bs_cr;
-  logic bs_cr_ready, bs_resolve, bs_taken, bs_head, bs_owner_commit, bs_hit;
+  logic bs_cr_ready, bs_resolve, bs_taken, bs_head, bs_owner_commit;
   assign bs_cr_ready = bs_owner_done_q ||
     (flags_busy && bu_cr_valid_q && (flags_owner == bs_owner_q));
   assign bs_cr = bs_owner_done_q ? cr : bu_cr_q;
@@ -2196,7 +2197,7 @@ module ppc_core #(
   assign trace_mode = ENABLE_DEBUG_EXCEPTIONS && (msr[MSR_SE] || msr[MSR_BE]);
   // Interrupts wait for the last micro-op of a cracked instruction.
   assign iq_ready = !fault_pending && !bu_redirect_q && !bs_miss_q &&
-    !(c0_carry && (bs_busy || fp_cr_pending)) &&
+    !(c0_carry && ((bs_busy && !bs_hit) || fp_cr_pending)) &&
     !(bs_valid_q && special_uop && !lsu_route && !sru_move) &&
     (!interrupt_qualified || seq_active) &&
     !update_wait0 && gpr_ready && (cq_ready || (bu_remove && !recovery_accepted)) && !sru_wait0 &&
@@ -2506,7 +2507,8 @@ module ppc_core #(
   // only prediction of the pair.
   assign dispatch1 = dispatch && seq_last && pair_units && (cq1_ready || d1_remove) &&
     !(c0_carry && (!d1_iu || c1_carry)) &&
-    !(c1_carry && (bs_busy || fp_cr_pending || (bu_branch && bu_spec) || c0_fp || c0_fp_mem)) &&
+    !(c1_carry && ((bs_busy && !bs_hit) || fp_cr_pending ||
+      (bu_branch && bu_spec) || c0_fp || c0_fp_mem)) &&
     // DQ1 needs only the renames left after DQ0 (UM 6.6.1.2).
     (!unit_update || (d1_iu && !d1_gpr)) && !sru_wait1 && !update_wait1 &&
     (!d1_lsu || d1_lsu_ready) &&
