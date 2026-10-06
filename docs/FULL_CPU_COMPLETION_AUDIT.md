@@ -1,10 +1,10 @@
 # Full CPU weighting audit
 
-Date: 2026-09-23; updated 2026-10-04. Scope: the original CPU-only 603e project through P30 in
+Date: 2026-09-23; updated 2026-10-05. Scope: the original CPU-only 603e project through P30 in
 [TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
-**Revised estimate: about 79% complete (weighted 79.41%).**
+**Revised estimate: about 81% complete (weighted 81.20%).**
 This replaces the provisional 40–45% headline. It is completed project scope,
 including documentation and tooling, not measured RTL coverage or a fraction of
 remaining effort.
@@ -24,13 +24,13 @@ historically measured effort. Keep them fixed for subsequent updates.
 
 | Workstream | Weight | Completion | Contribution |
 | --- | ---: | ---: | ---: |
-| Source contracts and ISA planning | 8% | 68% | 5.44% |
+| Source contracts and ISA planning | 8% | 80% | 6.40% |
 | Reproducible tools and scaffold | 4% | 90% | 3.60% |
 | Scalar tagged execution, recovery and integer units | 8% | 88% | 7.04% |
-| Dual dispatch/retirement and superscalar scheduling | 4% | 70% | 2.80% |
+| Dual dispatch/retirement and superscalar scheduling | 4% | 72% | 2.88% |
 | Functional branches | 3% | 90% | 2.70% |
 | Branch prediction and folding | 2% | 70% | 1.40% |
-| Load/store architecture | 5% | 90% | 4.50% |
+| Load/store architecture | 5% | 93% | 4.65% |
 | Supervisor, system instructions and interrupts | 8% | 85% | 6.80% |
 | MMU | 8% | 80% | 6.40% |
 | 60x transport and protocol | 6% | 95% | 5.70% |
@@ -39,9 +39,9 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Coherence and reservations | 3% | 95% | 2.85% |
 | Floating point | 12% | 75% | 9.00% |
 | Endian, variants and platform behavior | 6% | 80% | 4.80% |
-| Full timing, reference and integration verification | 10% | 60% | 6.00% |
+| Full timing, reference and integration verification | 10% | 66% | 6.60% |
 | Final FPGA closure and release | 4% | 50% | 2.00% |
-| **Total** | **100%** | | **79.41%** |
+| **Total** | **100%** | | **81.20%** |
 
 ## Reasons for the revised credit
 
@@ -280,3 +280,41 @@ FPU fits unchanged: fullfit 51.57 MHz, full602fit 50.58, compactfit 53.43,
 compact602fit 60.07; all pass 50 MHz and fail 66.
 
 Total 78.36% → 79.41%.
+
+## 2026-10-05 update
+
+Batch 13, branch `batch13-final` at `cc16ceb`. Weights unchanged.
+Milestones:
+
+- Source contracts 68% → 80%: the source reconciliation
+  ([record](references/SOURCE_RECONCILIATION.md)) fixed citations across the
+  exception, cache, bus, MMU, variant and decode documents and logged AUD-75
+  to AUD-79. Open: those rows and the ISA metadata gaps.
+- Full verification 60% → 66%: whole-machine lockstep against the reference
+  at width 2 with the LSU unit, MMU stress included; the dispatch-rule
+  checker; the [manual inventory](references/MANUAL_INVENTORY.md) (AUD-80 to
+  AUD-86).
+- Load/store 90% → 93%: the store queue, an 8-entry data micro-TLB and FP
+  accesses through the unit ([LSU](LSU_PIPELINE.md#store-queue)).
+- Dual dispatch 70% → 72%: branch removal behind `ENABLE_BRANCH_REMOVAL`
+  (off by default).
+- Final FPGA closure stays 50%: every top meets 50 MHz, but 66 MHz regressed
+  from −0.45 ns on `6cb15bb` to −3.3 to −5.5 ns through the batch 12–13 speed
+  work, and the MiSTer `--fpu-compact --dual --lsu-pipe` core fails to route
+  (87% ALMs).
+
+Fits (`quartus/<top>/build.sh --docker`,
+`quartus/report-target-paths.sh <top> --docker`):
+
+| Top | 50 MHz setup / hold (ns) | 66 MHz | ALMs |
+| --- | --- | --- | ---: |
+| Translated | +0.476 / +0.117 (`152f36d`) | −4.610 ns | |
+| Integrated | +1.535 / +0.076 | −3.313 ns | 9,421 |
+| Timer/BAT | +1.169 / +0.118 | −3.679 ns | 9,493 |
+| Chip | +0.950 / +0.119 (`497429b`) | −4.606 ns | 15,385 |
+| Chip602 | +0.245 / +0.118 (`497429b`) | −5.452 ns | 13,677 |
+
+Others on `0ff3a45`. FPU fits unchanged: fullfit 51.57 MHz, full602fit
+50.58, compactfit 53.43, compact602fit 60.07.
+
+Total 79.41% → 81.20%.

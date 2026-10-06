@@ -1,5 +1,14 @@
 # Translated cached 60x synthesis baseline
 
+## 2026-10-05 batch 13
+
+Recorded: `./quartus/report-target-paths.sh translated --docker`, commit
+`0ff3a45`, 2026-10-04: **misses 66 MHz** by −4.610 ns. 66 MHz regressed from the batch 11 fits on `6cb15bb` (worst −0.45 ns) through
+the batch 12–13 speed work.
+
+Recorded: `./quartus/translated/build.sh --docker`, commit `152f36d`,
+2026-10-05: **meets 50 MHz**, setup +0.476 ns, hold +0.117 ns.
+
 ## 2026-09-30 66 MHz round
 
 Recorded: `./quartus/translated/build.sh --docker` and `./quartus/report-target-paths.sh translated --docker`,

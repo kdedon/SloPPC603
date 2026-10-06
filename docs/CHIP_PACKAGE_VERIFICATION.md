@@ -264,6 +264,18 @@ fix). Meets 50 MHz at every corner: setup +4.190 / +4.227 / +6.676 / +7.206 ns, 
 (output, slow -40 C). `perf_o` is open in `ppc603e_measure`, so the event logic is
 pruned.
 
+## 2026-10-05 batch 13
+
+Recorded: `./quartus/chip/build.sh --docker` and `./quartus/chip602/build.sh
+--docker`, commit `497429b`, 2026-10-05. **Meets 50 MHz**: chip setup
++0.950 ns, hold +0.119 ns, 15,385 ALMs; chip602 setup +0.245 ns, hold
++0.118 ns, 13,677 ALMs.
+
+Recorded: `./quartus/report-target-paths.sh chip --docker` and
+`./quartus/report-target-paths.sh chip602 --docker`, commit `0ff3a45`,
+2026-10-04: **misses 66 MHz**, chip −4.606 ns, chip602 −5.452 ns. 66 MHz regressed from the batch 11 fits on `6cb15bb` (worst −0.45 ns) through
+the batch 12–13 speed work.
+
 ## 2026-09-30 66 MHz round
 
 Recorded: `./quartus/chip/build.sh --docker` and `./quartus/report-target-paths.sh chip --docker`,
