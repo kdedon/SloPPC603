@@ -10,6 +10,7 @@
 /* Memory map (docs/DEMO_SOC.md). The framebuffer's address and geometry
  * come from the registers (fb_init). */
 #define SOC_IO_BASE 0xf0100000u
+/* Clock when the MODE register reports none (soc_clock_hz). */
 #define SOC_CLOCK_HZ 50000000u
 
 #define SOC_REG(off) (*(volatile uint32_t *)(SOC_IO_BASE + (off)))
@@ -28,6 +29,12 @@
 /* Clock in MHz (31:16), FPU present (8) and host mode bits (7:0). */
 #define SOC_MODE SOC_REG(0x30)
 #define SOC_MODE_FPU 0x100u
+
+static inline uint32_t soc_clock_hz(void)
+{
+  uint32_t mhz = SOC_MODE >> 16;
+  return mhz ? mhz * 1000000u : SOC_CLOCK_HZ;
+}
 #define SOC_TENURES SOC_REG(0x34)
 #define SOC_RETIRED_LO SOC_REG(0x38)
 #define SOC_RETIRED_HI SOC_REG(0x3c)

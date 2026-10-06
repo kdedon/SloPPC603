@@ -82,6 +82,9 @@ def main():
         out += ["Rolling build of `main`. Not a release: unverified on hardware and replaced by the next push.", ""]
     out += [f"Commit [`{commit[:12]}`]({url}/tree/{commit}), {git('show', '-s', '--format=%cs', commit)}: "
             f"{git('show', '-s', '--format=%s', commit)}", ""]
+    clocks = sorted({s["core_mhz"] for s in summaries if s.get("core_mhz")})
+    if clocks:
+        out += [f"Core clock: {', '.join(f'{mhz} MHz' for mhz in clocks)} (target 66 MHz).", ""]
     stale = sorted({s["name"] for s in summaries if s["commit"] != commit or s["dirty"]})
     if stale:
         out += [f"**Warning:** built from another commit or a modified tree: {', '.join(stale)}.", ""]

@@ -38,15 +38,15 @@ def target(summary):
 
 def table(summaries):
     rows = [
-        "| Build | Commit | ALMs | Registers | M10K | MLAB bits | DSP | Worst setup | Worst hold | Timing met | 50 MHz | Re-timed | Bitstream |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |",
+        "| Build | Commit | Core clock | ALMs | Registers | M10K | MLAB bits | DSP | Worst setup | Worst hold | Timing met | 50 MHz | Re-timed | Bitstream |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |",
     ]
     for s in summaries:
         r = s["resources"]
         commit = s["commit"][:10] + ("+dirty" if s["dirty"] else "")
         rbf = f"`{s['rbf']['name']}` `{s['rbf']['sha256'][:16]}`" if s.get("rbf") else "–"
         rows.append(" | ".join([
-            f"| {s['name']}", f"`{commit}`", cell(r["alms"], "{:,}"), cell(r["registers"], "{:,}"),
+            f"| {s['name']}", f"`{commit}`", cell(s.get("core_mhz"), "{} MHz"), cell(r["alms"], "{:,}"), cell(r["registers"], "{:,}"),
             cell(r["m10k"]), cell(r["mlab_bits"], "{:,}"), cell(r["dsp"]),
             cell(worst(s, "setup"), "{:+.3f}"), cell(worst(s, "hold"), "{:+.3f}"),
             verdict(s["timing_met"]), verdict(s["pass_50mhz"]), target(s), rbf + " |",

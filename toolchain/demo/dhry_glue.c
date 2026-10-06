@@ -118,7 +118,8 @@ int main(void)
 
   uint32_t cycles = (uint32_t)(End_Time - Begin_Time);
   uint64_t runs = (uint64_t)demo_dhry_runs;
-  uint32_t per_sec = (uint32_t)(runs * SOC_CLOCK_HZ / cycles);
+  uint32_t clock = soc_clock_hz();
+  uint32_t per_sec = (uint32_t)(runs * clock / cycles);
   /* DMIPS/MHz = runs / cycles * 1e6 / 1757, kept to three decimals. */
   uint32_t dmips_mhz_milli = (uint32_t)(runs * 1000000000ull / ((uint64_t)cycles * 1757));
   uint32_t cycles_per_run_tenth = (uint32_t)((uint64_t)cycles * 10 / runs);
@@ -129,7 +130,7 @@ int main(void)
   printf("cycles/run:      %lu.%lu\n", (unsigned long)(cycles_per_run_tenth / 10),
          (unsigned long)(cycles_per_run_tenth % 10));
   printf("Dhrystones/s:    %lu at %lu MHz\n", (unsigned long)per_sec,
-         (unsigned long)(SOC_CLOCK_HZ / 1000000));
+         (unsigned long)(clock / 1000000));
   printf("DMIPS/MHz:       %lu.%03lu\n", (unsigned long)(dmips_mhz_milli / 1000),
          (unsigned long)(dmips_mhz_milli % 1000));
   printf("checks:          %d, mismatches %d\n", checks, mismatches);

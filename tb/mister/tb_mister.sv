@@ -8,7 +8,7 @@
 // that every framebuffer store reaches DDR3 in order and that the DDR3
 // framebuffer matches the stores seen on the bus. Native video: it
 // captures one frame from the video output, checks the DE and sync
-// structure, compares every pixel with the framebuffer stores seen on the bus
+// structure and a 15.6 kHz line at SYS_MHZ, compares every pixel with the framebuffer stores seen on the bus
 // through the palette, and checks the DDRAM port stays idle. Either way a
 // one-colour screen fails, and the picture goes to a PPM. No program image
 // is loaded, so the port never reads.
@@ -24,7 +24,8 @@ module tb_mister #(
   // DDRAM busy pattern seed.
   parameter logic [15:0] BUSY_SEED = 16'hace1,
   parameter bit ENABLE_FPU = 1'b0,
-  parameter int RAM_BYTES = 131072
+  parameter int RAM_BYTES = 131072,
+  parameter int SYS_MHZ = 50
 );
   localparam logic [28:0] FB_WORD = 29'h0600_0000;  // 0x30000000 / 8
 
@@ -44,7 +45,7 @@ module tb_mister #(
   logic ioctl_wait;
 
   ppc603e_mister #(.FB_EXTERNAL(FB_EXTERNAL), .FB_WIDTH(FB_W), .FB_HEIGHT(FB_H), .FB_BASE(FB_BASE),
-    .ENABLE_FPU(ENABLE_FPU), .RAM_BYTES(RAM_BYTES)) dut (
+    .ENABLE_FPU(ENABLE_FPU), .RAM_BYTES(RAM_BYTES), .SYS_MHZ(SYS_MHZ)) dut (
     .clk_i(clk), .rst_i(rst), .mode_i(mode), .input_i('0),
     .ce_pix_o(ce_pix), .r_o(r), .g_o(g), .b_o(b), .hs_o(hs), .vs_o(vs), .de_o(de),
     .pal_we_o(pal_we), .pal_addr_o(pal_addr), .pal_data_o(pal_data),
@@ -148,6 +149,20 @@ module tb_mister #(
         frames++;
       end
       de_prev = de;
+    end
+
+  // Native line period within 1% of 15.625 kHz.
+  int line_clocks = 0;
+  logic hs_prev = 1'b0;
+  always @(posedge clk)
+    if (!rst && !FB_EXTERNAL) begin
+      line_clocks++;
+      if (hs && !hs_prev) begin
+        if (frames != 0 && (line_clocks * 100 < SYS_MHZ * 64 * 99 || line_clocks * 100 > SYS_MHZ * 64 * 101))
+          $fatal(1, "line of %0d clocks at %0d MHz", line_clocks, SYS_MHZ);
+        line_clocks = 0;
+      end
+      hs_prev = hs;
     end
 
   // Takes the first FB_W x FB_H DE pixels after a vertical sync.

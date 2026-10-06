@@ -2462,19 +2462,23 @@ MISTER_FB ?= 1
 # FPU, and 256 KiB of program RAM.
 MISTER_FPU ?= 0
 MISTER_BENCH ?= 0
+# MISTER_SYS_MHZ matches mister/build.sh --sys-mhz.
+MISTER_SYS_MHZ ?= 50
 MISTER_RTL := $(if $(filter 1,$(MISTER_FPU)),$(DEMO_FPU_RTL),$(DEMO_RTL)) ../mister/rtl/ppc603e_mister.sv
 # MISTER_FB_BASE (hex) moves the framebuffer; MISTER_BUSY_SEED (hex) changes the
 # DDRAM busy pattern. Each option gives the model its own directory.
 MISTER_GFLAGS := $(if $(MISTER_FB_BASE),-GFB_BASE="32'h$(MISTER_FB_BASE)") \
                  $(if $(MISTER_BUSY_SEED),-GBUSY_SEED="16'h$(MISTER_BUSY_SEED)") \
                  $(if $(filter 1,$(MISTER_FPU)),"-GENABLE_FPU=1'b1") \
-                 $(if $(filter 1,$(MISTER_BENCH)),-GRAM_BYTES=262144)
-MISTER_OUT := $(BUILD_DIR)/mister/fb$(MISTER_FB)$(if $(MISTER_FB_BASE),-$(MISTER_FB_BASE))$(if $(MISTER_BUSY_SEED),-s$(MISTER_BUSY_SEED))$(if $(filter 1,$(MISTER_FPU)),-fpu)$(if $(filter 1,$(MISTER_BENCH)),-bench)
+                 $(if $(filter 1,$(MISTER_BENCH)),-GRAM_BYTES=262144) \
+                 $(if $(filter-out 50,$(MISTER_SYS_MHZ)),-GSYS_MHZ=$(MISTER_SYS_MHZ))
+MISTER_OUT := $(BUILD_DIR)/mister/fb$(MISTER_FB)$(if $(MISTER_FB_BASE),-$(MISTER_FB_BASE))$(if $(MISTER_BUSY_SEED),-s$(MISTER_BUSY_SEED))$(if $(filter 1,$(MISTER_FPU)),-fpu)$(if $(filter 1,$(MISTER_BENCH)),-bench)$(if $(filter-out 50,$(MISTER_SYS_MHZ)),-$(MISTER_SYS_MHZ)mhz)
 .PHONY: lint-mister mister-model mister-firmware mister-smoke mister-smoke-fpu
 lint: lint-mister
 lint-mister:
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_mister $(MISTER_RTL)
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_mister -GFB_EXTERNAL="1'b0" $(MISTER_RTL)
+	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_mister -GFB_EXTERNAL="1'b0" -GSYS_MHZ=45 $(MISTER_RTL)
 	$(VERILATOR) --lint-only --timing -Wall --top-module tb_mister $(MISTER_RTL) ../tb/mister/tb_mister.sv
 	$(VERILATOR) --lint-only --timing -Wall --top-module tb_mister -GFB_EXTERNAL="1'b0" $(MISTER_RTL) ../tb/mister/tb_mister.sv
 	$(VERILATOR) --lint-only --assert -Wall --top-module ppc603e_mister "-GENABLE_FPU=1'b1" $(DEMO_FPU_RTL) ../mister/rtl/ppc603e_mister.sv

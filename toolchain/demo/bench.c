@@ -3,11 +3,7 @@
 #include "bench.h"
 #include "soc.h"
 
-uint32_t bench_clock_hz(void)
-{
-  uint32_t mhz = SOC_MODE >> 16;
-  return mhz ? mhz * 1000000u : SOC_CLOCK_HZ;
-}
+uint32_t bench_clock_hz(void) { return soc_clock_hz(); }
 
 void bench_print_fixed(double v, int decimals, int width)
 {

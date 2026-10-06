@@ -18,10 +18,16 @@ memory on the 60x bus), [`tb/mister/`](../tb/mister) (Verilator benches).
 | `emu` | `mister/ppc603e.sv` | Framework top: `hps_io`, OSD, PLL, reset, video and framebuffer wiring |
 | `ppc603e_mister` | `mister/rtl/ppc603e_mister.sv` | Demo SoC; the DDRAM port shared by the image loader, the program bridge and, with `FB_EXTERNAL`, the framebuffer FIFO |
 | `soc_xmem_bridge` | `rtl/soc/soc_xmem_bridge.sv` | In the demo SoC: a loaded image's memory, as a 60x slave with a line buffer |
-| `pll` | `mister/rtl/pll.v` | 50 MHz core clock from the 50 MHz board clock |
+| `pll` | `mister/rtl/pll.v` | `SYS_MHZ` core clock from the 50 MHz board clock |
 
-- One clock, `clk_sys` at 50 MHz, drives the processor, the SoC, `DDRAM_CLK`, `CLK_VIDEO`
-  and the scaler palette port.
+- One clock, `clk_sys`, drives the processor, the SoC, `DDRAM_CLK`, `CLK_VIDEO`
+  and the scaler palette port. Its rate is `SYS_MHZ`: `mister/build.sh --sys-mhz N`
+  sets `VERILOG_MACRO "MISTER_SYS_MHZ=N"`, which sets the PLL output and the
+  `ppc603e_mister` parameter. The core clock is 45 MHz for now (the default, the
+  rate the test core closes timing at); 66 MHz, the original 603e's, is the target.
+  The SDC derives the PLL clocks, so the constraint follows (22.222 ns at 45 MHz).
+  The MODE register reports `SYS_MHZ` and the firmware's rates (Dhrystone, CoreMark,
+  Whetstone, nbench, Embench, the Mandelbrot time) use it.
 - Program RAM: 128 KiB of block RAM at `0xfff00000`, preloaded with the firmware image
   (`mister.hex` in simulation, `mister.mif` in synthesis, where `soc_ram_sp_be` instantiates
   `altsyncram` with byte enables because the inferred RAM loses its contents). The
@@ -38,11 +44,14 @@ memory on the 60x bus), [`tb/mister/`](../tb/mister) (Verilator benches).
     16-entry FIFO and drain one doubleword per DDRAM write; the 60x grant is held off
     while fewer than four entries are free. The palette writes go straight to the scaler
     palette. The native video output carries
-    a blank 320 × 240 (6.25 MHz pixel enable, 400 × 262, 59.6 Hz).
+    a blank 320 × 240 at the native timing below.
   - Native video (`mister/build.sh --native`): 320 × 240 with the framebuffer and palette
     in block RAM in the demo SoC, as in the standalone simulation, scanned out on
-    `VGA_R/G/B`, `VGA_HS/VS`, `VGA_DE` and `CE_PIXEL` at 400 × 262 with a 6.25 MHz pixel
-    enable (15.6 kHz, 59.6 Hz, console 240p timing), `VIDEO_ARX/ARY` 4:3, `FB_EN` absent.
+    `VGA_R/G/B`, `VGA_HS/VS`, `VGA_DE` and `CE_PIXEL` with a 15.6 kHz line (console 240p
+    timing), `VIDEO_ARX/ARY` 4:3, `FB_EN` absent. The pixel enable is every
+    `round(SYS_MHZ / 6.25)` clocks and the back porch fills the line: at 50 MHz,
+    6.25 MHz and 400 × 262 (15.625 kHz, 59.6 Hz); at 45 MHz, 6.43 MHz and 411 × 262
+    (15.64 kHz, 59.7 Hz).
 - `MISTER_DISABLE_ALSA` is set: the core has no audio.
 
 ### Screenshots
@@ -218,8 +227,8 @@ prints `FAIL: <reason>` instead and the OSD shows `Finished: FAIL`.
 ## Building
 
 ```sh
-mister/build.sh [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N]
-mister/build.sh --clean --fpu-compact --dual --lsu-pipe   # the test core
+mister/build.sh [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N] [--sys-mhz N]
+mister/build.sh --clean --fpu-compact --dual --lsu-pipe   # the test core, 45 MHz
 ```
 
 The test core is the one to load programs into: COMPACT FPU, dual dispatch and the
@@ -229,7 +238,7 @@ changes against Quartus 17.
 
 `--native` builds the 320 × 240 native-video variant; the default is the 1920 × 1080 DDR3
 framebuffer. `--suite` builds a core for one benchmark suite instead of hello, Dhrystone
-and CoreMark (see [Benchmark suite cores](#benchmark-suite-cores)). `--seed N` sets the fitter seed (default 2). `--fpu` builds the
+and CoreMark (see [Benchmark suite cores](#benchmark-suite-cores)). `--seed N` sets the fitter seed (default 2). `--sys-mhz N` sets the core clock (default 45). `--fpu` builds the
 processor with its FPU (see [FPU cores](#fpu-cores)). Needs Docker, network access for the framework and benchmark sources, and about
 12 GB for the pinned Quartus 17.0.2 image. The script:
 
