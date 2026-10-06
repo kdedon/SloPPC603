@@ -377,6 +377,8 @@ module ppc_core #(
   logic [2:0] waiter_crf_q, wait_crf;
   completion_tag_t flags_waiter_tag;
   logic fd_push, fold_predict, fold_q, iq_folded, bu_redirect;
+  logic wait0, wait1, fetch_stop, fstop_q, fetch_hold_q;
+  logic [31:0] stop_resume;
   // Branch class predecoded at IQ push, to keep decode off the dispatch path.
   logic [3:0] push_branch, iq_branch;
   logic [31:0] fold_target, fold_target_q;
@@ -584,9 +586,10 @@ module ppc_core #(
     fetch_miss.ea[2] = imem_rsp_page_miss_i.ea[2] ^ rsp_le_q;
   end
   ppc_fetch #(.RESET_PC(RESET_PC), .FETCH_WIDTH(FETCH_WIDTH)) fetch (
-    .clk_i, .rst_ni, .stop_i(fault_pending || frontend_fence || power_stop),
+    .clk_i, .rst_ni,
+    .stop_i(fault_pending || frontend_fence || power_stop || (fetch_hold_q && !frontend_clear)),
     .quiescent_o(frontend_quiescent),
-    .redirect_i(frontend_clear || fold_q), .redirect_target_i(frontend_target),
+    .redirect_i(frontend_clear || fold_q || fstop_q), .redirect_target_i(frontend_target),
     .early_i(early_q), .early_ok_i(early_ok), .early_target_i(early_target_q),
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
     .req_addr_o(fetch_req_addr), .rsp_valid_i(imem_rsp_valid_i),
@@ -611,14 +614,14 @@ module ppc_core #(
   logic [IQ_COUNT_WIDTH-1:0] iq_count;
   // The FD words enter the IQ together.
   assign fd_push_ok = fd1_valid_q ? iq_push2_ready : iq_push_ready;
-  assign fetch_ready = !frontend_clear && !fold_q && (!fd_valid_q || fd_push_ok);
+  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q && (!fd_valid_q || fd_push_ok);
   // Two words are taken only if the IQ holds them behind the FD words.
   assign fetch_room2 = (FETCH_WIDTH == 2) &&
     ({1'b0, iq_count} + (IQ_COUNT_WIDTH + 1)'(fd_valid_q) + (IQ_COUNT_WIDTH + 1)'(fd1_valid_q) <=
      (IQ_COUNT_WIDTH + 1)'(IQ_DEPTH - 2));
   assign fetch_ready2 = fetch_room2 && fetch_ready;
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || frontend_clear || fold_q) begin
+    if (!rst_ni || frontend_clear || fold_q || fstop_q) begin
       fd_valid_q <= 1'b0;
       fd1_valid_q <= 1'b0;
     end else if (fetch_ready) begin
@@ -671,27 +674,34 @@ module ppc_core #(
   // the edge after it enters the IQ, and the words behind it in the fetch
   // registers are dropped. Dispatch resolves the branch and corrects a wrong
   // prediction. A bclr or bcctr folds only when its target register is
-  // known. Where UM 6.4.1.1 stops fetching (a branch testing or reading CTR
-  // behind a CTR writer, a linking branch other than b behind an LR writer)
-  // nothing folds.
+  // known.
   // Not in trace mode, whose branches take the serialized path; changing MSR
   // refetches, so no folded entry is queued when trace mode starts.
   /* verilator lint_off UNUSEDSIGNAL */
   // Decoded from the word alone, keeping the IQ push enable shallow.
-  function automatic logic folds(fetch_packet_t p, logic trace, logic lr_ok, logic lr_none,
-                                 logic ctr_ok);
-    logic predict, bo_ok, xl_ok, wait_ok;
+  function automatic logic folds(fetch_packet_t p, logic trace, logic lr_ok, logic ctr_ok);
+    logic predict, bo_ok, xl_ok;
     predict = (p.insn[25] && p.insn[23]) || (p.insn[15] ^ p.insn[21]);
     bo_ok = (p.insn[25:21] <= 5'd20) && (p.insn[24:22] != 3'b011) &&
             (p.insn[24:22] != 3'b111);
     xl_ok = (p.insn[15:11] == 5'd0) && bo_ok &&
             ((p.insn[10:1] == 10'd16) || ((p.insn[10:1] == 10'd528) && p.insn[23]));
-    wait_ok = (!p.insn[0] || lr_none) && (p.insn[23] || ctr_ok);
     return !trace && (p.fault == FETCH_OK) &&
-      ((p.insn[31:26] == 6'd18) ||
-       (wait_ok && (((p.insn[31:26] == 6'd16) && predict) ||
-                    ((p.insn[31:26] == 6'd19) && xl_ok && predict &&
-                     (p.insn[10] ? ctr_ok : lr_ok)))));
+      ((p.insn[31:26] == 6'd18) || ((p.insn[31:26] == 6'd16) && predict) ||
+       ((p.insn[31:26] == 6'd19) && xl_ok && predict && (p.insn[10] ? ctr_ok : lr_ok)));
+  endfunction
+  // The UM 6.4.1.1 cases that stop fetching: a bclr behind an mtlr, a bcctr
+  // or CTR-testing branch behind a CTR writer (mtctr or CTR-testing branch),
+  // and a linking branch other than bl behind a linking branch. lr_ok is low
+  // only when the youngest LR writer is an mtlr.
+  function automatic logic waits(fetch_packet_t p, logic lr_ok, logic lk_ok, logic ctr_ok);
+    logic bc, bclr, bcctr;
+    bc = p.insn[31:26] == 6'd16;
+    bclr = (p.insn[31:26] == 6'd19) && (p.insn[10:1] == 10'd16);
+    bcctr = (p.insn[31:26] == 6'd19) && (p.insn[10:1] == 10'd528);
+    return (p.fault == FETCH_OK) &&
+      ((bclr && !lr_ok) || (bcctr && !ctr_ok) ||
+       ((bc || bclr || bcctr) && ((!p.insn[23] && !ctr_ok) || (p.insn[0] && !lk_ok))));
   endfunction
   // {writes LR, writes CTR}
   function automatic logic [1:0] lr_ctr_writes(uop_t u);
@@ -706,10 +716,12 @@ module ppc_core #(
   /* verilator lint_on UNUSEDSIGNAL */
   // LR and CTR writers in the IQ. Dispatched ones are tracked by
   // lr_pending_q and ctr_pending_q until they retire.
-  logic [2:0] lr_iq_q, ctr_iq_q;
+  logic [2:0] lr_iq_q, ctr_iq_q, lk_iq_q;
   logic [1:0] push_writes, push1_writes, pop_writes, pop1_writes;
-  logic lr_free, ctr_free;
+  logic lr_free, ctr_free, lk_free, push_lk, push1_lk, pop_lk, pop1_lk;
   assign lr_free = (lr_iq_q == '0) && !lr_pending_q;
+  // Linking branches queued or uncompleted.
+  assign lk_free = (lk_iq_q == '0) && !lk_pending_q;
   // Shadow LR (UM 6.4.1.1): a linking branch's LR value, PC + 4, is known
   // when it is queued. lr_front_q is the LR left by the youngest queued or
   // dispatched writer when that is a linking branch (lr_front_ok_q);
@@ -721,8 +733,9 @@ module ppc_core #(
   assign lr_ok = lr_free || lr_front_ok_q;
   assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
   assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
-  assign fd_push = fd_valid_q && !fold_q;
-  assign fold_predict = folds(queued, trace_mode, lr_ok, lr_free, ctr_free);
+  assign fd_push = fd_valid_q && !fold_q && !fstop_q;
+  assign wait0 = waits(queued, lr_ok, lk_free, ctr_free);
+  assign fold_predict = folds(queued, trace_mode, lr_ok, ctr_free) && !wait0;
   // Lane 1: the second FD word.
   fetch_packet_t queued1;
   logic [31:0] fold_pc;
@@ -767,9 +780,12 @@ module ppc_core #(
     assign queued1 = '0;
   end
   endgenerate
-  assign fold_predict1 = (FETCH_WIDTH == 2) &&
-    folds(queued1, trace_mode, lr_ok && !push_writes[1], lr_free && !push_writes[1],
+  // Behind a waiting first word the second does not fold.
+  assign wait1 = (FETCH_WIDTH == 2) &&
+    waits(queued1, push_writes[1] ? push_lk : lr_ok, lk_free && !push_lk,
           ctr_free && !push_writes[0]);
+  assign fold_predict1 = (FETCH_WIDTH == 2) && !wait0 && !wait1 &&
+    folds(queued1, trace_mode, lr_ok && !push_writes[1], ctr_free && !push_writes[0]);
   // A folding first word drops the second.
   assign iq_push0 = fd_push && fd_push_ok;
   assign iq_push1 = iq_push0 && fd1_valid_q && !fold_predict;
@@ -788,7 +804,32 @@ module ppc_core #(
     end else begin
       fold_q <= ((iq_push0 && fold_predict) || (iq_push1 && fold_predict1)) &&
                 !frontend_clear;
-      fold_target_q <= fold_target;
+      fold_target_q <= fetch_stop ? stop_resume : fold_target;
+    end
+  end
+  // Fetch stop (UM 6.4.1.1): once a waiting branch is queued, the words
+  // fetched behind its pair are dropped, and fetch restarts after the pair
+  // when the branch leaves the IQ (or at its target, if taken).
+  // stop_left_q counts the IQ entries up to the youngest waiting branch.
+  logic [IQ_COUNT_WIDTH-1:0] iq_pops, stop_left_q;
+  assign iq_pops = IQ_COUNT_WIDTH'(dispatch && iq_pop) + IQ_COUNT_WIDTH'(dispatch1);
+  assign fetch_stop = ((iq_push0 && wait0) || (iq_in1 && wait1)) && !frontend_clear;
+  assign stop_resume = {fd_packet_q.pc[31:2] + (iq_push1 ? 30'd2 : 30'd1), 2'b00};
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || frontend_clear) begin
+      fstop_q <= 1'b0;
+      fetch_hold_q <= 1'b0;
+      stop_left_q <= '0;
+    end else begin
+      fstop_q <= fetch_stop;
+      if (fetch_stop) begin
+        fetch_hold_q <= 1'b1;
+        stop_left_q <= iq_count - iq_pops + IQ_COUNT_WIDTH'(1) +
+                       IQ_COUNT_WIDTH'(iq_in1 && wait1);
+      end else if (fetch_hold_q) begin
+        if (iq_pops >= stop_left_q) fetch_hold_q <= 1'b0;
+        stop_left_q <= stop_left_q - iq_pops;
+      end
     end
   end
   // Pair predecode. dep_prev compares against the preceding pushed word:
@@ -859,7 +900,7 @@ module ppc_core #(
   /* verilator lint_on UNUSEDSIGNAL */
   assign push_remove0 = BRANCH_REMOVAL && !trace_mode && plain_b(queued) &&
     (fetch_removed_q != 2'd3);
-  assign push_remove1 = BRANCH_REMOVAL && !trace_mode && plain_b(queued1);
+  assign push_remove1 = BRANCH_REMOVAL && !trace_mode && plain_b(queued1) && !wait0;
   assign iq_in0 = iq_push0 && !push_remove0;
   assign iq_in1 = iq_push1 && !push_remove1;
   always_ff @(posedge clk_i) begin
@@ -874,6 +915,10 @@ module ppc_core #(
   assign push1_writes = lr_ctr_writes(push_uop1);
   assign pop_writes = lr_ctr_writes(iq_uop);
   assign pop1_writes = lr_ctr_writes(dq1_uop);
+  assign push_lk = push_writes[1] && (push_uop.special_op != SPECIAL_MTSPR);
+  assign push1_lk = push1_writes[1] && (push_uop1.special_op != SPECIAL_MTSPR);
+  assign pop_lk = pop_writes[1] && (iq_uop.special_op != SPECIAL_MTSPR);
+  assign pop1_lk = pop1_writes[1] && (dq1_uop.special_op != SPECIAL_MTSPR);
   always_ff @(posedge clk_i) begin
     if (!rst_ni || recovery_accepted) begin
       lr_front_ok_q <= 1'b0;
@@ -902,7 +947,10 @@ module ppc_core #(
     if (!rst_ni || frontend_clear) begin
       lr_iq_q <= '0;
       ctr_iq_q <= '0;
+      lk_iq_q <= '0;
     end else begin
+      lk_iq_q <= lk_iq_q + 3'(iq_push0 && push_lk) + 3'(iq_push1 && push1_lk) -
+                 3'(dispatch && iq_pop && pop_lk) - 3'(dispatch1 && pop1_lk);
       lr_iq_q <= lr_iq_q + 3'(iq_push0 && push_writes[1]) + 3'(iq_push1 && push1_writes[1]) -
                  3'(dispatch && iq_pop && pop_writes[1]) - 3'(dispatch1 && pop1_writes[1]);
       ctr_iq_q <= ctr_iq_q + 3'(iq_push0 && push_writes[0]) + 3'(iq_push1 && push1_writes[0]) -
