@@ -22,7 +22,7 @@ memory on the 60x bus), [`tb/mister/`](../tb/mister) (Verilator benches).
 
 - One clock, `clk_sys`, drives the processor, the SoC, `DDRAM_CLK`, `CLK_VIDEO`
   and the scaler palette port. Its rate is `SYS_MHZ`: `mister/build.sh --sys-mhz N`
-  sets `VERILOG_MACRO "MISTER_SYS_MHZ=N"`, which sets the PLL output and the
+  writes `mister/sys_clock.vh` (`MISTER_SYS_MHZ`, `MISTER_PLL_FREQ`), which sets the PLL output and the
   `ppc603e_mister` parameter. The core clock is 45 MHz for now (the default, the
   rate the test core closes timing at); 66 MHz, the original 603e's, is the target.
   The SDC derives the PLL clocks, so the constraint follows (22.222 ns at 45 MHz).

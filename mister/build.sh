@@ -101,6 +101,8 @@ python3 "${here}/hex2mif.py" "${here}/firmware/mister.hex" $((ram_bytes / 8)) "$
 } > "${here}/files.qip"
 
 rm -rf "${here}/output_files" "${here}/build_id.v"
+printf '`define MISTER_SYS_MHZ %s\n`define MISTER_PLL_FREQ "%s.000000 MHz"\n' "${sys_mhz}" "${sys_mhz}" \
+  > "${here}/sys_clock.vh"
 # Quartus writes every sourced assignment back into the project file.
 cp "${here}/ppc603e.qsf" "${here}/ppc603e.qsf.keep"
 if [[ "${native}" == 1 ]]; then
@@ -121,7 +123,6 @@ fi
 if [[ "${lsu_pipe}" == 1 ]]; then
   echo 'set_global_assignment -name VERILOG_MACRO "PPC_LSU_PIPE=1"' >> "${here}/ppc603e.qsf"
 fi
-echo "set_global_assignment -name VERILOG_MACRO \"MISTER_SYS_MHZ=${sys_mhz}\"" >> "${here}/ppc603e.qsf"
 if [[ -n "${seed}" ]]; then
   sed -i "s/^set_global_assignment -name SEED .*/set_global_assignment -name SEED ${seed}/" "${here}/ppc603e.qsf"
 fi

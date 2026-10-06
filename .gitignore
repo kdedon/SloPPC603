@@ -20,6 +20,7 @@ mister/sys/
 mister/firmware/
 mister/files.qip
 mister/build_id.v
+mister/sys_clock.vh
 mister/jtag.cdf
 mister/db/
 mister/incremental_db/
