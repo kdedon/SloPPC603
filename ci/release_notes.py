@@ -192,9 +192,9 @@ def main():
                 "one, then load the program.", ""]
     if any("quake" in name for name in names):
         out += ["**Quake:** `ppc603e-quake.bin` (hard float, big-endian, PowerPC assembly renderer), "
-                "`ppc603e-quake-le.bin` (hard float, little-endian) and `ppc603e-quake-sf.bin` (soft float, "
+                "`ppc603e-quake-le.bin` (hard float, little-endian, the same renderer) and `ppc603e-quake-sf.bin` (soft float, "
                 "any core) run a looping `timedemo demo1`. They hold quakegeneric object code (GPL-2.0), and the "
-                "first also assembly from Frank Wille's Amiga Quake 1.09 v2.30 source (GPL-2.0), so they are "
+                "first two also assembly from Frank Wille's Amiga Quake 1.09 v2.30 source (GPL-2.0), so they are "
                 f"GPL-2.0; their corresponding source is this repository at [`{commit[:12]}`]({url}/tree/{commit}), "
                 f"quakegeneric at [`{quakegeneric[:12]}`](https://github.com/erysdren/quakegeneric/tree/"
                 f"{quakegeneric}), the Amiga source archive (SHA-256 `{amiga_sha}`) and the runtime sources "

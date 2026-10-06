@@ -7,7 +7,14 @@ counter becomes '.', .rodata becomes a section, and the local labels
 (.name, scoped between global labels) get a unique suffix per scope. The
 output is otherwise line for line the input.
 
-Usage: asmconv.py in.s out.s"""
+--le adapts the sources to little-endian mode, where a double's low word is
+at its address and its high word at +4: within each function or macro, a
+load or store narrower than a doubleword into a doubleword that lfd/stfd
+also address moves to the mirrored offset in it (stfd at X, lwz at X+4
+becomes lwz at X), and a two-word .long constant (a double written as two
+words in hex) swaps its words.
+
+Usage: asmconv.py [--le] in.s out.s"""
 import re
 import sys
 
@@ -72,11 +79,79 @@ def scope_labels(lines):
     return out
 
 
+MEM = re.compile(r'^(\s*)(lfdu?|stfdu?|lwzu?|stwu?|lhzu?|lhau?|sthu?|lbzu?|stbu?|lfsu?|stfsu?)'
+                 r'(\s+[\w\\()]+,\s*)((?:[^,()]|\\\(\))*)\((r\d+)\)(.*)$')
+SIZE = {'lfd': 8, 'stfd': 8, 'lwz': 4, 'stw': 4, 'lfs': 4, 'stfs': 4, 'lhz': 2, 'lha': 2, 'sth': 2,
+        'lbz': 1, 'stb': 1}
+NUM = re.compile(r'(0x[0-9a-fA-F]+|\d+)(\*(0x[0-9a-fA-F]+|\d+))*')
+HEX = re.compile(r'0x[0-9a-fA-F]+')
+
+
+def split_offset(text):
+    """'local+dbl2int_tmp1+4' -> (('+local', '+dbl2int_tmp1'), 4)."""
+    syms, num = [], 0
+    for sign, term in re.findall(r'([+-]?)\s*([^+-]+)', text.replace(' ', '')):
+        if NUM.fullmatch(term):
+            v = 1
+            for f in term.split('*'):
+                v *= int(f, 0)
+            num += -v if sign == '-' else v
+        else:
+            syms.append((sign or '+') + term)
+    return tuple(syms), num
+
+
+def join_offset(syms, num):
+    text = ''.join(syms).lstrip('+')
+    return text + (f'{num:+d}' if num else '') if text else str(num)
+
+
+def little_endian(lines, path):
+    scopes, current = [], []
+    for line in lines:
+        if re.match(r'^\s*(funcdef\s|\.macro\s)', line) and current:
+            scopes.append(current)
+            current = []
+        current.append(line)
+    scopes.append(current)
+    out = []
+    for scope in scopes:
+        slots = set()
+        for line in scope:
+            m = MEM.match(line.partition('#')[0])
+            if m and SIZE[m.group(2).rstrip('u')] == 8:
+                syms, num = split_offset(m.group(4))
+                slots.add((m.group(5), tuple(sorted(syms)), num))
+        for line in scope:
+            code, sep, comment = line.partition('#')
+            m = MEM.match(code)
+            size = m and SIZE[m.group(2).rstrip('u')]
+            if m and size < 8:
+                syms, num = split_offset(m.group(4))
+                key = (m.group(5), tuple(sorted(syms)))
+                base = [s[2] for s in slots if s[:2] == key and 0 <= num - s[2] < 8]
+                if base:
+                    new = 2 * base[0] + 8 - size - num
+                    code = m.group(1) + m.group(2) + m.group(3) + join_offset(syms, new) + \
+                        f'({m.group(5)})' + m.group(6)
+                    print(f'{path}: {line.strip()} -> {code.strip()}', file=sys.stderr)
+            d = re.match(r'^(\s*\.long\s+)([^,\s]+)\s*,\s*([^,\s]+)(\s*)$', code)
+            if d and HEX.fullmatch(d.group(2)) and HEX.fullmatch(d.group(3)):
+                code = f'{d.group(1)}{d.group(3)},{d.group(2)}{d.group(4)}'
+                print(f'{path}: {line.strip()} -> {code.strip()}', file=sys.stderr)
+            out.append(code + sep + comment)
+    return out
+
+
 def main(argv):
+    le = argv[:1] == ['--le']
+    argv = argv[le:]
     if len(argv) != 2:
         sys.exit(__doc__)
     lines = open(argv[0], encoding='latin-1').read().splitlines()
     lines = convert_macros(lines)
+    if le:
+        lines = little_endian(lines, argv[0])
     lines = [re.sub(r'^(\s*)\.rodata\b', r'\1.section .rodata', line) for line in lines]
     lines = scope_labels(lines)
     if argv[0].endswith('.i'):

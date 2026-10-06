@@ -145,7 +145,7 @@ them alone.
 | `ppc603e-doom.bin` | Doom `-timedemo demo3`, looping, big-endian ([BENCHMARKS.md](BENCHMARKS.md#doom)) | GPL-2.0; needs `DOOM1.WAD` from `Load data` |
 | `ppc603e-doom-le.bin` | The same, little-endian | GPL-2.0; needs `DOOM1.WAD` from `Load data (little-endian)` |
 | `ppc603e-quake.bin` | Quake `timedemo demo1`, looping, hard float, big-endian, PowerPC assembly renderer ([BENCHMARKS.md](BENCHMARKS.md#quake)) | GPL-2.0; FPU cores; needs `pak0.pak` from `Load data` |
-| `ppc603e-quake-le.bin` | The same in C, little-endian | GPL-2.0; FPU cores; needs `pak0.pak` from `Load data (little-endian)` |
+| `ppc603e-quake-le.bin` | The same, little-endian | GPL-2.0; FPU cores; needs `pak0.pak` from `Load data (little-endian)` |
 | `ppc603e-quake-sf.bin` | The same in C, soft float, big-endian | GPL-2.0; any core; needs `pak0.pak` from `Load data` |
 
 The download is the framework's ROM load (`ioctl`, 8-bit, index 1). The core holds the

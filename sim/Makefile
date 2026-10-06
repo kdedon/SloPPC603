@@ -2562,17 +2562,18 @@ test-mister-doom: mister-load-model doom-host
 	  python3 tools/ppm_to_png.py $(DOOM_OUT)/$$e.ppm $(DOOM_OUT)/$$e.png; done
 	cat $(DOOM_OUT)/host.txt
 
-# Quake smoke (docs/BENCHMARKS.md#quake): the smoke images of the four
+# Quake smoke (docs/BENCHMARKS.md#quake): the smoke images of the five
 # variants run in tb_mister_load with pak0.pak preloaded (munged for
 # little-endian) to timedemo frame QUAKE_SMOKE_FRAMES at a fixed frame time.
 # Each prints a CRC-32 of the frame and palette, its cycles per frame and
 # the frame itself, which quake_frame_diff.py compares with the host build
-# of the same engine. The two hard-float C builds must agree with each other.
+# of the same engine. The two hard-float C builds must agree with each other,
+# and so must the two assembly builds.
 # quakegeneric is 32-bit only: HOSTCC32 must build i386 programs.
 QUAKE_OUT := $(BUILD_DIR)/mister/quake
 QUAKE_SMOKE_FRAMES ?= 8
 QUAKE_PAK := ../toolchain/build/demo/pak/pak0.pak
-QUAKE_VARIANTS ?= be bec le sf
+QUAKE_VARIANTS ?= be bec le lec sf
 HOSTCC32 ?= gcc -m32
 .PHONY: quake-host test-mister-quake
 quake-host:
@@ -2584,16 +2585,17 @@ test-mister-quake: mister-load-model quake-host
 	$(DEMO_FW_MAKE) quake QUAKE_SMOKE_FRAMES=$(QUAKE_SMOKE_FRAMES)
 	mkdir -p $(QUAKE_OUT)
 	for v in $(QUAKE_VARIANTS); do \
-	  img=ppc603e-quake-$$v-smoke; flag=; [ $$v = be ] && img=ppc603e-quake-smoke; [ $$v = le ] && flag=+WAD_LE; \
+	  img=ppc603e-quake-$$v-smoke; flag=; [ $$v = be ] && img=ppc603e-quake-smoke; case $$v in le*) flag=+WAD_LE;; esac; \
 	  timeout 14400 ./$(MISTER_LOAD_OUT)/model/Vtb_mister_load $(SIM_ARGS) +MAX_CYCLES=40000000000 \
 	    +WAD=$(QUAKE_PAK) +WAD_PRELOAD $$flag +IMAGE=$(DEMO_FW_DIR)/quake/$$img.bin \
 	    +PPM=$(QUAKE_OUT)/$$v.ppm > $(QUAKE_OUT)/$$v.log 2>&1 || { tail -20 $(QUAKE_OUT)/$$v.log; exit 1; }; \
 	  grep -E '^quake: (timedemo|[0-9]+ cycles)|^image: exit' $(QUAKE_OUT)/$$v.log | sed "s/^/$$v: /"; done
 	python3 tools/quake_frame_diff.py ../toolchain/build/demo/quake/host/$(QUAKE_SMOKE_FRAMES)/quake-frame.bin \
 	  $(addprefix $(QUAKE_OUT)/,$(addsuffix .log,$(QUAKE_VARIANTS)))
-	if [ -f $(QUAKE_OUT)/bec.log ] && [ -f $(QUAKE_OUT)/le.log ]; then \
-	  a=$$(grep '^quake: timedemo' $(QUAKE_OUT)/bec.log); b=$$(grep '^quake: timedemo' $(QUAKE_OUT)/le.log); \
-	  [ "$$a" = "$$b" ] || { echo "bec and le frames differ"; exit 1; }; fi
+	for p in "be le" "bec lec"; do set -- $$p; \
+	  if [ -f $(QUAKE_OUT)/$$1.log ] && [ -f $(QUAKE_OUT)/$$2.log ]; then \
+	    a=$$(grep '^quake: timedemo' $(QUAKE_OUT)/$$1.log); b=$$(grep '^quake: timedemo' $(QUAKE_OUT)/$$2.log); \
+	    [ "$$a" = "$$b" ] || { echo "$$1 and $$2 frames differ"; exit 1; }; fi; done
 
 # Uninitialized-state sweep: core, chip, demo SoC and MiSTer benches rerun
 # with several random initial values (XRAND builds) plus all-zero and all-one

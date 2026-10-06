@@ -40,8 +40,8 @@ Consequences for built images:
   its SHA-256; releases publish it byte for byte as its own file. No image or archive
   embeds it, and nothing alters it: the core munges it for little-endian programs while
   loading, in DDR3, never in the file.
-- **The Quake images contain quakegeneric (GPL-2.0), and `ppc603e-quake.bin` the
-  Amiga port's assembly (GPL-2.0), so they are GPL-2.0.** Releases publish them with
+- **The Quake images contain quakegeneric (GPL-2.0), and `ppc603e-quake.bin` and
+  `ppc603e-quake-le.bin` the Amiga port's assembly (GPL-2.0), so they are GPL-2.0.** Releases publish them with
   `ppc603e-quake.SOURCE.txt` and the same `ppc603e-source.tar.gz`, which holds the
   fetched quakegeneric files and the Amiga archives. `pak0.pak` is handled as
   `DOOM1.WAD` is: fetched, hash-checked, published unmodified as its own file, never
@@ -302,7 +302,7 @@ copies `pak0.pak` to `build/mister/images/`).
 | Image | Float | Byte order | Renderer | Cores |
 |---|---|---|---|---|
 | `ppc603e-quake.bin` | hard | big | PowerPC assembly | FPU |
-| `ppc603e-quake-le.bin` | hard | little | C | FPU |
+| `ppc603e-quake-le.bin` | hard | little | PowerPC assembly | FPU |
 | `ppc603e-quake-sf.bin` | soft | big | C | any; shows the FPU's gain |
 
 - **Engine.** quakegeneric's sources, built `-O2 -fsigned-char`. The port's own video
@@ -329,7 +329,7 @@ copies `pak0.pak` to `build/mister/images/`).
 
 ### PowerPC assembly
 
-`ppc603e-quake.bin` takes the rendering routines from Frank Wille's Amiga Quake 1.09
+`ppc603e-quake.bin` and `ppc603e-quake-le.bin` take the rendering routines from Frank Wille's Amiga Quake 1.09
 v2.30 source (`Quake_src.lha`, GPL-2.0 per the release's `QuakeMOS.readme`: "Quake is
 published under the GNU Public License"), fetched at a pinned SHA-256 and unpacked by
 our `lha.py`: `d_scanPPC`, `r_surfPPC`, `d_polysetPPC`, `d_edgePPC`, `r_edgePPC`,
@@ -340,7 +340,8 @@ is committed; three scripts of ours adapt it at build time:
 - `asmconv.py` turns the vasm syntax into GNU as: positional macro parameters (`\1`)
   become named ones, `$` becomes `.`, `.rodata` a section, local labels (`.loop`,
   scoped between global labels) get a suffix per scope, and the register names become
-  symbols so that `.rept 32-r24` evaluates.
+  symbols so that `.rept 32-r24` evaluates. For the little-endian image, `--le`
+  moves the FPR–GPR transfers to little-endian word order (below).
 - `asmoffsets.py` writes `quakedefPPC.i`, which the archive lacks, from the original
   generator's command file `quakeasmheaders.gen`: the cross-compiler measures each
   `offsetof` and `sizeof` in quakegeneric's own headers (and the structures
@@ -356,10 +357,24 @@ and address globals absolutely, never through r2 or r13 (the images build
 take 1/z from `frsqrte(z²)` followed by two Newton–Raphson steps. The 603e specifies
 the estimate to 1/32 (5 bits); ours is a 16-entry table per exponent parity. Two steps
 give about 20 bits, past the 16.16 texture coordinates; the smoke run below shows the
-result. The little-endian image uses the C renderer: the assembly moves values between
-FPRs and GPRs through memory assuming big-endian word order (`stfd` then `lwz` at +4,
-and the `0x43300000` conversion pair), which little-endian munging would break.
-Patching those offsets needs an audit of every such sequence and is not done.
+result.
+
+The assembly moves values between FPRs and GPRs through memory in big-endian word
+order: `fctiwz`, `stfd` at X, then `lwz` of the low word at X+4; and the integer to
+double conversion `stw` of `x ^ 0x80000000` at X+4 into a doubleword whose high word
+at X is `0x43300000`, then `lfd`. In little-endian mode a doubleword access is not
+munged and a word access goes to EA XOR 4, so the program sees true little-endian
+order: the low word of a double at X, the high word at X+4. `asmconv.py --le` handles
+both deterministically. In each function or macro, a word, halfword or byte access with
+the same base register and symbolic offset as an `lfd`/`stfd`, within that doubleword,
+moves to its mirror (offset k of size n to 8 − n − k), and a `.long` of exactly two hex
+words (a double written as words) swaps them. It rewrites 78 accesses: the `lwz` after
+`stfd` in every float-to-int conversion (span, sky, edge, alias, clip, draw and light
+routines), the `stw` in the `int2dbl` macro, `anglemod`'s `lhz` and two `stw`, and a
+`stw`/`lfs` pair in `d_edgePPC` that moves together; and the two constants `INT2DBL_0`
+(`0x4330000080000000`) and `c64kDIV360`. The audit found no other mixed-size access to a
+doubleword: every other `lfd`/`stfd` saves FPRs or loads a whole double, and pixel and
+table code reads bytes, halfwords and words at their own sizes.
 
 ### Quake smoke run
 
