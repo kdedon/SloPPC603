@@ -366,7 +366,7 @@ module ppc_core #(
   logic bu_branch, bu_ready, bu_taken, bu_reads_cr, bu_reads_lr, bu_reads_ctr;
   logic bu_spec, bs_valid_q, bs_miss_q, bs_busy, bs_hold, bu_redirect_d;
   logic bu_writes_ctr, bu_ctr_ok, bu_cond_ok, bu_redirect_q;
-  logic lr_pending_q, ctr_pending_q, frontend_clear;
+  logic lr_pending_q, ctr_pending_q, lk_pending_q, frontend_clear;
   logic [31:0] bu_target, bu_next_pc, bu_target_q, frontend_target;
   logic owner_simple_q, owner_crf_valid_q, bu_cr_valid_q, bu_cr_capture;
   logic [2:0] owner_crf_q;
@@ -670,22 +670,28 @@ module ppc_core #(
   // unless the y bit says otherwise, or branch always), redirects fetch on
   // the edge after it enters the IQ, and the words behind it in the fetch
   // registers are dropped. Dispatch resolves the branch and corrects a wrong
-  // prediction. A bclr or bcctr folds only when no older instruction still
-  // writes its target register, so the committed LR or CTR is the target.
+  // prediction. A bclr or bcctr folds only when its target register is
+  // known. Where UM 6.4.1.1 stops fetching (a branch testing or reading CTR
+  // behind a CTR writer, a linking branch other than b behind an LR writer)
+  // nothing folds.
   // Not in trace mode, whose branches take the serialized path; changing MSR
   // refetches, so no folded entry is queued when trace mode starts.
   /* verilator lint_off UNUSEDSIGNAL */
   // Decoded from the word alone, keeping the IQ push enable shallow.
-  function automatic logic folds(fetch_packet_t p, logic trace, logic lr_ok, logic ctr_ok);
-    logic predict, bo_ok, xl_ok;
+  function automatic logic folds(fetch_packet_t p, logic trace, logic lr_ok, logic lr_none,
+                                 logic ctr_ok);
+    logic predict, bo_ok, xl_ok, wait_ok;
     predict = (p.insn[25] && p.insn[23]) || (p.insn[15] ^ p.insn[21]);
     bo_ok = (p.insn[25:21] <= 5'd20) && (p.insn[24:22] != 3'b011) &&
             (p.insn[24:22] != 3'b111);
     xl_ok = (p.insn[15:11] == 5'd0) && bo_ok &&
             ((p.insn[10:1] == 10'd16) || ((p.insn[10:1] == 10'd528) && p.insn[23]));
+    wait_ok = (!p.insn[0] || lr_none) && (p.insn[23] || ctr_ok);
     return !trace && (p.fault == FETCH_OK) &&
-      ((p.insn[31:26] == 6'd18) || ((p.insn[31:26] == 6'd16) && predict) ||
-       ((p.insn[31:26] == 6'd19) && xl_ok && predict && (p.insn[10] ? ctr_ok : lr_ok)));
+      ((p.insn[31:26] == 6'd18) ||
+       (wait_ok && (((p.insn[31:26] == 6'd16) && predict) ||
+                    ((p.insn[31:26] == 6'd19) && xl_ok && predict &&
+                     (p.insn[10] ? ctr_ok : lr_ok)))));
   endfunction
   // {writes LR, writes CTR}
   function automatic logic [1:0] lr_ctr_writes(uop_t u);
@@ -706,17 +712,17 @@ module ppc_core #(
   assign lr_free = (lr_iq_q == '0) && !lr_pending_q;
   // Shadow LR (UM 6.4.1.1): a linking branch's LR value, PC + 4, is known
   // when it is queued. lr_front_q is the LR left by the youngest queued or
-  // dispatched writer when that is a linking branch or an mtlr whose value
-  // is known (lr_front_ok_q);
+  // dispatched writer when that is a linking branch (lr_front_ok_q);
   // lr_disp_q the same for the youngest dispatched writer, which a bclr
-  // reads at dispatch while that writer is uncommitted.
+  // reads at dispatch while that writer is uncommitted. An mtlr's value is
+  // not forwarded before it retires (UM 6.3.3.2), so a bclr behind it waits.
   logic lr_front_ok_q, lr_disp_ok_q, lr_ok;
   logic [31:2] lr_front_q, lr_disp_q, lr_fold;
   assign lr_ok = lr_free || lr_front_ok_q;
   assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
   assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
   assign fd_push = fd_valid_q && !fold_q;
-  assign fold_predict = folds(queued, trace_mode, lr_ok, ctr_free);
+  assign fold_predict = folds(queued, trace_mode, lr_ok, lr_free, ctr_free);
   // Lane 1: the second FD word.
   fetch_packet_t queued1;
   logic [31:0] fold_pc;
@@ -762,7 +768,7 @@ module ppc_core #(
   end
   endgenerate
   assign fold_predict1 = (FETCH_WIDTH == 2) &&
-    folds(queued1, trace_mode, lr_ok && !push_writes[1],
+    folds(queued1, trace_mode, lr_ok && !push_writes[1], lr_free && !push_writes[1],
           ctr_free && !push_writes[0]);
   // A folding first word drops the second.
   assign iq_push0 = fd_push && fd_push_ok;
@@ -868,14 +874,6 @@ module ppc_core #(
   assign push1_writes = lr_ctr_writes(push_uop1);
   assign pop_writes = lr_ctr_writes(iq_uop);
   assign pop1_writes = lr_ctr_writes(dq1_uop);
-  // An mtlr's value is its source at dispatch. Like the 603e's SRU result,
-  // it reaches the branch unit two cycles after dispatch (UM 6.4.1.1): a
-  // bclr then resolves from it, or folds if no other LR writer is queued.
-  logic lr_mt_q;
-  always_ff @(posedge clk_i) begin
-    if (!rst_ni || recovery_accepted) lr_mt_q <= 1'b0;
-    else lr_mt_q <= dispatch && sru_move && pop_writes[1] && !(dispatch1 && pop1_writes[1]);
-  end
   always_ff @(posedge clk_i) begin
     if (!rst_ni || recovery_accepted) begin
       lr_front_ok_q <= 1'b0;
@@ -890,9 +888,6 @@ module ppc_core #(
       end else if (iq_push0 && push_writes[1]) begin
         lr_front_ok_q <= push_uop.special_op != SPECIAL_MTSPR;
         lr_front_q <= queued.pc[31:2] + 30'd1;
-      end else if (lr_mt_q && (lr_iq_q == '0)) begin
-        lr_front_ok_q <= 1'b1;
-        lr_front_q <= sru_a_q[31:2];
       end
       if (dispatch1 && pop1_writes[1]) begin
         lr_disp_ok_q <= dq1_uop.special_op != SPECIAL_MTSPR;
@@ -900,9 +895,6 @@ module ppc_core #(
       end else if (dispatch && pop_writes[1]) begin
         lr_disp_ok_q <= iq_uop.special_op != SPECIAL_MTSPR;
         lr_disp_q <= iq_head.pc[31:2] + 30'd1;
-      end else if (lr_mt_q) begin
-        lr_disp_ok_q <= 1'b1;
-        lr_disp_q <= sru_a_q[31:2];
       end
     end
   end
@@ -1106,7 +1098,8 @@ module ppc_core #(
   assign bu_ready = !(bu_reads_cr && flags_busy && (!bu_cr_valid_q || flags_waiter) &&
                       !ENABLE_BRANCH_SPEC) &&
     !(bu_reads_cr && (fp_cr_pending || bs_busy)) &&
-    !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(bu_reads_ctr && ctr_pending_q);
+    !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(bu_reads_ctr && ctr_pending_q) &&
+    !(uop.branch_lk && (uop.special_op != SPECIAL_B) && lk_pending_q);
   // BO[0..3] are branch_bo[4..1]; the decrement leaves zero when CTR is 1.
   assign bu_ctr_ok = uop.branch_bo[2] || ((ctr != 32'd1) ^ uop.branch_bo[1]);
   assign bu_cond_ok = uop.branch_bo[4] || (bu_cr[31-uop.branch_bi] == uop.branch_bo[3]);
@@ -1260,13 +1253,17 @@ module ppc_core #(
   assign bu_redirect = bu_taken != iq_folded;
   assign bu_redirect_d = dispatch && bu_branch && bu_redirect && !recovery_accepted;
   // A writer is pending until the youngest one retires or the CQ empties.
-  completion_tag_t lr_writer_q, ctr_writer_q;
+  // lk_pending_q tracks linking branches: a younger one other than b waits
+  // for them to complete (UM 6.4.1.1).
+  completion_tag_t lr_writer_q, ctr_writer_q, lk_writer_q;
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       lr_pending_q <= 1'b0;
       ctr_pending_q <= 1'b0;
+      lk_pending_q <= 1'b0;
       lr_writer_q <= '0;
       ctr_writer_q <= '0;
+      lk_writer_q <= '0;
       bu_redirect_q <= 1'b0;
       bu_target_q <= '0;
     end else begin
@@ -1276,6 +1273,9 @@ module ppc_core #(
       if (cq_empty || (commit && (retire_producer == ctr_writer_q)) ||
           (commit1 && (retire1_producer == ctr_writer_q)))
         ctr_pending_q <= 1'b0;
+      if (cq_empty || (commit && (retire_producer == lk_writer_q)) ||
+          (commit1 && (retire1_producer == lk_writer_q)))
+        lk_pending_q <= 1'b0;
       if (dispatch && pop_writes[1]) begin
         lr_pending_q <= 1'b1;
         lr_writer_q <= alloc_producer;
@@ -1287,6 +1287,14 @@ module ppc_core #(
       if (dispatch1 && pop1_writes[1]) begin
         lr_pending_q <= 1'b1;
         lr_writer_q <= alloc1_producer;
+      end
+      if (dispatch && pop_writes[1] && (iq_uop.special_op != SPECIAL_MTSPR)) begin
+        lk_pending_q <= 1'b1;
+        lk_writer_q <= alloc_producer;
+      end
+      if (dispatch1 && pop1_writes[1] && (dq1_uop.special_op != SPECIAL_MTSPR)) begin
+        lk_pending_q <= 1'b1;
+        lk_writer_q <= alloc1_producer;
       end
       bu_redirect_q <= bu_redirect_d;
       bu_target_q <= bu_next_pc;
@@ -2028,6 +2036,8 @@ module ppc_core #(
     (dq1_uop.cache_op == CACHE_OP_NONE);
   assign d1_branch = d1_valid && dq1_branch[3] && (d1_bc ? (d1_bc_now || d1_bc_spec) :
     (dq1_folded && !(dq1_branch[1] && (lr_pending_q || pop_writes[1])) &&
+     !(dq1_uop.branch_lk && (dq1_uop.special_op != SPECIAL_B) &&
+       (lk_pending_q || (pop_writes[1] && (iq_uop.special_op != SPECIAL_MTSPR)))) &&
      ((dq1_head.insn[31:26] == 6'd18) || (dq1_head.insn[25] && dq1_head.insn[23]))));
   // A bc on a CR bit alone (no CTR, no LK) is handled by the BPU beside
   // DQ0 (UM 6.4.1.2, F6-5): resolved from a final CR when that matches the
