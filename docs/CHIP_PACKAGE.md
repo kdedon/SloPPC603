@@ -75,7 +75,7 @@ The 603 build (`CPU_VARIANT` `CPU_603`) has it (UM C.1.1).
 | DBG | in | 1 | I | Qualified data grant. |
 | DBWO | in | 1 | I | With a qualified DBG, runs an owed push's data ahead of an owed read's; see [DBWO](#dbwo). |
 | DBB | bidir | 1 | I | Out: data tenure ownership with half-cycle negation. In: another master's tenure. |
-| DH[0:31], DL[0:31] | bidir | 64 | I | 64-bit data bus. |
+| DH[0:31], DL[0:31] | bidir | 64 | I | 64-bit data bus; DH only in [32-bit mode](#32-bit-data-bus-and-reduced-pinout). |
 | DP[0:7] | bidir | 8 | I | Out: odd parity per data byte. In: with HID0[EBD]=1, checked on every byte lane of each TA beat of this processor's read data tenures (UM §7.2.7.2.2). |
 | DPE | out, OD | 1 | I | Asserted in the second cycle after a TA whose DP is wrong, unless DRTRY cancels that beat (UM §7.2.7.3); the error takes a machine check with SRR1[14], or checkstops with MSR[ME]=0. |
 | DBDIS | in | 1 | I | Releases DH, DL and DP in the cycle after assertion; the tenure and DBB continue. |
@@ -104,9 +104,9 @@ CKSTP_OUT reports it.
 |---|---|---:|---|---|
 | RSRV | out | 1 | I | Reservation bit: asserted from a committed lwarx until a stwcx. |
 | QREQ | out | 1 | T | Asserted in nap and sleep ([power management](POWER_MANAGEMENT.md)), from SYSCLK edges. |
-| QACK | in | 1 | T | Quiesce acknowledge while QREQ is asserted; strap: must be asserted at HRESET negation (full pinout). |
+| QACK | in | 1 | T | Quiesce acknowledge while QREQ is asserted. Strap: asserted at HRESET negation selects full pinout, negated reduced pinout. |
 | TBEN | in | 1 | I | Active high. Gates the time base; DEC keeps counting ([TIMER_CONTRACT.md](TIMER_CONTRACT.md)). |
-| TLBISYNC | in | 1 | I | Holds a tlbsync, and so completion after it, while asserted. Strap: must be negated at HRESET negation (64-bit bus). |
+| TLBISYNC | in | 1 | I | Holds a tlbsync, and so completion after it, while asserted. Strap: negated at HRESET negation selects the 64-bit data bus, asserted the 32-bit bus. |
 | SYSCLK | in | 1 | I | Bus clock, modeled as `bus_ce_o` on the processor clock `sysclk` (`PLL_CFG` sets the ratio). The time base ticks once per four SYSCLK cycles. |
 | PLL_CFG[0:3] | in | 4 | I | Strap; must equal the build's `PLL_CFG`, which HID1[PC0–PC3] returns. The build accepts any code the variant lists and runs the bus at that code's ratio; the default is PLL bypass (`0011`, 1:1) on PID7v and EC603e, which have no 1:1 PLL ratio, and `0000` on PID6 ([CPU_VARIANTS.md](CPU_VARIANTS.md#18-bus-pins-and-clocks)). |
 | CLK_OUT | out, tri | 1 | T | Always high impedance (the default); HID0 SBCLK/ECLK have no effect. |
@@ -120,18 +120,41 @@ TBEN has no overbar on the rendered UM page 7-27, so it is active high.
 ### Start-up straps and modes
 
 HRESET's negation samples QACK, TLBISYNC and PLL_CFG (the value held while
-HRESET is asserted). Unsupported selections checkstop at release, so a
-system that selects them sees CKSTP_OUT asserted and a silent bus:
+HRESET is asserted). An unsupported PLL_CFG checkstops at release, so a
+system that selects it sees CKSTP_OUT asserted and a silent bus:
 
 | Strap | Supported | Rejected |
 |---|---|---|
-| QACK | asserted: full pinout | negated: reduced pinout (UM §8.6.3) |
-| TLBISYNC | negated: 64-bit data bus | asserted: 32-bit data bus (UM §8.6.1) |
+| QACK | asserted: full pinout; negated: reduced pinout (UM §8.6.3) | — |
+| TLBISYNC | negated: 64-bit data bus; asserted: 32-bit data bus (UM §8.6.1) | — |
 | PLL_CFG | the build's code | any other code |
 | DRTRY | either | — |
 
 DRTRY needs no strap logic: in no-DRTRY mode the system never asserts DRTRY,
 and the normal-mode master is then correct (reads commit one cycle later).
+
+### 32-bit data bus and reduced pinout
+
+UM §8.6.1 (PDF 346–347). In 32-bit mode data and parity move on DH[0:31] and
+DP[0:3] only. DL and DP[4:7] are not sampled on reads and are driven low on
+writes. A transfer of four bytes or less is one beat on the lanes of A[30:31]
+(Tables 8-6, 8-7). An eight-byte single-beat transfer is two beats, TBST
+negated and TSIZ 000 as in 64-bit mode. Line fills, castouts and snoop pushes
+are eight beats, TBST asserted and TSIZ 010, in the 64-bit doubleword order
+(critical doubleword first for reads), high word first. Each beat takes its
+own TA and, on reads, its own DRTRY. A master's DBB release follows its final
+TA. `ppc_bus60x_dbw32` sits between each BIU master and the pins: the master
+sees one TA per doubleword, at its second beat, and a DRTRY of a first beat
+stays inside the adapter. With the strap negated every signal passes through.
+
+Reduced pinout (UM §8.6.3, PDF 348–349) selects the 32-bit bus and also drives
+AP, DP and RSRV low, holds APE and DPE released, and ignores AP and DP, so
+address and data parity are never checked.
+
+A master starts its data tenure only after the ARTRY window at AACK+1 closes,
+in either width, so the 32-bit late-ARTRY boundary (after the first TA of a
+word transfer, the second of a doubleword or burst, UM §8.6.1) never falls
+inside one of its data tenures.
 
 Pipeline tracking (HID0[EICE] turning AP/DP into tracking outputs) is not
 implemented; HID0[EICE] is stored and inert.

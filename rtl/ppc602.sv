@@ -201,7 +201,7 @@ module ppc602 #(
     .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL)
   ) cpu (
     // The internal 60x master runs 1:1 with ppc602_bus (PLL bypass only).
-    .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(1'b1),
+    .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(1'b1), .dbw32_i(1'b0),
     .external_irq_i(!int_n), .interrupt_taken_o(), .interrupt_pc_o(),
     .timer_tick_i(timer_tick), .timebase_enable_i(tben),
     .pin_event_i(pin_event), .pin_status_o(pin_status),

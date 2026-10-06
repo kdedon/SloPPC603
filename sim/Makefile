@@ -1915,6 +1915,7 @@ test-chip-fpu:
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+CHIP_ENABLE_FPU=1 --top-module tb_chip_firmware --Mdir $(BUILD_DIR)/chip-fpu -I../tb $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_firmware.sv
 	python3 tools/fpu_core_program.py --chip-image $(FPU_CHIP_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CHIP_RANDOM)
 	./$(BUILD_DIR)/chip-fpu/Vtb_chip_firmware +IMAGE=$(FPU_CHIP_IMAGE) +TOHOST=fff3ff00 +MIN_DWORDS=1 $(SIM_ARGS)
+	./$(BUILD_DIR)/chip-fpu/Vtb_chip_firmware +IMAGE=$(FPU_CHIP_IMAGE) +TOHOST=fff3ff00 +MIN_DWORDS=1 +DBW32 $(SIM_ARGS)
 
 .PHONY: test-chip-pins test-chip-power lint-chip
 test: test-chip-pins test-chip-power
@@ -2316,7 +2317,7 @@ test-dcache-mutations:
 # with a second bus master, seeded bus timing and a coherent image, plus
 # injected defects the bench must reject (BIU mutations, and the cache
 # answering a modified snoop hit without a push).
-BIU_DCACHE_RTL := ../rtl/ppc_pkg.sv ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv ../rtl/ppc_bus60x_line_read.sv ../rtl/ppc_bus60x_master_select.sv ../rtl/ppc_bus60x_two_master.sv ../rtl/ppc_bus60x_cache_master.sv ../rtl/ppc_bus60x_snoop.sv ../rtl/ppc_bus60x_direct_store.sv ../rtl/ppc_biu.sv $(DCACHE_RTL)
+BIU_DCACHE_RTL := ../rtl/ppc_pkg.sv ../rtl/ppc_bus60x.sv ../rtl/ppc_bus60x_arbiter.sv ../rtl/ppc_bus60x_line_read.sv ../rtl/ppc_bus60x_master_select.sv ../rtl/ppc_bus60x_two_master.sv ../rtl/ppc_bus60x_cache_master.sv ../rtl/ppc_bus60x_snoop.sv ../rtl/ppc_bus60x_direct_store.sv ../rtl/ppc_bus60x_dbw32.sv ../rtl/ppc_biu.sv $(DCACHE_RTL)
 BIU_DCACHE_SEEDS := 2 3 4 5
 BIU_DCACHE_MUTATIONS := BIU_MUTATION=1 BIU_MUTATION=2 BIU_MUTATION=3 BIU_MUTATION=4 DC_MUTATION=2 DC_MUTATION=8
 .PHONY: test-biu-dcache-snoop test-biu-dcache-snoop-mutations lint-biu-dcache

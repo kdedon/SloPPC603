@@ -26,7 +26,8 @@ in this record.
 | MCP ignored | HID0[EMCP]=0: no 0x200 entry, no checkstop, the loop keeps running |
 | MCP with ME=0 | Checkstop: CKSTP_OUT asserts, outputs release, no bus activity for 200 clocks, no 0x200 entry; HRESET clears it and reboots |
 | CKSTP_IN | Checkstop as above; it holds after CKSTP_IN negates until HRESET |
-| Straps | Reduced pinout (QACK negated), 32-bit bus (TLBISYNC asserted) and a foreign PLL_CFG each checkstop at release; the supported set boots |
+| Straps | A foreign PLL_CFG checkstops at release; the supported set boots |
+| 32-bit bus | TLBISYNC asserted at HRESET negation, then QACK negated (reduced pinout), with the memory on DH only and junk on DL: word, byte, halfword and word-crossing loads and stores land on the A[30:31] lanes; with both caches on, line fills, two castouts, a `dcbf` and a snoop push run eight beats each; once more with every read beat cancelled by DRTRY and replaced. DL and DP[4:7] stay low on writes; reduced pinout also holds AP and DP low, RSRV low and APE/DPE released |
 | TBEN | TBEN=0 holds the time base at 0; TBEN=1 counts once per four clocks; negating TBEN stops it |
 | SMI | MSR[EE]=0 masks SMI; with EE=1, SMI and INT together enter 0x1400 before 0x500; SRR1 high half is zero and holds EE |
 | RSRV | Negated at reset, asserted after `lwarx`, negated after `stwcx.` |
@@ -264,6 +265,39 @@ fix). Meets 50 MHz at every corner: setup +4.190 / +4.227 / +6.676 / +7.206 ns, 
 (output, slow -40 C). `perf_o` is open in `ppc603e_measure`, so the event logic is
 pruned.
 
+## 2026-10-06 32-bit data bus and reduced pinout (AUD-80)
+
+Recorded: `make -C sim test-chip-pins test-chip602-pins test-chip-603
+test-chip-mp test-dcache test-biu-dcache-snoop test-chip-fpu`, at width 1 and
+with `DISPATCH_WIDTH=2` and `sim/tools/verilate-lsu-pipe`, commit `73bd8ce`,
+2026-10-06. All pass. `test-chip-pins` prints, for each of the three 32-bit
+cases (plain, DRTRY on every read beat, reduced pinout): 152 paired beats,
+5 write bursts (two castouts, two `dcbf`, one snoop push) and 14 read
+bursts; the DRTRY case 159 DRTRYs. `test-chip-fpu`'s `+DBW32` run passes
+the FPU program under random retry, DRTRY and waits with one eight-byte read
+and one eight-byte write, 6,500 32-bit beats, 948 of them paired.
+
+Recorded: `make -C sim perf-diff` with `DISPATCH_WIDTH=2`,
+`sim/tools/verilate-lsu-pipe` and the demo Dhrystone image, commit `73bd8ce`,
+2026-10-06: 639.0 core cycles per iteration, unchanged in 64-bit mode.
+
+Negative controls, each a one-line mutation of commit `7e39b31` run through
+`test-chip-pins` (eight-byte: `test-chip-fpu`), all fail: every adapter
+off (32-bit boot never completes); scalar adapter off (boot); line-read
+adapter off (program after the I-cache turns on); cache-master adapter off
+and DL driven on writes (DP[4:7]/DL check); push-engine adapter off (write TA
+without data); a first-beat DRTRY passed to the master (protocol checkstop in
+the DRTRY case); eight-byte singles not paired (`test-chip-fpu` `+DBW32`).
+
+Recorded: `make -C sim lint check-spec`, commit `73bd8ce`, 2026-10-06: pass.
+
+Recorded: `quartus_map --analysis_and_elaboration` of `quartus/chip` and
+`quartus/chip602` (pinned image), commit `73bd8ce`, 2026-10-06: both
+successful, 0 errors. No fit.
+
+Not established: a DRTRY that holds past the cycle after TA before its
+replacement beat (the targets replace on the cancelling edge), and timing.
+
 ## 2026-10-05 batch 13
 
 Recorded: `./quartus/chip/build.sh --docker` and `./quartus/chip602/build.sh
@@ -298,7 +332,7 @@ worst internal path at 66 MHz has +0.714 ns. 36 RAM blocks and 2 DSP blocks in b
 The pin-level top boots from HRESET, honours the straps, takes MCP, SRESET
 and SMI at the vectors the manual gives, checkstops and recovers only through
 HRESET, and runs compiled images under random retry and DRTRY. It does not
-establish reduced-pinout or 32-bit modes (rejected), data-cache behaviour
+establish eight-byte transfers on the 32-bit bus (`test-chip-fpu` runs them), data-cache behaviour
 (the slot passes through) or JTAG/COP (absent). Power management:
 [POWER_MANAGEMENT_VERIFICATION.md](POWER_MANAGEMENT_VERIFICATION.md).
 

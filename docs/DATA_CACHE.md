@@ -202,7 +202,7 @@ a read beat with no read outstanding, or a completion with nothing outstanding.
 | dcbi broadcast | §3.7.1 (PDF 149) gives the ABE kill with no M condition | gated by M=1 |
 | Reservation cancel on RWITM | Table 7-2 lists writes and kill only | also RWITM (spurious loss is legal) |
 
-Not modelled: the 32-bit bus mode, DBWO (a BIU feature),
+Not modelled here: the 32-bit bus mode (a BIU adapter, [CHIP_PACKAGE.md](CHIP_PACKAGE.md#32-bit-data-bus-and-reduced-pinout)), DBWO (a BIU feature),
 direct-store segments (DSI before the cache), and the ABE broadcasts' snoop by this
 cache (they are not snooped, §3.2.3.4).
 

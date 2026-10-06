@@ -78,6 +78,8 @@ module ppc_core_bat_cached_bus60x #(
   input  logic rst_ni,
   // High in the cycle that ends at a SYSCLK edge; 1 runs the bus 1:1.
   input  logic bus_ce_i,
+  // 32-bit data bus mode (UM 8.6.1).
+  input  logic dbw32_i,
   input  logic external_irq_i,
   output logic interrupt_taken_o,
   output logic [31:0] interrupt_pc_o,
@@ -652,7 +654,7 @@ module ppc_core_bat_cached_bus60x #(
     .ENABLE_DCACHE(ENABLE_DCACHE),
     .ENABLE_DIRECT_STORE(HAS_DIRECT_STORE), .DS_PID(DS_PID)
   ) biu (
-    .clk_i, .rst_ni, .bus_ce_i,
+    .clk_i, .rst_ni, .bus_ce_i, .dbw32_i,
     .imem_req_valid_i(scalar_imem_req_valid),
     .imem_req_ready_o(scalar_imem_req_ready),
     .imem_req_addr_i(scalar_imem_req_addr),

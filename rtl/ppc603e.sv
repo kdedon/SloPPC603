@@ -187,11 +187,12 @@ module ppc603e #(
           tlbisync_n, pll_cfg} = pin_sync_q;
 
   // Hard reset. Start-up straps are the values held while HRESET is asserted
-  // (UM 8.6): QACK asserted selects full pinout, TLBISYNC negated the 64-bit
-  // bus. Reduced pinout, 32-bit mode and a PLL_CFG other than the build's
-  // are unsupported and checkstop at release. DRTRY needs no strap: the
+  // (UM 8.6): TLBISYNC asserted selects the 32-bit data bus, QACK negated
+  // reduced pinout, which implies it. A PLL_CFG other than the build's is
+  // unsupported and checkstops at release. DRTRY needs no strap: the
   // normal-mode master is correct when DRTRY never asserts.
   logic strap_reject_q, checkstop_q, core_rst_n, release_outputs;
+  logic dbw32_q, reduced_q, dbw32;
   // UM 4.5.2.2: an extended transfer (direct-store) protocol error
   // checkstops; the 603 treats any bus protocol error so.
   logic bus_protocol_error, xats_checkstop;
@@ -203,9 +204,13 @@ module ppc603e #(
   pin_status_t pin_status;
   pin_event_t pin_event;
   always_ff @(posedge sysclk) begin
-    if (!hreset_n)
-      strap_reject_q <= qack_n || !tlbisync_n || (pll_cfg != PLL_CFG);
+    if (!hreset_n) begin
+      strap_reject_q <= pll_cfg != PLL_CFG;
+      dbw32_q <= !tlbisync_n;
+      reduced_q <= qack_n;
+    end
   end
+  assign dbw32 = dbw32_q || reduced_q;
 
   // UM 8.7.2: CKSTP_IN, MCP with ME=0, and an internal machine check with
   // ME=0 stop the processor until HRESET. The core is then held in reset and
@@ -323,7 +328,7 @@ module ppc603e #(
     .FETCH_WIDTH(FETCH_WIDTH),
     .ENABLE_PIN_INTERRUPTS(1'b1), .PLL_CFG(PLL_CFG), .DS_PID(DS_PID)
   ) cpu (
-    .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(bus_ce),
+    .clk_i(sysclk), .rst_ni(core_rst_n), .bus_ce_i(bus_ce), .dbw32_i(dbw32),
     .external_irq_i(!int_n), .interrupt_taken_o(), .interrupt_pc_o(),
     .timer_tick_i(timer_tick), .timebase_enable_i(tben),
     .pin_event_i(pin_event), .pin_status_o(pin_status),
@@ -400,7 +405,8 @@ module ppc603e #(
   assign ts_n_o = core_ts_n;
   assign ts_oe_o = core_ts_oe && !release_outputs;
   assign a_o = core_a;
-  assign ap_o = addr_parity(core_a);
+  // Reduced pinout drives AP, DP and RSRV low and releases APE and DPE.
+  assign ap_o = reduced_q ? 4'b0 : addr_parity(core_a);
   assign tt_o = core_tt;
   assign tsiz_o = core_tsiz;
   assign tbst_n_o = core_tbst_n;
@@ -417,7 +423,7 @@ module ppc603e #(
   assign dbb_n_o = core_dbb_n;
   assign dbb_oe_o = core_dbb_oe && !release_outputs;
   assign {dh_o, dl_o} = core_d_o;
-  assign dp_o = data_parity(core_d_o);
+  assign dp_o = reduced_q ? 8'b0 : data_parity(core_d_o) & {4'hf, {4{!dbw32}}};
   assign data_oe_o = core_d_oe && !dbdis_q && !release_outputs;
 
   // UM 8.3.2.1: with HID0[EBA], another master's TS with GBL is checked
@@ -431,7 +437,7 @@ module ppc603e #(
       ape_error_q <= 1'b0;
       ape_out_q <= 1'b0;
     end else if (bus_ce) begin
-      ape_check_q <= !ts_n_i && !gbl_n_i && !core_ts_oe &&
+      ape_check_q <= !ts_n_i && !gbl_n_i && !core_ts_oe && !reduced_q &&
                      pin_status.address_parity_enable &&
                      (ap_i != addr_parity(a_i));
       ape_error_q <= ape_check_q;
@@ -449,8 +455,9 @@ module ppc603e #(
       dpe_out_q <= 1'b0;
     end else if (bus_ce) begin
       dpe_check_q <= !ta_n_i && core_dbb_oe && !core_dbb_n && !core_d_oe &&
-                     pin_status.data_parity_enable &&
-                     (dp_i != data_parity({dh_i, dl_i}));
+                     pin_status.data_parity_enable && !reduced_q &&
+                     (((dp_i ^ data_parity({dh_i, dl_i})) &
+                       {4'hf, {4{!dbw32}}}) != 8'b0);
       dpe_out_q <= dpe_check_q && drtry_n_i;
     end
   end
@@ -465,7 +472,7 @@ module ppc603e #(
   logic rsrv_n, rsrv_n_q;
   assign rsrv_n = bus_first_q ? !pin_status.reservation : rsrv_n_q;
   always_ff @(posedge sysclk) rsrv_n_q <= rsrv_n;
-  assign rsrv_n_o = rsrv_n || release_outputs;
+  assign rsrv_n_o = release_outputs || (rsrv_n && !reduced_q);
   // QREQ follows the core from SYSCLK edges (UM 8.7.4).
   logic qreq_n, qreq_n_q;
   assign qreq_n = bus_first_q ? !pin_status.qreq : qreq_n_q;

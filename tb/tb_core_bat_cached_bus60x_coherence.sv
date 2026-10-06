@@ -114,7 +114,7 @@ module tb_core_bat_cached_bus60x_coherence #(parameter int SETS = 128, parameter
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0),
     .ICACHE_SETS(SETS),.ICACHE_WAYS(WAYS),.DCACHE_SETS(SETS),.DCACHE_WAYS(WAYS),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),.ENABLE_LIVE_CONTEXT(1'b1),
-    .ENABLE_RUNTIME_BAT(1'b1)) dut(.bus_ce_i(1'b1),
+    .ENABLE_RUNTIME_BAT(1'b1)) dut(.dbw32_i(1'b0), .bus_ce_i(1'b1),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(),.interrupt_pc_o(),

@@ -128,7 +128,7 @@ module tb_biu_dcache_snoop;
     .async_error_o(async_error), .protocol_error_o(dc_protocol_error)
   );
 
-  ppc_biu #(.ENABLE_DCACHE(1'b1), .MUTATION(BIU_MUTATION)) biu (.bus_ce_i(1'b1),
+  ppc_biu #(.ENABLE_DCACHE(1'b1), .MUTATION(BIU_MUTATION)) biu (.bus_ce_i(1'b1), .dbw32_i(1'b0),
     .clk_i(clk), .rst_ni(rst_n),
     .imem_req_valid_i(1'b0), .imem_req_ready_o(), .imem_req_addr_i(32'd0),
     .imem_rsp_valid_o(), .imem_rsp_ready_i(1'b1), .imem_rsp_insn_o(),

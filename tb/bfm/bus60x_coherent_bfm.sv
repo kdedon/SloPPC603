@@ -18,6 +18,10 @@
 // at TS+2 at the earliest. Its data tenure moves memory directly and drives
 // no data-bus pins.
 //
+// With dbw32 set the data bus is 32 bits wide (UM 8.6.1): data on DH only,
+// two beats per doubleword, high word first, for eight-byte transfers and
+// bursts. DL carries junk on reads and must be driven low on writes.
+//
 // Checked here: the processor asserts ARTRY only inside a second-master
 // address tenure's window. n_push counts write-with-kill bursts to the
 // retried line that directly follow a retry.
@@ -100,6 +104,9 @@ module bus60x_coherent_bfm #(
   // Single-beat eight-byte transfers (TSIZ 000, TBST negated).
   int n_read_dword = 0, n_write_dword = 0;
   int n_addr_only = 0, n_push = 0, n_errors = 0;
+  bit dbw32 = 1'b0;
+  // 32-bit beats terminated by TA, and those of paired transfers.
+  int n_beats32 = 0, n_paired32 = 0;
   int tt_count [0:31];
   int om_tenures = 0, om_retried = 0, om_artry_cycles = 0;
   // Second-master TS in the cycle after the previous AACK, and second-master
@@ -227,6 +234,20 @@ module bus60x_coherent_bfm #(
     if (!burst) return {addr[31:3], 3'b000};
     return {addr[31:5], 5'b0} + 32'(((int'(addr[4:3]) + index) % 4) * 8);
   endfunction
+  // Two 32-bit beats per doubleword.
+  function automatic bit paired();
+    return dbw32 && (burst || (!external && tsiz == 3'b000));
+  endfunction
+  function automatic int dw_index(input int index);
+    return paired() ? index / 2 : index;
+  endfunction
+  function automatic logic [63:0] read_data(input int index);
+    logic [63:0] value;
+    value = doubleword(beat_address(dw_index(index)));
+    if (!dbw32) return value;
+    if (paired() ? index % 2 == 1 : addr[2]) return {value[31:0], 32'hdead_beef};
+    return {value[63:32], 32'hdead_beef};
+  endfunction
   function automatic bit tea_hit(input logic [31:0] address);
     for (int i = 0; i < tea_once.size(); i++)
       if (tea_once[i][31:3] == address[31:3]) begin
@@ -353,31 +374,35 @@ module bus60x_coherent_bfm #(
     logic [28:0] beat;
     delay();
     while (hold_i) bus_rise();
-    if (tea_hit(beat_address(index))) begin
+    if (tea_hit(beat_address(dw_index(index)))) begin
       tea_log.push_back(addr);
       tea_log_instr.push_back(tenure_instr);
       terminate_tea();
       return;
     end
     bus_fall();
-    d_o = doubleword(beat_address(index));
+    d_o = read_data(index);
     dp_flip = 8'h00;
-    beat = 29'(beat_address(index) >> 3);
+    beat = 29'(beat_address(dw_index(index)) >> 3);
     for (int i = 0; i < bad_dp_once.size(); i++)
       if (bad_dp_once[i][31:3] == beat) begin
         bad_dp_once.delete(i);
-        dp_flip = 8'h01;
+        dp_flip = dbw32 ? 8'h10 : 8'h01;
         break;
       end
     ta_n_o = 1'b0;
     bus_rise();
     if (d_oe_i) $fatal(1, "%m: processor drives data in a read tenure");
+    if (dbw32) begin
+      n_beats32++;
+      if (paired()) n_paired32++;
+    end
     bus_fall();
     dp_flip = 8'h00;
     if (drtry_i) begin
       drtries++;
       drtry_n_o = 1'b0;
-      d_o = doubleword(beat_address(index));
+      d_o = read_data(index);
       bus_rise();
       bus_fall();
       drtry_n_o = 1'b1;
@@ -390,13 +415,20 @@ module bus60x_coherent_bfm #(
     logic [31:0] base;
     delay();
     while (hold_i) bus_rise();
-    base = beat_address(index);
+    base = beat_address(dw_index(index));
     size = burst ? 8 : ((tsiz == 3'b000) ? 8 : int'(tsiz));
     offset = burst ? 0 : int'(addr[2:0]);
-    if (tea_hit(burst ? base : addr)) begin
+    // A 32-bit beat carries four bytes of a doubleword, or the word's lanes.
+    if (paired()) begin
+      base = base + 32'(4 * (index % 2));
+      size = 4;
+    end else if (dbw32) begin
+      offset = offset % 4;
+    end
+    if (tea_hit(burst || paired() ? base : addr)) begin
       if (tea_write_commits)
         for (int k = 0; k < size; k++)
-          put_byte((burst ? base : addr) + 32'(k), d_i[63-8*(offset + k) -: 8]);
+          put_byte((burst || paired() ? base : addr) + 32'(k), d_i[63-8*(offset + k) -: 8]);
       terminate_tea();
       return;
     end
@@ -406,7 +438,12 @@ module bus60x_coherent_bfm #(
     if (!d_oe_i && !write_release_ok) $fatal(1, "%m: write TA without driven data");
     if (!(dbb_oe_i && !dbb_n_i)) $fatal(1, "%m: write TA without DBB");
     if (d_oe_i) for (int k = 0; k < size; k++)
-      put_byte((burst ? base : addr) + 32'(k), d_i[63-8*(offset + k) -: 8]);
+      put_byte((burst || paired() ? base : addr) + 32'(k), d_i[63-8*(offset + k) -: 8]);
+    if (dbw32) begin
+      if (d_oe_i && d_i[31:0] != 32'b0) $fatal(1, "%m: DL driven high in 32-bit mode");
+      n_beats32++;
+      if (paired()) n_paired32++;
+    end
     bus_fall();
     ta_n_o = 1'b1;
   endtask
@@ -423,7 +460,7 @@ module bus60x_coherent_bfm #(
     bus_fall();
     dbg_n_o = 1'b1;
     dbwo_n = 1'b1;
-    for (int index = 0; index < (burst ? 4 : 1) && !tea_ended; index++)
+    for (int index = 0; index < (burst ? 4 : 1) * (paired() ? 2 : 1) && !tea_ended; index++)
       if (write) write_beat(index);
       else read_beat(index);
     if (external && !tea_ended)

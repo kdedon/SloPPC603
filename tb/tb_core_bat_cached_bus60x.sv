@@ -117,7 +117,7 @@ module tb_core_bat_cached_bus60x #(parameter int BUS_RATIO2 = 2);
   logic unused_checkstop;
   ppc_core_bat_cached_bus60x #(.RESET_PC(32'b0), .RETIRE_PAIRS(1'b0),
     .ENABLE_SUPERVISOR_EXCEPTIONS(1'b1),
-    .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_RUNTIME_BAT(1'b1)) dut(.bus_ce_i(bus_ce),
+    .ENABLE_LIVE_CONTEXT(1'b1),.ENABLE_RUNTIME_BAT(1'b1)) dut(.bus_ce_i(bus_ce), .dbw32_i(1'b0),
     .perf_o(),
     .clk_i(clk),.rst_ni(rst_n),
     .external_irq_i(1'b0),.interrupt_taken_o(),.interrupt_pc_o(),
