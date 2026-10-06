@@ -219,7 +219,7 @@ module tb_core_fetch2 #(
         split += int'(rsp_valid && rsp_ready && pair_answer && dut.fetch_valid &&
                       dut.fetch_ready && !dut.fetch_ready2);
         unaligned += int'(rsp_valid && rsp_ready && pending_addr[2]);
-        fold0_drop += int'(dut.iq_push0 && dut.fold_predict && dut.fd1_valid_q);
+        fold0_drop += int'(dut.iq_push0 && dut.fold_predict && dut.fd1_valid);
         fold1 += int'(dut.iq_push1 && dut.fold_predict1);
         clears += int'(dut.frontend_clear && (dut.iq_count > 1));
         dq1_valid += int'(dut.iq_valid && dut.iq_valid1);

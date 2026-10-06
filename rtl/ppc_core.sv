@@ -401,7 +401,8 @@ module ppc_core #(
   // Branch class predecoded at IQ push, to keep decode off the dispatch path.
   logic [3:0] push_branch, iq_branch;
   logic [31:0] fold_target, fold_target_q;
-  logic early_q, early_bs_q, early_ok, early_fold, early_bs, bs_now, bs_now_q;
+  logic early_q, early_bs_q, early_ok, early_fold, early_bs, bs_now, bs_fe_q;
+  logic early_bs_late, early_bu;
   logic [31:0] early_target_q, bs_alt_q;
   logic [31:0] bu_cr_q, bu_cr, bu_cr_d;
   completion_tag_t special_producer;
@@ -609,7 +610,7 @@ module ppc_core #(
     .stop_i(fault_pending || frontend_fence || power_stop || (fetch_hold_q && !frontend_clear)),
     .quiescent_o(frontend_quiescent),
     .redirect_i(frontend_clear || fold_q || fstop_q), .redirect_target_i(frontend_target),
-    .early_i((early_q && !bs_now_q) || bs_now), .early_ok_i(bs_now || early_ok),
+    .early_i(early_q || bs_now), .early_ok_i(bs_now || early_ok),
     .early_target_i(bs_now ? bs_alt_q : early_target_q),
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
     .req_addr_o(fetch_req_addr), .rsp_valid_i(imem_rsp_valid_i),
@@ -1485,11 +1486,16 @@ module ppc_core #(
       bu_target_q <= bu_next_pc;
     end
   end
-  // bs_now redirects the front end as the misprediction resolves; its
-  // recovery on the next edge then leaves the front end alone.
+  // bs_now redirects the front end as the misprediction resolves, and
+  // bs_fe_q holds until its recovery, which then leaves the front end
+  // alone. Branches dispatched meanwhile are on the wrong path.
   assign bs_now = MISPREDICT_FETCH_NOW && early_bs && !bs_miss_q;
-  assign frontend_clear = recovery_accepted ? !(bs_now_q && early_ok) :
-                          (bu_redirect_q || bs_now);
+  assign early_bs_late = early_bs && !bs_now && !bs_fe_q;
+  assign early_bu = bu_redirect_d && !bs_now && !bs_fe_q;
+  assign frontend_clear = recovery_accepted ?
+    !(bs_fe_q && !special_exception_redirect && !special_branch_redirect && !fp_replay &&
+      !bs_redirect_q) :
+    ((bu_redirect_q && !bs_fe_q) || bs_now);
   assign frontend_target = recovery_accepted ? selected_redirect_target :
                            bs_now ? bs_alt_q : bu_redirect_q ? bu_target_q : fold_target_q;
   // Fold, unfolded-branch and misprediction redirects come from registers,
@@ -1506,13 +1512,14 @@ module ppc_core #(
     if (!rst_ni) begin
       early_q <= 1'b0;
       early_bs_q <= 1'b0;
-      bs_now_q <= 1'b0;
+      bs_fe_q <= 1'b0;
     end else begin
-      bs_now_q <= bs_now;
-      early_q <= early_bs || bu_redirect_d || early_fold;
-      early_bs_q <= early_bs;
+      if (recovery_accepted) bs_fe_q <= 1'b0;
+      else if (bs_now) bs_fe_q <= 1'b1;
+      early_q <= early_bs_late || early_bu || early_fold;
+      early_bs_q <= early_bs_late;
     end
-    early_target_q <= early_bs ? bs_alt_q : bu_redirect_d ? bu_next_pc : fold_target;
+    early_target_q <= early_bs_late ? bs_alt_q : early_bu ? bu_next_pc : fold_target;
   end
   // Port 0 takes the head's destination. With two write ports, port 1 takes
   // its update base, else the CQ[1] destination (a pair writes at most two
