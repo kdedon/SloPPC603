@@ -1199,7 +1199,7 @@ execution benches (`result_offer_o` left unconnected), `test-decode-sweep`
 (EC603e `fsqrt` expectation), and four reference targets that failed only on
 the missing DingusPPC symlink.
 
-Recorded: `make -C sim` on those 20 targets, commit ee764cf, 2026-10-06: pass.
+Recorded: `make -C sim test-arithmetic-shift-execution test-completion-flags test-divider-timing test-divw-execution test-divwu-execution test-execution test-insert-execution test-multiply-execution test-multiply-high-execution test-recovery-execution test-reference-603 test-reference-le test-reference-memory test-reference-pid6 test-subcarry-execution test-subextend-execution test-subtract-execution test-subunary-execution test-unarylogical-execution variant-decode-sweep-2`, commit ee764cf, 2026-10-06: pass.
 
 Recorded: `make -C sim xrand-sweep test-fpu-all`, `make -C toolchain rtl-all`,
 commit 6b073fc, 2026-10-06: pass.
@@ -1225,6 +1225,6 @@ unchanged: 51.57, 50.58, 53.43, 60.07 MHz.
 MiSTer at 45 MHz, commit 794ca90 (before the gate), seed 3: met timing, clk_sys
 +0.663 ns, HDMI +0.064 ns, 33,406 ALMs.
 
-MiSTer (batch 16 gate): pending
+Recorded: `mister/build.sh --clean --fpu-compact --dual --lsu-pipe --sys-mhz 45 --seed 2`, commit 28de2bc, 2026-10-06: MiSTer (batch 16 gate) meets timing at seed 2; clk_sys setup +0.436 ns, HDMI setup +0.092 ns, hold positive on every clock; 33,636 ALMs (80%).
 
 MVP 97.43% (unchanged); full 603e 81.53% → 83.22%.
