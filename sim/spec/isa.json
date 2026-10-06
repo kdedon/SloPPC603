@@ -3,7 +3,7 @@
   "status": "P03x_168_default_plus_10_opt_in_integration_forms_plus_63_full_decode_forms",
   "scope": {
     "executable_decode_entries": "Entries with implementation.status=implemented form the default decoder profile; implemented_opt_in_supervisor and implemented_opt_in_serialization entries require ENABLE_SUPERVISOR_EXCEPTIONS=1; implemented_opt_in_profile entries require every parameter in implementation.feature_profile. With ENABLE_FULL_DECODE, every encoding outside the enabled entries takes the illegal-instruction program exception instead of a diagnostic.",
-    "source_inventory": "Appendix A is indexed completely; reviewed families now include seven bounded supervisor and three architectural-serialization opt-in forms in addition to the 168-form default subset. The 63 full-decode entries (traps, external control, PVR/HID0/HID1/EAR moves, SYNC with bits 9-10 set, and the floating-point forms) are reviewed against Table A-1 rows; the inventory row statuses are unchanged.",
+    "source_inventory": "Appendix A is indexed completely. Every one of the 226 Table A-1 rows carries reviewed metadata: form (Table A-46), primary and extended opcode, OE/Rc/AA/LK modifiers and concrete forms, privilege and attributes (footnotes), the bound decode entries and per-variant legality with a cited rule. 186 rows bind to decode entries; the 40 Table B-1/B-2 rows are undecoded and illegal.",
     "acceptance_gate": "P03 remains open until every required form has complete reserved-field and variant legality metadata."
   },
   "sources": {
@@ -42,11 +42,11 @@
     },
     {
       "id": "EC603e",
-      "status": "listed_no_fpu"
+      "status": "reviewed_no_fpu"
     },
     {
       "id": "603",
-      "status": "pending_variant_reconciliation"
+      "status": "reviewed_appendix_c"
     },
     {
       "id": "602",
@@ -21935,7 +21935,7 @@
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
         "EC603e": "legal",
-        "603": "legal",
+        "603": "illegal",
         "602": "legal"
       },
       "implementation": {
@@ -22000,7 +22000,7 @@
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
         "EC603e": "legal",
-        "603": "legal",
+        "603": "illegal",
         "602": "legal"
       },
       "implementation": {
@@ -22067,7 +22067,7 @@
         "PID7v-603e": "legal",
         "EC603e": "legal",
         "603": "legal",
-        "602": "legal"
+        "602": "illegal"
       },
       "implementation": {
         "status": "implemented_opt_in_profile",
@@ -22132,7 +22132,7 @@
         "PID7v-603e": "legal",
         "EC603e": "legal",
         "603": "legal",
-        "602": "legal"
+        "602": "illegal"
       },
       "implementation": {
         "status": "implemented_opt_in_profile",
@@ -22249,7 +22249,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22321,7 +22321,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22393,7 +22393,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22465,7 +22465,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22537,7 +22537,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22609,7 +22609,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22681,7 +22681,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22753,7 +22753,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22825,7 +22825,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22897,7 +22897,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -22969,7 +22969,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23041,7 +23041,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23113,7 +23113,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23185,7 +23185,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23257,7 +23257,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23329,7 +23329,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23401,7 +23401,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23474,7 +23474,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23547,7 +23547,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23620,7 +23620,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23693,7 +23693,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23766,7 +23766,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23839,7 +23839,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23912,7 +23912,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -23985,7 +23985,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -24058,7 +24058,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -24131,7 +24131,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "emulation_trap"
       },
@@ -24204,7 +24204,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "emulation_trap"
       },
@@ -24277,7 +24277,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "emulation_trap"
       },
@@ -24350,7 +24350,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -24423,7 +24423,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "emulation_trap"
       },
@@ -24496,7 +24496,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -24569,7 +24569,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "emulation_trap"
       },
@@ -24642,7 +24642,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "emulation_trap"
       },
@@ -24715,7 +24715,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "emulation_trap"
       },
@@ -24788,7 +24788,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "emulation_trap"
       },
@@ -24859,7 +24859,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -24930,7 +24930,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25001,7 +25001,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "emulation_trap"
       },
@@ -25072,7 +25072,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25143,7 +25143,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25214,7 +25214,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25285,7 +25285,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25356,7 +25356,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25427,7 +25427,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25498,7 +25498,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25569,7 +25569,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25640,7 +25640,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25711,7 +25711,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25782,7 +25782,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25828,7 +25828,7 @@
       "mnemonic": "mtfsf",
       "family": "mtfsf",
       "semantic_class": "full_decode_fp_unavailable",
-      "form": "X",
+      "form": "XFL",
       "mask": "0xfc0007fe",
       "value": "0xfc00058e",
       "primary_opcode": 63,
@@ -25853,7 +25853,7 @@
       "variants": {
         "PID6-603e": "legal",
         "PID7v-603e": "legal",
-        "EC603e": "legal",
+        "EC603e": "fp_unavailable",
         "603": "legal",
         "602": "tag_checked"
       },
@@ -25928,11 +25928,11 @@
     }
   ],
   "open_gaps": [
-    "Transcribe complete masks, fields, side effects, privilege and serialization for the 130 Appendix A source-inventory rows that remain pending after reconciling 96 reviewed source rows.",
-    "Reconcile Appendix A shaded unsupported rows with Appendix B and architecture-level optional/64-bit markers per concrete form.",
-    "Complete 603/PID6/PID7v/EC603e/602 legality per concrete form; the 602 user manual is now available (FPU_602_CONTRACT.md).",
-    "Resolve SPR-specific legality and instructions whose architectural mnemonic expands through OE/Rc/AA/LK outside the reviewed ADD, register-logical, integer-unary, CR-transfer, CR-logical, CR-state, word-rotate, word-shift, and 32-bit compare families.",
-    "Bind Appendix A inventory rows outside the 335 decode entries to timing rows; all 190 Table 6-1..6-6 rows already bind to decode entries."
+    "602-only instructions (esa, dsa, mfrom; 602 UM Table A-1, PDF 416-419) and 602-only SPRs have no 603e Appendix A row; they need their own source rows.",
+    "EC603e tlbia: Table B-3 lists it with the floating-point instructions although it is not floating point (PDF 410); its exception stays pending editorial reconciliation.",
+    "EC603e fsqrt and fsqrts take floating-point unavailable per Table B-3 and section 4.5.8, but the decoder takes the illegal-instruction program exception (AUD-87).",
+    "Bench references are grep-derived; 67 decode entries (SPR, segment, TLB and timer moves) carry no validation marker.",
+    "Invalid-form (reserved-field) legality is recorded per decode entry only; floating-point forms ignore reserved fields and Rc by design (UM 2.3.1)."
   ],
   "control_memory_contract": {
     "status": "accepted_bounded_serialized_subset",

@@ -69,6 +69,49 @@ TBEN-gates-TB-only profile.
 | AUD-77 | `rtl/ppc_dcache.sv:361` | UM Tables 3-6, 7-2 (PDF 146, 287) | Burst read snoops flush (E → I, M → push, I). Fixed |
 | AUD-78 | `rtl/ppc_bus60x_cache_master.sv:243`, `rtl/ppc_dcache.sv` | UM Tables 7-6, 8-8; §8.1.1 (PDF 290, 328, 312) | TC=01 on touch loads; fill before castout |
 | AUD-79 | `rtl/ppc_bat_translate.sv:146` | UM §3.5 vs Table 5-3 (PDF 136, 211) | Decide whether IBAT G is honoured. Decided: ignored (§3.5) |
+| AUD-87 | `rtl/ppc_decode.sv:65` | UM Table B-3, footnote 7, §4.5.8 (PDF 409, 368, 189) | EC603e `fsqrt`/`fsqrts` take FP unavailable. Fixed |
+
+## ISA metadata
+
+Recorded: `make -C sim check-spec`, commit 663c413 plus this record, 2026-10-05.
+
+All 226 Table A-1 rows (UM PDF 361-368) now carry metadata in
+`sim/spec/isa_sources.json`, validated by `sim/tools/isa_generate.py` and
+rendered in [ISA_MATRIX.md](ISA_MATRIX.md#appendix-a-row-metadata). Each row gives
+its Table A-1 fields, primary and extended opcode, Table A-46 form (PDF 399-405),
+OE/Rc/AA/LK modifiers and concrete forms, privilege from the footnotes (PDF 368),
+the decode entries its opcode key matches, their timing rows and validation
+markers, bench references, and a legality status per variant with a cited rule.
+The 124 rows that held only a primary opcode are closed: 84 bind to decode
+entries, 40 (Tables B-1 and B-2) are undecoded and illegal on every variant.
+
+Variant legality: PID6/PID7v from Tables A-1, B-1, B-2; EC603e FP rows take
+floating-point unavailable (Table B-3, PDF 409-410); the 603 follows the 603e
+(Appendix C, PDF 413) except the HID1 moves; the 602 from its Tables A-1, B-1,
+B-2 (602 UM PDF 415-422, 461-462), §2.3.5.4 for eciwx/ecowx (PDF 137), string
+and double-precision emulation traps and tag-checked SP forms (PDF 116-129), and
+no EAR (PDF 82). The 602 Table A-1 matches the 603e's row for row, adding only
+`dsa`, `esa` and `mfrom`.
+
+Corrections from the cross-check: 51 FP decode entries had EC603e `legal`
+(now `fp_unavailable`); `mfear`/`mtear` had 602 `legal` and `mfhid1`/`mthid1`
+had 603 `legal` (now `illegal`, matching the RTL); `mtfsf` is XFL-form, not X.
+
+The validator also checks that no decode entry falls outside every row, that
+each decoded row covers its concrete forms, and that bound entries agree with
+the row on form, privilege and legality.
+
+Remaining gaps:
+
+- 602-only `dsa`, `esa`, `mfrom` and the 602-only SPRs have no Appendix A row.
+- EC603e `tlbia` stays pending editorial reconciliation (Table B-3, PDF 410).
+- EC603e `fsqrt`/`fsqrts`: decode disagrees with the manual (AUD-87).
+- Table A-1 footnote 7 marks `fcfid`, `fctid`, `fctidz` as FP, but Table B-3
+  omits them; they are recorded illegal on the EC603e under Table B-2.
+- Bench references are grep-derived; 67 SPR, segment, TLB and timer entries
+  carry no validation marker.
+- Table A-1 shading is not machine-readable; implemented status follows
+  Tables B-1 and B-2.
 
 ## Not checked
 

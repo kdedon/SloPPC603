@@ -277,8 +277,10 @@ Main: [ISA_MATRIX.md](references/ISA_MATRIX.md) carries a `Variants` column
 generated from `sim/spec/isa.json`. The 602 column (V7) marks the strings,
 double-precision arithmetic and fctiw `emulation_trap`, eciwx/ecowx
 `illegal`, the other FP forms and FP loads/stores `tag_checked` (executed only
-when the SP/LT tags allow, V12), and the rest `legal`; esa, dsa and mfrom are
-602-only and absent from the matrix. `ppc_decode.sv` has one table; the 602
+when the SP/LT tags allow, V12), and the rest `legal`; EAR moves are `illegal` (602 UM PDF 82). The EC603e column marks
+every FP form `fp_unavailable`; the 603 column marks HID1 moves `illegal`.
+Each Appendix A row also carries per-variant legality with a cited rule. esa,
+dsa and mfrom are 602-only and absent from the matrix. `ppc_decode.sv` has one table; the 602
 rows are in [FULL_DECODE.md](FULL_DECODE.md#602). The 602 has one dispatch
 per cycle and no SRU; the core is single-issue with no SRU, so nothing
 changes.
@@ -619,7 +621,7 @@ choice and a test of that choice, not a fidelity claim:
 | V0 | Done: `cpu_variant_e`, `cpu_cfg_t`, `cpu_cfg()`, `cpu_variant_supported()`; `ppc_core` fails elaboration for `CPU_603` and `CPU_602` with a message naming the missing work |
 | V1 | Done: `CPU_VARIANT` on `ppc603e`, every core wrapper and measurement top, down to `ppc_core` and `ppc_special`; PVR, divide latency and HID0/HID1 read and write masks come from `cpu_cfg()`; PID7v PVR is `0x00070101` in RTL, reference runner, ISA metadata and firmware |
 | V2 | Done: PID6 stores neither HID0[IFEM] nor HID0[ABE], and its ABE broadcast pin status is tied off; `ppc603e` rejects a `PLL_CFG` outside the variant's table or not running the bus 1:1, and defaults to PLL bypass on PID7v and EC603e; `test-reference-pid6` runs the reference corpus with the RTL at PID6 against DingusPPC `MPC603E`. Open: PID6 misaligned eciwx/ecowx in hardware (deferred to V13, see §1.4) |
-| V3 | Done: `cfg.has_hid1`, `cfg.has_ear` and `cfg.has_srr1_key` gate decode (HID1; EAR, eciwx, ecowx) and SRR1[KEY]; absent SPRs take the illegal-instruction program exception; ISA-matrix 603 column is `legal` for all 335 reviewed forms (UM App. C lists no ISA difference) |
+| V3 | Done: `cfg.has_hid1`, `cfg.has_ear` and `cfg.has_srr1_key` gate decode (HID1; EAR, eciwx, ecowx) and SRR1[KEY]; absent SPRs take the illegal-instruction program exception; ISA-matrix 603 column is `legal` for every reviewed form except the HID1 moves (UM App. C lists no ISA difference) |
 | V6 | Done: `TLB_SETS` (32 or 16, other values fail elaboration) sizes `ppc_tlb_service`, its entry RAMs, the router's micro-TLB set flush and `tlbie`/`tlbld`/`tlbli` set selection; `ppc_core_bat` derives it from `cfg.tlb_sets` unless a bench overrides it. 16 sets index EA16–19 and tag EA4–15 (602UM Figure 5-9; the manual's EA15–19 prose is a 603e copy, see [TLB_SERVICE.md](TLB_SERVICE.md#geometry-parameter)). Miss derivation (IMISS/DMISS, ICMP/DCMP, HASH1/HASH2) and SRR1[WAY] need no change. The 602 NE/SE/WE bits and protection-only mode stay for V9 |
 | V7 | Done: 602 decode (strings and double-precision FP to the emulation trap, eciwx/ecowx and EAR illegal, esa/dsa/mfrom, TCR/IBR/ESASRR/SEBR/SER/SP/LT), HID0 mask, MSR[AP, SA], ESASRR with esa/dsa, and a minimal 0x1600 entry under the MSR[IP] prefix; ISA-matrix 602 column filled. The 602 core stays rejected. Open for V9: the esa SE bit (`event_esa_enable_i` is tied low, so esa is refused in the core) |
 | V8 | Done: IBR vector prefix for every 602 exception but system reset, machine check and IABR; 0x1500 watchdog from TCR (`ppc_watchdog`: TI period on time-base carries, WIE, NWE service, L2E/CRE second level with SLT, RESETO and core soft reset); watchdog ranked below DEC; emulation trap through IBR. `ppc_core` offers the watchdog boundary but still rejects the 602. Open: RESETO pin (V11), the esa SE bit (V9) |
