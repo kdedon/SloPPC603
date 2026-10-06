@@ -93,17 +93,15 @@ module ppc_rename (
   // recovery's kill and the wake's tag lookup out of the dispatch operand
   // cone. It is consumed only with ready, which needs a valid wake of this
   // slot on the same bus or a second-port wake, which takes precedence; a
-  // killed wake also kills the reader.
+  // killed wake also kills the reader. A wake matching the slot also
+  // matches its owner.
   logic [GPR_RENAME_DEPTH-1:0] slot_ready;
   logic [31:0] slot_value [GPR_RENAME_DEPTH];
   logic [31:0] reg_ready;
   always_comb begin
     for (int t = 0; t < GPR_RENAME_DEPTH; t++) begin
-      slot_ready[t] = ready[t] ||
-                      (wake_valid_i && wake_i.tag == rename_tag_t'(t) && valid[t] &&
-                       owners[t] == wake_i.producer) ||
-                      (wake1_valid_i && wake1_i.tag == rename_tag_t'(t) && valid[t] &&
-                       owners[t] == wake1_i.producer);
+      slot_ready[t] = ready[t] || (wake_match && wake_i.tag == rename_tag_t'(t)) ||
+                      (wake1_match && wake1_i.tag == rename_tag_t'(t));
       slot_value[t] = 32'b0;
       if (ready[t]) slot_value[t] = values[t];
       else if (wake1_offer_i && wake1_i.tag == rename_tag_t'(t) &&
