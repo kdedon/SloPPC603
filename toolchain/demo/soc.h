@@ -12,7 +12,13 @@
 #define SOC_IO_BASE 0xf0100000u
 #define SOC_CLOCK_HZ 50000000u
 
+/* Little-endian mode munges a word address with XOR 4; undo it for the
+ * big-endian registers. */
+#ifdef __LITTLE_ENDIAN__
+#define SOC_REG(off) (*(volatile uint32_t *)(SOC_IO_BASE + ((off) ^ 4u)))
+#else
 #define SOC_REG(off) (*(volatile uint32_t *)(SOC_IO_BASE + (off)))
+#endif
 #define SOC_ID SOC_REG(0x00)
 #define SOC_CTRL SOC_REG(0x04)
 #define SOC_CYCLE_LO SOC_REG(0x08)
