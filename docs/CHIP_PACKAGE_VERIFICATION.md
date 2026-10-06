@@ -26,7 +26,8 @@ in this record.
 | MCP ignored | HID0[EMCP]=0: no 0x200 entry, no checkstop, the loop keeps running |
 | MCP with ME=0 | Checkstop: CKSTP_OUT asserts, outputs release, no bus activity for 200 clocks, no 0x200 entry; HRESET clears it and reboots |
 | CKSTP_IN | Checkstop as above; it holds after CKSTP_IN negates until HRESET |
-| Straps | Reduced pinout (QACK negated), 32-bit bus (TLBISYNC asserted) and a foreign PLL_CFG each checkstop at release; the supported set boots |
+| Straps | A foreign PLL_CFG checkstops at release; the supported set boots |
+| 32-bit bus | TLBISYNC asserted at HRESET negation, then QACK negated (reduced pinout), with the memory on DH only and junk on DL: word, byte, halfword and word-crossing loads and stores land on the A[30:31] lanes; with both caches on, line fills, two castouts, a `dcbf` and a snoop push run eight beats each; once more with every read beat cancelled by DRTRY and replaced. DL and DP[4:7] stay low on writes; reduced pinout also holds AP and DP low, RSRV low and APE/DPE released |
 | TBEN | TBEN=0 holds the time base at 0; TBEN=1 counts once per four clocks; negating TBEN stops it |
 | SMI | MSR[EE]=0 masks SMI; with EE=1, SMI and INT together enter 0x1400 before 0x500; SRR1 high half is zero and holds EE |
 | RSRV | Negated at reset, asserted after `lwarx`, negated after `stwcx.` |
@@ -298,7 +299,7 @@ worst internal path at 66 MHz has +0.714 ns. 36 RAM blocks and 2 DSP blocks in b
 The pin-level top boots from HRESET, honours the straps, takes MCP, SRESET
 and SMI at the vectors the manual gives, checkstops and recovers only through
 HRESET, and runs compiled images under random retry and DRTRY. It does not
-establish reduced-pinout or 32-bit modes (rejected), data-cache behaviour
+establish eight-byte transfers on the 32-bit bus (`test-chip-fpu` runs them), data-cache behaviour
 (the slot passes through) or JTAG/COP (absent). Power management:
 [POWER_MANAGEMENT_VERIFICATION.md](POWER_MANAGEMENT_VERIFICATION.md).
 

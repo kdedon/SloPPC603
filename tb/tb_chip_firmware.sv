@@ -7,7 +7,8 @@
 // global reads by the second master (the data cache may hold the store);
 // +TEA_BASE/+TEA_END end tenures in that window with TEA; +MIN_DWORDS=<n>
 // requires n eight-byte single-beat reads and writes; +RETIRE_TRACE=<file>
-// writes the machine trace. Passes when the
+// writes the machine trace; +DBW32 straps the 32-bit data bus and
+// +REDUCED_PINOUT reduced pinout (UM 8.6.1, 8.6.3). Passes when the
 // firmware writes 1 to +TOHOST with no checkstop.
 /* verilator lint_off BLKSEQ */
 module tb_chip_firmware #(parameter int PLL = -1);
@@ -98,9 +99,14 @@ module tb_chip_firmware #(parameter int PLL = -1);
     for (int i = 0; i < IMAGE_BYTES; i++) memory.mem[i] = image[i];
     memory.tea_base = tea_base;
     memory.tea_bytes = tea_end - tea_base;
+    if ($test$plusargs("DBW32")) tlbisync_n = 1'b0;
+    if ($test$plusargs("REDUCED_PINOUT")) qack_n = 1'b1;
+    memory.dbw32 = !tlbisync_n || qack_n;
     repeat (8) @(negedge clk);
     if (!outputs_released()) $fatal(1, "outputs driven during HRESET");
     hreset_n = 1'b1;
+    @(negedge clk);
+    tlbisync_n = 1'b1;
     wait (done);
     repeat (20) @(posedge clk);
     if (memory.n_read_dword < min_dwords || memory.n_write_dword < min_dwords)
@@ -110,6 +116,9 @@ module tb_chip_firmware #(parameter int PLL = -1);
       cycles, writes, irqs, ack_polls, memory.tenures, memory.retries, memory.drtries, memory.teas,
       memory.n_read_burst, memory.n_write_burst, memory.n_read_dword, memory.n_write_dword,
       memory.om_retried, memory.n_push);
+    if (memory.dbw32)
+      $display("chip firmware on the 32-bit bus: beats=%0d paired=%0d", memory.n_beats32,
+               memory.n_paired32);
     $finish;
   end
 endmodule
