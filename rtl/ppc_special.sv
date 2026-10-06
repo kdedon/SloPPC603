@@ -354,6 +354,7 @@ module ppc_special #(
   logic cr_logic_a, cr_logic_b, cr_logic_value;
   logic exception_event_valid, exception_event_ready;
   exception_event_t exception_event_kind;
+  logic pin_preempt_select, pin_preempt, pin_preempt_take;
   logic exception_result_valid, exception_result_supported;
   logic [31:0] exception_result_target;
   logic exception_state_load_valid, exception_state_load_ready;
@@ -1068,6 +1069,7 @@ module ppc_special #(
   always_comb begin
     exception_event_valid = 1'b0;
     exception_event_kind = EVENT_SC;
+    pin_preempt = 1'b0;
     if (ENABLE_EXTERNAL_INTERRUPTS && (state_q == S_INTERRUPT_COMMIT)) begin
       exception_event_valid = 1'b1;
       // An asynchronous TEA reports as a TEA machine check (SRR1 bit 13).
@@ -1165,6 +1167,19 @@ module ppc_special #(
         end
         default: ;
       endcase
+      // UM 4.1, Table 4-2: MCP (ME=1) and SRESET outrank an instruction's
+      // exception. The instruction is abandoned and the pin event taken
+      // with SRR0 at it (Tables 4-9, 4-10); it re-executes after the handler.
+      if (exception_event_valid && pin_preempt_select &&
+          (exception_event_kind != EVENT_RFI) &&
+          (exception_event_kind != EVENT_RFI_FP_ENABLE) &&
+          (exception_event_kind != EVENT_MACHINE_CHECK)) begin
+        pin_preempt = 1'b1;
+        exception_event_kind = !pin_mcp_select ? EVENT_SOFT_RESET :
+          pin_event_i.mcp ? EVENT_MACHINE_CHECK_PIN :
+          pin_tea ? EVENT_MACHINE_CHECK :
+          pin_event_i.ape ? EVENT_MACHINE_CHECK_APE : EVENT_MACHINE_CHECK_DPE;
+      end
     end
   end
   assign interrupt_taken_o = rst_ni && (state_q == S_INTERRUPT_COMMIT) &&
@@ -1488,6 +1503,10 @@ module ppc_special #(
     !pin_machine_check && !pin_event_i.soft_reset &&
     !(ENABLE_DEBUG_EXCEPTIONS && interrupt_trace_i);
   assign pin_selected = mcp_selected_q || soft_reset_selected_q || smi_selected_q;
+  // MCP with ME=0 checkstops at the next boundary instead.
+  assign pin_preempt_select = ENABLE_EXTERNAL_INTERRUPTS && ENABLE_PIN_INTERRUPTS &&
+    (pin_mcp_select ? msr_o[MSR_ME] : pin_event_i.soft_reset);
+  assign pin_preempt_take = hold_commit && pin_preempt;
   // UM 8.8.2: TLBISYNC stops completion at a tlbsync.
   assign tlbsync_held = ENABLE_PIN_INTERRUPTS && pin_event_i.tlbisync &&
     (uop_q.special_op == SPECIAL_TLBSYNC);
@@ -1496,15 +1515,15 @@ module ppc_special #(
     pin_status_o.reservation = reserve_q;
     pin_status_o.mcp_enable = hid0_q[HID0_EMCP];
     pin_status_o.machine_check_enable = msr_o[MSR_ME];
-    pin_status_o.mcp_taken = interrupt_accept && pin_mcp_select &&
+    pin_status_o.mcp_taken = (interrupt_accept || pin_preempt_take) && pin_mcp_select &&
                              pin_event_i.mcp;
     // A machine check taken at an instruction also answers a pending TEA.
-    pin_status_o.tea_taken = (interrupt_accept && pin_mcp_select &&
+    pin_status_o.tea_taken = ((interrupt_accept || pin_preempt_take) && pin_mcp_select &&
                               !pin_event_i.mcp && pin_tea) ||
                              (hold_commit && machine_check_event && msr_o[MSR_ME]);
-    pin_status_o.ape_taken = interrupt_accept && pin_mcp_select &&
+    pin_status_o.ape_taken = (interrupt_accept || pin_preempt_take) && pin_mcp_select &&
                              !pin_event_i.mcp && !pin_tea && pin_event_i.ape;
-    pin_status_o.dpe_taken = interrupt_accept && pin_mcp_select &&
+    pin_status_o.dpe_taken = (interrupt_accept || pin_preempt_take) && pin_mcp_select &&
       !pin_event_i.mcp && !pin_tea && !pin_event_i.ape;
     pin_status_o.address_parity_enable = hid0_q[HID0_EBA];
     pin_status_o.data_parity_enable = hid0_q[HID0_EBD];
@@ -1516,8 +1535,8 @@ module ppc_special #(
     pin_status_o.noop_touch = hid0_q[HID0_NOOPTI];
     pin_status_o.broadcast_enable = CPU_CFG.has_abe_ifem && hid0_q[HID0_ABE];
     pin_status_o.ifetch_m_enable = CPU_CFG.has_abe_ifem && hid0_q[HID0_IFEM];
-    pin_status_o.soft_reset_taken = interrupt_accept && pin_soft_reset_select &&
-      !watchdog_reset_select;
+    pin_status_o.soft_reset_taken = (interrupt_accept && pin_soft_reset_select &&
+      !watchdog_reset_select) || (pin_preempt_take && !pin_mcp_select);
     pin_status_o.smi_taken = interrupt_accept && pin_smi_select;
     pin_status_o.qreq = qreq_q;
     pin_status_o.quiesced = quiesced_q;
@@ -1779,13 +1798,13 @@ module ppc_special #(
           hash1_q <= derived_hash1;
           hash2_q <= derived_hash2;
         end
-        if (exception_event_valid &&
+        if (exception_event_valid && !pin_preempt &&
             ((uop_q.special_op == SPECIAL_ALIGNMENT) || block_zero_event ||
              ds_align_event)) begin
           dar_q <= alignment_dar;
           dsisr_q <= {15'b0, uop_q.alignment_dsisr};
         end
-        if (exception_event_valid && dsi_event) begin
+        if (exception_event_valid && !pin_preempt && dsi_event) begin
           // Little-endian: the EA the instruction computed, not the munged
           // address (DMISS holds that).
           dar_q <= le_access ? ea_q : access_ea;
