@@ -16,6 +16,9 @@
 `ifndef PPC_BRANCH_REMOVAL
 `define PPC_BRANCH_REMOVAL 1'b0
 `endif
+`ifndef PPC_FETCH_DECODE_REG
+`define PPC_FETCH_DECODE_REG 1'b0
+`endif
 // Single-issue core with abstract fetch, data and CSR transports.
 module ppc_core #(
   // Part the build models; see cpu_cfg().
@@ -108,7 +111,13 @@ module ppc_core #(
   // it dispatches and takes no CQ entry (UM 6.3.1, 6.4.1.1). Not in trace
   // mode, and not one dispatched on a prediction. Benches may set the
   // default with +define+PPC_BRANCH_REMOVAL=1'b1.
-  parameter bit ENABLE_BRANCH_REMOVAL = `PPC_BRANCH_REMOVAL
+  parameter bit ENABLE_BRANCH_REMOVAL = `PPC_BRANCH_REMOVAL,
+  // 0: a fetched word enters the IQ in the cycle the cache returns it, one
+  // cycle from request to IQ (UM 6.3.2.2). 1: it is registered first, which
+  // takes the cache output off the decode and IQ write paths but adds a
+  // cycle to every fetch. Benches may set the default with
+  // +define+PPC_FETCH_DECODE_REG=1'b1.
+  parameter bit FETCH_DECODE_REG = `PPC_FETCH_DECODE_REG
 ) (
   input logic clk_i, rst_ni,
   output logic bat_csr_req_valid_o,
@@ -602,21 +611,35 @@ module ppc_core #(
     .packet_pair_o(fetch_pair), .packet_insn1_o(fetched_insn1)
   );
   // Fetch-to-decode registers: the fetched words, PC, fault and page-miss
-  // context are registered before decode. They clear with the IQ. The
-  // second word is always FETCH_OK at pc + 4 with the first word's ESA.
-  fetch_packet_t fd_packet_q;
-  page_miss_t fd_miss_q;
-  logic fd_valid_q, fd1_valid_q, fd_push_ok, fetch_ready2, fetch_room2;
+  // context. They clear with the IQ. The second word is always FETCH_OK at
+  // pc + 4 with the first word's ESA. With FETCH_DECODE_REG 0 they hold
+  // only words the IQ did not take; while empty, decode reads the fetch
+  // output (fd_*, the FD view) directly.
+  fetch_packet_t fd_packet_q, fd_packet;
+  page_miss_t fd_miss_q, fd_miss;
+  logic fd_valid_q, fd1_valid_q, fd_valid, fd1_valid, fd_bypass;
+  logic fd_push_ok, fd_push_ok_q, fd_split_q, hold1_cr, fetch_ready2, fetch_room2;
   // Read only by the second decoder.
   /* verilator lint_off UNUSEDSIGNAL */
-  logic [31:0] fd1_insn_q;
+  logic [31:0] fd1_insn_q, fd1_insn;
   /* verilator lint_on UNUSEDSIGNAL */
+  assign fd_bypass = !FETCH_DECODE_REG && !fd_valid_q;
+  assign fd_valid = fd_bypass ? fetch_valid : fd_valid_q;
+  assign fd1_valid = fd_bypass ? fetch_valid && fetch_pair : fd1_valid_q;
+  assign fd_packet = fd_bypass ? fetched : fd_packet_q;
+  assign fd1_insn = fd_bypass ? fetched_insn1 : fd1_insn_q;
+  assign fd_miss = fd_bypass ? fetch_miss : fd_miss_q;
   logic iq_push_ready, iq_push2_ready;
   logic [IQ_COUNT_WIDTH-1:0] iq_count;
   // The FD words enter the IQ together.
-  assign fd_push_ok = fd1_valid_q ? iq_push2_ready : iq_push_ready;
-  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q && !cr_hold0 && !fd_split &&
-    (!fd_valid_q || fd_push_ok);
+  assign fd_push_ok = fd1_valid ? iq_push2_ready : iq_push_ready;
+  // fd_split while the registers are read; the pair bit of a bypassed packet
+  // depends on fetch_ready.
+  assign fd_push_ok_q = fd1_valid_q ? iq_push2_ready : iq_push_ready;
+  assign fd_split_q = fd_push && fd_push_ok_q && fd1_valid_q && hold1_cr;
+  // A bypassed packet is taken whole: what the IQ refuses is registered.
+  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q &&
+    (fd_bypass || (!cr_hold0 && !fd_split_q && (!fd_valid_q || fd_push_ok_q)));
   // Two words are taken only if the IQ holds them behind the FD words.
   assign fetch_room2 = (FETCH_WIDTH == 2) &&
     ({1'b0, iq_count} + (IQ_COUNT_WIDTH + 1)'(fd_valid_q) + (IQ_COUNT_WIDTH + 1)'(fd1_valid_q) <=
@@ -627,18 +650,20 @@ module ppc_core #(
       fd_valid_q <= 1'b0;
       fd1_valid_q <= 1'b0;
     end else if (fd_split) begin
+      fd_valid_q <= 1'b1;
       fd1_valid_q <= 1'b0;
     end else if (fetch_ready) begin
-      fd_valid_q <= fetch_valid;
-      fd1_valid_q <= fetch_valid && fetch_pair;
+      fd_valid_q <= fetch_valid && !(fd_bypass && iq_push0);
+      fd1_valid_q <= fetch_valid && fetch_pair && !(fd_bypass && iq_push0);
     end
   end
   // A second word held back moves to the first slot.
   always_ff @(posedge clk_i) begin
     if (fd_split) begin
-      fd_packet_q.pc <= {fd_packet_q.pc[31:3], 3'b100};
-      fd_packet_q.insn <= fd1_insn_q;
+      fd_packet_q.pc <= {fd_packet.pc[31:3], 3'b100};
+      fd_packet_q.insn <= fd1_insn;
       fd_packet_q.fault <= FETCH_OK;
+      fd_packet_q.esa <= fd_packet.esa;
     end else if (fetch_valid && fetch_ready) begin
       fd_packet_q <= fetched;
       fd_miss_q <= fetch_miss;
@@ -664,7 +689,7 @@ module ppc_core #(
     .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
     .ENABLE_FPU(ENABLE_FPU),
     .CPU_VARIANT(CPU_VARIANT)
-  ) predecode (.insn_i(fd_packet_q.insn), .uop_o(push_uop));
+  ) predecode (.insn_i(fd_packet.insn), .uop_o(push_uop));
   // IABR compares at IQ push. The manual requires a context-synchronizing
   // instruction after mtspr IABR, and its refetch clears older IQ entries.
   /* verilator lint_off UNUSEDSIGNAL */
@@ -677,7 +702,7 @@ module ppc_core #(
     return q;
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
-  assign queued = iabr_check(fd_packet_q, iabr);
+  assign queued = iabr_check(fd_packet, iabr);
   // Branch folding: a b, or a bc, bclr or bcctr predicted taken (backward
   // unless the y bit says otherwise, or branch always), redirects fetch on
   // the edge after it enters the IQ, and the words behind it in the fetch
@@ -748,7 +773,7 @@ module ppc_core #(
   assign lr_ok = lr_free || lr_front_ok_q;
   assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
   assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
-  assign fd_push = fd_valid_q && !fold_q && !fstop_q && !cr_hold0;
+  assign fd_push = fd_valid && !fold_q && !fstop_q && !cr_hold0;
   // One level of prediction (UM 6.4.1.1 seventh case, 6.4.1.2): a branch
   // testing CR behind an older one still waiting on CR is not predicted.
   // Fetching stops with it held in the fetch registers until that CR is
@@ -778,7 +803,7 @@ module ppc_core #(
   assign crw0 = (queued.fault == FETCH_OK) && cr_writer(push_uop);
   assign cr_dep = (crw_left_q != '0) || cr_inflight;
   assign wait0_cr = crb0 && cr_unres;
-  assign cr_hold0 = fd_valid_q && wait0_cr;
+  assign cr_hold0 = fd_valid && wait0_cr;
   assign crb_pend0 = crb0 && cr_dep;
   assign wait0 = waits(queued, lr_ok, lk_free, ctr_free);
   // The CR also becomes final as the last owner's result arrives, which
@@ -819,13 +844,13 @@ module ppc_core #(
       .ENABLE_FULL_DECODE(ENABLE_FULL_DECODE),
       .ENABLE_FPU(ENABLE_FPU),
       .CPU_VARIANT(CPU_VARIANT)
-    ) predecode1 (.insn_i(fd1_insn_q), .uop_o(push_uop1));
+    ) predecode1 (.insn_i(fd1_insn), .uop_o(push_uop1));
     always_comb begin
       fetch_packet_t p;
-      p.pc = {fd_packet_q.pc[31:3], 3'b100};
-      p.insn = fd1_insn_q;
+      p.pc = {fd_packet.pc[31:3], 3'b100};
+      p.insn = fd1_insn;
       p.fault = FETCH_OK;
-      p.esa = fd_packet_q.esa;
+      p.esa = fd_packet.esa;
       queued1 = iabr_check(p, iabr);
     end
   end else begin : g_lane1_off
@@ -837,7 +862,8 @@ module ppc_core #(
   assign crw1 = (FETCH_WIDTH == 2) && cr_writer(push_uop1);
   assign wait1_cr = crb1 && (cr_unres || crb_pend0);
   // Lane 0 enters the IQ alone.
-  assign cr_hold1 = fd1_valid_q && wait1_cr && !wait0 && !fold_predict;
+  assign hold1_cr = wait1_cr && !wait0 && !fold_predict;
+  assign cr_hold1 = fd1_valid && hold1_cr;
   assign fd_split = iq_push0 && cr_hold1;
   // Behind a waiting first word the second does not fold.
   assign wait1 = (FETCH_WIDTH == 2) &&
@@ -848,7 +874,7 @@ module ppc_core #(
           cr_final && !crw0, cr_now, ctr_one);
   // A folding first word drops the second.
   assign iq_push0 = fd_push && fd_push_ok;
-  assign iq_push1 = iq_push0 && fd1_valid_q && !fold_predict && !cr_hold1;
+  assign iq_push1 = iq_push0 && fd1_valid && !fold_predict && !cr_hold1;
   assign fold_pc = fold_predict ? queued.pc : queued1.pc;
   assign fold_insn = fold_predict ? queued.insn : queued1.insn;
   assign fold_target = (fold_insn[31:26] == 6'd19) ?
@@ -874,7 +900,7 @@ module ppc_core #(
   logic [IQ_COUNT_WIDTH-1:0] iq_pops, stop_left_q;
   assign iq_pops = IQ_COUNT_WIDTH'(dispatch && iq_pop) + IQ_COUNT_WIDTH'(dispatch1);
   assign fetch_stop = ((iq_push0 && wait0) || (iq_in1 && wait1)) && !frontend_clear;
-  assign stop_resume = {fd_packet_q.pc[31:2] + (iq_push1 ? 30'd2 : 30'd1), 2'b00};
+  assign stop_resume = {fd_packet.pc[31:2] + (iq_push1 ? 30'd2 : 30'd1), 2'b00};
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear) begin
       fstop_q <= 1'b0;
@@ -1055,7 +1081,7 @@ module ppc_core #(
   // Page-miss context of the oldest IQ page-miss entry, captured only when no
   // other page-miss entry is queued. A younger one never dispatches: the older
   // fault either redirects, which clears the IQ, or halts.
-  assign iq_push_miss = iq_push0 && (fd_packet_q.fault == FETCH_PAGE_MISS);
+  assign iq_push_miss = iq_push0 && (fd_packet.fault == FETCH_PAGE_MISS);
   assign iq_pop_miss = iq_valid && iq_pop && (iq_head.fault == FETCH_PAGE_MISS);
   assign iq_miss_count_left = iq_miss_count_q - IQ_COUNT_WIDTH'(iq_pop_miss);
   always_ff @(posedge clk_i) begin
@@ -1069,7 +1095,7 @@ module ppc_core #(
     end
   end
   always_ff @(posedge clk_i) begin
-    if (iq_push_miss && (iq_miss_count_left == '0)) iq_miss_q <= fd_miss_q;
+    if (iq_push_miss && (iq_miss_count_left == '0)) iq_miss_q <= fd_miss;
   end
   assign head_page_miss = (ENABLE_PAGE_MISS_RESULTS && iq_miss_valid_q &&
     (iq_head.fault == FETCH_PAGE_MISS)) ? iq_miss_q : '0;
@@ -2620,7 +2646,7 @@ module ppc_core #(
       if (dispatch && special_uop) perf_special_mem_q <= perf_head_mem;
       perf_o.retire <= retire_valid_o;
       perf_o.retire1 <= commit1;
-      perf_o.iq_full <= fd_valid_q && !fd_push_ok;
+      perf_o.iq_full <= fd_valid && !fd_push_ok;
       perf_o.branch <= dispatch && perf_head_branch;
       perf_o.memory <= dispatch && special_uop && perf_head_mem;
       perf_o.branch_redirect <= (recovery_accepted &&
