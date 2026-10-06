@@ -139,12 +139,12 @@ Queued, in order:
    FULL FPU in the MiSTer core (97% ALMs, −2.606 ns: reduce area or keep
    COMPACT).
 5. Verification: P12 per-row latencies and the chapter 6 worked-schedule
-   replays (the trace-visible dispatch rules are checked), AUD-90 and the
+   replays (the trace-visible dispatch rules are checked) and the
    open manual inventory rows ([audit](../../AUDIT.md)).
 6. Speed: recover 66 MHz (translated −4.610 ns, integrated −3.313,
    timer-bat −3.679, chip −4.606, chip602 −5.452 on `0ff3a45`), then width
    2, the LSU unit and the FPU at 66 MHz; Dhrystone 1:1 with the 603e
-   (639 cycles/run against the model's 506); a single-precision Mandelbrot.
+   (641 cycles/run against the model's 506); a single-precision Mandelbrot.
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or

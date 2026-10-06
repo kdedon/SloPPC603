@@ -610,10 +610,12 @@ Three changes:
   cycle after its capture. Recovery and the target request follow on the
   next edge, F6-5's `6F`. A correct prediction still resolves from the
   captured CR.
-- An `mtlr` feeds the shadow LR with its source, two cycles after it
-  dispatches, when the 603e's SRU result reaches the BPU (UM 6.4.1.1; the
-  model's `lr_ready`). A `bclr` behind it resolves at dispatch or folds
-  instead of waiting for the `mtlr` to retire.
+- An `mtlr` fed the shadow LR with its source two cycles after it
+  dispatched, so a `bclr` behind it resolved before the `mtlr` retired.
+  This was not the manual's timing: a move to LR is completion-serialized
+  and its result is not forwarded before it retires (UM 6.3.3.2). The
+  early feed was removed ([AUD-90](AUDIT.md); see
+  [fetch-stop waits](#fetch-stop-waits-aud-90)); the table below includes it.
 
 | | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
 |---|---:|---:|---:|---:|
@@ -777,6 +779,28 @@ mostly CQ entries (`cq_full` 0.098 CPI after, 0.102 before).
 The "off" column is not batch 12 (775.8 at width 2): these builds predate
 the [BUG-03](BUGS.md) fix ([measurement reproducibility](#measurement-reproducibility)),
 which moved Dhrystone 6 cycles per run with no logic change.
+
+## Fetch-stop waits (AUD-90)
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff` (width 1 without `DISPATCH_WIDTH`), then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits 9c106ac (before) and 94c2815 (after), 2026-10-06.
+LSU unit and store queue on, prebuilt firmware. Every run passes its checks
+(CoreMark CRC 0xfcaf).
+
+The core now waits where UM 6.4.1.1 stops fetching: a `bclr` behind an
+`mtlr`, and a `bcctr` or CTR-testing `bc` behind an `mtctr`, resolve from
+the register after the move retires; a CTR-testing branch or `bcctr`
+behind a CTR-testing `bc`, and a linking branch other than `b` behind a
+linking branch, wait for the older branch to complete. None of these
+folds at fetch; a linking branch other than `b` also does not fold behind
+an `mtlr`, which the manual does not require.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before | 766.0 | 639.0 | 2.300 | 2.675 |
+| After | 769.0 | 641.0 | 2.276 | 2.641 |
+
+Fetch of the sequential words behind a waiting branch still continues; the
+603e stops it. Only a not-taken conditional branch can use those words.
 
 ## Gaps
 
