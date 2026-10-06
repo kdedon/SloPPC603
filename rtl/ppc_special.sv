@@ -440,6 +440,8 @@ module ppc_special #(
   logic fpu_mem_req_valid, fpu_mem_req_ready, fpu_mem_req_fire;
   logic fpu_mem_rsp_valid, fpu_mem_rsp_ready, fpu_store_valid, fpu_store_ready;
   logic fpu_exception, fpu_access;
+  logic fp_conv_load, fp_conv_store, fp_conv_wait;
+  logic [4:0] fp_conv_cycles, fp_conv_q;
   ppc_fpu_pkg::ppc_fpu_issue_t fpu_issue, fp_issue;
   ppc_fpu_pkg::ppc_fpu_mem_rsp_t fpu_mem_rsp, fpu_port_rsp;
   logic fpu_unit_owned, fpu_port_req_ready, fpu_port_rsp_valid, fpu_port_store_ready;
@@ -917,7 +919,7 @@ module ppc_special #(
     else if (uop_q.mem_signed) load_value = {{16{load_right[15]}}, load_right[15:0]};
     else load_value = load_right;
 
-    dmem_req_valid_o = rst_ni && (state_q == S_MEM_OFFER);
+    dmem_req_valid_o = rst_ni && (state_q == S_MEM_OFFER) && !(fp_conv_store && fp_conv_wait);
     dmem_req_write_o = (uop_q.special_op == SPECIAL_STORE);
     dmem_req_probe_o = (ENABLE_CACHE_INSTRUCTIONS && uop_q.cache_probe) ||
                        (ENABLE_CACHE_INSTRUCTIONS && conditional_probe);
@@ -926,7 +928,8 @@ module ppc_special #(
     req_wstrb_word = conditional_probe ? 4'b0 :
                      beat_q ? strobe_window[3:0] : strobe_window[7:4];
     dmem_rsp_ready_o = rst_ni && ((state_q == S_MEM_WAIT) ||
-                                  (state_q == S_MEM_DRAIN));
+                                  (state_q == S_MEM_DRAIN)) &&
+                       !(fp_conv_load && fp_conv_wait);
     store_irrevocable_o = rst_ni &&
       (uop_q.special_op == SPECIAL_STORE) &&
       ((state_q == S_MEM_OFFER) || (state_q == S_MEM_WAIT) ||
@@ -2100,6 +2103,19 @@ module ppc_special #(
     ((uop_q.special_op == SPECIAL_LOAD) || (uop_q.special_op == SPECIAL_STORE));
   assign fpu_exception = fpu_result.exception != ppc_fpu_pkg::FPU_NO_EXCEPTION;
   assign rsp_word = dmem_rsp_rdata_i[31:0];
+  // UM 2.3.4.2: the unit converts a single-precision denormal before a
+  // load answers or a store offers its data. stfiwx stores no single.
+  assign fp_conv_load = !HAS_602 && fpu_access && fp_load_q && !fpu_double_q &&
+    (state_q == S_MEM_WAIT) && !killed_q && dmem_rsp_valid_i;
+  assign fp_conv_store = !HAS_602 && fpu_access && !fp_load_q && !fpu_double_q &&
+    !((insn_q[31:26] == 6'd31) && (insn_q[10:1] == 10'd983)) &&
+    (state_q == S_MEM_OFFER) && !killed_q;
+  assign fp_conv_cycles = fp_conv_load ? fp_single_denorm_cycles(rsp_word) :
+                          fp_conv_store ? fp_single_denorm_cycles(fpu_data_q[31:0]) : 5'd0;
+  assign fp_conv_wait = fp_conv_q != fp_conv_cycles;
+  always_ff @(posedge clk_i)
+    if (!rst_ni || (fp_conv_cycles == 5'd0)) fp_conv_q <= 5'd0;
+    else if (fp_conv_wait) fp_conv_q <= fp_conv_q + 5'd1;
   always_comb begin
     rsp_dword = '0;
     rsp_dword[DMEM_BITS-1:0] = dmem_rsp_rdata_i;
@@ -2131,10 +2147,10 @@ module ppc_special #(
     (((state_q == S_FPU_WAIT) && !fpu_mem_req_valid && !fpu_sticky_hold) ||
      ((state_q == S_FPU_MEM_RSP) && fpu_mem_rsp_ready)) &&
     fpu_result_valid && (fpu_result.tag == producer_q);
-  // 602 UM 4.5.7.1: with MSR[FE0/FE1] clear, a result that newly sets an
+  // UM 4.5.7.1: with MSR[FE0/FE1] clear, a result that newly sets an
   // exception sticky bit completes one cycle late.
   localparam logic [31:0] FPSCR_STICKY = 32'h1ff8_0700;
-  assign fpu_sticky_hold = ENABLE_FPU && HAS_602 && !fpu_sticky_waited_q &&
+  assign fpu_sticky_hold = ENABLE_FPU && !fpu_sticky_waited_q &&
     (state_q == S_FPU_WAIT) && !fpu_exception && !msr_o[11] && !msr_o[8] &&
     fpu_result.fpscr_write && |(fpu_result.fpscr_value & ~fp_fpscr_o & FPSCR_STICKY);
   always_ff @(posedge clk_i)

@@ -2200,7 +2200,9 @@ module ppc_core #(
        (cq_head_packet.update_write && (cq_head_packet.update_gpr == cq_head1_packet.gpr)))) &&
     !(special_busy && ((special_producer == retire_producer) ||
                        (special_producer == retire1_producer))) &&
-    !bs_head && !(bs_busy && !bs_hit && (retire1_producer == bs_tag_q));
+    !bs_head && !(bs_busy && !bs_hit && (retire1_producer == bs_tag_q)) &&
+    // A completion-serialized FP result completes alone.
+    !(fp_head && fp_sticky_waited_q);
   assign branch_retire1 = commit1 && retire1_o.branch;
   // synthesis translate_off
   always @(posedge clk_i) begin
@@ -2235,7 +2237,7 @@ module ppc_core #(
       ppc_lsu_pipe #(.DMEM_BITS(DMEM_BITS), .STORE_QUEUE(STORE_QUEUE),
                      .BASE_SNOOP(LSU_BASE_SNOOP), .BASE_WAIT(LSU_BASE_WAIT),
                      .ENABLE_MISALIGNED_ACCESS(ENABLE_MISALIGNED_ACCESS),
-                     .FP_DOUBLE_HOLD(FP_DOUBLE_HOLD)) lsu (
+                     .FP_DOUBLE_HOLD(FP_DOUBLE_HOLD), .FP_SINGLE_DENORM(!FP_DOUBLE_HOLD)) lsu (
         .clk_i, .rst_ni,
         .dispatch_valid_i((dispatch && lsu_c0) || lsu_d1),
         .dispatch_ready_o(lsu_ready), .uop_i(lsu_c0 ? dispatch_uop : d1_lane_uop),
@@ -2762,10 +2764,11 @@ module ppc_core #(
   assign fp_head_ok = fp_head_match &&
     (fp_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION);
   assign fp_head_block = fp_head && (!fp_head_ok || fp_sticky_hold);
-  // 602 UM 4.5.7.1: with MSR[FE0/FE1] clear, a result that newly sets an
-  // exception sticky bit in the FPSCR completes one cycle late.
+  // UM 4.5.7.1: with MSR[FE0/FE1] clear, a result that newly sets an
+  // exception sticky bit in the FPSCR is completion-serialized: it
+  // completes one cycle late, and alone (UM 6.3.3.2).
   localparam logic [31:0] FPSCR_STICKY = 32'h1ff8_0700;
-  assign fp_sticky_hold = ENABLE_FPU && cpu_has_602_ext(CPU_VARIANT) && fp_head_ok &&
+  assign fp_sticky_hold = ENABLE_FPU && fp_head_ok &&
     !fp_sticky_waited_q && !msr[11] && !msr[8] && fp_result.fpscr_write &&
     |(fp_result.fpscr_value & ~fp_fpscr & FPSCR_STICKY);
   always_ff @(posedge clk_i) begin
