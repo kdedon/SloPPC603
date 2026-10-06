@@ -741,6 +741,11 @@ package ppc_pkg;
     c = cpu_cfg(v);
     return int'(c.dcache_ways);
   endfunction
+  function automatic bit cpu_has_no_fpu(cpu_variant_e v);
+    cpu_cfg_t c;
+    c = cpu_cfg(v);
+    return c.fpu == FPU_NONE;
+  endfunction
   function automatic bit cpu_has_fpu_dp(cpu_variant_e v);
     cpu_cfg_t c;
     c = cpu_cfg(v);

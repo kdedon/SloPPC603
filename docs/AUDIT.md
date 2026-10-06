@@ -65,6 +65,7 @@ Severity: H high, M medium, L low. Category: C correctness, E efficiency, K clar
 | AUD-26 | L | S | `rtl/ppc_dispatch.sv`, `rtl/ppc_core.sv:466-496` | RS and CQ payloads are loose signals copied field by field; allocation masks applied twice. | Struct payloads; sanitize once. | fixed (rs_entry_t/issue_packet_t; allocation sanitized once in completion) |
 | AUD-27 | L | K | `rtl/ppc_pkg.sv:150`, `rtl/ppc_decode.sv` | `write_cr0` means "write CR field `cr_field`". | Rename `write_cr_field`. | fixed |
 | AUD-28 | L | K | `rtl/ppc_decode.sv:127-145,287-342` | `addme`/`addze` not normalized like `subfme`/`subfze`; SH passed two ways; long equality-OR chains. | Normalize; flat nested case. | fixed |
+| AUD-87 | L | C | `rtl/ppc_decode.sv:65-73`, `tb/tb_core_full_decode.sv:216-217` | EC603e `fsqrt`/`fsqrts` take the illegal-instruction program exception: `fp_a_form` omits XO 22 on every variant. UM Table B-3 prose (PDF 409, printed B-3), Table A-1 footnote 7 (PDF 368) and §4.5.8 (PDF 189) trap every EC603e FP instruction, these two included, to floating-point unavailable; Table B-1 (PDF 407) makes them illegal only on the FPU-equipped 603e. | Decode XO 22 as FP class when the variant has no FPU; check 0x800 in the EC603e full-decode bench. | fixed (XO 22 is FP class only on the EC603e; `variant-full-decode-2` expects 0x800, the other variants 0x700) |
 
 ### Execution units and register files
 
