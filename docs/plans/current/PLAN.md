@@ -130,9 +130,9 @@ Queued, in order:
    fails to route at 87% ALMs (seeds 2–5); `batch13-mister-fit` routes but
    misses `clk_sys` by −4.2 ns. The CI `mister-unstable` job fails until
    this closes.
-2. Bus and endian follow-ups: DBWO; the two-CPU bench with address
-   pipelining, DRTRY and TEA; misaligned `eciwx`/`ecowx` split in hardware;
-   a DingusPPC little-endian comparison.
+2. Bus and endian follow-ups: a DingusPPC little-endian comparison. DBWO,
+   the two-CPU bench and the misaligned `eciwx`/`ecowx` split are closed
+   ([record](../../CHIP_PACKAGE_VERIFICATION.md#dbwo-write-drtry-and-32-bit-figures)).
 3. Defaults: width 2, the LSU unit and branch removal on, two-word fetch
    through the wrappers ([LSU remaining work](../../LSU_PIPELINE.md#remaining-work)).
 4. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
