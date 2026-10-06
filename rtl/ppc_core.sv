@@ -1766,8 +1766,10 @@ module ppc_core #(
     .alloc1_ready_o(alloc1_ready), .alloc1_tag_o(alloc1_tag),
     .alloc1_i((dispatch1 && d1_gpr && dispatch_uop.gpr_write) ||
               (update_alloc && !update_alloc_store)),
-    .alloc1_reg_i(dispatch1 ? dq1_uop.dst : dispatch_uop.src_a),
-    .alloc1_producer_i(dispatch1 ? alloc1_producer : alloc_producer),
+    // An update form's base may dispatch beside a DQ1 op that writes no GPR,
+    // so the slot's owner follows the update, not dispatch1.
+    .alloc1_reg_i(unit_update ? dispatch_uop.src_a : dq1_uop.dst),
+    .alloc1_producer_i(unit_update ? alloc_producer : alloc1_producer),
     .alloc1_value_valid_i(update_alloc && !update_alloc_store), .alloc1_value_i(dispatch_ea),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
     .wake1_offer_i(result1_offer),
