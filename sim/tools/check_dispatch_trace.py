@@ -80,17 +80,23 @@ def classify(word, sru):
     plus branches, which this core keeps in the CQ); writes: (GPR, CR, FPR,
     LR, CTR) updates for TIM-WB-LIMITS; isync and multiple for the trace;
     cond: a conditional branch, after which a misprediction flushes younger work.
+    branch: 'b', 'bc', 'bclr' or 'bcctr'; cr_test: the condition reads CR
+    (BO[0] clear); ctr_test: it decrements and tests CTR (BO[2] clear).
+    mtspr: 'LR' or 'CTR' for a move to that register.
     """
     op, xo = word >> 26, (word >> 1) & 1023
     rc = word & 1 if op in (20, 21, 23, 31, 59, 63) else 0  # D-form bit 31 is immediate
     c = dict(units={IU}, dser=False, cser=False, cq1=True, writes=[1, rc, 0, 0, 0],
-             isync=False, multiple=False, cond=False)
+             isync=False, multiple=False, cond=False, branch=None, cr_test=False, ctr_test=False,
+             mtspr=None)
     sru_unit = lambda: c.update(units={SRU}, cser=True, cq1=False, writes=[0, 0, 0, 0, 0])
     if op in (16, 18) or (op == 19 and xo in (16, 528)):
         lk = word & 1
         ctr = op == 19 and xo == 16 and not (word >> 23) & 1 or op == 16 and not (word >> 23) & 1
         c.update(units={BPU}, writes=[0, 0, 0, lk, int(bool(ctr))],
-                 cond=op != 18 and (word >> 21) & 0x14 != 0x14)
+                 cond=op != 18 and (word >> 21) & 0x14 != 0x14,
+                 branch='b' if op == 18 else 'bc' if op == 16 else 'bclr' if xo == 16 else 'bcctr',
+                 cr_test=op != 18 and not (word >> 25) & 1, ctr_test=bool(ctr))
     elif op == 19:
         sru_unit()
         c['writes'][1] = int(xo != 150 and xo != 50)
@@ -164,24 +170,50 @@ def classify(word, sru):
             c['writes'][1] = int(xo in (144, 512))
             c['writes'][3] = int(xo == 467 and spr == 8)
             c['writes'][4] = int(xo == 467 and spr == 9)
+            c['mtspr'] = {8: 'LR', 9: 'CTR'}.get(spr) if xo == 467 else None
     return c
+
+
+CQ_DEPTH, GPR_RENAMES, FPR_RENAMES = 5, 5, 4
+
+
+def fetch_stop(older, younger):
+    """UM 6.4.1.1 (PDF 261): how branch `younger` waits on `older`, or None.
+
+    'execute': it waits for the move to LR/CTR to execute; 'complete': for
+    the older branch to complete."""
+    if older['mtspr'] == 'LR' and younger['branch'] == 'bclr' or \
+            older['mtspr'] == 'CTR' and (younger['branch'] == 'bcctr' or younger['ctr_test']):
+        return 'execute'
+    if older['ctr_test'] and (younger['ctr_test'] or younger['branch'] == 'bcctr'):
+        return 'complete'
+    # A bl does not wait for an older branch with LK set.
+    if older['branch'] and older['writes'][3] and younger['writes'][3] and younger['branch'] != 'b':
+        return 'complete'
+    return None
 
 
 class Rules:
     """Streaming check of TIM-DISP-WIDTH/DQ1, TIM-SER-DISPATCH/COMPLETE/REFETCH,
-    TIM-CQ-CQ1/ORDER and TIM-WB-LIMITS over one trace."""
+    TIM-CQ-ALLOC/CQ1/ORDER, TIM-RENAME-LIMITS, TIM-WB-LIMITS and the branch
+    fetch-stop rules (TIM-BPU-*) over one trace."""
 
     def __init__(self, width, words, sru, flush):
         self.width, self.words, self.sru, self.flush = width, words, sru, flush
-        self.inflight = []      # [pc, dispatch cycle, sequence number, flushed] in dispatch order
+        # [pc, dispatch cycle, sequence number, flushed, class, order] in dispatch order
+        self.inflight = []
         self.seq = 0
+        self.order = 0          # dispatch order, counting removed branches
+        self.stream = []        # (order, class, removed) of recent dispatches
+        self.stops = []         # [older entry or None, waiting branch order, waiting pc, kind]
         self.block = None       # dispatch-serialized instruction not yet retired: [seq, cycle]
         self.last_dser = None   # (seq, dispatch cycle) of the latest dispatch-serialized dispatch
         self.isync_retired = None
         self.last_retired_pc = None
         self.cond_retired = False  # the latest retirement was a conditional branch
         self.stats = dict(cycles=0, dispatches=0, retirements=0, pairs_dispatched=0, pairs_retired=0,
-                          flushed=0, mispredicts=0, removed=0, dser=0, cser=0, isync=0, unknown=0, sru_pairs=0)
+                          flushed=0, mispredicts=0, removed=0, dser=0, cser=0, isync=0, unknown=0, sru_pairs=0,
+                          cq_max=0, gpr_max=0, fetch_stops=0, wrong_path_branches=0)
 
     def cls(self, pc):
         word = self.words.get(pc)
@@ -189,8 +221,10 @@ class Rules:
             self.stats['unknown'] += 1
         return None if word is None else classify(word, self.sru)
 
-    def event(self, cycle, dispatched, retired, mispredict=0, removed=()):
+    def event(self, cycle, dispatched, retired, mispredict=None, removed=()):
+        """mispredict: None, or the count a recovery this cycle removes."""
         st = self.stats
+        recovery, mispredict = mispredict is not None, mispredict or 0
         st['cycles'] = cycle
         require(len(dispatched) <= self.width and len(retired) <= self.width,
                 f'cycle {cycle}: more than {self.width} dispatched or retired (TIM-DISP-WIDTH)')
@@ -263,7 +297,11 @@ class Rules:
                         a['units'] == b['units'] == {IU, SRU}:
                     st['sru_pairs'] += 1
         for slot, (pc, c) in enumerate(zip(dispatched, classes)):
-            if slot < len(removed) and removed[slot]:
+            gone = slot < len(removed) and removed[slot]
+            self.fetch_stops(cycle, pc, c, gone)
+            self.order += 1
+            self.stream = self.stream[-31:] + [(self.order, c, gone)]
+            if gone:
                 # UM 6.3.1: only a branch with no LR or CTR write retires
                 # without a completion entry.
                 require(c is None or (c['units'] == {BPU} and not any(c['writes'][3:])),
@@ -273,7 +311,7 @@ class Rules:
                 st['removed'] += 1
                 continue
             self.seq += 1
-            self.inflight.append([pc, cycle, self.seq, False])
+            self.inflight.append([pc, cycle, self.seq, False, c, self.order])
             st['dispatches'] += 1
             if c and c['dser']:
                 st['dser'] += 1
@@ -281,10 +319,86 @@ class Rules:
                 self.last_dser = (self.seq, cycle)
             if c and c['cser']:
                 st['cser'] += 1
+        self.occupancy(cycle)
         require(mispredict <= len(self.inflight),
                 f'cycle {cycle}: recovery removes {mispredict} of {len(self.inflight)} in flight')
+        if recovery:
+            self.wrong_path(cycle, mispredict)
         for entry in self.inflight[len(self.inflight) - mispredict:]:
             entry[3] = True
+
+    def occupancy(self, cycle):
+        """TIM-CQ-ALLOC (UM 6.3.3, PDF 258; 6.6.1.2, PDF 267): five completion
+        buffers. TIM-RENAME-LIMITS (UM 6.6, PDF 266-267): five GPR and four
+        FPR destinations, two for a load with update. Counted after the
+        cycle's retirements, so a buffer freed and reused in one cycle passes;
+        renames held past completion only add to the count."""
+        live = [e[4] for e in self.inflight if not e[3]]
+        gpr = sum(c['writes'][0] for c in live if c)
+        fpr = sum(c['writes'][2] for c in live if c)
+        st = self.stats
+        st['cq_max'], st['gpr_max'] = max(st['cq_max'], len(live)), max(st['gpr_max'], gpr)
+        require(len(live) <= CQ_DEPTH, f'cycle {cycle}: {len(live)} instructions in the completion queue '
+                                       '(TIM-CQ-ALLOC)')
+        require(gpr <= GPR_RENAMES and fpr <= FPR_RENAMES,
+                f'cycle {cycle}: {gpr} GPR and {fpr} FPR destinations in flight (TIM-RENAME-LIMITS)')
+
+    def blocking(self, older, kind):
+        """Whether a fetch stop on `older` still holds after this cycle's retirements."""
+        live = [e for e in self.inflight if not e[3]]
+        if not any(e is older for e in live):
+            return False
+        if kind == 'complete':
+            return True
+        # A move to LR/CTR is completion-serialized (UM 6.3.3.2, PDF 259): it
+        # cannot execute while an older instruction is still in the queue.
+        return live[0] is not older
+
+    def fetch_stops(self, cycle, pc, c, gone):
+        """UM 6.4.1.1 (PDF 261), 6.6.1.1 (PDF 267): after mtspr(LR)/bclr,
+        mtspr(CTR)/bcctr or bc(CTR), bc(CTR)/bc(CTR) or bcctr, and
+        branch(LK)/branch(LK) other than bl, fetching stops until the older
+        instruction executes or completes. Nothing younger than the waiting
+        branch dispatches meanwhile, and a branch removed at dispatch (resolved
+        there) cannot be the one waiting."""
+        self.stops = [s for s in self.stops if self.blocking(s[0], s[3])]
+        for older, _, waiter, kind in self.stops:
+            require(False, f'cycle {cycle}: {pc:08x} dispatched while branch {waiter:08x} waits for '
+                           f'{older[0]:08x} to {kind} (TIM-BPU-FETCH-STOP)')
+        if not (c and c['branch']):
+            return
+        for older in reversed([e for e in self.inflight if not e[3] and e[4]]):
+            kind = fetch_stop(older[4], c)
+            if kind and self.blocking(older, kind):
+                require(not gone, f'cycle {cycle}: branch {pc:08x} resolved at dispatch while it waits for '
+                                  f'{older[0]:08x} to {kind} (TIM-BPU-FETCH-STOP)')
+                self.stops.append([older, self.order + 1, pc, kind])
+                self.stats['fetch_stops'] += 1
+                break
+
+    def wrong_path(self, cycle, mispredict):
+        """TIM-BPU-ONE-PREDICTION (UM 6.4.1.2, PDF 262; 6.6.1.1, PDF 267;
+        6.4.1.1 last case, PDF 261): behind an unresolved predicted branch, a
+        branch conditional on CR is not executed and fetching stops at it.
+        Only mispredicted branches show their predicted path. A branch that
+        also tests CTR may resolve on CTR alone, so it is not checked."""
+        younger = mispredict
+        for order, _, gone in reversed(self.stream):
+            if not gone:
+                if younger == 0:
+                    break
+                younger -= 1
+        else:
+            return
+        branch = order
+        path = [(c, gone) for order, c, gone in self.stream if order > branch]
+        self.stops = [s for s in self.stops if s[1] <= branch]
+        for i, (c, gone) in enumerate(path):
+            if c and c['branch'] and c['cr_test'] and not c['ctr_test']:
+                self.stats['wrong_path_branches'] += 1
+                require(not gone and i == len(path) - 1,
+                        f'cycle {cycle}: a branch on CR was resolved or followed by dispatch behind an '
+                        'unresolved predicted branch (TIM-BPU-ONE-PREDICTION)')
 
     def inflight_has(self, pc):
         return any(e[0] == pc for e in self.inflight)
@@ -293,7 +407,7 @@ class Rules:
 def parse_line(raw):
     head, _, retired = raw.partition('|')
     retired, _, removed = retired.partition('!')
-    mispredict = int(removed) if removed else 0
+    mispredict = int(removed) if removed else None
     fields = head.split()
     require(len(fields) >= 3 and fields[1][0] == 'D' and fields[2][0] == 'R', f'malformed event {raw!r}')
     dispatched = [int(x.rstrip('*'), 16) for x in fields[3:]]

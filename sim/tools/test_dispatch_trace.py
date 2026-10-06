@@ -142,6 +142,69 @@ class DispatchRulesTest(unittest.TestCase):
         with self.subTest('removed branch retires'), self.assertRaises(ValueError):
             check_rules(text.replace('R1 | 0000040c', 'R1 | 00000404').split('\n'), 2, words, False)
 
+    def test_completion_and_rename_limits(self):
+        # Five addi, then lwzu (two GPR destinations) and fadd.
+        words = {0x500 + 4 * i: 0x38630001 for i in range(6)}
+        words.update({0x600 + 4 * i: 0x84830000 for i in range(3)})
+        words.update({0x700 + 4 * i: 0xfc22182a for i in range(5)})
+        def run(base, count, retire_first=False):
+            text = '\n'.join(f'{i + 1} D1 R0 {base + 4 * i:08x} |' for i in range(count))
+            if retire_first:
+                text += f'\n{count + 1} D0 R1 | {base:08x}'
+            return check_rules(text.split('\n'), 1, words, False)
+        self.assertEqual(run(0x500, 5)['cq_max'], 5)
+        self.assertEqual(run(0x600, 2)['gpr_max'], 4)
+        run(0x700, 4)
+        for label, (base, count, rule) in {'sixth buffer': (0x500, 6, 'TIM-CQ-ALLOC'),
+                                           'sixth GPR rename': (0x600, 3, 'TIM-RENAME-LIMITS'),
+                                           'fifth FPR rename': (0x700, 5, 'TIM-RENAME-LIMITS')}.items():
+            with self.subTest(label), self.assertRaisesRegex(ValueError, rule):
+                run(base, count)
+
+    def test_fetch_stops(self):
+        # 0x800 add; 0x804 bl; 0x808 bcl (always); 0x80c bl; 0x810 bdnz;
+        # 0x814 bdnz; 0x818 mtctr; 0x81c bcctr; 0x820 mtlr; 0x824 blr; 0x828 addi.
+        words = {0x800: 0x7c632214, 0x804: 0x48000009, 0x808: 0x42800005, 0x80c: 0x48000009,
+                 0x810: 0x4200fff0, 0x814: 0x4200fff0, 0x818: 0x7c6903a6, 0x81c: 0x4e800420,
+                 0x820: 0x7c6803a6, 0x824: 0x4e800020, 0x828: 0x38630001}
+        def run(*lines):
+            return check_rules(list(lines), 1, words, False)
+        # bl need not wait for an older linking branch.
+        run('1 D1 R0 00000804 |', '2 D1 R0 0000080c |', '3 D1 R0 00000828 |')
+        # The waiting branch may enter; younger work waits for completion.
+        st = run('1 D1 R0 00000810 |', '2 D1 R0 00000814 |', '3 D0 R1 | 00000810', '4 D1 R0 00000828 |')
+        self.assertEqual(st['fetch_stops'], 1)
+        # A move to CTR executes once everything older has retired.
+        run('1 D1 R0 00000800 |', '2 D1 R0 00000818 |', '3 D1 R1 0000081c* | 00000800',
+            '4 D1 R0 00000828 |')
+        cases = {
+            'branch(LK) behind branch(LK)': ('1 D1 R0 00000804 |', '2 D1 R0 00000808 |',
+                                             '3 D1 R0 00000828 |'),
+            'bc(CTR) behind bc(CTR)': ('1 D1 R0 00000810 |', '2 D1 R0 00000814 |', '3 D1 R0 00000828 |'),
+            'bcctr behind bc(CTR)': ('1 D1 R0 00000810 |', '2 D1 R0 0000081c |', '3 D1 R0 00000828 |'),
+            'bcctr behind mtctr': ('1 D1 R0 00000800 |', '2 D1 R0 00000818 |', '3 D1 R0 0000081c |',
+                                   '4 D1 R0 00000828 |'),
+            'bcctr removed behind mtctr': ('1 D1 R0 00000800 |', '2 D1 R0 00000818 |',
+                                           '3 D1 R0 0000081c* |'),
+            'bclr removed behind mtlr': ('1 D1 R0 00000800 |', '2 D1 R0 00000820 |', '3 D1 R0 00000824* |'),
+        }
+        for label, lines in cases.items():
+            with self.subTest(label), self.assertRaisesRegex(ValueError, 'TIM-BPU-FETCH-STOP'):
+                run(*lines)
+
+    def test_one_level_of_prediction(self):
+        # 0x900 beq predicted not taken; 0x904 bne on the predicted path; 0x908 addi.
+        words = {0x900: 0x41820010, 0x904: 0x40820010, 0x908: 0x38630001, 0x910: 0x38630001}
+        stop = ['1 D1 R0 00000900 |', '2 D1 R0 00000904 |', '4 D0 R0 | !1',
+                '5 D1 R1 00000910 | 00000900', '6 D0 R1 | 00000910']
+        st = check_rules(stop, 1, words, False)
+        self.assertEqual(st['wrong_path_branches'], 1)
+        past = stop[:2] + ['3 D1 R0 00000908 |', '4 D0 R0 | !2'] + stop[3:]
+        with self.assertRaisesRegex(ValueError, 'TIM-BPU-ONE-PREDICTION'):
+            check_rules(past, 1, words, False)
+        with self.assertRaisesRegex(ValueError, 'TIM-BPU-ONE-PREDICTION'):
+            check_rules([stop[0], '2 D1 R0 00000904* |', '4 D0 R0 | !0'] + stop[3:], 1, words, False)
+
     def test_schedule_ignores_recovery_marker(self):
         self.assertEqual(parse('4 D0 R1 | 00000300 !2\n5 D0 R0 | !1'), {4: ([], [0x300])})
 
