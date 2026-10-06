@@ -88,37 +88,40 @@ module ppc_rename (
   assign alloc_fire = alloc_i && alloc_ready_o;
   assign alloc1_fire = alloc1_i && alloc1_ready_o;
 
-  // Readiness per architectural register, so a late register index only
-  // selects. A wake matching the slot also matches its owner.
+  // Each slot's operand, resolved before the register lookup so the map
+  // index only selects. The value forwards on the producer alone, keeping
+  // recovery's kill and the wake's tag lookup out of the dispatch operand
+  // cone. It is consumed only with ready, which needs a valid wake of this
+  // slot on the same bus or a second-port wake, which takes precedence; a
+  // killed wake also kills the reader. A wake matching the slot also
+  // matches its owner.
+  logic [GPR_RENAME_DEPTH-1:0] slot_ready;
+  logic [31:0] slot_value [GPR_RENAME_DEPTH];
   logic [31:0] reg_ready;
   always_comb begin
+    for (int t = 0; t < GPR_RENAME_DEPTH; t++) begin
+      slot_ready[t] = ready[t] || (wake_match && wake_i.tag == rename_tag_t'(t)) ||
+                      (wake1_match && wake1_i.tag == rename_tag_t'(t));
+      slot_value[t] = 32'b0;
+      if (ready[t]) slot_value[t] = values[t];
+      else if (wake1_offer_i && wake1_i.tag == rename_tag_t'(t) &&
+               wake1_i.producer == owners[t])
+        slot_value[t] = wake1_i.value;
+      else if (wake_i.producer == owners[t]) slot_value[t] = wake_i.value;
+    end
     for (int r = 0; r < 32; r++)
-      reg_ready[r] = !map_valid[r] || ready[map_tag[r]] ||
-                     (wake_match && wake_i.tag == map_tag[r]) ||
-                     (wake1_match && wake1_i.tag == map_tag[r]);
+      reg_ready[r] = !map_valid[r] || slot_ready[map_tag[r]];
   end
 
   function automatic operand_t read_operand(input logic [4:0] reg_index,
                                              input logic [31:0] arch_value);
     operand_t operand;
     operand = '0;
-    operand.ready = 1'b1;
     operand.value = arch_value;
     if (map_valid[reg_index]) begin
       operand.tag = map_tag[reg_index];
       operand.producer = owners[operand.tag];
-      // Pending payload is not consumed.
-      operand.value = ready[operand.tag] ? values[operand.tag] : 32'b0;
-      // The value forwards on the producer alone, keeping recovery's kill
-      // and the wake's tag lookup out of the dispatch operand cone. It is
-      // consumed only with ready, which needs a valid wake of this tag on
-      // the same bus or a second-port wake, which takes precedence; a killed
-      // wake also kills the reader.
-      if (!ready[operand.tag] && wake_i.producer == operand.producer)
-        operand.value = wake_i.value;
-      if (!ready[operand.tag] && wake1_offer_i && wake1_i.tag == operand.tag &&
-          wake1_i.producer == operand.producer)
-        operand.value = wake1_i.value;
+      operand.value = slot_value[operand.tag];
     end
     operand.ready = reg_ready[reg_index];
     return operand;
