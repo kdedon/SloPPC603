@@ -38,7 +38,9 @@ def expected(controls, ea, pairs):
     index, entry = matches[0]
     _, base, _, physical, _, wimg, pp = entry
     denied = pp == 0 or (write and pp != 2)
-    guarded = bool(instruction and wimg % 2)
+    if instruction:
+        wimg &= ~1  # IBATs have no G bit; their accesses are unguarded (UM 3.5)
+    guarded = False
     allow = not denied and not guarded
     pa = physical + (ea - base) if allow else 0
     return ((int(allow) << 56) | (1 << 54) | (int(denied) << 52) | (int(guarded) << 51) |
@@ -68,7 +70,9 @@ def expected_stored(controls, ea, pairs):
     offset = ((upper // 4) % 2048) * 131072 + 131071
     wimg, pp = (lower // 8) % 16, lower % 4
     denied = pp == 0 or (write and pp != 2)
-    guarded = bool(instruction and wimg % 2)
+    if instruction:
+        wimg &= ~1  # IBATs have no G bit; their accesses are unguarded (UM 3.5)
+    guarded = False
     allow = not denied and not guarded
     pa = (lower & 0xfffe0000) | (ea & offset) if allow else 0
     return ((int(allow) << 56) | (1 << 54) | (int(denied) << 52) | (int(guarded) << 51) |
