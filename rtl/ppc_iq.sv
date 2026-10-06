@@ -14,6 +14,8 @@ module ppc_iq #(
 ) (
   input logic clk_i, rst_ni,
   input logic clear_i,
+  // Empties the queue on the edge without hiding this cycle's entries.
+  input logic flush_i,
   // Lane 1 pushes only with lane 0, lane 0 needs push_ready_o and lane 1
   // push2_ready_o.
   input logic [1:0] push_valid_i,
@@ -61,7 +63,7 @@ module ppc_iq #(
     end
   end
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || clear_i) count <= '0;
+    if (!rst_ni || clear_i || flush_i) count <= '0;
     else count <= survivors + COUNT_WIDTH'(push0) + COUNT_WIDTH'(push1);
   end
 endmodule

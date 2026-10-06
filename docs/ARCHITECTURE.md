@@ -241,12 +241,18 @@ See [the contract](EXCEPTION_MACHINE_CHECK_TRACE.md).
 ## Fetch-to-decode register
 
 A one-entry register sits between `ppc_fetch` and the IQ. It holds the
-fetched word with its PC, fetch fault and page-miss context; decode and the
-IABR compare read it at IQ push, so the I-cache RAM output reaches only a
-register in its cycle. It accepts when empty or when the IQ accepts, and it
-clears with the IQ on an accepted redirect. Fetch credit therefore covers
-IQ_DEPTH + 1 entries, and every fetched instruction reaches the IQ one cycle
-later.
+fetched word with its PC, fetch fault and page-miss context, and clears with
+the IQ on an accepted redirect. Fetch credit covers IQ_DEPTH + 1 entries.
+
+`FETCH_DECODE_REG` (default 0) selects its use. At 0, decode, folding and
+the IABR compare read the fetch output while the register is empty, so a
+word enters the IQ in the cycle the cache returns it (UM 6.3.2.2: one cycle
+from request to IQ); the register takes only words the IQ refuses (a full
+IQ, a held CR branch, a split pair). At 1, every word is registered first:
+the I-cache RAM output reaches only a register in its cycle, and every
+fetched instruction reaches the IQ one cycle later than the manual.
+
+The record below is for `FETCH_DECODE_REG` 1.
 
 Recorded: `make -C toolchain rtl-all`, commit `6c66bb4` (before) and commit
 `a9e139f` plus the bench change committed as `f68868a` (after), 2026-09-28.

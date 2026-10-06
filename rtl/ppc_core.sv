@@ -402,7 +402,7 @@ module ppc_core #(
   logic [3:0] push_branch, iq_branch;
   logic [31:0] fold_target, fold_target_q;
   logic early_q, early_bs_q, early_ok, early_fold, early_bs, bs_now, bs_fe_q;
-  logic early_bs_late, early_bu;
+  logic early_bs_late, early_bu, fe_clear;
   logic [31:0] early_target_q, bs_alt_q;
   logic [31:0] bu_cr_q, bu_cr, bu_cr_d;
   completion_tag_t special_producer;
@@ -1004,7 +1004,7 @@ module ppc_core #(
   /* verilator lint_on UNUSEDSIGNAL */
   ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t)),
            .DEPTH(IQ_DEPTH)) iq (
-    .clk_i, .rst_ni, .clear_i(frontend_clear),
+    .clk_i, .rst_ni, .clear_i(fe_clear), .flush_i(bs_now),
     .push_valid_i({iq_in1, iq_in0}), .push_ready_o(iq_push_ready),
     .push2_ready_o(iq_push2_ready),
     .push0_data_i({queued, push_uop, fold_predict, push_branch, push_pair, fetch_removed_q}),
@@ -1492,10 +1492,11 @@ module ppc_core #(
   assign bs_now = MISPREDICT_FETCH_NOW && early_bs && !bs_miss_q;
   assign early_bs_late = early_bs && !bs_now && !bs_fe_q;
   assign early_bu = bu_redirect_d && !bs_now && !bs_fe_q;
-  assign frontend_clear = recovery_accepted ?
+  assign fe_clear = recovery_accepted ?
     !(bs_fe_q && !special_exception_redirect && !special_branch_redirect && !fp_replay &&
       !bs_redirect_q) :
-    ((bu_redirect_q && !bs_fe_q) || bs_now);
+    (bu_redirect_q && !bs_fe_q);
+  assign frontend_clear = fe_clear || bs_now;
   assign frontend_target = recovery_accepted ? selected_redirect_target :
                            bs_now ? bs_alt_q : bu_redirect_q ? bu_target_q : fold_target_q;
   // Fold, unfolded-branch and misprediction redirects come from registers,
