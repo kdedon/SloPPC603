@@ -156,7 +156,9 @@ module tb_demo_soc #(
     else if (!soc.cpu.cpu.translated_core.core.pair_units) key = "units";
     else if (!soc.cpu.cpu.translated_core.core.seq_last) key = "seq";
     else if (!soc.cpu.cpu.translated_core.core.cq1_ready) key = "cq";
-    else if (soc.cpu.cpu.translated_core.core.unit_update) key = "update";
+    else if (soc.cpu.cpu.translated_core.core.unit_update &&
+             !(soc.cpu.cpu.translated_core.core.d1_iu &&
+               !soc.cpu.cpu.translated_core.core.d1_gpr)) key = "update";
     else if (soc.cpu.cpu.translated_core.core.d1_lsu &&
              !soc.cpu.cpu.translated_core.core.d1_lsu_ready) key = "lsu";
     else if (soc.cpu.cpu.translated_core.core.d1_needs_flags) key = "flags";

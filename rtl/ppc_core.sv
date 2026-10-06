@@ -1746,6 +1746,8 @@ module ppc_core #(
   generate
     if (HAS_SRU) begin : g_sru
       logic sru_rs_issue_valid;
+      logic sru_fwd_iu;
+      assign sru_fwd_iu = iu_result_valid && iu_result_ready;
       ppc_dispatch sru_station (
         .clk_i, .rst_ni, .cancel_i(sru_rs_cancel),
         .dispatch_valid_i((dispatch && c0_sru) || (dispatch1 && d1_iu && c0_iu)),
@@ -1753,9 +1755,11 @@ module ppc_core #(
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .iu_done_i(sru_result_valid && sru_result_ready),
         .iu_producer_i(sru_result.producer), .iu_value_i(sru_result.value),
-        // IU results reach the SRU in the cycle they finish.
-        .lsu_done_i(iu_result_valid && iu_result_ready),
-        .lsu_producer_i(iu_result.producer), .lsu_value_i(iu_result.value),
+        // IU results, else load results, reach the SRU in the cycle they
+        // finish (UM 6.3.1 feed forwarding).
+        .lsu_done_i(sru_fwd_iu || lsu_result_valid),
+        .lsu_producer_i(sru_fwd_iu ? iu_result.producer : lsu_result.producer),
+        .lsu_value_i(sru_fwd_iu ? iu_result.value : lsu_result.value),
         .issue_valid_o(sru_rs_issue_valid), .issue_ready_i(sru_issue_ready && !sru_cr_hold),
         .issue_o(sru_issue)
       );
@@ -2088,7 +2092,8 @@ module ppc_core #(
     (dispatch_pre.illegal ||
      (fp_uop && fp_issue_ready && flags_ready && (!fp_mem_pipe || fp_mem_pipe_ready) &&
       (!unit_update || alloc_ready)) ||
-     (normal_uop && alloc_ready && (rs_ready || bu_finished || c0_sru || bu_remove) && flags_ready &&
+     // Only a GPR result needs a rename slot (UM 6.6.1.2).
+     (normal_uop && (alloc_ready || (!dispatch_pre.gpr_write && !recovery_accepted)) && (rs_ready || bu_finished || c0_sru || bu_remove) && flags_ready &&
       (!bu_branch || bu_ready) &&
       (!trace_mode || (cq_empty && normal_idle))) ||
      (special_uop && special_drained &&
@@ -2383,7 +2388,8 @@ module ppc_core #(
   assign d1_remove = BRANCH_REMOVAL && d1_branch && !dq1_uop.branch_lk &&
     (!(d1_bc && !d1_bc_now) || BS_ANCHOR) && (dq1_rb != 2'd3);
   assign dispatch1 = dispatch && seq_last && pair_units && (cq1_ready || d1_remove) &&
-    !unit_update && !sru_wait1 && !update_wait1 &&
+    // DQ1 needs only the renames left after DQ0 (UM 6.6.1.2).
+    (!unit_update || (d1_iu && !d1_gpr)) && !sru_wait1 && !update_wait1 &&
     (!d1_lsu || d1_lsu_ready) &&
     (!flags_tok1 || (!flags_waiter && (!cr_wait1 || (cr_wait_ok1 && !cr_wait0)))) &&
     (!d1_needs_flags || xer_ready1) &&

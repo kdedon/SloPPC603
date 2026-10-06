@@ -80,7 +80,8 @@ def negative_controls(runner, image, runner_args, prefix, le=False):
     cases = {'gpr': ('mutate=1000:r1', 'state after'), 'msr': ('mutate=1500:msr', 'state after'),
              'cr': ('mutate=2000:cr', 'state after'), 'store': ('mutate=5000:st', 'store byte'),
              'late store': ('mutate=5000:stlate', 'store byte'),
-             'drop': ('drop=3000', 'pc:')}
+             # A drop beside removed branches shows as a removed non-branch.
+             'drop': ('drop=3000', ('pc:', 'removed instruction'))}
     if le:
         cases['store address'] = ('mutate=5000:staddr', 'store byte')
     # Without a store queue no write follows a younger store.
@@ -89,7 +90,8 @@ def negative_controls(runner, image, runner_args, prefix, le=False):
     for label, (option, expect) in cases.items():
         run = subprocess.run([str(runner), str(image), str(prefix), *runner_args, f'records={records}',
                               option], capture_output=True, text=True)
-        if run.returncode == 0 or expect not in run.stderr:
+        expect = (expect,) if isinstance(expect, str) else expect
+        if run.returncode == 0 or not any(e in run.stderr for e in expect):
             raise RuntimeError(f'negative control ({label}) was not detected\n{run.stderr[-2000:]}')
     print(f'PASS reference machine negative controls: {len(cases)} mutations over {records} records',
           flush=True)
