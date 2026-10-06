@@ -969,7 +969,7 @@ retirement, the path of a correctly predicted branch, and when a move to LR or
 CTR executes. Not checked either: the per-row latencies and the chapter 6
 worked schedules.
 
-Recorded: `make -C sim check-spec`; `make -C sim test-dispatch-rules DEMO_FW_DIR=<main checkout>/toolchain/build/demo`, the same with `DISPATCH_RULES_ARGS=` and with `BRANCH_REMOVAL=1`, each at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`; commit 28de2bc plus the checker changes (same RTL), 2026-10-06.
+Recorded: `make -C sim check-spec`; `make -C sim test-dispatch-rules DEMO_FW_DIR=<main checkout>/toolchain/build/demo`, the same with `DISPATCH_RULES_ARGS=` and with `BRANCH_REMOVAL=1`, each at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`; commit 06df572 (checker; the same RTL as 28de2bc), 2026-10-06.
 Dhrystone, CoreMark and Whetstone pass every rule with `--early-move`, in
 both configurations and with branch removal. The CQ and GPR destination
 counts reach five and never exceed it. Fetch stops held (Dhrystone,
