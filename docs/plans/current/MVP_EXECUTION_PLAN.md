@@ -1165,3 +1165,66 @@ commit c9a6657, 2026-10-06: chip setup +0.355 / hold +0.117 ns; translated setup
 MVP 97.43% (unchanged); full 603e 81.20% → 81.53%. Inherited: xrand, FPU suite and
 FPU fits from batch 13 (no FPU change).
 
+## Batch 15 — accepted (2026-10-06)
+
+AUD-76 (PVR 0x00070200), AUD-81 remainder (HID0[IFEM] on single-beat fetches),
+AUD-84 (MCP and SRESET preempt a faulting instruction), AUD-85 (DBDIS and CSE
+checks) and AUD-86 (603 checkstop sources) fixed, each with a bench case
+([audit](../../AUDIT.md)).
+
+Recorded: `./quartus/chip/build.sh --docker`, `./quartus/chip602/build.sh --docker`,
+commit 9365839, 2026-10-06: chip setup +1.069 ns; chip602 setup −0.161 ns
+(50 MHz, worst corner), a miss that batch 16 recovered (below). The rest of
+batch 15's acceptance is the batch 16 gate, which contains it.
+
+## Batch 16 — accepted (2026-10-06)
+
+AUD-82 (602 injected snoops), the 603 fetch-TEA refetch (AUD-86), AUD-80
+(32-bit data bus and reduced pinout) and AUD-87 (EC603e `fsqrt` takes FP
+unavailable) fixed. An FPU semantics review found no RTL mismatch and recorded
+AUD-88 and AUD-89 (unmodelled timing). All 226 Appendix A rows carry metadata
+and five-variant legality ([ISA matrix](../../references/ISA_MATRIX.md)). The
+MiSTer test core runs at 45 MHz behind the named parameter `--sys-mhz` (45 MHz
+floor, 66 MHz target), with area and path fixes and three rename reverts. CI
+runs seeds in parallel. Fixes after the gate: IU bench `result_offer_o`
+tie-offs (28de2bc) and the decode sweep's EC603e `fsqrt` class (ee764cf).
+
+Recorded: preflight (firmware builds, `make -C toolchain firmware-all rtl-smoke
+rtl-alignment`, `make -C sim lint check-spec`, core benches at width 1 and width 2 + LSU unit,
+`test-reference-machine` Dhrystone, `perf-diff`), commit 6b073fc, 2026-10-06:
+all pass; Dhrystone 639.0 cycles/run.
+
+Recorded: `make -C sim ci`, commit 6b073fc, 2026-10-06: fail, 20 targets: the IU
+execution benches (`result_offer_o` left unconnected), `test-decode-sweep`
+(EC603e `fsqrt` expectation), and four reference targets that failed only on
+the missing DingusPPC symlink.
+
+Recorded: `make -C sim` on those 20 targets, commit ee764cf, 2026-10-06: pass.
+
+Recorded: `make -C sim xrand-sweep test-fpu-all`, `make -C toolchain rtl-all`,
+commit 6b073fc, 2026-10-06: pass.
+
+Recorded: `test-dispatch-rules test-reference-machine test-reference-machine-mmu`
+at width 1, width 2, LSU unit and width 2 + LSU unit, commit 6b073fc,
+2026-10-06: 11 PASS in each.
+
+Recorded: `./quartus/{translated,integrated,timer-bat,chip,chip602}/build.sh --docker`,
+commit 6b073fc, 2026-10-06 (worst corners):
+
+| Top | 50 MHz setup | 50 MHz hold | 66 MHz worst slack |
+|---|---:|---:|---:|
+| translated | +0.506 | +0.118 | −4.342 |
+| integrated | +1.557 | +0.115 | −3.291 |
+| timer-bat | +0.257 | +0.119 | −4.591 |
+| chip | +0.487 | +0.116 | −4.361 |
+| chip602 | +0.808 | +0.119 | −4.040 |
+
+All five meet 50 MHz; chip602 recovers from −0.161 ns on 9365839. FPU fits
+unchanged: 51.57, 50.58, 53.43, 60.07 MHz.
+
+MiSTer at 45 MHz, commit 794ca90 (before the gate), seed 3: met timing, clk_sys
++0.663 ns, HDMI +0.064 ns, 33,406 ALMs.
+
+MiSTer (batch 16 gate): pending
+
+MVP 97.43% (unchanged); full 603e 81.53% → 83.22%.

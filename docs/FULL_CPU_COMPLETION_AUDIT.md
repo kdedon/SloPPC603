@@ -24,24 +24,24 @@ historically measured effort. Keep them fixed for subsequent updates.
 
 | Workstream | Weight | Completion | Contribution |
 | --- | ---: | ---: | ---: |
-| Source contracts and ISA planning | 8% | 80% | 6.40% |
+| Source contracts and ISA planning | 8% | 88% | 7.04% |
 | Reproducible tools and scaffold | 4% | 90% | 3.60% |
 | Scalar tagged execution, recovery and integer units | 8% | 88% | 7.04% |
 | Dual dispatch/retirement and superscalar scheduling | 4% | 72% | 2.88% |
 | Functional branches | 3% | 90% | 2.70% |
 | Branch prediction and folding | 2% | 70% | 1.40% |
 | Load/store architecture | 5% | 93% | 4.65% |
-| Supervisor, system instructions and interrupts | 8% | 87% | 6.96% |
+| Supervisor, system instructions and interrupts | 8% | 89% | 7.12% |
 | MMU | 8% | 81% | 6.48% |
-| 60x transport and protocol | 6% | 95% | 5.70% |
+| 60x transport and protocol | 6% | 98% | 5.88% |
 | Instruction cache and architectural maintenance | 4% | 97% | 3.88% |
 | Data cache and writeback | 5% | 90% | 4.50% |
-| Coherence and reservations | 3% | 98% | 2.94% |
-| Floating point | 12% | 75% | 9.00% |
-| Endian, variants and platform behavior | 6% | 80% | 4.80% |
+| Coherence and reservations | 3% | 99% | 2.97% |
+| Floating point | 12% | 77% | 9.24% |
+| Endian, variants and platform behavior | 6% | 84% | 5.04% |
 | Full timing, reference and integration verification | 10% | 66% | 6.60% |
-| Final FPGA closure and release | 4% | 50% | 2.00% |
-| **Total** | **100%** | | **81.53%** |
+| Final FPGA closure and release | 4% | 55% | 2.20% |
+| **Total** | **100%** | | **83.22%** |
 
 ## Reasons for the revised credit
 
@@ -327,3 +327,29 @@ HID0[IFEM] drives GBL on cached instruction fetches (AUD-81, partial); soft rese
 clears HID0[ICE] (AUD-83, UM §4.5.1.2); SMI is taken with MSR[TGPR]=1 (AUD-75,
 UM §4.5.16); IBATs have no G bit (AUD-79, UM §3.5). Coherence and reservations
 95% → 98%, supervisor 85% → 87%, MMU 80% → 81%. Total 81.20% → 81.53%.
+
+## 2026-10-06 update (batches 15 and 16)
+
+Batch 15: PVR 0x00070200 (AUD-76); HID0[IFEM] on single-beat fetches (AUD-81);
+MCP and SRESET preempt a faulting instruction (AUD-84); DBDIS and CSE checks
+(AUD-85); 603 checkstop sources (AUD-86). Batch 16: 602 injected snoops
+(AUD-82); the 603 fetch-TEA refetch (AUD-86); 32-bit data bus and reduced
+pinout (AUD-80); EC603e `fsqrt` takes FP unavailable (AUD-87); an FPU semantics
+review (no RTL mismatch; AUD-88/89 record unmodelled timing); metadata and
+five-variant legality for all 226 Appendix A rows; the MiSTer test core at
+45 MHz (`--sys-mhz`; 45 MHz floor, 66 MHz target).
+
+| Row | From → to | Why |
+|---|---|---|
+| Source contracts and ISA planning | 80 → 88 | ISA metadata complete; 602-only rows and two manual self-contradictions remain |
+| Supervisor, system instructions and interrupts | 87 → 89 | pin-event priority, 603 checkstops |
+| 60x transport and protocol | 95 → 98 | 32-bit bus, reduced pinout, injected snoops |
+| Coherence and reservations | 98 → 99 | 602 injected snoop |
+| Endian, variants and platform behavior | 80 → 84 | PVR, EC603e fsqrt, 603 checkstops |
+| Floating point | 75 → 77 | semantics review, AUD-87 |
+| Final FPGA closure and release | 50 → 55 | all five tops and the FPU tops meet 50 MHz; MiSTer meets 45 MHz; 66 MHz open |
+
+Fits on `6b073fc` (50 MHz, setup / hold, worst corners): translated +0.506 /
++0.118 ns, integrated +1.557 / +0.115, timer-bat +0.257 / +0.119, chip +0.487 /
++0.116, chip602 +0.808 / +0.119. FPU fits unchanged: 51.57, 50.58, 53.43,
+60.07 MHz. Total 81.53% → 83.22%.

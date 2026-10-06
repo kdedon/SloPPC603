@@ -32,21 +32,23 @@ this record. Opcode coverage is summarised by the generated
 
 ## Summary
 
+Recounted 2026-10-06, after batches 15 and 16.
+
 | Chapter | tested | untested | partial | missing | out of scope | n/a | Rows |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Chapter 1 | 13 | 0 | 7 | 1 | 0 | 3 | 24 |
-| Chapter 2 | 62 | 1 | 6 | 0 | 0 | 5 | 74 |
-| Chapter 3 | 43 | 2 | 8 | 1 | 0 | 1 | 55 |
-| Chapter 4 | 58 | 3 | 4 | 1 | 1 | 4 | 71 |
+| Chapter 1 | 15 | 0 | 6 | 0 | 0 | 3 | 24 |
+| Chapter 2 | 63 | 1 | 5 | 0 | 0 | 5 | 74 |
+| Chapter 3 | 46 | 2 | 6 | 0 | 0 | 1 | 55 |
+| Chapter 4 | 61 | 3 | 2 | 0 | 1 | 4 | 71 |
 | Chapter 5 | 33 | 1 | 0 | 0 | 1 | 1 | 36 |
 | Chapter 6 | 15 | 2 | 13 | 0 | 0 | 1 | 31 |
-| Chapter 7 | 42 | 3 | 7 | 3 | 0 | 3 | 58 |
-| Chapter 8 | 28 | 0 | 5 | 4 | 0 | 2 | 39 |
+| Chapter 7 | 47 | 2 | 3 | 3 | 0 | 3 | 58 |
+| Chapter 8 | 32 | 0 | 5 | 0 | 0 | 2 | 39 |
 | Chapter 9 | 9 | 0 | 0 | 0 | 0 | 3 | 12 |
-| Appendices A and B | 9 | 0 | 2 | 0 | 0 | 0 | 11 |
-| Appendix C | 14 | 1 | 2 | 1 | 0 | 4 | 22 |
-| 602 differences | 28 | 6 | 2 | 2 | 0 | 4 | 42 |
-| **Total** | 354 | 19 | 56 | 13 | 2 | 31 | 475 |
+| Appendices A and B | 10 | 0 | 1 | 0 | 0 | 0 | 11 |
+| Appendix C | 15 | 1 | 2 | 0 | 0 | 4 | 22 |
+| 602 differences | 29 | 6 | 2 | 1 | 0 | 4 | 42 |
+| **Total** | 375 | 18 | 45 | 4 | 2 | 31 | 475 |
 
 ## Likely missed
 
@@ -55,22 +57,22 @@ Missing and partial rows, ranked by how visible they are to software or to a
 
 1. ~~**Burst-read snoop treated as clean** (AUD-77)~~. Fixed: TBST selects
    the flush class.
-2. **32-bit data bus and reduced-pinout modes** (AUD-80). UM §8.6.1, §8.6.3,
-   PDF 346-349. Their straps checkstop; boards wired that way cannot boot.
+2. ~~**32-bit data bus and reduced-pinout modes** (AUD-80)~~. Fixed: both
+   straps run.
 3. ~~**HID0[IFEM] partial** (AUD-81)~~. Fixed: line fills and single-beat
    fetches assert GBL for M=1.
 4. ~~**SMI refused while MSR[TGPR]=1** (AUD-75)~~. Fixed.
 5. ~~**IBAT G=1 raises ISI** (AUD-79)~~. Decided for §3.5: IBAT G ignored.
 6. ~~**SRESET leaves the I-cache enabled** (AUD-83)~~. Fixed: SRESET clears HID0[ICE].
-7. **602 injected snoops** (AUD-82). 602UM §8.4.2, PDF 378. A 602 system that
-   injects snoops during a burst read gets a push the protocol forbids.
+7. ~~**602 injected snoops** (AUD-82)~~. Fixed: a hit gives ARTRY without a
+   push.
 8. ~~**PVR revision below PID7v level** (AUD-76)~~. Fixed: 0x00070200.
 9. **Touch-load TC and castout order** (AUD-78). UM Table 7-6, PDF 290;
    §8.1.1, PDF 312. Visible to L2 controllers and bus monitors only.
-10. **Exception priority untested beyond pairs** (AUD-84). UM Table 4-2, PDF
-    165-166. Simultaneous fault and asynchronous events may vector wrongly.
+10. ~~**Exception priority untested beyond pairs** (AUD-84)~~. Fixed: MCP and
+    SRESET preempt a faulting instruction.
 11. ~~**DBDIS and 603e CSE unchecked** (AUD-85); **603 checkstop sources**
-    (AUD-86)~~. Fixed; the 603's fetch-TEA refetch tenure is not issued.
+    (AUD-86)~~. Fixed, including the 603's fetch-TEA refetch.
 
 Lower: core:bus ratios other than 1:1 (D07 in [SOURCES.md](SOURCES.md); 602
 2:1 and 3:1 per [CHIP_PACKAGE_602.md](../CHIP_PACKAGE_602.md)); COP, pipeline
@@ -101,7 +103,7 @@ PEM was read only where the UM defers to it.
 | MMUs: 64-entry 2-way I/D TLBs, 4 IBAT + 4 DBAT, software TLB reload | UM §1.1.5.1, PDF 52 | tested | test-core-tlb-miss, test-core-bat, test-tlb-geometry-16 (outside scope, see MMU chapter sweep) |
 | 16 KB 4-way I- and D-caches, 32-byte lines | UM §1.1.5.2, PDF 53 | tested | test-icache, test-dcache, test-chip-icache-real |
 | 60x bus: 32-bit addr, 64-bit data, split tenures, 1-level pipelining | UM §1.1.6, PDF 54 | tested | test-bus60x*, test-chip-pins |
-| 32-bit data bus mode (TLBISYNC strap) | UM §1.1.6, PDF 54; §1.3.7 PDF 75 | missing | CHIP_PACKAGE.md:129 rejects strap; DATA_CACHE.md:205 "not modelled" |
+| 32-bit data bus mode (TLBISYNC strap) | UM §1.1.6, PDF 54; §1.3.7 PDF 75 | tested | AUD-80: `ppc_bus60x_dbw32`; `test-chip-pins` 32-bit cases, `test-chip-fpu` with `+DBW32` |
 | CSE1 replaces XATS (PID7v) | UM §1.1.2.1.1, PDF 47 | tested | `rtl/ppc603e.sv:79` cse_o; CHIP_PACKAGE.md:63-68; test-chip-pins |
 | Half-clock bus multipliers (2.5:1, 3.5:1 ...) | UM §1.1.2.1.2, PDF 47 | tested | CPU_VARIANTS.md:317 ratios 2-6 in halves; test-chip-ratios, test-core-bat-cached-bus60x-ratios |
 | HID1 PLL_CFG readback | UM §1.1.2.2.2, PDF 48 | tested | `ppc_pkg.sv:619` hid1_rmask; tb_variant_config.sv, test-core-full-decode |
@@ -109,7 +111,7 @@ PEM was read only where the UM defers to it.
 | Time base / DEC, one tick per 4 bus clocks, TBEN | UM §1.1.7.2, PDF 55 | tested | `rtl/ppc603e.sv:267`; test-timer, test-core-timer-events, test-core-timer-registers |
 | JTAG / COP test interface | UM §1.1.7.3, PDF 56 | n/a | CHIP_PACKAGE.md:113,231 absent; no FPGA debug use |
 | Clock multiplier / PLL | UM §1.1.7.4, PDF 56 | n/a | FPGA PLL; PLL_CFG only selects ratio (CHIP_PACKAGE.md) |
-| PVR value (PID7v level 0x0200+) | UM §1.3.1.1, PDF 58 | yes | `cpu_cfg().pvr` = 0x00070200 (`variant-config-0`) |
+| PVR value (PID7v level 0x0200+) | UM §1.3.1.1, PDF 58 | tested | `cpu_cfg().pvr` = 0x00070200 (`variant-config-0`) |
 | Run_N counter (COP) | UM §1.3.1.3, PDF 59 | n/a | no COP (CPU_VARIANTS.md:224) |
 | Implementation exception vectors 0x1000/0x1100/0x1200/0x1300/0x1400 | UM §1.3.4.2, PDF 69-71 | tested | test-core-tlb-miss, test-core-machine-check-trace (IABR), test-chip-pins (SMI) |
 | Real-mode WIMG defaults | UM §1.3.5.2, PDF 72; §3.5 PDF 136 | tested | `rtl/ppc_bat_translate.sv:126`: fetch 0001, data 0011 (§3.5 says 0011 for both; differs only in M, which fetch ignores); test-core-bat |
@@ -144,7 +146,7 @@ PEM was read only where the UM defers to it.
 | HID0[DLOCK] | UM Tbl 2-2 PDF 86; §3.2.3.3 PDF 132 | tested | DATA_CACHE.md:83,90; test-dcache, test-biu-dcache-snoop |
 | HID0[ICFI] flash invalidate | UM Tbl 2-2 PDF 86; §3.1.3.1 PDF 130 | tested | test-chip-dcache-coherence, test-core-full-decode |
 | HID0[DCFI] flash invalidate | UM Tbl 2-2 PDF 86; §3.2.3.1 PDF 132 | tested | DATA_CACHE.md:70; test-dcache, test-chip-dcache-coherence |
-| HID0[IFEM] instruction fetch M/GBL (PID7v) | UM Tbl 2-2, PDF 86 | yes | Burst and CI single-beat fetches drive GBL from M when set (`test-chip-pins` `case_ifem`) |
+| HID0[IFEM] instruction fetch M/GBL (PID7v) | UM Tbl 2-2, PDF 86 | tested | Burst and CI single-beat fetches drive GBL from M when set (`test-chip-pins` `case_ifem`) |
 | HID0[FBIOB] force branch indirect on bus | UM Tbl 2-2, PDF 86 | partial | stored only (`ppc_pkg.sv:600`); no fetch behaviour |
 | HID0[ABE] address broadcast for dcbf/dcbi/dcbst (PID7v) | UM Tbl 2-2 PDF 86; §3.2.3.4 PDF 133 | tested | `ppc_special.sv:1514`; DATA_CACHE.md:104; test-dcache, test-core-full-decode; dcbi gated by M (deviation, DATA_CACHE.md:202) |
 | HID0[NOOPTI] touch no-op | UM Tbl 2-2 PDF 86; §3.2.4 PDF 133 | tested | DATA_CACHE.md:98; test-dcache, test-core-dcache |
@@ -207,7 +209,7 @@ PEM was read only where the UM defers to it.
 | I/D caches invalidated on hard reset, not soft reset | UM §3.1.3.1, §3.2.3.1, PDF 130/132 | untested | ICACHE.md:42-45 hard reset; no bench found asserting SRESET leaves cache contents |
 | D-cache 16 KB, 4-way, strict LRU, invalid-way first | UM §3.2.1, PDF 131 | tested | DATA_CACHE.md:20; test-dcache, test-dcache-mutations |
 | D-fill 4x64 critical first, forwarded on critical beat (PID7v) | UM §3.2.2, PDF 131 | tested | DATA_CACHE.md:21; test-dcache, test-core-dcache |
-| D-fill 8x32 beats (32-bit bus) | UM §3.2.2, PDF 131 | missing | 32-bit mode not modelled (DATA_CACHE.md:205) |
+| D-fill 8x32 beats (32-bit bus) | UM §3.2.2, PDF 131 | tested | AUD-80: two beats per doubleword; `test-chip-pins` 32-bit cases, `test-chip-fpu` with `+DBW32` |
 | Cache ops still act with DCE=0 (dcbf on M in disabled cache) | UM §3.2.3.2, PDF 132 | untested | not found in DATA_CACHE.md table; no targeted check seen |
 | Weak load/store ordering; I=1 strongly ordered | UM §3.2.3.2, PDF 132 | tested | test-core-lsu-timing-snoop, test-core-bat-cached-bus60x-drain |
 | dcbz address-only broadcast (kill) when M=1 | UM §3.2.3.4 PDF 133; §3.7.4 PDF 150 | tested | DATA_CACHE.md:93; test-dcache, test-biu-dcache-snoop |
@@ -261,7 +263,7 @@ PEM was read only where the UM defers to it.
 |---|---|---|---|
 | Vector offsets, all 603e exceptions (0x100-0x1400) | UM §4.1 Table 4-1, PDF 160-164 | tested | rtl/ppc_exception_state.sv:300-420; test-exception-state |
 | MSR[IP] vector prefix 0xFFF0_0000 vs 0 | UM Table 4-5, PDF 171 | tested | ppc_exception_state.sv:149 fixed_vector; tb_chip_power, tb_exception_602 |
-| Exception priority table (Table 4-2), full matrix | UM §4.1.1, PDF 165-166 | partial | only pairwise cases (trace>EXT/DEC, fetch>IABR, IABR>trace, SMI>INT); EXCEPTION_STATE.md:167 "does not arbitrate simultaneous exceptions" |
+| Exception priority table (Table 4-2), full matrix | UM §4.1.1, PDF 165-166 | tested | pairwise cases (trace>EXT/DEC, fetch>IABR, IABR>trace, SMI>INT); AUD-84: `test-chip-pins` sweeps MCP, SRESET, SMI and DEC around a trap, an eciwx DSI and a misaligned lwarx |
 | SRR0/SRR1 save, bits 16-31 from MSR, 0-15 cleared | UM §4.2 Table 4-3, PDF 168-169 | tested | exception_srr1(); test-exception-state |
 | SRR1 machine-check bits MCP/TEA/DPE/APE (12-15) | UM Table 4-3, PDF 169 | tested | ppc_exception_state.sv:326-336; test-chip-pins |
 | SRR1 TLB-miss bits CR0/KEY/I-D/WAY/S-L | UM Table 4-4, PDF 169 | tested | test-exception-tlb-miss (tb_exception_tlb_miss.sv:124,260), test-core-tlb-load (WAY) |
@@ -461,7 +463,7 @@ PEM was read only where the UM defers to it.
 | RSRV output | UM §7.2.9.7.3, PDF 303 | tested | `test-chip-pins` (lwarx asserts, stwcx. negates). `test-chip-power` (a kill clears it in doze) |
 | TBEN input | UM §7.2.9.7.4, PDF 303 | tested | `test-chip-pins` TBEN cases |
 | TLBISYNC input (holds tlbsync) | UM §7.2.9.7.5, PDF 303-304 | tested | `test-chip-pins` "TLBISYNC holds completion at tlbsync" |
-| Reset-configuration sampling (DRTRY, TLBISYNC, QACK, PLL_CFG at HRESET negation) | UM §7.2.9.7.5, §8.6, PDF 304, 346-349 | partial | Sampled. The unsupported selections (32-bit, reduced pinout, other PLL codes) checkstop (`test-chip-pins` case_straps, CHIP_PACKAGE.md §Start-up straps) |
+| Reset-configuration sampling (DRTRY, TLBISYNC, QACK, PLL_CFG at HRESET negation) | UM §7.2.9.7.5, §8.6, PDF 304, 346-349 | partial | Sampled; 32-bit and reduced pinout run (AUD-80). Other PLL codes checkstop (`test-chip-pins` case_straps, CHIP_PACKAGE.md §Start-up straps) |
 | COP debug / BIST | UM §7.2.10, PDF 304 | missing | Absent (CHIP_PACKAGE.md:231). Architected state cannot be read in checkstop |
 | JTAG TCK/TMS/TDI/TRST/TDO boundary scan | UM §7.2.10, §8.9, PDF 304, 351 | n/a | Boundary scan tests the package; there is none on an FPGA soft core. Inputs ignored, TDO high-Z (`rtl/ppc603e.sv:470-471`) |
 | LSSD TEST[0:2] | UM §7.2.10, PDF 304 | n/a | Manufacturing scan. Ignored (CHIP_PACKAGE.md:115) |
@@ -476,7 +478,7 @@ PEM was read only where the UM defers to it.
 | Item | Manual | Status | Evidence |
 |---|---|---|---|
 | Cache/BIU operation: fills, castouts, single-beat for CI/WT | UM §8.1.1-8.1.2, PDF 310-313 | tested | `test-chip-dcache-coherence`, `test-core-bat-cached-bus60x` |
-| 32-bit data bus mode (DH only, 1/2/8 beats, DL driven low) | UM §8.1.2.1, §8.6.1, PDF 313, 346-347 | missing | The TLBISYNC strap selecting it checkstops (CHIP_PACKAGE.md strap table, `test-chip-pins`) |
+| 32-bit data bus mode (DH only, 1/2/8 beats, DL driven low) | UM §8.1.2.1, §8.6.1, PDF 313, 346-347 | tested | AUD-80: DH only, DL and DP[4:7] low; `test-chip-pins` 32-bit cases |
 | Direct-store (T=1) access takes DSI on the 603e | UM §8.1.3, PDF 314 | tested | SYSTEM_COMPLETION supervisor row (direct-store T=1). `tb/tb_compiled_dsi_firmware.sv`. The 603 XATS protocol is separate (`test-chip-603`) |
 | Split address/data tenures, independent arbitration | UM §8.2, PDF 314-315 | tested | `test-chip-mp` (separate address/data processes) |
 | Address-only dcbz kill broadcast | UM §8.2, Table 7-1, PDF 315, 285 | tested | `test-dcache` ("dcbz miss (kill broadcast)"), `test-chip-dcache-coherence` |
@@ -488,9 +490,9 @@ PEM was read only where the UM defers to it.
 | Address bus parity generation/check | UM §8.3.2.1, PDF 321 | tested | `tb/chip_harness.svh:129`. `test-chip-pins` APE |
 | TT/TSIZ attribute rules; no 5-7 byte transfers; coherency size 32 B | UM §8.3.2.2, Table 8-1, PDF 321-322 | tested | BFM legality check (`docs/DATA_CACHE_INTEGRATION.md:306`) |
 | Burst ordering, 64-bit: reads critical DW first and wrap, writes DW0 first | UM §8.3.2.3, Table 8-2, PDF 322 | tested | `docs/DATA_CACHE.md:21,172`, `docs/ICACHE.md:119-128`. `test-icache-bus60x`, `test-dcache` |
-| Burst ordering, 32-bit (Table 8-3) | UM §8.3.2.3, PDF 323 | missing | No 32-bit mode |
+| Burst ordering, 32-bit (Table 8-3) | UM §8.3.2.3, PDF 323 | tested | AUD-80: eight beats in doubleword order; `test-chip-pins` 32-bit cases |
 | Alignment/lane steering, 64-bit bus (Table 8-4); misaligned split | UM §8.3.2.4, PDF 323-325 | tested | `docs/references/BUS_ADDRESSING.md`. `test-core-alignment`. `rtl-chip-lsu` firmware |
-| Alignment, 32-bit bus (Tables 8-5..8-7) | UM §8.3.2.5, PDF 325-327 | missing | No 32-bit mode |
+| Alignment, 32-bit bus (Tables 8-5..8-7) | UM §8.3.2.5, PDF 325-327 | tested | AUD-80: one beat on the A[30:31] lanes, two for eight bytes; `test-chip-pins`, `test-chip-fpu` with `+DBW32` |
 | eciwx/ecowx alignment and TT, EAR resource ID on TBST/TSIZ | UM §8.3.2.5.1, PDF 327 | tested | `test-chip-ecxwx` (PID6/603 split, PID7v alignment, DCE off/on) |
 | TC[0:1] codes (Table 8-8) | UM §8.3.2.6, PDF 328 | partial | AUD-78: touch loads give TC=00 (should be 01). A dirty castout runs before its fill |
 | Address termination: AACK, qualified ARTRY one cycle after AACK | UM §8.3.3, PDF 328-330 | tested | `test-core-bat-bus60x-retry`, `test-chip-mp` |
@@ -505,7 +507,7 @@ PEM was read only where the UM defers to it.
 | MEI protocol, WIM handling, snoop responses | UM §8.4.5, PDF 338-340 | partial | `test-dcache`, `test-chip-dcache-coherence`; burst-read snoops flush (AUD-77 fixed) |
 | Timing examples (Figs 8-6..8-23) | UM §8.5, PDF 340-346 | partial | BUS_SPEC: 12 figures have bounded cycle tables, 4 are inventory only, none is a full per-pin waveform |
 | No-DRTRY mode (DRTRY asserted at HRESET) | UM §8.6.2, PDF 348 | partial | Accepted. The master stays in normal mode, so loads lose the one-cycle-early forward (CHIP_PACKAGE.md §Start-up straps) |
-| Reduced-pinout mode (QACK negated at HRESET) | UM §8.6.3, PDF 348-349 | missing | The strap checkstops (`test-chip-pins` case_straps) |
+| Reduced-pinout mode (QACK negated at HRESET) | UM §8.6.3, PDF 348-349 | tested | AUD-80: AP, DP, RSRV low, no parity; `test-chip-pins` reduced-pinout case |
 | External interrupts INT/SMI/MCP | UM §8.7.1, PDF 349 | tested | `test-chip-pins`, `test-exception-state` |
 | Checkstop (CKSTP_IN, MCP/TEA with ME=0, parity) | UM §8.7.2, PDF 349 | tested | `test-chip-pins`. Clocks are not gated; the core is held in reset (CHIP_PACKAGE.md §Checkstop) |
 | HRESET/SRESET to the 0x100 vector, MSR[IP] | UM §8.7.3, PDF 349 | tested | `test-chip-pins` |
@@ -537,15 +539,15 @@ PEM was read only where the UM defers to it.
 | Item | Manual | Status | Evidence |
 |---|---|---|---|
 | A.1/A.2 all 32-bit mnemonics decode | UM App A, PDF 361-376 | tested | ISA_MATRIX.md:5-11 (335 + 147 opt-in + 63 full-decode); test-core-full-decode, test-decode-sweep |
-| A.1 rows with full-mask transcription pending (124-130 rows) | UM App A, PDF 361-368 | partial | ISA_MATRIX.md:421, 487-493: metadata incomplete, decode behaviour covered by full decode sweep |
+| A.1 rows: metadata and per-variant legality (226 rows) | UM App A, PDF 361-368 | tested | ISA_MATRIX.md "Appendix A row metadata"; validated by `check-spec`; one EC603e row (`tlbia`) awaits editorial reconciliation |
 | A.3 functional tables A-3..A-30 | UM App A, PDF 377-387 | tested | ISA_MATRIX.md table; isa.json validator (make check-spec) |
-| A.4 form tables A-31..A-45 (I,B,SC,D,X,XL,XFX,XFL,XS,XO,A,M) | UM App A, PDF 388-404 | partial | ISA_MATRIX.md form table: many forms "pending" in spec metadata; RTL decodes all 32-bit forms; AUD-12 (checker covers default profile only) |
+| A.4 form tables A-31..A-45 (I,B,SC,D,X,XL,XFX,XFL,XS,XO,A,M) | UM App A, PDF 388-404 | partial | Each Appendix A row names its form; the ISA_MATRIX.md form table still marks most forms "pending". RTL decodes all 32-bit forms; AUD-12 fixed (every decode profile probed) |
 | DS, MD, MDS (64-bit) forms | UM App A, PDF 389,404 | tested | illegal per App B; test-decode-sweep |
 | Optional 32-bit implemented: fres, frsqrte, fsel, stfiwx, eciwx/ecowx, tlbie, tlbsync, mfsrin/mtsrin | UM App A, PDF 361-406 | tested | sim/spec/isa.json; test-fpu-estimates, test-chip-ecxwx, test-core-tlbie |
 | 603e-specific tlbld/tlbli | UM §2.3.6.3.3, PDF 125-126 | tested | test-core-tlb-load |
 | B-1 fsqrt, fsqrts, tlbia → illegal | UM Tbl B-1, PDF 407 | tested | tb_core_full_decode.sv:216-218; test-core-full-decode |
 | B-2 64-bit instructions → illegal | UM Tbl B-2, PDF 407-408 | tested | ISA_MATRIX.md:476; test-decode-sweep |
-| B-3 EC603e: FP → FP unavailable | UM Tbl B-3, PDF 409-411 | tested | ISA_MATRIX.md:11 (no FPU: MSR[FP] stuck 0); test-core-full-decode no-FPU build; tlbia row editorial conflict noted |
+| B-3 EC603e: FP → FP unavailable | UM Tbl B-3, PDF 409-411 | tested | ISA_MATRIX.md:11 (no FPU: MSR[FP] stuck 0); `fsqrt`/`fsqrts` included (AUD-87, `variant-full-decode-2`); tlbia row editorial conflict noted |
 | B-4 SPR 280 (ASR) not implemented | UM Tbl B-4, PDF 412 | tested | test-decode-sweep (whole SPR space) |
 
 ## Appendix C: 603 differences (UM PDF 413-434)
@@ -570,7 +572,7 @@ PEM was read only where the UM defers to it.
 | No HID1 on 603 | UM §C.2, PDF 428 | tested | cfg.has_hid1 (CPU_VARIANTS.md:218,256) |
 | Store 2:2 timing | UM §C.2.2, Table C-5, PDF 431-432 | partial | listed in CPU_VARIANTS.md:295; no 603-specific timing bench found |
 | SRU does not execute add/cmp | UM §C.2.3, PDF 432 | n/a | core has no SRU add/cmp path at all (CPU_VARIANTS.md:283) |
-| Fetch TEA refetch double-TEA -> checkstop | UM §C.2.4, PDF 433 | missing | not modelled; core takes one machine check per TEA |
+| Fetch TEA refetch double-TEA -> checkstop | UM §C.2.4, PDF 433 | tested | AUD-86: refetch in its own tenure; `test-chip-603` `+fetch_tea`, `+fetch_tea_once` |
 | IABR vector (heading says 0x1400) | UM §C.2.5, PDF 433 | tested | uses 0x1300 per body text (CPU_VARIANTS.md:184) |
 | IABR same-cache-line spurious match | UM §C.2.5, PDF 433 | n/a | erratum; exact-match compare |
 | dcbz/dcbi snoop performance note; dcbz with M=1 | UM §C.2.6, PDF 433-434 | n/a | performance/software note |
@@ -616,7 +618,7 @@ area; most rows are tested at module level or on the `ppc602` top.
 | BE0–BE7 byte enables | 602UM §7.2.4.3, PDF 331 | tested | `test-chip602-pins` byte/half stores |
 | Only kill broadcast as address-only | 602UM Table 8-3, PDF 367-368 | untested | `rtl/ppc602_bus.sv` completes others locally; no bench drives a kill snoop |
 | Reservation snooped regardless of GBL | 602UM §8.4.2, PDF 378 | partial | Shared core snooper; not exercised on the 602 top |
-| Injected snoops between burst-read beats | 602UM §8.4.2, PDF 378; §8.5.4.7, PDF 406 | missing | `rtl/ppc602_bus.sv` has no injected-snoop window; an injected TS would be taken as an ordinary snoop |
+| Injected snoops between burst-read beats | 602UM §8.4.2, PDF 378; §8.5.4.7, PDF 406 | tested | AUD-82: ARTRY on a hit with no push, kill invalidates; `test-chip602-pins` inject cases |
 | 602 may not assert ARTRY before third cycle | 602UM §8.3.2.3, PDF 374 | tested | CHIP_PACKAGE_602.md; `test-chip602-pins` retry |
 | Core:bus 2:1 and 3:1 | 602UM §1.1.1, PDF 41; §8.1.3, PDF 357 | missing | CHIP_PACKAGE_602.md "Not modelled"; core runs at SYSCLK |
 | PLL_CFG strap | 602UM §7.2.11.3, PDF 350 | tested | Non-build code checkstops; `test-chip602-pins` |

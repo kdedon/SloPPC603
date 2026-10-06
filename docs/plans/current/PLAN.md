@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-10-05. This is the active planning entry point. The target for
+Updated: 2026-10-06. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -124,32 +124,33 @@ Done (batch 14, 2026-10-06): manual-mismatch fixes AUD-75 (SMI with TGPR),
 AUD-77 (burst-read snoop flush), AUD-79 (IBATs have no G bit), AUD-81 (IFEM on
 cached fetches) and AUD-83 (soft reset clears ICE).
 
-In progress on branches: batch 15, AUD-76/81/84/85/86 and the ISA metadata
-(`batch15-land`, `isa-metadata`); AUD-82 and the 603 refetch (`b15-snoop`); FPU
-semantics and AUD-87 (`fpu-semantics`); the 45 MHz MiSTer test core (`mister-45`;
-45 MHz is the floor, 66 MHz the target); Doom and Quake timedemos
-(`doom-timedemo`, `quake-timedemo`, `quake-le-asm`).
+Done (batch 15–16, 2026-10-06): PVR 0x00070200 (AUD-76); HID0[IFEM] on
+single-beat fetches (AUD-81); MCP and SRESET preempt a faulting instruction
+(AUD-84); DBDIS and CSE checks (AUD-85); 603 checkstop sources and the
+fetch-TEA refetch (AUD-86); 602 injected snoops (AUD-82); 32-bit data bus and
+reduced pinout (AUD-80); EC603e `fsqrt` takes FP unavailable (AUD-87); an FPU
+semantics review (AUD-88/89 recorded); metadata and five-variant legality for
+all 226 Appendix A rows; the MiSTer test core at 45 MHz (`--sys-mhz`; 45 MHz
+is the floor, 66 MHz the target). All five tops meet 50 MHz; 66 MHz misses by
+−3.3 to −4.6 ns on `6b073fc`.
+
+In progress on branches: Doom and Quake timedemos (`doom-timedemo`,
+`quake-timedemo`, `quake-le-asm`).
 
 Queued, in order:
 
-1. MiSTer timing closure: `mister/build.sh --fpu-compact --dual --lsu-pipe`
-   fails to route at 87% ALMs (seeds 2–5); `batch13-mister-fit` routes but
-   misses `clk_sys` by −4.2 ns. The CI `mister-unstable` job fails until
-   this closes.
-2. Bus and endian follow-ups: DBWO; the two-CPU bench with address
-   pipelining, DRTRY and TEA; misaligned `eciwx`/`ecowx` split in hardware;
-   a DingusPPC little-endian comparison.
-3. Defaults: width 2, the LSU unit and branch removal on, two-word fetch
+1. Land the pending branches: `aud90c` (fetch stops, P12 checks),
+   `fpu-timing`, `le-reference` (DingusPPC little-endian comparison),
+   `bus-followups`.
+2. Defaults: width 2, the LSU unit and branch removal on, two-word fetch
    through the wrappers ([LSU remaining work](../../LSU_PIPELINE.md#remaining-work)).
-4. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
-   FULL FPU in the MiSTer core (97% ALMs, −2.606 ns: reduce area or keep
-   COMPACT).
-5. Verification: the remaining P12 schedule checks and the open manual
-   inventory rows ([audit](../../AUDIT.md)).
-6. Speed: recover 66 MHz (translated −4.610 ns, integrated −3.313,
-   timer-bat −3.679, chip −4.606, chip602 −5.452 on `0ff3a45`), then width
+3. Speed: recover 66 MHz (translated −4.342 ns, integrated −3.291,
+   timer-bat −4.591, chip −4.361, chip602 −4.040 on `6b073fc`), then width
    2, the LSU unit and the FPU at 66 MHz; Dhrystone 1:1 with the 603e
    (639 cycles/run against the model's 506); a single-precision Mandelbrot.
+4. FPU silicon-semantics gaps (AUD-88/89, [assessment](../../FPU_REUSE_ASSESSMENT.md)),
+   FULL FPU in the MiSTer core (reduce area or keep COMPACT).
+5. Verification: the open manual inventory rows ([audit](../../AUDIT.md)).
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or
