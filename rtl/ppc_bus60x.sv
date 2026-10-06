@@ -19,6 +19,7 @@ module ppc_bus60x (
   input  logic [3:0]  req_wstrb_i,
   // Packed ppc_pkg::dmem_attr_t: {kind[1:0], rid[3:0]}.
   input  logic [5:0]  req_attr_i,
+  input  logic        req_gbl_i,
   output logic        rsp_valid_o,
   input  logic        rsp_ready_i,
   output logic [31:0] rsp_rdata_o,
@@ -98,6 +99,7 @@ module ppc_bus60x (
   logic [3:0]  request_wstrb_q;
   logic [2:0]  request_size_q;
   logic [5:0]  request_attr_q;
+  logic        request_gbl_q;
 
   logic [31:0] pending_rdata_q;
   logic        pending_error_q;
@@ -202,7 +204,7 @@ module ppc_bus60x (
     tc_o = request_instruction_q ? TC_INSTRUCTION : TC_DATA;
     ci_n_o = 1'b0;
     wt_n_o = 1'b1;
-    gbl_n_o = 1'b1;
+    gbl_n_o = !request_gbl_q;
     cse_o = 2'b00;
 
     dbb_oe_o = rst_ni && ((state_q == BUS_DATA_TRANSFER) ||
@@ -249,6 +251,7 @@ module ppc_bus60x (
       request_wstrb_q <= 4'b0;
       request_size_q <= 3'b0;
       request_attr_q <= 6'b0;
+      request_gbl_q <= 1'b0;
       pending_rdata_q <= 32'b0;
       pending_error_q <= 1'b0;
       rsp_valid_q <= 1'b0;
@@ -279,6 +282,7 @@ module ppc_bus60x (
               request_wstrb_q <= req_wstrb_i;
               request_size_q <= request_size;
               request_attr_q <= req_instruction_i ? 6'b0 : req_attr_i;
+              request_gbl_q <= req_gbl_i;
               pending_rdata_q <= 32'b0;
               pending_error_q <= 1'b0;
               state_q <= BUS_ADDR_REQUEST;

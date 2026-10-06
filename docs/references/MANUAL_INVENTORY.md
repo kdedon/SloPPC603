@@ -57,8 +57,8 @@ Missing and partial rows, ranked by how visible they are to software or to a
    the flush class.
 2. **32-bit data bus and reduced-pinout modes** (AUD-80). UM §8.6.1, §8.6.3,
    PDF 346-349. Their straps checkstop; boards wired that way cannot boot.
-3. **HID0[IFEM] partial** (AUD-81). UM Table 2-2, PDF 86. Line fills now
-   assert GBL for M=1 fetches; caching-inhibited single-beat fetches do not.
+3. ~~**HID0[IFEM] partial** (AUD-81)~~. Fixed: line fills and single-beat
+   fetches assert GBL for M=1.
 4. ~~**SMI refused while MSR[TGPR]=1** (AUD-75)~~. Fixed.
 5. ~~**IBAT G=1 raises ISI** (AUD-79)~~. Decided for §3.5: IBAT G ignored.
 6. ~~**SRESET leaves the I-cache enabled** (AUD-83)~~. Fixed: SRESET clears HID0[ICE].
@@ -145,7 +145,7 @@ PEM was read only where the UM defers to it.
 | HID0[DLOCK] | UM Tbl 2-2 PDF 86; §3.2.3.3 PDF 132 | tested | DATA_CACHE.md:83,90; test-dcache, test-biu-dcache-snoop |
 | HID0[ICFI] flash invalidate | UM Tbl 2-2 PDF 86; §3.1.3.1 PDF 130 | tested | test-chip-dcache-coherence, test-core-full-decode |
 | HID0[DCFI] flash invalidate | UM Tbl 2-2 PDF 86; §3.2.3.1 PDF 132 | tested | DATA_CACHE.md:70; test-dcache, test-chip-dcache-coherence |
-| HID0[IFEM] instruction fetch M/GBL (PID7v) | UM Tbl 2-2, PDF 86 | partial | Burst fetches drive GBL from M when set (`test-chip-pins` `case_ifem`); CI single-beat fetches do not (AUD-81) |
+| HID0[IFEM] instruction fetch M/GBL (PID7v) | UM Tbl 2-2, PDF 86 | yes | Burst and CI single-beat fetches drive GBL from M when set (`test-chip-pins` `case_ifem`) |
 | HID0[FBIOB] force branch indirect on bus | UM Tbl 2-2, PDF 86 | partial | stored only (`ppc_pkg.sv:600`); no fetch behaviour |
 | HID0[ABE] address broadcast for dcbf/dcbi/dcbst (PID7v) | UM Tbl 2-2 PDF 86; §3.2.3.4 PDF 133 | tested | `ppc_special.sv:1514`; DATA_CACHE.md:104; test-dcache, test-core-full-decode; dcbi gated by M (deviation, DATA_CACHE.md:202) |
 | HID0[NOOPTI] touch no-op | UM Tbl 2-2 PDF 86; §3.2.4 PDF 133 | tested | DATA_CACHE.md:98; test-dcache, test-core-dcache |

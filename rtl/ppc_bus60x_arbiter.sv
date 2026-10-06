@@ -14,6 +14,7 @@ module ppc_bus60x_arbiter #(
   input  logic        imem_req_valid_i,
   output logic        imem_req_ready_o,
   input  logic [31:0] imem_req_addr_i,
+  input  logic        imem_req_gbl_i,
   output logic        imem_rsp_valid_o,
   input  logic        imem_rsp_ready_i,
   output logic [31:0] imem_rsp_insn_o,
@@ -39,6 +40,7 @@ module ppc_bus60x_arbiter #(
   output logic [31:0] bus_req_wdata_o,
   output logic [3:0]  bus_req_wstrb_o,
   output logic [5:0]  bus_req_attr_o,
+  output logic        bus_req_gbl_o,
   input  logic        bus_rsp_valid_i,
   output logic        bus_rsp_ready_o,
   input  logic [31:0] bus_rsp_rdata_i,
@@ -63,6 +65,7 @@ module ppc_bus60x_arbiter #(
   logic [31:0] request_wdata_q;
   logic [3:0] request_wstrb_q;
   logic [5:0] request_attr_q;
+  logic request_gbl_q;
   logic ifetch_error_q;
   logic choose_instruction, choose_data;
 
@@ -90,6 +93,7 @@ module ppc_bus60x_arbiter #(
     bus_req_wdata_o = request_wdata_q;
     bus_req_wstrb_o = request_wstrb_q;
     bus_req_attr_o = request_attr_q;
+    bus_req_gbl_o = request_gbl_q;
 
     imem_rsp_valid_o = 1'b0;
     imem_rsp_insn_o = bus_rsp_rdata_i;
@@ -130,6 +134,7 @@ module ppc_bus60x_arbiter #(
       request_wdata_q <= 32'b0;
       request_wstrb_q <= 4'b0;
       request_attr_q <= 6'b0;
+      request_gbl_q <= 1'b0;
       ifetch_error_q <= 1'b0;
     end else begin
       unique case (state_q)
@@ -143,6 +148,7 @@ module ppc_bus60x_arbiter #(
             request_wdata_q <= 32'b0;
             request_wstrb_q <= 4'b1111;
             request_attr_q <= 6'b0;
+            request_gbl_q <= imem_req_gbl_i;
             state_q <= ROUTER_OFFER;
           end else if (choose_data) begin
             owner_instruction_q <= 1'b0;
@@ -153,6 +159,7 @@ module ppc_bus60x_arbiter #(
             request_wdata_q <= dmem_req_wdata_i;
             request_wstrb_q <= dmem_req_wstrb_i;
             request_attr_q <= dmem_req_attr_i;
+            request_gbl_q <= 1'b0;
             state_q <= ROUTER_OFFER;
           end
         end

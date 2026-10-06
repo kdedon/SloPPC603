@@ -675,14 +675,14 @@ module tb_chip_pins #(parameter int PLL = -1);
   endtask
 
   // HID0[IFEM] drives GBL on fetches from M=1 pages (UM Table 2-2): IBAT0
-  // maps the ROM with WIMG=0010 and code at MAIN+0x200 is filled.
-  task automatic case_ifem(input bit ifem);
+  // maps the ROM with WIMG=0010 (line fills) or 0110 (single beats).
+  task automatic case_ifem(input bit ifem, input bit ci);
     logic [31:0] b;
     b = MAIN + 32'h200;
     load_handlers();
     at = MAIN;
     emit_const(3, BASE | 32'h3); emit(asm_spr(1'b1, 3, 528));
-    emit_const(3, BASE | 32'h12); emit(asm_spr(1'b1, 3, 529)); emit(ASM_ISYNC);
+    emit_const(3, BASE | (ci ? 32'h32 : 32'h12)); emit(asm_spr(1'b1, 3, 529)); emit(ASM_ISYNC);
     emit_const(3, 32'h0000_8800); emit(asm_spr(1'b1, 3, 1008));
     emit_const(3, ifem ? 32'h0000_8080 : 32'h0000_8000); emit(asm_spr(1'b1, 3, 1008));
     emit(ASM_ISYNC);
@@ -700,9 +700,10 @@ module tb_chip_pins #(parameter int PLL = -1);
     hard_reset();
     wait_word(RESETS, 1, 6000, "boot");
     wait_word(ILOCK_B, 3, 20000, "IFEM loop runs");
-    check(ilock_burst != 0 && ilock_gbl == (ifem ? ilock_burst + ilock_single : 0),
-          $sformatf("IFEM=%0d: %0d of %0d fetch tenures assert GBL", ifem, ilock_gbl,
-                    ilock_burst + ilock_single));
+    check((ci ? ilock_single != 0 && ilock_burst == 0 : ilock_burst != 0) &&
+          ilock_gbl == (ifem ? ilock_burst + ilock_single : 0),
+          $sformatf("IFEM=%0d CI=%0d: %0d of %0d fetch tenures assert GBL", ifem, ci,
+                    ilock_gbl, ilock_burst + ilock_single));
     ilock_from = '1;
     ilock_watch = 1'b0;
   endtask
@@ -731,8 +732,10 @@ module tb_chip_pins #(parameter int PLL = -1);
     case_foreign_artry();
     case_ilock(1'b0);
     case_ilock(1'b1);
-    case_ifem(1'b0);
-    case_ifem(1'b1);
+    case_ifem(1'b0, 1'b0);
+    case_ifem(1'b1, 1'b0);
+    case_ifem(1'b0, 1'b1);
+    case_ifem(1'b1, 1'b1);
     // Cache hits stream: a fetch the router offers in the cycle it accepts
     // it, accepted on consecutive cycles.
     check(fetch_streamed > 0, "instruction fetch requests every cycle on hits");

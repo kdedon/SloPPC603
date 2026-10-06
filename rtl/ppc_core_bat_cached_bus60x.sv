@@ -653,6 +653,8 @@ module ppc_core_bat_cached_bus60x #(
     .imem_req_valid_i(scalar_imem_req_valid),
     .imem_req_ready_o(scalar_imem_req_ready),
     .imem_req_addr_i(scalar_imem_req_addr),
+    .imem_req_gbl_i(core_pin_status.ifetch_m_enable &&
+                    (direct_fetch_valid ? imem_req_wimg[1] : fetch_m_q)),
     .imem_rsp_valid_o(scalar_imem_rsp_valid),
     .imem_rsp_ready_i(scalar_imem_rsp_ready),
     .imem_rsp_insn_o(scalar_imem_rsp_insn),
