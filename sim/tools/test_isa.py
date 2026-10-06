@@ -45,7 +45,10 @@ class IsaMetadataTest(unittest.TestCase):
         with self.assertRaisesRegex(isa_generate.MetadataError, "overlapping decode masks"):
             isa_generate.validate(broken, self.sources, self.timing)
         broken["allowed_overlaps"].append({"entries": ["addi", "addi-collision"], "reason": "test-only exact alias"})
-        isa_generate.validate(broken, self.sources, self.timing)
+        sources = copy.deepcopy(self.sources)
+        row = next(item for item in sources["appendix_a_mnemonic_inventory"] if item["row_id"] == "A1-004")
+        row["metadata"]["decode_entries"].append("addi-collision")
+        isa_generate.validate(broken, sources, self.timing)
 
     def test_invalid_schema_required_field_mask_and_timing_are_rejected(self):
         broken = copy.deepcopy(self.spec)
@@ -461,11 +464,34 @@ class IsaMetadataTest(unittest.TestCase):
         with self.assertRaisesRegex(isa_generate.MetadataError, "L=0 legality"):
             isa_generate.validate(broken, self.sources, self.timing)
 
+    def test_row_metadata_rejects_drift(self):
+        broken = copy.deepcopy(self.sources)
+        row = next(item for item in broken["appendix_a_mnemonic_inventory"] if item["row_id"] == "A1-050")
+        row["metadata"]["variants"]["EC603e"] = {"status": "legal", "rule": "UM-EC-INT"}
+        with self.assertRaisesRegex(isa_generate.MetadataError, "legality disagrees|FP row"):
+            isa_generate.validate(self.spec, broken, self.timing)
+        broken = copy.deepcopy(self.sources)
+        row = next(item for item in broken["appendix_a_mnemonic_inventory"] if item["row_id"] == "A1-217")
+        row["metadata"]["variants"]["602"] = {"status": "legal", "rule": "602-A1"}
+        with self.assertRaisesRegex(isa_generate.MetadataError, "unimplemented row"):
+            isa_generate.validate(self.spec, broken, self.timing)
+        broken = copy.deepcopy(self.sources)
+        row = next(item for item in broken["appendix_a_mnemonic_inventory"] if item["row_id"] == "A1-032")
+        row["metadata"]["extended_opcode"] = 87
+        with self.assertRaisesRegex(isa_generate.MetadataError, "opcode key"):
+            isa_generate.validate(self.spec, broken, self.timing)
+        broken = copy.deepcopy(self.spec)
+        next(item for item in broken["decode_entries"] if item["id"] == "mfear")["variants"]["602"] = "legal"
+        with self.assertRaisesRegex(isa_generate.MetadataError, "SPR variant override"):
+            isa_generate.validate(broken, self.sources, self.timing)
+
     def test_source_inventory_is_bounded_and_complete(self):
         rows = self.sources["appendix_a_mnemonic_inventory"]
         self.assertEqual(len(rows), 226)
         self.assertEqual({row["pdf_page"] for row in rows}, set(range(361, 369)))
-        self.assertEqual(self.sources["inventory_status_counts"]["primary_opcode_only_pending_full_mask"], 124)
+        self.assertNotIn("primary_opcode_only_pending_full_mask", self.sources["inventory_status_counts"])
+        self.assertEqual(self.sources["inventory_status_counts"]["reviewed_not_implemented_metadata"], 40)
+        self.assertTrue(all("metadata" in row for row in rows))
         self.assertEqual(
             {row["row_id"] for row in rows if row["encoding_status"] == "reviewed_supervisor_opt_in_exact_form"},
             {"A1-127", "A1-155", "A1-165"},

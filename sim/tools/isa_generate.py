@@ -228,6 +228,136 @@ def validate_profile_entries(spec: dict[str, Any]) -> None:
         raise MetadataError(f"missing load/store extension forms: {sorted(set(LSU_EXTENSION_FORMS) - seen_lsu)}")
 
 
+# Extended-opcode field of each form: word-bit mask and shift of the XO value.
+FORM_XO_FIELD = {
+    "X": (0x7FE, 1), "XL": (0x7FE, 1), "XFX": (0x7FE, 1), "XFL": (0x7FE, 1),
+    "XO": (0x3FE, 1), "A": (0x3E, 1), "MDS": (0x1E, 1), "MD": (0x1C, 2),
+    "XS": (0x7FC, 2), "DS": (0x3, 0),
+}
+NO_XO_FORMS = {"D", "I", "B", "SC", "M"}
+ROW_ATTRIBUTES = {
+    "supervisor", "spr_dependent_privilege", "string_or_multiple", "64_bit",
+    "optional", "implementation_specific", "floating_point",
+}
+ROW_VARIANT_STATUSES = {
+    "legal", "illegal", "fp_unavailable", "emulation_trap", "tag_checked",
+    "pending_editorial_reconciliation",
+}
+# Rows whose architectural mnemonic selects SPRs; their entries may differ per SPR.
+SPR_ROWS = {"mfspr", "mtspr", "mftb"}
+
+
+def row_key(primary: int, form: str, xo: int | None) -> tuple[int, int]:
+    """Mask/value of the primary and extended opcode of an Appendix A row."""
+    mask, value = 0xFC000000, primary << 26
+    if form in FORM_XO_FIELD:
+        field, shift = FORM_XO_FIELD[form]
+        mask |= field
+        value |= xo << shift
+    return mask, value
+
+
+def row_concrete_forms(mnemonic: str, modifiers: dict[str, str]) -> list[str]:
+    forms = [mnemonic]
+    if modifiers["OE"] == "free":
+        forms += [form + "o" for form in forms]
+    if modifiers["LK"] == "free":
+        forms = [x for form in forms for x in (form, form + "l")]
+    if modifiers["AA"] == "free":
+        forms = [x for form in forms for x in (form, form + "a")]
+        forms.sort(key=lambda s: (s.endswith("a") or s.endswith("la"), s.endswith("l")))
+    if modifiers["Rc"] == "free":
+        forms = [x for form in forms for x in (form, form + ".")]
+    return forms
+
+
+def make_targets() -> set[str]:
+    text = (ROOT / "sim/Makefile").read_text()
+    return {name for line in text.splitlines() if not line.startswith("\t") and ":" in line
+            for name in line.split(":", 1)[0].split() if name.startswith("test-")}
+
+
+def validate_row_metadata(spec: dict[str, Any], sources: dict[str, Any]) -> None:
+    """Every Appendix A row carries form, opcode, modifier, privilege and legality metadata."""
+    entries = {entry["id"]: entry for entry in spec["decode_entries"]}
+    variants = [variant["id"] for variant in spec["variants"]]
+    rules = {rule["id"]: rule for rule in sources.get("variant_legality_rules", [])}
+    for rule in rules.values():
+        if rule["status"] not in ROW_VARIANT_STATUSES or set(rule["variants"]) - set(variants):
+            raise MetadataError(f"{rule['id']}: unknown legality status or variant")
+        if not rule["source"].get("pdf_pages"):
+            raise MetadataError(f"{rule['id']}: legality rule must cite PDF pages")
+    overrides = {(item["entry"], item["variant"]): item for item in sources.get("spr_variant_overrides", [])}
+    for (entry_id, variant), item in overrides.items():
+        if entry_id not in entries or entries[entry_id]["variants"][variant] != item["status"]:
+            raise MetadataError(f"{entry_id}: SPR variant override disagrees with its decode entry")
+    b_tables = {item["table"]: set(item.get("mnemonics", [])) for item in spec["appendix_b_exclusions"]}
+    targets = make_targets()
+    bound: set[str] = set()
+    for row in sources["appendix_a_mnemonic_inventory"]:
+        meta = row.get("metadata")
+        rid = row["row_id"]
+        if meta is None:
+            raise MetadataError(f"{rid}: missing row metadata")
+        form, xo, modifiers = meta["form"], meta["extended_opcode"], meta["modifiers"]
+        if (form in NO_XO_FORMS) != (xo is None) or (form not in NO_XO_FORMS and form not in FORM_XO_FIELD):
+            raise MetadataError(f"{rid}: form {form} and extended opcode disagree")
+        if set(modifiers) != {"OE", "Rc", "AA", "LK"}:
+            raise MetadataError(f"{rid}: modifier map must name OE, Rc, AA and LK")
+        if meta["concrete_forms"] != row_concrete_forms(meta["mnemonic"], modifiers):
+            raise MetadataError(f"{rid}: concrete forms do not follow the free modifiers")
+        attributes = set(meta["attributes"])
+        if attributes - ROW_ATTRIBUTES:
+            raise MetadataError(f"{rid}: unknown row attribute")
+        expected_privilege = ("supervisor" if "supervisor" in attributes else
+                              "spr_dependent" if "spr_dependent_privilege" in attributes else "user")
+        if meta["privilege"] != expected_privilege:
+            raise MetadataError(f"{rid}: privilege disagrees with the Table A-1 footnotes")
+        key_mask, key_value = row_key(row["primary_opcode"], form, xo)
+        expected_ids = [
+            entry_id for entry_id, entry in entries.items()
+            if (_number(entry["mask"], "mask") & key_mask) == key_mask
+            and (_number(entry["value"], "value") & key_mask) == key_value
+        ]
+        if meta["decode_entries"] != expected_ids:
+            raise MetadataError(f"{rid}: bound decode entries disagree with the opcode key")
+        bound.update(expected_ids)
+        covered: set[str] = set()
+        for entry_id in expected_ids:
+            entry = entries[entry_id]
+            if entry["form"] != form:
+                raise MetadataError(f"{rid}: {entry_id} form disagrees with Table A-46")
+            if meta["privilege"] != "spr_dependent" and entry["privilege"] != meta["privilege"]:
+                raise MetadataError(f"{rid}: {entry_id} privilege disagrees with the row")
+            covered.add(entry["mnemonic"])
+            if entry["modifiers"].get("Rc") == "ignored":
+                covered.add(entry["mnemonic"] + ".")
+            for variant in variants:
+                expected = meta["variants"][variant]["status"]
+                if entry["variants"][variant] != expected and (entry_id, variant) not in overrides:
+                    raise MetadataError(f"{rid}: {entry_id} {variant} legality disagrees with the row")
+        if expected_ids and meta["mnemonic"] not in SPR_ROWS and set(meta["concrete_forms"]) - covered:
+            raise MetadataError(f"{rid}: decoded row lacks concrete forms {sorted(set(meta['concrete_forms']) - covered)}")
+        if set(meta["variants"]) != set(variants):
+            raise MetadataError(f"{rid}: legality must cover every variant")
+        for variant, legality in meta["variants"].items():
+            rule = rules.get(legality["rule"])
+            if rule is None or variant not in rule["variants"] or rule["status"] != legality["status"]:
+                raise MetadataError(f"{rid}: {variant} legality does not follow its cited rule")
+        unimplemented = meta["mnemonic"] in b_tables["B-1"] | b_tables["B-2"]
+        if unimplemented != (row["encoding_status"] == "reviewed_not_implemented_metadata"):
+            raise MetadataError(f"{rid}: Table B-1/B-2 membership disagrees with the row status")
+        if unimplemented and (expected_ids or meta["variants"]["PID7v-603e"]["status"] != "illegal"
+                              or meta["variants"]["602"]["status"] != "illegal"):
+            raise MetadataError(f"{rid}: unimplemented row must be undecoded and illegal on 603e and 602")
+        if "floating_point" in attributes and not unimplemented and meta["variants"]["EC603e"]["status"] != "fp_unavailable":
+            raise MetadataError(f"{rid}: EC603e FP row must take floating-point unavailable")
+        if set(meta["bench_references"]) - targets:
+            raise MetadataError(f"{rid}: bench reference names an unknown make target")
+    if bound != set(entries):
+        raise MetadataError(f"decode entries outside every Appendix A row: {sorted(set(entries) - bound)}")
+
+
 def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, Any]) -> None:
     required = {"schema_version", "variants", "functional_families", "instruction_forms", "decode_entries", "allowed_overlaps"}
     missing = required - spec.keys()
@@ -271,7 +401,8 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
         raise MetadataError("duplicate Appendix A inventory row id")
     inventory_counts = Counter(row["encoding_status"] for row in inventory)
     expected_inventory_counts = {
-        "primary_opcode_only_pending_full_mask": 124,
+        "reviewed_decode_entry_metadata": 84,
+        "reviewed_not_implemented_metadata": 40,
         "reviewed_and_immediate_record": 2,
         "reviewed_integer_unary_2_Rc_forms": 3,
         "reviewed_cr_transfer_exact_forms": 2,
@@ -1688,6 +1819,80 @@ def validate(spec: dict[str, Any], sources: dict[str, Any], timing: dict[str, An
         raise MetadataError(f"overlapping decode masks: {' and '.join(sorted(pair))}")
     for pair in set(allowed) - overlaps:
         raise MetadataError(f"stale allowed overlap: {' and '.join(sorted(pair))}")
+    validate_row_metadata(spec, sources)
+
+
+PROFILE_LABELS = {
+    "implemented": "default", "implemented_opt_in_supervisor": "supervisor",
+    "implemented_opt_in_serialization": "serialization", "manual_conflict_rejected": "rejected",
+}
+IMPLICIT_PARAMETERS = {"ENABLE_SUPERVISOR_EXCEPTIONS", "ENABLE_LIVE_CONTEXT"}
+
+
+def _short_list(items: list[str], limit: int = 2) -> str:
+    if not items:
+        return "-"
+    shown = ", ".join(f"`{item}`" for item in items[:limit])
+    return shown if len(items) <= limit else f"{shown} +{len(items) - limit}"
+
+
+def render_row_metadata(spec: dict[str, Any], sources: dict[str, Any]) -> list[str]:
+    entries = {entry["id"]: entry for entry in spec["decode_entries"]}
+    rows = sources["appendix_a_mnemonic_inventory"]
+    decoded = sum(bool(row["metadata"]["decode_entries"]) for row in rows)
+    lines = [
+        "",
+        "## Appendix A row metadata",
+        "",
+        f"Every Table A-1 row carries reviewed metadata: {decoded} rows bind to decode entries and "
+        f"{len(rows) - decoded} rows (Tables B-1 and B-2) are undecoded and take the illegal-instruction "
+        "program exception. Fields, primary and extended opcode come from Table A-1 at the row's PDF page; "
+        "the form from Table A-46 (PDF 399-405); privilege and attributes from the Table A-1 footnotes "
+        "(PDF 368). The decode, timing and validation columns derive from the bound decode entries; "
+        "timing rows cite UM Tables 6-1..6-6 (PDF 269-276). Bench references name `sim/Makefile` targets "
+        "whose bench or program source uses the mnemonic. Legality cells give status and the rule below.",
+        "",
+        "| Row | Mnemonic | Form | PO/XO | OE/Rc/AA/LK | Forms | Privilege | Decode | Timing | Validation | Benches | PID6/PID7v | EC603e | 603 | 602 | PDF A-1/A-46 |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        meta = row["metadata"]
+        bound = [entries[entry_id] for entry_id in meta["decode_entries"]]
+        decode = sorted({
+            PROFILE_LABELS.get(entry["implementation"]["status"]) or
+            "+".join(p.removeprefix("ENABLE_").lower() for p in feature_profile(entry) if p not in IMPLICIT_PARAMETERS)
+            for entry in bound
+        }) or ["not decoded"]
+        timing_rows = sorted({entry["timing_row"] for entry in bound})
+        validation = sorted({entry["implementation"].get("validation") or "unrecorded" for entry in bound})
+        xo = "-" if meta["extended_opcode"] is None else str(meta["extended_opcode"])
+        mods = "/".join(meta["modifiers"][name].replace("fixed_", "") for name in ("OE", "Rc", "AA", "LK"))
+        forms = meta["concrete_forms"]
+        forms_text = f"{len(bound)} SPR entries" if meta["mnemonic"] in SPR_ROWS else ", ".join(f"`{form}`" for form in forms)
+        cells = {variant: f"{value['status']} ({value['rule']})" for variant, value in meta["variants"].items()}
+        pid = cells["PID6-603e"] if cells["PID6-603e"] == cells["PID7v-603e"] else f"{cells['PID6-603e']} / {cells['PID7v-603e']}"
+        refs = meta["bench_references"]
+        lines.append(
+            f"| {row['row_id']} | `{meta['mnemonic']}` | {meta['form']} | {row['primary_opcode']}/{xo} | {mods} | "
+            f"{forms_text} | {meta['privilege']} | {', '.join(decode)} | {_short_list(timing_rows)} | "
+            f"{_short_list(validation, 1)} | {len(refs)}: {_short_list(refs)} | {pid} | {cells['EC603e']} | "
+            f"{cells['603']} | {cells['602']} | {row['pdf_page']}/{meta['form_pdf_page']} |"
+        )
+    lines += ["", "### Variant legality rules", "", "| Rule | Variants | Status | Source | Rule text |", "|---|---|---|---|---|"]
+    for rule in sources["variant_legality_rules"]:
+        pages = rule["source"]["pdf_pages"]
+        page_text = str(pages[0]) if pages[0] == pages[1] else f"{pages[0]}-{pages[1]}"
+        manual = "602 UM" if rule["source"]["file"].startswith("MPC602") else "UM"
+        lines.append(f"| {rule['id']} | {', '.join(rule['variants'])} | {rule['status']} | "
+                     f"{manual} {rule['source']['section']}, PDF {page_text} | {rule['rule']} |")
+    lines += ["", "SPR-level legality that differs from the generic `mfspr`/`mtspr` row:", "",
+              "| Entry | Variant | Status | Source | Rule text |", "|---|---|---|---|---|"]
+    for item in sources["spr_variant_overrides"]:
+        pages = item["source"]["pdf_pages"]
+        manual = "602 UM" if item["source"]["file"].startswith("MPC602") else "UM"
+        lines.append(f"| `{item['entry']}` | {item['variant']} | {item['status']} | "
+                     f"{manual} {item['source']['section']}, PDF {pages[0]} | {item['rule']} |")
+    return lines
 
 
 def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
@@ -1801,7 +2006,7 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
         "",
         "## Source inventory coverage",
         "",
-        f"Appendix A.1 contributes {sources['observed_row_count']} observed mnemonic rows on PDF pages 361-368. The inventory now reconciles the selected supervisor and serialization rows; 124 rows retain full-mask transcription pending. The generic SPR rows cover SPR8/9 in the default profile and exact SPR26/27 plus SPR272..275 aliases in the opt-in supervisor profile. Appendix A.3 contributes 28 functional-family tables; Appendix A.4 contributes 15 form tables.",
+        f"Appendix A.1 contributes {sources['observed_row_count']} observed mnemonic rows on PDF pages 361-368. Every row carries reviewed metadata; see the row metadata table below. The generic SPR rows cover SPR8/9 in the default profile and exact SPR26/27 plus SPR272..275 aliases in the opt-in supervisor profile. Appendix A.3 contributes 28 functional-family tables; Appendix A.4 contributes 15 form tables.",
         "",
         "| Functional tables | Coverage |",
         "|---|---|",
@@ -1813,6 +2018,7 @@ def render(spec: dict[str, Any], sources: dict[str, Any]) -> str:
     lines += ["", "| Form table | Status |", "|---|---|"]
     for item in spec["instruction_forms"]:
         lines.append(f"| {item['table']} {item['form']}-form | `{item['encoding_status']}` |")
+    lines += render_row_metadata(spec, sources)
     lines += ["", "## Appendix B variant limits", "", "| Table | Variant | Recorded status | Count/detail |", "|---|---|---|---|"]
     for item in spec["appendix_b_exclusions"]:
         detail = str(len(item["mnemonics"])) + " mnemonics" if "mnemonics" in item else f"SPR {item['spr_decimal']} {item['spr_name']}"
