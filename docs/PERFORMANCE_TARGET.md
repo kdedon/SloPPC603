@@ -61,9 +61,13 @@ Assumptions (`perf_model_603e.py --assumptions` prints them):
 - A9: a station accepts the next instruction when the previous starts executing.
 - A10: SRU adder present. Without it: 512 cycles.
 - A11, A12: SRU serialization as above.
-- A13: the single CR rename (UM 6.3.3.1) is not modelled; UM 6.6.1.2 does
-  not list it as a dispatch condition. Holding a CR writer's finish until the
-  previous writer completes adds 1 cycle.
+- A13: the single CR rename (UM 6.3.3.1) is not a dispatch condition (UM
+  6.6.1.2 lists only GPR and FPR renames); a CR writer finishes, writing the
+  rename, no earlier than the cycle after the previous CR writer completes.
+- A14: a held branch stops fetch (UM 6.4.1.1 "Fetching is stopped"); the
+  word fetched beside it stays, and the next fetch is the cycle after the
+  branch executes. A CR branch behind an unresolved predicted branch is held
+  even when its own CR is ready (UM 6.6.1.1).
 
 Sensitivity of the primary figure: 500–523 cycles across A2, A10 and the divide.
 A6 and A7 make the model optimistic (fewer cycles), so the target is, if anything,
@@ -463,8 +467,11 @@ retirement, which A6 does not charge the 603e), SPR moves (`mtspr` drain 3,
 
 ### Model corrections
 
-None changes the target. The single CR rename is now A13 (+1 cycle with
-`--core cr-rename`). A6 stays the main optimistic assumption; the store
+The single CR rename is now A13, applied by default (+1 cycle on
+Dhrystone). A14 stops fetch at a held branch and holds a CR branch behind
+an unresolved prediction (UM 6.4.1.1, 6.6.1.1; +12 cycles). Together they
+raise the Dhrystone model from 506 to 519 cycles per run (width-2 core
+trace at d798e7d). A6 stays the main optimistic assumption; the store
 residual bounds it at about 25 cycles.
 
 ### CQ entry reuse

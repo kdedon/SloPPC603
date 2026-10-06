@@ -49,8 +49,11 @@ ASSUMPTIONS = {
     "A12": "mfspr/mtspr (not BATs), mfcr, mtcrf, mcrf and CR logicals are "
            "completion-serialized SRU work (UM 6.3.3.2 first bullet; T6-2/T6-3 cycles).",
     "A13": "The single CR rename (UM 6.3.3.1) is not a dispatch condition (UM 6.6.1.2 "
-           "lists only GPR and FPR renames) and is not modelled; holding a CR writer's "
-           "finish until the previous one completes (--core cr-rename) adds 1 cycle.",
+           "lists only GPR and FPR renames); a CR writer finishes, writing the rename, "
+           "no earlier than the cycle after the previous CR writer completes.",
+    "A14": "A held branch (UM 6.4.1.1 'Fetching is stopped') stops fetch after its own "
+           "fetch: the word fetched beside it stays, the next fetch is the cycle after "
+           "the branch executes.",
 }
 
 GPR_LIMIT = 5   # UM 6.3.3.1: five GPR renames
@@ -285,8 +288,6 @@ CORE_RULES = {
     "late-retire": "an instruction completes two cycles after it finishes, not one",
     "miss-late": "the correct path after a misprediction dispatches four cycles after "
                  "resolution, not two",
-    "cr-rename": "603e reading of UM 6.3.3.1 (one CR rename): a CR writer finishes only "
-                 "after the previous CR writer completes",
     "cq-same": "a CQ entry freed by completion takes a dispatch in the same cycle "
                "(the model's default is the next cycle)",
 }
@@ -308,7 +309,8 @@ def schedule(stream, fetch_any=False, core=frozenset()):
     fetch_hist = []                           # (F, pc) of every instruction, in order
     nb_hist = []                              # non-branch records, in order
     ser_until = 0                             # dispatch-serialized retire + 1
-    cr_free = 0                               # cr-token: next CR writer dispatch
+    cr_free = 0                               # previous CR writer completion + 1
+    stop_f, stop_until = -1, 0                # A14: fetch of a held branch, restart
     cq_late = 0 if "cq-same" in core else 1   # entry busy through its completion cycle
 
     def dispatch_cycle(ins, d, units):
@@ -339,6 +341,8 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         # Fetch: UM 6.3.2.2 hit returns next cycle; 6.3.1 two per cycle, IQ of six.
         f = max(redirect, fetch_hist[-1][0] if fetch_hist else 0)
         while True:
+            if f != stop_f and f < stop_until:
+                f = stop_until                     # UM 6.4.1.1, A14
             ok = True
             if fetch_hist and fetch_hist[-1][0] == f:
                 first = len(fetch_hist) < 2 or fetch_hist[-2][0] != f
@@ -358,6 +362,7 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         if ins.unit == "BPU":
             # UM 6.4.1: BPU decode/execute the cycle after fetch (F6-3: br 2F 3E).
             x = max(f + 1, last_x + 1)
+            x0 = x
             if "branch-slot" in core:
                 prev = nb_hist[-1] if nb_hist else None
                 d, _ = dispatch_cycle(ins, max(f + 1, prev["D"] if prev else 0, ser_until),
@@ -371,13 +376,14 @@ def schedule(stream, fetch_any=False, core=frozenset()):
             x = max(x, need)                       # no prediction on LR/CTR (UM 6.4.1.2)
             cr_avail = max([cr_prod.get(c, 0) for c in ins.crs], default=0)
             resolve = x
+            if ins.crs and pending_pred > x:
+                x = pending_pred                   # UM 6.4.1.1, 6.6.1.1: behind a prediction
             if ins.crs and cr_avail > x:
-                if pending_pred > x:               # one level of prediction (UM 6.4.1.2)
-                    x = pending_pred
-                if cr_avail > x:
                     resolve = cr_avail             # predicted, resolves later (A4)
             last_x = x
             r.update(X=x, R=resolve)
+            if x > x0:                             # held: fetch stops (UM 6.4.1.1, A14)
+                stop_f, stop_until = f, x + 1
             if resolve > x:
                 pending_pred = resolve
                 pred = predict_taken(ins)
@@ -427,8 +433,8 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         if ins.ctr_r:
             ready = max(ready, ctr_ready)
         best = None
-        if "cr-rename" in core and ins.crd:
-            ready = max(ready, cr_free - ins.lat + 1)
+        if ins.crd:
+            ready = max(ready, cr_free - ins.lat + 1)   # UM 6.3.3.1: one CR rename, A13
         for u in avail:
             s = max(d + 1, ready, unit_free[u])
             if ins.serial and prev:
