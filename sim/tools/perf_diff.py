@@ -85,6 +85,15 @@ def read_symbols(path):
     return sorted(syms)
 
 
+def resolve_mark(spec, syms):
+    """Hex PC, or symbol+0xoff so the mark survives firmware layout changes."""
+    name, _, off = spec.partition("+")
+    for a, n in syms:
+        if n == name:
+            return a + (int(off, 16) if off else 0)
+    return int(spec, 16)
+
+
 def func_of(syms, pc):
     name = "?"
     for a, n in syms:
@@ -99,8 +108,8 @@ def main():
     ap.add_argument("retire_log")
     ap.add_argument("dispatch_trace")
     ap.add_argument("stall_trace")
-    ap.add_argument("--mark", type=lambda v: int(v, 16), required=True,
-                    help="PC (hex) that starts each iteration of the timed loop")
+    ap.add_argument("--mark", required=True,
+                    help="PC that starts each iteration of the timed loop: hex, or symbol+0xoff")
     ap.add_argument("--dump", required=True, help="objdump -d output (symbols, text)")
     ap.add_argument("--div", type=int, default=20)
     ap.add_argument("--mul", type=int, default=3)
@@ -112,6 +121,7 @@ def main():
     ap.add_argument("--csv", help="write per-PC rows here")
     args = ap.parse_args()
     pm.ARGS = args
+    args.mark = resolve_mark(args.mark, read_symbols(args.dump))
     pm.Insn.div_cycles = args.div
 
     recs = pm.read_trace(args.retire_log)

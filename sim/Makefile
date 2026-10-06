@@ -2386,7 +2386,7 @@ demo-soc-model:
 .PHONY: perf-diff
 perf-diff: demo-soc-model
 	./$(BUILD_DIR)/demo/model/Vtb_demo_soc +IMAGE=$(DEMO_FW_DIR)/dhrystone.hex +TRACE=1000000 +TRACE_TO=1012000 +DISPATCH_TRACE=$(BUILD_DIR)/demo/dispatch.txt +STALL_TRACE=$(BUILD_DIR)/demo/stall.txt > $(BUILD_DIR)/demo/retire.log
-	python3 tools/perf_diff.py $(BUILD_DIR)/demo/retire.log $(BUILD_DIR)/demo/dispatch.txt $(BUILD_DIR)/demo/stall.txt --mark fff03808 --dump $(DEMO_FW_DIR)/dhrystone.dump $(PERF_DIFF_ARGS)
+	python3 tools/perf_diff.py $(BUILD_DIR)/demo/retire.log $(BUILD_DIR)/demo/dispatch.txt $(BUILD_DIR)/demo/stall.txt --mark dhry_main+0x1d4 --dump $(DEMO_FW_DIR)/dhrystone.dump $(PERF_DIFF_ARGS)
 # The demo SoC with ENABLE_FPU.
 .PHONY: demo-soc-fpu-model
 demo-soc-fpu-model:

@@ -26,7 +26,7 @@ No published 603e CoreMark exists; CoreMark postdates the part.
 The binary is `toolchain/build/demo/dhrystone.hex` as the demo Makefile builds it:
 pinned gcc, `-O2 -mcpu=603e -msoft-float`, `DHRY_RUNS=2000`, the demo runtime's
 own `strcpy`/`strcmp` (byte loops, `-fno-builtin`). One run is 590.0 retired
-instructions. The timed loop starts at `dhry_main+0x1d4` (`fff03808`).
+instructions. The timed loop starts at `dhry_main+0x1d4`; `perf-diff` resolves it from the dump.
 
 `sim/tools/perf_model_603e.py` schedules the retired instruction stream of that
 loop against the MPC603e User's Manual (MPC603EUM/AD 11/97) and reports the
