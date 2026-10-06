@@ -838,6 +838,45 @@ resolves, and the core's taken-branch refetch is no slower than before.
 The pair behind a released branch is followed by a fetch the cycle after,
 one cycle later than the 603e.
 
+## Predicted branches without a CQ entry
+
+Recorded: `make -C sim [DISPATCH_WIDTH=2] BRANCH_REMOVAL=<0|1> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits 382022b (before) and f080b24 (after), 2026-10-06.
+LSU unit and store queue on, prebuilt firmware. Every run passes its checks
+(CoreMark CRC 0xfcaf).
+
+UM 6.3.1 and 6.4.1.3: a branch predicted and resolved in the BPU takes no
+CQ entry. With `BRANCH_REMOVAL=1` a predicted branch, from DQ0 or DQ1, is
+now removed at dispatch and anchored on the youngest CQ entry before it
+([CONTROL_MEMORY.md](CONTROL_MEMORY.md#branch-unit)). A DQ1 branch may be
+predicted in the cycle the older prediction resolves correctly (UM
+6.4.1.2, Figure 6-5), and a conditional `bclr` with a committed LR is
+predicted from DQ1 like `bc`.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Removal off, before | 764.0 | 641.0 | 2.281 | 2.632 |
+| Removal off, after | 764.0 | 641.0 | 2.281 | 2.632 |
+| Removal on, before | 760.0 | 640.0 | 2.287 | 2.635 |
+| Removal on, after | 711.0 | 639.0 | 2.331 | 2.638 |
+
+Width 1 gains 49 cycles per run: the CQ entry was the limit. Width 2 gains
+one: `CQ_FULL` falls from 27 to 11 cycles per run and the refused DQ1
+`bc`/`beqlr` (36) are gone, but the `strcmp` and `strcpy` loops become
+fetch-bound (`BRANCH_REFETCH` 14 → 35) and the `lbzu` + `cmpwi` pair is
+refused by the update rule (17 → 35). Remaining excess at width 2, ranked:
+DQ1 not supplied 74, update form in DQ0 blocks DQ1 35, taken-branch refetch
+43, wrong-path dispatch 9, empty IQ 12, CQ full 11. A predicted branch
+still takes the DQ0 dispatch slot; the 603e takes it out of the IQ at
+fetch.
+
+Recorded: `make -C sim BRANCH_REMOVAL=<0|1> test-core test-core-recovery test-core-dual test-core-fetch2 test-core-branch-fold test-core-branch-recovery test-core-machine-check-trace test-core-control-memory test-core-interrupt test-core-alignment test-dispatch-rules`, at width 1 and at width 2 with the LSU unit, commit f66a75c (`test-dispatch-rules` at f080b24), 2026-10-06; `make -C sim DISPATCH_WIDTH=2 BRANCH_REMOVAL=1 VERILATOR=... test-reference-machine MACHINE_PROGRAMS="dhrystone coremark selftest"`, commit f080b24.
+All pass. The reference machine steps 266,595 removed branches in
+Dhrystone at width 2. Two bench faults were found: `tb_core_dual` read
+`dcycle[0x6c]` in a pair check, which inserted the key, so "a plain b was
+dispatched" fired whenever removal was on, though the `b` never was; and
+`tb_core_interrupt` expected the `b` at 0x28 to retire. The rule checker
+now locates a removed mispredicted branch from the trace's `!<n>*<m>`.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
