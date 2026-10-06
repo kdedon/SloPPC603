@@ -167,7 +167,7 @@ module ppc602 #(
   // Core 60x side.
   logic c_bg_n, c_ts_n, c_ts_oe, c_tbst_n, c_ci_n, c_wt_n, c_gbl_n, c_aack_n;
   logic c_dbg_n, c_dbb_n, c_dbb_oe, c_d_oe, c_ta_n, c_tea_n;
-  logic c_snoop_ts_n, c_snoop_gbl_n, c_artry_n, c_artry_oe;
+  logic c_snoop_ts_n, c_snoop_gbl_n, c_snoop_probe, c_artry_n, c_artry_oe;
   logic [31:0] c_a, c_snoop_a;
   logic [4:0] c_tt, c_snoop_tt;
   logic [2:0] c_tsiz;
@@ -253,7 +253,7 @@ module ppc602 #(
     // Quiesced for nap or sleep: no snooping.
     .snoop_ts_n_i(c_snoop_ts_n || pin_status.quiesced), .snoop_a_i(c_snoop_a), .snoop_tt_i(c_snoop_tt),
     .snoop_tbst_n_i(1'b1),
-    .snoop_gbl_n_i(c_snoop_gbl_n), .artry_n_o(c_artry_n),
+    .snoop_gbl_n_i(c_snoop_gbl_n), .snoop_probe_i(c_snoop_probe), .artry_n_o(c_artry_n),
     .artry_oe_o(c_artry_oe),
     .dbwo_n_i(1'b1), .dbg_n_i(c_dbg_n), .dbb_n_i(1'b1), .dbb_n_o(c_dbb_n), .dbb_oe_o(c_dbb_oe),
     .d_i(c_d_i), .d_o(c_d_o), .d_oe_o(c_d_oe),
@@ -273,6 +273,7 @@ module ppc602 #(
     .c_ta_n_o(c_ta_n), .c_tea_n_o(c_tea_n),
     .c_snoop_ts_n_o(c_snoop_ts_n), .c_snoop_a_o(c_snoop_a),
     .c_snoop_tt_o(c_snoop_tt), .c_snoop_gbl_n_o(c_snoop_gbl_n),
+    .c_snoop_probe_o(c_snoop_probe),
     .c_artry_n_i(c_artry_n), .c_artry_oe_i(c_artry_oe),
     .write_error_o(write_error),
     .br_n_o(bus_br_n), .bg_n_i, .ts_n_i, .ts_n_o, .ts_oe_o(bus_ts_oe),

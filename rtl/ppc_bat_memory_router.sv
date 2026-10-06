@@ -30,6 +30,8 @@ module ppc_bat_memory_router #(
   parameter int DATA_MICRO_TLB_ENTRIES = 8,
   parameter int TLB_SETS = 32,
   parameter bit HAS_602 = 1'b0,
+  // A fetch TEA is refetched once before it is returned.
+  parameter bit FETCH_TEA_REFETCH = 1'b0,
   parameter bit HAS_DIRECT_STORE = 1'b0,
   // Data path width: 64 adds FP doubleword accesses (eight strobes).
   parameter int DMEM_BITS = 32,
@@ -357,7 +359,7 @@ module ppc_bat_memory_router #(
   logic fault_miss_q, fault_protection_q, fault_guarded_q;
   logic fault_config_q, fault_invalid_input_q;
   logic [3:0] fault_invalid_entry_q;
-  logic pimem_error_q, ifetch_fatal_q;
+  logic pimem_error_q, ifetch_fatal_q, i_refetch_q, i_refetch;
   logic csr_owner, csr_offer, service_idle, service_ack;
   logic segment_owner, segment_offer, segment_service_idle;
   logic segment_req_valid, segment_req_ready;
@@ -744,7 +746,10 @@ module ppc_bat_memory_router #(
   assign lanes_idle = i_state_q == LANE_IDLE && d_state_q == LANE_IDLE;
   assign lane_accept_ok = rst_ni && running_q && owner_q == OWN_NONE &&
                           !ifetch_fatal_q;
-  assign i_finish = i_state_q == LANE_RESPONSE && pimem_rsp_valid_i &&
+  assign i_refetch = FETCH_TEA_REFETCH && ENABLE_MACHINE_CHECK &&
+                     i_state_q == LANE_RESPONSE && pimem_rsp_valid_i &&
+                     pimem_rsp_error_i && !i_refetch_q;
+  assign i_finish = i_state_q == LANE_RESPONSE && pimem_rsp_valid_i && !i_refetch &&
                     (ENABLE_MACHINE_CHECK || !pimem_rsp_error_i) && imem_rsp_ready;
   assign d_finish = d_state_q == LANE_RESPONSE && pdmem_rsp_valid_i &&
                     dmem_rsp_ready;
@@ -1064,15 +1069,17 @@ module ppc_bat_memory_router #(
     if (rst_ni && i_state_q == LANE_RESPONSE) begin
       // Without machine check a physical instruction error is consumed here
       // and never returned.
-      if (!ENABLE_MACHINE_CHECK && pimem_rsp_valid_i && pimem_rsp_error_i)
+      if ((!ENABLE_MACHINE_CHECK && pimem_rsp_valid_i && pimem_rsp_error_i) || i_refetch)
         pimem_rsp_ready_o = 1'b1;
       else begin
         imem_rsp_valid = pimem_rsp_valid_i;
         pimem_rsp_ready_o = imem_rsp_ready;
         imem_rsp_esa_o = HAS_602 ? i_esa_q : ESA_DENIED;
-        if (ENABLE_MACHINE_CHECK && pimem_rsp_error_i) begin
+        // A refetch that succeeds still reports the first TEA.
+        if (ENABLE_MACHINE_CHECK && (pimem_rsp_error_i || i_refetch_q)) begin
           imem_rsp_insn = '0;
-          imem_rsp_fault_o = FETCH_MACHINE_CHECK;
+          imem_rsp_fault_o = i_refetch_q && pimem_rsp_error_i ? FETCH_TEA_REPEAT :
+                                                                FETCH_MACHINE_CHECK;
         end
       end
     end else if (rst_ni && state_q == ROUTE_IFETCH_FAULT_RESPONSE) begin
@@ -1180,7 +1187,10 @@ module ppc_bat_memory_router #(
       page_config_q <= 1'b0;
       pimem_error_q <= 1'b0;
       ifetch_fatal_q <= 1'b0;
+      i_refetch_q <= 1'b0;
     end else begin
+      if (i_refetch) i_refetch_q <= 1'b1;
+      else if (i_finish) i_refetch_q <= 1'b0;
       unique case (owner_q)
         OWN_NONE: begin
           if (slot_grant[SLOT_BAT_CSR]) owner_q <= OWN_BAT_CSR;
@@ -1264,7 +1274,8 @@ module ppc_bat_memory_router #(
             pimem_error_q <= 1'b1;
             ifetch_fatal_q <= 1'b1;
             i_state_q <= LANE_FATAL;
-          end else if (i_accept) i_state_q <= i_accept_state;
+          end else if (i_refetch) i_state_q <= LANE_OFFER;
+          else if (i_accept) i_state_q <= i_accept_state;
           else if (i_finish) i_state_q <= LANE_IDLE;
         end
         LANE_FATAL: i_state_q <= LANE_FATAL;

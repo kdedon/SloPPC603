@@ -67,14 +67,17 @@ package ppc_pkg;
     logic [31:0] value;
   } wake_packet_t;
   // Fetch-borne events. FETCH_MACHINE_CHECK is a bus TEA on the fetch;
-  // FETCH_IABR marks an instruction address breakpoint match at IQ push.
+  // FETCH_TEA_REPEAT a 603 refetch that took TEA again with the machine
+  // check pending; FETCH_IABR marks an instruction address breakpoint match
+  // at IQ push.
   typedef enum logic [2:0] {
     FETCH_OK = 3'd0,
     FETCH_ISI_PROTECTION = 3'd1,
     FETCH_ISI_GUARDED = 3'd2,
     FETCH_PAGE_MISS = 3'd3,
     FETCH_MACHINE_CHECK = 3'd4,
-    FETCH_IABR = 3'd5
+    FETCH_IABR = 3'd5,
+    FETCH_TEA_REPEAT = 3'd6
   } fetch_fault_t;
   // 602 esa permission, fetched with each instruction (602UM 5.1.1.1).
   // Protection-only fetches defer to SEBR and SER when esa executes:
@@ -702,6 +705,10 @@ package ppc_pkg;
     cpu_cfg_t c;
     c = cpu_cfg(v);
     return c.has_602_ext;
+  endfunction
+  // UM C.2.4: the 603 refetches after a fetch TEA.
+  function automatic bit cpu_refetches_on_tea(cpu_variant_e v);
+    return v == CPU_603;
   endfunction
   function automatic bit cpu_has_direct_store(cpu_variant_e v);
     cpu_cfg_t c;

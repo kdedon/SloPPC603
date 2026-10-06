@@ -121,7 +121,7 @@ module tb_biu_dcache_snoop;
     .push_req_addr_o(push_addr), .push_req_data_o(push_data),
     .push_done_i(push_done), .push_error_i(push_error),
     .snoop_valid_i(snoop_valid), .snoop_addr_i(snoop_addr),
-    .snoop_tt_i(snoop_tt), .snoop_burst_i(snoop_burst),
+    .snoop_tt_i(snoop_tt), .snoop_burst_i(snoop_burst), .snoop_probe_i(1'b0),
     .snoop_rsp_valid_o(snoop_rsp_valid), .snoop_rsp_artry_o(snoop_rsp_artry),
     .snoop_rsp_hit_o(snoop_rsp_hit), .snoop_rsp_push_o(snoop_rsp_push),
     .busy_o(busy), .resv_valid_o(resv_valid), .hit_o(hit), .miss_o(miss),

@@ -1925,6 +1925,7 @@ test-chip-603:
 	./$(BUILD_DIR)/chip-603/Vtb_chip_603 $(SIM_ARGS)
 	./$(BUILD_DIR)/chip-603/Vtb_chip_603 +ds_protocol $(SIM_ARGS)
 	./$(BUILD_DIR)/chip-603/Vtb_chip_603 +fetch_tea $(SIM_ARGS)
+	./$(BUILD_DIR)/chip-603/Vtb_chip_603 +fetch_tea_once $(SIM_ARGS)
 # The same with the FPU: FP loads and stores to T=1 take alignment.
 test-chip-603-fpu:
 	mkdir -p $(BUILD_DIR)/chip-603-fpu

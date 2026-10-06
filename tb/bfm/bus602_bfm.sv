@@ -5,7 +5,10 @@
 // Everything is sampled and driven at the falling edge. The target answers
 // in 64- or 32-bit data mode (t32_mode, given with AACK), waits, retries
 // (qualified ARTRY in the cycle after AACK) and ends tenures in
-// [tea_base, tea_end) with TEA. Every CPU address phase is logged.
+// [tea_base, tea_end) with TEA. Every CPU address phase is logged. With
+// inj_en, a snoop of inj_addr/inj_tt is injected before beat inj_beat of
+// the CPU's burst read of inj_match's line (602UM 8.4.2), clearing inj_en;
+// inj_artry tells whether the CPU answered with ARTRY.
 /* verilator lint_off BLKSEQ */
 /* verilator lint_off ASCRANGE */
 // Address helpers take whole fields and use some bits.
@@ -56,6 +59,11 @@ module bus602_bfm #(
   logic [0:63] om_d;
   logic [63:0] om_line [4];
   bit om_artry = 1'b0;
+  // Injected snoop.
+  bit inj_en = 1'b0, inj_artry = 1'b0;
+  logic [31:0] inj_match = '0, inj_addr = '0;
+  logic [4:0] inj_tt = '0;
+  int inj_beat = 1, inj_watch = 0;
 
   logic tgt_d_oe, tgt_artry_n;
   logic [0:63] tgt_d;
@@ -157,6 +165,22 @@ module bus602_bfm #(
         tgt_d_oe = 1'b0;
         repeat (int'(rnd() % (max_wait + 1))) @(negedge clk);
       end
+      if (inj_en && !is_om && burst && !write && k == inj_beat && a[31:5] == inj_match[31:5]) begin
+        logic [0:63] sw;
+        sw = '0;
+        sw[0:31] = inj_addr;
+        sw[53] = 1'b1;
+        sw[54:58] = inj_tt;
+        sw[59] = 1'b0;
+        om_ts_n = 1'b0;
+        tgt_d_oe = 1'b1;
+        tgt_d = sw;
+        inj_en = 1'b0;
+        inj_artry = 1'b0;
+        inj_watch = 6;
+        @(negedge clk);
+        om_ts_n = 1'b1;
+      end
       if (tea_hit) begin
         tea_n = 1'b0;
         teas++;
@@ -226,6 +250,12 @@ module bus602_bfm #(
       end
     end
   end
+
+  always @(negedge clk)
+    if (inj_watch > 0) begin
+      inj_watch--;
+      if (cpu_artry_oe && !cpu_artry_n) inj_artry = 1'b1;
+    end
 
   logic unused;
   assign unused = ^{cpu_br_n};

@@ -205,6 +205,8 @@ module ppc_core_bat_cached_bus60x #(
   input  logic [4:0]  snoop_tt_i,
   input  logic        snoop_tbst_n_i,
   input  logic        snoop_gbl_n_i,
+  // The snoop only asks whether the cache would act (602 injected snoop).
+  input  logic        snoop_probe_i,
   output logic        artry_n_o,
   output logic        artry_oe_o,
   input  logic        dbg_n_i,
@@ -638,6 +640,7 @@ module ppc_core_bat_cached_bus60x #(
     .push_done_i(dc_in.push_done), .push_error_i(dc_in.push_error),
     .snoop_valid_i(dc_in.snoop_valid), .snoop_addr_i(dc_in.snoop_addr),
     .snoop_tt_i(dc_in.snoop_tt), .snoop_burst_i(dc_in.snoop_burst),
+    .snoop_probe_i,
     .snoop_rsp_valid_o(dc_out.snoop_rsp_valid),
     .snoop_rsp_artry_o(dc_out.snoop_rsp_artry),
     .snoop_rsp_hit_o(dc_out.snoop_rsp_hit),

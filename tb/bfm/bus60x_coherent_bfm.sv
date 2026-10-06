@@ -115,6 +115,9 @@ module bus60x_coherent_bfm #(
   logic [31:0] tea_base = 32'b0;
   logic [31:0] tea_bytes = 32'b0;
   logic [31:0] tea_once [$];
+  // Address of each read tenure ended by TEA; whether it was a fetch.
+  logic [31:0] tea_log [$];
+  bit tea_log_instr [$];
   // A bench keeping a golden image may let a write ended by TEA still land.
   bit tea_write_commits = 1'b0;
   // Negative control: the second master proceeds through ARTRY.
@@ -161,7 +164,7 @@ module bus60x_coherent_bfm #(
 
   logic [31:0] addr;
   logic [4:0] tt;
-  logic burst, write, external, tea_ended;
+  logic burst, write, external, tea_ended, tenure_instr;
   logic [2:0] tsiz;
   // Bytes owed by the second tenure of a split external word, per direction.
   logic [2:0] ext_rem [2] = '{3'd0, 3'd0};
@@ -275,6 +278,7 @@ module bus60x_coherent_bfm #(
     end
     taken = 1'b1;
     instr = tc_i == 2'd2;
+    tenure_instr = instr;
     ci_n_q = ci_n_i;
     addr = a_i;
     tt = tt_i;
@@ -350,6 +354,8 @@ module bus60x_coherent_bfm #(
     delay();
     while (hold_i) bus_rise();
     if (tea_hit(beat_address(index))) begin
+      tea_log.push_back(addr);
+      tea_log_instr.push_back(tenure_instr);
       terminate_tea();
       return;
     end

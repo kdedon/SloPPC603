@@ -246,7 +246,7 @@ module ppc_dcache_measure (
     .push_error_i(push_error_i_ibq),
     .snoop_valid_i(snoop_valid_i_ibq),
     .snoop_addr_i(snoop_addr_i_ibq),
-    .snoop_tt_i(snoop_tt_i_ibq), .snoop_burst_i(snoop_burst_i_ibq),
+    .snoop_tt_i(snoop_tt_i_ibq), .snoop_burst_i(snoop_burst_i_ibq), .snoop_probe_i(1'b0),
     .snoop_rsp_valid_o(snoop_rsp_valid_o_od),
     .snoop_rsp_artry_o(snoop_rsp_artry_o_od),
     .snoop_rsp_hit_o(snoop_rsp_hit_o_od),
