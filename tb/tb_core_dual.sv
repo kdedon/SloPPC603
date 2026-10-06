@@ -386,9 +386,13 @@ module tb_core_dual #(
       expect_pair(32'ha0, 1'b1, "divwu + addi");
       expect_pair(32'hac, LSU_PIPE, "or + lwz, base in rename");
       expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
-      expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
+      // A resolved bc without LR or CTR writes is removed as it is queued.
+      if (!dut.BRANCH_REMOVAL) expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
+      else if ((dcycle.exists(32'hf4) != 0) && (dcycle[32'hf4] != -1))
+        $fatal(1, "a resolved bc was dispatched");
       expect_pair(32'hfc, 1'b1, "cmpw + mispredicted bc in DQ1");
-      expect_pair(32'h110, 1'b1, "resolved bc + addi");
+      if (!dut.BRANCH_REMOVAL || ((dcycle.exists(32'h110) != 0) && (dcycle[32'h110] != -1)))
+        expect_pair(32'h110, 1'b1, "resolved bc + addi");
       if (dut.HAS_SRU && !(dcycle[32'h128] <= dcycle[32'h120] + 2))
         $fatal(1, "DQ0 addi waited for the IU station");
       $display("  %-34s or@%0d addi@%0d divw retired@%0d", "DQ0 addi to the SRU",

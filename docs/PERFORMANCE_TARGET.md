@@ -960,6 +960,30 @@ dispatched" fired whenever removal was on, though the `b` never was; and
 `tb_core_interrupt` expected the `b` at 0x28 to retire. The rule checker
 now locates a removed mispredicted branch from the trace's `!<n>*<m>`.
 
+## Timing accuracy round 4
+
+Recorded: `make -C sim BUILD_DIR=<dir> BRANCH_REMOVAL=1 [DISPATCH_WIDTH=2] VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe REFERENCE_DIR=<dingusppc> DEMO_FW_DIR=<main checkout>/toolchain/build/demo MACHINE_PROGRAMS=dhrystone test-reference-machine perf-diff`, commits 3cdb974 (before), d798e7d, 103a0af and the branch-removal commit after it, 2026-10-06.
+LSU unit and store queue on, removal on; every run passes the reference
+machine and `test-dispatch-rules`.
+
+| Dhrystone cycles/run | w1 | w2 | 603e model |
+|---|---:|---:|---:|
+| Before (3cdb974) | 692 | 593 | 506 |
+| Rename and DQ1 rules (d798e7d) | 692 | 593 | 506 |
+| Model A13, A14 (103a0af) | 692 | 593 | 519 |
+| Resolved `bc`/`bclr` removed at IQ push | 687 | 592 | 519 |
+
+- A DQ0 instruction without a GPR result needs no rename slot, and a DQ1
+  IU instruction without one dispatches beside an update form (UM
+  6.6.1.2). Load results reach the SRU station as they finish (UM 6.3).
+  No change on Dhrystone.
+- A `bc` or `bclr` without LR or CTR writes whose condition is final as it
+  is queued is removed there (UM 6.4.1.1, 6.3.1), taken or not. A
+  not-taken one in the first fetch lane is removed only without a second
+  word. Predicted branches still take a DQ0 dispatch slot: removing them
+  at push needs an IQ-side anchor for recovery, the remaining part of the
+  63 cycles `--core branch-slot` prices.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion

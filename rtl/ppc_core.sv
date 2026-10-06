@@ -1022,10 +1022,29 @@ module ppc_core #(
   function automatic logic plain_b(fetch_packet_t p);
     return (p.fault == FETCH_OK) && (p.insn[31:26] == 6'd18) && !p.insn[0];
   endfunction
+  // A bc or bclr that writes neither LR nor CTR and whose condition is final
+  // as it is queued is resolved and retired the same way (UM 6.4.1.1,
+  // 6.3.1): it takes no dispatch slot. Returns {resolved, taken}.
+  function automatic logic [1:0] resolved(fetch_packet_t p, logic lr_rdy, logic cr_fin,
+                                          logic [31:0] crv);
+    logic bc, bclr;
+    bc = p.insn[31:26] == 6'd16;
+    bclr = (p.insn[31:26] == 6'd19) && (p.insn[10:1] == 10'd16) &&
+           (p.insn[15:11] == 5'd0) && lr_rdy;
+    return {(p.fault == FETCH_OK) && (bc || bclr) && !p.insn[0] && p.insn[23] &&
+              (p.insn[25] || cr_fin),
+            p.insn[25] || (crv[5'd31 - p.insn[20:16]] == p.insn[24])};
+  endfunction
   /* verilator lint_on UNUSEDSIGNAL */
-  assign push_remove0 = BRANCH_REMOVAL && !trace_mode && plain_b(queued) &&
-    (fetch_removed_q != 2'd3);
-  assign push_remove1 = BRANCH_REMOVAL && !trace_mode && plain_b(queued1) && !wait0;
+  logic [1:0] res0, res1;
+  assign res0 = resolved(queued, lr_ok, cr_final, cr_now);
+  assign res1 = resolved(queued1, lr_ok && !push_writes[1], cr_final && !crw0, cr_now);
+  // A taken one folds. One not taken is removed from the first lane only
+  // without a second word, which would have to move to that lane.
+  assign push_remove0 = BRANCH_REMOVAL && !trace_mode && (fetch_removed_q != 2'd3) &&
+    (plain_b(queued) || (res0[1] && (res0[0] ? fold_predict : !fd1_valid)));
+  assign push_remove1 = BRANCH_REMOVAL && !trace_mode && !wait0 &&
+    (plain_b(queued1) || (res1[1] && (!res1[0] || fold_predict1)));
   assign iq_in0 = iq_push0 && !push_remove0;
   assign iq_in1 = iq_push1 && !push_remove1;
   always_ff @(posedge clk_i) begin
