@@ -213,8 +213,14 @@ module tb_core_full_decode #(
     emit_exc(32'h0000_0000, 32'h700, MSR0 | ILLEGAL);
     foreach (illegal_primary[i])
       emit_exc(32'(illegal_primary[i]) << 26, 32'h700, MSR0 | ILLEGAL);
-    emit_exc(32'hec00_002c, 32'h700, MSR0 | ILLEGAL);   // fsqrts
-    emit_exc(32'hfc00_002c, 32'h700, MSR0 | ILLEGAL);   // fsqrt
+    // fsqrt/fsqrts: FP unavailable on the EC603e, illegal elsewhere.
+    if (cpu_has_no_fpu(CPU_VARIANT)) begin
+      emit_exc(32'hec00_002c, 32'h800, MSR0);
+      emit_exc(32'hfc00_002c, 32'h800, MSR0);
+    end else begin
+      emit_exc(32'hec00_002c, 32'h700, MSR0 | ILLEGAL);
+      emit_exc(32'hfc00_002c, 32'h700, MSR0 | ILLEGAL);
+    end
     emit_exc(asm_xf(370, 0, 0, 0, 0), 32'h700, MSR0 | ILLEGAL);   // tlbia
     emit_exc(asm_xf(1, 0, 0, 0, 0), 32'h700, MSR0 | ILLEGAL);     // XO 1
     emit_exc(32'h4c00_0002, 32'h700, MSR0 | ILLEGAL);   // opcode 19 XO 1

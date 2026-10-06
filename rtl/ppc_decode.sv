@@ -36,6 +36,7 @@ module ppc_decode #(
   import ppc_pkg::*;
   localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
   localparam bit HAS_602 = cpu_has_602_ext(CPU_VARIANT);
+  localparam bit NO_FPU = cpu_has_no_fpu(CPU_VARIANT);
 
   function automatic logic [31:0] make_rotate_mask(
     input logic [4:0] mb,
@@ -61,10 +62,12 @@ module ppc_decode #(
   endfunction
 
   // UM Table A-1: 603e floating-point arithmetic, move and FPSCR forms.
-  // fsqrt/fsqrts (A-form XO 22) are unimplemented optional instructions.
+  // fsqrt/fsqrts (A-form XO 22) are illegal with an FPU, but the EC603e
+  // traps every FP opcode to FP unavailable (UM Table B-3, 4.5.8).
   function automatic logic fp_a_form(input logic [5:0] primary,
                                      input logic [4:0] xo);
     case (xo)
+      5'd22: return NO_FPU;
       5'd18, 5'd20, 5'd21, 5'd25, 5'd28, 5'd29, 5'd30, 5'd31: return 1'b1;
       5'd24: return primary == 6'd59;  // fres
       5'd23, 5'd26: return primary == 6'd63;  // fsel, frsqrte
