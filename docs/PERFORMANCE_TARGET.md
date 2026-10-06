@@ -810,9 +810,33 @@ after, as for every branch redirect. A linking `bc` or `bcctrl` behind an
 `mtlr` folds again; it waits only behind a linking branch. Dhrystone does
 not change; CoreMark loses 0.3% at both widths.
 
-Still faster than the manual: fetch does not stop behind a `bc` waiting
-on a CR dependency (UM 6.4.1.1, seventh case), and a second such `bc`
-predicted taken folds at fetch.
+### One level of CR prediction
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Fetch stop (4283ff7) | 769.0 | 641.0 | 2.270 | 2.633 |
+| One level | 764.0 | 641.0 | 2.281 | 2.632 |
+
+Recorded: the same commands, commit b9aca62, 2026-10-06.
+
+UM 6.4.1.1 seventh case: a branch on CR behind an older one still waiting
+on CR is not predicted. It stays in the fetch registers, and fetching
+stops, until the older one resolves; it is then predicted in that cycle
+(UM 6.4.1.2, Figure 6-5, PDF 263), as the CR result arrives. If its CTR
+test already fails, the CR is ignored and it is not held. A branch whose
+CR is final when it reaches the fetch registers, including in the cycle
+the CR result arrives, is resolved there (UM 6.4.1) instead of predicted;
+a branch predicted at dispatch takes its static prediction. The pair
+fetched behind a held branch waits in the fetch buffer and enters the
+fetch registers the cycle it is released, as the 603e fetches it then.
+
+Dhrystone width 1 gains 5 cycles/run: a `bne` in `memcpy` (`fff0337c`)
+whose `y` bit predicts it taken is resolved not taken from a final CR, and
+no longer redirects at dispatch. Width 2 does not change: the held
+second branches in `strcpy` and `strcmp` are released as the first
+resolves, and the core's taken-branch refetch is no slower than before.
+The pair behind a released branch is followed by a fetch the cycle after,
+one cycle later than the 603e.
 
 ## Gaps
 
