@@ -43,6 +43,8 @@ module ppc_lsu_pipe #(
   // 602: a doubleword FP access spends a cycle in P1 before its offer or
   // queueing, for 3:2 timing (602 UM Table 6-6).
   parameter bit FP_DOUBLE_HOLD = 1'b0,
+  // 603e: a single-precision denormal converts in extra cycles (UM 2.3.4.2).
+  parameter bit FP_SINGLE_DENORM = 1'b0,
   parameter int SQ_DEPTH = 4
 ) (
   input  logic clk_i, rst_ni,
@@ -258,8 +260,31 @@ module ppc_lsu_pipe #(
   assign head_data = p1_head.data_ready ? p1_head.data :
                      head_wake ? wake_i.value : wake1_i.value;
   assign fp_store_tag_o = p1_head.producer;
+  logic conv_store, conv_store_wait, conv_load, conv_load_wait;
+  logic [4:0] conv_store_cycles, conv_load_cycles, conv_store_q, conv_load_q;
   assign p1_ready = !p1_head.fp ? head_data_ready :
-                    !p1_head.hold && (p1_head.store ? fp_store_valid_i : p1_head.launched);
+                    !p1_head.hold && !(conv_store && conv_store_wait) &&
+                    (p1_head.store ? fp_store_valid_i : p1_head.launched);
+  // A single-precision denormal converts before a store offers its data or
+  // a load takes its response. stfiwx stores no single.
+  assign conv_store = FP_SINGLE_DENORM && p1_valid && p1_head.fp && p1_head.store &&
+    !p1_head.wide && !p1_head.split && fp_store_valid_i &&
+    !((p1_head.insn[31:26] == 6'd31) && (p1_head.insn[10:1] == 10'd983));
+  assign conv_store_cycles = conv_store ? ppc_pkg::fp_single_denorm_cycles(fp_store_data_i[31:0]) :
+                                          5'd0;
+  assign conv_store_wait = conv_store_q != conv_store_cycles;
+  assign conv_load = FP_SINGLE_DENORM && p2_valid && !rsp_to_lane_q && rsp_valid_i &&
+    p2_head.fp && !p2_head.write && !p2_head.wide && !p2_head.split &&
+    !p2_head.killed && !rsp_error_i && (rsp_fault_i == DATA_OK);
+  assign conv_load_cycles = conv_load ? ppc_pkg::fp_single_denorm_cycles(rsp_rdata_i[31:0]) :
+                                        5'd0;
+  assign conv_load_wait = conv_load_q != conv_load_cycles;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || (conv_store_cycles == 5'd0)) conv_store_q <= 5'd0;
+    else if (conv_store_wait) conv_store_q <= conv_store_q + 5'd1;
+    if (!rst_ni || (conv_load_cycles == 5'd0)) conv_load_q <= 5'd0;
+    else if (conv_load_wait) conv_load_q <= conv_load_q + 5'd1;
+  end
   // A waiting head's EA from the base written this cycle; both sums are
   // formed while the tags compare.
   localparam bit BASE_ANY = BASE_SNOOP || BASE_WAIT;
@@ -384,7 +409,7 @@ module ppc_lsu_pipe #(
   // A killed access's response is dropped; a good one moves to R, which
   // the result port empties every cycle. An FP response always moves to R.
   // A retired store's response and a passing load's fault are consumed here.
-  assign rsp_ready_o = rsp_owner_o &&
+  assign rsp_ready_o = rsp_owner_o && !(conv_load && conv_load_wait) &&
     (p2_head.killed || rsp_ok || p2_head.fp || p2_head.write || p2_head.passed);
   assign p2_retire = rsp_mine && rsp_ready_o;
   assign p2_live = !p2_head.killed && !killed_now(p2_head.producer);

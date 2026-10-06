@@ -871,6 +871,18 @@ package ppc_pkg;
   localparam int HID0_DOZE = 23;
   localparam int HID0_NAP = 22;
   localparam int HID0_SLEEP = 21;
+  // UM 2.3.4.2: the LSU converts a single-precision denormal between the
+  // external single and internal double formats in up to 24 cycles,
+  // modelled as one cycle per significand bit position shifted (1-23) plus
+  // one: 2-24. Zero for any other word.
+  function automatic logic [4:0] fp_single_denorm_cycles(logic [31:0] w);
+    logic [4:0] n;
+    n = 5'd0;
+    if (w[30:23] == 8'd0)
+      for (int i = 0; i < 23; i++)
+        if (w[i]) n = 5'(24 - i);
+    return n;
+  endfunction
   /* verilator lint_off UNUSEDSIGNAL */
   // HID0[ICE] is stored; without it the instruction cache is always enabled.
   function automatic bit cpu_has_hid0_ice(cpu_variant_e v);

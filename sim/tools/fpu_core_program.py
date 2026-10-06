@@ -909,6 +909,7 @@ def latency(p):
     one = p.load_fpr(1, ONE)
     p.load_fpr(2, TWO)
     p.load_fpr(3, HALF)
+    data_dependent_latency(p, latency_forms())
     slot = p.result_slot(2)
     p.li32(21, slot)
     p.li32(8, 0)
@@ -963,6 +964,31 @@ def latency(p):
     p.spacings.append(('R', pcs[0], pcs[1], 1))
     p.spacings.append(('R', pcs[4], pcs[5], 1))
     fp_memory_streams(p, forms)
+
+
+def data_dependent_latency(p, forms):
+    """UM 4.5.7.1: with MSR[FE0/FE1] clear, a result that newly sets a
+    sticky exception bit (here XX) completes one cycle late; the same
+    result again does not. UM 2.3.4.2: lfs and stfs of a single denormal
+    take extra cycles to convert, one per significand bit position shifted
+    plus one (2 for fraction MSB set, 24 for 2^-149)."""
+    p.load_fpr(9, f64(2.0 ** -30))
+    fadds = a_form(59, 4, 1, 9, 0, 21)
+    for extra in (1, 0):
+        p.emit(SYNC)
+        p.probes[p.emit(fadds)] = LATENCY['fadds'] + extra
+    p.clear_fpscr()
+    for word, extra in ((0x00400000, 2), (0x00000001, 24), (0x3f800000, 0)):
+        addr = p.data(word << 32)
+        slot = p.result_slot(1)
+        p.li32(5, addr)
+        p.li32(21, slot)
+        p.emit(SYNC)
+        p.probes[p.emit(forms['lfs'])] = LATENCY['lfs'] + extra
+        p.emit(SYNC)
+        p.probes[p.emit(d_form(52, 4, 21, 0))] = LATENCY['stfs'] + extra
+        p.expect(slot, word)
+    p.res_next = (p.res_next + 7) & ~7
 
 
 def fp_memory_streams(p, forms):

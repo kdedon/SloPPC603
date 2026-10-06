@@ -87,6 +87,23 @@ module ppc_fpu_arith #(
 
     assign divide_request = req_i.op == FP_DIV || req_i.op == FP_FRES;
 
+    // UM 2.3.4.2: a single-precision result that the rounder denormalizes
+    // stays two more cycles in the rounding stage, holding the stages
+    // behind it.
+    // Reads only the request and tiny-test fields of the record.
+    /* verilator lint_off UNUSEDSIGNAL */
+    function automatic logic slow_round(input round_input_t r);
+        return !CPU_602 && r.finite && !r.req.ni && !r.req.ue &&
+            (r.req.single_result || r.req.op == FP_FRSP || r.req.op == FP_FRES) &&
+            r.leading_zero != 8'd160 && (r.tiny_always || r.tiny_limit < r.leading_zero);
+    endfunction
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic [1:0] round_wait_q;
+    logic round_hold;
+    logic aligned_slow;
+    logic div_slow;
+    assign round_hold = add_valid_q && round_wait_q != 2'd0;
+
     // Input stage: classify, multiply, and plan alignment for all but the
     // double-precision multiply class, which plans after the product sum.
     ppc_fpu_unpack #(.CPU_602(CPU_602)) unpack (
@@ -257,7 +274,7 @@ module ppc_fpu_arith #(
     );
 
     assign div_busy_o = rst_ni && !flush_i && div_busy && !div_finishing;
-    assign req_ready_o = rst_ni && !flush_i &&
+    assign req_ready_o = rst_ni && !flush_i && !round_hold &&
         (outstanding_q < 3'd4 || retire) &&
         (!div_busy || div_finishing) &&
         !(input_valid_q && in_dp_multiply);
@@ -272,9 +289,13 @@ module ppc_fpu_arith #(
     // Derived from registered state only: special, conversion and divide
     // write suppression is known before rounding completes.
     assign finish_write_o = finish_valid_o && pushed_response.write_result;
+    assign aligned_slow = slow_round(add_next);
+    assign div_slow = slow_round(div_round);
     assign next_finish_valid_o = rst_ni && !flush_i &&
-        (aligned_valid_q || div_next_finish);
-    assign next_finish_tag_o = aligned_valid_q ? aligned_q.req.tag : div_tag;
+        ((aligned_valid_q && !round_hold && !aligned_slow) ||
+         (div_next_finish && !div_slow) || (round_hold && round_wait_q == 2'd1));
+    assign next_finish_tag_o = round_hold ? add_q.req.tag :
+        aligned_valid_q ? aligned_q.req.tag : div_tag;
 
     // A dependent operand finishing this cycle is taken here, directly in
     // front of the input registers.
@@ -285,7 +306,7 @@ module ppc_fpu_arith #(
         if (req_fwd_i[2]) req_operands.c = pushed_response.result;
     end
 
-    assign push_response = add_valid_q;
+    assign push_response = add_valid_q && !round_hold;
     assign pushed_response = round_response;
 
     always_ff @(posedge clk_i) begin
@@ -294,34 +315,41 @@ module ppc_fpu_arith #(
             multiply_valid_q <= 1'b0;
             aligned_valid_q <= 1'b0;
             add_valid_q <= 1'b0;
+            round_wait_q <= 2'd0;
             response_read_q <= 2'd0;
             response_write_q <= 2'd0;
             response_count_q <= 3'd0;
             outstanding_q <= 3'd0;
         end else begin
-            input_valid_q <= accept && !divide_request;
             // Operands load whenever admission is open; only the valid bit
             // waits for a request.
             if (req_ready_o && !divide_request) input_q <= req_operands;
-            multiply_valid_q <= input_valid_q &&
-                in_dp_multiply;
-            if (input_valid_q && in_dp_multiply) begin
-                multiply_q.req <= in_req;
-                multiply_q.finite <= in_finite;
-                multiply_q.special_rsp <= in_special_rsp;
-                multiply_q.operands <= in_operands;
+            if (round_hold) begin
+                round_wait_q <= round_wait_q - 2'd1;
+            end else begin
+                input_valid_q <= accept && !divide_request;
+                multiply_valid_q <= input_valid_q &&
+                    in_dp_multiply;
+                if (input_valid_q && in_dp_multiply) begin
+                    multiply_q.req <= in_req;
+                    multiply_q.finite <= in_finite;
+                    multiply_q.special_rsp <= in_special_rsp;
+                    multiply_q.operands <= in_operands;
+                end
+                aligned_valid_q <= (input_valid_q &&
+                    !in_dp_multiply) || multiply_valid_q;
+                if (input_valid_q && !in_dp_multiply)
+                    aligned_q <= multiply_basic_next;
+                else if (multiply_valid_q)
+                    aligned_q <= multiply_double_next;
+                // The divider blocks admission, so the pipeline is empty
+                // when its result enters the rounder.
+                add_valid_q <= aligned_valid_q || div_next_finish;
+                if (aligned_valid_q) add_q <= add_next;
+                else if (div_next_finish) add_q <= div_round;
+                round_wait_q <= (aligned_valid_q ? aligned_slow : div_next_finish && div_slow) ?
+                    2'd2 : 2'd0;
             end
-            aligned_valid_q <= (input_valid_q &&
-                !in_dp_multiply) || multiply_valid_q;
-            if (input_valid_q && !in_dp_multiply)
-                aligned_q <= multiply_basic_next;
-            else if (multiply_valid_q)
-                aligned_q <= multiply_double_next;
-            // The divider blocks admission, so the pipeline is empty
-            // when its result enters the rounder.
-            add_valid_q <= aligned_valid_q || div_next_finish;
-            if (aligned_valid_q) add_q <= add_next;
-            else if (div_next_finish) add_q <= div_round;
 
             if (push_response) begin
                 response_q[response_write_q] <= pushed_response;
