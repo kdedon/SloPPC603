@@ -883,6 +883,37 @@ branch resolves reaches dispatch with its target at R+3 or later against
 Figure 6-5's R+2, because the fetch-to-decode register sits between the
 cache and the IQ (UM 6.3.2.2: one cycle from request to IQ).
 
+## Timing accuracy round 2a
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BRANCH_REMOVAL=<0|1> FETCH_DECODE_REG=<0|1> MISPREDICT_FETCH_NOW=<0|1> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commit 1b154ee, 2026-10-06.
+"Before" is `FETCH_DECODE_REG=1 MISPREDICT_FETCH_NOW=0`, round 1's front end
+(measured at 15e5182; later commits do not change that setting). The
+second row is `FETCH_DECODE_REG=0 MISPREDICT_FETCH_NOW=0` at dfc9309.
+
+| | Dhrystone cycles/run, w1 | w2 | w2, removal | CoreMark/MHz, w1 | w2 | w2, removal |
+|---|---:|---:|---:|---:|---:|---:|
+| Before | 764.0 | 641.0 | 640.0 | 2.281 | 2.632 | 2.635 |
+| No fetch-to-decode register | | | 618.0 | | | |
+| Both | 749.0 | 610.0 | 610.0 | 2.390 | 2.838 | 2.849 |
+
+- `FETCH_DECODE_REG` (default 0): a word enters the IQ in the cycle the
+  cache returns it (UM 6.3.2.2). The register holds only words the IQ
+  refuses. A folded target now dispatches three cycles after its branch
+  is fetched (UM Figure 6-3: branch 2F, target 4F 5D).
+- `MISPREDICT_FETCH_NOW` (default 1): a misprediction redirects the front
+  end and requests the correct path in the cycle it resolves; the path
+  dispatches two cycles later (UM 6.4.1.2, Figure 6-5: resolve 5E, target
+  6F 7D). The recovery on the next edge leaves the front end alone.
+
+Neither can be faster than the manual: the cache answers a cycle after the
+request at the earliest, the IQ is emptied on the resolve edge, and
+dispatch is blocked until the recovery edge. `test-dispatch-rules` passes
+at both widths with removal off and on, at both settings.
+
+Still a cycle later than the manual: an unfolded branch resolved at
+dispatch, or a folded one that falls through, requests its target on the
+edge after dispatch (UM Figure 6-3: execute 3E, target 4F).
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
