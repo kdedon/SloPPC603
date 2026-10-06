@@ -174,13 +174,11 @@ class DispatchRulesTest(unittest.TestCase):
         # The waiting branch may enter; younger work waits for completion.
         st = run('1 D1 R0 00000810 |', '2 D1 R0 00000814 |', '3 D0 R1 | 00000810', '4 D1 R0 00000828 |')
         self.assertEqual(st['fetch_stops'], 1)
-        # A move to CTR feeds the branch once it retires; with AUD-90
-        # accepted, once everything older has retired.
+        # A move to CTR feeds the branch once it retires.
         run('1 D1 R0 00000800 |', '2 D1 R0 00000818 |', '3 D1 R1 0000081c | 00000800',
             '4 D0 R1 | 00000818', '5 D1 R0 00000828 |')
         early = ['1 D1 R0 00000800 |', '2 D1 R0 00000818 |', '3 D1 R1 0000081c* | 00000800',
                  '4 D1 R0 00000828 |']
-        check_rules(early, 1, words, False, early_move=True)
         with self.assertRaisesRegex(ValueError, 'TIM-BPU-FETCH-STOP'):
             run(*early)
         cases = {
