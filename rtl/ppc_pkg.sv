@@ -609,7 +609,7 @@ package ppc_pkg;
   localparam logic [31:0] HID0_MASK_602 = 32'h8af9_7caf;
   function automatic cpu_cfg_t cpu_cfg(cpu_variant_e v);
     cpu_cfg_t c;
-    c.pvr = 32'h0007_0101;
+    c.pvr = 32'h0007_0200;
     c.div_latency = 6'd20;
     c.icache_sets = 8'd128;
     c.dcache_sets = 8'd128;

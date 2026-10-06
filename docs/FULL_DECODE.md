@@ -87,7 +87,7 @@ and FE1 are stored and have no effect: no FP-enabled exception can occur.
 
 | SPR | Number | Read | Write |
 |---|---|---|---|
-| PVR | 287 | `cpu_cfg(CPU_VARIANT).pvr`: 0x00070101 PID7v and EC603e, 0x00060101 PID6 ([CPU_VARIANTS.md](CPU_VARIANTS.md)) | Illegal (privileged in problem state) |
+| PVR | 287 | `cpu_cfg(CPU_VARIANT).pvr`: 0x00070200 PID7v and EC603e, 0x00060101 PID6 ([CPU_VARIANTS.md](CPU_VARIANTS.md)) | Illegal (privileged in problem state) |
 | HID0 | 1008 | Stored bits | Masked by `cpu_cfg().hid0_wmask`: 0xbff9fc99 PID7v and EC603e, 0xbff9fc11 PID6 (no IFEM, ABE), 0x8af97caf 602 |
 | HID1 | 1009 | `PLL_CFG` in bits 0–3, rest zero | Accepted, no effect (read-only); illegal on the 603 |
 | EAR | 282 | E and RID | Masked to E (bit 0) and RID (bits 28–31); illegal, with eciwx/ecowx, on the 602 |

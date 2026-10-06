@@ -181,7 +181,7 @@ def main():
     adapter=[HERE/name for name in ['reference_runner.cpp','run_reference.py','reference_checkout.py','reference_program.py','compare_state.py']]
     manifest={'schema_version':SCHEMA_VERSION,'reference':'DingusPPC original opcode handlers',
               'reference_last_verified':LAST_VERIFIED,'reference_commit':reference_commit,'reference_dirty':reference_dirty,
-              'model':args.model,'pvr':{'MPC603EV':'00070101','MPC603E':'00060101','MPC603':'00030101'}[args.model],
+              'model':args.model,'pvr':{'MPC603EV':'00070200','MPC603E':'00060101','MPC603':'00030101'}[args.model],
               'include_601':False,'ppc_le':False,'memory_controller_le':False,
               'initial_state':'zero GPR/CR/XER/LR/CTR, PC=0; PVR only model metadata',
               'snapshot_fields':FIELDS,'license':'GPL-3.0-or-later; see copied reference LICENSE',

@@ -64,6 +64,13 @@ module tb_variant_config #(
                                4'b1010, 4'b1110};
     endcase
 
+    // PID7v is PVR level 0x0200 (UM 1.3.1.2); version fields per UM 2.1.1.
+    unique case (CPU_VARIANT)
+      CPU_PID6_603E: check(CFG.pvr[31:16] == 16'h0006, "cfg PVR version");
+      CPU_603: check(CFG.pvr[31:16] == 16'h0003, "cfg PVR version");
+      CPU_602: check(CFG.pvr[31:16] == 16'h0005, "cfg PVR version");
+      default: check(CFG.pvr == 32'h0007_0200, "cfg PID7v PVR level 0x0200");
+    endcase
     check(CFG.has_hid1 == exp_hid1, "cfg has_hid1");
     check(CFG.has_ear == exp_ear, "cfg has_ear");
     check(CFG.has_srr1_key == exp_key, "cfg has_srr1_key");

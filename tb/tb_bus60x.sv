@@ -40,7 +40,7 @@ module tb_bus60x;
   assign dbb_n = external_dbb_n;
 
   ppc_bus60x dut (.bus_ce_i(1'b1),
-    .req_attr_i(6'b0),
+    .req_attr_i(6'b0), .req_gbl_i(1'b0),
     .clk_i(clk), .rst_ni(rst_n),
     .req_valid_i(req_valid), .req_ready_o(req_ready),
     .req_instruction_i(req_instruction),

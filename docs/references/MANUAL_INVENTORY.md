@@ -57,21 +57,20 @@ Missing and partial rows, ranked by how visible they are to software or to a
    the flush class.
 2. **32-bit data bus and reduced-pinout modes** (AUD-80). UM §8.6.1, §8.6.3,
    PDF 346-349. Their straps checkstop; boards wired that way cannot boot.
-3. **HID0[IFEM] partial** (AUD-81). UM Table 2-2, PDF 86. Line fills now
-   assert GBL for M=1 fetches; caching-inhibited single-beat fetches do not.
+3. ~~**HID0[IFEM] partial** (AUD-81)~~. Fixed: line fills and single-beat
+   fetches assert GBL for M=1.
 4. ~~**SMI refused while MSR[TGPR]=1** (AUD-75)~~. Fixed.
 5. ~~**IBAT G=1 raises ISI** (AUD-79)~~. Decided for §3.5: IBAT G ignored.
 6. ~~**SRESET leaves the I-cache enabled** (AUD-83)~~. Fixed: SRESET clears HID0[ICE].
 7. **602 injected snoops** (AUD-82). 602UM §8.4.2, PDF 378. A 602 system that
    injects snoops during a burst read gets a push the protocol forbids.
-8. **PVR revision below PID7v level** (AUD-76). UM §1.3.1.2, PDF 58. Software
-   that keys features or errata on PVR picks the wrong model.
+8. ~~**PVR revision below PID7v level** (AUD-76)~~. Fixed: 0x00070200.
 9. **Touch-load TC and castout order** (AUD-78). UM Table 7-6, PDF 290;
    §8.1.1, PDF 312. Visible to L2 controllers and bus monitors only.
 10. **Exception priority untested beyond pairs** (AUD-84). UM Table 4-2, PDF
     165-166. Simultaneous fault and asynchronous events may vector wrongly.
-11. **DBDIS and 603e CSE unchecked** (AUD-85); **603 checkstop sources**
-    (AUD-86).
+11. ~~**DBDIS and 603e CSE unchecked** (AUD-85); **603 checkstop sources**
+    (AUD-86)~~. Fixed; the 603's fetch-TEA refetch tenure is not issued.
 
 Lower: core:bus ratios other than 1:1 (D07 in [SOURCES.md](SOURCES.md); 602
 2:1 and 3:1 per [CHIP_PACKAGE_602.md](../CHIP_PACKAGE_602.md)); COP, pipeline
@@ -110,7 +109,7 @@ PEM was read only where the UM defers to it.
 | Time base / DEC, one tick per 4 bus clocks, TBEN | UM §1.1.7.2, PDF 55 | tested | `rtl/ppc603e.sv:267`; test-timer, test-core-timer-events, test-core-timer-registers |
 | JTAG / COP test interface | UM §1.1.7.3, PDF 56 | n/a | CHIP_PACKAGE.md:113,231 absent; no FPGA debug use |
 | Clock multiplier / PLL | UM §1.1.7.4, PDF 56 | n/a | FPGA PLL; PLL_CFG only selects ratio (CHIP_PACKAGE.md) |
-| PVR value (PID7v level 0x0200+) | UM §1.3.1.1, PDF 58 | partial | `ppc_pkg.sv:610` = 0x00070101; AUD-76 open (PID7v bits enabled with PID6-level revision) |
+| PVR value (PID7v level 0x0200+) | UM §1.3.1.1, PDF 58 | yes | `cpu_cfg().pvr` = 0x00070200 (`variant-config-0`) |
 | Run_N counter (COP) | UM §1.3.1.3, PDF 59 | n/a | no COP (CPU_VARIANTS.md:224) |
 | Implementation exception vectors 0x1000/0x1100/0x1200/0x1300/0x1400 | UM §1.3.4.2, PDF 69-71 | tested | test-core-tlb-miss, test-core-machine-check-trace (IABR), test-chip-pins (SMI) |
 | Real-mode WIMG defaults | UM §1.3.5.2, PDF 72; §3.5 PDF 136 | tested | `rtl/ppc_bat_translate.sv:126`: fetch 0001, data 0011 (§3.5 says 0011 for both; differs only in M, which fetch ignores); test-core-bat |
@@ -145,7 +144,7 @@ PEM was read only where the UM defers to it.
 | HID0[DLOCK] | UM Tbl 2-2 PDF 86; §3.2.3.3 PDF 132 | tested | DATA_CACHE.md:83,90; test-dcache, test-biu-dcache-snoop |
 | HID0[ICFI] flash invalidate | UM Tbl 2-2 PDF 86; §3.1.3.1 PDF 130 | tested | test-chip-dcache-coherence, test-core-full-decode |
 | HID0[DCFI] flash invalidate | UM Tbl 2-2 PDF 86; §3.2.3.1 PDF 132 | tested | DATA_CACHE.md:70; test-dcache, test-chip-dcache-coherence |
-| HID0[IFEM] instruction fetch M/GBL (PID7v) | UM Tbl 2-2, PDF 86 | partial | Burst fetches drive GBL from M when set (`test-chip-pins` `case_ifem`); CI single-beat fetches do not (AUD-81) |
+| HID0[IFEM] instruction fetch M/GBL (PID7v) | UM Tbl 2-2, PDF 86 | yes | Burst and CI single-beat fetches drive GBL from M when set (`test-chip-pins` `case_ifem`) |
 | HID0[FBIOB] force branch indirect on bus | UM Tbl 2-2, PDF 86 | partial | stored only (`ppc_pkg.sv:600`); no fetch behaviour |
 | HID0[ABE] address broadcast for dcbf/dcbi/dcbst (PID7v) | UM Tbl 2-2 PDF 86; §3.2.3.4 PDF 133 | tested | `ppc_special.sv:1514`; DATA_CACHE.md:104; test-dcache, test-core-full-decode; dcbi gated by M (deviation, DATA_CACHE.md:202) |
 | HID0[NOOPTI] touch no-op | UM Tbl 2-2 PDF 86; §3.2.4 PDF 133 | tested | DATA_CACHE.md:98; test-dcache, test-core-dcache |
@@ -295,7 +294,7 @@ PEM was read only where the UM defers to it.
 | Machine check cancels pending stores in CSQ | UM §4.5.2, PDF 179 | n/a | no completed store queue; stores perform before commit (EXCEPTION_MACHINE_CHECK_TRACE.md:67) |
 | sync/load/sync recoverable bus probe | UM §4.5.2, PDF 179 | tested | test-core-bat-machine-check |
 | Checkstop: ME=0 machine check, CKSTP_IN; CKSTP_OUT asserted | UM §4.5.2.2, PDF 180 | tested | ppc603e.sv:56; test-chip-pins |
-| Checkstop on extended transfer protocol error | UM §4.5.2.2, PDF 180 | partial | direct-store protocol_error_o exists (ppc_bus60x_direct_store.sv:44); no checkstop routing seen |
+| Checkstop on extended transfer protocol error | UM §4.5.2.2, PDF 180 | tested | 603: a bus protocol error checkstops (`test-chip-603` `+ds_protocol`); 603 fetch TEA with ME=1 checkstops (`+fetch_tea`, UM §C.2.4) |
 | Checkstop latch freeze for analysis | UM §4.5.2.2, PDF 180 | n/a | no COP/scan (CHIP_PACKAGE.md:113) |
 | DSI: protection violation DSISR[4], store DSISR[6] | UM §4.5.3 Table 4-11, PDF 181-182 | tested | ppc_special.sv:1789; test-core-page-data-exception, test-core-data-fault |
 | DSI: direct-store segment access (603e, T=1) | UM §4.5.3, PDF 181 | tested | DATA_DSI_DIRECT_STORE, DSISR 0x0400_0000; test-core-page-data-exception |
@@ -435,7 +434,7 @@ PEM was read only where the UM defers to it.
 | CI output | UM §7.2.4.5, PDF 290 | tested | `test-chip-pins` ILOCK case (misses read with CI) |
 | WT output | UM §7.2.4.6, PDF 290 | tested | BFM logs it (`bus60x_coherent_bfm.sv:293`). Write-through in `test-dcache`. Pin value only lightly checked |
 | GBL output / input | UM §7.2.4.7, PDF 291 | tested | `test-chip-dcache-coherence`. `test-chip-pins` "GBL negated: no APE" |
-| CSE[0:1] (way of the fill/castout) | UM §7.2.4.8, PDF 291 | untested | `rtl/ppc603e.sv:407`. Only the 603 CSE0 is checked (`tb/tb_chip_603.sv:44-45`); 603e 4-way CSE is unchecked (`tb/chip_harness.svh:106` marks cse unused) |
+| CSE[0:1] (way of the fill/castout) | UM §7.2.4.8, PDF 291 | tested | 603e: `test-chip-pins` `case_cse` (four fills into one set give CSE 0-3); 603 CSE0: `test-chip-603` |
 | AACK input | UM §7.2.5.1, PDF 292 | tested | Every bus bench |
 | ARTRY input (qualified retry, BG blocked) | UM §7.2.5.2.2, PDF 293 | tested | `test-core-bat-bus60x-retry`, `test-chip-pins`, `test-chip-mp` |
 | ARTRY output (snoop window TS+2..AACK+1, precharge) | UM §7.2.5.2.1, PDF 292 | tested | BFM fatal outside a snoop window (`bus60x_coherent_bfm.sv:660`). `test-chip-dcache-coherence` |

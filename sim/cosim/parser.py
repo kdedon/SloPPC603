@@ -26,7 +26,7 @@ KNOWN_FIELDS = {
     "disasm": set(),
 }
 MODEL_METADATA = {
-    "MPC603EV": {"pid": "PID7v", "pvr": "0x00070101"},
+    "MPC603EV": {"pid": "PID7v", "pvr": "0x00070200"},
     "MPC603E": {"pid": "PID6", "pvr": "0x00060101"},
     "MPC603": {"pid": "603", "pvr": "0x00030101"},
 }

@@ -24,7 +24,7 @@ supervisor state. Every handler resumes after the faulting instruction.
 | Trap | Fifteen `tw`/`twi` cover each TO bit taken and not taken, `TO=0`, and trap-always: exactly seven traps, SRR1 = 0x00020070. |
 | FP unavailable | `fmr f5,f1` copies soft FPR 1 to 5; `lfd` is skipped; SRR0 is the faulting word, SRR1 = 0x70. |
 | MSR[FP] | `rfi` with SRR1[FP] = 1 returns with MSR = 0x70; the next FP instruction still faults. |
-| PVR, HID0 | PVR = 0x00070101; HID0 reads 0x8000 at reset (the cache reset mode); ICFI set, ICE off, ICE on and all-ones writes keep a loop's result; all-ones reads back 0xbff9fc99. |
+| PVR, HID0 | PVR = 0x00070200; HID0 reads 0x8000 at reset (the cache reset mode); ICFI set, ICE off, ICE on and all-ones writes keep a loop's result; all-ones reads back 0xbff9fc99. |
 | eciwx/ecowx | With EAR[E] = 0, DSI with DSISR 0x00100000 (load) and 0x02100000 (store), DAR = EA, no store; with EAR = 0x80000005 and 0x8000000a both complete. |
 | lwarx/stwcx. | An increment loop completes. |
 | Privilege | In problem state `mfspr HID0` is privileged and primary 1 illegal (SRR1 PR set); `sc` returns to supervisor. |

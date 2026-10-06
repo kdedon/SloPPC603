@@ -1923,6 +1923,8 @@ test-chip-603:
 	mkdir -p $(BUILD_DIR)/chip-603
 	$(VERILATOR) --binary --timing --assert -Wall --top-module tb_chip_603 +define+CHIP_VARIANT=3 +define+CHIP_DS_PID=10 --Mdir $(BUILD_DIR)/chip-603 -I../tb $(CHIP_RTL) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_603.sv
 	./$(BUILD_DIR)/chip-603/Vtb_chip_603 $(SIM_ARGS)
+	./$(BUILD_DIR)/chip-603/Vtb_chip_603 +ds_protocol $(SIM_ARGS)
+	./$(BUILD_DIR)/chip-603/Vtb_chip_603 +fetch_tea $(SIM_ARGS)
 # The same with the FPU: FP loads and stores to T=1 take alignment.
 test-chip-603-fpu:
 	mkdir -p $(BUILD_DIR)/chip-603-fpu

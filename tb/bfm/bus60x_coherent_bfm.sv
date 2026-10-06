@@ -119,6 +119,8 @@ module bus60x_coherent_bfm #(
   bit tea_write_commits = 1'b0;
   // Negative control: the second master proceeds through ARTRY.
   bit ignore_artry = 1'b0;
+  // Another device drives write data while the processor sees DBDIS.
+  bit write_release_ok = 1'b0;
   // Commands queued while set drive wrong AP[1] in their TS cycle.
   bit om_bad_parity = 1'b0;
   // Read beats of these doublewords carry wrong DP7 (once each); the bench
@@ -395,9 +397,9 @@ module bus60x_coherent_bfm #(
     bus_fall();
     ta_n_o = 1'b0;
     bus_rise();
-    if (!d_oe_i) $fatal(1, "%m: write TA without driven data");
+    if (!d_oe_i && !write_release_ok) $fatal(1, "%m: write TA without driven data");
     if (!(dbb_oe_i && !dbb_n_i)) $fatal(1, "%m: write TA without DBB");
-    for (int k = 0; k < size; k++)
+    if (d_oe_i) for (int k = 0; k < size; k++)
       put_byte((burst ? base : addr) + 32'(k), d_i[63-8*(offset + k) -: 8]);
     bus_fall();
     ta_n_o = 1'b1;

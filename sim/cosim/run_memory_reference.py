@@ -109,7 +109,7 @@ def main():
     original=[ref/'cpu/ppc/ppcopcodes.cpp',ref/'cpu/ppc/ppcemu.h',ref/'cpu/ppc/ppcmmu.h',ref/'LICENSE',ref/'CREDITS.md']
     adapter=[HERE/name for name in ['reference_runner.cpp','run_reference.py','reference_checkout.py','run_memory_reference.py','memory_program.py',
                                    'reference_program.py','compare_memory.py','compare_state.py']]
-    manifest={'schema_version':2,'header':HEADER,'snapshot_fields':FIELDS,'model':'MPC603EV','pvr':'00070101',
+    manifest={'schema_version':2,'header':HEADER,'snapshot_fields':FIELDS,'model':'MPC603EV','pvr':'00070200',
               'ppc_le':False,'memory_controller_le':False,'backend':'flat big-endian service; no original MMU',
               'ram_base':RAM_BASE,'ram_bytes':RAM_BYTES,'instruction_image':'separate immutable Harvard image',
               'initial_state':'zero GPR/CR/XER/LR/CTR and RAM; PC0; real instruction initialization',

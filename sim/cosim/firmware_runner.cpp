@@ -53,6 +53,7 @@ int main(int argc, char** argv) {
         is_deterministic = true;
         gProfilerObj.reset(new Profiler());
         ppc_cpu_init(&memory, PPC_VER::MPC603EV, false, 25000000ULL);
+        ppc_state.spr[SPR::PVR] = 0x00070200U;  // UM 1.3.1.2 PID7v level
         // Harness-installed state (BATs), applied through the reference's SPR path.
         for (int i = 6; i < argc; ++i) {
             std::string arg = argv[i];

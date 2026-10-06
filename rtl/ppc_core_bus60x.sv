@@ -203,6 +203,7 @@ module ppc_core_bus60x #(
     .redirect_pivot_i, .redirect_target_i, .redirect_accepted_o
   );
 
+  logic bus_req_gbl;
   ppc_bus60x_arbiter router (
     .clk_i, .rst_ni,
     .imem_req_valid_i(imem_req_valid),
@@ -230,7 +231,7 @@ module ppc_core_bus60x #(
     .bus_req_addr_o(bus_req_addr),
     .bus_req_wdata_o(bus_req_wdata),
     .bus_req_wstrb_o(bus_req_wstrb),
-    .bus_req_attr_o(bus_req_attr),
+    .bus_req_attr_o(bus_req_attr), .bus_req_gbl_o(bus_req_gbl), .imem_req_gbl_i(1'b0),
     .bus_rsp_valid_i(bus_rsp_valid),
     .bus_rsp_ready_o(bus_rsp_ready),
     .bus_rsp_rdata_i(bus_rsp_rdata),
@@ -244,7 +245,7 @@ module ppc_core_bus60x #(
     .req_instruction_i(bus_req_instruction),
     .req_write_i(bus_req_write), .req_addr_i(bus_req_addr),
     .req_wdata_i(bus_req_wdata), .req_wstrb_i(bus_req_wstrb),
-    .req_attr_i(bus_req_attr),
+    .req_attr_i(bus_req_attr), .req_gbl_i(bus_req_gbl),
     .rsp_valid_o(bus_rsp_valid), .rsp_ready_i(bus_rsp_ready),
     .rsp_rdata_o(bus_rsp_rdata), .rsp_error_o(bus_rsp_error),
     .busy_o(adapter_busy), .protocol_error_o(bus_protocol_error_o),

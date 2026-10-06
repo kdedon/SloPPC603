@@ -82,6 +82,7 @@ module tb_chip_603 #(parameter int PLL = -1);
   endtask
 
   // Addresses the checks compare against.
+  logic [31:0] pc_sizes;
   logic [31:0] pc_lwarx, pc_stwcx, pc_err, pc_tea, pc_lfs, pc_stfs, pc_sc;
   logic [31:0] user_pc, user_cont;
   task automatic build;
@@ -118,6 +119,7 @@ module tb_chip_603 #(parameter int PLL = -1);
     emit(asm_mtmsr(29));
     emit(ISYNC);
     emit(mfspr(3, 287)); emit(asm_stw(3, 'h4c, 31));
+    pc_sizes = at;
     // Sizes and alignments.
     emit(asm_lwz(5, 'h10, 6)); emit(asm_stw(5, 'h40, 31));
     emit(asm_stw(7, 'h20, 6));
@@ -276,6 +278,7 @@ module tb_chip_603 #(parameter int PLL = -1);
             for (int k = 0; k < int'(o.count); k++)
               buc_dh[31-8*(int'(addr[1:0]) + k) -: 8] = dev[8'(addr + 32'(k))];
           buc_ta_n = 1'b0;
+          if ($test$plusargs("ds_protocol")) buc_drtry_n = 1'b0;
           bus_rise();
           check(data_oe == (o.op == SIMM || o.op == SLAST), "data driven only by stores");
           for (int k = 0; k < int'(o.count); k++) begin
@@ -288,6 +291,7 @@ module tb_chip_603 #(parameter int PLL = -1);
           check(dl_out == 32'b0 || !data_oe, "DL unused");
           bus_fall();
           buc_ta_n = 1'b1;
+          buc_drtry_n = 1'b1;
           buc_dh = '0;
         end
       end
@@ -338,6 +342,26 @@ module tb_chip_603 #(parameter int PLL = -1);
     logic [7:0] d70 [4];
     build();
     for (int k = 0; k < 4; k++) d70[k] = 8'(8'h70 + 8'(k)) ^ 8'h5a;
+    // Checkstop sources (UM 4.5.2.2, C.2.4): DRTRY on a direct-store beat
+    // is an extended transfer protocol error; a fetch TEA with MSR[ME]=1.
+    if ($test$plusargs("ds_protocol") || $test$plusargs("fetch_tea")) begin
+      if ($test$plusargs("fetch_tea")) begin
+        memory.tea_base = (pc_sizes + 32'd32) & ~32'd31;
+        memory.tea_bytes = 32'd32;
+      end
+      repeat (8) @(negedge clk);
+      hreset_n = 1'b1;
+      n = 0;
+      while (ckstp_out_n && n < 60000) begin
+        @(negedge clk);
+        n++;
+      end
+      check(!ckstp_out_n, "checkstop");
+      check(mem_word(LOG) == 32'h0, $sformatf("no exception (log %08x)", mem_word(LOG)));
+      $display("PASS: tb_chip_603 %0s checkstop after %0d cycles",
+               $test$plusargs("fetch_tea") ? "fetch TEA" : "direct-store protocol", n);
+      $finish;
+    end
     repeat (8) @(negedge clk);
     hreset_n = 1'b1;
     n = 0;

@@ -8,7 +8,8 @@
 // data parity (DPE in the second cycle after TA, machine check, checkstop,
 // HID0[EBD]=0, cancelled by DRTRY), BR and BG after another snooper's
 // ARTRY, and HID0[ILOCK] (hits served, misses read single-beat with CI and
-// not allocated). Each case hard-resets the chip
+// not allocated), and the Table 4-2 order of MCP, SRESET, SMI and DEC
+// against a trap, a DSI and an alignment fault. Each case hard-resets the chip
 // into a small program; handlers record markers in RAM through the bus.
 /* verilator lint_off BLKSEQ */
 module tb_chip_pins #(parameter int PLL = -1);
@@ -43,6 +44,14 @@ module tb_chip_pins #(parameter int PLL = -1);
   logic [31:0] first_fetch = '0, pc;
   logic [31:0] tb_values [$];
   string mark_order = "";
+  // DBDIS sampled at the previous edge; data outputs seen while it applied;
+  // write beats terminated under it.
+  logic dbdis_prev = 1'b0;
+  int dbdis_oe = 0, dbdis_beats = 0;
+  // CSE of data line fills into set 2 above CSE_FROM.
+  logic [31:0] cse_from = '1;
+  logic [3:0] cse_ways = '0;
+  int cse_fills = 0;
   // Second-master TS cycles and APE cycles.
   int om_ts_cycles [$], ape_cycles [$];
   // TA cycles of beats with wrong DP, and DPE cycles.
@@ -89,6 +98,14 @@ module tb_chip_pins #(parameter int PLL = -1);
       if (block_after_bad_dp) bus_block = 1'b1;
     end
     if (!dpe_n) dpe_cycles.push_back(cycles);
+    if (dbdis_prev && data_oe) dbdis_oe++;
+    if (dbdis_prev && wr_pending_q && !ta_n && dbb_oe) dbdis_beats++;
+    dbdis_prev = !dbdis_n;
+    if (ts_oe && !ts_n && tc[0:1] == 2'b00 && !tbst_n && 32'(a) >= cse_from &&
+        ((32'(a) >> 5) & 32'h7f) == 32'd2) begin
+      cse_ways = cse_ways | (4'b1 << {cse[0], cse[1]});
+      cse_fills++;
+    end
     if (wr_fire) begin
       if (wr_addr == DATA + TB_VALUE) tb_values.push_back(wr_addr[2] ? dl_out : dh_out);
       if (wr_addr == DATA + SMI_MARK) mark_order = {mark_order, "S"};
@@ -675,14 +692,14 @@ module tb_chip_pins #(parameter int PLL = -1);
   endtask
 
   // HID0[IFEM] drives GBL on fetches from M=1 pages (UM Table 2-2): IBAT0
-  // maps the ROM with WIMG=0010 and code at MAIN+0x200 is filled.
-  task automatic case_ifem(input bit ifem);
+  // maps the ROM with WIMG=0010 (line fills) or 0110 (single beats).
+  task automatic case_ifem(input bit ifem, input bit ci);
     logic [31:0] b;
     b = MAIN + 32'h200;
     load_handlers();
     at = MAIN;
     emit_const(3, BASE | 32'h3); emit(asm_spr(1'b1, 3, 528));
-    emit_const(3, BASE | 32'h12); emit(asm_spr(1'b1, 3, 529)); emit(ASM_ISYNC);
+    emit_const(3, BASE | (ci ? 32'h32 : 32'h12)); emit(asm_spr(1'b1, 3, 529)); emit(ASM_ISYNC);
     emit_const(3, 32'h0000_8800); emit(asm_spr(1'b1, 3, 1008));
     emit_const(3, ifem ? 32'h0000_8080 : 32'h0000_8000); emit(asm_spr(1'b1, 3, 1008));
     emit(ASM_ISYNC);
@@ -700,15 +717,269 @@ module tb_chip_pins #(parameter int PLL = -1);
     hard_reset();
     wait_word(RESETS, 1, 6000, "boot");
     wait_word(ILOCK_B, 3, 20000, "IFEM loop runs");
-    check(ilock_burst != 0 && ilock_gbl == (ifem ? ilock_burst + ilock_single : 0),
-          $sformatf("IFEM=%0d: %0d of %0d fetch tenures assert GBL", ifem, ilock_gbl,
-                    ilock_burst + ilock_single));
+    check((ci ? ilock_single != 0 && ilock_burst == 0 : ilock_burst != 0) &&
+          ilock_gbl == (ifem ? ilock_burst + ilock_single : 0),
+          $sformatf("IFEM=%0d CI=%0d: %0d of %0d fetch tenures assert GBL", ifem, ci,
+                    ilock_gbl, ilock_burst + ilock_single));
     ilock_from = '1;
     ilock_watch = 1'b0;
   endtask
 
+  // UM 7.2.7.4: DBDIS releases the data bus the cycle after it is sampled;
+  // the write tenure still completes.
+  task automatic case_dbdis;
+    loop_program(32'h0, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    {dbdis_oe, dbdis_beats} = '0;
+    memory.write_release_ok = 1'b1;
+    bus_fall();
+    dbdis_n = 1'b0;
+    repeat (2000) bus_fall();
+    dbdis_n = 1'b1;
+    repeat (2) bus_fall();
+    memory.write_release_ok = 1'b0;
+    check(dbdis_oe == 0 && dbdis_beats > 0,
+          $sformatf("DBDIS: %0d driven cycles, %0d write beats", dbdis_oe, dbdis_beats));
+    running(3, "stores resume after DBDIS");
+  endtask
+
+  // UM 7.2.4.8: the 603e's CSE[0-1] give the way of a line fill; four
+  // fills into one empty set use all four ways.
+  task automatic case_cse;
+    load_handlers();
+    at = MAIN;
+    prologue(32'h0000_4000, MSR_IP | MSR_ME);
+    emit(ASM_ISYNC);
+    for (int i = 0; i < 4; i++) begin
+      emit_const(6, BASE + 32'hc040 + 32'(i) * 32'h1000);
+      emit(asm_lwz(7, 0, 6));
+    end
+    emit_loop();
+    cse_from = BASE + 32'hc000;
+    {cse_ways, cse_fills} = '0;
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    repeat (3000) bus_fall();
+    check(cse_fills == 4 && cse_ways == 4'hf,
+          $sformatf("CSE: %0d fills, ways %b", cse_fills, cse_ways));
+    cse_from = '1;
+  endtask
+
+  // UM Table 4-2 priority of pin events and DEC against a faulting
+  // instruction. MCP and SRESET outrank it: taken with SRR0 at the
+  // instruction, which then re-executes and faults. SMI and DEC follow its
+  // exception. Events are read at the exception unit; arrival and decision
+  // cycles at the core.
+  typedef enum int {F_TRAP, F_DSI, F_ALIGN} fault_e;
+  typedef enum int {P_MCP, P_SRESET, P_SMI, P_DEC} pin_e;
+  typedef struct {
+    logic [4:0] kind;
+    logic [31:0] srr0, srr1;
+  } exc_t;
+  localparam int DONE = 'h2c, DECVAL = 'h48;
+  localparam logic [31:0] NOP = 32'h6000_0000, TRAP = 32'h7fe0_0008;
+  // eciwx r5,0,r7 (EAR[E]=0: DSI) and lwarx r5,0,r6 (EA misaligned).
+  localparam logic [31:0] ECIWX = 32'h7ca0_3a6c, LWARX = 32'h7ca0_3028;
+  exc_t excs [$];
+  logic exc_cap = 1'b0;
+  logic [4:0] exc_kind;
+  logic [31:0] fault_pc = '1;
+  pin_e watch_pin = P_MCP;
+  int pcyc = 0, t_disp = -1, t_commit = -1, t_pin = -1;
+  always @(posedge clk) begin
+    if (!dut.core_rst_n) begin
+      pcyc = 0;
+      t_disp = -1;
+      t_commit = -1;
+      t_pin = -1;
+    end else pcyc++;
+    if (exc_cap) begin
+      exc_t e;
+      e.kind = exc_kind;
+      e.srr0 = dut.cpu.translated_core.core.special.srr0_o;
+      e.srr1 = dut.cpu.translated_core.core.special.srr1_o;
+      excs.push_back(e);
+    end
+    exc_cap = dut.cpu.translated_core.core.special.exception_state.event_valid_i &&
+      dut.cpu.translated_core.core.special.exception_state.event_ready_o &&
+      dut.cpu.translated_core.core.special.exception_state.event_kind_i != ppc_pkg::EVENT_RFI &&
+      dut.cpu.translated_core.core.special.exception_state.event_kind_i !=
+        ppc_pkg::EVENT_RFI_FP_ENABLE;
+    exc_kind = dut.cpu.translated_core.core.special.exception_state.event_kind_i;
+    if (t_disp < 0 &&
+        ((dut.cpu.translated_core.core.dispatch &&
+          dut.cpu.translated_core.core.iq_head.pc == fault_pc) ||
+         (dut.cpu.translated_core.core.dispatch1 &&
+          dut.cpu.translated_core.core.dq1_head.pc == fault_pc)))
+      t_disp = pcyc;
+    if (t_commit < 0 && dut.cpu.translated_core.core.special.hold_commit &&
+        dut.cpu.translated_core.core.special.pc_q == fault_pc)
+      t_commit = pcyc;
+    if (t_pin < 0 && dut.core_rst_n &&
+        (watch_pin == P_MCP ? dut.cpu.translated_core.core.pin_event_q.mcp :
+         watch_pin == P_SRESET ? dut.cpu.translated_core.core.pin_event_q.soft_reset :
+         watch_pin == P_SMI ? dut.cpu.translated_core.core.pin_event_q.smi :
+         dut.cpu.translated_core.core.decrementer_pending))
+      t_pin = pcyc;
+    if (smi_n == 1'b0 && dut.pin_status.smi_taken) smi_n = 1'b1;
+  end
+
+  // Fault handlers resume after the fault with a fixed SRR0/SRR1, so a pin
+  // event taken inside one still returns to it intact.
+  task automatic priority_program(input fault_e f, input logic [31:0] msr,
+                                  output logic [31:0] cont, output logic [31:0] last);
+    for (int i = 0; i < MEM_BYTES; i++) memory.mem[i] = 8'h00;
+    cont = MAIN + 32'h100;
+    at = BASE + 32'h100;
+    emit_const(31, DATA);
+    emit(asm_lwz(3, RESETS, 31));
+    emit(asm_addi(3, 3, 1));
+    emit(asm_stw(3, RESETS, 31));
+    emit(asm_cmpwi(3, 1));
+    emit(asm_bc(4, 2, 8));
+    emit(asm_ba(MAIN, 1'b0));
+    emit(RFI);
+    at = BASE + 32'h200;
+    emit(RFI);
+    for (int i = 0; i < 3; i++) begin
+      at = BASE + (i == 0 ? 32'h700 : i == 1 ? 32'h300 : 32'h600);
+      emit_const(4, cont);
+      emit(asm_spr(1'b1, 4, 26));
+      emit_const(4, msr);
+      emit(asm_spr(1'b1, 4, 27));
+      emit(RFI);
+    end
+    at = BASE + 32'h900;
+    emit(asm_lis(4, 'h7fff));
+    emit(asm_spr(1'b1, 4, 22));
+    emit(RFI);
+    at = BASE + 32'h1400;
+    emit(RFI);
+    at = MAIN;
+    prologue(32'h8000_0000, msr);
+    emit_const(6, DATA + 2);
+    emit_const(7, DATA);
+    emit(asm_lwz(8, DECVAL, 31));
+    emit(asm_spr(1'b1, 8, 22));
+    repeat (16) emit(NOP);
+    fault_pc = at;
+    emit(f == F_TRAP ? TRAP : f == F_DSI ? ECIWX : LWARX);
+    while (at < cont) emit(NOP);
+    emit(asm_li(5, 1));
+    emit(asm_stw(5, DONE, 31));
+    last = at;
+    emit(asm_ba(at, 1'b0));
+  endtask
+
+  // One run: the pin edge at core cycle `edge_at` (SRESET is taken at its
+  // negation), or DEC loaded with `dec`. A negative edge raises nothing.
+  task automatic priority_run(input fault_e f, input pin_e p, input int edge_at,
+                              input logic [31:0] dec, input logic [31:0] msr,
+                              input logic [31:0] cont, input logic [31:0] last,
+                              output int disp, output int pin, inout int in_flight);
+    logic [4:0] fk, pk;
+    int fi, pi, nf, np;
+    string tag;
+    fk = f == F_TRAP ? ppc_pkg::EVENT_PROGRAM_TRAP : f == F_DSI ? ppc_pkg::EVENT_DSI :
+         ppc_pkg::EVENT_ALIGNMENT;
+    pk = p == P_MCP ? ppc_pkg::EVENT_MACHINE_CHECK_PIN : p == P_SRESET ?
+         ppc_pkg::EVENT_SOFT_RESET : p == P_SMI ? ppc_pkg::EVENT_SMI :
+         ppc_pkg::EVENT_DECREMENTER;
+    tag = $sformatf("%s/%s edge=%0d dec=%0d", f.name(), p.name(), edge_at, dec);
+    watch_pin = p;
+    hard_reset();
+    put_word(DATA + DECVAL, (p == P_DEC && edge_at >= 0) ? dec : 32'h7fff_ffff);
+    excs.delete();
+    if (edge_at >= 0 && p != P_DEC) begin
+      while (pcyc < edge_at) @(negedge clk);
+      if (p == P_MCP) pulse(mcp_n, 3);
+      else if (p == P_SRESET) pulse(sreset_n, 3);
+      else smi_n = 1'b0;
+    end
+    wait_word(DONE, 1, 20000, {tag, ": program completes"});
+    repeat (300) bus_fall();
+    disp = t_disp;
+    pin = t_pin;
+    fi = -1;
+    pi = -1;
+    nf = 0;
+    np = 0;
+    foreach (excs[i]) begin
+      if (excs[i].kind == fk) begin
+        nf++;
+        fi = i;
+      end else if (excs[i].kind == pk) begin
+        np++;
+        pi = i;
+      end else check(1'b0, $sformatf("%s: unexpected event %0d", tag, excs[i].kind));
+    end
+    check(fi >= 0 && excs[fi].srr0 == fault_pc && excs[fi].srr1 ==
+          ((msr & 32'hffff) | (f == F_TRAP ? 32'h0002_0000 : 32'h0)),
+          $sformatf("%s: fault SRR0=%08x SRR1=%08x", tag, excs[fi].srr0, excs[fi].srr1));
+    if (edge_at < 0) begin
+      check(nf == 1 && np == 0, {tag, ": fault only"});
+      return;
+    end
+    check(nf == 1 && np == 1, $sformatf("%s: one fault (%0d) and one %s (%0d)",
+                                        tag, nf, p.name(), np));
+    check(t_disp >= 0 && t_commit >= t_disp && t_pin >= 0,
+          $sformatf("%s: disp=%0d commit=%0d pin=%0d", tag, t_disp, t_commit, t_pin));
+    if (t_pin >= t_disp && t_pin <= t_commit) in_flight++;
+    if (p == P_MCP || p == P_SRESET) begin
+      if (t_pin <= t_commit) begin
+        // Taken first, at or before the instruction, which re-executes.
+        check(pi < fi && excs[pi].srr0 >= MAIN && excs[pi].srr0 <= fault_pc &&
+              (t_pin < t_disp || excs[pi].srr0 == fault_pc),
+              $sformatf("%s: %s first at SRR0=%08x (fault %08x) pin=%0d disp=%0d commit=%0d",
+                        tag, p.name(), excs[pi].srr0, fault_pc, t_pin, t_disp, t_commit));
+        check(excs[pi].srr1 == ((msr & 32'hffff) |
+                                (p == P_MCP ? 32'h0008_0000 : 32'h0)),
+              $sformatf("%s: %s SRR1=%08x", tag, p.name(), excs[pi].srr1));
+      end else
+        check(fi < pi, {tag, ": a later pin follows the fault"});
+    end else if (t_pin >= t_disp || fi < pi) begin
+      // Maskable: after the fault, at an instruction after it.
+      check(fi < pi && excs[pi].srr0 >= cont && excs[pi].srr0 <= last &&
+            (excs[pi].srr1 & 32'hffff) == (msr & 32'hffff),
+            $sformatf("%s: %s follows at SRR0=%08x SRR1=%08x pin=%0d disp=%0d commit=%0d",
+                      tag, p.name(), excs[pi].srr0, excs[pi].srr1, t_pin, t_disp, t_commit));
+    end else
+      check(excs[pi].srr0 >= MAIN && excs[pi].srr0 <= fault_pc,
+            $sformatf("%s: early %s at SRR0=%08x", tag, p.name(), excs[pi].srr0));
+  endtask
+
+  task automatic case_priority(input fault_e f, input pin_e p);
+    logic [31:0] msr, cont, last;
+    int disp, pin0, pin1, unused, in_flight, base, step;
+    msr = MSR_IP | MSR_ME | ((p == P_SMI || p == P_DEC) ? MSR_EE : 32'h0);
+    priority_program(f, msr, cont, last);
+    in_flight = 0;
+    priority_run(f, p, -1, 0, msr, cont, last, disp, unused, in_flight);
+    if (p == P_DEC) begin
+      // DEC values from its expiry spacing that land on the instruction.
+      priority_run(f, p, 0, 0, msr, cont, last, unused, pin0, in_flight);
+      priority_run(f, p, 0, 1, msr, cont, last, unused, pin1, in_flight);
+      step = pin1 > pin0 ? pin1 - pin0 : 1;
+      base = disp > pin0 ? (disp - pin0) / step : 0;
+      for (int d = base - 2; d <= base + 4; d++)
+        if (d > 1) priority_run(f, p, 0, 32'(d), msr, cont, last, unused, unused, in_flight);
+    end else begin
+      for (int k = -12; k <= 5; k++)
+        priority_run(f, p, disp + k, 0, msr, cont, last, unused, unused, in_flight);
+    end
+    // At 1:1 the sweep reaches the instruction in flight.
+    if (PLL < 0)
+      check(in_flight > 0, $sformatf("%s/%s: no run raised the event in flight",
+                                     f.name(), p.name()));
+    $display("priority %s/%s: in-flight runs=%0d", f.name(), p.name(), in_flight);
+  endtask
+
   initial begin
     repeat (4) bus_fall();
+    case_dbdis();
+    case_cse();
     case_hreset();
     case_sreset();
     case_sreset_icache();
@@ -731,8 +1002,12 @@ module tb_chip_pins #(parameter int PLL = -1);
     case_foreign_artry();
     case_ilock(1'b0);
     case_ilock(1'b1);
-    case_ifem(1'b0);
-    case_ifem(1'b1);
+    case_ifem(1'b0, 1'b0);
+    case_ifem(1'b1, 1'b0);
+    case_ifem(1'b0, 1'b1);
+    case_ifem(1'b1, 1'b1);
+    for (int f = 0; f < 3; f++)
+      for (int p = 0; p < 4; p++) case_priority(fault_e'(f), pin_e'(p));
     // Cache hits stream: a fetch the router offers in the cycle it accepts
     // it, accepted on consecutive cycles.
     check(fetch_streamed > 0, "instruction fetch requests every cycle on hits");

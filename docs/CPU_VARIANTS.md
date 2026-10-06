@@ -36,7 +36,7 @@ this document does not restate it.
 | PVR revision | from `0x0100`; PID7v bits need level `0x0200` | from `0x0100` | not given | from `0x0100` |
 | Source | UM §1.3.1.1 PDF 58 / 1-18; §2.1.1 PDF 84 / 2-6 | same | UM §C.2 PDF 428 / C-16 | 602UM §2.1.1.3 PDF 85 / 2-9 |
 
-Main: `cpu_cfg().pvr` in `ppc_pkg.sv`: PID7v `0x00070101`, PID6 `0x00060101`,
+Main: `cpu_cfg().pvr` in `ppc_pkg.sv`: PID7v `0x00070200`, PID6 `0x00060101`,
 603 `0x00030101`, 602 `0x00050101`, matching the reference runner. UM §1.3.1.2
 (PDF 58, printed 1-18) designates PID7v by PVR level 0x0200, so the PID7v
 revision half is open as AUD-76.
@@ -895,7 +895,7 @@ The user settled the open questions:
 - **602 pins:** a separate `ppc602` pin top with the 602's multiplexed 64-bit
   address/data bus.
 - **603 direct-store:** implement the XATS protocol for T=1 segments on the 603.
-- **PVR:** PID7v reports `0x00070101`, matching the reference model; PID6
+- **PVR:** PID7v reports `0x00070200`, the manual's PID7v level (UM §1.3.1.2); PID6
   `0x00060101`, 603 `0x00030101`, 602 `0x00050101`, chosen as first revisions.
 - **EC603e:** a fifth variant (603e without the FPU; FP instructions take
   FP-unavailable).

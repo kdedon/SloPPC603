@@ -30,6 +30,7 @@ module ppc_biu #(
   input  logic        imem_req_valid_i,
   output logic        imem_req_ready_o,
   input  logic [31:0] imem_req_addr_i,
+  input  logic        imem_req_gbl_i,
   output logic        imem_rsp_valid_o,
   input  logic        imem_rsp_ready_i,
   output logic [31:0] imem_rsp_insn_o,
@@ -145,6 +146,7 @@ module ppc_biu #(
   logic [31:0] scalar_req_addr, scalar_req_wdata;
   logic [3:0] scalar_req_wstrb;
   logic [5:0] scalar_req_attr;
+  logic scalar_req_gbl;
   logic scalar_router_rsp_ready, scalar_router_busy;
   logic scalar_req_ready, scalar_rsp_valid, scalar_rsp_error, scalar_busy;
   // While the data cache waits for the pins the group starts no new
@@ -215,7 +217,7 @@ module ppc_biu #(
   assign unused_attr_spec = dmem_req_attr_i.spec;
   ppc_bus60x_arbiter #(.RETURN_IFETCH_ERROR(RETURN_IFETCH_ERROR)) scalar_router (
     .clk_i, .rst_ni,
-    .imem_req_valid_i, .imem_req_ready_o, .imem_req_addr_i,
+    .imem_req_valid_i, .imem_req_ready_o, .imem_req_addr_i, .imem_req_gbl_i,
     .imem_rsp_valid_o, .imem_rsp_ready_i, .imem_rsp_insn_o, .imem_rsp_error_o,
     .dmem_req_valid_i(dmem_req_valid_i && !ds_select),
     .dmem_req_ready_o(arb_dmem_req_ready),
@@ -231,7 +233,7 @@ module ppc_biu #(
     .bus_req_addr_o(scalar_req_addr),
     .bus_req_wdata_o(scalar_req_wdata),
     .bus_req_wstrb_o(scalar_req_wstrb),
-    .bus_req_attr_o(scalar_req_attr),
+    .bus_req_attr_o(scalar_req_attr), .bus_req_gbl_o(scalar_req_gbl),
     .bus_rsp_valid_i(scalar_rsp_valid),
     .bus_rsp_ready_o(scalar_router_rsp_ready),
     .bus_rsp_rdata_i(scalar_rsp_rdata),
@@ -248,7 +250,7 @@ module ppc_biu #(
     .req_instruction_i(scalar_req_instruction),
     .req_write_i(scalar_req_write), .req_addr_i(scalar_req_addr),
     .req_wdata_i(scalar_req_wdata), .req_wstrb_i(scalar_req_wstrb),
-    .req_attr_i(scalar_req_attr),
+    .req_attr_i(scalar_req_attr), .req_gbl_i(scalar_req_gbl),
     .rsp_valid_o(scalar_rsp_valid), .rsp_ready_i(scalar_router_rsp_ready),
     .rsp_rdata_o(scalar_rsp_rdata), .rsp_error_o(scalar_rsp_error),
     .busy_o(scalar_busy), .protocol_error_o(scalar_protocol_error),

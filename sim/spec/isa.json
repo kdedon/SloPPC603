@@ -21749,7 +21749,7 @@
           "ENABLE_FULL_DECODE"
         ],
         "validation": "accepted_full_decode_benches",
-        "note": "Read-only cpu_cfg().pvr, 0x00070101 on the PID7v-603e; mtspr PVR is an undefined SPR write."
+        "note": "Read-only cpu_cfg().pvr, 0x00070200 on the PID7v-603e; mtspr PVR is an undefined SPR write."
       },
       "evidence": [
         {

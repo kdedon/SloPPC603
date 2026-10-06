@@ -318,6 +318,7 @@ module ppc_core_cached_bus60x_managed #(
 
   // Disabled-cache instruction fetches and ordinary data operations share
   // the scalar single-beat adapter.  The router captures the selected owner.
+  logic bus_req_gbl;
   ppc_bus60x_arbiter scalar_router (
     .clk_i, .rst_ni,
     .imem_req_valid_i(bypass_req_valid && !transport_ifetch_error),
@@ -341,7 +342,7 @@ module ppc_core_cached_bus60x_managed #(
     .bus_req_addr_o(scalar_req_addr),
     .bus_req_wdata_o(scalar_req_wdata),
     .bus_req_wstrb_o(scalar_req_wstrb),
-    .bus_req_attr_o(scalar_req_attr),
+    .bus_req_attr_o(scalar_req_attr), .bus_req_gbl_o(bus_req_gbl), .imem_req_gbl_i(1'b0),
     .bus_rsp_valid_i(scalar_rsp_valid),
     .bus_rsp_ready_o(scalar_router_rsp_ready),
     .bus_rsp_rdata_i(scalar_rsp_rdata),
@@ -356,7 +357,7 @@ module ppc_core_cached_bus60x_managed #(
     .req_instruction_i(scalar_req_instruction),
     .req_write_i(scalar_req_write), .req_addr_i(scalar_req_addr),
     .req_wdata_i(scalar_req_wdata), .req_wstrb_i(scalar_req_wstrb),
-    .req_attr_i(scalar_req_attr),
+    .req_attr_i(scalar_req_attr), .req_gbl_i(bus_req_gbl),
     .rsp_valid_o(scalar_rsp_valid), .rsp_ready_i(scalar_router_rsp_ready),
     .rsp_rdata_o(scalar_rsp_rdata), .rsp_error_o(scalar_rsp_error),
     .busy_o(scalar_busy), .protocol_error_o(scalar_protocol_error),

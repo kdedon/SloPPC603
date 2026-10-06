@@ -251,6 +251,7 @@ int main(int argc, char** argv) {
         is_deterministic = true;
         gProfilerObj.reset(new Profiler());
         ppc_cpu_init(&memory, PPC_VER::MPC603EV, false, 25000000ULL);
+        ppc_state.spr[SPR::PVR] = 0x00070200U;  // UM 1.3.1.2 PID7v level
         ppc_state.pc = reset_pc;
         std::ofstream trace(argv[3]);
         if (!trace) throw std::runtime_error("cannot open trace");

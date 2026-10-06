@@ -270,7 +270,8 @@ int main(int argc, char** argv) {
         std::string model = argc == 3 ? argv[2] : "MPC603EV";
         if (model != "MPC603EV" && model != "MPC603E" && model != "MPC603")
             throw std::runtime_error("unsupported model (602/601/LE disabled)");
-        ppc_state.spr[SPR::PVR] = model == "MPC603EV" ? PPC_VER::MPC603EV :
+        // The RTL reports the manual's PID7v level 0x0200 (UM 1.3.1.2).
+        ppc_state.spr[SPR::PVR] = model == "MPC603EV" ? 0x00070200U :
                                   model == "MPC603E" ? PPC_VER::MPC603E : PPC_VER::MPC603;
         std::ifstream input(argv[1]);
         if (!input) throw std::runtime_error("cannot open program");

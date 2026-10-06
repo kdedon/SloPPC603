@@ -14,7 +14,7 @@ consistency; every mismatch is decided against the manuals.
 - `sim/cosim/firmware_runner.cpp` links the unmodified DingusPPC sources
   (`ppcexec`, `ppcmmu`, `ppcexceptions`, the opcode files, `memctrlbase`,
   `timermanager`) with 1 MiB of RAM at `0xfff00000`, model MPC603EV with its PVR
-  `0x00070101` (the RTL PID7v PVR), deterministic time, and reset at
+  `0x00070200` (the RTL PID7v PVR), deterministic time, and reset at
   `0xfff00100` with MSR[IP] set. It steps one instruction at a time and
   records the PC, whether an exception was taken, and each GPR that changed.
   It stops once the `tohost` word is nonzero and dumps RAM.
