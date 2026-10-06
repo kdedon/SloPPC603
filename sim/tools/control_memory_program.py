@@ -581,6 +581,28 @@ def make_branch_fold():
         # One per pad: behind an uncompleted linking branch it would wait.
         e('addi',3,0,t('g'));e('cmpi',0,4,1);e('divw',8,6,7,0,0);e('mtlr',3)
         p.folds.append(len(p.ops)*4);e('bc',13 if pad%2 else 20,2,t('g'),0,1);tail('g')
+    # UM 6.4.1.1 seventh case: a branch on CR behind one still waiting on
+    # CR (a compare behind a divide) is not predicted, and fetching stops
+    # at it. Either branch predicted taken or not; the second's predicted
+    # path holds poison, so neither folding it nor fetching past it passes.
+    for pad in range(4):
+        for pred1 in (0,1):
+            for pred2 in (0,1):
+                t=lambda name:f'c{name}{pad}{pred1}{pred2}'
+                nops(pad)
+                e('divw',8,6,7,0,0);e('cmp',0,8,8)
+                if pred1:e('bc',13,2,t('n'),0,0)
+                else:e('bc',4,2,t('z'),0,0)
+                p.label(t('n'))
+                if pred2:
+                    e('bc',5,2,t('p'),0,0);e('b',t('z'),0,0)
+                    for _ in range(5):e('illegal')
+                    p.label(t('p'))
+                else:
+                    e('bc',12,2,t('z'),0,0)
+                    for _ in range(5):e('illegal')
+                for _ in range(4):e('poison')
+                p.label(t('z'))
     # A leaf called in a loop: the return folds once the bl retires.
     e('addi',5,0,8);e('mtctr',5)
     p.label('loop');e('b','body',0,1);e('add',22,22,21);e('bc',16,0,'loop',0,0)
