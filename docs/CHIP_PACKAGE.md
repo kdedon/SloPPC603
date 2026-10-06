@@ -179,7 +179,8 @@ the data bus to the push; the read takes the next DBG. Otherwise DBWO is
 ignored: with no push owed the pending tenure runs, and an older write still
 runs first, since DBWO does not reorder writes (UM §7.2.6.2, §8.10). A system
 that does not need the reordering keeps DBWO negated, as the manual
-recommends.
+recommends. Only a push can pass a read, so DBWO never lets a store pass a
+program-ordered read and cannot undo an `eieio` (UM §8.4.2).
 
 System requirement with DBWO negated: the push's data waits for the
 processor's pending data tenure. The system must complete that data tenure

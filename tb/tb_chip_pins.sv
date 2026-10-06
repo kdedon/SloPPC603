@@ -582,6 +582,47 @@ module tb_chip_pins #(parameter int PLL = -1);
   // every read beat is cancelled once and replaced.
   localparam logic [31:0] SRC = BASE + 32'h9000, LINES = BASE + 32'ha000;
   localparam int RES = 'h80, FLAG = 'h50;
+  // Critical-word lines: line k is loaded first at offset CW_OFF[k].
+  localparam logic [31:0] CW_LINES = BASE + 32'hf400;
+  localparam int CW_OFF [5] = '{'h00, 'h0c, 'h10, 'h1c, 'h04};
+
+  // Figure 8-21 in 32-bit mode: a burst drives a double-word-aligned
+  // address with TBST asserted and TSIZ = 010, and its data tenure has
+  // eight beats (TAs less the DRTRY-cancelled ones). Single and double
+  // transfers have one or two (Figure 8-22). A DRTRY, with the replacement
+  // TA, may follow the final TA after DBB is released.
+  bit mon32 = 1'b0;
+  int mon32_bursts = 0, mon32_eight = 0, mon32_tail = 0, mon32_beats = 0;
+  bit mon32_in = 1'b0;
+  logic [31:0] mon32_reads [$];
+  always @(posedge clk) if (bus_ce && mon32) begin
+    if (ts_oe && !ts_n && !tbst_n) begin
+      if ((32'(a) & 32'h7) != 0 || tsiz != 3'b010)
+        $fatal(1, "32-bit burst A=%08x TSIZ=%03b cycle=%0d", 32'(a), tsiz, cycles);
+      mon32_bursts++;
+      if (tt[1]) mon32_reads.push_back(32'(a));
+    end
+    if (dbb_oe && !dbb_n) begin
+      if (!mon32_in && mon32_tail > 0) $fatal(1, "32-bit tenure follows a pending DRTRY window");
+      mon32_in = 1'b1;
+      mon32_tail = 2;
+    end else if (mon32_in) begin
+      mon32_in = 1'b0;
+    end
+    if (mon32_tail > 0) begin
+      if (!ta_n && (mon32_in || mon32_tail == 2)) mon32_beats++;
+      if (!drtry_n) mon32_beats--;
+      if (!mon32_in) begin
+        mon32_tail--;
+        if (mon32_tail == 0) begin
+          if (!(mon32_beats inside {1, 2, 8}))
+            $fatal(1, "32-bit data tenure with %0d beats cycle=%0d", mon32_beats, cycles);
+          if (mon32_beats == 8) mon32_eight++;
+          mon32_beats = 0;
+        end
+      end
+    end
+  end
   task automatic case_dbw32(input bit reduced, input bit drtry);
     /* verilator lint_off UNUSEDSIGNAL */
     logic [255:0] line;  // only the pushed word is checked
@@ -592,6 +633,8 @@ module tb_chip_pins #(parameter int PLL = -1);
     put_word(SRC, 32'h1122_3344);
     put_word(SRC + 4, 32'h5566_7788);
     for (int k = 0; k < 5; k++) put_word(LINES + 32'(k) * 32'h1000 + 8, 32'h100 * k);
+    for (int k = 0; k < 5; k++)
+      for (int w = 0; w < 8; w++) put_word(CW_LINES + 32'(32 * k + 4 * w), 32'h5a00_0000 | 32'(16 * k + w));
     at = MAIN;
     prologue(32'h0, MSR_IP | MSR_ME);
     emit_const(6, SRC);
@@ -620,6 +663,14 @@ module tb_chip_pins #(parameter int PLL = -1);
       emit(asm_addi(7, 7, k + 1));
       emit(asm_stw(7, 8, 6));
     end
+    // Fills of each critical double word, and of a low word.
+    for (int k = 0; k < 5; k++) begin
+      emit_const(6, CW_LINES + 32'(32 * k));
+      emit(asm_lwz(7, CW_OFF[k], 6));
+      emit(asm_stw(7, RES + 'h30 + 4 * k, 31));
+    end
+    emit_const(9, DATA + RES + 'h40);
+    emit(asm_dcbf(0, 9));
     emit_const(6, LINES);
     emit(asm_lwz(7, 8, 6));
     emit(asm_stw(7, RES + 'h28, 31));
@@ -642,7 +693,11 @@ module tb_chip_pins #(parameter int PLL = -1);
     else tlbisync_n = 1'b0;
     wait_bus_idle();
     memory.dbw32 = 1'b1;
+    mon32_reads.delete();
+    mon32_bursts = 0;
+    mon32_eight = 0;
     hard_reset();
+    mon32 = 1'b1;
     tlbisync_n = 1'b1;
     wait_word(RESETS, 1, 6000, "32-bit bus boot");
     wait_word(FLAG, 1, 40000, "32-bit bus program");
@@ -671,12 +726,26 @@ module tb_chip_pins #(parameter int PLL = -1);
           $sformatf("32-bit bursts: writes=%0d reads=%0d paired beats=%0d",
                     memory.n_write_burst - bursts_w, memory.bursts - bursts_r,
                     memory.n_paired32 - beats));
+    for (int k = 0; k < 5; k++) begin
+      logic [31:0] want;
+      bit seen;
+      want = CW_LINES + 32'(32 * k) + 32'(CW_OFF[k] & 'h18);
+      seen = 1'b0;
+      foreach (mon32_reads[i]) if (mon32_reads[i] == want) seen = 1'b1;
+      check(seen && mem_word(DATA + RES + 'h30 + 32'(4 * k)) ==
+                    (32'h5a00_0000 | 32'(16 * k + CW_OFF[k] / 4)),
+            $sformatf("32-bit critical word %0d: fill at %08x seen=%0d, loaded %08x", k, want,
+                      seen, mem_word(DATA + RES + 'h30 + 32'(4 * k))));
+    end
+    check(mon32_eight >= mon32_bursts && mon32_bursts >= 14,
+          $sformatf("32-bit bursts %0d, eight-beat tenures %0d", mon32_bursts, mon32_eight));
     if (reduced)
       check(!rsrv_n && ape_n && dpe_n, "reduced pinout: RSRV low, APE and DPE released");
-    $display("chip pins: 32-bit bus, reduced=%0d drtry=%0d: paired beats=%0d write bursts=%0d read bursts=%0d drtries=%0d",
+    $display("chip pins: 32-bit bus, reduced=%0d drtry=%0d: paired beats=%0d write bursts=%0d read bursts=%0d drtries=%0d burst tenures=%0d eight-beat=%0d",
              reduced, drtry, memory.n_paired32 - beats, memory.n_write_burst - bursts_w,
-             memory.bursts - bursts_r, memory.drtries - drtries);
+             memory.bursts - bursts_r, memory.drtries - drtries, mon32_bursts, mon32_eight);
     wait_bus_idle();
+    mon32 = 1'b0;
     memory.dbw32 = 1'b0;
     bfm_drtry = 1'b0;
     qack_n = 1'b0;

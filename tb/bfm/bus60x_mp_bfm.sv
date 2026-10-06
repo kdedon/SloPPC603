@@ -17,7 +17,17 @@
 // then replaced by the right data with TA. With early_dbg_pct the next data
 // tenure's DBG is asserted during the final beat's DRTRY. Reads of the
 // tea_base window end with TEA on a random beat with tea_pct, writes with
-// tea_write_pct.
+// tea_write_pct. With write_drtry_pct DRTRY is asserted in the cycle after a
+// write beat's TA; a write ignores it (UM 7.2.7.2), so the processor must
+// neither repeat the beat nor hold the data bus longer.
+//
+// DBWO (UM 7.2.6.2, 8.10), with dbwo_pct nonzero: when the next data tenure
+// is a read and the same processor owes a later write, DBWO mostly goes with
+// the DBG and that write runs first. With dbwo_pct it is also asserted when
+// no write may pass (the next tenure is a write, or the processor owes no
+// later write and has no address tenure in progress); the processor must
+// then ignore it. A read's DBG may wait while its master requests or holds
+// the address bus, or for up to 32 cycles.
 //
 // Arbitration: a processor that asserted ARTRY and still asserts BR in the
 // cycle after the qualified ARTRY is granted next, and its tenure must be
@@ -59,6 +69,7 @@ module bus60x_mp_bfm #(
   input  logic [1:0]  d_oe_i,
   output logic [1:0]  bg_n_o,
   output logic [1:0]  dbg_n_o,
+  output logic [1:0]  dbwo_n_o,
   output logic [1:0]  ta_n_o,
   output logic        drtry_n_o,
   output logic        tea_n_o,
@@ -107,13 +118,15 @@ module bus60x_mp_bfm #(
   // negated, and DBGs asserted during a DRTRY.
   int pipelined = 0, self_pipelined = 0, early_bg = 0, early_bg_retried = 0;
   int drtries = 0, drtry_holds = 0, early_dbg = 0, early_dbg_holds = 0;
-  int write_teas = 0;
+  int write_teas = 0, write_drtries = 0;
+  // Writes run ahead of an older read under DBWO, and DBWOs to be ignored.
+  int dbwo_runs = 0, dbwo_ignored = 0;
   /* verilator lint_on UNUSEDSIGNAL */
   // Percent chances: target retry, extra waits, pipelined grant per cycle,
   // early BG, DRTRY per read beat, early DBG, TEA per window read.
   int retry_pct = 5, wait_pct = 25, pipe_pct = 50, early_bg_pct = 50;
   int drtry_pct = 10, early_dbg_pct = 50, tea_pct = 40, tea_write_pct = 0;
-  int max_owed = 2;
+  int max_owed = 2, dbwo_pct = 0, write_drtry_pct = 0;
   logic [31:0] tea_base = 32'b0, tea_bytes = 32'b0;
   int unsigned rng = SEED;
   logic target_artry_n;
@@ -295,6 +308,13 @@ module bus60x_mp_bfm #(
         mem[int'((t.burst ? base : t.addr) + 32'(b) - BASE_ADDR)] =
           d_i[t.m][63-8*(offset + b) -: 8];
     beat_end();
+    if (chance(write_drtry_pct)) begin
+      drtry_n_o = 1'b0;
+      write_drtries++;
+      bus_rise();
+      bus_fall();
+      drtry_n_o = 1'b1;
+    end
   endtask
 
   // TEA in place of a write beat's TA; earlier beats stay written.
@@ -310,7 +330,7 @@ module bus60x_mp_bfm #(
     at_fall = 1'b1;
   endtask
 
-  task automatic data_tenure(input dt_t t);
+  task automatic data_tenure(input dt_t t, input bit dbwo);
     int beats, tea_beat;
     bit ended;
     beats = t.burst ? 4 : 1;
@@ -321,12 +341,14 @@ module bus60x_mp_bfm #(
       waits();
       bus_fall();
       dbg_n_o[t.m] = 1'b0;
+      dbwo_n_o[t.m] = !dbwo;
     end
     do bus_rise(); while (!(dbb_oe_i[t.m] && !dbb_n_i[t.m]));
     data_master = t.m;
     bus_fall();
     at_fall = 1'b1;
     dbg_n_o[t.m] = 1'b1;
+    dbwo_n_o[t.m] = 1'b1;
     data_tenures[t.m]++;
     for (int k = 0; k < beats && !ended; k++) begin
       logic [31:0] base;
@@ -376,15 +398,46 @@ module bus60x_mp_bfm #(
   // writer, even an initializer, makes Verilator update logic fed by the pin
   // only on the edges of the consumer's other inputs, not when the pin moves.
   initial begin : data_bus
-    dbg_n_o = 2'b11; ta_n_o = 2'b11; drtry_n_o = 1'b1; tea_n_o = 1'b1;
-    d_o = 64'b0;
+    int pick;
+    bit dbwo;
+    dbg_n_o = 2'b11; dbwo_n_o = 2'b11; ta_n_o = 2'b11; drtry_n_o = 1'b1;
+    tea_n_o = 1'b1; d_o = 64'b0;
     forever begin
       bus_rise();
       if (dq.size() == 0) continue;
-      cur = dq.pop_front();
+      // With DBWO in use, a read's grant may wait while its master requests
+      // or holds the address bus for a tenure that may be a push.
+      if (dbwo_pct > 0 && !dq[0].write && dbg_n_o[dq[0].m] &&
+          (!br_n_i[dq[0].m] || (window && window_master == dq[0].m)) &&
+          chance(90)) continue;
+      if (dbwo_pct > 0 && !dq[0].write && dbg_n_o[dq[0].m] && chance(80))
+        repeat (1 + rnd() % 32) bus_rise();
+      // The processor's next write behind its read at the head, if any.
+      pick = 0;
+      dbwo = 1'b0;
+      if (!dq[0].write)
+        for (int i = 1; i < dq.size(); i++)
+          if (dq[i].m == dq[0].m) begin
+            if (dq[i].write) pick = i;
+            break;
+          end
+      // An early DBG already went to the head's master without DBWO.
+      if (dbg_n_o[dq[0].m] && dbwo_pct > 0) begin
+        if (pick > 0 && chance(90)) begin
+          dbwo = 1'b1;
+          dbwo_runs++;
+        end else if (pick == 0 && chance(dbwo_pct) &&
+                     (dq[0].write || !(window && window_master == dq[0].m))) begin
+          dbwo = 1'b1;
+          dbwo_ignored++;
+        end
+      end
+      if (!dbwo) pick = 0;
+      cur = dq[pick];
+      dq.delete(pick);
       data_busy = 1'b1;
       cur_tea = 1'b0;
-      data_tenure(cur);
+      data_tenure(cur, dbwo);
       data_busy = 1'b0;
     end
   end

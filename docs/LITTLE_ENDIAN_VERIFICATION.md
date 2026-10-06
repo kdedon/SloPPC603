@@ -116,7 +116,8 @@ adapter. No RTL defect was found.
   rules.
 - The chip bench covers data and fetch munging; the DSI and `MSR[ILE]` paths are covered
   only by `test-core-le`.
-- Misaligned `eciwx`/`ecowx` stay alignment exceptions on every variant;
-  `cfg.misaligned_ecxwx_hw` still has no consumer.
+- Misaligned `eciwx`/`ecowx` take alignment in little-endian mode on every
+  variant; in big-endian mode PID6 and the 603 split them
+  (`cfg.misaligned_ecxwx_hw`, `test-chip-ecxwx`; [CPU_VARIANTS.md](CPU_VARIANTS.md#14-exceptions-and-msr)).
 - Timing is unmeasured: the lane adds a 29-bit add on the data request address and the
   fetch address gains an XOR and a mux.
