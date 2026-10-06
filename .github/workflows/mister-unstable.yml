@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
 # Rolling MiSTer build of main, published as the "unstable" prerelease: the
-# test core (COMPACT FPU, dual dispatch, pipelined load/store unit) and the
+# test core (COMPACT FPU, dual dispatch, pipelined load/store unit) at a
+# 45 MHz system clock and the
 # redistributable program images; the Embench image (GPL-3.0) goes with its
 # corresponding source. The release and its tag are replaced on every run; a build with negative slack
 # fails and publishes nothing.
@@ -37,7 +38,7 @@ jobs:
       - name: Build the core
         run: |
           for seed in 2 3 4 5; do
-            ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe --seed "${seed}" && exit 0
+            ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe --sys-mhz 45 --seed "${seed}" && exit 0
           done
           exit 1
       - name: Program images

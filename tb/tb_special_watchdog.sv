@@ -33,6 +33,8 @@ module tb_special_watchdog;
   logic tlb_fill_idle_i;
   logic dispatch_valid_i;
   ppc_pkg::uop_t uop_i;
+  logic dispatch_align_i;
+  assign dispatch_align_i = 1'b0;
   ppc_pkg::completion_tag_t producer_i;
   logic [31:0] pc_i;
   logic [31:0] insn_i;

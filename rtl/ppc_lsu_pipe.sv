@@ -111,6 +111,8 @@ module ppc_lsu_pipe #(
   output logic rsp_owner_o,
   input  logic lane_rsp_ready_i,
   output logic result_valid_o,
+  // result_valid_o without the recovery kill.
+  output logic result_offer_o,
   output ppc_pkg::result_packet_t result_o,
   output logic fp_rsp_valid_o,
   output ppc_pkg::completion_tag_t fp_rsp_tag_o,
@@ -272,8 +274,11 @@ module ppc_lsu_pipe #(
   assign base_sum0 = wake_i.value + p1_head.offset;
   assign base_sum1 = wake1_i.value + p1_head.offset;
   assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1;
-  assign head_ea = !p1_head.base_wait ? p1_head.ea : head_base0 ? base_sum0 : base_sum1;
-  assign head_fast = !p1_head.base_wait ? p1_head.fast :
+  // Without the snoop a waiting head is neither fast nor offered, so its
+  // registered EA stands in.
+  assign head_ea = (!BASE_SNOOP || !p1_head.base_wait) ? p1_head.ea :
+                   head_base0 ? base_sum0 : base_sum1;
+  assign head_fast = (!BASE_SNOOP || !p1_head.base_wait) ? p1_head.fast :
     (int_fast(p1_head.uop.mem_size, head_ea[1:0]) &&
      !int_trap(p1_head.uop.mem_size, head_ea[11:0], dr_i));
   assign p1_addr = {head_ea[31:3], head_ea[2] ^ p1_head.munge[2], 2'b00};
@@ -295,9 +300,12 @@ module ppc_lsu_pipe #(
   // the queue. A store write that stands keeps the port. Its EA and fault
   // check here come from P1 registers.
   logic load_first, sq_offered_q;
+  // A load's data is ready from entry, so it waits on no wake bus.
+  logic load_ready;
+  assign load_ready = !p1_head.fp || (!p1_head.hold && p1_head.launched);
   assign load_first = p1_valid && !p1_head.store && !p1_head.killed && !offered_q &&
     !sq_offered_q &&
-    !p1_head.base_wait && p1_head.fast && p1_ready && !sq_overlap && !redo_valid_q &&
+    !p1_head.base_wait && p1_head.fast && load_ready && !sq_overlap && !redo_valid_q &&
     (sq_count_q != SQ_W'(SQ_DEPTH));
   // A retired store is otherwise written ahead of any later offer, except one
   // that already stands non-speculatively.
@@ -450,6 +458,7 @@ module ppc_lsu_pipe #(
   end
 
   // ------------------------------------------------------------- Result
+  assign result_offer_o = r_valid_q;
   assign result_valid_o = r_valid_q && !killed_now(r_q.producer);
   assign result_o = r_q;
   assign fp_rsp_valid_o = r_fp_valid_q && !killed_now(r_fp_tag_q);
@@ -511,9 +520,33 @@ module ppc_lsu_pipe #(
     end
   end
 
+  // A base written this cycle, resolved for each entry P1 may hold next:
+  // P1[0], P1[1] and the incoming access. The pop then only selects.
+  entry_t base_src [3];
+  logic base_hit [3], base_fast [3], base_trap [3];
+  logic [31:0] base_ea [3];
+  always_comb begin
+    base_src[0] = p1_q[0];
+    base_src[1] = p1_q[1];
+    base_src[2] = incoming;
+    for (int s = 0; s < 3; s++) begin
+      logic hit0, hit1;
+      hit0 = wake_valid_i && (wake_i.tag == base_src[s].base_tag) &&
+             (wake_i.producer == base_src[s].base_producer);
+      hit1 = wake1_valid_i && (wake1_i.tag == base_src[s].base_tag) &&
+             (wake1_i.producer == base_src[s].base_producer);
+      base_hit[s] = hit0 || hit1;
+      base_ea[s] = (hit0 ? wake_i.value : wake1_i.value) + base_src[s].offset;
+      base_trap[s] = int_trap(base_src[s].uop.mem_size, base_ea[s][11:0], dr_i);
+      base_fast[s] = int_fast(base_src[s].uop.mem_size, base_ea[s][1:0]) && !base_trap[s];
+    end
+  end
+
   always_ff @(posedge clk_i) begin
     entry_t p1_next [2], p2_next [2], pushed;
     logic [1:0] p1_n, p2_n;
+    // Which base_src entry each P1 slot takes.
+    logic [1:0] p1_src [2];
     logic p1_pop, p2_pop, p2_push;
     p1_pop = p1_fire || p1_queue || p1_drop || p1_punt ||
              (adopt_fire && !p2_adopt && !redo_adopt);
@@ -535,9 +568,12 @@ module ppc_lsu_pipe #(
     // Shift out the popped heads. A second beat reaching the head moves to
     // the next word.
     p1_next = p1_q;
+    p1_src[0] = 2'd0;
+    p1_src[1] = 2'd1;
     p1_n = p1_count_q;
     if (p1_pop) begin
       p1_next[0] = p1_q[1];
+      p1_src[0] = 2'd1;
       if (p1_q[1].advance) begin
         p1_next[0].ea = {p1_q[1].ea[31:2] + 30'd1, p1_q[1].ea[1:0]};
         p1_next[0].advance = 1'b0;
@@ -558,9 +594,11 @@ module ppc_lsu_pipe #(
     end
     if (dispatch_fire) begin
       p1_next[p1_n[0]] = incoming;
+      p1_src[p1_n[0]] = 2'd2;
       p1_n = p1_n + 2'd1;
       if (in_split) begin
         p1_next[1] = incoming;
+        p1_src[1] = 2'd2;
         p1_next[1].second = 1'b1;
         p1_next[1].advance = 1'b1;
         p1_n = 2'd2;
@@ -588,23 +626,13 @@ module ppc_lsu_pipe #(
       end
       // A base written this cycle forms the EA; an alignment exception goes
       // to the lane with the access.
-      if (BASE_ANY && p1_next[i].base_wait) begin
-        logic hit0, hit1;
-        logic [31:0] ea;
-        hit0 = wake_valid_i && (wake_i.tag == p1_next[i].base_tag) &&
-               (wake_i.producer == p1_next[i].base_producer);
-        hit1 = wake1_valid_i && (wake1_i.tag == p1_next[i].base_tag) &&
-               (wake1_i.producer == p1_next[i].base_producer);
-        ea = (hit0 ? wake_i.value : wake1_i.value) + p1_next[i].offset;
-        if (hit0 || hit1) begin
-          p1_next[i].base_wait = 1'b0;
-          p1_next[i].ea = ea;
-          p1_next[i].fast = int_fast(p1_next[i].uop.mem_size, ea[1:0]) &&
-                            !int_trap(p1_next[i].uop.mem_size, ea[11:0], dr_i);
-          if (int_trap(p1_next[i].uop.mem_size, ea[11:0], dr_i)) begin
-            p1_next[i].uop.special_op = SPECIAL_ALIGNMENT;
-            p1_next[i].uop.gpr_write = 1'b0;
-          end
+      if (BASE_ANY && p1_next[i].base_wait && base_hit[p1_src[i]]) begin
+        p1_next[i].base_wait = 1'b0;
+        p1_next[i].ea = base_ea[p1_src[i]];
+        p1_next[i].fast = base_fast[p1_src[i]];
+        if (base_trap[p1_src[i]]) begin
+          p1_next[i].uop.special_op = SPECIAL_ALIGNMENT;
+          p1_next[i].uop.gpr_write = 1'b0;
         end
       end
     end
@@ -752,6 +780,9 @@ module ppc_lsu_pipe #(
     req_valid_o && !req_ready_i && !req_spec_o |=>
       req_valid_o && $stable({req_write_o, req_addr_o, req_wdata_o, req_wstrb_o}))
     else $error("stalled pipelined request changed");
+  always @(posedge clk_i)
+    if (rst_ni && p1_valid && !p1_head.store)
+      assert (load_ready == p1_ready) else $error("load waits on a wake bus");
   always @(posedge clk_i)
     if (rst_ni && p2_valid)
       assert (p2_head.fast) else $error("unperformable access in flight");

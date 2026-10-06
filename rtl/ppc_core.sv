@@ -283,7 +283,7 @@ module ppc_core #(
   result_packet_t result, iu_result, special_result;
   wake_packet_t wake;
   logic rs_ready, issue_valid, issue_ready, result_valid, result_ready, wake_valid;
-  logic iu_result_valid, iu_result_ready;
+  logic iu_result_valid, iu_result_ready, iu_result_offer, sru_result_offer;
   logic special_result_valid, special_result_ready, special_ready, special_busy;
   logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
   logic special_result_select;
@@ -293,6 +293,7 @@ module ppc_core #(
   logic special_drained, overlap_dispatch_ok;
   // Pipelined load/store unit.
   logic lsu_route, lsu_ready, lsu_empty, lsu_quiet, lsu_result_valid, lsu_store_irrevocable;
+  logic lsu_result_offer;
   logic lsu_req_valid, lsu_req_write, lsu_req_spec, lsu_rsp_ready, lsu_rsp_owner;
   logic [2:0] lsu_req_bytes;
   logic [31:0] lsu_req_addr;
@@ -310,7 +311,7 @@ module ppc_core #(
   logic [DMEM_BITS/8-1:0] sp_req_wstrb;
   dmem_attr_t sp_req_attr;
   logic sp_dispatch_valid;
-  uop_t sp_uop;
+  uop_t sp_uop, sp_dispatch_uop;
   completion_tag_t sp_producer;
   logic [31:0] sp_pc, sp_insn, sp_a, sp_b, sp_c;
   page_miss_t sp_page_miss;
@@ -409,7 +410,7 @@ module ppc_core #(
     (!ENABLE_MACHINE_CHECK ||
      (ENABLE_PIN_INTERRUPTS && ENABLE_DATA_CACHE && ENABLE_EXTERNAL_INTERRUPTS));
   logic lsu_store_error, store_tea_q;
-  logic sru_rs_ready, sru_result_valid, sru_result_ready, wake1_valid;
+  logic sru_rs_ready, sru_result_valid, sru_result_ready, wake1_valid, result1_offer;
   wake_packet_t wake1;
   logic sru_cancel, sru_idle, d1_sru, d1_station_ready;
   // Read only inside the SRU, which width 1 omits.
@@ -468,7 +469,7 @@ module ppc_core #(
   logic [1:0] removed_q, fetch_removed_q, iq_rb, dq1_rb, iq_rb_first;
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
-  logic [11:0] d1_ea;
+  logic [1:0] d1_ea;
   logic d1_lsu, d1_lsu_ready;
   // Read only by the load/store unit, which ENABLE_LSU_PIPE 0 omits.
   /* verilator lint_off UNUSEDSIGNAL */
@@ -949,16 +950,28 @@ module ppc_core #(
   // registers supply their operands without the rename/wake path.
   // A pipelined access may dispatch with its base registers in rename; any
   // other special uop finds them committed.
+  // a + b == k without the carry chain, so the alignment checks need not
+  // wait for the EA adder.
+  function automatic logic sum12_is(input logic [11:0] a, input logic [11:0] b,
+                                    input logic [11:0] k);
+    return (a ^ b ^ k) == {(a[10:0] & b[10:0]) | ((a[10:0] | b[10:0]) & ~k[10:0]), 1'b0};
+  endfunction
+  // An EA in the last bytes of a page: the last byte, or for a word any of
+  // the last three.
+  function automatic logic page_end(input logic [11:0] a, input logic [11:0] b,
+                                    input logic word);
+    return sum12_is(a, b, 12'hfff) ||
+           (word && (sum12_is(a, b, 12'hffe) || sum12_is(a, b, 12'hffd)));
+  endfunction
   assign special_a = uop.zero_a ? 32'b0 : src_a.value;
   assign special_b = uop.use_imm ? uop.imm : src_b.value;
   assign dispatch_ea = special_a + special_b;
-  assign dispatch_ea_low = dispatch_ea[1:0];
+  assign dispatch_ea_low = special_a[1:0] + special_b[1:0];
   // lmw/stmw/lwarx/stwcx. always need a word-aligned EA. With hardware
   // splitting, other scalars trap only when crossing a 4-KB page under data
   // translation (UM 4.5.6.1.1); BAT regions get no special handling.
-  assign dispatch_page_cross = (uop.mem_size == MEM_WORD) ?
-    (dispatch_ea[11:2] == 10'h3ff) && (dispatch_ea_low != 0) :
-    (dispatch_ea[11:0] == 12'hfff);
+  assign dispatch_page_cross = page_end(special_a[11:0], special_b[11:0],
+                                        uop.mem_size == MEM_WORD);
   // Strings never trap on alignment in big-endian mode. In little-endian
   // mode every multiple and string traps (UM 4.5.6), and so does a
   // misaligned scalar unless the part handles it in hardware.
@@ -1042,18 +1055,23 @@ module ppc_core #(
     end
   end
   // A branch resolved at dispatch; the IU passes its next PC through.
-  always_comb begin
-    dispatch_uop = dispatch_base;
-    if (bu_branch) begin
-      dispatch_uop.special_op = SPECIAL_NONE;
-      dispatch_uop.op = ALU_ADD;
-      dispatch_uop.invert_a = 1'b0;
-      dispatch_uop.carry_in = CARRY_ZERO;
-      dispatch_uop.zero_a = 1'b1;
-      dispatch_uop.use_imm = 1'b1;
-      dispatch_uop.gpr_write = 1'b0;
+  function automatic uop_t branch_resolved(input uop_t u, input logic branch);
+    uop_t r;
+    r = u;
+    if (branch) begin
+      r.special_op = SPECIAL_NONE;
+      r.op = ALU_ADD;
+      r.invert_a = 1'b0;
+      r.carry_in = CARRY_ZERO;
+      r.zero_a = 1'b1;
+      r.use_imm = 1'b1;
+      r.gpr_write = 1'b0;
     end
-  end
+    return r;
+  endfunction
+  assign dispatch_uop = branch_resolved(dispatch_base, bu_branch);
+  // The special unit takes the alignment fault as a separate input.
+  assign sp_dispatch_uop = branch_resolved(dispatch_pre, bu_branch);
   // Branch unit. Outside trace mode a branch resolves at dispatch from the
   // committed CR, LR and CTR, waiting while an uncommitted older instruction
   // writes one it reads; LR and CTR change when it retires. A taken branch
@@ -1384,6 +1402,7 @@ module ppc_core #(
     .alloc1_producer_i(dispatch1 ? alloc1_producer : alloc_producer),
     .alloc1_value_valid_i(update_alloc && !update_alloc_store), .alloc1_value_i(dispatch_ea),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
+    .wake1_offer_i(result1_offer),
     .release_i(commit && retire_o.rename_owned), .release_reg_i(retire_o.gpr), .release_tag_i(retire_o.tag),
     .release_producer_i(retire_producer),
     .release1_i(commit1 && retire1_o.rename_owned), .release1_reg_i(retire1_o.gpr),
@@ -1465,7 +1484,7 @@ module ppc_core #(
   ) iu (
     .clk_i, .rst_ni, .cancel_i(iu_cancel), .issue_valid_i(issue_valid),
     .issue_ready_o(issue_ready),
-    .issue_i(issue), .result_valid_o(iu_result_valid),
+    .issue_i(issue), .result_valid_o(iu_result_valid), .result_offer_o(iu_result_offer),
     .result_ready_i(iu_result_ready), .result_o(iu_result)
   );
   // The SRU is a second station and integer unit that only ever receives
@@ -1488,10 +1507,12 @@ module ppc_core #(
         .issue_o(sru_issue)
       );
       assign sru_issue_valid = sru_rs_issue_valid && !sru_cr_hold;
-      ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE), .MUL_602_TIMING(1'b0)) sru (
+      ppc_iu #(.DIV_LATENCY(DIV_LATENCY_EFFECTIVE), .MUL_602_TIMING(1'b0),
+               .ADD_COMPARE_ONLY(1'b1)) sru (
         .clk_i, .rst_ni, .cancel_i(sru_cancel), .issue_valid_i(sru_issue_valid),
         .issue_ready_o(sru_issue_ready), .issue_i(sru_issue),
-        .result_valid_o(sru_result_valid), .result_ready_i(sru_result_ready),
+        .result_valid_o(sru_result_valid), .result_offer_o(sru_result_offer),
+        .result_ready_i(sru_result_ready),
         .result_o(sru_result)
       );
       assign sru_idle = sru_rs_ready && !sru_issue_valid && sru_issue_ready &&
@@ -1504,6 +1525,7 @@ module ppc_core #(
       assign sru_issue_ready = 1'b0;
       assign sru_issue = '0;
       assign sru_result_valid = 1'b0;
+      assign sru_result_offer = 1'b0;
       assign sru_result = '0;
       assign sru_idle = 1'b1;
     end
@@ -1534,6 +1556,7 @@ module ppc_core #(
   ) special (
     .clk_i, .rst_ni, .dispatch_valid_i(sp_dispatch_valid),
     .dispatch_ready_o(special_ready), .uop_i(sp_uop),
+    .dispatch_align_i(dispatch_align && !sru_issue_go && !adopt_go && !lane_dq1),
     .dispatch_overlap_i(!sru_issue_go &&
                         (adopt_go || dispatch_mem_plain || dispatch_fp_mem_plain ||
                          (lane_dq1 && !special_busy))),
@@ -1644,27 +1667,32 @@ module ppc_core #(
 
   // An adopted access can reach the lane with IU work in flight; that
   // result waits while the lane owns the port.
-  assign result_valid = lsu_result_valid || special_result_valid ||
-                        (iu_result_valid && !special_result_select);
+  // The port selects on the LSU's offer, keeping the recovery kill out of
+  // the result's identity and value; a killed offer holds the port.
+  assign result_valid = lsu_result_valid ||
+    (!lsu_result_offer && (special_result_valid || (iu_result_valid && !special_result_select)));
   // A special op dispatches only into an idle IU and blocks dispatch until
   // it finishes, so the two result sources are never valid together and the
   // registered busy state can steer the payload.
   // Integer work overlapping a plain load or store waits one cycle when both
   // finish together.
   // A pipelined access result goes first; the lane never has one then.
-  assign result = lsu_result_valid ? lsu_result :
+  assign result = lsu_result_offer ? lsu_result :
                   special_result_select ? special_result : iu_result;
-  assign special_result_ready = result_ready && special_result_valid && !lsu_result_valid;
+  assign special_result_ready = result_ready && special_result_valid && !lsu_result_offer;
   // An IU result that meets a load's on the first port takes the second
   // when the SRU leaves it free: each unit has its own result bus (UM
   // 6.3.3), so a load's consumer finishes on its own timing. IU results
   // never fault and write only what the second port records.
   logic iu_port1;
   result_packet_t result1;
-  assign iu_port1 = HAS_SRU && ENABLE_LSU_PIPE && iu_result_valid && lsu_result_valid &&
-                    !special_result_select && !sru_result_valid;
-  assign result1 = sru_result_valid ? sru_result : iu_result;
-  assign iu_result_ready = (result_ready && !special_result_select && !lsu_result_valid) ||
+  assign iu_port1 = HAS_SRU && ENABLE_LSU_PIPE && iu_result_valid && lsu_result_offer &&
+                    !special_result_select && !sru_result_offer;
+  // The port selects on offers so a recovery's cancel stays out of the
+  // second result's identity and value.
+  assign result1 = sru_result_offer ? sru_result : iu_result;
+  assign result1_offer = sru_result_offer || iu_result_offer;
+  assign iu_result_ready = (result_ready && !special_result_select && !lsu_result_offer) ||
                            iu_port1;
   assign sru_result_ready = 1'b1;
   // Classify held identities without depending on cancel-masked valid signals.
@@ -2058,7 +2086,7 @@ module ppc_core #(
   // an alignment exception.
   assign d1_a = dq1_uop.zero_a ? 32'b0 : ENABLE_LSU_PIPE ? src_a1.value : arch_a1;
   assign d1_b = dq1_uop.use_imm ? dq1_uop.imm : ENABLE_LSU_PIPE ? src_b1.value : arch_b1;
-  assign d1_ea = d1_a[11:0] + d1_b[11:0];
+  assign d1_ea = d1_a[1:0] + d1_b[1:0];
   assign d1_ea_full = d1_a + d1_b;
   // Store data DQ0 writes follows from DQ0's new rename slot.
   always_comb begin
@@ -2073,8 +2101,7 @@ module ppc_core #(
     (((dq1_uop.mem_size == MEM_WORD) && (d1_ea[1:0] != 2'b00)) ||
      ((dq1_uop.mem_size == MEM_HALF) && d1_ea[0])) :
     ((dq1_uop.mem_size != MEM_BYTE) && msr[MSR_DR] &&
-     ((dq1_uop.mem_size == MEM_WORD) ?
-      ((d1_ea[11:2] == 10'h3ff) && (d1_ea[1:0] != 2'b00)) : (d1_ea[11:0] == 12'hfff)));
+     page_end(d1_a[11:0], d1_b[11:0], dq1_uop.mem_size == MEM_WORD));
   assign d1_mem_ready = !special_busy && !sru_hold_q && lsu_empty && !fp_unsafe_pending && !d1_misaligned &&
     !msr_le &&
     (dq1_uop.zero_a || (!gpr_mapped[dq1_uop.src_a] && !dq1_pair.dep_prev[0])) &&
@@ -2266,7 +2293,8 @@ module ppc_core #(
         .rsp_rdata_i(dmem_rsp_rdata_i), .rsp_error_i(dmem_rsp_error_i),
         .rsp_fault_i(dmem_rsp_fault_i), .rsp_owner_o(lsu_rsp_owner),
         .lane_rsp_ready_i(sp_rsp_ready),
-        .result_valid_o(lsu_result_valid), .result_o(lsu_result),
+        .result_valid_o(lsu_result_valid), .result_offer_o(lsu_result_offer),
+        .result_o(lsu_result),
         .fp_rsp_valid_o(fp_rsp_valid), .fp_rsp_tag_o(fp_rsp_tag),
         .fp_rsp_data_o(fp_rsp_data), .fp_rsp_fault_o(fp_rsp_fault),
         .adopt_valid_o(lsu_adopt_valid), .adopt_ready_i(special_ready && !sru_issue_go &&
@@ -2300,6 +2328,7 @@ module ppc_core #(
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;
+      assign lsu_result_offer = 1'b0;
       assign lsu_result = '0;
       assign lsu_adopt_valid = 1'b0;
       assign lsu_adopt_response = 1'b0;
@@ -2326,7 +2355,7 @@ module ppc_core #(
                              (dispatch && special_uop && !lsu_route && !sru_move) ||
                              (dispatch1 && d1_mem);
   assign sp_uop = sru_issue_go ? sru_uop_q : adopt_go ? lsu_adopt_uop :
-                  lane_dq1 ? d1_lane_uop : dispatch_uop;
+                  lane_dq1 ? d1_lane_uop : sp_dispatch_uop;
   assign sp_producer = sru_issue_go ? sru_producer_q : adopt_go ? lsu_adopt_producer :
                        lane_dq1 ? alloc1_producer : alloc_producer;
   assign sp_pc = sru_issue_go ? sru_pc_q : adopt_go ? lsu_adopt_pc :
@@ -2339,16 +2368,19 @@ module ppc_core #(
                 lane_dq1 ? arch_c1 : arch_c;
   assign sp_page_miss = (sru_issue_go || adopt_go || lane_dq1) ? '0 : head_page_miss;
   // The unit offers only while the lane is idle and the lane only while
-  // busy, so the request port needs no arbitration.
+  // busy, so the request port needs no arbitration, and the payload follows
+  // the idle state rather than the late offer.
+  logic lsu_req_sel;
+  assign lsu_req_sel = ENABLE_LSU_PIPE && lane_mem_idle;
   always_comb begin
     dmem_req_valid_o = sp_req_valid || lsu_req_valid;
-    dmem_req_write_o = lsu_req_valid ? lsu_req_write : sp_req_write;
-    dmem_req_addr_o = lsu_req_valid ? lsu_req_addr : sp_req_addr;
-    dmem_req_wdata_o = lsu_req_valid ? lsu_req_wdata : sp_req_wdata;
-    dmem_req_wstrb_o = lsu_req_valid ? lsu_req_wstrb : sp_req_wstrb;
+    dmem_req_write_o = lsu_req_sel ? lsu_req_write : sp_req_write;
+    dmem_req_addr_o = lsu_req_sel ? lsu_req_addr : sp_req_addr;
+    dmem_req_wdata_o = lsu_req_sel ? lsu_req_wdata : sp_req_wdata;
+    dmem_req_wstrb_o = lsu_req_sel ? lsu_req_wstrb : sp_req_wstrb;
     dmem_req_probe_o = !lsu_req_valid && sp_req_probe;
     dmem_req_attr_o = sp_req_attr;
-    if (lsu_req_valid) begin
+    if (lsu_req_sel) begin
       dmem_req_attr_o = '0;
       dmem_req_attr_o.kind = DMEM_NORMAL;
       dmem_req_attr_o.spec = lsu_req_spec;
@@ -2363,6 +2395,10 @@ module ppc_core #(
     if (rst_ni) begin
       assert (!(sp_req_valid && lsu_req_valid))
         else $error("lane and pipelined unit offered together");
+      assert (!(sp_req_valid && lsu_req_sel))
+        else $error("lane offered while idle");
+      assert (!(lsu_req_valid && !lsu_req_sel))
+        else $error("pipelined unit offered beside a busy lane");
       assert (!(adopt_go && dispatch && special_uop && !lsu_route && !sru_move))
         else $error("adoption collided with a lane dispatch");
       assert (!(sru_issue_go && (adopt_go || (dispatch1 && d1_mem) ||
@@ -2625,7 +2661,7 @@ module ppc_core #(
     .alloc1_finished_i(d1_fp || d1_branch), .alloc1_tag_o(alloc1_producer),
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     // UM 6.6.1: an IU or LSU result completes in its writeback cycle.
-    .result_retire_i(lsu_result_valid || !special_result_select),
+    .result_retire_i(lsu_result_offer || !special_result_select),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
     .result1_valid_i(sru_result_valid || iu_port1), .result1_i(result1),

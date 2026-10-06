@@ -19,7 +19,9 @@
 # --lsu-pipe builds it with the pipelined load/store unit (ENABLE_LSU_PIPE).
 # Every core loads program images from the OSD (Load program); the build
 # also writes the images to build/mister/images. --analyze runs Quartus
-# analysis and elaboration only. --seed N sets the fitter seed.
+# analysis and elaboration only. --seed N sets the fitter seed. --sys-mhz N
+# sets the system clock (processor, DDR3 port, video) to N MHz, 10 to 99;
+# the default, 45, is the clock the published core closes timing at.
 set -euo pipefail
 clean=0
 native=0
@@ -30,7 +32,8 @@ lsu_pipe=0
 analyze=0
 suite=""
 seed=""
-usage() { echo "usage: $0 [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N]" >&2; exit 2; }
+sys_mhz=45
+usage() { echo "usage: $0 [--clean] [--analyze] [--native] [--fpu|--fpu-compact] [--dual] [--lsu-pipe] [--suite nbench|embench|selftest|whetstone] [--seed N] [--sys-mhz N]" >&2; exit 2; }
 while (($#)); do
   case "$1" in
     --clean) clean=1 ;;
@@ -44,6 +47,11 @@ while (($#)); do
       shift
       [[ "${1:-}" =~ ^[0-9]+$ ]] || usage
       seed="$1"
+      ;;
+    --sys-mhz)
+      shift
+      [[ "${1:-}" =~ ^[1-9][0-9]$ ]] || usage
+      sys_mhz="$1"
       ;;
     --suite)
       shift
@@ -93,6 +101,8 @@ python3 "${here}/hex2mif.py" "${here}/firmware/mister.hex" $((ram_bytes / 8)) "$
 } > "${here}/files.qip"
 
 rm -rf "${here}/output_files" "${here}/build_id.v"
+printf '`define MISTER_SYS_MHZ %s\n`define MISTER_PLL_FREQ "%s.000000 MHz"\n' "${sys_mhz}" "${sys_mhz}" \
+  > "${here}/sys_clock.vh"
 # Quartus writes every sourced assignment back into the project file.
 cp "${here}/ppc603e.qsf" "${here}/ppc603e.qsf.keep"
 if [[ "${native}" == 1 ]]; then
@@ -171,7 +181,7 @@ if [[ -f "${out}/ppc603e.rbf" ]]; then
     rbf="${out}/ppc603e${suite:+_${suite}}${fpu_part}.rbf"
     mv "${out}/ppc603e.rbf" "${rbf}"
   fi
-  what="${short}, ${suite:-hello/Dhrystone/CoreMark}$([[ "${fpu}" == 1 ]] && echo ", FPU" || true)$([[ "${dual}" == 1 ]] && echo ", dual dispatch" || true)$([[ "${lsu_pipe}" == 1 ]] && echo ", pipelined LSU" || true), $([[ "${native}" == 1 ]] && echo "native video" || echo "1920x1080 DDR3 framebuffer")"
+  what="${short}, ${sys_mhz} MHz, ${suite:-hello/Dhrystone/CoreMark}$([[ "${fpu}" == 1 ]] && echo ", FPU" || true)$([[ "${dual}" == 1 ]] && echo ", dual dispatch" || true)$([[ "${lsu_pipe}" == 1 ]] && echo ", pipelined LSU" || true), $([[ "${native}" == 1 ]] && echo "native video" || echo "1920x1080 DDR3 framebuffer")"
   echo "rbf: ${rbf} (${what})"
   summary_rbf="${rbf}"
   # A timing-clean build is published under the MiSTer name convention,
@@ -188,7 +198,7 @@ if [[ -f "${out}/ppc603e.rbf" ]]; then
   fi
   label="mister${suite:+-${suite}}$([[ "${native}" == 1 ]] && echo -native || true)"
   python3 "${repo}/quartus/fit_summary.py" --name "${label}" --dir "${out}" --revision ppc603e --image "${image}" \
-    --note "${what}" --rbf "${summary_rbf}" --out "${out}/${label}.summary.json" || status=1
+    --core-mhz "${sys_mhz}" --note "${what}" --rbf "${summary_rbf}" --out "${out}/${label}.summary.json" || status=1
   if [[ -n "${pub:-}" ]]; then cp "${out}/${label}.summary.json" "${pub}/${name%.rbf}.json"; fi
 fi
 echo "quartus exit status ${status}"

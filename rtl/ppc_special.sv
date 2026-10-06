@@ -104,6 +104,8 @@ module ppc_special #(
   input logic dispatch_valid_i,
   output logic dispatch_ready_o,
   input ppc_pkg::uop_t uop_i,
+  // The load or store in uop_i takes the alignment exception instead.
+  input logic dispatch_align_i,
   input ppc_pkg::completion_tag_t producer_i,
   // A plain load or store, or its alignment exception: it needs no
   // commit-time action unless it faults.
@@ -1449,6 +1451,12 @@ module ppc_special #(
         default: ;
       endcase
     end
+    // An alignment exception is a context operation. It is applied last, as
+    // the latest input.
+    if (!interrupt_accept && dispatch_fire && dispatch_align_i) begin
+      fence_d = ENABLE_LIVE_CONTEXT;
+      state_d = ENABLE_LIVE_CONTEXT ? S_CONTEXT_DRAIN : S_EXEC;
+    end
   end
   // A plain access that completes without a fault retires with no lane
   // action, so the lane releases on its result.
@@ -1629,6 +1637,13 @@ module ppc_special #(
       timer_read_q <= 1'b0;
     end else if (dispatch_fire) begin
       uop_q <= uop_i;
+      if (dispatch_align_i) begin
+        // No faulting load destination or update-form base is written.
+        uop_q.special_op <= SPECIAL_ALIGNMENT;
+        uop_q.gpr_write <= 1'b0;
+        uop_q.mem_update <= 1'b0;
+        uop_q.seq_partial <= 1'b0;
+      end
       fetch_page_miss_q <= dispatch_page_miss_i;
       fetch_miss_eligible_q <= dispatch_fetch_miss_eligible;
       timer_read_q <= reads_timer(uop_i.special_op, uop_i.spr);

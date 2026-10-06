@@ -60,6 +60,7 @@ module tb_shift_execution;
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(iu_cancel),
     .issue_valid_i(issue_valid), .issue_ready_o(issue_ready), .issue_i(issue),
     .result_valid_o(result_valid), .result_ready_i(result_ready),
+    .result_offer_o(),
     .result_o(result)
   );
 

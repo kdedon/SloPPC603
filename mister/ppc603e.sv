@@ -65,6 +65,10 @@ localparam ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_COMPACT;
 localparam ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL;
 `endif
 
+// System clock in MHz: processor, DDR3 port and video (build.sh --sys-mhz).
+`include "sys_clock.vh"
+localparam int SYS_MHZ = `MISTER_SYS_MHZ;
+
 `ifdef MISTER_BENCH
 localparam int RAM_BYTES = 262144;
 `else
@@ -200,7 +204,7 @@ wire [23:0] pal_data;
 ppc603e_mister #(
 	.RAM_INIT("firmware/mister.mif"), .RAM_BYTES(RAM_BYTES), .FB_EXTERNAL(FB_EXTERNAL),
 	.FB_WIDTH(SCREEN_W), .FB_HEIGHT(SCREEN_H), .ENABLE_FPU(ENABLE_FPU),
-	.FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH)
+	.FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH), .SYS_MHZ(SYS_MHZ)
 ) core
 (
 	.clk_i(clk_sys),

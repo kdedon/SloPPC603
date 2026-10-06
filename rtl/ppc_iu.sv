@@ -9,7 +9,10 @@ module ppc_iu #(
   // 602 multiply timing: the first step multiplies by rB bits 15:0, one
   // cycle earlier than byte steps, with a floor of two cycles for register
   // forms; a MULLI whose SIMM fits one signed byte takes one.
-  parameter bit MUL_602_TIMING = 1'b0
+  parameter bit MUL_602_TIMING = 1'b0,
+  // Only add and compare forms issue; the multiplier, divider, rotator and
+  // logical ops are left out.
+  parameter bit ADD_COMPARE_ONLY = 1'b0
 ) (
   input logic clk_i, rst_ni,
   input logic cancel_i,
@@ -17,6 +20,8 @@ module ppc_iu #(
   output logic issue_ready_o,
   input ppc_pkg::issue_packet_t issue_i,
   output logic result_valid_o,
+  // result_valid_o without the cancel.
+  output logic result_offer_o,
   input logic result_ready_i,
   output ppc_pkg::result_packet_t result_o
 );
@@ -84,33 +89,45 @@ module ppc_iu #(
     if (DIV_LATENCY < 17)
       $fatal(1, "DIV_LATENCY must allow 16 radix-4 iterations after start");
   end
-  assign held_divide = (held.ctrl.op == ALU_DIVWU) || (held.ctrl.op == ALU_DIVW);
-  assign held_multiply = (held.ctrl.op == ALU_MULLI) ||
+  assign held_divide = !ADD_COMPARE_ONLY &&
+    ((held.ctrl.op == ALU_DIVWU) || (held.ctrl.op == ALU_DIVW));
+  assign held_multiply = !ADD_COMPARE_ONLY && ((held.ctrl.op == ALU_MULLI) ||
     (held.ctrl.op == ALU_MULLW) || (held.ctrl.op == ALU_MULHW) ||
-    (held.ctrl.op == ALU_MULHWU);
+    (held.ctrl.op == ALU_MULHWU));
   assign held_complete = held_divide ?
     ((divide_cycles_left == '0) && divider_quotient_valid && !divider_busy) :
     (!held_multiply || multiply_done);
   // Cancel frees the slot for a same-edge replacement.
   assign issue_ready_o = rst_ni &&
     (!occupied || cancel_i || (result_valid_o && result_ready_i));
-  assign result_valid_o = rst_ni && occupied && held_complete && !cancel_i;
+  assign result_offer_o = rst_ni && occupied && held_complete;
+  assign result_valid_o = result_offer_o && !cancel_i;
   assign result_o.producer = held.ctrl.producer;
   assign result_o.fault = 1'b0;
   assign result_o.data_fault = DATA_OK;
   assign result_o.page_miss = '0;
   assign result_o.update_value = '0;
-  assign divider_start = issue_valid_i && issue_ready_o &&
+  assign divider_start = !ADD_COMPARE_ONLY && issue_valid_i && issue_ready_o &&
     ((issue_i.ctrl.op == ALU_DIVWU) || (issue_i.ctrl.op == ALU_DIVW));
   assign divider_signed = issue_i.ctrl.op == ALU_DIVW;
   assign divider_cancel = cancel_i ||
     (result_valid_o && result_ready_i && held_divide);
-  ppc_divider divider (
-    .clk_i, .rst_ni, .start_i(divider_start), .cancel_i(divider_cancel),
-    .signed_i(divider_signed), .dividend_i(issue_i.a), .divisor_i(issue_i.b),
-    .busy_o(divider_busy), .quotient_valid_o(divider_quotient_valid),
-    .quotient_o(divider_quotient)
-  );
+  generate
+    if (ADD_COMPARE_ONLY) begin : g_no_divider
+      logic _unused_divider;
+      assign _unused_divider = &{1'b0, divider_start, divider_cancel, divider_signed};
+      assign divider_busy = 1'b0;
+      assign divider_quotient_valid = 1'b0;
+      assign divider_quotient = '0;
+    end else begin : g_divider
+      ppc_divider divider (
+        .clk_i, .rst_ni, .start_i(divider_start), .cancel_i(divider_cancel),
+        .signed_i(divider_signed), .dividend_i(issue_i.a), .divisor_i(issue_i.b),
+        .busy_o(divider_busy), .quotient_valid_o(divider_quotient_valid),
+        .quotient_o(divider_quotient)
+      );
+    end
+  endgenerate
   assign add_operand_a = held.ctrl.invert_a ? ~held.a : held.a;
   always_comb begin
     case (held.ctrl.carry_in)
@@ -133,9 +150,9 @@ module ppc_iu #(
   // MULLW/MULHW and 2-5 for MULHWU. A MULLI whose SIMM fits one signed byte
   // takes 1: its low word is read from the product in the cycle after
   // issue, while the first step accumulates it.
-  assign issue_multiply = (issue_i.ctrl.op == ALU_MULLI) ||
+  assign issue_multiply = !ADD_COMPARE_ONLY && ((issue_i.ctrl.op == ALU_MULLI) ||
     (issue_i.ctrl.op == ALU_MULLW) || (issue_i.ctrl.op == ALU_MULHW) ||
-    (issue_i.ctrl.op == ALU_MULHWU);
+    (issue_i.ctrl.op == ALU_MULHWU));
   assign issue_multiply_signed = issue_i.ctrl.op != ALU_MULHWU;
   assign multiply_a = {multiply_a_sign_q, held.a};
   assign multiply_b = {multiply_b_sign_q, held.b[31:7]};
@@ -143,7 +160,7 @@ module ppc_iu #(
   assign multiply_partial = multiply_a * multiply_digit;
   assign multiply_partial_ext = 64'(multiply_partial);
   assign issue_digit = {issue_i.b[DIGIT_WIDTH-2], issue_i.b[DIGIT_WIDTH-2:0]};
-  assign issue_mulli_short = MUL_602_TIMING &&
+  assign issue_mulli_short = MUL_602_TIMING && !ADD_COMPARE_ONLY &&
     (issue_i.ctrl.op == ALU_MULLI) &&
     (&issue_i.b[31:7] || !(|issue_i.b[31:7]));
   always_comb begin
@@ -234,7 +251,8 @@ module ppc_iu #(
   assign divide_by_zero = held.b == 0;
   assign signed_divide_exception = divide_by_zero ||
     ((held.a == 32'h8000_0000) && (held.b == 32'hffff_ffff));
-  assign operation_overflow = ((held.ctrl.op == ALU_MULLI) ||
+  assign operation_overflow = ADD_COMPARE_ONLY ? add_overflow :
+                              ((held.ctrl.op == ALU_MULLI) ||
                                (held.ctrl.op == ALU_MULLW)) ? multiply_overflow :
                               (held.ctrl.op == ALU_DIVWU) ? divide_by_zero :
                               (held.ctrl.op == ALU_DIVW) ? signed_divide_exception :
@@ -263,7 +281,7 @@ module ppc_iu #(
   assign sraw_ca = sign_fill && (held.b[5] || |(held.a & ~left_mask));
   assign leading_zeros = count_leading_zeros(held.a);
   assign result_o.ca = held.ctrl.write_ca ?
-    ((held.ctrl.op == ALU_SRAW) ? sraw_ca : add_sum[32]) : 1'b0;
+    ((!ADD_COMPARE_ONLY && (held.ctrl.op == ALU_SRAW)) ? sraw_ca : add_sum[32]) : 1'b0;
   assign result_o.ov = held.ctrl.write_ov_so ? operation_overflow : 1'b0;
   assign result_o.so = held.ctrl.write_ov_so ? final_so : 1'b0;
   // A short MULLI's low word comes straight from the first-step product
@@ -292,7 +310,7 @@ module ppc_iu #(
     held.ctrl.write_ov_so ? final_so : held.ctrl.so_in
   };
   always_comb begin
-    case (held.ctrl.op)
+    case (ADD_COMPARE_ONLY && !held_compare ? ALU_ADD : held.ctrl.op)
       ALU_ADD: alu_value = add_sum[31:0];
       ALU_ROTATE: alu_value = rotate_value & held.ctrl.mask;
       ALU_RLWIMI: alu_value = (rotate_value & held.ctrl.mask) |
@@ -345,6 +363,10 @@ module ppc_iu #(
   end
   // synthesis translate_off
   always_ff @(posedge clk_i) begin
+    if (ADD_COMPARE_ONLY && issue_valid_i && issue_ready_o)
+      assert ((issue_i.ctrl.op == ALU_ADD) || (issue_i.ctrl.op == ALU_CMP) ||
+              (issue_i.ctrl.op == ALU_CMPL))
+        else $error("add/compare unit issued another op");
     if (rst_ni && mulli_short_q)
       assert (held.ctrl.op == ALU_MULLI && !held.ctrl.write_cr_field)
         else $error("short MULLI result with a CR0 update");

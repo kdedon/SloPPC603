@@ -21,6 +21,8 @@ module ppc603e_demo_soc #(
   parameter int RAM_BYTES = 262144,
   parameter RAM_INIT = "",
   parameter int CE_DIV = 8,
+  // Native video horizontal back porch in pixels.
+  parameter int VIDEO_H_BP = 32,
   parameter bit FB_EXTERNAL = 1'b0,
   // Framebuffer geometry, 8-bit indexed, stride FB_WIDTH; FB_WIDTH * FB_HEIGHT
   // a multiple of 8. FB_BASE must not overlap the registers at 0xf0100000.
@@ -374,7 +376,7 @@ module ppc603e_demo_soc #(
     else ce_count_q <= (ce_count_q == ($clog2(CE_DIV + 1))'(CE_DIV - 1)) ? '0 : ce_count_q + 1'b1;
   assign ce_pix_o = ce_count_q == '0;
 
-  soc_video #(.H_ACTIVE(VIDEO_W), .V_ACTIVE(VIDEO_H)) video (
+  soc_video #(.H_ACTIVE(VIDEO_W), .H_BP(VIDEO_H_BP), .V_ACTIVE(VIDEO_H)) video (
     .clk_i, .rst_ni, .ce_pix_i(ce_pix_o), .enable_i(video_en_q),
     .fb_en_o(fb_video_en), .fb_addr_o(fb_video_addr), .fb_data_i(fb_video_data),
     .pal_we_i(pal_we), .pal_addr_i(io_word[7:0]), .pal_data_i(io_wdata[23:0]),

@@ -166,6 +166,7 @@ def main():
     parser.add_argument("--image", default="", help="Quartus container image")
     parser.add_argument("--rbf", type=Path, help="bitstream to name and hash")
     parser.add_argument("--note", default="", help="free text, e.g. firmware suite")
+    parser.add_argument("--core-mhz", type=int, help="processor clock the build is made for")
     parser.add_argument("--target-period", type=float,
                         help="add the re-timing at this period; updates only that entry of an existing summary")
     args = parser.parse_args()
@@ -200,6 +201,7 @@ def main():
         "image": args.image or None,
         "note": args.note or None,
         "resources": resources(values),
+        "core_mhz": args.core_mhz,
         "clocks_ns": periods,
         "slack": slack,
         "timing_met": met,

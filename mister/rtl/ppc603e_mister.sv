@@ -26,6 +26,8 @@
 module ppc603e_mister #(
   parameter RAM_INIT = "",
   parameter int RAM_BYTES = 131072,
+  // Clock in MHz. Native video keeps a 15.6 kHz line: a pixel enable near
+  // 6.25 MHz, and a back porch that fills the line.
   parameter int SYS_MHZ = 50,
   parameter bit FB_EXTERNAL = 1'b1,
   parameter int FB_WIDTH = 1920,
@@ -100,6 +102,10 @@ module ppc603e_mister #(
     for (int lane = 0; lane < 8; lane++) swap_be[lane] = be[7 - lane];
   endfunction
 
+  localparam int CE_DIV = (SYS_MHZ * 4 + 12) / 25;
+  localparam int VIDEO_H_TOTAL = (SYS_MHZ * 128 + CE_DIV) / (2 * CE_DIV);
+  localparam int VIDEO_H_BP = VIDEO_H_TOTAL - 320 - 16 - 32;
+
   logic fb_we, fb_hold;
   logic [23:0] fb_addr;
   logic [7:0] fb_be;
@@ -111,7 +117,7 @@ module ppc603e_mister #(
   logic [63:0] xmem_wdata;
 
   ppc603e_demo_soc #(
-    .RAM_INIT(RAM_INIT), .RAM_BYTES(RAM_BYTES), .CE_DIV(8), .FB_EXTERNAL(FB_EXTERNAL),
+    .RAM_INIT(RAM_INIT), .RAM_BYTES(RAM_BYTES), .CE_DIV(CE_DIV), .VIDEO_H_BP(VIDEO_H_BP), .FB_EXTERNAL(FB_EXTERNAL),
     .FB_WIDTH(FB_WIDTH), .FB_HEIGHT(FB_HEIGHT), .FB_BASE(FB_BASE), .XMEM_BYTES(IMAGE_BYTES),
     .SYS_MHZ(SYS_MHZ), .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL),
     .DISPATCH_WIDTH(DISPATCH_WIDTH), .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE)

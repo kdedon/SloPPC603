@@ -40,7 +40,7 @@ void stop_time(void)
 }
 
 CORE_TICKS get_time(void) { return stop_ticks - start_ticks; }
-secs_ret time_in_secs(CORE_TICKS ticks) { return ticks / SOC_CLOCK_HZ; }
+secs_ret time_in_secs(CORE_TICKS ticks) { return ticks / soc_clock_hz(); }
 
 void portable_init(core_portable *p, int *argc, char *argv[])
 {
@@ -97,7 +97,8 @@ int main(void)
 
   CORE_TICKS cycles = get_time();
   uint64_t iters = (uint64_t)demo_cm_iterations;
-  uint32_t per_sec_milli = (uint32_t)(iters * SOC_CLOCK_HZ * 1000 / cycles);
+  uint32_t clock = soc_clock_hz();
+  uint32_t per_sec_milli = (uint32_t)(iters * clock * 1000 / cycles);
   /* CoreMark/MHz = iterations / cycles * 1e6, three decimals. */
   uint32_t per_mhz_milli = (uint32_t)(iters * 1000000000ull / cycles);
 
@@ -106,7 +107,7 @@ int main(void)
   printf("cycles:        %lu\n", (unsigned long)cycles);
   printf("cycles/iter:   %lu\n", (unsigned long)(cycles / iters));
   printf("iter/s:        %lu.%03lu at %lu MHz\n", (unsigned long)(per_sec_milli / 1000),
-         (unsigned long)(per_sec_milli % 1000), (unsigned long)(SOC_CLOCK_HZ / 1000000));
+         (unsigned long)(per_sec_milli % 1000), (unsigned long)(clock / 1000000));
   printf("CoreMark/MHz:  %lu.%03lu\n", (unsigned long)(per_mhz_milli / 1000),
          (unsigned long)(per_mhz_milli % 1000));
   printf("crcfinal:      0x%04x\n", crcfinal);

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (c) 2026 Kevin Dedon
-// Core clock: 50 MHz from the 50 MHz board clock. The framework constraints
-// find the output clock at *|pll|pll_inst|altera_pll_i|*.
+// Core clock: MISTER_PLL_FREQ (sys_clock.vh, written by build.sh) from the
+// 50 MHz board clock. The framework constraints find the output clock at
+// *|pll|pll_inst|altera_pll_i|*.
+`include "sys_clock.vh"
 `timescale 1ns/10ps
 module pll (
 	input  wire refclk,
@@ -23,7 +25,7 @@ module pll_core (
 		.reference_clock_frequency("50.0 MHz"),
 		.operation_mode("direct"),
 		.number_of_clocks(1),
-		.output_clock_frequency0("50.000000 MHz"),
+		.output_clock_frequency0(`MISTER_PLL_FREQ),
 		.phase_shift0("0 ps"),
 		.duty_cycle0(50),
 		.pll_type("General"),
