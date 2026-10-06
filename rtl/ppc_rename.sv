@@ -186,6 +186,10 @@ module ppc_rename (
       if (release_i && release1_i)
         assert (release_tag_i != release1_tag_i)
           else $error("both rename releases name one slot");
+      // A retiring writer owns its slot; a miss leaks the slot.
+      assert ((!release_i || release_match) && (!release1_i || release1_match) &&
+              (!release2_i || release2_match))
+        else $error("rename release names a slot its retiring writer does not own");
       for (int reg_index = 0; reg_index < 32; reg_index++) begin
         if (map_valid[reg_index])
           assert (int'(map_tag[reg_index]) < GPR_RENAME_DEPTH &&
