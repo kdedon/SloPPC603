@@ -344,7 +344,7 @@ module ppc_core #(
   // A pending trace follows the instruction it traces, ahead of EXT/DEC. A
   // machine check at the IQ head outranks EXT/DEC (UM Table 4-2).
   assign fetch_machine_check_head = ENABLE_MACHINE_CHECK && iq_valid &&
-    (iq_head.fault == FETCH_MACHINE_CHECK);
+    (iq_head.fault == FETCH_MACHINE_CHECK || iq_head.fault == FETCH_TEA_REPEAT);
   // MCP and SRESET do not wait on MSR[EE]; SMI does.
   assign pin_interrupt = ENABLE_PIN_INTERRUPTS && !fetch_machine_check_head &&
     (pin_event_q.mcp || (ENABLE_DATA_CACHE && pin_event_q.tea) ||
@@ -991,7 +991,8 @@ module ppc_core #(
            (iq_head.fault == FETCH_ISI_GUARDED) ||
            (ENABLE_TLB_MISS_EXCEPTIONS &&
             (iq_head.fault == FETCH_PAGE_MISS)) ||
-           (ENABLE_MACHINE_CHECK && (iq_head.fault == FETCH_MACHINE_CHECK)) ||
+           (ENABLE_MACHINE_CHECK && (iq_head.fault == FETCH_MACHINE_CHECK ||
+                                     iq_head.fault == FETCH_TEA_REPEAT)) ||
            (ENABLE_DEBUG_EXCEPTIONS && (iq_head.fault == FETCH_IABR))))
         dispatch_pre.special_op = SPECIAL_ISI;
       else

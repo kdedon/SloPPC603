@@ -344,6 +344,25 @@ module tb_chip_603 #(parameter int PLL = -1);
     for (int k = 0; k < 4; k++) d70[k] = 8'(8'h70 + 8'(k)) ^ 8'h5a;
     // Checkstop sources (UM 4.5.2.2, C.2.4): DRTRY on a direct-store beat
     // is an extended transfer protocol error; a fetch TEA with MSR[ME]=1.
+    // A one-shot fetch TEA on a line past the isync: the refetch succeeds
+    // and the machine check is taken instead of a checkstop.
+    if ($test$plusargs("fetch_tea_once")) begin
+      memory.tea_once.push_back((pc_sizes + 32'd96) & ~32'd31);
+      repeat (8) @(negedge clk);
+      hreset_n = 1'b1;
+      n = 0;
+      while (!(dut.retire_valid && dut.retire.pc == BASE + 32'h200) && ckstp_out_n && n < 60000) begin
+        @(negedge clk);
+        n++;
+      end
+      if ($test$plusargs("LOG"))
+        foreach (memory.tea_log[i]) $display("  TEA %08x instr=%0d", memory.tea_log[i], memory.tea_log_instr[i]);
+      check(ckstp_out_n, "no checkstop");
+      check(memory.teas == 1 && memory.tea_log_instr[0], $sformatf("one fetch TEA (%0d)", memory.teas));
+      check(n < 60000, "machine check taken");
+      $display("PASS: tb_chip_603 fetch TEA refetched, machine check after %0d cycles", n);
+      $finish;
+    end
     if ($test$plusargs("ds_protocol") || $test$plusargs("fetch_tea")) begin
       if ($test$plusargs("fetch_tea")) begin
         memory.tea_base = (pc_sizes + 32'd32) & ~32'd31;
@@ -357,6 +376,12 @@ module tb_chip_603 #(parameter int PLL = -1);
         n++;
       end
       check(!ckstp_out_n, "checkstop");
+      // The refetch is its own tenure and takes the second TEA (UM C.2.4).
+      if ($test$plusargs("LOG"))
+        foreach (memory.tea_log[i]) $display("  TEA %08x instr=%0d", memory.tea_log[i], memory.tea_log_instr[i]);
+      if ($test$plusargs("fetch_tea"))
+        check(memory.tea_log.size() >= 2 && memory.tea_log_instr[0] && memory.tea_log_instr[1] &&
+              memory.tea_log[1] == memory.tea_log[0], "fetch TEA, then refetch TEA");
       check(mem_word(LOG) == 32'h0, $sformatf("no exception (log %08x)", mem_word(LOG)));
       $display("PASS: tb_chip_603 %0s checkstop after %0d cycles",
                $test$plusargs("fetch_tea") ? "fetch TEA" : "direct-store protocol", n);
