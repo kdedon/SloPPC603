@@ -957,11 +957,28 @@ of its requirements).
 | `TIM-CQ-ORDER`, `TIM-CQ-CQ1` | Retirement in dispatch order, never in the dispatch cycle; only the work a misprediction recovery removed behind a conditional branch (`!<n>` in the trace, UM 6.4.1.2) is skipped; CQ[1] holds only integer, load or branch (branches keep a CQ entry unless removed) |
 | `TIM-WB-LIMITS` | A retired pair writes at most two GPRs and one each of CR, FPR, LR, CTR |
 | `TIM-BPU-FOLD` | A branch removed at dispatch (`*`) is a branch without LR or CTR write, and never retires |
+| `TIM-CQ-ALLOC`, `TIM-RENAME-LIMITS` | After a cycle's retirements, at most five instructions in the CQ (UM 6.3.3, 6.6.1.2), five GPR destinations, two for a load with update, and four FPR destinations (UM 6.6) |
+| `TIM-BPU-FETCH-STOP` | The UM 6.4.1.1 cases (`mtlr`/`bclr`, `mtctr`/`bcctr` or `bc(CTR)`, `bc(CTR)`/`bc(CTR)` or `bcctr`, branch(LK)/branch(LK) except `bl`): until the older instruction completes, the waiting branch is not removed at dispatch and nothing younger dispatches. A move to LR or CTR is completion-serialized and its result is not forwarded before it retires (UM 6.3.3.2); `--early-move`, the target's default, accepts [AUD-90](AUDIT.md) and holds only until everything older than the move has retired |
+| `TIM-BPU-ONE-PREDICTION` | On a mispredicted path, a branch on CR alone is not removed and nothing behind it dispatches (UM 6.4.1.2 one level of prediction, 6.6.1.1, last case of 6.4.1.1) |
 
 Unit tests in `test_dispatch_trace.py` (`check-spec`) make each rule fail on a
-crafted trace. Not checked: rename and CQ occupancy, unit busy times, operand
-readiness and exception-free CQ[1] retirement, which the trace does not show,
-and the per-row latencies and chapter 6 worked schedules.
+crafted trace. Not checked, because the trace does not show them: renames held
+past completion, the single CR, LR and CTR renames (a station waiter holds
+none), IQ occupancy, unit busy times, operand readiness, exception-free CQ[1]
+retirement, the path of a correctly predicted branch, and when a move to LR or
+CTR executes. Not checked either: the per-row latencies and the chapter 6
+worked schedules.
+
+Recorded: `make -C sim check-spec`; `make -C sim test-dispatch-rules DEMO_FW_DIR=<main checkout>/toolchain/build/demo`, the same with `DISPATCH_RULES_ARGS=` and with `BRANCH_REMOVAL=1`, each at width 1 and from `sim/` with `DISPATCH_WIDTH=2 BUILD_DIR=<dir> VERILATOR=$PWD/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/tools/verilate-lsu-pipe`; commit 28de2bc plus the checker changes (same RTL), 2026-10-06.
+Dhrystone, CoreMark and Whetstone pass every rule with `--early-move`, in
+both configurations and with branch removal. The CQ and GPR destination
+counts reach five and never exceed it. Fetch stops held (Dhrystone,
+CoreMark, Whetstone): 28, 1,142, 220 at width 1; none at width 2, where the
+waiting branch itself waits at dispatch. No branch on CR dispatched on a
+mispredicted path. Without `--early-move`, width 1 fails on Dhrystone at
+cycle 4,828,474 ([AUD-90](AUDIT.md)); width 2 passes (2,152, 1,174 and 348
+stops held); with branch removal both widths fail, the `bclr` removed while
+older work is in flight.
 
 ## CQ[1] retirement audit
 

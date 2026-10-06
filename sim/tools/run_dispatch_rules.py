@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--width', type=int, required=True)
     parser.add_argument('--sru', action='store_true')
     parser.add_argument('--min-pairs', type=int, default=0)
+    parser.add_argument('--early-move', action='store_true',
+                        help='accept a move to LR/CTR feeding a branch before it retires (AUD-90)')
     parser.add_argument('--log-dir', type=Path, required=True)
     args = parser.parse_args()
     args.log_dir.mkdir(parents=True, exist_ok=True)
@@ -39,7 +41,7 @@ def main():
                                             f'+DISPATCH_TRACE={fifo}'], stdout=log, stderr=subprocess.STDOUT)
                     try:
                         with fifo.open() as lines:
-                            st = check_rules(lines, args.width, words, args.sru)
+                            st = check_rules(lines, args.width, words, args.sru, early_move=args.early_move)
                     except ValueError:
                         sim.kill()
                         raise

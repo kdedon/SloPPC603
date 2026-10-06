@@ -138,8 +138,9 @@ Queued, in order:
 4. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
    FULL FPU in the MiSTer core (97% ALMs, −2.606 ns: reduce area or keep
    COMPACT).
-5. Verification: the remaining P12 schedule checks and the open manual
-   inventory rows ([audit](../../AUDIT.md)).
+5. Verification: P12 per-row latencies and the chapter 6 worked-schedule
+   replays (the trace-visible dispatch rules are checked), AUD-90 and the
+   open manual inventory rows ([audit](../../AUDIT.md)).
 6. Speed: recover 66 MHz (translated −4.610 ns, integrated −3.313,
    timer-bat −3.679, chip −4.606, chip602 −5.452 on `0ff3a45`), then width
    2, the LSU unit and the FPU at 66 MHz; Dhrystone 1:1 with the 603e

@@ -180,11 +180,12 @@ CQ_DEPTH, GPR_RENAMES, FPR_RENAMES = 5, 5, 4
 def fetch_stop(older, younger):
     """UM 6.4.1.1 (PDF 261): how branch `younger` waits on `older`, or None.
 
-    'execute': it waits for the move to LR/CTR to execute; 'complete': for
-    the older branch to complete."""
+    'retire': it waits for the move to LR/CTR, whose result is not forwarded
+    before it retires (UM 6.3.3.2, PDF 259); 'complete': for the older
+    branch to complete."""
     if older['mtspr'] == 'LR' and younger['branch'] == 'bclr' or \
             older['mtspr'] == 'CTR' and (younger['branch'] == 'bcctr' or younger['ctr_test']):
-        return 'execute'
+        return 'retire'
     if older['ctr_test'] and (younger['ctr_test'] or younger['branch'] == 'bcctr'):
         return 'complete'
     # A bl does not wait for an older branch with LK set.
@@ -198,8 +199,11 @@ class Rules:
     TIM-CQ-ALLOC/CQ1/ORDER, TIM-RENAME-LIMITS, TIM-WB-LIMITS and the branch
     fetch-stop rules (TIM-BPU-*) over one trace."""
 
-    def __init__(self, width, words, sru, flush):
+    def __init__(self, width, words, sru, flush, early_move=False):
         self.width, self.words, self.sru, self.flush = width, words, sru, flush
+        # AUD-90: accept a move to LR/CTR reaching the BPU once it can
+        # execute, before it retires.
+        self.early_move = early_move
         # [pc, dispatch cycle, sequence number, flushed, class, order] in dispatch order
         self.inflight = []
         self.seq = 0
@@ -348,7 +352,7 @@ class Rules:
         live = [e for e in self.inflight if not e[3]]
         if not any(e is older for e in live):
             return False
-        if kind == 'complete':
+        if kind != 'execute':
             return True
         # A move to LR/CTR is completion-serialized (UM 6.3.3.2, PDF 259): it
         # cannot execute while an older instruction is still in the queue.
@@ -369,8 +373,10 @@ class Rules:
             return
         for older in reversed([e for e in self.inflight if not e[3] and e[4]]):
             kind = fetch_stop(older[4], c)
+            if kind == 'retire' and self.early_move:
+                kind = 'execute'
             if kind and self.blocking(older, kind):
-                require(not gone, f'cycle {cycle}: branch {pc:08x} resolved at dispatch while it waits for '
+                require(not gone or kind == 'execute', f'cycle {cycle}: branch {pc:08x} resolved at dispatch while it waits for '
                                   f'{older[0]:08x} to {kind} (TIM-BPU-FETCH-STOP)')
                 self.stops.append([older, self.order + 1, pc, kind])
                 self.stats['fetch_stops'] += 1
@@ -432,9 +438,10 @@ def read_image(path, base):
     return words
 
 
-def check_rules(lines, width, words, sru, flush=False):
-    """flush allows dispatched instructions that never retire (exceptions)."""
-    rules = Rules(width, words, sru, flush)
+def check_rules(lines, width, words, sru, flush=False, early_move=False):
+    """flush allows dispatched instructions that never retire (exceptions);
+    early_move accepts AUD-90."""
+    rules = Rules(width, words, sru, flush, early_move)
     previous = -1
     for raw in lines:
         raw = raw.split('#', 1)[0].strip()
@@ -457,6 +464,8 @@ def main():
     parser.add_argument('--image', type=Path, help='RAM image of 64-bit words for --rules')
     parser.add_argument('--allow-flush', action='store_true',
                         help='dispatched instructions may be flushed by exceptions')
+    parser.add_argument('--early-move', action='store_true',
+                        help='accept a move to LR/CTR feeding a branch before it retires (AUD-90)')
     parser.add_argument('--image-base', type=lambda x: int(x, 16), default=0xfff00000)
     parser.add_argument('--min-pairs', type=int, default=0,
                         help='require this many dispatched and retired pairs')
@@ -465,7 +474,7 @@ def main():
         if args.rules:
             words = read_image(args.image, args.image_base) if args.image else {}
             with args.trace.open() as lines:
-                st = check_rules(lines, args.width, words, args.sru, args.allow_flush)
+                st = check_rules(lines, args.width, words, args.sru, args.allow_flush, args.early_move)
             require(st['retirements'] > 0, 'no retirements')
             require(st['pairs_dispatched'] >= args.min_pairs and st['pairs_retired'] >= args.min_pairs,
                     f'fewer than {args.min_pairs} dispatched or retired pairs: {st}')
