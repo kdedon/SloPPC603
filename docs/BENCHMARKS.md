@@ -502,6 +502,16 @@ retired, CPI 4.427 (nbench); 61,549,013 cycles, 14,117,316 retired, CPI 4.360
 67,914,330 cycles, CPI 4.395. The MiSTer-layout images (`mister-*-smoke.hex`) give the
 same windows within 2,000 cycles.
 
+Recorded: `Vtb_mister_load` (the `test-mister-load` model) on each `-smoke` image with
+`+MENU=mister-fpu.hex`, and `Vtb_mister` (`mister-smoke-fpu-all`, mode 09), commit 823c205
+against 49b2152, 2026-10-06. All pass. The nbench OK lines no longer print inside the timed
+loops, so IDEA (462 → 636 iter/s) and Huffman (105 → 114) gain what the console cost them;
+the other tests agree within 1.5 %. Hard float (`ppc603e-nbench-hf`, COMPACT FPU): FP index
+2.50 against 0.34 soft-float (Fourier 190 against 20 iter/s, LU 558 against 97). Embench
+0.952 → 0.954/MHz, Whetstone-hf 544,625 → 544,959 timed cycles; Dhrystone 406,575 →
+406,608, CoreMark 815,623 → 815,647, Whetstone 466,774 → 466,537 on the MiSTer FPU image:
+code placement only. The full-size images are not simulated (billions of cycles).
+
 Embench per benchmark, relative speed per MHz against the Cortex-M4 (repeats divided by 16):
 
 | Benchmark | Cycles | /MHz | Benchmark | Cycles | /MHz |
