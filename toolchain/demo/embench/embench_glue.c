@@ -50,9 +50,12 @@ int main(void)
   printf("%lu MHz, repeats scale/%d\n", (unsigned long)(clock / 1000000), EMB_DIV);
   printf("benchmark          cycles  /MHz\n");
 
-  perf_start();
+  /* The counts cover the benchmarks, not the output between them; a total
+   * over all of them would overflow the 32-bit counters. */
+  struct perf_totals totals = {0};
   for (int i = 0; i < COUNT; i++) {
     const struct emb *e = &embs[i];
+    perf_start();
     uint32_t repeats = e->scale / EMB_DIV + (e->scale < EMB_DIV);
     e->init();
     e->warm(WARMUP_HEAT);
@@ -65,11 +68,12 @@ int main(void)
     log_sum += l;
     log_sq += l * l;
     failed += !ok;
+    perf_stop();
+    perf_add(&totals);
     printf("%-14s %10llu", e->name, (unsigned long long)cycles);
     bench_print_fixed(rel, 3, 7);
     printf(" %s\n", ok ? "ok" : "FAIL");
   }
-  perf_stop();
 
   double mean = log_sum / COUNT;
   double var = log_sq / COUNT - mean * mean;
@@ -83,7 +87,7 @@ int main(void)
   printf(" - ");
   bench_print_fixed(gmean * gsd, 3, 0);
   printf(", %d of %d verified\n", COUNT - failed, COUNT);
-  perf_report("embench");
+  perf_print("embench", &totals);
   bench_stack_check();
 
   con_color(failed ? 12 : 10, 1);

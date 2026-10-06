@@ -101,7 +101,7 @@ void con_screen(int enable);
 /* Whether screen text is also written to the console register (default). */
 void con_console(int enable);
 /* Text rows from top down form the text area: con_goto rows count from its
- * top, the text wraps within it, and con_clear fills it. */
+ * top, the text scrolls within it, and con_clear fills it. */
 void con_window(int top);
 void con_clear(uint8_t bg);
 void con_goto(int col, int row);
@@ -128,6 +128,14 @@ void perf_stop(void);
 void perf_report(const char *name);
 /* Fills r's stall fields from the stopped counters. */
 void perf_brief(struct demo_result *r);
+/* Counter totals over several windows: perf_add adds the stopped counters
+ * (each window under 2^32 cycles), perf_print reports them. */
+struct perf_totals {
+  uint64_t cycles, retired, iq_full, branches, memory, redirects, slot[SOC_PERF_SLOTS];
+};
+void perf_add(struct perf_totals *t);
+void perf_print(const char *name, const struct perf_totals *t);
+void perf_brief_totals(const struct perf_totals *t, struct demo_result *r);
 extern const char *const perf_short[SOC_PERF_SLOTS];
 
 extern const uint8_t font8x8[95][8];

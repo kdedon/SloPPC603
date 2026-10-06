@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (c) 2026 Kevin Dedon
-# Writes the corresponding source of the Embench, Doom and Quake images: this
+# Writes the corresponding source of the Embench, nbench, Doom and Quake images: this
 # repository at HEAD plus the fetched benchmark, engine and runtime sources
 # they were built from, with the Amiga Quake source archives (not the WAD or
 # pak0.pak).

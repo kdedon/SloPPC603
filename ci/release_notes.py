@@ -53,6 +53,44 @@ def embench_source(url, commit, embench):
         ""])
 
 
+def nbench_notice():
+    """BYTE's disclaimer and the port's warranty disclaimer, verbatim from the fetched source."""
+    src = REPO / "toolchain/build/demo/src/nbench"
+    lines = (src / "nbench1.c").read_text().splitlines()
+    start = lines.index("** DISCLAIMER")
+    end = next(i for i in range(start, len(lines)) if lines[i].startswith("*/"))
+    readme = (src / "README.md").read_text().splitlines()
+    first = next(i for i, line in enumerate(readme) if line.startswith("THIS SOFTWARE IS PROVIDED"))
+    last = next((i for i in range(first, len(readme)) if not readme[i].strip()), len(readme))
+    return lines[start:end], readme[first:last]
+
+
+def nbench_source(url, commit, nbench):
+    """Source pointer and upstream notice for the nbench images, as plain text."""
+    byte, port = nbench_notice()
+    return "\n".join([
+        "ppc603e-nbench.bin, ppc603e-nbench-hf.bin: source and notice",
+        "",
+        "The nbench images hold BYTE's nbench 2.2.3 (BYTEmark) object code, from Uwe Mayer's",
+        "Linux/Unix port. Its files carry no licence beyond the as-is notices below; the images",
+        "are redistributed under them, by the maintainer's decision of 2026-10-06.",
+        "",
+        f"- nbench 2.2.3: https://github.com/toshsan/nbench/tree/{nbench}",
+        f"- Driver, runtime and build scripts: {url}/tree/{commit}",
+        "  (toolchain/demo/fetch-benchmarks.sh, then",
+        "  toolchain/build-in-container.sh -f demo/Makefile mister-images)",
+        "- All of the above fetched: ppc603e-source.tar.gz, published next to the images.",
+        "",
+        "Notice in the nbench source files (nbench1.c and the others):",
+        "",
+        *byte,
+        "",
+        "Notice in the port's README.md:",
+        "",
+        *port,
+        ""])
+
+
 def doom_source(url, commit, doomgeneric, wad_sha):
     """GPL-2.0 source pointer for the Doom images, as plain text."""
     return "\n".join([
@@ -108,6 +146,7 @@ def main():
     parser.add_argument("--unstable", action="store_true")
     parser.add_argument("--images", nargs="*", type=Path, default=[], help="published program images")
     parser.add_argument("--embench-source", type=Path, help="also write the Embench image's source pointer here")
+    parser.add_argument("--nbench-source", type=Path, help="also write the nbench images' source pointer here")
     parser.add_argument("--doom-source", type=Path, help="also write the Doom images' source pointer here")
     parser.add_argument("--quake-source", type=Path, help="also write the Quake images' source pointer here")
     args = parser.parse_args()
@@ -117,6 +156,7 @@ def main():
     url = repo_url(args.repo_url)
     framework = pin("mister/fetch-framework.sh", r"^commit=([0-9a-f]{40})")
     embench = pin("toolchain/demo/fetch-benchmarks.sh", r"embench/embench-iot/([0-9a-f]{40})")
+    nbench = pin("toolchain/demo/fetch-benchmarks.sh", r"toshsan/nbench/tree/([0-9a-f]{40})")
     doomgeneric = pin("toolchain/demo/fetch-doom.sh", r"ozkl/doomgeneric/tree/([0-9a-f]{40})")
     wad_sha = pin("toolchain/demo/fetch-doom.sh", r"^  ([0-9a-f]{64})$")
     quakegeneric = pin("toolchain/demo/fetch-quake.sh", r"erysdren/quakegeneric/tree/([0-9a-f]{40})")
@@ -128,6 +168,8 @@ def main():
     names = [s["name"] for s in summaries] + [path.name for path in images]
     if args.embench_source:
         args.embench_source.write_text(embench_source(url, commit, embench))
+    if args.nbench_source:
+        args.nbench_source.write_text(nbench_source(url, commit, nbench))
     if args.doom_source:
         args.doom_source.write_text(doom_source(url, commit, doomgeneric, wad_sha))
     if args.quake_source:
@@ -208,8 +250,12 @@ def main():
                 "big-endian images or `Load data (little-endian)` for the little-endian one, then load the "
                 "program.", ""]
     if any("nbench" in name for name in names):
-        out += ["**nbench build:** BYTE's nbench code carries no stated licence. The nbench bitstream or image "
-                "is for measurement; do not redistribute it without checking the terms.", ""]
+        out += ["**nbench:** `ppc603e-nbench.bin` (soft float, any core) and `ppc603e-nbench-hf.bin` (hard "
+                "float, FPU cores) hold BYTE's nbench 2.2.3 object code, which carries no licence beyond "
+                "BYTE's as-is disclaimer and the port's warranty disclaimer. They are redistributed under "
+                "that notice; `ppc603e-nbench.SOURCE.txt` reproduces it and points to the source: nbench at "
+                f"[`{nbench[:12]}`](https://github.com/toshsan/nbench/tree/{nbench}) and this repository at "
+                f"[`{commit[:12]}`]({url}/tree/{commit}), both in the attached `ppc603e-source.tar.gz`.", ""]
 
     if args.since:
         log = git("log", "--no-merges", "--format=- %s (`%h`)", f"{args.since}..{commit}")
