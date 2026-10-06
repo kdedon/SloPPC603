@@ -108,6 +108,32 @@ stores retire at dispatch + 3 (two execute cycles, as FP rows count), and
 loads stream one per cycle
 ([LSU_PIPELINE.md](LSU_PIPELINE.md#fp-accesses)).
 
+### Data-dependent timing
+
+Three rare cases add cycles on the 603e and 603; ordinary operands keep the
+rows above.
+
+- Sticky serialization (UM §4.5.7.1, PDF 188). With MSR[FE0/FE1] clear, a
+  result whose FPSCR update newly sets an exception sticky bit (OX, UX, ZX,
+  XX or a VX cause) completes one cycle late, and alone. The manual allows
+  one or two cycles without a rule; §6.3.3.2 (PDF 259) limits serialized
+  instructions to one completion per cycle, so at width 2 a younger
+  instruction that would complete beside it waits a second cycle. Later
+  results setting the same bit do not stall. The first `fadds` setting XX
+  retires at dispatch + 5, the next at + 4.
+- Single-precision denormal results (UM §2.3.4.2, PDF 103). The FULL FPU
+  holds a single-precision result that the rounder denormalizes (tiny
+  before rounding, with NI=0 and UE=0) two more cycles in its third stage,
+  and the stages behind it wait: `fmuls` 2^-70 × 2^-70 finishes in 5, an
+  `fadds` accepted the next cycle in 5, a single divide in 20. Double
+  results are not affected. COMPACT keeps its own timing.
+- `lfs`/`stfs` of a single denormal (same note). The manual bounds the
+  conversion at 24 cycles and gives no rule. The unit converts in one cycle
+  per significand bit position shifted, plus one: 2 cycles for fraction
+  bit 22 set, 24 for 2^-149. A load takes its response, and a store offers
+  its data, that many cycles later, in the lane and in the pipelined unit.
+  `stfiwx` stores no single and is not affected.
+
 ## Lane sequence (loads and stores)
 
 1. Dispatch captures the instruction word, the committed GPR values of rA and

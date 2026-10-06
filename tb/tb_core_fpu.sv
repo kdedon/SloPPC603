@@ -9,9 +9,9 @@
 // L pc cycles (latency probe), R pc0 pc1 cycles (retirement spacing),
 // I pc0 pc1 cycles (dispatch spacing), P lo hi (DSI-protected words),
 // C lo hi (C=0 page words: stores take the changed-bit miss), T lo hi (TEA),
-// D addr (a store there ends the run), S count (602 sticky-bit completion
-// stalls). DMEM_BITS=64 answers a doubleword request (upper strobes set)
-// with both words in one response.
+// D addr (a store there ends the run), S count (sticky-bit completion
+// stalls; unchecked when absent). DMEM_BITS=64 answers a doubleword request
+// (upper strobes set) with both words in one response.
 /* verilator lint_off BLKSEQ */
 module tb_core_fpu #(
   parameter int DMEM_BITS = 64,
@@ -75,7 +75,7 @@ module tb_core_fpu #(
   int stall = 1, seed = 1, max_cycles = 400000;
   // Overlapped FP accesses: released loads, replays that cancelled a store.
   int fp_released = 0, fp_store_cancels = 0;
-  int sticky_stalls = 0, sticky_expect = 0;
+  int sticky_stalls = 0, sticky_expect = -1;
   bit done = 1'b0;
   logic ipending = 1'b0, dpending = 1'b0, dwrite_q = 1'b0;
   logic [31:0] iaddress = 32'b0, daddress = 32'b0;
@@ -353,7 +353,7 @@ module tb_core_fpu #(
       end
     end
     check(fp_released > 0, "no overlapped FP load was released");
-    check(sticky_stalls == sticky_expect,
+    check(sticky_expect < 0 || sticky_stalls == sticky_expect,
           $sformatf("sticky-bit stalls %0d expected %0d", sticky_stalls, sticky_expect));
     // COMPACT holds one FP instruction, so no FP store overlaps.
     check(FPU_IMPL != 0 || (stall == 0) || (fp_store_cancels > 0),

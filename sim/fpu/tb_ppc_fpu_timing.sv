@@ -303,6 +303,37 @@ module tb_ppc_fpu_timing #(
         wait_for_checked(base_count + 2);
         end
 
+        // UM 2.3.4.2: a single-precision denormal result rounds in two more
+        // cycles and holds the operation behind it; 2^-70 * 2^-70 = 2^-140.
+        // The double product is normal and keeps its latency.
+        if (!CPU_602) begin
+        base_count = checked;
+        send_when_ready(8'd24, FP_MUL, 1'b1,
+                        64'h3b90000000000000, 64'd0,
+                        64'h3b90000000000000, 64'h3730000000000000,
+                        5, first_cycle);
+        send_when_ready(8'd25, FP_ADD, 1'b1,
+                        64'h3ff0000000000000, 64'h4000000000000000,
+                        64'd0, 64'h4008000000000000, 5, second_cycle);
+        if (second_cycle != first_cycle + 1)
+            $fatal(1, "operation behind a denormal result was not accepted at once");
+        wait_for_checked(base_count + 2);
+        base_count = checked;
+        send_when_ready(8'd26, FP_ADD, 1'b1,
+                        64'h3ff0000000000000, 64'h4000000000000000,
+                        64'd0, 64'h4008000000000000, 3, first_cycle);
+        send_when_ready(8'd27, FP_MUL, 1'b0,
+                        64'h3b90000000000000, 64'd0,
+                        64'h3b90000000000000, 64'h3730000000000000,
+                        4, first_cycle);
+        wait_for_checked(base_count + 2);
+        base_count = checked;
+        send_when_ready(8'd28, FP_DIV, 1'b1,
+                        64'h3b90000000000000, 64'h4450000000000000,
+                        64'd0, 64'h3730000000000000, 20, first_cycle);
+        wait_for_checked(base_count + 1);
+        end
+
         // Sustained trains cross response-credit recycle boundaries. A
         // four-operation burst alone cannot detect a bubble every fifth op.
         base_count = checked;
