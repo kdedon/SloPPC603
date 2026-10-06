@@ -41,8 +41,8 @@ Consequences for built images:
   embeds it, and nothing alters it: the core munges it for little-endian programs while
   loading, in DDR3, never in the file.
 - **The Quake images contain quakegeneric (GPL-2.0), and `ppc603e-quake.bin` and
-  `ppc603e-quake-le.bin` the Amiga port's assembly (GPL-2.0), so they are GPL-2.0.** Releases publish them with
-  `ppc603e-quake.SOURCE.txt` and the same `ppc603e-source.tar.gz`, which holds the
+  `ppc603e-quake-le.bin` the Amiga port's assembly (GPL-2.0), so they are GPL-2.0.**
+  Releases publish them with `ppc603e-quake.SOURCE.txt` and the same `ppc603e-source.tar.gz`, which holds the
   fetched quakegeneric files and the Amiga archives. `pak0.pak` is handled as
   `DOOM1.WAD` is: fetched, hash-checked, published unmodified as its own file, never
   embedded. The build's `lha.py` is ours; no LHA or vasm tool is used.
@@ -329,10 +329,10 @@ copies `pak0.pak` to `build/mister/images/`).
 
 ### PowerPC assembly
 
-`ppc603e-quake.bin` and `ppc603e-quake-le.bin` take the rendering routines from Frank Wille's Amiga Quake 1.09
-v2.30 source (`Quake_src.lha`, GPL-2.0 per the release's `QuakeMOS.readme`: "Quake is
-published under the GNU Public License"), fetched at a pinned SHA-256 and unpacked by
-our `lha.py`: `d_scanPPC`, `r_surfPPC`, `d_polysetPPC`, `d_edgePPC`, `r_edgePPC`,
+`ppc603e-quake.bin` and `ppc603e-quake-le.bin` take the rendering routines from Frank
+Wille's Amiga Quake 1.09 v2.30 source (`Quake_src.lha`, GPL-2.0 per the release's
+`QuakeMOS.readme`: "Quake is published under the GNU Public License"), fetched at a
+pinned SHA-256 and unpacked by our `lha.py`: `d_scanPPC`, `r_surfPPC`, `d_polysetPPC`, `d_edgePPC`, `r_edgePPC`,
 `r_drawPPC`, `r_aliasPPC`, `r_aclipPPC`, `d_skyPPC`, `d_surfPPC`, `mathlibPPC`,
 `r_miscPPC`, `r_bspPPC`, `r_lightPPC`, and their constants `fconstPPC`. Nothing of it
 is committed; three scripts of ours adapt it at build time:
@@ -403,7 +403,7 @@ plusargs and comparison; the host build in a Debian trixie container with
 |---|---|---:|---:|---:|---:|
 | `ppc603e-quake-smoke.bin` (hard float, BE, assembly; 399,304 bytes) | `f1d64b5c` | 475 (0.74%) | 6,514,255 | 208,906,456 | 1,537,573 (6,150,127) |
 | `ppc603e-quake-bec-smoke.bin` (hard float, BE, C; 401,096 bytes) | `1458a682` | 0 | 7,333,000 | 210,456,616 | 1,500,510 (6,001,875) |
-| `ppc603e-quake-le-smoke.bin` (hard float, LE, C; 402,472 bytes) | `1458a682` | 0 | 7,510,772 | 217,060,812 | 1,505,958 (6,023,667) |
+| `ppc603e-quake-lec-smoke.bin` (then `-le-smoke`; hard float, LE, C; 402,472 bytes) | `1458a682` | 0 | 7,510,772 | 217,060,812 | 1,505,958 (6,023,667) |
 | `ppc603e-quake-sf-smoke.bin` (soft float, BE, C; 441,648 bytes) | `1458a682` | 0 | 21,283,032 | 348,534,190 | 1,564,926 (6,259,539) |
 | Host build (i386, SSE) | `1458a682` | | | | |
 
@@ -424,6 +424,22 @@ with CRC `2a5656ec`, 4,019 pixels (6.3%) from the host's (palette index mean 46,
 the C image renders the host's frame exactly (CRC `7d911abf`) at 6,325,374
 (407,833,680). The assembly saves 9.2% per frame there: about 8.7 frames per second at
 50 MHz against 7.9 in C.
+
+Recorded: `tb_mister_load` runs equal to `make -C sim test-mister-quake QUAKE_VARIANTS="be le"`
+(the frame comparison without the host frame), images built at commit `1f382f7`,
+2026-10-05; frame 40 by the same run of `ppc603e-quake-le-smoke.bin` built with
+`QUAKE_SMOKE_FRAMES=40`. All exit 0.
+
+| Image | Frame | CRC | Pixels differing from BE assembly | Cycles per frame (from 3) | Cycles from reset to exit |
+|---|---:|---|---:|---:|---:|
+| `ppc603e-quake-smoke.bin` (BE, assembly; 399,304 bytes) | 8 | `f1d64b5c` | | 6,514,255 | 208,906,456 |
+| `ppc603e-quake-le-smoke.bin` (LE, assembly; 400,656 bytes) | 8 | `f1d64b5c` | 0 | 6,685,814 | 215,085,908 |
+| `ppc603e-quake-le-smoke.bin` (LE, assembly) | 40 | `2a5656ec` | CRC equal to the BE frame 40 below | 5,923,378 | 400,825,529 |
+
+The little-endian assembly image renders the big-endian one's frames exactly. Per frame
+(3–8) it takes 11.0% fewer cycles than little-endian C (7,510,772) and 2.6% more than
+big-endian assembly; over frames 3–40, 3.1% more than big-endian assembly (5,745,077).
+It does not show the sky, water or a full pass.
 
 The host build with `QUAKE_SMOKE_FRAMES=0` (`make -f demo/quake/host.mk`, real clock)
 plays two passes through the port's loop, 969 frames each, its count matching the
