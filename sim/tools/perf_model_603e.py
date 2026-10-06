@@ -31,8 +31,13 @@ ASSUMPTIONS = {
           "completion cycle (F6-5: bc resolves in the add's writeback cycle).",
     "A5": "bc on CTR after a bc on CTR waits one cycle after the first resolves; the "
           "manual says 'until the first branch is completed' (UM 6.4.1.1).",
-    "A6": "No store-to-load address conflicts and no cache-port conflict between "
-          "store-queue writes and loads (addresses are not in the trace).",
+    "A6": "A load overlapping an older store reads the cache the cycle after the store "
+          "writes it, which is the cycle after the store completes: loads pass stores "
+          "only 'when free of data dependencies' and stores wait in the store queue "
+          "for completion (UM 1.1.4.3); the manual documents no store-to-load "
+          "forwarding. Addresses are not in the trace, so only D-form accesses whose "
+          "bases derive from one register through addi, mr and update forms are "
+          "compared; no cache-port conflict between store-queue writes and loads.",
     "A7": "Completion of an instruction behind a correctly predicted branch may occur "
           "in the branch's resolve cycle (UM 6.6.1.3).",
     "A8": "Multiply takes 1 + the bytes holding the multiplier as a signed value (T6-4 "
@@ -258,6 +263,16 @@ class Insn:
     div_cycles = 20
 
 
+def access_bytes(word):
+    """Bytes a D-form load or store accesses, or 0."""
+    op = word >> 26
+    if op == 46 or op == 47:
+        return 4 * (32 - ((word >> 21) & 31))
+    return {32: 4, 33: 4, 34: 1, 35: 1, 36: 4, 37: 4, 38: 1, 39: 1, 40: 2, 41: 2, 42: 2,
+            43: 2, 44: 2, 45: 2, 48: 4, 49: 4, 50: 8, 51: 8, 52: 4, 53: 4, 54: 8,
+            55: 8}.get(op, 0)
+
+
 def significant_bytes(v):
     """Fewest bytes holding v as a signed value (MULTIPLY_TIMING.md rB classes)."""
     v &= 0xFFFFFFFF
@@ -313,6 +328,46 @@ def schedule(stream, fetch_any=False, core=frozenset()):
     cr_free = 0                               # previous CR writer completion + 1
     stop_f, stop_until = -1, 0                # A14: fetch of a held branch, restart
     cq_late = 0 if "cq-same" in core else 1   # entry busy through its completion cycle
+    sym, fresh = {}, [0]                      # GPR as (root, offset) for A6
+    stores = []                               # (root, lo, hi, completion) of recent stores
+
+    def gpr_sym(g):
+        if g not in sym:
+            fresh[0] += 1
+            sym[g] = (fresh[0], 0)
+        return sym[g]
+
+    def track(ins, word):
+        """The access's symbolic EA and its wait on older stores (A6)."""
+        ra = (word >> 16) & 31
+        n = access_bytes(word)
+        ea, wait = None, 0
+        if n:
+            root, off = gpr_sym(ra) if ra else (0, 0)
+            ea = (root, (off + sext(word & 0xFFFF, 16)) & 0xFFFFFFFF)
+            lo, hi = ea[1], ea[1] + n
+            if ins.load:
+                wait = max([sc + 1 for r, slo, shi, sc in stores
+                            if r == root and slo < hi and lo < shi], default=0)
+        return ea, wait
+
+    def written(ins, word, ea, c):
+        """Record a store and the GPR values this instruction writes."""
+        op, rd, ra, rb = word >> 26, (word >> 21) & 31, (word >> 16) & 31, (word >> 11) & 31
+        if ins.store and ea is not None:
+            stores.append((ea[0], ea[1], ea[1] + access_bytes(word), c))
+            del stores[:-8]
+        for g in ins.dst:
+            if op == 14 and ra and g == rd:                      # addi
+                root, off = gpr_sym(ra)
+                sym[g] = (root, (off + sext(word & 0xFFFF, 16)) & 0xFFFFFFFF)
+            elif op == 31 and (word >> 1) & 0x3FF == 444 and rd == rb and g == ra:   # mr
+                sym[g] = gpr_sym(rd)
+            elif ea is not None and g == ra and ra != rd:        # update form
+                sym[g] = ea
+            else:
+                fresh[0] += 1
+                sym[g] = (fresh[0], 0)
 
     def dispatch_cycle(ins, d, units):
         """First cycle >= d with a slot, a free unit, a CQ entry and renames."""
@@ -428,6 +483,8 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         d, avail = dispatch_cycle(ins, d, units)
         # Execute: operands from rename/forwarding (UM 6.3.3.1).
         ready = max([gpr_prod.get(g, 0) for g in ins.src], default=0)
+        ea, st_wait = track(ins, word)
+        ready = max(ready, st_wait)               # A6: cache read after the store's write
         ready = max(ready, max([cr_prod.get(c, 0) for c in ins.crs], default=0))
         if ins.lr_r:
             ready = max(ready, lr_ready)
@@ -460,6 +517,7 @@ def schedule(stream, fetch_any=False, core=frozenset()):
                     continue
             break
         r.update(D=d, S=s, E=fin, C=c, unit=u)
+        written(ins, word, ea, c)
         avail_at = c + 1 if ins.serial else fin + 1
         for g in ins.dst:
             gpr_prod[g] = avail_at
