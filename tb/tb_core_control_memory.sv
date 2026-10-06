@@ -37,6 +37,12 @@ module tb_core_control_memory #(
   int edge_count = 0, checks = 0, retirements = 0;
   int read_requests = 0, write_requests = 0, request_stalls = 0;
   int retire_stalls = 0, expected_fd, manifest_fd, words, expected_retirements;
+  // Words never fetched (past a branch that stops fetch), and branches that
+  // must fold at least once.
+  localparam logic [31:0] POISON = 32'hdeadbeef;
+  int poison_fetches = 0;
+  logic [31:0] must_fold[$];
+  bit folded[logic [31:0]];
 
   logic [3:0] unused_context;
   logic [36:0] unused_tlb_inv_core;
@@ -178,6 +184,10 @@ module tb_core_control_memory #(
     end
   end
   always @(posedge clk) begin
+    if (rst_n && dut.iq_push0 && dut.fold_predict) folded[dut.queued.pc] = 1;
+    if (rst_n && dut.iq_push1 && dut.fold_predict1) folded[dut.queued1.pc] = 1;
+  end
+  always @(posedge clk) begin
     if (!rst_n) begin
       ipending <= 0;
       dpending <= 0;
@@ -190,6 +200,10 @@ module tb_core_control_memory #(
       if (rv && rr) dpending <= 0;
       if (iv && ir) begin
         require(!ipending && ia[1:0] == 0 && ia < 16384, "bad instruction request");
+        if (imem[ia[13:2]] == POISON) begin
+          poison_fetches++;
+          $display("fetch past a waiting branch: %08x edge=%0d", ia, edge_count);
+        end
         ipending <= 1;
         iword <= imem[ia[13:2]];
         iword1 <= imem[{ia[13:3], 1'b1}];
@@ -238,6 +252,9 @@ module tb_core_control_memory #(
         require(memory_digest() == hash, "committed byte-memory mismatch");
         if (insn == 0) begin
           require(halted && retirements == expected_retirements, "terminal state/count mismatch");
+          require(poison_fetches == 0, $sformatf("%0d fetches past a waiting branch", poison_fetches));
+          foreach (must_fold[i])
+            require(folded.exists(must_fold[i]) != 0, $sformatf("branch %08x never folded", must_fold[i]));
           require(read_requests >= 20 && write_requests >= 20 && request_stalls > 0 && retire_stalls > 0,
                   "missing memory/retirement backpressure coverage");
           $display("PASS control/memory program: checks=%0d retire=%0d reads=%0d writes=%0d request-stalls=%0d retire-stalls=%0d cycles=%0d speculative=%0d mispredicted=%0d early=%0d removed=%0d",
@@ -267,6 +284,12 @@ module tb_core_control_memory #(
     require(status == 2, "invalid generated program manifest");
     $fclose(manifest_fd);
     $readmemh({program_dir,"/program.hex"}, imem, 0, words-1);
+    manifest_fd = $fopen({program_dir,"/fold.hex"}, "r");
+    if (manifest_fd != 0) begin
+      logic [31:0] pc;
+      while ($fscanf(manifest_fd, "%h", pc) == 1) must_fold.push_back(pc);
+      $fclose(manifest_fd);
+    end
     expected_fd = $fopen({program_dir,"/expected.txt"}, "r");
     require(expected_fd != 0, "missing expected architectural trace");
     repeat(3) @(negedge clk);

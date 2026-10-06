@@ -610,10 +610,12 @@ Three changes:
   cycle after its capture. Recovery and the target request follow on the
   next edge, F6-5's `6F`. A correct prediction still resolves from the
   captured CR.
-- An `mtlr` feeds the shadow LR with its source, two cycles after it
-  dispatches, when the 603e's SRU result reaches the BPU (UM 6.4.1.1; the
-  model's `lr_ready`). A `bclr` behind it resolves at dispatch or folds
-  instead of waiting for the `mtlr` to retire.
+- An `mtlr` fed the shadow LR with its source two cycles after it
+  dispatched, so a `bclr` behind it resolved before the `mtlr` retired.
+  This was not the manual's timing: a move to LR is completion-serialized
+  and its result is not forwarded before it retires (UM 6.3.3.2). The
+  early feed was removed ([AUD-90](AUDIT.md); see
+  [fetch-stop waits](#fetch-stop-waits-aud-90)); the table below includes it.
 
 | | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
 |---|---:|---:|---:|---:|
@@ -777,6 +779,64 @@ mostly CQ entries (`cq_full` 0.098 CPI after, 0.102 before).
 The "off" column is not batch 12 (775.8 at width 2): these builds predate
 the [BUG-03](BUGS.md) fix ([measurement reproducibility](#measurement-reproducibility)),
 which moved Dhrystone 6 cycles per run with no logic change.
+
+## Fetch-stop waits (AUD-90)
+
+Recorded: `make -C sim DISPATCH_WIDTH=<1|2> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff` (width 1 without `DISPATCH_WIDTH`), then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits 9c106ac (before) and 94c2815 (after), 2026-10-06.
+LSU unit and store queue on, prebuilt firmware. Every run passes its checks
+(CoreMark CRC 0xfcaf).
+
+The core now waits where UM 6.4.1.1 stops fetching: a `bclr` behind an
+`mtlr`, and a `bcctr` or CTR-testing `bc` behind an `mtctr`, resolve from
+the register after the move retires; a CTR-testing branch or `bcctr`
+behind a CTR-testing `bc`, and a linking branch other than `b` behind a
+linking branch, wait for the older branch to complete. None of these
+folds at fetch, and fetch stops at them (below).
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before | 766.0 | 639.0 | 2.300 | 2.675 |
+| After | 769.0 | 641.0 | 2.276 | 2.641 |
+| Fetch stop | 769.0 | 641.0 | 2.270 | 2.633 |
+
+Recorded: the same commands, commit 4283ff7 (fetch stop), 2026-10-06.
+
+Fetch now stops at a waiting branch: words fetched past its fetch pair are
+dropped, and fetch restarts the cycle after the branch leaves the IQ, at
+its target if taken, else after the pair. The manual gives no resume
+cycle; in UM 6.4.1.2.1 (Figure 6-5, PDF 263) the new stream is requested
+in the cycle the branch resolves, and the core requests it the cycle
+after, as for every branch redirect. A linking `bc` or `bcctrl` behind an
+`mtlr` folds again; it waits only behind a linking branch. Dhrystone does
+not change; CoreMark loses 0.3% at both widths.
+
+### One level of CR prediction
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Fetch stop (4283ff7) | 769.0 | 641.0 | 2.270 | 2.633 |
+| One level | 764.0 | 641.0 | 2.281 | 2.632 |
+
+Recorded: the same commands, commit b9aca62, 2026-10-06.
+
+UM 6.4.1.1 seventh case: a branch on CR behind an older one still waiting
+on CR is not predicted. It stays in the fetch registers, and fetching
+stops, until the older one resolves; it is then predicted in that cycle
+(UM 6.4.1.2, Figure 6-5, PDF 263), as the CR result arrives. If its CTR
+test already fails, the CR is ignored and it is not held. A branch whose
+CR is final when it reaches the fetch registers, including in the cycle
+the CR result arrives, is resolved there (UM 6.4.1) instead of predicted;
+a branch predicted at dispatch takes its static prediction. The pair
+fetched behind a held branch waits in the fetch buffer and enters the
+fetch registers the cycle it is released, as the 603e fetches it then.
+
+Dhrystone width 1 gains 5 cycles/run: a `bne` in `memcpy` (`fff0337c`)
+whose `y` bit predicts it taken is resolved not taken from a final CR, and
+no longer redirects at dispatch. Width 2 does not change: the held
+second branches in `strcpy` and `strcmp` are released as the first
+resolves, and the core's taken-branch refetch is no slower than before.
+The pair behind a released branch is followed by a fetch the cycle after,
+one cycle later than the 603e.
 
 ## Gaps
 

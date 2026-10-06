@@ -11,6 +11,8 @@ import argparse
 
 MASK = 0xffffffff
 BASE = 0x1000
+# Never fetched: words past a branch that stops fetch.
+POISON = 0xdeadbeef
 DOPS = {'lwz':32,'lbz':34,'stw':36,'stb':38,'lhz':40,'lha':42,'sth':44}
 DOPS.update({op+'u':code+1 for op,code in list(DOPS.items())})
 CROPS = {'crand':257,'crandc':129,'creqv':289,'crnand':225,'crnor':33,'cror':449,'crorc':417,'crxor':193}
@@ -31,6 +33,7 @@ class Program:
     def __init__(self):
         self.ops=[]
         self.labels={}
+        self.folds=[]
     def emit(self, op, *args):
         self.ops.append((op,args))
     def label(self, name):
@@ -52,6 +55,7 @@ class Program:
         if op=='mfcr':return (31<<26)|(a[0]<<21)|(19<<1)
         if op=='mtcrf':return (31<<26)|(a[1]<<21)|(a[0]<<12)|(144<<1)
         if op=='illegal': return 0
+        if op=='poison': return POISON
         if op in ('addi','addis'):
             d,r,imm=a
             imm=self.address(imm)
@@ -552,6 +556,53 @@ def make_branch_fold():
         p.label(t('m1'));e('divw',8,6,7,0,0);e('cmpi',0,8,q);e('addi',3,0,t('m2'))
         e('mtlr',3);e('bclr',12,2,0);e('illegal')
         p.label(t('m2'));e('addi',21,21,64)
+    # UM 6.4.1.1: a branch waiting on an older mtlr, mtctr, CTR-testing
+    # branch or linking branch stops fetch until that one completes, so the
+    # poison words past it are never requested. A divide delays the older
+    # one. A linking bc behind mtlr is not such a case and folds.
+    for pad in range(4):
+        t=lambda name:f'f{name}{pad}'
+        def tail(target):
+            for _ in range(5):e('illegal')
+            for _ in range(4):e('poison')
+            p.label(t(target))
+        nops(pad)
+        e('addi',3,0,t('a'));e('divw',8,6,7,0,0);e('mtlr',3);e('bclr',20,0,0);tail('a')
+        e('addi',3,0,t('b'));e('divw',8,6,7,0,0);e('mtctr',3);e('bcctr',20,0,0);tail('b')
+        e('addi',5,0,2);e('divw',8,6,7,0,0);e('mtctr',5);e('bc',16,0,t('c'),0,0);tail('c')
+        e('addi',5,0,3);e('mtctr',5);e('divw',8,6,7,0,0)
+        e('bc',16,0,t('d0'),0,0);p.label(t('d0'));e('bc',16,0,t('d'),0,0);tail('d')
+        e('addi',3,0,t('e'));e('addi',3,3,1);e('mtctr',3);e('divw',8,6,7,0,0)
+        e('bc',16,0,t('e0'),0,0);p.label(t('e0'));e('bcctr',20,0,0);tail('e')
+        e('divw',8,6,7,0,0);e('b',t('f0'),0,1);e('illegal')
+        p.label(t('f0'));e('bc',20,0,t('f'),0,1);tail('f')
+        # Not taken: fetch resumes behind the branch.
+        e('addi',5,0,1);e('divw',8,6,7,0,0);e('mtctr',5);e('bc',16,0,t('a'),0,0);e('addi',21,21,1)
+        # One per pad: behind an uncompleted linking branch it would wait.
+        e('addi',3,0,t('g'));e('cmpi',0,4,1);e('divw',8,6,7,0,0);e('mtlr',3)
+        p.folds.append(len(p.ops)*4);e('bc',13 if pad%2 else 20,2,t('g'),0,1);tail('g')
+    # UM 6.4.1.1 seventh case: a branch on CR behind one still waiting on
+    # CR (a compare behind a divide) is not predicted, and fetching stops
+    # at it. Either branch predicted taken or not; the second's predicted
+    # path holds poison, so neither folding it nor fetching past it passes.
+    for pad in range(4):
+        for pred1 in (0,1):
+            for pred2 in (0,1):
+                t=lambda name:f'c{name}{pad}{pred1}{pred2}'
+                nops(pad)
+                e('divw',8,6,7,0,0);e('cmp',0,8,8)
+                if pred1:e('bc',13,2,t('n'),0,0)
+                else:e('bc',4,2,t('z'),0,0)
+                p.label(t('n'))
+                if pred2:
+                    e('bc',5,2,t('p'),0,0);e('b',t('z'),0,0)
+                    for _ in range(5):e('illegal')
+                    p.label(t('p'))
+                else:
+                    e('bc',12,2,t('z'),0,0)
+                    for _ in range(5):e('illegal')
+                for _ in range(4):e('poison')
+                p.label(t('z'))
     # A leaf called in a loop: the return folds once the bl retires.
     e('addi',5,0,8);e('mtctr',5)
     p.label('loop');e('b','body',0,1);e('add',22,22,21);e('bc',16,0,'loop',0,0)
@@ -1020,6 +1071,7 @@ def write(output, shifts=False, arithmetic_shifts=False, insert=False, subtract=
     snapshots,counts=p.simulate(limit=10000)
     (output/'program.hex').write_text('\n'.join(f'{p.encode(i*4,*op):08x}' for i,op in enumerate(p.ops))+'\n')
     (output/'expected.txt').write_text('\n'.join(' '.join(f'{x:08x}' for x in row) for row in snapshots)+'\n')
+    (output/'fold.hex').write_text(''.join(f'{pc:08x}\n' for pc in p.folds))
     (output/'manifest.txt').write_text(f'words={len(p.ops)} retirements={len(snapshots)}\n'+str(counts)+'\n')
     print(f'Generated memory/control program: {len(p.ops)} words, {len(snapshots)} expected retirements, {len(counts)} operation kinds')
 

@@ -9,13 +9,14 @@
 // Every response is consumed when it arrives, so a responder never holds one
 // (a held response could block a shared translation router). A request
 // offered with nothing pending has a reserved queue slot. One offered on a
-// consume edge may not: if its response finds the queue full, a normal word
-// waits in a one-entry buffer, and a fault response (whose side information
+// consume edge may not: if its response finds the queue full, normal words
+// wait in a buffer, and a fault response (whose side information
 // is captured at queue entry) is dropped and fetched again.
 //
 // With FETCH_WIDTH 2 a response may also carry the next word (rsp_pair_i,
-// doubleword-aligned requests only). Both words pass on when the queue has
-// two free slots; otherwise the second is dropped and fetched again.
+// doubleword-aligned requests only). Both words pass on, or wait in the
+// buffer, when the queue has two free slots; otherwise the second is dropped
+// and fetched again.
 //
 // early_i announces, a cycle ahead, a redirect to early_target_i whose
 // source and target are registered. When it arrives (early_ok_i) and no old
@@ -58,8 +59,8 @@ module ppc_fetch #(
   logic [31:0] pc, pc_plus4, pc_plus8, next_addr, redirect_target;
   // The buffer holds only normal words and never coexists with a pending
   // request: no request is offered while it is full or the queue is full.
-  logic buf_valid;
-  logic [31:0] buf_pc, buf_insn;
+  logic buf_valid, buf_pair;
+  logic [31:0] buf_pc, buf_insn, buf_insn1;
   ppc_pkg::esa_enable_t buf_esa;
   logic consume, live, to_buf, replay, offer, accept, pair, pair_next, early_sel, fast;
   logic pending_d, request_held_d, redirect_pending_d;
@@ -96,8 +97,8 @@ module ppc_fetch #(
   // On the redirect edge itself the cleared downstream queue refuses the
   // packet.
   assign packet_valid_o = buf_valid || live;
-  assign packet_pair_o = pair;
-  assign packet_insn1_o = rsp_insn1_i;
+  assign packet_pair_o = buf_valid ? buf_pair && packet_ready2_i : pair;
+  assign packet_insn1_o = buf_valid ? buf_insn1 : rsp_insn1_i;
   always_comb begin
     if (buf_valid) begin
       packet_o.pc = buf_pc;
@@ -180,7 +181,9 @@ module ppc_fetch #(
       else if (!pending) pc_plus8 <= pc + 32'd8;
       else if (consume && !replay) pc_plus8 <= next_addr + 32'd8;
       if (redirect_i) redirect_target <= redirect_target_i;
-      if (redirect_i || (buf_valid && packet_ready_i)) buf_valid <= 1'b0;
+      // A buffered pair taken one word at a time keeps its second word.
+      if (redirect_i || (buf_valid && packet_ready_i && !(buf_pair && !packet_ready2_i)))
+        buf_valid <= 1'b0;
       if (to_buf) buf_valid <= 1'b1;
     end
   end
@@ -190,6 +193,12 @@ module ppc_fetch #(
       buf_pc <= pc;
       buf_insn <= rsp_insn_i;
       buf_esa <= rsp_esa_i;
+      buf_pair <= pair_next;
+      buf_insn1 <= rsp_insn1_i;
+    end else if (buf_valid && packet_ready_i) begin
+      buf_pc <= buf_pc + 32'd4;
+      buf_insn <= buf_insn1;
+      buf_pair <= 1'b0;
     end
   end
 

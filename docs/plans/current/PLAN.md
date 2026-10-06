@@ -147,10 +147,12 @@ Queued, in order:
 3. Speed: recover 66 MHz (translated −4.342 ns, integrated −3.291,
    timer-bat −4.591, chip −4.361, chip602 −4.040 on `6b073fc`), then width
    2, the LSU unit and the FPU at 66 MHz; Dhrystone 1:1 with the 603e
-   (639 cycles/run against the model's 506); a single-precision Mandelbrot.
+   (641 cycles/run against the model's 506); a single-precision Mandelbrot.
 4. FPU silicon-semantics gaps (AUD-88/89, [assessment](../../FPU_REUSE_ASSESSMENT.md)),
    FULL FPU in the MiSTer core (reduce area or keep COMPACT).
-5. Verification: the open manual inventory rows ([audit](../../AUDIT.md)).
+5. Verification: P12 per-row latencies and the chapter 6 worked-schedule
+   replays (the trace-visible dispatch rules are checked) and the
+   open manual inventory rows ([audit](../../AUDIT.md)).
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or

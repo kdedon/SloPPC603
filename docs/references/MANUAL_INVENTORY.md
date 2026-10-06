@@ -386,20 +386,20 @@ PEM was read only where the UM defers to it.
 | I-cache miss: critical doubleword forwarded, streaming during reload | UM §6.3.2.3, Fig 6-4, PDF 256-257 | tested | `docs/ICACHE.md:114-128`. `test-icache`, `test-icache-bus60x` |
 | Dual dispatch: DQ1 needs a different free unit | UM §6.3.3, §6.6.1.2, PDF 257, 267 | tested | Behind `DISPATCH_WIDTH=2` (default 1). `test-core-dual`, `test-dispatch-rules` TIM-DISP-DQ1 |
 | Reservation station per unit; issue on the rename write cycle | UM §6.3.3, PDF 257-258 | partial | IU/LSU stations (DUAL_DISPATCH_DESIGN §Station waits). Operand readiness is not trace-checked. The cycle rule has no contract (PERFORMANCE_TARGET "Timing rules not yet contracts") |
-| Five completion buffers; dispatch stalls when full | UM §6.3.3, PDF 258 | untested | `rtl/ppc_pkg.sv:9` CQ_DEPTH=5. CQ occupancy not checked (DUAL_DISPATCH_DESIGN:961) |
+| Five completion buffers; dispatch stalls when full | UM §6.3.3, PDF 258 | tested | `rtl/ppc_pkg.sv:9` CQ_DEPTH=5. `test-dispatch-rules` TIM-CQ-ALLOC (at most five after a cycle's retirements) |
 | Stores, FPU and SRU retire only from CQ0; up to two retire per cycle | UM §6.3.3, §6.6.1.3, PDF 258, 268 | tested | `test-dispatch-rules` TIM-SER-COMPLETE, TIM-CQ-CQ1, TIM-DISP-WIDTH |
 | Writeback limits: 2 GPR, 1 each CR/FPR/LR/CTR per cycle | UM §6.3.3, PDF 258 | tested | `test-dispatch-rules` TIM-WB-LIMITS |
-| Rename registers: 5 GPR, 4 FPR, 1 CR/LR/CTR | UM §6.3.3.1, PDF 258-259 | partial | `rtl/ppc_pkg.sv:8` GPR_RENAME_DEPTH=5, `test-rename-pair`. The single CR rename is not modelled as a dispatch stall (PERFORMANCE_TARGET A13) |
+| Rename registers: 5 GPR, 4 FPR, 1 CR/LR/CTR | UM §6.3.3.1, PDF 258-259 | partial | `rtl/ppc_pkg.sv:8` GPR_RENAME_DEPTH=5, `test-rename-pair`, `test-dispatch-rules` TIM-RENAME-LIMITS (GPR/FPR destinations in flight). The single CR rename is not modelled as a dispatch stall (PERFORMANCE_TARGET A13) |
 | Precise exceptions at the last CQ position | UM §6.3.3, PDF 258 | tested | `ppc_completion`. Exception benches, e.g. `test-core-interrupt`, `test-core-alignment` |
 | Completion-serialized class (SRU non-add/cmp, cache/TLB ops, lmw/stmw/string, sync) | UM §6.3.3.2, PDF 259 | tested | `test-core-serialization`, `test-serialization-decode`, `test-dispatch-rules` TIM-SER-COMPLETE |
 | Dispatch-serialized class (lmw/lswi/lswx, mtxer/mcrxr, sync/isync/mtmsr/rfi/sc) | UM §6.3.3.2, PDF 259 | tested | `test-dispatch-rules` TIM-DISP-DQ0, TIM-SER-DISPATCH |
 | Refetch serialization (isync) | UM §6.3.3.2, PDF 259 | tested | `test-dispatch-rules` TIM-SER-REFETCH |
 | Unit busy stalls dispatch | UM §6.3.3.3, PDF 260 | partial | Implemented, but unit busy times are not trace-checked (DUAL_DISPATCH_DESIGN:961) |
-| Branch folding (branch removed from the stream) | UM §6.4.1.1, PDF 260-261 | partial | Folded `b`/predicted-taken `bc`/`bclr`/`bcctr` redirect at fetch (`rtl/ppc_core.sv:668`, `test-core-branch-fold`). Removal from the dispatch slot only behind `ENABLE_BRANCH_REMOVAL` (default 0, `rtl/ppc_core.sv:17`). Branches still take a dispatch slot |
-| Seven fetch-stop dependency cases (mtlr→bclr, mtctr→bcctr, LK→LK, CR→CR, ...) | UM §6.4.1.1, PDF 261 | partial | The waits exist (CR branch behind a predicted one, LR/CTR writer pending; DUAL_DISPATCH slice 7). They are not enumerated or cycle-checked against the list (PERFORMANCE_TARGET timing rules) |
+| Branch folding (branch removed from the stream) | UM §6.4.1.1, PDF 260-261 | partial | Folded `b`/predicted-taken `bc`/`bclr`/`bcctr` redirect at fetch (`rtl/ppc_core.sv:668`, `test-core-branch-fold`); a branch whose CR is final there is resolved instead of predicted. Removal from the dispatch slot only behind `ENABLE_BRANCH_REMOVAL` (default 0, `rtl/ppc_core.sv:17`). Branches still take a dispatch slot |
+| Seven fetch-stop dependency cases (mtlr→bclr, mtctr→bcctr, LK→LK, CR→CR, ...) | UM §6.4.1.1, PDF 261 | tested | `test-dispatch-rules` TIM-BPU-FETCH-STOP (six cases) and TIM-BPU-ONE-PREDICTION (CR→CR, mispredicted paths only). Fetch stops at the waiting branch: `test-core-branch-fold` (no fetch past it, including a CR branch behind one waiting on CR, held until that resolves; docs/PERFORMANCE_TARGET.md) |
 | Static prediction: backward taken, `y` bit inverts | UM §6.4.1.2, PDF 262 | tested | `rtl/ppc_core.sv:668-669`, ENABLE_BRANCH_SPEC=1 (`ppc_core.sv:102`). `test-core-branch-recovery` |
 | One level of prediction; nothing completes past an unresolved branch; flush on mispredict | UM §6.4.1.2, PDF 262 | tested | `docs/CONTROL_MEMORY.md:41`. `test-core-branch-recovery`, `test-dispatch-rules` TIM-CQ-ORDER |
-| No prediction when LR/CTR target is pending | UM §6.4.1.2, PDF 262 | tested | `test-core-branch-fold` (fold waits for an older LR/CTR writer, slice 7) |
+| No prediction when LR/CTR target is pending | UM §6.4.1.2, PDF 262 | tested | `test-core-branch-fold` (fold waits for an older LR/CTR writer, slice 7; a linking `bc` behind `mtlr` folds), `test-dispatch-rules` TIM-BPU-FETCH-STOP |
 | Predicted-branch cycle costs (taken target F+2, mispredict redirect R+1) | UM §6.4.1.2.1, Fig 6-3/6-5, PDF 262-263 | partial | Redirect "on the edge after resolution" (PERFORMANCE_TARGET:823). Not replayed against Figs 6-3..6-5 |
 | CR forwarded to the BPU at end of execute | UM §6.4.1, Table 6-4 `^`, PDF 264 | tested | `docs/CONTROL_MEMORY.md:41` (resolves when the owner's CR result is captured). `test-core-branch-recovery` |
 | IU timing: single-cycle ALU, multiply, divide | UM §6.4.2, PDF 264 | tested | `test-multiply-timing`, `test-divider-timing`, `test-core-divider-timing-pid6` |
@@ -408,7 +408,7 @@ PEM was read only where the UM defers to it.
 | LSU: two stages, 2-cycle load-use, one access per cycle | UM §6.4.4, PDF 264 | partial | Only with ENABLE_LSU_PIPE (default 0, `rtl/ppc603e.sv:8`). Base snooping behind LSU_BASE_SNOOP (default 0) |
 | Copy-back / write-through / cache-inhibited access costs | UM §6.5.1-6.5.3, PDF 264-266 | partial | Works functionally (`test-dcache`). No timing contract (PERFORMANCE_TARGET "Timing rules not yet contracts") |
 | sync/isync/eieio timing | UM §6.3.3.2, Table 6-2, PDF 259 | partial | Serialization is tested (above). eieio has no action (`docs/DATA_CACHE_INTEGRATION.md:78`). The cycle cost is not checked |
-| Scheduling guidelines (BPU/dispatch/completion resource lists) | UM §6.6, PDF 266-268 | partial | The dispatch/completion lists are trace-checked (`test-dispatch-rules`). The branch-resolution resource list is not |
+| Scheduling guidelines (BPU/dispatch/completion resource lists) | UM §6.6, PDF 266-268 | partial | The dispatch/completion lists are trace-checked (`test-dispatch-rules`); the branch-resolution list partly (TIM-BPU-FETCH-STOP, TIM-BPU-ONE-PREDICTION, AUD-90) |
 
 ## Chapter 7: Signal descriptions (UM PDF 277-308)
 

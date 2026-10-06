@@ -9897,7 +9897,7 @@
         "PID6-603e or PID7v-603e unless specifically overridden"
       ],
       "issue_ids": [],
-      "checker_status": "not_implemented"
+      "checker_status": "partially_trace_checked"
     },
     {
       "id": "TIM-CQ-CQ0",
@@ -10096,7 +10096,7 @@
         "PID6-603e or PID7v-603e unless specifically overridden"
       ],
       "issue_ids": [],
-      "checker_status": "not_implemented"
+      "checker_status": "partially_trace_checked"
     },
     {
       "id": "TIM-SER-COMPLETE",
@@ -10218,7 +10218,7 @@
         "PID6-603e or PID7v-603e unless specifically overridden"
       ],
       "issue_ids": [],
-      "checker_status": "not_implemented"
+      "checker_status": "partially_trace_checked"
     },
     {
       "id": "TIM-BPU-NO-SPEC-WRITE",
@@ -10304,7 +10304,7 @@
       "issue_ids": [
         "TIM-U04"
       ],
-      "checker_status": "not_implemented",
+      "checker_status": "partially_trace_checked",
       "requirements": [
         "bclr requires LR available",
         "bcctr requires CTR available",
@@ -10331,7 +10331,7 @@
       "issue_ids": [
         "TIM-U04"
       ],
-      "checker_status": "not_implemented"
+      "checker_status": "partially_trace_checked"
     },
     {
       "id": "TIM-BPU-CTR-DEPENDENCY",
@@ -10349,7 +10349,7 @@
         "PID6-603e or PID7v-603e unless specifically overridden"
       ],
       "issue_ids": [],
-      "checker_status": "not_implemented"
+      "checker_status": "partially_trace_checked"
     },
     {
       "id": "TIM-BPU-CTR-CHAIN",
@@ -10367,7 +10367,7 @@
         "PID6-603e or PID7v-603e unless specifically overridden"
       ],
       "issue_ids": [],
-      "checker_status": "not_implemented"
+      "checker_status": "trace_checked"
     },
     {
       "id": "TIM-BPU-LINK-CHAIN",
@@ -10387,7 +10387,7 @@
       "issue_ids": [
         "TIM-U04"
       ],
-      "checker_status": "not_implemented"
+      "checker_status": "trace_checked"
     },
     {
       "id": "TIM-BPU-CR-CHAIN",
@@ -10405,7 +10405,7 @@
         "PID6-603e or PID7v-603e unless specifically overridden"
       ],
       "issue_ids": [],
-      "checker_status": "not_implemented"
+      "checker_status": "partially_trace_checked"
     },
     {
       "id": "TIM-IU-OCCUPANCY",

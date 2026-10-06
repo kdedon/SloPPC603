@@ -2417,7 +2417,7 @@ test-reference-machine: reference-checkout demo-soc-model
 DISPATCH_RULES_PROGRAMS ?= dhrystone coremark whetstone
 .PHONY: test-dispatch-rules
 test-dispatch-rules: demo-soc-model
-	python3 tools/run_dispatch_rules.py --model $(BUILD_DIR)/demo/model/Vtb_demo_soc --image-dir $(DEMO_FW_DIR) --programs $(DISPATCH_RULES_PROGRAMS) --log-dir $(BUILD_DIR)/dispatch-rules $(if $(filter 2,$(DISPATCH_WIDTH)),--width 2 --sru --min-pairs 1000,--width 1)
+	python3 tools/run_dispatch_rules.py --model $(BUILD_DIR)/demo/model/Vtb_demo_soc --image-dir $(DEMO_FW_DIR) --programs $(DISPATCH_RULES_PROGRAMS) --log-dir $(BUILD_DIR)/dispatch-rules $(DISPATCH_RULES_ARGS) $(if $(filter 2,$(DISPATCH_WIDTH)),--width 2 --sru --min-pairs 1000,--width 1)
 # The MMU stress image on the package top: TLB reloads, interrupts, direct-store.
 MACHINE_MMU_ELF ?= ../toolchain/build/chip-mmu-stress/smoke.elf
 .PHONY: test-reference-machine-mmu
