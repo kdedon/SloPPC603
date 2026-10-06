@@ -6,7 +6,9 @@
 Trace lines come from ppc_core's +DISPATCH_TRACE monitor:
     <cycle> D<n> R<n> <dispatch pcs...> | <retire pcs...> [!<n>]
 '!<n>' marks a branch misprediction recovery that removed the n youngest
-dispatched instructions; the schedule comparison ignores it. A dispatch pc
+dispatched instructions; '!<n>*<m>' when the branch was itself removed at
+dispatch, m counting every dispatch after it. The schedule comparison
+ignores both. A dispatch pc
 ending in '*' is a branch removed at dispatch, which never retires. An expected schedule uses the same format; '#' starts a comment.
 
 --rules checks a trace of any length, streamed, against the 603e dispatch and
@@ -222,8 +224,9 @@ class Rules:
             self.stats['unknown'] += 1
         return None if word is None else classify(word, self.sru)
 
-    def event(self, cycle, dispatched, retired, mispredict=None, removed=()):
-        """mispredict: None, or the count a recovery this cycle removes."""
+    def event(self, cycle, dispatched, retired, mispredict=None, removed=(), after=None):
+        """mispredict: None, or the count a recovery this cycle removes;
+        after: for a removed branch, every dispatch after it."""
         st = self.stats
         recovery, mispredict = mispredict is not None, mispredict or 0
         st['cycles'] = cycle
@@ -238,9 +241,10 @@ class Rules:
                 continue  # further micro-op of the same multiple/string instruction
             # Work dispatched down a mispredicted path never retires
             # (UM 6.4.1.2); it is what a recovery removed behind the
-            # conditional branch that retired last.
+            # conditional branch that retired last, or that was removed at
+            # dispatch and so never retires.
             wrong_path = 0
-            if self.cond_retired:
+            if self.cond_retired or (self.inflight and self.inflight[0][3] == 'removed'):
                 while wrong_path < len(self.inflight) and self.inflight[wrong_path][3]:
                     wrong_path += 1
             index = next((i for i, e in enumerate(self.inflight) if i >= wrong_path and e[0] == pc), None)
@@ -324,9 +328,9 @@ class Rules:
         require(mispredict <= len(self.inflight),
                 f'cycle {cycle}: recovery removes {mispredict} of {len(self.inflight)} in flight')
         if recovery:
-            self.wrong_path(cycle, mispredict)
+            self.wrong_path(cycle, mispredict, after)
         for entry in self.inflight[len(self.inflight) - mispredict:]:
-            entry[3] = True
+            entry[3] = True if after is None else 'removed'
 
     def occupancy(self, cycle):
         """TIM-CQ-ALLOC (UM 6.3.3, PDF 258; 6.6.1.2, PDF 267): five completion
@@ -370,20 +374,25 @@ class Rules:
                 self.stats['fetch_stops'] += 1
                 break
 
-    def wrong_path(self, cycle, mispredict):
+    def wrong_path(self, cycle, mispredict, after=None):
         """TIM-BPU-ONE-PREDICTION (UM 6.4.1.2, PDF 262; 6.6.1.1, PDF 267;
         6.4.1.1 last case, PDF 261): behind an unresolved predicted branch, a
         branch conditional on CR is not executed and fetching stops at it.
         Only mispredicted branches show their predicted path. A branch that
         also tests CTR may resolve on CTR alone, so it is not checked."""
         younger = mispredict
-        for order, _, gone in reversed(self.stream):
-            if not gone:
-                if younger == 0:
-                    break
-                younger -= 1
+        if after is not None:
+            if after >= len(self.stream):
+                return
+            order = self.stream[-1 - after][0]
         else:
-            return
+            for order, _, gone in reversed(self.stream):
+                if not gone:
+                    if younger == 0:
+                        break
+                    younger -= 1
+            else:
+                return
         branch = order
         path = [(c, gone) for order, c, gone in self.stream if order > branch]
         self.stops = [s for s in self.stops if s[1] <= branch]
@@ -401,7 +410,9 @@ class Rules:
 def parse_line(raw):
     head, _, retired = raw.partition('|')
     retired, _, removed = retired.partition('!')
+    removed, star, after = removed.partition('*')
     mispredict = int(removed) if removed else None
+    after = int(after) if star else None
     fields = head.split()
     require(len(fields) >= 3 and fields[1][0] == 'D' and fields[2][0] == 'R', f'malformed event {raw!r}')
     dispatched = [int(x.rstrip('*'), 16) for x in fields[3:]]
@@ -409,7 +420,7 @@ def parse_line(raw):
     retired = [int(x, 16) for x in retired.split()]
     require(len(dispatched) == int(fields[1][1:]) and len(retired) == int(fields[2][1:]),
             f'count does not match pcs in {raw!r}')
-    return int(fields[0]), dispatched, retired, mispredict, removed
+    return int(fields[0]), dispatched, retired, mispredict, removed, after
 
 
 def read_image(path, base):
@@ -433,10 +444,10 @@ def check_rules(lines, width, words, sru, flush=False):
     for raw in lines:
         raw = raw.split('#', 1)[0].strip()
         if raw:
-            cycle, dispatched, retired, mispredict, removed = parse_line(raw)
+            cycle, dispatched, retired, mispredict, removed, after = parse_line(raw)
             require(cycle > previous, f'cycle {cycle} out of order')
             previous = cycle
-            rules.event(cycle, dispatched, retired, mispredict, removed)
+            rules.event(cycle, dispatched, retired, mispredict, removed, after)
     return rules.stats
 
 

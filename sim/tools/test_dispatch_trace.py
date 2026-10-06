@@ -210,6 +210,15 @@ class DispatchRulesTest(unittest.TestCase):
             check_rules(past, 1, words, False)
         with self.assertRaisesRegex(ValueError, 'TIM-BPU-ONE-PREDICTION'):
             check_rules([stop[0], '2 D1 R0 00000904* |', '4 D0 R0 | !0'] + stop[3:], 1, words, False)
+        # The predicted beq removed at dispatch: '*1' locates it.
+        words[0x8fc] = 0x38630001
+        removed = ['0 D1 R0 000008fc |', '1 D1 R0 00000900* |', '2 D1 R0 00000904 |',
+                   '3 D0 R1 | 000008fc', '4 D0 R0 | !1*1', '5 D1 R0 00000910 |', '6 D0 R1 | 00000910']
+        st = check_rules(removed, 1, words, False)
+        self.assertEqual(st['wrong_path_branches'], 1)
+        with self.assertRaisesRegex(ValueError, 'TIM-BPU-ONE-PREDICTION'):
+            check_rules(removed[:3] + ['3 D1 R1 00000908 | 000008fc', '4 D0 R0 | !2*2'] + removed[5:],
+                        1, words, False)
 
     def test_schedule_ignores_recovery_marker(self):
         self.assertEqual(parse('4 D0 R1 | 00000300 !2\n5 D0 R0 | !1'), {4: ([], [0x300])})
