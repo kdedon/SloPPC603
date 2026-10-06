@@ -98,7 +98,7 @@ jobs:
       - name: Program images
         if: matrix.suite == 'test'
         run: |
-          for name in selftest embench whetstone whetstone-hf doom doom-le quake quake-le quake-sf ${{ vars.MISTER_IMAGES || '' }}; do
+          for name in selftest embench nbench nbench-hf whetstone whetstone-hf doom doom-le quake quake-le quake-sf ${{ vars.MISTER_IMAGES || '' }}; do
             cp "build/mister/images/ppc603e-${name}.bin" build/mister/
           done
           cp build/mister/images/DOOM1.WAD build/mister/images/pak0.pak build/mister/
@@ -122,7 +122,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      # The Embench (GPL-3.0), Doom and Quake (GPL-2.0) images: publish their corresponding source.
+      # The Embench (GPL-3.0), Doom and Quake (GPL-2.0) and nbench images: publish their source.
       - name: Program source
         run: ci/source-archive.sh artifacts/ppc603e-source.tar.gz
       - name: Release notes
@@ -131,6 +131,7 @@ jobs:
           python3 ci/release_notes.py --tag "${GITHUB_REF_NAME}" ${previous:+--since "${previous}"} \
             $(find artifacts -name '*.json' | sort) --images $(find artifacts -name '*.bin' -o -name '*.WAD' -o -name '*.pak' | sort) \
             --embench-source artifacts/ppc603e-embench.SOURCE.txt \
+            --nbench-source artifacts/ppc603e-nbench.SOURCE.txt \
             --doom-source artifacts/ppc603e-doom.SOURCE.txt \
             --quake-source artifacts/ppc603e-quake.SOURCE.txt > notes.md
       - name: Publish

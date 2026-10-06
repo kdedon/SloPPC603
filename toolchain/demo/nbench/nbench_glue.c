@@ -5,7 +5,7 @@
  * the stopwatch on the cycle counter, NNET.DAT from the image. Each test
  * runs once, fixed-size (NB_SMOKE) or self-calibrated for NB_SECS seconds,
  * and the indices are the driver's geometric means. The tests' own checks
- * (built with DEBUG) print "OK" or an error, which nb_printf counts. */
+ * (built with DEBUG) report "OK" or an error, which nb_printf counts. */
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -29,18 +29,24 @@ const struct demo_file_image demo_files[] = {{"NNET.DAT", nnet_dat}, {0, 0}};
 
 /* ---- check lines -------------------------------------------------------- */
 
-static int checks_ok, checks_bad;
+/* The OK lines come from inside the timed loops, once per iteration: they
+ * are counted, once per check, and not printed. Errors are printed. */
+static const char *const ok_lines[] = {"Numeric sort: OK", "String sort: OK", "IDEA: OK",
+                                       "Huffman: OK"};
+static int ok_mask, checks_bad;
 
 int nb_printf(const char *fmt, ...)
 {
-  int ok = strncmp(fmt, "Numeric sort: OK", 16) == 0 || strncmp(fmt, "String sort: OK", 15) == 0 ||
-           strncmp(fmt, "IDEA: OK", 8) == 0 || strncmp(fmt, "Huffman: OK", 11) == 0;
-  int bad = !ok && (strncmp(fmt, "Sort Error", 10) == 0 || strncmp(fmt, "IDEA Error", 10) == 0 ||
-                    strncmp(fmt, "Error at", 8) == 0 || strncmp(fmt, "CPU:", 4) == 0 ||
-                    strncmp(fmt, "FPU:", 4) == 0 || strncmp(fmt, "\n CPU:", 6) == 0);
-  if (!ok && !bad) return 0;
-  checks_ok += ok;
-  checks_bad += bad;
+  for (int i = 0; i < 4; i++)
+    if (strncmp(fmt, ok_lines[i], strlen(ok_lines[i])) == 0) {
+      ok_mask |= 1 << i;
+      return 0;
+    }
+  int bad = strncmp(fmt, "Sort Error", 10) == 0 || strncmp(fmt, "IDEA Error", 10) == 0 ||
+            strncmp(fmt, "Error at", 8) == 0 || strncmp(fmt, "CPU:", 4) == 0 ||
+            strncmp(fmt, "FPU:", 4) == 0 || strncmp(fmt, "\n CPU:", 6) == 0;
+  if (!bad) return 0;
+  checks_bad++;
   va_list ap;
   va_start(ap, fmt);
   int n = vprintf(fmt, ap);
@@ -169,12 +175,19 @@ int main(void)
 #else
   printf("%lu s per test\n", (unsigned long)NB_SECS);
 #endif
+#ifdef _SOFT_FLOAT
+  printf("soft float\n");
+#else
+  printf("hard float\n");
+#endif
   printf("LU %dx%d (reference 101)\n", NB_LU_N, NB_LU_N);
   printf("%lu MHz\n", (unsigned long)(clock / 1000000));
   printf("test         iter/s    P90     K6\n");
   configure();
 
-  perf_start();
+  /* The counts cover the tests, not the output between them; a total over
+   * all tests would overflow the 32-bit counters. */
+  struct perf_totals totals = {0};
   for (int i = 0; i < NUMTESTS; i++) {
 #ifdef NB_SMOKE
     /* Training takes hundreds of millions of cycles. */
@@ -183,16 +196,22 @@ int main(void)
       continue;
     }
 #endif
+    /* The name shows which test is running; some take a minute. */
+    printf("%-8s", short_names[i]);
+    perf_start();
     uint64_t c0 = soc_cycles();
     funcpointer[i]();
     uint64_t cycles = soc_cycles() - c0;
+    perf_stop();
+    perf_add(&totals);
     double s = score(i), p90 = s / bindex[i], k6 = s / lx_bindex[i];
-    printf("%-8s", short_names[i]);
     bench_print_fixed(s, 3, 14);
     bench_print_fixed(p90, 3, 8);
     bench_print_fixed(k6, 3, 8);
     printf("\n");
+    con_screen(0);
     printf("         %llu cycles\n", (unsigned long long)cycles);
+    con_screen(1);
     if (i == TF_FFPU || i == TF_NNET || i == TF_LU) {
       p90_fp *= p90;
       k6_fp *= k6;
@@ -203,7 +222,6 @@ int main(void)
       else k6_mem *= k6;
     }
   }
-  perf_stop();
 
   p90_int = root(p90_int, 7);
   p90_fp = root(p90_fp, fp_tests);
@@ -220,12 +238,23 @@ int main(void)
   bench_print_fixed(k6_int, 3, 0);
   printf(" FP ");
   bench_print_fixed(k6_fp, 3, 0);
-  printf("\nchecks %d ok, %d failed; heap peak %lu KiB\n", checks_ok, checks_bad,
+  int passed = __builtin_popcount((unsigned)ok_mask);
+  printf("\nchecks %d ok, %d failed; heap peak %lu KiB\n", passed, checks_bad,
          (unsigned long)((arena_peak + 1023) / 1024));
-  perf_report("nbench");
+  /* The full report goes to the console only, so the screen keeps the
+   * results; the screen gets the three largest stall causes. */
+  con_screen(0);
+  perf_print("nbench", &totals);
+  con_screen(1);
+  struct demo_result r;
+  perf_brief_totals(&totals, &r);
+  printf("stalls");
+  for (int k = 0; k < 3; k++)
+    printf(" %s %u.%02u", perf_short[r.stall[k]], r.stall_cpi[k] / 100u, r.stall_cpi[k] % 100u);
+  printf(" CPI\n");
   bench_stack_check();
 
-  int pass = checks_bad == 0 && checks_ok == 4;
+  int pass = checks_bad == 0 && passed == 4;
   con_color(pass ? 10 : 12, 1);
   printf("NBENCH %luMHz INT ", (unsigned long)(clock / 1000000));
   bench_print_fixed(p90_int, 2, 0);

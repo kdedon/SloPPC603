@@ -13,7 +13,7 @@ its SHA-256 and caches it under `toolchain/build/demo/src` (git-ignored).
 
 | Component | Upstream | Licence |
 |---|---|---|
-| nbench 2.2.3 | <https://github.com/toshsan/nbench/tree/592e671e0c21760f0eb0add1bba50fe7766c1129> (import of Uwe Mayer's Linux/Unix port of BYTE's BYTEmark 2) | No formal licence. BYTE describes the source as "freely available"; the files carry an as-is disclaimer from BYTE/McGraw-Hill |
+| nbench 2.2.3 | <https://github.com/toshsan/nbench/tree/592e671e0c21760f0eb0add1bba50fe7766c1129> (import of Uwe Mayer's Linux/Unix port of BYTE's BYTEmark 2) | No formal licence. BYTE describes the source as "freely available"; the files carry an as-is disclaimer from BYTE/McGraw-Hill and the port's README a BSD-style warranty disclaimer. Redistributed under those notices, by the maintainer's decision of 2026-10-06 |
 | Embench-IoT 1.0 | <https://github.com/embench/embench-iot/tree/0466a18e4f6b47e19598d7c6ba72916d54b68f65> (tag `embench-1.0`) | GPL-3.0-or-later (benchmarks carry their own compatible notices) |
 | soft-fp | <https://github.com/gcc-mirror/gcc/tree/2ee5e4300186a92ad73f1a1a64cb918dc76c8d67/libgcc/soft-fp> (GCC 12.2.0, the pinned compiler's version) | GPL-3.0 with the GCC Runtime Library Exception |
 | libm | <https://github.com/kraj/musl/tree/0784374d561435f7c787a555aeab8ede699ed298/src/math> (musl 1.2.5) | MIT |
@@ -46,8 +46,12 @@ Consequences for built images:
   fetched quakegeneric files and the Amiga archives. `pak0.pak` is handled as
   `DOOM1.WAD` is: fetched, hash-checked, published unmodified as its own file, never
   embedded. The build's `lha.py` is ours; no LHA or vasm tool is used.
-- An nbench image contains BYTE's code under no stated licence. Use it for measurement;
-  do not redistribute built images without checking the terms yourself.
+- **The nbench images contain BYTE's code, which carries only the as-is notices.** By the
+  maintainer's decision of 2026-10-06 they are redistributed under those notices:
+  releases publish `ppc603e-nbench.bin` and `ppc603e-nbench-hf.bin` with
+  `ppc603e-nbench.SOURCE.txt`, which reproduces both notices verbatim from the fetched
+  files and points to the pinned upstream commit, and with `ppc603e-source.tar.gz`, which
+  holds the fetched nbench files.
 - soft-fp's runtime exception and musl's MIT licence place no condition on the images
   beyond the notices.
 - Whetstone's notice permits redistribution provided the whole opening comment block goes
@@ -65,8 +69,9 @@ double-precision `sin`, `cos`, `atan`, `acos`, `exp`, `log`, `pow`, `sqrt`, `flo
 `fabs`. Every image except the hard-float Whetstone ones is checked for floating-point
 instructions after linking. Floating-point scores of these images measure integer
 emulation of IEEE arithmetic: they are not comparable with a real 603e, which has a
-hardware FPU. The hard-float Whetstone images (see [Whetstone](#whetstone)) are the
-exception; nbench and Embench have no hard-float build yet.
+hardware FPU. The hard-float Whetstone images (see [Whetstone](#whetstone)) and the
+loadable `ppc603e-nbench-hf.bin` ([nbench](#nbench)) are the exceptions; Embench has no
+hard-float build yet.
 
 ## Memory
 
@@ -76,18 +81,25 @@ the rest to code, data and heap, and check their stack high-water mark at the en
 
 | Image | Code + data + bss | Stack (deepest seen) | Heap | Largest heap use |
 |---|---:|---:|---:|---|
-| `nbench`, `nbench-full` | 109 KiB | 8 KiB (1.3 KiB) | 143 KiB | LU at 90 × 90: two matrices, 127 KiB; FP emulation: 3 × 3000 numbers, 106 KiB |
-| `embench`, `embench-full` | 229 KiB | 24 KiB (7.7 KiB) | 3 KiB (unused) | All 19 benchmarks and their static heaps in one image |
+| `nbench`, `nbench-full` | 121 KiB | 24 KiB (about 22 KiB) | 111 KiB | LU at 82 × 82: two matrices, 105 KiB; FP emulation: 3 × 3000 numbers, 106 KiB |
+| `embench`, `embench-full` | 241 KiB | 12 KiB (7.7 KiB) | 3 KiB (unused) | All 19 benchmarks and their static heaps in one image |
+| `ppc603e-nbench.bin`, `-hf` (1 MiB) | 121 KiB | 64 KiB | 836 KiB | Reference sizes: LU 101 × 101, two matrices 159 KiB |
+
+The assignment test keeps its 101 × 101 table of shorts on the stack, a 20,880-byte
+frame; at the full size it needs about 22 KiB of stack, the smoke size (21 × 21) 1.3 KiB.
+The 256 KiB layouts give the rest of the RAM to the heap, which sets the LU size. The
+console's scroll copy takes 7.5 KiB of every image's BSS.
 
 nbench deviates from the reference sizes in two places:
 
-- **LU decomposition solves 90 × 90 systems instead of 101 × 101** (`NB_LU_N`): the test
+- **In the 256 KiB images, LU decomposition solves 82 × 82 systems instead of 101 × 101**
+  (`NB_LU_N`; the loadable 1 MiB images use 101): the test
   keeps a master matrix and a working copy, 163 KiB at 101. This changes the work per
   iteration: the LU score, and so both floating-point indices, are not directly
   comparable with published BYTEmark indices. LU also skips calibration and uses one
   system per iteration, the value calibration reaches (one solve far exceeds the
   minimum interval), which saves the spare matrix calibration allocates.
-- The bitfield map is 8192 words instead of 32768. The test only addresses bits below
+- In the 256 KiB images, the bitfield map is 8192 words instead of 32768. The test only addresses bits below
   262,140, which 8192 words cover, and the extra words are only cleared outside the
   timed region, so the timed work is unchanged.
 
@@ -489,6 +501,16 @@ retired, CPI 4.427 (nbench); 61,549,013 cycles, 14,117,316 retired, CPI 4.360
 (Embench). From reset to exit: nbench 76,890,055 cycles, CPI 4.444; Embench
 67,914,330 cycles, CPI 4.395. The MiSTer-layout images (`mister-*-smoke.hex`) give the
 same windows within 2,000 cycles.
+
+Recorded: `Vtb_mister_load` (the `test-mister-load` model) on each `-smoke` image with
+`+MENU=mister-fpu.hex`, and `Vtb_mister` (`mister-smoke-fpu-all`, mode 09), commit 823c205
+against 49b2152, 2026-10-06. All pass. The nbench OK lines no longer print inside the timed
+loops, so IDEA (462 → 636 iter/s) and Huffman (105 → 114) gain what the console cost them;
+the other tests agree within 1.5 %. Hard float (`ppc603e-nbench-hf`, COMPACT FPU): FP index
+2.50 against 0.34 soft-float (Fourier 190 against 20 iter/s, LU 558 against 97). Embench
+0.952 → 0.954/MHz, Whetstone-hf 544,625 → 544,959 timed cycles; Dhrystone 406,575 →
+406,608, CoreMark 815,623 → 815,647, Whetstone 466,774 → 466,537 on the MiSTer FPU image:
+code placement only. The full-size images are not simulated (billions of cycles).
 
 Embench per benchmark, relative speed per MHz against the Cortex-M4 (repeats divided by 16):
 

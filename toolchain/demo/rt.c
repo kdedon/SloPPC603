@@ -19,10 +19,10 @@ void perf_start(void)
 
 void perf_stop(void) { SOC_PERF_CTRL = 0; }
 
-static void perf_line(const char *label, uint32_t count, uint32_t retired)
+static void perf_line(const char *label, uint64_t count, uint64_t retired)
 {
-  uint32_t milli = (uint32_t)((uint64_t)count * 1000 / retired);
-  printf("perf %-16s %10lu %2lu.%03lu\n", label, (unsigned long)count,
+  uint64_t milli = count * 1000 / retired;
+  printf("perf %-16s %10llu %2lu.%03lu\n", label, (unsigned long long)count,
          (unsigned long)(milli / 1000), (unsigned long)(milli % 1000));
 }
 
@@ -30,50 +30,70 @@ const char *const perf_short[SOC_PERF_SLOTS] = {
   "disp", "fetch", "icmiss", "brref", "exref", "drbr", "drmem", "droth",
   "spec", "lsu", "dcmiss", "cqfull", "rsfull", "flags", "other"};
 
-void perf_brief(struct demo_result *r)
+void perf_add(struct perf_totals *t)
 {
-  uint32_t retired = SOC_PERF_RETIRED;
-  if (retired == 0) retired = 1;
+  t->cycles += SOC_PERF_CYCLES;
+  t->retired += SOC_PERF_RETIRED;
+  t->iq_full += SOC_PERF_IQ_FULL;
+  t->branches += SOC_PERF_BRANCHES;
+  t->memory += SOC_PERF_MEMORY;
+  t->redirects += SOC_PERF_REDIRECTS;
+  for (int n = 0; n < SOC_PERF_SLOTS; n++) t->slot[n] += SOC_PERF_SLOT(n);
+}
+
+void perf_brief_totals(const struct perf_totals *t, struct demo_result *r)
+{
+  uint64_t retired = t->retired ? t->retired : 1;
   for (int k = 0; k < 3; k++) {
-    uint32_t best = 0;
+    uint64_t best = 0;
     int slot = 0;
     for (int n = 1; n < SOC_PERF_SLOTS; n++) {
-      uint32_t count = SOC_PERF_SLOT(n);
       int taken = 0;
       for (int j = 0; j < k; j++) taken |= r->stall[j] == n;
-      if (!taken && count > best) {
-        best = count;
+      if (!taken && t->slot[n] > best) {
+        best = t->slot[n];
         slot = n;
       }
     }
     r->stall[k] = (uint8_t)slot;
-    r->stall_cpi[k] = (uint16_t)((uint64_t)best * 100 / retired);
+    r->stall_cpi[k] = (uint16_t)(best * 100 / retired);
   }
 }
 
-void perf_report(const char *name)
+void perf_brief(struct demo_result *r)
+{
+  struct perf_totals t = {0};
+  perf_add(&t);
+  perf_brief_totals(&t, r);
+}
+
+void perf_print(const char *name, const struct perf_totals *t)
 {
   static const char *const slot[SOC_PERF_SLOTS] = {
     "dispatch", "fetch_empty", "icache_miss", "branch_refetch",
     "except_refetch", "drain_branch", "drain_memory", "drain_other",
     "special_busy", "lsu_busy", "dcache_miss", "cq_full", "rs_full",
     "flags_wait", "other"};
-  uint32_t cycles = SOC_PERF_CYCLES, retired = SOC_PERF_RETIRED;
-  uint32_t sum = 0;
-  if (retired == 0) retired = 1;
-  printf("perf %s: cycles %lu retired %lu\n", name, (unsigned long)cycles,
-         (unsigned long)retired);
-  perf_line("cpi", cycles, retired);
+  uint64_t retired = t->retired ? t->retired : 1, sum = 0;
+  printf("perf %s: cycles %llu retired %llu\n", name, (unsigned long long)t->cycles,
+         (unsigned long long)t->retired);
+  perf_line("cpi", t->cycles, retired);
   for (int n = 0; n < SOC_PERF_SLOTS; n++) {
-    uint32_t count = SOC_PERF_SLOT(n);
-    sum += count;
-    perf_line(slot[n], count, retired);
+    sum += t->slot[n];
+    perf_line(slot[n], t->slot[n], retired);
   }
-  perf_line("iq_full", SOC_PERF_IQ_FULL, retired);
-  perf_line("branches", SOC_PERF_BRANCHES, retired);
-  perf_line("loads_stores", SOC_PERF_MEMORY, retired);
-  perf_line("redirects", SOC_PERF_REDIRECTS, retired);
-  if (sum != cycles) fail("perf slot counts do not sum to cycles");
+  perf_line("iq_full", t->iq_full, retired);
+  perf_line("branches", t->branches, retired);
+  perf_line("loads_stores", t->memory, retired);
+  perf_line("redirects", t->redirects, retired);
+  if (sum != t->cycles) fail("perf slot counts do not sum to cycles");
+}
+
+void perf_report(const char *name)
+{
+  struct perf_totals t = {0};
+  perf_add(&t);
+  perf_print(name, &t);
 }
 
 uint64_t soc_retired(void)
@@ -126,10 +146,13 @@ void fb_rect(int x, int y, int w, int h, uint8_t color)
   }
 }
 
+static void con_forget(int top);
+
 void fb_clear(uint8_t color)
 {
   if (!fb_width) fb_init();
   fb_rect(0, 0, fb_width, fb_height, color);
+  con_forget(0);
 }
 
 /* Entries 0-15: a VGA-like text palette; 16-255: a colour ramp through
@@ -178,17 +201,36 @@ void con_window(int top)
   con_goto(0, 0);
 }
 
+/* The framebuffer cannot be read back, so the console keeps a copy of the
+ * text it drew, with colours 0-15: scrolling redraws the cells that change.
+ * A screen larger than the copy wraps to the top of the text area. */
+#define CON_MAX_COLS 80
+#define CON_MAX_ROWS 48
+struct con_char {
+  uint8_t c, color; /* background in the high nibble */
+};
+static struct con_char con_text[CON_MAX_ROWS][CON_MAX_COLS];
+static uint8_t con_len[CON_MAX_ROWS];
+
+static int con_scrolls(void) { return con_cols <= CON_MAX_COLS && con_rows <= CON_MAX_ROWS; }
+
+static void con_forget(int top)
+{
+  for (int r = top; r < CON_MAX_ROWS; r++) con_len[r] = 0;
+}
+
 void con_clear(uint8_t bg)
 {
   if (!fb_width) fb_init();
   fb_rect(0, con_top * con_cell, fb_width, fb_height - con_top * con_cell, bg);
+  con_forget(con_top);
   con_goto(0, 0);
 }
 
 /* One glyph row at a time: each font bit is con_scale pixels wide and each
  * row con_scale lines tall, stored as words (a cell is a multiple of four
  * pixels wide and starts on a word boundary). */
-static void draw_glyph(int col, int row, int c)
+static void draw_glyph(int col, int row, int c, uint8_t fg, uint8_t bg)
 {
   const uint8_t *g = font8x8[(c < 0x20 || c > 0x7e) ? 0 : c - 0x20];
   int s = con_scale, words = con_cell / 4;
@@ -199,7 +241,7 @@ static void draw_glyph(int col, int row, int c)
       uint32_t v = 0;
       for (int b = 0; b < 4; b++) {
         int px = (4 * k + b) / s;
-        v = (v << 8) | ((g[y] << px) & 0x80 ? con_fg : con_bg);
+        v = (v << 8) | ((g[y] << px) & 0x80 ? fg : bg);
       }
       line[k] = v;
     }
@@ -208,12 +250,39 @@ static void draw_glyph(int col, int row, int c)
   }
 }
 
+/* Moves the text area up one row, drawing only the cells that differ. */
+static void con_scroll(void)
+{
+  for (int r = con_top; r < con_rows - 1; r++) {
+    struct con_char *to = con_text[r], *from = con_text[r + 1];
+    int n = con_len[r] > con_len[r + 1] ? con_len[r] : con_len[r + 1];
+    for (int c = 0; c < n; c++) {
+      if (c >= con_len[r + 1]) {
+        fb_rect(c * con_cell, r * con_cell, (n - c) * con_cell, con_cell, con_bg);
+        break;
+      }
+      if (c < con_len[r] && to[c].c == from[c].c && to[c].color == from[c].color) continue;
+      to[c] = from[c];
+      draw_glyph(c, r, to[c].c, to[c].color & 15, to[c].color >> 4);
+    }
+    con_len[r] = con_len[r + 1];
+  }
+}
+
 static void con_newline(void)
 {
   con_col = 0;
-  if (++con_row >= con_rows) con_row = con_top;
-  /* The text area wraps: clear the line about to be written. */
+  if (++con_row >= con_rows) {
+    if (con_scrolls() && con_rows - con_top > 1) {
+      con_scroll();
+      con_row = con_rows - 1;
+    } else {
+      con_row = con_top;
+    }
+  }
+  /* Clear the line about to be written. */
   fb_rect(0, con_row * con_cell, fb_width, con_cell, con_bg);
+  if (con_row < CON_MAX_ROWS) con_len[con_row] = 0;
 }
 
 void con_putc(int c)
@@ -224,7 +293,15 @@ void con_putc(int c)
   if (c == '\n') { con_newline(); return; }
   if (c == '\r') { con_col = 0; return; }
   if (con_col == con_cols) con_newline();
-  draw_glyph(con_col++, con_row, c);
+  if (con_scrolls()) {
+    /* Cells skipped by con_goto hold the background. */
+    uint8_t color = (uint8_t)((con_bg << 4) | (con_fg & 15));
+    for (int k = con_len[con_row]; k < con_col; k++)
+      con_text[con_row][k] = (struct con_char){' ', color};
+    con_text[con_row][con_col] = (struct con_char){(uint8_t)c, color};
+    if (con_len[con_row] <= con_col) con_len[con_row] = (uint8_t)(con_col + 1);
+  }
+  draw_glyph(con_col++, con_row, c, con_fg, con_bg);
 }
 
 void con_puts(const char *s)

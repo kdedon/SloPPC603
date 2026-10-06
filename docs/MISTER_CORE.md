@@ -112,6 +112,19 @@ self-test ([SELFTEST.md](SELFTEST.md)) pages with it; the other programs ignore 
 Rates use the SoC cycle counter and the clock in `MODE`; they are integer arithmetic, as
 in the simulation images.
 
+### Screen console
+
+Programs print through one console (`con_putc` in `toolchain/demo/rt.c`): text goes to
+the serial console register and, when the screen is on, to the framebuffer in 8 × 8
+glyphs scaled to the mode. At the bottom of its text area the console scrolls: the
+framebuffer cannot be read back, so the runtime keeps a copy of the text (up to 80 × 48
+cells, colours 0-15, 7.5 KiB of BSS) and redraws only the cells that change. A larger
+screen wraps to the top of the text area instead. The benchmarks print only between
+their timed regions, so a scroll never falls inside a measurement; nbench and Embench
+also stop the performance counters while they print. nbench names each test before it
+runs, so the screen shows which test is in progress, and sends its full counter report
+to the serial console only, printing the three largest stall causes on screen.
+
 ### Firmware image
 
 `make -C toolchain -f demo/Makefile mister` (normally through
@@ -148,7 +161,8 @@ them alone.
 |---|---|---|
 | `ppc603e-selftest.bin` | Opcode self-test, 603e ([SELFTEST.md](SELFTEST.md)) | Runs the floating-point cases on an FPU core |
 | `ppc603e-embench.bin` | Embench-IoT, full repeats ([BENCHMARKS.md](BENCHMARKS.md)) | GPL-3.0; released with its source ([Licensing](#licensing)) |
-| `ppc603e-nbench.bin` | nbench, full sizes | Do not redistribute; not released ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)) |
+| `ppc603e-nbench.bin` | nbench, reference sizes, soft-float ([BENCHMARKS.md](BENCHMARKS.md#nbench)) | Any core; BYTE's as-is notice, released with `ppc603e-nbench.SOURCE.txt` ([Licensing](#licensing)) |
+| `ppc603e-nbench-hf.bin` | The same, hard-float | FPU cores; elsewhere exits `0xe0000800` (`FAIL`) |
 | `ppc603e-whetstone.bin` | Whetstone, soft-float | Any core |
 | `ppc603e-whetstone-hf.bin` | Whetstone, hard-float | FPU cores; elsewhere exits `0xe0000800` (`FAIL`) |
 | `ppc603e-doom.bin` | Doom `-timedemo demo3`, looping, big-endian ([BENCHMARKS.md](BENCHMARKS.md#doom)) | GPL-2.0; needs `DOOM1.WAD` from `Load data` |
@@ -311,9 +325,9 @@ reruns the suite. The suite draws its table and ends with its photo line and the
 performance-counter breakdown; the OSD then shows `Finished: PASS` or `FAIL`. Neither
 has run on hardware yet; estimated from the simulation rates, nbench takes about half a
 minute at 50 MHz (each test runs at least `NB_SECS`, 2 s) and Embench about a minute and
-a half. The performance counters are 32 bits, so a suite-wide `perf_report` over more
-than 2^32 cycles (86 s at 50 MHz) wraps and its CPI lines are wrong; the per-test cycle
-counts are 64 bits.
+a half. The performance counters are 32 bits, so a window over more than 2^32 cycles
+(86 s at 50 MHz) wraps; nbench and Embench count each test in its own window and add
+the windows into 64-bit totals for their report.
 
 `make -C sim demo-mister-nbench demo-mister-embench` runs the simulation-size images
 with the same layout on the demo SoC bench.
@@ -428,8 +442,12 @@ shareware v1.9 IWAD (SHA-256
 allow redistributing the unmodified file, not for sale. The build fetches it at a pinned
 URL and checks the hash (`toolchain/demo/fetch-doom.sh`); releases publish it
 unmodified as its own file, and no image or archive contains it. The core's
-little-endian load munges it only in DDR3. The nbench image is not for
-redistribution and is never published
+little-endian load munges it only in DDR3. The nbench images contain BYTE's nbench code,
+which carries only BYTE's as-is disclaimer and the port's warranty disclaimer; by the
+maintainer's decision of 2026-10-06, releases redistribute them under those notices with
+`ppc603e-nbench.SOURCE.txt` (the notices verbatim, the pinned
+[nbench commit](https://github.com/toshsan/nbench/tree/592e671e0c21760f0eb0add1bba50fe7766c1129)
+and the build) and the same source archive, which holds the fetched nbench files
 ([BENCHMARKS.md](BENCHMARKS.md#sources-and-licences)).
 
 ## Running on the MiSTer
@@ -463,9 +481,8 @@ To run the self-test, Embench, nbench or Whetstone on the same core:
 1. Copy the images to `games/PPC603e/` on the card, e.g.
    `ssh root@<mister-ip> mkdir -p /media/fat/games/PPC603e` and
    `scp build/mister/images/*.bin root@<mister-ip>:/media/fat/games/PPC603e/`. Release
-   pages carry `ppc603e-selftest.bin`, `ppc603e-embench.bin`, `ppc603e-whetstone.bin` and
-   `ppc603e-whetstone-hf.bin`; build nbench with `mister/build.sh` or
-   `toolchain/build-in-container.sh -f demo/Makefile mister-images`.
+   pages carry `ppc603e-selftest.bin`, `ppc603e-embench.bin`, `ppc603e-nbench.bin`,
+   `ppc603e-nbench-hf.bin`, `ppc603e-whetstone.bin` and `ppc603e-whetstone-hf.bin`.
 2. In the OSD, `Load program` → pick the file. The core loads it, restarts and runs it;
    the OSD shows `Finished: PASS` or `FAIL` at the end.
    The self-test pages with the arrows, A/Enter and B/Esc.

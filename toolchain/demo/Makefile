@@ -122,8 +122,9 @@ BENCH_IMAGES := nbench nbench-full embench embench-full whetstone whetstone-full
 benchmarks: $(BENCH_IMAGES)
 # A smaller stack leaves the RAM to code, data and heap; the programs check
 # their stack depth. The symbol must precede the linker script.
-$(OUT)/nbench.elf $(OUT)/nbench-full.elf: LDFLAGS := -Wl,--defsym=__stack_size=0x2000 $(LDFLAGS)
-$(OUT)/embench.elf $(OUT)/embench-full.elf: LDFLAGS := -Wl,--defsym=__stack_size=0x6000 $(LDFLAGS)
+# nbench's assignment test keeps a 20 KiB table on the stack.
+$(OUT)/nbench.elf $(OUT)/nbench-full.elf: LDFLAGS := -Wl,--defsym=__stack_size=0x6000 $(LDFLAGS)
+$(OUT)/embench.elf $(OUT)/embench-full.elf: LDFLAGS := -Wl,--defsym=__stack_size=0x3000 $(LDFLAGS)
 
 $(OUT)/bench.o: demo/bench.c demo/bench.h demo/soc.h | $(OUT)
 	$(CC) $(BENCH_CFLAGS) $(OWN_CFLAGS) -c $< -o $@
@@ -159,8 +160,9 @@ $(OUT)/libm.a: $(addprefix $(OUT)/libm/,$(addsuffix .o,$(LIBM_SRC)))
 
 # nbench: nbench1.c is built with DEBUG for its sort, IDEA and Huffman
 # checks, once per variant: LU decomposition is NB_LU_N square instead of
-# 101 (memory). The short image shrinks LU and assignment further.
-NB_LU_N ?= 90
+# 101 (memory). The short image shrinks LU and assignment further; the
+# loadable image (ref) has the room for the reference sizes.
+NB_LU_N ?= 82
 NB_SMOKE_LU_N ?= 16
 NB_SMOKE_ASSIGN_N ?= 21
 NB_SECS ?= 2
@@ -177,14 +179,17 @@ NB_full := -DNB_LU_N=$(NB_LU_N) -DNB_NUMARRAYSIZE=8111 -DNB_STRARRAYSIZE=8111 \
 NB_smoke := -DNB_SMOKE -DNB_LU_N=$(NB_SMOKE_LU_N) -DNB_NUMARRAYSIZE=1000 -DNB_STRARRAYSIZE=1000 \
 	-DNB_BITFARRAYSIZE=8192 -DNB_BITOPS=3 -DNB_EMFARRAYSIZE=100 -DNB_FOURIERSIZE=2 \
 	-DNB_IDEAARRAYSIZE=400 -DNB_HUFFARRAYSIZE=500
+NB_ref := $(subst -DNB_LU_N=$(NB_LU_N),-DNB_LU_N=101,$(subst -DNB_BITFARRAYSIZE=8192,-DNB_BITFARRAYSIZE=32768,$(NB_full)))
 NB_LU_full = $(NB_LU_N)
 NB_LU_smoke = $(NB_SMOKE_LU_N)
+NB_LU_ref = 101
 NB_ASSIGN_full = 101
 NB_ASSIGN_smoke = $(NB_SMOKE_ASSIGN_N)
+NB_ASSIGN_ref = 101
 nbench: $(OUT)/nbench.hex
 nbench-full: $(OUT)/nbench-full.hex
 
-$(NB) $(NB)/smoke $(NB)/full:
+$(NB) $(NB)/smoke $(NB)/full $(NB)/ref:
 	mkdir -p $@
 $(NB)/%/nbench1.c: $(SRC)/nbench/nbench1.c $(SRC)/nbench/nbench1.h demo/Makefile | $(NB)/%
 	cp $< $@
@@ -240,9 +245,9 @@ MISTER_BENCH_DEPS := $(FP_OBJ) demo/mister-bench.ld demo/mister-sections.ld
 mister-nbench: $(OUT)/mister-nbench.hex $(OUT)/mister-nbench-smoke.hex
 mister-embench: $(OUT)/mister-embench.hex $(OUT)/mister-embench-smoke.hex
 $(OUT)/mister-nbench.elf $(OUT)/mister-nbench-smoke.elf: \
-	LDFLAGS := -Wl,--defsym=__stack_size=0x2000 $(MISTER_BENCH_LD)
+	LDFLAGS := -Wl,--defsym=__stack_size=0x6000 $(MISTER_BENCH_LD)
 $(OUT)/mister-embench.elf $(OUT)/mister-embench-smoke.elf: \
-	LDFLAGS := -Wl,--defsym=__stack_size=0x5000 $(MISTER_BENCH_LD)
+	LDFLAGS := -Wl,--defsym=__stack_size=0x3000 $(MISTER_BENCH_LD)
 $(OUT)/mister-nbench.elf: $(RT_OBJ) $(NB)/full/nbench1.o $(NB)/full/glue.o $(NB)/emfloat.o \
 	$(NB)/misc.o $(MISTER_BENCH_DEPS)
 $(OUT)/mister-nbench-smoke.elf: $(RT_OBJ) $(NB)/smoke/nbench1.o $(NB)/smoke/glue.o \
@@ -328,6 +333,27 @@ $(OUT)/mister-whetstone-hf.elf: $(HF_RT_OBJ) $(WH)/whetstone-hf.o $(WH)/full/glu
 	$(HF_FP_OBJ) demo/mister-bench.ld demo/mister-sections.ld
 $(OUT)/mister-whetstone-hf-smoke.elf: $(HF_RT_OBJ) $(WH)/whetstone-hf.o $(WH)/smoke/glue-hf.o \
 	$(HF_FP_OBJ) demo/mister-bench.ld demo/mister-sections.ld
+# Loadable nbench images (mister-images): the 1 MiB DDR3 window, so the
+# reference sizes (ref) fit; -hf is built hard-float for FPU cores.
+LOAD_LD := -Wl,--defsym=__stack_size=0x10000 $(subst demo/demo.ld,demo/mister-image.ld,$(LDFLAGS))
+LOAD_DEPS := demo/mister-image.ld demo/mister-sections.ld
+$(NB)/%/nbench1-hf.o: $(NB)/%/nbench1.c
+	$(CC) $(subst -msoft-float,-mhard-float,$(NB_CFLAGS)) -DDEBUG -c $< -o $@
+$(NB)/%-hf.o: $(SRC)/nbench/%.c | $(NB)
+	$(CC) $(subst -msoft-float,-mhard-float,$(NB_CFLAGS)) -c $< -o $@
+$(NB)/%/glue-hf.o: demo/nbench/nbench_glue.c $(NB)/nnet_dat.h demo/bench.h demo/soc.h demo/Makefile | $(NB)/%
+	$(CC) $(subst -msoft-float,-mhard-float,$(NB_GLUE_CFLAGS)) $(NB_$*) -c $< -o $@
+$(addprefix $(OUT)/load-nbench,.elf -smoke.elf -hf.elf -hf-smoke.elf): LDFLAGS := $(LOAD_LD)
+$(OUT)/load-nbench.elf: $(RT_OBJ) $(NB)/ref/nbench1.o $(NB)/ref/glue.o $(NB)/emfloat.o \
+	$(NB)/misc.o $(FP_OBJ) $(LOAD_DEPS)
+$(OUT)/load-nbench-smoke.elf: $(RT_OBJ) $(NB)/smoke/nbench1.o $(NB)/smoke/glue.o \
+	$(NB)/emfloat.o $(NB)/misc.o $(FP_OBJ) $(LOAD_DEPS)
+$(OUT)/load-nbench-hf.elf: $(HF_RT_OBJ) $(NB)/ref/nbench1-hf.o $(NB)/ref/glue-hf.o \
+	$(NB)/emfloat-hf.o $(NB)/misc-hf.o $(HF_FP_OBJ) $(LOAD_DEPS)
+$(OUT)/load-nbench-hf-smoke.elf: $(HF_RT_OBJ) $(NB)/smoke/nbench1-hf.o $(NB)/smoke/glue-hf.o \
+	$(NB)/emfloat-hf.o $(NB)/misc-hf.o $(HF_FP_OBJ) $(LOAD_DEPS)
+HF_IMAGES += load-nbench-hf load-nbench-hf-smoke
+
 # FPU MiSTer image (mister/build.sh --fpu): the MiSTer image's integer
 # objects unchanged, plus Whetstone and the double-precision Mandelbrot set
 # built hard-float, in the same RAM. The Whetstone glue carries both LOOPs'
@@ -401,7 +427,7 @@ $(OUT)/mister-selftest.hex: $(OUT)/selftest.hex
 # mister-images writes the full sizes to MISTER_IMAGES_DIR (the repository's
 # build/ by default); mister-images-smoke the simulation sizes to $(OUT)/images.
 MISTER_IMAGES_DIR ?= ../build/mister/images
-MISTER_IMAGE_NAMES := selftest embench nbench whetstone whetstone-hf
+MISTER_IMAGE_NAMES := selftest embench nbench nbench-hf whetstone whetstone-hf
 .PHONY: mister-images mister-images-smoke
 mister-images: $(addprefix $(MISTER_IMAGES_DIR)/ppc603e-,$(addsuffix .bin,$(MISTER_IMAGE_NAMES) doom doom-le \
 	quake quake-le quake-sf)) $(MISTER_IMAGES_DIR)/DOOM1.WAD $(MISTER_IMAGES_DIR)/pak0.pak
@@ -416,6 +442,14 @@ endef
 $(MISTER_IMAGES_DIR)/ppc603e-selftest.bin $(OUT)/images/ppc603e-selftest-smoke.bin: $(OUT)/selftest.elf
 	$(memory-image)
 $(MISTER_IMAGES_DIR)/ppc603e-%.bin: $(OUT)/mister-%.elf
+	$(memory-image)
+$(MISTER_IMAGES_DIR)/ppc603e-nbench.bin: $(OUT)/load-nbench.elf
+	$(memory-image)
+$(MISTER_IMAGES_DIR)/ppc603e-nbench-hf.bin: $(OUT)/load-nbench-hf.elf
+	$(memory-image)
+$(OUT)/images/ppc603e-nbench-smoke.bin: $(OUT)/load-nbench-smoke.elf
+	$(memory-image)
+$(OUT)/images/ppc603e-nbench-hf-smoke.bin: $(OUT)/load-nbench-hf-smoke.elf
 	$(memory-image)
 # Doom: its images and the WAD they read, unmodified (demo/fetch-doom.sh).
 $(MISTER_IMAGES_DIR)/ppc603e-doom.bin $(MISTER_IMAGES_DIR)/ppc603e-doom-le.bin: $(MISTER_IMAGES_DIR)/%: $(OUT)/doom/%
