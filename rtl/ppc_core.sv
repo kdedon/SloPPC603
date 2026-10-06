@@ -741,6 +741,9 @@ module ppc_core #(
     if (!p.insn[25] && cr_final)
       predict = (crv[5'd31 - p.insn[20:16]] == p.insn[24]) &&
                 (p.insn[23] || (ctr_one == p.insn[22]));
+    // On the CTR alone, known when queued: resolved.
+    if (p.insn[25] && !p.insn[23])
+      predict = ctr_one == p.insn[22];
     bo_ok = (p.insn[25:21] <= 5'd20) && (p.insn[24:22] != 3'b011) &&
             (p.insn[24:22] != 3'b111);
     xl_ok = (p.insn[15:11] == 5'd0) && bo_ok &&
@@ -750,17 +753,19 @@ module ppc_core #(
        ((p.insn[31:26] == 6'd19) && xl_ok && predict && (p.insn[10] ? ctr_ok : lr_ok)));
   endfunction
   // The UM 6.4.1.1 cases that stop fetching: a bclr behind an mtlr, a bcctr
-  // or CTR-testing branch behind a CTR writer (mtctr or CTR-testing branch),
-  // and a linking branch other than bl behind a linking branch. lr_ok is low
-  // only when the youngest LR writer is an mtlr.
-  function automatic logic waits(fetch_packet_t p, logic lr_ok, logic lk_ok, logic ctr_ok);
+  // behind a CTR writer, a CTR-testing branch behind an mtctr or behind a
+  // CTR-testing branch in the same fetch cycle, and a linking branch other
+  // than bl behind a linking branch. lr_ok is low only when the youngest LR
+  // writer is an mtlr; ctr_dec_ok only when the CTR is unknown.
+  function automatic logic waits(fetch_packet_t p, logic lr_ok, logic lk_ok, logic ctr_ok,
+                                 logic ctr_dec_ok);
     logic bc, bclr, bcctr;
     bc = p.insn[31:26] == 6'd16;
     bclr = (p.insn[31:26] == 6'd19) && (p.insn[10:1] == 10'd16);
     bcctr = (p.insn[31:26] == 6'd19) && (p.insn[10:1] == 10'd528);
     return (p.fault == FETCH_OK) &&
       ((bclr && !lr_ok) || (bcctr && !ctr_ok) ||
-       ((bc || bclr || bcctr) && ((!p.insn[23] && !ctr_ok) || (p.insn[0] && !lk_ok))));
+       ((bc || bclr || bcctr) && ((!p.insn[23] && !ctr_dec_ok) || (p.insn[0] && !lk_ok))));
   endfunction
   // {writes LR, writes CTR}
   function automatic logic [1:0] lr_ctr_writes(uop_t u);
@@ -792,6 +797,17 @@ module ppc_core #(
   assign lr_ok = lr_free || lr_front_ok_q;
   assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
   assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
+  // A CTR-testing bc decrements a CTR known when it is queued or dispatched
+  // (UM 6.4.1.1): ctr_disp_q is the CTR left by the youngest dispatched
+  // writer and ctr_front_q by the youngest queued one, each valid
+  // (ctr_disp_ok_q, ctr_front_ok_q) when that writer is such a bc. An
+  // mtctr's value is known only once it retires.
+  logic ctr_front_ok_q, ctr_disp_ok_q, ctr_fe_ok, ctr_bu_ok;
+  logic [31:0] ctr_front_q, ctr_disp_q, ctr_bu, ctr_fe;
+  assign ctr_bu_ok = !ctr_pending_q || ctr_disp_ok_q;
+  assign ctr_bu = ctr_pending_q ? ctr_disp_q : ctr;
+  assign ctr_fe_ok = (ctr_iq_q == '0) ? ctr_bu_ok : ctr_front_ok_q;
+  assign ctr_fe = (ctr_iq_q == '0) ? ctr_bu : ctr_front_q;
   assign fd_push = fd_valid && !fold_q && !fstop_q && !cr_hold0;
   // One level of prediction (UM 6.4.1.1 seventh case, 6.4.1.2): a branch
   // testing CR behind an older one still waiting on CR is not predicted.
@@ -817,14 +833,14 @@ module ppc_core #(
   // it. Everything dispatched is older than a queued branch.
   logic [IQ_COUNT_WIDTH-1:0] crw_left_q, crb_left_q, crbw_left_q;
   logic ctr_one, crb0, crb1, crw0, crw1, cr_dep, cr_final, crb_pend0, wait0_cr, wait1_cr;
-  assign ctr_one = ctr == 32'd1;
-  assign crb0 = cr_branch(queued, ctr_free, ctr_one);
+  assign ctr_one = ctr_fe == 32'd1;
+  assign crb0 = cr_branch(queued, ctr_fe_ok, ctr_one);
   assign crw0 = (queued.fault == FETCH_OK) && cr_writer(push_uop);
   assign cr_dep = (crw_left_q != '0) || cr_inflight;
   assign wait0_cr = crb0 && cr_unres;
   assign cr_hold0 = fd_valid && wait0_cr;
   assign crb_pend0 = crb0 && cr_dep;
-  assign wait0 = waits(queued, lr_ok, lk_free, ctr_free);
+  assign wait0 = waits(queued, lr_ok, lk_free, ctr_free, ctr_fe_ok);
   // The CR also becomes final as the last owner's result arrives, which
   // resolves a predicted branch on it in the same cycle (UM Figure 6-5).
   logic [31:0] cr_now;
@@ -877,7 +893,7 @@ module ppc_core #(
     assign queued1 = '0;
   end
   endgenerate
-  assign crb1 = (FETCH_WIDTH == 2) && cr_branch(queued1, ctr_free && !push_writes[0], ctr_one);
+  assign crb1 = (FETCH_WIDTH == 2) && cr_branch(queued1, ctr_fe_ok && !push_writes[0], ctr_one);
   assign crw1 = (FETCH_WIDTH == 2) && cr_writer(push_uop1);
   assign wait1_cr = crb1 && (cr_unres || crb_pend0);
   // Lane 0 enters the IQ alone.
@@ -887,7 +903,7 @@ module ppc_core #(
   // Behind a waiting first word the second does not fold.
   assign wait1 = (FETCH_WIDTH == 2) &&
     waits(queued1, push_writes[1] ? push_lk : lr_ok, lk_free && !push_lk,
-          ctr_free && !push_writes[0]);
+          ctr_free && !push_writes[0], ctr_fe_ok && !push_writes[0]);
   assign fold_predict1 = (FETCH_WIDTH == 2) && !wait0 && !wait1 &&
     folds(queued1, trace_mode, lr_ok && !push_writes[1], ctr_free && !push_writes[0],
           cr_final && !crw0, cr_now, ctr_one);
@@ -1148,6 +1164,21 @@ module ppc_core #(
     end
   end
   always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted || bs_now) ctr_disp_ok_q <= 1'b0;
+    else if (dispatch && pop_writes[0]) begin
+      ctr_disp_ok_q <= iq_uop.special_op != SPECIAL_MTSPR;
+      ctr_disp_q <= ctr_bu - 32'd1;
+    end
+    if (!rst_ni || frontend_clear) ctr_front_ok_q <= 1'b0;
+    else if (iq_push1 && push1_writes[0]) begin
+      ctr_front_ok_q <= (push_uop1.special_op != SPECIAL_MTSPR) && ctr_fe_ok && !push_writes[0];
+      ctr_front_q <= ctr_fe - 32'd1;
+    end else if (iq_push0 && push_writes[0]) begin
+      ctr_front_ok_q <= (push_uop.special_op != SPECIAL_MTSPR) && ctr_fe_ok;
+      ctr_front_q <= ctr_fe - 32'd1;
+    end
+  end
+  always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear) begin
       lr_iq_q <= '0;
       ctr_iq_q <= '0;
@@ -1352,10 +1383,11 @@ module ppc_core #(
   assign bu_ready = !(bu_reads_cr && bu_ctr_ok && flags_busy &&
                       (!bu_cr_valid_q || flags_waiter) && !ENABLE_BRANCH_SPEC) &&
     !(bu_reads_cr && bu_ctr_ok && (fp_cr_pending || (bs_busy && !bs_hit))) &&
-    !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(bu_reads_ctr && ctr_pending_q) &&
+    !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) &&
+    !(bu_reads_ctr && !((uop.special_op == SPECIAL_BC) ? ctr_bu_ok : !ctr_pending_q)) &&
     !(uop.branch_lk && (uop.special_op != SPECIAL_B) && lk_pending_q);
   // BO[0..3] are branch_bo[4..1]; the decrement leaves zero when CTR is 1.
-  assign bu_ctr_ok = uop.branch_bo[2] || ((ctr != 32'd1) ^ uop.branch_bo[1]);
+  assign bu_ctr_ok = uop.branch_bo[2] || ((ctr_bu != 32'd1) ^ uop.branch_bo[1]);
   assign bu_cond_ok = uop.branch_bo[4] || (bu_cr[31-uop.branch_bi] == uop.branch_bo[3]);
   // The CR a branch reads: committed, or the committed CR merged with the
   // finished result of an uncommitted integer flag owner. The owner is the
