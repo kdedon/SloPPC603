@@ -379,7 +379,7 @@ module tb_core_dual #(
       expect_pair(32'h78, 1'b0, "sync alone");
       expect_pair(32'h68, 1'b0, "cmpw in DQ1, then folded b");
       // A removed b is never dispatched.
-      if (dut.BRANCH_REMOVAL && dcycle.exists(32'h6c) && (dcycle[32'h6c] != -1))
+      if (dut.BRANCH_REMOVAL && (dcycle.exists(32'h6c) != 0) && (dcycle[32'h6c] != -1))
         $fatal(1, "a plain b was dispatched");
       // Pairing needs the add fetched into DQ1 by then.
       expect_pair(32'h94, !dq1_empty[32'h94], "unresolved bc + add");
