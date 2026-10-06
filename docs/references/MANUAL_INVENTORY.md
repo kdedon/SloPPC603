@@ -69,8 +69,8 @@ Missing and partial rows, ranked by how visible they are to software or to a
    §8.1.1, PDF 312. Visible to L2 controllers and bus monitors only.
 10. **Exception priority untested beyond pairs** (AUD-84). UM Table 4-2, PDF
     165-166. Simultaneous fault and asynchronous events may vector wrongly.
-11. **DBDIS and 603e CSE unchecked** (AUD-85); **603 checkstop sources**
-    (AUD-86).
+11. ~~**DBDIS and 603e CSE unchecked** (AUD-85); **603 checkstop sources**
+    (AUD-86)~~. Fixed; the 603's fetch-TEA refetch tenure is not issued.
 
 Lower: core:bus ratios other than 1:1 (D07 in [SOURCES.md](SOURCES.md); 602
 2:1 and 3:1 per [CHIP_PACKAGE_602.md](../CHIP_PACKAGE_602.md)); COP, pipeline
@@ -294,7 +294,7 @@ PEM was read only where the UM defers to it.
 | Machine check cancels pending stores in CSQ | UM §4.5.2, PDF 179 | n/a | no completed store queue; stores perform before commit (EXCEPTION_MACHINE_CHECK_TRACE.md:67) |
 | sync/load/sync recoverable bus probe | UM §4.5.2, PDF 179 | tested | test-core-bat-machine-check |
 | Checkstop: ME=0 machine check, CKSTP_IN; CKSTP_OUT asserted | UM §4.5.2.2, PDF 180 | tested | ppc603e.sv:56; test-chip-pins |
-| Checkstop on extended transfer protocol error | UM §4.5.2.2, PDF 180 | partial | direct-store protocol_error_o exists (ppc_bus60x_direct_store.sv:44); no checkstop routing seen |
+| Checkstop on extended transfer protocol error | UM §4.5.2.2, PDF 180 | tested | 603: a bus protocol error checkstops (`test-chip-603` `+ds_protocol`); 603 fetch TEA with ME=1 checkstops (`+fetch_tea`, UM §C.2.4) |
 | Checkstop latch freeze for analysis | UM §4.5.2.2, PDF 180 | n/a | no COP/scan (CHIP_PACKAGE.md:113) |
 | DSI: protection violation DSISR[4], store DSISR[6] | UM §4.5.3 Table 4-11, PDF 181-182 | tested | ppc_special.sv:1789; test-core-page-data-exception, test-core-data-fault |
 | DSI: direct-store segment access (603e, T=1) | UM §4.5.3, PDF 181 | tested | DATA_DSI_DIRECT_STORE, DSISR 0x0400_0000; test-core-page-data-exception |
@@ -434,7 +434,7 @@ PEM was read only where the UM defers to it.
 | CI output | UM §7.2.4.5, PDF 290 | tested | `test-chip-pins` ILOCK case (misses read with CI) |
 | WT output | UM §7.2.4.6, PDF 290 | tested | BFM logs it (`bus60x_coherent_bfm.sv:293`). Write-through in `test-dcache`. Pin value only lightly checked |
 | GBL output / input | UM §7.2.4.7, PDF 291 | tested | `test-chip-dcache-coherence`. `test-chip-pins` "GBL negated: no APE" |
-| CSE[0:1] (way of the fill/castout) | UM §7.2.4.8, PDF 291 | untested | `rtl/ppc603e.sv:407`. Only the 603 CSE0 is checked (`tb/tb_chip_603.sv:44-45`); 603e 4-way CSE is unchecked (`tb/chip_harness.svh:106` marks cse unused) |
+| CSE[0:1] (way of the fill/castout) | UM §7.2.4.8, PDF 291 | tested | 603e: `test-chip-pins` `case_cse` (four fills into one set give CSE 0-3); 603 CSE0: `test-chip-603` |
 | AACK input | UM §7.2.5.1, PDF 292 | tested | Every bus bench |
 | ARTRY input (qualified retry, BG blocked) | UM §7.2.5.2.2, PDF 293 | tested | `test-core-bat-bus60x-retry`, `test-chip-pins`, `test-chip-mp` |
 | ARTRY output (snoop window TS+2..AACK+1, precharge) | UM §7.2.5.2.1, PDF 292 | tested | BFM fatal outside a snoop window (`bus60x_coherent_bfm.sv:660`). `test-chip-dcache-coherence` |

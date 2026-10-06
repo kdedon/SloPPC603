@@ -192,6 +192,9 @@ module ppc603e #(
   // are unsupported and checkstop at release. DRTRY needs no strap: the
   // normal-mode master is correct when DRTRY never asserts.
   logic strap_reject_q, checkstop_q, core_rst_n, release_outputs;
+  // UM 4.5.2.2: an extended transfer (direct-store) protocol error
+  // checkstops; the 603 treats any bus protocol error so.
+  logic bus_protocol_error, xats_checkstop;
   logic core_checkstop, mcp_edge, mcp_pending_q, sreset_edge, sreset_pending_q;
   logic mcp_n_q, sreset_n_q, start_pending_q;
   logic ape_check_q, ape_error_q, ape_out_q, ape_pending_q, ape_event;
@@ -223,6 +226,7 @@ module ppc603e #(
       dpe_pending_q <= 1'b0;
     end else begin
       if (!ckstp_in_n || strap_reject_q || core_checkstop ||
+          xats_checkstop ||
           (mcp_edge && pin_status.mcp_enable && !pin_status.machine_check_enable) ||
           ((ape_event || dpe_event) && !pin_status.machine_check_enable))
         checkstop_q <= 1'b1;
@@ -286,6 +290,7 @@ module ppc603e #(
   logic [1:0] core_tc, core_cse;
   logic core_xats_n;
   localparam bit HAS_XATS = cpu_has_direct_store(CPU_VARIANT);
+  assign xats_checkstop = HAS_XATS && bus_protocol_error;
   logic core_dbb_n, core_dbb_oe, core_d_oe;
   logic [63:0] core_d_o;
 
@@ -355,7 +360,7 @@ module ppc603e #(
     .fault_ea_o(), .fault_miss_o(), .fault_protection_o(),
     .fault_guarded_o(), .fault_config_o(), .fault_invalid_input_o(),
     .fault_invalid_entry_o(), .pimem_error_o(), .busy_o(),
-    .ifetch_error_o(), .bus_protocol_error_o(), .bus_busy_o(),
+    .ifetch_error_o(), .bus_protocol_error_o(bus_protocol_error), .bus_busy_o(),
     .icache_hit_o(), .icache_miss_o(), .icache_busy_o(),
     .maintenance_valid_i(1'b0), .maintenance_ready_o(),
     .maintenance_invalidate_i(1'b0), .maintenance_cache_enable_i(1'b0),

@@ -242,6 +242,7 @@ module ppc_special #(
 );
   import ppc_pkg::*;
   localparam cpu_cfg_t CPU_CFG = cpu_cfg(CPU_VARIANT);
+  localparam logic FETCH_TEA_CHECKSTOP = CPU_VARIANT == CPU_603;
   localparam bit HAS_602 = cpu_has_602_ext(CPU_VARIANT);
   // A misaligned little-endian FP access takes the alignment exception.
   logic le_align;
@@ -1042,9 +1043,11 @@ module ppc_special #(
     !memory_result_q.fault &&
     (memory_result_q.data_fault == DATA_MACHINE_CHECK);
   assign machine_check_event = fetch_machine_check || data_machine_check;
-  // UM 4.5.2.2: a machine check with ME=0 enters the checkstop state.
+  // UM 4.5.2.2: a machine check with ME=0 enters the checkstop state. On
+  // the 603 a fetch TEA is refetched and TEAs again with the machine check
+  // pending, which checkstops (UM C.2.4).
   assign checkstop_commit = (state_q == S_HOLD) && commit_match &&
-    machine_check_event && !msr_o[MSR_ME];
+    machine_check_event && (!msr_o[MSR_ME] || (FETCH_TEA_CHECKSTOP && fetch_machine_check));
   assign dsi_event = ((uop_q.special_op == SPECIAL_LOAD) ||
                       (uop_q.special_op == SPECIAL_STORE)) &&
                      ((memory_result_q.data_fault == DATA_DSI_PROTECTION) ||
@@ -1083,7 +1086,7 @@ module ppc_special #(
       case (uop_q.special_op)
         SPECIAL_ISI: begin
           if (fetch_machine_check) begin
-            exception_event_valid = msr_o[MSR_ME];
+            exception_event_valid = msr_o[MSR_ME] && !FETCH_TEA_CHECKSTOP;
             exception_event_kind = EVENT_MACHINE_CHECK;
           end else if (ENABLE_DEBUG_EXCEPTIONS &&
                        (uop_q.fetch_fault == FETCH_IABR)) begin

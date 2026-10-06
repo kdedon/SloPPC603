@@ -52,6 +52,7 @@ logic [4:0] bus_tt;
 // A direct-store controller beside the memory: its active-low grant and
 // termination outputs join the memory's, and it may drive A, TT, XATS and DH.
 logic buc_aack_n = 1'b1, buc_artry_n = 1'b1, buc_dbg_n = 1'b1;
+logic buc_drtry_n = 1'b1;
 logic buc_ta_n = 1'b1, buc_tea_n = 1'b1, buc_xats_n = 1'b1, buc_drive = 1'b0;
 logic [31:0] buc_a = '0, buc_dh = '0;
 logic [4:0] buc_tt = '0;
@@ -80,7 +81,7 @@ ppc603e #(.CPU_VARIANT(ppc_pkg::cpu_variant_e'(`CHIP_VARIANT)), .PLL_CFG(CHIP_PL
   .dbg_n_i(dbg_n && buc_dbg_n), .dbwo_n_i(memory.dbwo_n), .dbb_n_i(1'b1), .dbb_n_o(dbb_n), .dbb_oe_o(dbb_oe),
   .dh_i(in_d[63:32]), .dl_i(in_d[31:0]), .dh_o(dh_out), .dl_o(dl_out),
   .dp_i(in_dp), .dp_o(dp), .data_oe_o(data_oe), .dpe_n_o(dpe_n), .dbdis_n_i(dbdis_n),
-  .ta_n_i(ta_n && buc_ta_n), .drtry_n_i(drtry_n), .tea_n_i(tea_n && buc_tea_n),
+  .ta_n_i(ta_n && buc_ta_n), .drtry_n_i(drtry_n && buc_drtry_n), .tea_n_i(tea_n && buc_tea_n),
   .int_n_i(int_n), .smi_n_i(smi_n), .mcp_n_i(mcp_n), .ckstp_in_n_i(ckstp_in_n),
   .ckstp_out_n_o(ckstp_out_n), .hreset_n_i(hreset_n), .sreset_n_i(sreset_n),
   .rsrv_n_o(rsrv_n), .qreq_n_o(qreq_n), .qack_n_i(qack_n), .tben_i(tben),

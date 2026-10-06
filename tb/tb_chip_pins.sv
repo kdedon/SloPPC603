@@ -43,6 +43,14 @@ module tb_chip_pins #(parameter int PLL = -1);
   logic [31:0] first_fetch = '0, pc;
   logic [31:0] tb_values [$];
   string mark_order = "";
+  // DBDIS sampled at the previous edge; data outputs seen while it applied;
+  // write beats terminated under it.
+  logic dbdis_prev = 1'b0;
+  int dbdis_oe = 0, dbdis_beats = 0;
+  // CSE of data line fills into set 2 above CSE_FROM.
+  logic [31:0] cse_from = '1;
+  logic [3:0] cse_ways = '0;
+  int cse_fills = 0;
   // Second-master TS cycles and APE cycles.
   int om_ts_cycles [$], ape_cycles [$];
   // TA cycles of beats with wrong DP, and DPE cycles.
@@ -89,6 +97,14 @@ module tb_chip_pins #(parameter int PLL = -1);
       if (block_after_bad_dp) bus_block = 1'b1;
     end
     if (!dpe_n) dpe_cycles.push_back(cycles);
+    if (dbdis_prev && data_oe) dbdis_oe++;
+    if (dbdis_prev && wr_pending_q && !ta_n && dbb_oe) dbdis_beats++;
+    dbdis_prev = !dbdis_n;
+    if (ts_oe && !ts_n && tc[0:1] == 2'b00 && !tbst_n && 32'(a) >= cse_from &&
+        ((32'(a) >> 5) & 32'h7f) == 32'd2) begin
+      cse_ways = cse_ways | (4'b1 << {cse[0], cse[1]});
+      cse_fills++;
+    end
     if (wr_fire) begin
       if (wr_addr == DATA + TB_VALUE) tb_values.push_back(wr_addr[2] ? dl_out : dh_out);
       if (wr_addr == DATA + SMI_MARK) mark_order = {mark_order, "S"};
@@ -708,8 +724,52 @@ module tb_chip_pins #(parameter int PLL = -1);
     ilock_watch = 1'b0;
   endtask
 
+  // UM 7.2.7.4: DBDIS releases the data bus the cycle after it is sampled;
+  // the write tenure still completes.
+  task automatic case_dbdis;
+    loop_program(32'h0, MSR_IP | MSR_ME);
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    running(3, "loop");
+    {dbdis_oe, dbdis_beats} = '0;
+    memory.write_release_ok = 1'b1;
+    bus_fall();
+    dbdis_n = 1'b0;
+    repeat (2000) bus_fall();
+    dbdis_n = 1'b1;
+    repeat (2) bus_fall();
+    memory.write_release_ok = 1'b0;
+    check(dbdis_oe == 0 && dbdis_beats > 0,
+          $sformatf("DBDIS: %0d driven cycles, %0d write beats", dbdis_oe, dbdis_beats));
+    running(3, "stores resume after DBDIS");
+  endtask
+
+  // UM 7.2.4.8: the 603e's CSE[0-1] give the way of a line fill; four
+  // fills into one empty set use all four ways.
+  task automatic case_cse;
+    load_handlers();
+    at = MAIN;
+    prologue(32'h0000_4000, MSR_IP | MSR_ME);
+    emit(ASM_ISYNC);
+    for (int i = 0; i < 4; i++) begin
+      emit_const(6, BASE + 32'hc040 + 32'(i) * 32'h1000);
+      emit(asm_lwz(7, 0, 6));
+    end
+    emit_loop();
+    cse_from = BASE + 32'hc000;
+    {cse_ways, cse_fills} = '0;
+    hard_reset();
+    wait_word(RESETS, 1, 6000, "boot");
+    repeat (3000) bus_fall();
+    check(cse_fills == 4 && cse_ways == 4'hf,
+          $sformatf("CSE: %0d fills, ways %b", cse_fills, cse_ways));
+    cse_from = '1;
+  endtask
+
   initial begin
     repeat (4) bus_fall();
+    case_dbdis();
+    case_cse();
     case_hreset();
     case_sreset();
     case_sreset_icache();
