@@ -354,3 +354,26 @@ and 66 MHz: no endpoint fails at 15.152 ns; the tightest boundary path at 66 MHz
 is an output (`pin_sync_q` to `ap_o`) at +3.292 ns. The 50 MHz worst setup path
 was not identified in this run, so no Fmax is derived from it.
 
+
+## DBWO, write DRTRY and 32-bit figures
+
+Recorded: `make -C sim test-chip-mp test-chip-pins` at width 1 and at
+`DISPATCH_WIDTH=2` with `VERILATOR=VERILATOR_TOOL=sim/tools/verilate-lsu-pipe`,
+commit a58123d, 2026-10-06: pass.
+
+- DBWO between processors (UM §8.10, §7.2.6.2): `test-chip-mp` seeds 6–10 run
+  with `+DBWO`; each reorders 2–7 snoop pushes ahead of an owed read and ignores
+  about 230–280 DBWOs that no write may use. Forcing `dbwo_push` to 0 fails the
+  seeds ("processor 0 write TA without data").
+- Write DRTRY: seeds 11–13 add `+WRITE_DRTRY` to `+DBWO +PAIR_PROBE +WRITE_TEA
+  +SHARED_BUSY`, with 154–219 write DRTRYs and 2–5 write TEAs per seed; a write
+  beat is neither repeated nor extended.
+- Figure 8-21 in 32-bit mode: `test-chip-pins` checks every burst for a
+  doubleword-aligned address, TBST and TSIZ=010, 1, 2 or 8 beats per data tenure,
+  and the critical doubleword first for fills at offsets 0, 0x4, 0xC, 0x10 and
+  0x1C (29 of 29 bursts at eight beats; checks=2596). Forcing burst TSIZ to 000
+  fails the check.
+
+Not established: a directed two-beat DRTRY check in an FPU chip build
+(Figure 8-22); two-beat transfers are covered only by `test-chip-fpu +DBW32`
+under random DRTRY.
