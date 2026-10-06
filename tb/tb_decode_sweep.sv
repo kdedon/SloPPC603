@@ -16,6 +16,8 @@ module tb_decode_sweep #(
   localparam cpu_variant_e CPU_VARIANT = cpu_variant_e'(VARIANT);
   localparam cpu_cfg_t CFG = cpu_cfg(CPU_VARIANT);
   localparam bit V602 = CFG.has_602_ext;
+  // The EC603e takes fsqrt/fsqrts as FP unavailable (UM Table B-3, AUD-87).
+  localparam bit NOFPU = cpu_has_no_fpu(CPU_VARIANT);
   logic [31:0] insn;
   uop_t full, base;
 
@@ -61,13 +63,15 @@ module tb_decode_sweep #(
       6'd56, 6'd57, 6'd58, 6'd60, 6'd61, 6'd62: return C_ILLEGAL;
       6'd3: return C_TRAP;
       6'd48, 6'd49, 6'd50, 6'd51, 6'd52, 6'd53, 6'd54, 6'd55: return C_FPU;
-      6'd59: return (axo inside {5'd18, 5'd20, 5'd21, 5'd24, 5'd25, 5'd28,
-                                 5'd29, 5'd30, 5'd31}) ? C_FPU : C_ILLEGAL;
+      6'd59: return ((axo inside {5'd18, 5'd20, 5'd21, 5'd24, 5'd25, 5'd28,
+                                 5'd29, 5'd30, 5'd31}) || (NOFPU && axo == 5'd22)) ?
+                    C_FPU : C_ILLEGAL;
       6'd63: if (V602 && ((axo inside {5'd18, 5'd20, 5'd21, 5'd25, 5'd28, 5'd29,
                                      5'd30, 5'd31}) || (xo == 10'd14)))
                return C_FPEMU;
              else return ((axo inside {5'd18, 5'd20, 5'd21, 5'd23, 5'd25, 5'd26,
                                   5'd28, 5'd29, 5'd30, 5'd31}) ||
+                     (NOFPU && axo == 5'd22) ||
                      (xo inside {10'd0, 10'd12, 10'd14, 10'd15, 10'd32, 10'd38,
                                  10'd40, 10'd64, 10'd70, 10'd72, 10'd134,
                                  10'd136, 10'd264, 10'd583, 10'd711})) ?
