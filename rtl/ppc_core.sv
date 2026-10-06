@@ -378,7 +378,7 @@ module ppc_core #(
   completion_tag_t flags_waiter_tag;
   logic fd_push, fold_predict, fold_q, iq_folded, bu_redirect;
   logic wait0, wait1, fetch_stop, fstop_q, fetch_hold_q;
-  logic cr_unres, cr_inflight, bu_pred;
+  logic cr_unres, cr_inflight, bu_pred, cr_hold0, cr_hold1, fd_split;
   logic [31:0] stop_resume;
   // Branch class predecoded at IQ push, to keep decode off the dispatch path.
   logic [3:0] push_branch, iq_branch;
@@ -615,7 +615,8 @@ module ppc_core #(
   logic [IQ_COUNT_WIDTH-1:0] iq_count;
   // The FD words enter the IQ together.
   assign fd_push_ok = fd1_valid_q ? iq_push2_ready : iq_push_ready;
-  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q && (!fd_valid_q || fd_push_ok);
+  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q && !cr_hold0 && !fd_split &&
+    (!fd_valid_q || fd_push_ok);
   // Two words are taken only if the IQ holds them behind the FD words.
   assign fetch_room2 = (FETCH_WIDTH == 2) &&
     ({1'b0, iq_count} + (IQ_COUNT_WIDTH + 1)'(fd_valid_q) + (IQ_COUNT_WIDTH + 1)'(fd1_valid_q) <=
@@ -625,13 +626,20 @@ module ppc_core #(
     if (!rst_ni || frontend_clear || fold_q || fstop_q) begin
       fd_valid_q <= 1'b0;
       fd1_valid_q <= 1'b0;
+    end else if (fd_split) begin
+      fd1_valid_q <= 1'b0;
     end else if (fetch_ready) begin
       fd_valid_q <= fetch_valid;
       fd1_valid_q <= fetch_valid && fetch_pair;
     end
   end
+  // A second word held back moves to the first slot.
   always_ff @(posedge clk_i) begin
-    if (fetch_valid && fetch_ready) begin
+    if (fd_split) begin
+      fd_packet_q.pc <= {fd_packet_q.pc[31:3], 3'b100};
+      fd_packet_q.insn <= fd1_insn_q;
+      fd_packet_q.fault <= FETCH_OK;
+    end else if (fetch_valid && fetch_ready) begin
       fd_packet_q <= fetched;
       fd_miss_q <= fetch_miss;
       fd1_insn_q <= fetched_insn1;
@@ -680,9 +688,15 @@ module ppc_core #(
   // refetches, so no folded entry is queued when trace mode starts.
   /* verilator lint_off UNUSEDSIGNAL */
   // Decoded from the word alone, keeping the IQ push enable shallow.
-  function automatic logic folds(fetch_packet_t p, logic trace, logic lr_ok, logic ctr_ok);
+  // A branch on a CR bit that is final, its CTR known, is resolved instead
+  // of predicted (UM 6.4.1.1).
+  function automatic logic folds(fetch_packet_t p, logic trace, logic lr_ok, logic ctr_ok,
+                                 logic cr_final, logic [31:0] crv, logic ctr_one);
     logic predict, bo_ok, xl_ok;
     predict = (p.insn[25] && p.insn[23]) || (p.insn[15] ^ p.insn[21]);
+    if (!p.insn[25] && cr_final)
+      predict = (crv[5'd31 - p.insn[20:16]] == p.insn[24]) &&
+                (p.insn[23] || (ctr_one == p.insn[22]));
     bo_ok = (p.insn[25:21] <= 5'd20) && (p.insn[24:22] != 3'b011) &&
             (p.insn[24:22] != 3'b111);
     xl_ok = (p.insn[15:11] == 5'd0) && bo_ok &&
@@ -734,10 +748,12 @@ module ppc_core #(
   assign lr_ok = lr_free || lr_front_ok_q;
   assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
   assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
-  assign fd_push = fd_valid_q && !fold_q && !fstop_q;
+  assign fd_push = fd_valid_q && !fold_q && !fstop_q && !cr_hold0;
   // One level of prediction (UM 6.4.1.1 seventh case, 6.4.1.2): a branch
-  // testing CR behind an older one still waiting on CR is not predicted;
-  // fetching stops at it. If its CTR test already fails, the CR is ignored.
+  // testing CR behind an older one still waiting on CR is not predicted.
+  // Fetching stops with it held in the fetch registers until that CR is
+  // resolved; it then enters the IQ and folds if predicted taken. If its
+  // CTR test already fails, the CR is ignored.
   /* verilator lint_off UNUSEDSIGNAL */
   function automatic logic cr_branch(fetch_packet_t p, logic ctr_known, logic ctr_one);
     return (p.fault == FETCH_OK) && !p.insn[25] &&
@@ -756,15 +772,23 @@ module ppc_core #(
   // pending, and crbw_left_q those up to the youngest CR writer older than
   // it. Everything dispatched is older than a queued branch.
   logic [IQ_COUNT_WIDTH-1:0] crw_left_q, crb_left_q, crbw_left_q;
-  logic ctr_one, crb0, crb1, crw0, crw1, cr_dep, crb_pend0, wait0_cr, wait1_cr;
+  logic ctr_one, crb0, crb1, crw0, crw1, cr_dep, cr_final, crb_pend0, wait0_cr, wait1_cr;
   assign ctr_one = ctr == 32'd1;
   assign crb0 = cr_branch(queued, ctr_free, ctr_one);
   assign crw0 = (queued.fault == FETCH_OK) && cr_writer(push_uop);
   assign cr_dep = (crw_left_q != '0) || cr_inflight;
   assign wait0_cr = crb0 && cr_unres;
-  assign crb_pend0 = crb0 && (cr_dep || cr_unres);
-  assign wait0 = waits(queued, lr_ok, lk_free, ctr_free) || wait0_cr;
-  assign fold_predict = folds(queued, trace_mode, lr_ok, ctr_free) && !wait0;
+  assign cr_hold0 = fd_valid_q && wait0_cr;
+  assign crb_pend0 = crb0 && cr_dep;
+  assign wait0 = waits(queued, lr_ok, lk_free, ctr_free);
+  // The CR also becomes final as the last owner's result arrives, which
+  // resolves a predicted branch on it in the same cycle (UM Figure 6-5).
+  logic [31:0] cr_now;
+  assign cr_final = (!cr_dep && !bs_busy) ||
+    (bu_cr_capture && !flags_waiter && (crw_left_q == '0) && (bs_valid_q || !bs_busy));
+  assign cr_now = bu_cr_capture ? bu_cr_d : bu_cr;
+  assign fold_predict = folds(queued, trace_mode, lr_ok, ctr_free, cr_final, cr_now, ctr_one) &&
+    !wait0;
   // Lane 1: the second FD word.
   fetch_packet_t queued1;
   logic [31:0] fold_pc;
@@ -812,15 +836,19 @@ module ppc_core #(
   assign crb1 = (FETCH_WIDTH == 2) && cr_branch(queued1, ctr_free && !push_writes[0], ctr_one);
   assign crw1 = (FETCH_WIDTH == 2) && cr_writer(push_uop1);
   assign wait1_cr = crb1 && (cr_unres || crb_pend0);
+  // Lane 0 enters the IQ alone.
+  assign cr_hold1 = fd1_valid_q && wait1_cr && !wait0 && !fold_predict;
+  assign fd_split = iq_push0 && cr_hold1;
   // Behind a waiting first word the second does not fold.
   assign wait1 = (FETCH_WIDTH == 2) &&
-    (waits(queued1, push_writes[1] ? push_lk : lr_ok, lk_free && !push_lk,
-           ctr_free && !push_writes[0]) || wait1_cr);
+    waits(queued1, push_writes[1] ? push_lk : lr_ok, lk_free && !push_lk,
+          ctr_free && !push_writes[0]);
   assign fold_predict1 = (FETCH_WIDTH == 2) && !wait0 && !wait1 &&
-    folds(queued1, trace_mode, lr_ok && !push_writes[1], ctr_free && !push_writes[0]);
+    folds(queued1, trace_mode, lr_ok && !push_writes[1], ctr_free && !push_writes[0],
+          cr_final && !crw0, cr_now, ctr_one);
   // A folding first word drops the second.
   assign iq_push0 = fd_push && fd_push_ok;
-  assign iq_push1 = iq_push0 && fd1_valid_q && !fold_predict;
+  assign iq_push1 = iq_push0 && fd1_valid_q && !fold_predict && !cr_hold1;
   assign fold_pc = fold_predict ? queued.pc : queued1.pc;
   assign fold_insn = fold_predict ? queued.insn : queued1.insn;
   assign fold_target = (fold_insn[31:26] == 6'd19) ?
@@ -1261,7 +1289,7 @@ module ppc_core #(
   end
   // A predicted branch takes its static prediction (UM 6.4.1.2); one that
   // waited at fetch was not folded.
-  assign bu_pred = folds(iq_head, 1'b0, 1'b1, 1'b1);
+  assign bu_pred = folds(iq_head, 1'b0, 1'b1, 1'b1, 1'b0, 32'd0, 1'b0);
   assign bu_taken = bu_spec ? bu_pred :
     ((uop.special_op == SPECIAL_B) || (bu_ctr_ok && bu_cond_ok));
   // Speculative branch (UM 6.4.1.2): a branch whose CR producer has not
@@ -1289,10 +1317,14 @@ module ppc_core #(
   assign bs_resolve = bs_valid_q && bs_cr_ready;
   assign bs_busy = bs_valid_q || bs_miss_q || bs_fix_q;
   // An older branch still waits on CR: predicted, or queued while its CR
-  // was pending, which only resolves once the writers before it finish.
+  // was pending, which only resolves once the writers before it finish. It
+  // resolves as the CR result arrives (UM Figure 6-5), and the held branch
+  // is predicted in that cycle.
   assign cr_inflight = (flags_busy && (!bu_cr_valid_q || flags_waiter)) || fp_cr_pending;
-  assign cr_unres = (bs_valid_q && !bs_cr_ready) ||
-    ((crb_left_q != '0) && ((crbw_left_q != '0) || cr_inflight));
+  assign cr_unres =
+    (bs_valid_q && !bs_resolve && !(bu_cr_capture && (flags_owner == bs_owner_q))) ||
+    ((crb_left_q != '0) &&
+     ((crbw_left_q != '0) || (cr_inflight && !(bu_cr_capture && !flags_waiter))));
   assign bs_head = bs_miss_q && (retire_producer == bs_tag_q);
   assign bs_recover = BS_EARLY && bs_miss_q;
   assign bs_fix_head = bs_fix_q && (retire_producer == bs_tag_q);
@@ -2168,7 +2200,7 @@ module ppc_core #(
   assign d1_bc_taken = bu_cr[5'd31 - dq1_uop.branch_bi] == dq1_uop.branch_bo[3];
   assign d1_bc_now = d1_cr_final && (d1_bc_taken == dq1_folded);
   assign d1_bc_spec = ENABLE_BRANCH_SPEC && !fp_cr_pending && !bs_busy && flags_tok0 && c0_iu &&
-    (folds(dq1_head, 1'b0, 1'b1, 1'b1) == dq1_folded);
+    (folds(dq1_head, 1'b0, 1'b1, 1'b1, 1'b0, 32'd0, 1'b0) == dq1_folded);
   assign d1_bc_target = dq1_uop.branch_aa ? dq1_uop.branch_disp :
                                             dq1_head.pc + dq1_uop.branch_disp;
   always_comb begin
