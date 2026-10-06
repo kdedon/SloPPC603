@@ -2,6 +2,14 @@
 
 
 
+## 2026-10-04 batch 13
+
+Recorded: `./quartus/integrated/build.sh --docker` and
+`./quartus/report-target-paths.sh integrated --docker`, commit `0ff3a45`,
+2026-10-04. **Meets 50 MHz**: setup +1.535 ns, hold +0.076 ns; 9,421 ALMs.
+**Misses 66 MHz** by −3.313 ns. 66 MHz regressed from the batch 11 fits on `6cb15bb` (worst −0.45 ns) through
+the batch 12–13 speed work.
+
 ## 2026-09-28 signoff with the fetch-to-decode register
 
 Recorded: `./quartus/integrated/build.sh --docker` and `./quartus/report-target-paths.sh integrated --docker`,

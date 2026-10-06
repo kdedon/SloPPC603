@@ -136,7 +136,7 @@ Embench-IoT commit and this repository at the release commit, as permalinks).
 | Workflow | Trigger | Does |
 | --- | --- | --- |
 | `quick.yml` | push, pull request | Verilator 5.020 from Ubuntu 24.04; `lint`, `check-spec`, five focused benches |
-| `mister-unstable.yml` | push to `main`, except docs-only pushes | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`); replaces the `unstable` prerelease with the `.rbf`, its summary, the self-test, Embench and Whetstone program images, the Embench source pointer and archive, and notes |
+| `mister-unstable.yml` | push to `main`, except docs-only pushes | MiSTer build of the test core (`--fpu-compact --dual --lsu-pipe`, fitter seeds 2–5 until timing passes); replaces the `unstable` prerelease with the `.rbf`, its summary, the self-test, Embench and Whetstone program images, the Embench source pointer and archive, and notes |
 | `release.yml` | tag `v*` | five measurement fits with 66 MHz re-timing, two FPU fits, MiSTer builds (the test core, or `vars.MISTER_SUITES`) with the self-test, Embench and Whetstone program images (plus `vars.MISTER_IMAGES`), then a release with notes, the Embench source pointer and archive |
 
 Runner limits (GitHub-hosted `ubuntu-24.04`, public repository):

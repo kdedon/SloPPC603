@@ -1,6 +1,6 @@
 # Current CPU plan
 
-Updated: 2026-10-04. This is the active planning entry point. The target for
+Updated: 2026-10-05. This is the active planning entry point. The target for
 the next deliverable is a single-issue, big-endian integer CPU with supervisor
 mode, resumable exceptions, interrupts and software-managed MMU. The full 603e
 CPU remains the longer-term target.
@@ -62,7 +62,7 @@ and throughput. The coherent baseline passes both personalities’ numerical, ex
 public-shell, paired dispatch/retirement and strict lint gates in
 [verification](../../../sim/fpu/PRODUCTION.md), including full-queue admission
 and 602 SPR timing. Frequency closure and the documented silicon-semantics
-gaps remain open. On `6cb15bb`
+gaps remain open. On `0ff3a45`
 the FULL FPU fits at 51.57 MHz (603e) and 50.58 MHz (602), COMPACT at 53.43
 and 60.07 MHz (`quartus/fpu-production/synthesize.sh --docker fullfit`,
 `full602fit`, `compactfit`, `compact602fit`); all miss 66 MHz. Timing work keeps the Table 6-5 cycle counts exact; any change to
@@ -108,29 +108,42 @@ through the LSU unit, loads at Table 6-6 2:1
 ([LSU](../../LSU_PIPELINE.md#fp-accesses)). Branches without a CQ entry are
 deferred.
 
-In progress on branches: a performance contract and rounds toward the
-Dhrystone 1:1 target.
+Done (batch 13, 2026-10-05): the batch 12–13 performance line (retire in
+the writeback cycle, early redirect, load priority, 8-entry data micro-TLB,
+second IU finish port and others; Dhrystone 0.89 DMIPS/MHz at width 2 with
+the LSU unit, [target](../../PERFORMANCE_TARGET.md)); the LSU store queue
+([LSU](../../LSU_PIPELINE.md#store-queue)); branch removal behind
+`ENABLE_BRANCH_REMOVAL` (off); FP loads through the LSU; the 602/rename
+timing fix; whole-machine reference lockstep at width 2 with the LSU unit,
+MMU stress included; the [source reconciliation](../../references/SOURCE_RECONCILIATION.md)
+and [manual inventory](../../references/MANUAL_INVENTORY.md) (AUD-75 to
+AUD-86). 66 MHz regressed: every top misses by −3.3 to −5.5 ns on
+`0ff3a45` (−0.45 ns on `6cb15bb`). The MiSTer test core does not route.
+
+In progress on branches: batch 14, fixes for AUD-75, 77, 79, 81 and 83
+(`b14-coherence-reset`); Doom and Quake timedemos (`doom-timedemo`,
+`quake-timedemo`).
 
 Queued, in order:
 
-1. Branches without a CQ entry (removal at fetch, P09).
-2. LSU unit completion: stores at one per cycle, base operands from rename,
-   FP update forms through the unit.
-3. Bus and endian follow-ups: DBWO; the two-CPU bench with address
+1. MiSTer timing closure: `mister/build.sh --fpu-compact --dual --lsu-pipe`
+   fails to route at 87% ALMs (seeds 2–5); `batch13-mister-fit` routes but
+   misses `clk_sys` by −4.2 ns. The CI `mister-unstable` job fails until
+   this closes.
+2. Bus and endian follow-ups: DBWO; the two-CPU bench with address
    pipelining, DRTRY and TEA; misaligned `eciwx`/`ecowx` split in hardware;
    a DingusPPC little-endian comparison.
-4. Defaults: width 2 and the LSU unit on, two-word fetch through the wrappers.
-5. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
+3. Defaults: width 2, the LSU unit and branch removal on, two-word fetch
+   through the wrappers ([LSU remaining work](../../LSU_PIPELINE.md#remaining-work)).
+4. FPU silicon-semantics gaps ([assessment](../../FPU_REUSE_ASSESSMENT.md)),
    FULL FPU in the MiSTer core (97% ALMs, −2.606 ns: reduce area or keep
    COMPACT).
-6. Verification: full-machine reference comparison and the remaining P12
-   schedule checks; source-contract reconciliation.
-7. Speed, after completion: 66 MHz at width 1 (translated −0.446 ns, chip
-   −0.448 ns, chip602 −0.063 ns on `6cb15bb`), width 2 at 66 MHz (IQ pair
-   decision), the LSU unit at 66 MHz, the FPU at 66 MHz, a single-precision
-   Mandelbrot.
-8. MiSTer test core: HDMI-domain timing at SEED 2 (`pll_hdmi` −0.353 ns on
-   `6cb15bb`); add seed choice to `mister/build.sh`.
+5. Verification: the remaining P12 schedule checks and the open manual
+   inventory rows ([audit](../../AUDIT.md)).
+6. Speed: recover 66 MHz (translated −4.610 ns, integrated −3.313,
+   timer-bat −3.679, chip −4.606, chip602 −5.452 on `0ff3a45`), then width
+   2, the LSU unit and the FPU at 66 MHz; Dhrystone 1:1 with the 603e
+   (639 cycles/run against the model's 506); a single-precision Mandelbrot.
 
 After each accepted implementation round, update the scorecard's affected rows
 and record fresh versus inherited checks. Refresh this plan when priorities or
