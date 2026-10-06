@@ -35,9 +35,9 @@ ASSUMPTIONS = {
           "store-queue writes and loads (addresses are not in the trace).",
     "A7": "Completion of an instruction behind a correctly predicted branch may occur "
           "in the branch's resolve cycle (UM 6.6.1.3).",
-    "A8": "Multiply takes 1 + significant bytes of the multiplier (T6-4 lists 2,3 for "
-          "mulli; the rule is the project's inference); mullw/mulhw without operand "
-          "values use --mul cycles.",
+    "A8": "Multiply takes 1 + the bytes holding the multiplier as a signed value (T6-4 "
+          "lists 2,3 for mulli but no operand mapping; the rule is the project's "
+          "inference, TIM-U02); mullw/mulhw without operand values use --mul cycles.",
     "A9": "A unit's reservation station accepts the next instruction in the cycle the "
           "previous one starts executing (UM 6.3.3: 'stall until the first instruction "
           "completes execution' read as leaving the station).",
@@ -259,11 +259,12 @@ class Insn:
 
 
 def significant_bytes(v):
+    """Fewest bytes holding v as a signed value (MULTIPLY_TIMING.md rB classes)."""
     v &= 0xFFFFFFFF
     if v & 0x80000000:
         v = ~v & 0xFFFFFFFF
     n = 1
-    while v >> (8 * n) and n < 4:
+    while v >> (8 * n - 1) and n < 4:
         n += 1
     return n
 
