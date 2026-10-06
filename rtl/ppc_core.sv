@@ -490,6 +490,12 @@ module ppc_core #(
   // b removed as it would enter the IQ, counted on the next entry pushed.
   logic bu_remove, d1_remove, push_remove0, push_remove1, iq_in0, iq_in1;
   logic [1:0] removed_q, fetch_removed_q, iq_rb, dq1_rb, iq_rb_first;
+  // A removed predicted bc's record on the IQ entry before it: valid,
+  // prediction, BO[1], BI, removal count and alternate target.
+  localparam int BREC_W = 40;
+  logic [BREC_W-1:0] push_rec, iq_rec, dq1_rec;
+  logic rem1_pred;
+  logic [31:2] rem1_alt;
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [1:0] d1_ea;
@@ -947,8 +953,9 @@ module ppc_core #(
     end else begin
       crw_left_q <= (iq_in1 && crw1) ? pos1 :
                     (iq_in0 && crw0) ? pos0 : crw_after;
-      if (iq_in1 && crb1 && ((iq_in0 && crw0) || cr_dep)) begin
-        crb_left_q <= pos1;
+      // A removed predicted branch counts up to the entry carrying it.
+      if ((iq_in1 || (iq_push1 && rem1_pred)) && crb1 && ((iq_in0 && crw0) || cr_dep)) begin
+        crb_left_q <= iq_in1 ? pos1 : pos0;
         crbw_left_q <= (iq_in0 && crw0) ? pos0 : crw_after;
       end else if (iq_in0 && crb0 && cr_dep) begin
         crb_left_q <= pos0;
@@ -1005,25 +1012,27 @@ module ppc_core #(
   /* verilator lint_off UNUSEDSIGNAL */
   iq_pair_t iq_pair;
   logic iq_valid1;
-  logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) - 1:0] iq_dq1;
+  logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq1;
   /* verilator lint_on UNUSEDSIGNAL */
   // A removed first word passes its lane to the second.
-  logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) - 1:0] iq_lane0;
+  logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_lane0;
   assign iq_lane0 = iq_in0 ?
-    {queued, push_uop, fold_predict, push_branch, push_pair, fetch_removed_q} :
-    {queued1, push_uop1, fold_predict1, push_branch1, push_pair1s, fetch_removed_q + 2'd1};
-  ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t)),
+    {queued, push_uop, fold_predict, push_branch, push_pair, fetch_removed_q, push_rec} :
+    {queued1, push_uop1, fold_predict1, push_branch1, push_pair1s, fetch_removed_q + 2'd1,
+     BREC_W'(0)};
+  ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W),
            .DEPTH(IQ_DEPTH)) iq (
     .clk_i, .rst_ni, .clear_i(fe_clear), .flush_i(bs_now),
     .push_valid_i({iq_in0 && iq_in1, iq_in0 || iq_in1}), .push_ready_o(iq_push_ready),
     .push2_ready_o(iq_push2_ready),
     .push0_data_i(iq_lane0),
-    .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1, 2'd0}),
+    .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1, 2'd0,
+                   BREC_W'(0)}),
     .pop_i({dispatch1, iq_pop}), .valid_o({iq_valid1, iq_valid}),
-    .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb}), .dq1_o(iq_dq1),
+    .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb, iq_rec}), .dq1_o(iq_dq1),
     .count_o(iq_count)
   );
-  assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair, dq1_rb} = iq_dq1;
+  assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair, dq1_rb, dq1_rec} = iq_dq1;
   // UM 6.3.1: an unconditional b without LK is resolved and retired by the
   // BPU as it is fetched; it folds (fetch redirects to its target) and never
   // enters the IQ. Lane 1 is pushed only beside lane 0, which then precedes it.
@@ -1054,7 +1063,18 @@ module ppc_core #(
     (plain_b(queued) ||
      (res0[1] && (res0[0] ? fold_predict : (!fd1_valid || !fetch_removed_q[1]))));
   assign push_remove1 = BRANCH_REMOVAL && !trace_mode && !wait0 &&
-    (plain_b(queued1) || (res1[1] && (!res1[0] || fold_predict1)));
+    (plain_b(queued1) || (res1[1] && (!res1[0] || fold_predict1)) || rem1_pred);
+  // A predicted bc on a CR bit alone also leaves the IQ (UM 6.4.1.1): the
+  // first word, pushed beside it, carries its prediction and starts it as
+  // it dispatches. That word must allocate and, if it writes CR, be an IU op.
+  assign rem1_pred = BS_ANCHOR && !trace_mode && !push_remove0 && !wait1 && crb1 &&
+    !res1[1] && (queued1.insn[31:26] == 6'd16) && queued1.insn[23] && !queued1.insn[0] &&
+    (queued.fault == FETCH_OK) && !push_branch[3] && !push_uop.privileged &&
+    ((push_pair.unit == UNIT_IU) || ((push_pair.unit == UNIT_LSU) && !crw0));
+  assign rem1_alt = fold_predict1 ? queued1.pc[31:2] + 30'd1 :
+    (queued1.insn[1] ? 30'b0 : queued1.pc[31:2]) + {{16{queued1.insn[15]}}, queued1.insn[15:2]};
+  assign push_rec = {iq_push1 && rem1_pred, fold_predict1, queued1.insn[24],
+                     queued1.insn[20:16], 2'd1, rem1_alt};
   assign iq_in0 = iq_push0 && !push_remove0;
   assign iq_in1 = iq_push1 && !push_remove1;
   always_ff @(posedge clk_i) begin
@@ -1474,8 +1494,44 @@ module ppc_core #(
         bs_bi_q <= uop.branch_bi;
         bs_alt_q <= bu_pred ? iq_head.pc + 32'd4 : bu_target;
       end
+      if (carry_start) begin
+        bs_valid_q <= 1'b1;
+        bs_anch_q <= 1'b1;
+        bs_rb_q <= crec[31:30];
+        bs_tag_q <= carry_d1 ? alloc1_producer : alloc_producer;
+        bs_anch_done_q <= 1'b0;
+        bs_owner_q <= carry_owner;
+        bs_owner_done_q <= !carry_tok && (!flags_busy ||
+          (!flags_waiter && ((commit && (retire_producer == flags_owner)) ||
+                             (commit1 && (retire1_producer == flags_owner)))));
+        bs_pred_q <= crec[38];
+        bs_ctr_ok_q <= 1'b1;
+        bs_bo3_q <= crec[37];
+        bs_bi_q <= crec[36:32];
+        bs_alt_q <= {crec[29:0], 2'b00};
+      end
     end
   end
+  // An entry carrying a removed branch's prediction starts it as it
+  // dispatches, anchored on itself. The branch reads the CR of the
+  // youngest flags owner before it; a final CR that matches the
+  // prediction needs no tracking.
+  logic c0_carry, c1_carry, carry_d1, carry_tok, carry_final, carry_start;
+  /* verilator lint_off UNUSEDSIGNAL */  // the valid bit, known from the lane
+  logic [BREC_W-1:0] crec;
+  /* verilator lint_on UNUSEDSIGNAL */
+  completion_tag_t carry_owner;
+  assign c0_carry = BS_ANCHOR && iq_rec[BREC_W-1] && (iq_head.fault == FETCH_OK);
+  assign c1_carry = BS_ANCHOR && d1_valid && dq1_rec[BREC_W-1];
+  assign carry_d1 = dispatch1 && c1_carry;
+  assign crec = carry_d1 ? dq1_rec : iq_rec;
+  assign carry_tok = flags_tok0 || (carry_d1 && flags_tok1);
+  assign carry_final = !carry_tok && (!flags_busy || (bu_cr_valid_q && !flags_waiter));
+  assign carry_owner = (carry_d1 && flags_tok1) ? alloc1_producer :
+                       flags_tok0 ? alloc_producer :
+                       flags_waiter ? flags_waiter_tag : flags_owner;
+  assign carry_start = !recovery_accepted && (carry_d1 || (dispatch && iq_pop && c0_carry)) &&
+    !(carry_final && ((bu_cr[5'd31 - crec[36:32]] == crec[37]) == crec[38]));
   // The youngest CQ entry, a removed predicted branch's anchor.
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
@@ -2112,6 +2168,7 @@ module ppc_core #(
   assign trace_mode = ENABLE_DEBUG_EXCEPTIONS && (msr[MSR_SE] || msr[MSR_BE]);
   // Interrupts wait for the last micro-op of a cracked instruction.
   assign iq_ready = !fault_pending && !bu_redirect_q && !bs_miss_q &&
+    !(c0_carry && (bs_busy || fp_cr_pending)) &&
     !(bs_valid_q && special_uop && !lsu_route && !sru_move) &&
     (!interrupt_qualified || seq_active) &&
     !update_wait0 && gpr_ready && (cq_ready || (bu_remove && !recovery_accepted)) && !sru_wait0 &&
@@ -2417,7 +2474,11 @@ module ppc_core #(
   // A predicted bc keeps its entry for recovery unless anchored on DQ0.
   assign d1_remove = BRANCH_REMOVAL && d1_branch && !dq1_uop.branch_lk &&
     (!(d1_bc && !d1_bc_now) || BS_ANCHOR) && (dq1_rb != 2'd3);
+  // Beside a carrier only an IU op dispatches; a carrier in DQ1 starts the
+  // only prediction of the pair.
   assign dispatch1 = dispatch && seq_last && pair_units && (cq1_ready || d1_remove) &&
+    !(c0_carry && (!d1_iu || c1_carry)) &&
+    !(c1_carry && (bs_busy || fp_cr_pending || (bu_branch && bu_spec) || c0_fp || c0_fp_mem)) &&
     // DQ1 needs only the renames left after DQ0 (UM 6.6.1.2).
     (!unit_update || (d1_iu && !d1_gpr)) && !sru_wait1 && !update_wait1 &&
     (!d1_lsu || d1_lsu_ready) &&
@@ -2890,9 +2951,13 @@ module ppc_core #(
       if (dispatch && bu_branch && bu_spec && !recovery_accepted) begin
         spec_younger <= int'(dispatch1 && !d1_remove);
         spec_after <= int'(dispatch1);
-      end else if (dispatch1 && d1_bc && !d1_bc_now && !recovery_accepted) begin
+      end else if ((dispatch1 && d1_bc && !d1_bc_now && !recovery_accepted) ||
+                   (carry_start && carry_d1)) begin
         spec_younger <= 0;
         spec_after <= 0;
+      end else if (carry_start) begin
+        spec_younger <= int'(dispatch1 && !d1_remove);
+        spec_after <= int'(dispatch1);
       end else begin
         spec_younger <= younger;
         spec_after <= after;
