@@ -21,16 +21,17 @@ DEMO_ARGS = ('ram=fff00000:00040000', 'ram=f0000000:00100000', 'io=f0100000:0000
 DEMO_PROGRAMS = ('hello', 'dhrystone', 'coremark', 'whetstone', 'selftest')
 
 
-def build_runner(build, ref):
+def build_runner(build, ref, le=False):
     inputs = {str(p): digest(p) for p in (HERE/'machine_runner.cpp', HERE/'reference_adapter.h',
                                           *(ref/s for s in SOURCES), *sorted(ref.rglob('*.h')))}
-    runner, record = build/'machine_runner', build/'machine-runner.json'
+    name = 'machine_runner_le' if le else 'machine_runner'
+    runner, record = build/name, build/f'{name}.json'
     if runner.exists() and record.exists() and json.loads(record.read_text()) == inputs:
         return runner
-    command(['g++', '-std=c++20', '-O2', '-fwrapv', '-DSUPPORTS_PPC_LITTLE_ENDIAN_MODE=0',
+    command(['g++', '-std=c++20', '-O2', '-fwrapv', f'-DSUPPORTS_PPC_LITTLE_ENDIAN_MODE={int(le)}',
              '-DSUPPORTS_MEMORY_CTRL_ENDIAN_MODE=0', '-DCPU_PROFILING', f'-I{ref}',
              f'-I{ref}/thirdparty/loguru', HERE/'machine_runner.cpp', *(ref/s for s in SOURCES),
-             '-lpthread', '-ldl', '-o', runner], build/'machine-runner-build.log')
+             '-lpthread', '-ldl', '-o', runner], build/f'{name}-build.log')
     record.write_text(json.dumps(inputs, indent=1) + '\n')
     return runner
 
@@ -65,8 +66,12 @@ def lockstep(name, runner, image, runner_args, rtl_cmd, out, keep=None):
     print(f'PASS reference machine {name}: {summary[len("PASS machine: "):]} cycles={cycles}', flush=True)
 
 
-def negative_controls(runner, image, runner_args, prefix):
-    """A flipped register, SPR, store byte or late store byte, or a dropped retirement must each fail."""
+def negative_controls(runner, image, runner_args, prefix, le=False):
+    """A flipped register, SPR, store byte or late store byte, or a dropped retirement must each fail.
+
+    In little-endian runs a store moved to the other word of its doubleword,
+    as an unmunged address would be, must fail too.
+    """
     records = sum(1 for _ in prefix.open())
     clean = subprocess.run([str(runner), str(image), str(prefix), *runner_args, f'records={records}'],
                            capture_output=True, text=True)
@@ -76,6 +81,8 @@ def negative_controls(runner, image, runner_args, prefix):
              'cr': ('mutate=2000:cr', 'state after'), 'store': ('mutate=5000:st', 'store byte'),
              'late store': ('mutate=5000:stlate', 'store byte'),
              'drop': ('drop=3000', 'pc:')}
+    if le:
+        cases['store address'] = ('mutate=5000:staddr', 'store byte')
     # Without a store queue no write follows a younger store.
     if ' deferred_bytes=0 ' in clean.stdout:
         del cases['late store']
@@ -101,6 +108,18 @@ def chip_stress(runner, args, out):
     lockstep('chip-mmu-stress', runner, image, ('ram=fff00000:00040000', f'exit={mailbox:08x}'), rtl, out)
 
 
+def chip_le(runner, model, out):
+    """The little-endian core program on the package top, with the FPU."""
+    out.mkdir(parents=True, exist_ok=True)
+    image = out/'program.hex'
+    command([sys.executable, PROJECT/'sim/tools/le_core_program.py', '--chip-image', image], out/'program.log')
+    data = bytes(int(line, 16) for line in image.read_text().split())
+    words = out/'image.hex'
+    words.write_text(''.join(data[i:i+8].hex() + '\n' for i in range(0, len(data), 8)))
+    rtl = [model.resolve(), f'+IMAGE={image}', '+TOHOST=fff3ff00']
+    lockstep('chip-le', runner, words, ('ram=fff00000:00040000', 'exit=fff3ff00', 'fpu'), rtl, out)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=Path, default=PROJECT/'sim/build/reference-machine')
@@ -109,7 +128,11 @@ def main():
     parser.add_argument('--image-dir', type=Path, help='demo firmware .hex directory')
     parser.add_argument('--chip-elf', type=Path, help='chip-mmu-stress ELF: run it on the package top')
     parser.add_argument('--verilator', default='verilator')
-    parser.add_argument('--programs', nargs='+', default=DEMO_PROGRAMS)
+    parser.add_argument('--programs', nargs='*', default=DEMO_PROGRAMS)
+    parser.add_argument('--little-endian', action='store_true',
+                        help='reference built with little-endian mode, for images that switch to it')
+    parser.add_argument('--chip-le', type=Path,
+                        help='tb_chip_firmware binary with the FPU: also run the little-endian core program')
     parser.add_argument('--max-cycles', type=int, default=400_000_000)
     args = parser.parse_args()
     build = args.build_dir.resolve()
@@ -125,13 +148,15 @@ def main():
     if missing:
         raise RuntimeError('missing demo images (build with make -C sim demo-firmware demo-bench-firmware): '
                            + ' '.join(missing))
-    runner = build_runner(build, ref)
+    runner = build_runner(build, ref, args.little_endian)
+    if args.chip_le:
+        chip_le(runner, args.chip_le, build/'chip-le')
     for index, (name, image) in enumerate(images.items()):
         rtl = [args.model.resolve(), f'+IMAGE={image}', f'+NAME={name}', f'+MAX_CYCLES={args.max_cycles}']
         prefix = build/name/'prefix.trace' if index == 0 else None
         lockstep(name, runner, image, DEMO_ARGS, rtl, build/name, prefix)
         if prefix:
-            negative_controls(runner, image, DEMO_ARGS, prefix)
+            negative_controls(runner, image, DEMO_ARGS, prefix, args.little_endian)
             prefix.unlink()
     print(f'PASS: reference machine {len(images)} programs')
 

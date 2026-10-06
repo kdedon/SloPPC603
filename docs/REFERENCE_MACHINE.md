@@ -83,6 +83,40 @@ counted in the summary:
 | A store's write after younger records (`late_stores`) | UM 1.1.4.3: the store queue performs a completed store later | Each completed store owes the bytes it writes (none for `dcbz` or a failed `stwcx.`); a record's write bytes must not exceed those owed. They are compared against the reference's memory then, or, while younger retired stores still owe bytes (the reference has already performed them, possibly to the same bytes), once none is owed, using the RTL's newest value per byte (`deferred_bytes`). At the exit store nothing may be owed. The reference's I/O writes wait for owed bytes |
 | Branches removed at dispatch (`removed_branches`) | UM 6.3.1: a branch with no SPR write back retires in the BPU | `rb=<n0>,<n1>` on the next record; the reference steps that many branches (each checked to be a branch without LK or CTR decrement) before the head and before CQ[1] |
 
+## Little-endian programs
+
+`make -C sim test-reference-le-machine` runs the same lockstep with the runner built
+`SUPPORTS_PPC_LITTLE_ENDIAN_MODE=1` (`--little-endian`); the DingusPPC checkout is
+only read. Programs:
+
+- `hello`, `dhrystone` and `coremark` built `-mlittle-endian` (`make -C sim
+  demo-le-firmware`, [DEMO_SOC.md](DEMO_SOC.md#firmware)) on the demo SoC. Each switches
+  to little-endian mode at reset and stays there. `DEMO_LE_FW_DIR` and
+  `MACHINE_LE_PROGRAMS` select them.
+- The `test-chip-le` program on `tb_chip_firmware` with the FPU (`--chip-le`): mode
+  switches by `mtmsr` and `rfi`, every scalar size at every offset, byte-reverse,
+  reservation, FP, multiple and string forms, and alignment exceptions taken from
+  little-endian code. The runner keeps MSR[FP] (`fpu`); FPRs are compared only
+  through stores.
+
+Both sides munge the same way. DingusPPC, like the 603e, keeps memory in big-endian
+layout and munges the address: XOR 7, 6 or 4 for a data access of 1, 2 or 4 bytes,
+none for 8, and XOR 4 on fetch (PEM 3.1.4). So RTL stores, which carry the munged
+physical address, compare against the reference's memory directly. The runner itself
+reads instruction words for removed branches and CQ[1] at PC XOR 4, and a forced MSR
+change also sets the reference's endian mode.
+
+Little-endian corrections (`reference_adapter.h`, LE build only; counted where noted):
+
+| Reference behavior | Manual | Correction |
+|---|---|---|
+| A misaligned halfword or word munges the EA once and moves contiguous bytes (`le_misaligned`) | PEM 3.1.4.2: byte i at `(EA + i) XOR 7`; UM 1.3: PID7v splits it in hardware | Move it a byte at a time |
+| `lfd`/`stfd` at EA = 4 mod 8 move the wrong bytes (`le_fp_split`) | as above | Move it a byte at a time |
+| Multiples, strings and FP accesses not word aligned execute | UM 2.3.4.3.6–7, 4.5.6; DSISR from Table 4-13 | Raise alignment |
+
+These are the rules `test-reference-le` applies. One negative control is added: a store
+moved to the other word of its doubleword, as an unmunged address would be, must fail.
+
 ## Not established
 
 - Final RAM is not compared: dirty data-cache lines never reach the bus model.
@@ -94,7 +128,10 @@ counted in the summary:
   only where it changes architectural results.
 - No timing: the reference is not a cycle oracle.
 - FPU images: the runner clears MSR[FP] as the non-FPU SoC does, so only the
-  soft-float programs are compared.
+  soft-float programs are compared, except the little-endian chip program.
+- Little-endian exception entry with MSR[ILE] set: the little-endian programs take
+  no exceptions and the chip program runs with MSR[ILE] clear; only
+  `test-reference-le` covers it.
 
 ## Results
 

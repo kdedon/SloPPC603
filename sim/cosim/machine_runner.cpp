@@ -217,6 +217,9 @@ static bool alignment_names_ra(uint32_t insn) {
 }
 
 static void set_msr(uint32_t value) {
+#if SUPPORTS_PPC_LITTLE_ENDIAN_MODE
+    ppc_change_endian(value & MSR::LE);
+#endif
     uint32_t old = ppc_state.msr;
     ppc_state.msr = value;
     ppc_msr_did_change(old, value, false);
@@ -233,15 +236,26 @@ static void on_abort(int) {
 
 struct Region { uint32_t base, bytes; uint8_t* host; };
 
+// Little-endian mode fetches from EA XOR 4 and munges a data access of
+// n < 8 bytes with XOR 8 - n (PEM 3.1.4).
+static uint32_t munge(uint32_t ea, unsigned n) {
+#if SUPPORTS_PPC_LITTLE_ENDIAN_MODE
+    if (ppc_state.is_LE && n < 8) return ea ^ (8 - n);
+#endif
+    (void)n;
+    return ea;
+}
+
 int main(int argc, char** argv) {
     try {
         // image.hex trace [ram=base:bytes] [io=base:bytes] [exit=addr] [spr=n:value]
         //   [records=n] [keep=path] [mutate=record:field] [mutate=record:st]
-        //   [mutate=record:stlate]
-        //   [drop=record]
+        //   [mutate=record:stlate] [mutate=record:staddr]
+        //   [drop=record] [fpu]
         // image.hex holds 64-bit words loaded at the first RAM. records=n stops
         // after n records without needing the exit store; keep copies the first
-        // 200000 records; mutate and drop corrupt the RTL trace for negative tests.
+        // 200000 records; mutate and drop corrupt the RTL trace for negative
+        // tests (staddr moves a store to the other word of its doubleword).
         if (argc < 3) throw std::runtime_error("usage: machine_runner image.hex trace [key=value...]");
         loguru::g_stderr_verbosity = loguru::Verbosity_WARNING;
         std::vector<std::pair<uint32_t, uint32_t>> rams;
@@ -264,6 +278,7 @@ int main(int argc, char** argv) {
                 else presets.push_back({a, b});
             } else if (key == "exit") { exit_addr = hex(value); }
             else if (key == "records") { max_records = std::stoull(value); }
+            else if (arg == "fpu") { adapter_fpu = true; }
             else if (key == "keep") { keep = value; }
             else if (key == "drop") { drop = std::stoull(value); }
             else if (key == "mutate") {
@@ -352,7 +367,7 @@ int main(int argc, char** argv) {
         auto step_removed = [&](unsigned n) {
             for (unsigned i = 0; i < n; ++i) {
                 uint32_t w = 0;
-                if (uint8_t* p = ram_byte(ppc_state.pc))
+                if (uint8_t* p = ram_byte(munge(ppc_state.pc, 4)))
                     w = uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
                 uint32_t op = w >> 26, xo = (w >> 1) & 1023;
                 bool branch = op == 18 || op == 16 || (op == 19 && (xo == 16 || xo == 528));
@@ -397,9 +412,11 @@ int main(int argc, char** argv) {
             }
             auto m = mutations.find(records);
             if (m != mutations.end() && m->second != "stlate") {
-                if (m->second != "st") rtl[field_index(m->second)] ^= 1;
-                else if (!rtl_stores.empty()) rtl_stores[0][2] ^= 0x01010101U;
-                else mutations[records + 1] = "st";
+                bool store = m->second == "st" || m->second == "staddr";
+                if (!store) rtl[field_index(m->second)] ^= 1;
+                else if (rtl_stores.empty()) mutations[records + 1] = m->second;
+                else if (m->second == "st") rtl_stores[0][2] ^= 0x01010101U;
+                else rtl_stores[0][0] ^= 4;
             }
             step_removed(removed0);
             // An interrupt is taken between retirements; enter it where the RTL did.
@@ -502,7 +519,7 @@ int main(int argc, char** argv) {
                     // also retires with its value in rtl.
                     step_removed(removed1);
                     uint32_t next = 0;
-                    if (uint8_t* p = ram_byte(ppc_state.pc))
+                    if (uint8_t* p = ram_byte(munge(ppc_state.pc, 4)))
                         next = uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
                     if (load_target(next, rd, reverse)) { io.pending = rtl_reg(rd); io.have_pending = true; }
                     step_insn = next;
@@ -545,7 +562,7 @@ int main(int argc, char** argv) {
                         discarded.count(step_ea & ~31U) && ppc_state.gpr[ld] != rtl_reg(ld)) {
                         ppc_state.gpr[ld] = rtl_reg(ld);
                         for (unsigned b = 0; b < size; ++b)
-                            if (uint8_t* p = ram_byte(step_ea + b))
+                            if (uint8_t* p = ram_byte(munge(step_ea, size) + b))
                                 *p = uint8_t(rtl_reg(ld) >> (8 * (size - 1 - b)));
                         ++discarded_loads;
                     }
@@ -659,6 +676,9 @@ int main(int argc, char** argv) {
                   << " store_bytes=" << store_bytes << " failed_stwcx=" << failed_conditional << " io_reads=" << io.reads
                   << " timing_reads=" << timing << " removed_branches=" << removed
                   << " late_stores=" << late_stores << " deferred_bytes=" << deferred_bytes
+#if SUPPORTS_PPC_LITTLE_ENDIAN_MODE
+                  << " le_misaligned=" << le_misaligned_count << " le_fp_split=" << le_fp_split_count
+#endif
                   << " undefined_fields=" << undefined << " dcbi_loads=" << discarded_loads << " trailing=" << trailing << '\n';
         return 0;
     } catch (const std::exception& e) {

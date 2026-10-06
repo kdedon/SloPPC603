@@ -9,12 +9,34 @@
  * vectors, entering at _reset. */
 #define SPR_HID0 1008
 #define IO_HI 0xf010
+/* Little-endian builds reach big-endian registers at the word address XOR 4. */
+#ifdef __LITTLE_ENDIAN__
+#define IO_EXIT 0x10
+#else
+#define IO_EXIT 0x14
+#endif
 
 #ifndef CRT0_OWN_VECTORS
     .section .vectors,"ax",@progbits
     .globl _start
 _start:                     /* 0x100: system reset */
+#ifdef __LITTLE_ENDIAN__
+    /* Reset runs big-endian, where fetching word 2k reads word 2k + 1 of
+     * this image, so each pair below is swapped. It sets MSR[ILE], then rfi
+     * enters _reset with MSR[LE] set. */
+    ori 5,5,_reset@l
+    lis 5,_reset@h
+    mfmsr 6
+    mtsrr0 5
+    mtmsr 6
+    oris 6,6,0x0001
+    mtsrr1 6
+    ori 6,6,0x0001
+    nop
+    rfi
+#else
     b _reset
+#endif
 
     .macro vector off
     .org \off - 0x100
@@ -142,7 +164,7 @@ _reset:
 .Lbss_done:
     bl main
     lis 4,IO_HI
-    stw 3,0x14(4)
+    stw 3,IO_EXIT(4)
     sync
 1:  b 1b
     .size _reset,.-_reset
@@ -157,7 +179,7 @@ _trap:
     isync
     oris 3,3,0xe000
     lis 4,IO_HI
-    stw 3,0x14(4)
+    stw 3,IO_EXIT(4)
     sync
 1:  b 1b
     .size _trap,.-_trap

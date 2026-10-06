@@ -89,5 +89,5 @@ multiple alignment exception).
 - Dual dispatch does not pair a DQ1 access with the serialized lane in
   little-endian mode; such accesses dispatch from DQ0. The pipelined unit
   still overlaps accesses.
-- No DingusPPC comparison: the reference runners build DingusPPC with
-  `SUPPORTS_PPC_LITTLE_ENDIAN_MODE=0`.
+- The DingusPPC comparisons (`test-reference-le`, `test-reference-le-machine`) model
+  only the PID7v alignment rules.
