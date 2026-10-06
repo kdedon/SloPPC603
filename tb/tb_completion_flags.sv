@@ -53,7 +53,7 @@ module tb_completion_flags;
     .alloc_i(allocation), .alloc_finished_i(1'b0), .alloc_tag_o(alloc_tag),
     .result_retire_i(1'b0), .result_valid_i(result_valid), .result_ready_o(result_ready),
     .result_i(result_packet), .wake_valid_o(wake_valid), .wake_o(wake),
-    .result1_valid_i(1'b0), .result1_i('0),
+    .result1_valid_i(1'b0), .result1_retire_i(1'b0), .result1_i('0),
     /* verilator lint_off PINCONNECTEMPTY */ .wake1_valid_o(), .wake1_o() /* verilator lint_on PINCONNECTEMPTY */,
     .retire_valid_o(retire_valid), /* verilator lint_off PINCONNECTEMPTY */ .retire_settled_o(), .head_o(), .head1_o() /* verilator lint_on PINCONNECTEMPTY */, .retire_ready_i(retire_ready), .retire_hold_i(1'b0),
     .retire_o(retired), .retire_tag_o(retired_tag),

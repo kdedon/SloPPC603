@@ -303,6 +303,7 @@ module ppc_core #(
   logic rs_ready, issue_valid, issue_ready, result_valid, result_ready, wake_valid;
   logic iu_result_valid, iu_result_ready, iu_result_offer, sru_result_offer;
   logic special_result_valid, special_result_ready, special_ready, special_busy;
+  logic special_port1_ok;
   logic special_mem_overlap, special_mem_dst_valid, special_retire_hold;
   logic special_result_select;
   logic [4:0] special_mem_dst;
@@ -2036,7 +2037,7 @@ module ppc_core #(
     .busy_o(special_busy),
     .mem_overlap_o(special_mem_overlap), .mem_dst_valid_o(special_mem_dst_valid),
     .mem_dst_o(special_mem_dst), .retire_hold_o(special_retire_hold),
-    .result_select_o(special_result_select),
+    .result_select_o(special_result_select), .result_port1_o(special_port1_ok),
     .producer_o(special_producer), .store_irrevocable_o(special_store_irrevocable),
     .lr_o(lr), .ctr_o(ctr), .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1),
     .dmem_req_valid_o(sp_req_valid), .dmem_req_ready_i,
@@ -2085,7 +2086,14 @@ module ppc_core #(
   // A pipelined access result goes first; the lane never has one then.
   assign result = lsu_result_offer ? lsu_result :
                   special_result_select ? special_result : iu_result;
-  assign special_result_ready = result_ready && special_result_valid && !lsu_result_offer;
+  // The SRU has its own result bus (UM 6.3.3): a special result that meets
+  // a load's on the first port takes the second when the SRU pipe leaves it
+  // free.
+  logic special_port1;
+  assign special_port1 = ENABLE_LSU_PIPE && special_result_select && special_result_valid &&
+                         special_port1_ok && lsu_result_offer && !sru_result_offer;
+  assign special_result_ready = special_result_valid &&
+                                ((result_ready && !lsu_result_offer) || special_port1);
   // An IU result that meets a load's on the first port takes the second
   // when the SRU leaves it free: each unit has its own result bus (UM
   // 6.3.3), so a load's consumer finishes on its own timing. IU results
@@ -2096,8 +2104,8 @@ module ppc_core #(
                     !special_result_select && !sru_result_offer;
   // The port selects on offers so a recovery's cancel stays out of the
   // second result's identity and value.
-  assign result1 = sru_result_offer ? sru_result : iu_result;
-  assign result1_offer = sru_result_offer || iu_result_offer;
+  assign result1 = sru_result_offer ? sru_result : special_port1 ? special_result : iu_result;
+  assign result1_offer = sru_result_offer || iu_result_offer || special_port1;
   assign iu_result_ready = (result_ready && !special_result_select && !lsu_result_offer) ||
                            iu_port1;
   assign sru_result_ready = 1'b1;
@@ -3107,7 +3115,9 @@ module ppc_core #(
     .result_retire_i(lsu_result_offer || !special_result_select),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
-    .result1_valid_i(sru_result_valid || iu_port1), .result1_i(result1),
+    .result1_valid_i(sru_result_valid || iu_port1 || special_port1), .result1_i(result1),
+    // Special results retire a cycle after they finish on either port.
+    .result1_retire_i(!special_port1),
     .wake1_valid_o(wake1_valid), .wake1_o(wake1),
     .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
     .head_o(cq_head_packet), .head1_o(cq_head1_packet),

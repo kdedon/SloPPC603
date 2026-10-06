@@ -46,6 +46,8 @@ module ppc_completion #(
   output ppc_pkg::wake_packet_t wake_o,
   // Second finish port, for a unit whose results never fault.
   input logic result1_valid_i,
+  // As result_retire_i, for the second port.
+  input logic result1_retire_i,
   // Its fault fields are only checked.
   /* verilator lint_off UNUSEDSIGNAL */
   input ppc_pkg::result_packet_t result1_i,
@@ -376,9 +378,9 @@ module ppc_completion #(
   always_comb begin
     // Finishing this cycle (finish_accept implies active and not done).
     head_now0 = result_clean && (result_i.producer.index == head_q);
-    head_now1 = finish1_accept && (result1_i.producer.index == head_q);
+    head_now1 = finish1_accept && result1_retire_i && (result1_i.producer.index == head_q);
     head1_now0 = result_clean && (result_i.producer.index == head1_q);
-    head1_now1 = finish1_accept && (result1_i.producer.index == head1_q);
+    head1_now1 = finish1_accept && result1_retire_i && (result1_i.producer.index == head1_q);
     retire_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
                                           (head_now0 || head_now1));
     retire_o = '0;

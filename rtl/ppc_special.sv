@@ -177,6 +177,8 @@ module ppc_special #(
   output logic retire_hold_o,
   // Registered: the lane owns the shared result port this cycle.
   output logic result_select_o,
+  // The result faults on nothing and writes no CR or XER field.
+  output logic result_port1_o,
   output ppc_pkg::completion_tag_t producer_o,
   output logic store_irrevocable_o,
   output logic [31:0] lr_o, ctr_o,
@@ -733,6 +735,8 @@ module ppc_special #(
   assign mem_dst_o = uop_q.dst;
   assign retire_hold_o = retire_hold_q;
   assign result_select_o = result_select_q;
+  assign result_port1_o = ((state_q == S_EXEC) || (state_q == S_TIMER_RESULT)) &&
+    !result_o.fault && !uop_q.write_cr_fields && !uop_q.write_cr_bit && !uop_q.write_xer;
   assign producer_o = producer_q;
   // The next plain access may dispatch on the releasing result edge.
   assign dispatch_ready_o = !cancel_i && ((state_q == S_IDLE) ||
