@@ -377,7 +377,7 @@ module ppc603e #(
     .aack_n_i, .artry_n_i,
     // Quiesced for nap or sleep: no snooping.
     .snoop_ts_n_i(ts_n_i || pin_status.quiesced), .snoop_a_i(a_i), .snoop_tt_i(tt_i),
-    .snoop_tbst_n_i(tbst_n_i),
+    .snoop_tbst_n_i(tbst_n_i), .snoop_probe_i(1'b0),
     .snoop_gbl_n_i(gbl_n_i), .artry_n_o(core_artry_n),
     .artry_oe_o(core_artry_oe),
     .dbg_n_i, .dbwo_n_i, .dbb_n_i, .dbb_n_o(core_dbb_n), .dbb_oe_o(core_dbb_oe),

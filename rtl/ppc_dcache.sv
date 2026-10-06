@@ -77,6 +77,8 @@ module ppc_dcache #(
   input  logic [4:0]   snoop_tt_i,
   // TBST asserted: a burst transfer.
   input  logic         snoop_burst_i,
+  // Query only: a hit the snoop would act on retries; nothing changes.
+  input  logic         snoop_probe_i,
   output logic         snoop_rsp_valid_o,
   output logic         snoop_rsp_artry_o,
   output logic         snoop_rsp_hit_o,
@@ -187,7 +189,7 @@ module ppc_dcache #(
   logic        snp_valid_q;
   logic [31:0] snp_addr_q;
   logic [4:0]  snp_tt_q;
-  logic        snp_burst_q;
+  logic        snp_burst_q, snp_probe_q;
   logic        snp_rsp_valid_q, snp_rsp_artry_q, snp_rsp_hit_q, snp_rsp_push_q;
 
   logic        resv_valid_q;
@@ -384,6 +386,8 @@ module ppc_dcache #(
     if (snp_valid_q && snp_class != SN_NONE) begin
       if (snp_conflict) begin
         s_artry = 1'b1;
+      end else if (snp_probe_q) begin
+        s_artry = hid0_dce_i && hit && (snp_dirty || snp_class != SN_CLEAN);
       end else if (hid0_dce_i && hit) begin
         if (snp_dirty && snp_class != SN_KILL) begin
           s_artry = 1'b1;
@@ -402,7 +406,7 @@ module ppc_dcache #(
     end
     // A lwarx whose read has not claimed its line reads after this snoop,
     // so the snoop does not cancel the reservation it sets.
-    s_resv_cancel = MUTATION != 4 && snp_valid_q && snp_cancel_type &&
+    s_resv_cancel = MUTATION != 4 && snp_valid_q && snp_cancel_type && !snp_probe_q &&
                     !s_artry && resv_valid_q && resv_line_q == snp_line &&
                     !(fsm_owns && !fsm_claims && req_op_q == DC_LWARX &&
                       req_line == snp_line);
@@ -927,6 +931,7 @@ module ppc_dcache #(
       snp_addr_q <= snoop_addr_i;
       snp_tt_q <= snoop_tt_i;
       snp_burst_q <= snoop_burst_i;
+      snp_probe_q <= snoop_probe_i;
     end
     if (rst_ni && snoop_valid_i) begin
       rd_set_q <= snoop_addr_i[5 +: SET_BITS];

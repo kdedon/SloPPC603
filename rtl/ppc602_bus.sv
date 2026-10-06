@@ -18,7 +18,10 @@
 // snooper one cycle late, so ARTRY can assert on the third cycle after TS
 // (8.3.2.3); such masters must give AACK no earlier than the second cycle
 // after TS. A snoop that meets the core's own address tenure, or hits a
-// queued write, is retried here.
+// queued write, is retried here. A target may inject a snoop (TS with TA
+// negated) into a burst read's data tenure (8.4.2); it gets no AACK, so one
+// is supplied internally on the second cycle after TS. Such a snoop only
+// queries the cache: a hit gives ARTRY with no push, and a kill invalidates.
 //
 // Buses are [63:0] with bit 63 = D0 (A0).
 module ppc602_bus #(
@@ -56,6 +59,7 @@ module ppc602_bus #(
   output logic [31:0] c_snoop_a_o,
   output logic [4:0]  c_snoop_tt_o,
   output logic        c_snoop_gbl_n_o,
+  output logic        c_snoop_probe_o,
   input  logic        c_artry_n_i,
   input  logic        c_artry_oe_i,
 
@@ -163,10 +167,11 @@ module ppc602_bus #(
   logic ext_aack_q, bridge_artry_q, artry_rel_q, artry_assert;
   logic queue_hit;
   logic [3:0] snoop_br_q;
+  logic inject, inj_q, inj_aack_q, inj_after_q, inj_probe_q;
 
   assign ext_ts = !ts_n_i && !own_ts_q;
   assign ext_start = ext_ts && !ext_open_q;
-  assign ext_aack = !aack_n_i && (ext_open_q || ext_start);
+  assign ext_aack = (!aack_n_i || inj_aack_q) && (ext_open_q || ext_start);
   // Queued writes the bus has not yet taken are this device's data.
   always_comb begin
     queue_hit = 1'b0;
@@ -187,8 +192,14 @@ module ppc602_bus #(
       bridge_artry_q <= 1'b0;
       artry_rel_q <= 1'b0;
       snoop_br_q <= '0;
+      inj_q <= 1'b0;
+      inj_aack_q <= 1'b0;
+      inj_after_q <= 1'b0;
     end else begin
-      ext_open_q <= ext_start ? aack_n_i : (ext_open_q && aack_n_i);
+      ext_open_q <= ext_start ? aack_n_i : (ext_open_q && !ext_aack);
+      inj_q <= ext_start && inject;
+      inj_aack_q <= inj_q;
+      inj_after_q <= inj_aack_q;
       after_aack_q <= ext_aack;
       snoop_ts_q <= ext_start;
       ext_aack_q <= ext_aack;
@@ -199,7 +210,7 @@ module ppc602_bus #(
         bridge_artry_q <= 1'b1;
       artry_rel_q <= artry_assert && after_aack_q;
       // A retry this device asserted may need its snoop push first.
-      if (artry_assert && after_aack_q && core_artry)
+      if (artry_assert && after_aack_q && core_artry && !inj_after_q)
         snoop_br_q <= 4'(SNOOP_BR_CYCLES);
       else if (snoop_br_q != '0)
         snoop_br_q <= snoop_br_q - 4'd1;
@@ -208,6 +219,7 @@ module ppc602_bus #(
       snoop_a_q <= d_i[63:32];
       snoop_tt_q <= d_i[9:5];
       snoop_gbl_q <= d_i[4];
+      inj_probe_q <= d_i[9:5] != TT_KILL && d_i[9:5] != TT_WRITE_KILL;
     end
   end
   // ARTRY runs from the cycle after TS through the cycle after AACK.
@@ -219,6 +231,7 @@ module ppc602_bus #(
   assign c_snoop_a_o = snoop_a_q;
   assign c_snoop_tt_o = snoop_tt_q;
   assign c_snoop_gbl_n_o = snoop_gbl_q;
+  assign c_snoop_probe_o = inj_q && inj_probe_q;
 
   // The core's grant waits for a free queue slot and for no other master's
   // address tenure, so its own TS never meets a snoop.
@@ -260,6 +273,7 @@ module ppc602_bus #(
                     count_q == 2'd2 && !q_q[1].write && q_q[1].burst &&
                     q_q[1].addr[10:5] == head.addr[10:5];
   assign want_bus = (state_q == P_IDLE) && !gap_q && head_ready;
+  assign inject = state_q == P_DATA && !first_q && head.burst && !head.write;
   assign qual_bg = !bg_n_i && bb_n_i && ts_n_i && artry_n_i;
 
   // Address phase word (Table 8-2).

@@ -5,6 +5,7 @@
 // 32-bit data modes (with waits and retries) and stores bytes, half words,
 // words and a misaligned word; then directed cases: a castout carrying
 // PFADDR ahead of its fill, a snoop retry and push to a second master,
+// snoops injected into a burst read (retry without push, kill),
 // INT, SRESET, TEA on a load and a posted store, and RESETO from the
 // watchdog and during HRESET, and nap with the QREQ/QACK handshake.
 /* verilator lint_off BLKSEQ */
@@ -362,6 +363,68 @@ module tb_chip602_pins;
     $display("snoop: %0d attempts", attempts);
   endtask
 
+  // ---- Injected snoop ------------------------------------------------------------
+  // The target injects a snoop of modified line s into the burst read of
+  // line r before beat `beat` (602UM 8.4.2): a RWITM hit gets ARTRY with no
+  // push and the line stays modified; a kill gets no ARTRY and invalidates.
+  task automatic inject_case(input bit kill, input int beat);
+    logic [31:0] s, r;
+    bit artry, wrote;
+    int attempts;
+    s = BASE + 32'ha000;
+    r = BASE + 32'hb000;
+    load_handlers();
+    mtspr(1008, HID0_DCE);
+    emit_const(9, s + 4);
+    emit_const(7, 32'h5a5a1234);
+    emit(asm_stw(7, 0, 9));
+    emit_const(9, r + 8);
+    emit(asm_lwz(8, 0, 9));
+    emit(asm_stw(8, LOOPS, 31));
+    done_mark(32'h1a1e, 1'b1);
+    halt();
+    put_word(r + 8, 32'h0b0b0008);
+    memory.t32_mode = 1'b0;
+    memory.inj_match = r;
+    memory.inj_addr = s;
+    memory.inj_tt = kill ? 5'b01100 : 5'b01110;
+    memory.inj_beat = beat;
+    memory.inj_en = 1'b1;
+    hard_reset();
+    wait_word(DATA + DONE, 32'h1a1e, 20000, "inject setup");
+    repeat (20) @(negedge clk);
+    if ($test$plusargs("LOG"))
+      foreach (memory.log_addr[i])
+        $display("  %08x tt=%05b burst=%0d", memory.log_addr[i], memory.log_tt[i], memory.log_burst[i]);
+    check(!memory.inj_en, "snoop injected");
+    check(mem_word(DATA + LOOPS) == 32'h0b0b0008, "read data across the injected snoop");
+    check(memory.inj_artry == !kill, kill ? "kill hit: no ARTRY" : "injected hit: ARTRY");
+    wrote = 1'b0;
+    foreach (memory.log_addr[i])
+      if (memory.log_addr[i][31:5] == s[31:5] && !memory.log_tt[i][3]) wrote = 1'b1;
+    check(!wrote, "no push for the injected snoop");
+    check(mem_word(s + 4) == 32'h0, "line not written back");
+    attempts = 0;
+    do begin
+      memory.om_addr = s;
+      memory.om_req = 1'b1;
+      do @(negedge clk);
+      while (memory.om_req);
+      artry = memory.om_artry;
+      attempts++;
+      if (artry) repeat (40) @(negedge clk);
+    end while (artry && attempts < 8);
+    if (kill) begin
+      check(attempts == 1, "killed line not snooped");
+      check(memory.om_line[0][31:0] == 32'h0, "killed store discarded");
+    end else begin
+      check(!artry && attempts >= 2, "line still modified: retried then pushed");
+      check(memory.om_line[0][31:0] == 32'h5a5a1234, "pushed store after injection");
+    end
+    $display("inject kill=%0d beat=%0d: artry=%0d, %0d attempts", kill, beat,
+             memory.inj_artry, attempts);
+  endtask
+
   // ---- INT, SRESET, TEA ---------------------------------------------------------
   task automatic int_sreset_case;
     logic [31:0] top, loops;
@@ -504,6 +567,9 @@ module tb_chip602_pins;
     icache_real_case(4'b0001);
     icache_real_case(4'b0100);
     snoop_case();
+    inject_case(1'b0, 1);
+    inject_case(1'b0, 3);
+    inject_case(1'b1, 2);
     int_sreset_case();
     tea_case();
     reseto_case();

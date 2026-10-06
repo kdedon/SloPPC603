@@ -536,7 +536,7 @@ module ppc_translated_measure #(
     .pin_event_i('0), .pin_status_o(),
     .snoop_ts_n_i(snoop_ts_n_i_ibq), .snoop_a_i(snoop_a_i_ibq),
     .snoop_tt_i(snoop_tt_i_ibq), .snoop_tbst_n_i(snoop_tbst_n_i_ibq),
-    .snoop_gbl_n_i(snoop_gbl_n_i_ibq),
+    .snoop_gbl_n_i(snoop_gbl_n_i_ibq), .snoop_probe_i(1'b0),
     .artry_n_o(artry_n_o_od), .artry_oe_o(artry_oe_o_od),
     /* verilator lint_on PINCONNECTEMPTY */
     .decrementer_taken_o(decrementer_taken_o_od),
