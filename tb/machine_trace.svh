@@ -60,9 +60,17 @@ always @(posedge `MT_CLK) begin
   automatic string store = "";
   if (mt_fd != 0 && `MT_BAT.pdmem_req_valid_o && `MT_BAT.pdmem_req_ready_i &&
       `MT_BAT.pdmem_req_write_o && (|`MT_BAT.pdmem_req_wstrb_o) &&
-      `MT_BAT.pdmem_req_attr_o.kind != ppc_pkg::DMEM_CACHE)
-    store = $sformatf(" st=%08x,%0x,%08x", `MT_BAT.pdmem_req_addr_o,
-                      `MT_BAT.pdmem_req_wstrb_o, `MT_BAT.pdmem_req_wdata_o[31:0]);
+      `MT_BAT.pdmem_req_attr_o.kind != ppc_pkg::DMEM_CACHE) begin
+    // A doubleword store fills all eight lanes, its high word at the address.
+    automatic logic [63:0] wdata = 64'(`MT_BAT.pdmem_req_wdata_o);
+    automatic logic [7:0] wstrb = 8'(`MT_BAT.pdmem_req_wstrb_o);
+    if (|wstrb[7:4])
+      store = $sformatf(" st=%08x,%0x,%08x st=%08x,%0x,%08x", `MT_BAT.pdmem_req_addr_o,
+                        wstrb[7:4], wdata[63:32], `MT_BAT.pdmem_req_addr_o + 32'd4,
+                        wstrb[3:0], wdata[31:0]);
+    else
+      store = $sformatf(" st=%08x,%0x,%08x", `MT_BAT.pdmem_req_addr_o, wstrb[3:0], wdata[31:0]);
+  end
   if (mt_fd != 0 && `MT_CORE.rst_ni && `MT_CORE.retire_valid_o && `MT_CORE.retire_ready_i &&
       `MT_CORE.retire_o.seq_partial)
     mt_removed += int'(`MT_CORE.retire_o.removed_branches);
