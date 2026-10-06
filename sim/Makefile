@@ -2407,6 +2407,18 @@ MACHINE_PROGRAMS ?= hello dhrystone coremark whetstone selftest
 .PHONY: test-reference-machine
 test-reference-machine: reference-checkout demo-soc-model
 	python3 cosim/run_machine_reference.py --build-dir $(BUILD_DIR)/reference-machine --reference $(REFERENCE_DIR) --model $(BUILD_DIR)/demo/model/Vtb_demo_soc --image-dir $(DEMO_FW_DIR) --programs $(MACHINE_PROGRAMS)
+# The demo programs built little-endian (they switch to MSR[LE] at reset)
+# against DingusPPC built with little-endian mode (docs/REFERENCE_MACHINE.md).
+DEMO_LE_FW_DIR ?= ../toolchain/build/demo-le
+MACHINE_LE_PROGRAMS ?= hello dhrystone coremark
+.PHONY: demo-le-firmware test-reference-le-machine
+demo-le-firmware:
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) ENDIAN=little all
+test-reference-le-machine: reference-checkout demo-soc-model
+	mkdir -p $(BUILD_DIR)/reference-le-machine
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+CHIP_ENABLE_FPU=1 --top-module tb_chip_firmware --Mdir $(BUILD_DIR)/reference-le-machine/chip -I../tb $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_firmware.sv
+	python3 cosim/run_machine_reference.py --little-endian --build-dir $(BUILD_DIR)/reference-le-machine --reference $(REFERENCE_DIR) --model $(BUILD_DIR)/demo/model/Vtb_demo_soc --image-dir $(DEMO_LE_FW_DIR) --programs $(MACHINE_LE_PROGRAMS) --chip-le $(BUILD_DIR)/reference-le-machine/chip/Vtb_chip_firmware
 # Demo programs' dispatch/retire traces against the 603e dispatch, serialization,
 # completion and writeback rules (docs/DUAL_DISPATCH_DESIGN.md). The width and
 # LSU unit follow the build (DISPATCH_WIDTH, VERILATOR=tools/verilate-lsu-pipe).
