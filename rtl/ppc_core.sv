@@ -336,6 +336,7 @@ module ppc_core #(
   logic trace_mode, trace_armed_q, trace_pending_q, fetch_machine_check_head;
   fetch_packet_t queued;
   logic frontend_fence, frontend_quiescent, power_stop;
+  logic bu_spec, bs_valid_q, bs_miss_q, bs_busy, bs_hold, bu_redirect_d;
   logic interrupt_qualified, interrupt_admit, resume_override_valid_q;
   logic decrementer_pending, external_irq_q;
   logic watchdog_interrupt, watchdog_reset, watchdog_reseto;
@@ -357,14 +358,14 @@ module ppc_core #(
       watchdog_interrupt) &&
       msr[MSR_EE] && !fetch_machine_check_head)) &&
     !fault_pending && !halted_o;
+  // A removed predicted branch may be unresolved with the CQ empty.
   assign interrupt_admit = interrupt_qualified && !seq_active && cq_empty && normal_idle &&
-    lsu_empty && !special_busy && special_ready && !recovery_accepted;
+    lsu_empty && !special_busy && special_ready && !recovery_accepted && !bs_busy;
   assign interrupt_resume_pc = resume_override_valid_q ?
     resume_override_target_q : committed_next_pc_q;
   logic [31:0] special_branch_target, special_exception_target, lr, ctr;
   // Branch unit (see the branch-unit block below).
   logic bu_branch, bu_ready, bu_taken, bu_reads_cr, bu_reads_lr, bu_reads_ctr;
-  logic bu_spec, bs_valid_q, bs_miss_q, bs_busy, bs_hold, bu_redirect_d;
   logic bu_writes_ctr, bu_ctr_ok, bu_cond_ok, bu_redirect_q;
   logic lr_pending_q, ctr_pending_q, lk_pending_q, frontend_clear;
   logic [31:0] bu_target, bu_next_pc, bu_target_q, frontend_target;
