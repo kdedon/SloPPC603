@@ -10,7 +10,9 @@
 //   push lanes ─► [5] [4] [3] [2] [DQ1] [DQ0] ─► dispatch
 module ppc_iq #(
   parameter int WIDTH = 32,
-  parameter int DEPTH = 6
+  parameter int DEPTH = 6,
+  // Low bits of an entry that rec_write_i rewrites in the youngest survivor.
+  parameter int REC_W = 1
 ) (
   input logic clk_i, rst_ni,
   input logic clear_i,
@@ -23,6 +25,9 @@ module ppc_iq #(
   input logic [WIDTH-1:0] push0_data_i, push1_data_i,
   // pop_i[1] pops DQ1 with DQ0.
   input logic [1:0] pop_i,
+  // Needs a survivor of this cycle's pops.
+  input logic rec_write_i,
+  input logic [REC_W-1:0] rec_i,
   output logic [1:0] valid_o,
   output logic [WIDTH-1:0] dq0_o, dq1_o,
   output logic [$clog2(DEPTH + 1)-1:0] count_o
@@ -60,6 +65,8 @@ module ppc_iq #(
       end else if (COUNT_WIDTH'(i) == survivors + 1'b1) begin
         entries[i] <= push1_data_i;
       end
+      if (rec_write_i && (COUNT_WIDTH'(i) + 1'b1 == survivors))
+        entries[i][REC_W-1:0] <= rec_i;
     end
   end
   always_ff @(posedge clk_i) begin

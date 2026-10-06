@@ -337,6 +337,9 @@ module tb_core_dual #(
     $display("  %-34s %08x@%0d %08x@%0d", what, 32'(older), rcycle[older], 32'(younger),
              rcycle[younger]);
   endfunction
+  function automatic logic dispatched(input int pc);
+    return (dcycle.exists(pc) != 0) && (dcycle[pc] != -1);
+  endfunction
   task automatic finish_run();
     logic [31:0] expected [32];
     for (int i = 0; i < 32; i++) expected[i] = '0;
@@ -382,15 +385,22 @@ module tb_core_dual #(
       if (dut.BRANCH_REMOVAL && (dcycle.exists(32'h6c) != 0) && (dcycle[32'h6c] != -1))
         $fatal(1, "a plain b was dispatched");
       // Pairing needs the add fetched into DQ1 by then.
-      expect_pair(32'h94, !dq1_empty[32'h94], "unresolved bc + add");
+      // A predicted bc leaves the IQ as it is queued when an older entry
+      // stays queued to carry its prediction (UM 6.4.1.1); the cmpw before
+      // this one dispatches as the bc is queued.
+      if (!dut.BS_ANCHOR) expect_pair(32'h94, !dq1_empty[32'h94], "unresolved bc + add");
       expect_pair(32'ha0, 1'b1, "divwu + addi");
       expect_pair(32'hac, LSU_PIPE, "or + lwz, base in rename");
-      expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
+      if (dut.BS_ANCHOR) begin
+        if (dispatched(32'he4)) $fatal(1, "a predicted bc was dispatched");
+      end else expect_pair(32'he0, 1'b1, "cmpw + predicted bc in DQ1");
       // A resolved bc without LR or CTR writes is removed as it is queued.
       if (!dut.BRANCH_REMOVAL) expect_pair(32'hf0, 1'b1, "addi + resolved bc in DQ1");
       else if ((dcycle.exists(32'hf4) != 0) && (dcycle[32'hf4] != -1))
         $fatal(1, "a resolved bc was dispatched");
-      expect_pair(32'hfc, 1'b1, "cmpw + mispredicted bc in DQ1");
+      if (dut.BS_ANCHOR) begin
+        if (dispatched(32'h100)) $fatal(1, "a mispredicted removed bc was dispatched");
+      end else expect_pair(32'hfc, 1'b1, "cmpw + mispredicted bc in DQ1");
       if (!dut.BRANCH_REMOVAL || ((dcycle.exists(32'h110) != 0) && (dcycle[32'h110] != -1)))
         expect_pair(32'h110, 1'b1, "resolved bc + addi");
       if (dut.HAS_SRU && !(dcycle[32'h128] <= dcycle[32'h120] + 2))

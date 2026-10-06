@@ -494,8 +494,9 @@ module ppc_core #(
   // prediction, BO[1], BI, removal count and alternate target.
   localparam int BREC_W = 40;
   logic [BREC_W-1:0] push_rec, iq_rec, dq1_rec;
-  logic rem1_pred;
-  logic [31:2] rem1_alt;
+  logic rem0_pred, rem0_in, rem1_pred, last_carry_q;
+  logic [31:2] rem0_alt, rem1_alt;
+  logic [BREC_W-1:0] rem0_rec;
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [1:0] d1_ea;
@@ -957,8 +958,8 @@ module ppc_core #(
       if ((iq_in1 || (iq_push1 && rem1_pred)) && crb1 && ((iq_in0 && crw0) || cr_dep)) begin
         crb_left_q <= iq_in1 ? pos1 : pos0;
         crbw_left_q <= (iq_in0 && crw0) ? pos0 : crw_after;
-      end else if (iq_in0 && crb0 && cr_dep) begin
-        crb_left_q <= pos0;
+      end else if ((iq_in0 || rem0_in) && crb0 && cr_dep) begin
+        crb_left_q <= iq_in0 ? pos0 : pos0 - IQ_COUNT_WIDTH'(1);
         crbw_left_q <= crw_after;
       end else begin
         crb_left_q <= left_after(crb_left_q, iq_pops);
@@ -1021,14 +1022,15 @@ module ppc_core #(
     {queued1, push_uop1, fold_predict1, push_branch1, push_pair1s, fetch_removed_q + 2'd1,
      BREC_W'(0)};
   ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W),
-           .DEPTH(IQ_DEPTH)) iq (
+           .DEPTH(IQ_DEPTH), .REC_W(BREC_W)) iq (
     .clk_i, .rst_ni, .clear_i(fe_clear), .flush_i(bs_now),
     .push_valid_i({iq_in0 && iq_in1, iq_in0 || iq_in1}), .push_ready_o(iq_push_ready),
     .push2_ready_o(iq_push2_ready),
     .push0_data_i(iq_lane0),
     .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1, 2'd0,
                    BREC_W'(0)}),
-    .pop_i({dispatch1, iq_pop}), .valid_o({iq_valid1, iq_valid}),
+    .pop_i({dispatch1, iq_pop}), .rec_write_i(rem0_in), .rec_i(rem0_rec),
+    .valid_o({iq_valid1, iq_valid}),
     .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb, iq_rec}), .dq1_o(iq_dq1),
     .count_o(iq_count)
   );
@@ -1061,7 +1063,33 @@ module ppc_core #(
   // first lane and counts both removals.
   assign push_remove0 = BRANCH_REMOVAL && !trace_mode && (fetch_removed_q != 2'd3) &&
     (plain_b(queued) ||
-     (res0[1] && (res0[0] ? fold_predict : (!fd1_valid || !fetch_removed_q[1]))));
+     (res0[1] && (res0[0] ? fold_predict : (!fd1_valid || !fetch_removed_q[1]))) ||
+     (rem0_pred && (fold_predict || !fd1_valid || !fetch_removed_q[1])));
+  // A predicted bc in lane 0 hands its record to the youngest IQ entry
+  // that survives this cycle's dispatch.
+  assign rem0_pred = BS_ANCHOR && !trace_mode && !wait0 && crb0 && !res0[1] &&
+    (queued.insn[31:26] == 6'd16) && queued.insn[23] && !queued.insn[0] &&
+    last_carry_q && (iq_count != iq_pops);
+  assign rem0_in = iq_push0 && push_remove0 && rem0_pred;
+  assign rem0_alt = fold_predict ? queued.pc[31:2] + 30'd1 :
+    (queued.insn[1] ? 30'b0 : queued.pc[31:2]) + {{16{queued.insn[15]}}, queued.insn[15:2]};
+  assign rem0_rec = {1'b1, fold_predict, queued.insn[24], queued.insn[20:16],
+                     fetch_removed_q + 2'd1, rem0_alt};
+  // The youngest IQ entry may carry a record: it allocates, holds none,
+  // and writes CR only from the IU.
+  /* verilator lint_off UNUSEDSIGNAL */  // most packet and uop fields
+  function automatic logic can_carry(fetch_packet_t p, uop_t u, iq_pair_t q, logic [3:0] br);
+    return (p.fault == FETCH_OK) && !br[3] && !u.illegal && !u.privileged &&
+      ((q.unit == UNIT_IU) || ((q.unit == UNIT_LSU) && !cr_writer(u)));
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || frontend_clear || bs_now) last_carry_q <= 1'b0;
+    else if (iq_in1) last_carry_q <= can_carry(queued1, push_uop1, push_pair1, push_branch1);
+    else if (iq_in0)
+      last_carry_q <= !push_rec[BREC_W-1] && can_carry(queued, push_uop, push_pair, push_branch);
+    else if (rem0_in) last_carry_q <= 1'b0;
+  end
   assign push_remove1 = BRANCH_REMOVAL && !trace_mode && !wait0 &&
     (plain_b(queued1) || (res1[1] && (!res1[0] || fold_predict1)) || rem1_pred);
   // A predicted bc on a CR bit alone also leaves the IQ (UM 6.4.1.1): the
