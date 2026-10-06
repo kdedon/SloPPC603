@@ -44,7 +44,7 @@ def read_events(path):
                 continue
             cyc = int(m.group(1))
             for pc in m.group(4).split():
-                disp.append((cyc, int(pc, 16)))
+                disp.append((cyc, int(pc.rstrip("*"), 16)))
             for pc in m.group(5).split():
                 ret.append((cyc, int(pc, 16)))
             if m.group(6) and int(m.group(6)):
@@ -65,14 +65,31 @@ def read_stalls(path):
     return stall, alone
 
 
-def align(events, pcs, start_hint=0):
-    """Index into events where the PC sequence pcs begins."""
-    n = min(4096, len(pcs))     # short windows repeat inside byte loops
-    epcs = [p for _, p in events]
-    for j in range(start_hint, len(epcs) - n + 1):
-        if epcs[j] == pcs[0] and epcs[j:j + n] == pcs[:n]:
-            return j
-    sys.exit("cannot align the event trace with the retire log")
+def align(events, pcs, branch, start_hint=0):
+    """Event cycle of each instruction in pcs.
+
+    A branch removed before the IQ or at dispatch has no event of its own
+    (BRANCH_REMOVAL); it takes the previous instruction's cycle."""
+    keep = [k for k, pc in enumerate(pcs) if not branch[k]]
+    want = [pcs[k] for k in keep]
+    skip = {pc for pc, b in zip(pcs, branch) if b}
+    sel = [j for j, (_, p) in enumerate(events) if j >= start_hint and p not in skip]
+    epcs = [events[j][1] for j in sel]
+    n = min(4096, len(want))    # short windows repeat inside byte loops
+    for s in range(len(epcs) - n + 1):
+        if epcs[s] == want[0] and epcs[s:s + n] == want[:n]:
+            break
+    else:
+        sys.exit("cannot align the event trace with the retire log")
+    out, j, last = [], sel[s], events[sel[s]][0]
+    for k, pc in enumerate(pcs):
+        if j < len(events) and events[j][1] == pc:
+            last = events[j][0]
+            j += 1
+        elif not branch[k]:
+            sys.exit(f"retired instruction {pc:08x} does not match the event trace")
+        out.append(last)
+    return out
 
 
 def read_symbols(path):
@@ -114,7 +131,7 @@ def main():
     pm.ARGS = args
     pm.Insn.div_cycles = args.div
 
-    recs = pm.read_trace(args.retire_log)
+    recs = pm.read_trace(args.retire_log, args.dump)
     stream = [(pc, w, recs[i + 1][1]) for i, (_, pc, w) in enumerate(recs[:-1])]
     sched = pm.schedule(stream, args.fetch == "any", frozenset(args.core))
     disp, ret = read_events(args.dispatch_trace)
@@ -122,12 +139,11 @@ def main():
     pcs = [pc for pc, _, _ in stream]
     with open(args.retire_log) as fh:
         first = next(int(m.group(1)) for m in map(pm.TRACE_RE.match, fh) if m)
-    jr = align(ret, pcs, max(0, first - 64))
-    jd = align(disp, pcs, max(0, first - 64))
-    bad = sum(1 for k, pc in enumerate(pcs)
-              if jd + k >= len(disp) or disp[jd + k][1] != pc or ret[jr + k][1] != pc)
-    if bad:
-        sys.exit(f"{bad} retired instructions do not match the event trace")
+    branch = [pm.Insn(pc, w, args.mul).unit == "BPU" for pc, w, _ in stream]
+    # The window's first retirement bounds where its events start.
+    hint = next((j for j, (c, _) in enumerate(disp) if c >= recs[0][0] - 64), 0)
+    rcyc = align(ret, pcs, branch, next((j for j, (c, _) in enumerate(ret) if c >= recs[0][0]), 0))
+    dcyc = align(disp, pcs, branch, hint)
     marks = [i for i, pc in enumerate(pcs) if pc == args.mark]
     if len(marks) < 4:
         sys.exit("fewer than four iterations in the window")
@@ -147,8 +163,8 @@ def main():
     leaders = set()
     total_excess, total_deficit = Counter(), 0
     for i in range(lo - 8, hi + 1):
-        cdi = disp[jd + i][0]
-        cri = ret[jr + i][0]
+        cdi = dcyc[i]
+        cri = rcyc[i]
         mdi = model_front(i)
         mri = sched[i]["C"]
         if rd is None:
@@ -184,7 +200,7 @@ def main():
         rd, rm = nd, nm
         cd, cm = max(cd, cri), max(cm, mri)
 
-    core_cyc = (ret[jr + hi][0] - ret[jr + lo][0]) / iters
+    core_cyc = (rcyc[hi] - rcyc[lo]) / iters
     model_cyc = (sched[hi]["C"] - sched[lo]["C"]) / iters
     print(f"iterations {iters}, instructions per iteration {(hi - lo) / iters:.1f}")
     print(f"core {core_cyc:.1f} cycles, 603e model {model_cyc:.1f}, "
@@ -223,11 +239,11 @@ def main():
         ins = s["ins"]
         if ins.unit != "BPU":
             k = ins.kind
-            lat_c[k][ret[jr + i][0] - disp[jd + i][0]] += 1
+            lat_c[k][rcyc[i] - dcyc[i]] += 1
             lat_m[k][s["C"] - s["D"]] += 1
         elif stream[i][2] != stream[i][0] + 4:
             k = ins.kind + (" mispredicted" if s.get("mispredict") else "")
-            red_c[k][disp[jd + i + 1][0] - disp[jd + i][0]] += 1
+            red_c[k][dcyc[i + 1] - dcyc[i]] += 1
             red_m[k][model_front(i + 1) - s["X"]] += 1
 
     def dist(c):

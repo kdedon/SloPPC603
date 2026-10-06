@@ -52,10 +52,14 @@ module tb_demo_soc #(
       cycles++;
       if (soc.cpu.retire_valid) begin
         if (retired >= trace_from && retired < trace_to) begin
-          $display("retire %0d cycle %0d pc %08x insn %08x", retired, cycles,
+          // A removed branch takes the number before the packet it precedes.
+          $display("retire %0d cycle %0d pc %08x insn %08x",
+                   retired + longint'(soc.cpu.retire.removed_branches), cycles,
                    soc.cpu.retire.pc, soc.cpu.retire.insn);
           if (soc.cpu.cpu.translated_core.core.commit1)
-            $display("retire %0d cycle %0d pc %08x insn %08x", retired + 1, cycles,
+            $display("retire %0d cycle %0d pc %08x insn %08x",
+                     retired + 1 + longint'(soc.cpu.retire.removed_branches) +
+                     longint'(soc.cpu.cpu.translated_core.core.retire1_o.removed_branches), cycles,
                      soc.cpu.cpu.translated_core.core.retire1_o.pc,
                      soc.cpu.cpu.translated_core.core.retire1_o.insn);
         end

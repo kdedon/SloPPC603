@@ -474,14 +474,68 @@ def schedule(stream, fetch_any=False, core=frozenset()):
 TRACE_RE = re.compile(r"retire (\d+) cycle (\d+) pc ([0-9a-f]{8}) insn ([0-9a-f]{8})")
 
 
-def read_trace(path):
-    recs = []
+def read_trace(path, dump=None):
+    """(cycle, pc, word) per retirement. Branches removed by the core
+    (BRANCH_REMOVAL) count as retirements but print no line; with the
+    disassembly they are restored from the gap in retirement numbers."""
+    recs, words, last = [], read_words(dump), None
     with open(path) as fh:
         for line in fh:
             m = TRACE_RE.match(line)
-            if m:
-                recs.append((int(m.group(2)), int(m.group(3), 16), int(m.group(4), 16)))
+            if not m:
+                continue
+            n, cyc, pc = int(m.group(1)), int(m.group(2)), int(m.group(3), 16)
+            if last is not None and n > last + 1:
+                if not words:
+                    sys.exit("removed branches in the trace: pass --dump")
+                recs.extend((cyc, b, words[b]) for b in removed_path(recs[-1], n - last - 1,
+                                                                     pc, words))
+            recs.append((cyc, pc, int(m.group(4), 16)))
+            last = n
     return recs
+
+
+def branch_targets(pc, word):
+    """Possible next PCs of a branch whose target is in the word."""
+    op = word >> 26
+    if op == 18:
+        return [(0 if word & 2 else pc) + sext(word & 0x3FFFFFC, 26) & 0xFFFFFFFF]
+    if op == 16:
+        return [pc + 4, (0 if word & 2 else pc) + sext(word & 0xFFFC, 16) & 0xFFFFFFFF]
+    return [pc + 4]
+
+
+def removed_path(prev, count, nxt, words):
+    """The count removed branches between retired record prev and PC nxt."""
+    _, ppc, pword = prev
+    def walk(starts, left):
+        for b in starts:
+            w = words.get(b)
+            if w is None or Insn(b, w, 3).unit != "BPU":
+                continue
+            if left == 1:
+                return [b]
+            rest = walk(branch_targets(b, w), left - 1)
+            if rest:
+                return [b] + rest
+        return None
+    starts = branch_targets(ppc, pword) if Insn(ppc, pword, 3).unit == "BPU" else [ppc + 4]
+    path = walk(starts, count)
+    if path is None:
+        sys.exit(f"cannot place {count} removed branches after {ppc:08x} before {nxt:08x}")
+    return path
+
+
+def read_words(path):
+    words = {}
+    if not path:
+        return words
+    with open(path) as fh:
+        for line in fh:
+            m = re.match(r"([0-9a-f]{8}):\s+((?:[0-9a-f]{2} ){4})", line)
+            if m:
+                words[int(m.group(1), 16)] = int(m.group(2).replace(" ", ""), 16)
+    return words
 
 
 def read_dump(path):
@@ -519,7 +573,7 @@ def main():
             print(f"{k}: {v}")
         return
     Insn.div_cycles = ARGS.div
-    recs = read_trace(ARGS.trace)
+    recs = read_trace(ARGS.trace, ARGS.dump)
     if len(recs) < 3:
         sys.exit("trace has no retirements")
     stream = [(pc, w, recs[i + 1][1]) for i, (_, pc, w) in enumerate(recs[:-1])]
