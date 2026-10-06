@@ -15,7 +15,9 @@ directory and builds it there with little-endian support, then compares the
 little-endian program retirement by retirement; see
 [LITTLE_ENDIAN_VERIFICATION.md](LITTLE_ENDIAN_VERIFICATION.md#dingusppc-comparison)
 (Recorded: `make -C sim test-reference-le`, commit `6cdb1dc`, 2026-10-04: PASS,
-1,760 retirements, 2,718 memory words).
+1,760 retirements, 2,718 memory words). `make -C sim test-reference-le-machine` runs
+whole little-endian programs in lockstep; see
+[REFERENCE_MACHINE.md](REFERENCE_MACHINE.md#little-endian-programs).
 
 ## Reproduce
 

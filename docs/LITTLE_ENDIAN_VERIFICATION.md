@@ -81,10 +81,39 @@ The RTL needed no change. The comparison establishes agreement with DingusPPC fo
 one program on PID7v; it does not cover PID6, the 603 or the 602, dual dispatch, the
 chip top, or FPR values other than through stores.
 
+## Whole-program comparison
+
+Recorded: `make -C sim lint check-spec`, `make -C sim test-reference-le-machine
+test-reference-le test-reference-machine test-reference-machine-mmu
+REFERENCE_DIR=<dingusppc> DEMO_FW_DIR=<main checkout>/toolchain/build/demo`, and
+`make -C sim test-reference-le-machine DISPATCH_WIDTH=2
+VERILATOR=tools/verilate-lsu-pipe VERILATOR_TOOL=tools/verilate-lsu-pipe`, commit
+`d8b2215` plus documentation, 2026-10-06. Images from `make -C sim demo-le-firmware`.
+
+`test-reference-le-machine` ([REFERENCE_MACHINE.md](REFERENCE_MACHINE.md#little-endian-programs))
+passes; instructions compared:
+
+| Program | Width 1 | Width 2, LSU unit (records) | Notes |
+|---|---:|---:|---|
+| chip-le (`tb_chip_firmware`, FPU) | 10,301 | 10,301 (8,060) | 9 exceptions, `le_misaligned=101`, `le_fp_split=2` |
+| hello | 9,960,222 | 9,960,010 (8,382,570) | 400,676 stores |
+| dhrystone | 2,247,523 | 2,214,410 (1,748,737) | |
+| coremark | 4,107,801 | 4,090,899 (3,253,203) | |
+
+Six negative controls (seven at width 2, where a late store exists) over the first
+200,000 `hello` records each fail, including a store moved to the other word of its
+doubleword. `test-reference-le`, `test-reference-machine` (five programs) and
+`test-reference-machine-mmu` still pass.
+
+Mismatches: the first chip-le run failed at an `stfd`: the machine trace printed only
+the low word of a doubleword store. The bench now writes both words; no RTL change. The
+other DingusPPC deviations are those in the table above, now applied by the shared
+adapter. No RTL defect was found.
+
 ## Not established
 
-- DingusPPC compares only the PID7v program (`test-reference-le`); it models no other
-  variant's alignment rules.
+- DingusPPC comparisons cover PID7v only; they model no other variant's alignment
+  rules.
 - The chip bench covers data and fetch munging; the DSI and `MSR[ILE]` paths are covered
   only by `test-core-le`.
 - Misaligned `eciwx`/`ecowx` stay alignment exceptions on every variant;

@@ -151,6 +151,15 @@ need `ENABLE_FPU`: their start-up sets MSR[FP], and without an FPU they exit wit
 Everything is compiled with the pinned cross compiler at `-O2 -mcpu=603e -msoft-float
 -fno-builtin`.
 
+`make -C sim demo-le-firmware` builds `hello`, `dhrystone` and `coremark` with
+`-mlittle-endian` into `toolchain/build/demo-le` (`ENDIAN=little`). The reset vector holds a
+big-endian stub, its instruction pairs swapped, that sets MSR[ILE] and enters `_reset`
+by `rfi` with MSR[LE] set ([LITTLE_ENDIAN.md](LITTLE_ENDIAN.md)). Registers are addressed
+at offset XOR 4, so the munged word access reaches the big-endian register; the
+framebuffer is not corrected. `bin2hex64.py --le` reverses each image doubleword, the
+layout munged accesses expect (PEM 3.1.4). The toolchain's libgcc is big-endian only;
+`divdi3.c` supplies the 64-bit division these images need.
+
 The `nbench` and `embench` images ([BENCHMARKS.md](BENCHMARKS.md)) add a C library
 subset (`toolchain/demo/libc/`), fetched soft-float routines and libm, and shared
 helpers (`bench.c`). They use the memory map above unchanged, but reserve 8 KiB
