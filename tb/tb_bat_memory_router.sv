@@ -603,8 +603,9 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
       @(posedge clk_i);@(negedge clk_i);imem_req_valid_i=0;
       wait_pimem(32'h40001234,4'b0000);return_pimem(32'h60000000);
 
-      // Protection/guarded faults are held typed responses. PP=00 with G=1
-      // reports protection, as the page path does. Typed faults leave the
+      // Protection faults are held typed responses; PP=00 with G=1 reports
+      // protection, as the page path does. IBATs have no G bit (UM 3.5), so
+      // PP=10 with G=1 (cause 2) fetches unguarded. Typed faults leave the
       // sticky diagnostic outputs clear.
       for (int cause=1;cause<=3;cause++) begin
         reset_router();
@@ -615,11 +616,16 @@ module tb_bat_memory_router #(parameter bit ENABLE_LIVE_CONTEXT = 1'b0);
         imem_req_addr_i=32'h1240;imem_req_valid_i=1;
         #1;check(imem_req_ready_o,"fault request not admitted");
         @(posedge clk_i);@(negedge clk_i);imem_req_valid_i=0;
+        if (cause == 2) begin
+          wait_pimem(32'h40001240,4'b0000);return_pimem(32'h60000000);
+          check(!ifetch_fatal_o && !translation_fault_o,
+                "IBAT G caused a fault");
+          continue;
+        end
         while(!imem_rsp_valid_o && !ifetch_fatal_o) @(negedge clk_i);
         repeat(4) begin
           check(imem_rsp_valid_o &&
-                imem_rsp_fault_o == (cause == 2 ? ppc_pkg::FETCH_ISI_GUARDED :
-                                                  ppc_pkg::FETCH_ISI_PROTECTION) &&
+                imem_rsp_fault_o == ppc_pkg::FETCH_ISI_PROTECTION &&
                 !ifetch_fatal_o && !pimem_req_valid_o && !context_ready_o,
                 "typed local fault lost cause/ownership under stall");
           @(negedge clk_i);
