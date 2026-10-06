@@ -35,7 +35,8 @@ dingusppc() {
 for part in "${parts[@]}"; do
   case "${part}" in
     dingusppc) dingusppc ;;
-    benchmarks) "${repo}/toolchain/demo/fetch-benchmarks.sh" ;;
+    benchmarks) "${repo}/toolchain/demo/fetch-benchmarks.sh" && "${repo}/toolchain/demo/fetch-doom.sh" &&
+      "${repo}/toolchain/demo/fetch-quake.sh" ;;
     framework) "${repo}/mister/fetch-framework.sh" ;;
     *) usage ;;
   esac

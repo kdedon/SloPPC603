@@ -52,7 +52,7 @@ module tb_mister #(
     .ddram_busy_i(ddram_busy), .ddram_addr_o(ddram_addr), .ddram_burstcnt_o(ddram_burstcnt),
     .ddram_din_o(ddram_din), .ddram_be_o(ddram_be), .ddram_we_o(ddram_we),
     .ddram_rd_o(ddram_rd), .ddram_dout_i('0), .ddram_dout_ready_i(1'b0),
-    .image_i(1'b0), .ioctl_download_i(1'b0), .ioctl_wr_i(1'b0), .ioctl_addr_i('0),
+    .image_i(1'b0), .wad_i(1'b0), .wad_munge_i(1'b0), .ioctl_download_i(1'b0), .ioctl_wr_i(1'b0), .ioctl_addr_i('0),
     .ioctl_dout_i('0), .ioctl_wait_o(ioctl_wait),
     .console_valid_o(console_valid), .console_data_o(console_data),
     .exit_valid_o(exit_valid), .exit_code_o(exit_code), .checkstop_o(checkstop)

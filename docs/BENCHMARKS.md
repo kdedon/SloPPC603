@@ -1,4 +1,4 @@
-# Benchmarks: nbench, Embench-IoT and Whetstone
+# Benchmarks: nbench, Embench-IoT, Whetstone, Doom and Quake
 
 Two benchmark suites run on the demonstration system ([DEMO_SOC.md](DEMO_SOC.md))
 alongside Dhrystone and CoreMark: nbench (BYTEmark) and Embench-IoT; so does Whetstone,
@@ -18,6 +18,11 @@ its SHA-256 and caches it under `toolchain/build/demo/src` (git-ignored).
 | soft-fp | <https://github.com/gcc-mirror/gcc/tree/2ee5e4300186a92ad73f1a1a64cb918dc76c8d67/libgcc/soft-fp> (GCC 12.2.0, the pinned compiler's version) | GPL-3.0 with the GCC Runtime Library Exception |
 | libm | <https://github.com/kraj/musl/tree/0784374d561435f7c787a555aeab8ede699ed298/src/math> (musl 1.2.5) | MIT |
 | Whetstone 1.2 | <https://www.netlib.org/benchmark/whetstone.c> (Rich Painter's C conversion of the double-precision Whetstone, 22 March 1998), fetched from the archived copy <https://web.archive.org/web/20241229210241id_/https://www.netlib.org/benchmark/whetstone.c>: netlib keeps no revisions, so the snapshot and its SHA-256 are the pin | Painter Engineering notice: permission "to use, duplicate, and publish this text and program as long as it includes this entire comment block and limited rights reference" |
+| doomgeneric | <https://github.com/ozkl/doomgeneric/tree/dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284> (Chocolate Doom based), fetched by `toolchain/demo/fetch-doom.sh` | GPL-2.0 |
+| `DOOM1.WAD` 1.9 | <https://github.com/Akbar30Bill/DOOM_wads/blob/9b384dc68add3eb2f5eb7754654cafeeaea5103b/doom1.wad>, SHA-256 `1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771` (MD5 `f0cefca49926d00903cf57551d901abe`, the published v1.9 shareware hash) | id Software shareware terms: redistribute unmodified, not for sale |
+| quakegeneric | <https://github.com/erysdren/quakegeneric/tree/13052102577c629650cf07a46151a4b6e1b19c3c> (WinQuake based), fetched by `toolchain/demo/fetch-quake.sh` | GPL-2.0 |
+| Amiga Quake 1.09 v2.30 source | <http://server.owl.de/~frank/quake1/2.30/Quake_src.lha>, SHA-256 `f61211db6e16b277771a79e6e2d2f41b100301293c9aa5e0b99c355f42c50d30`; licence statement from `QuakeMOS.readme` in <http://server.owl.de/~frank/quake1/2.30/QuakeMOS.lha> (SHA-256 `ef7a1be41c67b05a52354912002e7520c1821d2c4db0ffde29988560ff7975d8`) | GPL-2.0 ("Quake is published under the GNU Public License", with `COPYING`) |
+| `pak0.pak` 1.06 | <https://github.com/pweil-/origin-quake/blob/45f9279d81577cdf6a018277b200683ec75dac98/id1/pak0.pak>, SHA-256 `35a9c55e5e5a284a159ad2a62e0e8def23d829561fe2f54eb402dbc0a9a946af` (the Quake v1.06 shareware `id1/pak0.pak`) | id Software shareware terms: redistribute unmodified, not for sale |
 
 Consequences for built images:
 
@@ -25,7 +30,22 @@ Consequences for built images:
   image is GPL-3.0.** Distributing it means offering the corresponding source: the
   pinned upstream files plus this repository's glue. Releases publish the MiSTer image
   `ppc603e-embench.bin` with `ppc603e-embench.SOURCE.txt` (links to both at fixed
-  commits) and `ppc603e-embench-source.tar.gz` (both, fetched).
+  commits) and `ppc603e-source.tar.gz` (both, fetched).
+- **The Doom images contain doomgeneric (GPL-2.0), so they are GPL-2.0.** Releases
+  publish `ppc603e-doom.bin` and `ppc603e-doom-le.bin` with `ppc603e-doom.SOURCE.txt`
+  (the doomgeneric commit and this repository at the release commit) and the same
+  `ppc603e-source.tar.gz`, which holds the fetched doomgeneric files.
+- **`DOOM1.WAD` is id Software's shareware Doom v1.9 IWAD.** The shareware terms allow
+  redistribution of the unmodified file, not for sale. The build fetches it and checks
+  its SHA-256; releases publish it byte for byte as its own file. No image or archive
+  embeds it, and nothing alters it: the core munges it for little-endian programs while
+  loading, in DDR3, never in the file.
+- **The Quake images contain quakegeneric (GPL-2.0), and `ppc603e-quake.bin` and
+  `ppc603e-quake-le.bin` the Amiga port's assembly (GPL-2.0), so they are GPL-2.0.**
+  Releases publish them with `ppc603e-quake.SOURCE.txt` and the same `ppc603e-source.tar.gz`, which holds the
+  fetched quakegeneric files and the Amiga archives. `pak0.pak` is handled as
+  `DOOM1.WAD` is: fetched, hash-checked, published unmodified as its own file, never
+  embedded. The build's `lha.py` is ours; no LHA or vasm tool is used.
 - An nbench image contains BYTE's code under no stated licence. Use it for measurement;
   do not redistribute built images without checking the terms yourself.
 - soft-fp's runtime exception and musl's MIT licence place no condition on the images
@@ -188,6 +208,249 @@ The photo line: `WHETSTONE 50MHz soft-float|FPU <MWIPS> MWIPS <per MHz>/MHz PASS
 FPU executes one floating-point instruction at a time
 ([FPU_CORE_INTEGRATION.md](FPU_CORE_INTEGRATION.md#execution-model-serialized)), so the
 hard-float figure is not a 603e's.
+
+## Doom
+
+`-timedemo demo3` of the shareware `DOOM1.WAD` (v1.9) on
+[doomgeneric](https://github.com/ozkl/doomgeneric/tree/dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284),
+as loadable MiSTer images in both byte orders: `ppc603e-doom.bin` (big-endian) and
+`ppc603e-doom-le.bin` (little-endian, `-mlittle-endian`). Sources:
+[`toolchain/demo/doom/`](../toolchain/demo/doom). Build them with
+`toolchain/demo/fetch-benchmarks.sh`, `toolchain/demo/fetch-doom.sh` and
+`toolchain/build-in-container.sh -f demo/Makefile doom` (or `mister-images`, which also
+copies `DOOM1.WAD` to `build/mister/images/`).
+
+- **Engine.** doomgeneric's sources unchanged, built `-O2 -fsigned-char` with
+  `CMAP256` at 320 × 200: the engine's own 8-bit indexed frame and the `PLAYPAL`
+  palette, which match the framebuffer's format. No sound, no input.
+- **Platform** (`platform.c`). Each frame goes to the framebuffer at the largest
+  integer scale up to 3 that leaves room for the result lines (3 at 1920 × 1080, 1 at
+  320 × 240); the copy is part of the frame time, as the VGA copy is on a PC. The
+  palette goes to the palette registers when it changes. Time comes from the time base
+  (a quarter of the clock in `MODE`), so `I_GetTime` runs at 35 Hz.
+- **C library** (`libc.c`, `include/`): our own, freestanding: strings, a first-fit
+  heap over the data region, the printf family, and read-only `FILE`s. `fopen` of
+  `doom1.wad` returns a view of the WAD in memory at `0x01800000`; its size comes from
+  the WAD's directory. 64-bit division is `dimath.c`, soft float the fetched GCC
+  soft-fp (the toolchain has no little-endian libgcc).
+- **Loop.** The engine ends a timedemo with `I_Error("timed %i gametics in %i
+  realtics ...")`. `exit` takes the two numbers from that message, keeps them in a
+  section start-up does not clear, and restarts the program, which copies its data
+  and clears its BSS again and so runs the next pass from a fresh state. The screen
+  shows the last eight passes as gametics, realtics and FPS = gametics × 35 / realtics
+  to one decimal; the console (`CONSOLE` register) gets one line per pass,
+  `doom: pass N gametics G realtics R fps F`.
+- **Byte order.** The engine's `SHORT`/`LONG` macros follow `__BYTE_ORDER__`: the
+  big-endian build swaps WAD fields, the little-endian build reads them as they are.
+  The little-endian build reads the same file, munged by the core while loading.
+- **Memory.** Code, constants and the data load image sit in the 1 MiB image window
+  at `0xfff00000` (about 420 KiB); data, BSS, a 23 MiB heap and the stack are in the
+  64 MiB data region at 0, below the WAD at `0x01800000`
+  ([MISTER_CORE.md](MISTER_CORE.md#data-region-and-data-loading)).
+
+### Image layout
+
+`doom/stub.S`, always big-endian, sits at `0xfff00100`. It sets the BATs (BAT0 the
+image window, DBAT1 the device window, BAT2 the 64 MiB data region, all but DBAT1
+cacheable), enables both caches and enters the program at `0xfff01500` through `rfi`
+with `MSR[IR,DR]`; the little-endian stub first sets `MSR[ILE]` with `mtmsr` and
+then `MSR[LE]` through `SRR1`, as [LITTLE_ENDIAN.md](LITTLE_ENDIAN.md#mode-changes)
+describes. The program (`doom/start.S` vectors from `0x200`, entry, C) is built in its
+own byte order. `doom/mkimage.py` writes the image: zeros, the program from `0x200`,
+and for `--le` every doubleword byte-reversed (file byte n holds program byte
+n XOR 7, the layout munged little-endian accesses expect), then the stub's
+unmunged bytes at `0x100`. Device registers are words at A XOR 4 and screen bytes
+at A XOR 7 in the little-endian build.
+
+### Smoke run
+
+`make -C sim test-mister-doom` builds the smoke images (`ppc603e-doom-smoke.bin`,
+`ppc603e-doom-le-smoke.bin`), which stop after gametic `DOOM_SMOKE_TICS` (6) and print
+a CRC-32 of the 320 × 200 frame and the 768-byte palette, and the cycles per gametic
+from gametic 3. `tb_mister_load` downloads `DOOM1.WAD` through the ioctl port (munged
+for the little-endian run), checks every byte, then loads and runs the image. The
+bench compares both CRCs with a host build of the same engine, arguments and WAD
+(`toolchain/demo/doom/host.c`).
+
+Recorded: `make -C sim test-mister-doom`, commit `703baec`, 2026-10-05. Passes.
+
+| Image | Frame CRC at gametic 6 | Cycles per gametic (3–6) | Cycles from reset to exit | DDRAM reads (beats) |
+|---|---|---:|---:|---:|
+| `ppc603e-doom-smoke.bin` (big-endian, 421,944 bytes) | `da456448` | 2,245,072 | 103,943,984 | 617,933 (2,471,567) |
+| `ppc603e-doom-le-smoke.bin` (little-endian, 424,456 bytes) | `da456448` | 2,358,978 | 108,468,603 | 624,313 (2,497,087) |
+| Host build (x86-64) | `da456448` | | | |
+
+Both downloads of `DOOM1.WAD` (4,196,020 bytes, the second munged) checked byte for
+byte. This establishes that both byte orders load the WAD, initialise the engine, start
+demo3 and render the same frame and palette as the host build; at the bench's DDR3
+model (24-cycle read latency, random `BUSY`) a gametic with its frame takes about
+2.2–2.4 M cycles, about 21–22 FPS at 50 MHz, from gametics 3–6 only (the hangar's
+opening view). The host build plays the full demo3 in 2134 gametics; a pass of
+another length shows `DESYNC`. Not covered: a full timedemo pass (about 5 G cycles),
+the loop and result screen, the HPS's real DDR3 latency, a fit, or hardware.
+
+## Quake
+
+`timedemo demo1` of the shareware `pak0.pak` (Quake v1.06) on
+[quakegeneric](https://github.com/erysdren/quakegeneric/tree/13052102577c629650cf07a46151a4b6e1b19c3c)
+(WinQuake's software renderer), looping, as loadable MiSTer images. Sources:
+[`toolchain/demo/quake/`](../toolchain/demo/quake). Build them with
+`toolchain/demo/fetch-benchmarks.sh`, `toolchain/demo/fetch-quake.sh` and
+`toolchain/build-in-container.sh -f demo/Makefile quake` (or `mister-images`, which also
+copies `pak0.pak` to `build/mister/images/`).
+
+| Image | Float | Byte order | Renderer | Cores |
+|---|---|---|---|---|
+| `ppc603e-quake.bin` | hard | big | PowerPC assembly | FPU |
+| `ppc603e-quake-le.bin` | hard | little | PowerPC assembly | FPU |
+| `ppc603e-quake-sf.bin` | soft | big | C | any; shows the FPU's gain |
+
+- **Engine.** quakegeneric's sources, built `-O2 -fsigned-char`. The port's own video
+  layer (`qport.c`) replaces `vid_null.c`, which fixes 320 × 240, with the classic
+  320 × 200; its system layer replaces `sys_null.c`. No sound, no input, no network.
+  The engine's 8 MiB heap, a 600 KiB surface cache, and `d_subdiv16 1`.
+- **Platform** (`platform.c`): the framebuffer copy, scale and palette as for Doom; time
+  from the time base. pak0.pak is read in place at `0x01800000`.
+- **C library**: the Doom port's (`doom/libc.c`), whose `fopen` serves `pak0.pak` from
+  memory and whose `fscanf` reads the demo's track number, plus `setjmp.S` (no
+  `lmw`/`stmw`, which little-endian mode rejects), `qlibc.c`, and musl's `sin`, `cos`,
+  `tan`, `atan`, `atan2`, `pow`, `sqrt`, `sqrtf`, `floor`, `ceil` (pinned with the other
+  libm sources). There is no `fsqrt`: `sqrt` is musl's integer routine; the assembly's
+  vector code uses `frsqrte` with Newton steps.
+- **Loop.** The engine prints `969 frames ... seconds ... fps` at the end of a pass
+  and stops the demo. The port records the frame count and the engine's elapsed time,
+  shows the last eight passes as frames, seconds and FPS (`DESYNC` when a pass has
+  other than 969 frames, the count of demo1 on the host build), prints
+  `quake: pass N frames F ms T fps X` on the console, and starts the next pass with
+  `timedemo demo1`.
+- **Memory.** About 400 KiB of code and constants in the image window; data, BSS and
+  a 23 MiB heap in the 64 MiB data region below pak0.pak at `0x01800000`, which takes
+  18.7 MB of the 40 MiB above it.
+
+### PowerPC assembly
+
+`ppc603e-quake.bin` and `ppc603e-quake-le.bin` take the rendering routines from Frank
+Wille's Amiga Quake 1.09 v2.30 source (`Quake_src.lha`, GPL-2.0 per the release's
+`QuakeMOS.readme`: "Quake is published under the GNU Public License"), fetched at a
+pinned SHA-256 and unpacked by our `lha.py`: `d_scanPPC`, `r_surfPPC`, `d_polysetPPC`, `d_edgePPC`, `r_edgePPC`,
+`r_drawPPC`, `r_aliasPPC`, `r_aclipPPC`, `d_skyPPC`, `d_surfPPC`, `mathlibPPC`,
+`r_miscPPC`, `r_bspPPC`, `r_lightPPC`, and their constants `fconstPPC`. Nothing of it
+is committed; three scripts of ours adapt it at build time:
+
+- `asmconv.py` turns the vasm syntax into GNU as: positional macro parameters (`\1`)
+  become named ones, `$` becomes `.`, `.rodata` a section, local labels (`.loop`,
+  scoped between global labels) get a suffix per scope, and the register names become
+  symbols so that `.rept 32-r24` evaluates. For the little-endian image, `--le`
+  fixes the accesses that assume big-endian order within a word or doubleword (below).
+- `asmoffsets.py` writes `quakedefPPC.i`, which the archive lacks, from the original
+  generator's command file `quakeasmheaders.gen`: the cross-compiler measures each
+  `offsetof` and `sizeof` in quakegeneric's own headers (and the structures
+  `d_polyse.c` defines) and prints them into its assembly output.
+- `asmpatch.py` copies the engine with the C definitions of the 56 functions the
+  assembly provides removed (as the original's `#if !defined(PPCASM)`), `static`
+  dropped from the variables it reads (`miplevel`, `ziscale`, `makeleftedge`,
+  `makerightedge`), and the span drawer chosen by `d_subdiv16`.
+
+The routines use the SVR4 ABI of the macros: they save r14–r31 and f14–f31 they use
+and address globals absolutely, never through r2 or r13 (the images build
+`-msdata=none`). `D_DrawSpans16`, `D_DrawSpans8`, `Turbulent8` and `D_DrawSkyScans8`
+take 1/z from `frsqrte(z²)` followed by two Newton–Raphson steps. The 603e specifies
+the estimate to 1/32 (5 bits); ours is a 16-entry table per exponent parity. Two steps
+give about 20 bits, past the 16.16 texture coordinates; the smoke run below shows the
+result.
+
+The assembly moves values between FPRs and GPRs through memory in big-endian word
+order: `fctiwz`, `stfd` at X, then `lwz` of the low word at X+4; and the integer to
+double conversion `stw` of `x ^ 0x80000000` at X+4 into a doubleword whose high word
+at X is `0x43300000`, then `lfd`. In little-endian mode a doubleword access is not
+munged and a word access goes to EA XOR 4, so the program sees true little-endian
+order: the low word of a double at X, the high word at X+4. `asmconv.py --le` handles
+both deterministically. In each function or macro, a word, halfword or byte access with
+the same base register and symbolic offset as an `lfd`/`stfd`, within that doubleword,
+moves to its mirror (offset k of size n to 8 − n − k), and a `.long` of exactly two hex
+words (a double written as words) swaps them. It rewrites 78 accesses: the `lwz` after
+`stfd` in every float-to-int conversion (span, sky, edge, alias, clip, draw and light
+routines), the `stw` in the `int2dbl` macro, `anglemod`'s `lhz` and two `stw`, and a
+`stw`/`lfs` pair in `d_edgePPC` that moves together; and the two constants `INT2DBL_0`
+(`0x4330000080000000`) and `c64kDIV360`. Every other `lfd`/`stfd` saves FPRs or loads a
+whole double.
+
+The routines also move pairs of `short` as one word: `D_CalcGradients` loads
+`texturemins[2]` and `extents[2]` of `msurface_t` and takes element 0 from the high
+half, and the edge code stores and loads `surfs[2]` of `edge_t`. `--le` rotates each such
+word by 16 after the `lwz` and around the `stw` (five accesses, listed in the script).
+Without it the walls show one texel per surface. The other word accesses are to `int`
+and pointer members; bytes and halfwords are read at their own sizes. `D_DrawZSpans`
+packs two 16-bit z values per word as the C code does, which is little-endian order.
+
+### Quake smoke run
+
+`make -C sim test-mister-quake` (needs `HOSTCC32`, a compiler for i386 programs) builds
+the smoke images, which run `timedemo demo1` with the clock advanced 1/20 s per frame,
+so every build renders the same frames, and stop at timedemo frame
+`QUAKE_SMOKE_FRAMES` (8). Each prints a CRC-32 of the frame and palette, the cycles per
+frame from frame 3, and the frame as hex lines. `tb_mister_load` preloads `pak0.pak`
+into its DDR3 model (`+WAD_PRELOAD`, munged with `+WAD_LE`) instead of downloading
+18.7 MB through the ioctl port; Doom's bench covers the download path.
+`sim/tools/quake_frame_diff.py` compares each frame with the host build's
+(`toolchain/demo/quake/host.mk`: the same engine and port, i386 with SSE arithmetic).
+
+Recorded: `tb_mister_load` runs equal to `make -C sim test-mister-quake` (same images,
+plusargs and comparison; the host build in a Debian trixie container with
+`gcc-multilib`), images built at commit `84fe00a`, 2026-10-05. All four exit 0.
+
+| Image | Frame 8 CRC | Pixels differing from host | Cycles per frame (3–8) | Cycles from reset to exit | DDRAM reads (beats) |
+|---|---|---:|---:|---:|---:|
+| `ppc603e-quake-smoke.bin` (hard float, BE, assembly; 399,304 bytes) | `f1d64b5c` | 475 (0.74%) | 6,514,255 | 208,906,456 | 1,537,573 (6,150,127) |
+| `ppc603e-quake-bec-smoke.bin` (hard float, BE, C; 401,096 bytes) | `1458a682` | 0 | 7,333,000 | 210,456,616 | 1,500,510 (6,001,875) |
+| `ppc603e-quake-lec-smoke.bin` (then `-le-smoke`; hard float, LE, C; 402,472 bytes) | `1458a682` | 0 | 7,510,772 | 217,060,812 | 1,505,958 (6,023,667) |
+| `ppc603e-quake-sf-smoke.bin` (soft float, BE, C; 441,648 bytes) | `1458a682` | 0 | 21,283,032 | 348,534,190 | 1,564,926 (6,259,539) |
+| Host build (i386, SSE) | `1458a682` | | | | |
+
+The three C builds render exactly the host's frame: fused multiply-adds in the
+hard-float builds and musl's maths change no pixel here. The assembly build differs in
+475 pixels, all in the world (rows 80–129) and the weapon model (rows 130–159): texel
+choices at the 16-pixel perspective steps of `D_DrawSpans16` (the C renderer steps every
+8) and in the polygon-model drawers; palette index differences are large where a
+neighbouring texel is chosen (mean 53), the RGB difference small (mean 5.2 of 255,
+largest 55). Frame 8 still shows the console over the view (the console retracts over the
+first frames of the demo); per frame the assembly saves 11% against C, hard float in C
+runs 2.9 times as fast as soft float, and little-endian C costs 2.4% more than
+big-endian. Start-up to the first timedemo frame takes about 150 M cycles (3 s at 50 MHz).
+With `QUAKE_SMOKE_FRAMES=40` (images rebuilt so at commit `a1c8206`; frame 40 shows the
+level without the console): the hard-float big-endian assembly image renders frame 40
+with CRC `2a5656ec`, 4,019 pixels (6.3%) from the host's (palette index mean 46, RGB mean
+5.1, largest 52), at 5,745,077 cycles per frame over frames 3–40 (388,906,268 to exit);
+the C image renders the host's frame exactly (CRC `7d911abf`) at 6,325,374
+(407,833,680). The assembly saves 9.2% per frame there: about 8.7 frames per second at
+50 MHz against 7.9 in C.
+
+Recorded: `tb_mister_load` runs equal to `make -C sim test-mister-quake QUAKE_VARIANTS="be le"`
+(the frame comparison without the host frame), images built at commit `1f382f7`,
+2026-10-05; frame 40 by the same run of `ppc603e-quake-le-smoke.bin` built with
+`QUAKE_SMOKE_FRAMES=40`. All exit 0.
+
+| Image | Frame | CRC | Pixels differing from BE assembly | Cycles per frame (from 3) | Cycles from reset to exit |
+|---|---:|---|---:|---:|---:|
+| `ppc603e-quake-smoke.bin` (BE, assembly; 399,304 bytes) | 8 | `f1d64b5c` | | 6,514,255 | 208,906,456 |
+| `ppc603e-quake-le-smoke.bin` (LE, assembly; 400,656 bytes) | 8 | `f1d64b5c` | 0 | 6,685,814 | 215,085,908 |
+| `ppc603e-quake-le-smoke.bin` (LE, assembly) | 40 | `2a5656ec` | CRC equal to the BE frame 40 below | 5,923,378 | 400,825,529 |
+
+The little-endian assembly image renders the big-endian one's frames exactly. Per frame
+(3–8) it takes 11.0% fewer cycles than little-endian C (7,510,772) and 2.6% more than
+big-endian assembly; over frames 3–40, 3.1% more than big-endian assembly (5,745,077).
+It does not show the sky, water or a full pass.
+
+The host build with `QUAKE_SMOKE_FRAMES=0` (`make -f demo/quake/host.mk`, real clock)
+plays two passes through the port's loop, 969 frames each, its count matching the
+engine's own `969 frames ... fps` line both times.
+
+Not covered on the processor: a full pass (969 frames, about 6 G cycles), the result
+screen and loop,
+the download of `pak0.pak` through the core, the HPS's DDR3 latency, a fit, or
+hardware.
+
+## Running
 
 ## Running
 

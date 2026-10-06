@@ -288,3 +288,9 @@ its buffer, a write tenure is buffered and stored afterwards one doubleword per 
 while the next grant is held. The MiSTer core maps a loaded program image this way
 ([MISTER_CORE.md](MISTER_CORE.md#loading-programs)). The default, 0, leaves the system
 as above.
+
+With `XDATA_BYTES` nonzero too (a power of two), the `XDATA_BYTES` from `XDATA_BASE`
+(default 0) are a second window on the same port while `xmem_map_i` is high. Its
+addresses carry bit 28 of `xmem_addr_o` set; the host maps each window to its own
+memory. The MiSTer core uses it for a 64 MiB data region at processor address 0
+([MISTER_CORE.md](MISTER_CORE.md#data-region-and-data-loading)).

@@ -2551,6 +2551,74 @@ test-mister-load: mister-load-model
 	  timeout 3600 ./$(MISTER_LOAD_OUT)/model/Vtb_mister_load $(SIM_ARGS) +MAX_CYCLES=1000000000 \
 	    +IMAGE=$(DEMO_FW_DIR)/images/ppc603e-$$i-smoke.bin $$menu +PPM=$(MISTER_LOAD_OUT)/$$i.ppm || exit 1; \
 	  python3 tools/ppm_to_png.py $(MISTER_LOAD_OUT)/$$i.ppm $(MISTER_LOAD_OUT)/$$i.png; menu=; done
+# Doom smoke (docs/BENCHMARKS.md#doom): the big- and little-endian smoke
+# images run in tb_mister_load with DOOM1.WAD downloaded first (munged for
+# little-endian) to gametic DOOM_SMOKE_TICS. Both frame checksums must equal
+# a host build's of the same engine, arguments and WAD.
+DOOM_OUT := $(BUILD_DIR)/mister/doom
+HOSTCC ?= gcc
+DOOM_SMOKE_TICS ?= 6
+DOOM_DG := ../toolchain/build/demo/src/doomgeneric/doomgeneric
+DOOM_WAD := ../toolchain/build/demo/wad/DOOM1.WAD
+include ../toolchain/demo/doom/engine.mk
+.PHONY: doom-host test-mister-doom
+doom-host:
+	../toolchain/demo/fetch-doom.sh
+	mkdir -p $(DOOM_OUT)
+	$(HOSTCC) -O1 -w -fsigned-char -fno-strict-aliasing -DCMAP256 -DDOOMGENERIC_RESX=320 \
+	  -DDOOMGENERIC_RESY=200 -I$(DOOM_DG) $(addprefix $(DOOM_DG)/,$(addsuffix .c,$(DOOM_ENGINE))) \
+	  ../toolchain/demo/doom/host.c -o $(DOOM_OUT)/doom-host
+	ln -sf $(abspath $(DOOM_WAD)) $(DOOM_OUT)/doom1.wad
+	cd $(DOOM_OUT) && ./doom-host $(DOOM_SMOKE_TICS) | grep '^doom: gametic' > host.txt
+test-mister-doom: mister-load-model doom-host
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) doom DOOM_SMOKE_TICS=$(DOOM_SMOKE_TICS)
+	for e in be le; do \
+	  img=ppc603e-doom-smoke; flag=; [ $$e = le ] && img=ppc603e-doom-le-smoke && flag=+WAD_LE; \
+	  timeout 14400 ./$(MISTER_LOAD_OUT)/model/Vtb_mister_load $(SIM_ARGS) +MAX_CYCLES=4000000000 \
+	    +WAD=$(DOOM_WAD) $$flag +IMAGE=$(DEMO_FW_DIR)/doom/$$img.bin +PPM=$(DOOM_OUT)/$$e.ppm \
+	    > $(DOOM_OUT)/$$e.log 2>&1 || { tail -20 $(DOOM_OUT)/$$e.log; exit 1; }; \
+	  grep '^doom: gametic' $(DOOM_OUT)/$$e.log > $(DOOM_OUT)/$$e.txt; \
+	  cmp $(DOOM_OUT)/host.txt $(DOOM_OUT)/$$e.txt || { cat $(DOOM_OUT)/host.txt $(DOOM_OUT)/$$e.txt; exit 1; }; \
+	  grep -E '^doom: [0-9]+ cycles|^image: exit|^PASS' $(DOOM_OUT)/$$e.log | sed "s/^/$$e: /"; \
+	  python3 tools/ppm_to_png.py $(DOOM_OUT)/$$e.ppm $(DOOM_OUT)/$$e.png; done
+	cat $(DOOM_OUT)/host.txt
+
+# Quake smoke (docs/BENCHMARKS.md#quake): the smoke images of the five
+# variants run in tb_mister_load with pak0.pak preloaded (munged for
+# little-endian) to timedemo frame QUAKE_SMOKE_FRAMES at a fixed frame time.
+# Each prints a CRC-32 of the frame and palette, its cycles per frame and
+# the frame itself, which quake_frame_diff.py compares with the host build
+# of the same engine. The two hard-float C builds must agree with each other,
+# and so must the two assembly builds.
+# quakegeneric is 32-bit only: HOSTCC32 must build i386 programs.
+QUAKE_OUT := $(BUILD_DIR)/mister/quake
+QUAKE_SMOKE_FRAMES ?= 8
+QUAKE_PAK := ../toolchain/build/demo/pak/pak0.pak
+QUAKE_VARIANTS ?= be bec le lec sf
+HOSTCC32 ?= gcc -m32
+.PHONY: quake-host test-mister-quake
+quake-host:
+	../toolchain/demo/fetch-quake.sh
+	$(MAKE) -C ../toolchain -f demo/quake/host.mk QUAKE_SMOKE_FRAMES=$(QUAKE_SMOKE_FRAMES) \
+	  HOSTCC32="$(HOSTCC32)"
+test-mister-quake: mister-load-model quake-host
+	../toolchain/demo/fetch-benchmarks.sh
+	$(DEMO_FW_MAKE) quake QUAKE_SMOKE_FRAMES=$(QUAKE_SMOKE_FRAMES)
+	mkdir -p $(QUAKE_OUT)
+	for v in $(QUAKE_VARIANTS); do \
+	  img=ppc603e-quake-$$v-smoke; flag=; [ $$v = be ] && img=ppc603e-quake-smoke; case $$v in le*) flag=+WAD_LE;; esac; \
+	  timeout 14400 ./$(MISTER_LOAD_OUT)/model/Vtb_mister_load $(SIM_ARGS) +MAX_CYCLES=40000000000 \
+	    +WAD=$(QUAKE_PAK) +WAD_PRELOAD $$flag +IMAGE=$(DEMO_FW_DIR)/quake/$$img.bin \
+	    +PPM=$(QUAKE_OUT)/$$v.ppm > $(QUAKE_OUT)/$$v.log 2>&1 || { tail -20 $(QUAKE_OUT)/$$v.log; exit 1; }; \
+	  grep -E '^quake: (timedemo|[0-9]+ cycles)|^image: exit' $(QUAKE_OUT)/$$v.log | sed "s/^/$$v: /"; done
+	python3 tools/quake_frame_diff.py ../toolchain/build/demo/quake/host/$(QUAKE_SMOKE_FRAMES)/quake-frame.bin \
+	  $(addprefix $(QUAKE_OUT)/,$(addsuffix .log,$(QUAKE_VARIANTS)))
+	for p in "be le" "bec lec"; do set -- $$p; \
+	  if [ -f $(QUAKE_OUT)/$$1.log ] && [ -f $(QUAKE_OUT)/$$2.log ]; then \
+	    a=$$(grep '^quake: timedemo' $(QUAKE_OUT)/$$1.log); b=$$(grep '^quake: timedemo' $(QUAKE_OUT)/$$2.log); \
+	    [ "$$a" = "$$b" ] || { echo "$$1 and $$2 frames differ"; exit 1; }; fi; done
+
 # Uninitialized-state sweep: core, chip, demo SoC and MiSTer benches rerun
 # with several random initial values (XRAND builds) plus all-zero and all-one
 # state, so a register or memory that is used or written before reset

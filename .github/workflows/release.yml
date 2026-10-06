@@ -98,9 +98,10 @@ jobs:
       - name: Program images
         if: matrix.suite == 'test'
         run: |
-          for name in selftest embench whetstone whetstone-hf ${{ vars.MISTER_IMAGES || '' }}; do
+          for name in selftest embench whetstone whetstone-hf doom doom-le quake quake-le quake-sf ${{ vars.MISTER_IMAGES || '' }}; do
             cp "build/mister/images/ppc603e-${name}.bin" build/mister/
           done
+          cp build/mister/images/DOOM1.WAD build/mister/images/pak0.pak build/mister/
       - uses: actions/upload-artifact@v4
         with:
           name: mister-${{ matrix.suite }}
@@ -108,6 +109,8 @@ jobs:
             build/mister/*.rbf
             build/mister/*.json
             build/mister/*.bin
+            build/mister/*.WAD
+            build/mister/*.pak
 
   publish:
     needs: [fit, fpu, mister]
@@ -119,18 +122,20 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      # The Embench image and core are GPL-3.0: publish their corresponding source.
-      - name: Embench source
-        run: ci/source-archive.sh artifacts/ppc603e-embench-source.tar.gz
+      # The Embench (GPL-3.0), Doom and Quake (GPL-2.0) images: publish their corresponding source.
+      - name: Program source
+        run: ci/source-archive.sh artifacts/ppc603e-source.tar.gz
       - name: Release notes
         run: |
           previous="$(git describe --tags --abbrev=0 --exclude unstable "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
           python3 ci/release_notes.py --tag "${GITHUB_REF_NAME}" ${previous:+--since "${previous}"} \
-            $(find artifacts -name '*.json' | sort) --images $(find artifacts -name '*.bin' | sort) \
-            --embench-source artifacts/ppc603e-embench.SOURCE.txt > notes.md
+            $(find artifacts -name '*.json' | sort) --images $(find artifacts -name '*.bin' -o -name '*.WAD' -o -name '*.pak' | sort) \
+            --embench-source artifacts/ppc603e-embench.SOURCE.txt \
+            --doom-source artifacts/ppc603e-doom.SOURCE.txt \
+            --quake-source artifacts/ppc603e-quake.SOURCE.txt > notes.md
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" --notes-file notes.md \
-            $(find artifacts -type f \( -name '*.rbf' -o -name '*.json' -o -name '*.bin' -o -name '*.tar.gz' -o -name '*.txt' \) | sort)
+            $(find artifacts -type f \( -name '*.rbf' -o -name '*.json' -o -name '*.bin' -o -name '*.WAD' -o -name '*.pak' -o -name '*.tar.gz' -o -name '*.txt' \) | sort)

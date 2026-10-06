@@ -15,7 +15,9 @@
 // ports, its reads end with TEA, and the scan-out is a blank 320 x 240.
 // With XMEM_BYTES nonzero and xmem_map_i high, the first XMEM_BYTES from
 // RAM_BASE are external memory on the xmem_* port (soc_xmem_bridge) instead
-// of the RAM; xmem_map_i changes only under reset.
+// of the RAM; xmem_map_i changes only under reset. With XDATA_BYTES nonzero
+// too, the XDATA_BYTES from XDATA_BASE are a second window on the same port,
+// flagged by xmem_addr_o bit 28.
 module ppc603e_demo_soc #(
   parameter logic [31:0] RAM_BASE = 32'hfff0_0000,
   parameter int RAM_BYTES = 262144,
@@ -31,6 +33,10 @@ module ppc603e_demo_soc #(
   parameter logic [31:0] FB_BASE = 32'hf000_0000,
   // External memory window, a power of two of at least 32 bytes, or 0.
   parameter int XMEM_BYTES = 0,
+  // Data window on the external memory port while mapped, a power of two or 0;
+  // XMEM_BYTES must be nonzero.
+  parameter logic [31:0] XDATA_BASE = 32'h0000_0000,
+  parameter int XDATA_BYTES = 0,
   // Processor clock in MHz, reported in the MODE register.
   parameter int SYS_MHZ = 50,
   // Floating-point unit in the processor, reported in MODE bit 8.
@@ -184,6 +190,7 @@ module ppc603e_demo_soc #(
   function automatic logic [1:0] decode(input logic [31:0] a, input logic map, output logic hit);
     hit = 1'b1;
     if (XMEM_BYTES != 0 && map && a - RAM_BASE < 32'(XMEM_BYTES)) return SEL_XMEM;
+    if (XDATA_BYTES != 0 && map && a - XDATA_BASE < 32'(XDATA_BYTES)) return SEL_XMEM;
     if (a - RAM_BASE < 32'(RAM_BYTES)) return SEL_RAM;
     if (a - FB_BASE < 32'(FB_WORDS * 8)) return SEL_FB;
     if (a - IO_BASE < 32'h1000) return SEL_IO;
@@ -230,23 +237,33 @@ module ppc603e_demo_soc #(
     );
   end
   if (XMEM_BYTES != 0) begin : g_xmem
-    localparam int XMEM_AW = $clog2(XMEM_BYTES / 8);
+    // Doubleword offset bits, plus the window bit with a data window.
+    localparam int WIN_BYTES = XDATA_BYTES > XMEM_BYTES ? XDATA_BYTES : XMEM_BYTES;
+    localparam int OFF_AW = $clog2(WIN_BYTES / 8);
+    localparam int XMEM_AW = OFF_AW + (XDATA_BYTES != 0 ? 1 : 0);
+    logic claim_data;
     logic [31:0] claim_offset;
     logic [XMEM_AW-1:0] offset;
     logic unused_offset;
-    assign claim_offset = claim_addr - RAM_BASE;
-    assign unused_offset = ^{claim_offset[31:XMEM_AW+3], claim_offset[2:0]};
+    assign claim_data = XDATA_BYTES != 0 && claim_addr - XDATA_BASE < 32'(XDATA_BYTES);
+    assign claim_offset = claim_addr - (claim_data ? XDATA_BASE : RAM_BASE);
+    assign unused_offset = ^{claim_offset[31:OFF_AW+3], claim_offset[2:0]};
     soc_xmem_bridge #(.AW(XMEM_AW)) xmem (
       .clk_i, .rst_ni,
       .start_i(claim_valid && claim && claim_sel == SEL_XMEM), .write_i(claim_write),
-      .burst_i(claim_burst), .addr_i(claim_offset[3 +: XMEM_AW]),
+      .burst_i(claim_burst),
+      .addr_i(XMEM_AW'({claim_data, claim_offset[3 +: OFF_AW]})),
       .dwait_o(xmem_dwait), .hold_o(xmem_hold),
       .req_i(req && sel == SEL_XMEM), .we_i(we), .beat_i(beat_byte[4:3]), .be_i(be),
       .wdata_i(wdata), .rdata_o(xmem_rdata),
       .xmem_req_o, .xmem_we_o, .xmem_burst_o, .xmem_addr_o(offset), .xmem_be_o, .xmem_wdata_o,
       .xmem_ack_i, .xmem_rdata_i, .xmem_rvalid_i
     );
-    assign xmem_addr_o = 29'(offset);
+    if (XDATA_BYTES != 0) begin : g_window
+      assign xmem_addr_o = {offset[XMEM_AW-1], 28'(offset[OFF_AW-1:0])};
+    end else begin : g_image
+      assign xmem_addr_o = 29'(offset);
+    end
   end else begin : g_no_xmem
     logic unused_xmem;
     assign xmem_dwait = 1'b0;

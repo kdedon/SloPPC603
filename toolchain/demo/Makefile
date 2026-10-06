@@ -403,7 +403,8 @@ $(OUT)/mister-selftest.hex: $(OUT)/selftest.hex
 MISTER_IMAGES_DIR ?= ../build/mister/images
 MISTER_IMAGE_NAMES := selftest embench nbench whetstone whetstone-hf
 .PHONY: mister-images mister-images-smoke
-mister-images: $(addprefix $(MISTER_IMAGES_DIR)/ppc603e-,$(addsuffix .bin,$(MISTER_IMAGE_NAMES)))
+mister-images: $(addprefix $(MISTER_IMAGES_DIR)/ppc603e-,$(addsuffix .bin,$(MISTER_IMAGE_NAMES) doom doom-le \
+	quake quake-le quake-sf)) $(MISTER_IMAGES_DIR)/DOOM1.WAD $(MISTER_IMAGES_DIR)/pak0.pak
 mister-images-smoke: $(OUT)/images/ppc603e-selftest-smoke.bin \
 	$(addprefix $(OUT)/images/ppc603e-,$(addsuffix -smoke.bin,$(filter-out selftest,$(MISTER_IMAGE_NAMES))))
 define memory-image
@@ -416,6 +417,20 @@ $(MISTER_IMAGES_DIR)/ppc603e-selftest.bin $(OUT)/images/ppc603e-selftest-smoke.b
 	$(memory-image)
 $(MISTER_IMAGES_DIR)/ppc603e-%.bin: $(OUT)/mister-%.elf
 	$(memory-image)
+# Doom: its images and the WAD they read, unmodified (demo/fetch-doom.sh).
+$(MISTER_IMAGES_DIR)/ppc603e-doom.bin $(MISTER_IMAGES_DIR)/ppc603e-doom-le.bin: $(MISTER_IMAGES_DIR)/%: $(OUT)/doom/%
+	mkdir -p $(@D)
+	cp $< $@
+$(MISTER_IMAGES_DIR)/DOOM1.WAD: $(BUILD_DIR)/demo/wad/DOOM1.WAD
+	mkdir -p $(@D)
+	cp $< $@
+# Quake: its images and pak0.pak, unmodified (demo/fetch-quake.sh).
+$(addprefix $(MISTER_IMAGES_DIR)/ppc603e-,quake.bin quake-le.bin quake-sf.bin): $(MISTER_IMAGES_DIR)/%: $(OUT)/quake/%
+	mkdir -p $(@D)
+	cp $< $@
+$(MISTER_IMAGES_DIR)/pak0.pak: $(BUILD_DIR)/demo/pak/pak0.pak
+	mkdir -p $(@D)
+	cp $< $@
 $(OUT)/images/ppc603e-%.bin: $(OUT)/mister-%.elf
 	$(memory-image)
 
@@ -430,3 +445,6 @@ $(OUT)/%.elf:
 $(OUT)/%.hex: $(OUT)/%.elf demo/bin2hex64.py
 	$(OBJCOPY) -O binary $< $(OUT)/$*.bin
 	$(PYTHON) demo/bin2hex64.py $(OUT)/$*.bin 0x100 $@ $(if $(LE),--le)
+
+include demo/doom/doom.mk
+include demo/quake/quake.mk

@@ -2,10 +2,11 @@
 # Copyright (c) 2026 Kevin Dedon
 # Rolling MiSTer build of main, published as the "unstable" prerelease: the
 # test core (COMPACT FPU, dual dispatch, pipelined load/store unit) at a
-# 45 MHz system clock and the
-# redistributable program images; the Embench image (GPL-3.0) goes with its
-# corresponding source. The release and its tag are replaced on every run. Fitter seeds 2-5 build in
-# parallel; the lowest seed that meets timing is published. If none does, the run fails and publishes nothing.
+# 45 MHz system clock and the redistributable program images; the Embench
+# (GPL-3.0), Doom and Quake (GPL-2.0) images go with their corresponding source,
+# Doom with DOOM1.WAD and Quake with pak0.pak. The release and its tag are
+# replaced on every run. Fitter seeds 2-5 build in parallel; the lowest seed
+# that meets timing is published. If none does, the run fails and publishes nothing.
 name: mister-unstable
 on:
   push:
@@ -52,6 +53,8 @@ jobs:
             build/mister/*.rbf
             build/mister/*.json
             build/mister/images/*.bin
+            build/mister/images/DOOM1.WAD
+            build/mister/images/pak0.pak
           retention-days: 3
   publish:
     needs: mister
@@ -72,17 +75,21 @@ jobs:
           echo "publishing ${pick}"
           mkdir -p build/mister
           cp "${pick}"/*.rbf "${pick}"/*.json build/mister/
-          cp "${pick}"/images/ppc603e-{selftest,embench,whetstone,whetstone-hf}.bin build/mister/
+          cp "${pick}"/images/ppc603e-{selftest,embench,whetstone,whetstone-hf,doom,doom-le,quake,quake-le,quake-sf}.bin \
+            build/mister/
+          cp "${pick}"/images/DOOM1.WAD "${pick}"/images/pak0.pak build/mister/
       - name: Fetch pinned inputs
         run: ci/step.sh ci/setup.sh benchmarks
       - name: Source archive
-        run: ci/source-archive.sh build/mister/ppc603e-embench-source.tar.gz
+        run: ci/source-archive.sh build/mister/ppc603e-source.tar.gz
       - name: Release notes
         run: |
           previous="$(git describe --tags --abbrev=0 --exclude unstable 2>/dev/null || true)"
           python3 ci/release_notes.py --unstable --title "Unstable build" ${previous:+--since "${previous}"} \
-            build/mister/*.json --images build/mister/*.bin \
-            --embench-source build/mister/ppc603e-embench.SOURCE.txt > notes.md
+            build/mister/*.json --images build/mister/*.bin build/mister/DOOM1.WAD build/mister/pak0.pak \
+            --embench-source build/mister/ppc603e-embench.SOURCE.txt \
+            --doom-source build/mister/ppc603e-doom.SOURCE.txt \
+            --quake-source build/mister/ppc603e-quake.SOURCE.txt > notes.md
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -91,4 +98,6 @@ jobs:
           gh release create unstable --prerelease --target "${GITHUB_SHA}" \
             --title "Unstable build ${GITHUB_SHA::10}" --notes-file notes.md \
             build/mister/*.rbf build/mister/*.json build/mister/*.bin \
-            build/mister/ppc603e-embench.SOURCE.txt build/mister/ppc603e-embench-source.tar.gz
+            build/mister/DOOM1.WAD build/mister/ppc603e-embench.SOURCE.txt \
+            build/mister/ppc603e-doom.SOURCE.txt build/mister/pak0.pak \
+            build/mister/ppc603e-quake.SOURCE.txt build/mister/ppc603e-source.tar.gz

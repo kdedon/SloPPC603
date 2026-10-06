@@ -23,6 +23,11 @@
 // RAM_BASE + n. One DDRAM command register serves, in priority order, the
 // bridge's reads, the loader, the bridge's writes and the framebuffer FIFO,
 // with one read in flight at a time.
+//
+// With DATA_BYTES nonzero, the image also maps DATA_BYTES of DDR3 from
+// DATA_DDR_BASE at processor address DATA_BASE, and a second download
+// (wad_i) writes its file there from WAD_OFFSET; with wad_munge_i, file byte
+// n goes to n XOR 7, the layout a little-endian program reads it in.
 module ppc603e_mister #(
   parameter RAM_INIT = "",
   parameter int RAM_BYTES = 131072,
@@ -39,6 +44,12 @@ module ppc603e_mister #(
   // Program image window from the RAM base, and its DDR3 byte address.
   parameter int IMAGE_BYTES = 1048576,
   parameter logic [31:0] IMAGE_DDR_BASE = 32'h3400_0000,
+  // Data window: processor address, size (a power of two, or 0 for none),
+  // DDR3 byte address, and where in it a data file loads.
+  parameter logic [31:0] DATA_BASE = 32'h0000_0000,
+  parameter int DATA_BYTES = 0,
+  parameter logic [31:0] DATA_DDR_BASE = 32'h3600_0000,
+  parameter int WAD_OFFSET = 25165824,
   parameter bit ENABLE_FPU = 1'b0,
   parameter int DISPATCH_WIDTH = `PPC_DISPATCH_WIDTH,
   parameter ppc_fpu_pkg::fpu_impl_e FPU_IMPL = ppc_fpu_pkg::FPU_IMPL_FULL,
@@ -76,6 +87,9 @@ module ppc603e_mister #(
   // Program image download (8-bit ioctl, filtered to the image's file
   // index); the host holds rst_i through it. image_i changes under rst_i.
   input  logic        image_i,
+  // The download is a data file (with DATA_BYTES), byte-munged.
+  input  logic        wad_i,
+  input  logic        wad_munge_i,
   input  logic        ioctl_download_i,
   input  logic        ioctl_wr_i,
   input  logic [26:0] ioctl_addr_i,
@@ -93,6 +107,9 @@ module ppc603e_mister #(
   // A granted tenure writes at most four beats.
   localparam int FIFO_HOLD = FIFO_DEPTH - 4;
   localparam logic [28:0] IMAGE_WORD = IMAGE_DDR_BASE[31:3];
+  localparam logic [28:0] DATA_WORD = DATA_DDR_BASE[31:3];
+  localparam logic [28:0] WAD_WORD = DATA_WORD + 29'(WAD_OFFSET / 8);
+  localparam int WAD_BYTES = DATA_BYTES - WAD_OFFSET;
 
   // DDR3 is little-endian by byte address: bus byte 0 is lane 0.
   function automatic logic [63:0] swap_data(input logic [63:0] d);
@@ -119,6 +136,7 @@ module ppc603e_mister #(
   ppc603e_demo_soc #(
     .RAM_INIT(RAM_INIT), .RAM_BYTES(RAM_BYTES), .CE_DIV(CE_DIV), .VIDEO_H_BP(VIDEO_H_BP), .FB_EXTERNAL(FB_EXTERNAL),
     .FB_WIDTH(FB_WIDTH), .FB_HEIGHT(FB_HEIGHT), .FB_BASE(FB_BASE), .XMEM_BYTES(IMAGE_BYTES),
+    .XDATA_BASE(DATA_BASE), .XDATA_BYTES(DATA_BYTES),
     .SYS_MHZ(SYS_MHZ), .ENABLE_FPU(ENABLE_FPU), .FPU_IMPL(FPU_IMPL),
     .DISPATCH_WIDTH(DISPATCH_WIDTH), .ENABLE_LSU_PIPE(ENABLE_LSU_PIPE)
   ) soc (
@@ -154,6 +172,12 @@ module ppc603e_mister #(
   logic load_req = 1'b0;
   logic [26:0] load_addr;
   logic [7:0] load_byte;
+  logic load_wad;
+  logic [28:0] xmem_word;
+
+  // Bit 28 of a bridge address selects the data window.
+  assign xmem_word = (DATA_BYTES != 0 && xmem_addr[28] ? DATA_WORD : IMAGE_WORD)
+                   + {1'b0, xmem_addr[27:0]};
 
   assign port_free = !(we_q || rd_q) || !ddram_busy_i;
   assign reading = rd_left_q != '0;
@@ -176,17 +200,17 @@ module ppc603e_mister #(
       burst_q <= 8'd1;
       unique case (pick)
         P_XRD: begin
-          addr_q <= IMAGE_WORD + xmem_addr;
+          addr_q <= xmem_word;
           be_q <= '1;
           burst_q <= xmem_burst ? 8'd4 : 8'd1;
         end
         P_LOAD: begin
-          addr_q <= IMAGE_WORD + 29'(load_addr[26:3]);
+          addr_q <= (load_wad ? WAD_WORD : IMAGE_WORD) + 29'(load_addr[26:3]);
           din_q <= {8{load_byte}};
           be_q <= 8'd1 << load_addr[2:0];
         end
         P_XWR: begin
-          addr_q <= IMAGE_WORD + xmem_addr;
+          addr_q <= xmem_word;
           din_q <= swap_data(xmem_wdata);
           be_q <= swap_be(xmem_be);
         end
@@ -216,11 +240,15 @@ module ppc603e_mister #(
   // ---- image loader -------------------------------------------------------------
   // One byte per command; ioctl_wait holds the host until it is taken. Bytes
   // past the window are dropped.
+  logic load_wad_i, load_fits;
+  assign load_wad_i = DATA_BYTES != 0 && wad_i;
+  assign load_fits = 32'(ioctl_addr_i) < (load_wad_i ? 32'(WAD_BYTES) : 32'(IMAGE_BYTES));
   always_ff @(posedge clk_i) begin
     if (port_free && pick == P_LOAD) load_req <= 1'b0;
-    if (ioctl_download_i && ioctl_wr_i && 32'(ioctl_addr_i) < 32'(IMAGE_BYTES)) begin
+    if (ioctl_download_i && ioctl_wr_i && load_fits) begin
       load_req <= 1'b1;
-      load_addr <= ioctl_addr_i;
+      load_wad <= load_wad_i;
+      load_addr <= ioctl_addr_i ^ (load_wad_i && wad_munge_i ? 27'd7 : 27'd0);
       load_byte <= ioctl_dout_i;
     end
   end
@@ -278,6 +306,6 @@ module ppc603e_mister #(
   endgenerate
 
   logic unused;
-  assign unused = ^{hblank, vblank, IMAGE_DDR_BASE[2:0]};
+  assign unused = ^{hblank, vblank, IMAGE_DDR_BASE[2:0], DATA_DDR_BASE[2:0]};
 endmodule
 `default_nettype wire

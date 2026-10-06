@@ -81,6 +81,8 @@ localparam CONF_STR = {
 	"PPC603e;;",
 	"-;",
 	"F1,BIN,Load program;",
+	"F2,WADPAK,Load data;",
+	"F3,WADPAK,Load data (little-endian);",
 `ifndef MISTER_BENCH
 `ifdef MISTER_FPU
 	"O[7:5],Program,Hello,Dhrystone,CoreMark,Whetstone,FP Mandelbrot,Run all;",
@@ -151,12 +153,14 @@ wire [2:0] program_sel = {1'b0, status[2:1]};
 // A finished download selects the loaded image; a program change, the
 // built-in program.
 wire       load = ioctl_download && ioctl_index[5:0] == 6'd1;
+// Data files for loaded programs; index 3 stores them byte-munged.
+wire       load_wad = ioctl_download && (ioctl_index[5:0] == 6'd2 || ioctl_index[5:0] == 6'd3);
 reg  [2:0] reset_sync = '1;
 reg  [3:0] program_q = 0;
 reg  [4:0] reset_count = '1;
 reg        load_q = 0;
 reg        image = 0;
-wire       reset_req = reset_sync[2] | status[0] | buttons[1] | ~pll_locked | load |
+wire       reset_req = reset_sync[2] | status[0] | buttons[1] | ~pll_locked | load | load_wad |
                        (program_q != {program_sel, status[3]});
 wire       core_reset = |reset_count;
 
@@ -204,7 +208,8 @@ wire [23:0] pal_data;
 ppc603e_mister #(
 	.RAM_INIT("firmware/mister.mif"), .RAM_BYTES(RAM_BYTES), .FB_EXTERNAL(FB_EXTERNAL),
 	.FB_WIDTH(SCREEN_W), .FB_HEIGHT(SCREEN_H), .ENABLE_FPU(ENABLE_FPU),
-	.FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH), .SYS_MHZ(SYS_MHZ)
+	.DATA_BYTES(64 * 1024 * 1024), .FPU_IMPL(FPU_IMPL), .DISPATCH_WIDTH(DISPATCH_WIDTH),
+	.SYS_MHZ(SYS_MHZ)
 ) core
 (
 	.clk_i(clk_sys),
@@ -216,7 +221,8 @@ ppc603e_mister #(
 	.ddram_busy_i(DDRAM_BUSY), .ddram_addr_o(DDRAM_ADDR), .ddram_burstcnt_o(DDRAM_BURSTCNT),
 	.ddram_din_o(DDRAM_DIN), .ddram_be_o(DDRAM_BE), .ddram_we_o(DDRAM_WE),
 	.ddram_rd_o(DDRAM_RD), .ddram_dout_i(DDRAM_DOUT), .ddram_dout_ready_i(DDRAM_DOUT_READY),
-	.image_i(image), .ioctl_download_i(load), .ioctl_wr_i(ioctl_wr), .ioctl_addr_i(ioctl_addr),
+	.image_i(image), .wad_i(load_wad), .wad_munge_i(ioctl_index[0]),
+	.ioctl_download_i(load | load_wad), .ioctl_wr_i(ioctl_wr), .ioctl_addr_i(ioctl_addr),
 	.ioctl_dout_i(ioctl_dout), .ioctl_wait_o(ioctl_wait),
 	.console_valid_o(), .console_data_o(),
 	.exit_valid_o(exit_valid), .exit_code_o(exit_code), .checkstop_o(checkstop)
