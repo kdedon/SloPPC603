@@ -310,6 +310,7 @@ int main(int argc, char** argv) {
         is_deterministic = true;
         gProfilerObj.reset(new Profiler());
         ppc_cpu_init(&memory, PPC_VER::MPC603EV, false, 25000000ULL);
+        ppc_state.spr[SPR::PVR] = 0x00070200U;  // UM 1.3.1.2 PID7v level
         for (auto [spr, value] : presets) {
             ppc_state.gpr[0] = value;
             dppc_interpreter::ppc_mtspr((31U << 26) | ((spr & 31U) << 16) | ((spr >> 5) << 11) | (467U << 1));

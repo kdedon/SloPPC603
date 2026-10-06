@@ -10,7 +10,7 @@ python3 sim/cosim/parser.py ../dingusppc/cpu/ppc/test \
   -o sim/build/dingusppc-csv-manifest.json
 ```
 
-The default model metadata is `MPC603EV` / PID7v / PVR `0x00070101`; `MPC603E` selects the audited PID6 metadata. Model selection is closed to those two consistent mappings. The parser validates structural fields and numeric widths, but does not validate opcode legality, mnemonic spelling, FP source syntax or semantics, disassembly correctness, architectural state, timing, exceptions, endian modes, or TLB operations.
+The default model metadata is `MPC603EV` / PID7v / PVR `0x00070200`; `MPC603E` selects the audited PID6 metadata. Model selection is closed to those two consistent mappings. The parser validates structural fields and numeric widths, but does not validate opcode legality, mnemonic spelling, FP source syntax or semantics, disassembly correctness, architectural state, timing, exceptions, endian modes, or TLB operations.
 
 The separate P13b/P13c executable lane is documented in
 [`../../docs/REFERENCE_RUNNER.md`](../../docs/REFERENCE_RUNNER.md).

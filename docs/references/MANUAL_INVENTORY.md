@@ -64,8 +64,7 @@ Missing and partial rows, ranked by how visible they are to software or to a
 6. ~~**SRESET leaves the I-cache enabled** (AUD-83)~~. Fixed: SRESET clears HID0[ICE].
 7. **602 injected snoops** (AUD-82). 602UM §8.4.2, PDF 378. A 602 system that
    injects snoops during a burst read gets a push the protocol forbids.
-8. **PVR revision below PID7v level** (AUD-76). UM §1.3.1.2, PDF 58. Software
-   that keys features or errata on PVR picks the wrong model.
+8. ~~**PVR revision below PID7v level** (AUD-76)~~. Fixed: 0x00070200.
 9. **Touch-load TC and castout order** (AUD-78). UM Table 7-6, PDF 290;
    §8.1.1, PDF 312. Visible to L2 controllers and bus monitors only.
 10. **Exception priority untested beyond pairs** (AUD-84). UM Table 4-2, PDF
@@ -110,7 +109,7 @@ PEM was read only where the UM defers to it.
 | Time base / DEC, one tick per 4 bus clocks, TBEN | UM §1.1.7.2, PDF 55 | tested | `rtl/ppc603e.sv:267`; test-timer, test-core-timer-events, test-core-timer-registers |
 | JTAG / COP test interface | UM §1.1.7.3, PDF 56 | n/a | CHIP_PACKAGE.md:113,231 absent; no FPGA debug use |
 | Clock multiplier / PLL | UM §1.1.7.4, PDF 56 | n/a | FPGA PLL; PLL_CFG only selects ratio (CHIP_PACKAGE.md) |
-| PVR value (PID7v level 0x0200+) | UM §1.3.1.1, PDF 58 | partial | `ppc_pkg.sv:610` = 0x00070101; AUD-76 open (PID7v bits enabled with PID6-level revision) |
+| PVR value (PID7v level 0x0200+) | UM §1.3.1.1, PDF 58 | yes | `cpu_cfg().pvr` = 0x00070200 (`variant-config-0`) |
 | Run_N counter (COP) | UM §1.3.1.3, PDF 59 | n/a | no COP (CPU_VARIANTS.md:224) |
 | Implementation exception vectors 0x1000/0x1100/0x1200/0x1300/0x1400 | UM §1.3.4.2, PDF 69-71 | tested | test-core-tlb-miss, test-core-machine-check-trace (IABR), test-chip-pins (SMI) |
 | Real-mode WIMG defaults | UM §1.3.5.2, PDF 72; §3.5 PDF 136 | tested | `rtl/ppc_bat_translate.sv:126`: fetch 0001, data 0011 (§3.5 says 0011 for both; differs only in M, which fetch ignores); test-core-bat |

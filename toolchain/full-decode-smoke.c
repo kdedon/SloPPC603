@@ -99,7 +99,7 @@ int main(void) {
     /* PVR and HID0; ICE starts set (the cache reset mode). DCE stays as
        the boot code left it: the data cache may hold modified lines. */
     unsigned dce = READ_SPR(1008) & 0x00004000u;
-    if (READ_SPR(287) != 0x00070101u) return 0x80000400;
+    if (READ_SPR(287) != 0x00070200u) return 0x80000400;
     if (READ_SPR(1008) != (0x00008000u | dce)) return 0x80000401;
     v = work(40);
     WRITE_SPR(1008, 0x00008800u | dce);     /* ICFI: flash invalidate */
