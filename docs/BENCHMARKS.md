@@ -341,7 +341,7 @@ is committed; three scripts of ours adapt it at build time:
   become named ones, `$` becomes `.`, `.rodata` a section, local labels (`.loop`,
   scoped between global labels) get a suffix per scope, and the register names become
   symbols so that `.rept 32-r24` evaluates. For the little-endian image, `--le`
-  moves the FPR–GPR transfers to little-endian word order (below).
+  fixes the accesses that assume big-endian order within a word or doubleword (below).
 - `asmoffsets.py` writes `quakedefPPC.i`, which the archive lacks, from the original
   generator's command file `quakeasmheaders.gen`: the cross-compiler measures each
   `offsetof` and `sizeof` in quakegeneric's own headers (and the structures
@@ -372,9 +372,16 @@ words (a double written as words) swaps them. It rewrites 78 accesses: the `lwz`
 `stfd` in every float-to-int conversion (span, sky, edge, alias, clip, draw and light
 routines), the `stw` in the `int2dbl` macro, `anglemod`'s `lhz` and two `stw`, and a
 `stw`/`lfs` pair in `d_edgePPC` that moves together; and the two constants `INT2DBL_0`
-(`0x4330000080000000`) and `c64kDIV360`. The audit found no other mixed-size access to a
-doubleword: every other `lfd`/`stfd` saves FPRs or loads a whole double, and pixel and
-table code reads bytes, halfwords and words at their own sizes.
+(`0x4330000080000000`) and `c64kDIV360`. Every other `lfd`/`stfd` saves FPRs or loads a
+whole double.
+
+The routines also move pairs of `short` as one word: `D_CalcGradients` loads
+`texturemins[2]` and `extents[2]` of `msurface_t` and takes element 0 from the high
+half, and the edge code stores and loads `surfs[2]` of `edge_t`. `--le` rotates each such
+word by 16 after the `lwz` and around the `stw` (five accesses, listed in the script).
+Without it the walls show one texel per surface. The other word accesses are to `int`
+and pointer members; bytes and halfwords are read at their own sizes. `D_DrawZSpans`
+packs two 16-bit z values per word as the C code does, which is little-endian order.
 
 ### Quake smoke run
 

@@ -11,8 +11,10 @@ output is otherwise line for line the input.
 at its address and its high word at +4: within each function or macro, a
 load or store narrower than a doubleword into a doubleword that lfd/stfd
 also address moves to the mirrored offset in it (stfd at X, lwz at X+4
-becomes lwz at X), and a two-word .long constant (a double written as two
-words in hex) swaps its words.
+becomes lwz at X), a two-word .long constant (a double written as two
+words in hex) swaps its words, and a word load or store of a pair of
+halfwords (HALF_PAIRS) rotates the word by 16 so each halfword keeps its
+address.
 
 Usage: asmconv.py [--le] in.s out.s"""
 import re
@@ -85,6 +87,8 @@ SIZE = {'lfd': 8, 'stfd': 8, 'lwz': 4, 'stw': 4, 'lfs': 4, 'stfs': 4, 'lhz': 2, 
         'lbz': 1, 'stb': 1}
 NUM = re.compile(r'(0x[0-9a-fA-F]+|\d+)(\*(0x[0-9a-fA-F]+|\d+))*')
 HEX = re.compile(r'0x[0-9a-fA-F]+')
+# Struct members of two shorts that the sources move as one word.
+HALF_PAIRS = {'MSURFACE_TEXTUREMINS', 'MSURFACE_EXTENTS', 'EDGE_SURFS'}
 
 
 def split_offset(text):
@@ -135,6 +139,12 @@ def little_endian(lines, path):
                     code = m.group(1) + m.group(2) + m.group(3) + join_offset(syms, new) + \
                         f'({m.group(5)})' + m.group(6)
                     print(f'{path}: {line.strip()} -> {code.strip()}', file=sys.stderr)
+            if m and m.group(2) in ('lwz', 'stw') and m.group(4).strip() in HALF_PAIRS:
+                reg = m.group(3).strip().rstrip(',').strip()
+                rot = f'rotlwi {reg},{reg},16'
+                code = code.rstrip() + f'; {rot}' if m.group(2) == 'lwz' else \
+                    f'{m.group(1)}{rot}; ' + code.strip() + f'; {rot}'
+                print(f'{path}: {line.strip()} -> {code.strip()}', file=sys.stderr)
             d = re.match(r'^(\s*\.long\s+)([^,\s]+)\s*,\s*([^,\s]+)(\s*)$', code)
             if d and HEX.fullmatch(d.group(2)) and HEX.fullmatch(d.group(3)):
                 code = f'{d.group(1)}{d.group(3)},{d.group(2)}{d.group(4)}'
