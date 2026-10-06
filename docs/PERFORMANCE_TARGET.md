@@ -838,6 +838,51 @@ resolves, and the core's taken-branch refetch is no slower than before.
 The pair behind a released branch is followed by a fetch the cycle after,
 one cycle later than the 603e.
 
+## Timing accuracy round 1
+
+Recorded: `make -C sim DISPATCH_WIDTH=2 BRANCH_REMOVAL=<0|1> BUILD_DIR=<dir> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff`, commit 382022b, 2026-10-06.
+LSU unit and store queue on, prebuilt firmware. `perf-diff` now runs with
+`BRANCH_REMOVAL=1`: the retire trace numbers each record after the branches
+removed before it, and the model restores them from the disassembly.
+
+| Dhrystone, width 2 | Core | 603e model | Gap |
+|---|---:|---:|---:|
+| Branch removal off | 641.0 | 506.0 | 135.0 (27%) |
+| Branch removal on (UM 6.4.1.3) | 640.0 | 506.0 | 134.0 (26%) |
+
+Excess cycles per run with removal on, ranked: DQ1 not supplied 74,
+predicted `bc`/`beqlr` in DQ1 refused 36 (`units ... dq0-flags`), CQ full
+27, update form in DQ0 blocks DQ1 17 (`LSU+IU update`), CQ1 not free for a
+DQ1 integer op 19 (`LSU+IU cq`), taken-branch refetch 21, empty IQ 12.
+`--core branch-slot` prices branches that take a dispatch slot and a CQ
+entry at 63 cycles per run (model 569 against 506): with removal on, only
+11 branches per run leave at dispatch; the 70 loop branches of `strcmp`
+and `strcpy` are predicted and keep their entry.
+
+Tried, not accepted (branch `timing-acc1-wip`):
+
+- DQ1 predicted in the cycle the older prediction resolves correctly
+  (UM 6.4.1.2, Figure 6-5). No change alone: the DQ1 branch then waits
+  for a CQ entry.
+- A conditional `bclr` with committed LR predicted from DQ1 like `bc`.
+- A branch predicted from DQ1 takes no CQ entry (UM 6.3.1, A3): it is
+  anchored on DQ0, its CR owner; nothing younger completes until it
+  resolves, and a miss keeps the anchor (or removes everything once it has
+  retired). Dhrystone stays at 640: the loops become fetch-bound
+  (`BRANCH_REFETCH` 35) and the `lbzu` + `cmpwi` pair is refused by the
+  update rule (35). `test-core-dual` fails at width 2 with removal on (a
+  plain `b` is dispatched); the other width-2 benches run passed
+  (`test-core`, `-recovery` with removal on; all nine focused benches,
+  `test-dispatch-rules` and `test-reference-machine` with removal off).
+- DQ1 beside an update form when DQ1 takes no GPR rename (UM 6.6.1.2
+  counts renames, not ports). Deadlocks Dhrystone in `strcmp` with the
+  anchored branch; not kept.
+
+What remains is the front end: a held branch released as its older
+branch resolves reaches dispatch with its target at R+3 or later against
+Figure 6-5's R+2, because the fetch-to-decode register sits between the
+cache and the IQ (UM 6.3.2.2: one cycle from request to IQ).
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
