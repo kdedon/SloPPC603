@@ -265,6 +265,39 @@ fix). Meets 50 MHz at every corner: setup +4.190 / +4.227 / +6.676 / +7.206 ns, 
 (output, slow -40 C). `perf_o` is open in `ppc603e_measure`, so the event logic is
 pruned.
 
+## 2026-10-06 32-bit data bus and reduced pinout (AUD-80)
+
+Recorded: `make -C sim test-chip-pins test-chip602-pins test-chip-603
+test-chip-mp test-dcache test-biu-dcache-snoop test-chip-fpu`, at width 1 and
+with `DISPATCH_WIDTH=2` and `sim/tools/verilate-lsu-pipe`, commit `73bd8ce`,
+2026-10-06. All pass. `test-chip-pins` prints, for each of the three 32-bit
+cases (plain, DRTRY on every read beat, reduced pinout): 152 paired beats,
+5 write bursts (two castouts, two `dcbf`, one snoop push) and 14 read
+bursts; the DRTRY case 159 DRTRYs. `test-chip-fpu`'s `+DBW32` run passes
+the FPU program under random retry, DRTRY and waits with one eight-byte read
+and one eight-byte write, 6,500 32-bit beats, 948 of them paired.
+
+Recorded: `make -C sim perf-diff` with `DISPATCH_WIDTH=2`,
+`sim/tools/verilate-lsu-pipe` and the demo Dhrystone image, commit `73bd8ce`,
+2026-10-06: 639.0 core cycles per iteration, unchanged in 64-bit mode.
+
+Negative controls, each a one-line mutation of commit `7e39b31` run through
+`test-chip-pins` (eight-byte: `test-chip-fpu`), all fail: every adapter
+off (32-bit boot never completes); scalar adapter off (boot); line-read
+adapter off (program after the I-cache turns on); cache-master adapter off
+and DL driven on writes (DP[4:7]/DL check); push-engine adapter off (write TA
+without data); a first-beat DRTRY passed to the master (protocol checkstop in
+the DRTRY case); eight-byte singles not paired (`test-chip-fpu` `+DBW32`).
+
+Recorded: `make -C sim lint check-spec`, commit `73bd8ce`, 2026-10-06: pass.
+
+Recorded: `quartus_map --analysis_and_elaboration` of `quartus/chip` and
+`quartus/chip602` (pinned image), commit `73bd8ce`, 2026-10-06: both
+successful, 0 errors. No fit.
+
+Not established: a DRTRY that holds past the cycle after TA before its
+replacement beat (the targets replace on the cancelling edge), and timing.
+
 ## 2026-10-05 batch 13
 
 Recorded: `./quartus/chip/build.sh --docker` and `./quartus/chip602/build.sh
