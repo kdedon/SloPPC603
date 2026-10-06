@@ -791,16 +791,28 @@ The core now waits where UM 6.4.1.1 stops fetching: a `bclr` behind an
 the register after the move retires; a CTR-testing branch or `bcctr`
 behind a CTR-testing `bc`, and a linking branch other than `b` behind a
 linking branch, wait for the older branch to complete. None of these
-folds at fetch; a linking branch other than `b` also does not fold behind
-an `mtlr`, which the manual does not require.
+folds at fetch, and fetch stops at them (below).
 
 | | Dhrystone cycles/run, w1 | w2 | CoreMark/MHz, w1 | w2 |
 |---|---:|---:|---:|---:|
 | Before | 766.0 | 639.0 | 2.300 | 2.675 |
 | After | 769.0 | 641.0 | 2.276 | 2.641 |
+| Fetch stop | 769.0 | 641.0 | 2.270 | 2.633 |
 
-Fetch of the sequential words behind a waiting branch still continues; the
-603e stops it. Only a not-taken conditional branch can use those words.
+Recorded: the same commands, commit 4283ff7 (fetch stop), 2026-10-06.
+
+Fetch now stops at a waiting branch: words fetched past its fetch pair are
+dropped, and fetch restarts the cycle after the branch leaves the IQ, at
+its target if taken, else after the pair. The manual gives no resume
+cycle; in UM 6.4.1.2.1 (Figure 6-5, PDF 263) the new stream is requested
+in the cycle the branch resolves, and the core requests it the cycle
+after, as for every branch redirect. A linking `bc` or `bcctrl` behind an
+`mtlr` folds again; it waits only behind a linking branch. Dhrystone does
+not change; CoreMark loses 0.3% at both widths.
+
+Still faster than the manual: fetch does not stop behind a `bc` waiting
+on a CR dependency (UM 6.4.1.1, seventh case), and a second such `bc`
+predicted taken folds at fetch.
 
 ## Gaps
 
