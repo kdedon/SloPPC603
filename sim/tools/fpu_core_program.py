@@ -989,6 +989,34 @@ def data_dependent_latency(p, forms):
         p.probes[p.emit(d_form(52, 4, 21, 0))] = LATENCY['stfs'] + extra
         p.expect(slot, word)
     p.res_next = (p.res_next + 7) & ~7
+    if CHIP:
+        denormal_hits(p, forms)
+
+
+def denormal_hits(p, forms):
+    """A data cache hit answers at once and only while taken. A denormal
+    lfs hit converts before it takes its response. An stfs that offers
+    without queueing (its page last translated for a load) and hits answers
+    with that load's data, which is no load to convert."""
+    while p.data_next % 32:
+        p.data(0)
+    addr = p.data(0x00400000 << 32, 0)
+    p.res_next = (p.res_next + 0xfff) & ~0xfff
+    slot = p.result_slot(8)
+    p.li32(5, addr)
+    p.li32(21, slot)
+    p.emit(d_form(32, 6, 21, 0))          # lwz r6, slot: the line
+    # Loads from other pages, to other sets, evict the slot's page from the
+    # data micro-TLB, so the store is not checked and does not queue.
+    for k in range(1, 9):
+        p.li32(7, CHIP_BASE + 0x1000 * k + 0x40 * k)
+        p.emit(d_form(32, 6, 7, 0))
+    p.emit(forms['lfs'])
+    p.emit(SYNC)
+    p.emit(forms['lfs'])
+    p.emit(d_form(52, 4, 21, 0))          # stfs f4, slot
+    p.emit(SYNC)
+    p.expect(slot, 0x00400000)
 
 
 def fp_memory_streams(p, forms):

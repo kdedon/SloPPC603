@@ -276,7 +276,7 @@ module ppc_lsu_pipe #(
                                           5'd0;
   assign conv_store_wait = conv_store_q != conv_store_cycles;
   assign conv_load = FP_SINGLE_DENORM && p2_valid && !rsp_to_lane_q && rsp_valid_i &&
-    p2_head.fp && !p2_head.write && !p2_head.wide && !p2_head.split &&
+    p2_head.fp && !p2_head.store && !p2_head.wide && !p2_head.split &&
     !p2_head.killed && !rsp_error_i && (rsp_fault_i == DATA_OK);
   assign conv_load_cycles = conv_load ? ppc_pkg::fp_single_denorm_cycles(rsp_rdata_i[31:0]) :
                                         5'd0;

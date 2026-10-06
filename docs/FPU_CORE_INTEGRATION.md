@@ -132,7 +132,9 @@ rows above.
   per significand bit position shifted, plus one: 2 cycles for fraction
   bit 22 set, 24 for 2^-149. A load takes its response, and a store offers
   its data, that many cycles later, in the lane and in the pipelined unit.
-  `stfiwx` stores no single and is not affected.
+  `stfiwx` stores no single and is not affected. A store's response carries
+  no load data and is never held: a data cache store hit answers only in
+  the cycle it is taken (`test-chip-fpu-lsu-pipe`).
 
 ## Lane sequence (loads and stores)
 

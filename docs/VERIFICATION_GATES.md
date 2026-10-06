@@ -22,7 +22,9 @@ One command for the continuous gate, in order:
    `toolchain/build-in-container.sh`.
 3. `make -C toolchain rtl-all`: every compiled-firmware profile, including
    `rtl-mmu-stress-cached`, `rtl-mmu-stress-retry` and `rtl-mmu-stress-tea`.
-4. `coverage`: the coverage build, runs and summary below.
+4. `test-mister-load`: the MiSTer core (FPU, width 2, load/store unit) loads
+   and runs the selftest and Whetstone smoke images; about 12 minutes.
+5. `coverage`: the coverage build, runs and summary below.
 
 Run it as `make -C sim -j2 ci`, then `make -C sim clean-cache`. It needs
 Docker (or the cross-compiler) and the sibling DingusPPC checkout that

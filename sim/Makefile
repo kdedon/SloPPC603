@@ -1918,6 +1918,15 @@ test-chip-fpu:
 	python3 tools/fpu_core_program.py --chip-image $(FPU_CHIP_IMAGE) --seed $(FPU_CORE_SEED) --random $(FPU_CHIP_RANDOM)
 	./$(BUILD_DIR)/chip-fpu/Vtb_chip_firmware +IMAGE=$(FPU_CHIP_IMAGE) +TOHOST=fff3ff00 +MIN_DWORDS=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/chip-fpu/Vtb_chip_firmware +IMAGE=$(FPU_CHIP_IMAGE) +TOHOST=fff3ff00 +MIN_DWORDS=1 +DBW32 $(SIM_ARGS)
+# The same with the load/store unit: its data cache hits answer at once,
+# and an FP response is held only while a denormal lfs converts.
+.PHONY: test-chip-fpu-lsu-pipe
+test: test-chip-fpu-lsu-pipe
+test-chip-fpu-lsu-pipe:
+	mkdir -p $(BUILD_DIR)/chip-fpu-lsu-pipe
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+CHIP_ENABLE_FPU=1 +define+PPC_LSU_PIPE=1 --top-module tb_chip_firmware --Mdir $(BUILD_DIR)/chip-fpu-lsu-pipe -I../tb $(CHIP_RTL) $(shell cat ../rtl/fpu_files.f) ../tb/bfm/bus60x_coherent_bfm.sv ../tb/tb_chip_firmware.sv
+	python3 tools/fpu_core_program.py --chip-image $(BUILD_DIR)/chip-fpu-lsu-pipe/program.hex --seed $(FPU_CORE_SEED) --random $(FPU_CHIP_RANDOM)
+	./$(BUILD_DIR)/chip-fpu-lsu-pipe/Vtb_chip_firmware +IMAGE=$(BUILD_DIR)/chip-fpu-lsu-pipe/program.hex +TOHOST=fff3ff00 +MIN_DWORDS=1 $(SIM_ARGS)
 
 .PHONY: test-chip-pins test-chip-power lint-chip
 test: test-chip-pins test-chip-power
@@ -2012,8 +2021,9 @@ ci:
 	$(MAKE) regression
 	$(MAKE) ci-firmware
 	$(MAKE) -C ../toolchain rtl-all
+	$(MAKE) test-mister-load
 	$(MAKE) coverage
-	@echo "PASS: ci (regression, compiled firmware, coverage)"
+	@echo "PASS: ci (regression, compiled firmware, MiSTer load, coverage)"
 ci-firmware:
 	if command -v $(CROSS_GCC) >/dev/null 2>&1; then $(MAKE) -C ../toolchain firmware-all; \
 	else ../toolchain/build-in-container.sh firmware-all; fi
