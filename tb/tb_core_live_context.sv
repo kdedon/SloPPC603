@@ -419,7 +419,9 @@ module tb_core_live_context #(
     if(!ENABLE_LIVE_CONTEXT)run(0,'h30);
     else begin
       run(0,'h30);run(0,'h70);run(0,'h80000030);run(1,'h4030);
-      if(USE_BAT)begin run(7,'h30);run(8,'h30);end
+      // Phase 8 (an IBAT with G=1) no longer faults: IBATs have no G bit (UM 3.5).
+      // Page-table G and the 602's IBAT NE keep the guarded ISI cause covered.
+      if(USE_BAT)run(7,'h30);
       if(!USE_BAT)begin
         run(4,'h30);run(5,'h30);run(3,'h18040000);reset_during_install();
         for(int bitno=0;bitno<19;bitno++)if((32'h7bf03&(32'b1<<bitno))!=0)begin
