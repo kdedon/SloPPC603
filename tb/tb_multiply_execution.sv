@@ -54,7 +54,7 @@ module tb_multiply_execution;
   ppc_iu iu (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(iu_cancel),
     .issue_valid_i(issue_valid), .issue_ready_o(issue_ready), .issue_i(issue),
-    .result_valid_o(result_valid), .result_ready_i(result_ready),
+    /* verilator lint_off PINCONNECTEMPTY */ .result_offer_o() /* verilator lint_on PINCONNECTEMPTY */, .result_valid_o(result_valid), .result_ready_i(result_ready),
     .result_o(result)
   );
 

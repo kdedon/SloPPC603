@@ -99,7 +99,7 @@ module tb_execution;
   ppc_iu iu_dut (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .issue_valid_i(iu_issue_valid), .issue_ready_o(iu_issue_ready),
-    .issue_i(iu_issue), .result_valid_o(iu_result_valid),
+    .issue_i(iu_issue), /* verilator lint_off PINCONNECTEMPTY */ .result_offer_o() /* verilator lint_on PINCONNECTEMPTY */, .result_valid_o(iu_result_valid),
     .result_ready_i(iu_result_ready), .result_o(iu_result)
   );
 
@@ -122,7 +122,7 @@ module tb_execution;
   ppc_iu linked_iu (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(1'b0),
     .issue_valid_i(ln_issue_valid), .issue_ready_o(ln_issue_ready),
-    .issue_i(ln_issue), .result_valid_o(ln_result_valid),
+    .issue_i(ln_issue), /* verilator lint_off PINCONNECTEMPTY */ .result_offer_o() /* verilator lint_on PINCONNECTEMPTY */, .result_valid_o(ln_result_valid),
     .result_ready_i(ln_result_ready), .result_o(ln_result)
   );
 

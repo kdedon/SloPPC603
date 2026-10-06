@@ -27,7 +27,7 @@ module divider_timing_case #(
   ppc_iu #(.DIV_LATENCY(LATENCY)) dut (
     .clk_i(clk), .rst_ni(rst_n), .cancel_i(cancel),
     .issue_valid_i(issue_valid), .issue_ready_o(issue_ready), .issue_i(issue),
-    .result_valid_o(result_valid), .result_ready_i(result_ready), .result_o(result)
+    /* verilator lint_off PINCONNECTEMPTY */ .result_offer_o() /* verilator lint_on PINCONNECTEMPTY */, .result_valid_o(result_valid), .result_ready_i(result_ready), .result_o(result)
   );
 
   task automatic require(input logic condition, input string message);
