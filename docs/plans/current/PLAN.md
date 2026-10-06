@@ -120,9 +120,15 @@ and [manual inventory](../../references/MANUAL_INVENTORY.md) (AUD-75 to
 AUD-86). 66 MHz regressed: every top misses by −3.3 to −5.5 ns on
 `0ff3a45` (−0.45 ns on `6cb15bb`). The MiSTer test core does not route.
 
-In progress on branches: batch 14, fixes for AUD-75, 77, 79, 81 and 83
-(`b14-coherence-reset`); Doom and Quake timedemos (`doom-timedemo`,
-`quake-timedemo`).
+Done (batch 14, 2026-10-06): manual-mismatch fixes AUD-75 (SMI with TGPR),
+AUD-77 (burst-read snoop flush), AUD-79 (IBATs have no G bit), AUD-81 (IFEM on
+cached fetches) and AUD-83 (soft reset clears ICE).
+
+In progress on branches: batch 15, AUD-76/81/84/85/86 and the ISA metadata
+(`batch15-land`, `isa-metadata`); AUD-82 and the 603 refetch (`b15-snoop`); FPU
+semantics and AUD-87 (`fpu-semantics`); the 45 MHz MiSTer test core (`mister-45`;
+45 MHz is the floor, 66 MHz the target); Doom and Quake timedemos
+(`doom-timedemo`, `quake-timedemo`, `quake-le-asm`).
 
 Queued, in order:
 
