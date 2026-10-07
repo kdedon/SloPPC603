@@ -1100,6 +1100,7 @@ module ppc_core #(
   logic iq_valid1;
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq1;
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq2;
+  logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq3;
   /* verilator lint_on UNUSEDSIGNAL */
   // A removed first word passes its lane to the second.
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_lane0;
@@ -1120,7 +1121,7 @@ module ppc_core #(
     .fold_write_i(ctr_rel_taken),
     .valid_o({iq_valid1, iq_valid}),
     .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb, iq_rec}), .dq1_o(iq_dq1),
-    .dq2_o(iq_dq2),
+    .dq2_o(iq_dq2), .dq3_o(iq_dq3),
     .count_o(iq_count)
   );
   assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair, dq1_rb, dq1_rec} = iq_dq1;
@@ -2738,17 +2739,21 @@ module ppc_core #(
   function automatic logic needs_iu(unit_class_e unit, logic sru);
     return (unit == UNIT_IU) && !sru;
   endfunction
-  unit_class_e dq2_unit;
-  logic dq2_sru;
-  logic fd_next_iu, after1_iu, after0_iu;
+  unit_class_e dq2_unit, dq3_unit;
+  logic dq2_sru, dq3_sru;
+  logic fd_next_iu, after1_iu, after2_iu, after0_iu;
   assign dq2_unit = unit_class_e'(iq_dq2[BREC_W + 1 + $bits(iq_pair_t) -: 3]);
   assign dq2_sru = iq_dq2[BREC_W + 1 + $bits(iq_pair_t) - 3];
+  assign dq3_unit = unit_class_e'(iq_dq3[BREC_W + 1 + $bits(iq_pair_t) -: 3]);
+  assign dq3_sru = iq_dq3[BREC_W + 1 + $bits(iq_pair_t) - 3];
   assign fd_next_iu = fd_valid &&
     ((push_pair.unit != UNIT_BPU) ? needs_iu(push_pair.unit, push_pair.sru) :
      (fd1_valid && needs_iu(push_pair1.unit, push_pair1.sru)));
+  // A branch in the queue takes no unit station; the lookahead passes it.
+  assign after2_iu = (iq_count > IQ_COUNT_WIDTH'(3)) ?
+    ((dq3_unit != UNIT_BPU) && needs_iu(dq3_unit, dq3_sru)) : fd_next_iu;
   assign after1_iu = (iq_count > IQ_COUNT_WIDTH'(2)) ?
-    ((dq2_unit != UNIT_BPU) ? needs_iu(dq2_unit, dq2_sru) :
-     ((iq_count == IQ_COUNT_WIDTH'(3)) && fd_next_iu)) : fd_next_iu;
+    ((dq2_unit != UNIT_BPU) ? needs_iu(dq2_unit, dq2_sru) : after2_iu) : fd_next_iu;
   assign after0_iu = iq_valid1 ?
     ((dq1_pair.unit != UNIT_BPU) ? needs_iu(dq1_pair.unit, dq1_pair.sru) : after1_iu) : fd_next_iu;
   assign c0_sru = HAS_SRU && c0_iu && iq_pair.sru && sru_rs_ready &&

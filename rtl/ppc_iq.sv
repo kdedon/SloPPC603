@@ -35,6 +35,8 @@ module ppc_iq #(
   output logic [WIDTH-1:0] dq0_o, dq1_o,
   // The entry behind DQ1, valid while count_o exceeds 2.
   output logic [WIDTH-1:0] dq2_o,
+  // The entry behind that, valid while count_o exceeds 3.
+  output logic [WIDTH-1:0] dq3_o,
   output logic [$clog2(DEPTH + 1)-1:0] count_o
 );
   localparam int COUNT_WIDTH = $clog2(DEPTH + 1);
@@ -50,6 +52,7 @@ module ppc_iq #(
   assign dq0_o = entries[0];
   assign dq1_o = entries[1];
   assign dq2_o = entries[2];
+  assign dq3_o = entries[3];
   assign count_o = count;
   assign push0 = push_valid_i[0] && push_ready_o;
   assign push1 = push0 && push_valid_i[1] && push2_ready_o;
