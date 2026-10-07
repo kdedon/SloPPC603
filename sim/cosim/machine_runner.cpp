@@ -12,6 +12,7 @@
 #include <utils/profiler.h>
 #include "reference_adapter.h"
 #include <array>
+#include <csetjmp>
 #include <csignal>
 #include <cstring>
 #include <deque>
@@ -246,6 +247,20 @@ static uint32_t munge(uint32_t ea, unsigned n) {
     return ea;
 }
 
+// The word at PC as the reference fetches it, through its instruction
+// translation. A fetch that faults (and takes the exception) returns false.
+static bool fetch_word(uint32_t& word) {
+    jmp_buf outer;
+    std::memcpy(outer, exc_env, sizeof(outer));
+    volatile bool ok = false;
+    if (!setjmp(exc_env)) {
+        word = ppc_read_instruction(mmu_translate_imem(ppc_state.pc));
+        ok = true;
+    }
+    std::memcpy(exc_env, outer, sizeof(outer));
+    return ok;
+}
+
 int main(int argc, char** argv) {
     try {
         // image.hex trace [ram=base:bytes] [io=base:bytes] [exit=addr] [spr=n:value]
@@ -370,9 +385,8 @@ int main(int argc, char** argv) {
         // carries. They retire without a record and the reference steps them.
         auto step_removed = [&](unsigned n) {
             for (unsigned i = 0; i < n; ++i) {
-                uint32_t w = 0;
-                if (uint8_t* p = ram_byte(munge(ppc_state.pc, 4)))
-                    w = uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3];
+                uint32_t w = 0, at = ppc_state.pc;
+                if (!fetch_word(w)) fail("removed instruction at " + h8(at) + " faulted on fetch");
                 uint32_t op = w >> 26, xo = (w >> 1) & 1023;
                 bool branch = op == 18 || op == 16 || (op == 19 && (xo == 16 || xo == 528));
                 bool ctr = op != 18 && !((w >> 23) & 1);
