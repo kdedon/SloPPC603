@@ -18,10 +18,11 @@ module tb_rename_pair;
   logic [31:0] arch0, arch1, arch2, arch3;
   operand_t got [4];
   logic [31:0] mapped;
-  logic a0_ready, a1_ready, alloc0, alloc1, rel0, rel1, wake_v, recovery;
-  rename_tag_t a0_tag, a1_tag, rel0_tag, rel1_tag;
-  logic [4:0] a0_reg, a1_reg, rel0_reg, rel1_reg;
-  completion_tag_t a0_prod, a1_prod, rel0_prod, rel1_prod;
+  logic a0_ready, a1_ready, a2_ready, alloc0, alloc1, alloc2, rel0, rel1, wake_v, recovery;
+  rename_tag_t a0_tag, a1_tag, a2_tag, rel0_tag, rel1_tag;
+  logic [4:0] a0_reg, a1_reg, a2_reg, rel0_reg, rel1_reg;
+  completion_tag_t a0_prod, a1_prod, a2_prod, rel0_prod, rel1_prod;
+  completion_tag_t three_prod [3];
   wake_packet_t wake;
   logic [CW-1:0] surv_count;
   retire_packet_t surv_pkt [CQ_DEPTH];
@@ -45,6 +46,8 @@ module tb_rename_pair;
     .alloc_reg_i(a0_reg), .alloc_producer_i(a0_prod),
     .alloc1_ready_o(a1_ready), .alloc1_tag_o(a1_tag), .alloc1_i(alloc1),
     .alloc1_reg_i(a1_reg), .alloc1_producer_i(a1_prod),
+    .alloc2_ready_o(a2_ready), .alloc2_tag_o(a2_tag), .alloc2_i(alloc2),
+    .alloc2_reg_i(a2_reg), .alloc2_producer_i(a2_prod),
     .wake_valid_i(wake_v), .wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0), .wake1_offer_i(1'b0),
     .release_i(rel0), .release_reg_i(rel0_reg), .release_tag_i(rel0_tag),
     .release_producer_i(rel0_prod),
@@ -111,7 +114,7 @@ module tb_rename_pair;
   endtask
 
   task automatic idle;
-    alloc0 = 0; alloc1 = 0; rel0 = 0; rel1 = 0; wake_v = 0; recovery = 0;
+    alloc0 = 0; alloc1 = 0; alloc2 = 0; rel0 = 0; rel1 = 0; wake_v = 0; recovery = 0;
     a0_reg = '0; a1_reg = '0; a0_prod = '0; a1_prod = '0;
     rel0_reg = '0; rel1_reg = '0; rel0_tag = '0; rel1_tag = '0;
     rel0_prod = '0; rel1_prod = '0; wake = '0; surv_count = '0;
@@ -296,6 +299,34 @@ module tb_rename_pair;
     @(posedge clk);
     #1;
     check(!mapped[3] && dut.valid == 0, "younger release clears the map");
+    @(negedge clk);
+    idle();
+    // Three allocations at once to one register: port 2 is the youngest.
+    alloc0 = 1; a0_reg = 5'd3; a0_prod = next_producer();
+    alloc1 = 1; a1_reg = 5'd3; a1_prod = next_producer();
+    alloc2 = 1; a2_reg = 5'd3; a2_prod = next_producer();
+    three_prod = '{a0_prod, a1_prod, a2_prod};
+    #1;
+    check(a2_ready && a0_tag == 0 && a1_tag == 1 && a2_tag == 2, "first three slots");
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    idle();
+    rd[0] = 5'd3;
+    apply();
+    #1;
+    check(mapped[3] && got[0].tag == 2 && got[0].producer == three_prod[2] && !got[0].ready &&
+          dut.valid == 5'b00111, "three-port WAW: port 2 wins");
+    rel0 = 1; rel0_tag = 0; rel0_reg = 5'd3; rel0_prod = three_prod[0];
+    rel1 = 1; rel1_tag = 1; rel1_reg = 5'd3; rel1_prod = three_prod[1];
+    @(posedge clk);
+    #1;
+    @(negedge clk);
+    idle();
+    rel0 = 1; rel0_tag = 2; rel0_reg = 5'd3; rel0_prod = three_prod[2];
+    @(posedge clk);
+    #1;
+    check(!mapped[3] && dut.valid == 0, "port 2 release clears the map");
     @(negedge clk);
     idle();
 

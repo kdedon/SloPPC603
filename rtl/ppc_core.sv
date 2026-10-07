@@ -295,7 +295,7 @@ module ppc_core #(
   retire_packet_t cq_head_packet, cq_head1_packet;
   /* verilator lint_on UNUSEDSIGNAL */
   operand_t src_a, src_b, src_c, operand_a, operand_b;
-  logic mem_base_ready, unit_update, update_alloc, update_alloc_store;
+  logic mem_base_ready, unit_update, update_load, update_alloc, update_alloc_store;
   rs_entry_t rs_entry;
   issue_packet_t issue;
   result_packet_t result, iu_result, special_result;
@@ -472,7 +472,8 @@ module ppc_core #(
   completion_tag_t alloc1_producer;
   operand_t src_a1, src_b1, src_c1;
   logic alloc1_ready, cq1_ready;
-  rename_tag_t alloc1_tag;
+  rename_tag_t alloc1_tag, alloc2_tag;
+  logic alloc2_ready, rename1_dq1, rename2_dq1;
   logic dispatch1, rename0_dq1, d1_gpr;
   // DQ1 entry; only its PC and instruction word are read from the packet.
   /* verilator lint_off UNUSEDSIGNAL */
@@ -1797,13 +1798,15 @@ module ppc_core #(
     .alloc_producer_i(rename0_dq1 ? alloc1_producer : alloc_producer),
     .alloc_value_valid_i(update_alloc_store), .alloc_value_i(dispatch_ea),
     .alloc1_ready_o(alloc1_ready), .alloc1_tag_o(alloc1_tag),
-    .alloc1_i((dispatch1 && d1_gpr && dispatch_uop.gpr_write) ||
-              (update_alloc && !update_alloc_store)),
-    // An update form's base may dispatch beside a DQ1 op that writes no GPR,
-    // so the slot's owner follows the update, not dispatch1.
-    .alloc1_reg_i(unit_update ? dispatch_uop.src_a : dq1_uop.dst),
-    .alloc1_producer_i(unit_update ? alloc_producer : alloc1_producer),
+    .alloc1_i(rename1_dq1 || (update_alloc && !update_alloc_store)),
+    // An update load's base takes port 1 under the load's ownership.
+    .alloc1_reg_i(update_load ? dispatch_uop.src_a : dq1_uop.dst),
+    .alloc1_producer_i(update_load ? alloc_producer : alloc1_producer),
     .alloc1_value_valid_i(update_alloc && !update_alloc_store), .alloc1_value_i(dispatch_ea),
+    // Beside an update load DQ1 takes the third slot (UM 6.6.1.2: only the
+    // count of free renames limits dispatch).
+    .alloc2_ready_o(alloc2_ready), .alloc2_tag_o(alloc2_tag), .alloc2_i(rename2_dq1),
+    .alloc2_reg_i(dq1_uop.dst), .alloc2_producer_i(alloc1_producer),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
     .wake1_offer_i(result1_offer),
     .release_i(commit && retire_o.rename_owned), .release_reg_i(retire_o.gpr), .release_tag_i(retire_o.tag),
@@ -2313,6 +2316,7 @@ module ppc_core #(
   end
   // An update form in the unit writes its base through a second rename slot.
   assign unit_update = (lsu_route || fp_mem_pipe) && uop.mem_update;
+  assign update_load = unit_update && dispatch_uop.gpr_write;
   assign update_alloc = dispatch && (lsu_route || fp_mem_pipe) && dispatch_uop.mem_update;
   assign update_alloc_store = update_alloc && !dispatch_uop.gpr_write;
   // The check is registered: the head is unchanged while nothing dispatches
@@ -2565,15 +2569,21 @@ module ppc_core #(
     !(c0_carry && (!d1_iu || c1_carry)) &&
     !(c1_carry && ((bs_busy && !bs_hit) || fp_cr_pending ||
       (bu_branch && bu_spec) || c0_fp || c0_fp_mem)) &&
-    // DQ1 needs only the renames left after DQ0 (UM 6.6.1.2).
-    (!unit_update || (d1_iu && !d1_gpr)) && !sru_wait1 && !update_wait1 &&
+    // DQ1 needs only the renames left after DQ0 (UM 6.6.1.2). It does not
+    // read the base an update form in DQ0 writes.
+    (!unit_update || (d1_iu && !reads_reg(dq1_uop, uop.src_a))) &&
+    !sru_wait1 && !update_wait1 &&
     (!d1_lsu || d1_lsu_ready) &&
     (!flags_tok1 || (!flags_waiter && (!cr_wait1 || (cr_wait_ok1 && !cr_wait0)))) &&
     (!d1_needs_flags || xer_ready1) &&
-    (!d1_gpr || (dispatch_uop.gpr_write ? alloc1_ready : alloc_ready)) &&
+    (!d1_gpr || (update_load ? alloc2_ready :
+                 (dispatch_uop.gpr_write || unit_update) ? alloc1_ready : alloc_ready)) &&
     (!d1_iu || d1_iu_ready) && (!d1_mem || d1_mem_ready) && (!d1_fp || d1_fp_ready);
-  // DQ1 takes rename port 0 when DQ0 writes no GPR.
-  assign rename0_dq1 = dispatch1 && d1_gpr && !dispatch_uop.gpr_write;
+  // DQ1 takes the rename port after those DQ0 uses: port 0 when DQ0 writes
+  // no GPR, port 2 beside an update load.
+  assign rename0_dq1 = dispatch1 && d1_gpr && !dispatch_uop.gpr_write && !unit_update;
+  assign rename1_dq1 = dispatch1 && d1_gpr && (dispatch_uop.gpr_write != unit_update);
+  assign rename2_dq1 = dispatch1 && d1_gpr && update_load;
   assign lane_dq1 = d1_mem && !special_uop;
   assign fp_dq1 = d1_fp && !c0_fp && !c0_fp_mem;
   assign flags_ready = rst_ni && !recovery_accepted && xer_ready0 &&
@@ -2641,7 +2651,8 @@ module ppc_core #(
     allocation1.insn = dq1_head.insn;
     allocation1.gpr_write = d1_gpr;
     allocation1.gpr = dq1_uop.dst;
-    allocation1.tag = dispatch_uop.gpr_write ? alloc1_tag : alloc_tag;
+    allocation1.tag = update_load ? alloc2_tag :
+                      (dispatch_uop.gpr_write || unit_update) ? alloc1_tag : alloc_tag;
     allocation1.needs_flags = d1_needs_flags;
     allocation1.write_xer = dq1_uop.write_xer;
     allocation1.write_ca = dq1_uop.write_ca;

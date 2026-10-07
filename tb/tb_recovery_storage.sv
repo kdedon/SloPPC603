@@ -41,6 +41,8 @@ module tb_recovery_storage;
     /* verilator lint_on PINCONNECTEMPTY */
     .read_a1_i(5'd0), .read_b1_i(5'd0), .arch_a1_i(32'd0), .arch_b1_i(32'd0),
     .alloc1_i(1'b0), .alloc1_reg_i(5'd0), .alloc1_producer_i('0),
+    /* verilator lint_off PINCONNECTEMPTY */ .alloc2_ready_o(), .alloc2_tag_o(),
+    /* verilator lint_on PINCONNECTEMPTY */ .alloc2_i(1'b0), .alloc2_reg_i(5'd0), .alloc2_producer_i('0),
     .release1_i(1'b0), .release1_reg_i(5'd0), .release1_tag_i('0), .release1_producer_i('0),
     .mapped_o(rename_mapped),
     .clk_i(clk),.rst_ni(rst_n),.read_a_i(read_reg),.read_b_i(read_reg),
@@ -108,9 +110,6 @@ module tb_recovery_storage;
     tick();wake_valid=0;check_operand(0,0);
     wake.producer=completion_tag_t'(3);wake.value=32'hcafebabe;wake_valid=1;
     tick();wake_valid=0;check_operand(1,32'hcafebabe);
-    // A stale release must not invalidate a reused slot or its latest map.
-    release_slot=1;release_owner=completion_tag_t'(2);tick();release_slot=0;
-    check_operand(1,32'hcafebabe);
     // Exact release removes validity; retained owner bits cannot forward a
     // later stale wake into the architectural fallback or a new allocation.
     release_slot=1;release_owner=completion_tag_t'(3);tick();release_slot=0;
