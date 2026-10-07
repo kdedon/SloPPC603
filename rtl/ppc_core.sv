@@ -1510,16 +1510,18 @@ module ppc_core #(
   // only uncommitted CR writer, so the merge stays exact until it retires.
   assign bu_cr = (flags_busy && bu_cr_valid_q) ? bu_cr_q : cr;
   // The merge is exact only while no FP CR write is outstanding.
-  logic sru_cr_capture;
-  assign sru_cr_capture = HAS_SRU && !fp_cr_pending && sru_result_valid && sru_result_ready &&
-    !sru_cancel && !recovery_accepted && flags_busy && owner_simple_q &&
-    (sru_result.producer == flags_owner);
-  assign bu_cr_capture = sru_cr_capture || (!fp_cr_pending && iu_result_valid &&
-    iu_result_ready && !iu_cancel && !recovery_accepted && !iu_result.fault && flags_busy &&
-    owner_simple_q && (iu_result.producer == flags_owner));
+  // The offers ignore recovery: a cancelled offer never reaches a retiring
+  // entry, and retirement gates recovery acceptance.
+  logic sru_cr_offer, iu_cr_offer, sru_cr_capture, iu_offer_ready;
+  assign sru_cr_offer = HAS_SRU && !fp_cr_pending && sru_result_offer && sru_result_ready &&
+    flags_busy && owner_simple_q && (sru_result.producer == flags_owner);
+  assign iu_cr_offer = !fp_cr_pending && iu_result_offer && iu_offer_ready &&
+    !iu_result.fault && flags_busy && owner_simple_q && (iu_result.producer == flags_owner);
+  assign sru_cr_capture = sru_cr_offer && !sru_cancel && !recovery_accepted;
+  assign bu_cr_capture = sru_cr_capture || (iu_cr_offer && !iu_cancel && !recovery_accepted);
   assign bu_cr_d = owner_crf_valid_q ?
     ((cr & ~(32'hf000_0000 >> (owner_crf_q * 4))) |
-     ({sru_cr_capture ? sru_result.cr0 : iu_result.cr0, 28'b0} >> (owner_crf_q * 4))) : cr;
+     ({sru_cr_offer ? sru_result.cr0 : iu_result.cr0, 28'b0} >> (owner_crf_q * 4))) : cr;
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       owner_simple_q <= 1'b0;
@@ -1575,7 +1577,7 @@ module ppc_core #(
   // Nothing younger than the anchor completes until it resolves; a miss
   // keeps the anchor, or removes everything once the anchor has retired.
   localparam bit BS_ANCHOR = BRANCH_REMOVAL && BS_EARLY;
-  logic bs_anch_q, bs_anch_done_q, bs_young_hold, bs_store_hold, last_valid_q;
+  logic bs_anch_q, bs_anch_done_q, bs_young_hold, bs_store_hold, last_valid_q, bs_cap_offer;
   logic [1:0] bs_rb_q;
   completion_tag_t last_tag_q;
   completion_tag_t bs_tag_q, bs_owner_q;
@@ -1616,7 +1618,12 @@ module ppc_core #(
   assign bs_cap_hit = BS_EARLY && bs_valid_q && bs_anch_q && !bs_cr_ready && bu_cr_capture &&
     (flags_owner == bs_owner_q) && !bs_miss_q && !bs_fix_q &&
     ((bs_ctr_ok_q && (bu_cr_d[5'd31 - bs_bi_q] == bs_bo3_q)) == bs_pred_q);
-  assign bs_young_hold = bs_anch_q && ((bs_valid_q && !bs_hit) || bs_miss_q);
+  // An instruction behind the branch may complete in its resolve cycle
+  // (UM 6.6.1.3, Figure 6-5).
+  assign bs_cap_offer = BS_EARLY && bs_valid_q && bs_anch_q && !bs_cr_ready &&
+    (sru_cr_offer || iu_cr_offer) && (flags_owner == bs_owner_q) && !bs_miss_q && !bs_fix_q &&
+    ((bs_ctr_ok_q && (bu_cr_d[5'd31 - bs_bi_q] == bs_bo3_q)) == bs_pred_q);
+  assign bs_young_hold = bs_anch_q && ((bs_valid_q && !bs_hit && !bs_cap_offer) || bs_miss_q);
   assign bs_hold = (bs_valid_q && !bs_anch_q && !bs_hit && (retire_producer == bs_tag_q)) ||
     (bs_young_hold && bs_anch_done_q) || bs_redirect_q;
   // A store behind an anchored branch waits out the cycle it resolves in,
@@ -2341,6 +2348,9 @@ module ppc_core #(
   assign result1_offer = sru_result_offer || iu_result_offer || special_port1;
   assign iu_result_ready = (result_ready && !special_result_select && !lsu_result_offer) ||
                            iu_port1;
+  // iu_result_ready for an offer, without the cancel.
+  assign iu_offer_ready = (result_ready && !special_result_select && !lsu_result_offer) ||
+    (HAS_SRU && ENABLE_LSU_PIPE && lsu_result_offer && !special_result_select && !sru_result_offer);
   assign sru_result_ready = 1'b1;
   // Classify held identities without depending on cancel-masked valid signals.
   always_comb begin
