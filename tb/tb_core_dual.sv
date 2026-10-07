@@ -157,7 +157,8 @@ module tb_core_dual #(
       32'h24: return add(8, 4, 5);
       32'h28: return addi(9, 8, 1);
       32'h2c: return addi(21, 0, 1);
-      // C: add + mullw need the IU twice: DQ1 waits.
+      // C: add + mullw pair, the add in the SRU (UM 6.4.5); without the
+      // SRU both need the IU and DQ1 waits.
       32'h30: return SYNC;
       32'h34: return add(10, 4, 5);
       32'h38: return mullw(11, 4, 7);
@@ -370,7 +371,7 @@ module tb_core_dual #(
       $display("dispatch:");
       expect_pair(32'h14, 1'b1, "add + add (IU + SRU)");
       expect_pair(32'h24, 1'b1, "add + dependent addi");
-      expect_pair(32'h34, 1'b0, "add + mullw (same unit)");
+      expect_pair(32'h34, dut.HAS_SRU, "add + mullw (add to the SRU)");
       expect_pair(32'h44, 1'b1, "lwz + dependent add");
       // Without the unit the lwz waits for the lane, and the add, the IU
       // station holding the dependent add, goes ahead to the SRU.
