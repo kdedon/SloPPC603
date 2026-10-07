@@ -2520,10 +2520,12 @@ module ppc_core #(
   // A held move enters the lane in the cycle its older work completes, so it
   // executes the cycle after (UM 6.3.3.2). The lane reads LR and CTR in its
   // execute cycle, after a retiring branch or shadow LR has written them.
+  // It does not enter early past a branch still unresolved, which the
+  // retiring instruction's CR may resolve as mispredicted.
   function automatic logic [CQ_INDEX_WIDTH-1:0] cq_next(logic [CQ_INDEX_WIDTH-1:0] i);
     return (i == CQ_INDEX_WIDTH'(CQ_DEPTH - 1)) ? '0 : i + 1'b1;
   endfunction
-  assign sru_head_next = commit && !(special_producer == retire_producer) &&
+  assign sru_head_next = commit && !bs_busy && !(special_producer == retire_producer) &&
     (commit1 ? (!(special_producer == retire1_producer) &&
                 (cq_next(cq_next(cq_head)) == sru_producer_q.index)) :
                (cq_next(cq_head) == sru_producer_q.index));
