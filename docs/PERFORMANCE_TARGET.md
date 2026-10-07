@@ -2369,6 +2369,71 @@ Dhrystone 1,965,521 cycles (was 1,965,563), CoreMark 4,136,403
 `PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0
 errors. No fit was run, so this round makes no timing claim.
 
+## Timing accuracy round 38
+
+A directed test of round 37's speculative `bl` found an LR bug, fixed in
+1966674. No cycle-accuracy change was intended.
+
+Bug: a `bl` removed at fetch on the predicted path of an anchored
+branch still waiting on CR armed its LR shadow on the next entry. LR was
+written as that entry reached the CQ head, although the entry's own
+retirement was held by `bs_hold`. When the branch then mispredicted, the
+recovery dropped the shadow, but LR already held the wrong-path PC + 4.
+The write now also waits for `!bs_hold`. A `bl` completes only after the
+branches before it resolve (UM 6.3.1, 6.6.1.3).
+
+Tests:
+
+- `test-core-branch-fold` program: the bc on a divide, mispredicted
+  both ways, with the wrong path holding a `bl` alone, behind a carrier
+  `addi`, or behind an `mtlr` (that one is not removed at fetch). The
+  correct path reads LR and calls its own `bl`. Without the fix the
+  width-1 run fails with GPR24 0x22b0 (the wrong-path `bl`'s PC + 4)
+  where 0x44 is expected.
+- `test-core-interrupt` phases 13-16: `divw`, `cmpi`, `beq+` (not
+  taken), and the wrong path `bl` at 0x300 (alone) or 0x304 (behind a
+  nop). The IRQ is raised as the shadow is set (13, 14) or once it is
+  armed (15, 16). It must see the committed LR and resume on the correct
+  path, where `mflr` reads it. Phase 15 fails without the fix. The
+  oracle accepts the IRQ at 0x34, after the resolved removed `bc`, which
+  no later retirement counts.
+
+Path: `bs_hold` (CR capture and resolve) now feeds the LR shadow write
+enable.
+
+Width 2: Dhrystone stays at 511, and CoreMark's demo cycles fall by 6.
+Width 1: unchanged.
+
+Not done in the time box: the `strcmp` exit design (round 36) and the
+width-2 `strcpy` entry lag. In the lag, `lwz` fff03808 reports "own
+slot: DQ1 IU+LSU other" for one cycle, then pairs with fff0380c a cycle
+after the model. Its cause is not yet traced.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 37 (af57641) | 509 | 511 | 600 | 4,136,434 | 4,500,094 |
+| LR shadow behind `bs_hold` (1966674) | 509 | 511 | 600 | 4,136,428 | 4,500,094 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 (`DISPATCH_WIDTH=2` for
+width 2) with `VERILATOR=tools/verilate-lsu-pipe
+VERILATOR_TOOL=tools/verilate-lsu-pipe BRANCH_REMOVAL=1`: `test-core
+test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit 1966674, 2026-10-07. All fresh, all
+pass; CoreMark CRCs match. Dispatch rules, width 2: Dhrystone 1,965,521,
+CoreMark 4,136,403, Whetstone 6,443,608; width 1: Dhrystone 2,213,186,
+CoreMark 4,500,069, Whetstone 7,124,977 (all as round 37).
+`test-fpu-all` was not rerun (no FPU change). Quartus `quartus_map
+--analysis_and_elaboration` of `quartus/chip` with `PPC_LSU_PIPE=1`,
+`PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
+run, so this round makes no timing claim.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
