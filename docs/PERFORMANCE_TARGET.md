@@ -2172,6 +2172,56 @@ cycles (was 2,245,885), CoreMark 4,503,444 (4,574,160), Whetstone
 `quartus/chip` with `PPC_LSU_PIPE=1` and `PPC_BRANCH_REMOVAL=1` (width
 1): 0 errors. No fit was run, so this round makes no timing claim.
 
+## Timing accuracy round 35
+
+One core change; the model is unchanged (509). Dhrystone width 2
+512 → 511, width 1 stays at 607.
+
+`dhry_main` fff03870, traced: `Proc_7`'s `mr` fff03e70 and `blr`
+fff03e74 arrived as one doubleword while the IQ was full (the core
+trails the model by a cycle there, inherited from earlier code). The
+fetcher handed out the `mr` alone and refetched the `blr` a cycle later,
+so the `blr` folded, and fff0386c was fetched, a cycle late. The round 34
+note had the symptom wrong: fff03870 follows fff0386c by one cycle; the
+pair was late. UM 6.3.1: a branch takes no IQ entry, so the model fetches
+it with the word before it as that word enters the IQ (A2, A3). Empty
+fetch registers now take such a pair (second word a `b` or unconditional
+`bclr`, as `rm1_early` already selects) while the IQ is full; the branch
+folds as the first word enters. Path: `fetch_room2` gains an OR of
+`rm1_early` and `!fd_valid_q`. The remaining cycle at fff03870 is a
+completion-queue stall (`LSU+IU cq`) that follows from the same inherited
+lag.
+
+Not attempted this round (diagnosis as in round 34): the `strcmp` exit
+(the `mr` held beside a CR-held `beq`) and the `strcpy` entry (`bl`
+leaving the IQ at fetch).
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 34 (2c61050) | 509 | 512 | 607 | 4,136,487 | 4,503,469 |
+| Removable-branch pair held whole (fda2a79) | 509 | 511 | 607 | 4,136,487 | 4,503,469 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 (`DISPATCH_WIDTH=2` for
+width 2) with `VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit fda2a79, 2026-10-07. All fresh, all
+pass; CoreMark CRCs match. Dispatch rules, width 2: Dhrystone 1,965,563
+cycles (was 1,967,636), CoreMark 4,136,462 (unchanged), Whetstone
+6,443,805 (6,443,806); width 1: Dhrystone 2,228,113 (2,228,118), CoreMark
+4,503,444, Whetstone 7,152,086 (unchanged). `test-fpu-all` not rerun (no
+LSU or finish change). Quartus `quartus_map
+--analysis_and_elaboration` of `quartus/chip` with `PPC_LSU_PIPE=1`,
+`PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
+run, so this round makes no timing claim.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
