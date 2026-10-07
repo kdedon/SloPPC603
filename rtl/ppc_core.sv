@@ -1918,6 +1918,10 @@ module ppc_core #(
     .lsu_done_i(SRU_TO_IU ? sru_result_valid : lsu_result_valid),
     .lsu_producer_i(SRU_TO_IU ? sru_result.producer : lsu_result.producer),
     .lsu_value_i(SRU_TO_IU ? sru_result.value : lsu_result.value),
+    // With it, SRU results take the second forward port (UM 6.3.1 feed
+    // forwarding).
+    .fwd_done_i(HAS_SRU && !SRU_TO_IU && sru_result_valid && sru_result_ready),
+    .fwd_producer_i(sru_result.producer), .fwd_value_i(sru_result.value),
     .issue_valid_o(rs_issue_valid), .issue_ready_i(issue_ready && !iu_cr_hold), .issue_o(issue)
   );
   assign issue_valid = rs_issue_valid && !iu_cr_hold;
@@ -1962,11 +1966,12 @@ module ppc_core #(
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .iu_done_i(sru_result_valid && sru_result_ready),
         .iu_producer_i(sru_result.producer), .iu_value_i(sru_result.value),
-        // IU results, else load results, reach the SRU in the cycle they
-        // finish (UM 6.3.1 feed forwarding).
-        .lsu_done_i(sru_fwd_iu || lsu_result_valid),
-        .lsu_producer_i(sru_fwd_iu ? iu_result.producer : lsu_result.producer),
-        .lsu_value_i(sru_fwd_iu ? iu_result.value : lsu_result.value),
+        // IU and load results reach the SRU in the cycle they finish (UM
+        // 6.3.1 feed forwarding).
+        .lsu_done_i(lsu_result_valid), .lsu_producer_i(lsu_result.producer),
+        .lsu_value_i(lsu_result.value),
+        .fwd_done_i(sru_fwd_iu), .fwd_producer_i(iu_result.producer),
+        .fwd_value_i(iu_result.value),
         .issue_valid_o(sru_rs_issue_valid), .issue_ready_i(sru_issue_ready && !sru_cr_hold),
         .issue_o(sru_issue)
       );
