@@ -1971,6 +1971,61 @@ Whetstone 6,444,552; width 1: 2,265,283, 4,642,762, 7,259,287. Quartus
 `PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0
 errors. No fit was run, so this round makes no timing claim.
 
+## Timing accuracy round 32
+
+One core change: `mtlr` feeds the BPU's LR rename register as it finishes
+(4f2f753). Dhrystone width 2 515 → 513, width 1 619 → 617; the model is
+unchanged (509).
+
+UM 6.4.1.1: "An mtspr(LK) followed by a bclr—Fetching is stopped, and the
+branch waits for the mtspr to execute." The BPU holds its own LR rename
+register for this (UM 6.2). The core cleared `lr_pending_q` only when the
+`mtlr` retired, so the `blr` resolved a cycle after retirement. The lane's
+`mtlr` result now carries the value; a `bclr` waiting on it leaves the IQ
+in the `mtlr` finish cycle and redirects fetch the next (the BPU execute
+cycle). Its target dispatches at `mtlr` finish + 3, the model's F6-3
+timing. This removes two of round 31's three `dhry_main` cycles
+(`Func_2`'s `mtlr r0; blr`).
+
+Timing-phase path, taken for accuracy: the lane's result-port handshake
+(`special_result_ready`) and the producer compare now reach `bu_ready` and
+the dispatch decision, and the lane's result value reaches `bu_target`.
+
+Checker: the `mtlr`/`bclr` case moves from TIM-BPU-FETCH-STOP to
+TIM-BPU-LR-DEPENDENCY, now an execute-kind rule: a `bclr` behind an
+`mtspr(LR)` resolves no earlier than the move's finish (a cycle before it
+retires), and a taken target dispatches no earlier than the move's
+retirement + 2. The test case "bclr removed behind mtlr" is replaced by a
+passing trace (resolve the cycle after finish, target at retirement + 2)
+and three failing ones: `bclr` before the `mtlr` executes, target early,
+and target early after retirement.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 31 (b5e542f) | 509 | 515 | 619 | 4,139,002 | 4,642,787 |
+| `mtlr` feeds the BPU LR rename (4f2f753) | 509 | 513 | 617 | 4,136,530 | 4,640,461 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit 4f2f753, 2026-10-07. All pass; CoreMark
+CRCs match at both widths. At width 1, `test-core-branch-fold` does not
+build (REDEFMACRO of `PPC_DISPATCH_WIDTH` in its width-2 variant), as on
+rounds 28 to 31. Dispatch rules, width 2: Dhrystone 1,969,140 cycles,
+CoreMark 4,136,505, Whetstone 6,443,917; width 1: 2,260,333, 4,640,436,
+7,258,594. Quartus `quartus_map --analysis_and_elaboration` of
+`quartus/chip` with `PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and
+`PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was run, so this round makes no
+timing claim.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
