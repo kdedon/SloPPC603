@@ -81,12 +81,16 @@ def negative_controls(runner, image, runner_args, prefix, le=False):
              'cr': ('mutate=2000:cr', 'state after'), 'store': ('mutate=5000:st', 'store byte'),
              'late store': ('mutate=5000:stlate', 'store byte'),
              # A drop beside removed branches shows as a removed non-branch.
-             'drop': ('drop=3000', ('pc:', 'removed instruction'))}
+             'drop': ('drop=3000', ('pc:', 'removed instruction')),
+             'lr after removed bl': ('mutate=1000:lrbl', 'state after')}
     if le:
         cases['store address'] = ('mutate=5000:staddr', 'store byte')
     # Without a store queue no write follows a younger store.
     if ' deferred_bytes=0 ' in clean.stdout:
         del cases['late store']
+    # Without branch removal no bl retires through the shadow LR.
+    if ' removed_bl=0 ' in clean.stdout:
+        del cases['lr after removed bl']
     for label, (option, expect) in cases.items():
         run = subprocess.run([str(runner), str(image), str(prefix), *runner_args, f'records={records}',
                               option], capture_output=True, text=True)
