@@ -1540,6 +1540,54 @@ checks. Reference: 5 programs and 11 negative controls at both widths; MMU stres
 and 225 interrupts at w1, 41,006 records and 243 interrupts at w2. LSU timing benches: 3,209
 checks, 55 spacings. No bench expectation changed.
 
+## Timing accuracy round 26
+
+A store in LSU P1 no longer waits while a load that passed queued stores
+is still in P2. In `Proc_8` the `lwzx` at `fff03ecc` passes the queued
+`stw`s; the two `stw`s behind it then held P1 a cycle each, P1 filled,
+and the `lwz` at `fff03864` dispatched a cycle late (`LSU_BUSY`). In
+`Proc_1` the `stwu` behind that `lwz` waited the same way and the CQ
+filled. The manual has no such ordering wait: stores leave the LSU for
+the store queue and loads bypass them (UM 1.1.4.3, A6). The store now
+queues and is marked young: the passing load's fault (`redo` or FP
+fault) removes it with the rest of P1, and no later load passes it while
+that load is in P2, so every store a passing load bypasses is older
+than it.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 25 (dd7afe6) | 620 | 525 | 4,629,935 | 4,135,770 |
+| Young stores queue (63247f3) | 619 | 521 | 4,629,966 | 4,134,249 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 1,997,520 to
+1,986,169 cycles; Whetstone 6,443,526 to 6,442,041.
+
+The w2 iteration now equals the model (521). Per function the core is
+still +5 in `dhry_main` and +1 in `strcpy`, offset by `Proc_7` -2 and
+`Func_1` -3. One of the offsets is the core being faster than the
+manual: the `mtlr r0` at `fff03614` retires two cycles after the
+instruction ahead of it, where completion serialization (UM 6.3.3.2) and
+the 2-cycle `mtspr` (Table 6-2) give three. It enters the special lane
+through `sru_head_next`, in the cycle the entry ahead retires, and
+executes for one cycle. The `mtctr` at `fff03338` and `mtlr` at
+`fff03f60` take three. Open; the fix is to let only `mfspr` enter on
+`sru_head_next`.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 63247f3, 2026-10-07. All pass (Quartus: 0 errors), except the known `test-core-branch-fold`
+REDEFMACRO stop at its built-in w2 build at w1; its w1 program passes (checks=101,519). Dispatch
+rules pass Dhrystone, CoreMark and Whetstone at both widths. Interrupt benches: 15,044 and 382
+checks. Reference: 5 programs and 11 negative controls at both widths; MMU stress 46,141 records
+and 225 interrupts at w1, 41,006 records and 243 interrupts at w2. LSU timing benches: 3,209
+checks, 55 spacings. No bench expectation changed.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
