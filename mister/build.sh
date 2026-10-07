@@ -178,6 +178,10 @@ if [[ -f "${out}/ppc603e.sta.summary" ]]; then
     if [[ -f "${out}/ppc603e.failing.txt" ]]; then
       echo "failing setup paths (corner, slack, clock, from, to), worst 40:"
       sort -t$'\t' -k2,2g "${out}/ppc603e.failing.txt" | head -40
+      # One line per failing clock; ci/step.sh copies "negative slack" lines
+      # into the public failure annotation.
+      sort -t$'\t' -k2,2g "${out}/ppc603e.failing.txt" | awk -F'\t' '!seen[$3]++ {
+        printf "negative slack %s at %s on %s: %s -> %s\n", $2, $1, $3, substr($4, 1, 60), substr($5, 1, 60) }'
     fi
   fi
 fi
