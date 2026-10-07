@@ -987,6 +987,33 @@ machine and `test-dispatch-rules`.
   at push needs an IQ-side anchor for recovery, the remaining part of the
   63 cycles `--core branch-slot` prices.
 
+## Timing accuracy round 14
+
+Recorded: `make -C sim BUILD_DIR=<dir> BRANCH_REMOVAL=1 [DISPATCH_WIDTH=2] VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe REFERENCE_DIR=<dingusppc> DEMO_FW_DIR=<main checkout>/toolchain/build/demo MACHINE_PROGRAMS=dhrystone test-core test-core-recovery test-core-dual test-dispatch-rules test-reference-machine perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits e6c5cb2 (before), 95a1efc, 95ec321 and 2032aef, 2026-10-06.
+LSU unit and store queue on, removal on. Every run passes its benches, the
+reference machine and `test-dispatch-rules`; CoreMark CRCs match.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before (e6c5cb2) | 649 | 554 | 4,971,885 | 4,315,278 |
+| Base snoop by default (95a1efc) | 649 | 553 | 4,827,248 | 4,238,258 |
+| Held branch predicted from FD (95ec321) | 631 | 553 | 4,764,675 | 4,235,978 |
+| Target requested on release (2032aef) | 629 | 543 | 4,765,478 | 4,234,377 |
+
+The 603e model gives 521 cycles per Dhrystone run.
+
+- `LSU_BASE_SNOOP` is on: a load whose base a load or add produces waits
+  Table 6-6's 2 cycles. `LSU_BASE_SNOOP=0` keeps the base wait, the named
+  timing trade ([LSU_PIPELINE.md](LSU_PIPELINE.md#base-snooping)).
+- A held CR branch released from FD with no IQ entry left to carry its
+  prediction no longer enters the IQ (UM 6.3.1): it is predicted from FD,
+  anchored on the youngest entry dispatching that cycle or the youngest CQ
+  entry, and may replace an anchored prediction whose CR arrives matching
+  it that cycle. In `strcmp` the slot becomes fetch wait.
+- A held branch predicted taken as it is released requests its target on
+  that edge rather than through `fold_q` a cycle later (UM Figure 6-5).
+  `strcmp` and `strcpy` now match the model.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
