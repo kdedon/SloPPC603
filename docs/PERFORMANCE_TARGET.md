@@ -1281,6 +1281,56 @@ Reference: 5 programs and 11 negative controls at both widths; Dhrystone
 records, 220 interrupts and 2,944 removed `bdnz` at w1, 41,061 records and
 236 interrupts at w2.
 
+## Timing accuracy round 21
+
+An `mtlr`/`mtctr` now dispatches into its holding slot before its
+operand is written and takes it from the result buses there, as a
+reservation station would (UM 6.3.3); it still enters the special lane
+only at the CQ head. Before, it waited at dispatch for a ready source,
+so in `memcpy` the `mtctr` behind `srwi` dispatched a cycle late.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 20 (7a2a472) | 622 | 531 | 4,674,089 | 4,170,333 |
+| Held-move snoop (5b26f0e) | 623 | 531 | 4,671,880 | 4,170,343 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 2,014,111 to
+2,013,520 cycles; Whetstone 6,481,816 to 6,481,565.
+
+Diagnosis of the open w2 gaps (one iteration, core dispatch against the
+model's front end):
+
+- `dhry_main`: after `Proc_7` the core fetches `fff03e70` alone and its
+  `blr` a cycle later, because a pair is fetched only with two free IQ
+  entries. The model fetches the pair, since a branch goes to the BPU and
+  takes no IQ entry (UM 6.3.1). The core is slow; every later fetch in
+  the block is a cycle behind. Fix: let a fetched pair in when only one
+  entry is free and the second word is removed.
+- `memcpy`: with the `mtctr` fixed, `lwz` at `fff0333c` still dispatches
+  a cycle after it, as DQ1 pairs beside a move only with an IU op. A
+  trial that also paired an access beside `mtspr` matched the model's
+  dispatch but then lost three cycles to `LSU_BUSY` before `fff0334c`
+  (Dhrystone 532), so it was dropped; that stall is undiagnosed.
+- `Proc_8`: `lwz r6,76(r1)` at `fff03850` reads the word `Proc_7` just
+  stored and completes one cycle later than the model (A6), which fills
+  the CQ and delays `fff03e7c` (+1). `stwx` at `fff03e88` then misses
+  pairing in DQ1 (`IU+LSU lsu`, +1). Not yet traced into the LSU.
+- `Proc_1`: not diagnosed this round.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 5b26f0e, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=101,519). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
+Reference: 5 programs and 11 negative controls at both widths; MMU stress
+46,319 records and 241 interrupts at w1, 41,058 records and 236 interrupts at w2.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
