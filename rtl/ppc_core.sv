@@ -1724,7 +1724,8 @@ module ppc_core #(
   assign shadow_over = shadow_write && (retire_producer != shadow_tag_q);
   assign shadow_keep_free = shadow_valid_q && !shadow_write && bs_recover &&
     !(shadow_armed_q && shadow_live);
-  // Linking branches wait on the shadow until it is the only work left.
+  // A younger branch(LK) other than bl waits for the removed bl to
+  // complete (UM 6.4.1.1), which it does once everything older has.
   assign lk_busy = lk_pending_q && !(shadow_unarmed && cq_empty);
   always_ff @(posedge clk_i) begin
     if (!rst_ni || shadow_write) begin

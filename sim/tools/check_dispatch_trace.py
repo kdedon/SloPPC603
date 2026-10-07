@@ -219,6 +219,7 @@ class Rules:
         self.width, self.words, self.sru, self.flush = width, words, sru, flush
         # [pc, dispatch cycle, sequence number, flushed, class, order] in dispatch order
         self.inflight = []
+        self.removed_lk = []
         self.seq = 0
         self.order = 0          # dispatch order, counting removed branches
         self.stream = []        # (order, class, removed, cycle, pc) of recent dispatches
@@ -330,11 +331,15 @@ class Rules:
             self.order += 1
             self.stream = self.stream[-31:] + [(self.order, c, gone, cycle, pc)]
             if gone:
-                # UM 6.3.1: only a branch with no LR or CTR write retires
-                # without a completion entry.
-                require(c is None or (c['units'] == {BPU} and not any(c['writes'][3:])),
+                # UM 6.3.1, 6.4.1.1: a branch the BPU resolves retires without
+                # a completion entry if it writes no CTR, and LR only as a bl
+                # through the shadow LR (UM 6.6.1.1).
+                require(c is None or (c['units'] == {BPU} and not any(c['writes'][4:]) and
+                                      (not c['writes'][3] or c['branch'] == 'b')),
                         f'cycle {cycle}: {pc:08x} removed at dispatch but is not a branch that '
-                        'writes no LR or CTR (TIM-BPU-FOLD)')
+                        'writes no CTR, and LR only as a bl (TIM-BPU-FOLD)')
+                if c and c['writes'][3]:
+                    self.removed_lk.append((self.seq, pc))
                 st['dispatches'] += 1
                 st['removed'] += 1
                 continue
@@ -383,6 +388,14 @@ class Rules:
         branch dispatches meanwhile, and a branch removed at dispatch (resolved
         there) cannot be the one waiting."""
         self.stops = [s for s in self.stops if self.blocking(s[0])]
+        # A removed bl completes once everything older has (UM 6.3.1); a
+        # younger branch(LK) other than bl waits for that (UM 6.4.1.1).
+        self.removed_lk = [r for r in self.removed_lk
+                           if any(e[2] <= r[0] and not e[3] for e in self.inflight)]
+        if c and c['branch'] and c['writes'][3] and c['branch'] != 'b':
+            for _, bl in self.removed_lk:
+                require(False, f'cycle {cycle}: {pc:08x} dispatched before the removed bl {bl:08x} '
+                               'completes (TIM-BPU-FETCH-STOP)')
         for older, _, waiter, kind in self.stops:
             require(False, f'cycle {cycle}: {pc:08x} dispatched while branch {waiter:08x} waits for '
                            f'{older[0]:08x} to {kind} (TIM-BPU-FETCH-STOP)')

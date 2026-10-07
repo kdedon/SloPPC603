@@ -18,7 +18,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
   logic cv,cr,ci,cd,cp,red,red_accept;
   completion_tag_t pivot;
   logic ipending=0,dpending=0,pivot_seen=0,cut_done=0,done=0;
-  logic [31:0] fetch_pc,model_pc,model_msr,srr0,srr1,regs[32];
+  logic [31:0] fetch_pc,model_pc,model_msr,model_lr,srr0,srr1,regs[32];
   logic [31:0] selected=32'h8030;
   int phase=0,cycles=0,idelay=0,ddelay=0,checks=0,retires=0;
   int irq_count=0,stores=0,loads=0,ctx_wait=0,held_retire=0,held_offer=0;
@@ -129,13 +129,14 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
         6:return 32'h44000002;
         7:return 32'h90801004; // ignored synchronous fault payload
         8,9:return 32'h7cc42bd6; // divw r6,r4,r5
+        11:return 32'h480000d9; // bl 0x100
         default:return addi(6,0,17);
       endcase
       44:return 32'h7d6000a6;
       48:return addi(3,0,0);
       52:return 32'h7c600124;
       56,32'h200:return addi(31,0,123);
-      'h100:return addi(10,0,'h66);
+      'h100:return phase==11 ? spr(0,10,8) : addi(10,0,'h66);
       'h104:return 32'h4bffff28; // b 0x2c
       default:begin
         case(pc & 32'h0000ffff)
@@ -180,7 +181,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       ipending<=0;dpending<=0;fetch_pc<=0;idelay<=0;ddelay<=0;
       cycles<=0;ctx_wait<=0;held_retire<=0;held_offer<=0;pivot_seen<=0;cut_done<=0;pivot<='0;
       irq<=(phase==1||phase==5||!ENABLE_EXTERNAL_INTERRUPTS);
-      model_pc=0;model_msr=0;srr0=0;srr1=0;irq_count=0;stores=0;loads=0;retires=0;sync_events=0;done=0;
+      model_pc=0;model_msr=0;model_lr=0;srr0=0;srr1=0;irq_count=0;stores=0;loads=0;retires=0;sync_events=0;done=0;
       foreach(regs[i])regs[i]=0;
     end else begin
       cycles<=cycles+1;
@@ -207,6 +208,9 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       // A removed b never retires: the IRQ is raised as fetch removes it.
       if(phase==2&&irq_count==0&&((dut.iq_push0&&dut.push_remove0&&dut.queued.pc==32'h28)||
                     (dut.iq_push1&&dut.push_remove1&&dut.queued1.pc==32'h28)))irq<=1;
+      // A bl removed at dispatch leaves LR to the next entry: the IRQ is
+      // raised in that window and must see LR unwritten.
+      if(phase==11&&irq_count==0&&dut.shadow_set)irq<=1;
       if((phase==8||phase==9)&&dut.dispatch&&dut.iq_head.pc==32'h28)begin
         pivot<=dut.alloc_producer;pivot_seen<=1;irq<=1;
       end
@@ -217,6 +221,8 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       if(taken)begin
         check(ENABLE_EXTERNAL_INTERRUPTS&&model_msr[15]&&!tv&&!ipending&&!dpending,"IRQ was not a drained precise boundary");
         check(irq_pc==model_pc,"IRQ saved next PC differs from independent committed stream");
+        check(dut.lr==model_lr,"IRQ saw LR other than the committed stream's");
+        if(phase==11)check(irq_pc==(dut.BRANCH_REMOVAL?'h28:'h100),"removed bl IRQ resume PC");
         if(phase==1||phase==5)check(irq_pc=='h24,"EE enable executed a following instruction before IRQ");
         // An IRQ at a removed b resumes at the b.
         if(phase==2)check(irq_pc==(dut.BRANCH_REMOVAL?'h28:'h100),"branch target lost as IRQ resume PC");
@@ -231,8 +237,10 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       if(tv&&tr&&!done)begin
         check(!taken,"IRQ must not synthesize or share an instruction retirement");
         for(int k=0;k<int'(retired.removed_branches);k++)begin
-          check(word_at(model_pc)==32'h480000d8||word_at(model_pc)==32'h4bffff28,"removed branch identity");
-          model_pc=(word_at(model_pc)==32'h480000d8)?32'h100:32'h2c;
+          check(word_at(model_pc)==32'h480000d8||word_at(model_pc)==32'h480000d9||
+                word_at(model_pc)==32'h4bffff28,"removed branch identity");
+          if(word_at(model_pc)==32'h480000d9)model_lr=model_pc+4;
+          model_pc=(word_at(model_pc)==32'h4bffff28)?32'h2c:32'h100;
         end
         check(retired.pc==model_pc&&retired.insn==word_at(model_pc),"ordered architectural retirement identity");
         check(!retired.alignment_exception&&!retired.update_write&&!retired.write_cr_field&&!retired.write_ca&&
@@ -248,6 +256,8 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
           else if(insn==32'h44000002)begin srr0=model_pc+4;srr1=model_msr;model_msr=model_msr&32'hfff930c8;next_pc='hc00;sync_events++;end
           else if(insn==32'h4c000064)begin model_msr=srr1&32'h87c0ffff;next_pc=srr0;end
           else if(insn==32'h480000d8)begin next_pc='h100;irq<=1;end
+          else if(insn==32'h480000d9)begin next_pc='h100;model_lr=model_pc+4;if(irq_count==0)irq<=1;end
+          else if(insn==spr(0,rt,8))begin writes=1;value=model_lr;end
           else if(insn==32'h4bffff28)next_pc='h2c;
           else if(insn==32'h7cc42bd6)begin writes=1;value=28;end // 0x55 / 3
           else if(insn==32'h80c01000)begin writes=1;value=32'haabb0011;end
@@ -288,7 +298,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
   endtask
   initial begin
     if(ENABLE_EXTERNAL_INTERRUPTS)begin
-      for(int scenario=0;scenario<11;scenario++)run(scenario,32'h8030);
+      for(int scenario=0;scenario<12;scenario++)run(scenario,32'h8030);
       run(1,32'h8070);
     end else run(1,32'h8030);
     $display("PASS external IRQ total checks=%0d",checks);$finish;

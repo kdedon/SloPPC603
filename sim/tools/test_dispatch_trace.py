@@ -136,9 +136,18 @@ class DispatchRulesTest(unittest.TestCase):
         st = check_rules(text.split('\n'), 2, words, False)
         self.assertEqual((st['dispatches'], st['removed'], st['retirements']), (3, 1, 2))
         self.assertEqual(parse(text)[1], ([0x400, 0x404], []))
-        for label, pc in (('linking', '00000408'), ('counting', '00000410'), ('not a branch', '0000040c')):
+        # A bl leaves through the shadow LR; a bcl (0x414) does not.
+        check_rules(text.replace('00000404*', '00000408*').split('\n'), 2, words, False)
+        words[0x414] = 0x42800009
+        for label, pc in (('linking bc', '00000414'), ('counting', '00000410'), ('not a branch', '0000040c')):
             with self.subTest(label), self.assertRaises(ValueError):
                 check_rules(text.replace('00000404*', pc + '*').split('\n'), 2, words, False)
+        # A bcl dispatches only once the removed bl's older add completes.
+        late = '1 D2 R0 00000400 00000408* |\n2 D0 R1 | 00000400\n3 D1 R0 00000414 |\n4 D0 R1 | 00000414'
+        check_rules(late.split('\n'), 2, words, False)
+        early = '1 D2 R0 00000400 00000408* |\n2 D1 R0 00000414 |\n3 D0 R2 | 00000400 00000414'
+        with self.subTest('bcl before the bl completes'), self.assertRaises(ValueError):
+            check_rules(early.split('\n'), 2, words, False)
         with self.subTest('removed branch retires'), self.assertRaises(ValueError):
             check_rules(text.replace('R1 | 0000040c', 'R1 | 00000404').split('\n'), 2, words, False)
 

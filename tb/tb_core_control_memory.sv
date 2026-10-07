@@ -155,7 +155,8 @@ module tb_core_control_memory #(
     logic branch;
     branch = (insn[31:26] == 6'd18) || (insn[31:26] == 6'd16) ||
              ((insn[31:26] == 6'd19) && ((insn[10:1] == 10'd16) || (insn[10:1] == 10'd528)));
-    return branch && !insn[0] && ((insn[31:26] == 6'd18) || insn[23]);
+    // A bl links through the shadow LR (UM 6.6.1.1).
+    return branch && ((insn[31:26] == 6'd18) || (!insn[0] && insn[23]));
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
   task automatic read_expected(output logic [31:0] value);
