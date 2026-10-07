@@ -333,8 +333,11 @@ module ppc_lsu_pipe #(
     !p1_head.base_wait && p1_head.fast && load_ready && !sq_overlap && !redo_valid_q &&
     (sq_count_q != SQ_W'(SQ_DEPTH));
   // A retired store is otherwise written ahead of any later offer, except one
-  // that already stands non-speculatively.
-  assign sq_offer = STORE_QUEUE && rst_ni && sq_valid && sq_head.committed &&
+  // that already stands non-speculatively. It offers in its retire cycle, so
+  // the cache takes the write the cycle after it completes, and a load of
+  // its doubleword reads the cycle after that.
+  assign sq_offer = STORE_QUEUE && rst_ni && sq_valid &&
+    (sq_head.committed || (commit_i && (sq_head.producer == commit_tag_i))) &&
     !sq_head.killed && lane_idle_i && !rsp_to_lane_q && (p2_count_q != 2'd2) &&
     !(offered_q && !offered_spec_q) && !load_first;
   assign sq_fire = sq_offer && req_ready_i;
