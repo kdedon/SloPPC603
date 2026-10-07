@@ -356,6 +356,7 @@ module ppc_completion #(
     wake1_o.producer = result1_i.producer;
     wake1_o.tag = packets_q[result1_i.producer.index].tag;
     wake1_o.value = result1_i.value;
+    wake1_o.late = 1'b0;
   end
   // A faulting result changes the entry's fault fields; it retires a cycle
   // later from the stored packet.

@@ -265,6 +265,25 @@ class DispatchRulesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'TIM-SER-SRU-LATENCY'):
             check_rules(lines[:4] + ['7 D0 R1 | 00000908'], 2, words, True)
 
+    def test_serial_result(self):
+        # 0x900 mflr r0; 0x904 stw r0,20(r1); 0x908 ori r4,r0,1.
+        words = {0x900: 0x7c0802a6, 0x904: 0x90010014, 0x908: 0x60040001}
+        head = ['1 D2 R0 00000900 00000904 |', '2 D1 R0 00000908 |', '3 D0 R1 | 00000900']
+        self.assertEqual(check_rules(head + ['6 D0 R1 | 00000904', '7 D0 R1 | 00000908'],
+                                     2, words, True)['retirements'], 3)
+        with self.assertRaisesRegex(ValueError, 'TIM-SER-RESULT'):
+            check_rules(head + ['5 D0 R1 | 00000904', '7 D0 R1 | 00000908'], 2, words, True)
+        # An integer reader retires two cycles after the move.
+        words[0x904] = 0x60a50000  # ori r5,r5,0
+        self.assertEqual(check_rules(head + ['4 D0 R1 | 00000904', '5 D0 R1 | 00000908'],
+                                     2, words, True)['retirements'], 3)
+        with self.assertRaisesRegex(ValueError, 'TIM-SER-RESULT'):
+            check_rules(head + ['4 D0 R2 | 00000904 00000908'], 2, words, True)
+        # A younger write of r0 ends the wait: lwz r0,0(r3).
+        words[0x904] = 0x80030000
+        self.assertEqual(check_rules(head[:2] + ['3 D0 R2 | 00000900 00000904', '4 D0 R1 | 00000908'],
+                                     2, words, True)['retirements'], 3)
+
     def test_schedule_ignores_recovery_marker(self):
         self.assertEqual(parse('4 D0 R1 | 00000300 !2\n5 D0 R0 | !1'), {4: ([], [0x300])})
 

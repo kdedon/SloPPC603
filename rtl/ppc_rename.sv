@@ -114,13 +114,14 @@ module ppc_rename (
       // wake also kills the reader.
       if (!ready[operand.tag] && wake_i.producer == operand.producer)
         operand.value = wake_i.value;
-      if (wake_match && wake_i.tag == operand.tag &&
+      // A late wake is not forwarded; the reader takes it from the bus.
+      if (wake_match && !wake_i.late && wake_i.tag == operand.tag &&
           wake_i.producer == operand.producer)
         operand.ready = 1'b1;
       if (!ready[operand.tag] && wake1_offer_i && wake1_i.tag == operand.tag &&
           wake1_i.producer == operand.producer)
         operand.value = wake1_i.value;
-      if (wake1_match && wake1_i.tag == operand.tag &&
+      if (wake1_match && !wake1_i.late && wake1_i.tag == operand.tag &&
           wake1_i.producer == operand.producer)
         operand.ready = 1'b1;
     end

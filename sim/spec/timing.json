@@ -10191,6 +10191,42 @@
       "checker_status": "trace_checked"
     },
     {
+      "id": "TIM-SER-RESULT",
+      "category": "serialization",
+      "statement": "The GPR result of a completion-serialized SRU instruction is not available or forwarded until that instruction retires; a reader waits in its reservation station until the value is in the rename register, so it executes no earlier than the cycle after the retirement. An integer reader retires at least 2 cycles after the writer, a load or store using it as base or data (two-cycle latency) at least 3.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 259,
+          "printed_page": "6-13",
+          "section": "6.3.3.2"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 258,
+          "printed_page": "6-12",
+          "section": "6.3.3.1"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 264,
+          "printed_page": "6-18",
+          "section": "6.4.5"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 264,
+          "printed_page": "6-18",
+          "section": "6.4.4"
+        }
+      ],
+      "conditions": [
+        "PID6-603e or PID7v-603e unless specifically overridden"
+      ],
+      "issue_ids": [],
+      "checker_status": "trace_checked"
+    },
+    {
       "id": "TIM-BPU-FOLD",
       "category": "branch",
       "statement": "BPU removes foldable branch from stream; taken folded branch requests new target immediately; effective cost can be zero, contingent on target supply and dependencies. A branch that needs no SPR write back is retired by the BPU.",

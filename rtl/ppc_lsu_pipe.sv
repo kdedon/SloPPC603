@@ -147,7 +147,8 @@ module ppc_lsu_pipe #(
     // reaches the head.
     logic split, second, advance;
     // Store data is present; otherwise it comes from data_tag's producer.
-    logic data_ready;
+    // A late wake's data and base are taken, then used a cycle later.
+    logic data_ready, data_late, base_late;
     rename_tag_t data_tag;
     completion_tag_t data_producer;
     // A retired store's write, and a load offered past queued stores.
@@ -254,12 +255,13 @@ module ppc_lsu_pipe #(
   assign p1_at_head = store_authorize_i && (queue_head_i == p1_head.producer.index);
   // An FP access offers once the FPU has launched it, a store once the
   // FPU presents its data.
-  // Store data written this cycle is used at once.
+  // Store data written this cycle is used at once, a late wake's from the
+  // next cycle.
   logic head_wake, head_wake1, head_data_ready;
   logic [31:0] head_data;
-  assign head_wake = wake_valid_i && (wake_i.tag == p1_head.data_tag) &&
+  assign head_wake = wake_valid_i && !wake_i.late && (wake_i.tag == p1_head.data_tag) &&
                      (wake_i.producer == p1_head.data_producer);
-  assign head_wake1 = wake1_valid_i && (wake1_i.tag == p1_head.data_tag) &&
+  assign head_wake1 = wake1_valid_i && !wake1_i.late && (wake1_i.tag == p1_head.data_tag) &&
                       (wake1_i.producer == p1_head.data_producer);
   assign head_data_ready = p1_head.data_ready || head_wake || head_wake1;
   assign head_data = p1_head.data_ready ? p1_head.data :
@@ -295,9 +297,11 @@ module ppc_lsu_pipe #(
   localparam bit BASE_ANY = BASE_SNOOP || BASE_WAIT;
   logic head_base0, head_base1, head_base_ready, head_fast;
   logic [31:0] head_ea, base_sum0, base_sum1;
-  assign head_base0 = BASE_SNOOP && wake_valid_i && (wake_i.tag == p1_head.base_tag) &&
+  assign head_base0 = BASE_SNOOP && wake_valid_i && !wake_i.late &&
+                      (wake_i.tag == p1_head.base_tag) &&
                       (wake_i.producer == p1_head.base_producer);
-  assign head_base1 = BASE_SNOOP && wake1_valid_i && (wake1_i.tag == p1_head.base_tag) &&
+  assign head_base1 = BASE_SNOOP && wake1_valid_i && !wake1_i.late &&
+                      (wake1_i.tag == p1_head.base_tag) &&
                       (wake1_i.producer == p1_head.base_producer);
   assign base_sum0 = wake_i.value + p1_head.offset;
   assign base_sum1 = wake1_i.value + p1_head.offset;
@@ -558,7 +562,7 @@ module ppc_lsu_pipe #(
   // A base written this cycle, resolved for each entry P1 may hold next:
   // P1[0], P1[1] and the incoming access. The pop then only selects.
   entry_t base_src [3];
-  logic base_hit [3], base_fast [3], base_trap [3];
+  logic base_hit [3], base_late [3], base_fast [3], base_trap [3];
   logic [31:0] base_ea [3];
   always_comb begin
     base_src[0] = p1_q[0];
@@ -571,6 +575,7 @@ module ppc_lsu_pipe #(
       hit1 = wake1_valid_i && (wake1_i.tag == base_src[s].base_tag) &&
              (wake1_i.producer == base_src[s].base_producer);
       base_hit[s] = hit0 || hit1;
+      base_late[s] = hit0 ? wake_i.late : wake1_i.late;
       base_ea[s] = (hit0 ? wake_i.value : wake1_i.value) + base_src[s].offset;
       base_trap[s] = int_trap(base_src[s].uop.mem_size, base_ea[s][11:0], dr_i);
       base_fast[s] = int_fast(base_src[s].uop.mem_size, base_ea[s][1:0]) && !base_trap[s];
@@ -591,8 +596,10 @@ module ppc_lsu_pipe #(
     pushed.ea = head_ea;
     pushed.fast = head_fast;
     pushed.base_wait = 1'b0;
+    pushed.base_late = 1'b0;
     pushed.data = head_data;
     pushed.data_ready = 1'b1;
+    pushed.data_late = 1'b0;
     pushed.passed = sq_live;
     if (sq_fire) begin
       pushed = '0;
@@ -649,20 +656,30 @@ module ppc_lsu_pipe #(
       if (branch_resolved_i) p2_next[i].bspec = 1'b0;
       if (fp_launch_valid_i && (p1_next[i].producer == fp_launch_tag_i))
         p1_next[i].launched = 1'b1;
-      if (!p1_next[i].data_ready && wake_valid_i && (wake_i.tag == p1_next[i].data_tag) &&
-          (wake_i.producer == p1_next[i].data_producer)) begin
+      if (p1_next[i].data_late) begin
+        p1_next[i].data_ready = 1'b1;
+        p1_next[i].data_late = 1'b0;
+      end else if (!p1_next[i].data_ready && wake_valid_i &&
+                   (wake_i.tag == p1_next[i].data_tag) &&
+                   (wake_i.producer == p1_next[i].data_producer)) begin
         p1_next[i].data = wake_i.value;
-        p1_next[i].data_ready = 1'b1;
-      end
-      if (!p1_next[i].data_ready && wake1_valid_i && (wake1_i.tag == p1_next[i].data_tag) &&
-          (wake1_i.producer == p1_next[i].data_producer)) begin
+        p1_next[i].data_ready = !wake_i.late;
+        p1_next[i].data_late = wake_i.late;
+      end else if (!p1_next[i].data_ready && wake1_valid_i &&
+                   (wake1_i.tag == p1_next[i].data_tag) &&
+                   (wake1_i.producer == p1_next[i].data_producer)) begin
         p1_next[i].data = wake1_i.value;
-        p1_next[i].data_ready = 1'b1;
+        p1_next[i].data_ready = !wake1_i.late;
+        p1_next[i].data_late = wake1_i.late;
       end
       // A base written this cycle forms the EA; an alignment exception goes
       // to the lane with the access.
-      if (BASE_ANY && p1_next[i].base_wait && base_hit[p1_src[i]]) begin
+      if (p1_next[i].base_late) begin
         p1_next[i].base_wait = 1'b0;
+        p1_next[i].base_late = 1'b0;
+      end else if (BASE_ANY && p1_next[i].base_wait && base_hit[p1_src[i]]) begin
+        p1_next[i].base_wait = base_late[p1_src[i]];
+        p1_next[i].base_late = base_late[p1_src[i]];
         p1_next[i].ea = base_ea[p1_src[i]];
         p1_next[i].fast = base_fast[p1_src[i]];
         if (base_trap[p1_src[i]]) begin

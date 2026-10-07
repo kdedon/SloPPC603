@@ -199,6 +199,44 @@ def cr_field(word):
 
 CQ_DEPTH, GPR_RENAMES, FPR_RENAMES = 5, 5, 4
 
+STORES_X = (151, 183, 215, 247, 407, 439, 662, 918)
+
+
+def serial_gpr(word):
+    """The GPR a completion-serialized SRU move (mfspr, mftb, mfmsr, mfcr,
+    mfsr, mfsrin) writes, else None."""
+    if word >> 26 == 31 and (word >> 1) & 1023 in (339, 371, 83, 19, 595, 659):
+        return (word >> 21) & 31
+    return None
+
+
+def gpr_reads(word):
+    """(GPRs certainly read, retire gap) for TIM-SER-RESULT: a reader of a
+    completion-serialized result executes no earlier than the cycle after
+    that instruction retires (UM 6.3.3.2, 6.4.5), so an integer reader
+    retires two cycles after it and a load or store, two-cycle latency
+    (Table 6-6), three. Only forms whose operand fields are unambiguous."""
+    op, rs, ra, rb = word >> 26, (word >> 21) & 31, (word >> 16) & 31, (word >> 11) & 31
+    xo = (word >> 1) & 1023
+    base = {ra} if ra else set()
+    if op in (36, 37, 38, 39, 44, 45):
+        return {rs} | base, 3
+    if op == 31 and xo in STORES_X:
+        return {rs, rb} | base, 3
+    if op in (32, 33, 34, 35, 40, 41, 42, 43):
+        return base, 3
+    if op in (7, 8, 10, 11, 12, 13) or op in (14, 15) and ra:
+        return {ra}, 2
+    if op in (20, 21, 24, 25, 26, 27, 28, 29):
+        return {rs}, 2
+    return set(), 0
+
+
+def gpr_writes(word):
+    """GPRs an instruction may write: both register fields, for a writer."""
+    c = classify(word, False)
+    return {(word >> 21) & 31, (word >> 16) & 31} if c['writes'][0] else set()
+
 
 def fetch_stop(older, younger):
     """UM 6.4.1.1 (PDF 261): how branch `younger` waits on `older`, or None.
@@ -219,7 +257,7 @@ def fetch_stop(older, younger):
 
 class Rules:
     """Streaming check of TIM-DISP-WIDTH/DQ1, TIM-SER-DISPATCH/COMPLETE/REFETCH,
-    TIM-CQ-ALLOC/CQ1/ORDER, TIM-SER-SRU-LATENCY, TIM-RENAME-LIMITS, TIM-WB-LIMITS, TIM-BPU-MISPREDICT and the branch
+    TIM-CQ-ALLOC/CQ1/ORDER, TIM-SER-SRU-LATENCY, TIM-SER-RESULT, TIM-RENAME-LIMITS, TIM-WB-LIMITS, TIM-BPU-MISPREDICT and the branch
     fetch-stop rules (TIM-BPU-*) over one trace."""
 
     def __init__(self, width, words, sru, flush):
@@ -238,6 +276,7 @@ class Rules:
         self.isync_retired = None
         self.last_retired_pc = None
         self.last_retire_cycle = None
+        self.serial_gprs = {}   # GPR -> (retire cycle, pc) of its completion-serialized writer
         self.cond_retired = False  # the latest retirement was a conditional branch
         self.stats = dict(cycles=0, dispatches=0, retirements=0, pairs_dispatched=0, pairs_retired=0,
                           flushed=0, mispredicts=0, removed=0, dser=0, cser=0, isync=0, unknown=0, sru_pairs=0,
@@ -271,6 +310,18 @@ class Rules:
                         f'cycle {cycle}: {pc:08x} retired {cycle - self.last_retire_cycle} cycle(s) after the '
                         f'instruction ahead, under its {c["sru_lat"]}-cycle SRU latency (TIM-SER-SRU-LATENCY)')
             self.last_retire_cycle = cycle
+            word = self.words.get(pc)
+            if word is not None:
+                regs, gap = gpr_reads(word)
+                for r in regs & self.serial_gprs.keys():
+                    when, writer = self.serial_gprs[r]
+                    require(cycle - when >= gap,
+                            f'cycle {cycle}: {pc:08x} retired {cycle - when} cycle(s) after {writer:08x}, '
+                            f'whose r{r} is forwarded only once it retires (TIM-SER-RESULT)')
+                for r in gpr_writes(word):
+                    self.serial_gprs.pop(r, None)
+                if serial_gpr(word) is not None:
+                    self.serial_gprs[serial_gpr(word)] = (cycle, pc)
             if c and c['multiple'] and pc == self.last_retired_pc and not self.inflight_has(pc):
                 continue  # further micro-op of the same multiple/string instruction
             # Work dispatched down a mispredicted path never retires

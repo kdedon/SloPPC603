@@ -61,7 +61,7 @@ module tb_crstate_execution;
   logic [33:0] unused_cache_special;
   logic [33:0] unused_debug_special;
   /* verilator lint_off UNUSEDSIGNAL */
-  logic [9:0] unused_overlap;  // Plain-access overlap and port outputs; no access here.
+  logic [10:0] unused_overlap;  // Plain-access overlap and port outputs; no access here.
   /* verilator lint_on UNUSEDSIGNAL */
   ppc_special dut (
     .icache_ctl_ready_i(1'b1),
@@ -151,6 +151,7 @@ module tb_crstate_execution;
     .mem_overlap_o(unused_overlap[0]), .mem_dst_valid_o(unused_overlap[1]),
     .mem_dst_o(unused_overlap[6:2]), .retire_hold_o(unused_overlap[7]),
     .result_select_o(unused_overlap[8]), .result_port1_o(unused_overlap[9]),
+    .result_late_o(unused_overlap[10]),
     .result_valid_o(result_valid), .result_ready_i(result_ready),
     .result_o(result), .branch_commit_redirect_o(branch_commit_redirect),
     .branch_commit_target_o(branch_commit_target), .busy_o(busy),

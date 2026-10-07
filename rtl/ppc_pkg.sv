@@ -65,6 +65,9 @@ package ppc_pkg;
     completion_tag_t producer;
     rename_tag_t tag;
     logic [31:0] value;
+    // A completion-serialized result, written before its producer retires
+    // but forwarded only after (UM 6.3.3.2): readers use it a cycle later.
+    logic late;
   } wake_packet_t;
   // Fetch-borne events. FETCH_MACHINE_CHECK is a bus TEA on the fetch;
   // FETCH_TEA_REPEAT a 603 refetch that took TEA again with the machine

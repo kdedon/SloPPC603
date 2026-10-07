@@ -46,18 +46,38 @@ module ppc_dispatch (
   function automatic operand_t resolve(input operand_t pending);
     operand_t operand;
     operand = pending;
-    if (!pending.ready && wake_valid_i && pending.tag == wake_i.tag &&
+    if (!pending.ready && wake_valid_i && !wake_i.late && pending.tag == wake_i.tag &&
         pending.producer == wake_i.producer) begin
       operand.ready = 1'b1;
       operand.value = wake_i.value;
     end
-    if (!pending.ready && wake1_valid_i && pending.tag == wake1_i.tag &&
+    if (!pending.ready && wake1_valid_i && !wake1_i.late && pending.tag == wake1_i.tag &&
         pending.producer == wake1_i.producer) begin
       operand.ready = 1'b1;
       operand.value = wake1_i.value;
     end
     return operand;
   endfunction
+  // A late wake (UM 6.3.3.2) is captured now and ready a cycle later, so
+  // its reader issues two cycles after it, as after a retired result.
+  logic late_a, late_b;
+  operand_t late_src_a, late_src_b;
+  assign late_src_a = (dispatch_valid_i && dispatch_ready_o) ? entry_i.a : entry.a;
+  assign late_src_b = (dispatch_valid_i && dispatch_ready_o) ? entry_i.b : entry.b;
+  // The value comes from the wake bus.
+  logic _unused_late;
+  assign _unused_late = ^{late_src_a.value, late_src_b.value};
+  logic late_a0, late_a1, late_b0, late_b1, late_a_hit, late_b_hit;
+  assign late_a0 = wake_valid_i && wake_i.late && (late_src_a.tag == wake_i.tag) &&
+                   (late_src_a.producer == wake_i.producer);
+  assign late_a1 = wake1_valid_i && wake1_i.late && (late_src_a.tag == wake1_i.tag) &&
+                   (late_src_a.producer == wake1_i.producer);
+  assign late_b0 = wake_valid_i && wake_i.late && (late_src_b.tag == wake_i.tag) &&
+                   (late_src_b.producer == wake_i.producer);
+  assign late_b1 = wake1_valid_i && wake1_i.late && (late_src_b.tag == wake1_i.tag) &&
+                   (late_src_b.producer == wake1_i.producer);
+  assign late_a_hit = !late_src_a.ready && (late_a0 || late_a1);
+  assign late_b_hit = !late_src_b.ready && (late_b0 || late_b1);
   // Held operand: take a matching IU result or wake.
   function automatic operand_t snoop(input operand_t pending, input logic bypass);
     operand_t operand;
@@ -94,14 +114,22 @@ module ppc_dispatch (
   always_ff @(posedge clk_i) begin
     entry.a <= snoop(entry.a, bypass_a);
     entry.b <= snoop(entry.b, bypass_b);
+    if (late_a) entry.a.ready <= 1'b1;
+    if (late_b) entry.b.ready <= 1'b1;
     if (dispatch_valid_i && dispatch_ready_o) entry <= entry_i;
+    if (late_a_hit) entry.a.value <= late_a1 ? wake1_i.value : wake_i.value;
+    if (late_b_hit) entry.b.value <= late_b1 ? wake1_i.value : wake_i.value;
   end
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       occupied <= 1'b0;
       bypass_a <= 1'b0;
       bypass_b <= 1'b0;
+      late_a <= 1'b0;
+      late_b <= 1'b0;
     end else begin
+      late_a <= late_a_hit;
+      late_b <= late_b_hit;
       if (iu_done_i) begin
         bypass_a <= 1'b0;
         bypass_b <= 1'b0;
