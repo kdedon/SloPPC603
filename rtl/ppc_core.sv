@@ -269,7 +269,8 @@ module ppc_core #(
   logic iq_miss_valid_q, iq_push_miss, iq_pop_miss;
   logic [IQ_COUNT_WIDTH-1:0] iq_miss_count_q, iq_miss_count_left;
   uop_t uop, iq_uop, dispatch_uop, dispatch_base, dispatch_pre, push_uop;
-  logic dispatch_align, base_snoop;
+  logic dispatch_align, base_snoop, c0_wait_a, c0_wait_b;
+  logic [31:0] c0_offset;
   operand_t lsu_base;
   logic iq_pop, seq_last, seq_active;
   retire_packet_t allocation;
@@ -513,7 +514,9 @@ module ppc_core #(
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [1:0] d1_ea;
-  logic d1_lsu, d1_lsu_ready, d1_base_wait;
+  logic d1_lsu, d1_lsu_ready, d1_base_wait, d1_wait_a, d1_wait_b;
+  operand_t d1_wait;
+  logic [31:0] d1_offset;
   // Read only by the load/store unit, which ENABLE_LSU_PIPE 0 omits.
   /* verilator lint_off UNUSEDSIGNAL */
   logic [31:0] d1_ea_full;
@@ -2498,20 +2501,24 @@ module ppc_core #(
   // The unit takes its base registers from rename, including a value written
   // this cycle (UM 6.3.3.1); store data may follow later.
   assign mem_base_ready = (uop.zero_a || src_a.ready) && (uop.use_imm || src_b.ready);
-  // A D-form load the unit may start without its base; the unit then
-  // decides its alignment.
-  assign base_snoop = (LSU_BASE_SNOOP || (LSU_BASE_WAIT && !src_a.ready)) &&
-    ENABLE_LSU_PIPE && ENABLE_SUPERVISOR_EXCEPTIONS && dispatch_mem_plain &&
-    (uop.special_op == SPECIAL_LOAD) && !uop.mem_update && uop.use_imm && !uop.zero_a &&
-    !msr_le;
+  // A D-form load the unit may start without its base, and any other
+  // access with one address source unproduced, which waits in the unit
+  // with the other source or displacement as its offset (UM 6.3.3,
+  // 6.6.1.2). The unit then decides its alignment.
+  assign c0_wait_a = !uop.zero_a && !src_a.ready;
+  assign c0_wait_b = !uop.use_imm && !src_b.ready;
+  assign base_snoop = ENABLE_LSU_PIPE && ENABLE_SUPERVISOR_EXCEPTIONS && dispatch_mem_plain &&
+    !uop.mem_update && !msr_le &&
+    (((LSU_BASE_SNOOP || (LSU_BASE_WAIT && !src_a.ready)) &&
+      (uop.special_op == SPECIAL_LOAD) && uop.use_imm && !uop.zero_a) ||
+     ((LSU_BASE_SNOOP || LSU_BASE_WAIT) && (c0_wait_a != c0_wait_b)));
+  assign c0_offset = uop.use_imm ? uop.imm : !c0_wait_b ? src_b.value :
+                     uop.zero_a ? 32'b0 : src_a.value;
   always_comb begin
     lsu_base = '0;
     lsu_base.ready = 1'b1;
-    if (!lsu_c0 && d1_base_wait) begin
-      lsu_base.ready = 1'b0;
-      lsu_base.tag = alloc_tag;
-      lsu_base.producer = alloc_producer;
-    end else if (base_snoop) lsu_base = src_a;
+    if (!lsu_c0 && d1_base_wait) lsu_base = d1_wait;
+    else if (base_snoop) lsu_base = c0_wait_b ? src_b : src_a;
   end
   // An update form in the unit writes its base through a second rename slot.
   assign unit_update = (lsu_route || fp_mem_pipe) && uop.mem_update;
@@ -2791,16 +2798,31 @@ module ppc_core #(
     (dq1_uop.use_imm || (!gpr_mapped[dq1_uop.src_b] && !dq1_pair.dep_prev[1])) &&
     ((dq1_uop.special_op != SPECIAL_STORE) ||
      (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
-  // A D-form load whose base DQ0 writes enters the unit and waits there for
-  // it, as DQ0's own load does (UM 6.3.3, 6.6.1.2); the unit then decides
-  // its alignment.
+  // An access with one address source unproduced enters the unit and waits
+  // there for it, the other source or displacement as its offset (UM 6.3.3,
+  // 6.6.1.2); the unit then decides its alignment. A source DQ0 writes is
+  // DQ0's rename slot.
+  assign d1_wait_a = !dq1_uop.zero_a && (dq1_pair.dep_prev[0] || !src_a1.ready);
+  assign d1_wait_b = !dq1_uop.use_imm && (dq1_pair.dep_prev[1] || !src_b1.ready);
   assign d1_base_wait = (LSU_BASE_SNOOP || LSU_BASE_WAIT) && ENABLE_SUPERVISOR_EXCEPTIONS &&
-    (dq1_uop.special_op == SPECIAL_LOAD) && dq1_uop.use_imm && !dq1_uop.zero_a &&
-    dq1_pair.dep_prev[0] && dispatch_uop.gpr_write && !dispatch_uop.mem_update;
+    ((dq1_uop.special_op == SPECIAL_LOAD) || (dq1_uop.special_op == SPECIAL_STORE)) &&
+    !dq1_uop.mem_update && (d1_wait_a != d1_wait_b) &&
+    (!(dq1_pair.dep_prev[0] || dq1_pair.dep_prev[1]) ||
+     (dispatch_uop.gpr_write && !dispatch_uop.mem_update));
+  always_comb begin
+    d1_wait = d1_wait_a ? src_a1 : src_b1;
+    d1_offset = dq1_uop.use_imm ? dq1_uop.imm : d1_wait_a ? src_b1.value :
+                dq1_uop.zero_a ? 32'b0 : src_a1.value;
+    if (d1_wait_a ? dq1_pair.dep_prev[0] : dq1_pair.dep_prev[1]) begin
+      d1_wait = '0;
+      d1_wait.tag = alloc_tag;
+      d1_wait.producer = alloc_producer;
+    end
+  end
   assign d1_lsu_ready = lsu_ready && lane_mem_idle && !fp_unsafe_pending &&
     (d1_base_wait || !d1_misaligned) && !msr_le &&
-    (dq1_uop.zero_a || d1_base_wait || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
-    (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1]));
+    (d1_base_wait || ((dq1_uop.zero_a || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
+                      (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1]))));
   assign lsu_d1 = dispatch1 && d1_lsu;
   // DQ1 enters the unit only beside a DQ0 that does not, so the input mux
   // need not wait for dispatch1, which depends on the unit's ready.
@@ -2950,8 +2972,8 @@ module ppc_core #(
                 (dq1_uop.use_imm || (src_b1.ready && (src_b1.value == arch_b1))))
           else $error("DQ1 access saw an uncommitted GPR source");
       if (d1_lsu)
-        assert ((dq1_uop.zero_a || d1_base_wait || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
-                (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1])))
+        assert (d1_base_wait || ((dq1_uop.zero_a || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
+                                 (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1]))))
           else $error("DQ1 access dispatched without its base");
     end
     if (rst_ni && commit1)
@@ -2979,7 +3001,7 @@ module ppc_core #(
         .insn_i(lsu_c0 ? iq_head.insn : dq1_head.insn),
         .ea_i(lsu_c0 ? dispatch_ea : d1_ea_full), .data_i(lsu_c0 ? src_c : d1_data),
         .base_snoop_i(lsu_c0 ? base_snoop : d1_base_wait), .base_i(lsu_base),
-        .offset_i(lsu_c0 ? uop.imm : dq1_uop.imm),
+        .offset_i(lsu_c0 ? c0_offset : d1_offset),
         .dr_i(msr[MSR_DR]),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
@@ -3032,7 +3054,7 @@ module ppc_core #(
       assign fp_store_tag = '0;
       assign _unused_fp_unit = ^{fp_launch_valid, fp_launch_tag, fp_store_valid,
                                  fp_store_data, fp_mem_double, fp_mem_pipe_ready, src_c,
-                                 lsu_base};
+                                 lsu_base, d1_offset, c0_offset};
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;

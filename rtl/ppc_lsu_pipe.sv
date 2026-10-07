@@ -29,8 +29,9 @@
 // reported for an asynchronous machine check (UM 4.5.2) and cancels the
 // rest of the queue.
 //
-// With BASE_WAIT, a load whose base is not yet produced dispatches with its
-// displacement and waits in P1 for the base (UM 6.3.3.1): the EA is formed
+// With BASE_WAIT, an access with one address source not yet produced
+// dispatches with the other source or its displacement as offset and waits
+// in P1 for it (UM 6.3.3.1): the EA is formed
 // and its alignment decided as the base is written, and the access offers
 // on the next cycle. BASE_SNOOP also offers the head in the cycle the base
 // is written, forming its EA then (UM Table 6-6, load latency 2).
