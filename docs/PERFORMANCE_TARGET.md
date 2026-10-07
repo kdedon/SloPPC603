@@ -2478,8 +2478,9 @@ pass; CoreMark CRCs match. Dispatch rules, width 2: Dhrystone 1,965,504
 (was 1,965,521), CoreMark 4,136,403, Whetstone 6,443,608; width 1:
 Dhrystone 2,213,186, CoreMark 4,500,069, Whetstone 7,124,977
 (unchanged). `test-core-branch-fold` at width 2 covers stores and loads
-on both paths of a predicted `bc` at four code offsets, so some land in
-DQ1 beside a carrier; no bench expectation changed. `test-fpu-all` was
+on both paths of a predicted `bc` at four code offsets, which should put
+some in DQ1 beside a carrier (not instrumented); no bench expectation
+changed. `test-fpu-all` was
 not rerun (no FPU change). Quartus `quartus_map
 --analysis_and_elaboration` of `quartus/chip` with `PPC_LSU_PIPE=1`,
 `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
