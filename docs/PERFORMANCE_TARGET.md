@@ -1143,6 +1143,43 @@ MMU stress 49,363 records, 250 interrupts, 10,395 removed branches
 (681 `bl`); 5 programs and 7 negative controls pass, Dhrystone
 1,313,360 records, 290,548 removed branches of which 23,982 `bl`.
 
+## Timing accuracy round 19
+
+A held `mflr`, `mtlr`, `mfctr` or `mtctr` now enters the special lane in
+the cycle the entry ahead of it retires, so it executes the cycle after
+every older instruction has completed (UM 6.3.3.2) instead of one cycle
+later. It is not started beside the retirement of the lane's own last
+instruction. The lane reads LR and CTR in its execute cycle, after a
+retiring branch or the shadow LR has written them. An IU instruction in
+DQ1 now dispatches beside such a move in DQ0 unless it reads the move's
+result: the move is completion-serialized, and UM 6.6.1.2 stops DQ1 only
+behind a dispatch-serialized instruction.
+
+| | Dhrystone cycles/run, w2 |
+|---|---:|
+| Round 18 (64e707f) | 536 |
+| Moves (b1e85e5) | 533 |
+
+Proc_1's gap to the model drops from 4 to 2 cycles; the `mflr r0` at its
+entry completed two cycles after `stwu` instead of the model's one.
+
+The model has no width-1 mode: it always dispatches two (UM 6.6.1.2), so
+the w1 gap (621 against 521) is mostly DQ1 slots w1 cannot use. Only w2
+is compared against it.
+
+Open, w2 (gap per run against the model): `memcpy` 6, `dhry_main` 5,
+`Proc_8` 2, `Proc_1` 2. The `memcpy` loop runs 7.5 cycles per pass
+against the model's 7, filling the five-entry CQ (CQ_FULL STORE). The
+core keeps a CQ entry for `bdnz` (it decrements CTR at retirement); the
+model's A3 gives no branch a CQ entry. With nine entries per pass, each
+held three to five cycles, five entries cannot sustain seven cycles per
+pass. The manual says a branch that needs a write back does it "sometime
+after the decode/execute phase" (UM 6.3.1) and lists only CTR
+availability as a resource for `bc` on CTR (UM 6.6.1.1); T6-1 marks `bc`
+as foldable to an effective zero cycles. Neither fixes whether a counting
+branch takes a CQ entry. Closing it means a CTR shadow written in order,
+as round 18 did for LR, or a model change with a citation.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
