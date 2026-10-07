@@ -46,8 +46,13 @@ ASSUMPTIONS = {
     "A9": "A unit's reservation station accepts the next instruction in the cycle the "
           "previous one starts executing (UM 6.3.3: 'stall until the first instruction "
           "completes execution' read as leaving the station).",
-    "A10": "The SRU executes add/addi/addis/cmp-class beside the IU (UM 1.1.2.2.3 lists "
-           "the SRU adder as a 603e enhancement; UM 6.4.5).",
+    "A10": "The SRU executes addi, addis, add, addo, cmpi, cmp, cmpli and cmpl beside the "
+           "IU (UM 6.4.5; T6-4 note 1 excludes add.; UM 1.1.2.2.3 lists the SRU adder as a "
+           "603e enhancement, and the 602 lacks it, UM C.2.3). The manual names no steering "
+           "rule; an add or compare takes the unit that starts it first, and on a tie the "
+           "SRU when the next non-branch instruction needs the IU, else the IU. UM 6.4.5 "
+           "runs it 'in parallel with another integer instruction', and an IU station "
+           "held by it would stall that instruction's dispatch (UM 6.3.3).",
     "A11": "A completion-serialized instruction starts the cycle after every older "
            "instruction has completed, and its GPR result is forwarded the cycle after "
            "it completes (UM 6.3.3.2, 1.1.4.4).",
@@ -247,7 +252,7 @@ class Insn:
             self.dst = {rd}
             self.src = {ra} | ({rb} if xo9 not in (104, 200, 202, 232, 234) else set())
             self.kind = "int"
-            if xo9 == 266 and not rc and not (w & 0x400):  # add: IU & SRU (footnote 1)
+            if xo9 == 266 and not rc:                      # add, addo: IU & SRU (T6-4 note 1)
                 self.unit, self.kind = "ADD", "add"
             elif xo9 in (11, 75, 235):                     # mulhwu, mulhw, mullw (A8)
                 self.lat, self.kind = mul_default, "mul"
@@ -395,7 +400,15 @@ def schedule(stream, fetch_any=False, core=frozenset()):
                 d += 1
                 continue
             return d, avail
-    for pc, word, npc in stream:
+    def next_unit(i):
+        """Unit of the next non-branch instruction (branches leave the IQ at fetch)."""
+        for p, w, _ in stream[i + 1:i + 1 + IQ_LIMIT]:
+            u = Insn(p, w, ARGS.mul).unit
+            if u != "BPU":
+                return u
+        return None
+
+    for idx, (pc, word, npc) in enumerate(stream):
         ins = Insn(pc, word, ARGS.mul)
         r = {"pc": pc, "ins": ins}
         # Fetch: UM 6.3.2.2 hit returns next cycle; 6.3.1 two per cycle, IQ of six.
@@ -496,15 +509,20 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         if ins.ctr_r:
             ready = max(ready, ctr_ready)
         best = None
+        sru_s = None
         if ins.crd:
             ready = max(ready, cr_free - ins.lat + 1)   # UM 6.3.3.1: one CR rename, A13
         for u in avail:
             s = max(d + 1, ready, unit_free[u])
             if ins.serial and prev:
                 s = max(s, prev["C"] + 1)          # A11
+            if u == "SRU":
+                sru_s = s
             if best is None or s < best[0]:
                 best = (s, u)
         s, u = best
+        if u == "IU" and sru_s == s and next_unit(idx) == "IU":
+            u = "SRU"                              # A10: leave the IU to the next one
         fin = s + ins.lat - 1
         unit_start[u] = s
         unit_free[u] = s + 1 if u in ("LSU", "FPU") else fin + 1   # T6-6 2:1; UM 6.4.2
