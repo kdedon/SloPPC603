@@ -220,6 +220,18 @@ class DispatchRulesTest(unittest.TestCase):
             check_rules(removed[:3] + ['3 D1 R1 00000908 | 000008fc', '4 D0 R0 | !2*2'] + removed[5:],
                         1, words, False)
 
+    def test_mispredict_redirect(self):
+        # 0x900 cmpwi; 0x904 beq predicted not taken, taken to 0x914; 0x908 addi on the wrong path.
+        words = {0x900: 0x2c030000, 0x904: 0x41820010, 0x908: 0x38630001, 0x914: 0x38630001}
+        lines = ['1 D1 R0 00000900 |', '2 D1 R0 00000904* |', '3 D1 R0 00000908 |',
+                 '4 D0 R1 | 00000900 !1*1', '5 D1 R0 00000914 |', '6 D0 R1 | 00000914']
+        st = check_rules(lines, 1, words, False)
+        self.assertEqual((st['redirects'], st['redirects_at_floor']), (1, 1))
+        early = [lines[0], '2 D2 R0 00000904* 00000908 |', '3 D0 R1 | 00000900 !1*1',
+                 '4 D1 R0 00000914 |', '5 D0 R1 | 00000914']
+        with self.assertRaisesRegex(ValueError, 'TIM-BPU-MISPREDICT'):
+            check_rules(early, 2, words, False)
+
     def test_schedule_ignores_recovery_marker(self):
         self.assertEqual(parse('4 D0 R1 | 00000300 !2\n5 D0 R0 | !1'), {4: ([], [0x300])})
 

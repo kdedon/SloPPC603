@@ -1043,6 +1043,39 @@ The 603e model gives 521 cycles per Dhrystone run.
   completed, with interrupts and the retirement trace treating the branch
   as done at that point; not yet built.
 
+## Timing accuracy round 17
+
+Recorded: `make -C sim BUILD_DIR=<dir> BRANCH_REMOVAL=1 DISPATCH_WIDTH=<1|2> VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo perf-diff test-dispatch-rules` and `make -C sim check-spec`, commit e9c2a0a plus the checker and report changes below, 2026-10-06.
+
+perf-diff reported the core faster than the model on mispredicted
+branches (width 1: `bc` 4.17 against 4.33, `bclr` 4 against 6; width 2:
+`bclr` 5 against 6). The same report showed it at 36c7e3c and at
+3cdb974 (`bc` 3.17 at width 1). It was the metric, not the core: the
+core side ran from the dispatch of the instruction before a removed
+branch, the model side from the branch's BPU execute, which the model
+places at fetch + 1, often before older instructions dispatch.
+Measured from a common older instruction, every Dhrystone misprediction
+reaches the correct path no earlier than the model. Example, `memcpy`
+`andi.` then `beq` at fff03318, width 2: `andi.` dispatches in cycle 3,
+executes in 4 and writes back in 5, which resolves the branch; the
+target is fetched in 6 and dispatches in 7, as in Figure 6-5 (UM
+6.4.1.2.1: resolved in 5, fetched in 6, dispatched in 7). A `cmpwi`
+producer in `fb_palette_default` dispatches in 13262, its CR is
+available in 13264 (T6-4 '^'), and the correct path dispatches in 13266.
+
+- perf-diff now measures a taken branch from the dispatch of the last
+  older non-branch (for a misprediction, the CR producer) to the next
+  dispatch, on both sides. Mispredicted `bc` reads 4.67 against 5.00 at
+  both widths, `bclr` 5 against 5. The residue is a model producer that
+  dispatches early and waits in its station for a load result; the core
+  dispatches it later and executes it in the same cycle.
+- `test-dispatch-rules` checks TIM-BPU-MISPREDICT: the first dispatch
+  after a recovery is at least four cycles after the dispatch of the
+  branch's CR producer (execute, resolve, fetch, dispatch; Figure 6-5).
+  Dhrystone meets the bound exactly in 30,532 of 34,052 recoveries at
+  width 1 and 31,919 of 32,065 at width 2, and fails none, here or at
+  3cdb974.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion

@@ -176,6 +176,20 @@ def classify(word, sru):
     return c
 
 
+def cr_field(word):
+    """The CR field a compare or record-form integer instruction writes, else None."""
+    if word is None:
+        return None
+    op, xo = word >> 26, (word >> 1) & 1023
+    if op in (10, 11) or op == 31 and xo in (0, 32):
+        return (word >> 23) & 7
+    if op in (13, 28, 29) or op in (20, 21, 23) and word & 1:
+        return 0
+    if op == 31 and word & 1 and xo not in (150,):
+        return 0 if classify(word, False)['units'] == {IU} else None
+    return None
+
+
 CQ_DEPTH, GPR_RENAMES, FPR_RENAMES = 5, 5, 4
 
 
@@ -198,7 +212,7 @@ def fetch_stop(older, younger):
 
 class Rules:
     """Streaming check of TIM-DISP-WIDTH/DQ1, TIM-SER-DISPATCH/COMPLETE/REFETCH,
-    TIM-CQ-ALLOC/CQ1/ORDER, TIM-RENAME-LIMITS, TIM-WB-LIMITS and the branch
+    TIM-CQ-ALLOC/CQ1/ORDER, TIM-RENAME-LIMITS, TIM-WB-LIMITS, TIM-BPU-MISPREDICT and the branch
     fetch-stop rules (TIM-BPU-*) over one trace."""
 
     def __init__(self, width, words, sru, flush):
@@ -207,7 +221,8 @@ class Rules:
         self.inflight = []
         self.seq = 0
         self.order = 0          # dispatch order, counting removed branches
-        self.stream = []        # (order, class, removed) of recent dispatches
+        self.stream = []        # (order, class, removed, cycle, pc) of recent dispatches
+        self.redirect = None    # earliest correct-path dispatch after a recovery
         self.stops = []         # [older entry or None, waiting branch order, waiting pc, kind]
         self.block = None       # dispatch-serialized instruction not yet retired: [seq, cycle]
         self.last_dser = None   # (seq, dispatch cycle) of the latest dispatch-serialized dispatch
@@ -216,7 +231,8 @@ class Rules:
         self.cond_retired = False  # the latest retirement was a conditional branch
         self.stats = dict(cycles=0, dispatches=0, retirements=0, pairs_dispatched=0, pairs_retired=0,
                           flushed=0, mispredicts=0, removed=0, dser=0, cser=0, isync=0, unknown=0, sru_pairs=0,
-                          cq_max=0, gpr_max=0, fetch_stops=0, wrong_path_branches=0)
+                          cq_max=0, gpr_max=0, fetch_stops=0, wrong_path_branches=0,
+                          redirects=0, redirects_at_floor=0)
 
     def cls(self, pc):
         word = self.words.get(pc)
@@ -280,6 +296,13 @@ class Rules:
                 totals = [a + b for a, b in zip(classes[0]['writes'], classes[1]['writes'])]
                 require(totals[0] <= 2 and all(t <= 1 for t in totals[1:]),
                         f'cycle {cycle}: retired pair exceeds writeback limits {totals} (TIM-WB-LIMITS)')
+        if dispatched and self.redirect is not None:
+            floor, pc = self.redirect
+            require(cycle >= floor, f'cycle {cycle}: dispatch {floor - cycle} cycle(s) early after the '
+                                    f'misprediction of branch {pc:08x} (TIM-BPU-MISPREDICT)')
+            self.stats['redirects'] += 1
+            self.stats['redirects_at_floor'] += int(cycle == floor)
+            self.redirect = None
         if dispatched:
             require(self.block is None, f'cycle {cycle}: dispatch while a dispatch-serialized instruction '
                                         'is in flight (TIM-SER-DISPATCH)')
@@ -305,7 +328,7 @@ class Rules:
             gone = slot < len(removed) and removed[slot]
             self.fetch_stops(cycle, pc, c, gone)
             self.order += 1
-            self.stream = self.stream[-31:] + [(self.order, c, gone)]
+            self.stream = self.stream[-31:] + [(self.order, c, gone, cycle, pc)]
             if gone:
                 # UM 6.3.1: only a branch with no LR or CTR write retires
                 # without a completion entry.
@@ -386,7 +409,7 @@ class Rules:
                 return
             order = self.stream[-1 - after][0]
         else:
-            for order, _, gone in reversed(self.stream):
+            for order, _, gone, *_ in reversed(self.stream):
                 if not gone:
                     if younger == 0:
                         break
@@ -394,7 +417,8 @@ class Rules:
             else:
                 return
         branch = order
-        path = [(c, gone) for order, c, gone in self.stream if order > branch]
+        path = [(c, gone) for order, c, gone, *_ in self.stream if order > branch]
+        self.mispredict_floor(cycle, branch)
         self.stops = [s for s in self.stops if s[1] <= branch]
         for i, (c, gone) in enumerate(path):
             if c and c['branch'] and c['cr_test'] and not c['ctr_test']:
@@ -402,6 +426,26 @@ class Rules:
                 require(not gone and i == len(path) - 1,
                         f'cycle {cycle}: a branch on CR was resolved or followed by dispatch behind an '
                         'unresolved predicted branch (TIM-BPU-ONE-PREDICTION)')
+
+    def mispredict_floor(self, cycle, branch):
+        """TIM-BPU-MISPREDICT (UM 6.4.1.2.1, Figure 6-5, PDF 263): the CR
+        producer executes no earlier than the cycle after its dispatch and
+        resolves the branch no earlier than the cycle after that; the correct
+        path is fetched the cycle after resolution and dispatched the cycle
+        after that. So the first dispatch after a recovery is at least four
+        cycles after the dispatch of the branch's CR producer, and after the
+        recovery cycle."""
+        floor = cycle + 1
+        entry = next((e for e in self.stream if e[0] == branch), None)
+        if entry and entry[1] and entry[1]['branch'] and entry[1]['cr_test']:
+            field = (self.words[entry[4]] >> 18) & 7
+            older = [e for e in self.stream
+                     if e[0] < branch and not e[2] and cr_field(self.words.get(e[4])) == field]
+            if older:
+                floor = max(floor, older[-1][3] + 4)
+            else:
+                return
+        self.redirect = (floor, entry[4] if entry else 0)
 
     def inflight_has(self, pc):
         return any(e[0] == pc for e in self.inflight)

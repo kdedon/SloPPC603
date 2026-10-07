@@ -230,8 +230,13 @@ def main():
                   f"{a['model_d'] / iters:7.1f} {(a['core_d'] - a['model_d']) / iters:6.1f} "
                   f"{(a['core_r'] - a['model_r']) / iters:6.1f}  {causes}")
 
-    # Dispatch to retirement by class, and taken-branch redirects: branch
-    # dispatch (model: BPU execute) to the next instruction's dispatch.
+    # Dispatch to retirement by class, and taken-branch redirects: dispatch
+    # of the last older non-branch (for a misprediction, of the CR producer)
+    # to the next dispatch, on both sides. A removed branch has no dispatch
+    # of its own, and the model's BPU executes a branch at fetch + 1, often
+    # before older instructions dispatch, so anchoring at the branch compares
+    # different points. A model producer that waits in its reservation
+    # station for operands still dispatches earlier than the core's.
     lat_c, lat_m = defaultdict(Counter), defaultdict(Counter)
     red_c, red_m = defaultdict(Counter), defaultdict(Counter)
     for i in range(lo, hi):
@@ -243,8 +248,12 @@ def main():
             lat_m[k][s["C"] - s["D"]] += 1
         elif stream[i][2] != stream[i][0] + 4:
             k = ins.kind + (" mispredicted" if s.get("mispredict") else "")
-            red_c[k][dcyc[i + 1] - dcyc[i]] += 1
-            red_m[k][model_front(i + 1) - s["X"]] += 1
+            older = [k for k in range(i - 12, i) if not branch[k]]
+            j = older[-1]
+            if s.get("mispredict"):
+                j = max((k for k in older if sched[k]["ins"].crd & ins.crs), default=j)
+            red_c[k][dcyc[i + 1] - dcyc[j]] += 1
+            red_m[k][model_front(i + 1) - sched[j]["D"]] += 1
 
     def dist(c):
         n = sum(c.values())
@@ -253,7 +262,7 @@ def main():
     for k in sorted(lat_c):
         print(f"  {k:8} n/iter {sum(lat_c[k].values()) / iters:6.1f}  core {dist(lat_c[k])}"
               f"  603e {dist(lat_m[k])}")
-    print("\ntaken branch to next dispatch, cycles (excess = per iteration)")
+    print("\ntaken branch: previous dispatch to next dispatch, cycles (excess = per iteration)")
     for k in sorted(red_c):
         n = sum(red_c[k].values())
         exc = (sum(a * b for a, b in red_c[k].items()) - sum(a * b for a, b in red_m[k].items()))
