@@ -687,13 +687,15 @@ module ppc_core #(
   // Two words are taken only if the IQ holds them behind the FD words, or
   // one entry is free and the second word is a b or an unconditional bclr,
   // which is removed as it is queued. If it is not removed after all, the
-  // pair waits in the FD registers.
+  // pair waits in the FD registers. Such a pair also fills empty FD
+  // registers while the IQ is full: the branch takes no entry, so it is
+  // fetched with the word before it (UM 6.3.1).
   logic rm1_early;
   logic [IQ_COUNT_WIDTH:0] fd_used;
   assign fd_used = {1'b0, iq_count} + (IQ_COUNT_WIDTH + 1)'(fd_valid_q) +
                    (IQ_COUNT_WIDTH + 1)'(fd1_valid_q);
-  assign fetch_room2 = (FETCH_WIDTH == 2) &&
-    (fd_used <= (IQ_COUNT_WIDTH + 1)'(IQ_DEPTH - (rm1_early ? 1 : 2)));
+  assign fetch_room2 = (FETCH_WIDTH == 2) && ((rm1_early && fd_bypass) ||
+    (fd_used <= (IQ_COUNT_WIDTH + 1)'(IQ_DEPTH - (rm1_early ? 1 : 2))));
   assign fetch_ready2 = fetch_room2 && fetch_ready;
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear || fold_q || fstop_q || rel_fold) begin
