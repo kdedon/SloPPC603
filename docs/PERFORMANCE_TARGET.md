@@ -1218,6 +1218,69 @@ dispatched). CoreMark CRCs match at both widths. Interrupt benches: 13,953 and
 382 checks. Reference: 5 programs and 7 negative controls at both widths; MMU
 stress 48,921 records and 210 interrupts at w1, 42,238 and 220 at w2.
 
+## Timing accuracy round 20
+
+A `bc` that counts CTR without LK (`bdnz`, `bdz`, and their CR forms
+when CR is final) now leaves at dispatch like round 18's `bl`. Only CTR
+availability is listed as a resource for a `bc` on CTR (UM 6.6.1.1), and
+T6-1 folds `bc` to an effective zero cycles. A shadow CTR holds CTR - 1,
+written to CTR as the next allocated instruction reaches the CQ head or
+retires second of a pair, so CTR is written in order. An interrupt taken
+before then sees CTR unwritten and resumes at the `bc`. The `bc` is
+removed only when no older CTR writer (`mtctr` or a counting branch) is
+uncommitted, the shadow is free, no prediction is outstanding and no
+recovery is in flight; otherwise it takes a CQ entry as before. A
+younger `bc` on CTR or `bcctr` waits until the removed `bc` completes,
+that is until everything older has (UM 6.4.1.1). Once the CQ has drained
+behind it with nothing allocated since, the `bc` has completed and a
+`bcctr` uses the shadow's value. A held `mfctr`/`mtctr` (or
+`mflr`/`mtlr`) that is a shadow's tagged entry enters the special lane
+only at the CQ head, after the shadow has written.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 19 (efc1a82) | 622 | 533 | 4,740,364 | 4,174,575 |
+| Removed `bdnz` (7a2a472) | 622 | 531 | 4,674,089 | 4,170,333 |
+
+CoreMark per iteration: w1 352,524, w2 311,603; CRCs match at both
+widths. The `memcpy` loop now runs at the model's 7 cycles per pass in
+steady state. Its first pass still takes 9: that `bdnz` is fetched
+behind the `mtctr`, is not folded, and sits in DQ1 behind a store. A
+trial that removed counting `bc` from DQ1 too left `memcpy` unchanged
+and cost 3 cycles in `Proc_1` (534), so it was dropped. Open, w2:
+`dhry_main` 5, `memcpy` 4, `Proc_8` 2, `Proc_1` 2.
+
+Rules:
+
+- `test-dispatch-rules` (TIM-BPU-FOLD) accepts a removed branch that
+  writes CTR only as a `bc` without LK, and LR only as a `bl`. A younger
+  `bc` on CTR or `bcctr` may not dispatch until everything older than a
+  removed counting `bc` has completed (TIM-BPU-FETCH-STOP). The invalid
+  counting `bcctr` form counts as a CTR write.
+- The reference runner steps a removed counting `bc` and compares CTR at
+  the next record. New negative controls flip CTR in the first record
+  after a removed `bdnz`, and offer `bdnzl`, `bdnzlr` and a counting
+  `bcctr` as removable words; each must fail (11 controls in all).
+- `tb_core_interrupt` phase 12 raises an IRQ as a `bdnz` is removed; the
+  IRQ must see CTR unwritten and resume at the `bdnz`, which then counts
+  once (`mfctr` reads 0x54 from 0x55).
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 7a2a472, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=101,519). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
+Reference: 5 programs and 11 negative controls at both widths; Dhrystone
+28,967 removed `bdnz` and selftest about 1.07 million; MMU stress 46,088
+records, 220 interrupts and 2,944 removed `bdnz` at w1, 41,061 records and
+236 interrupts at w2.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
