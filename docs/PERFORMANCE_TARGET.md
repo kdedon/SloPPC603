@@ -1713,6 +1713,74 @@ BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
 VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe` on d6e8347 plus that
 uncommitted one-line change, 2026-10-07: pass, figures above.
 
+## Timing accuracy round 29
+
+Two core changes; the model is unchanged (509 cycles per run).
+
+Completion in a predicted branch's resolve cycle (A7, UM 6.6.1.3, Figure
+6-5) now lands. `bs_young_hold` releases on the owner's CR result as it
+is offered and matches the prediction (`bs_cap_offer`). The offer ignores
+recovery, which retirement already gates; built from the cancel-masked
+capture, the hold closed a combinational loop through recovery
+acceptance. Timing-phase item: the IU and SRU compare results and the CR
+bit select now reach the CQ1 retire gate (`bs_cap_offer` to
+`bs_young_hold` to the retire gate).
+
+SRU steering in the core now follows the model's tie rule (A10). `strcmp`'s
+`cmpwi` (DQ1, beside the `lbzu` in DQ0) waited in the IU station for the
+load, so the `mr` behind the predicted `beq` could not dispatch until the
+`cmpwi` started (UM 6.3.3). The core only sent a DQ1 add or compare to the
+SRU while the IU station was taken. With both stations free, an add or
+compare in DQ0, or in DQ1 beside another unit's instruction, now takes the
+SRU when the next non-branch instruction needs the IU. The lookahead reads
+the IQ entry behind DQ1 (a new `dq2_o` port) and the fetched words.
+Timing-phase item: the fetched words' decode and pair predecode, from the
+fetch response when the fetch/decode register is empty, now feed dispatch
+through `fd_next_iu`, `c0_sru` and `d1_alt_sru`.
+
+The round 28 note that `lbz` retires two cycles after `mr` against one
+in the model was attribution: the load starts the cycle after the `mr`
+executes and completes two cycles later in both. The model's `mr`
+completes late because it waits on the `cmpwi` ahead of it in order.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 28 (5c9e854) | 509 | 523 | 621 | 4,143,790 | 4,642,833 |
+| A7 and SRU steering (a180a4b) | 509 | 513 | 621 | 4,138,918 | 4,642,833 |
+
+Per function by retirement spacing (core minus model, w2): `strcmp` +11
+to +1; `dhry_main` +3, `strcpy` +1 and `Proc_7` +2 unchanged; `Func_2`
+-2. `Func_2`'s is a real difference, not attribution: `stw r0,20(r1)`
+after `mflr r0` completes two cycles after the `mflr` in the core and
+three in the model, which starts the store only once its data is
+forwarded (A11). Whether a store whose EA is ready may complete in the
+cycle after its data is forwarded needs a manual ruling (UM 6.3.3,
+Table 6-6) before either side changes. In `Proc_7` the removed `blr`'s
+retirement stamp adds 1 to 3 cycles that the next instruction gives
+back; the gap that stays is the `addi r9,r9,2` after `mr r9,r3`, which
+the core retires a cycle after the `mr` in two of the three calls while
+the model completes both together. Not yet diagnosed.
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit a180a4b, 2026-10-07. All pass; CoreMark
+CRCs match at both widths. At width 1, `test-core-branch-fold` does not
+build: its width-2 variant redefines `PPC_DISPATCH_WIDTH` (REDEFMACRO),
+as on round 28; the bench, not the RTL. Dispatch rules, width 2: Dhrystone
+1,969,972 cycles, CoreMark 4,138,893, Whetstone 6,443,944. Quartus
+`quartus_map --analysis_and_elaboration` of `quartus/chip` with
+`PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`:
+0 errors. No fit was run, so this round makes no timing claim.
+
 Per instruction, the core's retirement spacing minus the model's completion
 spacing, summed per iteration (Dhrystone, width 2, cycles per run), before
 and after closing gaps 1, 2, 6 and 7:
