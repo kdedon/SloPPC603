@@ -497,7 +497,7 @@ module ppc_core #(
   // prediction, BO[1], BI, removal count and alternate target.
   localparam int BREC_W = 40;
   logic [BREC_W-1:0] push_rec, iq_rec, dq1_rec;
-  logic rem0_pred, rem0_in, rem1_pred, last_carry_q;
+  logic rem0_pred, rem0_in, rem0_fd, fd_start, bs_cap_hit, rem1_pred, last_carry_q;
   logic [31:2] rem0_alt, rem1_alt;
   logic [BREC_W-1:0] rem0_rec;
   logic [31:0] d1_next_pc;
@@ -977,7 +977,7 @@ module ppc_core #(
       if ((iq_in1 || (iq_push1 && rem1_pred)) && crb1 && ((iq_in0 && crw0) || cr_dep)) begin
         crb_left_q <= iq_in1 ? pos1 : pos0;
         crbw_left_q <= (iq_in0 && crw0) ? pos0 : crw_after;
-      end else if ((iq_in0 || rem0_in) && crb0 && cr_dep) begin
+      end else if ((iq_in0 || rem0_in || fd_start) && crb0 && cr_dep) begin
         crb_left_q <= iq_in0 ? pos0 : pos0 - IQ_COUNT_WIDTH'(1);
         crbw_left_q <= crw_after;
       end else begin
@@ -1085,11 +1085,14 @@ module ppc_core #(
      (res0[1] && (res0[0] ? fold_predict : (!fd1_valid || !fetch_removed_q[1]))) ||
      (rem0_pred && (fold_predict || !fd1_valid || !fetch_removed_q[1])));
   // A predicted bc in lane 0 hands its record to the youngest IQ entry
-  // that survives this cycle's dispatch.
+  // that survives this cycle's dispatch. With none, it starts from FD
+  // anchored on the youngest entry before it (UM 6.3.1: branches take no
+  // dispatch slot).
   assign rem0_pred = BS_ANCHOR && !trace_mode && !wait0 && crb0 && !res0[1] &&
     (queued.insn[31:26] == 6'd16) && queued.insn[23] && !queued.insn[0] &&
-    last_carry_q && (iq_count != iq_pops);
-  assign rem0_in = iq_push0 && push_remove0 && rem0_pred;
+    ((last_carry_q && (iq_count != iq_pops)) || rem0_fd);
+  assign rem0_in = iq_push0 && push_remove0 && rem0_pred && !rem0_fd;
+  assign fd_start = iq_push0 && push_remove0 && rem0_pred && rem0_fd;
   assign rem0_alt = fold_predict ? queued.pc[31:2] + 30'd1 :
     (queued.insn[1] ? 30'b0 : queued.pc[31:2]) + {{16{queued.insn[15]}}, queued.insn[15:2]};
   assign rem0_rec = {1'b1, fold_predict, queued.insn[24], queued.insn[20:16],
@@ -1109,6 +1112,23 @@ module ppc_core #(
       last_carry_q <= !push_rec[BREC_W-1] && can_carry(queued, push_uop, push_pair, push_branch);
     else if (rem0_in) last_carry_q <= 1'b0;
   end
+  // The youngest entry dispatching this cycle anchors an FD start, as a
+  // carrier would; with none, the youngest CQ entry does.
+  logic fd_anchor_new, fd_carrier_ok, fd_tok;
+  completion_tag_t fd_anchor, fd_owner;
+  assign fd_anchor_new = (dispatch1 && !d1_remove) || (dispatch && !bu_remove);
+  assign fd_anchor = (dispatch1 && !d1_remove) ? alloc1_producer :
+                     (dispatch && !bu_remove) ? alloc_producer : last_tag_q;
+  assign fd_carrier_ok = dispatch1 ?
+      (!bu_branch && can_carry(dq1_head, dq1_uop, dq1_pair, dq1_branch)) :
+    dispatch ? can_carry(iq_head, iq_uop, iq_pair, iq_branch) : 1'b1;
+  assign rem0_fd = BS_ANCHOR && (iq_count == iq_pops) && fd_carrier_ok &&
+    (!bs_busy || bs_hit || bs_cap_hit) && !carry_start && !bu_redirect_q && !frontend_clear &&
+    !recovery_accepted;
+  assign fd_tok = (dispatch && flags_tok0) || (dispatch1 && flags_tok1);
+  assign fd_owner = (dispatch1 && flags_tok1) ? alloc1_producer :
+                    (dispatch && flags_tok0) ? alloc_producer :
+                    flags_waiter ? flags_waiter_tag : flags_owner;
   assign push_remove1 = BRANCH_REMOVAL && !trace_mode && !wait0 &&
     (plain_b(queued1) || (res1[1] && (!res1[0] || fold_predict1)) || rem1_pred);
   // A predicted bc on a CR bit alone also leaves the IQ (UM 6.4.1.1): the
@@ -1498,6 +1518,11 @@ module ppc_core #(
   assign bs_early_miss = BS_EARLY && bs_valid_q && !bs_cr_ready && bu_cr_capture &&
     (flags_owner == bs_owner_q) &&
     ((bs_ctr_ok_q && (bu_cr_d[5'd31 - bs_bi_q] == bs_bo3_q)) != bs_pred_q);
+  // An anchored branch whose owner's CR arrives matching the prediction
+  // is resolved; a held branch released by that CR may replace it.
+  assign bs_cap_hit = BS_EARLY && bs_valid_q && bs_anch_q && !bs_cr_ready && bu_cr_capture &&
+    (flags_owner == bs_owner_q) && !bs_miss_q && !bs_fix_q &&
+    ((bs_ctr_ok_q && (bu_cr_d[5'd31 - bs_bi_q] == bs_bo3_q)) == bs_pred_q);
   assign bs_young_hold = bs_anch_q && ((bs_valid_q && !bs_hit) || bs_miss_q);
   assign bs_hold = (bs_valid_q && !bs_anch_q && !bs_hit && (retire_producer == bs_tag_q)) ||
     (bs_young_hold && bs_anch_done_q) || bs_redirect_q;
@@ -1573,6 +1598,24 @@ module ppc_core #(
         bs_bo3_q <= crec[37];
         bs_bi_q <= crec[36:32];
         bs_alt_q <= {crec[29:0], 2'b00};
+      end
+      if (fd_start) begin
+        bs_valid_q <= 1'b1;
+        bs_anch_q <= 1'b1;
+        bs_rb_q <= rem0_rec[31:30];
+        bs_tag_q <= fd_anchor;
+        bs_anch_done_q <= !fd_anchor_new && (!last_valid_q ||
+          (commit && (retire_producer == last_tag_q)) ||
+          (commit1 && (retire1_producer == last_tag_q)));
+        bs_owner_q <= fd_owner;
+        bs_owner_done_q <= !fd_tok && (!flags_busy ||
+          (!flags_waiter && ((commit && (retire_producer == flags_owner)) ||
+                             (commit1 && (retire1_producer == flags_owner)))));
+        bs_pred_q <= fold_predict;
+        bs_ctr_ok_q <= 1'b1;
+        bs_bo3_q <= queued.insn[24];
+        bs_bi_q <= queued.insn[20:16];
+        bs_alt_q <= {rem0_alt, 2'b00};
       end
     end
   end
@@ -2744,7 +2787,7 @@ module ppc_core #(
         .kill_generation_i(recovery_kill_generation),
         .store_authorize_i(retire_ready_i && !bs_store_hold), .queue_head_i(cq_head),
         .commit_i(commit), .commit_tag_i(retire_producer),
-        .branch_spec_i(bs_valid_q || (bu_branch && bu_spec)), .branch_resolved_i(bs_resolve && (bs_taken == bs_pred_q)),
+        .branch_spec_i(bs_valid_q || (bu_branch && bu_spec)), .branch_resolved_i((bs_resolve && (bs_taken == bs_pred_q)) || (fd_start && bs_cap_hit)),
         .chk_addr_o(dmem_store_check_addr_o), .chk_ok_i(dmem_store_check_ok_i),
         .lane_idle_i(lane_mem_idle),
         .req_valid_o(lsu_req_valid), .req_ready_i(dmem_req_ready_i),
@@ -3051,7 +3094,7 @@ module ppc_core #(
         spec_younger <= int'(dispatch1 && !d1_remove);
         spec_after <= int'(dispatch1);
       end else if ((dispatch1 && d1_bc && !d1_bc_now && !recovery_accepted) ||
-                   (carry_start && carry_d1)) begin
+                   (carry_start && carry_d1) || fd_start) begin
         spec_younger <= 0;
         spec_after <= 0;
       end else if (carry_start) begin
