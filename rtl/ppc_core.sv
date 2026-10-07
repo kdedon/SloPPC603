@@ -404,7 +404,7 @@ module ppc_core #(
   // Branch class predecoded at IQ push, to keep decode off the dispatch path.
   logic [3:0] push_branch, iq_branch;
   logic [31:0] fold_target, fold_target_q;
-  logic early_q, early_bs_q, early_ok, early_fold, early_bs, bs_now, bs_fe_q;
+  logic early_q, early_bs_q, early_ok, early_fold, early_bs, bs_now, bs_fe_q, rel_fold, held_q;
   logic early_bs_late, early_bu, fe_clear;
   logic [31:0] early_target_q, bs_alt_q;
   logic [31:0] bu_cr_q, bu_cr, bu_cr_d;
@@ -620,9 +620,10 @@ module ppc_core #(
     .clk_i, .rst_ni,
     .stop_i(fault_pending || frontend_fence || power_stop || (fetch_hold_q && !frontend_clear)),
     .quiescent_o(frontend_quiescent),
-    .redirect_i(frontend_clear || fold_q || fstop_q), .redirect_target_i(frontend_target),
-    .early_i(early_q || bs_now), .early_ok_i(bs_now || early_ok),
-    .early_target_i(bs_now ? bs_alt_q : early_target_q),
+    .redirect_i(frontend_clear || fold_q || fstop_q || rel_fold),
+    .redirect_target_i(rel_fold ? fold_target : frontend_target),
+    .early_i(early_q || bs_now || rel_fold), .early_ok_i(bs_now || early_ok || rel_fold),
+    .early_target_i(bs_now ? bs_alt_q : rel_fold ? fold_target : early_target_q),
     .req_valid_o(imem_req_valid_o), .req_ready_i(imem_req_ready_i),
     .req_addr_o(fetch_req_addr), .rsp_valid_i(imem_rsp_valid_i),
     .rsp_ready_o(imem_rsp_ready_o), .rsp_insn_i(imem_rsp_insn_i[31:0]),
@@ -660,7 +661,7 @@ module ppc_core #(
   assign fd_push_ok_q = fd1_valid_q ? iq_push2_ready : iq_push_ready;
   assign fd_split_q = fd_push && fd_push_ok_q && fd1_valid_q && hold1_cr;
   // A bypassed packet is taken whole: what the IQ refuses is registered.
-  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q &&
+  assign fetch_ready = !frontend_clear && !fold_q && !fstop_q && !rel_fold &&
     (fd_bypass || (!cr_hold0 && !fd_split_q && (!fd_valid_q || fd_push_ok_q)));
   // Two words are taken only if the IQ holds them behind the FD words.
   assign fetch_room2 = (FETCH_WIDTH == 2) &&
@@ -668,7 +669,7 @@ module ppc_core #(
      (IQ_COUNT_WIDTH + 1)'(IQ_DEPTH - 2));
   assign fetch_ready2 = fetch_room2 && fetch_ready;
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || frontend_clear || fold_q || fstop_q) begin
+    if (!rst_ni || frontend_clear || fold_q || fstop_q || rel_fold) begin
       fd_valid_q <= 1'b0;
       fd1_valid_q <= 1'b0;
     end else if (fd_split) begin
@@ -927,9 +928,18 @@ module ppc_core #(
       fold_target_q <= '0;
     end else begin
       fold_q <= ((iq_push0 && fold_predict) || (iq_push1 && fold_predict1)) &&
-                !frontend_clear;
+                !frontend_clear && !rel_fold;
       fold_target_q <= fetch_stop ? stop_resume : fold_target;
     end
+  end
+  // A held branch predicted taken as it is released requests its target on
+  // that edge (UM Figure 6-5: fetched the cycle after the compare executes).
+  // A held word is registered, so the push condition avoids the bypass.
+  assign rel_fold = held_q && fd_valid_q && fd_push && fd_push_ok_q && fold_predict &&
+                    !frontend_clear && !early_q;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni) held_q <= 1'b0;
+    else held_q <= (cr_hold0 || fd_split) && !frontend_clear && !fold_q && !fstop_q;
   end
   // Fetch stop (UM 6.4.1.1): once a waiting branch is queued, the words
   // fetched behind its pair are dropped, and fetch restarts after the pair
@@ -1742,7 +1752,7 @@ module ppc_core #(
   // so fetch learns them a cycle early and requests the target on the
   // redirect edge. A misprediction recovery is announced from its D input.
   assign early_fold = ((iq_push0 && fold_predict) || (iq_push1 && fold_predict1)) &&
-                      !frontend_clear;
+                      !frontend_clear && !rel_fold;
   assign early_bs = BS_EARLY && !recovery_accepted &&
                     (bs_resolve ? (bs_taken != bs_pred_q) : (bs_miss_q || bs_early_miss));
   assign early_ok = early_bs_q ?
@@ -2959,7 +2969,7 @@ module ppc_core #(
     end else begin
       if (recovery_accepted)
         perf_refetch_q <= (special_branch_redirect || bs_redirect_q || bs_recover) ? 2'd1 : 2'd2;
-      else if (bu_redirect_q || fold_q) perf_refetch_q <= 2'd1;
+      else if (bu_redirect_q || fold_q || rel_fold) perf_refetch_q <= 2'd1;
       else if (iq_valid) perf_refetch_q <= '0;
       if (dispatch && special_uop) perf_special_mem_q <= perf_head_mem;
       perf_o.retire <= retire_valid_o;
