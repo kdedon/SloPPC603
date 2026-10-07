@@ -461,7 +461,8 @@ module ppc_core #(
   logic lane_mem_idle, sru_hold_kill, sru_dst_busy, sru_wait0, sru_wait1, adopt_go, adopt_older;
   uop_t sru_uop_q;
   completion_tag_t sru_producer_q;
-  logic [31:0] sru_pc_q, sru_insn_q, sru_a_q;
+  logic [31:0] sru_pc_q, sru_insn_q;
+  operand_t sru_a_q;
   logic dispatch_needs_flags, flags_tok0, flags_tok1, xer_ready0, xer_ready1;
   logic ca_pending_q, so_pending_q;
   completion_tag_t ca_writer_q, so_writer_q;
@@ -2551,8 +2552,9 @@ module ppc_core #(
     ((dispatch_pre.special_op == SPECIAL_MFSPR) ||
      (dispatch_pre.special_op == SPECIAL_MTSPR)) &&
     ((dispatch_pre.spr == SPR_LR) || (dispatch_pre.spr == SPR_CTR));
+  // An mtspr waits in the slot for its operand (UM 6.3.3: reservation station).
   assign sru_move_ready = (dispatch_pre.special_op == SPECIAL_MFSPR) ||
-    (src_a.ready && !(special_mem_dst_valid && (uop.src_a == special_mem_dst)));
+    !(special_mem_dst_valid && (uop.src_a == special_mem_dst));
   assign sru_in_lane = sru_lane_q && special_busy;
   // A move in the lane uses no memory port.
   assign lane_mem_idle = !special_busy || sru_in_lane;
@@ -2593,7 +2595,22 @@ module ppc_core #(
     (commit1 ? (!(special_producer == retire1_producer) &&
                 (cq_next(cq_next(cq_head)) == sru_producer_q.index)) :
                (cq_next(cq_head) == sru_producer_q.index));
-  assign sru_issue_go = sru_hold_q && !cq_empty &&
+  // The held operand takes a matching result as it is written.
+  function automatic operand_t sru_wake(operand_t o, logic zero);
+    sru_wake = o;
+    if (zero) begin
+      sru_wake.ready = 1'b1;
+      sru_wake.value = 32'b0;
+    end else if (!o.ready && wake_valid && (wake.tag == o.tag) && (wake.producer == o.producer)) begin
+      sru_wake.ready = 1'b1;
+      sru_wake.value = wake.value;
+    end else if (!o.ready && wake1_valid && (wake1.tag == o.tag) &&
+                 (wake1.producer == o.producer)) begin
+      sru_wake.ready = 1'b1;
+      sru_wake.value = wake1.value;
+    end
+  endfunction
+  assign sru_issue_go = sru_hold_q && sru_a_q.ready && !cq_empty &&
     ((cq_head == sru_producer_q.index) || sru_head_next) &&
     !special_busy && !special_cancel && !recovery_accepted;
   // An access the unit hands over may be older than the held move.
@@ -2619,8 +2636,8 @@ module ppc_core #(
       sru_producer_q <= alloc_producer;
       sru_pc_q <= iq_head.pc;
       sru_insn_q <= iq_head.insn;
-      sru_a_q <= special_a;
-    end
+      sru_a_q <= sru_wake(src_a, uop.zero_a);
+    end else if (sru_hold_q) sru_a_q <= sru_wake(sru_a_q, 1'b0);
   end
 
   // Dual dispatch (UM 6.6.1.2). DQ1 dispatches beside DQ0 when the two go to
@@ -3037,7 +3054,7 @@ module ppc_core #(
                  lane_dq1 ? dq1_head.pc : iq_head.pc;
   assign sp_insn = sru_issue_go ? sru_insn_q : adopt_go ? lsu_adopt_insn :
                    lane_dq1 ? dq1_head.insn : iq_head.insn;
-  assign sp_a = sru_issue_go ? sru_a_q : adopt_go ? lsu_adopt_ea : lane_dq1 ? d1_a : special_a;
+  assign sp_a = sru_issue_go ? sru_a_q.value : adopt_go ? lsu_adopt_ea : lane_dq1 ? d1_a : special_a;
   assign sp_b = (sru_issue_go || adopt_go) ? 32'b0 : lane_dq1 ? d1_b : special_b;
   assign sp_c = sru_issue_go ? 32'b0 : adopt_go ? lsu_adopt_data :
                 lane_dq1 ? arch_c1 : arch_c;
