@@ -1039,10 +1039,11 @@ def integer_memory_streams(p):
     p.emit(SYNC)
     pcs = [p.emit(d_form(36, 10, 21, 0)), p.emit(d_form(32, 11, 22, 0))]
     p.spacings.append(('R', pcs[0], pcs[1], 1))
-    # The load waits for the store's write, which follows its retirement.
+    # The store writes the cache the cycle after it retires and the load
+    # reads it the cycle after that, retiring the next cycle.
     p.emit(SYNC)
     pcs = [p.emit(d_form(36, 10, 21, 8)), p.emit(d_form(32, 12, 21, 8))]
-    p.spacings.append(('R', pcs[0], pcs[1], 4))
+    p.spacings.append(('R', pcs[0], pcs[1], 3))
     # Loads behind retired stores take the cache first, one access per
     # cycle: they retire one per cycle right after the stores.
     p.emit(SYNC)

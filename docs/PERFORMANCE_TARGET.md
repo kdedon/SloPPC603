@@ -1383,6 +1383,69 @@ Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
 Reference: 5 programs and 11 negative controls at both widths; MMU stress
 46,319 records and 241 interrupts at w1, 41,058 records and 236 interrupts at w2.
 
+## Timing accuracy round 23
+
+A retired store in the LSU pipe's store queue now offers its write in its
+retire cycle instead of the cycle after. The cache takes the write the
+cycle after the store completes, and an overlapping load offers the cycle
+after that and reads the cache then (A6, UM 1.1.4.3). A load's offer
+cycle is the model's EA cycle and its response the cache cycle, as for a
+load with no older store. In `Proc_8`, `lwz r6,76(r1)` behind the `stw`
+in `Proc_7` now retires three cycles after the store, as in the model,
+not four. The `test-core-lsu-timing` store-then-load retirement spacing
+expectation moves from 4 to 3 to match.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 22 (230bb7a) | 623 | 530 | 4,671,878 | 4,170,242 |
+| Store offers at retirement (120f35f) | 623 | 529 | 4,645,044 | 4,148,984 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 2,011,451 to
+2,008,517 cycles; Whetstone 6,481,470 to 6,467,554.
+
+Diagnosis of the other w2 gaps:
+
+- `memcpy`: the round 22 note was wrong. The `LSU_BUSY` cycles at the
+  `mtctr` are a stale `perf_special_mem_q` label: the special lane is
+  busy with the `mtctr` itself (state EXEC, then HOLD, after it reaches
+  the CQ head), and the younger `addi` waits on a full CQ and IU station,
+  not on a memory access. No wrong-path access holds the lane. The
+  `mtctr` itself retires on the model's cycle (D + 4). The loss is the
+  first `bdnz`: fetch stops behind it (UM 6.4.1.1) and the core resolves
+  it only at DQ0, four cycles after the model's BPU resolves it (the
+  cycle after the `mtctr` executes). The target dispatches two cycles
+  later than the model's, which is bounded by the CQ. Resolving a waiting
+  CTR branch in the IQ when CTR becomes ready would recover those two
+  cycles. Pairing the `lwz` beside the `mtctr` in DQ1 gains nothing:
+  the CQ fills behind the serialized `mtctr` either way.
+- Memcpy exit: `cmpwi` (an adder op) in DQ0 beside `slwi` in DQ1 does
+  not pair. The model sends the `cmpwi` to the SRU and the `slwi` to the
+  IU; the core only sends DQ1 to the SRU. The cycle is recovered a few
+  instructions later.
+- `stwx` at `fff03e88` in DQ1 waits for its index registers to be ready
+  (`d1_lsu_ready` needs ready sources except a D-form base). The model
+  dispatches it beside the `mulli` with unready sources into the LSU
+  reservation station (UM 6.6.1.2).
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 120f35f, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=101,519). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
+Reference: 5 programs and 11 negative controls at both widths; MMU stress
+46,418 records and 250 interrupts at w1, 41,049 records and 235 interrupts at w2.
+
+Recorded: `make -C sim -j2 check-spec` and, at both widths with the same LSU-pipe settings,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`;
+commit 120f35f plus the spacing-expectation change committed with this record, 2026-10-07. All pass
+(timing benches: 3,209 checks, 55 spacings).
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
