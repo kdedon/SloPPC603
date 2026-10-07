@@ -1017,9 +1017,10 @@ The 603e model gives 521 cycles per Dhrystone run.
 ## Timing accuracy rounds 15 and 16
 
 Recorded: `make -C sim BUILD_DIR=<dir> BRANCH_REMOVAL=1 [DISPATCH_WIDTH=2] VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe REFERENCE_DIR=<dingusppc> DEMO_FW_DIR=<main checkout>/toolchain/build/demo MACHINE_PROGRAMS=dhrystone test-core test-core-recovery test-core-dual test-dispatch-rules test-reference-machine perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits 2032aef (before), 36c7e3c and 383e017, 2026-10-06.
-LSU unit and store queue on, removal on. At 383e017 width 1 passes its
-benches, the reference machine and `test-dispatch-rules`; CoreMark CRCs
-match.
+LSU unit and store queue on, removal on. At 383e017 both widths pass
+their benches, the LSU benches, the reference machine and
+`test-dispatch-rules`; CoreMark CRCs match. `test-core` and
+`test-core-full-decode` pass at the default configuration.
 
 | | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
 |---|---:|---:|---:|---:|
