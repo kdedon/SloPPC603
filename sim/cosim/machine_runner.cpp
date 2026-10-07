@@ -362,8 +362,9 @@ int main(int argc, char** argv) {
             for (auto& r : recent) text << "\n    " << r.substr(0, 200);
             throw std::runtime_error(text.str());
         };
-        // Branches the RTL removed at dispatch (UM 6.3.1): no LR or CTR
-        // write, so they retire without a record and the reference steps them.
+        // Branches the RTL removed at dispatch (UM 6.3.1): no CTR write, and
+        // LR only from a bl through the shadow LR, which the next record
+        // carries. They retire without a record and the reference steps them.
         auto step_removed = [&](unsigned n) {
             for (unsigned i = 0; i < n; ++i) {
                 uint32_t w = 0;
@@ -372,9 +373,9 @@ int main(int argc, char** argv) {
                 uint32_t op = w >> 26, xo = (w >> 1) & 1023;
                 bool branch = op == 18 || op == 16 || (op == 19 && (xo == 16 || xo == 528));
                 bool ctr = op != 18 && !((w >> 23) & 1);
-                if (!branch || (w & 1) || ctr)
+                if (!branch || ((w & 1) && op != 18) || ctr)
                     fail("removed instruction at " + h8(ppc_state.pc) + " " + h8(w) +
-                         " is not a branch without LR or CTR writes");
+                         " is not a branch without CTR writes, and LR only as a bl");
                 uint64_t step_exceptions = exceptions_processed;
                 ppc_exec_single();
                 if (exceptions_processed != step_exceptions)
