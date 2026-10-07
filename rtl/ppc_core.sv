@@ -393,7 +393,7 @@ module ppc_core #(
   logic lr_pending_q, ctr_pending_q, lk_pending_q, frontend_clear;
   logic shadow_valid_q, shadow_armed_q, shadow_unarmed, shadow_set, shadow_arm, shadow_write;
   logic shadow_over, shadow_live, shadow_keep_free, lk_busy, shadow_set0;
-  completion_tag_t shadow_tag_q, shadow_arm_tag;
+  completion_tag_t shadow_tag_q, shadow_arm_tag, shadow_tag_d;
   logic [31:2] shadow_val_q;
   logic cshadow_valid_q, cshadow_armed_q, cshadow_unarmed, cshadow_set, cshadow_arm;
   logic cshadow_write, cshadow_over, cshadow_live, cshadow_keep, ctr_shadow_done, bu_ctr_remove;
@@ -508,6 +508,16 @@ module ppc_core #(
   // b removed as it would enter the IQ, counted on the next entry pushed.
   logic bu_remove, d1_remove, push_remove0, push_remove1, iq_in0, iq_in1;
   logic [1:0] removed_q, fetch_removed_q, iq_rb, dq1_rb, iq_rb_first;
+  // A bl removed as it is queued (UM 6.3.1) acts on LR as if dispatched
+  // right behind the youngest IQ entry, its carrier: at once when none is
+  // left (lk_fire_p), else as the carrier dispatches. lkp_q holds it while
+  // the carrier is lkp_pos_q entries from DQ0.
+  logic bl_ok, bl_rm0, bl_rm1, lk_fire_p, lk_fire_c0, lk_fire, lkp_q, iq_marked;
+  // Such a bl queued behind an unresolved prediction is on its path: a
+  // misprediction recovery drops it with its shadow.
+  logic lk_spec_q;
+  logic [IQ_COUNT_WIDTH-1:0] lkp_pos_q;
+  logic [31:2] lkp_val_q, lk_val;
   // A removed predicted bc's record on the IQ entry before it: valid,
   // prediction, BO[1], BI, removal count and alternate target.
   localparam int BREC_W = 40;
@@ -816,7 +826,7 @@ module ppc_core #(
   logic [2:0] lr_iq_q, ctr_iq_q, lk_iq_q;
   logic [1:0] push_writes, push1_writes, pop_writes, pop1_writes;
   logic lr_free, ctr_free, lk_free, push_lk, push1_lk, pop_lk, pop1_lk;
-  assign lr_free = (lr_iq_q == '0) && !lr_pending_q;
+  assign lr_free = (lr_iq_q == '0) && !lr_pending_q && !lkp_q;
   // Linking branches queued or uncompleted.
   assign lk_free = (lk_iq_q == '0) && !lk_busy;
   // Shadow LR (UM 6.4.1.1): a linking branch's LR value, PC + 4, is known
@@ -830,9 +840,9 @@ module ppc_core #(
   logic lr_front_ok_q, lr_disp_ok_q, lr_ok, mtlr_finish, lr_bu_ok;
   logic [31:2] lr_front_q, lr_disp_q, lr_fold, lr_bu;
   assign lr_ok = lr_free || lr_front_ok_q;
-  assign rm1_early = BRANCH_REMOVAL && !fetched_insn1[0] &&
+  assign rm1_early = BRANCH_REMOVAL &&
     ((fetched_insn1[31:26] == 6'd18) ||
-     ((fetched_insn1[31:26] == 6'd19) && (fetched_insn1[10:1] == 10'd16) &&
+     (!fetched_insn1[0] && (fetched_insn1[31:26] == 6'd19) && (fetched_insn1[10:1] == 10'd16) &&
       (fetched_insn1[15:11] == 5'd0) && fetched_insn1[25] && fetched_insn1[23] && lr_ok));
   assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
   // A removed counting bc whose older work has all retired, with nothing
@@ -1128,7 +1138,7 @@ module ppc_core #(
     .valid_o({iq_valid1, iq_valid}),
     .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb, iq_rec}), .dq1_o(iq_dq1),
     .dq2_o(iq_dq2), .dq3_o(iq_dq3),
-    .count_o(iq_count)
+    .count_o(iq_count), .marked_o(iq_marked)
   );
   assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair, dq1_rb, dq1_rec} = iq_dq1;
   // UM 6.3.1: an unconditional b without LK is resolved and retired by the
@@ -1158,7 +1168,7 @@ module ppc_core #(
   // A taken one folds. Beside one not taken, the second word moves to the
   // first lane and counts both removals.
   assign push_remove0 = BRANCH_REMOVAL && !trace_mode && (fetch_removed_q != 2'd3) &&
-    (plain_b(queued) ||
+    (plain_b(queued) || bl_rm0 ||
      (res0[1] && (res0[0] ? fold_predict : (!fd1_valid || !fetch_removed_q[1]))) ||
      (rem0_pred && (fold_predict || !fd1_valid || !fetch_removed_q[1])));
   // A predicted bc in lane 0 hands its record to the youngest IQ entry
@@ -1184,6 +1194,8 @@ module ppc_core #(
   /* verilator lint_on UNUSEDSIGNAL */
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear || bs_now) last_carry_q <= 1'b0;
+    else if ((iq_push0 && push_remove0 && bl_rm0) || (iq_push1 && push_remove1 && bl_rm1))
+      last_carry_q <= 1'b0;
     else if (iq_in1) last_carry_q <= can_carry(queued1, push_uop1, push_pair1, push_branch1);
     else if (iq_in0)
       last_carry_q <= !push_rec[BREC_W-1] && can_carry(queued, push_uop, push_pair, push_branch);
@@ -1207,7 +1219,7 @@ module ppc_core #(
                     (dispatch && flags_tok0) ? alloc_producer :
                     flags_waiter ? flags_waiter_tag : flags_owner;
   assign push_remove1 = BRANCH_REMOVAL && !trace_mode && !wait0 &&
-    (plain_b(queued1) || (res1[1] && (!res1[0] || fold_predict1)) || rem1_pred);
+    (plain_b(queued1) || bl_rm1 || (res1[1] && (!res1[0] || fold_predict1)) || rem1_pred);
   // A predicted bc on a CR bit alone also leaves the IQ (UM 6.4.1.1): the
   // first word, pushed beside it, carries its prediction and starts it as
   // it dispatches. That word must allocate and, if it writes CR, be an IU op.
@@ -1223,6 +1235,37 @@ module ppc_core #(
     (plain_b(queued1) || (res1[1] && res1[0] && fold_predict1)));
   assign iq_in0 = iq_push0 && !push_remove0;
   assign iq_in1 = iq_push1 && !push_remove1;
+  // One bl at a time, with no LR writer, branch or record queued before
+  // it: nothing older than the carrier can predict or redirect. An older
+  // prediction may be pending.
+  /* verilator lint_off UNUSEDSIGNAL */  // the fault, opcode and LK fields
+  function automatic logic is_bl(fetch_packet_t p);
+    return (p.fault == FETCH_OK) && (p.insn[31:26] == 6'd18) && p.insn[0];
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign bl_ok = BRANCH_REMOVAL && !shadow_valid_q && !lkp_q && !bs_miss_q && !bs_fix_q &&
+    !recovery_accepted && (lr_iq_q == '0) && !iq_marked;
+  assign bl_rm0 = bl_ok && is_bl(queued);
+  assign bl_rm1 = bl_ok && is_bl(queued1) && !push_branch[3] && !push_writes[1];
+  assign lk_fire_p = iq_push0 && push_remove0 && bl_rm0 && (iq_count == iq_pops);
+  assign lk_fire_c0 = lkp_q && (lkp_pos_q == IQ_COUNT_WIDTH'(1)) && dispatch && iq_pop;
+  assign lk_fire = lk_fire_p || lk_fire_c0 ||
+                   (lkp_q && (lkp_pos_q == IQ_COUNT_WIDTH'(2)) && dispatch1);
+  assign lk_val = lk_fire_p ? queued.pc[31:2] + 30'd1 : lkp_val_q;
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || frontend_clear || lk_fire) lkp_q <= 1'b0;
+    else if ((iq_push0 && push_remove0 && bl_rm0 && !lk_fire_p) ||
+             (iq_push1 && push_remove1 && bl_rm1)) begin
+      lkp_q <= 1'b1;
+      lkp_pos_q <= iq_count - iq_pops + IQ_COUNT_WIDTH'(bl_rm1);
+      lkp_val_q <= (bl_rm1 ? queued1.pc[31:2] : queued.pc[31:2]) + 30'd1;
+    end else lkp_pos_q <= lkp_pos_q - iq_pops;
+  end
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || recovery_accepted || !bs_busy || bs_hit || bs_cap_hit) lk_spec_q <= 1'b0;
+    else if ((iq_push0 && push_remove0 && bl_rm0) || (iq_push1 && push_remove1 && bl_rm1))
+      lk_spec_q <= bs_valid_q;
+  end
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear) fetch_removed_q <= '0;
     else if (iq_push0)
@@ -1269,6 +1312,9 @@ module ppc_core #(
       if (dispatch1 && pop1_writes[1]) begin
         lr_disp_ok_q <= dq1_uop.special_op != SPECIAL_MTSPR;
         lr_disp_q <= dq1_head.pc[31:2] + 30'd1;
+      end else if (lk_fire) begin
+        lr_disp_ok_q <= 1'b1;
+        lr_disp_q <= lk_val;
       end else if (dispatch && pop_writes[1]) begin
         lr_disp_ok_q <= iq_uop.special_op != SPECIAL_MTSPR;
         lr_disp_q <= iq_head.pc[31:2] + 30'd1;
@@ -1300,9 +1346,9 @@ module ppc_core #(
       ctr_iq_q <= '0;
       lk_iq_q <= '0;
     end else begin
-      lk_iq_q <= lk_iq_q + 3'(iq_push0 && push_lk) + 3'(iq_push1 && push1_lk) -
+      lk_iq_q <= lk_iq_q + 3'(iq_in0 && push_lk) + 3'(iq_in1 && push1_lk) -
                  3'(dispatch && iq_pop && pop_lk) - 3'(dispatch1 && pop1_lk);
-      lr_iq_q <= lr_iq_q + 3'(iq_push0 && push_writes[1]) + 3'(iq_push1 && push1_writes[1]) -
+      lr_iq_q <= lr_iq_q + 3'(iq_in0 && push_writes[1]) + 3'(iq_in1 && push1_writes[1]) -
                  3'(dispatch && iq_pop && pop_writes[1]) - 3'(dispatch1 && pop1_writes[1]);
       ctr_iq_q <= ctr_iq_q + 3'(iq_push0 && push_writes[0]) + 3'(iq_push1 && push1_writes[0]) -
                   3'(dispatch && iq_pop && pop_writes[0]) - 3'(dispatch1 && pop1_writes[0]);
@@ -1803,34 +1849,40 @@ module ppc_core #(
   end
   assign shadow_unarmed = shadow_valid_q && !shadow_armed_q;
   assign shadow_set0 = dispatch && bu_remove && uop.branch_lk;
-  assign shadow_set = shadow_set0 || (dispatch1 && d1_remove && dq1_uop.branch_lk);
-  assign shadow_arm = (shadow_set0 || shadow_unarmed) && !recovery_accepted &&
-    ((dispatch && !bu_remove) || (dispatch1 && !d1_remove));
+  assign shadow_set = shadow_set0 || (dispatch1 && d1_remove && dq1_uop.branch_lk) || lk_fire;
+  // A bl behind a DQ0 carrier arms on a DQ1 allocation.
+  assign shadow_arm = !recovery_accepted &&
+    (((shadow_set0 || shadow_unarmed) && ((dispatch && !bu_remove) || (dispatch1 && !d1_remove))) ||
+     (lk_fire_c0 && dispatch1 && !d1_remove));
   assign shadow_arm_tag = (dispatch && !bu_remove) ? alloc_producer : alloc1_producer;
+  assign shadow_tag_d = lk_fire_c0 ? alloc1_producer : shadow_arm_tag;
   assign shadow_write = shadow_valid_q && shadow_armed_q &&
     ((!cq_empty && (cq_head == shadow_tag_q.index)) ||
      (commit1 && (retire1_producer == shadow_tag_q)));
   assign shadow_over = shadow_write && (retire_producer != shadow_tag_q);
-  assign shadow_keep_free = shadow_valid_q && !shadow_write && bs_recover &&
+  assign shadow_keep_free = shadow_valid_q && !shadow_write && bs_recover && !lk_spec_q &&
     !(shadow_armed_q && shadow_live);
   // A younger branch(LK) other than bl waits for the removed bl to
   // complete (UM 6.4.1.1), which it does once everything older has.
-  assign lk_busy = lk_pending_q && !(shadow_unarmed && cq_empty);
+  assign lk_busy = (lk_pending_q && !(shadow_unarmed && cq_empty)) || lkp_q;
   always_ff @(posedge clk_i) begin
     if (!rst_ni || shadow_write) begin
       shadow_valid_q <= 1'b0;
       shadow_armed_q <= 1'b0;
     end else if (recovery_accepted) begin
-      shadow_valid_q <= shadow_valid_q && (bs_recover || (shadow_armed_q && shadow_live));
+      shadow_valid_q <= shadow_valid_q &&
+                        ((bs_recover && !lk_spec_q) || (shadow_armed_q && shadow_live));
       shadow_armed_q <= shadow_armed_q && shadow_live;
     end else if (shadow_set || shadow_arm) begin
       shadow_valid_q <= 1'b1;
       shadow_armed_q <= shadow_arm;
-      shadow_tag_q <= shadow_arm_tag;
+      shadow_tag_q <= shadow_tag_d;
     end
   end
   always_ff @(posedge clk_i)
-    if (shadow_set) shadow_val_q <= (shadow_set0 ? iq_head.pc[31:2] : dq1_head.pc[31:2]) + 30'd1;
+    if (shadow_set)
+      shadow_val_q <= lk_fire ? lk_val :
+                      (shadow_set0 ? iq_head.pc[31:2] : dq1_head.pc[31:2]) + 30'd1;
   // The CTR shadow does the same for a removed counting bc, written as the
   // next allocated entry reaches the CQ head. A counting branch retiring
   // older than that entry has its decrement already in the shadow.
@@ -1898,8 +1950,8 @@ module ppc_core #(
            (commit1 && (retire1_producer == lk_writer_q)))))
         lk_pending_q <= 1'b0;
       if (shadow_arm) begin
-        lr_writer_q <= shadow_arm_tag;
-        lk_writer_q <= shadow_arm_tag;
+        lr_writer_q <= shadow_tag_d;
+        lk_writer_q <= shadow_tag_d;
       end
       if (dispatch && pop_writes[1]) begin
         lr_pending_q <= 1'b1;
@@ -1910,6 +1962,12 @@ module ppc_core #(
         ctr_writer_q <= bu_remove ? shadow_arm_tag : alloc_producer;
       end
       if (cshadow_set) ctr_pending_q <= 1'b1;
+      if (lk_fire) begin
+        lr_pending_q <= 1'b1;
+        lr_writer_q <= shadow_tag_d;
+        lk_pending_q <= 1'b1;
+        lk_writer_q <= shadow_tag_d;
+      end
       if (dispatch1 && pop1_writes[1]) begin
         lr_pending_q <= 1'b1;
         lr_writer_q <= alloc1_producer;
@@ -2799,7 +2857,7 @@ module ppc_core #(
     !dq1_uop.mem_skip && !dq1_uop.cache_probe && !dq1_uop.block_zero &&
     (dq1_uop.cache_op == CACHE_OP_NONE);
   assign d1_branch = d1_valid && dq1_branch[3] && (d1_bc ? (d1_bc_now || d1_bc_spec) :
-    (dq1_folded && !(dq1_branch[1] && (lr_pending_q || pop_writes[1])) &&
+    (dq1_folded && !(dq1_branch[1] && (lr_pending_q || pop_writes[1] || lkp_q)) &&
      !(dq1_uop.branch_lk && (dq1_uop.special_op != SPECIAL_B) &&
        (lk_busy || (pop_writes[1] && (iq_uop.special_op != SPECIAL_MTSPR)))) &&
      ((dq1_head.insn[31:26] == 6'd18) || (dq1_head.insn[25] && dq1_head.insn[23]))));
@@ -2926,8 +2984,8 @@ module ppc_core #(
   assign lsu_c0 = (special_uop && lsu_route) || fp_mem_pipe;
   // A predicted bc keeps its entry for recovery unless anchored on DQ0.
   assign d1_remove = BRANCH_REMOVAL && d1_branch &&
-    (!dq1_uop.branch_lk || ((dq1_uop.special_op == SPECIAL_B) && !shadow_valid_q && !bs_busy &&
-                            !recovery_accepted && !c0_carry && !(bu_branch && (bu_spec || uop.branch_lk)))) &&
+    (!dq1_uop.branch_lk || ((dq1_uop.special_op == SPECIAL_B) && !shadow_valid_q && !lkp_q &&
+                            !bs_busy && !recovery_accepted && !c0_carry && !(bu_branch && (bu_spec || uop.branch_lk)))) &&
     (!(d1_bc && !d1_bc_now) || BS_ANCHOR) && (dq1_rb != 2'd3);
   // Beside a carrier only an IU op dispatches; a carrier in DQ1 starts the
   // only prediction of the pair.

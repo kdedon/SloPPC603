@@ -37,7 +37,9 @@ module ppc_iq #(
   output logic [WIDTH-1:0] dq2_o,
   // The entry behind that, valid while count_o exceeds 3.
   output logic [WIDTH-1:0] dq3_o,
-  output logic [$clog2(DEPTH + 1)-1:0] count_o
+  output logic [$clog2(DEPTH + 1)-1:0] count_o,
+  // An entry holds a record (bit REC_W - 1) or sets bit FOLD_BIT - 1.
+  output logic marked_o
 );
   localparam int COUNT_WIDTH = $clog2(DEPTH + 1);
   // Registers, not block RAM: DQ0/DQ1 feed dispatch directly.
@@ -54,6 +56,11 @@ module ppc_iq #(
   assign dq2_o = entries[2];
   assign dq3_o = entries[3];
   assign count_o = count;
+  always_comb begin
+    marked_o = 1'b0;
+    for (int i = 0; i < DEPTH; i++)
+      if (COUNT_WIDTH'(i) < count) marked_o |= entries[i][REC_W-1] || entries[i][FOLD_BIT-1];
+  end
   assign push0 = push_valid_i[0] && push_ready_o;
   assign push1 = push0 && push_valid_i[1] && push2_ready_o;
   assign pop0 = pop_i[0] && valid_o[0];
