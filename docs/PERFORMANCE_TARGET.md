@@ -1834,6 +1834,76 @@ gap per iteration), `bc` (178,000 at width 1, 66,000 at width 2), integer
 (101,000). Its multiplies cost 4.7 cycles against the model's 3 (A8), worth
 17,000 cycles per iteration.
 
+## Timing accuracy round 30
+
+One core change and a new checker rule; the model is unchanged (509
+cycles per run).
+
+`Func_2`'s `stw r0,20(r1)` after `mflr r0` completed 2 cycles after the
+`mflr` in the core and 3 in the model. The core was too fast. UM 6.3.3.2
+and 6.4.5: results of completion-serialized SRU instructions "will not be
+available or forwarded for subsequent instructions until the serializing
+instruction is retired"; UM 6.3.3.1: an instruction waiting on a rename
+tag begins execution once the data is in the rename register; T6-6 and
+UM 6.4.4: a store takes two cycles. A reader therefore executes no
+earlier than the cycle after the retirement, and a store completes no
+earlier than 3 cycles after it, as the model has it (A11). The special
+unit's result woke its readers in its finish cycle, a cycle before it
+retires, so the store in P1 had its data a cycle early.
+
+The wake packet now carries a `late` bit for a special-unit result other
+than a memory access's. Rename does not forward it at dispatch; the IU
+and SRU stations and the LSU's P1 (data and base) take the value and use
+it a cycle later. Timing-phase item: the late bit adds a register per
+station operand and per P1 entry; the P1 data and base snoops and the
+station's same-cycle resolve gain a `!late` term.
+
+The checker gains TIM-SER-RESULT (`sim/spec/timing.json`): a reader of an
+`mfspr`, `mftb`, `mfmsr`, `mfcr`, `mfsr` or `mfsrin` result retires at
+least 2 cycles after it, a load or store using it as base or data at
+least 3. It counts only forms whose operand fields are unambiguous, and
+stops tracking a register at any later instruction that may write it.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 29 (18dab36) | 509 | 513 | 621 | 4,138,918 | 4,642,833 |
+| Serialized result forwarding (446452f) | 509 | 515 | 619 | 4,139,002 | 4,642,787 |
+
+Per function (core minus model, w2): `Func_2` -2 to 0. Width 1 gains 2
+cycles per run: the store now meets its data later, which moves later
+work off a conflict.
+
+`Proc_7` +2 is not in completion. In calls 2 and 3 (from `Proc_1`, behind
+a `bl` the core removes at dispatch) the `bl` takes a dispatch cycle of
+its own, so the `mr r9,r3`/`addi r9,r9,2` pair dispatches a cycle later
+than in the model, where the folded `bl` takes no slot (UM 6.4.1.1) and
+its target reaches dispatch two cycles after its fetch (F6-3). The core
+then completes both at their execution time; the model's `mr` completes
+late beside the `addi` because the two instructions ahead hold both
+completion slots. Whether the `bl` slot or the target fetch sets the core's
+cycle is not yet traced.
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit 446452f, 2026-10-07. All pass; CoreMark
+CRCs match at both widths. At width 1, `test-core-branch-fold` does not
+build (REDEFMACRO of `PPC_DISPATCH_WIDTH` in its width-2 variant), as on
+rounds 28 and 29. Dispatch rules, width 2: Dhrystone 1,974,063 cycles,
+CoreMark 4,138,977, Whetstone 6,444,552; width 1: 2,265,283, 4,642,762,
+7,259,287. Quartus `quartus_map --analysis_and_elaboration` of
+`quartus/chip` with `PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and
+`PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was run, so this round makes no
+timing claim.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
