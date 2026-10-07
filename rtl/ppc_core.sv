@@ -664,19 +664,29 @@ module ppc_core #(
   assign fd_miss = fd_bypass ? fetch_miss : fd_miss_q;
   logic iq_push_ready, iq_push2_ready;
   logic [IQ_COUNT_WIDTH-1:0] iq_count;
-  // The FD words enter the IQ together.
-  assign fd_push_ok = fd1_valid ? iq_push2_ready : iq_push_ready;
+  // The FD words enter the IQ together; a removed or held word takes no
+  // entry (UM 6.3.1).
+  logic push_one, push_one_q;
+  assign push_one = push_remove0 || push_remove1 || fold_predict || hold1_cr;
+  assign fd_push_ok = fd1_valid ? iq_push2_ready || (iq_push_ready && push_one) : iq_push_ready;
   // fd_split while the registers are read; the pair bit of a bypassed packet
-  // depends on fetch_ready.
-  assign fd_push_ok_q = fd1_valid_q ? iq_push2_ready : iq_push_ready;
+  // depends on fetch_ready. push_one_q implies push_one without reading it.
+  assign fd_push_ok_q = fd1_valid_q ? iq_push2_ready || (iq_push_ready && push_one_q) :
+                                      iq_push_ready;
   assign fd_split_q = fd_push && fd_push_ok_q && fd1_valid_q && hold1_cr;
   // A bypassed packet is taken whole: what the IQ refuses is registered.
   assign fetch_ready = !frontend_clear && !fold_q && !fstop_q && !rel_fold &&
     (fd_bypass || (!cr_hold0 && !fd_split_q && (!fd_valid_q || fd_push_ok_q)));
-  // Two words are taken only if the IQ holds them behind the FD words.
+  // Two words are taken only if the IQ holds them behind the FD words, or
+  // one entry is free and the second word is a b or an unconditional bclr,
+  // which is removed as it is queued. If it is not removed after all, the
+  // pair waits in the FD registers.
+  logic rm1_early;
+  logic [IQ_COUNT_WIDTH:0] fd_used;
+  assign fd_used = {1'b0, iq_count} + (IQ_COUNT_WIDTH + 1)'(fd_valid_q) +
+                   (IQ_COUNT_WIDTH + 1)'(fd1_valid_q);
   assign fetch_room2 = (FETCH_WIDTH == 2) &&
-    ({1'b0, iq_count} + (IQ_COUNT_WIDTH + 1)'(fd_valid_q) + (IQ_COUNT_WIDTH + 1)'(fd1_valid_q) <=
-     (IQ_COUNT_WIDTH + 1)'(IQ_DEPTH - 2));
+    (fd_used <= (IQ_COUNT_WIDTH + 1)'(IQ_DEPTH - (rm1_early ? 1 : 2)));
   assign fetch_ready2 = fetch_room2 && fetch_ready;
   always_ff @(posedge clk_i) begin
     if (!rst_ni || frontend_clear || fold_q || fstop_q || rel_fold) begin
@@ -809,6 +819,10 @@ module ppc_core #(
   logic lr_front_ok_q, lr_disp_ok_q, lr_ok;
   logic [31:2] lr_front_q, lr_disp_q, lr_fold;
   assign lr_ok = lr_free || lr_front_ok_q;
+  assign rm1_early = BRANCH_REMOVAL && !fetched_insn1[0] &&
+    ((fetched_insn1[31:26] == 6'd18) ||
+     ((fetched_insn1[31:26] == 6'd19) && (fetched_insn1[10:1] == 10'd16) &&
+      (fetched_insn1[15:11] == 5'd0) && fetched_insn1[25] && fetched_insn1[23] && lr_ok));
   assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
   // A removed counting bc whose older work has all retired, with nothing
   // allocated since, has completed: CTR is the shadow's value.
@@ -1166,6 +1180,8 @@ module ppc_core #(
     (queued1.insn[1] ? 30'b0 : queued1.pc[31:2]) + {{16{queued1.insn[15]}}, queued1.insn[15:2]};
   assign push_rec = {iq_push1 && rem1_pred, fold_predict1, queued1.insn[24],
                      queued1.insn[20:16], 2'd1, rem1_alt};
+  assign push_one_q = fold_predict || (BRANCH_REMOVAL && !trace_mode && !wait0 &&
+    (plain_b(queued1) || (res1[1] && res1[0] && fold_predict1)));
   assign iq_in0 = iq_push0 && !push_remove0;
   assign iq_in1 = iq_push1 && !push_remove1;
   always_ff @(posedge clk_i) begin
