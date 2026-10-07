@@ -1099,6 +1099,7 @@ module ppc_core #(
   iq_pair_t iq_pair;
   logic iq_valid1;
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq1;
+  logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq2;
   /* verilator lint_on UNUSEDSIGNAL */
   // A removed first word passes its lane to the second.
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_lane0;
@@ -1119,6 +1120,7 @@ module ppc_core #(
     .fold_write_i(ctr_rel_taken),
     .valid_o({iq_valid1, iq_valid}),
     .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb, iq_rec}), .dq1_o(iq_dq1),
+    .dq2_o(iq_dq2),
     .count_o(iq_count)
   );
   assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair, dq1_rb, dq1_rec} = iq_dq1;
@@ -2720,8 +2722,28 @@ module ppc_core #(
   // (UM 6.3, 6.4.5).
   // It also does beside an IU-only operation in DQ1, which then takes the
   // IU (UM 6.6.1.2).
+  // With both stations free, an add or compare takes the SRU when the next
+  // non-branch instruction needs the IU, whose dispatch an IU station held
+  // by it would stall (UM 6.3.3, 6.4.5). The lookahead covers the queue
+  // and the fetched words; nothing further is known.
+  function automatic logic needs_iu(unit_class_e unit, logic sru);
+    return (unit == UNIT_IU) && !sru;
+  endfunction
+  unit_class_e dq2_unit;
+  logic dq2_sru;
+  logic fd_next_iu, after1_iu, after0_iu;
+  assign dq2_unit = unit_class_e'(iq_dq2[BREC_W + 1 + $bits(iq_pair_t) -: 3]);
+  assign dq2_sru = iq_dq2[BREC_W + 1 + $bits(iq_pair_t) - 3];
+  assign fd_next_iu = fd_valid &&
+    ((push_pair.unit != UNIT_BPU) ? needs_iu(push_pair.unit, push_pair.sru) :
+     (fd1_valid && needs_iu(push_pair1.unit, push_pair1.sru)));
+  assign after1_iu = (iq_count > IQ_COUNT_WIDTH'(2)) ?
+    ((dq2_unit != UNIT_BPU) ? needs_iu(dq2_unit, dq2_sru) :
+     ((iq_count == IQ_COUNT_WIDTH'(3)) && fd_next_iu)) : fd_next_iu;
+  assign after0_iu = iq_valid1 ?
+    ((dq1_pair.unit != UNIT_BPU) ? needs_iu(dq1_pair.unit, dq1_pair.sru) : after1_iu) : fd_next_iu;
   assign c0_sru = HAS_SRU && c0_iu && iq_pair.sru && sru_rs_ready &&
-    (!rs_ready || (d1_iu && !dq1_pair.sru));
+    (!rs_ready || (d1_iu && !dq1_pair.sru) || after0_iu);
   assign c0_branch = bu_branch && !bu_redirect;
   assign c0_lane = special_uop && dispatch_mem_plain;
   // An LR or CTR move is completion-serialized, not dispatch-serialized, so
@@ -2806,7 +2828,7 @@ module ppc_core #(
   // beside another unit's, an add or compare does while the IU station is
   // taken.
   assign d1_alt_sru = d1_sru && (c0_lane || c0_branch || c0_fp || c0_fp_mem) &&
-    !rs_ready && sru_rs_ready;
+    (!rs_ready || after1_iu) && sru_rs_ready;
   assign d1_station_ready = c0_sru ? rs_ready : c0_iu ? sru_rs_ready : (rs_ready || d1_alt_sru);
   assign d1_iu_ready = d1_station_ready && (!special_busy || special_mem_overlap || sru_in_lane) &&
     !(special_mem_dst_valid &&
