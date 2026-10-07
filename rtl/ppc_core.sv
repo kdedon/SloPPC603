@@ -2988,10 +2988,11 @@ module ppc_core #(
     (!dq1_uop.branch_lk || ((dq1_uop.special_op == SPECIAL_B) && !shadow_valid_q && !lkp_q &&
                             !bs_busy && !recovery_accepted && !c0_carry && !(bu_branch && (bu_spec || uop.branch_lk)))) &&
     (!(d1_bc && !d1_bc_now) || BS_ANCHOR) && (dq1_rb != 2'd3);
-  // Beside a carrier only an IU op dispatches; a carrier in DQ1 starts the
+  // Beside a carrier only an IU op or a unit access dispatches, the access
+  // marked speculative on the carrier's start; a carrier in DQ1 starts the
   // only prediction of the pair.
   assign dispatch1 = dispatch && seq_last && pair_units && (cq1_ready || d1_remove) &&
-    !(c0_carry && (!d1_iu || c1_carry)) &&
+    !(c0_carry && (!(d1_iu || d1_lsu) || c1_carry)) &&
     !(c1_carry && ((bs_busy && !bs_hit) || fp_cr_pending ||
       (bu_branch && bu_spec) || c0_fp || c0_fp_mem)) &&
     // DQ1 needs only the renames left after DQ0 (UM 6.6.1.2). It does not
@@ -3168,7 +3169,7 @@ module ppc_core #(
         .kill_generation_i(recovery_kill_generation),
         .store_authorize_i(retire_ready_i && !bs_store_hold), .queue_head_i(cq_head),
         .commit_i(commit), .commit_tag_i(retire_producer),
-        .branch_spec_i(bs_valid_q || (bu_branch && bu_spec)), .branch_resolved_i((bs_resolve && (bs_taken == bs_pred_q)) || (fd_start && bs_cap_hit)),
+        .branch_spec_i(bs_valid_q || (bu_branch && bu_spec) || (c0_carry && carry_start && !lsu_c0)),.branch_resolved_i((bs_resolve && (bs_taken == bs_pred_q)) || (fd_start && bs_cap_hit)),
         .chk_addr_o(dmem_store_check_addr_o), .chk_ok_i(dmem_store_check_ok_i),
         .lane_idle_i(lane_mem_idle),
         .req_valid_o(lsu_req_valid), .req_ready_i(dmem_req_ready_i),
