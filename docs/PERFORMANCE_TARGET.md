@@ -2434,6 +2434,57 @@ CoreMark 4,500,069, Whetstone 7,124,977 (all as round 37).
 `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
 run, so this round makes no timing claim.
 
+## Timing accuracy round 39
+
+The width-2 lag at the `strcpy` call in the Dhrystone loop is fixed.
+At the loop tail, `cmpw` fff03910 in DQ0 carries the removed `bge`
+fff03914, and `lwz` fff03808, the branch target, sits in DQ1. Beside a
+carrier only an IU op could dispatch, so the `lwz` waited a cycle
+("DQ1 IU+LSU other"). UM 6.6.1.2 has no such rule, and a folded branch
+does not hold dispatch (UM 6.4.1.1). A DQ1 access to the LSU now
+dispatches beside a carrier. The carrier's branch starts on that edge,
+so the access enters the unit marked as behind an unresolved branch,
+as it would a cycle later.
+
+Path: `carry_start` (CR finality and the prediction test) now feeds the
+LSU's speculation input, which is registered in the unit.
+
+The pair now dispatches with the model, but the next cycle's `addi`
+fff0380c waits on a full CQ, so retirement does not move: Dhrystone
+w2 stays at 511 and its dispatch-rules run falls by 17 cycles.
+
+Not done: the `strcmp` exit design (round 36) needs an IQ tail pop and
+a held-branch record with its recovery cases; it was not attempted in
+the time box.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 38 (1966674) | 509 | 511 | 600 | 4,136,428 | 4,500,094 |
+| DQ1 access beside a carrier (4e10507) | 509 | 511 | 600 | 4,136,428 | 4,500,094 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 (`DISPATCH_WIDTH=2` for
+width 2) with `VERILATOR=tools/verilate-lsu-pipe
+VERILATOR_TOOL=tools/verilate-lsu-pipe BRANCH_REMOVAL=1`: `test-core
+test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit 4e10507, 2026-10-07. All fresh, all
+pass; CoreMark CRCs match. Dispatch rules, width 2: Dhrystone 1,965,504
+(was 1,965,521), CoreMark 4,136,403, Whetstone 6,443,608; width 1:
+Dhrystone 2,213,186, CoreMark 4,500,069, Whetstone 7,124,977
+(unchanged). `test-core-branch-fold` at width 2 covers stores and loads
+on both paths of a predicted `bc` at four code offsets, so some land in
+DQ1 beside a carrier; no bench expectation changed. `test-fpu-all` was
+not rerun (no FPU change). Quartus `quartus_map
+--analysis_and_elaboration` of `quartus/chip` with `PPC_LSU_PIPE=1`,
+`PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
+run, so this round makes no timing claim.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
