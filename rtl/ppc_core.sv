@@ -2355,12 +2355,12 @@ module ppc_core #(
   assign special_result_ready = special_result_valid &&
                                 ((result_ready && !lsu_port0) || special_port1);
   // An IU result that meets a load's on the first port takes the second
-  // when the SRU leaves it free: each unit has its own result bus (UM
-  // 6.3.3), so a load's consumer finishes on its own timing. IU results
+  // when the SRU, if any, leaves it free: each unit has its own result bus
+  // (UM 6.3.3), so a load's consumer finishes on its own timing. IU results
   // never fault and write only what the second port records.
   logic iu_port1;
   result_packet_t result1;
-  assign iu_port1 = HAS_SRU && ENABLE_LSU_PIPE && iu_result_valid && lsu_port0 &&
+  assign iu_port1 = ENABLE_LSU_PIPE && iu_result_valid && lsu_port0 &&
                     !special_result_select && !sru_result_offer;
   // The port selects on offers so a recovery's cancel stays out of the
   // second result's identity and value.
@@ -2378,7 +2378,7 @@ module ppc_core #(
                            iu_port1;
   // iu_result_ready for an offer, without the cancel.
   assign iu_offer_ready = (result_ready && !special_result_select && !lsu_port0) ||
-    (HAS_SRU && ENABLE_LSU_PIPE && lsu_port0 && !special_result_select && !sru_result_offer);
+    (ENABLE_LSU_PIPE && lsu_port0 && !special_result_select && !sru_result_offer);
   assign sru_result_ready = 1'b1;
   // Classify held identities without depending on cancel-masked valid signals.
   always_comb begin
