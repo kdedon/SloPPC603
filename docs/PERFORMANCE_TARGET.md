@@ -68,6 +68,9 @@ Assumptions (`perf_model_603e.py --assumptions` prints them):
   word fetched beside it stays, and the next fetch is the cycle after the
   branch executes. A CR branch behind an unresolved predicted branch is held
   even when its own CR is ready (UM 6.6.1.1).
+- A15: an instruction after a branch dispatches no earlier than the branch
+  executes; a held branch is not yet predicted, and the 603e executes through
+  one level of prediction (UM 6.4.1.1, 6.4.1.2). No Dhrystone change.
 
 Sensitivity of the primary figure: 500–523 cycles across A2, A10 and the divide.
 A6 and A7 make the model optimistic (fewer cycles), so the target is, if anything,

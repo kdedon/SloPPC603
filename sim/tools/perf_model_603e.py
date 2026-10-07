@@ -59,6 +59,9 @@ ASSUMPTIONS = {
     "A14": "A held branch (UM 6.4.1.1 'Fetching is stopped') stops fetch after its own "
            "fetch: the word fetched beside it stays, the next fetch is the cycle after "
            "the branch executes.",
+    "A15": "An instruction after a branch dispatches no earlier than the branch executes: "
+           "a held branch is not yet predicted, and the 603e executes through one level "
+           "of prediction only (UM 6.4.1.1 seventh case, 6.4.1.2).",
 }
 
 GPR_LIMIT = 5   # UM 6.3.3.1: five GPR renames
@@ -327,6 +330,7 @@ def schedule(stream, fetch_any=False, core=frozenset()):
     ser_until = 0                             # dispatch-serialized retire + 1
     cr_free = 0                               # previous CR writer completion + 1
     stop_f, stop_until = -1, 0                # A14: fetch of a held branch, restart
+    branch_x = 0                              # A15: execute cycle of the last branch
     cq_late = 0 if "cq-same" in core else 1   # entry busy through its completion cycle
     sym, fresh = {}, [0]                      # GPR as (root, offset) for A6
     stores = []                               # (root, lo, hi, completion) of recent stores
@@ -437,6 +441,7 @@ def schedule(stream, fetch_any=False, core=frozenset()):
             if ins.crs and cr_avail > x:
                     resolve = cr_avail             # predicted, resolves later (A4)
             last_x = x
+            branch_x = x
             r.update(X=x, R=resolve)
             if x > x0:                             # held: fetch stops (UM 6.4.1.1, A14)
                 stop_f, stop_until = f, x + 1
@@ -470,7 +475,7 @@ def schedule(stream, fetch_any=False, core=frozenset()):
         redirect = 0
         prev = nb_hist[-1] if nb_hist else None
         # Dispatch: UM 6.3.3, 6.6.1.2.
-        d = max(f + 1, prev["D"] if prev else 0, ser_until)
+        d = max(f + 1, prev["D"] if prev else 0, ser_until, branch_x)   # A15
         if ins.dserial and prev:
             d = max(d, max(q["C"] for q in nb_hist[-CQ_LIMIT:]) + 1)
         if "cr-token" in core and ins.crd:
