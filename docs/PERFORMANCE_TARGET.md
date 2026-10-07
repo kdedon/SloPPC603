@@ -1493,6 +1493,53 @@ at both widths. Interrupt benches: 15,044 and 382 checks. Reference: 5 programs 
 controls at both widths; MMU stress 46,319 records and 241 interrupts at w1, 41,094 records and
 252 interrupts at w2. LSU timing benches: 3,209 checks, 55 spacings.
 
+## Timing accuracy round 25
+
+A `bc` on the CTR alone (BO[0] set, no LK) that stops fetching behind an
+`mtctr` (UM 6.4.1.1) now executes in the IQ: in the cycle after the
+`mtctr` retires, with no other CTR writer queued or uncommitted, the
+youngest IQ entry, if it is that branch, resolves from CTR. Taken, fetch
+redirects to its target and the entry is marked folded, so DQ0 does not
+redirect again; not taken, fetch restarts after it. The branch still
+dispatches and decrements CTR. Before, it resolved only at DQ0.
+
+When CTR is ready: the manual says the branch "waits for the mtspr to
+execute" (UM 6.4.1.1), and the BPU holds a CTR rename register for
+`mtspr(CTR)` (UM 6.3). `mtspr` is completion-serialized (UM 6.3.3.2) and
+takes 2 cycles (Table 6-2), so it finishes executing as it becomes able to
+complete. The model's `ctr_ready = fin + 1` is therefore the earliest the
+manual allows and is unchanged. The core resolves one cycle later (the
+cycle after retirement, from the committed CTR), so it is never faster.
+
+In `memcpy`, the first loop `lwz` now retires 8 cycles after the `mtctr`,
+as in the model (10 before).
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 24 (23298cb) | 622 | 528 | 4,639,686 | 4,144,826 |
+| CTR release in the IQ (dd7afe6) | 620 | 525 | 4,629,935 | 4,135,770 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 2,003,717 to
+1,997,520 cycles; Whetstone unchanged (6,443,526).
+
+Remaining w2 Dhrystone gap (perf-diff, per iteration): `dhry_main` +6
+front end, `Proc_1` +2, `strcpy` and `memcpy` +1 each.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit dd7afe6, 2026-10-07. All pass (Quartus: 0 errors), except the known `test-core-branch-fold`
+REDEFMACRO stop at its built-in w2 build at w1; its w1 program passes (checks=101,519). Dispatch
+rules pass Dhrystone, CoreMark and Whetstone at both widths. Interrupt benches: 15,044 and 382
+checks. Reference: 5 programs and 11 negative controls at both widths; MMU stress 46,141 records
+and 225 interrupts at w1, 41,006 records and 243 interrupts at w2. LSU timing benches: 3,209
+checks, 55 spacings. No bench expectation changed.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
