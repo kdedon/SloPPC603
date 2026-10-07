@@ -2160,9 +2160,12 @@ test-core-branch-recovery test-reference-machine perf-diff`
 CoreMark demo, `test-core-lsu-update test-core-lsu-extensions
 test-core-lsu-timing test-core-lsu-timing-snoop
 test-core-lsu-timing-602` and `test-fpu-all`; at width 2 the same set
-without the reference-machine targets (the width-2 603e logic is
-unchanged); commit d8bfec5 plus the record, 2026-10-07. All pass;
-CoreMark CRCs match. Dispatch rules, width 1: Dhrystone 2,228,118
+without the reference-machine targets and the CoreMark demo (the
+width-2 603e logic is unchanged); commit d8bfec5 plus the record,
+2026-10-07. All pass; CoreMark CRCs match. The width-2 CoreMark demo
+figure in the table was inherited from round 33; rerun fresh in round 35
+(`perf-diff` and the CoreMark demo at width 2, commit 2c61050, whose RTL
+is d8bfec5's, 2026-10-07): 4,136,487 cycles, CRCs match. Dispatch rules, width 1: Dhrystone 2,228,118
 cycles (was 2,245,885), CoreMark 4,503,444 (4,574,160), Whetstone
 7,152,086 (7,223,475); width 2 unchanged at 1,967,636, 4,136,462,
 6,443,806. Quartus `quartus_map --analysis_and_elaboration` of
