@@ -1588,7 +1588,66 @@ checks. Reference: 5 programs and 11 negative controls at both widths; MMU stres
 and 225 interrupts at w1, 41,006 records and 243 interrupts at w2. LSU timing benches: 3,209
 checks, 55 spacings. No bench expectation changed.
 
-## Gaps
+## Timing accuracy round 27
+
+An `mtspr` to LR or CTR no longer enters the special lane in the cycle
+the entry ahead retires. It executes after every older instruction
+retires (UM 6.3.3.2) and takes two cycles (Table 6-2), so it retires
+three cycles after the instruction ahead; only `mfspr` (one cycle) may
+enter as its older work completes. The `mtlr r0` at `fff03614` now takes
+three cycles, like the `mtctr` at `fff03338` and the `mtlr` at
+`fff03f60`; `mflr` keeps two.
+
+The dispatch-trace checker enforces this as `TIM-SER-SRU-LATENCY`: an
+`mtspr` or `mfspr` retires at least its Table 6-2 latency plus one cycle
+after the retirement ahead (`mtspr` 2, `mfspr` 1, `mfspr` of a BAT 3).
+The round 26 Dhrystone trace fails it; the new traces pass.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 26 (c6c3133) | 619 | 521 | 4,629,966 | 4,134,249 |
+| `mtspr` at the head (41e0a1f) | 621 | 523 | 4,642,833 | 4,143,790 |
+
+CRCs match at both widths. The model is unchanged at 521, so the w2
+core is now 2 cycles over it: the manual's cost of the `mtlr`, which
+the round 26 total hid.
+
+`Proc_7` and `Func_1` show the core ahead of the model only in the
+front-end (dispatch) column. By retirement the core equals the model
+through both functions: the per-instruction difference is the same on
+entry and exit. The negative front-end figures are attribution: a
+removed `blr` or `beq` takes no completion slot, so its offset drops and
+the next instruction's rises in the caller. On the third `Proc_7` call
+the core also dispatches its first `mr` beside the `addi` at `fff0362c`
+by sending the `addi` to the SRU; the model gives the `addi` the IU and
+dispatches the `mr` a cycle later. UM 6.4.5 lets the SRU add in parallel
+with another integer instruction, so the model's greedy unit choice is
+pessimistic. Making it choose the SRU when the next instruction needs
+the IU drops the model to 509 cycles; that change needs its own review
+and is not taken here.
+
+`dhry_main` +5: by retirement, the first gap is the `li r31,65` at
+`fff03878` behind the removed `ble` at `fff03874`. The model completes
+it with the `cmplwi` in the branch's resolve cycle; the core retires it
+a cycle later. Open: check against Figure 6-5 whether an instruction
+behind a predicted branch may complete in the resolve cycle.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 41e0a1f with the checker of 2400ce6, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1 program passes
+(checks=101,519). Dispatch rules, now with `TIM-SER-SRU-LATENCY`, pass Dhrystone, CoreMark and
+Whetstone at both widths. Reference: 5 programs and 11 negative controls at both widths; MMU stress
+46,362 records and 245 interrupts at w1, 40,792 records and 223 interrupts at w2. LSU timing benches:
+3,209 checks, 55 spacings. Bench expectation changed: the synthetic `mtctr` in
+`test_dispatch_trace.py` `test_fetch_stops` now retires three cycles after the `add` ahead
+(UM 6.3.3.2, Table 6-2), not one.
 
 Per instruction, the core's retirement spacing minus the model's completion
 spacing, summed per iteration (Dhrystone, width 2, cycles per run), before
