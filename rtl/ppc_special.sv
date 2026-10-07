@@ -1293,176 +1293,201 @@ module ppc_special #(
   // Lane sequencer: state, fence and kill ownership.
   state_t state_d;
   logic fence_d, killed_d, mem_response_fence;
+  // Index 4 is the live outcome; 0-3 assume each pair of memory handshake
+  // outcomes, so a late ready or valid only selects among them.
+  state_t state_c [5];
+  logic fence_c [5], killed_c [5];
   always_comb begin
-    state_d = state_q;
-    fence_d = fence_q;
-    killed_d = killed_q;
-    if (interrupt_accept) begin
-      state_d = S_CONTEXT_DRAIN;
-      fence_d = 1'b1;
-    end else if (dispatch_fire) begin
-      killed_d = 1'b0;
-      fence_d = dispatch_fenced;
-      if (dispatch_adopt_i) state_d = S_MEM_WAIT;
-      // A plain access has nothing to check before its offer.
-      else if (ENABLE_UNALIGNED_DATAPATH && dispatch_overlap_i &&
-          ((uop_i.special_op == SPECIAL_LOAD) ||
-           ((uop_i.special_op == SPECIAL_STORE) && store_authorize_i &&
-            queue_empty_i)))
-        state_d = S_MEM_OFFER;
-      else if ((uop_i.special_op == SPECIAL_LOAD) ||
-          (uop_i.special_op == SPECIAL_STORE) ||
-          (ENABLE_DATA_CACHE && (uop_i.special_op == SPECIAL_SYNC)))
-        state_d = S_MEM_PREP;
-      else if (ENABLE_CACHE_INSTRUCTIONS &&
-               (uop_i.special_op == SPECIAL_ICBI)) state_d = S_ICBI;
-      else if (ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU))
-        state_d = dispatch_overlap_i ? S_FPU_WAIT : S_FPU_ISSUE;
-      else if (dispatch_fenced) state_d = S_CONTEXT_DRAIN;
-      else state_d = S_EXEC;
-    end else if (cancel_i) begin
-      case (state_q)
-        S_MMU_OFFER: begin
-          // An offered request cannot be withdrawn by recovery. Finish its
-          // handshake, then abort the side-effect-free prepared proposal.
-          killed_d = 1'b1;
-          if (mmu_req_ready) state_d = S_MMU_ABORT;
-        end
-        S_MMU_WAIT: state_d = S_MMU_ABORT;
-        S_MMU_RESULT, S_HOLD: begin
-          if (mmu_operation) state_d = S_MMU_ABORT;
-          else if (fence_q) state_d = S_CONTEXT_ABORT;
-          else state_d = S_IDLE;
-        end
-        S_MMU_ABORT: if (mmu_idle && !mmu_response_pending_q) begin
-          fence_d = 1'b0;
-          state_d = S_IDLE;
-        end
-        S_MEM_OFFER: if (mem_killable) begin
-          killed_d = 1'b1;
-          if (request_fire) state_d = S_MEM_DRAIN;
-        end
-        S_MEM_WAIT: if (mem_killable) begin
-          killed_d = 1'b1;
-          state_d = response_fire ? S_IDLE : S_MEM_DRAIN;
-        end
-        S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
-        // An offered invalidation completes before the lane is reused.
-        S_ICBI: begin
-          killed_d = 1'b1;
-          if (icbi_req_ready_i) state_d = S_IDLE;
-        end
-        // The HID0 write has committed; finish the handshake.
-        S_ICACHE_CTL: if (icache_ctl_ready_i) state_d = S_CONTEXT_ABORT;
-        S_EXCEPTION_HALT, S_CHECKSTOP: ;
-        default: state_d = fence_q ? S_CONTEXT_ABORT : S_IDLE;
-      endcase
-    end else begin
-      case (state_q)
-        // Fence remains asserted from dispatch through install and redirect.
-        // Offered old requests drain under the old committed context.
-        S_CONTEXT_DRAIN: if (frontend_quiescent_i && memory_quiescent_i)
-          state_d = interrupt_q ? S_INTERRUPT_COMMIT :
-                    mmu_operation ? S_MMU_OFFER : S_EXEC;
-        S_MMU_OFFER: if (mmu_req_ready)
-          state_d = killed_q ? S_MMU_ABORT : S_MMU_WAIT;
-        S_MMU_WAIT: if (mmu_rsp_valid) state_d = S_MMU_RESULT;
-        S_MMU_RESULT: if (result_fire) state_d = S_HOLD;
-        S_MMU_ABORT: if (mmu_idle && !mmu_response_pending_q) begin
-          fence_d = 1'b0;
-          state_d = S_IDLE;
-        end
-        S_MMU_ACK: if (mmu_ack_valid) state_d = S_MMU_REDIRECT;
-        S_MMU_REDIRECT: if (redirect_accepted_i) begin
-          fence_d = 1'b0;
-          state_d = S_IDLE;
-        end
-        S_BRANCH_REDIRECT: if (redirect_accepted_i) state_d = S_IDLE;
-        S_INTERRUPT_COMMIT:
-          if (mcp_selected_q && !msr_o[MSR_ME]) state_d = S_CHECKSTOP;
-          else if (exception_event_ready) state_d = S_EXCEPTION_RESULT;
-        S_CONTEXT_ABORT: if (frontend_quiescent_i && memory_quiescent_i) begin
-          fence_d = 1'b0;
-          state_d = S_IDLE;
-        end
-        S_CONTEXT_INSTALL: if (context_ready_i) state_d = S_CONTEXT_REDIRECT;
-        S_CONTEXT_REDIRECT: if (redirect_accepted_i) begin
-          fence_d = 1'b0;
-          state_d = S_IDLE;
-        end
-        S_EXEC: begin
-          if (timer_read_execute) state_d = S_TIMER_RESULT;
-          else if (result_fire) state_d = S_HOLD;
-        end
-        S_TIMER_RESULT: if (result_fire) state_d = S_HOLD;
-        S_HOLD: if (commit_match) begin
-          if (tlb_fill_operation && mmu_error_q) state_d = S_MMU_ABORT;
-          else if (mmu_operation && !mmu_error_q)
-            state_d = mmu_req_write ? S_MMU_ACK : S_MMU_REDIRECT;
-          else if (checkstop_commit) begin
-            fence_d = 1'b1;
-            state_d = S_CHECKSTOP;
-          end else if (exception_event_valid) state_d = S_EXCEPTION_RESULT;
-          else if (icache_change) state_d = S_ICACHE_CTL;
-          else if (context_install) state_d = S_CONTEXT_INSTALL;
-          else begin
-            fence_d = 1'b0;
-            state_d = branch_redirect_taken ? S_BRANCH_REDIRECT : S_IDLE;
+    for (int c = 0; c < 5; c++) begin
+      state_t s_d;
+      logic f_d, k_d, rq_fire, rs_fire;
+      rq_fire = (c == 4) ? request_fire : c[1];
+      rs_fire = (c == 4) ? response_fire : c[0];
+      s_d = state_q;
+      f_d = fence_q;
+      k_d = killed_q;
+      if (interrupt_accept) begin
+        s_d = S_CONTEXT_DRAIN;
+        f_d = 1'b1;
+      end else if (dispatch_fire) begin
+        k_d = 1'b0;
+        f_d = dispatch_fenced;
+        if (dispatch_adopt_i) s_d = S_MEM_WAIT;
+        // A plain access has nothing to check before its offer.
+        else if (ENABLE_UNALIGNED_DATAPATH && dispatch_overlap_i &&
+            ((uop_i.special_op == SPECIAL_LOAD) ||
+             ((uop_i.special_op == SPECIAL_STORE) && store_authorize_i &&
+              queue_empty_i)))
+          s_d = S_MEM_OFFER;
+        else if ((uop_i.special_op == SPECIAL_LOAD) ||
+            (uop_i.special_op == SPECIAL_STORE) ||
+            (ENABLE_DATA_CACHE && (uop_i.special_op == SPECIAL_SYNC)))
+          s_d = S_MEM_PREP;
+        else if (ENABLE_CACHE_INSTRUCTIONS &&
+                 (uop_i.special_op == SPECIAL_ICBI)) s_d = S_ICBI;
+        else if (ENABLE_FPU && (uop_i.special_op == SPECIAL_FPU))
+          s_d = dispatch_overlap_i ? S_FPU_WAIT : S_FPU_ISSUE;
+        else if (dispatch_fenced) s_d = S_CONTEXT_DRAIN;
+        else s_d = S_EXEC;
+      end else if (cancel_i) begin
+        case (state_q)
+          S_MMU_OFFER: begin
+            // An offered request cannot be withdrawn by recovery. Finish its
+            // handshake, then abort the side-effect-free prepared proposal.
+            k_d = 1'b1;
+            if (mmu_req_ready) s_d = S_MMU_ABORT;
           end
-        end
-        S_ICACHE_CTL: if (icache_ctl_ready_i) state_d = S_CONTEXT_INSTALL;
-        S_MEM_PREP: begin
-          if (external_denied) begin
-            fence_d = 1'b1;
-            state_d = S_MEM_RESULT;
-          end else if (misaligned || mem_skip) state_d = S_MEM_RESULT;
-          else if (mem_killable ||
-                   (store_authorize_i && (queue_head_i == producer_q.index)))
-            state_d = S_MEM_OFFER;
-        end
-        S_MEM_OFFER: if (request_fire) state_d = killed_q ? S_MEM_DRAIN : S_MEM_WAIT;
-        S_MEM_WAIT: if (response_fire) begin
-          if (killed_q) state_d = S_IDLE;
-          else if (beat_continue) state_d = S_MEM_OFFER;
-          else begin
-            if (mem_response_fence) fence_d = 1'b1;
-            state_d = fpu_q && fpu_access_q ? S_FPU_MEM_RSP : S_MEM_RESULT;
+          S_MMU_WAIT: s_d = S_MMU_ABORT;
+          S_MMU_RESULT, S_HOLD: begin
+            if (mmu_operation) s_d = S_MMU_ABORT;
+            else if (fence_q) s_d = S_CONTEXT_ABORT;
+            else s_d = S_IDLE;
           end
-        end
-        S_FPU_ISSUE: if (fpu_issue_ready) state_d = S_FPU_WAIT;
-        S_FPU_WAIT, S_FPU_MEM_RSP: begin
-          if (fpu_mem_req_fire) state_d = fpu_mem_req.write ? S_FPU_MEM_RSP : S_MEM_OFFER;
-          else if (fpu_result_take) begin
-            // A late exception fences fetch as a data exception does.
-            if (fpu_exception && ENABLE_LIVE_CONTEXT) fence_d = 1'b1;
-            state_d = (fpu_result.store &&
-                       (fpu_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION)) ?
-                      S_FPU_STORE : S_MEM_RESULT;
-          end else if ((state_q == S_FPU_MEM_RSP) && fpu_mem_rsp_ready) state_d = S_FPU_WAIT;
-        end
-        S_FPU_STORE: if (fpu_commit_ready) state_d = S_MEM_OFFER;
-        S_MEM_RESULT: if (result_fire) state_d = mem_released ? S_IDLE : S_HOLD;
-        S_MEM_DRAIN: if (response_fire) state_d = S_IDLE;
-        S_ICBI: if (icbi_req_ready_i) state_d = killed_q ? S_IDLE : S_EXEC;
-        S_EXCEPTION_RESULT: if (exception_result_accept) begin
-          // A committed event the state unit rejected has no target;
-          // stop rather than redirect.
-          if (!exception_result_supported) begin
-            fence_d = 1'b1;
-            state_d = S_EXCEPTION_HALT;
-          end else if (ENABLE_LIVE_CONTEXT) state_d = S_CONTEXT_INSTALL;
-          else state_d = S_IDLE;
-        end
-        default: ;
-      endcase
-    end
-    // An alignment exception is a context operation. It is applied last, as
-    // the latest input.
-    if (!interrupt_accept && dispatch_fire && dispatch_align_i) begin
-      fence_d = ENABLE_LIVE_CONTEXT;
-      state_d = ENABLE_LIVE_CONTEXT ? S_CONTEXT_DRAIN : S_EXEC;
+          S_MMU_ABORT: if (mmu_idle && !mmu_response_pending_q) begin
+            f_d = 1'b0;
+            s_d = S_IDLE;
+          end
+          S_MEM_OFFER: if (mem_killable) begin
+            k_d = 1'b1;
+            if (rq_fire) s_d = S_MEM_DRAIN;
+          end
+          S_MEM_WAIT: if (mem_killable) begin
+            k_d = 1'b1;
+            s_d = rs_fire ? S_IDLE : S_MEM_DRAIN;
+          end
+          S_MEM_DRAIN: if (rs_fire) s_d = S_IDLE;
+          // An offered invalidation completes before the lane is reused.
+          S_ICBI: begin
+            k_d = 1'b1;
+            if (icbi_req_ready_i) s_d = S_IDLE;
+          end
+          // The HID0 write has committed; finish the handshake.
+          S_ICACHE_CTL: if (icache_ctl_ready_i) s_d = S_CONTEXT_ABORT;
+          S_EXCEPTION_HALT, S_CHECKSTOP: ;
+          default: s_d = fence_q ? S_CONTEXT_ABORT : S_IDLE;
+        endcase
+      end else begin
+        case (state_q)
+          // Fence remains asserted from dispatch through install and redirect.
+          // Offered old requests drain under the old committed context.
+          S_CONTEXT_DRAIN: if (frontend_quiescent_i && memory_quiescent_i)
+            s_d = interrupt_q ? S_INTERRUPT_COMMIT :
+                      mmu_operation ? S_MMU_OFFER : S_EXEC;
+          S_MMU_OFFER: if (mmu_req_ready)
+            s_d = killed_q ? S_MMU_ABORT : S_MMU_WAIT;
+          S_MMU_WAIT: if (mmu_rsp_valid) s_d = S_MMU_RESULT;
+          S_MMU_RESULT: if (result_fire) s_d = S_HOLD;
+          S_MMU_ABORT: if (mmu_idle && !mmu_response_pending_q) begin
+            f_d = 1'b0;
+            s_d = S_IDLE;
+          end
+          S_MMU_ACK: if (mmu_ack_valid) s_d = S_MMU_REDIRECT;
+          S_MMU_REDIRECT: if (redirect_accepted_i) begin
+            f_d = 1'b0;
+            s_d = S_IDLE;
+          end
+          S_BRANCH_REDIRECT: if (redirect_accepted_i) s_d = S_IDLE;
+          S_INTERRUPT_COMMIT:
+            if (mcp_selected_q && !msr_o[MSR_ME]) s_d = S_CHECKSTOP;
+            else if (exception_event_ready) s_d = S_EXCEPTION_RESULT;
+          S_CONTEXT_ABORT: if (frontend_quiescent_i && memory_quiescent_i) begin
+            f_d = 1'b0;
+            s_d = S_IDLE;
+          end
+          S_CONTEXT_INSTALL: if (context_ready_i) s_d = S_CONTEXT_REDIRECT;
+          S_CONTEXT_REDIRECT: if (redirect_accepted_i) begin
+            f_d = 1'b0;
+            s_d = S_IDLE;
+          end
+          S_EXEC: begin
+            if (timer_read_execute) s_d = S_TIMER_RESULT;
+            else if (result_fire) s_d = S_HOLD;
+          end
+          S_TIMER_RESULT: if (result_fire) s_d = S_HOLD;
+          S_HOLD: if (commit_match) begin
+            if (tlb_fill_operation && mmu_error_q) s_d = S_MMU_ABORT;
+            else if (mmu_operation && !mmu_error_q)
+              s_d = mmu_req_write ? S_MMU_ACK : S_MMU_REDIRECT;
+            else if (checkstop_commit) begin
+              f_d = 1'b1;
+              s_d = S_CHECKSTOP;
+            end else if (exception_event_valid) s_d = S_EXCEPTION_RESULT;
+            else if (icache_change) s_d = S_ICACHE_CTL;
+            else if (context_install) s_d = S_CONTEXT_INSTALL;
+            else begin
+              f_d = 1'b0;
+              s_d = branch_redirect_taken ? S_BRANCH_REDIRECT : S_IDLE;
+            end
+          end
+          S_ICACHE_CTL: if (icache_ctl_ready_i) s_d = S_CONTEXT_INSTALL;
+          S_MEM_PREP: begin
+            if (external_denied) begin
+              f_d = 1'b1;
+              s_d = S_MEM_RESULT;
+            end else if (misaligned || mem_skip) s_d = S_MEM_RESULT;
+            else if (mem_killable ||
+                     (store_authorize_i && (queue_head_i == producer_q.index)))
+              s_d = S_MEM_OFFER;
+          end
+          S_MEM_OFFER: if (rq_fire) s_d = killed_q ? S_MEM_DRAIN : S_MEM_WAIT;
+          S_MEM_WAIT: if (rs_fire) begin
+            if (killed_q) s_d = S_IDLE;
+            else if (beat_continue) s_d = S_MEM_OFFER;
+            else begin
+              if (mem_response_fence) f_d = 1'b1;
+              s_d = fpu_q && fpu_access_q ? S_FPU_MEM_RSP : S_MEM_RESULT;
+            end
+          end
+          S_FPU_ISSUE: if (fpu_issue_ready) s_d = S_FPU_WAIT;
+          S_FPU_WAIT, S_FPU_MEM_RSP: begin
+            if (fpu_mem_req_fire) s_d = fpu_mem_req.write ? S_FPU_MEM_RSP : S_MEM_OFFER;
+            else if (fpu_result_take) begin
+              // A late exception fences fetch as a data exception does.
+              if (fpu_exception && ENABLE_LIVE_CONTEXT) f_d = 1'b1;
+              s_d = (fpu_result.store &&
+                         (fpu_result.exception == ppc_fpu_pkg::FPU_NO_EXCEPTION)) ?
+                        S_FPU_STORE : S_MEM_RESULT;
+            end else if ((state_q == S_FPU_MEM_RSP) && fpu_mem_rsp_ready) s_d = S_FPU_WAIT;
+          end
+          S_FPU_STORE: if (fpu_commit_ready) s_d = S_MEM_OFFER;
+          S_MEM_RESULT: if (result_fire) s_d = mem_released ? S_IDLE : S_HOLD;
+          S_MEM_DRAIN: if (rs_fire) s_d = S_IDLE;
+          S_ICBI: if (icbi_req_ready_i) s_d = killed_q ? S_IDLE : S_EXEC;
+          S_EXCEPTION_RESULT: if (exception_result_accept) begin
+            // A committed event the state unit rejected has no target;
+            // stop rather than redirect.
+            if (!exception_result_supported) begin
+              f_d = 1'b1;
+              s_d = S_EXCEPTION_HALT;
+            end else if (ENABLE_LIVE_CONTEXT) s_d = S_CONTEXT_INSTALL;
+            else s_d = S_IDLE;
+          end
+          default: ;
+        endcase
+      end
+      // An alignment exception is a context operation. It is applied last, as
+      // the latest input.
+      if (!interrupt_accept && dispatch_fire && dispatch_align_i) begin
+        f_d = ENABLE_LIVE_CONTEXT;
+        s_d = ENABLE_LIVE_CONTEXT ? S_CONTEXT_DRAIN : S_EXEC;
+      end
+      state_c[c] = s_d;
+      fence_c[c] = f_d;
+      killed_c[c] = k_d;
     end
   end
+  assign state_d = state_c[4];
+  assign fence_d = fence_c[4];
+  assign killed_d = killed_c[4];
+  // The result port's owner for each outcome of this cycle's memory
+  // handshakes, so the late ready and valid only select.
+  function automatic logic result_select(input state_t s, input logic overlap);
+    return (s != S_IDLE) && !(overlap &&
+      ((s == S_MEM_PREP) || (s == S_MEM_OFFER) || (s == S_MEM_WAIT) || fpu_state(s)));
+  endfunction
+  logic [3:0] result_select_d;
+  always_comb
+    for (int i = 0; i < 4; i++) result_select_d[i] = result_select(state_c[i], overlap_d);
   // A plain access that completes without a fault retires with no lane
   // action, so the lane releases on its result.
   always_comb begin
@@ -1486,9 +1511,7 @@ module ppc_special #(
       fence_q <= fence_d;
       killed_q <= killed_d;
       overlap_q <= overlap_d;
-      result_select_q <= (state_d != S_IDLE) && !(overlap_d &&
-        ((state_d == S_MEM_PREP) || (state_d == S_MEM_OFFER) ||
-         (state_d == S_MEM_WAIT) || fpu_state(state_d)));
+      result_select_q <= result_select_d[{request_fire, response_fire}];
       retire_hold_q <= (state_d == S_EXCEPTION_RESULT) ||
         (state_d == S_EXCEPTION_HALT) || (state_d == S_CHECKSTOP) ||
         (state_d == S_CONTEXT_INSTALL) || (state_d == S_CONTEXT_REDIRECT) ||
@@ -2037,6 +2060,9 @@ module ppc_special #(
   // synthesis translate_off
   always_ff @(posedge clk_i) begin
     if (rst_ni) begin
+      assert (result_select_d[{request_fire, response_fire}] ==
+              result_select(state_d, overlap_d))
+        else $error("precomputed result select diverged");
       if (fetch_page_miss_opcode && ((state_q == S_EXEC) || (state_q == S_HOLD)))
         assert (fetch_miss_eligible == miss_eligible)
           else $error("registered fetch-miss eligibility went stale");
