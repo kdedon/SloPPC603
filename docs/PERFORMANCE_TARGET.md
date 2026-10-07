@@ -1331,6 +1331,58 @@ Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
 Reference: 5 programs and 11 negative controls at both widths; MMU stress
 46,319 records and 241 interrupts at w1, 41,058 records and 236 interrupts at w2.
 
+## Timing accuracy round 22
+
+A fetched pair whose second word is a `b`, or a `bclr` on an available
+LR with BO "branch always", now enters with one free IQ entry: the word
+goes to the BPU and takes none (UM 6.3.1). The decision reads only the
+fetched word and LR state; if the word is not removed after all (a
+waiting first word, trace mode), the pair waits in the FD registers for
+two entries, as before. The FD registers' own pair also enters with one
+entry when its second word is removed, folded or held back.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 21 (bec1db2) | 623 | 531 | 4,671,880 | 4,170,343 |
+| Removed pair word (230bb7a) | 623 | 530 | 4,671,878 | 4,170,242 |
+
+CRCs match at both widths. Whole Dhrystone run at w2: 2,013,520 to
+2,011,451 cycles; Whetstone 6,481,565 to 6,481,470.
+
+Diagnosis of the other w2 gaps:
+
+- An access in DQ1 beside an `mtctr` or `mtlr` in DQ0 is allowed by UM
+  6.6.1.2 (different units, neither dispatch-serialized). A retrial of
+  the pairing (`c0_move && d1_lsu && !dispatch_uop.gpr_write`) still
+  costs a cycle (Dhrystone 531). In `memcpy` it never pairs: after the
+  mispredicted `beq` at `fff03318`, the `mtctr` waits two to three
+  cycles at the DQ0 head with `LSU_BUSY`, because the special lane is
+  still busy with a non-overlapped memory operation (the
+  `!special_busy || ... || (sru_move && (special_mem_overlap ||
+  sru_in_lane))` dispatch term, `perf_special_mem_q` set). Which access
+  holds the lane, and why it is not overlapped, is not yet traced; the
+  pairing stays off.
+- `Proc_8`: the model's A6 text and code agree once read as "the store
+  writes the cache the cycle after it completes, and the load reads it
+  the cycle after that": the code starts the load's EA cycle at store
+  C + 1, so its cache read is at C + 2. The core's `lwz r6,76(r1)` reads
+  a cycle later; the LSU side is not yet traced.
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`,
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 230bb7a, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=101,519). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths. Interrupt benches: 15,044 and 382 checks.
+Reference: 5 programs and 11 negative controls at both widths; MMU stress
+46,319 records and 241 interrupts at w1, 41,058 records and 236 interrupts at w2.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
