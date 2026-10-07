@@ -2048,8 +2048,8 @@ module ppc_core #(
   ppc_dispatch station (
     .clk_i, .rst_ni, .cancel_i(rs_cancel),
     .dispatch_valid_i((dispatch && normal_uop && !bu_finished && !c0_sru && !bu_remove) ||
-                      (dispatch1 && d1_iu && !c0_iu && !d1_alt_sru)),
-    .dispatch_ready_o(rs_ready), .entry_i(d1_iu && !c0_iu ? rs_entry1 : rs_entry),
+                      (dispatch1 && d1_iu && (!c0_iu || c0_sru) && !d1_alt_sru)),
+    .dispatch_ready_o(rs_ready), .entry_i(d1_iu && (!c0_iu || c0_sru) ? rs_entry1 : rs_entry),
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
     .iu_done_i(iu_result_valid && iu_result_ready),
     .iu_producer_i(iu_result.producer), .iu_value_i(iu_result.value),
@@ -2100,7 +2100,7 @@ module ppc_core #(
       assign sru_fwd_iu = iu_result_valid && iu_result_ready;
       ppc_dispatch sru_station (
         .clk_i, .rst_ni, .cancel_i(sru_rs_cancel),
-        .dispatch_valid_i((dispatch && c0_sru) || (dispatch1 && d1_iu && (c0_iu || d1_alt_sru))),
+        .dispatch_valid_i((dispatch && c0_sru) || (dispatch1 && d1_iu && ((c0_iu && !c0_sru) || d1_alt_sru))),
         .dispatch_ready_o(sru_rs_ready), .entry_i(c0_sru ? rs_entry : rs_entry1),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .iu_done_i(sru_result_valid && sru_result_ready),
@@ -2670,7 +2670,7 @@ module ppc_core #(
   // folded at fetch, whose LR or CTR target no older instruction writes, or
   // a bc that is predicted or agrees with the fetch path.
   // Serialized instructions, faults and trace mode dispatch alone from DQ0.
-  // Two IU operations never pair: the SRU add/compare lane is not built.
+  // Two IU operations pair only when one is an add or compare, for the SRU.
   // A plain access in DQ1 takes the lane only with its sources committed;
   // an IU operation in DQ1 may wait in the station on a DQ0 load.
   logic pair_units, d1_iu_ready, d1_fp_ready;
@@ -2678,7 +2678,10 @@ module ppc_core #(
   assign c0_iu = normal_uop && !bu_branch;
   // An add or compare goes to the SRU while the IU station is taken
   // (UM 6.3, 6.4.5).
-  assign c0_sru = HAS_SRU && c0_iu && iq_pair.sru && !rs_ready && sru_rs_ready;
+  // It also does beside an IU-only operation in DQ1, which then takes the
+  // IU (UM 6.6.1.2).
+  assign c0_sru = HAS_SRU && c0_iu && iq_pair.sru && sru_rs_ready &&
+    (!rs_ready || (d1_iu && !dq1_pair.sru));
   assign c0_branch = bu_branch && !bu_redirect;
   assign c0_lane = special_uop && dispatch_mem_plain;
   // An LR or CTR move is completion-serialized, not dispatch-serialized, so
@@ -2754,7 +2757,7 @@ module ppc_core #(
   assign d1_sru = HAS_SRU && d1_iu && dq1_pair.sru;
   assign pair_units = ((c0_iu || c0_lane || c0_fp || c0_fp_mem) && d1_branch) ||
     ((c0_iu || c0_branch) && d1_lsu) ||
-    (c0_iu && (d1_sru || d1_mem || d1_fp)) ||
+    (c0_iu && (d1_sru || (c0_sru && d1_iu) || d1_mem || d1_fp)) ||
     (c0_branch && (d1_iu || d1_mem || d1_fp)) || (c0_lane && (d1_iu || d1_fp)) ||
     (c0_move && d1_iu) ||
     ((c0_fp || c0_fp_mem) && d1_iu);
@@ -2764,7 +2767,7 @@ module ppc_core #(
   // taken.
   assign d1_alt_sru = d1_sru && (c0_lane || c0_branch || c0_fp || c0_fp_mem) &&
     !rs_ready && sru_rs_ready;
-  assign d1_station_ready = !c0_sru && (c0_iu ? sru_rs_ready : (rs_ready || d1_alt_sru));
+  assign d1_station_ready = c0_sru ? rs_ready : c0_iu ? sru_rs_ready : (rs_ready || d1_alt_sru);
   assign d1_iu_ready = d1_station_ready && (!special_busy || special_mem_overlap || sru_in_lane) &&
     !(special_mem_dst_valid &&
       ((!dq1_uop.zero_a && (dq1_uop.src_a == special_mem_dst)) ||
@@ -2866,7 +2869,7 @@ module ppc_core #(
   assign wait_crf = cr_wait0 ? dispatch_uop.cr_field : dq1_uop.cr_field;
   always_ff @(posedge clk_i) begin
     if (dispatch && (cr_wait0 || (dispatch1 && cr_wait1))) begin
-      waiter_sru_q <= cr_wait0 ? c0_sru : (c0_iu || d1_alt_sru);
+      waiter_sru_q <= cr_wait0 ? c0_sru : ((c0_iu && !c0_sru) || d1_alt_sru);
       waiter_crf_valid_q <= wait_crf_valid;
       waiter_crf_q <= wait_crf;
     end
