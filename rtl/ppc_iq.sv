@@ -12,7 +12,9 @@ module ppc_iq #(
   parameter int WIDTH = 32,
   parameter int DEPTH = 6,
   // Low bits of an entry that rec_write_i rewrites in the youngest survivor.
-  parameter int REC_W = 1
+  parameter int REC_W = 1,
+  // Bit of an entry that fold_write_i sets in the youngest survivor.
+  parameter int FOLD_BIT = 0
 ) (
   input logic clk_i, rst_ni,
   input logic clear_i,
@@ -28,6 +30,7 @@ module ppc_iq #(
   // Needs a survivor of this cycle's pops.
   input logic rec_write_i,
   input logic [REC_W-1:0] rec_i,
+  input logic fold_write_i,
   output logic [1:0] valid_o,
   output logic [WIDTH-1:0] dq0_o, dq1_o,
   output logic [$clog2(DEPTH + 1)-1:0] count_o
@@ -67,6 +70,8 @@ module ppc_iq #(
       end
       if (rec_write_i && (COUNT_WIDTH'(i) + 1'b1 == survivors))
         entries[i][REC_W-1:0] <= rec_i;
+      if (fold_write_i && (COUNT_WIDTH'(i) + 1'b1 == survivors))
+        entries[i][FOLD_BIT] <= 1'b1;
     end
   end
   always_ff @(posedge clk_i) begin

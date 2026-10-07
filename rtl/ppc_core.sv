@@ -414,6 +414,8 @@ module ppc_core #(
   // Branch class predecoded at IQ push, to keep decode off the dispatch path.
   logic [3:0] push_branch, iq_branch;
   logic [31:0] fold_target, fold_target_q;
+  logic ctr_rel, ctr_rel_taken;
+  logic [31:0] ctr_rel_target;
   logic early_q, early_bs_q, early_ok, early_fold, early_bs, bs_now, bs_fe_q, rel_fold, held_q;
   logic early_bs_late, early_bu, fe_clear;
   logic [31:0] early_target_q, bs_alt_q;
@@ -958,9 +960,9 @@ module ppc_core #(
       fold_q <= 1'b0;
       fold_target_q <= '0;
     end else begin
-      fold_q <= ((iq_push0 && fold_predict) || (iq_push1 && fold_predict1)) &&
-                !frontend_clear && !rel_fold;
-      fold_target_q <= fetch_stop ? stop_resume : fold_target;
+      fold_q <= (((iq_push0 && fold_predict) || (iq_push1 && fold_predict1)) &&
+                 !frontend_clear && !rel_fold) || ctr_rel_taken;
+      fold_target_q <= fetch_stop ? stop_resume : ctr_rel_taken ? ctr_rel_target : fold_target;
     end
   end
   // A held branch predicted taken as it is released requests its target on
@@ -992,11 +994,34 @@ module ppc_core #(
         stop_left_q <= iq_count - iq_pops + IQ_COUNT_WIDTH'(1) +
                        IQ_COUNT_WIDTH'(iq_in0 && iq_in1 && wait1);
       end else if (fetch_hold_q) begin
-        if (iq_pops >= stop_left_q) fetch_hold_q <= 1'b0;
+        if ((iq_pops >= stop_left_q) || ctr_rel) fetch_hold_q <= 1'b0;
         stop_left_q <= stop_left_q - iq_pops;
       end
     end
   end
+  // The youngest waiting branch, for the CTR release below.
+  logic [31:0] stop_pc_q;
+  // A CTR-only bc ignores BO[1] and BI.
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic [31:0] stop_insn_q;
+  /* verilator lint_on UNUSEDSIGNAL */
+  always_ff @(posedge clk_i)
+    if (fetch_stop) begin
+      stop_pc_q <= (iq_in1 && wait1) ? queued1.pc : queued.pc;
+      stop_insn_q <= (iq_in1 && wait1) ? queued1.insn : queued.insn;
+    end
+  // A bc on the CTR alone waiting behind an mtctr executes once the mtctr
+  // has retired and leaves CTR final (UM 6.4.1.1): fetch restarts after it,
+  // or at its target, which marks it folded. It still decrements CTR when
+  // dispatched. Only the youngest IQ entry is resolved this way.
+  assign ctr_rel = fetch_hold_q && !fstop_q && !fd_valid && !frontend_clear &&
+    !recovery_accepted && !trace_mode && !fold_q && !rel_fold &&
+    (stop_insn_q[31:26] == 6'd16) && stop_insn_q[25] && !stop_insn_q[23] && !stop_insn_q[0] &&
+    (ctr_iq_q == 3'd1) && !ctr_pending_q && !cshadow_valid_q &&
+    (iq_count == stop_left_q) && (iq_pops < stop_left_q);
+  assign ctr_rel_taken = ctr_rel && ((ctr != 32'd1) ^ stop_insn_q[22]);
+  assign ctr_rel_target = (stop_insn_q[1] ? 32'b0 : stop_pc_q) +
+    {{16{stop_insn_q[15]}}, stop_insn_q[15:2], 2'b00};
   function automatic logic [IQ_COUNT_WIDTH-1:0] left_after(logic [IQ_COUNT_WIDTH-1:0] left,
                                                           logic [IQ_COUNT_WIDTH-1:0] pops);
     return (left > pops) ? left - pops : '0;
@@ -1082,7 +1107,8 @@ module ppc_core #(
     {queued1, push_uop1, fold_predict1, push_branch1, push_pair1s, fetch_removed_q + 2'd1,
      BREC_W'(0)};
   ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W),
-           .DEPTH(IQ_DEPTH), .REC_W(BREC_W)) iq (
+           .DEPTH(IQ_DEPTH), .REC_W(BREC_W),
+           .FOLD_BIT(BREC_W + 6 + $bits(iq_pair_t))) iq (
     .clk_i, .rst_ni, .clear_i(fe_clear), .flush_i(bs_now),
     .push_valid_i({iq_in0 && iq_in1, iq_in0 || iq_in1}), .push_ready_o(iq_push_ready),
     .push2_ready_o(iq_push2_ready),
@@ -1090,6 +1116,7 @@ module ppc_core #(
     .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1, 2'd0,
                    BREC_W'(0)}),
     .pop_i({dispatch1, iq_pop}), .rec_write_i(rem0_in), .rec_i(rem0_rec),
+    .fold_write_i(ctr_rel_taken),
     .valid_o({iq_valid1, iq_valid}),
     .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb, iq_rec}), .dq1_o(iq_dq1),
     .count_o(iq_count)
@@ -1905,10 +1932,11 @@ module ppc_core #(
     end else begin
       if (recovery_accepted) bs_fe_q <= 1'b0;
       else if (bs_now) bs_fe_q <= 1'b1;
-      early_q <= early_bs_late || early_bu || early_fold;
+      early_q <= early_bs_late || early_bu || early_fold || ctr_rel_taken;
       early_bs_q <= early_bs_late;
     end
-    early_target_q <= early_bs_late ? bs_alt_q : early_bu ? bu_next_pc : fold_target;
+    early_target_q <= early_bs_late ? bs_alt_q : early_bu ? bu_next_pc :
+                      ctr_rel_taken ? ctr_rel_target : fold_target;
   end
   // Port 0 takes the head's destination. With two write ports, port 1 takes
   // its update base, else the CQ[1] destination (a pair writes at most two
