@@ -501,7 +501,7 @@ module ppc_core #(
   logic [31:0] d1_next_pc;
   logic [31:0] d1_a, d1_b;
   logic [1:0] d1_ea;
-  logic d1_lsu, d1_lsu_ready;
+  logic d1_lsu, d1_lsu_ready, d1_base_wait;
   // Read only by the load/store unit, which ENABLE_LSU_PIPE 0 omits.
   /* verilator lint_off UNUSEDSIGNAL */
   logic [31:0] d1_ea_full;
@@ -2305,7 +2305,11 @@ module ppc_core #(
   always_comb begin
     lsu_base = '0;
     lsu_base.ready = 1'b1;
-    if (base_snoop) lsu_base = src_a;
+    if (!lsu_c0 && d1_base_wait) begin
+      lsu_base.ready = 1'b0;
+      lsu_base.tag = alloc_tag;
+      lsu_base.producer = alloc_producer;
+    end else if (base_snoop) lsu_base = src_a;
   end
   // An update form in the unit writes its base through a second rename slot.
   assign unit_update = (lsu_route || fp_mem_pipe) && uop.mem_update;
@@ -2538,9 +2542,15 @@ module ppc_core #(
     (dq1_uop.use_imm || (!gpr_mapped[dq1_uop.src_b] && !dq1_pair.dep_prev[1])) &&
     ((dq1_uop.special_op != SPECIAL_STORE) ||
      (!gpr_mapped[dq1_uop.src_c] && !dq1_pair.dep_prev[2]));
+  // A D-form load whose base DQ0 writes enters the unit and waits there for
+  // it, as DQ0's own load does (UM 6.3.3, 6.6.1.2); the unit then decides
+  // its alignment.
+  assign d1_base_wait = (LSU_BASE_SNOOP || LSU_BASE_WAIT) && ENABLE_SUPERVISOR_EXCEPTIONS &&
+    (dq1_uop.special_op == SPECIAL_LOAD) && dq1_uop.use_imm && !dq1_uop.zero_a &&
+    dq1_pair.dep_prev[0] && dispatch_uop.gpr_write && !dispatch_uop.mem_update;
   assign d1_lsu_ready = lsu_ready && lane_mem_idle && !fp_unsafe_pending &&
-    !d1_misaligned && !msr_le &&
-    (dq1_uop.zero_a || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
+    (d1_base_wait || !d1_misaligned) && !msr_le &&
+    (dq1_uop.zero_a || d1_base_wait || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
     (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1]));
   assign lsu_d1 = dispatch1 && d1_lsu;
   // DQ1 enters the unit only beside a DQ0 that does not, so the input mux
@@ -2682,7 +2692,7 @@ module ppc_core #(
                 (dq1_uop.use_imm || (src_b1.ready && (src_b1.value == arch_b1))))
           else $error("DQ1 access saw an uncommitted GPR source");
       if (d1_lsu)
-        assert ((dq1_uop.zero_a || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
+        assert ((dq1_uop.zero_a || d1_base_wait || (src_a1.ready && !dq1_pair.dep_prev[0])) &&
                 (dq1_uop.use_imm || (src_b1.ready && !dq1_pair.dep_prev[1])))
           else $error("DQ1 access dispatched without its base");
     end
@@ -2710,7 +2720,8 @@ module ppc_core #(
         .pc_i(lsu_c0 ? iq_head.pc : dq1_head.pc),
         .insn_i(lsu_c0 ? iq_head.insn : dq1_head.insn),
         .ea_i(lsu_c0 ? dispatch_ea : d1_ea_full), .data_i(lsu_c0 ? src_c : d1_data),
-        .base_snoop_i(lsu_c0 && base_snoop), .base_i(lsu_base), .offset_i(uop.imm),
+        .base_snoop_i(lsu_c0 ? base_snoop : d1_base_wait), .base_i(lsu_base),
+        .offset_i(lsu_c0 ? uop.imm : dq1_uop.imm),
         .dr_i(msr[MSR_DR]),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
