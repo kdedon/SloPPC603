@@ -151,6 +151,9 @@ module ppc_special #(
   // Retirement of a branch resolved at dispatch.
   input logic branch_retire_i, branch_retire_lk_i, branch_retire_ctr_i,
   input logic [31:0] branch_retire_pc_i,
+  // A removed bl's LR value, written once every older instruction retires.
+  input logic shadow_lr_write_i,
+  input logic [31:0] shadow_lr_i,
   output logic result_valid_o,
   input logic result_ready_i,
   output ppc_pkg::result_packet_t result_o,
@@ -1844,6 +1847,7 @@ module ppc_special #(
         if (branch_lr_write_q) lr_q <= branch_lr_next_q;
         if (branch_ctr_write_q) ctr_q <= branch_ctr_next_q;
       end
+      if (shadow_lr_write_i) lr_q <= shadow_lr_i;
       if (branch_retire_i && branch_retire_lk_i) lr_q <= branch_retire_pc_i + 32'd4;
       if (branch_retire_i && branch_retire_ctr_i) ctr_q <= ctr_q - 32'd1;
     end

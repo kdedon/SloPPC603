@@ -146,7 +146,7 @@ module tb_crstate_execution;
     .cancel_i(cancel), .store_authorize_i(store_authorize),
     .commit_i(commit), .commit_tag_i(commit_tag),
     .branch_retire_i(1'b0), .branch_retire_lk_i(1'b0), .branch_retire_ctr_i(1'b0),
-    .branch_retire_pc_i(32'b0), .dispatch_overlap_i(1'b0), .dispatch_adopt_i(1'b0),
+    .branch_retire_pc_i(32'b0), .shadow_lr_write_i(1'b0), .shadow_lr_i(32'b0), .dispatch_overlap_i(1'b0), .dispatch_adopt_i(1'b0),
     .queue_empty_i(1'b1), .queue_head_i('0),
     .mem_overlap_o(unused_overlap[0]), .mem_dst_valid_o(unused_overlap[1]),
     .mem_dst_o(unused_overlap[6:2]), .retire_hold_o(unused_overlap[7]),

@@ -506,6 +506,14 @@ def make_branch_fold():
         p.label(t('outer'));e('mflr',24);e('b',t('inner'),0,1);e('mtlr',24);e('bclr',20,0,0)
         p.label(t('inner'));nops(pad);e('addi',21,21,1);e('bclr',20,0,0)
         p.label(t('next'))
+        # LR of a bl that leaves before dispatch: read at the target, by a
+        # return at once, and by a bl reached from a return.
+        e('b',t('m1'),0,1);e('b',t('m2'),0,0)
+        p.label(t('m1'));e('mflr',28);e('stw',28,1,16*pad+8);e('bclr',20,0,0)
+        p.label(t('m2'));e('b',t('m3'),0,1);e('b',t('m4'),0,1);e('b',t('m5'),0,0)
+        p.label(t('m3'));e('bclr',20,0,0)
+        p.label(t('m4'));e('mflr',29);e('add',22,22,29);e('bclr',20,0,0)
+        p.label(t('m5'))
     # A bc whose compare waits on a divide or a load dispatches on its
     # prediction, right and wrong, forward and backward, with and without
     # y and LK. Younger stores, loads, a compare with a second CR branch, a
