@@ -5,7 +5,7 @@
 # 45 MHz system clock and the redistributable program images; the Embench
 # (GPL-3.0), Doom and Quake (GPL-2.0) and nbench images go with their source,
 # Doom with DOOM1.WAD and Quake with pak0.pak. The release and its tag are
-# replaced on every run. Fitter seeds 2-5 build in parallel; the lowest seed
+# replaced on every run. Fitter seeds 1-8 build in parallel; the lowest seed
 # that meets timing is published. If none does, the run fails and publishes nothing.
 name: mister-unstable
 on:
@@ -21,11 +21,11 @@ concurrency:
 jobs:
   mister:
     runs-on: ubuntu-24.04
-    timeout-minutes: 300
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
-        seed: [2, 3, 4, 5]
+        seed: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v4
       - name: Free disk for the Quartus image
