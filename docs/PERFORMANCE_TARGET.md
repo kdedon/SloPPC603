@@ -1076,6 +1076,73 @@ available in 13264 (T6-4 '^'), and the correct path dispatches in 13266.
   width 1 and 31,919 of 32,065 at width 2, and fails none, here or at
   3cdb974.
 
+## Timing accuracy round 18
+
+A `bl` now leaves at dispatch like a branch without LR or CTR writes
+(UM 6.3.1: only branches that update LR or CTR need a completion
+entry). It holds PC + 4 in a shadow LR, written to LR when the next
+allocated instruction reaches the CQ head or retires second of a pair,
+so LR is written in order. An interrupt taken before then sees LR
+unwritten and resumes at the `bl`. A `bl` is removed only when the
+shadow is free, no prediction is outstanding and no recovery is in
+flight; a recovery keeps the shadow while the `bl` survives. Removed
+`bcl`, `bclrl` and `bcctrl` stay excluded: they are conditional or read
+a register (UM 6.4.1.1, 6.6.1.1).
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Round 16 (383e017) | 627 | 539 | 4,764,252 | 4,194,493 |
+| Removed `bl` (99c3e2e) | 621 | 536 | 4,760,510 | 4,194,442 |
+
+The 603e model gives 521 cycles per Dhrystone run; both widths stay
+slower than it. CoreMark CRCs match at both widths (w1 361,101, w2
+313,643 cycles per iteration).
+
+Rules:
+
+- `test-dispatch-rules` (TIM-BPU-FOLD) accepts a removed branch that
+  writes no CTR and LR only as a `bl`; a younger LR-writing branch other
+  than `bl` may not dispatch until everything older than a removed `bl`
+  has completed (UM 6.4.1.1, 6.6.1.1).
+- The reference runner steps a removed `bl` and compares LR at the next
+  record against DingusPPC's LR after the `bl`. It fetches each removed
+  word through the reference's instruction translation, so a branch in
+  translated space is checked; a fetch fault, a removed non-branch or a
+  removed `bcl`/`bclrl`/`bcctrl` fails. When an interrupt is taken with
+  removed branches not yet counted on a record (empty CQ), the runner
+  steps removed branches, at most three, until its PC equals the RTL's
+  SRR0; each must pass the same rule. The runner holds DingusPPC's clock,
+  so its decrementer never expires on its own: the RTL decides when DEC
+  is taken, and the runner checks where.
+- A new negative control flips LR in the first record after a removed
+  `bl`; it must fail.
+
+Recorded: `make -C sim -j2 lint check-spec`; and at `DISPATCH_WIDTH=1`
+and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules perf-diff`,
+CoreMark on the demo model (`+IMAGE=coremark.hex`), and
+`test-core-lsu-update test-core-lsu-extensions test-core-lsu-timing test-core-lsu-timing-snoop test-core-lsu-timing-602`;
+`test-core test-core-full-decode` at the default configuration; commit
+99c3e2e, 2026-10-06. All pass. Dispatch rules: Dhrystone 61,496
+removed branches at w1, 59,494 at w2, no failures; CoreMark and
+Whetstone pass at both widths.
+
+Recorded: `test-core-branch-fold test-core-branch-recovery test-core-interrupt test-core-interrupt-disabled perf-diff`,
+`test-reference-machine REFERENCE_DIR=<dingusppc> MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`
+and `test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+at both widths with the flags above, commit 4d979d9 (`lint check-spec` also
+rerun there: 250 and 29 checker tests), 2026-10-06. All pass, except that
+`test-core-branch-fold` at w1 stops at its built-in w2 build on
+REDEFMACRO (`PPC_DISPATCH_WIDTH` redefined), a harness quirk; its w1
+program passes (checks=102,522, removed=284) and both programs pass at
+w2. Interrupt benches: 382 checks. Reference, w2: 5 programs and 7
+negative controls pass; Dhrystone 1,009,270 records, 288,579 removed
+branches of which 21,980 `bl`; MMU stress 42,364 records, 233
+interrupts, 122 TLB misses, 10,379 removed branches (665 `bl`). w1:
+MMU stress 49,363 records, 250 interrupts, 10,395 removed branches
+(681 `bl`); 5 programs and 7 negative controls pass, Dhrystone
+1,313,360 records, 290,548 removed branches of which 23,982 `bl`.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
