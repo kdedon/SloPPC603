@@ -762,8 +762,8 @@ load-use path the 66 MHz fit flags; the chip needs a fresh fit.
 
 The largest LSU-area gap left in the width 2 profile is `DRAIN_MEMORY LOAD`
 (20 cycles/run, strcmp's `lbz r10,0(r4)` behind `mr r4,r8`): a load waiting
-at dispatch for its base. `LSU_BASE_SNOOP` removes it but is off until a fit
-meets the clock target (LSU_PIPELINE.md, Base snooping). `CQ_FULL STORE`
+at dispatch for its base. `LSU_BASE_SNOOP` removes it and is the default
+since 2026-10-06 (LSU_PIPELINE.md, Base snooping). `CQ_FULL STORE`
 (6) and `LSU_BUSY STORE` (3) in memcpy follow.
 
 ## Branch removal (gap 8)
@@ -1032,7 +1032,7 @@ they are not additive. None needs timing faster than the manual's.
 | 4 | A `bc` waits for its uncommitted CR producer (`drain_branch` 187 per run) | T6-4 `^`: compare CR to the BPU at end of execute; UM 6.4.1.2: predict and dispatch down the predicted path, one level, no completion past it | Done: dispatch past one unresolved `bc`; a miss removes the younger work and redirects fetch on the edge after resolution | 150–190 (got 35 at width 2, 134 at width 1) |
 | 5 | Dual dispatch rarely pairs (7.6% of instructions at width 2); dispatch alone is 0.92 CPI against a 0.86 CPI target | UM 6.6.1.2/6.6.1.3: DQ1 to a different unit, CQ1 integer or load; UM 6.4.5: SRU adder | Partly done: IU + LSU-unit access, unresolved `bc` + DQ1 (25 cycles), a DQ0 branch that does not redirect + DQ1 (5). IU + SRU, LSU + IU and CQ1 rules existed. Open: an SRU-form DQ0 beside a non-SRU integer DQ1 (the SRU takes DQ0); the rest waits on gaps 1 and 2 | 80–150 (after 1–4) |
 | 6 | Closed. Residual cost of plain accesses with old sources (5.0 cycles per load) | UM 6.4.4: one access per cycle | Found: a store hit held the data cache for four cycles. It now writes and answers in its lookup cycle. The rest of the charge is fetch and branch time | 5 measured |
-| 7 | Closed for integer consumers (55 dependents, gap 0). A load or add producing the next access's base costs 3 cycles against T6-6's 2 | T6-6 `2:1` | Done behind `LSU_BASE_SNOOP` (default off): a D-form load forms its EA in P1 from the result bus, 2 cycles; the path waits for a fit ([LSU_PIPELINE.md](LSU_PIPELINE.md#base-snooping)) | 1 measured while fetch-bound |
+| 7 | Closed for integer consumers (55 dependents, gap 0). A load or add producing the next access's base costs 3 cycles against T6-6's 2 | T6-6 `2:1` | Done: `LSU_BASE_SNOOP` (default on since 2026-10-06) forms a D-form load's EA in P1 from the result bus, 2 cycles; `LSU_BASE_SNOOP=0` is the named base-wait timing trade, 3 cycles ([LSU_PIPELINE.md](LSU_PIPELINE.md#base-snooping)) | 1 measured while fetch-bound |
 | 8 | Branches take dispatch and completion slots (118 per run) | UM 6.4.1.1, 6.3.1: folded branches bypass the dispatch queue; a branch with no SPR write back is retired by the BPU | Partly done behind `ENABLE_BRANCH_REMOVAL`: a plain `b` never enters the IQ; other branches without LR/CTR writes take no CQ entry but still a dispatch slot ([branch removal](#branch-removal-gap-8)). Linking and counting branches keep their entry | 40–100 (got 3 at width 2) |
 | 9 | Integer waits not explained above (flags token, station full, `other` 50 per run) | UM 6.3.3, 6.3.3.2 | Broken down with `+PROFILE` ([above](#dq1-rename-operands-and-base-snooping)): `mflr`/`mtlr` drains 20, CQ full 20, station full 20, flags 7. Moves no longer drain; XER-only writers take no flag token ([round](#serialization-flag-token-and-dq1-branches)) | 20 (SRU completion serialization): got 11.5 |
 | 10 | `bclr` not folded (26 per run, 11 taken) | UM 6.6.1.1: `bclr` resolves when LR is available (shadow LR from `bl`); same timing as `b` | Done: folds and resolves from the shadow LR of an uncommitted linking branch | 30–50 (got 8–10) |

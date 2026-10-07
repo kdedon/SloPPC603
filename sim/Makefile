@@ -2106,11 +2106,12 @@ test-reference-le: reference-checkout
 	python3 cosim/run_le_reference.py --build-dir $(BUILD_DIR)/reference-le --rtl $(BUILD_DIR)/reference-le/rtl/Vtb_core_le --reference $(REFERENCE_DIR)
 
 # The same program with the pipelined LSU over a memory taking one access per
-# cycle; adds the Table 6-6 integer load/store rows.
+# cycle; adds the Table 6-6 integer load/store rows. Runs the base-wait
+# option (LSU_BASE_SNOOP off); the -snoop target runs the default.
 .PHONY: test-core-lsu-timing
 test-core-lsu-timing:
 	mkdir -p $(BUILD_DIR)/core-lsu-timing
-	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GPIPE_MEM=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
+	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 +define+PPC_LSU_BASE_SNOOP=0 -GPIPE_MEM=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-lsu-timing $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
 	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-lsu-timing/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --pipe-mem $(if $(filter 2,$(DISPATCH_WIDTH)),--dual-write)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
 	./$(BUILD_DIR)/core-lsu-timing/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-lsu-timing/program.txt +STALL=0 $(SIM_ARGS)
@@ -2123,8 +2124,8 @@ test-core-fpu-machine-check-lsu:
 	$(VERILATOR) --binary --timing --assert -Wall -j 2 +define+PPC_LSU_PIPE=1 -GMACHINE_CHECK=1 --top-module tb_core_fpu --Mdir $(BUILD_DIR)/core-fpu-mc $(FPU_CORE_RTL) ../tb/tb_core_fpu.sv
 	python3 tools/fpu_core_program.py --image $(BUILD_DIR)/core-fpu-mc/program.txt --seed $(FPU_CORE_SEED) --random $(FPU_CORE_RANDOM) --lsu-pipe --machine-check
 	./$(BUILD_DIR)/core-fpu-mc/Vtb_core_fpu +IMAGE=$(BUILD_DIR)/core-fpu-mc/program.txt +STALL=1 +SEED=1 $(SIM_ARGS)
-# The same with LSU_BASE_SNOOP: a load's base produced by a load or add
-# costs Table 6-6's latency, and a misaligned snooped EA traps.
+# The same with LSU_BASE_SNOOP (the default): a load's base produced by a
+# load or add costs Table 6-6's latency, and a misaligned snooped EA traps.
 .PHONY: test-core-lsu-timing-snoop
 test-core-lsu-timing-snoop:
 	mkdir -p $(BUILD_DIR)/core-lsu-timing-snoop

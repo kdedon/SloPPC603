@@ -5,7 +5,7 @@
 `define PPC_LSU_PIPE 1'b0
 `endif
 `ifndef PPC_LSU_BASE_SNOOP
-`define PPC_LSU_BASE_SNOOP 1'b0
+`define PPC_LSU_BASE_SNOOP 1'b1
 `endif
 `ifndef PPC_LSU_BASE_WAIT
 `define PPC_LSU_BASE_WAIT 1'b1
@@ -88,7 +88,8 @@ module ppc_core #(
   // adder and request address in one cycle; benches may set the default
   // with +define+PPC_LSU_BASE_SNOOP.
   parameter bit LSU_BASE_SNOOP = `PPC_LSU_BASE_SNOOP,
-  // A D-form load in the unit whose base is not yet produced dispatches and
+  // Timing trade with LSU_BASE_SNOOP off, a cycle slower than Table 6-6: a
+  // D-form load in the unit whose base is not yet produced dispatches and
   // waits for it in the unit, which forms the EA as the base is written and
   // offers on the next cycle.
   parameter bit LSU_BASE_WAIT = `PPC_LSU_BASE_WAIT,

@@ -405,7 +405,7 @@ PEM was read only where the UM defers to it.
 | IU timing: single-cycle ALU, multiply, divide | UM §6.4.2, PDF 264 | tested | `test-multiply-timing`, `test-divider-timing`, `test-core-divider-timing-pid6` |
 | SRU runs add/addi/addis/cmp beside the IU | UM §6.4.5, PDF 264 | partial | Only at width 2 with `--sru` (DUAL_DISPATCH_DESIGN:948). IU+SRU pairing still open (PERFORMANCE_TARGET rank 5) |
 | FPU pipeline timing | UM §6.4.3, PDF 264 | tested | `test-fpu-timing-603` (ENABLE_FPU default 0, so not on the chip by default) |
-| LSU: two stages, 2-cycle load-use, one access per cycle | UM §6.4.4, PDF 264 | partial | Only with ENABLE_LSU_PIPE (default 0, `rtl/ppc603e.sv:8`). Base snooping behind LSU_BASE_SNOOP (default 0) |
+| LSU: two stages, 2-cycle load-use, one access per cycle | UM §6.4.4, PDF 264 | partial | Only with ENABLE_LSU_PIPE (default 0, `rtl/ppc603e.sv:8`). Base snooping (LSU_BASE_SNOOP) on by default |
 | Copy-back / write-through / cache-inhibited access costs | UM §6.5.1-6.5.3, PDF 264-266 | partial | Works functionally (`test-dcache`). No timing contract (PERFORMANCE_TARGET "Timing rules not yet contracts") |
 | sync/isync/eieio timing | UM §6.3.3.2, Table 6-2, PDF 259 | partial | Serialization is tested (above). eieio has no action (`docs/DATA_CACHE_INTEGRATION.md:78`). The cycle cost is not checked |
 | Scheduling guidelines (BPU/dispatch/completion resource lists) | UM §6.6, PDF 266-268 | partial | The dispatch/completion lists are trace-checked (`test-dispatch-rules`); the branch-resolution list partly (TIM-BPU-FETCH-STOP, TIM-BPU-ONE-PREDICTION, AUD-90) |
