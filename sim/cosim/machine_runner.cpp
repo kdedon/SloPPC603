@@ -247,6 +247,16 @@ static uint32_t munge(uint32_t ea, unsigned n) {
     return ea;
 }
 
+extern uint64_t g_icycles;
+
+// Steps one instruction with the reference's clock held, so its timers never
+// expire: the RTL's timing decides when DEC is taken, and the runner enters
+// the interrupt where the RTL did.
+static void step_untimed() {
+    g_icycles = 0;
+    ppc_exec_single();
+}
+
 // The word at PC as the reference fetches it, through its instruction
 // translation. A fetch that faults (and takes the exception) returns false.
 static bool fetch_word(uint32_t& word) {
@@ -394,7 +404,7 @@ int main(int argc, char** argv) {
                     fail("removed instruction at " + h8(ppc_state.pc) + " " + h8(w) +
                          " is not a branch without CTR writes, and LR only as a bl");
                 uint64_t step_exceptions = exceptions_processed;
-                ppc_exec_single();
+                step_untimed();
                 if (exceptions_processed != step_exceptions)
                     fail("removed branch at " + h8(w) + " took an exception");
                 removed_bl |= op == 18 && (w & 1);
@@ -445,6 +455,10 @@ int main(int argc, char** argv) {
             if (ppc_state.pc != pc && (vector == 0x500 || vector == 0x900)) {
                 int_pin = false;
                 dec_exception_pending = false;
+                // Branches removed with no younger entry yet (at most three)
+                // have no record; SRR0 shows how far they took the PC. A bl
+                // whose shadow LR is unwritten resumes at the bl (UM 6.3.1).
+                for (unsigned n = 0; ppc_state.pc != rtl[37] && n < 3; ++n) step_removed(1);
                 uint32_t resume = ppc_state.pc;
                 ppc_exception_handler(vector == 0x500 ? Except_Type::EXC_EXT_INT : Except_Type::EXC_DECR, 0);
                 // Taken between instructions, so SRR0 is the next one to run.
@@ -554,7 +568,7 @@ int main(int argc, char** argv) {
                 bool undefined_divide = divide_undefined(step_insn);
                 uint32_t step_ea = 0;
                 bool has_ea = access_ea(step_insn, step_ea);
-                ppc_exec_single();
+                step_untimed();
                 adapter_after_step(step_exceptions);
                 if (k == 0 && exceptions_processed == step_exceptions) bytes_owed += store_size(step_insn);
                 unsigned d = (step_insn >> 21) & 31;
