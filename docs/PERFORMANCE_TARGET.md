@@ -2026,6 +2026,78 @@ CoreMark 4,136,505, Whetstone 6,443,917; width 1: 2,260,333, 4,640,436,
 `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was run, so this round makes no
 timing claim.
 
+## Timing accuracy round 33
+
+One core change and a bench fix; the model is unchanged (509 cycles per
+run). Dhrystone width 2 513 → 512, width 1 617 → 612.
+
+`test-core-branch-fold` builds its width-2 variant with its own
+`PPC_DISPATCH_WIDTH`; it now drops the outer `DISPATCH_WIDTH` define for
+that build, so the bench builds and passes at width 1 (REDEFMACRO since
+round 28).
+
+The completion queue gains a third finish port for stores without
+update. UM 6.3 gives each execution unit its own result path and sets no
+limit on finishes per cycle; the core had two ports, port 0 shared by the
+LSU, the IU and the special unit with the LSU first. A plain store writes
+no register, so the LSU's result for it now finishes on the new port: no
+wake, no value, but it carries the fault fields (`fault`, `data_fault`,
+`page_miss`), and a clean finish retires in its arrival cycle as on port
+0. Port 0 is then free for the IU. In round 31's `Proc_7` trace (calls 2
+and 3, `stw` + `addi` + `mr` finishing together) the `mr` no longer holds
+the IU, and the core's offset from the model is now constant through
+`Proc_7`. `tb_completion` adds a store finishing on the third port beside
+a register result on port 0 (no wake, retires that cycle) and a faulting
+one (retires a cycle later with its cause). Four completion benches
+(`test-completion`, `-cr-bits`, `-cr-fields`, `-flags`) had not built
+since the wake packet's `late` bit (round 30, UNUSEDSIGNAL); they now
+consume it.
+
+Timing-phase item: the store flag selects port 0's source
+(`lsu_port0`) and reaches the IU's and special unit's port-0 grant; the
+CQ's head retire and pair retire gain a third finish term.
+
+Why round 30 made width 1 two cycles faster: no manual rule was
+involved; the gain was this port conflict. Width 1 has no SRU, so the IU
+never takes port 1. In `Func_2`, before round 30 the `stw r0,20(r1)` took
+the `mflr` value at finish, and the LSU's results on port 0 kept the
+`li r9,0` result off the port: it retired 7 cycles after dispatch, and
+the CQ filled for 3 cycles (PERF_CQ_FULL). Round 30 (UM 6.3.3.2, 6.4.5)
+delayed the store's data a cycle, which moved the LSU results off the
+`li`'s cycle; the `li` retired 3 cycles earlier and `Func_2` went 33 → 31
+per run. With the third port, width 1 gains 5 more cycles, and CoreMark's
+width-1 dispatch-rules run drops 66,276 cycles.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 32 (4f2f753) | 509 | 513 | 617 | 4,136,530 | 4,640,461 |
+| Store finish port (faa2568) | 509 | 512 | 612 | 4,136,487 | 4,574,185 |
+
+Not done: `strcpy` +1 and `strcmp` +1 at width 2, and the third
+`dhry_main` cycle.
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, `make -C sim test-completion
+test-completion-cr-bits test-completion-cr-fields test-completion-flags
+test-completion-ring test-completion-update test-recovery-state`, and at
+widths 1 and 2 with `VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; `test-fpu-all` at width 2 with the LSU pipe;
+commit faa2568 plus the record, 2026-10-07. All pass, including
+`test-core-branch-fold` at width 1; CoreMark CRCs match at both widths.
+Dispatch rules, width 2: Dhrystone 1,967,636 cycles, CoreMark 4,136,462,
+Whetstone 6,443,806; width 1: 2,245,885, 4,574,160, 7,223,475. Quartus
+`quartus_map --analysis_and_elaboration` of `quartus/chip` with
+`PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0
+errors. No fit was run, so this round makes no timing claim.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
