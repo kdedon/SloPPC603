@@ -1838,10 +1838,11 @@ module ppc_core #(
   assign bu_redirect_d = dispatch && bu_branch && bu_redirect && !recovery_accepted;
   // A removed bl (UM 6.3.1) holds PC + 4 in the shadow LR. The next entry
   // to allocate is tagged; LR takes the value as that entry reaches the CQ
-  // head, every older one retired, or retires second of a pair. A linking
-  // branch retiring with it wins if it is that entry or younger. A recovery
-  // keeps the shadow while the bl survives: always for a mispredicted
-  // branch (none is older), otherwise while the tagged entry survives.
+  // head, every older one retired and no unresolved branch holding it, or
+  // retires second of a pair. A linking branch retiring with it wins if it
+  // is that entry or younger. A recovery keeps the shadow while the bl
+  // survives: always for a mispredicted branch (none is older), otherwise
+  // while the tagged entry survives.
   always_comb begin
     shadow_live = 1'b0;
     for (int i = 0; i < CQ_DEPTH; i++)
@@ -1857,7 +1858,7 @@ module ppc_core #(
   assign shadow_arm_tag = (dispatch && !bu_remove) ? alloc_producer : alloc1_producer;
   assign shadow_tag_d = lk_fire_c0 ? alloc1_producer : shadow_arm_tag;
   assign shadow_write = shadow_valid_q && shadow_armed_q &&
-    ((!cq_empty && (cq_head == shadow_tag_q.index)) ||
+    ((!cq_empty && (cq_head == shadow_tag_q.index) && !bs_hold) ||
      (commit1 && (retire1_producer == shadow_tag_q)));
   assign shadow_over = shadow_write && (retire_producer != shadow_tag_q);
   assign shadow_keep_free = shadow_valid_q && !shadow_write && bs_recover && !lk_spec_q &&
