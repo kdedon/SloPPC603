@@ -314,7 +314,9 @@ module ppc_core #(
   logic special_drained, overlap_dispatch_ok;
   // Pipelined load/store unit.
   logic lsu_route, lsu_ready, lsu_empty, lsu_quiet, lsu_result_valid, lsu_store_irrevocable;
-  logic lsu_result_offer;
+  logic lsu_result_offer, lsu_result_store;
+  // An LSU result on the first finish port; a store's takes the third.
+  logic lsu_port0;
   logic lsu_req_valid, lsu_req_write, lsu_req_spec, lsu_rsp_ready, lsu_rsp_owner;
   logic [2:0] lsu_req_bytes;
   logic [31:0] lsu_req_addr;
@@ -2331,31 +2333,34 @@ module ppc_core #(
   // result waits while the lane owns the port.
   // The port selects on the LSU's offer, keeping the recovery kill out of
   // the result's identity and value; a killed offer holds the port.
-  assign result_valid = lsu_result_valid ||
-    (!lsu_result_offer && (special_result_valid || (iu_result_valid && !special_result_select)));
+  // A store writes no register, so it finishes on its own port (UM 6.3:
+  // each unit has its own result path) and leaves this one to the IU.
+  assign lsu_port0 = lsu_result_offer && !lsu_result_store;
+  assign result_valid = (lsu_result_valid && !lsu_result_store) ||
+    (!lsu_port0 && (special_result_valid || (iu_result_valid && !special_result_select)));
   // A special op dispatches only into an idle IU and blocks dispatch until
   // it finishes, so the two result sources are never valid together and the
   // registered busy state can steer the payload.
   // Integer work overlapping a plain load or store waits one cycle when both
   // finish together.
   // A pipelined access result goes first; the lane never has one then.
-  assign result = lsu_result_offer ? lsu_result :
+  assign result = lsu_port0 ? lsu_result :
                   special_result_select ? special_result : iu_result;
   // The SRU has its own result bus (UM 6.3.3): a special result that meets
   // a load's on the first port takes the second when the SRU pipe leaves it
   // free.
   logic special_port1;
   assign special_port1 = ENABLE_LSU_PIPE && special_result_select && special_result_valid &&
-                         special_port1_ok && lsu_result_offer && !sru_result_offer;
+                         special_port1_ok && lsu_port0 && !sru_result_offer;
   assign special_result_ready = special_result_valid &&
-                                ((result_ready && !lsu_result_offer) || special_port1);
+                                ((result_ready && !lsu_port0) || special_port1);
   // An IU result that meets a load's on the first port takes the second
   // when the SRU leaves it free: each unit has its own result bus (UM
   // 6.3.3), so a load's consumer finishes on its own timing. IU results
   // never fault and write only what the second port records.
   logic iu_port1;
   result_packet_t result1;
-  assign iu_port1 = HAS_SRU && ENABLE_LSU_PIPE && iu_result_valid && lsu_result_offer &&
+  assign iu_port1 = HAS_SRU && ENABLE_LSU_PIPE && iu_result_valid && lsu_port0 &&
                     !special_result_select && !sru_result_offer;
   // The port selects on offers so a recovery's cancel stays out of the
   // second result's identity and value.
@@ -2365,15 +2370,15 @@ module ppc_core #(
   // 6.3.3.2, 6.4.5); it retires the cycle after it finishes.
   always_comb begin
     wake = cq_wake;
-    wake.late = !lsu_result_offer && special_result_select && special_late;
+    wake.late = !lsu_port0 && special_result_select && special_late;
     wake1 = cq_wake1;
     wake1.late = special_port1 && special_late;
   end
-  assign iu_result_ready = (result_ready && !special_result_select && !lsu_result_offer) ||
+  assign iu_result_ready = (result_ready && !special_result_select && !lsu_port0) ||
                            iu_port1;
   // iu_result_ready for an offer, without the cancel.
-  assign iu_offer_ready = (result_ready && !special_result_select && !lsu_result_offer) ||
-    (HAS_SRU && ENABLE_LSU_PIPE && lsu_result_offer && !special_result_select && !sru_result_offer);
+  assign iu_offer_ready = (result_ready && !special_result_select && !lsu_port0) ||
+    (HAS_SRU && ENABLE_LSU_PIPE && lsu_port0 && !special_result_select && !sru_result_offer);
   assign sru_result_ready = 1'b1;
   // Classify held identities without depending on cancel-masked valid signals.
   always_comb begin
@@ -3114,7 +3119,7 @@ module ppc_core #(
         .rsp_fault_i(dmem_rsp_fault_i), .rsp_owner_o(lsu_rsp_owner),
         .lane_rsp_ready_i(sp_rsp_ready),
         .result_valid_o(lsu_result_valid), .result_offer_o(lsu_result_offer),
-        .result_o(lsu_result),
+        .result_o(lsu_result), .result_store_o(lsu_result_store),
         .fp_rsp_valid_o(fp_rsp_valid), .fp_rsp_tag_o(fp_rsp_tag),
         .fp_rsp_data_o(fp_rsp_data), .fp_rsp_fault_o(fp_rsp_fault),
         .adopt_valid_o(lsu_adopt_valid), .adopt_ready_i(special_ready && !sru_issue_go &&
@@ -3149,6 +3154,7 @@ module ppc_core #(
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;
       assign lsu_result_offer = 1'b0;
+      assign lsu_result_store = 1'b0;
       assign lsu_result = '0;
       assign lsu_adopt_valid = 1'b0;
       assign lsu_adopt_response = 1'b0;
@@ -3500,13 +3506,14 @@ module ppc_core #(
     .alloc1_finished_i(d1_fp || d1_branch), .alloc1_tag_o(alloc1_producer),
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     // UM 6.6.1: an IU or LSU result completes in its writeback cycle.
-    .result_retire_i(lsu_result_offer || !special_result_select),
+    .result_retire_i(lsu_port0 || !special_result_select),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(cq_wake),
     .result1_valid_i(sru_result_valid || iu_port1 || special_port1), .result1_i(result1),
     // Special results retire a cycle after they finish on either port.
     .result1_retire_i(!special_port1),
     .wake1_valid_o(wake1_valid), .wake1_o(cq_wake1),
+    .result2_valid_i(lsu_result_valid && lsu_result_store), .result2_i(lsu_result),
     .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
     .head_o(cq_head_packet), .head1_o(cq_head1_packet),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block &&

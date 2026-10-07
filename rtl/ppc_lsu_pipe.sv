@@ -117,6 +117,8 @@ module ppc_lsu_pipe #(
   // result_valid_o without the recovery kill.
   output logic result_offer_o,
   output ppc_pkg::result_packet_t result_o,
+  // The result is a store's without update: it writes no register.
+  output logic result_store_o,
   output logic fp_rsp_valid_o,
   output ppc_pkg::completion_tag_t fp_rsp_tag_o,
   output logic [63:0] fp_rsp_data_o,
@@ -176,6 +178,7 @@ module ppc_lsu_pipe #(
   logic [31:0] beat0_q;
   logic [ppc_pkg::CQ_INDEX_WIDTH-1:0] store_done_index_q;
   result_packet_t r_q;
+  logic r_store_q;
 
   function automatic logic killed_now(input completion_tag_t producer);
     return recovery_i && kill_i[producer.index] &&
@@ -500,6 +503,7 @@ module ppc_lsu_pipe #(
   assign result_offer_o = r_valid_q;
   assign result_valid_o = r_valid_q && !killed_now(r_q.producer);
   assign result_o = r_q;
+  assign result_store_o = r_store_q;
   assign fp_rsp_valid_o = r_fp_valid_q && !killed_now(r_fp_tag_q);
   assign fp_rsp_tag_o = r_fp_tag_q;
   assign fp_rsp_data_o = r_fp_data_q;
@@ -789,11 +793,13 @@ module ppc_lsu_pipe #(
       r_q.producer <= p2_head.producer;
       r_q.value <= load_value;
       r_q.update_value <= p2_head.ea;
+      r_store_q <= p2_head.store && !p2_head.uop.mem_update;
     end
     if (q_go && !p2_result) begin
       r_q <= '0;
       r_q.producer <= q_q.producer;
       r_q.update_value <= q_q.ea;
+      r_store_q <= q_q.store && !q_q.uop.mem_update;
     end
     if (p2_retire && p2_head.split && !p2_head.second) beat0_q <= rsp_word;
     if (p1_punt) begin
