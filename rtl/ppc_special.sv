@@ -299,6 +299,8 @@ module ppc_special #(
   logic [31:0] imiss_q, dmiss_q, hash1_q, hash2_q;
   logic [31:0] hid0_q, ear_q;
   logic trap_taken_q, hid0_write, dispatch_hid0_write, hid0_power_unsupported;
+  // The held uop's SPR number decoded at dispatch.
+  logic spr_xer_q, spr_sdr1_q, spr_hid0_q;
   logic icache_change, external_denied;
   page_miss_t fetch_page_miss_q, miss_context;
   logic fetch_page_miss_opcode, data_page_miss_opcode;
@@ -412,11 +414,11 @@ module ppc_special #(
     ((uop_i.special_op == SPECIAL_TLBLD) ||
      (uop_i.special_op == SPECIAL_TLBLI));
   assign sdr1_write = ENABLE_SDR1 &&
-    (uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == 10'd25);
+    (uop_q.special_op == SPECIAL_MTSPR) && spr_sdr1_q;
   assign dispatch_sdr1_write = ENABLE_SDR1 &&
     (uop_i.special_op == SPECIAL_MTSPR) && (uop_i.spr == 10'd25);
   assign hid0_write = ENABLE_FULL_DECODE &&
-    (uop_q.special_op == SPECIAL_MTSPR) && (uop_q.spr == SPR_HID0);
+    (uop_q.special_op == SPECIAL_MTSPR) && spr_hid0_q;
   assign hid0_power_unsupported = hid0_write &&
     power_mode_unsupported(msr_o[MSR_POW], a_q);
   assign dispatch_hid0_write = ENABLE_FULL_DECODE &&
@@ -811,7 +813,7 @@ module ppc_special #(
     if (state_q == S_EXEC) begin
       result_valid_o = !timer_read && !tlbsync_held;
       if (uop_q.special_op == SPECIAL_MFSPR) result_o.value = exec_value;
-      if (uop_q.special_op == SPECIAL_MTSPR && uop_q.spr == 10'd1)
+      if (uop_q.special_op == SPECIAL_MTSPR && spr_xer_q)
         result_o.value = a_q;
       if (uop_q.special_op == SPECIAL_MFMSR)
         result_o.value = msr_o & MSR_MASK;
@@ -1632,12 +1634,18 @@ module ppc_special #(
       fetch_page_miss_q <= '0;
       fetch_miss_eligible_q <= 1'b0;
       timer_read_q <= 1'b0;
+      spr_xer_q <= 1'b0;
+      spr_sdr1_q <= 1'b0;
+      spr_hid0_q <= 1'b0;
       trap_taken_q <= 1'b0;
       mfrom_q <= '0;
     end else if (interrupt_accept) begin
       pc_q <= interrupt_pc_i;
       uop_q <= '0;
       timer_read_q <= 1'b0;
+      spr_xer_q <= 1'b0;
+      spr_sdr1_q <= 1'b0;
+      spr_hid0_q <= 1'b0;
     end else if (dispatch_fire) begin
       uop_q <= uop_i;
       if (dispatch_align_i) begin
@@ -1650,6 +1658,9 @@ module ppc_special #(
       fetch_page_miss_q <= dispatch_page_miss_i;
       fetch_miss_eligible_q <= dispatch_fetch_miss_eligible;
       timer_read_q <= reads_timer(uop_i.special_op, uop_i.spr);
+      spr_xer_q <= uop_i.spr == 10'd1;
+      spr_sdr1_q <= uop_i.spr == 10'd25;
+      spr_hid0_q <= uop_i.spr == SPR_HID0;
       producer_q <= producer_i;
       a_q <= a_i;
       b_q <= b_i;
@@ -2043,6 +2054,9 @@ module ppc_special #(
           else $error("data page miss lost its capture provenance");
       assert (timer_read_q == reads_timer(uop_q.special_op, uop_q.spr))
         else $error("registered timer-read decode disagrees with the held uop");
+      assert ({spr_xer_q, spr_sdr1_q, spr_hid0_q} ==
+              {uop_q.spr == 10'd1, uop_q.spr == 10'd25, uop_q.spr == SPR_HID0})
+        else $error("registered SPR decode disagrees with the held uop");
       if (tlb_fill_commit_o)
         assert (!tlb_fill_abort_o && !cancel_i && fence_q &&
                 !mmu_response_pending_q && !tlb_fill_local_error_q)
