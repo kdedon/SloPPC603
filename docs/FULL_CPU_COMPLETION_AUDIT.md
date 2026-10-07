@@ -4,7 +4,7 @@ Date: 2026-09-23; updated 2026-10-05. Scope: the original CPU-only 603e project 
 [TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
-**Revised estimate: about 81% complete (weighted 81.20%).**
+**Revised estimate: about 84% complete (weighted 83.50%).**
 This replaces the provisional 40–45% headline. It is completed project scope,
 including documentation and tooling, not measured RTL coverage or a fraction of
 remaining effort.
@@ -29,7 +29,7 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Scalar tagged execution, recovery and integer units | 8% | 88% | 7.04% |
 | Dual dispatch/retirement and superscalar scheduling | 4% | 72% | 2.88% |
 | Functional branches | 3% | 90% | 2.70% |
-| Branch prediction and folding | 2% | 70% | 1.40% |
+| Branch prediction and folding | 2% | 75% | 1.50% |
 | Load/store architecture | 5% | 93% | 4.65% |
 | Supervisor, system instructions and interrupts | 8% | 89% | 7.12% |
 | MMU | 8% | 81% | 6.48% |
@@ -37,11 +37,11 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Instruction cache and architectural maintenance | 4% | 97% | 3.88% |
 | Data cache and writeback | 5% | 90% | 4.50% |
 | Coherence and reservations | 3% | 99% | 2.97% |
-| Floating point | 12% | 77% | 9.24% |
-| Endian, variants and platform behavior | 6% | 84% | 5.04% |
-| Full timing, reference and integration verification | 10% | 66% | 6.60% |
-| Final FPGA closure and release | 4% | 55% | 2.20% |
-| **Total** | **100%** | | **83.22%** |
+| Floating point | 12% | 78% | 9.36% |
+| Endian, variants and platform behavior | 6% | 85% | 5.10% |
+| Full timing, reference and integration verification | 10% | 68% | 6.80% |
+| Final FPGA closure and release | 4% | 50% | 2.00% |
+| **Total** | **100%** | | **83.50%** |
 
 ## Reasons for the revised credit
 
@@ -353,3 +353,28 @@ Fits on `6b073fc` (50 MHz, setup / hold, worst corners): translated +0.506 /
 +0.118 ns, integrated +1.557 / +0.115, timer-bat +0.257 / +0.119, chip +0.487 /
 +0.116, chip602 +0.808 / +0.119. FPU fits unchanged: 51.57, 50.58, 53.43,
 60.07 MHz. Total 81.53% → 83.22%.
+
+## 2026-10-06 update (batches 17 and 18)
+
+AUD-90: fetch stops at a branch waiting on LR, CTR or CR, a CR branch behind an
+unresolved CR branch is held at fetch (one level of prediction, UM §6.4.1.1),
+and `bclr`/`bcctr` read LR or CTR only after the move retires (UM §6.3.3.2).
+AUD-88: a newly set disabled FPSCR sticky bit serializes completion. AUD-89:
+single denormal results round two cycles later and the LSU converts single
+denormals in 2–24 cycles. Little-endian machine lockstep against DingusPPC.
+Doom and Quake shareware timedemos run on the MiSTer core, big- and
+little-endian. The dispatch-rule checker enforces completion-buffer, rename
+and fetch-stop limits.
+
+| Row | From → to | Why |
+|---|---|---|
+| Branch prediction and folding | 70 → 75 | manual fetch stop and one level of CR prediction (AUD-90) |
+| Floating point | 77 → 78 | AUD-88 and AUD-89 timing |
+| Endian, variants and platform behavior | 84 → 85 | little-endian machine lockstep |
+| Full timing, reference and integration verification | 66 → 68 | dispatch-rule limits, LE lockstep, Doom/Quake system runs |
+| Final FPGA closure and release | 55 → 50 | chip −0.368 ns and chip602 −0.517 ns at 50 MHz; full FPU 49.57 MHz |
+
+Fits on `cf80b79` (50 MHz setup / hold, worst corners): translated +1.353 /
++0.059 ns, integrated +0.598 / +0.094, timer-bat +0.952 / +0.117, chip −0.368 /
++0.122, chip602 −0.517 / +0.117. FPU fits: 49.57, 51.20, 53.43, 60.07 MHz.
+Total 83.22% → 83.50%.

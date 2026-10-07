@@ -1228,3 +1228,50 @@ MiSTer at 45 MHz, commit 794ca90 (before the gate), seed 3: met timing, clk_sys
 Recorded: `mister/build.sh --clean --fpu-compact --dual --lsu-pipe --sys-mhz 45 --seed 2`, commit 28de2bc, 2026-10-06: MiSTer (batch 16 gate) meets timing at seed 2; clk_sys setup +0.436 ns, HDMI setup +0.092 ns, hold positive on every clock; 33,636 ALMs (80%).
 
 MVP 97.43% (unchanged); full 603e 81.53% → 83.22%.
+
+## Batches 17 and 18 — accepted (2026-10-06)
+
+AUD-90 fixed: fetch stops at a branch waiting on LR, CTR or CR (UM §6.4.1.1); a
+CR branch behind an unresolved CR branch is held at fetch; `bclr`/`bcctr` read
+LR or CTR after the move retires (UM §6.3.3.2). AUD-88 and AUD-89 fixed, with
+the pipelined LSU's FP store handshake corrected (87d96be). Little-endian
+machine lockstep. Doom and Quake shareware timedemos build as big- and
+little-endian MiSTer images. nbench no longer overflows its stack, gains a
+hard-float image, and the console scrolls. `perf-diff` marks the Dhrystone loop
+as `dhry_main+0x1d4`.
+
+Recorded: preflight (firmware builds, `make -C toolchain firmware-all rtl-smoke
+rtl-alignment`, `make -C sim lint check-spec`, core benches at width 1 and
+width 2 + LSU unit, `test-reference-machine` Dhrystone, `perf-diff`,
+`test-mister-load`), commit 8478ccf, 2026-10-06: all pass; Dhrystone 652.0
+cycles/run, model 506.0.
+
+Recorded: `make -C sim ci xrand-sweep test-fpu-all`, `make -C toolchain
+rtl-all`, commit 8478ccf, 2026-10-06: pass; `xrand-sweep` 80 runs.
+
+Recorded: `test-dispatch-rules test-reference-machine test-reference-machine-mmu`
+at width 1, width 2, LSU unit and width 2 + LSU unit, commit 8478ccf,
+2026-10-06: 11 PASS in each.
+
+Recorded: `./quartus/{translated,integrated,timer-bat,chip,chip602}/build.sh --docker`,
+`./quartus/report-target-paths.sh`, `quartus/fpu-production/synthesize.sh`,
+commit cf80b79, 2026-10-06 (worst corners; inherited, same RTL but 87d96be):
+
+| Top | 50 MHz setup | 50 MHz hold | 66 MHz worst slack |
+|---|---:|---:|---:|
+| translated | +1.353 | +0.059 | −3.495 |
+| integrated | +0.598 | +0.094 | −4.250 |
+| timer-bat | +0.952 | +0.117 | −3.896 |
+| chip | −0.368 | +0.122 | −5.216 |
+| chip602 | −0.517 | +0.117 | −5.365 |
+
+chip and chip602 miss 50 MHz on the AUD-90 fetch-stop path; recovery is the
+timing phase's, not a reverted fix. FPU fits: 49.57 (full, misses 50 MHz after
+AUD-89's rounding hold), 51.20, 53.43, 60.07 MHz.
+
+Recorded: `mister/build.sh --clean --fpu-compact --dual --lsu-pipe --sys-mhz 45
+--seed {2,3,4,5}`, commit cf80b79, 2026-10-06: fail on every seed; clk_sys
+−0.188, −0.383, −1.345, −0.170 ns. On 49b2152 (batch 18) seed 2 met timing,
+clk_sys +0.021 ns.
+
+MVP 97.43% (unchanged); full 603e 83.22% → 83.50%.

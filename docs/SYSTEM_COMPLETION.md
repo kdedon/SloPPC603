@@ -62,7 +62,7 @@ completion denominator.
 
 ## Full-603e estimate and systems outside this MVP
 
-**Approximately 83% of full-603e project scope (weighted 83.22%)** follows the
+**Approximately 84% of full-603e project scope (weighted 83.50%)** follows the
 [full CPU weighting audit](FULL_CPU_COMPLETION_AUDIT.md) (2026-10-06 update).
 Original category weights are preserved; broad execution, branch/LSU and memory
 categories now explicitly allocate weight to unimplemented systems. This corrects
@@ -204,6 +204,7 @@ acceptance gates. Keep the full-603e and MVP denominators distinct.
 | Batch 14, 2026-10-06 | 97.43% (unchanged) | Outside MVP scope: manual-mismatch fixes AUD-75/77/79/81/83 with regressions. Fresh: preflight, ci, references (width 1 and width 2 + LSU), chip and translated 50 MHz fits. Full 603e 81.20% → 81.53%. |
 | Batch 15, 2026-10-06 | 97.43% (unchanged) | Outside MVP scope: AUD-76 (PVR), AUD-81 (IFEM on single-beat fetches), AUD-84 (MCP/SRESET preempt a faulting instruction), AUD-85 (DBDIS, CSE), AUD-86 (603 checkstops). Fresh on `9365839`: chip +1.069 ns, chip602 −0.161 ns setup at 50 MHz (recovered in batch 16). Other checks are the batch 16 gate. |
 | Batch 16, 2026-10-06 | 97.43% (unchanged) | Outside MVP scope: AUD-82 (602 injected snoops), the 603 fetch-TEA refetch, AUD-80 (32-bit bus, reduced pinout), AUD-87 (EC603e `fsqrt`), FPU semantics review (AUD-88/89 recorded), Appendix A metadata (226 rows, five variants), MiSTer test core at 45 MHz (`--sys-mhz`). Fresh on `6b073fc`: preflight, `xrand-sweep`, `test-fpu-all`, `make -C toolchain rtl-all`, references at w1/w2/LSU/w2+LSU (11 PASS each), all five tops at 50 MHz (setup +0.257 to +1.557 ns), FPU fits unchanged; 66 MHz −3.291 to −4.591 ns. `ci` failed 20 targets on bench issues, fixed and passing on `ee764cf`. MiSTer at 45 MHz met timing on `794ca90` (clk_sys +0.663 ns); gate build pending. Full 603e 81.53% → 83.22%. |
+| Batches 17 and 18, 2026-10-06 | 97.43% (unchanged) | Outside MVP scope: AUD-90 (manual fetch stop, one level of CR prediction, LR/CTR read after the move retires), AUD-88 (FPSCR sticky serialization), AUD-89 (single denormal rounding and LSU conversion), little-endian machine lockstep, Doom and Quake timedemo images, nbench stack fix and scrolling console, perf-diff loop mark by symbol. Fresh on `8478ccf`: preflight, `ci`, `xrand-sweep` (80 runs), `test-fpu-all`, `make -C toolchain rtl-all`, references at w1/w2/LSU/w2+LSU (11 PASS each); Dhrystone 652 cycles/run against the model's 506 (641 on `cf80b79`; the firmware relink moved `dhry_main` by 0x6c4 bytes). Inherited from `cf80b79` (same RTL except the one-line AUD-89 handshake fix): 50 MHz setup translated +1.353, integrated +0.598, timer-bat +0.952, chip −0.368, chip602 −0.517 ns; 66 MHz −3.495 to −5.365 ns; FPU fits 49.57, 51.20, 53.43, 60.07 MHz; MiSTer at 45 MHz missed on seeds 2–5 (best clk_sys −0.170 ns). MiSTer at 45 MHz met timing on `49b2152`, seed 2 (clk_sys +0.021 ns); the gate build is CI's. Full 603e 83.22% → 83.50%. |
 
 Recovery round details: [recovery metadata verification](RECOVERY_METADATA_VERIFICATION.md).
 The score is unchanged because this hardening adds no new architectural capability.
