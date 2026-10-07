@@ -85,12 +85,13 @@ def classify(word, sru):
     branch: 'b', 'bc', 'bclr' or 'bcctr'; cr_test: the condition reads CR
     (BO[0] clear); ctr_test: it decrements and tests CTR (BO[2] clear).
     mtspr: 'LR' or 'CTR' for a move to that register.
+    sru_lat: Table 6-2 execute cycles of an mtspr/mfspr (TIM-SER-SRU-LATENCY).
     """
     op, xo = word >> 26, (word >> 1) & 1023
     rc = word & 1 if op in (20, 21, 23, 31, 59, 63) else 0  # D-form bit 31 is immediate
     c = dict(units={IU}, dser=False, cser=False, cq1=True, writes=[1, rc, 0, 0, 0],
              isync=False, multiple=False, cond=False, branch=None, cr_test=False, ctr_test=False,
-             mtspr=None)
+             mtspr=None, sru_lat=None)
     sru_unit = lambda: c.update(units={SRU}, cser=True, cq1=False, writes=[0, 0, 0, 0, 0])
     if op in (16, 18) or (op == 19 and xo in (16, 528)):
         lk = word & 1
@@ -167,6 +168,9 @@ def classify(word, sru):
         elif xo in (339, 371, 83, 19, 595, 659):
             sru_unit()
             c['writes'][0] = 1
+            if xo == 339:
+                spr = ((word >> 16) & 31) | ((word >> 11) & 31) << 5
+                c['sru_lat'] = 3 if 528 <= spr <= 543 else 1
         elif xo in (467, 146, 144, 210, 242, 512):
             sru_unit()
             spr = ((word >> 16) & 31) | ((word >> 11) & 31) << 5
@@ -175,6 +179,7 @@ def classify(word, sru):
             c['writes'][3] = int(xo == 467 and spr == 8)
             c['writes'][4] = int(xo == 467 and spr == 9)
             c['mtspr'] = {8: 'LR', 9: 'CTR'}.get(spr) if xo == 467 else None
+            c['sru_lat'] = 2 if xo == 467 else None
     return c
 
 
@@ -214,7 +219,7 @@ def fetch_stop(older, younger):
 
 class Rules:
     """Streaming check of TIM-DISP-WIDTH/DQ1, TIM-SER-DISPATCH/COMPLETE/REFETCH,
-    TIM-CQ-ALLOC/CQ1/ORDER, TIM-RENAME-LIMITS, TIM-WB-LIMITS, TIM-BPU-MISPREDICT and the branch
+    TIM-CQ-ALLOC/CQ1/ORDER, TIM-SER-SRU-LATENCY, TIM-RENAME-LIMITS, TIM-WB-LIMITS, TIM-BPU-MISPREDICT and the branch
     fetch-stop rules (TIM-BPU-*) over one trace."""
 
     def __init__(self, width, words, sru, flush):
@@ -232,6 +237,7 @@ class Rules:
         self.last_dser = None   # (seq, dispatch cycle) of the latest dispatch-serialized dispatch
         self.isync_retired = None
         self.last_retired_pc = None
+        self.last_retire_cycle = None
         self.cond_retired = False  # the latest retirement was a conditional branch
         self.stats = dict(cycles=0, dispatches=0, retirements=0, pairs_dispatched=0, pairs_retired=0,
                           flushed=0, mispredicts=0, removed=0, dser=0, cser=0, isync=0, unknown=0, sru_pairs=0,
@@ -257,6 +263,14 @@ class Rules:
         for slot, pc in enumerate(retired):
             c = self.cls(pc)
             classes.append(c)
+            # TIM-SER-SRU-LATENCY (UM 6.3.3.2, Table 6-2): an mtspr/mfspr
+            # executes after every older instruction retires and completes
+            # the cycle after it finishes.
+            if c and c['sru_lat'] and self.last_retire_cycle is not None:
+                require(cycle - self.last_retire_cycle >= c['sru_lat'] + 1,
+                        f'cycle {cycle}: {pc:08x} retired {cycle - self.last_retire_cycle} cycle(s) after the '
+                        f'instruction ahead, under its {c["sru_lat"]}-cycle SRU latency (TIM-SER-SRU-LATENCY)')
+            self.last_retire_cycle = cycle
             if c and c['multiple'] and pc == self.last_retired_pc and not self.inflight_has(pc):
                 continue  # further micro-op of the same multiple/string instruction
             # Work dispatched down a mispredicted path never retires

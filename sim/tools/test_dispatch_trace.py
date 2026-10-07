@@ -198,7 +198,7 @@ class DispatchRulesTest(unittest.TestCase):
         self.assertEqual(st['fetch_stops'], 1)
         # A move to CTR feeds the branch once it retires.
         run('1 D1 R0 00000800 |', '2 D1 R0 00000818 |', '3 D1 R1 0000081c | 00000800',
-            '4 D0 R1 | 00000818', '5 D1 R0 00000828 |')
+            '6 D0 R1 | 00000818', '7 D1 R0 00000828 |')
         early = ['1 D1 R0 00000800 |', '2 D1 R0 00000818 |', '3 D1 R1 0000081c* | 00000800',
                  '4 D1 R0 00000828 |']
         with self.assertRaisesRegex(ValueError, 'TIM-BPU-FETCH-STOP'):
@@ -253,6 +253,17 @@ class DispatchRulesTest(unittest.TestCase):
                  '4 D1 R0 00000914 |', '5 D0 R1 | 00000914']
         with self.assertRaisesRegex(ValueError, 'TIM-BPU-MISPREDICT'):
             check_rules(early, 2, words, False)
+
+    def test_sru_move_latency(self):
+        # 0x900 addi; 0x904 mtlr r0 (2 cycles); 0x908 mflr r3 (1 cycle).
+        words = {0x900: 0x38630001, 0x904: 0x7c0803a6, 0x908: 0x7c6802a6}
+        lines = ['1 D2 R0 00000900 00000904 |', '2 D1 R0 00000908 |', '3 D0 R1 | 00000900',
+                 '6 D0 R1 | 00000904', '8 D0 R1 | 00000908']
+        self.assertEqual(check_rules(lines, 2, words, True)['retirements'], 3)
+        with self.assertRaisesRegex(ValueError, 'TIM-SER-SRU-LATENCY'):
+            check_rules(lines[:3] + ['5 D0 R1 | 00000904'] + lines[4:], 2, words, True)
+        with self.assertRaisesRegex(ValueError, 'TIM-SER-SRU-LATENCY'):
+            check_rules(lines[:4] + ['7 D0 R1 | 00000908'], 2, words, True)
 
     def test_schedule_ignores_recovery_marker(self):
         self.assertEqual(parse('4 D0 R1 | 00000300 !2\n5 D0 R0 | !1'), {4: ([], [0x300])})

@@ -25,7 +25,7 @@
       "6-6": 70
     },
     "total_rows": 190,
-    "rule_count": 39,
+    "rule_count": 40,
     "schedule_manifests": 3,
     "full_schedule_replays": 0,
     "variant_scope": [
@@ -10158,6 +10158,30 @@
           "pdf_page": 259,
           "printed_page": "6-13",
           "section": "6.3.3.2"
+        }
+      ],
+      "conditions": [
+        "PID6-603e or PID7v-603e unless specifically overridden"
+      ],
+      "issue_ids": [],
+      "checker_status": "trace_checked"
+    },
+    {
+      "id": "TIM-SER-SRU-LATENCY",
+      "category": "serialization",
+      "statement": "A completion-serialized mtspr/mfspr starts execution only after every older CQ instruction retires and completes the cycle after its Table 6-2 execute latency, so it retires at least latency+1 cycles after the instruction ahead: mtspr 2, mfspr 1, mfspr of a BAT 3.",
+      "sources": [
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 259,
+          "printed_page": "6-13",
+          "section": "6.3.3.2"
+        },
+        {
+          "file": "1997_MPC603EUM_MPC603e_EC603e_Users_Manual.pdf",
+          "pdf_page": 269,
+          "printed_page": "6-23",
+          "section": "Table 6-2"
         }
       ],
       "conditions": [
