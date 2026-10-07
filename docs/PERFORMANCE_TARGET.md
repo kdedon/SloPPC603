@@ -13,8 +13,8 @@ counters are in [PERFORMANCE.md](PERFORMANCE.md).
 
 | Definition | Cycles per Dhrystone run | Dhrystones/s per MHz | DMIPS/MHz | Firmness |
 |---|---:|---:|---:|---|
-| **Primary.** Our binary on a manual-accurate PID7v 603e, warm caches | **506** | **1976** | **1.125** | Model, about ±10% |
-| Same, PID6 (37-cycle divide) | 523 | 1912 | 1.088 | Model |
+| **Primary.** Our binary on a manual-accurate PID7v 603e, warm caches | **509** | **1965** | **1.118** | Model, about ±10% |
+| Same, PID6 (37-cycle divide) | 526 | 1901 | 1.082 | Model |
 | Published Motorola figure (other compiler and library) | (406) | 2460 | 1.40 | Vendor, compiler unstated |
 
 CoreMark on the same model: CPI 0.918 over one full iteration (319,000
@@ -42,7 +42,7 @@ cycles a 603e needs. Each rule cites its source in the code:
 | Dispatch two per cycle in order; DQ1 needs a different free unit; five CQ entries, five GPR renames (update forms take two) | UM 6.3.3, 6.6, 6.6.1.2 |
 | Reservation station per unit; operands from rename on the cycle they are written | UM 6.3.3, 6.3.3.1 |
 | IU one execute stage; multiply 1 + multiplier bytes; divide 20 (PID7v) or 37 (PID6) | UM 6.4.2; T6-4; UM 1.1 |
-| SRU adder runs `add`/`addi`/`addis`/`cmp*` beside the IU | UM 1.1.2.2.3, 6.4.5 |
+| SRU adder runs `add`/`addo`/`addi`/`addis`/`cmp*` beside the IU; on a start-cycle tie it takes the one the next integer instruction does not need | UM 1.1.2.2.3, 6.4.5; T6-4 note 1; UM 6.3.3 |
 | LSU two stages (EA/translate, cache), 2-cycle load-use, one access per cycle | UM 6.4.4; T6-6 `2:1` |
 | Completion two per cycle in order; CQ1 only integer or load; ≤2 GPR, ≤1 CR writes; stores, SRU and FP only from CQ0; nothing completes behind an unresolved prediction | UM 6.3.3, 6.6.1.3 |
 | Completion-serialized SRU work (`mfspr`, `mtspr`, CR logicals) starts after all older work completes, result forwarded after it completes; `mtspr` 2 cycles | UM 6.3.3.2, 1.1.4.4; T6-2 |
@@ -59,7 +59,11 @@ Assumptions (`perf_model_603e.py --assumptions` prints them):
 - A7: work behind a correctly predicted branch may complete in its resolve cycle.
 - A8: `mullw`/`mulhw` take 3 cycles without operand values (CoreMark only).
 - A9: a station accepts the next instruction when the previous starts executing.
-- A10: SRU adder present. Without it: 512 cycles.
+- A10: SRU adder present (603e only; UM C.2.3). The manual gives no unit-steering
+  rule: an add or compare takes the unit that starts it first and, on a tie, the
+  SRU when the next non-branch instruction needs the IU (UM 6.4.5 "in parallel
+  with another integer instruction"; an IU station it held would stall that
+  instruction, UM 6.3.3). IU on every tie: 521 cycles. Without the adder: 526.
 - A11, A12: SRU serialization as above.
 - A13: the single CR rename (UM 6.3.3.1) is not a dispatch condition (UM
   6.6.1.2 lists only GPR and FPR renames); a CR writer finishes, writing the
@@ -72,7 +76,7 @@ Assumptions (`perf_model_603e.py --assumptions` prints them):
   executes; a held branch is not yet predicted, and the 603e executes through
   one level of prediction (UM 6.4.1.1, 6.4.1.2). No Dhrystone change.
 
-Sensitivity of the primary figure: 500–523 cycles across A2, A10 and the divide.
+Sensitivity of the primary figure: 502–526 cycles across A2, A10 and the divide.
 A6 and A7 make the model optimistic (fewer cycles), so the target is, if anything,
 slightly strict. The model has not been replayed against Figures 6-3 to 6-5
 cycle by cycle; doing so is the first step that would firm it up.
@@ -1648,6 +1652,66 @@ Whetstone at both widths. Reference: 5 programs and 11 negative controls at both
 3,209 checks, 55 spacings. Bench expectation changed: the synthetic `mtctr` in
 `test_dispatch_trace.py` `test_fetch_stops` now retires three cycles after the `add` ahead
 (UM 6.3.3.2, Table 6-2), not one.
+
+## Timing accuracy round 28
+
+The model's unit choice for an add or compare was pessimistic. It gave
+the IU on every start-cycle tie, so a compare waiting in the IU station
+for a load held the station and the next IU instruction could not
+dispatch (UM 6.3.3: "dispatch of that instruction will stall until the
+first instruction completes execution"). UM 6.4.5 lets the SRU execute
+`addi`, `addis`, `add`, `addo`, `cmpi`, `cmp`, `cmpli` and `cmpl` "in
+parallel with another integer instruction"; Table 6-4 note 1 limits the
+`add` row to `add` and `addo` (no record form), and UM C.2.3 removes the
+adder on the 602 (`--no-sru-add`). The manual names no steering rule,
+so the model now picks the earlier start and, on a tie, the SRU when the
+next non-branch instruction needs the IU (A10). It also admits `addo`,
+which the core already sent to the SRU. The core's own rule (an add or
+compare in DQ0 takes the SRU when DQ1 holds an IU-only instruction,
+round 24) is the same choice.
+
+| | Model, Dhrystone cycles/run | Core w2 | Gap |
+|---|---:|---:|---:|
+| Round 27 (1c76de0) | 521 | 523 | 2 |
+| SRU steering (d6e8347) | 509 | 523 | 14 |
+
+Other model figures: IU on every tie 521, no SRU adder 526, any fetch
+pair (A2) 502, 37-cycle divide 526. The core is unchanged.
+
+Per function by retirement spacing (core minus model, cycles per run,
+round 27 trace): `strcmp` +11, `Proc_7` +2, `dhry_main` +2, `strcpy`
++1, `Func_2` -2, the rest 0. `strcmp`'s inner loop (`lbzu`, `cmpwi`,
+`beq`, `mr`, `lbz`, `addi`, `cmpw`, `beq`) takes 6 cycles in the model
+(the `cmpwi` waits for the `lbzu` in the SRU and the `mr` dispatches
+the next cycle) and alternates 6 and 7 in the core: the `lbz r10,0(r4)`
+behind `mr r4,r8` retires two cycles after the `mr` against one in the
+model, and the core's `cmpw` retires four cycles after its dispatch.
+
+Completion in a predicted branch's resolve cycle (A7). UM 6.6.1.3 bars
+completion of an instruction that follows "an unresolved predicted
+branch"; Figure 6-5 acts on a resolution in its own cycle: branch 1
+resolves in cycle 3 and the BPU predicts branch 5 in cycle 3, and branch
+5 resolves in cycle 5 and the correct-path fetch request goes out in
+cycle 5. A7 stands: work behind a correctly predicted branch may
+complete in the resolve cycle. The core breaks it for a removed branch:
+`bs_young_hold` releases only from the captured CR (`bs_hit`), a cycle
+after the owner's CR arrives, so the `li r31,65` at `fff03878` retires
+a cycle after the `cmplwi` ahead of the removed `ble` instead of beside
+it. Adding the arrival-cycle match (`bs_cap_hit`) to the release fixes
+that instance and passes the width-2 dispatch rules for Dhrystone,
+CoreMark and Whetstone, but saves nothing on Dhrystone (1,991,076 against
+1,991,074 cycles) and 26 cycles on CoreMark (4,143,764). It also puts the
+IU compare result on the CQ1 retire gate, the path the existing comment
+keeps it off. Not taken; it needs a timing review before it lands.
+
+Recorded: `make -C sim check-spec` (251 and 29 tests pass) and
+`perf_model_603e.py` on the round 27 width-2 Dhrystone trace
+(`--mark fff03808`, default and `--fetch any`, `--div 37`,
+`--no-sru-add`), commit d6e8347, 2026-10-07. The `bs_cap_hit`
+experiment: `make -C sim test-dispatch-rules perf-diff DISPATCH_WIDTH=2
+BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe` on d6e8347 plus that
+uncommitted one-line change, 2026-10-07: pass, figures above.
 
 Per instruction, the core's retirement spacing minus the model's completion
 spacing, summed per iteration (Dhrystone, width 2, cycles per run), before
