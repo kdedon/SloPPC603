@@ -171,6 +171,14 @@ if [[ -f "${out}/ppc603e.sta.summary" ]]; then
   if awk -F' : ' '/^Slack/ && $2 < 0 {bad=1} END {exit !bad}' "${out}/ppc603e.sta.summary"; then
     echo "timing: negative slack" >&2
     status=1
+    # Name the failing paths in the log, so a missed seed needs no refit.
+    flock /tmp/ppc603e-quartus.lock docker run --rm --network none --user "$(id -u):$(id -g)" --volume "${repo}:/work" \
+      --workdir /work/mister "${image}" /opt/intelFPGA_lite/quartus/bin/quartus_sta \
+      -t failing_paths.tcl ppc603e output_files/ppc603e.failing.txt > "${here}/failing_paths.log" 2>&1 || true
+    if [[ -f "${out}/ppc603e.failing.txt" ]]; then
+      echo "failing setup paths (corner, slack, clock, from, to), worst 40:"
+      sort -t$'\t' -k2,2g "${out}/ppc603e.failing.txt" | head -40
+    fi
   fi
 fi
 if [[ -f "${out}/ppc603e.rbf" ]]; then

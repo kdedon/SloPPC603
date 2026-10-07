@@ -45,6 +45,18 @@ jobs:
           if ci/step.sh mister/build.sh --clean --fpu-compact --dual --lsu-pipe --sys-mhz 45 --seed "${{ matrix.seed }}"; then
             touch build/mister/PASS
           fi
+      # Timing reports for every seed, passed or missed.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mister-timing-${{ matrix.seed }}
+          path: |
+            mister/output_files/*.sta.summary
+            mister/output_files/*.sta.rpt
+            mister/output_files/*.fit.summary
+            mister/output_files/ppc603e.failing.txt*
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: hashFiles('build/mister/PASS') != ''
         with:
