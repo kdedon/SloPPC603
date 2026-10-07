@@ -452,7 +452,7 @@ module ppc_core #(
   logic [4:0] gpr_port_reg, gpr_port1_reg, update_reg_q;
   logic [31:0] gpr_port_value, gpr_port1_value, update_value_q;
   logic normal_uop, special_uop, normal_idle;
-  logic sru_move, sru_move_ready, sru_hold_q, sru_lane_q, sru_in_lane, sru_issue_go;
+  logic sru_move, sru_move_ready, sru_hold_q, sru_lane_q, sru_in_lane, sru_issue_go, sru_head_next;
   logic lane_mem_idle, sru_hold_kill, sru_dst_busy, sru_wait0, sru_wait1, adopt_go, adopt_older;
   uop_t sru_uop_q;
   completion_tag_t sru_producer_q;
@@ -489,7 +489,7 @@ module ppc_core #(
   uop_t dq1_uop, d1_lane_uop;
   iq_pair_t dq1_pair;
   // Unit classes: c0_* for DQ0, d1_* for DQ1.
-  logic c0_sru, c0_iu, c0_branch, c0_lane, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
+  logic c0_sru, c0_iu, c0_branch, c0_lane, c0_move, c0_fp, c0_fp_mem, d1_valid, d1_iu, d1_mem, d1_fp;
   logic bu_finished, lane_dq1, fp_dq1, d1_needs_flags, d1_mem_ready, d1_misaligned;
   logic d1_branch, d1_bc, d1_cr_final, d1_bc_taken, d1_bc_now, d1_bc_spec;
   logic [31:0] d1_bc_target;
@@ -2517,7 +2517,18 @@ module ppc_core #(
   // A held update base is not yet in the register file.
   assign update_wait0 = update_pending_q && reads_reg(uop, update_reg_q);
   assign update_wait1 = update_pending_q && reads_reg(dq1_uop, update_reg_q);
-  assign sru_issue_go = sru_hold_q && !cq_empty && (cq_head == sru_producer_q.index) &&
+  // A held move enters the lane in the cycle its older work completes, so it
+  // executes the cycle after (UM 6.3.3.2). The lane reads LR and CTR in its
+  // execute cycle, after a retiring branch or shadow LR has written them.
+  function automatic logic [CQ_INDEX_WIDTH-1:0] cq_next(logic [CQ_INDEX_WIDTH-1:0] i);
+    return (i == CQ_INDEX_WIDTH'(CQ_DEPTH - 1)) ? '0 : i + 1'b1;
+  endfunction
+  assign sru_head_next = commit && !(special_producer == retire_producer) &&
+    (commit1 ? (!(special_producer == retire1_producer) &&
+                (cq_next(cq_next(cq_head)) == sru_producer_q.index)) :
+               (cq_next(cq_head) == sru_producer_q.index));
+  assign sru_issue_go = sru_hold_q && !cq_empty &&
+    ((cq_head == sru_producer_q.index) || sru_head_next) &&
     !special_busy && !special_cancel && !recovery_accepted;
   // An access the unit hands over may be older than the held move.
   function automatic logic [CQ_INDEX_WIDTH-1:0] cq_age(logic [CQ_INDEX_WIDTH-1:0] i,
@@ -2564,6 +2575,11 @@ module ppc_core #(
   assign c0_sru = HAS_SRU && c0_iu && iq_pair.sru && !rs_ready && sru_rs_ready;
   assign c0_branch = bu_branch && !bu_redirect;
   assign c0_lane = special_uop && dispatch_mem_plain;
+  // An LR or CTR move is completion-serialized, not dispatch-serialized, so
+  // an IU instruction may dispatch beside it (UM 6.6.1.2) unless it reads
+  // the move's result.
+  assign c0_move = special_uop && sru_move &&
+    !(dispatch_uop.gpr_write && reads_reg(dq1_uop, dispatch_uop.dst));
   assign c0_fp = fp_uop;
   assign c0_fp_mem = special_uop && dispatch_fp_mem_plain;
   assign d1_valid = DUAL && iq_valid1 && !trace_mode && !seq_active && !dq1_uop.privileged;
@@ -2634,6 +2650,7 @@ module ppc_core #(
     ((c0_iu || c0_branch) && d1_lsu) ||
     (c0_iu && (d1_sru || d1_mem || d1_fp)) ||
     (c0_branch && (d1_iu || d1_mem || d1_fp)) || (c0_lane && (d1_iu || d1_fp)) ||
+    (c0_move && d1_iu) ||
     ((c0_fp || c0_fp_mem) && d1_iu);
   // As for DQ0, no station operand waits on an older lane access.
   // Beside an IU operation in DQ0, a DQ1 integer operation goes to the SRU;
