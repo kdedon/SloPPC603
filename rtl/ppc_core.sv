@@ -2630,8 +2630,9 @@ module ppc_core #(
   // A held update base is not yet in the register file.
   assign update_wait0 = update_pending_q && reads_reg(uop, update_reg_q);
   assign update_wait1 = update_pending_q && reads_reg(dq1_uop, update_reg_q);
-  // A held move enters the lane in the cycle its older work completes, so it
-  // executes the cycle after (UM 6.3.3.2). The lane reads LR and CTR in its
+  // A held mfspr enters the lane in the cycle its older work completes, so it
+  // executes the cycle after (UM 6.3.3.2). An mtspr takes two cycles
+  // (Table 6-2) and enters at the head. The lane reads LR and CTR in its
   // execute cycle, after a retiring branch or shadow LR has written them.
   // It does not enter early past a branch still unresolved, which the
   // retiring instruction's CR may resolve as mispredicted.
@@ -2662,7 +2663,8 @@ module ppc_core #(
     end
   endfunction
   assign sru_issue_go = sru_hold_q && sru_a_q.ready && !cq_empty &&
-    ((cq_head == sru_producer_q.index) || sru_head_next) &&
+    ((cq_head == sru_producer_q.index) ||
+     (sru_head_next && (sru_uop_q.special_op == SPECIAL_MFSPR))) &&
     !special_busy && !special_cancel && !recovery_accepted;
   // An access the unit hands over may be older than the held move.
   function automatic logic [CQ_INDEX_WIDTH-1:0] cq_age(logic [CQ_INDEX_WIDTH-1:0] i,
