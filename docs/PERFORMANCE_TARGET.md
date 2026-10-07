@@ -1180,6 +1180,44 @@ as foldable to an effective zero cycles. Neither fixes whether a counting
 branch takes a CQ entry. Closing it means a CTR shadow written in order,
 as round 18 did for LR, or a model change with a citation.
 
+The early entry is withheld while a predicted branch is unresolved
+(0178fe9). In Whetstone at w1, `mflr r0` in `cos` entered the lane as the
+`cmplw` ahead of it retired; that CR resolved the removed `bgt` between
+them as mispredicted, and the recovery killed the lane, tripping the
+special-lane kill assertion. The dispatch-rules failure (`retired
+0000fff0 was not dispatched`) was the checker reading the trace cut off
+by that abort. Dhrystone and CoreMark cycles are unchanged by the fix.
+
+At w1 Dhrystone is 622, one above round 18's 621. In `Func_2` the move
+now executes in the cycle the following `li r9,0` offers its result. At
+w1 the IU shares the one result port and yields while the lane holds it,
+then to the two `lbz` and the `stw` behind, so `li` completes four
+cycles late and the CQ fills (CQ_FULL, 3 cycles). This is the w1 result
+port, not a manual rule: the IU and SRU have their own result buses (UM
+6.3.3), as w2's second port shows. CoreMark w1 improves (4,760,510 to
+4,740,364).
+
+| | w1 | w2 |
+|---|---:|---:|
+| Dhrystone cycles/run | 622 | 533 |
+| CoreMark cycles (demo run) | 4,740,364 | 4,174,575 |
+| CoreMark cycles/iteration | 359,202 | 311,896 |
+
+Recorded: `make -C sim -j2 lint check-spec` and `make -C sim test-core test-core-full-decode` at the default configuration;
+at `DISPATCH_WIDTH=1` and `2` with `BRANCH_REMOVAL=1 VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe DEMO_FW_DIR=<main checkout>/toolchain/build/demo REFERENCE_DIR=<dingusppc>`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules test-core-interrupt test-core-interrupt-disabled test-core-branch-fold test-core-branch-recovery perf-diff`,
+`test-reference-machine MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`,
+`test-reference-machine-mmu MACHINE_MMU_ELF=<main checkout>/toolchain/build/chip-mmu-stress/smoke.elf`
+and CoreMark on the demo model (`+IMAGE=coremark.hex`); `quartus_map --analysis_and_elaboration`
+of `quartus/chip` with `PPC_LSU_PIPE=1 PPC_DISPATCH_WIDTH=2 PPC_BRANCH_REMOVAL=1`;
+commit 0178fe9, 2026-10-07. All pass (Quartus: 0 errors), except the known
+`test-core-branch-fold` REDEFMACRO stop at its built-in w2 build at w1; its w1
+program passes (checks=102,527). Dispatch rules pass Dhrystone, CoreMark and
+Whetstone at both widths (w1 Whetstone 3,939,931 retirements; w2 837,058 pairs
+dispatched). CoreMark CRCs match at both widths. Interrupt benches: 13,953 and
+382 checks. Reference: 5 programs and 7 negative controls at both widths; MMU
+stress 48,921 records and 210 interrupts at w1, 42,238 and 220 at w2.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
