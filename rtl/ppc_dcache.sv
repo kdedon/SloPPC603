@@ -222,18 +222,22 @@ module ppc_dcache #(
   // Shared tag-port read: the snoop lookup has priority.
   logic [SET_BITS-1:0] rd_set;
   logic [TAG_BITS-1:0] rd_tag;
-  logic [WAY_COUNT-1:0][TAG_BITS-1:0] tag_rdata;
-  logic [2*WAY_COUNT-1:0] st_rdata;
   lru_ranks_t lru_rdata;
   logic [WAY_COUNT-1:0] vld, drt, hitw;
   logic hit, hdirty, any_valid;
   logic [WAY_BITS-1:0] hway, victim;
-  // Registered copy of the read address, so the lookup cone starts at a
-  // flop: the snoop address while snp_valid_q, else req_addr_q.
-  logic [SET_BITS-1:0] rd_set_q;
-  logic [TAG_BITS-1:0] rd_tag_q;
+  // Registered copy of the read address: the snoop address while
+  // snp_valid_q, else req_addr_q.
+  logic [SET_BITS-1:0] rd_set_q, rd_set_d;
+  logic [TAG_BITS-1:0] rd_tag_q, rd_tag_d;
   assign rd_set = rd_set_q;
   assign rd_tag = rd_tag_q;
+  // The tag and state RAMs are read at the next cycle's address, with this
+  // edge's writes bypassed, so the hit vector and line state are registers.
+  logic [WAY_COUNT-1:0][TAG_BITS-1:0] tag_rdata, tag_next, tag_q;
+  logic [2*WAY_COUNT-1:0] st_rdata, st_next;
+  logic sv_next;
+  logic [WAY_COUNT-1:0] vld_q, drt_q, hitw_q;
 
   // Data arrays: one 512 x 64 byte-enabled RAM per way, addressed {set, dw}.
   logic [SET_BITS+1:0] data_raddr, data_waddr;
@@ -282,22 +286,43 @@ module ppc_dcache #(
   for (gw = 0; gw < WAY_COUNT; gw = gw + 1) begin : g_way
     ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(TAG_BITS)) tag_ram (
       .clk_i, .we_i(tag_we[gw]), .waddr_i(req_set), .wdata_i(req_tag),
-      .raddr_i(rd_set), .rdata_o(tag_rdata[gw])
+      .raddr_i(rd_set_d), .rdata_o(tag_rdata[gw])
     );
+    assign tag_next[gw] = (tag_we[gw] && req_set == rd_set_d) ? req_tag : tag_rdata[gw];
     ppc_ram_sdp_be #(.DEPTH(4*SET_COUNT), .BYTES(8)) data_ram (
       .clk_i, .we_i(data_be & {8{data_way_we[gw]}}), .waddr_i(data_waddr),
       .wdata_i(data_wdata), .raddr_i(data_raddr), .rdata_o(data_rdata[gw])
     );
-    assign vld[gw] = set_valid_q[rd_set] && st_rdata[gw];
-    assign drt[gw] = vld[gw] && st_rdata[WAY_COUNT + gw];
-    assign hitw[gw] = vld[gw] && tag_rdata[gw] == rd_tag;
+    always_ff @(posedge clk_i) begin
+      tag_q[gw] <= tag_next[gw];
+      vld_q[gw] <= sv_next && st_next[gw];
+      drt_q[gw] <= sv_next && st_next[gw] && st_next[WAY_COUNT + gw];
+      hitw_q[gw] <= sv_next && st_next[gw] && tag_next[gw] == rd_tag_d;
+    end
+    assign vld[gw] = vld_q[gw];
+    assign drt[gw] = drt_q[gw];
+    assign hitw[gw] = hitw_q[gw];
+    // synthesis translate_off
+    always_ff @(posedge clk_i) begin
+      if (rst_ni)
+        assert (tag_q[gw] == tag_ram.mem[rd_set] &&
+                vld[gw] == (set_valid_q[rd_set] && state_ram.mem[rd_set][gw]) &&
+                drt[gw] == (vld[gw] && state_ram.mem[rd_set][WAY_COUNT + gw]) &&
+                hitw[gw] == (vld[gw] && tag_ram.mem[rd_set] == rd_tag))
+          else $error("data cache registered lookup diverged from the RAMs");
+    end
+    // synthesis translate_on
   end
   endgenerate
 
   ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(2*WAY_COUNT)) state_ram (
     .clk_i, .we_i(st_we), .waddr_i(st_waddr), .wdata_i(st_wdata),
-    .raddr_i(rd_set), .rdata_o(st_rdata)
+    .raddr_i(rd_set_d), .rdata_o(st_rdata)
   );
+  assign st_next = (st_we && st_waddr == rd_set_d) ? st_wdata : st_rdata;
+  // The flash invalidate wins over a state write, as in set_valid_q.
+  assign sv_next = rst_ni && !(state_q == S_IDLE && hid0_dcfi_i && MUTATION != 7) &&
+                   (set_valid_q[rd_set_d] || (st_we && st_waddr == rd_set_d));
   ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(LRU_BITS)) lru_ram (
     .clk_i, .we_i(lru_we), .waddr_i(req_set), .wdata_i(lru_wdata),
     .raddr_i(rd_set), .rdata_o(lru_rdata)
@@ -614,7 +639,7 @@ module ppc_dcache #(
       lk_valid[victim] = 1'b0;
       lk_dirty[victim] = 1'b0;
       lk_cob = MUTATION != 1 && drt[victim];
-      lk_cob_line = {tag_rdata[victim], req_set};
+      lk_cob_line = {tag_q[victim], req_set};
     end
     lk_plan[P_COB] = lk_cob;
     // UM 4.5.2: the machine check is taken before the next instruction
@@ -901,6 +926,18 @@ module ppc_dcache #(
       fwd_wdata_q <= req_wdata_q;
     end
   end
+  always_comb begin
+    if (rst_ni && snoop_valid_i) begin
+      rd_set_d = snoop_addr_i[5 +: SET_BITS];
+      rd_tag_d = snoop_addr_i[31 -: TAG_BITS];
+    end else if (req_accept) begin
+      rd_set_d = req_addr_i[5 +: SET_BITS];
+      rd_tag_d = req_addr_i[31 -: TAG_BITS];
+    end else begin
+      rd_set_d = req_set;
+      rd_tag_d = req_tag;
+    end
+  end
   always_ff @(posedge clk_i) begin
     if (req_accept) begin
       req_op_q <= req_op_i;
@@ -934,16 +971,8 @@ module ppc_dcache #(
       snp_burst_q <= snoop_burst_i;
       snp_probe_q <= snoop_probe_i;
     end
-    if (rst_ni && snoop_valid_i) begin
-      rd_set_q <= snoop_addr_i[5 +: SET_BITS];
-      rd_tag_q <= snoop_addr_i[31 -: TAG_BITS];
-    end else if (req_accept) begin
-      rd_set_q <= req_addr_i[5 +: SET_BITS];
-      rd_tag_q <= req_addr_i[31 -: TAG_BITS];
-    end else begin
-      rd_set_q <= req_set;
-      rd_tag_q <= req_tag;
-    end
+    rd_set_q <= rd_set_d;
+    rd_tag_q <= rd_tag_d;
     cob_cap_idx_q <= step_idx_q;
     push_cap_idx_q <= push_idx_q;
   end
