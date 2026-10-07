@@ -392,6 +392,11 @@ module ppc_core #(
   logic shadow_over, shadow_live, shadow_keep_free, lk_busy, shadow_set0;
   completion_tag_t shadow_tag_q, shadow_arm_tag;
   logic [31:2] shadow_val_q;
+  logic cshadow_valid_q, cshadow_armed_q, cshadow_unarmed, cshadow_set, cshadow_arm;
+  logic cshadow_write, cshadow_over, cshadow_live, cshadow_keep, ctr_shadow_done, bu_ctr_remove;
+  completion_tag_t cshadow_tag_q;
+  logic [31:0] cshadow_val_q;
+  logic [31:2] ctr_arch;
   logic [31:0] bu_target, bu_next_pc, bu_target_q, frontend_target;
   logic owner_simple_q, owner_crf_valid_q, bu_cr_valid_q, bu_cr_capture;
   logic [2:0] owner_crf_q;
@@ -804,7 +809,11 @@ module ppc_core #(
   logic [31:2] lr_front_q, lr_disp_q, lr_fold;
   assign lr_ok = lr_free || lr_front_ok_q;
   assign lr_fold = lr_free ? lr[31:2] : lr_front_q;
-  assign ctr_free = (ctr_iq_q == '0) && !ctr_pending_q;
+  // A removed counting bc whose older work has all retired, with nothing
+  // allocated since, has completed: CTR is the shadow's value.
+  assign ctr_shadow_done = cshadow_unarmed && cq_empty;
+  assign ctr_arch = ctr_shadow_done ? cshadow_val_q[31:2] : ctr[31:2];
+  assign ctr_free = (ctr_iq_q == '0) && (!ctr_pending_q || ctr_shadow_done);
   // A CTR-testing bc decrements a CTR known when it is queued or dispatched
   // (UM 6.4.1.1): ctr_disp_q is the CTR left by the youngest dispatched
   // writer and ctr_front_q by the youngest queued one, each valid
@@ -921,7 +930,7 @@ module ppc_core #(
   assign fold_pc = fold_predict ? queued.pc : queued1.pc;
   assign fold_insn = fold_predict ? queued.insn : queued1.insn;
   assign fold_target = (fold_insn[31:26] == 6'd19) ?
-    {(fold_insn[10] ? ctr[31:2] : lr_fold[31:2]), 2'b00} :
+    {(fold_insn[10] ? ctr_arch : lr_fold[31:2]), 2'b00} :
     (fold_insn[1] ? 32'b0 : fold_pc) +
     ((fold_insn[31:26] == 6'd18) ?
       {{6{fold_insn[25]}}, fold_insn[25:2], 2'b00} :
@@ -1207,9 +1216,13 @@ module ppc_core #(
     end
   end
   always_ff @(posedge clk_i) begin
-    if (!rst_ni || recovery_accepted || bs_now) ctr_disp_ok_q <= 1'b0;
-    else if (dispatch && pop_writes[0]) begin
-      ctr_disp_ok_q <= iq_uop.special_op != SPECIAL_MTSPR;
+    if (!rst_ni || bs_now) ctr_disp_ok_q <= 1'b0;
+    else if (recovery_accepted) begin
+      // A kept CTR shadow is the only CTR writer left.
+      ctr_disp_ok_q <= cshadow_keep;
+      ctr_disp_q <= cshadow_val_q;
+    end else if (cshadow_set || (dispatch && pop_writes[0])) begin
+      ctr_disp_ok_q <= cshadow_set || (iq_uop.special_op != SPECIAL_MTSPR);
       ctr_disp_q <= ctr_bu - 32'd1;
     end
     if (!rst_ni || frontend_clear) ctr_front_ok_q <= 1'b0;
@@ -1421,17 +1434,26 @@ module ppc_core #(
   // The count saturates; a further branch then takes an entry.
   // A bl leaves too when the shadow LR is free and nothing older is
   // predicted (UM 6.3.1, 6.6.1.1).
+  // A bc counting CTR leaves when no older CTR writer is uncommitted, its
+  // CR is final and nothing older is predicted; the CTR shadow holds the
+  // count (UM 6.3.1, 6.6.1.1).
+  assign bu_ctr_remove = (uop.special_op == SPECIAL_BC) && !uop.branch_lk && !bu_spec &&
+    !ctr_pending_q && !cshadow_valid_q && !bs_busy && !recovery_accepted;
   assign bu_remove = BRANCH_REMOVAL && bu_branch && (!bu_spec || BS_ANCHOR) &&
     (!uop.branch_lk || ((uop.special_op == SPECIAL_B) && !shadow_valid_q && !bs_busy &&
                         !recovery_accepted)) &&
-    !bu_writes_ctr && ({1'b0, removed_q} + {1'b0, iq_rb_first} <= 3'd2);
+    (!bu_writes_ctr || bu_ctr_remove) && ({1'b0, removed_q} + {1'b0, iq_rb_first} <= 3'd2);
   // A failing CTR test resolves the branch without its CR (UM 6.4.1.1).
   // A prediction resolving as predicted lets the next one start (UM 6.4.1.2).
   assign bu_ready = !(bu_reads_cr && bu_ctr_ok && flags_busy &&
                       (!bu_cr_valid_q || flags_waiter) && !ENABLE_BRANCH_SPEC) &&
     !(bu_reads_cr && bu_ctr_ok && (fp_cr_pending || (bs_busy && !bs_hit))) &&
     !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) &&
-    !(bu_reads_ctr && !((uop.special_op == SPECIAL_BC) ? ctr_bu_ok : !ctr_pending_q)) &&
+    !(bu_reads_ctr && !((uop.special_op == SPECIAL_BC) ? ctr_bu_ok :
+                        (!ctr_pending_q || ctr_shadow_done))) &&
+    // A younger CTR reader waits for a removed counting bc to complete
+    // (UM 6.4.1.1).
+    !(bu_reads_ctr && cshadow_valid_q && !ctr_shadow_done) &&
     !(uop.branch_lk && (uop.special_op != SPECIAL_B) && lk_busy);
   // BO[0..3] are branch_bo[4..1]; the decrement leaves zero when CTR is 1.
   assign bu_ctr_ok = uop.branch_bo[2] || ((ctr_bu != 32'd1) ^ uop.branch_bo[1]);
@@ -1685,7 +1707,7 @@ module ppc_core #(
   always_comb begin
     case (uop.special_op)
       SPECIAL_BCLR: bu_target = {(lr_pending_q ? lr_disp_q : lr[31:2]), 2'b00};
-      SPECIAL_BCCTR: bu_target = {ctr[31:2], 2'b00};
+      SPECIAL_BCCTR: bu_target = {ctr_arch, 2'b00};
       default: bu_target = uop.branch_aa ? uop.branch_disp :
                                            iq_head.pc + uop.branch_disp;
     endcase
@@ -1742,6 +1764,39 @@ module ppc_core #(
   end
   always_ff @(posedge clk_i)
     if (shadow_set) shadow_val_q <= (shadow_set0 ? iq_head.pc[31:2] : dq1_head.pc[31:2]) + 30'd1;
+  // The CTR shadow does the same for a removed counting bc, written as the
+  // next allocated entry reaches the CQ head. A counting branch retiring
+  // older than that entry has its decrement already in the shadow.
+  always_comb begin
+    cshadow_live = 1'b0;
+    for (int i = 0; i < CQ_DEPTH; i++)
+      if ((i < int'(recovery_count)) && (recovery_tags[i] == cshadow_tag_q)) cshadow_live = 1'b1;
+  end
+  assign cshadow_unarmed = cshadow_valid_q && !cshadow_armed_q;
+  assign cshadow_set = dispatch && bu_remove && bu_writes_ctr;
+  assign cshadow_arm = (cshadow_set || cshadow_unarmed) && !recovery_accepted &&
+    ((dispatch && !bu_remove) || (dispatch1 && !d1_remove));
+  assign cshadow_write = cshadow_valid_q && cshadow_armed_q &&
+    ((!cq_empty && (cq_head == cshadow_tag_q.index)) ||
+     (commit1 && (retire1_producer == cshadow_tag_q)));
+  assign cshadow_over = cshadow_write && !branch_retire1 && (retire_producer != cshadow_tag_q);
+  assign cshadow_keep = cshadow_valid_q && !cshadow_write && bs_recover &&
+    !(cshadow_armed_q && cshadow_live);
+  always_ff @(posedge clk_i) begin
+    if (!rst_ni || cshadow_write) begin
+      cshadow_valid_q <= 1'b0;
+      cshadow_armed_q <= 1'b0;
+    end else if (recovery_accepted) begin
+      cshadow_valid_q <= cshadow_valid_q && (bs_recover || (cshadow_armed_q && cshadow_live));
+      cshadow_armed_q <= cshadow_armed_q && cshadow_live;
+    end else if (cshadow_set || cshadow_arm) begin
+      cshadow_valid_q <= 1'b1;
+      cshadow_armed_q <= cshadow_arm;
+      cshadow_tag_q <= shadow_arm_tag;
+    end
+  end
+  always_ff @(posedge clk_i)
+    if (cshadow_set) cshadow_val_q <= ctr_bu - 32'd1;
   // A writer is pending until the youngest one retires or the CQ empties.
   // lk_pending_q tracks linking branches: a younger one other than b waits
   // for them to complete (UM 6.4.1.1).
@@ -1761,9 +1816,11 @@ module ppc_core #(
           ((commit && (retire_producer == lr_writer_q)) ||
            (commit1 && (retire1_producer == lr_writer_q)))))
         lr_pending_q <= 1'b0;
-      if (cq_empty || (commit && (retire_producer == ctr_writer_q)) ||
-          (commit1 && (retire1_producer == ctr_writer_q)))
+      if ((cq_empty && !cshadow_valid_q) || (!cshadow_unarmed &&
+          ((commit && (retire_producer == ctr_writer_q)) ||
+           (commit1 && (retire1_producer == ctr_writer_q)))))
         ctr_pending_q <= 1'b0;
+      if (cshadow_arm) ctr_writer_q <= shadow_arm_tag;
       if ((cq_empty && !shadow_valid_q) || (!shadow_unarmed &&
           ((commit && (retire_producer == lk_writer_q)) ||
            (commit1 && (retire1_producer == lk_writer_q)))))
@@ -1778,8 +1835,9 @@ module ppc_core #(
       end
       if (dispatch && pop_writes[0]) begin
         ctr_pending_q <= 1'b1;
-        ctr_writer_q <= alloc_producer;
+        ctr_writer_q <= bu_remove ? shadow_arm_tag : alloc_producer;
       end
+      if (cshadow_set) ctr_pending_q <= 1'b1;
       if (dispatch1 && pop1_writes[1]) begin
         lr_pending_q <= 1'b1;
         lr_writer_q <= alloc1_producer;
@@ -2095,9 +2153,11 @@ module ppc_core #(
     .branch_retire_i((commit && retire_o.branch) || branch_retire1),
     .branch_retire_lk_i(branch_retire1 ? retire1_o.branch_lk :
                         (retire_o.branch_lk && !shadow_over)),
-    .branch_retire_ctr_i(branch_retire1 ? retire1_o.branch_ctr : retire_o.branch_ctr),
+    .branch_retire_ctr_i(branch_retire1 ? retire1_o.branch_ctr :
+                         (retire_o.branch_ctr && !cshadow_over)),
     .branch_retire_pc_i(branch_retire1 ? retire1_o.pc : retire_o.pc),
     .shadow_lr_write_i(shadow_write), .shadow_lr_i({shadow_val_q, 2'b00}),
+    .shadow_ctr_write_i(cshadow_write), .shadow_ctr_i(cshadow_val_q),
     .dispatch_page_miss_i(sp_page_miss),
     .a_i(sp_a), .b_i(sp_b), .c_i(sp_c),
     .cr_i(cr), .xer_flags_i(xer[XER_SO_BIT:XER_CA_BIT]),
@@ -2525,7 +2585,11 @@ module ppc_core #(
   function automatic logic [CQ_INDEX_WIDTH-1:0] cq_next(logic [CQ_INDEX_WIDTH-1:0] i);
     return (i == CQ_INDEX_WIDTH'(CQ_DEPTH - 1)) ? '0 : i + 1'b1;
   endfunction
+  // A move that is a shadow's tagged entry waits for the head, where the
+  // shadow writes.
   assign sru_head_next = commit && !bs_busy && !(special_producer == retire_producer) &&
+    !(shadow_valid_q && shadow_armed_q && (sru_producer_q == shadow_tag_q)) &&
+    !(cshadow_valid_q && cshadow_armed_q && (sru_producer_q == cshadow_tag_q)) &&
     (commit1 ? (!(special_producer == retire1_producer) &&
                 (cq_next(cq_next(cq_head)) == sru_producer_q.index)) :
                (cq_next(cq_head) == sru_producer_q.index));
@@ -3135,8 +3199,11 @@ module ppc_core #(
       assert (d1_branch) else $error("folded DQ1 branch left the branch unit");
     // A folded bclr or bcctr found its target register final at fetch.
     if (rst_ni && iq_valid && iq_folded && !trace_mode)
-      assert (!(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) && !(iq_branch[1] == 1'b0 &&
-              iq_head.insn[31:26] == 6'd19 && ctr_pending_q))
+      assert (!(bu_reads_lr && lr_pending_q && !lr_disp_ok_q))
+        else $error("folded branch target register still pending");
+    if (rst_ni && dispatch && iq_folded && !trace_mode)
+      assert (!(iq_branch[1] == 1'b0 && iq_head.insn[31:26] == 6'd19 && ctr_pending_q &&
+                !ctr_shadow_done))
         else $error("folded branch target register still pending");
     if (rst_ni && dispatch && bu_branch && iq_folded && bu_taken && iq_valid1)
       assert ((dq1_rb != 2'd0) || (dq1_head.pc == bu_target))

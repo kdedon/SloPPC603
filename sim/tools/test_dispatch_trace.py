@@ -139,9 +139,22 @@ class DispatchRulesTest(unittest.TestCase):
         # A bl leaves through the shadow LR; a bcl (0x414) does not.
         check_rules(text.replace('00000404*', '00000408*').split('\n'), 2, words, False)
         words[0x414] = 0x42800009
-        for label, pc in (('linking bc', '00000414'), ('counting', '00000410'), ('not a branch', '0000040c')):
+        # A bdnz leaves through the shadow CTR; a bdnzl (0x418), a bdnzlr
+        # (0x41c) and a bcctr (0x420) writing CTR do not.
+        check_rules(text.replace('00000404*', '00000410*').split('\n'), 2, words, False)
+        words.update({0x418: 0x4200fff1, 0x41c: 0x4e000020, 0x420: 0x4e000420})
+        for label, pc in (('linking bc', '00000414'), ('counting bc with LK', '00000418'),
+                          ('counting bclr', '0000041c'), ('counting bcctr', '00000420'),
+                          ('not a branch', '0000040c')):
             with self.subTest(label), self.assertRaises(ValueError):
                 check_rules(text.replace('00000404*', pc + '*').split('\n'), 2, words, False)
+        # A bc on CTR dispatches only once the removed bdnz's older add completes.
+        words[0x424] = 0x4200fff0
+        late = '1 D2 R0 00000400 00000410* |\n2 D0 R1 | 00000400\n3 D1 R0 00000424 |\n4 D0 R1 | 00000424'
+        check_rules(late.split('\n'), 2, words, False)
+        early = '1 D2 R0 00000400 00000410* |\n2 D1 R0 00000424 |\n3 D0 R2 | 00000400 00000424'
+        with self.subTest('bdnz before the removed bdnz completes'), self.assertRaises(ValueError):
+            check_rules(early.split('\n'), 2, words, False)
         # A bcl dispatches only once the removed bl's older add completes.
         late = '1 D2 R0 00000400 00000408* |\n2 D0 R1 | 00000400\n3 D1 R0 00000414 |\n4 D0 R1 | 00000414'
         check_rules(late.split('\n'), 2, words, False)

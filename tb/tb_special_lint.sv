@@ -75,12 +75,16 @@ module tb_special_lint #(
   logic [31:0] branch_retire_pc_i;
   logic shadow_lr_write_i;
   logic [31:0] shadow_lr_i;
+  logic shadow_ctr_write_i;
+  logic [31:0] shadow_ctr_i;
   assign branch_retire_i = 1'b0;
   assign branch_retire_lk_i = 1'b0;
   assign branch_retire_ctr_i = 1'b0;
   assign branch_retire_pc_i = '0;
   assign shadow_lr_write_i = 1'b0;
   assign shadow_lr_i = '0;
+  assign shadow_ctr_write_i = 1'b0;
+  assign shadow_ctr_i = '0;
   wire result_ready_i = '0;
   wire dmem_req_ready_i = '0;
   wire dmem_rsp_valid_i = '0;

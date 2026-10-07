@@ -148,15 +148,18 @@ module tb_core_control_memory #(
     assert(condition) else $fatal(1, "%s edge=%0d retired=%0d pc=%08x insn=%08x",
                                  message, edge_count, retirements, retired.pc, retired.insn);
   endtask
-  // b, bc, bclr or bcctr without LK or a CTR decrement: the core may remove
-  // it at dispatch (UM 6.3.1); the next packet counts it.
+  // b, bc, bclr or bcctr without LK or a CTR decrement, or a bc counting CTR
+  // without LK: the core may remove it at dispatch (UM 6.3.1); the next
+  // packet counts it.
   /* verilator lint_off UNUSEDSIGNAL */  // only the opcode, BO[2] and LK fields
   function automatic logic removable_branch(input logic [31:0] insn);
     logic branch;
     branch = (insn[31:26] == 6'd18) || (insn[31:26] == 6'd16) ||
              ((insn[31:26] == 6'd19) && ((insn[10:1] == 10'd16) || (insn[10:1] == 10'd528)));
-    // A bl links through the shadow LR (UM 6.6.1.1).
-    return branch && ((insn[31:26] == 6'd18) || (!insn[0] && insn[23]));
+    // A bl links through the shadow LR, a bc counts through the shadow CTR
+    // (UM 6.6.1.1).
+    return branch && ((insn[31:26] == 6'd18) ||
+                      (!insn[0] && (insn[23] || (insn[31:26] == 6'd16))));
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
   task automatic read_expected(output logic [31:0] value);

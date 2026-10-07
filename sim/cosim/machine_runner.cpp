@@ -281,7 +281,9 @@ int main(int argc, char** argv) {
         // after n records without needing the exit store; keep copies the first
         // 200000 records; mutate and drop corrupt the RTL trace for negative
         // tests (staddr moves a store to the other word of its doubleword;
-        // lrbl corrupts LR in the first record from there after a removed bl).
+        // lrbl corrupts LR in the first record from there after a removed bl,
+        // ctrbd CTR after a removed bdnz). removable=<word> fails unless the
+        // word may be removed at dispatch.
         if (argc < 3) throw std::runtime_error("usage: machine_runner image.hex trace [key=value...]");
         loguru::g_stderr_verbosity = loguru::Verbosity_WARNING;
         std::vector<std::pair<uint32_t, uint32_t>> rams;
@@ -290,6 +292,7 @@ int main(int argc, char** argv) {
         bool exit_io = false, exit_mailbox = false;
         uint64_t max_records = ~0ULL, drop = ~0ULL;
         std::map<uint64_t, std::string> mutations;
+        std::vector<uint32_t> removable_words;
         std::string keep;
         for (int i = 3; i < argc; ++i) {
             std::string arg = argv[i];
@@ -307,6 +310,7 @@ int main(int argc, char** argv) {
             else if (arg == "fpu") { adapter_fpu = true; }
             else if (key == "keep") { keep = value; }
             else if (key == "drop") { drop = std::stoull(value); }
+            else if (key == "removable") { removable_words.push_back(hex(value)); }
             else if (key == "mutate") {
                 colon = value.find(':');
                 mutations[std::stoull(value.substr(0, colon))] = value.substr(colon + 1);
@@ -369,8 +373,8 @@ int main(int argc, char** argv) {
         bool done = false, miss_vector = false, direct_vector = false;
         uint64_t misses = 0, direct = 0, failed_conditional = 0, undefined = 0, discarded_loads = 0;
         uint64_t removed = 0, late_stores = 0, deferred_bytes = 0;
-        bool removed_bl = false;
-        uint64_t removed_links = 0;
+        bool removed_bl = false, removed_count = false;
+        uint64_t removed_links = 0, removed_counts = 0;
         // Bytes of retired stores the RTL trace has not yet written: the store
         // queue performs a store after younger instructions retire (UM 1.1.4.3).
         uint64_t bytes_owed = 0;
@@ -390,25 +394,35 @@ int main(int argc, char** argv) {
             for (auto& r : recent) text << "\n    " << r.substr(0, 200);
             throw std::runtime_error(text.str());
         };
-        // Branches the RTL removed at dispatch (UM 6.3.1): no CTR write, and
-        // LR only from a bl through the shadow LR, which the next record
-        // carries. They retire without a record and the reference steps them.
+        // Branches the RTL removed at dispatch (UM 6.3.1): CTR written only by
+        // a bc through the shadow CTR, and LR only by a bl through the shadow
+        // LR; the next record carries both. They retire without a record and
+        // the reference steps them.
+        auto removable = [](uint32_t w) {
+            uint32_t op = w >> 26, xo = (w >> 1) & 1023;
+            bool branch = op == 18 || op == 16 || (op == 19 && (xo == 16 || xo == 528));
+            bool ctr = op != 18 && !((w >> 23) & 1);
+            return branch && (!(w & 1) || op == 18) && (!ctr || op == 16);
+        };
+        for (uint32_t w : removable_words)
+            if (!removable(w)) fail("removable word " + h8(w) + " is not a branch that writes CTR only as a bc"
+                                    ", and LR only as a bl");
         auto step_removed = [&](unsigned n) {
             for (unsigned i = 0; i < n; ++i) {
                 uint32_t w = 0, at = ppc_state.pc;
                 if (!fetch_word(w)) fail("removed instruction at " + h8(at) + " faulted on fetch");
-                uint32_t op = w >> 26, xo = (w >> 1) & 1023;
-                bool branch = op == 18 || op == 16 || (op == 19 && (xo == 16 || xo == 528));
-                bool ctr = op != 18 && !((w >> 23) & 1);
-                if (!branch || ((w & 1) && op != 18) || ctr)
+                uint32_t op = w >> 26;
+                if (!removable(w))
                     fail("removed instruction at " + h8(ppc_state.pc) + " " + h8(w) +
-                         " is not a branch without CTR writes, and LR only as a bl");
+                         " is not a branch that writes CTR only as a bc, and LR only as a bl");
                 uint64_t step_exceptions = exceptions_processed;
                 step_untimed();
                 if (exceptions_processed != step_exceptions)
                     fail("removed branch at " + h8(w) + " took an exception");
                 removed_bl |= op == 18 && (w & 1);
                 removed_links += op == 18 && (w & 1);
+                removed_count |= op == 16 && !((w >> 23) & 1);
+                removed_counts += op == 16 && !((w >> 23) & 1);
                 ++removed;
                 ++instructions;
             }
@@ -440,9 +454,9 @@ int main(int argc, char** argv) {
                                           hex(value.substr(c2 + 1))});
                 } else rtl[field_index(name)] = hex(value);
             }
-            removed_bl = false;
+            removed_bl = removed_count = false;
             auto m = mutations.find(records);
-            if (m != mutations.end() && m->second != "stlate" && m->second != "lrbl") {
+            if (m != mutations.end() && m->second != "stlate" && m->second != "lrbl" && m->second != "ctrbd") {
                 bool store = m->second == "st" || m->second == "staddr";
                 if (!store) rtl[field_index(m->second)] ^= 1;
                 else if (rtl_stores.empty()) mutations[records + 1] = m->second;
@@ -638,6 +652,10 @@ int main(int argc, char** argv) {
                 if (removed_bl) rtl[field_index("lr")] ^= 4;
                 else mutations[records + 1] = "lrbl";
             }
+            if (m != mutations.end() && m->second == "ctrbd") {
+                if (removed_count) rtl[field_index("ctr")] ^= 1;
+                else mutations[records + 1] = "ctrbd";
+            }
             auto ref = reference_state();
             std::string diff;
             for (int i = 0; i < FIELDS; ++i)
@@ -714,7 +732,7 @@ int main(int argc, char** argv) {
                   << " exceptions=" << exceptions << " tlb_misses=" << misses << " direct_store=" << direct << " interrupts=" << async << " stores=" << stores
                   << " store_bytes=" << store_bytes << " failed_stwcx=" << failed_conditional << " io_reads=" << io.reads
                   << " timing_reads=" << timing << " removed_branches=" << removed
-                  << " removed_bl=" << removed_links
+                  << " removed_bl=" << removed_links << " removed_bdnz=" << removed_counts
                   << " late_stores=" << late_stores << " deferred_bytes=" << deferred_bytes
 #if SUPPORTS_PPC_LITTLE_ENDIAN_MODE
                   << " le_misaligned=" << le_misaligned_count << " le_fp_split=" << le_fp_split_count

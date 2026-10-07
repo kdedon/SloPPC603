@@ -95,7 +95,9 @@ def classify(word, sru):
     if op in (16, 18) or (op == 19 and xo in (16, 528)):
         lk = word & 1
         ctr = op == 19 and xo == 16 and not (word >> 23) & 1 or op == 16 and not (word >> 23) & 1
-        c.update(units={BPU}, writes=[0, 0, 0, lk, int(bool(ctr))],
+        # The invalid counting bcctr form counts as a CTR write too.
+        counts = bool(ctr) or op == 19 and not (word >> 23) & 1
+        c.update(units={BPU}, writes=[0, 0, 0, lk, int(counts)],
                  cond=op != 18 and (word >> 21) & 0x14 != 0x14,
                  branch='b' if op == 18 else 'bc' if op == 16 else 'bclr' if xo == 16 else 'bcctr',
                  cr_test=op != 18 and not (word >> 25) & 1, ctr_test=bool(ctr))
@@ -220,6 +222,7 @@ class Rules:
         # [pc, dispatch cycle, sequence number, flushed, class, order] in dispatch order
         self.inflight = []
         self.removed_lk = []
+        self.removed_ctr = []
         self.seq = 0
         self.order = 0          # dispatch order, counting removed branches
         self.stream = []        # (order, class, removed, cycle, pc) of recent dispatches
@@ -333,13 +336,18 @@ class Rules:
             if gone:
                 # UM 6.3.1, 6.4.1.1: a branch the BPU resolves retires without
                 # a completion entry if it writes no CTR, and LR only as a bl
-                # through the shadow LR (UM 6.6.1.1).
-                require(c is None or (c['units'] == {BPU} and not any(c['writes'][4:]) and
+                # through the shadow LR; a bc counting CTR without LK writes
+                # CTR through the shadow CTR (UM 6.6.1.1).
+                require(c is None or (c['units'] == {BPU} and
+                                      (not any(c['writes'][4:]) or
+                                       (c['branch'] == 'bc' and not c['writes'][3])) and
                                       (not c['writes'][3] or c['branch'] == 'b')),
                         f'cycle {cycle}: {pc:08x} removed at dispatch but is not a branch that '
-                        'writes no CTR, and LR only as a bl (TIM-BPU-FOLD)')
+                        'writes CTR only as a bc, and LR only as a bl (TIM-BPU-FOLD)')
                 if c and c['writes'][3]:
                     self.removed_lk.append((self.seq, pc))
+                if c and c['writes'][4]:
+                    self.removed_ctr.append((self.seq, pc))
                 st['dispatches'] += 1
                 st['removed'] += 1
                 continue
@@ -395,6 +403,13 @@ class Rules:
         if c and c['branch'] and c['writes'][3] and c['branch'] != 'b':
             for _, bl in self.removed_lk:
                 require(False, f'cycle {cycle}: {pc:08x} dispatched before the removed bl {bl:08x} '
+                               'completes (TIM-BPU-FETCH-STOP)')
+        # Likewise a removed bc on CTR, before a younger bc on CTR or bcctr.
+        self.removed_ctr = [r for r in self.removed_ctr
+                            if any(e[2] <= r[0] and not e[3] for e in self.inflight)]
+        if c and (c['ctr_test'] or c['branch'] == 'bcctr'):
+            for _, bc in self.removed_ctr:
+                require(False, f'cycle {cycle}: {pc:08x} dispatched before the removed bc {bc:08x} '
                                'completes (TIM-BPU-FETCH-STOP)')
         for older, _, waiter, kind in self.stops:
             require(False, f'cycle {cycle}: {pc:08x} dispatched while branch {waiter:08x} waits for '

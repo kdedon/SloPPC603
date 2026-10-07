@@ -18,7 +18,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
   logic cv,cr,ci,cd,cp,red,red_accept;
   completion_tag_t pivot;
   logic ipending=0,dpending=0,pivot_seen=0,cut_done=0,done=0;
-  logic [31:0] fetch_pc,model_pc,model_msr,model_lr,srr0,srr1,regs[32];
+  logic [31:0] fetch_pc,model_pc,model_msr,model_lr,model_ctr,srr0,srr1,regs[32];
   logic [31:0] selected=32'h8030;
   int phase=0,cycles=0,idelay=0,ddelay=0,checks=0,retires=0;
   int irq_count=0,stores=0,loads=0,ctx_wait=0,held_retire=0,held_offer=0;
@@ -119,7 +119,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       16:return 32'h3c600000|{16'b0,selected[31:16]};
       20:return 32'h60630000|{16'b0,selected[15:0]};
       24:return addi(4,0,'h55);
-      28:return addi(5,0,3);
+      28:return phase==12 ? spr(1,4,9) : addi(5,0,3);
       32:return 32'h7c600124;
       36:return addi(10,0,'h77);
       40:case(phase)
@@ -130,13 +130,14 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
         7:return 32'h90801004; // ignored synchronous fault payload
         8,9:return 32'h7cc42bd6; // divw r6,r4,r5
         11:return 32'h480000d9; // bl 0x100
+        12:return 32'h420000d8; // bdnz 0x100
         default:return addi(6,0,17);
       endcase
       44:return 32'h7d6000a6;
       48:return addi(3,0,0);
       52:return 32'h7c600124;
       56,32'h200:return addi(31,0,123);
-      'h100:return phase==11 ? spr(0,10,8) : addi(10,0,'h66);
+      'h100:return phase==11 ? spr(0,10,8) : phase==12 ? spr(0,10,9) : addi(10,0,'h66);
       'h104:return 32'h4bffff28; // b 0x2c
       default:begin
         case(pc & 32'h0000ffff)
@@ -181,7 +182,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       ipending<=0;dpending<=0;fetch_pc<=0;idelay<=0;ddelay<=0;
       cycles<=0;ctx_wait<=0;held_retire<=0;held_offer<=0;pivot_seen<=0;cut_done<=0;pivot<='0;
       irq<=(phase==1||phase==5||!ENABLE_EXTERNAL_INTERRUPTS);
-      model_pc=0;model_msr=0;model_lr=0;srr0=0;srr1=0;irq_count=0;stores=0;loads=0;retires=0;sync_events=0;done=0;
+      model_pc=0;model_msr=0;model_lr=0;model_ctr=0;srr0=0;srr1=0;irq_count=0;stores=0;loads=0;retires=0;sync_events=0;done=0;
       foreach(regs[i])regs[i]=0;
     end else begin
       cycles<=cycles+1;
@@ -211,6 +212,8 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       // A bl removed at dispatch leaves LR to the next entry: the IRQ is
       // raised in that window and must see LR unwritten.
       if(phase==11&&irq_count==0&&dut.shadow_set)irq<=1;
+      // Likewise a bdnz removed at dispatch leaves CTR to the next entry.
+      if(phase==12&&irq_count==0&&dut.cshadow_set)irq<=1;
       if((phase==8||phase==9)&&dut.dispatch&&dut.iq_head.pc==32'h28)begin
         pivot<=dut.alloc_producer;pivot_seen<=1;irq<=1;
       end
@@ -223,6 +226,8 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
         check(irq_pc==model_pc,"IRQ saved next PC differs from independent committed stream");
         check(dut.lr==model_lr,"IRQ saw LR other than the committed stream's");
         if(phase==11)check(irq_pc==(dut.BRANCH_REMOVAL?'h28:'h100),"removed bl IRQ resume PC");
+        check(dut.ctr==model_ctr,"IRQ saw CTR other than the committed stream's");
+        if(phase==12)check(irq_pc==(dut.BRANCH_REMOVAL?'h28:'h100),"removed bdnz IRQ resume PC");
         if(phase==1||phase==5)check(irq_pc=='h24,"EE enable executed a following instruction before IRQ");
         // An IRQ at a removed b resumes at the b.
         if(phase==2)check(irq_pc==(dut.BRANCH_REMOVAL?'h28:'h100),"branch target lost as IRQ resume PC");
@@ -238,8 +243,9 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
         check(!taken,"IRQ must not synthesize or share an instruction retirement");
         for(int k=0;k<int'(retired.removed_branches);k++)begin
           check(word_at(model_pc)==32'h480000d8||word_at(model_pc)==32'h480000d9||
-                word_at(model_pc)==32'h4bffff28,"removed branch identity");
+                word_at(model_pc)==32'h420000d8||word_at(model_pc)==32'h4bffff28,"removed branch identity");
           if(word_at(model_pc)==32'h480000d9)model_lr=model_pc+4;
+          if(word_at(model_pc)==32'h420000d8)begin check(model_ctr!=1,"bdnz falls through");model_ctr--;end
           model_pc=(word_at(model_pc)==32'h4bffff28)?32'h2c:32'h100;
         end
         check(retired.pc==model_pc&&retired.insn==word_at(model_pc),"ordered architectural retirement identity");
@@ -258,6 +264,9 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
           else if(insn==32'h480000d8)begin next_pc='h100;irq<=1;end
           else if(insn==32'h480000d9)begin next_pc='h100;model_lr=model_pc+4;if(irq_count==0)irq<=1;end
           else if(insn==spr(0,rt,8))begin writes=1;value=model_lr;end
+          else if(insn==32'h420000d8)begin check(model_ctr!=1,"bdnz falls through");next_pc='h100;model_ctr--;if(irq_count==0)irq<=1;end
+          else if(insn==spr(1,4,9))model_ctr=regs[4];
+          else if(insn==spr(0,rt,9))begin writes=1;value=model_ctr;end
           else if(insn==32'h4bffff28)next_pc='h2c;
           else if(insn==32'h7cc42bd6)begin writes=1;value=28;end // 0x55 / 3
           else if(insn==32'h80c01000)begin writes=1;value=32'haabb0011;end
@@ -292,13 +301,14 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       check(stores==(phase==4?1:0)&&loads==((phase==3||phase==10)?1:0),"duplicate or missing memory side effect");
       if(phase!=0&&phase!=10)check(regs[23]=='h1234&&regs[24]=='h5678,"IRQ damaged DAR/DSISR");
       if(phase==8)check(regs[6]==28,"retained divider failed to complete");
+      if(phase==12)check(regs[10]=='h54&&dut.ctr=='h54,"bdnz counted other than once");
       if(phase==9)check(regs[6]==0,"killed divider wrote a destination");
     end
     $display("PASS external IRQ enabled=%0d phase=%0d msr=%08x events=%0d retires=%0d stores=%0d loads=%0d",ENABLE_EXTERNAL_INTERRUPTS,phase,selected,irq_count,retires,stores,loads);
   endtask
   initial begin
     if(ENABLE_EXTERNAL_INTERRUPTS)begin
-      for(int scenario=0;scenario<12;scenario++)run(scenario,32'h8030);
+      for(int scenario=0;scenario<13;scenario++)run(scenario,32'h8030);
       run(1,32'h8070);
     end else run(1,32'h8030);
     $display("PASS external IRQ total checks=%0d",checks);$finish;
