@@ -2823,6 +2823,10 @@ module ppc_core #(
     .result_valid_i(result_valid), .result_ready_o(result_ready), .result_i(result),
     // UM 6.6.1: an IU or LSU result completes in its writeback cycle.
     .result_retire_i(lsu_result_offer || !special_result_select),
+    .wake_sel_i({lsu_result_offer, !lsu_result_offer && special_result_select,
+                 !lsu_result_offer && !special_result_select}),
+    .wake_cand_valid_i({lsu_result_valid, special_result_valid, iu_result_valid}),
+    .wake_cand_i({lsu_result, special_result, iu_result}),
     .finish_accept_o(cq_finish_accept),
     .wake_valid_o(wake_valid), .wake_o(wake),
     .result1_valid_i(sru_result_valid || iu_port1), .result1_i(result1),

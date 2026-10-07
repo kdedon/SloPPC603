@@ -41,6 +41,11 @@ module ppc_completion #(
   input ppc_pkg::result_packet_t result_i,
   // The result may retire in the cycle it arrives.
   input logic result_retire_i,
+  // The port's candidate results and their one-hot owner, so the wake
+  // lookups need not wait for the port's selection.
+  input logic [2:0] wake_sel_i,
+  input logic [2:0] wake_cand_valid_i,
+  input ppc_pkg::result_packet_t [2:0] wake_cand_i,
   output logic finish_accept_o,
   output logic wake_valid_o,
   output ppc_pkg::wake_packet_t wake_o,
@@ -319,13 +324,6 @@ module ppc_completion #(
     alloc1_tag_o.generation = generations_q[alloc1_tag_o.index] + CQ_GENERATION_WIDTH'(1);
 
     finish_accept = 1'b0;
-    wake_valid_o = 1'b0;
-    // Meaningful only with wake_valid_o; keeps the finish checks out of the
-    // wake payload.
-    wake_o = '0;
-    wake_o.producer = result_i.producer;
-    wake_o.tag = packets_q[result_i.producer.index].tag;
-    wake_o.value = result_i.value;
     // Qualify against the accepted pre-edge survivor set. A rejected redirect
     // has no effect on ordinary progress.
     if (result_valid_i && result_ready_o &&
@@ -336,10 +334,28 @@ module ppc_completion #(
            result_i.producer.generation) &&
           !redirect_kill_o[result_i.producer.index]) begin
         finish_accept = 1'b1;
-        if (packets_q[result_i.producer.index].gpr_write && !result_i.fault &&
-            (result_i.data_fault == DATA_OK)) begin
-          wake_valid_o = 1'b1;
-        end
+      end
+    end
+  end
+  // Each candidate is qualified as the port's result would be; the owner
+  // only selects.
+  always_comb begin
+    wake_valid_o = 1'b0;
+    wake_o = '0;
+    for (int k = 0; k < 3; k++) begin
+      logic [CQ_INDEX_WIDTH-1:0] idx;
+      logic ok;
+      idx = wake_cand_i[k].producer.index;
+      ok = wake_cand_valid_i[k] && (idx < CQ_INDEX_WIDTH'(CQ_DEPTH)) &&
+           active_q[idx] && !done_q[idx] &&
+           (generations_q[idx] == wake_cand_i[k].producer.generation) &&
+           !redirect_kill_o[idx] && packets_q[idx].gpr_write &&
+           !wake_cand_i[k].fault && (wake_cand_i[k].data_fault == DATA_OK);
+      if (wake_sel_i[k]) begin
+        wake_valid_o = ok;
+        wake_o.producer = wake_cand_i[k].producer;
+        wake_o.tag = packets_q[idx].tag;
+        wake_o.value = wake_cand_i[k].value;
       end
     end
   end
@@ -408,6 +424,13 @@ module ppc_completion #(
     end
   end
   // synthesis translate_off
+  always @(posedge clk_i)
+    if (rst_ni)
+      assert ($onehot(wake_sel_i) &&
+              (result_valid_i == |(wake_sel_i & wake_cand_valid_i)) &&
+              (!result_valid_i ||
+               (result_i == wake_cand_i[wake_sel_i[2] ? 2 : wake_sel_i[1] ? 1 : 0])))
+        else $error("wake candidates disagree with the finish port");
   always @(posedge clk_i)
     if (rst_ni && result1_valid_i)
       assert (!result1_i.fault && (result1_i.data_fault == DATA_OK) &&
