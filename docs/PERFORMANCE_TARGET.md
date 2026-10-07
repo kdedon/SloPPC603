@@ -2222,6 +2222,92 @@ LSU or finish change). Quartus `quartus_map
 `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
 run, so this round makes no timing claim.
 
+## Timing accuracy round 36
+
+Design only; no RTL change. Neither width-2 residue could be made exact
+and verified in the round's time box, so both are written up here
+instead of landing partially. Figures are round 35's (56d77ef): model
+509, Dhrystone w2 511, w1 607; CoreMark demo w2 4,136,487, w1 4,503,469.
+
+### `strcmp` exit: word beside a CR-held branch
+
+Today the lane-0 `beq` fff034d0 waits on CR behind the predicted `beq`
+fff034e4 (`cr_hold0`), and `fd_push` is low, so the `mr` fff034d4 in
+lane 1 stays in the fetch registers too. UM 6.4.1.1 (seventh case) stops
+fetching only; the model enters the word at fetch (A14) and dispatches
+it no earlier than the branch executes (A15).
+
+Design:
+
+1. Record. When `cr_hold0` is set, `fd1_valid` and the IQ has an entry,
+   push lane 1 and move the branch to a pending record `hb_*`: valid,
+   PC, BO/BI, target, and the anchor (the youngest IQ entry before it,
+   or `fd_anchor` when the IQ empties this cycle, as `rem0_fd` picks).
+   The record is not a prediction: it does not take the single BS
+   record, and `bs_busy` stays the older predicted branch's.
+2. Gate (A15). The entry pushed from lane 1 carries a `behind_hb` bit;
+   it does not dispatch while the record is valid. Nothing else enters:
+   fetch stays stopped (`fetch_hold_q`), as for `fetch_stop`.
+3. Release. When `cr_final` (the cycle `cr_hold0` would drop today), the
+   record resolves with `folds`' condition test. Not taken: clear the
+   record; the entry dispatches the next cycle and fetch resumes at
+   PC + 8. Taken: drop the youngest IQ entry (the lane-1 word; it cannot
+   have dispatched) and request the target on that edge as `rel_fold`
+   does, so the refetch keeps today's timing (UM Figure 6-5). The IQ
+   needs a tail pop for this; it has none today.
+4. Recovery and interrupts. A redirect or recovery older than the record
+   (the predicted `beq` mispredicting, an exception on an older entry)
+   clears the IQ and the record together; the branch refetches from the
+   resume PC. An interrupt resumes at `committed_next_pc_q`, which is the
+   branch's PC once the anchor has retired, so the branch re-executes;
+   the `behind_hb` entry never dispatched. The branch's retirement count
+   goes on the anchor's rb field only when it resolves.
+
+Checks: `check_dispatch_trace.py` A15 already rejects a dispatch of the
+`mr` before the branch executes; `test-core-branch-fold` and
+`test-core-branch-recovery` need a case with the held branch taken and
+an older mispredict in the same cycle. Path: the release adds a compare
+on `hb_*` beside `rel_fold`, and the tail pop adds a decrement to the IQ
+write pointer.
+
+### `strcpy` entry: `bl` leaving the IQ at fetch
+
+The core removes a `bl` at dispatch (`bu_remove`/`d1_remove` with the LR
+shadow, `shadow_set`), so it takes an IQ entry and a dispatch slot. UM
+6.3.1 and 6.4.1.1 remove branches at fetch; model A3 gives a branch no IQ
+entry or dispatch slot. `blsplit.patch` (fetch keeps a buffered pair
+whole; `lk_hold1` holds the `bl` alone in FD) moves the fold a cycle
+earlier but not the `addi` fff03484 dispatch.
+
+Design: remove a `bl` as it is queued, like `plain_b`, and move
+`shadow_set` from dispatch to the carrier:
+
+1. IQ empty after this cycle's dispatch: set the LR shadow at push
+   (unarmed, `shadow_val_q` = PC + 4); it arms on the next allocation, as
+   now.
+2. Otherwise the youngest IQ entry carries an `lk_after` bit, with the
+   value in one pending register; the carrier sets the shadow when it
+   dispatches. One pending `bl` at a time: push removal requires
+   `!shadow_valid_q`, no pending carrier, `!bs_busy` and
+   `!recovery_accepted`, the conditions `bu_remove` uses now.
+3. `lk_iq_q` does not count the removed `bl`; `lk_busy` also covers a
+   pending carrier, so a younger `bcl`/`bclrl` still waits for the `bl`
+   to complete (UM 6.4.1.1 sixth case). `lr_front_q` already takes the
+   `bl`'s PC + 4 at push.
+4. The rb count on the carrier includes the `bl` for retirement and the
+   trace; the reference runner's `lr after removed bl` case and
+   `test-core-interrupt` phase 11 (interrupt between the carrier and the
+   `bl`'s completion) cover LR. An interrupt or exception before the
+   carrier dispatches flushes the bit, and the `bl` refetches from the
+   resume PC; after it, the shadow behaves as today.
+
+Path: `push_remove0/1` gain the `bl` term (an opcode and LK compare);
+`shadow_set` gains the carrier's dispatch.
+
+Recorded: no RTL change; figures inherited from round 35 (commit
+56d77ef, 2026-10-07). This record is commit-only documentation on
+`timing-acc36`, 2026-10-07.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
