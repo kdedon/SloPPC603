@@ -545,17 +545,28 @@ module ppc_lsu_pipe #(
     end
   end
 
-  // A base written this cycle, resolved for each entry P1 may hold next:
-  // P1[0], P1[1] and the incoming access. The pop then only selects.
+  // A base or store data written this cycle, and a launch or kill, resolved
+  // for each entry P1 may hold next: P1[0], P1[1] and the incoming access.
+  // The pop then only selects.
   entry_t base_src [3];
   logic base_hit [3], base_fast [3], base_trap [3];
   logic [31:0] base_ea [3];
+  logic data_hit [3], src_launch [3], src_kill [3];
+  logic [31:0] data_value [3];
   always_comb begin
     base_src[0] = p1_q[0];
     base_src[1] = p1_q[1];
     base_src[2] = incoming;
     for (int s = 0; s < 3; s++) begin
-      logic hit0, hit1;
+      logic hit0, hit1, dhit0, dhit1;
+      dhit0 = wake_valid_i && (wake_i.tag == base_src[s].data_tag) &&
+              (wake_i.producer == base_src[s].data_producer);
+      dhit1 = wake1_valid_i && (wake1_i.tag == base_src[s].data_tag) &&
+              (wake1_i.producer == base_src[s].data_producer);
+      data_hit[s] = !base_src[s].data_ready && (dhit0 || dhit1);
+      data_value[s] = dhit0 ? wake_i.value : wake1_i.value;
+      src_launch[s] = fp_launch_valid_i && (base_src[s].producer == fp_launch_tag_i);
+      src_kill[s] = killed_now(base_src[s].producer);
       hit0 = wake_valid_i && (wake_i.tag == base_src[s].base_tag) &&
              (wake_i.producer == base_src[s].base_producer);
       hit1 = wake1_valid_i && (wake1_i.tag == base_src[s].base_tag) &&
@@ -632,21 +643,14 @@ module ppc_lsu_pipe #(
     // Removal by recovery or behind a faulting access. A retired store's
     // write is never removed.
     for (int i = 0; i < 2; i++) begin
-      if (doom || killed_now(p1_next[i].producer)) p1_next[i].killed = 1'b1;
+      if (doom || src_kill[p1_src[i]]) p1_next[i].killed = 1'b1;
       if (branch_resolved_i) p1_next[i].bspec = 1'b0;
       if (!p2_next[i].write && (doom || killed_now(p2_next[i].producer)))
         p2_next[i].killed = 1'b1;
       if (branch_resolved_i) p2_next[i].bspec = 1'b0;
-      if (fp_launch_valid_i && (p1_next[i].producer == fp_launch_tag_i))
-        p1_next[i].launched = 1'b1;
-      if (!p1_next[i].data_ready && wake_valid_i && (wake_i.tag == p1_next[i].data_tag) &&
-          (wake_i.producer == p1_next[i].data_producer)) begin
-        p1_next[i].data = wake_i.value;
-        p1_next[i].data_ready = 1'b1;
-      end
-      if (!p1_next[i].data_ready && wake1_valid_i && (wake1_i.tag == p1_next[i].data_tag) &&
-          (wake1_i.producer == p1_next[i].data_producer)) begin
-        p1_next[i].data = wake1_i.value;
+      if (src_launch[p1_src[i]]) p1_next[i].launched = 1'b1;
+      if (data_hit[p1_src[i]]) begin
+        p1_next[i].data = data_value[p1_src[i]];
         p1_next[i].data_ready = 1'b1;
       end
       // A base written this cycle forms the EA; an alignment exception goes
