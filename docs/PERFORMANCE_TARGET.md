@@ -1904,6 +1904,73 @@ CoreMark 4,138,977, Whetstone 6,444,552; width 1: 2,265,283, 4,642,762,
 `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was run, so this round makes no
 timing claim.
 
+## Timing accuracy round 31
+
+One core change, no cycle change; the model is unchanged (509 cycles per
+run). Two causes of the remaining width-2 gap are traced.
+
+The add/compare steering takes the SRU on a tie when the next
+instruction needs the IU, so an IU station held by the add does not
+stall that instruction's dispatch (UM 6.3.3, 6.4.5; model A10). The core's
+lookahead stopped at a branch two entries behind DQ0 unless the queue held
+exactly three. A branch takes no station, so it now reads the entry behind
+the branch, as the model's next non-branch instruction does. In a
+steady-state `Proc_1` call to `Proc_7`, the `addi r5,r5,12` before
+`bl Proc_7` now takes the SRU and the target's `mr r9,r3` dispatches
+beside the `bl`, matching the model's dispatch cycles. Timing-phase item:
+the IU-need term gains a mux over IQ entry 3's unit bits.
+
+`Proc_7` +2 (calls 2 and 3): dispatch now matches the model; the cycle is
+in finish. In the traced iteration the `stw` before the `bl` (LSU), the
+`addi` (SRU) and the `mr` (IU) finish in the same cycle. The CQ has two
+finish ports; the store's result takes port 0 and the SRU's port 1, so the
+`mr` holds the IU a cycle and the dependent `addi r9,r9,2` issues a cycle
+late. The manual gives each unit its own result path into the rename
+registers (UM 6.3), with no limit on finishes per cycle, and the model has
+none. A store writes no rename register, so the fix is a finish path for a
+store (or a third port).
+
+`dhry_main` +3: two cycles are `Func_2`'s return, `mtlr r0` then `blr`.
+UM 6.4.1.1: "An mtspr(LK) followed by a bclr—Fetching is stopped, and the
+branch waits for the mtspr to execute." The model resolves the `blr` the
+cycle after the `mtlr` finishes; the core clears `lr_pending_q` only when
+the `mtlr` retires, so the `blr` resolves a cycle after retirement, and its
+target dispatches 3 cycles after it rather than 2. The fix is to give the
+BPU the `mtlr` value at finish.
+
+Not done: `strcpy` +1, `strcmp` +1, and why round 30 made width 1 two
+cycles faster (both dispatch-rule runs pass at width 1, but the rule that
+covers the change is not yet identified).
+
+The checker's rule coverage count is raised to 41 for round 30's
+TIM-SER-RESULT; `check-spec` failed without it.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 30 (446452f) | 509 | 515 | 619 | 4,139,002 | 4,642,787 |
+| Station lookahead past a branch (b5e542f) | 509 | 515 | 619 | 4,139,002 | 4,642,787 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit b5e542f, 2026-10-07 (`check-spec` rerun
+after the coverage fix). All pass; CoreMark CRCs match at both widths. At
+width 1, `test-core-branch-fold` does not build (REDEFMACRO of
+`PPC_DISPATCH_WIDTH` in its width-2 variant), as on rounds 28 to 30.
+Dispatch rules, width 2: Dhrystone 1,974,063 cycles, CoreMark 4,138,977,
+Whetstone 6,444,552; width 1: 2,265,283, 4,642,762, 7,259,287. Quartus
+`quartus_map --analysis_and_elaboration` of `quartus/chip` with
+`PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0
+errors. No fit was run, so this round makes no timing claim.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
