@@ -1014,6 +1014,34 @@ The 603e model gives 521 cycles per Dhrystone run.
   that edge rather than through `fold_q` a cycle later (UM Figure 6-5).
   `strcmp` and `strcpy` now match the model.
 
+## Timing accuracy rounds 15 and 16
+
+Recorded: `make -C sim BUILD_DIR=<dir> BRANCH_REMOVAL=1 [DISPATCH_WIDTH=2] VERILATOR=$PWD/sim/tools/verilate-lsu-pipe VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe REFERENCE_DIR=<dingusppc> DEMO_FW_DIR=<main checkout>/toolchain/build/demo MACHINE_PROGRAMS=dhrystone test-core test-core-recovery test-core-dual test-dispatch-rules test-reference-machine perf-diff`, then `Vtb_demo_soc +IMAGE=<main checkout>/toolchain/build/demo/coremark.hex`, commits 2032aef (before), 36c7e3c and 383e017, 2026-10-06.
+LSU unit and store queue on, removal on. At 383e017 width 1 passes its
+benches, the reference machine and `test-dispatch-rules`; CoreMark CRCs
+match.
+
+| | Dhrystone cycles/run, w1 | w2 | CoreMark demo cycles, w1 | w2 |
+|---|---:|---:|---:|---:|
+| Before (2032aef) | 629 | 543 | 4,765,478 | 4,234,377 |
+| IU, load and SRU results forwarded as they finish (36c7e3c) | 629 | 542 | 4,765,478 | 4,195,696 |
+| Store data from an LR or CTR move (383e017) | 627 | 539 | 4,764,252 | 4,194,493 |
+
+The 603e model gives 521 cycles per Dhrystone run.
+
+- A second forward port carries IU or load results to the SRU station and
+  SRU results to the IU station in their finish cycle (UM 6.3.1).
+  Mispredicted `bc` mean at width 2: 4.67 → 4.50 (model 4.33).
+- A store whose data an `mflr` or `mfctr` writes dispatches to the LSU
+  and takes its data from the wake bus (UM 6.3.3, 6.4.5); only a base
+  read waits for the move. In `Func_2`, `stw r0,20(r1)` dispatched four
+  cycles after `mflr`; it now dispatches with the model. Mispredicted `bc`
+  mean at width 2: 4.50 → 4.33, the model's.
+- Linking branches still take a CQ entry. Removing them needs the shadow
+  LR (UM 6.3.1, 6.6.1.1) written when every older instruction has
+  completed, with interrupts and the retirement trace treating the branch
+  as done at that point; not yet built.
+
 ## Gaps
 
 Per instruction, the core's retirement spacing minus the model's completion
