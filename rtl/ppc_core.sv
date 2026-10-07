@@ -2441,9 +2441,16 @@ module ppc_core #(
     return (!u.zero_a && (u.src_a == r)) || (!u.use_imm && (u.src_b == r)) ||
            ((u.special_op == SPECIAL_STORE) && (u.src_c == r));
   endfunction
+  function automatic logic reads_base(uop_t u, logic [4:0] r);
+    return (!u.zero_a && (u.src_a == r)) || (!u.use_imm && (u.src_b == r));
+  endfunction
   /* verilator lint_on UNUSEDSIGNAL */
-  assign sru_wait0 = sru_dst_busy && reads_reg(uop, sru_uop_q.dst);
-  assign sru_wait1 = sru_dst_busy && reads_reg(dq1_uop, sru_uop_q.dst);
+  // Store data the unit takes from the wake bus when the move finishes, and
+  // the store writes only after the move retires (UM 6.3.3).
+  assign sru_wait0 = sru_dst_busy && (lsu_route ? reads_base(uop, sru_uop_q.dst) :
+                                                  reads_reg(uop, sru_uop_q.dst));
+  assign sru_wait1 = sru_dst_busy && (d1_lsu ? reads_base(dq1_uop, sru_uop_q.dst) :
+                                               reads_reg(dq1_uop, sru_uop_q.dst));
   // A held update base is not yet in the register file.
   assign update_wait0 = update_pending_q && reads_reg(uop, update_reg_q);
   assign update_wait1 = update_pending_q && reads_reg(dq1_uop, update_reg_q);
