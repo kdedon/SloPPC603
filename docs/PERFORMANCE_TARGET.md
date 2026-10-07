@@ -2098,6 +2098,77 @@ Whetstone 6,443,806; width 1: 2,245,885, 4,574,160, 7,223,475. Quartus
 `PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0
 errors. No fit was run, so this round makes no timing claim.
 
+## Timing accuracy round 34
+
+One core change; the model is unchanged (509 cycles per run). Dhrystone
+width 2 stays at 512, width 1 612 → 607.
+
+Width 1 has no SRU, and the IU took the second finish port only beside
+an SRU, so an IU result meeting a load's on port 0 waited a cycle. UM 6.3
+gives each unit its own result path and sets no limit on finishes per
+cycle; the IU now takes port 1 whenever a load holds port 0 and no SRU
+result is offered there, with or without an SRU. Width 2 on the 603e is
+unchanged (the SRU was already present); the 602 variant, which has no
+SRU, gains the same port. Timing-phase item: `iu_port1` and
+`iu_offer_ready` no longer depend on the variant, so the IU's port-1
+grant is live at width 1 and on the 602.
+
+Width-2 residue, diagnosed but not fixed (each is a core cycle beyond
+the model, which the manual supports):
+
+- `strcpy` entry (`bl` at fff0381c). The fetcher took `stb` fff03818
+  alone into its buffer while the IQ was full, then fetched the `bl`
+  alone a cycle later. UM 6.3.1: a vacancy of one takes one instruction,
+  but a branch goes to the BPU and takes no IQ entry, so the model fetches
+  the doubleword `stb`+`bl` together. Keeping a buffered pair whole (and
+  taking a `bl` second word with one IQ entry free) moves the fold a cycle
+  earlier, but the `bl` still occupies an IQ entry and the DQ1 slot
+  (removed at dispatch), so `addi` fff03484 still dispatches a cycle
+  after the `stb`; the cycle needs the `bl` to leave the IQ at fetch
+  (UM 6.3.1, model A3), which the core does not do for linking branches.
+- `strcmp` exit (`beq` fff034e4 mispredicted, refetch at fff034e8). In
+  each loop pass the forward `beq` fff034d0 waits on CR behind the
+  predicted `beq` fff034e4 (UM 6.4.1.1, one level of prediction). The
+  core holds the `mr` fff034d4 fetched beside it in the fetch registers
+  too, so the `lbz` fff034d8 dispatches a cycle late; on the last pass the
+  `cmpw` result, and so the mispredict, is a cycle late. UM 6.4.1.1 stops
+  fetching only; the word already fetched beside the held branch enters
+  the IQ (the model's `stop_f` rule).
+- `dhry_main` fff03870: after `Proc_7`'s `blr` to fff0386c the core
+  fetches fff03870 two cycles after fff0386c; the model one. Not yet
+  traced.
+
+No function is faster than the model in a way the manual forbids:
+`Func_1` (−2 front end, −1 retirement) and `Proc_7` (−2) come from the
+core dispatching ahead after earlier stalls, and `check_dispatch_trace.py`
+passes at both widths.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 33 (b223ca6) | 509 | 512 | 612 | 4,136,487 | 4,574,185 |
+| IU port 1 without SRU (d8bfec5) | 509 | 512 | 607 | 4,136,487 | 4,503,469 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at width 1 with
+`VERILATOR=$PWD/sim/tools/verilate-lsu-pipe
+VERILATOR_TOOL=$PWD/sim/tools/verilate-lsu-pipe BRANCH_REMOVAL=1`:
+`test-core test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo, `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602` and `test-fpu-all`; at width 2 the same set
+without the reference-machine targets (the width-2 603e logic is
+unchanged); commit d8bfec5 plus the record, 2026-10-07. All pass;
+CoreMark CRCs match. Dispatch rules, width 1: Dhrystone 2,228,118
+cycles (was 2,245,885), CoreMark 4,503,444 (4,574,160), Whetstone
+7,152,086 (7,223,475); width 2 unchanged at 1,967,636, 4,136,462,
+6,443,806. Quartus `quartus_map --analysis_and_elaboration` of
+`quartus/chip` with `PPC_LSU_PIPE=1` and `PPC_BRANCH_REMOVAL=1` (width
+1): 0 errors. No fit was run, so this round makes no timing claim.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
