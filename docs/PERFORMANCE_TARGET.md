@@ -2308,6 +2308,67 @@ Recorded: no RTL change; figures inherited from round 35 (commit
 56d77ef, 2026-10-07). This record is commit-only documentation on
 `timing-acc36`, 2026-10-07.
 
+## Timing accuracy round 37
+
+The `strcpy` entry design of round 36, implemented (af57641). The model
+is unchanged (509). Dhrystone width 1 607 → 600; width 2 stays at 511.
+
+A `bl` is removed as it is queued, like a plain `b` (UM 6.3.1, model
+A3): it takes no IQ entry or dispatch slot, and its retirement is
+counted on the next entry pushed. If no IQ entry is left after this
+cycle's dispatch, it sets the LR shadow at push (unarmed, as a
+dispatched `bl` does). Otherwise the youngest IQ entry is its carrier:
+`lkp_q` holds the `bl`, `lkp_pos_q` the carrier's position, and the
+shadow, `lr_disp_q` and the LR/LK pending state are set as the carrier
+dispatches; beside a DQ0 carrier the shadow arms on the DQ1 allocation.
+Conditions: one `bl` at a time (no shadow, no pending `bl`), no LR
+writer queued before it (`lr_iq_q`, and not lane 0 of its pair), no
+branch or prediction record queued before it (`marked_o`, a new IQ
+output), and no misprediction or fix-up pending. A prediction may be
+unresolved: the `bl` is then on its path (`lk_spec_q`), and a
+misprediction recovery drops its shadow instead of keeping it. An
+interrupt or exception before the carrier dispatches clears the IQ and
+the pending `bl`, which refetches; after it, the shadow behaves as
+before. `lk_iq_q` and `lr_iq_q` no longer count the `bl`; `lk_busy` and
+`lr_free` cover the pending one, so a younger `bcl`/`bclrl` still waits
+for it (UM 6.4.1.1 sixth case).
+
+Width 2: the `bl` fff0381c now leaves at fetch, but `addi` fff03484
+still dispatches a cycle after the `stb` fff03818: the CQ has one free
+entry that cycle (`cq1_ready` low), from the inherited lag of the stores
+before it (the model dispatches fff03808 and fff0380c a cycle apart).
+
+Path: `push_remove0/1` gain the `bl` term (opcode and LK, `lr_iq_q`, the
+six-entry `marked_o` OR); `shadow_set`, the shadow value mux and the LR
+dispatch state gain the carrier's pop.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 35 (56d77ef) | 509 | 511 | 607 | 4,136,487 | 4,503,469 |
+| `bl` removed at fetch (af57641) | 509 | 511 | 600 | 4,136,434 | 4,500,094 |
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 (`DISPATCH_WIDTH=2` for
+width 2) with `VERILATOR=tools/verilate-lsu-pipe
+VERILATOR_TOOL=tools/verilate-lsu-pipe BRANCH_REMOVAL=1`: `test-core
+test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit af57641, 2026-10-07. All fresh, all
+pass; CoreMark CRCs match; the reference runner's negative controls
+(including `lr after removed bl`) pass. Dispatch rules, width 2:
+Dhrystone 1,965,521 cycles (was 1,965,563), CoreMark 4,136,403
+(4,136,462), Whetstone 6,443,608 (6,443,805); width 1: Dhrystone
+2,213,186 (2,228,113), CoreMark 4,500,069 (4,503,444), Whetstone
+7,124,977 (7,152,086). `test-fpu-all` not rerun (no FPU change). Quartus
+`quartus_map --analysis_and_elaboration` of `quartus/chip` with
+`PPC_LSU_PIPE=1`, `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0
+errors. No fit was run, so this round makes no timing claim.
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
