@@ -222,14 +222,16 @@ module ppc_lsu_pipe #(
     logic [DMEM_BITS/8-1:0] wstrb;
     logic [2:0] bytes;
     logic fp;
+    // Queued behind a load that passed older stores and is still in P2.
+    logic young;
   } sq_entry_t;
   localparam int SQ_W = $clog2(SQ_DEPTH + 1);
   sq_entry_t sq_q [SQ_DEPTH], sq_head;
   logic [SQ_W-1:0] sq_count_q;
-  logic sq_valid, sq_live, sq_overlap, sq_offer, sq_fire, sq_drop;
+  logic sq_valid, sq_live, sq_overlap, sq_young, sq_offer, sq_fire, sq_drop;
   // Q: a queued store on its way to R.
   entry_t q_q;
-  logic q_valid_q, q_go, q_pop;
+  logic q_valid_q, q_young_q, q_go, q_pop;
   // A load that faulted after passing queued stores, for the lane once the
   // queue has drained.
   entry_t redo_q;
@@ -313,10 +315,12 @@ module ppc_lsu_pipe #(
   always_comb begin
     sq_live = 1'b0;
     sq_overlap = 1'b0;
+    sq_young = 1'b0;
     for (int i = 0; i < SQ_DEPTH; i++)
       if ((SQ_W'(i) < sq_count_q) && !sq_q[i].killed) begin
         sq_live = 1'b1;
         if (sq_q[i].addr[11:3] == p1_addr[11:3]) sq_overlap = 1'b1;
+        if (sq_q[i].young && p2_passed) sq_young = 1'b1;
       end
   end
   assign p2_passed = (p2_valid && p2_q[0].passed && !p2_q[0].killed) ||
@@ -331,7 +335,7 @@ module ppc_lsu_pipe #(
   assign load_ready = !p1_head.fp || (!p1_head.hold && p1_head.launched);
   assign load_first = p1_valid && !p1_head.store && !p1_head.killed && !offered_q &&
     !sq_offered_q &&
-    !p1_head.base_wait && p1_head.fast && load_ready && !sq_overlap && !redo_valid_q &&
+    !p1_head.base_wait && p1_head.fast && load_ready && !sq_overlap && !sq_young && !redo_valid_q &&
     (sq_count_q != SQ_W'(SQ_DEPTH));
   // A retired store is otherwise written ahead of any later offer, except one
   // that already stands non-speculatively. It offers in its retire cycle, so
@@ -343,14 +347,14 @@ module ppc_lsu_pipe #(
     !(offered_q && !offered_spec_q) && !load_first;
   assign sq_fire = sq_offer && req_ready_i;
   assign sq_drop = sq_valid && sq_head.killed;
-  // A store may queue while older accesses await their responses, but not
-  // behind a load that passed queued stores, so every queued store stays
-  // older than such a load if it faults.
+  // A store may queue while older accesses await their responses. One
+  // queued behind a load that passed older stores is younger than it: that
+  // load's fault removes it, and no later load passes it.
   // A doubleword in two beats does not queue.
   assign p1_check = STORE_QUEUE && p1_valid && p1_head.store && p1_head.fast && !p1_head.split &&
     !p1_head.killed && !offered_q && p1_ready && lane_idle_i && !rsp_to_lane_q &&
     !redo_valid_q && (!q_valid_q || q_pop) && (sq_count_q != SQ_W'(SQ_DEPTH)) &&
-    !p2_passed && !killed_now(p1_head.producer);
+    !killed_now(p1_head.producer);
   assign chk_addr_o = p1_addr;
   assign p1_queue = p1_check && chk_ok_i;
   // An offer stands until accepted. A removed entry leaves without an
@@ -363,7 +367,7 @@ module ppc_lsu_pipe #(
      (offered_q || (lane_idle_i && !rsp_to_lane_q && !redo_valid_q &&
                     (p2_count_q != 2'd2) && p1_ready &&
                     (p1_head.store ? (p1_at_head && !sq_valid && !p1_queue) :
-                                     !sq_overlap))));
+                                     !sq_overlap && !sq_young))));
   assign p1_fire = offer && req_ready_i;
   assign p1_drop = p1_valid && p1_head.killed && !offer;
   // An FP access this unit cannot perform answers the FPU with a fault once
@@ -402,6 +406,8 @@ module ppc_lsu_pipe #(
   assign req_wstrb_o = sq_offer ? sq_head.wstrb : p1_wstrb;
   assign req_bytes_o = sq_offer ? sq_head.bytes : p1_nbytes;
   assign req_fp_o = sq_offer ? sq_head.fp : p1_head.fp;
+  logic _unused_sq_young;
+  assign _unused_sq_young = sq_head.young;
   // The two beats of one doubleword do not make each other speculative.
   assign req_spec_o = !sq_offer && (sq_live || p1_head.bspec ||
     (p2_valid && !p2_q[0].killed && !p2_q[0].write &&
@@ -694,21 +700,27 @@ module ppc_lsu_pipe #(
       added.wstrb = p1_wstrb;
       added.bytes = p1_nbytes;
       added.fp = p1_head.fp;
+      added.young = p2_passed;
       sq_next[sq_n[$clog2(SQ_DEPTH)-1:0]] = added;
       sq_n = sq_n + 1'b1;
     end
     // A store becomes committed as it retires; an error on a write cancels
     // every retired store still queued.
     for (int i = 0; i < SQ_DEPTH; i++) begin
-      if (!sq_next[i].committed && (sq_doom || killed_now(sq_next[i].producer)))
+      if (!sq_next[i].committed && (sq_doom || killed_now(sq_next[i].producer) ||
+                                    (sq_next[i].young && (redo_set || fp_fault))))
         sq_next[i].killed = 1'b1;
+      if (!p2_passed) sq_next[i].young = 1'b0;
       if (!sq_next[i].killed && commit_i && (sq_next[i].producer == commit_tag_i))
         sq_next[i].committed = 1'b1;
       if (sq_next[i].committed && store_error_o) sq_next[i].killed = 1'b1;
     end
     sq_q <= sq_next;
-    if (p1_queue) q_q <= p1_head;
-    else if (sq_doom || killed_now(q_q.producer)) q_q.killed <= 1'b1;
+    if (p1_queue) begin
+      q_q <= p1_head;
+      q_young_q <= p2_passed;
+    end else if (sq_doom || killed_now(q_q.producer) || (q_young_q && (redo_set || fp_fault)))
+      q_q.killed <= 1'b1;
     if (redo_set) begin
       redo_q <= p2_head;
       redo_q.fast <= 1'b0;
