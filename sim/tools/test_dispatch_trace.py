@@ -203,6 +203,21 @@ class DispatchRulesTest(unittest.TestCase):
                  '4 D1 R0 00000828 |']
         with self.assertRaisesRegex(ValueError, 'TIM-BPU-FETCH-STOP'):
             run(*early)
+        # A bclr resolves the cycle after mtlr finishes, a cycle before it
+        # retires; its target dispatches two cycles after that retirement.
+        words[0x900] = 0x38630001
+        lr = ['1 D1 R0 00000820 |', '2 D1 R0 00000824* |', '3 D0 R1 | 00000820', '5 D1 R0 00000900 |']
+        run(*lr)
+        lr_cases = {
+            'bclr before mtlr executes': lr[:1] + ['2 D1 R0 00000824* |', '4 D0 R1 | 00000820',
+                                                   '6 D1 R0 00000900 |'],
+            'bclr target early': lr[:3] + ['4 D1 R0 00000900 |'],
+            'bclr target early after retirement': ['1 D1 R0 00000820 |', '3 D1 R1 00000824* | 00000820',
+                                                   '4 D1 R0 00000900 |'],
+        }
+        for label, lines in lr_cases.items():
+            with self.subTest(label), self.assertRaisesRegex(ValueError, 'TIM-BPU-LR-DEPENDENCY'):
+                run(*lines)
         cases = {
             'branch(LK) behind branch(LK)': ('1 D1 R0 00000804 |', '2 D1 R0 00000808 |',
                                              '3 D1 R0 00000828 |'),
@@ -214,7 +229,6 @@ class DispatchRulesTest(unittest.TestCase):
                                            '3 D1 R0 0000081c* |'),
             'bcctr target before mtctr retires': ('1 D1 R0 00000818 |', '2 D1 R0 0000081c |',
                                                   '3 D1 R0 00000828 |'),
-            'bclr removed behind mtlr': ('1 D1 R0 00000800 |', '2 D1 R0 00000820 |', '3 D1 R0 00000824* |'),
         }
         for label, lines in cases.items():
             with self.subTest(label), self.assertRaisesRegex(ValueError, 'TIM-BPU-FETCH-STOP'):

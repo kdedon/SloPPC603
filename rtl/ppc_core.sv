@@ -819,10 +819,12 @@ module ppc_core #(
   // when it is queued. lr_front_q is the LR left by the youngest queued or
   // dispatched writer when that is a linking branch (lr_front_ok_q);
   // lr_disp_q the same for the youngest dispatched writer, which a bclr
-  // reads at dispatch while that writer is uncommitted. An mtlr's value is
-  // not forwarded before it retires (UM 6.3.3.2), so a bclr behind it waits.
-  logic lr_front_ok_q, lr_disp_ok_q, lr_ok;
-  logic [31:2] lr_front_q, lr_disp_q, lr_fold;
+  // reads at dispatch while that writer is uncommitted. An mtlr writes it
+  // as it finishes, the BPU's LR rename register (UM 6.2, 6.4.1.1). A bclr
+  // behind it leaves the IQ in that cycle and redirects fetch the next, the
+  // cycle the BPU executes it.
+  logic lr_front_ok_q, lr_disp_ok_q, lr_ok, mtlr_finish, lr_bu_ok;
+  logic [31:2] lr_front_q, lr_disp_q, lr_fold, lr_bu;
   assign lr_ok = lr_free || lr_front_ok_q;
   assign rm1_early = BRANCH_REMOVAL && !fetched_insn1[0] &&
     ((fetched_insn1[31:26] == 6'd18) ||
@@ -1247,14 +1249,18 @@ module ppc_core #(
     end else begin
       if (frontend_clear) begin
         // Writers dispatched behind a mispredicted branch are not removed yet.
-        lr_front_ok_q <= lr_disp_ok_q && !bs_now;
-        lr_front_q <= lr_disp_q;
+        lr_front_ok_q <= lr_bu_ok && !bs_now;
+        lr_front_q <= lr_bu;
       end else if (iq_push1 && push1_writes[1]) begin
         lr_front_ok_q <= push_uop1.special_op != SPECIAL_MTSPR;
         lr_front_q <= queued1.pc[31:2] + 30'd1;
       end else if (iq_push0 && push_writes[1]) begin
         lr_front_ok_q <= push_uop.special_op != SPECIAL_MTSPR;
         lr_front_q <= queued.pc[31:2] + 30'd1;
+      end
+      if (mtlr_finish) begin
+        lr_disp_ok_q <= 1'b1;
+        lr_disp_q <= special_result.value[31:2];
       end
       if (dispatch1 && pop1_writes[1]) begin
         lr_disp_ok_q <= dq1_uop.special_op != SPECIAL_MTSPR;
@@ -1498,7 +1504,7 @@ module ppc_core #(
   assign bu_ready = !(bu_reads_cr && bu_ctr_ok && flags_busy &&
                       (!bu_cr_valid_q || flags_waiter) && !ENABLE_BRANCH_SPEC) &&
     !(bu_reads_cr && bu_ctr_ok && (fp_cr_pending || (bs_busy && !bs_hit))) &&
-    !(bu_reads_lr && lr_pending_q && !lr_disp_ok_q) &&
+    !(bu_reads_lr && lr_pending_q && !lr_bu_ok) &&
     !(bu_reads_ctr && !((uop.special_op == SPECIAL_BC) ? ctr_bu_ok :
                         (!ctr_pending_q || ctr_shadow_done))) &&
     // A younger CTR reader waits for a removed counting bc to complete
@@ -1763,7 +1769,7 @@ module ppc_core #(
   end
   always_comb begin
     case (uop.special_op)
-      SPECIAL_BCLR: bu_target = {(lr_pending_q ? lr_disp_q : lr[31:2]), 2'b00};
+      SPECIAL_BCLR: bu_target = {(lr_pending_q ? lr_bu : lr[31:2]), 2'b00};
       SPECIAL_BCCTR: bu_target = {ctr_arch, 2'b00};
       default: bu_target = uop.branch_aa ? uop.branch_disp :
                                            iq_head.pc + uop.branch_disp;
@@ -1858,6 +1864,11 @@ module ppc_core #(
   // lk_pending_q tracks linking branches: a younger one other than b waits
   // for them to complete (UM 6.4.1.1).
   completion_tag_t lr_writer_q, ctr_writer_q, lk_writer_q;
+  // The youngest LR writer, an mtlr, finishing in the lane.
+  assign mtlr_finish = special_result_valid && special_result_ready && lr_pending_q &&
+                       !lr_disp_ok_q && (special_result.producer == lr_writer_q);
+  assign lr_bu_ok = lr_disp_ok_q || mtlr_finish;
+  assign lr_bu = lr_disp_ok_q ? lr_disp_q : special_result.value[31:2];
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       lr_pending_q <= 1'b0;

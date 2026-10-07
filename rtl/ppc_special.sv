@@ -824,7 +824,8 @@ module ppc_special #(
     if (state_q == S_EXEC) begin
       result_valid_o = !timer_read && !tlbsync_held;
       if (uop_q.special_op == SPECIAL_MFSPR) result_o.value = exec_value;
-      if (uop_q.special_op == SPECIAL_MTSPR && uop_q.spr == 10'd1)
+      // mtlr carries its value to the BPU's LR rename register (UM 6.4.1.1).
+      if (uop_q.special_op == SPECIAL_MTSPR && (uop_q.spr == 10'd1 || uop_q.spr == 10'd8))
         result_o.value = a_q;
       if (uop_q.special_op == SPECIAL_MFMSR)
         result_o.value = msr_o & MSR_MASK;

@@ -241,11 +241,14 @@ def gpr_writes(word):
 def fetch_stop(older, younger):
     """UM 6.4.1.1 (PDF 261): how branch `younger` waits on `older`, or None.
 
-    'retire': it waits for the move to LR/CTR, whose result is not forwarded
-    before it retires (UM 6.3.3.2, PDF 259); 'complete': for the older
-    branch to complete."""
-    if older['mtspr'] == 'LR' and younger['branch'] == 'bclr' or \
-            older['mtspr'] == 'CTR' and (younger['branch'] == 'bcctr' or younger['ctr_test']):
+    'execute': it waits for the move to LR to execute, which writes the
+    BPU's LR rename register (UM 6.2, PDF 248; TIM-BPU-LR-DEPENDENCY);
+    'retire': for the move to CTR, whose result is not forwarded before it
+    retires (UM 6.3.3.2, PDF 259); 'complete': for the older branch to
+    complete."""
+    if older['mtspr'] == 'LR' and younger['branch'] == 'bclr':
+        return 'execute'
+    if older['mtspr'] == 'CTR' and (younger['branch'] == 'bcctr' or younger['ctr_test']):
         return 'retire'
     if older['ctr_test'] and (younger['ctr_test'] or younger['branch'] == 'bcctr'):
         return 'complete'
@@ -271,6 +274,9 @@ class Rules:
         self.stream = []        # (order, class, removed, cycle, pc) of recent dispatches
         self.redirect = None    # earliest correct-path dispatch after a recovery
         self.stops = []         # [older entry or None, waiting branch order, waiting pc, kind]
+        # bclr behind an mtspr(LR): [mtspr entry, bclr order, bclr pc, bclr cycle, mtspr retire cycle]
+        self.lr_waits = []
+        self.lr_retired = None  # retire cycle of the youngest LR writer, an mtspr(LR)
         self.block = None       # dispatch-serialized instruction not yet retired: [seq, cycle]
         self.last_dser = None   # (seq, dispatch cycle) of the latest dispatch-serialized dispatch
         self.isync_retired = None
@@ -341,6 +347,16 @@ class Rules:
             st['flushed'] += index
             st['mispredicts'] += int(wrong_path > 0)
             seq, dcycle = self.inflight[index][2], self.inflight[index][1]
+            for w in self.lr_waits:
+                if w[5] is self.inflight[index]:
+                    w[4] = cycle
+                    # The move finishes the cycle before it retires
+                    # (TIM-SER-SRU-LATENCY); the bclr leaves no earlier.
+                    require(w[3] >= cycle - 1,
+                            f'cycle {cycle}: bclr {w[2]:08x} resolved at {w[3]}, before {pc:08x} '
+                            'executed (TIM-BPU-LR-DEPENDENCY)')
+            if c and c['mtspr'] == 'LR':
+                self.lr_retired = (cycle, pc)
             del self.inflight[:index + 1]
             require(dcycle < cycle, f'cycle {cycle}: {pc:08x} retired in its dispatch cycle')
             st['retirements'] += 1
@@ -430,6 +446,7 @@ class Rules:
                 f'cycle {cycle}: recovery removes {mispredict} of {len(self.inflight)} in flight')
         if recovery:
             self.wrong_path(cycle, mispredict, after)
+            self.lr_waits = []
         for entry in self.inflight[len(self.inflight) - mispredict:]:
             entry[3] = True if after is None else 'removed'
 
@@ -461,6 +478,19 @@ class Rules:
         branch dispatches meanwhile, and a branch removed at dispatch (resolved
         there) cannot be the one waiting."""
         self.stops = [s for s in self.stops if self.blocking(s[0])]
+        # TIM-BPU-LR-DEPENDENCY (UM 6.4.1.1, PDF 261; F6-3, PDF 263): the
+        # BPU executes the bclr the cycle after the mtspr(LR) finishes, and
+        # its target is fetched the cycle after that, then dispatched; with
+        # the finish a cycle before retirement R, the target dispatches at
+        # R + 2 at the earliest. Fall-through fetched with the bclr is exempt.
+        for w in [w for w in self.lr_waits if w[1] == self.order]:
+            self.lr_waits.remove(w)
+            if w[4] is not None and pc != w[2] + 4:
+                require(cycle >= w[4] + 2,
+                        f'cycle {cycle}: {pc:08x} dispatched {cycle - w[4]} cycle(s) after {w[0]:08x} '
+                        f'retired, the target of bclr {w[2]:08x} (TIM-BPU-LR-DEPENDENCY)')
+        if c and c['writes'][3]:
+            self.lr_retired = None
         # A removed bl completes once everything older has (UM 6.3.1); a
         # younger branch(LK) other than bl waits for that (UM 6.4.1.1).
         self.removed_lk = [r for r in self.removed_lk
@@ -481,11 +511,16 @@ class Rules:
                            f'{older[0]:08x} to {kind} (TIM-BPU-FETCH-STOP)')
         if not (c and c['branch']):
             return
+        if c['branch'] == 'bclr' and self.lr_retired is not None:
+            self.lr_waits.append([self.lr_retired[1], self.order + 1, pc, cycle, self.lr_retired[0], None])
         for older in reversed([e for e in self.inflight if not e[3] and e[4]]):
             kind = fetch_stop(older[4], c)
             if kind and self.blocking(older):
-                require(not gone, f'cycle {cycle}: branch {pc:08x} resolved at dispatch while it waits for '
-                                  f'{older[0]:08x} to {kind} (TIM-BPU-FETCH-STOP)')
+                if kind == 'execute':
+                    self.lr_waits.append([older[0], self.order + 1, pc, cycle, None, older])
+                require(not gone or kind == 'execute',
+                        f'cycle {cycle}: branch {pc:08x} resolved at dispatch while it waits for '
+                        f'{older[0]:08x} to {kind} (TIM-BPU-FETCH-STOP)')
                 self.stops.append([older, self.order + 1, pc, kind])
                 self.stats['fetch_stops'] += 1
                 break
