@@ -86,6 +86,9 @@ module ppc_lsu_pipe #(
   // The completion-queue head retires this cycle.
   input  logic commit_i,
   input  ppc_pkg::completion_tag_t commit_tag_i,
+  // commit_i for a head that finished earlier or on this unit's result, the
+  // only heads a queued store can be.
+  input  logic commit_mem_i,
   // Dispatch is behind an unresolved branch; it resolved as predicted.
   input  logic branch_spec_i,
   input  logic branch_resolved_i,
@@ -355,7 +358,7 @@ module ppc_lsu_pipe #(
   // the cache takes the write the cycle after it completes, and a load of
   // its doubleword reads the cycle after that.
   assign sq_offer = STORE_QUEUE && rst_ni && sq_valid &&
-    (sq_head.committed || (commit_i && (sq_head.producer == commit_tag_i))) &&
+    (sq_head.committed || (commit_mem_i && (sq_head.producer == commit_tag_i))) &&
     !sq_head.killed && lane_idle_i && !rsp_to_lane_q && (p2_count_q != 2'd2) &&
     !(offered_q && !offered_spec_q) && !load_first;
   assign sq_fire = sq_offer && req_ready_i;
@@ -927,6 +930,12 @@ module ppc_lsu_pipe #(
     if (rst_ni && p2_retire && p2_head.write && !rsp_error_i)
       assert (rsp_fault_i == DATA_OK || rsp_fault_i == DATA_MACHINE_CHECK)
         else $error("retired store's write took a DSI");
+  always @(posedge clk_i)
+    if (rst_ni) begin
+      if (commit_mem_i) assert (commit_i) else $error("memory commit without commit");
+      if (commit_i && sq_valid && (sq_head.producer == commit_tag_i))
+        assert (commit_mem_i) else $error("store queue head retired off the memory commit");
+    end
   always @(posedge clk_i)
     if (rst_ni && sq_offer)
       assert (!(p1_valid && p1_head.store && offered_q && !p1_head.killed))

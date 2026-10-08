@@ -291,7 +291,7 @@ module ppc_core #(
   logic [31:0] fp_fpscr;
   logic fp_sticky_hold, fp_sticky_waited_q;
   retire_packet_t cq_retire, cq_retire1;
-  logic cq_retire_settled, retire_gate;
+  logic cq_retire_settled, retire_gate, cq_retire_mem_valid;
   // Pairing checks read a few fields.
   /* verilator lint_off UNUSEDSIGNAL */
   retire_packet_t cq_head_packet, cq_head1_packet;
@@ -3235,6 +3235,7 @@ module ppc_core #(
         .kill_generation_i(recovery_kill_generation),
         .store_authorize_i(retire_ready_i && !bs_store_hold), .queue_head_i(cq_head),
         .commit_i(commit), .commit_tag_i(retire_producer),
+        .commit_mem_i(cq_retire_mem_valid && retire_gate && retire_ready_i),
         .branch_spec_i(bs_valid_q || (bu_branch && bu_spec) || (c0_carry && carry_start && !lsu_c0)),.branch_resolved_i((bs_resolve && (bs_taken == bs_pred_q)) || (fd_start && bs_cap_hit)),
         .chk_addr_o(dmem_store_check_addr_o), .chk_ok_i(dmem_store_check_ok_i),
         .lane_idle_i(lane_mem_idle),
@@ -3277,7 +3278,7 @@ module ppc_core #(
       assign fp_store_tag = '0;
       assign _unused_fp_unit = ^{fp_launch_valid, fp_launch_tag, fp_store_valid,
                                  fp_store_data, fp_mem_double, fp_mem_pipe_ready, src_c,
-                                 lsu_base, d1_offset, c0_offset};
+                                 lsu_base, d1_offset, c0_offset, cq_retire_mem_valid};
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;
@@ -3651,6 +3652,8 @@ module ppc_core #(
     .wake1_valid_o(wake1_valid), .wake1_o(cq_wake1),
     .result2_valid_i(lsu_result_valid && lsu_result_store), .result2_i(lsu_result),
     .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
+    .result_lsu_valid_i(lsu_result_valid && !lsu_result_store),
+    .retire_mem_valid_o(cq_retire_mem_valid),
     .head_o(cq_head_packet), .head1_o(cq_head1_packet),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block &&
                     !update_pending_q && !bs_hold),
