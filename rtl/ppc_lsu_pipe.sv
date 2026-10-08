@@ -65,6 +65,8 @@ module ppc_lsu_pipe #(
   input  logic dr_i,
   input  logic wake_valid_i, wake1_valid_i,
   input  ppc_pkg::wake_packet_t wake_i, wake1_i,
+  // wake_i.value and wake1_i.value while the wake is not late.
+  input  logic [31:0] wake_early_value_i, wake1_early_value_i,
   // FP access: store and doubleword forms.
   input  logic fp_i, fp_store_i, fp_double_i,
   // The FPU has launched the memory form with this tag.
@@ -232,7 +234,7 @@ module ppc_lsu_pipe #(
   localparam int SQ_W = $clog2(SQ_DEPTH + 1);
   sq_entry_t sq_q [SQ_DEPTH], sq_head;
   logic [SQ_W-1:0] sq_count_q;
-  logic sq_valid, sq_live, sq_overlap, sq_young, sq_offer, sq_fire, sq_drop;
+  logic sq_valid, sq_live, sq_overlap, sq_overlap_reg, sq_young, sq_offer, sq_fire, sq_drop;
   // Q: a queued store on its way to R.
   entry_t q_q;
   logic q_valid_q, q_young_q, q_go, q_pop;
@@ -306,13 +308,13 @@ module ppc_lsu_pipe #(
   assign head_base1 = BASE_SNOOP && wake1_valid_i && !wake1_i.late &&
                       (wake1_i.tag == p1_head.base_tag) &&
                       (wake1_i.producer == p1_head.base_producer);
-  assign base_sum0 = wake_i.value + p1_head.offset;
-  assign base_sum1 = wake1_i.value + p1_head.offset;
+  assign base_sum0 = wake_early_value_i + p1_head.offset;
+  assign base_sum1 = wake1_early_value_i + p1_head.offset;
   assign head_base_ready = !p1_head.base_wait || head_base0 || head_base1;
-  // Without the snoop a waiting head is neither fast nor offered, so its
+  // A waiting head is neither fast nor offered until its base arrives, so its
   // registered EA stands in.
-  assign head_ea = (!BASE_SNOOP || !p1_head.base_wait) ? p1_head.ea :
-                   head_base0 ? base_sum0 : base_sum1;
+  assign head_ea = (BASE_SNOOP && p1_head.base_wait && head_base0) ? base_sum0 :
+                   (BASE_SNOOP && p1_head.base_wait && head_base1) ? base_sum1 : p1_head.ea;
   assign head_fast = (!BASE_SNOOP || !p1_head.base_wait) ? p1_head.fast :
     (int_fast(p1_head.uop.mem_size, head_ea[1:0]) &&
      !int_trap(p1_head.uop.mem_size, head_ea[11:0], dr_i));
@@ -322,11 +324,15 @@ module ppc_lsu_pipe #(
   always_comb begin
     sq_live = 1'b0;
     sq_overlap = 1'b0;
+    sq_overlap_reg = 1'b0;
     sq_young = 1'b0;
     for (int i = 0; i < SQ_DEPTH; i++)
       if ((SQ_W'(i) < sq_count_q) && !sq_q[i].killed) begin
         sq_live = 1'b1;
         if (sq_q[i].addr[11:3] == p1_addr[11:3]) sq_overlap = 1'b1;
+        // The same compare against the registered EA, for a head not
+        // waiting on its base.
+        if (sq_q[i].addr[11:3] == p1_head.ea[11:3]) sq_overlap_reg = 1'b1;
         if (sq_q[i].young && p2_passed) sq_young = 1'b1;
       end
   end
@@ -342,7 +348,7 @@ module ppc_lsu_pipe #(
   assign load_ready = !p1_head.fp || (!p1_head.hold && p1_head.launched);
   assign load_first = p1_valid && !p1_head.store && !p1_head.killed && !offered_q &&
     !sq_offered_q &&
-    !p1_head.base_wait && p1_head.fast && load_ready && !sq_overlap && !sq_young && !redo_valid_q &&
+    !p1_head.base_wait && p1_head.fast && load_ready && !sq_overlap_reg && !sq_young && !redo_valid_q &&
     (sq_count_q != SQ_W'(SQ_DEPTH));
   // A retired store is otherwise written ahead of any later offer, except one
   // that already stands non-speculatively. It offers in its retire cycle, so
@@ -862,6 +868,15 @@ module ppc_lsu_pipe #(
   always @(posedge clk_i)
     if (rst_ni && req_valid_o && req_write_o)
       assert (!req_spec_o) else $error("store offered behind an unresolved access");
+  always @(posedge clk_i)
+    if (rst_ni)
+      assert ((!wake_valid_i || wake_i.late || wake_early_value_i == wake_i.value) &&
+              (!wake1_valid_i || wake1_i.late || wake1_early_value_i == wake1_i.value))
+        else $error("early wake value differs from the wake bus");
+  always @(posedge clk_i)
+    if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait && !head_base0 && !head_base1 &&
+        (p1_check || offer))
+      assert (0) else $error("waiting head checked or offered without its base");
   // +LSU_STATS reports store-queue use at the end of simulation.
   int stat_queued = 0, stat_written = 0, stat_passed = 0, stat_overlap = 0, stat_errors = 0,
       stat_redo = 0, stat_cancelled = 0;

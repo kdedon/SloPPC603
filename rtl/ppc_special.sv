@@ -184,6 +184,8 @@ module ppc_special #(
   output logic result_select_o,
   // The result is a completion-serialized one, not a memory access's.
   output logic result_late_o,
+  // result_o's value whenever result_late_o is low.
+  output logic [31:0] result_early_value_o,
   // The result faults on nothing and writes no CR or XER field.
   output logic result_port1_o,
   output ppc_pkg::completion_tag_t producer_o,
@@ -746,6 +748,7 @@ module ppc_special #(
   assign result_select_o = result_select_q;
   assign result_late_o = (state_q == S_EXEC) || (state_q == S_MMU_RESULT) ||
                          (state_q == S_TIMER_RESULT);
+  assign result_early_value_o = (state_q == S_MEM_RESULT) ? memory_result_q.value : '0;
   assign result_port1_o = ((state_q == S_EXEC) || (state_q == S_TIMER_RESULT)) &&
     !result_o.fault && !uop_q.write_cr_fields && !uop_q.write_cr_bit && !uop_q.write_xer;
   assign producer_o = producer_q;

@@ -2413,7 +2413,7 @@ module ppc_core #(
     .mem_overlap_o(special_mem_overlap), .mem_dst_valid_o(special_mem_dst_valid),
     .mem_dst_o(special_mem_dst), .retire_hold_o(special_retire_hold),
     .result_select_o(special_result_select), .result_port1_o(special_port1_ok),
-    .result_late_o(special_late),
+    .result_late_o(special_late), .result_early_value_o(special_early_value),
     .producer_o(special_producer), .store_irrevocable_o(special_store_irrevocable),
     .lr_o(lr), .ctr_o(ctr), .msr_o(msr), .srr0_o(srr0), .srr1_o(srr1),
     .dmem_req_valid_o(sp_req_valid), .dmem_req_ready_i,
@@ -2487,6 +2487,13 @@ module ppc_core #(
   assign result1_offer = sru_result_offer || iu_result_offer || special_port1;
   // A completion-serialized result is forwarded only once it retires (UM
   // 6.3.3.2, 6.4.5); it retires the cycle after it finishes.
+  // Each wake value where it is not late, without the late special result's
+  // mux, for the load/store unit's same-cycle base.
+  logic [31:0] special_early_value, wake_early_value, wake1_early_value;
+  assign wake_early_value = lsu_port0 ? lsu_result.value :
+                            special_result_select ? special_early_value : iu_result.value;
+  assign wake1_early_value = sru_result_offer ? sru_result.value :
+                             special_port1 ? special_early_value : iu_result.value;
   always_comb begin
     wake = cq_wake;
     wake.late = !lsu_port0 && special_result_select && special_late;
@@ -3219,6 +3226,7 @@ module ppc_core #(
         .offset_i(lsu_c0 ? c0_offset : d1_offset),
         .dr_i(msr[MSR_DR]),
         .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(wake1_valid), .wake1_i(wake1),
+        .wake_early_value_i(wake_early_value), .wake1_early_value_i(wake1_early_value),
         .fp_i(fp_mem_pipe), .fp_store_i(fp_mem_store), .fp_double_i(fp_mem_double),
         .fp_launch_valid_i(fp_launch_valid), .fp_launch_tag_i(fp_launch_tag),
         .fp_store_valid_i(fp_store_valid), .fp_store_tag_o(fp_store_tag),
@@ -3291,6 +3299,8 @@ module ppc_core #(
       assign dmem_store_check_addr_o = '0;
       logic _unused_store_check;
       assign _unused_store_check = dmem_store_check_ok_i;
+      logic _unused_early_wake;
+      assign _unused_early_wake = ^{wake_early_value, wake1_early_value};
     end
   endgenerate
   // The lane takes an adopted access in place of a dispatch; a lane dispatch
