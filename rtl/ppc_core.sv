@@ -1118,7 +1118,6 @@ module ppc_core #(
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq2;
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq3;
   /* verilator lint_on UNUSEDSIGNAL */
-  // A removed first word passes its lane to the second.
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_lane0;
   // An entry keeps a rotate mask and a branch displacement as their forms;
   // the word holds the values.
@@ -1142,11 +1141,9 @@ module ppc_core #(
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
   uop_t iq_uop_packed, dq1_uop_packed;
-  assign iq_lane0 = iq_in0 ?
+  assign iq_lane0 =
     {queued, iq_pack(push_uop, queued.insn), fold_predict, push_branch, push_pair,
-     fetch_removed_q, push_rec} :
-    {queued1, iq_pack(push_uop1, queued1.insn), fold_predict1, push_branch1, push_pair1s,
-     fetch_removed_q + 2'd1, BREC_W'(0)};
+     fetch_removed_q, push_rec};
   ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W),
            .DEPTH(IQ_DEPTH), .REC_W(BREC_W),
            .FOLD_BIT(BREC_W + 6 + $bits(iq_pair_t))) iq (
@@ -1154,8 +1151,11 @@ module ppc_core #(
     .push_valid_i({iq_in0 && iq_in1, iq_in0 || iq_in1}), .push_ready_o(iq_push_ready),
     .push2_ready_o(iq_push2_ready),
     .push0_data_i(iq_lane0),
+    // A removed first word passes its lane to the second.
     .push1_data_i({queued1, iq_pack(push_uop1, queued1.insn), fold_predict1, push_branch1,
-                   push_pair1, 2'd0, BREC_W'(0)}),
+                   iq_in0 ? push_pair1 : push_pair1s,
+                   iq_in0 ? 2'd0 : fetch_removed_q + 2'd1, BREC_W'(0)}),
+    .push_lane1_i(!iq_in0),
     .pop_i({dispatch1, iq_pop}), .rec_write_i(rem0_in), .rec_i(rem0_rec),
     .fold_write_i(ctr_rel_taken),
     .valid_o({iq_valid1, iq_valid}),
@@ -3332,7 +3332,8 @@ module ppc_core #(
   assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && (iq_in0 || iq_in1)));
   assign {iq_peek_head, iq_peek_uop, iq_peek_folded, iq_peek_branch} = iq_valid1 ?
       {dq1_head, dq1_uop, dq1_folded, dq1_branch} :
-      iq_lane0[$bits(iq_lane0) - 1 -: $bits(fetch_packet_t) + $bits(uop_t) + 5];
+    iq_in0 ? {queued, push_uop, fold_predict, push_branch} :
+             {queued1, push_uop1, fold_predict1, push_branch1};
   // Performance events: the cause of each cycle without a dispatch. The
   // cause and all its inputs only feed the registered event.
   logic [1:0] perf_refetch_q;  // 1: branch redirect, 2: other redirect
