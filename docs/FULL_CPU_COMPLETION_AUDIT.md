@@ -4,7 +4,7 @@ Date: 2026-09-23; updated 2026-10-05. Scope: the original CPU-only 603e project 
 [TASK_PLAN.md](plans/current/TASK_PLAN.md), including superscalar execution, floating point,
 caches/coherence, modes, timing fidelity and FPGA delivery; board integration excluded.
 
-**Revised estimate: about 84% complete (weighted 83.50%).**
+**Revised estimate: about 85% complete (weighted 84.82%).**
 This replaces the provisional 40–45% headline. It is completed project scope,
 including documentation and tooling, not measured RTL coverage or a fraction of
 remaining effort.
@@ -27,9 +27,9 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Source contracts and ISA planning | 8% | 88% | 7.04% |
 | Reproducible tools and scaffold | 4% | 90% | 3.60% |
 | Scalar tagged execution, recovery and integer units | 8% | 88% | 7.04% |
-| Dual dispatch/retirement and superscalar scheduling | 4% | 72% | 2.88% |
+| Dual dispatch/retirement and superscalar scheduling | 4% | 85% | 3.40% |
 | Functional branches | 3% | 90% | 2.70% |
-| Branch prediction and folding | 2% | 75% | 1.50% |
+| Branch prediction and folding | 2% | 85% | 1.70% |
 | Load/store architecture | 5% | 93% | 4.65% |
 | Supervisor, system instructions and interrupts | 8% | 89% | 7.12% |
 | MMU | 8% | 81% | 6.48% |
@@ -39,9 +39,9 @@ historically measured effort. Keep them fixed for subsequent updates.
 | Coherence and reservations | 3% | 99% | 2.97% |
 | Floating point | 12% | 78% | 9.36% |
 | Endian, variants and platform behavior | 6% | 85% | 5.10% |
-| Full timing, reference and integration verification | 10% | 68% | 6.80% |
+| Full timing, reference and integration verification | 10% | 74% | 7.40% |
 | Final FPGA closure and release | 4% | 50% | 2.00% |
-| **Total** | **100%** | | **83.50%** |
+| **Total** | **100%** | | **84.82%** |
 
 ## Reasons for the revised credit
 
@@ -378,3 +378,26 @@ Fits on `cf80b79` (50 MHz setup / hold, worst corners): translated +1.353 /
 +0.059 ns, integrated +0.598 / +0.094, timer-bat +0.952 / +0.117, chip −0.368 /
 +0.122, chip602 −0.517 / +0.117. FPU fits: 49.57, 51.20, 53.43, 60.07 MHz.
 Total 83.22% → 83.50%.
+
+## 2026-10-08 update (cycle-accuracy rounds 3–39)
+
+Dispatch, fetch, branch, completion and LSU timing now follow the UM chapter 6
+rules round by round (docs/PERFORMANCE_TARGET.md, rounds 3–39): branches
+removed at fetch with in-order LR/CTR shadows, one level of CR prediction
+checked at the BPU's execute cycle, SRU add/compare steering (UM 6.4.5),
+serialized SRU results forwarded after retirement, a third finish port for
+plain stores, and stores offering their cache write in the retire cycle. The
+dispatch-rule checker gained the mispredict, SRU-latency, serialized-result and
+LR-dependency rules. Dhrystone at width 2 with the LSU pipe and branch removal
+went from 593 to 511 cycles per run against the manual model's 509 on the
+round firmware; the 529 the landing gate reads on main's relinked firmware is
+the lane-1 CR-hold case fixed in round 40.
+
+| Row | From → to | Why |
+|---|---|---|
+| Dual dispatch/retirement and superscalar scheduling | 72 → 85 | dispatch, rename, completion and finish-port rules to UM 6.6 |
+| Branch prediction and folding | 75 → 85 | fetch-time removal with LR/CTR shadows, BPU-cycle prediction rule |
+| Full timing, reference and integration verification | 68 → 74 | cycle model within 2 cycles of the manual; new checker rules |
+
+Fits: none fresh (MiSTer fits run in CI). Total 83.50% → 84.82%.
+

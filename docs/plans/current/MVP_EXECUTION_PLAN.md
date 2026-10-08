@@ -1275,3 +1275,33 @@ Recorded: `mister/build.sh --clean --fpu-compact --dual --lsu-pipe --sys-mhz 45
 clk_sys +0.021 ns.
 
 MVP 97.43% (unchanged); full 603e 83.22% → 83.50%.
+
+## Cycle-accuracy rounds 3–39 — accepted (2026-10-08)
+
+The timing rounds (docs/PERFORMANCE_TARGET.md) merged onto main as `e56e51c`
+with bench fixes `e7eac3a`, `ac4601d` and `c56a092`.
+
+Recorded: preflight (firmware builds, `make -C toolchain firmware-all rtl-smoke
+rtl-alignment`, `make -C sim lint check-spec`, core benches at width 1 and
+width 2 + LSU unit, `test-reference-machine` Dhrystone with BRANCH_REMOVAL=1,
+`perf-diff`, `test-mister-load`), commit e56e51c, 2026-10-07: all pass;
+Dhrystone 529.0 cycles/run, model 508.0.
+
+Recorded: `make -C sim xrand-sweep test-fpu-all`, `make -C toolchain rtl-all`,
+commit e56e51c, 2026-10-08: pass; `xrand-sweep` 80 runs.
+
+Recorded: `make -C sim ci`, commit e56e51c, 2026-10-07: fail, 19 targets (14
+execution benches without the dispatch forward port, `test-core-interrupt`
+phases 13–16 and `test-core-timer-registers` stimulus, two 602 special-unit
+benches without `result_port1_o`). The same 19 targets, commit c56a092,
+2026-10-08: pass.
+
+Recorded: `test-dispatch-rules test-reference-machine test-reference-machine-mmu`
+at width 1, width 2, LSU unit and width 2 + LSU unit, commit e56e51c,
+2026-10-08: 11 PASS in each.
+
+MiSTer: CI on `5427d00` met 45 MHz on seeds 6 and 8 and published the
+`unstable` release with Doom and Quake. No fresh local fits.
+
+MVP 97.43% (unchanged); full 603e 83.50% → 84.82%.
+
