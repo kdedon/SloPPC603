@@ -219,6 +219,11 @@ fi
 # Quartus errors as "error:" lines, which ci/step.sh copies into the public
 # failure annotation.
 grep -E "^Error \(" "${here}/output_files.log" | head -20 | sed 's/^/quartus error: /' || true
+# On a failed fit, the fitter's reasons (resource limits, illegal placements).
+if [[ "${status}" != 0 ]]; then
+  grep -iE "can.t (place|fit|route)|requires .* but|exceed|insufficient|illegal|not enough|MLAB|LAB-wide" "${here}/output_files.log" \
+    | grep -v "^Warning" | head -15 | sed 's/^/quartus error: /' || true
+fi
 echo "quartus exit status ${status}"
 if [[ "${clean}" == 1 ]]; then
   rm -rf "${here}/db" "${here}/incremental_db" "${here}"/*.qws
