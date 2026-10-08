@@ -69,6 +69,11 @@ module ppc_completion #(
   output logic retire_valid_o,
   // The head finished on an earlier cycle.
   output logic retire_settled_o,
+  // The first port carries a valid load/store unit result.
+  input logic result_lsu_valid_i,
+  // retire_valid_o for a head that finished earlier or finishes on a load/store
+  // unit result, without the other units' finish terms.
+  output logic retire_mem_valid_o,
   // Stored head and CQ[1] packets, for checks that must not wait for a
   // finishing result. A clean finish changes only value and delta fields.
   output ppc_pkg::retire_packet_t head_o,
@@ -108,7 +113,7 @@ module ppc_completion #(
   logic [COUNT_WIDTH-1:0] count_q;
   retire_packet_t allocation, allocation1;
   logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept, finish1_accept;
-  logic finish2_accept, result2_fault, head_now2, head1_now2;
+  logic finish2_accept, result2_fault, head_now2, head1_now2, head_mem0;
   retire_packet_t finish0_packet, finish1_packet, finish2_packet;
   logic result_fault, result_clean, head_now0, head_now1, head1_now0, head1_now1, retire1_settled;
   logic redirect_found;
@@ -341,6 +346,10 @@ module ppc_completion #(
         assert (!redirect_candidate_kill[head_q])
           else $error("a branch recovery removed the head");
       assert (int'(head_q) < CQ_DEPTH) else $error("CQ head out of range");
+      if (result_lsu_valid_i)
+        assert (result_valid_i && result_retire_i) else $error("CQ LSU result off the first port");
+      if (retire_mem_valid_o)
+        assert (retire_valid_o) else $error("CQ memory retire without retire");
       assert (int'(tail_q) < CQ_DEPTH) else $error("CQ tail out of range");
       assert (int'(count_q) <= CQ_DEPTH) else $error("CQ count out of range");
     end
@@ -495,6 +504,11 @@ module ppc_completion #(
     head1_now2 = finish2_accept && !result2_fault && (result2_i.producer.index == head1_q);
     retire_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
                                           (head_now0 || head_now1 || head_now2));
+    head_mem0 = result_lsu_valid_i && (result_i.producer.index == head_q) && !done_q[head_q] &&
+                (generations_q[head_q] == result_i.producer.generation) &&
+                !redirect_kill_o[head_q] && !result_fault;
+    retire_mem_valid_o = retire_settled_o || (rst_ni && (count_q != '0) && active_q[head_q] &&
+                                              (head_mem0 || head_now2));
     retire_o = '0;
     if (retire_valid_o)
       retire_o = head_now0 ? finished(packets_q[head_q], result_i) :

@@ -48,7 +48,7 @@ module tb_recovery_storage;
     .clk_i(clk),.rst_ni(rst_n),.read_a_i(read_reg),.read_b_i(read_reg),
     .arch_a_i(32'habcd),.arch_b_i(32'habcd),.read_a_o(operand_a),.read_b_o(operand_b),
     .alloc_ready_o(alloc_ready),.alloc_tag_o(alloc_tag),.alloc_i(alloc),
-    .alloc_reg_i(alloc_reg),.alloc_producer_i(producer),.wake_valid_i(wake_valid),.wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0), .wake1_offer_i(1'b0),
+    .alloc_reg_i(alloc_reg),.alloc_producer_i(producer),.wake_early_value_i(32'b0), .wake1_early_value_i(32'b0), /* verilator lint_off PINCONNECTEMPTY */ .read_a_early_o(), .read_b_early_o() /* verilator lint_on PINCONNECTEMPTY */,.wake_valid_i(wake_valid),.wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0), .wake1_offer_i(1'b0),
     .release_i(release_slot),.release_reg_i(5'd4),.release_tag_i(second_tag),
     .release_producer_i(release_owner),.recovery_i(recovery),
     .recovery_survivor_count_i(survivors),.recovery_survivor_packet_i(packets),

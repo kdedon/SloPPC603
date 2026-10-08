@@ -12,6 +12,10 @@ module ppc_rename (
   input logic [4:0] read_a_i, read_b_i,
   input logic [31:0] arch_a_i, arch_b_i,
   output ppc_pkg::operand_t read_a_o, read_b_o,
+  // Low bits of the read_a_o and read_b_o values, forwarding the early wake
+  // values: equal wherever the operand is ready.
+  input logic [31:0] wake_early_value_i, wake1_early_value_i,
+  output logic [11:0] read_a_early_o, read_b_early_o,
   // Store data of a lane-0 access.
   input logic [4:0] read_c_i,
   input logic [31:0] arch_c_i,
@@ -105,7 +109,9 @@ module ppc_rename (
     end
 
   function automatic operand_t read_operand(input logic [4:0] reg_index,
-                                             input logic [31:0] arch_value);
+                                             input logic [31:0] arch_value,
+                                             input logic [31:0] wake_value,
+                                             input logic [31:0] wake1_value);
     operand_t operand;
     operand = '0;
     operand.ready = 1'b1;
@@ -122,13 +128,13 @@ module ppc_rename (
       // the same bus or a second-port wake, which takes precedence; a killed
       // wake also kills the reader.
       if (!ready[operand.tag] && wake_owns[operand.tag])
-        operand.value = wake_i.value;
+        operand.value = wake_value;
       // A late wake is not forwarded; the reader takes it from the bus.
       if (wake_match && !wake_i.late && wake_i.tag == operand.tag)
         operand.ready = 1'b1;
       if (!ready[operand.tag] && wake1_offer_i && wake1_i.tag == operand.tag &&
           wake1_owns[operand.tag])
-        operand.value = wake1_i.value;
+        operand.value = wake1_value;
       if (wake1_match && !wake1_i.late && wake1_i.tag == operand.tag)
         operand.ready = 1'b1;
     end
@@ -136,12 +142,20 @@ module ppc_rename (
   endfunction
 
   assign mapped_o = map_valid;
-  assign read_a_o = read_operand(read_a_i, arch_a_i);
-  assign read_b_o = read_operand(read_b_i, arch_b_i);
-  assign read_c_o = read_operand(read_c_i, arch_c_i);
-  assign read_a1_o = read_operand(read_a1_i, arch_a1_i);
-  assign read_b1_o = read_operand(read_b1_i, arch_b1_i);
-  assign read_c1_o = read_operand(read_c1_i, arch_c1_i);
+  assign read_a_o = read_operand(read_a_i, arch_a_i, wake_i.value, wake1_i.value);
+  assign read_b_o = read_operand(read_b_i, arch_b_i, wake_i.value, wake1_i.value);
+  assign read_c_o = read_operand(read_c_i, arch_c_i, wake_i.value, wake1_i.value);
+  assign read_a1_o = read_operand(read_a1_i, arch_a1_i, wake_i.value, wake1_i.value);
+  assign read_b1_o = read_operand(read_b1_i, arch_b1_i, wake_i.value, wake1_i.value);
+  assign read_c1_o = read_operand(read_c1_i, arch_c1_i, wake_i.value, wake1_i.value);
+  // Only the values are read.
+  /* verilator lint_off UNUSEDSIGNAL */
+  ppc_pkg::operand_t early_a, early_b;
+  /* verilator lint_on UNUSEDSIGNAL */
+  assign early_a = read_operand(read_a_i, arch_a_i, wake_early_value_i, wake1_early_value_i);
+  assign early_b = read_operand(read_b_i, arch_b_i, wake_early_value_i, wake1_early_value_i);
+  assign read_a_early_o = early_a.value[11:0];
+  assign read_b_early_o = early_b.value[11:0];
 
   // The three lowest free slots, all from the valid flops.
   always_comb begin

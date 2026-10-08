@@ -234,17 +234,9 @@ module ppc_dcache #(
   assign rd_tag = rd_tag_q;
   // The tag and state RAMs are read at the next cycle's address, with this
   // edge's writes bypassed, so the hit vector and line state are registers.
-  // Both candidates for that address are looked up, each in its own copy of
-  // the RAMs, so the request handshake only selects: [0] the request on
-  // offer, [1] the snoop or the held request.
-  logic [SET_BITS-1:0] cand_set [2];
-  logic [TAG_BITS-1:0] cand_tag [2];
-  logic cand_accept;
-  logic [1:0][WAY_COUNT-1:0][TAG_BITS-1:0] tag_rdata, tag_next;
-  logic [WAY_COUNT-1:0][TAG_BITS-1:0] tag_q;
-  logic [1:0][2*WAY_COUNT-1:0] st_rdata, st_next;
-  logic [1:0] sv_next;
-  logic [1:0][WAY_COUNT-1:0] hit_next;
+  logic [WAY_COUNT-1:0][TAG_BITS-1:0] tag_rdata, tag_next, tag_q;
+  logic [2*WAY_COUNT-1:0] st_rdata, st_next;
+  logic sv_next;
   logic [WAY_COUNT-1:0] vld_q, drt_q, hitw_q;
 
   // Data arrays: one 512 x 64 byte-enabled RAM per way, addressed {set, dw}.
@@ -289,32 +281,23 @@ module ppc_dcache #(
     return result;
   endfunction
 
-  genvar gw, gc, gs;
+  genvar gw;
   generate
   for (gw = 0; gw < WAY_COUNT; gw = gw + 1) begin : g_way
     ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(TAG_BITS)) tag_ram (
       .clk_i, .we_i(tag_we[gw]), .waddr_i(req_set), .wdata_i(req_tag),
-      .raddr_i(cand_set[0]), .rdata_o(tag_rdata[0][gw])
+      .raddr_i(rd_set_d), .rdata_o(tag_rdata[gw])
     );
-    ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(TAG_BITS)) tag_ram_held (
-      .clk_i, .we_i(tag_we[gw]), .waddr_i(req_set), .wdata_i(req_tag),
-      .raddr_i(cand_set[1]), .rdata_o(tag_rdata[1][gw])
-    );
-    for (gc = 0; gc < 2; gc = gc + 1) begin : g_cand
-      assign tag_next[gc][gw] = (tag_we[gw] && req_set == cand_set[gc]) ? req_tag :
-                                                                          tag_rdata[gc][gw];
-      assign hit_next[gc][gw] = sv_next[gc] && st_next[gc][gw] && tag_next[gc][gw] == cand_tag[gc];
-    end
+    assign tag_next[gw] = (tag_we[gw] && req_set == rd_set_d) ? req_tag : tag_rdata[gw];
     ppc_ram_sdp_be #(.DEPTH(4*SET_COUNT), .BYTES(8)) data_ram (
       .clk_i, .we_i(data_be & {8{data_way_we[gw]}}), .waddr_i(data_waddr),
       .wdata_i(data_wdata), .raddr_i(data_raddr), .rdata_o(data_rdata[gw])
     );
     always_ff @(posedge clk_i) begin
-      tag_q[gw] <= tag_next[cand_accept ? 0 : 1][gw];
-      vld_q[gw] <= cand_accept ? sv_next[0] && st_next[0][gw] : sv_next[1] && st_next[1][gw];
-      drt_q[gw] <= cand_accept ? sv_next[0] && st_next[0][gw] && st_next[0][WAY_COUNT + gw] :
-                                 sv_next[1] && st_next[1][gw] && st_next[1][WAY_COUNT + gw];
-      hitw_q[gw] <= cand_accept ? hit_next[0][gw] : hit_next[1][gw];
+      tag_q[gw] <= tag_next[gw];
+      vld_q[gw] <= sv_next && st_next[gw];
+      drt_q[gw] <= sv_next && st_next[gw] && st_next[WAY_COUNT + gw];
+      hitw_q[gw] <= sv_next && st_next[gw] && tag_next[gw] == rd_tag_d;
     end
     assign vld[gw] = vld_q[gw];
     assign drt[gw] = drt_q[gw];
@@ -322,10 +305,7 @@ module ppc_dcache #(
     // synthesis translate_off
     always_ff @(posedge clk_i) begin
       if (rst_ni)
-        // The RAM copies are written alike; entries never written differ.
-        assert ((!vld[gw] || (tag_q[gw] == tag_ram.mem[rd_set] &&
-                              tag_ram_held.mem[rd_set] == tag_ram.mem[rd_set])) &&
-                (!set_valid_q[rd_set] || state_ram_held.mem[rd_set] == state_ram.mem[rd_set]) &&
+        assert (tag_q[gw] == tag_ram.mem[rd_set] &&
                 vld[gw] == (set_valid_q[rd_set] && state_ram.mem[rd_set][gw]) &&
                 drt[gw] == (vld[gw] && state_ram.mem[rd_set][WAY_COUNT + gw]) &&
                 hitw[gw] == (vld[gw] && tag_ram.mem[rd_set] == rd_tag))
@@ -337,20 +317,12 @@ module ppc_dcache #(
 
   ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(2*WAY_COUNT)) state_ram (
     .clk_i, .we_i(st_we), .waddr_i(st_waddr), .wdata_i(st_wdata),
-    .raddr_i(cand_set[0]), .rdata_o(st_rdata[0])
+    .raddr_i(rd_set_d), .rdata_o(st_rdata)
   );
-  ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(2*WAY_COUNT)) state_ram_held (
-    .clk_i, .we_i(st_we), .waddr_i(st_waddr), .wdata_i(st_wdata),
-    .raddr_i(cand_set[1]), .rdata_o(st_rdata[1])
-  );
-  generate
-  for (gs = 0; gs < 2; gs = gs + 1) begin : g_cand_state
-    assign st_next[gs] = (st_we && st_waddr == cand_set[gs]) ? st_wdata : st_rdata[gs];
-    // The flash invalidate wins over a state write, as in set_valid_q.
-    assign sv_next[gs] = rst_ni && !(state_q == S_IDLE && hid0_dcfi_i && MUTATION != 7) &&
-                        (set_valid_q[cand_set[gs]] || (st_we && st_waddr == cand_set[gs]));
-  end
-  endgenerate
+  assign st_next = (st_we && st_waddr == rd_set_d) ? st_wdata : st_rdata;
+  // The flash invalidate wins over a state write, as in set_valid_q.
+  assign sv_next = rst_ni && !(state_q == S_IDLE && hid0_dcfi_i && MUTATION != 7) &&
+                   (set_valid_q[rd_set_d] || (st_we && st_waddr == rd_set_d));
   ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(LRU_BITS)) lru_ram (
     .clk_i, .we_i(lru_we), .waddr_i(req_set), .wdata_i(lru_wdata),
     .raddr_i(rd_set), .rdata_o(lru_rdata)
@@ -954,13 +926,18 @@ module ppc_dcache #(
       fwd_wdata_q <= req_wdata_q;
     end
   end
-  assign cand_set[0] = req_addr_i[5 +: SET_BITS];
-  assign cand_tag[0] = req_addr_i[31 -: TAG_BITS];
-  assign cand_set[1] = (rst_ni && snoop_valid_i) ? snoop_addr_i[5 +: SET_BITS] : req_set;
-  assign cand_tag[1] = (rst_ni && snoop_valid_i) ? snoop_addr_i[31 -: TAG_BITS] : req_tag;
-  assign cand_accept = !(rst_ni && snoop_valid_i) && req_accept;
-  assign rd_set_d = cand_accept ? cand_set[0] : cand_set[1];
-  assign rd_tag_d = cand_accept ? cand_tag[0] : cand_tag[1];
+  always_comb begin
+    if (rst_ni && snoop_valid_i) begin
+      rd_set_d = snoop_addr_i[5 +: SET_BITS];
+      rd_tag_d = snoop_addr_i[31 -: TAG_BITS];
+    end else if (req_accept) begin
+      rd_set_d = req_addr_i[5 +: SET_BITS];
+      rd_tag_d = req_addr_i[31 -: TAG_BITS];
+    end else begin
+      rd_set_d = req_set;
+      rd_tag_d = req_tag;
+    end
+  end
   always_ff @(posedge clk_i) begin
     if (req_accept) begin
       req_op_q <= req_op_i;

@@ -291,7 +291,7 @@ module ppc_core #(
   logic [31:0] fp_fpscr;
   logic fp_sticky_hold, fp_sticky_waited_q;
   retire_packet_t cq_retire, cq_retire1;
-  logic cq_retire_settled, retire_gate;
+  logic cq_retire_settled, retire_gate, cq_retire_mem_valid;
   // Pairing checks read a few fields.
   /* verilator lint_off UNUSEDSIGNAL */
   retire_packet_t cq_head_packet, cq_head1_packet;
@@ -483,6 +483,8 @@ module ppc_core #(
   completion_tag_t recovery_tags [CQ_DEPTH];
   rename_tag_t alloc_tag;
   logic [31:0] arch_a, arch_b, arch_c, special_a, special_b;
+  logic [31:0] special_early_value, wake_early_value, wake1_early_value;
+  logic [11:0] src_a_early, src_b_early, special_a_early, special_b_early;
   // Second dispatch slot (DQ1); idle at DISPATCH_WIDTH 1.
   logic [31:0] arch_a1, arch_b1, arch_c1;
   completion_tag_t alloc1_producer;
@@ -1446,11 +1448,16 @@ module ppc_core #(
   assign special_a = uop.zero_a ? 32'b0 : src_a.value;
   assign special_b = uop.use_imm ? uop.imm : src_b.value;
   assign dispatch_ea = special_a + special_b;
-  assign dispatch_ea_low = special_a[1:0] + special_b[1:0];
+  // The alignment checks read the operands with each late special result
+  // left out; a late value is never ready, and such an access either waits
+  // or leaves its alignment to the load/store unit.
+  assign special_a_early = uop.zero_a ? 12'b0 : src_a_early;
+  assign special_b_early = uop.use_imm ? uop.imm[11:0] : src_b_early;
+  assign dispatch_ea_low = special_a_early[1:0] + special_b_early[1:0];
   // lmw/stmw/lwarx/stwcx. always need a word-aligned EA. With hardware
   // splitting, other scalars trap only when crossing a 4-KB page under data
   // translation (UM 4.5.6.1.1); BAT regions get no special handling.
-  assign dispatch_page_cross = page_end(special_a[11:0], special_b[11:0],
+  assign dispatch_page_cross = page_end(special_a_early[11:0], special_b_early[11:0],
                                         uop.mem_size == MEM_WORD);
   // Strings never trap on alignment in big-endian mode. In little-endian
   // mode every multiple and string traps (UM 4.5.6), and so does a
@@ -2146,6 +2153,8 @@ module ppc_core #(
   ppc_rename rename (
     .clk_i, .rst_ni, .read_a_i(uop.src_a), .read_b_i(uop.src_b),
     .arch_a_i(arch_a), .arch_b_i(arch_b), .read_a_o(src_a), .read_b_o(src_b),
+    .wake_early_value_i(wake_early_value), .wake1_early_value_i(wake1_early_value),
+    .read_a_early_o(src_a_early), .read_b_early_o(src_b_early),
     .read_a1_i(dq1_uop.src_a), .read_b1_i(dq1_uop.src_b),
     .arch_a1_i(arch_a1), .arch_b1_i(arch_b1),
     .read_a1_o(src_a1), .read_b1_o(src_b1),
@@ -2489,11 +2498,10 @@ module ppc_core #(
   // 6.3.3.2, 6.4.5); it retires the cycle after it finishes.
   // Each wake value where it is not late, without the late special result's
   // mux, for the load/store unit's same-cycle base.
-  logic [31:0] special_early_value, wake_early_value, wake1_early_value;
   assign wake_early_value = lsu_port0 ? lsu_result.value :
                             special_result_select ? special_early_value : iu_result.value;
   assign wake1_early_value = sru_result_offer ? sru_result.value :
-                             special_port1 ? special_early_value : iu_result.value;
+                             special_result_select ? special_early_value : iu_result.value;
   always_comb begin
     wake = cq_wake;
     wake.late = !lsu_port0 && special_result_select && special_late;
@@ -3235,6 +3243,7 @@ module ppc_core #(
         .kill_generation_i(recovery_kill_generation),
         .store_authorize_i(retire_ready_i && !bs_store_hold), .queue_head_i(cq_head),
         .commit_i(commit), .commit_tag_i(retire_producer),
+        .commit_mem_i(cq_retire_mem_valid && retire_gate && retire_ready_i),
         .branch_spec_i(bs_valid_q || (bu_branch && bu_spec) || (c0_carry && carry_start && !lsu_c0)),.branch_resolved_i((bs_resolve && (bs_taken == bs_pred_q)) || (fd_start && bs_cap_hit)),
         .chk_addr_o(dmem_store_check_addr_o), .chk_ok_i(dmem_store_check_ok_i),
         .lane_idle_i(lane_mem_idle),
@@ -3277,7 +3286,7 @@ module ppc_core #(
       assign fp_store_tag = '0;
       assign _unused_fp_unit = ^{fp_launch_valid, fp_launch_tag, fp_store_valid,
                                  fp_store_data, fp_mem_double, fp_mem_pipe_ready, src_c,
-                                 lsu_base, d1_offset, c0_offset};
+                                 lsu_base, d1_offset, c0_offset, cq_retire_mem_valid};
       assign lsu_rsp_ready = 1'b0;
       assign lsu_rsp_owner = 1'b0;
       assign lsu_result_valid = 1'b0;
@@ -3459,6 +3468,9 @@ module ppc_core #(
         else $error("memory dispatch violated committed-EA serialization");
       assert (base_snoop || (forwarded_ea_low == dispatch_ea_low))
         else $error("committed and forwarded memory EA low bits disagree");
+      assert (base_snoop || ((special_a_early == special_a[11:0]) &&
+                             (special_b_early == special_b[11:0])))
+        else $error("alignment check operands differ from the dispatched ones");
     end
     if (rst_ni && iq_valid)
       assert (iq_uop == check_uop) else $error("queued uop disagrees with decode");
@@ -3651,6 +3663,8 @@ module ppc_core #(
     .wake1_valid_o(wake1_valid), .wake1_o(cq_wake1),
     .result2_valid_i(lsu_result_valid && lsu_result_store), .result2_i(lsu_result),
     .retire_valid_o(cq_retire_valid), .retire_settled_o(cq_retire_settled),
+    .result_lsu_valid_i(lsu_result_valid && !lsu_result_store),
+    .retire_mem_valid_o(cq_retire_mem_valid),
     .head_o(cq_head_packet), .head1_o(cq_head1_packet),
     .retire_ready_i(retire_ready_i && !special_retire_hold && !halted_o && !fp_head_block &&
                     !update_pending_q && !bs_hold),
