@@ -360,8 +360,8 @@ module tb_demo_soc #(
       exit_code == 0 ? "PASS" : "FAIL", name, exit_code, run_cycles, run_retired,
       real'(run_cycles) / real'(run_retired), soc.tenures, soc.frames_q, ppm);
     if (exit_code != 0) $fatal(1, "firmware exit code %08x", exit_code);
-    if (perf_retired[31:0] != soc.perf.count_q[2])
-      $fatal(1, "perf RETIRED %0d, retire strobes %0d", soc.perf.count_q[2], perf_retired);
+    if (perf_retired[31:0] != soc.perf.count_q[1])
+      $fatal(1, "perf RETIRED %0d, retire strobes %0d", soc.perf.count_q[1], perf_retired);
     $finish;
   end
 endmodule
