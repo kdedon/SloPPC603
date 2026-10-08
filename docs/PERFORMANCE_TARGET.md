@@ -2486,6 +2486,69 @@ not rerun (no FPU change). Quartus `quartus_map
 `PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
 run, so this round makes no timing claim.
 
+## Timing accuracy round 40
+
+The demo firmware rebuilt from this tree moves Dhrystone's code by
+0x6c4, which put the `strcmp` loop's forward `beq` fff03b94 in lane 1
+beside `cmpwi` fff03b90. At its FD cycle F the loop's backward `beq`
+fff03ba8 was still predicted, its `cmpw` executing (result at F+1), so
+the pair split and the `beq` stayed in FD a cycle, delaying the next
+doubleword. The BPU decodes a branch the cycle after fetch, and the
+older prediction frees the BPU in the cycle it resolves (UM 6.4.1.2,
+Figure 6-5); fetch stops only while the second branch actually waits
+(UM 6.4.1.1). A lane-1 `bc` predicted not taken, behind a CR writer
+still queued, now enters the IQ with its pair when the older
+prediction's CR owner issues a single-cycle IU or SRU op that cycle. Its
+carried prediction still starts no earlier than the resolution.
+
+Path: the IU and SRU issue select (`issue_valid`, `issue.ctrl`) now
+feeds `wait1_cr`, and through it `iq_push1` and `fetch_ready`.
+
+Lane 0 keeps the F-cycle check: releasing it early sent the branch to
+the IQ as a dispatched `bc` instead of a removed one and cost CoreMark
+about 12,000 cycles. Matching the manual there needs a one-entry BPU
+hold register that removes the branch at F+1.
+
+| | Model | Core w2 | Core w1 | CoreMark w2 demo | CoreMark w1 demo |
+|---|---:|---:|---:|---:|---:|
+| Round 39, older firmware (4e10507) | 509 | 511 | 600 | 4,136,428 | 4,500,094 |
+| Lane-1 release (1cd8e53), older firmware | 509 | 511 | 599 | 4,130,504 | 4,501,023 |
+| Round 39 (e56e51c), this tree's firmware | 508 | 529 | | | |
+| Lane-1 release (1cd8e53), this tree's firmware | 508 | 511 | 601 | 4,091,869 | 4,514,748 |
+
+The older firmware is the build Round 39 measured; "this tree's
+firmware" is `toolchain/build/demo` rebuilt from commit 1cd8e53 with
+`toolchain/build-in-container.sh -f demo/Makefile all benchmarks
+selftest`. Width-2 dispatch-rules cycles with this tree's firmware, base
+to change: Dhrystone 2,027,757 to 1,991,559, CoreMark 4,088,186 to
+4,091,845, Whetstone 9,011,961 to 9,003,554. Width 1 and the base's
+CoreMark demo were not measured on the base.
+
+Recorded: `make -C sim -j2 lint check-spec`, `make -C sim test-core
+test-core-full-decode`, and at widths 1 and 2 (`DISPATCH_WIDTH=2` for
+width 2) with `VERILATOR=tools/verilate-lsu-pipe
+VERILATOR_TOOL=tools/verilate-lsu-pipe BRANCH_REMOVAL=1`: `test-core
+test-core-recovery test-core-dual test-dispatch-rules
+test-core-interrupt test-core-interrupt-disabled test-core-branch-fold
+test-core-branch-recovery test-reference-machine perf-diff`
+(`MACHINE_PROGRAMS="hello dhrystone coremark whetstone selftest"`),
+`test-reference-machine-mmu` (chip-mmu-stress `smoke.elf`), the
+CoreMark demo and `test-core-lsu-update test-core-lsu-extensions
+test-core-lsu-timing test-core-lsu-timing-snoop
+test-core-lsu-timing-602`; commit 1cd8e53, 2026-10-07, with this tree's
+firmware. `perf-diff` and the CoreMark demo were also run with the older
+firmware (`DEMO_FW_DIR` pointing at a build from before the 0x6c4 move).
+All fresh, all pass; CoreMark CRCs match with both builds. `test-fpu-all`
+was not rerun (no FPU change). Quartus `quartus_map
+--analysis_and_elaboration` of `quartus/chip` with `PPC_LSU_PIPE=1`,
+`PPC_DISPATCH_WIDTH=2` and `PPC_BRANCH_REMOVAL=1`: 0 errors. No fit was
+run, so this round makes no timing claim.
+
+Not done: the lane-0 hold register above, and a word fetched beside a
+held branch entering the IQ (`ble` fff03950 behind `bne` fff03948 in
+`memcpy` holds `addi` fff03954 a cycle; the `strcmp` exit residue is the
+same mechanism).
+
 ## Memory system
 
 The demo SoC differs from a 603e board in ways that do not affect these numbers
