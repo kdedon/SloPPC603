@@ -102,6 +102,7 @@ module tb_recovery_state;
     .alloc_ready_o(rename_alloc_ready), .alloc_tag_o(rename_alloc_tag),
     .alloc_i(rename_alloc), .alloc_reg_i(rename_alloc_reg),
     .alloc_producer_i(rename_alloc_producer),
+    .wake_early_value_i(32'b0), .wake1_early_value_i(32'b0), /* verilator lint_off PINCONNECTEMPTY */ .read_a_early_o(), .read_b_early_o() /* verilator lint_on PINCONNECTEMPTY */,
     .wake_valid_i(wake_valid), .wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0), .wake1_offer_i(1'b0),
     .release_i(release_fire), .release_reg_i(retire_packet.gpr),
     .release_tag_i(retire_packet.tag), .release_producer_i(retire_tag),

@@ -48,6 +48,7 @@ module tb_rename_pair;
     .alloc1_reg_i(a1_reg), .alloc1_producer_i(a1_prod),
     .alloc2_ready_o(a2_ready), .alloc2_tag_o(a2_tag), .alloc2_i(alloc2),
     .alloc2_reg_i(a2_reg), .alloc2_producer_i(a2_prod),
+    .wake_early_value_i(32'b0), .wake1_early_value_i(32'b0), /* verilator lint_off PINCONNECTEMPTY */ .read_a_early_o(), .read_b_early_o() /* verilator lint_on PINCONNECTEMPTY */,
     .wake_valid_i(wake_v), .wake_i(wake), .wake1_valid_i(1'b0), .wake1_i('0), .wake1_offer_i(1'b0),
     .release_i(rel0), .release_reg_i(rel0_reg), .release_tag_i(rel0_tag),
     .release_producer_i(rel0_prod),

@@ -71,6 +71,7 @@ module tb_execution;
     .alloc_ready_o(rn_alloc_ready), .alloc_tag_o(rn_alloc_tag),
     .alloc_i(rn_alloc), .alloc_reg_i(rn_alloc_reg),
     .alloc_producer_i(rn_alloc_producer),
+    .wake_early_value_i(32'b0), .wake1_early_value_i(32'b0), /* verilator lint_off PINCONNECTEMPTY */ .read_a_early_o(), .read_b_early_o() /* verilator lint_on PINCONNECTEMPTY */,
     .wake_valid_i(rn_wake_valid), .wake_i(rn_wake), .wake1_valid_i(1'b0), .wake1_i('0), .wake1_offer_i(1'b0),
     .release_i(rn_release), .release_reg_i(rn_release_reg),
     .release_tag_i(rn_release_tag), .release_producer_i(rn_release_producer),
