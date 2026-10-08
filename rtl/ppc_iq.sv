@@ -25,6 +25,8 @@ module ppc_iq #(
   input logic [1:0] push_valid_i,
   output logic push_ready_o, push2_ready_o,
   input logic [WIDTH-1:0] push0_data_i, push1_data_i,
+  // With one push, it takes push1_data_i.
+  input logic push_lane1_i,
   // pop_i[1] pops DQ1 with DQ0.
   input logic [1:0] pop_i,
   // Needs a survivor of this cycle's pops.
@@ -45,7 +47,7 @@ module ppc_iq #(
   // Registers, not block RAM: DQ0/DQ1 feed dispatch directly.
   (* ramstyle = "logic" *) logic [WIDTH-1:0] entries [DEPTH];
   logic [COUNT_WIDTH-1:0] count, survivors;
-  logic push0, push1, pop0, pop1;
+  logic push0, push1, pop0, pop1, first1;
 
   assign push_ready_o = !clear_i && (count < COUNT_WIDTH'(DEPTH));
   assign push2_ready_o = !clear_i && (count < COUNT_WIDTH'(DEPTH - 1));
@@ -63,6 +65,7 @@ module ppc_iq #(
   end
   assign push0 = push_valid_i[0] && push_ready_o;
   assign push1 = push0 && push_valid_i[1] && push2_ready_o;
+  assign first1 = push_lane1_i && !push_valid_i[1];
   assign pop0 = pop_i[0] && valid_o[0];
   assign pop1 = pop0 && pop_i[1] && valid_o[1];
   assign survivors = count - COUNT_WIDTH'(pop0) - COUNT_WIDTH'(pop1);
@@ -76,9 +79,9 @@ module ppc_iq #(
         end else if (pop0) begin
           if (i + 1 < DEPTH) entries[i] <= entries[i + 1];
         end
-      end else if (COUNT_WIDTH'(i) == survivors) begin
+      end else if ((COUNT_WIDTH'(i) == survivors) && !first1) begin
         entries[i] <= push0_data_i;
-      end else if (COUNT_WIDTH'(i) == survivors + 1'b1) begin
+      end else if (COUNT_WIDTH'(i) == survivors + COUNT_WIDTH'(!first1)) begin
         entries[i] <= push1_data_i;
       end
       if (rec_write_i && (COUNT_WIDTH'(i) + 1'b1 == survivors))

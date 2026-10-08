@@ -1010,6 +1010,29 @@ package ppc_pkg;
     return p;
   endfunction
   /* verilator lint_on UNUSEDSIGNAL */
+  // Decode helpers shared with the IQ, which rebuilds fields from the word.
+  function automatic logic [31:0] make_rotate_mask(
+    input logic [4:0] mb,
+    input logic [4:0] me
+  );
+    logic [31:0] mask;
+    mask = '0;
+    for (int ppc_bit = 0; ppc_bit < 32; ppc_bit++) begin
+      if ((mb <= me && ppc_bit >= int'(mb) && ppc_bit <= int'(me)) ||
+          (mb > me && (ppc_bit >= int'(mb) || ppc_bit <= int'(me))))
+        mask[31-ppc_bit] = 1'b1;
+    end
+    return mask;
+  endfunction
+
+  function automatic logic valid_bo(input logic [4:0] bo);
+    case (bo)
+      5'd0, 5'd1, 5'd2, 5'd3, 5'd4, 5'd5,
+      5'd8, 5'd9, 5'd10, 5'd11, 5'd12, 5'd13,
+      5'd16, 5'd17, 5'd18, 5'd19, 5'd20: return 1'b1;
+      default: return 1'b0;
+    endcase
+  endfunction
 endpackage
 /* verilator lint_on UNUSEDPARAM */
 `default_nettype wire

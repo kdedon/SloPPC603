@@ -600,120 +600,111 @@ module ppc_lsu_pipe #(
 
   always_ff @(posedge clk_i) begin
     entry_t p1_next [2], p2_next [2], pushed;
-    entry_t p1_nx [2][2], p2_nx [2][2];
-    logic [1:0] p1_n, p2_n, p1_nn [2], p2_nn [2];
+    logic [1:0] p1_n, p2_n;
     // Which base_src entry each P1 slot takes.
     logic [1:0] p1_src [2];
     logic p1_pop, p2_pop, p2_push, fire_p1, fire_sq;
-    // Both outcomes of the request handshake are formed; the late ready
-    // only selects between them.
-    for (int r = 0; r < 2; r++) begin
-      fire_p1 = offer && (r == 1);
-      fire_sq = sq_offer && (r == 1);
-      p1_pop = fire_p1 || p1_queue || p1_drop || p1_punt ||
-               (adopt_fire && !p2_adopt && !redo_adopt);
-      p2_pop = p2_retire || (adopt_fire && p2_adopt);
-      p2_push = fire_p1 || fire_sq;
-      pushed = p1_head;
-      pushed.ea = head_ea;
-      pushed.fast = head_fast;
-      pushed.base_wait = 1'b0;
-      pushed.base_late = 1'b0;
-      pushed.data = head_data;
-      pushed.data_ready = 1'b1;
-      pushed.data_late = 1'b0;
-      pushed.passed = sq_live;
-      if (fire_sq) begin
-        pushed = '0;
-        pushed.write = 1'b1;
-        pushed.fast = 1'b1;
-        pushed.producer = sq_head.producer;
-      end
-      // Shift out the popped heads. A second beat reaching the head moves to
-      // the next word.
-      p1_next = p1_q;
-      p1_src[0] = 2'd0;
-      p1_src[1] = 2'd1;
-      p1_n = p1_count_q;
-      if (p1_pop) begin
-        p1_next[0] = p1_q[1];
-        p1_src[0] = 2'd1;
-        if (p1_q[1].advance) begin
-          p1_next[0].ea = {p1_q[1].ea[31:2] + 30'd1, p1_q[1].ea[1:0]};
-          p1_next[0].advance = 1'b0;
-        end
-        p1_n = p1_n - 2'd1;
-      end else if (p1_count_q != 2'd0) begin
-        p1_next[0].hold = 1'b0;
-      end
-      p2_next = p2_q;
-      p2_n = p2_count_q;
-      if (p2_pop) begin
-        p2_next[0] = p2_q[1];
-        p2_n = p2_n - 2'd1;
-      end
-      if (p2_push) begin
-        p2_next[p2_n[0]] = pushed;
-        p2_n = p2_n + 2'd1;
-      end
-      if (dispatch_fire) begin
-        p1_next[p1_n[0]] = incoming;
-        p1_src[p1_n[0]] = 2'd2;
-        p1_n = p1_n + 2'd1;
-        if (in_split) begin
-          p1_next[1] = incoming;
-          p1_src[1] = 2'd2;
-          p1_next[1].second = 1'b1;
-          p1_next[1].advance = 1'b1;
-          p1_n = 2'd2;
-        end
-      end
-      // Removal by recovery or behind a faulting access. A retired store's
-      // write is never removed.
-      for (int i = 0; i < 2; i++) begin
-        if (doom || src_kill[p1_src[i]]) p1_next[i].killed = 1'b1;
-        if (branch_resolved_i) p1_next[i].bspec = 1'b0;
-        if (!p2_next[i].write && (doom || killed_now(p2_next[i].producer)))
-          p2_next[i].killed = 1'b1;
-        if (branch_resolved_i) p2_next[i].bspec = 1'b0;
-        if (src_launch[p1_src[i]]) p1_next[i].launched = 1'b1;
-        if (p1_next[i].data_late) begin
-          p1_next[i].data_ready = 1'b1;
-          p1_next[i].data_late = 1'b0;
-        end else if (data_hit[p1_src[i]]) begin
-          p1_next[i].data = data_value[p1_src[i]];
-          p1_next[i].data_ready = !data_late[p1_src[i]];
-          p1_next[i].data_late = data_late[p1_src[i]];
-        end
-        // A base written this cycle forms the EA; an alignment exception goes
-        // to the lane with the access.
-        if (p1_next[i].base_late) begin
-          p1_next[i].base_wait = 1'b0;
-          p1_next[i].base_late = 1'b0;
-        end else if (BASE_ANY && p1_next[i].base_wait && base_hit[p1_src[i]]) begin
-          p1_next[i].base_wait = base_late[p1_src[i]];
-          p1_next[i].base_late = base_late[p1_src[i]];
-          p1_next[i].ea = base_ea[p1_src[i]];
-          p1_next[i].fast = base_fast[p1_src[i]];
-          if (base_trap[p1_src[i]]) begin
-            p1_next[i].uop.special_op = SPECIAL_ALIGNMENT;
-            p1_next[i].uop.gpr_write = 1'b0;
-          end
-        end
-      end
-      p1_nx[r] = p1_next;
-      p2_nx[r] = p2_next;
-      p1_nn[r] = p1_n;
-      p2_nn[r] = p2_n;
+    fire_p1 = p1_fire;
+    fire_sq = sq_fire;
+    p1_pop = fire_p1 || p1_queue || p1_drop || p1_punt ||
+             (adopt_fire && !p2_adopt && !redo_adopt);
+    p2_pop = p2_retire || (adopt_fire && p2_adopt);
+    p2_push = fire_p1 || fire_sq;
+    pushed = p1_head;
+    pushed.ea = head_ea;
+    pushed.fast = head_fast;
+    pushed.base_wait = 1'b0;
+    pushed.base_late = 1'b0;
+    pushed.data = head_data;
+    pushed.data_ready = 1'b1;
+    pushed.data_late = 1'b0;
+    pushed.passed = sq_live;
+    if (fire_sq) begin
+      pushed = '0;
+      pushed.write = 1'b1;
+      pushed.fast = 1'b1;
+      pushed.producer = sq_head.producer;
     end
-    p1_q <= p1_nx[req_ready_i];
-    p2_q <= p2_nx[req_ready_i];
+    // Shift out the popped heads. A second beat reaching the head moves to
+    // the next word.
+    p1_next = p1_q;
+    p1_src[0] = 2'd0;
+    p1_src[1] = 2'd1;
+    p1_n = p1_count_q;
+    if (p1_pop) begin
+      p1_next[0] = p1_q[1];
+      p1_src[0] = 2'd1;
+      if (p1_q[1].advance) begin
+        p1_next[0].ea = {p1_q[1].ea[31:2] + 30'd1, p1_q[1].ea[1:0]};
+        p1_next[0].advance = 1'b0;
+      end
+      p1_n = p1_n - 2'd1;
+    end else if (p1_count_q != 2'd0) begin
+      p1_next[0].hold = 1'b0;
+    end
+    p2_next = p2_q;
+    p2_n = p2_count_q;
+    if (p2_pop) begin
+      p2_next[0] = p2_q[1];
+      p2_n = p2_n - 2'd1;
+    end
+    if (p2_push) begin
+      p2_next[p2_n[0]] = pushed;
+      p2_n = p2_n + 2'd1;
+    end
+    if (dispatch_fire) begin
+      p1_next[p1_n[0]] = incoming;
+      p1_src[p1_n[0]] = 2'd2;
+      p1_n = p1_n + 2'd1;
+      if (in_split) begin
+        p1_next[1] = incoming;
+        p1_src[1] = 2'd2;
+        p1_next[1].second = 1'b1;
+        p1_next[1].advance = 1'b1;
+        p1_n = 2'd2;
+      end
+    end
+    // Removal by recovery or behind a faulting access. A retired store's
+    // write is never removed.
+    for (int i = 0; i < 2; i++) begin
+      if (doom || src_kill[p1_src[i]]) p1_next[i].killed = 1'b1;
+      if (branch_resolved_i) p1_next[i].bspec = 1'b0;
+      if (!p2_next[i].write && (doom || killed_now(p2_next[i].producer)))
+        p2_next[i].killed = 1'b1;
+      if (branch_resolved_i) p2_next[i].bspec = 1'b0;
+      if (src_launch[p1_src[i]]) p1_next[i].launched = 1'b1;
+      if (p1_next[i].data_late) begin
+        p1_next[i].data_ready = 1'b1;
+        p1_next[i].data_late = 1'b0;
+      end else if (data_hit[p1_src[i]]) begin
+        p1_next[i].data = data_value[p1_src[i]];
+        p1_next[i].data_ready = !data_late[p1_src[i]];
+        p1_next[i].data_late = data_late[p1_src[i]];
+      end
+      // A base written this cycle forms the EA; an alignment exception goes
+      // to the lane with the access.
+      if (p1_next[i].base_late) begin
+        p1_next[i].base_wait = 1'b0;
+        p1_next[i].base_late = 1'b0;
+      end else if (BASE_ANY && p1_next[i].base_wait && base_hit[p1_src[i]]) begin
+        p1_next[i].base_wait = base_late[p1_src[i]];
+        p1_next[i].base_late = base_late[p1_src[i]];
+        p1_next[i].ea = base_ea[p1_src[i]];
+        p1_next[i].fast = base_fast[p1_src[i]];
+        if (base_trap[p1_src[i]]) begin
+          p1_next[i].uop.special_op = SPECIAL_ALIGNMENT;
+          p1_next[i].uop.gpr_write = 1'b0;
+        end
+      end
+    end
+    p1_q <= p1_next;
+    p2_q <= p2_next;
     if (!rst_ni) begin
       p1_count_q <= '0;
       p2_count_q <= '0;
     end else begin
-      p1_count_q <= p1_nn[req_ready_i];
-      p2_count_q <= p2_nn[req_ready_i];
+      p1_count_q <= p1_n;
+      p2_count_q <= p2_n;
     end
   end
 

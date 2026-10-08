@@ -1128,12 +1128,32 @@ module ppc_core #(
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq2;
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_dq3;
   /* verilator lint_on UNUSEDSIGNAL */
-  // A removed first word passes its lane to the second.
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_lane0;
-  assign iq_lane0 = iq_in0 ?
-    {queued, push_uop, fold_predict, push_branch, push_pair, fetch_removed_q, push_rec} :
-    {queued1, push_uop1, fold_predict1, push_branch1, push_pair1s, fetch_removed_q + 2'd1,
-     BREC_W'(0)};
+  // An entry keeps a rotate mask and a branch displacement as their forms;
+  // the word holds the values.
+  /* verilator lint_off UNUSEDSIGNAL */  // each reads only the fields it needs
+  function automatic uop_t iq_pack(uop_t u, logic [31:0] insn);
+    uop_t q;
+    q = u;
+    q.mask = {31'b0, (insn[31:26] == 6'd20) || (insn[31:26] == 6'd21) ||
+                     (insn[31:26] == 6'd23)};
+    q.branch_disp = {30'b0, (insn[31:26] == 6'd16) && valid_bo(insn[25:21]),
+                     insn[31:26] == 6'd18};
+    return q;
+  endfunction
+  function automatic uop_t iq_unpack(uop_t u, logic [31:0] insn);
+    uop_t q;
+    q = u;
+    q.mask = u.mask[0] ? make_rotate_mask(insn[10:6], insn[5:1]) : 32'b0;
+    q.branch_disp = u.branch_disp[0] ? {{6{insn[25]}}, insn[25:2], 2'b0} :
+                    u.branch_disp[1] ? {{16{insn[15]}}, insn[15:2], 2'b0} : 32'b0;
+    return q;
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
+  uop_t iq_uop_packed, dq1_uop_packed;
+  assign iq_lane0 =
+    {queued, iq_pack(push_uop, queued.insn), fold_predict, push_branch, push_pair,
+     fetch_removed_q, push_rec};
   ppc_iq #(.WIDTH($bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W),
            .DEPTH(IQ_DEPTH), .REC_W(BREC_W),
            .FOLD_BIT(BREC_W + 6 + $bits(iq_pair_t))) iq (
@@ -1141,16 +1161,29 @@ module ppc_core #(
     .push_valid_i({iq_in0 && iq_in1, iq_in0 || iq_in1}), .push_ready_o(iq_push_ready),
     .push2_ready_o(iq_push2_ready),
     .push0_data_i(iq_lane0),
-    .push1_data_i({queued1, push_uop1, fold_predict1, push_branch1, push_pair1, 2'd0,
-                   BREC_W'(0)}),
+    // A removed first word passes its lane to the second.
+    .push1_data_i({queued1, iq_pack(push_uop1, queued1.insn), fold_predict1, push_branch1,
+                   iq_in0 ? push_pair1 : push_pair1s,
+                   iq_in0 ? 2'd0 : fetch_removed_q + 2'd1, BREC_W'(0)}),
+    .push_lane1_i(!iq_in0),
     .pop_i({dispatch1, iq_pop}), .rec_write_i(rem0_in), .rec_i(rem0_rec),
     .fold_write_i(ctr_rel_taken),
     .valid_o({iq_valid1, iq_valid}),
-    .dq0_o({iq_head, iq_uop, iq_folded, iq_branch, iq_pair, iq_rb, iq_rec}), .dq1_o(iq_dq1),
+    .dq0_o({iq_head, iq_uop_packed, iq_folded, iq_branch, iq_pair, iq_rb, iq_rec}),
+    .dq1_o(iq_dq1),
     .dq2_o(iq_dq2), .dq3_o(iq_dq3),
     .count_o(iq_count), .marked_o(iq_marked)
   );
-  assign {dq1_head, dq1_uop, dq1_folded, dq1_branch, dq1_pair, dq1_rb, dq1_rec} = iq_dq1;
+  assign {dq1_head, dq1_uop_packed, dq1_folded, dq1_branch, dq1_pair, dq1_rb, dq1_rec} = iq_dq1;
+  assign iq_uop = iq_unpack(iq_uop_packed, iq_head.insn);
+  assign dq1_uop = iq_unpack(dq1_uop_packed, dq1_head.insn);
+  always @(posedge clk_i)
+    if (rst_ni) begin
+      assert (iq_unpack(iq_pack(push_uop, queued.insn), queued.insn) == push_uop)
+        else $error("IQ mask or displacement form does not rebuild lane 0");
+      assert (iq_unpack(iq_pack(push_uop1, queued1.insn), queued1.insn) == push_uop1)
+        else $error("IQ mask or displacement form does not rebuild lane 1");
+    end
   // UM 6.3.1: an unconditional b without LK is resolved and retired by the
   // BPU as it is fetched; it folds (fetch redirects to its target) and never
   // enters the IQ. Lane 1 is pushed only beside lane 0, which then precedes it.
@@ -3324,7 +3357,8 @@ module ppc_core #(
   assign iq_peek_valid = !frontend_clear && (iq_valid1 || (iq_valid && (iq_in0 || iq_in1)));
   assign {iq_peek_head, iq_peek_uop, iq_peek_folded, iq_peek_branch} = iq_valid1 ?
       {dq1_head, dq1_uop, dq1_folded, dq1_branch} :
-      iq_lane0[$bits(iq_lane0) - 1 -: $bits(fetch_packet_t) + $bits(uop_t) + 5];
+    iq_in0 ? {queued, push_uop, fold_predict, push_branch} :
+             {queued1, push_uop1, fold_predict1, push_branch1};
   // Performance events: the cause of each cycle without a dispatch. The
   // cause and all its inputs only feed the registered event.
   logic [1:0] perf_refetch_q;  // 1: branch redirect, 2: other redirect

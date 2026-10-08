@@ -109,6 +109,7 @@ module ppc_completion #(
   retire_packet_t allocation, allocation1;
   logic alloc_fire, alloc1_fire, retire_fire, retire1_fire, finish_accept, finish1_accept;
   logic finish2_accept, result2_fault, head_now2, head1_now2;
+  retire_packet_t finish0_packet, finish1_packet, finish2_packet;
   logic result_fault, result_clean, head_now0, head_now1, head1_now0, head1_now1, retire1_settled;
   logic redirect_found;
   logic [CQ_DEPTH-1:0] redirect_candidate_kill;
@@ -190,6 +191,42 @@ module ppc_completion #(
     n.cr_delta = '0;
     n.xer_delta = '0;
     return n;
+  endfunction
+
+  // An entry with the fields a finish rewrites taken from n; the rest hold,
+  // so no finish port reads a whole entry through its index.
+  function automatic retire_packet_t merge_finish(input retire_packet_t own,
+                                                  input retire_packet_t n);
+    retire_packet_t m;
+    m = own;
+    m.value = n.value;
+    m.update_value = n.update_value;
+    m.cr_delta = n.cr_delta;
+    m.xer_delta = n.xer_delta;
+    return m;
+  endfunction
+
+  function automatic retire_packet_t merge_fault(input retire_packet_t own,
+                                                 input retire_packet_t n);
+    retire_packet_t m;
+    m = merge_finish(own, n);
+    m.illegal = n.illegal;
+    m.data_fault = n.data_fault;
+    m.page_miss = n.page_miss;
+    m.gpr_write = n.gpr_write;
+    m.update_write = n.update_write;
+    m.update_gpr = n.update_gpr;
+    m.needs_flags = n.needs_flags;
+    m.write_xer = n.write_xer;
+    m.write_ca = n.write_ca;
+    m.write_ov_so = n.write_ov_so;
+    m.write_cr_field = n.write_cr_field;
+    m.cr_field = n.cr_field;
+    m.write_cr_fields = n.write_cr_fields;
+    m.cr_mask = n.cr_mask;
+    m.write_cr_bit = n.write_cr_bit;
+    m.cr_bit = n.cr_bit;
+    return m;
   endfunction
 
   function automatic logic is_fault(input result_packet_t r);
@@ -559,6 +596,14 @@ module ppc_completion #(
     end
   end
 
+  assign finish0_packet = result_fault ?
+    faulted(packets_q[result_i.producer.index], result_i) :
+    finished(packets_q[result_i.producer.index], result_i);
+  assign finish1_packet = finished1(packets_q[result1_i.producer.index], result1_i);
+  assign finish2_packet = result2_fault ?
+    faulted(packets_q[result2_i.producer.index], result2_i) :
+    finished(packets_q[result2_i.producer.index], NO_RESULT);
+
   always_ff @(posedge clk_i) begin
     if (!rst_ni) begin
       active_q <= '0;
@@ -622,23 +667,17 @@ module ppc_completion #(
           tail1_q <= next_index(tail1_q);
         end
       end
-      if (finish_accept) begin
-        packets_q[result_i.producer.index] <= result_fault ?
-          faulted(packets_q[result_i.producer.index], result_i) :
-          finished(packets_q[result_i.producer.index], result_i);
-        done_q[result_i.producer.index] <= 1'b1;
+      for (int i = 0; i < CQ_DEPTH; i++) begin
+        if (finish_accept && (result_i.producer.index == CQ_INDEX_WIDTH'(i)))
+          packets_q[i] <= merge_fault(packets_q[i], finish0_packet);
+        if (finish1_accept && (result1_i.producer.index == CQ_INDEX_WIDTH'(i)))
+          packets_q[i] <= merge_finish(packets_q[i], finish1_packet);
+        if (finish2_accept && (result2_i.producer.index == CQ_INDEX_WIDTH'(i)))
+          packets_q[i] <= merge_fault(packets_q[i], finish2_packet);
       end
-      if (finish1_accept) begin
-        packets_q[result1_i.producer.index] <=
-          finished1(packets_q[result1_i.producer.index], result1_i);
-        done_q[result1_i.producer.index] <= 1'b1;
-      end
-      if (finish2_accept) begin
-        packets_q[result2_i.producer.index] <= result2_fault ?
-          faulted(packets_q[result2_i.producer.index], result2_i) :
-          finished(packets_q[result2_i.producer.index], NO_RESULT);
-        done_q[result2_i.producer.index] <= 1'b1;
-      end
+      if (finish_accept) done_q[result_i.producer.index] <= 1'b1;
+      if (finish1_accept) done_q[result1_i.producer.index] <= 1'b1;
+      if (finish2_accept) done_q[result2_i.producer.index] <= 1'b1;
     end
   end
 endmodule
