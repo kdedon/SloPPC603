@@ -289,7 +289,7 @@ module ppc_dcache #(
     return result;
   endfunction
 
-  genvar gw;
+  genvar gw, gc, gs;
   generate
   for (gw = 0; gw < WAY_COUNT; gw = gw + 1) begin : g_way
     ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(TAG_BITS)) tag_ram (
@@ -300,10 +300,10 @@ module ppc_dcache #(
       .clk_i, .we_i(tag_we[gw]), .waddr_i(req_set), .wdata_i(req_tag),
       .raddr_i(cand_set[1]), .rdata_o(tag_rdata[1][gw])
     );
-    for (genvar c = 0; c < 2; c++) begin : g_cand
-      assign tag_next[c][gw] = (tag_we[gw] && req_set == cand_set[c]) ? req_tag :
-                                                                         tag_rdata[c][gw];
-      assign hit_next[c][gw] = sv_next[c] && st_next[c][gw] && tag_next[c][gw] == cand_tag[c];
+    for (gc = 0; gc < 2; gc = gc + 1) begin : g_cand
+      assign tag_next[gc][gw] = (tag_we[gw] && req_set == cand_set[gc]) ? req_tag :
+                                                                          tag_rdata[gc][gw];
+      assign hit_next[gc][gw] = sv_next[gc] && st_next[gc][gw] && tag_next[gc][gw] == cand_tag[gc];
     end
     ppc_ram_sdp_be #(.DEPTH(4*SET_COUNT), .BYTES(8)) data_ram (
       .clk_i, .we_i(data_be & {8{data_way_we[gw]}}), .waddr_i(data_waddr),
@@ -344,11 +344,11 @@ module ppc_dcache #(
     .raddr_i(cand_set[1]), .rdata_o(st_rdata[1])
   );
   generate
-  for (genvar c = 0; c < 2; c++) begin : g_cand_state
-    assign st_next[c] = (st_we && st_waddr == cand_set[c]) ? st_wdata : st_rdata[c];
+  for (gs = 0; gs < 2; gs = gs + 1) begin : g_cand_state
+    assign st_next[gs] = (st_we && st_waddr == cand_set[gs]) ? st_wdata : st_rdata[gs];
     // The flash invalidate wins over a state write, as in set_valid_q.
-    assign sv_next[c] = rst_ni && !(state_q == S_IDLE && hid0_dcfi_i && MUTATION != 7) &&
-                        (set_valid_q[cand_set[c]] || (st_we && st_waddr == cand_set[c]));
+    assign sv_next[gs] = rst_ni && !(state_q == S_IDLE && hid0_dcfi_i && MUTATION != 7) &&
+                        (set_valid_q[cand_set[gs]] || (st_we && st_waddr == cand_set[gs]));
   end
   endgenerate
   ppc_ram_lut #(.DEPTH(SET_COUNT), .WIDTH(LRU_BITS)) lru_ram (
