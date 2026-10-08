@@ -434,10 +434,12 @@ module ppc_completion #(
     end
   end
   // Each candidate is qualified as the port's result would be; the owner
-  // only selects.
+  // only selects. The port's own mux carries the payload.
   always_comb begin
     wake_valid_o = 1'b0;
     wake_o = '0;
+    wake_o.producer = result_i.producer;
+    wake_o.value = result_i.value;
     for (int k = 0; k < 3; k++) begin
       logic [CQ_INDEX_WIDTH-1:0] idx;
       logic ok;
@@ -449,9 +451,7 @@ module ppc_completion #(
            !wake_cand_i[k].fault && (wake_cand_i[k].data_fault == DATA_OK);
       if (wake_sel_i[k]) begin
         wake_valid_o = ok;
-        wake_o.producer = wake_cand_i[k].producer;
         wake_o.tag = packets_q[idx].tag;
-        wake_o.value = wake_cand_i[k].value;
       end
     end
   end

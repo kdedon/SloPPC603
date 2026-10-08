@@ -95,6 +95,15 @@ module ppc_rename (
   assign alloc1_fire = alloc1_i && alloc1_ready_o;
   assign alloc2_fire = alloc2_i && alloc2_ready_o;
 
+  // Each slot's owner against each wake's producer, shared by every read
+  // port. A matched wake of the operand's own slot is that slot's owner.
+  logic [GPR_RENAME_DEPTH-1:0] wake_owns, wake1_owns;
+  always_comb
+    for (int i = 0; i < GPR_RENAME_DEPTH; i++) begin
+      wake_owns[i] = owners[i] == wake_i.producer;
+      wake1_owns[i] = owners[i] == wake1_i.producer;
+    end
+
   function automatic operand_t read_operand(input logic [4:0] reg_index,
                                              input logic [31:0] arch_value);
     operand_t operand;
@@ -112,17 +121,15 @@ module ppc_rename (
       // consumed only with ready, which needs a valid wake of this tag on
       // the same bus or a second-port wake, which takes precedence; a killed
       // wake also kills the reader.
-      if (!ready[operand.tag] && wake_i.producer == operand.producer)
+      if (!ready[operand.tag] && wake_owns[operand.tag])
         operand.value = wake_i.value;
       // A late wake is not forwarded; the reader takes it from the bus.
-      if (wake_match && !wake_i.late && wake_i.tag == operand.tag &&
-          wake_i.producer == operand.producer)
+      if (wake_match && !wake_i.late && wake_i.tag == operand.tag)
         operand.ready = 1'b1;
       if (!ready[operand.tag] && wake1_offer_i && wake1_i.tag == operand.tag &&
-          wake1_i.producer == operand.producer)
+          wake1_owns[operand.tag])
         operand.value = wake1_i.value;
-      if (wake1_match && !wake1_i.late && wake1_i.tag == operand.tag &&
-          wake1_i.producer == operand.producer)
+      if (wake1_match && !wake1_i.late && wake1_i.tag == operand.tag)
         operand.ready = 1'b1;
     end
     return operand;
