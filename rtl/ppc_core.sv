@@ -411,7 +411,7 @@ module ppc_core #(
   completion_tag_t flags_waiter_tag;
   logic fd_push, fold_predict, fold_q, iq_folded, bu_redirect;
   logic wait0, wait1, fetch_stop, fstop_q, fetch_hold_q;
-  logic cr_unres, cr_inflight, bu_pred, cr_hold0, cr_hold1, fd_split;
+  logic cr_unres, cr_unres_fd, cr_inflight, bu_pred, cr_hold0, cr_hold1, fd_split;
   logic [31:0] stop_resume;
   // Branch class predecoded at IQ push, to keep decode off the dispatch path.
   logic [3:0] push_branch, iq_branch;
@@ -890,6 +890,15 @@ module ppc_core #(
   assign crb0 = cr_branch(queued, ctr_fe_ok, ctr_one);
   assign crw0 = (queued.fault == FETCH_OK) && cr_writer(push_uop);
   assign cr_dep = (crw_left_q != '0) || cr_inflight;
+  // A second-word bc predicted not taken, behind a CR writer still queued
+  // (so predicted even once the older prediction resolves), waits only
+  // while that prediction does not resolve next cycle. Its prediction
+  // starts no earlier than the resolution.
+  /* verilator lint_off UNUSEDSIGNAL */
+  function automatic logic bc_not_taken(fetch_packet_t p);
+    return (p.insn[31:26] == 6'd16) && !folds(p, 1'b0, 1'b1, 1'b1, 1'b0, 32'd0, 1'b0);
+  endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
   assign wait0_cr = crb0 && cr_unres;
   assign cr_hold0 = fd_valid && wait0_cr;
   assign crb_pend0 = crb0 && cr_dep;
@@ -948,7 +957,8 @@ module ppc_core #(
   endgenerate
   assign crb1 = (FETCH_WIDTH == 2) && cr_branch(queued1, ctr_fe_ok && !push_writes[0], ctr_one);
   assign crw1 = (FETCH_WIDTH == 2) && cr_writer(push_uop1);
-  assign wait1_cr = crb1 && (cr_unres || crb_pend0);
+  assign wait1_cr = crb1 && (crb_pend0 ||
+    ((bc_not_taken(queued1) && (crw0 || (crw_left_q != '0))) ? cr_unres_fd : cr_unres));
   // Lane 0 enters the IQ alone.
   assign hold1_cr = wait1_cr && !wait0 && !fold_predict;
   assign cr_hold1 = fd1_valid && hold1_cr;
@@ -1656,10 +1666,25 @@ module ppc_core #(
   // resolves as the CR result arrives (UM Figure 6-5), and the held branch
   // is predicted in that cycle.
   assign cr_inflight = (flags_busy && (!bu_cr_valid_q || flags_waiter)) || fp_cr_pending;
-  assign cr_unres =
-    (bs_valid_q && !bs_resolve && !(bu_cr_capture && (flags_owner == bs_owner_q))) ||
-    ((crb_left_q != '0) &&
-     ((crbw_left_q != '0) || (cr_inflight && !(bu_cr_capture && !flags_waiter))));
+  logic bs_unres, crq_unres, bs_res_next, iu_one_cycle;
+  assign bs_unres =
+    bs_valid_q && !bs_resolve && !(bu_cr_capture && (flags_owner == bs_owner_q));
+  assign crq_unres = (crb_left_q != '0) &&
+    ((crbw_left_q != '0) || (cr_inflight && !(bu_cr_capture && !flags_waiter)));
+  assign cr_unres = bs_unres || crq_unres;
+  // The prediction's CR owner issues a single-cycle op now, so it resolves
+  // next cycle: the cycle a branch fetched now is decoded (UM 6.4.1.2,
+  // Figure 6-5). A branch predicted not taken may then leave FD; its
+  // prediction still waits for the resolution.
+  assign iu_one_cycle = !((issue.ctrl.op == ALU_MULLI) || (issue.ctrl.op == ALU_MULLW) ||
+    (issue.ctrl.op == ALU_MULHW) || (issue.ctrl.op == ALU_MULHWU) ||
+    (issue.ctrl.op == ALU_DIVWU) || (issue.ctrl.op == ALU_DIVW));
+  assign bs_res_next = flags_busy && (flags_owner == bs_owner_q) && owner_simple_q &&
+    !flags_waiter && !fp_cr_pending && !recovery_accepted &&
+    ((issue_valid && issue_ready && iu_one_cycle && (issue.ctrl.producer == bs_owner_q)) ||
+     (HAS_SRU && sru_issue_valid && sru_issue_ready &&
+      (sru_issue.ctrl.producer == bs_owner_q)));
+  assign cr_unres_fd = (bs_unres && !bs_res_next) || crq_unres;
   assign bs_head = bs_miss_q && !bs_anch_q && (retire_producer == bs_tag_q);
   assign bs_recover = BS_EARLY && bs_miss_q;
   assign bs_fix_head = bs_fix_q && !bs_anch_q && (retire_producer == bs_tag_q);
