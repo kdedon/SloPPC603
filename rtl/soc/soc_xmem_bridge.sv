@@ -46,7 +46,12 @@ module soc_xmem_bridge #(
   logic [AW-1:0] addr_q;
   logic burst_q;
   logic [1:0] idx_q, left_q;
-  logic [63:0] data_q [4];
+  // LUT RAM: one write port, an unregistered read for the DDR3 side and a
+  // registered read for the processor side.
+  (* ramstyle = "MLAB, no_rw_check" *) logic [63:0] data_q [4];
+  logic data_we;
+  logic [1:0] data_waddr;
+  logic [63:0] data_wdata;
   logic [7:0] be_q [4];
 
   always_ff @(posedge clk_i) begin
@@ -95,14 +100,18 @@ module soc_xmem_bridge #(
       endcase
   end
 
+  // A fill and a processor write are in different states.
+  assign data_we = (state_q == X_RD_FILL && xmem_rvalid_i) || (state_q == X_WR_DATA && req_i && we_i);
+  assign data_waddr = state_q == X_RD_FILL ? idx_q : beat_i;
+  assign data_wdata = state_q == X_RD_FILL ? xmem_rdata_i : wdata_i;
+
   always_ff @(posedge clk_i) begin
-    if (state_q == X_RD_FILL && xmem_rvalid_i) data_q[idx_q] <= xmem_rdata_i;
-    if (state_q == X_WR_DATA && req_i && we_i) begin
-      data_q[beat_i] <= wdata_i;
-      be_q[beat_i] <= be_i;
-    end
+    if (data_we) data_q[data_waddr] <= data_wdata;
     if (req_i && !we_i) rdata_o <= data_q[beat_i];
   end
+
+  always_ff @(posedge clk_i)
+    if (state_q == X_WR_DATA && req_i && we_i) be_q[beat_i] <= be_i;
 
   assign dwait_o = state_q != X_IDLE || (start_i && !write_i);
   assign hold_o = state_q == X_WR_DATA || state_q == X_WR_REQ;
