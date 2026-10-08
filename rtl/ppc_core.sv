@@ -1120,18 +1120,22 @@ module ppc_core #(
   /* verilator lint_on UNUSEDSIGNAL */
   // A removed first word passes its lane to the second.
   logic [$bits(fetch_packet_t) + $bits(uop_t) + 7 + $bits(iq_pair_t) + BREC_W - 1:0] iq_lane0;
-  // An entry keeps a branch displacement as its form; the word holds the value.
+  // An entry keeps a rotate mask and a branch displacement as their forms;
+  // the word holds the values.
   /* verilator lint_off UNUSEDSIGNAL */  // each reads only the fields it needs
   function automatic uop_t iq_pack(uop_t u, logic [31:0] insn);
     uop_t q;
     q = u;
-    q.branch_disp = {30'b0, (insn[31:26] == 6'd16) && (u.branch_disp != 32'b0),
+    q.mask = {31'b0, (insn[31:26] == 6'd20) || (insn[31:26] == 6'd21) ||
+                     (insn[31:26] == 6'd23)};
+    q.branch_disp = {30'b0, (insn[31:26] == 6'd16) && valid_bo(insn[25:21]),
                      insn[31:26] == 6'd18};
     return q;
   endfunction
   function automatic uop_t iq_unpack(uop_t u, logic [31:0] insn);
     uop_t q;
     q = u;
+    q.mask = u.mask[0] ? make_rotate_mask(insn[10:6], insn[5:1]) : 32'b0;
     q.branch_disp = u.branch_disp[0] ? {{6{insn[25]}}, insn[25:2], 2'b0} :
                     u.branch_disp[1] ? {{16{insn[15]}}, insn[15:2], 2'b0} : 32'b0;
     return q;
@@ -1166,9 +1170,9 @@ module ppc_core #(
   always @(posedge clk_i)
     if (rst_ni) begin
       assert (iq_unpack(iq_pack(push_uop, queued.insn), queued.insn) == push_uop)
-        else $error("IQ branch displacement form does not rebuild lane 0");
+        else $error("IQ mask or displacement form does not rebuild lane 0");
       assert (iq_unpack(iq_pack(push_uop1, queued1.insn), queued1.insn) == push_uop1)
-        else $error("IQ branch displacement form does not rebuild lane 1");
+        else $error("IQ mask or displacement form does not rebuild lane 1");
     end
   // UM 6.3.1: an unconditional b without LK is resolved and retired by the
   // BPU as it is fetched; it folds (fetch redirects to its target) and never
