@@ -216,6 +216,9 @@ if [[ -f "${out}/ppc603e.rbf" ]]; then
     --core-mhz "${sys_mhz}" --note "${what}" --rbf "${summary_rbf}" --out "${out}/${label}.summary.json" || status=1
   if [[ -n "${pub:-}" ]]; then cp "${out}/${label}.summary.json" "${pub}/${name%.rbf}.json"; fi
 fi
+# Quartus errors as "error:" lines, which ci/step.sh copies into the public
+# failure annotation.
+grep -E "^Error \(" "${here}/output_files.log" | head -20 | sed 's/^/quartus error: /' || true
 echo "quartus exit status ${status}"
 if [[ "${clean}" == 1 ]]; then
   rm -rf "${here}/db" "${here}/incremental_db" "${here}"/*.qws
