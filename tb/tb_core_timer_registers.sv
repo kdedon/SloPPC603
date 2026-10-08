@@ -148,7 +148,9 @@ module tb_core_timer_registers;
       default:return addi(0,0,0);
     endcase
   endfunction
-  assign tick=rst_n&&cycles%3!=1;
+  // Retirement backpressure spaces reads 12 cycles apart; a tick period
+  // coprime to 12 puts successive reads on different tick phases.
+  assign tick=rst_n&&cycles%7!=1;
   assign tben=cycles%11>=3;
   assign ir=rst_n&&!ipending&&cycles%3!=1;
   assign sv=rst_n&&ipending&&idelay==0;

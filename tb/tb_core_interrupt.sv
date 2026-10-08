@@ -219,7 +219,11 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       // A bl removed at fetch on the predicted path of a bc waiting on the
       // divide sets the LR shadow, armed on the next entry in phases 15-16;
       // the bc then mispredicts. The IRQ raised then must see LR unwritten.
-      if(phase>=13&&irq_count==0&&(phase<15 ? dut.lk_fire&&(dut.lk_spec_q||dut.bs_valid_q) :
+      // Without removal the IRQ is raised as the predicted-path bl
+      // dispatches (phases 13, 15) or is queued (phases 14, 16).
+      if(phase>=13&&irq_count==0&&(!dut.BRANCH_REMOVAL ? ((phase==13||phase==15) ? dut.dispatch&&dut.iq_head.pc=='h300 :
+                                     (dut.iq_push0&&dut.queued.pc=='h304)||(dut.iq_push1&&dut.queued1.pc=='h304)) :
+                                   phase<15 ? dut.lk_fire&&(dut.lk_spec_q||dut.bs_valid_q) :
                                    dut.shadow_armed_q&&dut.lk_spec_q))begin
         irq<=1;spec_bl<=1;
       end
@@ -319,7 +323,7 @@ module tb_core_interrupt #(parameter bit ENABLE_EXTERNAL_INTERRUPTS=1'b1);
       if(phase==8)check(regs[6]==28,"retained divider failed to complete");
       if(phase==12)check(regs[10]=='h54&&dut.ctr=='h54,"bdnz counted other than once");
       if(phase==9)check(regs[6]==0,"killed divider wrote a destination");
-      if(phase>=13)check(regs[6]==28&&regs[12]==0&&(spec_bl||!dut.BRANCH_REMOVAL),"speculative bl LR window");
+      if(phase>=13)check(regs[6]==28&&regs[12]==0&&spec_bl,"speculative bl LR window");
     end
     $display("PASS external IRQ enabled=%0d phase=%0d msr=%08x events=%0d retires=%0d stores=%0d loads=%0d",ENABLE_EXTERNAL_INTERRUPTS,phase,selected,irq_count,retires,stores,loads);
   endtask
