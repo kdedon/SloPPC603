@@ -368,7 +368,8 @@ module ppc_lsu_pipe #(
     !p1_head.killed && !offered_q && p1_ready && lane_idle_i && !rsp_to_lane_q &&
     !redo_valid_q && (!q_valid_q || q_pop) && (sq_count_q != SQ_W'(SQ_DEPTH)) &&
     !killed_now(p1_head.producer);
-  assign chk_addr_o = p1_addr;
+  // A head that may queue is fast, so its EA is registered.
+  assign chk_addr_o = {p1_head.ea[31:3], p1_head.ea[2] ^ p1_head.munge[2], 2'b00};
   assign p1_queue = p1_check && chk_ok_i;
   // An offer stands until accepted. A removed entry leaves without an
   // offer, or withdraws one last made speculatively (the older access whose
@@ -736,7 +737,7 @@ module ppc_lsu_pipe #(
     if (p1_queue) begin
       added = '0;
       added.producer = p1_head.producer;
-      added.addr = p1_addr;
+      added.addr = chk_addr_o;
       added.wdata = p1_wdata;
       added.wstrb = p1_wstrb;
       added.bytes = p1_nbytes;
@@ -882,6 +883,9 @@ module ppc_lsu_pipe #(
       assert ((!wake_valid_i || wake_i.late || wake_early_value_i == wake_i.value) &&
               (!wake1_valid_i || wake1_i.late || wake1_early_value_i == wake1_i.value))
         else $error("early wake value differs from the wake bus");
+  always @(posedge clk_i)
+    if (rst_ni && p1_check)
+      assert (chk_addr_o == p1_addr) else $error("store check address is not the head's");
   always @(posedge clk_i)
     if (rst_ni && BASE_SNOOP && p1_valid && p1_head.base_wait && !head_base0 && !head_base1 &&
         (p1_check || offer))
