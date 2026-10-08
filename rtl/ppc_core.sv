@@ -2501,7 +2501,7 @@ module ppc_core #(
   assign wake_early_value = lsu_port0 ? lsu_result.value :
                             special_result_select ? special_early_value : iu_result.value;
   assign wake1_early_value = sru_result_offer ? sru_result.value :
-                             special_port1 ? special_early_value : iu_result.value;
+                             special_result_select ? special_early_value : iu_result.value;
   always_comb begin
     wake = cq_wake;
     wake.late = !lsu_port0 && special_result_select && special_late;
